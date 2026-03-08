@@ -5,7 +5,10 @@
 	"type": "module",
 	"main": "src/index.ts",
 	"dependencies": {
-		"@ascend/sdk": "workspace:*"
+		"@ascend/schema": "workspace:*",
+		"@ascend/sdk": "workspace:*",
+		"@modelcontextprotocol/sdk": "^1.27.1",
+		"zod": "^4.3.6"
 	},
 	"scripts": {
 		"test": "bun test"

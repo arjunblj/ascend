@@ -1,5 +1,5 @@
 import type { CellValue } from '@ascend/schema'
-import { EMPTY, errorValue, numberValue } from '@ascend/schema'
+import { booleanValue, EMPTY, errorValue, numberValue } from '@ascend/schema'
 import {
 	cellOf,
 	compareValues,
@@ -272,6 +272,64 @@ function columnsFn(args: EvalArg[]): CellValue {
 	return numberValue(getRange(args[0])[0]?.length ?? 0)
 }
 
+function lookupFn(args: EvalArg[]): CellValue {
+	const lookup = cellOf(args[0])
+	if (lookup.kind === 'error') return lookup
+	const lookupArray = getRange(args[1])
+	const resultArray = args.length > 2 ? getRange(args[2]) : lookupArray
+	const lookupFlat: CellValue[] =
+		lookupArray.length === 1 ? [...(lookupArray[0] ?? [])] : extractColumn(lookupArray, 0)
+	const resultFlat: CellValue[] =
+		resultArray.length === 1 ? [...(resultArray[0] ?? [])] : extractColumn(resultArray, 0)
+	const idx = approximateMatch(lookup, lookupFlat)
+	return idx < 0 ? errorValue('#N/A') : (resultFlat[idx] ?? EMPTY)
+}
+
+function address(args: EvalArg[]): CellValue {
+	const rowNum = numArg(args[0])
+	if (typeof rowNum !== 'number') return rowNum
+	const colNum = numArg(args[1])
+	if (typeof colNum !== 'number') return colNum
+	const absNum = args.length > 2 ? numArg(args[2]) : 1
+	if (typeof absNum !== 'number') return absNum
+	const useA1 = args.length > 3 ? cellOf(args[3]) : booleanValue(true)
+	if (useA1.kind === 'error') return useA1
+	const sheetText = args.length > 4 ? cellOf(args[4]) : null
+	if (sheetText?.kind === 'error') return sheetText
+
+	const row = Math.trunc(rowNum)
+	const col = Math.trunc(colNum)
+	if (row < 1 || col < 1) return errorValue('#VALUE!')
+
+	const absoluteMode = Math.trunc(absNum)
+	const absRow = absoluteMode === 1 || absoluteMode === 2
+	const absCol = absoluteMode === 1 || absoluteMode === 3
+
+	let ref: string
+	if (useA1.kind === 'boolean' ? useA1.value : true) {
+		const colLabel = toColumnLabel(col - 1)
+		ref = `${absCol ? '$' : ''}${colLabel}${absRow ? '$' : ''}${row}`
+	} else {
+		ref = `R${absRow ? row : `[${row}]`}C${absCol ? col : `[${col}]`}`
+	}
+
+	if (sheetText && sheetText.kind === 'string' && sheetText.value.length > 0) {
+		return { kind: 'string', value: `'${sheetText.value}'!${ref}` }
+	}
+	return { kind: 'string', value: ref }
+}
+
+function toColumnLabel(colIndex: number): string {
+	let n = colIndex + 1
+	let label = ''
+	while (n > 0) {
+		const rem = (n - 1) % 26
+		label = String.fromCharCode(65 + rem) + label
+		n = Math.floor((n - 1) / 26)
+	}
+	return label
+}
+
 // --- Registration ---
 
 registerFunction({ name: 'VLOOKUP', minArgs: 3, maxArgs: 4, evaluate: vlookup })
@@ -286,6 +344,8 @@ registerFunction({
 })
 registerFunction({ name: 'XMATCH', minArgs: 2, maxArgs: 4, evaluate: xmatch })
 registerFunction({ name: 'CHOOSE', minArgs: 2, maxArgs: 255, evaluate: choose })
+registerFunction({ name: 'LOOKUP', minArgs: 2, maxArgs: 3, evaluate: lookupFn })
+registerFunction({ name: 'ADDRESS', minArgs: 2, maxArgs: 5, evaluate: address })
 registerFunction({ name: 'ROWS', minArgs: 1, maxArgs: 1, evaluate: rowsFn })
 registerFunction({
 	name: 'COLUMNS',

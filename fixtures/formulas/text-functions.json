@@ -44,6 +44,12 @@
 			"expected": { "kind": "string", "value": "hello" }
 		},
 		{
+			"description": "EXACT compares text with case sensitivity",
+			"setup": { "A1": "Falcons", "A2": "falcons" },
+			"formula": "EXACT(A1, A2)",
+			"expected": { "kind": "boolean", "value": false }
+		},
+		{
 			"description": "CONCATENATE joins strings",
 			"setup": { "A1": "Hello", "A2": " ", "A3": "World" },
 			"formula": "CONCATENATE(A1, A2, A3)",

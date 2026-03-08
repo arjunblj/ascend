@@ -1,5 +1,13 @@
 import type { CellValue } from '@ascend/schema'
-import { EMPTY, errorValue, isEmpty, isError, numberValue, stringValue } from '@ascend/schema'
+import {
+	booleanValue,
+	EMPTY,
+	errorValue,
+	isEmpty,
+	isError,
+	numberValue,
+	stringValue,
+} from '@ascend/schema'
 import type { EvalArg, FunctionDef } from './index.ts'
 
 function fn(
@@ -216,6 +224,14 @@ export const textFunctions: FunctionDef[] = [
 		const s = strArg(args[0])
 		if (typeof s !== 'string') return s
 		return stringValue(s.toLowerCase())
+	}),
+
+	fn('EXACT', 2, 2, (args) => {
+		const left = strArg(args[0])
+		if (typeof left !== 'string') return left
+		const right = strArg(args[1])
+		if (typeof right !== 'string') return right
+		return booleanValue(left === right)
 	}),
 
 	fn('PROPER', 1, 1, (args) => {

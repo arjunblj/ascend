@@ -98,6 +98,18 @@
 			"expected": { "kind": "number", "value": 45 }
 		},
 		{
+			"description": "TIME builds a fraction for a fake 1:30 PM tipoff",
+			"setup": {},
+			"formula": "TIME(13, 30, 0)",
+			"expected": { "kind": "number", "value": 0.5625 }
+		},
+		{
+			"description": "TIMEVALUE parses a text timestamp",
+			"setup": {},
+			"formula": "TIMEVALUE(\"1:30 PM\")",
+			"expected": { "kind": "number", "value": 0.5625 }
+		},
+		{
 			"description": "DATE uses the 1904 system when requested",
 			"setup": {},
 			"context": { "dateSystem": "1904" },

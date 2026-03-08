@@ -198,6 +198,39 @@ function secondFn(args: EvalArg[]): CellValue {
 	return numberValue(Math.round(frac * 86400) % 60)
 }
 
+function timeFn(args: EvalArg[]): CellValue {
+	const h = numArg(args[0])
+	if (typeof h !== 'number') return h
+	const m = numArg(args[1])
+	if (typeof m !== 'number') return m
+	const s = numArg(args[2])
+	if (typeof s !== 'number') return s
+	const totalSeconds = Math.trunc(h) * 3600 + Math.trunc(m) * 60 + Math.trunc(s)
+	const wrapped = ((totalSeconds % 86400) + 86400) % 86400
+	return numberValue(wrapped / 86400)
+}
+
+function timevalue(args: EvalArg[]): CellValue {
+	const v = cellOf(args[0])
+	if (v.kind === 'error') return v
+	if (v.kind !== 'string') return errorValue('#VALUE!')
+	const match = /^\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?\s*$/i.exec(v.value)
+	if (!match) return errorValue('#VALUE!')
+	let hour = Number(match[1])
+	const minute = Number(match[2])
+	const second = Number(match[3] ?? '0')
+	if (Number.isNaN(hour) || Number.isNaN(minute) || Number.isNaN(second)) {
+		return errorValue('#VALUE!')
+	}
+	const meridiem = match[4]?.toUpperCase()
+	if (meridiem === 'AM' && hour === 12) hour = 0
+	if (meridiem === 'PM' && hour < 12) hour += 12
+	if (hour < 0 || minute < 0 || minute >= 60 || second < 0 || second >= 60) {
+		return errorValue('#VALUE!')
+	}
+	return numberValue((hour * 3600 + minute * 60 + second) / 86400)
+}
+
 function datevalue(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const v = cellOf(args[0])
 	if (v.kind === 'error') return v
@@ -437,6 +470,13 @@ registerFunction({
 	minArgs: 1,
 	maxArgs: 1,
 	evaluate: secondFn,
+})
+registerFunction({ name: 'TIME', minArgs: 3, maxArgs: 3, evaluate: timeFn })
+registerFunction({
+	name: 'TIMEVALUE',
+	minArgs: 1,
+	maxArgs: 1,
+	evaluate: timevalue,
 })
 registerFunction({
 	name: 'DATEVALUE',

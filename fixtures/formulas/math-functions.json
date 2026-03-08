@@ -189,6 +189,18 @@
 			},
 			"formula": "MAXIFS(A1:A3, B1:B3, \"Approved\")",
 			"expected": { "kind": "number", "value": 300 }
+		},
+		{
+			"description": "SUBTOTAL sums a compact finance range",
+			"setup": { "A1": 100, "A2": 200, "A3": 300 },
+			"formula": "SUBTOTAL(9, A1:A3)",
+			"expected": { "kind": "number", "value": 600 }
+		},
+		{
+			"description": "SUBTOTAL averages a compact stats range",
+			"setup": { "A1": 8, "A2": 10, "A3": 12 },
+			"formula": "SUBTOTAL(1, A1:A3)",
+			"expected": { "kind": "number", "value": 10 }
 		}
 	]
 }

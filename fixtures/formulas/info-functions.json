@@ -14,6 +14,12 @@
 			"expected": { "kind": "boolean", "value": true }
 		},
 		{
+			"description": "ISERR returns TRUE for #DIV/0! but not #N/A",
+			"setup": {},
+			"formula": "ISERR(1/0)",
+			"expected": { "kind": "boolean", "value": true }
+		},
+		{
 			"description": "ISNA returns TRUE for #N/A",
 			"setup": {},
 			"formula": "ISNA(NA())",

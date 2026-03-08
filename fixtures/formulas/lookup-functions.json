@@ -132,6 +132,31 @@
 			"expected": { "kind": "number", "value": 1 }
 		},
 		{
+			"description": "LOOKUP returns the last matching fee band",
+			"setup": {
+				"A1": 10,
+				"A2": 20,
+				"A3": 30,
+				"B1": "small",
+				"B2": "medium",
+				"B3": "large"
+			},
+			"formula": "LOOKUP(25, A1:A3, B1:B3)",
+			"expected": { "kind": "string", "value": "medium" }
+		},
+		{
+			"description": "ADDRESS returns an absolute A1 reference",
+			"setup": {},
+			"formula": "ADDRESS(2, 3)",
+			"expected": { "kind": "string", "value": "$C$2" }
+		},
+		{
+			"description": "ADDRESS can prefix a sheet name",
+			"setup": {},
+			"formula": "ADDRESS(4, 2, 1, TRUE, \"Stats\")",
+			"expected": { "kind": "string", "value": "'Stats'!$B$4" }
+		},
+		{
 			"description": "ROW returns the current row when called without arguments",
 			"setup": {},
 			"formula": "ROW()",

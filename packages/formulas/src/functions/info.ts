@@ -10,6 +10,11 @@ function iserror(args: EvalArg[]): CellValue {
 	return booleanValue(cellOf(args[0]).kind === 'error')
 }
 
+function iserr(args: EvalArg[]): CellValue {
+	const v = cellOf(args[0])
+	return booleanValue(v.kind === 'error' && v.value !== '#N/A')
+}
+
 function isna(args: EvalArg[]): CellValue {
 	const v = cellOf(args[0])
 	return booleanValue(v.kind === 'error' && v.value === '#N/A')
@@ -72,6 +77,7 @@ registerFunction({
 	maxArgs: 1,
 	evaluate: iserror,
 })
+registerFunction({ name: 'ISERR', minArgs: 1, maxArgs: 1, evaluate: iserr })
 registerFunction({ name: 'ISNA', minArgs: 1, maxArgs: 1, evaluate: isna })
 registerFunction({
 	name: 'ISNUMBER',

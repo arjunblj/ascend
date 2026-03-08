@@ -1,0 +1,167 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "ascend",
+      "devDependencies": {
+        "@biomejs/biome": "2.4.6",
+        "lefthook": "^1.11.0",
+        "typescript": "^5.7.0",
+      },
+    },
+    "apps/api": {
+      "name": "@ascend/api",
+      "version": "0.0.0",
+      "dependencies": {
+        "@ascend/sdk": "workspace:*",
+      },
+    },
+    "apps/cli": {
+      "name": "@ascend/cli",
+      "version": "0.0.0",
+      "dependencies": {
+        "@ascend/sdk": "workspace:*",
+      },
+    },
+    "apps/mcp": {
+      "name": "@ascend/mcp",
+      "version": "0.0.0",
+      "dependencies": {
+        "@ascend/sdk": "workspace:*",
+      },
+    },
+    "packages/core": {
+      "name": "@ascend/core",
+      "version": "0.0.0",
+      "dependencies": {
+        "@ascend/schema": "workspace:*",
+      },
+    },
+    "packages/engine": {
+      "name": "@ascend/engine",
+      "version": "0.0.0",
+      "dependencies": {
+        "@ascend/core": "workspace:*",
+        "@ascend/formulas": "workspace:*",
+        "@ascend/schema": "workspace:*",
+      },
+    },
+    "packages/formulas": {
+      "name": "@ascend/formulas",
+      "version": "0.0.0",
+      "dependencies": {
+        "@ascend/core": "workspace:*",
+        "@ascend/schema": "workspace:*",
+      },
+    },
+    "packages/io-csv": {
+      "name": "@ascend/io-csv",
+      "version": "0.0.0",
+      "dependencies": {
+        "@ascend/core": "workspace:*",
+        "@ascend/schema": "workspace:*",
+      },
+    },
+    "packages/io-xlsx": {
+      "name": "@ascend/io-xlsx",
+      "version": "0.0.0",
+      "dependencies": {
+        "@ascend/core": "workspace:*",
+        "@ascend/schema": "workspace:*",
+      },
+    },
+    "packages/schema": {
+      "name": "@ascend/schema",
+      "version": "0.0.0",
+    },
+    "packages/sdk": {
+      "name": "@ascend/sdk",
+      "version": "0.0.0",
+      "dependencies": {
+        "@ascend/core": "workspace:*",
+        "@ascend/engine": "workspace:*",
+        "@ascend/formulas": "workspace:*",
+        "@ascend/io-csv": "workspace:*",
+        "@ascend/io-xlsx": "workspace:*",
+        "@ascend/schema": "workspace:*",
+        "@ascend/verify": "workspace:*",
+      },
+    },
+    "packages/verify": {
+      "name": "@ascend/verify",
+      "version": "0.0.0",
+      "dependencies": {
+        "@ascend/core": "workspace:*",
+        "@ascend/engine": "workspace:*",
+        "@ascend/formulas": "workspace:*",
+        "@ascend/schema": "workspace:*",
+      },
+    },
+  },
+  "packages": {
+    "@ascend/api": ["@ascend/api@workspace:apps/api"],
+
+    "@ascend/cli": ["@ascend/cli@workspace:apps/cli"],
+
+    "@ascend/core": ["@ascend/core@workspace:packages/core"],
+
+    "@ascend/engine": ["@ascend/engine@workspace:packages/engine"],
+
+    "@ascend/formulas": ["@ascend/formulas@workspace:packages/formulas"],
+
+    "@ascend/io-csv": ["@ascend/io-csv@workspace:packages/io-csv"],
+
+    "@ascend/io-xlsx": ["@ascend/io-xlsx@workspace:packages/io-xlsx"],
+
+    "@ascend/mcp": ["@ascend/mcp@workspace:apps/mcp"],
+
+    "@ascend/schema": ["@ascend/schema@workspace:packages/schema"],
+
+    "@ascend/sdk": ["@ascend/sdk@workspace:packages/sdk"],
+
+    "@ascend/verify": ["@ascend/verify@workspace:packages/verify"],
+
+    "@biomejs/biome": ["@biomejs/biome@2.4.6", "", { "optionalDependencies": { "@biomejs/cli-darwin-arm64": "2.4.6", "@biomejs/cli-darwin-x64": "2.4.6", "@biomejs/cli-linux-arm64": "2.4.6", "@biomejs/cli-linux-arm64-musl": "2.4.6", "@biomejs/cli-linux-x64": "2.4.6", "@biomejs/cli-linux-x64-musl": "2.4.6", "@biomejs/cli-win32-arm64": "2.4.6", "@biomejs/cli-win32-x64": "2.4.6" }, "bin": { "biome": "bin/biome" } }, "sha512-QnHe81PMslpy3mnpL8DnO2M4S4ZnYPkjlGCLWBZT/3R9M6b5daArWMMtEfP52/n174RKnwRIf3oT8+wc9ihSfQ=="],
+
+    "@biomejs/cli-darwin-arm64": ["@biomejs/cli-darwin-arm64@2.4.6", "", { "os": "darwin", "cpu": "arm64" }, "sha512-NW18GSyxr+8sJIqgoGwVp5Zqm4SALH4b4gftIA0n62PTuBs6G2tHlwNAOj0Vq0KKSs7Sf88VjjmHh0O36EnzrQ=="],
+
+    "@biomejs/cli-darwin-x64": ["@biomejs/cli-darwin-x64@2.4.6", "", { "os": "darwin", "cpu": "x64" }, "sha512-4uiE/9tuI7cnjtY9b07RgS7gGyYOAfIAGeVJWEfeCnAarOAS7qVmuRyX6d7JTKw28/mt+rUzMasYeZ+0R/U1Mw=="],
+
+    "@biomejs/cli-linux-arm64": ["@biomejs/cli-linux-arm64@2.4.6", "", { "os": "linux", "cpu": "arm64" }, "sha512-kMLaI7OF5GN1Q8Doymjro1P8rVEoy7BKQALNz6fiR8IC1WKduoNyteBtJlHT7ASIL0Cx2jR6VUOBIbcB1B8pew=="],
+
+    "@biomejs/cli-linux-arm64-musl": ["@biomejs/cli-linux-arm64-musl@2.4.6", "", { "os": "linux", "cpu": "arm64" }, "sha512-F/JdB7eN22txiTqHM5KhIVt0jVkzZwVYrdTR1O3Y4auBOQcXxHK4dxULf4z43QyZI5tsnQJrRBHZy7wwtL+B3A=="],
+
+    "@biomejs/cli-linux-x64": ["@biomejs/cli-linux-x64@2.4.6", "", { "os": "linux", "cpu": "x64" }, "sha512-oHXmUFEoH8Lql1xfc3QkFLiC1hGR7qedv5eKNlC185or+o4/4HiaU7vYODAH3peRCfsuLr1g6v2fK9dFFOYdyw=="],
+
+    "@biomejs/cli-linux-x64-musl": ["@biomejs/cli-linux-x64-musl@2.4.6", "", { "os": "linux", "cpu": "x64" }, "sha512-C9s98IPDu7DYarjlZNuzJKTjVHN03RUnmHV5htvqsx6vEUXCDSJ59DNwjKVD5XYoSS4N+BYhq3RTBAL8X6svEg=="],
+
+    "@biomejs/cli-win32-arm64": ["@biomejs/cli-win32-arm64@2.4.6", "", { "os": "win32", "cpu": "arm64" }, "sha512-xzThn87Pf3YrOGTEODFGONmqXpTwUNxovQb72iaUOdcw8sBSY3+3WD8Hm9IhMYLnPi0n32s3L3NWU6+eSjfqFg=="],
+
+    "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.4.6", "", { "os": "win32", "cpu": "x64" }, "sha512-7++XhnsPlr1HDbor5amovPjOH6vsrFOCdp93iKXhFn6bcMUI6soodj3WWKfgEO6JosKU1W5n3uky3WW9RlRjTg=="],
+
+    "lefthook": ["lefthook@1.13.6", "", { "optionalDependencies": { "lefthook-darwin-arm64": "1.13.6", "lefthook-darwin-x64": "1.13.6", "lefthook-freebsd-arm64": "1.13.6", "lefthook-freebsd-x64": "1.13.6", "lefthook-linux-arm64": "1.13.6", "lefthook-linux-x64": "1.13.6", "lefthook-openbsd-arm64": "1.13.6", "lefthook-openbsd-x64": "1.13.6", "lefthook-windows-arm64": "1.13.6", "lefthook-windows-x64": "1.13.6" }, "bin": { "lefthook": "bin/index.js" } }, "sha512-ojj4/4IJ29Xn4drd5emqVgilegAPN3Kf0FQM2p/9+lwSTpU+SZ1v4Ig++NF+9MOa99UKY8bElmVrLhnUUNFh5g=="],
+
+    "lefthook-darwin-arm64": ["lefthook-darwin-arm64@1.13.6", "", { "os": "darwin", "cpu": "arm64" }, "sha512-m6Lb77VGc84/Qo21Lhq576pEvcgFCnvloEiP02HbAHcIXD0RTLy9u2yAInrixqZeaz13HYtdDaI7OBYAAdVt8A=="],
+
+    "lefthook-darwin-x64": ["lefthook-darwin-x64@1.13.6", "", { "os": "darwin", "cpu": "x64" }, "sha512-CoRpdzanu9RK3oXR1vbEJA5LN7iB+c7hP+sONeQJzoOXuq4PNKVtEaN84Gl1BrVtCNLHWFAvCQaZPPiiXSy8qg=="],
+
+    "lefthook-freebsd-arm64": ["lefthook-freebsd-arm64@1.13.6", "", { "os": "freebsd", "cpu": "arm64" }, "sha512-X4A7yfvAJ68CoHTqP+XvQzdKbyd935sYy0bQT6Ajz7FL1g7hFiro8dqHSdPdkwei9hs8hXeV7feyTXbYmfjKQQ=="],
+
+    "lefthook-freebsd-x64": ["lefthook-freebsd-x64@1.13.6", "", { "os": "freebsd", "cpu": "x64" }, "sha512-ai2m+Sj2kGdY46USfBrCqLKe9GYhzeq01nuyDYCrdGISePeZ6udOlD1k3lQKJGQCHb0bRz4St0r5nKDSh1x/2A=="],
+
+    "lefthook-linux-arm64": ["lefthook-linux-arm64@1.13.6", "", { "os": "linux", "cpu": "arm64" }, "sha512-cbo4Wtdq81GTABvikLORJsAWPKAJXE8Q5RXsICFUVznh5PHigS9dFW/4NXywo0+jfFPCT6SYds2zz4tCx6DA0Q=="],
+
+    "lefthook-linux-x64": ["lefthook-linux-x64@1.13.6", "", { "os": "linux", "cpu": "x64" }, "sha512-uJl9vjCIIBTBvMZkemxCE+3zrZHlRO7Oc+nZJ+o9Oea3fu+W82jwX7a7clw8jqNfaeBS+8+ZEQgiMHWCloTsGw=="],
+
+    "lefthook-openbsd-arm64": ["lefthook-openbsd-arm64@1.13.6", "", { "os": "openbsd", "cpu": "arm64" }, "sha512-7r153dxrNRQ9ytRs2PmGKKkYdvZYFPre7My7XToSTiRu5jNCq++++eAKVkoyWPduk97dGIA+YWiEr5Noe0TK2A=="],
+
+    "lefthook-openbsd-x64": ["lefthook-openbsd-x64@1.13.6", "", { "os": "openbsd", "cpu": "x64" }, "sha512-Z+UhLlcg1xrXOidK3aLLpgH7KrwNyWYE3yb7ITYnzJSEV8qXnePtVu8lvMBHs/myzemjBzeIr/U/+ipjclR06g=="],
+
+    "lefthook-windows-arm64": ["lefthook-windows-arm64@1.13.6", "", { "os": "win32", "cpu": "arm64" }, "sha512-Uxef6qoDxCmUNQwk8eBvddYJKSBFglfwAY9Y9+NnnmiHpWTjjYiObE9gT2mvGVpEgZRJVAatBXc+Ha5oDD/OgQ=="],
+
+    "lefthook-windows-x64": ["lefthook-windows-x64@1.13.6", "", { "os": "win32", "cpu": "x64" }, "sha512-mOZoM3FQh3o08M8PQ/b3IYuL5oo36D9ehczIw1dAgp1Ly+Tr4fJ96A+4SEJrQuYeRD4mex9bR7Ps56I73sBSZA=="],
+
+    "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
+  }
+}

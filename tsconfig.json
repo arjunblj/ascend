@@ -1,0 +1,16 @@
+{
+	"files": [],
+	"references": [
+		{ "path": "packages/schema" },
+		{ "path": "packages/core" },
+		{ "path": "packages/formulas" },
+		{ "path": "packages/engine" },
+		{ "path": "packages/io-xlsx" },
+		{ "path": "packages/io-csv" },
+		{ "path": "packages/verify" },
+		{ "path": "packages/sdk" },
+		{ "path": "apps/cli" },
+		{ "path": "apps/api" },
+		{ "path": "apps/mcp" }
+	]
+}

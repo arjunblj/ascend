@@ -1,0 +1,6 @@
+pre-commit:
+  parallel: true
+  commands:
+    biome:
+      run: bunx biome check --write --staged
+      stage_fixed: true

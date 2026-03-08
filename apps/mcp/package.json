@@ -1,0 +1,13 @@
+{
+	"name": "@ascend/mcp",
+	"private": true,
+	"version": "0.0.0",
+	"type": "module",
+	"main": "src/index.ts",
+	"dependencies": {
+		"@ascend/sdk": "workspace:*"
+	},
+	"scripts": {
+		"test": "bun test"
+	}
+}

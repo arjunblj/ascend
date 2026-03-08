@@ -1,0 +1,19 @@
+{
+	"name": "@ascend/sdk",
+	"private": true,
+	"version": "0.0.0",
+	"type": "module",
+	"main": "src/index.ts",
+	"dependencies": {
+		"@ascend/schema": "workspace:*",
+		"@ascend/core": "workspace:*",
+		"@ascend/formulas": "workspace:*",
+		"@ascend/engine": "workspace:*",
+		"@ascend/io-xlsx": "workspace:*",
+		"@ascend/io-csv": "workspace:*",
+		"@ascend/verify": "workspace:*"
+	},
+	"scripts": {
+		"test": "bun test"
+	}
+}

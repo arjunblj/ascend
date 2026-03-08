@@ -1,0 +1,14 @@
+{
+	"name": "@ascend/io-csv",
+	"private": true,
+	"version": "0.0.0",
+	"type": "module",
+	"main": "src/index.ts",
+	"dependencies": {
+		"@ascend/schema": "workspace:*",
+		"@ascend/core": "workspace:*"
+	},
+	"scripts": {
+		"test": "bun test"
+	}
+}

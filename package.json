@@ -7,7 +7,7 @@
 		"fixtures/*"
 	],
 	"scripts": {
-		"typecheck": "tsc --build --noEmit",
+		"typecheck": "tsc --build",
 		"lint": "biome check",
 		"lint:fix": "biome check --write",
 		"test": "bun test --recursive",

@@ -89,7 +89,10 @@ export class AscendWorkbook {
 		this.compat = report
 	}
 
-	static async open(pathOrBytes: string | Uint8Array): Promise<AscendWorkbook> {
+	static async open(
+		pathOrBytes: string | Uint8Array,
+		options?: { mode?: 'full' | 'metadata-only'; sheets?: readonly string[] },
+	): Promise<AscendWorkbook> {
 		let bytes: Uint8Array
 		let ext = ''
 
@@ -110,7 +113,7 @@ export class AscendWorkbook {
 		}
 
 		if (ext === 'xlsx' || ext === 'xlsm' || isZip(bytes)) {
-			const result = readXlsx(bytes)
+			const result = readXlsx(bytes, options)
 			if (!result.ok) throw new Error(result.error.message)
 			return new AscendWorkbook(result.value.workbook, result.value.capsules, result.value.report)
 		}

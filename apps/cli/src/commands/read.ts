@@ -10,8 +10,12 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 		return 1
 	}
 
-	const wb = await AscendWorkbook.open(file)
-	const sheetName = flags.get('sheet') ?? wb.sheets[0]
+	const requestedSheet = flags.get('sheet')
+	const wb = await AscendWorkbook.open(
+		file,
+		requestedSheet ? { sheets: [requestedSheet] } : undefined,
+	)
+	const sheetName = requestedSheet ?? wb.sheets[0]
 	if (!sheetName) {
 		console.error('No sheets in workbook')
 		return 1

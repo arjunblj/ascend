@@ -166,6 +166,34 @@ describe('AscendWorkbook', () => {
 		expect(b1?.value).toEqual({ kind: 'number', value: 42 })
 	})
 
+	test('metadata-only open preserves workbook structure without parsing cells', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'summary' }] },
+			{ op: 'addSheet', name: 'Archive' },
+		])
+		const bytes = wb.toBytes()
+
+		const reopened = await AscendWorkbook.open(bytes, { mode: 'metadata-only' })
+		expect(reopened.sheets).toEqual(['Sheet1', 'Archive'])
+		expect(reopened.inspect().cellCount).toBe(0)
+		expect(reopened.sheet('Sheet1')?.cell('A1')).toBeUndefined()
+	})
+
+	test('selective open parses only requested sheets', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'main' }] },
+			{ op: 'addSheet', name: 'Archive' },
+			{ op: 'setCells', sheet: 'Archive', updates: [{ ref: 'A1', value: 'extra' }] },
+		])
+		const bytes = wb.toBytes()
+
+		const reopened = await AscendWorkbook.open(bytes, { sheets: ['Archive'] })
+		expect(reopened.sheets).toEqual(['Archive'])
+		expect(reopened.sheet('Archive')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'extra' })
+	})
+
 	test('CSV import creates workbook', () => {
 		const csv = 'Name,Age\nAlice,30\nBob,25'
 		const wb = AscendWorkbook.fromCsv(csv)

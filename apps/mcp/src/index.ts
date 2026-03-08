@@ -18,7 +18,7 @@ export function createServer(): McpServer {
 			sheet: z.string().optional().describe('Sheet name to inspect'),
 		},
 		async ({ file, sheet }) => {
-			const wb = await Ascend.open(file)
+			const wb = await Ascend.open(file, sheet ? { sheets: [sheet] } : { mode: 'metadata-only' })
 			if (sheet) {
 				const handle = wb.sheet(sheet)
 				if (!handle) {

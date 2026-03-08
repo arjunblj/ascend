@@ -9,9 +9,12 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 		return 1
 	}
 
-	const wb = await AscendWorkbook.open(file)
-	const info = wb.inspect()
 	const sheetArg = args[1] ?? flags.get('sheet')
+	const wb = await AscendWorkbook.open(
+		file,
+		sheetArg ? { sheets: [sheetArg] } : { mode: 'metadata-only' },
+	)
+	const info = wb.inspect()
 
 	if (sheetArg) {
 		const sheet = info.sheets.find((s) => s.name === sheetArg)

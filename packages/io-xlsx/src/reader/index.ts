@@ -32,9 +32,22 @@ export interface ReadXlsxResult {
 	readonly capsules: PreservationCapsule[]
 }
 
+export interface ReadXlsxOptions {
+	readonly mode?: 'full' | 'metadata-only'
+	readonly sheets?: readonly string[]
+}
+
 const decoder = new TextDecoder('utf-8')
 
-export function readXlsx(bytes: Uint8Array): Result<ReadXlsxResult, AscendError> {
+export function readXlsx(
+	bytes: Uint8Array,
+	options: ReadXlsxOptions = {},
+): Result<ReadXlsxResult, AscendError> {
+	const mode = options.mode ?? 'full'
+	const selectedSheets = options.sheets
+		? new Set(options.sheets.map((name) => name.toLowerCase()))
+		: null
+
 	let parts: Map<string, Uint8Array>
 	try {
 		parts = extractZip(bytes)
@@ -73,52 +86,69 @@ export function readXlsx(bytes: Uint8Array): Result<ReadXlsxResult, AscendError>
 	const wbRels = wbRelsXml ? parseRelationships(wbRelsXml) : []
 	const relMap = new Map(wbRels.map((r) => [r.id, r]))
 
-	const ssPart = wbRels.find((r) => r.type === REL_SHARED_STRINGS)
-	const ssPath = ssPart ? resolvePath(workbookPath, ssPart.target) : undefined
-	const ssXml = ssPath ? readPart(parts, ssPath) : undefined
-	const sharedStrings = ssXml ? parseSharedStrings(ssXml) : []
-
-	const stylesPart = wbRels.find((r) => r.type === REL_STYLES)
-	const stylesPath = stylesPart ? resolvePath(workbookPath, stylesPart.target) : undefined
-	const stylesXml = stylesPath ? readPart(parts, stylesPath) : undefined
-	const parsedStyles = stylesXml
-		? parseStyles(stylesXml)
-		: { cellStyles: [{}], isDateFormat: [false] }
-
 	const workbook = new Workbook()
 	workbook.calcSettings = wbInfo.calcSettings
-
-	const styleIds = registerStyles(workbook, parsedStyles.cellStyles)
 
 	const consumed = new Set<string>()
 	consumed.add('[Content_Types].xml')
 	consumed.add('_rels/.rels')
 	consumed.add(workbookPath)
 	consumed.add(wbRelsPath)
+
+	const ssPart = wbRels.find((r) => r.type === REL_SHARED_STRINGS)
+	const ssPath = ssPart ? resolvePath(workbookPath, ssPart.target) : undefined
 	if (ssPath) consumed.add(ssPath)
+
+	const stylesPart = wbRels.find((r) => r.type === REL_STYLES)
+	const stylesPath = stylesPart ? resolvePath(workbookPath, stylesPart.target) : undefined
 	if (stylesPath) consumed.add(stylesPath)
 
 	const sheetPathToName = new Map<string, string>()
+	const sheetsToParse: Array<{
+		name: string
+		path: string
+		state: (typeof wbInfo.sheets)[number]['state']
+	}> = []
 
 	for (const entry of wbInfo.sheets) {
 		const rel = relMap.get(entry.rId)
 		if (!rel) continue
 
 		const sheetPath = resolvePath(workbookPath, rel.target)
-		const sheetXml = readPart(parts, sheetPath)
-		if (!sheetXml) continue
-
+		sheetPathToName.set(sheetPath, entry.name)
 		consumed.add(sheetPath)
 		consumed.add(getRelsPath(sheetPath))
-		sheetPathToName.set(sheetPath, entry.name)
 
-		const sheet = parseSheet(entry.name, sheetXml, {
-			sharedStrings,
-			styleIds,
-			isDateFormat: parsedStyles.isDateFormat,
-		})
-		sheet.state = entry.state
-		workbook.sheets.push(sheet)
+		if (selectedSheets && !selectedSheets.has(entry.name.toLowerCase())) continue
+		sheetsToParse.push({ name: entry.name, path: sheetPath, state: entry.state })
+	}
+
+	if (mode === 'metadata-only') {
+		for (const entry of sheetsToParse) {
+			const sheet = workbook.addSheet(entry.name)
+			sheet.state = entry.state
+		}
+	} else {
+		const ssXml = ssPath ? readPart(parts, ssPath) : undefined
+		const sharedStrings = ssXml ? parseSharedStrings(ssXml) : []
+
+		const stylesXml = stylesPath ? readPart(parts, stylesPath) : undefined
+		const parsedStyles = stylesXml
+			? parseStyles(stylesXml)
+			: { cellStyles: [{}], isDateFormat: [false] }
+		const styleIds = registerStyles(workbook, parsedStyles.cellStyles)
+
+		for (const entry of sheetsToParse) {
+			const sheetXml = readPart(parts, entry.path)
+			if (!sheetXml) continue
+			const sheet = parseSheet(entry.name, sheetXml, {
+				sharedStrings,
+				styleIds,
+				isDateFormat: parsedStyles.isDateFormat,
+			})
+			sheet.state = entry.state
+			workbook.sheets.push(sheet)
+		}
 	}
 
 	for (const dn of wbInfo.definedNames) {

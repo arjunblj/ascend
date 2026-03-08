@@ -215,4 +215,61 @@ describe('readXlsx', () => {
 
 		expect(result.value.workbook.definedNames.get('Total')).toBe('Data!$A$1')
 	})
+
+	it('supports metadata-only reads without parsing sheet cells', () => {
+		const result = readXlsx(minimalXlsx(), { mode: 'metadata-only' })
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(result.value.workbook.sheets).toHaveLength(1)
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet?.name).toBe('Data')
+		expect(sheet?.cells.cellCount()).toBe(0)
+	})
+
+	it('supports selective sheet parsing', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Data" sheetId="1" r:id="rId1"/>
+    <sheet name="Archive" sheetId="2" r:id="rId2"/>
+  </sheets>
+</workbook>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1"><v>10</v></c></row></sheetData>
+</worksheet>`,
+			'xl/worksheets/sheet2.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1"><v>20</v></c></row></sheetData>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes, { sheets: ['Archive'] })
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(result.value.workbook.sheets).toHaveLength(1)
+		expect(result.value.workbook.sheets[0]?.name).toBe('Archive')
+		expect(result.value.workbook.sheets[0]?.cells.get(0, 0)?.value).toEqual({
+			kind: 'number',
+			value: 20,
+		})
+	})
 })

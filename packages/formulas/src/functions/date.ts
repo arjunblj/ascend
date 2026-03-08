@@ -1,0 +1,418 @@
+import type { CellValue } from '@ascend/schema'
+import { errorValue, numberValue } from '@ascend/schema'
+import { cellOf, type EvalArg, getRange, numArg, registerFunction, toNumber } from './registry.ts'
+
+const MS_PER_DAY = 86_400_000
+
+function makeUTC(y: number, m: number, d: number): Date {
+	const date = new Date(Date.UTC(y, m - 1, d))
+	if (y >= 0 && y < 100) date.setUTCFullYear(y)
+	return date
+}
+
+const EPOCH_MS = makeUTC(1900, 1, 1).getTime()
+
+export function dateToSerial(year: number, month: number, day: number): number {
+	const ms = makeUTC(year, month, day).getTime()
+	const days = Math.floor((ms - EPOCH_MS) / MS_PER_DAY)
+	let serial = days + 1
+	if (serial >= 60) serial += 1
+	return serial
+}
+
+interface DateParts {
+	year: number
+	month: number
+	day: number
+}
+
+export function serialToDate(serial: number): DateParts | null {
+	if (serial < 1) return null
+	if (serial === 60) return { year: 1900, month: 2, day: 29 }
+	const days = serial < 60 ? serial - 1 : serial - 2
+	const d = new Date(EPOCH_MS + days * MS_PER_DAY)
+	return {
+		year: d.getUTCFullYear(),
+		month: d.getUTCMonth() + 1,
+		day: d.getUTCDate(),
+	}
+}
+
+function isLeapYear(y: number): boolean {
+	return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0
+}
+
+const MONTH_DAYS = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31] as const
+
+function daysInMonth(y: number, m: number): number {
+	return m === 2 && isLeapYear(y) ? 29 : (MONTH_DAYS[m] ?? 30)
+}
+
+function isWeekend(serial: number): boolean {
+	const di = (((serial - 1) % 7) + 7) % 7
+	return di === 0 || di === 6
+}
+
+function getHolidays(arg: EvalArg | undefined): Set<number> {
+	const set = new Set<number>()
+	if (!arg) return set
+	for (const row of getRange(arg)) {
+		for (const cell of row) {
+			const n = toNumber(cell)
+			if (n !== null) set.add(Math.floor(n))
+		}
+	}
+	return set
+}
+
+function addMonths(parts: DateParts, months: number): { year: number; month: number } {
+	let newMonth = parts.month + Math.trunc(months)
+	let newYear = parts.year
+	newYear += Math.floor((newMonth - 1) / 12)
+	newMonth = ((((newMonth - 1) % 12) + 12) % 12) + 1
+	return { year: newYear, month: newMonth }
+}
+
+// --- Implementations ---
+
+function dateFn(args: EvalArg[]): CellValue {
+	const y = numArg(args[0])
+	if (typeof y !== 'number') return y
+	const m = numArg(args[1])
+	if (typeof m !== 'number') return m
+	const d = numArg(args[2])
+	if (typeof d !== 'number') return d
+
+	let year = Math.trunc(y)
+	if (year >= 0 && year <= 1899) year += 1900
+	const serial = dateToSerial(year, Math.trunc(m), Math.trunc(d))
+	return serial < 1 ? errorValue('#NUM!') : numberValue(serial)
+}
+
+function today(_args: EvalArg[]): CellValue {
+	const d = new Date()
+	return numberValue(dateToSerial(d.getFullYear(), d.getMonth() + 1, d.getDate()))
+}
+
+function nowFn(_args: EvalArg[]): CellValue {
+	const d = new Date()
+	const serial = dateToSerial(d.getFullYear(), d.getMonth() + 1, d.getDate())
+	const frac = (d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds()) / 86400
+	return numberValue(serial + frac)
+}
+
+function yearFn(args: EvalArg[]): CellValue {
+	const s = numArg(args[0])
+	if (typeof s !== 'number') return s
+	const parts = serialToDate(Math.floor(s))
+	return parts ? numberValue(parts.year) : errorValue('#NUM!')
+}
+
+function monthFn(args: EvalArg[]): CellValue {
+	const s = numArg(args[0])
+	if (typeof s !== 'number') return s
+	const parts = serialToDate(Math.floor(s))
+	return parts ? numberValue(parts.month) : errorValue('#NUM!')
+}
+
+function dayFn(args: EvalArg[]): CellValue {
+	const s = numArg(args[0])
+	if (typeof s !== 'number') return s
+	const parts = serialToDate(Math.floor(s))
+	return parts ? numberValue(parts.day) : errorValue('#NUM!')
+}
+
+function hourFn(args: EvalArg[]): CellValue {
+	const s = numArg(args[0])
+	if (typeof s !== 'number') return s
+	const frac = Math.abs(s) - Math.floor(Math.abs(s))
+	return numberValue(Math.floor(Math.round(frac * 86400) / 3600) % 24)
+}
+
+function minuteFn(args: EvalArg[]): CellValue {
+	const s = numArg(args[0])
+	if (typeof s !== 'number') return s
+	const frac = Math.abs(s) - Math.floor(Math.abs(s))
+	const totalSec = Math.round(frac * 86400)
+	return numberValue(Math.floor(totalSec / 60) % 60)
+}
+
+function secondFn(args: EvalArg[]): CellValue {
+	const s = numArg(args[0])
+	if (typeof s !== 'number') return s
+	const frac = Math.abs(s) - Math.floor(Math.abs(s))
+	return numberValue(Math.round(frac * 86400) % 60)
+}
+
+function datevalue(args: EvalArg[]): CellValue {
+	const v = cellOf(args[0])
+	if (v.kind === 'error') return v
+	if (v.kind !== 'string') return errorValue('#VALUE!')
+	const d = new Date(v.value)
+	if (Number.isNaN(d.getTime())) return errorValue('#VALUE!')
+	return numberValue(dateToSerial(d.getFullYear(), d.getMonth() + 1, d.getDate()))
+}
+
+function datedif(args: EvalArg[]): CellValue {
+	const sn = numArg(args[0])
+	if (typeof sn !== 'number') return sn
+	const en = numArg(args[1])
+	if (typeof en !== 'number') return en
+	const uv = cellOf(args[2])
+	if (uv.kind === 'error') return uv
+	if (uv.kind !== 'string') return errorValue('#VALUE!')
+	if (sn > en) return errorValue('#NUM!')
+
+	const sp = serialToDate(Math.floor(sn))
+	const ep = serialToDate(Math.floor(en))
+	if (!sp || !ep) return errorValue('#NUM!')
+
+	switch (uv.value.toUpperCase()) {
+		case 'Y': {
+			let yrs = ep.year - sp.year
+			if (ep.month < sp.month || (ep.month === sp.month && ep.day < sp.day)) yrs--
+			return numberValue(yrs)
+		}
+		case 'M': {
+			let mos = (ep.year - sp.year) * 12 + (ep.month - sp.month)
+			if (ep.day < sp.day) mos--
+			return numberValue(mos)
+		}
+		case 'D':
+			return numberValue(Math.floor(en) - Math.floor(sn))
+		case 'MD': {
+			let days = ep.day - sp.day
+			if (days < 0) {
+				const pm = ep.month === 1 ? 12 : ep.month - 1
+				const py = ep.month === 1 ? ep.year - 1 : ep.year
+				days += daysInMonth(py, pm)
+			}
+			return numberValue(days)
+		}
+		case 'YM': {
+			let mos = ep.month - sp.month
+			if (ep.day < sp.day) mos--
+			if (mos < 0) mos += 12
+			return numberValue(mos)
+		}
+		case 'YD': {
+			const doy = (p: DateParts) => {
+				let d = p.day
+				for (let i = 1; i < p.month; i++) d += daysInMonth(p.year, i)
+				return d
+			}
+			let days = doy(ep) - doy(sp)
+			if (days < 0) days += isLeapYear(ep.year - 1) ? 366 : 365
+			return numberValue(days)
+		}
+		default:
+			return errorValue('#NUM!')
+	}
+}
+
+function edate(args: EvalArg[]): CellValue {
+	const sn = numArg(args[0])
+	if (typeof sn !== 'number') return sn
+	const mn = numArg(args[1])
+	if (typeof mn !== 'number') return mn
+
+	const parts = serialToDate(Math.floor(sn))
+	if (!parts) return errorValue('#NUM!')
+
+	const { year, month } = addMonths(parts, mn)
+	const maxDay = daysInMonth(year, month)
+	const serial = dateToSerial(year, month, Math.min(parts.day, maxDay))
+	return serial < 1 ? errorValue('#NUM!') : numberValue(serial)
+}
+
+function eomonth(args: EvalArg[]): CellValue {
+	const sn = numArg(args[0])
+	if (typeof sn !== 'number') return sn
+	const mn = numArg(args[1])
+	if (typeof mn !== 'number') return mn
+
+	const parts = serialToDate(Math.floor(sn))
+	if (!parts) return errorValue('#NUM!')
+
+	const { year, month } = addMonths(parts, mn)
+	const serial = dateToSerial(year, month, daysInMonth(year, month))
+	return serial < 1 ? errorValue('#NUM!') : numberValue(serial)
+}
+
+function weekday(args: EvalArg[]): CellValue {
+	const sn = numArg(args[0])
+	if (typeof sn !== 'number') return sn
+	const serial = Math.floor(sn)
+	if (serial < 1) return errorValue('#NUM!')
+
+	const rt = args.length > 1 ? numArg(args[1]) : 1
+	if (typeof rt !== 'number') return rt
+
+	const dayIndex = (((serial - 1) % 7) + 7) % 7
+	const startDays: Record<number, number> = {
+		1: 0,
+		2: 1,
+		3: 1,
+		11: 1,
+		12: 2,
+		13: 3,
+		14: 4,
+		15: 5,
+		16: 6,
+		17: 0,
+	}
+	const start = startDays[rt]
+	if (start === undefined) return errorValue('#NUM!')
+
+	const shifted = (dayIndex - start + 7) % 7
+	return numberValue(rt === 3 ? shifted : shifted + 1)
+}
+
+function weeknum(args: EvalArg[]): CellValue {
+	const sn = numArg(args[0])
+	if (typeof sn !== 'number') return sn
+	const serial = Math.floor(sn)
+	if (serial < 1) return errorValue('#NUM!')
+
+	const rt = args.length > 1 ? numArg(args[1]) : 1
+	if (typeof rt !== 'number') return rt
+
+	const parts = serialToDate(serial)
+	if (!parts) return errorValue('#NUM!')
+
+	const jan1 = dateToSerial(parts.year, 1, 1)
+	const jan1Di = (((jan1 - 1) % 7) + 7) % 7
+	const weekStarts: Record<number, number> = {
+		1: 0,
+		2: 1,
+		11: 1,
+		12: 2,
+		13: 3,
+		14: 4,
+		15: 5,
+		16: 6,
+		17: 0,
+	}
+	const ws = weekStarts[rt]
+	if (ws === undefined) return errorValue('#NUM!')
+
+	const dayOfYear = serial - jan1
+	const offset = (jan1Di - ws + 7) % 7
+	return numberValue(Math.floor((dayOfYear + offset) / 7) + 1)
+}
+
+function networkdays(args: EvalArg[]): CellValue {
+	const sn = numArg(args[0])
+	if (typeof sn !== 'number') return sn
+	const en = numArg(args[1])
+	if (typeof en !== 'number') return en
+
+	let start = Math.floor(sn)
+	let end = Math.floor(en)
+	const holidays = args.length > 2 ? getHolidays(args[2]) : new Set<number>()
+
+	const sign = start <= end ? 1 : -1
+	if (start > end) [start, end] = [end, start]
+
+	let count = 0
+	for (let d = start; d <= end; d++) {
+		if (!isWeekend(d) && !holidays.has(d)) count++
+	}
+	return numberValue(count * sign)
+}
+
+function workdayFn(args: EvalArg[]): CellValue {
+	const sn = numArg(args[0])
+	if (typeof sn !== 'number') return sn
+	const dn = numArg(args[1])
+	if (typeof dn !== 'number') return dn
+
+	let serial = Math.floor(sn)
+	let days = Math.trunc(dn)
+	const holidays = args.length > 2 ? getHolidays(args[2]) : new Set<number>()
+
+	const step = days > 0 ? 1 : -1
+	days = Math.abs(days)
+	while (days > 0) {
+		serial += step
+		if (!isWeekend(serial) && !holidays.has(serial)) days--
+	}
+	return numberValue(serial)
+}
+
+// --- Registration ---
+
+registerFunction({ name: 'DATE', minArgs: 3, maxArgs: 3, evaluate: dateFn })
+registerFunction({
+	name: 'TODAY',
+	minArgs: 0,
+	maxArgs: 0,
+	evaluate: today,
+	volatile: true,
+})
+registerFunction({
+	name: 'NOW',
+	minArgs: 0,
+	maxArgs: 0,
+	evaluate: nowFn,
+	volatile: true,
+})
+registerFunction({ name: 'YEAR', minArgs: 1, maxArgs: 1, evaluate: yearFn })
+registerFunction({ name: 'MONTH', minArgs: 1, maxArgs: 1, evaluate: monthFn })
+registerFunction({ name: 'DAY', minArgs: 1, maxArgs: 1, evaluate: dayFn })
+registerFunction({ name: 'HOUR', minArgs: 1, maxArgs: 1, evaluate: hourFn })
+registerFunction({
+	name: 'MINUTE',
+	minArgs: 1,
+	maxArgs: 1,
+	evaluate: minuteFn,
+})
+registerFunction({
+	name: 'SECOND',
+	minArgs: 1,
+	maxArgs: 1,
+	evaluate: secondFn,
+})
+registerFunction({
+	name: 'DATEVALUE',
+	minArgs: 1,
+	maxArgs: 1,
+	evaluate: datevalue,
+})
+registerFunction({
+	name: 'DATEDIF',
+	minArgs: 3,
+	maxArgs: 3,
+	evaluate: datedif,
+})
+registerFunction({ name: 'EDATE', minArgs: 2, maxArgs: 2, evaluate: edate })
+registerFunction({
+	name: 'EOMONTH',
+	minArgs: 2,
+	maxArgs: 2,
+	evaluate: eomonth,
+})
+registerFunction({
+	name: 'WEEKDAY',
+	minArgs: 1,
+	maxArgs: 2,
+	evaluate: weekday,
+})
+registerFunction({
+	name: 'WEEKNUM',
+	minArgs: 1,
+	maxArgs: 2,
+	evaluate: weeknum,
+})
+registerFunction({
+	name: 'NETWORKDAYS',
+	minArgs: 2,
+	maxArgs: 3,
+	evaluate: networkdays,
+})
+registerFunction({
+	name: 'WORKDAY',
+	minArgs: 2,
+	maxArgs: 3,
+	evaluate: workdayFn,
+})

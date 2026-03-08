@@ -17,6 +17,14 @@ export type {
 	UnaryNode,
 	UnaryOp,
 } from './ast.ts'
+export {
+	dateToSerial,
+	type EvalArg,
+	type FnArg,
+	type FunctionDef,
+	functionRegistry,
+	serialToDate,
+} from './functions/index.ts'
 export { tokenize } from './lexer.ts'
 export { parse, parseFormula } from './parser.ts'
 export { printFormula } from './printer.ts'

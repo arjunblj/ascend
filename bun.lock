@@ -40,6 +40,16 @@
         "zod": "^4.3.6",
       },
     },
+    "fixtures/benchmarks": {
+      "name": "@ascend/benchmarks",
+      "version": "0.0.0",
+      "dependencies": {
+        "@ascend/core": "workspace:*",
+        "@ascend/engine": "workspace:*",
+        "@ascend/io-xlsx": "workspace:*",
+        "@ascend/schema": "workspace:*",
+      },
+    },
     "fixtures/formulas": {
       "name": "@ascend/formula-conformance",
       "version": "0.0.0",
@@ -87,6 +97,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@ascend/core": "workspace:*",
+        "@ascend/formulas": "workspace:*",
         "@ascend/schema": "workspace:*",
         "fast-xml-parser": "^5.4.2",
         "fflate": "^0.8.2",
@@ -122,6 +133,8 @@
   },
   "packages": {
     "@ascend/api": ["@ascend/api@workspace:apps/api"],
+
+    "@ascend/benchmarks": ["@ascend/benchmarks@workspace:fixtures/benchmarks"],
 
     "@ascend/cli": ["@ascend/cli@workspace:apps/cli"],
 

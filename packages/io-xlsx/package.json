@@ -6,6 +6,7 @@
 	"main": "src/index.ts",
 	"dependencies": {
 		"@ascend/core": "workspace:*",
+		"@ascend/formulas": "workspace:*",
 		"@ascend/schema": "workspace:*",
 		"fast-xml-parser": "^5.4.2",
 		"fflate": "^0.8.2"

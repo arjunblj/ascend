@@ -1,5 +1,7 @@
 import type { Cell, RangeRef, StyleId } from '@ascend/core'
 import { columnToIndex, parseRange, Sheet } from '@ascend/core'
+import type { FormulaCellRef } from '@ascend/formulas'
+import { parseFormula, printFormula, rewriteRefs } from '@ascend/formulas'
 import type { CellValue, ExcelError } from '@ascend/schema'
 import { booleanValue, EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
 import { asArray, attr, numAttr, parseXml, type XmlNode } from '../xml.ts'
@@ -28,6 +30,7 @@ export function parseSheet(name: string, xml: string, ctx: SheetParseContext): S
 function parseSheetData(ws: XmlNode, sheet: Sheet, ctx: SheetParseContext): void {
 	const sd = ws.sheetData as XmlNode | undefined
 	if (!sd) return
+	const sharedFormulaMasters = new Map<string, { formula: string; row: number; col: number }>()
 
 	for (const row of asArray<XmlNode>(sd.row as XmlNode | XmlNode[])) {
 		for (const c of asArray<XmlNode>(row.c as XmlNode | XmlNode[])) {
@@ -37,7 +40,7 @@ function parseSheetData(ws: XmlNode, sheet: Sheet, ctx: SheetParseContext): void
 			const pos = parseCellRef(ref)
 			if (!pos) continue
 
-			const cell = parseCellValue(c, ctx)
+			const cell = parseCellValue(c, ctx, pos.row, pos.col, sharedFormulaMasters)
 			if (cell) {
 				sheet.cells.set(pos.row, pos.col, cell)
 			}
@@ -56,11 +59,17 @@ function parseCellRef(ref: string): { row: number; col: number } | undefined {
 	}
 }
 
-function parseCellValue(c: XmlNode, ctx: SheetParseContext): Cell | undefined {
+function parseCellValue(
+	c: XmlNode,
+	ctx: SheetParseContext,
+	row: number,
+	col: number,
+	sharedFormulaMasters: Map<string, { formula: string; row: number; col: number }>,
+): Cell | undefined {
 	const type = attr(c, 't')
 	const styleIdx = numAttr(c, 's') ?? 0
 	const styleId = ctx.styleIds[styleIdx] ?? (0 as StyleId)
-	const formula = parseFormulaText(c.f)
+	const formula = parseFormulaText(c.f, row, col, sharedFormulaMasters)
 	const rawValue = c.v
 
 	let value: CellValue
@@ -96,7 +105,12 @@ function parseCellValue(c: XmlNode, ctx: SheetParseContext): Cell | undefined {
 	return { value, formula, styleId }
 }
 
-function parseFormulaText(formulaNode: unknown): string | null {
+function parseFormulaText(
+	formulaNode: unknown,
+	row: number,
+	col: number,
+	sharedFormulaMasters: Map<string, { formula: string; row: number; col: number }>,
+): string | null {
 	if (formulaNode === undefined || formulaNode === null) return null
 	if (
 		typeof formulaNode === 'string' ||
@@ -106,10 +120,42 @@ function parseFormulaText(formulaNode: unknown): string | null {
 		return String(formulaNode)
 	}
 	if (typeof formulaNode === 'object') {
-		const text = (formulaNode as XmlNode)['#text']
+		const node = formulaNode as XmlNode
+		const sharedIndex = attr(node, 'si')
+		const formulaType = attr(node, 't')
+		const text = node['#text']
+		if (formulaType === 'shared' && sharedIndex) {
+			if (text !== undefined && text !== null) {
+				const formula = String(text)
+				sharedFormulaMasters.set(sharedIndex, { formula, row, col })
+				return formula
+			}
+			const master = sharedFormulaMasters.get(sharedIndex)
+			if (!master) return null
+			return translateSharedFormula(master.formula, master.row, master.col, row, col)
+		}
 		return text !== undefined && text !== null ? String(text) : null
 	}
 	return null
+}
+
+function translateSharedFormula(
+	formula: string,
+	masterRow: number,
+	masterCol: number,
+	row: number,
+	col: number,
+): string | null {
+	const parsed = parseFormula(formula)
+	if (!parsed.ok) return null
+	const rowDelta = row - masterRow
+	const colDelta = col - masterCol
+	const rewritten = rewriteRefs(parsed.value, (ref: FormulaCellRef) => ({
+		...ref,
+		row: ref.rowAbsolute ? ref.row : ref.row + rowDelta,
+		col: ref.colAbsolute ? ref.col : ref.col + colDelta,
+	}))
+	return printFormula(rewritten)
 }
 
 function parseInlineString(c: XmlNode): CellValue {

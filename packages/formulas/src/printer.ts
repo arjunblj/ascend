@@ -96,7 +96,7 @@ function printNode(node: FormulaNode): string {
 				formatCellRef(node.end)
 			)
 		case 'name':
-			return node.name
+			return (node.sheet !== undefined ? formatSheet(node.sheet) : '') + node.name
 		case 'function':
 			return `${node.name}(${node.args.map(printNode).join(',')})`
 		case 'binary':

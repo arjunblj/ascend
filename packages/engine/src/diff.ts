@@ -1,4 +1,4 @@
-import type { Workbook } from '@ascend/core'
+import type { DefinedName, Workbook } from '@ascend/core'
 import { toA1 } from '@ascend/core'
 import type { CellValue } from '@ascend/schema'
 
@@ -98,8 +98,15 @@ export function diffWorkbooks(before: Workbook, after: Workbook): WorkbookDiff {
 	const namesRemoved: string[] = []
 	const namesChanged: string[] = []
 
-	for (const [name, ref] of before.definedNames) {
-		const afterRef = after.definedNames.get(name)
+	const beforeNames = new Map(
+		before.definedNames.list().map((entry) => [definedNameKey(before, entry), entry.formula]),
+	)
+	const afterNames = new Map(
+		after.definedNames.list().map((entry) => [definedNameKey(after, entry), entry.formula]),
+	)
+
+	for (const [name, ref] of beforeNames) {
+		const afterRef = afterNames.get(name)
 		if (afterRef === undefined) {
 			namesRemoved.push(name)
 		} else if (afterRef !== ref) {
@@ -107,11 +114,18 @@ export function diffWorkbooks(before: Workbook, after: Workbook): WorkbookDiff {
 		}
 	}
 
-	for (const name of after.definedNames.keys()) {
-		if (!before.definedNames.has(name)) {
+	for (const name of afterNames.keys()) {
+		if (!beforeNames.has(name)) {
 			namesAdded.push(name)
 		}
 	}
 
 	return { sheets, namesAdded, namesRemoved, namesChanged }
+}
+
+function definedNameKey(workbook: Workbook, entry: DefinedName): string {
+	if (entry.scope.kind === 'workbook') return entry.name
+	const scope = entry.scope
+	const sheetName = workbook.sheets.find((sheet) => sheet.id === scope.sheetId)?.name ?? 'Sheet'
+	return `${sheetName}!${entry.name}`
 }

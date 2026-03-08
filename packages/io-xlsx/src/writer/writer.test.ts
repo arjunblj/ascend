@@ -126,6 +126,23 @@ describe('writeXlsx', () => {
 		expect(result.workbook.definedNames.get('Total')).toBe('Data!$A$1')
 	})
 
+	it('preserves sheet-scoped defined names on round-trip', () => {
+		const wb = new Workbook()
+		const data = wb.addSheet('Data')
+		const summary = wb.addSheet('Summary')
+		data.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: S0 })
+		summary.cells.set(0, 0, { value: numberValue(2), formula: null, styleId: S0 })
+		wb.definedNames.set('Budget', 'Summary!$A$1', { kind: 'sheet', sheetId: summary.id })
+
+		const { result } = roundTrip(wb)
+		const resolved = result.workbook.definedNames.resolve(
+			'Budget',
+			result.workbook.getSheet('Summary')?.id,
+		)
+		expect(resolved?.scope.kind).toBe('sheet')
+		expect(resolved?.formula).toBe('Summary!$A$1')
+	})
+
 	it('preserves capsule parts through write-read cycle', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Sheet1')

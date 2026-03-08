@@ -1,6 +1,6 @@
-import { parseRange, type Workbook } from '@ascend/core'
+import type { Workbook } from '@ascend/core'
 import type { FormulaNode } from '@ascend/formulas'
-import { type EvalArg, functionRegistry, toNumber } from '@ascend/formulas'
+import { type EvalArg, functionRegistry, parseFormula, toNumber } from '@ascend/formulas'
 import type { CellValue } from '@ascend/schema'
 import { booleanValue, EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
 import type { CalcContext } from './calc-context.ts'
@@ -11,6 +11,7 @@ export interface EvalContext {
 	readonly sheetIndex: number
 	readonly row: number
 	readonly col: number
+	readonly definedNameStack?: readonly string[]
 }
 
 function resolveSheetIndex(
@@ -185,9 +186,7 @@ export function evaluate(node: FormulaNode, ctx: EvalContext): CellValue {
 		}
 
 		case 'name': {
-			const def = ctx.workbook.definedNames.get(node.name)
-			if (def === undefined) return errorValue('#NAME?')
-			return evaluateNamedRef(def, ctx)
+			return evaluateDefinedName(node.name, node.sheet, ctx)
 		}
 
 		case 'binary': {
@@ -228,17 +227,6 @@ export function evaluate(node: FormulaNode, ctx: EvalContext): CellValue {
 			return errorValue('#REF!')
 	}
 	return EMPTY
-}
-
-function evaluateNamedRef(def: string, ctx: EvalContext): CellValue {
-	try {
-		const rangeRef = parseRange(def)
-		const si = resolveSheetIndex(ctx.workbook, rangeRef.sheet, ctx.sheetIndex)
-		if (si < 0) return errorValue('#REF!')
-		return getCellValue(ctx.workbook, si, rangeRef.start.row, rangeRef.start.col)
-	} catch {
-		return errorValue('#NAME?')
-	}
 }
 
 function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
@@ -304,6 +292,56 @@ function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
 		}
 	}
 
+	if (node.type === 'name') {
+		const resolved = resolveDefinedName(node.name, node.sheet, ctx)
+		if (!resolved) return { value: errorValue('#NAME?') }
+		return resolveArg(resolved.ast, resolved.ctx)
+	}
+
 	const value = evaluate(node, ctx)
 	return { value }
+}
+
+function evaluateDefinedName(name: string, sheet: string | undefined, ctx: EvalContext): CellValue {
+	const resolved = resolveDefinedName(name, sheet, ctx)
+	if (!resolved) return errorValue('#NAME?')
+	return evaluate(resolved.ast, resolved.ctx)
+}
+
+function resolveDefinedName(
+	name: string,
+	sheet: string | undefined,
+	ctx: EvalContext,
+): { ast: FormulaNode; ctx: EvalContext } | null {
+	const explicitSheet = sheet ? ctx.workbook.getSheet(sheet) : undefined
+	const currentSheet = ctx.workbook.sheets[ctx.sheetIndex]
+	const entry = ctx.workbook.definedNames.resolve(name, currentSheet?.id, explicitSheet?.id)
+	if (!entry) return null
+
+	const entryKey =
+		entry.scope.kind === 'workbook'
+			? `workbook:${entry.name.toLowerCase()}`
+			: `sheet:${entry.scope.sheetId}:${entry.name.toLowerCase()}`
+	if (ctx.definedNameStack?.includes(entryKey)) return null
+
+	const parsed = parseFormula(entry.formula)
+	if (!parsed.ok) return null
+
+	let sheetIndex = ctx.sheetIndex
+	if (entry.scope.kind === 'sheet') {
+		const scope = entry.scope
+		const localSheetIndex = ctx.workbook.sheets.findIndex(
+			(workbookSheet) => workbookSheet.id === scope.sheetId,
+		)
+		if (localSheetIndex >= 0) sheetIndex = localSheetIndex
+	}
+
+	return {
+		ast: parsed.value,
+		ctx: {
+			...ctx,
+			sheetIndex,
+			definedNameStack: [...(ctx.definedNameStack ?? []), entryKey],
+		},
+	}
 }

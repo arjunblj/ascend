@@ -1,6 +1,7 @@
+export type { DefinedName, DefinedNameScope } from './defined-name.ts'
+export { DefinedNameCollection } from './defined-name.ts'
 export type { SheetId, StyleId, TableId, WorkbookId } from './ids.ts'
 export { createSheetId, createTableId, createWorkbookId } from './ids.ts'
-
 export type { CellRef, RangeRef } from './refs.ts'
 export {
 	columnToIndex,

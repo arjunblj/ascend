@@ -26,8 +26,14 @@ export function buildWorkbookXml(workbook: Workbook): string {
 
 	if (workbook.definedNames.size > 0) {
 		parts.push('<definedNames>')
-		for (const [name, formula] of workbook.definedNames) {
-			parts.push(`<definedName name="${escapeXml(name)}">${escapeXml(formula)}</definedName>`)
+		for (const definedName of workbook.definedNames.list()) {
+			const attrs = [`name="${escapeXml(definedName.name)}"`]
+			if (definedName.scope.kind === 'sheet') {
+				const scope = definedName.scope
+				const sheetIndex = workbook.sheets.findIndex((sheet) => sheet.id === scope.sheetId)
+				if (sheetIndex >= 0) attrs.push(`localSheetId="${sheetIndex}"`)
+			}
+			parts.push(`<definedName ${attrs.join(' ')}>${escapeXml(definedName.formula)}</definedName>`)
 		}
 		parts.push('</definedNames>')
 	}

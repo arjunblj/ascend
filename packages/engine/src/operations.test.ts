@@ -198,6 +198,21 @@ describe('applyOperation', () => {
 		expect(result.ok).toBe(true)
 		expect(wb.definedNames.get('MyRange')).toBe('Sheet1!A1:A3')
 	})
+
+	test('setDefinedName can target a sheet scope', () => {
+		const wb = setup()
+		const result = applyOperation(wb, {
+			op: 'setDefinedName',
+			name: 'Budget',
+			ref: 'Sheet1!A1',
+			scope: 'Sheet1',
+		})
+		expect(result.ok).toBe(true)
+		const sheet = wb.getSheet('Sheet1')
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+		expect(wb.definedNames.resolve('Budget', sheet.id)?.scope.kind).toBe('sheet')
+	})
 })
 
 describe('applyOperations', () => {

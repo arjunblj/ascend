@@ -79,7 +79,9 @@ function checkOrphanedNames(wb: Workbook): CheckIssue[] {
 	const issues: CheckIssue[] = []
 	const sheetNames = new Set(wb.sheets.map((s) => s.name.toLowerCase()))
 
-	for (const [name, ref] of wb.definedNames) {
+	for (const entry of wb.definedNames.list()) {
+		const name = entry.name
+		const ref = entry.formula
 		const bang = ref.indexOf('!')
 		if (bang !== -1) {
 			const sheetPart = ref.substring(0, bang).replace(/^'|'$/g, '')

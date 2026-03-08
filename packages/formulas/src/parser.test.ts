@@ -202,6 +202,11 @@ describe('parse', () => {
 		expect(node).toEqual({ type: 'name', name: 'MyRange' })
 	})
 
+	it('parses sheet-qualified defined names', () => {
+		const node = p('Sheet1!Budget')
+		expect(node).toEqual({ type: 'name', name: 'Budget', sheet: 'Sheet1' })
+	})
+
 	it('parses SUM(A1:B10)', () => {
 		const node = p('SUM(A1:B10)')
 		expect(node.type).toBe('function')
@@ -259,6 +264,7 @@ describe('printFormula', () => {
 	it('roundtrips sheet-qualified references', () => {
 		expect(printFormula(p('Sheet1!A1'))).toBe('Sheet1!A1')
 		expect(printFormula(p("'My Sheet'!A1"))).toBe("'My Sheet'!A1")
+		expect(printFormula(p('Sheet1!Budget'))).toBe('Sheet1!Budget')
 	})
 
 	it('preserves parentheses where needed', () => {

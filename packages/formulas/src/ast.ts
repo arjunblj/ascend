@@ -61,6 +61,7 @@ export interface RangeRefNode {
 export interface NameNode {
 	readonly type: 'name'
 	readonly name: string
+	readonly sheet?: string
 }
 
 export interface FunctionNode {

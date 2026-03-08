@@ -80,7 +80,7 @@ export function analyzeWorkbook(
 			}
 
 			const ast = parsed.value
-			const refs = extractRefs(ast)
+			const refs = extractRefsWithNames(ast, workbook, sheetNameIndex, sheetIndex, [])
 			const deps: CellKey[] = []
 			for (const ref of refs) {
 				const refSheetIndex = resolveSheetIndex(sheetNameIndex, ref.sheet, sheetIndex)
@@ -143,5 +143,81 @@ function hasVolatileFunction(node: FormulaNode): boolean {
 			return node.rows.some((row) => row.some((cell) => hasVolatileFunction(cell)))
 		default:
 			return false
+	}
+}
+
+function extractRefsWithNames(
+	node: FormulaNode,
+	workbook: Workbook,
+	sheetNameIndex: ReadonlyMap<string, number>,
+	sheetIndex: number,
+	seenNames: readonly string[],
+): FormulaRef[] {
+	const refs = extractRefs(node)
+	const nameRefs = collectNameRefs(node)
+	for (const nameRef of nameRefs) {
+		const currentSheet = workbook.sheets[sheetIndex]
+		const explicitSheet = nameRef.sheet ? workbook.getSheet(nameRef.sheet) : undefined
+		const entry = workbook.definedNames.resolve(nameRef.name, currentSheet?.id, explicitSheet?.id)
+		if (!entry) continue
+
+		const entryKey =
+			entry.scope.kind === 'workbook'
+				? `workbook:${entry.name.toLowerCase()}`
+				: `sheet:${entry.scope.sheetId}:${entry.name.toLowerCase()}`
+		if (seenNames.includes(entryKey)) continue
+
+		const parsed = parseFormula(entry.formula)
+		if (!parsed.ok) continue
+
+		let formulaSheetIndex = sheetIndex
+		if (entry.scope.kind === 'sheet') {
+			const scope = entry.scope
+			const localSheetIndex = workbook.sheets.findIndex(
+				(workbookSheet) => workbookSheet.id === scope.sheetId,
+			)
+			if (localSheetIndex >= 0) formulaSheetIndex = localSheetIndex
+		}
+
+		refs.push(
+			...extractRefsWithNames(parsed.value, workbook, sheetNameIndex, formulaSheetIndex, [
+				...seenNames,
+				entryKey,
+			]),
+		)
+	}
+	return refs
+}
+
+function collectNameRefs(node: FormulaNode): Array<{ name: string; sheet?: string }> {
+	const result: Array<{ name: string; sheet?: string }> = []
+	walkNameRefs(node, result)
+	return result
+}
+
+function walkNameRefs(node: FormulaNode, result: Array<{ name: string; sheet?: string }>): void {
+	switch (node.type) {
+		case 'name':
+			result.push(
+				node.sheet !== undefined ? { name: node.name, sheet: node.sheet } : { name: node.name },
+			)
+			break
+		case 'binary':
+			walkNameRefs(node.left, result)
+			walkNameRefs(node.right, result)
+			break
+		case 'unary':
+			walkNameRefs(node.operand, result)
+			break
+		case 'function':
+			for (const arg of node.args) walkNameRefs(arg, result)
+			break
+		case 'array':
+			for (const row of node.rows) {
+				for (const cell of row) walkNameRefs(cell, result)
+			}
+			break
+		default:
+			break
 	}
 }

@@ -48,8 +48,8 @@ function cloneWorkbook(source: Workbook): Workbook {
 	const clone = createWorkbook()
 	clone.calcSettings = source.calcSettings
 
-	for (const [name, ref] of source.definedNames) {
-		clone.definedNames.set(name, ref)
+	for (const definedName of source.definedNames.list()) {
+		clone.definedNames.set(definedName.name, definedName.formula, definedName.scope)
 	}
 
 	for (const sheet of source.sheets) {
@@ -157,7 +157,7 @@ export class AscendWorkbook {
 		return {
 			sheetCount: this.wb.sheets.length,
 			sheets,
-			definedNames: [...this.wb.definedNames.keys()],
+			definedNames: this.wb.definedNames.workbookKeys(),
 			cellCount: totalCells,
 			sourceFormat: this.compat.sourceFormat,
 		}
@@ -358,7 +358,7 @@ export class AscendWorkbook {
 	}
 
 	get names(): readonly string[] {
-		return [...this.wb.definedNames.keys()]
+		return this.wb.definedNames.workbookKeys()
 	}
 }
 

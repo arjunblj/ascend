@@ -1,4 +1,5 @@
 import { type CalcSettings, DEFAULT_CALC_SETTINGS } from '@ascend/schema'
+import { DefinedNameCollection } from './defined-name.ts'
 import { createWorkbookId, type SheetId, type WorkbookId } from './ids.ts'
 import { createSheet, type Sheet } from './sheet.ts'
 import { StyleRegistry } from './style-registry.ts'
@@ -6,7 +7,7 @@ import { StyleRegistry } from './style-registry.ts'
 export class Workbook {
 	readonly id: WorkbookId
 	readonly sheets: Sheet[] = []
-	readonly definedNames = new Map<string, string>()
+	readonly definedNames = new DefinedNameCollection()
 	readonly styles = new StyleRegistry()
 	calcSettings: CalcSettings
 

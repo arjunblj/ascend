@@ -508,7 +508,15 @@ function handleSetDefinedName(
 	_workbook: Workbook,
 	op: Extract<Operation, { op: 'setDefinedName' }>,
 ): Result<PatchResult> {
-	_workbook.definedNames.set(op.name, op.ref)
+	if (op.scope) {
+		const sheet = _workbook.getSheet(op.scope)
+		if (!sheet) {
+			return err(ascendError('SHEET_NOT_FOUND', `Sheet "${op.scope}" not found`))
+		}
+		_workbook.definedNames.set(op.name, op.ref, { kind: 'sheet', sheetId: sheet.id })
+	} else {
+		_workbook.definedNames.set(op.name, op.ref)
+	}
 	return ok(patch([], []))
 }
 

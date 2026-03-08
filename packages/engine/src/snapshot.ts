@@ -25,8 +25,14 @@ export function createSnapshot(workbook: Workbook): WorkbookSnapshot {
 	})
 
 	const names: Record<string, string> = {}
-	for (const [name, ref] of workbook.definedNames) {
-		names[name] = ref
+	for (const definedName of workbook.definedNames.list()) {
+		let key = definedName.name
+		if (definedName.scope.kind === 'sheet') {
+			const scope = definedName.scope
+			const sheetName = workbook.sheets.find((sheet) => sheet.id === scope.sheetId)?.name ?? 'Sheet'
+			key = `${sheetName}!${definedName.name}`
+		}
+		names[key] = definedName.formula
 	}
 
 	return { sheets, names, timestamp: Date.now() }

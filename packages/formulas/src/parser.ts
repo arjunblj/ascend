@@ -260,8 +260,12 @@ class FormulaParser {
 			if (this.peek().type === TokenType.CellRef) {
 				return this.parseCellOrRange(sheet)
 			}
+			if (this.peek().type === TokenType.Name) {
+				const name = this.advance().value
+				return { type: 'name', name, sheet }
+			}
 			throw new Error(
-				`Expected cell reference after "${sheet}!" at position ${this.peek().position}`,
+				`Expected cell reference or name after "${sheet}!" at position ${this.peek().position}`,
 			)
 		}
 

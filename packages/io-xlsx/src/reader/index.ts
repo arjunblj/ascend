@@ -167,6 +167,13 @@ export function readXlsx(
 	}
 
 	for (const dn of wbInfo.definedNames) {
+		if (dn.localSheetId !== undefined) {
+			const sheet = workbook.sheets[dn.localSheetId]
+			if (sheet) {
+				workbook.definedNames.set(dn.name, dn.formula, { kind: 'sheet', sheetId: sheet.id })
+				continue
+			}
+		}
 		workbook.definedNames.set(dn.name, dn.formula)
 	}
 

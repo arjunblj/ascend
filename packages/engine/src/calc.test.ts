@@ -67,6 +67,35 @@ describe('recalculate', () => {
 		expect(s2.cells.get(0, 0)?.value).toEqual(numberValue(42))
 	})
 
+	test('sheet-scoped defined name shadows workbook-scoped name', () => {
+		const wb = createWorkbook()
+		const sheet1 = wb.addSheet('Sheet1')
+		const sheet2 = wb.addSheet('Sheet2')
+		wb.definedNames.set('Rate', '0.1')
+		wb.definedNames.set('Rate', '0.2', { kind: 'sheet', sheetId: sheet2.id })
+		sheet1.cells.set(0, 0, { value: EMPTY, formula: 'Rate*100', styleId: sid })
+		sheet2.cells.set(0, 0, { value: EMPTY, formula: 'Rate*100', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+		expect(result.errors).toEqual([])
+		expect(sheet1.cells.get(0, 0)?.value).toEqual(numberValue(10))
+		expect(sheet2.cells.get(0, 0)?.value).toEqual(numberValue(20))
+	})
+
+	test('qualified local defined names can be referenced from another sheet', () => {
+		const wb = createWorkbook()
+		const sheet1 = wb.addSheet('Sheet1')
+		const sheet2 = wb.addSheet('Sheet2')
+		const calc = wb.addSheet('Calc')
+		wb.definedNames.set('Budget', '10', { kind: 'sheet', sheetId: sheet1.id })
+		wb.definedNames.set('Budget', '20', { kind: 'sheet', sheetId: sheet2.id })
+		calc.cells.set(0, 0, { value: EMPTY, formula: 'Sheet1!Budget+Sheet2!Budget', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+		expect(result.errors).toEqual([])
+		expect(calc.cells.get(0, 0)?.value).toEqual(numberValue(30))
+	})
+
 	test('deterministic NOW via CalcContext', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

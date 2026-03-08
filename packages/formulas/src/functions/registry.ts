@@ -1,10 +1,20 @@
 import type { CellValue } from '@ascend/schema'
 import { EMPTY, errorValue } from '@ascend/schema'
 
+export interface EvalRef {
+	readonly kind: 'cell' | 'range'
+	readonly sheetIndex: number
+	readonly row: number
+	readonly col: number
+	readonly endRow?: number
+	readonly endCol?: number
+}
+
 export interface EvalArg {
 	readonly value: CellValue
 	readonly kind?: 'range'
 	readonly values?: readonly (readonly CellValue[])[]
+	readonly ref?: EvalRef
 }
 
 export type FnArg = EvalArg

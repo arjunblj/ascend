@@ -298,13 +298,19 @@ registerFunction({
 	name: 'ROW',
 	minArgs: 0,
 	maxArgs: 1,
-	evaluate: () => errorValue('#REF!'),
+	evaluate: (args) => {
+		const ref = args[0]?.ref
+		return ref ? numberValue(ref.row + 1) : errorValue('#VALUE!')
+	},
 })
 registerFunction({
 	name: 'COLUMN',
 	minArgs: 0,
 	maxArgs: 1,
-	evaluate: () => errorValue('#REF!'),
+	evaluate: (args) => {
+		const ref = args[0]?.ref
+		return ref ? numberValue(ref.col + 1) : errorValue('#VALUE!')
+	},
 })
 registerFunction({
 	name: 'INDIRECT',

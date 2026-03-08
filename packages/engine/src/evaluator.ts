@@ -262,6 +262,12 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 			),
 		)
 	}
+	if (upperName === 'ROW' && argNodes.length === 0) {
+		return numberValue(ctx.row + 1)
+	}
+	if (upperName === 'COLUMN' && argNodes.length === 0) {
+		return numberValue(ctx.col + 1)
+	}
 
 	const def = functionRegistry.get(upperName)
 	if (!def) return errorValue('#NAME?')
@@ -286,7 +292,19 @@ function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
 		)
 		const firstRow = values[0]
 		const firstVal = firstRow ? (firstRow[0] ?? EMPTY) : EMPTY
-		return { value: firstVal, kind: 'range', values }
+		return {
+			value: firstVal,
+			kind: 'range',
+			values,
+			ref: {
+				kind: 'range',
+				sheetIndex: si,
+				row: node.start.row,
+				col: node.start.col,
+				endRow: node.end.row,
+				endCol: node.end.col,
+			},
+		}
 	}
 
 	if (node.type === 'cellRef') {
@@ -294,7 +312,15 @@ function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
 		if (si < 0) {
 			return { value: errorValue('#REF!') }
 		}
-		return { value: getCellValue(ctx.workbook, si, node.ref.row, node.ref.col) }
+		return {
+			value: getCellValue(ctx.workbook, si, node.ref.row, node.ref.col),
+			ref: {
+				kind: 'cell',
+				sheetIndex: si,
+				row: node.ref.row,
+				col: node.ref.col,
+			},
+		}
 	}
 
 	const value = evaluate(node, ctx)

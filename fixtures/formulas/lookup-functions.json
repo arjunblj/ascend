@@ -130,6 +130,30 @@
 			},
 			"formula": "MATCH(\"North*\", A1:A3, 0)",
 			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "ROW returns the current row when called without arguments",
+			"setup": {},
+			"formula": "ROW()",
+			"expected": { "kind": "number", "value": 11 }
+		},
+		{
+			"description": "ROW returns the first row of a referenced range",
+			"setup": { "B7": 42 },
+			"formula": "ROW(B7)",
+			"expected": { "kind": "number", "value": 7 }
+		},
+		{
+			"description": "COLUMN returns the current column when called without arguments",
+			"setup": {},
+			"formula": "COLUMN()",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "COLUMN returns the first column of a referenced range",
+			"setup": { "AA3": 9 },
+			"formula": "COLUMN(AA3)",
+			"expected": { "kind": "number", "value": 27 }
 		}
 	]
 }

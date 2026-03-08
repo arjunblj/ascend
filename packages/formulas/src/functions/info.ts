@@ -90,7 +90,7 @@ registerFunction({
 	name: 'ISREF',
 	minArgs: 1,
 	maxArgs: 1,
-	evaluate: () => booleanValue(false),
+	evaluate: (args) => booleanValue(args[0]?.ref !== undefined),
 })
 registerFunction({ name: 'TYPE', minArgs: 1, maxArgs: 1, evaluate: typeFn })
 registerFunction({ name: 'N', minArgs: 1, maxArgs: 1, evaluate: nFn })

@@ -56,6 +56,12 @@
 			"expected": { "kind": "number", "value": 0 }
 		},
 		{
+			"description": "ISREF returns TRUE for a range reference",
+			"setup": { "A1": 1, "A2": 2 },
+			"formula": "ISREF(A1:A2)",
+			"expected": { "kind": "boolean", "value": true }
+		},
+		{
 			"description": "NA returns #N/A",
 			"setup": {},
 			"formula": "NA()",

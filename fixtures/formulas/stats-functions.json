@@ -1,0 +1,47 @@
+{
+	"function": "stats",
+	"cases": [
+		{
+			"description": "LARGE returns the 2nd largest number",
+			"setup": { "A1": 1, "A2": 2, "A3": 3, "A4": 4, "A5": 5 },
+			"formula": "LARGE(A1:A5, 2)",
+			"expected": { "kind": "number", "value": 4 }
+		},
+		{
+			"description": "SMALL returns the 2nd smallest number",
+			"setup": { "A1": 1, "A2": 2, "A3": 3, "A4": 4, "A5": 5 },
+			"formula": "SMALL(A1:A5, 2)",
+			"expected": { "kind": "number", "value": 2 }
+		},
+		{
+			"description": "RANK returns descending rank by default",
+			"setup": { "A1": 10, "A2": 20, "A3": 30 },
+			"formula": "RANK(20, A1:A3)",
+			"expected": { "kind": "number", "value": 2 }
+		},
+		{
+			"description": "PERCENTILE interpolates over a simple ordered set",
+			"setup": { "A1": 1, "A2": 2, "A3": 3, "A4": 4, "A5": 5 },
+			"formula": "PERCENTILE(A1:A5, 0.25)",
+			"expected": { "kind": "number", "value": 2 }
+		},
+		{
+			"description": "MEDIAN averages the middle pair for an even-sized set",
+			"setup": { "A1": 1, "A2": 2, "A3": 3, "A4": 4 },
+			"formula": "MEDIAN(A1:A4)",
+			"expected": { "kind": "number", "value": 2.5 }
+		},
+		{
+			"description": "STDEV returns sample standard deviation",
+			"setup": { "A1": 1, "A2": 2, "A3": 3 },
+			"formula": "STDEV(A1:A3)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "VAR returns sample variance",
+			"setup": { "A1": 1, "A2": 2, "A3": 3 },
+			"formula": "VAR(A1:A3)",
+			"expected": { "kind": "number", "value": 1 }
+		}
+	]
+}

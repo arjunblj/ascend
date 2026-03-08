@@ -1,0 +1,64 @@
+{
+	"function": "lookup-advanced",
+	"cases": [
+		{
+			"description": "XLOOKUP returns fallback text when no match exists",
+			"setup": {
+				"A1": "apple",
+				"A2": "banana",
+				"B1": 10,
+				"B2": 20
+			},
+			"formula": "XLOOKUP(\"pear\", A1:A2, B1:B2, \"missing\")",
+			"expected": { "kind": "string", "value": "missing" }
+		},
+		{
+			"description": "XLOOKUP reverse search returns the last matching entry",
+			"setup": {
+				"A1": "apple",
+				"A2": "banana",
+				"A3": "banana",
+				"B1": 10,
+				"B2": 20,
+				"B3": 30
+			},
+			"formula": "XLOOKUP(\"banana\", A1:A3, B1:B3, \"missing\", 0, -1)",
+			"expected": { "kind": "number", "value": 30 }
+		},
+		{
+			"description": "XLOOKUP wildcard matching finds the first matching string",
+			"setup": {
+				"A1": "North-East",
+				"A2": "South",
+				"B1": 11,
+				"B2": 22
+			},
+			"formula": "XLOOKUP(\"North*\", A1:A2, B1:B2, \"missing\", 2)",
+			"expected": { "kind": "number", "value": 11 }
+		},
+		{
+			"description": "XLOOKUP can return the next larger item",
+			"setup": {
+				"A1": 10,
+				"A2": 20,
+				"A3": 30,
+				"B1": "small",
+				"B2": "medium",
+				"B3": "large"
+			},
+			"formula": "XLOOKUP(25, A1:A3, B1:B3, \"missing\", 1)",
+			"expected": { "kind": "string", "value": "large" }
+		},
+		{
+			"description": "XMATCH reverse search returns the last matching index",
+			"setup": {
+				"A1": "apple",
+				"A2": "banana",
+				"A3": "banana",
+				"A4": "pear"
+			},
+			"formula": "XMATCH(\"banana\", A1:A4, 0, -1)",
+			"expected": { "kind": "number", "value": 3 }
+		}
+	]
+}

@@ -1,0 +1,65 @@
+{
+	"function": "info",
+	"cases": [
+		{
+			"description": "ISBLANK returns TRUE for an empty cell",
+			"setup": {},
+			"formula": "ISBLANK(A1)",
+			"expected": { "kind": "boolean", "value": true }
+		},
+		{
+			"description": "ISERROR returns TRUE for #N/A",
+			"setup": {},
+			"formula": "ISERROR(NA())",
+			"expected": { "kind": "boolean", "value": true }
+		},
+		{
+			"description": "ISNA returns TRUE for #N/A",
+			"setup": {},
+			"formula": "ISNA(NA())",
+			"expected": { "kind": "boolean", "value": true }
+		},
+		{
+			"description": "ISNUMBER returns TRUE for a numeric cell",
+			"setup": { "A1": 42 },
+			"formula": "ISNUMBER(A1)",
+			"expected": { "kind": "boolean", "value": true }
+		},
+		{
+			"description": "ISTEXT returns TRUE for a text cell",
+			"setup": { "A1": "hello" },
+			"formula": "ISTEXT(A1)",
+			"expected": { "kind": "boolean", "value": true }
+		},
+		{
+			"description": "ISLOGICAL returns TRUE for a boolean cell",
+			"setup": { "A1": true },
+			"formula": "ISLOGICAL(A1)",
+			"expected": { "kind": "boolean", "value": true }
+		},
+		{
+			"description": "TYPE returns 64 for a range reference",
+			"setup": { "A1": 1, "A2": 2 },
+			"formula": "TYPE(A1:A2)",
+			"expected": { "kind": "number", "value": 64 }
+		},
+		{
+			"description": "N converts TRUE to 1",
+			"setup": {},
+			"formula": "N(TRUE)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "N converts text to 0",
+			"setup": {},
+			"formula": "N(\"text\")",
+			"expected": { "kind": "number", "value": 0 }
+		},
+		{
+			"description": "NA returns #N/A",
+			"setup": {},
+			"formula": "NA()",
+			"expected": { "kind": "error", "value": "#N/A" }
+		}
+	]
+}

@@ -24,6 +24,7 @@ export {
 	type FunctionDef,
 	functionRegistry,
 	serialToDate,
+	toNumber,
 } from './functions/index.ts'
 export { tokenize } from './lexer.ts'
 export { parse, parseFormula } from './parser.ts'

@@ -1,0 +1,15 @@
+{
+	"name": "@ascend/benchmarks",
+	"private": true,
+	"version": "0.0.0",
+	"type": "module",
+	"dependencies": {
+		"@ascend/core": "workspace:*",
+		"@ascend/engine": "workspace:*",
+		"@ascend/io-xlsx": "workspace:*",
+		"@ascend/schema": "workspace:*"
+	},
+	"scripts": {
+		"bench": "bun run run.ts"
+	}
+}

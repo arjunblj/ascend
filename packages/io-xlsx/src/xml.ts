@@ -37,3 +37,11 @@ export function boolAttr(node: XmlNode, name: string): boolean | undefined {
 	if (val === undefined) return undefined
 	return val === '1' || val === 'true'
 }
+
+export function escapeXml(s: string): string {
+	return s
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+}

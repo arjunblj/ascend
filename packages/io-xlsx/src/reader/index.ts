@@ -9,13 +9,15 @@ import type {
 	Result,
 } from '@ascend/schema'
 import { ascendError, emptyReport, err, ok } from '@ascend/schema'
-import { parseContentTypes } from './content-types.ts'
+import type { PreservationCapsule } from '../preserve.ts'
+import { type ContentTypes, parseContentTypes } from './content-types.ts'
 import {
 	getRelsPath,
 	parseRelationships,
 	REL_OFFICE_DOC,
 	REL_SHARED_STRINGS,
 	REL_STYLES,
+	type Relationship,
 	resolvePath,
 } from './relationships.ts'
 import { parseSharedStrings } from './shared-strings.ts'
@@ -27,6 +29,7 @@ import { extractZip } from './zip.ts'
 export interface ReadXlsxResult {
 	readonly workbook: Workbook
 	readonly report: CompatibilityReport
+	readonly capsules: PreservationCapsule[]
 }
 
 const decoder = new TextDecoder('utf-8')
@@ -87,6 +90,16 @@ export function readXlsx(bytes: Uint8Array): Result<ReadXlsxResult, AscendError>
 
 	const styleIds = registerStyles(workbook, parsedStyles.cellStyles)
 
+	const consumed = new Set<string>()
+	consumed.add('[Content_Types].xml')
+	consumed.add('_rels/.rels')
+	consumed.add(workbookPath)
+	consumed.add(wbRelsPath)
+	if (ssPath) consumed.add(ssPath)
+	if (stylesPath) consumed.add(stylesPath)
+
+	const sheetPathToName = new Map<string, string>()
+
 	for (const entry of wbInfo.sheets) {
 		const rel = relMap.get(entry.rId)
 		if (!rel) continue
@@ -94,6 +107,10 @@ export function readXlsx(bytes: Uint8Array): Result<ReadXlsxResult, AscendError>
 		const sheetPath = resolvePath(workbookPath, rel.target)
 		const sheetXml = readPart(parts, sheetPath)
 		if (!sheetXml) continue
+
+		consumed.add(sheetPath)
+		consumed.add(getRelsPath(sheetPath))
+		sheetPathToName.set(sheetPath, entry.name)
 
 		const sheet = parseSheet(entry.name, sheetXml, {
 			sharedStrings,
@@ -109,8 +126,16 @@ export function readXlsx(bytes: Uint8Array): Result<ReadXlsxResult, AscendError>
 	}
 
 	const report = buildReport(contentTypes)
+	const capsules = collectCapsules(
+		parts,
+		consumed,
+		contentTypes,
+		wbRels,
+		sheetPathToName,
+		workbookPath,
+	)
 
-	return ok({ workbook, report })
+	return ok({ workbook, report, capsules })
 }
 
 function readPart(parts: Map<string, Uint8Array>, path: string): string | undefined {
@@ -121,6 +146,82 @@ function readPart(parts: Map<string, Uint8Array>, path: string): string | undefi
 
 function registerStyles(workbook: Workbook, cellStyles: CellStyle[]): StyleId[] {
 	return cellStyles.map((style) => workbook.styles.register(style))
+}
+
+function collectCapsules(
+	parts: Map<string, Uint8Array>,
+	consumed: Set<string>,
+	contentTypes: ContentTypes,
+	wbRels: Relationship[],
+	sheetPathToName: Map<string, string>,
+	workbookPath: string,
+): PreservationCapsule[] {
+	const capsules: PreservationCapsule[] = []
+
+	const wbRelByTarget = new Map<string, Relationship>()
+	for (const rel of wbRels) {
+		wbRelByTarget.set(resolvePath(workbookPath, rel.target), rel)
+	}
+
+	const sheetRelByTarget = new Map<string, { sheetName: string; rel: Relationship }>()
+	for (const [sheetPath, sheetName] of sheetPathToName) {
+		const sheetRelsXml = readPart(parts, getRelsPath(sheetPath))
+		if (!sheetRelsXml) continue
+		for (const rel of parseRelationships(sheetRelsXml)) {
+			sheetRelByTarget.set(resolvePath(sheetPath, rel.target), { sheetName, rel })
+		}
+	}
+
+	for (const [partPath, data] of parts) {
+		if (consumed.has(partPath)) continue
+		if (partPath.endsWith('.rels')) continue
+		if (partPath.startsWith('_rels/')) continue
+		if (partPath.startsWith('docProps/')) continue
+
+		const ct = resolveContentType(partPath, contentTypes)
+
+		let anchor: PreservationCapsule['anchor'] = { kind: 'workbook' }
+		let relType: string | undefined
+
+		const wbRef = wbRelByTarget.get(partPath)
+		if (wbRef) relType = wbRef.type
+
+		const sheetRef = sheetRelByTarget.get(partPath)
+		if (sheetRef) {
+			anchor = { kind: 'sheet', sheetName: sheetRef.sheetName }
+			relType = sheetRef.rel.type
+		}
+
+		const capsuleRelsXml = readPart(parts, getRelsPath(partPath))
+		const relationships = capsuleRelsXml
+			? parseRelationships(capsuleRelsXml).map((r) => ({
+					id: r.id,
+					type: r.type,
+					target: r.target,
+				}))
+			: []
+
+		const capsule: PreservationCapsule = {
+			partPath,
+			contentType: ct,
+			relationships,
+			content: data,
+			anchor,
+		}
+		if (relType) capsule.relType = relType
+		capsules.push(capsule)
+	}
+
+	return capsules
+}
+
+function resolveContentType(partPath: string, contentTypes: ContentTypes): string {
+	const normalized = partPath.startsWith('/') ? partPath.substring(1) : partPath
+	const ct = contentTypes.overrides.get(normalized)
+	if (ct) return ct
+
+	const ext = partPath.split('.').pop() ?? ''
+	return contentTypes.defaults.get(ext) ?? 'application/octet-stream'
 }
 
 function buildReport(contentTypes: {

@@ -1,0 +1,81 @@
+import type { Workbook } from '@ascend/core'
+import type { CellValue, RichTextRun } from '@ascend/schema'
+import { escapeXml } from '../xml.ts'
+
+const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+
+export interface SharedStringTable {
+	getIndex(value: CellValue): number | undefined
+	toXml(): string
+	readonly count: number
+}
+
+export function buildSharedStrings(workbook: Workbook): SharedStringTable {
+	const entries: CellValue[] = []
+	const lookup = new Map<string, number>()
+
+	for (const sheet of workbook.sheets) {
+		for (const [, , cell] of sheet.cells.iterate()) {
+			const key = makeKey(cell.value)
+			if (key !== undefined && !lookup.has(key)) {
+				lookup.set(key, entries.length)
+				entries.push(cell.value)
+			}
+		}
+	}
+
+	return {
+		getIndex(value: CellValue): number | undefined {
+			const key = makeKey(value)
+			return key !== undefined ? lookup.get(key) : undefined
+		},
+		toXml(): string {
+			const parts: string[] = [
+				XML_HEADER,
+				`<sst xmlns="${NS}" count="${entries.length}" uniqueCount="${entries.length}">`,
+			]
+			for (const entry of entries) {
+				parts.push(entryXml(entry))
+			}
+			parts.push('</sst>')
+			return parts.join('')
+		},
+		count: entries.length,
+	}
+}
+
+function makeKey(value: CellValue): string | undefined {
+	if (value.kind === 'string') return `s:${value.value}`
+	if (value.kind === 'richText') return `r:${JSON.stringify(value.runs)}`
+	return undefined
+}
+
+function entryXml(value: CellValue): string {
+	if (value.kind === 'string') {
+		return `<si><t>${escapeXml(value.value)}</t></si>`
+	}
+	if (value.kind === 'richText') {
+		const runs = value.runs.map(runXml).join('')
+		return `<si>${runs}</si>`
+	}
+	return '<si><t/></si>'
+}
+
+function runXml(run: RichTextRun): string {
+	const rPr = runPropsXml(run)
+	const rPrEl = rPr ? `<rPr>${rPr}</rPr>` : ''
+	return `<r>${rPrEl}<t>${escapeXml(run.text)}</t></r>`
+}
+
+function runPropsXml(run: RichTextRun): string {
+	const parts: string[] = []
+	if (run.bold) parts.push('<b/>')
+	if (run.italic) parts.push('<i/>')
+	if (run.underline) parts.push('<u/>')
+	if (run.strikethrough) parts.push('<strike/>')
+	if (run.fontSize !== undefined) parts.push(`<sz val="${run.fontSize}"/>`)
+	if (run.color) parts.push(`<color rgb="${escapeXml(run.color)}"/>`)
+	if (run.fontName) parts.push(`<rFont val="${escapeXml(run.fontName)}"/>`)
+	return parts.join('')
+}

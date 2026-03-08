@@ -335,6 +335,33 @@ function buildReport(
 		})
 	}
 
+	if (workbook.calcSettings.calcMode === 'manual' || workbook.calcSettings.fullCalcOnLoad) {
+		const reasons: string[] = []
+		if (workbook.calcSettings.calcMode === 'manual') reasons.push('manual calculation mode')
+		if (workbook.calcSettings.fullCalcOnLoad) reasons.push('full recalculation requested on load')
+		features.push({
+			feature: 'formulaFreshness',
+			tier: 'normalized',
+			count: 1,
+			locations: ['workbook'],
+			note: `Workbook indicates ${reasons.join(' and ')}.`,
+		})
+	}
+
+	const calcChainLocations: string[] = []
+	for (const [path, ct] of contentTypes.overrides) {
+		if (ct.includes('calcChain+xml')) calcChainLocations.push(path)
+	}
+	if (calcChainLocations.length > 0) {
+		features.push({
+			feature: 'calcChain',
+			tier: 'normalized',
+			count: calcChainLocations.length,
+			locations: calcChainLocations,
+			note: 'Calc chain is treated as an optimization hint and not as calculation truth.',
+		})
+	}
+
 	if (features.length === 0) return emptyReport('xlsx')
 
 	const summary = { exact: 0, normalized: 0, preserved: 0, unsupported: 0 }

@@ -365,6 +365,41 @@ describe('readXlsx', () => {
 		expect(result.value.report.features.some((feature) => feature.feature === 'table')).toBe(true)
 	})
 
+	it('reports workbook freshness signals from calc settings and calc chain', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/calcChain.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.calcChain+xml"/>
+</Types>`,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
+  <calcPr calcMode="manual" fullCalcOnLoad="1"/>
+</workbook>`,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': SHEET_XML,
+			'xl/calcChain.xml': `<?xml version="1.0"?><calcChain xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"/>`,
+		})
+
+		const result = readXlsx(bytes)
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(
+			result.value.report.features.some((feature) => feature.feature === 'formulaFreshness'),
+		).toBe(true)
+		expect(result.value.report.features.some((feature) => feature.feature === 'calcChain')).toBe(
+			true,
+		)
+	})
+
 	it('supports metadata-only reads without parsing sheet cells', () => {
 		const result = readXlsx(minimalXlsx(), { mode: 'metadata-only' })
 		expect(result.ok).toBe(true)

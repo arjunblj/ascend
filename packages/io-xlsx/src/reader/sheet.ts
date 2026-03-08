@@ -60,7 +60,7 @@ function parseCellValue(c: XmlNode, ctx: SheetParseContext): Cell | undefined {
 	const type = attr(c, 't')
 	const styleIdx = numAttr(c, 's') ?? 0
 	const styleId = ctx.styleIds[styleIdx] ?? (0 as StyleId)
-	const formula = c.f !== undefined ? String(c.f) : null
+	const formula = parseFormulaText(c.f)
 	const rawValue = c.v
 
 	let value: CellValue
@@ -94,6 +94,22 @@ function parseCellValue(c: XmlNode, ctx: SheetParseContext): Cell | undefined {
 	}
 
 	return { value, formula, styleId }
+}
+
+function parseFormulaText(formulaNode: unknown): string | null {
+	if (formulaNode === undefined || formulaNode === null) return null
+	if (
+		typeof formulaNode === 'string' ||
+		typeof formulaNode === 'number' ||
+		typeof formulaNode === 'boolean'
+	) {
+		return String(formulaNode)
+	}
+	if (typeof formulaNode === 'object') {
+		const text = (formulaNode as XmlNode)['#text']
+		return text !== undefined && text !== null ? String(text) : null
+	}
+	return null
 }
 
 function parseInlineString(c: XmlNode): CellValue {

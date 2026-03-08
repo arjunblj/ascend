@@ -39,6 +39,11 @@ export interface ReadXlsxOptions {
 
 const decoder = new TextDecoder('utf-8')
 
+interface FormulaFeatureSummary {
+	sharedFormulaSheets: string[]
+	arrayFormulaSheets: string[]
+}
+
 export function readXlsx(
 	bytes: Uint8Array,
 	options: ReadXlsxOptions = {},
@@ -104,6 +109,10 @@ export function readXlsx(
 	if (stylesPath) consumed.add(stylesPath)
 
 	const sheetPathToName = new Map<string, string>()
+	const formulaFeatures: FormulaFeatureSummary = {
+		sharedFormulaSheets: [],
+		arrayFormulaSheets: [],
+	}
 	const sheetsToParse: Array<{
 		name: string
 		path: string
@@ -115,9 +124,12 @@ export function readXlsx(
 		if (!rel) continue
 
 		const sheetPath = resolvePath(workbookPath, rel.target)
+		const sheetXml = readPart(parts, sheetPath)
+		if (!sheetXml) continue
 		sheetPathToName.set(sheetPath, entry.name)
 		consumed.add(sheetPath)
 		consumed.add(getRelsPath(sheetPath))
+		recordFormulaFeatures(sheetXml, entry.name, formulaFeatures)
 
 		if (selectedSheets && !selectedSheets.has(entry.name.toLowerCase())) continue
 		sheetsToParse.push({ name: entry.name, path: sheetPath, state: entry.state })
@@ -155,7 +167,7 @@ export function readXlsx(
 		workbook.definedNames.set(dn.name, dn.formula)
 	}
 
-	const report = buildReport(contentTypes)
+	const report = buildReport(contentTypes, formulaFeatures)
 	const capsules = collectCapsules(
 		parts,
 		consumed,
@@ -254,9 +266,12 @@ function resolveContentType(partPath: string, contentTypes: ContentTypes): strin
 	return contentTypes.defaults.get(ext) ?? 'application/octet-stream'
 }
 
-function buildReport(contentTypes: {
-	overrides: ReadonlyMap<string, string>
-}): CompatibilityReport {
+function buildReport(
+	contentTypes: {
+		overrides: ReadonlyMap<string, string>
+	},
+	formulaFeatures: FormulaFeatureSummary,
+): CompatibilityReport {
 	const features: FeatureReport[] = []
 
 	const unsupportedTypes: [string, string][] = [
@@ -281,6 +296,26 @@ function buildReport(contentTypes: {
 		}
 	}
 
+	if (formulaFeatures.sharedFormulaSheets.length > 0) {
+		features.push({
+			feature: 'sharedFormula',
+			tier: 'unsupported',
+			count: formulaFeatures.sharedFormulaSheets.length,
+			locations: formulaFeatures.sharedFormulaSheets,
+			note: 'Shared formulas are detected but not yet modeled as first-class semantics.',
+		})
+	}
+
+	if (formulaFeatures.arrayFormulaSheets.length > 0) {
+		features.push({
+			feature: 'arrayFormula',
+			tier: 'unsupported',
+			count: formulaFeatures.arrayFormulaSheets.length,
+			locations: formulaFeatures.arrayFormulaSheets,
+			note: 'Array formulas are detected but not yet modeled as first-class semantics.',
+		})
+	}
+
 	if (features.length === 0) return emptyReport('xlsx')
 
 	const summary = { exact: 0, normalized: 0, preserved: 0, unsupported: 0 }
@@ -296,5 +331,18 @@ function buildReport(contentTypes: {
 		features,
 		summary,
 		sourceFormat: 'xlsx',
+	}
+}
+
+function recordFormulaFeatures(
+	sheetXml: string,
+	sheetName: string,
+	summary: FormulaFeatureSummary,
+): void {
+	if (/<f\b[^>]*\bt="shared"/.test(sheetXml)) {
+		summary.sharedFormulaSheets.push(sheetName)
+	}
+	if (/<f\b[^>]*\bt="array"/.test(sheetXml)) {
+		summary.arrayFormulaSheets.push(sheetName)
 	}
 }

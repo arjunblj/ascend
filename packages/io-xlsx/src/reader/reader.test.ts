@@ -216,6 +216,60 @@ describe('readXlsx', () => {
 		expect(result.value.workbook.definedNames.get('Total')).toBe('Data!$A$1')
 	})
 
+	it('reads array formula text from structured formula nodes', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1"><c r="A1"><f t="array" ref="A1:A2">SUM(B1:B2)</f><v>3</v></c></row>
+  </sheetData>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		const cell = result.value.workbook.sheets[0]?.cells.get(0, 0)
+		expect(cell?.formula).toBe('SUM(B1:B2)')
+		expect(result.value.report.features.some((feature) => feature.feature === 'arrayFormula')).toBe(
+			true,
+		)
+	})
+
+	it('flags shared formulas in the compatibility report', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1"><f t="shared" si="0">B1*2</f><v>84</v></c>
+      <c r="A2"><f t="shared" si="0"/><v>168</v></c>
+    </row>
+  </sheetData>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(
+			result.value.report.features.some((feature) => feature.feature === 'sharedFormula'),
+		).toBe(true)
+		expect(result.value.workbook.sheets[0]?.cells.get(1, 0)?.formula).toBeNull()
+	})
+
 	it('supports metadata-only reads without parsing sheet cells', () => {
 		const result = readXlsx(minimalXlsx(), { mode: 'metadata-only' })
 		expect(result.ok).toBe(true)

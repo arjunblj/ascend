@@ -40,12 +40,11 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 	}
 
 	const grid: string[][] = []
+	const cellMap = new Map(info.cells.map((cell) => [`${cell.row}:${cell.col}`, cell] as const))
 	for (let r = 0; r < info.rowCount; r++) {
 		const row: string[] = []
 		for (let c = 0; c < info.colCount; c++) {
-			const cell = info.cells.find(
-				(ci) => ci.row === info.ref.start.row + r && ci.col === info.ref.start.col + c,
-			)
+			const cell = cellMap.get(`${info.ref.start.row + r}:${info.ref.start.col + c}`)
 			row.push(cell ? formatCellValue(cell.value) : '')
 		}
 		grid.push(row)

@@ -4,6 +4,21 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 
+function okResponse<T>(data: T, summary: string) {
+	return {
+		content: [{ type: 'text' as const, text: summary }],
+		structuredContent: data as Record<string, unknown>,
+	}
+}
+
+function errorResponse(message: string) {
+	return {
+		content: [{ type: 'text' as const, text: message }],
+		structuredContent: { error: message },
+		isError: true,
+	}
+}
+
 export function createServer(): McpServer {
 	const server = new McpServer({
 		name: 'ascend',
@@ -22,28 +37,20 @@ export function createServer(): McpServer {
 			if (sheet) {
 				const handle = wb.sheet(sheet)
 				if (!handle) {
-					return {
-						content: [
-							{ type: 'text', text: JSON.stringify({ error: `Sheet "${sheet}" not found` }) },
-						],
-						isError: true,
-					}
+					return errorResponse(`Sheet "${sheet}" not found`)
+				}
+				const data = {
+					name: handle.name,
+					rowCount: handle.rowCount,
+					colCount: handle.colCount,
+					usedRange: handle.usedRange(),
 				}
 				return {
-					content: [
-						{
-							type: 'text',
-							text: JSON.stringify({
-								name: handle.name,
-								rowCount: handle.rowCount,
-								colCount: handle.colCount,
-								usedRange: handle.usedRange(),
-							}),
-						},
-					],
+					...okResponse(data, `Inspected sheet "${sheet}"`),
 				}
 			}
-			return { content: [{ type: 'text', text: JSON.stringify(wb.inspect()) }] }
+			const data = wb.inspect()
+			return okResponse(data, `Inspected workbook "${file}"`)
 		},
 	)
 
@@ -59,22 +66,14 @@ export function createServer(): McpServer {
 			const wb = await Ascend.open(file)
 			const sheetName = sheet ?? wb.sheets[0]
 			if (!sheetName) {
-				return {
-					content: [{ type: 'text', text: JSON.stringify({ error: 'No sheets in workbook' }) }],
-					isError: true,
-				}
+				return errorResponse('No sheets in workbook')
 			}
 			const handle = wb.sheet(sheetName)
 			if (!handle) {
-				return {
-					content: [
-						{ type: 'text', text: JSON.stringify({ error: `Sheet "${sheetName}" not found` }) },
-					],
-					isError: true,
-				}
+				return errorResponse(`Sheet "${sheetName}" not found`)
 			}
 			const info = handle.range(range)
-			return { content: [{ type: 'text', text: JSON.stringify(info) }] }
+			return okResponse(info, `Read range ${range} from "${sheetName}"`)
 		},
 	)
 
@@ -92,7 +91,7 @@ export function createServer(): McpServer {
 				await wb.save(file)
 			}
 			return {
-				content: [{ type: 'text', text: JSON.stringify(result) }],
+				...okResponse(result, `Applied ${ops.length} operation(s)`),
 				isError: result.errors.length > 0,
 			}
 		},
@@ -108,7 +107,7 @@ export function createServer(): McpServer {
 			const wb = await Ascend.open(file)
 			const result = wb.recalc()
 			await wb.save(file)
-			return { content: [{ type: 'text', text: JSON.stringify(result) }] }
+			return okResponse(result, `Recalculated workbook "${file}"`)
 		},
 	)
 
@@ -121,7 +120,7 @@ export function createServer(): McpServer {
 		async ({ file }) => {
 			const wb = await Ascend.open(file)
 			const result = wb.check()
-			return { content: [{ type: 'text', text: JSON.stringify(result) }], isError: !result.valid }
+			return { ...okResponse(result, `Checked workbook "${file}"`), isError: !result.valid }
 		},
 	)
 
@@ -134,7 +133,7 @@ export function createServer(): McpServer {
 		async ({ file }) => {
 			const wb = await Ascend.open(file)
 			const result = wb.lint()
-			return { content: [{ type: 'text', text: JSON.stringify(result) }] }
+			return okResponse(result, `Linted workbook "${file}"`)
 		},
 	)
 
@@ -149,12 +148,9 @@ export function createServer(): McpServer {
 			const wb = await Ascend.open(file)
 			const result = wb.trace(cell)
 			if (!result) {
-				return {
-					content: [{ type: 'text', text: JSON.stringify({ error: `Cannot trace "${cell}"` }) }],
-					isError: true,
-				}
+				return errorResponse(`Cannot trace "${cell}"`)
 			}
-			return { content: [{ type: 'text', text: JSON.stringify(result) }] }
+			return okResponse(result, `Traced cell "${cell}"`)
 		},
 	)
 
@@ -168,7 +164,7 @@ export function createServer(): McpServer {
 		async ({ fileA, fileB }) => {
 			const [a, b] = await Promise.all([Ascend.open(fileA), Ascend.open(fileB)])
 			const result = a.diff(b)
-			return { content: [{ type: 'text', text: JSON.stringify(result) }] }
+			return okResponse(result, `Diffed "${fileA}" against "${fileB}"`)
 		},
 	)
 
@@ -184,7 +180,7 @@ export function createServer(): McpServer {
 			const wb = await Ascend.open(file)
 			const target = format ? `${output.replace(/\.[^.]+$/, '')}.${format}` : output
 			await wb.save(target)
-			return { content: [{ type: 'text', text: JSON.stringify({ exported: target }) }] }
+			return okResponse({ exported: target }, `Exported workbook to "${target}"`)
 		},
 	)
 

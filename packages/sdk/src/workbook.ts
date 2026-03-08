@@ -27,6 +27,7 @@ import type {
 	CheckResult,
 	LintResult,
 	LintWarning,
+	RangeWindowInfo,
 	RecalcResult,
 	TraceResult,
 	WorkbookInfo,
@@ -172,6 +173,14 @@ export class AscendWorkbook {
 		return this.sheet(sheetName)?.range(range)
 	}
 
+	readWindow(
+		sheetName: string,
+		range: string,
+		opts?: { rowOffset?: number; rowLimit?: number },
+	): RangeWindowInfo | undefined {
+		return this.sheet(sheetName)?.readWindow(range, opts)
+	}
+
 	*streamRange(
 		sheetName: string,
 		range: string,
@@ -179,6 +188,24 @@ export class AscendWorkbook {
 		const sheet = this.sheet(sheetName)
 		if (!sheet) return
 		yield* sheet.streamRange(range)
+	}
+
+	*streamWindows(
+		sheetName: string,
+		range: string,
+		opts?: { rowLimit?: number },
+	): Generator<RangeWindowInfo> {
+		let rowOffset = 0
+		while (true) {
+			const window = this.readWindow(sheetName, range, {
+				rowOffset,
+				...(opts?.rowLimit !== undefined ? { rowLimit: opts.rowLimit } : {}),
+			})
+			if (!window) return
+			yield window
+			if (!window.hasMore || window.nextRowOffset === undefined) return
+			rowOffset = window.nextRowOffset
+		}
 	}
 
 	table(name: string): TableHandle | undefined {

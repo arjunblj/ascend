@@ -9,6 +9,7 @@ export type {
 	LintWarning,
 	PreviewResult,
 	RangeInfo,
+	RangeWindowInfo,
 	RecalcResult,
 	SheetInfo,
 	TraceResult,

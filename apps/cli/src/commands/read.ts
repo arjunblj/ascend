@@ -27,15 +27,15 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 		return 1
 	}
 
-	const info = sheet.range(range)
+	const rowOffset = parseOptionalInt(flags.get('row-offset'))
+	const rowLimit = parseOptionalInt(flags.get('row-limit'))
+	const info = sheet.readWindow(range, {
+		...(rowOffset !== undefined ? { rowOffset } : {}),
+		...(rowLimit !== undefined ? { rowLimit } : {}),
+	})
 
 	if (flags.has('json')) {
-		const data = info.cells.map((c) => ({
-			ref: c.ref,
-			value: c.value,
-			formula: c.formula,
-		}))
-		console.log(jsonOut(data))
+		console.log(jsonOut(info))
 		return 0
 	}
 
@@ -52,5 +52,14 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 
 	const headers = Array.from({ length: info.colCount }, (_, i) => `Col${i + 1}`)
 	console.log(table(headers, grid))
+	if (info.hasMore) {
+		console.log(`\nMore rows available. Re-run with --row-offset ${info.nextRowOffset}.`)
+	}
 	return 0
+}
+
+function parseOptionalInt(value: string | undefined): number | undefined {
+	if (value === undefined || value === '') return undefined
+	const parsed = Number.parseInt(value, 10)
+	return Number.isNaN(parsed) ? undefined : parsed
 }

@@ -61,8 +61,10 @@ export function createServer(): McpServer {
 			file: z.string().describe('Path to workbook file'),
 			range: z.string().describe('Cell range (e.g. "A1:C10")'),
 			sheet: z.string().optional().describe('Sheet name (defaults to first sheet)'),
+			rowOffset: z.number().int().nonnegative().optional().describe('Row offset within the range'),
+			rowLimit: z.number().int().positive().optional().describe('Maximum rows to return'),
 		},
-		async ({ file, range, sheet }) => {
+		async ({ file, range, sheet, rowOffset, rowLimit }) => {
 			const wb = await Ascend.open(file)
 			const sheetName = sheet ?? wb.sheets[0]
 			if (!sheetName) {
@@ -72,7 +74,10 @@ export function createServer(): McpServer {
 			if (!handle) {
 				return errorResponse(`Sheet "${sheetName}" not found`)
 			}
-			const info = handle.range(range)
+			const info = handle.readWindow(range, {
+				...(rowOffset !== undefined ? { rowOffset } : {}),
+				...(rowLimit !== undefined ? { rowLimit } : {}),
+			})
 			return okResponse(info, `Read range ${range} from "${sheetName}"`)
 		},
 	)

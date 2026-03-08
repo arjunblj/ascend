@@ -34,6 +34,14 @@ export interface RangeInfo {
 	readonly colCount: number
 }
 
+export interface RangeWindowInfo extends RangeInfo {
+	readonly requestedRef: RangeRef
+	readonly rowOffset: number
+	readonly rowLimit: number
+	readonly hasMore: boolean
+	readonly nextRowOffset?: number
+}
+
 export interface PreviewResult {
 	readonly diff: WorkbookDiff
 	readonly sheetDiffs: readonly SheetDiff[]

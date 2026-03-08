@@ -90,6 +90,25 @@ describe('AscendWorkbook', () => {
 		expect(rows[1]?.map((cell) => cell.ref)).toEqual(['A2'])
 	})
 
+	test('sheet handle can read a windowed slice of a range', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'A2', value: 2 },
+					{ ref: 'A3', value: 3 },
+				],
+			},
+		])
+		const window = wb.sheet('Sheet1')?.readWindow('A1:A3', { rowOffset: 1, rowLimit: 1 })
+		expect(window?.cells.map((cell) => cell.ref)).toEqual(['A2'])
+		expect(window?.hasMore).toBe(true)
+		expect(window?.nextRowOffset).toBe(2)
+	})
+
 	test('sheet handle usedRange', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -135,6 +154,30 @@ describe('AscendWorkbook', () => {
 		expect(rows).toHaveLength(2)
 		expect(rows[0]?.[0]?.ref).toBe('A1')
 		expect(rows[1]?.[0]?.ref).toBe('A2')
+	})
+
+	test('workbook readWindow and streamWindows helpers paginate rows', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'x' },
+					{ ref: 'A2', value: 'y' },
+					{ ref: 'A3', value: 'z' },
+				],
+			},
+		])
+
+		const window = wb.readWindow('Sheet1', 'A1:A3', { rowLimit: 2 })
+		expect(window?.cells.map((cell) => cell.ref)).toEqual(['A1', 'A2'])
+		expect(window?.hasMore).toBe(true)
+
+		const windows = [...wb.streamWindows('Sheet1', 'A1:A3', { rowLimit: 2 })]
+		expect(windows).toHaveLength(2)
+		expect(windows[0]?.cells.map((cell) => cell.ref)).toEqual(['A1', 'A2'])
+		expect(windows[1]?.cells.map((cell) => cell.ref)).toEqual(['A3'])
 	})
 
 	test('apply operations modifies workbook', () => {

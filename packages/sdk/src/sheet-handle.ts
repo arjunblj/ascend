@@ -63,6 +63,25 @@ export class SheetHandle {
 		}
 	}
 
+	*streamRange(rangeRef: string): Generator<readonly CellInfo[]> {
+		const parsed = parseRange(rangeRef)
+		for (let r = parsed.start.row; r <= parsed.end.row; r++) {
+			const row: CellInfo[] = []
+			for (let c = parsed.start.col; c <= parsed.end.col; c++) {
+				const cell = this.sheet.cells.get(r, c)
+				if (!cell) continue
+				row.push({
+					ref: toA1({ row: r, col: c }),
+					value: cell.value,
+					formula: cell.formula,
+					row: r,
+					col: c,
+				})
+			}
+			yield row
+		}
+	}
+
 	usedRange(): RangeRef | null {
 		return this.sheet.cells.usedRange()
 	}

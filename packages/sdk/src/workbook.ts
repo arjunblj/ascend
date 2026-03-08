@@ -168,6 +168,19 @@ export class AscendWorkbook {
 		return s ? new SheetHandle(s) : undefined
 	}
 
+	readRange(sheetName: string, range: string): import('./types.ts').RangeInfo | undefined {
+		return this.sheet(sheetName)?.range(range)
+	}
+
+	*streamRange(
+		sheetName: string,
+		range: string,
+	): Generator<readonly import('./types.ts').CellInfo[]> {
+		const sheet = this.sheet(sheetName)
+		if (!sheet) return
+		yield* sheet.streamRange(range)
+	}
+
 	table(name: string): TableHandle | undefined {
 		for (const sheet of this.wb.sheets) {
 			for (const tbl of sheet.tables) {

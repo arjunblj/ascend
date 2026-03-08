@@ -71,6 +71,25 @@ describe('AscendWorkbook', () => {
 		expect(range.cells.length).toBe(3)
 	})
 
+	test('sheet handle streams range rows', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'B1', value: 2 },
+					{ ref: 'A2', value: 3 },
+				],
+			},
+		])
+		const rows = [...(wb.sheet('Sheet1')?.streamRange('A1:B2') ?? [])]
+		expect(rows).toHaveLength(2)
+		expect(rows[0]?.map((cell) => cell.ref)).toEqual(['A1', 'B1'])
+		expect(rows[1]?.map((cell) => cell.ref)).toEqual(['A2'])
+	})
+
 	test('sheet handle usedRange', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -94,6 +113,28 @@ describe('AscendWorkbook', () => {
 	test('sheet returns undefined for nonexistent sheet', () => {
 		const wb = AscendWorkbook.create()
 		expect(wb.sheet('Nope')).toBeUndefined()
+	})
+
+	test('workbook readRange and streamRange helpers delegate to sheet handles', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'x' },
+					{ ref: 'A2', value: 'y' },
+				],
+			},
+		])
+
+		const range = wb.readRange('Sheet1', 'A1:A2')
+		expect(range?.cells.length).toBe(2)
+
+		const rows = [...wb.streamRange('Sheet1', 'A1:A2')]
+		expect(rows).toHaveLength(2)
+		expect(rows[0]?.[0]?.ref).toBe('A1')
+		expect(rows[1]?.[0]?.ref).toBe('A2')
 	})
 
 	test('apply operations modifies workbook', () => {

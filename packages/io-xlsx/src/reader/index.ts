@@ -26,7 +26,7 @@ import { parseSheet } from './sheet.ts'
 import { parseStyles } from './styles.ts'
 import { parseTable } from './table.ts'
 import { parseWorkbookXml } from './workbook.ts'
-import { extractZip } from './zip.ts'
+import { extractZip, type ZipArchive } from './zip.ts'
 
 export interface ReadXlsxResult {
 	readonly workbook: Workbook
@@ -38,8 +38,6 @@ export interface ReadXlsxOptions {
 	readonly mode?: 'full' | 'metadata-only'
 	readonly sheets?: readonly string[]
 }
-
-const decoder = new TextDecoder('utf-8')
 
 interface FormulaFeatureSummary {
 	sharedFormulaSheets: string[]
@@ -55,22 +53,22 @@ export function readXlsx(
 		? new Set(options.sheets.map((name) => name.toLowerCase()))
 		: null
 
-	let parts: Map<string, Uint8Array>
+	let archive: ZipArchive
 	try {
-		parts = extractZip(bytes)
+		archive = extractZip(bytes)
 	} catch (e) {
 		return err(
 			ascendError('CORRUPT_FILE', `Invalid ZIP: ${e instanceof Error ? e.message : 'unknown'}`),
 		)
 	}
 
-	const contentTypesXml = readPart(parts, '[Content_Types].xml')
+	const contentTypesXml = readPart(archive, '[Content_Types].xml')
 	if (!contentTypesXml) {
 		return err(ascendError('CORRUPT_FILE', 'Missing [Content_Types].xml'))
 	}
 	const contentTypes = parseContentTypes(contentTypesXml)
 
-	const rootRelsXml = readPart(parts, '_rels/.rels')
+	const rootRelsXml = readPart(archive, '_rels/.rels')
 	if (!rootRelsXml) {
 		return err(ascendError('CORRUPT_FILE', 'Missing _rels/.rels'))
 	}
@@ -82,14 +80,14 @@ export function readXlsx(
 	}
 	const workbookPath = docRel.target.replace(/^\//, '')
 
-	const wbXml = readPart(parts, workbookPath)
+	const wbXml = readPart(archive, workbookPath)
 	if (!wbXml) {
 		return err(ascendError('CORRUPT_FILE', `Missing workbook: ${workbookPath}`))
 	}
 	const wbInfo = parseWorkbookXml(wbXml)
 
 	const wbRelsPath = getRelsPath(workbookPath)
-	const wbRelsXml = readPart(parts, wbRelsPath)
+	const wbRelsXml = readPart(archive, wbRelsPath)
 	const wbRels = wbRelsXml ? parseRelationships(wbRelsXml) : []
 	const relMap = new Map(wbRels.map((r) => [r.id, r]))
 
@@ -126,12 +124,9 @@ export function readXlsx(
 		if (!rel) continue
 
 		const sheetPath = resolvePath(workbookPath, rel.target)
-		const sheetXml = readPart(parts, sheetPath)
-		if (!sheetXml) continue
 		sheetPathToName.set(sheetPath, entry.name)
 		consumed.add(sheetPath)
 		consumed.add(getRelsPath(sheetPath))
-		recordFormulaFeatures(sheetXml, entry.name, formulaFeatures)
 
 		if (selectedSheets && !selectedSheets.has(entry.name.toLowerCase())) continue
 		sheetsToParse.push({ name: entry.name, path: sheetPath, state: entry.state })
@@ -143,24 +138,25 @@ export function readXlsx(
 			sheet.state = entry.state
 		}
 	} else {
-		const ssXml = ssPath ? readPart(parts, ssPath) : undefined
+		const ssXml = ssPath ? readPart(archive, ssPath) : undefined
 		const sharedStrings = ssXml ? parseSharedStrings(ssXml) : []
 
-		const stylesXml = stylesPath ? readPart(parts, stylesPath) : undefined
+		const stylesXml = stylesPath ? readPart(archive, stylesPath) : undefined
 		const parsedStyles = stylesXml
 			? parseStyles(stylesXml)
 			: { cellStyles: [{}], isDateFormat: [false] }
 		const styleIds = registerStyles(workbook, parsedStyles.cellStyles)
 
 		for (const entry of sheetsToParse) {
-			const sheetXml = readPart(parts, entry.path)
+			const sheetXml = readPart(archive, entry.path)
 			if (!sheetXml) continue
+			recordFormulaFeatures(sheetXml, entry.name, formulaFeatures)
 			const sheet = parseSheet(entry.name, sheetXml, {
 				sharedStrings,
 				styleIds,
 				isDateFormat: parsedStyles.isDateFormat,
 			})
-			attachTables(parts, entry.path, sheet)
+			attachTables(archive, entry.path, sheet)
 			sheet.state = entry.state
 			workbook.sheets.push(sheet)
 		}
@@ -179,7 +175,7 @@ export function readXlsx(
 
 	const report = buildReport(contentTypes, formulaFeatures, workbook)
 	const capsules = collectCapsules(
-		parts,
+		archive,
 		consumed,
 		contentTypes,
 		wbRels,
@@ -190,10 +186,8 @@ export function readXlsx(
 	return ok({ workbook, report, capsules })
 }
 
-function readPart(parts: Map<string, Uint8Array>, path: string): string | undefined {
-	const data = parts.get(path)
-	if (!data) return undefined
-	return decoder.decode(data)
+function readPart(archive: ZipArchive, path: string): string | undefined {
+	return archive.readText(path)
 }
 
 function registerStyles(workbook: Workbook, cellStyles: CellStyle[]): StyleId[] {
@@ -201,7 +195,7 @@ function registerStyles(workbook: Workbook, cellStyles: CellStyle[]): StyleId[] 
 }
 
 function collectCapsules(
-	parts: Map<string, Uint8Array>,
+	archive: ZipArchive,
 	consumed: Set<string>,
 	contentTypes: ContentTypes,
 	wbRels: Relationship[],
@@ -217,14 +211,15 @@ function collectCapsules(
 
 	const sheetRelByTarget = new Map<string, { sheetName: string; rel: Relationship }>()
 	for (const [sheetPath, sheetName] of sheetPathToName) {
-		const sheetRelsXml = readPart(parts, getRelsPath(sheetPath))
+		const sheetRelsXml = readPart(archive, getRelsPath(sheetPath))
 		if (!sheetRelsXml) continue
 		for (const rel of parseRelationships(sheetRelsXml)) {
 			sheetRelByTarget.set(resolvePath(sheetPath, rel.target), { sheetName, rel })
 		}
 	}
 
-	for (const [partPath, data] of parts) {
+	for (const entry of archive.entries()) {
+		const partPath = entry.path
 		if (consumed.has(partPath)) continue
 		if (partPath.endsWith('.rels')) continue
 		if (partPath.startsWith('_rels/')) continue
@@ -244,7 +239,7 @@ function collectCapsules(
 			relType = sheetRef.rel.type
 		}
 
-		const capsuleRelsXml = readPart(parts, getRelsPath(partPath))
+		const capsuleRelsXml = readPart(archive, getRelsPath(partPath))
 		const relationships = capsuleRelsXml
 			? parseRelationships(capsuleRelsXml).map((r) => ({
 					id: r.id,
@@ -257,7 +252,7 @@ function collectCapsules(
 			partPath,
 			contentType: ct,
 			relationships,
-			content: data,
+			content: archive.readBytes(partPath) ?? new Uint8Array(),
 			anchor,
 		}
 		if (relType) capsule.relType = relType
@@ -359,17 +354,17 @@ function buildReport(
 }
 
 function attachTables(
-	parts: Map<string, Uint8Array>,
+	archive: ZipArchive,
 	sheetPath: string,
 	sheet: Workbook['sheets'][number],
 ): void {
 	if (!sheet) return
-	const sheetRelsXml = readPart(parts, getRelsPath(sheetPath))
+	const sheetRelsXml = readPart(archive, getRelsPath(sheetPath))
 	if (!sheetRelsXml) return
 	const tableRels = parseRelationships(sheetRelsXml).filter((rel) => rel.type === REL_TABLE)
 	for (const rel of tableRels) {
 		const tablePath = resolvePath(sheetPath, rel.target)
-		const tableXml = readPart(parts, tablePath)
+		const tableXml = readPart(archive, tablePath)
 		if (!tableXml) continue
 		const table = parseTable(tableXml, sheet.id)
 		if (!table) continue

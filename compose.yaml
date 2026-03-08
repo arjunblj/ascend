@@ -1,0 +1,10 @@
+services:
+  dev:
+    build:
+      context: .
+      target: runtime
+    volumes:
+      - .:/app
+      - /app/node_modules
+    working_dir: /app
+    command: bun test --recursive --watch

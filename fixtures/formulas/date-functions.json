@@ -36,6 +36,66 @@
 			"setup": {},
 			"formula": "DATE(1900, 2, 29)",
 			"expected": { "kind": "number", "value": 61 }
+		},
+		{
+			"description": "DATEVALUE parses ISO text for a fake settlement date",
+			"setup": {},
+			"formula": "DATEVALUE(\"2024-01-15\")",
+			"expected": { "kind": "number", "value": 45306 }
+		},
+		{
+			"description": "DATEDIF returns leftover days between billing checkpoints",
+			"setup": {},
+			"formula": "DATEDIF(DATE(2024, 1, 15), DATE(2024, 3, 20), \"MD\")",
+			"expected": { "kind": "number", "value": 5 }
+		},
+		{
+			"description": "EOMONTH returns month end for a reporting period",
+			"setup": { "A1": 45306 },
+			"formula": "EOMONTH(A1, 0)",
+			"expected": { "kind": "number", "value": 45322 }
+		},
+		{
+			"description": "WEEKDAY with return type 2 makes Monday equal 1",
+			"setup": { "A1": 45306 },
+			"formula": "WEEKDAY(A1, 2)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "WEEKNUM reports the third week for mid-January 2024",
+			"setup": { "A1": 45306 },
+			"formula": "WEEKNUM(A1)",
+			"expected": { "kind": "number", "value": 3 }
+		},
+		{
+			"description": "NETWORKDAYS excludes a listed holiday from a finance work window",
+			"setup": { "A1": 45306, "A2": 45310, "C1": 45308 },
+			"formula": "NETWORKDAYS(A1, A2, C1:C1)",
+			"expected": { "kind": "number", "value": 4 }
+		},
+		{
+			"description": "WORKDAY skips weekends and one listed holiday",
+			"setup": { "A1": 45306, "A2": 3, "C1": 45308 },
+			"formula": "WORKDAY(A1, A2, C1:C1)",
+			"expected": { "kind": "number", "value": 45310 }
+		},
+		{
+			"description": "HOUR extracts noon from a half-day serial fraction",
+			"setup": { "A1": 0.5 },
+			"formula": "HOUR(A1)",
+			"expected": { "kind": "number", "value": 12 }
+		},
+		{
+			"description": "MINUTE extracts 15 minutes from a serial fraction",
+			"setup": { "A1": 1.0104166666666667 },
+			"formula": "MINUTE(A1)",
+			"expected": { "kind": "number", "value": 15 }
+		},
+		{
+			"description": "SECOND extracts 45 seconds from a serial fraction",
+			"setup": { "A1": 1.0005208333333333 },
+			"formula": "SECOND(A1)",
+			"expected": { "kind": "number", "value": 45 }
 		}
 	]
 }

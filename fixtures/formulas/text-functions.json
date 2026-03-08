@@ -60,6 +60,66 @@
 			"setup": { "A1": "p", "A2": "Apple" },
 			"formula": "SEARCH(A1, A2)",
 			"expected": { "kind": "number", "value": 2 }
+		},
+		{
+			"description": "CONCAT flattens a compact range",
+			"setup": { "A1": "Q", "A2": 2, "A3": "-report" },
+			"formula": "CONCAT(A1:A3)",
+			"expected": { "kind": "string", "value": "Q2-report" }
+		},
+		{
+			"description": "TEXTJOIN ignores blank roster fields",
+			"setup": { "A1": "red", "A2": "", "A4": "blue" },
+			"formula": "TEXTJOIN(\" / \", TRUE, A1:A4)",
+			"expected": { "kind": "string", "value": "red / blue" }
+		},
+		{
+			"description": "PROPER normalizes mixed-case athlete names",
+			"setup": { "A1": "mILA santos" },
+			"formula": "PROPER(A1)",
+			"expected": { "kind": "string", "value": "Mila Santos" }
+		},
+		{
+			"description": "SUBSTITUTE replaces only the requested instance",
+			"setup": {},
+			"formula": "SUBSTITUTE(\"2026-Q1-Q1\", \"Q1\", \"Q2\", 2)",
+			"expected": { "kind": "string", "value": "2026-Q1-Q2" }
+		},
+		{
+			"description": "REPLACE swaps the middle segment of a team code",
+			"setup": { "A1": "EAST-2026" },
+			"formula": "REPLACE(A1, 6, 4, \"PLAY\")",
+			"expected": { "kind": "string", "value": "EAST-PLAY" }
+		},
+		{
+			"description": "TEXT formats percentages for a dashboard cell",
+			"setup": { "A1": 0.125 },
+			"formula": "TEXT(A1, \"0.0%\")",
+			"expected": { "kind": "string", "value": "12.5%" }
+		},
+		{
+			"description": "VALUE parses a currency string with commas",
+			"setup": { "A1": "$1,250.50" },
+			"formula": "VALUE(A1)",
+			"expected": { "kind": "number", "value": 1250.5 }
+		},
+		{
+			"description": "CHAR converts a code point to a letter",
+			"setup": { "A1": 65 },
+			"formula": "CHAR(A1)",
+			"expected": { "kind": "string", "value": "A" }
+		},
+		{
+			"description": "CODE returns the code point of the first character",
+			"setup": { "A1": "Zebra" },
+			"formula": "CODE(A1)",
+			"expected": { "kind": "number", "value": 90 }
+		},
+		{
+			"description": "REPT repeats a marker string for a fake chart bar",
+			"setup": { "A1": "*", "A2": 4 },
+			"formula": "REPT(A1, A2)",
+			"expected": { "kind": "string", "value": "****" }
 		}
 	]
 }

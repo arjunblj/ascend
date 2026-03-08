@@ -81,6 +81,55 @@
 			},
 			"formula": "VLOOKUP(25, A1:B3, 2, TRUE)",
 			"expected": { "kind": "string", "value": "medium" }
+		},
+		{
+			"description": "HLOOKUP exact match across the header row",
+			"setup": {
+				"A1": "Jan",
+				"B1": "Feb",
+				"C1": "Mar",
+				"A2": 10,
+				"B2": 20,
+				"C2": 30
+			},
+			"formula": "HLOOKUP(\"Mar\", A1:C2, 2, FALSE)",
+			"expected": { "kind": "number", "value": 30 }
+		},
+		{
+			"description": "ROWS returns the row dimension of a small stats range",
+			"setup": {
+				"A1": 1,
+				"B1": 2,
+				"C1": 3,
+				"A2": 4,
+				"B2": 5,
+				"C2": 6
+			},
+			"formula": "ROWS(A1:C2)",
+			"expected": { "kind": "number", "value": 2 }
+		},
+		{
+			"description": "COLUMNS returns the column dimension of a small stats range",
+			"setup": {
+				"A1": 1,
+				"B1": 2,
+				"C1": 3,
+				"A2": 4,
+				"B2": 5,
+				"C2": 6
+			},
+			"formula": "COLUMNS(A1:C2)",
+			"expected": { "kind": "number", "value": 3 }
+		},
+		{
+			"description": "MATCH supports wildcard matching in text lookups",
+			"setup": {
+				"A1": "North-East",
+				"A2": "South",
+				"A3": "North-West"
+			},
+			"formula": "MATCH(\"North*\", A1:A3, 0)",
+			"expected": { "kind": "number", "value": 1 }
 		}
 	]
 }

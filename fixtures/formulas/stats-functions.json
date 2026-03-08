@@ -42,6 +42,30 @@
 			"setup": { "A1": 1, "A2": 2, "A3": 3 },
 			"formula": "VAR(A1:A3)",
 			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "LARGE returns #NUM! when k exceeds the result set",
+			"setup": { "A1": 1, "A2": 2, "A3": 3 },
+			"formula": "LARGE(A1:A3, 5)",
+			"expected": { "kind": "error", "value": "#NUM!" }
+		},
+		{
+			"description": "RANK supports ascending order for race times",
+			"setup": { "A1": 10, "A2": 20, "A3": 30 },
+			"formula": "RANK(10, A1:A3, 1)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "PERCENTILE interpolates non-trivially across an even set",
+			"setup": { "A1": 1, "A2": 2, "A3": 3, "A4": 4 },
+			"formula": "PERCENTILE(A1:A4, 0.25)",
+			"expected": { "kind": "number", "value": 1.75 }
+		},
+		{
+			"description": "STDEV returns #DIV/0! for a single value",
+			"setup": { "A1": 5 },
+			"formula": "STDEV(A1)",
+			"expected": { "kind": "error", "value": "#DIV/0!" }
 		}
 	]
 }

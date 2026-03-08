@@ -48,6 +48,30 @@
 			"setup": { "A1": 85 },
 			"formula": "IF(A1>=90, \"A\", IF(A1>=80, \"B\", IF(A1>=70, \"C\", \"F\")))",
 			"expected": { "kind": "string", "value": "B" }
+		},
+		{
+			"description": "NOT flips a TRUE-like text value",
+			"setup": {},
+			"formula": "NOT(\"TRUE\")",
+			"expected": { "kind": "boolean", "value": false }
+		},
+		{
+			"description": "XOR returns FALSE when an even number of entries are true",
+			"setup": {},
+			"formula": "XOR(TRUE, FALSE, TRUE)",
+			"expected": { "kind": "boolean", "value": false }
+		},
+		{
+			"description": "IFNA catches #N/A from a missing lookup",
+			"setup": {},
+			"formula": "IFNA(NA(), \"missing\")",
+			"expected": { "kind": "string", "value": "missing" }
+		},
+		{
+			"description": "SWITCH matches strings case-insensitively",
+			"setup": {},
+			"formula": "SWITCH(\"b\", \"A\", 1, \"B\", 2, 99)",
+			"expected": { "kind": "number", "value": 2 }
 		}
 	]
 }

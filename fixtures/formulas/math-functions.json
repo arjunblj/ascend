@@ -66,6 +66,129 @@
 			"setup": { "A1": 10, "A2": 3 },
 			"formula": "MOD(A1, A2)",
 			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "SUMIFS totals settled east-region finance items",
+			"setup": {
+				"A1": 120,
+				"A2": 80,
+				"A3": 40,
+				"A4": 30,
+				"B1": "East",
+				"B2": "West",
+				"B3": "East",
+				"B4": "East",
+				"C1": "Settled",
+				"C2": "Settled",
+				"C3": "Open",
+				"C4": "Settled"
+			},
+			"formula": "SUMIFS(A1:A4, B1:B4, \"East\", C1:C4, \"Settled\")",
+			"expected": { "kind": "number", "value": 150 }
+		},
+		{
+			"description": "COUNTIFS counts athletes with 10+ points and an active flag",
+			"setup": {
+				"A1": 8,
+				"A2": 12,
+				"A3": 15,
+				"A4": 9,
+				"B1": true,
+				"B2": false,
+				"B3": true,
+				"B4": true
+			},
+			"formula": "COUNTIFS(A1:A4, \">=10\", B1:B4, TRUE)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "AVERAGEIF returns #DIV/0! when no invoices match the threshold",
+			"setup": { "A1": 100, "A2": 200, "A3": 300 },
+			"formula": "AVERAGEIF(A1:A3, \">500\")",
+			"expected": { "kind": "error", "value": "#DIV/0!" }
+		},
+		{
+			"description": "COUNTBLANK counts missing cells and empty strings",
+			"setup": { "A1": 1, "A3": "" },
+			"formula": "COUNTBLANK(A1:A3)",
+			"expected": { "kind": "number", "value": 2 }
+		},
+		{
+			"description": "SUMPRODUCT computes weighted score from two 2x2 ranges",
+			"setup": {
+				"A1": 1,
+				"B1": 3,
+				"A2": 2,
+				"B2": 4,
+				"C1": 5,
+				"D1": 7,
+				"C2": 6,
+				"D2": 8
+			},
+			"formula": "SUMPRODUCT(A1:B2, C1:D2)",
+			"expected": { "kind": "number", "value": 70 }
+		},
+		{
+			"description": "INT rounds negative values down",
+			"setup": { "A1": -2.3 },
+			"formula": "INT(A1)",
+			"expected": { "kind": "number", "value": -3 }
+		},
+		{
+			"description": "POWER raises a fake interest factor",
+			"setup": { "A1": 1.05, "A2": 2 },
+			"formula": "POWER(A1, A2)",
+			"expected": { "kind": "number", "value": 1.1025 }
+		},
+		{
+			"description": "SQRT computes square root of training load",
+			"setup": { "A1": 81 },
+			"formula": "SQRT(A1)",
+			"expected": { "kind": "number", "value": 9 }
+		},
+		{
+			"description": "LOG uses a custom base",
+			"setup": { "A1": 8, "A2": 2 },
+			"formula": "LOG(A1, A2)",
+			"expected": { "kind": "number", "value": 3 }
+		},
+		{
+			"description": "CEILING rounds fees up to the next quarter unit",
+			"setup": { "A1": 2.13, "A2": 0.25 },
+			"formula": "CEILING(A1, A2)",
+			"expected": { "kind": "number", "value": 2.25 }
+		},
+		{
+			"description": "FLOOR rounds ticket totals down to the prior quarter unit",
+			"setup": { "A1": 2.13, "A2": 0.25 },
+			"formula": "FLOOR(A1, A2)",
+			"expected": { "kind": "number", "value": 2 }
+		},
+		{
+			"description": "MINIFS finds the fastest legal sprint time",
+			"setup": {
+				"A1": 11.2,
+				"A2": 10.9,
+				"A3": 11.4,
+				"B1": "Legal",
+				"B2": "Legal",
+				"B3": "Wind"
+			},
+			"formula": "MINIFS(A1:A3, B1:B3, \"Legal\")",
+			"expected": { "kind": "number", "value": 10.9 }
+		},
+		{
+			"description": "MAXIFS finds the highest approved payout",
+			"setup": {
+				"A1": 240,
+				"A2": 180,
+				"A3": 300,
+				"B1": "Approved",
+				"B2": "Pending",
+				"B3": "Approved"
+			},
+			"formula": "MAXIFS(A1:A3, B1:B3, \"Approved\")",
+			"expected": { "kind": "number", "value": 300 }
 		}
 	]
 }

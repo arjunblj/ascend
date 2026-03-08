@@ -2,6 +2,7 @@ import type { RangeRef, Workbook } from '@ascend/core'
 import type { FormulaNode, FormulaRef } from '@ascend/formulas'
 import { extractRefs, functionRegistry, parseFormula } from '@ascend/formulas'
 import { type CellKey, cellKey, DependencyGraph } from './dep-graph.ts'
+import { resolveStructuredRefRange } from './structured-refs.ts'
 
 export interface AnalyzedFormula {
 	readonly key: CellKey
@@ -92,6 +93,15 @@ export function analyzeWorkbook(
 						for (let c = ref.start.col; c <= ref.end.col; c++) {
 							deps.push(cellKey(refSheetIndex, r, c))
 						}
+					}
+				}
+			}
+			for (const structuredRef of collectStructuredRefs(ast)) {
+				const resolved = resolveStructuredRefRange(workbook, structuredRef, sheetIndex, row, col)
+				if (!resolved) continue
+				for (let r = resolved.startRow; r <= resolved.endRow; r++) {
+					for (let c = resolved.startCol; c <= resolved.endCol; c++) {
+						deps.push(cellKey(resolved.sheetIndex, r, c))
 					}
 				}
 			}
@@ -193,6 +203,42 @@ function collectNameRefs(node: FormulaNode): Array<{ name: string; sheet?: strin
 	const result: Array<{ name: string; sheet?: string }> = []
 	walkNameRefs(node, result)
 	return result
+}
+
+function collectStructuredRefs(
+	node: FormulaNode,
+): Array<Extract<FormulaNode, { type: 'structuredRef' }>> {
+	const result: Array<Extract<FormulaNode, { type: 'structuredRef' }>> = []
+	walkStructuredRefs(node, result)
+	return result
+}
+
+function walkStructuredRefs(
+	node: FormulaNode,
+	result: Array<Extract<FormulaNode, { type: 'structuredRef' }>>,
+): void {
+	switch (node.type) {
+		case 'structuredRef':
+			result.push(node)
+			break
+		case 'binary':
+			walkStructuredRefs(node.left, result)
+			walkStructuredRefs(node.right, result)
+			break
+		case 'unary':
+			walkStructuredRefs(node.operand, result)
+			break
+		case 'function':
+			for (const arg of node.args) walkStructuredRefs(arg, result)
+			break
+		case 'array':
+			for (const row of node.rows) {
+				for (const cell of row) walkStructuredRefs(cell, result)
+			}
+			break
+		default:
+			break
+	}
 }
 
 function walkNameRefs(node: FormulaNode, result: Array<{ name: string; sheet?: string }>): void {

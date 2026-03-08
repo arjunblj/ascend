@@ -4,6 +4,7 @@ import { type EvalArg, functionRegistry, parseFormula, toNumber } from '@ascend/
 import type { CellValue } from '@ascend/schema'
 import { booleanValue, EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
 import type { CalcContext } from './calc-context.ts'
+import { resolveStructuredRefRange } from './structured-refs.ts'
 
 export interface EvalContext {
 	readonly workbook: Workbook
@@ -223,8 +224,26 @@ export function evaluate(node: FormulaNode, ctx: EvalContext): CellValue {
 			return EMPTY
 		}
 
-		case 'structuredRef':
-			return errorValue('#REF!')
+		case 'structuredRef': {
+			const resolved = resolveStructuredRefRange(
+				ctx.workbook,
+				node,
+				ctx.sheetIndex,
+				ctx.row,
+				ctx.col,
+			)
+			if (!resolved) return errorValue('#REF!')
+			const values = getRangeValues(
+				ctx.workbook,
+				resolved.sheetIndex,
+				resolved.startRow,
+				resolved.startCol,
+				resolved.endRow,
+				resolved.endCol,
+			)
+			const firstRow = values[0]
+			return firstRow?.[0] ?? EMPTY
+		}
 	}
 	return EMPTY
 }
@@ -296,6 +315,34 @@ function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
 		const resolved = resolveDefinedName(node.name, node.sheet, ctx)
 		if (!resolved) return { value: errorValue('#NAME?') }
 		return resolveArg(resolved.ast, resolved.ctx)
+	}
+
+	if (node.type === 'structuredRef') {
+		const resolved = resolveStructuredRefRange(ctx.workbook, node, ctx.sheetIndex, ctx.row, ctx.col)
+		if (!resolved) return { value: errorValue('#REF!') }
+		const values = getRangeValues(
+			ctx.workbook,
+			resolved.sheetIndex,
+			resolved.startRow,
+			resolved.startCol,
+			resolved.endRow,
+			resolved.endCol,
+		)
+		const firstRow = values[0]
+		const firstVal = firstRow ? (firstRow[0] ?? EMPTY) : EMPTY
+		return {
+			value: firstVal,
+			kind: 'range',
+			values,
+			ref: {
+				kind: 'range',
+				sheetIndex: resolved.sheetIndex,
+				row: resolved.startRow,
+				col: resolved.startCol,
+				endRow: resolved.endRow,
+				endCol: resolved.endCol,
+			},
+		}
 	}
 
 	const value = evaluate(node, ctx)

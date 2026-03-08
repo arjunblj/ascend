@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { StyleId } from '@ascend/core'
-import { createWorkbook } from '@ascend/core'
+import { createTableId, createWorkbook } from '@ascend/core'
 import { dateToSerial } from '@ascend/formulas'
 import { EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
 import { recalculate } from './calc.ts'
@@ -94,6 +94,59 @@ describe('recalculate', () => {
 		const result = recalculate(wb, makeCtx())
 		expect(result.errors).toEqual([])
 		expect(calc.cells.get(0, 0)?.value).toEqual(numberValue(30))
+	})
+
+	test('structured references can sum a table column', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Player'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Score'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('Mina'), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: stringValue('Noah'), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: numberValue(12), formula: null, styleId: sid })
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Scores',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } },
+			columns: [{ name: 'Player' }, { name: 'Score' }],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+		sheet.cells.set(4, 0, { value: EMPTY, formula: 'SUM(Scores[Score])', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(4, 0)?.value).toEqual(numberValue(22))
+	})
+
+	test('current-row structured references resolve within a table body', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Qty'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Price'), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: stringValue('Total'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(1, 2, { value: EMPTY, formula: '[@Qty]*[@Price]', styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(4), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: numberValue(5), formula: null, styleId: sid })
+		sheet.cells.set(2, 2, { value: EMPTY, formula: '[@Qty]*[@Price]', styleId: sid })
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 2 } },
+			columns: [{ name: 'Qty' }, { name: 'Price' }, { name: 'Total' }],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+
+		const result = recalculate(wb, makeCtx())
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(1, 2)?.value).toEqual(numberValue(6))
+		expect(sheet.cells.get(2, 2)?.value).toEqual(numberValue(20))
 	})
 
 	test('deterministic NOW via CalcContext', () => {

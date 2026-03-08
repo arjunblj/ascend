@@ -1,0 +1,71 @@
+{
+	"function": "arithmetic",
+	"cases": [
+		{
+			"description": "addition",
+			"setup": { "A1": 1, "A2": 2 },
+			"formula": "A1+A2",
+			"expected": { "kind": "number", "value": 3 }
+		},
+		{
+			"description": "subtraction",
+			"setup": { "A1": 10, "A2": 3 },
+			"formula": "A1-A2",
+			"expected": { "kind": "number", "value": 7 }
+		},
+		{
+			"description": "multiplication",
+			"setup": { "A1": 4, "A2": 5 },
+			"formula": "A1*A2",
+			"expected": { "kind": "number", "value": 20 }
+		},
+		{
+			"description": "division",
+			"setup": { "A1": 15, "A2": 3 },
+			"formula": "A1/A2",
+			"expected": { "kind": "number", "value": 5 }
+		},
+		{
+			"description": "operator precedence: 2+3*4 = 14",
+			"setup": {},
+			"formula": "2+3*4",
+			"expected": { "kind": "number", "value": 14 }
+		},
+		{
+			"description": "string concatenation with &",
+			"setup": { "A1": "Hello", "A2": " World" },
+			"formula": "A1&A2",
+			"expected": { "kind": "string", "value": "Hello World" }
+		},
+		{
+			"description": "percentage operator 50% = 0.5",
+			"setup": { "A1": 50 },
+			"formula": "A1%",
+			"expected": { "kind": "number", "value": 0.5 }
+		},
+		{
+			"description": "exponentiation",
+			"setup": { "A1": 2, "A2": 10 },
+			"formula": "A1^A2",
+			"expected": { "kind": "number", "value": 1024 }
+		},
+		{
+			"description": "division by zero returns #DIV/0!",
+			"setup": { "A1": 1, "A2": 0 },
+			"formula": "A1/A2",
+			"expected": { "kind": "error", "value": "#DIV/0!" }
+		},
+		{
+			"description": "comparison less than returns TRUE",
+			"setup": { "A1": 3, "A2": 5 },
+			"formula": "A1<A2",
+			"expected": { "kind": "boolean", "value": true }
+		},
+		{
+			"description": "comparison greater than returns FALSE",
+			"setup": { "A1": 3, "A2": 5 },
+			"formula": "A1>A2",
+			"expected": { "kind": "boolean", "value": false }
+		}
+	]
+}

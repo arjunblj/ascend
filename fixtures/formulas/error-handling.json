@@ -1,0 +1,41 @@
+{
+	"function": "error-handling",
+	"cases": [
+		{
+			"description": "error propagation through arithmetic",
+			"setup": { "A1": 1, "A2": 0, "A3": 5 },
+			"formula": "A1/A2+A3",
+			"expected": { "kind": "error", "value": "#DIV/0!" }
+		},
+		{
+			"description": "IFERROR replaces error with value",
+			"setup": { "A1": 1, "A2": 0 },
+			"formula": "IFERROR(A1/A2, 999)",
+			"expected": { "kind": "number", "value": 999 }
+		},
+		{
+			"description": "#VALUE! from type mismatch",
+			"setup": { "A1": "hello" },
+			"formula": "A1*2",
+			"expected": { "kind": "error", "value": "#VALUE!" }
+		},
+		{
+			"description": "#NAME? from unknown function",
+			"setup": {},
+			"formula": "NONEXISTENT(1)",
+			"expected": { "kind": "error", "value": "#NAME?" }
+		},
+		{
+			"description": "#REF! from invalid sheet reference",
+			"setup": {},
+			"formula": "MissingSheet!A1",
+			"expected": { "kind": "error", "value": "#REF!" }
+		},
+		{
+			"description": "IFERROR passes through non-error",
+			"setup": { "A1": 10, "A2": 2 },
+			"formula": "IFERROR(A1/A2, \"Error\")",
+			"expected": { "kind": "number", "value": 5 }
+		}
+	]
+}

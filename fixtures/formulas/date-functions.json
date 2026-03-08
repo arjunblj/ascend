@@ -1,0 +1,41 @@
+{
+	"function": "date",
+	"cases": [
+		{
+			"description": "DATE(2024,1,15) returns serial number",
+			"setup": {},
+			"formula": "DATE(2024, 1, 15)",
+			"expected": { "kind": "number", "value": 45306 }
+		},
+		{
+			"description": "YEAR extracts year from serial",
+			"setup": { "A1": 45306 },
+			"formula": "YEAR(A1)",
+			"expected": { "kind": "number", "value": 2024 }
+		},
+		{
+			"description": "MONTH extracts month",
+			"setup": { "A1": 45306 },
+			"formula": "MONTH(A1)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "DAY extracts day",
+			"setup": { "A1": 45306 },
+			"formula": "DAY(A1)",
+			"expected": { "kind": "number", "value": 15 }
+		},
+		{
+			"description": "EDATE adds months",
+			"setup": { "A1": 45306 },
+			"formula": "EDATE(A1, 3)",
+			"expected": { "kind": "number", "value": 45397 }
+		},
+		{
+			"description": "1900 leap year bug: DATE(1900,2,29) works",
+			"setup": {},
+			"formula": "DATE(1900, 2, 29)",
+			"expected": { "kind": "number", "value": 61 }
+		}
+	]
+}

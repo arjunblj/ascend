@@ -1,0 +1,15 @@
+{
+	"name": "@ascend/formula-conformance",
+	"private": true,
+	"version": "0.0.0",
+	"type": "module",
+	"dependencies": {
+		"@ascend/core": "workspace:*",
+		"@ascend/engine": "workspace:*",
+		"@ascend/formulas": "workspace:*",
+		"@ascend/schema": "workspace:*"
+	},
+	"scripts": {
+		"test": "bun test"
+	}
+}

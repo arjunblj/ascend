@@ -1,0 +1,53 @@
+{
+	"function": "logical",
+	"cases": [
+		{
+			"description": "IF true branch",
+			"setup": { "A1": true },
+			"formula": "IF(A1, \"yes\", \"no\")",
+			"expected": { "kind": "string", "value": "yes" }
+		},
+		{
+			"description": "IF false branch",
+			"setup": { "A1": false },
+			"formula": "IF(A1, \"yes\", \"no\")",
+			"expected": { "kind": "string", "value": "no" }
+		},
+		{
+			"description": "IFS multiple conditions - first match",
+			"setup": { "A1": 75 },
+			"formula": "IFS(A1>=90, \"A\", A1>=80, \"B\", A1>=70, \"C\", TRUE, \"F\")",
+			"expected": { "kind": "string", "value": "C" }
+		},
+		{
+			"description": "AND with all true",
+			"setup": { "A1": true, "A2": true },
+			"formula": "AND(A1, A2)",
+			"expected": { "kind": "boolean", "value": true }
+		},
+		{
+			"description": "AND with one false",
+			"setup": { "A1": true, "A2": false },
+			"formula": "AND(A1, A2)",
+			"expected": { "kind": "boolean", "value": false }
+		},
+		{
+			"description": "OR with one true",
+			"setup": { "A1": false, "A2": true },
+			"formula": "OR(A1, A2)",
+			"expected": { "kind": "boolean", "value": true }
+		},
+		{
+			"description": "IFERROR catches #DIV/0!",
+			"setup": { "A1": 1, "A2": 0 },
+			"formula": "IFERROR(A1/A2, \"Error\")",
+			"expected": { "kind": "string", "value": "Error" }
+		},
+		{
+			"description": "nested IF",
+			"setup": { "A1": 85 },
+			"formula": "IF(A1>=90, \"A\", IF(A1>=80, \"B\", IF(A1>=70, \"C\", \"F\")))",
+			"expected": { "kind": "string", "value": "B" }
+		}
+	]
+}

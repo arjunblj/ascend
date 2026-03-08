@@ -15,6 +15,7 @@
       "name": "@ascend/api",
       "version": "0.0.0",
       "dependencies": {
+        "@ascend/schema": "workspace:*",
         "@ascend/sdk": "workspace:*",
       },
     },
@@ -37,6 +38,16 @@
         "@ascend/sdk": "workspace:*",
         "@modelcontextprotocol/sdk": "^1.27.1",
         "zod": "^4.3.6",
+      },
+    },
+    "fixtures/formulas": {
+      "name": "@ascend/formula-conformance",
+      "version": "0.0.0",
+      "dependencies": {
+        "@ascend/core": "workspace:*",
+        "@ascend/engine": "workspace:*",
+        "@ascend/formulas": "workspace:*",
+        "@ascend/schema": "workspace:*",
       },
     },
     "packages/core": {
@@ -117,6 +128,8 @@
     "@ascend/core": ["@ascend/core@workspace:packages/core"],
 
     "@ascend/engine": ["@ascend/engine@workspace:packages/engine"],
+
+    "@ascend/formula-conformance": ["@ascend/formula-conformance@workspace:fixtures/formulas"],
 
     "@ascend/formulas": ["@ascend/formulas@workspace:packages/formulas"],
 

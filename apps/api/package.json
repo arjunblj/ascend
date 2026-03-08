@@ -5,6 +5,7 @@
 	"type": "module",
 	"main": "src/index.ts",
 	"dependencies": {
+		"@ascend/schema": "workspace:*",
 		"@ascend/sdk": "workspace:*"
 	},
 	"scripts": {

@@ -1,0 +1,65 @@
+{
+	"function": "text",
+	"cases": [
+		{
+			"description": "LEFT returns first n characters",
+			"setup": { "A1": "Hello" },
+			"formula": "LEFT(A1, 2)",
+			"expected": { "kind": "string", "value": "He" }
+		},
+		{
+			"description": "RIGHT returns last n characters",
+			"setup": { "A1": "Hello" },
+			"formula": "RIGHT(A1, 2)",
+			"expected": { "kind": "string", "value": "lo" }
+		},
+		{
+			"description": "MID returns substring from position",
+			"setup": { "A1": "Hello World" },
+			"formula": "MID(A1, 7, 5)",
+			"expected": { "kind": "string", "value": "World" }
+		},
+		{
+			"description": "LEN returns string length",
+			"setup": { "A1": "Hello" },
+			"formula": "LEN(A1)",
+			"expected": { "kind": "number", "value": 5 }
+		},
+		{
+			"description": "TRIM removes extra spaces",
+			"setup": { "A1": "  hello   world  " },
+			"formula": "TRIM(A1)",
+			"expected": { "kind": "string", "value": "hello world" }
+		},
+		{
+			"description": "UPPER converts to uppercase",
+			"setup": { "A1": "hello" },
+			"formula": "UPPER(A1)",
+			"expected": { "kind": "string", "value": "HELLO" }
+		},
+		{
+			"description": "LOWER converts to lowercase",
+			"setup": { "A1": "HELLO" },
+			"formula": "LOWER(A1)",
+			"expected": { "kind": "string", "value": "hello" }
+		},
+		{
+			"description": "CONCATENATE joins strings",
+			"setup": { "A1": "Hello", "A2": " ", "A3": "World" },
+			"formula": "CONCATENATE(A1, A2, A3)",
+			"expected": { "kind": "string", "value": "Hello World" }
+		},
+		{
+			"description": "FIND is case-sensitive - finds lowercase p at position 2",
+			"setup": { "A1": "p", "A2": "Apple" },
+			"formula": "FIND(A1, A2)",
+			"expected": { "kind": "number", "value": 2 }
+		},
+		{
+			"description": "SEARCH is case-insensitive - finds p in Apple at position 2",
+			"setup": { "A1": "p", "A2": "Apple" },
+			"formula": "SEARCH(A1, A2)",
+			"expected": { "kind": "number", "value": 2 }
+		}
+	]
+}

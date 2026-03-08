@@ -1,0 +1,86 @@
+{
+	"function": "lookup",
+	"cases": [
+		{
+			"description": "VLOOKUP exact match",
+			"setup": {
+				"A1": "apple",
+				"A2": "banana",
+				"A3": "cherry",
+				"B1": 10,
+				"B2": 20,
+				"B3": 30
+			},
+			"formula": "VLOOKUP(\"banana\", A1:B3, 2, FALSE)",
+			"expected": { "kind": "number", "value": 20 }
+		},
+		{
+			"description": "VLOOKUP not found returns #N/A",
+			"setup": {
+				"A1": "apple",
+				"A2": 10
+			},
+			"formula": "VLOOKUP(\"xyz\", A1:A2, 1, FALSE)",
+			"expected": { "kind": "error", "value": "#N/A" }
+		},
+		{
+			"description": "INDEX returns value at row,col",
+			"setup": {
+				"A1": 1,
+				"A2": 2,
+				"B1": 3,
+				"B2": 4
+			},
+			"formula": "INDEX(A1:B2, 2, 2)",
+			"expected": { "kind": "number", "value": 4 }
+		},
+		{
+			"description": "MATCH finds position",
+			"setup": {
+				"A1": "a",
+				"A2": "b",
+				"A3": "c"
+			},
+			"formula": "MATCH(\"b\", A1:A3, 0)",
+			"expected": { "kind": "number", "value": 2 }
+		},
+		{
+			"description": "INDEX/MATCH pattern",
+			"setup": {
+				"A1": "Jan",
+				"A2": "Feb",
+				"A3": "Mar",
+				"B1": 100,
+				"B2": 200,
+				"B3": 300
+			},
+			"formula": "INDEX(B1:B3, MATCH(\"Feb\", A1:A3, 0))",
+			"expected": { "kind": "number", "value": 200 }
+		},
+		{
+			"description": "CHOOSE returns nth argument",
+			"setup": { "A1": 2 },
+			"formula": "CHOOSE(A1, \"First\", \"Second\", \"Third\")",
+			"expected": { "kind": "string", "value": "Second" }
+		},
+		{
+			"description": "CHOOSE with numbers",
+			"setup": { "A1": 3 },
+			"formula": "CHOOSE(A1, 10, 20, 30, 40)",
+			"expected": { "kind": "number", "value": 30 }
+		},
+		{
+			"description": "VLOOKUP approximate match",
+			"setup": {
+				"A1": 10,
+				"A2": 20,
+				"A3": 30,
+				"B1": "small",
+				"B2": "medium",
+				"B3": "large"
+			},
+			"formula": "VLOOKUP(25, A1:B3, 2, TRUE)",
+			"expected": { "kind": "string", "value": "medium" }
+		}
+	]
+}

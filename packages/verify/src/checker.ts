@@ -1,7 +1,6 @@
 import type { Workbook } from '@ascend/core'
 import { indexToColumn, toA1 } from '@ascend/core'
-import { cellKey, DependencyGraph, parseCellKey } from '@ascend/engine'
-import { extractRefs, parseFormula } from '@ascend/formulas'
+import { analyzeWorkbook, parseCellKey } from '@ascend/engine'
 import { isError } from '@ascend/schema'
 
 export interface CheckResult {
@@ -18,26 +17,19 @@ export interface CheckIssue {
 
 function checkBrokenRefs(wb: Workbook): CheckIssue[] {
 	const issues: CheckIssue[] = []
-	const sheetNames = new Set(wb.sheets.map((s) => s.name.toLowerCase()))
+	const analysis = analyzeWorkbook(wb)
 
-	for (const sheet of wb.sheets) {
-		for (const [row, col, cell] of sheet.cells.iterate()) {
-			if (!cell.formula) continue
-			const parsed = parseFormula(cell.formula)
-			if (!parsed.ok) continue
-
-			const refs = extractRefs(parsed.value)
-			const cellAddr = `${sheet.name}!${toA1({ row, col })}`
-
-			for (const ref of refs) {
-				if (ref.sheet && !sheetNames.has(ref.sheet.toLowerCase())) {
-					issues.push({
-						rule: 'broken-refs',
-						severity: 'error',
-						message: `Reference to non-existent sheet "${ref.sheet}"`,
-						refs: [cellAddr],
-					})
-				}
+	for (const formula of analysis.formulas.values()) {
+		if (!formula.ast) continue
+		const cellAddr = `${formula.sheetName}!${toA1({ row: formula.row, col: formula.col })}`
+		for (const ref of formula.refs) {
+			if (ref.sheet && !analysis.sheetNameIndex.has(ref.sheet.toLowerCase())) {
+				issues.push({
+					rule: 'broken-refs',
+					severity: 'error',
+					message: `Reference to non-existent sheet "${ref.sheet}"`,
+					refs: [cellAddr],
+				})
 			}
 		}
 	}
@@ -46,41 +38,7 @@ function checkBrokenRefs(wb: Workbook): CheckIssue[] {
 }
 
 function checkCircularRefs(wb: Workbook): CheckIssue[] {
-	const graph = new DependencyGraph()
-
-	for (let si = 0; si < wb.sheets.length; si++) {
-		const sheet = wb.sheets[si]
-		if (!sheet) continue
-		for (const [row, col, cell] of sheet.cells.iterate()) {
-			if (!cell.formula) continue
-			const parsed = parseFormula(cell.formula)
-			if (!parsed.ok) continue
-
-			const refs = extractRefs(parsed.value)
-			const deps: string[] = []
-
-			for (const ref of refs) {
-				const targetSheet = ref.sheet
-					? wb.sheets.findIndex((s) => s.name.toLowerCase() === ref.sheet?.toLowerCase())
-					: si
-				if (targetSheet === -1) continue
-
-				if (ref.kind === 'cell') {
-					deps.push(cellKey(targetSheet, ref.ref.row, ref.ref.col))
-				} else {
-					for (let r = ref.start.row; r <= ref.end.row; r++) {
-						for (let c = ref.start.col; c <= ref.end.col; c++) {
-							deps.push(cellKey(targetSheet, r, c))
-						}
-					}
-				}
-			}
-
-			graph.addFormula(cellKey(si, row, col), deps, false)
-		}
-	}
-
-	const cycles = graph.detectCycles()
+	const cycles = analyzeWorkbook(wb).dependencyGraph.detectCycles()
 	return cycles.map((cycle) => {
 		const refs = cycle.map((key) => {
 			const [si, row, col] = parseCellKey(key)

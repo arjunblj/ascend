@@ -1,6 +1,5 @@
 import { parseA1, toA1, type Workbook } from '@ascend/core'
-import { cellKey, DependencyGraph, parseCellKey } from '@ascend/engine'
-import { extractRefs, parseFormula } from '@ascend/formulas'
+import { analyzeWorkbook, cellKey, parseCellKey } from '@ascend/engine'
 import { ascendError, type CellValue, EMPTY, err, ok, type Result } from '@ascend/schema'
 
 export interface TraceResult {
@@ -18,52 +17,6 @@ export interface TraceNode {
 	readonly formula: string | null
 	readonly value: CellValue
 	readonly depth: number
-}
-
-function buildGraph(wb: Workbook): DependencyGraph {
-	const graph = new DependencyGraph()
-
-	for (let si = 0; si < wb.sheets.length; si++) {
-		const sheet = wb.sheets[si]
-		if (!sheet) continue
-		for (const [row, col, cell] of sheet.cells.iterate()) {
-			if (!cell.formula) continue
-			const parsed = parseFormula(cell.formula)
-			if (!parsed.ok) continue
-
-			const refs = extractRefs(parsed.value)
-			const deps: string[] = []
-			let isVolatile = false
-
-			if (parsed.value.type === 'function') {
-				const name = parsed.value.name.toUpperCase()
-				if (name === 'NOW' || name === 'TODAY' || name === 'RAND' || name === 'RANDBETWEEN') {
-					isVolatile = true
-				}
-			}
-
-			for (const ref of refs) {
-				const targetSheet = ref.sheet
-					? wb.sheets.findIndex((s) => s.name.toLowerCase() === ref.sheet?.toLowerCase())
-					: si
-				if (targetSheet === -1) continue
-
-				if (ref.kind === 'cell') {
-					deps.push(cellKey(targetSheet, ref.ref.row, ref.ref.col))
-				} else {
-					for (let r = ref.start.row; r <= ref.end.row; r++) {
-						for (let c = ref.start.col; c <= ref.end.col; c++) {
-							deps.push(cellKey(targetSheet, r, c))
-						}
-					}
-				}
-			}
-
-			graph.addFormula(cellKey(si, row, col), deps, isVolatile)
-		}
-	}
-
-	return graph
 }
 
 function resolveCell(
@@ -107,7 +60,7 @@ export function trace(
 	const formula = cell?.formula ?? null
 	const value = cell?.value ?? EMPTY
 
-	const graph = buildGraph(workbook)
+	const graph = analyzeWorkbook(workbook).dependencyGraph
 	const targetKey = cellKey(sheetIndex, cellRef.row, cellRef.col)
 
 	const precedents: TraceNode[] = []

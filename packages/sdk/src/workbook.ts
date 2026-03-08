@@ -3,7 +3,6 @@ import { createWorkbook, parseRange, type RangeRef, type Workbook } from '@ascen
 import {
 	applyOperations,
 	type CalcContext,
-	cellKey,
 	createSnapshot,
 	defaultCalcContext,
 	diffWorkbooks,
@@ -11,7 +10,6 @@ import {
 	type WorkbookDiff,
 	type WorkbookSnapshot,
 } from '@ascend/engine'
-import { extractRefs, parseFormula } from '@ascend/formulas'
 import { readCsv, writeCsv } from '@ascend/io-csv'
 import { type PreservationCapsule, readXlsx, writeXlsx } from '@ascend/io-xlsx'
 import {
@@ -20,6 +18,7 @@ import {
 	emptyReport,
 	type Operation,
 } from '@ascend/schema'
+import { check as verifyCheck, lint as verifyLint, trace as verifyTrace } from '@ascend/verify'
 import { SheetHandle } from './sheet-handle.ts'
 import { TableHandle } from './table-handle.ts'
 import type {
@@ -238,152 +237,41 @@ export class AscendWorkbook {
 	// --- Verification ---
 
 	check(): CheckResult {
-		const issues: CheckIssue[] = []
-		const sheetNames = new Set<string>()
-
-		for (const sheet of this.wb.sheets) {
-			if (sheetNames.has(sheet.name)) {
-				issues.push({ severity: 'error', message: `Duplicate sheet name: "${sheet.name}"` })
-			}
-			sheetNames.add(sheet.name)
-
-			for (const [row, col, cell] of sheet.cells.iterate()) {
-				if (cell.formula) {
-					const parsed = parseFormula(cell.formula)
-					if (!parsed.ok) {
-						const ref = `${sheet.name}!${colLabel(col)}${row + 1}`
-						issues.push({
-							severity: 'error',
-							message: `Invalid formula in ${ref}: ${cell.formula}`,
-							ref,
-						})
+		const result = verifyCheck(this.wb)
+		const issues: CheckIssue[] = result.issues.map((issue) =>
+			issue.refs?.[0]
+				? {
+						severity: issue.severity === 'info' ? 'warning' : issue.severity,
+						message: issue.message,
+						ref: issue.refs[0],
 					}
-				}
-			}
-		}
-
-		if (this.wb.sheets.length === 0) {
-			issues.push({ severity: 'warning', message: 'Workbook has no sheets' })
-		}
-
-		return { valid: issues.filter((i) => i.severity === 'error').length === 0, issues }
+				: {
+						severity: issue.severity === 'info' ? 'warning' : issue.severity,
+						message: issue.message,
+					},
+		)
+		return { valid: result.passed, issues }
 	}
 
 	lint(): LintResult {
-		const warnings: LintWarning[] = []
-		const volatileFns = new Set(['NOW', 'TODAY', 'RAND', 'RANDBETWEEN', 'OFFSET', 'INDIRECT'])
-
-		for (const sheet of this.wb.sheets) {
-			for (const [row, col, cell] of sheet.cells.iterate()) {
-				if (!cell.formula) continue
-				const ref = `${sheet.name}!${colLabel(col)}${row + 1}`
-
-				const parsed = parseFormula(cell.formula)
-				if (!parsed.ok) {
-					warnings.push({
-						rule: 'parse-error',
-						message: `Unparseable formula: ${cell.formula}`,
-						ref,
-					})
-					continue
-				}
-
-				const volatiles = findVolatileCalls(parsed.value, volatileFns)
-				for (const fn of volatiles) {
-					warnings.push({
-						rule: 'volatile-function',
-						message: `Uses volatile function ${fn}()`,
-						ref,
-					})
-				}
-
-				if (cell.value.kind === 'error') {
-					warnings.push({
-						rule: 'error-value',
-						message: `Cell contains error: ${cell.value.value}`,
-						ref,
-					})
-				}
-			}
-		}
-
+		const result = verifyLint(this.wb)
+		const warnings: LintWarning[] = result.violations.map((violation) => ({
+			rule: violation.rule,
+			message: violation.message,
+			ref: violation.ref,
+		}))
 		return { clean: warnings.length === 0, warnings }
 	}
 
 	trace(cellRef: string): TraceResult | undefined {
-		const { sheetName, row, col } = parseFullRef(cellRef, this.wb)
-		const sheet = this.wb.getSheet(sheetName)
-		if (!sheet) return undefined
-
-		const cell = sheet.cells.get(row, col)
-		const dependsOn: string[] = []
-		const feedsInto: string[] = []
-
-		if (cell?.formula) {
-			const parsed = parseFormula(cell.formula)
-			if (parsed.ok) {
-				const refs = extractRefs(parsed.value)
-				for (const ref of refs) {
-					if (ref.kind === 'cell') {
-						const refSheet = ref.sheet ?? sheetName
-						dependsOn.push(`${refSheet}!${colLabel(ref.ref.col)}${ref.ref.row + 1}`)
-					} else {
-						const refSheet = ref.sheet ?? sheetName
-						const start = `${colLabel(ref.start.col)}${ref.start.row + 1}`
-						const end = `${colLabel(ref.end.col)}${ref.end.row + 1}`
-						dependsOn.push(`${refSheet}!${start}:${end}`)
-					}
-				}
-			}
-		}
-
-		const sheetIndex = this.wb.sheets.findIndex((s) => s.name === sheetName)
-		if (sheetIndex >= 0) {
-			const targetKey = cellKey(sheetIndex, row, col)
-			for (let si = 0; si < this.wb.sheets.length; si++) {
-				const s = this.wb.sheets[si]
-				if (!s) continue
-				for (const [r, c, otherCell] of s.cells.iterate()) {
-					if (!otherCell.formula) continue
-					const parsed = parseFormula(otherCell.formula)
-					if (!parsed.ok) continue
-					const refs = extractRefs(parsed.value)
-					for (const ref of refs) {
-						if (ref.kind === 'cell') {
-							const refSi = ref.sheet
-								? this.wb.sheets.findIndex(
-										(ws) => ws.name.toLowerCase() === ref.sheet?.toLowerCase(),
-									)
-								: si
-							if (refSi >= 0 && cellKey(refSi, ref.ref.row, ref.ref.col) === targetKey) {
-								feedsInto.push(`${s.name}!${colLabel(c)}${r + 1}`)
-							}
-						} else {
-							const refSi = ref.sheet
-								? this.wb.sheets.findIndex(
-										(ws) => ws.name.toLowerCase() === ref.sheet?.toLowerCase(),
-									)
-								: si
-							if (refSi !== sheetIndex) continue
-							if (
-								row >= ref.start.row &&
-								row <= ref.end.row &&
-								col >= ref.start.col &&
-								col <= ref.end.col
-							) {
-								feedsInto.push(`${s.name}!${colLabel(c)}${r + 1}`)
-							}
-						}
-					}
-				}
-			}
-		}
-
+		const { sheetName, ref } = parseFullRef(cellRef, this.wb)
+		const result = verifyTrace(this.wb, sheetName, ref)
+		if (!result.ok) return undefined
 		return {
-			ref: cellRef,
-			formula: cell?.formula ?? null,
-			dependsOn,
-			feedsInto,
+			ref: `${sheetName}!${ref}`,
+			formula: result.value.formula,
+			dependsOn: result.value.precedents.map((node) => `${node.sheet}!${node.ref}`),
+			feedsInto: result.value.dependents.map((node) => `${node.sheet}!${node.ref}`),
 		}
 	}
 
@@ -449,58 +337,13 @@ export class AscendWorkbook {
 	}
 }
 
-// --- Helpers ---
-
-import { indexToColumn } from '@ascend/core'
-import type { FormulaNode } from '@ascend/formulas'
-
-function colLabel(col: number): string {
-	return indexToColumn(col)
-}
-
-function parseFullRef(
-	cellRef: string,
-	workbook: Workbook,
-): { sheetName: string; row: number; col: number } {
+function parseFullRef(cellRef: string, workbook: Workbook): { sheetName: string; ref: string } {
 	const bang = cellRef.indexOf('!')
 	if (bang !== -1) {
 		const sheetName = cellRef.substring(0, bang).replace(/^'|'$/g, '')
-		const parsed = parseRange(cellRef.substring(bang + 1))
-		return { sheetName, row: parsed.start.row, col: parsed.start.col }
+		return { sheetName, ref: cellRef.substring(bang + 1) }
 	}
 	const firstSheet = workbook.sheets[0]
 	const sheetName = firstSheet ? firstSheet.name : 'Sheet1'
-	const parsed = parseRange(cellRef)
-	return { sheetName, row: parsed.start.row, col: parsed.start.col }
-}
-
-function findVolatileCalls(node: FormulaNode, volatileFns: Set<string>): string[] {
-	const found: string[] = []
-	walkAst(node, (n) => {
-		if (n.type === 'function' && volatileFns.has(n.name.toUpperCase())) {
-			found.push(n.name.toUpperCase())
-		}
-	})
-	return found
-}
-
-function walkAst(node: FormulaNode, visitor: (n: FormulaNode) => void): void {
-	visitor(node)
-	switch (node.type) {
-		case 'binary':
-			walkAst(node.left, visitor)
-			walkAst(node.right, visitor)
-			break
-		case 'unary':
-			walkAst(node.operand, visitor)
-			break
-		case 'function':
-			for (const arg of node.args) walkAst(arg, visitor)
-			break
-		case 'array':
-			for (const row of node.rows) {
-				for (const cell of row) walkAst(cell, visitor)
-			}
-			break
-	}
+	return { sheetName, ref: cellRef }
 }

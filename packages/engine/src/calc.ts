@@ -1,76 +1,16 @@
 import { indexToColumn, type RangeRef, type StyleId, type Workbook } from '@ascend/core'
 import type { FormulaNode } from '@ascend/formulas'
-import { extractRefs, functionRegistry, parseFormula } from '@ascend/formulas'
 import type { AscendError, CellValue } from '@ascend/schema'
 import { EMPTY, errorValue } from '@ascend/schema'
+import { analyzeWorkbook } from './analysis.ts'
 import type { CalcContext } from './calc-context.ts'
-import { cellKey, DependencyGraph, parseCellKey } from './dep-graph.ts'
+import { type DependencyGraph, parseCellKey } from './dep-graph.ts'
 import { type EvalContext, evaluate } from './evaluator.ts'
 
 export interface RecalcResult {
 	readonly changed: string[]
 	readonly errors: Array<{ ref: string; error: AscendError }>
 	readonly duration: number
-}
-
-interface ParsedFormula {
-	readonly ast: FormulaNode
-	readonly volatile: boolean
-	readonly deps: string[]
-}
-
-function parseAndAnalyze(formula: string, sheetIndex: number, wb: Workbook): ParsedFormula | null {
-	const result = parseFormula(formula)
-	if (!result.ok) return null
-
-	const ast = result.value
-	const refs = extractRefs(ast)
-	const deps: string[] = []
-	let volatile = false
-
-	if (ast.type === 'function') {
-		const fn = functionRegistry.get(ast.name.toUpperCase())
-		if (fn?.volatile) volatile = true
-	}
-	checkVolatile(ast, (v) => {
-		volatile = volatile || v
-	})
-
-	for (const ref of refs) {
-		if (ref.kind === 'cell') {
-			const si = resolveSheetIdx(wb, ref.sheet, sheetIndex)
-			if (si >= 0) deps.push(cellKey(si, ref.ref.row, ref.ref.col))
-		} else {
-			const si = resolveSheetIdx(wb, ref.sheet, sheetIndex)
-			if (si >= 0) {
-				for (let r = ref.start.row; r <= ref.end.row; r++) {
-					for (let c = ref.start.col; c <= ref.end.col; c++) {
-						deps.push(cellKey(si, r, c))
-					}
-				}
-			}
-		}
-	}
-
-	return { ast, volatile, deps }
-}
-
-function checkVolatile(node: FormulaNode, cb: (v: boolean) => void): void {
-	if (node.type === 'function') {
-		const fn = functionRegistry.get(node.name.toUpperCase())
-		if (fn?.volatile) cb(true)
-		for (const arg of node.args) checkVolatile(arg, cb)
-	} else if (node.type === 'binary') {
-		checkVolatile(node.left, cb)
-		checkVolatile(node.right, cb)
-	} else if (node.type === 'unary') {
-		checkVolatile(node.operand, cb)
-	}
-}
-
-function resolveSheetIdx(wb: Workbook, sheetName: string | undefined, fallback: number): number {
-	if (sheetName === undefined) return fallback
-	return wb.sheets.findIndex((s) => s.name.toLowerCase() === sheetName.toLowerCase())
 }
 
 function valuesEqual(a: CellValue, b: CellValue): boolean {
@@ -105,50 +45,26 @@ export function recalculate(
 	opts?: { dirtyOnly?: boolean; range?: RangeRef },
 ): RecalcResult {
 	const start = performance.now()
-	const graph = new DependencyGraph()
 	const asts = new Map<string, FormulaNode>()
 	const changed: string[] = []
 	const errors: Array<{ ref: string; error: AscendError }> = []
 
-	for (let si = 0; si < workbook.sheets.length; si++) {
-		const sheet = workbook.sheets[si]
-		if (!sheet) continue
-		for (const [row, col, cell] of sheet.cells.iterate()) {
-			if (!cell.formula) continue
+	const analysis = analyzeWorkbook(workbook, opts?.range ? { range: opts.range } : undefined)
+	const graph = analysis.dependencyGraph
 
-			if (opts?.range) {
-				if (
-					opts.range.sheet !== undefined &&
-					opts.range.sheet.toLowerCase() !== sheet.name.toLowerCase()
-				) {
-					continue
-				}
-				if (
-					row < opts.range.start.row ||
-					row > opts.range.end.row ||
-					col < opts.range.start.col ||
-					col > opts.range.end.col
-				) {
-					continue
-				}
-			}
-
-			const key = cellKey(si, row, col)
-			const parsed = parseAndAnalyze(cell.formula, si, workbook)
-			if (parsed) {
-				graph.addFormula(key, parsed.deps, parsed.volatile)
-				asts.set(key, parsed.ast)
-			} else {
-				errors.push({
-					ref: cellRefString(workbook, si, row, col),
-					error: {
-						code: 'FORMULA_PARSE_ERROR',
-						message: `Failed to parse: ${cell.formula}`,
-						retryable: false,
-					},
-				})
-			}
+	for (const analyzed of analysis.formulas.values()) {
+		if (analyzed.parseError || !analyzed.ast) {
+			errors.push({
+				ref: cellRefString(workbook, analyzed.sheetIndex, analyzed.row, analyzed.col),
+				error: {
+					code: 'FORMULA_PARSE_ERROR',
+					message: `Failed to parse: ${analyzed.formula}`,
+					retryable: false,
+				},
+			})
+			continue
 		}
+		asts.set(analyzed.key, analyzed.ast)
 	}
 
 	let evalOrder: string[]

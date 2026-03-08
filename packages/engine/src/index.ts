@@ -1,5 +1,12 @@
+export {
+	type AnalyzedFormula,
+	type AnalyzeWorkbookOptions,
+	analyzeWorkbook,
+	createSheetNameIndex,
+	resolveSheetIndex,
+	type WorkbookAnalysis,
+} from './analysis.ts'
 export { type RecalcResult, recalculate } from './calc.ts'
-
 export { type CalcContext, defaultCalcContext } from './calc-context.ts'
 export {
 	type CellKey,

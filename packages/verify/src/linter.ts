@@ -1,7 +1,8 @@
 import type { Workbook } from '@ascend/core'
 import { toA1 } from '@ascend/core'
+import { analyzeWorkbook } from '@ascend/engine'
 import type { FormulaNode } from '@ascend/formulas'
-import { functionRegistry, parseFormula } from '@ascend/formulas'
+import { functionRegistry } from '@ascend/formulas'
 
 export interface LintResult {
 	readonly violations: readonly LintViolation[]
@@ -103,17 +104,27 @@ function findFragileRefs(node: FormulaNode): boolean {
 
 export function lint(workbook: Workbook): LintResult {
 	const violations: LintViolation[] = []
+	const analysis = analyzeWorkbook(workbook)
 
 	for (const sheet of workbook.sheets) {
 		let sheetVolatileCount = 0
 		const volatileCells: string[] = []
 
-		for (const [row, col, cell] of sheet.cells.iterate()) {
-			if (!cell.formula) continue
-			const parsed = parseFormula(cell.formula)
-			if (!parsed.ok) continue
-			const ast = parsed.value
-			const ref = `${sheet.name}!${toA1({ row, col })}`
+		for (const formula of analysis.formulas.values()) {
+			const ref = `${sheet.name}!${toA1({ row: formula.row, col: formula.col })}`
+			if (formula.sheetName !== sheet.name) continue
+			if (!formula.ast) {
+				violations.push({
+					rule: 'parse-error',
+					severity: 'warning',
+					message: `Unparseable formula: ${formula.formula}`,
+					ref,
+					formula: formula.formula,
+				})
+				continue
+			}
+
+			const ast = formula.ast
 
 			const vc = countVolatileCalls(ast)
 			if (vc > 0) {
@@ -128,7 +139,7 @@ export function lint(workbook: Workbook): LintResult {
 					severity: 'info',
 					message: `Formula contains magic number(s): ${magic.join(', ')}`,
 					ref,
-					formula: cell.formula,
+					formula: formula.formula,
 				})
 			}
 
@@ -138,7 +149,7 @@ export function lint(workbook: Workbook): LintResult {
 					severity: 'warning',
 					message: 'Non-absolute reference spanning a large range',
 					ref,
-					formula: cell.formula,
+					formula: formula.formula,
 				})
 			}
 		}

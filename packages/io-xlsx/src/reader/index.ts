@@ -17,12 +17,14 @@ import {
 	REL_OFFICE_DOC,
 	REL_SHARED_STRINGS,
 	REL_STYLES,
+	REL_TABLE,
 	type Relationship,
 	resolvePath,
 } from './relationships.ts'
 import { parseSharedStrings } from './shared-strings.ts'
 import { parseSheet } from './sheet.ts'
 import { parseStyles } from './styles.ts'
+import { parseTable } from './table.ts'
 import { parseWorkbookXml } from './workbook.ts'
 import { extractZip } from './zip.ts'
 
@@ -158,6 +160,7 @@ export function readXlsx(
 				styleIds,
 				isDateFormat: parsedStyles.isDateFormat,
 			})
+			attachTables(parts, entry.path, sheet)
 			sheet.state = entry.state
 			workbook.sheets.push(sheet)
 		}
@@ -167,7 +170,7 @@ export function readXlsx(
 		workbook.definedNames.set(dn.name, dn.formula)
 	}
 
-	const report = buildReport(contentTypes, formulaFeatures)
+	const report = buildReport(contentTypes, formulaFeatures, workbook)
 	const capsules = collectCapsules(
 		parts,
 		consumed,
@@ -271,6 +274,7 @@ function buildReport(
 		overrides: ReadonlyMap<string, string>
 	},
 	formulaFeatures: FormulaFeatureSummary,
+	workbook: Workbook,
 ): CompatibilityReport {
 	const features: FeatureReport[] = []
 
@@ -316,6 +320,19 @@ function buildReport(
 		})
 	}
 
+	const tableLocations = workbook.sheets
+		.filter((sheet) => sheet.tables.length > 0)
+		.map((sheet) => sheet.name)
+	if (tableLocations.length > 0) {
+		features.push({
+			feature: 'table',
+			tier: 'normalized',
+			count: tableLocations.length,
+			locations: tableLocations,
+			note: 'Tables are imported for read access, but full round-trip table semantics are not complete.',
+		})
+	}
+
 	if (features.length === 0) return emptyReport('xlsx')
 
 	const summary = { exact: 0, normalized: 0, preserved: 0, unsupported: 0 }
@@ -331,6 +348,25 @@ function buildReport(
 		features,
 		summary,
 		sourceFormat: 'xlsx',
+	}
+}
+
+function attachTables(
+	parts: Map<string, Uint8Array>,
+	sheetPath: string,
+	sheet: Workbook['sheets'][number],
+): void {
+	if (!sheet) return
+	const sheetRelsXml = readPart(parts, getRelsPath(sheetPath))
+	if (!sheetRelsXml) return
+	const tableRels = parseRelationships(sheetRelsXml).filter((rel) => rel.type === REL_TABLE)
+	for (const rel of tableRels) {
+		const tablePath = resolvePath(sheetPath, rel.target)
+		const tableXml = readPart(parts, tablePath)
+		if (!tableXml) continue
+		const table = parseTable(tableXml, sheet.id)
+		if (!table) continue
+		sheet.tables.push(table)
 	}
 }
 

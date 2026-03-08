@@ -14,6 +14,7 @@ export const REL_STYLES =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles'
 export const REL_SHARED_STRINGS =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings'
+export const REL_TABLE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/table'
 
 export function parseRelationships(xml: string): Relationship[] {
 	const doc = parseXml(xml)
@@ -41,6 +42,16 @@ export function getRelsPath(partPath: string): string {
 
 export function resolvePath(basePart: string, target: string): string {
 	if (target.startsWith('/')) return target.substring(1)
-	const dir = basePart.substring(0, basePart.lastIndexOf('/') + 1)
-	return dir + target
+	const baseDir = basePart.substring(0, basePart.lastIndexOf('/') + 1)
+	const segments = [...baseDir.split('/').filter(Boolean), ...target.split('/')]
+	const resolved: string[] = []
+	for (const segment of segments) {
+		if (segment === '' || segment === '.') continue
+		if (segment === '..') {
+			resolved.pop()
+			continue
+		}
+		resolved.push(segment)
+	}
+	return resolved.join('/')
 }

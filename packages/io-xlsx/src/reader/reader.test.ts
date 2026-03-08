@@ -270,6 +270,56 @@ describe('readXlsx', () => {
 		expect(result.value.workbook.sheets[0]?.cells.get(1, 0)?.formula).toBeNull()
 	})
 
+	it('parses worksheet tables from sheet relationships', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/tables/table1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/>
+</Types>`,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1"><c r="A1" t="str"><v>Name</v></c><c r="B1" t="str"><v>Score</v></c></row>
+    <row r="2"><c r="A2" t="str"><v>Mina</v></c><c r="B2"><v>10</v></c></row>
+    <row r="3"><c r="A3" t="str"><v>Noah</v></c><c r="B3"><v>12</v></c></row>
+  </sheetData>
+  <tableParts count="1"><tablePart r:id="rId1"/></tableParts>
+</worksheet>`,
+			'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"/>
+</Relationships>`,
+			'xl/tables/table1.xml': `<?xml version="1.0"?>
+<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="Table1" displayName="Scores" ref="A1:B3" headerRowCount="1" totalsRowCount="0">
+  <tableColumns count="2">
+    <tableColumn id="1" name="Name"/>
+    <tableColumn id="2" name="Score"/>
+  </tableColumns>
+</table>`,
+		})
+
+		const result = readXlsx(bytes)
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet?.tables).toHaveLength(1)
+		expect(sheet?.tables[0]?.name).toBe('Scores')
+		expect(sheet?.tables[0]?.hasHeaders).toBe(true)
+		expect(sheet?.tables[0]?.columns.map((column) => column.name)).toEqual(['Name', 'Score'])
+		expect(result.value.report.features.some((feature) => feature.feature === 'table')).toBe(true)
+	})
+
 	it('supports metadata-only reads without parsing sheet cells', () => {
 		const result = readXlsx(minimalXlsx(), { mode: 'metadata-only' })
 		expect(result.ok).toBe(true)

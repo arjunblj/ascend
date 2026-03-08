@@ -1,6 +1,6 @@
 import { parseRange, type Workbook } from '@ascend/core'
 import type { FormulaNode } from '@ascend/formulas'
-import { dateToSerial, type EvalArg, functionRegistry, toNumber } from '@ascend/formulas'
+import { type EvalArg, functionRegistry, toNumber } from '@ascend/formulas'
 import type { CellValue } from '@ascend/schema'
 import { booleanValue, EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
 import type { CalcContext } from './calc-context.ts'
@@ -243,25 +243,6 @@ function evaluateNamedRef(def: string, ctx: EvalContext): CellValue {
 
 function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
 	const upperName = name.toUpperCase()
-
-	if (upperName === 'NOW') {
-		return numberValue(
-			dateToSerial(
-				ctx.calcContext.now.getFullYear(),
-				ctx.calcContext.now.getMonth() + 1,
-				ctx.calcContext.now.getDate(),
-			),
-		)
-	}
-	if (upperName === 'TODAY') {
-		return numberValue(
-			dateToSerial(
-				ctx.calcContext.today.getFullYear(),
-				ctx.calcContext.today.getMonth() + 1,
-				ctx.calcContext.today.getDate(),
-			),
-		)
-	}
 	if (upperName === 'ROW' && argNodes.length === 0) {
 		return numberValue(ctx.row + 1)
 	}
@@ -273,7 +254,7 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 	if (!def) return errorValue('#NAME?')
 
 	const args = argNodes.map((argNode) => resolveArg(argNode, ctx))
-	return def.evaluate(args)
+	return def.evaluate(args, ctx.calcContext)
 }
 
 function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {

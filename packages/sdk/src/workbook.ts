@@ -192,7 +192,13 @@ export class AscendWorkbook {
 		}
 
 		if (result.value.recalcRequired) {
-			recalculate(clone, defaultCalcContext())
+			recalculate(
+				clone,
+				defaultCalcContext({
+					dateSystem: clone.calcSettings.dateSystem,
+					iterativeCalc: clone.calcSettings.iterativeCalc,
+				}),
+			)
 		}
 
 		const diff = diffWorkbooks(this.wb, clone)
@@ -221,7 +227,10 @@ export class AscendWorkbook {
 	}
 
 	recalc(opts?: { range?: string }): RecalcResult {
-		const ctx: CalcContext = defaultCalcContext()
+		const ctx: CalcContext = defaultCalcContext({
+			dateSystem: this.wb.calcSettings.dateSystem,
+			iterativeCalc: this.wb.calcSettings.iterativeCalc,
+		})
 		let rangeRef: RangeRef | undefined
 		if (opts?.range) {
 			rangeRef = parseRange(opts.range)

@@ -14,6 +14,13 @@ interface ConformanceCase {
 	description: string
 	setup: Record<string, string | number | boolean>
 	formula: string
+	context?: {
+		dateSystem?: '1900' | '1904'
+		now?: string
+		today?: string
+		randomSeed?: number
+		locale?: string
+	}
 	expected: {
 		kind: string
 		value?: number | string | boolean
@@ -77,7 +84,7 @@ function cellValuesEqual(actual: CellValue, expected: CellValue): boolean {
 function runCase(
 	_fnName: string,
 	c: ConformanceCase,
-	ctx: CalcContext,
+	baseCtx: CalcContext,
 ): { pass: boolean; actual?: CellValue; error?: string } {
 	const wb = createWorkbook()
 	const sheet = wb.addSheet('Sheet1')
@@ -99,6 +106,20 @@ function runCase(
 		formula,
 		styleId: sid,
 	})
+
+	const ctx: CalcContext = {
+		...baseCtx,
+		...(c.context?.dateSystem ? { dateSystem: c.context.dateSystem } : {}),
+		...(c.context?.randomSeed !== undefined ? { randomSeed: c.context.randomSeed } : {}),
+		...(c.context?.locale ? { locale: c.context.locale } : {}),
+		...(c.context?.now ? { now: new Date(c.context.now) } : {}),
+		...(c.context?.today ? { today: new Date(c.context.today) } : {}),
+	}
+	wb.calcSettings = {
+		...wb.calcSettings,
+		dateSystem: ctx.dateSystem,
+		iterativeCalc: ctx.iterativeCalc,
+	}
 
 	const result = recalculate(wb, ctx)
 	if (result.errors.length > 0) {

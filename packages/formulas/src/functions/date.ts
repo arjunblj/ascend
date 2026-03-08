@@ -1,6 +1,14 @@
 import type { CellValue } from '@ascend/schema'
 import { errorValue, numberValue } from '@ascend/schema'
-import { cellOf, type EvalArg, getRange, numArg, registerFunction, toNumber } from './registry.ts'
+import {
+	cellOf,
+	type EvalArg,
+	type FunctionEvalContext,
+	getRange,
+	numArg,
+	registerFunction,
+	toNumber,
+} from './registry.ts'
 
 const MS_PER_DAY = 86_400_000
 
@@ -10,11 +18,21 @@ function makeUTC(y: number, m: number, d: number): Date {
 	return date
 }
 
-const EPOCH_MS = makeUTC(1900, 1, 1).getTime()
+const EPOCH_1900_MS = makeUTC(1900, 1, 1).getTime()
+const EPOCH_1904_MS = makeUTC(1904, 1, 1).getTime()
 
-export function dateToSerial(year: number, month: number, day: number): number {
+export function dateToSerial(
+	year: number,
+	month: number,
+	day: number,
+	dateSystem: '1900' | '1904' = '1900',
+): number {
 	const ms = makeUTC(year, month, day).getTime()
-	const days = Math.floor((ms - EPOCH_MS) / MS_PER_DAY)
+	if (dateSystem === '1904') {
+		return Math.floor((ms - EPOCH_1904_MS) / MS_PER_DAY)
+	}
+
+	const days = Math.floor((ms - EPOCH_1900_MS) / MS_PER_DAY)
 	let serial = days + 1
 	if (serial >= 60) serial += 1
 	return serial
@@ -26,11 +44,24 @@ interface DateParts {
 	day: number
 }
 
-export function serialToDate(serial: number): DateParts | null {
+export function serialToDate(
+	serial: number,
+	dateSystem: '1900' | '1904' = '1900',
+): DateParts | null {
+	if (dateSystem === '1904') {
+		if (serial < 0) return null
+		const d = new Date(EPOCH_1904_MS + serial * MS_PER_DAY)
+		return {
+			year: d.getUTCFullYear(),
+			month: d.getUTCMonth() + 1,
+			day: d.getUTCDate(),
+		}
+	}
+
 	if (serial < 1) return null
 	if (serial === 60) return { year: 1900, month: 2, day: 29 }
 	const days = serial < 60 ? serial - 1 : serial - 2
-	const d = new Date(EPOCH_MS + days * MS_PER_DAY)
+	const d = new Date(EPOCH_1900_MS + days * MS_PER_DAY)
 	return {
 		year: d.getUTCFullYear(),
 		month: d.getUTCMonth() + 1,
@@ -48,8 +79,23 @@ function daysInMonth(y: number, m: number): number {
 	return m === 2 && isLeapYear(y) ? 29 : (MONTH_DAYS[m] ?? 30)
 }
 
-function isWeekend(serial: number): boolean {
-	const di = (((serial - 1) % 7) + 7) % 7
+function currentDateSystem(ctx: FunctionEvalContext | undefined): '1900' | '1904' {
+	return ctx?.dateSystem ?? '1900'
+}
+
+function serialDayIndex(serial: number, dateSystem: '1900' | '1904'): number | null {
+	if (dateSystem === '1904') {
+		const parts = serialToDate(serial, dateSystem)
+		if (!parts) return null
+		return makeUTC(parts.year, parts.month, parts.day).getUTCDay()
+	}
+
+	if (serial < 1) return null
+	return (((serial - 1) % 7) + 7) % 7
+}
+
+function isWeekend(serial: number, dateSystem: '1900' | '1904'): boolean {
+	const di = serialDayIndex(serial, dateSystem)
 	return di === 0 || di === 6
 }
 
@@ -75,7 +121,7 @@ function addMonths(parts: DateParts, months: number): { year: number; month: num
 
 // --- Implementations ---
 
-function dateFn(args: EvalArg[]): CellValue {
+function dateFn(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const y = numArg(args[0])
 	if (typeof y !== 'number') return y
 	const m = numArg(args[1])
@@ -85,40 +131,48 @@ function dateFn(args: EvalArg[]): CellValue {
 
 	let year = Math.trunc(y)
 	if (year >= 0 && year <= 1899) year += 1900
-	const serial = dateToSerial(year, Math.trunc(m), Math.trunc(d))
-	return serial < 1 ? errorValue('#NUM!') : numberValue(serial)
+	const dateSystem = currentDateSystem(ctx)
+	const serial = dateToSerial(year, Math.trunc(m), Math.trunc(d), dateSystem)
+	return serial < (dateSystem === '1904' ? 0 : 1) ? errorValue('#NUM!') : numberValue(serial)
 }
 
-function today(_args: EvalArg[]): CellValue {
-	const d = new Date()
-	return numberValue(dateToSerial(d.getFullYear(), d.getMonth() + 1, d.getDate()))
+function today(_args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
+	const d = ctx?.today ?? new Date()
+	return numberValue(
+		dateToSerial(d.getFullYear(), d.getMonth() + 1, d.getDate(), currentDateSystem(ctx)),
+	)
 }
 
-function nowFn(_args: EvalArg[]): CellValue {
-	const d = new Date()
-	const serial = dateToSerial(d.getFullYear(), d.getMonth() + 1, d.getDate())
+function nowFn(_args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
+	const d = ctx?.now ?? new Date()
+	const serial = dateToSerial(
+		d.getFullYear(),
+		d.getMonth() + 1,
+		d.getDate(),
+		currentDateSystem(ctx),
+	)
 	const frac = (d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds()) / 86400
 	return numberValue(serial + frac)
 }
 
-function yearFn(args: EvalArg[]): CellValue {
+function yearFn(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const s = numArg(args[0])
 	if (typeof s !== 'number') return s
-	const parts = serialToDate(Math.floor(s))
+	const parts = serialToDate(Math.floor(s), currentDateSystem(ctx))
 	return parts ? numberValue(parts.year) : errorValue('#NUM!')
 }
 
-function monthFn(args: EvalArg[]): CellValue {
+function monthFn(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const s = numArg(args[0])
 	if (typeof s !== 'number') return s
-	const parts = serialToDate(Math.floor(s))
+	const parts = serialToDate(Math.floor(s), currentDateSystem(ctx))
 	return parts ? numberValue(parts.month) : errorValue('#NUM!')
 }
 
-function dayFn(args: EvalArg[]): CellValue {
+function dayFn(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const s = numArg(args[0])
 	if (typeof s !== 'number') return s
-	const parts = serialToDate(Math.floor(s))
+	const parts = serialToDate(Math.floor(s), currentDateSystem(ctx))
 	return parts ? numberValue(parts.day) : errorValue('#NUM!')
 }
 
@@ -144,16 +198,18 @@ function secondFn(args: EvalArg[]): CellValue {
 	return numberValue(Math.round(frac * 86400) % 60)
 }
 
-function datevalue(args: EvalArg[]): CellValue {
+function datevalue(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const v = cellOf(args[0])
 	if (v.kind === 'error') return v
 	if (v.kind !== 'string') return errorValue('#VALUE!')
 	const d = new Date(v.value)
 	if (Number.isNaN(d.getTime())) return errorValue('#VALUE!')
-	return numberValue(dateToSerial(d.getFullYear(), d.getMonth() + 1, d.getDate()))
+	return numberValue(
+		dateToSerial(d.getFullYear(), d.getMonth() + 1, d.getDate(), currentDateSystem(ctx)),
+	)
 }
 
-function datedif(args: EvalArg[]): CellValue {
+function datedif(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const sn = numArg(args[0])
 	if (typeof sn !== 'number') return sn
 	const en = numArg(args[1])
@@ -163,8 +219,9 @@ function datedif(args: EvalArg[]): CellValue {
 	if (uv.kind !== 'string') return errorValue('#VALUE!')
 	if (sn > en) return errorValue('#NUM!')
 
-	const sp = serialToDate(Math.floor(sn))
-	const ep = serialToDate(Math.floor(en))
+	const dateSystem = currentDateSystem(ctx)
+	const sp = serialToDate(Math.floor(sn), dateSystem)
+	const ep = serialToDate(Math.floor(en), dateSystem)
 	if (!sp || !ep) return errorValue('#NUM!')
 
 	switch (uv.value.toUpperCase()) {
@@ -210,45 +267,49 @@ function datedif(args: EvalArg[]): CellValue {
 	}
 }
 
-function edate(args: EvalArg[]): CellValue {
+function edate(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const sn = numArg(args[0])
 	if (typeof sn !== 'number') return sn
 	const mn = numArg(args[1])
 	if (typeof mn !== 'number') return mn
 
-	const parts = serialToDate(Math.floor(sn))
+	const dateSystem = currentDateSystem(ctx)
+	const parts = serialToDate(Math.floor(sn), dateSystem)
 	if (!parts) return errorValue('#NUM!')
 
 	const { year, month } = addMonths(parts, mn)
 	const maxDay = daysInMonth(year, month)
-	const serial = dateToSerial(year, month, Math.min(parts.day, maxDay))
-	return serial < 1 ? errorValue('#NUM!') : numberValue(serial)
+	const serial = dateToSerial(year, month, Math.min(parts.day, maxDay), dateSystem)
+	return serial < (dateSystem === '1904' ? 0 : 1) ? errorValue('#NUM!') : numberValue(serial)
 }
 
-function eomonth(args: EvalArg[]): CellValue {
+function eomonth(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const sn = numArg(args[0])
 	if (typeof sn !== 'number') return sn
 	const mn = numArg(args[1])
 	if (typeof mn !== 'number') return mn
 
-	const parts = serialToDate(Math.floor(sn))
+	const dateSystem = currentDateSystem(ctx)
+	const parts = serialToDate(Math.floor(sn), dateSystem)
 	if (!parts) return errorValue('#NUM!')
 
 	const { year, month } = addMonths(parts, mn)
-	const serial = dateToSerial(year, month, daysInMonth(year, month))
-	return serial < 1 ? errorValue('#NUM!') : numberValue(serial)
+	const serial = dateToSerial(year, month, daysInMonth(year, month), dateSystem)
+	return serial < (dateSystem === '1904' ? 0 : 1) ? errorValue('#NUM!') : numberValue(serial)
 }
 
-function weekday(args: EvalArg[]): CellValue {
+function weekday(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const sn = numArg(args[0])
 	if (typeof sn !== 'number') return sn
 	const serial = Math.floor(sn)
-	if (serial < 1) return errorValue('#NUM!')
+	const dateSystem = currentDateSystem(ctx)
+	if (serial < (dateSystem === '1904' ? 0 : 1)) return errorValue('#NUM!')
 
 	const rt = args.length > 1 ? numArg(args[1]) : 1
 	if (typeof rt !== 'number') return rt
 
-	const dayIndex = (((serial - 1) % 7) + 7) % 7
+	const dayIndex = serialDayIndex(serial, dateSystem)
+	if (dayIndex === null) return errorValue('#NUM!')
 	const startDays: Record<number, number> = {
 		1: 0,
 		2: 1,
@@ -268,20 +329,22 @@ function weekday(args: EvalArg[]): CellValue {
 	return numberValue(rt === 3 ? shifted : shifted + 1)
 }
 
-function weeknum(args: EvalArg[]): CellValue {
+function weeknum(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const sn = numArg(args[0])
 	if (typeof sn !== 'number') return sn
 	const serial = Math.floor(sn)
-	if (serial < 1) return errorValue('#NUM!')
+	const dateSystem = currentDateSystem(ctx)
+	if (serial < (dateSystem === '1904' ? 0 : 1)) return errorValue('#NUM!')
 
 	const rt = args.length > 1 ? numArg(args[1]) : 1
 	if (typeof rt !== 'number') return rt
 
-	const parts = serialToDate(serial)
+	const parts = serialToDate(serial, dateSystem)
 	if (!parts) return errorValue('#NUM!')
 
-	const jan1 = dateToSerial(parts.year, 1, 1)
-	const jan1Di = (((jan1 - 1) % 7) + 7) % 7
+	const jan1 = dateToSerial(parts.year, 1, 1, dateSystem)
+	const jan1Di = serialDayIndex(jan1, dateSystem)
+	if (jan1Di === null) return errorValue('#NUM!')
 	const weekStarts: Record<number, number> = {
 		1: 0,
 		2: 1,
@@ -301,7 +364,7 @@ function weeknum(args: EvalArg[]): CellValue {
 	return numberValue(Math.floor((dayOfYear + offset) / 7) + 1)
 }
 
-function networkdays(args: EvalArg[]): CellValue {
+function networkdays(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const sn = numArg(args[0])
 	if (typeof sn !== 'number') return sn
 	const en = numArg(args[1])
@@ -309,6 +372,7 @@ function networkdays(args: EvalArg[]): CellValue {
 
 	let start = Math.floor(sn)
 	let end = Math.floor(en)
+	const dateSystem = currentDateSystem(ctx)
 	const holidays = args.length > 2 ? getHolidays(args[2]) : new Set<number>()
 
 	const sign = start <= end ? 1 : -1
@@ -316,12 +380,12 @@ function networkdays(args: EvalArg[]): CellValue {
 
 	let count = 0
 	for (let d = start; d <= end; d++) {
-		if (!isWeekend(d) && !holidays.has(d)) count++
+		if (!isWeekend(d, dateSystem) && !holidays.has(d)) count++
 	}
 	return numberValue(count * sign)
 }
 
-function workdayFn(args: EvalArg[]): CellValue {
+function workdayFn(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const sn = numArg(args[0])
 	if (typeof sn !== 'number') return sn
 	const dn = numArg(args[1])
@@ -329,13 +393,14 @@ function workdayFn(args: EvalArg[]): CellValue {
 
 	let serial = Math.floor(sn)
 	let days = Math.trunc(dn)
+	const dateSystem = currentDateSystem(ctx)
 	const holidays = args.length > 2 ? getHolidays(args[2]) : new Set<number>()
 
 	const step = days > 0 ? 1 : -1
 	days = Math.abs(days)
 	while (days > 0) {
 		serial += step
-		if (!isWeekend(serial) && !holidays.has(serial)) days--
+		if (!isWeekend(serial, dateSystem) && !holidays.has(serial)) days--
 	}
 	return numberValue(serial)
 }

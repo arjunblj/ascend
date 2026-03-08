@@ -96,6 +96,27 @@
 			"setup": { "A1": 1.0005208333333333 },
 			"formula": "SECOND(A1)",
 			"expected": { "kind": "number", "value": 45 }
+		},
+		{
+			"description": "DATE uses the 1904 system when requested",
+			"setup": {},
+			"context": { "dateSystem": "1904" },
+			"formula": "DATE(1904, 1, 2)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "YEAR interprets serial 0 in the 1904 system",
+			"setup": { "A1": 0 },
+			"context": { "dateSystem": "1904" },
+			"formula": "YEAR(A1)",
+			"expected": { "kind": "number", "value": 1904 }
+		},
+		{
+			"description": "DATEVALUE respects the 1904 system for imported text dates",
+			"setup": {},
+			"context": { "dateSystem": "1904" },
+			"formula": "DATEVALUE(\"1904-01-02\")",
+			"expected": { "kind": "number", "value": 1 }
 		}
 	]
 }

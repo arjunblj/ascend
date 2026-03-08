@@ -6,6 +6,7 @@ export {
 	type EvalArg,
 	type FnArg,
 	type FunctionDef,
+	type FunctionEvalContext,
 	flattenArgs,
 	functionRegistry,
 	getRange,

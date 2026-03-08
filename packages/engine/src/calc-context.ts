@@ -11,10 +11,10 @@ export interface CalcContext {
 	}
 }
 
-export function defaultCalcContext(): CalcContext {
+export function defaultCalcContext(overrides: Partial<CalcContext> = {}): CalcContext {
 	const now = new Date()
 	const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-	return {
+	const base: CalcContext = {
 		now,
 		today,
 		randomSeed: 42,
@@ -24,6 +24,14 @@ export function defaultCalcContext(): CalcContext {
 			enabled: false,
 			maxIterations: 100,
 			maxChange: 0.001,
+		},
+	}
+	return {
+		...base,
+		...overrides,
+		iterativeCalc: {
+			...base.iterativeCalc,
+			...overrides.iterativeCalc,
 		},
 	}
 }

@@ -19,11 +19,19 @@ export interface EvalArg {
 
 export type FnArg = EvalArg
 
+export interface FunctionEvalContext {
+	readonly now: Date
+	readonly today: Date
+	readonly randomSeed: number
+	readonly locale: string
+	readonly dateSystem: '1900' | '1904'
+}
+
 export interface FunctionDef {
 	readonly name: string
 	readonly minArgs: number
 	readonly maxArgs: number
-	readonly evaluate: (args: EvalArg[]) => CellValue
+	readonly evaluate: (args: EvalArg[], ctx?: FunctionEvalContext) => CellValue
 	readonly volatile?: boolean
 }
 

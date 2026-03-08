@@ -11,7 +11,7 @@ export {
 	toA1,
 	toRangeString,
 } from './refs.ts'
-export type { SheetState } from './sheet.ts'
+export type { SheetComment, SheetState } from './sheet.ts'
 export { createSheet, Sheet } from './sheet.ts'
 
 export type { Cell } from './sparse-grid.ts'

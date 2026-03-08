@@ -5,6 +5,11 @@ import type { Table } from './table.ts'
 
 export type SheetState = 'visible' | 'hidden' | 'veryHidden'
 
+export interface SheetComment {
+	readonly text: string
+	readonly author?: string
+}
+
 export class Sheet {
 	readonly id: SheetId
 	name: string
@@ -12,6 +17,11 @@ export class Sheet {
 	readonly merges: RangeRef[]
 	readonly tables: Table[]
 	state: SheetState
+	readonly colWidths: Map<number, number>
+	readonly rowHeights: Map<number, number>
+	frozenRows: number
+	frozenCols: number
+	readonly comments: Map<string, SheetComment>
 
 	constructor(name: string, id?: SheetId) {
 		this.id = id ?? createSheetId()
@@ -20,6 +30,11 @@ export class Sheet {
 		this.merges = []
 		this.tables = []
 		this.state = 'visible'
+		this.colWidths = new Map()
+		this.rowHeights = new Map()
+		this.frozenRows = 0
+		this.frozenCols = 0
+		this.comments = new Map()
 	}
 }
 

@@ -13,6 +13,9 @@ const DEFAULT_STYLE_ID = 0 as StyleId
 
 export class SparseGrid {
 	private readonly data = new Map<number, StoredCell>()
+	private readonly styledStringCache = new Map<string, StyledStringCell>()
+	private readonly styledBooleanCache = new Map<string, StyledBooleanCell>()
+	private readonly styledSmallNumberCache = new Map<string, StyledNumberCell>()
 	private _minRow = Number.POSITIVE_INFINITY
 	private _maxRow = Number.NEGATIVE_INFINITY
 	private _minCol = Number.POSITIVE_INFINITY
@@ -34,7 +37,7 @@ export class SparseGrid {
 		formula: string | null,
 		styleId: StyleId,
 	): void {
-		this.data.set(packKey(row, col), compactResolvedCell(value, formula, styleId))
+		this.data.set(packKey(row, col), this.compactResolvedCell(value, formula, styleId))
 		if (row < this._minRow) this._minRow = row
 		if (row > this._maxRow) this._maxRow = row
 		if (col < this._minCol) this._minCol = col
@@ -125,6 +128,9 @@ export class SparseGrid {
 
 	clear(): void {
 		this.data.clear()
+		this.styledStringCache.clear()
+		this.styledBooleanCache.clear()
+		this.styledSmallNumberCache.clear()
 		this._minRow = Number.POSITIVE_INFINITY
 		this._maxRow = Number.NEGATIVE_INFINITY
 		this._minCol = Number.POSITIVE_INFINITY
@@ -202,6 +208,73 @@ export class SparseGrid {
 		}
 		this._boundsDirty = true
 	}
+
+	private compactResolvedCell(
+		value: CellValue,
+		formula: string | null,
+		styleId: StyleId,
+	): StoredCell {
+		const compactValue = compactScalarValue(value)
+		if (compactValue) {
+			if (formula === null && styleId === DEFAULT_STYLE_ID) {
+				switch (compactValue.kind) {
+					case 'number':
+					case 'string':
+					case 'boolean':
+						return compactValue.scalarValue as string | number | boolean
+					case 'empty':
+						return EMPTY
+					default:
+						return new StyledSpecialScalarCell(
+							compactValue.kind,
+							compactValue.scalarValue,
+							DEFAULT_STYLE_ID,
+						)
+				}
+			}
+			if (formula === null) {
+				switch (compactValue.kind) {
+					case 'number': {
+						const numericValue = compactValue.scalarValue as number
+						if (Number.isInteger(numericValue) && numericValue >= -128 && numericValue <= 512) {
+							const key = `${styleId}|${numericValue}`
+							let cached = this.styledSmallNumberCache.get(key)
+							if (!cached) {
+								cached = new StyledNumberCell(numericValue, styleId)
+								this.styledSmallNumberCache.set(key, cached)
+							}
+							return cached
+						}
+						return new StyledNumberCell(numericValue, styleId)
+					}
+					case 'string': {
+						const text = compactValue.scalarValue as string
+						const key = `${styleId}|${text}`
+						let cached = this.styledStringCache.get(key)
+						if (!cached) {
+							cached = new StyledStringCell(text, styleId)
+							this.styledStringCache.set(key, cached)
+						}
+						return cached
+					}
+					case 'boolean': {
+						const bool = compactValue.scalarValue as boolean
+						const key = `${styleId}|${bool ? 1 : 0}`
+						let cached = this.styledBooleanCache.get(key)
+						if (!cached) {
+							cached = new StyledBooleanCell(bool, styleId)
+							this.styledBooleanCache.set(key, cached)
+						}
+						return cached
+					}
+					default:
+						return new StyledSpecialScalarCell(compactValue.kind, compactValue.scalarValue, styleId)
+				}
+			}
+			return new FormulaScalarCell(compactValue.kind, compactValue.scalarValue, styleId, formula)
+		}
+		return new HeapCell(value, styleId, formula)
+	}
 }
 
 type StoredCell =
@@ -272,50 +345,6 @@ function unpackKey(key: number): readonly [number, number] {
 	const col = key % PACK_FACTOR
 	const row = (key - col) / PACK_FACTOR
 	return [row, col] as const
-}
-
-function compactCell(cell: Cell): StoredCell {
-	return compactResolvedCell(cell.value, cell.formula, cell.styleId)
-}
-
-function compactResolvedCell(
-	value: CellValue,
-	formula: string | null,
-	styleId: StyleId,
-): StoredCell {
-	const compactValue = compactScalarValue(value)
-	if (compactValue) {
-		if (formula === null && styleId === DEFAULT_STYLE_ID) {
-			switch (compactValue.kind) {
-				case 'number':
-				case 'string':
-				case 'boolean':
-					return compactValue.scalarValue as string | number | boolean
-				case 'empty':
-					return EMPTY
-				default:
-					return new StyledSpecialScalarCell(
-						compactValue.kind,
-						compactValue.scalarValue,
-						DEFAULT_STYLE_ID,
-					)
-			}
-		}
-		if (formula === null) {
-			switch (compactValue.kind) {
-				case 'number':
-					return new StyledNumberCell(compactValue.scalarValue as number, styleId)
-				case 'string':
-					return new StyledStringCell(compactValue.scalarValue as string, styleId)
-				case 'boolean':
-					return new StyledBooleanCell(compactValue.scalarValue as boolean, styleId)
-				default:
-					return new StyledSpecialScalarCell(compactValue.kind, compactValue.scalarValue, styleId)
-			}
-		}
-		return new FormulaScalarCell(compactValue.kind, compactValue.scalarValue, styleId, formula)
-	}
-	return new HeapCell(value, styleId, formula)
 }
 
 function cloneCell(cell: StoredCell): StoredCell {

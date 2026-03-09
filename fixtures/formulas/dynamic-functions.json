@@ -1,0 +1,71 @@
+{
+	"function": "dynamic",
+	"cases": [
+		{
+			"description": "SORT returns the first value of a sorted column (ascending)",
+			"setup": { "A1": 30, "A2": 10, "A3": 20 },
+			"formula": "SORT(A1:A3)",
+			"expected": { "kind": "number", "value": 10 }
+		},
+		{
+			"description": "SORT descending returns the largest value first",
+			"setup": { "A1": 30, "A2": 10, "A3": 20 },
+			"formula": "SORT(A1:A3, 1, -1)",
+			"expected": { "kind": "number", "value": 30 }
+		},
+		{
+			"description": "FILTER returns the first matching value",
+			"setup": { "A1": 10, "A2": 20, "A3": 30, "B1": true, "B2": false, "B3": true },
+			"formula": "FILTER(A1:A3, B1:B3)",
+			"expected": { "kind": "number", "value": 10 }
+		},
+		{
+			"description": "FILTER returns fallback when no matches",
+			"setup": { "A1": 10, "A2": 20, "B1": false, "B2": false },
+			"formula": "FILTER(A1:A2, B1:B2, \"none\")",
+			"expected": { "kind": "string", "value": "none" }
+		},
+		{
+			"description": "UNIQUE returns the first unique value",
+			"setup": { "A1": "apple", "A2": "banana", "A3": "apple" },
+			"formula": "UNIQUE(A1:A3)",
+			"expected": { "kind": "string", "value": "apple" }
+		},
+		{
+			"description": "SEQUENCE returns the start value",
+			"setup": {},
+			"formula": "SEQUENCE(5)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "SEQUENCE with custom start returns that start",
+			"setup": {},
+			"formula": "SEQUENCE(3, 1, 10)",
+			"expected": { "kind": "number", "value": 10 }
+		},
+		{
+			"description": "SORTBY returns first value after sorting by another range",
+			"setup": { "A1": "C", "A2": "A", "A3": "B", "B1": 3, "B2": 1, "B3": 2 },
+			"formula": "SORTBY(A1:A3, B1:B3)",
+			"expected": { "kind": "string", "value": "A" }
+		},
+		{
+			"description": "CHOOSECOLS returns value from specified column",
+			"setup": { "A1": 10, "B1": 20, "C1": 30 },
+			"formula": "CHOOSECOLS(A1:C1, 2)",
+			"expected": { "kind": "number", "value": 20 }
+		},
+		{
+			"description": "CHOOSEROWS returns value from specified row",
+			"setup": { "A1": 10, "A2": 20, "A3": 30 },
+			"formula": "CHOOSEROWS(A1:A3, 2)",
+			"expected": { "kind": "number", "value": 20 }
+		},
+		{
+			"description": "TRANSPOSE returns the top-left value",
+			"setup": { "A1": 42, "A2": 99 },
+			"formula": "TRANSPOSE(A1:A2)",
+			"expected": { "kind": "number", "value": 42 }
+		}
+	]
+}

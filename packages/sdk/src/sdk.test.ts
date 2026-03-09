@@ -598,6 +598,66 @@ describe('AscendWorkbook', () => {
 		wb.apply([{ op: 'deleteSheet', sheet: 'Extra' }])
 		expect(wb.sheets).toEqual(['Sheet1'])
 	})
+
+	test('SheetHandle exposes comments, hyperlinks, merges, frozenPanes, protection, autoFilter', () => {
+		const wb = AscendWorkbook.create()
+		const handle = wb.sheet('Sheet1')!
+
+		expect(handle.comments().size).toBe(0)
+		expect(handle.hyperlinks().size).toBe(0)
+		expect(handle.merges).toEqual([])
+		expect(handle.frozenRows).toBe(0)
+		expect(handle.frozenCols).toBe(0)
+		expect(handle.protection).toBeNull()
+		expect(handle.autoFilter).toBeNull()
+		expect(handle.conditionalFormats).toEqual([])
+		expect(handle.dataValidations).toEqual([])
+		expect(handle.imageRefs).toEqual([])
+		expect(handle.state).toBe('visible')
+		expect(handle.tabColor).toBeNull()
+		expect(handle.sheetFormatPr).toBeNull()
+	})
+
+	test('SheetHandle comment and hyperlink single-cell accessors', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'test' }] },
+			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'A1', url: 'https://example.com' },
+		])
+		const handle = wb.sheet('Sheet1')!
+		expect(handle.hyperlink('A1')).toBeDefined()
+		expect(handle.hyperlink('A1')?.target).toBe('https://example.com')
+		expect(handle.hyperlink('B1')).toBeUndefined()
+		expect(handle.comment('A1')).toBeUndefined()
+	})
+
+	test('TableHandle exposes ref, styleInfo, autoFilter, columnDefs', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Name' },
+					{ ref: 'B1', value: 'Score' },
+					{ ref: 'A2', value: 'Alice' },
+					{ ref: 'B2', value: 90 },
+				],
+			},
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:B2', name: 'MyTable', hasHeaders: true },
+		])
+
+		const table = wb.table('MyTable')!
+		expect(table).toBeDefined()
+		expect(table.name).toBe('MyTable')
+		expect(table.ref).toBeDefined()
+		expect(table.columns).toEqual(['Name', 'Score'])
+		expect(table.hasHeaders).toBe(true)
+		expect(table.hasTotals).toBe(false)
+		expect(table.columnDefs).toHaveLength(2)
+		expect(table.columnDefs[0]?.name).toBe('Name')
+		expect(table.rowCount).toBe(1)
+	})
 })
 
 function makeSyntheticXlsx(parts: Record<string, string>): Uint8Array {

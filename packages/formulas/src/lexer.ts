@@ -138,6 +138,14 @@ export function tokenize(formula: string): Token[] {
 		if (isIdStart(ch) || ch === '$') {
 			const start = pos
 			while (pos < formula.length && isIdPart(formula.charAt(pos))) pos++
+			while (
+				formula.charAt(pos) === '.' &&
+				pos + 1 < formula.length &&
+				isAlpha(formula.charAt(pos + 1))
+			) {
+				pos++
+				while (pos < formula.length && isIdPart(formula.charAt(pos))) pos++
+			}
 			const raw = formula.slice(start, pos)
 
 			if (formula.charAt(pos) === '!') {

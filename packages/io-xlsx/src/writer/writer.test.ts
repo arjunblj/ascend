@@ -865,4 +865,71 @@ describe('writeXlsx', () => {
 			}),
 		)
 	})
+
+	it('preserves sheetPr tabColor and sheetFormatPr on round-trip', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Colored')
+		sheet.cells.set(0, 0, { value: stringValue('hi'), formula: null, styleId: S0 })
+		sheet.tabColor = { rgb: 'FF0000FF', theme: 4, tint: -0.25 }
+		sheet.sheetFormatPr = { defaultRowHeight: 14.5, defaultColWidth: 10.0 }
+
+		const { result } = roundTrip(wb)
+		const s = result.workbook.sheets[0]!
+		expect(s.tabColor).toEqual({ rgb: 'FF0000FF', theme: 4, tint: -0.25 })
+		expect(s.sheetFormatPr).toEqual({ defaultRowHeight: 14.5, defaultColWidth: 10 })
+	})
+
+	it('preserves extLst blocks through round-trip when present', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('ExtLst')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: S0 })
+		sheet.preservedExtLst = '<extLst><ext uri="{test}"><x14:sparklines/></ext></extLst>'
+
+		const written = writeXlsx(wb)
+		if (!written.ok) throw new Error(written.error.message)
+		const zip = unzipSync(written.value)
+		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'])
+		expect(sheetXml).toContain('<extLst>')
+		expect(sheetXml).toContain('x14:sparklines')
+
+		const read = readXlsx(written.value)
+		if (!read.ok) throw new Error(read.error.message)
+		expect(read.value.workbook.sheets[0]?.preservedExtLst).toContain('<extLst>')
+	})
+
+	it('emits dimension element for non-empty sheets', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Dim')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: S0 })
+		sheet.cells.set(9, 4, { value: numberValue(2), formula: null, styleId: S0 })
+
+		const written = writeXlsx(wb)
+		if (!written.ok) throw new Error(written.error.message)
+		const zip = unzipSync(written.value)
+		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'])
+		expect(sheetXml).toContain('<dimension ref="A1:E10"/>')
+	})
+
+	it('preserves full ignoredError attributes on round-trip', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Errors')
+		sheet.cells.set(0, 0, { value: stringValue('123'), formula: null, styleId: S0 })
+		sheet.ignoredErrors.push({
+			sqref: 'A1:B2',
+			numberStoredAsText: true,
+			formula: true,
+			evalError: true,
+		})
+
+		const { result } = roundTrip(wb)
+		const s = result.workbook.sheets[0]!
+		expect(s.ignoredErrors).toEqual([
+			{
+				sqref: 'A1:B2',
+				numberStoredAsText: true,
+				formula: true,
+				evalError: true,
+			},
+		])
+	})
 })

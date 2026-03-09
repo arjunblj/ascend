@@ -1,0 +1,77 @@
+{
+	"function": "stats-extended",
+	"cases": [
+		{
+			"description": "STDEV.S returns sample standard deviation (same as STDEV)",
+			"setup": { "A1": 1, "A2": 2, "A3": 3 },
+			"formula": "STDEV.S(A1:A3)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "STDEV.P returns population standard deviation",
+			"setup": { "A1": 2, "A2": 4, "A3": 4, "A4": 4, "A5": 5, "A6": 5, "A7": 7, "A8": 9 },
+			"formula": "STDEV.P(A1:A8)",
+			"expected": { "kind": "number", "approx": 2.0, "tolerance": 0.001 }
+		},
+		{
+			"description": "VAR.S returns sample variance (same as VAR)",
+			"setup": { "A1": 1, "A2": 2, "A3": 3 },
+			"formula": "VAR.S(A1:A3)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "VAR.P returns population variance",
+			"setup": { "A1": 1, "A2": 2, "A3": 3 },
+			"formula": "VAR.P(A1:A3)",
+			"expected": { "kind": "number", "approx": 0.6667, "tolerance": 0.001 }
+		},
+		{
+			"description": "PERCENTILE.INC is identical to PERCENTILE",
+			"setup": { "A1": 1, "A2": 2, "A3": 3, "A4": 4, "A5": 5 },
+			"formula": "PERCENTILE.INC(A1:A5, 0.25)",
+			"expected": { "kind": "number", "value": 2 }
+		},
+		{
+			"description": "PERCENTILE.EXC uses n+1 interpolation",
+			"setup": { "A1": 1, "A2": 2, "A3": 3, "A4": 4 },
+			"formula": "PERCENTILE.EXC(A1:A4, 0.4)",
+			"expected": { "kind": "number", "value": 2 }
+		},
+		{
+			"description": "STDEVP is an alias for population standard deviation",
+			"setup": { "A1": 1, "A2": 2, "A3": 3 },
+			"formula": "STDEVP(A1:A3)",
+			"expected": { "kind": "number", "approx": 0.8165, "tolerance": 0.001 }
+		},
+		{
+			"description": "VARP is an alias for population variance",
+			"setup": { "A1": 1, "A2": 2, "A3": 3 },
+			"formula": "VARP(A1:A3)",
+			"expected": { "kind": "number", "approx": 0.6667, "tolerance": 0.001 }
+		},
+		{
+			"description": "SUBTOTAL code 6 computes PRODUCT",
+			"setup": { "A1": 2, "A2": 3, "A3": 5 },
+			"formula": "SUBTOTAL(6, A1:A3)",
+			"expected": { "kind": "number", "value": 30 }
+		},
+		{
+			"description": "SUBTOTAL code 7 computes sample STDEV",
+			"setup": { "A1": 1, "A2": 2, "A3": 3 },
+			"formula": "SUBTOTAL(7, A1:A3)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "SUBTOTAL code 8 computes sample VAR",
+			"setup": { "A1": 1, "A2": 2, "A3": 3 },
+			"formula": "SUBTOTAL(8, A1:A3)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "SUBTOTAL code 109 is the hidden-row variant of SUM",
+			"setup": { "A1": 10, "A2": 20, "A3": 30 },
+			"formula": "SUBTOTAL(109, A1:A3)",
+			"expected": { "kind": "number", "value": 60 }
+		}
+	]
+}

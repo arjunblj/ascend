@@ -42,6 +42,30 @@ export interface SheetPrintOptions {
 	readonly verticalCentered?: boolean
 }
 
+export interface SheetProtection {
+	readonly sheet?: boolean
+	readonly objects?: boolean
+	readonly scenarios?: boolean
+	readonly formatCells?: boolean
+	readonly formatColumns?: boolean
+	readonly formatRows?: boolean
+	readonly insertColumns?: boolean
+	readonly insertRows?: boolean
+	readonly insertHyperlinks?: boolean
+	readonly deleteColumns?: boolean
+	readonly deleteRows?: boolean
+	readonly selectLockedCells?: boolean
+	readonly sort?: boolean
+	readonly autoFilter?: boolean
+	readonly pivotTables?: boolean
+	readonly selectUnlockedCells?: boolean
+	readonly password?: string
+	readonly algorithmName?: string
+	readonly hashValue?: string
+	readonly saltValue?: string
+	readonly spinCount?: number
+}
+
 export interface SheetHeaderFooter {
 	readonly oddHeader?: string
 	readonly oddFooter?: string
@@ -124,6 +148,7 @@ export class Sheet {
 	readonly conditionalFormats: SheetConditionalFormat[]
 	drawingRefs: SheetDrawingRefs
 	autoFilter: string | null
+	protection: SheetProtection | null
 	pageMargins: SheetPageMargins | null
 	pageSetup: SheetPageSetup | null
 	printOptions: SheetPrintOptions | null
@@ -149,6 +174,7 @@ export class Sheet {
 		this.conditionalFormats = []
 		this.drawingRefs = { hasDrawing: false, hasLegacyDrawing: false }
 		this.autoFilter = null
+		this.protection = null
 		this.pageMargins = null
 		this.pageSetup = null
 		this.printOptions = null

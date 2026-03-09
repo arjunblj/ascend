@@ -70,6 +70,7 @@ function cloneWorkbook(source: Workbook): Workbook {
 	const clone = createWorkbook()
 	clone.calcSettings = source.calcSettings
 	clone.workbookProperties = { ...source.workbookProperties }
+	clone.workbookProtection = source.workbookProtection ? { ...source.workbookProtection } : null
 	clone.styleMetadata = { ...source.styleMetadata }
 	clone.themeMetadata = { ...source.themeMetadata }
 	clone.preservedStyles = source.preservedStyles
@@ -136,6 +137,7 @@ function cloneWorkbook(source: Workbook): Workbook {
 		)
 		cloned.drawingRefs = { ...sheet.drawingRefs }
 		cloned.autoFilter = sheet.autoFilter
+		cloned.protection = sheet.protection ? { ...sheet.protection } : null
 		cloned.pageMargins = sheet.pageMargins ? { ...sheet.pageMargins } : null
 		cloned.pageSetup = sheet.pageSetup ? { ...sheet.pageSetup } : null
 		cloned.printOptions = sheet.printOptions ? { ...sheet.printOptions } : null

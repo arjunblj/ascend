@@ -39,6 +39,7 @@ export function parseSheet(name: string, xml: string, ctx: SheetParseContext): S
 	parseMergeCells(ws, sheet)
 	parseDrawingRefs(ws, sheet)
 	parseAutoFilter(ws, sheet)
+	parseSheetProtection(ws, sheet)
 	parsePageMargins(ws, sheet)
 	parsePageSetup(ws, sheet)
 	parsePrintOptions(ws, sheet)
@@ -290,6 +291,34 @@ function parseAutoFilter(ws: XmlNode, sheet: Sheet): void {
 	if (!autoFilter) return
 	const ref = attr(autoFilter, 'ref')
 	if (ref) sheet.autoFilter = ref
+}
+
+function parseSheetProtection(ws: XmlNode, sheet: Sheet): void {
+	const protection = ws.sheetProtection as XmlNode | undefined
+	if (!protection) return
+	const parsed: Record<string, string | number | boolean> = {}
+	setIfDefined(parsed, 'sheet', readBoolAttribute(protection, 'sheet'))
+	setIfDefined(parsed, 'objects', readBoolAttribute(protection, 'objects'))
+	setIfDefined(parsed, 'scenarios', readBoolAttribute(protection, 'scenarios'))
+	setIfDefined(parsed, 'formatCells', readBoolAttribute(protection, 'formatCells'))
+	setIfDefined(parsed, 'formatColumns', readBoolAttribute(protection, 'formatColumns'))
+	setIfDefined(parsed, 'formatRows', readBoolAttribute(protection, 'formatRows'))
+	setIfDefined(parsed, 'insertColumns', readBoolAttribute(protection, 'insertColumns'))
+	setIfDefined(parsed, 'insertRows', readBoolAttribute(protection, 'insertRows'))
+	setIfDefined(parsed, 'insertHyperlinks', readBoolAttribute(protection, 'insertHyperlinks'))
+	setIfDefined(parsed, 'deleteColumns', readBoolAttribute(protection, 'deleteColumns'))
+	setIfDefined(parsed, 'deleteRows', readBoolAttribute(protection, 'deleteRows'))
+	setIfDefined(parsed, 'selectLockedCells', readBoolAttribute(protection, 'selectLockedCells'))
+	setIfDefined(parsed, 'sort', readBoolAttribute(protection, 'sort'))
+	setIfDefined(parsed, 'autoFilter', readBoolAttribute(protection, 'autoFilter'))
+	setIfDefined(parsed, 'pivotTables', readBoolAttribute(protection, 'pivotTables'))
+	setIfDefined(parsed, 'selectUnlockedCells', readBoolAttribute(protection, 'selectUnlockedCells'))
+	setIfDefined(parsed, 'password', attr(protection, 'password'))
+	setIfDefined(parsed, 'algorithmName', attr(protection, 'algorithmName'))
+	setIfDefined(parsed, 'hashValue', attr(protection, 'hashValue'))
+	setIfDefined(parsed, 'saltValue', attr(protection, 'saltValue'))
+	setIfDefined(parsed, 'spinCount', numAttr(protection, 'spinCount'))
+	sheet.protection = parsed
 }
 
 function parsePageMargins(ws: XmlNode, sheet: Sheet): void {

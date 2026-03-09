@@ -448,6 +448,46 @@ describe('readXlsx', () => {
 		expect(result.value.workbook.externalReferences).toEqual(['xl/externalLinks/externalLink1.xml'])
 	})
 
+	it('parses workbook and sheet protection metadata', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <workbookProtection lockStructure="1" workbookPassword="ABCD" workbookAlgorithmName="SHA-512" workbookSpinCount="100000"/>
+  <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData/>
+  <sheetProtection sheet="1" objects="1" scenarios="1" password="1234" sort="0" autoFilter="0" selectUnlockedCells="1"/>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(result.value.workbook.workbookProtection).toEqual({
+			lockStructure: true,
+			workbookPassword: 'ABCD',
+			workbookAlgorithmName: 'SHA-512',
+			workbookSpinCount: 100000,
+		})
+		expect(result.value.workbook.sheets[0]?.protection).toEqual({
+			sheet: true,
+			objects: true,
+			scenarios: true,
+			password: '1234',
+			sort: false,
+			autoFilter: false,
+			selectUnlockedCells: true,
+		})
+	})
+
 	it('parses and preserves workbook theme metadata', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

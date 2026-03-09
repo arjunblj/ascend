@@ -1,4 +1,4 @@
-import type { SheetState, WorkbookProperties, WorkbookView } from '@ascend/core'
+import type { SheetState, WorkbookProperties, WorkbookProtection, WorkbookView } from '@ascend/core'
 import type { CalcSettings } from '@ascend/schema'
 import { DEFAULT_CALC_SETTINGS } from '@ascend/schema'
 import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
@@ -21,6 +21,7 @@ export interface WorkbookInfo {
 	readonly definedNames: DefinedNameEntry[]
 	readonly calcSettings: CalcSettings
 	readonly workbookProperties: WorkbookProperties
+	readonly workbookProtection: WorkbookProtection | null
 	readonly workbookViews: readonly WorkbookView[]
 	readonly externalReferenceRelIds: readonly string[]
 }
@@ -34,6 +35,7 @@ export function parseWorkbookXml(xml: string): WorkbookInfo {
 			definedNames: [],
 			calcSettings: DEFAULT_CALC_SETTINGS,
 			workbookProperties: {},
+			workbookProtection: null,
 			workbookViews: [],
 			externalReferenceRelIds: [],
 		}
@@ -43,6 +45,7 @@ export function parseWorkbookXml(xml: string): WorkbookInfo {
 	const definedNames = parseDefinedNames(wb)
 	const calcSettings = parseCalcSettings(wb)
 	const workbookProperties = parseWorkbookProperties(wb)
+	const workbookProtection = parseWorkbookProtection(wb)
 	const workbookViews = parseWorkbookViews(wb)
 	const externalReferenceRelIds = parseExternalReferenceRelIds(wb)
 
@@ -51,9 +54,61 @@ export function parseWorkbookXml(xml: string): WorkbookInfo {
 		definedNames,
 		calcSettings,
 		workbookProperties,
+		workbookProtection,
 		workbookViews,
 		externalReferenceRelIds,
 	}
+}
+
+function parseWorkbookProtection(wb: XmlNode): WorkbookProtection | null {
+	const protection = wb.workbookProtection as XmlNode | undefined
+	if (!protection) return null
+
+	const parsed: Record<string, string | number | boolean> = {}
+	setBoolAttr(parsed, 'lockStructure', protection, 'lockStructure')
+	setBoolAttr(parsed, 'lockWindows', protection, 'lockWindows')
+	setBoolAttr(parsed, 'lockRevision', protection, 'lockRevision')
+	setStringAttr(parsed, 'workbookPassword', protection, 'workbookPassword')
+	setStringAttr(parsed, 'revisionsPassword', protection, 'revisionsPassword')
+	setStringAttr(parsed, 'workbookAlgorithmName', protection, 'workbookAlgorithmName')
+	setStringAttr(parsed, 'workbookHashValue', protection, 'workbookHashValue')
+	setStringAttr(parsed, 'workbookSaltValue', protection, 'workbookSaltValue')
+	setNumberAttr(parsed, 'workbookSpinCount', protection, 'workbookSpinCount')
+	setStringAttr(parsed, 'revisionsAlgorithmName', protection, 'revisionsAlgorithmName')
+	setStringAttr(parsed, 'revisionsHashValue', protection, 'revisionsHashValue')
+	setStringAttr(parsed, 'revisionsSaltValue', protection, 'revisionsSaltValue')
+	setNumberAttr(parsed, 'revisionsSpinCount', protection, 'revisionsSpinCount')
+	return parsed as WorkbookProtection
+}
+
+function setBoolAttr(
+	target: Record<string, string | number | boolean>,
+	key: string,
+	node: XmlNode,
+	attrName: string,
+): void {
+	const value = boolAttr(node, attrName)
+	if (value !== undefined) target[key] = value
+}
+
+function setStringAttr(
+	target: Record<string, string | number | boolean>,
+	key: string,
+	node: XmlNode,
+	attrName: string,
+): void {
+	const value = attr(node, attrName)
+	if (value) target[key] = value
+}
+
+function setNumberAttr(
+	target: Record<string, string | number | boolean>,
+	key: string,
+	node: XmlNode,
+	attrName: string,
+): void {
+	const value = numAttr(node, attrName)
+	if (value !== undefined) target[key] = value
 }
 
 function parseSheets(wb: XmlNode): SheetEntry[] {

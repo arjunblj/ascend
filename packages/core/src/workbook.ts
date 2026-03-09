@@ -29,6 +29,22 @@ export interface WorkbookStyleMetadata {
 	readonly tableStyleCount: number
 }
 
+export interface WorkbookProtection {
+	readonly lockStructure?: boolean
+	readonly lockWindows?: boolean
+	readonly lockRevision?: boolean
+	readonly workbookPassword?: string
+	readonly revisionsPassword?: string
+	readonly workbookAlgorithmName?: string
+	readonly workbookHashValue?: string
+	readonly workbookSaltValue?: string
+	readonly workbookSpinCount?: number
+	readonly revisionsAlgorithmName?: string
+	readonly revisionsHashValue?: string
+	readonly revisionsSaltValue?: string
+	readonly revisionsSpinCount?: number
+}
+
 export interface WorkbookThemeMetadata {
 	readonly name?: string
 	readonly colorSchemeName?: string
@@ -62,6 +78,7 @@ export class Workbook {
 	readonly workbookViews: WorkbookView[] = []
 	readonly externalReferences: string[] = []
 	workbookProperties: WorkbookProperties = {}
+	workbookProtection: WorkbookProtection | null = null
 	styleMetadata: WorkbookStyleMetadata = {
 		numFmtCount: 0,
 		fontCount: 0,

@@ -108,6 +108,7 @@ export function readXlsx(
 	const workbook = new Workbook()
 	workbook.calcSettings = wbInfo.calcSettings
 	workbook.workbookProperties = { ...wbInfo.workbookProperties }
+	workbook.workbookProtection = wbInfo.workbookProtection ? { ...wbInfo.workbookProtection } : null
 	workbook.workbookViews.push(...wbInfo.workbookViews.map((view) => ({ ...view })))
 	workbook.preservedXml = {
 		workbookXml: wbXml,

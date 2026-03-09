@@ -24,6 +24,7 @@ export type {
 	SheetPageMargins,
 	SheetPageSetup,
 	SheetPrintOptions,
+	SheetProtection,
 	SheetState,
 } from './sheet.ts'
 export { createSheet, Sheet } from './sheet.ts'
@@ -51,6 +52,7 @@ export type {
 	WorkbookPreservedTheme,
 	WorkbookPreservedXml,
 	WorkbookProperties,
+	WorkbookProtection,
 	WorkbookStyleMetadata,
 	WorkbookThemeMetadata,
 	WorkbookView,

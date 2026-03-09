@@ -180,6 +180,51 @@ describe('writeXlsx', () => {
 		})
 	})
 
+	it('preserves workbook and sheet protection on round-trip', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Protected')
+		sheet.cells.set(0, 0, { value: stringValue('Locked'), formula: null, styleId: S0 })
+		wb.workbookProtection = {
+			lockStructure: true,
+			workbookPassword: 'ABCD',
+			workbookAlgorithmName: 'SHA-512',
+			workbookSpinCount: 100000,
+		}
+		sheet.protection = {
+			sheet: true,
+			objects: true,
+			scenarios: true,
+			password: '1234',
+			sort: false,
+			autoFilter: false,
+			selectUnlockedCells: true,
+		}
+
+		const { result, bytes } = roundTrip(wb)
+		expect(result.workbook.workbookProtection).toEqual({
+			lockStructure: true,
+			workbookPassword: 'ABCD',
+			workbookAlgorithmName: 'SHA-512',
+			workbookSpinCount: 100000,
+		})
+		expect(result.workbook.sheets[0]?.protection).toEqual({
+			sheet: true,
+			objects: true,
+			scenarios: true,
+			password: '1234',
+			sort: false,
+			autoFilter: false,
+			selectUnlockedCells: true,
+		})
+		const fingerprint = fingerprintXlsx(bytes)
+		expect(fingerprint.workbook?.tagCounts).toMatchObject({
+			workbookProtection: 1,
+		})
+		expect(fingerprint.sheets[0]?.xml.tagCounts).toMatchObject({
+			sheetProtection: 1,
+		})
+	})
+
 	it('preserves hyperlinks on round-trip', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Links')

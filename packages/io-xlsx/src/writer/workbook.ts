@@ -42,6 +42,11 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 		parts.push('</bookViews>')
 	}
 
+	if (workbook.workbookProtection) {
+		const attrs = collectWorkbookProtectionAttrs(workbook.workbookProtection)
+		if (attrs.length > 0) parts.push(`<workbookProtection ${attrs.join(' ')}/>`)
+	}
+
 	parts.push('<sheets>')
 	for (let i = 0; i < workbook.sheets.length; i++) {
 		const sheet = workbook.sheets[i]
@@ -97,4 +102,48 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 
 	parts.push('</workbook>')
 	return parts.join('')
+}
+
+function collectWorkbookProtectionAttrs(
+	protection: NonNullable<Workbook['workbookProtection']>,
+): string[] {
+	const attrs: string[] = []
+	if (protection.lockStructure !== undefined) {
+		attrs.push(`lockStructure="${protection.lockStructure ? '1' : '0'}"`)
+	}
+	if (protection.lockWindows !== undefined) {
+		attrs.push(`lockWindows="${protection.lockWindows ? '1' : '0'}"`)
+	}
+	if (protection.lockRevision !== undefined) {
+		attrs.push(`lockRevision="${protection.lockRevision ? '1' : '0'}"`)
+	}
+	if (protection.workbookPassword)
+		attrs.push(`workbookPassword="${escapeXml(protection.workbookPassword)}"`)
+	if (protection.revisionsPassword)
+		attrs.push(`revisionsPassword="${escapeXml(protection.revisionsPassword)}"`)
+	if (protection.workbookAlgorithmName) {
+		attrs.push(`workbookAlgorithmName="${escapeXml(protection.workbookAlgorithmName)}"`)
+	}
+	if (protection.workbookHashValue) {
+		attrs.push(`workbookHashValue="${escapeXml(protection.workbookHashValue)}"`)
+	}
+	if (protection.workbookSaltValue) {
+		attrs.push(`workbookSaltValue="${escapeXml(protection.workbookSaltValue)}"`)
+	}
+	if (protection.workbookSpinCount !== undefined) {
+		attrs.push(`workbookSpinCount="${protection.workbookSpinCount}"`)
+	}
+	if (protection.revisionsAlgorithmName) {
+		attrs.push(`revisionsAlgorithmName="${escapeXml(protection.revisionsAlgorithmName)}"`)
+	}
+	if (protection.revisionsHashValue) {
+		attrs.push(`revisionsHashValue="${escapeXml(protection.revisionsHashValue)}"`)
+	}
+	if (protection.revisionsSaltValue) {
+		attrs.push(`revisionsSaltValue="${escapeXml(protection.revisionsSaltValue)}"`)
+	}
+	if (protection.revisionsSpinCount !== undefined) {
+		attrs.push(`revisionsSpinCount="${protection.revisionsSpinCount}"`)
+	}
+	return attrs
 }

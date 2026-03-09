@@ -121,6 +121,11 @@ export function buildSheetXml(
 		parts.push(`<autoFilter ref="${escapeXml(sheet.autoFilter)}"/>`)
 	}
 
+	if (sheet.protection) {
+		const attrs = collectProtectionAttrs(sheet.protection)
+		if (attrs.length > 0) parts.push(`<sheetProtection ${attrs.join(' ')}/>`)
+	}
+
 	if (drawingRelId) {
 		parts.push(`<drawing r:id="${drawingRelId}"/>`)
 	}
@@ -293,6 +298,19 @@ function collectMixedAttrs(values: object): string[] {
 		attrs.push(
 			`${key}="${typeof value === 'boolean' ? (value ? '1' : '0') : escapeXml(String(value))}"`,
 		)
+	}
+	return attrs
+}
+
+function collectProtectionAttrs(protection: NonNullable<Sheet['protection']>): string[] {
+	const attrs: string[] = []
+	for (const [key, value] of Object.entries(protection)) {
+		if (value === undefined) continue
+		if (typeof value === 'boolean') {
+			attrs.push(`${key}="${value ? '1' : '0'}"`)
+			continue
+		}
+		attrs.push(`${key}="${escapeXml(String(value))}"`)
 	}
 	return attrs
 }

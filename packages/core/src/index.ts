@@ -13,6 +13,7 @@ export {
 	toRangeString,
 } from './refs.ts'
 export type {
+	SheetAnchorMarker,
 	SheetColDef,
 	SheetComment,
 	SheetConditionalFormat,
@@ -21,6 +22,7 @@ export type {
 	SheetDrawingRefs,
 	SheetHeaderFooter,
 	SheetHyperlink,
+	SheetImageAnchor,
 	SheetImageRef,
 	SheetPageMargins,
 	SheetPageSetup,

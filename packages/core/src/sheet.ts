@@ -97,10 +97,41 @@ export interface SheetDrawingRefs {
 	readonly hasLegacyDrawing: boolean
 }
 
+export interface SheetAnchorMarker {
+	readonly col: number
+	readonly row: number
+	readonly colOff?: number
+	readonly rowOff?: number
+}
+
+export type SheetImageAnchor =
+	| {
+			readonly kind: 'oneCell'
+			readonly from: SheetAnchorMarker
+			readonly cx?: number
+			readonly cy?: number
+	  }
+	| {
+			readonly kind: 'twoCell'
+			readonly from: SheetAnchorMarker
+			readonly to: SheetAnchorMarker
+			readonly editAs?: string
+	  }
+	| {
+			readonly kind: 'absolute'
+			readonly x: number
+			readonly y: number
+			readonly cx?: number
+			readonly cy?: number
+	  }
+
 export interface SheetImageRef {
 	readonly drawingPartPath: string
 	readonly relId: string
 	readonly targetPath: string
+	readonly anchor?: SheetImageAnchor
+	readonly name?: string
+	readonly description?: string
 }
 
 export interface SheetDataValidation {

@@ -12,12 +12,12 @@ import { ascendError, emptyReport, err, ok } from '@ascend/schema'
 import type { PreservationCapsule } from '../preserve.ts'
 import { parseCommentsXml } from './comments.ts'
 import { type ContentTypes, parseContentTypes } from './content-types.ts'
+import { parseDrawingImageRefs } from './drawing.ts'
 import {
 	getRelsPath,
 	parseRelationships,
 	REL_COMMENTS,
 	REL_DRAWING,
-	REL_IMAGE,
 	REL_OFFICE_DOC,
 	REL_SHARED_STRINGS,
 	REL_STYLES,
@@ -546,16 +546,12 @@ function attachDrawingImages(
 	if (!sheet) return
 	for (const drawingRel of sheetRelationships.filter((rel) => rel.type === REL_DRAWING)) {
 		const drawingPath = resolvePath(sheetPath, drawingRel.target)
+		const drawingXml = readPart(archive, drawingPath)
 		const drawingRelsXml = readPart(archive, getRelsPath(drawingPath))
-		if (!drawingRelsXml) continue
-		for (const rel of parseRelationships(drawingRelsXml)) {
-			if (rel.type !== REL_IMAGE) continue
-			sheet.imageRefs.push({
-				drawingPartPath: drawingPath,
-				relId: rel.id,
-				targetPath: resolvePath(drawingPath, rel.target),
-			})
-		}
+		if (!drawingXml || !drawingRelsXml) continue
+		sheet.imageRefs.push(
+			...parseDrawingImageRefs(drawingXml, drawingPath, parseRelationships(drawingRelsXml)),
+		)
 	}
 }
 

@@ -68,6 +68,13 @@ export function buildSheetXml(
 		if (fmtAttrs.length > 0) parts.push(`<sheetFormatPr ${fmtAttrs.join(' ')}/>`)
 	}
 
+	const usedRange = sheet.cells.usedRange()
+	if (usedRange) {
+		const s = `${indexToColumn(usedRange.start.col)}${usedRange.start.row + 1}`
+		const e = `${indexToColumn(usedRange.end.col)}${usedRange.end.row + 1}`
+		parts.push(`<dimension ref="${s}:${e}"/>`)
+	}
+
 	if (sheet.frozenRows > 0 || sheet.frozenCols > 0) {
 		const paneAttrs: string[] = ['state="frozen"']
 		if (sheet.frozenCols > 0) paneAttrs.push(`xSplit="${sheet.frozenCols}"`)
@@ -366,21 +373,28 @@ function cellXml(
 	if (cell.formula) {
 		return formulaCellXml(ref, cell, xfIdx)
 	}
+
+	const v = cell.value
+	if (v.kind === 'number') {
+		return xfIdx === 0
+			? `<c r="${ref}"><v>${v.value}</v></c>`
+			: `<c r="${ref}" s="${xfIdx}"><v>${v.value}</v></c>`
+	}
+	if (v.kind === 'date') {
+		return xfIdx === 0
+			? `<c r="${ref}"><v>${v.serial}</v></c>`
+			: `<c r="${ref}" s="${xfIdx}"><v>${v.serial}</v></c>`
+	}
+
 	return regularCellXml(ref, cell, ssTable, xfIdx)
 }
 
 function formulaCellXml(ref: string, cell: Cell, xfIdx: number): string {
-	const attrs: string[] = [`r="${ref}"`]
-	if (xfIdx !== 0) attrs.push(`s="${xfIdx}"`)
-
+	const sAttr = xfIdx !== 0 ? ` s="${xfIdx}"` : ''
 	const { typeAttr, valueStr } = formulaValueAttrs(cell.value)
-	if (typeAttr) attrs.push(`t="${typeAttr}"`)
-
-	const parts: string[] = [`<c ${attrs.join(' ')}>`]
-	parts.push(`<f>${escapeXml(cell.formula ?? '')}</f>`)
-	if (valueStr !== undefined) parts.push(`<v>${valueStr}</v>`)
-	parts.push('</c>')
-	return parts.join('')
+	const tAttr = typeAttr ? ` t="${typeAttr}"` : ''
+	const vPart = valueStr !== undefined ? `<v>${valueStr}</v>` : ''
+	return `<c r="${ref}"${sAttr}${tAttr}><f>${escapeXml(cell.formula ?? '')}</f>${vPart}</c>`
 }
 
 function regularCellXml(
@@ -389,14 +403,12 @@ function regularCellXml(
 	ssTable: SharedStringTable,
 	xfIdx: number,
 ): string {
-	const attrs: string[] = [`r="${ref}"`]
-	if (xfIdx !== 0) attrs.push(`s="${xfIdx}"`)
-
+	const sAttr = xfIdx !== 0 ? ` s="${xfIdx}"` : ''
 	const { typeAttr, valueStr } = regularValueAttrs(cell.value, ssTable)
-	if (typeAttr) attrs.push(`t="${typeAttr}"`)
+	const tAttr = typeAttr ? ` t="${typeAttr}"` : ''
 
-	if (valueStr === undefined) return `<c ${attrs.join(' ')}/>`
-	return `<c ${attrs.join(' ')}><v>${valueStr}</v></c>`
+	if (valueStr === undefined) return `<c r="${ref}"${sAttr}${tAttr}/>`
+	return `<c r="${ref}"${sAttr}${tAttr}><v>${valueStr}</v></c>`
 }
 
 function formulaValueAttrs(value: CellValue): {

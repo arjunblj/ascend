@@ -503,143 +503,219 @@ export const mathFunctions: FunctionDef[] = [
 		return numberValue(found ? product : 0)
 	}),
 
-	fn('SUBTOTAL', 2, 255, (args) => {
-		const fnNum = numArg(args[0])
-		if (typeof fnNum !== 'number') return fnNum
-		const code = Math.trunc(fnNum)
-		const data = args.slice(1)
-		switch (code) {
-			case 1: {
-				let sum = 0
-				let count = 0
-				for (const arg of data) {
-					if (arg.kind === 'range' && arg.values) {
-						for (const row of arg.values) {
-							for (const cell of row) {
-								if (isError(cell)) return cell
-								const n = numericVal(cell)
-								if (n !== null) {
-									sum += n
-									count++
-								}
-							}
-						}
-					} else {
-						const n = toNum(arg.value ?? EMPTY)
-						if (typeof n !== 'number') return n
-						sum += n
-						count++
-					}
+	fn('SUBTOTAL', 2, 255, subtotalFn),
+]
+
+function subtotalNums(data: EvalArg[]): number[] | CellValue {
+	const nums: number[] = []
+	for (const arg of data) {
+		if (arg.kind === 'range' && arg.values) {
+			for (const row of arg.values) {
+				for (const cell of row) {
+					if (isError(cell)) return cell
+					const n = numericVal(cell)
+					if (n !== null) nums.push(n)
 				}
-				return count === 0 ? errorValue('#DIV/0!') : numberValue(sum / count)
 			}
-			case 2: {
-				let count = 0
-				for (const arg of data) {
-					if (arg.kind === 'range' && arg.values) {
-						for (const row of arg.values) {
-							for (const cell of row) {
-								if (cell.kind === 'number' || cell.kind === 'date') count++
-							}
-						}
-					} else {
-						const v = arg.value ?? EMPTY
-						if (v.kind === 'number' || v.kind === 'date' || v.kind === 'boolean') count++
-					}
-				}
-				return numberValue(count)
-			}
-			case 3: {
-				let count = 0
-				for (const arg of data) {
-					if (arg.kind === 'range' && arg.values) {
-						for (const row of arg.values) {
-							for (const cell of row) {
-								if (!isEmpty(cell)) count++
-							}
-						}
-					} else if (!isEmpty(arg.value ?? EMPTY)) {
-						count++
-					}
-				}
-				return numberValue(count)
-			}
-			case 4: {
-				let max = Number.NEGATIVE_INFINITY
-				let found = false
-				for (const arg of data) {
-					if (arg.kind === 'range' && arg.values) {
-						for (const row of arg.values) {
-							for (const cell of row) {
-								if (isError(cell)) return cell
-								const n = numericVal(cell)
-								if (n !== null) {
-									max = Math.max(max, n)
-									found = true
-								}
-							}
-						}
-					} else {
-						const n = toNum(arg.value ?? EMPTY)
-						if (typeof n !== 'number') return n
-						max = Math.max(max, n)
-						found = true
-					}
-				}
-				return numberValue(found ? max : 0)
-			}
-			case 5: {
-				let min = Number.POSITIVE_INFINITY
-				let found = false
-				for (const arg of data) {
-					if (arg.kind === 'range' && arg.values) {
-						for (const row of arg.values) {
-							for (const cell of row) {
-								if (isError(cell)) return cell
-								const n = numericVal(cell)
-								if (n !== null) {
-									min = Math.min(min, n)
-									found = true
-								}
-							}
-						}
-					} else {
-						const n = toNum(arg.value ?? EMPTY)
-						if (typeof n !== 'number') return n
-						min = Math.min(min, n)
-						found = true
-					}
-				}
-				return numberValue(found ? min : 0)
-			}
-			case 9: {
-				let sum = 0
-				for (const arg of data) {
-					if (arg.kind === 'range' && arg.values) {
-						for (const row of arg.values) {
-							for (const cell of row) {
-								if (isError(cell)) return cell
-								const n = numericVal(cell)
-								if (n !== null) sum += n
-							}
-						}
-					} else {
-						const n = toNum(arg.value ?? EMPTY)
-						if (typeof n !== 'number') return n
-						sum += n
-					}
-				}
-				return numberValue(sum)
-			}
-			default:
-				return errorValue('#VALUE!')
+		} else {
+			const n = toNum(arg.value ?? EMPTY)
+			if (typeof n !== 'number') return n
+			nums.push(n)
 		}
-	}),
+	}
+	return nums
+}
 
-	// ---------------------------------------------------------------------------
-	// Conditional aggregates
-	// ---------------------------------------------------------------------------
+function subtotalDelegated(code: number, data: EvalArg[]): CellValue {
+	return subtotalFn([{ value: numberValue(code) }, ...data])
+}
 
+function subtotalFn(args: EvalArg[]): CellValue {
+	const fnNum = numArg(args[0])
+	if (typeof fnNum !== 'number') return fnNum
+	const code = Math.trunc(fnNum)
+	const data = args.slice(1)
+	switch (code) {
+		case 1: {
+			let sum = 0
+			let count = 0
+			for (const arg of data) {
+				if (arg.kind === 'range' && arg.values) {
+					for (const row of arg.values) {
+						for (const cell of row) {
+							if (isError(cell)) return cell
+							const n = numericVal(cell)
+							if (n !== null) {
+								sum += n
+								count++
+							}
+						}
+					}
+				} else {
+					const n = toNum(arg.value ?? EMPTY)
+					if (typeof n !== 'number') return n
+					sum += n
+					count++
+				}
+			}
+			return count === 0 ? errorValue('#DIV/0!') : numberValue(sum / count)
+		}
+		case 2: {
+			let count = 0
+			for (const arg of data) {
+				if (arg.kind === 'range' && arg.values) {
+					for (const row of arg.values) {
+						for (const cell of row) {
+							if (cell.kind === 'number' || cell.kind === 'date') count++
+						}
+					}
+				} else {
+					const v = arg.value ?? EMPTY
+					if (v.kind === 'number' || v.kind === 'date' || v.kind === 'boolean') count++
+				}
+			}
+			return numberValue(count)
+		}
+		case 3: {
+			let count = 0
+			for (const arg of data) {
+				if (arg.kind === 'range' && arg.values) {
+					for (const row of arg.values) {
+						for (const cell of row) {
+							if (!isEmpty(cell)) count++
+						}
+					}
+				} else if (!isEmpty(arg.value ?? EMPTY)) {
+					count++
+				}
+			}
+			return numberValue(count)
+		}
+		case 4: {
+			let max = Number.NEGATIVE_INFINITY
+			let found = false
+			for (const arg of data) {
+				if (arg.kind === 'range' && arg.values) {
+					for (const row of arg.values) {
+						for (const cell of row) {
+							if (isError(cell)) return cell
+							const n = numericVal(cell)
+							if (n !== null) {
+								max = Math.max(max, n)
+								found = true
+							}
+						}
+					}
+				} else {
+					const n = toNum(arg.value ?? EMPTY)
+					if (typeof n !== 'number') return n
+					max = Math.max(max, n)
+					found = true
+				}
+			}
+			return numberValue(found ? max : 0)
+		}
+		case 5: {
+			let min = Number.POSITIVE_INFINITY
+			let found = false
+			for (const arg of data) {
+				if (arg.kind === 'range' && arg.values) {
+					for (const row of arg.values) {
+						for (const cell of row) {
+							if (isError(cell)) return cell
+							const n = numericVal(cell)
+							if (n !== null) {
+								min = Math.min(min, n)
+								found = true
+							}
+						}
+					}
+				} else {
+					const n = toNum(arg.value ?? EMPTY)
+					if (typeof n !== 'number') return n
+					min = Math.min(min, n)
+					found = true
+				}
+			}
+			return numberValue(found ? min : 0)
+		}
+		case 6:
+		case 106: {
+			let product = 1
+			for (const arg of data) {
+				if (arg.kind === 'range' && arg.values) {
+					for (const row of arg.values) {
+						for (const cell of row) {
+							if (isError(cell)) return cell
+							const n = numericVal(cell)
+							if (n !== null) product *= n
+						}
+					}
+				} else {
+					const n = toNum(arg.value ?? EMPTY)
+					if (typeof n !== 'number') return n
+					product *= n
+				}
+			}
+			return numberValue(product)
+		}
+		case 7:
+		case 107: {
+			const nums = subtotalNums(data)
+			if (!Array.isArray(nums)) return nums
+			if (nums.length < 2) return errorValue('#DIV/0!')
+			const mean = nums.reduce((a, b) => a + b, 0) / nums.length
+			const sumSq = nums.reduce((acc, v) => acc + (v - mean) ** 2, 0)
+			return numberValue(Math.sqrt(sumSq / (nums.length - 1)))
+		}
+		case 8:
+		case 108: {
+			const nums = subtotalNums(data)
+			if (!Array.isArray(nums)) return nums
+			if (nums.length < 2) return errorValue('#DIV/0!')
+			const mean = nums.reduce((a, b) => a + b, 0) / nums.length
+			const sumSq = nums.reduce((acc, v) => acc + (v - mean) ** 2, 0)
+			return numberValue(sumSq / (nums.length - 1))
+		}
+		case 9:
+		case 109: {
+			let sum = 0
+			for (const arg of data) {
+				if (arg.kind === 'range' && arg.values) {
+					for (const row of arg.values) {
+						for (const cell of row) {
+							if (isError(cell)) return cell
+							const n = numericVal(cell)
+							if (n !== null) sum += n
+						}
+					}
+				} else {
+					const n = toNum(arg.value ?? EMPTY)
+					if (typeof n !== 'number') return n
+					sum += n
+				}
+			}
+			return numberValue(sum)
+		}
+		case 101:
+			return subtotalDelegated(1, data)
+		case 102:
+			return subtotalDelegated(2, data)
+		case 103:
+			return subtotalDelegated(3, data)
+		case 104:
+			return subtotalDelegated(4, data)
+		case 105:
+			return subtotalDelegated(5, data)
+		case 110:
+		case 111:
+			return errorValue('#VALUE!')
+		default:
+			return errorValue('#VALUE!')
+	}
+}
+
+const conditionalFunctions: FunctionDef[] = [
 	fn('SUMIF', 2, 3, (args) => {
 		const range = getRange(args[0])
 		const match = parseCriteria(args[1]?.value ?? EMPTY)
@@ -773,3 +849,5 @@ export const mathFunctions: FunctionDef[] = [
 		return numberValue(found ? max : 0)
 	}),
 ]
+
+mathFunctions.push(...conditionalFunctions)

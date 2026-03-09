@@ -75,24 +75,44 @@ function medianFn(args: EvalArg[]): CellValue {
 	return numberValue(numsOrErr[mid] ?? 0)
 }
 
-function stdevFn(args: EvalArg[]): CellValue {
+function stdevFn(args: EvalArg[], population = false): CellValue {
 	const numsOrErr = collectNumbers(args)
 	if (!Array.isArray(numsOrErr)) return numsOrErr
-	if (numsOrErr.length < 2) return errorValue('#DIV/0!')
+	const divisor = population ? numsOrErr.length : numsOrErr.length - 1
+	if (divisor < 1) return errorValue('#DIV/0!')
 
 	const mean = numsOrErr.reduce((a, b) => a + b, 0) / numsOrErr.length
 	const sumSq = numsOrErr.reduce((acc, v) => acc + (v - mean) ** 2, 0)
-	return numberValue(Math.sqrt(sumSq / (numsOrErr.length - 1)))
+	return numberValue(Math.sqrt(sumSq / divisor))
 }
 
-function varFn(args: EvalArg[]): CellValue {
+function varFn(args: EvalArg[], population = false): CellValue {
 	const numsOrErr = collectNumbers(args)
 	if (!Array.isArray(numsOrErr)) return numsOrErr
-	if (numsOrErr.length < 2) return errorValue('#DIV/0!')
+	const divisor = population ? numsOrErr.length : numsOrErr.length - 1
+	if (divisor < 1) return errorValue('#DIV/0!')
 
 	const mean = numsOrErr.reduce((a, b) => a + b, 0) / numsOrErr.length
 	const sumSq = numsOrErr.reduce((acc, v) => acc + (v - mean) ** 2, 0)
-	return numberValue(sumSq / (numsOrErr.length - 1))
+	return numberValue(sumSq / divisor)
+}
+
+function percentileExcFn(args: EvalArg[]): CellValue {
+	const numsOrErr = collectFrom(args[0])
+	if (!Array.isArray(numsOrErr)) return numsOrErr
+	const k = numArg(args[1])
+	if (typeof k !== 'number') return k
+	const n = numsOrErr.length
+	if (n === 0 || k <= 0 || k >= 1) return errorValue('#NUM!')
+	if (k < 1 / (n + 1) || k > n / (n + 1)) return errorValue('#NUM!')
+
+	numsOrErr.sort((a, b) => a - b)
+	const x = k * (n + 1) - 1
+	const i = Math.floor(x)
+	const frac = x - i
+	if (i < 0) return numberValue(numsOrErr[0] ?? 0)
+	if (i + 1 >= n) return numberValue(numsOrErr[n - 1] ?? 0)
+	return numberValue((numsOrErr[i] ?? 0) + frac * ((numsOrErr[i + 1] ?? 0) - (numsOrErr[i] ?? 0)))
 }
 
 // --- Registration ---
@@ -112,10 +132,43 @@ registerFunction({
 	maxArgs: 255,
 	evaluate: medianFn,
 })
+registerFunction({ name: 'STDEV', minArgs: 1, maxArgs: 255, evaluate: (args) => stdevFn(args) })
+registerFunction({ name: 'STDEV.S', minArgs: 1, maxArgs: 255, evaluate: (args) => stdevFn(args) })
 registerFunction({
-	name: 'STDEV',
+	name: 'STDEV.P',
 	minArgs: 1,
 	maxArgs: 255,
-	evaluate: stdevFn,
+	evaluate: (args) => stdevFn(args, true),
 })
-registerFunction({ name: 'VAR', minArgs: 1, maxArgs: 255, evaluate: varFn })
+registerFunction({
+	name: 'STDEVP',
+	minArgs: 1,
+	maxArgs: 255,
+	evaluate: (args) => stdevFn(args, true),
+})
+registerFunction({ name: 'VAR', minArgs: 1, maxArgs: 255, evaluate: (args) => varFn(args) })
+registerFunction({ name: 'VAR.S', minArgs: 1, maxArgs: 255, evaluate: (args) => varFn(args) })
+registerFunction({
+	name: 'VAR.P',
+	minArgs: 1,
+	maxArgs: 255,
+	evaluate: (args) => varFn(args, true),
+})
+registerFunction({
+	name: 'VARP',
+	minArgs: 1,
+	maxArgs: 255,
+	evaluate: (args) => varFn(args, true),
+})
+registerFunction({
+	name: 'PERCENTILE.INC',
+	minArgs: 2,
+	maxArgs: 2,
+	evaluate: percentileFn,
+})
+registerFunction({
+	name: 'PERCENTILE.EXC',
+	minArgs: 2,
+	maxArgs: 2,
+	evaluate: percentileExcFn,
+})

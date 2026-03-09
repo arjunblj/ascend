@@ -17,6 +17,7 @@ export function buildContentTypesXml(
 	sheetCount: number,
 	hasSharedStrings: boolean,
 	capsules?: PreservationCapsule[],
+	extraOverrides?: readonly { partPath: string; contentType: string }[],
 ): string {
 	const parts: string[] = [
 		XML_HEADER,
@@ -44,6 +45,13 @@ export function buildContentTypesXml(
 				const pn = capsule.partPath.startsWith('/') ? capsule.partPath : `/${capsule.partPath}`
 				parts.push(`<Override PartName="${pn}" ContentType="${capsule.contentType}"/>`)
 			}
+		}
+	}
+
+	if (extraOverrides) {
+		for (const override of extraOverrides) {
+			const pn = override.partPath.startsWith('/') ? override.partPath : `/${override.partPath}`
+			parts.push(`<Override PartName="${pn}" ContentType="${override.contentType}"/>`)
 		}
 	}
 

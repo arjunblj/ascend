@@ -12,7 +12,16 @@ export {
 	toA1,
 	toRangeString,
 } from './refs.ts'
-export type { SheetComment, SheetState } from './sheet.ts'
+export type {
+	SheetColDef,
+	SheetComment,
+	SheetHeaderFooter,
+	SheetHyperlink,
+	SheetPageMargins,
+	SheetPageSetup,
+	SheetPrintOptions,
+	SheetState,
+} from './sheet.ts'
 export { createSheet, Sheet } from './sheet.ts'
 
 export type { Cell } from './sparse-grid.ts'
@@ -33,4 +42,13 @@ export type {
 export { DEFAULT_STYLE, StyleRegistry } from './style-registry.ts'
 export type { Table, TableColumn } from './table.ts'
 
+export type {
+	WorkbookPreservedStyles,
+	WorkbookPreservedTheme,
+	WorkbookPreservedXml,
+	WorkbookProperties,
+	WorkbookStyleMetadata,
+	WorkbookThemeMetadata,
+	WorkbookView,
+} from './workbook.ts'
 export { createWorkbook, Workbook } from './workbook.ts'

@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'bun:test'
 import type { StyleId } from '@ascend/core'
-import { Workbook } from '@ascend/core'
+import { createTableId, Workbook } from '@ascend/core'
 import { booleanValue, numberValue, stringValue } from '@ascend/schema'
 import { unzipSync } from 'fflate'
+import { fingerprintXlsx } from '../../test/fidelity-harness.ts'
 import type { PreservationCapsule } from '../preserve.ts'
 import { readXlsx } from '../reader/index.ts'
 import { writeXlsx } from './index.ts'
@@ -116,6 +117,69 @@ describe('writeXlsx', () => {
 		expect(s?.merges[1]).toEqual({ start: { row: 3, col: 0 }, end: { row: 3, col: 1 } })
 	})
 
+	it('preserves worksheet layout metadata on round-trip', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Layout')
+		sheet.cells.set(0, 0, { value: stringValue('Header'), formula: null, styleId: S0 })
+		sheet.frozenRows = 1
+		sheet.frozenCols = 2
+		sheet.colWidths.set(0, 18.5)
+		sheet.colWidths.set(1, 18.5)
+		sheet.rowHeights.set(0, 24)
+		sheet.autoFilter = 'A1:B10'
+		sheet.pageMargins = {
+			left: 0.7,
+			right: 0.7,
+			top: 0.75,
+			bottom: 0.75,
+			header: 0.3,
+			footer: 0.3,
+		}
+		sheet.pageSetup = {
+			orientation: 'landscape',
+			fitToWidth: 1,
+			fitToHeight: 2,
+		}
+		sheet.printOptions = {
+			gridLines: true,
+			headings: true,
+		}
+		sheet.headerFooter = {
+			oddHeader: '&LTest',
+			oddFooter: '&R1',
+		}
+
+		const { result } = roundTrip(wb)
+		const s = result.workbook.sheets[0]
+		expect(s?.frozenRows).toBe(1)
+		expect(s?.frozenCols).toBe(2)
+		expect(s?.colWidths.get(0)).toBe(18.5)
+		expect(s?.colWidths.get(1)).toBe(18.5)
+		expect(s?.rowHeights.get(0)).toBe(24)
+		expect(s?.autoFilter).toBe('A1:B10')
+		expect(s?.pageMargins).toEqual({
+			left: 0.7,
+			right: 0.7,
+			top: 0.75,
+			bottom: 0.75,
+			header: 0.3,
+			footer: 0.3,
+		})
+		expect(s?.pageSetup).toEqual({
+			orientation: 'landscape',
+			fitToWidth: 1,
+			fitToHeight: 2,
+		})
+		expect(s?.printOptions).toEqual({
+			gridLines: true,
+			headings: true,
+		})
+		expect(s?.headerFooter).toEqual({
+			oddHeader: '&LTest',
+			oddFooter: '&R1',
+		})
+	})
+
 	it('preserves defined names on round-trip', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Data')
@@ -141,6 +205,161 @@ describe('writeXlsx', () => {
 		)
 		expect(resolved?.scope.kind).toBe('sheet')
 		expect(resolved?.formula).toBe('Summary!$A$1')
+	})
+
+	it('preserves workbook views and external reference wiring on round-trip', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Data')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: S0 })
+		wb.workbookViews.push({ activeTab: 1, firstSheet: 0, visibility: 'visible', tabRatio: 600 })
+		wb.workbookProperties = { codeName: 'Model', filterPrivacy: true }
+		wb.externalReferences.push('xl/externalLinks/externalLink1.xml')
+
+		const capsules: PreservationCapsule[] = [
+			{
+				partPath: 'xl/externalLinks/externalLink1.xml',
+				contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml',
+				relationships: [],
+				content: new TextEncoder().encode(
+					'<externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"/>',
+				),
+				anchor: { kind: 'workbook' },
+				relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink',
+			},
+		]
+
+		const { result, bytes } = roundTrip(wb, capsules)
+		expect(result.workbook.workbookViews).toEqual([
+			{ activeTab: 1, firstSheet: 0, visibility: 'visible', tabRatio: 600 },
+		])
+		expect(result.workbook.externalReferences).toEqual(['xl/externalLinks/externalLink1.xml'])
+
+		const fingerprint = fingerprintXlsx(bytes)
+		expect(fingerprint.workbook?.tagCounts).toMatchObject({
+			bookViews: 1,
+			workbookView: 1,
+			externalReferences: 1,
+			externalReference: 1,
+			calcPr: 1,
+		})
+	})
+
+	it('preserves workbook theme parts on round-trip', () => {
+		const wb = new Workbook()
+		const themedStyle = wb.styles.register({
+			font: { color: { kind: 'theme', theme: 4, tint: -0.25 } },
+			fill: { pattern: 'solid', fgColor: { kind: 'theme', theme: 5 } },
+		})
+		const sheet = wb.addSheet('Theme')
+		sheet.cells.set(0, 0, { value: stringValue('Brand'), formula: null, styleId: themedStyle })
+		wb.preservedTheme = {
+			path: 'xl/theme/theme1.xml',
+			contentType: 'application/vnd.openxmlformats-officedocument.theme+xml',
+			xml: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Custom Theme">
+  <a:themeElements>
+    <a:clrScheme name="Brand">
+      <a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1>
+      <a:lt1><a:sysClr val="window" lastClr="FFFFFF"/></a:lt1>
+      <a:dk2><a:srgbClr val="123456"/></a:dk2>
+      <a:lt2><a:srgbClr val="F2F2F2"/></a:lt2>
+      <a:accent1><a:srgbClr val="004488"/></a:accent1>
+      <a:accent2><a:srgbClr val="D64545"/></a:accent2>
+      <a:accent3><a:srgbClr val="4CAF50"/></a:accent3>
+      <a:accent4><a:srgbClr val="7E57C2"/></a:accent4>
+      <a:accent5><a:srgbClr val="00ACC1"/></a:accent5>
+      <a:accent6><a:srgbClr val="FB8C00"/></a:accent6>
+      <a:hlink><a:srgbClr val="1A73E8"/></a:hlink>
+      <a:folHlink><a:srgbClr val="7B1FA2"/></a:folHlink>
+    </a:clrScheme>
+    <a:fontScheme name="Brand Fonts">
+      <a:majorFont><a:latin typeface="Inter Display"/></a:majorFont>
+      <a:minorFont><a:latin typeface="Inter"/></a:minorFont>
+    </a:fontScheme>
+    <a:fmtScheme name="Brand Formats"/>
+  </a:themeElements>
+</a:theme>`,
+		}
+		wb.themeMetadata = {
+			name: 'Custom Theme',
+			colorSchemeName: 'Brand',
+			colorCount: 12,
+			majorFontLatin: 'Inter Display',
+			minorFontLatin: 'Inter',
+		}
+
+		const { result, bytes } = roundTrip(wb)
+		const fingerprint = fingerprintXlsx(bytes)
+		expect(fingerprint.partPaths).toContain('xl/theme/theme1.xml')
+		expect(result.workbook.preservedTheme).toEqual({
+			path: 'xl/theme/theme1.xml',
+			contentType: 'application/vnd.openxmlformats-officedocument.theme+xml',
+			xml: expect.stringContaining('Custom Theme'),
+		})
+		expect(result.workbook.themeMetadata).toEqual({
+			name: 'Custom Theme',
+			colorSchemeName: 'Brand',
+			colorCount: 12,
+			majorFontLatin: 'Inter Display',
+			minorFontLatin: 'Inter',
+		})
+		const style = result.workbook.styles.get(
+			result.workbook.sheets[0]?.cells.get(0, 0)?.styleId ?? S0,
+		)
+		expect(style?.font?.color).toEqual({ kind: 'theme', theme: 4, tint: -0.25 })
+		expect(style?.fill?.fgColor).toEqual({ kind: 'theme', theme: 5 })
+		expect(fingerprint.workbookRels?.tagCounts).toMatchObject({
+			Relationships: 1,
+			Relationship: 4,
+		})
+		expect(fingerprint.contentTypes?.normalized).toContain('/xl/theme/theme1.xml')
+	})
+
+	it('preserves table-part sheet wiring when table capsules are present', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Balance')
+		sheet.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: S0 })
+		sheet.cells.set(0, 1, { value: stringValue('Value'), formula: null, styleId: S0 })
+		sheet.cells.set(1, 0, { value: stringValue('Cash'), formula: null, styleId: S0 })
+		sheet.cells.set(1, 1, { value: numberValue(10), formula: null, styleId: S0 })
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'BalanceTable',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 1, col: 1 } },
+			columns: [{ name: 'Name' }, { name: 'Value' }],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+
+		const capsules: PreservationCapsule[] = [
+			{
+				partPath: 'xl/tables/table1.xml',
+				contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml',
+				relationships: [],
+				content: new TextEncoder().encode(`<?xml version="1.0"?>
+<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="Table1" displayName="BalanceTable" ref="A1:B2" headerRowCount="1" totalsRowCount="0">
+  <tableColumns count="2">
+    <tableColumn id="1" name="Name"/>
+    <tableColumn id="2" name="Value"/>
+  </tableColumns>
+</table>`),
+				anchor: { kind: 'sheet', sheetName: 'Balance' },
+				relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/table',
+			},
+		]
+
+		const { result, bytes } = roundTrip(wb, capsules)
+		expect(result.workbook.sheets[0]?.tables).toHaveLength(1)
+		const fingerprint = fingerprintXlsx(bytes)
+		expect(fingerprint.sheets[0]?.xml.tagCounts).toMatchObject({
+			tableParts: 1,
+			tablePart: 1,
+		})
+		expect(fingerprint.sheetRels[0]?.xml.tagCounts).toMatchObject({
+			Relationships: 1,
+			Relationship: 1,
+		})
 	})
 
 	it('preserves capsule parts through write-read cycle', () => {
@@ -190,5 +409,80 @@ describe('writeXlsx', () => {
 		expect(entries['xl/_rels/workbook.xml.rels']).toBeDefined()
 		expect(entries['xl/styles.xml']).toBeDefined()
 		expect(entries['xl/worksheets/sheet1.xml']).toBeDefined()
+	})
+
+	it('emits a stable structure fingerprint for synthetic workbooks', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Report')
+		const percentId = wb.styles.register({
+			font: { bold: true },
+			numberFormat: '0.0%',
+		})
+		sheet.cells.set(0, 0, { value: stringValue('Revenue'), formula: null, styleId: S0 })
+		sheet.cells.set(0, 1, { value: numberValue(0.25), formula: null, styleId: percentId })
+		sheet.cells.set(1, 1, { value: numberValue(0.5), formula: 'B1*2', styleId: percentId })
+		sheet.merges.push({ start: { row: 0, col: 0 }, end: { row: 0, col: 1 } })
+		wb.definedNames.set('RevenuePct', 'Report!$B$1')
+		wb.calcSettings = {
+			...wb.calcSettings,
+			calcMode: 'manual',
+			fullCalcOnLoad: true,
+		}
+
+		const written = writeXlsx(wb)
+		expect(written.ok).toBe(true)
+		if (!written.ok) return
+
+		const fingerprint = fingerprintXlsx(written.value)
+		expect(fingerprint.partPaths).toEqual([
+			'[Content_Types].xml',
+			'_rels/.rels',
+			'docProps/app.xml',
+			'docProps/core.xml',
+			'xl/_rels/workbook.xml.rels',
+			'xl/sharedStrings.xml',
+			'xl/styles.xml',
+			'xl/workbook.xml',
+			'xl/worksheets/sheet1.xml',
+		])
+		expect(fingerprint.workbook?.tagCounts).toMatchObject({
+			workbook: 1,
+			sheets: 1,
+			sheet: 1,
+			definedNames: 1,
+			definedName: 1,
+			calcPr: 1,
+		})
+		expect(fingerprint.workbookRels?.tagCounts).toMatchObject({
+			Relationships: 1,
+			Relationship: 3,
+		})
+		expect(fingerprint.styles?.tagCounts).toMatchObject({
+			styleSheet: 1,
+			fonts: 1,
+			fills: 1,
+			borders: 1,
+			numFmts: 1,
+			numFmt: 1,
+			cellXfs: 1,
+			xf: 2,
+		})
+		expect(fingerprint.sheets).toHaveLength(1)
+		expect(fingerprint.sheets[0]).toEqual(
+			expect.objectContaining({
+				path: 'xl/worksheets/sheet1.xml',
+				xml: expect.objectContaining({
+					tagCounts: expect.objectContaining({
+						worksheet: 1,
+						sheetData: 1,
+						row: 2,
+						c: 3,
+						f: 1,
+						mergeCells: 1,
+						mergeCell: 1,
+					}),
+				}),
+			}),
+		)
 	})
 })

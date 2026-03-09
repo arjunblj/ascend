@@ -400,6 +400,247 @@ describe('readXlsx', () => {
 		)
 	})
 
+	it('parses workbook views, workbook properties, and external references', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/externalLinks/externalLink1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml"/>
+</Types>`,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink" Target="externalLinks/externalLink1.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <workbookPr date1904="1" filterPrivacy="1" codeName="Model"/>
+  <bookViews>
+    <workbookView activeTab="1" firstSheet="2" visibility="visible" tabRatio="600"/>
+  </bookViews>
+  <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
+  <externalReferences>
+    <externalReference r:id="rId2"/>
+  </externalReferences>
+  <calcPr calcMode="manual" fullCalcOnLoad="1"/>
+</workbook>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+			'xl/externalLinks/externalLink1.xml': `<?xml version="1.0"?><externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"/>`,
+		})
+
+		const result = readXlsx(bytes)
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(result.value.workbook.workbookProperties).toEqual({
+			date1904: true,
+			filterPrivacy: true,
+			codeName: 'Model',
+		})
+		expect(result.value.workbook.workbookViews).toEqual([
+			{ activeTab: 1, firstSheet: 2, visibility: 'visible', tabRatio: 600 },
+		])
+		expect(result.value.workbook.externalReferences).toEqual(['xl/externalLinks/externalLink1.xml'])
+	})
+
+	it('parses and preserves workbook theme metadata', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
+</Types>`,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdTheme" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+			'xl/theme/theme1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Office Twist">
+  <a:themeElements>
+    <a:clrScheme name="Office">
+      <a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1>
+      <a:lt1><a:sysClr val="window" lastClr="FFFFFF"/></a:lt1>
+      <a:dk2><a:srgbClr val="1F497D"/></a:dk2>
+      <a:lt2><a:srgbClr val="EEECE1"/></a:lt2>
+      <a:accent1><a:srgbClr val="4F81BD"/></a:accent1>
+      <a:accent2><a:srgbClr val="C0504D"/></a:accent2>
+      <a:accent3><a:srgbClr val="9BBB59"/></a:accent3>
+      <a:accent4><a:srgbClr val="8064A2"/></a:accent4>
+      <a:accent5><a:srgbClr val="4BACC6"/></a:accent5>
+      <a:accent6><a:srgbClr val="F79646"/></a:accent6>
+      <a:hlink><a:srgbClr val="0000FF"/></a:hlink>
+      <a:folHlink><a:srgbClr val="800080"/></a:folHlink>
+    </a:clrScheme>
+    <a:fontScheme name="Office">
+      <a:majorFont><a:latin typeface="Aptos Display"/></a:majorFont>
+      <a:minorFont><a:latin typeface="Aptos"/></a:minorFont>
+    </a:fontScheme>
+    <a:fmtScheme name="Office"/>
+  </a:themeElements>
+</a:theme>`,
+		})
+
+		const result = readXlsx(bytes, { mode: 'metadata-only' })
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(result.value.workbook.themeMetadata).toEqual({
+			name: 'Office Twist',
+			colorSchemeName: 'Office',
+			colorCount: 12,
+			majorFontLatin: 'Aptos Display',
+			minorFontLatin: 'Aptos',
+		})
+		expect(result.value.workbook.preservedTheme).toEqual({
+			path: 'xl/theme/theme1.xml',
+			contentType: 'application/vnd.openxmlformats-officedocument.theme+xml',
+			xml: expect.stringContaining('<a:theme'),
+		})
+	})
+
+	it('parses worksheet layout metadata and hyperlinks', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheetViews>
+    <sheetView workbookViewId="0">
+      <pane xSplit="2" ySplit="1" state="frozen"/>
+    </sheetView>
+  </sheetViews>
+  <cols>
+    <col min="1" max="2" width="18.5" customWidth="1"/>
+  </cols>
+  <sheetData>
+    <row r="1" ht="24" customHeight="1">
+      <c r="A1" t="s"><v>0</v></c>
+      <c r="B1" t="s"><v>1</v></c>
+    </row>
+  </sheetData>
+  <autoFilter ref="A1:B10"/>
+  <pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>
+  <pageSetup orientation="landscape" fitToWidth="1" fitToHeight="2"/>
+  <printOptions gridLines="1" headings="1"/>
+  <headerFooter><oddHeader>&amp;LTest</oddHeader><oddFooter>&amp;R1</oddFooter></headerFooter>
+  <ignoredErrors><ignoredError sqref="A1:B2" numberStoredAsText="1"/></ignoredErrors>
+  <hyperlinks><hyperlink ref="A1" r:id="rIdHyper" display="Docs" tooltip="Open docs"/></hyperlinks>
+</worksheet>`,
+			'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdHyper" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/docs"/>
+</Relationships>`,
+		})
+
+		const result = readXlsx(bytes)
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet?.frozenRows).toBe(1)
+		expect(sheet?.frozenCols).toBe(2)
+		expect(sheet?.colWidths.get(0)).toBe(18.5)
+		expect(sheet?.colWidths.get(1)).toBe(18.5)
+		expect(sheet?.rowHeights.get(0)).toBe(24)
+		expect(sheet?.autoFilter).toBe('A1:B10')
+		expect(sheet?.pageMargins).toEqual({
+			left: 0.7,
+			right: 0.7,
+			top: 0.75,
+			bottom: 0.75,
+			header: 0.3,
+			footer: 0.3,
+		})
+		expect(sheet?.pageSetup).toEqual({
+			orientation: 'landscape',
+			fitToWidth: 1,
+			fitToHeight: 2,
+		})
+		expect(sheet?.printOptions).toEqual({
+			gridLines: true,
+			headings: true,
+			horizontalCentered: undefined,
+			verticalCentered: undefined,
+		})
+		expect(sheet?.headerFooter).toEqual({
+			oddHeader: '&LTest',
+			oddFooter: '&R1',
+			evenHeader: undefined,
+			evenFooter: undefined,
+			firstHeader: undefined,
+			firstFooter: undefined,
+		})
+		expect(sheet?.ignoredErrors).toEqual(['A1:B2'])
+		expect(sheet?.hyperlinks.get('A1')).toEqual({
+			target: 'https://example.com/docs',
+			location: undefined,
+			display: 'Docs',
+			tooltip: 'Open docs',
+		})
+	})
+
+	it('captures style metadata richness for read-time inspection', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>`,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/styles.xml': `<?xml version="1.0"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <numFmts count="1"><numFmt numFmtId="164" formatCode="0.00%"/></numFmts>
+  <fonts count="2"><font/><font><b/></font></fonts>
+  <fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"/></fill></fills>
+  <borders count="1"><border/></borders>
+  <cellStyleXfs count="1"><xf/></cellStyleXfs>
+  <cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/><xf numFmtId="164" fontId="1" fillId="1" borderId="0"/></cellXfs>
+  <dxfs count="2"><dxf><font><b/></font></dxf><dxf><fill><patternFill patternType="solid"/></fill></dxf></dxfs>
+  <tableStyles count="1" defaultTableStyle="TableStyleMedium2"><tableStyle name="TableStyleMedium2"/></tableStyles>
+</styleSheet>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(result.value.workbook.styleMetadata).toEqual({
+			numFmtCount: 1,
+			fontCount: 2,
+			fillCount: 2,
+			borderCount: 1,
+			cellXfCount: 2,
+			dxfCount: 2,
+			tableStyleCount: 1,
+		})
+	})
+
 	it('supports metadata-only reads without parsing sheet cells', () => {
 		const result = readXlsx(minimalXlsx(), { mode: 'metadata-only' })
 		expect(result.ok).toBe(true)
@@ -409,6 +650,9 @@ describe('readXlsx', () => {
 		const sheet = result.value.workbook.sheets[0]
 		expect(sheet?.name).toBe('Data')
 		expect(sheet?.cells.cellCount()).toBe(0)
+		expect(result.value.report.features.some((feature) => feature.feature === 'partialLoad')).toBe(
+			true,
+		)
 	})
 
 	it('supports selective sheet parsing', () => {
@@ -455,5 +699,41 @@ describe('readXlsx', () => {
 			kind: 'number',
 			value: 20,
 		})
+		expect(result.value.report.features.some((feature) => feature.feature === 'partialLoad')).toBe(
+			true,
+		)
+	})
+
+	it('reports preserved non-semantic parts explicitly', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/custom/custom1.xml" ContentType="application/custom+xml"/>
+</Types>`,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/worksheets/sheet1.xml': SHEET_XML,
+			'xl/custom/custom1.xml': '<custom>preserve me</custom>',
+		})
+
+		const result = readXlsx(bytes)
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(result.value.report.status).toBe('has-preserved')
+		expect(
+			result.value.report.features.find((feature) => feature.feature === 'preservedPart'),
+		).toEqual(
+			expect.objectContaining({
+				tier: 'preserved',
+				count: 1,
+				locations: ['xl/custom/custom1.xml'],
+			}),
+		)
 	})
 })

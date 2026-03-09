@@ -18,6 +18,7 @@ import {
 	REL_SHARED_STRINGS,
 	REL_STYLES,
 	REL_TABLE,
+	REL_THEME,
 	type Relationship,
 	resolvePath,
 } from './relationships.ts'
@@ -25,6 +26,7 @@ import { parseSharedStrings } from './shared-strings.ts'
 import { parseSheet } from './sheet.ts'
 import { parseStyles } from './styles.ts'
 import { parseTable } from './table.ts'
+import { parseThemeXml } from './theme.ts'
 import { parseWorkbookXml } from './workbook.ts'
 import { extractZip, type ZipArchive } from './zip.ts'
 
@@ -32,11 +34,21 @@ export interface ReadXlsxResult {
 	readonly workbook: Workbook
 	readonly report: CompatibilityReport
 	readonly capsules: PreservationCapsule[]
+	readonly loadInfo: ReadXlsxLoadInfo
 }
 
 export interface ReadXlsxOptions {
 	readonly mode?: 'full' | 'metadata-only'
 	readonly sheets?: readonly string[]
+}
+
+export interface ReadXlsxLoadInfo {
+	readonly mode: 'full' | 'metadata-only' | 'selective'
+	readonly isPartial: boolean
+	readonly cellsHydrated: boolean
+	readonly hasAllSheets: boolean
+	readonly sourceSheetNames: readonly string[]
+	readonly loadedSheetNames: readonly string[]
 }
 
 interface FormulaFeatureSummary {
@@ -93,6 +105,17 @@ export function readXlsx(
 
 	const workbook = new Workbook()
 	workbook.calcSettings = wbInfo.calcSettings
+	workbook.workbookProperties = { ...wbInfo.workbookProperties }
+	workbook.workbookViews.push(...wbInfo.workbookViews.map((view) => ({ ...view })))
+	workbook.preservedXml = {
+		workbookXml: wbXml,
+		...(wbRelsXml ? { workbookRelsXml: wbRelsXml } : {}),
+	}
+	for (const relId of wbInfo.externalReferenceRelIds) {
+		const rel = relMap.get(relId)
+		if (!rel) continue
+		workbook.externalReferences.push(resolvePath(workbookPath, rel.target))
+	}
 
 	const consumed = new Set<string>()
 	consumed.add('[Content_Types].xml')
@@ -107,6 +130,21 @@ export function readXlsx(
 	const stylesPart = wbRels.find((r) => r.type === REL_STYLES)
 	const stylesPath = stylesPart ? resolvePath(workbookPath, stylesPart.target) : undefined
 	if (stylesPath) consumed.add(stylesPath)
+
+	const themePart = wbRels.find((r) => r.type === REL_THEME)
+	const themePath = themePart ? resolvePath(workbookPath, themePart.target) : undefined
+	if (themePath) consumed.add(themePath)
+	if (themePath) {
+		const themeXml = readPart(archive, themePath)
+		if (themeXml) {
+			workbook.themeMetadata = parseThemeXml(themeXml)
+			workbook.preservedTheme = {
+				path: themePath,
+				contentType: resolveContentType(themePath, contentTypes),
+				xml: themeXml,
+			}
+		}
+	}
 
 	const sheetPathToName = new Map<string, string>()
 	const formulaFeatures: FormulaFeatureSummary = {
@@ -144,20 +182,43 @@ export function readXlsx(
 		const stylesXml = stylesPath ? readPart(archive, stylesPath) : undefined
 		const parsedStyles = stylesXml
 			? parseStyles(stylesXml)
-			: { cellStyles: [{}], isDateFormat: [false] }
+			: {
+					cellStyles: [{}],
+					isDateFormat: [false],
+					metadata: {
+						numFmtCount: 0,
+						fontCount: 0,
+						fillCount: 0,
+						borderCount: 0,
+						cellXfCount: 1,
+						dxfCount: 0,
+						tableStyleCount: 0,
+					},
+				}
+		if (stylesXml) {
+			workbook.preservedStyles = { xml: stylesXml, xfByStyleId: {} }
+		}
 		const styleIds = registerStyles(workbook, parsedStyles.cellStyles)
+		workbook.styleMetadata = parsedStyles.metadata
 
 		for (const entry of sheetsToParse) {
 			const sheetXml = readPart(archive, entry.path)
 			if (!sheetXml) continue
+			const sheetRelsXml = readPart(archive, getRelsPath(entry.path))
+			const sheetRelationships = sheetRelsXml ? parseRelationships(sheetRelsXml) : []
 			recordFormulaFeatures(sheetXml, entry.name, formulaFeatures)
 			const sheet = parseSheet(entry.name, sheetXml, {
 				sharedStrings,
 				styleIds,
 				isDateFormat: parsedStyles.isDateFormat,
+				relationships: sheetRelationships,
 			})
-			attachTables(archive, entry.path, sheet)
+			attachTables(archive, entry.path, sheet, sheetRelationships)
 			sheet.state = entry.state
+			sheet.preservedXml = {
+				xml: sheetXml,
+				...(sheetRelsXml ? { relsXml: sheetRelsXml } : {}),
+			}
 			workbook.sheets.push(sheet)
 		}
 	}
@@ -173,7 +234,6 @@ export function readXlsx(
 		workbook.definedNames.set(dn.name, dn.formula)
 	}
 
-	const report = buildReport(contentTypes, formulaFeatures, workbook)
 	const capsules = collectCapsules(
 		archive,
 		consumed,
@@ -182,8 +242,21 @@ export function readXlsx(
 		sheetPathToName,
 		workbookPath,
 	)
+	const sourceSheetNames = wbInfo.sheets.map((sheet) => sheet.name)
+	const loadedSheetNames = sheetsToParse.map((sheet) => sheet.name)
+	const hasAllSheets = loadedSheetNames.length === sourceSheetNames.length
+	const cellsHydrated = mode !== 'metadata-only'
+	const loadInfo: ReadXlsxLoadInfo = {
+		mode: selectedSheets ? 'selective' : mode,
+		isPartial: !hasAllSheets || !cellsHydrated,
+		cellsHydrated,
+		hasAllSheets,
+		sourceSheetNames,
+		loadedSheetNames,
+	}
+	const report = buildReport(contentTypes, formulaFeatures, workbook, capsules, loadInfo)
 
-	return ok({ workbook, report, capsules })
+	return ok({ workbook, report, capsules, loadInfo })
 }
 
 function readPart(archive: ZipArchive, path: string): string | undefined {
@@ -191,7 +264,21 @@ function readPart(archive: ZipArchive, path: string): string | undefined {
 }
 
 function registerStyles(workbook: Workbook, cellStyles: CellStyle[]): StyleId[] {
-	return cellStyles.map((style) => workbook.styles.register(style))
+	const styleIds = cellStyles.map((style) => workbook.styles.register(style))
+	const xfByStyleId: Record<number, number> = {}
+	for (let xfIndex = 0; xfIndex < styleIds.length; xfIndex++) {
+		const styleId = styleIds[xfIndex]
+		if (styleId === undefined) continue
+		if (xfByStyleId[styleId] === undefined) xfByStyleId[styleId] = xfIndex
+	}
+	if (xfByStyleId[0] === undefined) xfByStyleId[0] = 0
+	if (workbook.preservedStyles) {
+		workbook.preservedStyles = {
+			...workbook.preservedStyles,
+			xfByStyleId,
+		}
+	}
+	return styleIds
 }
 
 function collectCapsules(
@@ -277,6 +364,8 @@ function buildReport(
 	},
 	formulaFeatures: FormulaFeatureSummary,
 	workbook: Workbook,
+	capsules: readonly PreservationCapsule[],
+	loadInfo: ReadXlsxLoadInfo,
 ): CompatibilityReport {
 	const features: FeatureReport[] = []
 
@@ -362,6 +451,29 @@ function buildReport(
 		})
 	}
 
+	if (capsules.length > 0) {
+		features.push({
+			feature: 'preservedPart',
+			tier: 'preserved',
+			count: capsules.length,
+			locations: capsules.map((capsule) => capsule.partPath),
+			note: 'Extra OOXML parts are preserved outside the semantic workbook model.',
+		})
+	}
+
+	if (loadInfo.isPartial) {
+		const reasons: string[] = []
+		if (!loadInfo.hasAllSheets) reasons.push('only selected sheets are loaded')
+		if (!loadInfo.cellsHydrated) reasons.push('sheet cells are not hydrated')
+		features.push({
+			feature: 'partialLoad',
+			tier: 'normalized',
+			count: 1,
+			locations: loadInfo.loadedSheetNames,
+			note: `Workbook is being inspected through a partial view because ${reasons.join(' and ')}.`,
+		})
+	}
+
 	if (features.length === 0) return emptyReport('xlsx')
 
 	const summary = { exact: 0, normalized: 0, preserved: 0, unsupported: 0 }
@@ -384,11 +496,10 @@ function attachTables(
 	archive: ZipArchive,
 	sheetPath: string,
 	sheet: Workbook['sheets'][number],
+	sheetRelationships: readonly Relationship[],
 ): void {
 	if (!sheet) return
-	const sheetRelsXml = readPart(archive, getRelsPath(sheetPath))
-	if (!sheetRelsXml) return
-	const tableRels = parseRelationships(sheetRelsXml).filter((rel) => rel.type === REL_TABLE)
+	const tableRels = sheetRelationships.filter((rel) => rel.type === REL_TABLE)
 	for (const rel of tableRels) {
 		const tablePath = resolvePath(sheetPath, rel.target)
 		const tableXml = readPart(archive, tablePath)

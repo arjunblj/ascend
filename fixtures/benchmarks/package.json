@@ -10,6 +10,7 @@
 		"@ascend/schema": "workspace:*"
 	},
 	"scripts": {
-		"bench": "bun run run.ts"
+		"bench": "bun run run.ts",
+		"compare": "bun run compare.ts"
 	}
 }

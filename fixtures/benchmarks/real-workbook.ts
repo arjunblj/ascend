@@ -1,7 +1,13 @@
 import { createHash } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { access, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { AscendWorkbook } from '../../packages/sdk/src/index.ts'
+import {
+	type BenchmarkCaseResult,
+	createBenchmarkSuite,
+	formatBytes,
+	summarizeSamples,
+} from './results.ts'
 
 interface TimingResult {
 	readonly name: string
@@ -14,6 +20,8 @@ interface TimingResult {
 		readonly durationMs: number
 		readonly rssDeltaBytes?: number
 		readonly retainedRssDeltaBytes?: number
+		readonly rssAfterBytes?: number
+		readonly rssAfterGcBytes?: number
 	}[]
 }
 
@@ -41,7 +49,20 @@ interface StepResult {
 			readonly tableStyleCount: number
 		}
 	}
+	readonly assertions?: Record<string, string | number | boolean | null>
 }
+
+type StepName =
+	| 'open-metadata'
+	| 'open-values'
+	| 'open-full'
+	| 'read-window-values'
+	| 'workflow-inspect-read'
+	| 'preview-numeric-edit'
+	| 'preview-format-edit'
+	| 'no-op-save-bytes'
+	| 'numeric-edit-save-bytes'
+	| 'format-edit-save-bytes'
 
 function sha256(bytes: Uint8Array): string {
 	return createHash('sha256').update(bytes).digest('hex')
@@ -77,15 +98,28 @@ async function time<T>(
 	}
 }
 
-function renderTimings(timings: readonly TimingResult[]): string {
-	const headers = ['step', 'ms', 'rss-delta', 'rss-after', 'retained', 'rss-after-gc']
-	const rows = timings.map((timing) => [
-		timing.name,
-		timing.durationMs.toFixed(2),
-		timing.rssDeltaBytes !== undefined ? formatBytes(timing.rssDeltaBytes) : 'n/a',
-		timing.rssAfterBytes !== undefined ? formatBytes(timing.rssAfterBytes) : 'n/a',
-		timing.retainedRssDeltaBytes !== undefined ? formatBytes(timing.retainedRssDeltaBytes) : 'n/a',
-		timing.rssAfterGcBytes !== undefined ? formatBytes(timing.rssAfterGcBytes) : 'n/a',
+function renderTimings(results: readonly BenchmarkCaseResult[]): string {
+	const headers = [
+		'step',
+		'median-ms',
+		'p95-ms',
+		'rss-delta',
+		'rss-after',
+		'retained',
+		'rss-after-gc',
+	]
+	const rows = results.map((result) => [
+		result.name,
+		result.metrics.medianMs.toFixed(2),
+		result.metrics.p95Ms.toFixed(2),
+		result.metrics.rssDeltaBytes !== undefined ? formatBytes(result.metrics.rssDeltaBytes) : 'n/a',
+		result.metrics.rssAfterBytes !== undefined ? formatBytes(result.metrics.rssAfterBytes) : 'n/a',
+		result.metrics.retainedRssDeltaBytes !== undefined
+			? formatBytes(result.metrics.retainedRssDeltaBytes)
+			: 'n/a',
+		result.metrics.rssAfterGcBytes !== undefined
+			? formatBytes(result.metrics.rssAfterGcBytes)
+			: 'n/a',
 	])
 	const widths = headers.map((header, index) =>
 		Math.max(header.length, ...rows.map((row) => row[index]?.length ?? 0)),
@@ -102,40 +136,47 @@ function renderTimings(timings: readonly TimingResult[]): string {
 }
 
 async function main(): Promise<void> {
-	const argPath = process.argv[2]
-	const target = resolve(argPath ?? 'research/real-workbooks/Book1.xlsx')
+	const argPath = readPositionalArg(0)
+	const target = argPath ? resolve(argPath) : await defaultBenchmarkTarget()
 	const step = readFlag('--step')
 	const repeat = Math.max(1, Number.parseInt(readFlag('--repeat') ?? '1', 10) || 1)
 	if (step) {
-		const result = await runStep(target, step)
+		const result = await runStep(target, step as StepName)
 		console.log(JSON.stringify(result, null, 2))
 		return
 	}
 
-	const stepNames = [
+	const stepNames: readonly StepName[] = [
 		'open-metadata',
 		'open-values',
 		'open-full',
+		'read-window-values',
+		'workflow-inspect-read',
 		'preview-numeric-edit',
 		'preview-format-edit',
 		'no-op-save-bytes',
 		'numeric-edit-save-bytes',
 		'format-edit-save-bytes',
-	] as const
+	]
 	const results: StepResult[] = []
 	for (const name of stepNames) {
 		results.push(await runRepeatedStep(target, name, repeat))
 	}
-	const timings = results.map((result) => result.timing)
+	const cases = results.map((result) => toBenchmarkCase(result))
 	const parity = results.find((result) => result.parity)?.parity
 	const workbook = results.find((result) => result.workbook)?.workbook
 
-	const output = {
-		file: target,
-		parity,
-		workbook,
-		timings,
-	}
+	const output = createBenchmarkSuite({
+		suite: 'ascend-real-workbook-benchmarks',
+		kind: 'real-workbook',
+		cases,
+		metadata: {
+			file: target,
+			repeat,
+			...(parity ? { parity } : {}),
+			...(workbook ? { workbook } : {}),
+		},
+	})
 
 	if (process.argv.includes('--json')) {
 		console.log(JSON.stringify(output, null, 2))
@@ -144,21 +185,10 @@ async function main(): Promise<void> {
 
 	console.log(`Real workbook benchmark: ${target}`)
 	console.log(`Byte-identical no-op save: ${parity?.byteIdentical ? 'yes' : 'no'}`)
-	console.log(renderTimings(timings))
+	console.log(renderTimings(cases))
 }
 
-async function runIsolatedStep(
-	target: string,
-	step:
-		| 'open-metadata'
-		| 'open-values'
-		| 'open-full'
-		| 'preview-numeric-edit'
-		| 'preview-format-edit'
-		| 'no-op-save-bytes'
-		| 'numeric-edit-save-bytes'
-		| 'format-edit-save-bytes',
-): Promise<StepResult> {
+async function runIsolatedStep(target: string, step: StepName): Promise<StepResult> {
 	const proc = Bun.spawn(
 		['bun', 'run', process.argv[1] ?? import.meta.path, target, '--step', step],
 		{
@@ -178,7 +208,7 @@ async function runIsolatedStep(
 	return JSON.parse(stdout) as StepResult
 }
 
-async function runStep(target: string, step: string): Promise<StepResult> {
+async function runStep(target: string, step: StepName): Promise<StepResult> {
 	const originalBytes = new Uint8Array(await readFile(target))
 	const originalSha = sha256(originalBytes)
 
@@ -208,6 +238,48 @@ async function runStep(target: string, step: string): Promise<StepResult> {
 					externalReferenceCount: info.externalReferenceCount,
 					compatibility: info.compatibility.status,
 					styleSummary: info.styleSummary,
+				},
+			}
+		}
+		case 'read-window-values': {
+			const wb = await AscendWorkbook.open(target, { mode: 'values' })
+			const probe = pickReadProbe(wb)
+			const { result, timing } = await time('read-window-values', async () =>
+				Promise.resolve(wb.readWindow(probe.sheet, probe.range, { rowLimit: probe.rowLimit })),
+			)
+			if (!result) throw new Error('Read-window benchmark failed to load target range')
+			return {
+				timing,
+				assertions: {
+					sheet: probe.sheet,
+					range: probe.range,
+					returnedCells: result.cells.length,
+					hasMore: result.hasMore,
+				},
+			}
+		}
+		case 'workflow-inspect-read': {
+			const wb = await AscendWorkbook.open(target, { mode: 'values' })
+			const probe = pickReadProbe(wb)
+			const { result, timing } = await time('workflow-inspect-read', async () => {
+				const info = wb.inspect()
+				const first = wb.readWindow(probe.sheet, probe.range, { rowLimit: probe.rowLimit })
+				const second = wb.readWindow(probe.sheet, probe.range, {
+					rowOffset: probe.rowLimit,
+					rowLimit: probe.rowLimit,
+				})
+				return {
+					sheetCount: info.sheetCount,
+					firstCells: first?.cells.length ?? 0,
+					secondCells: second?.cells.length ?? 0,
+				}
+			})
+			return {
+				timing,
+				assertions: {
+					sheetCount: result.sheetCount,
+					firstCells: result.firstCells,
+					secondCells: result.secondCells,
 				},
 			}
 		}
@@ -266,22 +338,12 @@ async function runStep(target: string, step: string): Promise<StepResult> {
 			const { timing } = await time('format-edit-save-bytes', async () => wb.toBytes())
 			return { timing }
 		}
-		default:
-			throw new Error(`Unknown benchmark step: ${step}`)
 	}
 }
 
 async function runRepeatedStep(
 	target: string,
-	step:
-		| 'open-metadata'
-		| 'open-values'
-		| 'open-full'
-		| 'preview-numeric-edit'
-		| 'preview-format-edit'
-		| 'no-op-save-bytes'
-		| 'numeric-edit-save-bytes'
-		| 'format-edit-save-bytes',
+	step: StepName,
 	repeat: number,
 ): Promise<StepResult> {
 	const results: StepResult[] = []
@@ -304,6 +366,8 @@ async function runRepeatedStep(
 			...(timing.retainedRssDeltaBytes !== undefined
 				? { retainedRssDeltaBytes: timing.retainedRssDeltaBytes }
 				: {}),
+			...(timing.rssAfterBytes !== undefined ? { rssAfterBytes: timing.rssAfterBytes } : {}),
+			...(timing.rssAfterGcBytes !== undefined ? { rssAfterGcBytes: timing.rssAfterGcBytes } : {}),
 		})),
 	}
 
@@ -311,12 +375,75 @@ async function runRepeatedStep(
 		timing: aggregateTiming,
 		parity: results.find((result) => result.parity)?.parity,
 		workbook: results.find((result) => result.workbook)?.workbook,
+		assertions: results.find((result) => result.assertions)?.assertions,
+	}
+}
+
+function toBenchmarkCase(result: StepResult): BenchmarkCaseResult {
+	const samples = result.timing.samples?.map((sample) => ({
+		durationMs: sample.durationMs,
+		...(sample.rssDeltaBytes !== undefined ? { rssDeltaBytes: sample.rssDeltaBytes } : {}),
+		...(sample.retainedRssDeltaBytes !== undefined
+			? { retainedRssDeltaBytes: sample.retainedRssDeltaBytes }
+			: {}),
+		...(sample.rssAfterBytes !== undefined ? { rssAfterBytes: sample.rssAfterBytes } : {}),
+		...(sample.rssAfterGcBytes !== undefined ? { rssAfterGcBytes: sample.rssAfterGcBytes } : {}),
+	})) ?? [
+		{
+			durationMs: result.timing.durationMs,
+			...(result.timing.rssDeltaBytes !== undefined
+				? { rssDeltaBytes: result.timing.rssDeltaBytes }
+				: {}),
+			...(result.timing.retainedRssDeltaBytes !== undefined
+				? { retainedRssDeltaBytes: result.timing.retainedRssDeltaBytes }
+				: {}),
+			...(result.timing.rssAfterBytes !== undefined
+				? { rssAfterBytes: result.timing.rssAfterBytes }
+				: {}),
+			...(result.timing.rssAfterGcBytes !== undefined
+				? { rssAfterGcBytes: result.timing.rssAfterGcBytes }
+				: {}),
+		},
+	]
+	return {
+		name: result.timing.name,
+		category: 'workflow',
+		dimensions: {},
+		metrics: summarizeSamples(samples),
+		...(result.timing.samples ? { samples } : {}),
+		...(result.assertions ? { assertions: result.assertions } : {}),
 	}
 }
 
 function readFlag(name: string): string | undefined {
 	const index = process.argv.indexOf(name)
 	return index >= 0 ? process.argv[index + 1] : undefined
+}
+
+async function defaultBenchmarkTarget(): Promise<string> {
+	const candidates = [
+		'research/excel-corpus/ms-excel-formulas-and-pivot-tables.xlsx',
+		'research/excel-corpus/conditional-formatting.xlsx',
+		'research/real-workbooks/Book1.xlsx',
+	]
+	for (const candidate of candidates) {
+		const resolved = resolve(candidate)
+		try {
+			await access(resolved)
+			return resolved
+		} catch {}
+	}
+	return resolve(candidates[candidates.length - 1] ?? 'research/real-workbooks/Book1.xlsx')
+}
+
+function readPositionalArg(index: number): string | undefined {
+	const positional = process.argv.slice(2).filter((arg, argIndex, args) => {
+		if (arg.startsWith('--')) return false
+		const previous = args[argIndex - 1]
+		if (previous && previous.startsWith('--')) return false
+		return true
+	})
+	return positional[index]
 }
 
 function pickNumericProbe(wb: AscendWorkbook): { sheet: string; ref: string; value: number } {
@@ -335,6 +462,24 @@ function pickNumericProbe(wb: AscendWorkbook): { sheet: string; ref: string; val
 		}
 	}
 	return { sheet: wb.sheets[0] ?? 'Sheet1', ref: 'A1', value: 1 }
+}
+
+function pickReadProbe(wb: AscendWorkbook): { sheet: string; range: string; rowLimit: number } {
+	for (const sheetName of wb.sheets) {
+		const sheet = wb.sheet(sheetName)
+		if (!sheet) continue
+		const used = sheet.usedRange()
+		if (!used) continue
+		const endCol = Math.min(used.end.col, 19)
+		const endRow = Math.min(used.end.row, 999)
+		const rowLimit = Math.max(1, Math.min(200, endRow - used.start.row + 1))
+		return {
+			sheet: sheetName,
+			range: `${columnLabel(used.start.col)}${used.start.row + 1}:${columnLabel(endCol)}${endRow + 1}`,
+			rowLimit,
+		}
+	}
+	return { sheet: wb.sheets[0] ?? 'Sheet1', range: 'A1:A1', rowLimit: 1 }
 }
 
 function median(values: number[]): number {
@@ -366,12 +511,6 @@ function getRssBytes(): number | undefined {
 	} catch {
 		return undefined
 	}
-}
-
-function formatBytes(bytes: number): string {
-	if (bytes < 1024) return `${bytes} B`
-	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-	return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
 }
 
 function runGc(): void {

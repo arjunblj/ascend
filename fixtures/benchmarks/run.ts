@@ -2,6 +2,14 @@ import { createWorkbook, type StyleId, type Workbook } from '../../packages/core
 import { defaultCalcContext, recalculate } from '../../packages/engine/src/index.ts'
 import { readXlsx, writeXlsx } from '../../packages/io-xlsx/src/index.ts'
 import { EMPTY, numberValue } from '../../packages/schema/src/index.ts'
+import { AscendWorkbook } from '../../packages/sdk/src/index.ts'
+import {
+	type BenchmarkCaseResult,
+	createBenchmarkSuite,
+	formatBytes,
+	formatRate,
+	summarizeSamples,
+} from './results.ts'
 
 const SID = 0 as StyleId
 
@@ -13,23 +21,15 @@ interface ScenarioInput {
 	readonly cells: number
 }
 
-interface Scenario {
-	readonly name: string
-	readonly kind: 'read' | 'calc'
-	build(): ScenarioInput
-	run(input: ScenarioInput): void
+interface ScenarioRunResult {
+	readonly assertions?: Record<string, string | number | boolean | null>
 }
 
-interface ScenarioResult {
+interface Scenario {
 	readonly name: string
-	readonly kind: 'read' | 'calc'
-	readonly durationMs: number
-	readonly rows: number
-	readonly cols: number
-	readonly cells: number
-	readonly bytes: number
-	readonly rssDeltaBytes?: number
-	readonly throughputCellsPerSec: number
+	readonly category: 'read' | 'write' | 'calc' | 'workflow'
+	build(): ScenarioInput
+	run(input: ScenarioInput): Promise<ScenarioRunResult | void> | ScenarioRunResult | void
 }
 
 function requireBytes(input: ScenarioInput): Uint8Array {
@@ -122,7 +122,7 @@ function buildRangeAggregationWorkbook(length: number): Workbook {
 const scenarios: readonly Scenario[] = [
 	{
 		name: 'write-dense-40k',
-		kind: 'read',
+		category: 'write',
 		build() {
 			const workbook = buildDenseWorkbook(2000, 20)
 			return { workbook, rows: 2000, cols: 20, cells: 40_000 }
@@ -133,7 +133,7 @@ const scenarios: readonly Scenario[] = [
 	},
 	{
 		name: 'write-large-100k',
-		kind: 'read',
+		category: 'write',
 		build() {
 			const workbook = buildDenseWorkbook(5000, 20)
 			return { workbook, rows: 5000, cols: 20, cells: 100_000 }
@@ -144,7 +144,7 @@ const scenarios: readonly Scenario[] = [
 	},
 	{
 		name: 'write-multi-sheet',
-		kind: 'read',
+		category: 'write',
 		build() {
 			const workbook = buildMultiSheetWorkbook(8, 1000, 10)
 			return { workbook, rows: 1000, cols: 10, cells: 80_000 }
@@ -155,7 +155,7 @@ const scenarios: readonly Scenario[] = [
 	},
 	{
 		name: 'roundtrip-dense-40k',
-		kind: 'read',
+		category: 'read',
 		build() {
 			const workbook = buildDenseWorkbook(2000, 20)
 			const bytes = mustWrite(workbook)
@@ -169,7 +169,7 @@ const scenarios: readonly Scenario[] = [
 	},
 	{
 		name: 'read-large-200k',
-		kind: 'read',
+		category: 'read',
 		build() {
 			const workbook = buildDenseWorkbook(10_000, 20)
 			const bytes = mustWrite(workbook)
@@ -182,7 +182,7 @@ const scenarios: readonly Scenario[] = [
 	},
 	{
 		name: 'read-metadata-dense',
-		kind: 'read',
+		category: 'read',
 		build() {
 			const workbook = buildDenseWorkbook(2000, 20)
 			const bytes = mustWrite(workbook)
@@ -195,7 +195,7 @@ const scenarios: readonly Scenario[] = [
 	},
 	{
 		name: 'read-full-dense',
-		kind: 'read',
+		category: 'read',
 		build() {
 			const workbook = buildDenseWorkbook(2000, 20)
 			const bytes = mustWrite(workbook)
@@ -208,7 +208,7 @@ const scenarios: readonly Scenario[] = [
 	},
 	{
 		name: 'read-full-sparse',
-		kind: 'read',
+		category: 'read',
 		build() {
 			const workbook = buildSparseWorkbook(50_000, 8, 200)
 			const bytes = mustWrite(workbook)
@@ -221,7 +221,7 @@ const scenarios: readonly Scenario[] = [
 	},
 	{
 		name: 'read-selective-sheet',
-		kind: 'read',
+		category: 'read',
 		build() {
 			const workbook = buildMultiSheetWorkbook(4, 800, 10)
 			const bytes = mustWrite(workbook)
@@ -233,8 +233,93 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'read-window-dense-values',
+		category: 'read',
+		build() {
+			const workbook = buildDenseWorkbook(5000, 20)
+			const bytes = mustWrite(workbook)
+			return { bytes, rows: 5000, cols: 20, cells: 100_000 }
+		},
+		async run(input) {
+			const wb = await AscendWorkbook.open(requireBytes(input), { mode: 'values' })
+			const window = wb.readWindow('Sheet1', 'A1:T5000', { rowLimit: 250 })
+			if (!window) throw new Error('Dense window benchmark failed to read Sheet1')
+			return {
+				assertions: {
+					returnedCells: window.cells.length,
+					hasMore: window.hasMore,
+				},
+			}
+		},
+	},
+	{
+		name: 'read-window-sparse-wide',
+		category: 'read',
+		build() {
+			const workbook = buildSparseWorkbook(100_000, 20, 500)
+			const bytes = mustWrite(workbook)
+			return { bytes, rows: 100_000, cols: 20, cells: 4_000 }
+		},
+		async run(input) {
+			const wb = await AscendWorkbook.open(requireBytes(input), { mode: 'values' })
+			const window = wb.readWindow('Sheet1', 'A1:T100000', { rowLimit: 5000 })
+			if (!window) throw new Error('Sparse window benchmark failed to read Sheet1')
+			return {
+				assertions: {
+					returnedCells: window.cells.length,
+					hasMore: window.hasMore,
+				},
+			}
+		},
+	},
+	{
+		name: 'workflow-reopen-values-window',
+		category: 'workflow',
+		build() {
+			const workbook = buildDenseWorkbook(4000, 20)
+			const bytes = mustWrite(workbook)
+			return { bytes, rows: 4000, cols: 20, cells: 80_000 }
+		},
+		async run(input) {
+			let totalCells = 0
+			for (let i = 0; i < 3; i++) {
+				const wb = await AscendWorkbook.open(requireBytes(input), { mode: 'values' })
+				const window = wb.readWindow('Sheet1', 'A1:T4000', { rowLimit: 200 })
+				if (!window) throw new Error('Workflow benchmark failed to read Sheet1')
+				totalCells += window.cells.length
+			}
+			return {
+				assertions: {
+					iterations: 3,
+					totalCellsRead: totalCells,
+				},
+			}
+		},
+	},
+	{
+		name: 'formula-inspect-chain',
+		category: 'workflow',
+		build() {
+			const workbook = buildFormulaChainWorkbook(6000)
+			const bytes = mustWrite(workbook)
+			return { bytes, rows: 6000, cols: 1, cells: 6000 }
+		},
+		async run(input) {
+			const wb = await AscendWorkbook.open(requireBytes(input))
+			const info = wb.formula('Sheet1!A6000')
+			if (!info) throw new Error('Formula inspect benchmark could not load formula target')
+			return {
+				assertions: {
+					volatile: info.volatile,
+					refCount: info.refs.length,
+					functionCount: info.functions.length,
+				},
+			}
+		},
+	},
+	{
 		name: 'recalc-formula-chain',
-		kind: 'calc',
+		category: 'calc',
 		build() {
 			const workbook = buildFormulaChainWorkbook(6000)
 			return { workbook, rows: 6000, cols: 1, cells: 6000 }
@@ -245,7 +330,7 @@ const scenarios: readonly Scenario[] = [
 	},
 	{
 		name: 'recalc-range-aggregation',
-		kind: 'calc',
+		category: 'calc',
 		build() {
 			const workbook = buildRangeAggregationWorkbook(800)
 			return { workbook, rows: 800, cols: 2, cells: 1600 }
@@ -264,28 +349,28 @@ function getRssBytes(): number | undefined {
 	}
 }
 
-function formatBytes(bytes: number): string {
-	if (bytes < 1024) return `${bytes} B`
-	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-	return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
-}
-
-function formatRate(rate: number): string {
-	if (!Number.isFinite(rate)) return 'n/a'
-	if (rate >= 1_000_000) return `${(rate / 1_000_000).toFixed(2)}M cells/s`
-	if (rate >= 1_000) return `${(rate / 1_000).toFixed(1)}K cells/s`
-	return `${rate.toFixed(1)} cells/s`
-}
-
-function renderSummary(results: readonly ScenarioResult[]): string {
-	const headers = ['scenario', 'ms', 'cells', 'bytes', 'throughput', 'rss-delta']
+function renderSummary(results: readonly BenchmarkCaseResult[]): string {
+	const headers = [
+		'scenario',
+		'category',
+		'median-ms',
+		'p95-ms',
+		'cells',
+		'bytes',
+		'throughput',
+		'rss-delta',
+	]
 	const rows = results.map((result) => [
 		result.name,
-		result.durationMs.toFixed(2),
-		String(result.cells),
-		formatBytes(result.bytes),
-		formatRate(result.throughputCellsPerSec),
-		result.rssDeltaBytes !== undefined ? formatBytes(result.rssDeltaBytes) : 'n/a',
+		result.category,
+		result.metrics.medianMs.toFixed(2),
+		result.metrics.p95Ms.toFixed(2),
+		String(result.dimensions.cells ?? 'n/a'),
+		typeof result.dimensions.bytes === 'number' ? formatBytes(result.dimensions.bytes) : 'n/a',
+		result.metrics.throughputPerSec !== undefined
+			? formatRate(result.metrics.throughputPerSec)
+			: 'n/a',
+		result.metrics.rssDeltaBytes !== undefined ? formatBytes(result.metrics.rssDeltaBytes) : 'n/a',
 	])
 
 	const widths = headers.map((header, index) =>
@@ -303,36 +388,70 @@ function renderSummary(results: readonly ScenarioResult[]): string {
 	].join('\n')
 }
 
-function runScenario(scenario: Scenario): ScenarioResult {
-	const input = scenario.build()
-	const bytes = input.bytes?.byteLength ?? 0
-	const rssBefore = getRssBytes()
-	const start = performance.now()
-	scenario.run(input)
-	const durationMs = performance.now() - start
-	const rssAfter = getRssBytes()
+async function runScenario(scenario: Scenario, repeat: number): Promise<BenchmarkCaseResult> {
+	const samples: Array<{
+		readonly durationMs: number
+		readonly throughputPerSec: number
+		readonly rssDeltaBytes?: number
+	}> = []
+	let firstInput: ScenarioInput | undefined
+	let assertions: Record<string, string | number | boolean | null> | undefined
+	for (let i = 0; i < repeat; i++) {
+		const input = scenario.build()
+		firstInput ??= input
+		const rssBefore = getRssBytes()
+		const start = performance.now()
+		const runResult = await scenario.run(input)
+		const durationMs = performance.now() - start
+		const rssAfter = getRssBytes()
+		samples.push({
+			durationMs,
+			throughputPerSec:
+				durationMs > 0 ? (input.cells / durationMs) * 1000 : Number.POSITIVE_INFINITY,
+			rssDeltaBytes:
+				rssBefore !== undefined && rssAfter !== undefined
+					? Math.max(0, rssAfter - rssBefore)
+					: undefined,
+		})
+		assertions ??= runResult?.assertions
+	}
+	const input = firstInput
+	if (!input) throw new Error(`Scenario "${scenario.name}" did not produce input`)
 	return {
 		name: scenario.name,
-		kind: scenario.kind,
-		durationMs,
-		rows: input.rows,
-		cols: input.cols,
-		cells: input.cells,
-		bytes,
-		rssDeltaBytes:
-			rssBefore !== undefined && rssAfter !== undefined
-				? Math.max(0, rssAfter - rssBefore)
-				: undefined,
-		throughputCellsPerSec:
-			durationMs > 0 ? (input.cells / durationMs) * 1000 : Number.POSITIVE_INFINITY,
+		category: scenario.category,
+		dimensions: {
+			rows: input.rows,
+			cols: input.cols,
+			cells: input.cells,
+			bytes: input.bytes?.byteLength ?? 0,
+			repeat,
+		},
+		metrics: summarizeSamples(samples),
+		...(repeat > 1 ? { samples } : {}),
+		...(assertions ? { assertions } : {}),
 	}
 }
 
-function main(): void {
+function readFlag(name: string): string | undefined {
+	const index = process.argv.indexOf(name)
+	return index >= 0 ? process.argv[index + 1] : undefined
+}
+
+async function main(): Promise<void> {
 	const json = process.argv.includes('--json')
-	const results = scenarios.map(runScenario)
+	const repeat = Math.max(1, Number.parseInt(readFlag('--repeat') ?? '1', 10) || 1)
+	const results = await Promise.all(scenarios.map((scenario) => runScenario(scenario, repeat)))
+	const suite = createBenchmarkSuite({
+		suite: 'ascend-synthetic-benchmarks',
+		kind: 'synthetic',
+		cases: results,
+		metadata: {
+			repeat,
+		},
+	})
 	if (json) {
-		console.log(JSON.stringify(results, null, 2))
+		console.log(JSON.stringify(suite, null, 2))
 		return
 	}
 
@@ -340,4 +459,4 @@ function main(): void {
 	console.log(renderSummary(results))
 }
 
-main()
+await main()

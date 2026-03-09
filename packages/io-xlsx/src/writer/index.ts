@@ -4,6 +4,7 @@ import { ascendError, err, ok } from '@ascend/schema'
 import type { PreservationCapsule } from '../preserve.ts'
 import {
 	getRelsPath,
+	REL_COMMENTS,
 	REL_DRAWING,
 	REL_SHARED_STRINGS,
 	REL_STYLES,
@@ -12,6 +13,7 @@ import {
 	REL_VML_DRAWING,
 	REL_WORKSHEET,
 } from '../reader/relationships.ts'
+import { buildCommentsVml, buildCommentsXml } from './comments.ts'
 import { buildContentTypesXml } from './content-types.ts'
 import { buildAppPropsXml, buildCorePropsXml } from './doc-props.ts'
 import type { RelEntry } from './relationships.ts'
@@ -31,7 +33,9 @@ const REL_EXT_PROPS =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties'
 const REL_HYPERLINK =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink'
+const CT_COMMENTS = 'application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml'
 const CT_TABLE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml'
+const CT_VML = 'application/vnd.openxmlformats-officedocument.vmlDrawing'
 
 export interface WriteXlsxOptions {
 	readonly dirtySheetNames?: readonly string[]
@@ -51,6 +55,8 @@ export function writeXlsx(
 		const skippedCapsulePaths = new Set<string>()
 		const extraOverrides: Array<{ partPath: string; contentType: string }> = []
 		let nextGeneratedTableNumber = 1
+		let nextGeneratedCommentsNumber = 1
+		let nextGeneratedVmlNumber = 1
 
 		const ssTable = buildSharedStrings(workbook)
 		const hasSharedStrings = ssTable.count > 0
@@ -162,9 +168,12 @@ export function writeXlsx(
 			const preservedSheetXml = sheet.preservedXml
 			const sheetRels: RelEntry[] = []
 			let sheetRelId = 1
+			let commentsRelId: string | undefined
 			let drawingRelId: string | undefined
 			let legacyDrawingRelId: string | undefined
+			let commentsCapsulePath: string | undefined
 			const tableRelIds: string[] = []
+			const commentsCapsule = sheetCapsules.find((capsule) => capsule.relType === REL_COMMENTS)
 			const tableCapsules = sheetCapsules.filter((capsule) => capsule.relType === REL_TABLE)
 			const hyperlinkEntries: Array<{
 				ref: string
@@ -182,6 +191,10 @@ export function writeXlsx(
 					type: capsule.relType,
 					target: computeRelativePath('xl/worksheets/', capsule.partPath),
 				})
+				if (capsule.relType === REL_COMMENTS && !commentsRelId) {
+					commentsRelId = relId
+					commentsCapsulePath = capsule.partPath
+				}
 				if (capsule.relType === REL_DRAWING && !drawingRelId) drawingRelId = relId
 				if (capsule.relType === REL_VML_DRAWING && !legacyDrawingRelId) legacyDrawingRelId = relId
 				sheetRelId++
@@ -217,6 +230,41 @@ export function writeXlsx(
 				!(options.dirtySheetNames ?? []).includes(sheet.name) &&
 				preservedSheetXml?.xml
 			if (!preserveSheetXml) {
+				if (sheet.comments.size > 0) {
+					const commentsPartPath =
+						commentsCapsule?.partPath ?? `xl/comments${nextGeneratedCommentsNumber}.xml`
+					const vmlPartPath =
+						commentsCapsulePath && legacyDrawingRelId
+							? sheetCapsules.find((capsule) => capsule.relType === REL_VML_DRAWING)?.partPath
+							: undefined
+					const resolvedVmlPartPath =
+						vmlPartPath ?? `xl/drawings/vmlDrawing${nextGeneratedVmlNumber}.vml`
+					parts.set(commentsPartPath, encode(buildCommentsXml(sheet)))
+					parts.set(resolvedVmlPartPath, encode(buildCommentsVml(sheet)))
+					extraOverrides.push({ partPath: commentsPartPath, contentType: CT_COMMENTS })
+					extraOverrides.push({ partPath: resolvedVmlPartPath, contentType: CT_VML })
+					if (commentsCapsule) skippedCapsulePaths.add(commentsCapsule.partPath)
+					const existingVmlCapsule = sheetCapsules.find(
+						(capsule) => capsule.relType === REL_VML_DRAWING,
+					)
+					if (existingVmlCapsule) skippedCapsulePaths.add(existingVmlCapsule.partPath)
+					commentsRelId = `rId${sheetRelId}`
+					sheetRels.push({
+						id: commentsRelId,
+						type: REL_COMMENTS,
+						target: computeRelativePath('xl/worksheets/', commentsPartPath),
+					})
+					sheetRelId++
+					legacyDrawingRelId = `rId${sheetRelId}`
+					sheetRels.push({
+						id: legacyDrawingRelId,
+						type: REL_VML_DRAWING,
+						target: computeRelativePath('xl/worksheets/', resolvedVmlPartPath),
+					})
+					sheetRelId++
+					nextGeneratedCommentsNumber++
+					nextGeneratedVmlNumber++
+				}
 				for (let tableIndex = 0; tableIndex < sheet.tables.length; tableIndex++) {
 					const table = sheet.tables[tableIndex]
 					if (!table) continue
@@ -247,7 +295,8 @@ export function writeXlsx(
 								tableRelIds,
 								...(sheet.drawingRefs.hasDrawing && drawingRelId ? { drawingRelId } : {}),
 								hyperlinks: hyperlinkEntries,
-								...(sheet.drawingRefs.hasLegacyDrawing && legacyDrawingRelId
+								...((sheet.drawingRefs.hasLegacyDrawing || sheet.comments.size > 0) &&
+								legacyDrawingRelId
 									? { legacyDrawingRelId }
 									: {}),
 							}),

@@ -250,6 +250,35 @@ describe('writeXlsx', () => {
 		})
 	})
 
+	it('writes classic comments with generated comments and VML parts', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Notes')
+		sheet.cells.set(1, 1, { value: stringValue('Cell'), formula: null, styleId: S0 })
+		sheet.comments.set('B2', { text: 'Hello', author: 'Ada' })
+
+		const { result, bytes } = roundTrip(wb)
+		expect(result.workbook.sheets[0]?.comments.get('B2')).toEqual({
+			text: 'Hello',
+			author: 'Ada',
+		})
+		expect(result.workbook.sheets[0]?.drawingRefs).toEqual({
+			hasDrawing: false,
+			hasLegacyDrawing: true,
+		})
+
+		const entries = unzipSync(bytes)
+		expect(entries['xl/comments1.xml']).toBeDefined()
+		expect(entries['xl/drawings/vmlDrawing1.vml']).toBeDefined()
+		const fingerprint = fingerprintXlsx(bytes)
+		expect(fingerprint.sheets[0]?.xml.tagCounts).toMatchObject({
+			legacyDrawing: 1,
+		})
+		expect(fingerprint.sheetRels[0]?.xml.tagCounts).toMatchObject({
+			Relationships: 1,
+			Relationship: 2,
+		})
+	})
+
 	it('preserves conditional formatting and data validations on round-trip', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Rules')

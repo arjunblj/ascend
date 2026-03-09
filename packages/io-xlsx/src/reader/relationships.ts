@@ -16,6 +16,8 @@ export const REL_SHARED_STRINGS =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings'
 export const REL_THEME = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme'
 export const REL_TABLE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/table'
+export const REL_COMMENTS =
+	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments'
 export const REL_DRAWING =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing'
 export const REL_VML_DRAWING =

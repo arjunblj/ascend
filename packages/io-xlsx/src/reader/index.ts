@@ -10,10 +10,12 @@ import type {
 } from '@ascend/schema'
 import { ascendError, emptyReport, err, ok } from '@ascend/schema'
 import type { PreservationCapsule } from '../preserve.ts'
+import { parseCommentsXml } from './comments.ts'
 import { type ContentTypes, parseContentTypes } from './content-types.ts'
 import {
 	getRelsPath,
 	parseRelationships,
+	REL_COMMENTS,
 	REL_OFFICE_DOC,
 	REL_SHARED_STRINGS,
 	REL_STYLES,
@@ -216,6 +218,7 @@ export function readXlsx(
 				differentialStyles: parsedStyles.differentialStyles,
 				relationships: sheetRelationships,
 			})
+			attachComments(archive, entry.path, sheet, sheetRelationships)
 			attachTables(archive, entry.path, sheet, sheetRelationships)
 			sheet.state = entry.state
 			sheet.preservedXml = {
@@ -510,6 +513,23 @@ function attachTables(
 		const table = parseTable(tableXml, sheet.id)
 		if (!table) continue
 		sheet.tables.push(table)
+	}
+}
+
+function attachComments(
+	archive: ZipArchive,
+	sheetPath: string,
+	sheet: Workbook['sheets'][number],
+	sheetRelationships: readonly Relationship[],
+): void {
+	if (!sheet) return
+	const commentsRel = sheetRelationships.find((rel) => rel.type === REL_COMMENTS)
+	if (!commentsRel) return
+	const commentsPath = resolvePath(sheetPath, commentsRel.target)
+	const commentsXml = readPart(archive, commentsPath)
+	if (!commentsXml) return
+	for (const [ref, comment] of parseCommentsXml(commentsXml)) {
+		sheet.comments.set(ref, comment)
 	}
 }
 

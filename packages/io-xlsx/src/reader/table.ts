@@ -7,6 +7,7 @@ import {
 	type TableColumn,
 } from '@ascend/core'
 import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
+import { parseAutoFilterNode } from './filtering.ts'
 
 export function parseTable(xml: string, sheetId: SheetId): Table | null {
 	const doc = parseXml(xml)
@@ -29,6 +30,7 @@ export function parseTable(xml: string, sheetId: SheetId): Table | null {
 	const totalsRowCount =
 		numAttr(table, 'totalsRowCount') ?? (boolAttr(table, 'totalsRowShown') ? 1 : 0)
 	const columns = parseTableColumns(table)
+	const autoFilter = parseAutoFilterNode(table.autoFilter as XmlNode | undefined)
 
 	return {
 		id: createTableId(),
@@ -38,6 +40,7 @@ export function parseTable(xml: string, sheetId: SheetId): Table | null {
 		columns,
 		hasHeaders: (headerRowCount ?? 1) !== 0,
 		hasTotals: totalsRowCount > 0,
+		...(autoFilter ? { autoFilter } : {}),
 	}
 }
 

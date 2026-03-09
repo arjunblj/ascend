@@ -330,7 +330,10 @@ describe('applyOperation', () => {
 
 		expect(sheet.tables).toHaveLength(1)
 		expect(sheet.tables[0]?.columns).toEqual([{ name: 'Name' }, { name: 'Value' }])
-		expect(sheet.autoFilter).toBe('A1:B2')
+		expect(sheet.autoFilter).toEqual({
+			ref: 'A1:B2',
+			columns: [],
+		})
 	})
 
 	test('appendRows expands a table and writes new values', () => {

@@ -126,7 +126,10 @@ describe('writeXlsx', () => {
 		sheet.colWidths.set(0, 18.5)
 		sheet.colWidths.set(1, 18.5)
 		sheet.rowHeights.set(0, 24)
-		sheet.autoFilter = 'A1:B10'
+		sheet.autoFilter = {
+			ref: 'A1:B10',
+			columns: [],
+		}
 		sheet.pageMargins = {
 			left: 0.7,
 			right: 0.7,
@@ -156,7 +159,10 @@ describe('writeXlsx', () => {
 		expect(s?.colWidths.get(0)).toBe(18.5)
 		expect(s?.colWidths.get(1)).toBe(18.5)
 		expect(s?.rowHeights.get(0)).toBe(24)
-		expect(s?.autoFilter).toBe('A1:B10')
+		expect(s?.autoFilter).toEqual({
+			ref: 'A1:B10',
+			columns: [],
+		})
 		expect(s?.pageMargins).toEqual({
 			left: 0.7,
 			right: 0.7,
@@ -177,6 +183,54 @@ describe('writeXlsx', () => {
 		expect(s?.headerFooter).toEqual({
 			oddHeader: '&LTest',
 			oddFooter: '&R1',
+		})
+	})
+
+	it('preserves worksheet autoFilter criteria and sort state on round-trip', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Filter')
+		sheet.autoFilter = {
+			ref: 'A1:B10',
+			columns: [
+				{
+					colId: 0,
+					kind: 'filters',
+					blank: true,
+					values: ['Open', 'Closed'],
+				},
+			],
+			sortState: {
+				ref: 'A2:B10',
+				caseSensitive: true,
+				conditions: [{ ref: 'B2:B10', descending: true }],
+			},
+		}
+
+		const { result, bytes } = roundTrip(wb)
+		expect(result.workbook.sheets[0]?.autoFilter).toEqual({
+			ref: 'A1:B10',
+			columns: [
+				{
+					colId: 0,
+					kind: 'filters',
+					blank: true,
+					values: ['Open', 'Closed'],
+				},
+			],
+			sortState: {
+				ref: 'A2:B10',
+				caseSensitive: true,
+				conditions: [{ ref: 'B2:B10', descending: true }],
+			},
+		})
+		const fingerprint = fingerprintXlsx(bytes)
+		expect(fingerprint.sheets[0]?.xml.tagCounts).toMatchObject({
+			autoFilter: 1,
+			filterColumn: 1,
+			filters: 1,
+			filter: 2,
+			sortState: 1,
+			sortCondition: 1,
 		})
 	})
 

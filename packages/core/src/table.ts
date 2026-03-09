@@ -1,3 +1,4 @@
+import type { AutoFilter } from './filter.ts'
 import type { SheetId, TableId } from './ids.ts'
 import type { RangeRef } from './refs.ts'
 
@@ -14,4 +15,5 @@ export interface Table {
 	readonly columns: readonly TableColumn[]
 	readonly hasHeaders: boolean
 	readonly hasTotals: boolean
+	readonly autoFilter?: AutoFilter
 }

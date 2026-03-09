@@ -1,4 +1,5 @@
 import type {
+	AutoFilter,
 	Cell,
 	CellStyle,
 	RangeRef,
@@ -14,6 +15,7 @@ import { parseFormula, printFormula, rewriteRefs } from '@ascend/formulas'
 import type { CellValue, ExcelError } from '@ascend/schema'
 import { booleanValue, EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
 import { asArray, attr, numAttr, parseXml, type XmlNode } from '../xml.ts'
+import { parseAutoFilterNode } from './filtering.ts'
 import type { Relationship } from './relationships.ts'
 
 const CELL_REF_RE = /^([A-Za-z]+)(\d+)$/
@@ -287,10 +289,8 @@ function parseCols(ws: XmlNode, sheet: Sheet): void {
 }
 
 function parseAutoFilter(ws: XmlNode, sheet: Sheet): void {
-	const autoFilter = ws.autoFilter as XmlNode | undefined
-	if (!autoFilter) return
-	const ref = attr(autoFilter, 'ref')
-	if (ref) sheet.autoFilter = ref
+	const autoFilter = parseAutoFilterNode(ws.autoFilter as XmlNode | undefined)
+	sheet.autoFilter = autoFilter as AutoFilter | null
 }
 
 function parseSheetProtection(ws: XmlNode, sheet: Sheet): void {

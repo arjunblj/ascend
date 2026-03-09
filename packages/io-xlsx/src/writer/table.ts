@@ -1,5 +1,6 @@
 import type { Table } from '@ascend/core'
 import { escapeXml } from '../xml.ts'
+import { autoFilterXml } from './filtering.ts'
 
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
@@ -20,7 +21,9 @@ export function buildTableXml(table: Table, tableNumber: number): string {
 	]
 
 	const parts: string[] = [XML_HEADER, `<table ${attrs.join(' ')}>`]
-	if (table.hasHeaders) {
+	if (table.autoFilter) {
+		parts.push(autoFilterXml(table.autoFilter))
+	} else if (table.hasHeaders) {
 		parts.push(`<autoFilter ref="${ref}"/>`)
 	}
 	parts.push(`<tableColumns count="${table.columns.length}">`)

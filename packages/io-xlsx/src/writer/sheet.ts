@@ -2,6 +2,7 @@ import type { Cell, Sheet, SheetColDef } from '@ascend/core'
 import { indexToColumn } from '@ascend/core'
 import type { CellValue } from '@ascend/schema'
 import { escapeXml } from '../xml.ts'
+import { autoFilterXml } from './filtering.ts'
 import type { SharedStringTable } from './shared-strings.ts'
 
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
@@ -118,7 +119,7 @@ export function buildSheetXml(
 	}
 
 	if (sheet.autoFilter) {
-		parts.push(`<autoFilter ref="${escapeXml(sheet.autoFilter)}"/>`)
+		parts.push(autoFilterXml(sheet.autoFilter))
 	}
 
 	if (sheet.protection) {

@@ -491,7 +491,12 @@ function handleCreateTable(
 		hasHeaders: op.hasHeaders,
 		hasTotals: false,
 	})
-	if (op.hasHeaders) sheet.autoFilter = op.ref
+	if (op.hasHeaders) {
+		sheet.autoFilter = {
+			ref: op.ref,
+			columns: [],
+		}
+	}
 	return ok(patch([], [op.sheet]))
 }
 

@@ -1,3 +1,4 @@
+import type { AutoFilter } from './filter.ts'
 import { createSheetId, type SheetId } from './ids.ts'
 import type { RangeRef } from './refs.ts'
 import { SparseGrid } from './sparse-grid.ts'
@@ -185,7 +186,7 @@ export class Sheet {
 	readonly conditionalFormats: SheetConditionalFormat[]
 	readonly imageRefs: SheetImageRef[]
 	drawingRefs: SheetDrawingRefs
-	autoFilter: string | null
+	autoFilter: AutoFilter | null
 	protection: SheetProtection | null
 	pageMargins: SheetPageMargins | null
 	pageSetup: SheetPageSetup | null

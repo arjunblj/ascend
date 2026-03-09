@@ -362,7 +362,53 @@ describe('readXlsx', () => {
 		expect(sheet?.tables[0]?.name).toBe('Scores')
 		expect(sheet?.tables[0]?.hasHeaders).toBe(true)
 		expect(sheet?.tables[0]?.columns.map((column) => column.name)).toEqual(['Name', 'Score'])
+		expect(sheet?.tables[0]?.autoFilter).toBeUndefined()
 		expect(result.value.report.features.some((feature) => feature.feature === 'table')).toBe(true)
+	})
+
+	it('parses worksheet autoFilter criteria and sort state', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData/>
+  <autoFilter ref="A1:B10">
+    <filterColumn colId="0">
+      <filters blank="1">
+        <filter val="Open"/>
+        <filter val="Closed"/>
+      </filters>
+    </filterColumn>
+    <sortState ref="A2:B10" caseSensitive="1">
+      <sortCondition ref="B2:B10" descending="1"/>
+    </sortState>
+  </autoFilter>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+		expect(result.value.workbook.sheets[0]?.autoFilter).toEqual({
+			ref: 'A1:B10',
+			columns: [
+				{
+					colId: 0,
+					kind: 'filters',
+					blank: true,
+					values: ['Open', 'Closed'],
+				},
+			],
+			sortState: {
+				ref: 'A2:B10',
+				caseSensitive: true,
+				conditions: [{ ref: 'B2:B10', descending: true }],
+			},
+		})
 	})
 
 	it('reports workbook freshness signals from calc settings and calc chain', () => {
@@ -598,7 +644,10 @@ describe('readXlsx', () => {
 		expect(sheet?.colWidths.get(0)).toBe(18.5)
 		expect(sheet?.colWidths.get(1)).toBe(18.5)
 		expect(sheet?.rowHeights.get(0)).toBe(24)
-		expect(sheet?.autoFilter).toBe('A1:B10')
+		expect(sheet?.autoFilter).toEqual({
+			ref: 'A1:B10',
+			columns: [],
+		})
 		expect(sheet?.pageMargins).toEqual({
 			left: 0.7,
 			right: 0.7,

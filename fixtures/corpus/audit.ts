@@ -29,12 +29,48 @@ interface WorkbookSemanticSummary {
 	readonly conditionalFormatCount: number
 	readonly dataValidationCount: number
 	readonly imageCount: number
+	readonly hyperlinkCount: number
+	readonly ignoredErrorCount: number
+	readonly mergeCount: number
+	readonly definedNameCount: number
+	readonly workbookViewCount: number
+	readonly hasWorkbookProtection: boolean
 	readonly pivotTableCount: number
 	readonly pivotCacheCount: number
 	readonly slicerCount: number
 	readonly slicerCacheCount: number
 	readonly externalReferenceCount: number
 	readonly compatibilityStatus: string
+	readonly compatibilityFeatures: Record<string, { tier: string; count: number }>
+	readonly styleSummary: {
+		readonly numFmtCount: number
+		readonly fontCount: number
+		readonly fillCount: number
+		readonly borderCount: number
+		readonly cellXfCount: number
+		readonly dxfCount: number
+		readonly tableStyleCount: number
+	}
+	readonly themeSummary: {
+		readonly hasThemePart: boolean
+		readonly colorCount: number
+	}
+	readonly sheets: Array<{
+		readonly name: string
+		readonly cellCount: number
+		readonly tableCount: number
+		readonly commentCount: number
+		readonly conditionalFormatCount: number
+		readonly dataValidationCount: number
+		readonly imageCount: number
+		readonly hyperlinkCount: number
+		readonly ignoredErrorCount: number
+		readonly hasAutoFilter: boolean
+		readonly hasDrawingRefs: boolean
+		readonly hasProtection: boolean
+		readonly hasPageMetadata: boolean
+		readonly hasFrozenPanes: boolean
+	}>
 }
 
 interface ProbeTarget {
@@ -52,6 +88,7 @@ interface AuditResult {
 	readonly dirtyPackage: PackageSummary
 	readonly sourceSemantic: WorkbookSemanticSummary
 	readonly dirtySemantic: WorkbookSemanticSummary
+	readonly probeValuePersisted: boolean
 	readonly packageRegressions: readonly string[]
 	readonly semanticRegressions: readonly string[]
 	readonly risk: 'low' | 'medium' | 'high'
@@ -96,7 +133,10 @@ async function auditEntry(entry: CorpusManifestEntry): Promise<AuditResult> {
 		await inspectAndBuildDirtyWorkbook(entry.file, sourceBytes)
 	runGc()
 	const dirtyPackage = summarizePackage(dirtyBytes)
-	const dirtySemantic = await inspectDirtyWorkbook(dirtyBytes)
+	const { summary: dirtySemantic, probeValuePersisted } = await inspectDirtyWorkbook(
+		dirtyBytes,
+		probe,
+	)
 	runGc()
 
 	const packageRegressions = diffPackageSummary(sourcePackage, dirtyPackage)
@@ -112,9 +152,15 @@ async function auditEntry(entry: CorpusManifestEntry): Promise<AuditResult> {
 		dirtyPackage,
 		sourceSemantic,
 		dirtySemantic,
+		probeValuePersisted,
 		packageRegressions,
 		semanticRegressions,
-		risk: classifyRisk(noOpByteIdentical, packageRegressions, semanticRegressions),
+		risk: classifyRisk(
+			noOpByteIdentical,
+			probeValuePersisted,
+			packageRegressions,
+			semanticRegressions,
+		),
 	}
 }
 
@@ -150,14 +196,35 @@ async function inspectAndBuildDirtyWorkbook(
 	return { sourceSemantic, noOpByteIdentical, dirtyBytes: workbook.toBytes(), probe }
 }
 
-async function inspectDirtyWorkbook(dirtyBytes: Uint8Array): Promise<WorkbookSemanticSummary> {
+async function inspectDirtyWorkbook(
+	dirtyBytes: Uint8Array,
+	probe: ProbeTarget,
+): Promise<{ summary: WorkbookSemanticSummary; probeValuePersisted: boolean }> {
 	const workbook = await AscendWorkbook.open(dirtyBytes)
-	return summarizeWorkbook(workbook)
+	const probeValuePersisted =
+		workbook.sheet(probe.sheet)?.cell(probe.ref)?.value.kind === 'string' &&
+		workbook.sheet(probe.sheet)?.cell(probe.ref)?.value.value === PROBE_VALUE
+	return { summary: summarizeWorkbook(workbook), probeValuePersisted }
 }
 
 function summarizeWorkbook(workbook: AscendWorkbook): WorkbookSemanticSummary {
 	const info = workbook.inspect()
 	const totalTables = info.sheets.reduce((sum, sheet) => sum + (sheet.tableCount ?? 0), 0)
+	const totalHyperlinks = info.sheets.reduce((sum, sheet) => sum + (sheet.hyperlinkCount ?? 0), 0)
+	const totalIgnoredErrors = info.sheets.reduce(
+		(sum, sheet) => sum + (sheet.ignoredErrorCount ?? 0),
+		0,
+	)
+	const totalMerges = workbook.sheets.reduce(
+		(sum, name) => sum + (workbook.sheet(name)?.merges.length ?? 0),
+		0,
+	)
+	const compatibilityFeatures = Object.fromEntries(
+		info.compatibility.features.map((feature) => [
+			feature.feature,
+			{ tier: feature.tier, count: feature.count },
+		]),
+	)
 	return {
 		sheetCount: info.sheetCount,
 		tableCount: totalTables,
@@ -165,12 +232,40 @@ function summarizeWorkbook(workbook: AscendWorkbook): WorkbookSemanticSummary {
 		conditionalFormatCount: info.conditionalFormatCount ?? 0,
 		dataValidationCount: info.dataValidationCount ?? 0,
 		imageCount: info.imageCount ?? 0,
+		hyperlinkCount: totalHyperlinks,
+		ignoredErrorCount: totalIgnoredErrors,
+		mergeCount: totalMerges,
+		definedNameCount: info.definedNames.length,
+		workbookViewCount: info.workbookViewCount,
+		hasWorkbookProtection: info.hasWorkbookProtection,
 		pivotTableCount: info.pivotTableCount,
 		pivotCacheCount: info.pivotCacheCount,
 		slicerCount: info.slicerCount,
 		slicerCacheCount: info.slicerCacheCount,
 		externalReferenceCount: info.externalReferenceCount,
 		compatibilityStatus: info.compatibility.status,
+		compatibilityFeatures,
+		styleSummary: info.styleSummary,
+		themeSummary: {
+			hasThemePart: info.themeSummary.hasThemePart,
+			colorCount: info.themeSummary.colorCount,
+		},
+		sheets: info.sheets.map((sheet) => ({
+			name: sheet.name,
+			cellCount: sheet.cellCount ?? 0,
+			tableCount: sheet.tableCount ?? 0,
+			commentCount: sheet.commentCount ?? 0,
+			conditionalFormatCount: sheet.conditionalFormatCount ?? 0,
+			dataValidationCount: sheet.dataValidationCount ?? 0,
+			imageCount: sheet.imageCount ?? 0,
+			hyperlinkCount: sheet.hyperlinkCount ?? 0,
+			ignoredErrorCount: sheet.ignoredErrorCount ?? 0,
+			hasAutoFilter: sheet.hasAutoFilter ?? false,
+			hasDrawingRefs: sheet.hasDrawingRefs ?? false,
+			hasProtection: sheet.hasProtection ?? false,
+			hasPageMetadata: sheet.hasPageMetadata ?? false,
+			hasFrozenPanes: sheet.hasFrozenPanes ?? false,
+		})),
 	}
 }
 
@@ -281,6 +376,11 @@ function diffSemanticSummary(
 		'conditionalFormatCount',
 		'dataValidationCount',
 		'imageCount',
+		'hyperlinkCount',
+		'ignoredErrorCount',
+		'mergeCount',
+		'definedNameCount',
+		'workbookViewCount',
 		'pivotTableCount',
 		'pivotCacheCount',
 		'slicerCount',
@@ -300,14 +400,95 @@ function diffSemanticSummary(
 			`compatibility status changed from ${source.compatibilityStatus} to ${dirty.compatibilityStatus}`,
 		)
 	}
+	if (dirty.hasWorkbookProtection !== source.hasWorkbookProtection) {
+		regressions.push(
+			`workbook protection changed: ${source.hasWorkbookProtection} -> ${dirty.hasWorkbookProtection}`,
+		)
+	}
+	for (const key of Object.keys(source.compatibilityFeatures).sort()) {
+		const before = source.compatibilityFeatures[key]
+		const after = dirty.compatibilityFeatures[key]
+		if (!before) continue
+		if (!after) {
+			regressions.push(`compatibility feature missing after edit: ${key}`)
+			continue
+		}
+		if (after.count < before.count) {
+			regressions.push(
+				`compatibility feature count dropped for ${key}: ${before.count} -> ${after.count}`,
+			)
+		}
+		const tierRank = { exact: 3, normalized: 2, preserved: 1, unsupported: 0 } as const
+		if (
+			(tierRank[after.tier as keyof typeof tierRank] ?? -1) <
+			(tierRank[before.tier as keyof typeof tierRank] ?? -1)
+		) {
+			regressions.push(
+				`compatibility feature tier worsened for ${key}: ${before.tier} -> ${after.tier}`,
+			)
+		}
+	}
+	for (const key of Object.keys(source.styleSummary) as Array<
+		keyof WorkbookSemanticSummary['styleSummary']
+	>) {
+		if (dirty.styleSummary[key] < source.styleSummary[key]) {
+			regressions.push(
+				`style summary dropped for ${key}: ${source.styleSummary[key]} -> ${dirty.styleSummary[key]}`,
+			)
+		}
+	}
+	if (dirty.themeSummary.hasThemePart !== source.themeSummary.hasThemePart) {
+		regressions.push(
+			`theme presence changed: ${source.themeSummary.hasThemePart} -> ${dirty.themeSummary.hasThemePart}`,
+		)
+	}
+	if (dirty.themeSummary.colorCount < source.themeSummary.colorCount) {
+		regressions.push(
+			`theme color count dropped: ${source.themeSummary.colorCount} -> ${dirty.themeSummary.colorCount}`,
+		)
+	}
+	for (const beforeSheet of source.sheets) {
+		const afterSheet = dirty.sheets.find((sheet) => sheet.name === beforeSheet.name)
+		if (!afterSheet) {
+			regressions.push(`sheet missing after edit: ${beforeSheet.name}`)
+			continue
+		}
+		const keys: Array<keyof typeof beforeSheet> = [
+			'cellCount',
+			'tableCount',
+			'commentCount',
+			'conditionalFormatCount',
+			'dataValidationCount',
+			'imageCount',
+			'hyperlinkCount',
+			'ignoredErrorCount',
+		]
+		for (const key of keys) {
+			if (afterSheet[key] < beforeSheet[key]) {
+				regressions.push(
+					`sheet ${beforeSheet.name} ${key} dropped: ${beforeSheet[key]} -> ${afterSheet[key]}`,
+				)
+			}
+		}
+		const flagKeys: Array<
+			'hasAutoFilter' | 'hasDrawingRefs' | 'hasProtection' | 'hasPageMetadata' | 'hasFrozenPanes'
+		> = ['hasAutoFilter', 'hasDrawingRefs', 'hasProtection', 'hasPageMetadata', 'hasFrozenPanes']
+		for (const key of flagKeys) {
+			if (beforeSheet[key] && !afterSheet[key]) {
+				regressions.push(`sheet ${beforeSheet.name} lost ${key}`)
+			}
+		}
+	}
 	return regressions
 }
 
 function classifyRisk(
 	noOpByteIdentical: boolean,
+	probeValuePersisted: boolean,
 	packageRegressions: readonly string[],
 	semanticRegressions: readonly string[],
 ): 'low' | 'medium' | 'high' {
+	if (!probeValuePersisted) return 'high'
 	if (packageRegressions.length > 0 || semanticRegressions.length > 0) return 'high'
 	if (!noOpByteIdentical) return 'medium'
 	return 'low'
@@ -317,7 +498,7 @@ function renderSummary(results: readonly AuditResult[]): void {
 	for (const result of results) {
 		console.log(`${riskBadge(result.risk)} ${result.file}`)
 		console.log(
-			`  no-op=${result.noOpByteIdentical ? 'identical' : 'changed'} probe=${result.probe.sheet}!${result.probe.ref}`,
+			`  no-op=${result.noOpByteIdentical ? 'identical' : 'changed'} probe=${result.probe.sheet}!${result.probe.ref} persisted=${result.probeValuePersisted ? 'yes' : 'no'}`,
 		)
 		if (result.packageRegressions.length === 0 && result.semanticRegressions.length === 0) {
 			console.log('  regressions: none detected')

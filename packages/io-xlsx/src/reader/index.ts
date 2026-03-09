@@ -151,7 +151,6 @@ export function readXlsx(
 				? parsePivotCacheDefinitionXml(xml, partPath, entry.cacheId, entry.relId, relationships)
 				: null
 			if (parsed) workbook.pivotCaches.push(parsed)
-			consumed.add(partPath)
 			if (relsXml) consumed.add(getRelsPath(partPath))
 		}
 		for (const rel of wbRels.filter((relationship) => relationship.type === REL_SLICER_CACHE)) {
@@ -161,14 +160,12 @@ export function readXlsx(
 				const parsed = parseSlicerCacheXml(xml, partPath)
 				if (parsed) workbook.slicerCaches.push(parsed)
 			}
-			consumed.add(partPath)
 		}
 		for (const entry of archive.entries()) {
 			if (!entry.path.startsWith('xl/slicers/') || !entry.path.endsWith('.xml')) continue
 			const xml = readPart(archive, entry.path)
 			if (!xml) continue
 			workbook.slicers.push(...parseSlicerXml(xml, entry.path))
-			consumed.add(entry.path)
 		}
 	}
 

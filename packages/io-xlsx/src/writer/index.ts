@@ -288,9 +288,7 @@ export function writeXlsx(
 				})
 			}
 			const preserveSheetXml =
-				!options.sharedStringsDirty &&
-				!(options.dirtySheetNames ?? []).includes(sheet.name) &&
-				preservedSheetXmlText
+				!(options.dirtySheetNames ?? []).includes(sheet.name) && preservedSheetXmlText
 			if (!preserveSheetXml) {
 				if (sheet.comments.size > 0) {
 					const commentsPartPath =

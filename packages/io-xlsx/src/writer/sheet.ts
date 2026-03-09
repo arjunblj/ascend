@@ -118,17 +118,13 @@ export function buildSheetXml(
 		parts.push('</mergeCells>')
 	}
 
-	if (sheet.autoFilter) {
-		parts.push(autoFilterXml(sheet.autoFilter))
-	}
-
 	if (sheet.protection) {
 		const attrs = collectProtectionAttrs(sheet.protection)
 		if (attrs.length > 0) parts.push(`<sheetProtection ${attrs.join(' ')}/>`)
 	}
 
-	if (drawingRelId) {
-		parts.push(`<drawing r:id="${drawingRelId}"/>`)
+	if (sheet.autoFilter) {
+		parts.push(autoFilterXml(sheet.autoFilter))
 	}
 
 	if (sheet.conditionalFormats.length > 0) {
@@ -194,6 +190,11 @@ export function buildSheetXml(
 		parts.push('</hyperlinks>')
 	}
 
+	if (sheet.printOptions) {
+		const attrs = collectMixedAttrs(sheet.printOptions)
+		if (attrs.length > 0) parts.push(`<printOptions ${attrs.join(' ')}/>`)
+	}
+
 	if (sheet.pageMargins) {
 		const attrs = collectNumericAttrs(sheet.pageMargins)
 		if (attrs.length > 0) parts.push(`<pageMargins ${attrs.join(' ')}/>`)
@@ -202,11 +203,6 @@ export function buildSheetXml(
 	if (sheet.pageSetup) {
 		const attrs = collectMixedAttrs(sheet.pageSetup)
 		if (attrs.length > 0) parts.push(`<pageSetup ${attrs.join(' ')}/>`)
-	}
-
-	if (sheet.printOptions) {
-		const attrs = collectMixedAttrs(sheet.printOptions)
-		if (attrs.length > 0) parts.push(`<printOptions ${attrs.join(' ')}/>`)
 	}
 
 	if (sheet.headerFooter) {
@@ -240,16 +236,20 @@ export function buildSheetXml(
 		parts.push('</ignoredErrors>')
 	}
 
+	if (drawingRelId) {
+		parts.push(`<drawing r:id="${drawingRelId}"/>`)
+	}
+
+	if (legacyDrawingRelId) {
+		parts.push(`<legacyDrawing r:id="${legacyDrawingRelId}"/>`)
+	}
+
 	if (tableRelIds.length > 0) {
 		parts.push(`<tableParts count="${tableRelIds.length}">`)
 		for (const relId of tableRelIds) {
 			parts.push(`<tablePart r:id="${relId}"/>`)
 		}
 		parts.push('</tableParts>')
-	}
-
-	if (legacyDrawingRelId) {
-		parts.push(`<legacyDrawing r:id="${legacyDrawingRelId}"/>`)
 	}
 
 	parts.push('</worksheet>')

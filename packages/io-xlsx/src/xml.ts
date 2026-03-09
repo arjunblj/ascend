@@ -39,9 +39,23 @@ export function boolAttr(node: XmlNode, name: string): boolean | undefined {
 }
 
 export function escapeXml(s: string): string {
-	return s
-		.replace(/&/g, '&amp;')
-		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;')
-		.replace(/"/g, '&quot;')
+	if (!needsEscape(s)) return s
+	let out = ''
+	for (let i = 0; i < s.length; i++) {
+		const ch = s.charCodeAt(i)
+		if (ch === 38) out += '&amp;'
+		else if (ch === 60) out += '&lt;'
+		else if (ch === 62) out += '&gt;'
+		else if (ch === 34) out += '&quot;'
+		else out += s[i]
+	}
+	return out
+}
+
+function needsEscape(s: string): boolean {
+	for (let i = 0; i < s.length; i++) {
+		const ch = s.charCodeAt(i)
+		if (ch === 38 || ch === 60 || ch === 62 || ch === 34) return true
+	}
+	return false
 }

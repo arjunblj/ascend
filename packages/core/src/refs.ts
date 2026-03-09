@@ -17,7 +17,9 @@ export function columnToIndex(col: string): number {
 	return result - 1
 }
 
-export function indexToColumn(index: number): string {
+const COLUMN_CACHE: string[] = []
+
+function computeColumnLabel(index: number): string {
 	let result = ''
 	let n = index + 1
 	while (n > 0) {
@@ -26,6 +28,14 @@ export function indexToColumn(index: number): string {
 		n = Math.floor((n - 1) / 26)
 	}
 	return result
+}
+
+for (let i = 0; i < 702; i++) {
+	COLUMN_CACHE.push(computeColumnLabel(i))
+}
+
+export function indexToColumn(index: number): string {
+	return COLUMN_CACHE[index] ?? computeColumnLabel(index)
 }
 
 const A1_RE = /^([A-Za-z]+)(\d+)$/

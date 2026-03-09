@@ -14,12 +14,20 @@ import { parseCommentsXml } from './comments.ts'
 import { type ContentTypes, parseContentTypes } from './content-types.ts'
 import { parseDrawingImageRefs } from './drawing.ts'
 import {
+	parsePivotCacheDefinitionXml,
+	parsePivotTableXml,
+	parseSlicerCacheXml,
+	parseSlicerXml,
+} from './pivots.ts'
+import {
 	getRelsPath,
 	parseRelationships,
 	REL_COMMENTS,
 	REL_DRAWING,
 	REL_OFFICE_DOC,
+	REL_PIVOT_TABLE,
 	REL_SHARED_STRINGS,
+	REL_SLICER_CACHE,
 	REL_STYLES,
 	REL_TABLE,
 	REL_THEME,
@@ -128,6 +136,37 @@ export function readXlsx(
 	consumed.add(workbookPath)
 	consumed.add(wbRelsPath)
 
+	for (const entry of wbInfo.pivotCacheEntries) {
+		const rel = relMap.get(entry.relId)
+		if (!rel) continue
+		const partPath = resolvePath(workbookPath, rel.target)
+		const xml = readPart(archive, partPath)
+		const relsXml = readPart(archive, getRelsPath(partPath))
+		const relationships = relsXml ? parseRelationships(relsXml) : []
+		const parsed = xml
+			? parsePivotCacheDefinitionXml(xml, partPath, entry.cacheId, entry.relId, relationships)
+			: null
+		if (parsed) workbook.pivotCaches.push(parsed)
+		consumed.add(partPath)
+		if (relsXml) consumed.add(getRelsPath(partPath))
+	}
+	for (const rel of wbRels.filter((relationship) => relationship.type === REL_SLICER_CACHE)) {
+		const partPath = resolvePath(workbookPath, rel.target)
+		const xml = readPart(archive, partPath)
+		if (xml) {
+			const parsed = parseSlicerCacheXml(xml, partPath)
+			if (parsed) workbook.slicerCaches.push(parsed)
+		}
+		consumed.add(partPath)
+	}
+	for (const entry of archive.entries()) {
+		if (!entry.path.startsWith('xl/slicers/') || !entry.path.endsWith('.xml')) continue
+		const xml = readPart(archive, entry.path)
+		if (!xml) continue
+		workbook.slicers.push(...parseSlicerXml(xml, entry.path))
+		consumed.add(entry.path)
+	}
+
 	const ssPart = wbRels.find((r) => r.type === REL_SHARED_STRINGS)
 	const ssPath = ssPart ? resolvePath(workbookPath, ssPart.target) : undefined
 	if (ssPath) consumed.add(ssPath)
@@ -223,6 +262,7 @@ export function readXlsx(
 			})
 			attachComments(archive, entry.path, sheet, sheetRelationships)
 			attachDrawingImages(archive, entry.path, sheet, sheetRelationships)
+			attachPivotTables(archive, entry.path, entry.name, workbook, sheetRelationships)
 			attachTables(archive, entry.path, sheet, sheetRelationships)
 			sheet.state = entry.state
 			sheet.preservedXml = {
@@ -552,6 +592,24 @@ function attachDrawingImages(
 		sheet.imageRefs.push(
 			...parseDrawingImageRefs(drawingXml, drawingPath, parseRelationships(drawingRelsXml)),
 		)
+	}
+}
+
+function attachPivotTables(
+	archive: ZipArchive,
+	sheetPath: string,
+	sheetName: string,
+	workbook: Workbook,
+	sheetRelationships: readonly Relationship[],
+): void {
+	for (const rel of sheetRelationships.filter(
+		(relationship) => relationship.type === REL_PIVOT_TABLE,
+	)) {
+		const partPath = resolvePath(sheetPath, rel.target)
+		const xml = readPart(archive, partPath)
+		if (!xml) continue
+		const parsed = parsePivotTableXml(xml, partPath, sheetName)
+		if (parsed) workbook.pivotTables.push(parsed)
 	}
 }
 

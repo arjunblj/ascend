@@ -1,6 +1,7 @@
 import { type CalcSettings, DEFAULT_CALC_SETTINGS } from '@ascend/schema'
 import { DefinedNameCollection } from './defined-name.ts'
 import { createWorkbookId, type SheetId, type WorkbookId } from './ids.ts'
+import type { PivotCacheInfo, PivotTableInfo, SlicerCacheInfo, SlicerInfo } from './pivot.ts'
 import { createSheet, type Sheet } from './sheet.ts'
 import type { CellStyle } from './style.ts'
 import { StyleRegistry } from './style-registry.ts'
@@ -75,6 +76,10 @@ export class Workbook {
 	readonly definedNames = new DefinedNameCollection()
 	readonly styles = new StyleRegistry()
 	readonly differentialStyles: CellStyle[] = []
+	readonly pivotCaches: PivotCacheInfo[] = []
+	readonly pivotTables: PivotTableInfo[] = []
+	readonly slicerCaches: SlicerCacheInfo[] = []
+	readonly slicers: SlicerInfo[] = []
 	readonly workbookViews: WorkbookView[] = []
 	readonly externalReferences: string[] = []
 	workbookProperties: WorkbookProperties = {}

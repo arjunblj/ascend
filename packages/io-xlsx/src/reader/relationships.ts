@@ -21,6 +21,11 @@ export const REL_COMMENTS =
 export const REL_DRAWING =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing'
 export const REL_IMAGE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image'
+export const REL_PIVOT_CACHE_DEFINITION =
+	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheDefinition'
+export const REL_PIVOT_TABLE =
+	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable'
+export const REL_SLICER_CACHE = 'http://schemas.microsoft.com/office/2007/relationships/slicerCache'
 export const REL_VML_DRAWING =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing'
 

@@ -24,6 +24,7 @@ export interface WorkbookInfo {
 	readonly workbookProtection: WorkbookProtection | null
 	readonly workbookViews: readonly WorkbookView[]
 	readonly externalReferenceRelIds: readonly string[]
+	readonly pivotCacheEntries: readonly { cacheId: number; relId: string }[]
 }
 
 export function parseWorkbookXml(xml: string): WorkbookInfo {
@@ -38,6 +39,7 @@ export function parseWorkbookXml(xml: string): WorkbookInfo {
 			workbookProtection: null,
 			workbookViews: [],
 			externalReferenceRelIds: [],
+			pivotCacheEntries: [],
 		}
 	}
 
@@ -48,6 +50,7 @@ export function parseWorkbookXml(xml: string): WorkbookInfo {
 	const workbookProtection = parseWorkbookProtection(wb)
 	const workbookViews = parseWorkbookViews(wb)
 	const externalReferenceRelIds = parseExternalReferenceRelIds(wb)
+	const pivotCacheEntries = parsePivotCacheEntries(wb)
 
 	return {
 		sheets,
@@ -57,7 +60,21 @@ export function parseWorkbookXml(xml: string): WorkbookInfo {
 		workbookProtection,
 		workbookViews,
 		externalReferenceRelIds,
+		pivotCacheEntries,
 	}
+}
+
+function parsePivotCacheEntries(wb: XmlNode): readonly { cacheId: number; relId: string }[] {
+	const pivotCachesNode = wb.pivotCaches as XmlNode | undefined
+	if (!pivotCachesNode) return []
+	const caches: Array<{ cacheId: number; relId: string }> = []
+	for (const pivotCache of asArray<XmlNode>(pivotCachesNode.pivotCache as XmlNode | XmlNode[])) {
+		const cacheId = numAttr(pivotCache, 'cacheId')
+		const relId = attr(pivotCache, 'r:id') ?? attr(pivotCache, 'id')
+		if (cacheId === undefined || !relId) continue
+		caches.push({ cacheId, relId })
+	}
+	return caches
 }
 
 function parseWorkbookProtection(wb: XmlNode): WorkbookProtection | null {

@@ -45,13 +45,44 @@ describe('AscendWorkbook', () => {
 			targetPath: 'xl/media/image1.png',
 		})
 		internal.wb.workbookProtection = { lockStructure: true }
+		internal.wb.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'Sheet1',
+			name: 'PivotTable1',
+			cacheId: 34,
+			locationRef: 'A1',
+		})
+		internal.wb.pivotCaches.push({
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			cacheId: 34,
+			sourceSheet: 'Raw',
+			sourceRef: 'A1:D10',
+		})
+		internal.wb.slicerCaches.push({
+			partPath: 'xl/slicerCaches/slicerCache1.xml',
+			name: 'Slicer_Product',
+			pivotTableNames: ['PivotTable1'],
+		})
+		internal.wb.slicers.push({
+			partPath: 'xl/slicers/slicer1.xml',
+			name: 'Product',
+			cacheName: 'Slicer_Product',
+		})
 		const info = wb.inspect()
 		expect(info.cellCount).toBe(1)
 		expect(info.commentCount).toBe(1)
 		expect(info.conditionalFormatCount).toBe(1)
 		expect(info.dataValidationCount).toBe(1)
 		expect(info.imageCount).toBe(1)
+		expect(info.pivotTableCount).toBe(1)
+		expect(info.pivotCacheCount).toBe(1)
+		expect(info.slicerCount).toBe(1)
+		expect(info.slicerCacheCount).toBe(1)
 		expect(info.hasWorkbookProtection).toBe(true)
+		expect(info.pivotTables[0]?.name).toBe('PivotTable1')
+		expect(info.pivotCaches[0]?.sourceSheet).toBe('Raw')
+		expect(info.slicerCaches[0]?.name).toBe('Slicer_Product')
+		expect(info.slicers[0]?.name).toBe('Product')
 		expect(info.sheets[0]?.cellCount).toBe(1)
 		expect(info.sheets[0]?.commentCount).toBe(1)
 		expect(info.sheets[0]?.conditionalFormatCount).toBe(1)

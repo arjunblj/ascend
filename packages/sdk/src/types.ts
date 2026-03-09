@@ -13,10 +13,43 @@ export interface WorkbookInfo {
 	readonly conditionalFormatCount: number | null
 	readonly dataValidationCount: number | null
 	readonly imageCount: number | null
+	readonly pivotTableCount: number
+	readonly pivotCacheCount: number
+	readonly slicerCount: number
+	readonly slicerCacheCount: number
 	readonly sourceFormat: string
 	readonly workbookViewCount: number
 	readonly externalReferenceCount: number
 	readonly hasWorkbookProtection: boolean
+	readonly pivotTables: readonly {
+		readonly partPath: string
+		readonly sheetName: string
+		readonly name?: string
+		readonly cacheId?: number
+		readonly locationRef?: string
+	}[]
+	readonly pivotCaches: readonly {
+		readonly partPath: string
+		readonly cacheId?: number
+		readonly relId?: string
+		readonly recordCount?: number
+		readonly sourceSheet?: string
+		readonly sourceRef?: string
+		readonly recordsPartPath?: string
+	}[]
+	readonly slicerCaches: readonly {
+		readonly partPath: string
+		readonly name?: string
+		readonly sourceName?: string
+		readonly pivotCacheId?: number
+		readonly pivotTableNames: readonly string[]
+	}[]
+	readonly slicers: readonly {
+		readonly partPath: string
+		readonly name?: string
+		readonly cacheName?: string
+		readonly caption?: string
+	}[]
 	readonly styleSummary: {
 		readonly numFmtCount: number
 		readonly fontCount: number

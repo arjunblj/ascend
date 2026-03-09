@@ -97,6 +97,15 @@ function cloneWorkbook(source: Workbook): Workbook {
 	clone.workbookViews.push(...source.workbookViews.map((view) => ({ ...view })))
 	clone.externalReferences.push(...source.externalReferences)
 	clone.differentialStyles.push(...source.differentialStyles.map((style) => ({ ...style })))
+	clone.pivotCaches.push(...source.pivotCaches.map((entry) => ({ ...entry })))
+	clone.pivotTables.push(...source.pivotTables.map((entry) => ({ ...entry })))
+	clone.slicerCaches.push(
+		...source.slicerCaches.map((entry) => ({
+			...entry,
+			pivotTableNames: [...entry.pivotTableNames],
+		})),
+	)
+	clone.slicers.push(...source.slicers.map((entry) => ({ ...entry })))
 
 	for (const definedName of source.definedNames.list()) {
 		clone.definedNames.set(definedName.name, definedName.formula, definedName.scope)
@@ -344,10 +353,21 @@ export class AscendWorkbook {
 			conditionalFormatCount: this.loadInfo.cellsHydrated ? totalConditionalFormats : null,
 			dataValidationCount: this.loadInfo.cellsHydrated ? totalDataValidations : null,
 			imageCount: this.loadInfo.cellsHydrated ? totalImages : null,
+			pivotTableCount: this.wb.pivotTables.length,
+			pivotCacheCount: this.wb.pivotCaches.length,
+			slicerCount: this.wb.slicers.length,
+			slicerCacheCount: this.wb.slicerCaches.length,
 			sourceFormat: this.compat.sourceFormat,
 			workbookViewCount: this.wb.workbookViews.length,
 			externalReferenceCount: this.wb.externalReferences.length,
 			hasWorkbookProtection: this.wb.workbookProtection !== null,
+			pivotTables: this.wb.pivotTables.map((entry) => ({ ...entry })),
+			pivotCaches: this.wb.pivotCaches.map((entry) => ({ ...entry })),
+			slicerCaches: this.wb.slicerCaches.map((entry) => ({
+				...entry,
+				pivotTableNames: [...entry.pivotTableNames],
+			})),
+			slicers: this.wb.slicers.map((entry) => ({ ...entry })),
 			styleSummary: { ...this.wb.styleMetadata },
 			themeSummary: {
 				hasThemePart: this.wb.preservedTheme !== null,

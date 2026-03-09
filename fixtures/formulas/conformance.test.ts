@@ -25,6 +25,8 @@ interface ConformanceCase {
 		kind: string
 		value?: number | string | boolean
 		serial?: number
+		approx?: number
+		tolerance?: number
 	}
 }
 
@@ -129,6 +131,13 @@ function runCase(
 
 	const cell = sheet.cells.get(formulaRow, formulaCol)
 	const actual = cell?.value ?? EMPTY
+
+	if (c.expected.approx !== undefined && c.expected.tolerance !== undefined) {
+		const pass =
+			actual.kind === 'number' && Math.abs(actual.value - c.expected.approx) <= c.expected.tolerance
+		return { pass, actual }
+	}
+
 	const expected = expectedToCellValue(c.expected)
 	const pass = cellValuesEqual(actual, expected)
 

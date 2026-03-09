@@ -10,6 +10,11 @@ interface TimingResult {
 	readonly rssAfterBytes?: number
 	readonly retainedRssDeltaBytes?: number
 	readonly rssAfterGcBytes?: number
+	readonly samples?: readonly {
+		readonly durationMs: number
+		readonly rssDeltaBytes?: number
+		readonly retainedRssDeltaBytes?: number
+	}[]
 }
 
 interface StepResult {
@@ -100,6 +105,7 @@ async function main(): Promise<void> {
 	const argPath = process.argv[2]
 	const target = resolve(argPath ?? 'research/real-workbooks/Book1.xlsx')
 	const step = readFlag('--step')
+	const repeat = Math.max(1, Number.parseInt(readFlag('--repeat') ?? '1', 10) || 1)
 	if (step) {
 		const result = await runStep(target, step)
 		console.log(JSON.stringify(result, null, 2))
@@ -113,10 +119,11 @@ async function main(): Promise<void> {
 		'preview-numeric-edit',
 		'no-op-save-bytes',
 		'numeric-edit-save-bytes',
+		'format-edit-save-bytes',
 	] as const
 	const results: StepResult[] = []
 	for (const name of stepNames) {
-		results.push(await runIsolatedStep(target, name))
+		results.push(await runRepeatedStep(target, name, repeat))
 	}
 	const timings = results.map((result) => result.timing)
 	const parity = results.find((result) => result.parity)?.parity
@@ -147,7 +154,8 @@ async function runIsolatedStep(
 		| 'open-full'
 		| 'preview-numeric-edit'
 		| 'no-op-save-bytes'
-		| 'numeric-edit-save-bytes',
+		| 'numeric-edit-save-bytes'
+		| 'format-edit-save-bytes',
 ): Promise<StepResult> {
 	const proc = Bun.spawn(
 		['bun', 'run', process.argv[1] ?? import.meta.path, target, '--step', step],
@@ -239,8 +247,57 @@ async function runStep(target: string, step: string): Promise<StepResult> {
 				},
 			}
 		}
+		case 'format-edit-save-bytes': {
+			const wb = await AscendWorkbook.open(target)
+			const probe = pickNumericProbe(wb)
+			wb.apply([{ op: 'setNumberFormat', sheet: probe.sheet, range: probe.ref, format: '0.0%' }])
+			const { timing } = await time('format-edit-save-bytes', async () => wb.toBytes())
+			return { timing }
+		}
 		default:
 			throw new Error(`Unknown benchmark step: ${step}`)
+	}
+}
+
+async function runRepeatedStep(
+	target: string,
+	step:
+		| 'open-metadata'
+		| 'open-values'
+		| 'open-full'
+		| 'preview-numeric-edit'
+		| 'no-op-save-bytes'
+		| 'numeric-edit-save-bytes'
+		| 'format-edit-save-bytes',
+	repeat: number,
+): Promise<StepResult> {
+	const results: StepResult[] = []
+	for (let i = 0; i < repeat; i++) {
+		results.push(await runIsolatedStep(target, step))
+	}
+	if (results.length === 1) return results[0] as StepResult
+
+	const timings = results.map((result) => result.timing)
+	const aggregateTiming: TimingResult = {
+		name: step,
+		durationMs: median(timings.map((timing) => timing.durationMs)),
+		rssDeltaBytes: medianDefined(timings.map((timing) => timing.rssDeltaBytes)),
+		rssAfterBytes: medianDefined(timings.map((timing) => timing.rssAfterBytes)),
+		retainedRssDeltaBytes: medianDefined(timings.map((timing) => timing.retainedRssDeltaBytes)),
+		rssAfterGcBytes: medianDefined(timings.map((timing) => timing.rssAfterGcBytes)),
+		samples: timings.map((timing) => ({
+			durationMs: timing.durationMs,
+			...(timing.rssDeltaBytes !== undefined ? { rssDeltaBytes: timing.rssDeltaBytes } : {}),
+			...(timing.retainedRssDeltaBytes !== undefined
+				? { retainedRssDeltaBytes: timing.retainedRssDeltaBytes }
+				: {}),
+		})),
+	}
+
+	return {
+		timing: aggregateTiming,
+		parity: results.find((result) => result.parity)?.parity,
+		workbook: results.find((result) => result.workbook)?.workbook,
 	}
 }
 
@@ -265,6 +322,19 @@ function pickNumericProbe(wb: AscendWorkbook): { sheet: string; ref: string; val
 		}
 	}
 	return { sheet: wb.sheets[0] ?? 'Sheet1', ref: 'A1', value: 1 }
+}
+
+function median(values: number[]): number {
+	const sorted = [...values].sort((a, b) => a - b)
+	const mid = Math.floor(sorted.length / 2)
+	return sorted.length % 2 === 0
+		? ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2
+		: (sorted[mid] ?? 0)
+}
+
+function medianDefined(values: Array<number | undefined>): number | undefined {
+	const defined = values.filter((value): value is number => value !== undefined)
+	return defined.length > 0 ? median(defined) : undefined
 }
 
 function columnLabel(col: number): string {

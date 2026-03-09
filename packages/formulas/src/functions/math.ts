@@ -181,7 +181,19 @@ export const mathFunctions: FunctionDef[] = [
 	fn('SUM', 1, 255, (args) => {
 		let sum = 0
 		for (const arg of args) {
-			if (arg.kind === 'range' && arg.values) {
+			if (arg.forEachValue) {
+				let err: CellValue | undefined
+				arg.forEachValue((cell) => {
+					if (err) return
+					if (isError(cell)) {
+						err = cell
+						return
+					}
+					const n = numericVal(cell)
+					if (n !== null) sum += n
+				})
+				if (err) return err
+			} else if (arg.kind === 'range' && arg.values) {
 				for (const row of arg.values) {
 					for (const cell of row) {
 						if (isError(cell)) return cell
@@ -222,7 +234,22 @@ export const mathFunctions: FunctionDef[] = [
 		let sum = 0
 		let count = 0
 		for (const arg of args) {
-			if (arg.kind === 'range' && arg.values) {
+			if (arg.forEachValue) {
+				let err: CellValue | undefined
+				arg.forEachValue((cell) => {
+					if (err) return
+					if (isError(cell)) {
+						err = cell
+						return
+					}
+					const n = numericVal(cell)
+					if (n !== null) {
+						sum += n
+						count++
+					}
+				})
+				if (err) return err
+			} else if (arg.kind === 'range' && arg.values) {
 				for (const row of arg.values) {
 					for (const cell of row) {
 						if (isError(cell)) return cell
@@ -246,7 +273,11 @@ export const mathFunctions: FunctionDef[] = [
 	fn('COUNT', 1, 255, (args) => {
 		let count = 0
 		for (const arg of args) {
-			if (arg.kind === 'range' && arg.values) {
+			if (arg.forEachValue) {
+				arg.forEachValue((cell) => {
+					if (cell.kind === 'number' || cell.kind === 'date') count++
+				})
+			} else if (arg.kind === 'range' && arg.values) {
 				for (const row of arg.values) {
 					for (const cell of row) {
 						if (cell.kind === 'number' || cell.kind === 'date') count++
@@ -290,7 +321,22 @@ export const mathFunctions: FunctionDef[] = [
 		let min = Number.POSITIVE_INFINITY
 		let found = false
 		for (const arg of args) {
-			if (arg.kind === 'range' && arg.values) {
+			if (arg.forEachValue) {
+				let err: CellValue | undefined
+				arg.forEachValue((cell) => {
+					if (err) return
+					if (isError(cell)) {
+						err = cell
+						return
+					}
+					const n = numericVal(cell)
+					if (n !== null) {
+						min = Math.min(min, n)
+						found = true
+					}
+				})
+				if (err) return err
+			} else if (arg.kind === 'range' && arg.values) {
 				for (const row of arg.values) {
 					for (const cell of row) {
 						if (isError(cell)) return cell
@@ -315,7 +361,22 @@ export const mathFunctions: FunctionDef[] = [
 		let max = Number.NEGATIVE_INFINITY
 		let found = false
 		for (const arg of args) {
-			if (arg.kind === 'range' && arg.values) {
+			if (arg.forEachValue) {
+				let err: CellValue | undefined
+				arg.forEachValue((cell) => {
+					if (err) return
+					if (isError(cell)) {
+						err = cell
+						return
+					}
+					const n = numericVal(cell)
+					if (n !== null) {
+						max = Math.max(max, n)
+						found = true
+					}
+				})
+				if (err) return err
+			} else if (arg.kind === 'range' && arg.values) {
 				for (const row of arg.values) {
 					for (const cell of row) {
 						if (isError(cell)) return cell

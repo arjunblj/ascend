@@ -10,6 +10,14 @@ export interface SortSpec {
 	readonly descending?: boolean
 }
 
+export interface StyleInput {
+	readonly font?: Record<string, unknown>
+	readonly fill?: Record<string, unknown>
+	readonly border?: Record<string, unknown>
+	readonly alignment?: Record<string, unknown>
+	readonly numberFormat?: string
+}
+
 export type Operation =
 	| { readonly op: 'setCells'; readonly sheet: string; readonly updates: readonly CellUpdate[] }
 	| {
@@ -117,6 +125,12 @@ export type Operation =
 			readonly scope?: string
 	  }
 	| { readonly op: 'deleteDefinedName'; readonly name: string }
+	| {
+			readonly op: 'setStyle'
+			readonly sheet: string
+			readonly range: string
+			readonly style: StyleInput
+	  }
 	| {
 			readonly op: 'freezePane'
 			readonly sheet: string

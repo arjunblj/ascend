@@ -122,6 +122,42 @@ export class Workbook {
 		this.sheets.splice(index, 1)
 		return true
 	}
+
+	clone(): Workbook {
+		const clone = new Workbook(this.id)
+		clone.calcSettings = structuredClone(this.calcSettings)
+		clone.workbookProperties = structuredClone(this.workbookProperties)
+		clone.workbookProtection = this.workbookProtection
+			? structuredClone(this.workbookProtection)
+			: null
+		clone.styleMetadata = structuredClone(this.styleMetadata)
+		clone.themeMetadata = structuredClone(this.themeMetadata)
+		clone.preservedStyles = this.preservedStyles ? structuredClone(this.preservedStyles) : null
+		clone.preservedTheme = this.preservedTheme ? structuredClone(this.preservedTheme) : null
+		clone.preservedXml = this.preservedXml ? structuredClone(this.preservedXml) : null
+		for (const sheet of this.sheets) clone.sheets.push(sheet.clone())
+		for (const definedName of this.definedNames.list()) {
+			clone.definedNames.set(
+				definedName.name,
+				definedName.formula,
+				structuredClone(definedName.scope),
+			)
+		}
+		for (let styleId = 0 as import('./ids.ts').StyleId; styleId < this.styles.size; styleId++) {
+			const style = this.styles.get(styleId)
+			if (style) clone.styles.register(structuredClone(style))
+		}
+		clone.differentialStyles.push(...this.differentialStyles.map((style) => structuredClone(style)))
+		clone.pivotCaches.push(...this.pivotCaches.map((entry) => structuredClone(entry)))
+		clone.pivotTables.push(...this.pivotTables.map((entry) => structuredClone(entry)))
+		clone.slicerCaches.push(...this.slicerCaches.map((entry) => structuredClone(entry)))
+		clone.slicers.push(...this.slicers.map((entry) => structuredClone(entry)))
+		clone.workbookViews.push(...this.workbookViews.map((view) => structuredClone(view)))
+		clone.externalReferences.push(
+			...this.externalReferences.map((reference) => structuredClone(reference)),
+		)
+		return clone
+	}
 }
 
 export function createWorkbook(id?: WorkbookId): Workbook {

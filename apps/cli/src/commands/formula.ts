@@ -1,6 +1,19 @@
-import { AscendWorkbook } from '@ascend/sdk'
 import { jsonOut } from '../output/json.ts'
 import { bullet, heading } from '../output/pretty.ts'
+import { openWorkbookWithProgress, withProgress } from '../progress.ts'
+
+export const usage = `Usage: ascend formula <subcommand> <file> <ref> [expr] [flags]
+
+  Inspect and edit cell formulas.
+
+Subcommands:
+  show <file> <ref>           Show formula at a cell reference
+  set <file> <ref> <expr>     Set a formula on a cell
+  fill <file> <range> <expr>  Fill a formula across a range
+
+Flags:
+  --json          Output as JSON
+`
 
 export async function formulaCommand(args: string[], flags: Map<string, string>): Promise<number> {
 	const action = args[0]
@@ -25,7 +38,7 @@ async function showFormula(args: string[], flags: Map<string, string>): Promise<
 		return 1
 	}
 
-	const wb = await AscendWorkbook.open(file)
+	const { workbook: wb } = await openWorkbookWithProgress(file)
 	const info = wb.formula(cellRef)
 	if (!info) {
 		console.error(`No formula found at "${cellRef}"`)
@@ -58,14 +71,16 @@ async function setFormula(args: string[], flags: Map<string, string>): Promise<n
 		return 1
 	}
 
-	const wb = await AscendWorkbook.open(file)
+	const { workbook: wb } = await openWorkbookWithProgress(file)
 	const result = wb.setFormula(cellRef, expr)
 	if (result.errors.length > 0) {
 		for (const error of result.errors) console.error(error.message)
 		return 1
 	}
-	if (result.recalcRequired) wb.recalc()
-	await wb.save(file)
+	if (result.recalcRequired) {
+		await withProgress('Recalculating formulas', () => wb.recalc())
+	}
+	await withProgress(`Saving ${file}`, () => wb.save(file))
 
 	if (flags.has('json')) {
 		console.log(jsonOut(result))
@@ -84,14 +99,16 @@ async function fillFormula(args: string[], flags: Map<string, string>): Promise<
 		return 1
 	}
 
-	const wb = await AscendWorkbook.open(file)
+	const { workbook: wb } = await openWorkbookWithProgress(file)
 	const result = wb.fillFormula(rangeRef, expr)
 	if (result.errors.length > 0) {
 		for (const error of result.errors) console.error(error.message)
 		return 1
 	}
-	if (result.recalcRequired) wb.recalc()
-	await wb.save(file)
+	if (result.recalcRequired) {
+		await withProgress('Recalculating formulas', () => wb.recalc())
+	}
+	await withProgress(`Saving ${file}`, () => wb.save(file))
 
 	if (flags.has('json')) {
 		console.log(jsonOut(result))

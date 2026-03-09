@@ -7,9 +7,12 @@ function num(arg: EvalArg | undefined): number | CellValue {
 	return numArg(arg)
 }
 
-function firstValue(rows: readonly (readonly CellValue[])[]): CellValue {
+function scalarOrSpill(rows: readonly (readonly CellValue[])[]): CellValue {
 	const first = rows[0]
 	if (!first || first.length === 0) return EMPTY
+	const rowCount = rows.length
+	const colCount = rows.reduce((max, row) => Math.max(max, row.length), 0)
+	if (rowCount > 1 || colCount > 1) return errorValue('#SPILL!')
 	return first[0] ?? EMPTY
 }
 
@@ -33,7 +36,7 @@ export const dynamicFunctions: FunctionDef[] = [
 				const bv = b[col] ?? EMPTY
 				return compareValues(av, bv) * (sortOrder === -1 ? -1 : 1)
 			})
-			return firstValue(rows)
+			return scalarOrSpill(rows)
 		},
 	},
 	{
@@ -53,10 +56,8 @@ export const dynamicFunctions: FunctionDef[] = [
 				const bv = byRange[b] ?? EMPTY
 				return compareValues(av, bv) * (order === -1 ? -1 : 1)
 			})
-			const first = indices[0]
-			if (first === undefined) return EMPTY
-			const row = data[first]
-			return row?.[0] ?? EMPTY
+			const rows = indices.map((index) => data[index] ?? [])
+			return scalarOrSpill(rows)
 		},
 	},
 	{
@@ -78,7 +79,7 @@ export const dynamicFunctions: FunctionDef[] = [
 			if (filtered.length === 0) {
 				return ifEmpty ?? errorValue('#CALC!')
 			}
-			return firstValue(filtered)
+			return scalarOrSpill(filtered)
 		},
 	},
 	{
@@ -92,7 +93,7 @@ export const dynamicFunctions: FunctionDef[] = [
 			const exactlyOnce = args[2] ? toNumber(args[2].value) === 1 : false
 
 			if (byCol) {
-				return firstValue(data)
+				return scalarOrSpill(data)
 			}
 
 			const seen = new Set<string>()
@@ -124,10 +125,10 @@ export const dynamicFunctions: FunctionDef[] = [
 					return counts.get(key) === 1
 				})
 				if (once.length === 0) return errorValue('#CALC!')
-				return firstValue(once)
+				return scalarOrSpill(once)
 			}
 
-			return firstValue(unique)
+			return scalarOrSpill(unique)
 		},
 	},
 	{
@@ -141,6 +142,12 @@ export const dynamicFunctions: FunctionDef[] = [
 			if (typeof cols !== 'number') return cols
 			const start = args[2] ? num(args[2]) : 1
 			if (typeof start !== 'number') return start
+			const step = args[3] ? num(args[3]) : 1
+			if (typeof step !== 'number') return step
+			const r = Math.trunc(rows)
+			const c = Math.trunc(cols)
+			if (r <= 0 || c <= 0) return errorValue('#CALC!')
+			if (r > 1 || c > 1) return errorValue('#SPILL!')
 			return numberValue(start)
 		},
 	},
@@ -177,7 +184,7 @@ export const dynamicFunctions: FunctionDef[] = [
 		evaluate(args) {
 			const data = getRange(args[0])
 			if (data.length === 0) return EMPTY
-			return firstValue(data)
+			return scalarOrSpill(data)
 		},
 	},
 	{
@@ -186,7 +193,7 @@ export const dynamicFunctions: FunctionDef[] = [
 		maxArgs: 3,
 		evaluate(args) {
 			const data = getRange(args[0])
-			return firstValue(data)
+			return scalarOrSpill(data)
 		},
 	},
 	{
@@ -195,7 +202,7 @@ export const dynamicFunctions: FunctionDef[] = [
 		maxArgs: 3,
 		evaluate(args) {
 			const data = getRange(args[0])
-			return firstValue(data)
+			return scalarOrSpill(data)
 		},
 	},
 	{
@@ -204,7 +211,7 @@ export const dynamicFunctions: FunctionDef[] = [
 		maxArgs: 3,
 		evaluate(args) {
 			const data = getRange(args[0])
-			return firstValue(data)
+			return scalarOrSpill(data)
 		},
 	},
 	{
@@ -213,7 +220,7 @@ export const dynamicFunctions: FunctionDef[] = [
 		maxArgs: 3,
 		evaluate(args) {
 			const data = getRange(args[0])
-			return firstValue(data)
+			return scalarOrSpill(data)
 		},
 	},
 	{
@@ -222,7 +229,7 @@ export const dynamicFunctions: FunctionDef[] = [
 		maxArgs: 255,
 		evaluate(args) {
 			const data = getRange(args[0])
-			return firstValue(data)
+			return scalarOrSpill(data)
 		},
 	},
 	{
@@ -231,7 +238,7 @@ export const dynamicFunctions: FunctionDef[] = [
 		maxArgs: 255,
 		evaluate(args) {
 			const data = getRange(args[0])
-			return firstValue(data)
+			return scalarOrSpill(data)
 		},
 	},
 	{
@@ -240,7 +247,7 @@ export const dynamicFunctions: FunctionDef[] = [
 		maxArgs: 3,
 		evaluate(args) {
 			const data = getRange(args[0])
-			return firstValue(data)
+			return scalarOrSpill(data)
 		},
 	},
 	{
@@ -253,7 +260,7 @@ export const dynamicFunctions: FunctionDef[] = [
 			if (typeof rows !== 'number') return rows
 			if (Math.abs(rows) >= data.length) return errorValue('#CALC!')
 			const dropped = rows > 0 ? data.slice(rows) : data.slice(0, data.length + rows)
-			return firstValue(dropped)
+			return scalarOrSpill(dropped)
 		},
 	},
 	{
@@ -262,7 +269,7 @@ export const dynamicFunctions: FunctionDef[] = [
 		maxArgs: 4,
 		evaluate(args) {
 			const data = getRange(args[0])
-			return firstValue(data)
+			return scalarOrSpill(data)
 		},
 	},
 	{
@@ -276,7 +283,7 @@ export const dynamicFunctions: FunctionDef[] = [
 			const idx = Math.round(col) - 1
 			const first = data[0]
 			if (!first || idx < 0 || idx >= first.length) return errorValue('#VALUE!')
-			return first[idx] ?? EMPTY
+			return scalarOrSpill(data.map((row) => [row[idx] ?? EMPTY]))
 		},
 	},
 	{
@@ -290,7 +297,7 @@ export const dynamicFunctions: FunctionDef[] = [
 			const idx = Math.round(row) - 1
 			if (idx < 0 || idx >= data.length) return errorValue('#VALUE!')
 			const r = data[idx]
-			return r?.[0] ?? EMPTY
+			return scalarOrSpill(r ? [r] : [])
 		},
 	},
 ]

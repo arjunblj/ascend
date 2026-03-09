@@ -50,6 +50,14 @@
         "@ascend/schema": "workspace:*",
       },
     },
+    "fixtures/corpus": {
+      "name": "@ascend/corpus-tests",
+      "dependencies": {
+        "@ascend/io-xlsx": "workspace:*",
+        "@ascend/schema": "workspace:*",
+        "@ascend/sdk": "workspace:*",
+      },
+    },
     "fixtures/formulas": {
       "name": "@ascend/formula-conformance",
       "version": "0.0.0",
@@ -139,6 +147,8 @@
     "@ascend/cli": ["@ascend/cli@workspace:apps/cli"],
 
     "@ascend/core": ["@ascend/core@workspace:packages/core"],
+
+    "@ascend/corpus-tests": ["@ascend/corpus-tests@workspace:fixtures/corpus"],
 
     "@ascend/engine": ["@ascend/engine@workspace:packages/engine"],
 

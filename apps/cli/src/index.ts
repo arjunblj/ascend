@@ -1,17 +1,17 @@
 #!/usr/bin/env bun
 
-import { calcCommand } from './commands/calc.ts'
-import { checkCommand } from './commands/check.ts'
-import { createCommand } from './commands/create.ts'
-import { diffCommand } from './commands/diff.ts'
-import { doctorCommand } from './commands/doctor.ts'
-import { exportCommand } from './commands/export.ts'
-import { formulaCommand } from './commands/formula.ts'
-import { inspectCommand } from './commands/inspect.ts'
-import { lintCommand } from './commands/lint.ts'
-import { readCommand } from './commands/read.ts'
-import { traceCommand } from './commands/trace.ts'
-import { writeCommand } from './commands/write.ts'
+import { calcCommand, usage as calcUsage } from './commands/calc.ts'
+import { checkCommand, usage as checkUsage } from './commands/check.ts'
+import { createCommand, usage as createUsage } from './commands/create.ts'
+import { diffCommand, usage as diffUsage } from './commands/diff.ts'
+import { doctorCommand, usage as doctorUsage } from './commands/doctor.ts'
+import { exportCommand, usage as exportUsage } from './commands/export.ts'
+import { formulaCommand, usage as formulaUsage } from './commands/formula.ts'
+import { inspectCommand, usage as inspectUsage } from './commands/inspect.ts'
+import { lintCommand, usage as lintUsage } from './commands/lint.ts'
+import { readCommand, usage as readUsage } from './commands/read.ts'
+import { traceCommand, usage as traceUsage } from './commands/trace.ts'
+import { writeCommand, usage as writeUsage } from './commands/write.ts'
 
 const VERSION = '0.0.0'
 
@@ -35,25 +35,31 @@ Commands:
 
 Global flags:
   --json        Output as JSON
-  --help, -h    Show help
+  --verbose     Show extended details
+  --help, -h    Show help (use "ascend <command> --help" for command help)
   --version, -v Show version
 `
 
 type CommandFn = (args: string[], flags: Map<string, string>) => Promise<number>
 
-const COMMANDS: Record<string, CommandFn> = {
-	create: createCommand,
-	inspect: inspectCommand,
-	read: readCommand,
-	write: writeCommand,
-	formula: formulaCommand,
-	calc: calcCommand,
-	check: checkCommand,
-	lint: lintCommand,
-	trace: traceCommand,
-	diff: diffCommand,
-	export: exportCommand,
-	doctor: doctorCommand,
+interface Command {
+	run: CommandFn
+	usage: string
+}
+
+const COMMANDS: Record<string, Command> = {
+	create: { run: createCommand, usage: createUsage },
+	inspect: { run: inspectCommand, usage: inspectUsage },
+	read: { run: readCommand, usage: readUsage },
+	write: { run: writeCommand, usage: writeUsage },
+	formula: { run: formulaCommand, usage: formulaUsage },
+	calc: { run: calcCommand, usage: calcUsage },
+	check: { run: checkCommand, usage: checkUsage },
+	lint: { run: lintCommand, usage: lintUsage },
+	trace: { run: traceCommand, usage: traceUsage },
+	diff: { run: diffCommand, usage: diffUsage },
+	export: { run: exportCommand, usage: exportUsage },
+	doctor: { run: doctorCommand, usage: doctorUsage },
 }
 
 function parseArgs(argv: string[]): {
@@ -101,20 +107,29 @@ async function main(): Promise<void> {
 		process.exit(0)
 	}
 
-	if (!command || flags.has('help') || flags.has('h')) {
+	if (!command) {
 		console.log(HELP)
 		process.exit(0)
 	}
 
-	const handler = COMMANDS[command]
-	if (!handler) {
+	const cmd = COMMANDS[command]
+	if (!cmd) {
+		if (flags.has('help') || flags.has('h')) {
+			console.log(HELP)
+			process.exit(0)
+		}
 		console.error(`Unknown command: ${command}`)
 		console.error('Run "ascend --help" for usage')
 		process.exit(1)
 	}
 
+	if (flags.has('help') || flags.has('h')) {
+		console.log(cmd.usage)
+		process.exit(0)
+	}
+
 	try {
-		const code = await handler(args, flags)
+		const code = await cmd.run(args, flags)
 		process.exit(code)
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err)

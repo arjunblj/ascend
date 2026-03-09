@@ -13,6 +13,7 @@ export interface EvalContext {
 	readonly row: number
 	readonly col: number
 	readonly definedNameStack?: readonly string[]
+	readonly letBindings?: ReadonlyMap<string, CellValue>
 }
 
 function resolveSheetIndex(
@@ -173,17 +174,7 @@ export function evaluate(node: FormulaNode, ctx: EvalContext): CellValue {
 		case 'rangeRef': {
 			const si = resolveSheetIndex(ctx.workbook, node.sheet, ctx.sheetIndex)
 			if (si < 0) return errorValue('#REF!')
-			const values = getRangeValues(
-				ctx.workbook,
-				si,
-				node.start.row,
-				node.start.col,
-				node.end.row,
-				node.end.col,
-			)
-			const firstRow = values[0]
-			if (firstRow?.[0]) return firstRow[0]
-			return EMPTY
+			return getCellValue(ctx.workbook, si, node.start.row, node.start.col)
 		}
 
 		case 'name': {
@@ -233,16 +224,7 @@ export function evaluate(node: FormulaNode, ctx: EvalContext): CellValue {
 				ctx.col,
 			)
 			if (!resolved) return errorValue('#REF!')
-			const values = getRangeValues(
-				ctx.workbook,
-				resolved.sheetIndex,
-				resolved.startRow,
-				resolved.startCol,
-				resolved.endRow,
-				resolved.endCol,
-			)
-			const firstRow = values[0]
-			return firstRow?.[0] ?? EMPTY
+			return getCellValue(ctx.workbook, resolved.sheetIndex, resolved.startRow, resolved.startCol)
 		}
 	}
 	return EMPTY
@@ -258,6 +240,9 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 	}
 	if (upperName === 'INDIRECT' || upperName === 'OFFSET') {
 		return resolveReferenceFunction(upperName, argNodes, ctx).value
+	}
+	if (upperName === 'LET') {
+		return evalLet(argNodes, ctx)
 	}
 
 	const def = functionRegistry.get(upperName)
@@ -281,6 +266,9 @@ function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
 		if (upperName === 'INDIRECT' || upperName === 'OFFSET') {
 			return resolveReferenceFunction(upperName, node.args, ctx)
 		}
+		if (upperName === 'LET') {
+			return { value: evalLet(node.args, ctx) }
+		}
 	}
 
 	if (node.type === 'rangeRef') {
@@ -288,7 +276,7 @@ function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
 		if (si < 0) {
 			return { value: errorValue('#REF!') }
 		}
-		const values = getRangeValues(
+		return makeLazyRangeArg(
 			ctx.workbook,
 			si,
 			node.start.row,
@@ -296,21 +284,6 @@ function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
 			node.end.row,
 			node.end.col,
 		)
-		const firstRow = values[0]
-		const firstVal = firstRow ? (firstRow[0] ?? EMPTY) : EMPTY
-		return {
-			value: firstVal,
-			kind: 'range',
-			values,
-			ref: {
-				kind: 'range',
-				sheetIndex: si,
-				row: node.start.row,
-				col: node.start.col,
-				endRow: node.end.row,
-				endCol: node.end.col,
-			},
-		}
 	}
 
 	if (node.type === 'cellRef') {
@@ -330,6 +303,9 @@ function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
 	}
 
 	if (node.type === 'name') {
+		if (!node.sheet && ctx.letBindings?.has(node.name.toLowerCase())) {
+			return { value: ctx.letBindings.get(node.name.toLowerCase()) as CellValue }
+		}
 		const resolved = resolveDefinedName(node.name, node.sheet, ctx)
 		if (!resolved) return { value: errorValue('#NAME?') }
 		return resolveArg(resolved.ast, resolved.ctx)
@@ -338,7 +314,7 @@ function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
 	if (node.type === 'structuredRef') {
 		const resolved = resolveStructuredRefRange(ctx.workbook, node, ctx.sheetIndex, ctx.row, ctx.col)
 		if (!resolved) return { value: errorValue('#REF!') }
-		const values = getRangeValues(
+		return makeLazyRangeArg(
 			ctx.workbook,
 			resolved.sheetIndex,
 			resolved.startRow,
@@ -346,21 +322,6 @@ function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
 			resolved.endRow,
 			resolved.endCol,
 		)
-		const firstRow = values[0]
-		const firstVal = firstRow ? (firstRow[0] ?? EMPTY) : EMPTY
-		return {
-			value: firstVal,
-			kind: 'range',
-			values,
-			ref: {
-				kind: 'range',
-				sheetIndex: resolved.sheetIndex,
-				row: resolved.startRow,
-				col: resolved.startCol,
-				endRow: resolved.endRow,
-				endCol: resolved.endCol,
-			},
-		}
 	}
 
 	const value = evaluate(node, ctx)
@@ -507,6 +468,7 @@ function makeRangeArg(
 ): EvalArg {
 	const values = getRangeValues(workbook, sheetIndex, startRow, startCol, endRow, endCol)
 	const firstRow = values[0]
+	const sheet = workbook.sheets[sheetIndex]
 	return {
 		value: firstRow?.[0] ?? EMPTY,
 		kind: 'range',
@@ -519,7 +481,73 @@ function makeRangeArg(
 			endRow,
 			endCol,
 		},
+		...(sheet
+			? {
+					forEachValue: (fn: (value: CellValue) => void) => {
+						for (let r = startRow; r <= endRow; r++) {
+							for (let c = startCol; c <= endCol; c++) {
+								const cell = sheet.cells.get(r, c)
+								fn(cell ? cell.value : EMPTY)
+							}
+						}
+					},
+				}
+			: {}),
 	}
+}
+
+function makeLazyRangeArg(
+	workbook: Workbook,
+	sheetIndex: number,
+	startRow: number,
+	startCol: number,
+	endRow: number,
+	endCol: number,
+): EvalArg {
+	const sheet = workbook.sheets[sheetIndex]
+	if (!sheet) return { value: errorValue('#REF!') }
+	const firstVal = getCellValue(workbook, sheetIndex, startRow, startCol)
+	let cachedValues: readonly (readonly CellValue[])[] | undefined
+	return {
+		value: firstVal,
+		kind: 'range',
+		get values() {
+			if (!cachedValues) {
+				cachedValues = getRangeValues(workbook, sheetIndex, startRow, startCol, endRow, endCol)
+			}
+			return cachedValues
+		},
+		ref: {
+			kind: 'range',
+			sheetIndex,
+			row: startRow,
+			col: startCol,
+			endRow,
+			endCol,
+		},
+		forEachValue: (fn) => {
+			for (let r = startRow; r <= endRow; r++) {
+				for (let c = startCol; c <= endCol; c++) {
+					const cell = sheet.cells.get(r, c)
+					fn(cell ? cell.value : EMPTY)
+				}
+			}
+		},
+	}
+}
+
+function evalLet(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
+	if (argNodes.length < 3 || argNodes.length % 2 === 0) return errorValue('#VALUE!')
+	const bindings = new Map<string, CellValue>(ctx.letBindings)
+	for (let i = 0; i < argNodes.length - 1; i += 2) {
+		const nameNode = argNodes[i] as FormulaNode
+		const valueNode = argNodes[i + 1] as FormulaNode
+		if (nameNode.type !== 'name') return errorValue('#VALUE!')
+		const boundCtx: EvalContext = { ...ctx, letBindings: bindings }
+		bindings.set(nameNode.name.toLowerCase(), evaluate(valueNode, boundCtx))
+	}
+	const bodyNode = argNodes[argNodes.length - 1] as FormulaNode
+	return evaluate(bodyNode, { ...ctx, letBindings: bindings })
 }
 
 function resolveR1C1Reference(refText: string, ctx: EvalContext): EvalArg | null {
@@ -567,6 +595,9 @@ function parseR1C1Coordinate(token: string, currentIndex: number): number {
 }
 
 function evaluateDefinedName(name: string, sheet: string | undefined, ctx: EvalContext): CellValue {
+	if (!sheet && ctx.letBindings?.has(name.toLowerCase())) {
+		return ctx.letBindings.get(name.toLowerCase()) as CellValue
+	}
 	const resolved = resolveDefinedName(name, sheet, ctx)
 	if (!resolved) return errorValue('#NAME?')
 	return evaluate(resolved.ast, resolved.ctx)

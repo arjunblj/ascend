@@ -26,6 +26,71 @@ export interface SheetParseContext {
 	readonly isDateFormat: boolean[]
 	readonly differentialStyles?: readonly CellStyle[]
 	readonly relationships?: readonly Relationship[]
+	readonly valuePool?: ValueInternPool
+}
+
+export class ValueInternPool {
+	private readonly strings = new Map<string, string>()
+	private readonly stringValues = new Map<string, CellValue>()
+	private readonly booleans = new Map<boolean, CellValue>([
+		[true, booleanValue(true)],
+		[false, booleanValue(false)],
+	])
+	private readonly errors = new Map<ExcelError, CellValue>()
+	private readonly smallNumbers = new Map<number, CellValue>([
+		[0, numberValue(0)],
+		[1, numberValue(1)],
+	])
+
+	internString(value: string): string {
+		const cached = this.strings.get(value)
+		if (cached !== undefined) return cached
+		this.strings.set(value, value)
+		return value
+	}
+
+	internValue(value: CellValue): CellValue {
+		switch (value.kind) {
+			case 'empty':
+				return EMPTY
+			case 'boolean': {
+				const cached = this.booleans.get(value.value)
+				if (cached) return cached
+				return value
+			}
+			case 'error': {
+				const cached = this.errors.get(value.value)
+				if (cached) return cached
+				this.errors.set(value.value, value)
+				return value
+			}
+			case 'number': {
+				const cached = this.smallNumbers.get(value.value)
+				if (cached) return cached
+				return value
+			}
+			case 'string': {
+				const text = this.internString(value.value)
+				const cached = this.stringValues.get(text)
+				if (cached) return cached
+				const interned: CellValue = { kind: 'string', value: text }
+				this.stringValues.set(text, interned)
+				return interned
+			}
+			case 'richText':
+				return {
+					kind: 'richText',
+					runs: value.runs.map((run) => ({
+						...run,
+						text: this.internString(run.text),
+						...(run.fontName ? { fontName: this.internString(run.fontName) } : {}),
+						...(run.color ? { color: this.internString(run.color) } : {}),
+					})),
+				}
+			default:
+				return value
+		}
+	}
 }
 
 export function parseSheet(name: string, xml: string, ctx: SheetParseContext): Sheet {
@@ -49,9 +114,9 @@ export function parseSheet(name: string, xml: string, ctx: SheetParseContext): S
 	parsePrintOptions(ws, sheet)
 	parseHeaderFooter(ws, sheet)
 	parseIgnoredErrors(ws, sheet)
-	parseHyperlinks(ws, sheet, ctx.relationships ?? [])
-	parseConditionalFormatting(ws, sheet, ctx.differentialStyles ?? [])
-	parseDataValidations(ws, sheet)
+	parseHyperlinks(ws, sheet, ctx.relationships ?? [], ctx.valuePool)
+	parseConditionalFormatting(ws, sheet, ctx.differentialStyles ?? [], ctx.valuePool)
+	parseDataValidations(ws, sheet, ctx.valuePool)
 	extractExtLst(xml, sheet)
 
 	return sheet
@@ -101,10 +166,11 @@ function parseCellValue(
 	col: number,
 	sharedFormulaMasters: Map<string, { formula: string; row: number; col: number }>,
 ): Cell | undefined {
+	const pool = ctx.valuePool
 	const type = attr(c, 't')
 	const styleIdx = numAttr(c, 's') ?? 0
 	const styleId = ctx.styleIds[styleIdx] ?? (0 as StyleId)
-	const formula = parseFormulaText(c.f, row, col, sharedFormulaMasters)
+	const formula = parseFormulaText(c.f, row, col, sharedFormulaMasters, pool)
 	const rawValue = c.v
 
 	let value: CellValue
@@ -112,24 +178,30 @@ function parseCellValue(
 	if (type === 's') {
 		const idx = typeof rawValue === 'number' ? rawValue : Number(rawValue)
 		const entry = ctx.sharedStrings[idx]
-		value = entry ?? stringValue('')
+		value = entry ?? (pool ? pool.internValue(stringValue('')) : stringValue(''))
 	} else if (type === 'b') {
 		const bv = rawValue === 1 || rawValue === true || rawValue === '1'
-		value = booleanValue(bv)
+		value = pool ? pool.internValue(booleanValue(bv)) : booleanValue(bv)
 	} else if (type === 'e') {
-		value = errorValue(String(rawValue ?? '#VALUE!') as ExcelError)
+		value = pool
+			? pool.internValue(errorValue(String(rawValue ?? '#VALUE!') as ExcelError))
+			: errorValue(String(rawValue ?? '#VALUE!') as ExcelError)
 	} else if (type === 'str') {
-		value = stringValue(String(rawValue ?? ''))
+		value = pool
+			? pool.internValue(stringValue(pool.internString(String(rawValue ?? ''))))
+			: stringValue(String(rawValue ?? ''))
 	} else if (type === 'inlineStr') {
-		value = parseInlineString(c)
+		value = parseInlineString(c, pool)
 	} else if (rawValue !== undefined && rawValue !== null && rawValue !== '') {
 		const num = Number(rawValue)
 		if (Number.isNaN(num)) {
-			value = stringValue(String(rawValue))
+			value = pool
+				? pool.internValue(stringValue(pool.internString(String(rawValue))))
+				: stringValue(String(rawValue))
 		} else if (ctx.isDateFormat[styleIdx]) {
 			value = { kind: 'date', serial: num }
 		} else {
-			value = numberValue(num)
+			value = pool ? pool.internValue(numberValue(num)) : numberValue(num)
 		}
 	} else if (formula) {
 		value = EMPTY
@@ -145,6 +217,7 @@ function parseFormulaText(
 	row: number,
 	col: number,
 	sharedFormulaMasters: Map<string, { formula: string; row: number; col: number }>,
+	pool?: ValueInternPool,
 ): string | null {
 	if (formulaNode === undefined || formulaNode === null) return null
 	if (
@@ -152,7 +225,8 @@ function parseFormulaText(
 		typeof formulaNode === 'number' ||
 		typeof formulaNode === 'boolean'
 	) {
-		return String(formulaNode)
+		const text = String(formulaNode)
+		return pool ? pool.internString(text) : text
 	}
 	if (typeof formulaNode === 'object') {
 		const node = formulaNode as XmlNode
@@ -161,15 +235,18 @@ function parseFormulaText(
 		const text = node['#text']
 		if (formulaType === 'shared' && sharedIndex) {
 			if (text !== undefined && text !== null) {
-				const formula = String(text)
+				const formula = pool ? pool.internString(String(text)) : String(text)
 				sharedFormulaMasters.set(sharedIndex, { formula, row, col })
 				return formula
 			}
 			const master = sharedFormulaMasters.get(sharedIndex)
 			if (!master) return null
-			return translateSharedFormula(master.formula, master.row, master.col, row, col)
+			const translated = translateSharedFormula(master.formula, master.row, master.col, row, col)
+			return translated && pool ? pool.internString(translated) : translated
 		}
-		return text !== undefined && text !== null ? String(text) : null
+		if (text === undefined || text === null) return null
+		const formula = String(text)
+		return pool ? pool.internString(formula) : formula
 	}
 	return null
 }
@@ -193,17 +270,20 @@ function translateSharedFormula(
 	return printFormula(rewritten)
 }
 
-function parseInlineString(c: XmlNode): CellValue {
+function parseInlineString(c: XmlNode, pool?: ValueInternPool): CellValue {
 	const is = c.is as XmlNode | undefined
-	if (!is || typeof is !== 'object') return stringValue('')
+	if (!is || typeof is !== 'object') {
+		return pool ? pool.internValue(stringValue('')) : stringValue('')
+	}
 
 	if (is.t !== undefined) {
-		return stringValue(String(is.t))
+		const text = String(is.t)
+		return pool ? pool.internValue(stringValue(pool.internString(text))) : stringValue(text)
 	}
 
 	const runs = asArray<XmlNode>(is.r as XmlNode | XmlNode[])
 	const text = runs.map((r) => (r.t !== undefined ? String(r.t) : '')).join('')
-	return stringValue(text)
+	return pool ? pool.internValue(stringValue(pool.internString(text))) : stringValue(text)
 }
 
 function parseMergeCells(ws: XmlNode, sheet: Sheet): void {
@@ -446,7 +526,12 @@ function parseIgnoredErrors(ws: XmlNode, sheet: Sheet): void {
 	}
 }
 
-function parseHyperlinks(ws: XmlNode, sheet: Sheet, relationships: readonly Relationship[]): void {
+function parseHyperlinks(
+	ws: XmlNode,
+	sheet: Sheet,
+	relationships: readonly Relationship[],
+	pool?: ValueInternPool,
+): void {
 	const hyperlinks = ws.hyperlinks as XmlNode | undefined
 	if (!hyperlinks) return
 	const relMap = new Map(relationships.map((rel) => [rel.id, rel]))
@@ -457,10 +542,38 @@ function parseHyperlinks(ws: XmlNode, sheet: Sheet, relationships: readonly Rela
 		const relId = attr(hyperlink, 'r:id') ?? attr(hyperlink, 'id')
 		const rel = relId ? relMap.get(relId) : undefined
 		const parsed: Record<string, string> = {}
-		setIfDefined(parsed, 'target', rel?.target)
-		setIfDefined(parsed, 'location', attr(hyperlink, 'location'))
-		setIfDefined(parsed, 'display', attr(hyperlink, 'display'))
-		setIfDefined(parsed, 'tooltip', attr(hyperlink, 'tooltip'))
+		setIfDefined(
+			parsed,
+			'target',
+			rel?.target ? (pool ? pool.internString(rel.target) : rel.target) : undefined,
+		)
+		setIfDefined(
+			parsed,
+			'location',
+			attr(hyperlink, 'location')
+				? pool
+					? pool.internString(attr(hyperlink, 'location') as string)
+					: (attr(hyperlink, 'location') as string)
+				: undefined,
+		)
+		setIfDefined(
+			parsed,
+			'display',
+			attr(hyperlink, 'display')
+				? pool
+					? pool.internString(attr(hyperlink, 'display') as string)
+					: (attr(hyperlink, 'display') as string)
+				: undefined,
+		)
+		setIfDefined(
+			parsed,
+			'tooltip',
+			attr(hyperlink, 'tooltip')
+				? pool
+					? pool.internString(attr(hyperlink, 'tooltip') as string)
+					: (attr(hyperlink, 'tooltip') as string)
+				: undefined,
+		)
 		sheet.hyperlinks.set(ref, parsed)
 	}
 }
@@ -469,6 +582,7 @@ function parseConditionalFormatting(
 	ws: XmlNode,
 	sheet: Sheet,
 	differentialStyles: readonly CellStyle[],
+	pool?: ValueInternPool,
 ): void {
 	for (const conditionalFormatting of asArray<XmlNode>(
 		ws.conditionalFormatting as XmlNode | XmlNode[] | undefined,
@@ -481,7 +595,10 @@ function parseConditionalFormatting(
 			if (!type) continue
 			const formulas = asArray<XmlNode | string | number | boolean>(
 				rule.formula as XmlNode | XmlNode[] | string | string[] | undefined,
-			).map((formula) => readNodeText(formula) ?? '')
+			).map((formula) => {
+				const text = readNodeText(formula) ?? ''
+				return pool ? pool.internString(text) : text
+			})
 			const dxfId = numAttr(rule, 'dxfId')
 			const parsedRule: {
 				type: string
@@ -514,7 +631,7 @@ function parseConditionalFormatting(
 	}
 }
 
-function parseDataValidations(ws: XmlNode, sheet: Sheet): void {
+function parseDataValidations(ws: XmlNode, sheet: Sheet, pool?: ValueInternPool): void {
 	const container = ws.dataValidations as XmlNode | undefined
 	if (!container) return
 	for (const validation of asArray<XmlNode>(container.dataValidation as XmlNode | XmlNode[])) {
@@ -562,6 +679,18 @@ function parseDataValidations(ws: XmlNode, sheet: Sheet): void {
 		if (formula1) parsed.formula1 = formula1
 		const formula2 = readNodeText(validation.formula2)
 		if (formula2) parsed.formula2 = formula2
+		if (pool) {
+			if (parsed.sqref) parsed.sqref = pool.internString(parsed.sqref)
+			if (parsed.type) parsed.type = pool.internString(parsed.type)
+			if (parsed.operator) parsed.operator = pool.internString(parsed.operator)
+			if (parsed.promptTitle) parsed.promptTitle = pool.internString(parsed.promptTitle)
+			if (parsed.prompt) parsed.prompt = pool.internString(parsed.prompt)
+			if (parsed.errorTitle) parsed.errorTitle = pool.internString(parsed.errorTitle)
+			if (parsed.error) parsed.error = pool.internString(parsed.error)
+			if (parsed.errorStyle) parsed.errorStyle = pool.internString(parsed.errorStyle)
+			if (parsed.formula1) parsed.formula1 = pool.internString(parsed.formula1)
+			if (parsed.formula2) parsed.formula2 = pool.internString(parsed.formula2)
+		}
 		sheet.dataValidations.push(parsed as SheetDataValidation)
 	}
 }

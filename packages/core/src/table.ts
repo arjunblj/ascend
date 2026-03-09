@@ -1,4 +1,4 @@
-import type { AutoFilter } from './filter.ts'
+import type { AutoFilter, SortState } from './filter.ts'
 import type { SheetId, TableId } from './ids.ts'
 import type { RangeRef } from './refs.ts'
 
@@ -7,6 +7,7 @@ export interface TableColumn {
 	readonly name: string
 	readonly formula?: string
 	readonly totalsRowFunction?: string
+	readonly totalsRowFormula?: string
 	readonly totalsRowLabel?: string
 	readonly dataDxfId?: number
 	readonly headerRowDxfId?: number
@@ -30,6 +31,8 @@ export interface Table {
 	readonly hasHeaders: boolean
 	readonly hasTotals: boolean
 	readonly autoFilter?: AutoFilter
+	readonly sortState?: SortState
+	readonly dxfId?: number
 	readonly headerRowDxfId?: number
 	readonly dataDxfId?: number
 	readonly totalsRowDxfId?: number

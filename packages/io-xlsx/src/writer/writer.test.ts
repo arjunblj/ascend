@@ -874,7 +874,8 @@ describe('writeXlsx', () => {
 		sheet.sheetFormatPr = { defaultRowHeight: 14.5, defaultColWidth: 10.0 }
 
 		const { result } = roundTrip(wb)
-		const s = result.workbook.sheets[0]!
+		const s = result.workbook.sheets[0]
+		if (!s) throw new Error('Expected round-tripped workbook to contain a sheet')
 		expect(s.tabColor).toEqual({ rgb: 'FF0000FF', theme: 4, tint: -0.25 })
 		expect(s.sheetFormatPr).toEqual({ defaultRowHeight: 14.5, defaultColWidth: 10 })
 	})
@@ -922,7 +923,8 @@ describe('writeXlsx', () => {
 		})
 
 		const { result } = roundTrip(wb)
-		const s = result.workbook.sheets[0]!
+		const s = result.workbook.sheets[0]
+		if (!s) throw new Error('Expected round-tripped workbook to contain a sheet')
 		expect(s.ignoredErrors).toEqual([
 			{
 				sqref: 'A1:B2',

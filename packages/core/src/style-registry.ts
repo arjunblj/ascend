@@ -29,4 +29,18 @@ export class StyleRegistry {
 	get size(): number {
 		return this.styles.length
 	}
+
+	clone(): StyleRegistry {
+		const clone = new StyleRegistry()
+		clone.styles.splice(
+			0,
+			clone.styles.length,
+			...this.styles.map((style) => structuredClone(style)),
+		)
+		clone.hashes.clear()
+		for (const [hash, id] of this.hashes) {
+			clone.hashes.set(hash, id)
+		}
+		return clone
+	}
 }

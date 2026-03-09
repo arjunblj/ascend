@@ -1,6 +1,22 @@
-import { AscendWorkbook } from '@ascend/sdk'
+import type { AscendWorkbook } from '@ascend/sdk'
 import { jsonOut } from '../output/json.ts'
 import { bullet, heading, table } from '../output/pretty.ts'
+import { openWorkbookWithProgress } from '../progress.ts'
+
+export const usage = `Usage: ascend inspect <file> [sheet] [flags]
+
+  Inspect workbook structure and sheet details.
+
+Arguments:
+  <file>          Path to the workbook file
+  [sheet]         Optional sheet name to inspect
+
+Flags:
+  --sheet <name>  Sheet name (alternative to positional argument)
+  --detail <type> Show detail for: cf, dv, hyperlinks, tables, comments, compatibility
+  --json          Output as JSON
+  --verbose       Show compatibility report and timing
+`
 
 export async function inspectCommand(args: string[], flags: Map<string, string>): Promise<number> {
 	const file = args[0]
@@ -10,11 +26,31 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 	}
 
 	const sheetArg = args[1] ?? flags.get('sheet')
-	const wb = await AscendWorkbook.open(
+	const detail = flags.get('detail')
+	const verbose = flags.has('verbose')
+	const workbookDetail = detail === 'compatibility'
+
+	const needsData = (!workbookDetail && !!detail) || !!sheetArg
+	const { workbook: wb, durationMs: openMs } = await openWorkbookWithProgress(
 		file,
-		sheetArg ? { sheets: [sheetArg] } : { mode: 'metadata-only' },
+		needsData ? (sheetArg ? { sheets: [sheetArg] } : undefined) : { mode: 'metadata-only' },
 	)
 	const info = wb.inspect()
+
+	if (detail === 'compatibility') {
+		return printCompatibilityDetail(wb, flags.has('json'))
+	}
+
+	if (detail && sheetArg) {
+		return printSheetDetail(wb, sheetArg, detail, flags.has('json'))
+	}
+
+	if (detail) {
+		console.error(
+			'Sheet detail requires a sheet name. Use: ascend inspect <file> <sheet> --detail <type>',
+		)
+		return 1
+	}
 
 	if (sheetArg) {
 		const sheet = info.sheets.find((s) => s.name === sheetArg)
@@ -49,7 +85,8 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 	}
 
 	if (flags.has('json')) {
-		console.log(jsonOut(info))
+		const out = verbose ? { ...info, timing: { openMs: Math.round(openMs * 100) / 100 } } : info
+		console.log(jsonOut(out))
 		return 0
 	}
 
@@ -122,6 +159,127 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 		)
 	}
 
+	if (verbose) {
+		console.log('')
+		console.log(heading('Compatibility Details'))
+		for (const f of info.compatibility.features) {
+			console.log(bullet(`${f.feature} (${f.tier})`, `${f.count} location(s)`))
+			if (f.note) console.log(`    ${f.note}`)
+		}
+		console.log('')
+		console.log(heading('Timing'))
+		console.log(bullet('Open', `${openMs.toFixed(1)}ms`))
+	}
+
+	return 0
+}
+
+function printSheetDetail(
+	wb: AscendWorkbook,
+	sheetName: string,
+	detail: string,
+	json: boolean,
+): number {
+	const handle = wb.sheet(sheetName)
+	if (!handle) {
+		console.error(`Sheet "${sheetName}" not found`)
+		return 1
+	}
+	switch (detail) {
+		case 'cf': {
+			const cfs = handle.conditionalFormats
+			if (json) {
+				console.log(jsonOut(cfs))
+				return 0
+			}
+			console.log(heading(`Conditional Formats: ${sheetName}`))
+			for (const cf of cfs) {
+				console.log(bullet('Range', cf.sqref))
+				for (const rule of cf.rules) {
+					console.log(
+						`    type=${rule.type ?? '(none)'} priority=${rule.priority} operator=${rule.operator ?? ''}`,
+					)
+					if (rule.formulas.length > 0) console.log(`    formulas: ${rule.formulas.join(', ')}`)
+				}
+			}
+			if (cfs.length === 0) console.log('  (none)')
+			return 0
+		}
+		case 'dv': {
+			const dvs = handle.dataValidations
+			if (json) {
+				console.log(jsonOut(dvs))
+				return 0
+			}
+			console.log(heading(`Data Validations: ${sheetName}`))
+			for (const dv of dvs) {
+				console.log(bullet('Range', dv.sqref ?? ''))
+				console.log(`    type=${dv.type ?? '(any)'} allowBlank=${dv.allowBlank ?? false}`)
+				if (dv.formula1) console.log(`    formula1: ${dv.formula1}`)
+				if (dv.formula2) console.log(`    formula2: ${dv.formula2}`)
+			}
+			if (dvs.length === 0) console.log('  (none)')
+			return 0
+		}
+		case 'hyperlinks': {
+			const links = handle.hyperlinks()
+			if (json) {
+				console.log(jsonOut(Object.fromEntries(links)))
+				return 0
+			}
+			console.log(heading(`Hyperlinks: ${sheetName}`))
+			for (const [ref, link] of links) {
+				console.log(bullet(ref, link.target ?? link.location ?? ''))
+			}
+			if (links.size === 0) console.log('  (none)')
+			return 0
+		}
+		case 'comments': {
+			const comments = handle.comments()
+			if (json) {
+				console.log(jsonOut(Object.fromEntries(comments)))
+				return 0
+			}
+			console.log(heading(`Comments: ${sheetName}`))
+			for (const [ref, comment] of comments) {
+				console.log(bullet(ref, `${comment.author ?? ''}: ${comment.text}`))
+			}
+			if (comments.size === 0) console.log('  (none)')
+			return 0
+		}
+		case 'tables': {
+			const tables = wb.inspect().sheets.find((s) => s.name === sheetName)
+			if (json) {
+				console.log(jsonOut({ tableCount: tables?.tableCount ?? 0 }))
+				return 0
+			}
+			console.log(heading(`Tables: ${sheetName}`))
+			console.log(bullet('Count', formatCount(tables?.tableCount ?? null)))
+			return 0
+		}
+		case 'compatibility': {
+			return printCompatibilityDetail(wb, json)
+		}
+		default:
+			console.error(
+				`Unknown detail type: ${detail}. Options: cf, dv, hyperlinks, comments, tables, compatibility`,
+			)
+			return 1
+	}
+}
+
+function printCompatibilityDetail(wb: AscendWorkbook, json: boolean): number {
+	const report = wb.report
+	if (json) {
+		console.log(jsonOut(report))
+		return 0
+	}
+	console.log(heading('Compatibility Report'))
+	console.log(bullet('Status', report.status))
+	for (const f of report.features) {
+		console.log(bullet(`${f.feature} (${f.tier})`, `${f.count} location(s)`))
+		if (f.note) console.log(`    ${f.note}`)
+	}
 	return 0
 }
 

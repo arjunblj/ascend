@@ -1,5 +1,13 @@
 import { jsonOut } from '../output/json.ts'
 
+export const usage = `Usage: ascend doctor [flags]
+
+  Check environment and verify dependencies.
+
+Flags:
+  --json          Output as JSON
+`
+
 interface Check {
 	name: string
 	status: 'ok' | 'warn' | 'fail'

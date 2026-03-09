@@ -3,12 +3,13 @@ import {
 	parseRange,
 	type RangeRef,
 	type SheetId,
+	type SortState,
 	type Table,
 	type TableColumn,
 	type TableStyleInfo,
 } from '@ascend/core'
 import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
-import { parseAutoFilterNode } from './filtering.ts'
+import { parseAutoFilterNode, parseSortStateNode } from './filtering.ts'
 
 export function parseTable(xml: string, sheetId: SheetId): Table | null {
 	const doc = parseXml(xml)
@@ -32,7 +33,9 @@ export function parseTable(xml: string, sheetId: SheetId): Table | null {
 		numAttr(table, 'totalsRowCount') ?? (boolAttr(table, 'totalsRowShown') ? 1 : 0)
 	const columns = parseTableColumns(table)
 	const autoFilter = parseAutoFilterNode(table.autoFilter as XmlNode | undefined)
+	const sortState = parseSortStateNode(table.sortState as XmlNode | undefined)
 	const tableStyleInfo = parseTableStyleInfo(table.tableStyleInfo as XmlNode | undefined)
+	const dxfId = numAttr(table, 'dxfId')
 	const headerRowDxfId = numAttr(table, 'headerRowDxfId')
 	const dataDxfId = numAttr(table, 'dataDxfId')
 	const totalsRowDxfId = numAttr(table, 'totalsRowDxfId')
@@ -47,6 +50,8 @@ export function parseTable(xml: string, sheetId: SheetId): Table | null {
 		hasHeaders: boolean
 		hasTotals: boolean
 		autoFilter?: Table['autoFilter']
+		sortState?: SortState
+		dxfId?: number
 		headerRowDxfId?: number
 		dataDxfId?: number
 		totalsRowDxfId?: number
@@ -62,6 +67,8 @@ export function parseTable(xml: string, sheetId: SheetId): Table | null {
 		hasTotals: totalsRowCount > 0,
 	}
 	if (autoFilter) parsed.autoFilter = autoFilter
+	if (sortState) parsed.sortState = sortState
+	if (dxfId !== undefined) parsed.dxfId = dxfId
 	if (headerRowDxfId !== undefined) parsed.headerRowDxfId = headerRowDxfId
 	if (dataDxfId !== undefined) parsed.dataDxfId = dataDxfId
 	if (totalsRowDxfId !== undefined) parsed.totalsRowDxfId = totalsRowDxfId
@@ -82,11 +89,17 @@ function parseTableColumns(table: XmlNode): readonly TableColumn[] {
 			formulaNode !== undefined && formulaNode !== null
 				? extractFormulaText(formulaNode)
 				: undefined
+		const totalsRowFormulaNode = column.totalsRowFormula
+		const totalsRowFormula =
+			totalsRowFormulaNode !== undefined && totalsRowFormulaNode !== null
+				? extractFormulaText(totalsRowFormulaNode)
+				: undefined
 		const parsed: {
 			id?: number
 			name: string
 			formula?: string
 			totalsRowFunction?: string
+			totalsRowFormula?: string
 			totalsRowLabel?: string
 			dataDxfId?: number
 			headerRowDxfId?: number
@@ -97,6 +110,7 @@ function parseTableColumns(table: XmlNode): readonly TableColumn[] {
 		if (formula) parsed.formula = formula
 		const totalsRowFunction = attr(column, 'totalsRowFunction')
 		if (totalsRowFunction) parsed.totalsRowFunction = totalsRowFunction
+		if (totalsRowFormula) parsed.totalsRowFormula = totalsRowFormula
 		const totalsRowLabel = attr(column, 'totalsRowLabel')
 		if (totalsRowLabel) parsed.totalsRowLabel = totalsRowLabel
 		const dataDxfId = numAttr(column, 'dataDxfId')

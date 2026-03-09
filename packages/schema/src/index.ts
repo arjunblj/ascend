@@ -22,6 +22,7 @@ export type {
 	CellUpdate,
 	Operation,
 	SortSpec,
+	StyleInput,
 } from './operations.ts'
 export type {
 	CellValue,

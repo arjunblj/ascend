@@ -255,6 +255,45 @@ export class Sheet {
 		this.preservedXml = null
 		this.preservedExtLst = null
 	}
+
+	clone(): Sheet {
+		const clone = new Sheet(this.name, this.id)
+		for (const [row, col, cell] of this.cells.iterate()) {
+			clone.cells.set(row, col, structuredClone(cell))
+		}
+		clone.merges.push(...this.merges.map((merge) => structuredClone(merge)))
+		clone.tables.push(...this.tables.map((table) => structuredClone(table)))
+		clone.state = this.state
+		for (const [key, value] of this.colWidths) clone.colWidths.set(key, value)
+		clone.colDefs.push(...this.colDefs.map((colDef) => structuredClone(colDef)))
+		for (const [key, value] of this.rowHeights) clone.rowHeights.set(key, value)
+		clone.frozenRows = this.frozenRows
+		clone.frozenCols = this.frozenCols
+		for (const [key, value] of this.comments) clone.comments.set(key, structuredClone(value))
+		for (const [key, value] of this.hyperlinks) clone.hyperlinks.set(key, structuredClone(value))
+		clone.ignoredErrors.push(
+			...this.ignoredErrors.map((ignoredError) => structuredClone(ignoredError)),
+		)
+		clone.tabColor = this.tabColor ? structuredClone(this.tabColor) : null
+		clone.sheetFormatPr = this.sheetFormatPr ? structuredClone(this.sheetFormatPr) : null
+		clone.dataValidations.push(
+			...this.dataValidations.map((dataValidation) => structuredClone(dataValidation)),
+		)
+		clone.conditionalFormats.push(
+			...this.conditionalFormats.map((conditionalFormat) => structuredClone(conditionalFormat)),
+		)
+		clone.imageRefs.push(...this.imageRefs.map((imageRef) => structuredClone(imageRef)))
+		clone.drawingRefs = structuredClone(this.drawingRefs)
+		clone.autoFilter = this.autoFilter ? structuredClone(this.autoFilter) : null
+		clone.protection = this.protection ? structuredClone(this.protection) : null
+		clone.pageMargins = this.pageMargins ? structuredClone(this.pageMargins) : null
+		clone.pageSetup = this.pageSetup ? structuredClone(this.pageSetup) : null
+		clone.printOptions = this.printOptions ? structuredClone(this.printOptions) : null
+		clone.headerFooter = this.headerFooter ? structuredClone(this.headerFooter) : null
+		clone.preservedXml = this.preservedXml ? structuredClone(this.preservedXml) : null
+		clone.preservedExtLst = this.preservedExtLst
+		return clone
+	}
 }
 
 export function createSheet(name: string, id?: SheetId): Sheet {

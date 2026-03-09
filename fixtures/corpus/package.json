@@ -1,0 +1,9 @@
+{
+	"name": "@ascend/corpus-tests",
+	"private": true,
+	"dependencies": {
+		"@ascend/io-xlsx": "workspace:*",
+		"@ascend/sdk": "workspace:*",
+		"@ascend/schema": "workspace:*"
+	}
+}

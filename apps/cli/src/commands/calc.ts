@@ -1,5 +1,16 @@
-import { AscendWorkbook } from '@ascend/sdk'
 import { jsonOut } from '../output/json.ts'
+import { openWorkbookWithProgress, withProgress } from '../progress.ts'
+
+export const usage = `Usage: ascend calc <file> [flags]
+
+  Recalculate all formulas in the workbook.
+
+Arguments:
+  <file>          Path to the workbook file
+
+Flags:
+  --json          Output as JSON
+`
 
 export async function calcCommand(args: string[], flags: Map<string, string>): Promise<number> {
 	const file = args[0]
@@ -8,14 +19,14 @@ export async function calcCommand(args: string[], flags: Map<string, string>): P
 		return 1
 	}
 
-	const wb = await AscendWorkbook.open(file)
-	const result = wb.recalc()
+	const { workbook: wb } = await openWorkbookWithProgress(file)
+	const { value: result } = await withProgress('Recalculating formulas', () => wb.recalc())
 
 	if (result.errors.length > 0) {
 		for (const e of result.errors) console.error(`${e.ref}: ${e.error.message}`)
 	}
 
-	await wb.save(file)
+	await withProgress(`Saving ${file}`, () => wb.save(file))
 
 	if (flags.has('json')) {
 		console.log(jsonOut(result))

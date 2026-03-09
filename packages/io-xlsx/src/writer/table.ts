@@ -1,6 +1,6 @@
 import type { Table } from '@ascend/core'
 import { escapeXml } from '../xml.ts'
-import { autoFilterXml } from './filtering.ts'
+import { autoFilterXml, sortStateXml } from './filtering.ts'
 
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
@@ -19,6 +19,7 @@ export function buildTableXml(table: Table, tableNumber: number): string {
 		`headerRowCount="${table.hasHeaders ? 1 : 0}"`,
 		`totalsRowCount="${table.hasTotals ? 1 : 0}"`,
 	]
+	if (table.dxfId !== undefined) attrs.push(`dxfId="${table.dxfId}"`)
 	if (table.headerRowDxfId !== undefined) attrs.push(`headerRowDxfId="${table.headerRowDxfId}"`)
 	if (table.dataDxfId !== undefined) attrs.push(`dataDxfId="${table.dataDxfId}"`)
 	if (table.totalsRowDxfId !== undefined) attrs.push(`totalsRowDxfId="${table.totalsRowDxfId}"`)
@@ -31,6 +32,9 @@ export function buildTableXml(table: Table, tableNumber: number): string {
 		parts.push(autoFilterXml(table.autoFilter))
 	} else if (table.hasHeaders) {
 		parts.push(`<autoFilter ref="${ref}"/>`)
+	}
+	if (table.sortState) {
+		parts.push(sortStateXml(table.sortState))
 	}
 	parts.push(`<tableColumns count="${table.columns.length}">`)
 	for (let index = 0; index < table.columns.length; index++) {
@@ -53,6 +57,9 @@ export function buildTableXml(table: Table, tableNumber: number): string {
 		parts.push(`<tableColumn ${columnAttrs.join(' ')}>`)
 		if (column.formula) {
 			parts.push(`<calculatedColumnFormula>${escapeXml(column.formula)}</calculatedColumnFormula>`)
+		}
+		if (column.totalsRowFormula) {
+			parts.push(`<totalsRowFormula>${escapeXml(column.totalsRowFormula)}</totalsRowFormula>`)
 		}
 		parts.push('</tableColumn>')
 	}

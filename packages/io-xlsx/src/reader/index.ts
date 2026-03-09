@@ -35,7 +35,7 @@ import {
 	resolvePath,
 } from './relationships.ts'
 import { parseSharedStrings } from './shared-strings.ts'
-import { parseSheet } from './sheet.ts'
+import { parseSheet, ValueInternPool } from './sheet.ts'
 import { parseStyles } from './styles.ts'
 import { parseTable } from './table.ts'
 import { parseThemeXml } from './theme.ts'
@@ -220,8 +220,11 @@ export function readXlsx(
 			sheet.state = entry.state
 		}
 	} else {
+		const valuePool = new ValueInternPool()
 		const ssXml = ssPath ? readPart(archive, ssPath) : undefined
-		const sharedStrings = ssXml ? parseSharedStrings(ssXml) : []
+		const sharedStrings = ssXml
+			? parseSharedStrings(ssXml).map((value) => valuePool.internValue(value))
+			: []
 
 		const stylesXml = stylesPath ? readPart(archive, stylesPath) : undefined
 		const parsedStyles = stylesXml
@@ -259,6 +262,7 @@ export function readXlsx(
 				isDateFormat: parsedStyles.isDateFormat,
 				differentialStyles: parsedStyles.differentialStyles,
 				relationships: sheetRelationships,
+				valuePool,
 			})
 			attachComments(archive, entry.path, sheet, sheetRelationships)
 			attachDrawingImages(archive, entry.path, sheet, sheetRelationships)
@@ -408,6 +412,37 @@ function resolveContentType(partPath: string, contentTypes: ContentTypes): strin
 	return contentTypes.defaults.get(ext) ?? 'application/octet-stream'
 }
 
+function capsuleFamily(path: string): string {
+	if (path.includes('/charts/') || path.includes('/chartEx/')) return 'preservedChart'
+	if (path.includes('/drawings/') && path.endsWith('.vml')) return 'preservedVml'
+	if (path.includes('/drawings/')) return 'preservedDrawing'
+	if (path.includes('/media/')) return 'preservedMedia'
+	if (path.includes('/activeX/')) return 'preservedActiveX'
+	if (path.includes('/vbaProject')) return 'preservedMacro'
+	if (path.includes('/printerSettings/')) return 'preservedPrinterSettings'
+	if (path.startsWith('customXml/')) return 'preservedCustomXml'
+	if (path.includes('/ctrlProps/')) return 'preservedControl'
+	if (path.includes('/pivotTables/') || path.includes('/pivotCache/')) return 'preservedPivot'
+	if (path.includes('/slicers/') || path.includes('/slicerCaches/')) return 'preservedSlicer'
+	if (path.includes('/tables/')) return 'preservedTable'
+	if (path.includes('/metadata')) return 'preservedMetadata'
+	return 'preservedOther'
+}
+
+function categorizeCapsules(capsules: readonly PreservationCapsule[]): Map<string, string[]> {
+	const families = new Map<string, string[]>()
+	for (const capsule of capsules) {
+		const family = capsuleFamily(capsule.partPath)
+		let paths = families.get(family)
+		if (!paths) {
+			paths = []
+			families.set(family, paths)
+		}
+		paths.push(capsule.partPath)
+	}
+	return families
+}
+
 function buildReport(
 	contentTypes: {
 		overrides: ReadonlyMap<string, string>
@@ -502,13 +537,15 @@ function buildReport(
 	}
 
 	if (capsules.length > 0) {
-		features.push({
-			feature: 'preservedPart',
-			tier: 'preserved',
-			count: capsules.length,
-			locations: capsules.map((capsule) => capsule.partPath),
-			note: 'Extra OOXML parts are preserved outside the semantic workbook model.',
-		})
+		const families = categorizeCapsules(capsules)
+		for (const [family, paths] of families) {
+			features.push({
+				feature: family,
+				tier: 'preserved',
+				count: paths.length,
+				locations: paths,
+			})
+		}
 	}
 
 	if (loadInfo.isPartial) {

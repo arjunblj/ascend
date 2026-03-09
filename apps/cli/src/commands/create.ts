@@ -1,5 +1,17 @@
 import { AscendWorkbook } from '@ascend/sdk'
 import { jsonOut } from '../output/json.ts'
+import { withProgress } from '../progress.ts'
+
+export const usage = `Usage: ascend create <output.xlsx> [flags]
+
+  Create a new empty .xlsx workbook.
+
+Arguments:
+  <output.xlsx>   Path to the output workbook file
+
+Flags:
+  --json          Output as JSON
+`
 
 export async function createCommand(args: string[], flags: Map<string, string>): Promise<number> {
 	const file = args[0]
@@ -9,7 +21,7 @@ export async function createCommand(args: string[], flags: Map<string, string>):
 	}
 
 	const wb = AscendWorkbook.create()
-	await wb.save(file)
+	await withProgress(`Saving ${file}`, () => wb.save(file))
 
 	if (flags.has('json')) {
 		console.log(jsonOut({ created: file }))

@@ -1,6 +1,22 @@
-import { AscendWorkbook } from '@ascend/sdk'
+import type { AscendWorkbook } from '@ascend/sdk'
 import { jsonOut } from '../output/json.ts'
 import { formatCellValue, table } from '../output/pretty.ts'
+import { openWorkbookWithProgress } from '../progress.ts'
+
+export const usage = `Usage: ascend read <file> <selector> [flags]
+
+  Read cell values from a range, table, or defined name.
+
+Arguments:
+  <file>              Path to the workbook file
+  <selector>          Cell range (A1:B2), table (table:Name), or defined name (name:Name)
+
+Flags:
+  --sheet <name>      Sheet name when selector is a plain range
+  --row-offset <N>    Start reading from row offset N
+  --row-limit <N>     Limit number of rows returned
+  --json              Output as JSON
+`
 
 export async function readCommand(args: string[], flags: Map<string, string>): Promise<number> {
 	const file = args[0]
@@ -12,7 +28,7 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 
 	const requestedSheet = flags.get('sheet')
 	const selector = parseSelector(selectorArg, requestedSheet)
-	const wb = await AscendWorkbook.open(file, inferOpenOptions(selector))
+	const { workbook: wb } = await openWorkbookWithProgress(file, inferOpenOptions(selector))
 
 	const rowOffset = parseOptionalInt(flags.get('row-offset'))
 	const rowLimit = parseOptionalInt(flags.get('row-limit'))

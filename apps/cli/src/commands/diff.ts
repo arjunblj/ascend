@@ -1,6 +1,19 @@
 import { AscendWorkbook } from '@ascend/sdk'
 import { jsonOut } from '../output/json.ts'
 import { heading, table } from '../output/pretty.ts'
+import { withProgress } from '../progress.ts'
+
+export const usage = `Usage: ascend diff <fileA> <fileB> [flags]
+
+  Semantic diff between two workbooks.
+
+Arguments:
+  <fileA>         Path to the first workbook
+  <fileB>         Path to the second workbook
+
+Flags:
+  --json          Output as JSON
+`
 
 export async function diffCommand(args: string[], flags: Map<string, string>): Promise<number> {
 	const fileA = args[0]
@@ -10,7 +23,11 @@ export async function diffCommand(args: string[], flags: Map<string, string>): P
 		return 1
 	}
 
-	const [a, b] = await Promise.all([AscendWorkbook.open(fileA), AscendWorkbook.open(fileB)])
+	const {
+		value: [a, b],
+	} = await withProgress('Opening workbooks', () =>
+		Promise.all([AscendWorkbook.open(fileA), AscendWorkbook.open(fileB)]),
+	)
 	const result = a.diff(b)
 
 	if (flags.has('json')) {

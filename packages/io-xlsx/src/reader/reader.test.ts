@@ -1188,7 +1188,7 @@ describe('readXlsx', () => {
 
 		expect(result.value.report.status).toBe('has-preserved')
 		expect(
-			result.value.report.features.find((feature) => feature.feature === 'preservedPart'),
+			result.value.report.features.find((feature) => feature.feature === 'preservedOther'),
 		).toEqual(
 			expect.objectContaining({
 				tier: 'preserved',

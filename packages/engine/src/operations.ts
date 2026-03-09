@@ -844,6 +844,45 @@ function handleSetHyperlink(
 	return ok(patch([op.ref], [op.sheet]))
 }
 
+function mergeStyleInput(current: CellStyle, input: CellStyle): CellStyle {
+	return {
+		...current,
+		...(input.font && { font: { ...current.font, ...input.font } }),
+		...(input.fill && { fill: { ...current.fill, ...input.fill } }),
+		...(input.border && { border: { ...current.border, ...input.border } }),
+		...(input.alignment && { alignment: { ...current.alignment, ...input.alignment } }),
+		...(input.numberFormat !== undefined && { numberFormat: input.numberFormat }),
+	}
+}
+
+function handleSetStyle(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setStyle' }>,
+): Result<PatchResult> {
+	const result = getSheet(workbook, op.sheet)
+	if (!result.ok) return result
+	const sheet = result.value
+
+	const rangeResult = safeParseRange(op.range)
+	if (!rangeResult.ok) return rangeResult
+	const range = rangeResult.value
+
+	const input = op.style as unknown as CellStyle
+	const affected: string[] = []
+	for (let row = range.start.row; row <= range.end.row; row++) {
+		for (let col = range.start.col; col <= range.end.col; col++) {
+			const existing = sheet.cells.get(row, col)
+			const currentStyle = workbook.styles.get(existing?.styleId ?? DEFAULT_SID) ?? {}
+			const merged = mergeStyleInput(currentStyle, input)
+			const styleId = workbook.styles.register(merged)
+			sheet.cells.set(row, col, cell(existing?.value ?? EMPTY, existing?.formula ?? null, styleId))
+			affected.push(toA1({ row, col }))
+		}
+	}
+
+	return ok(patch(affected, [op.sheet]))
+}
+
 function handleSetNumberFormat(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'setNumberFormat' }>,
@@ -1118,6 +1157,8 @@ export function applyOperation(workbook: Workbook, op: Operation): Result<PatchR
 			return handleSetHyperlink(workbook, op)
 		case 'setNumberFormat':
 			return handleSetNumberFormat(workbook, op)
+		case 'setStyle':
+			return handleSetStyle(workbook, op)
 		default:
 			return assertUnreachable(op)
 	}

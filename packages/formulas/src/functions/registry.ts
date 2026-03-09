@@ -15,6 +15,7 @@ export interface EvalArg {
 	readonly kind?: 'range'
 	readonly values?: readonly (readonly CellValue[])[]
 	readonly ref?: EvalRef
+	readonly forEachValue?: (fn: (value: CellValue) => void) => void
 }
 
 export type FnArg = EvalArg

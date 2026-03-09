@@ -1,6 +1,17 @@
-import { AscendWorkbook } from '@ascend/sdk'
 import { jsonOut } from '../output/json.ts'
 import { table } from '../output/pretty.ts'
+import { openWorkbookWithProgress } from '../progress.ts'
+
+export const usage = `Usage: ascend lint <file> [flags]
+
+  Run formula lint checks on a workbook.
+
+Arguments:
+  <file>          Path to the workbook file
+
+Flags:
+  --json          Output as JSON
+`
 
 export async function lintCommand(args: string[], flags: Map<string, string>): Promise<number> {
 	const file = args[0]
@@ -9,7 +20,7 @@ export async function lintCommand(args: string[], flags: Map<string, string>): P
 		return 1
 	}
 
-	const wb = await AscendWorkbook.open(file)
+	const { workbook: wb } = await openWorkbookWithProgress(file)
 	const result = wb.lint()
 
 	if (flags.has('json')) {

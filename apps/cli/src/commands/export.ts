@@ -1,6 +1,20 @@
 import { writeFile } from 'node:fs/promises'
-import { AscendWorkbook } from '@ascend/sdk'
 import { jsonOut } from '../output/json.ts'
+import { openWorkbookWithProgress, withProgress } from '../progress.ts'
+
+export const usage = `Usage: ascend export <file> <output> [flags]
+
+  Export workbook to another format.
+
+Arguments:
+  <file>              Path to the source workbook
+  <output>            Path to the output file
+
+Flags:
+  --format csv|json   Output format (inferred from extension if omitted)
+  --sheet <name>      Sheet to export (for CSV)
+  --json              Output status as JSON
+`
 
 export async function exportCommand(args: string[], flags: Map<string, string>): Promise<number> {
 	const file = args[0]
@@ -10,18 +24,22 @@ export async function exportCommand(args: string[], flags: Map<string, string>):
 		return 1
 	}
 
-	const wb = await AscendWorkbook.open(file)
+	const { workbook: wb } = await openWorkbookWithProgress(file)
 	const format = flags.get('format') ?? inferFormat(output)
 
 	if (format === 'json') {
-		const data = wb.toJSON()
-		await writeFile(output, JSON.stringify(data, null, 2), 'utf-8')
+		const { value: data } = await withProgress('Serializing workbook', () =>
+			JSON.stringify(wb.toJSON(), null, 2),
+		)
+		await withProgress(`Writing ${output}`, () => writeFile(output, data, 'utf-8'))
 	} else if (format === 'csv') {
 		const sheetName = flags.get('sheet')
-		const csv = wb.toCsv(sheetName ? { sheet: sheetName } : undefined)
-		await writeFile(output, csv, 'utf-8')
+		const { value: csv } = await withProgress('Rendering CSV export', () =>
+			wb.toCsv(sheetName ? { sheet: sheetName } : undefined),
+		)
+		await withProgress(`Writing ${output}`, () => writeFile(output, csv, 'utf-8'))
 	} else {
-		await wb.save(output)
+		await withProgress(`Saving ${output}`, () => wb.save(output))
 	}
 
 	if (flags.has('json')) {

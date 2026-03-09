@@ -1,7 +1,24 @@
 import { readFile } from 'node:fs/promises'
 import type { Operation } from '@ascend/schema'
-import { AscendWorkbook } from '@ascend/sdk'
+import type { AscendWorkbook } from '@ascend/sdk'
 import { jsonOut } from '../output/json.ts'
+import { openWorkbookWithProgress, withProgress } from '../progress.ts'
+
+export const usage = `Usage: ascend write <file> <selector> <values...> [flags]
+       ascend write <file> --ops <file.json>
+
+  Write cell values or apply operations to a workbook.
+
+Arguments:
+  <file>              Path to the workbook file
+  <selector>          Cell reference (e.g. Sheet1!A1)
+  <values...>         JSON-encoded values to write
+
+Flags:
+  --sheet <name>      Sheet name when selector has no sheet qualifier
+  --ops <file.json>   Apply operations from a JSON file instead
+  --json              Output as JSON
+`
 
 export async function writeCommand(args: string[], flags: Map<string, string>): Promise<number> {
 	const file = args[0]
@@ -11,7 +28,7 @@ export async function writeCommand(args: string[], flags: Map<string, string>): 
 		return 1
 	}
 
-	const wb = await AscendWorkbook.open(file)
+	const { workbook: wb } = await openWorkbookWithProgress(file)
 
 	const opsFile = flags.get('ops')
 	if (opsFile) {
@@ -22,8 +39,10 @@ export async function writeCommand(args: string[], flags: Map<string, string>): 
 			for (const e of result.errors) console.error(e.message)
 			return 1
 		}
-		if (result.recalcRequired) wb.recalc()
-		await wb.save(file)
+		if (result.recalcRequired) {
+			await withProgress('Recalculating formulas', () => wb.recalc())
+		}
+		await withProgress(`Saving ${file}`, () => wb.save(file))
 		if (flags.has('json')) {
 			console.log(jsonOut(result))
 		} else {
@@ -64,9 +83,11 @@ export async function writeCommand(args: string[], flags: Map<string, string>): 
 		for (const e of result.errors) console.error(e.message)
 		return 1
 	}
-	if (result.recalcRequired) wb.recalc()
+	if (result.recalcRequired) {
+		await withProgress('Recalculating formulas', () => wb.recalc())
+	}
 
-	await wb.save(file)
+	await withProgress(`Saving ${file}`, () => wb.save(file))
 	if (flags.has('json')) {
 		console.log(jsonOut(result))
 	} else {

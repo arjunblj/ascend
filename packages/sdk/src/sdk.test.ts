@@ -601,7 +601,8 @@ describe('AscendWorkbook', () => {
 
 	test('SheetHandle exposes comments, hyperlinks, merges, frozenPanes, protection, autoFilter', () => {
 		const wb = AscendWorkbook.create()
-		const handle = wb.sheet('Sheet1')!
+		const handle = wb.sheet('Sheet1')
+		if (!handle) throw new Error('Expected Sheet1 to exist')
 
 		expect(handle.comments().size).toBe(0)
 		expect(handle.hyperlinks().size).toBe(0)
@@ -624,7 +625,8 @@ describe('AscendWorkbook', () => {
 			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'test' }] },
 			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'A1', url: 'https://example.com' },
 		])
-		const handle = wb.sheet('Sheet1')!
+		const handle = wb.sheet('Sheet1')
+		if (!handle) throw new Error('Expected Sheet1 to exist')
 		expect(handle.hyperlink('A1')).toBeDefined()
 		expect(handle.hyperlink('A1')?.target).toBe('https://example.com')
 		expect(handle.hyperlink('B1')).toBeUndefined()
@@ -647,8 +649,8 @@ describe('AscendWorkbook', () => {
 			{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:B2', name: 'MyTable', hasHeaders: true },
 		])
 
-		const table = wb.table('MyTable')!
-		expect(table).toBeDefined()
+		const table = wb.table('MyTable')
+		if (!table) throw new Error('Expected MyTable to exist')
 		expect(table.name).toBe('MyTable')
 		expect(table.ref).toBeDefined()
 		expect(table.columns).toEqual(['Name', 'Score'])

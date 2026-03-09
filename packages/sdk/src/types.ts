@@ -1,4 +1,24 @@
-import type { RangeRef } from '@ascend/core'
+import type {
+	AutoFilter,
+	RangeRef,
+	SheetComment,
+	SheetConditionalFormat,
+	SheetDataValidation,
+	SheetDrawingRefs,
+	SheetFormatPr,
+	SheetHeaderFooter,
+	SheetHyperlink,
+	SheetIgnoredError,
+	SheetImageRef,
+	SheetPageMargins,
+	SheetPageSetup,
+	SheetPrintOptions,
+	SheetProtection,
+	SheetState,
+	SheetTabColor,
+	TableColumn,
+	TableStyleInfo,
+} from '@ascend/core'
 import type { CellChange, SheetDiff, WorkbookDiff } from '@ascend/engine'
 import type { FormulaNode, Token } from '@ascend/formulas'
 import type { AscendError, CellValue, CompatibilityReport } from '@ascend/schema'
@@ -91,6 +111,48 @@ export interface SheetInfo {
 	readonly hasPageMetadata: boolean | null
 	readonly hasProtection: boolean | null
 	readonly cellDataLoaded: boolean
+}
+
+export interface SheetCommentInfo extends SheetComment {
+	readonly ref: string
+}
+
+export interface SheetHyperlinkInfo extends SheetHyperlink {
+	readonly ref: string
+}
+
+export interface TableInfo {
+	readonly name: string
+	readonly ref: RangeRef
+	readonly rowCount: number
+	readonly hasHeaders: boolean
+	readonly hasTotals: boolean
+	readonly autoFilter: AutoFilter | null
+	readonly sortStateRef?: string
+	readonly styleInfo?: TableStyleInfo
+	readonly columnDefs: readonly TableColumn[]
+}
+
+export interface SheetInspectInfo extends SheetInfo {
+	readonly usedRange: RangeRef | null
+	readonly state: SheetState
+	readonly merges: readonly RangeRef[] | null
+	readonly tables: readonly TableInfo[] | null
+	readonly comments: readonly SheetCommentInfo[] | null
+	readonly hyperlinks: readonly SheetHyperlinkInfo[] | null
+	readonly ignoredErrors: readonly SheetIgnoredError[] | null
+	readonly conditionalFormats: readonly SheetConditionalFormat[] | null
+	readonly dataValidations: readonly SheetDataValidation[] | null
+	readonly imageRefs: readonly SheetImageRef[] | null
+	readonly drawingRefs: SheetDrawingRefs | null
+	readonly autoFilter: AutoFilter | null
+	readonly protection: SheetProtection | null
+	readonly tabColor: SheetTabColor | null
+	readonly sheetFormatPr: SheetFormatPr | null
+	readonly pageMargins: SheetPageMargins | null
+	readonly pageSetup: SheetPageSetup | null
+	readonly printOptions: SheetPrintOptions | null
+	readonly headerFooter: SheetHeaderFooter | null
 }
 
 export interface WorkbookLoadInfo {

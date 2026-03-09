@@ -50,6 +50,9 @@ import type {
 	LintWarning,
 	RangeWindowInfo,
 	RecalcResult,
+	SheetInfo,
+	SheetInspectInfo,
+	TableInfo,
 	TraceResult,
 	WorkbookInfo,
 } from './types.ts'
@@ -224,35 +227,7 @@ export class AscendWorkbook {
 				totalDataValidations += s.dataValidations.length
 				totalImages += s.imageRefs.length
 			}
-			const info: import('./types.ts').SheetInfo = {
-				name: s.name,
-				rowCount: used ? used.end.row + 1 : null,
-				colCount: used ? used.end.col + 1 : null,
-				cellCount: count,
-				tableCount: isHydrated ? s.tables.length : null,
-				commentCount: isHydrated ? s.comments.size : null,
-				conditionalFormatCount: isHydrated ? s.conditionalFormats.length : null,
-				dataValidationCount: isHydrated ? s.dataValidations.length : null,
-				hasFrozenPanes: isHydrated ? s.frozenRows > 0 || s.frozenCols > 0 : null,
-				colWidthCount: isHydrated ? s.colWidths.size : null,
-				imageCount: isHydrated ? s.imageRefs.length : null,
-				rowHeightCount: isHydrated ? s.rowHeights.size : null,
-				hyperlinkCount: isHydrated ? s.hyperlinks.size : null,
-				ignoredErrorCount: isHydrated ? s.ignoredErrors.length : null,
-				hasAutoFilter: isHydrated ? s.autoFilter !== null : null,
-				hasDrawingRefs: isHydrated
-					? s.drawingRefs.hasDrawing || s.drawingRefs.hasLegacyDrawing
-					: null,
-				hasPageMetadata: isHydrated
-					? s.pageMargins !== null ||
-						s.pageSetup !== null ||
-						s.printOptions !== null ||
-						s.headerFooter !== null
-					: null,
-				hasProtection: isHydrated ? s.protection !== null : null,
-				cellDataLoaded: isHydrated,
-			}
-			return info
+			return buildSheetInfo(s, isHydrated, used, count)
 		})
 		return {
 			sheetCount: this.loadInfo.sourceSheets.length,
@@ -286,6 +261,41 @@ export class AscendWorkbook {
 			},
 			compatibility: this.compat,
 			load: this.loadInfo,
+		}
+	}
+
+	inspectSheet(name: string): SheetInspectInfo | undefined {
+		const sheet = this.wb.getSheet(name)
+		if (!sheet) return undefined
+		const isHydrated = this.loadInfo.cellsHydrated
+		const used = isHydrated ? sheet.cells.usedRange() : null
+		const count = isHydrated ? sheet.cells.cellCount() : null
+		const base = buildSheetInfo(sheet, isHydrated, used, count)
+		return {
+			...base,
+			usedRange: used,
+			state: sheet.state,
+			merges: isHydrated ? [...sheet.merges] : null,
+			tables: isHydrated ? sheet.tables.map((table) => buildTableInfo(table)) : null,
+			comments: isHydrated
+				? [...sheet.comments.entries()].map(([ref, comment]) => ({ ref, ...comment }))
+				: null,
+			hyperlinks: isHydrated
+				? [...sheet.hyperlinks.entries()].map(([ref, hyperlink]) => ({ ref, ...hyperlink }))
+				: null,
+			ignoredErrors: isHydrated ? [...sheet.ignoredErrors] : null,
+			conditionalFormats: isHydrated ? [...sheet.conditionalFormats] : null,
+			dataValidations: isHydrated ? [...sheet.dataValidations] : null,
+			imageRefs: isHydrated ? [...sheet.imageRefs] : null,
+			drawingRefs: isHydrated ? { ...sheet.drawingRefs } : null,
+			autoFilter: isHydrated ? sheet.autoFilter : null,
+			protection: isHydrated ? sheet.protection : null,
+			tabColor: isHydrated ? sheet.tabColor : null,
+			sheetFormatPr: isHydrated ? sheet.sheetFormatPr : null,
+			pageMargins: isHydrated ? sheet.pageMargins : null,
+			pageSetup: isHydrated ? sheet.pageSetup : null,
+			printOptions: isHydrated ? sheet.printOptions : null,
+			headerFooter: isHydrated ? sheet.headerFooter : null,
 		}
 	}
 
@@ -685,6 +695,58 @@ export class AscendWorkbook {
 		this.dirtySheets.clear()
 		this.workbookMetaDirty = false
 		this.sharedStringsDirty = false
+	}
+}
+
+function buildSheetInfo(
+	sheet: import('@ascend/core').Sheet,
+	isHydrated: boolean,
+	used: RangeRef | null,
+	count: number | null,
+): SheetInfo {
+	return {
+		name: sheet.name,
+		rowCount: used ? used.end.row + 1 : null,
+		colCount: used ? used.end.col + 1 : null,
+		cellCount: count,
+		tableCount: isHydrated ? sheet.tables.length : null,
+		commentCount: isHydrated ? sheet.comments.size : null,
+		conditionalFormatCount: isHydrated ? sheet.conditionalFormats.length : null,
+		dataValidationCount: isHydrated ? sheet.dataValidations.length : null,
+		hasFrozenPanes: isHydrated ? sheet.frozenRows > 0 || sheet.frozenCols > 0 : null,
+		colWidthCount: isHydrated ? sheet.colWidths.size : null,
+		imageCount: isHydrated ? sheet.imageRefs.length : null,
+		rowHeightCount: isHydrated ? sheet.rowHeights.size : null,
+		hyperlinkCount: isHydrated ? sheet.hyperlinks.size : null,
+		ignoredErrorCount: isHydrated ? sheet.ignoredErrors.length : null,
+		hasAutoFilter: isHydrated ? sheet.autoFilter !== null : null,
+		hasDrawingRefs: isHydrated
+			? sheet.drawingRefs.hasDrawing || sheet.drawingRefs.hasLegacyDrawing
+			: null,
+		hasPageMetadata: isHydrated
+			? sheet.pageMargins !== null ||
+				sheet.pageSetup !== null ||
+				sheet.printOptions !== null ||
+				sheet.headerFooter !== null
+			: null,
+		hasProtection: isHydrated ? sheet.protection !== null : null,
+		cellDataLoaded: isHydrated,
+	}
+}
+
+function buildTableInfo(table: import('@ascend/core').Table): TableInfo {
+	const headerOffset = table.hasHeaders ? 1 : 0
+	const totalOffset = table.hasTotals ? 1 : 0
+	return {
+		name: table.name,
+		ref: table.ref,
+		rowCount: table.ref.end.row - table.ref.start.row + 1 - headerOffset - totalOffset,
+		hasHeaders: table.hasHeaders,
+		hasTotals: table.hasTotals,
+		autoFilter: table.autoFilter ?? null,
+		...(table.sortState?.ref ? { sortStateRef: table.sortState.ref } : {}),
+		...(table.tableStyleInfo ? { styleInfo: table.tableStyleInfo } : {}),
+		columnDefs: [...table.columns],
 	}
 }
 

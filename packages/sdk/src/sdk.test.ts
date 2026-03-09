@@ -100,6 +100,54 @@ describe('AscendWorkbook', () => {
 		expect(info.sheets[0]?.cellDataLoaded).toBe(true)
 	})
 
+	test('inspectSheet returns parsed worksheet structures', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'hello' }] },
+			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'A1', url: 'https://example.com' },
+		])
+		const internal = wb as unknown as {
+			wb: {
+				sheets: Array<Record<string, unknown>>
+			}
+		}
+		const backingSheet = internal.wb.sheets[0] as
+			| {
+					comments: Map<string, { text: string; author?: string }>
+					ignoredErrors: Array<Record<string, unknown>>
+					conditionalFormats: Array<Record<string, unknown>>
+					dataValidations: Array<Record<string, unknown>>
+					drawingRefs: { hasDrawing: boolean; hasLegacyDrawing: boolean }
+					pageMargins: Record<string, unknown> | null
+			  }
+			| undefined
+		backingSheet?.comments.set('A1', { text: 'note', author: 'me' })
+		backingSheet?.ignoredErrors.push({ sqref: 'A1', formula: true })
+		backingSheet?.conditionalFormats.push({
+			sqref: 'A1',
+			rules: [{ type: 'cellIs', formulas: ['1'] }],
+		})
+		backingSheet?.dataValidations.push({ sqref: 'A1', type: 'list', formula1: '"A,B"' })
+		if (backingSheet) {
+			backingSheet.drawingRefs = { hasDrawing: true, hasLegacyDrawing: true }
+			backingSheet.pageMargins = { left: 0.5 }
+		}
+
+		const detail = wb.inspectSheet('Sheet1')
+		expect(detail).toBeDefined()
+		expect(detail?.usedRange).toEqual({
+			start: { row: 0, col: 0 },
+			end: { row: 0, col: 0 },
+		})
+		expect(detail?.comments?.[0]?.ref).toBe('A1')
+		expect(detail?.hyperlinks?.[0]?.target).toBe('https://example.com')
+		expect(detail?.ignoredErrors).toHaveLength(1)
+		expect(detail?.conditionalFormats).toHaveLength(1)
+		expect(detail?.dataValidations).toHaveLength(1)
+		expect(detail?.drawingRefs?.hasLegacyDrawing).toBe(true)
+		expect(detail?.pageMargins?.left).toBe(0.5)
+	})
+
 	test('sheet handle reads cells', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -898,6 +946,28 @@ describe('AscendWorkbook', () => {
 		expect(table.columnDefs).toHaveLength(2)
 		expect(table.columnDefs[0]?.name).toBe('Name')
 		expect(table.rowCount).toBe(1)
+	})
+
+	test('inspectSheet exposes structured table metadata', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Name' },
+					{ ref: 'B1', value: 'Score' },
+					{ ref: 'A2', value: 'Alice' },
+					{ ref: 'B2', value: 90 },
+				],
+			},
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:B2', name: 'MyTable', hasHeaders: true },
+		])
+		const detail = wb.inspectSheet('Sheet1')
+		expect(detail?.tables).toHaveLength(1)
+		expect(detail?.tables?.[0]?.name).toBe('MyTable')
+		expect(detail?.tables?.[0]?.rowCount).toBe(1)
+		expect(detail?.tables?.[0]?.columnDefs.map((column) => column.name)).toEqual(['Name', 'Score'])
 	})
 })
 

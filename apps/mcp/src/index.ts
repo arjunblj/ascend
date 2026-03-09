@@ -38,15 +38,9 @@ export function createServer(): McpServer {
 				sheet ? { mode: 'values', sheets: [sheet] } : { mode: 'metadata-only' },
 			)
 			if (sheet) {
-				const handle = wb.sheet(sheet)
-				if (!handle) {
+				const data = wb.inspectSheet(sheet)
+				if (!data) {
 					return errorResponse(`Sheet "${sheet}" not found`)
-				}
-				const data = {
-					name: handle.name,
-					rowCount: handle.rowCount,
-					colCount: handle.colCount,
-					usedRange: handle.usedRange(),
 				}
 				return {
 					...okResponse(data, `Inspected sheet "${sheet}"`),

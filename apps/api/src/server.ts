@@ -59,7 +59,7 @@ export function createServer(opts?: { port?: number }) {
 							sheetName ? { mode: 'values', sheets: [sheetName] } : { mode: 'metadata-only' },
 						)
 						if (!sheetName) return jsonResponse(wb.inspect())
-						const sheet = wb.inspect().sheets.find((entry) => entry.name === sheetName)
+						const sheet = wb.inspectSheet(sheetName)
 						if (!sheet) return errorResponse('Sheet not found', 400)
 						return jsonResponse(sheet)
 					} catch (e) {

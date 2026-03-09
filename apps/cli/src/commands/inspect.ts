@@ -73,7 +73,7 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 	}
 
 	if (sheetArg) {
-		const sheet = info.sheets.find((s) => s.name === sheetArg)
+		const sheet = wb.inspectSheet(sheetArg)
 		if (!sheet) {
 			console.error(`Sheet "${sheetArg}" not found`)
 			return 1
@@ -97,9 +97,36 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 			console.log(bullet('Hyperlinks', formatCount(sheet.hyperlinkCount)))
 			console.log(bullet('Ignored errors', formatCount(sheet.ignoredErrorCount)))
 			console.log(bullet('Auto filter', formatLoadedBool(sheet.hasAutoFilter)))
+			console.log(bullet('Auto filter ref', sheet.autoFilter?.ref ?? 'none'))
 			console.log(bullet('Drawing refs', formatLoadedBool(sheet.hasDrawingRefs)))
+			console.log(
+				bullet(
+					'Drawing detail',
+					sheet.drawingRefs
+						? `drawing=${sheet.drawingRefs.hasDrawing ? 'yes' : 'no'}, legacy=${sheet.drawingRefs.hasLegacyDrawing ? 'yes' : 'no'}`
+						: 'unknown (not hydrated)',
+				),
+			)
 			console.log(bullet('Page metadata', formatLoadedBool(sheet.hasPageMetadata)))
+			console.log(
+				bullet(
+					'Page detail',
+					sheet.cellDataLoaded
+						? [
+								sheet.pageMargins ? 'margins' : undefined,
+								sheet.pageSetup ? 'setup' : undefined,
+								sheet.printOptions ? 'print-options' : undefined,
+								sheet.headerFooter ? 'header-footer' : undefined,
+							]
+								.filter(Boolean)
+								.join(', ') || 'none'
+						: 'unknown (not hydrated)',
+				),
+			)
 			console.log(bullet('Protection', formatLoadedBool(sheet.hasProtection)))
+			console.log(
+				bullet('Merges', sheet.merges ? String(sheet.merges.length) : 'unknown (not hydrated)'),
+			)
 		}
 		return 0
 	}
@@ -283,13 +310,36 @@ function printSheetDetail(
 			return 0
 		}
 		case 'tables': {
-			const tables = wb.inspect().sheets.find((s) => s.name === sheetName)
+			const sheetInfo = wb.inspectSheet(sheetName)
+			const tables = sheetInfo?.tables ?? null
 			if (json) {
-				console.log(jsonOut({ tableCount: tables?.tableCount ?? 0 }))
+				console.log(jsonOut({ tableCount: tables?.length ?? null, tables }))
 				return 0
 			}
 			console.log(heading(`Tables: ${sheetName}`))
-			console.log(bullet('Count', formatCount(tables?.tableCount ?? null)))
+			console.log(
+				bullet('Count', tables === null ? 'unknown (not hydrated)' : String(tables.length)),
+			)
+			for (const tableInfo of tables ?? []) {
+				console.log(
+					bullet(
+						tableInfo.name,
+						`${formatRange(tableInfo.ref)} rows=${tableInfo.rowCount} headers=${tableInfo.hasHeaders ? 'yes' : 'no'} totals=${tableInfo.hasTotals ? 'yes' : 'no'}`,
+					),
+				)
+				if (tableInfo.styleInfo?.name) {
+					console.log(`    style: ${tableInfo.styleInfo.name}`)
+				}
+				if (tableInfo.autoFilter?.ref) {
+					console.log(`    filter: ${tableInfo.autoFilter.ref}`)
+				}
+				if (tableInfo.sortStateRef) {
+					console.log(`    sort: ${tableInfo.sortStateRef}`)
+				}
+				console.log(
+					`    columns: ${tableInfo.columnDefs.map((column) => column.name).join(', ') || '(none)'}`,
+				)
+			}
 			return 0
 		}
 		case 'compatibility': {
@@ -325,4 +375,21 @@ function formatCount(value: number | null): string {
 function formatLoadedBool(value: boolean | null): string {
 	if (value === null) return 'unknown (not hydrated)'
 	return value ? 'yes' : 'no'
+}
+
+function formatRange(range: {
+	start: { row: number; col: number }
+	end: { row: number; col: number }
+}): string {
+	return `${columnLabel(range.start.col)}${range.start.row + 1}:${columnLabel(range.end.col)}${range.end.row + 1}`
+}
+
+function columnLabel(col: number): string {
+	let n = col
+	let label = ''
+	while (n >= 0) {
+		label = String.fromCharCode(65 + (n % 26)) + label
+		n = Math.floor(n / 26) - 1
+	}
+	return label
 }

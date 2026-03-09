@@ -289,29 +289,47 @@ export class AscendWorkbook {
 
 	inspect(): WorkbookInfo {
 		let totalCells = 0
+		let totalComments = 0
+		let totalConditionalFormats = 0
+		let totalDataValidations = 0
+		let totalImages = 0
 		const sheets = this.wb.sheets.map((s) => {
 			const isHydrated = this.loadInfo.cellsHydrated
 			const used = isHydrated ? s.cells.usedRange() : null
 			const count = isHydrated ? s.cells.cellCount() : null
 			if (count !== null) totalCells += count
+			if (isHydrated) {
+				totalComments += s.comments.size
+				totalConditionalFormats += s.conditionalFormats.length
+				totalDataValidations += s.dataValidations.length
+				totalImages += s.imageRefs.length
+			}
 			const info: import('./types.ts').SheetInfo = {
 				name: s.name,
 				rowCount: used ? used.end.row + 1 : null,
 				colCount: used ? used.end.col + 1 : null,
 				cellCount: count,
 				tableCount: isHydrated ? s.tables.length : null,
+				commentCount: isHydrated ? s.comments.size : null,
+				conditionalFormatCount: isHydrated ? s.conditionalFormats.length : null,
+				dataValidationCount: isHydrated ? s.dataValidations.length : null,
 				hasFrozenPanes: isHydrated ? s.frozenRows > 0 || s.frozenCols > 0 : null,
 				colWidthCount: isHydrated ? s.colWidths.size : null,
+				imageCount: isHydrated ? s.imageRefs.length : null,
 				rowHeightCount: isHydrated ? s.rowHeights.size : null,
 				hyperlinkCount: isHydrated ? s.hyperlinks.size : null,
 				ignoredErrorCount: isHydrated ? s.ignoredErrors.length : null,
 				hasAutoFilter: isHydrated ? s.autoFilter !== null : null,
+				hasDrawingRefs: isHydrated
+					? s.drawingRefs.hasDrawing || s.drawingRefs.hasLegacyDrawing
+					: null,
 				hasPageMetadata: isHydrated
 					? s.pageMargins !== null ||
 						s.pageSetup !== null ||
 						s.printOptions !== null ||
 						s.headerFooter !== null
 					: null,
+				hasProtection: isHydrated ? s.protection !== null : null,
 				cellDataLoaded: isHydrated,
 			}
 			return info
@@ -322,9 +340,14 @@ export class AscendWorkbook {
 			sheets,
 			definedNames: this.wb.definedNames.workbookKeys(),
 			cellCount: this.loadInfo.cellsHydrated ? totalCells : null,
+			commentCount: this.loadInfo.cellsHydrated ? totalComments : null,
+			conditionalFormatCount: this.loadInfo.cellsHydrated ? totalConditionalFormats : null,
+			dataValidationCount: this.loadInfo.cellsHydrated ? totalDataValidations : null,
+			imageCount: this.loadInfo.cellsHydrated ? totalImages : null,
 			sourceFormat: this.compat.sourceFormat,
 			workbookViewCount: this.wb.workbookViews.length,
 			externalReferenceCount: this.wb.externalReferences.length,
+			hasWorkbookProtection: this.wb.workbookProtection !== null,
 			styleSummary: { ...this.wb.styleMetadata },
 			themeSummary: {
 				hasThemePart: this.wb.preservedTheme !== null,

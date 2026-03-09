@@ -9,9 +9,14 @@ export interface WorkbookInfo {
 	readonly sheets: readonly SheetInfo[]
 	readonly definedNames: readonly string[]
 	readonly cellCount: number | null
+	readonly commentCount: number | null
+	readonly conditionalFormatCount: number | null
+	readonly dataValidationCount: number | null
+	readonly imageCount: number | null
 	readonly sourceFormat: string
 	readonly workbookViewCount: number
 	readonly externalReferenceCount: number
+	readonly hasWorkbookProtection: boolean
 	readonly styleSummary: {
 		readonly numFmtCount: number
 		readonly fontCount: number
@@ -39,13 +44,19 @@ export interface SheetInfo {
 	readonly colCount: number | null
 	readonly cellCount: number | null
 	readonly tableCount: number | null
+	readonly commentCount: number | null
+	readonly conditionalFormatCount: number | null
+	readonly dataValidationCount: number | null
 	readonly hasFrozenPanes: boolean | null
 	readonly colWidthCount: number | null
+	readonly imageCount: number | null
 	readonly rowHeightCount: number | null
 	readonly hyperlinkCount: number | null
 	readonly ignoredErrorCount: number | null
 	readonly hasAutoFilter: boolean | null
+	readonly hasDrawingRefs: boolean | null
 	readonly hasPageMetadata: boolean | null
+	readonly hasProtection: boolean | null
 	readonly cellDataLoaded: boolean
 }
 

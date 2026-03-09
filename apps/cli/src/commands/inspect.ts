@@ -31,13 +31,19 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 			console.log(bullet('Columns', formatCount(sheet.colCount)))
 			console.log(bullet('Cells', formatCount(sheet.cellCount)))
 			console.log(bullet('Tables', formatCount(sheet.tableCount)))
+			console.log(bullet('Comments', formatCount(sheet.commentCount)))
+			console.log(bullet('Conditional formats', formatCount(sheet.conditionalFormatCount)))
+			console.log(bullet('Data validations', formatCount(sheet.dataValidationCount)))
+			console.log(bullet('Images', formatCount(sheet.imageCount)))
 			console.log(bullet('Frozen panes', formatLoadedBool(sheet.hasFrozenPanes)))
 			console.log(bullet('Column widths', formatCount(sheet.colWidthCount)))
 			console.log(bullet('Row heights', formatCount(sheet.rowHeightCount)))
 			console.log(bullet('Hyperlinks', formatCount(sheet.hyperlinkCount)))
 			console.log(bullet('Ignored errors', formatCount(sheet.ignoredErrorCount)))
 			console.log(bullet('Auto filter', formatLoadedBool(sheet.hasAutoFilter)))
+			console.log(bullet('Drawing refs', formatLoadedBool(sheet.hasDrawingRefs)))
 			console.log(bullet('Page metadata', formatLoadedBool(sheet.hasPageMetadata)))
+			console.log(bullet('Protection', formatLoadedBool(sheet.hasProtection)))
 		}
 		return 0
 	}
@@ -55,8 +61,13 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 	console.log(bullet('Partial view', info.load.isPartial ? 'yes' : 'no'))
 	console.log(bullet('Cell data loaded', info.load.cellsHydrated ? 'yes' : 'no'))
 	console.log(bullet('Total cells', formatCount(info.cellCount)))
+	console.log(bullet('Comments', formatCount(info.commentCount)))
+	console.log(bullet('Conditional formats', formatCount(info.conditionalFormatCount)))
+	console.log(bullet('Data validations', formatCount(info.dataValidationCount)))
+	console.log(bullet('Images', formatCount(info.imageCount)))
 	console.log(bullet('Workbook views', info.workbookViewCount))
 	console.log(bullet('External references', info.externalReferenceCount))
+	console.log(bullet('Workbook protection', info.hasWorkbookProtection ? 'yes' : 'no'))
 	console.log(bullet('Cell styles', info.styleSummary.cellXfCount))
 	console.log(bullet('Diff styles', info.styleSummary.dxfCount))
 	console.log(bullet('Theme part', info.themeSummary.hasThemePart ? 'yes' : 'no'))
@@ -90,7 +101,7 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 		console.log('')
 		console.log(
 			table(
-				['Sheet', 'Loaded', 'Rows', 'Cols', 'Cells', 'Tables', 'Links', 'Filter'],
+				['Sheet', 'Loaded', 'Rows', 'Cols', 'Cells', 'Tables', 'CF', 'DV', 'Images', 'Filter'],
 				info.sheets.map((s) => [
 					s.name,
 					s.cellDataLoaded ? 'yes' : 'no',
@@ -98,7 +109,9 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 					formatCount(s.colCount),
 					formatCount(s.cellCount),
 					formatCount(s.tableCount),
-					formatCount(s.hyperlinkCount),
+					formatCount(s.conditionalFormatCount),
+					formatCount(s.dataValidationCount),
+					formatCount(s.imageCount),
 					formatLoadedBool(s.hasAutoFilter),
 				]),
 			),

@@ -22,9 +22,42 @@ describe('AscendWorkbook', () => {
 	test('inspect returns correct sheet info', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'hello' }] }])
+		const internal = wb as unknown as {
+			wb: { sheets: Array<Record<string, unknown>>; workbookProtection: unknown }
+		}
+		const backingSheet = internal.wb.sheets[0] as
+			| {
+					comments: Map<string, { text: string }>
+					dataValidations: Array<Record<string, unknown>>
+					conditionalFormats: Array<Record<string, unknown>>
+					imageRefs: Array<Record<string, unknown>>
+			  }
+			| undefined
+		backingSheet?.comments.set('A1', { text: 'note' })
+		backingSheet?.dataValidations.push({ sqref: 'B1', type: 'list', formula1: '"A,B"' })
+		backingSheet?.conditionalFormats.push({
+			sqref: 'A1',
+			rules: [{ type: 'cellIs', formulas: ['1'] }],
+		})
+		backingSheet?.imageRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			relId: 'rId1',
+			targetPath: 'xl/media/image1.png',
+		})
+		internal.wb.workbookProtection = { lockStructure: true }
 		const info = wb.inspect()
 		expect(info.cellCount).toBe(1)
+		expect(info.commentCount).toBe(1)
+		expect(info.conditionalFormatCount).toBe(1)
+		expect(info.dataValidationCount).toBe(1)
+		expect(info.imageCount).toBe(1)
+		expect(info.hasWorkbookProtection).toBe(true)
 		expect(info.sheets[0]?.cellCount).toBe(1)
+		expect(info.sheets[0]?.commentCount).toBe(1)
+		expect(info.sheets[0]?.conditionalFormatCount).toBe(1)
+		expect(info.sheets[0]?.dataValidationCount).toBe(1)
+		expect(info.sheets[0]?.imageCount).toBe(1)
+		expect(info.sheets[0]?.hasProtection).toBe(false)
 		expect(info.sheets[0]?.name).toBe('Sheet1')
 		expect(info.sheets[0]?.cellDataLoaded).toBe(true)
 	})

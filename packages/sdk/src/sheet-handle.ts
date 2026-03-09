@@ -5,9 +5,11 @@ import type {
 	SheetComment,
 	SheetConditionalFormat,
 	SheetDataValidation,
+	SheetFormatPr,
 	SheetHyperlink,
 	SheetImageRef,
 	SheetProtection,
+	SheetTabColor,
 } from '@ascend/core'
 import { parseA1, parseRange, toA1 } from '@ascend/core'
 import type { CellInfo, RangeInfo, RangeWindowInfo } from './types.ts'
@@ -114,6 +116,14 @@ export class SheetHandle {
 
 	get state(): string {
 		return this.sheet.state
+	}
+
+	get tabColor(): SheetTabColor | null {
+		return this.sheet.tabColor
+	}
+
+	get sheetFormatPr(): SheetFormatPr | null {
+		return this.sheet.sheetFormatPr
 	}
 
 	get frozenRows(): number {

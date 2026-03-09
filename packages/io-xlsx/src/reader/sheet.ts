@@ -146,7 +146,10 @@ function stripSheetDataForDom(xml: string): string {
 function parseSheetDataXml(xml: string, sheet: Sheet, ctx: SheetParseContext): void {
 	const sheetData = extractSheetDataContent(xml)
 	if (!sheetData) return
-	const sharedFormulaMasters = new Map<string, { formula: string; row: number; col: number }>()
+	const sharedFormulaMasters = new Map<
+		string,
+		{ formula: string; row: number; col: number; ref?: string }
+	>()
 
 	for (const rowMatch of sheetData.matchAll(ROW_RE)) {
 		const rowAttrs = parseRawAttributes(rowMatch[1] ?? rowMatch[3] ?? '')
@@ -170,7 +173,14 @@ function parseSheetDataXml(xml: string, sheet: Sheet, ctx: SheetParseContext): v
 			if (!pos) continue
 			const cell = parseCellValue(cellNode, ctx, pos.row, pos.col, sharedFormulaMasters)
 			if (cell) {
-				sheet.cells.setResolved(pos.row, pos.col, cell.value, cell.formula, cell.styleId)
+				sheet.cells.setResolved(
+					pos.row,
+					pos.col,
+					cell.value,
+					cell.formula,
+					cell.styleId,
+					cell.formulaInfo,
+				)
 			}
 		}
 	}
@@ -184,7 +194,10 @@ function extractSheetDataContent(xml: string): string | null {
 function parseSheetData(ws: XmlNode, sheet: Sheet, ctx: SheetParseContext): void {
 	const sd = ws.sheetData as XmlNode | undefined
 	if (!sd) return
-	const sharedFormulaMasters = new Map<string, { formula: string; row: number; col: number }>()
+	const sharedFormulaMasters = new Map<
+		string,
+		{ formula: string; row: number; col: number; ref?: string }
+	>()
 
 	for (const row of asArray<XmlNode>(sd.row as XmlNode | XmlNode[])) {
 		const rowIndex = numAttr(row, 'r')
@@ -201,7 +214,14 @@ function parseSheetData(ws: XmlNode, sheet: Sheet, ctx: SheetParseContext): void
 
 			const cell = parseCellValue(c, ctx, pos.row, pos.col, sharedFormulaMasters)
 			if (cell) {
-				sheet.cells.setResolved(pos.row, pos.col, cell.value, cell.formula, cell.styleId)
+				sheet.cells.setResolved(
+					pos.row,
+					pos.col,
+					cell.value,
+					cell.formula,
+					cell.styleId,
+					cell.formulaInfo,
+				)
 			}
 		}
 	}
@@ -306,10 +326,11 @@ function parseCellValue(
 	const styleIdx = numAttr(c, 's') ?? 0
 	const rawValue = c.v
 	const styleId = ctx.valuesOnly ? (0 as StyleId) : (ctx.styleIds[styleIdx] ?? (0 as StyleId))
-	const formula =
+	const formulaSpec =
 		ctx.valuesOnly && rawValue !== undefined && rawValue !== null && rawValue !== ''
-			? null
+			? { text: null, info: undefined }
 			: parseFormulaText(c.f, row, col, sharedFormulaMasters, pool)
+	const formula = formulaSpec.text
 
 	let value: CellValue
 
@@ -347,24 +368,29 @@ function parseCellValue(
 		return undefined
 	}
 
-	return { value, formula, styleId }
+	return {
+		value,
+		formula,
+		styleId,
+		...(formulaSpec.info ? { formulaInfo: formulaSpec.info } : {}),
+	}
 }
 
 function parseFormulaText(
 	formulaNode: unknown,
 	row: number,
 	col: number,
-	sharedFormulaMasters: Map<string, { formula: string; row: number; col: number }>,
+	sharedFormulaMasters: Map<string, { formula: string; row: number; col: number; ref?: string }>,
 	pool?: ValueInternPool,
-): string | null {
-	if (formulaNode === undefined || formulaNode === null) return null
+): { text: string | null; info?: Cell['formulaInfo'] } {
+	if (formulaNode === undefined || formulaNode === null) return { text: null }
 	if (
 		typeof formulaNode === 'string' ||
 		typeof formulaNode === 'number' ||
 		typeof formulaNode === 'boolean'
 	) {
 		const text = String(formulaNode)
-		return pool ? pool.internString(text) : text
+		return { text: pool ? pool.internString(text) : text }
 	}
 	if (typeof formulaNode === 'object') {
 		const node = formulaNode as XmlNode
@@ -372,21 +398,28 @@ function parseFormulaText(
 		const formulaType = attr(node, 't')
 		const text = node['#text']
 		if (formulaType === 'shared' && sharedIndex) {
+			const ref = attr(node, 'ref')
 			if (text !== undefined && text !== null) {
 				const formula = pool ? pool.internString(String(text)) : String(text)
-				sharedFormulaMasters.set(sharedIndex, { formula, row, col })
-				return formula
+				sharedFormulaMasters.set(sharedIndex, { formula, row, col, ...(ref ? { ref } : {}) })
+				return {
+					text: formula,
+					info: { kind: 'shared', sharedIndex, isMaster: true, ...(ref ? { ref } : {}) },
+				}
 			}
 			const master = sharedFormulaMasters.get(sharedIndex)
-			if (!master) return null
+			if (!master) return { text: null }
 			const translated = translateSharedFormula(master.formula, master.row, master.col, row, col)
-			return translated && pool ? pool.internString(translated) : translated
+			return {
+				text: translated && pool ? pool.internString(translated) : translated,
+				info: { kind: 'shared', sharedIndex, isMaster: false },
+			}
 		}
-		if (text === undefined || text === null) return null
+		if (text === undefined || text === null) return { text: null }
 		const formula = String(text)
-		return pool ? pool.internString(formula) : formula
+		return { text: pool ? pool.internString(formula) : formula }
 	}
-	return null
+	return { text: null }
 }
 
 function translateSharedFormula(

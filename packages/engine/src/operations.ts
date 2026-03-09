@@ -53,6 +53,20 @@ function cell(value: CellValue, formula: string | null, styleId: StyleId): Cell 
 	return { value, formula, styleId }
 }
 
+function cellWithExisting(
+	value: CellValue,
+	formula: string | null,
+	styleId: StyleId,
+	existing?: Cell,
+): Cell {
+	return {
+		value,
+		formula,
+		styleId,
+		...(formula !== null && existing?.formulaInfo ? { formulaInfo: existing.formulaInfo } : {}),
+	}
+}
+
 function safeParseRange(range: string): Result<RangeRef> {
 	try {
 		return ok(parseRange(range))
@@ -240,7 +254,12 @@ function handleSetCells(
 		sheet.cells.set(
 			ref.row,
 			ref.col,
-			cell(value, existing?.formula ?? null, existing?.styleId ?? DEFAULT_SID),
+			cellWithExisting(
+				value,
+				existing?.formula ?? null,
+				existing?.styleId ?? DEFAULT_SID,
+				existing,
+			),
 		)
 		affected.push(update.ref)
 	}
@@ -261,10 +280,11 @@ function handleSetFormula(
 	sheet.cells.set(
 		ref.row,
 		ref.col,
-		cell(
+		cellWithExisting(
 			existing?.value ?? EMPTY,
 			normalizeFormulaInput(op.formula),
 			existing?.styleId ?? DEFAULT_SID,
+			undefined,
 		),
 	)
 
@@ -297,7 +317,7 @@ function handleFillFormula(
 			sheet.cells.set(
 				row,
 				col,
-				cell(existing?.value ?? EMPTY, translated, existing?.styleId ?? DEFAULT_SID),
+				cellWithExisting(existing?.value ?? EMPTY, translated, existing?.styleId ?? DEFAULT_SID),
 			)
 			affected.push(toA1({ row, col }))
 		}
@@ -317,6 +337,7 @@ function handleInsertRows(
 	sheet.cells.insertRows(op.at, op.count)
 
 	shiftMerges(sheet.merges, 'row', op.at, op.count)
+	clearFormulaMetadata(workbook)
 	rewriteAllFormulas(workbook, op.sheet, 'row', op.at, op.count)
 
 	return ok(patch([], [op.sheet], true))
@@ -333,6 +354,7 @@ function handleDeleteRows(
 	sheet.cells.deleteRows(op.at, op.count)
 
 	shiftMerges(sheet.merges, 'row', op.at, -op.count)
+	clearFormulaMetadata(workbook)
 	rewriteAllFormulas(workbook, op.sheet, 'row', op.at, -op.count)
 
 	return ok(patch([], [op.sheet], true))
@@ -349,6 +371,7 @@ function handleInsertCols(
 	sheet.cells.insertCols(op.at, op.count)
 
 	shiftMerges(sheet.merges, 'col', op.at, op.count)
+	clearFormulaMetadata(workbook)
 	rewriteAllFormulas(workbook, op.sheet, 'col', op.at, op.count)
 
 	return ok(patch([], [op.sheet], true))
@@ -365,6 +388,7 @@ function handleDeleteCols(
 	sheet.cells.deleteCols(op.at, op.count)
 
 	shiftMerges(sheet.merges, 'col', op.at, -op.count)
+	clearFormulaMetadata(workbook)
 	rewriteAllFormulas(workbook, op.sheet, 'col', op.at, -op.count)
 
 	return ok(patch([], [op.sheet], true))
@@ -505,10 +529,11 @@ function handleAppendRows(
 				sheet.cells.set(
 					nextRow,
 					col,
-					cell(
+					cellWithExisting(
 						inputToCellValue(provided),
 						existing?.formula ?? null,
 						existing?.styleId ?? DEFAULT_SID,
+						existing,
 					),
 				)
 			} else {
@@ -516,7 +541,11 @@ function handleAppendRows(
 				sheet.cells.set(
 					nextRow,
 					col,
-					cell(existing?.value ?? EMPTY, formula ?? null, existing?.styleId ?? DEFAULT_SID),
+					cellWithExisting(
+						existing?.value ?? EMPTY,
+						formula ?? null,
+						existing?.styleId ?? DEFAULT_SID,
+					),
 				)
 			}
 			affected.push(ref)
@@ -562,6 +591,7 @@ function handleRenameSheet(
 
 	const oldName = sheet.name
 	sheet.name = op.newName
+	clearFormulaMetadata(workbook)
 	rewriteSheetNameInFormulas(workbook, oldName, op.newName)
 
 	return ok(patch([], [op.newName]))
@@ -726,7 +756,11 @@ function handleClearRange(
 					sheet.cells.delete(r, c)
 					break
 				case 'values':
-					sheet.cells.set(r, c, cell(EMPTY, existing.formula, existing.styleId))
+					sheet.cells.set(
+						r,
+						c,
+						cellWithExisting(EMPTY, existing.formula, existing.styleId, existing),
+					)
 					break
 				case 'formulas':
 					sheet.cells.set(r, c, cell(existing.value, null, existing.styleId))
@@ -794,9 +828,23 @@ function handleSortRange(
 	if (dataStartRow > range.end.row) return ok(patch([], [op.sheet], false))
 
 	const rows = captureSortedRows(sheet, range, dataStartRow)
+	clearFormulaMetadata(workbook)
 	rows.sort((left, right) => compareSortRows(left, right, columns, range.start.col))
 	rewriteSortedRows(sheet, range, dataStartRow, rows)
 	return ok(patch([], [op.sheet], true))
+}
+
+function clearFormulaMetadata(workbook: Workbook): void {
+	for (const sheet of workbook.sheets) {
+		for (const [row, col, existing] of sheet.cells.iterate()) {
+			if (!existing.formulaInfo) continue
+			sheet.cells.set(row, col, {
+				value: existing.value,
+				formula: existing.formula,
+				styleId: existing.styleId,
+			})
+		}
+	}
 }
 
 function handleSetHyperlink(
@@ -843,7 +891,11 @@ function handleSetStyle(
 			const currentStyle = workbook.styles.get(existing?.styleId ?? DEFAULT_SID) ?? {}
 			const merged = mergeStyleInput(currentStyle, input)
 			const styleId = workbook.styles.register(merged)
-			sheet.cells.set(row, col, cell(existing?.value ?? EMPTY, existing?.formula ?? null, styleId))
+			sheet.cells.set(
+				row,
+				col,
+				cellWithExisting(existing?.value ?? EMPTY, existing?.formula ?? null, styleId, existing),
+			)
 			affected.push(toA1({ row, col }))
 		}
 	}
@@ -887,7 +939,11 @@ function handleSetNumberFormat(
 					},
 				}
 			}
-			sheet.cells.set(row, col, cell(existing?.value ?? EMPTY, existing?.formula ?? null, styleId))
+			sheet.cells.set(
+				row,
+				col,
+				cellWithExisting(existing?.value ?? EMPTY, existing?.formula ?? null, styleId, existing),
+			)
 			affected.push(toA1({ row, col }))
 		}
 	}

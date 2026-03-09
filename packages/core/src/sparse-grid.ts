@@ -7,6 +7,14 @@ export interface Cell {
 	readonly value: CellValue
 	readonly formula: string | null
 	readonly styleId: StyleId
+	readonly formulaInfo?: SharedFormulaInfo
+}
+
+export interface SharedFormulaInfo {
+	readonly kind: 'shared'
+	readonly sharedIndex: string
+	readonly isMaster: boolean
+	readonly ref?: string
 }
 
 const DEFAULT_STYLE_ID = 0 as StyleId
@@ -29,7 +37,7 @@ export class SparseGrid {
 	}
 
 	set(row: number, col: number, cell: Cell): void {
-		this.setResolved(row, col, cell.value, cell.formula, cell.styleId)
+		this.setResolved(row, col, cell.value, cell.formula, cell.styleId, cell.formulaInfo)
 	}
 
 	setResolved(
@@ -38,10 +46,11 @@ export class SparseGrid {
 		value: CellValue,
 		formula: string | null,
 		styleId: StyleId,
+		formulaInfo?: SharedFormulaInfo,
 	): void {
 		const key = packKey(row, col)
 		const isNew = !this.data.has(key)
-		this.data.set(key, this.compactResolvedCell(value, formula, styleId))
+		this.data.set(key, this.compactResolvedCell(value, formula, styleId, formulaInfo))
 		if (isNew) {
 			if (key < this._lastInsertedKey) this._isKeyOrderSorted = false
 			else this._lastInsertedKey = key
@@ -259,6 +268,7 @@ export class SparseGrid {
 		value: CellValue,
 		formula: string | null,
 		styleId: StyleId,
+		formulaInfo?: SharedFormulaInfo,
 	): StoredCell {
 		const compactValue = compactScalarValue(value)
 		if (compactValue) {
@@ -318,9 +328,15 @@ export class SparseGrid {
 						return new StyledSpecialScalarCell(compactValue.kind, compactValue.scalarValue, styleId)
 				}
 			}
-			return new FormulaScalarCell(compactValue.kind, compactValue.scalarValue, styleId, formula)
+			return new FormulaScalarCell(
+				compactValue.kind,
+				compactValue.scalarValue,
+				styleId,
+				formula,
+				formulaInfo,
+			)
 		}
-		return new HeapCell(value, styleId, formula)
+		return new HeapCell(value, styleId, formula, formulaInfo)
 	}
 }
 
@@ -371,6 +387,7 @@ class FormulaScalarCell {
 		readonly scalarValue: number | string | boolean | null,
 		readonly styleId: StyleId,
 		readonly formula: string,
+		readonly formulaInfo?: SharedFormulaInfo,
 	) {}
 }
 
@@ -379,6 +396,7 @@ class HeapCell {
 		readonly value: CellValue,
 		readonly styleId: StyleId,
 		readonly formula: string | null,
+		readonly formulaInfo?: SharedFormulaInfo,
 	) {}
 }
 
@@ -405,7 +423,7 @@ function cloneCell(cell: StoredCell): StoredCell {
 		return cell
 	}
 	if (cell instanceof HeapCell) {
-		return new HeapCell(structuredClone(cell.value), cell.styleId, cell.formula)
+		return new HeapCell(structuredClone(cell.value), cell.styleId, cell.formula, cell.formulaInfo)
 	}
 	if (typeof cell === 'string' || typeof cell === 'number' || typeof cell === 'boolean') return cell
 	if (cell === EMPTY) return cell
@@ -435,10 +453,16 @@ function materializeCell(cell: StoredCell | undefined): Cell | undefined {
 			value: materializeScalarValue(cell.valueKind, cell.scalarValue),
 			formula: cell.formula,
 			styleId: cell.styleId,
+			...(cell.formulaInfo ? { formulaInfo: cell.formulaInfo } : {}),
 		}
 	}
 	if (cell instanceof HeapCell) {
-		return { value: cell.value, formula: cell.formula, styleId: cell.styleId }
+		return {
+			value: cell.value,
+			formula: cell.formula,
+			styleId: cell.styleId,
+			...(cell.formulaInfo ? { formulaInfo: cell.formulaInfo } : {}),
+		}
 	}
 	if (typeof cell === 'string')
 		return { value: stringValue(cell), formula: null, styleId: DEFAULT_STYLE_ID }

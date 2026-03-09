@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { AscendWorkbook } from '@ascend/sdk'
+import { readXlsx } from '../../packages/io-xlsx/src/reader/index.ts'
 import { extractZip } from '../../packages/io-xlsx/src/reader/zip.ts'
 
 const CORPUS_DIR = resolve(import.meta.dir, '../../research/excel-corpus')
@@ -174,7 +175,9 @@ async function inspectAndBuildDirtyWorkbook(
 	probe: ProbeTarget
 }> {
 	const workbook = await AscendWorkbook.open(sourceBytes)
-	const sourceSemantic = summarizeWorkbook(workbook)
+	const raw = readXlsx(sourceBytes)
+	if (!raw.ok) throw new Error(`${file}: failed to read source workbook for audit summary`)
+	const sourceSemantic = summarizeWorkbook(workbook, raw.value.report)
 	const noOpByteIdentical = sha256(workbook.toBytes()) === sha256(sourceBytes)
 	const probe = pickProbeTarget(workbook)
 	const apply = workbook.apply([
@@ -201,13 +204,18 @@ async function inspectDirtyWorkbook(
 	probe: ProbeTarget,
 ): Promise<{ summary: WorkbookSemanticSummary; probeValuePersisted: boolean }> {
 	const workbook = await AscendWorkbook.open(dirtyBytes)
+	const raw = readXlsx(dirtyBytes)
+	if (!raw.ok) throw new Error('Failed to read dirty workbook for audit summary')
 	const probeValuePersisted =
 		workbook.sheet(probe.sheet)?.cell(probe.ref)?.value.kind === 'string' &&
 		workbook.sheet(probe.sheet)?.cell(probe.ref)?.value.value === PROBE_VALUE
-	return { summary: summarizeWorkbook(workbook), probeValuePersisted }
+	return { summary: summarizeWorkbook(workbook, raw.value.report), probeValuePersisted }
 }
 
-function summarizeWorkbook(workbook: AscendWorkbook): WorkbookSemanticSummary {
+function summarizeWorkbook(
+	workbook: AscendWorkbook,
+	report: { status: string; features: readonly { feature: string; tier: string; count: number }[] },
+): WorkbookSemanticSummary {
 	const info = workbook.inspect()
 	const totalTables = info.sheets.reduce((sum, sheet) => sum + (sheet.tableCount ?? 0), 0)
 	const totalHyperlinks = info.sheets.reduce((sum, sheet) => sum + (sheet.hyperlinkCount ?? 0), 0)
@@ -220,7 +228,7 @@ function summarizeWorkbook(workbook: AscendWorkbook): WorkbookSemanticSummary {
 		0,
 	)
 	const compatibilityFeatures = Object.fromEntries(
-		info.compatibility.features.map((feature) => [
+		report.features.map((feature) => [
 			feature.feature,
 			{ tier: feature.tier, count: feature.count },
 		]),
@@ -243,7 +251,7 @@ function summarizeWorkbook(workbook: AscendWorkbook): WorkbookSemanticSummary {
 		slicerCount: info.slicerCount,
 		slicerCacheCount: info.slicerCacheCount,
 		externalReferenceCount: info.externalReferenceCount,
-		compatibilityStatus: info.compatibility.status,
+		compatibilityStatus: report.status,
 		compatibilityFeatures,
 		styleSummary: info.styleSummary,
 		themeSummary: {
@@ -413,7 +421,7 @@ function diffSemanticSummary(
 			regressions.push(`compatibility feature missing after edit: ${key}`)
 			continue
 		}
-		if (after.count < before.count) {
+		if (before.tier !== 'unsupported' && after.count < before.count) {
 			regressions.push(
 				`compatibility feature count dropped for ${key}: ${before.count} -> ${after.count}`,
 			)

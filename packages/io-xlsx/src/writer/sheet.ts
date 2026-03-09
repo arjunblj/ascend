@@ -392,6 +392,19 @@ function formulaCellXml(ref: string, cell: Cell, xfIdx: number): string {
 	const { typeAttr, valueStr } = formulaValueAttrs(cell.value)
 	const tAttr = typeAttr ? ` t="${typeAttr}"` : ''
 	const vPart = valueStr !== undefined ? `<v>${valueStr}</v>` : ''
+	if (cell.formulaInfo?.kind === 'shared') {
+		const sharedAttrs = [
+			't="shared"',
+			`si="${escapeXml(cell.formulaInfo.sharedIndex)}"`,
+			...(cell.formulaInfo.isMaster && cell.formulaInfo.ref
+				? [`ref="${escapeXml(cell.formulaInfo.ref)}"`]
+				: []),
+		]
+		const formulaXml = cell.formulaInfo.isMaster
+			? `<f ${sharedAttrs.join(' ')}>${escapeXml(cell.formula ?? '')}</f>`
+			: `<f ${sharedAttrs.join(' ')}/>`
+		return `<c r="${ref}"${sAttr}${tAttr}>${formulaXml}${vPart}</c>`
+	}
 	return `<c r="${ref}"${sAttr}${tAttr}><f>${escapeXml(cell.formula ?? '')}</f>${vPart}</c>`
 }
 

@@ -1,4 +1,4 @@
-import { AscendWorkbook } from '@ascend/sdk'
+import { AscendWorkbook, WorkbookSession } from '@ascend/sdk'
 
 const SPINNER_FRAMES = ['-', '\\', '|', '/'] as const
 const DEFAULT_DELAY_MS = 350
@@ -51,6 +51,15 @@ export async function openWorkbookWithProgress(
 	const label = typeof file === 'string' ? `Opening ${file}` : 'Opening workbook'
 	const { value, durationMs } = await withProgress(label, () => AscendWorkbook.open(file, options))
 	return { workbook: value, durationMs }
+}
+
+export async function openWorkbookSessionWithProgress(
+	file: string,
+	options?: { mode?: 'full' | 'metadata-only' | 'values'; sheets?: readonly string[] },
+): Promise<{ session: WorkbookSession; durationMs: number }> {
+	const label = `Opening ${file}`
+	const { value, durationMs } = await withProgress(label, () => WorkbookSession.open(file, options))
+	return { session: value, durationMs }
 }
 
 function clearStatusLine(): void {

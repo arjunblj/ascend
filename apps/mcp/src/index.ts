@@ -1,5 +1,5 @@
 import type { Operation } from '@ascend/schema'
-import { Ascend } from '@ascend/sdk'
+import { Ascend, WorkbookSession } from '@ascend/sdk'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
@@ -33,7 +33,7 @@ export function createServer(): McpServer {
 			sheet: z.string().optional().describe('Sheet name to inspect'),
 		},
 		async ({ file, sheet }) => {
-			const wb = await Ascend.open(
+			const wb = await WorkbookSession.open(
 				file,
 				sheet ? { mode: 'values', sheets: [sheet] } : { mode: 'metadata-only' },
 			)
@@ -62,7 +62,7 @@ export function createServer(): McpServer {
 			rowLimit: z.number().int().positive().optional().describe('Maximum rows to return'),
 		},
 		async ({ file, range, sheet, rowOffset, rowLimit }) => {
-			const wb = await Ascend.open(
+			const wb = await WorkbookSession.open(
 				file,
 				sheet ? { mode: 'values', sheets: [sheet] } : { mode: 'values' },
 			)
@@ -150,7 +150,7 @@ export function createServer(): McpServer {
 			cell: z.string().describe('Cell reference (e.g. "Sheet1!A1" or "A1")'),
 		},
 		async ({ file, cell }) => {
-			const wb = await Ascend.open(file)
+			const wb = await WorkbookSession.open(file)
 			const result = wb.trace(cell)
 			if (!result) {
 				return errorResponse(`Cannot trace "${cell}"`)

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { access, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { AscendWorkbook } from '../../packages/sdk/src/index.ts'
+import { AscendWorkbook, WorkbookSession } from '../../packages/sdk/src/index.ts'
 import {
 	type BenchmarkCaseResult,
 	createBenchmarkSuite,
@@ -58,6 +58,7 @@ type StepName =
 	| 'open-full'
 	| 'read-window-values'
 	| 'workflow-inspect-read'
+	| 'workflow-session-open-read'
 	| 'preview-numeric-edit'
 	| 'preview-format-edit'
 	| 'no-op-save-bytes'
@@ -152,6 +153,7 @@ async function main(): Promise<void> {
 		'open-full',
 		'read-window-values',
 		'workflow-inspect-read',
+		'workflow-session-open-read',
 		'preview-numeric-edit',
 		'preview-format-edit',
 		'no-op-save-bytes',
@@ -280,6 +282,28 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 					sheetCount: result.sheetCount,
 					firstCells: result.firstCells,
 					secondCells: result.secondCells,
+				},
+			}
+		}
+		case 'workflow-session-open-read': {
+			WorkbookSession.clearCache()
+			const { result, timing } = await time('workflow-session-open-read', async () => {
+				let totalCells = 0
+				let sheetCount = 0
+				for (let i = 0; i < 3; i++) {
+					const session = await WorkbookSession.open(target, { mode: 'values' })
+					const probe = pickReadProbe(session)
+					sheetCount = session.inspect().sheetCount
+					const window = session.readWindow(probe.sheet, probe.range, { rowLimit: probe.rowLimit })
+					totalCells += window?.cells.length ?? 0
+				}
+				return { sheetCount, totalCells }
+			})
+			return {
+				timing,
+				assertions: {
+					sheetCount: result.sheetCount,
+					totalCells: result.totalCells,
 				},
 			}
 		}

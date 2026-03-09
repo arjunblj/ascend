@@ -1,3 +1,4 @@
+export { WorkbookSession } from './session.ts'
 export { SheetHandle } from './sheet-handle.ts'
 export { TableHandle } from './table-handle.ts'
 export type {
@@ -14,6 +15,8 @@ export type {
 	RangeWindowInfo,
 	RecalcResult,
 	SheetInfo,
+	SheetInspectInfo,
+	TableInfo,
 	TraceResult,
 	WorkbookInfo,
 	WorkbookLoadInfo,

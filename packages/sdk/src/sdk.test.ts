@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test'
+import { unlink } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { extractZip } from '../../io-xlsx/src/reader/zip.ts'
 import { createZip, encode } from '../../io-xlsx/src/writer/zip.ts'
-import { Ascend, AscendWorkbook } from './index.ts'
+import { Ascend, AscendWorkbook, WorkbookSession } from './index.ts'
 
 describe('AscendWorkbook', () => {
 	test('Ascend is an alias for AscendWorkbook', () => {
@@ -1022,6 +1025,36 @@ describe('AscendWorkbook', () => {
 		expect(detail?.tables?.[0]?.name).toBe('MyTable')
 		expect(detail?.tables?.[0]?.rowCount).toBe(1)
 		expect(detail?.tables?.[0]?.columnDefs.map((column) => column.name)).toEqual(['Name', 'Score'])
+	})
+
+	test('WorkbookSession reuses cached sessions for unchanged files and invalidates on change', async () => {
+		WorkbookSession.clearCache()
+		const path = join(
+			tmpdir(),
+			`ascend-session-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsx`,
+		)
+		try {
+			const wb = AscendWorkbook.create()
+			wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'v1' }] }])
+			await wb.save(path)
+
+			const first = await WorkbookSession.open(path, { mode: 'values' })
+			const second = await WorkbookSession.open(path, { mode: 'values' })
+			expect(first).toBe(second)
+			expect(first.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'v1' })
+
+			await Bun.sleep(20)
+			const updated = AscendWorkbook.create()
+			updated.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'v2' }] }])
+			await updated.save(path)
+
+			const third = await WorkbookSession.open(path, { mode: 'values' })
+			expect(third).not.toBe(first)
+			expect(third.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'v2' })
+		} finally {
+			WorkbookSession.clearCache()
+			await unlink(path).catch(() => {})
+		}
 	})
 })
 

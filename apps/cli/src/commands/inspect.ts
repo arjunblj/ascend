@@ -1,7 +1,7 @@
-import type { AscendWorkbook } from '@ascend/sdk'
+import type { WorkbookSession } from '@ascend/sdk'
 import { jsonOut } from '../output/json.ts'
 import { bullet, heading, table } from '../output/pretty.ts'
-import { openWorkbookWithProgress } from '../progress.ts'
+import { openWorkbookSessionWithProgress } from '../progress.ts'
 
 export const usage = `Usage: ascend inspect <file> [sheet] [flags]
 
@@ -54,7 +54,8 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 					: sheetArg
 						? { mode: 'values' as const, sheets: [sheetArg] }
 						: { mode: 'metadata-only' as const }
-	const { workbook: wb, durationMs: openMs } = await openWorkbookWithProgress(file, openOptions)
+	const { session, durationMs: openMs } = await openWorkbookSessionWithProgress(file, openOptions)
+	const wb = session
 	const info = wb.inspect()
 
 	if (detail === 'compatibility') {
@@ -237,7 +238,7 @@ function parseInspectMode(
 }
 
 function printSheetDetail(
-	wb: AscendWorkbook,
+	wb: WorkbookSession,
 	sheetName: string,
 	detail: string,
 	json: boolean,
@@ -353,7 +354,7 @@ function printSheetDetail(
 	}
 }
 
-function printCompatibilityDetail(wb: AscendWorkbook, json: boolean): number {
+function printCompatibilityDetail(wb: WorkbookSession, json: boolean): number {
 	const report = wb.report
 	if (json) {
 		console.log(jsonOut(report))

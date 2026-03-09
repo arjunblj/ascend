@@ -1,6 +1,6 @@
 import { jsonOut } from '../output/json.ts'
 import { bullet, heading } from '../output/pretty.ts'
-import { openWorkbookWithProgress } from '../progress.ts'
+import { openWorkbookSessionWithProgress } from '../progress.ts'
 
 export const usage = `Usage: ascend trace <file> <ref> [flags]
 
@@ -22,8 +22,8 @@ export async function traceCommand(args: string[], flags: Map<string, string>): 
 		return 1
 	}
 
-	const { workbook: wb } = await openWorkbookWithProgress(file)
-	const result = wb.trace(cellRef)
+	const { session } = await openWorkbookSessionWithProgress(file)
+	const result = session.trace(cellRef)
 
 	if (!result) {
 		console.error(`Could not trace "${cellRef}"`)

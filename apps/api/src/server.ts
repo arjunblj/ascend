@@ -1,5 +1,5 @@
 import type { Operation } from '@ascend/schema'
-import { AscendWorkbook } from '@ascend/sdk'
+import { AscendWorkbook, WorkbookSession } from '@ascend/sdk'
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
 
@@ -54,7 +54,7 @@ export function createServer(opts?: { port?: number }) {
 					const sheetName = body ? requireString(body, 'sheet') : null
 					if (!file) return errorResponse('Missing or invalid file', 400)
 					try {
-						const wb = await AscendWorkbook.open(
+						const wb = await WorkbookSession.open(
 							file,
 							sheetName ? { mode: 'values', sheets: [sheetName] } : { mode: 'metadata-only' },
 						)
@@ -78,7 +78,7 @@ export function createServer(opts?: { port?: number }) {
 					if (!range) return errorResponse('Missing or invalid range', 400)
 					try {
 						const sheetName = body ? requireString(body, 'sheet') : null
-						const wb = await AscendWorkbook.open(
+						const wb = await WorkbookSession.open(
 							file,
 							sheetName ? { mode: 'values', sheets: [sheetName] } : { mode: 'values' },
 						)
@@ -172,7 +172,7 @@ export function createServer(opts?: { port?: number }) {
 					if (!file) return errorResponse('Missing or invalid file', 400)
 					if (!cell) return errorResponse('Missing or invalid cell', 400)
 					try {
-						const wb = await AscendWorkbook.open(file)
+						const wb = await WorkbookSession.open(file)
 						const result = wb.trace(cell)
 						if (!result) return errorResponse('Cell not found', 400)
 						return jsonResponse(result)

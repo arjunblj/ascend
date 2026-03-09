@@ -59,6 +59,7 @@ export interface StylesResult {
 }
 
 export function buildPreservedStylesXml(
+	xml: string,
 	preserved: import('@ascend/core').WorkbookPreservedStyles,
 	registry: StyleRegistry,
 ): StylesResult | undefined {
@@ -68,7 +69,7 @@ export function buildPreservedStylesXml(
 		if (xfIndex === undefined) return undefined
 		xfMap.set(i, xfIndex)
 	}
-	return { xml: preserved.xml, xfMap }
+	return { xml, xfMap }
 }
 
 export function buildStylesXml(

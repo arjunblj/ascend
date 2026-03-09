@@ -741,7 +741,6 @@ describe('readXlsx', () => {
 		expect(result.value.workbook.preservedTheme).toEqual({
 			path: 'xl/theme/theme1.xml',
 			contentType: 'application/vnd.openxmlformats-officedocument.theme+xml',
-			xml: expect.stringContaining('<a:theme'),
 		})
 	})
 

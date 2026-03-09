@@ -116,13 +116,16 @@ export function readXlsx(
 	const relMap = new Map(wbRels.map((r) => [r.id, r]))
 
 	const workbook = new Workbook()
+	workbook.sourceArchiveBytes = bytes
 	workbook.calcSettings = wbInfo.calcSettings
 	workbook.workbookProperties = { ...wbInfo.workbookProperties }
 	workbook.workbookProtection = wbInfo.workbookProtection ? { ...wbInfo.workbookProtection } : null
 	workbook.workbookViews.push(...wbInfo.workbookViews.map((view) => ({ ...view })))
+	const workbookContentType = contentTypes.overrides.get(workbookPath)
 	workbook.preservedXml = {
-		workbookXml: wbXml,
-		...(wbRelsXml ? { workbookRelsXml: wbRelsXml } : {}),
+		workbookPath,
+		...(wbRelsXml ? { workbookRelsPath: wbRelsPath } : {}),
+		...(workbookContentType ? { contentType: workbookContentType } : {}),
 	}
 	for (const relId of wbInfo.externalReferenceRelIds) {
 		const rel = relMap.get(relId)
@@ -185,7 +188,6 @@ export function readXlsx(
 			workbook.preservedTheme = {
 				path: themePath,
 				contentType: resolveContentType(themePath, contentTypes),
-				xml: themeXml,
 			}
 		}
 	}
@@ -243,8 +245,8 @@ export function readXlsx(
 						tableStyleCount: 0,
 					},
 				}
-		if (stylesXml) {
-			workbook.preservedStyles = { xml: stylesXml, xfByStyleId: {} }
+		if (stylesXml && stylesPath) {
+			workbook.preservedStyles = { path: stylesPath, xfByStyleId: {} }
 		}
 		const styleIds = registerStyles(workbook, parsedStyles.cellStyles)
 		workbook.styleMetadata = parsedStyles.metadata
@@ -270,8 +272,8 @@ export function readXlsx(
 			attachTables(archive, entry.path, sheet, sheetRelationships)
 			sheet.state = entry.state
 			sheet.preservedXml = {
-				xml: sheetXml,
-				...(sheetRelsXml ? { relsXml: sheetRelsXml } : {}),
+				partPath: entry.path,
+				...(sheetRelsXml ? { relsPath: getRelsPath(entry.path) } : {}),
 			}
 			workbook.sheets.push(sheet)
 		}
@@ -393,9 +395,16 @@ function collectCapsules(
 			partPath,
 			contentType: ct,
 			relationships,
-			content: archive.readBytes(partPath) ?? new Uint8Array(),
+			content: new Uint8Array(),
 			anchor,
 		}
+		Object.defineProperty(capsule, 'content', {
+			configurable: true,
+			enumerable: true,
+			get() {
+				return archive.readBytes(partPath) ?? new Uint8Array()
+			},
+		})
 		if (relType) capsule.relType = relType
 		capsules.push(capsule)
 	}

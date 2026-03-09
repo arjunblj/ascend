@@ -11,6 +11,7 @@
 		"lint": "biome check",
 		"lint:fix": "biome check --write",
 		"test": "bun test --recursive",
+		"corpus:audit": "bun run fixtures/corpus/audit.ts",
 		"bench": "bun run fixtures/benchmarks/run.ts",
 		"bench:real": "bun run fixtures/benchmarks/real-workbook.ts",
 		"prepare": "lefthook install"

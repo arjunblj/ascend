@@ -16,6 +16,7 @@ const CT_APP_PROPS = 'application/vnd.openxmlformats-officedocument.extended-pro
 export function buildContentTypesXml(
 	sheetCount: number,
 	hasSharedStrings: boolean,
+	workbookContentType = CT_WORKBOOK,
 	capsules?: PreservationCapsule[],
 	extraOverrides?: readonly { partPath: string; contentType: string }[],
 ): string {
@@ -24,7 +25,7 @@ export function buildContentTypesXml(
 		`<Types xmlns="${NS}">`,
 		`<Default Extension="rels" ContentType="${CT_RELS}"/>`,
 		`<Default Extension="xml" ContentType="${CT_XML}"/>`,
-		`<Override PartName="/xl/workbook.xml" ContentType="${CT_WORKBOOK}"/>`,
+		`<Override PartName="/xl/workbook.xml" ContentType="${workbookContentType}"/>`,
 	]
 
 	for (let i = 1; i <= sheetCount; i++) {

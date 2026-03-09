@@ -13,6 +13,7 @@ import {
 	REL_VML_DRAWING,
 	REL_WORKSHEET,
 } from '../reader/relationships.ts'
+import { extractZip, type ZipArchive } from '../reader/zip.ts'
 import { buildCommentsVml, buildCommentsXml } from './comments.ts'
 import { buildContentTypesXml } from './content-types.ts'
 import { buildAppPropsXml, buildCorePropsXml } from './doc-props.ts'
@@ -50,6 +51,9 @@ export function writeXlsx(
 ): Result<Uint8Array, AscendError> {
 	try {
 		const parts = new Map<string, Uint8Array>()
+		const sourceArchive = workbook.sourceArchiveBytes
+			? extractZip(workbook.sourceArchiveBytes)
+			: undefined
 		const sheetCapsuleMap = new Map<string, PreservationCapsule[]>()
 		const workbookCapsules: PreservationCapsule[] = []
 		const skippedCapsulePaths = new Set<string>()
@@ -61,9 +65,17 @@ export function writeXlsx(
 		const ssTable = buildSharedStrings(workbook)
 		const hasSharedStrings = ssTable.count > 0
 
-		const stylesResult =
+		const preservedStylesXml =
 			workbook.preservedStyles && !stylesNeedRebuild(workbook)
-				? buildPreservedStylesXml(workbook.preservedStyles, workbook.styles)
+				? resolvePreservedText(
+						sourceArchive,
+						workbook.preservedStyles.xml,
+						workbook.preservedStyles.path,
+					)
+				: undefined
+		const stylesResult =
+			workbook.preservedStyles && preservedStylesXml
+				? buildPreservedStylesXml(preservedStylesXml, workbook.preservedStyles, workbook.styles)
 				: undefined
 		const { xml: stylesXml, xfMap } =
 			stylesResult ?? buildStylesXml(workbook.styles, workbook.differentialStyles)
@@ -98,7 +110,14 @@ export function writeXlsx(
 		wbRels.push({ id: `rId${rIdCounter}`, type: REL_STYLES, target: 'styles.xml' })
 		rIdCounter++
 
-		if (workbook.preservedTheme) {
+		const preservedThemeXml = workbook.preservedTheme
+			? resolvePreservedText(
+					sourceArchive,
+					workbook.preservedTheme.xml,
+					workbook.preservedTheme.path,
+				)
+			: undefined
+		if (workbook.preservedTheme && preservedThemeXml) {
 			wbRels.push({
 				id: `rId${rIdCounter}`,
 				type: REL_THEME,
@@ -136,21 +155,37 @@ export function writeXlsx(
 			.map((rel) => rel.id)
 
 		const preservedWorkbookXml = workbook.preservedXml
-		const preserveWorkbookXml =
-			!options.workbookMetaDirty &&
-			preservedWorkbookXml?.workbookXml &&
-			preservedWorkbookXml.workbookRelsXml
+		const preservedWorkbookXmlText =
+			!options.workbookMetaDirty && preservedWorkbookXml
+				? resolvePreservedText(
+						sourceArchive,
+						preservedWorkbookXml.workbookXml,
+						preservedWorkbookXml.workbookPath,
+					)
+				: undefined
+		const preservedWorkbookRelsText =
+			!options.workbookMetaDirty && preservedWorkbookXml
+				? resolvePreservedText(
+						sourceArchive,
+						preservedWorkbookXml.workbookRelsXml,
+						preservedWorkbookXml.workbookRelsPath,
+					)
+				: undefined
+		const preserveWorkbookXml = preservedWorkbookXmlText && preservedWorkbookRelsText
+		const workbookContentType =
+			preservedWorkbookXml?.contentType ??
+			'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml'
 		parts.set(
 			'xl/workbook.xml',
 			encode(
 				preserveWorkbookXml
-					? preservedWorkbookXml.workbookXml
+					? preservedWorkbookXmlText
 					: buildWorkbookXml(workbook, { externalReferenceRelIds }),
 			),
 		)
 		parts.set('xl/styles.xml', encode(stylesXml))
-		if (workbook.preservedTheme) {
-			parts.set(workbook.preservedTheme.path, encode(workbook.preservedTheme.xml))
+		if (workbook.preservedTheme && preservedThemeXml) {
+			parts.set(workbook.preservedTheme.path, encode(preservedThemeXml))
 			extraOverrides.push({
 				partPath: workbook.preservedTheme.path,
 				contentType: workbook.preservedTheme.contentType,
@@ -175,6 +210,16 @@ export function writeXlsx(
 			const tableRelIds: string[] = []
 			const commentsCapsule = sheetCapsules.find((capsule) => capsule.relType === REL_COMMENTS)
 			const tableCapsules = sheetCapsules.filter((capsule) => capsule.relType === REL_TABLE)
+			const preservedSheetXmlText = resolvePreservedText(
+				sourceArchive,
+				preservedSheetXml?.xml,
+				preservedSheetXml?.partPath,
+			)
+			const preservedSheetRelsText = resolvePreservedText(
+				sourceArchive,
+				preservedSheetXml?.relsXml,
+				preservedSheetXml?.relsPath,
+			)
 			const hyperlinkEntries: Array<{
 				ref: string
 				relId?: string
@@ -228,7 +273,7 @@ export function writeXlsx(
 			const preserveSheetXml =
 				!options.sharedStringsDirty &&
 				!(options.dirtySheetNames ?? []).includes(sheet.name) &&
-				preservedSheetXml?.xml
+				preservedSheetXmlText
 			if (!preserveSheetXml) {
 				if (sheet.comments.size > 0) {
 					const commentsPartPath =
@@ -290,7 +335,7 @@ export function writeXlsx(
 				`xl/worksheets/sheet${i + 1}.xml`,
 				encode(
 					preserveSheetXml
-						? preservedSheetXml.xml
+						? preservedSheetXmlText
 						: buildSheetXml(sheet, ssTable, xfMap, {
 								tableRelIds,
 								...(sheet.drawingRefs.hasDrawing && drawingRelId ? { drawingRelId } : {}),
@@ -302,8 +347,8 @@ export function writeXlsx(
 							}),
 				),
 			)
-			if (preserveSheetXml && preservedSheetXml?.relsXml) {
-				parts.set(`xl/worksheets/_rels/sheet${i + 1}.xml.rels`, encode(preservedSheetXml.relsXml))
+			if (preserveSheetXml && preservedSheetRelsText) {
+				parts.set(`xl/worksheets/_rels/sheet${i + 1}.xml.rels`, encode(preservedSheetRelsText))
 			} else if (sheetRels.length > 0) {
 				parts.set(`xl/worksheets/_rels/sheet${i + 1}.xml.rels`, encode(buildRelsXml(sheetRels)))
 			}
@@ -334,8 +379,8 @@ export function writeXlsx(
 		parts.set(
 			'xl/_rels/workbook.xml.rels',
 			encode(
-				preserveWorkbookXml && workbook.preservedXml?.workbookRelsXml
-					? workbook.preservedXml.workbookRelsXml
+				preserveWorkbookXml && preservedWorkbookRelsText
+					? preservedWorkbookRelsText
 					: buildRelsXml(wbRels),
 			),
 		)
@@ -346,6 +391,7 @@ export function writeXlsx(
 				buildContentTypesXml(
 					workbook.sheets.length,
 					hasSharedStrings,
+					workbookContentType,
 					capsules,
 					extraOverrides.length > 0 ? extraOverrides : undefined,
 				),
@@ -369,6 +415,16 @@ function stylesNeedRebuild(workbook: Workbook): boolean {
 		if (workbook.preservedStyles.xfByStyleId[i] === undefined) return true
 	}
 	return false
+}
+
+function resolvePreservedText(
+	archive: ZipArchive | undefined,
+	inlineText: string | undefined,
+	partPath: string | undefined,
+): string | undefined {
+	if (inlineText !== undefined) return inlineText
+	if (!archive || !partPath) return undefined
+	return archive.readText(partPath)
 }
 
 function computeRelativePath(fromDir: string, toPath: string): string {

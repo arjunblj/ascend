@@ -186,6 +186,40 @@ describe('writeXlsx', () => {
 		})
 	})
 
+	it('preserves macro-enabled workbook content type when workbook capsules are present', () => {
+		const wb = new Workbook()
+		wb.preservedXml = {
+			workbookXml:
+				'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"/>',
+			workbookRelsXml:
+				'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.microsoft.com/office/2006/relationships/vbaProject" Target="vbaProject.bin"/></Relationships>',
+			contentType: 'application/vnd.ms-excel.sheet.macroEnabled.main+xml',
+		}
+		wb.addSheet('Sheet1')
+		const macroCapsule: PreservationCapsule = {
+			partPath: 'xl/vbaProject.bin',
+			contentType: 'application/vnd.ms-office.vbaProject',
+			relationships: [],
+			content: new Uint8Array([0xde, 0xad, 0xbe, 0xef]),
+			anchor: { kind: 'workbook' },
+			relType: 'http://schemas.microsoft.com/office/2006/relationships/vbaProject',
+		}
+
+		const written = writeXlsx(wb, [macroCapsule])
+		if (!written.ok) throw new Error(`write failed: ${written.error.message}`)
+
+		const zip = unzipSync(written.value)
+		const contentTypes = new TextDecoder().decode(zip['[Content_Types].xml'] ?? new Uint8Array())
+		const workbookRels = new TextDecoder().decode(
+			zip['xl/_rels/workbook.xml.rels'] ?? new Uint8Array(),
+		)
+
+		expect(contentTypes).toContain('application/vnd.ms-excel.sheet.macroEnabled.main+xml')
+		expect(contentTypes).toContain('application/vnd.ms-office.vbaProject')
+		expect(workbookRels).toContain('relationships/vbaProject')
+		expect(zip['xl/vbaProject.bin']).toBeDefined()
+	})
+
 	it('preserves worksheet autoFilter criteria and sort state on round-trip', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Filter')
@@ -566,7 +600,6 @@ describe('writeXlsx', () => {
 		expect(result.workbook.preservedTheme).toEqual({
 			path: 'xl/theme/theme1.xml',
 			contentType: 'application/vnd.openxmlformats-officedocument.theme+xml',
-			xml: expect.stringContaining('Custom Theme'),
 		})
 		expect(result.workbook.themeMetadata).toEqual({
 			name: 'Custom Theme',

@@ -75,7 +75,7 @@ export class AscendWorkbook {
 	private readonly caps: PreservationCapsule[]
 	private readonly compat: CompatibilityReport
 	private readonly loadInfo: import('./types.ts').WorkbookLoadInfo
-	private readonly originalBytes: Uint8Array | null
+	private originalBytes: Uint8Array | null
 	private dirty: boolean
 	private readonly dirtySheets = new Set<string>()
 	private workbookMetaDirty = false
@@ -382,7 +382,7 @@ export class AscendWorkbook {
 			}
 		}
 
-		this.dirty = true
+		this.markDirty()
 		for (const sheetName of result.value.sheetsModified) this.dirtySheets.add(sheetName)
 		this.updateDirtyFlags(ops)
 		return {
@@ -404,7 +404,7 @@ export class AscendWorkbook {
 		}
 		const result = recalculate(this.wb, ctx, rangeRef ? { range: rangeRef } : undefined)
 		if (result.changed.length > 0 || result.errors.length > 0) {
-			this.dirty = true
+			this.markDirty()
 			this.sharedStringsDirty = true
 			for (const ref of result.changed) {
 				const bang = ref.indexOf('!')
@@ -634,6 +634,11 @@ export class AscendWorkbook {
 					break
 			}
 		}
+	}
+
+	private markDirty(): void {
+		if (!this.dirty) this.originalBytes = null
+		this.dirty = true
 	}
 }
 

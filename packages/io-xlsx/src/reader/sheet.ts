@@ -19,6 +19,8 @@ import { parseAutoFilterNode } from './filtering.ts'
 import type { Relationship } from './relationships.ts'
 
 const CELL_REF_RE = /^([A-Za-z]+)(\d+)$/
+const SMALL_NUMBER_RANGE_START = -128
+const SMALL_NUMBER_RANGE_END = 512
 
 export interface SheetParseContext {
 	readonly sharedStrings: CellValue[]
@@ -37,10 +39,7 @@ export class ValueInternPool {
 		[false, booleanValue(false)],
 	])
 	private readonly errors = new Map<ExcelError, CellValue>()
-	private readonly smallNumbers = new Map<number, CellValue>([
-		[0, numberValue(0)],
-		[1, numberValue(1)],
-	])
+	private readonly smallNumbers = buildSmallNumberCache()
 
 	internString(value: string): string {
 		const cached = this.strings.get(value)
@@ -91,6 +90,14 @@ export class ValueInternPool {
 				return value
 		}
 	}
+}
+
+function buildSmallNumberCache(): Map<number, CellValue> {
+	const cache = new Map<number, CellValue>()
+	for (let value = SMALL_NUMBER_RANGE_START; value <= SMALL_NUMBER_RANGE_END; value++) {
+		cache.set(value, numberValue(value))
+	}
+	return cache
 }
 
 export function parseSheet(name: string, xml: string, ctx: SheetParseContext): Sheet {

@@ -89,7 +89,9 @@ export interface SheetColDef {
 }
 
 export interface SheetPreservedXml {
-	readonly xml: string
+	readonly partPath?: string
+	readonly xml?: string
+	readonly relsPath?: string
 	readonly relsXml?: string
 }
 

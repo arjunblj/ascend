@@ -83,6 +83,15 @@ describe('ascend cli', () => {
 		expect(parsed.sheets[0].name).toBe('Sheet1')
 	})
 
+	test('inspect --mode full loads full workbook detail', async () => {
+		const { stdout, exitCode } = await run('inspect', TEST_FILE, '--mode', 'full', '--json')
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.load.mode).toBe('full')
+		expect(parsed.cellCount).toBe(0)
+		expect(parsed.commentCount).toBe(0)
+	})
+
 	test('read requires an explicit sheet when workbook has multiple sheets', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -101,6 +110,12 @@ describe('ascend cli', () => {
 		const { exitCode, stdout } = await run('read', TEST_FILE, 'Sheet1!A1')
 		expect(exitCode).toBe(0)
 		expect(stdout).toContain('A')
+	})
+
+	test('read rejects unsupported modes', async () => {
+		const { exitCode, stderr } = await run('read', TEST_FILE, 'Sheet1!A1', '--mode', 'metadata')
+		expect(exitCode).toBe(1)
+		expect(stderr).toContain('Invalid --mode')
 	})
 
 	test('read supports named range selectors', async () => {

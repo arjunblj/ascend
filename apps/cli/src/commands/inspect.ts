@@ -14,6 +14,7 @@ Arguments:
 Flags:
   --sheet <name>  Sheet name (alternative to positional argument)
   --detail <type> Show detail for: cf, dv, hyperlinks, tables, comments, compatibility
+  --mode <mode>   Load mode: metadata, values, or full
   --json          Output as JSON
   --verbose       Show compatibility report and timing
 `
@@ -29,12 +30,31 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 	const detail = flags.get('detail')
 	const verbose = flags.has('verbose')
 	const workbookDetail = detail === 'compatibility'
+	const parsedMode = parseInspectMode(flags.get('mode'))
+	if (flags.has('mode') && parsedMode === null) {
+		console.error('Invalid --mode. Use one of: metadata, values, full')
+		return 1
+	}
+	const explicitMode = parsedMode ?? undefined
+	if (detail && sheetArg && explicitMode && explicitMode !== 'full') {
+		console.error('Sheet detail views require --mode full')
+		return 1
+	}
 
-	const needsData = (!workbookDetail && !!detail) || !!sheetArg
-	const { workbook: wb, durationMs: openMs } = await openWorkbookWithProgress(
-		file,
-		needsData ? (sheetArg ? { sheets: [sheetArg] } : undefined) : { mode: 'metadata-only' },
-	)
+	const openOptions =
+		explicitMode !== undefined
+			? {
+					mode: explicitMode,
+					...(sheetArg ? { sheets: [sheetArg] } : {}),
+				}
+			: workbookDetail
+				? { mode: 'metadata-only' as const }
+				: detail && sheetArg
+					? { sheets: [sheetArg] }
+					: sheetArg
+						? { mode: 'values' as const, sheets: [sheetArg] }
+						: { mode: 'metadata-only' as const }
+	const { workbook: wb, durationMs: openMs } = await openWorkbookWithProgress(file, openOptions)
 	const info = wb.inspect()
 
 	if (detail === 'compatibility') {
@@ -172,6 +192,21 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 	}
 
 	return 0
+}
+
+function parseInspectMode(
+	mode: string | undefined,
+): 'metadata-only' | 'values' | 'full' | undefined | null {
+	if (mode === undefined || mode === '') return undefined
+	switch (mode) {
+		case 'metadata':
+			return 'metadata-only'
+		case 'values':
+		case 'full':
+			return mode
+		default:
+			return null
+	}
 }
 
 function printSheetDetail(

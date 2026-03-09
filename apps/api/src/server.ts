@@ -49,12 +49,19 @@ export function createServer(opts?: { port?: number }) {
 				}
 
 				if (method === 'POST' && path === '/inspect') {
-					const body = await parseJson<{ file?: string }>(req)
+					const body = await parseJson<{ file?: string; sheet?: string }>(req)
 					const file = body ? requireString(body, 'file') : null
+					const sheetName = body ? requireString(body, 'sheet') : null
 					if (!file) return errorResponse('Missing or invalid file', 400)
 					try {
-						const wb = await AscendWorkbook.open(file)
-						return jsonResponse(wb.inspect())
+						const wb = await AscendWorkbook.open(
+							file,
+							sheetName ? { mode: 'values', sheets: [sheetName] } : { mode: 'metadata-only' },
+						)
+						if (!sheetName) return jsonResponse(wb.inspect())
+						const sheet = wb.inspect().sheets.find((entry) => entry.name === sheetName)
+						if (!sheet) return errorResponse('Sheet not found', 400)
+						return jsonResponse(sheet)
 					} catch (e) {
 						const msg = e instanceof Error ? e.message : String(e)
 						if (msg.includes('ENOENT') || msg.includes('not found'))
@@ -70,8 +77,11 @@ export function createServer(opts?: { port?: number }) {
 					if (!file) return errorResponse('Missing or invalid file', 400)
 					if (!range) return errorResponse('Missing or invalid range', 400)
 					try {
-						const wb = await AscendWorkbook.open(file)
 						const sheetName = body ? requireString(body, 'sheet') : null
+						const wb = await AscendWorkbook.open(
+							file,
+							sheetName ? { mode: 'values', sheets: [sheetName] } : { mode: 'values' },
+						)
 						const sheet = sheetName ? wb.sheet(sheetName) : wb.sheet(wb.sheets[0] ?? '')
 						if (!sheet) return errorResponse('Sheet not found', 400)
 						const rangeInfo = sheet.range(range)

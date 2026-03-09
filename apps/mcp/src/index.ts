@@ -33,7 +33,10 @@ export function createServer(): McpServer {
 			sheet: z.string().optional().describe('Sheet name to inspect'),
 		},
 		async ({ file, sheet }) => {
-			const wb = await Ascend.open(file, sheet ? { sheets: [sheet] } : { mode: 'metadata-only' })
+			const wb = await Ascend.open(
+				file,
+				sheet ? { mode: 'values', sheets: [sheet] } : { mode: 'metadata-only' },
+			)
 			if (sheet) {
 				const handle = wb.sheet(sheet)
 				if (!handle) {
@@ -65,7 +68,10 @@ export function createServer(): McpServer {
 			rowLimit: z.number().int().positive().optional().describe('Maximum rows to return'),
 		},
 		async ({ file, range, sheet, rowOffset, rowLimit }) => {
-			const wb = await Ascend.open(file)
+			const wb = await Ascend.open(
+				file,
+				sheet ? { mode: 'values', sheets: [sheet] } : { mode: 'values' },
+			)
 			const sheetName = sheet ?? wb.sheets[0]
 			if (!sheetName) {
 				return errorResponse('No sheets in workbook')

@@ -13,6 +13,7 @@ Arguments:
 
 Flags:
   --sheet <name>      Sheet name when selector is a plain range
+  --mode <mode>       Load mode: values or full
   --row-offset <N>    Start reading from row offset N
   --row-limit <N>     Limit number of rows returned
   --json              Output as JSON
@@ -27,8 +28,16 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 	}
 
 	const requestedSheet = flags.get('sheet')
+	const explicitMode = parseReadMode(flags.get('mode'))
+	if (flags.has('mode') && explicitMode === null) {
+		console.error('Invalid --mode. Use one of: values, full')
+		return 1
+	}
 	const selector = parseSelector(selectorArg, requestedSheet)
-	const { workbook: wb } = await openWorkbookWithProgress(file, inferOpenOptions(selector))
+	const { workbook: wb } = await openWorkbookWithProgress(
+		file,
+		inferOpenOptions(selector, explicitMode ?? 'values'),
+	)
 
 	const rowOffset = parseOptionalInt(flags.get('row-offset'))
 	const rowLimit = parseOptionalInt(flags.get('row-limit'))
@@ -95,14 +104,17 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 	}
 }
 
-function inferOpenOptions(selector: ReadSelector): { sheets?: readonly string[] } | undefined {
+function inferOpenOptions(
+	selector: ReadSelector,
+	mode: 'values' | 'full',
+): { mode: 'values' | 'full'; sheets?: readonly string[] } {
 	if (selector.kind === 'range' && selector.sheet) {
-		return { sheets: [selector.sheet] }
+		return { mode, sheets: [selector.sheet] }
 	}
 	if (selector.kind === 'name' && selector.sheetName) {
-		return { sheets: [selector.sheetName] }
+		return { mode, sheets: [selector.sheetName] }
 	}
-	return undefined
+	return { mode }
 }
 
 function readRangeLike(
@@ -224,4 +236,15 @@ function columnLabel(col: number): string {
 		n = Math.floor(n / 26) - 1
 	}
 	return label
+}
+
+function parseReadMode(mode: string | undefined): 'values' | 'full' | undefined | null {
+	if (mode === undefined || mode === '') return undefined
+	switch (mode) {
+		case 'values':
+		case 'full':
+			return mode
+		default:
+			return null
+	}
 }

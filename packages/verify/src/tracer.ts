@@ -1,5 +1,5 @@
 import { parseA1, toA1, type Workbook } from '@ascend/core'
-import { analyzeWorkbook, cellKey, parseCellKey } from '@ascend/engine'
+import { analyzeWorkbook, cellKey, parseCellKey, type WorkbookAnalysis } from '@ascend/engine'
 import { ascendError, type CellValue, EMPTY, err, ok, type Result } from '@ascend/schema'
 
 export interface TraceResult {
@@ -37,6 +37,7 @@ export function trace(
 	sheetName: string,
 	ref: string,
 	opts?: { maxDepth?: number },
+	analysis?: WorkbookAnalysis,
 ): Result<TraceResult> {
 	const sheetIndex = workbook.sheets.findIndex(
 		(s) => s.name.toLowerCase() === sheetName.toLowerCase(),
@@ -60,7 +61,7 @@ export function trace(
 	const formula = cell?.formula ?? null
 	const value = cell?.value ?? EMPTY
 
-	const graph = analyzeWorkbook(workbook).dependencyGraph
+	const graph = (analysis ?? analyzeWorkbook(workbook)).dependencyGraph
 	const targetKey = cellKey(sheetIndex, cellRef.row, cellRef.col)
 
 	const precedents: TraceNode[] = []

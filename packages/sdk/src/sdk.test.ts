@@ -694,6 +694,35 @@ describe('AscendWorkbook', () => {
 		)
 	})
 
+	test('formula mode preserves formulas in a read-only partial view', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A2', formula: 'A1*3' },
+		])
+		wb.recalc()
+		const bytes = wb.toBytes()
+
+		const reopened = await AscendWorkbook.open(bytes, { mode: 'formula' })
+		expect(reopened.inspect().load.mode).toBe('formula')
+		expect(reopened.inspect().load.isPartial).toBe(true)
+		expect(reopened.inspect().load.cellsHydrated).toBe(true)
+		expect(reopened.sheet('Sheet1')?.cell('A2')?.value).toEqual({ kind: 'number', value: 6 })
+		expect(reopened.sheet('Sheet1')?.cell('A2')?.formula).toBe('A1*3')
+		expect(reopened.formula('Sheet1!A2')?.normalizedFormula).toBe('A1*3')
+		const formulaInternal = reopened as unknown as {
+			originalBytes: Uint8Array | null
+			caps: readonly unknown[]
+			wb: { sourceArchiveBytes: Uint8Array | null }
+		}
+		expect(formulaInternal.originalBytes).toBeNull()
+		expect(formulaInternal.caps).toHaveLength(0)
+		expect(formulaInternal.wb.sourceArchiveBytes).toBeNull()
+		expect(() => reopened.toBytes()).toThrow(
+			'Cannot export a partial workbook view. Reopen the workbook with a full load before saving or exporting.',
+		)
+	})
+
 	test('selective open parses only requested sheets', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

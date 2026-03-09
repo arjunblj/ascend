@@ -1,12 +1,16 @@
 import { stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { analyzeWorkbook, type WorkbookAnalysis } from '@ascend/engine'
+import { check as verifyCheck, lint as verifyLint, trace as verifyTrace } from '@ascend/verify'
 import { openWorkbookSource } from './load.ts'
 import { WorkbookReadView } from './read-view.ts'
 import type { SheetHandle } from './sheet-handle.ts'
 import type { TableHandle } from './table-handle.ts'
 import type {
+	CheckResult,
 	DefinedNameInfo,
 	FormulaInfo,
+	LintResult,
 	RangeInfo,
 	RangeWindowInfo,
 	SheetInspectInfo,
@@ -15,7 +19,7 @@ import type {
 } from './types.ts'
 
 export interface WorkbookSessionOpenOptions {
-	readonly mode?: 'full' | 'metadata-only' | 'values'
+	readonly mode?: 'full' | 'metadata-only' | 'values' | 'formula'
 	readonly sheets?: readonly string[]
 }
 
@@ -38,6 +42,7 @@ export class WorkbookSession {
 	private readonly identity: SessionFileIdentity
 	private readonly options: WorkbookSessionOpenOptions
 	private readonly view: WorkbookReadView
+	private analysis?: WorkbookAnalysis
 
 	private constructor(
 		identity: SessionFileIdentity,
@@ -136,11 +141,51 @@ export class WorkbookSession {
 	}
 
 	trace(cellRef: string, opts?: { maxDepth?: number }): TraceResult | undefined {
-		return this.view.trace(cellRef, opts)
+		const bang = cellRef.indexOf('!')
+		const sheetName = bang >= 0 ? cellRef.slice(0, bang).replace(/^'|'$/g, '') : this.sheets[0]
+		const ref = bang >= 0 ? cellRef.slice(bang + 1) : cellRef
+		if (!sheetName) return undefined
+		const result = verifyTrace(
+			this.view.getWorkbookModel(),
+			sheetName,
+			ref,
+			opts,
+			this.getAnalysis(),
+		)
+		return result.ok
+			? {
+					ref: `${sheetName}!${ref}`,
+					formula: result.value.formula,
+					dependsOn: result.value.precedents.map((node) => `${node.sheet}!${node.ref}`),
+					feedsInto: result.value.dependents.map((node) => `${node.sheet}!${node.ref}`),
+				}
+			: undefined
 	}
 
 	formula(cellRef: string): FormulaInfo | undefined {
 		return this.view.formula(cellRef)
+	}
+
+	check(): CheckResult {
+		const result = verifyCheck(this.view.getWorkbookModel(), this.getAnalysis())
+		const issues = result.issues.map((issue) => ({
+			severity: issue.severity === 'info' ? 'warning' : issue.severity,
+			message: issue.message,
+			...(issue.refs?.[0] ? { ref: issue.refs[0] } : {}),
+		}))
+		return { valid: result.passed, issues }
+	}
+
+	lint(): LintResult {
+		const result = verifyLint(this.view.getWorkbookModel(), this.getAnalysis())
+		return {
+			clean: result.violations.length === 0,
+			warnings: result.violations.map((violation) => ({
+				rule: violation.rule,
+				message: violation.message,
+				ref: violation.ref,
+			})),
+		}
 	}
 
 	definedName(name: string, sheetName?: string): DefinedNameInfo | undefined {
@@ -149,6 +194,13 @@ export class WorkbookSession {
 
 	table(name: string): TableHandle | undefined {
 		return this.view.table(name)
+	}
+
+	private getAnalysis(): WorkbookAnalysis {
+		if (!this.analysis) {
+			this.analysis = analyzeWorkbook(this.view.getWorkbookModel())
+		}
+		return this.analysis
 	}
 }
 

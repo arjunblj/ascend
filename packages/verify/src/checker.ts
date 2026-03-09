@@ -1,6 +1,6 @@
 import type { Workbook } from '@ascend/core'
 import { indexToColumn, toA1 } from '@ascend/core'
-import { analyzeWorkbook, parseCellKey } from '@ascend/engine'
+import { analyzeWorkbook, parseCellKey, type WorkbookAnalysis } from '@ascend/engine'
 import { isError } from '@ascend/schema'
 
 export interface CheckResult {
@@ -15,9 +15,8 @@ export interface CheckIssue {
 	readonly refs?: readonly string[]
 }
 
-function checkBrokenRefs(wb: Workbook): CheckIssue[] {
+function checkBrokenRefs(wb: Workbook, analysis: WorkbookAnalysis): CheckIssue[] {
 	const issues: CheckIssue[] = []
-	const analysis = analyzeWorkbook(wb)
 
 	for (const formula of analysis.formulas.values()) {
 		if (!formula.ast) continue
@@ -37,8 +36,8 @@ function checkBrokenRefs(wb: Workbook): CheckIssue[] {
 	return issues
 }
 
-function checkCircularRefs(wb: Workbook): CheckIssue[] {
-	const cycles = analyzeWorkbook(wb).dependencyGraph.detectCycles()
+function checkCircularRefs(wb: Workbook, analysis: WorkbookAnalysis): CheckIssue[] {
+	const cycles = analysis.dependencyGraph.detectCycles()
 	return cycles.map((cycle) => {
 		const refs = cycle.map((key) => {
 			const [si, row, col] = parseCellKey(key)
@@ -120,10 +119,11 @@ function checkTableIntegrity(wb: Workbook): CheckIssue[] {
 	return issues
 }
 
-export function check(workbook: Workbook): CheckResult {
+export function check(workbook: Workbook, analysis?: WorkbookAnalysis): CheckResult {
+	const compiled = analysis ?? analyzeWorkbook(workbook)
 	const issues = [
-		...checkBrokenRefs(workbook),
-		...checkCircularRefs(workbook),
+		...checkBrokenRefs(workbook, compiled),
+		...checkCircularRefs(workbook, compiled),
 		...checkFormulaErrors(workbook),
 		...checkOrphanedNames(workbook),
 		...checkTableIntegrity(workbook),

@@ -22,7 +22,7 @@ export async function traceCommand(args: string[], flags: Map<string, string>): 
 		return 1
 	}
 
-	const { session } = await openWorkbookSessionWithProgress(file)
+	const { session } = await openWorkbookSessionWithProgress(file, { mode: 'formula' })
 	const result = session.trace(cellRef)
 
 	if (!result) {

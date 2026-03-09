@@ -140,7 +140,7 @@ export function createServer(opts?: { port?: number }) {
 					const file = body ? requireString(body, 'file') : null
 					if (!file) return errorResponse('Missing or invalid file', 400)
 					try {
-						const wb = await AscendWorkbook.open(file)
+						const wb = await WorkbookSession.open(file, { mode: 'formula' })
 						return jsonResponse(wb.check())
 					} catch (e) {
 						const msg = e instanceof Error ? e.message : String(e)
@@ -155,7 +155,7 @@ export function createServer(opts?: { port?: number }) {
 					const file = body ? requireString(body, 'file') : null
 					if (!file) return errorResponse('Missing or invalid file', 400)
 					try {
-						const wb = await AscendWorkbook.open(file)
+						const wb = await WorkbookSession.open(file, { mode: 'formula' })
 						return jsonResponse(wb.lint())
 					} catch (e) {
 						const msg = e instanceof Error ? e.message : String(e)
@@ -172,7 +172,7 @@ export function createServer(opts?: { port?: number }) {
 					if (!file) return errorResponse('Missing or invalid file', 400)
 					if (!cell) return errorResponse('Missing or invalid cell', 400)
 					try {
-						const wb = await WorkbookSession.open(file)
+						const wb = await WorkbookSession.open(file, { mode: 'formula' })
 						const result = wb.trace(cell)
 						if (!result) return errorResponse('Cell not found', 400)
 						return jsonResponse(result)

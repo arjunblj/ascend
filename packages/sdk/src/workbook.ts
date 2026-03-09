@@ -54,7 +54,10 @@ export class AscendWorkbook extends WorkbookReadView {
 
 	static async open(
 		pathOrBytes: string | Uint8Array,
-		options?: { mode?: 'full' | 'metadata-only' | 'values'; sheets?: readonly string[] },
+		options?: {
+			mode?: 'full' | 'metadata-only' | 'values' | 'formula'
+			sheets?: readonly string[]
+		},
 	): Promise<AscendWorkbook> {
 		const loaded = await openWorkbookSource(pathOrBytes, options)
 		return new AscendWorkbook(

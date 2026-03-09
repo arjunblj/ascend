@@ -37,6 +37,7 @@ export interface SheetParseContext {
 	readonly relationships?: readonly Relationship[]
 	readonly valuePool?: ValueInternPool
 	readonly valuesOnly?: boolean
+	readonly formulaOnly?: boolean
 }
 
 export class ValueInternPool {
@@ -129,7 +130,7 @@ export function parseSheet(name: string, xml: string, ctx: SheetParseContext): S
 	parsePrintOptions(ws, sheet)
 	parseHeaderFooter(ws, sheet)
 	parseIgnoredErrors(ws, sheet)
-	if (!ctx.valuesOnly) {
+	if (!ctx.valuesOnly && !ctx.formulaOnly) {
 		parseHyperlinks(ws, sheet, ctx.relationships ?? [], ctx.valuePool)
 		parseConditionalFormatting(ws, sheet, ctx.differentialStyles ?? [], ctx.valuePool)
 		parseDataValidations(ws, sheet, ctx.valuePool)

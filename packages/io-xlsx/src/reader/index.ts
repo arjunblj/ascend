@@ -50,12 +50,12 @@ export interface ReadXlsxResult {
 }
 
 export interface ReadXlsxOptions {
-	readonly mode?: 'full' | 'metadata-only' | 'values'
+	readonly mode?: 'full' | 'metadata-only' | 'values' | 'formula'
 	readonly sheets?: readonly string[]
 }
 
 export interface ReadXlsxLoadInfo {
-	readonly mode: 'full' | 'metadata-only' | 'values' | 'selective'
+	readonly mode: 'full' | 'metadata-only' | 'values' | 'formula' | 'selective'
 	readonly isPartial: boolean
 	readonly cellsHydrated: boolean
 	readonly hasAllSheets: boolean
@@ -219,6 +219,7 @@ export function readXlsx(
 	}
 
 	const valuesOnly = mode === 'values'
+	const formulaOnly = mode === 'formula'
 	if (mode === 'metadata-only') {
 		for (const entry of sheetsToParse) {
 			const sheet = workbook.addSheet(entry.name)
@@ -237,7 +238,7 @@ export function readXlsx(
 		let styleIds: StyleId[]
 		let isDateFormat: boolean[]
 		let differentialStyles: readonly CellStyle[]
-		if (valuesOnly) {
+		if (valuesOnly || formulaOnly) {
 			const parsedStyles = stylesXml
 				? parseStylesLite(stylesXml)
 				: {
@@ -297,15 +298,16 @@ export function readXlsx(
 				relationships: sheetRelationships,
 				valuePool,
 				valuesOnly,
+				formulaOnly,
 			})
-			if (!valuesOnly) {
+			if (!valuesOnly && !formulaOnly) {
 				attachComments(archive, entry.path, sheet, sheetRelationships)
 				attachDrawingImages(archive, entry.path, sheet, sheetRelationships)
 				attachPivotTables(archive, entry.path, entry.name, workbook, sheetRelationships)
 			}
 			attachTables(archive, entry.path, sheet, sheetRelationships)
 			sheet.state = entry.state
-			if (!valuesOnly) {
+			if (!valuesOnly && !formulaOnly) {
 				sheet.preservedXml = {
 					partPath: entry.path,
 					...(sheetRelsXml ? { relsPath: getRelsPath(entry.path) } : {}),
@@ -338,7 +340,7 @@ export function readXlsx(
 	const loadedSheetNames = sheetsToParse.map((sheet) => sheet.name)
 	const hasAllSheets = loadedSheetNames.length === sourceSheetNames.length
 	const cellsHydrated = mode !== 'metadata-only'
-	const fidelityPartial = mode === 'values'
+	const fidelityPartial = mode === 'values' || mode === 'formula'
 	const loadInfo: ReadXlsxLoadInfo = {
 		mode: selectedSheets ? 'selective' : mode,
 		isPartial: !hasAllSheets || !cellsHydrated || fidelityPartial,

@@ -1,6 +1,6 @@
 import { jsonOut } from '../output/json.ts'
 import { table } from '../output/pretty.ts'
-import { openWorkbookWithProgress } from '../progress.ts'
+import { openWorkbookSessionWithProgress } from '../progress.ts'
 
 export const usage = `Usage: ascend lint <file> [flags]
 
@@ -20,7 +20,7 @@ export async function lintCommand(args: string[], flags: Map<string, string>): P
 		return 1
 	}
 
-	const { workbook: wb } = await openWorkbookWithProgress(file)
+	const { session: wb } = await openWorkbookSessionWithProgress(file, { mode: 'formula' })
 	const result = wb.lint()
 
 	if (flags.has('json')) {

@@ -1,6 +1,6 @@
 import { jsonOut } from '../output/json.ts'
 import { table } from '../output/pretty.ts'
-import { openWorkbookWithProgress } from '../progress.ts'
+import { openWorkbookSessionWithProgress } from '../progress.ts'
 
 export const usage = `Usage: ascend check <file> [flags]
 
@@ -20,7 +20,7 @@ export async function checkCommand(args: string[], flags: Map<string, string>): 
 		return 1
 	}
 
-	const { workbook: wb } = await openWorkbookWithProgress(file)
+	const { session: wb } = await openWorkbookSessionWithProgress(file, { mode: 'formula' })
 	const result = wb.check()
 
 	if (flags.has('json')) {

@@ -17,7 +17,7 @@ export interface LoadedWorkbookSource {
 
 export async function openWorkbookSource(
 	pathOrBytes: string | Uint8Array,
-	options?: { mode?: 'full' | 'metadata-only' | 'values'; sheets?: readonly string[] },
+	options?: { mode?: 'full' | 'metadata-only' | 'values' | 'formula'; sheets?: readonly string[] },
 ): Promise<LoadedWorkbookSource> {
 	let bytes: Uint8Array
 	let ext = ''

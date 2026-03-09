@@ -157,7 +157,7 @@ export interface SheetInspectInfo extends SheetInfo {
 }
 
 export interface WorkbookLoadInfo {
-	readonly mode: 'full' | 'metadata-only' | 'values' | 'selective'
+	readonly mode: 'full' | 'metadata-only' | 'values' | 'formula' | 'selective'
 	readonly isPartial: boolean
 	readonly cellsHydrated: boolean
 	readonly hasAllSheets: boolean

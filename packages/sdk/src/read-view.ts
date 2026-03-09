@@ -41,6 +41,10 @@ export class WorkbookReadView {
 		this.loadInfo = loadInfo
 	}
 
+	getWorkbookModel(): Workbook {
+		return this.wb
+	}
+
 	inspect(): WorkbookInfo {
 		let totalCells = 0
 		let totalComments = 0

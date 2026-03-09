@@ -1,6 +1,6 @@
 import type { Workbook } from '@ascend/core'
 import { toA1 } from '@ascend/core'
-import { analyzeWorkbook } from '@ascend/engine'
+import { analyzeWorkbook, type WorkbookAnalysis } from '@ascend/engine'
 import type { FormulaNode } from '@ascend/formulas'
 import { functionRegistry } from '@ascend/formulas'
 
@@ -102,15 +102,15 @@ function findFragileRefs(node: FormulaNode): boolean {
 	}
 }
 
-export function lint(workbook: Workbook): LintResult {
+export function lint(workbook: Workbook, analysis?: WorkbookAnalysis): LintResult {
 	const violations: LintViolation[] = []
-	const analysis = analyzeWorkbook(workbook)
+	const compiled = analysis ?? analyzeWorkbook(workbook)
 
 	for (const sheet of workbook.sheets) {
 		let sheetVolatileCount = 0
 		const volatileCells: string[] = []
 
-		for (const formula of analysis.formulas.values()) {
+		for (const formula of compiled.formulas.values()) {
 			const ref = `${sheet.name}!${toA1({ row: formula.row, col: formula.col })}`
 			if (formula.sheetName !== sheet.name) continue
 			if (!formula.ast) {

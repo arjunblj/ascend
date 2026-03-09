@@ -55,10 +55,12 @@ interface StepResult {
 type StepName =
 	| 'open-metadata'
 	| 'open-values'
+	| 'open-formula'
 	| 'open-full'
 	| 'read-window-values'
 	| 'workflow-inspect-read'
 	| 'workflow-session-open-read'
+	| 'workflow-session-verify'
 	| 'preview-numeric-edit'
 	| 'preview-format-edit'
 	| 'no-op-save-bytes'
@@ -150,10 +152,12 @@ async function main(): Promise<void> {
 	const stepNames: readonly StepName[] = [
 		'open-metadata',
 		'open-values',
+		'open-formula',
 		'open-full',
 		'read-window-values',
 		'workflow-inspect-read',
 		'workflow-session-open-read',
+		'workflow-session-verify',
 		'preview-numeric-edit',
 		'preview-format-edit',
 		'no-op-save-bytes',
@@ -224,6 +228,12 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 		case 'open-values': {
 			const { timing } = await time('open-values', () =>
 				AscendWorkbook.open(target, { mode: 'values' }),
+			)
+			return { timing }
+		}
+		case 'open-formula': {
+			const { timing } = await time('open-formula', () =>
+				AscendWorkbook.open(target, { mode: 'formula' }),
 			)
 			return { timing }
 		}
@@ -304,6 +314,30 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 				assertions: {
 					sheetCount: result.sheetCount,
 					totalCells: result.totalCells,
+				},
+			}
+		}
+		case 'workflow-session-verify': {
+			WorkbookSession.clearCache()
+			const session = await WorkbookSession.open(target, { mode: 'formula' })
+			const probe = pickFormulaProbe(session)
+			const { result, timing } = await time('workflow-session-verify', async () => {
+				const trace = session.trace(`${probe.sheet}!${probe.ref}`)
+				const check = session.check()
+				const lint = session.lint()
+				return {
+					tracePrecedents: trace?.dependsOn.length ?? 0,
+					checkIssues: check.issues.length,
+					lintWarnings: lint.warnings.length,
+				}
+			})
+			return {
+				timing,
+				assertions: {
+					traceRef: `${probe.sheet}!${probe.ref}`,
+					tracePrecedents: result.tracePrecedents,
+					checkIssues: result.checkIssues,
+					lintWarnings: result.lintWarnings,
 				},
 			}
 		}
@@ -504,6 +538,25 @@ function pickReadProbe(wb: AscendWorkbook): { sheet: string; range: string; rowL
 		}
 	}
 	return { sheet: wb.sheets[0] ?? 'Sheet1', range: 'A1:A1', rowLimit: 1 }
+}
+
+function pickFormulaProbe(
+	wb: Pick<AscendWorkbook, 'sheets' | 'sheet'> | Pick<WorkbookSession, 'sheets' | 'sheet'>,
+): { sheet: string; ref: string } {
+	for (const sheetName of wb.sheets) {
+		const sheet = wb.sheet(sheetName)
+		if (!sheet) continue
+		const used = sheet.usedRange()
+		if (!used) continue
+		for (const row of sheet.streamRange(
+			`${columnLabel(used.start.col)}${used.start.row + 1}:${columnLabel(used.end.col)}${used.end.row + 1}`,
+		)) {
+			for (const cell of row) {
+				if (cell.formula) return { sheet: sheetName, ref: cell.ref }
+			}
+		}
+	}
+	return { sheet: wb.sheets[0] ?? 'Sheet1', ref: 'A1' }
 }
 
 function median(values: number[]): number {

@@ -5,6 +5,7 @@ import {
 	type SheetId,
 	type Table,
 	type TableColumn,
+	type TableStyleInfo,
 } from '@ascend/core'
 import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
 import { parseAutoFilterNode } from './filtering.ts'
@@ -31,8 +32,27 @@ export function parseTable(xml: string, sheetId: SheetId): Table | null {
 		numAttr(table, 'totalsRowCount') ?? (boolAttr(table, 'totalsRowShown') ? 1 : 0)
 	const columns = parseTableColumns(table)
 	const autoFilter = parseAutoFilterNode(table.autoFilter as XmlNode | undefined)
+	const tableStyleInfo = parseTableStyleInfo(table.tableStyleInfo as XmlNode | undefined)
+	const headerRowDxfId = numAttr(table, 'headerRowDxfId')
+	const dataDxfId = numAttr(table, 'dataDxfId')
+	const totalsRowDxfId = numAttr(table, 'totalsRowDxfId')
+	const headerRowBorderDxfId = numAttr(table, 'headerRowBorderDxfId')
 
-	return {
+	const parsed: {
+		id: Table['id']
+		name: string
+		sheetId: SheetId
+		ref: RangeRef
+		columns: readonly TableColumn[]
+		hasHeaders: boolean
+		hasTotals: boolean
+		autoFilter?: Table['autoFilter']
+		headerRowDxfId?: number
+		dataDxfId?: number
+		totalsRowDxfId?: number
+		headerRowBorderDxfId?: number
+		tableStyleInfo?: TableStyleInfo
+	} = {
 		id: createTableId(),
 		name,
 		sheetId,
@@ -40,8 +60,14 @@ export function parseTable(xml: string, sheetId: SheetId): Table | null {
 		columns,
 		hasHeaders: (headerRowCount ?? 1) !== 0,
 		hasTotals: totalsRowCount > 0,
-		...(autoFilter ? { autoFilter } : {}),
 	}
+	if (autoFilter) parsed.autoFilter = autoFilter
+	if (headerRowDxfId !== undefined) parsed.headerRowDxfId = headerRowDxfId
+	if (dataDxfId !== undefined) parsed.dataDxfId = dataDxfId
+	if (totalsRowDxfId !== undefined) parsed.totalsRowDxfId = totalsRowDxfId
+	if (headerRowBorderDxfId !== undefined) parsed.headerRowBorderDxfId = headerRowBorderDxfId
+	if (tableStyleInfo) parsed.tableStyleInfo = tableStyleInfo
+	return parsed as Table
 }
 
 function parseTableColumns(table: XmlNode): readonly TableColumn[] {
@@ -56,13 +82,54 @@ function parseTableColumns(table: XmlNode): readonly TableColumn[] {
 			formulaNode !== undefined && formulaNode !== null
 				? extractFormulaText(formulaNode)
 				: undefined
-		if (formula) {
-			columns.push({ name, formula })
-		} else {
-			columns.push({ name })
-		}
+		const parsed: {
+			id?: number
+			name: string
+			formula?: string
+			totalsRowFunction?: string
+			totalsRowLabel?: string
+			dataDxfId?: number
+			headerRowDxfId?: number
+			totalsRowDxfId?: number
+		} = { name }
+		const id = numAttr(column, 'id')
+		if (id !== undefined) parsed.id = id
+		if (formula) parsed.formula = formula
+		const totalsRowFunction = attr(column, 'totalsRowFunction')
+		if (totalsRowFunction) parsed.totalsRowFunction = totalsRowFunction
+		const totalsRowLabel = attr(column, 'totalsRowLabel')
+		if (totalsRowLabel) parsed.totalsRowLabel = totalsRowLabel
+		const dataDxfId = numAttr(column, 'dataDxfId')
+		if (dataDxfId !== undefined) parsed.dataDxfId = dataDxfId
+		const headerRowDxfId = numAttr(column, 'headerRowDxfId')
+		if (headerRowDxfId !== undefined) parsed.headerRowDxfId = headerRowDxfId
+		const totalsRowDxfId = numAttr(column, 'totalsRowDxfId')
+		if (totalsRowDxfId !== undefined) parsed.totalsRowDxfId = totalsRowDxfId
+		columns.push(parsed)
 	}
 	return columns
+}
+
+function parseTableStyleInfo(node: XmlNode | undefined): TableStyleInfo | undefined {
+	if (!node) return undefined
+	const parsed: {
+		name?: string
+		showFirstColumn?: boolean
+		showLastColumn?: boolean
+		showRowStripes?: boolean
+		showColumnStripes?: boolean
+	} = {}
+	const name = attr(node, 'name')
+	if (name) parsed.name = name
+	const showFirstColumn = boolAttr(node, 'showFirstColumn')
+	if (showFirstColumn !== undefined) parsed.showFirstColumn = showFirstColumn
+	const showLastColumn = boolAttr(node, 'showLastColumn')
+	if (showLastColumn !== undefined) parsed.showLastColumn = showLastColumn
+	const showRowStripes = boolAttr(node, 'showRowStripes')
+	if (showRowStripes !== undefined) parsed.showRowStripes = showRowStripes
+	const showColumnStripes = boolAttr(node, 'showColumnStripes')
+	if (showColumnStripes !== undefined) parsed.showColumnStripes = showColumnStripes
+	return Object.keys(parsed).length > 0 ? parsed : undefined
 }
 
 function extractFormulaText(node: unknown): string | undefined {

@@ -345,11 +345,13 @@ describe('readXlsx', () => {
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"/>
 </Relationships>`,
 			'xl/tables/table1.xml': `<?xml version="1.0"?>
-<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="Table1" displayName="Scores" ref="A1:B3" headerRowCount="1" totalsRowCount="0">
+<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="Table1" displayName="Scores" ref="A1:B3" headerRowCount="1" totalsRowCount="0" headerRowDxfId="5" dataDxfId="6">
+  <autoFilter ref="A1:B3"><sortState ref="A2:B3"><sortCondition ref="B2:B3"/></sortState></autoFilter>
   <tableColumns count="2">
-    <tableColumn id="1" name="Name"/>
-    <tableColumn id="2" name="Score"/>
+    <tableColumn id="1" name="Name" totalsRowLabel="Total" dataDxfId="7"/>
+    <tableColumn id="2" name="Score" totalsRowFunction="sum" totalsRowDxfId="8"/>
   </tableColumns>
+  <tableStyleInfo name="TableStyleMedium2" showFirstColumn="0" showLastColumn="0" showRowStripes="1" showColumnStripes="0"/>
 </table>`,
 		})
 
@@ -361,8 +363,27 @@ describe('readXlsx', () => {
 		expect(sheet?.tables).toHaveLength(1)
 		expect(sheet?.tables[0]?.name).toBe('Scores')
 		expect(sheet?.tables[0]?.hasHeaders).toBe(true)
-		expect(sheet?.tables[0]?.columns.map((column) => column.name)).toEqual(['Name', 'Score'])
-		expect(sheet?.tables[0]?.autoFilter).toBeUndefined()
+		expect(sheet?.tables[0]?.columns).toEqual([
+			{ id: 1, name: 'Name', totalsRowLabel: 'Total', dataDxfId: 7 },
+			{ id: 2, name: 'Score', totalsRowFunction: 'sum', totalsRowDxfId: 8 },
+		])
+		expect(sheet?.tables[0]?.autoFilter).toEqual({
+			ref: 'A1:B3',
+			columns: [],
+			sortState: {
+				ref: 'A2:B3',
+				conditions: [{ ref: 'B2:B3' }],
+			},
+		})
+		expect(sheet?.tables[0]?.headerRowDxfId).toBe(5)
+		expect(sheet?.tables[0]?.dataDxfId).toBe(6)
+		expect(sheet?.tables[0]?.tableStyleInfo).toEqual({
+			name: 'TableStyleMedium2',
+			showFirstColumn: false,
+			showLastColumn: false,
+			showRowStripes: true,
+			showColumnStripes: false,
+		})
 		expect(result.value.report.features.some((feature) => feature.feature === 'table')).toBe(true)
 	})
 

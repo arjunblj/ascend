@@ -634,6 +634,73 @@ describe('writeXlsx', () => {
 		})
 	})
 
+	it('preserves richer table metadata on round-trip', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Inventory')
+		sheet.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: S0 })
+		sheet.cells.set(0, 1, { value: stringValue('Qty'), formula: null, styleId: S0 })
+		sheet.cells.set(1, 0, { value: stringValue('Bolts'), formula: null, styleId: S0 })
+		sheet.cells.set(1, 1, { value: numberValue(5), formula: null, styleId: S0 })
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'InventoryTable',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 1, col: 1 } },
+			columns: [
+				{ id: 1, name: 'Name', totalsRowLabel: 'Total', dataDxfId: 7 },
+				{ id: 2, name: 'Qty', totalsRowFunction: 'sum', totalsRowDxfId: 8 },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+			autoFilter: {
+				ref: 'A1:B2',
+				columns: [],
+				sortState: {
+					ref: 'A2:B2',
+					conditions: [{ ref: 'B2:B2' }],
+				},
+			},
+			headerRowDxfId: 5,
+			dataDxfId: 6,
+			tableStyleInfo: {
+				name: 'TableStyleMedium2',
+				showFirstColumn: false,
+				showLastColumn: false,
+				showRowStripes: true,
+				showColumnStripes: false,
+			},
+		})
+
+		const { result, bytes } = roundTrip(wb)
+		expect(result.workbook.sheets[0]?.tables[0]).toEqual(
+			expect.objectContaining({
+				name: 'InventoryTable',
+				headerRowDxfId: 5,
+				dataDxfId: 6,
+				tableStyleInfo: {
+					name: 'TableStyleMedium2',
+					showFirstColumn: false,
+					showLastColumn: false,
+					showRowStripes: true,
+					showColumnStripes: false,
+				},
+				columns: [
+					{ id: 1, name: 'Name', totalsRowLabel: 'Total', dataDxfId: 7 },
+					{ id: 2, name: 'Qty', totalsRowFunction: 'sum', totalsRowDxfId: 8 },
+				],
+			}),
+		)
+		const entries = unzipSync(bytes)
+		const tableEntry = entries['xl/tables/table1.xml']
+		expect(tableEntry).toBeDefined()
+		if (!tableEntry) return
+		const tableXml = new TextDecoder().decode(tableEntry)
+		expect(tableXml).toContain('headerRowDxfId="5"')
+		expect(tableXml).toContain('dataDxfId="6"')
+		expect(tableXml).toContain('totalsRowFunction="sum"')
+		expect(tableXml).toContain('tableStyleInfo')
+	})
+
 	it('emits table parts for semantic tables without capsules', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Inventory')

@@ -160,6 +160,7 @@ function cloneWorkbook(source: Workbook): Workbook {
 					...(sheet.preservedXml.relsXml ? { relsXml: sheet.preservedXml.relsXml } : {}),
 				}
 			: null
+		cloned.preservedExtLst = sheet.preservedExtLst
 	}
 
 	return clone

@@ -52,6 +52,7 @@ export function parseSheet(name: string, xml: string, ctx: SheetParseContext): S
 	parseHyperlinks(ws, sheet, ctx.relationships ?? [])
 	parseConditionalFormatting(ws, sheet, ctx.differentialStyles ?? [])
 	parseDataValidations(ws, sheet)
+	extractExtLst(xml, sheet)
 
 	return sheet
 }
@@ -228,6 +229,13 @@ function parseDrawingRefs(ws: XmlNode, sheet: Sheet): void {
 		hasDrawing: drawing !== undefined,
 		hasLegacyDrawing: legacyDrawing !== undefined,
 	}
+}
+
+const EXTLST_RE = /<extLst[\s>][\s\S]*?<\/extLst>/
+
+function extractExtLst(xml: string, sheet: Sheet): void {
+	const m = EXTLST_RE.exec(xml)
+	if (m) sheet.preservedExtLst = m[0]
 }
 
 function parseSheetPr(ws: XmlNode, sheet: Sheet): void {

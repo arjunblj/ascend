@@ -287,6 +287,10 @@ export function buildSheetXml(
 		parts.push('</tableParts>')
 	}
 
+	if (sheet.preservedExtLst) {
+		parts.push(sheet.preservedExtLst)
+	}
+
 	parts.push('</worksheet>')
 	return parts.join('')
 }

@@ -223,6 +223,7 @@ export class Sheet {
 	printOptions: SheetPrintOptions | null
 	headerFooter: SheetHeaderFooter | null
 	preservedXml: SheetPreservedXml | null
+	preservedExtLst: string | null
 
 	constructor(name: string, id?: SheetId) {
 		this.id = id ?? createSheetId()
@@ -252,6 +253,7 @@ export class Sheet {
 		this.printOptions = null
 		this.headerFooter = null
 		this.preservedXml = null
+		this.preservedExtLst = null
 	}
 }
 

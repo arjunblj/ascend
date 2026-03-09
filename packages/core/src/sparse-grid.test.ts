@@ -116,6 +116,24 @@ describe('SparseGrid', () => {
 		])
 	})
 
+	test('iterateRowsInRange yields only populated cells within row and column bounds', () => {
+		const grid = new SparseGrid()
+		grid.set(0, 0, makeCell(numberValue(1)))
+		grid.set(0, 5, makeCell(numberValue(2)))
+		grid.set(3, 1, makeCell(numberValue(3)))
+		grid.set(4, 2, makeCell(numberValue(4)))
+
+		expect([
+			...grid.iterateRowsInRange({
+				start: { row: 0, col: 1 },
+				end: { row: 3, col: 5 },
+			}),
+		]).toEqual([
+			[0, [[5, makeCell(numberValue(2))]]],
+			[3, [[1, makeCell(numberValue(3))]]],
+		])
+	})
+
 	test('clear removes all cells', () => {
 		const grid = new SparseGrid()
 		grid.set(0, 0, makeCell(numberValue(1)))

@@ -94,21 +94,22 @@ export class SheetHandle {
 
 	*streamRange(rangeRef: string): Generator<readonly CellInfo[]> {
 		const parsed = parseRange(rangeRef)
-		for (let r = parsed.start.row; r <= parsed.end.row; r++) {
-			const row: CellInfo[] = []
-			for (let c = parsed.start.col; c <= parsed.end.col; c++) {
-				const cell = this.sheet.cells.get(r, c)
-				if (!cell) continue
-				row.push({
-					ref: toA1({ row: r, col: c }),
+		const rowMap = new Map<number, CellInfo[]>()
+		for (const [row, rowCells] of this.sheet.cells.iterateRowsInRange(parsed)) {
+			rowMap.set(
+				row,
+				rowCells.map(([col, cell]) => ({
+					ref: toA1({ row, col }),
 					value: cell.value,
 					formula: cell.formula,
 					...(cell.formulaInfo ? { formulaBinding: cell.formulaInfo } : {}),
-					row: r,
-					col: c,
-				})
-			}
-			yield row
+					row,
+					col,
+				})),
+			)
+		}
+		for (let row = parsed.start.row; row <= parsed.end.row; row++) {
+			yield rowMap.get(row) ?? []
 		}
 	}
 
@@ -179,17 +180,15 @@ export class SheetHandle {
 
 function collectCells(sheet: Sheet, range: RangeRef): CellInfo[] {
 	const cells: CellInfo[] = []
-	for (let r = range.start.row; r <= range.end.row; r++) {
-		for (let c = range.start.col; c <= range.end.col; c++) {
-			const cell = sheet.cells.get(r, c)
-			if (!cell) continue
+	for (const [row, rowCells] of sheet.cells.iterateRowsInRange(range)) {
+		for (const [col, cell] of rowCells) {
 			cells.push({
-				ref: toA1({ row: r, col: c }),
+				ref: toA1({ row, col }),
 				value: cell.value,
 				formula: cell.formula,
 				...(cell.formulaInfo ? { formulaBinding: cell.formulaInfo } : {}),
-				row: r,
-				col: c,
+				row,
+				col,
 			})
 		}
 	}

@@ -169,6 +169,18 @@ export class SparseGrid {
 		}
 	}
 
+	*iterateRowsInRange(
+		range: RangeRef,
+	): Generator<readonly [number, readonly (readonly [number, Cell])[]]> {
+		for (const [row, rowCells] of this.iterateRows()) {
+			if (row < range.start.row) continue
+			if (row > range.end.row) return
+			const filtered = rowCells.filter(([col]) => col >= range.start.col && col <= range.end.col)
+			if (filtered.length === 0) continue
+			yield [row, filtered] as const
+		}
+	}
+
 	cellCount(): number {
 		return this.data.size
 	}

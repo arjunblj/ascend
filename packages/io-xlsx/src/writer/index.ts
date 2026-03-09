@@ -63,7 +63,15 @@ export function writeXlsx(
 		let nextGeneratedVmlNumber = 1
 
 		const ssTable = buildSharedStrings(workbook)
-		const hasSharedStrings = ssTable.count > 0
+		const preservedSharedStringsXml =
+			workbook.preservedSharedStrings && !options.sharedStringsDirty
+				? resolvePreservedText(
+						sourceArchive,
+						workbook.preservedSharedStrings.xml,
+						workbook.preservedSharedStrings.path,
+					)
+				: undefined
+		const hasSharedStrings = ssTable.count > 0 || preservedSharedStringsXml !== undefined
 
 		const preservedStylesXml =
 			workbook.preservedStyles && !stylesNeedRebuild(workbook)
@@ -193,7 +201,7 @@ export function writeXlsx(
 		}
 
 		if (hasSharedStrings) {
-			parts.set('xl/sharedStrings.xml', encode(ssTable.toXml()))
+			parts.set('xl/sharedStrings.xml', encode(preservedSharedStringsXml ?? ssTable.toXml()))
 		}
 
 		for (let i = 0; i < workbook.sheets.length; i++) {

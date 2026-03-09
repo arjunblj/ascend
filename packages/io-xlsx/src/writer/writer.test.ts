@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import type { StyleId } from '@ascend/core'
 import { createTableId, Workbook } from '@ascend/core'
 import { booleanValue, numberValue, stringValue } from '@ascend/schema'
-import { unzipSync } from 'fflate'
+import { strToU8, unzipSync, zipSync } from 'fflate'
 import { fingerprintXlsx } from '../../test/fidelity-harness.ts'
 import type { PreservationCapsule } from '../preserve.ts'
 import { readXlsx } from '../reader/index.ts'
@@ -16,6 +16,14 @@ function roundTrip(wb: Workbook, capsules?: PreservationCapsule[]) {
 	const read = readXlsx(written.value)
 	if (!read.ok) throw new Error(`read failed: ${read.error.message}`)
 	return { bytes: written.value, result: read.value }
+}
+
+function makeXlsx(parts: Record<string, string>): Uint8Array {
+	const entries: Record<string, Uint8Array> = {}
+	for (const [path, content] of Object.entries(parts)) {
+		entries[path] = strToU8(content)
+	}
+	return zipSync(entries)
 }
 
 describe('writeXlsx', () => {
@@ -73,6 +81,74 @@ describe('writeXlsx', () => {
 		expect(s?.cells.get(0, 1)?.formula).toBe('A1*2')
 		expect(s?.cells.get(0, 1)?.value).toEqual({ kind: 'number', value: 20 })
 		expect(s?.cells.get(1, 0)?.formula).toBe('SUM(A1,B1)')
+	})
+
+	it('preserves sharedStrings.xml when string indices are unchanged', () => {
+		const sourceBytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>
+</Relationships>`,
+			'xl/sharedStrings.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="3" uniqueCount="2">
+  <si><t xml:space="preserve"> Hello </t></si>
+  <si><t>World</t></si>
+</sst>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1" t="s"><v>0</v></c>
+      <c r="B1"><v>1</v></c>
+    </row>
+    <row r="2">
+      <c r="A2" t="s"><v>1</v></c>
+    </row>
+  </sheetData>
+</worksheet>`,
+		})
+
+		const source = readXlsx(sourceBytes)
+		expect(source.ok).toBe(true)
+		if (!source.ok) return
+
+		const sourceZip = unzipSync(sourceBytes)
+		const originalSharedStrings = new TextDecoder().decode(
+			sourceZip['xl/sharedStrings.xml'] ?? new Uint8Array(),
+		)
+
+		const sheet = source.value.workbook.sheets[0]
+		expect(sheet).toBeDefined()
+		sheet?.cells.set(0, 1, { value: numberValue(99), formula: null, styleId: S0 })
+
+		const written = writeXlsx(source.value.workbook, source.value.capsules, {
+			dirtySheetNames: ['Data'],
+			sharedStringsDirty: false,
+		})
+		expect(written.ok).toBe(true)
+		if (!written.ok) return
+
+		const zip = unzipSync(written.value)
+		const sharedStrings = new TextDecoder().decode(zip['xl/sharedStrings.xml'] ?? new Uint8Array())
+		expect(sharedStrings).toBe(originalSharedStrings)
 	})
 
 	it('preserves bold style on round-trip', () => {

@@ -167,6 +167,16 @@ describe('readXlsx', () => {
 		expect(cell?.value).toEqual({ kind: 'number', value: 99 })
 	})
 
+	it('captures shared strings as a preserved workbook part', () => {
+		const result = readXlsx(minimalXlsx())
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(result.value.workbook.preservedSharedStrings).toEqual({
+			path: 'xl/sharedStrings.xml',
+		})
+	})
+
 	it('handles error cell type', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': CONTENT_TYPES,
@@ -1151,6 +1161,48 @@ describe('readXlsx', () => {
 		expect(result.value.report.features.some((feature) => feature.feature === 'partialLoad')).toBe(
 			true,
 		)
+	})
+
+	it('preserves date decoding in values mode without full style hydration', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>`,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/styles.xml': `<?xml version="1.0"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <cellXfs count="2">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
+    <xf numFmtId="14" fontId="0" fillId="0" borderId="0"/>
+  </cellXfs>
+</styleSheet>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1"><c r="A1" s="1"><v>45292</v></c></row>
+  </sheetData>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes, { mode: 'values' })
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(result.value.workbook.sheets[0]?.cells.get(0, 0)?.value).toEqual({
+			kind: 'date',
+			serial: 45292,
+		})
 	})
 
 	it('supports selective sheet parsing', () => {

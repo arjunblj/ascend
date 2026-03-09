@@ -64,6 +64,11 @@ export interface ParsedStyles {
 	}
 }
 
+export interface ParsedStylesLite {
+	readonly isDateFormat: boolean[]
+	readonly metadata: ParsedStyles['metadata']
+}
+
 export function parseStyles(xml: string): ParsedStyles {
 	const doc = parseXml(xml)
 	const ss = doc.styleSheet as XmlNode | undefined
@@ -105,6 +110,41 @@ export function parseStyles(xml: string): ParsedStyles {
 			cellXfCount: Math.max(0, cellXfCount),
 			dxfCount: Math.max(0, dxfCount),
 			tableStyleCount: Math.max(0, tableStyleCount),
+		},
+	}
+}
+
+export function parseStylesLite(xml: string): ParsedStylesLite {
+	const doc = parseXml(xml)
+	const ss = doc.styleSheet as XmlNode | undefined
+	if (!ss) {
+		return {
+			isDateFormat: [false],
+			metadata: {
+				numFmtCount: 0,
+				fontCount: 0,
+				fillCount: 0,
+				borderCount: 0,
+				cellXfCount: 1,
+				dxfCount: 0,
+				tableStyleCount: 0,
+			},
+		}
+	}
+
+	const numFmts = parseNumFmts(ss)
+	const cellXfCount = countNodes(ss.cellXfs, 'xf')
+	const isDateFormat = buildDateFormatFlags(ss, numFmts)
+	return {
+		isDateFormat,
+		metadata: {
+			numFmtCount: Math.max(0, numFmts.size - BUILTIN_NUM_FMTS.size),
+			fontCount: Math.max(0, countNodes(ss.fonts, 'font')),
+			fillCount: Math.max(0, countNodes(ss.fills, 'fill')),
+			borderCount: Math.max(0, countNodes(ss.borders, 'border')),
+			cellXfCount: Math.max(0, cellXfCount),
+			dxfCount: Math.max(0, countNodes(ss.dxfs, 'dxf')),
+			tableStyleCount: Math.max(0, countNodes(ss.tableStyles, 'tableStyle')),
 		},
 	}
 }
@@ -366,6 +406,17 @@ function buildCellStyles(
 	}
 
 	return { cellStyles, isDateFormat }
+}
+
+function buildDateFormatFlags(ss: XmlNode, numFmts: Map<number, string>): boolean[] {
+	const xfsNode = ss.cellXfs as XmlNode | undefined
+	if (!xfsNode) return [false]
+	const isDateFormat: boolean[] = []
+	for (const xf of asArray<XmlNode>(xfsNode.xf as XmlNode | XmlNode[])) {
+		const numFmtId = numAttr(xf, 'numFmtId') ?? 0
+		isDateFormat.push(checkDateFormat(numFmtId, numFmts.get(numFmtId)))
+	}
+	return isDateFormat.length > 0 ? isDateFormat : [false]
 }
 
 function parseAlignment(xf: XmlNode): AlignmentStyle | undefined {

@@ -36,7 +36,7 @@ import {
 } from './relationships.ts'
 import { parseSharedStrings } from './shared-strings.ts'
 import { parseSheet, ValueInternPool } from './sheet.ts'
-import { parseStyles } from './styles.ts'
+import { parseStyles, parseStylesLite } from './styles.ts'
 import { parseTable } from './table.ts'
 import { parseThemeXml } from './theme.ts'
 import { parseWorkbookXml } from './workbook.ts'
@@ -174,7 +174,10 @@ export function readXlsx(
 
 	const ssPart = wbRels.find((r) => r.type === REL_SHARED_STRINGS)
 	const ssPath = ssPart ? resolvePath(workbookPath, ssPart.target) : undefined
-	if (ssPath) consumed.add(ssPath)
+	if (ssPath) {
+		consumed.add(ssPath)
+		workbook.preservedSharedStrings = { path: ssPath }
+	}
 
 	const stylesPart = wbRels.find((r) => r.type === REL_STYLES)
 	const stylesPath = stylesPart ? resolvePath(workbookPath, stylesPart.target) : undefined
@@ -232,30 +235,52 @@ export function readXlsx(
 			: []
 
 		const stylesXml = stylesPath ? readPart(archive, stylesPath) : undefined
-		const parsedStyles = stylesXml
-			? parseStyles(stylesXml)
-			: {
-					cellStyles: [{}],
-					differentialStyles: [],
-					isDateFormat: [false],
-					metadata: {
-						numFmtCount: 0,
-						fontCount: 0,
-						fillCount: 0,
-						borderCount: 0,
-						cellXfCount: 1,
-						dxfCount: 0,
-						tableStyleCount: 0,
-					},
-				}
-		if (stylesXml && stylesPath && !valuesOnly) {
-			workbook.preservedStyles = { path: stylesPath, xfByStyleId: {} }
-		}
-		const styleIds = valuesOnly
-			? new Array<StyleId>(parsedStyles.cellStyles.length).fill(0 as StyleId)
-			: registerStyles(workbook, parsedStyles.cellStyles)
-		workbook.styleMetadata = parsedStyles.metadata
-		if (!valuesOnly) {
+		let styleIds: StyleId[]
+		let isDateFormat: boolean[]
+		let differentialStyles: readonly CellStyle[]
+		if (valuesOnly) {
+			const parsedStyles = stylesXml
+				? parseStylesLite(stylesXml)
+				: {
+						isDateFormat: [false],
+						metadata: {
+							numFmtCount: 0,
+							fontCount: 0,
+							fillCount: 0,
+							borderCount: 0,
+							cellXfCount: 1,
+							dxfCount: 0,
+							tableStyleCount: 0,
+						},
+					}
+			styleIds = new Array<StyleId>(parsedStyles.isDateFormat.length).fill(0 as StyleId)
+			isDateFormat = parsedStyles.isDateFormat
+			differentialStyles = []
+			workbook.styleMetadata = parsedStyles.metadata
+		} else {
+			const parsedStyles = stylesXml
+				? parseStyles(stylesXml)
+				: {
+						cellStyles: [{}],
+						differentialStyles: [],
+						isDateFormat: [false],
+						metadata: {
+							numFmtCount: 0,
+							fontCount: 0,
+							fillCount: 0,
+							borderCount: 0,
+							cellXfCount: 1,
+							dxfCount: 0,
+							tableStyleCount: 0,
+						},
+					}
+			if (stylesXml && stylesPath) {
+				workbook.preservedStyles = { path: stylesPath, xfByStyleId: {} }
+			}
+			styleIds = registerStyles(workbook, parsedStyles.cellStyles)
+			isDateFormat = parsedStyles.isDateFormat
+			differentialStyles = parsedStyles.differentialStyles
+			workbook.styleMetadata = parsedStyles.metadata
 			workbook.differentialStyles.push(...parsedStyles.differentialStyles)
 		}
 
@@ -268,8 +293,8 @@ export function readXlsx(
 			const sheet = parseSheet(entry.name, sheetXml, {
 				sharedStrings,
 				styleIds,
-				isDateFormat: parsedStyles.isDateFormat,
-				differentialStyles: parsedStyles.differentialStyles,
+				isDateFormat,
+				differentialStyles,
 				relationships: sheetRelationships,
 				valuePool,
 				valuesOnly,

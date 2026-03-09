@@ -66,6 +66,11 @@ export interface WorkbookPreservedTheme {
 	readonly xml?: string
 }
 
+export interface WorkbookPreservedSharedStrings {
+	readonly path: string
+	readonly xml?: string
+}
+
 export interface WorkbookPreservedXml {
 	readonly workbookPath?: string
 	readonly workbookXml?: string
@@ -102,6 +107,7 @@ export class Workbook {
 	}
 	preservedStyles: WorkbookPreservedStyles | null = null
 	preservedTheme: WorkbookPreservedTheme | null = null
+	preservedSharedStrings: WorkbookPreservedSharedStrings | null = null
 	preservedXml: WorkbookPreservedXml | null = null
 	sourceArchiveBytes: Uint8Array | null = null
 	calcSettings: CalcSettings
@@ -139,6 +145,9 @@ export class Workbook {
 		clone.themeMetadata = structuredClone(this.themeMetadata)
 		clone.preservedStyles = this.preservedStyles ? structuredClone(this.preservedStyles) : null
 		clone.preservedTheme = this.preservedTheme ? structuredClone(this.preservedTheme) : null
+		clone.preservedSharedStrings = this.preservedSharedStrings
+			? structuredClone(this.preservedSharedStrings)
+			: null
 		clone.preservedXml = this.preservedXml ? structuredClone(this.preservedXml) : null
 		clone.sourceArchiveBytes = this.sourceArchiveBytes
 		for (const sheet of this.sheets) clone.sheets.push(sheet.clone())

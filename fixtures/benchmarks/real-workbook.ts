@@ -110,6 +110,7 @@ async function main(): Promise<void> {
 		'open-metadata',
 		'open-values',
 		'open-full',
+		'preview-numeric-edit',
 		'no-op-save-bytes',
 		'numeric-edit-save-bytes',
 	] as const
@@ -144,6 +145,7 @@ async function runIsolatedStep(
 		| 'open-metadata'
 		| 'open-values'
 		| 'open-full'
+		| 'preview-numeric-edit'
 		| 'no-op-save-bytes'
 		| 'numeric-edit-save-bytes',
 ): Promise<StepResult> {
@@ -198,6 +200,16 @@ async function runStep(target: string, step: string): Promise<StepResult> {
 					styleSummary: info.styleSummary,
 				},
 			}
+		}
+		case 'preview-numeric-edit': {
+			const wb = await AscendWorkbook.open(target)
+			const probe = pickNumericProbe(wb)
+			const { timing } = await time('preview-numeric-edit', async () =>
+				wb.preview([
+					{ op: 'setCells', sheet: probe.sheet, updates: [{ ref: probe.ref, value: probe.value }] },
+				]),
+			)
+			return { timing }
 		}
 		case 'no-op-save-bytes': {
 			const wb = await AscendWorkbook.open(target)

@@ -26,8 +26,42 @@ export interface WorkbookDiff {
 
 export function cellValuesEqual(a: CellValue, b: CellValue): boolean {
 	if (a.kind !== b.kind) return false
-	if (a.kind === 'empty') return true
-	return JSON.stringify(a) === JSON.stringify(b)
+	switch (a.kind) {
+		case 'empty':
+			return true
+		case 'number':
+			return a.value === (b as typeof a).value
+		case 'string':
+			return a.value === (b as typeof a).value
+		case 'boolean':
+			return a.value === (b as typeof a).value
+		case 'error':
+			return a.value === (b as typeof a).value
+		case 'date':
+			return a.serial === (b as typeof a).serial
+		case 'richText': {
+			const runsA = a.runs
+			const runsB = (b as typeof a).runs
+			if (runsA.length !== runsB.length) return false
+			for (let index = 0; index < runsA.length; index++) {
+				const left = runsA[index]
+				const right = runsB[index]
+				if (
+					left?.text !== right?.text ||
+					left?.bold !== right?.bold ||
+					left?.italic !== right?.italic ||
+					left?.underline !== right?.underline ||
+					left?.strikethrough !== right?.strikethrough ||
+					left?.fontName !== right?.fontName ||
+					left?.fontSize !== right?.fontSize ||
+					left?.color !== right?.color
+				) {
+					return false
+				}
+			}
+			return true
+		}
+	}
 }
 
 export function diffWorkbooks(before: Workbook, after: Workbook): WorkbookDiff {
@@ -51,17 +85,15 @@ export function diffWorkbooks(before: Workbook, after: Workbook): WorkbookDiff {
 		const cellsRemoved: string[] = []
 		const cellsChanged: CellChange[] = []
 
-		const beforeKeys = new Set<string>()
 		for (const [row, col, cellBefore] of beforeSheet.cells.iterate()) {
-			const ref = toA1({ row, col })
-			beforeKeys.add(ref)
 			const cellAfter = afterSheet.cells.get(row, col)
 			if (!cellAfter) {
-				cellsRemoved.push(ref)
+				cellsRemoved.push(toA1({ row, col }))
 			} else if (
 				!cellValuesEqual(cellBefore.value, cellAfter.value) ||
 				cellBefore.formula !== cellAfter.formula
 			) {
+				const ref = toA1({ row, col })
 				cellsChanged.push({
 					ref,
 					before: cellBefore.value,
@@ -73,9 +105,8 @@ export function diffWorkbooks(before: Workbook, after: Workbook): WorkbookDiff {
 		}
 
 		for (const [row, col] of afterSheet.cells.iterate()) {
-			const ref = toA1({ row, col })
-			if (!beforeKeys.has(ref)) {
-				cellsAdded.push(ref)
+			if (!beforeSheet.cells.has(row, col)) {
+				cellsAdded.push(toA1({ row, col }))
 			}
 		}
 

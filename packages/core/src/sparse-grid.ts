@@ -62,6 +62,10 @@ export class SparseGrid {
 		return readStoredValue(this.data.get(packKey(row, col)))
 	}
 
+	has(row: number, col: number): boolean {
+		return this.data.has(packKey(row, col))
+	}
+
 	*getRange(range: RangeRef): Generator<readonly [number, number, Cell]> {
 		for (const [key, stored] of this.data) {
 			const [row, col] = unpackKey(key)
@@ -193,17 +197,25 @@ export class SparseGrid {
 
 	clone(): SparseGrid {
 		const clone = new SparseGrid()
-		for (const [key, cell] of this.data) {
-			clone.data.set(key, cloneCell(cell))
-		}
-		clone._minRow = this._minRow
-		clone._maxRow = this._maxRow
-		clone._minCol = this._minCol
-		clone._maxCol = this._maxCol
-		clone._boundsDirty = this._boundsDirty
-		clone._isKeyOrderSorted = this._isKeyOrderSorted
-		clone._lastInsertedKey = this._lastInsertedKey
+		clone.copyFrom(this)
 		return clone
+	}
+
+	copyFrom(other: SparseGrid): void {
+		this.data.clear()
+		this.styledStringCache.clear()
+		this.styledBooleanCache.clear()
+		this.styledSmallNumberCache.clear()
+		for (const [key, cell] of other.data) {
+			this.data.set(key, cloneCell(cell))
+		}
+		this._minRow = other._minRow
+		this._maxRow = other._maxRow
+		this._minCol = other._minCol
+		this._maxCol = other._maxCol
+		this._boundsDirty = other._boundsDirty
+		this._isKeyOrderSorted = other._isKeyOrderSorted
+		this._lastInsertedKey = other._lastInsertedKey
 	}
 
 	private _recomputeBounds(): void {
@@ -382,19 +394,20 @@ function unpackKey(key: number): readonly [number, number] {
 }
 
 function cloneCell(cell: StoredCell): StoredCell {
-	if (cell instanceof StyledNumberCell) return new StyledNumberCell(cell.value, cell.styleId)
-	if (cell instanceof StyledStringCell) return new StyledStringCell(cell.value, cell.styleId)
-	if (cell instanceof StyledBooleanCell) return new StyledBooleanCell(cell.value, cell.styleId)
-	if (cell instanceof StyledSpecialScalarCell) {
-		return new StyledSpecialScalarCell(cell.valueKind, cell.scalarValue, cell.styleId)
-	}
-	if (cell instanceof FormulaScalarCell) {
-		return new FormulaScalarCell(cell.valueKind, cell.scalarValue, cell.styleId, cell.formula)
+	if (
+		cell instanceof StyledNumberCell ||
+		cell instanceof StyledStringCell ||
+		cell instanceof StyledBooleanCell ||
+		cell instanceof StyledSpecialScalarCell ||
+		cell instanceof FormulaScalarCell
+	) {
+		return cell
 	}
 	if (cell instanceof HeapCell) {
 		return new HeapCell(structuredClone(cell.value), cell.styleId, cell.formula)
 	}
 	if (typeof cell === 'string' || typeof cell === 'number' || typeof cell === 'boolean') return cell
+	if (cell === EMPTY) return cell
 	return structuredClone(cell)
 }
 

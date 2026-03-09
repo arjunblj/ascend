@@ -260,9 +260,7 @@ export class Sheet {
 
 	clone(): Sheet {
 		const clone = new Sheet(this.name, this.id)
-		for (const [row, col, cell] of this.cells.iterate()) {
-			clone.cells.set(row, col, structuredClone(cell))
-		}
+		clone.cells.copyFrom(this.cells)
 		clone.merges.push(...this.merges.map((merge) => structuredClone(merge)))
 		clone.tables.push(...this.tables.map((table) => structuredClone(table)))
 		clone.state = this.state

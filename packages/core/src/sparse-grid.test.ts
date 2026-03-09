@@ -182,4 +182,17 @@ describe('SparseGrid', () => {
 		expect(grid.get(0, 1)?.value).toEqual(numberValue(3))
 		expect(grid.cellCount()).toBe(2)
 	})
+
+	test('clone preserves cells without sharing mutation path', () => {
+		const grid = new SparseGrid()
+		grid.set(0, 0, makeCell(stringValue('alpha')))
+		grid.set(1, 1, makeCell(numberValue(2), 'A1*2'))
+
+		const clone = grid.clone()
+		clone.set(0, 0, makeCell(stringValue('beta')))
+
+		expect(grid.get(0, 0)?.value).toEqual(stringValue('alpha'))
+		expect(clone.get(0, 0)?.value).toEqual(stringValue('beta'))
+		expect(clone.get(1, 1)?.formula).toBe('A1*2')
+	})
 })

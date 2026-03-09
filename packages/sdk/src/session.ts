@@ -1,5 +1,7 @@
 import { stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { openWorkbookSource } from './load.ts'
+import { WorkbookReadView } from './read-view.ts'
 import type { SheetHandle } from './sheet-handle.ts'
 import type { TableHandle } from './table-handle.ts'
 import type {
@@ -11,7 +13,6 @@ import type {
 	TraceResult,
 	WorkbookInfo,
 } from './types.ts'
-import { AscendWorkbook } from './workbook.ts'
 
 export interface WorkbookSessionOpenOptions {
 	readonly mode?: 'full' | 'metadata-only' | 'values'
@@ -36,16 +37,16 @@ const sessionCache = new Map<string, SessionCacheEntry>()
 export class WorkbookSession {
 	private readonly identity: SessionFileIdentity
 	private readonly options: WorkbookSessionOpenOptions
-	private readonly workbook: AscendWorkbook
+	private readonly view: WorkbookReadView
 
 	private constructor(
 		identity: SessionFileIdentity,
 		options: WorkbookSessionOpenOptions,
-		workbook: AscendWorkbook,
+		view: WorkbookReadView,
 	) {
 		this.identity = identity
 		this.options = options
-		this.workbook = workbook
+		this.view = view
 	}
 
 	static async open(
@@ -60,8 +61,12 @@ export class WorkbookSession {
 			return cached.session
 		}
 
-		const workbook = await AscendWorkbook.open(identity.path, options)
-		const session = new WorkbookSession(identity, normalizeOptions(options), workbook)
+		const loaded = await openWorkbookSource(identity.path, options)
+		const session = new WorkbookSession(
+			identity,
+			normalizeOptions(options),
+			new WorkbookReadView(loaded.workbook, loaded.report, loaded.loadInfo),
+		)
 		setCacheEntry({ key, identity, session })
 		return session
 	}
@@ -80,11 +85,11 @@ export class WorkbookSession {
 	}
 
 	get sheets(): readonly string[] {
-		return this.workbook.sheets
+		return this.view.sheets
 	}
 
 	get report() {
-		return this.workbook.report
+		return this.view.report
 	}
 
 	get openOptions(): WorkbookSessionOpenOptions {
@@ -92,19 +97,19 @@ export class WorkbookSession {
 	}
 
 	inspect(): WorkbookInfo {
-		return this.workbook.inspect()
+		return this.view.inspect()
 	}
 
 	inspectSheet(name: string): SheetInspectInfo | undefined {
-		return this.workbook.inspectSheet(name)
+		return this.view.inspectSheet(name)
 	}
 
 	sheet(name: string): SheetHandle | undefined {
-		return this.workbook.sheet(name)
+		return this.view.sheet(name)
 	}
 
 	readRange(sheetName: string, range: string): RangeInfo | undefined {
-		return this.workbook.readRange(sheetName, range)
+		return this.view.readRange(sheetName, range)
 	}
 
 	readWindow(
@@ -112,14 +117,14 @@ export class WorkbookSession {
 		range: string,
 		opts?: { rowOffset?: number; rowLimit?: number },
 	): RangeWindowInfo | undefined {
-		return this.workbook.readWindow(sheetName, range, opts)
+		return this.view.readWindow(sheetName, range, opts)
 	}
 
 	*streamRange(
 		sheetName: string,
 		range: string,
 	): Generator<readonly import('./types.ts').CellInfo[]> {
-		yield* this.workbook.streamRange(sheetName, range)
+		yield* this.view.streamRange(sheetName, range)
 	}
 
 	*streamWindows(
@@ -127,23 +132,23 @@ export class WorkbookSession {
 		range: string,
 		opts?: { rowLimit?: number },
 	): Generator<RangeWindowInfo> {
-		yield* this.workbook.streamWindows(sheetName, range, opts)
+		yield* this.view.streamWindows(sheetName, range, opts)
 	}
 
 	trace(cellRef: string, opts?: { maxDepth?: number }): TraceResult | undefined {
-		return this.workbook.trace(cellRef, opts)
+		return this.view.trace(cellRef, opts)
 	}
 
 	formula(cellRef: string): FormulaInfo | undefined {
-		return this.workbook.formula(cellRef)
+		return this.view.formula(cellRef)
 	}
 
 	definedName(name: string, sheetName?: string): DefinedNameInfo | undefined {
-		return this.workbook.definedName(name, sheetName)
+		return this.view.definedName(name, sheetName)
 	}
 
 	table(name: string): TableHandle | undefined {
-		return this.workbook.table(name)
+		return this.view.table(name)
 	}
 }
 

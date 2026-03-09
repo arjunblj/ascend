@@ -16,6 +16,8 @@ import {
 	getRelsPath,
 	parseRelationships,
 	REL_COMMENTS,
+	REL_DRAWING,
+	REL_IMAGE,
 	REL_OFFICE_DOC,
 	REL_SHARED_STRINGS,
 	REL_STYLES,
@@ -220,6 +222,7 @@ export function readXlsx(
 				relationships: sheetRelationships,
 			})
 			attachComments(archive, entry.path, sheet, sheetRelationships)
+			attachDrawingImages(archive, entry.path, sheet, sheetRelationships)
 			attachTables(archive, entry.path, sheet, sheetRelationships)
 			sheet.state = entry.state
 			sheet.preservedXml = {
@@ -531,6 +534,28 @@ function attachComments(
 	if (!commentsXml) return
 	for (const [ref, comment] of parseCommentsXml(commentsXml)) {
 		sheet.comments.set(ref, comment)
+	}
+}
+
+function attachDrawingImages(
+	archive: ZipArchive,
+	sheetPath: string,
+	sheet: Workbook['sheets'][number],
+	sheetRelationships: readonly Relationship[],
+): void {
+	if (!sheet) return
+	for (const drawingRel of sheetRelationships.filter((rel) => rel.type === REL_DRAWING)) {
+		const drawingPath = resolvePath(sheetPath, drawingRel.target)
+		const drawingRelsXml = readPart(archive, getRelsPath(drawingPath))
+		if (!drawingRelsXml) continue
+		for (const rel of parseRelationships(drawingRelsXml)) {
+			if (rel.type !== REL_IMAGE) continue
+			sheet.imageRefs.push({
+				drawingPartPath: drawingPath,
+				relId: rel.id,
+				targetPath: resolvePath(drawingPath, rel.target),
+			})
+		}
 	}
 }
 

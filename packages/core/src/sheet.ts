@@ -97,6 +97,12 @@ export interface SheetDrawingRefs {
 	readonly hasLegacyDrawing: boolean
 }
 
+export interface SheetImageRef {
+	readonly drawingPartPath: string
+	readonly relId: string
+	readonly targetPath: string
+}
+
 export interface SheetDataValidation {
 	readonly sqref: string
 	readonly type?: string
@@ -146,6 +152,7 @@ export class Sheet {
 	readonly ignoredErrors: string[]
 	readonly dataValidations: SheetDataValidation[]
 	readonly conditionalFormats: SheetConditionalFormat[]
+	readonly imageRefs: SheetImageRef[]
 	drawingRefs: SheetDrawingRefs
 	autoFilter: string | null
 	protection: SheetProtection | null
@@ -172,6 +179,7 @@ export class Sheet {
 		this.ignoredErrors = []
 		this.dataValidations = []
 		this.conditionalFormats = []
+		this.imageRefs = []
 		this.drawingRefs = { hasDrawing: false, hasLegacyDrawing: false }
 		this.autoFilter = null
 		this.protection = null

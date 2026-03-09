@@ -20,6 +20,7 @@ export const REL_COMMENTS =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments'
 export const REL_DRAWING =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing'
+export const REL_IMAGE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image'
 export const REL_VML_DRAWING =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing'
 

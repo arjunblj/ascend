@@ -21,6 +21,7 @@ export type {
 	SheetDrawingRefs,
 	SheetHeaderFooter,
 	SheetHyperlink,
+	SheetImageRef,
 	SheetPageMargins,
 	SheetPageSetup,
 	SheetPrintOptions,

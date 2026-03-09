@@ -135,6 +135,7 @@ function cloneWorkbook(source: Workbook): Workbook {
 				})),
 			})),
 		)
+		cloned.imageRefs.push(...sheet.imageRefs.map((imageRef) => ({ ...imageRef })))
 		cloned.drawingRefs = { ...sheet.drawingRefs }
 		cloned.autoFilter = sheet.autoFilter
 		cloned.protection = sheet.protection ? { ...sheet.protection } : null

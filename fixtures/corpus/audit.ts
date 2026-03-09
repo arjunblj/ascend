@@ -4,18 +4,20 @@ import { resolve } from 'node:path'
 import { AscendWorkbook } from '@ascend/sdk'
 import { readXlsx } from '../../packages/io-xlsx/src/reader/index.ts'
 import { extractZip } from '../../packages/io-xlsx/src/reader/zip.ts'
+import {
+	type CorpusAssertionClass,
+	type CorpusBenchmarkTier,
+	type CorpusManifestEntry,
+	type CorpusRiskClass,
+	type NormalizedCorpusManifestEntry,
+	normalizeManifest,
+	selectManifestEntries,
+} from './manifest.ts'
 
 const CORPUS_DIR = resolve(import.meta.dir, '../../research/excel-corpus')
 const MANIFEST_PATH = resolve(CORPUS_DIR, 'manifest.json')
 const REPORT_PATH = resolve(CORPUS_DIR, 'audit-report.json')
 const PROBE_VALUE = '__ascend_probe__'
-
-interface CorpusManifestEntry {
-	readonly file: string
-	readonly size_bytes: number
-	readonly features: Record<string, boolean>
-	readonly counts: Record<string, number>
-}
 
 interface PackageSummary {
 	readonly workbookContentType?: string
@@ -81,6 +83,11 @@ interface ProbeTarget {
 
 interface AuditResult {
 	readonly file: string
+	readonly benchmarkTier: CorpusBenchmarkTier
+	readonly assertionClass: CorpusAssertionClass
+	readonly riskClass: CorpusRiskClass
+	readonly featureTags: readonly string[]
+	readonly vendorable: boolean
 	readonly sourceSha256: string
 	readonly sourceBytes: number
 	readonly noOpByteIdentical: boolean
@@ -90,6 +97,7 @@ interface AuditResult {
 	readonly sourceSemantic: WorkbookSemanticSummary
 	readonly dirtySemantic: WorkbookSemanticSummary
 	readonly probeValuePersisted: boolean
+	readonly probeRecalcError?: string
 	readonly packageRegressions: readonly string[]
 	readonly semanticRegressions: readonly string[]
 	readonly risk: 'low' | 'medium' | 'high'
@@ -98,9 +106,21 @@ interface AuditResult {
 async function main(): Promise<void> {
 	const manifest = await loadManifest()
 	const requestedFile = readFlagValue('--file')
-	const selected = requestedFile
-		? manifest.filter((entry) => entry.file === requestedFile)
-		: manifest
+	const tags = readFlagValues('--tag')
+	const tiers = readFlagValues('--tier') as CorpusBenchmarkTier[]
+	const risks = readFlagValues('--risk') as CorpusRiskClass[]
+	const assertionClasses = readFlagValues('--assertion-class') as CorpusAssertionClass[]
+	const selected = selectManifestEntries(manifest, {
+		...(requestedFile ? { file: requestedFile } : {}),
+		...(tags.length > 0 ? { tags } : {}),
+		...(tiers.length > 0 ? { tiers } : {}),
+		...(risks.length > 0 ? { risks } : {}),
+		...(assertionClasses.length > 0 ? { assertionClasses } : {}),
+		...(process.argv.includes('--vendorable-only') ? { vendorableOnly: true } : {}),
+	})
+	if (selected.length === 0) {
+		throw new Error('No corpus entries matched the requested audit filters')
+	}
 	const results: AuditResult[] = []
 
 	for (const entry of selected) {
@@ -120,17 +140,17 @@ async function main(): Promise<void> {
 	renderSummary(results)
 }
 
-async function loadManifest(): Promise<CorpusManifestEntry[]> {
+async function loadManifest(): Promise<readonly NormalizedCorpusManifestEntry[]> {
 	const raw = await readFile(MANIFEST_PATH, 'utf-8')
-	return JSON.parse(raw) as CorpusManifestEntry[]
+	return normalizeManifest(JSON.parse(raw) as CorpusManifestEntry[])
 }
 
-async function auditEntry(entry: CorpusManifestEntry): Promise<AuditResult> {
+async function auditEntry(entry: NormalizedCorpusManifestEntry): Promise<AuditResult> {
 	const sourcePath = resolve(CORPUS_DIR, entry.file)
 	const sourceBytes = new Uint8Array(await readFile(sourcePath))
 	const sourceSha256 = sha256(sourceBytes)
 	const sourcePackage = summarizePackage(sourceBytes)
-	const { sourceSemantic, noOpByteIdentical, dirtyBytes, probe } =
+	const { sourceSemantic, noOpByteIdentical, dirtyBytes, probe, probeRecalcError } =
 		await inspectAndBuildDirtyWorkbook(entry.file, sourceBytes)
 	runGc()
 	const dirtyPackage = summarizePackage(dirtyBytes)
@@ -145,6 +165,11 @@ async function auditEntry(entry: CorpusManifestEntry): Promise<AuditResult> {
 
 	return {
 		file: entry.file,
+		benchmarkTier: entry.benchmarkTier,
+		assertionClass: entry.assertionClass,
+		riskClass: entry.riskClass,
+		featureTags: entry.featureTags,
+		vendorable: entry.vendorable,
 		sourceSha256,
 		sourceBytes: sourceBytes.byteLength,
 		noOpByteIdentical,
@@ -154,11 +179,13 @@ async function auditEntry(entry: CorpusManifestEntry): Promise<AuditResult> {
 		sourceSemantic,
 		dirtySemantic,
 		probeValuePersisted,
+		...(probeRecalcError ? { probeRecalcError } : {}),
 		packageRegressions,
 		semanticRegressions,
 		risk: classifyRisk(
 			noOpByteIdentical,
 			probeValuePersisted,
+			probeRecalcError,
 			packageRegressions,
 			semanticRegressions,
 		),
@@ -173,6 +200,7 @@ async function inspectAndBuildDirtyWorkbook(
 	noOpByteIdentical: boolean
 	dirtyBytes: Uint8Array
 	probe: ProbeTarget
+	probeRecalcError?: string
 }> {
 	const workbook = await AscendWorkbook.open(sourceBytes)
 	const raw = readXlsx(sourceBytes)
@@ -193,7 +221,13 @@ async function inspectAndBuildDirtyWorkbook(
 	if (apply.recalcRequired) {
 		const recalc = workbook.recalc()
 		if (recalc.errors.length > 0) {
-			throw new Error(`${file}: recalc failed after probe edit`)
+			return {
+				sourceSemantic,
+				noOpByteIdentical,
+				dirtyBytes: workbook.toBytes(),
+				probe,
+				probeRecalcError: `${file}: recalc failed after probe edit`,
+			}
 		}
 	}
 	return { sourceSemantic, noOpByteIdentical, dirtyBytes: workbook.toBytes(), probe }
@@ -493,9 +527,11 @@ function diffSemanticSummary(
 function classifyRisk(
 	noOpByteIdentical: boolean,
 	probeValuePersisted: boolean,
+	probeRecalcError: string | undefined,
 	packageRegressions: readonly string[],
 	semanticRegressions: readonly string[],
 ): 'low' | 'medium' | 'high' {
+	if (probeRecalcError) return 'high'
 	if (!probeValuePersisted) return 'high'
 	if (packageRegressions.length > 0 || semanticRegressions.length > 0) return 'high'
 	if (!noOpByteIdentical) return 'medium'
@@ -503,11 +539,22 @@ function classifyRisk(
 }
 
 function renderSummary(results: readonly AuditResult[]): void {
+	const byTier = summarizeBy(results, (result) => result.benchmarkTier)
+	const byRisk = summarizeBy(results, (result) => result.riskClass)
+	console.log(
+		`summary: files=${results.length} tiers=${renderCounts(byTier)} risks=${renderCounts(byRisk)}`,
+	)
 	for (const result of results) {
 		console.log(`${riskBadge(result.risk)} ${result.file}`)
 		console.log(
-			`  no-op=${result.noOpByteIdentical ? 'identical' : 'changed'} probe=${result.probe.sheet}!${result.probe.ref} persisted=${result.probeValuePersisted ? 'yes' : 'no'}`,
+			`  tier=${result.benchmarkTier} risk=${result.riskClass} assertion=${result.assertionClass} tags=${result.featureTags.join(', ')}`,
 		)
+		console.log(
+			`  no-op=${result.noOpByteIdentical ? 'identical' : 'changed'} probe=${result.probe.sheet}!${result.probe.ref} persisted=${result.probeValuePersisted ? 'yes' : 'no'} vendorable=${result.vendorable ? 'yes' : 'no'}`,
+		)
+		if (result.probeRecalcError) {
+			console.log(`  probe-recalc-error: ${result.probeRecalcError}`)
+		}
 		if (result.packageRegressions.length === 0 && result.semanticRegressions.length === 0) {
 			console.log('  regressions: none detected')
 			continue
@@ -529,6 +576,25 @@ function riskBadge(risk: AuditResult['risk']): string {
 	}
 }
 
+function summarizeBy<Key extends string>(
+	results: readonly AuditResult[],
+	getKey: (result: AuditResult) => Key,
+): Record<Key, number> {
+	const counts = {} as Record<Key, number>
+	for (const result of results) {
+		const key = getKey(result)
+		counts[key] = (counts[key] ?? 0) + 1
+	}
+	return counts
+}
+
+function renderCounts(counts: Record<string, number>): string {
+	return Object.entries(counts)
+		.sort(([left], [right]) => left.localeCompare(right))
+		.map(([key, value]) => `${key}:${value}`)
+		.join(', ')
+}
+
 function sha256(bytes: Uint8Array): string {
 	return createHash('sha256').update(bytes).digest('hex')
 }
@@ -537,6 +603,17 @@ function readFlagValue(name: string): string | undefined {
 	const index = process.argv.indexOf(name)
 	if (index === -1) return undefined
 	return process.argv[index + 1]
+}
+
+function readFlagValues(name: string): string[] {
+	const values: string[] = []
+	for (let i = 0; i < process.argv.length; i++) {
+		if (process.argv[i] !== name) continue
+		const value = process.argv[i + 1]
+		if (!value || value.startsWith('--')) continue
+		values.push(value)
+	}
+	return values
 }
 
 function runGc(): void {

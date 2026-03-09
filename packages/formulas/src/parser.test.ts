@@ -70,6 +70,35 @@ describe('parse', () => {
 		})
 	})
 
+	it('parses exponentiation as right associative', () => {
+		const node = p('2^3^2')
+		expect(node).toEqual({
+			type: 'binary',
+			op: '^',
+			left: { type: 'number', value: 2 },
+			right: {
+				type: 'binary',
+				op: '^',
+				left: { type: 'number', value: 3 },
+				right: { type: 'number', value: 2 },
+			},
+		})
+	})
+
+	it('parses unary minus after exponentiation precedence', () => {
+		const node = p('-2^2')
+		expect(node).toEqual({
+			type: 'unary',
+			op: '-',
+			operand: {
+				type: 'binary',
+				op: '^',
+				left: { type: 'number', value: 2 },
+				right: { type: 'number', value: 2 },
+			},
+		})
+	})
+
 	it('parses unary minus', () => {
 		const node = p('-A1')
 		expect(node.type).toBe('unary')

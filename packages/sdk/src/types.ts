@@ -1,22 +1,68 @@
 import type { RangeRef } from '@ascend/core'
 import type { CellChange, SheetDiff, WorkbookDiff } from '@ascend/engine'
-import type { AscendError, CellValue } from '@ascend/schema'
+import type { FormulaNode, Token } from '@ascend/formulas'
+import type { AscendError, CellValue, CompatibilityReport } from '@ascend/schema'
 
 export interface WorkbookInfo {
 	readonly sheetCount: number
+	readonly loadedSheetCount: number
 	readonly sheets: readonly SheetInfo[]
 	readonly definedNames: readonly string[]
-	readonly cellCount: number
+	readonly cellCount: number | null
 	readonly sourceFormat: string
+	readonly workbookViewCount: number
+	readonly externalReferenceCount: number
+	readonly styleSummary: {
+		readonly numFmtCount: number
+		readonly fontCount: number
+		readonly fillCount: number
+		readonly borderCount: number
+		readonly cellXfCount: number
+		readonly dxfCount: number
+		readonly tableStyleCount: number
+	}
+	readonly themeSummary: {
+		readonly hasThemePart: boolean
+		readonly name?: string
+		readonly colorSchemeName?: string
+		readonly colorCount: number
+		readonly majorFontLatin?: string
+		readonly minorFontLatin?: string
+	}
+	readonly compatibility: CompatibilityReport
+	readonly load: WorkbookLoadInfo
 }
 
 export interface SheetInfo {
 	readonly name: string
-	readonly rowCount: number
-	readonly colCount: number
-	readonly cellCount: number
-	readonly tableCount: number
-	readonly hasFrozenPanes: boolean
+	readonly rowCount: number | null
+	readonly colCount: number | null
+	readonly cellCount: number | null
+	readonly tableCount: number | null
+	readonly hasFrozenPanes: boolean | null
+	readonly colWidthCount: number | null
+	readonly rowHeightCount: number | null
+	readonly hyperlinkCount: number | null
+	readonly ignoredErrorCount: number | null
+	readonly hasAutoFilter: boolean | null
+	readonly hasPageMetadata: boolean | null
+	readonly cellDataLoaded: boolean
+}
+
+export interface WorkbookLoadInfo {
+	readonly mode: 'full' | 'metadata-only' | 'selective'
+	readonly isPartial: boolean
+	readonly cellsHydrated: boolean
+	readonly hasAllSheets: boolean
+	readonly sourceSheets: readonly string[]
+	readonly loadedSheets: readonly string[]
+}
+
+export interface DefinedNameInfo {
+	readonly name: string
+	readonly formula: string
+	readonly scope: 'workbook' | 'sheet'
+	readonly sheet?: string
 }
 
 export interface CellInfo {
@@ -89,4 +135,17 @@ export interface TraceResult {
 	readonly formula: string | null
 	readonly dependsOn: readonly string[]
 	readonly feedsInto: readonly string[]
+}
+
+export interface FormulaInfo {
+	readonly ref: string
+	readonly formula: string
+	readonly normalizedFormula: string
+	readonly value: CellValue
+	readonly refs: readonly string[]
+	readonly functions: readonly string[]
+	readonly volatile: boolean
+	readonly tokens: readonly Token[]
+	readonly ast?: FormulaNode
+	readonly parseError?: string
 }

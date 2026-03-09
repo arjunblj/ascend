@@ -163,6 +163,77 @@ describe('recalculate', () => {
 		expect(cell?.value).toEqual(numberValue(expectedSerial))
 	})
 
+	test('RAND is deterministic per cell and seed', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'RAND()', styleId: sid })
+		sheet.cells.set(1, 0, { value: EMPTY, formula: 'RAND()', styleId: sid })
+
+		const ctx = makeCtx({ randomSeed: 7 })
+		recalculate(wb, ctx)
+		const a1 = sheet.cells.get(0, 0)?.value
+		const a2 = sheet.cells.get(1, 0)?.value
+		recalculate(wb, ctx)
+		expect(sheet.cells.get(0, 0)?.value).toEqual(a1)
+		expect(sheet.cells.get(1, 0)?.value).toEqual(a2)
+		expect(a1).not.toEqual(a2)
+	})
+
+	test('wrong function arity returns #VALUE!', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'ABS()', styleId: sid })
+		sheet.cells.set(1, 0, { value: EMPTY, formula: 'ABS(1,2)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#VALUE!'))
+		expect(sheet.cells.get(1, 0)?.value).toEqual(errorValue('#VALUE!'))
+	})
+
+	test('exponentiation precedence matches spreadsheet semantics', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: '2^3^2', styleId: sid })
+		sheet.cells.set(1, 0, { value: EMPTY, formula: '-2^2', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(512))
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(-4))
+	})
+
+	test('INDIRECT resolves A1-style ranges inside aggregate functions', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: EMPTY, formula: 'SUM(INDIRECT("A1:A2"))', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(2, 0)?.value).toEqual(numberValue(5))
+	})
+
+	test('INDIRECT resolves R1C1-style references when requested', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(1, 0, { value: numberValue(11), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'INDIRECT("R[1]C[-1]",FALSE)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(11))
+	})
+
+	test('OFFSET returns shifted ranges to aggregators', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(4), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(5), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(6), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'SUM(OFFSET(A1,1,0,2,1))', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(11))
+	})
+
 	test('error propagation through formula chain', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

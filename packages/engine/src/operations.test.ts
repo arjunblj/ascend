@@ -37,7 +37,9 @@ describe('applyOperation', () => {
 		expect(result.value.affectedCells).toEqual(['A1', 'C1'])
 		expect(result.value.recalcRequired).toBe(true)
 
-		const s = wb.getSheet('Sheet1')!
+		const s = wb.getSheet('Sheet1')
+		expect(s).toBeDefined()
+		if (!s) return
 		expect(s.cells.get(0, 0)?.value).toEqual(numberValue(99))
 		expect(s.cells.get(0, 2)?.value).toEqual(stringValue('new'))
 	})
@@ -57,6 +59,25 @@ describe('applyOperation', () => {
 		const c = wb.getSheet('Sheet1')?.cells.get(0, 0)
 		expect(c?.formula).toBe('SUM(A2:A3)')
 		expect(c?.value).toEqual(numberValue(10))
+	})
+
+	test('fillFormula translates references across a range', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, cell(numberValue(1)))
+		sheet.cells.set(1, 0, cell(numberValue(2)))
+
+		const result = applyOperation(wb, {
+			op: 'fillFormula',
+			sheet: 'Sheet1',
+			range: 'B1:B2',
+			formula: '=A1*2',
+		})
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(sheet.cells.get(0, 1)?.formula).toBe('A1*2')
+		expect(sheet.cells.get(1, 1)?.formula).toBe('A2*2')
 	})
 
 	test('addSheet creates a new sheet', () => {
@@ -94,7 +115,9 @@ describe('applyOperation', () => {
 		})
 		expect(result.ok).toBe(true)
 
-		const s = wb.getSheet('Sheet1')!
+		const s = wb.getSheet('Sheet1')
+		expect(s).toBeDefined()
+		if (!s) return
 		expect(s.cells.get(0, 0)?.value).toEqual(numberValue(10))
 		expect(s.cells.get(1, 0)).toBeUndefined()
 		expect(s.cells.get(2, 0)).toBeUndefined()
@@ -112,7 +135,9 @@ describe('applyOperation', () => {
 		})
 		expect(result.ok).toBe(true)
 
-		const s = wb.getSheet('Sheet1')!
+		const s = wb.getSheet('Sheet1')
+		expect(s).toBeDefined()
+		if (!s) return
 		expect(s.cells.get(0, 0)?.value).toEqual(numberValue(20))
 		expect(s.cells.get(1, 0)?.value).toEqual(numberValue(30))
 		expect(s.cells.get(2, 0)).toBeUndefined()
@@ -154,7 +179,9 @@ describe('applyOperation', () => {
 		expect(result.ok).toBe(true)
 		if (!result.ok) return
 
-		const s = wb.getSheet('Sheet1')!
+		const s = wb.getSheet('Sheet1')
+		expect(s).toBeDefined()
+		if (!s) return
 		expect(s.cells.get(0, 0)).toBeUndefined()
 		expect(s.cells.get(1, 0)).toBeUndefined()
 		expect(s.cells.get(2, 0)).toBeUndefined()
@@ -182,7 +209,9 @@ describe('applyOperation', () => {
 		})
 		expect(result.ok).toBe(true)
 
-		const s = wb.getSheet('Sheet1')!
+		const s = wb.getSheet('Sheet1')
+		expect(s).toBeDefined()
+		if (!s) return
 		expect(s.merges).toHaveLength(1)
 		expect(s.merges[0]?.start).toEqual({ row: 0, col: 0 })
 		expect(s.merges[0]?.end).toEqual({ row: 1, col: 1 })
@@ -233,7 +262,9 @@ describe('applyOperations', () => {
 		expect(result.ok).toBe(true)
 		if (!result.ok) return
 
-		const s = wb.getSheet('Sheet1')!
+		const s = wb.getSheet('Sheet1')
+		expect(s).toBeDefined()
+		if (!s) return
 		expect(s.cells.get(0, 0)?.value).toEqual(numberValue(1))
 		expect(s.cells.get(1, 0)?.value).toEqual(numberValue(2))
 		expect(s.cells.get(2, 0)?.formula).toBe('SUM(A1:A2)')

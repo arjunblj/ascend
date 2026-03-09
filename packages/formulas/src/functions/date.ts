@@ -235,11 +235,31 @@ function datevalue(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const v = cellOf(args[0])
 	if (v.kind === 'error') return v
 	if (v.kind !== 'string') return errorValue('#VALUE!')
-	const d = new Date(v.value)
-	if (Number.isNaN(d.getTime())) return errorValue('#VALUE!')
-	return numberValue(
-		dateToSerial(d.getFullYear(), d.getMonth() + 1, d.getDate(), currentDateSystem(ctx)),
-	)
+	const parsed = parseDateText(v.value)
+	if (!parsed) return errorValue('#VALUE!')
+	return numberValue(dateToSerial(parsed.year, parsed.month, parsed.day, currentDateSystem(ctx)))
+}
+
+function parseDateText(value: string): DateParts | null {
+	const text = value.trim()
+	const iso = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[T\s].*)?$/.exec(text)
+	if (iso) return validateDateParts(Number(iso[1]), Number(iso[2]), Number(iso[3]))
+
+	const us = /^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})$/.exec(text)
+	if (us) {
+		const yearRaw = Number(us[3])
+		const year = yearRaw < 100 ? 2000 + yearRaw : yearRaw
+		return validateDateParts(year, Number(us[1]), Number(us[2]))
+	}
+
+	return null
+}
+
+function validateDateParts(year: number, month: number, day: number): DateParts | null {
+	if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null
+	if (month < 1 || month > 12) return null
+	if (day < 1 || day > daysInMonth(year, month)) return null
+	return { year, month, day }
 }
 
 function datedif(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {

@@ -1,15 +1,29 @@
 import type { CellValue } from '@ascend/schema'
 import { EMPTY, errorValue, isEmpty, isError, numberValue } from '@ascend/schema'
-import type { EvalArg, FunctionDef } from './index.ts'
+import type { EvalArg, FunctionDef, FunctionEvalContext } from './index.ts'
 
 function fn(
 	name: string,
 	minArgs: number,
 	maxArgs: number,
-	evaluate: (args: EvalArg[]) => CellValue,
+	evaluate: (args: EvalArg[], ctx?: FunctionEvalContext) => CellValue,
 	volatile = false,
 ): FunctionDef {
 	return { name, minArgs, maxArgs, volatile, evaluate }
+}
+function seededRandom(ctx?: FunctionEvalContext): number {
+	const seed = ctx?.randomSeed ?? 42
+	const row = ctx?.row ?? 0
+	const col = ctx?.col ?? 0
+	const sheet = ctx?.sheetIndex ?? 0
+	let state =
+		(seed ^ ((sheet + 1) * 0x9e3779b1) ^ ((row + 1) * 0x85ebca6b) ^ ((col + 1) * 0xc2b2ae35)) >>> 0
+	state ^= state >>> 16
+	state = Math.imul(state, 0x7feb352d) >>> 0
+	state ^= state >>> 15
+	state = Math.imul(state, 0x846ca68b) >>> 0
+	state ^= state >>> 16
+	return state / 0x1_0000_0000
 }
 
 function toNum(v: CellValue): number | CellValue {
@@ -443,13 +457,13 @@ export const mathFunctions: FunctionDef[] = [
 		return numberValue(Math.sign(n))
 	}),
 
-	fn('RAND', 0, 0, () => numberValue(Math.random()), true),
+	fn('RAND', 0, 0, (_args, ctx) => numberValue(seededRandom(ctx)), true),
 
 	fn(
 		'RANDBETWEEN',
 		2,
 		2,
-		(args) => {
+		(args, ctx) => {
 			const lo = numArg(args[0])
 			if (typeof lo !== 'number') return lo
 			const hi = numArg(args[1])
@@ -457,7 +471,7 @@ export const mathFunctions: FunctionDef[] = [
 			const bottom = Math.ceil(lo)
 			const top = Math.floor(hi)
 			if (bottom > top) return errorValue('#NUM!')
-			return numberValue(Math.floor(Math.random() * (top - bottom + 1)) + bottom)
+			return numberValue(Math.floor(seededRandom(ctx) * (top - bottom + 1)) + bottom)
 		},
 		true,
 	),

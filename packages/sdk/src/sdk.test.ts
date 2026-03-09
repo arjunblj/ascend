@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import { extractZip } from '../../io-xlsx/src/reader/zip.ts'
+import { createZip, encode } from '../../io-xlsx/src/writer/zip.ts'
 import { Ascend, AscendWorkbook } from './index.ts'
 
 describe('AscendWorkbook', () => {
@@ -11,8 +13,10 @@ describe('AscendWorkbook', () => {
 		expect(wb.sheets).toEqual(['Sheet1'])
 		const info = wb.inspect()
 		expect(info.sheetCount).toBe(1)
+		expect(info.loadedSheetCount).toBe(1)
 		expect(info.cellCount).toBe(0)
 		expect(info.sourceFormat).toBe('ascend')
+		expect(info.load.isPartial).toBe(false)
 	})
 
 	test('inspect returns correct sheet info', () => {
@@ -22,6 +26,7 @@ describe('AscendWorkbook', () => {
 		expect(info.cellCount).toBe(1)
 		expect(info.sheets[0]?.cellCount).toBe(1)
 		expect(info.sheets[0]?.name).toBe('Sheet1')
+		expect(info.sheets[0]?.cellDataLoaded).toBe(true)
 	})
 
 	test('sheet handle reads cells', () => {
@@ -66,6 +71,8 @@ describe('AscendWorkbook', () => {
 		const handle = wb.sheet('Sheet1')
 		expect(handle).toBeDefined()
 		const range = handle?.range('A1:B2')
+		expect(range).toBeDefined()
+		if (!range) return
 		expect(range.rowCount).toBe(2)
 		expect(range.colCount).toBe(2)
 		expect(range.cells.length).toBe(3)
@@ -250,6 +257,88 @@ describe('AscendWorkbook', () => {
 		expect(b1?.value).toEqual({ kind: 'number', value: 42 })
 	})
 
+	test('untouched imported xlsx returns original bytes exactly', async () => {
+		const bytes = makeSyntheticXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1"><c r="A1"><f t="shared" si="0">B1*2</f><v>84</v></c></row>
+    <row r="2"><c r="A2"><f t="shared" si="0"/><v>168</v></c></row>
+  </sheetData>
+</worksheet>`,
+		})
+
+		const reopened = await AscendWorkbook.open(bytes)
+		expect(reopened.toBytes()).toEqual(bytes)
+	})
+
+	test('modified workbook preserves untouched shared-formula sheets when safe', async () => {
+		const bytes = makeSyntheticXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Input" sheetId="1" r:id="rId1"/>
+    <sheet name="Calc" sheetId="2" r:id="rId2"/>
+  </sheets>
+</workbook>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>
+</worksheet>`,
+			'xl/worksheets/sheet2.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1"><c r="A1"><f t="shared" si="0">B1*2</f><v>84</v></c></row>
+    <row r="2"><c r="A2"><f t="shared" si="0"/><v>168</v></c></row>
+  </sheetData>
+</worksheet>`,
+		})
+
+		const reopened = await AscendWorkbook.open(bytes)
+		reopened.apply([{ op: 'setCells', sheet: 'Input', updates: [{ ref: 'A1', value: 2 }] }])
+		const out = reopened.toBytes()
+		const archive = extractZip(out)
+		const calcSheetXml = archive.readText('xl/worksheets/sheet2.xml')
+		expect(calcSheetXml).toBeDefined()
+		expect(calcSheetXml?.match(/<f\b[^>]*\bt="shared"/g)?.length).toBe(2)
+	})
+
 	test('metadata-only open preserves workbook structure without parsing cells', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -260,8 +349,16 @@ describe('AscendWorkbook', () => {
 
 		const reopened = await AscendWorkbook.open(bytes, { mode: 'metadata-only' })
 		expect(reopened.sheets).toEqual(['Sheet1', 'Archive'])
-		expect(reopened.inspect().cellCount).toBe(0)
+		expect(reopened.inspect().sheetCount).toBe(2)
+		expect(reopened.inspect().loadedSheetCount).toBe(2)
+		expect(reopened.inspect().cellCount).toBeNull()
+		expect(reopened.inspect().load.mode).toBe('metadata-only')
+		expect(reopened.inspect().load.isPartial).toBe(true)
+		expect(reopened.inspect().sheets[0]?.cellDataLoaded).toBe(false)
 		expect(reopened.sheet('Sheet1')?.cell('A1')).toBeUndefined()
+		expect(() => reopened.toBytes()).toThrow(
+			'Cannot export a partial workbook view. Reopen the workbook with a full load before saving or exporting.',
+		)
 	})
 
 	test('selective open parses only requested sheets', async () => {
@@ -275,7 +372,14 @@ describe('AscendWorkbook', () => {
 
 		const reopened = await AscendWorkbook.open(bytes, { sheets: ['Archive'] })
 		expect(reopened.sheets).toEqual(['Archive'])
+		expect(reopened.inspect().sheetCount).toBe(2)
+		expect(reopened.inspect().loadedSheetCount).toBe(1)
+		expect(reopened.inspect().load.mode).toBe('selective')
+		expect(reopened.inspect().load.isPartial).toBe(true)
 		expect(reopened.sheet('Archive')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'extra' })
+		expect(() => reopened.toCsv()).toThrow(
+			'Cannot export a partial workbook view. Reopen the workbook with a full load before saving or exporting.',
+		)
 	})
 
 	test('CSV import creates workbook', () => {
@@ -382,6 +486,46 @@ describe('AscendWorkbook', () => {
 		expect(wb.names).toContain('MyRange')
 	})
 
+	test('definedName returns queryable name metadata', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setDefinedName', name: 'MyRange', ref: 'Sheet1!A1:B10' }])
+		expect(wb.definedName('MyRange')).toEqual({
+			name: 'MyRange',
+			formula: 'Sheet1!A1:B10',
+			scope: 'workbook',
+		})
+	})
+
+	test('formula returns parsed formula metadata', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=SUM(B1:B2)' }])
+		const info = wb.formula('Sheet1!A1')
+		expect(info).toBeDefined()
+		expect(info?.normalizedFormula).toBe('SUM(B1:B2)')
+		expect(info?.functions).toEqual(['SUM'])
+		expect(info?.refs).toEqual(['B1:B2'])
+	})
+
+	test('setFormula and fillFormula helpers apply formula operations', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 2 },
+					{ ref: 'A2', value: 3 },
+				],
+			},
+		])
+		wb.setFormula('Sheet1!B1', '=A1*2')
+		wb.fillFormula('Sheet1!B1:B2', '=A1*2')
+		wb.recalc()
+		expect(wb.sheet('Sheet1')?.cell('B1')?.formula).toBe('A1*2')
+		expect(wb.sheet('Sheet1')?.cell('B2')?.formula).toBe('A2*2')
+		expect(wb.sheet('Sheet1')?.cell('B2')?.value).toEqual({ kind: 'number', value: 6 })
+	})
+
 	test('add and delete sheets', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'addSheet', name: 'Extra' }])
@@ -391,3 +535,11 @@ describe('AscendWorkbook', () => {
 		expect(wb.sheets).toEqual(['Sheet1'])
 	})
 })
+
+function makeSyntheticXlsx(parts: Record<string, string>): Uint8Array {
+	const entries = new Map<string, Uint8Array>()
+	for (const [path, content] of Object.entries(parts)) {
+		entries.set(path, encode(content))
+	}
+	return createZip(entries)
+}

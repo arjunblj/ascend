@@ -6,6 +6,7 @@ import { createCommand } from './commands/create.ts'
 import { diffCommand } from './commands/diff.ts'
 import { doctorCommand } from './commands/doctor.ts'
 import { exportCommand } from './commands/export.ts'
+import { formulaCommand } from './commands/formula.ts'
 import { inspectCommand } from './commands/inspect.ts'
 import { lintCommand } from './commands/lint.ts'
 import { readCommand } from './commands/read.ts'
@@ -23,6 +24,7 @@ Commands:
   inspect <file> [sheet]        Show workbook/sheet structure
   read <file> <range>           Read cell values from a range
   write <file> <range> <json>   Write values to cells
+  formula <subcommand>          Inspect or edit formulas
   calc <file>                   Recalculate all formulas
   check <file>                  Run structural checks
   lint <file>                   Run formula lint
@@ -44,6 +46,7 @@ const COMMANDS: Record<string, CommandFn> = {
 	inspect: inspectCommand,
 	read: readCommand,
 	write: writeCommand,
+	formula: formulaCommand,
 	calc: calcCommand,
 	check: checkCommand,
 	lint: lintCommand,

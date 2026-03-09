@@ -5,6 +5,8 @@ export type {
 	CellInfo,
 	CheckIssue,
 	CheckResult,
+	DefinedNameInfo,
+	FormulaInfo,
 	LintResult,
 	LintWarning,
 	PreviewResult,
@@ -14,5 +16,6 @@ export type {
 	SheetInfo,
 	TraceResult,
 	WorkbookInfo,
+	WorkbookLoadInfo,
 } from './types.ts'
 export { AscendWorkbook, AscendWorkbook as Ascend } from './workbook.ts'

@@ -25,6 +25,9 @@ export interface FunctionEvalContext {
 	readonly randomSeed: number
 	readonly locale: string
 	readonly dateSystem: '1900' | '1904'
+	readonly sheetIndex?: number
+	readonly row?: number
+	readonly col?: number
 }
 
 export interface FunctionDef {

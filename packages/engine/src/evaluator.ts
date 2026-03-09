@@ -256,15 +256,33 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 	if (upperName === 'COLUMN' && argNodes.length === 0) {
 		return numberValue(ctx.col + 1)
 	}
+	if (upperName === 'INDIRECT' || upperName === 'OFFSET') {
+		return resolveReferenceFunction(upperName, argNodes, ctx).value
+	}
 
 	const def = functionRegistry.get(upperName)
 	if (!def) return errorValue('#NAME?')
+	if (argNodes.length < def.minArgs || argNodes.length > def.maxArgs) {
+		return errorValue('#VALUE!')
+	}
 
 	const args = argNodes.map((argNode) => resolveArg(argNode, ctx))
-	return def.evaluate(args, ctx.calcContext)
+	return def.evaluate(args, {
+		...ctx.calcContext,
+		sheetIndex: ctx.sheetIndex,
+		row: ctx.row,
+		col: ctx.col,
+	})
 }
 
 function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
+	if (node.type === 'function') {
+		const upperName = node.name.toUpperCase()
+		if (upperName === 'INDIRECT' || upperName === 'OFFSET') {
+			return resolveReferenceFunction(upperName, node.args, ctx)
+		}
+	}
+
 	if (node.type === 'rangeRef') {
 		const si = resolveSheetIndex(ctx.workbook, node.sheet, ctx.sheetIndex)
 		if (si < 0) {
@@ -347,6 +365,205 @@ function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
 
 	const value = evaluate(node, ctx)
 	return { value }
+}
+
+function resolveReferenceFunction(
+	name: 'INDIRECT' | 'OFFSET',
+	argNodes: readonly FormulaNode[],
+	ctx: EvalContext,
+): EvalArg {
+	return name === 'INDIRECT'
+		? resolveIndirectReference(argNodes, ctx)
+		: resolveOffsetReference(argNodes, ctx)
+}
+
+function resolveIndirectReference(argNodes: readonly FormulaNode[], ctx: EvalContext): EvalArg {
+	const textValue = evaluate(argNodes[0] ?? { type: 'missing' }, ctx)
+	if (textValue.kind === 'error') return { value: textValue }
+	const refText = coerceToString(textValue).trim()
+	if (refText.length === 0) return { value: errorValue('#REF!') }
+
+	const useA1Value =
+		argNodes.length > 1 ? evaluate(argNodes[1] as FormulaNode, ctx) : booleanValue(true)
+	if (useA1Value.kind === 'error') return { value: useA1Value }
+	const useA1 =
+		useA1Value.kind === 'boolean'
+			? useA1Value.value
+			: useA1Value.kind === 'number'
+				? useA1Value.value !== 0
+				: true
+
+	if (useA1) {
+		const parsed = parseFormula(refText)
+		if (!parsed.ok) return { value: errorValue('#REF!') }
+		const resolved = resolveReferenceNode(parsed.value, ctx)
+		return resolved ?? { value: errorValue('#REF!') }
+	}
+
+	return resolveR1C1Reference(refText, ctx) ?? { value: errorValue('#REF!') }
+}
+
+function resolveOffsetReference(argNodes: readonly FormulaNode[], ctx: EvalContext): EvalArg {
+	const base = resolveArg(argNodes[0] ?? { type: 'missing' }, ctx)
+	if (base.value.kind === 'error') return base
+	if (!base.ref) return { value: errorValue('#VALUE!') }
+
+	const rowOffset = coerceToNumber(evaluate(argNodes[1] ?? { type: 'missing' }, ctx))
+	if (rowOffset === null) return { value: errorValue('#VALUE!') }
+	const colOffset = coerceToNumber(evaluate(argNodes[2] ?? { type: 'missing' }, ctx))
+	if (colOffset === null) return { value: errorValue('#VALUE!') }
+
+	const baseHeight =
+		base.ref.kind === 'range' ? (base.ref.endRow ?? base.ref.row) - base.ref.row + 1 : 1
+	const baseWidth =
+		base.ref.kind === 'range' ? (base.ref.endCol ?? base.ref.col) - base.ref.col + 1 : 1
+
+	const height =
+		argNodes.length > 3 ? coerceToNumber(evaluate(argNodes[3] as FormulaNode, ctx)) : baseHeight
+	if (height === null) return { value: errorValue('#VALUE!') }
+	const width =
+		argNodes.length > 4 ? coerceToNumber(evaluate(argNodes[4] as FormulaNode, ctx)) : baseWidth
+	if (width === null) return { value: errorValue('#VALUE!') }
+
+	const targetHeight = Math.trunc(height)
+	const targetWidth = Math.trunc(width)
+	if (targetHeight <= 0 || targetWidth <= 0) return { value: errorValue('#REF!') }
+
+	const startRow = base.ref.row + Math.trunc(rowOffset)
+	const startCol = base.ref.col + Math.trunc(colOffset)
+	const endRow = startRow + targetHeight - 1
+	const endCol = startCol + targetWidth - 1
+	if (startRow < 0 || startCol < 0 || endRow < 0 || endCol < 0) {
+		return { value: errorValue('#REF!') }
+	}
+
+	return makeRangeArg(ctx.workbook, base.ref.sheetIndex, startRow, startCol, endRow, endCol)
+}
+
+function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | null {
+	switch (node.type) {
+		case 'cellRef': {
+			const si = resolveSheetIndex(ctx.workbook, node.sheet, ctx.sheetIndex)
+			if (si < 0) return { value: errorValue('#REF!') }
+			return {
+				value: getCellValue(ctx.workbook, si, node.ref.row, node.ref.col),
+				ref: {
+					kind: 'cell',
+					sheetIndex: si,
+					row: node.ref.row,
+					col: node.ref.col,
+				},
+			}
+		}
+		case 'rangeRef': {
+			const si = resolveSheetIndex(ctx.workbook, node.sheet, ctx.sheetIndex)
+			if (si < 0) return { value: errorValue('#REF!') }
+			return makeRangeArg(
+				ctx.workbook,
+				si,
+				node.start.row,
+				node.start.col,
+				node.end.row,
+				node.end.col,
+			)
+		}
+		case 'name': {
+			const resolved = resolveDefinedName(node.name, node.sheet, ctx)
+			if (!resolved) return { value: errorValue('#NAME?') }
+			return (
+				resolveReferenceNode(resolved.ast, resolved.ctx) ?? resolveArg(resolved.ast, resolved.ctx)
+			)
+		}
+		case 'structuredRef': {
+			const resolved = resolveStructuredRefRange(
+				ctx.workbook,
+				node,
+				ctx.sheetIndex,
+				ctx.row,
+				ctx.col,
+			)
+			if (!resolved) return { value: errorValue('#REF!') }
+			return makeRangeArg(
+				ctx.workbook,
+				resolved.sheetIndex,
+				resolved.startRow,
+				resolved.startCol,
+				resolved.endRow,
+				resolved.endCol,
+			)
+		}
+		default:
+			return null
+	}
+}
+
+function makeRangeArg(
+	workbook: Workbook,
+	sheetIndex: number,
+	startRow: number,
+	startCol: number,
+	endRow: number,
+	endCol: number,
+): EvalArg {
+	const values = getRangeValues(workbook, sheetIndex, startRow, startCol, endRow, endCol)
+	const firstRow = values[0]
+	return {
+		value: firstRow?.[0] ?? EMPTY,
+		kind: 'range',
+		values,
+		ref: {
+			kind: 'range',
+			sheetIndex,
+			row: startRow,
+			col: startCol,
+			endRow,
+			endCol,
+		},
+	}
+}
+
+function resolveR1C1Reference(refText: string, ctx: EvalContext): EvalArg | null {
+	const sheetSplit = refText.lastIndexOf('!')
+	const sheetName =
+		sheetSplit === -1 ? undefined : refText.slice(0, sheetSplit).replace(/^'|'$/g, '')
+	const body = sheetSplit === -1 ? refText : refText.slice(sheetSplit + 1)
+	const [startToken, endToken = body] = body.split(':')
+	if (!startToken) return null
+	const start = parseR1C1CellRef(startToken, ctx.row, ctx.col)
+	const end = parseR1C1CellRef(endToken, ctx.row, ctx.col)
+	if (!start || !end) return null
+	const sheetIndex = resolveSheetIndex(ctx.workbook, sheetName, ctx.sheetIndex)
+	if (sheetIndex < 0) return { value: errorValue('#REF!') }
+	if (start.row < 0 || start.col < 0 || end.row < 0 || end.col < 0) {
+		return { value: errorValue('#REF!') }
+	}
+
+	return makeRangeArg(ctx.workbook, sheetIndex, start.row, start.col, end.row, end.col)
+}
+
+function parseR1C1CellRef(
+	token: string,
+	currentRow: number,
+	currentCol: number,
+): { row: number; col: number } | null {
+	const match = /^(R(?:\[-?\d+\]|\d+)?)(C(?:\[-?\d+\]|\d+)?)$/i.exec(token.trim())
+	if (!match) return null
+	const rowToken = match[1]
+	const colToken = match[2]
+	if (!rowToken || !colToken) return null
+	return {
+		row: parseR1C1Coordinate(rowToken, currentRow),
+		col: parseR1C1Coordinate(colToken, currentCol),
+	}
+}
+
+function parseR1C1Coordinate(token: string, currentIndex: number): number {
+	const value = token.slice(1)
+	if (value.startsWith('[') && value.endsWith(']')) {
+		return currentIndex + Number.parseInt(value.slice(1, -1) || '0', 10)
+	}
+	if (value === '') return currentIndex
+	return Number.parseInt(value, 10) - 1
 }
 
 function evaluateDefinedName(name: string, sheet: string | undefined, ctx: EvalContext): CellValue {

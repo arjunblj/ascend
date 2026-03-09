@@ -116,21 +116,21 @@ class FormulaParser {
 	}
 
 	private parseMultiplication(): FormulaNode {
-		let left = this.parseExponentiation()
+		let left = this.parseUnaryPrefix()
 		while (this.isOp('*', '/')) {
 			const op = this.advance().value as BinaryOp
-			const right = this.parseExponentiation()
+			const right = this.parseUnaryPrefix()
 			left = { type: 'binary', op, left, right }
 		}
 		return left
 	}
 
 	private parseExponentiation(): FormulaNode {
-		let left = this.parseUnaryPrefix()
-		while (this.isOp('^')) {
+		const left = this.parsePostfix()
+		if (this.isOp('^')) {
 			this.advance()
 			const right = this.parseUnaryPrefix()
-			left = { type: 'binary', op: '^', left, right }
+			return { type: 'binary', op: '^', left, right }
 		}
 		return left
 	}
@@ -141,7 +141,7 @@ class FormulaParser {
 			const operand = this.parseUnaryPrefix()
 			return { type: 'unary', op, operand }
 		}
-		return this.parsePostfix()
+		return this.parseExponentiation()
 	}
 
 	private parsePostfix(): FormulaNode {

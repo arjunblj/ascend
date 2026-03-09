@@ -1,8 +1,11 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { existsSync, unlinkSync } from 'node:fs'
+import { AscendWorkbook } from '@ascend/sdk'
 
 const CLI = new URL('./index.ts', import.meta.url).pathname
 const TEST_FILE = 'test-output.xlsx'
+const MULTI_SHEET_FILE = 'test-multi.xlsx'
+const NAMED_RANGE_FILE = 'test-named.xlsx'
 
 function run(...args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
 	return new Promise((resolve) => {
@@ -21,7 +24,7 @@ function run(...args: string[]): Promise<{ stdout: string; stderr: string; exitC
 }
 
 afterAll(() => {
-	for (const f of [TEST_FILE]) {
+	for (const f of [TEST_FILE, MULTI_SHEET_FILE, NAMED_RANGE_FILE]) {
 		const path = `${import.meta.dir}/${f}`
 		if (existsSync(path)) unlinkSync(path)
 	}
@@ -66,8 +69,106 @@ describe('ascend cli', () => {
 		expect(exitCode).toBe(0)
 		const parsed = JSON.parse(stdout)
 		expect(parsed.sheetCount).toBe(1)
+		expect(parsed.loadedSheetCount).toBe(1)
+		expect(parsed.load.mode).toBe('metadata-only')
 		expect(parsed.sheets).toBeArray()
 		expect(parsed.sheets[0].name).toBe('Sheet1')
+	})
+
+	test('read requires an explicit sheet when workbook has multiple sheets', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'main' }] },
+			{ op: 'addSheet', name: 'Archive' },
+			{ op: 'setCells', sheet: 'Archive', updates: [{ ref: 'A1', value: 'extra' }] },
+		])
+		await wb.save(`${import.meta.dir}/${MULTI_SHEET_FILE}`)
+
+		const { exitCode, stderr } = await run('read', MULTI_SHEET_FILE, 'A1')
+		expect(exitCode).toBe(1)
+		expect(stderr).toContain('Multiple sheets available')
+	})
+
+	test('read accepts explicit sheet selectors', async () => {
+		const { exitCode, stdout } = await run('read', TEST_FILE, 'Sheet1!A1')
+		expect(exitCode).toBe(0)
+		expect(stdout).toContain('A')
+	})
+
+	test('read supports named range selectors', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'alpha' }] },
+			{ op: 'setDefinedName', name: 'MyRange', ref: 'Sheet1!A1:A1' },
+		])
+		await wb.save(`${import.meta.dir}/${NAMED_RANGE_FILE}`)
+
+		const { exitCode, stdout } = await run('read', NAMED_RANGE_FILE, 'name:MyRange')
+		expect(exitCode).toBe(0)
+		expect(stdout).toContain('MyRange: Sheet1!A1:A1')
+	})
+
+	test('write requires an explicit sheet when workbook has multiple sheets', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'main' }] },
+			{ op: 'addSheet', name: 'Archive' },
+		])
+		await wb.save(`${import.meta.dir}/${MULTI_SHEET_FILE}`)
+
+		const { exitCode, stderr } = await run('write', MULTI_SHEET_FILE, 'A1', '123')
+		expect(exitCode).toBe(1)
+		expect(stderr).toContain('Multiple sheets available')
+	})
+
+	test('write accepts explicit sheet selectors and auto-recalculates', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A2', formula: 'A1*2' },
+		])
+		await wb.recalc()
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const { exitCode } = await run('write', TEST_FILE, 'Sheet1!A1', '5')
+		expect(exitCode).toBe(0)
+
+		const reopened = await AscendWorkbook.open(`${import.meta.dir}/${TEST_FILE}`)
+		expect(reopened.sheet('Sheet1')?.cell('A2')?.value).toEqual({ kind: 'number', value: 10 })
+	})
+
+	test('formula show returns parsed formula info', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=SUM(B1:B2)' }])
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const { exitCode, stdout } = await run('formula', 'show', TEST_FILE, 'Sheet1!A1')
+		expect(exitCode).toBe(0)
+		expect(stdout).toContain('Normalized')
+		expect(stdout).toContain('SUM')
+	})
+
+	test('formula set and fill edit formulas from the CLI', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 2 },
+					{ ref: 'A2', value: 3 },
+				],
+			},
+		])
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		expect((await run('formula', 'set', TEST_FILE, 'Sheet1!B1', '=A1*2')).exitCode).toBe(0)
+		expect((await run('formula', 'fill', TEST_FILE, 'Sheet1!B1:B2', '=A1*2')).exitCode).toBe(0)
+
+		const reopened = await AscendWorkbook.open(`${import.meta.dir}/${TEST_FILE}`)
+		expect(reopened.sheet('Sheet1')?.cell('B1')?.formula).toBe('A1*2')
+		expect(reopened.sheet('Sheet1')?.cell('B2')?.formula).toBe('A2*2')
+		expect(reopened.sheet('Sheet1')?.cell('B2')?.value).toEqual({ kind: 'number', value: 6 })
 	})
 
 	test('doctor runs without error', async () => {

@@ -1,7 +1,7 @@
 import type { Cell, RangeRef, Sheet, StyleId, Workbook } from '@ascend/core'
 import { parseA1, parseRange, toA1 } from '@ascend/core'
 import type { FormulaCellRef, FormulaNode } from '@ascend/formulas'
-import { dateToSerial, parseFormula, printFormula } from '@ascend/formulas'
+import { dateToSerial, parseFormula, printFormula, rewriteRefs } from '@ascend/formulas'
 import type { CellValue, InputValue, Operation, Result } from '@ascend/schema'
 import { ascendError, booleanValue, EMPTY, err, numberValue, ok, stringValue } from '@ascend/schema'
 
@@ -255,10 +255,49 @@ function handleSetFormula(
 	sheet.cells.set(
 		ref.row,
 		ref.col,
-		cell(existing?.value ?? EMPTY, op.formula, existing?.styleId ?? DEFAULT_SID),
+		cell(
+			existing?.value ?? EMPTY,
+			normalizeFormulaInput(op.formula),
+			existing?.styleId ?? DEFAULT_SID,
+		),
 	)
 
 	return ok(patch([op.ref], [op.sheet], true))
+}
+
+function handleFillFormula(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'fillFormula' }>,
+): Result<PatchResult> {
+	const result = getSheet(workbook, op.sheet)
+	if (!result.ok) return result
+	const sheet = result.value
+
+	const rangeResult = safeParseRange(op.range)
+	if (!rangeResult.ok) return rangeResult
+	const baseFormula = normalizeFormulaInput(op.formula)
+	const parsed = parseFormula(baseFormula)
+	if (!parsed.ok) {
+		return err(ascendError('VALIDATION_ERROR', `Invalid formula: ${op.formula}`))
+	}
+	const range = rangeResult.value
+	const anchor = range.start
+	const affected: string[] = []
+
+	for (let row = range.start.row; row <= range.end.row; row++) {
+		for (let col = range.start.col; col <= range.end.col; col++) {
+			const translated = translateFormula(parsed.value, row - anchor.row, col - anchor.col)
+			const existing = sheet.cells.get(row, col)
+			sheet.cells.set(
+				row,
+				col,
+				cell(existing?.value ?? EMPTY, translated, existing?.styleId ?? DEFAULT_SID),
+			)
+			affected.push(toA1({ row, col }))
+		}
+	}
+
+	return ok(patch(affected, [op.sheet], true))
 }
 
 function handleInsertRows(
@@ -390,6 +429,19 @@ function shiftMerges(merges: RangeRef[], axis: 'row' | 'col', at: number, delta:
 	}
 	merges.length = 0
 	merges.push(...updated)
+}
+
+function translateFormula(node: FormulaNode, rowDelta: number, colDelta: number): string {
+	const rewritten = rewriteRefs(node, (ref: FormulaCellRef) => ({
+		...ref,
+		row: ref.rowAbsolute ? ref.row : ref.row + rowDelta,
+		col: ref.colAbsolute ? ref.col : ref.col + colDelta,
+	}))
+	return printFormula(rewritten)
+}
+
+function normalizeFormulaInput(formula: string): string {
+	return formula.startsWith('=') ? formula.slice(1) : formula
 }
 
 function handleAddSheet(
@@ -611,6 +663,8 @@ export function applyOperation(workbook: Workbook, op: Operation): Result<PatchR
 			return handleSetCells(workbook, op)
 		case 'setFormula':
 			return handleSetFormula(workbook, op)
+		case 'fillFormula':
+			return handleFillFormula(workbook, op)
 		case 'insertRows':
 			return handleInsertRows(workbook, op)
 		case 'deleteRows':

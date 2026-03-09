@@ -641,6 +641,90 @@ describe('readXlsx', () => {
 		})
 	})
 
+	it('parses conditional formatting and data validations', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>`,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/styles.xml': `<?xml version="1.0"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="2"><font/><font><b/></font></fonts>
+  <fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFC6EFCE"/></patternFill></fill></fills>
+  <borders count="1"><border/></borders>
+  <cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellXfs>
+  <dxfs count="1"><dxf><font><b/></font><fill><patternFill patternType="solid"><fgColor rgb="FFC6EFCE"/></patternFill></fill></dxf></dxfs>
+</styleSheet>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1"><c r="A1"><v>4</v></c></row>
+  </sheetData>
+  <conditionalFormatting sqref="A1:A10">
+    <cfRule type="cellIs" operator="greaterThan" dxfId="0" priority="1" stopIfTrue="1">
+      <formula>3</formula>
+    </cfRule>
+  </conditionalFormatting>
+  <dataValidations count="1">
+    <dataValidation type="list" allowBlank="1" showInputMessage="1" sqref="B2:B4">
+      <formula1>"Q1,Q2,Q3"</formula1>
+    </dataValidation>
+  </dataValidations>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet?.conditionalFormats).toEqual([
+			{
+				sqref: 'A1:A10',
+				rules: [
+					{
+						type: 'cellIs',
+						operator: 'greaterThan',
+						dxfId: 0,
+						priority: 1,
+						stopIfTrue: true,
+						formulas: ['3'],
+						style: {
+							font: { bold: true },
+							fill: { pattern: 'solid', fgColor: { kind: 'rgb', rgb: 'FFC6EFCE' } },
+						},
+					},
+				],
+			},
+		])
+		expect(sheet?.dataValidations).toEqual([
+			{
+				sqref: 'B2:B4',
+				type: 'list',
+				allowBlank: true,
+				showInputMessage: true,
+				formula1: '"Q1,Q2,Q3"',
+			},
+		])
+		expect(result.value.workbook.differentialStyles).toEqual([
+			{
+				font: { bold: true },
+				fill: { pattern: 'solid', fgColor: { kind: 'rgb', rgb: 'FFC6EFCE' } },
+			},
+		])
+	})
+
 	it('supports metadata-only reads without parsing sheet cells', () => {
 		const result = readXlsx(minimalXlsx(), { mode: 'metadata-only' })
 		expect(result.ok).toBe(true)

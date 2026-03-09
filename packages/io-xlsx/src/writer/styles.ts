@@ -71,7 +71,10 @@ export function buildPreservedStylesXml(
 	return { xml: preserved.xml, xfMap }
 }
 
-export function buildStylesXml(registry: StyleRegistry): StylesResult {
+export function buildStylesXml(
+	registry: StyleRegistry,
+	differentialStyles: readonly import('@ascend/core').CellStyle[] = [],
+): StylesResult {
 	const fonts: FontStyle[] = [{}]
 	const fontKeys = new Map<string, number>([['{}', 0]])
 
@@ -130,6 +133,14 @@ export function buildStylesXml(registry: StyleRegistry): StylesResult {
 	parts.push(`<cellXfs count="${xfEntries.length}">`)
 	for (const xf of xfEntries) parts.push(xfXml(xf))
 	parts.push('</cellXfs>')
+
+	if (differentialStyles.length > 0) {
+		parts.push(`<dxfs count="${differentialStyles.length}">`)
+		for (const style of differentialStyles) {
+			parts.push(dxfXml(style))
+		}
+		parts.push('</dxfs>')
+	}
 
 	parts.push('</styleSheet>')
 
@@ -274,6 +285,22 @@ function xfXml(xf: XfEntry): string {
 	if (xf.alignment) parts.push(alignmentXml(xf.alignment))
 	if (xf.protection) parts.push(protectionXml(xf.protection))
 	parts.push('</xf>')
+	return parts.join('')
+}
+
+function dxfXml(style: import('@ascend/core').CellStyle): string {
+	const parts: string[] = ['<dxf>']
+	if (style.font && hasProps(style.font)) parts.push(fontXml(style.font))
+	if (style.fill && hasProps(style.fill)) parts.push(fillXml(style.fill))
+	if (style.border && hasProps(style.border)) parts.push(borderXml(style.border))
+	if (style.numberFormat && style.numberFormat !== 'General') {
+		const builtin = BUILTIN_FMT_CODES.get(style.numberFormat)
+		const numFmtId = builtin ?? 164
+		parts.push(`<numFmt numFmtId="${numFmtId}" formatCode="${escapeXml(style.numberFormat)}"/>`)
+	}
+	if (style.alignment) parts.push(alignmentXml(style.alignment))
+	if (style.protection) parts.push(protectionXml(style.protection))
+	parts.push('</dxf>')
 	return parts.join('')
 }
 

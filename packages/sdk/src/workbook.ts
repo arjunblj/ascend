@@ -95,6 +95,7 @@ function cloneWorkbook(source: Workbook): Workbook {
 		: null
 	clone.workbookViews.push(...source.workbookViews.map((view) => ({ ...view })))
 	clone.externalReferences.push(...source.externalReferences)
+	clone.differentialStyles.push(...source.differentialStyles.map((style) => ({ ...style })))
 
 	for (const definedName of source.definedNames.list()) {
 		clone.definedNames.set(definedName.name, definedName.formula, definedName.scope)
@@ -122,6 +123,17 @@ function cloneWorkbook(source: Workbook): Workbook {
 		for (const [k, v] of sheet.comments) cloned.comments.set(k, v)
 		for (const [k, v] of sheet.hyperlinks) cloned.hyperlinks.set(k, { ...v })
 		cloned.ignoredErrors.push(...sheet.ignoredErrors)
+		cloned.dataValidations.push(...sheet.dataValidations.map((validation) => ({ ...validation })))
+		cloned.conditionalFormats.push(
+			...sheet.conditionalFormats.map((conditionalFormat) => ({
+				sqref: conditionalFormat.sqref,
+				rules: conditionalFormat.rules.map((rule) => ({
+					...rule,
+					formulas: [...rule.formulas],
+					...(rule.style ? { style: { ...rule.style } } : {}),
+				})),
+			})),
+		)
 		cloned.autoFilter = sheet.autoFilter
 		cloned.pageMargins = sheet.pageMargins ? { ...sheet.pageMargins } : null
 		cloned.pageSetup = sheet.pageSetup ? { ...sheet.pageSetup } : null

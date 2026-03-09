@@ -1,6 +1,7 @@
 import { createSheetId, type SheetId } from './ids.ts'
 import type { RangeRef } from './refs.ts'
 import { SparseGrid } from './sparse-grid.ts'
+import type { CellStyle } from './style.ts'
 import type { Table } from './table.ts'
 
 export type SheetState = 'visible' | 'hidden' | 'veryHidden'
@@ -67,6 +68,38 @@ export interface SheetPreservedXml {
 	readonly relsXml?: string
 }
 
+export interface SheetDataValidation {
+	readonly sqref: string
+	readonly type?: string
+	readonly operator?: string
+	readonly allowBlank?: boolean
+	readonly showInputMessage?: boolean
+	readonly showErrorMessage?: boolean
+	readonly showDropDown?: boolean
+	readonly promptTitle?: string
+	readonly prompt?: string
+	readonly errorTitle?: string
+	readonly error?: string
+	readonly errorStyle?: string
+	readonly formula1?: string
+	readonly formula2?: string
+}
+
+export interface SheetConditionalFormatRule {
+	readonly type: string
+	readonly operator?: string
+	readonly dxfId?: number
+	readonly priority?: number
+	readonly stopIfTrue?: boolean
+	readonly formulas: readonly string[]
+	readonly style?: CellStyle
+}
+
+export interface SheetConditionalFormat {
+	readonly sqref: string
+	readonly rules: readonly SheetConditionalFormatRule[]
+}
+
 export class Sheet {
 	readonly id: SheetId
 	name: string
@@ -82,6 +115,8 @@ export class Sheet {
 	readonly comments: Map<string, SheetComment>
 	readonly hyperlinks: Map<string, SheetHyperlink>
 	readonly ignoredErrors: string[]
+	readonly dataValidations: SheetDataValidation[]
+	readonly conditionalFormats: SheetConditionalFormat[]
 	autoFilter: string | null
 	pageMargins: SheetPageMargins | null
 	pageSetup: SheetPageSetup | null
@@ -104,6 +139,8 @@ export class Sheet {
 		this.comments = new Map()
 		this.hyperlinks = new Map()
 		this.ignoredErrors = []
+		this.dataValidations = []
+		this.conditionalFormats = []
 		this.autoFilter = null
 		this.pageMargins = null
 		this.pageSetup = null

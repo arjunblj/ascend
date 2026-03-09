@@ -207,6 +207,80 @@ describe('writeXlsx', () => {
 		expect(fingerprint.sheetRels[0]?.xml.normalized).toContain('TargetMode="External"')
 	})
 
+	it('preserves conditional formatting and data validations on round-trip', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Rules')
+		sheet.cells.set(0, 0, { value: numberValue(4), formula: null, styleId: S0 })
+		wb.differentialStyles.push({
+			font: { bold: true },
+			fill: { pattern: 'solid', fgColor: { kind: 'rgb', rgb: 'FFC6EFCE' } },
+		})
+		sheet.conditionalFormats.push({
+			sqref: 'A1:A10',
+			rules: [
+				{
+					type: 'cellIs',
+					operator: 'greaterThan',
+					dxfId: 0,
+					priority: 1,
+					stopIfTrue: true,
+					formulas: ['3'],
+					style: wb.differentialStyles[0],
+				},
+			],
+		})
+		sheet.dataValidations.push({
+			sqref: 'B2:B4',
+			type: 'list',
+			allowBlank: true,
+			showInputMessage: true,
+			formula1: '"Q1,Q2,Q3"',
+		})
+
+		const { result, bytes } = roundTrip(wb)
+		expect(result.workbook.sheets[0]?.conditionalFormats).toEqual([
+			{
+				sqref: 'A1:A10',
+				rules: [
+					{
+						type: 'cellIs',
+						operator: 'greaterThan',
+						dxfId: 0,
+						priority: 1,
+						stopIfTrue: true,
+						formulas: ['3'],
+						style: {
+							font: { bold: true },
+							fill: { pattern: 'solid', fgColor: { kind: 'rgb', rgb: 'FFC6EFCE' } },
+						},
+					},
+				],
+			},
+		])
+		expect(result.workbook.sheets[0]?.dataValidations).toEqual([
+			{
+				sqref: 'B2:B4',
+				type: 'list',
+				allowBlank: true,
+				showInputMessage: true,
+				formula1: '"Q1,Q2,Q3"',
+			},
+		])
+		const fingerprint = fingerprintXlsx(bytes)
+		expect(fingerprint.styles?.tagCounts).toMatchObject({
+			dxfs: 1,
+			dxf: 1,
+		})
+		expect(fingerprint.sheets[0]?.xml.tagCounts).toMatchObject({
+			conditionalFormatting: 1,
+			cfRule: 1,
+			dataValidations: 1,
+			dataValidation: 1,
+			formula: 1,
+			formula1: 1,
+		})
+	})
+
 	it('preserves defined names on round-trip', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Data')

@@ -51,6 +51,7 @@ const BUILTIN_NUM_FMTS = new Map<number, string>([
 
 export interface ParsedStyles {
 	readonly cellStyles: CellStyle[]
+	readonly differentialStyles: readonly CellStyle[]
 	readonly isDateFormat: boolean[]
 	readonly metadata: {
 		readonly numFmtCount: number
@@ -69,6 +70,7 @@ export function parseStyles(xml: string): ParsedStyles {
 	if (!ss) {
 		return {
 			cellStyles: [{}],
+			differentialStyles: [],
 			isDateFormat: [false],
 			metadata: {
 				numFmtCount: 0,
@@ -89,10 +91,12 @@ export function parseStyles(xml: string): ParsedStyles {
 	const cellXfCount = countNodes(ss.cellXfs, 'xf')
 	const dxfCount = countNodes(ss.dxfs, 'dxf')
 	const tableStyleCount = countNodes(ss.tableStyles, 'tableStyle')
+	const differentialStyles = parseDxfs(ss, fonts, fills, borders, numFmts)
 
 	const built = buildCellStyles(ss, fonts, fills, borders, numFmts)
 	return {
 		...built,
+		differentialStyles,
 		metadata: {
 			numFmtCount: Math.max(0, numFmts.size - BUILTIN_NUM_FMTS.size),
 			fontCount: Math.max(0, fonts.length),
@@ -103,6 +107,62 @@ export function parseStyles(xml: string): ParsedStyles {
 			tableStyleCount: Math.max(0, tableStyleCount),
 		},
 	}
+}
+
+function parseDxfs(
+	ss: XmlNode,
+	fonts: FontStyle[],
+	fills: FillStyle[],
+	borders: BorderStyle[],
+	numFmts: Map<number, string>,
+): readonly CellStyle[] {
+	const dxfsNode = ss.dxfs as XmlNode | undefined
+	if (!dxfsNode) return []
+	return asArray<XmlNode>(dxfsNode.dxf as XmlNode | XmlNode[]).map((dxf) =>
+		parseDxfStyle(dxf, fonts, fills, borders, numFmts),
+	)
+}
+
+function parseDxfStyle(
+	dxf: XmlNode,
+	_fonts: FontStyle[],
+	_fills: FillStyle[],
+	_borders: BorderStyle[],
+	numFmts: Map<number, string>,
+): CellStyle {
+	const style: Record<string, unknown> = {}
+
+	const fontNode = dxf.font as XmlNode | undefined
+	if (fontNode) {
+		const font = parseFont(fontNode)
+		if (hasProps(font)) style.font = font
+	}
+
+	const fillNode = dxf.fill as XmlNode | undefined
+	if (fillNode) {
+		const fill = parseFill(fillNode)
+		if (hasProps(fill)) style.fill = fill
+	}
+
+	const borderNode = dxf.border as XmlNode | undefined
+	if (borderNode) {
+		const border = parseBorder(borderNode)
+		if (hasProps(border)) style.border = border
+	}
+
+	const numFmtNode = dxf.numFmt as XmlNode | undefined
+	if (numFmtNode) {
+		const numFmtId = numAttr(numFmtNode, 'numFmtId')
+		const formatCode =
+			attr(numFmtNode, 'formatCode') ?? (numFmtId !== undefined ? numFmts.get(numFmtId) : undefined)
+		if (formatCode) style.numberFormat = formatCode
+	}
+
+	const alignment = parseAlignment(dxf)
+	if (alignment) style.alignment = alignment
+	const protection = parseProtection(dxf)
+	if (protection) style.protection = protection
+	return style as CellStyle
 }
 
 function parseNumFmts(ss: XmlNode): Map<number, string> {

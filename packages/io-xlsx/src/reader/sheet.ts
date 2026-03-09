@@ -1,4 +1,13 @@
-import type { Cell, RangeRef, SheetColDef, StyleId } from '@ascend/core'
+import type {
+	Cell,
+	CellStyle,
+	RangeRef,
+	SheetColDef,
+	SheetConditionalFormat,
+	SheetConditionalFormatRule,
+	SheetDataValidation,
+	StyleId,
+} from '@ascend/core'
 import { columnToIndex, parseRange, Sheet } from '@ascend/core'
 import type { FormulaCellRef } from '@ascend/formulas'
 import { parseFormula, printFormula, rewriteRefs } from '@ascend/formulas'
@@ -13,6 +22,7 @@ export interface SheetParseContext {
 	readonly sharedStrings: CellValue[]
 	readonly styleIds: StyleId[]
 	readonly isDateFormat: boolean[]
+	readonly differentialStyles?: readonly CellStyle[]
 	readonly relationships?: readonly Relationship[]
 }
 
@@ -34,6 +44,8 @@ export function parseSheet(name: string, xml: string, ctx: SheetParseContext): S
 	parseHeaderFooter(ws, sheet)
 	parseIgnoredErrors(ws, sheet)
 	parseHyperlinks(ws, sheet, ctx.relationships ?? [])
+	parseConditionalFormatting(ws, sheet, ctx.differentialStyles ?? [])
+	parseDataValidations(ws, sheet)
 
 	return sheet
 }
@@ -354,6 +366,107 @@ function parseHyperlinks(ws: XmlNode, sheet: Sheet, relationships: readonly Rela
 		setIfDefined(parsed, 'display', attr(hyperlink, 'display'))
 		setIfDefined(parsed, 'tooltip', attr(hyperlink, 'tooltip'))
 		sheet.hyperlinks.set(ref, parsed)
+	}
+}
+
+function parseConditionalFormatting(
+	ws: XmlNode,
+	sheet: Sheet,
+	differentialStyles: readonly CellStyle[],
+): void {
+	for (const conditionalFormatting of asArray<XmlNode>(
+		ws.conditionalFormatting as XmlNode | XmlNode[] | undefined,
+	)) {
+		const sqref = attr(conditionalFormatting, 'sqref')
+		if (!sqref) continue
+		const rules: SheetConditionalFormatRule[] = []
+		for (const rule of asArray<XmlNode>(conditionalFormatting.cfRule as XmlNode | XmlNode[])) {
+			const type = attr(rule, 'type')
+			if (!type) continue
+			const formulas = asArray<XmlNode | string | number | boolean>(
+				rule.formula as XmlNode | XmlNode[] | string | string[] | undefined,
+			).map((formula) => readNodeText(formula) ?? '')
+			const dxfId = numAttr(rule, 'dxfId')
+			const parsedRule: {
+				type: string
+				operator?: string
+				dxfId?: number
+				priority?: number
+				stopIfTrue?: boolean
+				formulas: readonly string[]
+				style?: CellStyle
+			} = {
+				type,
+				formulas,
+			}
+			const operator = attr(rule, 'operator')
+			if (operator) parsedRule.operator = operator
+			const priority = numAttr(rule, 'priority')
+			if (priority !== undefined) parsedRule.priority = priority
+			const stopIfTrue = readBoolAttribute(rule, 'stopIfTrue')
+			if (stopIfTrue !== undefined) parsedRule.stopIfTrue = stopIfTrue
+			if (dxfId !== undefined) {
+				parsedRule.dxfId = dxfId
+				const style = differentialStyles[dxfId]
+				if (style) parsedRule.style = style
+			}
+			rules.push(parsedRule as SheetConditionalFormatRule)
+		}
+		if (rules.length > 0) {
+			sheet.conditionalFormats.push({ sqref, rules } satisfies SheetConditionalFormat)
+		}
+	}
+}
+
+function parseDataValidations(ws: XmlNode, sheet: Sheet): void {
+	const container = ws.dataValidations as XmlNode | undefined
+	if (!container) return
+	for (const validation of asArray<XmlNode>(container.dataValidation as XmlNode | XmlNode[])) {
+		const sqref = attr(validation, 'sqref')
+		if (!sqref) continue
+		const parsed: {
+			sqref: string
+			type?: string
+			operator?: string
+			allowBlank?: boolean
+			showInputMessage?: boolean
+			showErrorMessage?: boolean
+			showDropDown?: boolean
+			promptTitle?: string
+			prompt?: string
+			errorTitle?: string
+			error?: string
+			errorStyle?: string
+			formula1?: string
+			formula2?: string
+		} = { sqref }
+		const type = attr(validation, 'type')
+		if (type) parsed.type = type
+		const operator = attr(validation, 'operator')
+		if (operator) parsed.operator = operator
+		const errorStyle = attr(validation, 'errorStyle')
+		if (errorStyle) parsed.errorStyle = errorStyle
+		const allowBlank = readBoolAttribute(validation, 'allowBlank')
+		if (allowBlank !== undefined) parsed.allowBlank = allowBlank
+		const showInputMessage = readBoolAttribute(validation, 'showInputMessage')
+		if (showInputMessage !== undefined) parsed.showInputMessage = showInputMessage
+		const showErrorMessage = readBoolAttribute(validation, 'showErrorMessage')
+		if (showErrorMessage !== undefined) parsed.showErrorMessage = showErrorMessage
+		const showDropDown = readBoolAttribute(validation, 'showDropDown')
+		if (showDropDown !== undefined) parsed.showDropDown = showDropDown
+		const promptTitle = attr(validation, 'promptTitle')
+		if (promptTitle) parsed.promptTitle = promptTitle
+		const prompt = attr(validation, 'prompt')
+		if (prompt) parsed.prompt = prompt
+		const errorTitle = attr(validation, 'errorTitle')
+		if (errorTitle) parsed.errorTitle = errorTitle
+		const error = attr(validation, 'error')
+		if (error) parsed.error = error
+		const formula1 = readNodeText(validation.formula1)
+		if (formula1) parsed.formula1 = formula1
+		const formula2 = readNodeText(validation.formula2)
+		if (formula2) parsed.formula2 = formula2
+		sheet.dataValidations.push(parsed as SheetDataValidation)
 	}
 }
 

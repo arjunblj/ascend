@@ -184,6 +184,7 @@ export function readXlsx(
 			? parseStyles(stylesXml)
 			: {
 					cellStyles: [{}],
+					differentialStyles: [],
 					isDateFormat: [false],
 					metadata: {
 						numFmtCount: 0,
@@ -200,6 +201,7 @@ export function readXlsx(
 		}
 		const styleIds = registerStyles(workbook, parsedStyles.cellStyles)
 		workbook.styleMetadata = parsedStyles.metadata
+		workbook.differentialStyles.push(...parsedStyles.differentialStyles)
 
 		for (const entry of sheetsToParse) {
 			const sheetXml = readPart(archive, entry.path)
@@ -211,6 +213,7 @@ export function readXlsx(
 				sharedStrings,
 				styleIds,
 				isDateFormat: parsedStyles.isDateFormat,
+				differentialStyles: parsedStyles.differentialStyles,
 				relationships: sheetRelationships,
 			})
 			attachTables(archive, entry.path, sheet, sheetRelationships)

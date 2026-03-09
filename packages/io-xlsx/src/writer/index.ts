@@ -57,7 +57,8 @@ export function writeXlsx(
 			workbook.preservedStyles && !stylesNeedRebuild(workbook)
 				? buildPreservedStylesXml(workbook.preservedStyles, workbook.styles)
 				: undefined
-		const { xml: stylesXml, xfMap } = stylesResult ?? buildStylesXml(workbook.styles)
+		const { xml: stylesXml, xfMap } =
+			stylesResult ?? buildStylesXml(workbook.styles, workbook.differentialStyles)
 
 		if (capsules) {
 			for (const capsule of capsules) {

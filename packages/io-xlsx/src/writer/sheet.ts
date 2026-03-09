@@ -112,6 +112,56 @@ export function buildSheetXml(
 		parts.push(`<autoFilter ref="${escapeXml(sheet.autoFilter)}"/>`)
 	}
 
+	if (sheet.conditionalFormats.length > 0) {
+		for (const conditionalFormat of sheet.conditionalFormats) {
+			parts.push(`<conditionalFormatting sqref="${escapeXml(conditionalFormat.sqref)}">`)
+			for (const rule of conditionalFormat.rules) {
+				const attrs = [`type="${escapeXml(rule.type)}"`]
+				if (rule.operator) attrs.push(`operator="${escapeXml(rule.operator)}"`)
+				if (rule.priority !== undefined) attrs.push(`priority="${rule.priority}"`)
+				if (rule.dxfId !== undefined) attrs.push(`dxfId="${rule.dxfId}"`)
+				if (rule.stopIfTrue) attrs.push('stopIfTrue="1"')
+				parts.push(`<cfRule ${attrs.join(' ')}>`)
+				for (const formula of rule.formulas) {
+					parts.push(`<formula>${escapeXml(formula)}</formula>`)
+				}
+				parts.push('</cfRule>')
+			}
+			parts.push('</conditionalFormatting>')
+		}
+	}
+
+	if (sheet.dataValidations.length > 0) {
+		parts.push(`<dataValidations count="${sheet.dataValidations.length}">`)
+		for (const validation of sheet.dataValidations) {
+			const attrs = [`sqref="${escapeXml(validation.sqref)}"`]
+			if (validation.type) attrs.push(`type="${escapeXml(validation.type)}"`)
+			if (validation.operator) attrs.push(`operator="${escapeXml(validation.operator)}"`)
+			if (validation.errorStyle) attrs.push(`errorStyle="${escapeXml(validation.errorStyle)}"`)
+			if (validation.allowBlank !== undefined) {
+				attrs.push(`allowBlank="${validation.allowBlank ? '1' : '0'}"`)
+			}
+			if (validation.showInputMessage !== undefined) {
+				attrs.push(`showInputMessage="${validation.showInputMessage ? '1' : '0'}"`)
+			}
+			if (validation.showErrorMessage !== undefined) {
+				attrs.push(`showErrorMessage="${validation.showErrorMessage ? '1' : '0'}"`)
+			}
+			if (validation.showDropDown !== undefined) {
+				attrs.push(`showDropDown="${validation.showDropDown ? '1' : '0'}"`)
+			}
+			if (validation.promptTitle) attrs.push(`promptTitle="${escapeXml(validation.promptTitle)}"`)
+			if (validation.prompt) attrs.push(`prompt="${escapeXml(validation.prompt)}"`)
+			if (validation.errorTitle) attrs.push(`errorTitle="${escapeXml(validation.errorTitle)}"`)
+			if (validation.error) attrs.push(`error="${escapeXml(validation.error)}"`)
+			parts.push(`<dataValidation ${attrs.join(' ')}>`)
+			if (validation.formula1) parts.push(`<formula1>${escapeXml(validation.formula1)}</formula1>`)
+			if (validation.formula2) parts.push(`<formula2>${escapeXml(validation.formula2)}</formula2>`)
+			parts.push('</dataValidation>')
+		}
+		parts.push('</dataValidations>')
+	}
+
 	if (hyperlinks.length > 0) {
 		parts.push('<hyperlinks>')
 		for (const hyperlink of hyperlinks) {

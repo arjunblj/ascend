@@ -15,6 +15,9 @@ export {
 export type {
 	SheetColDef,
 	SheetComment,
+	SheetConditionalFormat,
+	SheetConditionalFormatRule,
+	SheetDataValidation,
 	SheetHeaderFooter,
 	SheetHyperlink,
 	SheetPageMargins,

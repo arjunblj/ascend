@@ -15,7 +15,7 @@ export class SparseGrid {
 	private readonly data = new Map<number, StoredCell>()
 	private readonly styledStringCache = new Map<string, StyledStringCell>()
 	private readonly styledBooleanCache = new Map<string, StyledBooleanCell>()
-	private readonly styledSmallNumberCache = new Map<string, StyledNumberCell>()
+	private readonly styledNumberCache = new Map<StyleId, Map<number, StyledNumberCell>>()
 	private _isKeyOrderSorted = true
 	private _lastInsertedKey = Number.NEGATIVE_INFINITY
 	private _minRow = Number.POSITIVE_INFINITY
@@ -161,7 +161,7 @@ export class SparseGrid {
 		this.data.clear()
 		this.styledStringCache.clear()
 		this.styledBooleanCache.clear()
-		this.styledSmallNumberCache.clear()
+		this.styledNumberCache.clear()
 		this._isKeyOrderSorted = true
 		this._lastInsertedKey = Number.NEGATIVE_INFINITY
 		this._minRow = Number.POSITIVE_INFINITY
@@ -205,7 +205,7 @@ export class SparseGrid {
 		this.data.clear()
 		this.styledStringCache.clear()
 		this.styledBooleanCache.clear()
-		this.styledSmallNumberCache.clear()
+		this.styledNumberCache.clear()
 		for (const [key, cell] of other.data) {
 			this.data.set(key, cloneCell(cell))
 		}
@@ -282,16 +282,17 @@ export class SparseGrid {
 				switch (compactValue.kind) {
 					case 'number': {
 						const numericValue = compactValue.scalarValue as number
-						if (Number.isInteger(numericValue) && numericValue >= -128 && numericValue <= 512) {
-							const key = `${styleId}|${numericValue}`
-							let cached = this.styledSmallNumberCache.get(key)
-							if (!cached) {
-								cached = new StyledNumberCell(numericValue, styleId)
-								this.styledSmallNumberCache.set(key, cached)
-							}
-							return cached
+						let valuesByStyle = this.styledNumberCache.get(styleId)
+						if (!valuesByStyle) {
+							valuesByStyle = new Map()
+							this.styledNumberCache.set(styleId, valuesByStyle)
 						}
-						return new StyledNumberCell(numericValue, styleId)
+						let cached = valuesByStyle.get(numericValue)
+						if (!cached) {
+							cached = new StyledNumberCell(numericValue, styleId)
+							valuesByStyle.set(numericValue, cached)
+						}
+						return cached
 					}
 					case 'string': {
 						const text = compactValue.scalarValue as string

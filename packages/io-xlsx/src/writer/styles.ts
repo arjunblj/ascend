@@ -63,13 +63,29 @@ export function buildPreservedStylesXml(
 	preserved: import('@ascend/core').WorkbookPreservedStyles,
 	registry: StyleRegistry,
 ): StylesResult | undefined {
+	const parsed = parsePreservedStylesXml(xml)
 	const xfMap = new Map<number, number>()
 	for (let i = 0; i < registry.size; i++) {
 		const xfIndex = preserved.xfByStyleId[i]
-		if (xfIndex === undefined) return undefined
-		xfMap.set(i, xfIndex)
+		if (xfIndex !== undefined) {
+			xfMap.set(i, xfIndex)
+			continue
+		}
+		const baseStyleId = preserved.baseStyleIdByStyleId?.[i]
+		if (baseStyleId === undefined) return undefined
+		const baseXfIndex = xfMap.get(baseStyleId) ?? preserved.xfByStyleId[baseStyleId]
+		if (baseXfIndex === undefined) return undefined
+		const style = registry.get(i as StyleId) ?? {}
+		const baseStyle = registry.get(baseStyleId as StyleId) ?? {}
+		if (!stylesDifferOnlyByNumberFormat(style, baseStyle)) return undefined
+		const nextNumFmtId = resolvePreservedNumFmtId(style.numberFormat, parsed)
+		const baseXfXml = parsed.xfEntries[baseXfIndex]
+		if (!baseXfXml) return undefined
+		parsed.appendedXfEntries.push(patchXfNumFmt(baseXfXml, nextNumFmtId))
+		const appendedIndex = parsed.xfEntries.length + parsed.appendedXfEntries.length - 1
+		xfMap.set(i, appendedIndex)
 	}
-	return { xml, xfMap }
+	return { xml: serializePatchedStylesXml(parsed), xfMap }
 }
 
 export function buildStylesXml(
@@ -194,6 +210,120 @@ function resolveNumFmtId(
 		custom.set(fmt, id)
 	}
 	return id
+}
+
+interface ParsedPreservedStyles {
+	xml: string
+	customNumFmtIds: Map<string, number>
+	nextNumFmtId: number
+	xfEntries: string[]
+	appendedXfEntries: string[]
+	appendedNumFmts: Array<{ id: number; code: string }>
+}
+
+function parsePreservedStylesXml(xml: string): ParsedPreservedStyles {
+	const customNumFmtIds = new Map<string, number>()
+	let nextNumFmtId = 164
+	for (const match of xml.matchAll(/<numFmt\b([^>]*)\/>/g)) {
+		const attrs = match[1] ?? ''
+		const idMatch = /numFmtId="(\d+)"/.exec(attrs)
+		const codeMatch = /formatCode="([^"]*)"/.exec(attrs)
+		const id = idMatch ? Number(idMatch[1]) : undefined
+		const rawCode = codeMatch?.[1]
+		const code = rawCode !== undefined ? decodeXmlAttr(rawCode) : undefined
+		if (id === undefined || !code) continue
+		if (!BUILTIN_FMT_CODES.has(code)) customNumFmtIds.set(code, id)
+		if (id >= nextNumFmtId) nextNumFmtId = id + 1
+	}
+	const cellXfsMatch = /<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/.exec(xml)
+	const xfEntries = cellXfsMatch?.[1]?.match(/<xf\b[^>]*\/>|<xf\b[^>]*>[\s\S]*?<\/xf>/g) ?? []
+	return {
+		xml,
+		customNumFmtIds,
+		nextNumFmtId,
+		xfEntries,
+		appendedXfEntries: [],
+		appendedNumFmts: [],
+	}
+}
+
+function resolvePreservedNumFmtId(
+	formatCode: string | undefined,
+	parsed: ParsedPreservedStyles,
+): number {
+	if (!formatCode || formatCode === 'General') return 0
+	const builtin = BUILTIN_FMT_CODES.get(formatCode)
+	if (builtin !== undefined) return builtin
+	const existing = parsed.customNumFmtIds.get(formatCode)
+	if (existing !== undefined) return existing
+	const id = parsed.nextNumFmtId++
+	parsed.customNumFmtIds.set(formatCode, id)
+	parsed.appendedNumFmts.push({ id, code: formatCode })
+	return id
+}
+
+function stylesDifferOnlyByNumberFormat(
+	style: import('@ascend/core').CellStyle,
+	baseStyle: import('@ascend/core').CellStyle,
+): boolean {
+	const { numberFormat: _fmtA, ...restA } = style
+	const { numberFormat: _fmtB, ...restB } = baseStyle
+	return JSON.stringify(restA) === JSON.stringify(restB)
+}
+
+function patchXfNumFmt(xfXmlSource: string, numFmtId: number): string {
+	let out = xfXmlSource.replace(/numFmtId="[^"]*"/, `numFmtId="${numFmtId}"`)
+	if (!/numFmtId=/.test(out)) {
+		out = out.replace('<xf', `<xf numFmtId="${numFmtId}"`)
+	}
+	if (numFmtId === 0) {
+		out = out.replace(/\sapplyNumberFormat="[^"]*"/, '')
+		return out
+	}
+	if (/applyNumberFormat=/.test(out)) {
+		return out.replace(/applyNumberFormat="[^"]*"/, 'applyNumberFormat="1"')
+	}
+	return out.replace(/<xf\b/, '<xf applyNumberFormat="1"')
+}
+
+function serializePatchedStylesXml(parsed: ParsedPreservedStyles): string {
+	let xml = parsed.xml
+	if (parsed.appendedNumFmts.length > 0) {
+		const appended = parsed.appendedNumFmts
+			.map((entry) => `<numFmt numFmtId="${entry.id}" formatCode="${escapeXml(entry.code)}"/>`)
+			.join('')
+		if (/<numFmts\b[^>]*>/.test(xml)) {
+			xml = xml.replace(
+				/<numFmts\b([^>]*)count="(\d+)"([^>]*)>([\s\S]*?)<\/numFmts>/,
+				(_match, before, count, after, body) =>
+					`<numFmts${before}count="${Number(count) + parsed.appendedNumFmts.length}"${after}>${body}${appended}</numFmts>`,
+			)
+		} else {
+			xml = xml.replace(
+				/<styleSheet\b[^>]*>/,
+				(match) =>
+					`${match}<numFmts count="${parsed.appendedNumFmts.length}">${appended}</numFmts>`,
+			)
+		}
+	}
+	if (parsed.appendedXfEntries.length > 0) {
+		const appended = parsed.appendedXfEntries.join('')
+		xml = xml.replace(
+			/<cellXfs\b([^>]*)count="(\d+)"([^>]*)>([\s\S]*?)<\/cellXfs>/,
+			(_match, before, count, after, body) =>
+				`<cellXfs${before}count="${Number(count) + parsed.appendedXfEntries.length}"${after}>${body}${appended}</cellXfs>`,
+		)
+	}
+	return xml
+}
+
+function decodeXmlAttr(value: string): string {
+	return value
+		.replace(/&quot;/g, '"')
+		.replace(/&apos;/g, "'")
+		.replace(/&lt;/g, '<')
+		.replace(/&gt;/g, '>')
+		.replace(/&amp;/g, '&')
 }
 
 function fontXml(font: FontStyle): string {

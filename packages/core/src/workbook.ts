@@ -58,6 +58,7 @@ export interface WorkbookPreservedStyles {
 	readonly path?: string
 	readonly xml?: string
 	readonly xfByStyleId: Readonly<Record<number, number>>
+	readonly baseStyleIdByStyleId?: Readonly<Record<number, number>>
 }
 
 export interface WorkbookPreservedTheme {

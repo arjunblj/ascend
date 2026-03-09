@@ -77,20 +77,25 @@ export function writeXlsx(
 		const ssTable = buildSharedStrings(workbook, preservedSharedStringEntries)
 		const hasSharedStrings = ssTable.count > 0 || preservedSharedStringsXml !== undefined
 
-		const preservedStylesXml =
-			workbook.preservedStyles && !stylesNeedRebuild(workbook)
-				? resolvePreservedText(
-						sourceArchive,
-						workbook.preservedStyles.xml,
-						workbook.preservedStyles.path,
-					)
-				: undefined
+		const preservedStylesXml = workbook.preservedStyles
+			? resolvePreservedText(
+					sourceArchive,
+					workbook.preservedStyles.xml,
+					workbook.preservedStyles.path,
+				)
+			: undefined
 		const stylesResult =
 			workbook.preservedStyles && preservedStylesXml
 				? buildPreservedStylesXml(preservedStylesXml, workbook.preservedStyles, workbook.styles)
 				: undefined
 		const { xml: stylesXml, xfMap } =
 			stylesResult ?? buildStylesXml(workbook.styles, workbook.differentialStyles)
+		if (workbook.preservedStyles) {
+			workbook.preservedStyles = {
+				...workbook.preservedStyles,
+				xfByStyleId: Object.fromEntries(xfMap.entries()),
+			}
+		}
 
 		if (capsules) {
 			for (const capsule of capsules) {
@@ -421,14 +426,6 @@ export function writeXlsx(
 			),
 		)
 	}
-}
-
-function stylesNeedRebuild(workbook: Workbook): boolean {
-	if (!workbook.preservedStyles) return true
-	for (let i = 0; i < workbook.styles.size; i++) {
-		if (workbook.preservedStyles.xfByStyleId[i] === undefined) return true
-	}
-	return false
 }
 
 function materializeSharedStringEntries(xml: string): CellValue[] {

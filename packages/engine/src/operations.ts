@@ -872,6 +872,21 @@ function handleSetNumberFormat(
 				numberFormat: op.format,
 			}
 			const styleId = workbook.styles.register(style)
+			if (
+				workbook.preservedStyles &&
+				existing?.styleId !== undefined &&
+				styleId !== existing.styleId
+			) {
+				const baseStyleId =
+					workbook.preservedStyles.baseStyleIdByStyleId?.[existing.styleId] ?? existing.styleId
+				workbook.preservedStyles = {
+					...workbook.preservedStyles,
+					baseStyleIdByStyleId: {
+						...(workbook.preservedStyles.baseStyleIdByStyleId ?? {}),
+						[styleId]: baseStyleId,
+					},
+				}
+			}
 			sheet.cells.set(row, col, cell(existing?.value ?? EMPTY, existing?.formula ?? null, styleId))
 			affected.push(toA1({ row, col }))
 		}

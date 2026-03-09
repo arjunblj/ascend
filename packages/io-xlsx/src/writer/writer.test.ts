@@ -3,6 +3,7 @@ import type { StyleId } from '@ascend/core'
 import { createTableId, Workbook } from '@ascend/core'
 import { booleanValue, numberValue, stringValue } from '@ascend/schema'
 import { strToU8, unzipSync, zipSync } from 'fflate'
+import { applyOperations } from '../../../engine/src/index.ts'
 import { fingerprintXlsx } from '../../test/fidelity-harness.ts'
 import type { PreservationCapsule } from '../preserve.ts'
 import { readXlsx } from '../reader/index.ts'
@@ -188,6 +189,80 @@ describe('writeXlsx', () => {
 		expect(cell).toBeDefined()
 		const style = result.workbook.styles.get(cell?.styleId ?? (0 as StyleId))
 		expect(style?.numberFormat).toBe('0.00%')
+	})
+
+	it('appends number-format styles onto preserved styles.xml without rebuilding it', () => {
+		const sourceBytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`,
+			'xl/styles.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="1"><font/></fonts>
+  <fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
+  <borders count="1"><border/></borders>
+  <cellStyleXfs count="1"><xf/></cellStyleXfs>
+  <cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellXfs>
+  <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+  <tableStyles count="1" defaultTableStyle="TableStyleMedium2" defaultPivotStyle="PivotStyleLight16">
+    <tableStyle name="TableStyleMedium2"/>
+  </tableStyles>
+</styleSheet>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1"><v>0.25</v></c></row></sheetData>
+</worksheet>`,
+		})
+
+		const source = readXlsx(sourceBytes)
+		expect(source.ok).toBe(true)
+		if (!source.ok) return
+
+		const applied = applyOperations(source.value.workbook, [
+			{ op: 'setNumberFormat', sheet: 'Sheet1', range: 'A1:A1', format: '0.0%' },
+		])
+		expect(applied.ok).toBe(true)
+		if (!applied.ok) return
+
+		const written = writeXlsx(source.value.workbook, source.value.capsules, {
+			dirtySheetNames: ['Sheet1'],
+		})
+		expect(written.ok).toBe(true)
+		if (!written.ok) return
+
+		const zip = unzipSync(written.value)
+		const stylesXml = new TextDecoder().decode(zip['xl/styles.xml'] ?? new Uint8Array())
+		expect(stylesXml).toContain('<tableStyles count="1" defaultTableStyle="TableStyleMedium2"')
+		expect(stylesXml).toContain('<cellStyleXfs count="1"><xf/></cellStyleXfs>')
+		expect(stylesXml).toContain('formatCode="0.0%"')
+		expect(stylesXml).toContain('<cellXfs count="2">')
+		expect(stylesXml).toContain('applyNumberFormat="1"')
+
+		const reopened = readXlsx(written.value)
+		expect(reopened.ok).toBe(true)
+		if (!reopened.ok) return
+		const cell = reopened.value.workbook.sheets[0]?.cells.get(0, 0)
+		const style = reopened.value.workbook.styles.get(cell?.styleId ?? (0 as StyleId))
+		expect(style?.numberFormat).toBe('0.0%')
 	})
 
 	it('preserves merges on round-trip', () => {

@@ -389,6 +389,47 @@ describe('writeXlsx', () => {
 		})
 	})
 
+	it('emits table parts for semantic tables without capsules', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Inventory')
+		sheet.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: S0 })
+		sheet.cells.set(0, 1, { value: stringValue('Qty'), formula: null, styleId: S0 })
+		sheet.cells.set(1, 0, { value: stringValue('Bolts'), formula: null, styleId: S0 })
+		sheet.cells.set(1, 1, { value: numberValue(5), formula: null, styleId: S0 })
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'InventoryTable',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 1, col: 1 } },
+			columns: [{ name: 'Name' }, { name: 'Qty' }],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+
+		const { result, bytes } = roundTrip(wb)
+		expect(result.workbook.sheets[0]?.tables).toHaveLength(1)
+		expect(result.workbook.sheets[0]?.tables[0]?.name).toBe('InventoryTable')
+
+		const fingerprint = fingerprintXlsx(bytes)
+		expect(fingerprint.partPaths).toContain('xl/tables/table1.xml')
+		expect(fingerprint.sheets[0]?.xml.tagCounts).toMatchObject({
+			tableParts: 1,
+			tablePart: 1,
+		})
+		expect(fingerprint.sheetRels[0]?.xml.tagCounts).toMatchObject({
+			Relationships: 1,
+			Relationship: 1,
+		})
+
+		const entries = unzipSync(bytes)
+		const tableEntry = entries['xl/tables/table1.xml']
+		expect(tableEntry).toBeDefined()
+		if (!tableEntry) return
+		const tableXml = new TextDecoder().decode(tableEntry)
+		expect(tableXml).toContain('InventoryTable')
+		expect(tableXml).toContain('<tableColumns count="2">')
+	})
+
 	it('preserves capsule parts through write-read cycle', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Sheet1')

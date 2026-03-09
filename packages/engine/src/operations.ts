@@ -1,5 +1,5 @@
 import type { Cell, CellStyle, RangeRef, Sheet, StyleId, Workbook } from '@ascend/core'
-import { columnToIndex, parseA1, parseRange, toA1 } from '@ascend/core'
+import { columnToIndex, createTableId, parseA1, parseRange, toA1 } from '@ascend/core'
 import type { FormulaCellRef, FormulaNode } from '@ascend/formulas'
 import {
 	compareValues,
@@ -466,6 +466,104 @@ function handleAddSheet(
 	return ok(patch([], [op.name]))
 }
 
+function handleCreateTable(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'createTable' }>,
+): Result<PatchResult> {
+	const result = getSheet(workbook, op.sheet)
+	if (!result.ok) return result
+	const sheet = result.value
+	const rangeResult = safeParseRange(op.ref)
+	if (!rangeResult.ok) return rangeResult
+	if (sheet.tables.some((table) => table.name === op.name)) {
+		return err(ascendError('NAME_CONFLICT', `Table "${op.name}" already exists`))
+	}
+
+	const ref = rangeResult.value
+	const width = ref.end.col - ref.start.col + 1
+	const columns = buildTableColumns(sheet, ref, width, op.hasHeaders)
+	sheet.tables.push({
+		id: createTableId(),
+		name: op.name,
+		sheetId: sheet.id,
+		ref,
+		columns,
+		hasHeaders: op.hasHeaders,
+		hasTotals: false,
+	})
+	if (op.hasHeaders) sheet.autoFilter = op.ref
+	return ok(patch([], [op.sheet]))
+}
+
+function handleAppendRows(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'appendRows' }>,
+): Result<PatchResult> {
+	const located = findTable(workbook, op.table)
+	if (!located) {
+		return err(ascendError('NAME_NOT_FOUND', `Table "${op.table}" not found`))
+	}
+	const { table, sheet } = located
+	if (table.hasTotals) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'appendRows does not support tables with totals rows yet'),
+		)
+	}
+	if (op.rows.length === 0) return ok(patch([], [sheet.name], false))
+
+	const width = table.columns.length
+	const affected: string[] = []
+	let nextRow = table.ref.end.row + 1
+	for (const row of op.rows) {
+		if (row.length > width) {
+			return err(
+				ascendError(
+					'VALIDATION_ERROR',
+					`Appended row has ${row.length} values but table "${table.name}" expects ${width}`,
+				),
+			)
+		}
+		for (let colOffset = 0; colOffset < width; colOffset++) {
+			const col = table.ref.start.col + colOffset
+			const ref = toA1({ row: nextRow, col })
+			const provided = row[colOffset]
+			const existing = sheet.cells.get(nextRow, col)
+			if (provided !== undefined) {
+				sheet.cells.set(
+					nextRow,
+					col,
+					cell(
+						inputToCellValue(provided),
+						existing?.formula ?? null,
+						existing?.styleId ?? DEFAULT_SID,
+					),
+				)
+			} else {
+				const formula = table.columns[colOffset]?.formula
+				sheet.cells.set(
+					nextRow,
+					col,
+					cell(existing?.value ?? EMPTY, formula ?? null, existing?.styleId ?? DEFAULT_SID),
+				)
+			}
+			affected.push(ref)
+		}
+		nextRow++
+	}
+
+	const tableIndex = sheet.tables.findIndex((candidate) => candidate.id === table.id)
+	if (tableIndex >= 0) {
+		sheet.tables.splice(tableIndex, 1, {
+			...table,
+			ref: {
+				start: table.ref.start,
+				end: { row: table.ref.end.row + op.rows.length, col: table.ref.end.col },
+			},
+		})
+	}
+	return ok(patch(affected, [sheet.name], true))
+}
+
 function handleDeleteSheet(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'deleteSheet' }>,
@@ -509,6 +607,46 @@ function handleMoveSheet(
 	workbook.sheets.splice(op.position, 0, sheet)
 
 	return ok(patch([], [op.sheet]))
+}
+
+function buildTableColumns(
+	sheet: Sheet,
+	ref: RangeRef,
+	width: number,
+	hasHeaders: boolean,
+): Array<{ name: string }> {
+	const usedNames = new Set<string>()
+	const columns: Array<{ name: string }> = []
+	for (let colOffset = 0; colOffset < width; colOffset++) {
+		let name = `Column${colOffset + 1}`
+		if (hasHeaders) {
+			const cellValue = sheet.cells.get(ref.start.row, ref.start.col + colOffset)?.value
+			if (cellValue?.kind === 'string' && cellValue.value.trim() !== '') {
+				name = cellValue.value.trim()
+			}
+		}
+		let candidate = name
+		let suffix = 2
+		while (usedNames.has(candidate.toLowerCase())) {
+			candidate = `${name}_${suffix}`
+			suffix++
+		}
+		usedNames.add(candidate.toLowerCase())
+		columns.push({ name: candidate })
+	}
+	return columns
+}
+
+function findTable(
+	workbook: Workbook,
+	name: string,
+): { table: Sheet['tables'][number]; sheet: Sheet } | null {
+	for (const sheet of workbook.sheets) {
+		for (const table of sheet.tables) {
+			if (table.name === name) return { table, sheet }
+		}
+	}
+	return null
 }
 
 function handleMergeCells(
@@ -941,6 +1079,10 @@ export function applyOperation(workbook: Workbook, op: Operation): Result<PatchR
 			return handleDeleteCols(workbook, op)
 		case 'addSheet':
 			return handleAddSheet(workbook, op)
+		case 'createTable':
+			return handleCreateTable(workbook, op)
+		case 'appendRows':
+			return handleAppendRows(workbook, op)
 		case 'deleteSheet':
 			return handleDeleteSheet(workbook, op)
 		case 'renameSheet':
@@ -972,7 +1114,7 @@ export function applyOperation(workbook: Workbook, op: Operation): Result<PatchR
 		case 'setNumberFormat':
 			return handleSetNumberFormat(workbook, op)
 		default:
-			return err(ascendError('VALIDATION_ERROR', `Unsupported operation: ${op.op}`))
+			return assertUnreachable(op)
 	}
 }
 
@@ -993,4 +1135,8 @@ export function applyOperations(
 	}
 
 	return ok(patch(allAffected, allSheets, needsRecalc))
+}
+
+function assertUnreachable(value: never): Result<PatchResult> {
+	return err(ascendError('VALIDATION_ERROR', `Unsupported operation: ${JSON.stringify(value)}`))
 }

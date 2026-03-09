@@ -309,6 +309,60 @@ describe('applyOperation', () => {
 		expect(sheet.hyperlinks.get('A3')).toEqual({ target: 'https://example.com/b' })
 		expect(sheet.comments.get('B2')).toEqual({ text: 'lowest' })
 	})
+
+	test('createTable infers columns from the header row', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Value'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('Cash'), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(10), formula: null, styleId: sid })
+
+		const result = applyOperation(wb, {
+			op: 'createTable',
+			sheet: 'Sheet1',
+			ref: 'A1:B2',
+			name: 'BalanceTable',
+			hasHeaders: true,
+		})
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(sheet.tables).toHaveLength(1)
+		expect(sheet.tables[0]?.columns).toEqual([{ name: 'Name' }, { name: 'Value' }])
+		expect(sheet.autoFilter).toBe('A1:B2')
+	})
+
+	test('appendRows expands a table and writes new values', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Value'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('Cash'), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(10), formula: null, styleId: sid })
+		applyOperation(wb, {
+			op: 'createTable',
+			sheet: 'Sheet1',
+			ref: 'A1:B2',
+			name: 'BalanceTable',
+			hasHeaders: true,
+		})
+
+		const result = applyOperation(wb, {
+			op: 'appendRows',
+			table: 'BalanceTable',
+			rows: [['Debt', 20]],
+		})
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(sheet.tables[0]?.ref).toEqual({
+			start: { row: 0, col: 0 },
+			end: { row: 2, col: 1 },
+		})
+		expect(sheet.cells.get(2, 0)?.value).toEqual(stringValue('Debt'))
+		expect(sheet.cells.get(2, 1)?.value).toEqual(numberValue(20))
+	})
 })
 
 describe('applyOperations', () => {

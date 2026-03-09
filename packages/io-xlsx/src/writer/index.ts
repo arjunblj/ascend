@@ -6,6 +6,7 @@ import {
 	getRelsPath,
 	REL_SHARED_STRINGS,
 	REL_STYLES,
+	REL_TABLE,
 	REL_THEME,
 	REL_WORKSHEET,
 } from '../reader/relationships.ts'
@@ -16,6 +17,7 @@ import { buildRelsXml } from './relationships.ts'
 import { buildSharedStrings } from './shared-strings.ts'
 import { buildSheetXml } from './sheet.ts'
 import { buildPreservedStylesXml, buildStylesXml } from './styles.ts'
+import { buildTableXml } from './table.ts'
 import { buildWorkbookXml } from './workbook.ts'
 import { createZip, encode } from './zip.ts'
 
@@ -27,6 +29,7 @@ const REL_EXT_PROPS =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties'
 const REL_HYPERLINK =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink'
+const CT_TABLE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml'
 
 export interface WriteXlsxOptions {
 	readonly dirtySheetNames?: readonly string[]
@@ -43,6 +46,9 @@ export function writeXlsx(
 		const parts = new Map<string, Uint8Array>()
 		const sheetCapsuleMap = new Map<string, PreservationCapsule[]>()
 		const workbookCapsules: PreservationCapsule[] = []
+		const skippedCapsulePaths = new Set<string>()
+		const extraOverrides: Array<{ partPath: string; contentType: string }> = []
+		let nextGeneratedTableNumber = 1
 
 		const ssTable = buildSharedStrings(workbook)
 		const hasSharedStrings = ssTable.count > 0
@@ -136,6 +142,10 @@ export function writeXlsx(
 		parts.set('xl/styles.xml', encode(stylesXml))
 		if (workbook.preservedTheme) {
 			parts.set(workbook.preservedTheme.path, encode(workbook.preservedTheme.xml))
+			extraOverrides.push({
+				partPath: workbook.preservedTheme.path,
+				contentType: workbook.preservedTheme.contentType,
+			})
 		}
 
 		if (hasSharedStrings) {
@@ -150,6 +160,7 @@ export function writeXlsx(
 			const sheetRels: RelEntry[] = []
 			let sheetRelId = 1
 			const tableRelIds: string[] = []
+			const tableCapsules = sheetCapsules.filter((capsule) => capsule.relType === REL_TABLE)
 			const hyperlinkEntries: Array<{
 				ref: string
 				relId?: string
@@ -159,18 +170,13 @@ export function writeXlsx(
 			}> = []
 			for (const capsule of sheetCapsules) {
 				if (!capsule.relType) continue
+				if (capsule.relType === REL_TABLE) continue
 				const relId = `rId${sheetRelId}`
 				sheetRels.push({
 					id: relId,
 					type: capsule.relType,
 					target: computeRelativePath('xl/worksheets/', capsule.partPath),
 				})
-				if (
-					capsule.relType ===
-					'http://schemas.openxmlformats.org/officeDocument/2006/relationships/table'
-				) {
-					tableRelIds.push(relId)
-				}
 				sheetRelId++
 			}
 			for (const [ref, hyperlink] of sheet.hyperlinks) {
@@ -203,6 +209,28 @@ export function writeXlsx(
 				!options.sharedStringsDirty &&
 				!(options.dirtySheetNames ?? []).includes(sheet.name) &&
 				preservedSheetXml?.xml
+			if (!preserveSheetXml) {
+				for (let tableIndex = 0; tableIndex < sheet.tables.length; tableIndex++) {
+					const table = sheet.tables[tableIndex]
+					if (!table) continue
+					const tableCapsule = tableCapsules[tableIndex]
+					const tablePartPath =
+						tableCapsule?.partPath ?? `xl/tables/table${nextGeneratedTableNumber}.xml`
+					const tableContentType = tableCapsule?.contentType ?? CT_TABLE
+					parts.set(tablePartPath, encode(buildTableXml(table, nextGeneratedTableNumber)))
+					extraOverrides.push({ partPath: tablePartPath, contentType: tableContentType })
+					if (tableCapsule) skippedCapsulePaths.add(tableCapsule.partPath)
+					const relId = `rId${sheetRelId}`
+					sheetRels.push({
+						id: relId,
+						type: REL_TABLE,
+						target: computeRelativePath('xl/worksheets/', tablePartPath),
+					})
+					tableRelIds.push(relId)
+					sheetRelId++
+					nextGeneratedTableNumber++
+				}
+			}
 			parts.set(
 				`xl/worksheets/sheet${i + 1}.xml`,
 				encode(
@@ -230,6 +258,7 @@ export function writeXlsx(
 
 		if (capsules) {
 			for (const capsule of capsules) {
+				if (skippedCapsulePaths.has(capsule.partPath)) continue
 				parts.set(capsule.partPath, capsule.content)
 
 				if (capsule.relationships.length > 0) {
@@ -255,14 +284,7 @@ export function writeXlsx(
 					workbook.sheets.length,
 					hasSharedStrings,
 					capsules,
-					workbook.preservedTheme
-						? [
-								{
-									partPath: workbook.preservedTheme.path,
-									contentType: workbook.preservedTheme.contentType,
-								},
-							]
-						: undefined,
+					extraOverrides.length > 0 ? extraOverrides : undefined,
 				),
 			),
 		)

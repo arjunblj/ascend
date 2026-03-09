@@ -125,6 +125,29 @@ describe('parse', () => {
 		})
 	})
 
+	it('parses spill references', () => {
+		const node = p('A1#')
+		expect(node).toEqual({
+			type: 'spillRef',
+			target: {
+				type: 'cellRef',
+				ref: { row: 0, col: 0, rowAbsolute: false, colAbsolute: false },
+			},
+		})
+	})
+
+	it('parses implicit intersection prefix', () => {
+		const node = p('@A1')
+		expect(node).toEqual({
+			type: 'unary',
+			op: '@',
+			operand: {
+				type: 'cellRef',
+				ref: { row: 0, col: 0, rowAbsolute: false, colAbsolute: false },
+			},
+		})
+	})
+
 	it('parses concatenation', () => {
 		const node = p('"a"&"b"')
 		expect(node).toEqual({
@@ -304,6 +327,8 @@ describe('printFormula', () => {
 	it('roundtrips unary operators', () => {
 		expect(printFormula(p('-A1'))).toBe('-A1')
 		expect(printFormula(p('50%'))).toBe('50%')
+		expect(printFormula(p('@A1'))).toBe('@A1')
+		expect(printFormula(p('A1#'))).toBe('A1#')
 	})
 
 	it('roundtrips array literals', () => {

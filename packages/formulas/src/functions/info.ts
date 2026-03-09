@@ -38,6 +38,7 @@ function typeFn(args: EvalArg[]): CellValue {
 	if (arg?.kind === 'range') return numberValue(64)
 	const v = arg?.value
 	if (!v) return numberValue(1)
+	if (v.kind === 'array') return numberValue(64)
 	switch (v.kind) {
 		case 'number':
 		case 'date':

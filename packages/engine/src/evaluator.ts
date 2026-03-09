@@ -1,8 +1,16 @@
 import type { Workbook } from '@ascend/core'
 import type { FormulaNode } from '@ascend/formulas'
 import { type EvalArg, functionRegistry, parseFormula, toNumber } from '@ascend/formulas'
-import type { CellValue } from '@ascend/schema'
-import { booleanValue, EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
+import type { CellValue, ScalarCellValue } from '@ascend/schema'
+import {
+	arrayValue,
+	booleanValue,
+	EMPTY,
+	errorValue,
+	numberValue,
+	stringValue,
+	topLeftScalar,
+} from '@ascend/schema'
 import type { CalcContext } from './calc-context.ts'
 import { resolveStructuredRefRange } from './structured-refs.ts'
 
@@ -60,6 +68,7 @@ function coerceToNumber(v: CellValue): number | null {
 }
 
 function coerceToString(v: CellValue): string {
+	v = topLeftScalar(v)
 	switch (v.kind) {
 		case 'number':
 			return String(v.value)
@@ -79,6 +88,8 @@ function coerceToString(v: CellValue): string {
 }
 
 function evalBinary(op: string, left: CellValue, right: CellValue): CellValue {
+	left = topLeftScalar(left)
+	right = topLeftScalar(right)
 	if (left.kind === 'error') return left
 	if (right.kind === 'error') return right
 
@@ -189,6 +200,7 @@ export function evaluate(node: FormulaNode, ctx: EvalContext): CellValue {
 
 		case 'unary': {
 			const operand = evaluate(node.operand, ctx)
+			if (node.op === '@') return topLeftScalar(operand)
 			if (operand.kind === 'error') return operand
 			const n = coerceToNumber(operand)
 			if (n === null) return errorValue('#VALUE!')
@@ -207,12 +219,15 @@ export function evaluate(node: FormulaNode, ctx: EvalContext): CellValue {
 			return evalFunction(node.name, node.args, ctx)
 
 		case 'array': {
-			const firstRow = node.rows[0]
-			if (firstRow) {
-				const firstEl = firstRow[0]
-				if (firstEl) return evaluate(firstEl, ctx)
+			const rows: ScalarCellValue[][] = []
+			for (const sourceRow of node.rows) {
+				const targetRow: ScalarCellValue[] = []
+				for (const sourceNode of sourceRow) {
+					targetRow.push(topLeftScalar(evaluate(sourceNode, ctx)))
+				}
+				rows.push(targetRow)
 			}
-			return EMPTY
+			return arrayValue(rows)
 		}
 
 		case 'structuredRef': {
@@ -225,6 +240,10 @@ export function evaluate(node: FormulaNode, ctx: EvalContext): CellValue {
 			)
 			if (!resolved) return errorValue('#REF!')
 			return getCellValue(ctx.workbook, resolved.sheetIndex, resolved.startRow, resolved.startCol)
+		}
+		case 'spillRef': {
+			const resolved = resolveSpillReference(node.target, ctx)
+			return resolved?.value ?? errorValue('#REF!')
 		}
 	}
 	return EMPTY
@@ -267,7 +286,8 @@ function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
 			return resolveReferenceFunction(upperName, node.args, ctx)
 		}
 		if (upperName === 'LET') {
-			return { value: evalLet(node.args, ctx) }
+			const value = evalLet(node.args, ctx)
+			return value.kind === 'array' ? { value, kind: 'range', values: value.rows } : { value }
 		}
 	}
 
@@ -324,7 +344,18 @@ function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
 		)
 	}
 
+	if (node.type === 'spillRef') {
+		return resolveSpillReference(node.target, ctx) ?? { value: errorValue('#REF!') }
+	}
+
 	const value = evaluate(node, ctx)
+	if (value.kind === 'array') {
+		return {
+			value,
+			kind: 'range',
+			values: value.rows,
+		}
+	}
 	return { value }
 }
 
@@ -453,9 +484,41 @@ function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | nu
 				resolved.endCol,
 			)
 		}
+		case 'spillRef':
+			return resolveSpillReference(node.target, ctx)
 		default:
 			return null
 	}
+}
+
+function resolveSpillReference(target: FormulaNode, ctx: EvalContext): EvalArg | null {
+	const targetRef = resolveReferenceNode(target, ctx) ?? resolveArg(target, ctx)
+	if (!targetRef.ref) return null
+	const sheet = ctx.workbook.sheets[targetRef.ref.sheetIndex]
+	if (!sheet) return null
+	const cell = sheet.cells.get(targetRef.ref.row, targetRef.ref.col)
+	const binding = cell?.formulaInfo
+	if (!binding || !isSpillFormulaBinding(binding)) return { value: errorValue('#REF!') }
+	const parsed = parseFormula(binding.ref)
+	if (!parsed.ok || parsed.value.type !== 'rangeRef') return null
+	return makeRangeArg(
+		ctx.workbook,
+		targetRef.ref.sheetIndex,
+		parsed.value.start.row,
+		parsed.value.start.col,
+		parsed.value.end.row,
+		parsed.value.end.col,
+	)
+}
+
+function isSpillFormulaBinding(
+	binding: unknown,
+): binding is { kind: 'spill'; anchorRef: string; ref: string; isAnchor: boolean } {
+	return (
+		typeof binding === 'object' &&
+		binding !== null &&
+		(binding as { kind?: string }).kind === 'spill'
+	)
 }
 
 function makeRangeArg(

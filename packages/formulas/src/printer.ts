@@ -114,6 +114,11 @@ function printNode(node: FormulaNode): string {
 				node.operand.type === 'binary' ? `(${printNode(node.operand)})` : printNode(node.operand)
 			return `${node.op}${inner}`
 		}
+		case 'spillRef': {
+			const inner =
+				node.target.type === 'binary' ? `(${printNode(node.target)})` : printNode(node.target)
+			return `${inner}#`
+		}
 		case 'array':
 			return `{${node.rows.map((row) => row.map(printNode).join(',')).join(';')}}`
 		case 'structuredRef':

@@ -16,7 +16,7 @@ export type BinaryOp =
 	| ' '
 	| ','
 
-export type UnaryOp = '+' | '-' | '%'
+export type UnaryOp = '+' | '-' | '%' | '@'
 
 export interface FormulaCellRef {
 	readonly row: number
@@ -95,6 +95,11 @@ export interface StructuredRefNode {
 	readonly column?: string
 }
 
+export interface SpillRefNode {
+	readonly type: 'spillRef'
+	readonly target: FormulaNode
+}
+
 export interface MissingNode {
 	readonly type: 'missing'
 }
@@ -112,4 +117,5 @@ export type FormulaNode =
 	| UnaryNode
 	| ArrayNode
 	| StructuredRefNode
+	| SpillRefNode
 	| MissingNode

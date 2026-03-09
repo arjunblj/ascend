@@ -85,11 +85,8 @@ export function tokenize(formula: string): Token[] {
 				}
 			}
 			if (!matched) {
+				tokens.push({ type: TokenType.Operator, value: '#', position: start })
 				pos++
-				while (pos < formula.length && /[A-Za-z0-9!?/]/.test(formula.charAt(pos))) {
-					pos++
-				}
-				tokens.push({ type: TokenType.Error, value: formula.slice(start, pos), position: start })
 			}
 			continue
 		}
@@ -209,7 +206,8 @@ export function tokenize(formula: string): Token[] {
 			ch === '^' ||
 			ch === '&' ||
 			ch === '=' ||
-			ch === '%'
+			ch === '%' ||
+			ch === '@'
 		) {
 			tokens.push({ type: TokenType.Operator, value: ch, position: pos })
 			pos++

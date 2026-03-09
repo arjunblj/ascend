@@ -3,6 +3,7 @@ export {
 	type AnalyzeWorkbookOptions,
 	analyzeWorkbook,
 	createSheetNameIndex,
+	invalidateWorkbookAnalysis,
 	resolveSheetIndex,
 	type WorkbookAnalysis,
 } from './analysis.ts'

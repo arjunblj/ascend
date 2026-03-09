@@ -139,6 +139,30 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(4, 0)?.value).toEqual(numberValue(22))
 	})
 
+	test('SUMPRODUCT returns #VALUE! for mismatched range shapes', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: EMPTY, formula: 'SUMPRODUCT(A1:A2,B1:B1)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(2, 0)?.value).toEqual(errorValue('#VALUE!'))
+	})
+
+	test('SUMIFS returns #VALUE! for mismatched criteria shapes', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: EMPTY, formula: 'SUMIFS(A1:A2,B1:B1,1)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(2, 0)?.value).toEqual(errorValue('#VALUE!'))
+	})
+
 	test('current-row structured references resolve within a table body', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -276,6 +300,52 @@ describe('recalculate', () => {
 
 		recalculate(wb, makeCtx())
 		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(11))
+	})
+
+	test('SEQUENCE spills vertically into neighboring cells', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'SEQUENCE(3)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(2, 0)?.value).toEqual(numberValue(3))
+	})
+
+	test('blocked spill returns #SPILL! in the anchor cell', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'SEQUENCE(3)', styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('blocker'), formula: null, styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#SPILL!'))
+		expect(sheet.cells.get(1, 0)?.value).toEqual(stringValue('blocker'))
+	})
+
+	test('spill operator resolves a spilled range', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'SEQUENCE(3)', styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'SUM(A1#)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(6))
+	})
+
+	test('dynamic array functions spill sorted results', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(30), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'SORT(A1:A3)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(10))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(20))
+		expect(sheet.cells.get(2, 1)?.value).toEqual(numberValue(30))
 	})
 
 	test('error propagation through formula chain', () => {

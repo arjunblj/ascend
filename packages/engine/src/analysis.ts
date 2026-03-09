@@ -29,6 +29,8 @@ export interface AnalyzeWorkbookOptions {
 	readonly range?: RangeRef
 }
 
+const workbookAnalysisCache = new WeakMap<Workbook, WorkbookAnalysis>()
+
 export function createSheetNameIndex(workbook: Workbook): Map<string, number> {
 	const index = new Map<string, number>()
 	for (let i = 0; i < workbook.sheets.length; i++) {
@@ -52,6 +54,10 @@ export function analyzeWorkbook(
 	workbook: Workbook,
 	options: AnalyzeWorkbookOptions = {},
 ): WorkbookAnalysis {
+	if (!options.range) {
+		const cached = workbookAnalysisCache.get(workbook)
+		if (cached) return cached
+	}
 	const sheetNameIndex = createSheetNameIndex(workbook)
 	const formulas = new Map<CellKey, AnalyzedFormula>()
 	const dependencyGraph = new DependencyGraph()
@@ -131,7 +137,13 @@ export function analyzeWorkbook(
 		}
 	}
 
-	return { formulas, dependencyGraph, sheetNameIndex }
+	const analysis = { formulas, dependencyGraph, sheetNameIndex }
+	if (!options.range) workbookAnalysisCache.set(workbook, analysis)
+	return analysis
+}
+
+export function invalidateWorkbookAnalysis(workbook: Workbook): void {
+	workbookAnalysisCache.delete(workbook)
 }
 
 function inRange(
@@ -159,6 +171,8 @@ function hasVolatileFunction(node: FormulaNode): boolean {
 			return hasVolatileFunction(node.operand)
 		case 'array':
 			return node.rows.some((row) => row.some((cell) => hasVolatileFunction(cell)))
+		case 'spillRef':
+			return hasVolatileFunction(node.target)
 		default:
 			return false
 	}
@@ -244,6 +258,9 @@ function walkStructuredRefs(
 				for (const cell of row) walkStructuredRefs(cell, result)
 			}
 			break
+		case 'spillRef':
+			walkStructuredRefs(node.target, result)
+			break
 		default:
 			break
 	}
@@ -270,6 +287,9 @@ function walkNameRefs(node: FormulaNode, result: Array<{ name: string; sheet?: s
 			for (const row of node.rows) {
 				for (const cell of row) walkNameRefs(cell, result)
 			}
+			break
+		case 'spillRef':
+			walkNameRefs(node.target, result)
 			break
 		default:
 			break

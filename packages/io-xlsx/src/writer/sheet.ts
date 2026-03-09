@@ -1,6 +1,7 @@
 import type { Cell, Sheet, SheetColDef } from '@ascend/core'
 import { indexToColumn } from '@ascend/core'
 import type { CellValue } from '@ascend/schema'
+import { topLeftScalar } from '@ascend/schema'
 import { escapeXml } from '../xml.ts'
 import { autoFilterXml } from './filtering.ts'
 import type { SharedStringTable } from './shared-strings.ts'
@@ -433,6 +434,7 @@ function formulaValueAttrs(value: CellValue): {
 	typeAttr: string | undefined
 	valueStr: string | undefined
 } {
+	value = topLeftScalar(value)
 	switch (value.kind) {
 		case 'string':
 			return { typeAttr: 'str', valueStr: escapeXml(value.value) }
@@ -458,6 +460,7 @@ function regularValueAttrs(
 	value: CellValue,
 	ssTable: SharedStringTable,
 ): { typeAttr: string | undefined; valueStr: string | undefined } {
+	value = topLeftScalar(value)
 	switch (value.kind) {
 		case 'string':
 		case 'richText': {

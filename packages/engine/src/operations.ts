@@ -10,6 +10,7 @@ import {
 } from '@ascend/formulas'
 import type { CellValue, InputValue, Operation, Result, SortSpec } from '@ascend/schema'
 import { ascendError, booleanValue, EMPTY, err, numberValue, ok, stringValue } from '@ascend/schema'
+import { invalidateWorkbookAnalysis } from './analysis.ts'
 
 export interface PatchResult {
 	readonly affectedCells: string[]
@@ -217,6 +218,36 @@ function rewriteAllFormulas(
 	}
 }
 
+function rewriteDefinedNameFormulasForShift(
+	workbook: Workbook,
+	targetSheet: string,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): void {
+	const entries = [...workbook.definedNames.list()]
+	for (const entry of entries) {
+		let scopeSheet: string | undefined
+		if (entry.scope.kind === 'sheet') {
+			const scope = entry.scope
+			scopeSheet = workbook.sheets.find((sheet) => sheet.id === scope.sheetId)?.name
+		}
+		const parsed = parseFormula(entry.formula)
+		if (!parsed.ok) continue
+		const rewritten = rewriteNodeForShift(
+			parsed.value,
+			targetSheet,
+			scopeSheet ?? targetSheet,
+			axis,
+			at,
+			delta,
+		)
+		const formula = printFormula(rewritten)
+		if (formula === entry.formula) continue
+		workbook.definedNames.set(entry.name, formula, entry.scope)
+	}
+}
+
 function rewriteSheetNameInFormulas(workbook: Workbook, oldName: string, newName: string): void {
 	for (const sheet of workbook.sheets) {
 		const updates: [number, number, Cell][] = []
@@ -234,6 +265,254 @@ function rewriteSheetNameInFormulas(workbook: Workbook, oldName: string, newName
 			sheet.cells.set(r, c, updated)
 		}
 	}
+}
+
+function rewriteSheetNameInDefinedNames(
+	workbook: Workbook,
+	oldName: string,
+	newName: string,
+): void {
+	const entries = [...workbook.definedNames.list()]
+	for (const entry of entries) {
+		const parsed = parseFormula(entry.formula)
+		if (!parsed.ok) continue
+		const rewritten = rewriteSheetName(parsed.value, oldName, newName)
+		const formula = printFormula(rewritten)
+		if (formula === entry.formula) continue
+		workbook.definedNames.set(entry.name, formula, entry.scope)
+	}
+}
+
+function shiftSheetCellMetadata(
+	sheet: Sheet,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): void {
+	shiftMappedRefs(sheet.comments, axis, at, delta)
+	shiftMappedRefs(sheet.hyperlinks, axis, at, delta)
+	shiftRowOrColMap(sheet.rowHeights, axis === 'row', at, delta)
+	shiftRowOrColMap(sheet.colWidths, axis === 'col', at, delta)
+	shiftSqrefEntries(sheet.dataValidations, axis, at, delta)
+	shiftConditionalFormats(sheet.conditionalFormats, axis, at, delta)
+	shiftIgnoredErrors(sheet.ignoredErrors, axis, at, delta)
+	shiftSheetAutoFilter(sheet, axis, at, delta)
+	shiftSheetTables(sheet, axis, at, delta)
+}
+
+function shiftMappedRefs<T>(
+	map: Map<string, T>,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): void {
+	const entries = [...map.entries()]
+	map.clear()
+	for (const [ref, value] of entries) {
+		const next = shiftA1Ref(ref, axis, at, delta)
+		if (next) map.set(next, value)
+	}
+}
+
+function shiftRowOrColMap(
+	map: Map<number, number>,
+	active: boolean,
+	at: number,
+	delta: number,
+): void {
+	if (!active || map.size === 0) return
+	const entries = [...map.entries()]
+	map.clear()
+	for (const [index, value] of entries) {
+		const next = shiftIndex(index, at, delta)
+		if (next !== null) map.set(next, value)
+	}
+}
+
+function shiftSqrefEntries(
+	validations: Array<{ sqref: string }>,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): void {
+	for (let i = validations.length - 1; i >= 0; i--) {
+		const validation = validations[i]
+		if (!validation) continue
+		const next = shiftSqref(validation.sqref, axis, at, delta)
+		if (!next) validations.splice(i, 1)
+		else validations[i] = { ...validation, sqref: next }
+	}
+}
+
+function shiftConditionalFormats(
+	formats: Array<{ sqref: string }>,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): void {
+	for (let i = formats.length - 1; i >= 0; i--) {
+		const format = formats[i]
+		if (!format) continue
+		const next = shiftSqref(format.sqref, axis, at, delta)
+		if (!next) formats.splice(i, 1)
+		else formats[i] = { ...format, sqref: next }
+	}
+}
+
+function shiftIgnoredErrors(
+	ignoredErrors: Array<{ sqref: string }>,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): void {
+	for (let i = ignoredErrors.length - 1; i >= 0; i--) {
+		const ignoredError = ignoredErrors[i]
+		if (!ignoredError) continue
+		const next = shiftSqref(ignoredError.sqref, axis, at, delta)
+		if (!next) ignoredErrors.splice(i, 1)
+		else ignoredErrors[i] = { ...ignoredError, sqref: next }
+	}
+}
+
+function shiftSheetAutoFilter(sheet: Sheet, axis: 'row' | 'col', at: number, delta: number): void {
+	if (!sheet.autoFilter) return
+	const ref = shiftSqref(sheet.autoFilter.ref, axis, at, delta)
+	if (!ref) {
+		sheet.autoFilter = null
+		return
+	}
+	sheet.autoFilter = {
+		...sheet.autoFilter,
+		ref,
+		...(sheet.autoFilter.sortState
+			? {
+					sortState: {
+						...sheet.autoFilter.sortState,
+						ref:
+							shiftSqref(sheet.autoFilter.sortState.ref, axis, at, delta) ??
+							sheet.autoFilter.sortState.ref,
+						conditions: sheet.autoFilter.sortState.conditions.map((condition) => ({
+							...condition,
+							ref: shiftSqref(condition.ref, axis, at, delta) ?? condition.ref,
+						})),
+					},
+				}
+			: {}),
+	}
+}
+
+function shiftSheetTables(sheet: Sheet, axis: 'row' | 'col', at: number, delta: number): void {
+	for (let index = 0; index < sheet.tables.length; index++) {
+		const table = sheet.tables[index]
+		if (!table) continue
+		const ref = shiftRangeRef(table.ref, axis, at, delta)
+		if (!ref) continue
+		sheet.tables[index] = {
+			...table,
+			ref,
+			...(table.autoFilter
+				? {
+						autoFilter: {
+							...table.autoFilter,
+							ref: shiftSqref(table.autoFilter.ref, axis, at, delta) ?? table.autoFilter.ref,
+							...(table.autoFilter.sortState
+								? {
+										sortState: {
+											...table.autoFilter.sortState,
+											ref:
+												shiftSqref(table.autoFilter.sortState.ref, axis, at, delta) ??
+												table.autoFilter.sortState.ref,
+											conditions: table.autoFilter.sortState.conditions.map((condition) => ({
+												...condition,
+												ref: shiftSqref(condition.ref, axis, at, delta) ?? condition.ref,
+											})),
+										},
+									}
+								: {}),
+						},
+					}
+				: {}),
+			...(table.sortState
+				? {
+						sortState: {
+							...table.sortState,
+							ref: shiftSqref(table.sortState.ref, axis, at, delta) ?? table.sortState.ref,
+							conditions: table.sortState.conditions.map((condition) => ({
+								...condition,
+								ref: shiftSqref(condition.ref, axis, at, delta) ?? condition.ref,
+							})),
+						},
+					}
+				: {}),
+		}
+	}
+}
+
+function shiftSqref(sqref: string, axis: 'row' | 'col', at: number, delta: number): string | null {
+	const shifted = sqref
+		.split(/\s+/)
+		.map((part) => shiftA1RangeOrCell(part, axis, at, delta))
+		.filter((part): part is string => part !== null && part.length > 0)
+	return shifted.length > 0 ? shifted.join(' ') : null
+}
+
+function shiftA1RangeOrCell(
+	input: string,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): string | null {
+	if (!input) return null
+	try {
+		const range = parseRange(input)
+		const shifted = shiftRangeRef(range, axis, at, delta)
+		if (!shifted) return null
+		const start = toA1(shifted.start)
+		const end = toA1(shifted.end)
+		return start === end ? start : `${start}:${end}`
+	} catch {
+		const shifted = shiftA1Ref(input, axis, at, delta)
+		return shifted
+	}
+}
+
+function shiftRangeRef(
+	range: RangeRef,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): RangeRef | null {
+	const start =
+		axis === 'row' ? shiftIndex(range.start.row, at, delta) : shiftIndex(range.start.col, at, delta)
+	const end =
+		axis === 'row' ? shiftIndex(range.end.row, at, delta) : shiftIndex(range.end.col, at, delta)
+	if (start === null || end === null) return null
+	if (axis === 'row') {
+		return { start: { ...range.start, row: start }, end: { ...range.end, row: end } }
+	}
+	return { start: { ...range.start, col: start }, end: { ...range.end, col: end } }
+}
+
+function shiftA1Ref(ref: string, axis: 'row' | 'col', at: number, delta: number): string | null {
+	try {
+		const parsed = parseA1(ref)
+		const next =
+			axis === 'row' ? shiftIndex(parsed.row, at, delta) : shiftIndex(parsed.col, at, delta)
+		if (next === null) return null
+		return axis === 'row'
+			? toA1({ row: next, col: parsed.col })
+			: toA1({ row: parsed.row, col: next })
+	} catch {
+		return ref
+	}
+}
+
+function shiftIndex(index: number, at: number, delta: number): number | null {
+	if (delta > 0) return index >= at ? index + delta : index
+	const count = Math.abs(delta)
+	const deleteEnd = at + count
+	if (index >= at && index < deleteEnd) return null
+	return index >= deleteEnd ? index + delta : index
 }
 
 // --- Operation handlers ---
@@ -337,8 +616,10 @@ function handleInsertRows(
 	sheet.cells.insertRows(op.at, op.count)
 
 	shiftMerges(sheet.merges, 'row', op.at, op.count)
+	shiftSheetCellMetadata(sheet, 'row', op.at, op.count)
 	clearFormulaMetadata(workbook)
 	rewriteAllFormulas(workbook, op.sheet, 'row', op.at, op.count)
+	rewriteDefinedNameFormulasForShift(workbook, op.sheet, 'row', op.at, op.count)
 
 	return ok(patch([], [op.sheet], true))
 }
@@ -354,8 +635,10 @@ function handleDeleteRows(
 	sheet.cells.deleteRows(op.at, op.count)
 
 	shiftMerges(sheet.merges, 'row', op.at, -op.count)
+	shiftSheetCellMetadata(sheet, 'row', op.at, -op.count)
 	clearFormulaMetadata(workbook)
 	rewriteAllFormulas(workbook, op.sheet, 'row', op.at, -op.count)
+	rewriteDefinedNameFormulasForShift(workbook, op.sheet, 'row', op.at, -op.count)
 
 	return ok(patch([], [op.sheet], true))
 }
@@ -371,8 +654,10 @@ function handleInsertCols(
 	sheet.cells.insertCols(op.at, op.count)
 
 	shiftMerges(sheet.merges, 'col', op.at, op.count)
+	shiftSheetCellMetadata(sheet, 'col', op.at, op.count)
 	clearFormulaMetadata(workbook)
 	rewriteAllFormulas(workbook, op.sheet, 'col', op.at, op.count)
+	rewriteDefinedNameFormulasForShift(workbook, op.sheet, 'col', op.at, op.count)
 
 	return ok(patch([], [op.sheet], true))
 }
@@ -388,8 +673,10 @@ function handleDeleteCols(
 	sheet.cells.deleteCols(op.at, op.count)
 
 	shiftMerges(sheet.merges, 'col', op.at, -op.count)
+	shiftSheetCellMetadata(sheet, 'col', op.at, -op.count)
 	clearFormulaMetadata(workbook)
 	rewriteAllFormulas(workbook, op.sheet, 'col', op.at, -op.count)
+	rewriteDefinedNameFormulasForShift(workbook, op.sheet, 'col', op.at, -op.count)
 
 	return ok(patch([], [op.sheet], true))
 }
@@ -593,6 +880,7 @@ function handleRenameSheet(
 	sheet.name = op.newName
 	clearFormulaMetadata(workbook)
 	rewriteSheetNameInFormulas(workbook, oldName, op.newName)
+	rewriteSheetNameInDefinedNames(workbook, oldName, op.newName)
 
 	return ok(patch([], [op.newName]))
 }
@@ -1145,6 +1433,7 @@ function opRange(range: RangeRef): string {
 // --- Public API ---
 
 export function applyOperation(workbook: Workbook, op: Operation): Result<PatchResult> {
+	invalidateWorkbookAnalysis(workbook)
 	switch (op.op) {
 		case 'setCells':
 			return handleSetCells(workbook, op)

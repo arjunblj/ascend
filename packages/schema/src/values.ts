@@ -21,7 +21,7 @@ export interface RichTextRun {
 	readonly color?: string
 }
 
-export type CellValue =
+export type ScalarCellValue =
 	| { readonly kind: 'empty' }
 	| { readonly kind: 'number'; readonly value: number }
 	| { readonly kind: 'string'; readonly value: string }
@@ -29,6 +29,13 @@ export type CellValue =
 	| { readonly kind: 'error'; readonly value: ExcelError }
 	| { readonly kind: 'date'; readonly serial: number }
 	| { readonly kind: 'richText'; readonly runs: readonly RichTextRun[] }
+
+export interface ArrayValue {
+	readonly kind: 'array'
+	readonly rows: readonly (readonly ScalarCellValue[])[]
+}
+
+export type CellValue = ScalarCellValue | ArrayValue
 
 export type InputValue = string | number | boolean | null | Date
 
@@ -50,10 +57,24 @@ export function errorValue(v: ExcelError): CellValue {
 	return { kind: 'error', value: v }
 }
 
+export function arrayValue(rows: readonly (readonly ScalarCellValue[])[]): CellValue {
+	return { kind: 'array', rows }
+}
+
 export function isError(v: CellValue): v is CellValue & { kind: 'error' } {
 	return v.kind === 'error'
 }
 
 export function isEmpty(v: CellValue): v is CellValue & { kind: 'empty' } {
 	return v.kind === 'empty'
+}
+
+export function isArrayValue(v: CellValue): v is ArrayValue {
+	return v.kind === 'array'
+}
+
+export function topLeftScalar(v: CellValue): ScalarCellValue {
+	if (v.kind !== 'array') return v
+	const firstRow = v.rows[0]
+	return firstRow?.[0] ?? (EMPTY as ScalarCellValue)
 }

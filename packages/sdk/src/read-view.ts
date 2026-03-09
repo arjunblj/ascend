@@ -381,6 +381,8 @@ function hasVolatileFunction(node: FormulaNode): boolean {
 			return hasVolatileFunction(node.operand)
 		case 'array':
 			return node.rows.some((row) => row.some(hasVolatileFunction))
+		case 'spillRef':
+			return hasVolatileFunction(node.target)
 		default:
 			return false
 	}
@@ -403,6 +405,9 @@ function collectFunctionNames(node: FormulaNode, out = new Set<string>()): Set<s
 			for (const row of node.rows) {
 				for (const cell of row) collectFunctionNames(cell, out)
 			}
+			break
+		case 'spillRef':
+			collectFunctionNames(node.target, out)
 			break
 	}
 	return out

@@ -22,7 +22,14 @@ export interface ArrayFormulaInfo {
 	readonly ref?: string
 }
 
-export type CellFormulaBinding = SharedFormulaInfo | ArrayFormulaInfo
+export interface SpillFormulaInfo {
+	readonly kind: 'spill'
+	readonly anchorRef: string
+	readonly ref: string
+	readonly isAnchor: boolean
+}
+
+export type CellFormulaBinding = SharedFormulaInfo | ArrayFormulaInfo | SpillFormulaInfo
 
 const DEFAULT_STYLE_ID = 0 as StyleId
 
@@ -172,6 +179,30 @@ export class SparseGrid {
 	*iterateRowsInRange(
 		range: RangeRef,
 	): Generator<readonly [number, readonly (readonly [number, Cell])[]]> {
+		if (this._isKeyOrderSorted) {
+			const minKey = packKey(range.start.row, 0)
+			const maxKey = packKey(range.end.row, PACK_FACTOR - 1)
+			let currentRow = Number.NaN
+			let rowCells: Array<readonly [number, Cell]> = []
+			for (const [key, stored] of this.data) {
+				if (key < minKey) continue
+				if (key > maxKey) break
+				const [row, col] = unpackKey(key)
+				if (col < range.start.col || col > range.end.col) continue
+				const cell = materializeCell(stored)
+				if (!cell) continue
+				if (!Number.isNaN(currentRow) && row !== currentRow) {
+					yield [currentRow, rowCells] as const
+					rowCells = []
+				}
+				currentRow = row
+				rowCells.push([col, cell] as const)
+			}
+			if (!Number.isNaN(currentRow) && rowCells.length > 0) {
+				yield [currentRow, rowCells] as const
+			}
+			return
+		}
 		for (const [row, rowCells] of this.iterateRows()) {
 			if (row < range.start.row) continue
 			if (row > range.end.row) return
@@ -525,6 +556,8 @@ function compactScalarValue(value: CellValue): {
 			return { kind: 'error', scalarValue: value.value }
 		case 'date':
 			return { kind: 'date', scalarValue: value.serial }
+		case 'array':
+			return null
 		default:
 			return null
 	}

@@ -94,22 +94,22 @@ export class SheetHandle {
 
 	*streamRange(rangeRef: string): Generator<readonly CellInfo[]> {
 		const parsed = parseRange(rangeRef)
-		const rowMap = new Map<number, CellInfo[]>()
-		for (const [row, rowCells] of this.sheet.cells.iterateRowsInRange(parsed)) {
-			rowMap.set(
-				row,
-				rowCells.map(([col, cell]) => ({
+		const rows = this.sheet.cells.iterateRowsInRange(parsed)
+		let next = rows.next()
+		for (let row = parsed.start.row; row <= parsed.end.row; row++) {
+			if (!next.done && next.value[0] === row) {
+				yield next.value[1].map(([col, cell]) => ({
 					ref: toA1({ row, col }),
 					value: cell.value,
 					formula: cell.formula,
 					...(cell.formulaInfo ? { formulaBinding: cell.formulaInfo } : {}),
 					row,
 					col,
-				})),
-			)
-		}
-		for (let row = parsed.start.row; row <= parsed.end.row; row++) {
-			yield rowMap.get(row) ?? []
+				}))
+				next = rows.next()
+			} else {
+				yield []
+			}
 		}
 	}
 

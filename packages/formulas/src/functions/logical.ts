@@ -1,5 +1,5 @@
 import type { CellValue } from '@ascend/schema'
-import { booleanValue, EMPTY, errorValue, isError } from '@ascend/schema'
+import { booleanValue, EMPTY, errorValue, isError, topLeftScalar } from '@ascend/schema'
 import type { EvalArg, FunctionDef } from './index.ts'
 
 function fn(
@@ -12,6 +12,7 @@ function fn(
 }
 
 function toBool(v: CellValue): boolean | CellValue {
+	v = topLeftScalar(v)
 	switch (v.kind) {
 		case 'empty':
 			return false

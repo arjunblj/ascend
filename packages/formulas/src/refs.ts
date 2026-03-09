@@ -44,6 +44,9 @@ function walk(node: FormulaNode, out: FormulaRef[]): void {
 				for (const cell of row) walk(cell, out)
 			}
 			break
+		case 'spillRef':
+			walk(node.target, out)
+			break
 		default:
 			break
 	}
@@ -98,6 +101,11 @@ export function rewriteRefs(
 			return {
 				type: 'array',
 				rows: node.rows.map((r) => r.map((c) => rewriteRefs(c, transform))),
+			}
+		case 'spillRef':
+			return {
+				type: 'spillRef',
+				target: rewriteRefs(node.target, transform),
 			}
 		default:
 			return node

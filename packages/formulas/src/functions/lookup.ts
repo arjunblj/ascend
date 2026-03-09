@@ -1,5 +1,12 @@
-import type { CellValue } from '@ascend/schema'
-import { booleanValue, EMPTY, errorValue, numberValue } from '@ascend/schema'
+import type { CellValue, ScalarCellValue } from '@ascend/schema'
+import {
+	arrayValue,
+	booleanValue,
+	EMPTY,
+	errorValue,
+	numberValue,
+	topLeftScalar,
+} from '@ascend/schema'
 import {
 	cellOf,
 	compareValues,
@@ -169,6 +176,15 @@ function indexFn(args: EvalArg[]): CellValue {
 		const colNum = numArg(args[2])
 		if (typeof colNum !== 'number') return colNum
 		const col = Math.floor(colNum)
+		if (row === 0 && col === 0) return errorValue('#VALUE!')
+		if (row === 0) {
+			if (col < 1 || col > (array[0]?.length ?? 0)) return errorValue('#REF!')
+			return arrayValue(array.map((arrayRow) => [topLeftScalar(arrayRow[col - 1] ?? EMPTY)]))
+		}
+		if (col === 0) {
+			if (row < 1 || row > array.length) return errorValue('#REF!')
+			return arrayValue([(array[row - 1] ?? []).map((cell) => topLeftScalar(cell))])
+		}
 		if (row < 1 || row > array.length) return errorValue('#REF!')
 		if (col < 1 || col > (array[0]?.length ?? 0)) return errorValue('#REF!')
 		return array[row - 1]?.[col - 1] ?? EMPTY
@@ -237,7 +253,16 @@ function xlookup(args: EvalArg[]): CellValue {
 
 	const idx = findInArray(lookup, lookupFlat, matchMode, searchMode)
 	if (idx < 0) return ifNotFound ?? errorValue('#N/A')
-	return vertical ? (returnArray[idx]?.[0] ?? EMPTY) : (returnArray[0]?.[idx] ?? EMPTY)
+	if (vertical) {
+		const row = returnArray[idx] ?? []
+		if (row.length <= 1) return row[0] ?? EMPTY
+		return arrayValue([row.map((cell) => topLeftScalar(cell))])
+	}
+	const rows: ScalarCellValue[][] = []
+	for (const returnRow of returnArray) {
+		rows.push([topLeftScalar(returnRow[idx] ?? EMPTY)])
+	}
+	return rows.length <= 1 ? (rows[0]?.[0] ?? EMPTY) : arrayValue(rows)
 }
 
 function xmatch(args: EvalArg[]): CellValue {

@@ -27,17 +27,22 @@ export type {
 	StyleInput,
 } from './operations.ts'
 export type {
+	ArrayValue,
 	CellValue,
 	ExcelError,
 	InputValue,
 	RichTextRun,
+	ScalarCellValue,
 } from './values.ts'
 export {
+	arrayValue,
 	booleanValue,
 	EMPTY,
 	errorValue,
+	isArrayValue,
 	isEmpty,
 	isError,
 	numberValue,
 	stringValue,
+	topLeftScalar,
 } from './values.ts'

@@ -2,22 +2,22 @@
 	"function": "dynamic",
 	"cases": [
 		{
-			"description": "SORT returns #SPILL! until spill semantics are implemented",
+			"description": "SORT spills sorted values with the anchor holding the first result",
 			"setup": { "A1": 30, "A2": 10, "A3": 20 },
 			"formula": "SORT(A1:A3)",
-			"expected": { "kind": "error", "value": "#SPILL!" }
+			"expected": { "kind": "number", "value": 10 }
 		},
 		{
-			"description": "SORT descending returns #SPILL! until spill semantics are implemented",
+			"description": "SORT descending spills sorted values with the anchor holding the first result",
 			"setup": { "A1": 30, "A2": 10, "A3": 20 },
 			"formula": "SORT(A1:A3, 1, -1)",
-			"expected": { "kind": "error", "value": "#SPILL!" }
+			"expected": { "kind": "number", "value": 30 }
 		},
 		{
-			"description": "FILTER returns #SPILL! when multiple matches would spill",
+			"description": "FILTER spills matching rows with the anchor holding the first result",
 			"setup": { "A1": 10, "A2": 20, "A3": 30, "B1": true, "B2": false, "B3": true },
 			"formula": "FILTER(A1:A3, B1:B3)",
-			"expected": { "kind": "error", "value": "#SPILL!" }
+			"expected": { "kind": "number", "value": 10 }
 		},
 		{
 			"description": "FILTER returns fallback when no matches",
@@ -26,28 +26,28 @@
 			"expected": { "kind": "string", "value": "none" }
 		},
 		{
-			"description": "UNIQUE returns #SPILL! until spill semantics are implemented",
+			"description": "UNIQUE spills distinct rows with the anchor holding the first result",
 			"setup": { "A1": "apple", "A2": "banana", "A3": "apple" },
 			"formula": "UNIQUE(A1:A3)",
-			"expected": { "kind": "error", "value": "#SPILL!" }
+			"expected": { "kind": "string", "value": "apple" }
 		},
 		{
-			"description": "SEQUENCE returns #SPILL! when it would produce multiple cells",
+			"description": "SEQUENCE spills values with the anchor holding the first result",
 			"setup": {},
 			"formula": "SEQUENCE(5)",
-			"expected": { "kind": "error", "value": "#SPILL!" }
+			"expected": { "kind": "number", "value": 1 }
 		},
 		{
-			"description": "SEQUENCE with custom start returns #SPILL! when it would produce multiple cells",
+			"description": "SEQUENCE with custom start spills values with the anchor holding the first result",
 			"setup": {},
 			"formula": "SEQUENCE(3, 1, 10)",
-			"expected": { "kind": "error", "value": "#SPILL!" }
+			"expected": { "kind": "number", "value": 10 }
 		},
 		{
-			"description": "SORTBY returns #SPILL! until spill semantics are implemented",
+			"description": "SORTBY spills sorted values with the anchor holding the first result",
 			"setup": { "A1": "C", "A2": "A", "A3": "B", "B1": 3, "B2": 1, "B3": 2 },
 			"formula": "SORTBY(A1:A3, B1:B3)",
-			"expected": { "kind": "error", "value": "#SPILL!" }
+			"expected": { "kind": "string", "value": "A" }
 		},
 		{
 			"description": "CHOOSECOLS returns value from specified column",
@@ -62,10 +62,10 @@
 			"expected": { "kind": "number", "value": 20 }
 		},
 		{
-			"description": "TRANSPOSE returns #SPILL! until spill semantics are implemented",
+			"description": "TRANSPOSE spills values with the anchor holding the first result",
 			"setup": { "A1": 42, "A2": 99 },
 			"formula": "TRANSPOSE(A1:A2)",
-			"expected": { "kind": "error", "value": "#SPILL!" }
+			"expected": { "kind": "number", "value": 42 }
 		}
 	]
 }

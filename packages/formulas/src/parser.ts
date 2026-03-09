@@ -136,7 +136,7 @@ class FormulaParser {
 	}
 
 	private parseUnaryPrefix(): FormulaNode {
-		if (this.isOp('+', '-')) {
+		if (this.isOp('+', '-', '@')) {
 			const op = this.advance().value as UnaryOp
 			const operand = this.parseUnaryPrefix()
 			return { type: 'unary', op, operand }
@@ -146,9 +146,13 @@ class FormulaParser {
 
 	private parsePostfix(): FormulaNode {
 		let node = this.parseAtom()
-		while (this.isOp('%')) {
-			this.advance()
-			node = { type: 'unary', op: '%' as const, operand: node }
+		while (this.isOp('%', '#')) {
+			const op = this.advance().value
+			if (op === '%') {
+				node = { type: 'unary', op: '%' as const, operand: node }
+			} else {
+				node = { type: 'spillRef', target: node }
+			}
 		}
 		return node
 	}

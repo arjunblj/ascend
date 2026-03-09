@@ -1,5 +1,5 @@
-import type { CellValue } from '@ascend/schema'
-import { EMPTY, errorValue, numberValue } from '@ascend/schema'
+import type { CellValue, ScalarCellValue } from '@ascend/schema'
+import { arrayValue, EMPTY, errorValue, numberValue, topLeftScalar } from '@ascend/schema'
 import type { EvalArg, FunctionDef } from './registry.ts'
 import { compareValues, getRange, numArg, toNumber } from './registry.ts'
 
@@ -7,13 +7,76 @@ function num(arg: EvalArg | undefined): number | CellValue {
 	return numArg(arg)
 }
 
-function scalarOrSpill(rows: readonly (readonly CellValue[])[]): CellValue {
+function scalarOrArray(rows: readonly (readonly CellValue[])[]): CellValue {
 	const first = rows[0]
 	if (!first || first.length === 0) return EMPTY
 	const rowCount = rows.length
 	const colCount = rows.reduce((max, row) => Math.max(max, row.length), 0)
-	if (rowCount > 1 || colCount > 1) return errorValue('#SPILL!')
-	return first[0] ?? EMPTY
+	if (rowCount === 1 && colCount === 1) return first[0] ?? EMPTY
+	return arrayValue(rows.map((row) => row.map((cell) => topLeftScalar(cell))))
+}
+
+function flattenByColumn(data: readonly (readonly CellValue[])[]): ScalarCellValue[][] {
+	const rows: ScalarCellValue[][] = []
+	for (const row of data) {
+		for (const cell of row) rows.push([topLeftScalar(cell)])
+	}
+	return rows
+}
+
+function flattenByRow(data: readonly (readonly CellValue[])[]): ScalarCellValue[][] {
+	const flat: ScalarCellValue[] = []
+	for (const row of data) {
+		for (const cell of row) flat.push(topLeftScalar(cell))
+	}
+	return [flat]
+}
+
+function transposeRows(data: readonly (readonly CellValue[])[]): ScalarCellValue[][] {
+	const rowCount = data.length
+	const colCount = data.reduce((max, row) => Math.max(max, row.length), 0)
+	const rows: ScalarCellValue[][] = []
+	for (let col = 0; col < colCount; col++) {
+		const row: ScalarCellValue[] = []
+		for (let sourceRow = 0; sourceRow < rowCount; sourceRow++) {
+			row.push(topLeftScalar(data[sourceRow]?.[col] ?? EMPTY))
+		}
+		rows.push(row)
+	}
+	return rows
+}
+
+function chooseCols(
+	data: readonly (readonly CellValue[])[],
+	indices: readonly number[],
+): ScalarCellValue[][] | CellValue {
+	const first = data[0] ?? []
+	for (const idx of indices) {
+		if (idx < 0 || idx >= first.length) return errorValue('#VALUE!')
+	}
+	return data.map((row) => indices.map((idx) => topLeftScalar(row[idx] ?? EMPTY)))
+}
+
+function chooseRows(
+	data: readonly (readonly CellValue[])[],
+	indices: readonly number[],
+): ScalarCellValue[][] | CellValue {
+	for (const idx of indices) {
+		if (idx < 0 || idx >= data.length) return errorValue('#VALUE!')
+	}
+	return indices.map((idx) => (data[idx] ?? []).map((cell) => topLeftScalar(cell)))
+}
+
+function padRows(
+	rows: readonly (readonly ScalarCellValue[])[],
+	targetCols: number,
+	fill: ScalarCellValue,
+): ScalarCellValue[][] {
+	return rows.map((row) => {
+		const next = [...row]
+		while (next.length < targetCols) next.push(fill)
+		return next
+	})
 }
 
 export const dynamicFunctions: FunctionDef[] = [
@@ -36,7 +99,7 @@ export const dynamicFunctions: FunctionDef[] = [
 				const bv = b[col] ?? EMPTY
 				return compareValues(av, bv) * (sortOrder === -1 ? -1 : 1)
 			})
-			return scalarOrSpill(rows)
+			return scalarOrArray(rows)
 		},
 	},
 	{
@@ -57,7 +120,7 @@ export const dynamicFunctions: FunctionDef[] = [
 				return compareValues(av, bv) * (order === -1 ? -1 : 1)
 			})
 			const rows = indices.map((index) => data[index] ?? [])
-			return scalarOrSpill(rows)
+			return scalarOrArray(rows)
 		},
 	},
 	{
@@ -79,7 +142,7 @@ export const dynamicFunctions: FunctionDef[] = [
 			if (filtered.length === 0) {
 				return ifEmpty ?? errorValue('#CALC!')
 			}
-			return scalarOrSpill(filtered)
+			return scalarOrArray(filtered)
 		},
 	},
 	{
@@ -93,7 +156,7 @@ export const dynamicFunctions: FunctionDef[] = [
 			const exactlyOnce = args[2] ? toNumber(args[2].value) === 1 : false
 
 			if (byCol) {
-				return scalarOrSpill(data)
+				return scalarOrArray(data)
 			}
 
 			const seen = new Set<string>()
@@ -125,10 +188,10 @@ export const dynamicFunctions: FunctionDef[] = [
 					return counts.get(key) === 1
 				})
 				if (once.length === 0) return errorValue('#CALC!')
-				return scalarOrSpill(once)
+				return scalarOrArray(once)
 			}
 
-			return scalarOrSpill(unique)
+			return scalarOrArray(unique)
 		},
 	},
 	{
@@ -136,19 +199,28 @@ export const dynamicFunctions: FunctionDef[] = [
 		minArgs: 1,
 		maxArgs: 4,
 		evaluate(args) {
-			const rows = num(args[0])
-			if (typeof rows !== 'number') return rows
-			const cols = args[1] ? num(args[1]) : 1
-			if (typeof cols !== 'number') return cols
+			const rowCountArg = num(args[0])
+			if (typeof rowCountArg !== 'number') return rowCountArg
+			const colCountArg = args[1] ? num(args[1]) : 1
+			if (typeof colCountArg !== 'number') return colCountArg
 			const start = args[2] ? num(args[2]) : 1
 			if (typeof start !== 'number') return start
 			const step = args[3] ? num(args[3]) : 1
 			if (typeof step !== 'number') return step
-			const r = Math.trunc(rows)
-			const c = Math.trunc(cols)
+			const r = Math.trunc(rowCountArg)
+			const c = Math.trunc(colCountArg)
 			if (r <= 0 || c <= 0) return errorValue('#CALC!')
-			if (r > 1 || c > 1) return errorValue('#SPILL!')
-			return numberValue(start)
+			const resultRows: ScalarCellValue[][] = []
+			let current = start
+			for (let row = 0; row < r; row++) {
+				const values: ScalarCellValue[] = []
+				for (let col = 0; col < c; col++) {
+					values.push(numberValue(current) as ScalarCellValue)
+					current += step
+				}
+				resultRows.push(values)
+			}
+			return scalarOrArray(resultRows)
 		},
 	},
 	{
@@ -158,13 +230,28 @@ export const dynamicFunctions: FunctionDef[] = [
 		volatile: true,
 		evaluate(args, ctx) {
 			const seed = ctx?.randomSeed ?? Math.random()
+			const rowCount = args[0] ? num(args[0]) : 1
+			if (typeof rowCount !== 'number') return rowCount
+			const colCount = args[1] ? num(args[1]) : 1
+			if (typeof colCount !== 'number') return colCount
 			const min = args[2] ? num(args[2]) : 0
 			if (typeof min !== 'number') return min
 			const max = args[3] ? num(args[3]) : 1
 			if (typeof max !== 'number') return max
 			const whole = args[4] ? toNumber(args[4].value) === 1 : false
-			const val = min + seed * (max - min)
-			return numberValue(whole ? Math.floor(val) : val)
+			const rows = Math.max(1, Math.trunc(rowCount))
+			const cols = Math.max(1, Math.trunc(colCount))
+			const result: ScalarCellValue[][] = []
+			for (let row = 0; row < rows; row++) {
+				const rowValues: ScalarCellValue[] = []
+				for (let col = 0; col < cols; col++) {
+					const mixedSeed = (seed + row * 0.131 + col * 0.071) % 1
+					const val = min + mixedSeed * (max - min)
+					rowValues.push(numberValue(whole ? Math.floor(val) : val) as ScalarCellValue)
+				}
+				result.push(rowValues)
+			}
+			return scalarOrArray(result)
 		},
 	},
 	{
@@ -184,7 +271,7 @@ export const dynamicFunctions: FunctionDef[] = [
 		evaluate(args) {
 			const data = getRange(args[0])
 			if (data.length === 0) return EMPTY
-			return scalarOrSpill(data)
+			return scalarOrArray(transposeRows(data))
 		},
 	},
 	{
@@ -193,7 +280,7 @@ export const dynamicFunctions: FunctionDef[] = [
 		maxArgs: 3,
 		evaluate(args) {
 			const data = getRange(args[0])
-			return scalarOrSpill(data)
+			return scalarOrArray(flattenByColumn(data))
 		},
 	},
 	{
@@ -202,7 +289,7 @@ export const dynamicFunctions: FunctionDef[] = [
 		maxArgs: 3,
 		evaluate(args) {
 			const data = getRange(args[0])
-			return scalarOrSpill(data)
+			return scalarOrArray(flattenByRow(data))
 		},
 	},
 	{
@@ -210,8 +297,20 @@ export const dynamicFunctions: FunctionDef[] = [
 		minArgs: 2,
 		maxArgs: 3,
 		evaluate(args) {
-			const data = getRange(args[0])
-			return scalarOrSpill(data)
+			const data = flattenByColumn(getRange(args[0]))
+			const wrap = num(args[1])
+			if (typeof wrap !== 'number') return wrap
+			const fill = topLeftScalar(args[2]?.value ?? EMPTY)
+			if (wrap <= 0) return errorValue('#VALUE!')
+			const rows: ScalarCellValue[][] = []
+			for (let index = 0; index < data.length; index += wrap) {
+				const chunk = data
+					.slice(index, index + wrap)
+					.map((entry) => topLeftScalar(entry[0] ?? EMPTY))
+				while (chunk.length < wrap) chunk.push(fill)
+				rows.push(chunk)
+			}
+			return scalarOrArray(transposeRows(rows))
 		},
 	},
 	{
@@ -219,8 +318,18 @@ export const dynamicFunctions: FunctionDef[] = [
 		minArgs: 2,
 		maxArgs: 3,
 		evaluate(args) {
-			const data = getRange(args[0])
-			return scalarOrSpill(data)
+			const data = flattenByRow(getRange(args[0]))[0] ?? []
+			const wrap = num(args[1])
+			if (typeof wrap !== 'number') return wrap
+			const fill = topLeftScalar(args[2]?.value ?? EMPTY)
+			if (wrap <= 0) return errorValue('#VALUE!')
+			const rows: ScalarCellValue[][] = []
+			for (let index = 0; index < data.length; index += wrap) {
+				const chunk = data.slice(index, index + wrap)
+				while (chunk.length < wrap) chunk.push(fill)
+				rows.push(chunk)
+			}
+			return scalarOrArray(rows)
 		},
 	},
 	{
@@ -228,8 +337,26 @@ export const dynamicFunctions: FunctionDef[] = [
 		minArgs: 1,
 		maxArgs: 255,
 		evaluate(args) {
-			const data = getRange(args[0])
-			return scalarOrSpill(data)
+			const blocks = args.map((arg) => getRange(arg))
+			const rowCount = blocks.reduce((max, block) => Math.max(max, block.length), 0)
+			const totalCols = blocks.reduce(
+				(sum, block) => sum + block.reduce((max, row) => Math.max(max, row.length), 0),
+				0,
+			)
+			const fill = errorValue('#N/A') as ScalarCellValue
+			const rows: ScalarCellValue[][] = []
+			for (let row = 0; row < rowCount; row++) {
+				const rowValues: ScalarCellValue[] = []
+				for (const block of blocks) {
+					const blockCols = block.reduce((max, entries) => Math.max(max, entries.length), 0)
+					const source = block[row]
+					for (let col = 0; col < blockCols; col++) {
+						rowValues.push(topLeftScalar(source?.[col] ?? fill))
+					}
+				}
+				rows.push(rowValues)
+			}
+			return scalarOrArray(padRows(rows, totalCols, fill))
 		},
 	},
 	{
@@ -237,8 +364,15 @@ export const dynamicFunctions: FunctionDef[] = [
 		minArgs: 1,
 		maxArgs: 255,
 		evaluate(args) {
-			const data = getRange(args[0])
-			return scalarOrSpill(data)
+			const fill = errorValue('#N/A') as ScalarCellValue
+			const rows: ScalarCellValue[][] = []
+			for (const arg of args) {
+				for (const row of getRange(arg)) {
+					rows.push(row.map((cell) => topLeftScalar(cell)))
+				}
+			}
+			const width = rows.reduce((max, row) => Math.max(max, row.length), 0)
+			return scalarOrArray(padRows(rows, width, fill))
 		},
 	},
 	{
@@ -247,7 +381,22 @@ export const dynamicFunctions: FunctionDef[] = [
 		maxArgs: 3,
 		evaluate(args) {
 			const data = getRange(args[0])
-			return scalarOrSpill(data)
+			const rowCountArg = args[1] ? num(args[1]) : 0
+			if (typeof rowCountArg !== 'number') return rowCountArg
+			const colCountArg = args[2] ? num(args[2]) : undefined
+			if (colCountArg !== undefined && typeof colCountArg !== 'number') return colCountArg
+			let rows =
+				rowCountArg >= 0
+					? data.slice(0, rowCountArg)
+					: data.slice(Math.max(0, data.length + rowCountArg))
+			if (colCountArg !== undefined) {
+				rows = rows.map((row) =>
+					colCountArg >= 0
+						? row.slice(0, colCountArg)
+						: row.slice(Math.max(0, row.length + colCountArg)),
+				)
+			}
+			return scalarOrArray(rows)
 		},
 	},
 	{
@@ -260,7 +409,15 @@ export const dynamicFunctions: FunctionDef[] = [
 			if (typeof rows !== 'number') return rows
 			if (Math.abs(rows) >= data.length) return errorValue('#CALC!')
 			const dropped = rows > 0 ? data.slice(rows) : data.slice(0, data.length + rows)
-			return scalarOrSpill(dropped)
+			let result = dropped
+			const cols = args[2] ? num(args[2]) : 0
+			if (typeof cols !== 'number') return cols
+			if (cols !== 0) {
+				result = dropped.map((row) =>
+					cols > 0 ? row.slice(cols) : row.slice(0, Math.max(0, row.length + cols)),
+				)
+			}
+			return scalarOrArray(result)
 		},
 	},
 	{
@@ -268,8 +425,24 @@ export const dynamicFunctions: FunctionDef[] = [
 		minArgs: 2,
 		maxArgs: 4,
 		evaluate(args) {
-			const data = getRange(args[0])
-			return scalarOrSpill(data)
+			const data = getRange(args[0]).map((row) => row.map((cell) => topLeftScalar(cell)))
+			const targetRows = num(args[1])
+			if (typeof targetRows !== 'number') return targetRows
+			const targetCols = args[2]
+				? num(args[2])
+				: data.reduce((max, row) => Math.max(max, row.length), 0)
+			if (typeof targetCols !== 'number') return targetCols
+			const fill = topLeftScalar(args[3]?.value ?? errorValue('#N/A'))
+			const rows: ScalarCellValue[][] = []
+			for (let row = 0; row < targetRows; row++) {
+				const source = data[row] ?? []
+				const next: ScalarCellValue[] = []
+				for (let col = 0; col < targetCols; col++) {
+					next.push(source[col] ?? fill)
+				}
+				rows.push(next)
+			}
+			return scalarOrArray(rows)
 		},
 	},
 	{
@@ -278,12 +451,14 @@ export const dynamicFunctions: FunctionDef[] = [
 		maxArgs: 255,
 		evaluate(args) {
 			const data = getRange(args[0])
-			const col = args[1] ? num(args[1]) : 1
-			if (typeof col !== 'number') return col
-			const idx = Math.round(col) - 1
-			const first = data[0]
-			if (!first || idx < 0 || idx >= first.length) return errorValue('#VALUE!')
-			return scalarOrSpill(data.map((row) => [row[idx] ?? EMPTY]))
+			const indices: number[] = []
+			for (let i = 1; i < args.length; i++) {
+				const col = num(args[i])
+				if (typeof col !== 'number') return col
+				indices.push(Math.round(col) - 1)
+			}
+			const chosen = chooseCols(data, indices)
+			return 'kind' in chosen ? chosen : scalarOrArray(chosen)
 		},
 	},
 	{
@@ -292,12 +467,14 @@ export const dynamicFunctions: FunctionDef[] = [
 		maxArgs: 255,
 		evaluate(args) {
 			const data = getRange(args[0])
-			const row = args[1] ? num(args[1]) : 1
-			if (typeof row !== 'number') return row
-			const idx = Math.round(row) - 1
-			if (idx < 0 || idx >= data.length) return errorValue('#VALUE!')
-			const r = data[idx]
-			return scalarOrSpill(r ? [r] : [])
+			const indices: number[] = []
+			for (let i = 1; i < args.length; i++) {
+				const row = num(args[i])
+				if (typeof row !== 'number') return row
+				indices.push(Math.round(row) - 1)
+			}
+			const chosen = chooseRows(data, indices)
+			return 'kind' in chosen ? chosen : scalarOrArray(chosen)
 		},
 	},
 ]

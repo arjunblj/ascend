@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { StyleId } from '@ascend/core'
-import { createWorkbook } from '@ascend/core'
+import { createTableId, createWorkbook } from '@ascend/core'
 import { EMPTY, numberValue, stringValue } from '@ascend/schema'
 import { applyOperation, applyOperations } from './operations.ts'
 
@@ -156,8 +156,61 @@ describe('applyOperation', () => {
 		expect(formulaCell?.formula).toBe('SUM(A1:A3)')
 	})
 
+	test('insertRows shifts comments, hyperlinks, validations, ignored errors, and row heights', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, cell(numberValue(1)))
+		s.comments.set('A2', { text: 'note' })
+		s.hyperlinks.set('B2', { target: 'https://example.com' })
+		s.dataValidations.push({ sqref: 'A2:B2', type: 'list', formula1: '"A,B"' })
+		s.ignoredErrors.push({ sqref: 'A2', formula: true })
+		s.rowHeights.set(1, 24)
+
+		applyOperation(wb, { op: 'insertRows', sheet: 'Sheet1', at: 1, count: 2 })
+
+		expect(s.comments.get('A4')).toEqual({ text: 'note' })
+		expect(s.hyperlinks.get('B4')).toEqual({ target: 'https://example.com' })
+		expect(s.dataValidations[0]?.sqref).toBe('A4:B4')
+		expect(s.ignoredErrors[0]?.sqref).toBe('A4')
+		expect(s.rowHeights.get(3)).toBe(24)
+	})
+
+	test('insertCols shifts tables, filters, comments, and hyperlinks', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: sid })
+		s.cells.set(0, 1, { value: stringValue('Value'), formula: null, styleId: sid })
+		s.cells.set(1, 0, { value: stringValue('Cash'), formula: null, styleId: sid })
+		s.cells.set(1, 1, { value: numberValue(10), formula: null, styleId: sid })
+		s.comments.set('A1', { text: 'header' })
+		s.hyperlinks.set('B2', { target: 'https://example.com/value' })
+		s.autoFilter = { ref: 'A1:B2', columns: [] }
+		s.tables.push({
+			id: createTableId(),
+			name: 'BalanceTable',
+			sheetId: s.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 1, col: 1 } },
+			columns: [{ name: 'Name' }, { name: 'Value' }],
+			hasHeaders: true,
+			hasTotals: false,
+			autoFilter: { ref: 'A1:B2', columns: [] },
+		})
+
+		applyOperation(wb, { op: 'insertCols', sheet: 'Sheet1', at: 0, count: 1 })
+
+		expect(s.comments.get('B1')).toEqual({ text: 'header' })
+		expect(s.hyperlinks.get('C2')).toEqual({ target: 'https://example.com/value' })
+		expect(s.autoFilter?.ref).toBe('B1:C2')
+		expect(s.tables[0]?.ref).toEqual({
+			start: { row: 0, col: 1 },
+			end: { row: 1, col: 2 },
+		})
+		expect(s.tables[0]?.autoFilter?.ref).toBe('B1:C2')
+	})
+
 	test('renameSheet updates sheet name', () => {
 		const wb = setup()
+		wb.definedNames.set('Budget', 'Sheet1!A1')
 		const result = applyOperation(wb, {
 			op: 'renameSheet',
 			sheet: 'Sheet1',
@@ -166,6 +219,7 @@ describe('applyOperation', () => {
 		expect(result.ok).toBe(true)
 		expect(wb.getSheet('Data')).toBeDefined()
 		expect(wb.getSheet('Sheet1')).toBeUndefined()
+		expect(wb.definedNames.get('Budget')).toBe('Data!A1')
 	})
 
 	test('clearRange removes cell data', () => {

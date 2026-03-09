@@ -1,5 +1,5 @@
 import type { CellValue } from '@ascend/schema'
-import { EMPTY, errorValue } from '@ascend/schema'
+import { EMPTY, errorValue, topLeftScalar } from '@ascend/schema'
 
 export interface EvalRef {
 	readonly kind: 'cell' | 'range'
@@ -47,10 +47,13 @@ export function registerFunction(def: FunctionDef): void {
 
 export function getRange(arg: EvalArg | undefined): readonly (readonly CellValue[])[] {
 	if (arg?.kind === 'range' && arg.values) return arg.values
+	if (arg?.value.kind === 'array') return arg.value.rows
 	return [[arg?.value ?? EMPTY]]
 }
 
 export function toNumber(v: CellValue): number | null {
+	const scalar = topLeftScalar(v)
+	if (scalar.kind !== v.kind) return toNumber(scalar)
 	switch (v.kind) {
 		case 'number':
 			return v.value
@@ -79,7 +82,8 @@ export function numArg(arg: EvalArg | undefined): number | CellValue {
 }
 
 export function cellOf(arg: EvalArg | undefined): CellValue {
-	return arg?.value ?? EMPTY
+	const value = arg?.value ?? EMPTY
+	return topLeftScalar(value)
 }
 
 export function flattenArgs(args: EvalArg[]): CellValue[] {
@@ -90,7 +94,13 @@ export function flattenArgs(args: EvalArg[]): CellValue[] {
 				for (const cell of row) result.push(cell)
 			}
 		} else {
-			result.push(arg.value)
+			if (arg.value.kind === 'array') {
+				for (const row of arg.value.rows) {
+					for (const cell of row) result.push(cell)
+				}
+			} else {
+				result.push(arg.value)
+			}
 		}
 	}
 	return result
@@ -108,8 +118,9 @@ export function collectNumbers(args: EvalArg[]): number[] | CellValue {
 				}
 			}
 		} else {
-			if (arg.value.kind === 'error') return arg.value
-			const n = toNumber(arg.value)
+			const scalar = topLeftScalar(arg.value)
+			if (scalar.kind === 'error') return scalar
+			const n = toNumber(scalar)
 			if (n !== null) nums.push(n)
 		}
 	}
@@ -117,6 +128,8 @@ export function collectNumbers(args: EvalArg[]): number[] | CellValue {
 }
 
 export function compareValues(a: CellValue, b: CellValue): number {
+	a = topLeftScalar(a)
+	b = topLeftScalar(b)
 	const an = numericOf(a)
 	const bn = numericOf(b)
 	if (an !== null && bn !== null) return an - bn
@@ -131,6 +144,8 @@ export function compareValues(a: CellValue, b: CellValue): number {
 }
 
 export function valuesEqual(a: CellValue, b: CellValue): boolean {
+	a = topLeftScalar(a)
+	b = topLeftScalar(b)
 	const an = numericOf(a)
 	const bn = numericOf(b)
 	if (an !== null && bn !== null) return an === bn
@@ -169,12 +184,14 @@ function escapeRe(ch: string): string {
 }
 
 function numericOf(v: CellValue): number | null {
+	v = topLeftScalar(v)
 	if (v.kind === 'number') return v.value
 	if (v.kind === 'date') return v.serial
 	return null
 }
 
 function typeRank(v: CellValue): number {
+	v = topLeftScalar(v)
 	switch (v.kind) {
 		case 'empty':
 			return 0

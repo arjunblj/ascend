@@ -1,5 +1,5 @@
 import type { CellValue } from '@ascend/schema'
-import { EMPTY, errorValue, isEmpty, isError, numberValue } from '@ascend/schema'
+import { EMPTY, errorValue, isEmpty, isError, numberValue, topLeftScalar } from '@ascend/schema'
 import type { EvalArg, FunctionDef, FunctionEvalContext } from './index.ts'
 import { wildcardMatch } from './registry.ts'
 
@@ -28,6 +28,7 @@ function seededRandom(ctx?: FunctionEvalContext): number {
 }
 
 function toNum(v: CellValue): number | CellValue {
+	v = topLeftScalar(v)
 	switch (v.kind) {
 		case 'empty':
 			return 0
@@ -169,6 +170,17 @@ interface CriteriaPair {
 	match: (v: CellValue) => boolean
 }
 
+function sameShape(
+	left: readonly (readonly CellValue[])[],
+	right: readonly (readonly CellValue[])[],
+): boolean {
+	if (left.length !== right.length) return false
+	for (let row = 0; row < left.length; row++) {
+		if ((left[row]?.length ?? 0) !== (right[row]?.length ?? 0)) return false
+	}
+	return true
+}
+
 function buildPairs(args: EvalArg[], startIdx: number): CriteriaPair[] {
 	const pairs: CriteriaPair[] = []
 	for (let i = startIdx; i + 1 < args.length; i += 2) {
@@ -228,6 +240,9 @@ export const mathFunctions: FunctionDef[] = [
 		const ranges = args.map(getRange)
 		const rows = ranges[0]?.length ?? 0
 		const cols = ranges[0]?.[0]?.length ?? 0
+		for (let i = 1; i < ranges.length; i++) {
+			if (!sameShape(ranges[0] ?? [], ranges[i] ?? [])) return errorValue('#VALUE!')
+		}
 		let total = 0
 		for (let r = 0; r < rows; r++) {
 			for (let c = 0; c < cols; c++) {
@@ -810,6 +825,7 @@ const conditionalFunctions: FunctionDef[] = [
 	fn('SUMIFS', 3, 255, (args) => {
 		const sumRange = getRange(args[0])
 		const pairs = buildPairs(args, 1)
+		if (pairs.some((pair) => !sameShape(sumRange, pair.range))) return errorValue('#VALUE!')
 		let sum = 0
 		for (let r = 0; r < sumRange.length; r++) {
 			for (let c = 0; c < (sumRange[r]?.length ?? 0); c++) {
@@ -838,6 +854,7 @@ const conditionalFunctions: FunctionDef[] = [
 		const pairs = buildPairs(args, 0)
 		const first = pairs[0]?.range
 		if (!first) return numberValue(0)
+		if (pairs.some((pair) => !sameShape(first, pair.range))) return errorValue('#VALUE!')
 		let count = 0
 		for (let r = 0; r < first.length; r++) {
 			for (let c = 0; c < (first[r]?.length ?? 0); c++) {
@@ -870,6 +887,7 @@ const conditionalFunctions: FunctionDef[] = [
 	fn('AVERAGEIFS', 3, 255, (args) => {
 		const avgRange = getRange(args[0])
 		const pairs = buildPairs(args, 1)
+		if (pairs.some((pair) => !sameShape(avgRange, pair.range))) return errorValue('#VALUE!')
 		let sum = 0
 		let count = 0
 		for (let r = 0; r < avgRange.length; r++) {
@@ -889,6 +907,7 @@ const conditionalFunctions: FunctionDef[] = [
 	fn('MINIFS', 3, 255, (args) => {
 		const minRange = getRange(args[0])
 		const pairs = buildPairs(args, 1)
+		if (pairs.some((pair) => !sameShape(minRange, pair.range))) return errorValue('#VALUE!')
 		let min = Number.POSITIVE_INFINITY
 		let found = false
 		for (let r = 0; r < minRange.length; r++) {
@@ -908,6 +927,7 @@ const conditionalFunctions: FunctionDef[] = [
 	fn('MAXIFS', 3, 255, (args) => {
 		const maxRange = getRange(args[0])
 		const pairs = buildPairs(args, 1)
+		if (pairs.some((pair) => !sameShape(maxRange, pair.range))) return errorValue('#VALUE!')
 		let max = Number.NEGATIVE_INFINITY
 		let found = false
 		for (let r = 0; r < maxRange.length; r++) {

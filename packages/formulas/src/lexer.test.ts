@@ -69,7 +69,7 @@ describe('tokenize', () => {
 	})
 
 	it('tokenizes single-char operators', () => {
-		for (const op of ['+', '-', '*', '/', '^', '&', '=', '%']) {
+		for (const op of ['+', '-', '*', '/', '^', '&', '=', '%', '@', '#']) {
 			const tokens = tokenize(op)
 			expect(tokens[0]?.type).toBe(TokenType.Operator)
 			expect(tokens[0]?.value).toBe(op)

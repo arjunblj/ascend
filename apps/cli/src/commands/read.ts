@@ -49,7 +49,10 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 				console.error(`Table "${selector.name}" not found`)
 				return 1
 			}
-			const rows = handle.rows(rowLimit !== undefined ? { limit: rowLimit } : undefined)
+			const rows = handle.rows({
+				...(rowOffset !== undefined ? { offset: rowOffset } : {}),
+				...(rowLimit !== undefined ? { limit: rowLimit } : {}),
+			})
 			if (flags.has('json')) {
 				console.log(
 					jsonOut({
@@ -57,6 +60,8 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 						name: handle.name,
 						columns: handle.columns,
 						rowCount: handle.rowCount,
+						sortState: handle.sortState,
+						autoFilter: handle.autoFilter,
 						rows,
 					}),
 				)

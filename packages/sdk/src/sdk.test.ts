@@ -1143,6 +1143,18 @@ describe('AscendWorkbook', () => {
 			await unlink(path).catch(() => {})
 		}
 	})
+
+	test('WorkbookSession reuses cached sessions for identical byte sources', async () => {
+		WorkbookSession.clearCache()
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'bytes' }] }])
+		const bytes = wb.toBytes()
+		const first = await WorkbookSession.open(bytes, { mode: 'values' })
+		const second = await WorkbookSession.open(bytes, { mode: 'values' })
+		expect(first).toBe(second)
+		expect(first.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'bytes' })
+		WorkbookSession.clearCache()
+	})
 })
 
 function makeSyntheticXlsx(parts: Record<string, string>): Uint8Array {

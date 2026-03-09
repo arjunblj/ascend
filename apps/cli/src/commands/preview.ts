@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import type { Operation } from '@ascend/schema'
+import type { CellValue, Operation } from '@ascend/schema'
 import { jsonOut } from '../output/json.ts'
 import { bullet, heading, table } from '../output/pretty.ts'
 import { openWorkbookWithProgress } from '../progress.ts'
@@ -104,7 +104,7 @@ async function resolvePreviewOps(
 	return buildSetCellOps(sheetName, selector.ref, values)
 }
 
-function formatValue(value: { kind: string } & Record<string, unknown>): string {
+function formatValue(value: CellValue): string {
 	switch (value.kind) {
 		case 'empty':
 			return ''
@@ -117,6 +117,8 @@ function formatValue(value: { kind: string } & Record<string, unknown>): string 
 			return String(value.serial ?? '')
 		case 'richText':
 			return '[richText]'
+		case 'array':
+			return '[array]'
 		default:
 			return ''
 	}

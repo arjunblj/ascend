@@ -1,5 +1,13 @@
 import { parseRange, type RangeRef, type Workbook } from '@ascend/core'
-import { ascendError, type CellValue, type CsvDialect, err, ok, type Result } from '@ascend/schema'
+import {
+	ascendError,
+	type CellValue,
+	type CsvDialect,
+	err,
+	ok,
+	type Result,
+	topLeftScalar,
+} from '@ascend/schema'
 import { resolveDialect } from './dialect.ts'
 
 export interface WriteCsvOptions {
@@ -48,6 +56,7 @@ export function writeCsv(workbook: Workbook, opts?: WriteCsvOptions): Result<str
 }
 
 function formatValue(value: CellValue): string {
+	value = topLeftScalar(value)
 	switch (value.kind) {
 		case 'empty':
 			return ''

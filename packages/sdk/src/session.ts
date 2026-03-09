@@ -1,6 +1,15 @@
+import { createHash } from 'node:crypto'
 import { stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { indexToColumn, parseA1 } from '@ascend/core'
 import { analyzeWorkbook, type WorkbookAnalysis } from '@ascend/engine'
+import {
+	extractRefs,
+	type FormulaCellRef,
+	type FormulaNode,
+	printFormula,
+	tokenize,
+} from '@ascend/formulas'
 import { check as verifyCheck, lint as verifyLint, trace as verifyTrace } from '@ascend/verify'
 import { openWorkbookSource } from './load.ts'
 import { WorkbookReadView } from './read-view.ts'
@@ -29,9 +38,16 @@ interface SessionFileIdentity {
 	readonly mtimeMs: number
 }
 
+interface SessionBytesIdentity {
+	readonly key: string
+	readonly size: number
+}
+
+type SessionIdentity = SessionFileIdentity | SessionBytesIdentity
+
 interface SessionCacheEntry {
 	readonly key: string
-	readonly identity: SessionFileIdentity
+	readonly identity: SessionIdentity
 	readonly session: WorkbookSession
 }
 
@@ -39,13 +55,13 @@ const MAX_CACHED_SESSIONS = 16
 const sessionCache = new Map<string, SessionCacheEntry>()
 
 export class WorkbookSession {
-	private readonly identity: SessionFileIdentity
+	private readonly identity: SessionIdentity
 	private readonly options: WorkbookSessionOpenOptions
 	private readonly view: WorkbookReadView
 	private analysis?: WorkbookAnalysis
 
 	private constructor(
-		identity: SessionFileIdentity,
+		identity: SessionIdentity,
 		options: WorkbookSessionOpenOptions,
 		view: WorkbookReadView,
 	) {
@@ -55,18 +71,19 @@ export class WorkbookSession {
 	}
 
 	static async open(
-		file: string,
+		source: string | Uint8Array,
 		options: WorkbookSessionOpenOptions = {},
 	): Promise<WorkbookSession> {
-		const identity = await readIdentity(file)
-		const key = makeSessionKey(identity.path, options)
+		const identity =
+			typeof source === 'string' ? await readIdentity(source) : readBytesIdentity(source)
+		const key = makeSessionKey(identity, options)
 		const cached = sessionCache.get(key)
 		if (cached && isIdentityEqual(cached.identity, identity)) {
 			touchCacheEntry(cached)
 			return cached.session
 		}
 
-		const loaded = await openWorkbookSource(identity.path, options)
+		const loaded = await openWorkbookSource(source, options)
 		const session = new WorkbookSession(
 			identity,
 			normalizeOptions(options),
@@ -81,12 +98,12 @@ export class WorkbookSession {
 	}
 
 	static drop(file: string, options: WorkbookSessionOpenOptions = {}): void {
-		const key = makeSessionKey(resolve(file), options)
+		const key = makeSessionKey({ path: resolve(file), size: 0, mtimeMs: 0 }, options)
 		sessionCache.delete(key)
 	}
 
 	get file(): string {
-		return this.identity.path
+		return 'path' in this.identity ? this.identity.path : this.identity.key
 	}
 
 	get sheets(): readonly string[] {
@@ -163,7 +180,42 @@ export class WorkbookSession {
 	}
 
 	formula(cellRef: string): FormulaInfo | undefined {
-		return this.view.formula(cellRef)
+		const { sheetName, ref } = parseFullRef(cellRef, this.view.getWorkbookModel())
+		const cell = this.view.sheet(sheetName)?.cell(ref)
+		if (!cell?.formula) return undefined
+		const formula = normalizeFormulaInput(cell.formula)
+		const formulaKey = makeFormulaKey(this.view.getWorkbookModel(), sheetName, ref)
+		const analyzed = formulaKey ? this.getAnalysis().formulas.get(formulaKey) : undefined
+		if (!analyzed) return this.view.formula(cellRef)
+		const tokens = tokenize(formula).filter(
+			(token) => token.type !== 'Whitespace' && token.type !== 'EOF',
+		)
+		if (!analyzed.ast) {
+			return {
+				ref: `${sheetName}!${ref}`,
+				formula,
+				normalizedFormula: formula,
+				value: cell.value,
+				...(cell.formulaBinding ? { binding: cell.formulaBinding } : {}),
+				refs: [],
+				functions: [],
+				volatile: analyzed.volatile,
+				tokens,
+				...(analyzed.parseError ? { parseError: analyzed.parseError } : {}),
+			}
+		}
+		return {
+			ref: `${sheetName}!${ref}`,
+			formula,
+			normalizedFormula: printFormula(analyzed.ast),
+			value: cell.value,
+			...(cell.formulaBinding ? { binding: cell.formulaBinding } : {}),
+			refs: extractRefs(analyzed.ast).map(formatFormulaRef),
+			functions: [...collectFunctionNames(analyzed.ast)],
+			volatile: analyzed.volatile,
+			tokens,
+			ast: analyzed.ast,
+		}
 	}
 
 	check(): CheckResult {
@@ -221,17 +273,31 @@ async function readIdentity(file: string): Promise<SessionFileIdentity> {
 	}
 }
 
-function makeSessionKey(path: string, options: WorkbookSessionOpenOptions): string {
+function readBytesIdentity(bytes: Uint8Array): SessionBytesIdentity {
+	const hash = createHash('sha256').update(bytes).digest('hex')
+	return {
+		key: `bytes:${hash}`,
+		size: bytes.byteLength,
+	}
+}
+
+function makeSessionKey(identity: SessionIdentity, options: WorkbookSessionOpenOptions): string {
 	const normalized = normalizeOptions(options)
 	return JSON.stringify({
-		path,
+		source: 'path' in identity ? identity.path : identity.key,
 		mode: normalized.mode ?? 'full',
 		sheets: normalized.sheets ?? [],
 	})
 }
 
-function isIdentityEqual(left: SessionFileIdentity, right: SessionFileIdentity): boolean {
-	return left.path === right.path && left.size === right.size && left.mtimeMs === right.mtimeMs
+function isIdentityEqual(left: SessionIdentity, right: SessionIdentity): boolean {
+	if ('path' in left && 'path' in right) {
+		return left.path === right.path && left.size === right.size && left.mtimeMs === right.mtimeMs
+	}
+	if (!('path' in left) && !('path' in right)) {
+		return left.key === right.key && left.size === right.size
+	}
+	return false
 }
 
 function touchCacheEntry(entry: SessionCacheEntry): void {
@@ -246,4 +312,71 @@ function setCacheEntry(entry: SessionCacheEntry): void {
 		if (!oldest) break
 		sessionCache.delete(oldest)
 	}
+}
+
+function normalizeFormulaInput(formula: string): string {
+	return formula.startsWith('=') ? formula.slice(1) : formula
+}
+
+function parseFullRef(
+	cellRef: string,
+	workbook: import('@ascend/core').Workbook,
+): {
+	sheetName: string
+	ref: string
+} {
+	const bang = cellRef.indexOf('!')
+	if (bang !== -1) {
+		const sheetName = cellRef.substring(0, bang).replace(/^'|'$/g, '')
+		return { sheetName, ref: cellRef.substring(bang + 1) }
+	}
+	const firstSheet = workbook.sheets[0]
+	return { sheetName: firstSheet ? firstSheet.name : 'Sheet1', ref: cellRef }
+}
+
+function makeFormulaKey(
+	workbook: import('@ascend/core').Workbook,
+	sheetName: string,
+	ref: string,
+): string | undefined {
+	const sheetIndex = workbook.sheets.findIndex((sheet) => sheet.name === sheetName)
+	if (sheetIndex === -1) return undefined
+	const cellRef = parseA1(ref)
+	return `${sheetIndex}:${cellRef.row}:${cellRef.col}`
+}
+
+function formatFormulaRef(ref: import('@ascend/formulas').FormulaRef): string {
+	if (ref.kind === 'cell') {
+		return `${ref.sheet ? `${ref.sheet}!` : ''}${formatFormulaCellRef(ref.ref)}`
+	}
+	return `${ref.sheet ? `${ref.sheet}!` : ''}${formatFormulaCellRef(ref.start)}:${formatFormulaCellRef(ref.end)}`
+}
+
+function formatFormulaCellRef(ref: FormulaCellRef): string {
+	return `${ref.colAbsolute ? '$' : ''}${indexToColumn(ref.col)}${ref.rowAbsolute ? '$' : ''}${ref.row + 1}`
+}
+
+function collectFunctionNames(node: FormulaNode, out = new Set<string>()): Set<string> {
+	switch (node.type) {
+		case 'function':
+			out.add(node.name)
+			for (const arg of node.args) collectFunctionNames(arg, out)
+			break
+		case 'binary':
+			collectFunctionNames(node.left, out)
+			collectFunctionNames(node.right, out)
+			break
+		case 'unary':
+			collectFunctionNames(node.operand, out)
+			break
+		case 'array':
+			for (const row of node.rows) {
+				for (const cell of row) collectFunctionNames(cell, out)
+			}
+			break
+		case 'spillRef':
+			collectFunctionNames(node.target, out)
+			break
+	}
+	return out
 }

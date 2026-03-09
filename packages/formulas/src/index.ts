@@ -12,6 +12,7 @@ export type {
 	NameNode,
 	NumberNode,
 	RangeRefNode,
+	SpillRefNode,
 	StringNode,
 	StructuredRefNode,
 	UnaryNode,

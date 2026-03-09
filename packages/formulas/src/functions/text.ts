@@ -7,6 +7,7 @@ import {
 	isError,
 	numberValue,
 	stringValue,
+	topLeftScalar,
 } from '@ascend/schema'
 import type { EvalArg, FunctionDef } from './index.ts'
 
@@ -20,6 +21,7 @@ function fn(
 }
 
 function toNum(v: CellValue): number | CellValue {
+	v = topLeftScalar(v)
 	switch (v.kind) {
 		case 'empty':
 			return 0
@@ -46,6 +48,7 @@ function numArg(arg: EvalArg | undefined): number | CellValue {
 }
 
 function cvStr(v: CellValue): string {
+	v = topLeftScalar(v)
 	switch (v.kind) {
 		case 'empty':
 			return ''

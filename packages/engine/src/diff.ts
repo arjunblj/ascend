@@ -1,6 +1,7 @@
 import type { DefinedName, Workbook } from '@ascend/core'
 import { toA1 } from '@ascend/core'
 import type { CellValue } from '@ascend/schema'
+import { topLeftScalar } from '@ascend/schema'
 
 export interface CellChange {
 	readonly ref: string
@@ -25,6 +26,8 @@ export interface WorkbookDiff {
 }
 
 export function cellValuesEqual(a: CellValue, b: CellValue): boolean {
+	a = topLeftScalar(a)
+	b = topLeftScalar(b)
 	if (a.kind !== b.kind) return false
 	switch (a.kind) {
 		case 'empty':

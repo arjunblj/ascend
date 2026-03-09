@@ -1,7 +1,7 @@
 import { indexToColumn, parseRange, type RangeRef, type StyleId, type Workbook } from '@ascend/core'
 import type { FormulaNode } from '@ascend/formulas'
 import type { AscendError, CellValue } from '@ascend/schema'
-import { EMPTY, errorValue } from '@ascend/schema'
+import { EMPTY, errorValue, topLeftScalar } from '@ascend/schema'
 import { analyzeWorkbook } from './analysis.ts'
 import type { CalcContext } from './calc-context.ts'
 import { type DependencyGraph, parseCellKey } from './dep-graph.ts'
@@ -14,6 +14,8 @@ export interface RecalcResult {
 }
 
 function valuesEqual(a: CellValue, b: CellValue): boolean {
+	a = topLeftScalar(a)
+	b = topLeftScalar(b)
 	if (a.kind !== b.kind) return false
 	switch (a.kind) {
 		case 'empty':
@@ -37,6 +39,149 @@ function cellRefString(wb: Workbook, sheetIndex: number, row: number, col: numbe
 	const sheet = wb.sheets[sheetIndex]
 	const name = sheet ? sheet.name : `Sheet${sheetIndex + 1}`
 	return `${name}!${indexToColumn(col)}${row + 1}`
+}
+
+function toScalarMatrix(value: CellValue): readonly (readonly CellValue[])[] | null {
+	if (value.kind !== 'array') return null
+	return value.rows
+}
+
+function topLeftValue(value: CellValue): CellValue {
+	return topLeftScalar(value)
+}
+
+function isSpillBinding(
+	binding: unknown,
+): binding is { kind: 'spill'; anchorRef: string; ref: string; isAnchor: boolean } {
+	return (
+		typeof binding === 'object' &&
+		binding !== null &&
+		(binding as { kind?: string }).kind === 'spill'
+	)
+}
+
+function clearSpillFootprint(
+	sheet: Workbook['sheets'][number],
+	anchorRef: string,
+	changed: string[],
+): void {
+	if (!sheet) return
+	const removals: Array<{ row: number; col: number; ref: string }> = []
+	for (const [row, col, cell] of sheet.cells.iterate()) {
+		if (
+			cell.formulaInfo &&
+			isSpillBinding(cell.formulaInfo) &&
+			cell.formulaInfo.anchorRef === anchorRef
+		) {
+			removals.push({ row, col, ref: toA1Ref(row, col) })
+		}
+	}
+	for (const removal of removals) {
+		sheet.cells.delete(removal.row, removal.col)
+		changed.push(`${sheet.name}!${removal.ref}`)
+	}
+}
+
+function isSpillBlocked(
+	sheet: Workbook['sheets'][number],
+	anchorRow: number,
+	anchorCol: number,
+	anchorRef: string,
+	matrix: readonly (readonly CellValue[])[],
+): boolean {
+	if (!sheet) return true
+	for (let rowOffset = 0; rowOffset < matrix.length; rowOffset++) {
+		const sourceRow = matrix[rowOffset] ?? []
+		for (let colOffset = 0; colOffset < sourceRow.length; colOffset++) {
+			if (rowOffset === 0 && colOffset === 0) continue
+			const targetRow = anchorRow + rowOffset
+			const targetCol = anchorCol + colOffset
+			const existing = sheet.cells.get(targetRow, targetCol)
+			if (!existing) continue
+			if (
+				existing.formulaInfo &&
+				isSpillBinding(existing.formulaInfo) &&
+				existing.formulaInfo.anchorRef === anchorRef
+			) {
+				continue
+			}
+			return true
+		}
+	}
+	return false
+}
+
+function applyArrayResult(
+	workbook: Workbook,
+	sheetIndex: number,
+	row: number,
+	col: number,
+	oldCell:
+		| { value: CellValue; formula: string | null; styleId: StyleId; formulaInfo?: unknown }
+		| undefined,
+	matrix: readonly (readonly CellValue[])[],
+	changed: string[],
+): CellValue {
+	const sheet = workbook.sheets[sheetIndex]
+	if (!sheet) return errorValue('#REF!')
+	const anchorRef = `${sheet.name}!${toA1Ref(row, col)}`
+	clearSpillFootprint(sheet, anchorRef, changed)
+	if (matrix.length === 0 || (matrix[0]?.length ?? 0) === 0) return EMPTY
+	if (isSpillBlocked(sheet, row, col, anchorRef, matrix)) {
+		const spillError = errorValue('#SPILL!')
+		sheet.cells.set(row, col, {
+			value: spillError,
+			formula: oldCell?.formula ?? null,
+			styleId: oldCell?.styleId ?? (0 as StyleId),
+		})
+		changed.push(anchorRef)
+		return spillError
+	}
+
+	const anchorValue = topLeftValue(matrix[0]?.[0] ?? EMPTY)
+	const spillRef = `${toA1Ref(row, col)}:${toA1Ref(
+		row + matrix.length - 1,
+		col + Math.max(...matrix.map((matrixRow) => matrixRow.length), 1) - 1,
+	)}`
+
+	sheet.cells.set(row, col, {
+		value: anchorValue,
+		formula: oldCell?.formula ?? null,
+		styleId: oldCell?.styleId ?? (0 as StyleId),
+		formulaInfo: {
+			kind: 'spill',
+			anchorRef,
+			ref: spillRef,
+			isAnchor: true,
+		},
+	})
+	changed.push(anchorRef)
+
+	for (let rowOffset = 0; rowOffset < matrix.length; rowOffset++) {
+		const sourceRow = matrix[rowOffset] ?? []
+		for (let colOffset = 0; colOffset < sourceRow.length; colOffset++) {
+			if (rowOffset === 0 && colOffset === 0) continue
+			const targetRow = row + rowOffset
+			const targetCol = col + colOffset
+			sheet.cells.set(targetRow, targetCol, {
+				value: topLeftValue(sourceRow[colOffset] ?? EMPTY),
+				formula: null,
+				styleId: oldCell?.styleId ?? (0 as StyleId),
+				formulaInfo: {
+					kind: 'spill',
+					anchorRef,
+					ref: spillRef,
+					isAnchor: false,
+				},
+			})
+			changed.push(`${sheet.name}!${toA1Ref(targetRow, targetCol)}`)
+		}
+	}
+	return anchorValue
+}
+
+function toA1Ref(row: number, col: number): string {
+	return `${indexToColumn(col)}${row + 1}`
 }
 
 export function recalculate(
@@ -94,6 +239,13 @@ export function recalculate(
 				const sheet = workbook.sheets[si]
 				if (sheet) {
 					const oldCell = sheet.cells.get(row, col)
+					if (
+						oldCell?.formulaInfo &&
+						isSpillBinding(oldCell.formulaInfo) &&
+						oldCell.formulaInfo.isAnchor
+					) {
+						clearSpillFootprint(sheet, oldCell.formulaInfo.anchorRef, changed)
+					}
 					const newValue = errorValue('#REF!')
 					if (!oldCell || !valuesEqual(oldCell.value, newValue)) {
 						sheet.cells.set(row, col, {
@@ -131,6 +283,18 @@ export function recalculate(
 			}
 			const newValue = evaluate(ast, evalCtx)
 			const oldCell = sheet.cells.get(row, col)
+			const spillMatrix = toScalarMatrix(newValue)
+			if (spillMatrix) {
+				applyArrayResult(workbook, si, row, col, oldCell, spillMatrix, changed)
+				continue
+			}
+			if (
+				oldCell?.formulaInfo &&
+				isSpillBinding(oldCell.formulaInfo) &&
+				oldCell.formulaInfo.isAnchor
+			) {
+				clearSpillFootprint(sheet, oldCell.formulaInfo.anchorRef, changed)
+			}
 			if (!oldCell || !valuesEqual(oldCell.value, newValue)) {
 				sheet.cells.set(row, col, {
 					value: newValue,
@@ -204,6 +368,18 @@ function evalIterative(
 			const newValue = evaluate(ast, evalCtx)
 			const oldCell = sheet.cells.get(row, col)
 			const oldValue = oldCell?.value ?? EMPTY
+			const spillMatrix = toScalarMatrix(newValue)
+			if (spillMatrix) {
+				applyArrayResult(workbook, si, row, col, oldCell, spillMatrix, changed)
+				continue
+			}
+			if (
+				oldCell?.formulaInfo &&
+				isSpillBinding(oldCell.formulaInfo) &&
+				oldCell.formulaInfo.isAnchor
+			) {
+				clearSpillFootprint(sheet, oldCell.formulaInfo.anchorRef, changed)
+			}
 
 			if (oldValue.kind === 'number' && newValue.kind === 'number') {
 				maxDelta = Math.max(maxDelta, Math.abs(newValue.value - oldValue.value))
@@ -242,6 +418,18 @@ function evalIterative(
 		}
 		const newValue = evaluate(ast, evalCtx)
 		const oldCell = sheet.cells.get(row, col)
+		const spillMatrix = toScalarMatrix(newValue)
+		if (spillMatrix) {
+			applyArrayResult(workbook, si, row, col, oldCell, spillMatrix, changed)
+			continue
+		}
+		if (
+			oldCell?.formulaInfo &&
+			isSpillBinding(oldCell.formulaInfo) &&
+			oldCell.formulaInfo.isAnchor
+		) {
+			clearSpillFootprint(sheet, oldCell.formulaInfo.anchorRef, changed)
+		}
 		if (!oldCell || !valuesEqual(oldCell.value, newValue)) {
 			sheet.cells.set(row, col, {
 				value: newValue,

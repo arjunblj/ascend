@@ -102,6 +102,53 @@
 			"expected": { "kind": "number", "value": 1 }
 		},
 		{
+			"description": "COUNTIF supports wildcard criteria",
+			"setup": {
+				"A1": "North",
+				"A2": "Northeast",
+				"A3": "South",
+				"A4": "Northwest"
+			},
+			"formula": "COUNTIF(A1:A4, \"North*\")",
+			"expected": { "kind": "number", "value": 3 }
+		},
+		{
+			"description": "SUMIFS supports wildcard and nonblank criteria together",
+			"setup": {
+				"A1": 120,
+				"A2": 40,
+				"A3": 25,
+				"A4": 60,
+				"B1": "East",
+				"B2": "East-Alt",
+				"B3": "West",
+				"B4": "East",
+				"C1": "ok",
+				"C2": "",
+				"C4": "ok"
+			},
+			"formula": "SUMIFS(A1:A4, B1:B4, \"East*\", C1:C4, \"<>\")",
+			"expected": { "kind": "number", "value": 180 }
+		},
+		{
+			"description": "COUNTIF treats empty criteria as blank matching",
+			"setup": {
+				"A1": "",
+				"A2": "value"
+			},
+			"formula": "COUNTIF(A1:A3, \"\")",
+			"expected": { "kind": "number", "value": 2 }
+		},
+		{
+			"description": "COUNTIF treats <> with no operand as nonblank matching",
+			"setup": {
+				"A1": "",
+				"A2": "value"
+			},
+			"formula": "COUNTIF(A1:A3, \"<>\")",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
 			"description": "AVERAGEIF returns #DIV/0! when no invoices match the threshold",
 			"setup": { "A1": 100, "A2": 200, "A3": 300 },
 			"formula": "AVERAGEIF(A1:A3, \">500\")",

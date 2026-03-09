@@ -149,6 +149,32 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 2)?.value).toEqual(numberValue(20))
 	})
 
+	test('COUNTIF supports wildcard criteria', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('North'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('Northeast'), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: stringValue('South'), formula: null, styleId: sid })
+		sheet.cells.set(3, 0, { value: stringValue('Northwest'), formula: null, styleId: sid })
+		sheet.cells.set(4, 0, { value: EMPTY, formula: 'COUNTIF(A1:A4,"North*")', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(4, 0)?.value).toEqual(numberValue(3))
+	})
+
+	test('COUNTIF blank and nonblank criteria match Excel semantics', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue(''), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('value'), formula: null, styleId: sid })
+		sheet.cells.set(3, 0, { value: EMPTY, formula: 'COUNTIF(A1:A3,"")', styleId: sid })
+		sheet.cells.set(4, 0, { value: EMPTY, formula: 'COUNTIF(A1:A3,"<>")', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(3, 0)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(4, 0)?.value).toEqual(numberValue(1))
+	})
+
 	test('deterministic NOW via CalcContext', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

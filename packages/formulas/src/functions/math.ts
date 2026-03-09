@@ -1,6 +1,7 @@
 import type { CellValue } from '@ascend/schema'
 import { EMPTY, errorValue, isEmpty, isError, numberValue } from '@ascend/schema'
 import type { EvalArg, FunctionDef, FunctionEvalContext } from './index.ts'
+import { wildcardMatch } from './registry.ts'
 
 function fn(
 	name: string,
@@ -95,11 +96,16 @@ function parseCriteria(criteria: CellValue): (v: CellValue) => boolean {
 
 	const numRest = Number(rest)
 	const isNumeric = rest.trim() !== '' && !Number.isNaN(numRest)
+	const isBlankCriterion = rest === ''
+	const hasWildcards = /(^|[^~])[*?]/.test(rest)
 
 	if (!op) {
 		const lower = s.toLowerCase()
 		return (v) => {
-			if (v.kind === 'string') return v.value.toLowerCase() === lower
+			if (lower === '') return isBlankLike(v)
+			if (v.kind === 'string') {
+				return hasWildcards ? wildcardMatch(s, v.value) : v.value.toLowerCase() === lower
+			}
 			if (isNumeric && v.kind === 'number') return v.value === numRest
 			if (v.kind === 'boolean') return v.value === (lower === 'true')
 			return false
@@ -133,17 +139,25 @@ function parseCriteria(criteria: CellValue): (v: CellValue) => boolean {
 
 	const lower = rest.toLowerCase()
 	return (v) => {
-		if (v.kind !== 'string') return false
-		const vl = v.value.toLowerCase()
 		switch (op) {
 			case '=':
-				return vl === lower
+				if (isBlankCriterion) return isBlankLike(v)
+				if (v.kind !== 'string') return false
+				return hasWildcards ? wildcardMatch(rest, v.value) : v.value.toLowerCase() === lower
 			case '<>':
-				return vl !== lower
+				if (isBlankCriterion) return !isBlankLike(v)
+				if (v.kind !== 'string') return false
+				return hasWildcards ? !wildcardMatch(rest, v.value) : v.value.toLowerCase() !== lower
 			default:
 				return false
 		}
 	}
+}
+
+function isBlankLike(value: CellValue): boolean {
+	if (isEmpty(value)) return true
+	if (value.kind === 'string') return value.value === ''
+	return false
 }
 
 // ---------------------------------------------------------------------------

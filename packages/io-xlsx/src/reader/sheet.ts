@@ -21,6 +21,12 @@ import type { Relationship } from './relationships.ts'
 const CELL_REF_RE = /^([A-Za-z]+)(\d+)$/
 const SMALL_NUMBER_RANGE_START = -128
 const SMALL_NUMBER_RANGE_END = 512
+const SHEET_DATA_RE = /<sheetData\b[^>]*>([\s\S]*?)<\/sheetData>|<sheetData\b[^>]*\/>/
+const ROW_RE = /<row\b([^>]*)>([\s\S]*?)<\/row>|<row\b([^>]*)\/>/g
+const CELL_RE = /<c\b([^>]*)>([\s\S]*?)<\/c>|<c\b([^>]*)\/>/g
+const ATTR_RE = /([A-Za-z_][\w:.-]*)="([^"]*)"/g
+const TEXT_NODE_RE =
+	/<([A-Za-z_][\w:.-]*)\b([^>]*)>([\s\S]*?)<\/\1>|<([A-Za-z_][\w:.-]*)\b([^>]*)\/>/g
 
 export interface SheetParseContext {
 	readonly sharedStrings: CellValue[]
@@ -29,6 +35,7 @@ export interface SheetParseContext {
 	readonly differentialStyles?: readonly CellStyle[]
 	readonly relationships?: readonly Relationship[]
 	readonly valuePool?: ValueInternPool
+	readonly valuesOnly?: boolean
 }
 
 export class ValueInternPool {
@@ -101,7 +108,7 @@ function buildSmallNumberCache(): Map<number, CellValue> {
 }
 
 export function parseSheet(name: string, xml: string, ctx: SheetParseContext): Sheet {
-	const doc = parseXml(xml)
+	const doc = parseXml(stripSheetDataForDom(xml))
 	const ws = doc.worksheet as XmlNode | undefined
 	const sheet = new Sheet(name)
 
@@ -111,7 +118,7 @@ export function parseSheet(name: string, xml: string, ctx: SheetParseContext): S
 	parseSheetFormatPr(ws, sheet)
 	parseSheetViews(ws, sheet)
 	parseCols(ws, sheet)
-	parseSheetData(ws, sheet, ctx)
+	parseSheetDataXml(xml, sheet, ctx)
 	parseMergeCells(ws, sheet)
 	parseDrawingRefs(ws, sheet)
 	parseAutoFilter(ws, sheet)
@@ -121,12 +128,54 @@ export function parseSheet(name: string, xml: string, ctx: SheetParseContext): S
 	parsePrintOptions(ws, sheet)
 	parseHeaderFooter(ws, sheet)
 	parseIgnoredErrors(ws, sheet)
-	parseHyperlinks(ws, sheet, ctx.relationships ?? [], ctx.valuePool)
-	parseConditionalFormatting(ws, sheet, ctx.differentialStyles ?? [], ctx.valuePool)
-	parseDataValidations(ws, sheet, ctx.valuePool)
-	extractExtLst(xml, sheet)
+	if (!ctx.valuesOnly) {
+		parseHyperlinks(ws, sheet, ctx.relationships ?? [], ctx.valuePool)
+		parseConditionalFormatting(ws, sheet, ctx.differentialStyles ?? [], ctx.valuePool)
+		parseDataValidations(ws, sheet, ctx.valuePool)
+		extractExtLst(xml, sheet)
+	}
 
 	return sheet
+}
+
+function stripSheetDataForDom(xml: string): string {
+	return xml.replace(SHEET_DATA_RE, '<sheetData/>')
+}
+
+function parseSheetDataXml(xml: string, sheet: Sheet, ctx: SheetParseContext): void {
+	const sheetData = extractSheetDataContent(xml)
+	if (!sheetData) return
+	const sharedFormulaMasters = new Map<string, { formula: string; row: number; col: number }>()
+
+	for (const rowMatch of sheetData.matchAll(ROW_RE)) {
+		const rowAttrs = parseRawAttributes(rowMatch[1] ?? rowMatch[3] ?? '')
+		const rowIndex = numAttr(rowAttrs, 'r')
+		const rowHeight = numAttr(rowAttrs, 'ht')
+		if (
+			rowIndex !== undefined &&
+			rowHeight !== undefined &&
+			attr(rowAttrs, 'customHeight') === '1'
+		) {
+			sheet.rowHeights.set(rowIndex - 1, rowHeight)
+		}
+
+		const rowInner = rowMatch[2] ?? ''
+		for (const cellMatch of rowInner.matchAll(CELL_RE)) {
+			const rawAttrs = cellMatch[1] ?? cellMatch[3] ?? ''
+			const cellNode = buildCellNode(rawAttrs, cellMatch[2] ?? '')
+			const ref = attr(cellNode, 'r')
+			if (!ref) continue
+			const pos = parseCellRef(ref)
+			if (!pos) continue
+			const cell = parseCellValue(cellNode, ctx, pos.row, pos.col, sharedFormulaMasters)
+			if (cell) sheet.cells.set(pos.row, pos.col, cell)
+		}
+	}
+}
+
+function extractSheetDataContent(xml: string): string | null {
+	const match = SHEET_DATA_RE.exec(xml)
+	return match?.[1] ?? null
 }
 
 function parseSheetData(ws: XmlNode, sheet: Sheet, ctx: SheetParseContext): void {
@@ -155,6 +204,82 @@ function parseSheetData(ws: XmlNode, sheet: Sheet, ctx: SheetParseContext): void
 	}
 }
 
+function buildCellNode(rawAttrs: string, innerXml: string): XmlNode {
+	const node = parseRawAttributes(rawAttrs)
+	const valueNode = extractTextNode(innerXml, 'v')
+	if (valueNode) node.v = valueNode.text
+	const formulaNode = extractTextNode(innerXml, 'f')
+	if (formulaNode) {
+		const fNode = parseRawAttributes(formulaNode.attrs)
+		if (formulaNode.text !== undefined) fNode['#text'] = formulaNode.text
+		node.f = fNode
+	}
+	const inlineStringNode = extractTextNode(innerXml, 'is')
+	if (inlineStringNode) {
+		node.is = buildInlineStringNode(inlineStringNode.text ?? '')
+	}
+	return node
+}
+
+function buildInlineStringNode(innerXml: string): XmlNode {
+	const runs: XmlNode[] = []
+	for (const run of extractNodes(innerXml, 'r')) {
+		const text = extractTextNode(run.text ?? '', 't')
+		runs.push({ t: text?.text ?? '' })
+	}
+	if (runs.length > 0) return { r: runs }
+	const directText = extractTextNode(innerXml, 't')
+	return directText ? { t: directText.text ?? '' } : {}
+}
+
+function parseRawAttributes(rawAttrs: string): XmlNode {
+	const node: XmlNode = {}
+	for (const match of rawAttrs.matchAll(ATTR_RE)) {
+		const key = match[1]
+		const value = match[2]
+		if (!key || value === undefined) continue
+		node[`@_${key}`] = decodeXmlText(value)
+	}
+	return node
+}
+
+function extractTextNode(
+	xml: string,
+	tagName: string,
+): { attrs: string; text?: string } | undefined {
+	for (const node of extractNodes(xml, tagName)) {
+		return {
+			attrs: node.attrs,
+			...(node.text !== undefined ? { text: node.text } : {}),
+		}
+	}
+	return undefined
+}
+
+function extractNodes(xml: string, tagName: string): Array<{ attrs: string; text?: string }> {
+	const nodes: Array<{ attrs: string; text?: string }> = []
+	for (const match of xml.matchAll(TEXT_NODE_RE)) {
+		const openTag = match[1] ?? match[4]
+		if (openTag !== tagName) continue
+		const attrs = match[2] ?? match[5] ?? ''
+		const text = match[3]
+		nodes.push({
+			attrs,
+			...(text !== undefined ? { text: decodeXmlText(text) } : {}),
+		})
+	}
+	return nodes
+}
+
+function decodeXmlText(text: string): string {
+	return text
+		.replace(/&lt;/g, '<')
+		.replace(/&gt;/g, '>')
+		.replace(/&quot;/g, '"')
+		.replace(/&apos;/g, "'")
+		.replace(/&amp;/g, '&')
+}
+
 function parseCellRef(ref: string): { row: number; col: number } | undefined {
 	const m = CELL_REF_RE.exec(ref)
 	const colStr = m?.[1]
@@ -176,9 +301,12 @@ function parseCellValue(
 	const pool = ctx.valuePool
 	const type = attr(c, 't')
 	const styleIdx = numAttr(c, 's') ?? 0
-	const styleId = ctx.styleIds[styleIdx] ?? (0 as StyleId)
-	const formula = parseFormulaText(c.f, row, col, sharedFormulaMasters, pool)
 	const rawValue = c.v
+	const styleId = ctx.valuesOnly ? (0 as StyleId) : (ctx.styleIds[styleIdx] ?? (0 as StyleId))
+	const formula =
+		ctx.valuesOnly && rawValue !== undefined && rawValue !== null && rawValue !== ''
+			? null
+			: parseFormulaText(c.f, row, col, sharedFormulaMasters, pool)
 
 	let value: CellValue
 

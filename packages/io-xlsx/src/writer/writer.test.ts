@@ -804,7 +804,7 @@ describe('writeXlsx', () => {
 		const chart = readCapsules.find((c) => c.partPath === 'xl/charts/chart1.xml')
 		expect(chart).toBeDefined()
 		expect(chart?.contentType).toContain('chart')
-		expect(new TextDecoder().decode(chart?.content)).toBe('<chart>test chart data</chart>')
+		expect(chart?.content).toBeUndefined()
 	})
 
 	it('produces a valid ZIP file', () => {

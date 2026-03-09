@@ -23,7 +23,14 @@ describe('AscendWorkbook', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'hello' }] }])
 		const internal = wb as unknown as {
-			wb: { sheets: Array<Record<string, unknown>>; workbookProtection: unknown }
+			wb: {
+				sheets: Array<Record<string, unknown>>
+				workbookProtection: unknown
+				pivotTables: Array<Record<string, unknown>>
+				pivotCaches: Array<Record<string, unknown>>
+				slicerCaches: Array<Record<string, unknown>>
+				slicers: Array<Record<string, unknown>>
+			}
 		}
 		const backingSheet = internal.wb.sheets[0] as
 			| {
@@ -321,6 +328,29 @@ describe('AscendWorkbook', () => {
 		expect(b1?.value).toEqual({ kind: 'number', value: 42 })
 	})
 
+	test('dirty serialization rebases source bytes and clears dirty flags', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'hello' }] }])
+
+		const bytes = wb.toBytes()
+		const internal = wb as unknown as {
+			originalBytes: Uint8Array | null
+			dirty: boolean
+			dirtySheets: Set<string>
+			workbookMetaDirty: boolean
+			sharedStringsDirty: boolean
+			wb: { sourceArchiveBytes: Uint8Array | null }
+		}
+
+		expect(internal.dirty).toBe(false)
+		expect(internal.originalBytes).toBe(bytes)
+		expect(internal.wb.sourceArchiveBytes).toBe(bytes)
+		expect(internal.dirtySheets.size).toBe(0)
+		expect(internal.workbookMetaDirty).toBe(false)
+		expect(internal.sharedStringsDirty).toBe(false)
+		expect(wb.toBytes()).toBe(bytes)
+	})
+
 	test('untouched imported xlsx returns original bytes exactly', async () => {
 		const bytes = makeSyntheticXlsx({
 			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -420,6 +450,42 @@ describe('AscendWorkbook', () => {
 		expect(reopened.inspect().load.isPartial).toBe(true)
 		expect(reopened.inspect().sheets[0]?.cellDataLoaded).toBe(false)
 		expect(reopened.sheet('Sheet1')?.cell('A1')).toBeUndefined()
+		const metadataInternal = reopened as unknown as {
+			originalBytes: Uint8Array | null
+			caps: readonly unknown[]
+			wb: { sourceArchiveBytes: Uint8Array | null }
+		}
+		expect(metadataInternal.originalBytes).toBeNull()
+		expect(metadataInternal.caps).toHaveLength(0)
+		expect(metadataInternal.wb.sourceArchiveBytes).toBeNull()
+		expect(() => reopened.toBytes()).toThrow(
+			'Cannot export a partial workbook view. Reopen the workbook with a full load before saving or exporting.',
+		)
+	})
+
+	test('values mode opens hydrated cells as a read-only partial view', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A2', formula: 'A1*3' },
+		])
+		wb.recalc()
+		const bytes = wb.toBytes()
+
+		const reopened = await AscendWorkbook.open(bytes, { mode: 'values' })
+		expect(reopened.inspect().load.mode).toBe('values')
+		expect(reopened.inspect().load.isPartial).toBe(true)
+		expect(reopened.inspect().load.cellsHydrated).toBe(true)
+		expect(reopened.sheet('Sheet1')?.cell('A2')?.value).toEqual({ kind: 'number', value: 6 })
+		expect(reopened.sheet('Sheet1')?.cell('A2')?.formula).toBeNull()
+		const valuesInternal = reopened as unknown as {
+			originalBytes: Uint8Array | null
+			caps: readonly unknown[]
+			wb: { sourceArchiveBytes: Uint8Array | null }
+		}
+		expect(valuesInternal.originalBytes).toBeNull()
+		expect(valuesInternal.caps).toHaveLength(0)
+		expect(valuesInternal.wb.sourceArchiveBytes).toBeNull()
 		expect(() => reopened.toBytes()).toThrow(
 			'Cannot export a partial workbook view. Reopen the workbook with a full load before saving or exporting.',
 		)
@@ -441,6 +507,14 @@ describe('AscendWorkbook', () => {
 		expect(reopened.inspect().load.mode).toBe('selective')
 		expect(reopened.inspect().load.isPartial).toBe(true)
 		expect(reopened.sheet('Archive')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'extra' })
+		const selectiveInternal = reopened as unknown as {
+			originalBytes: Uint8Array | null
+			caps: readonly unknown[]
+			wb: { sourceArchiveBytes: Uint8Array | null }
+		}
+		expect(selectiveInternal.originalBytes).toBeNull()
+		expect(selectiveInternal.caps).toHaveLength(0)
+		expect(selectiveInternal.wb.sourceArchiveBytes).toBeNull()
 		expect(() => reopened.toCsv()).toThrow(
 			'Cannot export a partial workbook view. Reopen the workbook with a full load before saving or exporting.',
 		)

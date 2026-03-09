@@ -50,12 +50,12 @@ export interface ReadXlsxResult {
 }
 
 export interface ReadXlsxOptions {
-	readonly mode?: 'full' | 'metadata-only'
+	readonly mode?: 'full' | 'metadata-only' | 'values'
 	readonly sheets?: readonly string[]
 }
 
 export interface ReadXlsxLoadInfo {
-	readonly mode: 'full' | 'metadata-only' | 'selective'
+	readonly mode: 'full' | 'metadata-only' | 'values' | 'selective'
 	readonly isPartial: boolean
 	readonly cellsHydrated: boolean
 	readonly hasAllSheets: boolean
@@ -139,35 +139,37 @@ export function readXlsx(
 	consumed.add(workbookPath)
 	consumed.add(wbRelsPath)
 
-	for (const entry of wbInfo.pivotCacheEntries) {
-		const rel = relMap.get(entry.relId)
-		if (!rel) continue
-		const partPath = resolvePath(workbookPath, rel.target)
-		const xml = readPart(archive, partPath)
-		const relsXml = readPart(archive, getRelsPath(partPath))
-		const relationships = relsXml ? parseRelationships(relsXml) : []
-		const parsed = xml
-			? parsePivotCacheDefinitionXml(xml, partPath, entry.cacheId, entry.relId, relationships)
-			: null
-		if (parsed) workbook.pivotCaches.push(parsed)
-		consumed.add(partPath)
-		if (relsXml) consumed.add(getRelsPath(partPath))
-	}
-	for (const rel of wbRels.filter((relationship) => relationship.type === REL_SLICER_CACHE)) {
-		const partPath = resolvePath(workbookPath, rel.target)
-		const xml = readPart(archive, partPath)
-		if (xml) {
-			const parsed = parseSlicerCacheXml(xml, partPath)
-			if (parsed) workbook.slicerCaches.push(parsed)
+	if (mode !== 'values') {
+		for (const entry of wbInfo.pivotCacheEntries) {
+			const rel = relMap.get(entry.relId)
+			if (!rel) continue
+			const partPath = resolvePath(workbookPath, rel.target)
+			const xml = readPart(archive, partPath)
+			const relsXml = readPart(archive, getRelsPath(partPath))
+			const relationships = relsXml ? parseRelationships(relsXml) : []
+			const parsed = xml
+				? parsePivotCacheDefinitionXml(xml, partPath, entry.cacheId, entry.relId, relationships)
+				: null
+			if (parsed) workbook.pivotCaches.push(parsed)
+			consumed.add(partPath)
+			if (relsXml) consumed.add(getRelsPath(partPath))
 		}
-		consumed.add(partPath)
-	}
-	for (const entry of archive.entries()) {
-		if (!entry.path.startsWith('xl/slicers/') || !entry.path.endsWith('.xml')) continue
-		const xml = readPart(archive, entry.path)
-		if (!xml) continue
-		workbook.slicers.push(...parseSlicerXml(xml, entry.path))
-		consumed.add(entry.path)
+		for (const rel of wbRels.filter((relationship) => relationship.type === REL_SLICER_CACHE)) {
+			const partPath = resolvePath(workbookPath, rel.target)
+			const xml = readPart(archive, partPath)
+			if (xml) {
+				const parsed = parseSlicerCacheXml(xml, partPath)
+				if (parsed) workbook.slicerCaches.push(parsed)
+			}
+			consumed.add(partPath)
+		}
+		for (const entry of archive.entries()) {
+			if (!entry.path.startsWith('xl/slicers/') || !entry.path.endsWith('.xml')) continue
+			const xml = readPart(archive, entry.path)
+			if (!xml) continue
+			workbook.slicers.push(...parseSlicerXml(xml, entry.path))
+			consumed.add(entry.path)
+		}
 	}
 
 	const ssPart = wbRels.find((r) => r.type === REL_SHARED_STRINGS)
@@ -216,6 +218,7 @@ export function readXlsx(
 		sheetsToParse.push({ name: entry.name, path: sheetPath, state: entry.state })
 	}
 
+	const valuesOnly = mode === 'values'
 	if (mode === 'metadata-only') {
 		for (const entry of sheetsToParse) {
 			const sheet = workbook.addSheet(entry.name)
@@ -245,12 +248,16 @@ export function readXlsx(
 						tableStyleCount: 0,
 					},
 				}
-		if (stylesXml && stylesPath) {
+		if (stylesXml && stylesPath && !valuesOnly) {
 			workbook.preservedStyles = { path: stylesPath, xfByStyleId: {} }
 		}
-		const styleIds = registerStyles(workbook, parsedStyles.cellStyles)
+		const styleIds = valuesOnly
+			? new Array<StyleId>(parsedStyles.cellStyles.length).fill(0 as StyleId)
+			: registerStyles(workbook, parsedStyles.cellStyles)
 		workbook.styleMetadata = parsedStyles.metadata
-		workbook.differentialStyles.push(...parsedStyles.differentialStyles)
+		if (!valuesOnly) {
+			workbook.differentialStyles.push(...parsedStyles.differentialStyles)
+		}
 
 		for (const entry of sheetsToParse) {
 			const sheetXml = readPart(archive, entry.path)
@@ -265,15 +272,20 @@ export function readXlsx(
 				differentialStyles: parsedStyles.differentialStyles,
 				relationships: sheetRelationships,
 				valuePool,
+				valuesOnly,
 			})
-			attachComments(archive, entry.path, sheet, sheetRelationships)
-			attachDrawingImages(archive, entry.path, sheet, sheetRelationships)
-			attachPivotTables(archive, entry.path, entry.name, workbook, sheetRelationships)
+			if (!valuesOnly) {
+				attachComments(archive, entry.path, sheet, sheetRelationships)
+				attachDrawingImages(archive, entry.path, sheet, sheetRelationships)
+				attachPivotTables(archive, entry.path, entry.name, workbook, sheetRelationships)
+			}
 			attachTables(archive, entry.path, sheet, sheetRelationships)
 			sheet.state = entry.state
-			sheet.preservedXml = {
-				partPath: entry.path,
-				...(sheetRelsXml ? { relsPath: getRelsPath(entry.path) } : {}),
+			if (!valuesOnly) {
+				sheet.preservedXml = {
+					partPath: entry.path,
+					...(sheetRelsXml ? { relsPath: getRelsPath(entry.path) } : {}),
+				}
 			}
 			workbook.sheets.push(sheet)
 		}
@@ -302,15 +314,20 @@ export function readXlsx(
 	const loadedSheetNames = sheetsToParse.map((sheet) => sheet.name)
 	const hasAllSheets = loadedSheetNames.length === sourceSheetNames.length
 	const cellsHydrated = mode !== 'metadata-only'
+	const fidelityPartial = mode === 'values'
 	const loadInfo: ReadXlsxLoadInfo = {
 		mode: selectedSheets ? 'selective' : mode,
-		isPartial: !hasAllSheets || !cellsHydrated,
+		isPartial: !hasAllSheets || !cellsHydrated || fidelityPartial,
 		cellsHydrated,
 		hasAllSheets,
 		sourceSheetNames,
 		loadedSheetNames,
 	}
 	const report = buildReport(contentTypes, formulaFeatures, workbook, capsules, loadInfo)
+	if (loadInfo.isPartial) {
+		workbook.sourceArchiveBytes = null
+		return ok({ workbook, report, capsules: [], loadInfo })
+	}
 
 	return ok({ workbook, report, capsules, loadInfo })
 }
@@ -395,16 +412,8 @@ function collectCapsules(
 			partPath,
 			contentType: ct,
 			relationships,
-			content: new Uint8Array(),
 			anchor,
 		}
-		Object.defineProperty(capsule, 'content', {
-			configurable: true,
-			enumerable: true,
-			get() {
-				return archive.readBytes(partPath) ?? new Uint8Array()
-			},
-		})
 		if (relType) capsule.relType = relType
 		capsules.push(capsule)
 	}
@@ -561,6 +570,7 @@ function buildReport(
 		const reasons: string[] = []
 		if (!loadInfo.hasAllSheets) reasons.push('only selected sheets are loaded')
 		if (!loadInfo.cellsHydrated) reasons.push('sheet cells are not hydrated')
+		if (loadInfo.mode === 'values') reasons.push('only cell values are hydrated')
 		features.push({
 			feature: 'partialLoad',
 			tier: 'normalized',

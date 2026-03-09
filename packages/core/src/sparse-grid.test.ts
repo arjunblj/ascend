@@ -98,6 +98,24 @@ describe('SparseGrid', () => {
 		expect(coords).not.toContainEqual([5, 5])
 	})
 
+	test('iterateRows yields sorted row-major cells', () => {
+		const grid = new SparseGrid()
+		grid.set(2, 3, makeCell(stringValue('hello')))
+		grid.set(0, 1, makeCell(numberValue(2)))
+		grid.set(0, 0, makeCell(numberValue(1)))
+
+		expect([...grid.iterateRows()]).toEqual([
+			[
+				0,
+				[
+					[0, makeCell(numberValue(1))],
+					[1, makeCell(numberValue(2))],
+				],
+			],
+			[2, [[3, makeCell(stringValue('hello'))]]],
+		])
+	})
+
 	test('clear removes all cells', () => {
 		const grid = new SparseGrid()
 		grid.set(0, 0, makeCell(numberValue(1)))
@@ -122,5 +140,46 @@ describe('SparseGrid', () => {
 		const retrieved = grid.get(0, 5)
 		expect(retrieved?.formula).toBe('SUM(A1:A5)')
 		expect(retrieved?.value).toEqual(numberValue(10))
+	})
+
+	test('insertRows shifts populated rows without rewriting cells', () => {
+		const grid = new SparseGrid()
+		grid.set(0, 0, makeCell(numberValue(1)))
+		grid.set(2, 0, makeCell(numberValue(2)))
+		grid.insertRows(1, 2)
+		expect(grid.get(0, 0)?.value).toEqual(numberValue(1))
+		expect(grid.get(4, 0)?.value).toEqual(numberValue(2))
+		expect(grid.get(2, 0)).toBeUndefined()
+	})
+
+	test('deleteRows removes and compacts shifted rows', () => {
+		const grid = new SparseGrid()
+		grid.set(0, 0, makeCell(numberValue(1)))
+		grid.set(1, 0, makeCell(numberValue(2)))
+		grid.set(3, 0, makeCell(numberValue(3)))
+		grid.deleteRows(1, 2)
+		expect(grid.get(0, 0)?.value).toEqual(numberValue(1))
+		expect(grid.get(1, 0)?.value).toEqual(numberValue(3))
+		expect(grid.cellCount()).toBe(2)
+	})
+
+	test('insertCols shifts cells within each row', () => {
+		const grid = new SparseGrid()
+		grid.set(0, 0, makeCell(numberValue(1)))
+		grid.set(0, 2, makeCell(numberValue(2)))
+		grid.insertCols(1, 2)
+		expect(grid.get(0, 0)?.value).toEqual(numberValue(1))
+		expect(grid.get(0, 4)?.value).toEqual(numberValue(2))
+	})
+
+	test('deleteCols removes deleted columns and compacts survivors', () => {
+		const grid = new SparseGrid()
+		grid.set(0, 0, makeCell(numberValue(1)))
+		grid.set(0, 1, makeCell(numberValue(2)))
+		grid.set(0, 3, makeCell(numberValue(3)))
+		grid.deleteCols(1, 2)
+		expect(grid.get(0, 0)?.value).toEqual(numberValue(1))
+		expect(grid.get(0, 1)?.value).toEqual(numberValue(3))
+		expect(grid.cellCount()).toBe(2)
 	})
 })

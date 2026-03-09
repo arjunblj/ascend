@@ -94,7 +94,7 @@ export interface SheetInfo {
 }
 
 export interface WorkbookLoadInfo {
-	readonly mode: 'full' | 'metadata-only' | 'selective'
+	readonly mode: 'full' | 'metadata-only' | 'values' | 'selective'
 	readonly isPartial: boolean
 	readonly cellsHydrated: boolean
 	readonly hasAllSheets: boolean

@@ -6,6 +6,36 @@ import { AscendWorkbook } from '../../packages/sdk/src/index.ts'
 interface TimingResult {
 	readonly name: string
 	readonly durationMs: number
+	readonly rssDeltaBytes?: number
+	readonly rssAfterBytes?: number
+	readonly retainedRssDeltaBytes?: number
+	readonly rssAfterGcBytes?: number
+}
+
+interface StepResult {
+	readonly timing: TimingResult
+	readonly parity?: {
+		readonly byteIdentical: boolean
+		readonly sha256Before: string
+		readonly sha256After: string
+	}
+	readonly workbook?: {
+		readonly sheetCount: number
+		readonly loadedSheetCount: number
+		readonly cellCount: number | null
+		readonly workbookViewCount: number
+		readonly externalReferenceCount: number
+		readonly compatibility: string
+		readonly styleSummary: {
+			readonly numFmtCount: number
+			readonly fontCount: number
+			readonly fillCount: number
+			readonly borderCount: number
+			readonly cellXfCount: number
+			readonly dxfCount: number
+			readonly tableStyleCount: number
+		}
+	}
 }
 
 function sha256(bytes: Uint8Array): string {
@@ -16,20 +46,42 @@ async function time<T>(
 	name: string,
 	fn: () => Promise<T>,
 ): Promise<{ result: T; timing: TimingResult }> {
+	runGc()
+	const rssBefore = getRssBytes()
 	const start = performance.now()
 	const result = await fn()
+	const rssAfter = getRssBytes()
+	runGc()
+	const rssAfterGc = getRssBytes()
 	return {
 		result,
 		timing: {
 			name,
 			durationMs: performance.now() - start,
+			rssDeltaBytes:
+				rssBefore !== undefined && rssAfter !== undefined
+					? Math.max(0, rssAfter - rssBefore)
+					: undefined,
+			rssAfterBytes: rssAfter,
+			retainedRssDeltaBytes:
+				rssBefore !== undefined && rssAfterGc !== undefined
+					? Math.max(0, rssAfterGc - rssBefore)
+					: undefined,
+			rssAfterGcBytes: rssAfterGc,
 		},
 	}
 }
 
 function renderTimings(timings: readonly TimingResult[]): string {
-	const headers = ['step', 'ms']
-	const rows = timings.map((timing) => [timing.name, timing.durationMs.toFixed(2)])
+	const headers = ['step', 'ms', 'rss-delta', 'rss-after', 'retained', 'rss-after-gc']
+	const rows = timings.map((timing) => [
+		timing.name,
+		timing.durationMs.toFixed(2),
+		timing.rssDeltaBytes !== undefined ? formatBytes(timing.rssDeltaBytes) : 'n/a',
+		timing.rssAfterBytes !== undefined ? formatBytes(timing.rssAfterBytes) : 'n/a',
+		timing.retainedRssDeltaBytes !== undefined ? formatBytes(timing.retainedRssDeltaBytes) : 'n/a',
+		timing.rssAfterGcBytes !== undefined ? formatBytes(timing.rssAfterGcBytes) : 'n/a',
+	])
 	const widths = headers.map((header, index) =>
 		Math.max(header.length, ...rows.map((row) => row[index]?.length ?? 0)),
 	)
@@ -47,42 +99,26 @@ function renderTimings(timings: readonly TimingResult[]): string {
 async function main(): Promise<void> {
 	const argPath = process.argv[2]
 	const target = resolve(argPath ?? 'research/real-workbooks/Book1.xlsx')
-	const originalBytes = new Uint8Array(await readFile(target))
-	const originalSha = sha256(originalBytes)
-
-	const timings: TimingResult[] = []
-
-	const metadata = await time('open-metadata', () =>
-		AscendWorkbook.open(target, { mode: 'metadata-only' }),
-	)
-	timings.push(metadata.timing)
-
-	const full = await time('open-full', () => AscendWorkbook.open(target))
-	timings.push(full.timing)
-
-	const bytes = await time('no-op-save-bytes', async () => full.result.toBytes())
-	timings.push(bytes.timing)
-
-	const parity = {
-		byteIdentical: originalSha === sha256(bytes.result),
-		sha256Before: originalSha,
-		sha256After: sha256(bytes.result),
+	const step = readFlag('--step')
+	if (step) {
+		const result = await runStep(target, step)
+		console.log(JSON.stringify(result, null, 2))
+		return
 	}
 
-	const info = full.result.inspect()
+	const stepNames = ['open-metadata', 'open-values', 'open-full', 'no-op-save-bytes'] as const
+	const results: StepResult[] = []
+	for (const name of stepNames) {
+		results.push(await runIsolatedStep(target, name))
+	}
+	const timings = results.map((result) => result.timing)
+	const parity = results.find((result) => result.parity)?.parity
+	const workbook = results.find((result) => result.workbook)?.workbook
 
 	const output = {
 		file: target,
 		parity,
-		workbook: {
-			sheetCount: info.sheetCount,
-			loadedSheetCount: info.loadedSheetCount,
-			cellCount: info.cellCount,
-			workbookViewCount: info.workbookViewCount,
-			externalReferenceCount: info.externalReferenceCount,
-			compatibility: info.compatibility.status,
-			styleSummary: info.styleSummary,
-		},
+		workbook,
 		timings,
 	}
 
@@ -92,8 +128,108 @@ async function main(): Promise<void> {
 	}
 
 	console.log(`Real workbook benchmark: ${target}`)
-	console.log(`Byte-identical no-op save: ${parity.byteIdentical ? 'yes' : 'no'}`)
+	console.log(`Byte-identical no-op save: ${parity?.byteIdentical ? 'yes' : 'no'}`)
 	console.log(renderTimings(timings))
+}
+
+async function runIsolatedStep(
+	target: string,
+	step: 'open-metadata' | 'open-values' | 'open-full' | 'no-op-save-bytes',
+): Promise<StepResult> {
+	const proc = Bun.spawn(
+		['bun', 'run', process.argv[1] ?? import.meta.path, target, '--step', step],
+		{
+			stdout: 'pipe',
+			stderr: 'pipe',
+			cwd: process.cwd(),
+		},
+	)
+	const [stdout, stderr, exitCode] = await Promise.all([
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+		proc.exited,
+	])
+	if (exitCode !== 0) {
+		throw new Error(stderr.trim() || `Benchmark step "${step}" failed`)
+	}
+	return JSON.parse(stdout) as StepResult
+}
+
+async function runStep(target: string, step: string): Promise<StepResult> {
+	const originalBytes = new Uint8Array(await readFile(target))
+	const originalSha = sha256(originalBytes)
+
+	switch (step) {
+		case 'open-metadata': {
+			const { timing } = await time('open-metadata', () =>
+				AscendWorkbook.open(target, { mode: 'metadata-only' }),
+			)
+			return { timing }
+		}
+		case 'open-values': {
+			const { timing } = await time('open-values', () =>
+				AscendWorkbook.open(target, { mode: 'values' }),
+			)
+			return { timing }
+		}
+		case 'open-full': {
+			const { result, timing } = await time('open-full', () => AscendWorkbook.open(target))
+			const info = result.inspect()
+			return {
+				timing,
+				workbook: {
+					sheetCount: info.sheetCount,
+					loadedSheetCount: info.loadedSheetCount,
+					cellCount: info.cellCount,
+					workbookViewCount: info.workbookViewCount,
+					externalReferenceCount: info.externalReferenceCount,
+					compatibility: info.compatibility.status,
+					styleSummary: info.styleSummary,
+				},
+			}
+		}
+		case 'no-op-save-bytes': {
+			const wb = await AscendWorkbook.open(target)
+			const { result, timing } = await time('no-op-save-bytes', async () => wb.toBytes())
+			return {
+				timing,
+				parity: {
+					byteIdentical: originalSha === sha256(result),
+					sha256Before: originalSha,
+					sha256After: sha256(result),
+				},
+			}
+		}
+		default:
+			throw new Error(`Unknown benchmark step: ${step}`)
+	}
+}
+
+function readFlag(name: string): string | undefined {
+	const index = process.argv.indexOf(name)
+	return index >= 0 ? process.argv[index + 1] : undefined
+}
+
+function getRssBytes(): number | undefined {
+	try {
+		return process.memoryUsage.rss()
+	} catch {
+		return undefined
+	}
+}
+
+function formatBytes(bytes: number): string {
+	if (bytes < 1024) return `${bytes} B`
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+	return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+}
+
+function runGc(): void {
+	try {
+		;(Bun as unknown as { gc?: (force?: boolean) => void }).gc?.(true)
+	} catch {
+		// Best effort only.
+	}
 }
 
 await main()

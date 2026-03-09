@@ -367,7 +367,9 @@ export function writeXlsx(
 		if (capsules) {
 			for (const capsule of capsules) {
 				if (skippedCapsulePaths.has(capsule.partPath)) continue
-				parts.set(capsule.partPath, capsule.content)
+				const content = capsule.content ?? sourceArchive?.readBytes(capsule.partPath)
+				if (!content) continue
+				parts.set(capsule.partPath, content)
 
 				if (capsule.relationships.length > 0) {
 					const capsuleRelsPath = getRelsPath(capsule.partPath)

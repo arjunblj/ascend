@@ -46,7 +46,7 @@ export async function withProgress<T>(
 
 export async function openWorkbookWithProgress(
 	file: string | Uint8Array,
-	options?: { mode?: 'full' | 'metadata-only'; sheets?: readonly string[] },
+	options?: { mode?: 'full' | 'metadata-only' | 'values'; sheets?: readonly string[] },
 ): Promise<{ workbook: AscendWorkbook; durationMs: number }> {
 	const label = typeof file === 'string' ? `Opening ${file}` : 'Opening workbook'
 	const { value, durationMs } = await withProgress(label, () => AscendWorkbook.open(file, options))

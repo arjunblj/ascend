@@ -1115,6 +1115,44 @@ describe('readXlsx', () => {
 		)
 	})
 
+	it('supports values mode with hydrated cells but without formula fidelity', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1"><f>A2+1</f><v>7</v></c>
+      <c r="A2"><v>6</v></c>
+    </row>
+  </sheetData>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes, { mode: 'values' })
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet?.cells.get(0, 0)?.value).toEqual({ kind: 'number', value: 7 })
+		expect(sheet?.cells.get(0, 0)?.formula).toBeNull()
+		expect(result.value.loadInfo.mode).toBe('values')
+		expect(result.value.loadInfo.cellsHydrated).toBe(true)
+		expect(result.value.loadInfo.isPartial).toBe(true)
+		expect(result.value.report.features.some((feature) => feature.feature === 'partialLoad')).toBe(
+			true,
+		)
+	})
+
 	it('supports selective sheet parsing', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

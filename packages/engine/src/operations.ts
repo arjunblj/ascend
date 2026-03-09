@@ -314,14 +314,7 @@ function handleInsertRows(
 	if (!result.ok) return result
 	const sheet = result.value
 
-	const entries: [number, number, Cell][] = []
-	for (const [row, col, c] of sheet.cells.iterate()) {
-		entries.push([row, col, c])
-	}
-	sheet.cells.clear()
-	for (const [row, col, c] of entries) {
-		sheet.cells.set(row >= op.at ? row + op.count : row, col, c)
-	}
+	sheet.cells.insertRows(op.at, op.count)
 
 	shiftMerges(sheet.merges, 'row', op.at, op.count)
 	rewriteAllFormulas(workbook, op.sheet, 'row', op.at, op.count)
@@ -337,16 +330,7 @@ function handleDeleteRows(
 	if (!result.ok) return result
 	const sheet = result.value
 
-	const deleteEnd = op.at + op.count
-	const entries: [number, number, Cell][] = []
-	for (const [row, col, c] of sheet.cells.iterate()) {
-		entries.push([row, col, c])
-	}
-	sheet.cells.clear()
-	for (const [row, col, c] of entries) {
-		if (row >= op.at && row < deleteEnd) continue
-		sheet.cells.set(row >= deleteEnd ? row - op.count : row, col, c)
-	}
+	sheet.cells.deleteRows(op.at, op.count)
 
 	shiftMerges(sheet.merges, 'row', op.at, -op.count)
 	rewriteAllFormulas(workbook, op.sheet, 'row', op.at, -op.count)
@@ -362,14 +346,7 @@ function handleInsertCols(
 	if (!result.ok) return result
 	const sheet = result.value
 
-	const entries: [number, number, Cell][] = []
-	for (const [row, col, c] of sheet.cells.iterate()) {
-		entries.push([row, col, c])
-	}
-	sheet.cells.clear()
-	for (const [row, col, c] of entries) {
-		sheet.cells.set(row, col >= op.at ? col + op.count : col, c)
-	}
+	sheet.cells.insertCols(op.at, op.count)
 
 	shiftMerges(sheet.merges, 'col', op.at, op.count)
 	rewriteAllFormulas(workbook, op.sheet, 'col', op.at, op.count)
@@ -385,16 +362,7 @@ function handleDeleteCols(
 	if (!result.ok) return result
 	const sheet = result.value
 
-	const deleteEnd = op.at + op.count
-	const entries: [number, number, Cell][] = []
-	for (const [row, col, c] of sheet.cells.iterate()) {
-		entries.push([row, col, c])
-	}
-	sheet.cells.clear()
-	for (const [row, col, c] of entries) {
-		if (col >= op.at && col < deleteEnd) continue
-		sheet.cells.set(row, col >= deleteEnd ? col - op.count : col, c)
-	}
+	sheet.cells.deleteCols(op.at, op.count)
 
 	shiftMerges(sheet.merges, 'col', op.at, -op.count)
 	rewriteAllFormulas(workbook, op.sheet, 'col', op.at, -op.count)

@@ -105,25 +105,12 @@ export function buildSheetXml(
 	}
 
 	parts.push('<sheetData>')
+	const populatedRows = new Map(sheet.cells.iterateRows())
+	const rowIndexes = new Set<number>([...populatedRows.keys(), ...sheet.rowHeights.keys()])
+	const sortedRows = [...rowIndexes].sort((a, b) => a - b)
 
-	const rows = new Map<number, Array<{ col: number; cell: Cell }>>()
-	for (const [row, col, cell] of sheet.cells.iterate()) {
-		let rowCells = rows.get(row)
-		if (!rowCells) {
-			rowCells = []
-			rows.set(row, rowCells)
-		}
-		rowCells.push({ col, cell })
-	}
-
-	for (const row of sheet.rowHeights.keys()) {
-		if (!rows.has(row)) rows.set(row, [])
-	}
-
-	const sortedRows = [...rows.entries()].sort((a, b) => a[0] - b[0])
-
-	for (const [row, cells] of sortedRows) {
-		cells.sort((a, b) => a.col - b.col)
+	for (const row of sortedRows) {
+		const cells = populatedRows.get(row) ?? []
 		const rowAttrs = [`r="${row + 1}"`]
 		const rowHeight = sheet.rowHeights.get(row)
 		if (rowHeight !== undefined) {
@@ -131,7 +118,7 @@ export function buildSheetXml(
 			rowAttrs.push('customHeight="1"')
 		}
 		parts.push(`<row ${rowAttrs.join(' ')}>`)
-		for (const { col, cell } of cells) {
+		for (const [col, cell] of cells) {
 			const ref = `${indexToColumn(col)}${row + 1}`
 			parts.push(cellXml(ref, cell, ssTable, xfMap))
 		}

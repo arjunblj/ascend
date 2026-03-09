@@ -58,6 +58,19 @@ export interface StylesResult {
 	xfMap: Map<number, number>
 }
 
+export function buildPreservedStylesXml(
+	preserved: import('@ascend/core').WorkbookPreservedStyles,
+	registry: StyleRegistry,
+): StylesResult | undefined {
+	const xfMap = new Map<number, number>()
+	for (let i = 0; i < registry.size; i++) {
+		const xfIndex = preserved.xfByStyleId[i]
+		if (xfIndex === undefined) return undefined
+		xfMap.set(i, xfIndex)
+	}
+	return { xml: preserved.xml, xfMap }
+}
+
 export function buildStylesXml(registry: StyleRegistry): StylesResult {
 	const fonts: FontStyle[] = [{}]
 	const fontKeys = new Map<string, number>([['{}', 0]])

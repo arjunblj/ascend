@@ -1,4 +1,4 @@
-import type { Cell, Sheet } from '@ascend/core'
+import type { Cell, Sheet, SheetColDef } from '@ascend/core'
 import { indexToColumn } from '@ascend/core'
 import type { CellValue } from '@ascend/schema'
 import { escapeXml } from '../xml.ts'
@@ -6,13 +6,51 @@ import type { SharedStringTable } from './shared-strings.ts'
 
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+const NS_R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+
+export interface SheetXmlOptions {
+	readonly tableRelIds?: readonly string[]
+}
 
 export function buildSheetXml(
 	sheet: Sheet,
 	ssTable: SharedStringTable,
 	xfMap: Map<number, number>,
+	options: SheetXmlOptions = {},
 ): string {
-	const parts: string[] = [XML_HEADER, `<worksheet xmlns="${NS}">`]
+	const tableRelIds = options.tableRelIds ?? []
+	const worksheetAttrs = [`xmlns="${NS}"`]
+	if (tableRelIds.length > 0) worksheetAttrs.push(`xmlns:r="${NS_R}"`)
+	const parts: string[] = [XML_HEADER, `<worksheet ${worksheetAttrs.join(' ')}>`]
+
+	if (sheet.frozenRows > 0 || sheet.frozenCols > 0) {
+		const paneAttrs: string[] = ['state="frozen"']
+		if (sheet.frozenCols > 0) paneAttrs.push(`xSplit="${sheet.frozenCols}"`)
+		if (sheet.frozenRows > 0) paneAttrs.push(`ySplit="${sheet.frozenRows}"`)
+		parts.push('<sheetViews>')
+		parts.push('<sheetView workbookViewId="0">')
+		parts.push(`<pane ${paneAttrs.join(' ')}/>`)
+		parts.push('</sheetView>')
+		parts.push('</sheetViews>')
+	}
+
+	if (sheet.colWidths.size > 0 || sheet.colDefs.length > 0) {
+		parts.push('<cols>')
+		const colDefs: readonly SheetColDef[] =
+			sheet.colDefs.length > 0 ? sheet.colDefs : groupColumnWidths(sheet)
+		for (const group of colDefs) {
+			const attrs = [`min="${group.min + 1}"`, `max="${group.max + 1}"`]
+			if (group.width !== undefined) attrs.push(`width="${group.width}"`)
+			if (group.style !== undefined) attrs.push(`style="${group.style}"`)
+			if (group.hidden) attrs.push('hidden="1"')
+			if (group.bestFit) attrs.push('bestFit="1"')
+			if (group.collapsed) attrs.push('collapsed="1"')
+			if (group.outlineLevel !== undefined) attrs.push(`outlineLevel="${group.outlineLevel}"`)
+			if (group.customWidth ?? group.width !== undefined) attrs.push('customWidth="1"')
+			parts.push(`<col ${attrs.join(' ')}/>`)
+		}
+		parts.push('</cols>')
+	}
 
 	parts.push('<sheetData>')
 
@@ -26,11 +64,21 @@ export function buildSheetXml(
 		rowCells.push({ col, cell })
 	}
 
+	for (const row of sheet.rowHeights.keys()) {
+		if (!rows.has(row)) rows.set(row, [])
+	}
+
 	const sortedRows = [...rows.entries()].sort((a, b) => a[0] - b[0])
 
 	for (const [row, cells] of sortedRows) {
 		cells.sort((a, b) => a.col - b.col)
-		parts.push(`<row r="${row + 1}">`)
+		const rowAttrs = [`r="${row + 1}"`]
+		const rowHeight = sheet.rowHeights.get(row)
+		if (rowHeight !== undefined) {
+			rowAttrs.push(`ht="${rowHeight}"`)
+			rowAttrs.push('customHeight="1"')
+		}
+		parts.push(`<row ${rowAttrs.join(' ')}>`)
 		for (const { col, cell } of cells) {
 			const ref = `${indexToColumn(col)}${row + 1}`
 			parts.push(cellXml(ref, cell, ssTable, xfMap))
@@ -50,8 +98,113 @@ export function buildSheetXml(
 		parts.push('</mergeCells>')
 	}
 
+	if (sheet.autoFilter) {
+		parts.push(`<autoFilter ref="${escapeXml(sheet.autoFilter)}"/>`)
+	}
+
+	if (sheet.pageMargins) {
+		const attrs = collectNumericAttrs(sheet.pageMargins)
+		if (attrs.length > 0) parts.push(`<pageMargins ${attrs.join(' ')}/>`)
+	}
+
+	if (sheet.pageSetup) {
+		const attrs = collectMixedAttrs(sheet.pageSetup)
+		if (attrs.length > 0) parts.push(`<pageSetup ${attrs.join(' ')}/>`)
+	}
+
+	if (sheet.printOptions) {
+		const attrs = collectMixedAttrs(sheet.printOptions)
+		if (attrs.length > 0) parts.push(`<printOptions ${attrs.join(' ')}/>`)
+	}
+
+	if (sheet.headerFooter) {
+		parts.push('<headerFooter>')
+		if (sheet.headerFooter.oddHeader) {
+			parts.push(`<oddHeader>${escapeXml(sheet.headerFooter.oddHeader)}</oddHeader>`)
+		}
+		if (sheet.headerFooter.oddFooter) {
+			parts.push(`<oddFooter>${escapeXml(sheet.headerFooter.oddFooter)}</oddFooter>`)
+		}
+		if (sheet.headerFooter.evenHeader) {
+			parts.push(`<evenHeader>${escapeXml(sheet.headerFooter.evenHeader)}</evenHeader>`)
+		}
+		if (sheet.headerFooter.evenFooter) {
+			parts.push(`<evenFooter>${escapeXml(sheet.headerFooter.evenFooter)}</evenFooter>`)
+		}
+		if (sheet.headerFooter.firstHeader) {
+			parts.push(`<firstHeader>${escapeXml(sheet.headerFooter.firstHeader)}</firstHeader>`)
+		}
+		if (sheet.headerFooter.firstFooter) {
+			parts.push(`<firstFooter>${escapeXml(sheet.headerFooter.firstFooter)}</firstFooter>`)
+		}
+		parts.push('</headerFooter>')
+	}
+
+	if (sheet.ignoredErrors.length > 0) {
+		parts.push('<ignoredErrors>')
+		for (const sqref of sheet.ignoredErrors) {
+			parts.push(`<ignoredError sqref="${escapeXml(sqref)}" numberStoredAsText="1"/>`)
+		}
+		parts.push('</ignoredErrors>')
+	}
+
+	if (tableRelIds.length > 0) {
+		parts.push(`<tableParts count="${tableRelIds.length}">`)
+		for (const relId of tableRelIds) {
+			parts.push(`<tablePart r:id="${relId}"/>`)
+		}
+		parts.push('</tableParts>')
+	}
+
 	parts.push('</worksheet>')
 	return parts.join('')
+}
+
+function groupColumnWidths(sheet: Sheet): SheetColDef[] {
+	const cols = [...sheet.colWidths.entries()].sort((a, b) => a[0] - b[0])
+	if (cols.length === 0) return []
+
+	const groups: Array<{ min: number; max: number; width: number }> = []
+	let [startCol, width] = cols[0] ?? [0, 0]
+	let endCol = startCol
+
+	for (let i = 1; i < cols.length; i++) {
+		const entry = cols[i]
+		if (!entry) continue
+		const [col, colWidth] = entry
+		if (col === endCol + 1 && colWidth === width) {
+			endCol = col
+			continue
+		}
+		groups.push({ min: startCol, max: endCol, width })
+		startCol = col
+		endCol = col
+		width = colWidth
+	}
+
+	groups.push({ min: startCol, max: endCol, width })
+	return groups
+}
+
+function collectNumericAttrs(values: object): string[] {
+	const attrs: string[] = []
+	for (const [key, value] of Object.entries(values as Record<string, number | undefined>)) {
+		if (value !== undefined) attrs.push(`${key}="${value}"`)
+	}
+	return attrs
+}
+
+function collectMixedAttrs(values: object): string[] {
+	const attrs: string[] = []
+	for (const [key, value] of Object.entries(
+		values as Record<string, string | number | boolean | undefined>,
+	)) {
+		if (value === undefined) continue
+		attrs.push(
+			`${key}="${typeof value === 'boolean' ? (value ? '1' : '0') : escapeXml(String(value))}"`,
+		)
+	}
+	return attrs
 }
 
 function cellXml(

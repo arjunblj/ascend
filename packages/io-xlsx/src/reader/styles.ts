@@ -52,19 +52,57 @@ const BUILTIN_NUM_FMTS = new Map<number, string>([
 export interface ParsedStyles {
 	readonly cellStyles: CellStyle[]
 	readonly isDateFormat: boolean[]
+	readonly metadata: {
+		readonly numFmtCount: number
+		readonly fontCount: number
+		readonly fillCount: number
+		readonly borderCount: number
+		readonly cellXfCount: number
+		readonly dxfCount: number
+		readonly tableStyleCount: number
+	}
 }
 
 export function parseStyles(xml: string): ParsedStyles {
 	const doc = parseXml(xml)
 	const ss = doc.styleSheet as XmlNode | undefined
-	if (!ss) return { cellStyles: [{}], isDateFormat: [false] }
+	if (!ss) {
+		return {
+			cellStyles: [{}],
+			isDateFormat: [false],
+			metadata: {
+				numFmtCount: 0,
+				fontCount: 0,
+				fillCount: 0,
+				borderCount: 0,
+				cellXfCount: 1,
+				dxfCount: 0,
+				tableStyleCount: 0,
+			},
+		}
+	}
 
 	const numFmts = parseNumFmts(ss)
 	const fonts = parseFonts(ss)
 	const fills = parseFills(ss)
 	const borders = parseBorders(ss)
+	const cellXfCount = countNodes(ss.cellXfs, 'xf')
+	const dxfCount = countNodes(ss.dxfs, 'dxf')
+	const tableStyleCount = countNodes(ss.tableStyles, 'tableStyle')
 
-	return buildCellStyles(ss, fonts, fills, borders, numFmts)
+	const built = buildCellStyles(ss, fonts, fills, borders, numFmts)
+	return {
+		...built,
+		metadata: {
+			numFmtCount: Math.max(0, numFmts.size - BUILTIN_NUM_FMTS.size),
+			fontCount: Math.max(0, fonts.length),
+			fillCount: Math.max(0, fills.length),
+			borderCount: Math.max(0, borders.length),
+			cellXfCount: Math.max(0, cellXfCount),
+			dxfCount: Math.max(0, dxfCount),
+			tableStyleCount: Math.max(0, tableStyleCount),
+		},
+	}
 }
 
 function parseNumFmts(ss: XmlNode): Map<number, string> {
@@ -226,7 +264,7 @@ function buildCellStyles(
 	fills: FillStyle[],
 	borders: BorderStyle[],
 	numFmts: Map<number, string>,
-): ParsedStyles {
+): Pick<ParsedStyles, 'cellStyles' | 'isDateFormat'> {
 	const xfsNode = ss.cellXfs as XmlNode | undefined
 	if (!xfsNode) return { cellStyles: [{}], isDateFormat: [false] }
 
@@ -322,4 +360,9 @@ function checkDateFormat(numFmtId: number, formatCode: string | undefined): bool
 function hasProps(obj: object): boolean {
 	for (const _ in obj) return true
 	return false
+}
+
+function countNodes(node: unknown, key: string): number {
+	if (typeof node !== 'object' || node === null) return 0
+	return asArray<XmlNode>((node as XmlNode)[key] as XmlNode | XmlNode[]).length
 }

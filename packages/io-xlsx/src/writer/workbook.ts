@@ -5,11 +5,41 @@ const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 const NS_MAIN = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
 const NS_R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
 
-export function buildWorkbookXml(workbook: Workbook): string {
+export interface WorkbookXmlOptions {
+	readonly externalReferenceRelIds?: readonly string[]
+}
+
+export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions = {}): string {
 	const parts: string[] = [XML_HEADER, `<workbook xmlns="${NS_MAIN}" xmlns:r="${NS_R}">`]
 
-	if (workbook.calcSettings.dateSystem === '1904') {
-		parts.push('<workbookPr date1904="1"/>')
+	const workbookPrAttrs: string[] = []
+	if (workbook.calcSettings.dateSystem === '1904' || workbook.workbookProperties.date1904) {
+		workbookPrAttrs.push('date1904="1"')
+	}
+	if (workbook.workbookProperties.codeName) {
+		workbookPrAttrs.push(`codeName="${escapeXml(workbook.workbookProperties.codeName)}"`)
+	}
+	if (workbook.workbookProperties.defaultThemeVersion !== undefined) {
+		workbookPrAttrs.push(`defaultThemeVersion="${workbook.workbookProperties.defaultThemeVersion}"`)
+	}
+	if (workbook.workbookProperties.filterPrivacy !== undefined) {
+		workbookPrAttrs.push(`filterPrivacy="${workbook.workbookProperties.filterPrivacy ? '1' : '0'}"`)
+	}
+	if (workbookPrAttrs.length > 0) {
+		parts.push(`<workbookPr ${workbookPrAttrs.join(' ')}/>`)
+	}
+
+	if (workbook.workbookViews.length > 0) {
+		parts.push('<bookViews>')
+		for (const view of workbook.workbookViews) {
+			const attrs: string[] = []
+			if (view.activeTab !== undefined) attrs.push(`activeTab="${view.activeTab}"`)
+			if (view.firstSheet !== undefined) attrs.push(`firstSheet="${view.firstSheet}"`)
+			if (view.visibility) attrs.push(`visibility="${escapeXml(view.visibility)}"`)
+			if (view.tabRatio !== undefined) attrs.push(`tabRatio="${view.tabRatio}"`)
+			parts.push(`<workbookView ${attrs.join(' ')}/>`)
+		}
+		parts.push('</bookViews>')
 	}
 
 	parts.push('<sheets>')
@@ -38,6 +68,18 @@ export function buildWorkbookXml(workbook: Workbook): string {
 		parts.push('</definedNames>')
 	}
 
+	if (
+		workbook.externalReferences.length > 0 &&
+		options.externalReferenceRelIds &&
+		options.externalReferenceRelIds.length > 0
+	) {
+		parts.push('<externalReferences>')
+		for (const relId of options.externalReferenceRelIds) {
+			parts.push(`<externalReference r:id="${relId}"/>`)
+		}
+		parts.push('</externalReferences>')
+	}
+
 	const cs = workbook.calcSettings
 	const calcAttrs: string[] = []
 	if (cs.calcMode !== 'auto') calcAttrs.push(`calcMode="${cs.calcMode}"`)
@@ -49,6 +91,8 @@ export function buildWorkbookXml(workbook: Workbook): string {
 	}
 	if (calcAttrs.length > 0) {
 		parts.push(`<calcPr ${calcAttrs.join(' ')}/>`)
+	} else {
+		parts.push('<calcPr/>')
 	}
 
 	parts.push('</workbook>')

@@ -1,4 +1,4 @@
-import type { SheetState } from '@ascend/core'
+import type { SheetState, WorkbookProperties, WorkbookView } from '@ascend/core'
 import type { CalcSettings } from '@ascend/schema'
 import { DEFAULT_CALC_SETTINGS } from '@ascend/schema'
 import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
@@ -20,6 +20,9 @@ export interface WorkbookInfo {
 	readonly sheets: SheetEntry[]
 	readonly definedNames: DefinedNameEntry[]
 	readonly calcSettings: CalcSettings
+	readonly workbookProperties: WorkbookProperties
+	readonly workbookViews: readonly WorkbookView[]
+	readonly externalReferenceRelIds: readonly string[]
 }
 
 export function parseWorkbookXml(xml: string): WorkbookInfo {
@@ -30,14 +33,27 @@ export function parseWorkbookXml(xml: string): WorkbookInfo {
 			sheets: [],
 			definedNames: [],
 			calcSettings: DEFAULT_CALC_SETTINGS,
+			workbookProperties: {},
+			workbookViews: [],
+			externalReferenceRelIds: [],
 		}
 	}
 
 	const sheets = parseSheets(wb)
 	const definedNames = parseDefinedNames(wb)
 	const calcSettings = parseCalcSettings(wb)
+	const workbookProperties = parseWorkbookProperties(wb)
+	const workbookViews = parseWorkbookViews(wb)
+	const externalReferenceRelIds = parseExternalReferenceRelIds(wb)
 
-	return { sheets, definedNames, calcSettings }
+	return {
+		sheets,
+		definedNames,
+		calcSettings,
+		workbookProperties,
+		workbookViews,
+		externalReferenceRelIds,
+	}
 }
 
 function parseSheets(wb: XmlNode): SheetEntry[] {
@@ -107,4 +123,50 @@ function parseCalcSettings(wb: XmlNode): CalcSettings {
 			maxChange: iterateDelta,
 		},
 	}
+}
+
+function parseWorkbookProperties(wb: XmlNode): WorkbookProperties {
+	const wbPr = wb.workbookPr as XmlNode | undefined
+	if (!wbPr) return {}
+
+	const props: Record<string, unknown> = {}
+	const codeName = attr(wbPr, 'codeName')
+	if (codeName) props.codeName = codeName
+	const defaultThemeVersion = numAttr(wbPr, 'defaultThemeVersion')
+	if (defaultThemeVersion !== undefined) props.defaultThemeVersion = defaultThemeVersion
+	const filterPrivacy = boolAttr(wbPr, 'filterPrivacy')
+	if (filterPrivacy !== undefined) props.filterPrivacy = filterPrivacy
+	const date1904 = boolAttr(wbPr, 'date1904')
+	if (date1904 !== undefined) props.date1904 = date1904
+	return props as WorkbookProperties
+}
+
+function parseWorkbookViews(wb: XmlNode): readonly WorkbookView[] {
+	const viewsNode = wb.bookViews as XmlNode | undefined
+	if (!viewsNode) return []
+
+	return asArray<XmlNode>(viewsNode.workbookView as XmlNode | XmlNode[]).map((view) => {
+		const parsed: Record<string, unknown> = {}
+		const activeTab = numAttr(view, 'activeTab')
+		if (activeTab !== undefined) parsed.activeTab = activeTab
+		const firstSheet = numAttr(view, 'firstSheet')
+		if (firstSheet !== undefined) parsed.firstSheet = firstSheet
+		const visibility = attr(view, 'visibility')
+		if (visibility) parsed.visibility = visibility
+		const tabRatio = numAttr(view, 'tabRatio')
+		if (tabRatio !== undefined) parsed.tabRatio = tabRatio
+		return parsed as WorkbookView
+	})
+}
+
+function parseExternalReferenceRelIds(wb: XmlNode): readonly string[] {
+	const refsNode = wb.externalReferences as XmlNode | undefined
+	if (!refsNode) return []
+
+	const relIds: string[] = []
+	for (const ref of asArray<XmlNode>(refsNode.externalReference as XmlNode | XmlNode[])) {
+		const relId = attr(ref, 'r:id') ?? attr(ref, 'id')
+		if (relId) relIds.push(relId)
+	}
+	return relIds
 }

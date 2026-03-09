@@ -38,9 +38,11 @@ describe('API', () => {
 		expect(res.status).toBe(200)
 		const body = await res.json()
 		expect(body.sheetCount).toBe(1)
+		expect(body.loadedSheetCount).toBe(1)
 		expect(body.sheets).toHaveLength(1)
 		expect(body.sheets[0].name).toBe('Sheet1')
 		expect(body.cellCount).toBe(0)
+		expect(body.load.mode).toBe('full')
 	})
 
 	test('unknown route returns 404', async () => {

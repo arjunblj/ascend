@@ -1,4 +1,4 @@
-import type { Sheet, Table } from '@ascend/core'
+import type { AutoFilter, RangeRef, Sheet, Table, TableColumn, TableStyleInfo } from '@ascend/core'
 import type { CellValue } from '@ascend/schema'
 
 export class TableHandle {
@@ -22,6 +22,30 @@ export class TableHandle {
 		const headerOffset = this.table.hasHeaders ? 1 : 0
 		const totalOffset = this.table.hasTotals ? 1 : 0
 		return this.table.ref.end.row - this.table.ref.start.row + 1 - headerOffset - totalOffset
+	}
+
+	get ref(): RangeRef {
+		return this.table.ref
+	}
+
+	get hasHeaders(): boolean {
+		return this.table.hasHeaders
+	}
+
+	get hasTotals(): boolean {
+		return this.table.hasTotals
+	}
+
+	get styleInfo(): TableStyleInfo | undefined {
+		return this.table.tableStyleInfo
+	}
+
+	get autoFilter(): AutoFilter | null {
+		return this.table.autoFilter ?? null
+	}
+
+	get columnDefs(): readonly TableColumn[] {
+		return this.table.columns
 	}
 
 	rows(opts?: { limit?: number }): readonly Record<string, CellValue>[] {

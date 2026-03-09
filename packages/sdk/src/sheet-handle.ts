@@ -1,4 +1,14 @@
-import type { RangeRef, Sheet } from '@ascend/core'
+import type {
+	AutoFilter,
+	RangeRef,
+	Sheet,
+	SheetComment,
+	SheetConditionalFormat,
+	SheetDataValidation,
+	SheetHyperlink,
+	SheetImageRef,
+	SheetProtection,
+} from '@ascend/core'
 import { parseA1, parseRange, toA1 } from '@ascend/core'
 import type { CellInfo, RangeInfo, RangeWindowInfo } from './types.ts'
 
@@ -100,6 +110,58 @@ export class SheetHandle {
 
 	usedRange(): RangeRef | null {
 		return this.sheet.cells.usedRange()
+	}
+
+	get state(): string {
+		return this.sheet.state
+	}
+
+	get frozenRows(): number {
+		return this.sheet.frozenRows
+	}
+
+	get frozenCols(): number {
+		return this.sheet.frozenCols
+	}
+
+	get merges(): readonly RangeRef[] {
+		return this.sheet.merges
+	}
+
+	get autoFilter(): AutoFilter | null {
+		return this.sheet.autoFilter
+	}
+
+	get protection(): SheetProtection | null {
+		return this.sheet.protection
+	}
+
+	get conditionalFormats(): readonly SheetConditionalFormat[] {
+		return this.sheet.conditionalFormats
+	}
+
+	get dataValidations(): readonly SheetDataValidation[] {
+		return this.sheet.dataValidations
+	}
+
+	get imageRefs(): readonly SheetImageRef[] {
+		return this.sheet.imageRefs
+	}
+
+	comments(): ReadonlyMap<string, SheetComment> {
+		return this.sheet.comments
+	}
+
+	hyperlinks(): ReadonlyMap<string, SheetHyperlink> {
+		return this.sheet.hyperlinks
+	}
+
+	comment(ref: string): SheetComment | undefined {
+		return this.sheet.comments.get(ref)
+	}
+
+	hyperlink(ref: string): SheetHyperlink | undefined {
+		return this.sheet.hyperlinks.get(ref)
 	}
 }
 

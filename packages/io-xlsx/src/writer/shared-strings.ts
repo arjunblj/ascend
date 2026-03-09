@@ -11,16 +11,29 @@ export interface SharedStringTable {
 	readonly count: number
 }
 
-export function buildSharedStrings(workbook: Workbook): SharedStringTable {
-	const entries: CellValue[] = []
+export function buildSharedStrings(
+	workbook: Workbook,
+	existingEntries: readonly CellValue[] = [],
+): SharedStringTable {
+	const entries: CellValue[] = [...existingEntries]
 	const lookup = new Map<string, number>()
+	for (let index = 0; index < entries.length; index++) {
+		const entry = entries[index]
+		if (!entry) continue
+		const key = makeKey(entry)
+		if (key !== undefined && !lookup.has(key)) lookup.set(key, index)
+	}
+	let count = 0
 
 	for (const sheet of workbook.sheets) {
 		for (const [, , cell] of sheet.cells.iterate()) {
 			const key = makeKey(cell.value)
-			if (key !== undefined && !lookup.has(key)) {
-				lookup.set(key, entries.length)
-				entries.push(cell.value)
+			if (key !== undefined) {
+				count += 1
+				if (!lookup.has(key)) {
+					lookup.set(key, entries.length)
+					entries.push(cell.value)
+				}
 			}
 		}
 	}
@@ -33,7 +46,7 @@ export function buildSharedStrings(workbook: Workbook): SharedStringTable {
 		toXml(): string {
 			const parts: string[] = [
 				XML_HEADER,
-				`<sst xmlns="${NS}" count="${entries.length}" uniqueCount="${entries.length}">`,
+				`<sst xmlns="${NS}" count="${count}" uniqueCount="${entries.length}">`,
 			]
 			for (const entry of entries) {
 				parts.push(entryXml(entry))
@@ -41,7 +54,7 @@ export function buildSharedStrings(workbook: Workbook): SharedStringTable {
 			parts.push('</sst>')
 			return parts.join('')
 		},
-		count: entries.length,
+		count,
 	}
 }
 

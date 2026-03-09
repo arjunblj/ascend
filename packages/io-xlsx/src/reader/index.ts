@@ -34,7 +34,7 @@ import {
 	type Relationship,
 	resolvePath,
 } from './relationships.ts'
-import { parseSharedStrings } from './shared-strings.ts'
+import { emptySharedStrings, parseSharedStrings } from './shared-strings.ts'
 import { parseSheet, ValueInternPool } from './sheet.ts'
 import { parseStyles, parseStylesLite } from './styles.ts'
 import { parseTable } from './table.ts'
@@ -231,8 +231,10 @@ export function readXlsx(
 		const valuePool = new ValueInternPool()
 		const ssXml = ssPath ? readPart(archive, ssPath) : undefined
 		const sharedStrings = ssXml
-			? parseSharedStrings(ssXml).map((value) => valuePool.internValue(value))
-			: []
+			? parseSharedStrings(ssXml, {
+					normalize: (value) => valuePool.internValue(value),
+				})
+			: emptySharedStrings()
 
 		const stylesXml = stylesPath ? readPart(archive, stylesPath) : undefined
 		let styleIds: StyleId[]

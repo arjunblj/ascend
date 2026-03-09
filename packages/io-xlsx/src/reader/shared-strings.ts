@@ -1,24 +1,59 @@
 import type { CellValue, RichTextRun } from '@ascend/schema'
 import { asArray, attr, numAttr, parseXml, type XmlNode } from '../xml.ts'
 
-export function parseSharedStrings(xml: string): CellValue[] {
+export interface SharedStringResolver {
+	readonly count: number
+	get(index: number): CellValue | undefined
+}
+
+export function parseSharedStrings(
+	xml: string,
+	options: {
+		readonly normalize?: (value: CellValue) => CellValue
+	} = {},
+): SharedStringResolver {
+	return createEagerSharedStrings(xml, options.normalize)
+}
+
+export function emptySharedStrings(): SharedStringResolver {
+	return {
+		count: 0,
+		get(): CellValue | undefined {
+			return undefined
+		},
+	}
+}
+
+function createEagerSharedStrings(
+	xml: string,
+	normalize?: (value: CellValue) => CellValue,
+): SharedStringResolver {
 	const doc = parseXml(xml)
 	const sst = doc.sst as XmlNode | undefined
-	if (!sst) return []
+	if (!sst) return emptySharedStrings()
 
 	const entries: CellValue[] = []
 
 	for (const si of asArray<XmlNode>(sst.si as XmlNode | XmlNode[])) {
-		if (si.t !== undefined) {
-			entries.push({ kind: 'string', value: String(si.t) })
-		} else if (si.r !== undefined) {
-			entries.push(parseRichText(si))
-		} else {
-			entries.push({ kind: 'string', value: '' })
-		}
+		entries.push(normalize ? normalize(parseSharedStringNode(si)) : parseSharedStringNode(si))
 	}
 
-	return entries
+	return {
+		count: entries.length,
+		get(index: number): CellValue | undefined {
+			return entries[index]
+		},
+	}
+}
+
+function parseSharedStringNode(si: XmlNode): CellValue {
+	if (si.t !== undefined) {
+		return { kind: 'string', value: String(si.t) }
+	}
+	if (si.r !== undefined) {
+		return parseRichText(si)
+	}
+	return { kind: 'string', value: '' }
 }
 
 function parseRichText(si: XmlNode): CellValue {

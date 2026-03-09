@@ -1,5 +1,5 @@
 import type { Workbook } from '@ascend/core'
-import type { AscendError, Result } from '@ascend/schema'
+import type { AscendError, CellValue, Result } from '@ascend/schema'
 import { ascendError, err, ok } from '@ascend/schema'
 import type { PreservationCapsule } from '../preserve.ts'
 import {
@@ -13,6 +13,7 @@ import {
 	REL_VML_DRAWING,
 	REL_WORKSHEET,
 } from '../reader/relationships.ts'
+import { parseSharedStrings } from '../reader/shared-strings.ts'
 import { extractZip, type ZipArchive } from '../reader/zip.ts'
 import { buildCommentsVml, buildCommentsXml } from './comments.ts'
 import { buildContentTypesXml } from './content-types.ts'
@@ -62,7 +63,6 @@ export function writeXlsx(
 		let nextGeneratedCommentsNumber = 1
 		let nextGeneratedVmlNumber = 1
 
-		const ssTable = buildSharedStrings(workbook)
 		const preservedSharedStringsXml =
 			workbook.preservedSharedStrings && !options.sharedStringsDirty
 				? resolvePreservedText(
@@ -71,6 +71,10 @@ export function writeXlsx(
 						workbook.preservedSharedStrings.path,
 					)
 				: undefined
+		const preservedSharedStringEntries = preservedSharedStringsXml
+			? materializeSharedStringEntries(preservedSharedStringsXml)
+			: []
+		const ssTable = buildSharedStrings(workbook, preservedSharedStringEntries)
 		const hasSharedStrings = ssTable.count > 0 || preservedSharedStringsXml !== undefined
 
 		const preservedStylesXml =
@@ -425,6 +429,16 @@ function stylesNeedRebuild(workbook: Workbook): boolean {
 		if (workbook.preservedStyles.xfByStyleId[i] === undefined) return true
 	}
 	return false
+}
+
+function materializeSharedStringEntries(xml: string): CellValue[] {
+	const resolver = parseSharedStrings(xml)
+	const entries: CellValue[] = []
+	for (let index = 0; index < resolver.count; index++) {
+		const value = resolver.get(index)
+		if (value) entries.push(value)
+	}
+	return entries
 }
 
 function resolvePreservedText(

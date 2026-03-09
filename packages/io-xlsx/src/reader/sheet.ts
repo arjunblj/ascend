@@ -17,6 +17,7 @@ import { booleanValue, EMPTY, errorValue, numberValue, stringValue } from '@asce
 import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
 import { parseAutoFilterNode } from './filtering.ts'
 import type { Relationship } from './relationships.ts'
+import type { SharedStringResolver } from './shared-strings.ts'
 
 const CELL_REF_RE = /^([A-Za-z]+)(\d+)$/
 const SMALL_NUMBER_RANGE_START = -128
@@ -29,7 +30,7 @@ const TEXT_NODE_RE =
 	/<([A-Za-z_][\w:.-]*)\b([^>]*)>([\s\S]*?)<\/\1>|<([A-Za-z_][\w:.-]*)\b([^>]*)\/>/g
 
 export interface SheetParseContext {
-	readonly sharedStrings: CellValue[]
+	readonly sharedStrings: SharedStringResolver
 	readonly styleIds: StyleId[]
 	readonly isDateFormat: boolean[]
 	readonly differentialStyles?: readonly CellStyle[]
@@ -312,7 +313,7 @@ function parseCellValue(
 
 	if (type === 's') {
 		const idx = typeof rawValue === 'number' ? rawValue : Number(rawValue)
-		const entry = ctx.sharedStrings[idx]
+		const entry = ctx.sharedStrings.get(idx)
 		value = entry ?? (pool ? pool.internValue(stringValue('')) : stringValue(''))
 	} else if (type === 'b') {
 		const bv = rawValue === 1 || rawValue === true || rawValue === '1'

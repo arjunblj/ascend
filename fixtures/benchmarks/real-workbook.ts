@@ -106,7 +106,13 @@ async function main(): Promise<void> {
 		return
 	}
 
-	const stepNames = ['open-metadata', 'open-values', 'open-full', 'no-op-save-bytes'] as const
+	const stepNames = [
+		'open-metadata',
+		'open-values',
+		'open-full',
+		'no-op-save-bytes',
+		'numeric-edit-save-bytes',
+	] as const
 	const results: StepResult[] = []
 	for (const name of stepNames) {
 		results.push(await runIsolatedStep(target, name))
@@ -134,7 +140,12 @@ async function main(): Promise<void> {
 
 async function runIsolatedStep(
 	target: string,
-	step: 'open-metadata' | 'open-values' | 'open-full' | 'no-op-save-bytes',
+	step:
+		| 'open-metadata'
+		| 'open-values'
+		| 'open-full'
+		| 'no-op-save-bytes'
+		| 'numeric-edit-save-bytes',
 ): Promise<StepResult> {
 	const proc = Bun.spawn(
 		['bun', 'run', process.argv[1] ?? import.meta.path, target, '--step', step],
@@ -200,6 +211,22 @@ async function runStep(target: string, step: string): Promise<StepResult> {
 				},
 			}
 		}
+		case 'numeric-edit-save-bytes': {
+			const wb = await AscendWorkbook.open(target)
+			const probe = pickNumericProbe(wb)
+			wb.apply([
+				{ op: 'setCells', sheet: probe.sheet, updates: [{ ref: probe.ref, value: probe.value }] },
+			])
+			const { result, timing } = await time('numeric-edit-save-bytes', async () => wb.toBytes())
+			return {
+				timing,
+				parity: {
+					byteIdentical: originalSha === sha256(result),
+					sha256Before: originalSha,
+					sha256After: sha256(result),
+				},
+			}
+		}
 		default:
 			throw new Error(`Unknown benchmark step: ${step}`)
 	}
@@ -208,6 +235,34 @@ async function runStep(target: string, step: string): Promise<StepResult> {
 function readFlag(name: string): string | undefined {
 	const index = process.argv.indexOf(name)
 	return index >= 0 ? process.argv[index + 1] : undefined
+}
+
+function pickNumericProbe(wb: AscendWorkbook): { sheet: string; ref: string; value: number } {
+	for (const sheetName of wb.sheets) {
+		const sheet = wb.sheet(sheetName)
+		if (!sheet) continue
+		const used = sheet.usedRange()
+		if (!used) continue
+		const range = `${columnLabel(used.start.col)}${used.start.row + 1}:${columnLabel(used.end.col)}${used.end.row + 1}`
+		for (const row of sheet.streamRange(range)) {
+			for (const cell of row) {
+				if (cell.value.kind === 'number') {
+					return { sheet: sheetName, ref: cell.ref, value: cell.value.value + 1 }
+				}
+			}
+		}
+	}
+	return { sheet: wb.sheets[0] ?? 'Sheet1', ref: 'A1', value: 1 }
+}
+
+function columnLabel(col: number): string {
+	let n = col
+	let label = ''
+	while (n >= 0) {
+		label = String.fromCharCode(65 + (n % 26)) + label
+		n = Math.floor(n / 26) - 1
+	}
+	return label
 }
 
 function getRssBytes(): number | undefined {

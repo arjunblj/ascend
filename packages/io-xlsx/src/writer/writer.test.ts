@@ -109,18 +109,18 @@ describe('writeXlsx', () => {
 </Relationships>`,
 			'xl/sharedStrings.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="3" uniqueCount="2">
-  <si><t xml:space="preserve"> Hello </t></si>
   <si><t>World</t></si>
+  <si><t>Hello</t></si>
 </sst>`,
 			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <sheetData>
     <row r="1">
-      <c r="A1" t="s"><v>0</v></c>
+      <c r="A1" t="s"><v>1</v></c>
       <c r="B1"><v>1</v></c>
     </row>
     <row r="2">
-      <c r="A2" t="s"><v>1</v></c>
+      <c r="A2" t="s"><v>0</v></c>
     </row>
   </sheetData>
 </worksheet>`,
@@ -149,6 +149,17 @@ describe('writeXlsx', () => {
 		const zip = unzipSync(written.value)
 		const sharedStrings = new TextDecoder().decode(zip['xl/sharedStrings.xml'] ?? new Uint8Array())
 		expect(sharedStrings).toBe(originalSharedStrings)
+		const reopened = readXlsx(written.value)
+		expect(reopened.ok).toBe(true)
+		if (!reopened.ok) return
+		expect(reopened.value.workbook.sheets[0]?.cells.get(0, 0)?.value).toEqual({
+			kind: 'string',
+			value: 'Hello',
+		})
+		expect(reopened.value.workbook.sheets[0]?.cells.get(1, 0)?.value).toEqual({
+			kind: 'string',
+			value: 'World',
+		})
 	})
 
 	it('preserves bold style on round-trip', () => {

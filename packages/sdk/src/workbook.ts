@@ -376,6 +376,7 @@ export class AscendWorkbook {
 	}
 
 	apply(ops: readonly Operation[]): ApplyResult {
+		const dirtyFlags = this.deriveDirtyFlags(ops)
 		const result = applyOperations(this.wb, ops)
 		if (!result.ok) {
 			return {
@@ -388,7 +389,8 @@ export class AscendWorkbook {
 
 		this.markDirty()
 		for (const sheetName of result.value.sheetsModified) this.dirtySheets.add(sheetName)
-		this.updateDirtyFlags(ops)
+		this.workbookMetaDirty ||= dirtyFlags.workbookMetaDirty
+		this.sharedStringsDirty ||= dirtyFlags.sharedStringsDirty
 		return {
 			affectedCells: result.value.affectedCells,
 			sheetsModified: result.value.sheetsModified,
@@ -617,7 +619,18 @@ export class AscendWorkbook {
 		)
 	}
 
-	private updateDirtyFlags(ops: readonly Operation[]): void {
+	private deriveDirtyFlags(ops: readonly Operation[]): {
+		workbookMetaDirty: boolean
+		sharedStringsDirty: boolean
+	} {
+		let workbookMetaDirty = false
+		let sharedStringsDirty = false
+		let sharedStringKeys: Set<string> | null = null
+		const getSharedStringKeys = (): Set<string> => {
+			if (sharedStringKeys) return sharedStringKeys
+			sharedStringKeys = collectSharedStringKeys(this.wb)
+			return sharedStringKeys
+		}
 		for (const op of ops) {
 			switch (op.op) {
 				case 'addSheet':
@@ -626,19 +639,38 @@ export class AscendWorkbook {
 				case 'moveSheet':
 				case 'setDefinedName':
 				case 'deleteDefinedName':
-					this.workbookMetaDirty = true
+					workbookMetaDirty = true
 					break
 				case 'setFormula':
-				case 'clearRange':
-					this.sharedStringsDirty = true
+				case 'fillFormula':
+					sharedStringsDirty = true
 					break
 				case 'setCells':
-					if (op.updates.some((update) => typeof update.value === 'string')) {
-						this.sharedStringsDirty = true
+					if (
+						op.updates.some((update) => {
+							if (typeof update.value !== 'string') return false
+							return !getSharedStringKeys().has(makePlainSharedStringKey(update.value))
+						})
+					) {
+						sharedStringsDirty = true
+					}
+					break
+				case 'appendRows':
+					if (
+						op.rows.some((row) =>
+							row.some(
+								(value) =>
+									typeof value === 'string' &&
+									!getSharedStringKeys().has(makePlainSharedStringKey(value)),
+							),
+						)
+					) {
+						sharedStringsDirty = true
 					}
 					break
 			}
 		}
+		return { workbookMetaDirty, sharedStringsDirty }
 	}
 
 	private markDirty(): void {
@@ -676,6 +708,28 @@ function buildLoadInfo(info: ReadXlsxLoadInfo): import('./types.ts').WorkbookLoa
 		sourceSheets: info.sourceSheetNames,
 		loadedSheets: info.loadedSheetNames,
 	}
+}
+
+function collectSharedStringKeys(workbook: Workbook): Set<string> {
+	const keys = new Set<string>()
+	for (const sheet of workbook.sheets) {
+		for (const [, , cell] of sheet.cells.iterate()) {
+			const key = makeSharedStringKey(cell.value)
+			if (key) keys.add(key)
+		}
+	}
+	return keys
+}
+
+function makePlainSharedStringKey(value: string): string {
+	return `s:${value}`
+}
+
+function makeSharedStringKey(value: import('@ascend/schema').CellValue | string): string | null {
+	if (typeof value === 'string') return makePlainSharedStringKey(value)
+	if (value.kind === 'string') return `s:${value.value}`
+	if (value.kind === 'richText') return `r:${JSON.stringify(value.runs)}`
+	return null
 }
 
 function normalizeFormulaInput(formula: string): string {

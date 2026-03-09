@@ -121,6 +121,66 @@ function buildRangeAggregationWorkbook(length: number): Workbook {
 
 const scenarios: readonly Scenario[] = [
 	{
+		name: 'write-dense-40k',
+		kind: 'read',
+		build() {
+			const workbook = buildDenseWorkbook(2000, 20)
+			return { workbook, rows: 2000, cols: 20, cells: 40_000 }
+		},
+		run(input) {
+			mustWrite(requireWorkbook(input))
+		},
+	},
+	{
+		name: 'write-large-100k',
+		kind: 'read',
+		build() {
+			const workbook = buildDenseWorkbook(5000, 20)
+			return { workbook, rows: 5000, cols: 20, cells: 100_000 }
+		},
+		run(input) {
+			mustWrite(requireWorkbook(input))
+		},
+	},
+	{
+		name: 'write-multi-sheet',
+		kind: 'read',
+		build() {
+			const workbook = buildMultiSheetWorkbook(8, 1000, 10)
+			return { workbook, rows: 1000, cols: 10, cells: 80_000 }
+		},
+		run(input) {
+			mustWrite(requireWorkbook(input))
+		},
+	},
+	{
+		name: 'roundtrip-dense-40k',
+		kind: 'read',
+		build() {
+			const workbook = buildDenseWorkbook(2000, 20)
+			const bytes = mustWrite(workbook)
+			return { bytes, rows: 2000, cols: 20, cells: 40_000 }
+		},
+		run(input) {
+			const result = readXlsx(requireBytes(input))
+			if (!result.ok) throw new Error(result.error.message)
+			mustWrite(result.value.workbook)
+		},
+	},
+	{
+		name: 'read-large-200k',
+		kind: 'read',
+		build() {
+			const workbook = buildDenseWorkbook(10_000, 20)
+			const bytes = mustWrite(workbook)
+			return { bytes, rows: 10_000, cols: 20, cells: 200_000 }
+		},
+		run(input) {
+			const result = readXlsx(requireBytes(input))
+			if (!result.ok) throw new Error(result.error.message)
+		},
+	},
+	{
 		name: 'read-metadata-dense',
 		kind: 'read',
 		build() {

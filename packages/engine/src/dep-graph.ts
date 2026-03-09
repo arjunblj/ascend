@@ -114,11 +114,8 @@ export class DependencyGraph {
 			const current = queue.pop()
 			if (current === undefined || dirty.has(current)) continue
 			dirty.add(current)
-			const deps = this.dependents.get(current)
-			if (deps) {
-				for (const dep of deps) {
-					if (!dirty.has(dep)) queue.push(dep)
-				}
+			for (const dep of this.getDependents(current)) {
+				if (!dirty.has(dep)) queue.push(dep)
 			}
 		}
 		return dirty

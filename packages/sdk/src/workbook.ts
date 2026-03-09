@@ -8,7 +8,7 @@ import {
 	recalculate,
 } from '@ascend/engine'
 import { readCsv, writeCsv } from '@ascend/io-csv'
-import { type PreservationCapsule, writeXlsx } from '@ascend/io-xlsx'
+import { type PreservationCapsule, summarizePlannedWrite, writeXlsx } from '@ascend/io-xlsx'
 import {
 	type CompatibilityReport,
 	type CsvDialect,
@@ -25,6 +25,7 @@ import type {
 	LintResult,
 	LintWarning,
 	RecalcResult,
+	WritePlanInfo,
 } from './types.ts'
 
 function cloneWorkbook(source: Workbook): Workbook {
@@ -36,6 +37,8 @@ export class AscendWorkbook extends WorkbookReadView {
 	private originalBytes: Uint8Array | null
 	private dirty: boolean
 	private readonly dirtySheets = new Set<string>()
+	private pendingDirtyRefs: string[] = []
+	private pendingFullRecalc = false
 	private workbookMetaDirty = false
 	private sharedStringsDirty = false
 
@@ -112,6 +115,7 @@ export class AscendWorkbook extends WorkbookReadView {
 	preview(ops: readonly Operation[]): import('./types.ts').PreviewResult {
 		const clone = cloneWorkbook(this.wb)
 		const errors: import('@ascend/schema').AscendError[] = []
+		const dirtyFlags = this.deriveDirtyFlags(ops)
 
 		const result = applyOperations(clone, ops)
 		if (!result.ok) {
@@ -125,24 +129,38 @@ export class AscendWorkbook extends WorkbookReadView {
 		}
 
 		if (result.value.recalcRequired) {
+			const recalcTargets = deriveRecalcTargets(ops)
 			recalculate(
 				clone,
 				defaultCalcContext({
 					dateSystem: clone.calcSettings.dateSystem,
 					iterativeCalc: clone.calcSettings.iterativeCalc,
 				}),
+				resolveRecalcOptions(recalcTargets.fullRecalc, recalcTargets.dirtyRefs),
 			)
 		}
 
 		const diff = diffWorkbooks(this.wb, clone)
 		const cellChanges = diff.sheets.flatMap((s) => s.cellsChanged)
+		const plan = summarizePlannedWrite(clone, this.caps.length > 0 ? this.caps : undefined, {
+			dirtySheetNames: result.value.sheetsModified,
+			workbookMetaDirty: dirtyFlags.workbookMetaDirty,
+			sharedStringsDirty: dirtyFlags.sharedStringsDirty,
+		})
 
-		return { diff, sheetDiffs: diff.sheets, cellChanges, errors }
+		return {
+			diff,
+			sheetDiffs: diff.sheets,
+			cellChanges,
+			errors,
+			...(plan.ok ? { writePlan: plan.value } : {}),
+		}
 	}
 
 	apply(ops: readonly Operation[]): ApplyResult {
 		const dirtyFlags = this.deriveDirtyFlags(ops)
-		const result = applyOperations(this.wb, ops)
+		const nextWorkbook = cloneWorkbook(this.wb)
+		const result = applyOperations(nextWorkbook, ops)
 		if (!result.ok) {
 			return {
 				affectedCells: [],
@@ -152,10 +170,12 @@ export class AscendWorkbook extends WorkbookReadView {
 			}
 		}
 
+		this.wb = nextWorkbook
 		this.markDirty()
 		for (const sheetName of result.value.sheetsModified) this.dirtySheets.add(sheetName)
 		this.workbookMetaDirty ||= dirtyFlags.workbookMetaDirty
 		this.sharedStringsDirty ||= dirtyFlags.sharedStringsDirty
+		if (result.value.recalcRequired) this.mergePendingRecalcTargets(ops)
 		return {
 			affectedCells: result.value.affectedCells,
 			sheetsModified: result.value.sheetsModified,
@@ -173,7 +193,13 @@ export class AscendWorkbook extends WorkbookReadView {
 		if (opts?.range) {
 			rangeRef = parseRange(opts.range)
 		}
-		const result = recalculate(this.wb, ctx, rangeRef ? { range: rangeRef } : undefined)
+		const result = recalculate(
+			this.wb,
+			ctx,
+			rangeRef
+				? { range: rangeRef }
+				: resolveRecalcOptions(this.pendingFullRecalc, this.pendingDirtyRefs),
+		)
 		if (result.changed.length > 0 || result.errors.length > 0) {
 			this.markDirty()
 			this.sharedStringsDirty = true
@@ -182,6 +208,8 @@ export class AscendWorkbook extends WorkbookReadView {
 				if (bang !== -1) this.dirtySheets.add(ref.slice(0, bang))
 			}
 		}
+		this.pendingDirtyRefs = []
+		this.pendingFullRecalc = false
 		return {
 			changed: result.changed,
 			errors: result.errors,
@@ -270,6 +298,17 @@ export class AscendWorkbook extends WorkbookReadView {
 		return result.value
 	}
 
+	writePlanSummary(): WritePlanInfo {
+		this.assertWritable()
+		const result = summarizePlannedWrite(this.wb, this.caps.length > 0 ? this.caps : undefined, {
+			dirtySheetNames: [...this.dirtySheets],
+			workbookMetaDirty: this.workbookMetaDirty,
+			sharedStringsDirty: this.sharedStringsDirty,
+		})
+		if (!result.ok) throw new Error(result.error.message)
+		return result.value
+	}
+
 	private assertWritable(): void {
 		if (!this.loadInfo.isPartial) return
 		throw new Error(
@@ -343,7 +382,32 @@ export class AscendWorkbook extends WorkbookReadView {
 		this.dirtySheets.clear()
 		this.workbookMetaDirty = false
 		this.sharedStringsDirty = false
+		this.pendingDirtyRefs = []
+		this.pendingFullRecalc = false
 	}
+
+	private mergePendingRecalcTargets(ops: readonly Operation[]): void {
+		const refs = deriveRecalcTargets(ops)
+		if (refs.fullRecalc) {
+			this.pendingFullRecalc = true
+			this.pendingDirtyRefs = []
+			return
+		}
+		if (!this.pendingFullRecalc) {
+			this.pendingDirtyRefs = [...new Set([...this.pendingDirtyRefs, ...refs.dirtyRefs])]
+		}
+	}
+}
+
+function deriveRecalcTargets(ops: readonly Operation[]): {
+	fullRecalc: boolean
+	dirtyRefs: readonly string[]
+} {
+	const refs = deriveDirtyRefsFromOps(ops)
+	if (refs === null) {
+		return { fullRecalc: true, dirtyRefs: [] }
+	}
+	return { fullRecalc: false, dirtyRefs: refs }
 }
 
 function parseFullRef(cellRef: string, workbook: Workbook): { sheetName: string; ref: string } {
@@ -381,4 +445,53 @@ function makeSharedStringKey(value: import('@ascend/schema').CellValue | string)
 
 function normalizeFormulaInput(formula: string): string {
 	return formula.startsWith('=') ? formula.slice(1) : formula
+}
+
+function resolveRecalcOptions(
+	fullRecalc: boolean,
+	dirtyRefs: readonly string[],
+): { dirtyOnly?: boolean; dirtyRefs?: readonly string[] } | undefined {
+	if (fullRecalc) return undefined
+	if (dirtyRefs.length === 0) return undefined
+	return { dirtyOnly: true, dirtyRefs }
+}
+
+function deriveDirtyRefsFromOps(ops: readonly Operation[]): string[] | null {
+	const refs: string[] = []
+	for (const op of ops) {
+		switch (op.op) {
+			case 'setCells':
+				refs.push(...op.updates.map((update) => `${op.sheet}!${update.ref}`))
+				break
+			case 'setFormula':
+				refs.push(`${op.sheet}!${op.ref}`)
+				break
+			case 'fillFormula':
+				refs.push(`${op.sheet}!${op.range}`)
+				break
+			case 'clearRange':
+				if (op.what !== 'styles') refs.push(`${op.sheet}!${op.range}`)
+				break
+			case 'appendRows':
+				return null
+			case 'insertRows':
+			case 'deleteRows':
+			case 'insertCols':
+			case 'deleteCols':
+			case 'addSheet':
+			case 'deleteSheet':
+			case 'renameSheet':
+			case 'moveSheet':
+			case 'createTable':
+			case 'sortRange':
+			case 'mergeCells':
+			case 'unmergeCells':
+			case 'setDefinedName':
+			case 'deleteDefinedName':
+				return null
+			default:
+				break
+		}
+	}
+	return refs
 }

@@ -18,6 +18,12 @@ import { extractZip, type ZipArchive } from '../reader/zip.ts'
 import { buildCommentsVml, buildCommentsXml } from './comments.ts'
 import { buildContentTypesXml } from './content-types.ts'
 import { buildAppPropsXml, buildCorePropsXml } from './doc-props.ts'
+import {
+	summarizeWritePlan,
+	WritePlanBuilder,
+	type WritePlanResult,
+	type WritePlanSummary,
+} from './plan.ts'
 import type { RelEntry } from './relationships.ts'
 import { buildRelsXml } from './relationships.ts'
 import { buildSharedStrings } from './shared-strings.ts'
@@ -25,7 +31,7 @@ import { buildSheetXml } from './sheet.ts'
 import { buildPreservedStylesXml, buildStylesXml } from './styles.ts'
 import { buildTableXml } from './table.ts'
 import { buildWorkbookXml } from './workbook.ts'
-import { createZip, encode } from './zip.ts'
+import { createZip } from './zip.ts'
 
 const REL_OFFICE_DOC =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument'
@@ -51,14 +57,31 @@ export function writeXlsx(
 	options: WriteXlsxOptions = {},
 ): Result<Uint8Array, AscendError> {
 	try {
-		const parts = new Map<string, Uint8Array>()
+		const plan = planWriteXlsx(workbook, capsules, options)
+		if (!plan.ok) return plan
+		return ok(createZip(new Map(plan.value.parts)))
+	} catch (e) {
+		return err(
+			ascendError(
+				'EXPORT_ERROR',
+				`Failed to write XLSX: ${e instanceof Error ? e.message : 'unknown'}`,
+			),
+		)
+	}
+}
+
+export function planWriteXlsx(
+	workbook: Workbook,
+	capsules?: PreservationCapsule[],
+	options: WriteXlsxOptions = {},
+): Result<WritePlanResult, AscendError> {
+	try {
+		const plan = new WritePlanBuilder()
 		const sourceArchive = workbook.sourceArchiveBytes
 			? extractZip(workbook.sourceArchiveBytes)
 			: undefined
 		const sheetCapsuleMap = new Map<string, PreservationCapsule[]>()
 		const workbookCapsules: PreservationCapsule[] = []
-		const skippedCapsulePaths = new Set<string>()
-		const extraOverrides: Array<{ partPath: string; contentType: string }> = []
 		let nextGeneratedTableNumber = 1
 		let nextGeneratedCommentsNumber = 1
 		let nextGeneratedVmlNumber = 1
@@ -192,25 +215,46 @@ export function writeXlsx(
 		const workbookContentType =
 			preservedWorkbookXml?.contentType ??
 			'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml'
-		parts.set(
+		plan.putXml(
 			'xl/workbook.xml',
-			encode(
-				preserveWorkbookXml
-					? preservedWorkbookXmlText
-					: buildWorkbookXml(workbook, { externalReferenceRelIds }),
-			),
+			preserveWorkbookXml
+				? preservedWorkbookXmlText
+				: buildWorkbookXml(workbook, { externalReferenceRelIds }),
+			{
+				owner: { kind: 'workbook' },
+				origin: preserveWorkbookXml
+					? resolvePreservedOrigin(preservedWorkbookXml?.workbookXml)
+					: 'generated',
+				contentType: workbookContentType,
+			},
 		)
-		parts.set('xl/styles.xml', encode(stylesXml))
+		plan.putXml('xl/styles.xml', stylesXml, {
+			owner: { kind: 'workbook' },
+			origin:
+				workbook.preservedStyles && preservedStylesXml
+					? resolvePreservedOrigin(workbook.preservedStyles.xml)
+					: 'generated',
+			contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml',
+		})
 		if (workbook.preservedTheme && preservedThemeXml) {
-			parts.set(workbook.preservedTheme.path, encode(preservedThemeXml))
-			extraOverrides.push({
-				partPath: workbook.preservedTheme.path,
+			plan.putXml(workbook.preservedTheme.path, preservedThemeXml, {
+				owner: { kind: 'workbook' },
+				origin: resolvePreservedOrigin(workbook.preservedTheme.xml),
 				contentType: workbook.preservedTheme.contentType,
 			})
+			plan.addOverride(workbook.preservedTheme.path, workbook.preservedTheme.contentType)
 		}
 
 		if (hasSharedStrings) {
-			parts.set('xl/sharedStrings.xml', encode(preservedSharedStringsXml ?? ssTable.toXml()))
+			plan.putXml('xl/sharedStrings.xml', preservedSharedStringsXml ?? ssTable.toXml(), {
+				owner: { kind: 'workbook' },
+				origin:
+					preservedSharedStringsXml !== undefined
+						? resolvePreservedOrigin(workbook.preservedSharedStrings?.xml)
+						: 'generated',
+				contentType:
+					'application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml',
+			})
 		}
 
 		for (let i = 0; i < workbook.sheets.length; i++) {
@@ -299,15 +343,23 @@ export function writeXlsx(
 							: undefined
 					const resolvedVmlPartPath =
 						vmlPartPath ?? `xl/drawings/vmlDrawing${nextGeneratedVmlNumber}.vml`
-					parts.set(commentsPartPath, encode(buildCommentsXml(sheet)))
-					parts.set(resolvedVmlPartPath, encode(buildCommentsVml(sheet)))
-					extraOverrides.push({ partPath: commentsPartPath, contentType: CT_COMMENTS })
-					extraOverrides.push({ partPath: resolvedVmlPartPath, contentType: CT_VML })
-					if (commentsCapsule) skippedCapsulePaths.add(commentsCapsule.partPath)
+					plan.putXml(commentsPartPath, buildCommentsXml(sheet), {
+						owner: { kind: 'sheet', sheetName: sheet.name },
+						origin: 'generated',
+						contentType: CT_COMMENTS,
+					})
+					plan.putXml(resolvedVmlPartPath, buildCommentsVml(sheet), {
+						owner: { kind: 'sheet', sheetName: sheet.name },
+						origin: 'generated',
+						contentType: CT_VML,
+					})
+					plan.addOverride(commentsPartPath, CT_COMMENTS)
+					plan.addOverride(resolvedVmlPartPath, CT_VML)
+					if (commentsCapsule) plan.skipCapsulePath(commentsCapsule.partPath)
 					const existingVmlCapsule = sheetCapsules.find(
 						(capsule) => capsule.relType === REL_VML_DRAWING,
 					)
-					if (existingVmlCapsule) skippedCapsulePaths.add(existingVmlCapsule.partPath)
+					if (existingVmlCapsule) plan.skipCapsulePath(existingVmlCapsule.partPath)
 					commentsRelId = `rId${sheetRelId}`
 					sheetRels.push({
 						id: commentsRelId,
@@ -332,9 +384,13 @@ export function writeXlsx(
 					const tablePartPath =
 						tableCapsule?.partPath ?? `xl/tables/table${nextGeneratedTableNumber}.xml`
 					const tableContentType = tableCapsule?.contentType ?? CT_TABLE
-					parts.set(tablePartPath, encode(buildTableXml(table, nextGeneratedTableNumber)))
-					extraOverrides.push({ partPath: tablePartPath, contentType: tableContentType })
-					if (tableCapsule) skippedCapsulePaths.add(tableCapsule.partPath)
+					plan.putXml(tablePartPath, buildTableXml(table, nextGeneratedTableNumber), {
+						owner: { kind: 'sheet', sheetName: sheet.name },
+						origin: 'generated',
+						contentType: tableContentType,
+					})
+					plan.addOverride(tablePartPath, tableContentType)
+					if (tableCapsule) plan.skipCapsulePath(tableCapsule.partPath)
 					const relId = `rId${sheetRelId}`
 					sheetRels.push({
 						id: relId,
@@ -346,76 +402,116 @@ export function writeXlsx(
 					nextGeneratedTableNumber++
 				}
 			}
-			parts.set(
+			plan.putXml(
 				`xl/worksheets/sheet${i + 1}.xml`,
-				encode(
-					preserveSheetXml
-						? preservedSheetXmlText
-						: buildSheetXml(sheet, ssTable, xfMap, {
-								tableRelIds,
-								...(sheet.drawingRefs.hasDrawing && drawingRelId ? { drawingRelId } : {}),
-								hyperlinks: hyperlinkEntries,
-								...((sheet.drawingRefs.hasLegacyDrawing || sheet.comments.size > 0) &&
-								legacyDrawingRelId
-									? { legacyDrawingRelId }
-									: {}),
-							}),
-				),
+				preserveSheetXml
+					? preservedSheetXmlText
+					: buildSheetXml(sheet, ssTable, xfMap, {
+							tableRelIds,
+							...(sheet.drawingRefs.hasDrawing && drawingRelId ? { drawingRelId } : {}),
+							hyperlinks: hyperlinkEntries,
+							...((sheet.drawingRefs.hasLegacyDrawing || sheet.comments.size > 0) &&
+							legacyDrawingRelId
+								? { legacyDrawingRelId }
+								: {}),
+						}),
+				{
+					owner: { kind: 'sheet', sheetName: sheet.name },
+					origin: preserveSheetXml ? resolvePreservedOrigin(preservedSheetXml?.xml) : 'generated',
+					contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml',
+				},
 			)
 			if (preserveSheetXml && preservedSheetRelsText) {
-				parts.set(`xl/worksheets/_rels/sheet${i + 1}.xml.rels`, encode(preservedSheetRelsText))
+				plan.putXml(`xl/worksheets/_rels/sheet${i + 1}.xml.rels`, preservedSheetRelsText, {
+					owner: { kind: 'sheet', sheetName: sheet.name },
+					origin: resolvePreservedOrigin(preservedSheetXml?.relsXml),
+				})
 			} else if (sheetRels.length > 0) {
-				parts.set(`xl/worksheets/_rels/sheet${i + 1}.xml.rels`, encode(buildRelsXml(sheetRels)))
+				plan.putXml(`xl/worksheets/_rels/sheet${i + 1}.xml.rels`, buildRelsXml(sheetRels), {
+					owner: { kind: 'sheet', sheetName: sheet.name },
+					origin: 'generated',
+				})
 			}
 		}
 
-		parts.set('docProps/core.xml', encode(buildCorePropsXml()))
-		parts.set('docProps/app.xml', encode(buildAppPropsXml()))
+		plan.putXml('docProps/core.xml', buildCorePropsXml(), {
+			owner: { kind: 'package' },
+			origin: 'generated',
+			contentType: 'application/vnd.openxmlformats-package.core-properties+xml',
+		})
+		plan.putXml('docProps/app.xml', buildAppPropsXml(), {
+			owner: { kind: 'package' },
+			origin: 'generated',
+			contentType: 'application/vnd.openxmlformats-officedocument.extended-properties+xml',
+		})
 
 		const rootRels: RelEntry[] = [
 			{ id: 'rId1', type: REL_OFFICE_DOC, target: 'xl/workbook.xml' },
 			{ id: 'rId2', type: REL_CORE_PROPS, target: 'docProps/core.xml' },
 			{ id: 'rId3', type: REL_EXT_PROPS, target: 'docProps/app.xml' },
 		]
-		parts.set('_rels/.rels', encode(buildRelsXml(rootRels)))
+		plan.putXml('_rels/.rels', buildRelsXml(rootRels), {
+			owner: { kind: 'package' },
+			origin: 'generated',
+		})
 
 		if (capsules) {
 			for (const capsule of capsules) {
-				if (skippedCapsulePaths.has(capsule.partPath)) continue
+				if (plan.isCapsulePathSkipped(capsule.partPath)) continue
 				const content = capsule.content ?? sourceArchive?.readBytes(capsule.partPath)
 				if (!content) continue
-				parts.set(capsule.partPath, content)
+				plan.putBytes(capsule.partPath, content, {
+					owner:
+						capsule.anchor.kind === 'sheet'
+							? { kind: 'sheet', sheetName: capsule.anchor.sheetName }
+							: { kind: 'workbook' },
+					origin: 'capsule',
+					contentType: capsule.contentType,
+				})
 
 				if (capsule.relationships.length > 0) {
 					const capsuleRelsPath = getRelsPath(capsule.partPath)
-					parts.set(capsuleRelsPath, encode(buildRelsXml(capsule.relationships)))
+					plan.putXml(capsuleRelsPath, buildRelsXml(capsule.relationships), {
+						owner:
+							capsule.anchor.kind === 'sheet'
+								? { kind: 'sheet', sheetName: capsule.anchor.sheetName }
+								: { kind: 'workbook' },
+						origin: 'capsule',
+					})
 				}
 			}
 		}
 
-		parts.set(
+		plan.putXml(
 			'xl/_rels/workbook.xml.rels',
-			encode(
-				preserveWorkbookXml && preservedWorkbookRelsText
-					? preservedWorkbookRelsText
-					: buildRelsXml(wbRels),
-			),
+			preserveWorkbookXml && preservedWorkbookRelsText
+				? preservedWorkbookRelsText
+				: buildRelsXml(wbRels),
+			{
+				owner: { kind: 'workbook' },
+				origin:
+					preserveWorkbookXml && preservedWorkbookRelsText
+						? resolvePreservedOrigin(preservedWorkbookXml?.workbookRelsXml)
+						: 'generated',
+			},
 		)
 
-		parts.set(
+		plan.putXml(
 			'[Content_Types].xml',
-			encode(
-				buildContentTypesXml(
-					workbook.sheets.length,
-					hasSharedStrings,
-					workbookContentType,
-					capsules,
-					extraOverrides.length > 0 ? extraOverrides : undefined,
-				),
+			buildContentTypesXml(
+				workbook.sheets.length,
+				hasSharedStrings,
+				workbookContentType,
+				capsules,
+				plan.build().extraOverrides.length > 0 ? plan.build().extraOverrides : undefined,
 			),
+			{
+				owner: { kind: 'package' },
+				origin: 'generated',
+			},
 		)
 
-		return ok(createZip(parts))
+		return ok(plan.build())
 	} catch (e) {
 		return err(
 			ascendError(
@@ -424,6 +520,22 @@ export function writeXlsx(
 			),
 		)
 	}
+}
+
+export function summarizePlannedWrite(
+	workbook: Workbook,
+	capsules?: PreservationCapsule[],
+	options: WriteXlsxOptions = {},
+): Result<WritePlanSummary, AscendError> {
+	const plan = planWriteXlsx(workbook, capsules, options)
+	if (!plan.ok) return plan
+	return ok(summarizeWritePlan(plan.value))
+}
+
+function resolvePreservedOrigin(
+	inlineText: string | undefined,
+): 'preserved-inline' | 'preserved-source' {
+	return inlineText !== undefined ? 'preserved-inline' : 'preserved-source'
 }
 
 function materializeSharedStringEntries(xml: string): CellValue[] {

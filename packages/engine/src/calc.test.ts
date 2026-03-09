@@ -55,6 +55,24 @@ describe('recalculate', () => {
 		expect(result.changed.length).toBeGreaterThan(0)
 	})
 
+	test('dirty refs limit recalculation scope to affected dependency subgraph', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'A1+1', styleId: sid })
+		sheet.cells.set(0, 2, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(0, 3, { value: EMPTY, formula: 'C1+1', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		sheet.cells.set(0, 0, { value: numberValue(5), formula: null, styleId: sid })
+
+		const result = recalculate(wb, makeCtx(), { dirtyOnly: true, dirtyRefs: ['Sheet1!A1'] })
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(6))
+		expect(sheet.cells.get(0, 3)?.value).toEqual(numberValue(11))
+		expect(result.changed).toContain('Sheet1!B1')
+		expect(result.changed).not.toContain('Sheet1!D1')
+	})
+
 	test('multi-sheet reference', () => {
 		const wb = createWorkbook()
 		const s1 = wb.addSheet('Data')

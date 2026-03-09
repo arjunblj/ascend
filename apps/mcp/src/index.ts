@@ -3,21 +3,7 @@ import { Ascend, WorkbookSession } from '@ascend/sdk'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
-
-function okResponse<T>(data: T, summary: string) {
-	return {
-		content: [{ type: 'text' as const, text: summary }],
-		structuredContent: data as Record<string, unknown>,
-	}
-}
-
-function errorResponse(message: string) {
-	return {
-		content: [{ type: 'text' as const, text: message }],
-		structuredContent: { error: message },
-		isError: true,
-	}
-}
+import { errorResponse, okResponse } from './response.ts'
 
 export function createServer(): McpServer {
 	const server = new McpServer({
@@ -79,6 +65,23 @@ export function createServer(): McpServer {
 				...(rowLimit !== undefined ? { rowLimit } : {}),
 			})
 			return okResponse(info, `Read range ${range} from "${sheetName}"`)
+		},
+	)
+
+	server.tool(
+		'ascend.preview',
+		'Preview operations without saving the workbook',
+		{
+			file: z.string().describe('Path to workbook file'),
+			ops: z.array(z.record(z.string(), z.unknown())).describe('Operations to preview'),
+		},
+		async ({ file, ops }) => {
+			const wb = await Ascend.open(file)
+			const result = wb.preview(ops as unknown as readonly Operation[])
+			return {
+				...okResponse(result, `Previewed ${ops.length} operation(s)`),
+				isError: result.errors.length > 0,
+			}
 		},
 	)
 

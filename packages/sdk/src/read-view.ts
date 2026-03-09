@@ -1,4 +1,4 @@
-import { indexToColumn, parseRange, type RangeRef, type Workbook } from '@ascend/core'
+import { indexToColumn, type RangeRef, type Workbook } from '@ascend/core'
 import {
 	createSnapshot,
 	diffWorkbooks,
@@ -31,7 +31,7 @@ import type {
 } from './types.ts'
 
 export class WorkbookReadView {
-	protected readonly wb: Workbook
+	protected wb: Workbook
 	protected readonly compat: CompatibilityReport
 	protected readonly loadInfo: WorkbookLoadInfo
 

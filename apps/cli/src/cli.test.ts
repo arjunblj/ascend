@@ -74,19 +74,21 @@ describe('ascend cli', () => {
 		const { stdout, exitCode } = await run('inspect', TEST_FILE, '--json')
 		expect(exitCode).toBe(0)
 		const parsed = JSON.parse(stdout)
-		expect(parsed.sheetCount).toBe(1)
-		expect(parsed.loadedSheetCount).toBe(1)
-		expect(parsed.commentCount).toBeNull()
-		expect(parsed.conditionalFormatCount).toBeNull()
-		expect(parsed.dataValidationCount).toBeNull()
-		expect(parsed.imageCount).toBeNull()
-		expect(parsed.pivotTableCount).toBe(0)
-		expect(parsed.pivotCacheCount).toBe(0)
-		expect(parsed.slicerCount).toBe(0)
-		expect(parsed.slicerCacheCount).toBe(0)
-		expect(parsed.load.mode).toBe('metadata-only')
-		expect(parsed.sheets).toBeArray()
-		expect(parsed.sheets[0].name).toBe('Sheet1')
+		expect(parsed.formatVersion).toBe(1)
+		expect(parsed.ok).toBe(true)
+		expect(parsed.data.sheetCount).toBe(1)
+		expect(parsed.data.loadedSheetCount).toBe(1)
+		expect(parsed.data.commentCount).toBeNull()
+		expect(parsed.data.conditionalFormatCount).toBeNull()
+		expect(parsed.data.dataValidationCount).toBeNull()
+		expect(parsed.data.imageCount).toBeNull()
+		expect(parsed.data.pivotTableCount).toBe(0)
+		expect(parsed.data.pivotCacheCount).toBe(0)
+		expect(parsed.data.slicerCount).toBe(0)
+		expect(parsed.data.slicerCacheCount).toBe(0)
+		expect(parsed.data.load.mode).toBe('metadata-only')
+		expect(parsed.data.sheets).toBeArray()
+		expect(parsed.data.sheets[0].name).toBe('Sheet1')
 	})
 
 	test('unknown inspect flag suggests the closest supported flag', async () => {
@@ -100,9 +102,9 @@ describe('ascend cli', () => {
 		const { stdout, exitCode } = await run('inspect', TEST_FILE, '--mode', 'full', '--json')
 		expect(exitCode).toBe(0)
 		const parsed = JSON.parse(stdout)
-		expect(parsed.load.mode).toBe('full')
-		expect(parsed.cellCount).toBe(0)
-		expect(parsed.commentCount).toBe(0)
+		expect(parsed.data.load.mode).toBe('full')
+		expect(parsed.data.cellCount).toBe(0)
+		expect(parsed.data.commentCount).toBe(0)
 	})
 
 	test('read requires an explicit sheet when workbook has multiple sheets', async () => {
@@ -123,6 +125,20 @@ describe('ascend cli', () => {
 		const { exitCode, stdout } = await run('read', TEST_FILE, 'Sheet1!A1')
 		expect(exitCode).toBe(0)
 		expect(stdout).toContain('A')
+	})
+
+	test('read --json returns versioned machine envelope', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'alpha' }] }])
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const { exitCode, stdout } = await run('read', TEST_FILE, 'Sheet1!A1', '--json')
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.formatVersion).toBe(1)
+		expect(parsed.ok).toBe(true)
+		expect(parsed.data.cells).toHaveLength(1)
+		expect(parsed.data.cells[0].ref).toBe('A1')
 	})
 
 	test('read rejects unsupported modes', async () => {
@@ -171,6 +187,28 @@ describe('ascend cli', () => {
 
 		const reopened = await AscendWorkbook.open(`${import.meta.dir}/${TEST_FILE}`)
 		expect(reopened.sheet('Sheet1')?.cell('A2')?.value).toEqual({ kind: 'number', value: 10 })
+	})
+
+	test('preview shows changes without mutating the workbook file', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A2', formula: 'A1*2' },
+		])
+		await wb.recalc()
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const { exitCode, stdout } = await run('preview', TEST_FILE, 'Sheet1!A1', '5', '--json')
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.formatVersion).toBe(1)
+		expect(parsed.ok).toBe(true)
+		expect(parsed.data.cellChanges.length).toBeGreaterThan(0)
+		expect(parsed.data.writePlan.totalParts).toBeGreaterThan(0)
+
+		const reopened = await AscendWorkbook.open(`${import.meta.dir}/${TEST_FILE}`)
+		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 2 })
+		expect(reopened.sheet('Sheet1')?.cell('A2')?.value).toEqual({ kind: 'number', value: 4 })
 	})
 
 	test('formula show returns parsed formula info', async () => {
@@ -231,5 +269,14 @@ describe('ascend cli', () => {
 		const { exitCode, stdout } = await run('check', TEST_FILE)
 		expect(exitCode).toBe(0)
 		expect(stdout).toContain('all checks passed')
+	})
+
+	test('check --json returns versioned machine envelope', async () => {
+		const { exitCode, stdout } = await run('check', TEST_FILE, '--json')
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.formatVersion).toBe(1)
+		expect(parsed.ok).toBe(true)
+		expect(parsed.data.valid).toBe(true)
 	})
 })

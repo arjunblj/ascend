@@ -331,6 +331,16 @@ describe('AscendWorkbook', () => {
 		expect(result.errors[0]?.code).toBe('SHEET_NOT_FOUND')
 	})
 
+	test('failed apply does not partially mutate workbook state', () => {
+		const wb = AscendWorkbook.create()
+		const result = wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'keep' }] },
+			{ op: 'setCells', sheet: 'Missing', updates: [{ ref: 'A1', value: 'break' }] },
+		])
+		expect(result.errors).toHaveLength(1)
+		expect(wb.sheet('Sheet1')?.cell('A1')).toBeUndefined()
+	})
+
 	test('recalc updates formula values', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -793,6 +803,7 @@ describe('AscendWorkbook', () => {
 		])
 		expect(preview.errors).toHaveLength(0)
 		expect(preview.cellChanges.length).toBeGreaterThanOrEqual(1)
+		expect(preview.writePlan?.totalParts).toBeGreaterThan(0)
 
 		const cell = wb.sheet('Sheet1')?.cell('A1')
 		expect(cell?.value).toEqual({ kind: 'string', value: 'before' })
@@ -855,6 +866,53 @@ describe('AscendWorkbook', () => {
 		const parsed = JSON.parse(JSON.stringify(json))
 		expect(parsed.sheets).toBeDefined()
 		expect(parsed.sheets[0].name).toBe('Sheet1')
+	})
+
+	test('writePlanSummary classifies generated and preserved write parts', async () => {
+		const sourceBytes = makeSyntheticXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+  <Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+			'xl/styles.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="1"><font/></fonts>
+  <fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
+  <borders count="1"><border/></borders>
+  <cellStyleXfs count="1"><xf/></cellStyleXfs>
+  <cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellXfs>
+  <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>`,
+			'xl/theme/theme1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Test Theme"/>`,
+		})
+		const wb = await AscendWorkbook.open(sourceBytes)
+		const summary = wb.writePlanSummary()
+		expect(summary.totalParts).toBeGreaterThan(0)
+		expect(summary.byOrigin['preserved-source']).toBeGreaterThan(0)
+		expect(summary.byOrigin.generated).toBeGreaterThan(0)
+		expect(summary.byOwnerKind.workbook).toBeGreaterThan(0)
 	})
 
 	test('report returns compatibility info', () => {

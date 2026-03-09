@@ -9,6 +9,7 @@ import { exportCommand, usage as exportUsage } from './commands/export.ts'
 import { formulaCommand, usage as formulaUsage } from './commands/formula.ts'
 import { inspectCommand, usage as inspectUsage } from './commands/inspect.ts'
 import { lintCommand, usage as lintUsage } from './commands/lint.ts'
+import { previewCommand, usage as previewUsage } from './commands/preview.ts'
 import { readCommand, usage as readUsage } from './commands/read.ts'
 import { traceCommand, usage as traceUsage } from './commands/trace.ts'
 import { writeCommand, usage as writeUsage } from './commands/write.ts'
@@ -23,6 +24,7 @@ Commands:
   create <file>                 Create a new empty .xlsx workbook
   inspect <file> [sheet]        Show workbook/sheet structure
   read <file> <range>           Read cell values from a range
+  preview <file> <range> <json> Preview workbook changes without saving
   write <file> <range> <json>   Write values to cells
   formula <subcommand>          Inspect or edit formulas
   calc <file>                   Recalculate all formulas
@@ -62,6 +64,7 @@ const COMMANDS: Record<string, Command> = {
 		usage: readUsage,
 		allowedFlags: ['sheet', 'mode', 'row-offset', 'row-limit', 'json'],
 	},
+	preview: { run: previewCommand, usage: previewUsage, allowedFlags: ['sheet', 'ops', 'json'] },
 	write: { run: writeCommand, usage: writeUsage, allowedFlags: ['sheet', 'ops', 'json'] },
 	formula: { run: formulaCommand, usage: formulaUsage, allowedFlags: ['json'] },
 	calc: { run: calcCommand, usage: calcUsage, allowedFlags: ['json'] },

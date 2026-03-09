@@ -18,6 +18,8 @@ export type {
 	Result,
 } from './errors.ts'
 export { ascendError, err, ok } from './errors.ts'
+export type { MachineEnvelope, MachineFailure, MachineSuccess } from './machine.ts'
+export { MACHINE_FORMAT_VERSION, machineFailure, machineSuccess } from './machine.ts'
 export type {
 	CellUpdate,
 	Operation,

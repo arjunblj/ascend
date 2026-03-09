@@ -1,4 +1,4 @@
-import { indexToColumn, type RangeRef, type StyleId, type Workbook } from '@ascend/core'
+import { indexToColumn, parseRange, type RangeRef, type StyleId, type Workbook } from '@ascend/core'
 import type { FormulaNode } from '@ascend/formulas'
 import type { AscendError, CellValue } from '@ascend/schema'
 import { EMPTY, errorValue } from '@ascend/schema'
@@ -42,7 +42,7 @@ function cellRefString(wb: Workbook, sheetIndex: number, row: number, col: numbe
 export function recalculate(
 	workbook: Workbook,
 	ctx: CalcContext,
-	opts?: { dirtyOnly?: boolean; range?: RangeRef },
+	opts?: { dirtyOnly?: boolean; range?: RangeRef; dirtyRefs?: readonly string[] },
 ): RecalcResult {
 	const start = performance.now()
 	const asts = new Map<string, FormulaNode>()
@@ -69,9 +69,9 @@ export function recalculate(
 
 	let evalOrder: string[]
 
-	if (opts?.dirtyOnly) {
-		const volatiles = graph.getVolatiles()
-		const dirty = graph.getDirtySet(volatiles)
+	if (opts?.dirtyOnly || (opts?.dirtyRefs?.length ?? 0) > 0) {
+		const dirtySeeds = [...graph.getVolatiles(), ...resolveDirtyKeys(workbook, opts?.dirtyRefs)]
+		const dirty = graph.getDirtySet(dirtySeeds)
 		evalOrder = graph.getEvalOrder(dirty)
 	} else {
 		const allKeys = graph.getAllFormulaCells()
@@ -147,6 +147,27 @@ export function recalculate(
 		errors,
 		duration: performance.now() - start,
 	}
+}
+
+function resolveDirtyKeys(workbook: Workbook, refs: readonly string[] | undefined): string[] {
+	if (!refs || refs.length === 0) return []
+	const keys: string[] = []
+	for (const ref of refs) {
+		const bang = ref.indexOf('!')
+		const sheetName =
+			bang >= 0 ? ref.slice(0, bang).replace(/^'|'$/g, '') : workbook.sheets[0]?.name
+		const localRef = bang >= 0 ? ref.slice(bang + 1) : ref
+		if (!sheetName || !localRef) continue
+		const sheetIndex = workbook.sheets.findIndex((sheet) => sheet.name === sheetName)
+		if (sheetIndex === -1) continue
+		const range = parseRange(localRef)
+		for (let row = range.start.row; row <= range.end.row; row++) {
+			for (let col = range.start.col; col <= range.end.col; col++) {
+				keys.push(`${sheetIndex}:${row}:${col}`)
+			}
+		}
+	}
+	return keys
 }
 
 function evalIterative(

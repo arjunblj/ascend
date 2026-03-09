@@ -16,6 +16,7 @@ describe('MCP server', () => {
 
 		expect(names).toContain('ascend.inspect')
 		expect(names).toContain('ascend.read')
+		expect(names).toContain('ascend.preview')
 		expect(names).toContain('ascend.write')
 		expect(names).toContain('ascend.calc')
 		expect(names).toContain('ascend.check')
@@ -23,6 +24,6 @@ describe('MCP server', () => {
 		expect(names).toContain('ascend.trace')
 		expect(names).toContain('ascend.diff')
 		expect(names).toContain('ascend.export')
-		expect(names.length).toBe(9)
+		expect(names.length).toBe(10)
 	})
 })

@@ -192,7 +192,7 @@ function extractSheetDataContent(xml: string): string | null {
 	return match?.[1] ?? null
 }
 
-function parseSheetData(ws: XmlNode, sheet: Sheet, ctx: SheetParseContext): void {
+function _parseSheetData(ws: XmlNode, sheet: Sheet, ctx: SheetParseContext): void {
 	const sd = ws.sheetData as XmlNode | undefined
 	if (!sd) return
 	const sharedFormulaMasters = new Map<

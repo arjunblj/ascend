@@ -15,7 +15,7 @@ export interface CheckIssue {
 	readonly refs?: readonly string[]
 }
 
-function checkBrokenRefs(wb: Workbook, analysis: WorkbookAnalysis): CheckIssue[] {
+function checkBrokenRefs(_wb: Workbook, analysis: WorkbookAnalysis): CheckIssue[] {
 	const issues: CheckIssue[] = []
 
 	for (const formula of analysis.formulas.values()) {

@@ -498,7 +498,7 @@ function readPositionalArg(index: number): string | undefined {
 	const positional = process.argv.slice(2).filter((arg, argIndex, args) => {
 		if (arg.startsWith('--')) return false
 		const previous = args[argIndex - 1]
-		if (previous && previous.startsWith('--')) return false
+		if (previous?.startsWith('--')) return false
 		return true
 	})
 	return positional[index]

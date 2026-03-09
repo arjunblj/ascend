@@ -7,7 +7,7 @@ import { applyOperations } from '../../../engine/src/index.ts'
 import { fingerprintXlsx } from '../../test/fidelity-harness.ts'
 import type { PreservationCapsule } from '../preserve.ts'
 import { readXlsx } from '../reader/index.ts'
-import { writeXlsx } from './index.ts'
+import { planWriteXlsx, writeXlsx } from './index.ts'
 
 const S0 = 0 as StyleId
 
@@ -188,6 +188,68 @@ describe('writeXlsx', () => {
 			kind: 'string',
 			value: 'World',
 		})
+	})
+
+	it('classifies generated and preserved parts in the write plan', () => {
+		const sourceBytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+  <Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>
+</Relationships>`,
+			'xl/styles.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="1"><font/></fonts>
+  <fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
+  <borders count="1"><border/></borders>
+  <cellStyleXfs count="1"><xf/></cellStyleXfs>
+  <cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellXfs>
+  <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>`,
+			'xl/theme/theme1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Test Theme"/>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+		})
+		const source = readXlsx(sourceBytes)
+		expect(source.ok).toBe(true)
+		if (!source.ok) return
+
+		const plan = planWriteXlsx(source.value.workbook, source.value.capsules, {
+			dirtySheetNames: ['Sheet1'],
+		})
+		expect(plan.ok).toBe(true)
+		if (!plan.ok) return
+
+		const workbookPart = plan.value.descriptors.find((entry) => entry.path === 'xl/workbook.xml')
+		const stylesPart = plan.value.descriptors.find((entry) => entry.path === 'xl/styles.xml')
+		const themePart = plan.value.descriptors.find((entry) => entry.path === 'xl/theme/theme1.xml')
+		const sheetPart = plan.value.descriptors.find(
+			(entry) => entry.path === 'xl/worksheets/sheet1.xml',
+		)
+		expect(workbookPart?.origin).toBe('preserved-source')
+		expect(stylesPart?.origin).toBe('preserved-source')
+		expect(themePart?.origin).toBe('preserved-source')
+		expect(sheetPart?.origin).toBe('generated')
 	})
 
 	it('preserves bold style on round-trip', () => {

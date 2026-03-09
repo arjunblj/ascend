@@ -22,7 +22,11 @@ describe('API', () => {
 		const res = await fetch(`http://localhost:${server.port}/health`)
 		expect(res.status).toBe(200)
 		const body = await res.json()
-		expect(body).toEqual({ status: 'ok' })
+		expect(body).toEqual({
+			formatVersion: 1,
+			ok: true,
+			data: { status: 'ok' },
+		})
 	})
 
 	test('inspect returns workbook info', async () => {
@@ -60,25 +64,27 @@ describe('API', () => {
 		})
 		expect(res.status).toBe(200)
 		const body = await res.json()
-		expect(body.sheetCount).toBe(1)
-		expect(body.loadedSheetCount).toBe(1)
-		expect(body.commentCount).toBeNull()
-		expect(body.conditionalFormatCount).toBeNull()
-		expect(body.dataValidationCount).toBeNull()
-		expect(body.imageCount).toBeNull()
-		expect(body.pivotTableCount).toBe(0)
-		expect(body.pivotCacheCount).toBe(0)
-		expect(body.slicerCount).toBe(0)
-		expect(body.slicerCacheCount).toBe(0)
-		expect(body.hasWorkbookProtection).toBe(true)
-		expect(body.sheets).toHaveLength(1)
-		expect(body.sheets[0].name).toBe('Sheet1')
-		expect(body.sheets[0].commentCount).toBeNull()
-		expect(body.sheets[0].conditionalFormatCount).toBeNull()
-		expect(body.sheets[0].dataValidationCount).toBeNull()
-		expect(body.sheets[0].imageCount).toBeNull()
-		expect(body.cellCount).toBeNull()
-		expect(body.load.mode).toBe('metadata-only')
+		expect(body.formatVersion).toBe(1)
+		expect(body.ok).toBe(true)
+		expect(body.data.sheetCount).toBe(1)
+		expect(body.data.loadedSheetCount).toBe(1)
+		expect(body.data.commentCount).toBeNull()
+		expect(body.data.conditionalFormatCount).toBeNull()
+		expect(body.data.dataValidationCount).toBeNull()
+		expect(body.data.imageCount).toBeNull()
+		expect(body.data.pivotTableCount).toBe(0)
+		expect(body.data.pivotCacheCount).toBe(0)
+		expect(body.data.slicerCount).toBe(0)
+		expect(body.data.slicerCacheCount).toBe(0)
+		expect(body.data.hasWorkbookProtection).toBe(true)
+		expect(body.data.sheets).toHaveLength(1)
+		expect(body.data.sheets[0].name).toBe('Sheet1')
+		expect(body.data.sheets[0].commentCount).toBeNull()
+		expect(body.data.sheets[0].conditionalFormatCount).toBeNull()
+		expect(body.data.sheets[0].dataValidationCount).toBeNull()
+		expect(body.data.sheets[0].imageCount).toBeNull()
+		expect(body.data.cellCount).toBeNull()
+		expect(body.data.load.mode).toBe('metadata-only')
 	})
 
 	test('inspect can return a values-loaded sheet summary', async () => {
@@ -94,17 +100,83 @@ describe('API', () => {
 		})
 		expect(res.status).toBe(200)
 		const body = await res.json()
-		expect(body.name).toBe('Sheet1')
-		expect(body.cellDataLoaded).toBe(true)
-		expect(body.cellCount).toBe(1)
-		expect(body.rowCount).toBe(2)
-		expect(body.colCount).toBe(2)
+		expect(body.formatVersion).toBe(1)
+		expect(body.ok).toBe(true)
+		expect(body.data.name).toBe('Sheet1')
+		expect(body.data.cellDataLoaded).toBe(true)
+		expect(body.data.cellCount).toBe(1)
+		expect(body.data.rowCount).toBe(2)
+		expect(body.data.colCount).toBe(2)
+	})
+
+	test('read returns versioned machine envelope', async () => {
+		const tempFile = join(tempDir, 'read.xlsx')
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 42 }] }])
+		await wb.save(tempFile)
+
+		const res = await fetch(`http://localhost:${server.port}/read`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ file: tempFile, sheet: 'Sheet1', range: 'A1:A1' }),
+		})
+		expect(res.status).toBe(200)
+		const body = await res.json()
+		expect(body.formatVersion).toBe(1)
+		expect(body.ok).toBe(true)
+		expect(body.data.cells).toHaveLength(1)
+		expect(body.data.cells[0].ref).toBe('A1')
+	})
+
+	test('read errors return machine failure envelope', async () => {
+		const res = await fetch(`http://localhost:${server.port}/read`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ range: 'A1:A1' }),
+		})
+		expect(res.status).toBe(400)
+		const body = await res.json()
+		expect(body.formatVersion).toBe(1)
+		expect(body.ok).toBe(false)
+		expect(body.error.message).toBe('Missing or invalid file')
+	})
+
+	test('preview returns a diff without mutating the workbook on disk', async () => {
+		const tempFile = join(tempDir, 'preview.xlsx')
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A2', formula: 'A1*2' },
+		])
+		await wb.recalc()
+		await wb.save(tempFile)
+
+		const res = await fetch(`http://localhost:${server.port}/preview`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				file: tempFile,
+				ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 5 }] }],
+			}),
+		})
+		expect(res.status).toBe(200)
+		const body = await res.json()
+		expect(body.formatVersion).toBe(1)
+		expect(body.ok).toBe(true)
+		expect(body.data.cellChanges.length).toBeGreaterThan(0)
+		expect(body.data.writePlan.totalParts).toBeGreaterThan(0)
+
+		const reopened = await AscendWorkbook.open(tempFile)
+		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 2 })
+		expect(reopened.sheet('Sheet1')?.cell('A2')?.value).toEqual({ kind: 'number', value: 4 })
 	})
 
 	test('unknown route returns 404', async () => {
 		const res = await fetch(`http://localhost:${server.port}/unknown`)
 		expect(res.status).toBe(404)
 		const body = await res.json()
-		expect(body.error).toBe('Not Found')
+		expect(body.formatVersion).toBe(1)
+		expect(body.ok).toBe(false)
+		expect(body.error.message).toBe('Not Found')
 	})
 })

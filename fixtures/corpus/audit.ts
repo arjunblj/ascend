@@ -88,6 +88,21 @@ interface AuditResult {
 	readonly riskClass: CorpusRiskClass
 	readonly featureTags: readonly string[]
 	readonly vendorable: boolean
+	readonly writePlanSummary: {
+		readonly totalParts: number
+		readonly byOrigin: Readonly<{
+			generated: number
+			'preserved-inline': number
+			'preserved-source': number
+			capsule: number
+		}>
+		readonly byOwnerKind: Readonly<{
+			package: number
+			workbook: number
+			sheet: number
+		}>
+		readonly sheetPartCounts: Readonly<Record<string, number>>
+	}
 	readonly sourceSha256: string
 	readonly sourceBytes: number
 	readonly noOpByteIdentical: boolean
@@ -150,8 +165,14 @@ async function auditEntry(entry: NormalizedCorpusManifestEntry): Promise<AuditRe
 	const sourceBytes = new Uint8Array(await readFile(sourcePath))
 	const sourceSha256 = sha256(sourceBytes)
 	const sourcePackage = summarizePackage(sourceBytes)
-	const { sourceSemantic, noOpByteIdentical, dirtyBytes, probe, probeRecalcError } =
-		await inspectAndBuildDirtyWorkbook(entry.file, sourceBytes)
+	const {
+		sourceSemantic,
+		noOpByteIdentical,
+		dirtyBytes,
+		probe,
+		probeRecalcError,
+		writePlanSummary,
+	} = await inspectAndBuildDirtyWorkbook(entry.file, sourceBytes)
 	runGc()
 	const dirtyPackage = summarizePackage(dirtyBytes)
 	const { summary: dirtySemantic, probeValuePersisted } = await inspectDirtyWorkbook(
@@ -170,6 +191,7 @@ async function auditEntry(entry: NormalizedCorpusManifestEntry): Promise<AuditRe
 		riskClass: entry.riskClass,
 		featureTags: entry.featureTags,
 		vendorable: entry.vendorable,
+		writePlanSummary,
 		sourceSha256,
 		sourceBytes: sourceBytes.byteLength,
 		noOpByteIdentical,
@@ -201,6 +223,7 @@ async function inspectAndBuildDirtyWorkbook(
 	dirtyBytes: Uint8Array
 	probe: ProbeTarget
 	probeRecalcError?: string
+	writePlanSummary: AuditResult['writePlanSummary']
 }> {
 	const workbook = await AscendWorkbook.open(sourceBytes)
 	const raw = readXlsx(sourceBytes)
@@ -227,10 +250,17 @@ async function inspectAndBuildDirtyWorkbook(
 				dirtyBytes: workbook.toBytes(),
 				probe,
 				probeRecalcError: `${file}: recalc failed after probe edit`,
+				writePlanSummary: workbook.writePlanSummary(),
 			}
 		}
 	}
-	return { sourceSemantic, noOpByteIdentical, dirtyBytes: workbook.toBytes(), probe }
+	return {
+		sourceSemantic,
+		noOpByteIdentical,
+		dirtyBytes: workbook.toBytes(),
+		probe,
+		writePlanSummary: workbook.writePlanSummary(),
+	}
 }
 
 async function inspectDirtyWorkbook(
@@ -551,6 +581,9 @@ function renderSummary(results: readonly AuditResult[]): void {
 		)
 		console.log(
 			`  no-op=${result.noOpByteIdentical ? 'identical' : 'changed'} probe=${result.probe.sheet}!${result.probe.ref} persisted=${result.probeValuePersisted ? 'yes' : 'no'} vendorable=${result.vendorable ? 'yes' : 'no'}`,
+		)
+		console.log(
+			`  write-plan: total=${result.writePlanSummary.totalParts} generated=${result.writePlanSummary.byOrigin.generated} preserved-inline=${result.writePlanSummary.byOrigin['preserved-inline']} preserved-source=${result.writePlanSummary.byOrigin['preserved-source']} capsule=${result.writePlanSummary.byOrigin.capsule}`,
 		)
 		if (result.probeRecalcError) {
 			console.log(`  probe-recalc-error: ${result.probeRecalcError}`)

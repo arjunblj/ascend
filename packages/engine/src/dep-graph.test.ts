@@ -45,6 +45,24 @@ describe('DependencyGraph', () => {
 		expect(g.getPrecedents(formula)).toEqual(['0:0:0', '0:1:0', '0:2:0'])
 	})
 
+	test('dirty propagation includes range-backed dependents', () => {
+		const g = new DependencyGraph()
+		const source = cellKey(0, 0, 0)
+		const formula = cellKey(0, 0, 2)
+		g.addFormula(formula, [], false, [
+			{
+				sheetIndex: 0,
+				startRow: 0,
+				startCol: 0,
+				endRow: 2,
+				endCol: 0,
+			},
+		])
+		const dirty = g.getDirtySet([source])
+		expect(dirty.has(source)).toBe(true)
+		expect(dirty.has(formula)).toBe(true)
+	})
+
 	test('removeFormula cleans up dependents', () => {
 		const g = new DependencyGraph()
 		const a = cellKey(0, 0, 0)

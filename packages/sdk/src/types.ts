@@ -201,6 +201,7 @@ export interface PreviewResult {
 	readonly sheetDiffs: readonly SheetDiff[]
 	readonly cellChanges: readonly CellChange[]
 	readonly errors: readonly AscendError[]
+	readonly writePlan?: WritePlanInfo
 }
 
 export interface ApplyResult {
@@ -214,6 +215,22 @@ export interface RecalcResult {
 	readonly changed: readonly string[]
 	readonly errors: ReadonlyArray<{ ref: string; error: AscendError }>
 	readonly duration: number
+}
+
+export interface WritePlanInfo {
+	readonly totalParts: number
+	readonly byOrigin: Readonly<{
+		generated: number
+		'preserved-inline': number
+		'preserved-source': number
+		capsule: number
+	}>
+	readonly byOwnerKind: Readonly<{
+		package: number
+		workbook: number
+		sheet: number
+	}>
+	readonly sheetPartCounts: Readonly<Record<string, number>>
 }
 
 export interface CheckResult {

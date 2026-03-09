@@ -29,7 +29,7 @@ interface Scenario {
 	readonly name: string
 	readonly category: 'read' | 'write' | 'calc' | 'workflow'
 	build(): ScenarioInput
-	run(input: ScenarioInput): Promise<ScenarioRunResult | void> | ScenarioRunResult | void
+	run(input: ScenarioInput): Promise<ScenarioRunResult | undefined> | ScenarioRunResult | undefined
 }
 
 function requireBytes(input: ScenarioInput): Uint8Array {

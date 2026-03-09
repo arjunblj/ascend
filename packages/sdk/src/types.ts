@@ -1,5 +1,6 @@
 import type {
 	AutoFilter,
+	CellFormulaBinding,
 	RangeRef,
 	SheetComment,
 	SheetConditionalFormat,
@@ -175,6 +176,7 @@ export interface CellInfo {
 	readonly ref: string
 	readonly value: CellValue
 	readonly formula: string | null
+	readonly formulaBinding?: CellFormulaBinding
 	readonly row: number
 	readonly col: number
 }
@@ -248,6 +250,7 @@ export interface FormulaInfo {
 	readonly formula: string
 	readonly normalizedFormula: string
 	readonly value: CellValue
+	readonly binding?: CellFormulaBinding
 	readonly refs: readonly string[]
 	readonly functions: readonly string[]
 	readonly volatile: boolean

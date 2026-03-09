@@ -44,7 +44,12 @@ export type {
 } from './sheet.ts'
 export { createSheet, Sheet } from './sheet.ts'
 
-export type { Cell } from './sparse-grid.ts'
+export type {
+	ArrayFormulaInfo,
+	Cell,
+	CellFormulaBinding,
+	SharedFormulaInfo,
+} from './sparse-grid.ts'
 export { SparseGrid } from './sparse-grid.ts'
 export type {
 	AlignmentStyle,

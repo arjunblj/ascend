@@ -292,6 +292,7 @@ describe('readXlsx', () => {
 
 		const cell = result.value.workbook.sheets[0]?.cells.get(0, 0)
 		expect(cell?.formula).toBe('SUM(B1:B2)')
+		expect(cell?.formulaInfo).toEqual({ kind: 'array', ref: 'A1:A2' })
 		expect(result.value.report.features.some((feature) => feature.feature === 'arrayFormula')).toBe(
 			true,
 		)
@@ -322,6 +323,16 @@ describe('readXlsx', () => {
 		expect(
 			result.value.report.features.some((feature) => feature.feature === 'sharedFormula'),
 		).toBe(true)
+		expect(result.value.workbook.sheets[0]?.cells.get(0, 0)?.formulaInfo).toEqual({
+			kind: 'shared',
+			sharedIndex: '0',
+			isMaster: true,
+		})
+		expect(result.value.workbook.sheets[0]?.cells.get(1, 0)?.formulaInfo).toEqual({
+			kind: 'shared',
+			sharedIndex: '0',
+			isMaster: false,
+		})
 		expect(result.value.workbook.sheets[0]?.cells.get(1, 0)?.formula).toBe('B2*2')
 	})
 

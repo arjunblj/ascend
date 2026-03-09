@@ -43,6 +43,7 @@ export class SheetHandle {
 			ref,
 			value: cell.value,
 			formula: cell.formula,
+			...(cell.formulaInfo ? { formulaBinding: cell.formulaInfo } : {}),
 			row: parsed.row,
 			col: parsed.col,
 		}
@@ -102,6 +103,7 @@ export class SheetHandle {
 					ref: toA1({ row: r, col: c }),
 					value: cell.value,
 					formula: cell.formula,
+					...(cell.formulaInfo ? { formulaBinding: cell.formulaInfo } : {}),
 					row: r,
 					col: c,
 				})
@@ -185,6 +187,7 @@ function collectCells(sheet: Sheet, range: RangeRef): CellInfo[] {
 				ref: toA1({ row: r, col: c }),
 				value: cell.value,
 				formula: cell.formula,
+				...(cell.formulaInfo ? { formulaBinding: cell.formulaInfo } : {}),
 				row: r,
 				col: c,
 			})

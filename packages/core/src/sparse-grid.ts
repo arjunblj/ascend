@@ -7,7 +7,7 @@ export interface Cell {
 	readonly value: CellValue
 	readonly formula: string | null
 	readonly styleId: StyleId
-	readonly formulaInfo?: SharedFormulaInfo
+	readonly formulaInfo?: CellFormulaBinding
 }
 
 export interface SharedFormulaInfo {
@@ -16,6 +16,13 @@ export interface SharedFormulaInfo {
 	readonly isMaster: boolean
 	readonly ref?: string
 }
+
+export interface ArrayFormulaInfo {
+	readonly kind: 'array'
+	readonly ref?: string
+}
+
+export type CellFormulaBinding = SharedFormulaInfo | ArrayFormulaInfo
 
 const DEFAULT_STYLE_ID = 0 as StyleId
 
@@ -46,7 +53,7 @@ export class SparseGrid {
 		value: CellValue,
 		formula: string | null,
 		styleId: StyleId,
-		formulaInfo?: SharedFormulaInfo,
+		formulaInfo?: CellFormulaBinding,
 	): void {
 		const key = packKey(row, col)
 		const isNew = !this.data.has(key)
@@ -268,7 +275,7 @@ export class SparseGrid {
 		value: CellValue,
 		formula: string | null,
 		styleId: StyleId,
-		formulaInfo?: SharedFormulaInfo,
+		formulaInfo?: CellFormulaBinding,
 	): StoredCell {
 		const compactValue = compactScalarValue(value)
 		if (compactValue) {
@@ -387,7 +394,7 @@ class FormulaScalarCell {
 		readonly scalarValue: number | string | boolean | null,
 		readonly styleId: StyleId,
 		readonly formula: string,
-		readonly formulaInfo?: SharedFormulaInfo,
+		readonly formulaInfo?: CellFormulaBinding,
 	) {}
 }
 
@@ -396,7 +403,7 @@ class HeapCell {
 		readonly value: CellValue,
 		readonly styleId: StyleId,
 		readonly formula: string | null,
-		readonly formulaInfo?: SharedFormulaInfo,
+		readonly formulaInfo?: CellFormulaBinding,
 	) {}
 }
 

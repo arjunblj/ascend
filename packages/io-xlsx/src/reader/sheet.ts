@@ -415,6 +415,20 @@ function parseFormulaText(
 				info: { kind: 'shared', sharedIndex, isMaster: false },
 			}
 		}
+		if (formulaType === 'array') {
+			const ref = attr(node, 'ref')
+			if (text === undefined || text === null) {
+				return {
+					text: null,
+					info: { kind: 'array', ...(ref ? { ref } : {}) },
+				}
+			}
+			const formula = String(text)
+			return {
+				text: pool ? pool.internString(formula) : formula,
+				info: { kind: 'array', ...(ref ? { ref } : {}) },
+			}
+		}
 		if (text === undefined || text === null) return { text: null }
 		const formula = String(text)
 		return { text: pool ? pool.internString(formula) : formula }

@@ -405,6 +405,13 @@ function formulaCellXml(ref: string, cell: Cell, xfIdx: number): string {
 			: `<f ${sharedAttrs.join(' ')}/>`
 		return `<c r="${ref}"${sAttr}${tAttr}>${formulaXml}${vPart}</c>`
 	}
+	if (cell.formulaInfo?.kind === 'array') {
+		const arrayAttrs = [
+			't="array"',
+			...(cell.formulaInfo.ref ? [`ref="${escapeXml(cell.formulaInfo.ref)}"`] : []),
+		]
+		return `<c r="${ref}"${sAttr}${tAttr}><f ${arrayAttrs.join(' ')}>${escapeXml(cell.formula ?? '')}</f>${vPart}</c>`
+	}
 	return `<c r="${ref}"${sAttr}${tAttr}><f>${escapeXml(cell.formula ?? '')}</f>${vPart}</c>`
 }
 

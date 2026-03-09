@@ -84,6 +84,33 @@ describe('writeXlsx', () => {
 		expect(s?.cells.get(1, 0)?.formula).toBe('SUM(A1,B1)')
 	})
 
+	it('round-trips array formula bindings', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Formulas')
+		sheet.cells.set(0, 0, {
+			value: numberValue(3),
+			formula: 'SUM(B1:B2)',
+			styleId: S0,
+			formulaInfo: { kind: 'array', ref: 'A1:A2' },
+		})
+
+		const written = writeXlsx(wb)
+		expect(written.ok).toBe(true)
+		if (!written.ok) return
+
+		const zip = unzipSync(written.value)
+		const xml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+		expect(xml).toContain('<f t="array" ref="A1:A2">SUM(B1:B2)</f>')
+
+		const reopened = readXlsx(written.value)
+		expect(reopened.ok).toBe(true)
+		if (!reopened.ok) return
+		expect(reopened.value.workbook.sheets[0]?.cells.get(0, 0)?.formulaInfo).toEqual({
+			kind: 'array',
+			ref: 'A1:A2',
+		})
+	})
+
 	it('preserves sharedStrings.xml when string indices are unchanged', () => {
 		const sourceBytes = makeXlsx({
 			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

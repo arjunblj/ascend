@@ -148,6 +148,8 @@ function cloneWorkbook(source: Workbook): Workbook {
 		cloned.drawingRefs = { ...sheet.drawingRefs }
 		cloned.autoFilter = sheet.autoFilter
 		cloned.protection = sheet.protection ? { ...sheet.protection } : null
+		cloned.tabColor = sheet.tabColor ? { ...sheet.tabColor } : null
+		cloned.sheetFormatPr = sheet.sheetFormatPr ? { ...sheet.sheetFormatPr } : null
 		cloned.pageMargins = sheet.pageMargins ? { ...sheet.pageMargins } : null
 		cloned.pageSetup = sheet.pageSetup ? { ...sheet.pageSetup } : null
 		cloned.printOptions = sheet.printOptions ? { ...sheet.printOptions } : null

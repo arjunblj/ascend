@@ -14,7 +14,7 @@ import type { FormulaCellRef } from '@ascend/formulas'
 import { parseFormula, printFormula, rewriteRefs } from '@ascend/formulas'
 import type { CellValue, ExcelError } from '@ascend/schema'
 import { booleanValue, EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
-import { asArray, attr, numAttr, parseXml, type XmlNode } from '../xml.ts'
+import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
 import { parseAutoFilterNode } from './filtering.ts'
 import type { Relationship } from './relationships.ts'
 
@@ -35,6 +35,8 @@ export function parseSheet(name: string, xml: string, ctx: SheetParseContext): S
 
 	if (!ws) return sheet
 
+	parseSheetPr(ws, sheet)
+	parseSheetFormatPr(ws, sheet)
 	parseSheetViews(ws, sheet)
 	parseCols(ws, sheet)
 	parseSheetData(ws, sheet, ctx)
@@ -228,6 +230,41 @@ function parseDrawingRefs(ws: XmlNode, sheet: Sheet): void {
 	}
 }
 
+function parseSheetPr(ws: XmlNode, sheet: Sheet): void {
+	const pr = ws.sheetPr as XmlNode | undefined
+	if (!pr) return
+	const tc = pr.tabColor as XmlNode | undefined
+	if (tc) {
+		const color: Record<string, string | number> = {}
+		const rgb = attr(tc, 'rgb')
+		if (rgb) color.rgb = rgb
+		const theme = numAttr(tc, 'theme')
+		if (theme !== undefined) color.theme = theme
+		const tint = numAttr(tc, 'tint')
+		if (tint !== undefined) color.tint = tint
+		const indexed = numAttr(tc, 'indexed')
+		if (indexed !== undefined) color.indexed = indexed
+		sheet.tabColor = color as import('@ascend/core').SheetTabColor
+	}
+}
+
+function parseSheetFormatPr(ws: XmlNode, sheet: Sheet): void {
+	const fmt = ws.sheetFormatPr as XmlNode | undefined
+	if (!fmt) return
+	const fp: Record<string, number | boolean> = {}
+	const drh = numAttr(fmt, 'defaultRowHeight')
+	if (drh !== undefined) fp.defaultRowHeight = drh
+	const dcw = numAttr(fmt, 'defaultColWidth')
+	if (dcw !== undefined) fp.defaultColWidth = dcw
+	const olr = numAttr(fmt, 'outlineLevelRow')
+	if (olr !== undefined) fp.outlineLevelRow = olr
+	const olc = numAttr(fmt, 'outlineLevelCol')
+	if (olc !== undefined) fp.outlineLevelCol = olc
+	const ch = boolAttr(fmt, 'customHeight')
+	if (ch !== undefined) fp.customHeight = ch
+	sheet.sheetFormatPr = fp as import('@ascend/core').SheetFormatPr
+}
+
 function parseSheetViews(ws: XmlNode, sheet: Sheet): void {
 	const viewsNode = ws.sheetViews as XmlNode | undefined
 	if (!viewsNode) return
@@ -383,9 +420,21 @@ function parseIgnoredErrors(ws: XmlNode, sheet: Sheet): void {
 	const ignoredErrors = ws.ignoredErrors as XmlNode | undefined
 	if (!ignoredErrors) return
 
-	for (const ignoredError of asArray<XmlNode>(ignoredErrors.ignoredError as XmlNode | XmlNode[])) {
-		const sqref = attr(ignoredError, 'sqref')
-		if (sqref) sheet.ignoredErrors.push(sqref)
+	for (const ie of asArray<XmlNode>(ignoredErrors.ignoredError as XmlNode | XmlNode[])) {
+		const sqref = attr(ie, 'sqref')
+		if (!sqref) continue
+		sheet.ignoredErrors.push({
+			sqref,
+			...(boolAttr(ie, 'numberStoredAsText') ? { numberStoredAsText: true } : {}),
+			...(boolAttr(ie, 'formula') ? { formula: true } : {}),
+			...(boolAttr(ie, 'formulaRange') ? { formulaRange: true } : {}),
+			...(boolAttr(ie, 'evalError') ? { evalError: true } : {}),
+			...(boolAttr(ie, 'twoDigitTextYear') ? { twoDigitTextYear: true } : {}),
+			...(boolAttr(ie, 'unlockedFormula') ? { unlockedFormula: true } : {}),
+			...(boolAttr(ie, 'emptyCellReference') ? { emptyCellReference: true } : {}),
+			...(boolAttr(ie, 'listDataValidation') ? { listDataValidation: true } : {}),
+			...(boolAttr(ie, 'calculatedColumn') ? { calculatedColumn: true } : {}),
+		})
 	}
 }
 

@@ -43,6 +43,31 @@ export function buildSheetXml(
 	}
 	const parts: string[] = [XML_HEADER, `<worksheet ${worksheetAttrs.join(' ')}>`]
 
+	if (sheet.tabColor) {
+		parts.push('<sheetPr>')
+		const tcAttrs: string[] = []
+		if (sheet.tabColor.rgb) tcAttrs.push(`rgb="${sheet.tabColor.rgb}"`)
+		if (sheet.tabColor.theme !== undefined) tcAttrs.push(`theme="${sheet.tabColor.theme}"`)
+		if (sheet.tabColor.tint !== undefined) tcAttrs.push(`tint="${sheet.tabColor.tint}"`)
+		if (sheet.tabColor.indexed !== undefined) tcAttrs.push(`indexed="${sheet.tabColor.indexed}"`)
+		parts.push(`<tabColor ${tcAttrs.join(' ')}/>`)
+		parts.push('</sheetPr>')
+	}
+
+	if (sheet.sheetFormatPr) {
+		const fmtAttrs: string[] = []
+		if (sheet.sheetFormatPr.defaultRowHeight !== undefined)
+			fmtAttrs.push(`defaultRowHeight="${sheet.sheetFormatPr.defaultRowHeight}"`)
+		if (sheet.sheetFormatPr.defaultColWidth !== undefined)
+			fmtAttrs.push(`defaultColWidth="${sheet.sheetFormatPr.defaultColWidth}"`)
+		if (sheet.sheetFormatPr.outlineLevelRow !== undefined)
+			fmtAttrs.push(`outlineLevelRow="${sheet.sheetFormatPr.outlineLevelRow}"`)
+		if (sheet.sheetFormatPr.outlineLevelCol !== undefined)
+			fmtAttrs.push(`outlineLevelCol="${sheet.sheetFormatPr.outlineLevelCol}"`)
+		if (sheet.sheetFormatPr.customHeight) fmtAttrs.push('customHeight="1"')
+		if (fmtAttrs.length > 0) parts.push(`<sheetFormatPr ${fmtAttrs.join(' ')}/>`)
+	}
+
 	if (sheet.frozenRows > 0 || sheet.frozenCols > 0) {
 		const paneAttrs: string[] = ['state="frozen"']
 		if (sheet.frozenCols > 0) paneAttrs.push(`xSplit="${sheet.frozenCols}"`)
@@ -230,8 +255,18 @@ export function buildSheetXml(
 
 	if (sheet.ignoredErrors.length > 0) {
 		parts.push('<ignoredErrors>')
-		for (const sqref of sheet.ignoredErrors) {
-			parts.push(`<ignoredError sqref="${escapeXml(sqref)}" numberStoredAsText="1"/>`)
+		for (const ie of sheet.ignoredErrors) {
+			const attrs = [`sqref="${escapeXml(ie.sqref)}"`]
+			if (ie.numberStoredAsText) attrs.push('numberStoredAsText="1"')
+			if (ie.formula) attrs.push('formula="1"')
+			if (ie.formulaRange) attrs.push('formulaRange="1"')
+			if (ie.evalError) attrs.push('evalError="1"')
+			if (ie.twoDigitTextYear) attrs.push('twoDigitTextYear="1"')
+			if (ie.unlockedFormula) attrs.push('unlockedFormula="1"')
+			if (ie.emptyCellReference) attrs.push('emptyCellReference="1"')
+			if (ie.listDataValidation) attrs.push('listDataValidation="1"')
+			if (ie.calculatedColumn) attrs.push('calculatedColumn="1"')
+			parts.push(`<ignoredError ${attrs.join(' ')}/>`)
 		}
 		parts.push('</ignoredErrors>')
 	}

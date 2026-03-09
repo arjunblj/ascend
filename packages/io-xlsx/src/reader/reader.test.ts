@@ -824,7 +824,7 @@ describe('readXlsx', () => {
 			firstHeader: undefined,
 			firstFooter: undefined,
 		})
-		expect(sheet?.ignoredErrors).toEqual(['A1:B2'])
+		expect(sheet?.ignoredErrors).toEqual([{ sqref: 'A1:B2', numberStoredAsText: true }])
 		expect(sheet?.hyperlinks.get('A1')).toEqual({
 			target: 'https://example.com/docs',
 			location: undefined,

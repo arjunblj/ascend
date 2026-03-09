@@ -29,8 +29,10 @@ export type {
 	SheetConditionalFormatRule,
 	SheetDataValidation,
 	SheetDrawingRefs,
+	SheetFormatPr,
 	SheetHeaderFooter,
 	SheetHyperlink,
+	SheetIgnoredError,
 	SheetImageAnchor,
 	SheetImageRef,
 	SheetPageMargins,
@@ -38,6 +40,7 @@ export type {
 	SheetPrintOptions,
 	SheetProtection,
 	SheetState,
+	SheetTabColor,
 } from './sheet.ts'
 export { createSheet, Sheet } from './sheet.ts'
 

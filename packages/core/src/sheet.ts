@@ -167,6 +167,34 @@ export interface SheetConditionalFormat {
 	readonly rules: readonly SheetConditionalFormatRule[]
 }
 
+export interface SheetIgnoredError {
+	readonly sqref: string
+	readonly numberStoredAsText?: boolean
+	readonly formula?: boolean
+	readonly formulaRange?: boolean
+	readonly evalError?: boolean
+	readonly twoDigitTextYear?: boolean
+	readonly unlockedFormula?: boolean
+	readonly emptyCellReference?: boolean
+	readonly listDataValidation?: boolean
+	readonly calculatedColumn?: boolean
+}
+
+export interface SheetTabColor {
+	readonly rgb?: string
+	readonly theme?: number
+	readonly tint?: number
+	readonly indexed?: number
+}
+
+export interface SheetFormatPr {
+	readonly defaultRowHeight?: number
+	readonly defaultColWidth?: number
+	readonly outlineLevelRow?: number
+	readonly outlineLevelCol?: number
+	readonly customHeight?: boolean
+}
+
 export class Sheet {
 	readonly id: SheetId
 	name: string
@@ -181,7 +209,9 @@ export class Sheet {
 	frozenCols: number
 	readonly comments: Map<string, SheetComment>
 	readonly hyperlinks: Map<string, SheetHyperlink>
-	readonly ignoredErrors: string[]
+	readonly ignoredErrors: SheetIgnoredError[]
+	tabColor: SheetTabColor | null
+	sheetFormatPr: SheetFormatPr | null
 	readonly dataValidations: SheetDataValidation[]
 	readonly conditionalFormats: SheetConditionalFormat[]
 	readonly imageRefs: SheetImageRef[]
@@ -209,6 +239,8 @@ export class Sheet {
 		this.comments = new Map()
 		this.hyperlinks = new Map()
 		this.ignoredErrors = []
+		this.tabColor = null
+		this.sheetFormatPr = null
 		this.dataValidations = []
 		this.conditionalFormats = []
 		this.imageRefs = []

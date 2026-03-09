@@ -68,6 +68,11 @@ export interface SheetPreservedXml {
 	readonly relsXml?: string
 }
 
+export interface SheetDrawingRefs {
+	readonly hasDrawing: boolean
+	readonly hasLegacyDrawing: boolean
+}
+
 export interface SheetDataValidation {
 	readonly sqref: string
 	readonly type?: string
@@ -117,6 +122,7 @@ export class Sheet {
 	readonly ignoredErrors: string[]
 	readonly dataValidations: SheetDataValidation[]
 	readonly conditionalFormats: SheetConditionalFormat[]
+	drawingRefs: SheetDrawingRefs
 	autoFilter: string | null
 	pageMargins: SheetPageMargins | null
 	pageSetup: SheetPageSetup | null
@@ -141,6 +147,7 @@ export class Sheet {
 		this.ignoredErrors = []
 		this.dataValidations = []
 		this.conditionalFormats = []
+		this.drawingRefs = { hasDrawing: false, hasLegacyDrawing: false }
 		this.autoFilter = null
 		this.pageMargins = null
 		this.pageSetup = null

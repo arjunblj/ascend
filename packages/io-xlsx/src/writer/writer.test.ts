@@ -207,6 +207,49 @@ describe('writeXlsx', () => {
 		expect(fingerprint.sheetRels[0]?.xml.normalized).toContain('TargetMode="External"')
 	})
 
+	it('preserves drawing and legacyDrawing references when sheet capsules exist', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Visuals')
+		sheet.cells.set(0, 0, { value: stringValue('Chart host'), formula: null, styleId: S0 })
+		sheet.drawingRefs = { hasDrawing: true, hasLegacyDrawing: true }
+
+		const capsules: PreservationCapsule[] = [
+			{
+				partPath: 'xl/drawings/drawing1.xml',
+				contentType: 'application/vnd.openxmlformats-officedocument.drawing+xml',
+				relationships: [],
+				content: new TextEncoder().encode(
+					'<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"/>',
+				),
+				anchor: { kind: 'sheet', sheetName: 'Visuals' },
+				relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing',
+			},
+			{
+				partPath: 'xl/drawings/vmlDrawing1.vml',
+				contentType: 'application/vnd.openxmlformats-officedocument.vmlDrawing',
+				relationships: [],
+				content: new TextEncoder().encode('<xml xmlns:v="urn:schemas-microsoft-com:vml"/>'),
+				anchor: { kind: 'sheet', sheetName: 'Visuals' },
+				relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing',
+			},
+		]
+
+		const { result, bytes } = roundTrip(wb, capsules)
+		expect(result.workbook.sheets[0]?.drawingRefs).toEqual({
+			hasDrawing: true,
+			hasLegacyDrawing: true,
+		})
+		const fingerprint = fingerprintXlsx(bytes)
+		expect(fingerprint.sheets[0]?.xml.tagCounts).toMatchObject({
+			drawing: 1,
+			legacyDrawing: 1,
+		})
+		expect(fingerprint.sheetRels[0]?.xml.tagCounts).toMatchObject({
+			Relationships: 1,
+			Relationship: 2,
+		})
+	})
+
 	it('preserves conditional formatting and data validations on round-trip', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Rules')

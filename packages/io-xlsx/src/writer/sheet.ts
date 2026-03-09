@@ -10,6 +10,7 @@ const NS_R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationship
 
 export interface SheetXmlOptions {
 	readonly tableRelIds?: readonly string[]
+	readonly drawingRelId?: string
 	readonly hyperlinks?: readonly {
 		ref: string
 		relId?: string
@@ -17,6 +18,7 @@ export interface SheetXmlOptions {
 		display?: string
 		tooltip?: string
 	}[]
+	readonly legacyDrawingRelId?: string
 }
 
 export function buildSheetXml(
@@ -27,8 +29,15 @@ export function buildSheetXml(
 ): string {
 	const tableRelIds = options.tableRelIds ?? []
 	const hyperlinks = options.hyperlinks ?? []
+	const drawingRelId = options.drawingRelId
+	const legacyDrawingRelId = options.legacyDrawingRelId
 	const worksheetAttrs = [`xmlns="${NS}"`]
-	if (tableRelIds.length > 0 || hyperlinks.some((link) => link.relId)) {
+	if (
+		tableRelIds.length > 0 ||
+		hyperlinks.some((link) => link.relId) ||
+		drawingRelId ||
+		legacyDrawingRelId
+	) {
 		worksheetAttrs.push(`xmlns:r="${NS_R}"`)
 	}
 	const parts: string[] = [XML_HEADER, `<worksheet ${worksheetAttrs.join(' ')}>`]
@@ -110,6 +119,10 @@ export function buildSheetXml(
 
 	if (sheet.autoFilter) {
 		parts.push(`<autoFilter ref="${escapeXml(sheet.autoFilter)}"/>`)
+	}
+
+	if (drawingRelId) {
+		parts.push(`<drawing r:id="${drawingRelId}"/>`)
 	}
 
 	if (sheet.conditionalFormats.length > 0) {
@@ -227,6 +240,10 @@ export function buildSheetXml(
 			parts.push(`<tablePart r:id="${relId}"/>`)
 		}
 		parts.push('</tableParts>')
+	}
+
+	if (legacyDrawingRelId) {
+		parts.push(`<legacyDrawing r:id="${legacyDrawingRelId}"/>`)
 	}
 
 	parts.push('</worksheet>')

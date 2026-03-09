@@ -134,6 +134,7 @@ function cloneWorkbook(source: Workbook): Workbook {
 				})),
 			})),
 		)
+		cloned.drawingRefs = { ...sheet.drawingRefs }
 		cloned.autoFilter = sheet.autoFilter
 		cloned.pageMargins = sheet.pageMargins ? { ...sheet.pageMargins } : null
 		cloned.pageSetup = sheet.pageSetup ? { ...sheet.pageSetup } : null

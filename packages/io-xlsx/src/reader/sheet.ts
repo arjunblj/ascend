@@ -37,6 +37,7 @@ export function parseSheet(name: string, xml: string, ctx: SheetParseContext): S
 	parseCols(ws, sheet)
 	parseSheetData(ws, sheet, ctx)
 	parseMergeCells(ws, sheet)
+	parseDrawingRefs(ws, sheet)
 	parseAutoFilter(ws, sheet)
 	parsePageMargins(ws, sheet)
 	parsePageSetup(ws, sheet)
@@ -212,6 +213,15 @@ function parseMergeCells(ws: XmlNode, sheet: Sheet): void {
 		} catch {
 			// skip invalid merge refs
 		}
+	}
+}
+
+function parseDrawingRefs(ws: XmlNode, sheet: Sheet): void {
+	const drawing = ws.drawing as XmlNode | undefined
+	const legacyDrawing = ws.legacyDrawing as XmlNode | undefined
+	sheet.drawingRefs = {
+		hasDrawing: drawing !== undefined,
+		hasLegacyDrawing: legacyDrawing !== undefined,
 	}
 }
 

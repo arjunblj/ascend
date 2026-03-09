@@ -18,6 +18,7 @@ export type {
 	SheetConditionalFormat,
 	SheetConditionalFormatRule,
 	SheetDataValidation,
+	SheetDrawingRefs,
 	SheetHeaderFooter,
 	SheetHyperlink,
 	SheetPageMargins,

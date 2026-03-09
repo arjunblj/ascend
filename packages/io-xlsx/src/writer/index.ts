@@ -4,10 +4,12 @@ import { ascendError, err, ok } from '@ascend/schema'
 import type { PreservationCapsule } from '../preserve.ts'
 import {
 	getRelsPath,
+	REL_DRAWING,
 	REL_SHARED_STRINGS,
 	REL_STYLES,
 	REL_TABLE,
 	REL_THEME,
+	REL_VML_DRAWING,
 	REL_WORKSHEET,
 } from '../reader/relationships.ts'
 import { buildContentTypesXml } from './content-types.ts'
@@ -160,6 +162,8 @@ export function writeXlsx(
 			const preservedSheetXml = sheet.preservedXml
 			const sheetRels: RelEntry[] = []
 			let sheetRelId = 1
+			let drawingRelId: string | undefined
+			let legacyDrawingRelId: string | undefined
 			const tableRelIds: string[] = []
 			const tableCapsules = sheetCapsules.filter((capsule) => capsule.relType === REL_TABLE)
 			const hyperlinkEntries: Array<{
@@ -178,6 +182,8 @@ export function writeXlsx(
 					type: capsule.relType,
 					target: computeRelativePath('xl/worksheets/', capsule.partPath),
 				})
+				if (capsule.relType === REL_DRAWING && !drawingRelId) drawingRelId = relId
+				if (capsule.relType === REL_VML_DRAWING && !legacyDrawingRelId) legacyDrawingRelId = relId
 				sheetRelId++
 			}
 			for (const [ref, hyperlink] of sheet.hyperlinks) {
@@ -237,7 +243,14 @@ export function writeXlsx(
 				encode(
 					preserveSheetXml
 						? preservedSheetXml.xml
-						: buildSheetXml(sheet, ssTable, xfMap, { tableRelIds, hyperlinks: hyperlinkEntries }),
+						: buildSheetXml(sheet, ssTable, xfMap, {
+								tableRelIds,
+								...(sheet.drawingRefs.hasDrawing && drawingRelId ? { drawingRelId } : {}),
+								hyperlinks: hyperlinkEntries,
+								...(sheet.drawingRefs.hasLegacyDrawing && legacyDrawingRelId
+									? { legacyDrawingRelId }
+									: {}),
+							}),
 				),
 			)
 			if (preserveSheetXml && preservedSheetXml?.relsXml) {

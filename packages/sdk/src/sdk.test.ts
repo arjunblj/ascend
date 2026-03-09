@@ -621,6 +621,19 @@ describe('AscendWorkbook', () => {
 		expect(cell?.value).toEqual({ kind: 'string', value: 'before' })
 	})
 
+	test('preview formatting changes do not grow the source style registry', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 0.25 }] }])
+		const internal = wb as unknown as { wb: { styles: { size: number } } }
+		const beforeSize = internal.wb.styles.size
+
+		const preview = wb.preview([
+			{ op: 'setNumberFormat', sheet: 'Sheet1', range: 'A1:A1', format: '0.0%' },
+		])
+		expect(preview.errors).toHaveLength(0)
+		expect(internal.wb.styles.size).toBe(beforeSize)
+	})
+
 	test('check returns clean for valid workbook', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }])

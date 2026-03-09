@@ -159,10 +159,7 @@ export class Workbook {
 				structuredClone(definedName.scope),
 			)
 		}
-		for (let styleId = 0 as import('./ids.ts').StyleId; styleId < this.styles.size; styleId++) {
-			const style = this.styles.get(styleId)
-			if (style) clone.styles.register(structuredClone(style))
-		}
+		clone.styles.copyFrom(this.styles)
 		clone.differentialStyles.push(...this.differentialStyles.map((style) => structuredClone(style)))
 		clone.pivotCaches.push(...this.pivotCaches.map((entry) => structuredClone(entry)))
 		clone.pivotTables.push(...this.pivotTables.map((entry) => structuredClone(entry)))

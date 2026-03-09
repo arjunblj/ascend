@@ -117,6 +117,7 @@ async function main(): Promise<void> {
 		'open-values',
 		'open-full',
 		'preview-numeric-edit',
+		'preview-format-edit',
 		'no-op-save-bytes',
 		'numeric-edit-save-bytes',
 		'format-edit-save-bytes',
@@ -153,6 +154,7 @@ async function runIsolatedStep(
 		| 'open-values'
 		| 'open-full'
 		| 'preview-numeric-edit'
+		| 'preview-format-edit'
 		| 'no-op-save-bytes'
 		| 'numeric-edit-save-bytes'
 		| 'format-edit-save-bytes',
@@ -219,6 +221,16 @@ async function runStep(target: string, step: string): Promise<StepResult> {
 			)
 			return { timing }
 		}
+		case 'preview-format-edit': {
+			const wb = await AscendWorkbook.open(target)
+			const probe = pickNumericProbe(wb)
+			const { timing } = await time('preview-format-edit', async () =>
+				wb.preview([
+					{ op: 'setNumberFormat', sheet: probe.sheet, range: probe.ref, format: '0.0%' },
+				]),
+			)
+			return { timing }
+		}
 		case 'no-op-save-bytes': {
 			const wb = await AscendWorkbook.open(target)
 			const { result, timing } = await time('no-op-save-bytes', async () => wb.toBytes())
@@ -266,6 +278,7 @@ async function runRepeatedStep(
 		| 'open-values'
 		| 'open-full'
 		| 'preview-numeric-edit'
+		| 'preview-format-edit'
 		| 'no-op-save-bytes'
 		| 'numeric-edit-save-bytes'
 		| 'format-edit-save-bytes',

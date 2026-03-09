@@ -1,14 +1,16 @@
 import type { StyleId } from './ids.ts'
 import type { CellStyle } from './style.ts'
 
-export const DEFAULT_STYLE: CellStyle = {}
+export const DEFAULT_STYLE: CellStyle = Object.freeze({}) as CellStyle
+const DEFAULT_STYLE_HASH = JSON.stringify(DEFAULT_STYLE)
 
 export class StyleRegistry {
-	private readonly styles: CellStyle[] = [DEFAULT_STYLE]
-	private readonly hashes = new Map<string, StyleId>()
+	private styles: CellStyle[] = [DEFAULT_STYLE]
+	private hashes = new Map<string, StyleId>()
+	private shared = false
 
 	constructor() {
-		this.hashes.set(JSON.stringify(DEFAULT_STYLE), 0 as StyleId)
+		this.hashes.set(DEFAULT_STYLE_HASH, 0 as StyleId)
 	}
 
 	register(style: CellStyle): StyleId {
@@ -16,8 +18,9 @@ export class StyleRegistry {
 		const existing = this.hashes.get(hash)
 		if (existing !== undefined) return existing
 
+		this.ensureWritable()
 		const id = this.styles.length as StyleId
-		this.styles.push(style)
+		this.styles.push(freezeDeep(structuredClone(style)))
 		this.hashes.set(hash, id)
 		return id
 	}
@@ -32,15 +35,30 @@ export class StyleRegistry {
 
 	clone(): StyleRegistry {
 		const clone = new StyleRegistry()
-		clone.styles.splice(
-			0,
-			clone.styles.length,
-			...this.styles.map((style) => structuredClone(style)),
-		)
-		clone.hashes.clear()
-		for (const [hash, id] of this.hashes) {
-			clone.hashes.set(hash, id)
-		}
+		clone.copyFrom(this)
 		return clone
 	}
+
+	copyFrom(other: StyleRegistry): void {
+		this.styles = other.styles
+		this.hashes = other.hashes
+		this.shared = true
+		other.shared = true
+	}
+
+	private ensureWritable(): void {
+		if (!this.shared) return
+		this.styles = [...this.styles]
+		this.hashes = new Map(this.hashes)
+		this.shared = false
+	}
+}
+
+function freezeDeep<T>(value: T): T {
+	if (typeof value !== 'object' || value === null || Object.isFrozen(value)) return value
+	Object.freeze(value)
+	for (const child of Object.values(value as Record<string, unknown>)) {
+		freezeDeep(child)
+	}
+	return value
 }

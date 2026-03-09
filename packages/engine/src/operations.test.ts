@@ -280,6 +280,35 @@ describe('applyOperation', () => {
 		expect(styleA1?.numberFormat).toBe('0.00%')
 		expect(styleA2?.numberFormat).toBe('0.00%')
 	})
+
+	test('sortRange sorts a block by header name and moves metadata with rows', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Score'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('B'), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: stringValue('A'), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.hyperlinks.set('A2', { target: 'https://example.com/b' })
+		sheet.comments.set('B3', { text: 'lowest' })
+
+		const result = applyOperation(wb, {
+			op: 'sortRange',
+			sheet: 'Sheet1',
+			range: 'A1:B3',
+			by: [{ column: 'Score' }],
+		})
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(sheet.cells.get(1, 0)?.value).toEqual(stringValue('A'))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(2, 0)?.value).toEqual(stringValue('B'))
+		expect(sheet.cells.get(2, 1)?.value).toEqual(numberValue(2))
+		expect(sheet.hyperlinks.get('A3')).toEqual({ target: 'https://example.com/b' })
+		expect(sheet.comments.get('B2')).toEqual({ text: 'lowest' })
+	})
 })
 
 describe('applyOperations', () => {

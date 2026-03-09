@@ -1,8 +1,14 @@
 import type { Cell, CellStyle, RangeRef, Sheet, StyleId, Workbook } from '@ascend/core'
-import { parseA1, parseRange, toA1 } from '@ascend/core'
+import { columnToIndex, parseA1, parseRange, toA1 } from '@ascend/core'
 import type { FormulaCellRef, FormulaNode } from '@ascend/formulas'
-import { dateToSerial, parseFormula, printFormula, rewriteRefs } from '@ascend/formulas'
-import type { CellValue, InputValue, Operation, Result } from '@ascend/schema'
+import {
+	compareValues,
+	dateToSerial,
+	parseFormula,
+	printFormula,
+	rewriteRefs,
+} from '@ascend/formulas'
+import type { CellValue, InputValue, Operation, Result, SortSpec } from '@ascend/schema'
 import { ascendError, booleanValue, EMPTY, err, numberValue, ok, stringValue } from '@ascend/schema'
 
 export interface PatchResult {
@@ -655,6 +661,33 @@ function handleSetRowHeight(
 	return ok(patch([], [op.sheet]))
 }
 
+function handleSortRange(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'sortRange' }>,
+): Result<PatchResult> {
+	const result = getSheet(workbook, op.sheet)
+	if (!result.ok) return result
+	const sheet = result.value
+	const rangeResult = safeParseRange(op.range)
+	if (!rangeResult.ok) return rangeResult
+	const range = rangeResult.value
+
+	if (sheet.merges.some((merge) => rangesOverlap(merge, range))) {
+		return err(ascendError('VALIDATION_ERROR', 'sortRange does not support merged cells yet'))
+	}
+
+	const resolvedColumns = resolveSortColumns(sheet, range, op.by)
+	if (!resolvedColumns.ok) return resolvedColumns
+	const { columns, headerRow } = resolvedColumns.value
+	const dataStartRow = headerRow ? range.start.row + 1 : range.start.row
+	if (dataStartRow > range.end.row) return ok(patch([], [op.sheet], false))
+
+	const rows = captureSortedRows(sheet, range, dataStartRow)
+	rows.sort((left, right) => compareSortRows(left, right, columns, range.start.col))
+	rewriteSortedRows(sheet, range, dataStartRow, rows)
+	return ok(patch([], [op.sheet], true))
+}
+
 function handleSetHyperlink(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'setHyperlink' }>,
@@ -695,6 +728,197 @@ function handleSetNumberFormat(
 	}
 
 	return ok(patch(affected, [op.sheet]))
+}
+
+function resolveSortColumns(
+	sheet: Sheet,
+	range: RangeRef,
+	specs: readonly SortSpec[],
+): Result<{ columns: readonly { col: number; descending: boolean }[]; headerRow: boolean }> {
+	if (specs.length === 0) {
+		return err(ascendError('VALIDATION_ERROR', 'sortRange requires at least one sort key'))
+	}
+
+	const headerMap = new Map<string, number>()
+	for (let col = range.start.col; col <= range.end.col; col++) {
+		const value = sheet.cells.get(range.start.row, col)?.value
+		if (value?.kind === 'string' && value.value.trim() !== '') {
+			headerMap.set(value.value.trim().toLowerCase(), col)
+		}
+	}
+
+	let headerRow = false
+	const columns: Array<{ col: number; descending: boolean }> = []
+	for (const spec of specs) {
+		if (typeof spec.column === 'number') {
+			const col = range.start.col + Math.trunc(spec.column) - 1
+			if (col < range.start.col || col > range.end.col) {
+				return err(
+					ascendError(
+						'VALIDATION_ERROR',
+						`Sort column ${spec.column} is outside ${opRange(range)}`,
+					),
+				)
+			}
+			columns.push({ col, descending: spec.descending ?? false })
+			continue
+		}
+
+		const trimmed = spec.column.trim()
+		const matched = headerMap.get(trimmed.toLowerCase())
+		if (matched !== undefined) {
+			headerRow = true
+			columns.push({ col: matched, descending: spec.descending ?? false })
+			continue
+		}
+
+		if (/^[A-Za-z]{1,3}$/.test(trimmed)) {
+			const col = columnToIndex(trimmed.toUpperCase())
+			if (col < range.start.col || col > range.end.col) {
+				return err(
+					ascendError('VALIDATION_ERROR', `Sort column ${trimmed} is outside ${opRange(range)}`),
+				)
+			}
+			columns.push({ col, descending: spec.descending ?? false })
+			continue
+		}
+
+		return err(ascendError('VALIDATION_ERROR', `Unknown sort column "${spec.column}"`))
+	}
+
+	return ok({ columns, headerRow })
+}
+
+function captureSortedRows(sheet: Sheet, range: RangeRef, startRow: number): SortRow[] {
+	const rows: SortRow[] = []
+	for (let row = startRow; row <= range.end.row; row++) {
+		const cells: Array<{ colOffset: number; cell: Cell }> = []
+		for (let col = range.start.col; col <= range.end.col; col++) {
+			const cell = sheet.cells.get(row, col)
+			if (cell) cells.push({ colOffset: col - range.start.col, cell })
+		}
+
+		const comments: Array<{
+			colOffset: number
+			ref: string
+			comment: Sheet['comments'] extends Map<string, infer T> ? T : never
+		}> = []
+		for (const [ref, comment] of sheet.comments) {
+			const pos = parseA1(ref)
+			if (pos.row === row && pos.col >= range.start.col && pos.col <= range.end.col) {
+				comments.push({ colOffset: pos.col - range.start.col, ref, comment })
+			}
+		}
+
+		const hyperlinks: Array<{
+			colOffset: number
+			ref: string
+			hyperlink: Sheet['hyperlinks'] extends Map<string, infer T> ? T : never
+		}> = []
+		for (const [ref, hyperlink] of sheet.hyperlinks) {
+			const pos = parseA1(ref)
+			if (pos.row === row && pos.col >= range.start.col && pos.col <= range.end.col) {
+				hyperlinks.push({ colOffset: pos.col - range.start.col, ref, hyperlink })
+			}
+		}
+
+		rows.push({
+			originalIndex: row - startRow,
+			cells,
+			comments,
+			hyperlinks,
+			rowHeight: sheet.rowHeights.get(row),
+		})
+	}
+	return rows
+}
+
+interface SortRow {
+	readonly originalIndex: number
+	readonly cells: Array<{ colOffset: number; cell: Cell }>
+	readonly comments: Array<{
+		colOffset: number
+		ref: string
+		comment: Sheet['comments'] extends Map<string, infer T> ? T : never
+	}>
+	readonly hyperlinks: Array<{
+		colOffset: number
+		ref: string
+		hyperlink: Sheet['hyperlinks'] extends Map<string, infer T> ? T : never
+	}>
+	readonly rowHeight: number | undefined
+}
+
+function compareSortRows(
+	left: SortRow,
+	right: SortRow,
+	columns: readonly { col: number; descending: boolean }[],
+	startCol: number,
+): number {
+	for (const column of columns) {
+		const leftValue = cellValueAt(left, column.col - startCol)
+		const rightValue = cellValueAt(right, column.col - startCol)
+		const result = compareValues(leftValue, rightValue)
+		if (result !== 0) return column.descending ? -result : result
+	}
+	return left.originalIndex - right.originalIndex
+}
+
+function cellValueAt(row: SortRow, colOffset: number): CellValue {
+	const entry = row.cells.find((cell) => cell.colOffset === colOffset)
+	return entry?.cell.value ?? EMPTY
+}
+
+function rewriteSortedRows(
+	sheet: Sheet,
+	range: RangeRef,
+	startRow: number,
+	rows: readonly SortRow[],
+): void {
+	for (let row = startRow; row <= range.end.row; row++) {
+		for (let col = range.start.col; col <= range.end.col; col++) {
+			sheet.cells.delete(row, col)
+			const ref = toA1({ row, col })
+			sheet.comments.delete(ref)
+			sheet.hyperlinks.delete(ref)
+		}
+		sheet.rowHeights.delete(row)
+	}
+
+	rows.forEach((rowData, index) => {
+		const targetRow = startRow + index
+		for (const entry of rowData.cells) {
+			sheet.cells.set(targetRow, range.start.col + entry.colOffset, entry.cell)
+		}
+		for (const entry of rowData.comments) {
+			sheet.comments.set(
+				toA1({ row: targetRow, col: range.start.col + entry.colOffset }),
+				entry.comment,
+			)
+		}
+		for (const entry of rowData.hyperlinks) {
+			sheet.hyperlinks.set(
+				toA1({ row: targetRow, col: range.start.col + entry.colOffset }),
+				entry.hyperlink,
+			)
+		}
+		if (rowData.rowHeight !== undefined) {
+			sheet.rowHeights.set(targetRow, rowData.rowHeight)
+		}
+	})
+}
+
+function rangesOverlap(a: RangeRef, b: RangeRef): boolean {
+	return !(
+		a.end.row < b.start.row ||
+		a.start.row > b.end.row ||
+		a.end.col < b.start.col ||
+		a.start.col > b.end.col
+	)
+}
+
+function opRange(range: RangeRef): string {
+	return `${toA1(range.start)}:${toA1(range.end)}`
 }
 
 // --- Public API ---
@@ -741,6 +965,8 @@ export function applyOperation(workbook: Workbook, op: Operation): Result<PatchR
 			return handleSetColWidth(workbook, op)
 		case 'setRowHeight':
 			return handleSetRowHeight(workbook, op)
+		case 'sortRange':
+			return handleSortRange(workbook, op)
 		case 'setHyperlink':
 			return handleSetHyperlink(workbook, op)
 		case 'setNumberFormat':

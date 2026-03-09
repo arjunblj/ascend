@@ -18,6 +18,7 @@ export type {
 	UnaryOp,
 } from './ast.ts'
 export {
+	compareValues,
 	dateToSerial,
 	type EvalArg,
 	type FnArg,

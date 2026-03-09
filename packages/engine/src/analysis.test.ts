@@ -32,4 +32,26 @@ describe('analyzeWorkbook', () => {
 		expect(analysis.formulas.size).toBe(1)
 		expect([...analysis.formulas.values()][0]?.row).toBe(0)
 	})
+
+	test('stores rectangular range dependencies as spans', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: 0 })
+		s.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: 0 })
+		s.cells.set(0, 1, { value: EMPTY, formula: 'SUM(A1:A2)', styleId: 0 })
+
+		const analysis = analyzeWorkbook(wb)
+		const formula = [...analysis.formulas.values()][0]
+		expect(formula?.deps).toEqual([])
+		expect(formula?.rangeDeps).toEqual([
+			{
+				sheetIndex: 0,
+				startRow: 0,
+				startCol: 0,
+				endRow: 1,
+				endCol: 0,
+			},
+		])
+		expect(analysis.dependencyGraph.getPrecedents('0:0:1')).toEqual(['0:0:0', '0:1:0'])
+	})
 })

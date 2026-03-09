@@ -1,5 +1,13 @@
 export type CellKey = string
 
+export interface RangeDependency {
+	readonly sheetIndex: number
+	readonly startRow: number
+	readonly startCol: number
+	readonly endRow: number
+	readonly endCol: number
+}
+
 export function cellKey(sheetIndex: number, row: number, col: number): CellKey {
 	return `${sheetIndex}:${row}:${col}`
 }
@@ -11,17 +19,27 @@ export function parseCellKey(key: CellKey): readonly [number, number, number] {
 
 interface FormulaEntry {
 	readonly dependsOn: ReadonlySet<CellKey>
+	readonly rangeDeps: readonly RangeDependency[]
 	readonly volatile: boolean
 }
 
 export class DependencyGraph {
 	private readonly formulas = new Map<CellKey, FormulaEntry>()
 	private readonly dependents = new Map<CellKey, Set<CellKey>>()
+	private readonly rangeDependents = new Map<
+		number,
+		Array<{ range: RangeDependency; formulaKey: CellKey }>
+	>()
 
-	addFormula(key: CellKey, dependsOn: CellKey[], isVolatile: boolean): void {
+	addFormula(
+		key: CellKey,
+		dependsOn: CellKey[],
+		isVolatile: boolean,
+		rangeDeps: readonly RangeDependency[] = [],
+	): void {
 		this.removeFormula(key)
 		const depSet = new Set(dependsOn)
-		this.formulas.set(key, { dependsOn: depSet, volatile: isVolatile })
+		this.formulas.set(key, { dependsOn: depSet, rangeDeps, volatile: isVolatile })
 		for (const dep of depSet) {
 			let set = this.dependents.get(dep)
 			if (!set) {
@@ -29,6 +47,11 @@ export class DependencyGraph {
 				this.dependents.set(dep, set)
 			}
 			set.add(key)
+		}
+		for (const range of rangeDeps) {
+			const entries = this.rangeDependents.get(range.sheetIndex)
+			if (entries) entries.push({ range, formulaKey: key })
+			else this.rangeDependents.set(range.sheetIndex, [{ range, formulaKey: key }])
 		}
 	}
 
@@ -42,17 +65,38 @@ export class DependencyGraph {
 				if (set.size === 0) this.dependents.delete(dep)
 			}
 		}
+		for (const [sheetIndex, entries] of this.rangeDependents) {
+			const filtered = entries.filter((entry) => entry.formulaKey !== key)
+			if (filtered.length === 0) this.rangeDependents.delete(sheetIndex)
+			else if (filtered.length !== entries.length) this.rangeDependents.set(sheetIndex, filtered)
+		}
 		this.formulas.delete(key)
 	}
 
 	getPrecedents(key: CellKey): CellKey[] {
 		const entry = this.formulas.get(key)
-		return entry ? [...entry.dependsOn] : []
+		if (!entry) return []
+		const precedents = [...entry.dependsOn]
+		for (const range of entry.rangeDeps) {
+			for (let row = range.startRow; row <= range.endRow; row++) {
+				for (let col = range.startCol; col <= range.endCol; col++) {
+					precedents.push(cellKey(range.sheetIndex, row, col))
+				}
+			}
+		}
+		return precedents
 	}
 
 	getDependents(key: CellKey): CellKey[] {
-		const set = this.dependents.get(key)
-		return set ? [...set] : []
+		const direct = this.dependents.get(key)
+		const result = new Set(direct ? [...direct] : [])
+		const [sheetIndex, row, col] = parseCellKey(key)
+		for (const entry of this.rangeDependents.get(sheetIndex) ?? []) {
+			if (containsCell(entry.range, row, col)) {
+				result.add(entry.formulaKey)
+			}
+		}
+		return [...result]
 	}
 
 	getVolatiles(): CellKey[] {
@@ -95,6 +139,14 @@ export class DependencyGraph {
 				for (const dep of entry.dependsOn) {
 					if (dirtySet.has(dep)) visit(dep)
 				}
+				for (const range of entry.rangeDeps) {
+					for (let row = range.startRow; row <= range.endRow; row++) {
+						for (let col = range.startCol; col <= range.endCol; col++) {
+							const dep = cellKey(range.sheetIndex, row, col)
+							if (dirtySet.has(dep)) visit(dep)
+						}
+					}
+				}
 			}
 			onStack.delete(key)
 			order.push(key)
@@ -121,16 +173,13 @@ export class DependencyGraph {
 			stack.push(v)
 			onStack.add(v)
 
-			const deps = this.dependents.get(v)
-			if (deps) {
-				for (const w of deps) {
-					if (!this.formulas.has(w)) continue
-					if (!indices.has(w)) {
-						strongconnect(w)
-						lowlinks.set(v, Math.min(lowlinks.get(v) ?? 0, lowlinks.get(w) ?? 0))
-					} else if (onStack.has(w)) {
-						lowlinks.set(v, Math.min(lowlinks.get(v) ?? 0, indices.get(w) ?? 0))
-					}
+			for (const w of this.getDependents(v)) {
+				if (!this.formulas.has(w)) continue
+				if (!indices.has(w)) {
+					strongconnect(w)
+					lowlinks.set(v, Math.min(lowlinks.get(v) ?? 0, lowlinks.get(w) ?? 0))
+				} else if (onStack.has(w)) {
+					lowlinks.set(v, Math.min(lowlinks.get(v) ?? 0, indices.get(w) ?? 0))
 				}
 			}
 
@@ -172,5 +221,12 @@ export class DependencyGraph {
 	clear(): void {
 		this.formulas.clear()
 		this.dependents.clear()
+		this.rangeDependents.clear()
 	}
+}
+
+function containsCell(range: RangeDependency, row: number, col: number): boolean {
+	return (
+		row >= range.startRow && row <= range.endRow && col >= range.startCol && col <= range.endCol
+	)
 }

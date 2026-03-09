@@ -1,7 +1,7 @@
 import type { RangeRef, Workbook } from '@ascend/core'
 import type { FormulaNode, FormulaRef } from '@ascend/formulas'
 import { extractRefs, functionRegistry, parseFormula } from '@ascend/formulas'
-import { type CellKey, cellKey, DependencyGraph } from './dep-graph.ts'
+import { type CellKey, cellKey, DependencyGraph, type RangeDependency } from './dep-graph.ts'
 import { resolveStructuredRefRange } from './structured-refs.ts'
 
 export interface AnalyzedFormula {
@@ -14,6 +14,7 @@ export interface AnalyzedFormula {
 	readonly ast?: FormulaNode
 	readonly refs: readonly FormulaRef[]
 	readonly deps: readonly CellKey[]
+	readonly rangeDeps: readonly RangeDependency[]
 	readonly volatile: boolean
 	readonly parseError?: string
 }
@@ -74,6 +75,7 @@ export function analyzeWorkbook(
 					formula: cell.formula,
 					refs: [],
 					deps: [],
+					rangeDeps: [],
 					volatile: false,
 					parseError: parsed.error.message,
 				})
@@ -83,31 +85,36 @@ export function analyzeWorkbook(
 			const ast = parsed.value
 			const refs = extractRefsWithNames(ast, workbook, sheetNameIndex, sheetIndex, [])
 			const deps: CellKey[] = []
+			const rangeDeps: RangeDependency[] = []
 			for (const ref of refs) {
 				const refSheetIndex = resolveSheetIndex(sheetNameIndex, ref.sheet, sheetIndex)
 				if (refSheetIndex < 0) continue
 				if (ref.kind === 'cell') {
 					deps.push(cellKey(refSheetIndex, ref.ref.row, ref.ref.col))
 				} else {
-					for (let r = ref.start.row; r <= ref.end.row; r++) {
-						for (let c = ref.start.col; c <= ref.end.col; c++) {
-							deps.push(cellKey(refSheetIndex, r, c))
-						}
-					}
+					rangeDeps.push({
+						sheetIndex: refSheetIndex,
+						startRow: ref.start.row,
+						startCol: ref.start.col,
+						endRow: ref.end.row,
+						endCol: ref.end.col,
+					})
 				}
 			}
 			for (const structuredRef of collectStructuredRefs(ast)) {
 				const resolved = resolveStructuredRefRange(workbook, structuredRef, sheetIndex, row, col)
 				if (!resolved) continue
-				for (let r = resolved.startRow; r <= resolved.endRow; r++) {
-					for (let c = resolved.startCol; c <= resolved.endCol; c++) {
-						deps.push(cellKey(resolved.sheetIndex, r, c))
-					}
-				}
+				rangeDeps.push({
+					sheetIndex: resolved.sheetIndex,
+					startRow: resolved.startRow,
+					startCol: resolved.startCol,
+					endRow: resolved.endRow,
+					endCol: resolved.endCol,
+				})
 			}
 
 			const volatile = hasVolatileFunction(ast)
-			dependencyGraph.addFormula(key, deps, volatile)
+			dependencyGraph.addFormula(key, deps, volatile, rangeDeps)
 			formulas.set(key, {
 				key,
 				sheetIndex,
@@ -118,6 +125,7 @@ export function analyzeWorkbook(
 				ast,
 				refs,
 				deps,
+				rangeDeps,
 				volatile,
 			})
 		}

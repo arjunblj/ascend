@@ -29,6 +29,22 @@ describe('DependencyGraph', () => {
 		expect(g.getDependents(a)).toEqual([c])
 	})
 
+	test('range dependencies track dependents without eager expansion', () => {
+		const g = new DependencyGraph()
+		const formula = cellKey(0, 0, 2)
+		g.addFormula(formula, [], false, [
+			{
+				sheetIndex: 0,
+				startRow: 0,
+				startCol: 0,
+				endRow: 2,
+				endCol: 0,
+			},
+		])
+		expect(g.getDependents(cellKey(0, 1, 0))).toEqual([formula])
+		expect(g.getPrecedents(formula)).toEqual(['0:0:0', '0:1:0', '0:2:0'])
+	})
+
 	test('removeFormula cleans up dependents', () => {
 		const g = new DependencyGraph()
 		const a = cellKey(0, 0, 0)

@@ -169,7 +169,9 @@ function parseSheetDataXml(xml: string, sheet: Sheet, ctx: SheetParseContext): v
 			const pos = parseCellRef(ref)
 			if (!pos) continue
 			const cell = parseCellValue(cellNode, ctx, pos.row, pos.col, sharedFormulaMasters)
-			if (cell) sheet.cells.set(pos.row, pos.col, cell)
+			if (cell) {
+				sheet.cells.setResolved(pos.row, pos.col, cell.value, cell.formula, cell.styleId)
+			}
 		}
 	}
 }
@@ -199,7 +201,7 @@ function parseSheetData(ws: XmlNode, sheet: Sheet, ctx: SheetParseContext): void
 
 			const cell = parseCellValue(c, ctx, pos.row, pos.col, sharedFormulaMasters)
 			if (cell) {
-				sheet.cells.set(pos.row, pos.col, cell)
+				sheet.cells.setResolved(pos.row, pos.col, cell.value, cell.formula, cell.styleId)
 			}
 		}
 	}

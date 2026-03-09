@@ -24,7 +24,17 @@ export class SparseGrid {
 	}
 
 	set(row: number, col: number, cell: Cell): void {
-		this.data.set(packKey(row, col), compactCell(cell))
+		this.setResolved(row, col, cell.value, cell.formula, cell.styleId)
+	}
+
+	setResolved(
+		row: number,
+		col: number,
+		value: CellValue,
+		formula: string | null,
+		styleId: StyleId,
+	): void {
+		this.data.set(packKey(row, col), compactResolvedCell(value, formula, styleId))
 		if (row < this._minRow) this._minRow = row
 		if (row > this._maxRow) this._maxRow = row
 		if (col < this._minCol) this._minCol = col
@@ -265,9 +275,17 @@ function unpackKey(key: number): readonly [number, number] {
 }
 
 function compactCell(cell: Cell): StoredCell {
-	const compactValue = compactScalarValue(cell.value)
+	return compactResolvedCell(cell.value, cell.formula, cell.styleId)
+}
+
+function compactResolvedCell(
+	value: CellValue,
+	formula: string | null,
+	styleId: StyleId,
+): StoredCell {
+	const compactValue = compactScalarValue(value)
 	if (compactValue) {
-		if (cell.formula === null && cell.styleId === DEFAULT_STYLE_ID) {
+		if (formula === null && styleId === DEFAULT_STYLE_ID) {
 			switch (compactValue.kind) {
 				case 'number':
 				case 'string':
@@ -283,30 +301,21 @@ function compactCell(cell: Cell): StoredCell {
 					)
 			}
 		}
-		if (cell.formula === null) {
+		if (formula === null) {
 			switch (compactValue.kind) {
 				case 'number':
-					return new StyledNumberCell(compactValue.scalarValue as number, cell.styleId)
+					return new StyledNumberCell(compactValue.scalarValue as number, styleId)
 				case 'string':
-					return new StyledStringCell(compactValue.scalarValue as string, cell.styleId)
+					return new StyledStringCell(compactValue.scalarValue as string, styleId)
 				case 'boolean':
-					return new StyledBooleanCell(compactValue.scalarValue as boolean, cell.styleId)
+					return new StyledBooleanCell(compactValue.scalarValue as boolean, styleId)
 				default:
-					return new StyledSpecialScalarCell(
-						compactValue.kind,
-						compactValue.scalarValue,
-						cell.styleId,
-					)
+					return new StyledSpecialScalarCell(compactValue.kind, compactValue.scalarValue, styleId)
 			}
 		}
-		return new FormulaScalarCell(
-			compactValue.kind,
-			compactValue.scalarValue,
-			cell.styleId,
-			cell.formula,
-		)
+		return new FormulaScalarCell(compactValue.kind, compactValue.scalarValue, styleId, formula)
 	}
-	return new HeapCell(cell.value, cell.styleId, cell.formula)
+	return new HeapCell(value, styleId, formula)
 }
 
 function cloneCell(cell: StoredCell): StoredCell {

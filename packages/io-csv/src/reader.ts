@@ -36,7 +36,7 @@ export function readCsv(content: string, dialect?: Partial<CsvDialect>): Result<
 			const raw = row[c] ?? ''
 			const value = detectType(raw)
 			if (value.kind !== 'empty') {
-				sheet.cells.set(r, c, { value, formula: null, styleId: 0 as never })
+				sheet.cells.setResolved(r, c, value, null, 0 as never)
 			}
 		}
 	}

@@ -16,6 +16,8 @@ export class SparseGrid {
 	private readonly styledStringCache = new Map<string, StyledStringCell>()
 	private readonly styledBooleanCache = new Map<string, StyledBooleanCell>()
 	private readonly styledSmallNumberCache = new Map<string, StyledNumberCell>()
+	private _isKeyOrderSorted = true
+	private _lastInsertedKey = Number.NEGATIVE_INFINITY
 	private _minRow = Number.POSITIVE_INFINITY
 	private _maxRow = Number.NEGATIVE_INFINITY
 	private _minCol = Number.POSITIVE_INFINITY
@@ -37,7 +39,13 @@ export class SparseGrid {
 		formula: string | null,
 		styleId: StyleId,
 	): void {
-		this.data.set(packKey(row, col), this.compactResolvedCell(value, formula, styleId))
+		const key = packKey(row, col)
+		const isNew = !this.data.has(key)
+		this.data.set(key, this.compactResolvedCell(value, formula, styleId))
+		if (isNew) {
+			if (key < this._lastInsertedKey) this._isKeyOrderSorted = false
+			else this._lastInsertedKey = key
+		}
 		if (row < this._minRow) this._minRow = row
 		if (row > this._maxRow) this._maxRow = row
 		if (col < this._minCol) this._minCol = col
@@ -106,6 +114,25 @@ export class SparseGrid {
 	}
 
 	*iterateRows(): Generator<readonly [number, readonly (readonly [number, Cell])[]]> {
+		if (this._isKeyOrderSorted) {
+			let currentRow = Number.NaN
+			let rowCells: Array<readonly [number, Cell]> = []
+			for (const [key, stored] of this.data) {
+				const [row, col] = unpackKey(key)
+				const cell = materializeCell(stored)
+				if (!cell) continue
+				if (!Number.isNaN(currentRow) && row !== currentRow) {
+					yield [currentRow, rowCells] as const
+					rowCells = []
+				}
+				currentRow = row
+				rowCells.push([col, cell] as const)
+			}
+			if (!Number.isNaN(currentRow)) {
+				yield [currentRow, rowCells] as const
+			}
+			return
+		}
 		const rows = new Map<number, Array<readonly [number, Cell]>>()
 		for (const [key, stored] of this.data) {
 			const [row, col] = unpackKey(key)
@@ -131,6 +158,8 @@ export class SparseGrid {
 		this.styledStringCache.clear()
 		this.styledBooleanCache.clear()
 		this.styledSmallNumberCache.clear()
+		this._isKeyOrderSorted = true
+		this._lastInsertedKey = Number.NEGATIVE_INFINITY
 		this._minRow = Number.POSITIVE_INFINITY
 		this._maxRow = Number.NEGATIVE_INFINITY
 		this._minCol = Number.POSITIVE_INFINITY
@@ -172,6 +201,8 @@ export class SparseGrid {
 		clone._minCol = this._minCol
 		clone._maxCol = this._maxCol
 		clone._boundsDirty = this._boundsDirty
+		clone._isKeyOrderSorted = this._isKeyOrderSorted
+		clone._lastInsertedKey = this._lastInsertedKey
 		return clone
 	}
 
@@ -206,6 +237,9 @@ export class SparseGrid {
 		for (const [key, cell] of nextData) {
 			this.data.set(key, cell)
 		}
+		let lastInsertedKey = Number.NEGATIVE_INFINITY
+		for (const key of nextData.keys()) lastInsertedKey = key
+		this._lastInsertedKey = lastInsertedKey
 		this._boundsDirty = true
 	}
 

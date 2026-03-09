@@ -105,14 +105,23 @@ export function buildSheetXml(
 	}
 
 	parts.push('<sheetData>')
-	const populatedRows = new Map(sheet.cells.iterateRows())
-	const rowIndexes = new Set<number>([...populatedRows.keys(), ...sheet.rowHeights.keys()])
-	const sortedRows = [...rowIndexes].sort((a, b) => a - b)
-
-	for (const row of sortedRows) {
-		const cells = populatedRows.get(row) ?? []
+	const rowHeights = [...sheet.rowHeights.entries()].sort((a, b) => a[0] - b[0])
+	const rowIterator = sheet.cells.iterateRows()
+	let nextRow = rowIterator.next()
+	let rowHeightIndex = 0
+	while (!nextRow.done || rowHeightIndex < rowHeights.length) {
+		const populatedRow = nextRow.done ? undefined : nextRow.value
+		const heightEntry = rowHeights[rowHeightIndex]
+		const heightRow = heightEntry?.[0]
+		const row =
+			populatedRow === undefined
+				? (heightRow as number)
+				: heightRow === undefined
+					? populatedRow[0]
+					: Math.min(populatedRow[0], heightRow)
+		const cells = populatedRow && populatedRow[0] === row ? populatedRow[1] : []
 		const rowAttrs = [`r="${row + 1}"`]
-		const rowHeight = sheet.rowHeights.get(row)
+		const rowHeight = heightEntry && heightEntry[0] === row ? heightEntry[1] : undefined
 		if (rowHeight !== undefined) {
 			rowAttrs.push(`ht="${rowHeight}"`)
 			rowAttrs.push('customHeight="1"')
@@ -123,6 +132,8 @@ export function buildSheetXml(
 			parts.push(cellXml(ref, cell, ssTable, xfMap))
 		}
 		parts.push('</row>')
+		if (populatedRow && populatedRow[0] === row) nextRow = rowIterator.next()
+		if (heightEntry && heightEntry[0] === row) rowHeightIndex++
 	}
 
 	parts.push('</sheetData>')

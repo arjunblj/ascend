@@ -51,6 +51,12 @@ describe('ascend cli', () => {
 		expect(stderr).toContain('Unknown command')
 	})
 
+	test('unknown command suggests the closest match', async () => {
+		const { exitCode, stderr } = await run('inspcet')
+		expect(exitCode).toBe(1)
+		expect(stderr).toContain('Did you mean "inspect"?')
+	})
+
 	test('create makes a workbook file', async () => {
 		const { stdout, exitCode } = await run('create', TEST_FILE)
 		expect(exitCode).toBe(0)
@@ -81,6 +87,13 @@ describe('ascend cli', () => {
 		expect(parsed.load.mode).toBe('metadata-only')
 		expect(parsed.sheets).toBeArray()
 		expect(parsed.sheets[0].name).toBe('Sheet1')
+	})
+
+	test('unknown inspect flag suggests the closest supported flag', async () => {
+		const { exitCode, stderr } = await run('inspect', TEST_FILE, '--shet', 'Sheet1')
+		expect(exitCode).toBe(1)
+		expect(stderr).toContain('Unknown flag for "inspect": --shet')
+		expect(stderr).toContain('Did you mean "--sheet"?')
 	})
 
 	test('inspect --mode full loads full workbook detail', async () => {
@@ -169,6 +182,19 @@ describe('ascend cli', () => {
 		expect(exitCode).toBe(0)
 		expect(stdout).toContain('Normalized')
 		expect(stdout).toContain('SUM')
+	})
+
+	test('formula suggests the closest subcommand', async () => {
+		const { exitCode, stderr } = await run('formula', 'sho', TEST_FILE, 'Sheet1!A1')
+		expect(exitCode).toBe(1)
+		expect(stderr).toContain('Unknown formula subcommand: sho')
+		expect(stderr).toContain('Did you mean "show"?')
+	})
+
+	test('doctor rejects unsupported flags', async () => {
+		const { exitCode, stderr } = await run('doctor', '--verbose')
+		expect(exitCode).toBe(1)
+		expect(stderr).toContain('Unknown flag for "doctor": --verbose')
 	})
 
 	test('formula set and fill edit formulas from the CLI', async () => {

@@ -24,9 +24,13 @@ export async function formulaCommand(args: string[], flags: Map<string, string>)
 			return setFormula(args.slice(1), flags)
 		case 'fill':
 			return fillFormula(args.slice(1), flags)
-		default:
+		default: {
+			console.error(`Unknown formula subcommand: ${action ?? '(missing)'}`)
+			const suggestion = suggestClosest(action ?? '', ['show', 'set', 'fill'])
+			if (suggestion) console.error(`Did you mean "${suggestion}"?`)
 			console.error('Usage: ascend formula <show|set|fill> ...')
 			return 1
+		}
 	}
 }
 
@@ -116,4 +120,36 @@ async function fillFormula(args: string[], flags: Map<string, string>): Promise<
 		console.log(`Filled formula across ${rangeRef}`)
 	}
 	return 0
+}
+
+function suggestClosest(input: string, candidates: readonly string[]): string | undefined {
+	let best: { candidate: string; distance: number } | undefined
+	for (const candidate of candidates) {
+		const distance = levenshtein(input, candidate)
+		if (!best || distance < best.distance) best = { candidate, distance }
+	}
+	if (!best) return undefined
+	return best.distance <= Math.max(2, Math.floor(best.candidate.length / 3))
+		? best.candidate
+		: undefined
+}
+
+function levenshtein(a: string, b: string): number {
+	if (a === b) return 0
+	if (a.length === 0) return b.length
+	if (b.length === 0) return a.length
+	const prev = Array.from({ length: b.length + 1 }, (_, i) => i)
+	const curr = new Array<number>(b.length + 1).fill(0)
+	for (let i = 0; i < a.length; i++) {
+		curr[0] = i + 1
+		for (let j = 0; j < b.length; j++) {
+			const left = curr[j] ?? 0
+			const up = prev[j + 1] ?? 0
+			const diag = prev[j] ?? 0
+			const cost = (a[i] ?? '') === (b[j] ?? '') ? 0 : 1
+			curr[j + 1] = Math.min(left + 1, up + 1, diag + cost)
+		}
+		for (let j = 0; j < prev.length; j++) prev[j] = curr[j] ?? 0
+	}
+	return prev[b.length] ?? Math.max(a.length, b.length)
 }

@@ -1,4 +1,5 @@
 import type { CellValue } from '@ascend/schema'
+import { booleanValue, EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
 import type { StyleId } from './ids.ts'
 import type { RangeRef } from './refs.ts'
 
@@ -193,20 +194,61 @@ export class SparseGrid {
 	}
 }
 
-type StoredCell = CellValue | StyledCell | FormulaCell
+type StoredCell =
+	| CellValue
+	| string
+	| number
+	| boolean
+	| StyledNumberCell
+	| StyledStringCell
+	| StyledBooleanCell
+	| StyledSpecialScalarCell
+	| FormulaScalarCell
+	| HeapCell
 
-class StyledCell {
+class StyledNumberCell {
 	constructor(
-		readonly value: CellValue,
+		readonly value: number,
 		readonly styleId: StyleId,
 	) {}
 }
 
-class FormulaCell implements Cell {
+class StyledStringCell {
+	constructor(
+		readonly value: string,
+		readonly styleId: StyleId,
+	) {}
+}
+
+class StyledBooleanCell {
+	constructor(
+		readonly value: boolean,
+		readonly styleId: StyleId,
+	) {}
+}
+
+class StyledSpecialScalarCell {
+	constructor(
+		readonly valueKind: 'empty' | 'number' | 'string' | 'boolean' | 'error' | 'date',
+		readonly scalarValue: number | string | boolean | null,
+		readonly styleId: StyleId,
+	) {}
+}
+
+class FormulaScalarCell {
+	constructor(
+		readonly valueKind: 'empty' | 'number' | 'string' | 'boolean' | 'error' | 'date',
+		readonly scalarValue: number | string | boolean | null,
+		readonly styleId: StyleId,
+		readonly formula: string,
+	) {}
+}
+
+class HeapCell {
 	constructor(
 		readonly value: CellValue,
-		readonly formula: string,
 		readonly styleId: StyleId,
+		readonly formula: string | null,
 	) {}
 }
 
@@ -223,36 +265,158 @@ function unpackKey(key: number): readonly [number, number] {
 }
 
 function compactCell(cell: Cell): StoredCell {
-	if (cell.formula === null && cell.styleId === DEFAULT_STYLE_ID) {
-		return cell.value
+	const compactValue = compactScalarValue(cell.value)
+	if (compactValue) {
+		if (cell.formula === null && cell.styleId === DEFAULT_STYLE_ID) {
+			switch (compactValue.kind) {
+				case 'number':
+				case 'string':
+				case 'boolean':
+					return compactValue.scalarValue as string | number | boolean
+				case 'empty':
+					return EMPTY
+				default:
+					return new StyledSpecialScalarCell(
+						compactValue.kind,
+						compactValue.scalarValue,
+						DEFAULT_STYLE_ID,
+					)
+			}
+		}
+		if (cell.formula === null) {
+			switch (compactValue.kind) {
+				case 'number':
+					return new StyledNumberCell(compactValue.scalarValue as number, cell.styleId)
+				case 'string':
+					return new StyledStringCell(compactValue.scalarValue as string, cell.styleId)
+				case 'boolean':
+					return new StyledBooleanCell(compactValue.scalarValue as boolean, cell.styleId)
+				default:
+					return new StyledSpecialScalarCell(
+						compactValue.kind,
+						compactValue.scalarValue,
+						cell.styleId,
+					)
+			}
+		}
+		return new FormulaScalarCell(
+			compactValue.kind,
+			compactValue.scalarValue,
+			cell.styleId,
+			cell.formula,
+		)
 	}
-	if (cell.formula === null) {
-		return new StyledCell(cell.value, cell.styleId)
-	}
-	return new FormulaCell(cell.value, cell.formula, cell.styleId)
+	return new HeapCell(cell.value, cell.styleId, cell.formula)
 }
 
 function cloneCell(cell: StoredCell): StoredCell {
-	if (cell instanceof FormulaCell) {
-		return new FormulaCell(structuredClone(cell.value), cell.formula, cell.styleId)
+	if (cell instanceof StyledNumberCell) return new StyledNumberCell(cell.value, cell.styleId)
+	if (cell instanceof StyledStringCell) return new StyledStringCell(cell.value, cell.styleId)
+	if (cell instanceof StyledBooleanCell) return new StyledBooleanCell(cell.value, cell.styleId)
+	if (cell instanceof StyledSpecialScalarCell) {
+		return new StyledSpecialScalarCell(cell.valueKind, cell.scalarValue, cell.styleId)
 	}
-	if (cell instanceof StyledCell) {
-		return new StyledCell(structuredClone(cell.value), cell.styleId)
+	if (cell instanceof FormulaScalarCell) {
+		return new FormulaScalarCell(cell.valueKind, cell.scalarValue, cell.styleId, cell.formula)
 	}
+	if (cell instanceof HeapCell) {
+		return new HeapCell(structuredClone(cell.value), cell.styleId, cell.formula)
+	}
+	if (typeof cell === 'string' || typeof cell === 'number' || typeof cell === 'boolean') return cell
 	return structuredClone(cell)
 }
 
 function materializeCell(cell: StoredCell | undefined): Cell | undefined {
-	if (!cell) return undefined
-	if (cell instanceof FormulaCell) return cell
-	if (cell instanceof StyledCell) {
-		return { value: cell.value, formula: null, styleId: cell.styleId }
+	if (cell === undefined) return undefined
+	if (cell instanceof StyledNumberCell) {
+		return { value: numberValue(cell.value), formula: null, styleId: cell.styleId }
+	}
+	if (cell instanceof StyledStringCell) {
+		return { value: stringValue(cell.value), formula: null, styleId: cell.styleId }
+	}
+	if (cell instanceof StyledBooleanCell) {
+		return { value: booleanValue(cell.value), formula: null, styleId: cell.styleId }
+	}
+	if (cell instanceof StyledSpecialScalarCell) {
+		return {
+			value: materializeScalarValue(cell.valueKind, cell.scalarValue),
+			formula: null,
+			styleId: cell.styleId,
+		}
+	}
+	if (cell instanceof FormulaScalarCell) {
+		return {
+			value: materializeScalarValue(cell.valueKind, cell.scalarValue),
+			formula: cell.formula,
+			styleId: cell.styleId,
+		}
+	}
+	if (cell instanceof HeapCell) {
+		return { value: cell.value, formula: cell.formula, styleId: cell.styleId }
+	}
+	if (typeof cell === 'string')
+		return { value: stringValue(cell), formula: null, styleId: DEFAULT_STYLE_ID }
+	if (typeof cell === 'number')
+		return { value: numberValue(cell), formula: null, styleId: DEFAULT_STYLE_ID }
+	if (typeof cell === 'boolean') {
+		return { value: booleanValue(cell), formula: null, styleId: DEFAULT_STYLE_ID }
 	}
 	return { value: cell, formula: null, styleId: DEFAULT_STYLE_ID }
 }
 
 function readStoredValue(cell: StoredCell | undefined): CellValue | undefined {
-	if (!cell) return undefined
-	if (cell instanceof FormulaCell || cell instanceof StyledCell) return cell.value
+	if (cell === undefined) return undefined
+	if (cell instanceof StyledNumberCell) return numberValue(cell.value)
+	if (cell instanceof StyledStringCell) return stringValue(cell.value)
+	if (cell instanceof StyledBooleanCell) return booleanValue(cell.value)
+	if (cell instanceof StyledSpecialScalarCell || cell instanceof FormulaScalarCell) {
+		return materializeScalarValue(cell.valueKind, cell.scalarValue)
+	}
+	if (cell instanceof HeapCell) return cell.value
+	if (typeof cell === 'string') return stringValue(cell)
+	if (typeof cell === 'number') return numberValue(cell)
+	if (typeof cell === 'boolean') return booleanValue(cell)
 	return cell
+}
+
+function compactScalarValue(value: CellValue): {
+	kind: 'empty' | 'number' | 'string' | 'boolean' | 'error' | 'date'
+	scalarValue: number | string | boolean | null
+} | null {
+	switch (value.kind) {
+		case 'empty':
+			return { kind: 'empty', scalarValue: null }
+		case 'number':
+			return { kind: 'number', scalarValue: value.value }
+		case 'string':
+			return { kind: 'string', scalarValue: value.value }
+		case 'boolean':
+			return { kind: 'boolean', scalarValue: value.value }
+		case 'error':
+			return { kind: 'error', scalarValue: value.value }
+		case 'date':
+			return { kind: 'date', scalarValue: value.serial }
+		default:
+			return null
+	}
+}
+
+function materializeScalarValue(
+	kind: 'empty' | 'number' | 'string' | 'boolean' | 'error' | 'date',
+	scalarValue: number | string | boolean | null,
+): CellValue {
+	switch (kind) {
+		case 'empty':
+			return EMPTY
+		case 'number':
+			return numberValue(scalarValue as number)
+		case 'string':
+			return stringValue(scalarValue as string)
+		case 'boolean':
+			return booleanValue(Boolean(scalarValue))
+		case 'error':
+			return errorValue(scalarValue as never)
+		case 'date':
+			return { kind: 'date', serial: scalarValue as number }
+	}
 }

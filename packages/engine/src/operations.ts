@@ -1,4 +1,4 @@
-import type { Cell, RangeRef, Sheet, StyleId, Workbook } from '@ascend/core'
+import type { Cell, CellStyle, RangeRef, Sheet, StyleId, Workbook } from '@ascend/core'
 import { parseA1, parseRange, toA1 } from '@ascend/core'
 import type { FormulaCellRef, FormulaNode } from '@ascend/formulas'
 import { dateToSerial, parseFormula, printFormula, rewriteRefs } from '@ascend/formulas'
@@ -655,6 +655,48 @@ function handleSetRowHeight(
 	return ok(patch([], [op.sheet]))
 }
 
+function handleSetHyperlink(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setHyperlink' }>,
+): Result<PatchResult> {
+	const result = getSheet(workbook, op.sheet)
+	if (!result.ok) return result
+	result.value.hyperlinks.set(op.ref, {
+		target: op.url,
+		...(op.display ? { display: op.display } : {}),
+	})
+	return ok(patch([op.ref], [op.sheet]))
+}
+
+function handleSetNumberFormat(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setNumberFormat' }>,
+): Result<PatchResult> {
+	const result = getSheet(workbook, op.sheet)
+	if (!result.ok) return result
+	const sheet = result.value
+	const rangeResult = safeParseRange(op.range)
+	if (!rangeResult.ok) return rangeResult
+
+	const range = rangeResult.value
+	const affected: string[] = []
+	for (let row = range.start.row; row <= range.end.row; row++) {
+		for (let col = range.start.col; col <= range.end.col; col++) {
+			const existing = sheet.cells.get(row, col)
+			const currentStyle = workbook.styles.get(existing?.styleId ?? DEFAULT_SID) ?? {}
+			const style: CellStyle = {
+				...currentStyle,
+				numberFormat: op.format,
+			}
+			const styleId = workbook.styles.register(style)
+			sheet.cells.set(row, col, cell(existing?.value ?? EMPTY, existing?.formula ?? null, styleId))
+			affected.push(toA1({ row, col }))
+		}
+	}
+
+	return ok(patch(affected, [op.sheet]))
+}
+
 // --- Public API ---
 
 export function applyOperation(workbook: Workbook, op: Operation): Result<PatchResult> {
@@ -699,6 +741,10 @@ export function applyOperation(workbook: Workbook, op: Operation): Result<PatchR
 			return handleSetColWidth(workbook, op)
 		case 'setRowHeight':
 			return handleSetRowHeight(workbook, op)
+		case 'setHyperlink':
+			return handleSetHyperlink(workbook, op)
+		case 'setNumberFormat':
+			return handleSetNumberFormat(workbook, op)
 		default:
 			return err(ascendError('VALIDATION_ERROR', `Unsupported operation: ${op.op}`))
 	}

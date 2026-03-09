@@ -25,6 +25,8 @@ const REL_CORE_PROPS =
 	'http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties'
 const REL_EXT_PROPS =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties'
+const REL_HYPERLINK =
+	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink'
 
 export interface WriteXlsxOptions {
 	readonly dirtySheetNames?: readonly string[]
@@ -148,6 +150,13 @@ export function writeXlsx(
 			const sheetRels: RelEntry[] = []
 			let sheetRelId = 1
 			const tableRelIds: string[] = []
+			const hyperlinkEntries: Array<{
+				ref: string
+				relId?: string
+				location?: string
+				display?: string
+				tooltip?: string
+			}> = []
 			for (const capsule of sheetCapsules) {
 				if (!capsule.relType) continue
 				const relId = `rId${sheetRelId}`
@@ -164,6 +173,32 @@ export function writeXlsx(
 				}
 				sheetRelId++
 			}
+			for (const [ref, hyperlink] of sheet.hyperlinks) {
+				if (hyperlink.target) {
+					const relId = `rId${sheetRelId}`
+					sheetRels.push({
+						id: relId,
+						type: REL_HYPERLINK,
+						target: hyperlink.target,
+						targetMode: 'External',
+					})
+					hyperlinkEntries.push({
+						ref,
+						relId,
+						...(hyperlink.location ? { location: hyperlink.location } : {}),
+						...(hyperlink.display ? { display: hyperlink.display } : {}),
+						...(hyperlink.tooltip ? { tooltip: hyperlink.tooltip } : {}),
+					})
+					sheetRelId++
+					continue
+				}
+				hyperlinkEntries.push({
+					ref,
+					...(hyperlink.location ? { location: hyperlink.location } : {}),
+					...(hyperlink.display ? { display: hyperlink.display } : {}),
+					...(hyperlink.tooltip ? { tooltip: hyperlink.tooltip } : {}),
+				})
+			}
 			const preserveSheetXml =
 				!options.sharedStringsDirty &&
 				!(options.dirtySheetNames ?? []).includes(sheet.name) &&
@@ -173,7 +208,7 @@ export function writeXlsx(
 				encode(
 					preserveSheetXml
 						? preservedSheetXml.xml
-						: buildSheetXml(sheet, ssTable, xfMap, { tableRelIds }),
+						: buildSheetXml(sheet, ssTable, xfMap, { tableRelIds, hyperlinks: hyperlinkEntries }),
 				),
 			)
 			if (preserveSheetXml && preservedSheetXml?.relsXml) {

@@ -242,6 +242,44 @@ describe('applyOperation', () => {
 		if (!sheet) return
 		expect(wb.definedNames.resolve('Budget', sheet.id)?.scope.kind).toBe('sheet')
 	})
+
+	test('setHyperlink stores hyperlink metadata on the sheet', () => {
+		const wb = setup()
+		const result = applyOperation(wb, {
+			op: 'setHyperlink',
+			sheet: 'Sheet1',
+			ref: 'B1',
+			url: 'https://example.com/report',
+			display: 'Report',
+		})
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(wb.getSheet('Sheet1')?.hyperlinks.get('B1')).toEqual({
+			target: 'https://example.com/report',
+			display: 'Report',
+		})
+	})
+
+	test('setNumberFormat applies styles across a range', () => {
+		const wb = setup()
+		const result = applyOperation(wb, {
+			op: 'setNumberFormat',
+			sheet: 'Sheet1',
+			range: 'A1:A2',
+			format: '0.00%',
+		})
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		const sheet = wb.getSheet('Sheet1')
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+		const styleA1 = wb.styles.get(sheet.cells.get(0, 0)?.styleId ?? sid)
+		const styleA2 = wb.styles.get(sheet.cells.get(1, 0)?.styleId ?? sid)
+		expect(styleA1?.numberFormat).toBe('0.00%')
+		expect(styleA2?.numberFormat).toBe('0.00%')
+	})
 })
 
 describe('applyOperations', () => {

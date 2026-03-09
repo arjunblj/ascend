@@ -180,6 +180,33 @@ describe('writeXlsx', () => {
 		})
 	})
 
+	it('preserves hyperlinks on round-trip', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Links')
+		sheet.cells.set(0, 0, { value: stringValue('Docs'), formula: null, styleId: S0 })
+		sheet.hyperlinks.set('A1', {
+			target: 'https://example.com/docs',
+			display: 'Docs',
+			tooltip: 'Open docs',
+		})
+
+		const { result, bytes } = roundTrip(wb)
+		expect(result.workbook.sheets[0]?.hyperlinks.get('A1')).toEqual({
+			target: 'https://example.com/docs',
+			display: 'Docs',
+			tooltip: 'Open docs',
+		})
+		const fingerprint = fingerprintXlsx(bytes)
+		expect(fingerprint.sheets[0]?.xml.tagCounts).toMatchObject({
+			hyperlinks: 1,
+			hyperlink: 1,
+		})
+		expect(fingerprint.sheetRels[0]?.xml.normalized).toContain(
+			'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink',
+		)
+		expect(fingerprint.sheetRels[0]?.xml.normalized).toContain('TargetMode="External"')
+	})
+
 	it('preserves defined names on round-trip', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Data')

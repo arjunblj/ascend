@@ -10,6 +10,13 @@ const NS_R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationship
 
 export interface SheetXmlOptions {
 	readonly tableRelIds?: readonly string[]
+	readonly hyperlinks?: readonly {
+		ref: string
+		relId?: string
+		location?: string
+		display?: string
+		tooltip?: string
+	}[]
 }
 
 export function buildSheetXml(
@@ -19,8 +26,11 @@ export function buildSheetXml(
 	options: SheetXmlOptions = {},
 ): string {
 	const tableRelIds = options.tableRelIds ?? []
+	const hyperlinks = options.hyperlinks ?? []
 	const worksheetAttrs = [`xmlns="${NS}"`]
-	if (tableRelIds.length > 0) worksheetAttrs.push(`xmlns:r="${NS_R}"`)
+	if (tableRelIds.length > 0 || hyperlinks.some((link) => link.relId)) {
+		worksheetAttrs.push(`xmlns:r="${NS_R}"`)
+	}
 	const parts: string[] = [XML_HEADER, `<worksheet ${worksheetAttrs.join(' ')}>`]
 
 	if (sheet.frozenRows > 0 || sheet.frozenCols > 0) {
@@ -100,6 +110,19 @@ export function buildSheetXml(
 
 	if (sheet.autoFilter) {
 		parts.push(`<autoFilter ref="${escapeXml(sheet.autoFilter)}"/>`)
+	}
+
+	if (hyperlinks.length > 0) {
+		parts.push('<hyperlinks>')
+		for (const hyperlink of hyperlinks) {
+			const attrs = [`ref="${escapeXml(hyperlink.ref)}"`]
+			if (hyperlink.relId) attrs.push(`r:id="${hyperlink.relId}"`)
+			if (hyperlink.location) attrs.push(`location="${escapeXml(hyperlink.location)}"`)
+			if (hyperlink.display) attrs.push(`display="${escapeXml(hyperlink.display)}"`)
+			if (hyperlink.tooltip) attrs.push(`tooltip="${escapeXml(hyperlink.tooltip)}"`)
+			parts.push(`<hyperlink ${attrs.join(' ')}/>`)
+		}
+		parts.push('</hyperlinks>')
 	}
 
 	if (sheet.pageMargins) {

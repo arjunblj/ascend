@@ -5,13 +5,16 @@ export interface RelEntry {
 	readonly id: string
 	readonly type: string
 	readonly target: string
+	readonly targetMode?: string
 }
 
 export function buildRelsXml(entries: readonly RelEntry[]): string {
 	if (entries.length === 0) return ''
 	const parts: string[] = [XML_HEADER, `<Relationships xmlns="${NS}">`]
 	for (const e of entries) {
-		parts.push(`<Relationship Id="${e.id}" Type="${e.type}" Target="${e.target}"/>`)
+		const attrs = [`Id="${e.id}"`, `Type="${e.type}"`, `Target="${e.target}"`]
+		if (e.targetMode) attrs.push(`TargetMode="${e.targetMode}"`)
+		parts.push(`<Relationship ${attrs.join(' ')}/>`)
 	}
 	parts.push('</Relationships>')
 	return parts.join('')

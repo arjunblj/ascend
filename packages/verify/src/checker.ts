@@ -1,6 +1,12 @@
 import type { Workbook } from '@ascend/core'
 import { indexToColumn, toA1 } from '@ascend/core'
-import { analyzeWorkbook, parseCellKey, type WorkbookAnalysis } from '@ascend/engine'
+import {
+	analyzeWorkbookDependencies,
+	analyzeWorkbookFormulas,
+	parseCellKey,
+	type WorkbookDependencyAnalysis,
+	type WorkbookFormulaAnalysis,
+} from '@ascend/engine'
 import { isError } from '@ascend/schema'
 
 export interface CheckResult {
@@ -15,7 +21,7 @@ export interface CheckIssue {
 	readonly refs?: readonly string[]
 }
 
-function checkBrokenRefs(_wb: Workbook, analysis: WorkbookAnalysis): CheckIssue[] {
+function checkBrokenRefs(_wb: Workbook, analysis: WorkbookFormulaAnalysis): CheckIssue[] {
 	const issues: CheckIssue[] = []
 
 	for (const formula of analysis.formulas.values()) {
@@ -66,7 +72,7 @@ function checkBrokenRefs(_wb: Workbook, analysis: WorkbookAnalysis): CheckIssue[
 	return issues
 }
 
-function checkCircularRefs(wb: Workbook, analysis: WorkbookAnalysis): CheckIssue[] {
+function checkCircularRefs(wb: Workbook, analysis: WorkbookDependencyAnalysis): CheckIssue[] {
 	const cycles = analysis.dependencyGraph.detectCycles()
 	return cycles.map((cycle) => {
 		const refs = cycle.map((key) => {
@@ -84,7 +90,7 @@ function checkCircularRefs(wb: Workbook, analysis: WorkbookAnalysis): CheckIssue
 	})
 }
 
-function checkFormulaErrors(wb: Workbook, analysis: WorkbookAnalysis): CheckIssue[] {
+function checkFormulaErrors(wb: Workbook, analysis: WorkbookFormulaAnalysis): CheckIssue[] {
 	const issues: CheckIssue[] = []
 
 	for (const formula of analysis.formulas.values()) {
@@ -149,12 +155,19 @@ function checkTableIntegrity(wb: Workbook): CheckIssue[] {
 	return issues
 }
 
-export function check(workbook: Workbook, analysis?: WorkbookAnalysis): CheckResult {
-	const compiled = analysis ?? analyzeWorkbook(workbook)
+export function check(
+	workbook: Workbook,
+	analysis?: {
+		readonly formulas?: WorkbookFormulaAnalysis
+		readonly dependencies?: WorkbookDependencyAnalysis
+	},
+): CheckResult {
+	const formulas = analysis?.formulas ?? analyzeWorkbookFormulas(workbook)
+	const dependencies = analysis?.dependencies ?? analyzeWorkbookDependencies(workbook)
 	const issues = [
-		...checkBrokenRefs(workbook, compiled),
-		...checkCircularRefs(workbook, compiled),
-		...checkFormulaErrors(workbook, compiled),
+		...checkBrokenRefs(workbook, formulas),
+		...checkCircularRefs(workbook, dependencies),
+		...checkFormulaErrors(workbook, formulas),
 		...checkOrphanedNames(workbook),
 		...checkTableIntegrity(workbook),
 	]

@@ -2,12 +2,15 @@ export {
 	type AnalyzedFormula,
 	type AnalyzeWorkbookOptions,
 	analyzeWorkbook,
+	analyzeWorkbookDependencies,
 	analyzeWorkbookFormulas,
 	createSheetNameIndex,
 	type IndexedFormula,
 	invalidateWorkbookAnalysis,
+	resolveFormulaDependencies,
 	resolveSheetIndex,
 	type WorkbookAnalysis,
+	type WorkbookDependencyAnalysis,
 	type WorkbookFormulaAnalysis,
 } from './analysis.ts'
 export { type RecalcResult, recalculate } from './calc.ts'

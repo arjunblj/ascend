@@ -253,7 +253,10 @@ export class AscendWorkbook extends WorkbookReadView {
 	// --- Verification ---
 
 	check(): CheckResult {
-		const result = verifyCheck(this.wb, this.analysis())
+		const result = verifyCheck(this.wb, {
+			formulas: this.formulaAnalysis(),
+			dependencies: this.dependencyAnalysis(),
+		})
 		const issues: CheckIssue[] = result.issues.map((issue) =>
 			issue.refs?.[0]
 				? {
@@ -270,7 +273,7 @@ export class AscendWorkbook extends WorkbookReadView {
 	}
 
 	lint(): LintResult {
-		const result = verifyLint(this.wb, this.analysis())
+		const result = verifyLint(this.wb, this.formulaAnalysis())
 		const warnings: LintWarning[] = result.violations.map((violation) => ({
 			rule: violation.rule,
 			message: violation.message,

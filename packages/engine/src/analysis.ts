@@ -1,6 +1,6 @@
 import type { RangeRef, Workbook } from '@ascend/core'
-import type { FormulaNode, FormulaRef } from '@ascend/formulas'
-import { extractRefs, functionRegistry, parseFormula } from '@ascend/formulas'
+import type { FormulaCellRef, FormulaNode, FormulaRef } from '@ascend/formulas'
+import { extractRefs, functionRegistry, parseFormula, rewriteRefs } from '@ascend/formulas'
 import { type CellKey, cellKey, DependencyGraph, type RangeDependency } from './dep-graph.ts'
 import { resolveStructuredRefRange } from './structured-refs.ts'
 
@@ -37,6 +37,11 @@ export interface WorkbookFormulaAnalysis {
 	readonly sheetNameIndex: ReadonlyMap<string, number>
 }
 
+export interface WorkbookDependencyAnalysis {
+	readonly dependencyGraph: DependencyGraph
+	readonly sheetNameIndex: ReadonlyMap<string, number>
+}
+
 export interface WorkbookAnalysis {
 	readonly formulas: ReadonlyMap<CellKey, AnalyzedFormula>
 	readonly dependencyGraph: DependencyGraph
@@ -48,6 +53,7 @@ export interface AnalyzeWorkbookOptions {
 }
 
 const workbookFormulaAnalysisCache = new WeakMap<Workbook, WorkbookFormulaAnalysis>()
+const workbookDependencyAnalysisCache = new WeakMap<Workbook, WorkbookDependencyAnalysis>()
 const workbookAnalysisCache = new WeakMap<Workbook, WorkbookAnalysis>()
 
 export function createSheetNameIndex(workbook: Workbook): Map<string, number> {
@@ -79,6 +85,7 @@ export function analyzeWorkbookFormulas(
 	}
 	const sheetNameIndex = createSheetNameIndex(workbook)
 	const formulas = new Map<CellKey, IndexedFormula>()
+	const sharedMasterCache = new Map<string, FormulaNode>()
 
 	for (let sheetIndex = 0; sheetIndex < workbook.sheets.length; sheetIndex++) {
 		const sheet = workbook.sheets[sheetIndex]
@@ -88,7 +95,7 @@ export function analyzeWorkbookFormulas(
 			if (!inRange(sheet.name, row, col, options.range)) continue
 
 			const key = cellKey(sheetIndex, row, col)
-			const parsed = parseFormula(cell.formula)
+			const parsed = parseIndexedFormula(workbook, sheetIndex, row, col, cell, sharedMasterCache)
 			if (!parsed.ok) {
 				formulas.set(key, {
 					key,
@@ -126,6 +133,86 @@ export function analyzeWorkbookFormulas(
 	return analysis
 }
 
+function parseIndexedFormula(
+	workbook: Workbook,
+	sheetIndex: number,
+	row: number,
+	col: number,
+	cell: {
+		formula: string
+		formulaInfo?: { kind?: string; sharedIndex?: string; isMaster?: boolean; masterRef?: string }
+	},
+	sharedMasterCache: Map<string, FormulaNode>,
+): ReturnType<typeof parseFormula> {
+	const binding = cell.formulaInfo
+	if (binding?.kind === 'shared') {
+		const cacheKey = `${sheetIndex}:${binding.sharedIndex ?? ''}`
+		if (binding.isMaster) {
+			const parsed = parseFormula(cell.formula)
+			if (parsed.ok) sharedMasterCache.set(cacheKey, parsed.value)
+			return parsed
+		}
+		const masterAst =
+			sharedMasterCache.get(cacheKey) ?? loadSharedMasterAst(workbook, sheetIndex, binding)
+		if (masterAst) {
+			sharedMasterCache.set(cacheKey, masterAst)
+			return {
+				ok: true as const,
+				value: rewriteSharedFormulaAst(masterAst, binding.masterRef, row, col),
+			}
+		}
+	}
+	return parseFormula(cell.formula)
+}
+
+function loadSharedMasterAst(
+	workbook: Workbook,
+	sheetIndex: number,
+	binding: { masterRef?: string },
+): FormulaNode | null {
+	if (!binding.masterRef) return null
+	const ref = parseCellA1(binding.masterRef)
+	if (!ref) return null
+	const masterCell = workbook.sheets[sheetIndex]?.cells.get(ref.row, ref.col)
+	if (!masterCell?.formula) return null
+	const parsed = parseFormula(masterCell.formula)
+	return parsed.ok ? parsed.value : null
+}
+
+function rewriteSharedFormulaAst(
+	masterAst: FormulaNode,
+	masterRef: string | undefined,
+	row: number,
+	col: number,
+): FormulaNode {
+	const anchor = parseCellA1(masterRef)
+	if (!anchor) return masterAst
+	const rowDelta = row - anchor.row
+	const colDelta = col - anchor.col
+	return rewriteRefs(masterAst, (ref: FormulaCellRef) => ({
+		...ref,
+		row: ref.rowAbsolute ? ref.row : ref.row + rowDelta,
+		col: ref.colAbsolute ? ref.col : ref.col + colDelta,
+	}))
+}
+
+function parseCellA1(ref: string | undefined): { row: number; col: number } | null {
+	if (!ref) return null
+	const match = /^([A-Za-z]+)(\d+)$/.exec(ref)
+	if (!match) return null
+	const colText = match[1]
+	const rowText = match[2]
+	if (!colText || !rowText) return null
+	let col = 0
+	for (const char of colText.toUpperCase()) {
+		col = col * 26 + (char.charCodeAt(0) - 64)
+	}
+	return {
+		row: Number.parseInt(rowText, 10) - 1,
+		col: col - 1,
+	}
+}
+
 export function analyzeWorkbook(
 	workbook: Workbook,
 	options: AnalyzeWorkbookOptions = {},
@@ -135,31 +222,56 @@ export function analyzeWorkbook(
 		if (cached) return cached
 	}
 	const indexed = analyzeWorkbookFormulas(workbook, options)
+	const dependency = analyzeWorkbookDependencies(workbook, options)
 	const formulas = new Map<CellKey, AnalyzedFormula>()
-	const dependencyGraph = new DependencyGraph()
 	for (const formula of indexed.formulas.values()) {
-		const analyzed = enrichFormula(workbook, indexed.sheetNameIndex, formula)
-		if (!analyzed.parseError) {
-			dependencyGraph.addFormula(
-				analyzed.key,
-				[...analyzed.deps],
-				analyzed.volatile,
-				analyzed.rangeDeps,
-			)
-		}
+		const analyzed = resolveFormulaDependencies(workbook, indexed.sheetNameIndex, formula)
 		formulas.set(analyzed.key, analyzed)
 	}
-	const analysis = { formulas, dependencyGraph, sheetNameIndex: indexed.sheetNameIndex }
+	const analysis = {
+		formulas,
+		dependencyGraph: dependency.dependencyGraph,
+		sheetNameIndex: indexed.sheetNameIndex,
+	}
 	if (!options.range) workbookAnalysisCache.set(workbook, analysis)
+	return analysis
+}
+
+export function analyzeWorkbookDependencies(
+	workbook: Workbook,
+	options: AnalyzeWorkbookOptions = {},
+): WorkbookDependencyAnalysis {
+	if (!options.range) {
+		const cached = workbookDependencyAnalysisCache.get(workbook)
+		if (cached) return cached
+	}
+	const indexed = analyzeWorkbookFormulas(workbook, options)
+	const dependencyGraph = new DependencyGraph()
+	for (const formula of indexed.formulas.values()) {
+		const resolved = resolveFormulaDependencies(workbook, indexed.sheetNameIndex, formula)
+		if (resolved.parseError) continue
+		dependencyGraph.addFormula(
+			resolved.key,
+			[...resolved.deps],
+			resolved.volatile,
+			resolved.rangeDeps,
+		)
+	}
+	const analysis = {
+		dependencyGraph,
+		sheetNameIndex: indexed.sheetNameIndex,
+	}
+	if (!options.range) workbookDependencyAnalysisCache.set(workbook, analysis)
 	return analysis
 }
 
 export function invalidateWorkbookAnalysis(workbook: Workbook): void {
 	workbookFormulaAnalysisCache.delete(workbook)
+	workbookDependencyAnalysisCache.delete(workbook)
 	workbookAnalysisCache.delete(workbook)
 }
 
-function enrichFormula(
+export function resolveFormulaDependencies(
 	workbook: Workbook,
 	sheetNameIndex: ReadonlyMap<string, number>,
 	formula: IndexedFormula,

@@ -1,10 +1,12 @@
 import { parseA1, type RangeRef, type Workbook } from '@ascend/core'
 import {
 	analyzeWorkbook,
+	analyzeWorkbookDependencies,
 	analyzeWorkbookFormulas,
 	createSnapshot,
 	diffWorkbooks,
 	type WorkbookAnalysis,
+	type WorkbookDependencyAnalysis,
 	type WorkbookDiff,
 	type WorkbookFormulaAnalysis,
 	type WorkbookSnapshot,
@@ -316,7 +318,10 @@ export class WorkbookReadView {
 
 	trace(cellRef: string, opts?: { maxDepth?: number }): TraceResult | undefined {
 		const { sheetName, ref } = parseFullRef(cellRef, this.wb)
-		const result = verifyTrace(this.wb, sheetName, ref, opts, this.analysis())
+		const result = verifyTrace(this.wb, sheetName, ref, opts, {
+			formulas: this.formulaAnalysis(),
+			dependencies: this.dependencyAnalysis(),
+		})
 		if (!result.ok) return undefined
 		return {
 			ref: `${sheetName}!${ref}`,
@@ -471,6 +476,10 @@ export class WorkbookReadView {
 
 	analysis(): WorkbookAnalysis {
 		return analyzeWorkbook(this.wb)
+	}
+
+	dependencyAnalysis(): WorkbookDependencyAnalysis {
+		return analyzeWorkbookDependencies(this.wb)
 	}
 
 	formulaAnalysis(): WorkbookFormulaAnalysis {

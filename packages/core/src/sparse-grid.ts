@@ -14,6 +14,7 @@ export interface SharedFormulaInfo {
 	readonly kind: 'shared'
 	readonly sharedIndex: string
 	readonly isMaster: boolean
+	readonly masterRef?: string
 	readonly ref?: string
 }
 

@@ -771,22 +771,26 @@ function handleSortRange(
 	const rangeResult = safeParseRange(op.range)
 	if (!rangeResult.ok) return rangeResult
 	const range = rangeResult.value
-	clearFormulaMetadata(workbook)
+	clearFormulaMetadataForSheet(sheet)
 	const sorted = sortSheetRange(workbook, sheet, range, op.by)
 	if (!sorted.ok) return sorted
 	return ok(patch([], [op.sheet], sorted.value))
 }
 
+function clearFormulaMetadataForSheet(sheet: Workbook['sheets'][number]): void {
+	for (const [row, col, existing] of sheet.cells.iterate()) {
+		if (!existing.formulaInfo) continue
+		sheet.cells.set(row, col, {
+			value: existing.value,
+			formula: existing.formula,
+			styleId: existing.styleId,
+		})
+	}
+}
+
 function clearFormulaMetadata(workbook: Workbook): void {
 	for (const sheet of workbook.sheets) {
-		for (const [row, col, existing] of sheet.cells.iterate()) {
-			if (!existing.formulaInfo) continue
-			sheet.cells.set(row, col, {
-				value: existing.value,
-				formula: existing.formula,
-				styleId: existing.styleId,
-			})
-		}
+		clearFormulaMetadataForSheet(sheet)
 	}
 }
 

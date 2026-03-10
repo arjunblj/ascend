@@ -1240,17 +1240,20 @@ describe('AscendWorkbook', () => {
 			kind: 'shared',
 			sharedIndex: '0',
 			isMaster: true,
+			masterRef: 'B1',
 		})
 		expect(wb.sheet('Calc')?.cell('B2')?.formulaBinding).toEqual({
 			kind: 'shared',
 			sharedIndex: '0',
 			isMaster: false,
+			masterRef: 'B1',
 		})
 		expect(wb.formula('Calc!A1')?.binding).toEqual({ kind: 'array', ref: 'A1:A2' })
 		expect(wb.formula('Calc!B1')?.binding).toEqual({
 			kind: 'shared',
 			sharedIndex: '0',
 			isMaster: true,
+			masterRef: 'B1',
 		})
 	})
 

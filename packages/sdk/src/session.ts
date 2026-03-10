@@ -255,13 +255,10 @@ export class WorkbookSession {
 		const sheetName = bang >= 0 ? cellRef.slice(0, bang).replace(/^'|'$/g, '') : this.sheets[0]
 		const ref = bang >= 0 ? cellRef.slice(bang + 1) : cellRef
 		if (!sheetName) return undefined
-		const result = verifyTrace(
-			this.view.getWorkbookModel(),
-			sheetName,
-			ref,
-			opts,
-			this.view.analysis(),
-		)
+		const result = verifyTrace(this.view.getWorkbookModel(), sheetName, ref, opts, {
+			formulas: this.view.formulaAnalysis(),
+			dependencies: this.view.dependencyAnalysis(),
+		})
 		this.refreshCacheFootprint('verify')
 		return result.ok
 			? {
@@ -291,7 +288,10 @@ export class WorkbookSession {
 	}
 
 	check(): CheckResult {
-		const result = verifyCheck(this.view.getWorkbookModel(), this.view.analysis())
+		const result = verifyCheck(this.view.getWorkbookModel(), {
+			formulas: this.view.formulaAnalysis(),
+			dependencies: this.view.dependencyAnalysis(),
+		})
 		this.refreshCacheFootprint('verify')
 		const issues = result.issues.map((issue) => ({
 			severity: issue.severity === 'info' ? 'warning' : issue.severity,
@@ -302,7 +302,7 @@ export class WorkbookSession {
 	}
 
 	lint(): LintResult {
-		const result = verifyLint(this.view.getWorkbookModel(), this.view.analysis())
+		const result = verifyLint(this.view.getWorkbookModel(), this.view.formulaAnalysis())
 		this.refreshCacheFootprint('verify')
 		return {
 			clean: result.violations.length === 0,
@@ -506,6 +506,6 @@ function sessionSizeBytes(
 		metadataUnits * 256 +
 		styleUnits * 128
 	if (usage === 'base') return baseEstimate
-	const formulaCount = view.analysis().formulas.size
+	const formulaCount = view.formulaAnalysis().formulas.size
 	return baseEstimate + formulaCount * 192
 }

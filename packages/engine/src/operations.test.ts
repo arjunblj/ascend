@@ -519,6 +519,29 @@ describe('applyOperation', () => {
 		expect(sheet.ignoredErrors[0]?.sqref).toBe('A3')
 	})
 
+	test('sortRange only clears formula metadata on the affected sheet', () => {
+		const wb = createWorkbook()
+		const source = wb.addSheet('Source')
+		const other = wb.addSheet('Other')
+		source.cells.set(0, 0, { value: stringValue('b'), formula: null, styleId: sid })
+		source.cells.set(1, 0, { value: stringValue('a'), formula: null, styleId: sid })
+		other.cells.set(0, 0, {
+			value: numberValue(3),
+			formula: 'SUM(B1:B2)',
+			styleId: sid,
+			formulaInfo: { kind: 'array', ref: 'A1:A2' },
+		})
+
+		const result = applyOperation(wb, {
+			op: 'sortRange',
+			sheet: 'Source',
+			range: 'A1:A2',
+			by: [{ column: 'A' }],
+		})
+		expect(result.ok).toBe(true)
+		expect(other.cells.get(0, 0)?.formulaInfo).toEqual({ kind: 'array', ref: 'A1:A2' })
+	})
+
 	test('createTable infers columns from the header row', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

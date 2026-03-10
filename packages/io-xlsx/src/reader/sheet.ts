@@ -9,8 +9,8 @@ import type {
 	SheetDataValidation,
 	StyleId,
 } from '@ascend/core'
-import { columnToIndex, parseRange, Sheet } from '@ascend/core'
-import type { FormulaCellRef } from '@ascend/formulas'
+import { columnToIndex, indexToColumn, parseRange, Sheet } from '@ascend/core'
+import type { FormulaCellRef, FormulaNode } from '@ascend/formulas'
 import { parseFormula, printFormula, rewriteRefs } from '@ascend/formulas'
 import type { CellValue, ExcelError } from '@ascend/schema'
 import { booleanValue, EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
@@ -149,17 +149,25 @@ function parseSheetDataXml(xml: string, sheet: Sheet, ctx: SheetParseContext): v
 	if (!sheetData) return
 	const sharedFormulaMasters = new Map<
 		string,
-		{ formula: string; row: number; col: number; ref?: string }
+		{
+			formula: string
+			row: number
+			col: number
+			ref?: string
+			masterRef?: string
+			parsed?: FormulaNode
+		}
 	>()
+	const useFastPath = ctx.valuesOnly || ctx.formulaOnly
 
 	for (const rowMatch of sheetData.matchAll(ROW_RE)) {
-		const rowAttrs = parseRawAttributes(rowMatch[1] ?? rowMatch[3] ?? '')
-		const rowIndex = numAttr(rowAttrs, 'r')
-		const rowHeight = numAttr(rowAttrs, 'ht')
+		const rowAttrsRaw = rowMatch[1] ?? rowMatch[3] ?? ''
+		const rowIndex = rawNumAttr(rowAttrsRaw, 'r')
+		const rowHeight = rawNumAttr(rowAttrsRaw, 'ht')
 		if (
 			rowIndex !== undefined &&
 			rowHeight !== undefined &&
-			attr(rowAttrs, 'customHeight') === '1'
+			rawAttr(rowAttrsRaw, 'customHeight') === '1'
 		) {
 			sheet.rowHeights.set(rowIndex - 1, rowHeight)
 		}
@@ -167,16 +175,16 @@ function parseSheetDataXml(xml: string, sheet: Sheet, ctx: SheetParseContext): v
 		const rowInner = rowMatch[2] ?? ''
 		for (const cellMatch of rowInner.matchAll(CELL_RE)) {
 			const rawAttrs = cellMatch[1] ?? cellMatch[3] ?? ''
-			const cellNode = buildCellNode(rawAttrs, cellMatch[2] ?? '')
-			const ref = attr(cellNode, 'r')
-			if (!ref) continue
-			const pos = parseCellRef(ref)
-			if (!pos) continue
-			const cell = parseCellValue(cellNode, ctx, pos.row, pos.col, sharedFormulaMasters)
+			const innerXml = cellMatch[2] ?? ''
+			const parsed = useFastPath
+				? parseFastCell(rawAttrs, innerXml, ctx, sharedFormulaMasters)
+				: parseSlowCell(rawAttrs, innerXml, ctx, sharedFormulaMasters)
+			if (!parsed) continue
+			const cell = parsed.cell
 			if (cell) {
 				sheet.cells.setResolved(
-					pos.row,
-					pos.col,
+					parsed.row,
+					parsed.col,
 					cell.value,
 					cell.formula,
 					cell.styleId,
@@ -184,6 +192,113 @@ function parseSheetDataXml(xml: string, sheet: Sheet, ctx: SheetParseContext): v
 				)
 			}
 		}
+	}
+}
+
+function parseSlowCell(
+	rawAttrs: string,
+	innerXml: string,
+	ctx: SheetParseContext,
+	sharedFormulaMasters: Map<
+		string,
+		{
+			formula: string
+			row: number
+			col: number
+			ref?: string
+			masterRef?: string
+			parsed?: FormulaNode
+		}
+	>,
+): { row: number; col: number; cell: Cell | undefined } | undefined {
+	const cellNode = buildCellNode(rawAttrs, innerXml)
+	const ref = attr(cellNode, 'r')
+	if (!ref) return undefined
+	const pos = parseCellRef(ref)
+	if (!pos) return undefined
+	return {
+		row: pos.row,
+		col: pos.col,
+		cell: parseCellValue(cellNode, ctx, pos.row, pos.col, sharedFormulaMasters),
+	}
+}
+
+function parseFastCell(
+	rawAttrs: string,
+	innerXml: string,
+	ctx: SheetParseContext,
+	sharedFormulaMasters: Map<
+		string,
+		{
+			formula: string
+			row: number
+			col: number
+			ref?: string
+			masterRef?: string
+			parsed?: FormulaNode
+		}
+	>,
+): { row: number; col: number; cell: Cell | undefined } | undefined {
+	const ref = rawAttr(rawAttrs, 'r')
+	if (!ref) return undefined
+	const pos = parseCellRef(ref)
+	if (!pos) return undefined
+	if (rawAttr(rawAttrs, 't') === 'inlineStr' || innerXml.includes('<is')) {
+		return parseSlowCell(rawAttrs, innerXml, ctx, sharedFormulaMasters)
+	}
+
+	const pool = ctx.valuePool
+	const type = rawAttr(rawAttrs, 't')
+	const styleIdx = rawNumAttr(rawAttrs, 's') ?? 0
+	const rawValue = extractTagText(innerXml, 'v')
+	const styleId = ctx.valuesOnly ? (0 as StyleId) : (ctx.styleIds[styleIdx] ?? (0 as StyleId))
+	const formulaSpec =
+		ctx.valuesOnly && rawValue !== undefined && rawValue !== ''
+			? { text: null, info: undefined }
+			: parseFormulaText(buildFormulaNode(innerXml), pos.row, pos.col, sharedFormulaMasters, pool)
+
+	let value: CellValue
+	if (type === 's') {
+		const idx = rawValue === undefined ? Number.NaN : Number(rawValue)
+		const entry = ctx.sharedStrings.get(idx)
+		value = entry ?? (pool ? pool.internValue(stringValue('')) : stringValue(''))
+	} else if (type === 'b') {
+		const bv = rawValue === '1'
+		value = pool ? pool.internValue(booleanValue(bv)) : booleanValue(bv)
+	} else if (type === 'e') {
+		value = pool
+			? pool.internValue(errorValue(String(rawValue ?? '#VALUE!') as ExcelError))
+			: errorValue(String(rawValue ?? '#VALUE!') as ExcelError)
+	} else if (type === 'str') {
+		value = pool
+			? pool.internValue(stringValue(pool.internString(String(rawValue ?? ''))))
+			: stringValue(String(rawValue ?? ''))
+	} else if (rawValue !== undefined && rawValue !== '') {
+		const num = Number(rawValue)
+		if (Number.isNaN(num)) {
+			value = pool
+				? pool.internValue(stringValue(pool.internString(String(rawValue))))
+				: stringValue(String(rawValue))
+		} else if (ctx.isDateFormat[styleIdx]) {
+			value = { kind: 'date', serial: num }
+		} else {
+			value = pool ? pool.internValue(numberValue(num)) : numberValue(num)
+		}
+	} else if (formulaSpec.text) {
+		value = EMPTY
+	} else {
+		return undefined
+	}
+
+	return {
+		row: pos.row,
+		col: pos.col,
+		cell: {
+			value,
+			formula: formulaSpec.text,
+			styleId,
+			...(formulaSpec.info ? { formulaInfo: formulaSpec.info } : {}),
+		},
 	}
 }
 
@@ -197,7 +312,14 @@ function _parseSheetData(ws: XmlNode, sheet: Sheet, ctx: SheetParseContext): voi
 	if (!sd) return
 	const sharedFormulaMasters = new Map<
 		string,
-		{ formula: string; row: number; col: number; ref?: string }
+		{
+			formula: string
+			row: number
+			col: number
+			ref?: string
+			masterRef?: string
+			parsed?: FormulaNode
+		}
 	>()
 
 	for (const row of asArray<XmlNode>(sd.row as XmlNode | XmlNode[])) {
@@ -267,6 +389,23 @@ function parseRawAttributes(rawAttrs: string): XmlNode {
 	return node
 }
 
+function rawAttr(rawAttrs: string, name: string): string | undefined {
+	const needle = `${name}="`
+	const start = rawAttrs.indexOf(needle)
+	if (start === -1) return undefined
+	const valueStart = start + needle.length
+	const valueEnd = rawAttrs.indexOf('"', valueStart)
+	if (valueEnd === -1) return undefined
+	return decodeXmlText(rawAttrs.slice(valueStart, valueEnd))
+}
+
+function rawNumAttr(rawAttrs: string, name: string): number | undefined {
+	const value = rawAttr(rawAttrs, name)
+	if (value === undefined) return undefined
+	const parsed = Number(value)
+	return Number.isNaN(parsed) ? undefined : parsed
+}
+
 function extractTextNode(
 	xml: string,
 	tagName: string,
@@ -278,6 +417,30 @@ function extractTextNode(
 		}
 	}
 	return undefined
+}
+
+function extractTagText(xml: string, tagName: string): string | undefined {
+	const open = xml.indexOf(`<${tagName}`)
+	if (open === -1) return undefined
+	const contentStart = xml.indexOf('>', open)
+	if (contentStart === -1) return undefined
+	const close = xml.indexOf(`</${tagName}>`, contentStart + 1)
+	if (close === -1) return undefined
+	return decodeXmlText(xml.slice(contentStart + 1, close))
+}
+
+function buildFormulaNode(innerXml: string): XmlNode | undefined {
+	const open = innerXml.indexOf('<f')
+	if (open === -1) return undefined
+	const tagEnd = innerXml.indexOf('>', open)
+	if (tagEnd === -1) return undefined
+	const rawAttrs = innerXml.slice(open + 2, tagEnd)
+	const node = parseRawAttributes(rawAttrs)
+	if (innerXml[tagEnd - 1] === '/') return node
+	const close = innerXml.indexOf('</f>', tagEnd + 1)
+	if (close === -1) return node
+	node['#text'] = decodeXmlText(innerXml.slice(tagEnd + 1, close))
+	return node
 }
 
 function extractNodes(xml: string, tagName: string): Array<{ attrs: string; text?: string }> {
@@ -320,7 +483,17 @@ function parseCellValue(
 	ctx: SheetParseContext,
 	row: number,
 	col: number,
-	sharedFormulaMasters: Map<string, { formula: string; row: number; col: number }>,
+	sharedFormulaMasters: Map<
+		string,
+		{
+			formula: string
+			row: number
+			col: number
+			ref?: string
+			masterRef?: string
+			parsed?: FormulaNode
+		}
+	>,
 ): Cell | undefined {
 	const pool = ctx.valuePool
 	const type = attr(c, 't')
@@ -381,7 +554,17 @@ function parseFormulaText(
 	formulaNode: unknown,
 	row: number,
 	col: number,
-	sharedFormulaMasters: Map<string, { formula: string; row: number; col: number; ref?: string }>,
+	sharedFormulaMasters: Map<
+		string,
+		{
+			formula: string
+			row: number
+			col: number
+			ref?: string
+			masterRef?: string
+			parsed?: FormulaNode
+		}
+	>,
 	pool?: ValueInternPool,
 ): { text: string | null; info?: Cell['formulaInfo'] } {
 	if (formulaNode === undefined || formulaNode === null) return { text: null }
@@ -402,18 +585,37 @@ function parseFormulaText(
 			const ref = attr(node, 'ref')
 			if (text !== undefined && text !== null) {
 				const formula = pool ? pool.internString(String(text)) : String(text)
-				sharedFormulaMasters.set(sharedIndex, { formula, row, col, ...(ref ? { ref } : {}) })
+				const parsed = parseFormula(formula)
+				sharedFormulaMasters.set(sharedIndex, {
+					formula,
+					row,
+					col,
+					masterRef: toCellRef(row, col),
+					...(ref ? { ref } : {}),
+					...(parsed.ok ? { parsed: parsed.value } : {}),
+				})
 				return {
 					text: formula,
-					info: { kind: 'shared', sharedIndex, isMaster: true, ...(ref ? { ref } : {}) },
+					info: {
+						kind: 'shared',
+						sharedIndex,
+						isMaster: true,
+						masterRef: toCellRef(row, col),
+						...(ref ? { ref } : {}),
+					},
 				}
 			}
 			const master = sharedFormulaMasters.get(sharedIndex)
 			if (!master) return { text: null }
-			const translated = translateSharedFormula(master.formula, master.row, master.col, row, col)
+			const translated = translateSharedFormula(master, row, col)
 			return {
 				text: translated && pool ? pool.internString(translated) : translated,
-				info: { kind: 'shared', sharedIndex, isMaster: false },
+				info: {
+					kind: 'shared',
+					sharedIndex,
+					isMaster: false,
+					masterRef: master.masterRef,
+				},
 			}
 		}
 		if (formulaType === 'array') {
@@ -438,22 +640,24 @@ function parseFormulaText(
 }
 
 function translateSharedFormula(
-	formula: string,
-	masterRow: number,
-	masterCol: number,
+	master: { formula: string; row: number; col: number; parsed?: FormulaNode },
 	row: number,
 	col: number,
 ): string | null {
-	const parsed = parseFormula(formula)
-	if (!parsed.ok) return null
-	const rowDelta = row - masterRow
-	const colDelta = col - masterCol
-	const rewritten = rewriteRefs(parsed.value, (ref: FormulaCellRef) => ({
+	const parsed = master.parsed
+	if (!parsed) return null
+	const rowDelta = row - master.row
+	const colDelta = col - master.col
+	const rewritten = rewriteRefs(parsed, (ref: FormulaCellRef) => ({
 		...ref,
 		row: ref.rowAbsolute ? ref.row : ref.row + rowDelta,
 		col: ref.colAbsolute ? ref.col : ref.col + colDelta,
 	}))
 	return printFormula(rewritten)
+}
+
+function toCellRef(row: number, col: number): string {
+	return `${indexToColumn(col)}${row + 1}`
 }
 
 function parseInlineString(c: XmlNode, pool?: ValueInternPool): CellValue {

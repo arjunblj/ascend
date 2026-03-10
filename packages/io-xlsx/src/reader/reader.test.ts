@@ -364,11 +364,13 @@ describe('readXlsx', () => {
 			kind: 'shared',
 			sharedIndex: '0',
 			isMaster: true,
+			masterRef: 'A1',
 		})
 		expect(result.value.workbook.sheets[0]?.cells.get(1, 0)?.formulaInfo).toEqual({
 			kind: 'shared',
 			sharedIndex: '0',
 			isMaster: false,
+			masterRef: 'A1',
 		})
 		expect(result.value.workbook.sheets[0]?.cells.get(1, 0)?.formula).toBe('B2*2')
 	})

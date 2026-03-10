@@ -1,10 +1,13 @@
 import { parseA1, toA1, type Workbook } from '@ascend/core'
 import {
 	type AnalyzedFormula,
-	analyzeWorkbook,
+	analyzeWorkbookDependencies,
+	analyzeWorkbookFormulas,
 	cellKey,
 	parseCellKey,
-	type WorkbookAnalysis,
+	resolveFormulaDependencies,
+	type WorkbookDependencyAnalysis,
+	type WorkbookFormulaAnalysis,
 } from '@ascend/engine'
 import type { FormulaRef } from '@ascend/formulas'
 import { ascendError, type CellValue, EMPTY, err, ok, type Result } from '@ascend/schema'
@@ -44,7 +47,10 @@ export function trace(
 	sheetName: string,
 	ref: string,
 	opts?: { maxDepth?: number },
-	analysis?: WorkbookAnalysis,
+	analysis?: {
+		readonly formulas?: WorkbookFormulaAnalysis
+		readonly dependencies?: WorkbookDependencyAnalysis
+	},
 ): Result<TraceResult> {
 	const sheetIndex = workbook.sheets.findIndex(
 		(s) => s.name.toLowerCase() === sheetName.toLowerCase(),
@@ -68,10 +74,11 @@ export function trace(
 	const formula = cell?.formula ?? null
 	const value = cell?.value ?? EMPTY
 
-	const compiled = analysis ?? analyzeWorkbook(workbook)
-	const graph = compiled.dependencyGraph
+	const formulas = analysis?.formulas ?? analyzeWorkbookFormulas(workbook)
+	const dependencies = analysis?.dependencies ?? analyzeWorkbookDependencies(workbook)
+	const graph = dependencies.dependencyGraph
 	const targetKey = cellKey(sheetIndex, cellRef.row, cellRef.col)
-	const targetFormula = compiled.formulas.get(targetKey)
+	const targetFormula = targetKey ? formulas.formulas.get(targetKey) : undefined
 
 	const precedents: TraceNode[] = []
 	const visitedPre = new Set<string>()
@@ -84,8 +91,13 @@ export function trace(
 		if (!item) break
 		if (item.depth >= maxDepth) continue
 
-		const currentFormula = item.key === targetKey ? targetFormula : compiled.formulas.get(item.key)
-		if (currentFormula) {
+		const currentIndexed = item.key === targetKey ? targetFormula : formulas.formulas.get(item.key)
+		if (currentIndexed) {
+			const currentFormula = resolveFormulaDependencies(
+				workbook,
+				formulas.sheetNameIndex,
+				currentIndexed,
+			)
 			addSymbolicPrecedents(
 				workbook,
 				currentFormula,

@@ -246,6 +246,42 @@ describe('readXlsx', () => {
 		})
 	})
 
+	it('parses escaped and empty shared strings without DOM fallback', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2" uniqueCount="2">
+  <si><t xml:space="preserve">&lt;tag&gt; &amp; &quot;q&quot;</t></si>
+  <si><t/></si>
+</sst>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1" t="s"><v>0</v></c>
+      <c r="B1" t="s"><v>1</v></c>
+    </row>
+  </sheetData>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(result.value.workbook.sheets[0]?.cells.get(0, 0)?.value).toEqual({
+			kind: 'string',
+			value: '<tag> & "q"',
+		})
+		expect(result.value.workbook.sheets[0]?.cells.get(0, 1)?.value).toEqual({
+			kind: 'string',
+			value: '',
+		})
+	})
+
 	it('handles error cell type', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': CONTENT_TYPES,

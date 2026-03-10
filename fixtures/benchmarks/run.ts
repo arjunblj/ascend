@@ -71,6 +71,24 @@ function buildDenseWorkbook(rows: number, cols: number): Workbook {
 	return workbook
 }
 
+function buildStringDenseWorkbook(rows: number, cols: number): Workbook {
+	const workbook = createWorkbook()
+	workbook.addSheet('Sheet1')
+	const sheet = workbook.sheets[0]
+	if (!sheet) throw new Error('Benchmark workbook missing first sheet')
+	for (let r = 0; r < rows; r++) {
+		for (let c = 0; c < cols; c++) {
+			const value = c % 2 === 0 ? `label-${r}-${c}` : `shared-${c % 5}`
+			sheet.cells.set(r, c, {
+				value: { kind: 'string', value },
+				formula: null,
+				styleId: SID,
+			})
+		}
+	}
+	return workbook
+}
+
 function buildSparseWorkbook(rows: number, cols: number, step: number): Workbook {
 	const workbook = createWorkbook()
 	workbook.addSheet('Sheet1')
@@ -198,6 +216,19 @@ const scenarios: readonly Scenario[] = [
 		category: 'read',
 		build() {
 			const workbook = buildDenseWorkbook(2000, 20)
+			const bytes = mustWrite(workbook)
+			return { bytes, rows: 2000, cols: 20, cells: 40_000 }
+		},
+		run(input) {
+			const result = readXlsx(requireBytes(input))
+			if (!result.ok) throw new Error(result.error.message)
+		},
+	},
+	{
+		name: 'read-full-string-dense',
+		category: 'read',
+		build() {
+			const workbook = buildStringDenseWorkbook(2000, 20)
 			const bytes = mustWrite(workbook)
 			return { bytes, rows: 2000, cols: 20, cells: 40_000 }
 		},

@@ -6,10 +6,6 @@ export interface SharedStringResolver {
 	get(index: number): CellValue | undefined
 }
 
-const SHARED_STRING_ENTRY_RE = /<si\b[^>]*>([\s\S]*?)<\/si>/g
-const SHARED_STRING_TEXT_RE = /<t\b[^>]*>([\s\S]*?)<\/t>/
-const SHARED_STRING_EMPTY_TEXT_RE = /<t\b[^>]*\/>/
-
 export function parseSharedStrings(
 	xml: string,
 	options: {
@@ -32,18 +28,16 @@ function createEagerSharedStrings(
 	xml: string,
 	normalize?: (value: CellValue) => CellValue,
 ): SharedStringResolver {
-	const entries: CellValue[] = []
-	for (const match of xml.matchAll(SHARED_STRING_ENTRY_RE)) {
-		const chunk = match[1] ?? ''
-		const parsed = parseSharedStringChunk(chunk)
-		entries.push(normalize ? normalize(parsed) : parsed)
-	}
-	if (entries.length === 0) {
-		const doc = parseXml(xml)
-		const sst = doc.sst as XmlNode | undefined
-		if (!sst) return emptySharedStrings()
-		for (const si of asArray<XmlNode>(sst.si as XmlNode | XmlNode[])) {
-			entries.push(normalize ? normalize(parseSharedStringNode(si)) : parseSharedStringNode(si))
+	const entries = parseSharedStringEntries(xml, normalize)
+	if (entries.length === 0 && xml.includes('<si')) {
+		const fallback = parseSharedStringEntriesWithDom(xml, normalize)
+		if (fallback.length > 0) {
+			return {
+				count: fallback.length,
+				get(index: number): CellValue | undefined {
+					return fallback[index]
+				},
+			}
 		}
 	}
 
@@ -55,19 +49,82 @@ function createEagerSharedStrings(
 	}
 }
 
+function parseSharedStringEntries(
+	xml: string,
+	normalize?: (value: CellValue) => CellValue,
+): CellValue[] {
+	const entries: CellValue[] = []
+	let cursor = 0
+	while (true) {
+		const open = xml.indexOf('<si', cursor)
+		if (open === -1) break
+		const tagEnd = findTagEnd(xml, open)
+		if (tagEnd === -1) break
+		if (isSelfClosingTag(xml, open, tagEnd)) {
+			const parsed: CellValue = { kind: 'string', value: '' }
+			entries.push(normalize ? normalize(parsed) : parsed)
+			cursor = tagEnd + 1
+			continue
+		}
+		const close = xml.indexOf('</si>', tagEnd + 1)
+		if (close === -1) break
+		const parsed = parseSharedStringChunk(xml.slice(tagEnd + 1, close))
+		entries.push(normalize ? normalize(parsed) : parsed)
+		cursor = close + 5
+	}
+	return entries
+}
+
+function parseSharedStringEntriesWithDom(
+	xml: string,
+	normalize?: (value: CellValue) => CellValue,
+): CellValue[] {
+	const entries: CellValue[] = []
+	const doc = parseXml(xml)
+	const sst = doc.sst as XmlNode | undefined
+	if (!sst) return entries
+	for (const si of asArray<XmlNode>(sst.si as XmlNode | XmlNode[])) {
+		const parsed = parseSharedStringNode(si)
+		entries.push(normalize ? normalize(parsed) : parsed)
+	}
+	return entries
+}
+
 function parseSharedStringChunk(chunk: string): CellValue {
 	if (!chunk.includes('<r')) {
-		const textMatch = SHARED_STRING_TEXT_RE.exec(chunk)
-		if (textMatch) {
-			return { kind: 'string', value: decodeXmlText(textMatch[1] ?? '') }
-		}
-		if (SHARED_STRING_EMPTY_TEXT_RE.test(chunk)) {
-			return { kind: 'string', value: '' }
-		}
+		const text = extractTextContent(chunk)
+		if (text !== undefined) return { kind: 'string', value: text }
 	}
-	const doc = parseXml(`<si>${chunk}</si>`)
-	const si = doc.si as XmlNode | undefined
-	return si ? parseSharedStringNode(si) : { kind: 'string', value: '' }
+
+	const runs: RichTextRun[] = []
+	let cursor = 0
+	while (true) {
+		const runOpen = chunk.indexOf('<r', cursor)
+		if (runOpen === -1) break
+		const runTagEnd = findTagEnd(chunk, runOpen)
+		if (runTagEnd === -1) break
+		const runClose = chunk.indexOf('</r>', runTagEnd + 1)
+		if (runClose === -1) break
+		const runBody = chunk.slice(runTagEnd + 1, runClose)
+		runs.push(parseRunChunk(runBody))
+		cursor = runClose + 4
+	}
+	if (runs.length === 0) return { kind: 'string', value: '' }
+	const first = runs[0]
+	if (
+		runs.length === 1 &&
+		first &&
+		!first.bold &&
+		!first.italic &&
+		!first.underline &&
+		!first.strikethrough &&
+		!first.fontName &&
+		!first.fontSize &&
+		!first.color
+	) {
+		return { kind: 'string', value: first.text }
+	}
+	return { kind: 'richText', runs }
 }
 
 function parseSharedStringNode(si: XmlNode): CellValue {
@@ -120,6 +177,21 @@ function parseRichText(si: XmlNode): CellValue {
 	return { kind: 'richText', runs }
 }
 
+function parseRunChunk(chunk: string): RichTextRun {
+	const text = extractTextContent(chunk) ?? ''
+	const runProps = extractSectionContent(chunk, 'rPr')
+	if (!runProps) return { text }
+	const run: RichTextRun = {
+		text,
+		...(runProps.includes('<b') ? { bold: true } : {}),
+		...(runProps.includes('<i') ? { italic: true } : {}),
+		...(runProps.includes('<u') ? { underline: true } : {}),
+		...(runProps.includes('<strike') ? { strikethrough: true } : {}),
+		...parseFontPropsChunk(runProps),
+	}
+	return run
+}
+
 function parseFontProps(rPr: XmlNode): Pick<RichTextRun, 'fontName' | 'fontSize' | 'color'> {
 	const result: Pick<RichTextRun, 'fontName' | 'fontSize' | 'color'> = {}
 
@@ -144,7 +216,73 @@ function parseFontProps(rPr: XmlNode): Pick<RichTextRun, 'fontName' | 'fontSize'
 	return result
 }
 
+function parseFontPropsChunk(chunk: string): Pick<RichTextRun, 'fontName' | 'fontSize' | 'color'> {
+	const result: Pick<RichTextRun, 'fontName' | 'fontSize' | 'color'> = {}
+	const fontName = extractAttributeValue(chunk, 'rFont', 'val')
+	if (fontName) (result as Record<string, unknown>).fontName = fontName
+	const fontSize = extractAttributeValue(chunk, 'sz', 'val')
+	if (fontSize !== undefined) {
+		const parsed = Number(fontSize)
+		if (!Number.isNaN(parsed)) (result as Record<string, unknown>).fontSize = parsed
+	}
+	const color = extractAttributeValue(chunk, 'color', 'rgb')
+	if (color) (result as Record<string, unknown>).color = color
+	return result
+}
+
+function extractTextContent(chunk: string): string | undefined {
+	const textOpen = chunk.indexOf('<t')
+	if (textOpen === -1) return undefined
+	const textTagEnd = findTagEnd(chunk, textOpen)
+	if (textTagEnd === -1) return undefined
+	if (isSelfClosingTag(chunk, textOpen, textTagEnd)) return ''
+	const textClose = chunk.indexOf('</t>', textTagEnd + 1)
+	if (textClose === -1) return undefined
+	return decodeXmlText(chunk.slice(textTagEnd + 1, textClose))
+}
+
+function extractSectionContent(chunk: string, tagName: string): string | undefined {
+	const open = chunk.indexOf(`<${tagName}`)
+	if (open === -1) return undefined
+	const tagEnd = findTagEnd(chunk, open)
+	if (tagEnd === -1) return undefined
+	if (isSelfClosingTag(chunk, open, tagEnd)) return ''
+	const close = chunk.indexOf(`</${tagName}>`, tagEnd + 1)
+	if (close === -1) return undefined
+	return chunk.slice(tagEnd + 1, close)
+}
+
+function extractAttributeValue(
+	chunk: string,
+	tagName: string,
+	attribute: string,
+): string | undefined {
+	const open = chunk.indexOf(`<${tagName}`)
+	if (open === -1) return undefined
+	const tagEnd = findTagEnd(chunk, open)
+	if (tagEnd === -1) return undefined
+	const attrs = chunk.slice(open + tagName.length + 1, tagEnd)
+	const pattern = new RegExp(`${attribute}="([^"]*)"`)
+	const match = pattern.exec(attrs)
+	return match?.[1] ? decodeXmlText(match[1]) : undefined
+}
+
+function findTagEnd(xml: string, start: number): number {
+	return xml.indexOf('>', start + 1)
+}
+
+function isSelfClosingTag(xml: string, tagStart: number, tagEnd: number): boolean {
+	for (let idx = tagEnd - 1; idx > tagStart; idx--) {
+		const ch = xml[idx]
+		if (!ch) break
+		if (ch === '/') return true
+		if (ch !== ' ' && ch !== '\n' && ch !== '\r' && ch !== '\t') return false
+	}
+	return false
+}
+
 function decodeXmlText(text: string): string {
+	if (!text.includes('&')) return text
 	return text
 		.replace(/&lt;/g, '<')
 		.replace(/&gt;/g, '>')

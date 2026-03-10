@@ -5,6 +5,7 @@ import {
 	analyzeWorkbookFormulas,
 	cellKey,
 	parseCellKey,
+	resolveCellFormulaText,
 	resolveFormulaDependencies,
 	type WorkbookDependencyAnalysis,
 	type WorkbookFormulaAnalysis,
@@ -39,7 +40,10 @@ function resolveCell(
 	if (!sheet) return { formula: null, value: EMPTY }
 	const cell = sheet.cells.get(row, col)
 	if (!cell) return { formula: null, value: EMPTY }
-	return { formula: cell.formula, value: cell.value }
+	return {
+		formula: resolveCellFormulaText(wb, sheetIndex, row, col, cell),
+		value: cell.value,
+	}
 }
 
 export function trace(
@@ -71,7 +75,9 @@ export function trace(
 	}
 
 	const cell = sheet.cells.get(cellRef.row, cellRef.col)
-	const formula = cell?.formula ?? null
+	const formula = cell
+		? resolveCellFormulaText(workbook, sheetIndex, cellRef.row, cellRef.col, cell)
+		: null
 	const value = cell?.value ?? EMPTY
 
 	const formulas = analysis?.formulas ?? analyzeWorkbookFormulas(workbook)

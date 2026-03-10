@@ -369,7 +369,7 @@ function cellXml(
 ): string {
 	const xfIdx = xfMap.get(cell.styleId as number) ?? 0
 
-	if (cell.formula) {
+	if (cell.formula || cell.formulaInfo?.kind === 'shared' || cell.formulaInfo?.kind === 'array') {
 		return formulaCellXml(ref, cell, xfIdx)
 	}
 

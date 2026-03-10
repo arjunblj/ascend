@@ -323,7 +323,7 @@ export class SparseGrid {
 	): StoredCell {
 		const compactValue = compactScalarValue(value)
 		if (compactValue) {
-			if (formula === null && styleId === DEFAULT_STYLE_ID) {
+			if (formula === null && formulaInfo === undefined && styleId === DEFAULT_STYLE_ID) {
 				switch (compactValue.kind) {
 					case 'number':
 					case 'string':
@@ -339,7 +339,7 @@ export class SparseGrid {
 						)
 				}
 			}
-			if (formula === null) {
+			if (formula === null && formulaInfo === undefined) {
 				switch (compactValue.kind) {
 					case 'number': {
 						const numericValue = compactValue.scalarValue as number
@@ -437,7 +437,7 @@ class FormulaScalarCell {
 		readonly valueKind: 'empty' | 'number' | 'string' | 'boolean' | 'error' | 'date',
 		readonly scalarValue: number | string | boolean | null,
 		readonly styleId: StyleId,
-		readonly formula: string,
+		readonly formula: string | null,
 		readonly formulaInfo?: CellFormulaBinding,
 	) {}
 }

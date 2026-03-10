@@ -10,8 +10,8 @@ import type {
 	StyleId,
 } from '@ascend/core'
 import { indexToColumn, parseRange, Sheet } from '@ascend/core'
-import type { FormulaCellRef, FormulaNode } from '@ascend/formulas'
-import { parseFormula, printFormula, rewriteRefs } from '@ascend/formulas'
+import type { FormulaNode } from '@ascend/formulas'
+import { parseFormula } from '@ascend/formulas'
 import type { CellValue, ExcelError } from '@ascend/schema'
 import { booleanValue, EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
 import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
@@ -688,9 +688,8 @@ function parseResolvedFormulaText(
 		}
 		const master = sharedFormulaMasters.get(sharedIndex)
 		if (!master) return { text: null }
-		const translated = translateSharedFormula(master, row, col)
 		return {
-			text: translated && pool ? pool.internString(translated) : translated,
+			text: null,
 			info: {
 				kind: 'shared',
 				sharedIndex,
@@ -720,23 +719,6 @@ function parseResolvedFormulaText(
 
 function isRawFormulaNode(value: unknown): value is RawFormulaNode {
 	return typeof value === 'object' && value !== null && 'rawAttrs' in value
-}
-
-function translateSharedFormula(
-	master: { formula: string; row: number; col: number; parsed?: FormulaNode },
-	row: number,
-	col: number,
-): string | null {
-	const parsed = master.parsed
-	if (!parsed) return null
-	const rowDelta = row - master.row
-	const colDelta = col - master.col
-	const rewritten = rewriteRefs(parsed, (ref: FormulaCellRef) => ({
-		...ref,
-		row: ref.rowAbsolute ? ref.row : ref.row + rowDelta,
-		col: ref.colAbsolute ? ref.col : ref.col + colDelta,
-	}))
-	return printFormula(rewritten)
 }
 
 function toCellRef(row: number, col: number): string {

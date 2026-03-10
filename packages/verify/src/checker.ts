@@ -3,6 +3,7 @@ import { indexToColumn, toA1 } from '@ascend/core'
 import {
 	analyzeWorkbookDependencies,
 	analyzeWorkbookFormulas,
+	cellHasFormula,
 	parseCellKey,
 	type WorkbookDependencyAnalysis,
 	type WorkbookFormulaAnalysis,
@@ -96,7 +97,7 @@ function checkFormulaErrors(wb: Workbook, analysis: WorkbookFormulaAnalysis): Ch
 	for (const formula of analysis.formulas.values()) {
 		const sheet = wb.sheets[formula.sheetIndex]
 		const cell = sheet?.cells.get(formula.row, formula.col)
-		if (!sheet || !cell || !cell.formula) continue
+		if (!sheet || !cell || !cellHasFormula(cell)) continue
 		if (isError(cell.value)) {
 			issues.push({
 				rule: 'formula-errors',

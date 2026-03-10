@@ -1288,6 +1288,8 @@ describe('AscendWorkbook', () => {
 			isMaster: true,
 			masterRef: 'B1',
 		})
+		expect(wb.sheet('Calc')?.cell('B2')?.formula).toBe('A2*2')
+		expect(wb.formula('Calc!B2')?.normalizedFormula).toBe('A2*2')
 	})
 
 	test('setFormula and fillFormula helpers apply formula operations', () => {

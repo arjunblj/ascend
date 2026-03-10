@@ -1,6 +1,12 @@
 import type { RangeRef, Workbook } from '@ascend/core'
 import type { FormulaCellRef, FormulaNode, FormulaRef } from '@ascend/formulas'
-import { extractRefs, functionRegistry, parseFormula, rewriteRefs } from '@ascend/formulas'
+import {
+	extractRefs,
+	functionRegistry,
+	parseFormula,
+	printFormula,
+	rewriteRefs,
+} from '@ascend/formulas'
 import { ascendError } from '@ascend/schema'
 import { type CellKey, cellKey, DependencyGraph, type RangeDependency } from './dep-graph.ts'
 import { resolveStructuredRefRange } from './structured-refs.ts'
@@ -92,10 +98,11 @@ export function analyzeWorkbookFormulas(
 		const sheet = workbook.sheets[sheetIndex]
 		if (!sheet) continue
 		for (const [row, col, cell] of sheet.cells.iterate()) {
-			if (!cell.formula) continue
+			if (!cellHasFormula(cell)) continue
 			if (!inRange(sheet.name, row, col, options.range)) continue
 
 			const key = cellKey(sheetIndex, row, col)
+			const formulaText = resolveCellFormulaText(workbook, sheetIndex, row, col, cell)
 			const parsed = parseIndexedFormula(workbook, sheetIndex, row, col, cell, sharedMasterCache)
 			if (!parsed.ok) {
 				formulas.set(key, {
@@ -104,7 +111,7 @@ export function analyzeWorkbookFormulas(
 					sheetName: sheet.name,
 					row,
 					col,
-					formula: cell.formula,
+					formula: formulaText ?? cell.formula ?? '',
 					refs: [],
 					volatile: false,
 					parseError: parsed.error.message,
@@ -121,7 +128,7 @@ export function analyzeWorkbookFormulas(
 				sheetName: sheet.name,
 				row,
 				col,
-				formula: cell.formula,
+				formula: formulaText ?? printFormula(ast),
 				ast,
 				refs,
 				volatile,
@@ -134,6 +141,47 @@ export function analyzeWorkbookFormulas(
 	return analysis
 }
 
+export function cellHasFormula(
+	cell:
+		| {
+				formula: string | null
+				formulaInfo?: {
+					kind?: string
+					sharedIndex?: string
+					isMaster?: boolean
+					masterRef?: string
+				}
+		  }
+		| null
+		| undefined,
+): boolean {
+	if (!cell) return false
+	return cell.formula !== null || cell.formulaInfo?.kind === 'shared'
+}
+
+export function resolveCellFormulaText(
+	workbook: Workbook,
+	sheetIndex: number,
+	row: number,
+	col: number,
+	cell: {
+		formula: string | null
+		formulaInfo?: {
+			kind?: string
+			sharedIndex?: string
+			isMaster?: boolean
+			masterRef?: string
+		}
+	},
+): string | null {
+	if (cell.formula) return cell.formula
+	const binding = cell.formulaInfo
+	if (binding?.kind !== 'shared' || binding.isMaster) return null
+	const masterAst = loadSharedMasterAst(workbook, sheetIndex, binding)
+	if (!masterAst) return null
+	return printFormula(rewriteSharedFormulaAst(masterAst, binding.masterRef, row, col))
+}
+
 function parseIndexedFormula(
 	workbook: Workbook,
 	sheetIndex: number,
@@ -141,7 +189,12 @@ function parseIndexedFormula(
 	col: number,
 	cell: {
 		formula: string | null
-		formulaInfo?: { kind?: string; sharedIndex?: string; isMaster?: boolean; masterRef?: string }
+		formulaInfo?: {
+			kind?: string
+			sharedIndex?: string
+			isMaster?: boolean
+			masterRef?: string
+		}
 	},
 	sharedMasterCache: Map<string, FormulaNode>,
 ): ReturnType<typeof parseFormula> {

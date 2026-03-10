@@ -27,10 +27,24 @@ import type {
 export class SheetHandle {
 	private readonly sheetName: string
 	private readonly resolveSheet: () => Sheet | undefined
+	private readonly resolveFormula: (
+		row: number,
+		col: number,
+		cell: NonNullable<ReturnType<Sheet['cells']['get']>>,
+	) => string | null
 
-	constructor(sheetName: string, resolveSheet: () => Sheet | undefined) {
+	constructor(
+		sheetName: string,
+		resolveSheet: () => Sheet | undefined,
+		resolveFormula: (
+			row: number,
+			col: number,
+			cell: NonNullable<ReturnType<Sheet['cells']['get']>>,
+		) => string | null,
+	) {
 		this.sheetName = sheetName
 		this.resolveSheet = resolveSheet
+		this.resolveFormula = resolveFormula
 	}
 
 	get name(): string {
@@ -56,7 +70,13 @@ export class SheetHandle {
 		const parsed = parseA1(ref)
 		const cell = this.requireSheet().cells.get(parsed.row, parsed.col)
 		if (!cell) return undefined
-		return makeCompactCellInfo(parsed.row, parsed.col, cell, ref)
+		return makeCompactCellInfo(
+			parsed.row,
+			parsed.col,
+			cell,
+			this.resolveFormula(parsed.row, parsed.col, cell),
+			ref,
+		)
 	}
 
 	range(rangeRef: string): RangeInfo {
@@ -71,7 +91,7 @@ export class SheetHandle {
 
 	rangeCompact(rangeRef: string, opts?: { includeRefs?: boolean }): CompactRangeInfo {
 		const parsed = parseRange(rangeRef)
-		const cells = collectCellsCompact(this.requireSheet(), parsed, opts)
+		const cells = collectCellsCompact(this.requireSheet(), parsed, this.resolveFormula, opts)
 		return {
 			ref: parsed,
 			cells,
@@ -115,7 +135,7 @@ export class SheetHandle {
 				row: Math.max(Math.min(endRow, requestedRef.end.row), requestedRef.start.row),
 			},
 		}
-		const cells = collectCellsCompact(sheet, windowRef, opts)
+		const cells = collectCellsCompact(sheet, windowRef, this.resolveFormula, opts)
 		const consumedRows = Math.max(0, endRow - requestedRef.start.row + 1)
 		const hasMore = requestedRef.start.row + rowOffset + rowLimit - 1 < requestedRef.end.row
 		return {
@@ -212,6 +232,7 @@ export class SheetHandle {
 						row,
 						col,
 						cell,
+						this.resolveFormula(row, col, cell),
 						opts?.includeRefs === false ? undefined : toA1({ row, col }),
 					),
 				)
@@ -298,6 +319,11 @@ export class SheetHandle {
 function collectCellsCompact(
 	sheet: Sheet,
 	range: RangeRef,
+	resolveFormula: (
+		row: number,
+		col: number,
+		cell: NonNullable<ReturnType<Sheet['cells']['get']>>,
+	) => string | null,
 	opts?: { includeRefs?: boolean },
 ): CompactCellInfo[] {
 	const cells: CompactCellInfo[] = []
@@ -308,6 +334,7 @@ function collectCellsCompact(
 					row,
 					col,
 					cell,
+					resolveFormula(row, col, cell),
 					opts?.includeRefs === false ? undefined : toA1({ row, col }),
 				),
 			)
@@ -320,12 +347,13 @@ function makeCompactCellInfo(
 	row: number,
 	col: number,
 	cell: NonNullable<ReturnType<Sheet['cells']['get']>>,
+	formula: string | null,
 	ref?: string,
 ): CompactCellInfo {
 	return {
 		...(ref ? { ref } : {}),
 		value: cell.value,
-		formula: cell.formula,
+		formula,
 		formulaBinding: cell.formulaInfo ?? null,
 		row,
 		col,

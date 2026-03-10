@@ -5,6 +5,7 @@ import {
 	analyzeWorkbookFormulas,
 	createSnapshot,
 	diffWorkbooks,
+	resolveCellFormulaText,
 	type WorkbookAnalysis,
 	type WorkbookDependencyAnalysis,
 	type WorkbookDiff,
@@ -174,7 +175,15 @@ export class WorkbookReadView {
 		const cached = this.sheetHandleCache.get(name)
 		if (cached) return cached
 		if (!this.wb.getSheet(name)) return undefined
-		const handle = new SheetHandle(name, () => this.wb.getSheet(name))
+		const handle = new SheetHandle(
+			name,
+			() => this.wb.getSheet(name),
+			(row, col, cell) => {
+				const sheetIndex = this.wb.sheets.findIndex((sheet) => sheet.name === name)
+				if (sheetIndex === -1) return cell.formula
+				return resolveCellFormulaText(this.wb, sheetIndex, row, col, cell)
+			},
+		)
 		this.sheetHandleCache.set(name, handle)
 		return handle
 	}
@@ -352,19 +361,15 @@ export class WorkbookReadView {
 	formula(cellRef: string): FormulaInfo | undefined {
 		if (this.formulaInfoCache.has(cellRef)) return this.formulaInfoCache.get(cellRef)
 		const { sheetName, ref } = parseFullRef(cellRef, this.wb)
+		const formulaKey = makeFormulaKey(this.wb, sheetName, ref)
+		const analyzed = formulaKey ? this.formulaAnalysis().formulas.get(formulaKey) : undefined
 		const cell = this.sheet(sheetName)?.cell(ref)
-		if (!cell?.formula) {
+		if (!cell || !analyzed) {
 			this.formulaInfoCache.set(cellRef, undefined)
 			return undefined
 		}
 
-		const formula = normalizeFormulaInput(cell.formula)
-		const formulaKey = makeFormulaKey(this.wb, sheetName, ref)
-		const analyzed = formulaKey ? this.formulaAnalysis().formulas.get(formulaKey) : undefined
-		if (!analyzed) {
-			this.formulaInfoCache.set(cellRef, undefined)
-			return undefined
-		}
+		const formula = normalizeFormulaInput(analyzed.formula)
 		const tokens = tokenizeFormulaInput(formula)
 		if (!analyzed.ast) {
 			const info = buildFormulaInfo({

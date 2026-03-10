@@ -410,7 +410,7 @@ describe('readXlsx', () => {
 			isMaster: false,
 			masterRef: 'A1',
 		})
-		expect(result.value.workbook.sheets[0]?.cells.get(1, 0)?.formula).toBe('B2*2')
+		expect(result.value.workbook.sheets[0]?.cells.get(1, 0)?.formula).toBeNull()
 	})
 
 	it('parses worksheet tables from sheet relationships', () => {

@@ -25,11 +25,15 @@ export async function traceCommand(args: string[], flags: Map<string, string>): 
 
 	const { document: session } = await openWorkbookDocumentWithProgress(file, { mode: 'formula' })
 	const maxDepth = parseOptionalInt(flags.get('max-depth'))
-	if (flags.has('max-depth') && (maxDepth === null || maxDepth < 0)) {
+	if (flags.has('max-depth') && (maxDepth == null || maxDepth < 0)) {
 		console.error('Invalid --max-depth. Use a non-negative integer.')
 		return 1
 	}
-	const result = session.trace(cellRef, maxDepth !== undefined ? { maxDepth } : undefined)
+	const validatedMaxDepth = maxDepth ?? undefined
+	const result = session.trace(
+		cellRef,
+		validatedMaxDepth !== undefined ? { maxDepth: validatedMaxDepth } : undefined,
+	)
 
 	if (!result) {
 		console.error(`Could not trace "${cellRef}"`)

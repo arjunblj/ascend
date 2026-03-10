@@ -41,15 +41,17 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 	)
 
 	const rowOffset = parseOptionalInt(flags.get('row-offset'))
-	if (flags.has('row-offset') && rowOffset === null) {
+	if (flags.has('row-offset') && rowOffset == null) {
 		console.error('Invalid --row-offset. Use a non-negative integer.')
 		return 1
 	}
 	const rowLimit = parseOptionalInt(flags.get('row-limit'))
-	if (flags.has('row-limit') && (rowLimit === null || rowLimit < 1)) {
+	if (flags.has('row-limit') && (rowLimit == null || rowLimit < 1)) {
 		console.error('Invalid --row-limit. Use a positive integer.')
 		return 1
 	}
+	const validatedRowOffset = rowOffset ?? undefined
+	const validatedRowLimit = rowLimit ?? undefined
 	const display = flags.has('display')
 
 	switch (selector.kind) {
@@ -60,8 +62,8 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 				return 1
 			}
 			const page = handle.readRows({
-				...(rowOffset !== undefined ? { offset: rowOffset } : {}),
-				...(rowLimit !== undefined ? { limit: rowLimit } : {}),
+				...(validatedRowOffset !== undefined ? { offset: validatedRowOffset } : {}),
+				...(validatedRowLimit !== undefined ? { limit: validatedRowLimit } : {}),
 			})
 			if (flags.has('json')) {
 				console.log(
@@ -136,8 +138,8 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 				wb,
 				resolvedRange.sheet,
 				resolvedRange.range,
-				rowOffset,
-				rowLimit,
+				validatedRowOffset,
+				validatedRowLimit,
 				flags.has('json'),
 				display,
 			)
@@ -147,8 +149,8 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 				wb,
 				resolveSheetName(wb, selector.sheet),
 				selector.range,
-				rowOffset,
-				rowLimit,
+				validatedRowOffset,
+				validatedRowLimit,
 				flags.has('json'),
 				display,
 			)

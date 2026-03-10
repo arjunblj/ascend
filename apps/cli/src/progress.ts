@@ -64,8 +64,6 @@ export async function openWorkbookDocumentWithProgress(
 	return { document: value, durationMs }
 }
 
-export const openWorkbookSessionWithProgress = openWorkbookDocumentWithProgress
-
 function clearStatusLine(): void {
 	process.stderr.write('\r')
 	process.stderr.write(' '.repeat(80))

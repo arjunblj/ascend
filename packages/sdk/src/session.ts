@@ -31,8 +31,6 @@ export interface WorkbookLoadOptions {
 	readonly sheets?: readonly string[]
 }
 
-export type WorkbookSessionOpenOptions = WorkbookLoadOptions
-
 interface SessionFileIdentity {
 	readonly path: string
 	readonly size: number
@@ -125,10 +123,6 @@ export class WorkbookDocument {
 	}
 
 	get loadOptions(): WorkbookLoadOptions {
-		return this.options
-	}
-
-	get openOptions(): WorkbookLoadOptions {
 		return this.options
 	}
 

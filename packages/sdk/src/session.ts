@@ -288,6 +288,13 @@ export class WorkbookSession {
 	}
 
 	check(): CheckResult {
+		const issue = this.view.dependencyVerificationIssue()
+		if (issue) {
+			return {
+				valid: false,
+				issues: [{ severity: 'warning', message: issue }],
+			}
+		}
 		const result = verifyCheck(this.view.getWorkbookModel(), {
 			formulas: this.view.formulaAnalysis(),
 			dependencies: this.view.dependencyAnalysis(),

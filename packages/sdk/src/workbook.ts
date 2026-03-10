@@ -277,6 +277,13 @@ export class AscendWorkbook extends WorkbookReadView {
 	// --- Verification ---
 
 	check(): CheckResult {
+		const issue = this.dependencyVerificationIssue()
+		if (issue) {
+			return {
+				valid: false,
+				issues: [{ severity: 'warning', message: issue }],
+			}
+		}
 		const result = verifyCheck(this.wb, {
 			formulas: this.formulaAnalysis(),
 			dependencies: this.dependencyAnalysis(),

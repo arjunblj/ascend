@@ -331,6 +331,7 @@ export class WorkbookReadView {
 	}
 
 	trace(cellRef: string, opts?: { maxDepth?: number }): TraceResult | undefined {
+		if (this.dependencyVerificationIssue()) return undefined
 		const { sheetName, ref } = parseFullRef(cellRef, this.wb)
 		const result = verifyTrace(this.wb, sheetName, ref, opts, {
 			formulas: this.formulaAnalysis(),
@@ -430,6 +431,15 @@ export class WorkbookReadView {
 
 	get names(): readonly string[] {
 		return this.wb.definedNames.workbookKeys()
+	}
+
+	dependencyVerificationIssue(): string | undefined {
+		const reasons: string[] = []
+		if (!this.loadInfo.hasAllSheets) reasons.push('not all sheets are loaded')
+		if (!this.loadInfo.cellsHydrated) reasons.push('sheet cells are not hydrated')
+		if (this.loadInfo.mode === 'values') reasons.push('only cell values are hydrated')
+		if (reasons.length === 0) return undefined
+		return `Cannot verify workbook dependencies from this partial view because ${reasons.join(' and ')}. Reopen with formula or full mode and all sheets loaded.`
 	}
 
 	definedNames(scopeSheetName?: string): readonly DefinedNameInfo[] {

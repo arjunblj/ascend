@@ -9,7 +9,7 @@ import type {
 	SheetDataValidation,
 	StyleId,
 } from '@ascend/core'
-import { columnToIndex, indexToColumn, parseRange, Sheet } from '@ascend/core'
+import { indexToColumn, parseRange, Sheet } from '@ascend/core'
 import type { FormulaCellRef, FormulaNode } from '@ascend/formulas'
 import { parseFormula, printFormula, rewriteRefs } from '@ascend/formulas'
 import type { CellValue, ExcelError } from '@ascend/schema'
@@ -19,15 +19,28 @@ import { parseAutoFilterNode } from './filtering.ts'
 import type { Relationship } from './relationships.ts'
 import type { SharedStringResolver } from './shared-strings.ts'
 
-const CELL_REF_RE = /^([A-Za-z]+)(\d+)$/
 const SMALL_NUMBER_RANGE_START = -128
 const SMALL_NUMBER_RANGE_END = 512
 const SHEET_DATA_RE = /<sheetData\b[^>]*>([\s\S]*?)<\/sheetData>|<sheetData\b[^>]*\/>/
-const ROW_RE = /<row\b([^>]*)>([\s\S]*?)<\/row>|<row\b([^>]*)\/>/g
-const CELL_RE = /<c\b([^>]*)>([\s\S]*?)<\/c>|<c\b([^>]*)\/>/g
 const ATTR_RE = /([A-Za-z_][\w:.-]*)="([^"]*)"/g
 const TEXT_NODE_RE =
 	/<([A-Za-z_][\w:.-]*)\b([^>]*)>([\s\S]*?)<\/\1>|<([A-Za-z_][\w:.-]*)\b([^>]*)\/>/g
+
+interface CellPosition {
+	readonly row: number
+	readonly col: number
+}
+
+interface SharedFormulaMaster {
+	readonly formula: string
+	readonly row: number
+	readonly col: number
+	readonly ref?: string
+	readonly masterRef?: string
+	readonly parsed?: FormulaNode
+}
+
+type SharedFormulaMasterMap = Map<string, SharedFormulaMaster>
 
 export interface SheetParseContext {
 	readonly sharedStrings: SharedStringResolver
@@ -38,6 +51,12 @@ export interface SheetParseContext {
 	readonly valuePool?: ValueInternPool
 	readonly valuesOnly?: boolean
 	readonly formulaOnly?: boolean
+	readonly formulaFeatures?: SheetFormulaFeatures
+}
+
+export interface SheetFormulaFeatures {
+	hasSharedFormula: boolean
+	hasArrayFormula: boolean
 }
 
 export class ValueInternPool {
@@ -145,41 +164,54 @@ function stripSheetDataForDom(xml: string): string {
 }
 
 function parseSheetDataXml(xml: string, sheet: Sheet, ctx: SheetParseContext): void {
-	const sheetData = extractSheetDataContent(xml)
+	const sheetData = locateSheetData(xml)
 	if (!sheetData) return
-	const sharedFormulaMasters = new Map<
-		string,
-		{
-			formula: string
-			row: number
-			col: number
-			ref?: string
-			masterRef?: string
-			parsed?: FormulaNode
-		}
-	>()
+	const sharedFormulaMasters: SharedFormulaMasterMap = new Map()
 	const useFastPath = ctx.valuesOnly || ctx.formulaOnly
+	let rowCursor = sheetData.contentStart
+	let currentRow = -1
 
-	for (const rowMatch of sheetData.matchAll(ROW_RE)) {
-		const rowAttrsRaw = rowMatch[1] ?? rowMatch[3] ?? ''
-		const rowIndex = rawNumAttr(rowAttrsRaw, 'r')
+	while (true) {
+		const rowOpen = xml.indexOf('<row', rowCursor)
+		if (rowOpen === -1 || rowOpen >= sheetData.contentEnd) return
+		const rowTagEnd = findTagEnd(xml, rowOpen)
+		if (rowTagEnd === -1 || rowTagEnd >= sheetData.contentEnd) return
+		const rowAttrsRaw = xml.slice(rowOpen + 4, rowTagEnd)
+		const explicitRowIndex = rawNumAttr(rowAttrsRaw, 'r')
+		const row = explicitRowIndex !== undefined ? explicitRowIndex - 1 : currentRow + 1
+		currentRow = row
 		const rowHeight = rawNumAttr(rowAttrsRaw, 'ht')
-		if (
-			rowIndex !== undefined &&
-			rowHeight !== undefined &&
-			rawAttr(rowAttrsRaw, 'customHeight') === '1'
-		) {
-			sheet.rowHeights.set(rowIndex - 1, rowHeight)
+		if (rowHeight !== undefined && rawAttr(rowAttrsRaw, 'customHeight') === '1') {
+			sheet.rowHeights.set(row, rowHeight)
+		}
+		if (isSelfClosingTag(xml, rowOpen, rowTagEnd)) {
+			rowCursor = rowTagEnd + 1
+			continue
 		}
 
-		const rowInner = rowMatch[2] ?? ''
-		for (const cellMatch of rowInner.matchAll(CELL_RE)) {
-			const rawAttrs = cellMatch[1] ?? cellMatch[3] ?? ''
-			const innerXml = cellMatch[2] ?? ''
+		const rowClose = xml.indexOf('</row>', rowTagEnd + 1)
+		if (rowClose === -1 || rowClose > sheetData.contentEnd) return
+		let cellCursor = rowTagEnd + 1
+		let nextCol = 0
+		while (true) {
+			const cellOpen = xml.indexOf('<c', cellCursor)
+			if (cellOpen === -1 || cellOpen >= rowClose) break
+			const cellTagEnd = findTagEnd(xml, cellOpen)
+			if (cellTagEnd === -1 || cellTagEnd > rowClose) break
+			const rawAttrs = xml.slice(cellOpen + 2, cellTagEnd)
+			const selfClosing = isSelfClosingTag(xml, cellOpen, cellTagEnd)
+			const cellClose = selfClosing ? -1 : xml.indexOf('</c>', cellTagEnd + 1)
+			const innerXml =
+				!selfClosing && cellClose !== -1 && cellClose <= rowClose
+					? xml.slice(cellTagEnd + 1, cellClose)
+					: ''
 			const parsed = useFastPath
-				? parseFastCell(rawAttrs, innerXml, ctx, sharedFormulaMasters)
-				: parseSlowCell(rawAttrs, innerXml, ctx, sharedFormulaMasters)
+				? parseFastCell(rawAttrs, innerXml, ctx, sharedFormulaMasters, { row, col: nextCol })
+				: parseSlowCell(rawAttrs, innerXml, ctx, sharedFormulaMasters, { row, col: nextCol })
+			cellCursor =
+				selfClosing || cellClose === -1 || cellClose > rowClose ? cellTagEnd + 1 : cellClose + 4
 			if (!parsed) continue
+			nextCol = parsed.col + 1
 			const cell = parsed.cell
 			if (cell) {
 				sheet.cells.setResolved(
@@ -192,6 +224,7 @@ function parseSheetDataXml(xml: string, sheet: Sheet, ctx: SheetParseContext): v
 				)
 			}
 		}
+		rowCursor = rowClose + 6
 	}
 }
 
@@ -199,22 +232,12 @@ function parseSlowCell(
 	rawAttrs: string,
 	innerXml: string,
 	ctx: SheetParseContext,
-	sharedFormulaMasters: Map<
-		string,
-		{
-			formula: string
-			row: number
-			col: number
-			ref?: string
-			masterRef?: string
-			parsed?: FormulaNode
-		}
-	>,
+	sharedFormulaMasters: SharedFormulaMasterMap,
+	fallbackPosition?: CellPosition,
 ): { row: number; col: number; cell: Cell | undefined } | undefined {
 	const cellNode = buildCellNode(rawAttrs, innerXml)
 	const ref = attr(cellNode, 'r')
-	if (!ref) return undefined
-	const pos = parseCellRef(ref)
+	const pos = ref ? parseCellRef(ref) : fallbackPosition
 	if (!pos) return undefined
 	return {
 		row: pos.row,
@@ -227,24 +250,13 @@ function parseFastCell(
 	rawAttrs: string,
 	innerXml: string,
 	ctx: SheetParseContext,
-	sharedFormulaMasters: Map<
-		string,
-		{
-			formula: string
-			row: number
-			col: number
-			ref?: string
-			masterRef?: string
-			parsed?: FormulaNode
-		}
-	>,
+	sharedFormulaMasters: SharedFormulaMasterMap,
+	fallbackPosition?: CellPosition,
 ): { row: number; col: number; cell: Cell | undefined } | undefined {
-	const ref = rawAttr(rawAttrs, 'r')
-	if (!ref) return undefined
-	const pos = parseCellRef(ref)
+	const pos = resolveCellPosition(rawAttrs, fallbackPosition)
 	if (!pos) return undefined
 	if (rawAttr(rawAttrs, 't') === 'inlineStr' || innerXml.includes('<is')) {
-		return parseSlowCell(rawAttrs, innerXml, ctx, sharedFormulaMasters)
+		return parseSlowCell(rawAttrs, innerXml, ctx, sharedFormulaMasters, pos)
 	}
 
 	const pool = ctx.valuePool
@@ -255,7 +267,14 @@ function parseFastCell(
 	const formulaSpec =
 		ctx.valuesOnly && rawValue !== undefined && rawValue !== ''
 			? { text: null, info: undefined }
-			: parseFormulaText(buildFormulaNode(innerXml), pos.row, pos.col, sharedFormulaMasters, pool)
+			: parseFormulaText(
+					extractRawFormulaNode(innerXml),
+					pos.row,
+					pos.col,
+					sharedFormulaMasters,
+					pool,
+					ctx.formulaFeatures,
+				)
 
 	let value: CellValue
 	if (type === 's') {
@@ -302,25 +321,35 @@ function parseFastCell(
 	}
 }
 
-function extractSheetDataContent(xml: string): string | null {
-	const match = SHEET_DATA_RE.exec(xml)
-	return match?.[1] ?? null
+function locateSheetData(xml: string): { contentStart: number; contentEnd: number } | null {
+	const open = xml.indexOf('<sheetData')
+	if (open === -1) return null
+	const tagEnd = findTagEnd(xml, open)
+	if (tagEnd === -1) return null
+	if (isSelfClosingTag(xml, open, tagEnd)) return null
+	const close = xml.indexOf('</sheetData>', tagEnd + 1)
+	if (close === -1) return null
+	return { contentStart: tagEnd + 1, contentEnd: close }
+}
+
+function findTagEnd(xml: string, start: number): number {
+	return xml.indexOf('>', start + 1)
+}
+
+function isSelfClosingTag(xml: string, tagStart: number, tagEnd: number): boolean {
+	for (let idx = tagEnd - 1; idx > tagStart; idx--) {
+		const ch = xml[idx]
+		if (!ch) break
+		if (ch === '/') return true
+		if (ch !== ' ' && ch !== '\n' && ch !== '\r' && ch !== '\t') return false
+	}
+	return false
 }
 
 function _parseSheetData(ws: XmlNode, sheet: Sheet, ctx: SheetParseContext): void {
 	const sd = ws.sheetData as XmlNode | undefined
 	if (!sd) return
-	const sharedFormulaMasters = new Map<
-		string,
-		{
-			formula: string
-			row: number
-			col: number
-			ref?: string
-			masterRef?: string
-			parsed?: FormulaNode
-		}
-	>()
+	const sharedFormulaMasters: SharedFormulaMasterMap = new Map()
 
 	for (const row of asArray<XmlNode>(sd.row as XmlNode | XmlNode[])) {
 		const rowIndex = numAttr(row, 'r')
@@ -406,6 +435,15 @@ function rawNumAttr(rawAttrs: string, name: string): number | undefined {
 	return Number.isNaN(parsed) ? undefined : parsed
 }
 
+function resolveCellPosition(
+	rawAttrs: string,
+	fallbackPosition?: CellPosition,
+): CellPosition | undefined {
+	const ref = rawAttr(rawAttrs, 'r')
+	if (ref) return parseCellRef(ref)
+	return fallbackPosition
+}
+
 function extractTextNode(
 	xml: string,
 	tagName: string,
@@ -429,18 +467,21 @@ function extractTagText(xml: string, tagName: string): string | undefined {
 	return decodeXmlText(xml.slice(contentStart + 1, close))
 }
 
-function buildFormulaNode(innerXml: string): XmlNode | undefined {
+interface RawFormulaNode {
+	readonly rawAttrs: string
+	readonly text?: string
+}
+
+function extractRawFormulaNode(innerXml: string): RawFormulaNode | undefined {
 	const open = innerXml.indexOf('<f')
 	if (open === -1) return undefined
-	const tagEnd = innerXml.indexOf('>', open)
+	const tagEnd = findTagEnd(innerXml, open)
 	if (tagEnd === -1) return undefined
 	const rawAttrs = innerXml.slice(open + 2, tagEnd)
-	const node = parseRawAttributes(rawAttrs)
-	if (innerXml[tagEnd - 1] === '/') return node
+	if (isSelfClosingTag(innerXml, open, tagEnd)) return { rawAttrs }
 	const close = innerXml.indexOf('</f>', tagEnd + 1)
-	if (close === -1) return node
-	node['#text'] = decodeXmlText(innerXml.slice(tagEnd + 1, close))
-	return node
+	if (close === -1) return { rawAttrs }
+	return { rawAttrs, text: decodeXmlText(innerXml.slice(tagEnd + 1, close)) }
 }
 
 function extractNodes(xml: string, tagName: string): Array<{ attrs: string; text?: string }> {
@@ -459,6 +500,7 @@ function extractNodes(xml: string, tagName: string): Array<{ attrs: string; text
 }
 
 function decodeXmlText(text: string): string {
+	if (!text.includes('&')) return text
 	return text
 		.replace(/&lt;/g, '<')
 		.replace(/&gt;/g, '>')
@@ -468,14 +510,30 @@ function decodeXmlText(text: string): string {
 }
 
 function parseCellRef(ref: string): { row: number; col: number } | undefined {
-	const m = CELL_REF_RE.exec(ref)
-	const colStr = m?.[1]
-	const rowStr = m?.[2]
-	if (!colStr || !rowStr) return undefined
-	return {
-		row: Number.parseInt(rowStr, 10) - 1,
-		col: columnToIndex(colStr.toUpperCase()),
+	let index = 0
+	let col = 0
+	while (index < ref.length) {
+		const code = ref.charCodeAt(index)
+		if (code >= 48 && code <= 57) break
+		if (code >= 65 && code <= 90) {
+			col = col * 26 + (code - 64)
+		} else if (code >= 97 && code <= 122) {
+			col = col * 26 + (code - 96)
+		} else {
+			return undefined
+		}
+		index += 1
 	}
+	if (index === 0 || index >= ref.length) return undefined
+	let row = 0
+	while (index < ref.length) {
+		const code = ref.charCodeAt(index)
+		if (code < 48 || code > 57) return undefined
+		row = row * 10 + (code - 48)
+		index += 1
+	}
+	if (row <= 0 || col <= 0) return undefined
+	return { row: row - 1, col: col - 1 }
 }
 
 function parseCellValue(
@@ -483,17 +541,7 @@ function parseCellValue(
 	ctx: SheetParseContext,
 	row: number,
 	col: number,
-	sharedFormulaMasters: Map<
-		string,
-		{
-			formula: string
-			row: number
-			col: number
-			ref?: string
-			masterRef?: string
-			parsed?: FormulaNode
-		}
-	>,
+	sharedFormulaMasters: SharedFormulaMasterMap,
 ): Cell | undefined {
 	const pool = ctx.valuePool
 	const type = attr(c, 't')
@@ -503,7 +551,7 @@ function parseCellValue(
 	const formulaSpec =
 		ctx.valuesOnly && rawValue !== undefined && rawValue !== null && rawValue !== ''
 			? { text: null, info: undefined }
-			: parseFormulaText(c.f, row, col, sharedFormulaMasters, pool)
+			: parseFormulaText(c.f, row, col, sharedFormulaMasters, pool, ctx.formulaFeatures)
 	const formula = formulaSpec.text
 
 	let value: CellValue
@@ -554,18 +602,9 @@ function parseFormulaText(
 	formulaNode: unknown,
 	row: number,
 	col: number,
-	sharedFormulaMasters: Map<
-		string,
-		{
-			formula: string
-			row: number
-			col: number
-			ref?: string
-			masterRef?: string
-			parsed?: FormulaNode
-		}
-	>,
+	sharedFormulaMasters: SharedFormulaMasterMap,
 	pool?: ValueInternPool,
+	formulaFeatures?: SheetFormulaFeatures,
 ): { text: string | null; info?: Cell['formulaInfo'] } {
 	if (formulaNode === undefined || formulaNode === null) return { text: null }
 	if (
@@ -576,67 +615,111 @@ function parseFormulaText(
 		const text = String(formulaNode)
 		return { text: pool ? pool.internString(text) : text }
 	}
+	if (isRawFormulaNode(formulaNode)) {
+		const sharedIndex = rawAttr(formulaNode.rawAttrs, 'si')
+		const formulaType = rawAttr(formulaNode.rawAttrs, 't')
+		const text = formulaNode.text
+		return parseResolvedFormulaText(
+			formulaType,
+			sharedIndex,
+			rawAttr(formulaNode.rawAttrs, 'ref'),
+			text,
+			row,
+			col,
+			sharedFormulaMasters,
+			pool,
+			formulaFeatures,
+		)
+	}
 	if (typeof formulaNode === 'object') {
 		const node = formulaNode as XmlNode
 		const sharedIndex = attr(node, 'si')
 		const formulaType = attr(node, 't')
 		const text = node['#text']
-		if (formulaType === 'shared' && sharedIndex) {
-			const ref = attr(node, 'ref')
-			if (text !== undefined && text !== null) {
-				const formula = pool ? pool.internString(String(text)) : String(text)
-				const parsed = parseFormula(formula)
-				sharedFormulaMasters.set(sharedIndex, {
-					formula,
-					row,
-					col,
-					masterRef: toCellRef(row, col),
-					...(ref ? { ref } : {}),
-					...(parsed.ok ? { parsed: parsed.value } : {}),
-				})
-				return {
-					text: formula,
-					info: {
-						kind: 'shared',
-						sharedIndex,
-						isMaster: true,
-						masterRef: toCellRef(row, col),
-						...(ref ? { ref } : {}),
-					},
-				}
-			}
-			const master = sharedFormulaMasters.get(sharedIndex)
-			if (!master) return { text: null }
-			const translated = translateSharedFormula(master, row, col)
+		return parseResolvedFormulaText(
+			formulaType,
+			sharedIndex,
+			attr(node, 'ref'),
+			text,
+			row,
+			col,
+			sharedFormulaMasters,
+			pool,
+			formulaFeatures,
+		)
+	}
+	return { text: null }
+}
+
+function parseResolvedFormulaText(
+	formulaType: string | undefined,
+	sharedIndex: string | undefined,
+	ref: string | undefined,
+	text: unknown,
+	row: number,
+	col: number,
+	sharedFormulaMasters: SharedFormulaMasterMap,
+	pool?: ValueInternPool,
+	formulaFeatures?: SheetFormulaFeatures,
+): { text: string | null; info?: Cell['formulaInfo'] } {
+	if (formulaType === 'shared' && sharedIndex) {
+		if (formulaFeatures) formulaFeatures.hasSharedFormula = true
+		if (text !== undefined && text !== null) {
+			const formula = pool ? pool.internString(String(text)) : String(text)
+			const parsed = parseFormula(formula)
+			sharedFormulaMasters.set(sharedIndex, {
+				formula,
+				row,
+				col,
+				masterRef: toCellRef(row, col),
+				...(ref ? { ref } : {}),
+				...(parsed.ok ? { parsed: parsed.value } : {}),
+			})
 			return {
-				text: translated && pool ? pool.internString(translated) : translated,
+				text: formula,
 				info: {
 					kind: 'shared',
 					sharedIndex,
-					isMaster: false,
-					masterRef: master.masterRef,
+					isMaster: true,
+					masterRef: toCellRef(row, col),
+					...(ref ? { ref } : {}),
 				},
 			}
 		}
-		if (formulaType === 'array') {
-			const ref = attr(node, 'ref')
-			if (text === undefined || text === null) {
-				return {
-					text: null,
-					info: { kind: 'array', ...(ref ? { ref } : {}) },
-				}
-			}
-			const formula = String(text)
+		const master = sharedFormulaMasters.get(sharedIndex)
+		if (!master) return { text: null }
+		const translated = translateSharedFormula(master, row, col)
+		return {
+			text: translated && pool ? pool.internString(translated) : translated,
+			info: {
+				kind: 'shared',
+				sharedIndex,
+				isMaster: false,
+				...(master.masterRef ? { masterRef: master.masterRef } : {}),
+			},
+		}
+	}
+	if (formulaType === 'array') {
+		if (formulaFeatures) formulaFeatures.hasArrayFormula = true
+		if (text === undefined || text === null) {
 			return {
-				text: pool ? pool.internString(formula) : formula,
+				text: null,
 				info: { kind: 'array', ...(ref ? { ref } : {}) },
 			}
 		}
-		if (text === undefined || text === null) return { text: null }
 		const formula = String(text)
-		return { text: pool ? pool.internString(formula) : formula }
+		return {
+			text: pool ? pool.internString(formula) : formula,
+			info: { kind: 'array', ...(ref ? { ref } : {}) },
+		}
 	}
-	return { text: null }
+	if (text === undefined || text === null) return { text: null }
+	const formula = String(text)
+	return { text: pool ? pool.internString(formula) : formula }
+}
+
+function isRawFormulaNode(value: unknown): value is RawFormulaNode {
+	return typeof value === 'object' && value !== null && 'rawAttrs' in value
 }
 
 function translateSharedFormula(

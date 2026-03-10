@@ -167,6 +167,44 @@ describe('readXlsx', () => {
 		expect(cell?.value).toEqual({ kind: 'number', value: 99 })
 	})
 
+	it('infers omitted row and cell references during sheet parsing', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row>
+      <c t="s"><v>0</v></c>
+      <c><v>7</v></c>
+    </row>
+    <row>
+      <c><f>A1+B1</f><v>14</v></c>
+    </row>
+    <row r="5">
+      <c r="C5"><v>3</v></c>
+      <c><v>4</v></c>
+    </row>
+  </sheetData>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet?.cells.get(0, 0)?.value).toEqual({ kind: 'string', value: 'Hello' })
+		expect(sheet?.cells.get(0, 1)?.value).toEqual({ kind: 'number', value: 7 })
+		expect(sheet?.cells.get(1, 0)?.formula).toBe('A1+B1')
+		expect(sheet?.cells.get(1, 0)?.value).toEqual({ kind: 'number', value: 14 })
+		expect(sheet?.cells.get(4, 2)?.value).toEqual({ kind: 'number', value: 3 })
+		expect(sheet?.cells.get(4, 3)?.value).toEqual({ kind: 'number', value: 4 })
+	})
+
 	it('captures shared strings as a preserved workbook part', () => {
 		const result = readXlsx(minimalXlsx())
 		expect(result.ok).toBe(true)

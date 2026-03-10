@@ -1,6 +1,7 @@
 import type { RangeRef, Workbook } from '@ascend/core'
 import type { FormulaCellRef, FormulaNode, FormulaRef } from '@ascend/formulas'
 import { extractRefs, functionRegistry, parseFormula, rewriteRefs } from '@ascend/formulas'
+import { ascendError } from '@ascend/schema'
 import { type CellKey, cellKey, DependencyGraph, type RangeDependency } from './dep-graph.ts'
 import { resolveStructuredRefRange } from './structured-refs.ts'
 
@@ -139,7 +140,7 @@ function parseIndexedFormula(
 	row: number,
 	col: number,
 	cell: {
-		formula: string
+		formula: string | null
 		formulaInfo?: { kind?: string; sharedIndex?: string; isMaster?: boolean; masterRef?: string }
 	},
 	sharedMasterCache: Map<string, FormulaNode>,
@@ -147,7 +148,7 @@ function parseIndexedFormula(
 	const binding = cell.formulaInfo
 	if (binding?.kind === 'shared') {
 		const cacheKey = `${sheetIndex}:${binding.sharedIndex ?? ''}`
-		if (binding.isMaster) {
+		if (binding.isMaster && cell.formula) {
 			const parsed = parseFormula(cell.formula)
 			if (parsed.ok) sharedMasterCache.set(cacheKey, parsed.value)
 			return parsed
@@ -160,6 +161,12 @@ function parseIndexedFormula(
 				ok: true as const,
 				value: rewriteSharedFormulaAst(masterAst, binding.masterRef, row, col),
 			}
+		}
+	}
+	if (!cell.formula) {
+		return {
+			ok: false as const,
+			error: ascendError('FORMULA_PARSE_ERROR', 'Formula text is missing for this cell.'),
 		}
 	}
 	return parseFormula(cell.formula)

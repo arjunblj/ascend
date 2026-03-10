@@ -901,6 +901,26 @@ describe('AscendWorkbook', () => {
 		)
 	})
 
+	test('partial workbook views reject preview, apply, and recalc operations', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'locked' }] }])
+		const bytes = wb.toBytes()
+		const reopened = await AscendWorkbook.open(bytes, { mode: 'values' })
+
+		const preview = reopened.preview([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'next' }] },
+		])
+		expect(preview.errors[0]?.message).toContain('Cannot modify a partial workbook view')
+
+		const apply = reopened.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'next' }] },
+		])
+		expect(apply.errors[0]?.message).toContain('Cannot modify a partial workbook view')
+
+		const recalc = reopened.recalc()
+		expect(recalc.errors[0]?.error.message).toContain('Cannot modify a partial workbook view')
+	})
+
 	test('CSV import creates workbook', () => {
 		const csv = 'Name,Age\nAlice,30\nBob,25'
 		const wb = AscendWorkbook.fromCsv(csv)
@@ -910,6 +930,19 @@ describe('AscendWorkbook', () => {
 		expect(handle).toBeDefined()
 		expect(handle?.cell('A1')?.value).toEqual({ kind: 'string', value: 'Name' })
 		expect(handle?.cell('B2')?.value).toEqual({ kind: 'number', value: 30 })
+	})
+
+	test('sheet handles stay current across workbook replacement', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'before' }] }])
+		const handle = wb.sheet('Sheet1')
+		if (!handle) throw new Error('Expected Sheet1 handle')
+
+		expect(handle.cell('A1')?.value).toEqual({ kind: 'string', value: 'before' })
+
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'after' }] }])
+
+		expect(handle.cell('A1')?.value).toEqual({ kind: 'string', value: 'after' })
 	})
 
 	test('CSV export works', () => {
@@ -1387,6 +1420,37 @@ describe('AscendWorkbook', () => {
 		})
 	})
 
+	test('table handles stay current across workbook replacement', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Name' },
+					{ ref: 'B1', value: 'Score' },
+					{ ref: 'A2', value: 'Alice' },
+					{ ref: 'B2', value: 90 },
+				],
+			},
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:B2', name: 'MyTable', hasHeaders: true },
+		])
+		const table = wb.table('MyTable')
+		if (!table) throw new Error('Expected MyTable to exist')
+
+		expect(table.readRows({ limit: 1 }).rows[0]?.values.Score).toEqual({
+			kind: 'number',
+			value: 90,
+		})
+
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'B2', value: 95 }] }])
+
+		expect(table.readRows({ limit: 1 }).rows[0]?.values.Score).toEqual({
+			kind: 'number',
+			value: 95,
+		})
+	})
+
 	test('inspectSheet exposes structured table metadata', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -1514,6 +1578,23 @@ describe('AscendWorkbook', () => {
 		expect(session.formula('Sheet1!A2')?.normalizedFormula).toBe('A1*3')
 		const reopened = await WorkbookSession.open(bytes, { mode: 'formula' })
 		expect(reopened).toBe(session)
+		WorkbookSession.clearCache()
+	})
+
+	test('WorkbookSession sheet handles stay current across upgrade', async () => {
+		WorkbookSession.clearCache()
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'loaded' }] }])
+		const bytes = wb.toBytes()
+		const session = await WorkbookSession.open(bytes, { mode: 'metadata-only' })
+		const handle = session.sheet('Sheet1')
+		if (!handle) throw new Error('Expected Sheet1 handle')
+
+		expect(handle.cell('A1')).toBeUndefined()
+
+		await session.upgrade({ mode: 'values' })
+
+		expect(handle.cell('A1')?.value).toEqual({ kind: 'string', value: 'loaded' })
 		WorkbookSession.clearCache()
 	})
 

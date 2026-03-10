@@ -25,6 +25,7 @@ import {
 	type ZipArchive,
 } from '@ascend/io-xlsx'
 import {
+	ascendError,
 	type CompatibilityReport,
 	type CsvDialect,
 	EMPTY,
@@ -133,6 +134,14 @@ export class AscendWorkbook extends WorkbookReadView {
 	// --- Mutation ---
 
 	preview(ops: readonly Operation[]): import('./types.ts').PreviewResult {
+		if (this.loadInfo.isPartial) {
+			return {
+				diff: { sheets: [], namesAdded: [], namesRemoved: [], namesChanged: [] },
+				sheetDiffs: [],
+				cellChanges: [],
+				errors: [partialWorkbookEditError()],
+			}
+		}
 		const clone = cloneWorkbook(this.wb)
 		const errors: import('@ascend/schema').AscendError[] = []
 		const dirtyFlags = this.deriveDirtyFlags(ops)
@@ -188,6 +197,14 @@ export class AscendWorkbook extends WorkbookReadView {
 	}
 
 	apply(ops: readonly Operation[]): ApplyResult {
+		if (this.loadInfo.isPartial) {
+			return {
+				affectedCells: [],
+				sheetsModified: [],
+				recalcRequired: false,
+				errors: [partialWorkbookEditError()],
+			}
+		}
 		const dirtyFlags = this.deriveDirtyFlags(ops)
 		const nextWorkbook = cloneWorkbook(this.wb)
 		const result = applyOperations(nextWorkbook, ops)
@@ -217,6 +234,13 @@ export class AscendWorkbook extends WorkbookReadView {
 	}
 
 	recalc(opts?: { range?: string }): RecalcResult {
+		if (this.loadInfo.isPartial) {
+			return {
+				changed: [],
+				errors: [{ ref: '', error: partialWorkbookEditError() }],
+				duration: 0,
+			}
+		}
 		const ctx: CalcContext = defaultCalcContext({
 			dateSystem: this.wb.calcSettings.dateSystem,
 			iterativeCalc: this.wb.calcSettings.iterativeCalc,
@@ -464,6 +488,17 @@ export class AscendWorkbook extends WorkbookReadView {
 		this.sourceArchive = extractZip(this.wb.sourceArchiveBytes)
 		return this.sourceArchive
 	}
+}
+
+function partialWorkbookEditError() {
+	return ascendError(
+		'VALIDATION_ERROR',
+		'Cannot modify a partial workbook view. Reopen the workbook with a full load before applying edits or recalculation.',
+		{
+			suggestedFix:
+				'Open the workbook with mode "full" and all sheets loaded before editing or recalculating.',
+		},
+	)
 }
 
 function buildFastPreviewDiff(

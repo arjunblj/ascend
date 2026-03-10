@@ -25,23 +25,25 @@ import type {
 } from './types.ts'
 
 export class SheetHandle {
-	private readonly sheet: Sheet
+	private readonly sheetName: string
+	private readonly resolveSheet: () => Sheet | undefined
 
-	constructor(sheet: Sheet) {
-		this.sheet = sheet
+	constructor(sheetName: string, resolveSheet: () => Sheet | undefined) {
+		this.sheetName = sheetName
+		this.resolveSheet = resolveSheet
 	}
 
 	get name(): string {
-		return this.sheet.name
+		return this.sheetName
 	}
 
 	get rowCount(): number {
-		const used = this.sheet.cells.usedRange()
+		const used = this.requireSheet().cells.usedRange()
 		return used ? used.end.row + 1 : 0
 	}
 
 	get colCount(): number {
-		const used = this.sheet.cells.usedRange()
+		const used = this.requireSheet().cells.usedRange()
 		return used ? used.end.col + 1 : 0
 	}
 
@@ -52,7 +54,7 @@ export class SheetHandle {
 
 	cellCompact(ref: string): CompactCellInfo | undefined {
 		const parsed = parseA1(ref)
-		const cell = this.sheet.cells.get(parsed.row, parsed.col)
+		const cell = this.requireSheet().cells.get(parsed.row, parsed.col)
 		if (!cell) return undefined
 		return makeCompactCellInfo(parsed.row, parsed.col, cell, ref)
 	}
@@ -69,7 +71,7 @@ export class SheetHandle {
 
 	rangeCompact(rangeRef: string, opts?: { includeRefs?: boolean }): CompactRangeInfo {
 		const parsed = parseRange(rangeRef)
-		const cells = collectCellsCompact(this.sheet, parsed, opts)
+		const cells = collectCellsCompact(this.requireSheet(), parsed, opts)
 		return {
 			ref: parsed,
 			cells,
@@ -98,6 +100,7 @@ export class SheetHandle {
 		opts?: { rowOffset?: number; rowLimit?: number; includeRefs?: boolean },
 	): CompactRangeWindowInfo {
 		const requestedRef = parseRange(rangeRef)
+		const sheet = this.requireSheet()
 		const rowOffset = Math.max(0, opts?.rowOffset ?? 0)
 		const totalRows = requestedRef.end.row - requestedRef.start.row + 1
 		const defaultLimit = totalRows
@@ -112,7 +115,7 @@ export class SheetHandle {
 				row: Math.max(Math.min(endRow, requestedRef.end.row), requestedRef.start.row),
 			},
 		}
-		const cells = collectCellsCompact(this.sheet, windowRef, opts)
+		const cells = collectCellsCompact(sheet, windowRef, opts)
 		const consumedRows = Math.max(0, endRow - requestedRef.start.row + 1)
 		const hasMore = requestedRef.start.row + rowOffset + rowLimit - 1 < requestedRef.end.row
 		return {
@@ -200,7 +203,7 @@ export class SheetHandle {
 		opts?: { includeRefs?: boolean },
 	): Generator<readonly CompactCellInfo[]> {
 		const parsed = parseRange(rangeRef)
-		const rows = this.sheet.cells.iterateRowsInRange(parsed)
+		const rows = this.requireSheet().cells.iterateRowsInRange(parsed)
 		let next = rows.next()
 		for (let row = parsed.start.row; row <= parsed.end.row; row++) {
 			if (!next.done && next.value[0] === row) {
@@ -220,67 +223,75 @@ export class SheetHandle {
 	}
 
 	usedRange(): RangeRef | null {
-		return this.sheet.cells.usedRange()
+		return this.requireSheet().cells.usedRange()
 	}
 
 	get state(): string {
-		return this.sheet.state
+		return this.requireSheet().state
 	}
 
 	get tabColor(): SheetTabColor | null {
-		return this.sheet.tabColor
+		return this.requireSheet().tabColor
 	}
 
 	get sheetFormatPr(): SheetFormatPr | null {
-		return this.sheet.sheetFormatPr
+		return this.requireSheet().sheetFormatPr
 	}
 
 	get frozenRows(): number {
-		return this.sheet.frozenRows
+		return this.requireSheet().frozenRows
 	}
 
 	get frozenCols(): number {
-		return this.sheet.frozenCols
+		return this.requireSheet().frozenCols
 	}
 
 	get merges(): readonly RangeRef[] {
-		return this.sheet.merges
+		return this.requireSheet().merges
 	}
 
 	get autoFilter(): AutoFilter | null {
-		return this.sheet.autoFilter
+		return this.requireSheet().autoFilter
 	}
 
 	get protection(): SheetProtection | null {
-		return this.sheet.protection
+		return this.requireSheet().protection
 	}
 
 	get conditionalFormats(): readonly SheetConditionalFormat[] {
-		return this.sheet.conditionalFormats
+		return this.requireSheet().conditionalFormats
 	}
 
 	get dataValidations(): readonly SheetDataValidation[] {
-		return this.sheet.dataValidations
+		return this.requireSheet().dataValidations
 	}
 
 	get imageRefs(): readonly SheetImageRef[] {
-		return this.sheet.imageRefs
+		return this.requireSheet().imageRefs
 	}
 
 	comments(): ReadonlyMap<string, SheetComment> {
-		return this.sheet.comments
+		return this.requireSheet().comments
 	}
 
 	hyperlinks(): ReadonlyMap<string, SheetHyperlink> {
-		return this.sheet.hyperlinks
+		return this.requireSheet().hyperlinks
 	}
 
 	comment(ref: string): SheetComment | undefined {
-		return this.sheet.comments.get(ref)
+		return this.requireSheet().comments.get(ref)
 	}
 
 	hyperlink(ref: string): SheetHyperlink | undefined {
-		return this.sheet.hyperlinks.get(ref)
+		return this.requireSheet().hyperlinks.get(ref)
+	}
+
+	private requireSheet(): Sheet {
+		const sheet = this.resolveSheet()
+		if (sheet) return sheet
+		throw new Error(
+			`Sheet "${this.sheetName}" is no longer available in the current workbook view.`,
+		)
 	}
 }
 

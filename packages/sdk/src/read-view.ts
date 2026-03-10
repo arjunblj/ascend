@@ -47,8 +47,8 @@ import type {
 
 export class WorkbookReadView {
 	protected wb: Workbook
-	protected readonly compat: CompatibilityReport
-	protected readonly loadInfo: WorkbookLoadInfo
+	protected compat: CompatibilityReport
+	protected loadInfo: WorkbookLoadInfo
 	private workbookInfoCache: WorkbookInfo | undefined
 	private readonly sheetInspectCache = new Map<string, SheetInspectInfo | undefined>()
 	private readonly formulaInfoCache = new Map<string, FormulaInfo | undefined>()
@@ -173,9 +173,8 @@ export class WorkbookReadView {
 	sheet(name: string): SheetHandle | undefined {
 		const cached = this.sheetHandleCache.get(name)
 		if (cached) return cached
-		const sheet = this.wb.getSheet(name)
-		if (!sheet) return undefined
-		const handle = new SheetHandle(sheet)
+		if (!this.wb.getSheet(name)) return undefined
+		const handle = new SheetHandle(name, () => this.wb.getSheet(name))
 		this.sheetHandleCache.set(name, handle)
 		return handle
 	}
@@ -286,7 +285,13 @@ export class WorkbookReadView {
 		for (const sheet of this.wb.sheets) {
 			for (const table of sheet.tables) {
 				if (table.name === name) {
-					const handle = new TableHandle(table, sheet)
+					const handle = new TableHandle(name, () => {
+						for (const currentSheet of this.wb.sheets) {
+							const currentTable = currentSheet.tables.find((entry) => entry.name === name)
+							if (currentTable) return { table: currentTable, sheet: currentSheet }
+						}
+						return undefined
+					})
 					this.tableHandleCache.set(name, handle)
 					return handle
 				}
@@ -492,8 +497,8 @@ export class WorkbookReadView {
 		loadInfo: WorkbookLoadInfo = this.loadInfo,
 	): void {
 		this.wb = workbook
-		;(this as unknown as { compat: CompatibilityReport }).compat = report
-		;(this as unknown as { loadInfo: WorkbookLoadInfo }).loadInfo = loadInfo
+		this.compat = report
+		this.loadInfo = loadInfo
 		this.clearReadCaches()
 	}
 }

@@ -35,7 +35,7 @@ import {
 	resolvePath,
 } from './relationships.ts'
 import { emptySharedStrings, parseSharedStrings } from './shared-strings.ts'
-import { parseSheet, ValueInternPool } from './sheet.ts'
+import { parseSheet, type SheetFormulaFeatures, ValueInternPool } from './sheet.ts'
 import { parseStyles, parseStylesLite } from './styles.ts'
 import { parseTable } from './table.ts'
 import { parseThemeXml } from './theme.ts'
@@ -290,7 +290,10 @@ export function readXlsx(
 			if (!sheetXml) continue
 			const sheetRelsXml = readPart(archive, getRelsPath(entry.path))
 			const sheetRelationships = sheetRelsXml ? parseRelationships(sheetRelsXml) : []
-			recordFormulaFeatures(sheetXml, entry.name, formulaFeatures)
+			const sheetFormulaFeatures: SheetFormulaFeatures = {
+				hasSharedFormula: false,
+				hasArrayFormula: false,
+			}
 			const sheet = parseSheet(entry.name, sheetXml, {
 				sharedStrings,
 				styleIds,
@@ -300,7 +303,14 @@ export function readXlsx(
 				valuePool,
 				valuesOnly,
 				formulaOnly,
+				formulaFeatures: sheetFormulaFeatures,
 			})
+			if (sheetFormulaFeatures.hasSharedFormula) {
+				formulaFeatures.sharedFormulaSheets.push(entry.name)
+			}
+			if (sheetFormulaFeatures.hasArrayFormula) {
+				formulaFeatures.arrayFormulaSheets.push(entry.name)
+			}
 			if (!valuesOnly && !formulaOnly) {
 				attachComments(archive, entry.path, sheet, sheetRelationships)
 				attachDrawingImages(archive, entry.path, sheet, sheetRelationships)
@@ -691,18 +701,5 @@ function attachPivotTables(
 		if (!xml) continue
 		const parsed = parsePivotTableXml(xml, partPath, sheetName)
 		if (parsed) workbook.pivotTables.push(parsed)
-	}
-}
-
-function recordFormulaFeatures(
-	sheetXml: string,
-	sheetName: string,
-	summary: FormulaFeatureSummary,
-): void {
-	if (/<f\b[^>]*\bt="shared"/.test(sheetXml)) {
-		summary.sharedFormulaSheets.push(sheetName)
-	}
-	if (/<f\b[^>]*\bt="array"/.test(sheetXml)) {
-		summary.arrayFormulaSheets.push(sheetName)
 	}
 }

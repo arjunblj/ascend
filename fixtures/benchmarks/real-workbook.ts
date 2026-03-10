@@ -70,6 +70,10 @@ type StepName =
 	| 'workflow-session-warm-read'
 	| 'workflow-session-trace'
 	| 'workflow-session-check'
+	| 'workflow-session-open-lint'
+	| 'workflow-session-cache-hit-open-lint'
+	| 'workflow-session-second-lint'
+	| 'workflow-session-upgrade-lint'
 	| 'workflow-session-lint'
 	| 'preview-numeric-edit'
 	| 'preview-format-edit'
@@ -195,6 +199,10 @@ async function main(): Promise<void> {
 		'workflow-session-warm-read',
 		'workflow-session-trace',
 		'workflow-session-check',
+		'workflow-session-open-lint',
+		'workflow-session-cache-hit-open-lint',
+		'workflow-session-second-lint',
+		'workflow-session-upgrade-lint',
 		'workflow-session-lint',
 		'preview-numeric-edit',
 		'preview-format-edit',
@@ -489,6 +497,119 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 				assertions: {
 					checkIssues: result.checkIssues,
 					valid: result.valid,
+				},
+			}
+		}
+		case 'workflow-session-open-lint': {
+			WorkbookSession.clearCache()
+			const { result, timing } = await time(
+				'workflow-session-open-lint',
+				async () => {
+					const session = await WorkbookSession.open(target, { mode: 'formula' })
+					const lint = session.lint()
+					return {
+						lintWarnings: lint.warnings.length,
+						clean: lint.clean,
+					}
+				},
+				{
+					beforeGc: () => {
+						WorkbookSession.clearCache()
+					},
+				},
+			)
+			return {
+				timing,
+				assertions: {
+					lintWarnings: result.lintWarnings,
+					clean: result.clean,
+				},
+			}
+		}
+		case 'workflow-session-cache-hit-open-lint': {
+			WorkbookSession.clearCache()
+			await WorkbookSession.open(target, { mode: 'formula' })
+			const { result, timing } = await time(
+				'workflow-session-cache-hit-open-lint',
+				async () => {
+					const session = await WorkbookSession.open(target, { mode: 'formula' })
+					const lint = session.lint()
+					return {
+						lintWarnings: lint.warnings.length,
+						clean: lint.clean,
+					}
+				},
+				{
+					beforeGc: () => {
+						WorkbookSession.clearCache()
+					},
+				},
+			)
+			return {
+				timing,
+				assertions: {
+					lintWarnings: result.lintWarnings,
+					clean: result.clean,
+				},
+			}
+		}
+		case 'workflow-session-second-lint': {
+			WorkbookSession.clearCache()
+			let session: WorkbookSession | undefined = await WorkbookSession.open(target, {
+				mode: 'formula',
+			})
+			session.lint()
+			const { result, timing } = await time(
+				'workflow-session-second-lint',
+				async () => {
+					const lint = session?.lint()
+					return {
+						lintWarnings: lint?.warnings.length ?? 0,
+						clean: lint?.clean ?? false,
+					}
+				},
+				{
+					beforeGc: () => {
+						session = undefined
+						WorkbookSession.clearCache()
+					},
+				},
+			)
+			return {
+				timing,
+				assertions: {
+					lintWarnings: result.lintWarnings,
+					clean: result.clean,
+				},
+			}
+		}
+		case 'workflow-session-upgrade-lint': {
+			WorkbookSession.clearCache()
+			let session: WorkbookSession | undefined = await WorkbookSession.open(target, {
+				mode: 'values',
+			})
+			const { result, timing } = await time(
+				'workflow-session-upgrade-lint',
+				async () => {
+					await session?.upgrade({ mode: 'formula' })
+					const lint = session?.lint()
+					return {
+						lintWarnings: lint?.warnings.length ?? 0,
+						clean: lint?.clean ?? false,
+					}
+				},
+				{
+					beforeGc: () => {
+						session = undefined
+						WorkbookSession.clearCache()
+					},
+				},
+			)
+			return {
+				timing,
+				assertions: {
+					lintWarnings: result.lintWarnings,
+					clean: result.clean,
 				},
 			}
 		}

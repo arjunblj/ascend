@@ -25,6 +25,10 @@ export async function traceCommand(args: string[], flags: Map<string, string>): 
 
 	const { document: session } = await openWorkbookDocumentWithProgress(file, { mode: 'formula' })
 	const maxDepth = parseOptionalInt(flags.get('max-depth'))
+	if (flags.has('max-depth') && (maxDepth === null || maxDepth < 0)) {
+		console.error('Invalid --max-depth. Use a non-negative integer.')
+		return 1
+	}
 	const result = session.trace(cellRef, maxDepth !== undefined ? { maxDepth } : undefined)
 
 	if (!result) {
@@ -64,8 +68,9 @@ export async function traceCommand(args: string[], flags: Map<string, string>): 
 	return 0
 }
 
-function parseOptionalInt(value: string | undefined): number | undefined {
+function parseOptionalInt(value: string | undefined): number | null | undefined {
 	if (value === undefined || value === '') return undefined
 	const parsed = Number.parseInt(value, 10)
-	return Number.isNaN(parsed) ? undefined : parsed
+	if (Number.isNaN(parsed)) return null
+	return parsed
 }

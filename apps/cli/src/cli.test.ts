@@ -234,6 +234,34 @@ describe('ascend cli', () => {
 		expect(parsed.data.cells[0].ref).toBe('A1')
 	})
 
+	test('read accepts --display and rejects invalid pagination integers', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 2 },
+					{ ref: 'A2', value: 3 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: '=A1*2' },
+		])
+		await wb.recalc()
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const display = await run('read', TEST_FILE, 'Sheet1!A1:B1', '--display')
+		expect(display.exitCode).toBe(0)
+
+		const badOffset = await run('read', TEST_FILE, 'Sheet1!A1:B1', '--row-offset', 'nope')
+		expect(badOffset.exitCode).toBe(1)
+		expect(badOffset.stderr).toContain('Invalid --row-offset')
+
+		const badLimit = await run('read', TEST_FILE, 'Sheet1!A1:B1', '--row-limit', '0')
+		expect(badLimit.exitCode).toBe(1)
+		expect(badLimit.stderr).toContain('Invalid --row-limit')
+	})
+
 	test('read rejects unsupported modes', async () => {
 		const { exitCode, stderr } = await run('read', TEST_FILE, 'Sheet1!A1', '--mode', 'metadata')
 		expect(exitCode).toBe(1)
@@ -423,6 +451,16 @@ describe('ascend cli', () => {
 		expect(stdout).toContain('Value')
 		expect(stdout).toContain('[1] Sheet1!B1')
 		expect(stdout).not.toContain('Sheet1!A1')
+	})
+
+	test('trace rejects invalid max depth values', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=1+1' }])
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const { exitCode, stderr } = await run('trace', TEST_FILE, 'Sheet1!A1', '--max-depth', 'bad')
+		expect(exitCode).toBe(1)
+		expect(stderr).toContain('Invalid --max-depth')
 	})
 
 	test('formula suggests the closest subcommand', async () => {

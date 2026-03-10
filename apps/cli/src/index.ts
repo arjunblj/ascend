@@ -62,7 +62,7 @@ const COMMANDS: Record<string, Command> = {
 	read: {
 		run: readCommand,
 		usage: readUsage,
-		allowedFlags: ['sheet', 'mode', 'row-offset', 'row-limit', 'json'],
+		allowedFlags: ['sheet', 'mode', 'row-offset', 'row-limit', 'display', 'json'],
 	},
 	preview: { run: previewCommand, usage: previewUsage, allowedFlags: ['sheet', 'ops', 'json'] },
 	write: { run: writeCommand, usage: writeUsage, allowedFlags: ['sheet', 'ops', 'json'] },

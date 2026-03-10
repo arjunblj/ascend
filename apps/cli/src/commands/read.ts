@@ -41,7 +41,15 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 	)
 
 	const rowOffset = parseOptionalInt(flags.get('row-offset'))
+	if (flags.has('row-offset') && rowOffset === null) {
+		console.error('Invalid --row-offset. Use a non-negative integer.')
+		return 1
+	}
 	const rowLimit = parseOptionalInt(flags.get('row-limit'))
+	if (flags.has('row-limit') && (rowLimit === null || rowLimit < 1)) {
+		console.error('Invalid --row-limit. Use a positive integer.')
+		return 1
+	}
 	const display = flags.has('display')
 
 	switch (selector.kind) {
@@ -346,10 +354,11 @@ function normalizeReadableRange(value: string): string {
 	return value.replaceAll('$', '')
 }
 
-function parseOptionalInt(value: string | undefined): number | undefined {
+function parseOptionalInt(value: string | undefined): number | null | undefined {
 	if (value === undefined || value === '') return undefined
 	const parsed = Number.parseInt(value, 10)
-	return Number.isNaN(parsed) ? undefined : parsed
+	if (Number.isNaN(parsed)) return null
+	return parsed
 }
 
 function columnLabel(col: number): string {

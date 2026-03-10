@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { check as verifyCheck, lint as verifyLint, trace as verifyTrace } from '@ascend/verify'
+import { check as verifyCheck, lint as verifyLint } from '@ascend/verify'
 import { openWorkbookSource } from './load.ts'
 import { WorkbookReadView } from './read-view.ts'
 import type { SheetHandle } from './sheet-handle.ts'
@@ -240,36 +240,8 @@ export class WorkbookDocument {
 	}
 
 	trace(cellRef: string, opts?: { maxDepth?: number }): TraceResult | undefined {
-		const bang = cellRef.indexOf('!')
-		const sheetName = bang >= 0 ? cellRef.slice(0, bang).replace(/^'|'$/g, '') : this.sheets[0]
-		const ref = bang >= 0 ? cellRef.slice(bang + 1) : cellRef
-		if (!sheetName) return undefined
-		const result = verifyTrace(this.view.getWorkbookModel(), sheetName, ref, opts, {
-			formulas: this.view.formulaAnalysis(),
-			dependencies: this.view.dependencyAnalysis(),
-		})
 		this.refreshCacheFootprint('verify')
-		return result.ok
-			? {
-					ref: `${sheetName}!${ref}`,
-					formula: result.value.formula,
-					value: result.value.value,
-					precedents: result.value.precedents.map((node) => ({
-						ref: `${node.sheet}!${node.ref}`,
-						formula: node.formula,
-						value: node.value,
-						depth: node.depth,
-					})),
-					dependents: result.value.dependents.map((node) => ({
-						ref: `${node.sheet}!${node.ref}`,
-						formula: node.formula,
-						value: node.value,
-						depth: node.depth,
-					})),
-					dependsOn: result.value.precedents.map((node) => `${node.sheet}!${node.ref}`),
-					feedsInto: result.value.dependents.map((node) => `${node.sheet}!${node.ref}`),
-				}
-			: undefined
+		return this.view.trace(cellRef, opts)
 	}
 
 	formula(cellRef: string): FormulaInfo | undefined {

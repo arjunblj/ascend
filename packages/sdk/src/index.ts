@@ -1,4 +1,4 @@
-export { WorkbookSession } from './session.ts'
+export { WorkbookDocument, WorkbookDocument as WorkbookSession } from './session.ts'
 export { SheetHandle } from './sheet-handle.ts'
 export { TableHandle } from './table-handle.ts'
 export type {

@@ -1,5 +1,5 @@
 import type { CellValue, Operation } from '@ascend/schema'
-import { Ascend, WorkbookSession } from '@ascend/sdk'
+import { Ascend, WorkbookDocument } from '@ascend/sdk'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
@@ -19,7 +19,7 @@ export function createServer(): McpServer {
 			sheet: z.string().optional().describe('Sheet name to inspect'),
 		},
 		async ({ file, sheet }) => {
-			const wb = await WorkbookSession.open(
+			const wb = await WorkbookDocument.open(
 				file,
 				sheet ? { mode: 'values', sheets: [sheet] } : { mode: 'metadata-only' },
 			)
@@ -60,7 +60,7 @@ export function createServer(): McpServer {
 				.describe('Explicit headers for object mode; defaults to first-row headers'),
 		},
 		async ({ file, range, sheet, rowOffset, rowLimit, format, display, headers }) => {
-			const wb = await WorkbookSession.open(
+			const wb = await WorkbookDocument.open(
 				file,
 				sheet ? { mode: 'values', sheets: [sheet] } : { mode: 'values' },
 			)
@@ -151,7 +151,7 @@ export function createServer(): McpServer {
 			file: z.string().describe('Path to workbook file'),
 		},
 		async ({ file }) => {
-			const wb = await WorkbookSession.open(file, { mode: 'formula' })
+			const wb = await WorkbookDocument.open(file, { mode: 'formula' })
 			const result = wb.check()
 			return { ...okResponse(result, `Checked workbook "${file}"`), isError: !result.valid }
 		},
@@ -164,7 +164,7 @@ export function createServer(): McpServer {
 			file: z.string().describe('Path to workbook file'),
 		},
 		async ({ file }) => {
-			const wb = await WorkbookSession.open(file, { mode: 'formula' })
+			const wb = await WorkbookDocument.open(file, { mode: 'formula' })
 			const result = wb.lint()
 			return okResponse(result, `Linted workbook "${file}"`)
 		},
@@ -178,7 +178,7 @@ export function createServer(): McpServer {
 			cell: z.string().describe('Cell reference (e.g. "Sheet1!A1" or "A1")'),
 		},
 		async ({ file, cell }) => {
-			const wb = await WorkbookSession.open(file, { mode: 'formula' })
+			const wb = await WorkbookDocument.open(file, { mode: 'formula' })
 			const result = wb.trace(cell)
 			if (!result) {
 				return errorResponse(`Cannot trace "${cell}"`)

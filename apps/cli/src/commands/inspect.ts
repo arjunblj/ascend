@@ -1,7 +1,7 @@
-import type { WorkbookSession } from '@ascend/sdk'
+import type { WorkbookDocument } from '@ascend/sdk'
 import { jsonOut } from '../output/json.ts'
 import { bullet, formatCellValue, heading, table } from '../output/pretty.ts'
-import { openWorkbookSessionWithProgress } from '../progress.ts'
+import { openWorkbookDocumentWithProgress } from '../progress.ts'
 
 export const usage = `Usage: ascend inspect <file> [sheet] [flags]
 
@@ -62,8 +62,10 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 						: sheetArg
 							? { mode: 'values' as const, sheets: [sheetArg] }
 							: { mode: 'metadata-only' as const }
-	const { session, durationMs: openMs } = await openWorkbookSessionWithProgress(file, openOptions)
-	const wb = session
+	const { document: wb, durationMs: openMs } = await openWorkbookDocumentWithProgress(
+		file,
+		openOptions,
+	)
 
 	if (detail === 'compatibility') {
 		return printCompatibilityDetail(wb, flags.has('json'))
@@ -282,7 +284,7 @@ function parseInspectMode(
 }
 
 function printSheetDetail(
-	wb: WorkbookSession,
+	wb: WorkbookDocument,
 	sheetName: string,
 	detail: string,
 	json: boolean,
@@ -451,7 +453,7 @@ function printSheetDetail(
 	}
 }
 
-function printCompatibilityDetail(wb: WorkbookSession, json: boolean): number {
+function printCompatibilityDetail(wb: WorkbookDocument, json: boolean): number {
 	const report = wb.report
 	if (json) {
 		console.log(jsonOut(report))
@@ -466,7 +468,7 @@ function printCompatibilityDetail(wb: WorkbookSession, json: boolean): number {
 	return 0
 }
 
-function printPivotDetail(wb: WorkbookSession, json: boolean): number {
+function printPivotDetail(wb: WorkbookDocument, json: boolean): number {
 	const workbookInfo = wb.inspect()
 	if (json) {
 		console.log(
@@ -515,7 +517,7 @@ function printPivotDetail(wb: WorkbookSession, json: boolean): number {
 	return 0
 }
 
-function printSlicerDetail(wb: WorkbookSession, json: boolean): number {
+function printSlicerDetail(wb: WorkbookDocument, json: boolean): number {
 	const workbookInfo = wb.inspect()
 	if (json) {
 		console.log(
@@ -560,7 +562,7 @@ function printSlicerDetail(wb: WorkbookSession, json: boolean): number {
 	return 0
 }
 
-function printNamesDetail(wb: WorkbookSession, json: boolean): number {
+function printNamesDetail(wb: WorkbookDocument, json: boolean): number {
 	const names = wb.definedNames()
 	if (json) {
 		console.log(jsonOut(names))
@@ -584,7 +586,7 @@ function printNamesDetail(wb: WorkbookSession, json: boolean): number {
 	return 0
 }
 
-function printExternalRefsDetail(wb: WorkbookSession, json: boolean): number {
+function printExternalRefsDetail(wb: WorkbookDocument, json: boolean): number {
 	const refs = wb.externalReferences()
 	if (json) {
 		console.log(jsonOut(refs))
@@ -596,7 +598,7 @@ function printExternalRefsDetail(wb: WorkbookSession, json: boolean): number {
 	return 0
 }
 
-function printWorkbookViewsDetail(wb: WorkbookSession, json: boolean): number {
+function printWorkbookViewsDetail(wb: WorkbookDocument, json: boolean): number {
 	const views = wb.workbookViews()
 	if (json) {
 		console.log(jsonOut(views))

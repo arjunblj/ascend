@@ -1,7 +1,7 @@
-import type { CompactCellInfo, WorkbookSession } from '@ascend/sdk'
+import type { CompactCellInfo, WorkbookDocument } from '@ascend/sdk'
 import { jsonOut } from '../output/json.ts'
 import { formatCellValue, table } from '../output/pretty.ts'
-import { openWorkbookSessionWithProgress } from '../progress.ts'
+import { openWorkbookDocumentWithProgress } from '../progress.ts'
 
 export const usage = `Usage: ascend read <file> <selector> [flags]
 
@@ -35,7 +35,7 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 		return 1
 	}
 	const selector = parseSelector(selectorArg, requestedSheet)
-	const { session: wb } = await openWorkbookSessionWithProgress(
+	const { document: wb } = await openWorkbookDocumentWithProgress(
 		file,
 		inferOpenOptions(selector, explicitMode ?? 'values'),
 	)
@@ -161,7 +161,7 @@ function inferOpenOptions(
 }
 
 function readRangeLike(
-	wb: WorkbookSession,
+	wb: WorkbookDocument,
 	sheetName: string | undefined,
 	range: string,
 	rowOffset: number | undefined,
@@ -280,7 +280,7 @@ function splitSheetQualifier(input: string): { sheet: string; value: string } | 
 }
 
 function resolveSheetName(
-	wb: WorkbookSession,
+	wb: WorkbookDocument,
 	explicitSheet: string | undefined,
 ): string | undefined {
 	if (explicitSheet) return explicitSheet

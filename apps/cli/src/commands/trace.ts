@@ -1,6 +1,6 @@
 import { jsonOut } from '../output/json.ts'
 import { bullet, formatCellValue, heading } from '../output/pretty.ts'
-import { openWorkbookSessionWithProgress } from '../progress.ts'
+import { openWorkbookDocumentWithProgress } from '../progress.ts'
 
 export const usage = `Usage: ascend trace <file> <ref> [flags]
 
@@ -23,7 +23,7 @@ export async function traceCommand(args: string[], flags: Map<string, string>): 
 		return 1
 	}
 
-	const { session } = await openWorkbookSessionWithProgress(file, { mode: 'formula' })
+	const { document: session } = await openWorkbookDocumentWithProgress(file, { mode: 'formula' })
 	const maxDepth = parseOptionalInt(flags.get('max-depth'))
 	const result = session.trace(cellRef, maxDepth !== undefined ? { maxDepth } : undefined)
 

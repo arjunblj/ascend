@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { access, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { AscendWorkbook, WorkbookSession } from '../../packages/sdk/src/index.ts'
+import { AscendWorkbook, WorkbookDocument } from '../../packages/sdk/src/index.ts'
 import {
 	type BenchmarkCaseResult,
 	createBenchmarkSuite,
@@ -386,12 +386,12 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 			}
 		}
 		case 'workflow-session-open-read': {
-			WorkbookSession.clearCache()
+			WorkbookDocument.clearCache()
 			const { result, timing } = await time('workflow-session-open-read', async () => {
 				let totalCells = 0
 				let sheetCount = 0
 				for (let i = 0; i < 3; i++) {
-					const session = await WorkbookSession.open(target, { mode: 'values' })
+					const session = await WorkbookDocument.open(target, { mode: 'values' })
 					const probe = pickReadProbe(session)
 					sheetCount = session.inspect().sheetCount
 					const window = session.readWindow(probe.sheet, probe.range, { rowLimit: probe.rowLimit })
@@ -408,8 +408,8 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 			}
 		}
 		case 'workflow-session-warm-read': {
-			WorkbookSession.clearCache()
-			let session: WorkbookSession | undefined = await WorkbookSession.open(target, {
+			WorkbookDocument.clearCache()
+			let session: WorkbookDocument | undefined = await WorkbookDocument.open(target, {
 				mode: 'values',
 			})
 			const probe = pickReadProbe(session)
@@ -429,7 +429,7 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 				{
 					beforeGc: () => {
 						session = undefined
-						WorkbookSession.clearCache()
+						WorkbookDocument.clearCache()
 					},
 				},
 			)
@@ -443,8 +443,8 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 			}
 		}
 		case 'workflow-session-trace': {
-			WorkbookSession.clearCache()
-			let session: WorkbookSession | undefined = await WorkbookSession.open(target, {
+			WorkbookDocument.clearCache()
+			let session: WorkbookDocument | undefined = await WorkbookDocument.open(target, {
 				mode: 'formula',
 			})
 			const probe = pickFormulaProbe(session)
@@ -459,7 +459,7 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 				{
 					beforeGc: () => {
 						session = undefined
-						WorkbookSession.clearCache()
+						WorkbookDocument.clearCache()
 					},
 				},
 			)
@@ -472,8 +472,8 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 			}
 		}
 		case 'workflow-session-check': {
-			WorkbookSession.clearCache()
-			let session: WorkbookSession | undefined = await WorkbookSession.open(target, {
+			WorkbookDocument.clearCache()
+			let session: WorkbookDocument | undefined = await WorkbookDocument.open(target, {
 				mode: 'formula',
 			})
 			const { result, timing } = await time(
@@ -488,7 +488,7 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 				{
 					beforeGc: () => {
 						session = undefined
-						WorkbookSession.clearCache()
+						WorkbookDocument.clearCache()
 					},
 				},
 			)
@@ -501,11 +501,11 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 			}
 		}
 		case 'workflow-session-open-lint': {
-			WorkbookSession.clearCache()
+			WorkbookDocument.clearCache()
 			const { result, timing } = await time(
 				'workflow-session-open-lint',
 				async () => {
-					const session = await WorkbookSession.open(target, { mode: 'formula' })
+					const session = await WorkbookDocument.open(target, { mode: 'formula' })
 					const lint = session.lint()
 					return {
 						lintWarnings: lint.warnings.length,
@@ -514,7 +514,7 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 				},
 				{
 					beforeGc: () => {
-						WorkbookSession.clearCache()
+						WorkbookDocument.clearCache()
 					},
 				},
 			)
@@ -527,12 +527,12 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 			}
 		}
 		case 'workflow-session-cache-hit-open-lint': {
-			WorkbookSession.clearCache()
-			await WorkbookSession.open(target, { mode: 'formula' })
+			WorkbookDocument.clearCache()
+			await WorkbookDocument.open(target, { mode: 'formula' })
 			const { result, timing } = await time(
 				'workflow-session-cache-hit-open-lint',
 				async () => {
-					const session = await WorkbookSession.open(target, { mode: 'formula' })
+					const session = await WorkbookDocument.open(target, { mode: 'formula' })
 					const lint = session.lint()
 					return {
 						lintWarnings: lint.warnings.length,
@@ -541,7 +541,7 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 				},
 				{
 					beforeGc: () => {
-						WorkbookSession.clearCache()
+						WorkbookDocument.clearCache()
 					},
 				},
 			)
@@ -554,8 +554,8 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 			}
 		}
 		case 'workflow-session-second-lint': {
-			WorkbookSession.clearCache()
-			let session: WorkbookSession | undefined = await WorkbookSession.open(target, {
+			WorkbookDocument.clearCache()
+			let session: WorkbookDocument | undefined = await WorkbookDocument.open(target, {
 				mode: 'formula',
 			})
 			session.lint()
@@ -571,7 +571,7 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 				{
 					beforeGc: () => {
 						session = undefined
-						WorkbookSession.clearCache()
+						WorkbookDocument.clearCache()
 					},
 				},
 			)
@@ -584,14 +584,14 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 			}
 		}
 		case 'workflow-session-upgrade-lint': {
-			WorkbookSession.clearCache()
-			let session: WorkbookSession | undefined = await WorkbookSession.open(target, {
+			WorkbookDocument.clearCache()
+			let session: WorkbookDocument | undefined = await WorkbookDocument.open(target, {
 				mode: 'values',
 			})
 			const { result, timing } = await time(
 				'workflow-session-upgrade-lint',
 				async () => {
-					await session?.upgrade({ mode: 'formula' })
+					session = session ? await session.withLoad({ mode: 'formula' }) : undefined
 					const lint = session?.lint()
 					return {
 						lintWarnings: lint?.warnings.length ?? 0,
@@ -601,7 +601,7 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 				{
 					beforeGc: () => {
 						session = undefined
-						WorkbookSession.clearCache()
+						WorkbookDocument.clearCache()
 					},
 				},
 			)
@@ -614,8 +614,8 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 			}
 		}
 		case 'workflow-session-lint': {
-			WorkbookSession.clearCache()
-			let session: WorkbookSession | undefined = await WorkbookSession.open(target, {
+			WorkbookDocument.clearCache()
+			let session: WorkbookDocument | undefined = await WorkbookDocument.open(target, {
 				mode: 'formula',
 			})
 			const { result, timing } = await time(
@@ -630,7 +630,7 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 				{
 					beforeGc: () => {
 						session = undefined
-						WorkbookSession.clearCache()
+						WorkbookDocument.clearCache()
 					},
 				},
 			)
@@ -868,7 +868,7 @@ function pickNumericProbe(wb: AscendWorkbook): { sheet: string; ref: string; val
 }
 
 function pickReadProbe(
-	wb: Pick<AscendWorkbook, 'sheets' | 'sheet'> | Pick<WorkbookSession, 'sheets' | 'sheet'>,
+	wb: Pick<AscendWorkbook, 'sheets' | 'sheet'> | Pick<WorkbookDocument, 'sheets' | 'sheet'>,
 ): { sheet: string; range: string; rowLimit: number } {
 	for (const sheetName of wb.sheets) {
 		const sheet = wb.sheet(sheetName)
@@ -888,7 +888,7 @@ function pickReadProbe(
 }
 
 function pickFormulaProbe(
-	wb: Pick<AscendWorkbook, 'sheets' | 'sheet'> | Pick<WorkbookSession, 'sheets' | 'sheet'>,
+	wb: Pick<AscendWorkbook, 'sheets' | 'sheet'> | Pick<WorkbookDocument, 'sheets' | 'sheet'>,
 ): { sheet: string; ref: string } {
 	for (const sheetName of wb.sheets) {
 		const sheet = wb.sheet(sheetName)

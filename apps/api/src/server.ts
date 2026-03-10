@@ -1,5 +1,5 @@
 import type { CellValue, Operation } from '@ascend/schema'
-import { AscendWorkbook, WorkbookSession } from '@ascend/sdk'
+import { AscendWorkbook, WorkbookDocument } from '@ascend/sdk'
 import { binaryResponse, jsonFailure, jsonSuccess } from './response.ts'
 
 async function parseJson<T>(req: Request): Promise<T | null> {
@@ -42,7 +42,7 @@ export function createServer(opts?: { port?: number }) {
 					const sheetName = body ? requireString(body, 'sheet') : null
 					if (!file) return jsonFailure('Missing or invalid file', 400)
 					try {
-						const wb = await WorkbookSession.open(
+						const wb = await WorkbookDocument.open(
 							file,
 							sheetName ? { mode: 'values', sheets: [sheetName] } : { mode: 'metadata-only' },
 						)
@@ -79,7 +79,7 @@ export function createServer(opts?: { port?: number }) {
 							body !== null &&
 							typeof body === 'object' &&
 							(body as Record<string, unknown>).display === true
-						const wb = await WorkbookSession.open(
+						const wb = await WorkbookDocument.open(
 							file,
 							sheetName ? { mode: 'values', sheets: [sheetName] } : { mode: 'values' },
 						)
@@ -173,7 +173,7 @@ export function createServer(opts?: { port?: number }) {
 					const file = body ? requireString(body, 'file') : null
 					if (!file) return jsonFailure('Missing or invalid file', 400)
 					try {
-						const wb = await WorkbookSession.open(file, { mode: 'formula' })
+						const wb = await WorkbookDocument.open(file, { mode: 'formula' })
 						return jsonSuccess(wb.check())
 					} catch (e) {
 						const msg = e instanceof Error ? e.message : String(e)
@@ -188,7 +188,7 @@ export function createServer(opts?: { port?: number }) {
 					const file = body ? requireString(body, 'file') : null
 					if (!file) return jsonFailure('Missing or invalid file', 400)
 					try {
-						const wb = await WorkbookSession.open(file, { mode: 'formula' })
+						const wb = await WorkbookDocument.open(file, { mode: 'formula' })
 						return jsonSuccess(wb.lint())
 					} catch (e) {
 						const msg = e instanceof Error ? e.message : String(e)
@@ -205,7 +205,7 @@ export function createServer(opts?: { port?: number }) {
 					if (!file) return jsonFailure('Missing or invalid file', 400)
 					if (!cell) return jsonFailure('Missing or invalid cell', 400)
 					try {
-						const wb = await WorkbookSession.open(file, { mode: 'formula' })
+						const wb = await WorkbookDocument.open(file, { mode: 'formula' })
 						const result = wb.trace(cell)
 						if (!result) return jsonFailure('Cell not found', 400)
 						return jsonSuccess(result)

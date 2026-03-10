@@ -26,10 +26,12 @@ import type {
 	WorkbookInfo,
 } from './types.ts'
 
-export interface WorkbookSessionOpenOptions {
+export interface WorkbookLoadOptions {
 	readonly mode?: 'full' | 'metadata-only' | 'values' | 'formula'
 	readonly sheets?: readonly string[]
 }
+
+export type WorkbookSessionOpenOptions = WorkbookLoadOptions
 
 interface SessionFileIdentity {
 	readonly path: string
@@ -47,7 +49,7 @@ type SessionIdentity = SessionFileIdentity | SessionBytesIdentity
 interface SessionCacheEntry {
 	readonly key: string
 	readonly identity: SessionIdentity
-	readonly session: WorkbookSession
+	readonly document: WorkbookDocument
 	readonly sizeBytes: number
 }
 
@@ -55,18 +57,18 @@ const MAX_CACHED_SESSIONS = 16
 const MAX_CACHED_SESSION_BYTES = 32 * 1024 * 1024
 const sessionCache = new Map<string, SessionCacheEntry>()
 
-export class WorkbookSession {
-	private cacheKey: string
+export class WorkbookDocument {
+	private readonly cacheKey: string
 	private readonly identity: SessionIdentity
 	private readonly source: string | Uint8Array
-	private options: WorkbookSessionOpenOptions
-	private view: WorkbookReadView
+	private readonly options: WorkbookLoadOptions
+	private readonly view: WorkbookReadView
 
 	private constructor(
 		cacheKey: string,
 		source: string | Uint8Array,
 		identity: SessionIdentity,
-		options: WorkbookSessionOpenOptions,
+		options: WorkbookLoadOptions,
 		view: WorkbookReadView,
 	) {
 		this.cacheKey = cacheKey
@@ -78,34 +80,34 @@ export class WorkbookSession {
 
 	static async open(
 		source: string | Uint8Array,
-		options: WorkbookSessionOpenOptions = {},
-	): Promise<WorkbookSession> {
+		options: WorkbookLoadOptions = {},
+	): Promise<WorkbookDocument> {
 		const identity =
 			typeof source === 'string' ? await readIdentity(source) : readBytesIdentity(source)
 		const key = makeSessionKey(identity, options)
 		const cached = sessionCache.get(key)
 		if (cached && isIdentityEqual(cached.identity, identity)) {
 			touchCacheEntry(cached)
-			return cached.session
+			return cached.document
 		}
 
 		const loaded = await openWorkbookSource(source, options)
-		const session = new WorkbookSession(
+		const document = new WorkbookDocument(
 			key,
 			source,
 			identity,
 			normalizeOptions(options),
 			new WorkbookReadView(loaded.workbook, loaded.report, loaded.loadInfo),
 		)
-		session.refreshCacheFootprint('base')
-		return session
+		document.refreshCacheFootprint('base')
+		return document
 	}
 
 	static clearCache(): void {
 		sessionCache.clear()
 	}
 
-	static drop(file: string, options: WorkbookSessionOpenOptions = {}): void {
+	static drop(file: string, options: WorkbookLoadOptions = {}): void {
 		const key = makeSessionKey({ path: resolve(file), size: 0, mtimeMs: 0 }, options)
 		sessionCache.delete(key)
 	}
@@ -122,42 +124,35 @@ export class WorkbookSession {
 		return this.view.report
 	}
 
-	get openOptions(): WorkbookSessionOpenOptions {
+	get loadOptions(): WorkbookLoadOptions {
 		return this.options
 	}
 
-	async upgrade(options: WorkbookSessionOpenOptions): Promise<WorkbookSession> {
-		const nextOptions = mergeOpenOptions(this.options, options)
-		if (sameOpenOptions(this.options, nextOptions)) return this
-		const nextKey = makeSessionKey(this.identity, nextOptions)
-		const loaded = await openWorkbookSource(this.source, nextOptions)
-		this.options = nextOptions
-		this.view.replaceWorkbook(loaded.workbook, loaded.report, loaded.loadInfo)
-		replaceCacheEntry(this.cacheKey, {
-			key: nextKey,
-			identity: this.identity,
-			session: this,
-			sizeBytes: sessionSizeBytes(this.identity, this.view, 'base'),
-		})
-		this.cacheKey = nextKey
-		return this
+	get openOptions(): WorkbookLoadOptions {
+		return this.options
 	}
 
-	async hydrateSheet(
+	async withLoad(options: WorkbookLoadOptions): Promise<WorkbookDocument> {
+		const nextOptions = mergeOpenOptions(this.options, options)
+		if (sameOpenOptions(this.options, nextOptions)) return this
+		return WorkbookDocument.open(this.source, nextOptions)
+	}
+
+	async withSheet(
 		sheetName: string,
 		options?: { mode?: 'values' | 'formula' | 'full' },
-	): Promise<WorkbookSession> {
-		return this.upgrade({
+	): Promise<WorkbookDocument> {
+		return this.withLoad({
 			...(options?.mode ? { mode: options.mode } : {}),
 			sheets: [sheetName],
 		})
 	}
 
-	async hydrateSheets(
+	async withSheets(
 		sheetNames: readonly string[],
 		options?: { mode?: 'values' | 'formula' | 'full' },
-	): Promise<WorkbookSession> {
-		return this.upgrade({
+	): Promise<WorkbookDocument> {
+		return this.withLoad({
 			...(options?.mode ? { mode: options.mode } : {}),
 			sheets: sheetNames,
 		})
@@ -361,13 +356,13 @@ export class WorkbookSession {
 		replaceCacheEntry(this.cacheKey, {
 			key: this.cacheKey,
 			identity: this.identity,
-			session: this,
+			document: this,
 			sizeBytes: sessionSizeBytes(this.identity, this.view, usage),
 		})
 	}
 }
 
-function normalizeOptions(options: WorkbookSessionOpenOptions): WorkbookSessionOpenOptions {
+function normalizeOptions(options: WorkbookLoadOptions): WorkbookLoadOptions {
 	return {
 		...(options.mode ? { mode: options.mode } : {}),
 		...(options.sheets ? { sheets: [...options.sheets].sort((a, b) => a.localeCompare(b)) } : {}),
@@ -375,9 +370,9 @@ function normalizeOptions(options: WorkbookSessionOpenOptions): WorkbookSessionO
 }
 
 function mergeOpenOptions(
-	current: WorkbookSessionOpenOptions,
-	next: WorkbookSessionOpenOptions,
-): WorkbookSessionOpenOptions {
+	current: WorkbookLoadOptions,
+	next: WorkbookLoadOptions,
+): WorkbookLoadOptions {
 	const mode = strongerMode(current.mode, next.mode)
 	const currentSheets = current.sheets ?? []
 	const nextSheets = next.sheets ?? []
@@ -391,10 +386,7 @@ function mergeOpenOptions(
 	})
 }
 
-function sameOpenOptions(
-	left: WorkbookSessionOpenOptions,
-	right: WorkbookSessionOpenOptions,
-): boolean {
+function sameOpenOptions(left: WorkbookLoadOptions, right: WorkbookLoadOptions): boolean {
 	const normalizedLeft = normalizeOptions(left)
 	const normalizedRight = normalizeOptions(right)
 	if ((normalizedLeft.mode ?? 'full') !== (normalizedRight.mode ?? 'full')) return false
@@ -405,10 +397,10 @@ function sameOpenOptions(
 }
 
 function strongerMode(
-	current: WorkbookSessionOpenOptions['mode'],
-	next: WorkbookSessionOpenOptions['mode'],
-): WorkbookSessionOpenOptions['mode'] {
-	const rank: Record<NonNullable<WorkbookSessionOpenOptions['mode']>, number> = {
+	current: WorkbookLoadOptions['mode'],
+	next: WorkbookLoadOptions['mode'],
+): WorkbookLoadOptions['mode'] {
+	const rank: Record<NonNullable<WorkbookLoadOptions['mode']>, number> = {
 		'metadata-only': 0,
 		values: 1,
 		formula: 2,
@@ -437,7 +429,7 @@ function readBytesIdentity(bytes: Uint8Array): SessionBytesIdentity {
 	}
 }
 
-function makeSessionKey(identity: SessionIdentity, options: WorkbookSessionOpenOptions): string {
+function makeSessionKey(identity: SessionIdentity, options: WorkbookLoadOptions): string {
 	const normalized = normalizeOptions(options)
 	return JSON.stringify({
 		source: 'path' in identity ? identity.path : identity.key,

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { extractZip } from '../../io-xlsx/src/reader/zip.ts'
 import { createZip, encode } from '../../io-xlsx/src/writer/zip.ts'
-import { Ascend, AscendWorkbook, WorkbookSession } from './index.ts'
+import { Ascend, AscendWorkbook, WorkbookDocument } from './index.ts'
 
 describe('AscendWorkbook', () => {
 	test('Ascend is an alias for AscendWorkbook', () => {
@@ -103,7 +103,7 @@ describe('AscendWorkbook', () => {
 		expect(info.sheets[0]?.cellDataLoaded).toBe(true)
 	})
 
-	test('WorkbookReadView and WorkbookSession expose pivot and slicer query surfaces', async () => {
+	test('WorkbookReadView and WorkbookDocument expose pivot and slicer query surfaces', async () => {
 		const wb = AscendWorkbook.create()
 		const internal = wb as unknown as {
 			wb: {
@@ -147,10 +147,10 @@ describe('AscendWorkbook', () => {
 			import.meta.dir,
 			'../../../research/excel-corpus/ms-excel-formulas-and-pivot-tables.xlsx',
 		)
-		const session = await WorkbookSession.open(corpusPath)
+		const session = await WorkbookDocument.open(corpusPath)
 		expect(session.pivotTables().length).toBeGreaterThan(0)
 		expect(session.pivotCaches().length).toBeGreaterThan(0)
-		WorkbookSession.clearCache()
+		WorkbookDocument.clearCache()
 	})
 
 	test('inspectSheet returns parsed worksheet structures', () => {
@@ -1616,8 +1616,8 @@ describe('AscendWorkbook', () => {
 		])
 	})
 
-	test('WorkbookSession reuses cached sessions for unchanged files and invalidates on change', async () => {
-		WorkbookSession.clearCache()
+	test('WorkbookDocument reuses cached documents for unchanged files and invalidates on change', async () => {
+		WorkbookDocument.clearCache()
 		const path = join(
 			tmpdir(),
 			`ascend-session-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsx`,
@@ -1627,8 +1627,8 @@ describe('AscendWorkbook', () => {
 			wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'v1' }] }])
 			await wb.save(path)
 
-			const first = await WorkbookSession.open(path, { mode: 'values' })
-			const second = await WorkbookSession.open(path, { mode: 'values' })
+			const first = await WorkbookDocument.open(path, { mode: 'values' })
+			const second = await WorkbookDocument.open(path, { mode: 'values' })
 			expect(first).toBe(second)
 			expect(first.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'v1' })
 
@@ -1637,74 +1637,77 @@ describe('AscendWorkbook', () => {
 			updated.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'v2' }] }])
 			await updated.save(path)
 
-			const third = await WorkbookSession.open(path, { mode: 'values' })
+			const third = await WorkbookDocument.open(path, { mode: 'values' })
 			expect(third).not.toBe(first)
 			expect(third.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'v2' })
 		} finally {
-			WorkbookSession.clearCache()
+			WorkbookDocument.clearCache()
 			await unlink(path).catch(() => {})
 		}
 	})
 
-	test('WorkbookSession reuses cached sessions for identical byte sources', async () => {
-		WorkbookSession.clearCache()
+	test('WorkbookDocument reuses cached documents for identical byte sources', async () => {
+		WorkbookDocument.clearCache()
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'bytes' }] }])
 		const bytes = wb.toBytes()
-		const first = await WorkbookSession.open(bytes, { mode: 'values' })
-		const second = await WorkbookSession.open(bytes, { mode: 'values' })
+		const first = await WorkbookDocument.open(bytes, { mode: 'values' })
+		const second = await WorkbookDocument.open(bytes, { mode: 'values' })
 		expect(first).toBe(second)
 		expect(first.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'bytes' })
-		WorkbookSession.clearCache()
+		WorkbookDocument.clearCache()
 	})
 
-	test('WorkbookSession can upgrade load options in place', async () => {
-		WorkbookSession.clearCache()
+	test('WorkbookDocument derives upgraded load snapshots immutably', async () => {
+		WorkbookDocument.clearCache()
 		const wb = AscendWorkbook.create()
 		wb.apply([
 			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] },
 			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A2', formula: '=A1*3' },
 		])
 		const bytes = wb.toBytes()
-		const session = await WorkbookSession.open(bytes, { mode: 'values' })
-		expect(session.openOptions.mode).toBe('values')
-		await session.upgrade({ mode: 'formula' })
-		expect(session.openOptions.mode).toBe('formula')
-		expect(session.formula('Sheet1!A2')?.normalizedFormula).toBe('A1*3')
-		const reopened = await WorkbookSession.open(bytes, { mode: 'formula' })
-		expect(reopened).toBe(session)
-		WorkbookSession.clearCache()
+		const document = await WorkbookDocument.open(bytes, { mode: 'values' })
+		expect(document.loadOptions.mode).toBe('values')
+		const upgraded = await document.withLoad({ mode: 'formula' })
+		expect(document.loadOptions.mode).toBe('values')
+		expect(upgraded.loadOptions.mode).toBe('formula')
+		expect(upgraded.formula('Sheet1!A2')?.normalizedFormula).toBe('A1*3')
+		const reopened = await WorkbookDocument.open(bytes, { mode: 'formula' })
+		expect(reopened).toBe(upgraded)
+		WorkbookDocument.clearCache()
 	})
 
-	test('WorkbookSession sheet handles stay current across upgrade', async () => {
-		WorkbookSession.clearCache()
+	test('WorkbookDocument sheet handles stay snapshot-bound across withLoad', async () => {
+		WorkbookDocument.clearCache()
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'loaded' }] }])
 		const bytes = wb.toBytes()
-		const session = await WorkbookSession.open(bytes, { mode: 'metadata-only' })
-		const handle = session.sheet('Sheet1')
+		const document = await WorkbookDocument.open(bytes, { mode: 'metadata-only' })
+		const handle = document.sheet('Sheet1')
 		if (!handle) throw new Error('Expected Sheet1 handle')
 
 		expect(handle.cell('A1')).toBeUndefined()
 
-		await session.upgrade({ mode: 'values' })
+		const hydrated = await document.withLoad({ mode: 'values' })
 
-		expect(handle.cell('A1')?.value).toEqual({ kind: 'string', value: 'loaded' })
-		WorkbookSession.clearCache()
+		expect(handle.cell('A1')).toBeUndefined()
+		expect(hydrated.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'loaded' })
+		WorkbookDocument.clearCache()
 	})
 
-	test('WorkbookSession can hydrate additional sheets on demand', async () => {
-		WorkbookSession.clearCache()
+	test('WorkbookDocument can derive broader sheet snapshots on demand', async () => {
+		WorkbookDocument.clearCache()
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'addSheet', name: 'Data' }])
 		wb.apply([{ op: 'setCells', sheet: 'Data', updates: [{ ref: 'A1', value: 'loaded' }] }])
 		const bytes = wb.toBytes()
-		const session = await WorkbookSession.open(bytes, { mode: 'values', sheets: ['Sheet1'] })
-		expect(session.sheets).toEqual(['Sheet1'])
-		await session.hydrateSheet('Data', { mode: 'values' })
-		expect(session.sheets).toEqual(['Sheet1', 'Data'])
-		expect(session.sheet('Data')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'loaded' })
-		WorkbookSession.clearCache()
+		const document = await WorkbookDocument.open(bytes, { mode: 'values', sheets: ['Sheet1'] })
+		expect(document.sheets).toEqual(['Sheet1'])
+		const expanded = await document.withSheet('Data', { mode: 'values' })
+		expect(document.sheets).toEqual(['Sheet1'])
+		expect(expanded.sheets).toEqual(['Sheet1', 'Data'])
+		expect(expanded.sheet('Data')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'loaded' })
+		WorkbookDocument.clearCache()
 	})
 })
 

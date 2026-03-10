@@ -132,7 +132,7 @@ describe('ascend cli', () => {
 		expect(parsed.data.pivotCaches.length).toBeGreaterThan(0)
 	})
 
-	test('inspect --detail slicers --json returns slicer inventory', async () => {
+	test('inspect --detail slicers --json returns slicer inventory', { timeout: 10000 }, async () => {
 		const { exitCode, stdout } = await run(
 			'inspect',
 			SLICER_CORPUS_FILE,

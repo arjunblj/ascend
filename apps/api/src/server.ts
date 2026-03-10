@@ -293,6 +293,9 @@ export function createServer(opts?: { port?: number }) {
 							const bytes = new TextEncoder().encode(csv)
 							return binaryResponse(bytes, fmt === 'tsv' ? 'text/tab-separated-values' : 'text/csv')
 						}
+						if (fmt === 'json') {
+							return jsonSuccess(wb.toJSON())
+						}
 						return jsonFailure(`Unsupported format: ${format}`, 400)
 					} catch (e) {
 						const msg = e instanceof Error ? e.message : String(e)

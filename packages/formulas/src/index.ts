@@ -17,6 +17,8 @@ export type {
 	StructuredRefNode,
 	UnaryNode,
 	UnaryOp,
+	WholeColumnRangeNode,
+	WholeRowRangeNode,
 } from './ast.ts'
 export {
 	compareValues,

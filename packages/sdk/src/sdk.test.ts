@@ -103,6 +103,56 @@ describe('AscendWorkbook', () => {
 		expect(info.sheets[0]?.cellDataLoaded).toBe(true)
 	})
 
+	test('WorkbookReadView and WorkbookSession expose pivot and slicer query surfaces', async () => {
+		const wb = AscendWorkbook.create()
+		const internal = wb as unknown as {
+			wb: {
+				pivotTables: Array<Record<string, unknown>>
+				pivotCaches: Array<Record<string, unknown>>
+				slicerCaches: Array<Record<string, unknown>>
+				slicers: Array<Record<string, unknown>>
+			}
+		}
+		internal.wb.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'Sheet1',
+			name: 'PivotTable1',
+			cacheId: 7,
+			locationRef: 'A1',
+		})
+		internal.wb.pivotCaches.push({
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			cacheId: 7,
+			sourceSheet: 'Raw',
+			sourceRef: 'A1:D10',
+		})
+		internal.wb.slicerCaches.push({
+			partPath: 'xl/slicerCaches/slicerCache1.xml',
+			name: 'Slicer_Product',
+			pivotTableNames: ['PivotTable1'],
+		})
+		internal.wb.slicers.push({
+			partPath: 'xl/slicers/slicer1.xml',
+			name: 'Product',
+			cacheName: 'Slicer_Product',
+		})
+
+		expect(wb.pivotTables()).toHaveLength(1)
+		expect(wb.pivotTables('Sheet1')[0]?.name).toBe('PivotTable1')
+		expect(wb.pivotCaches()[0]?.sourceSheet).toBe('Raw')
+		expect(wb.slicerCaches()[0]?.pivotTableNames).toEqual(['PivotTable1'])
+		expect(wb.slicers()[0]?.cacheName).toBe('Slicer_Product')
+
+		const corpusPath = join(
+			import.meta.dir,
+			'../../../research/excel-corpus/ms-excel-formulas-and-pivot-tables.xlsx',
+		)
+		const session = await WorkbookSession.open(corpusPath)
+		expect(session.pivotTables().length).toBeGreaterThan(0)
+		expect(session.pivotCaches().length).toBeGreaterThan(0)
+		WorkbookSession.clearCache()
+	})
+
 	test('inspectSheet returns parsed worksheet structures', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -947,6 +997,13 @@ describe('AscendWorkbook', () => {
 		expect(info?.refs).toEqual(['B1:B2'])
 	})
 
+	test('formula metadata exposes whole-column references', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: '=SUM(A:A)' }])
+		const info = wb.formula('Sheet1!B1')
+		expect(info?.refs).toContain('A:A')
+	})
+
 	test('formula and cell inspection expose formula binding metadata', async () => {
 		const bytes = makeSyntheticXlsx({
 			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -1064,7 +1121,7 @@ describe('AscendWorkbook', () => {
 		expect(handle.comment('A1')).toBeUndefined()
 	})
 
-	test('TableHandle exposes ref, styleInfo, autoFilter, columnDefs', () => {
+	test('TableHandle exposes ref, styleInfo, autoFilter, sortState, header/totals rows, and columnDefs', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
 			{
@@ -1075,10 +1132,29 @@ describe('AscendWorkbook', () => {
 					{ ref: 'B1', value: 'Score' },
 					{ ref: 'A2', value: 'Alice' },
 					{ ref: 'B2', value: 90 },
+					{ ref: 'A3', value: 'Total' },
+					{ ref: 'B3', value: 90 },
 				],
 			},
 			{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:B2', name: 'MyTable', hasHeaders: true },
 		])
+		const internal = wb as unknown as {
+			wb: {
+				sheets: Array<{ tables: Array<Record<string, unknown>> }>
+			}
+		}
+		const tableModel = internal.wb.sheets[0]?.tables[0] as
+			| {
+					sortState?: { ref: string; conditions: readonly { ref: string }[] }
+					ref: { start: { row: number; col: number }; end: { row: number; col: number } }
+					hasTotals: boolean
+			  }
+			| undefined
+		if (tableModel) {
+			tableModel.sortState = { ref: 'A1:B2', conditions: [{ ref: 'B2:B2' }] }
+			tableModel.hasTotals = true
+			tableModel.ref = { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } }
+		}
 
 		const table = wb.table('MyTable')
 		if (!table) throw new Error('Expected MyTable to exist')
@@ -1086,10 +1162,13 @@ describe('AscendWorkbook', () => {
 		expect(table.ref).toBeDefined()
 		expect(table.columns).toEqual(['Name', 'Score'])
 		expect(table.hasHeaders).toBe(true)
-		expect(table.hasTotals).toBe(false)
+		expect(table.hasTotals).toBe(true)
 		expect(table.columnDefs).toHaveLength(2)
 		expect(table.columnDefs[0]?.name).toBe('Name')
 		expect(table.rowCount).toBe(1)
+		expect(table.sortState?.ref).toBe('A1:B2')
+		expect(table.headerRow()?.[0]).toEqual({ kind: 'string', value: 'Name' })
+		expect(table.totalsRow()?.[1]).toEqual({ kind: 'number', value: 90 })
 	})
 
 	test('inspectSheet exposes structured table metadata', () => {
@@ -1112,6 +1191,7 @@ describe('AscendWorkbook', () => {
 		expect(detail?.tables?.[0]?.name).toBe('MyTable')
 		expect(detail?.tables?.[0]?.rowCount).toBe(1)
 		expect(detail?.tables?.[0]?.columnDefs.map((column) => column.name)).toEqual(['Name', 'Score'])
+		expect(detail?.tables?.[0]?.headerRow?.[0]).toEqual({ kind: 'string', value: 'Name' })
 	})
 
 	test('WorkbookSession reuses cached sessions for unchanged files and invalidates on change', async () => {

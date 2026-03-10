@@ -1,5 +1,8 @@
 export type { PreservationCapsule } from './preserve.ts'
 export type { ReadXlsxLoadInfo, ReadXlsxOptions, ReadXlsxResult } from './reader/index.ts'
 export { readXlsx } from './reader/index.ts'
+export type { ZipArchive } from './reader/zip.ts'
+export { extractZip } from './reader/zip.ts'
+export type { WriteXlsxOptions } from './writer/index.ts'
 export { planWriteXlsx, summarizePlannedWrite, writeXlsx } from './writer/index.ts'
 export type { WritePlanResult, WritePlanSummary } from './writer/plan.ts'

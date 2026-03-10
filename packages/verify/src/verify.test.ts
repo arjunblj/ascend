@@ -1,16 +1,18 @@
 import { describe, expect, test } from 'bun:test'
-import { createTableId, createWorkbook, type Table } from '@ascend/core'
+import { createTableId, createWorkbook, type StyleId, type Table } from '@ascend/core'
 import { EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
 import { check } from './checker.ts'
 import { lint } from './linter.ts'
 import { trace } from './tracer.ts'
 
+const SID = 0 as StyleId
+
 function makeCleanWorkbook() {
 	const wb = createWorkbook()
 	const s = wb.addSheet('Sheet1')
-	s.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: 0 })
-	s.cells.set(0, 1, { value: numberValue(2), formula: null, styleId: 0 })
-	s.cells.set(0, 2, { value: numberValue(3), formula: 'A1+B1', styleId: 0 })
+	s.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: SID })
+	s.cells.set(0, 1, { value: numberValue(2), formula: null, styleId: SID })
+	s.cells.set(0, 2, { value: numberValue(3), formula: 'A1+B1', styleId: SID })
 	return wb
 }
 
@@ -25,7 +27,7 @@ describe('checker', () => {
 	test('detects formula errors', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
-		s.cells.set(0, 0, { value: errorValue('#DIV/0!'), formula: '1/0', styleId: 0 })
+		s.cells.set(0, 0, { value: errorValue('#DIV/0!'), formula: '1/0', styleId: SID })
 		const result = check(wb)
 		expect(result.passed).toBe(false)
 		const errorIssues = result.issues.filter((i) => i.rule === 'formula-errors')
@@ -36,8 +38,8 @@ describe('checker', () => {
 	test('detects circular refs', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
-		s.cells.set(0, 0, { value: EMPTY, formula: 'B1', styleId: 0 })
-		s.cells.set(0, 1, { value: EMPTY, formula: 'A1', styleId: 0 })
+		s.cells.set(0, 0, { value: EMPTY, formula: 'B1', styleId: SID })
+		s.cells.set(0, 1, { value: EMPTY, formula: 'A1', styleId: SID })
 		const result = check(wb)
 		expect(result.passed).toBe(false)
 		const circIssues = result.issues.filter((i) => i.rule === 'circular-refs')
@@ -47,7 +49,7 @@ describe('checker', () => {
 	test('detects broken refs to non-existent sheets', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
-		s.cells.set(0, 0, { value: EMPTY, formula: 'MissingSheet!A1', styleId: 0 })
+		s.cells.set(0, 0, { value: EMPTY, formula: 'MissingSheet!A1', styleId: SID })
 		const result = check(wb)
 		expect(result.passed).toBe(false)
 		const brokenIssues = result.issues.filter((i) => i.rule === 'broken-refs')
@@ -90,7 +92,7 @@ describe('linter', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
 		for (let i = 0; i < 12; i++) {
-			s.cells.set(i, 0, { value: numberValue(0), formula: 'NOW()', styleId: 0 })
+			s.cells.set(i, 0, { value: numberValue(0), formula: 'NOW()', styleId: SID })
 		}
 		const result = lint(wb)
 		const volatileViolations = result.violations.filter((v) => v.rule === 'volatile-overuse')
@@ -101,7 +103,7 @@ describe('linter', () => {
 	test('detects magic numbers', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
-		s.cells.set(0, 0, { value: numberValue(0), formula: 'A2*3.14159', styleId: 0 })
+		s.cells.set(0, 0, { value: numberValue(0), formula: 'A2*3.14159', styleId: SID })
 		const result = lint(wb)
 		const magic = result.violations.filter((v) => v.rule === 'hardcoded-in-formula')
 		expect(magic.length).toBeGreaterThanOrEqual(1)
@@ -111,8 +113,8 @@ describe('linter', () => {
 	test('does not flag 0 or 1 as magic numbers', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
-		s.cells.set(0, 0, { value: numberValue(0), formula: 'A2+1', styleId: 0 })
-		s.cells.set(0, 1, { value: numberValue(0), formula: 'A2*0', styleId: 0 })
+		s.cells.set(0, 0, { value: numberValue(0), formula: 'A2+1', styleId: SID })
+		s.cells.set(0, 1, { value: numberValue(0), formula: 'A2*0', styleId: SID })
 		const result = lint(wb)
 		const magic = result.violations.filter((v) => v.rule === 'hardcoded-in-formula')
 		expect(magic).toHaveLength(0)
@@ -121,7 +123,7 @@ describe('linter', () => {
 	test('detects fragile refs', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
-		s.cells.set(0, 0, { value: numberValue(0), formula: 'SUM(A1:A200)', styleId: 0 })
+		s.cells.set(0, 0, { value: numberValue(0), formula: 'SUM(A1:A200)', styleId: SID })
 		const result = lint(wb)
 		const fragile = result.violations.filter((v) => v.rule === 'fragile-refs')
 		expect(fragile.length).toBeGreaterThanOrEqual(1)
@@ -132,9 +134,9 @@ describe('tracer', () => {
 	test('returns precedents and dependents', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
-		s.cells.set(0, 0, { value: numberValue(10), formula: null, styleId: 0 })
-		s.cells.set(0, 1, { value: numberValue(20), formula: null, styleId: 0 })
-		s.cells.set(0, 2, { value: numberValue(30), formula: 'A1+B1', styleId: 0 })
+		s.cells.set(0, 0, { value: numberValue(10), formula: null, styleId: SID })
+		s.cells.set(0, 1, { value: numberValue(20), formula: null, styleId: SID })
+		s.cells.set(0, 2, { value: numberValue(30), formula: 'A1+B1', styleId: SID })
 
 		const result = trace(wb, 'Sheet1', 'C1')
 		expect(result.ok).toBe(true)
@@ -148,7 +150,7 @@ describe('tracer', () => {
 	test('returns empty for non-formula cell', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
-		s.cells.set(0, 0, { value: stringValue('hello'), formula: null, styleId: 0 })
+		s.cells.set(0, 0, { value: stringValue('hello'), formula: null, styleId: SID })
 
 		const result = trace(wb, 'Sheet1', 'A1')
 		expect(result.ok).toBe(true)
@@ -161,9 +163,9 @@ describe('tracer', () => {
 	test('returns dependents of a source cell', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
-		s.cells.set(0, 0, { value: numberValue(5), formula: null, styleId: 0 })
-		s.cells.set(0, 1, { value: numberValue(10), formula: 'A1*2', styleId: 0 })
-		s.cells.set(0, 2, { value: numberValue(15), formula: 'A1+B1', styleId: 0 })
+		s.cells.set(0, 0, { value: numberValue(5), formula: null, styleId: SID })
+		s.cells.set(0, 1, { value: numberValue(10), formula: 'A1*2', styleId: SID })
+		s.cells.set(0, 2, { value: numberValue(15), formula: 'A1+B1', styleId: SID })
 
 		const result = trace(wb, 'Sheet1', 'A1')
 		expect(result.ok).toBe(true)
@@ -182,10 +184,10 @@ describe('tracer', () => {
 	test('respects maxDepth', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
-		s.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: 0 })
-		s.cells.set(0, 1, { value: numberValue(1), formula: 'A1', styleId: 0 })
-		s.cells.set(0, 2, { value: numberValue(1), formula: 'B1', styleId: 0 })
-		s.cells.set(0, 3, { value: numberValue(1), formula: 'C1', styleId: 0 })
+		s.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: SID })
+		s.cells.set(0, 1, { value: numberValue(1), formula: 'A1', styleId: SID })
+		s.cells.set(0, 2, { value: numberValue(1), formula: 'B1', styleId: SID })
+		s.cells.set(0, 3, { value: numberValue(1), formula: 'C1', styleId: SID })
 
 		const result = trace(wb, 'Sheet1', 'D1', { maxDepth: 1 })
 		expect(result.ok).toBe(true)
@@ -193,5 +195,20 @@ describe('tracer', () => {
 
 		expect(result.value.precedents.length).toBe(1)
 		expect(result.value.precedents[0]?.ref).toBe('C1')
+	})
+
+	test('reports whole-column precedents symbolically instead of expanding them', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: SID })
+		s.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: SID })
+		s.cells.set(0, 1, { value: numberValue(3), formula: 'SUM(A:A)', styleId: SID })
+
+		const result = trace(wb, 'Sheet1', 'B1')
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(result.value.precedents).toHaveLength(1)
+		expect(result.value.precedents[0]?.ref).toBe('A:A')
 	})
 })

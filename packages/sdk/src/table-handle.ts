@@ -62,10 +62,10 @@ export class TableHandle {
 		const result: Record<string, CellValue>[] = []
 		const limit = opts?.limit ?? Number.POSITIVE_INFINITY
 		const offset = Math.max(0, opts?.offset ?? 0)
-		let seen = 0
+		const startRow = Math.min(dataEndRow + 1, dataStartRow + offset)
+		const endRow = Math.min(dataEndRow, startRow + limit - 1)
 
-		for (let r = dataStartRow; r <= dataEndRow && result.length < limit; r++) {
-			if (seen++ < offset) continue
+		for (let r = startRow; r <= endRow; r++) {
 			const row: Record<string, CellValue> = {}
 			for (let c = 0; c < colNames.length; c++) {
 				const colName = colNames[c]

@@ -6,6 +6,8 @@ const CLI = new URL('./index.ts', import.meta.url).pathname
 const TEST_FILE = 'test-output.xlsx'
 const MULTI_SHEET_FILE = 'test-multi.xlsx'
 const NAMED_RANGE_FILE = 'test-named.xlsx'
+const PIVOT_CORPUS_FILE = '../../../research/excel-corpus/ms-excel-formulas-and-pivot-tables.xlsx'
+const SLICER_CORPUS_FILE = '../../../research/excel-corpus/excel-dashboard-v2.xlsx'
 
 function run(...args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
 	return new Promise((resolve) => {
@@ -107,6 +109,48 @@ describe('ascend cli', () => {
 		expect(parsed.data.commentCount).toBe(0)
 	})
 
+	test('inspect --detail pivots --json returns pivot inventory', async () => {
+		const { exitCode, stdout } = await run(
+			'inspect',
+			PIVOT_CORPUS_FILE,
+			'--detail',
+			'pivots',
+			'--json',
+		)
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.data.pivotTables.length).toBeGreaterThan(0)
+		expect(parsed.data.pivotCaches.length).toBeGreaterThan(0)
+	})
+
+	test('inspect --detail slicers --json returns slicer inventory', async () => {
+		const { exitCode, stdout } = await run(
+			'inspect',
+			SLICER_CORPUS_FILE,
+			'--detail',
+			'slicers',
+			'--json',
+		)
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.data.slicerCaches.length).toBeGreaterThan(0)
+		expect(parsed.data.slicers.length).toBeGreaterThan(0)
+	})
+
+	test('inspect --detail drawings --json returns drawing flags', async () => {
+		const { exitCode, stdout } = await run(
+			'inspect',
+			PIVOT_CORPUS_FILE,
+			'Source data',
+			'--detail',
+			'drawings',
+			'--json',
+		)
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(typeof parsed.data.drawingRefs.hasDrawing).toBe('boolean')
+	})
+
 	test('read requires an explicit sheet when workbook has multiple sheets', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -158,6 +202,64 @@ describe('ascend cli', () => {
 		const { exitCode, stdout } = await run('read', NAMED_RANGE_FILE, 'name:MyRange')
 		expect(exitCode).toBe(0)
 		expect(stdout).toContain('MyRange: Sheet1!A1:A1')
+	})
+
+	test('read table --json exposes table metadata and paginated rows', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Name' },
+					{ ref: 'B1', value: 'Score' },
+					{ ref: 'A2', value: 'Alice' },
+					{ ref: 'B2', value: 90 },
+					{ ref: 'A3', value: 'Bob' },
+					{ ref: 'B3', value: 80 },
+					{ ref: 'A4', value: 'Total' },
+					{ ref: 'B4', value: 170 },
+				],
+			},
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:B3', name: 'MyTable', hasHeaders: true },
+		])
+		const internal = wb as unknown as {
+			wb: { sheets: Array<{ tables: Array<Record<string, unknown>> }> }
+		}
+		const tableModel = internal.wb.sheets[0]?.tables[0] as
+			| {
+					sortState?: { ref: string; conditions: readonly { ref: string }[] }
+					ref: { start: { row: number; col: number }; end: { row: number; col: number } }
+					hasTotals: boolean
+			  }
+			| undefined
+		if (tableModel) {
+			tableModel.sortState = { ref: 'A1:B4', conditions: [{ ref: 'B2:B3' }] }
+			tableModel.hasTotals = true
+			tableModel.ref = { start: { row: 0, col: 0 }, end: { row: 3, col: 1 } }
+		}
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const { exitCode, stdout } = await run(
+			'read',
+			TEST_FILE,
+			'table:MyTable',
+			'--json',
+			'--row-offset',
+			'1',
+			'--row-limit',
+			'1',
+		)
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.data.kind).toBe('table')
+		expect(parsed.data.hasHeaders).toBe(true)
+		expect(parsed.data.hasTotals).toBe(true)
+		expect(parsed.data.headerRow[0]).toEqual({ kind: 'string', value: 'Name' })
+		expect(parsed.data.totalsRow[1]).toEqual({ kind: 'number', value: 170 })
+		expect(parsed.data.sortState.ref).toBe('A1:B4')
+		expect(parsed.data.rows).toHaveLength(1)
+		expect(parsed.data.rows[0].Name).toEqual({ kind: 'string', value: 'Bob' })
 	})
 
 	test('write requires an explicit sheet when workbook has multiple sheets', async () => {

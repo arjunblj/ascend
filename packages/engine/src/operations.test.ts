@@ -105,6 +105,30 @@ describe('applyOperation', () => {
 		expect(wb.sheets).toHaveLength(1)
 	})
 
+	test('deleteSheet removes sheet-scoped names and pivot metadata for the deleted sheet', () => {
+		const wb = setup()
+		const sheet2 = wb.addSheet('Sheet2')
+		wb.definedNames.set('LocalBudget', 'Sheet2!A1', { kind: 'sheet', sheetId: sheet2.id })
+		wb.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'Sheet2',
+			name: 'PivotTable1',
+			cacheId: 4,
+			locationRef: 'A1',
+		})
+		wb.slicerCaches.push({
+			partPath: 'xl/slicerCaches/slicerCache1.xml',
+			name: 'Slicer_PivotTable1',
+			pivotTableNames: ['PivotTable1'],
+		})
+
+		const result = applyOperation(wb, { op: 'deleteSheet', sheet: 'Sheet2' })
+		expect(result.ok).toBe(true)
+		expect(wb.definedNames.list().some((entry) => entry.name === 'LocalBudget')).toBe(false)
+		expect(wb.pivotTables).toHaveLength(0)
+		expect(wb.slicerCaches).toHaveLength(0)
+	})
+
 	test('insertRows shifts cells down', () => {
 		const wb = setup()
 		const result = applyOperation(wb, {

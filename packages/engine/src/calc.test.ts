@@ -139,6 +139,42 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(4, 0)?.value).toEqual(numberValue(22))
 	})
 
+	test('whole-column references can aggregate used cells in a column', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(4), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(6), formula: null, styleId: sid })
+		sheet.cells.set(3, 1, { value: EMPTY, formula: 'SUM(A:A)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(3, 1)?.value).toEqual(numberValue(10))
+	})
+
+	test('dirty recalc updates formulas using whole-column references', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(4), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(6), formula: null, styleId: sid })
+		sheet.cells.set(3, 1, { value: EMPTY, formula: 'SUM(A:A)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		sheet.cells.set(2, 0, { value: numberValue(10), formula: null, styleId: sid })
+
+		recalculate(wb, makeCtx(), { dirtyOnly: true, dirtyRefs: ['Sheet1!A3'] })
+		expect(sheet.cells.get(3, 1)?.value).toEqual(numberValue(14))
+	})
+
+	test('whole-row references can aggregate used cells in a row', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(1, 0, { value: numberValue(4), formula: null, styleId: sid })
+		sheet.cells.set(1, 2, { value: numberValue(6), formula: null, styleId: sid })
+		sheet.cells.set(2, 3, { value: EMPTY, formula: 'SUM(2:2)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(2, 3)?.value).toEqual(numberValue(10))
+	})
+
 	test('SUMPRODUCT returns #VALUE! for mismatched range shapes', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -280,6 +316,20 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 0)?.value).toEqual(numberValue(5))
 	})
 
+	test('dirty recalc re-evaluates INDIRECT formulas through the volatile path', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'INDIRECT("A1")*2', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(4))
+
+		sheet.cells.set(0, 0, { value: numberValue(5), formula: null, styleId: sid })
+		recalculate(wb, makeCtx(), { dirtyOnly: true, dirtyRefs: ['Sheet1!A1'] })
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(10))
+	})
+
 	test('INDIRECT resolves R1C1-style references when requested', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -300,6 +350,21 @@ describe('recalculate', () => {
 
 		recalculate(wb, makeCtx())
 		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(11))
+	})
+
+	test('dirty recalc re-evaluates OFFSET formulas through the volatile path', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(4), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(5), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'SUM(OFFSET(A1,1,0,1,1))', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(5))
+
+		sheet.cells.set(1, 0, { value: numberValue(9), formula: null, styleId: sid })
+		recalculate(wb, makeCtx(), { dirtyOnly: true, dirtyRefs: ['Sheet1!A2'] })
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(9))
 	})
 
 	test('SEQUENCE spills vertically into neighboring cells', () => {
@@ -346,6 +411,73 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(10))
 		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(20))
 		expect(sheet.cells.get(2, 1)?.value).toEqual(numberValue(30))
+	})
+
+	test('TRANSPOSE spills values across columns', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(4), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(5), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'TRANSPOSE(A1:A2)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(4))
+		expect(sheet.cells.get(0, 2)?.value).toEqual(numberValue(5))
+	})
+
+	test('TAKE spills the requested leading rows', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'TAKE(A1:A3,2)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(2))
+	})
+
+	test('DROP spills the remaining rows after dropping the requested prefix', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'DROP(A1:A3,1)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(3))
+	})
+
+	test('CHOOSECOLS can spill multiple selected columns', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(0, 3, { value: EMPTY, formula: 'CHOOSECOLS(A1:C1,1,3)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 3)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(0, 4)?.value).toEqual(numberValue(3))
+	})
+
+	test('HSTACK spills joined ranges across columns', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: EMPTY, formula: 'HSTACK(A1:A2,B1:B2)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 2)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(0, 3)?.value).toEqual(numberValue(10))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(1, 3)?.value).toEqual(numberValue(20))
 	})
 
 	test('error propagation through formula chain', () => {

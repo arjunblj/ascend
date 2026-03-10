@@ -401,11 +401,13 @@ registerFunction({
 	name: 'INDIRECT',
 	minArgs: 1,
 	maxArgs: 2,
+	volatile: true,
 	evaluate: () => errorValue('#REF!'),
 })
 registerFunction({
 	name: 'OFFSET',
 	minArgs: 3,
 	maxArgs: 5,
+	volatile: true,
 	evaluate: () => errorValue('#REF!'),
 })

@@ -206,6 +206,29 @@ describe('parse', () => {
 		expect(node.end).toEqual({ row: 9, col: 1, rowAbsolute: false, colAbsolute: false })
 	})
 
+	it('parses whole-column ranges', () => {
+		expect(p('A:C')).toEqual({ type: 'wholeColumnRange', startCol: 0, endCol: 2 })
+	})
+
+	it('parses whole-row ranges', () => {
+		expect(p('1:3')).toEqual({ type: 'wholeRowRange', startRow: 0, endRow: 2 })
+	})
+
+	it('parses sheet-qualified whole-column and whole-row ranges', () => {
+		expect(p('Sheet1!A:C')).toEqual({
+			type: 'wholeColumnRange',
+			startCol: 0,
+			endCol: 2,
+			sheet: 'Sheet1',
+		})
+		expect(p('Sheet1!1:3')).toEqual({
+			type: 'wholeRowRange',
+			startRow: 0,
+			endRow: 2,
+			sheet: 'Sheet1',
+		})
+	})
+
 	it('parses sheet-qualified cell references', () => {
 		const node = p('Sheet1!A1')
 		expect(node.type).toBe('cellRef')
@@ -333,6 +356,12 @@ describe('printFormula', () => {
 
 	it('roundtrips array literals', () => {
 		expect(printFormula(p('{1,2;3,4}'))).toBe('{1,2;3,4}')
+	})
+
+	it('roundtrips whole-row and whole-column ranges', () => {
+		expect(printFormula(p('A:C'))).toBe('A:C')
+		expect(printFormula(p('1:3'))).toBe('1:3')
+		expect(printFormula(p('Sheet1!A:C'))).toBe('Sheet1!A:C')
 	})
 })
 

@@ -328,27 +328,23 @@ export function readXlsx(
 		workbook.definedNames.set(dn.name, dn.formula)
 	}
 
-	const capsules = collectCapsules(
-		archive,
-		consumed,
-		contentTypes,
-		wbRels,
-		sheetPathToName,
-		workbookPath,
-	)
 	const sourceSheetNames = wbInfo.sheets.map((sheet) => sheet.name)
 	const loadedSheetNames = sheetsToParse.map((sheet) => sheet.name)
 	const hasAllSheets = loadedSheetNames.length === sourceSheetNames.length
 	const cellsHydrated = mode !== 'metadata-only'
 	const fidelityPartial = mode === 'values' || mode === 'formula'
+	const isPartial = !hasAllSheets || !cellsHydrated || fidelityPartial
 	const loadInfo: ReadXlsxLoadInfo = {
 		mode: selectedSheets ? 'selective' : mode,
-		isPartial: !hasAllSheets || !cellsHydrated || fidelityPartial,
+		isPartial,
 		cellsHydrated,
 		hasAllSheets,
 		sourceSheetNames,
 		loadedSheetNames,
 	}
+	const capsules = isPartial
+		? []
+		: collectCapsules(archive, consumed, contentTypes, wbRels, sheetPathToName, workbookPath)
 	const report = buildReport(contentTypes, formulaFeatures, workbook, capsules, loadInfo)
 	if (loadInfo.isPartial) {
 		workbook.sourceArchiveBytes = null

@@ -34,13 +34,23 @@ export class WritePlanBuilder {
 	private readonly extraOverrides: Array<{ partPath: string; contentType: string }> = []
 	private readonly skippedCapsulePaths = new Set<string>()
 
+	constructor(private readonly includeParts = true) {}
+
 	putXml(path: string, xml: string, descriptor: Omit<WritePartDescriptor, 'path'>): void {
-		this.parts.set(path, encode(xml))
+		if (this.includeParts) {
+			this.parts.set(path, encode(xml))
+		}
 		this.record(path, descriptor)
 	}
 
 	putBytes(path: string, bytes: Uint8Array, descriptor: Omit<WritePartDescriptor, 'path'>): void {
-		this.parts.set(path, bytes)
+		if (this.includeParts) {
+			this.parts.set(path, bytes)
+		}
+		this.record(path, descriptor)
+	}
+
+	recordOnly(path: string, descriptor: Omit<WritePartDescriptor, 'path'>): void {
 		this.record(path, descriptor)
 	}
 

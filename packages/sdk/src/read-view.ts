@@ -15,15 +15,20 @@ import {
 	tokenize,
 } from '@ascend/formulas'
 import type { CompatibilityReport } from '@ascend/schema'
+import { EMPTY } from '@ascend/schema'
 import { trace as verifyTrace } from '@ascend/verify'
 import { SheetHandle } from './sheet-handle.ts'
 import { TableHandle } from './table-handle.ts'
 import type {
 	DefinedNameInfo,
 	FormulaInfo,
+	PivotCacheInfo,
+	PivotTableInfo,
 	RangeWindowInfo,
 	SheetInfo,
 	SheetInspectInfo,
+	SlicerCacheInfo,
+	SlicerInfo,
 	TableInfo,
 	TraceResult,
 	WorkbookInfo,
@@ -34,6 +39,11 @@ export class WorkbookReadView {
 	protected wb: Workbook
 	protected readonly compat: CompatibilityReport
 	protected readonly loadInfo: WorkbookLoadInfo
+	private workbookInfoCache: WorkbookInfo | undefined
+	private readonly sheetInspectCache = new Map<string, SheetInspectInfo | undefined>()
+	private readonly formulaInfoCache = new Map<string, FormulaInfo | undefined>()
+	private readonly sheetHandleCache = new Map<string, SheetHandle>()
+	private readonly tableHandleCache = new Map<string, TableHandle>()
 
 	constructor(workbook: Workbook, report: CompatibilityReport, loadInfo: WorkbookLoadInfo) {
 		this.wb = workbook
@@ -46,6 +56,7 @@ export class WorkbookReadView {
 	}
 
 	inspect(): WorkbookInfo {
+		if (this.workbookInfoCache) return this.workbookInfoCache
 		let totalCells = 0
 		let totalComments = 0
 		let totalConditionalFormats = 0
@@ -64,7 +75,7 @@ export class WorkbookReadView {
 			}
 			return buildSheetInfo(sheet, isHydrated, used, count)
 		})
-		return {
+		const info = {
 			sheetCount: this.loadInfo.sourceSheets.length,
 			loadedSheetCount: this.loadInfo.loadedSheets.length,
 			sheets,
@@ -97,21 +108,27 @@ export class WorkbookReadView {
 			compatibility: this.compat,
 			load: this.loadInfo,
 		}
+		this.workbookInfoCache = info
+		return info
 	}
 
 	inspectSheet(name: string): SheetInspectInfo | undefined {
+		if (this.sheetInspectCache.has(name)) return this.sheetInspectCache.get(name)
 		const sheet = this.wb.getSheet(name)
-		if (!sheet) return undefined
+		if (!sheet) {
+			this.sheetInspectCache.set(name, undefined)
+			return undefined
+		}
 		const isHydrated = this.loadInfo.cellsHydrated
 		const used = isHydrated ? sheet.cells.usedRange() : null
 		const count = isHydrated ? sheet.cells.cellCount() : null
 		const base = buildSheetInfo(sheet, isHydrated, used, count)
-		return {
+		const info = {
 			...base,
 			usedRange: used,
 			state: sheet.state,
 			merges: isHydrated ? [...sheet.merges] : null,
-			tables: isHydrated ? sheet.tables.map((table) => buildTableInfo(table)) : null,
+			tables: isHydrated ? sheet.tables.map((table) => buildTableInfo(table, sheet)) : null,
 			comments: isHydrated
 				? [...sheet.comments.entries()].map(([ref, comment]) => ({ ref, ...comment }))
 				: null,
@@ -132,11 +149,18 @@ export class WorkbookReadView {
 			printOptions: isHydrated ? sheet.printOptions : null,
 			headerFooter: isHydrated ? sheet.headerFooter : null,
 		}
+		this.sheetInspectCache.set(name, info)
+		return info
 	}
 
 	sheet(name: string): SheetHandle | undefined {
+		const cached = this.sheetHandleCache.get(name)
+		if (cached) return cached
 		const sheet = this.wb.getSheet(name)
-		return sheet ? new SheetHandle(sheet) : undefined
+		if (!sheet) return undefined
+		const handle = new SheetHandle(sheet)
+		this.sheetHandleCache.set(name, handle)
+		return handle
 	}
 
 	readRange(sheetName: string, range: string): import('./types.ts').RangeInfo | undefined {
@@ -179,12 +203,39 @@ export class WorkbookReadView {
 	}
 
 	table(name: string): TableHandle | undefined {
+		const cached = this.tableHandleCache.get(name)
+		if (cached) return cached
 		for (const sheet of this.wb.sheets) {
 			for (const table of sheet.tables) {
-				if (table.name === name) return new TableHandle(table, sheet)
+				if (table.name === name) {
+					const handle = new TableHandle(table, sheet)
+					this.tableHandleCache.set(name, handle)
+					return handle
+				}
 			}
 		}
 		return undefined
+	}
+
+	pivotTables(sheetName?: string): readonly PivotTableInfo[] {
+		return this.wb.pivotTables
+			.filter((entry) => (sheetName ? entry.sheetName === sheetName : true))
+			.map((entry) => ({ ...entry }))
+	}
+
+	pivotCaches(): readonly PivotCacheInfo[] {
+		return this.wb.pivotCaches.map((entry) => ({ ...entry }))
+	}
+
+	slicerCaches(): readonly SlicerCacheInfo[] {
+		return this.wb.slicerCaches.map((entry) => ({
+			...entry,
+			pivotTableNames: [...entry.pivotTableNames],
+		}))
+	}
+
+	slicers(): readonly SlicerInfo[] {
+		return this.wb.slicers.map((entry) => ({ ...entry }))
 	}
 
 	trace(cellRef: string, opts?: { maxDepth?: number }): TraceResult | undefined {
@@ -200,9 +251,13 @@ export class WorkbookReadView {
 	}
 
 	formula(cellRef: string): FormulaInfo | undefined {
+		if (this.formulaInfoCache.has(cellRef)) return this.formulaInfoCache.get(cellRef)
 		const { sheetName, ref } = parseFullRef(cellRef, this.wb)
 		const cell = this.sheet(sheetName)?.cell(ref)
-		if (!cell?.formula) return undefined
+		if (!cell?.formula) {
+			this.formulaInfoCache.set(cellRef, undefined)
+			return undefined
+		}
 
 		const formula = normalizeFormulaInput(cell.formula)
 		const tokens = tokenize(formula).filter(
@@ -210,7 +265,7 @@ export class WorkbookReadView {
 		)
 		const parsed = parseFormula(formula)
 		if (!parsed.ok) {
-			return {
+			const info = {
 				ref: `${sheetName}!${ref}`,
 				formula,
 				normalizedFormula: formula,
@@ -222,10 +277,12 @@ export class WorkbookReadView {
 				tokens,
 				parseError: parsed.error.message,
 			}
+			this.formulaInfoCache.set(cellRef, info)
+			return info
 		}
 
 		const ast = parsed.value
-		return {
+		const info = {
 			ref: `${sheetName}!${ref}`,
 			formula,
 			normalizedFormula: printFormula(ast),
@@ -237,6 +294,8 @@ export class WorkbookReadView {
 			tokens,
 			ast,
 		}
+		this.formulaInfoCache.set(cellRef, info)
+		return info
 	}
 
 	diff(other: WorkbookReadView): WorkbookDiff {
@@ -290,6 +349,14 @@ export class WorkbookReadView {
 			...(sheetName ? { sheet: sheetName } : {}),
 		}
 	}
+
+	protected clearReadCaches(): void {
+		this.workbookInfoCache = undefined
+		this.sheetInspectCache.clear()
+		this.formulaInfoCache.clear()
+		this.sheetHandleCache.clear()
+		this.tableHandleCache.clear()
+	}
 }
 
 function buildSheetInfo(
@@ -328,9 +395,22 @@ function buildSheetInfo(
 	}
 }
 
-function buildTableInfo(table: import('@ascend/core').Table): TableInfo {
+function buildTableInfo(
+	table: import('@ascend/core').Table,
+	sheet: import('@ascend/core').Sheet,
+): TableInfo {
 	const headerOffset = table.hasHeaders ? 1 : 0
 	const totalOffset = table.hasTotals ? 1 : 0
+	const headerRow = table.hasHeaders
+		? Array.from({ length: table.ref.end.col - table.ref.start.col + 1 }, (_, offset) => {
+				return sheet.cells.get(table.ref.start.row, table.ref.start.col + offset)?.value ?? EMPTY
+			})
+		: undefined
+	const totalsRow = table.hasTotals
+		? Array.from({ length: table.ref.end.col - table.ref.start.col + 1 }, (_, offset) => {
+				return sheet.cells.get(table.ref.end.row, table.ref.start.col + offset)?.value ?? EMPTY
+			})
+		: undefined
 	return {
 		name: table.name,
 		ref: table.ref,
@@ -338,9 +418,11 @@ function buildTableInfo(table: import('@ascend/core').Table): TableInfo {
 		hasHeaders: table.hasHeaders,
 		hasTotals: table.hasTotals,
 		autoFilter: table.autoFilter ?? null,
-		...(table.sortState?.ref ? { sortStateRef: table.sortState.ref } : {}),
+		...(table.sortState ? { sortState: table.sortState } : {}),
 		...(table.tableStyleInfo ? { styleInfo: table.tableStyleInfo } : {}),
 		columnDefs: [...table.columns],
+		...(headerRow ? { headerRow } : {}),
+		...(totalsRow ? { totalsRow } : {}),
 	}
 }
 
@@ -363,7 +445,13 @@ function formatFormulaRef(ref: import('@ascend/formulas').FormulaRef): string {
 	if (ref.kind === 'cell') {
 		return `${ref.sheet ? `${ref.sheet}!` : ''}${formatFormulaCellRef(ref.ref)}`
 	}
-	return `${ref.sheet ? `${ref.sheet}!` : ''}${formatFormulaCellRef(ref.start)}:${formatFormulaCellRef(ref.end)}`
+	if (ref.kind === 'range') {
+		return `${ref.sheet ? `${ref.sheet}!` : ''}${formatFormulaCellRef(ref.start)}:${formatFormulaCellRef(ref.end)}`
+	}
+	if (ref.kind === 'wholeRowRange') {
+		return `${ref.sheet ? `${ref.sheet}!` : ''}${ref.startRow + 1}:${ref.endRow + 1}`
+	}
+	return `${ref.sheet ? `${ref.sheet}!` : ''}${indexToColumn(ref.startCol)}:${indexToColumn(ref.endCol)}`
 }
 
 function formatFormulaCellRef(ref: FormulaCellRef): string {
@@ -383,6 +471,9 @@ function hasVolatileFunction(node: FormulaNode): boolean {
 			return node.rows.some((row) => row.some(hasVolatileFunction))
 		case 'spillRef':
 			return hasVolatileFunction(node.target)
+		case 'wholeRowRange':
+		case 'wholeColumnRange':
+			return false
 		default:
 			return false
 	}
@@ -408,6 +499,9 @@ function collectFunctionNames(node: FormulaNode, out = new Set<string>()): Set<s
 			break
 		case 'spillRef':
 			collectFunctionNames(node.target, out)
+			break
+		case 'wholeRowRange':
+		case 'wholeColumnRange':
 			break
 	}
 	return out

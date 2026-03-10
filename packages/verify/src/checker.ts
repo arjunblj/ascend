@@ -54,20 +54,20 @@ function checkCircularRefs(wb: Workbook, analysis: WorkbookAnalysis): CheckIssue
 	})
 }
 
-function checkFormulaErrors(wb: Workbook): CheckIssue[] {
+function checkFormulaErrors(wb: Workbook, analysis: WorkbookAnalysis): CheckIssue[] {
 	const issues: CheckIssue[] = []
 
-	for (const sheet of wb.sheets) {
-		for (const [row, col, cell] of sheet.cells.iterate()) {
-			if (!cell.formula) continue
-			if (isError(cell.value)) {
-				issues.push({
-					rule: 'formula-errors',
-					severity: 'warning',
-					message: `Formula evaluates to ${cell.value.value}`,
-					refs: [`${sheet.name}!${toA1({ row, col })}`],
-				})
-			}
+	for (const formula of analysis.formulas.values()) {
+		const sheet = wb.sheets[formula.sheetIndex]
+		const cell = sheet?.cells.get(formula.row, formula.col)
+		if (!sheet || !cell || !cell.formula) continue
+		if (isError(cell.value)) {
+			issues.push({
+				rule: 'formula-errors',
+				severity: 'warning',
+				message: `Formula evaluates to ${cell.value.value}`,
+				refs: [`${sheet.name}!${toA1({ row: formula.row, col: formula.col })}`],
+			})
 		}
 	}
 
@@ -124,7 +124,7 @@ export function check(workbook: Workbook, analysis?: WorkbookAnalysis): CheckRes
 	const issues = [
 		...checkBrokenRefs(workbook, compiled),
 		...checkCircularRefs(workbook, compiled),
-		...checkFormulaErrors(workbook),
+		...checkFormulaErrors(workbook, compiled),
 		...checkOrphanedNames(workbook),
 		...checkTableIntegrity(workbook),
 	]

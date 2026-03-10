@@ -12,6 +12,18 @@ export type FormulaRef =
 			readonly end: FormulaCellRef
 			readonly sheet?: string
 	  }
+	| {
+			readonly kind: 'wholeRowRange'
+			readonly startRow: number
+			readonly endRow: number
+			readonly sheet?: string
+	  }
+	| {
+			readonly kind: 'wholeColumnRange'
+			readonly startCol: number
+			readonly endCol: number
+			readonly sheet?: string
+	  }
 
 function walk(node: FormulaNode, out: FormulaRef[]): void {
 	switch (node.type) {
@@ -27,6 +39,30 @@ function walk(node: FormulaNode, out: FormulaRef[]): void {
 				node.sheet !== undefined
 					? { kind: 'range', start: node.start, end: node.end, sheet: node.sheet }
 					: { kind: 'range', start: node.start, end: node.end },
+			)
+			break
+		case 'wholeRowRange':
+			out.push(
+				node.sheet !== undefined
+					? {
+							kind: 'wholeRowRange',
+							startRow: node.startRow,
+							endRow: node.endRow,
+							sheet: node.sheet,
+						}
+					: { kind: 'wholeRowRange', startRow: node.startRow, endRow: node.endRow },
+			)
+			break
+		case 'wholeColumnRange':
+			out.push(
+				node.sheet !== undefined
+					? {
+							kind: 'wholeColumnRange',
+							startCol: node.startCol,
+							endCol: node.endCol,
+							sheet: node.sheet,
+						}
+					: { kind: 'wholeColumnRange', startCol: node.startCol, endCol: node.endCol },
 			)
 			break
 		case 'binary':
@@ -78,6 +114,9 @@ export function rewriteRefs(
 			}
 			return { type: 'rangeRef', start, end }
 		}
+		case 'wholeColumnRange':
+		case 'wholeRowRange':
+			return node
 		case 'binary':
 			return {
 				type: 'binary',

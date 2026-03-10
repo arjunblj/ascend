@@ -188,6 +188,18 @@ export function evaluate(node: FormulaNode, ctx: EvalContext): CellValue {
 			return getCellValue(ctx.workbook, si, node.start.row, node.start.col)
 		}
 
+		case 'wholeRowRange': {
+			const si = resolveSheetIndex(ctx.workbook, node.sheet, ctx.sheetIndex)
+			if (si < 0) return errorValue('#REF!')
+			return wholeRowTopLeftValue(ctx.workbook, si, node.startRow)
+		}
+
+		case 'wholeColumnRange': {
+			const si = resolveSheetIndex(ctx.workbook, node.sheet, ctx.sheetIndex)
+			if (si < 0) return errorValue('#REF!')
+			return wholeColumnTopLeftValue(ctx.workbook, si, node.startCol)
+		}
+
 		case 'name': {
 			return evaluateDefinedName(node.name, node.sheet, ctx)
 		}
@@ -304,6 +316,18 @@ function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
 			node.end.row,
 			node.end.col,
 		)
+	}
+
+	if (node.type === 'wholeRowRange') {
+		const si = resolveSheetIndex(ctx.workbook, node.sheet, ctx.sheetIndex)
+		if (si < 0) return { value: errorValue('#REF!') }
+		return makeWholeRowArg(ctx.workbook, si, node.startRow, node.endRow)
+	}
+
+	if (node.type === 'wholeColumnRange') {
+		const si = resolveSheetIndex(ctx.workbook, node.sheet, ctx.sheetIndex)
+		if (si < 0) return { value: errorValue('#REF!') }
+		return makeWholeColumnArg(ctx.workbook, si, node.startCol, node.endCol)
 	}
 
 	if (node.type === 'cellRef') {
@@ -459,6 +483,16 @@ function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | nu
 				node.end.col,
 			)
 		}
+		case 'wholeRowRange': {
+			const si = resolveSheetIndex(ctx.workbook, node.sheet, ctx.sheetIndex)
+			if (si < 0) return { value: errorValue('#REF!') }
+			return makeWholeRowArg(ctx.workbook, si, node.startRow, node.endRow)
+		}
+		case 'wholeColumnRange': {
+			const si = resolveSheetIndex(ctx.workbook, node.sheet, ctx.sheetIndex)
+			if (si < 0) return { value: errorValue('#REF!') }
+			return makeWholeColumnArg(ctx.workbook, si, node.startCol, node.endCol)
+		}
 		case 'name': {
 			const resolved = resolveDefinedName(node.name, node.sheet, ctx)
 			if (!resolved) return { value: errorValue('#NAME?') }
@@ -597,6 +631,50 @@ function makeLazyRangeArg(
 			}
 		},
 	}
+}
+
+function wholeRowTopLeftValue(workbook: Workbook, sheetIndex: number, row: number): CellValue {
+	const sheet = workbook.sheets[sheetIndex]
+	if (!sheet) return errorValue('#REF!')
+	const used = sheet.cells.usedRange()
+	const startCol = used?.start.col ?? 0
+	return getCellValue(workbook, sheetIndex, row, startCol)
+}
+
+function wholeColumnTopLeftValue(workbook: Workbook, sheetIndex: number, col: number): CellValue {
+	const sheet = workbook.sheets[sheetIndex]
+	if (!sheet) return errorValue('#REF!')
+	const used = sheet.cells.usedRange()
+	const startRow = used?.start.row ?? 0
+	return getCellValue(workbook, sheetIndex, startRow, col)
+}
+
+function makeWholeRowArg(
+	workbook: Workbook,
+	sheetIndex: number,
+	startRow: number,
+	endRow: number,
+): EvalArg {
+	const sheet = workbook.sheets[sheetIndex]
+	if (!sheet) return { value: errorValue('#REF!') }
+	const used = sheet.cells.usedRange()
+	const startCol = used?.start.col ?? 0
+	const endCol = used?.end.col ?? startCol
+	return makeLazyRangeArg(workbook, sheetIndex, startRow, startCol, endRow, endCol)
+}
+
+function makeWholeColumnArg(
+	workbook: Workbook,
+	sheetIndex: number,
+	startCol: number,
+	endCol: number,
+): EvalArg {
+	const sheet = workbook.sheets[sheetIndex]
+	if (!sheet) return { value: errorValue('#REF!') }
+	const used = sheet.cells.usedRange()
+	const startRow = used?.start.row ?? 0
+	const endRow = used?.end.row ?? startRow
+	return makeLazyRangeArg(workbook, sheetIndex, startRow, startCol, endRow, endCol)
 }
 
 function evalLet(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {

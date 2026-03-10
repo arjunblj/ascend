@@ -1,17 +1,33 @@
 import { writeFile } from 'node:fs/promises'
-import { createWorkbook, parseRange, type RangeRef, type Workbook } from '@ascend/core'
+import {
+	createWorkbook,
+	indexToColumn,
+	parseA1,
+	parseRange,
+	type RangeRef,
+	type Workbook,
+} from '@ascend/core'
 import {
 	applyOperations,
 	type CalcContext,
 	defaultCalcContext,
+	cellValuesEqual as diffCellValuesEqual,
 	diffWorkbooks,
+	type PatchResult,
 	recalculate,
 } from '@ascend/engine'
 import { readCsv, writeCsv } from '@ascend/io-csv'
-import { type PreservationCapsule, summarizePlannedWrite, writeXlsx } from '@ascend/io-xlsx'
+import {
+	extractZip,
+	type PreservationCapsule,
+	summarizePlannedWrite,
+	writeXlsx,
+	type ZipArchive,
+} from '@ascend/io-xlsx'
 import {
 	type CompatibilityReport,
 	type CsvDialect,
+	EMPTY,
 	emptyReport,
 	type Operation,
 } from '@ascend/schema'
@@ -35,12 +51,14 @@ function cloneWorkbook(source: Workbook): Workbook {
 export class AscendWorkbook extends WorkbookReadView {
 	private readonly caps: PreservationCapsule[]
 	private originalBytes: Uint8Array | null
+	private sourceArchive: ZipArchive | undefined
 	private dirty: boolean
 	private readonly dirtySheets = new Set<string>()
 	private pendingDirtyRefs: string[] = []
 	private pendingFullRecalc = false
 	private workbookMetaDirty = false
 	private sharedStringsDirty = false
+	private stylesDirty = false
 
 	private constructor(
 		workbook: Workbook,
@@ -116,6 +134,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		const clone = cloneWorkbook(this.wb)
 		const errors: import('@ascend/schema').AscendError[] = []
 		const dirtyFlags = this.deriveDirtyFlags(ops)
+		const sourceArchive = this.getSourceArchive()
 
 		const result = applyOperations(clone, ops)
 		if (!result.ok) {
@@ -128,9 +147,10 @@ export class AscendWorkbook extends WorkbookReadView {
 			}
 		}
 
+		let recalcResult: import('./types.ts').RecalcResult | undefined
 		if (result.value.recalcRequired) {
 			const recalcTargets = deriveRecalcTargets(ops)
-			recalculate(
+			const calcResult = recalculate(
 				clone,
 				defaultCalcContext({
 					dateSystem: clone.calcSettings.dateSystem,
@@ -138,14 +158,22 @@ export class AscendWorkbook extends WorkbookReadView {
 				}),
 				resolveRecalcOptions(recalcTargets.fullRecalc, recalcTargets.dirtyRefs),
 			)
+			recalcResult = {
+				changed: calcResult.changed,
+				errors: calcResult.errors,
+				duration: calcResult.duration,
+			}
 		}
 
-		const diff = diffWorkbooks(this.wb, clone)
+		const fastDiff = buildFastPreviewDiff(this.wb, clone, ops, result.value, recalcResult)
+		const diff = fastDiff ?? diffWorkbooks(this.wb, clone)
 		const cellChanges = diff.sheets.flatMap((s) => s.cellsChanged)
 		const plan = summarizePlannedWrite(clone, this.caps.length > 0 ? this.caps : undefined, {
 			dirtySheetNames: result.value.sheetsModified,
 			workbookMetaDirty: dirtyFlags.workbookMetaDirty,
 			sharedStringsDirty: dirtyFlags.sharedStringsDirty,
+			stylesDirty: dirtyFlags.stylesDirty,
+			...(sourceArchive ? { sourceArchive } : {}),
 		})
 
 		return {
@@ -175,7 +203,9 @@ export class AscendWorkbook extends WorkbookReadView {
 		for (const sheetName of result.value.sheetsModified) this.dirtySheets.add(sheetName)
 		this.workbookMetaDirty ||= dirtyFlags.workbookMetaDirty
 		this.sharedStringsDirty ||= dirtyFlags.sharedStringsDirty
+		this.stylesDirty ||= dirtyFlags.stylesDirty
 		if (result.value.recalcRequired) this.mergePendingRecalcTargets(ops)
+		this.clearReadCaches()
 		return {
 			affectedCells: result.value.affectedCells,
 			sheetsModified: result.value.sheetsModified,
@@ -208,6 +238,7 @@ export class AscendWorkbook extends WorkbookReadView {
 				if (bang !== -1) this.dirtySheets.add(ref.slice(0, bang))
 			}
 		}
+		this.clearReadCaches()
 		this.pendingDirtyRefs = []
 		this.pendingFullRecalc = false
 		return {
@@ -281,11 +312,15 @@ export class AscendWorkbook extends WorkbookReadView {
 	toBytes(): Uint8Array {
 		this.assertWritable()
 		if (this.originalBytes && !this.dirty) return this.originalBytes
-		const result = writeXlsx(this.wb, this.caps.length > 0 ? this.caps : undefined, {
+		const sourceArchive = this.getSourceArchive()
+		const writeOptions: import('@ascend/io-xlsx').WriteXlsxOptions = {
 			dirtySheetNames: [...this.dirtySheets],
 			workbookMetaDirty: this.workbookMetaDirty,
 			sharedStringsDirty: this.sharedStringsDirty,
-		})
+			stylesDirty: this.stylesDirty,
+			...(sourceArchive ? { sourceArchive } : {}),
+		}
+		const result = writeXlsx(this.wb, this.caps.length > 0 ? this.caps : undefined, writeOptions)
 		if (!result.ok) throw new Error(result.error.message)
 		this.captureSerializedState(result.value)
 		return result.value
@@ -300,11 +335,19 @@ export class AscendWorkbook extends WorkbookReadView {
 
 	writePlanSummary(): WritePlanInfo {
 		this.assertWritable()
-		const result = summarizePlannedWrite(this.wb, this.caps.length > 0 ? this.caps : undefined, {
+		const sourceArchive = this.getSourceArchive()
+		const writeOptions: import('@ascend/io-xlsx').WriteXlsxOptions = {
 			dirtySheetNames: [...this.dirtySheets],
 			workbookMetaDirty: this.workbookMetaDirty,
 			sharedStringsDirty: this.sharedStringsDirty,
-		})
+			stylesDirty: this.stylesDirty,
+			...(sourceArchive ? { sourceArchive } : {}),
+		}
+		const result = summarizePlannedWrite(
+			this.wb,
+			this.caps.length > 0 ? this.caps : undefined,
+			writeOptions,
+		)
 		if (!result.ok) throw new Error(result.error.message)
 		return result.value
 	}
@@ -319,9 +362,11 @@ export class AscendWorkbook extends WorkbookReadView {
 	private deriveDirtyFlags(ops: readonly Operation[]): {
 		workbookMetaDirty: boolean
 		sharedStringsDirty: boolean
+		stylesDirty: boolean
 	} {
 		let workbookMetaDirty = false
 		let sharedStringsDirty = false
+		let stylesDirty = false
 		let sharedStringKeys: Set<string> | null = null
 		const getSharedStringKeys = (): Set<string> => {
 			if (sharedStringKeys) return sharedStringKeys
@@ -341,6 +386,10 @@ export class AscendWorkbook extends WorkbookReadView {
 				case 'setFormula':
 				case 'fillFormula':
 					sharedStringsDirty = true
+					break
+				case 'setNumberFormat':
+				case 'setStyle':
+					stylesDirty = true
 					break
 				case 'setCells':
 					if (
@@ -365,9 +414,12 @@ export class AscendWorkbook extends WorkbookReadView {
 						sharedStringsDirty = true
 					}
 					break
+				case 'clearRange':
+					if (op.what === 'styles' || op.what === 'all') stylesDirty = true
+					break
 			}
 		}
-		return { workbookMetaDirty, sharedStringsDirty }
+		return { workbookMetaDirty, sharedStringsDirty, stylesDirty }
 	}
 
 	private markDirty(): void {
@@ -378,10 +430,12 @@ export class AscendWorkbook extends WorkbookReadView {
 	private captureSerializedState(bytes: Uint8Array): void {
 		this.originalBytes = bytes
 		this.wb.sourceArchiveBytes = bytes
+		this.sourceArchive = undefined
 		this.dirty = false
 		this.dirtySheets.clear()
 		this.workbookMetaDirty = false
 		this.sharedStringsDirty = false
+		this.stylesDirty = false
 		this.pendingDirtyRefs = []
 		this.pendingFullRecalc = false
 	}
@@ -396,6 +450,133 @@ export class AscendWorkbook extends WorkbookReadView {
 		if (!this.pendingFullRecalc) {
 			this.pendingDirtyRefs = [...new Set([...this.pendingDirtyRefs, ...refs.dirtyRefs])]
 		}
+	}
+
+	private getSourceArchive(): ZipArchive | undefined {
+		if (this.sourceArchive) return this.sourceArchive
+		if (!this.wb.sourceArchiveBytes) return undefined
+		this.sourceArchive = extractZip(this.wb.sourceArchiveBytes)
+		return this.sourceArchive
+	}
+}
+
+function buildFastPreviewDiff(
+	before: Workbook,
+	after: Workbook,
+	ops: readonly Operation[],
+	applyResult: PatchResult,
+	recalcResult: RecalcResult | undefined,
+): import('@ascend/engine').WorkbookDiff | undefined {
+	if (!ops.every(isFastPreviewOp)) return undefined
+	const candidateRefs = collectFastPreviewRefs(ops, applyResult, recalcResult)
+	const bySheet = new Map<string, import('@ascend/engine').CellChange[]>()
+	for (const fullRef of candidateRefs) {
+		const parsed = splitFullRef(fullRef, after)
+		if (!parsed) continue
+		const beforeCell = before.getSheet(parsed.sheet)?.cells.get(parsed.row, parsed.col)
+		const afterCell = after.getSheet(parsed.sheet)?.cells.get(parsed.row, parsed.col)
+		if (!beforeCell && !afterCell) continue
+		const beforeValue = beforeCell?.value ?? EMPTY
+		const afterValue = afterCell?.value ?? EMPTY
+		const beforeFormula = beforeCell?.formula ?? null
+		const afterFormula = afterCell?.formula ?? null
+		if (beforeFormula === afterFormula && diffCellValuesEqual(beforeValue, afterValue)) continue
+		const change: import('@ascend/engine').CellChange = {
+			ref: parsed.ref,
+			before: beforeValue,
+			after: afterValue,
+			formulaBefore: beforeFormula,
+			formulaAfter: afterFormula,
+		}
+		const sheetChanges = bySheet.get(parsed.sheet)
+		if (sheetChanges) sheetChanges.push(change)
+		else bySheet.set(parsed.sheet, [change])
+	}
+	return {
+		sheets: [...bySheet.entries()].map(([name, cellsChanged]) => ({
+			name,
+			cellsAdded: [],
+			cellsRemoved: [],
+			cellsChanged,
+		})),
+		namesAdded: [],
+		namesRemoved: [],
+		namesChanged: [],
+	}
+}
+
+function isFastPreviewOp(op: Operation): boolean {
+	switch (op.op) {
+		case 'setCells':
+		case 'setFormula':
+		case 'setComment':
+		case 'setHyperlink':
+			return true
+		case 'setNumberFormat':
+		case 'setStyle':
+			return !op.range.includes(':') || isSingleCellRef(op.range)
+		default:
+			return false
+	}
+}
+
+function isSingleCellRef(ref: string): boolean {
+	try {
+		const range = parseRange(ref)
+		return range.start.row === range.end.row && range.start.col === range.end.col
+	} catch {
+		return false
+	}
+}
+
+function collectFastPreviewRefs(
+	ops: readonly Operation[],
+	applyResult: PatchResult,
+	recalcResult: RecalcResult | undefined,
+): Set<string> {
+	const refs = new Set<string>()
+	for (const op of ops) {
+		switch (op.op) {
+			case 'setCells':
+				for (const update of op.updates) refs.add(`${op.sheet}!${update.ref}`)
+				break
+			case 'setFormula':
+			case 'setComment':
+			case 'setHyperlink':
+				refs.add(`${op.sheet}!${op.ref}`)
+				break
+			case 'setNumberFormat':
+			case 'setStyle':
+				if (isSingleCellRef(op.range)) refs.add(`${op.sheet}!${op.range}`)
+				break
+		}
+	}
+	for (const ref of applyResult.affectedCells) {
+		if (ref.includes('!')) refs.add(ref)
+		else if (applyResult.sheetsModified.length === 1)
+			refs.add(`${applyResult.sheetsModified[0]}!${ref}`)
+	}
+	for (const ref of recalcResult?.changed ?? []) refs.add(ref)
+	return refs
+}
+
+function splitFullRef(
+	fullRef: string,
+	workbook: Workbook,
+): { sheet: string; ref: string; row: number; col: number } | undefined {
+	const bang = fullRef.lastIndexOf('!')
+	const sheet =
+		bang === -1 ? workbook.sheets[0]?.name : fullRef.slice(0, bang).replace(/^'|'$/g, '')
+	const ref = bang === -1 ? fullRef : fullRef.slice(bang + 1)
+	if (!sheet || !ref) return undefined
+	try {
+		const parsed = parseA1(ref)
+		return { sheet, ref, row: parsed.row, col: parsed.col }
+	} catch {
+		const range = parseRange(ref)
+		if (range.start.row !== range.end.row || range.start.col !== range.end.col) return undefined
+		const singleRef = `${indexToColumn(range.start.col)}${range.start.row + 1}`
+		return { sheet, ref: singleRef, row: range.start.row, col: range.start.col }
 	}
 }
 

@@ -1,6 +1,6 @@
 import type { WorkbookSession } from '@ascend/sdk'
 import { jsonOut } from '../output/json.ts'
-import { bullet, heading, table } from '../output/pretty.ts'
+import { bullet, formatCellValue, heading, table } from '../output/pretty.ts'
 import { openWorkbookSessionWithProgress } from '../progress.ts'
 
 export const usage = `Usage: ascend inspect <file> [sheet] [flags]
@@ -13,7 +13,7 @@ Arguments:
 
 Flags:
   --sheet <name>  Sheet name (alternative to positional argument)
-  --detail <type> Show detail for: cf, dv, hyperlinks, tables, comments, compatibility
+  --detail <type> Show detail for: cf, dv, hyperlinks, tables, comments, drawings, images, compatibility, pivots, slicers
   --mode <mode>   Load mode: metadata, values, or full
   --json          Output as JSON
   --verbose       Show compatibility report and timing
@@ -30,6 +30,7 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 	const detail = flags.get('detail')
 	const verbose = flags.has('verbose')
 	const workbookDetail = detail === 'compatibility'
+	const workbookStructureDetail = detail === 'pivots' || detail === 'slicers'
 	const parsedMode = parseInspectMode(flags.get('mode'))
 	if (flags.has('mode') && parsedMode === null) {
 		console.error('Invalid --mode. Use one of: metadata, values, full')
@@ -49,17 +50,26 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 				}
 			: workbookDetail
 				? { mode: 'metadata-only' as const }
-				: detail && sheetArg
-					? { sheets: [sheetArg] }
-					: sheetArg
-						? { mode: 'values' as const, sheets: [sheetArg] }
-						: { mode: 'metadata-only' as const }
+				: workbookStructureDetail
+					? { mode: 'full' as const }
+					: detail && sheetArg
+						? { sheets: [sheetArg] }
+						: sheetArg
+							? { mode: 'values' as const, sheets: [sheetArg] }
+							: { mode: 'metadata-only' as const }
 	const { session, durationMs: openMs } = await openWorkbookSessionWithProgress(file, openOptions)
 	const wb = session
-	const info = wb.inspect()
 
 	if (detail === 'compatibility') {
 		return printCompatibilityDetail(wb, flags.has('json'))
+	}
+
+	if (detail === 'pivots') {
+		return printPivotDetail(wb, flags.has('json'))
+	}
+
+	if (detail === 'slicers') {
+		return printSlicerDetail(wb, flags.has('json'))
 	}
 
 	if (detail && sheetArg) {
@@ -133,11 +143,13 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 	}
 
 	if (flags.has('json')) {
+		const info = wb.inspect()
 		const out = verbose ? { ...info, timing: { openMs: Math.round(openMs * 100) / 100 } } : info
 		console.log(jsonOut(out))
 		return 0
 	}
 
+	const info = wb.inspect()
 	console.log(heading(`Workbook: ${file}`))
 	console.log(bullet('Format', info.sourceFormat))
 	console.log(bullet('Source sheets', info.sheetCount))
@@ -310,6 +322,49 @@ function printSheetDetail(
 			if (comments.size === 0) console.log('  (none)')
 			return 0
 		}
+		case 'drawings': {
+			const detailInfo = wb.inspectSheet(sheetName)
+			if (json) {
+				console.log(
+					jsonOut({
+						drawingRefs: detailInfo?.drawingRefs ?? null,
+					}),
+				)
+				return 0
+			}
+			console.log(heading(`Drawing Refs: ${sheetName}`))
+			if (!detailInfo?.drawingRefs) {
+				console.log('  unknown (not hydrated)')
+				return 0
+			}
+			console.log(bullet('Drawing', detailInfo.drawingRefs.hasDrawing ? 'yes' : 'no'))
+			console.log(bullet('Legacy drawing', detailInfo.drawingRefs.hasLegacyDrawing ? 'yes' : 'no'))
+			return 0
+		}
+		case 'images': {
+			const images = handle.imageRefs
+			if (json) {
+				console.log(jsonOut(images))
+				return 0
+			}
+			console.log(heading(`Images: ${sheetName}`))
+			for (const image of images) {
+				console.log(
+					bullet(
+						image.name ?? image.targetPath,
+						[
+							image.targetPath,
+							image.description,
+							image.anchor?.kind ? `anchor=${image.anchor.kind}` : undefined,
+						]
+							.filter(Boolean)
+							.join(' | '),
+					),
+				)
+			}
+			if (images.length === 0) console.log('  (none)')
+			return 0
+		}
 		case 'tables': {
 			const sheetInfo = wb.inspectSheet(sheetName)
 			const tables = sheetInfo?.tables ?? null
@@ -334,8 +389,14 @@ function printSheetDetail(
 				if (tableInfo.autoFilter?.ref) {
 					console.log(`    filter: ${tableInfo.autoFilter.ref}`)
 				}
-				if (tableInfo.sortStateRef) {
-					console.log(`    sort: ${tableInfo.sortStateRef}`)
+				if (tableInfo.sortState?.ref) {
+					console.log(`    sort: ${tableInfo.sortState.ref}`)
+				}
+				if (tableInfo.headerRow) {
+					console.log(`    headers: ${tableInfo.headerRow.map(formatCellValue).join(' | ')}`)
+				}
+				if (tableInfo.totalsRow) {
+					console.log(`    totals: ${tableInfo.totalsRow.map(formatCellValue).join(' | ')}`)
 				}
 				console.log(
 					`    columns: ${tableInfo.columnDefs.map((column) => column.name).join(', ') || '(none)'}`,
@@ -348,7 +409,7 @@ function printSheetDetail(
 		}
 		default:
 			console.error(
-				`Unknown detail type: ${detail}. Options: cf, dv, hyperlinks, comments, tables, compatibility`,
+				`Unknown detail type: ${detail}. Options: cf, dv, hyperlinks, comments, drawings, images, tables, compatibility`,
 			)
 			return 1
 	}
@@ -365,6 +426,100 @@ function printCompatibilityDetail(wb: WorkbookSession, json: boolean): number {
 	for (const f of report.features) {
 		console.log(bullet(`${f.feature} (${f.tier})`, `${f.count} location(s)`))
 		if (f.note) console.log(`    ${f.note}`)
+	}
+	return 0
+}
+
+function printPivotDetail(wb: WorkbookSession, json: boolean): number {
+	const workbookInfo = wb.inspect()
+	if (json) {
+		console.log(
+			jsonOut({
+				pivotTables: wb.pivotTables(),
+				pivotCaches: wb.pivotCaches(),
+			}),
+		)
+		return 0
+	}
+	console.log(heading('Pivot Tables'))
+	console.log(bullet('Count', String(workbookInfo.pivotTableCount)))
+	for (const pivot of wb.pivotTables()) {
+		console.log(
+			bullet(
+				pivot.name ?? pivot.partPath,
+				[
+					pivot.sheetName,
+					pivot.locationRef,
+					pivot.cacheId !== undefined ? `cache=${pivot.cacheId}` : undefined,
+				]
+					.filter(Boolean)
+					.join(' | '),
+			),
+		)
+	}
+	if (workbookInfo.pivotTableCount === 0) console.log('  (none)')
+	if (wb.pivotCaches().length > 0) {
+		console.log('')
+		console.log(heading('Pivot Caches'))
+		for (const cache of wb.pivotCaches()) {
+			console.log(
+				bullet(
+					cache.partPath,
+					[
+						cache.sourceSheet ? `sheet=${cache.sourceSheet}` : undefined,
+						cache.sourceRef ? `ref=${cache.sourceRef}` : undefined,
+						cache.cacheId !== undefined ? `cache=${cache.cacheId}` : undefined,
+					]
+						.filter(Boolean)
+						.join(' | '),
+				),
+			)
+		}
+	}
+	return 0
+}
+
+function printSlicerDetail(wb: WorkbookSession, json: boolean): number {
+	const workbookInfo = wb.inspect()
+	if (json) {
+		console.log(
+			jsonOut({
+				slicerCaches: wb.slicerCaches(),
+				slicers: wb.slicers(),
+			}),
+		)
+		return 0
+	}
+	console.log(heading('Slicers'))
+	console.log(bullet('Count', String(workbookInfo.slicerCount)))
+	for (const slicer of wb.slicers()) {
+		console.log(
+			bullet(
+				slicer.name ?? slicer.partPath,
+				[slicer.cacheName, slicer.caption].filter(Boolean).join(' | '),
+			),
+		)
+	}
+	if (workbookInfo.slicerCount === 0) console.log('  (none)')
+	if (wb.slicerCaches().length > 0) {
+		console.log('')
+		console.log(heading('Slicer Caches'))
+		for (const cache of wb.slicerCaches()) {
+			console.log(
+				bullet(
+					cache.name ?? cache.partPath,
+					[
+						cache.sourceName,
+						cache.pivotCacheId !== undefined ? `pivotCache=${cache.pivotCacheId}` : undefined,
+						cache.pivotTableNames.length > 0
+							? `pivots=${cache.pivotTableNames.join(', ')}`
+							: undefined,
+					]
+						.filter(Boolean)
+						.join(' | '),
+				),
+			)
+		}
 	}
 	return 0
 }

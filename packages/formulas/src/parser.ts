@@ -37,6 +37,10 @@ function parseCellRefValue(raw: string): FormulaCellRef {
 	}
 }
 
+function isColumnLabel(raw: string): boolean {
+	return /^[A-Za-z]{1,3}$/.test(raw)
+}
+
 class FormulaParser {
 	private readonly tokens: readonly Token[]
 	private pos = 0
@@ -161,6 +165,15 @@ class FormulaParser {
 		const token = this.peek()
 
 		if (token.type === TokenType.Number) {
+			if (
+				this.tokens[this.pos + 1]?.type === TokenType.Colon &&
+				this.tokens[this.pos + 2]?.type === TokenType.Number
+			) {
+				const start = Number.parseInt(this.advance().value, 10) - 1
+				this.advance()
+				const end = Number.parseInt(this.expect(TokenType.Number).value, 10) - 1
+				return { type: 'wholeRowRange', startRow: start, endRow: end }
+			}
 			this.advance()
 			return { type: 'number', value: Number.parseFloat(token.value) }
 		}
@@ -192,6 +205,17 @@ class FormulaParser {
 			if (token.value.startsWith('[')) {
 				this.advance()
 				return this.buildStructuredRef('', token.value)
+			}
+			if (
+				isColumnLabel(token.value) &&
+				this.tokens[this.pos + 1]?.type === TokenType.Colon &&
+				this.tokens[this.pos + 2]?.type === TokenType.Name &&
+				isColumnLabel(this.tokens[this.pos + 2]?.value ?? '')
+			) {
+				const startCol = columnToIndex(this.advance().value.toUpperCase())
+				this.advance()
+				const endCol = columnToIndex(this.expect(TokenType.Name).value.toUpperCase())
+				return { type: 'wholeColumnRange', startCol, endCol }
 			}
 			return this.parseNameOrSheetRef()
 		}
@@ -261,6 +285,28 @@ class FormulaParser {
 		if (this.peek().type === TokenType.Bang) {
 			this.advance()
 			const sheet = token.value
+			if (
+				this.peek().type === TokenType.Number &&
+				this.tokens[this.pos + 1]?.type === TokenType.Colon &&
+				this.tokens[this.pos + 2]?.type === TokenType.Number
+			) {
+				const start = Number.parseInt(this.advance().value, 10) - 1
+				this.advance()
+				const end = Number.parseInt(this.expect(TokenType.Number).value, 10) - 1
+				return { type: 'wholeRowRange', startRow: start, endRow: end, sheet }
+			}
+			if (
+				this.peek().type === TokenType.Name &&
+				isColumnLabel(this.peek().value) &&
+				this.tokens[this.pos + 1]?.type === TokenType.Colon &&
+				this.tokens[this.pos + 2]?.type === TokenType.Name &&
+				isColumnLabel(this.tokens[this.pos + 2]?.value ?? '')
+			) {
+				const startCol = columnToIndex(this.advance().value.toUpperCase())
+				this.advance()
+				const endCol = columnToIndex(this.expect(TokenType.Name).value.toUpperCase())
+				return { type: 'wholeColumnRange', startCol, endCol, sheet }
+			}
 			if (this.peek().type === TokenType.CellRef) {
 				return this.parseCellOrRange(sheet)
 			}

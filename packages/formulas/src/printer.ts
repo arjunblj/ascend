@@ -95,6 +95,10 @@ function printNode(node: FormulaNode): string {
 				':' +
 				formatCellRef(node.end)
 			)
+		case 'wholeRowRange':
+			return `${node.sheet !== undefined ? formatSheet(node.sheet) : ''}${node.startRow + 1}:${node.endRow + 1}`
+		case 'wholeColumnRange':
+			return `${node.sheet !== undefined ? formatSheet(node.sheet) : ''}${indexToColumn(node.startCol)}:${indexToColumn(node.endCol)}`
 		case 'name':
 			return (node.sheet !== undefined ? formatSheet(node.sheet) : '') + node.name
 		case 'function':

@@ -36,6 +36,7 @@ function countVolatileCalls(node: FormulaNode): number {
 	if (node.type === 'array') {
 		return node.rows.reduce((n, row) => n + row.reduce((m, c) => m + countVolatileCalls(c), 0), 0)
 	}
+	if (node.type === 'spillRef') return countVolatileCalls(node.target)
 	return 0
 }
 
@@ -67,6 +68,9 @@ function walkForMagic(node: FormulaNode, out: number[]): void {
 				for (const cell of row) walkForMagic(cell, out)
 			}
 			break
+		case 'spillRef':
+			walkForMagic(node.target, out)
+			break
 		default:
 			break
 	}
@@ -97,6 +101,8 @@ function findFragileRefs(node: FormulaNode): boolean {
 			return node.args.some((a) => findFragileRefs(a))
 		case 'array':
 			return node.rows.some((row) => row.some((c) => findFragileRefs(c)))
+		case 'spillRef':
+			return findFragileRefs(node.target)
 		default:
 			return false
 	}
@@ -106,60 +112,59 @@ export function lint(workbook: Workbook, analysis?: WorkbookAnalysis): LintResul
 	const violations: LintViolation[] = []
 	const compiled = analysis ?? analyzeWorkbook(workbook)
 
-	for (const sheet of workbook.sheets) {
-		let sheetVolatileCount = 0
-		const volatileCells: string[] = []
+	const sheetStats = new Map<string, { volatileCount: number; volatileCells: number }>()
 
-		for (const formula of compiled.formulas.values()) {
-			const ref = `${sheet.name}!${toA1({ row: formula.row, col: formula.col })}`
-			if (formula.sheetName !== sheet.name) continue
-			if (!formula.ast) {
-				violations.push({
-					rule: 'parse-error',
-					severity: 'warning',
-					message: `Unparseable formula: ${formula.formula}`,
-					ref,
-					formula: formula.formula,
-				})
-				continue
-			}
-
-			const ast = formula.ast
-
-			const vc = countVolatileCalls(ast)
-			if (vc > 0) {
-				sheetVolatileCount += vc
-				volatileCells.push(ref)
-			}
-
-			const magic = findMagicNumbers(ast)
-			if (magic.length > 0) {
-				violations.push({
-					rule: 'hardcoded-in-formula',
-					severity: 'info',
-					message: `Formula contains magic number(s): ${magic.join(', ')}`,
-					ref,
-					formula: formula.formula,
-				})
-			}
-
-			if (findFragileRefs(ast)) {
-				violations.push({
-					rule: 'fragile-refs',
-					severity: 'warning',
-					message: 'Non-absolute reference spanning a large range',
-					ref,
-					formula: formula.formula,
-				})
-			}
+	for (const formula of compiled.formulas.values()) {
+		const ref = `${formula.sheetName}!${toA1({ row: formula.row, col: formula.col })}`
+		if (!formula.ast) {
+			violations.push({
+				rule: 'parse-error',
+				severity: 'warning',
+				message: `Unparseable formula: ${formula.formula}`,
+				ref,
+				formula: formula.formula,
+			})
+			continue
 		}
 
-		if (sheetVolatileCount > 10) {
+		const ast = formula.ast
+		const volatileCalls = countVolatileCalls(ast)
+		if (volatileCalls > 0) {
+			const stats = sheetStats.get(formula.sheetName) ?? { volatileCount: 0, volatileCells: 0 }
+			stats.volatileCount += volatileCalls
+			stats.volatileCells += 1
+			sheetStats.set(formula.sheetName, stats)
+		}
+
+		const magic = findMagicNumbers(ast)
+		if (magic.length > 0) {
+			violations.push({
+				rule: 'hardcoded-in-formula',
+				severity: 'info',
+				message: `Formula contains magic number(s): ${magic.join(', ')}`,
+				ref,
+				formula: formula.formula,
+			})
+		}
+
+		if (findFragileRefs(ast)) {
+			violations.push({
+				rule: 'fragile-refs',
+				severity: 'warning',
+				message: 'Non-absolute reference spanning a large range',
+				ref,
+				formula: formula.formula,
+			})
+		}
+	}
+
+	for (const [sheetName, stats] of sheetStats) {
+		if (stats.volatileCount > 10) {
 			violations.push({
 				rule: 'volatile-overuse',
 				severity: 'warning',
-				message: `Sheet "${sheet.name}" has ${sheetVolatileCount} volatile function calls across ${volatileCells.length} cell(s)`,
-				ref: `${sheet.name}!A1`,
+				message: `Sheet "${sheetName}" has ${stats.volatileCount} volatile function calls across ${stats.volatileCells} cell(s)`,
+				ref: `${sheetName}!A1`,
 				formula: '',
 			})
 		}

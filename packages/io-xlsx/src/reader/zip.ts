@@ -3,6 +3,7 @@ import { inflateRawSync } from 'node:zlib'
 const EOCD_SIGNATURE = 0x06054b50
 const CENTRAL_DIR_SIGNATURE = 0x02014b50
 const LOCAL_FILE_SIGNATURE = 0x04034b50
+const MAX_CACHED_PART_BYTES = 128 * 1024
 
 export interface ZipEntry {
 	readonly path: string
@@ -17,6 +18,8 @@ export class ZipArchive {
 	private readonly bytes: Uint8Array
 	private readonly entriesByPath: Map<string, ZipEntry>
 	private readonly decoder = new TextDecoder('utf-8')
+	private readonly bytesCache = new Map<string, Uint8Array>()
+	private readonly textCache = new Map<string, string>()
 
 	constructor(bytes: Uint8Array) {
 		this.bytes = bytes
@@ -36,20 +39,35 @@ export class ZipArchive {
 	}
 
 	readBytes(path: string): Uint8Array | undefined {
+		const cached = this.bytesCache.get(path)
+		if (cached) return cached
 		const entry = this.entriesByPath.get(path)
 		if (!entry) return undefined
 		const compressed = this.bytes.subarray(
 			entry.dataOffset,
 			entry.dataOffset + entry.compressedSize,
 		)
-		if (entry.compressionMethod === 0) return compressed
-		if (entry.compressionMethod === 8) return new Uint8Array(inflateRawSync(compressed))
-		throw new Error(`Unsupported ZIP compression method ${entry.compressionMethod} for ${path}`)
+		let bytes: Uint8Array
+		if (entry.compressionMethod === 0) bytes = compressed
+		else if (entry.compressionMethod === 8) bytes = new Uint8Array(inflateRawSync(compressed))
+		else
+			throw new Error(`Unsupported ZIP compression method ${entry.compressionMethod} for ${path}`)
+		if (bytes.byteLength <= MAX_CACHED_PART_BYTES) {
+			this.bytesCache.set(path, bytes)
+		}
+		return bytes
 	}
 
 	readText(path: string): string | undefined {
+		const cached = this.textCache.get(path)
+		if (cached !== undefined) return cached
 		const bytes = this.readBytes(path)
-		return bytes ? this.decoder.decode(bytes) : undefined
+		if (!bytes) return undefined
+		const text = this.decoder.decode(bytes)
+		if (bytes.byteLength <= MAX_CACHED_PART_BYTES) {
+			this.textCache.set(path, text)
+		}
+		return text
 	}
 }
 

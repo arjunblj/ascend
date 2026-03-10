@@ -58,6 +58,20 @@ export interface RangeRefNode {
 	readonly sheet?: string
 }
 
+export interface WholeRowRangeNode {
+	readonly type: 'wholeRowRange'
+	readonly startRow: number
+	readonly endRow: number
+	readonly sheet?: string
+}
+
+export interface WholeColumnRangeNode {
+	readonly type: 'wholeColumnRange'
+	readonly startCol: number
+	readonly endCol: number
+	readonly sheet?: string
+}
+
 export interface NameNode {
 	readonly type: 'name'
 	readonly name: string
@@ -111,6 +125,8 @@ export type FormulaNode =
 	| ErrorNode
 	| CellRefNode
 	| RangeRefNode
+	| WholeRowRangeNode
+	| WholeColumnRangeNode
 	| NameNode
 	| FunctionNode
 	| BinaryNode

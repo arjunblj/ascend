@@ -97,7 +97,7 @@ export function analyzeWorkbook(
 				if (refSheetIndex < 0) continue
 				if (ref.kind === 'cell') {
 					deps.push(cellKey(refSheetIndex, ref.ref.row, ref.ref.col))
-				} else {
+				} else if (ref.kind === 'range') {
 					rangeDeps.push({
 						sheetIndex: refSheetIndex,
 						startRow: ref.start.row,
@@ -105,6 +105,27 @@ export function analyzeWorkbook(
 						endRow: ref.end.row,
 						endCol: ref.end.col,
 					})
+				} else {
+					const targetSheet = workbook.sheets[refSheetIndex]
+					const usedRange = targetSheet?.cells.usedRange()
+					if (!targetSheet || !usedRange) continue
+					if (ref.kind === 'wholeRowRange') {
+						rangeDeps.push({
+							sheetIndex: refSheetIndex,
+							startRow: ref.startRow,
+							startCol: usedRange.start.col,
+							endRow: ref.endRow,
+							endCol: usedRange.end.col,
+						})
+					} else {
+						rangeDeps.push({
+							sheetIndex: refSheetIndex,
+							startRow: usedRange.start.row,
+							startCol: ref.startCol,
+							endRow: usedRange.end.row,
+							endCol: ref.endCol,
+						})
+					}
 				}
 			}
 			for (const structuredRef of collectStructuredRefs(ast)) {
@@ -118,7 +139,6 @@ export function analyzeWorkbook(
 					endCol: resolved.endCol,
 				})
 			}
-
 			const volatile = hasVolatileFunction(ast)
 			dependencyGraph.addFormula(key, deps, volatile, rangeDeps)
 			formulas.set(key, {
@@ -173,6 +193,9 @@ function hasVolatileFunction(node: FormulaNode): boolean {
 			return node.rows.some((row) => row.some((cell) => hasVolatileFunction(cell)))
 		case 'spillRef':
 			return hasVolatileFunction(node.target)
+		case 'wholeRowRange':
+		case 'wholeColumnRange':
+			return false
 		default:
 			return false
 	}
@@ -261,6 +284,9 @@ function walkStructuredRefs(
 		case 'spillRef':
 			walkStructuredRefs(node.target, result)
 			break
+		case 'wholeRowRange':
+		case 'wholeColumnRange':
+			break
 		default:
 			break
 	}
@@ -290,6 +316,9 @@ function walkNameRefs(node: FormulaNode, result: Array<{ name: string; sheet?: s
 			break
 		case 'spillRef':
 			walkNameRefs(node.target, result)
+			break
+		case 'wholeRowRange':
+		case 'wholeColumnRange':
 			break
 		default:
 			break

@@ -20,9 +20,13 @@ import type {
 	DefinedNameInfo,
 	FormulaInfo,
 	LintResult,
+	PivotCacheInfo,
+	PivotTableInfo,
 	RangeInfo,
 	RangeWindowInfo,
 	SheetInspectInfo,
+	SlicerCacheInfo,
+	SlicerInfo,
 	TraceResult,
 	WorkbookInfo,
 } from './types.ts'
@@ -248,6 +252,22 @@ export class WorkbookSession {
 		return this.view.table(name)
 	}
 
+	pivotTables(sheetName?: string): readonly PivotTableInfo[] {
+		return this.view.pivotTables(sheetName)
+	}
+
+	pivotCaches(): readonly PivotCacheInfo[] {
+		return this.view.pivotCaches()
+	}
+
+	slicerCaches(): readonly SlicerCacheInfo[] {
+		return this.view.slicerCaches()
+	}
+
+	slicers(): readonly SlicerInfo[] {
+		return this.view.slicers()
+	}
+
 	private getAnalysis(): WorkbookAnalysis {
 		if (!this.analysis) {
 			this.analysis = analyzeWorkbook(this.view.getWorkbookModel())
@@ -349,7 +369,13 @@ function formatFormulaRef(ref: import('@ascend/formulas').FormulaRef): string {
 	if (ref.kind === 'cell') {
 		return `${ref.sheet ? `${ref.sheet}!` : ''}${formatFormulaCellRef(ref.ref)}`
 	}
-	return `${ref.sheet ? `${ref.sheet}!` : ''}${formatFormulaCellRef(ref.start)}:${formatFormulaCellRef(ref.end)}`
+	if (ref.kind === 'range') {
+		return `${ref.sheet ? `${ref.sheet}!` : ''}${formatFormulaCellRef(ref.start)}:${formatFormulaCellRef(ref.end)}`
+	}
+	if (ref.kind === 'wholeRowRange') {
+		return `${ref.sheet ? `${ref.sheet}!` : ''}${ref.startRow + 1}:${ref.endRow + 1}`
+	}
+	return `${ref.sheet ? `${ref.sheet}!` : ''}${indexToColumn(ref.startCol)}:${indexToColumn(ref.endCol)}`
 }
 
 function formatFormulaCellRef(ref: FormulaCellRef): string {

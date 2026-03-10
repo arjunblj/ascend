@@ -857,10 +857,17 @@ function handleDeleteSheet(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'deleteSheet' }>,
 ): Result<PatchResult> {
-	if (!workbook.getSheet(op.sheet)) {
+	const targetSheet = workbook.getSheet(op.sheet)
+	if (!targetSheet) {
 		return err(ascendError('SHEET_NOT_FOUND', `Sheet "${op.sheet}" not found`))
 	}
+	const removedPivotNames = workbook.pivotTables
+		.filter((entry) => entry.sheetName === op.sheet)
+		.map((entry) => entry.name)
+		.filter((name): name is string => Boolean(name))
 	workbook.removeSheet(op.sheet)
+	removeSheetScopedDefinedNames(workbook, targetSheet.id)
+	removeWorkbookMetadataForDeletedSheet(workbook, op.sheet, removedPivotNames)
 	return ok(patch([], [op.sheet]))
 }
 
@@ -898,6 +905,53 @@ function handleMoveSheet(
 	workbook.sheets.splice(op.position, 0, sheet)
 
 	return ok(patch([], [op.sheet]))
+}
+
+function removeSheetScopedDefinedNames(workbook: Workbook, sheetId: string): void {
+	const scopedEntries = workbook.definedNames
+		.list()
+		.filter((entry) => entry.scope.kind === 'sheet' && entry.scope.sheetId === sheetId)
+	for (const entry of scopedEntries) {
+		workbook.definedNames.delete(entry.name, entry.scope)
+	}
+}
+
+function removeWorkbookMetadataForDeletedSheet(
+	workbook: Workbook,
+	sheetName: string,
+	removedPivotNames: readonly string[],
+): void {
+	for (let index = workbook.pivotTables.length - 1; index >= 0; index--) {
+		if (workbook.pivotTables[index]?.sheetName === sheetName) {
+			workbook.pivotTables.splice(index, 1)
+		}
+	}
+	for (let index = workbook.slicers.length - 1; index >= 0; index--) {
+		const slicer = workbook.slicers[index]
+		if (!slicer) continue
+		if (
+			removedPivotNames.some(
+				(pivotName) => slicer.name === pivotName || slicer.cacheName === pivotName,
+			)
+		) {
+			workbook.slicers.splice(index, 1)
+		}
+	}
+	for (let index = workbook.slicerCaches.length - 1; index >= 0; index--) {
+		const cache = workbook.slicerCaches[index]
+		if (!cache) continue
+		const remainingPivotNames = cache.pivotTableNames.filter(
+			(name) => !removedPivotNames.includes(name),
+		)
+		if (remainingPivotNames.length === 0 && cache.pivotTableNames.length > 0) {
+			workbook.slicerCaches.splice(index, 1)
+		} else if (remainingPivotNames.length !== cache.pivotTableNames.length) {
+			workbook.slicerCaches[index] = {
+				...cache,
+				pivotTableNames: remainingPivotNames,
+			}
+		}
+	}
 }
 
 function buildTableColumns(

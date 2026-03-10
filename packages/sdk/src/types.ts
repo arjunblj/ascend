@@ -196,6 +196,7 @@ export interface WorkbookLoadInfo {
 	readonly mode: 'full' | 'metadata-only' | 'values' | 'formula' | 'selective'
 	readonly isPartial: boolean
 	readonly cellsHydrated: boolean
+	readonly richSheetMetadataHydrated: boolean
 	readonly hasAllSheets: boolean
 	readonly sourceSheets: readonly string[]
 	readonly loadedSheets: readonly string[]
@@ -294,9 +295,83 @@ export interface LintWarning {
 export interface TraceResult {
 	readonly ref: string
 	readonly formula: string | null
+	readonly precedents: readonly TraceNodeInfo[]
+	readonly dependents: readonly TraceNodeInfo[]
 	readonly dependsOn: readonly string[]
 	readonly feedsInto: readonly string[]
 }
+
+export interface TraceNodeInfo {
+	readonly ref: string
+	readonly formula: string | null
+	readonly depth: number
+}
+
+export type FormulaReferenceScope =
+	| { readonly kind: 'local' }
+	| { readonly kind: 'sheet'; readonly sheet: string }
+	| { readonly kind: 'sheetSpan'; readonly startSheet: string; readonly endSheet: string }
+	| { readonly kind: 'external'; readonly workbook: string; readonly sheet: string }
+
+interface FormulaReferenceBase {
+	readonly text: string
+	readonly scope?: FormulaReferenceScope
+}
+
+export interface CellFormulaReferenceInfo extends FormulaReferenceBase {
+	readonly kind: 'cell'
+}
+
+export interface RangeFormulaReferenceInfo extends FormulaReferenceBase {
+	readonly kind: 'range'
+}
+
+export interface WholeRowFormulaReferenceInfo extends FormulaReferenceBase {
+	readonly kind: 'wholeRow'
+}
+
+export interface WholeColumnFormulaReferenceInfo extends FormulaReferenceBase {
+	readonly kind: 'wholeColumn'
+}
+
+export interface NameFormulaReferenceInfo extends FormulaReferenceBase {
+	readonly kind: 'name'
+}
+
+export interface StructuredFormulaReferenceInfo extends FormulaReferenceBase {
+	readonly kind: 'structured'
+	readonly table: string
+	readonly specifiers: readonly string[]
+	readonly column?: string
+}
+
+export interface SpillFormulaReferenceInfo extends FormulaReferenceBase {
+	readonly kind: 'spill'
+	readonly targetText: string
+	readonly target?: FormulaReferenceInfo
+}
+
+export interface ImplicitIntersectionFormulaReferenceInfo extends FormulaReferenceBase {
+	readonly kind: 'implicitIntersection'
+	readonly targetText: string
+	readonly target?: FormulaReferenceInfo
+}
+
+export interface CompoundFormulaReferenceInfo extends FormulaReferenceBase {
+	readonly kind: 'union' | 'intersection'
+	readonly members: readonly FormulaReferenceInfo[]
+}
+
+export type FormulaReferenceInfo =
+	| CellFormulaReferenceInfo
+	| RangeFormulaReferenceInfo
+	| WholeRowFormulaReferenceInfo
+	| WholeColumnFormulaReferenceInfo
+	| NameFormulaReferenceInfo
+	| StructuredFormulaReferenceInfo
+	| SpillFormulaReferenceInfo
+	| ImplicitIntersectionFormulaReferenceInfo
+	| CompoundFormulaReferenceInfo
 
 export interface FormulaInfo {
 	readonly ref: string
@@ -304,6 +379,7 @@ export interface FormulaInfo {
 	readonly normalizedFormula: string
 	readonly value: CellValue
 	readonly binding?: CellFormulaBinding
+	readonly references: readonly FormulaReferenceInfo[]
 	readonly refs: readonly string[]
 	readonly functions: readonly string[]
 	readonly volatile: boolean

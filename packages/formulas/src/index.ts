@@ -12,6 +12,7 @@ export type {
 	NameNode,
 	NumberNode,
 	RangeRefNode,
+	SheetSpanRefNode,
 	SpillRefNode,
 	StringNode,
 	StructuredRefNode,
@@ -23,6 +24,7 @@ export type {
 export {
 	compareValues,
 	dateToSerial,
+	type EvalArea,
 	type EvalArg,
 	type FnArg,
 	type FunctionDef,

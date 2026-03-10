@@ -28,10 +28,18 @@ function needsQuoting(sheet: string): boolean {
 }
 
 function formatSheet(sheet: string): string {
+	if (sheet.startsWith('[') && !sheet.includes(' ')) return `${sheet}!`
 	if (needsQuoting(sheet)) {
 		return `'${sheet.replace(/'/g, "''")}'!`
 	}
 	return `${sheet}!`
+}
+
+function formatSheetSpan(startSheet: string, endSheet: string): string {
+	if (needsQuoting(startSheet) || needsQuoting(endSheet)) {
+		return `'${startSheet.replace(/'/g, "''")}:${endSheet.replace(/'/g, "''")}'!`
+	}
+	return `${startSheet}:${endSheet}!`
 }
 
 function formatCellRef(ref: FormulaCellRef): string {
@@ -102,7 +110,7 @@ function printNode(node: FormulaNode): string {
 		case 'name':
 			return (node.sheet !== undefined ? formatSheet(node.sheet) : '') + node.name
 		case 'function':
-			return `${node.name}(${node.args.map(printNode).join(',')})`
+			return `${node.name}(${node.args.map(printFunctionArg).join(',')})`
 		case 'binary':
 			return printBinary(node)
 		case 'unary': {
@@ -123,6 +131,8 @@ function printNode(node: FormulaNode): string {
 				node.target.type === 'binary' ? `(${printNode(node.target)})` : printNode(node.target)
 			return `${inner}#`
 		}
+		case 'sheetSpanRef':
+			return `${formatSheetSpan(node.startSheet, node.endSheet)}${printNode(node.target)}`
 		case 'array':
 			return `{${node.rows.map((row) => row.map(printNode).join(',')).join(';')}}`
 		case 'structuredRef':
@@ -133,5 +143,12 @@ function printNode(node: FormulaNode): string {
 }
 
 export function printFormula(node: FormulaNode): string {
+	return printNode(node)
+}
+
+function printFunctionArg(node: FormulaNode): string {
+	if (node.type === 'binary' && node.op === ',') {
+		return `(${printNode(node)})`
+	}
 	return printNode(node)
 }

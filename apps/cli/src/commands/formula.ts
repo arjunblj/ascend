@@ -59,7 +59,16 @@ async function showFormula(args: string[], flags: Map<string, string>): Promise<
 	console.log(bullet('Normalized', `=${info.normalizedFormula}`))
 	console.log(bullet('Volatile', info.volatile ? 'yes' : 'no'))
 	console.log(bullet('Functions', info.functions.length > 0 ? info.functions.join(', ') : '(none)'))
-	console.log(bullet('Refs', info.refs.length > 0 ? info.refs.join(', ') : '(none)'))
+	console.log(
+		bullet(
+			'References',
+			info.references.length > 0
+				? info.references.map(formatReferenceSummary).join(', ')
+				: info.refs.length > 0
+					? info.refs.join(', ')
+					: '(none)',
+		),
+	)
 	if (info.parseError) {
 		console.log(bullet('Parse error', info.parseError))
 	}
@@ -132,6 +141,18 @@ function suggestClosest(input: string, candidates: readonly string[]): string | 
 	return best.distance <= Math.max(2, Math.floor(best.candidate.length / 3))
 		? best.candidate
 		: undefined
+}
+
+function formatReferenceSummary(reference: {
+	readonly kind: string
+	readonly text: string
+	readonly members?: readonly { readonly text: string }[]
+}): string {
+	if (reference.kind === 'union' || reference.kind === 'intersection') {
+		const members = reference.members?.map((member) => member.text).join(', ') ?? reference.text
+		return `${reference.kind}(${members})`
+	}
+	return reference.text
 }
 
 function levenshtein(a: string, b: string): number {

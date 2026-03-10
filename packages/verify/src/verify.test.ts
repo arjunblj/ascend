@@ -57,6 +57,17 @@ describe('checker', () => {
 		expect(brokenIssues[0]?.message).toContain('MissingSheet')
 	})
 
+	test('detects invalid 3D sheet spans', () => {
+		const wb = createWorkbook()
+		const s1 = wb.addSheet('Sheet1')
+		wb.addSheet('Sheet2')
+		s1.cells.set(0, 0, { value: EMPTY, formula: 'SUM(Sheet2:Sheet1!A1)', styleId: SID })
+		const result = check(wb)
+		expect(result.passed).toBe(false)
+		const brokenIssues = result.issues.filter((issue) => issue.rule === 'broken-refs')
+		expect(brokenIssues.some((issue) => issue.message.includes('Invalid 3D sheet span'))).toBe(true)
+	})
+
 	test('detects orphaned names', () => {
 		const wb = createWorkbook()
 		wb.addSheet('Sheet1')
@@ -210,5 +221,33 @@ describe('tracer', () => {
 
 		expect(result.value.precedents).toHaveLength(1)
 		expect(result.value.precedents[0]?.ref).toBe('A:A')
+	})
+
+	test('reports structured-reference precedents from resolved dependency metadata', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, { value: stringValue('Player'), formula: null, styleId: SID })
+		s.cells.set(0, 1, { value: stringValue('Score'), formula: null, styleId: SID })
+		s.cells.set(1, 0, { value: stringValue('Mina'), formula: null, styleId: SID })
+		s.cells.set(1, 1, { value: numberValue(10), formula: null, styleId: SID })
+		s.cells.set(2, 0, { value: stringValue('Noah'), formula: null, styleId: SID })
+		s.cells.set(2, 1, { value: numberValue(12), formula: null, styleId: SID })
+		s.tables.push({
+			id: createTableId(),
+			name: 'Scores',
+			sheetId: s.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } },
+			columns: [{ name: 'Player' }, { name: 'Score' }],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+		s.cells.set(4, 0, { value: EMPTY, formula: 'SUM(Scores[Score])', styleId: SID })
+
+		const result = trace(wb, 'Sheet1', 'A5')
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(result.value.precedents).toHaveLength(1)
+		expect(result.value.precedents[0]?.ref).toBe('B2:B3')
 	})
 })

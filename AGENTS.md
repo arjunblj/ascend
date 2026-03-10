@@ -34,9 +34,12 @@ bunx tsc --build               # typecheck all packages
 - Conventional commits: `feat(scope):`, `fix(scope):`, `test(scope):`, `chore:`, `ci:`, `docs:`
 - Scopes match package names: `schema`, `core`, `formulas`, `engine`, `io-xlsx`, `io-csv`, `verify`, `sdk`, `cli`, `api`, `mcp`
 - Plain TypeScript everywhere. No frameworks in the engine packages.
-- Self-documenting code. No narration comments.
+- Prefer one production implementation over layered legacy/compatibility paths when changing behavior.
+- Self-documenting code by default. Comments should be rare and only used when they clarify nuanced semantics, tricky edge cases, or non-obvious invariants that a human maintainer could otherwise misread.
 - All engine functions are pure: `(input) => Result<output, error>`. No side effects, no ambient state.
 - Tests encode behavior and edge cases, not implementation details.
+- Keep user-facing formula/read metadata symbolic and explainable; do not eagerly flatten advanced references if that would hide what the workbook actually contains.
+- For substantive work, keep code quality, performance, and maintainability moving together: prefer simpler designs, shared helpers, and validation via tests, typecheck, lint, and benchmarks.
 
 ## Package Dependencies
 

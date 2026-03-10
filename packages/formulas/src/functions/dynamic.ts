@@ -32,6 +32,22 @@ function flattenByRow(data: readonly (readonly CellValue[])[]): ScalarCellValue[
 	return [flat]
 }
 
+function flattenScalars(
+	data: readonly (readonly CellValue[])[],
+	scanByColumn: boolean,
+): ScalarCellValue[] {
+	if (!scanByColumn) return flattenByRow(data)[0] ?? []
+	const flat: ScalarCellValue[] = []
+	const rowCount = data.length
+	const colCount = data.reduce((max, row) => Math.max(max, row.length), 0)
+	for (let col = 0; col < colCount; col++) {
+		for (let row = 0; row < rowCount; row++) {
+			flat.push(topLeftScalar(data[row]?.[col] ?? EMPTY))
+		}
+	}
+	return flat
+}
+
 function transposeRows(data: readonly (readonly CellValue[])[]): ScalarCellValue[][] {
 	const rowCount = data.length
 	const colCount = data.reduce((max, row) => Math.max(max, row.length), 0)
@@ -79,6 +95,69 @@ function padRows(
 	})
 }
 
+function readIgnoreMode(arg: EvalArg | undefined): number | CellValue {
+	if (!arg) return 0
+	const value = toNumber(arg.value)
+	if (value === null || !Number.isInteger(value) || value < 0 || value > 3) {
+		return errorValue('#VALUE!')
+	}
+	return value
+}
+
+function readScanByColumn(arg: EvalArg | undefined): boolean | CellValue {
+	if (!arg) return false
+	const value = toNumber(arg.value)
+	if (value === null) return errorValue('#VALUE!')
+	return value !== 0
+}
+
+function shouldIgnoreValue(value: ScalarCellValue, ignoreMode: number): boolean {
+	if ((ignoreMode === 1 || ignoreMode === 3) && value.kind === 'empty') return true
+	if ((ignoreMode === 2 || ignoreMode === 3) && value.kind === 'error') return true
+	return false
+}
+
+function serializeCell(value: CellValue): string {
+	switch (value.kind) {
+		case 'number':
+			return `number:${value.value}`
+		case 'string':
+			return `string:${value.value}`
+		case 'boolean':
+			return `boolean:${value.value}`
+		case 'date':
+			return `date:${value.serial}`
+		case 'error':
+			return `error:${value.value}`
+		case 'richText':
+			return `richText:${JSON.stringify(value.runs)}`
+		case 'array':
+			return `array:${JSON.stringify(value.rows.map((row) => row.map((cell) => serializeCell(cell))))}`
+		case 'empty':
+			return 'empty'
+	}
+}
+
+function serializeVector(values: readonly CellValue[]): string {
+	return values.map((value) => serializeCell(value)).join('|')
+}
+
+function columnVectors(data: readonly (readonly CellValue[])[]): CellValue[][] {
+	const colCount = data.reduce((max, row) => Math.max(max, row.length), 0)
+	const columns: CellValue[][] = []
+	for (let col = 0; col < colCount; col++) {
+		const values: CellValue[] = []
+		for (const row of data) values.push(row[col] ?? EMPTY)
+		columns.push(values)
+	}
+	return columns
+}
+
+function rangeLooksLikeReference(arg: EvalArg | undefined): boolean {
+	if (!arg) return false
+	return arg.kind === 'range' || arg.value.kind === 'array'
+}
+
 export const dynamicFunctions: FunctionDef[] = [
 	{
 		name: 'SORT',
@@ -109,15 +188,35 @@ export const dynamicFunctions: FunctionDef[] = [
 		evaluate(args) {
 			const data = getRange(args[0])
 			if (data.length === 0) return EMPTY
-			const byRange = getRange(args[1]).map((r) => r[0] ?? EMPTY)
-			const order = args[2] ? num(args[2]) : 1
-			if (typeof order !== 'number') return order
+			const sortKeys: Array<{ values: CellValue[]; order: 1 | -1 }> = []
+			let index = 1
+			while (index < args.length) {
+				const byArg = args[index]
+				if (!byArg) break
+				const values = getRange(byArg).map((row) => row[0] ?? EMPTY)
+				let order: 1 | -1 = 1
+				const next = args[index + 1]
+				if (next && !rangeLooksLikeReference(next)) {
+					const parsedOrder = num(next)
+					if (typeof parsedOrder !== 'number') return parsedOrder
+					order = parsedOrder === -1 ? -1 : 1
+					index += 2
+				} else {
+					index += 1
+				}
+				sortKeys.push({ values, order })
+			}
+			if (sortKeys.length === 0) return scalarOrArray(data)
 
 			const indices = Array.from({ length: data.length }, (_, i) => i)
 			indices.sort((a, b) => {
-				const av = byRange[a] ?? EMPTY
-				const bv = byRange[b] ?? EMPTY
-				return compareValues(av, bv) * (order === -1 ? -1 : 1)
+				for (const key of sortKeys) {
+					const av = key.values[a] ?? EMPTY
+					const bv = key.values[b] ?? EMPTY
+					const cmp = compareValues(av, bv)
+					if (cmp !== 0) return cmp * key.order
+				}
+				return 0
 			})
 			const rows = indices.map((index) => data[index] ?? [])
 			return scalarOrArray(rows)
@@ -156,7 +255,23 @@ export const dynamicFunctions: FunctionDef[] = [
 			const exactlyOnce = args[2] ? toNumber(args[2].value) === 1 : false
 
 			if (byCol) {
-				return scalarOrArray(data)
+				const seen = new Set<string>()
+				const counts = new Map<string, number>()
+				const columns = columnVectors(data)
+				const unique: CellValue[][] = []
+				for (const column of columns) {
+					const key = serializeVector(column)
+					counts.set(key, (counts.get(key) ?? 0) + 1)
+					if (!seen.has(key)) {
+						seen.add(key)
+						unique.push(column)
+					}
+				}
+				const filtered = exactlyOnce
+					? unique.filter((column) => counts.get(serializeVector(column)) === 1)
+					: unique
+				if (filtered.length === 0) return errorValue('#CALC!')
+				return scalarOrArray(transposeRows(filtered))
 			}
 
 			const seen = new Set<string>()
@@ -164,12 +279,7 @@ export const dynamicFunctions: FunctionDef[] = [
 			const unique: (readonly CellValue[])[] = []
 
 			for (const row of data) {
-				const key = row
-					.map(
-						(c) =>
-							`${c.kind}:${c.kind === 'number' ? c.value : c.kind === 'string' ? c.value : ''}`,
-					)
-					.join('|')
+				const key = serializeVector(row)
 				counts.set(key, (counts.get(key) ?? 0) + 1)
 				if (!seen.has(key)) {
 					seen.add(key)
@@ -179,12 +289,7 @@ export const dynamicFunctions: FunctionDef[] = [
 
 			if (exactlyOnce) {
 				const once = unique.filter((row) => {
-					const key = row
-						.map(
-							(c) =>
-								`${c.kind}:${c.kind === 'number' ? c.value : c.kind === 'string' ? c.value : ''}`,
-						)
-						.join('|')
+					const key = serializeVector(row)
 					return counts.get(key) === 1
 				})
 				if (once.length === 0) return errorValue('#CALC!')
@@ -280,7 +385,14 @@ export const dynamicFunctions: FunctionDef[] = [
 		maxArgs: 3,
 		evaluate(args) {
 			const data = getRange(args[0])
-			return scalarOrArray(flattenByColumn(data))
+			const ignoreMode = readIgnoreMode(args[1])
+			if (typeof ignoreMode !== 'number') return ignoreMode
+			const scanByColumn = readScanByColumn(args[2])
+			if (typeof scanByColumn !== 'boolean') return scanByColumn
+			const flat = flattenScalars(data, scanByColumn).filter(
+				(value) => !shouldIgnoreValue(value, ignoreMode),
+			)
+			return scalarOrArray(flat.map((value) => [value]))
 		},
 	},
 	{
@@ -289,7 +401,14 @@ export const dynamicFunctions: FunctionDef[] = [
 		maxArgs: 3,
 		evaluate(args) {
 			const data = getRange(args[0])
-			return scalarOrArray(flattenByRow(data))
+			const ignoreMode = readIgnoreMode(args[1])
+			if (typeof ignoreMode !== 'number') return ignoreMode
+			const scanByColumn = readScanByColumn(args[2])
+			if (typeof scanByColumn !== 'boolean') return scanByColumn
+			const flat = flattenScalars(data, scanByColumn).filter(
+				(value) => !shouldIgnoreValue(value, ignoreMode),
+			)
+			return scalarOrArray([flat])
 		},
 	},
 	{

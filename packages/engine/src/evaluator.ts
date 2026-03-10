@@ -1,6 +1,12 @@
 import type { Workbook } from '@ascend/core'
 import type { FormulaNode } from '@ascend/formulas'
-import { type EvalArg, functionRegistry, parseFormula, toNumber } from '@ascend/formulas'
+import {
+	type EvalArea,
+	type EvalArg,
+	functionRegistry,
+	parseFormula,
+	toNumber,
+} from '@ascend/formulas'
 import type { CellValue, ScalarCellValue } from '@ascend/schema'
 import {
 	arrayValue,
@@ -85,6 +91,10 @@ function coerceToString(v: CellValue): string {
 		case 'richText':
 			return v.runs.map((r) => r.text).join('')
 	}
+}
+
+function isReferenceBinaryOp(op: string): op is ',' | ' ' {
+	return op === ',' || op === ' '
 }
 
 function evalBinary(op: string, left: CellValue, right: CellValue): CellValue {
@@ -183,21 +193,15 @@ export function evaluate(node: FormulaNode, ctx: EvalContext): CellValue {
 		}
 
 		case 'rangeRef': {
-			const si = resolveSheetIndex(ctx.workbook, node.sheet, ctx.sheetIndex)
-			if (si < 0) return errorValue('#REF!')
-			return getCellValue(ctx.workbook, si, node.start.row, node.start.col)
+			return evaluateReferenceNode(node, ctx)
 		}
 
 		case 'wholeRowRange': {
-			const si = resolveSheetIndex(ctx.workbook, node.sheet, ctx.sheetIndex)
-			if (si < 0) return errorValue('#REF!')
-			return wholeRowTopLeftValue(ctx.workbook, si, node.startRow)
+			return evaluateReferenceNode(node, ctx)
 		}
 
 		case 'wholeColumnRange': {
-			const si = resolveSheetIndex(ctx.workbook, node.sheet, ctx.sheetIndex)
-			if (si < 0) return errorValue('#REF!')
-			return wholeColumnTopLeftValue(ctx.workbook, si, node.startCol)
+			return evaluateReferenceNode(node, ctx)
 		}
 
 		case 'name': {
@@ -205,14 +209,19 @@ export function evaluate(node: FormulaNode, ctx: EvalContext): CellValue {
 		}
 
 		case 'binary': {
+			if (isReferenceBinaryOp(node.op)) return evaluateReferenceNode(node, ctx)
 			const left = evaluate(node.left, ctx)
 			const right = evaluate(node.right, ctx)
 			return evalBinary(node.op, left, right)
 		}
 
 		case 'unary': {
+			if (node.op === '@') {
+				const refOperand = resolveReferenceNode(node.operand, ctx)
+				if (refOperand) return implicitIntersect(refOperand, ctx)
+				return topLeftScalar(evaluate(node.operand, ctx))
+			}
 			const operand = evaluate(node.operand, ctx)
-			if (node.op === '@') return topLeftScalar(operand)
 			if (operand.kind === 'error') return operand
 			const n = coerceToNumber(operand)
 			if (n === null) return errorValue('#VALUE!')
@@ -243,19 +252,13 @@ export function evaluate(node: FormulaNode, ctx: EvalContext): CellValue {
 		}
 
 		case 'structuredRef': {
-			const resolved = resolveStructuredRefRange(
-				ctx.workbook,
-				node,
-				ctx.sheetIndex,
-				ctx.row,
-				ctx.col,
-			)
-			if (!resolved) return errorValue('#REF!')
-			return getCellValue(ctx.workbook, resolved.sheetIndex, resolved.startRow, resolved.startCol)
+			return evaluateReferenceNode(node, ctx)
 		}
 		case 'spillRef': {
-			const resolved = resolveSpillReference(node.target, ctx)
-			return resolved?.value ?? errorValue('#REF!')
+			return evaluateReferenceNode(node, ctx)
+		}
+		case 'sheetSpanRef': {
+			return evaluateReferenceNode(node, ctx)
 		}
 	}
 	return EMPTY
@@ -292,6 +295,10 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 }
 
 function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
+	if (node.type === 'binary' && isReferenceBinaryOp(node.op)) {
+		const resolved = resolveReferenceNode(node, ctx)
+		if (resolved) return resolved
+	}
 	if (node.type === 'function') {
 		const upperName = node.name.toUpperCase()
 		if (upperName === 'INDIRECT' || upperName === 'OFFSET') {
@@ -370,6 +377,10 @@ function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
 
 	if (node.type === 'spillRef') {
 		return resolveSpillReference(node.target, ctx) ?? { value: errorValue('#REF!') }
+	}
+
+	if (node.type === 'sheetSpanRef') {
+		return resolveReferenceNode(node, ctx) ?? { value: errorValue('#REF!') }
 	}
 
 	const value = evaluate(node, ctx)
@@ -520,6 +531,53 @@ function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | nu
 		}
 		case 'spillRef':
 			return resolveSpillReference(node.target, ctx)
+		case 'sheetSpanRef': {
+			const sheetIndices = resolveSheetSpanIndices(ctx.workbook, node.startSheet, node.endSheet)
+			if (!sheetIndices) return { value: errorValue('#REF!') }
+			const areas: EvalArea[] = []
+			for (const sheetIndex of sheetIndices) {
+				const targetRef = resolveReferenceNode(
+					applySheetToReferenceNode(node.target, sheetIndex, ctx),
+					ctx,
+				)
+				if (!targetRef) return { value: errorValue('#REF!') }
+				const targetAreas = areasOf(targetRef)
+				if (!targetAreas) return { value: errorValue('#REF!') }
+				areas.push(...targetAreas)
+			}
+			return areas.length > 0 ? makeMultiAreaArg(areas) : { value: errorValue('#REF!') }
+		}
+		case 'binary': {
+			if (!isReferenceBinaryOp(node.op)) return null
+			const left = resolveReferenceNode(node.left, ctx)
+			const right = resolveReferenceNode(node.right, ctx)
+			if (!left || !right) return null
+			const leftAreas = areasOf(left)
+			const rightAreas = areasOf(right)
+			if (!leftAreas || !rightAreas) return { value: errorValue('#VALUE!') }
+			if (node.op === ',') {
+				return makeMultiAreaArg([...leftAreas, ...rightAreas])
+			}
+			const intersections: EvalArea[] = []
+			for (const leftArea of leftAreas) {
+				for (const rightArea of rightAreas) {
+					const leftRef = toAreaBounds(leftArea.ref)
+					const rightRef = toAreaBounds(rightArea.ref)
+					if (leftRef.sheetIndex !== rightRef.sheetIndex) continue
+					const startRow = Math.max(leftRef.startRow, rightRef.startRow)
+					const startCol = Math.max(leftRef.startCol, rightRef.startCol)
+					const endRow = Math.min(leftRef.endRow, rightRef.endRow)
+					const endCol = Math.min(leftRef.endCol, rightRef.endCol)
+					if (startRow > endRow || startCol > endCol) continue
+					intersections.push(
+						makeRangeArea(ctx.workbook, leftRef.sheetIndex, startRow, startCol, endRow, endCol),
+					)
+				}
+			}
+			return intersections.length > 0
+				? makeMultiAreaArg(intersections)
+				: { value: errorValue('#NULL!') }
+		}
 		default:
 			return null
 	}
@@ -563,13 +621,120 @@ function makeRangeArg(
 	endRow: number,
 	endCol: number,
 ): EvalArg {
-	const values = getRangeValues(workbook, sheetIndex, startRow, startCol, endRow, endCol)
-	const firstRow = values[0]
+	return makeMultiAreaArg([makeRangeArea(workbook, sheetIndex, startRow, startCol, endRow, endCol)])
+}
+
+function makeLazyRangeArg(
+	workbook: Workbook,
+	sheetIndex: number,
+	startRow: number,
+	startCol: number,
+	endRow: number,
+	endCol: number,
+): EvalArg {
+	return makeMultiAreaArg([makeRangeArea(workbook, sheetIndex, startRow, startCol, endRow, endCol)])
+}
+
+function evaluateReferenceNode(node: FormulaNode, ctx: EvalContext): CellValue {
+	const resolved = resolveReferenceNode(node, ctx)
+	if (!resolved) return errorValue('#VALUE!')
+	return referenceArgToValue(resolved)
+}
+
+function referenceArgToValue(arg: EvalArg): CellValue {
+	if (arg.value.kind === 'error') return arg.value
+	const areas = areasOf(arg)
+	if (areas?.length) {
+		if (areas.length !== 1) return errorValue('#VALUE!')
+		const area = areas[0]
+		if (!area) return errorValue('#VALUE!')
+		return areaToValue(area)
+	}
+	if (arg.kind === 'range' && arg.values) return matrixToValue(arg.values)
+	return arg.value
+}
+
+function implicitIntersect(arg: EvalArg, ctx: EvalContext): CellValue {
+	if (arg.value.kind === 'error') return arg.value
+	if (arg.value.kind === 'array') return topLeftScalar(arg.value)
+	const areas = areasOf(arg)
+	if (!areas?.length) return topLeftScalar(arg.value)
+	if (areas.length !== 1) return errorValue('#VALUE!')
+	const area = areas[0]
+	if (!area) return errorValue('#VALUE!')
+	const bounds = toAreaBounds(area.ref)
+	const height = bounds.endRow - bounds.startRow + 1
+	const width = bounds.endCol - bounds.startCol + 1
+	if (height === 1 && width === 1) return area.values[0]?.[0] ?? EMPTY
+	if (height === 1) {
+		if (ctx.col < bounds.startCol || ctx.col > bounds.endCol) return errorValue('#VALUE!')
+		return getCellValue(ctx.workbook, bounds.sheetIndex, bounds.startRow, ctx.col)
+	}
+	if (width === 1) {
+		if (ctx.row < bounds.startRow || ctx.row > bounds.endRow) return errorValue('#VALUE!')
+		return getCellValue(ctx.workbook, bounds.sheetIndex, ctx.row, bounds.startCol)
+	}
+	if (
+		ctx.row >= bounds.startRow &&
+		ctx.row <= bounds.endRow &&
+		ctx.col >= bounds.startCol &&
+		ctx.col <= bounds.endCol
+	) {
+		return getCellValue(ctx.workbook, bounds.sheetIndex, ctx.row, ctx.col)
+	}
+	return errorValue('#VALUE!')
+}
+
+function matrixToValue(values: readonly (readonly CellValue[])[]): CellValue {
+	const rows = values.map((row) => row.map((value) => topLeftScalar(value)))
+	if (rows.length === 0) return EMPTY
+	if (rows.length === 1 && (rows[0]?.length ?? 0) === 1) return rows[0]?.[0] ?? EMPTY
+	return arrayValue(rows)
+}
+
+function areaToValue(area: EvalArea): CellValue {
+	return matrixToValue(area.values)
+}
+
+function areasOf(arg: EvalArg): readonly EvalArea[] | null {
+	if (arg.areas?.length) return arg.areas
+	if (!arg.ref) return null
+	if (arg.ref.kind === 'cell') {
+		return [
+			{
+				ref: {
+					kind: 'range',
+					sheetIndex: arg.ref.sheetIndex,
+					row: arg.ref.row,
+					col: arg.ref.col,
+					endRow: arg.ref.row,
+					endCol: arg.ref.col,
+				},
+				values: [[arg.value]],
+				forEachValue: (fn) => fn(arg.value),
+			},
+		]
+	}
+	return [
+		{
+			ref: arg.ref,
+			values: arg.values ?? [[arg.value]],
+			...(arg.forEachValue ? { forEachValue: arg.forEachValue } : {}),
+		},
+	]
+}
+
+function makeRangeArea(
+	workbook: Workbook,
+	sheetIndex: number,
+	startRow: number,
+	startCol: number,
+	endRow: number,
+	endCol: number,
+): EvalArea {
 	const sheet = workbook.sheets[sheetIndex]
+	let cachedValues: readonly (readonly CellValue[])[] | undefined
 	return {
-		value: firstRow?.[0] ?? EMPTY,
-		kind: 'range',
-		values,
 		ref: {
 			kind: 'range',
 			sheetIndex,
@@ -577,6 +742,12 @@ function makeRangeArg(
 			col: startCol,
 			endRow,
 			endCol,
+		},
+		get values() {
+			if (!cachedValues) {
+				cachedValues = getRangeValues(workbook, sheetIndex, startRow, startCol, endRow, endCol)
+			}
+			return cachedValues
 		},
 		...(sheet
 			? {
@@ -593,60 +764,95 @@ function makeRangeArg(
 	}
 }
 
-function makeLazyRangeArg(
-	workbook: Workbook,
-	sheetIndex: number,
-	startRow: number,
-	startCol: number,
-	endRow: number,
-	endCol: number,
-): EvalArg {
-	const sheet = workbook.sheets[sheetIndex]
-	if (!sheet) return { value: errorValue('#REF!') }
-	const firstVal = getCellValue(workbook, sheetIndex, startRow, startCol)
-	let cachedValues: readonly (readonly CellValue[])[] | undefined
+function makeMultiAreaArg(areas: readonly EvalArea[]): EvalArg {
+	if (areas.length === 0) return { value: errorValue('#NULL!') }
+	const firstArea = areas[0]
+	if (!firstArea) return { value: errorValue('#NULL!') }
 	return {
-		value: firstVal,
+		value: firstArea.values[0]?.[0] ?? EMPTY,
 		kind: 'range',
-		get values() {
-			if (!cachedValues) {
-				cachedValues = getRangeValues(workbook, sheetIndex, startRow, startCol, endRow, endCol)
-			}
-			return cachedValues
-		},
-		ref: {
-			kind: 'range',
-			sheetIndex,
-			row: startRow,
-			col: startCol,
-			endRow,
-			endCol,
-		},
+		...(areas.length === 1
+			? {
+					values: firstArea.values,
+					ref: firstArea.ref,
+				}
+			: {}),
+		areas,
 		forEachValue: (fn) => {
-			for (let r = startRow; r <= endRow; r++) {
-				for (let c = startCol; c <= endCol; c++) {
-					const cell = sheet.cells.get(r, c)
-					fn(cell ? cell.value : EMPTY)
+			for (const area of areas) {
+				if (area.forEachValue) area.forEachValue(fn)
+				else {
+					for (const row of area.values) {
+						for (const value of row) fn(value)
+					}
 				}
 			}
 		},
 	}
 }
 
-function wholeRowTopLeftValue(workbook: Workbook, sheetIndex: number, row: number): CellValue {
-	const sheet = workbook.sheets[sheetIndex]
-	if (!sheet) return errorValue('#REF!')
-	const used = sheet.cells.usedRange()
-	const startCol = used?.start.col ?? 0
-	return getCellValue(workbook, sheetIndex, row, startCol)
+function toAreaBounds(ref: EvalArea['ref']): {
+	sheetIndex: number
+	startRow: number
+	startCol: number
+	endRow: number
+	endCol: number
+} {
+	return {
+		sheetIndex: ref.sheetIndex,
+		startRow: ref.row,
+		startCol: ref.col,
+		endRow: ref.endRow ?? ref.row,
+		endCol: ref.endCol ?? ref.col,
+	}
 }
 
-function wholeColumnTopLeftValue(workbook: Workbook, sheetIndex: number, col: number): CellValue {
-	const sheet = workbook.sheets[sheetIndex]
-	if (!sheet) return errorValue('#REF!')
-	const used = sheet.cells.usedRange()
-	const startRow = used?.start.row ?? 0
-	return getCellValue(workbook, sheetIndex, startRow, col)
+function resolveSheetSpanIndices(
+	workbook: Workbook,
+	startSheet: string,
+	endSheet: string,
+): number[] | null {
+	const start = workbook.sheets.findIndex(
+		(sheet) => sheet.name.toLowerCase() === startSheet.toLowerCase(),
+	)
+	const end = workbook.sheets.findIndex(
+		(sheet) => sheet.name.toLowerCase() === endSheet.toLowerCase(),
+	)
+	if (start === -1 || end === -1 || start > end) return null
+	return Array.from({ length: end - start + 1 }, (_, offset) => start + offset)
+}
+
+function applySheetToReferenceNode(
+	node: FormulaNode,
+	sheetIndex: number,
+	ctx: EvalContext,
+): FormulaNode {
+	const sheet = ctx.workbook.sheets[sheetIndex]
+	if (!sheet) return node
+	switch (node.type) {
+		case 'cellRef':
+			return { type: 'cellRef', ref: node.ref, sheet: sheet.name }
+		case 'rangeRef':
+			return { type: 'rangeRef', start: node.start, end: node.end, sheet: sheet.name }
+		case 'wholeRowRange':
+			return {
+				type: 'wholeRowRange',
+				startRow: node.startRow,
+				endRow: node.endRow,
+				sheet: sheet.name,
+			}
+		case 'wholeColumnRange':
+			return {
+				type: 'wholeColumnRange',
+				startCol: node.startCol,
+				endCol: node.endCol,
+				sheet: sheet.name,
+			}
+		case 'name':
+			return { type: 'name', name: node.name, sheet: sheet.name }
+		default:
+			return node
+	}
 }
 
 function makeWholeRowArg(

@@ -1,16 +1,10 @@
 import { createHash } from 'node:crypto'
 import { stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { indexToColumn, parseA1 } from '@ascend/core'
+import { parseA1 } from '@ascend/core'
 import { analyzeWorkbook, type WorkbookAnalysis } from '@ascend/engine'
-import {
-	extractRefs,
-	type FormulaCellRef,
-	type FormulaNode,
-	printFormula,
-	tokenize,
-} from '@ascend/formulas'
 import { check as verifyCheck, lint as verifyLint, trace as verifyTrace } from '@ascend/verify'
+import { buildFormulaInfo } from './formula-info.ts'
 import { openWorkbookSource } from './load.ts'
 import { WorkbookReadView } from './read-view.ts'
 import type { SheetHandle } from './sheet-handle.ts'
@@ -177,6 +171,16 @@ export class WorkbookSession {
 			? {
 					ref: `${sheetName}!${ref}`,
 					formula: result.value.formula,
+					precedents: result.value.precedents.map((node) => ({
+						ref: `${node.sheet}!${node.ref}`,
+						formula: node.formula,
+						depth: node.depth,
+					})),
+					dependents: result.value.dependents.map((node) => ({
+						ref: `${node.sheet}!${node.ref}`,
+						formula: node.formula,
+						depth: node.depth,
+					})),
 					dependsOn: result.value.precedents.map((node) => `${node.sheet}!${node.ref}`),
 					feedsInto: result.value.dependents.map((node) => `${node.sheet}!${node.ref}`),
 				}
@@ -191,35 +195,30 @@ export class WorkbookSession {
 		const formulaKey = makeFormulaKey(this.view.getWorkbookModel(), sheetName, ref)
 		const analyzed = formulaKey ? this.getAnalysis().formulas.get(formulaKey) : undefined
 		if (!analyzed) return this.view.formula(cellRef)
-		const tokens = tokenize(formula).filter(
-			(token) => token.type !== 'Whitespace' && token.type !== 'EOF',
-		)
 		if (!analyzed.ast) {
-			return {
+			return buildFormulaInfo({
 				ref: `${sheetName}!${ref}`,
 				formula,
-				normalizedFormula: formula,
 				value: cell.value,
 				...(cell.formulaBinding ? { binding: cell.formulaBinding } : {}),
-				refs: [],
-				functions: [],
+				tokens: analyzed.tokens,
+				normalizedFormula: analyzed.normalizedFormula,
+				functions: analyzed.functionNames,
 				volatile: analyzed.volatile,
-				tokens,
 				...(analyzed.parseError ? { parseError: analyzed.parseError } : {}),
-			}
+			})
 		}
-		return {
+		return buildFormulaInfo({
 			ref: `${sheetName}!${ref}`,
 			formula,
-			normalizedFormula: printFormula(analyzed.ast),
 			value: cell.value,
 			...(cell.formulaBinding ? { binding: cell.formulaBinding } : {}),
-			refs: extractRefs(analyzed.ast).map(formatFormulaRef),
-			functions: [...collectFunctionNames(analyzed.ast)],
-			volatile: analyzed.volatile,
-			tokens,
+			tokens: analyzed.tokens,
 			ast: analyzed.ast,
-		}
+			normalizedFormula: analyzed.normalizedFormula,
+			functions: analyzed.functionNames,
+			volatile: analyzed.volatile,
+		})
 	}
 
 	check(): CheckResult {
@@ -363,46 +362,4 @@ function makeFormulaKey(
 	if (sheetIndex === -1) return undefined
 	const cellRef = parseA1(ref)
 	return `${sheetIndex}:${cellRef.row}:${cellRef.col}`
-}
-
-function formatFormulaRef(ref: import('@ascend/formulas').FormulaRef): string {
-	if (ref.kind === 'cell') {
-		return `${ref.sheet ? `${ref.sheet}!` : ''}${formatFormulaCellRef(ref.ref)}`
-	}
-	if (ref.kind === 'range') {
-		return `${ref.sheet ? `${ref.sheet}!` : ''}${formatFormulaCellRef(ref.start)}:${formatFormulaCellRef(ref.end)}`
-	}
-	if (ref.kind === 'wholeRowRange') {
-		return `${ref.sheet ? `${ref.sheet}!` : ''}${ref.startRow + 1}:${ref.endRow + 1}`
-	}
-	return `${ref.sheet ? `${ref.sheet}!` : ''}${indexToColumn(ref.startCol)}:${indexToColumn(ref.endCol)}`
-}
-
-function formatFormulaCellRef(ref: FormulaCellRef): string {
-	return `${ref.colAbsolute ? '$' : ''}${indexToColumn(ref.col)}${ref.rowAbsolute ? '$' : ''}${ref.row + 1}`
-}
-
-function collectFunctionNames(node: FormulaNode, out = new Set<string>()): Set<string> {
-	switch (node.type) {
-		case 'function':
-			out.add(node.name)
-			for (const arg of node.args) collectFunctionNames(arg, out)
-			break
-		case 'binary':
-			collectFunctionNames(node.left, out)
-			collectFunctionNames(node.right, out)
-			break
-		case 'unary':
-			collectFunctionNames(node.operand, out)
-			break
-		case 'array':
-			for (const row of node.rows) {
-				for (const cell of row) collectFunctionNames(cell, out)
-			}
-			break
-		case 'spillRef':
-			collectFunctionNames(node.target, out)
-			break
-	}
-	return out
 }

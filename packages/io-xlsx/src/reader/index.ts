@@ -58,6 +58,7 @@ export interface ReadXlsxLoadInfo {
 	readonly mode: 'full' | 'metadata-only' | 'values' | 'formula' | 'selective'
 	readonly isPartial: boolean
 	readonly cellsHydrated: boolean
+	readonly richSheetMetadataHydrated: boolean
 	readonly hasAllSheets: boolean
 	readonly sourceSheetNames: readonly string[]
 	readonly loadedSheetNames: readonly string[]
@@ -332,12 +333,14 @@ export function readXlsx(
 	const loadedSheetNames = sheetsToParse.map((sheet) => sheet.name)
 	const hasAllSheets = loadedSheetNames.length === sourceSheetNames.length
 	const cellsHydrated = mode !== 'metadata-only'
+	const richSheetMetadataHydrated = !valuesOnly && !formulaOnly && mode !== 'metadata-only'
 	const fidelityPartial = mode === 'values' || mode === 'formula'
 	const isPartial = !hasAllSheets || !cellsHydrated || fidelityPartial
 	const loadInfo: ReadXlsxLoadInfo = {
 		mode: selectedSheets ? 'selective' : mode,
 		isPartial,
 		cellsHydrated,
+		richSheetMetadataHydrated,
 		hasAllSheets,
 		sourceSheetNames,
 		loadedSheetNames,

@@ -114,6 +114,13 @@ export interface SpillRefNode {
 	readonly target: FormulaNode
 }
 
+export interface SheetSpanRefNode {
+	readonly type: 'sheetSpanRef'
+	readonly startSheet: string
+	readonly endSheet: string
+	readonly target: FormulaNode
+}
+
 export interface MissingNode {
 	readonly type: 'missing'
 }
@@ -134,4 +141,5 @@ export type FormulaNode =
 	| ArrayNode
 	| StructuredRefNode
 	| SpillRefNode
+	| SheetSpanRefNode
 	| MissingNode

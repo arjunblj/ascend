@@ -109,6 +109,15 @@ describe('ascend cli', () => {
 		expect(parsed.data.commentCount).toBe(0)
 	})
 
+	test('inspect --mode values reports rich sheet metadata as unknown', async () => {
+		const { stdout, exitCode } = await run('inspect', TEST_FILE, '--mode', 'values', '--json')
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.data.load.mode).toBe('values')
+		expect(parsed.data.load.richSheetMetadataHydrated).toBe(false)
+		expect(parsed.data.commentCount).toBeNull()
+	})
+
 	test('inspect --detail pivots --json returns pivot inventory', async () => {
 		const { exitCode, stdout } = await run(
 			'inspect',
@@ -202,6 +211,20 @@ describe('ascend cli', () => {
 		const { exitCode, stdout } = await run('read', NAMED_RANGE_FILE, 'name:MyRange')
 		expect(exitCode).toBe(0)
 		expect(stdout).toContain('MyRange: Sheet1!A1:A1')
+	})
+
+	test('read supports named range selectors with anchored refs', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'alpha' }] },
+			{ op: 'setDefinedName', name: 'AnchoredRange', ref: 'Sheet1!$A$1:$A$1' },
+		])
+		await wb.save(`${import.meta.dir}/${NAMED_RANGE_FILE}`)
+
+		const { exitCode, stdout } = await run('read', NAMED_RANGE_FILE, 'name:AnchoredRange')
+		expect(exitCode).toBe(0)
+		expect(stdout).toContain('AnchoredRange: Sheet1!$A$1:$A$1')
+		expect(stdout).toContain('alpha')
 	})
 
 	test('read table --json exposes table metadata and paginated rows', async () => {
@@ -322,6 +345,8 @@ describe('ascend cli', () => {
 		expect(exitCode).toBe(0)
 		expect(stdout).toContain('Normalized')
 		expect(stdout).toContain('SUM')
+		expect(stdout).toContain('References')
+		expect(stdout).toContain('B1:B2')
 	})
 
 	test('formula suggests the closest subcommand', async () => {

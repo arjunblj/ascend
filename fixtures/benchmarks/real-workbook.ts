@@ -71,15 +71,25 @@ function sha256(bytes: Uint8Array): string {
 	return createHash('sha256').update(bytes).digest('hex')
 }
 
-async function time<T>(
+async function time<T, TResult = T>(
 	name: string,
 	fn: () => Promise<T>,
-): Promise<{ result: T; timing: TimingResult }> {
+	options: {
+		readonly summarizeResult?: (result: T) => TResult
+		readonly retainResultForGc?: boolean
+	} = {},
+): Promise<{ result: TResult; timing: TimingResult }> {
 	runGc()
 	const rssBefore = getRssBytes()
 	const start = performance.now()
-	const result = await fn()
+	let rawResult = await fn()
+	const result = options.summarizeResult
+		? options.summarizeResult(rawResult)
+		: (rawResult as unknown as TResult)
 	const rssAfter = getRssBytes()
+	if (!options.retainResultForGc) {
+		rawResult = undefined as T
+	}
 	runGc()
 	const rssAfterGc = getRssBytes()
 	return {
@@ -344,32 +354,48 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 		case 'preview-numeric-edit': {
 			const wb = await AscendWorkbook.open(target)
 			const probe = pickNumericProbe(wb)
-			const { timing } = await time('preview-numeric-edit', async () =>
-				wb.preview([
-					{ op: 'setCells', sheet: probe.sheet, updates: [{ ref: probe.ref, value: probe.value }] },
-				]),
+			const { timing } = await time(
+				'preview-numeric-edit',
+				async () =>
+					wb.preview([
+						{
+							op: 'setCells',
+							sheet: probe.sheet,
+							updates: [{ ref: probe.ref, value: probe.value }],
+						},
+					]),
+				{ retainResultForGc: false },
 			)
 			return { timing }
 		}
 		case 'preview-format-edit': {
 			const wb = await AscendWorkbook.open(target)
 			const probe = pickNumericProbe(wb)
-			const { timing } = await time('preview-format-edit', async () =>
-				wb.preview([
-					{ op: 'setNumberFormat', sheet: probe.sheet, range: probe.ref, format: '0.0%' },
-				]),
+			const { timing } = await time(
+				'preview-format-edit',
+				async () =>
+					wb.preview([
+						{ op: 'setNumberFormat', sheet: probe.sheet, range: probe.ref, format: '0.0%' },
+					]),
+				{ retainResultForGc: false },
 			)
 			return { timing }
 		}
 		case 'no-op-save-bytes': {
 			const wb = await AscendWorkbook.open(target)
-			const { result, timing } = await time('no-op-save-bytes', async () => wb.toBytes())
+			const { result, timing } = await time('no-op-save-bytes', async () => wb.toBytes(), {
+				summarizeResult: (bytes) => ({
+					byteIdentical: originalSha === sha256(bytes),
+					sha256After: sha256(bytes),
+				}),
+				retainResultForGc: false,
+			})
 			return {
 				timing,
 				parity: {
-					byteIdentical: originalSha === sha256(result),
+					byteIdentical: result.byteIdentical,
 					sha256Before: originalSha,
-					sha256After: sha256(result),
+					sha256After: result.sha256After,
 				},
 			}
 		}
@@ -379,13 +405,19 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 			wb.apply([
 				{ op: 'setCells', sheet: probe.sheet, updates: [{ ref: probe.ref, value: probe.value }] },
 			])
-			const { result, timing } = await time('numeric-edit-save-bytes', async () => wb.toBytes())
+			const { result, timing } = await time('numeric-edit-save-bytes', async () => wb.toBytes(), {
+				summarizeResult: (bytes) => ({
+					byteIdentical: originalSha === sha256(bytes),
+					sha256After: sha256(bytes),
+				}),
+				retainResultForGc: false,
+			})
 			return {
 				timing,
 				parity: {
-					byteIdentical: originalSha === sha256(result),
+					byteIdentical: result.byteIdentical,
 					sha256Before: originalSha,
-					sha256After: sha256(result),
+					sha256After: result.sha256After,
 				},
 			}
 		}
@@ -393,7 +425,9 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 			const wb = await AscendWorkbook.open(target)
 			const probe = pickNumericProbe(wb)
 			wb.apply([{ op: 'setNumberFormat', sheet: probe.sheet, range: probe.ref, format: '0.0%' }])
-			const { timing } = await time('format-edit-save-bytes', async () => wb.toBytes())
+			const { timing } = await time('format-edit-save-bytes', async () => wb.toBytes(), {
+				retainResultForGc: false,
+			})
 			return { timing }
 		}
 	}

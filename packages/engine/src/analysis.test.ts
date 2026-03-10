@@ -54,4 +54,34 @@ describe('analyzeWorkbook', () => {
 		])
 		expect(analysis.dependencyGraph.getPrecedents('0:0:1')).toEqual(['0:0:0', '0:1:0'])
 	})
+
+	test('LET bindings do not get treated as defined-name dependencies', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		wb.definedNames.set('x', 'Sheet1!B1')
+		s.cells.set(0, 0, { value: EMPTY, formula: 'LET(x, A1, x+1)', styleId: 0 })
+		s.cells.set(0, 1, { value: numberValue(99), formula: null, styleId: 0 })
+
+		const analysis = analyzeWorkbook(wb)
+		const formula = [...analysis.formulas.values()][0]
+		expect(formula?.deps).toEqual(['0:0:0'])
+		expect(formula?.rangeDeps).toEqual([])
+	})
+
+	test('expands 3D sheet-span references into dependencies across contiguous sheets', () => {
+		const wb = createWorkbook()
+		const s1 = wb.addSheet('Sheet1')
+		const s2 = wb.addSheet('Sheet2')
+		const s3 = wb.addSheet('Sheet3')
+		const calc = wb.addSheet('Calc')
+		s1.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: 0 })
+		s2.cells.set(0, 0, { value: numberValue(2), formula: null, styleId: 0 })
+		s3.cells.set(0, 0, { value: numberValue(3), formula: null, styleId: 0 })
+		calc.cells.set(0, 0, { value: EMPTY, formula: 'SUM(Sheet1:Sheet3!A1)', styleId: 0 })
+
+		const analysis = analyzeWorkbook(wb)
+		const formula = [...analysis.formulas.values()].find((entry) => entry.sheetName === 'Calc')
+		expect(formula?.deps).toEqual(['0:0:0', '1:0:0', '2:0:0'])
+		expect(formula?.rangeDeps).toEqual([])
+	})
 })

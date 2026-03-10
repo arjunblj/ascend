@@ -24,6 +24,12 @@ export type FormulaRef =
 			readonly endCol: number
 			readonly sheet?: string
 	  }
+	| {
+			readonly kind: 'sheetSpan'
+			readonly startSheet: string
+			readonly endSheet: string
+			readonly target: FormulaRef
+	  }
 
 function walk(node: FormulaNode, out: FormulaRef[]): void {
 	switch (node.type) {
@@ -65,6 +71,20 @@ function walk(node: FormulaNode, out: FormulaRef[]): void {
 					: { kind: 'wholeColumnRange', startCol: node.startCol, endCol: node.endCol },
 			)
 			break
+		case 'sheetSpanRef': {
+			const nested: FormulaRef[] = []
+			walk(node.target, nested)
+			const target = nested[0]
+			if (target) {
+				out.push({
+					kind: 'sheetSpan',
+					startSheet: node.startSheet,
+					endSheet: node.endSheet,
+					target,
+				})
+			}
+			break
+		}
 		case 'binary':
 			walk(node.left, out)
 			walk(node.right, out)
@@ -144,6 +164,13 @@ export function rewriteRefs(
 		case 'spillRef':
 			return {
 				type: 'spillRef',
+				target: rewriteRefs(node.target, transform),
+			}
+		case 'sheetSpanRef':
+			return {
+				type: 'sheetSpanRef',
+				startSheet: node.startSheet,
+				endSheet: node.endSheet,
 				target: rewriteRefs(node.target, transform),
 			}
 		default:

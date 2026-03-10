@@ -125,18 +125,17 @@ export function planWriteXlsx(
 			preserveSharedStrings && !options.summaryOnly && preservedSharedStringsXml
 				? materializeSharedStringEntries(preservedSharedStringsXml)
 				: []
-		const ssTable =
-			preserveSharedStrings && options.summaryOnly
-				? {
-						getIndex(): number | undefined {
-							return undefined
-						},
-						toXml(): string {
-							return ''
-						},
-						count: 1,
-					}
-				: buildSharedStrings(workbook, preservedSharedStringEntries)
+		const ssTable = options.summaryOnly
+			? {
+					getIndex(): number | undefined {
+						return undefined
+					},
+					toXml(): string {
+						return ''
+					},
+					count: preserveSharedStrings || workbookHasStringCells(workbook) ? 1 : 0,
+				}
+			: buildSharedStrings(workbook, preservedSharedStringEntries)
 		const hasSharedStrings =
 			preserveSharedStrings ||
 			(!options.summaryOnly ? ssTable.count > 0 : workbookHasStringCells(workbook))
@@ -148,7 +147,7 @@ export function planWriteXlsx(
 			!options.stylesDirty &&
 			hasCompletePreservedStyleMap(preservedStyles.xfByStyleId, workbook.styles.size)
 		const preservedStylesXml =
-			preserveStyles && preservedStyles
+			preserveStyles && preservedStyles && !options.summaryOnly
 				? resolvePreservedText(sourceArchive, preservedStyles.xml, preservedStyles.path)
 				: undefined
 		const preservedStyleBytes =
@@ -162,8 +161,9 @@ export function planWriteXlsx(
 			!canReusePreservedStyles
 				? buildPreservedStylesXml(preservedStylesXml, preservedStyles, workbook.styles)
 				: undefined
-		const generatedStylesResult =
-			preservedStyles !== undefined && !options.summaryOnly && !canReusePreservedStyles
+		const generatedStylesResult = options.summaryOnly
+			? undefined
+			: preservedStyles !== undefined && !canReusePreservedStyles
 				? undefined
 				: buildStylesXml(workbook.styles, workbook.differentialStyles)
 		const xfMap =
@@ -174,16 +174,19 @@ export function planWriteXlsx(
 							xfIndex,
 						]),
 					)
-				: (
-						stylesResult ??
-						generatedStylesResult ??
-						buildStylesXml(workbook.styles, workbook.differentialStyles)
-					).xfMap
-		const stylesXml =
-			preservedStyles !== undefined && !options.summaryOnly
+				: options.summaryOnly
+					? new Map<number, number>()
+					: (
+							stylesResult ??
+							generatedStylesResult ??
+							buildStylesXml(workbook.styles, workbook.differentialStyles)
+						).xfMap
+		const stylesXml = options.summaryOnly
+			? ''
+			: preservedStyles !== undefined
 				? (stylesResult?.xml ?? preservedStylesXml ?? '')
 				: (generatedStylesResult?.xml ?? '')
-		if (preservedStyles) {
+		if (preservedStyles && !options.summaryOnly) {
 			workbook.preservedStyles = {
 				...preservedStyles,
 				xfByStyleId: Object.fromEntries(xfMap.entries()),

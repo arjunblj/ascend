@@ -3,6 +3,7 @@ export {
 	cellOf,
 	collectNumbers,
 	compareValues,
+	type EvalArea,
 	type EvalArg,
 	type FnArg,
 	type FunctionDef,

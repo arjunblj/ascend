@@ -124,7 +124,7 @@ export type Operation =
 			readonly ref: string
 			readonly scope?: string
 	  }
-	| { readonly op: 'deleteDefinedName'; readonly name: string }
+	| { readonly op: 'deleteDefinedName'; readonly name: string; readonly scope?: string }
 	| {
 			readonly op: 'setStyle'
 			readonly sheet: string

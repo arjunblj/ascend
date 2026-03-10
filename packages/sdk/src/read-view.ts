@@ -1,22 +1,15 @@
-import { indexToColumn, type RangeRef, type Workbook } from '@ascend/core'
+import { parseA1, type RangeRef, type Workbook } from '@ascend/core'
 import {
+	analyzeWorkbook,
 	createSnapshot,
 	diffWorkbooks,
 	type WorkbookDiff,
 	type WorkbookSnapshot,
 } from '@ascend/engine'
-import {
-	extractRefs,
-	type FormulaCellRef,
-	type FormulaNode,
-	functionRegistry,
-	parseFormula,
-	printFormula,
-	tokenize,
-} from '@ascend/formulas'
 import type { CompatibilityReport } from '@ascend/schema'
 import { EMPTY } from '@ascend/schema'
 import { trace as verifyTrace } from '@ascend/verify'
+import { buildFormulaInfo } from './formula-info.ts'
 import { SheetHandle } from './sheet-handle.ts'
 import { TableHandle } from './table-handle.ts'
 import type {
@@ -63,17 +56,18 @@ export class WorkbookReadView {
 		let totalDataValidations = 0
 		let totalImages = 0
 		const sheets = this.wb.sheets.map((sheet) => {
-			const isHydrated = this.loadInfo.cellsHydrated
-			const used = isHydrated ? sheet.cells.usedRange() : null
-			const count = isHydrated ? sheet.cells.cellCount() : null
+			const cellsHydrated = this.loadInfo.cellsHydrated
+			const richSheetMetadataHydrated = this.loadInfo.richSheetMetadataHydrated
+			const used = cellsHydrated ? sheet.cells.usedRange() : null
+			const count = cellsHydrated ? sheet.cells.cellCount() : null
 			if (count !== null) totalCells += count
-			if (isHydrated) {
+			if (richSheetMetadataHydrated) {
 				totalComments += sheet.comments.size
 				totalConditionalFormats += sheet.conditionalFormats.length
 				totalDataValidations += sheet.dataValidations.length
 				totalImages += sheet.imageRefs.length
 			}
-			return buildSheetInfo(sheet, isHydrated, used, count)
+			return buildSheetInfo(sheet, cellsHydrated, richSheetMetadataHydrated, used, count)
 		})
 		const info = {
 			sheetCount: this.loadInfo.sourceSheets.length,
@@ -81,10 +75,12 @@ export class WorkbookReadView {
 			sheets,
 			definedNames: this.wb.definedNames.workbookKeys(),
 			cellCount: this.loadInfo.cellsHydrated ? totalCells : null,
-			commentCount: this.loadInfo.cellsHydrated ? totalComments : null,
-			conditionalFormatCount: this.loadInfo.cellsHydrated ? totalConditionalFormats : null,
-			dataValidationCount: this.loadInfo.cellsHydrated ? totalDataValidations : null,
-			imageCount: this.loadInfo.cellsHydrated ? totalImages : null,
+			commentCount: this.loadInfo.richSheetMetadataHydrated ? totalComments : null,
+			conditionalFormatCount: this.loadInfo.richSheetMetadataHydrated
+				? totalConditionalFormats
+				: null,
+			dataValidationCount: this.loadInfo.richSheetMetadataHydrated ? totalDataValidations : null,
+			imageCount: this.loadInfo.richSheetMetadataHydrated ? totalImages : null,
 			pivotTableCount: this.wb.pivotTables.length,
 			pivotCacheCount: this.wb.pivotCaches.length,
 			slicerCount: this.wb.slicers.length,
@@ -119,35 +115,36 @@ export class WorkbookReadView {
 			this.sheetInspectCache.set(name, undefined)
 			return undefined
 		}
-		const isHydrated = this.loadInfo.cellsHydrated
-		const used = isHydrated ? sheet.cells.usedRange() : null
-		const count = isHydrated ? sheet.cells.cellCount() : null
-		const base = buildSheetInfo(sheet, isHydrated, used, count)
+		const cellsHydrated = this.loadInfo.cellsHydrated
+		const richSheetMetadataHydrated = this.loadInfo.richSheetMetadataHydrated
+		const used = cellsHydrated ? sheet.cells.usedRange() : null
+		const count = cellsHydrated ? sheet.cells.cellCount() : null
+		const base = buildSheetInfo(sheet, cellsHydrated, richSheetMetadataHydrated, used, count)
 		const info = {
 			...base,
 			usedRange: used,
 			state: sheet.state,
-			merges: isHydrated ? [...sheet.merges] : null,
-			tables: isHydrated ? sheet.tables.map((table) => buildTableInfo(table, sheet)) : null,
-			comments: isHydrated
+			merges: cellsHydrated ? [...sheet.merges] : null,
+			tables: cellsHydrated ? sheet.tables.map((table) => buildTableInfo(table, sheet)) : null,
+			comments: richSheetMetadataHydrated
 				? [...sheet.comments.entries()].map(([ref, comment]) => ({ ref, ...comment }))
 				: null,
-			hyperlinks: isHydrated
+			hyperlinks: richSheetMetadataHydrated
 				? [...sheet.hyperlinks.entries()].map(([ref, hyperlink]) => ({ ref, ...hyperlink }))
 				: null,
-			ignoredErrors: isHydrated ? [...sheet.ignoredErrors] : null,
-			conditionalFormats: isHydrated ? [...sheet.conditionalFormats] : null,
-			dataValidations: isHydrated ? [...sheet.dataValidations] : null,
-			imageRefs: isHydrated ? [...sheet.imageRefs] : null,
-			drawingRefs: isHydrated ? { ...sheet.drawingRefs } : null,
-			autoFilter: isHydrated ? sheet.autoFilter : null,
-			protection: isHydrated ? sheet.protection : null,
-			tabColor: isHydrated ? sheet.tabColor : null,
-			sheetFormatPr: isHydrated ? sheet.sheetFormatPr : null,
-			pageMargins: isHydrated ? sheet.pageMargins : null,
-			pageSetup: isHydrated ? sheet.pageSetup : null,
-			printOptions: isHydrated ? sheet.printOptions : null,
-			headerFooter: isHydrated ? sheet.headerFooter : null,
+			ignoredErrors: cellsHydrated ? [...sheet.ignoredErrors] : null,
+			conditionalFormats: richSheetMetadataHydrated ? [...sheet.conditionalFormats] : null,
+			dataValidations: richSheetMetadataHydrated ? [...sheet.dataValidations] : null,
+			imageRefs: richSheetMetadataHydrated ? [...sheet.imageRefs] : null,
+			drawingRefs: cellsHydrated ? { ...sheet.drawingRefs } : null,
+			autoFilter: cellsHydrated ? sheet.autoFilter : null,
+			protection: cellsHydrated ? sheet.protection : null,
+			tabColor: cellsHydrated ? sheet.tabColor : null,
+			sheetFormatPr: cellsHydrated ? sheet.sheetFormatPr : null,
+			pageMargins: cellsHydrated ? sheet.pageMargins : null,
+			pageSetup: cellsHydrated ? sheet.pageSetup : null,
+			printOptions: cellsHydrated ? sheet.printOptions : null,
+			headerFooter: cellsHydrated ? sheet.headerFooter : null,
 		}
 		this.sheetInspectCache.set(name, info)
 		return info
@@ -245,6 +242,16 @@ export class WorkbookReadView {
 		return {
 			ref: `${sheetName}!${ref}`,
 			formula: result.value.formula,
+			precedents: result.value.precedents.map((node) => ({
+				ref: `${node.sheet}!${node.ref}`,
+				formula: node.formula,
+				depth: node.depth,
+			})),
+			dependents: result.value.dependents.map((node) => ({
+				ref: `${node.sheet}!${node.ref}`,
+				formula: node.formula,
+				depth: node.depth,
+			})),
 			dependsOn: result.value.precedents.map((node) => `${node.sheet}!${node.ref}`),
 			feedsInto: result.value.dependents.map((node) => `${node.sheet}!${node.ref}`),
 		}
@@ -260,40 +267,39 @@ export class WorkbookReadView {
 		}
 
 		const formula = normalizeFormulaInput(cell.formula)
-		const tokens = tokenize(formula).filter(
-			(token) => token.type !== 'Whitespace' && token.type !== 'EOF',
-		)
-		const parsed = parseFormula(formula)
-		if (!parsed.ok) {
-			const info = {
+		const formulaKey = makeFormulaKey(this.wb, sheetName, ref)
+		const analyzed = formulaKey ? analyzeWorkbook(this.wb).formulas.get(formulaKey) : undefined
+		if (!analyzed) {
+			this.formulaInfoCache.set(cellRef, undefined)
+			return undefined
+		}
+		if (!analyzed.ast) {
+			const info = buildFormulaInfo({
 				ref: `${sheetName}!${ref}`,
 				formula,
-				normalizedFormula: formula,
 				value: cell.value,
 				...(cell.formulaBinding ? { binding: cell.formulaBinding } : {}),
-				refs: [],
-				functions: [],
-				volatile: false,
-				tokens,
-				parseError: parsed.error.message,
-			}
+				tokens: analyzed.tokens,
+				normalizedFormula: analyzed.normalizedFormula,
+				functions: analyzed.functionNames,
+				volatile: analyzed.volatile,
+				...(analyzed.parseError ? { parseError: analyzed.parseError } : {}),
+			})
 			this.formulaInfoCache.set(cellRef, info)
 			return info
 		}
 
-		const ast = parsed.value
-		const info = {
+		const info = buildFormulaInfo({
 			ref: `${sheetName}!${ref}`,
 			formula,
-			normalizedFormula: printFormula(ast),
 			value: cell.value,
 			...(cell.formulaBinding ? { binding: cell.formulaBinding } : {}),
-			refs: extractRefs(ast).map(formatFormulaRef),
-			functions: [...collectFunctionNames(ast)],
-			volatile: hasVolatileFunction(ast),
-			tokens,
-			ast,
-		}
+			tokens: analyzed.tokens,
+			ast: analyzed.ast,
+			normalizedFormula: analyzed.normalizedFormula,
+			functions: analyzed.functionNames,
+			volatile: analyzed.volatile,
+		})
 		this.formulaInfoCache.set(cellRef, info)
 		return info
 	}
@@ -361,7 +367,8 @@ export class WorkbookReadView {
 
 function buildSheetInfo(
 	sheet: import('@ascend/core').Sheet,
-	isHydrated: boolean,
+	cellsHydrated: boolean,
+	richSheetMetadataHydrated: boolean,
 	used: RangeRef | null,
 	count: number | null,
 ): SheetInfo {
@@ -370,28 +377,28 @@ function buildSheetInfo(
 		rowCount: used ? used.end.row + 1 : null,
 		colCount: used ? used.end.col + 1 : null,
 		cellCount: count,
-		tableCount: isHydrated ? sheet.tables.length : null,
-		commentCount: isHydrated ? sheet.comments.size : null,
-		conditionalFormatCount: isHydrated ? sheet.conditionalFormats.length : null,
-		dataValidationCount: isHydrated ? sheet.dataValidations.length : null,
-		hasFrozenPanes: isHydrated ? sheet.frozenRows > 0 || sheet.frozenCols > 0 : null,
-		colWidthCount: isHydrated ? sheet.colWidths.size : null,
-		imageCount: isHydrated ? sheet.imageRefs.length : null,
-		rowHeightCount: isHydrated ? sheet.rowHeights.size : null,
-		hyperlinkCount: isHydrated ? sheet.hyperlinks.size : null,
-		ignoredErrorCount: isHydrated ? sheet.ignoredErrors.length : null,
-		hasAutoFilter: isHydrated ? sheet.autoFilter !== null : null,
-		hasDrawingRefs: isHydrated
+		tableCount: cellsHydrated ? sheet.tables.length : null,
+		commentCount: richSheetMetadataHydrated ? sheet.comments.size : null,
+		conditionalFormatCount: richSheetMetadataHydrated ? sheet.conditionalFormats.length : null,
+		dataValidationCount: richSheetMetadataHydrated ? sheet.dataValidations.length : null,
+		hasFrozenPanes: cellsHydrated ? sheet.frozenRows > 0 || sheet.frozenCols > 0 : null,
+		colWidthCount: cellsHydrated ? sheet.colWidths.size : null,
+		imageCount: richSheetMetadataHydrated ? sheet.imageRefs.length : null,
+		rowHeightCount: cellsHydrated ? sheet.rowHeights.size : null,
+		hyperlinkCount: richSheetMetadataHydrated ? sheet.hyperlinks.size : null,
+		ignoredErrorCount: cellsHydrated ? sheet.ignoredErrors.length : null,
+		hasAutoFilter: cellsHydrated ? sheet.autoFilter !== null : null,
+		hasDrawingRefs: cellsHydrated
 			? sheet.drawingRefs.hasDrawing || sheet.drawingRefs.hasLegacyDrawing
 			: null,
-		hasPageMetadata: isHydrated
+		hasPageMetadata: cellsHydrated
 			? sheet.pageMargins !== null ||
 				sheet.pageSetup !== null ||
 				sheet.printOptions !== null ||
 				sheet.headerFooter !== null
 			: null,
-		hasProtection: isHydrated ? sheet.protection !== null : null,
-		cellDataLoaded: isHydrated,
+		hasProtection: cellsHydrated ? sheet.protection !== null : null,
+		cellDataLoaded: cellsHydrated,
 	}
 }
 
@@ -441,70 +448,11 @@ function normalizeFormulaInput(formula: string): string {
 	return formula.startsWith('=') ? formula.slice(1) : formula
 }
 
-function formatFormulaRef(ref: import('@ascend/formulas').FormulaRef): string {
-	if (ref.kind === 'cell') {
-		return `${ref.sheet ? `${ref.sheet}!` : ''}${formatFormulaCellRef(ref.ref)}`
-	}
-	if (ref.kind === 'range') {
-		return `${ref.sheet ? `${ref.sheet}!` : ''}${formatFormulaCellRef(ref.start)}:${formatFormulaCellRef(ref.end)}`
-	}
-	if (ref.kind === 'wholeRowRange') {
-		return `${ref.sheet ? `${ref.sheet}!` : ''}${ref.startRow + 1}:${ref.endRow + 1}`
-	}
-	return `${ref.sheet ? `${ref.sheet}!` : ''}${indexToColumn(ref.startCol)}:${indexToColumn(ref.endCol)}`
-}
-
-function formatFormulaCellRef(ref: FormulaCellRef): string {
-	return `${ref.colAbsolute ? '$' : ''}${indexToColumn(ref.col)}${ref.rowAbsolute ? '$' : ''}${ref.row + 1}`
-}
-
-function hasVolatileFunction(node: FormulaNode): boolean {
-	switch (node.type) {
-		case 'function':
-			if (functionRegistry.get(node.name.toUpperCase())?.volatile) return true
-			return node.args.some(hasVolatileFunction)
-		case 'binary':
-			return hasVolatileFunction(node.left) || hasVolatileFunction(node.right)
-		case 'unary':
-			return hasVolatileFunction(node.operand)
-		case 'array':
-			return node.rows.some((row) => row.some(hasVolatileFunction))
-		case 'spillRef':
-			return hasVolatileFunction(node.target)
-		case 'wholeRowRange':
-		case 'wholeColumnRange':
-			return false
-		default:
-			return false
-	}
-}
-
-function collectFunctionNames(node: FormulaNode, out = new Set<string>()): Set<string> {
-	switch (node.type) {
-		case 'function':
-			out.add(node.name)
-			for (const arg of node.args) collectFunctionNames(arg, out)
-			break
-		case 'binary':
-			collectFunctionNames(node.left, out)
-			collectFunctionNames(node.right, out)
-			break
-		case 'unary':
-			collectFunctionNames(node.operand, out)
-			break
-		case 'array':
-			for (const row of node.rows) {
-				for (const cell of row) collectFunctionNames(cell, out)
-			}
-			break
-		case 'spillRef':
-			collectFunctionNames(node.target, out)
-			break
-		case 'wholeRowRange':
-		case 'wholeColumnRange':
-			break
-	}
-	return out
+function makeFormulaKey(workbook: Workbook, sheetName: string, ref: string): string | undefined {
+	const sheetIndex = workbook.sheets.findIndex((sheet) => sheet.name === sheetName)
+	if (sheetIndex === -1) return undefined
+	const cellRef = parseA1(ref)
+	return `${sheetIndex}:${cellRef.row}:${cellRef.col}`
 }
 
 function resolveDefinedNameBySheet(

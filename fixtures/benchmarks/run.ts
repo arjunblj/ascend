@@ -438,10 +438,62 @@ function readFlag(name: string): string | undefined {
 	return index >= 0 ? process.argv[index + 1] : undefined
 }
 
+async function runScenarioIsolated(
+	scenario: Scenario,
+	repeat: number,
+	json: boolean,
+): Promise<BenchmarkCaseResult> {
+	const proc = Bun.spawn(
+		[
+			'bun',
+			'run',
+			process.argv[1] ?? import.meta.path,
+			'--scenario',
+			scenario.name,
+			'--repeat',
+			String(repeat),
+			'--json',
+		],
+		{
+			stdout: 'pipe',
+			stderr: 'pipe',
+			cwd: process.cwd(),
+		},
+	)
+	const [stdout, stderr, exitCode] = await Promise.all([
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+		proc.exited,
+	])
+	if (exitCode !== 0) {
+		throw new Error(stderr.trim() || `Synthetic benchmark scenario "${scenario.name}" failed`)
+	}
+	const parsed = JSON.parse(stdout) as BenchmarkCaseResult
+	if (!json) {
+		console.log(`completed ${scenario.name}`)
+	}
+	return parsed
+}
+
 async function main(): Promise<void> {
 	const json = process.argv.includes('--json')
+	const scenarioName = readFlag('--scenario')
 	const repeat = Math.max(1, Number.parseInt(readFlag('--repeat') ?? '1', 10) || 1)
-	const results = await Promise.all(scenarios.map((scenario) => runScenario(scenario, repeat)))
+	if (scenarioName) {
+		const scenario = scenarios.find((entry) => entry.name === scenarioName)
+		if (!scenario) throw new Error(`Unknown synthetic benchmark scenario "${scenarioName}"`)
+		const result = await runScenario(scenario, repeat)
+		if (json) {
+			console.log(JSON.stringify(result, null, 2))
+			return
+		}
+		console.log(renderSummary([result]))
+		return
+	}
+	const results: BenchmarkCaseResult[] = []
+	for (const scenario of scenarios) {
+		results.push(await runScenarioIsolated(scenario, repeat, json))
+	}
 	const suite = createBenchmarkSuite({
 		suite: 'ascend-synthetic-benchmarks',
 		kind: 'synthetic',

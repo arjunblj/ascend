@@ -101,6 +101,7 @@ export class AscendWorkbook extends WorkbookReadView {
 				mode: 'full',
 				isPartial: false,
 				cellsHydrated: true,
+				richSheetMetadataHydrated: true,
 				hasAllSheets: true,
 				sourceSheetNames: ['Sheet1'],
 				loadedSheetNames: ['Sheet1'],
@@ -120,6 +121,7 @@ export class AscendWorkbook extends WorkbookReadView {
 				mode: 'full',
 				isPartial: false,
 				cellsHydrated: true,
+				richSheetMetadataHydrated: true,
 				hasAllSheets: true,
 				sourceSheetNames: result.value.sheets.map((sheet) => sheet.name),
 				loadedSheetNames: result.value.sheets.map((sheet) => sheet.name),
@@ -134,7 +136,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		const clone = cloneWorkbook(this.wb)
 		const errors: import('@ascend/schema').AscendError[] = []
 		const dirtyFlags = this.deriveDirtyFlags(ops)
-		const sourceArchive = this.getSourceArchive()
+		const sourceArchive = this.getSourceArchive(false)
 
 		const result = applyOperations(clone, ops)
 		if (!result.ok) {
@@ -335,7 +337,7 @@ export class AscendWorkbook extends WorkbookReadView {
 
 	writePlanSummary(): WritePlanInfo {
 		this.assertWritable()
-		const sourceArchive = this.getSourceArchive()
+		const sourceArchive = this.getSourceArchive(false)
 		const writeOptions: import('@ascend/io-xlsx').WriteXlsxOptions = {
 			dirtySheetNames: [...this.dirtySheets],
 			workbookMetaDirty: this.workbookMetaDirty,
@@ -452,9 +454,10 @@ export class AscendWorkbook extends WorkbookReadView {
 		}
 	}
 
-	private getSourceArchive(): ZipArchive | undefined {
-		if (this.sourceArchive) return this.sourceArchive
+	private getSourceArchive(cache = true): ZipArchive | undefined {
 		if (!this.wb.sourceArchiveBytes) return undefined
+		if (!cache) return extractZip(this.wb.sourceArchiveBytes)
+		if (this.sourceArchive) return this.sourceArchive
 		this.sourceArchive = extractZip(this.wb.sourceArchiveBytes)
 		return this.sourceArchive
 	}

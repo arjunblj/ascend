@@ -739,6 +739,8 @@ describe('AscendWorkbook', () => {
 		expect(reopened.inspect().load.mode).toBe('values')
 		expect(reopened.inspect().load.isPartial).toBe(true)
 		expect(reopened.inspect().load.cellsHydrated).toBe(true)
+		expect(reopened.inspect().load.richSheetMetadataHydrated).toBe(false)
+		expect(reopened.inspect().commentCount).toBeNull()
 		expect(reopened.sheet('Sheet1')?.cell('A2')?.value).toEqual({ kind: 'number', value: 6 })
 		expect(reopened.sheet('Sheet1')?.cell('A2')?.formula).toBeNull()
 		const valuesInternal = reopened as unknown as {
@@ -767,6 +769,8 @@ describe('AscendWorkbook', () => {
 		expect(reopened.inspect().load.mode).toBe('formula')
 		expect(reopened.inspect().load.isPartial).toBe(true)
 		expect(reopened.inspect().load.cellsHydrated).toBe(true)
+		expect(reopened.inspect().load.richSheetMetadataHydrated).toBe(false)
+		expect(reopened.inspect().commentCount).toBeNull()
 		expect(reopened.sheet('Sheet1')?.cell('A2')?.value).toEqual({ kind: 'number', value: 6 })
 		expect(reopened.sheet('Sheet1')?.cell('A2')?.formula).toBe('A1*3')
 		expect(reopened.formula('Sheet1!A2')?.normalizedFormula).toBe('A1*3')
@@ -870,6 +874,42 @@ describe('AscendWorkbook', () => {
 		])
 		expect(preview.errors).toHaveLength(0)
 		expect(internal.wb.styles.size).toBe(beforeSize)
+	})
+
+	test('preview and writePlanSummary do not retain a cached source archive', async () => {
+		const sourceBytes = makeSyntheticXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+		})
+		const wb = await AscendWorkbook.open(sourceBytes)
+		const internal = wb as unknown as { sourceArchive?: unknown }
+
+		expect(internal.sourceArchive).toBeUndefined()
+		wb.preview([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'preview' }] }])
+		expect(internal.sourceArchive).toBeUndefined()
+		wb.writePlanSummary()
+		expect(internal.sourceArchive).toBeUndefined()
+		wb.toBytes()
+		expect(internal.sourceArchive).toBeUndefined()
 	})
 
 	test('check returns clean for valid workbook', () => {
@@ -994,6 +1034,7 @@ describe('AscendWorkbook', () => {
 		expect(info).toBeDefined()
 		expect(info?.normalizedFormula).toBe('SUM(B1:B2)')
 		expect(info?.functions).toEqual(['SUM'])
+		expect(info?.references).toEqual([{ kind: 'range', text: 'B1:B2', scope: { kind: 'local' } }])
 		expect(info?.refs).toEqual(['B1:B2'])
 	})
 
@@ -1001,7 +1042,40 @@ describe('AscendWorkbook', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: '=SUM(A:A)' }])
 		const info = wb.formula('Sheet1!B1')
+		expect(info?.references).toEqual([
+			{ kind: 'wholeColumn', text: 'A:A', scope: { kind: 'local' } },
+		])
 		expect(info?.refs).toContain('A:A')
+	})
+
+	test('formula metadata exposes workbook-qualified external references symbolically', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=[Book.xlsx]Sheet1!A1' }])
+		const info = wb.formula('Sheet1!A1')
+		expect(info?.references).toEqual([
+			{
+				kind: 'cell',
+				text: '[Book.xlsx]Sheet1!A1',
+				scope: { kind: 'external', workbook: 'Book.xlsx', sheet: 'Sheet1' },
+			},
+		])
+	})
+
+	test('formula metadata exposes 3D sheet-span references symbolically', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'addSheet', name: 'Sheet2' },
+			{ op: 'addSheet', name: 'Sheet3' },
+		])
+		wb.apply([{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=SUM(Sheet1:Sheet3!A1)' }])
+		const info = wb.formula('Sheet1!A1')
+		expect(info?.references).toEqual([
+			{
+				kind: 'cell',
+				text: 'Sheet1:Sheet3!A1',
+				scope: { kind: 'sheetSpan', startSheet: 'Sheet1', endSheet: 'Sheet3' },
+			},
+		])
 	})
 
 	test('formula and cell inspection expose formula binding metadata', async () => {

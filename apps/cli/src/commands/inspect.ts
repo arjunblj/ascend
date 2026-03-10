@@ -94,6 +94,18 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 		} else {
 			console.log(heading(`Sheet: ${sheet.name}`))
 			console.log(bullet('Cell data loaded', sheet.cellDataLoaded ? 'yes' : 'no'))
+			console.log(
+				bullet(
+					'Rich sheet metadata loaded',
+					sheet.commentCount !== null ||
+						sheet.conditionalFormatCount !== null ||
+						sheet.dataValidationCount !== null ||
+						sheet.imageCount !== null ||
+						sheet.hyperlinkCount !== null
+						? 'yes'
+						: 'no',
+				),
+			)
 			console.log(bullet('Rows', formatCount(sheet.rowCount)))
 			console.log(bullet('Columns', formatCount(sheet.colCount)))
 			console.log(bullet('Cells', formatCount(sheet.cellCount)))
@@ -157,6 +169,9 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 	console.log(bullet('Load mode', info.load.mode))
 	console.log(bullet('Partial view', info.load.isPartial ? 'yes' : 'no'))
 	console.log(bullet('Cell data loaded', info.load.cellsHydrated ? 'yes' : 'no'))
+	console.log(
+		bullet('Rich sheet metadata loaded', info.load.richSheetMetadataHydrated ? 'yes' : 'no'),
+	)
 	console.log(bullet('Total cells', formatCount(info.cellCount)))
 	console.log(bullet('Comments', formatCount(info.commentCount)))
 	console.log(bullet('Conditional formats', formatCount(info.conditionalFormatCount)))

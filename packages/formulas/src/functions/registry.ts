@@ -10,11 +10,18 @@ export interface EvalRef {
 	readonly endCol?: number
 }
 
+export interface EvalArea {
+	readonly ref: EvalRef
+	readonly values: readonly (readonly CellValue[])[]
+	readonly forEachValue?: (fn: (value: CellValue) => void) => void
+}
+
 export interface EvalArg {
 	readonly value: CellValue
 	readonly kind?: 'range'
 	readonly values?: readonly (readonly CellValue[])[]
 	readonly ref?: EvalRef
+	readonly areas?: readonly EvalArea[]
 	readonly forEachValue?: (fn: (value: CellValue) => void) => void
 }
 
@@ -46,6 +53,10 @@ export function registerFunction(def: FunctionDef): void {
 }
 
 export function getRange(arg: EvalArg | undefined): readonly (readonly CellValue[])[] {
+	if (arg?.areas?.length) {
+		if (arg.areas.length === 1) return arg.areas[0]?.values ?? [[EMPTY]]
+		return [[errorValue('#VALUE!')]]
+	}
 	if (arg?.kind === 'range' && arg.values) return arg.values
 	if (arg?.value.kind === 'array') return arg.value.rows
 	return [[arg?.value ?? EMPTY]]
@@ -89,6 +100,14 @@ export function cellOf(arg: EvalArg | undefined): CellValue {
 export function flattenArgs(args: EvalArg[]): CellValue[] {
 	const result: CellValue[] = []
 	for (const arg of args) {
+		if (arg.areas?.length) {
+			for (const area of arg.areas) {
+				for (const row of area.values) {
+					for (const cell of row) result.push(cell)
+				}
+			}
+			continue
+		}
 		if (arg.kind === 'range' && arg.values) {
 			for (const row of arg.values) {
 				for (const cell of row) result.push(cell)
@@ -109,6 +128,18 @@ export function flattenArgs(args: EvalArg[]): CellValue[] {
 export function collectNumbers(args: EvalArg[]): number[] | CellValue {
 	const nums: number[] = []
 	for (const arg of args) {
+		if (arg.areas?.length) {
+			for (const area of arg.areas) {
+				for (const row of area.values) {
+					for (const cell of row) {
+						if (cell.kind === 'error') return cell
+						if (cell.kind === 'number') nums.push(cell.value)
+						else if (cell.kind === 'date') nums.push(cell.serial)
+					}
+				}
+			}
+			continue
+		}
 		if (arg.kind === 'range' && arg.values) {
 			for (const row of arg.values) {
 				for (const cell of row) {

@@ -22,6 +22,36 @@ function checkBrokenRefs(_wb: Workbook, analysis: WorkbookAnalysis): CheckIssue[
 		if (!formula.ast) continue
 		const cellAddr = `${formula.sheetName}!${toA1({ row: formula.row, col: formula.col })}`
 		for (const ref of formula.refs) {
+			if (ref.kind === 'sheetSpan') {
+				const start = analysis.sheetNameIndex.get(ref.startSheet.toLowerCase())
+				const end = analysis.sheetNameIndex.get(ref.endSheet.toLowerCase())
+				if (start === undefined) {
+					issues.push({
+						rule: 'broken-refs',
+						severity: 'error',
+						message: `Reference to non-existent sheet "${ref.startSheet}"`,
+						refs: [cellAddr],
+					})
+				}
+				if (end === undefined) {
+					issues.push({
+						rule: 'broken-refs',
+						severity: 'error',
+						message: `Reference to non-existent sheet "${ref.endSheet}"`,
+						refs: [cellAddr],
+					})
+				}
+				if (start !== undefined && end !== undefined && start > end) {
+					issues.push({
+						rule: 'broken-refs',
+						severity: 'error',
+						message: `Invalid 3D sheet span "${ref.startSheet}:${ref.endSheet}"`,
+						refs: [cellAddr],
+					})
+				}
+				continue
+			}
+			if (ref.sheet?.startsWith('[')) continue
 			if (ref.sheet && !analysis.sheetNameIndex.has(ref.sheet.toLowerCase())) {
 				issues.push({
 					rule: 'broken-refs',

@@ -167,6 +167,41 @@ describe('applyOperation', () => {
 		expect(s.cells.get(2, 0)).toBeUndefined()
 	})
 
+	test('deleteRows shrinks overlapping table, filter, and validation ranges', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: sid })
+		s.cells.set(0, 1, { value: stringValue('Value'), formula: null, styleId: sid })
+		s.cells.set(1, 0, { value: stringValue('Cash'), formula: null, styleId: sid })
+		s.cells.set(1, 1, { value: numberValue(10), formula: null, styleId: sid })
+		s.cells.set(2, 0, { value: stringValue('Debt'), formula: null, styleId: sid })
+		s.cells.set(2, 1, { value: numberValue(20), formula: null, styleId: sid })
+		s.cells.set(3, 0, { value: stringValue('Equity'), formula: null, styleId: sid })
+		s.cells.set(3, 1, { value: numberValue(30), formula: null, styleId: sid })
+		s.autoFilter = { ref: 'A1:B4', columns: [] }
+		s.dataValidations.push({ sqref: 'A2:B4', type: 'list', formula1: 'A2' })
+		s.tables.push({
+			id: createTableId(),
+			name: 'BalanceTable',
+			sheetId: s.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 1 } },
+			columns: [{ name: 'Name' }, { name: 'Value' }],
+			hasHeaders: true,
+			hasTotals: false,
+			autoFilter: { ref: 'A1:B4', columns: [] },
+		})
+
+		applyOperation(wb, { op: 'deleteRows', sheet: 'Sheet1', at: 1, count: 1 })
+
+		expect(s.autoFilter?.ref).toBe('A1:B3')
+		expect(s.dataValidations[0]?.sqref).toBe('A2:B3')
+		expect(s.tables[0]?.ref).toEqual({
+			start: { row: 0, col: 0 },
+			end: { row: 2, col: 1 },
+		})
+		expect(s.tables[0]?.autoFilter?.ref).toBe('A1:B3')
+	})
+
 	test('insertRows rewrites formulas', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
@@ -180,21 +215,43 @@ describe('applyOperation', () => {
 		expect(formulaCell?.formula).toBe('SUM(A1:A3)')
 	})
 
+	test('insertRows rewrites whole-row references', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, cell(numberValue(1)))
+		s.cells.set(1, 0, cell(numberValue(2)))
+		s.cells.set(2, 0, cell(EMPTY, 'SUM(1:2)'))
+
+		applyOperation(wb, { op: 'insertRows', sheet: 'Sheet1', at: 1, count: 1 })
+
+		expect(s.cells.get(3, 0)?.formula).toBe('SUM(1:3)')
+	})
+
 	test('insertRows shifts comments, hyperlinks, validations, ignored errors, and row heights', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
 		s.cells.set(0, 0, cell(numberValue(1)))
 		s.comments.set('A2', { text: 'note' })
-		s.hyperlinks.set('B2', { target: 'https://example.com' })
-		s.dataValidations.push({ sqref: 'A2:B2', type: 'list', formula1: '"A,B"' })
+		s.hyperlinks.set('B2', { target: 'https://example.com', location: 'Sheet1!A2' })
+		s.dataValidations.push({ sqref: 'A2:B2', type: 'list', formula1: 'A2' })
+		s.conditionalFormats.push({
+			sqref: 'A2',
+			rules: [{ type: 'expression', formulas: ['A2>0'] }],
+		})
 		s.ignoredErrors.push({ sqref: 'A2', formula: true })
 		s.rowHeights.set(1, 24)
 
 		applyOperation(wb, { op: 'insertRows', sheet: 'Sheet1', at: 1, count: 2 })
 
 		expect(s.comments.get('A4')).toEqual({ text: 'note' })
-		expect(s.hyperlinks.get('B4')).toEqual({ target: 'https://example.com' })
+		expect(s.hyperlinks.get('B4')).toEqual({
+			target: 'https://example.com',
+			location: 'Sheet1!A4',
+		})
 		expect(s.dataValidations[0]?.sqref).toBe('A4:B4')
+		expect(s.dataValidations[0]?.formula1).toBe('A4')
+		expect(s.conditionalFormats[0]?.sqref).toBe('A4')
+		expect(s.conditionalFormats[0]?.rules[0]?.formulas[0]).toBe('A4>0')
 		expect(s.ignoredErrors[0]?.sqref).toBe('A4')
 		expect(s.rowHeights.get(3)).toBe(24)
 	})
@@ -244,6 +301,49 @@ describe('applyOperation', () => {
 		expect(wb.getSheet('Data')).toBeDefined()
 		expect(wb.getSheet('Sheet1')).toBeUndefined()
 		expect(wb.definedNames.get('Budget')).toBe('Data!A1')
+	})
+
+	test('renameSheet updates whole-column references in formulas and defined names', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, cell(EMPTY, 'SUM(Sheet1!A:A)'))
+		wb.definedNames.set('AllA', 'Sheet1!A:A')
+
+		applyOperation(wb, { op: 'renameSheet', sheet: 'Sheet1', newName: 'Data' })
+
+		expect(s.cells.get(0, 0)?.formula).toBe('SUM(Data!A:A)')
+		expect(wb.definedNames.get('AllA')).toBe('Data!A:A')
+	})
+
+	test('renameSheet updates validation, conditional-format, and table formulas', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.dataValidations.push({ sqref: 'A1', type: 'list', formula1: 'Sheet1!A:A' })
+		s.conditionalFormats.push({
+			sqref: 'A1',
+			rules: [{ type: 'expression', formulas: ['SUM(Sheet1!A:A)>0'] }],
+		})
+		s.hyperlinks.set('A1', { location: 'Sheet1!A1', display: 'jump' })
+		s.tables.push({
+			id: createTableId(),
+			name: 'BalanceTable',
+			sheetId: s.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 1, col: 1 } },
+			columns: [
+				{ name: 'Name', formula: 'Sheet1!A:A', totalsRowFormula: 'SUM(Sheet1!A:A)' },
+				{ name: 'Value' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+
+		applyOperation(wb, { op: 'renameSheet', sheet: 'Sheet1', newName: 'Data' })
+
+		expect(s.dataValidations[0]?.formula1).toBe('Data!A:A')
+		expect(s.conditionalFormats[0]?.rules[0]?.formulas[0]).toBe('SUM(Data!A:A)>0')
+		expect(s.hyperlinks.get('A1')?.location).toBe('Data!A1')
+		expect(s.tables[0]?.columns[0]?.formula).toBe('Data!A:A')
+		expect(s.tables[0]?.columns[0]?.totalsRowFormula).toBe('SUM(Data!A:A)')
 	})
 
 	test('clearRange removes cell data', () => {
@@ -321,6 +421,19 @@ describe('applyOperation', () => {
 		expect(wb.definedNames.resolve('Budget', sheet.id)?.scope.kind).toBe('sheet')
 	})
 
+	test('deleteDefinedName can target a sheet scope without removing workbook scope', () => {
+		const wb = setup()
+		const sheet = wb.getSheet('Sheet1')
+		if (!sheet) throw new Error('expected sheet')
+		wb.definedNames.set('Budget', '10')
+		wb.definedNames.set('Budget', '20', { kind: 'sheet', sheetId: sheet.id })
+
+		const result = applyOperation(wb, { op: 'deleteDefinedName', name: 'Budget', scope: 'Sheet1' })
+		expect(result.ok).toBe(true)
+		expect(wb.definedNames.get('Budget')).toBe('10')
+		expect(wb.definedNames.resolve('Budget', sheet.id)?.formula).toBe('10')
+	})
+
 	test('setHyperlink stores hyperlink metadata on the sheet', () => {
 		const wb = setup()
 		const result = applyOperation(wb, {
@@ -370,6 +483,9 @@ describe('applyOperation', () => {
 		sheet.cells.set(2, 1, { value: numberValue(1), formula: null, styleId: sid })
 		sheet.hyperlinks.set('A2', { target: 'https://example.com/b' })
 		sheet.comments.set('B3', { text: 'lowest' })
+		sheet.dataValidations.push({ sqref: 'A2:B2', type: 'list', formula1: '"A,B"' })
+		sheet.conditionalFormats.push({ sqref: 'B3', rules: [] })
+		sheet.ignoredErrors.push({ sqref: 'A2', formula: true })
 
 		const result = applyOperation(wb, {
 			op: 'sortRange',
@@ -386,6 +502,9 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(2, 1)?.value).toEqual(numberValue(2))
 		expect(sheet.hyperlinks.get('A3')).toEqual({ target: 'https://example.com/b' })
 		expect(sheet.comments.get('B2')).toEqual({ text: 'lowest' })
+		expect(sheet.dataValidations[0]?.sqref).toBe('A3:B3')
+		expect(sheet.conditionalFormats[0]?.sqref).toBe('B2')
+		expect(sheet.ignoredErrors[0]?.sqref).toBe('A3')
 	})
 
 	test('createTable infers columns from the header row', () => {
@@ -443,6 +562,45 @@ describe('applyOperation', () => {
 		})
 		expect(sheet.cells.get(2, 0)?.value).toEqual(stringValue('Debt'))
 		expect(sheet.cells.get(2, 1)?.value).toEqual(numberValue(20))
+	})
+
+	test('appendRows expands table filter and sort metadata refs', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Value'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('Cash'), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(10), formula: null, styleId: sid })
+		applyOperation(wb, {
+			op: 'createTable',
+			sheet: 'Sheet1',
+			ref: 'A1:B2',
+			name: 'BalanceTable',
+			hasHeaders: true,
+		})
+		const table = sheet.tables[0]
+		if (!table) throw new Error('expected table')
+		sheet.tables[0] = {
+			...table,
+			autoFilter: {
+				ref: 'A1:B2',
+				columns: [],
+				sortState: { ref: 'A1:B2', conditions: [{ ref: 'B2:B2' }] },
+			},
+			sortState: { ref: 'A1:B2', conditions: [{ ref: 'A1:A2' }] },
+		}
+
+		const result = applyOperation(wb, {
+			op: 'appendRows',
+			table: 'BalanceTable',
+			rows: [['Debt', 20]],
+		})
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(sheet.tables[0]?.autoFilter?.ref).toBe('A1:B3')
+		expect(sheet.tables[0]?.autoFilter?.sortState?.ref).toBe('A1:B3')
+		expect(sheet.tables[0]?.sortState?.ref).toBe('A1:B3')
 	})
 })
 

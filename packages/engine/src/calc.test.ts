@@ -175,6 +175,68 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 3)?.value).toEqual(numberValue(10))
 	})
 
+	test('bare contiguous ranges spill under array semantics', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'A1:A3', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(2, 1)?.value).toEqual(numberValue(3))
+	})
+
+	test('implicit intersection uses the formula row for single-column ranges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(30), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: EMPTY, formula: '@A:A', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(20))
+	})
+
+	test('implicit intersection uses the formula column for single-row ranges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: numberValue(30), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: EMPTY, formula: '@1:1', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(20))
+	})
+
+	test('SUM supports union references inside a parenthesized single argument', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(1, 2, { value: numberValue(4), formula: null, styleId: sid })
+		sheet.cells.set(0, 3, { value: EMPTY, formula: 'SUM((A1:A2,C1:C2))', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 3)?.value).toEqual(numberValue(10))
+	})
+
+	test('SUM supports intersection references', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(1, 0, { value: numberValue(4), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(6), formula: null, styleId: sid })
+		sheet.cells.set(2, 2, { value: EMPTY, formula: 'SUM(A:B 2:2)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(2, 2)?.value).toEqual(numberValue(10))
+	})
+
 	test('SUMPRODUCT returns #VALUE! for mismatched range shapes', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -478,6 +540,208 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(0, 3)?.value).toEqual(numberValue(10))
 		expect(sheet.cells.get(1, 2)?.value).toEqual(numberValue(2))
 		expect(sheet.cells.get(1, 3)?.value).toEqual(numberValue(20))
+	})
+
+	test('SORTBY supports multiple sort keys', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('b'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: stringValue('a'), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: stringValue('a'), formula: null, styleId: sid })
+		sheet.cells.set(0, 3, {
+			value: EMPTY,
+			formula: 'SORTBY(A1:B3,A1:A3,1,B1:B3,-1)',
+			styleId: sid,
+		})
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 3)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(0, 4)?.value).toEqual(stringValue('a'))
+		expect(sheet.cells.get(1, 3)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(1, 4)?.value).toEqual(stringValue('b'))
+		expect(sheet.cells.get(2, 3)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(2, 4)?.value).toEqual(stringValue('a'))
+	})
+
+	test('UNIQUE can compare columns when by_col is true', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(1, 2, { value: numberValue(4), formula: null, styleId: sid })
+		sheet.cells.set(0, 4, { value: EMPTY, formula: 'UNIQUE(A1:C2,TRUE)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 4)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(0, 5)?.value).toEqual(numberValue(3))
+		expect(sheet.cells.get(1, 4)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(1, 5)?.value).toEqual(numberValue(4))
+	})
+
+	test('TOCOL supports ignore blanks and scan-by-column', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(0, 3, { value: EMPTY, formula: 'TOCOL(A1:B2,1,TRUE)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 3)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(1, 3)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(2, 3)?.value).toEqual(numberValue(3))
+	})
+
+	test('TOROW supports ignore errors and scan-by-column', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: errorValue('#N/A'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(0, 3, { value: EMPTY, formula: 'TOROW(A1:B2,2,TRUE)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 3)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(0, 4)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(0, 5)?.value).toEqual(numberValue(3))
+	})
+
+	test('XMATCH spills results for array lookup values', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(30), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: EMPTY, formula: 'XMATCH({20;30},A1:A3)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 2)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(numberValue(3))
+	})
+
+	test('MATCH spills results for array lookup values', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('North'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('South'), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: stringValue('West'), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, {
+			value: EMPTY,
+			formula: 'MATCH({"South";"West"},A1:A3,0)',
+			styleId: sid,
+		})
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 2)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(numberValue(3))
+	})
+
+	test('XLOOKUP spills scalar-return matches for array lookup values', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('One'), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: stringValue('Two'), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: stringValue('Three'), formula: null, styleId: sid })
+		sheet.cells.set(0, 3, { value: EMPTY, formula: 'XLOOKUP({2;3},A1:A3,B1:B3)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 3)?.value).toEqual(stringValue('Two'))
+		expect(sheet.cells.get(1, 3)?.value).toEqual(stringValue('Three'))
+	})
+
+	test('VLOOKUP spills scalar-return matches for array lookup values', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('One'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: stringValue('Two'), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: stringValue('Three'), formula: null, styleId: sid })
+		sheet.cells.set(0, 3, { value: EMPTY, formula: 'VLOOKUP({2;3},A1:B3,2,FALSE)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 3)?.value).toEqual(stringValue('Two'))
+		expect(sheet.cells.get(1, 3)?.value).toEqual(stringValue('Three'))
+	})
+
+	test('HLOOKUP spills scalar-return matches for array lookup values', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('One'), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: stringValue('Two'), formula: null, styleId: sid })
+		sheet.cells.set(1, 2, { value: stringValue('Three'), formula: null, styleId: sid })
+		sheet.cells.set(0, 4, { value: EMPTY, formula: 'HLOOKUP({2,3},A1:C2,2,FALSE)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 4)?.value).toEqual(stringValue('Two'))
+		expect(sheet.cells.get(0, 5)?.value).toEqual(stringValue('Three'))
+	})
+
+	test('LOOKUP spills scalar-return matches for array lookup values', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('One'), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: stringValue('Two'), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: stringValue('Three'), formula: null, styleId: sid })
+		sheet.cells.set(0, 3, { value: EMPTY, formula: 'LOOKUP({2;3},A1:A3,B1:B3)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 3)?.value).toEqual(stringValue('Two'))
+		expect(sheet.cells.get(1, 3)?.value).toEqual(stringValue('Three'))
+	})
+
+	test('external workbook references currently evaluate to #REF!', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: '[Book.xlsx]Sheet1!A1', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#REF!'))
+	})
+
+	test('3D sheet-span references aggregate across contiguous sheets', () => {
+		const wb = createWorkbook()
+		const s1 = wb.addSheet('Sheet1')
+		const s2 = wb.addSheet('Sheet2')
+		const s3 = wb.addSheet('Sheet3')
+		const calc = wb.addSheet('Calc')
+		s1.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		s2.cells.set(0, 0, { value: numberValue(2), formula: null, styleId: sid })
+		s3.cells.set(0, 0, { value: numberValue(3), formula: null, styleId: sid })
+		calc.cells.set(0, 0, { value: EMPTY, formula: 'SUM(Sheet1:Sheet3!A1)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(calc.cells.get(0, 0)?.value).toEqual(numberValue(6))
+	})
+
+	test('bare 3D sheet-span references remain unsupported in scalar contexts', () => {
+		const wb = createWorkbook()
+		const s1 = wb.addSheet('Sheet1')
+		const s2 = wb.addSheet('Sheet2')
+		const calc = wb.addSheet('Calc')
+		s1.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		s2.cells.set(0, 0, { value: numberValue(2), formula: null, styleId: sid })
+		calc.cells.set(0, 0, { value: EMPTY, formula: 'Sheet1:Sheet2!A1', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(calc.cells.get(0, 0)?.value).toEqual(errorValue('#VALUE!'))
 	})
 
 	test('error propagation through formula chain', () => {

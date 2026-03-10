@@ -214,6 +214,30 @@ describe('parse', () => {
 		expect(p('1:3')).toEqual({ type: 'wholeRowRange', startRow: 0, endRow: 2 })
 	})
 
+	it('parses union references at top level', () => {
+		expect(p('A1,B2')).toEqual({
+			type: 'binary',
+			op: ',',
+			left: {
+				type: 'cellRef',
+				ref: { row: 0, col: 0, rowAbsolute: false, colAbsolute: false },
+			},
+			right: {
+				type: 'cellRef',
+				ref: { row: 1, col: 1, rowAbsolute: false, colAbsolute: false },
+			},
+		})
+	})
+
+	it('parses intersection references with whitespace', () => {
+		expect(p('A:A 2:2')).toEqual({
+			type: 'binary',
+			op: ' ',
+			left: { type: 'wholeColumnRange', startCol: 0, endCol: 0 },
+			right: { type: 'wholeRowRange', startRow: 1, endRow: 1 },
+		})
+	})
+
 	it('parses sheet-qualified whole-column and whole-row ranges', () => {
 		expect(p('Sheet1!A:C')).toEqual({
 			type: 'wholeColumnRange',
@@ -249,6 +273,27 @@ describe('parse', () => {
 		expect(node.type).toBe('rangeRef')
 		if (node.type !== 'rangeRef') return
 		expect(node.sheet).toBe('Sheet2')
+	})
+
+	it('parses workbook-qualified external references', () => {
+		const node = p('[Book.xlsx]Sheet1!A1')
+		expect(node).toEqual({
+			type: 'cellRef',
+			sheet: '[Book.xlsx]Sheet1',
+			ref: { row: 0, col: 0, rowAbsolute: false, colAbsolute: false },
+		})
+	})
+
+	it('parses 3D sheet-span references', () => {
+		expect(p('Sheet1:Sheet3!A1')).toEqual({
+			type: 'sheetSpanRef',
+			startSheet: 'Sheet1',
+			endSheet: 'Sheet3',
+			target: {
+				type: 'cellRef',
+				ref: { row: 0, col: 0, rowAbsolute: false, colAbsolute: false },
+			},
+		})
 	})
 
 	it('parses parenthesized expressions', () => {
@@ -340,6 +385,8 @@ describe('printFormula', () => {
 		expect(printFormula(p('Sheet1!A1'))).toBe('Sheet1!A1')
 		expect(printFormula(p("'My Sheet'!A1"))).toBe("'My Sheet'!A1")
 		expect(printFormula(p('Sheet1!Budget'))).toBe('Sheet1!Budget')
+		expect(printFormula(p('[Book.xlsx]Sheet1!A1'))).toBe('[Book.xlsx]Sheet1!A1')
+		expect(printFormula(p('Sheet1:Sheet3!A1'))).toBe('Sheet1:Sheet3!A1')
 	})
 
 	it('preserves parentheses where needed', () => {
@@ -363,6 +410,12 @@ describe('printFormula', () => {
 		expect(printFormula(p('1:3'))).toBe('1:3')
 		expect(printFormula(p('Sheet1!A:C'))).toBe('Sheet1!A:C')
 	})
+
+	it('roundtrips union and intersection references', () => {
+		expect(printFormula(p('A1,B2'))).toBe('A1,B2')
+		expect(printFormula(p('A:A 2:2'))).toBe('A:A 2:2')
+		expect(printFormula(p('SUM((A1,B2))'))).toBe('SUM((A1,B2))')
+	})
 })
 
 describe('extractRefs', () => {
@@ -382,6 +435,11 @@ describe('extractRefs', () => {
 	it('extracts refs from nested expressions', () => {
 		const refs = extractRefs(p('IF(A1>0,B1*C1,D1)'))
 		expect(refs).toHaveLength(4)
+	})
+
+	it('extracts refs from union and intersection expressions', () => {
+		expect(extractRefs(p('A1,B2'))).toHaveLength(2)
+		expect(extractRefs(p('A:A 2:2'))).toHaveLength(2)
 	})
 })
 

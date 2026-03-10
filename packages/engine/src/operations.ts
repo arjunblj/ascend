@@ -123,6 +123,24 @@ function rewriteNodeForShift(
 				? { type: 'rangeRef', start, end, sheet: node.sheet }
 				: { type: 'rangeRef', start, end }
 		}
+		case 'wholeRowRange': {
+			if (!onTarget(node.sheet) || axis !== 'row') return node
+			const startRow = shiftIndex(node.startRow, at, delta)
+			const endRow = shiftIndex(node.endRow, at, delta)
+			if (startRow === null || endRow === null) return node
+			return node.sheet !== undefined
+				? { type: 'wholeRowRange', startRow, endRow, sheet: node.sheet }
+				: { type: 'wholeRowRange', startRow, endRow }
+		}
+		case 'wholeColumnRange': {
+			if (!onTarget(node.sheet) || axis !== 'col') return node
+			const startCol = shiftIndex(node.startCol, at, delta)
+			const endCol = shiftIndex(node.endCol, at, delta)
+			if (startCol === null || endCol === null) return node
+			return node.sheet !== undefined
+				? { type: 'wholeColumnRange', startCol, endCol, sheet: node.sheet }
+				: { type: 'wholeColumnRange', startCol, endCol }
+		}
 		case 'binary':
 			return {
 				type: 'binary',
@@ -163,6 +181,19 @@ function rewriteSheetName(node: FormulaNode, oldName: string, newName: string): 
 		case 'rangeRef':
 			return node.sheet === oldName
 				? { type: 'rangeRef', start: node.start, end: node.end, sheet: newName }
+				: node
+		case 'wholeRowRange':
+			return node.sheet === oldName
+				? { type: 'wholeRowRange', startRow: node.startRow, endRow: node.endRow, sheet: newName }
+				: node
+		case 'wholeColumnRange':
+			return node.sheet === oldName
+				? {
+						type: 'wholeColumnRange',
+						startCol: node.startCol,
+						endCol: node.endCol,
+						sheet: newName,
+					}
 				: node
 		case 'binary':
 			return {
@@ -248,6 +279,20 @@ function rewriteDefinedNameFormulasForShift(
 	}
 }
 
+function rewriteFormulaTextForShift(
+	formula: string | undefined,
+	targetSheet: string,
+	formulaSheet: string,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): string | undefined {
+	if (!formula) return formula
+	const parsed = parseFormula(formula)
+	if (!parsed.ok) return formula
+	return printFormula(rewriteNodeForShift(parsed.value, targetSheet, formulaSheet, axis, at, delta))
+}
+
 function rewriteSheetNameInFormulas(workbook: Workbook, oldName: string, newName: string): void {
 	for (const sheet of workbook.sheets) {
 		const updates: [number, number, Cell][] = []
@@ -283,6 +328,17 @@ function rewriteSheetNameInDefinedNames(
 	}
 }
 
+function rewriteFormulaTextForRename(
+	formula: string | undefined,
+	oldName: string,
+	newName: string,
+): string | undefined {
+	if (!formula) return formula
+	const parsed = parseFormula(formula)
+	if (!parsed.ok) return formula
+	return printFormula(rewriteSheetName(parsed.value, oldName, newName))
+}
+
 function shiftSheetCellMetadata(
 	sheet: Sheet,
 	axis: 'row' | 'col',
@@ -291,6 +347,7 @@ function shiftSheetCellMetadata(
 ): void {
 	shiftMappedRefs(sheet.comments, axis, at, delta)
 	shiftMappedRefs(sheet.hyperlinks, axis, at, delta)
+	rewriteHyperlinkLocationsForShift(sheet, axis, at, delta)
 	shiftRowOrColMap(sheet.rowHeights, axis === 'row', at, delta)
 	shiftRowOrColMap(sheet.colWidths, axis === 'col', at, delta)
 	shiftSqrefEntries(sheet.dataValidations, axis, at, delta)
@@ -298,6 +355,188 @@ function shiftSheetCellMetadata(
 	shiftIgnoredErrors(sheet.ignoredErrors, axis, at, delta)
 	shiftSheetAutoFilter(sheet, axis, at, delta)
 	shiftSheetTables(sheet, axis, at, delta)
+	rewriteSheetMetadataFormulasForShift(sheet, axis, at, delta)
+}
+
+function rewriteSheetMetadataFormulasForShift(
+	sheet: Sheet,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): void {
+	for (let i = 0; i < sheet.dataValidations.length; i++) {
+		const validation = sheet.dataValidations[i]
+		if (!validation) continue
+		const formula1 = rewriteFormulaTextForShift(
+			validation.formula1,
+			sheet.name,
+			sheet.name,
+			axis,
+			at,
+			delta,
+		)
+		const formula2 = rewriteFormulaTextForShift(
+			validation.formula2,
+			sheet.name,
+			sheet.name,
+			axis,
+			at,
+			delta,
+		)
+		sheet.dataValidations[i] = {
+			...validation,
+			...(formula1 !== undefined ? { formula1 } : {}),
+			...(formula2 !== undefined ? { formula2 } : {}),
+		}
+	}
+	for (let i = 0; i < sheet.conditionalFormats.length; i++) {
+		const format = sheet.conditionalFormats[i]
+		if (!format) continue
+		sheet.conditionalFormats[i] = {
+			...format,
+			rules: format.rules.map((rule) => ({
+				...rule,
+				formulas: rule.formulas.map(
+					(formula) =>
+						rewriteFormulaTextForShift(formula, sheet.name, sheet.name, axis, at, delta) ?? formula,
+				),
+			})),
+		}
+	}
+	for (let i = 0; i < sheet.tables.length; i++) {
+		const table = sheet.tables[i]
+		if (!table) continue
+		const columns = table.columns.map((column) => {
+			const formula = rewriteFormulaTextForShift(
+				column.formula,
+				sheet.name,
+				sheet.name,
+				axis,
+				at,
+				delta,
+			)
+			const totalsRowFormula = rewriteFormulaTextForShift(
+				column.totalsRowFormula,
+				sheet.name,
+				sheet.name,
+				axis,
+				at,
+				delta,
+			)
+			return {
+				...column,
+				...(formula !== undefined ? { formula } : {}),
+				...(totalsRowFormula !== undefined ? { totalsRowFormula } : {}),
+			}
+		})
+		sheet.tables[i] = {
+			...table,
+			columns,
+		}
+	}
+}
+
+function rewriteSheetMetadataFormulasForRename(
+	sheet: Sheet,
+	oldName: string,
+	newName: string,
+): void {
+	for (let i = 0; i < sheet.dataValidations.length; i++) {
+		const validation = sheet.dataValidations[i]
+		if (!validation) continue
+		const formula1 = rewriteFormulaTextForRename(validation.formula1, oldName, newName)
+		const formula2 = rewriteFormulaTextForRename(validation.formula2, oldName, newName)
+		sheet.dataValidations[i] = {
+			...validation,
+			...(formula1 !== undefined ? { formula1 } : {}),
+			...(formula2 !== undefined ? { formula2 } : {}),
+		}
+	}
+	for (let i = 0; i < sheet.conditionalFormats.length; i++) {
+		const format = sheet.conditionalFormats[i]
+		if (!format) continue
+		sheet.conditionalFormats[i] = {
+			...format,
+			rules: format.rules.map((rule) => ({
+				...rule,
+				formulas: rule.formulas.map(
+					(formula) => rewriteFormulaTextForRename(formula, oldName, newName) ?? formula,
+				),
+			})),
+		}
+	}
+	for (let i = 0; i < sheet.tables.length; i++) {
+		const table = sheet.tables[i]
+		if (!table) continue
+		const columns = table.columns.map((column) => {
+			const formula = rewriteFormulaTextForRename(column.formula, oldName, newName)
+			const totalsRowFormula = rewriteFormulaTextForRename(
+				column.totalsRowFormula,
+				oldName,
+				newName,
+			)
+			return {
+				...column,
+				...(formula !== undefined ? { formula } : {}),
+				...(totalsRowFormula !== undefined ? { totalsRowFormula } : {}),
+			}
+		})
+		sheet.tables[i] = {
+			...table,
+			columns,
+		}
+	}
+	for (const [ref, hyperlink] of sheet.hyperlinks) {
+		const location = renameHyperlinkLocation(hyperlink.location, oldName, newName)
+		if (location === hyperlink.location) continue
+		sheet.hyperlinks.set(ref, { ...hyperlink, ...(location !== undefined ? { location } : {}) })
+	}
+}
+
+function rewriteHyperlinkLocationsForShift(
+	sheet: Sheet,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): void {
+	for (const [ref, hyperlink] of sheet.hyperlinks) {
+		const location = shiftHyperlinkLocation(hyperlink.location, sheet.name, axis, at, delta)
+		if (location === hyperlink.location) continue
+		sheet.hyperlinks.set(ref, { ...hyperlink, ...(location !== undefined ? { location } : {}) })
+	}
+}
+
+function shiftHyperlinkLocation(
+	location: string | undefined,
+	sheetName: string,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): string | undefined {
+	if (!location) return location
+	const split = splitSheetQualifiedRef(location)
+	if (!split || split.sheet !== sheetName) return location
+	const shifted = shiftA1RangeOrCell(split.ref, axis, at, delta)
+	return shifted ? `${split.sheet}!${shifted}` : location
+}
+
+function renameHyperlinkLocation(
+	location: string | undefined,
+	oldName: string,
+	newName: string,
+): string | undefined {
+	if (!location) return location
+	const split = splitSheetQualifiedRef(location)
+	if (!split || split.sheet !== oldName) return location
+	return `${newName}!${split.ref}`
+}
+
+function splitSheetQualifiedRef(input: string): { sheet: string; ref: string } | null {
+	const bang = input.lastIndexOf('!')
+	if (bang === -1) return null
+	const sheet = input.slice(0, bang).replace(/^'|'$/g, '')
+	const ref = input.slice(bang + 1)
+	return sheet && ref ? { sheet, ref } : null
 }
 
 function shiftMappedRefs<T>(
@@ -456,6 +695,22 @@ function shiftSqref(sqref: string, axis: 'row' | 'col', at: number, delta: numbe
 	return shifted.length > 0 ? shifted.join(' ') : null
 }
 
+function expandSqrefRows(sqref: string, count: number): string {
+	return sqref
+		.split(/\s+/)
+		.map((part) => {
+			try {
+				const range = parseRange(part)
+				const start = toA1(range.start)
+				const end = toA1({ row: range.end.row + count, col: range.end.col })
+				return start === end ? start : `${start}:${end}`
+			} catch {
+				return part
+			}
+		})
+		.join(' ')
+}
+
 function shiftA1RangeOrCell(
 	input: string,
 	axis: 'row' | 'col',
@@ -482,15 +737,44 @@ function shiftRangeRef(
 	at: number,
 	delta: number,
 ): RangeRef | null {
-	const start =
-		axis === 'row' ? shiftIndex(range.start.row, at, delta) : shiftIndex(range.start.col, at, delta)
-	const end =
-		axis === 'row' ? shiftIndex(range.end.row, at, delta) : shiftIndex(range.end.col, at, delta)
-	if (start === null || end === null) return null
+	const startIndex = axis === 'row' ? range.start.row : range.start.col
+	const endIndex = axis === 'row' ? range.end.row : range.end.col
+	const shifted = shiftRangeBounds(startIndex, endIndex, at, delta)
+	if (!shifted) return null
 	if (axis === 'row') {
-		return { start: { ...range.start, row: start }, end: { ...range.end, row: end } }
+		return {
+			start: { ...range.start, row: shifted.start },
+			end: { ...range.end, row: shifted.end },
+		}
 	}
-	return { start: { ...range.start, col: start }, end: { ...range.end, col: end } }
+	return {
+		start: { ...range.start, col: shifted.start },
+		end: { ...range.end, col: shifted.end },
+	}
+}
+
+function shiftRangeBounds(
+	start: number,
+	end: number,
+	at: number,
+	delta: number,
+): { start: number; end: number } | null {
+	if (delta > 0) {
+		return {
+			start: start >= at ? start + delta : start,
+			end: end >= at ? end + delta : end,
+		}
+	}
+	const count = Math.abs(delta)
+	const deleteEnd = at + count
+	if (end < at) return { start, end }
+	if (start >= deleteEnd) {
+		return { start: start + delta, end: end + delta }
+	}
+	if (start >= at && end < deleteEnd) return null
+	const nextStart = start >= at ? at : start
+	const nextEnd = end >= deleteEnd ? end + delta : at - 1
+	return nextEnd >= nextStart ? { start: nextStart, end: nextEnd } : null
 }
 
 function shiftA1Ref(ref: string, axis: 'row' | 'col', at: number, delta: number): string | null {
@@ -842,12 +1126,37 @@ function handleAppendRows(
 
 	const tableIndex = sheet.tables.findIndex((candidate) => candidate.id === table.id)
 	if (tableIndex >= 0) {
+		const rowDelta = op.rows.length
 		sheet.tables.splice(tableIndex, 1, {
 			...table,
 			ref: {
 				start: table.ref.start,
-				end: { row: table.ref.end.row + op.rows.length, col: table.ref.end.col },
+				end: { row: table.ref.end.row + rowDelta, col: table.ref.end.col },
 			},
+			...(table.autoFilter
+				? {
+						autoFilter: {
+							...table.autoFilter,
+							ref: expandSqrefRows(table.autoFilter.ref, rowDelta),
+							...(table.autoFilter.sortState
+								? {
+										sortState: {
+											...table.autoFilter.sortState,
+											ref: expandSqrefRows(table.autoFilter.sortState.ref, rowDelta),
+										},
+									}
+								: {}),
+						},
+					}
+				: {}),
+			...(table.sortState
+				? {
+						sortState: {
+							...table.sortState,
+							ref: expandSqrefRows(table.sortState.ref, rowDelta),
+						},
+					}
+				: {}),
 		})
 	}
 	return ok(patch(affected, [sheet.name], true))
@@ -888,6 +1197,9 @@ function handleRenameSheet(
 	clearFormulaMetadata(workbook)
 	rewriteSheetNameInFormulas(workbook, oldName, op.newName)
 	rewriteSheetNameInDefinedNames(workbook, oldName, op.newName)
+	for (const workbookSheet of workbook.sheets) {
+		rewriteSheetMetadataFormulasForRename(workbookSheet, oldName, op.newName)
+	}
 
 	return ok(patch([], [op.newName]))
 }
@@ -1065,6 +1377,18 @@ function handleDeleteDefinedName(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'deleteDefinedName' }>,
 ): Result<PatchResult> {
+	if (op.scope) {
+		const sheet = workbook.getSheet(op.scope)
+		if (!sheet) {
+			return err(ascendError('SHEET_NOT_FOUND', `Sheet "${op.scope}" not found`))
+		}
+		if (!workbook.definedNames.delete(op.name, { kind: 'sheet', sheetId: sheet.id })) {
+			return err(
+				ascendError('NAME_NOT_FOUND', `Defined name "${op.name}" not found in scope "${op.scope}"`),
+			)
+		}
+		return ok(patch([], []))
+	}
 	if (!workbook.definedNames.has(op.name)) {
 		return err(ascendError('NAME_NOT_FOUND', `Defined name "${op.name}" not found`))
 	}
@@ -1385,11 +1709,18 @@ function captureSortedRows(sheet: Sheet, range: RangeRef, startRow: number): Sor
 			}
 		}
 
+		const dataValidations = captureRowScopedSqrefEntries(sheet.dataValidations, range, row)
+		const conditionalFormats = captureRowScopedSqrefEntries(sheet.conditionalFormats, range, row)
+		const ignoredErrors = captureRowScopedSqrefEntries(sheet.ignoredErrors, range, row)
+
 		rows.push({
 			originalIndex: row - startRow,
 			cells,
 			comments,
 			hyperlinks,
+			dataValidations,
+			conditionalFormats,
+			ignoredErrors,
 			rowHeight: sheet.rowHeights.get(row),
 		})
 	}
@@ -1409,7 +1740,16 @@ interface SortRow {
 		ref: string
 		hyperlink: Sheet['hyperlinks'] extends Map<string, infer T> ? T : never
 	}>
+	readonly dataValidations: Array<RowScopedSqrefEntry<Sheet['dataValidations'][number]>>
+	readonly conditionalFormats: Array<RowScopedSqrefEntry<Sheet['conditionalFormats'][number]>>
+	readonly ignoredErrors: Array<RowScopedSqrefEntry<Sheet['ignoredErrors'][number]>>
 	readonly rowHeight: number | undefined
+}
+
+interface RowScopedSqrefEntry<T extends { sqref: string }> {
+	readonly startColOffset: number
+	readonly endColOffset: number
+	readonly entry: T
 }
 
 function compareSortRows(
@@ -1438,6 +1778,18 @@ function rewriteSortedRows(
 	startRow: number,
 	rows: readonly SortRow[],
 ): void {
+	replaceArrayContents(
+		sheet.dataValidations,
+		sheet.dataValidations.filter((entry) => !isSortableRowScopedSqrefEntry(entry, range)),
+	)
+	replaceArrayContents(
+		sheet.conditionalFormats,
+		sheet.conditionalFormats.filter((entry) => !isSortableRowScopedSqrefEntry(entry, range)),
+	)
+	replaceArrayContents(
+		sheet.ignoredErrors,
+		sheet.ignoredErrors.filter((entry) => !isSortableRowScopedSqrefEntry(entry, range)),
+	)
 	for (let row = startRow; row <= range.end.row; row++) {
 		for (let col = range.start.col; col <= range.end.col; col++) {
 			sheet.cells.delete(row, col)
@@ -1465,10 +1817,78 @@ function rewriteSortedRows(
 				entry.hyperlink,
 			)
 		}
+		for (const entry of rowData.dataValidations) {
+			sheet.dataValidations.push(rewriteRowScopedSqrefEntry(entry, targetRow, range.start.col))
+		}
+		for (const entry of rowData.conditionalFormats) {
+			sheet.conditionalFormats.push(rewriteRowScopedSqrefEntry(entry, targetRow, range.start.col))
+		}
+		for (const entry of rowData.ignoredErrors) {
+			sheet.ignoredErrors.push(rewriteRowScopedSqrefEntry(entry, targetRow, range.start.col))
+		}
 		if (rowData.rowHeight !== undefined) {
 			sheet.rowHeights.set(targetRow, rowData.rowHeight)
 		}
 	})
+}
+
+function captureRowScopedSqrefEntries<T extends { sqref: string }>(
+	entries: readonly T[],
+	range: RangeRef,
+	row: number,
+): Array<RowScopedSqrefEntry<T>> {
+	const captured: Array<RowScopedSqrefEntry<T>> = []
+	for (const entry of entries) {
+		const parsed = parseRowScopedSqref(entry.sqref, range)
+		if (!parsed || parsed.row !== row) continue
+		captured.push({
+			startColOffset: parsed.startCol - range.start.col,
+			endColOffset: parsed.endCol - range.start.col,
+			entry,
+		})
+	}
+	return captured
+}
+
+function isSortableRowScopedSqrefEntry(entry: { sqref: string }, range: RangeRef): boolean {
+	return parseRowScopedSqref(entry.sqref, range) !== null
+}
+
+function parseRowScopedSqref(
+	sqref: string,
+	range: RangeRef,
+): { row: number; startCol: number; endCol: number } | null {
+	if (sqref.includes(' ')) return null
+	try {
+		const parsed = parseRange(sqref)
+		if (parsed.start.row !== parsed.end.row) return null
+		if (parsed.start.row < range.start.row || parsed.start.row > range.end.row) return null
+		if (parsed.start.col < range.start.col || parsed.end.col > range.end.col) return null
+		return {
+			row: parsed.start.row,
+			startCol: parsed.start.col,
+			endCol: parsed.end.col,
+		}
+	} catch {
+		return null
+	}
+}
+
+function replaceArrayContents<T>(target: T[], next: readonly T[]): void {
+	target.splice(0, target.length, ...next)
+}
+
+function rewriteRowScopedSqrefEntry<T extends { sqref: string }>(
+	entry: RowScopedSqrefEntry<T>,
+	targetRow: number,
+	startCol: number,
+): T {
+	const start = toA1({ row: targetRow, col: startCol + entry.startColOffset })
+	const end = toA1({ row: targetRow, col: startCol + entry.endColOffset })
+	return {
+		...entry.entry,
+		sqref: start === end ? start : `${start}:${end}`,
+	}
 }
 
 function rangesOverlap(a: RangeRef, b: RangeRef): boolean {

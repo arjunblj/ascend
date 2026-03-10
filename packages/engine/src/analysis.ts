@@ -1,6 +1,12 @@
 import type { RangeRef, Workbook } from '@ascend/core'
-import type { FormulaNode, FormulaRef } from '@ascend/formulas'
-import { extractRefs, functionRegistry, parseFormula } from '@ascend/formulas'
+import type { FormulaNode, FormulaRef, Token } from '@ascend/formulas'
+import {
+	extractRefs,
+	functionRegistry,
+	parseFormula,
+	printFormula,
+	tokenize,
+} from '@ascend/formulas'
 import { type CellKey, cellKey, DependencyGraph, type RangeDependency } from './dep-graph.ts'
 import { resolveStructuredRefRange } from './structured-refs.ts'
 
@@ -12,6 +18,9 @@ export interface AnalyzedFormula {
 	readonly col: number
 	readonly formula: string
 	readonly ast?: FormulaNode
+	readonly normalizedFormula: string
+	readonly tokens: readonly Token[]
+	readonly functionNames: readonly string[]
 	readonly refs: readonly FormulaRef[]
 	readonly deps: readonly CellKey[]
 	readonly rangeDeps: readonly RangeDependency[]
@@ -70,6 +79,9 @@ export function analyzeWorkbook(
 			if (!inRange(sheet.name, row, col, options.range)) continue
 
 			const key = cellKey(sheetIndex, row, col)
+			const tokens = tokenize(cell.formula).filter(
+				(token) => token.type !== 'Whitespace' && token.type !== 'EOF',
+			)
 			const parsed = parseFormula(cell.formula)
 			if (!parsed.ok) {
 				formulas.set(key, {
@@ -79,6 +91,9 @@ export function analyzeWorkbook(
 					row,
 					col,
 					formula: cell.formula,
+					normalizedFormula: cell.formula,
+					tokens,
+					functionNames: [],
 					refs: [],
 					deps: [],
 					rangeDeps: [],
@@ -89,43 +104,33 @@ export function analyzeWorkbook(
 			}
 
 			const ast = parsed.value
+			const functionNames = [...collectFunctionNames(ast)]
 			const refs = extractRefsWithNames(ast, workbook, sheetNameIndex, sheetIndex, [])
 			const deps: CellKey[] = []
 			const rangeDeps: RangeDependency[] = []
 			for (const ref of refs) {
+				if (ref.kind === 'sheetSpan') {
+					const span = resolveSheetSpan(sheetNameIndex, ref.startSheet, ref.endSheet)
+					if (!span) continue
+					for (const refSheetIndex of span) {
+						const target = ref.target
+						if (target.kind === 'sheetSpan') continue
+						if (target.kind === 'cell') {
+							deps.push(cellKey(refSheetIndex, target.ref.row, target.ref.col))
+						} else {
+							const rangeDep = formulaRefToRangeDependency(workbook, refSheetIndex, target)
+							if (rangeDep) rangeDeps.push(rangeDep)
+						}
+					}
+					continue
+				}
 				const refSheetIndex = resolveSheetIndex(sheetNameIndex, ref.sheet, sheetIndex)
 				if (refSheetIndex < 0) continue
 				if (ref.kind === 'cell') {
 					deps.push(cellKey(refSheetIndex, ref.ref.row, ref.ref.col))
-				} else if (ref.kind === 'range') {
-					rangeDeps.push({
-						sheetIndex: refSheetIndex,
-						startRow: ref.start.row,
-						startCol: ref.start.col,
-						endRow: ref.end.row,
-						endCol: ref.end.col,
-					})
 				} else {
-					const targetSheet = workbook.sheets[refSheetIndex]
-					const usedRange = targetSheet?.cells.usedRange()
-					if (!targetSheet || !usedRange) continue
-					if (ref.kind === 'wholeRowRange') {
-						rangeDeps.push({
-							sheetIndex: refSheetIndex,
-							startRow: ref.startRow,
-							startCol: usedRange.start.col,
-							endRow: ref.endRow,
-							endCol: usedRange.end.col,
-						})
-					} else {
-						rangeDeps.push({
-							sheetIndex: refSheetIndex,
-							startRow: usedRange.start.row,
-							startCol: ref.startCol,
-							endRow: usedRange.end.row,
-							endCol: ref.endCol,
-						})
-					}
+					const rangeDep = formulaRefToRangeDependency(workbook, refSheetIndex, ref)
+					if (rangeDep) rangeDeps.push(rangeDep)
 				}
 			}
 			for (const structuredRef of collectStructuredRefs(ast)) {
@@ -149,6 +154,9 @@ export function analyzeWorkbook(
 				col,
 				formula: cell.formula,
 				ast,
+				normalizedFormula: printFormula(ast),
+				tokens,
+				functionNames,
 				refs,
 				deps,
 				rangeDeps,
@@ -164,6 +172,17 @@ export function analyzeWorkbook(
 
 export function invalidateWorkbookAnalysis(workbook: Workbook): void {
 	workbookAnalysisCache.delete(workbook)
+}
+
+function resolveSheetSpan(
+	sheetNameIndex: ReadonlyMap<string, number>,
+	startSheet: string,
+	endSheet: string,
+): number[] | null {
+	const start = sheetNameIndex.get(startSheet.toLowerCase())
+	const end = sheetNameIndex.get(endSheet.toLowerCase())
+	if (start === undefined || end === undefined || start > end) return null
+	return Array.from({ length: end - start + 1 }, (_, offset) => start + offset)
 }
 
 function inRange(
@@ -193,11 +212,78 @@ function hasVolatileFunction(node: FormulaNode): boolean {
 			return node.rows.some((row) => row.some((cell) => hasVolatileFunction(cell)))
 		case 'spillRef':
 			return hasVolatileFunction(node.target)
+		case 'sheetSpanRef':
+			return hasVolatileFunction(node.target)
 		case 'wholeRowRange':
 		case 'wholeColumnRange':
 			return false
 		default:
 			return false
+	}
+}
+
+function collectFunctionNames(node: FormulaNode, out = new Set<string>()): Set<string> {
+	switch (node.type) {
+		case 'function':
+			out.add(node.name)
+			for (const arg of node.args) collectFunctionNames(arg, out)
+			break
+		case 'binary':
+			collectFunctionNames(node.left, out)
+			collectFunctionNames(node.right, out)
+			break
+		case 'unary':
+			collectFunctionNames(node.operand, out)
+			break
+		case 'array':
+			for (const row of node.rows) {
+				for (const cell of row) collectFunctionNames(cell, out)
+			}
+			break
+		case 'spillRef':
+			collectFunctionNames(node.target, out)
+			break
+		case 'sheetSpanRef':
+			collectFunctionNames(node.target, out)
+			break
+		default:
+			break
+	}
+	return out
+}
+
+function formulaRefToRangeDependency(
+	workbook: Workbook,
+	sheetIndex: number,
+	ref: Exclude<FormulaRef, { kind: 'cell' } | { kind: 'sheetSpan' }>,
+): RangeDependency | null {
+	if (ref.kind === 'range') {
+		return {
+			sheetIndex,
+			startRow: ref.start.row,
+			startCol: ref.start.col,
+			endRow: ref.end.row,
+			endCol: ref.end.col,
+		}
+	}
+	const targetSheet = workbook.sheets[sheetIndex]
+	const usedRange = targetSheet?.cells.usedRange()
+	if (!targetSheet || !usedRange) return null
+	if (ref.kind === 'wholeRowRange') {
+		return {
+			sheetIndex,
+			startRow: ref.startRow,
+			startCol: usedRange.start.col,
+			endRow: ref.endRow,
+			endCol: usedRange.end.col,
+		}
+	}
+	return {
+		sheetIndex,
+		startRow: usedRange.start.row,
+		startCol: ref.startCol,
+		endRow: usedRange.end.row,
+		endCol: ref.endCol,
 	}
 }
 
@@ -246,7 +332,7 @@ function extractRefsWithNames(
 
 function collectNameRefs(node: FormulaNode): Array<{ name: string; sheet?: string }> {
 	const result: Array<{ name: string; sheet?: string }> = []
-	walkNameRefs(node, result)
+	walkNameRefs(node, result, new Set<string>())
 	return result
 }
 
@@ -284,6 +370,9 @@ function walkStructuredRefs(
 		case 'spillRef':
 			walkStructuredRefs(node.target, result)
 			break
+		case 'sheetSpanRef':
+			walkStructuredRefs(node.target, result)
+			break
 		case 'wholeRowRange':
 		case 'wholeColumnRange':
 			break
@@ -292,30 +381,51 @@ function walkStructuredRefs(
 	}
 }
 
-function walkNameRefs(node: FormulaNode, result: Array<{ name: string; sheet?: string }>): void {
+function walkNameRefs(
+	node: FormulaNode,
+	result: Array<{ name: string; sheet?: string }>,
+	shadowed: ReadonlySet<string>,
+): void {
 	switch (node.type) {
 		case 'name':
+			if (!node.sheet && shadowed.has(node.name.toLowerCase())) break
 			result.push(
 				node.sheet !== undefined ? { name: node.name, sheet: node.sheet } : { name: node.name },
 			)
 			break
 		case 'binary':
-			walkNameRefs(node.left, result)
-			walkNameRefs(node.right, result)
+			walkNameRefs(node.left, result, shadowed)
+			walkNameRefs(node.right, result, shadowed)
 			break
 		case 'unary':
-			walkNameRefs(node.operand, result)
+			walkNameRefs(node.operand, result, shadowed)
 			break
 		case 'function':
-			for (const arg of node.args) walkNameRefs(arg, result)
+			if (node.name.toUpperCase() === 'LET') {
+				const nextShadowed = new Set(shadowed)
+				for (let i = 0; i < node.args.length - 1; i += 2) {
+					const binder = node.args[i]
+					if (binder?.type !== 'name' || binder.sheet) break
+					const valueNode = node.args[i + 1]
+					if (valueNode) walkNameRefs(valueNode, result, nextShadowed)
+					nextShadowed.add(binder.name.toLowerCase())
+				}
+				const body = node.args[node.args.length - 1]
+				if (body) walkNameRefs(body, result, nextShadowed)
+				break
+			}
+			for (const arg of node.args) walkNameRefs(arg, result, shadowed)
 			break
 		case 'array':
 			for (const row of node.rows) {
-				for (const cell of row) walkNameRefs(cell, result)
+				for (const cell of row) walkNameRefs(cell, result, shadowed)
 			}
 			break
 		case 'spillRef':
-			walkNameRefs(node.target, result)
+			walkNameRefs(node.target, result, shadowed)
+			break
+		case 'sheetSpanRef':
+			walkNameRefs(node.target, result, shadowed)
 			break
 		case 'wholeRowRange':
 		case 'wholeColumnRange':

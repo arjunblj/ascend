@@ -149,7 +149,7 @@ function readRangeLike(
 		return 1
 	}
 
-	const info = sheet.readWindow(range, {
+	const info = sheet.readWindow(normalizeReadableRange(range), {
 		...(rowOffset !== undefined ? { rowOffset } : {}),
 		...(rowLimit !== undefined ? { rowLimit } : {}),
 	})
@@ -223,12 +223,24 @@ function resolveSheetName(
 }
 
 function parseNamedRangeFormula(formula: string): { sheet: string; range: string } | undefined {
-	const match = /^'?([^']+)'?!([A-Za-z]+\d+(?::[A-Za-z]+\d+)?)$/.exec(formula)
+	const match = /^'?([^']+)'?!(.+)$/.exec(formula)
 	if (!match) return undefined
 	const sheet = match[1]
 	const range = match[2]
-	if (!sheet || !range) return undefined
+	if (!sheet || !range || !isSimpleRangeReference(range)) return undefined
 	return { sheet, range }
+}
+
+function isSimpleRangeReference(value: string): boolean {
+	return (
+		/^\$?[A-Za-z]{1,3}\$?\d+(?::\$?[A-Za-z]{1,3}\$?\d+)?$/.test(value) ||
+		/^\$?[A-Za-z]{1,3}:\$?[A-Za-z]{1,3}$/.test(value) ||
+		/^\$?\d+:\$?\d+$/.test(value)
+	)
+}
+
+function normalizeReadableRange(value: string): string {
+	return value.replaceAll('$', '')
 }
 
 function parseOptionalInt(value: string | undefined): number | undefined {

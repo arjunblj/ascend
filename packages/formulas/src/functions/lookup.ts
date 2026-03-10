@@ -132,11 +132,38 @@ function extractColumn(table: readonly (readonly CellValue[])[], col: number): C
 	return table.map((r) => r[col] ?? EMPTY)
 }
 
+function lookupInputMatrix(
+	arg: EvalArg | undefined,
+): readonly (readonly CellValue[])[] | undefined {
+	if (!arg) return undefined
+	if (arg.kind === 'range' && arg.values) return arg.values
+	if (arg.value.kind === 'array') return arg.value.rows
+	return undefined
+}
+
+function scalarOrLookupArray(
+	arg: EvalArg | undefined,
+	resolve: (lookup: CellValue) => CellValue,
+): CellValue {
+	const matrix = lookupInputMatrix(arg)
+	if (!matrix) return resolve(cellOf(arg))
+	const rows: ScalarCellValue[][] = []
+	for (const row of matrix) {
+		const next: ScalarCellValue[] = []
+		for (const value of row) {
+			const resolved = resolve(topLeftScalar(value))
+			if (resolved.kind === 'array') return errorValue('#VALUE!')
+			next.push(topLeftScalar(resolved))
+		}
+		rows.push(next)
+	}
+	if (rows.length === 1 && (rows[0]?.length ?? 0) === 1) return rows[0]?.[0] ?? EMPTY
+	return arrayValue(rows)
+}
+
 // --- Implementations ---
 
 function vlookup(args: EvalArg[]): CellValue {
-	const lookup = cellOf(args[0])
-	if (lookup.kind === 'error') return lookup
 	const table = getRange(args[1])
 	const col = numArg(args[2])
 	if (typeof col !== 'number') return col
@@ -146,13 +173,14 @@ function vlookup(args: EvalArg[]): CellValue {
 
 	const firstCol = extractColumn(table, 0)
 	const approx = resolveApproximate(args.length > 3 ? cellOf(args[3]) : EMPTY)
-	const idx = approx ? approximateMatch(lookup, firstCol) : exactMatch(lookup, firstCol)
-	return idx < 0 ? errorValue('#N/A') : (table[idx]?.[colInt - 1] ?? EMPTY)
+	return scalarOrLookupArray(args[0], (lookup) => {
+		if (lookup.kind === 'error') return lookup
+		const idx = approx ? approximateMatch(lookup, firstCol) : exactMatch(lookup, firstCol)
+		return idx < 0 ? errorValue('#N/A') : (table[idx]?.[colInt - 1] ?? EMPTY)
+	})
 }
 
 function hlookup(args: EvalArg[]): CellValue {
-	const lookup = cellOf(args[0])
-	if (lookup.kind === 'error') return lookup
 	const table = getRange(args[1])
 	const row = numArg(args[2])
 	if (typeof row !== 'number') return row
@@ -162,8 +190,11 @@ function hlookup(args: EvalArg[]): CellValue {
 	if (rowInt < 1 || rowInt > table.length || firstRow.length === 0) return errorValue('#REF!')
 
 	const approx = resolveApproximate(args.length > 3 ? cellOf(args[3]) : EMPTY)
-	const idx = approx ? approximateMatch(lookup, firstRow) : exactMatch(lookup, firstRow)
-	return idx < 0 ? errorValue('#N/A') : (table[rowInt - 1]?.[idx] ?? EMPTY)
+	return scalarOrLookupArray(args[0], (lookup) => {
+		if (lookup.kind === 'error') return lookup
+		const idx = approx ? approximateMatch(lookup, firstRow) : exactMatch(lookup, firstRow)
+		return idx < 0 ? errorValue('#N/A') : (table[rowInt - 1]?.[idx] ?? EMPTY)
+	})
 }
 
 function indexFn(args: EvalArg[]): CellValue {
@@ -200,14 +231,17 @@ function indexFn(args: EvalArg[]): CellValue {
 }
 
 function matchFn(args: EvalArg[]): CellValue {
-	const lookup = cellOf(args[0])
-	if (lookup.kind === 'error') return lookup
 	const array = getRange(args[1])
 	const matchType = args.length > 2 ? numArg(args[2]) : 1
 	if (typeof matchType !== 'number') return matchType
 
 	const flat: CellValue[] = array.length === 1 ? [...(array[0] ?? [])] : extractColumn(array, 0)
 
+	return scalarOrLookupArray(args[0], (lookup) => matchScalar(lookup, flat, matchType))
+}
+
+function matchScalar(lookup: CellValue, flat: CellValue[], matchType: number): CellValue {
+	if (lookup.kind === 'error') return lookup
 	if (matchType === 0) {
 		for (let i = 0; i < flat.length; i++) {
 			const cell = v(flat, i)
@@ -231,8 +265,6 @@ function matchFn(args: EvalArg[]): CellValue {
 }
 
 function xlookup(args: EvalArg[]): CellValue {
-	const lookup = cellOf(args[0])
-	if (lookup.kind === 'error') return lookup
 	const lookupArray = getRange(args[1])
 	const returnArray = getRange(args[2])
 	const ifNotFound = args.length > 3 ? cellOf(args[3]) : null
@@ -251,6 +283,21 @@ function xlookup(args: EvalArg[]): CellValue {
 		vertical = true
 	}
 
+	return scalarOrLookupArray(args[0], (lookup) =>
+		xlookupScalar(lookup, lookupFlat, returnArray, ifNotFound, matchMode, searchMode, vertical),
+	)
+}
+
+function xlookupScalar(
+	lookup: CellValue,
+	lookupFlat: CellValue[],
+	returnArray: readonly (readonly CellValue[])[],
+	ifNotFound: CellValue | null,
+	matchMode: number,
+	searchMode: number,
+	vertical: boolean,
+): CellValue {
+	if (lookup.kind === 'error') return lookup
 	const idx = findInArray(lookup, lookupFlat, matchMode, searchMode)
 	if (idx < 0) return ifNotFound ?? errorValue('#N/A')
 	if (vertical) {
@@ -266,8 +313,6 @@ function xlookup(args: EvalArg[]): CellValue {
 }
 
 function xmatch(args: EvalArg[]): CellValue {
-	const lookup = cellOf(args[0])
-	if (lookup.kind === 'error') return lookup
 	const lookupArray = getRange(args[1])
 	const matchMode = args.length > 2 ? numArg(args[2]) : 0
 	if (typeof matchMode !== 'number') return matchMode
@@ -277,8 +322,11 @@ function xmatch(args: EvalArg[]): CellValue {
 	const flat: CellValue[] =
 		lookupArray.length === 1 ? [...(lookupArray[0] ?? [])] : extractColumn(lookupArray, 0)
 
-	const idx = findInArray(lookup, flat, matchMode, searchMode)
-	return idx < 0 ? errorValue('#N/A') : numberValue(idx + 1)
+	return scalarOrLookupArray(args[0], (lookup) => {
+		if (lookup.kind === 'error') return lookup
+		const idx = findInArray(lookup, flat, matchMode, searchMode)
+		return idx < 0 ? errorValue('#N/A') : numberValue(idx + 1)
+	})
 }
 
 function choose(args: EvalArg[]): CellValue {
@@ -298,16 +346,17 @@ function columnsFn(args: EvalArg[]): CellValue {
 }
 
 function lookupFn(args: EvalArg[]): CellValue {
-	const lookup = cellOf(args[0])
-	if (lookup.kind === 'error') return lookup
 	const lookupArray = getRange(args[1])
 	const resultArray = args.length > 2 ? getRange(args[2]) : lookupArray
 	const lookupFlat: CellValue[] =
 		lookupArray.length === 1 ? [...(lookupArray[0] ?? [])] : extractColumn(lookupArray, 0)
 	const resultFlat: CellValue[] =
 		resultArray.length === 1 ? [...(resultArray[0] ?? [])] : extractColumn(resultArray, 0)
-	const idx = approximateMatch(lookup, lookupFlat)
-	return idx < 0 ? errorValue('#N/A') : (resultFlat[idx] ?? EMPTY)
+	return scalarOrLookupArray(args[0], (lookup) => {
+		if (lookup.kind === 'error') return lookup
+		const idx = approximateMatch(lookup, lookupFlat)
+		return idx < 0 ? errorValue('#N/A') : (resultFlat[idx] ?? EMPTY)
+	})
 }
 
 function address(args: EvalArg[]): CellValue {

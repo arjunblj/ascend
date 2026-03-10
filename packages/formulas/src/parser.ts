@@ -46,36 +46,57 @@ class FormulaParser {
 	private pos = 0
 
 	constructor(tokens: readonly Token[]) {
-		this.tokens = tokens.filter((t) => t.type !== TokenType.Whitespace)
+		this.tokens = tokens
 	}
 
-	private peek(): Token {
-		return this.tokens[this.pos] ?? EOF_TOKEN
+	private peek(skipWhitespace = false): Token {
+		if (!skipWhitespace) return this.tokens[this.pos] ?? EOF_TOKEN
+		return this.lookahead(0, true)
 	}
 
-	private advance(): Token {
+	private advance(skipWhitespace = false): Token {
+		if (skipWhitespace) this.skipWhitespace()
 		const token = this.peek()
 		if (token.type !== TokenType.EOF) this.pos++
 		return token
 	}
 
-	private expect(type: TokenType): Token {
-		const token = this.peek()
+	private expect(type: TokenType, skipWhitespace = true): Token {
+		const token = this.peek(skipWhitespace)
 		if (token.type !== type) {
 			throw new Error(
 				`Expected ${type}, got ${token.type} "${token.value}" at position ${token.position}`,
 			)
 		}
-		return this.advance()
+		return this.advance(skipWhitespace)
 	}
 
 	private isOp(...ops: string[]): boolean {
-		const t = this.peek()
+		const t = this.peek(true)
 		return t.type === TokenType.Operator && ops.includes(t.value)
+	}
+
+	private skipWhitespace(): void {
+		while (this.peek().type === TokenType.Whitespace) this.pos++
+	}
+
+	private lookahead(offset: number, skipWhitespace = false): Token {
+		let index = this.pos
+		let remaining = offset
+		while (true) {
+			const token = this.tokens[index] ?? EOF_TOKEN
+			if (!skipWhitespace || token.type !== TokenType.Whitespace) {
+				if (remaining === 0) return token
+				remaining--
+			}
+			if (token.type === TokenType.EOF) return EOF_TOKEN
+			index++
+		}
 	}
 
 	parse(): FormulaNode {
 		const node = this.parseExpression()
+		this.skipWhitespace()
 		if (this.peek().type !== TokenType.EOF) {
 			const leftover = this.peek()
 			throw new Error(
@@ -85,73 +106,110 @@ class FormulaParser {
 		return node
 	}
 
-	private parseExpression(): FormulaNode {
-		return this.parseComparison()
+	private parseExpression(allowUnionComma = true): FormulaNode {
+		return this.parseComparison(allowUnionComma)
 	}
 
-	private parseComparison(): FormulaNode {
-		let left = this.parseConcatenation()
+	private parseComparison(allowUnionComma: boolean): FormulaNode {
+		let left = this.parseConcatenation(allowUnionComma)
 		while (this.isOp('=', '<>', '<', '>', '<=', '>=')) {
-			const op = this.advance().value as BinaryOp
-			const right = this.parseConcatenation()
+			const op = this.advance(true).value as BinaryOp
+			const right = this.parseConcatenation(allowUnionComma)
 			left = { type: 'binary', op, left, right }
 		}
 		return left
 	}
 
-	private parseConcatenation(): FormulaNode {
-		let left = this.parseAddition()
+	private parseConcatenation(allowUnionComma: boolean): FormulaNode {
+		let left = this.parseAddition(allowUnionComma)
 		while (this.isOp('&')) {
-			this.advance()
-			const right = this.parseAddition()
+			this.advance(true)
+			const right = this.parseAddition(allowUnionComma)
 			left = { type: 'binary', op: '&', left, right }
 		}
 		return left
 	}
 
-	private parseAddition(): FormulaNode {
-		let left = this.parseMultiplication()
+	private parseAddition(allowUnionComma: boolean): FormulaNode {
+		let left = this.parseMultiplication(allowUnionComma)
 		while (this.isOp('+', '-')) {
-			const op = this.advance().value as BinaryOp
-			const right = this.parseMultiplication()
+			const op = this.advance(true).value as BinaryOp
+			const right = this.parseMultiplication(allowUnionComma)
 			left = { type: 'binary', op, left, right }
 		}
 		return left
 	}
 
-	private parseMultiplication(): FormulaNode {
-		let left = this.parseUnaryPrefix()
+	private parseMultiplication(allowUnionComma: boolean): FormulaNode {
+		let left = this.parseUnaryPrefix(allowUnionComma)
 		while (this.isOp('*', '/')) {
-			const op = this.advance().value as BinaryOp
-			const right = this.parseUnaryPrefix()
+			const op = this.advance(true).value as BinaryOp
+			const right = this.parseUnaryPrefix(allowUnionComma)
 			left = { type: 'binary', op, left, right }
 		}
 		return left
 	}
 
-	private parseExponentiation(): FormulaNode {
-		const left = this.parsePostfix()
+	private parseExponentiation(allowUnionComma: boolean): FormulaNode {
+		const left = this.parseReferenceUnion(allowUnionComma)
 		if (this.isOp('^')) {
-			this.advance()
-			const right = this.parseUnaryPrefix()
+			this.advance(true)
+			const right = this.parseUnaryPrefix(allowUnionComma)
 			return { type: 'binary', op: '^', left, right }
 		}
 		return left
 	}
 
-	private parseUnaryPrefix(): FormulaNode {
+	private parseUnaryPrefix(allowUnionComma: boolean): FormulaNode {
 		if (this.isOp('+', '-', '@')) {
-			const op = this.advance().value as UnaryOp
-			const operand = this.parseUnaryPrefix()
+			const op = this.advance(true).value as UnaryOp
+			const operand = this.parseUnaryPrefix(allowUnionComma)
 			return { type: 'unary', op, operand }
 		}
-		return this.parseExponentiation()
+		return this.parseExponentiation(allowUnionComma)
+	}
+
+	private parseReferenceUnion(allowUnionComma: boolean): FormulaNode {
+		let left = this.parseReferenceIntersection()
+		while (allowUnionComma) {
+			this.skipWhitespace()
+			if (this.peek().type !== TokenType.Comma || !isReferenceLike(left)) break
+			this.advance()
+			const right = this.parseReferenceIntersection()
+			if (!isReferenceLike(right)) {
+				throw new Error(
+					`Union operator requires references at position ${this.peek(true).position}`,
+				)
+			}
+			left = { type: 'binary', op: ',', left, right }
+		}
+		return left
+	}
+
+	private parseReferenceIntersection(): FormulaNode {
+		let left = this.parsePostfix()
+		while (isReferenceLike(left) && this.peek().type === TokenType.Whitespace) {
+			const savedPos = this.pos
+			this.advance()
+			if (!canStartReferenceExpression(this.peek(true))) {
+				this.pos = savedPos
+				break
+			}
+			const right = this.parsePostfix()
+			if (!isReferenceLike(right)) {
+				throw new Error(
+					`Intersection operator requires references at position ${this.peek(true).position}`,
+				)
+			}
+			left = { type: 'binary', op: ' ', left, right }
+		}
+		return left
 	}
 
 	private parsePostfix(): FormulaNode {
 		let node = this.parseAtom()
 		while (this.isOp('%', '#')) {
-			const op = this.advance().value
+			const op = this.advance(true).value
 			if (op === '%') {
 				node = { type: 'unary', op: '%' as const, operand: node }
 			} else {
@@ -162,34 +220,34 @@ class FormulaParser {
 	}
 
 	private parseAtom(): FormulaNode {
-		const token = this.peek()
+		const token = this.peek(true)
 
 		if (token.type === TokenType.Number) {
 			if (
-				this.tokens[this.pos + 1]?.type === TokenType.Colon &&
-				this.tokens[this.pos + 2]?.type === TokenType.Number
+				this.lookahead(1, true).type === TokenType.Colon &&
+				this.lookahead(2, true).type === TokenType.Number
 			) {
-				const start = Number.parseInt(this.advance().value, 10) - 1
-				this.advance()
+				const start = Number.parseInt(this.advance(true).value, 10) - 1
+				this.expect(TokenType.Colon)
 				const end = Number.parseInt(this.expect(TokenType.Number).value, 10) - 1
 				return { type: 'wholeRowRange', startRow: start, endRow: end }
 			}
-			this.advance()
+			this.advance(true)
 			return { type: 'number', value: Number.parseFloat(token.value) }
 		}
 
 		if (token.type === TokenType.String) {
-			this.advance()
+			this.advance(true)
 			return { type: 'string', value: token.value }
 		}
 
 		if (token.type === TokenType.Boolean) {
-			this.advance()
+			this.advance(true)
 			return { type: 'boolean', value: token.value === 'TRUE' }
 		}
 
 		if (token.type === TokenType.Error) {
-			this.advance()
+			this.advance(true)
 			return { type: 'error', value: token.value as ExcelError }
 		}
 
@@ -203,17 +261,26 @@ class FormulaParser {
 
 		if (token.type === TokenType.Name) {
 			if (token.value.startsWith('[')) {
-				this.advance()
+				if (
+					this.lookahead(1, true).type === TokenType.Name &&
+					this.lookahead(2, true).type === TokenType.Bang
+				) {
+					const workbookToken = this.advance(true).value
+					const sheetToken = this.expect(TokenType.Name).value
+					this.expect(TokenType.Bang)
+					return this.parseSheetQualifiedReference(`${workbookToken}${sheetToken}`)
+				}
+				this.advance(true)
 				return this.buildStructuredRef('', token.value)
 			}
 			if (
 				isColumnLabel(token.value) &&
-				this.tokens[this.pos + 1]?.type === TokenType.Colon &&
-				this.tokens[this.pos + 2]?.type === TokenType.Name &&
-				isColumnLabel(this.tokens[this.pos + 2]?.value ?? '')
+				this.lookahead(1, true).type === TokenType.Colon &&
+				this.lookahead(2, true).type === TokenType.Name &&
+				isColumnLabel(this.lookahead(2, true).value)
 			) {
-				const startCol = columnToIndex(this.advance().value.toUpperCase())
-				this.advance()
+				const startCol = columnToIndex(this.advance(true).value.toUpperCase())
+				this.expect(TokenType.Colon)
 				const endCol = columnToIndex(this.expect(TokenType.Name).value.toUpperCase())
 				return { type: 'wholeColumnRange', startCol, endCol }
 			}
@@ -221,7 +288,7 @@ class FormulaParser {
 		}
 
 		if (token.type === TokenType.OpenParen) {
-			this.advance()
+			this.advance(true)
 			const expr = this.parseExpression()
 			this.expect(TokenType.CloseParen)
 			return expr
@@ -235,14 +302,14 @@ class FormulaParser {
 	}
 
 	private parseFunctionCall(): FormulaNode {
-		const name = this.advance().value
+		const name = this.advance(true).value
 		this.expect(TokenType.OpenParen)
 		const args: FormulaNode[] = []
 
-		if (this.peek().type !== TokenType.CloseParen) {
+		if (this.peek(true).type !== TokenType.CloseParen) {
 			args.push(this.parseArgOrMissing())
-			while (this.peek().type === TokenType.Comma) {
-				this.advance()
+			while (this.peek(true).type === TokenType.Comma) {
+				this.advance(true)
 				args.push(this.parseArgOrMissing())
 			}
 		}
@@ -252,19 +319,19 @@ class FormulaParser {
 	}
 
 	private parseArgOrMissing(): FormulaNode {
-		const next = this.peek()
+		const next = this.peek(true)
 		if (next.type === TokenType.Comma || next.type === TokenType.CloseParen) {
 			return { type: 'missing' }
 		}
-		return this.parseExpression()
+		return this.parseExpression(false)
 	}
 
 	private parseCellOrRange(sheet?: string): CellRefNode | RangeRefNode {
-		const token = this.advance()
+		const token = this.advance(true)
 		const ref = parseCellRefValue(token.value)
 
-		if (this.peek().type === TokenType.Colon) {
-			this.advance()
+		if (this.peek(true).type === TokenType.Colon) {
+			this.expect(TokenType.Colon)
 			const endToken = this.expect(TokenType.CellRef)
 			const end = parseCellRefValue(endToken.value)
 			if (sheet !== undefined) {
@@ -280,51 +347,105 @@ class FormulaParser {
 	}
 
 	private parseNameOrSheetRef(): FormulaNode {
-		const token = this.advance()
-
-		if (this.peek().type === TokenType.Bang) {
-			this.advance()
-			const sheet = token.value
-			if (
-				this.peek().type === TokenType.Number &&
-				this.tokens[this.pos + 1]?.type === TokenType.Colon &&
-				this.tokens[this.pos + 2]?.type === TokenType.Number
-			) {
-				const start = Number.parseInt(this.advance().value, 10) - 1
-				this.advance()
-				const end = Number.parseInt(this.expect(TokenType.Number).value, 10) - 1
-				return { type: 'wholeRowRange', startRow: start, endRow: end, sheet }
+		const token = this.advance(true)
+		if (token.value.includes(':') && this.peek(true).type === TokenType.Bang) {
+			const [startSheet, endSheet] = token.value.split(':')
+			if (!startSheet || !endSheet) {
+				throw new Error(`Invalid 3D sheet span "${token.value}" at position ${token.position}`)
 			}
-			if (
-				this.peek().type === TokenType.Name &&
-				isColumnLabel(this.peek().value) &&
-				this.tokens[this.pos + 1]?.type === TokenType.Colon &&
-				this.tokens[this.pos + 2]?.type === TokenType.Name &&
-				isColumnLabel(this.tokens[this.pos + 2]?.value ?? '')
-			) {
-				const startCol = columnToIndex(this.advance().value.toUpperCase())
-				this.advance()
-				const endCol = columnToIndex(this.expect(TokenType.Name).value.toUpperCase())
-				return { type: 'wholeColumnRange', startCol, endCol, sheet }
-			}
-			if (this.peek().type === TokenType.CellRef) {
-				return this.parseCellOrRange(sheet)
-			}
-			if (this.peek().type === TokenType.Name) {
-				const name = this.advance().value
-				return { type: 'name', name, sheet }
-			}
-			throw new Error(
-				`Expected cell reference or name after "${sheet}!" at position ${this.peek().position}`,
-			)
+			this.expect(TokenType.Bang)
+			return this.parseSheetSpanQualifiedReference(startSheet, endSheet)
 		}
 
-		if (this.peek().type === TokenType.Name && this.peek().value.startsWith('[')) {
-			const bracketToken = this.advance()
+		if (
+			this.peek(true).type === TokenType.Colon &&
+			this.lookahead(1, true).type === TokenType.Name &&
+			this.lookahead(2, true).type === TokenType.Bang
+		) {
+			this.expect(TokenType.Colon)
+			const endSheet = this.expect(TokenType.Name).value
+			this.expect(TokenType.Bang)
+			return this.parseSheetSpanQualifiedReference(token.value, endSheet)
+		}
+
+		if (this.peek(true).type === TokenType.Bang) {
+			this.expect(TokenType.Bang)
+			return this.parseSheetQualifiedReference(token.value)
+		}
+
+		if (this.peek(true).type === TokenType.Name && this.peek(true).value.startsWith('[')) {
+			const bracketToken = this.advance(true)
 			return this.buildStructuredRef(token.value, bracketToken.value)
 		}
 
 		return { type: 'name', name: token.value }
+	}
+
+	private parseSheetSpanQualifiedReference(startSheet: string, endSheet: string): FormulaNode {
+		return {
+			type: 'sheetSpanRef',
+			startSheet,
+			endSheet,
+			target: this.parseQualifiedReferenceTarget(),
+		}
+	}
+
+	private parseSheetQualifiedReference(sheet: string): FormulaNode {
+		const target = this.parseQualifiedReferenceTarget()
+		switch (target.type) {
+			case 'cellRef':
+				return { type: 'cellRef', ref: target.ref, sheet }
+			case 'rangeRef':
+				return { type: 'rangeRef', start: target.start, end: target.end, sheet }
+			case 'wholeRowRange':
+				return { type: 'wholeRowRange', startRow: target.startRow, endRow: target.endRow, sheet }
+			case 'wholeColumnRange':
+				return {
+					type: 'wholeColumnRange',
+					startCol: target.startCol,
+					endCol: target.endCol,
+					sheet,
+				}
+			case 'name':
+				return { type: 'name', name: target.name, sheet }
+			default:
+				throw new Error(`Unsupported sheet-qualified reference target "${target.type}"`)
+		}
+	}
+
+	private parseQualifiedReferenceTarget(): FormulaNode {
+		if (
+			this.peek(true).type === TokenType.Number &&
+			this.lookahead(1, true).type === TokenType.Colon &&
+			this.lookahead(2, true).type === TokenType.Number
+		) {
+			const start = Number.parseInt(this.advance(true).value, 10) - 1
+			this.expect(TokenType.Colon)
+			const end = Number.parseInt(this.expect(TokenType.Number).value, 10) - 1
+			return { type: 'wholeRowRange', startRow: start, endRow: end }
+		}
+		if (
+			this.peek(true).type === TokenType.Name &&
+			isColumnLabel(this.peek(true).value) &&
+			this.lookahead(1, true).type === TokenType.Colon &&
+			this.lookahead(2, true).type === TokenType.Name &&
+			isColumnLabel(this.lookahead(2, true).value)
+		) {
+			const startCol = columnToIndex(this.advance(true).value.toUpperCase())
+			this.expect(TokenType.Colon)
+			const endCol = columnToIndex(this.expect(TokenType.Name).value.toUpperCase())
+			return { type: 'wholeColumnRange', startCol, endCol }
+		}
+		if (this.peek(true).type === TokenType.CellRef) {
+			return this.parseCellOrRange()
+		}
+		if (this.peek(true).type === TokenType.Name) {
+			const name = this.advance(true).value
+			return { type: 'name', name }
+		}
+		throw new Error(
+			`Expected cell reference or name after qualifier at position ${this.peek(true).position}`,
+		)
 	}
 
 	private buildStructuredRef(table: string, bracket: string): StructuredRefNode {
@@ -361,18 +482,18 @@ class FormulaParser {
 	private parseArrayLiteral(): FormulaNode {
 		this.expect(TokenType.OpenBrace)
 		const rows: FormulaNode[][] = []
-		let currentRow: FormulaNode[] = [this.parseExpression()]
+		let currentRow: FormulaNode[] = [this.parseExpression(false)]
 
-		while (this.peek().type !== TokenType.CloseBrace) {
-			if (this.peek().type === TokenType.Comma) {
-				this.advance()
-				currentRow.push(this.parseExpression())
-			} else if (this.peek().type === TokenType.Semicolon) {
-				this.advance()
+		while (this.peek(true).type !== TokenType.CloseBrace) {
+			if (this.peek(true).type === TokenType.Comma) {
+				this.advance(true)
+				currentRow.push(this.parseExpression(false))
+			} else if (this.peek(true).type === TokenType.Semicolon) {
+				this.advance(true)
 				rows.push(currentRow)
-				currentRow = [this.parseExpression()]
+				currentRow = [this.parseExpression(false)]
 			} else {
-				throw new Error(`Expected , or ; in array literal at position ${this.peek().position}`)
+				throw new Error(`Expected , or ; in array literal at position ${this.peek(true).position}`)
 			}
 		}
 
@@ -393,4 +514,34 @@ export function parse(tokens: readonly Token[]): Result<FormulaNode> {
 
 export function parseFormula(formula: string): Result<FormulaNode> {
 	return parse(tokenize(formula))
+}
+
+function isReferenceLike(node: FormulaNode): boolean {
+	switch (node.type) {
+		case 'cellRef':
+		case 'rangeRef':
+		case 'wholeRowRange':
+		case 'wholeColumnRange':
+		case 'name':
+		case 'structuredRef':
+		case 'spillRef':
+		case 'sheetSpanRef':
+			return true
+		case 'binary':
+			return node.op === ',' || node.op === ' '
+		default:
+			return false
+	}
+}
+
+function canStartReferenceExpression(token: Token): boolean {
+	switch (token.type) {
+		case TokenType.CellRef:
+		case TokenType.Name:
+		case TokenType.Number:
+		case TokenType.OpenParen:
+			return true
+		default:
+			return false
+	}
 }

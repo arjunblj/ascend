@@ -72,6 +72,12 @@ export interface WorkbookPreservedSharedStrings {
 	readonly xml?: string
 }
 
+export interface WorkbookPreservedMetadata {
+	readonly path: string
+	readonly contentType: string
+	readonly xml?: string
+}
+
 export interface WorkbookPreservedXml {
 	readonly workbookPath?: string
 	readonly workbookXml?: string
@@ -109,6 +115,7 @@ export class Workbook {
 	preservedStyles: WorkbookPreservedStyles | null = null
 	preservedTheme: WorkbookPreservedTheme | null = null
 	preservedSharedStrings: WorkbookPreservedSharedStrings | null = null
+	preservedMetadata: WorkbookPreservedMetadata | null = null
 	preservedXml: WorkbookPreservedXml | null = null
 	sourceArchiveBytes: Uint8Array | null = null
 	calcSettings: CalcSettings
@@ -148,6 +155,9 @@ export class Workbook {
 		clone.preservedTheme = this.preservedTheme ? structuredClone(this.preservedTheme) : null
 		clone.preservedSharedStrings = this.preservedSharedStrings
 			? structuredClone(this.preservedSharedStrings)
+			: null
+		clone.preservedMetadata = this.preservedMetadata
+			? structuredClone(this.preservedMetadata)
 			: null
 		clone.preservedXml = this.preservedXml ? structuredClone(this.preservedXml) : null
 		clone.sourceArchiveBytes = this.sourceArchiveBytes

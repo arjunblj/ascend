@@ -1,4 +1,5 @@
 import type { Workbook } from '@ascend/core'
+import { toStoredFormulaText } from '../formula-storage.ts'
 import { escapeXml } from '../xml.ts'
 
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
@@ -68,7 +69,9 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 				const sheetIndex = workbook.sheets.findIndex((sheet) => sheet.id === scope.sheetId)
 				if (sheetIndex >= 0) attrs.push(`localSheetId="${sheetIndex}"`)
 			}
-			parts.push(`<definedName ${attrs.join(' ')}>${escapeXml(definedName.formula)}</definedName>`)
+			parts.push(
+				`<definedName ${attrs.join(' ')}>${escapeXml(toStoredFormulaText(definedName.formula))}</definedName>`,
+			)
 		}
 		parts.push('</definedNames>')
 	}

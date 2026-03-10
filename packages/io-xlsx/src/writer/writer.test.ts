@@ -111,6 +111,63 @@ describe('writeXlsx', () => {
 		})
 	})
 
+	it('writes dynamic-array metadata and storage formula syntax', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Dynamic')
+		sheet.cells.set(0, 0, {
+			value: numberValue(1),
+			formula: 'SEQUENCE(3)',
+			styleId: S0,
+			formulaInfo: { kind: 'dynamicArray', metadataIndex: 1, collapsed: false },
+		})
+		sheet.cells.set(0, 1, {
+			value: numberValue(6),
+			formula: 'SUM(A1#)',
+			styleId: S0,
+		})
+		sheet.cells.set(0, 2, {
+			value: numberValue(1),
+			formula: '@A1',
+			styleId: S0,
+		})
+
+		const written = writeXlsx(wb)
+		expect(written.ok).toBe(true)
+		if (!written.ok) return
+
+		const zip = unzipSync(written.value)
+		const contentTypes = new TextDecoder().decode(zip['[Content_Types].xml'] ?? new Uint8Array())
+		const workbookRels = new TextDecoder().decode(
+			zip['xl/_rels/workbook.xml.rels'] ?? new Uint8Array(),
+		)
+		const metadataXml = new TextDecoder().decode(zip['xl/metadata.xml'] ?? new Uint8Array())
+		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+
+		expect(contentTypes).toContain(
+			'/xl/metadata.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml"',
+		)
+		expect(workbookRels).toContain(
+			'Type="http://purl.oclc.org/ooxml/officeDocument/relationships/sheetMetadata"',
+		)
+		expect(metadataXml).toContain('name="XLDAPR"')
+		expect(sheetXml).toContain('cm="1"')
+		expect(sheetXml).toContain('_xlfn.SEQUENCE(3)')
+		expect(sheetXml).toContain('SUM(_xlfn.ANCHORARRAY(A1))')
+		expect(sheetXml).toContain('_xlfn.SINGLE(A1)')
+
+		const reopened = readXlsx(written.value)
+		expect(reopened.ok).toBe(true)
+		if (!reopened.ok) return
+		expect(reopened.value.workbook.sheets[0]?.cells.get(0, 0)?.formulaInfo).toEqual({
+			kind: 'dynamicArray',
+			metadataIndex: 1,
+			collapsed: false,
+		})
+		expect(reopened.value.workbook.sheets[0]?.cells.get(0, 0)?.formula).toBe('SEQUENCE(3)')
+		expect(reopened.value.workbook.sheets[0]?.cells.get(0, 1)?.formula).toBe('SUM(A1#)')
+		expect(reopened.value.workbook.sheets[0]?.cells.get(0, 2)?.formula).toBe('@A1')
+	})
+
 	it('preserves sharedStrings.xml when string indices are unchanged', () => {
 		const sourceBytes = makeXlsx({
 			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

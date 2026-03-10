@@ -23,6 +23,12 @@ export interface ArrayFormulaInfo {
 	readonly ref?: string
 }
 
+export interface DynamicArrayFormulaInfo {
+	readonly kind: 'dynamicArray'
+	readonly metadataIndex: number
+	readonly collapsed?: boolean
+}
+
 export interface SpillFormulaInfo {
 	readonly kind: 'spill'
 	readonly anchorRef: string
@@ -30,7 +36,11 @@ export interface SpillFormulaInfo {
 	readonly isAnchor: boolean
 }
 
-export type CellFormulaBinding = SharedFormulaInfo | ArrayFormulaInfo | SpillFormulaInfo
+export type CellFormulaBinding =
+	| SharedFormulaInfo
+	| ArrayFormulaInfo
+	| DynamicArrayFormulaInfo
+	| SpillFormulaInfo
 
 const DEFAULT_STYLE_ID = 0 as StyleId
 

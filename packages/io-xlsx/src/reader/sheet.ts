@@ -2,6 +2,7 @@ import type {
 	AutoFilter,
 	Cell,
 	CellStyle,
+	DynamicArrayFormulaInfo,
 	RangeRef,
 	SheetColDef,
 	SheetConditionalFormat,
@@ -14,8 +15,10 @@ import type { FormulaNode } from '@ascend/formulas'
 import { parseFormula } from '@ascend/formulas'
 import type { CellValue, ExcelError } from '@ascend/schema'
 import { booleanValue, EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
+import { normalizeStoredFormulaText } from '../formula-storage.ts'
 import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
 import { parseAutoFilterNode } from './filtering.ts'
+import type { ParsedMetadataPart } from './metadata.ts'
 import type { Relationship } from './relationships.ts'
 import type { SharedStringResolver } from './shared-strings.ts'
 
@@ -52,11 +55,13 @@ export interface SheetParseContext {
 	readonly valuesOnly?: boolean
 	readonly formulaOnly?: boolean
 	readonly formulaFeatures?: SheetFormulaFeatures
+	readonly metadata?: ParsedMetadataPart
 }
 
 export interface SheetFormulaFeatures {
 	hasSharedFormula: boolean
 	hasArrayFormula: boolean
+	hasDynamicArrayFormula: boolean
 }
 
 export class ValueInternPool {
@@ -264,6 +269,7 @@ function parseFastCell(
 	const styleIdx = rawNumAttr(rawAttrs, 's') ?? 0
 	const rawValue = extractTagText(innerXml, 'v')
 	const styleId = ctx.valuesOnly ? (0 as StyleId) : (ctx.styleIds[styleIdx] ?? (0 as StyleId))
+	const metadataIndex = rawNumAttr(rawAttrs, 'cm')
 	const formulaSpec =
 		ctx.valuesOnly && rawValue !== undefined && rawValue !== ''
 			? { text: null, info: undefined }
@@ -275,6 +281,13 @@ function parseFastCell(
 					pool,
 					ctx.formulaFeatures,
 				)
+	const binding = attachDynamicArrayBinding(
+		formulaSpec.info,
+		formulaSpec.text,
+		metadataIndex,
+		ctx.metadata,
+		ctx.formulaFeatures,
+	)
 
 	let value: CellValue
 	if (type === 's') {
@@ -316,7 +329,7 @@ function parseFastCell(
 			value,
 			formula: formulaSpec.text,
 			styleId,
-			...(formulaSpec.info ? { formulaInfo: formulaSpec.info } : {}),
+			...(binding ? { formulaInfo: binding } : {}),
 		},
 	}
 }
@@ -548,11 +561,19 @@ function parseCellValue(
 	const styleIdx = numAttr(c, 's') ?? 0
 	const rawValue = c.v
 	const styleId = ctx.valuesOnly ? (0 as StyleId) : (ctx.styleIds[styleIdx] ?? (0 as StyleId))
+	const metadataIndex = numAttr(c, 'cm')
 	const formulaSpec =
 		ctx.valuesOnly && rawValue !== undefined && rawValue !== null && rawValue !== ''
 			? { text: null, info: undefined }
 			: parseFormulaText(c.f, row, col, sharedFormulaMasters, pool, ctx.formulaFeatures)
 	const formula = formulaSpec.text
+	const binding = attachDynamicArrayBinding(
+		formulaSpec.info,
+		formula,
+		metadataIndex,
+		ctx.metadata,
+		ctx.formulaFeatures,
+	)
 
 	let value: CellValue
 
@@ -594,7 +615,7 @@ function parseCellValue(
 		value,
 		formula,
 		styleId,
-		...(formulaSpec.info ? { formulaInfo: formulaSpec.info } : {}),
+		...(binding ? { formulaInfo: binding } : {}),
 	}
 }
 
@@ -665,7 +686,8 @@ function parseResolvedFormulaText(
 	if (formulaType === 'shared' && sharedIndex) {
 		if (formulaFeatures) formulaFeatures.hasSharedFormula = true
 		if (text !== undefined && text !== null) {
-			const formula = pool ? pool.internString(String(text)) : String(text)
+			const normalized = normalizeStoredFormulaText(String(text))
+			const formula = pool ? pool.internString(normalized) : normalized
 			const parsed = parseFormula(formula)
 			sharedFormulaMasters.set(sharedIndex, {
 				formula,
@@ -706,15 +728,34 @@ function parseResolvedFormulaText(
 				info: { kind: 'array', ...(ref ? { ref } : {}) },
 			}
 		}
-		const formula = String(text)
+		const formula = normalizeStoredFormulaText(String(text))
 		return {
 			text: pool ? pool.internString(formula) : formula,
 			info: { kind: 'array', ...(ref ? { ref } : {}) },
 		}
 	}
 	if (text === undefined || text === null) return { text: null }
-	const formula = String(text)
+	const formula = normalizeStoredFormulaText(String(text))
 	return { text: pool ? pool.internString(formula) : formula }
+}
+
+function attachDynamicArrayBinding(
+	existing: Cell['formulaInfo'] | undefined,
+	formulaText: string | null,
+	metadataIndex: number | undefined,
+	metadata: ParsedMetadataPart | undefined,
+	formulaFeatures: SheetFormulaFeatures | undefined,
+): Cell['formulaInfo'] | undefined {
+	if (existing || !formulaText || metadataIndex === undefined || metadataIndex <= 0) return existing
+	const record = metadata?.dynamicArrayByCellMetadataIndex.get(metadataIndex)
+	if (!record) return existing
+	if (formulaFeatures) formulaFeatures.hasDynamicArrayFormula = true
+	const binding: DynamicArrayFormulaInfo = {
+		kind: 'dynamicArray',
+		metadataIndex,
+		...(record.collapsed !== undefined ? { collapsed: record.collapsed } : {}),
+	}
+	return binding
 }
 
 function isRawFormulaNode(value: unknown): value is RawFormulaNode {

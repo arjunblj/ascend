@@ -7,6 +7,7 @@ import {
 	REL_COMMENTS,
 	REL_DRAWING,
 	REL_SHARED_STRINGS,
+	REL_SHEET_METADATA,
 	REL_STYLES,
 	REL_TABLE,
 	REL_THEME,
@@ -18,6 +19,7 @@ import { extractZip, type ZipArchive } from '../reader/zip.ts'
 import { buildCommentsVml, buildCommentsXml } from './comments.ts'
 import { buildContentTypesXml } from './content-types.ts'
 import { buildAppPropsXml, buildCorePropsXml } from './doc-props.ts'
+import { buildDynamicArrayMetadataXml, type DynamicArrayMetadataEntry } from './metadata.ts'
 import {
 	summarizeWritePlan,
 	WritePlanBuilder,
@@ -41,6 +43,8 @@ const REL_EXT_PROPS =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties'
 const REL_HYPERLINK =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink'
+const CT_SHEET_METADATA =
+	'application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml'
 const CT_COMMENTS = 'application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml'
 const CT_TABLE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml'
 const CT_VML = 'application/vnd.openxmlformats-officedocument.vmlDrawing'
@@ -209,6 +213,24 @@ export function planWriteXlsx(
 			}
 		}
 
+		const dynamicArrayMetadata = collectDynamicArrayMetadata(workbook)
+		const shouldWriteDynamicArrayMetadata =
+			dynamicArrayMetadata.entries.length > 0 || workbook.preservedMetadata !== null
+		const dynamicArrayMetadataPath = workbook.preservedMetadata?.path ?? 'xl/metadata.xml'
+		const dynamicArrayMetadataTarget = dynamicArrayMetadataPath.replace(/^xl\//, '')
+		const preserveDynamicArrayMetadata = workbook.preservedMetadata !== null
+		const preservedDynamicArrayMetadataBytes = workbook.preservedMetadata
+			? resolvePreservedBytes(sourceArchive, workbook.preservedMetadata.path)
+			: undefined
+		const preservedDynamicArrayMetadataText =
+			workbook.preservedMetadata && !options.summaryOnly
+				? resolvePreservedText(
+						sourceArchive,
+						workbook.preservedMetadata.xml,
+						workbook.preservedMetadata.path,
+					)
+				: undefined
+
 		let rIdCounter = 1
 		const wbRels: RelEntry[] = []
 		for (let i = 0; i < workbook.sheets.length; i++) {
@@ -248,6 +270,15 @@ export function planWriteXlsx(
 				id: `rId${rIdCounter}`,
 				type: REL_SHARED_STRINGS,
 				target: 'sharedStrings.xml',
+			})
+			rIdCounter++
+		}
+
+		if (shouldWriteDynamicArrayMetadata) {
+			wbRels.push({
+				id: `rId${rIdCounter}`,
+				type: REL_SHEET_METADATA,
+				target: dynamicArrayMetadataTarget,
 			})
 			rIdCounter++
 		}
@@ -315,6 +346,10 @@ export function planWriteXlsx(
 		const preserveWorkbookXml = options.summaryOnly
 			? hasPreservedWorkbookXml && hasPreservedWorkbookRels
 			: !!(preservedWorkbookXmlText && preservedWorkbookRelsText)
+		const preserveWorkbookRels =
+			preserveWorkbookXml &&
+			(!shouldWriteDynamicArrayMetadata ||
+				preservedWorkbookRelsText?.includes(REL_SHEET_METADATA) === true)
 		const workbookContentType =
 			preservedWorkbookXml?.contentType ??
 			'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml'
@@ -744,7 +779,7 @@ export function planWriteXlsx(
 		}
 
 		if (
-			preserveWorkbookXml &&
+			preserveWorkbookRels &&
 			preservedWorkbookRelsText &&
 			preservedWorkbookRelsBytes &&
 			!options.summaryOnly
@@ -763,15 +798,50 @@ export function planWriteXlsx(
 				{
 					owner: { kind: 'workbook' },
 					origin:
-						preserveWorkbookXml && preservedWorkbookRelsText
+						preserveWorkbookRels && preservedWorkbookRelsText
 							? resolvePreservedOrigin(preservedWorkbookXml?.workbookRelsXml)
 							: 'generated',
 				},
 				() =>
-					preserveWorkbookXml && preservedWorkbookRelsText
+					preserveWorkbookRels && preservedWorkbookRelsText
 						? preservedWorkbookRelsText
 						: buildRelsXml(wbRels),
 			)
+		}
+
+		if (shouldWriteDynamicArrayMetadata) {
+			plan.addOverride(dynamicArrayMetadataPath, CT_SHEET_METADATA)
+			if (
+				preserveDynamicArrayMetadata &&
+				preservedDynamicArrayMetadataBytes &&
+				!options.summaryOnly
+			) {
+				recordBytes(
+					dynamicArrayMetadataPath,
+					{
+						owner: { kind: 'workbook' },
+						origin: resolvePreservedOrigin(workbook.preservedMetadata?.xml),
+						contentType: workbook.preservedMetadata?.contentType ?? CT_SHEET_METADATA,
+					},
+					() => preservedDynamicArrayMetadataBytes,
+				)
+			} else {
+				recordXml(
+					dynamicArrayMetadataPath,
+					{
+						owner: { kind: 'workbook' },
+						origin:
+							preserveDynamicArrayMetadata && preservedDynamicArrayMetadataText
+								? resolvePreservedOrigin(workbook.preservedMetadata?.xml)
+								: 'generated',
+						contentType: workbook.preservedMetadata?.contentType ?? CT_SHEET_METADATA,
+					},
+					() =>
+						preserveDynamicArrayMetadata && preservedDynamicArrayMetadataText
+							? preservedDynamicArrayMetadataText
+							: buildDynamicArrayMetadataXml(dynamicArrayMetadata.entries),
+				)
+			}
 		}
 
 		recordXml(
@@ -861,6 +931,28 @@ function hasCompletePreservedStyleMap(
 		if (xfByStyleId[index] === undefined) return false
 	}
 	return true
+}
+
+function collectDynamicArrayMetadata(workbook: Workbook): {
+	readonly entries: readonly DynamicArrayMetadataEntry[]
+} {
+	for (const sheet of workbook.sheets) {
+		for (const [, , cell] of sheet.cells.iterate()) {
+			const binding = cell.formulaInfo
+			if (!binding) continue
+			if (binding.kind === 'dynamicArray') {
+				return {
+					entries: [{ metadataIndex: 1, collapsed: binding.collapsed ?? false }],
+				}
+			}
+			if (binding.kind === 'spill' && binding.isAnchor) {
+				return {
+					entries: [{ metadataIndex: 1, collapsed: false }],
+				}
+			}
+		}
+	}
+	return { entries: [] }
 }
 
 function workbookHasStringCells(workbook: Workbook): boolean {

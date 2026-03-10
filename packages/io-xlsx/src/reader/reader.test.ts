@@ -413,6 +413,69 @@ describe('readXlsx', () => {
 		expect(result.value.workbook.sheets[0]?.cells.get(1, 0)?.formula).toBeNull()
 	})
 
+	it('imports dynamic-array metadata and normalizes storage formulas', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/metadata.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml"/>
+</Types>`,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://purl.oclc.org/ooxml/officeDocument/relationships/sheetMetadata" Target="metadata.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/metadata.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<metadata xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:xda="http://schemas.microsoft.com/office/spreadsheetml/2017/dynamicarray">
+  <metadataTypes count="1">
+    <metadataType name="XLDAPR" minSupportedVersion="120000" copy="1" pasteAll="1" pasteValues="1" merge="1" splitFirst="1" rowColShift="1" clearFormats="1" clearComments="1" assign="1" coerce="1" cellMeta="1"/>
+  </metadataTypes>
+  <futureMetadata name="XLDAPR" count="1">
+    <bk><extLst><ext uri="{bdbb8cdc-fa1e-496e-a857-3c3f30c029c3}"><xda:dynamicArrayProperties fDynamic="1" fCollapsed="0"/></ext></extLst></bk>
+  </futureMetadata>
+  <cellMetadata count="1">
+    <bk><rc t="1" v="0"/></bk>
+  </cellMetadata>
+</metadata>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1" cm="1"><f>_xlfn.SEQUENCE(3)</f><v>1</v></c>
+      <c r="B1"><f>SUM(_xlfn.ANCHORARRAY(A1))</f><v>6</v></c>
+      <c r="C1"><f>_xlfn.SINGLE(A1)</f><v>1</v></c>
+    </row>
+  </sheetData>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet?.cells.get(0, 0)?.formula).toBe('SEQUENCE(3)')
+		expect(sheet?.cells.get(0, 0)?.formulaInfo).toEqual({
+			kind: 'dynamicArray',
+			metadataIndex: 1,
+			collapsed: false,
+		})
+		expect(sheet?.cells.get(0, 1)?.formula).toBe('SUM(A1#)')
+		expect(sheet?.cells.get(0, 2)?.formula).toBe('@A1')
+		expect(
+			result.value.report.features.find((feature) => feature.feature === 'dynamicArray'),
+		).toMatchObject({
+			feature: 'dynamicArray',
+			tier: 'normalized',
+		})
+	})
+
 	it('parses worksheet tables from sheet relationships', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

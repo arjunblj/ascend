@@ -48,6 +48,7 @@ export type {
 	ArrayFormulaInfo,
 	Cell,
 	CellFormulaBinding,
+	DynamicArrayFormulaInfo,
 	SharedFormulaInfo,
 } from './sparse-grid.ts'
 export { SparseGrid } from './sparse-grid.ts'
@@ -68,6 +69,7 @@ export { DEFAULT_STYLE, StyleRegistry } from './style-registry.ts'
 export type { Table, TableColumn, TableStyleInfo } from './table.ts'
 
 export type {
+	WorkbookPreservedMetadata,
 	WorkbookPreservedStyles,
 	WorkbookPreservedTheme,
 	WorkbookPreservedXml,

@@ -15,6 +15,8 @@ export const REL_STYLES =
 export const REL_SHARED_STRINGS =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings'
 export const REL_THEME = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme'
+export const REL_SHEET_METADATA =
+	'http://purl.oclc.org/ooxml/officeDocument/relationships/sheetMetadata'
 export const REL_TABLE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/table'
 export const REL_COMMENTS =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments'

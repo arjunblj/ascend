@@ -2,6 +2,7 @@ import type { Cell, Sheet, SheetColDef } from '@ascend/core'
 import { indexToColumn } from '@ascend/core'
 import type { CellValue } from '@ascend/schema'
 import { topLeftScalar } from '@ascend/schema'
+import { toStoredFormulaText } from '../formula-storage.ts'
 import { escapeXml } from '../xml.ts'
 import { autoFilterXml } from './filtering.ts'
 import type { SharedStringTable } from './shared-strings.ts'
@@ -389,7 +390,10 @@ function cellXml(
 }
 
 function formulaCellXml(ref: string, cell: Cell, xfIdx: number): string {
+	const formulaText = cell.formula ? toStoredFormulaText(cell.formula) : ''
 	const sAttr = xfIdx !== 0 ? ` s="${xfIdx}"` : ''
+	const dynamicArrayMetadataIndex = dynamicArrayCellMetadataIndex(cell.formulaInfo)
+	const cmAttr = dynamicArrayMetadataIndex !== undefined ? ` cm="${dynamicArrayMetadataIndex}"` : ''
 	const { typeAttr, valueStr } = formulaValueAttrs(cell.value)
 	const tAttr = typeAttr ? ` t="${typeAttr}"` : ''
 	const vPart = valueStr !== undefined ? `<v>${valueStr}</v>` : ''
@@ -402,18 +406,26 @@ function formulaCellXml(ref: string, cell: Cell, xfIdx: number): string {
 				: []),
 		]
 		const formulaXml = cell.formulaInfo.isMaster
-			? `<f ${sharedAttrs.join(' ')}>${escapeXml(cell.formula ?? '')}</f>`
+			? `<f ${sharedAttrs.join(' ')}>${escapeXml(formulaText)}</f>`
 			: `<f ${sharedAttrs.join(' ')}/>`
-		return `<c r="${ref}"${sAttr}${tAttr}>${formulaXml}${vPart}</c>`
+		return `<c r="${ref}"${cmAttr}${sAttr}${tAttr}>${formulaXml}${vPart}</c>`
 	}
 	if (cell.formulaInfo?.kind === 'array') {
 		const arrayAttrs = [
 			't="array"',
 			...(cell.formulaInfo.ref ? [`ref="${escapeXml(cell.formulaInfo.ref)}"`] : []),
 		]
-		return `<c r="${ref}"${sAttr}${tAttr}><f ${arrayAttrs.join(' ')}>${escapeXml(cell.formula ?? '')}</f>${vPart}</c>`
+		return `<c r="${ref}"${cmAttr}${sAttr}${tAttr}><f ${arrayAttrs.join(' ')}>${escapeXml(formulaText)}</f>${vPart}</c>`
 	}
-	return `<c r="${ref}"${sAttr}${tAttr}><f>${escapeXml(cell.formula ?? '')}</f>${vPart}</c>`
+	return `<c r="${ref}"${cmAttr}${sAttr}${tAttr}><f>${escapeXml(formulaText)}</f>${vPart}</c>`
+}
+
+function dynamicArrayCellMetadataIndex(
+	binding: Cell['formulaInfo'] | undefined,
+): number | undefined {
+	if (binding?.kind === 'dynamicArray') return binding.metadataIndex
+	if (binding?.kind === 'spill' && binding.isAnchor) return 1
+	return undefined
 }
 
 function regularCellXml(

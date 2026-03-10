@@ -9,10 +9,12 @@ import type {
 	Result,
 } from '@ascend/schema'
 import { ascendError, emptyReport, err, ok } from '@ascend/schema'
+import { normalizeStoredFormulaText } from '../formula-storage.ts'
 import type { PreservationCapsule } from '../preserve.ts'
 import { parseCommentsXml } from './comments.ts'
 import { type ContentTypes, parseContentTypes } from './content-types.ts'
 import { parseDrawingImageRefs } from './drawing.ts'
+import { parseMetadataXml } from './metadata.ts'
 import {
 	parsePivotCacheDefinitionXml,
 	parsePivotTableXml,
@@ -27,6 +29,7 @@ import {
 	REL_OFFICE_DOC,
 	REL_PIVOT_TABLE,
 	REL_SHARED_STRINGS,
+	REL_SHEET_METADATA,
 	REL_SLICER_CACHE,
 	REL_STYLES,
 	REL_TABLE,
@@ -67,6 +70,7 @@ export interface ReadXlsxLoadInfo {
 interface FormulaFeatureSummary {
 	sharedFormulaSheets: string[]
 	arrayFormulaSheets: string[]
+	dynamicArraySheets: string[]
 }
 
 export function readXlsx(
@@ -199,6 +203,19 @@ export function readXlsx(
 	const formulaFeatures: FormulaFeatureSummary = {
 		sharedFormulaSheets: [],
 		arrayFormulaSheets: [],
+		dynamicArraySheets: [],
+	}
+	const metadataRel = wbRels.find((rel) => rel.type === REL_SHEET_METADATA)
+	const metadataPath = metadataRel ? resolvePath(workbookPath, metadataRel.target) : undefined
+	const metadataXml = metadataPath ? readPart(archive, metadataPath) : undefined
+	const metadata = metadataXml ? parseMetadataXml(metadataXml) : undefined
+	if (metadataPath && metadataRel) {
+		consumed.add(metadataPath)
+		workbook.preservedMetadata = {
+			path: metadataPath,
+			contentType: resolveContentType(metadataPath, contentTypes),
+			...(metadataXml ? { xml: metadataXml } : {}),
+		}
 	}
 	const sheetsToParse: Array<{
 		name: string
@@ -293,6 +310,7 @@ export function readXlsx(
 			const sheetFormulaFeatures: SheetFormulaFeatures = {
 				hasSharedFormula: false,
 				hasArrayFormula: false,
+				hasDynamicArrayFormula: false,
 			}
 			const sheet = parseSheet(entry.name, sheetXml, {
 				sharedStrings,
@@ -304,12 +322,16 @@ export function readXlsx(
 				valuesOnly,
 				formulaOnly,
 				formulaFeatures: sheetFormulaFeatures,
+				...(metadata ? { metadata } : {}),
 			})
 			if (sheetFormulaFeatures.hasSharedFormula) {
 				formulaFeatures.sharedFormulaSheets.push(entry.name)
 			}
 			if (sheetFormulaFeatures.hasArrayFormula) {
 				formulaFeatures.arrayFormulaSheets.push(entry.name)
+			}
+			if (sheetFormulaFeatures.hasDynamicArrayFormula) {
+				formulaFeatures.dynamicArraySheets.push(entry.name)
 			}
 			if (!valuesOnly && !formulaOnly) {
 				attachComments(archive, entry.path, sheet, sheetRelationships)
@@ -333,12 +355,15 @@ export function readXlsx(
 			const sourceSheet = wbInfo.sheets[dn.localSheetId]
 			const sheet = sourceSheet ? workbook.getSheet(sourceSheet.name) : undefined
 			if (sheet) {
-				workbook.definedNames.set(dn.name, dn.formula, { kind: 'sheet', sheetId: sheet.id })
+				workbook.definedNames.set(dn.name, normalizeStoredFormulaText(dn.formula), {
+					kind: 'sheet',
+					sheetId: sheet.id,
+				})
 				continue
 			}
 			continue
 		}
-		workbook.definedNames.set(dn.name, dn.formula)
+		workbook.definedNames.set(dn.name, normalizeStoredFormulaText(dn.formula))
 	}
 
 	const sourceSheetNames = wbInfo.sheets.map((sheet) => sheet.name)
@@ -548,6 +573,16 @@ function buildReport(
 			count: formulaFeatures.arrayFormulaSheets.length,
 			locations: formulaFeatures.arrayFormulaSheets,
 			note: 'Array formulas are imported with binding metadata, but legacy CSE semantics are not yet modeled as first-class editable semantics.',
+		})
+	}
+
+	if (formulaFeatures.dynamicArraySheets.length > 0) {
+		features.push({
+			feature: 'dynamicArray',
+			tier: 'normalized',
+			count: formulaFeatures.dynamicArraySheets.length,
+			locations: formulaFeatures.dynamicArraySheets,
+			note: 'Dynamic-array anchors are imported with metadata-backed bindings and normalized formula syntax.',
 		})
 	}
 

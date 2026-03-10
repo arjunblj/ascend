@@ -175,11 +175,20 @@ export class WorkbookReadView {
 		const cached = this.sheetHandleCache.get(name)
 		if (cached) return cached
 		if (!this.wb.getSheet(name)) return undefined
+		let cachedWorkbook = this.wb
+		let cachedSheetIndex = this.wb.sheets.findIndex((sheet) => sheet.name === name)
+		const resolveSheetIndex = (): number => {
+			if (this.wb !== cachedWorkbook) {
+				cachedWorkbook = this.wb
+				cachedSheetIndex = this.wb.sheets.findIndex((sheet) => sheet.name === name)
+			}
+			return cachedSheetIndex
+		}
 		const handle = new SheetHandle(
 			name,
 			() => this.wb.getSheet(name),
 			(row, col, cell) => {
-				const sheetIndex = this.wb.sheets.findIndex((sheet) => sheet.name === name)
+				const sheetIndex = resolveSheetIndex()
 				if (sheetIndex === -1) return cell.formula
 				return resolveCellFormulaText(this.wb, sheetIndex, row, col, cell)
 			},

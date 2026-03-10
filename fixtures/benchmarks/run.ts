@@ -276,6 +276,30 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'read-window-formula-chain-compact',
+		category: 'read',
+		build() {
+			const workbook = buildFormulaChainWorkbook(6000)
+			const bytes = mustWrite(workbook)
+			return { bytes, rows: 6000, cols: 1, cells: 6000 }
+		},
+		async run(input) {
+			const wb = await AscendWorkbook.open(requireBytes(input), { mode: 'formula' })
+			const window = wb.readWindowCompact('Sheet1', 'A1:A6000', {
+				rowLimit: 500,
+				includeRefs: false,
+			})
+			if (!window) throw new Error('Formula chain window benchmark failed to read Sheet1')
+			return {
+				assertions: {
+					returnedCells: window.cells.length,
+					hasMore: window.hasMore,
+					formulaCount: window.cells.filter((cell) => cell.formula !== null).length,
+				},
+			}
+		},
+	},
+	{
 		name: 'read-window-sparse-wide',
 		category: 'read',
 		build() {

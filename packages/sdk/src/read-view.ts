@@ -1,10 +1,12 @@
 import { parseA1, type RangeRef, type Workbook } from '@ascend/core'
 import {
 	analyzeWorkbook,
+	analyzeWorkbookFormulas,
 	createSnapshot,
 	diffWorkbooks,
 	type WorkbookAnalysis,
 	type WorkbookDiff,
+	type WorkbookFormulaAnalysis,
 	type WorkbookSnapshot,
 } from '@ascend/engine'
 import { parseFormula, printFormula } from '@ascend/formulas'
@@ -22,10 +24,14 @@ import {
 import { SheetHandle } from './sheet-handle.ts'
 import { TableHandle } from './table-handle.ts'
 import type {
+	CompactRangeInfo,
+	CompactRangeWindowInfo,
 	DefinedNameInfo,
 	FormulaInfo,
 	PivotCacheInfo,
 	PivotTableInfo,
+	RangeObjectsInfo,
+	RangeRowsInfo,
 	RangeWindowInfo,
 	SheetInfo,
 	SheetInspectInfo,
@@ -42,7 +48,6 @@ export class WorkbookReadView {
 	protected readonly compat: CompatibilityReport
 	protected readonly loadInfo: WorkbookLoadInfo
 	private workbookInfoCache: WorkbookInfo | undefined
-	private analysisCache: WorkbookAnalysis | undefined
 	private readonly sheetInspectCache = new Map<string, SheetInspectInfo | undefined>()
 	private readonly formulaInfoCache = new Map<string, FormulaInfo | undefined>()
 	private readonly sheetHandleCache = new Map<string, SheetHandle>()
@@ -177,12 +182,44 @@ export class WorkbookReadView {
 		return this.sheet(sheetName)?.range(range)
 	}
 
+	readRangeCompact(
+		sheetName: string,
+		range: string,
+		opts?: { includeRefs?: boolean },
+	): CompactRangeInfo | undefined {
+		return this.sheet(sheetName)?.rangeCompact(range, opts)
+	}
+
 	readWindow(
 		sheetName: string,
 		range: string,
 		opts?: { rowOffset?: number; rowLimit?: number },
 	): RangeWindowInfo | undefined {
 		return this.sheet(sheetName)?.readWindow(range, opts)
+	}
+
+	readWindowCompact(
+		sheetName: string,
+		range: string,
+		opts?: { rowOffset?: number; rowLimit?: number; includeRefs?: boolean },
+	): CompactRangeWindowInfo | undefined {
+		return this.sheet(sheetName)?.readWindowCompact(range, opts)
+	}
+
+	readRows(
+		sheetName: string,
+		range: string,
+		opts?: { rowOffset?: number; rowLimit?: number },
+	): RangeRowsInfo | undefined {
+		return this.sheet(sheetName)?.readRows(range, opts)
+	}
+
+	readObjects(
+		sheetName: string,
+		range: string,
+		opts?: { rowOffset?: number; rowLimit?: number; headers?: readonly string[] | 'first-row' },
+	): RangeObjectsInfo | undefined {
+		return this.sheet(sheetName)?.readObjects(range, opts)
 	}
 
 	*streamRange(
@@ -192,6 +229,16 @@ export class WorkbookReadView {
 		const sheet = this.sheet(sheetName)
 		if (!sheet) return
 		yield* sheet.streamRange(range)
+	}
+
+	*streamRangeCompact(
+		sheetName: string,
+		range: string,
+		opts?: { includeRefs?: boolean },
+	): Generator<readonly import('./types.ts').CompactCellInfo[]> {
+		const sheet = this.sheet(sheetName)
+		if (!sheet) return
+		yield* sheet.streamRangeCompact(range, opts)
 	}
 
 	*streamWindows(
@@ -204,6 +251,25 @@ export class WorkbookReadView {
 			const window = this.readWindow(sheetName, range, {
 				rowOffset,
 				...(opts?.rowLimit !== undefined ? { rowLimit: opts.rowLimit } : {}),
+			})
+			if (!window) return
+			yield window
+			if (!window.hasMore || window.nextRowOffset === undefined) return
+			rowOffset = window.nextRowOffset
+		}
+	}
+
+	*streamWindowsCompact(
+		sheetName: string,
+		range: string,
+		opts?: { rowLimit?: number; includeRefs?: boolean },
+	): Generator<CompactRangeWindowInfo> {
+		let rowOffset = 0
+		while (true) {
+			const window = this.readWindowCompact(sheetName, range, {
+				rowOffset,
+				...(opts?.rowLimit !== undefined ? { rowLimit: opts.rowLimit } : {}),
+				...(opts?.includeRefs !== undefined ? { includeRefs: opts.includeRefs } : {}),
 			})
 			if (!window) return
 			yield window
@@ -284,7 +350,7 @@ export class WorkbookReadView {
 
 		const formula = normalizeFormulaInput(cell.formula)
 		const formulaKey = makeFormulaKey(this.wb, sheetName, ref)
-		const analyzed = formulaKey ? this.analysis().formulas.get(formulaKey) : undefined
+		const analyzed = formulaKey ? this.formulaAnalysis().formulas.get(formulaKey) : undefined
 		if (!analyzed) {
 			this.formulaInfoCache.set(cellRef, undefined)
 			return undefined
@@ -397,7 +463,6 @@ export class WorkbookReadView {
 
 	protected clearReadCaches(): void {
 		this.workbookInfoCache = undefined
-		this.analysisCache = undefined
 		this.sheetInspectCache.clear()
 		this.formulaInfoCache.clear()
 		this.sheetHandleCache.clear()
@@ -405,10 +470,22 @@ export class WorkbookReadView {
 	}
 
 	analysis(): WorkbookAnalysis {
-		if (!this.analysisCache) {
-			this.analysisCache = analyzeWorkbook(this.wb)
-		}
-		return this.analysisCache
+		return analyzeWorkbook(this.wb)
+	}
+
+	formulaAnalysis(): WorkbookFormulaAnalysis {
+		return analyzeWorkbookFormulas(this.wb)
+	}
+
+	replaceWorkbook(
+		workbook: Workbook,
+		report: CompatibilityReport = this.compat,
+		loadInfo: WorkbookLoadInfo = this.loadInfo,
+	): void {
+		this.wb = workbook
+		;(this as unknown as { compat: CompatibilityReport }).compat = report
+		;(this as unknown as { loadInfo: WorkbookLoadInfo }).loadInfo = loadInfo
+		this.clearReadCaches()
 	}
 }
 

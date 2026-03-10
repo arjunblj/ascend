@@ -46,8 +46,16 @@ export function createServer(): McpServer {
 			sheet: z.string().optional().describe('Sheet name (defaults to first sheet)'),
 			rowOffset: z.number().int().nonnegative().optional().describe('Row offset within the range'),
 			rowLimit: z.number().int().positive().optional().describe('Maximum rows to return'),
+			format: z
+				.enum(['cells', 'rows', 'objects'])
+				.optional()
+				.describe('Read format: cell records, row arrays, or object rows'),
+			headers: z
+				.array(z.string())
+				.optional()
+				.describe('Explicit headers for object mode; defaults to first-row headers'),
 		},
-		async ({ file, range, sheet, rowOffset, rowLimit }) => {
+		async ({ file, range, sheet, rowOffset, rowLimit, format, headers }) => {
 			const wb = await WorkbookSession.open(
 				file,
 				sheet ? { mode: 'values', sheets: [sheet] } : { mode: 'values' },
@@ -60,10 +68,20 @@ export function createServer(): McpServer {
 			if (!handle) {
 				return errorResponse(`Sheet "${sheetName}" not found`)
 			}
-			const info = handle.readWindow(range, {
+			const readOpts = {
 				...(rowOffset !== undefined ? { rowOffset } : {}),
 				...(rowLimit !== undefined ? { rowLimit } : {}),
-			})
+			}
+			const mode = format ?? 'cells'
+			const info =
+				mode === 'rows'
+					? handle.readRows(range, readOpts)
+					: mode === 'objects'
+						? handle.readObjects(range, {
+								...readOpts,
+								headers: headers && headers.length > 0 ? headers : 'first-row',
+							})
+						: handle.readWindow(range, readOpts)
 			return okResponse(info, `Read range ${range} from "${sheetName}"`)
 		},
 	)

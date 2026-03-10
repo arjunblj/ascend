@@ -16,12 +16,18 @@ interface TimingResult {
 	readonly rssAfterBytes?: number
 	readonly retainedRssDeltaBytes?: number
 	readonly rssAfterGcBytes?: number
+	readonly heapUsedBytes?: number
+	readonly heapTotalBytes?: number
+	readonly heapAfterGcBytes?: number
 	readonly samples?: readonly {
 		readonly durationMs: number
 		readonly rssDeltaBytes?: number
 		readonly retainedRssDeltaBytes?: number
 		readonly rssAfterBytes?: number
 		readonly rssAfterGcBytes?: number
+		readonly heapUsedBytes?: number
+		readonly heapTotalBytes?: number
+		readonly heapAfterGcBytes?: number
 	}[]
 }
 
@@ -58,14 +64,24 @@ type StepName =
 	| 'open-formula'
 	| 'open-full'
 	| 'read-window-values'
+	| 'read-window-values-compact'
 	| 'workflow-inspect-read'
 	| 'workflow-session-open-read'
-	| 'workflow-session-verify'
+	| 'workflow-session-warm-read'
+	| 'workflow-session-trace'
+	| 'workflow-session-check'
+	| 'workflow-session-lint'
 	| 'preview-numeric-edit'
 	| 'preview-format-edit'
 	| 'no-op-save-bytes'
 	| 'numeric-edit-save-bytes'
 	| 'format-edit-save-bytes'
+
+interface MemorySnapshot {
+	readonly rssBytes?: number
+	readonly heapUsedBytes?: number
+	readonly heapTotalBytes?: number
+}
 
 function sha256(bytes: Uint8Array): string {
 	return createHash('sha256').update(bytes).digest('hex')
@@ -81,34 +97,34 @@ async function time<T, TResult = T>(
 	} = {},
 ): Promise<{ result: TResult; timing: TimingResult }> {
 	runGc()
-	const rssBefore = getRssBytes()
+	const before = getMemorySnapshot()
 	const start = performance.now()
-	let rawResult = await fn()
+	const rawResult = await fn()
 	const result = options.summarizeResult
 		? options.summarizeResult(rawResult)
 		: (rawResult as unknown as TResult)
-	const rssAfter = getRssBytes()
+	const after = getMemorySnapshot()
 	options.beforeGc?.()
-	if (!options.retainResultForGc) {
-		rawResult = undefined as T
-	}
 	runGc()
-	const rssAfterGc = getRssBytes()
+	const afterGc = getMemorySnapshot()
 	return {
 		result,
 		timing: {
 			name,
 			durationMs: performance.now() - start,
 			rssDeltaBytes:
-				rssBefore !== undefined && rssAfter !== undefined
-					? Math.max(0, rssAfter - rssBefore)
+				before.rssBytes !== undefined && after.rssBytes !== undefined
+					? Math.max(0, after.rssBytes - before.rssBytes)
 					: undefined,
-			rssAfterBytes: rssAfter,
+			rssAfterBytes: after.rssBytes,
 			retainedRssDeltaBytes:
-				rssBefore !== undefined && rssAfterGc !== undefined
-					? Math.max(0, rssAfterGc - rssBefore)
+				before.rssBytes !== undefined && afterGc.rssBytes !== undefined
+					? Math.max(0, afterGc.rssBytes - before.rssBytes)
 					: undefined,
-			rssAfterGcBytes: rssAfterGc,
+			rssAfterGcBytes: afterGc.rssBytes,
+			heapUsedBytes: after.heapUsedBytes,
+			heapTotalBytes: after.heapTotalBytes,
+			heapAfterGcBytes: afterGc.heapUsedBytes,
 		},
 	}
 }
@@ -119,6 +135,8 @@ function renderTimings(results: readonly BenchmarkCaseResult[]): string {
 		'median-ms',
 		'p95-ms',
 		'rss-delta',
+		'heap-used',
+		'heap-after-gc',
 		'rss-after',
 		'retained',
 		'rss-after-gc',
@@ -128,6 +146,10 @@ function renderTimings(results: readonly BenchmarkCaseResult[]): string {
 		result.metrics.medianMs.toFixed(2),
 		result.metrics.p95Ms.toFixed(2),
 		result.metrics.rssDeltaBytes !== undefined ? formatBytes(result.metrics.rssDeltaBytes) : 'n/a',
+		result.metrics.heapUsedBytes !== undefined ? formatBytes(result.metrics.heapUsedBytes) : 'n/a',
+		result.metrics.heapAfterGcBytes !== undefined
+			? formatBytes(result.metrics.heapAfterGcBytes)
+			: 'n/a',
 		result.metrics.rssAfterBytes !== undefined ? formatBytes(result.metrics.rssAfterBytes) : 'n/a',
 		result.metrics.retainedRssDeltaBytes !== undefined
 			? formatBytes(result.metrics.retainedRssDeltaBytes)
@@ -167,9 +189,13 @@ async function main(): Promise<void> {
 		'open-formula',
 		'open-full',
 		'read-window-values',
+		'read-window-values-compact',
 		'workflow-inspect-read',
 		'workflow-session-open-read',
-		'workflow-session-verify',
+		'workflow-session-warm-read',
+		'workflow-session-trace',
+		'workflow-session-check',
+		'workflow-session-lint',
 		'preview-numeric-edit',
 		'preview-format-edit',
 		'no-op-save-bytes',
@@ -289,6 +315,35 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 				},
 			}
 		}
+		case 'read-window-values-compact': {
+			let wb: AscendWorkbook | undefined = await AscendWorkbook.open(target, { mode: 'values' })
+			const probe = pickReadProbe(wb)
+			const { result, timing } = await time(
+				'read-window-values-compact',
+				async () =>
+					Promise.resolve(
+						wb?.readWindowCompact(probe.sheet, probe.range, {
+							rowLimit: probe.rowLimit,
+							includeRefs: false,
+						}),
+					),
+				{
+					beforeGc: () => {
+						wb = undefined
+					},
+				},
+			)
+			if (!result) throw new Error('Compact read-window benchmark failed to load target range')
+			return {
+				timing,
+				assertions: {
+					sheet: probe.sheet,
+					range: probe.range,
+					returnedCells: result.cells.length,
+					hasMore: result.hasMore,
+				},
+			}
+		}
 		case 'workflow-inspect-read': {
 			let wb: AscendWorkbook | undefined = await AscendWorkbook.open(target, { mode: 'values' })
 			const probe = pickReadProbe(wb)
@@ -344,22 +399,53 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 				},
 			}
 		}
-		case 'workflow-session-verify': {
+		case 'workflow-session-warm-read': {
+			WorkbookSession.clearCache()
+			let session: WorkbookSession | undefined = await WorkbookSession.open(target, {
+				mode: 'values',
+			})
+			const probe = pickReadProbe(session)
+			const { result, timing } = await time(
+				'workflow-session-warm-read',
+				async () => {
+					let totalCells = 0
+					for (let i = 0; i < 3; i++) {
+						const window = session?.readWindowCompact(probe.sheet, probe.range, {
+							rowLimit: probe.rowLimit,
+							includeRefs: false,
+						})
+						totalCells += window?.cells.length ?? 0
+					}
+					return { totalCells }
+				},
+				{
+					beforeGc: () => {
+						session = undefined
+						WorkbookSession.clearCache()
+					},
+				},
+			)
+			return {
+				timing,
+				assertions: {
+					sheet: probe.sheet,
+					range: probe.range,
+					totalCells: result.totalCells,
+				},
+			}
+		}
+		case 'workflow-session-trace': {
 			WorkbookSession.clearCache()
 			let session: WorkbookSession | undefined = await WorkbookSession.open(target, {
 				mode: 'formula',
 			})
 			const probe = pickFormulaProbe(session)
 			const { result, timing } = await time(
-				'workflow-session-verify',
+				'workflow-session-trace',
 				async () => {
 					const trace = session?.trace(`${probe.sheet}!${probe.ref}`)
-					const check = session?.check()
-					const lint = session?.lint()
 					return {
 						tracePrecedents: trace?.dependsOn.length ?? 0,
-						checkIssues: check?.issues.length ?? 0,
-						lintWarnings: lint?.warnings.length ?? 0,
 					}
 				},
 				{
@@ -374,8 +460,64 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 				assertions: {
 					traceRef: `${probe.sheet}!${probe.ref}`,
 					tracePrecedents: result.tracePrecedents,
+				},
+			}
+		}
+		case 'workflow-session-check': {
+			WorkbookSession.clearCache()
+			let session: WorkbookSession | undefined = await WorkbookSession.open(target, {
+				mode: 'formula',
+			})
+			const { result, timing } = await time(
+				'workflow-session-check',
+				async () => {
+					const check = session?.check()
+					return {
+						checkIssues: check?.issues.length ?? 0,
+						valid: check?.valid ?? false,
+					}
+				},
+				{
+					beforeGc: () => {
+						session = undefined
+						WorkbookSession.clearCache()
+					},
+				},
+			)
+			return {
+				timing,
+				assertions: {
 					checkIssues: result.checkIssues,
+					valid: result.valid,
+				},
+			}
+		}
+		case 'workflow-session-lint': {
+			WorkbookSession.clearCache()
+			let session: WorkbookSession | undefined = await WorkbookSession.open(target, {
+				mode: 'formula',
+			})
+			const { result, timing } = await time(
+				'workflow-session-lint',
+				async () => {
+					const lint = session?.lint()
+					return {
+						lintWarnings: lint?.warnings.length ?? 0,
+						clean: lint?.clean ?? false,
+					}
+				},
+				{
+					beforeGc: () => {
+						session = undefined
+						WorkbookSession.clearCache()
+					},
+				},
+			)
+			return {
+				timing,
+				assertions: {
 					lintWarnings: result.lintWarnings,
+					clean: result.clean,
 				},
 			}
 		}
@@ -480,6 +622,9 @@ async function runRepeatedStep(
 		rssAfterBytes: medianDefined(timings.map((timing) => timing.rssAfterBytes)),
 		retainedRssDeltaBytes: medianDefined(timings.map((timing) => timing.retainedRssDeltaBytes)),
 		rssAfterGcBytes: medianDefined(timings.map((timing) => timing.rssAfterGcBytes)),
+		heapUsedBytes: medianDefined(timings.map((timing) => timing.heapUsedBytes)),
+		heapTotalBytes: medianDefined(timings.map((timing) => timing.heapTotalBytes)),
+		heapAfterGcBytes: medianDefined(timings.map((timing) => timing.heapAfterGcBytes)),
 		samples: timings.map((timing) => ({
 			durationMs: timing.durationMs,
 			...(timing.rssDeltaBytes !== undefined ? { rssDeltaBytes: timing.rssDeltaBytes } : {}),
@@ -488,6 +633,11 @@ async function runRepeatedStep(
 				: {}),
 			...(timing.rssAfterBytes !== undefined ? { rssAfterBytes: timing.rssAfterBytes } : {}),
 			...(timing.rssAfterGcBytes !== undefined ? { rssAfterGcBytes: timing.rssAfterGcBytes } : {}),
+			...(timing.heapUsedBytes !== undefined ? { heapUsedBytes: timing.heapUsedBytes } : {}),
+			...(timing.heapTotalBytes !== undefined ? { heapTotalBytes: timing.heapTotalBytes } : {}),
+			...(timing.heapAfterGcBytes !== undefined
+				? { heapAfterGcBytes: timing.heapAfterGcBytes }
+				: {}),
 		})),
 	}
 
@@ -508,6 +658,9 @@ function toBenchmarkCase(result: StepResult): BenchmarkCaseResult {
 			: {}),
 		...(sample.rssAfterBytes !== undefined ? { rssAfterBytes: sample.rssAfterBytes } : {}),
 		...(sample.rssAfterGcBytes !== undefined ? { rssAfterGcBytes: sample.rssAfterGcBytes } : {}),
+		...(sample.heapUsedBytes !== undefined ? { heapUsedBytes: sample.heapUsedBytes } : {}),
+		...(sample.heapTotalBytes !== undefined ? { heapTotalBytes: sample.heapTotalBytes } : {}),
+		...(sample.heapAfterGcBytes !== undefined ? { heapAfterGcBytes: sample.heapAfterGcBytes } : {}),
 	})) ?? [
 		{
 			durationMs: result.timing.durationMs,
@@ -522,6 +675,15 @@ function toBenchmarkCase(result: StepResult): BenchmarkCaseResult {
 				: {}),
 			...(result.timing.rssAfterGcBytes !== undefined
 				? { rssAfterGcBytes: result.timing.rssAfterGcBytes }
+				: {}),
+			...(result.timing.heapUsedBytes !== undefined
+				? { heapUsedBytes: result.timing.heapUsedBytes }
+				: {}),
+			...(result.timing.heapTotalBytes !== undefined
+				? { heapTotalBytes: result.timing.heapTotalBytes }
+				: {}),
+			...(result.timing.heapAfterGcBytes !== undefined
+				? { heapAfterGcBytes: result.timing.heapAfterGcBytes }
 				: {}),
 		},
 	]
@@ -584,7 +746,9 @@ function pickNumericProbe(wb: AscendWorkbook): { sheet: string; ref: string; val
 	return { sheet: wb.sheets[0] ?? 'Sheet1', ref: 'A1', value: 1 }
 }
 
-function pickReadProbe(wb: AscendWorkbook): { sheet: string; range: string; rowLimit: number } {
+function pickReadProbe(
+	wb: Pick<AscendWorkbook, 'sheets' | 'sheet'> | Pick<WorkbookSession, 'sheets' | 'sheet'>,
+): { sheet: string; range: string; rowLimit: number } {
 	for (const sheetName of wb.sheets) {
 		const sheet = wb.sheet(sheetName)
 		if (!sheet) continue
@@ -644,11 +808,21 @@ function columnLabel(col: number): string {
 	return label
 }
 
-function getRssBytes(): number | undefined {
+function getMemorySnapshot(): MemorySnapshot {
 	try {
-		return process.memoryUsage.rss()
+		const usage = process.memoryUsage()
+		return {
+			rssBytes:
+				typeof process.memoryUsage.rss === 'function'
+					? process.memoryUsage.rss()
+					: 'rss' in usage
+						? (usage.rss as number)
+						: undefined,
+			heapUsedBytes: usage.heapUsed,
+			heapTotalBytes: usage.heapTotal,
+		}
 	} catch {
-		return undefined
+		return {}
 	}
 }
 

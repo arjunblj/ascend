@@ -801,6 +801,38 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(1, 3)?.value).toEqual(stringValue('Three'))
 	})
 
+	test('TEXTBEFORE and TEXTAFTER support modern text slicing formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, {
+			value: EMPTY,
+			formula: 'TEXTBEFORE("alpha-beta-gamma","-",2)',
+			styleId: sid,
+		})
+		sheet.cells.set(1, 0, {
+			value: EMPTY,
+			formula: 'TEXTAFTER("alpha-beta-gamma","-",2)',
+			styleId: sid,
+		})
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 0)?.value).toEqual(stringValue('alpha-beta'))
+		expect(sheet.cells.get(1, 0)?.value).toEqual(stringValue('gamma'))
+	})
+
+	test('TEXTBEFORE and TEXTAFTER support case-insensitive matching and if_not_found', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, {
+			value: EMPTY,
+			formula: 'TEXTBEFORE("Alpha-beta","BETA",1,1,0,"missing")',
+			styleId: sid,
+		})
+		sheet.cells.set(1, 0, { value: EMPTY, formula: 'TEXTAFTER("Alpha","-")', styleId: sid })
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 0)?.value).toEqual(stringValue('Alpha-'))
+		expect(sheet.cells.get(1, 0)?.value).toEqual(errorValue('#N/A'))
+	})
+
 	test('external workbook references currently evaluate to #REF!', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

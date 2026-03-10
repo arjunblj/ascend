@@ -26,7 +26,7 @@ export async function openWorkbookSource(
 		ext = pathOrBytes.split('.').pop()?.toLowerCase() ?? ''
 		bytes =
 			typeof Bun !== 'undefined'
-				? new Uint8Array(await Bun.file(pathOrBytes).bytes())
+				? await Bun.file(pathOrBytes).bytes()
 				: new Uint8Array(await readFile(pathOrBytes))
 	} else {
 		bytes = pathOrBytes

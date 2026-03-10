@@ -1,22 +1,23 @@
 import { createHash } from 'node:crypto'
 import { stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { parseA1 } from '@ascend/core'
-import { printFormula } from '@ascend/formulas'
 import { check as verifyCheck, lint as verifyLint, trace as verifyTrace } from '@ascend/verify'
-import { buildFormulaInfo, collectFunctionNames, tokenizeFormulaInput } from './formula-info.ts'
 import { openWorkbookSource } from './load.ts'
 import { WorkbookReadView } from './read-view.ts'
 import type { SheetHandle } from './sheet-handle.ts'
 import type { TableHandle } from './table-handle.ts'
 import type {
 	CheckResult,
+	CompactRangeInfo,
+	CompactRangeWindowInfo,
 	DefinedNameInfo,
 	FormulaInfo,
 	LintResult,
 	PivotCacheInfo,
 	PivotTableInfo,
 	RangeInfo,
+	RangeObjectsInfo,
+	RangeRowsInfo,
 	RangeWindowInfo,
 	SheetInspectInfo,
 	SlicerCacheInfo,
@@ -56,14 +57,17 @@ const sessionCache = new Map<string, SessionCacheEntry>()
 
 export class WorkbookSession {
 	private readonly identity: SessionIdentity
-	private readonly options: WorkbookSessionOpenOptions
-	private readonly view: WorkbookReadView
+	private readonly source: string | Uint8Array
+	private options: WorkbookSessionOpenOptions
+	private view: WorkbookReadView
 
 	private constructor(
+		source: string | Uint8Array,
 		identity: SessionIdentity,
 		options: WorkbookSessionOpenOptions,
 		view: WorkbookReadView,
 	) {
+		this.source = source
 		this.identity = identity
 		this.options = options
 		this.view = view
@@ -84,6 +88,7 @@ export class WorkbookSession {
 
 		const loaded = await openWorkbookSource(source, options)
 		const session = new WorkbookSession(
+			source,
 			identity,
 			normalizeOptions(options),
 			new WorkbookReadView(loaded.workbook, loaded.report, loaded.loadInfo),
@@ -117,6 +122,35 @@ export class WorkbookSession {
 		return this.options
 	}
 
+	async upgrade(options: WorkbookSessionOpenOptions): Promise<WorkbookSession> {
+		const nextOptions = mergeOpenOptions(this.options, options)
+		if (sameOpenOptions(this.options, nextOptions)) return this
+		const loaded = await openWorkbookSource(this.source, nextOptions)
+		this.options = nextOptions
+		this.view.replaceWorkbook(loaded.workbook, loaded.report, loaded.loadInfo)
+		return this
+	}
+
+	async hydrateSheet(
+		sheetName: string,
+		options?: { mode?: 'values' | 'formula' | 'full' },
+	): Promise<WorkbookSession> {
+		return this.upgrade({
+			...(options?.mode ? { mode: options.mode } : {}),
+			sheets: [sheetName],
+		})
+	}
+
+	async hydrateSheets(
+		sheetNames: readonly string[],
+		options?: { mode?: 'values' | 'formula' | 'full' },
+	): Promise<WorkbookSession> {
+		return this.upgrade({
+			...(options?.mode ? { mode: options.mode } : {}),
+			sheets: sheetNames,
+		})
+	}
+
 	inspect(): WorkbookInfo {
 		return this.view.inspect()
 	}
@@ -133,12 +167,44 @@ export class WorkbookSession {
 		return this.view.readRange(sheetName, range)
 	}
 
+	readRangeCompact(
+		sheetName: string,
+		range: string,
+		opts?: { includeRefs?: boolean },
+	): CompactRangeInfo | undefined {
+		return this.view.readRangeCompact(sheetName, range, opts)
+	}
+
 	readWindow(
 		sheetName: string,
 		range: string,
 		opts?: { rowOffset?: number; rowLimit?: number },
 	): RangeWindowInfo | undefined {
 		return this.view.readWindow(sheetName, range, opts)
+	}
+
+	readWindowCompact(
+		sheetName: string,
+		range: string,
+		opts?: { rowOffset?: number; rowLimit?: number; includeRefs?: boolean },
+	): CompactRangeWindowInfo | undefined {
+		return this.view.readWindowCompact(sheetName, range, opts)
+	}
+
+	readRows(
+		sheetName: string,
+		range: string,
+		opts?: { rowOffset?: number; rowLimit?: number },
+	): RangeRowsInfo | undefined {
+		return this.view.readRows(sheetName, range, opts)
+	}
+
+	readObjects(
+		sheetName: string,
+		range: string,
+		opts?: { rowOffset?: number; rowLimit?: number; headers?: readonly string[] | 'first-row' },
+	): RangeObjectsInfo | undefined {
+		return this.view.readObjects(sheetName, range, opts)
 	}
 
 	*streamRange(
@@ -148,12 +214,28 @@ export class WorkbookSession {
 		yield* this.view.streamRange(sheetName, range)
 	}
 
+	*streamRangeCompact(
+		sheetName: string,
+		range: string,
+		opts?: { includeRefs?: boolean },
+	): Generator<readonly import('./types.ts').CompactCellInfo[]> {
+		yield* this.view.streamRangeCompact(sheetName, range, opts)
+	}
+
 	*streamWindows(
 		sheetName: string,
 		range: string,
 		opts?: { rowLimit?: number },
 	): Generator<RangeWindowInfo> {
 		yield* this.view.streamWindows(sheetName, range, opts)
+	}
+
+	*streamWindowsCompact(
+		sheetName: string,
+		range: string,
+		opts?: { rowLimit?: number; includeRefs?: boolean },
+	): Generator<CompactRangeWindowInfo> {
+		yield* this.view.streamWindowsCompact(sheetName, range, opts)
 	}
 
 	trace(cellRef: string, opts?: { maxDepth?: number }): TraceResult | undefined {
@@ -192,38 +274,7 @@ export class WorkbookSession {
 	}
 
 	formula(cellRef: string): FormulaInfo | undefined {
-		const { sheetName, ref } = parseFullRef(cellRef, this.view.getWorkbookModel())
-		const cell = this.view.sheet(sheetName)?.cell(ref)
-		if (!cell?.formula) return undefined
-		const formula = normalizeFormulaInput(cell.formula)
-		const formulaKey = makeFormulaKey(this.view.getWorkbookModel(), sheetName, ref)
-		const analyzed = formulaKey ? this.view.analysis().formulas.get(formulaKey) : undefined
-		if (!analyzed) return this.view.formula(cellRef)
-		const tokens = tokenizeFormulaInput(formula)
-		if (!analyzed.ast) {
-			return buildFormulaInfo({
-				ref: `${sheetName}!${ref}`,
-				formula,
-				value: cell.value,
-				...(cell.formulaBinding ? { binding: cell.formulaBinding } : {}),
-				tokens,
-				normalizedFormula: formula,
-				functions: [],
-				volatile: analyzed.volatile,
-				...(analyzed.parseError ? { parseError: analyzed.parseError } : {}),
-			})
-		}
-		return buildFormulaInfo({
-			ref: `${sheetName}!${ref}`,
-			formula,
-			value: cell.value,
-			...(cell.formulaBinding ? { binding: cell.formulaBinding } : {}),
-			tokens,
-			ast: analyzed.ast,
-			normalizedFormula: printFormula(analyzed.ast),
-			functions: [...collectFunctionNames(analyzed.ast)],
-			volatile: analyzed.volatile,
-		})
+		return this.view.formula(cellRef)
 	}
 
 	check(): CheckResult {
@@ -292,6 +343,51 @@ function normalizeOptions(options: WorkbookSessionOpenOptions): WorkbookSessionO
 	}
 }
 
+function mergeOpenOptions(
+	current: WorkbookSessionOpenOptions,
+	next: WorkbookSessionOpenOptions,
+): WorkbookSessionOpenOptions {
+	const mode = strongerMode(current.mode, next.mode)
+	const currentSheets = current.sheets ?? []
+	const nextSheets = next.sheets ?? []
+	const mergedSheets =
+		currentSheets.length === 0 && nextSheets.length === 0
+			? undefined
+			: [...new Set([...currentSheets, ...nextSheets])].sort((a, b) => a.localeCompare(b))
+	return normalizeOptions({
+		...(mode ? { mode } : {}),
+		...(mergedSheets ? { sheets: mergedSheets } : {}),
+	})
+}
+
+function sameOpenOptions(
+	left: WorkbookSessionOpenOptions,
+	right: WorkbookSessionOpenOptions,
+): boolean {
+	const normalizedLeft = normalizeOptions(left)
+	const normalizedRight = normalizeOptions(right)
+	if ((normalizedLeft.mode ?? 'full') !== (normalizedRight.mode ?? 'full')) return false
+	const leftSheets = normalizedLeft.sheets ?? []
+	const rightSheets = normalizedRight.sheets ?? []
+	if (leftSheets.length !== rightSheets.length) return false
+	return leftSheets.every((sheet, index) => sheet === rightSheets[index])
+}
+
+function strongerMode(
+	current: WorkbookSessionOpenOptions['mode'],
+	next: WorkbookSessionOpenOptions['mode'],
+): WorkbookSessionOpenOptions['mode'] {
+	const rank: Record<NonNullable<WorkbookSessionOpenOptions['mode']>, number> = {
+		'metadata-only': 0,
+		values: 1,
+		formula: 2,
+		full: 3,
+	}
+	if (!current) return next
+	if (!next) return current
+	return (rank[next] ?? 0) > (rank[current] ?? 0) ? next : current
+}
+
 async function readIdentity(file: string): Promise<SessionFileIdentity> {
 	const path = resolve(file)
 	const info = await stat(path)
@@ -354,35 +450,4 @@ function totalCachedSessionBytes(): number {
 
 function sessionSizeBytes(identity: SessionIdentity): number {
 	return identity.size
-}
-
-function normalizeFormulaInput(formula: string): string {
-	return formula.startsWith('=') ? formula.slice(1) : formula
-}
-
-function parseFullRef(
-	cellRef: string,
-	workbook: import('@ascend/core').Workbook,
-): {
-	sheetName: string
-	ref: string
-} {
-	const bang = cellRef.indexOf('!')
-	if (bang !== -1) {
-		const sheetName = cellRef.substring(0, bang).replace(/^'|'$/g, '')
-		return { sheetName, ref: cellRef.substring(bang + 1) }
-	}
-	const firstSheet = workbook.sheets[0]
-	return { sheetName: firstSheet ? firstSheet.name : 'Sheet1', ref: cellRef }
-}
-
-function makeFormulaKey(
-	workbook: import('@ascend/core').Workbook,
-	sheetName: string,
-	ref: string,
-): string | undefined {
-	const sheetIndex = workbook.sheets.findIndex((sheet) => sheet.name === sheetName)
-	if (sheetIndex === -1) return undefined
-	const cellRef = parseA1(ref)
-	return `${sheetIndex}:${cellRef.row}:${cellRef.col}`
 }

@@ -288,6 +288,26 @@ describe('AscendWorkbook', () => {
 		expect(window?.nextRowOffset).toBe(2)
 	})
 
+	test('sheet handle compact window omits refs when requested', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'A2', value: 2 },
+				],
+			},
+		])
+		const window = wb.sheet('Sheet1')?.readWindowCompact('A1:A2', {
+			rowLimit: 2,
+			includeRefs: false,
+		})
+		expect(window?.cells.map((cell) => cell.ref)).toEqual([undefined, undefined])
+		expect(window?.cells.map((cell) => cell.formulaBinding)).toEqual([null, null])
+	})
+
 	test('sheet handle usedRange', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -357,6 +377,71 @@ describe('AscendWorkbook', () => {
 		expect(windows).toHaveLength(2)
 		expect(windows[0]?.cells.map((cell) => cell.ref)).toEqual(['A1', 'A2'])
 		expect(windows[1]?.cells.map((cell) => cell.ref)).toEqual(['A3'])
+	})
+
+	test('workbook compact window helpers preserve row and column coordinates', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'B2', value: 'x' },
+					{ ref: 'B3', value: 'y' },
+				],
+			},
+		])
+		const window = wb.readWindowCompact('Sheet1', 'B2:B3', { includeRefs: false })
+		expect(window?.cells).toEqual([
+			{
+				row: 1,
+				col: 1,
+				ref: undefined,
+				value: { kind: 'string', value: 'x' },
+				formula: null,
+				formulaBinding: null,
+			},
+			{
+				row: 2,
+				col: 1,
+				ref: undefined,
+				value: { kind: 'string', value: 'y' },
+				formula: null,
+				formulaBinding: null,
+			},
+		])
+	})
+
+	test('sheet handle can expose range rows and object rows for extraction workflows', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'name' },
+					{ ref: 'B1', value: 'score' },
+					{ ref: 'A2', value: 'Ada' },
+					{ ref: 'B2', value: 42 },
+				],
+			},
+		])
+		const rows = wb.sheet('Sheet1')?.readRows('A1:B2')
+		expect(rows?.rows).toEqual([
+			[
+				{ kind: 'string', value: 'name' },
+				{ kind: 'string', value: 'score' },
+			],
+			[
+				{ kind: 'string', value: 'Ada' },
+				{ kind: 'number', value: 42 },
+			],
+		])
+		const objects = wb.sheet('Sheet1')?.readObjects('A1:B2')
+		expect(objects?.headers).toEqual(['name', 'score'])
+		expect(objects?.rows).toEqual([
+			{ name: { kind: 'string', value: 'Ada' }, score: { kind: 'number', value: 42 } },
+		])
 	})
 
 	test('apply operations modifies workbook', () => {
@@ -1385,6 +1470,36 @@ describe('AscendWorkbook', () => {
 		const second = await WorkbookSession.open(bytes, { mode: 'values' })
 		expect(first).toBe(second)
 		expect(first.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'bytes' })
+		WorkbookSession.clearCache()
+	})
+
+	test('WorkbookSession can upgrade load options in place', async () => {
+		WorkbookSession.clearCache()
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A2', formula: '=A1*3' },
+		])
+		const bytes = wb.toBytes()
+		const session = await WorkbookSession.open(bytes, { mode: 'values' })
+		expect(session.openOptions.mode).toBe('values')
+		await session.upgrade({ mode: 'formula' })
+		expect(session.openOptions.mode).toBe('formula')
+		expect(session.formula('Sheet1!A2')?.normalizedFormula).toBe('A1*3')
+		WorkbookSession.clearCache()
+	})
+
+	test('WorkbookSession can hydrate additional sheets on demand', async () => {
+		WorkbookSession.clearCache()
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'addSheet', name: 'Data' }])
+		wb.apply([{ op: 'setCells', sheet: 'Data', updates: [{ ref: 'A1', value: 'loaded' }] }])
+		const bytes = wb.toBytes()
+		const session = await WorkbookSession.open(bytes, { mode: 'values', sheets: ['Sheet1'] })
+		expect(session.sheets).toEqual(['Sheet1'])
+		await session.hydrateSheet('Data', { mode: 'values' })
+		expect(session.sheets).toEqual(['Sheet1', 'Data'])
+		expect(session.sheet('Data')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'loaded' })
 		WorkbookSession.clearCache()
 	})
 })

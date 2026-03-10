@@ -230,9 +230,25 @@ export interface CellInfo {
 	readonly col: number
 }
 
+export interface CompactCellInfo {
+	readonly ref?: string
+	readonly value: CellValue
+	readonly formula: string | null
+	readonly formulaBinding: CellFormulaBinding | null
+	readonly row: number
+	readonly col: number
+}
+
 export interface RangeInfo {
 	readonly ref: RangeRef
 	readonly cells: readonly CellInfo[]
+	readonly rowCount: number
+	readonly colCount: number
+}
+
+export interface CompactRangeInfo {
+	readonly ref: RangeRef
+	readonly cells: readonly CompactCellInfo[]
 	readonly rowCount: number
 	readonly colCount: number
 }
@@ -243,6 +259,39 @@ export interface RangeWindowInfo extends RangeInfo {
 	readonly rowLimit: number
 	readonly hasMore: boolean
 	readonly nextRowOffset?: number
+}
+
+export interface CompactRangeWindowInfo extends CompactRangeInfo {
+	readonly requestedRef: RangeRef
+	readonly rowOffset: number
+	readonly rowLimit: number
+	readonly hasMore: boolean
+	readonly nextRowOffset?: number
+}
+
+export interface RangeRowsInfo {
+	readonly requestedRef: RangeRef
+	readonly ref: RangeRef
+	readonly rowCount: number
+	readonly colCount: number
+	readonly rowOffset: number
+	readonly rowLimit: number
+	readonly hasMore: boolean
+	readonly nextRowOffset?: number
+	readonly rows: readonly (readonly CellValue[])[]
+}
+
+export interface RangeObjectsInfo {
+	readonly requestedRef: RangeRef
+	readonly ref: RangeRef
+	readonly rowCount: number
+	readonly colCount: number
+	readonly rowOffset: number
+	readonly rowLimit: number
+	readonly hasMore: boolean
+	readonly nextRowOffset?: number
+	readonly headers: readonly string[]
+	readonly rows: readonly Readonly<Record<string, CellValue>>[]
 }
 
 export interface TableRowInfo {

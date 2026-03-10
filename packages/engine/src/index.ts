@@ -2,10 +2,13 @@ export {
 	type AnalyzedFormula,
 	type AnalyzeWorkbookOptions,
 	analyzeWorkbook,
+	analyzeWorkbookFormulas,
 	createSheetNameIndex,
+	type IndexedFormula,
 	invalidateWorkbookAnalysis,
 	resolveSheetIndex,
 	type WorkbookAnalysis,
+	type WorkbookFormulaAnalysis,
 } from './analysis.ts'
 export { type RecalcResult, recalculate } from './calc.ts'
 export { type CalcContext, defaultCalcContext } from './calc-context.ts'

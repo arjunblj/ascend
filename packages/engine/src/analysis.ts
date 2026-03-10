@@ -19,6 +19,24 @@ export interface AnalyzedFormula {
 	readonly parseError?: string
 }
 
+export interface IndexedFormula {
+	readonly key: CellKey
+	readonly sheetIndex: number
+	readonly sheetName: string
+	readonly row: number
+	readonly col: number
+	readonly formula: string
+	readonly ast?: FormulaNode
+	readonly refs: readonly FormulaRef[]
+	readonly volatile: boolean
+	readonly parseError?: string
+}
+
+export interface WorkbookFormulaAnalysis {
+	readonly formulas: ReadonlyMap<CellKey, IndexedFormula>
+	readonly sheetNameIndex: ReadonlyMap<string, number>
+}
+
 export interface WorkbookAnalysis {
 	readonly formulas: ReadonlyMap<CellKey, AnalyzedFormula>
 	readonly dependencyGraph: DependencyGraph
@@ -29,6 +47,7 @@ export interface AnalyzeWorkbookOptions {
 	readonly range?: RangeRef
 }
 
+const workbookFormulaAnalysisCache = new WeakMap<Workbook, WorkbookFormulaAnalysis>()
 const workbookAnalysisCache = new WeakMap<Workbook, WorkbookAnalysis>()
 
 export function createSheetNameIndex(workbook: Workbook): Map<string, number> {
@@ -50,17 +69,16 @@ export function resolveSheetIndex(
 	return sheetNameIndex.get(sheetName.toLowerCase()) ?? -1
 }
 
-export function analyzeWorkbook(
+export function analyzeWorkbookFormulas(
 	workbook: Workbook,
 	options: AnalyzeWorkbookOptions = {},
-): WorkbookAnalysis {
+): WorkbookFormulaAnalysis {
 	if (!options.range) {
-		const cached = workbookAnalysisCache.get(workbook)
+		const cached = workbookFormulaAnalysisCache.get(workbook)
 		if (cached) return cached
 	}
 	const sheetNameIndex = createSheetNameIndex(workbook)
-	const formulas = new Map<CellKey, AnalyzedFormula>()
-	const dependencyGraph = new DependencyGraph()
+	const formulas = new Map<CellKey, IndexedFormula>()
 
 	for (let sheetIndex = 0; sheetIndex < workbook.sheets.length; sheetIndex++) {
 		const sheet = workbook.sheets[sheetIndex]
@@ -80,8 +98,6 @@ export function analyzeWorkbook(
 					col,
 					formula: cell.formula,
 					refs: [],
-					deps: [],
-					rangeDeps: [],
 					volatile: false,
 					parseError: parsed.error.message,
 				})
@@ -90,46 +106,7 @@ export function analyzeWorkbook(
 
 			const ast = parsed.value
 			const refs = extractRefsWithNames(ast, workbook, sheetNameIndex, sheetIndex, [])
-			const deps: CellKey[] = []
-			const rangeDeps: RangeDependency[] = []
-			for (const ref of refs) {
-				if (ref.kind === 'sheetSpan') {
-					const span = resolveSheetSpan(sheetNameIndex, ref.startSheet, ref.endSheet)
-					if (!span) continue
-					for (const refSheetIndex of span) {
-						const target = ref.target
-						if (target.kind === 'sheetSpan') continue
-						if (target.kind === 'cell') {
-							deps.push(cellKey(refSheetIndex, target.ref.row, target.ref.col))
-						} else {
-							const rangeDep = formulaRefToRangeDependency(workbook, refSheetIndex, target)
-							if (rangeDep) rangeDeps.push(rangeDep)
-						}
-					}
-					continue
-				}
-				const refSheetIndex = resolveSheetIndex(sheetNameIndex, ref.sheet, sheetIndex)
-				if (refSheetIndex < 0) continue
-				if (ref.kind === 'cell') {
-					deps.push(cellKey(refSheetIndex, ref.ref.row, ref.ref.col))
-				} else {
-					const rangeDep = formulaRefToRangeDependency(workbook, refSheetIndex, ref)
-					if (rangeDep) rangeDeps.push(rangeDep)
-				}
-			}
-			for (const structuredRef of collectStructuredRefs(ast)) {
-				const resolved = resolveStructuredRefRange(workbook, structuredRef, sheetIndex, row, col)
-				if (!resolved) continue
-				rangeDeps.push({
-					sheetIndex: resolved.sheetIndex,
-					startRow: resolved.startRow,
-					startCol: resolved.startCol,
-					endRow: resolved.endRow,
-					endCol: resolved.endCol,
-				})
-			}
 			const volatile = hasVolatileFunction(ast)
-			dependencyGraph.addFormula(key, deps, volatile, rangeDeps)
 			formulas.set(key, {
 				key,
 				sheetIndex,
@@ -139,20 +116,110 @@ export function analyzeWorkbook(
 				formula: cell.formula,
 				ast,
 				refs,
-				deps,
-				rangeDeps,
 				volatile,
 			})
 		}
 	}
 
-	const analysis = { formulas, dependencyGraph, sheetNameIndex }
+	const analysis = { formulas, sheetNameIndex }
+	if (!options.range) workbookFormulaAnalysisCache.set(workbook, analysis)
+	return analysis
+}
+
+export function analyzeWorkbook(
+	workbook: Workbook,
+	options: AnalyzeWorkbookOptions = {},
+): WorkbookAnalysis {
+	if (!options.range) {
+		const cached = workbookAnalysisCache.get(workbook)
+		if (cached) return cached
+	}
+	const indexed = analyzeWorkbookFormulas(workbook, options)
+	const formulas = new Map<CellKey, AnalyzedFormula>()
+	const dependencyGraph = new DependencyGraph()
+	for (const formula of indexed.formulas.values()) {
+		const analyzed = enrichFormula(workbook, indexed.sheetNameIndex, formula)
+		if (!analyzed.parseError) {
+			dependencyGraph.addFormula(
+				analyzed.key,
+				[...analyzed.deps],
+				analyzed.volatile,
+				analyzed.rangeDeps,
+			)
+		}
+		formulas.set(analyzed.key, analyzed)
+	}
+	const analysis = { formulas, dependencyGraph, sheetNameIndex: indexed.sheetNameIndex }
 	if (!options.range) workbookAnalysisCache.set(workbook, analysis)
 	return analysis
 }
 
 export function invalidateWorkbookAnalysis(workbook: Workbook): void {
+	workbookFormulaAnalysisCache.delete(workbook)
 	workbookAnalysisCache.delete(workbook)
+}
+
+function enrichFormula(
+	workbook: Workbook,
+	sheetNameIndex: ReadonlyMap<string, number>,
+	formula: IndexedFormula,
+): AnalyzedFormula {
+	if (!formula.ast) {
+		return {
+			...formula,
+			deps: [],
+			rangeDeps: [],
+		}
+	}
+	const deps: CellKey[] = []
+	const rangeDeps: RangeDependency[] = []
+	for (const ref of formula.refs) {
+		if (ref.kind === 'sheetSpan') {
+			const span = resolveSheetSpan(sheetNameIndex, ref.startSheet, ref.endSheet)
+			if (!span) continue
+			for (const refSheetIndex of span) {
+				const target = ref.target
+				if (target.kind === 'sheetSpan') continue
+				if (target.kind === 'cell') {
+					deps.push(cellKey(refSheetIndex, target.ref.row, target.ref.col))
+				} else {
+					const rangeDep = formulaRefToRangeDependency(workbook, refSheetIndex, target)
+					if (rangeDep) rangeDeps.push(rangeDep)
+				}
+			}
+			continue
+		}
+		const refSheetIndex = resolveSheetIndex(sheetNameIndex, ref.sheet, formula.sheetIndex)
+		if (refSheetIndex < 0) continue
+		if (ref.kind === 'cell') {
+			deps.push(cellKey(refSheetIndex, ref.ref.row, ref.ref.col))
+		} else {
+			const rangeDep = formulaRefToRangeDependency(workbook, refSheetIndex, ref)
+			if (rangeDep) rangeDeps.push(rangeDep)
+		}
+	}
+	for (const structuredRef of collectStructuredRefs(formula.ast)) {
+		const resolved = resolveStructuredRefRange(
+			workbook,
+			structuredRef,
+			formula.sheetIndex,
+			formula.row,
+			formula.col,
+		)
+		if (!resolved) continue
+		rangeDeps.push({
+			sheetIndex: resolved.sheetIndex,
+			startRow: resolved.startRow,
+			startCol: resolved.startCol,
+			endRow: resolved.endRow,
+			endCol: resolved.endCol,
+		})
+	}
+	return {
+		...formula,
+		deps,
+		rangeDeps,
+	}
 }
 
 function resolveSheetSpan(

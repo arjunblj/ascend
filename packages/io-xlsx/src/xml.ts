@@ -2,6 +2,10 @@ import { XMLParser } from 'fast-xml-parser'
 
 export type XmlNode = Record<string, unknown>
 
+const ALTERNATE_CONTENT_RE = /<mc:AlternateContent\b[\s\S]*?>([\s\S]*?)<\/mc:AlternateContent>/g
+const FALLBACK_RE = /<mc:Fallback\b[^>]*>([\s\S]*?)<\/mc:Fallback>/
+const CHOICE_RE = /<mc:Choice\b[^>]*>([\s\S]*?)<\/mc:Choice>/
+
 const parser = new XMLParser({
 	attributeNamePrefix: '@_',
 	ignoreAttributes: false,
@@ -11,7 +15,7 @@ const parser = new XMLParser({
 })
 
 export function parseXml(content: string): XmlNode {
-	return parser.parse(content) as XmlNode
+	return parser.parse(normalizeMarkupCompatibility(content)) as XmlNode
 }
 
 export function asArray<T>(val: T | T[] | undefined | null): T[] {
@@ -58,4 +62,12 @@ function needsEscape(s: string): boolean {
 		if (ch === 38 || ch === 60 || ch === 62 || ch === 34) return true
 	}
 	return false
+}
+
+function normalizeMarkupCompatibility(content: string): string {
+	return content.replace(ALTERNATE_CONTENT_RE, (_full, inner: string) => {
+		const fallback = inner.match(FALLBACK_RE)?.[1]
+		if (fallback !== undefined) return fallback
+		return inner.match(CHOICE_RE)?.[1] ?? ''
+	})
 }

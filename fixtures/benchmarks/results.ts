@@ -5,6 +5,9 @@ interface MetricSample {
 	readonly retainedRssDeltaBytes?: number
 	readonly rssAfterBytes?: number
 	readonly rssAfterGcBytes?: number
+	readonly heapUsedBytes?: number
+	readonly heapTotalBytes?: number
+	readonly heapAfterGcBytes?: number
 }
 
 export interface BenchmarkMetricSummary {
@@ -19,6 +22,9 @@ export interface BenchmarkMetricSummary {
 	readonly retainedRssDeltaBytes?: number
 	readonly rssAfterBytes?: number
 	readonly rssAfterGcBytes?: number
+	readonly heapUsedBytes?: number
+	readonly heapTotalBytes?: number
+	readonly heapAfterGcBytes?: number
 }
 
 export interface BenchmarkCaseResult {
@@ -135,6 +141,12 @@ export function summarizeSamples(samples: readonly MetricSample[]): BenchmarkMet
 		...withDefined(
 			'rssAfterGcBytes',
 			medianDefined(samples.map((sample) => sample.rssAfterGcBytes)),
+		),
+		...withDefined('heapUsedBytes', medianDefined(samples.map((sample) => sample.heapUsedBytes))),
+		...withDefined('heapTotalBytes', medianDefined(samples.map((sample) => sample.heapTotalBytes))),
+		...withDefined(
+			'heapAfterGcBytes',
+			medianDefined(samples.map((sample) => sample.heapAfterGcBytes)),
 		),
 	}
 }
@@ -320,5 +332,5 @@ function withDefined<Key extends string, Value>(
 	key: Key,
 	value: Value | undefined,
 ): Partial<Record<Key, Value>> {
-	return value === undefined ? {} : { [key]: value }
+	return value === undefined ? {} : ({ [key]: value } as Partial<Record<Key, Value>>)
 }

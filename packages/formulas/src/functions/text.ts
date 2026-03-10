@@ -88,6 +88,47 @@ function proper(s: string): string {
 	return result
 }
 
+function findTextSlice(
+	text: string,
+	delimiter: string,
+	instanceNum: number,
+	matchMode: number,
+): { start: number; end: number } | null {
+	if (delimiter === '') return null
+	const haystack = matchMode === 1 ? text.toLowerCase() : text
+	const needle = matchMode === 1 ? delimiter.toLowerCase() : delimiter
+	const matches: Array<{ start: number; end: number }> = []
+	let searchFrom = 0
+	while (searchFrom <= haystack.length) {
+		const start = haystack.indexOf(needle, searchFrom)
+		if (start === -1) break
+		matches.push({ start, end: start + delimiter.length })
+		searchFrom = start + Math.max(1, delimiter.length)
+	}
+	if (matches.length === 0) return null
+	if (instanceNum > 0) return matches[instanceNum - 1] ?? null
+	const reverseIndex = matches.length + instanceNum
+	return reverseIndex >= 0 ? (matches[reverseIndex] ?? null) : null
+}
+
+function textSplitPoint(
+	args: EvalArg[],
+): { text: string; delimiter: string; instanceNum: number; matchMode: number } | CellValue {
+	const text = strArg(args[0])
+	if (typeof text !== 'string') return text
+	const delimiter = strArg(args[1])
+	if (typeof delimiter !== 'string') return delimiter
+	const instanceRaw = args[2] ? numArg(args[2]) : 1
+	if (typeof instanceRaw !== 'number') return instanceRaw
+	const instanceNum = Math.trunc(instanceRaw)
+	if (instanceNum === 0) return errorValue('#VALUE!')
+	const matchModeRaw = args[3] ? numArg(args[3]) : 0
+	if (typeof matchModeRaw !== 'number') return matchModeRaw
+	const matchMode = Math.trunc(matchModeRaw)
+	if (matchMode !== 0 && matchMode !== 1) return errorValue('#VALUE!')
+	return { text, delimiter, instanceNum, matchMode }
+}
+
 function formatNumber(value: number, code: string): string {
 	const fmt = code.trim()
 
@@ -265,6 +306,32 @@ export const textFunctions: FunctionDef[] = [
 		if (startNum < 1) return errorValue('#VALUE!')
 		const idx = within.toLowerCase().indexOf(findText.toLowerCase(), Math.trunc(startNum) - 1)
 		return idx === -1 ? errorValue('#VALUE!') : numberValue(idx + 1)
+	}),
+
+	fn('TEXTBEFORE', 2, 6, (args) => {
+		const parsed = textSplitPoint(args)
+		if ('kind' in parsed) return parsed
+		const match = findTextSlice(parsed.text, parsed.delimiter, parsed.instanceNum, parsed.matchMode)
+		if (!match) {
+			const matchEnd = args[4] ? numArg(args[4]) : 0
+			if (typeof matchEnd !== 'number') return matchEnd
+			if (Math.trunc(matchEnd) !== 0) return stringValue(parsed.text)
+			return (args[5]?.value ?? errorValue('#N/A')) as CellValue
+		}
+		return stringValue(parsed.text.slice(0, match.start))
+	}),
+
+	fn('TEXTAFTER', 2, 6, (args) => {
+		const parsed = textSplitPoint(args)
+		if ('kind' in parsed) return parsed
+		const match = findTextSlice(parsed.text, parsed.delimiter, parsed.instanceNum, parsed.matchMode)
+		if (!match) {
+			const matchEnd = args[4] ? numArg(args[4]) : 0
+			if (typeof matchEnd !== 'number') return matchEnd
+			if (Math.trunc(matchEnd) !== 0) return stringValue('')
+			return (args[5]?.value ?? errorValue('#N/A')) as CellValue
+		}
+		return stringValue(parsed.text.slice(match.end))
 	}),
 
 	fn('SUBSTITUTE', 3, 4, (args) => {

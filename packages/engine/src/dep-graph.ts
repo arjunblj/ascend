@@ -28,7 +28,7 @@ export class DependencyGraph {
 	private readonly dependents = new Map<CellKey, Set<CellKey>>()
 	private readonly rangeDependents = new Map<
 		number,
-		Array<{ range: RangeDependency; formulaKey: CellKey }>
+		Map<number, Array<{ range: RangeDependency; formulaKey: CellKey }>>
 	>()
 
 	addFormula(
@@ -49,9 +49,16 @@ export class DependencyGraph {
 			set.add(key)
 		}
 		for (const range of rangeDeps) {
-			const entries = this.rangeDependents.get(range.sheetIndex)
-			if (entries) entries.push({ range, formulaKey: key })
-			else this.rangeDependents.set(range.sheetIndex, [{ range, formulaKey: key }])
+			let byRow = this.rangeDependents.get(range.sheetIndex)
+			if (!byRow) {
+				byRow = new Map()
+				this.rangeDependents.set(range.sheetIndex, byRow)
+			}
+			for (let row = range.startRow; row <= range.endRow; row++) {
+				const entries = byRow.get(row)
+				if (entries) entries.push({ range, formulaKey: key })
+				else byRow.set(row, [{ range, formulaKey: key }])
+			}
 		}
 	}
 
@@ -65,10 +72,17 @@ export class DependencyGraph {
 				if (set.size === 0) this.dependents.delete(dep)
 			}
 		}
-		for (const [sheetIndex, entries] of this.rangeDependents) {
-			const filtered = entries.filter((entry) => entry.formulaKey !== key)
-			if (filtered.length === 0) this.rangeDependents.delete(sheetIndex)
-			else if (filtered.length !== entries.length) this.rangeDependents.set(sheetIndex, filtered)
+		for (const range of entry.rangeDeps) {
+			const byRow = this.rangeDependents.get(range.sheetIndex)
+			if (!byRow) continue
+			for (let row = range.startRow; row <= range.endRow; row++) {
+				const entries = byRow.get(row)
+				if (!entries) continue
+				const filtered = entries.filter((candidate) => candidate.formulaKey !== key)
+				if (filtered.length === 0) byRow.delete(row)
+				else if (filtered.length !== entries.length) byRow.set(row, filtered)
+			}
+			if (byRow.size === 0) this.rangeDependents.delete(range.sheetIndex)
 		}
 		this.formulas.delete(key)
 	}
@@ -91,7 +105,7 @@ export class DependencyGraph {
 		const direct = this.dependents.get(key)
 		const result = new Set(direct ? [...direct] : [])
 		const [sheetIndex, row, col] = parseCellKey(key)
-		for (const entry of this.rangeDependents.get(sheetIndex) ?? []) {
+		for (const entry of this.rangeDependents.get(sheetIndex)?.get(row) ?? []) {
 			if (containsCell(entry.range, row, col)) {
 				result.add(entry.formulaKey)
 			}
@@ -125,6 +139,7 @@ export class DependencyGraph {
 		const visited = new Set<CellKey>()
 		const onStack = new Set<CellKey>()
 		const order: CellKey[] = []
+		const dirtyBySheetRow = indexDirtyCellsBySheetRow(dirtySet)
 
 		const visit = (key: CellKey): void => {
 			if (visited.has(key)) return
@@ -137,10 +152,14 @@ export class DependencyGraph {
 					if (dirtySet.has(dep)) visit(dep)
 				}
 				for (const range of entry.rangeDeps) {
+					const sheetRows = dirtyBySheetRow.get(range.sheetIndex)
+					if (!sheetRows) continue
 					for (let row = range.startRow; row <= range.endRow; row++) {
-						for (let col = range.startCol; col <= range.endCol; col++) {
-							const dep = cellKey(range.sheetIndex, row, col)
-							if (dirtySet.has(dep)) visit(dep)
+						const cols = sheetRows.get(row)
+						if (!cols) continue
+						for (const col of cols) {
+							if (col < range.startCol || col > range.endCol) continue
+							visit(cellKey(range.sheetIndex, row, col))
 						}
 					}
 				}
@@ -226,4 +245,25 @@ function containsCell(range: RangeDependency, row: number, col: number): boolean
 	return (
 		row >= range.startRow && row <= range.endRow && col >= range.startCol && col <= range.endCol
 	)
+}
+
+function indexDirtyCellsBySheetRow(
+	dirtySet: ReadonlySet<CellKey>,
+): Map<number, Map<number, Set<number>>> {
+	const indexed = new Map<number, Map<number, Set<number>>>()
+	for (const key of dirtySet) {
+		const [sheetIndex, row, col] = parseCellKey(key)
+		let rows = indexed.get(sheetIndex)
+		if (!rows) {
+			rows = new Map()
+			indexed.set(sheetIndex, rows)
+		}
+		let cols = rows.get(row)
+		if (!cols) {
+			cols = new Set()
+			rows.set(row, cols)
+		}
+		cols.add(col)
+	}
+	return indexed
 }

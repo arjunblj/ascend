@@ -59,21 +59,41 @@ export function createServer(opts?: { port?: number }) {
 				}
 
 				if (method === 'POST' && path === '/read') {
-					const body = await parseJson<{ file?: string; range?: string; sheet?: string }>(req)
+					const body = await parseJson<{
+						file?: string
+						range?: string
+						sheet?: string
+						format?: string
+						headers?: string[]
+					}>(req)
 					const file = body ? requireString(body, 'file') : null
 					const range = body ? requireString(body, 'range') : null
 					if (!file) return jsonFailure('Missing or invalid file', 400)
 					if (!range) return jsonFailure('Missing or invalid range', 400)
 					try {
 						const sheetName = body ? requireString(body, 'sheet') : null
+						const format = (body ? requireString(body, 'format') : null) ?? 'cells'
+						const headers = body ? requireArray(body, 'headers') : null
 						const wb = await WorkbookSession.open(
 							file,
 							sheetName ? { mode: 'values', sheets: [sheetName] } : { mode: 'values' },
 						)
 						const sheet = sheetName ? wb.sheet(sheetName) : wb.sheet(wb.sheets[0] ?? '')
 						if (!sheet) return jsonFailure('Sheet not found', 400)
-						const rangeInfo = sheet.range(range)
-						return jsonSuccess(rangeInfo)
+						if (format === 'rows') {
+							return jsonSuccess(sheet.readRows(range))
+						}
+						if (format === 'objects') {
+							return jsonSuccess(
+								sheet.readObjects(range, {
+									headers: headers?.every((entry) => typeof entry === 'string')
+										? (headers as string[])
+										: 'first-row',
+								}),
+							)
+						}
+						if (format !== 'cells') return jsonFailure('Invalid read format', 400)
+						return jsonSuccess(sheet.range(range))
 					} catch (e) {
 						const msg = e instanceof Error ? e.message : String(e)
 						if (msg.includes('ENOENT') || msg.includes('not found'))

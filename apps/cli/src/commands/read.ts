@@ -1,4 +1,4 @@
-import type { WorkbookSession } from '@ascend/sdk'
+import type { CompactCellInfo, WorkbookSession } from '@ascend/sdk'
 import { jsonOut } from '../output/json.ts'
 import { formatCellValue, table } from '../output/pretty.ts'
 import { openWorkbookSessionWithProgress } from '../progress.ts'
@@ -170,26 +170,27 @@ function readRangeLike(
 		return 1
 	}
 
-	const info = sheet.readWindow(normalizeReadableRange(range), {
-		...(rowOffset !== undefined ? { rowOffset } : {}),
-		...(rowLimit !== undefined ? { rowLimit } : {}),
-	})
-
 	if (asJson) {
+		const info = sheet.readWindow(normalizeReadableRange(range), {
+			...(rowOffset !== undefined ? { rowOffset } : {}),
+			...(rowLimit !== undefined ? { rowLimit } : {}),
+		})
 		console.log(jsonOut(info))
 		return 0
 	}
 
-	const grid: string[][] = []
-	const cellMap = new Map(info.cells.map((cell) => [`${cell.row}:${cell.col}`, cell] as const))
-	for (let r = 0; r < info.rowCount; r++) {
-		const row: string[] = []
-		for (let c = 0; c < info.colCount; c++) {
-			const cell = cellMap.get(`${info.ref.start.row + r}:${info.ref.start.col + c}`)
-			row.push(cell ? formatCellValue(cell.value) : '')
-		}
-		grid.push(row)
-	}
+	const info = sheet.readWindowCompact(normalizeReadableRange(range), {
+		...(rowOffset !== undefined ? { rowOffset } : {}),
+		...(rowLimit !== undefined ? { rowLimit } : {}),
+		includeRefs: false,
+	})
+	const grid = buildWindowGrid(
+		info.cells,
+		info.rowCount,
+		info.colCount,
+		info.ref.start.row,
+		info.ref.start.col,
+	)
 
 	const headers = Array.from({ length: info.colCount }, (_, i) =>
 		columnLabel(info.ref.start.col + i),
@@ -199,6 +200,33 @@ function readRangeLike(
 		console.log(`\nMore rows available. Re-run with --row-offset ${info.nextRowOffset}.`)
 	}
 	return 0
+}
+
+function buildWindowGrid(
+	cells: readonly CompactCellInfo[],
+	rowCount: number,
+	colCount: number,
+	startRow: number,
+	startCol: number,
+): string[][] {
+	const grid: string[][] = []
+	let index = 0
+	for (let rowOffset = 0; rowOffset < rowCount; rowOffset++) {
+		const rowIndex = startRow + rowOffset
+		const row: string[] = []
+		for (let colOffset = 0; colOffset < colCount; colOffset++) {
+			const colIndex = startCol + colOffset
+			const cell = cells[index]
+			if (cell && cell.row === rowIndex && cell.col === colIndex) {
+				row.push(formatCellValue(cell.value))
+				index += 1
+			} else {
+				row.push('')
+			}
+		}
+		grid.push(row)
+	}
+	return grid
 }
 
 type ReadSelector =

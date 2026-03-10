@@ -1,6 +1,10 @@
 import { jsonOut } from '../output/json.ts'
 import { bullet, heading } from '../output/pretty.ts'
-import { openWorkbookWithProgress, withProgress } from '../progress.ts'
+import {
+	openWorkbookSessionWithProgress,
+	openWorkbookWithProgress,
+	withProgress,
+} from '../progress.ts'
 
 export const usage = `Usage: ascend formula <subcommand> <file> <ref> [expr] [flags]
 
@@ -42,8 +46,8 @@ async function showFormula(args: string[], flags: Map<string, string>): Promise<
 		return 1
 	}
 
-	const { workbook: wb } = await openWorkbookWithProgress(file)
-	const info = wb.formula(cellRef)
+	const { session } = await openWorkbookSessionWithProgress(file, { mode: 'formula' })
+	const info = session.formula(cellRef)
 	if (!info) {
 		console.error(`No formula found at "${cellRef}"`)
 		return 1

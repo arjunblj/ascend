@@ -253,6 +253,29 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'read-window-dense-values-compact',
+		category: 'read',
+		build() {
+			const workbook = buildDenseWorkbook(5000, 20)
+			const bytes = mustWrite(workbook)
+			return { bytes, rows: 5000, cols: 20, cells: 100_000 }
+		},
+		async run(input) {
+			const wb = await AscendWorkbook.open(requireBytes(input), { mode: 'values' })
+			const window = wb.readWindowCompact('Sheet1', 'A1:T5000', {
+				rowLimit: 250,
+				includeRefs: false,
+			})
+			if (!window) throw new Error('Compact dense window benchmark failed to read Sheet1')
+			return {
+				assertions: {
+					returnedCells: window.cells.length,
+					hasMore: window.hasMore,
+				},
+			}
+		},
+	},
+	{
 		name: 'read-window-sparse-wide',
 		category: 'read',
 		build() {

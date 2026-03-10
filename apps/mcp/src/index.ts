@@ -226,13 +226,47 @@ export function createServer(): McpServer {
 		},
 		async ({ file, output, format }) => {
 			const wb = await Ascend.open(file)
-			const target = format ? `${output.replace(/\.[^.]+$/, '')}.${format}` : output
-			await wb.save(target)
+			const normalized = format ? normalizeExportFormat(format) : inferExportFormat(output)
+			if (!normalized) return errorResponse(`Unsupported format: ${format ?? output}`)
+			const target = ensureOutputExtension(output, normalized)
+			if (normalized === 'json') {
+				await Bun.write(target, JSON.stringify(wb.toJSON(), null, 2))
+			} else if (normalized === 'csv' || normalized === 'tsv') {
+				const text = wb.toCsv(normalized === 'tsv' ? { dialect: { delimiter: '\t' } } : undefined)
+				await Bun.write(target, text)
+			} else {
+				await wb.save(target)
+			}
 			return okResponse({ exported: target }, `Exported workbook to "${target}"`)
 		},
 	)
 
 	return server
+}
+
+function normalizeExportFormat(format: string): 'csv' | 'tsv' | 'json' | 'xlsx' | 'xlsm' | null {
+	switch (format.toLowerCase()) {
+		case 'csv':
+		case 'tsv':
+		case 'json':
+		case 'xlsx':
+		case 'xlsm':
+			return format.toLowerCase() as 'csv' | 'tsv' | 'json' | 'xlsx' | 'xlsm'
+		default:
+			return null
+	}
+}
+
+function inferExportFormat(path: string): 'csv' | 'tsv' | 'json' | 'xlsx' | 'xlsm' | null {
+	const ext = path.split('.').pop()?.toLowerCase() ?? ''
+	return normalizeExportFormat(ext)
+}
+
+function ensureOutputExtension(
+	output: string,
+	format: 'csv' | 'tsv' | 'json' | 'xlsx' | 'xlsm',
+): string {
+	return output.endsWith(`.${format}`) ? output : `${output.replace(/\.[^.]+$/, '')}.${format}`
 }
 
 function displayReadResult(mode: 'cells' | 'rows' | 'objects', info: unknown): unknown {

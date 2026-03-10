@@ -277,7 +277,8 @@ export function createServer(opts?: { port?: number }) {
 					if (!format) return jsonFailure('Missing or invalid format', 400)
 					try {
 						const wb = await AscendWorkbook.open(file)
-						const fmt = format.toLowerCase()
+						const fmt = normalizeExportFormat(format)
+						if (!fmt) return jsonFailure(`Unsupported format: ${format}`, 400)
 						if (fmt === 'xlsx' || fmt === 'xlsm') {
 							const bytes = wb.toBytes()
 							return binaryResponse(
@@ -288,8 +289,7 @@ export function createServer(opts?: { port?: number }) {
 							)
 						}
 						if (fmt === 'csv' || fmt === 'tsv') {
-							const opts = fmt === 'tsv' ? ({ dialect: { delimiter: '\t' } } as never) : undefined
-							const csv = wb.toCsv(opts)
+							const csv = wb.toCsv(fmt === 'tsv' ? { dialect: { delimiter: '\t' } } : undefined)
 							const bytes = new TextEncoder().encode(csv)
 							return binaryResponse(bytes, fmt === 'tsv' ? 'text/tab-separated-values' : 'text/csv')
 						}
@@ -390,4 +390,17 @@ function serialToDateParts(
 	const days = serial < 60 ? serial - 1 : serial - 2
 	const date = new Date(epoch + days * msPerDay)
 	return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() }
+}
+
+function normalizeExportFormat(format: string): 'csv' | 'tsv' | 'json' | 'xlsx' | 'xlsm' | null {
+	switch (format.toLowerCase()) {
+		case 'csv':
+		case 'tsv':
+		case 'json':
+		case 'xlsx':
+		case 'xlsm':
+			return format.toLowerCase() as 'csv' | 'tsv' | 'json' | 'xlsx' | 'xlsm'
+		default:
+			return null
+	}
 }

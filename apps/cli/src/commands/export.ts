@@ -11,8 +11,8 @@ Arguments:
   <output>            Path to the output file
 
 Flags:
-  --format csv|json   Output format (inferred from extension if omitted)
-  --sheet <name>      Sheet to export (for CSV)
+  --format csv|tsv|json|xlsx|xlsm   Output format (inferred from extension if omitted)
+  --sheet <name>      Sheet to export (for CSV/TSV)
   --json              Output status as JSON
 `
 
@@ -25,17 +25,24 @@ export async function exportCommand(args: string[], flags: Map<string, string>):
 	}
 
 	const { workbook: wb } = await openWorkbookWithProgress(file)
-	const format = flags.get('format') ?? inferFormat(output)
+	const format = normalizeExportFormat(flags.get('format') ?? inferFormat(output))
+	if (!format) {
+		console.error('Invalid export format. Use one of: csv, tsv, json, xlsx, xlsm')
+		return 1
+	}
 
 	if (format === 'json') {
 		const { value: data } = await withProgress('Serializing workbook', () =>
 			JSON.stringify(wb.toJSON(), null, 2),
 		)
 		await withProgress(`Writing ${output}`, () => writeFile(output, data, 'utf-8'))
-	} else if (format === 'csv') {
+	} else if (format === 'csv' || format === 'tsv') {
 		const sheetName = flags.get('sheet')
 		const { value: csv } = await withProgress('Rendering CSV export', () =>
-			wb.toCsv(sheetName ? { sheet: sheetName } : undefined),
+			wb.toCsv({
+				...(sheetName ? { sheet: sheetName } : {}),
+				...(format === 'tsv' ? { dialect: { delimiter: '\t' } } : {}),
+			}),
 		)
 		await withProgress(`Writing ${output}`, () => writeFile(output, csv, 'utf-8'))
 	} else {
@@ -52,7 +59,20 @@ export async function exportCommand(args: string[], flags: Map<string, string>):
 
 function inferFormat(path: string): string {
 	const ext = path.split('.').pop()?.toLowerCase() ?? ''
-	if (ext === 'csv' || ext === 'tsv') return 'csv'
-	if (ext === 'json') return 'json'
+	if (ext === 'csv' || ext === 'tsv' || ext === 'json' || ext === 'xlsx' || ext === 'xlsm')
+		return ext
 	return ext
+}
+
+function normalizeExportFormat(format: string): 'csv' | 'tsv' | 'json' | 'xlsx' | 'xlsm' | null {
+	switch (format.toLowerCase()) {
+		case 'csv':
+		case 'tsv':
+		case 'json':
+		case 'xlsx':
+		case 'xlsm':
+			return format.toLowerCase() as 'csv' | 'tsv' | 'json' | 'xlsx' | 'xlsm'
+		default:
+			return null
+	}
 }

@@ -26,7 +26,13 @@ function run(...args: string[]): Promise<{ stdout: string; stderr: string; exitC
 }
 
 afterAll(() => {
-	for (const f of [TEST_FILE, MULTI_SHEET_FILE, NAMED_RANGE_FILE]) {
+	for (const f of [
+		TEST_FILE,
+		MULTI_SHEET_FILE,
+		NAMED_RANGE_FILE,
+		'exported.tsv',
+		'exported.json',
+	]) {
 		const path = `${import.meta.dir}/${f}`
 		if (existsSync(path)) unlinkSync(path)
 	}
@@ -553,5 +559,32 @@ describe('ascend cli', () => {
 		expect(parsed.formatVersion).toBe(1)
 		expect(parsed.ok).toBe(true)
 		expect(parsed.data.valid).toBe(true)
+	})
+
+	test('export writes TSV output and rejects unsupported formats', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Name' },
+					{ ref: 'B1', value: 'Score' },
+					{ ref: 'A2', value: 'Alice' },
+					{ ref: 'B2', value: 10 },
+				],
+			},
+		])
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const tsv = await run('export', TEST_FILE, 'exported.tsv')
+		expect(tsv.exitCode).toBe(0)
+		const tsvText = await Bun.file(`${import.meta.dir}/exported.tsv`).text()
+		expect(tsvText).toContain('Name\tScore')
+		expect(tsvText).toContain('Alice\t10')
+
+		const bad = await run('export', TEST_FILE, 'out.weird', '--format', 'weird')
+		expect(bad.exitCode).toBe(1)
+		expect(bad.stderr).toContain('Invalid export format')
 	})
 })

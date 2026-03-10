@@ -275,4 +275,41 @@ describe('API', () => {
 		expect(body.ok).toBe(false)
 		expect(body.error.message).toBe('Not Found')
 	})
+
+	test('export returns TSV bytes and rejects unsupported formats', async () => {
+		const tempFile = join(tempDir, 'export.xlsx')
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Name' },
+					{ ref: 'B1', value: 'Score' },
+					{ ref: 'A2', value: 'Alice' },
+					{ ref: 'B2', value: 10 },
+				],
+			},
+		])
+		await wb.save(tempFile)
+
+		const tsvRes = await fetch(`http://localhost:${server.port}/export`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ file: tempFile, format: 'tsv' }),
+		})
+		expect(tsvRes.status).toBe(200)
+		expect(tsvRes.headers.get('Content-Type')).toContain('text/tab-separated-values')
+		expect(await tsvRes.text()).toContain('Name\tScore')
+
+		const badRes = await fetch(`http://localhost:${server.port}/export`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ file: tempFile, format: 'weird' }),
+		})
+		expect(badRes.status).toBe(400)
+		const badBody = await badRes.json()
+		expect(badBody.ok).toBe(false)
+		expect(badBody.error.message).toContain('Unsupported format')
+	})
 })

@@ -98,4 +98,42 @@ describe('MCP server', () => {
 		expect(result.isError).toBe(true)
 		expect(result.structuredContent?.error?.message).toContain('Circular reference detected')
 	})
+
+	test('ascend.export writes JSON/TSV and rejects unsupported formats', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Name' },
+					{ ref: 'B1', value: 'Score' },
+					{ ref: 'A2', value: 'Alice' },
+					{ ref: 'B2', value: 10 },
+				],
+			},
+		])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.export'].handler as (args: {
+			file: string
+			output: string
+			format?: string
+		}) => Promise<{ isError?: boolean; structuredContent?: Record<string, unknown> }>
+
+		const jsonPath = `${TEMP_FILE}.json`
+		await handler({ file: TEMP_FILE, output: jsonPath, format: 'json' })
+		expect(await Bun.file(jsonPath).text()).toContain('"sheets"')
+		await unlink(jsonPath).catch(() => {})
+
+		const tsvPath = `${TEMP_FILE}.tsv`
+		await handler({ file: TEMP_FILE, output: tsvPath, format: 'tsv' })
+		expect(await Bun.file(tsvPath).text()).toContain('Name\tScore')
+		await unlink(tsvPath).catch(() => {})
+
+		const bad = await handler({ file: TEMP_FILE, output: `${TEMP_FILE}.weird`, format: 'weird' })
+		expect(bad.isError).toBe(true)
+	})
 })

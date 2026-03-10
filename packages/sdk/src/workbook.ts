@@ -383,7 +383,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		return result.value
 	}
 
-	toCsv(opts?: { sheet?: string; range?: string }): string {
+	toCsv(opts?: { sheet?: string; range?: string; dialect?: Partial<CsvDialect> }): string {
 		this.assertWritable()
 		const result = writeCsv(this.wb, opts)
 		if (!result.ok) throw new Error(result.error.message)

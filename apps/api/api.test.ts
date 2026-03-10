@@ -128,6 +128,47 @@ describe('API', () => {
 		expect(body.data.cells[0].ref).toBe('A1')
 	})
 
+	test('read honors pagination and display options', async () => {
+		const tempFile = join(tempDir, 'read-paged.xlsx')
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Name' },
+					{ ref: 'B1', value: 'Score' },
+					{ ref: 'A2', value: 'Alice' },
+					{ ref: 'B2', value: 10 },
+					{ ref: 'A3', value: 'Bob' },
+					{ ref: 'B3', value: 20 },
+				],
+			},
+		])
+		await wb.save(tempFile)
+
+		const res = await fetch(`http://localhost:${server.port}/read`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				file: tempFile,
+				sheet: 'Sheet1',
+				range: 'A1:B3',
+				format: 'objects',
+				headers: ['Name', 'Score'],
+				rowOffset: 1,
+				rowLimit: 1,
+				display: true,
+			}),
+		})
+		expect(res.status).toBe(200)
+		const body = await res.json()
+		expect(body.ok).toBe(true)
+		expect(body.data.rowOffset).toBe(1)
+		expect(body.data.rowLimit).toBe(1)
+		expect(body.data.rows).toEqual([{ Name: 'Alice', Score: '10' }])
+	})
+
 	test('read errors return machine failure envelope', async () => {
 		const res = await fetch(`http://localhost:${server.port}/read`, {
 			method: 'POST',
@@ -169,6 +210,25 @@ describe('API', () => {
 		const reopened = await AscendWorkbook.open(tempFile)
 		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 2 })
 		expect(reopened.sheet('Sheet1')?.cell('A2')?.value).toEqual({ kind: 'number', value: 4 })
+	})
+
+	test('write returns a failure envelope on operation errors', async () => {
+		const tempFile = join(tempDir, 'write-error.xlsx')
+		const wb = AscendWorkbook.create()
+		await wb.save(tempFile)
+
+		const res = await fetch(`http://localhost:${server.port}/write`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				file: tempFile,
+				ops: [{ op: 'setCells', sheet: 'Missing', updates: [{ ref: 'A1', value: 1 }] }],
+			}),
+		})
+		expect(res.status).toBe(400)
+		const body = await res.json()
+		expect(body.ok).toBe(false)
+		expect(body.error.message).toContain('Sheet')
 	})
 
 	test('unknown route returns 404', async () => {

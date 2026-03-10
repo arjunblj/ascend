@@ -121,6 +121,7 @@ export function createServer(): McpServer {
 			const wb = await Ascend.open(file)
 			const result = wb.apply(ops as unknown as readonly Operation[])
 			if (result.errors.length === 0) {
+				if (result.recalcRequired) wb.recalc()
 				await wb.save(file)
 			}
 			return {

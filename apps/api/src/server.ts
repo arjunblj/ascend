@@ -23,6 +23,12 @@ function requireArray(obj: unknown, key: string): unknown[] | null {
 	return Array.isArray(v) ? v : null
 }
 
+function requireOptionalNumber(obj: unknown, key: string): number | undefined {
+	if (obj === null || typeof obj !== 'object') return undefined
+	const v = (obj as Record<string, unknown>)[key]
+	return typeof v === 'number' && Number.isFinite(v) ? v : undefined
+}
+
 export function createServer(opts?: { port?: number }) {
 	return Bun.serve({
 		port: opts?.port ?? (Number(process.env.PORT) || 3000),
@@ -75,6 +81,8 @@ export function createServer(opts?: { port?: number }) {
 						const sheetName = body ? requireString(body, 'sheet') : null
 						const format = (body ? requireString(body, 'format') : null) ?? 'cells'
 						const headers = body ? requireArray(body, 'headers') : null
+						const rowOffset = body ? requireOptionalNumber(body, 'rowOffset') : undefined
+						const rowLimit = body ? requireOptionalNumber(body, 'rowLimit') : undefined
 						const display =
 							body !== null &&
 							typeof body === 'object' &&
@@ -86,12 +94,16 @@ export function createServer(opts?: { port?: number }) {
 						const sheet = sheetName ? wb.sheet(sheetName) : wb.sheet(wb.sheets[0] ?? '')
 						if (!sheet) return jsonFailure('Sheet not found', 400)
 						if (format === 'rows') {
-							return jsonSuccess(
-								display ? displayRows(sheet.readRows(range)) : sheet.readRows(range),
-							)
+							const info = sheet.readRows(range, {
+								...(rowOffset !== undefined ? { rowOffset } : {}),
+								...(rowLimit !== undefined ? { rowLimit } : {}),
+							})
+							return jsonSuccess(display ? displayRows(info) : info)
 						}
 						if (format === 'objects') {
 							const info = sheet.readObjects(range, {
+								...(rowOffset !== undefined ? { rowOffset } : {}),
+								...(rowLimit !== undefined ? { rowLimit } : {}),
 								headers: headers?.every((entry) => typeof entry === 'string')
 									? (headers as string[])
 									: 'first-row',
@@ -99,7 +111,10 @@ export function createServer(opts?: { port?: number }) {
 							return jsonSuccess(display ? displayObjects(info) : info)
 						}
 						if (format !== 'cells') return jsonFailure('Invalid read format', 400)
-						const info = sheet.range(range)
+						const info = sheet.readWindow(range, {
+							...(rowOffset !== undefined ? { rowOffset } : {}),
+							...(rowLimit !== undefined ? { rowLimit } : {}),
+						})
 						return jsonSuccess(display ? displayCells(info) : info)
 					} catch (e) {
 						const msg = e instanceof Error ? e.message : String(e)
@@ -120,7 +135,7 @@ export function createServer(opts?: { port?: number }) {
 						const wb = await AscendWorkbook.open(file)
 						const result = wb.apply(ops)
 						if (result.errors.length > 0) {
-							return jsonSuccess(result, 400)
+							return jsonFailure(result.errors[0]?.message ?? 'Failed to apply operations', 400)
 						}
 						if (result.recalcRequired) wb.recalc()
 						await wb.save(file)
@@ -278,26 +293,32 @@ export function createServer(opts?: { port?: number }) {
 	})
 }
 
-function displayCells(info: { cells: readonly { ref: string; value: CellValue }[] }): {
-	cells: Array<{ ref: string; value: string }>
-} {
+function displayCells<T extends { cells: readonly { ref: string; value: CellValue }[] }>(
+	info: T,
+): Omit<T, 'cells'> & { cells: Array<{ ref: string; value: string }> } {
 	return {
+		...info,
 		cells: info.cells.map((cell) => ({ ref: cell.ref, value: formatDisplayCellValue(cell.value) })),
 	}
 }
 
-function displayRows(info: { rows: readonly (readonly CellValue[])[] }): { rows: string[][] } {
+function displayRows<T extends { rows: readonly (readonly CellValue[])[] }>(
+	info: T,
+): Omit<T, 'rows'> & { rows: string[][] } {
 	return {
+		...info,
 		rows: info.rows.map((row) => row.map((cell) => formatDisplayCellValue(cell))),
 	}
 }
 
-function displayObjects(info: {
-	headers: readonly string[]
-	rows: readonly Readonly<Record<string, CellValue>>[]
-}): { headers: readonly string[]; rows: Array<Record<string, string>> } {
+function displayObjects<
+	T extends {
+		headers: readonly string[]
+		rows: readonly Readonly<Record<string, CellValue>>[]
+	},
+>(info: T): Omit<T, 'rows'> & { rows: Array<Record<string, string>> } {
 	return {
-		headers: info.headers,
+		...info,
 		rows: info.rows.map((row) =>
 			Object.fromEntries(
 				Object.entries(row).map(([key, value]) => [key, formatDisplayCellValue(value)]),

@@ -58,6 +58,7 @@ export class AscendWorkbook extends WorkbookReadView {
 	private pendingDirtyRefs: string[] = []
 	private pendingFullRecalc = false
 	private workbookMetaDirty = false
+	private calcStateDirty = false
 	private sharedStringsDirty = false
 	private stylesDirty = false
 
@@ -182,6 +183,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		const plan = summarizePlannedWrite(clone, this.caps.length > 0 ? this.caps : undefined, {
 			dirtySheetNames: result.value.sheetsModified,
 			workbookMetaDirty: dirtyFlags.workbookMetaDirty,
+			calcStateDirty: dirtyFlags.workbookMetaDirty || result.value.recalcRequired,
 			sharedStringsDirty: dirtyFlags.sharedStringsDirty,
 			stylesDirty: dirtyFlags.stylesDirty,
 			...(sourceArchive ? { sourceArchive } : {}),
@@ -221,6 +223,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		this.markDirty()
 		for (const sheetName of result.value.sheetsModified) this.dirtySheets.add(sheetName)
 		this.workbookMetaDirty ||= dirtyFlags.workbookMetaDirty
+		this.calcStateDirty ||= dirtyFlags.workbookMetaDirty || result.value.recalcRequired
 		this.sharedStringsDirty ||= dirtyFlags.sharedStringsDirty
 		this.stylesDirty ||= dirtyFlags.stylesDirty
 		if (result.value.recalcRequired) this.mergePendingRecalcTargets(ops)
@@ -258,10 +261,21 @@ export class AscendWorkbook extends WorkbookReadView {
 		)
 		if (result.changed.length > 0 || result.errors.length > 0) {
 			this.markDirty()
+			this.calcStateDirty = result.errors.length > 0
 			this.sharedStringsDirty = true
 			for (const ref of result.changed) {
 				const bang = ref.indexOf('!')
 				if (bang !== -1) this.dirtySheets.add(ref.slice(0, bang))
+			}
+		}
+		if (result.errors.length === 0) {
+			this.calcStateDirty = false
+			this.wb.calcSettings = {
+				...this.wb.calcSettings,
+				fullCalcOnLoad: false,
+				calcCompleted: true,
+				calcOnSave: true,
+				forceFullCalc: false,
 			}
 		}
 		this.clearReadCaches()
@@ -352,6 +366,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		const writeOptions: import('@ascend/io-xlsx').WriteXlsxOptions = {
 			dirtySheetNames: [...this.dirtySheets],
 			workbookMetaDirty: this.workbookMetaDirty,
+			calcStateDirty: this.calcStateDirty,
 			sharedStringsDirty: this.sharedStringsDirty,
 			stylesDirty: this.stylesDirty,
 			...(sourceArchive ? { sourceArchive } : {}),
@@ -375,6 +390,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		const writeOptions: import('@ascend/io-xlsx').WriteXlsxOptions = {
 			dirtySheetNames: [...this.dirtySheets],
 			workbookMetaDirty: this.workbookMetaDirty,
+			calcStateDirty: this.calcStateDirty,
 			sharedStringsDirty: this.sharedStringsDirty,
 			stylesDirty: this.stylesDirty,
 			...(sourceArchive ? { sourceArchive } : {}),
@@ -470,6 +486,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		this.dirty = false
 		this.dirtySheets.clear()
 		this.workbookMetaDirty = false
+		this.calcStateDirty = false
 		this.sharedStringsDirty = false
 		this.stylesDirty = false
 		this.pendingDirtyRefs = []

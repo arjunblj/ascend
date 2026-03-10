@@ -8,6 +8,7 @@ const NS_R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationship
 
 export interface WorkbookXmlOptions {
 	readonly externalReferenceRelIds?: readonly string[]
+	readonly calcStateDirty?: boolean
 }
 
 export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions = {}): string {
@@ -90,8 +91,16 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 
 	const cs = workbook.calcSettings
 	const calcAttrs: string[] = []
-	if (cs.calcMode !== 'auto') calcAttrs.push(`calcMode="${cs.calcMode}"`)
-	if (cs.fullCalcOnLoad) calcAttrs.push('fullCalcOnLoad="1"')
+	const calcMode = options.calcStateDirty ? 'auto' : cs.calcMode
+	if (calcMode !== 'auto') calcAttrs.push(`calcMode="${calcMode}"`)
+	if (options.calcStateDirty || cs.fullCalcOnLoad) calcAttrs.push('fullCalcOnLoad="1"')
+	if (options.calcStateDirty || cs.calcCompleted === false) calcAttrs.push('calcCompleted="0"')
+	else if (cs.calcCompleted === true) calcAttrs.push('calcCompleted="1"')
+	if (options.calcStateDirty || cs.calcOnSave === true) calcAttrs.push('calcOnSave="1"')
+	else if (cs.calcOnSave === false) calcAttrs.push('calcOnSave="0"')
+	if (options.calcStateDirty || cs.forceFullCalc) calcAttrs.push('forceFullCalc="1"')
+	else if (cs.forceFullCalc === false) calcAttrs.push('forceFullCalc="0"')
+	if (cs.calcId !== undefined) calcAttrs.push(`calcId="${cs.calcId}"`)
 	if (cs.iterativeCalc.enabled) {
 		calcAttrs.push('iterate="1"')
 		calcAttrs.push(`iterateCount="${cs.iterativeCalc.maxIterations}"`)

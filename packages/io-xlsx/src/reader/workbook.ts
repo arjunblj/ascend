@@ -179,8 +179,13 @@ function parseCalcSettings(wb: XmlNode): CalcSettings {
 	}
 
 	const modeStr = attr(calcPr, 'calcMode')
-	const calcMode: 'auto' | 'manual' = modeStr === 'manual' ? 'manual' : 'auto'
+	const calcMode: 'auto' | 'manual' | 'autoNoTable' =
+		modeStr === 'manual' ? 'manual' : modeStr === 'autoNoTable' ? 'autoNoTable' : 'auto'
 	const fullCalcOnLoad = boolAttr(calcPr, 'fullCalcOnLoad') ?? false
+	const calcCompleted = boolAttr(calcPr, 'calcCompleted')
+	const calcOnSave = boolAttr(calcPr, 'calcOnSave')
+	const forceFullCalc = boolAttr(calcPr, 'forceFullCalc')
+	const calcId = numAttr(calcPr, 'calcId')
 	const iterate = boolAttr(calcPr, 'iterate') ?? false
 	const iterateCount = numAttr(calcPr, 'iterateCount') ?? 100
 	const iterateDelta = numAttr(calcPr, 'iterateDelta') ?? 0.001
@@ -188,6 +193,10 @@ function parseCalcSettings(wb: XmlNode): CalcSettings {
 	return {
 		calcMode,
 		fullCalcOnLoad,
+		...(calcCompleted !== undefined ? { calcCompleted } : {}),
+		...(calcOnSave !== undefined ? { calcOnSave } : {}),
+		...(forceFullCalc !== undefined ? { forceFullCalc } : {}),
+		...(calcId !== undefined ? { calcId } : {}),
 		dateSystem,
 		iterativeCalc: {
 			enabled: iterate,

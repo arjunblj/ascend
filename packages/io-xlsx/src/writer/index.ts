@@ -4,6 +4,7 @@ import { ascendError, err, ok } from '@ascend/schema'
 import type { PreservationCapsule } from '../preserve.ts'
 import {
 	getRelsPath,
+	REL_CALC_CHAIN,
 	REL_COMMENTS,
 	REL_DRAWING,
 	REL_SHARED_STRINGS,
@@ -52,6 +53,7 @@ const CT_VML = 'application/vnd.openxmlformats-officedocument.vmlDrawing'
 export interface WriteXlsxOptions {
 	readonly dirtySheetNames?: readonly string[]
 	readonly workbookMetaDirty?: boolean
+	readonly calcStateDirty?: boolean
 	readonly sharedStringsDirty?: boolean
 	readonly stylesDirty?: boolean
 	readonly summaryOnly?: boolean
@@ -199,6 +201,7 @@ export function planWriteXlsx(
 
 		if (capsules) {
 			for (const capsule of capsules) {
+				if (options.calcStateDirty && isCalcChainCapsule(capsule)) continue
 				if (capsule.anchor.kind === 'sheet') {
 					const sheetName = capsule.anchor.sheetName
 					let list = sheetCapsuleMap.get(sheetName)
@@ -346,14 +349,15 @@ export function planWriteXlsx(
 		const preserveWorkbookXml = options.summaryOnly
 			? hasPreservedWorkbookXml && hasPreservedWorkbookRels
 			: !!(preservedWorkbookXmlText && preservedWorkbookRelsText)
+		const preserveWorkbookCalcState = preserveWorkbookXml && !options.calcStateDirty
 		const preserveWorkbookRels =
-			preserveWorkbookXml &&
+			preserveWorkbookCalcState &&
 			(!shouldWriteDynamicArrayMetadata ||
 				preservedWorkbookRelsText?.includes(REL_SHEET_METADATA) === true)
 		const workbookContentType =
 			preservedWorkbookXml?.contentType ??
 			'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml'
-		if (preserveWorkbookXml && preservedWorkbookXmlBytes && !options.summaryOnly) {
+		if (preserveWorkbookCalcState && preservedWorkbookXmlBytes && !options.summaryOnly) {
 			recordBytes(
 				'xl/workbook.xml',
 				{
@@ -368,15 +372,20 @@ export function planWriteXlsx(
 				'xl/workbook.xml',
 				{
 					owner: { kind: 'workbook' },
-					origin: preserveWorkbookXml
+					origin: preserveWorkbookCalcState
 						? resolvePreservedOrigin(preservedWorkbookXml?.workbookXml)
 						: 'generated',
 					contentType: workbookContentType,
 				},
 				() =>
-					preserveWorkbookXml
+					preserveWorkbookCalcState
 						? (preservedWorkbookXmlText ?? '')
-						: buildWorkbookXml(workbook, { externalReferenceRelIds }),
+						: buildWorkbookXml(workbook, {
+								externalReferenceRelIds,
+								...(options.calcStateDirty !== undefined
+									? { calcStateDirty: options.calcStateDirty }
+									: {}),
+							}),
 			)
 		}
 		if (canReusePreservedStyles && preservedStyleBytes && !options.summaryOnly) {
@@ -745,6 +754,7 @@ export function planWriteXlsx(
 
 		if (capsules) {
 			for (const capsule of capsules) {
+				if (options.calcStateDirty && isCalcChainCapsule(capsule)) continue
 				if (plan.isCapsulePathSkipped(capsule.partPath)) continue
 				const content = capsule.content ?? sourceArchive?.readBytes(capsule.partPath)
 				if (!content) continue
@@ -855,7 +865,7 @@ export function planWriteXlsx(
 					workbook.sheets.length,
 					hasSharedStrings,
 					workbookContentType,
-					capsules,
+					capsules?.filter((capsule) => !(options.calcStateDirty && isCalcChainCapsule(capsule))),
 					plan.build().extraOverrides.length > 0 ? plan.build().extraOverrides : undefined,
 				),
 		)
@@ -953,6 +963,14 @@ function collectDynamicArrayMetadata(workbook: Workbook): {
 		}
 	}
 	return { entries: [] }
+}
+
+function isCalcChainCapsule(capsule: PreservationCapsule): boolean {
+	return (
+		capsule.relType === REL_CALC_CHAIN ||
+		capsule.contentType.includes('calcChain+xml') ||
+		capsule.partPath.endsWith('/calcChain.xml')
+	)
 }
 
 function workbookHasStringCells(workbook: Workbook): boolean {

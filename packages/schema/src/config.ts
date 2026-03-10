@@ -1,6 +1,10 @@
 export interface CalcSettings {
-	readonly calcMode: 'auto' | 'manual'
+	readonly calcMode: 'auto' | 'manual' | 'autoNoTable'
 	readonly fullCalcOnLoad: boolean
+	readonly calcCompleted?: boolean
+	readonly calcOnSave?: boolean
+	readonly forceFullCalc?: boolean
+	readonly calcId?: number
 	readonly dateSystem: '1900' | '1904'
 	readonly iterativeCalc: {
 		readonly enabled: boolean
@@ -12,6 +16,9 @@ export interface CalcSettings {
 export const DEFAULT_CALC_SETTINGS: CalcSettings = {
 	calcMode: 'auto',
 	fullCalcOnLoad: false,
+	calcCompleted: true,
+	calcOnSave: true,
+	forceFullCalc: false,
 	dateSystem: '1900',
 	iterativeCalc: {
 		enabled: false,

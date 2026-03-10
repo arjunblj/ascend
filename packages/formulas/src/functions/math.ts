@@ -1,7 +1,7 @@
 import type { CellValue } from '@ascend/schema'
 import { EMPTY, errorValue, isEmpty, isError, numberValue, topLeftScalar } from '@ascend/schema'
 import type { EvalArg, FunctionDef, FunctionEvalContext } from './index.ts'
-import { wildcardMatch } from './registry.ts'
+import { iterAreaRows, wildcardMatch } from './registry.ts'
 
 function fn(
 	name: string,
@@ -55,8 +55,7 @@ function numArg(arg: EvalArg | undefined): number | CellValue {
 }
 
 function getRange(arg: EvalArg | undefined): readonly (readonly CellValue[])[] {
-	if (arg?.kind === 'range' && arg.values) return arg.values
-	return [[arg?.value ?? EMPTY]]
+	return iterAreaRows(arg)
 }
 
 function numericVal(cell: CellValue): number | null {
@@ -323,7 +322,11 @@ export const mathFunctions: FunctionDef[] = [
 	fn('COUNTA', 1, 255, (args) => {
 		let count = 0
 		for (const arg of args) {
-			if (arg.kind === 'range' && arg.values) {
+			if (arg.forEachValue) {
+				arg.forEachValue((cell) => {
+					if (!isEmpty(cell)) count++
+				})
+			} else if (arg.kind === 'range' && arg.values) {
 				for (const row of arg.values) {
 					for (const cell of row) {
 						if (!isEmpty(cell)) count++
@@ -338,9 +341,16 @@ export const mathFunctions: FunctionDef[] = [
 
 	fn('COUNTBLANK', 1, 1, (args) => {
 		let count = 0
-		for (const row of getRange(args[0])) {
-			for (const cell of row) {
+		const arg = args[0]
+		if (arg?.forEachValue) {
+			arg.forEachValue((cell) => {
 				if (isEmpty(cell) || (cell.kind === 'string' && cell.value === '')) count++
+			})
+		} else {
+			for (const row of getRange(arg)) {
+				for (const cell of row) {
+					if (isEmpty(cell) || (cell.kind === 'string' && cell.value === '')) count++
+				}
 			}
 		}
 		return numberValue(count)
@@ -572,7 +582,22 @@ export const mathFunctions: FunctionDef[] = [
 		let product = 1
 		let found = false
 		for (const arg of args) {
-			if (arg.kind === 'range' && arg.values) {
+			if (arg.forEachValue) {
+				let err: CellValue | undefined
+				arg.forEachValue((cell) => {
+					if (err) return
+					if (isError(cell)) {
+						err = cell
+						return
+					}
+					const n = numericVal(cell)
+					if (n !== null) {
+						product *= n
+						found = true
+					}
+				})
+				if (err) return err
+			} else if (arg.kind === 'range' && arg.values) {
 				for (const row of arg.values) {
 					for (const cell of row) {
 						if (isError(cell)) return cell
@@ -599,7 +624,19 @@ export const mathFunctions: FunctionDef[] = [
 function subtotalNums(data: EvalArg[]): number[] | CellValue {
 	const nums: number[] = []
 	for (const arg of data) {
-		if (arg.kind === 'range' && arg.values) {
+		if (arg.forEachValue) {
+			let err: CellValue | undefined
+			arg.forEachValue((cell) => {
+				if (err) return
+				if (isError(cell)) {
+					err = cell
+					return
+				}
+				const n = numericVal(cell)
+				if (n !== null) nums.push(n)
+			})
+			if (err) return err
+		} else if (arg.kind === 'range' && arg.values) {
 			for (const row of arg.values) {
 				for (const cell of row) {
 					if (isError(cell)) return cell

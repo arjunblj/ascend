@@ -20,6 +20,7 @@ import type {
 	SortState,
 	TableColumn,
 	TableStyleInfo,
+	WorkbookView,
 } from '@ascend/core'
 import type { CellChange, SheetDiff, WorkbookDiff } from '@ascend/engine'
 import type { FormulaNode, Token } from '@ascend/formulas'
@@ -30,6 +31,7 @@ export interface WorkbookInfo {
 	readonly loadedSheetCount: number
 	readonly sheets: readonly SheetInfo[]
 	readonly definedNames: readonly string[]
+	readonly definedNameDetails: readonly DefinedNameInfo[]
 	readonly cellCount: number | null
 	readonly commentCount: number | null
 	readonly conditionalFormatCount: number | null
@@ -42,6 +44,8 @@ export interface WorkbookInfo {
 	readonly sourceFormat: string
 	readonly workbookViewCount: number
 	readonly externalReferenceCount: number
+	readonly workbookViews: readonly WorkbookViewInfo[]
+	readonly externalReferences: readonly string[]
 	readonly hasWorkbookProtection: boolean
 	readonly pivotTables: readonly {
 		readonly partPath: string
@@ -205,9 +209,17 @@ export interface WorkbookLoadInfo {
 export interface DefinedNameInfo {
 	readonly name: string
 	readonly formula: string
+	readonly normalizedFormula: string
 	readonly scope: 'workbook' | 'sheet'
 	readonly sheet?: string
+	readonly references: readonly FormulaReferenceInfo[]
+	readonly refs: readonly string[]
+	readonly functions: readonly string[]
+	readonly volatile: boolean
+	readonly parseError?: string
 }
+
+export interface WorkbookViewInfo extends WorkbookView {}
 
 export interface CellInfo {
 	readonly ref: string
@@ -231,6 +243,22 @@ export interface RangeWindowInfo extends RangeInfo {
 	readonly rowLimit: number
 	readonly hasMore: boolean
 	readonly nextRowOffset?: number
+}
+
+export interface TableRowInfo {
+	readonly index: number
+	readonly sheetRow: number
+	readonly values: Readonly<Record<string, CellValue>>
+}
+
+export interface TableWindowInfo {
+	readonly rowOffset: number
+	readonly rowLimit: number
+	readonly returnedRows: number
+	readonly totalRows: number
+	readonly hasMore: boolean
+	readonly nextRowOffset?: number
+	readonly rows: readonly TableRowInfo[]
 }
 
 export interface PreviewResult {
@@ -295,6 +323,7 @@ export interface LintWarning {
 export interface TraceResult {
 	readonly ref: string
 	readonly formula: string | null
+	readonly value: CellValue
 	readonly precedents: readonly TraceNodeInfo[]
 	readonly dependents: readonly TraceNodeInfo[]
 	readonly dependsOn: readonly string[]
@@ -304,6 +333,7 @@ export interface TraceResult {
 export interface TraceNodeInfo {
 	readonly ref: string
 	readonly formula: string | null
+	readonly value: CellValue
 	readonly depth: number
 }
 

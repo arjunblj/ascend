@@ -160,6 +160,46 @@ describe('ascend cli', () => {
 		expect(typeof parsed.data.drawingRefs.hasDrawing).toBe('boolean')
 	})
 
+	test('inspect --detail names --json returns defined name inventory', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setDefinedName', name: 'Budget', ref: 'Sheet1!A1:A3' }])
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const { exitCode, stdout } = await run('inspect', TEST_FILE, '--detail', 'names', '--json')
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.data[0].name).toBe('Budget')
+		expect(parsed.data[0].references[0].text).toBe('Sheet1!A1:A3')
+	})
+
+	test('inspect --detail views --json returns workbook view inventory', async () => {
+		const wb = AscendWorkbook.create()
+		const internal = wb as unknown as { wb: { workbookViews: Array<Record<string, unknown>> } }
+		internal.wb.workbookViews.push({ activeTab: 0, visibility: 'visible' })
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const { exitCode, stdout } = await run('inspect', TEST_FILE, '--detail', 'views', '--json')
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.data[0].activeTab).toBe(0)
+	})
+
+	test('inspect --detail external-refs --json returns workbook external reference inventory', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const { exitCode, stdout } = await run(
+			'inspect',
+			TEST_FILE,
+			'--detail',
+			'external-refs',
+			'--json',
+		)
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(Array.isArray(parsed.data)).toBe(true)
+	})
+
 	test('read requires an explicit sheet when workbook has multiple sheets', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -227,6 +267,20 @@ describe('ascend cli', () => {
 		expect(stdout).toContain('alpha')
 	})
 
+	test('read name --json exposes parsed name metadata', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setDefinedName', name: 'Budget', ref: 'Sheet1!A1:A3' }])
+		await wb.save(`${import.meta.dir}/${NAMED_RANGE_FILE}`)
+
+		const { exitCode, stdout } = await run('read', NAMED_RANGE_FILE, 'name:Budget', '--json')
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.data.kind).toBe('name')
+		expect(parsed.data.normalizedFormula).toBe('Sheet1!A1:A3')
+		expect(parsed.data.references[0].text).toBe('Sheet1!A1:A3')
+		expect(parsed.data.resolutionKind).toBe('range')
+	})
+
 	test('read table --json exposes table metadata and paginated rows', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -281,6 +335,11 @@ describe('ascend cli', () => {
 		expect(parsed.data.headerRow[0]).toEqual({ kind: 'string', value: 'Name' })
 		expect(parsed.data.totalsRow[1]).toEqual({ kind: 'number', value: 170 })
 		expect(parsed.data.sortState.ref).toBe('A1:B4')
+		expect(parsed.data.page.rowOffset).toBe(1)
+		expect(parsed.data.page.rowLimit).toBe(1)
+		expect(parsed.data.page.returnedRows).toBe(1)
+		expect(parsed.data.page.totalRows).toBe(2)
+		expect(parsed.data.page.hasMore).toBe(false)
 		expect(parsed.data.rows).toHaveLength(1)
 		expect(parsed.data.rows[0].Name).toEqual({ kind: 'string', value: 'Bob' })
 	})
@@ -347,6 +406,23 @@ describe('ascend cli', () => {
 		expect(stdout).toContain('SUM')
 		expect(stdout).toContain('References')
 		expect(stdout).toContain('B1:B2')
+	})
+
+	test('trace shows values and respects max depth', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: '=A1*2' },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'C1', formula: '=B1+1' },
+		])
+		wb.recalc()
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const { exitCode, stdout } = await run('trace', TEST_FILE, 'Sheet1!C1', '--max-depth', '1')
+		expect(exitCode).toBe(0)
+		expect(stdout).toContain('Value')
+		expect(stdout).toContain('[1] Sheet1!B1')
+		expect(stdout).not.toContain('Sheet1!A1')
 	})
 
 	test('formula suggests the closest subcommand', async () => {

@@ -70,7 +70,7 @@ const COMMANDS: Record<string, Command> = {
 	calc: { run: calcCommand, usage: calcUsage, allowedFlags: ['json'] },
 	check: { run: checkCommand, usage: checkUsage, allowedFlags: ['json'] },
 	lint: { run: lintCommand, usage: lintUsage, allowedFlags: ['json'] },
-	trace: { run: traceCommand, usage: traceUsage, allowedFlags: ['json'] },
+	trace: { run: traceCommand, usage: traceUsage, allowedFlags: ['json', 'max-depth'] },
 	diff: { run: diffCommand, usage: diffUsage, allowedFlags: ['json'] },
 	export: { run: exportCommand, usage: exportUsage, allowedFlags: ['format', 'sheet', 'json'] },
 	doctor: { run: doctorCommand, usage: doctorUsage },

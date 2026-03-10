@@ -3,13 +3,22 @@ import {
 	analyzeWorkbook,
 	createSnapshot,
 	diffWorkbooks,
+	type WorkbookAnalysis,
 	type WorkbookDiff,
 	type WorkbookSnapshot,
 } from '@ascend/engine'
+import { parseFormula, printFormula } from '@ascend/formulas'
 import type { CompatibilityReport } from '@ascend/schema'
 import { EMPTY } from '@ascend/schema'
 import { trace as verifyTrace } from '@ascend/verify'
-import { buildFormulaInfo } from './formula-info.ts'
+import {
+	buildFormulaInfo,
+	collectFormulaReferences,
+	collectFunctionNames,
+	flattenLegacyReferenceTexts,
+	hasVolatileFunction,
+	tokenizeFormulaInput,
+} from './formula-info.ts'
 import { SheetHandle } from './sheet-handle.ts'
 import { TableHandle } from './table-handle.ts'
 import type {
@@ -33,6 +42,7 @@ export class WorkbookReadView {
 	protected readonly compat: CompatibilityReport
 	protected readonly loadInfo: WorkbookLoadInfo
 	private workbookInfoCache: WorkbookInfo | undefined
+	private analysisCache: WorkbookAnalysis | undefined
 	private readonly sheetInspectCache = new Map<string, SheetInspectInfo | undefined>()
 	private readonly formulaInfoCache = new Map<string, FormulaInfo | undefined>()
 	private readonly sheetHandleCache = new Map<string, SheetHandle>()
@@ -74,6 +84,7 @@ export class WorkbookReadView {
 			loadedSheetCount: this.loadInfo.loadedSheets.length,
 			sheets,
 			definedNames: this.wb.definedNames.workbookKeys(),
+			definedNameDetails: this.definedNames(),
 			cellCount: this.loadInfo.cellsHydrated ? totalCells : null,
 			commentCount: this.loadInfo.richSheetMetadataHydrated ? totalComments : null,
 			conditionalFormatCount: this.loadInfo.richSheetMetadataHydrated
@@ -88,6 +99,8 @@ export class WorkbookReadView {
 			sourceFormat: this.compat.sourceFormat,
 			workbookViewCount: this.wb.workbookViews.length,
 			externalReferenceCount: this.wb.externalReferences.length,
+			workbookViews: this.wb.workbookViews.map((view) => ({ ...view })),
+			externalReferences: [...this.wb.externalReferences],
 			hasWorkbookProtection: this.wb.workbookProtection !== null,
 			pivotTables: this.wb.pivotTables.map((entry) => ({ ...entry })),
 			pivotCaches: this.wb.pivotCaches.map((entry) => ({ ...entry })),
@@ -237,19 +250,22 @@ export class WorkbookReadView {
 
 	trace(cellRef: string, opts?: { maxDepth?: number }): TraceResult | undefined {
 		const { sheetName, ref } = parseFullRef(cellRef, this.wb)
-		const result = verifyTrace(this.wb, sheetName, ref, opts)
+		const result = verifyTrace(this.wb, sheetName, ref, opts, this.analysis())
 		if (!result.ok) return undefined
 		return {
 			ref: `${sheetName}!${ref}`,
 			formula: result.value.formula,
+			value: result.value.value,
 			precedents: result.value.precedents.map((node) => ({
 				ref: `${node.sheet}!${node.ref}`,
 				formula: node.formula,
+				value: node.value,
 				depth: node.depth,
 			})),
 			dependents: result.value.dependents.map((node) => ({
 				ref: `${node.sheet}!${node.ref}`,
 				formula: node.formula,
+				value: node.value,
 				depth: node.depth,
 			})),
 			dependsOn: result.value.precedents.map((node) => `${node.sheet}!${node.ref}`),
@@ -268,20 +284,21 @@ export class WorkbookReadView {
 
 		const formula = normalizeFormulaInput(cell.formula)
 		const formulaKey = makeFormulaKey(this.wb, sheetName, ref)
-		const analyzed = formulaKey ? analyzeWorkbook(this.wb).formulas.get(formulaKey) : undefined
+		const analyzed = formulaKey ? this.analysis().formulas.get(formulaKey) : undefined
 		if (!analyzed) {
 			this.formulaInfoCache.set(cellRef, undefined)
 			return undefined
 		}
+		const tokens = tokenizeFormulaInput(formula)
 		if (!analyzed.ast) {
 			const info = buildFormulaInfo({
 				ref: `${sheetName}!${ref}`,
 				formula,
 				value: cell.value,
 				...(cell.formulaBinding ? { binding: cell.formulaBinding } : {}),
-				tokens: analyzed.tokens,
-				normalizedFormula: analyzed.normalizedFormula,
-				functions: analyzed.functionNames,
+				tokens,
+				normalizedFormula: formula,
+				functions: [],
 				volatile: analyzed.volatile,
 				...(analyzed.parseError ? { parseError: analyzed.parseError } : {}),
 			})
@@ -294,10 +311,10 @@ export class WorkbookReadView {
 			formula,
 			value: cell.value,
 			...(cell.formulaBinding ? { binding: cell.formulaBinding } : {}),
-			tokens: analyzed.tokens,
+			tokens,
 			ast: analyzed.ast,
-			normalizedFormula: analyzed.normalizedFormula,
-			functions: analyzed.functionNames,
+			normalizedFormula: printFormula(analyzed.ast),
+			functions: [...collectFunctionNames(analyzed.ast)],
 			volatile: analyzed.volatile,
 		})
 		this.formulaInfoCache.set(cellRef, info)
@@ -334,6 +351,29 @@ export class WorkbookReadView {
 		return this.wb.definedNames.workbookKeys()
 	}
 
+	definedNames(scopeSheetName?: string): readonly DefinedNameInfo[] {
+		if (scopeSheetName) {
+			return this.wb.definedNames
+				.list()
+				.filter((entry) => {
+					if (entry.scope.kind !== 'sheet') return false
+					const scope = entry.scope
+					const sheet = this.wb.sheets.find((candidate) => candidate.id === scope.sheetId)
+					return sheet?.name === scopeSheetName
+				})
+				.map((entry) => buildDefinedNameInfo(this.wb, entry))
+		}
+		return this.wb.definedNames.list().map((entry) => buildDefinedNameInfo(this.wb, entry))
+	}
+
+	workbookViews(): readonly import('./types.ts').WorkbookViewInfo[] {
+		return this.wb.workbookViews.map((view) => ({ ...view }))
+	}
+
+	externalReferences(): readonly string[] {
+		return [...this.wb.externalReferences]
+	}
+
 	definedName(name: string, scopeSheetName?: string): DefinedNameInfo | undefined {
 		let entry = scopeSheetName
 			? resolveDefinedNameBySheet(this.wb, name, scopeSheetName)
@@ -349,8 +389,7 @@ export class WorkbookReadView {
 			? this.wb.sheets.find((sheet) => sheet.id === sheetScope.sheetId)?.name
 			: undefined
 		return {
-			name: entry.name,
-			formula: entry.formula,
+			...buildDefinedNameInfo(this.wb, entry),
 			scope: entry.scope.kind,
 			...(sheetName ? { sheet: sheetName } : {}),
 		}
@@ -358,10 +397,18 @@ export class WorkbookReadView {
 
 	protected clearReadCaches(): void {
 		this.workbookInfoCache = undefined
+		this.analysisCache = undefined
 		this.sheetInspectCache.clear()
 		this.formulaInfoCache.clear()
 		this.sheetHandleCache.clear()
 		this.tableHandleCache.clear()
+	}
+
+	analysis(): WorkbookAnalysis {
+		if (!this.analysisCache) {
+			this.analysisCache = analyzeWorkbook(this.wb)
+		}
+		return this.analysisCache
 	}
 }
 
@@ -446,6 +493,43 @@ function parseFullRef(cellRef: string, workbook: Workbook): { sheetName: string;
 
 function normalizeFormulaInput(formula: string): string {
 	return formula.startsWith('=') ? formula.slice(1) : formula
+}
+
+function buildDefinedNameInfo(
+	workbook: Workbook,
+	entry: ReturnType<Workbook['definedNames']['list']>[number],
+): DefinedNameInfo {
+	const formula = normalizeFormulaInput(entry.formula)
+	const parsed = parseFormula(formula)
+	if (!parsed.ok) {
+		return {
+			name: entry.name,
+			formula: entry.formula,
+			normalizedFormula: formula,
+			scope: entry.scope.kind,
+			references: [],
+			refs: [],
+			functions: [],
+			volatile: false,
+			parseError: parsed.error.message,
+		}
+	}
+	const references = collectFormulaReferences(parsed.value)
+	const sheetScope = entry.scope.kind === 'sheet' ? entry.scope : undefined
+	const scopeSheet = sheetScope
+		? workbook.sheets.find((sheet) => sheet.id === sheetScope.sheetId)?.name
+		: undefined
+	return {
+		name: entry.name,
+		formula: entry.formula,
+		normalizedFormula: printFormula(parsed.value),
+		scope: entry.scope.kind,
+		...(scopeSheet ? { sheet: scopeSheet } : {}),
+		references,
+		refs: flattenLegacyReferenceTexts(references),
+		functions: [...collectFunctionNames(parsed.value)],
+		volatile: hasVolatileFunction(parsed.value),
+	}
 }
 
 function makeFormulaKey(workbook: Workbook, sheetName: string, ref: string): string | undefined {

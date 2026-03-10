@@ -29,6 +29,8 @@ export {
 	type FnArg,
 	type FunctionDef,
 	functionRegistry,
+	iterAreaRows,
+	rangeShape,
 	serialToDate,
 	toNumber,
 } from './functions/index.ts'

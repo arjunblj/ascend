@@ -49,7 +49,7 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 				console.error(`Table "${selector.name}" not found`)
 				return 1
 			}
-			const rows = handle.rows({
+			const page = handle.readRows({
 				...(rowOffset !== undefined ? { offset: rowOffset } : {}),
 				...(rowLimit !== undefined ? { limit: rowLimit } : {}),
 			})
@@ -66,15 +66,19 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 						totalsRow: handle.totalsRow(),
 						sortState: handle.sortState,
 						autoFilter: handle.autoFilter,
-						rows,
+						page,
+						rows: page.rows.map((row) => row.values),
 					}),
 				)
 				return 0
 			}
-			const grid = rows.map((row) =>
-				handle.columns.map((column) => formatCellValue(row[column] ?? { kind: 'empty' })),
+			const grid = page.rows.map((row) =>
+				handle.columns.map((column) => formatCellValue(row.values[column] ?? { kind: 'empty' })),
 			)
 			console.log(table([...handle.columns], grid))
+			if (page.hasMore) {
+				console.log(`\nMore rows available. Re-run with --row-offset ${page.nextRowOffset}.`)
+			}
 			return 0
 		}
 		case 'name': {
@@ -83,21 +87,38 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 				console.error(`Defined name "${selector.name}" not found`)
 				return 1
 			}
-			const resolvedRange = parseNamedRangeFormula(handle.formula)
+			const resolvedRange = resolveNamedRead(handle)
 			if (flags.has('json')) {
 				console.log(
 					jsonOut({
 						kind: 'name',
 						name: handle.name,
 						formula: handle.formula,
+						normalizedFormula: handle.normalizedFormula,
 						scope: handle.scope,
 						sheet: handle.sheet,
+						references: handle.references,
+						functions: handle.functions,
+						volatile: handle.volatile,
+						parseError: handle.parseError,
+						resolutionKind: describeNamedReadResolution(handle),
 						resolvedRange,
 					}),
 				)
 				return 0
 			}
 			console.log(`${handle.name}: ${handle.formula}`)
+			console.log(`  normalized: ${handle.normalizedFormula}`)
+			console.log(`  scope: ${handle.scope}${handle.sheet ? ` (${handle.sheet})` : ''}`)
+			if (handle.references.length > 0) {
+				console.log(`  refs: ${handle.references.map((reference) => reference.text).join(', ')}`)
+			}
+			if (handle.functions.length > 0) {
+				console.log(`  functions: ${handle.functions.join(', ')}`)
+			}
+			if (handle.parseError) {
+				console.log(`  parse-error: ${handle.parseError}`)
+			}
 			if (!resolvedRange) return 0
 			return readRangeLike(wb, resolvedRange.sheet, resolvedRange.range, rowOffset, rowLimit)
 		}
@@ -229,6 +250,44 @@ function parseNamedRangeFormula(formula: string): { sheet: string; range: string
 	const range = match[2]
 	if (!sheet || !range || !isSimpleRangeReference(range)) return undefined
 	return { sheet, range }
+}
+
+function resolveNamedRead(name: {
+	formula: string
+	references: readonly { kind: string; text: string; scope?: { kind: string; sheet?: string } }[]
+	sheet?: string
+}): { sheet: string; range: string } | undefined {
+	const first = name.references[0]
+	if (
+		first &&
+		(first.kind === 'cell' ||
+			first.kind === 'range' ||
+			first.kind === 'wholeRow' ||
+			first.kind === 'wholeColumn')
+	) {
+		const bang = first.text.lastIndexOf('!')
+		if (bang !== -1) {
+			return {
+				sheet: first.text.slice(0, bang).replace(/^'|'$/g, ''),
+				range: first.text.slice(bang + 1),
+			}
+		}
+		if (first.scope?.kind === 'sheet' && first.scope.sheet) {
+			return { sheet: first.scope.sheet, range: first.text }
+		}
+		if (name.sheet) {
+			return { sheet: name.sheet, range: first.text }
+		}
+	}
+	return parseNamedRangeFormula(name.formula)
+}
+
+function describeNamedReadResolution(name: {
+	references: readonly { kind: string }[]
+	parseError?: string
+}): string {
+	if (name.parseError) return 'parse-error'
+	return name.references[0]?.kind ?? 'unresolved'
 }
 
 function isSimpleRangeReference(value: string): boolean {

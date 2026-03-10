@@ -13,6 +13,7 @@ import {
 	type EvalArg,
 	getRange,
 	numArg,
+	rangeShape,
 	registerFunction,
 	valuesEqual,
 	wildcardMatch,
@@ -338,11 +339,11 @@ function choose(args: EvalArg[]): CellValue {
 }
 
 function rowsFn(args: EvalArg[]): CellValue {
-	return numberValue(getRange(args[0]).length)
+	return numberValue(rangeShape(args[0]).rows)
 }
 
 function columnsFn(args: EvalArg[]): CellValue {
-	return numberValue(getRange(args[0])[0]?.length ?? 0)
+	return numberValue(rangeShape(args[0]).cols)
 }
 
 function lookupFn(args: EvalArg[]): CellValue {

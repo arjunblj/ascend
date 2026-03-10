@@ -22,6 +22,8 @@ export interface EvalArg {
 	readonly values?: readonly (readonly CellValue[])[]
 	readonly ref?: EvalRef
 	readonly areas?: readonly EvalArea[]
+	readonly shapeRows?: number
+	readonly shapeCols?: number
 	readonly forEachValue?: (fn: (value: CellValue) => void) => void
 }
 
@@ -60,6 +62,31 @@ export function getRange(arg: EvalArg | undefined): readonly (readonly CellValue
 	if (arg?.kind === 'range' && arg.values) return arg.values
 	if (arg?.value.kind === 'array') return arg.value.rows
 	return [[arg?.value ?? EMPTY]]
+}
+
+export function rangeShape(arg: EvalArg | undefined): { rows: number; cols: number } {
+	if (arg?.shapeRows !== undefined && arg?.shapeCols !== undefined) {
+		return { rows: arg.shapeRows, cols: arg.shapeCols }
+	}
+	if (arg?.ref) {
+		return {
+			rows: (arg.ref.endRow ?? arg.ref.row) - arg.ref.row + 1,
+			cols: (arg.ref.endCol ?? arg.ref.col) - arg.ref.col + 1,
+		}
+	}
+	const range = getRange(arg)
+	return { rows: range.length, cols: range[0]?.length ?? 0 }
+}
+
+export function iterAreaRows(arg: EvalArg | undefined): readonly (readonly CellValue[])[] {
+	if (!arg) return []
+	if (arg.areas?.length) {
+		if (arg.areas.length === 1) return arg.areas[0]?.values ?? []
+		return []
+	}
+	if (arg.kind === 'range' && arg.values) return arg.values
+	if (arg.value.kind === 'array') return arg.value.rows
+	return [[arg.value]]
 }
 
 export function toNumber(v: CellValue): number | null {

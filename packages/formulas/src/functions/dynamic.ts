@@ -158,6 +158,12 @@ function rangeLooksLikeReference(arg: EvalArg | undefined): boolean {
 	return arg.kind === 'range' || arg.value.kind === 'array'
 }
 
+function resolveSelectionIndex(index: number, size: number): number | CellValue {
+	if (index === 0) return errorValue('#VALUE!')
+	const normalized = index < 0 ? size + index : index - 1
+	return normalized < 0 || normalized >= size ? errorValue('#VALUE!') : normalized
+}
+
 export const dynamicFunctions: FunctionDef[] = [
 	{
 		name: 'SORT',
@@ -228,20 +234,43 @@ export const dynamicFunctions: FunctionDef[] = [
 		maxArgs: 3,
 		evaluate(args) {
 			const data = getRange(args[0])
-			const include = getRange(args[1]).map((r) => {
-				const v = r[0]
-				if (!v) return false
-				if (v.kind === 'boolean') return v.value
-				if (v.kind === 'number') return v.value !== 0
-				return false
-			})
+			const includeRange = getRange(args[1])
 			const ifEmpty = args[2]?.value
+			const rowCount = data.length
+			const colCount = data.reduce((max, row) => Math.max(max, row.length), 0)
+			const includeRows = includeRange.length
+			const includeCols = includeRange.reduce((max, row) => Math.max(max, row.length), 0)
 
-			const filtered = data.filter((_, i) => include[i])
-			if (filtered.length === 0) {
-				return ifEmpty ?? errorValue('#CALC!')
+			const coerceInclude = (value: CellValue): boolean | CellValue => {
+				if (value.kind === 'error') return value
+				if (value.kind === 'boolean') return value.value
+				if (value.kind === 'number') return value.value !== 0
+				return false
 			}
-			return scalarOrArray(filtered)
+
+			if (includeRows === rowCount && includeCols === 1) {
+				const filtered: (readonly CellValue[])[] = []
+				for (let row = 0; row < rowCount; row++) {
+					const includeValue = coerceInclude(includeRange[row]?.[0] ?? EMPTY)
+					if (typeof includeValue !== 'boolean') return includeValue
+					if (includeValue) filtered.push(data[row] ?? [])
+				}
+				if (filtered.length === 0) return ifEmpty ?? errorValue('#CALC!')
+				return scalarOrArray(filtered)
+			}
+			if (includeRows === 1 && includeCols === colCount) {
+				const selectedCols: number[] = []
+				for (let col = 0; col < colCount; col++) {
+					const includeValue = coerceInclude(includeRange[0]?.[col] ?? EMPTY)
+					if (typeof includeValue !== 'boolean') return includeValue
+					if (includeValue) selectedCols.push(col)
+				}
+				if (selectedCols.length === 0) return ifEmpty ?? errorValue('#CALC!')
+				return scalarOrArray(
+					data.map((row) => selectedCols.map((col) => topLeftScalar(row[col] ?? EMPTY))),
+				)
+			}
+			return errorValue('#VALUE!')
 		},
 	},
 	{
@@ -392,6 +421,7 @@ export const dynamicFunctions: FunctionDef[] = [
 			const flat = flattenScalars(data, scanByColumn).filter(
 				(value) => !shouldIgnoreValue(value, ignoreMode),
 			)
+			if (flat.length === 0) return errorValue('#CALC!')
 			return scalarOrArray(flat.map((value) => [value]))
 		},
 	},
@@ -408,6 +438,7 @@ export const dynamicFunctions: FunctionDef[] = [
 			const flat = flattenScalars(data, scanByColumn).filter(
 				(value) => !shouldIgnoreValue(value, ignoreMode),
 			)
+			if (flat.length === 0) return errorValue('#CALC!')
 			return scalarOrArray([flat])
 		},
 	},
@@ -504,6 +535,7 @@ export const dynamicFunctions: FunctionDef[] = [
 			if (typeof rowCountArg !== 'number') return rowCountArg
 			const colCountArg = args[2] ? num(args[2]) : undefined
 			if (colCountArg !== undefined && typeof colCountArg !== 'number') return colCountArg
+			if (rowCountArg === 0 || colCountArg === 0) return errorValue('#CALC!')
 			let rows =
 				rowCountArg >= 0
 					? data.slice(0, rowCountArg)
@@ -515,6 +547,7 @@ export const dynamicFunctions: FunctionDef[] = [
 						: row.slice(Math.max(0, row.length + colCountArg)),
 				)
 			}
+			if (rows.length === 0 || rows.every((row) => row.length === 0)) return errorValue('#CALC!')
 			return scalarOrArray(rows)
 		},
 	},
@@ -526,16 +559,20 @@ export const dynamicFunctions: FunctionDef[] = [
 			const data = getRange(args[0])
 			const rows = args[1] ? num(args[1]) : 0
 			if (typeof rows !== 'number') return rows
+			if (rows === 0) return errorValue('#CALC!')
 			if (Math.abs(rows) >= data.length) return errorValue('#CALC!')
 			const dropped = rows > 0 ? data.slice(rows) : data.slice(0, data.length + rows)
 			let result = dropped
 			const cols = args[2] ? num(args[2]) : 0
 			if (typeof cols !== 'number') return cols
+			if (cols === 0 && args[2] !== undefined) return errorValue('#CALC!')
 			if (cols !== 0) {
 				result = dropped.map((row) =>
 					cols > 0 ? row.slice(cols) : row.slice(0, Math.max(0, row.length + cols)),
 				)
 			}
+			if (result.length === 0 || result.every((row) => row.length === 0))
+				return errorValue('#CALC!')
 			return scalarOrArray(result)
 		},
 	},
@@ -574,7 +611,9 @@ export const dynamicFunctions: FunctionDef[] = [
 			for (let i = 1; i < args.length; i++) {
 				const col = num(args[i])
 				if (typeof col !== 'number') return col
-				indices.push(Math.round(col) - 1)
+				const resolved = resolveSelectionIndex(Math.round(col), (data[0] ?? []).length)
+				if (typeof resolved !== 'number') return resolved
+				indices.push(resolved)
 			}
 			const chosen = chooseCols(data, indices)
 			return 'kind' in chosen ? chosen : scalarOrArray(chosen)
@@ -590,7 +629,9 @@ export const dynamicFunctions: FunctionDef[] = [
 			for (let i = 1; i < args.length; i++) {
 				const row = num(args[i])
 				if (typeof row !== 'number') return row
-				indices.push(Math.round(row) - 1)
+				const resolved = resolveSelectionIndex(Math.round(row), data.length)
+				if (typeof resolved !== 'number') return resolved
+				indices.push(resolved)
 			}
 			const chosen = chooseRows(data, indices)
 			return 'kind' in chosen ? chosen : scalarOrArray(chosen)

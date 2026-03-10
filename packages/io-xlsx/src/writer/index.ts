@@ -223,14 +223,18 @@ export function planWriteXlsx(
 		wbRels.push({ id: `rId${rIdCounter}`, type: REL_STYLES, target: 'styles.xml' })
 		rIdCounter++
 
-		const preservedThemeXml = workbook.preservedTheme
-			? resolvePreservedText(
-					sourceArchive,
-					workbook.preservedTheme.xml,
-					workbook.preservedTheme.path,
-				)
-			: undefined
-		if (workbook.preservedTheme && preservedThemeXml) {
+		const hasPreservedTheme = workbook.preservedTheme
+			? hasPreservedPart(sourceArchive, workbook.preservedTheme.xml, workbook.preservedTheme.path)
+			: false
+		const preservedThemeXml =
+			workbook.preservedTheme && !options.summaryOnly
+				? resolvePreservedText(
+						sourceArchive,
+						workbook.preservedTheme.xml,
+						workbook.preservedTheme.path,
+					)
+				: undefined
+		if (workbook.preservedTheme && (hasPreservedTheme || preservedThemeXml)) {
 			wbRels.push({
 				id: `rId${rIdCounter}`,
 				type: REL_THEME,
@@ -268,20 +272,36 @@ export function planWriteXlsx(
 			.map((rel) => rel.id)
 
 		const preservedWorkbookXml = workbook.preservedXml
+		const hasPreservedWorkbookXml =
+			!options.workbookMetaDirty &&
+			!!preservedWorkbookXml &&
+			hasPreservedPart(
+				sourceArchive,
+				preservedWorkbookXml.workbookXml,
+				preservedWorkbookXml.workbookPath,
+			)
+		const hasPreservedWorkbookRels =
+			!options.workbookMetaDirty &&
+			!!preservedWorkbookXml &&
+			hasPreservedPart(
+				sourceArchive,
+				preservedWorkbookXml.workbookRelsXml,
+				preservedWorkbookXml.workbookRelsPath,
+			)
 		const preservedWorkbookXmlText =
-			!options.workbookMetaDirty && preservedWorkbookXml
+			hasPreservedWorkbookXml && !options.summaryOnly
 				? resolvePreservedText(
 						sourceArchive,
-						preservedWorkbookXml.workbookXml,
-						preservedWorkbookXml.workbookPath,
+						preservedWorkbookXml?.workbookXml,
+						preservedWorkbookXml?.workbookPath,
 					)
 				: undefined
 		const preservedWorkbookRelsText =
-			!options.workbookMetaDirty && preservedWorkbookXml
+			hasPreservedWorkbookRels && !options.summaryOnly
 				? resolvePreservedText(
 						sourceArchive,
-						preservedWorkbookXml.workbookRelsXml,
-						preservedWorkbookXml.workbookRelsPath,
+						preservedWorkbookXml?.workbookRelsXml,
+						preservedWorkbookXml?.workbookRelsPath,
 					)
 				: undefined
 		const preservedWorkbookXmlBytes =
@@ -292,7 +312,9 @@ export function planWriteXlsx(
 			!options.workbookMetaDirty && preservedWorkbookXml
 				? resolvePreservedBytes(sourceArchive, preservedWorkbookXml.workbookRelsPath)
 				: undefined
-		const preserveWorkbookXml = preservedWorkbookXmlText && preservedWorkbookRelsText
+		const preserveWorkbookXml = options.summaryOnly
+			? hasPreservedWorkbookXml && hasPreservedWorkbookRels
+			: !!(preservedWorkbookXmlText && preservedWorkbookRelsText)
 		const workbookContentType =
 			preservedWorkbookXml?.contentType ??
 			'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml'
@@ -318,7 +340,7 @@ export function planWriteXlsx(
 				},
 				() =>
 					preserveWorkbookXml
-						? preservedWorkbookXmlText
+						? (preservedWorkbookXmlText ?? '')
 						: buildWorkbookXml(workbook, { externalReferenceRelIds }),
 			)
 		}
@@ -420,20 +442,32 @@ export function planWriteXlsx(
 			const tableRelIds: string[] = []
 			const commentsCapsule = sheetCapsules.find((capsule) => capsule.relType === REL_COMMENTS)
 			const tableCapsules = sheetCapsules.filter((capsule) => capsule.relType === REL_TABLE)
-			const preservedSheetXmlText = resolvePreservedText(
+			const hasPreservedSheetXml = hasPreservedPart(
 				sourceArchive,
 				preservedSheetXml?.xml,
 				preservedSheetXml?.partPath,
 			)
-			const preservedSheetXmlBytes = resolvePreservedBytes(
-				sourceArchive,
-				preservedSheetXml?.partPath,
-			)
-			const preservedSheetRelsText = resolvePreservedText(
+			const hasPreservedSheetRels = hasPreservedPart(
 				sourceArchive,
 				preservedSheetXml?.relsXml,
 				preservedSheetXml?.relsPath,
 			)
+			const preservedSheetXmlText =
+				!options.summaryOnly && hasPreservedSheetXml
+					? resolvePreservedText(sourceArchive, preservedSheetXml?.xml, preservedSheetXml?.partPath)
+					: undefined
+			const preservedSheetXmlBytes = resolvePreservedBytes(
+				sourceArchive,
+				preservedSheetXml?.partPath,
+			)
+			const preservedSheetRelsText =
+				!options.summaryOnly && hasPreservedSheetRels
+					? resolvePreservedText(
+							sourceArchive,
+							preservedSheetXml?.relsXml,
+							preservedSheetXml?.relsPath,
+						)
+					: undefined
 			const preservedSheetRelsBytes = resolvePreservedBytes(
 				sourceArchive,
 				preservedSheetXml?.relsPath,
@@ -489,7 +523,8 @@ export function planWriteXlsx(
 				})
 			}
 			const preserveSheetXml =
-				!(options.dirtySheetNames ?? []).includes(sheet.name) && preservedSheetXmlText
+				!(options.dirtySheetNames ?? []).includes(sheet.name) &&
+				(options.summaryOnly ? hasPreservedSheetXml : !!preservedSheetXmlText)
 			if (!preserveSheetXml) {
 				if (sheet.comments.size > 0) {
 					const commentsPartPath =
@@ -593,7 +628,7 @@ export function planWriteXlsx(
 					},
 					() =>
 						preserveSheetXml
-							? preservedSheetXmlText
+							? (preservedSheetXmlText ?? '')
 							: buildSheetXml(sheet, ssTable, xfMap, {
 									tableRelIds,
 									...(sheet.drawingRefs.hasDrawing && drawingRelId ? { drawingRelId } : {}),
@@ -605,7 +640,10 @@ export function planWriteXlsx(
 								}),
 				)
 			}
-			if (preserveSheetXml && preservedSheetRelsText) {
+			if (
+				preserveSheetXml &&
+				(options.summaryOnly ? hasPreservedSheetRels : !!preservedSheetRelsText)
+			) {
 				if (preservedSheetRelsBytes && !options.summaryOnly) {
 					recordBytes(
 						`xl/worksheets/_rels/sheet${i + 1}.xml.rels`,
@@ -622,7 +660,7 @@ export function planWriteXlsx(
 							owner: { kind: 'sheet', sheetName: sheet.name },
 							origin: resolvePreservedOrigin(preservedSheetXml?.relsXml),
 						},
-						() => preservedSheetRelsText,
+						() => preservedSheetRelsText ?? '',
 					)
 				}
 			} else if (sheetRels.length > 0) {
@@ -805,6 +843,14 @@ function resolvePreservedBytes(
 ): Uint8Array | undefined {
 	if (!archive || !partPath) return undefined
 	return archive.readBytes(partPath)
+}
+
+function hasPreservedPart(
+	archive: ZipArchive | undefined,
+	inlineText: string | undefined,
+	partPath: string | undefined,
+): boolean {
+	return inlineText !== undefined || (!!archive && !!partPath && archive.has(partPath))
 }
 
 function hasCompletePreservedStyleMap(

@@ -1,6 +1,6 @@
 import type { CellFormulaBinding } from '@ascend/core'
 import type { FormulaNode, StructuredRefNode, Token } from '@ascend/formulas'
-import { functionRegistry, printFormula } from '@ascend/formulas'
+import { functionRegistry, printFormula, tokenize } from '@ascend/formulas'
 import type { CellValue } from '@ascend/schema'
 import type { FormulaInfo, FormulaReferenceInfo, FormulaReferenceScope } from './types.ts'
 
@@ -39,6 +39,10 @@ export function buildFormulaInfo(input: BuildFormulaInfoInput): FormulaInfo {
 		...(input.ast ? { ast: input.ast } : {}),
 		...(input.parseError ? { parseError: input.parseError } : {}),
 	}
+}
+
+export function tokenizeFormulaInput(formula: string): readonly Token[] {
+	return tokenize(formula).filter((token) => token.type !== 'Whitespace' && token.type !== 'EOF')
 }
 
 export function collectFormulaReferences(node: FormulaNode): readonly FormulaReferenceInfo[] {

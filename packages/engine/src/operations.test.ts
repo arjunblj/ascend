@@ -315,6 +315,18 @@ describe('applyOperation', () => {
 		expect(wb.definedNames.get('AllA')).toBe('Data!A:A')
 	})
 
+	test('renameSheet updates 3D sheet-span endpoints in formulas', () => {
+		const wb = createWorkbook()
+		const s1 = wb.addSheet('Sheet1')
+		wb.addSheet('Sheet2')
+		wb.addSheet('Sheet3')
+		s1.cells.set(0, 0, cell(EMPTY, 'SUM(Sheet1:Sheet3!A1)'))
+
+		applyOperation(wb, { op: 'renameSheet', sheet: 'Sheet3', newName: 'Summary' })
+
+		expect(s1.cells.get(0, 0)?.formula).toBe('SUM(Sheet1:Summary!A1)')
+	})
+
 	test('renameSheet updates validation, conditional-format, and table formulas', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

@@ -1,5 +1,5 @@
 import { jsonOut } from '../output/json.ts'
-import { bullet, heading } from '../output/pretty.ts'
+import { bullet, formatCellValue, heading } from '../output/pretty.ts'
 import { openWorkbookSessionWithProgress } from '../progress.ts'
 
 export const usage = `Usage: ascend trace <file> <ref> [flags]
@@ -12,6 +12,7 @@ Arguments:
 
 Flags:
   --json          Output as JSON
+  --max-depth <N> Limit trace depth
 `
 
 export async function traceCommand(args: string[], flags: Map<string, string>): Promise<number> {
@@ -23,7 +24,8 @@ export async function traceCommand(args: string[], flags: Map<string, string>): 
 	}
 
 	const { session } = await openWorkbookSessionWithProgress(file, { mode: 'formula' })
-	const result = session.trace(cellRef)
+	const maxDepth = parseOptionalInt(flags.get('max-depth'))
+	const result = session.trace(cellRef, maxDepth !== undefined ? { maxDepth } : undefined)
 
 	if (!result) {
 		console.error(`Could not trace "${cellRef}"`)
@@ -37,12 +39,33 @@ export async function traceCommand(args: string[], flags: Map<string, string>): 
 		if (result.formula) {
 			console.log(bullet('Formula', `=${result.formula}`))
 		}
-		console.log(
-			bullet('Depends on', result.dependsOn.length > 0 ? result.dependsOn.join(', ') : '(none)'),
-		)
-		console.log(
-			bullet('Feeds into', result.feedsInto.length > 0 ? result.feedsInto.join(', ') : '(none)'),
-		)
+		console.log(bullet('Value', formatCellValue(result.value)))
+		console.log(heading('Precedents'))
+		if (result.precedents.length === 0) {
+			console.log('  (none)')
+		} else {
+			for (const node of result.precedents) {
+				console.log(
+					`  [${node.depth}] ${node.ref} value=${formatCellValue(node.value)}${node.formula ? ` formula=${node.formula}` : ''}`,
+				)
+			}
+		}
+		console.log(heading('Dependents'))
+		if (result.dependents.length === 0) {
+			console.log('  (none)')
+		} else {
+			for (const node of result.dependents) {
+				console.log(
+					`  [${node.depth}] ${node.ref} value=${formatCellValue(node.value)}${node.formula ? ` formula=${node.formula}` : ''}`,
+				)
+			}
+		}
 	}
 	return 0
+}
+
+function parseOptionalInt(value: string | undefined): number | undefined {
+	if (value === undefined || value === '') return undefined
+	const parsed = Number.parseInt(value, 10)
+	return Number.isNaN(parsed) ? undefined : parsed
 }

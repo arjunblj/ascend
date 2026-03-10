@@ -2,9 +2,9 @@ import { createHash } from 'node:crypto'
 import { stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { parseA1 } from '@ascend/core'
-import { analyzeWorkbook, type WorkbookAnalysis } from '@ascend/engine'
+import { printFormula } from '@ascend/formulas'
 import { check as verifyCheck, lint as verifyLint, trace as verifyTrace } from '@ascend/verify'
-import { buildFormulaInfo } from './formula-info.ts'
+import { buildFormulaInfo, collectFunctionNames, tokenizeFormulaInput } from './formula-info.ts'
 import { openWorkbookSource } from './load.ts'
 import { WorkbookReadView } from './read-view.ts'
 import type { SheetHandle } from './sheet-handle.ts'
@@ -47,16 +47,17 @@ interface SessionCacheEntry {
 	readonly key: string
 	readonly identity: SessionIdentity
 	readonly session: WorkbookSession
+	readonly sizeBytes: number
 }
 
 const MAX_CACHED_SESSIONS = 16
+const MAX_CACHED_SESSION_BYTES = 32 * 1024 * 1024
 const sessionCache = new Map<string, SessionCacheEntry>()
 
 export class WorkbookSession {
 	private readonly identity: SessionIdentity
 	private readonly options: WorkbookSessionOpenOptions
 	private readonly view: WorkbookReadView
-	private analysis?: WorkbookAnalysis
 
 	private constructor(
 		identity: SessionIdentity,
@@ -87,7 +88,7 @@ export class WorkbookSession {
 			normalizeOptions(options),
 			new WorkbookReadView(loaded.workbook, loaded.report, loaded.loadInfo),
 		)
-		setCacheEntry({ key, identity, session })
+		setCacheEntry({ key, identity, session, sizeBytes: sessionSizeBytes(identity) })
 		return session
 	}
 
@@ -165,20 +166,23 @@ export class WorkbookSession {
 			sheetName,
 			ref,
 			opts,
-			this.getAnalysis(),
+			this.view.analysis(),
 		)
 		return result.ok
 			? {
 					ref: `${sheetName}!${ref}`,
 					formula: result.value.formula,
+					value: result.value.value,
 					precedents: result.value.precedents.map((node) => ({
 						ref: `${node.sheet}!${node.ref}`,
 						formula: node.formula,
+						value: node.value,
 						depth: node.depth,
 					})),
 					dependents: result.value.dependents.map((node) => ({
 						ref: `${node.sheet}!${node.ref}`,
 						formula: node.formula,
+						value: node.value,
 						depth: node.depth,
 					})),
 					dependsOn: result.value.precedents.map((node) => `${node.sheet}!${node.ref}`),
@@ -193,17 +197,18 @@ export class WorkbookSession {
 		if (!cell?.formula) return undefined
 		const formula = normalizeFormulaInput(cell.formula)
 		const formulaKey = makeFormulaKey(this.view.getWorkbookModel(), sheetName, ref)
-		const analyzed = formulaKey ? this.getAnalysis().formulas.get(formulaKey) : undefined
+		const analyzed = formulaKey ? this.view.analysis().formulas.get(formulaKey) : undefined
 		if (!analyzed) return this.view.formula(cellRef)
+		const tokens = tokenizeFormulaInput(formula)
 		if (!analyzed.ast) {
 			return buildFormulaInfo({
 				ref: `${sheetName}!${ref}`,
 				formula,
 				value: cell.value,
 				...(cell.formulaBinding ? { binding: cell.formulaBinding } : {}),
-				tokens: analyzed.tokens,
-				normalizedFormula: analyzed.normalizedFormula,
-				functions: analyzed.functionNames,
+				tokens,
+				normalizedFormula: formula,
+				functions: [],
 				volatile: analyzed.volatile,
 				...(analyzed.parseError ? { parseError: analyzed.parseError } : {}),
 			})
@@ -213,16 +218,16 @@ export class WorkbookSession {
 			formula,
 			value: cell.value,
 			...(cell.formulaBinding ? { binding: cell.formulaBinding } : {}),
-			tokens: analyzed.tokens,
+			tokens,
 			ast: analyzed.ast,
-			normalizedFormula: analyzed.normalizedFormula,
-			functions: analyzed.functionNames,
+			normalizedFormula: printFormula(analyzed.ast),
+			functions: [...collectFunctionNames(analyzed.ast)],
 			volatile: analyzed.volatile,
 		})
 	}
 
 	check(): CheckResult {
-		const result = verifyCheck(this.view.getWorkbookModel(), this.getAnalysis())
+		const result = verifyCheck(this.view.getWorkbookModel(), this.view.analysis())
 		const issues = result.issues.map((issue) => ({
 			severity: issue.severity === 'info' ? 'warning' : issue.severity,
 			message: issue.message,
@@ -232,7 +237,7 @@ export class WorkbookSession {
 	}
 
 	lint(): LintResult {
-		const result = verifyLint(this.view.getWorkbookModel(), this.getAnalysis())
+		const result = verifyLint(this.view.getWorkbookModel(), this.view.analysis())
 		return {
 			clean: result.violations.length === 0,
 			warnings: result.violations.map((violation) => ({
@@ -245,6 +250,10 @@ export class WorkbookSession {
 
 	definedName(name: string, sheetName?: string): DefinedNameInfo | undefined {
 		return this.view.definedName(name, sheetName)
+	}
+
+	definedNames(sheetName?: string): readonly DefinedNameInfo[] {
+		return this.view.definedNames(sheetName)
 	}
 
 	table(name: string): TableHandle | undefined {
@@ -267,11 +276,12 @@ export class WorkbookSession {
 		return this.view.slicers()
 	}
 
-	private getAnalysis(): WorkbookAnalysis {
-		if (!this.analysis) {
-			this.analysis = analyzeWorkbook(this.view.getWorkbookModel())
-		}
-		return this.analysis
+	workbookViews(): readonly import('./types.ts').WorkbookViewInfo[] {
+		return this.view.workbookViews()
+	}
+
+	externalReferences(): readonly string[] {
+		return this.view.externalReferences()
 	}
 }
 
@@ -326,11 +336,24 @@ function touchCacheEntry(entry: SessionCacheEntry): void {
 
 function setCacheEntry(entry: SessionCacheEntry): void {
 	sessionCache.set(entry.key, entry)
-	while (sessionCache.size > MAX_CACHED_SESSIONS) {
+	while (
+		sessionCache.size > MAX_CACHED_SESSIONS ||
+		totalCachedSessionBytes() > MAX_CACHED_SESSION_BYTES
+	) {
 		const oldest = sessionCache.keys().next().value
 		if (!oldest) break
 		sessionCache.delete(oldest)
 	}
+}
+
+function totalCachedSessionBytes(): number {
+	let total = 0
+	for (const entry of sessionCache.values()) total += entry.sizeBytes
+	return total
+}
+
+function sessionSizeBytes(identity: SessionIdentity): number {
+	return identity.size
 }
 
 function normalizeFormulaInput(formula: string): string {

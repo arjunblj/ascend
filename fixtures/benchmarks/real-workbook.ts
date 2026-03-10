@@ -75,6 +75,7 @@ async function time<T, TResult = T>(
 	name: string,
 	fn: () => Promise<T>,
 	options: {
+		readonly beforeGc?: () => void
 		readonly summarizeResult?: (result: T) => TResult
 		readonly retainResultForGc?: boolean
 	} = {},
@@ -87,6 +88,7 @@ async function time<T, TResult = T>(
 		? options.summarizeResult(rawResult)
 		: (rawResult as unknown as TResult)
 	const rssAfter = getRssBytes()
+	options.beforeGc?.()
 	if (!options.retainResultForGc) {
 		rawResult = undefined as T
 	}
@@ -264,10 +266,17 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 			}
 		}
 		case 'read-window-values': {
-			const wb = await AscendWorkbook.open(target, { mode: 'values' })
+			let wb: AscendWorkbook | undefined = await AscendWorkbook.open(target, { mode: 'values' })
 			const probe = pickReadProbe(wb)
-			const { result, timing } = await time('read-window-values', async () =>
-				Promise.resolve(wb.readWindow(probe.sheet, probe.range, { rowLimit: probe.rowLimit })),
+			const { result, timing } = await time(
+				'read-window-values',
+				async () =>
+					Promise.resolve(wb?.readWindow(probe.sheet, probe.range, { rowLimit: probe.rowLimit })),
+				{
+					beforeGc: () => {
+						wb = undefined
+					},
+				},
 			)
 			if (!result) throw new Error('Read-window benchmark failed to load target range')
 			return {
@@ -281,21 +290,29 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 			}
 		}
 		case 'workflow-inspect-read': {
-			const wb = await AscendWorkbook.open(target, { mode: 'values' })
+			let wb: AscendWorkbook | undefined = await AscendWorkbook.open(target, { mode: 'values' })
 			const probe = pickReadProbe(wb)
-			const { result, timing } = await time('workflow-inspect-read', async () => {
-				const info = wb.inspect()
-				const first = wb.readWindow(probe.sheet, probe.range, { rowLimit: probe.rowLimit })
-				const second = wb.readWindow(probe.sheet, probe.range, {
-					rowOffset: probe.rowLimit,
-					rowLimit: probe.rowLimit,
-				})
-				return {
-					sheetCount: info.sheetCount,
-					firstCells: first?.cells.length ?? 0,
-					secondCells: second?.cells.length ?? 0,
-				}
-			})
+			const { result, timing } = await time(
+				'workflow-inspect-read',
+				async () => {
+					const info = wb?.inspect()
+					const first = wb?.readWindow(probe.sheet, probe.range, { rowLimit: probe.rowLimit })
+					const second = wb?.readWindow(probe.sheet, probe.range, {
+						rowOffset: probe.rowLimit,
+						rowLimit: probe.rowLimit,
+					})
+					return {
+						sheetCount: info?.sheetCount ?? 0,
+						firstCells: first?.cells.length ?? 0,
+						secondCells: second?.cells.length ?? 0,
+					}
+				},
+				{
+					beforeGc: () => {
+						wb = undefined
+					},
+				},
+			)
 			return {
 				timing,
 				assertions: {
@@ -329,18 +346,29 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 		}
 		case 'workflow-session-verify': {
 			WorkbookSession.clearCache()
-			const session = await WorkbookSession.open(target, { mode: 'formula' })
-			const probe = pickFormulaProbe(session)
-			const { result, timing } = await time('workflow-session-verify', async () => {
-				const trace = session.trace(`${probe.sheet}!${probe.ref}`)
-				const check = session.check()
-				const lint = session.lint()
-				return {
-					tracePrecedents: trace?.dependsOn.length ?? 0,
-					checkIssues: check.issues.length,
-					lintWarnings: lint.warnings.length,
-				}
+			let session: WorkbookSession | undefined = await WorkbookSession.open(target, {
+				mode: 'formula',
 			})
+			const probe = pickFormulaProbe(session)
+			const { result, timing } = await time(
+				'workflow-session-verify',
+				async () => {
+					const trace = session?.trace(`${probe.sheet}!${probe.ref}`)
+					const check = session?.check()
+					const lint = session?.lint()
+					return {
+						tracePrecedents: trace?.dependsOn.length ?? 0,
+						checkIssues: check?.issues.length ?? 0,
+						lintWarnings: lint?.warnings.length ?? 0,
+					}
+				},
+				{
+					beforeGc: () => {
+						session = undefined
+						WorkbookSession.clearCache()
+					},
+				},
+			)
 			return {
 				timing,
 				assertions: {

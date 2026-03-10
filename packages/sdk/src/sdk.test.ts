@@ -1023,8 +1023,45 @@ describe('AscendWorkbook', () => {
 		expect(wb.definedName('MyRange')).toEqual({
 			name: 'MyRange',
 			formula: 'Sheet1!A1:B10',
+			normalizedFormula: 'Sheet1!A1:B10',
 			scope: 'workbook',
+			references: [
+				{ kind: 'range', text: 'Sheet1!A1:B10', scope: { kind: 'sheet', sheet: 'Sheet1' } },
+			],
+			refs: ['Sheet1!A1:B10'],
+			functions: [],
+			volatile: false,
 		})
+	})
+
+	test('definedNames exposes parsed name inventory and workbook metadata inventories', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setDefinedName', name: 'Budget', ref: 'Sheet1!A1:A3' }])
+		const internal = wb as unknown as {
+			wb: {
+				workbookViews: Array<Record<string, unknown>>
+				externalReferences: string[]
+			}
+		}
+		internal.wb.workbookViews.push({ activeTab: 0, visibility: 'visible' })
+		internal.wb.externalReferences.push('xl/externalLinks/externalLink1.xml')
+
+		expect(wb.definedNames()).toEqual([
+			{
+				name: 'Budget',
+				formula: 'Sheet1!A1:A3',
+				normalizedFormula: 'Sheet1!A1:A3',
+				scope: 'workbook',
+				references: [
+					{ kind: 'range', text: 'Sheet1!A1:A3', scope: { kind: 'sheet', sheet: 'Sheet1' } },
+				],
+				refs: ['Sheet1!A1:A3'],
+				functions: [],
+				volatile: false,
+			},
+		])
+		expect(wb.workbookViews()).toEqual([{ activeTab: 0, visibility: 'visible' }])
+		expect(wb.externalReferences()).toEqual(['xl/externalLinks/externalLink1.xml'])
 	})
 
 	test('formula returns parsed formula metadata', () => {
@@ -1243,6 +1280,23 @@ describe('AscendWorkbook', () => {
 		expect(table.sortState?.ref).toBe('A1:B2')
 		expect(table.headerRow()?.[0]).toEqual({ kind: 'string', value: 'Name' })
 		expect(table.totalsRow()?.[1]).toEqual({ kind: 'number', value: 90 })
+		expect(table.readRows({ offset: 0, limit: 1 })).toEqual({
+			rowOffset: 0,
+			rowLimit: 1,
+			returnedRows: 1,
+			totalRows: 1,
+			hasMore: false,
+			rows: [
+				{
+					index: 0,
+					sheetRow: 1,
+					values: {
+						Name: { kind: 'string', value: 'Alice' },
+						Score: { kind: 'number', value: 90 },
+					},
+				},
+			],
+		})
 	})
 
 	test('inspectSheet exposes structured table metadata', () => {
@@ -1266,6 +1320,30 @@ describe('AscendWorkbook', () => {
 		expect(detail?.tables?.[0]?.rowCount).toBe(1)
 		expect(detail?.tables?.[0]?.columnDefs.map((column) => column.name)).toEqual(['Name', 'Score'])
 		expect(detail?.tables?.[0]?.headerRow?.[0]).toEqual({ kind: 'string', value: 'Name' })
+	})
+
+	test('trace exposes node values and depth', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 2 },
+					{ ref: 'B1', value: 3 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'C1', formula: '=A1+B1' },
+		])
+		wb.recalc()
+
+		const trace = wb.trace('Sheet1!C1')
+		expect(trace).toBeDefined()
+		expect(trace?.value).toEqual({ kind: 'number', value: 5 })
+		expect(trace?.precedents).toEqual([
+			{ ref: 'Sheet1!A1', formula: null, value: { kind: 'number', value: 2 }, depth: 1 },
+			{ ref: 'Sheet1!B1', formula: null, value: { kind: 'number', value: 3 }, depth: 1 },
+		])
 	})
 
 	test('WorkbookSession reuses cached sessions for unchanged files and invalidates on change', async () => {

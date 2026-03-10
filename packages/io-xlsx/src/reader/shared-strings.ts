@@ -6,6 +6,10 @@ export interface SharedStringResolver {
 	get(index: number): CellValue | undefined
 }
 
+const SHARED_STRING_ENTRY_RE = /<si\b[^>]*>([\s\S]*?)<\/si>/g
+const SHARED_STRING_TEXT_RE = /<t\b[^>]*>([\s\S]*?)<\/t>/
+const SHARED_STRING_EMPTY_TEXT_RE = /<t\b[^>]*\/>/
+
 export function parseSharedStrings(
 	xml: string,
 	options: {
@@ -28,14 +32,19 @@ function createEagerSharedStrings(
 	xml: string,
 	normalize?: (value: CellValue) => CellValue,
 ): SharedStringResolver {
-	const doc = parseXml(xml)
-	const sst = doc.sst as XmlNode | undefined
-	if (!sst) return emptySharedStrings()
-
 	const entries: CellValue[] = []
-
-	for (const si of asArray<XmlNode>(sst.si as XmlNode | XmlNode[])) {
-		entries.push(normalize ? normalize(parseSharedStringNode(si)) : parseSharedStringNode(si))
+	for (const match of xml.matchAll(SHARED_STRING_ENTRY_RE)) {
+		const chunk = match[1] ?? ''
+		const parsed = parseSharedStringChunk(chunk)
+		entries.push(normalize ? normalize(parsed) : parsed)
+	}
+	if (entries.length === 0) {
+		const doc = parseXml(xml)
+		const sst = doc.sst as XmlNode | undefined
+		if (!sst) return emptySharedStrings()
+		for (const si of asArray<XmlNode>(sst.si as XmlNode | XmlNode[])) {
+			entries.push(normalize ? normalize(parseSharedStringNode(si)) : parseSharedStringNode(si))
+		}
 	}
 
 	return {
@@ -44,6 +53,21 @@ function createEagerSharedStrings(
 			return entries[index]
 		},
 	}
+}
+
+function parseSharedStringChunk(chunk: string): CellValue {
+	if (!chunk.includes('<r')) {
+		const textMatch = SHARED_STRING_TEXT_RE.exec(chunk)
+		if (textMatch) {
+			return { kind: 'string', value: decodeXmlText(textMatch[1] ?? '') }
+		}
+		if (SHARED_STRING_EMPTY_TEXT_RE.test(chunk)) {
+			return { kind: 'string', value: '' }
+		}
+	}
+	const doc = parseXml(`<si>${chunk}</si>`)
+	const si = doc.si as XmlNode | undefined
+	return si ? parseSharedStringNode(si) : { kind: 'string', value: '' }
 }
 
 function parseSharedStringNode(si: XmlNode): CellValue {
@@ -118,4 +142,13 @@ function parseFontProps(rPr: XmlNode): Pick<RichTextRun, 'fontName' | 'fontSize'
 	}
 
 	return result
+}
+
+function decodeXmlText(text: string): string {
+	return text
+		.replace(/&lt;/g, '<')
+		.replace(/&gt;/g, '>')
+		.replace(/&quot;/g, '"')
+		.replace(/&apos;/g, "'")
+		.replace(/&amp;/g, '&')
 }

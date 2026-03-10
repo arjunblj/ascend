@@ -1,12 +1,6 @@
 import type { RangeRef, Workbook } from '@ascend/core'
-import type { FormulaNode, FormulaRef, Token } from '@ascend/formulas'
-import {
-	extractRefs,
-	functionRegistry,
-	parseFormula,
-	printFormula,
-	tokenize,
-} from '@ascend/formulas'
+import type { FormulaNode, FormulaRef } from '@ascend/formulas'
+import { extractRefs, functionRegistry, parseFormula } from '@ascend/formulas'
 import { type CellKey, cellKey, DependencyGraph, type RangeDependency } from './dep-graph.ts'
 import { resolveStructuredRefRange } from './structured-refs.ts'
 
@@ -18,9 +12,6 @@ export interface AnalyzedFormula {
 	readonly col: number
 	readonly formula: string
 	readonly ast?: FormulaNode
-	readonly normalizedFormula: string
-	readonly tokens: readonly Token[]
-	readonly functionNames: readonly string[]
 	readonly refs: readonly FormulaRef[]
 	readonly deps: readonly CellKey[]
 	readonly rangeDeps: readonly RangeDependency[]
@@ -79,9 +70,6 @@ export function analyzeWorkbook(
 			if (!inRange(sheet.name, row, col, options.range)) continue
 
 			const key = cellKey(sheetIndex, row, col)
-			const tokens = tokenize(cell.formula).filter(
-				(token) => token.type !== 'Whitespace' && token.type !== 'EOF',
-			)
 			const parsed = parseFormula(cell.formula)
 			if (!parsed.ok) {
 				formulas.set(key, {
@@ -91,9 +79,6 @@ export function analyzeWorkbook(
 					row,
 					col,
 					formula: cell.formula,
-					normalizedFormula: cell.formula,
-					tokens,
-					functionNames: [],
 					refs: [],
 					deps: [],
 					rangeDeps: [],
@@ -104,7 +89,6 @@ export function analyzeWorkbook(
 			}
 
 			const ast = parsed.value
-			const functionNames = [...collectFunctionNames(ast)]
 			const refs = extractRefsWithNames(ast, workbook, sheetNameIndex, sheetIndex, [])
 			const deps: CellKey[] = []
 			const rangeDeps: RangeDependency[] = []
@@ -154,9 +138,6 @@ export function analyzeWorkbook(
 				col,
 				formula: cell.formula,
 				ast,
-				normalizedFormula: printFormula(ast),
-				tokens,
-				functionNames,
 				refs,
 				deps,
 				rangeDeps,
@@ -220,36 +201,6 @@ function hasVolatileFunction(node: FormulaNode): boolean {
 		default:
 			return false
 	}
-}
-
-function collectFunctionNames(node: FormulaNode, out = new Set<string>()): Set<string> {
-	switch (node.type) {
-		case 'function':
-			out.add(node.name)
-			for (const arg of node.args) collectFunctionNames(arg, out)
-			break
-		case 'binary':
-			collectFunctionNames(node.left, out)
-			collectFunctionNames(node.right, out)
-			break
-		case 'unary':
-			collectFunctionNames(node.operand, out)
-			break
-		case 'array':
-			for (const row of node.rows) {
-				for (const cell of row) collectFunctionNames(cell, out)
-			}
-			break
-		case 'spillRef':
-			collectFunctionNames(node.target, out)
-			break
-		case 'sheetSpanRef':
-			collectFunctionNames(node.target, out)
-			break
-		default:
-			break
-	}
-	return out
 }
 
 function formulaRefToRangeDependency(

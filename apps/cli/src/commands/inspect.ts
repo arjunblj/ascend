@@ -13,7 +13,7 @@ Arguments:
 
 Flags:
   --sheet <name>  Sheet name (alternative to positional argument)
-  --detail <type> Show detail for: cf, dv, hyperlinks, tables, comments, drawings, images, compatibility, pivots, slicers
+  --detail <type> Show detail for: cf, dv, hyperlinks, tables, comments, drawings, images, compatibility, pivots, slicers, names, external-refs, views
   --mode <mode>   Load mode: metadata, values, or full
   --json          Output as JSON
   --verbose       Show compatibility report and timing
@@ -30,7 +30,12 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 	const detail = flags.get('detail')
 	const verbose = flags.has('verbose')
 	const workbookDetail = detail === 'compatibility'
-	const workbookStructureDetail = detail === 'pivots' || detail === 'slicers'
+	const workbookStructureDetail =
+		detail === 'pivots' ||
+		detail === 'slicers' ||
+		detail === 'names' ||
+		detail === 'external-refs' ||
+		detail === 'views'
 	const parsedMode = parseInspectMode(flags.get('mode'))
 	if (flags.has('mode') && parsedMode === null) {
 		console.error('Invalid --mode. Use one of: metadata, values, full')
@@ -70,6 +75,18 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 
 	if (detail === 'slicers') {
 		return printSlicerDetail(wb, flags.has('json'))
+	}
+
+	if (detail === 'names') {
+		return printNamesDetail(wb, flags.has('json'))
+	}
+
+	if (detail === 'external-refs') {
+		return printExternalRefsDetail(wb, flags.has('json'))
+	}
+
+	if (detail === 'views') {
+		return printWorkbookViewsDetail(wb, flags.has('json'))
 	}
 
 	if (detail && sheetArg) {
@@ -424,7 +441,7 @@ function printSheetDetail(
 		}
 		default:
 			console.error(
-				`Unknown detail type: ${detail}. Options: cf, dv, hyperlinks, comments, drawings, images, tables, compatibility`,
+				`Unknown detail type: ${detail}. Options: cf, dv, hyperlinks, comments, drawings, images, tables, compatibility, pivots, slicers, names, external-refs, views`,
 			)
 			return 1
 	}
@@ -536,6 +553,68 @@ function printSlicerDetail(wb: WorkbookSession, json: boolean): number {
 			)
 		}
 	}
+	return 0
+}
+
+function printNamesDetail(wb: WorkbookSession, json: boolean): number {
+	const names = wb.definedNames()
+	if (json) {
+		console.log(jsonOut(names))
+		return 0
+	}
+	console.log(heading('Defined Names'))
+	for (const entry of names) {
+		const scope = entry.scope === 'sheet' ? `sheet=${entry.sheet ?? '(unknown)'}` : 'workbook'
+		console.log(bullet(entry.name, `${scope} | ${entry.normalizedFormula}`))
+		if (entry.references.length > 0) {
+			console.log(`    refs: ${entry.references.map((reference) => reference.text).join(', ')}`)
+		}
+		if (entry.functions.length > 0) {
+			console.log(`    functions: ${entry.functions.join(', ')}`)
+		}
+		if (entry.parseError) {
+			console.log(`    parse-error: ${entry.parseError}`)
+		}
+	}
+	if (names.length === 0) console.log('  (none)')
+	return 0
+}
+
+function printExternalRefsDetail(wb: WorkbookSession, json: boolean): number {
+	const refs = wb.externalReferences()
+	if (json) {
+		console.log(jsonOut(refs))
+		return 0
+	}
+	console.log(heading('External References'))
+	for (const ref of refs) console.log(bullet(ref, ref))
+	if (refs.length === 0) console.log('  (none)')
+	return 0
+}
+
+function printWorkbookViewsDetail(wb: WorkbookSession, json: boolean): number {
+	const views = wb.workbookViews()
+	if (json) {
+		console.log(jsonOut(views))
+		return 0
+	}
+	console.log(heading('Workbook Views'))
+	for (const [index, view] of views.entries()) {
+		console.log(
+			bullet(
+				`View ${index + 1}`,
+				[
+					view.activeTab !== undefined ? `activeTab=${view.activeTab}` : undefined,
+					view.firstSheet !== undefined ? `firstSheet=${view.firstSheet}` : undefined,
+					view.visibility,
+					view.tabRatio !== undefined ? `tabRatio=${view.tabRatio}` : undefined,
+				]
+					.filter(Boolean)
+					.join(' | '),
+			),
+		)
+	}
+	if (views.length === 0) console.log('  (none)')
 	return 0
 }
 

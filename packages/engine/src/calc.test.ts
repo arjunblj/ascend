@@ -175,6 +175,17 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 3)?.value).toEqual(numberValue(10))
 	})
 
+	test('ROWS and COLUMNS treat whole-dimension refs as full-sheet ranges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'ROWS(A:A)', styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'COLUMNS(1:1)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(1_048_576))
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(16_384))
+	})
+
 	test('bare contiguous ranges spill under array semantics', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -199,6 +210,16 @@ describe('recalculate', () => {
 
 		recalculate(wb, makeCtx())
 		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(20))
+	})
+
+	test('implicit intersection on whole-column refs can return empty cells outside usedRange', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(9, 1, { value: EMPTY, formula: '@A:A', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(9, 1)?.value).toEqual(EMPTY)
 	})
 
 	test('implicit intersection uses the formula column for single-row ranges', () => {
@@ -235,6 +256,23 @@ describe('recalculate', () => {
 
 		recalculate(wb, makeCtx())
 		expect(sheet.cells.get(2, 2)?.value).toEqual(numberValue(10))
+	})
+
+	test('COUNTA, COUNTBLANK, and PRODUCT support union references', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: EMPTY, formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(1, 2, { value: numberValue(4), formula: null, styleId: sid })
+		sheet.cells.set(0, 4, { value: EMPTY, formula: 'COUNTA((A1:A2,C1:C2))', styleId: sid })
+		sheet.cells.set(1, 4, { value: EMPTY, formula: 'COUNTBLANK((A1:A2,C1:C2))', styleId: sid })
+		sheet.cells.set(2, 4, { value: EMPTY, formula: 'PRODUCT((A1:A2,C1:C2))', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 4)?.value).toEqual(numberValue(3))
+		expect(sheet.cells.get(1, 4)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(2, 4)?.value).toEqual(numberValue(24))
 	})
 
 	test('SUMPRODUCT returns #VALUE! for mismatched range shapes', () => {
@@ -598,6 +636,15 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 3)?.value).toEqual(numberValue(3))
 	})
 
+	test('TOCOL returns #CALC! when ignore rules remove every value', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 2, { value: EMPTY, formula: 'TOCOL(A1:B2,1)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 2)?.value).toEqual(errorValue('#CALC!'))
+	})
+
 	test('TOROW supports ignore errors and scan-by-column', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -611,6 +658,53 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(0, 3)?.value).toEqual(numberValue(1))
 		expect(sheet.cells.get(0, 4)?.value).toEqual(numberValue(2))
 		expect(sheet.cells.get(0, 5)?.value).toEqual(numberValue(3))
+	})
+
+	test('FILTER returns #VALUE! for include shape mismatch and propagates include errors', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(4), formula: null, styleId: sid })
+		sheet.cells.set(0, 3, { value: EMPTY, formula: 'FILTER(A1:B2,{TRUE})', styleId: sid })
+		sheet.cells.set(1, 3, { value: EMPTY, formula: 'FILTER(A1:A2,{#N/A;TRUE})', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 3)?.value).toEqual(errorValue('#VALUE!'))
+		expect(sheet.cells.get(1, 3)?.value).toEqual(errorValue('#N/A'))
+	})
+
+	test('TAKE and DROP return #CALC! for zero extents', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: EMPTY, formula: 'TAKE(A1:A2,0)', styleId: sid })
+		sheet.cells.set(1, 2, { value: EMPTY, formula: 'DROP(A1:A2,0)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 2)?.value).toEqual(errorValue('#CALC!'))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(errorValue('#CALC!'))
+	})
+
+	test('CHOOSECOLS and CHOOSEROWS support negative indices from the end', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(4), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(5), formula: null, styleId: sid })
+		sheet.cells.set(1, 2, { value: numberValue(6), formula: null, styleId: sid })
+		sheet.cells.set(0, 4, { value: EMPTY, formula: 'CHOOSECOLS(A1:C2,-1,-2)', styleId: sid })
+		sheet.cells.set(3, 0, { value: EMPTY, formula: 'CHOOSEROWS(A1:C2,-1)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 4)?.value).toEqual(numberValue(3))
+		expect(sheet.cells.get(0, 5)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(3, 0)?.value).toEqual(numberValue(4))
+		expect(sheet.cells.get(3, 2)?.value).toEqual(numberValue(6))
 	})
 
 	test('XMATCH spills results for array lookup values', () => {

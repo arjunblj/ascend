@@ -30,6 +30,9 @@ export interface EvalContext {
 	readonly letBindings?: ReadonlyMap<string, CellValue>
 }
 
+const EXCEL_MAX_ROWS = 1_048_576
+const EXCEL_MAX_COLS = 16_384
+
 function resolveSheetIndex(
 	wb: Workbook,
 	sheetName: string | undefined,
@@ -731,9 +734,19 @@ function makeRangeArea(
 	startCol: number,
 	endRow: number,
 	endCol: number,
+	options: {
+		materializedStartRow?: number
+		materializedStartCol?: number
+		materializedEndRow?: number
+		materializedEndCol?: number
+	} = {},
 ): EvalArea {
 	const sheet = workbook.sheets[sheetIndex]
 	let cachedValues: readonly (readonly CellValue[])[] | undefined
+	const materializedStartRow = options.materializedStartRow ?? startRow
+	const materializedStartCol = options.materializedStartCol ?? startCol
+	const materializedEndRow = options.materializedEndRow ?? endRow
+	const materializedEndCol = options.materializedEndCol ?? endCol
 	return {
 		ref: {
 			kind: 'range',
@@ -745,15 +758,22 @@ function makeRangeArea(
 		},
 		get values() {
 			if (!cachedValues) {
-				cachedValues = getRangeValues(workbook, sheetIndex, startRow, startCol, endRow, endCol)
+				cachedValues = getRangeValues(
+					workbook,
+					sheetIndex,
+					materializedStartRow,
+					materializedStartCol,
+					materializedEndRow,
+					materializedEndCol,
+				)
 			}
 			return cachedValues
 		},
 		...(sheet
 			? {
 					forEachValue: (fn: (value: CellValue) => void) => {
-						for (let r = startRow; r <= endRow; r++) {
-							for (let c = startCol; c <= endCol; c++) {
+						for (let r = materializedStartRow; r <= materializedEndRow; r++) {
+							for (let c = materializedStartCol; c <= materializedEndCol; c++) {
 								const cell = sheet.cells.get(r, c)
 								fn(cell ? cell.value : EMPTY)
 							}
@@ -775,6 +795,8 @@ function makeMultiAreaArg(areas: readonly EvalArea[]): EvalArg {
 			? {
 					values: firstArea.values,
 					ref: firstArea.ref,
+					shapeRows: (firstArea.ref.endRow ?? firstArea.ref.row) - firstArea.ref.row + 1,
+					shapeCols: (firstArea.ref.endCol ?? firstArea.ref.col) - firstArea.ref.col + 1,
 				}
 			: {}),
 		areas,
@@ -864,9 +886,16 @@ function makeWholeRowArg(
 	const sheet = workbook.sheets[sheetIndex]
 	if (!sheet) return { value: errorValue('#REF!') }
 	const used = sheet.cells.usedRange()
-	const startCol = used?.start.col ?? 0
-	const endCol = used?.end.col ?? startCol
-	return makeLazyRangeArg(workbook, sheetIndex, startRow, startCol, endRow, endCol)
+	const materializedStartCol = used?.start.col ?? 0
+	const materializedEndCol = used?.end.col ?? materializedStartCol
+	return makeMultiAreaArg([
+		makeRangeArea(workbook, sheetIndex, startRow, 0, endRow, EXCEL_MAX_COLS - 1, {
+			materializedStartRow: startRow,
+			materializedStartCol,
+			materializedEndRow: endRow,
+			materializedEndCol,
+		}),
+	])
 }
 
 function makeWholeColumnArg(
@@ -878,9 +907,16 @@ function makeWholeColumnArg(
 	const sheet = workbook.sheets[sheetIndex]
 	if (!sheet) return { value: errorValue('#REF!') }
 	const used = sheet.cells.usedRange()
-	const startRow = used?.start.row ?? 0
-	const endRow = used?.end.row ?? startRow
-	return makeLazyRangeArg(workbook, sheetIndex, startRow, startCol, endRow, endCol)
+	const materializedStartRow = used?.start.row ?? 0
+	const materializedEndRow = used?.end.row ?? materializedStartRow
+	return makeMultiAreaArg([
+		makeRangeArea(workbook, sheetIndex, 0, startCol, EXCEL_MAX_ROWS - 1, endCol, {
+			materializedStartRow,
+			materializedStartCol: startCol,
+			materializedEndRow,
+			materializedEndCol: endCol,
+		}),
+	])
 }
 
 function evalLet(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {

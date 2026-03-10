@@ -231,6 +231,42 @@ describe('API', () => {
 		expect(body.error.message).toContain('Sheet')
 	})
 
+	test('write returns a failure envelope when recalculation reports errors', async () => {
+		const tempFile = join(tempDir, 'write-recalc-error.xlsx')
+		const wb = AscendWorkbook.create()
+		await wb.save(tempFile)
+
+		const res = await fetch(`http://localhost:${server.port}/write`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				file: tempFile,
+				ops: [{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=A1+1' }],
+			}),
+		})
+		expect(res.status).toBe(400)
+		const body = await res.json()
+		expect(body.ok).toBe(false)
+		expect(body.error.message).toContain('Circular reference detected')
+	})
+
+	test('calc returns a failure envelope when recalculation reports errors', async () => {
+		const tempFile = join(tempDir, 'calc-recalc-error.xlsx')
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=A1+1' }])
+		await wb.save(tempFile)
+
+		const res = await fetch(`http://localhost:${server.port}/calc`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ file: tempFile }),
+		})
+		expect(res.status).toBe(400)
+		const body = await res.json()
+		expect(body.ok).toBe(false)
+		expect(body.error.message).toContain('Circular reference detected')
+	})
+
 	test('unknown route returns 404', async () => {
 		const res = await fetch(`http://localhost:${server.port}/unknown`)
 		expect(res.status).toBe(404)

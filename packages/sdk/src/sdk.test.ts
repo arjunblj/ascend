@@ -1074,6 +1074,12 @@ describe('AscendWorkbook', () => {
 		expect(cell?.value).toEqual({ kind: 'string', value: 'before' })
 	})
 
+	test('preview surfaces recalc errors from derived workbook state', () => {
+		const wb = AscendWorkbook.create()
+		const preview = wb.preview([{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=A1+1' }])
+		expect(preview.errors.some((error) => error.code === 'CIRCULAR_REF')).toBe(true)
+	})
+
 	test('preview formatting changes do not grow the source style registry', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 0.25 }] }])

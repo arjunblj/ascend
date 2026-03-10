@@ -175,6 +175,12 @@ export class AscendWorkbook extends WorkbookReadView {
 				errors: calcResult.errors,
 				duration: calcResult.duration,
 			}
+			for (const issue of calcResult.errors) {
+				errors.push({
+					...issue.error,
+					...(issue.error.refs ? {} : { refs: [issue.ref] }),
+				})
+			}
 		}
 
 		const fastDiff = buildFastPreviewDiff(this.wb, clone, ops, result.value, recalcResult)

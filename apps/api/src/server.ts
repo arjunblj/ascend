@@ -137,7 +137,17 @@ export function createServer(opts?: { port?: number }) {
 						if (result.errors.length > 0) {
 							return jsonFailure(result.errors[0]?.message ?? 'Failed to apply operations', 400)
 						}
-						if (result.recalcRequired) wb.recalc()
+						if (result.recalcRequired) {
+							const recalc = wb.recalc()
+							if (recalc.errors.length > 0) {
+								return jsonFailure(
+									recalc.errors[0]
+										? `${recalc.errors[0].ref}: ${recalc.errors[0].error.message}`
+										: 'Recalculation failed',
+									400,
+								)
+							}
+						}
 						await wb.save(file)
 						return jsonSuccess(result)
 					} catch (e) {
@@ -173,6 +183,14 @@ export function createServer(opts?: { port?: number }) {
 					try {
 						const wb = await AscendWorkbook.open(file)
 						const result = wb.recalc()
+						if (result.errors.length > 0) {
+							return jsonFailure(
+								result.errors[0]
+									? `${result.errors[0].ref}: ${result.errors[0].error.message}`
+									: 'Recalculation failed',
+								400,
+							)
+						}
 						await wb.save(file)
 						return jsonSuccess(result)
 					} catch (e) {

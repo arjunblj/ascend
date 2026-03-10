@@ -63,4 +63,39 @@ describe('MCP server', () => {
 		const reopened = await AscendWorkbook.open(TEMP_FILE)
 		expect(reopened.sheet('Sheet1')?.cell('A2')?.value).toEqual({ kind: 'number', value: 10 })
 	})
+
+	test('ascend.write returns an error response when recalculation fails', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.write'].handler as (args: {
+			file: string
+			ops: unknown[]
+		}) => Promise<{ isError?: boolean; structuredContent?: { error?: { message?: string } } }>
+		const result = await handler({
+			file: TEMP_FILE,
+			ops: [{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=A1+1' }],
+		})
+
+		expect(result.isError).toBe(true)
+		expect(result.structuredContent?.error?.message).toContain('Circular reference detected')
+	})
+
+	test('ascend.calc returns an error response when recalculation fails', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=A1+1' }])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.calc'].handler as (args: {
+			file: string
+		}) => Promise<{ isError?: boolean; structuredContent?: { error?: { message?: string } } }>
+		const result = await handler({ file: TEMP_FILE })
+
+		expect(result.isError).toBe(true)
+		expect(result.structuredContent?.error?.message).toContain('Circular reference detected')
+	})
 })

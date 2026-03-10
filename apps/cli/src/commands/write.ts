@@ -40,7 +40,11 @@ export async function writeCommand(args: string[], flags: Map<string, string>): 
 			return 1
 		}
 		if (result.recalcRequired) {
-			await withProgress('Recalculating formulas', () => wb.recalc())
+			const { value: recalc } = await withProgress('Recalculating formulas', () => wb.recalc())
+			if (recalc.errors.length > 0) {
+				for (const error of recalc.errors) console.error(`${error.ref}: ${error.error.message}`)
+				return 1
+			}
 		}
 		await withProgress(`Saving ${file}`, () => wb.save(file))
 		if (flags.has('json')) {
@@ -77,7 +81,11 @@ export async function writeCommand(args: string[], flags: Map<string, string>): 
 		return 1
 	}
 	if (result.recalcRequired) {
-		await withProgress('Recalculating formulas', () => wb.recalc())
+		const { value: recalc } = await withProgress('Recalculating formulas', () => wb.recalc())
+		if (recalc.errors.length > 0) {
+			for (const error of recalc.errors) console.error(`${error.ref}: ${error.error.message}`)
+			return 1
+		}
 	}
 
 	await withProgress(`Saving ${file}`, () => wb.save(file))

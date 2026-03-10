@@ -401,6 +401,21 @@ describe('ascend cli', () => {
 		expect(reopened.sheet('Sheet1')?.cell('A2')?.value).toEqual({ kind: 'number', value: 10 })
 	})
 
+	test('write fails when recalculation reports errors', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const opsFile = `${import.meta.dir}/write-ops.json`
+		await Bun.write(
+			opsFile,
+			JSON.stringify([{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=A1+1' }]),
+		)
+		const { exitCode, stderr } = await run('write', TEST_FILE, '--ops', 'write-ops.json')
+		expect(exitCode).toBe(1)
+		expect(stderr).toContain('Circular reference detected')
+		if (existsSync(opsFile)) unlinkSync(opsFile)
+	})
+
 	test('preview shows changes without mutating the workbook file', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -434,6 +449,15 @@ describe('ascend cli', () => {
 		expect(stdout).toContain('SUM')
 		expect(stdout).toContain('References')
 		expect(stdout).toContain('B1:B2')
+	})
+
+	test('formula set fails when recalculation reports errors', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const { exitCode, stderr } = await run('formula', 'set', TEST_FILE, 'Sheet1!A1', '=A1+1')
+		expect(exitCode).toBe(1)
+		expect(stderr).toContain('Circular reference detected')
 	})
 
 	test('trace shows values and respects max depth', async () => {
@@ -474,6 +498,16 @@ describe('ascend cli', () => {
 		const { exitCode, stderr } = await run('doctor', '--verbose')
 		expect(exitCode).toBe(1)
 		expect(stderr).toContain('Unknown flag for "doctor": --verbose')
+	})
+
+	test('calc exits nonzero when recalculation reports errors', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=A1+1' }])
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const { exitCode, stderr } = await run('calc', TEST_FILE)
+		expect(exitCode).toBe(1)
+		expect(stderr).toContain('Circular reference detected')
 	})
 
 	test('formula set and fill edit formulas from the CLI', async () => {

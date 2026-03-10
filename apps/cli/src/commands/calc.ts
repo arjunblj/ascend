@@ -24,6 +24,7 @@ export async function calcCommand(args: string[], flags: Map<string, string>): P
 
 	if (result.errors.length > 0) {
 		for (const e of result.errors) console.error(`${e.ref}: ${e.error.message}`)
+		return 1
 	}
 
 	await withProgress(`Saving ${file}`, () => wb.save(file))

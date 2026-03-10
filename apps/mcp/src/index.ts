@@ -121,7 +121,15 @@ export function createServer(): McpServer {
 			const wb = await Ascend.open(file)
 			const result = wb.apply(ops as unknown as readonly Operation[])
 			if (result.errors.length === 0) {
-				if (result.recalcRequired) wb.recalc()
+				if (result.recalcRequired) {
+					const recalc = wb.recalc()
+					if (recalc.errors.length > 0) {
+						const first = recalc.errors[0]
+						return errorResponse(
+							first ? `${first.ref}: ${first.error.message}` : 'Recalculation failed',
+						)
+					}
+				}
 				await wb.save(file)
 			}
 			return {
@@ -140,6 +148,12 @@ export function createServer(): McpServer {
 		async ({ file }) => {
 			const wb = await Ascend.open(file)
 			const result = wb.recalc()
+			if (result.errors.length > 0) {
+				const first = result.errors[0]
+				return errorResponse(
+					first ? `${first.ref}: ${first.error.message}` : 'Recalculation failed',
+				)
+			}
 			await wb.save(file)
 			return okResponse(result, `Recalculated workbook "${file}"`)
 		},

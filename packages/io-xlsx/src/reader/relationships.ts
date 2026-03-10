@@ -1,5 +1,3 @@
-import { asArray, attr, parseXml, type XmlNode } from '../xml.ts'
-
 export interface Relationship {
 	readonly id: string
 	readonly type: string
@@ -33,19 +31,26 @@ export const REL_SLICER_CACHE = 'http://schemas.microsoft.com/office/2007/relati
 export const REL_VML_DRAWING =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing'
 
-export function parseRelationships(xml: string): Relationship[] {
-	const doc = parseXml(xml)
-	const root = doc.Relationships as XmlNode | undefined
-	if (!root) return []
+const RELATIONSHIP_RE = /<Relationship\b([^>]*)\/>/g
+const ATTR_RE = /([A-Za-z_][\w:.-]*)="([^"]*)"/g
 
+export function parseRelationships(xml: string): Relationship[] {
 	const rels: Relationship[] = []
-	for (const entry of asArray<XmlNode>(root.Relationship as XmlNode | XmlNode[])) {
-		const id = attr(entry, 'Id')
-		const type = attr(entry, 'Type')
-		const target = attr(entry, 'Target')
-		if (id && type && target) {
-			rels.push({ id, type, target })
+	for (const match of xml.matchAll(RELATIONSHIP_RE)) {
+		const rawAttrs = match[1]
+		if (!rawAttrs) continue
+		let id: string | undefined
+		let type: string | undefined
+		let target: string | undefined
+		for (const attrMatch of rawAttrs.matchAll(ATTR_RE)) {
+			const key = attrMatch[1]
+			const value = attrMatch[2]
+			if (!key || value === undefined) continue
+			if (key === 'Id') id = value
+			else if (key === 'Type') type = value
+			else if (key === 'Target') target = value
 		}
+		if (id && type && target) rels.push({ id, type, target })
 	}
 	return rels
 }

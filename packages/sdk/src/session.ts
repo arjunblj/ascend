@@ -56,17 +56,20 @@ const MAX_CACHED_SESSION_BYTES = 32 * 1024 * 1024
 const sessionCache = new Map<string, SessionCacheEntry>()
 
 export class WorkbookSession {
+	private cacheKey: string
 	private readonly identity: SessionIdentity
 	private readonly source: string | Uint8Array
 	private options: WorkbookSessionOpenOptions
 	private view: WorkbookReadView
 
 	private constructor(
+		cacheKey: string,
 		source: string | Uint8Array,
 		identity: SessionIdentity,
 		options: WorkbookSessionOpenOptions,
 		view: WorkbookReadView,
 	) {
+		this.cacheKey = cacheKey
 		this.source = source
 		this.identity = identity
 		this.options = options
@@ -88,12 +91,13 @@ export class WorkbookSession {
 
 		const loaded = await openWorkbookSource(source, options)
 		const session = new WorkbookSession(
+			key,
 			source,
 			identity,
 			normalizeOptions(options),
 			new WorkbookReadView(loaded.workbook, loaded.report, loaded.loadInfo),
 		)
-		setCacheEntry({ key, identity, session, sizeBytes: sessionSizeBytes(identity) })
+		session.refreshCacheFootprint('base')
 		return session
 	}
 
@@ -125,9 +129,17 @@ export class WorkbookSession {
 	async upgrade(options: WorkbookSessionOpenOptions): Promise<WorkbookSession> {
 		const nextOptions = mergeOpenOptions(this.options, options)
 		if (sameOpenOptions(this.options, nextOptions)) return this
+		const nextKey = makeSessionKey(this.identity, nextOptions)
 		const loaded = await openWorkbookSource(this.source, nextOptions)
 		this.options = nextOptions
 		this.view.replaceWorkbook(loaded.workbook, loaded.report, loaded.loadInfo)
+		replaceCacheEntry(this.cacheKey, {
+			key: nextKey,
+			identity: this.identity,
+			session: this,
+			sizeBytes: sessionSizeBytes(this.identity, this.view, 'base'),
+		})
+		this.cacheKey = nextKey
 		return this
 	}
 
@@ -250,6 +262,7 @@ export class WorkbookSession {
 			opts,
 			this.view.analysis(),
 		)
+		this.refreshCacheFootprint('verify')
 		return result.ok
 			? {
 					ref: `${sheetName}!${ref}`,
@@ -279,6 +292,7 @@ export class WorkbookSession {
 
 	check(): CheckResult {
 		const result = verifyCheck(this.view.getWorkbookModel(), this.view.analysis())
+		this.refreshCacheFootprint('verify')
 		const issues = result.issues.map((issue) => ({
 			severity: issue.severity === 'info' ? 'warning' : issue.severity,
 			message: issue.message,
@@ -289,6 +303,7 @@ export class WorkbookSession {
 
 	lint(): LintResult {
 		const result = verifyLint(this.view.getWorkbookModel(), this.view.analysis())
+		this.refreshCacheFootprint('verify')
 		return {
 			clean: result.violations.length === 0,
 			warnings: result.violations.map((violation) => ({
@@ -333,6 +348,15 @@ export class WorkbookSession {
 
 	externalReferences(): readonly string[] {
 		return this.view.externalReferences()
+	}
+
+	private refreshCacheFootprint(usage: 'base' | 'verify'): void {
+		replaceCacheEntry(this.cacheKey, {
+			key: this.cacheKey,
+			identity: this.identity,
+			session: this,
+			sizeBytes: sessionSizeBytes(this.identity, this.view, usage),
+		})
 	}
 }
 
@@ -442,12 +466,46 @@ function setCacheEntry(entry: SessionCacheEntry): void {
 	}
 }
 
+function replaceCacheEntry(previousKey: string, entry: SessionCacheEntry): void {
+	sessionCache.delete(previousKey)
+	setCacheEntry(entry)
+}
+
 function totalCachedSessionBytes(): number {
 	let total = 0
 	for (const entry of sessionCache.values()) total += entry.sizeBytes
 	return total
 }
 
-function sessionSizeBytes(identity: SessionIdentity): number {
-	return identity.size
+function sessionSizeBytes(
+	identity: SessionIdentity,
+	view: WorkbookReadView,
+	usage: 'base' | 'verify',
+): number {
+	const workbook = view.inspect()
+	const sourceBytes = identity.size
+	const loadedSheets = workbook.loadedSheetCount
+	const cells = workbook.cellCount ?? 0
+	const metadataUnits =
+		(workbook.commentCount ?? 0) +
+		(workbook.conditionalFormatCount ?? 0) +
+		(workbook.dataValidationCount ?? 0) +
+		(workbook.imageCount ?? 0)
+	const styleUnits =
+		workbook.styleSummary.numFmtCount +
+		workbook.styleSummary.fontCount +
+		workbook.styleSummary.fillCount +
+		workbook.styleSummary.borderCount +
+		workbook.styleSummary.cellXfCount +
+		workbook.styleSummary.dxfCount +
+		workbook.styleSummary.tableStyleCount
+	const baseEstimate =
+		sourceBytes +
+		loadedSheets * 64 * 1024 +
+		cells * (view.report.sourceFormat === 'csv' ? 24 : 40) +
+		metadataUnits * 256 +
+		styleUnits * 128
+	if (usage === 'base') return baseEstimate
+	const formulaCount = view.analysis().formulas.size
+	return baseEstimate + formulaCount * 192
 }

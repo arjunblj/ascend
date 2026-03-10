@@ -1,5 +1,11 @@
 import { parseA1, toA1, type Workbook } from '@ascend/core'
-import { analyzeWorkbook, cellKey, parseCellKey, type WorkbookAnalysis } from '@ascend/engine'
+import {
+	type AnalyzedFormula,
+	analyzeWorkbook,
+	cellKey,
+	parseCellKey,
+	type WorkbookAnalysis,
+} from '@ascend/engine'
 import type { FormulaRef } from '@ascend/formulas'
 import { ascendError, type CellValue, EMPTY, err, ok, type Result } from '@ascend/schema'
 
@@ -78,55 +84,16 @@ export function trace(
 		if (!item) break
 		if (item.depth >= maxDepth) continue
 
-		if (item.key === targetKey && targetFormula) {
-			const rootDependencyKeys = new Set<string>()
-			for (const refNode of targetFormula.refs) {
-				const traceNode = formulaRefToTraceNode(workbook, sheetIndex, refNode, item.depth + 1)
-				if (!traceNode) continue
-				const visitKey = `${traceNode.sheet}!${traceNode.ref}`
-				if (visitedPre.has(visitKey)) continue
-				visitedPre.add(visitKey)
-				precedents.push(traceNode)
-				const dependencyKey = formulaRefToDependencyKey(workbook, sheetIndex, refNode)
-				if (dependencyKey) rootDependencyKeys.add(dependencyKey)
-				if (refNode.kind === 'cell') {
-					const refSheetIndex = resolveFormulaRefSheetIndex(workbook, sheetIndex, refNode)
-					if (refSheetIndex >= 0) {
-						prQueue.push({
-							key: cellKey(refSheetIndex, refNode.ref.row, refNode.ref.col),
-							depth: item.depth + 1,
-						})
-					}
-				}
-			}
-			for (const dep of targetFormula.deps) {
-				if (rootDependencyKeys.has(dep) || visitedPre.has(dep)) continue
-				rootDependencyKeys.add(dep)
-				visitedPre.add(dep)
-				const [si, r, c] = parseCellKey(dep)
-				const s = workbook.sheets[si]
-				if (!s) continue
-				const resolved = resolveCell(workbook, si, r, c)
-				precedents.push({
-					ref: toA1({ row: r, col: c }),
-					sheet: s.name,
-					formula: resolved.formula,
-					value: resolved.value,
-					depth: item.depth + 1,
-				})
-				prQueue.push({ key: dep, depth: item.depth + 1 })
-			}
-			for (const rangeDep of targetFormula.rangeDeps) {
-				const depKey = rangeDependencyKey(rangeDep)
-				if (rootDependencyKeys.has(depKey)) continue
-				rootDependencyKeys.add(depKey)
-				const traceNode = rangeDependencyToTraceNode(workbook, rangeDep, item.depth + 1)
-				if (!traceNode) continue
-				const visitKey = `${traceNode.sheet}!${traceNode.ref}`
-				if (visitedPre.has(visitKey)) continue
-				visitedPre.add(visitKey)
-				precedents.push(traceNode)
-			}
+		const currentFormula = item.key === targetKey ? targetFormula : compiled.formulas.get(item.key)
+		if (currentFormula) {
+			addSymbolicPrecedents(
+				workbook,
+				currentFormula,
+				item.depth + 1,
+				visitedPre,
+				precedents,
+				prQueue,
+			)
 			continue
 		}
 
@@ -186,6 +153,64 @@ export function trace(
 		precedents,
 		dependents,
 	})
+}
+
+function addSymbolicPrecedents(
+	workbook: Workbook,
+	formula: AnalyzedFormula,
+	depth: number,
+	visitedPre: Set<string>,
+	precedents: TraceNode[],
+	prQueue: Array<{ key: string; depth: number }>,
+): void {
+	const dependencyKeys = new Set<string>()
+	for (const refNode of formula.refs) {
+		const traceNode = formulaRefToTraceNode(workbook, formula.sheetIndex, refNode, depth)
+		if (!traceNode) continue
+		const visitKey = `${traceNode.sheet}!${traceNode.ref}`
+		if (visitedPre.has(visitKey)) continue
+		visitedPre.add(visitKey)
+		precedents.push(traceNode)
+		const dependencyKey = formulaRefToDependencyKey(workbook, formula.sheetIndex, refNode)
+		if (dependencyKey) dependencyKeys.add(dependencyKey)
+		if (refNode.kind === 'cell') {
+			const refSheetIndex = resolveFormulaRefSheetIndex(workbook, formula.sheetIndex, refNode)
+			if (refSheetIndex >= 0) {
+				prQueue.push({
+					key: cellKey(refSheetIndex, refNode.ref.row, refNode.ref.col),
+					depth,
+				})
+			}
+		}
+	}
+	for (const dep of formula.deps) {
+		if (dependencyKeys.has(dep) || visitedPre.has(dep)) continue
+		dependencyKeys.add(dep)
+		visitedPre.add(dep)
+		const [si, r, c] = parseCellKey(dep)
+		const s = workbook.sheets[si]
+		if (!s) continue
+		const resolved = resolveCell(workbook, si, r, c)
+		precedents.push({
+			ref: toA1({ row: r, col: c }),
+			sheet: s.name,
+			formula: resolved.formula,
+			value: resolved.value,
+			depth,
+		})
+		prQueue.push({ key: dep, depth })
+	}
+	for (const rangeDep of formula.rangeDeps) {
+		const depKey = rangeDependencyKey(rangeDep)
+		if (dependencyKeys.has(depKey)) continue
+		dependencyKeys.add(depKey)
+		const traceNode = rangeDependencyToTraceNode(workbook, rangeDep, depth)
+		if (!traceNode) continue
+		const visitKey = `${traceNode.sheet}!${traceNode.ref}`
+		if (visitedPre.has(visitKey)) continue
+		visitedPre.add(visitKey)
+		precedents.push(traceNode)
+	}
 }
 
 function formulaRefToTraceNode(

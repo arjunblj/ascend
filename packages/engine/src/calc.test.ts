@@ -833,6 +833,35 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(1, 0)?.value).toEqual(errorValue('#N/A'))
 	})
 
+	test('TEXTSPLIT spills rows and columns from delimited text', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, {
+			value: EMPTY,
+			formula: 'TEXTSPLIT("a,b;c,d",",",";")',
+			styleId: sid,
+		})
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 0)?.value).toEqual(stringValue('a'))
+		expect(sheet.cells.get(0, 1)?.value).toEqual(stringValue('b'))
+		expect(sheet.cells.get(1, 0)?.value).toEqual(stringValue('c'))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(stringValue('d'))
+	})
+
+	test('TEXTSPLIT supports ignore_empty and pad_with', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, {
+			value: EMPTY,
+			formula: 'TEXTSPLIT("a,,c",",",,TRUE,0,"pad")',
+			styleId: sid,
+		})
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 0)?.value).toEqual(stringValue('a'))
+		expect(sheet.cells.get(0, 1)?.value).toEqual(stringValue('c'))
+		expect(sheet.cells.get(0, 2)).toBeUndefined()
+	})
+
 	test('external workbook references currently evaluate to #REF!', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

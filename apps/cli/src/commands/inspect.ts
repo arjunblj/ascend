@@ -425,10 +425,14 @@ function printSheetDetail(
 					console.log(`    sort: ${tableInfo.sortState.ref}`)
 				}
 				if (tableInfo.headerRow) {
-					console.log(`    headers: ${tableInfo.headerRow.map(formatCellValue).join(' | ')}`)
+					console.log(
+						`    headers: ${tableInfo.headerRow.map((value) => formatCellValue(value)).join(' | ')}`,
+					)
 				}
 				if (tableInfo.totalsRow) {
-					console.log(`    totals: ${tableInfo.totalsRow.map(formatCellValue).join(' | ')}`)
+					console.log(
+						`    totals: ${tableInfo.totalsRow.map((value) => formatCellValue(value)).join(' | ')}`,
+					)
 				}
 				console.log(
 					`    columns: ${tableInfo.columnDefs.map((column) => column.name).join(', ') || '(none)'}`,

@@ -1431,6 +1431,29 @@ describe('AscendWorkbook', () => {
 		])
 	})
 
+	test('trace keeps nested range precedents symbolic', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 2 },
+					{ ref: 'A2', value: 3 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: '=SUM(A1:A2)' },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'C1', formula: '=B1+1' },
+		])
+		wb.recalc()
+
+		const trace = wb.trace('Sheet1!C1')
+		expect(trace?.precedents).toEqual([
+			{ ref: 'Sheet1!B1', formula: 'SUM(A1:A2)', value: { kind: 'number', value: 5 }, depth: 1 },
+			{ ref: 'Sheet1!A1:A2', formula: null, value: { kind: 'number', value: 2 }, depth: 2 },
+		])
+	})
+
 	test('WorkbookSession reuses cached sessions for unchanged files and invalidates on change', async () => {
 		WorkbookSession.clearCache()
 		const path = join(
@@ -1486,6 +1509,8 @@ describe('AscendWorkbook', () => {
 		await session.upgrade({ mode: 'formula' })
 		expect(session.openOptions.mode).toBe('formula')
 		expect(session.formula('Sheet1!A2')?.normalizedFormula).toBe('A1*3')
+		const reopened = await WorkbookSession.open(bytes, { mode: 'formula' })
+		expect(reopened).toBe(session)
 		WorkbookSession.clearCache()
 	})
 

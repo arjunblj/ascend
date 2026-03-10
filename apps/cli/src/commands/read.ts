@@ -16,6 +16,7 @@ Flags:
   --mode <mode>       Load mode: values or full
   --row-offset <N>    Start reading from row offset N
   --row-limit <N>     Limit number of rows returned
+  --display           Render display strings for user-facing output
   --json              Output as JSON
 `
 
@@ -41,6 +42,7 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 
 	const rowOffset = parseOptionalInt(flags.get('row-offset'))
 	const rowLimit = parseOptionalInt(flags.get('row-limit'))
+	const display = flags.has('display')
 
 	switch (selector.kind) {
 		case 'table': {
@@ -73,7 +75,9 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 				return 0
 			}
 			const grid = page.rows.map((row) =>
-				handle.columns.map((column) => formatCellValue(row.values[column] ?? { kind: 'empty' })),
+				handle.columns.map((column) =>
+					formatCellValue(row.values[column] ?? { kind: 'empty' }, { display }),
+				),
 			)
 			console.log(table([...handle.columns], grid))
 			if (page.hasMore) {
@@ -120,7 +124,15 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 				console.log(`  parse-error: ${handle.parseError}`)
 			}
 			if (!resolvedRange) return 0
-			return readRangeLike(wb, resolvedRange.sheet, resolvedRange.range, rowOffset, rowLimit)
+			return readRangeLike(
+				wb,
+				resolvedRange.sheet,
+				resolvedRange.range,
+				rowOffset,
+				rowLimit,
+				flags.has('json'),
+				display,
+			)
 		}
 		case 'range':
 			return readRangeLike(
@@ -130,6 +142,7 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 				rowOffset,
 				rowLimit,
 				flags.has('json'),
+				display,
 			)
 	}
 }
@@ -154,6 +167,7 @@ function readRangeLike(
 	rowOffset: number | undefined,
 	rowLimit: number | undefined,
 	asJson = false,
+	display = false,
 ): number {
 	if (!sheetName) {
 		console.error(
@@ -190,6 +204,7 @@ function readRangeLike(
 		info.colCount,
 		info.ref.start.row,
 		info.ref.start.col,
+		display,
 	)
 
 	const headers = Array.from({ length: info.colCount }, (_, i) =>
@@ -208,6 +223,7 @@ function buildWindowGrid(
 	colCount: number,
 	startRow: number,
 	startCol: number,
+	display: boolean,
 ): string[][] {
 	const grid: string[][] = []
 	let index = 0
@@ -218,7 +234,7 @@ function buildWindowGrid(
 			const colIndex = startCol + colOffset
 			const cell = cells[index]
 			if (cell && cell.row === rowIndex && cell.col === colIndex) {
-				row.push(formatCellValue(cell.value))
+				row.push(formatCellValue(cell.value, { display }))
 				index += 1
 			} else {
 				row.push('')

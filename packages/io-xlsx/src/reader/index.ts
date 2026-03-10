@@ -522,20 +522,20 @@ function buildReport(
 	if (formulaFeatures.sharedFormulaSheets.length > 0) {
 		features.push({
 			feature: 'sharedFormula',
-			tier: 'unsupported',
+			tier: 'normalized',
 			count: formulaFeatures.sharedFormulaSheets.length,
 			locations: formulaFeatures.sharedFormulaSheets,
-			note: 'Shared formulas are detected but not yet modeled as first-class semantics.',
+			note: 'Shared formulas are translated into concrete formulas with binding metadata, but shared groups are not yet first-class editable semantics.',
 		})
 	}
 
 	if (formulaFeatures.arrayFormulaSheets.length > 0) {
 		features.push({
 			feature: 'arrayFormula',
-			tier: 'unsupported',
+			tier: 'normalized',
 			count: formulaFeatures.arrayFormulaSheets.length,
 			locations: formulaFeatures.arrayFormulaSheets,
-			note: 'Array formulas are detected but not yet modeled as first-class semantics.',
+			note: 'Array formulas are imported with binding metadata, but legacy CSE semantics are not yet modeled as first-class editable semantics.',
 		})
 	}
 

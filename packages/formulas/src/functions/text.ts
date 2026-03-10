@@ -1,5 +1,6 @@
-import type { CellValue } from '@ascend/schema'
+import type { CellValue, ScalarCellValue } from '@ascend/schema'
 import {
+	arrayValue,
 	booleanValue,
 	EMPTY,
 	errorValue,
@@ -127,6 +128,27 @@ function textSplitPoint(
 	const matchMode = Math.trunc(matchModeRaw)
 	if (matchMode !== 0 && matchMode !== 1) return errorValue('#VALUE!')
 	return { text, delimiter, instanceNum, matchMode }
+}
+
+function splitByDelimiter(text: string, delimiter: string, matchMode: number): string[] {
+	if (delimiter === '') return [...text]
+	if (matchMode === 0) return text.split(delimiter)
+	const loweredText = text.toLowerCase()
+	const loweredDelimiter = delimiter.toLowerCase()
+	const parts: string[] = []
+	let start = 0
+	let searchFrom = 0
+	while (searchFrom <= text.length) {
+		const index = loweredText.indexOf(loweredDelimiter, searchFrom)
+		if (index === -1) {
+			parts.push(text.slice(start))
+			break
+		}
+		parts.push(text.slice(start, index))
+		start = index + delimiter.length
+		searchFrom = start
+	}
+	return parts
 }
 
 function formatNumber(value: number, code: string): string {
@@ -332,6 +354,45 @@ export const textFunctions: FunctionDef[] = [
 			return (args[5]?.value ?? errorValue('#N/A')) as CellValue
 		}
 		return stringValue(parsed.text.slice(match.end))
+	}),
+
+	fn('TEXTSPLIT', 2, 6, (args) => {
+		const text = strArg(args[0])
+		if (typeof text !== 'string') return text
+		const colDelimiter = strArg(args[1])
+		if (typeof colDelimiter !== 'string') return colDelimiter
+		const rowDelimiter = args[2] ? strArg(args[2]) : undefined
+		if (typeof rowDelimiter !== 'string' && rowDelimiter !== undefined) return rowDelimiter
+		const ignoreEmptyValue = args[3]?.value ?? booleanValue(false)
+		if (isError(ignoreEmptyValue)) return ignoreEmptyValue
+		const ignoreEmpty =
+			ignoreEmptyValue.kind === 'boolean'
+				? ignoreEmptyValue.value
+				: ignoreEmptyValue.kind === 'number'
+					? ignoreEmptyValue.value !== 0
+					: ignoreEmptyValue.kind !== 'empty'
+		const matchModeRaw = args[4] ? numArg(args[4]) : 0
+		if (typeof matchModeRaw !== 'number') return matchModeRaw
+		const matchMode = Math.trunc(matchModeRaw)
+		if (matchMode !== 0 && matchMode !== 1) return errorValue('#VALUE!')
+		const padWith = topLeftScalar(args[5]?.value ?? errorValue('#N/A'))
+
+		const rowParts = rowDelimiter ? splitByDelimiter(text, rowDelimiter, matchMode) : [text]
+		const filteredRows = ignoreEmpty ? rowParts.filter((part) => part !== '') : rowParts
+		const splitRows = filteredRows.map((rowText) => {
+			const cols = splitByDelimiter(rowText, colDelimiter, matchMode)
+			return ignoreEmpty ? cols.filter((part) => part !== '') : cols
+		})
+		if (splitRows.length === 0) return arrayValue([[padWith]])
+		const maxCols = splitRows.reduce((max, row) => Math.max(max, row.length), 0)
+		return arrayValue(
+			splitRows.map((row): ScalarCellValue[] =>
+				Array.from({ length: maxCols }, (_, index): ScalarCellValue => {
+					const value = row[index]
+					return value === undefined ? padWith : topLeftScalar(stringValue(value))
+				}),
+			),
+		)
 	}),
 
 	fn('SUBSTITUTE', 3, 4, (args) => {

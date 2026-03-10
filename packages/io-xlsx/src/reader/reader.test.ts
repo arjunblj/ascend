@@ -324,9 +324,12 @@ describe('readXlsx', () => {
 		const cell = result.value.workbook.sheets[0]?.cells.get(0, 0)
 		expect(cell?.formula).toBe('SUM(B1:B2)')
 		expect(cell?.formulaInfo).toEqual({ kind: 'array', ref: 'A1:A2' })
-		expect(result.value.report.features.some((feature) => feature.feature === 'arrayFormula')).toBe(
-			true,
-		)
+		expect(
+			result.value.report.features.find((feature) => feature.feature === 'arrayFormula'),
+		).toMatchObject({
+			feature: 'arrayFormula',
+			tier: 'normalized',
+		})
 	})
 
 	it('flags shared formulas in the compatibility report', () => {
@@ -352,8 +355,11 @@ describe('readXlsx', () => {
 		if (!result.ok) return
 
 		expect(
-			result.value.report.features.some((feature) => feature.feature === 'sharedFormula'),
-		).toBe(true)
+			result.value.report.features.find((feature) => feature.feature === 'sharedFormula'),
+		).toMatchObject({
+			feature: 'sharedFormula',
+			tier: 'normalized',
+		})
 		expect(result.value.workbook.sheets[0]?.cells.get(0, 0)?.formulaInfo).toEqual({
 			kind: 'shared',
 			sharedIndex: '0',

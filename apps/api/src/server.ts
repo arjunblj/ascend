@@ -1,4 +1,4 @@
-import type { Operation } from '@ascend/schema'
+import type { CellValue, Operation } from '@ascend/schema'
 import { AscendWorkbook, WorkbookSession } from '@ascend/sdk'
 import { binaryResponse, jsonFailure, jsonSuccess } from './response.ts'
 
@@ -65,6 +65,7 @@ export function createServer(opts?: { port?: number }) {
 						sheet?: string
 						format?: string
 						headers?: string[]
+						display?: boolean
 					}>(req)
 					const file = body ? requireString(body, 'file') : null
 					const range = body ? requireString(body, 'range') : null
@@ -74,6 +75,10 @@ export function createServer(opts?: { port?: number }) {
 						const sheetName = body ? requireString(body, 'sheet') : null
 						const format = (body ? requireString(body, 'format') : null) ?? 'cells'
 						const headers = body ? requireArray(body, 'headers') : null
+						const display =
+							body !== null &&
+							typeof body === 'object' &&
+							(body as Record<string, unknown>).display === true
 						const wb = await WorkbookSession.open(
 							file,
 							sheetName ? { mode: 'values', sheets: [sheetName] } : { mode: 'values' },
@@ -81,19 +86,21 @@ export function createServer(opts?: { port?: number }) {
 						const sheet = sheetName ? wb.sheet(sheetName) : wb.sheet(wb.sheets[0] ?? '')
 						if (!sheet) return jsonFailure('Sheet not found', 400)
 						if (format === 'rows') {
-							return jsonSuccess(sheet.readRows(range))
-						}
-						if (format === 'objects') {
 							return jsonSuccess(
-								sheet.readObjects(range, {
-									headers: headers?.every((entry) => typeof entry === 'string')
-										? (headers as string[])
-										: 'first-row',
-								}),
+								display ? displayRows(sheet.readRows(range)) : sheet.readRows(range),
 							)
 						}
+						if (format === 'objects') {
+							const info = sheet.readObjects(range, {
+								headers: headers?.every((entry) => typeof entry === 'string')
+									? (headers as string[])
+									: 'first-row',
+							})
+							return jsonSuccess(display ? displayObjects(info) : info)
+						}
 						if (format !== 'cells') return jsonFailure('Invalid read format', 400)
-						return jsonSuccess(sheet.range(range))
+						const info = sheet.range(range)
+						return jsonSuccess(display ? displayCells(info) : info)
 					} catch (e) {
 						const msg = e instanceof Error ? e.message : String(e)
 						if (msg.includes('ENOENT') || msg.includes('not found'))
@@ -269,4 +276,79 @@ export function createServer(opts?: { port?: number }) {
 			}
 		},
 	})
+}
+
+function displayCells(info: { cells: readonly { ref: string; value: CellValue }[] }): {
+	cells: Array<{ ref: string; value: string }>
+} {
+	return {
+		cells: info.cells.map((cell) => ({ ref: cell.ref, value: formatDisplayCellValue(cell.value) })),
+	}
+}
+
+function displayRows(info: { rows: readonly (readonly CellValue[])[] }): { rows: string[][] } {
+	return {
+		rows: info.rows.map((row) => row.map((cell) => formatDisplayCellValue(cell))),
+	}
+}
+
+function displayObjects(info: {
+	headers: readonly string[]
+	rows: readonly Readonly<Record<string, CellValue>>[]
+}): { headers: readonly string[]; rows: Array<Record<string, string>> } {
+	return {
+		headers: info.headers,
+		rows: info.rows.map((row) =>
+			Object.fromEntries(
+				Object.entries(row).map(([key, value]) => [key, formatDisplayCellValue(value)]),
+			),
+		),
+	}
+}
+
+function formatDisplayCellValue(value: CellValue): string {
+	switch (value.kind) {
+		case 'empty':
+			return ''
+		case 'number':
+			return String(value.value)
+		case 'string':
+			return value.value
+		case 'boolean':
+			return value.value ? 'TRUE' : 'FALSE'
+		case 'error':
+			return value.value
+		case 'date': {
+			const parts = serialToDateParts(Math.floor(value.serial))
+			if (!parts) return `[date:${value.serial}]`
+			return `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`
+		}
+		case 'richText':
+			return value.runs.map((run) => run.text).join('')
+	}
+	return ''
+}
+
+function serialToDateParts(
+	serial: number,
+	dateSystem: '1900' | '1904' = '1900',
+): { year: number; month: number; day: number } | null {
+	const msPerDay = 86_400_000
+	const makeUtc = (year: number, month: number, day: number) => {
+		const date = new Date(Date.UTC(year, month - 1, day))
+		if (year >= 0 && year < 100) date.setUTCFullYear(year)
+		return date
+	}
+	if (dateSystem === '1904') {
+		if (serial < 0) return null
+		const epoch = makeUtc(1904, 1, 1).getTime()
+		const date = new Date(epoch + serial * msPerDay)
+		return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() }
+	}
+	if (serial < 1) return null
+	if (serial === 60) return { year: 1900, month: 2, day: 29 }
+	const epoch = makeUtc(1900, 1, 1).getTime()
+	const days = serial < 60 ? serial - 1 : serial - 2
+	const date = new Date(epoch + days * msPerDay)
+	return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() }
 }

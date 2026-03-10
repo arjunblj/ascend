@@ -1,4 +1,4 @@
-import type { Operation } from '@ascend/schema'
+import type { CellValue, Operation } from '@ascend/schema'
 import { Ascend, WorkbookSession } from '@ascend/sdk'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
@@ -50,12 +50,16 @@ export function createServer(): McpServer {
 				.enum(['cells', 'rows', 'objects'])
 				.optional()
 				.describe('Read format: cell records, row arrays, or object rows'),
+			display: z
+				.boolean()
+				.optional()
+				.describe('Return display strings instead of raw typed values'),
 			headers: z
 				.array(z.string())
 				.optional()
 				.describe('Explicit headers for object mode; defaults to first-row headers'),
 		},
-		async ({ file, range, sheet, rowOffset, rowLimit, format, headers }) => {
+		async ({ file, range, sheet, rowOffset, rowLimit, format, display, headers }) => {
 			const wb = await WorkbookSession.open(
 				file,
 				sheet ? { mode: 'values', sheets: [sheet] } : { mode: 'values' },
@@ -82,7 +86,10 @@ export function createServer(): McpServer {
 								headers: headers && headers.length > 0 ? headers : 'first-row',
 							})
 						: handle.readWindow(range, readOpts)
-			return okResponse(info, `Read range ${range} from "${sheetName}"`)
+			return okResponse(
+				display ? displayReadResult(mode, info) : info,
+				`Read range ${range} from "${sheetName}"`,
+			)
 		},
 	)
 
@@ -211,6 +218,85 @@ export function createServer(): McpServer {
 	)
 
 	return server
+}
+
+function displayReadResult(mode: 'cells' | 'rows' | 'objects', info: unknown): unknown {
+	if (mode === 'rows') {
+		const rowsInfo = info as { rows: readonly (readonly CellValue[])[] }
+		return {
+			...rowsInfo,
+			rows: rowsInfo.rows.map((row) => row.map((cell) => formatDisplayCellValue(cell))),
+		}
+	}
+	if (mode === 'objects') {
+		const objectInfo = info as {
+			headers: readonly string[]
+			rows: readonly Readonly<Record<string, CellValue>>[]
+		}
+		return {
+			...objectInfo,
+			rows: objectInfo.rows.map((row) =>
+				Object.fromEntries(
+					Object.entries(row).map(([key, value]) => [key, formatDisplayCellValue(value)]),
+				),
+			),
+		}
+	}
+	const cellInfo = info as { cells: readonly { ref: string; value: CellValue }[] }
+	return {
+		...cellInfo,
+		cells: cellInfo.cells.map((cell) => ({
+			...cell,
+			value: formatDisplayCellValue(cell.value),
+		})),
+	}
+}
+
+function formatDisplayCellValue(value: CellValue): string {
+	switch (value.kind) {
+		case 'empty':
+			return ''
+		case 'number':
+			return String(value.value)
+		case 'string':
+			return value.value
+		case 'boolean':
+			return value.value ? 'TRUE' : 'FALSE'
+		case 'error':
+			return value.value
+		case 'date': {
+			const parts = serialToDateParts(Math.floor(value.serial))
+			if (!parts) return `[date:${value.serial}]`
+			return `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`
+		}
+		case 'richText':
+			return value.runs.map((run) => run.text).join('')
+	}
+	return ''
+}
+
+function serialToDateParts(
+	serial: number,
+	dateSystem: '1900' | '1904' = '1900',
+): { year: number; month: number; day: number } | null {
+	const msPerDay = 86_400_000
+	const makeUtc = (year: number, month: number, day: number) => {
+		const date = new Date(Date.UTC(year, month - 1, day))
+		if (year >= 0 && year < 100) date.setUTCFullYear(year)
+		return date
+	}
+	if (dateSystem === '1904') {
+		if (serial < 0) return null
+		const epoch = makeUtc(1904, 1, 1).getTime()
+		const date = new Date(epoch + serial * msPerDay)
+		return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() }
+	}
+	if (serial < 1) return null
+	if (serial === 60) return { year: 1900, month: 2, day: 29 }
+	const epoch = makeUtc(1900, 1, 1).getTime()
+	const days = serial < 60 ? serial - 1 : serial - 2
+	const date = new Date(epoch + days * msPerDay)
+	return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() }
 }
 
 if (import.meta.main) {

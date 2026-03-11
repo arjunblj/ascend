@@ -331,6 +331,31 @@ describe('readXlsx', () => {
 		expect(result.value.workbook.definedNames.get('Total')).toBe('Data!$A$1')
 	})
 
+	it('decodes escaped workbook defined-name formulas', () => {
+		const wbXml = `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
+  <definedNames>
+    <definedName name="Escaped">Data!$A$1&amp;&quot;x&quot;</definedName>
+  </definedNames>
+</workbook>`
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': wbXml,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': SHEET_XML,
+		})
+
+		const result = readXlsx(bytes)
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(result.value.workbook.definedNames.get('Escaped')).toBe('Data!$A$1&"x"')
+	})
+
 	it('reads sheet-scoped defined names from localSheetId', () => {
 		const wbXml = `<?xml version="1.0"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"

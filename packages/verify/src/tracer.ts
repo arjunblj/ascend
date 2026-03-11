@@ -98,13 +98,12 @@ export function trace(
 		if (!item) break
 		if (item.depth >= maxDepth) continue
 
-		const currentIndexed = item.key === targetKey ? targetFormula : formulas.formulas.get(item.key)
-		if (currentIndexed) {
-			const currentFormula = resolveFormulaDependencies(
-				workbook,
-				formulas.sheetNameIndex,
-				currentIndexed,
-			)
+		const currentFormula =
+			dependencies.resolvedFormulas.get(item.key) ??
+			(item.key === targetKey && targetFormula
+				? resolveFormulaDependencies(workbook, formulas.sheetNameIndex, targetFormula)
+				: undefined)
+		if (currentFormula) {
 			addSymbolicPrecedents(
 				workbook,
 				currentFormula,

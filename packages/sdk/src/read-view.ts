@@ -3,8 +3,6 @@ import {
 	analyzeWorkbook,
 	analyzeWorkbookDependencies,
 	analyzeWorkbookFormulas,
-	type CellKey,
-	cellKey,
 	createSnapshot,
 	diffWorkbooks,
 	resolveCellFormulaText,
@@ -373,28 +371,43 @@ export class WorkbookReadView {
 	formula(cellRef: string): FormulaInfo | undefined {
 		if (this.formulaInfoCache.has(cellRef)) return this.formulaInfoCache.get(cellRef)
 		const { sheetName, ref } = parseFullRef(cellRef, this.wb)
-		const formulaKey = makeFormulaKey(this.wb, sheetName, ref)
-		const analyzed =
-			formulaKey !== undefined ? this.formulaAnalysis().formulas.get(formulaKey) : undefined
-		const cell = this.sheet(sheetName)?.cell(ref)
-		if (!cell || !analyzed) {
+		const sheet = this.wb.getSheet(sheetName)
+		if (!sheet) {
+			this.formulaInfoCache.set(cellRef, undefined)
+			return undefined
+		}
+		const parsedRef = parseA1(ref)
+		const rawCell = sheet.cells.get(parsedRef.row, parsedRef.col)
+		if (!rawCell) {
+			this.formulaInfoCache.set(cellRef, undefined)
+			return undefined
+		}
+		const resolvedFormula = resolveCellFormulaText(
+			this.wb,
+			this.wb.sheets.findIndex((entry) => entry.id === sheet.id),
+			parsedRef.row,
+			parsedRef.col,
+			rawCell,
+		)
+		if (!resolvedFormula) {
 			this.formulaInfoCache.set(cellRef, undefined)
 			return undefined
 		}
 
-		const formula = normalizeFormulaInput(analyzed.formula)
+		const formula = normalizeFormulaInput(resolvedFormula)
 		const tokens = tokenizeFormulaInput(formula)
-		if (!analyzed.ast) {
+		const parsed = parseFormula(formula)
+		if (!parsed.ok) {
 			const info = buildFormulaInfo({
 				ref: `${sheetName}!${ref}`,
 				formula,
-				value: cell.value,
-				...(cell.formulaBinding ? { binding: cell.formulaBinding } : {}),
+				value: rawCell.value,
+				...(rawCell.formulaInfo ? { binding: rawCell.formulaInfo } : {}),
 				tokens,
 				normalizedFormula: formula,
 				functions: [],
-				volatile: analyzed.volatile,
-				...(analyzed.parseError ? { parseError: analyzed.parseError } : {}),
+				volatile: false,
+				parseError: parsed.error.message,
 			})
 			this.formulaInfoCache.set(cellRef, info)
 			return info
@@ -403,13 +416,14 @@ export class WorkbookReadView {
 		const info = buildFormulaInfo({
 			ref: `${sheetName}!${ref}`,
 			formula,
-			value: cell.value,
-			...(cell.formulaBinding ? { binding: cell.formulaBinding } : {}),
+			value: rawCell.value,
+			...(rawCell.formulaInfo ? { binding: rawCell.formulaInfo } : {}),
 			tokens,
-			ast: analyzed.ast,
-			normalizedFormula: printFormula(analyzed.ast),
-			functions: [...collectFunctionNames(analyzed.ast)],
-			volatile: analyzed.volatile,
+			ast: parsed.value,
+			normalizedFormula: printFormula(parsed.value),
+			functions: [...collectFunctionNames(parsed.value)],
+			volatile: hasVolatileFunction(parsed.value),
+			references: collectFormulaReferences(parsed.value),
 		})
 		this.formulaInfoCache.set(cellRef, info)
 		return info
@@ -648,13 +662,6 @@ function buildDefinedNameInfo(
 		functions: [...collectFunctionNames(parsed.value)],
 		volatile: hasVolatileFunction(parsed.value),
 	}
-}
-
-function makeFormulaKey(workbook: Workbook, sheetName: string, ref: string): CellKey | undefined {
-	const sheetIndex = workbook.sheets.findIndex((sheet) => sheet.name === sheetName)
-	if (sheetIndex === -1) return undefined
-	const cellRef = parseA1(ref)
-	return cellKey(sheetIndex, cellRef.row, cellRef.col)
 }
 
 function resolveDefinedNameBySheet(

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { StyleId } from '@ascend/core'
 import { createWorkbook } from '@ascend/core'
 import { EMPTY, numberValue } from '@ascend/schema'
-import { analyzeWorkbook } from './analysis.ts'
+import { analyzeWorkbook, analyzeWorkbookDependencies } from './analysis.ts'
 import { cellKey } from './dep-graph.ts'
 
 const sid = 0 as StyleId
@@ -124,5 +124,17 @@ describe('analyzeWorkbook', () => {
 		expect(new Set(analysis.cycles[0])).toEqual(new Set([cellKey(0, 0, 0), cellKey(0, 0, 1)]))
 		expect(analysis.cycleKeys.has(cellKey(0, 0, 0))).toBe(true)
 		expect(analysis.cycleKeys.has(cellKey(0, 0, 1))).toBe(true)
+	})
+
+	test('dependency analysis exposes resolved formula dependencies', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: EMPTY, formula: 'A1+1', styleId: sid })
+
+		const analysis = analyzeWorkbookDependencies(wb)
+		const formula = analysis.resolvedFormulas.get(cellKey(0, 1, 0))
+		expect(formula?.deps).toEqual([cellKey(0, 0, 0)])
+		expect(formula?.rangeDeps).toEqual([])
 	})
 })

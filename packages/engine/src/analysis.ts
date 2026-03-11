@@ -46,6 +46,7 @@ export interface WorkbookFormulaAnalysis {
 
 export interface WorkbookDependencyAnalysis {
 	readonly dependencyGraph: DependencyGraph
+	readonly resolvedFormulas: ReadonlyMap<CellKey, AnalyzedFormula>
 	readonly cycles: readonly (readonly CellKey[])[]
 	readonly cycleKeys: ReadonlySet<CellKey>
 	readonly sheetNameIndex: ReadonlyMap<string, number>
@@ -335,13 +336,8 @@ export function analyzeWorkbook(
 	}
 	const indexed = analyzeWorkbookFormulas(workbook, options)
 	const dependency = analyzeWorkbookDependencies(workbook, options)
-	const formulas = new Map<CellKey, AnalyzedFormula>()
-	for (const formula of indexed.formulas.values()) {
-		const analyzed = resolveFormulaDependencies(workbook, indexed.sheetNameIndex, formula)
-		formulas.set(analyzed.key, analyzed)
-	}
 	const analysis = {
-		formulas,
+		formulas: dependency.resolvedFormulas,
 		dependencyGraph: dependency.dependencyGraph,
 		cycles: dependency.cycles,
 		cycleKeys: dependency.cycleKeys,
@@ -361,8 +357,10 @@ export function analyzeWorkbookDependencies(
 	}
 	const indexed = analyzeWorkbookFormulas(workbook, options)
 	const dependencyGraph = new DependencyGraph()
+	const resolvedFormulas = new Map<CellKey, AnalyzedFormula>()
 	for (const formula of indexed.formulas.values()) {
 		const resolved = resolveFormulaDependencies(workbook, indexed.sheetNameIndex, formula)
+		resolvedFormulas.set(resolved.key, resolved)
 		if (resolved.parseError) continue
 		dependencyGraph.addFormula(
 			resolved.key,
@@ -378,6 +376,7 @@ export function analyzeWorkbookDependencies(
 	}
 	const analysis = {
 		dependencyGraph,
+		resolvedFormulas,
 		cycles,
 		cycleKeys,
 		sheetNameIndex: indexed.sheetNameIndex,

@@ -1,4 +1,5 @@
-import { jsonOut } from '../output/json.ts'
+import { ascendError } from '@ascend/schema'
+import { jsonErr, jsonOut } from '../output/json.ts'
 import { bullet, heading } from '../output/pretty.ts'
 import {
 	openWorkbookDocumentWithProgress,
@@ -91,12 +92,39 @@ async function setFormula(args: string[], flags: Map<string, string>): Promise<n
 	const { workbook: wb } = await openWorkbookWithProgress(file)
 	const result = wb.setFormula(cellRef, expr)
 	if (result.errors.length > 0) {
+		if (flags.has('json')) {
+			const first = result.errors[0]
+			console.log(
+				jsonErr(
+					first ??
+						ascendError('VALIDATION_ERROR', 'Failed to set formula', {
+							details: { apply: result },
+						}),
+				),
+			)
+		}
 		for (const error of result.errors) console.error(error.message)
 		return 1
 	}
 	if (result.recalcRequired) {
 		const { value: recalc } = await withProgress('Recalculating formulas', () => wb.recalc())
 		if (recalc.errors.length > 0) {
+			if (flags.has('json')) {
+				const first = recalc.errors[0]
+				console.log(
+					jsonErr(
+						first
+							? {
+									...first.error,
+									...(first.error.refs ? {} : { refs: [first.ref] }),
+									details: { ...(first.error.details ?? {}), recalc },
+								}
+							: ascendError('FORMULA_EVAL_ERROR', 'Recalculation failed', {
+									details: { recalc },
+								}),
+					),
+				)
+			}
 			for (const error of recalc.errors) console.error(`${error.ref}: ${error.error.message}`)
 			return 1
 		}
@@ -123,12 +151,39 @@ async function fillFormula(args: string[], flags: Map<string, string>): Promise<
 	const { workbook: wb } = await openWorkbookWithProgress(file)
 	const result = wb.fillFormula(rangeRef, expr)
 	if (result.errors.length > 0) {
+		if (flags.has('json')) {
+			const first = result.errors[0]
+			console.log(
+				jsonErr(
+					first ??
+						ascendError('VALIDATION_ERROR', 'Failed to fill formula', {
+							details: { apply: result },
+						}),
+				),
+			)
+		}
 		for (const error of result.errors) console.error(error.message)
 		return 1
 	}
 	if (result.recalcRequired) {
 		const { value: recalc } = await withProgress('Recalculating formulas', () => wb.recalc())
 		if (recalc.errors.length > 0) {
+			if (flags.has('json')) {
+				const first = recalc.errors[0]
+				console.log(
+					jsonErr(
+						first
+							? {
+									...first.error,
+									...(first.error.refs ? {} : { refs: [first.ref] }),
+									details: { ...(first.error.details ?? {}), recalc },
+								}
+							: ascendError('FORMULA_EVAL_ERROR', 'Recalculation failed', {
+									details: { recalc },
+								}),
+					),
+				)
+			}
 			for (const error of recalc.errors) console.error(`${error.ref}: ${error.error.message}`)
 			return 1
 		}

@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
-import type { Operation } from '@ascend/schema'
-import { jsonOut } from '../output/json.ts'
+import { ascendError, type Operation } from '@ascend/schema'
+import { jsonErr, jsonOut } from '../output/json.ts'
 import { openWorkbookWithProgress, withProgress } from '../progress.ts'
 import { buildSetCellOps, parseWriteSelector, resolveSheetName } from './mutation-helpers.ts'
 
@@ -36,12 +36,39 @@ export async function writeCommand(args: string[], flags: Map<string, string>): 
 		const ops: Operation[] = JSON.parse(raw)
 		const result = wb.apply(ops)
 		if (result.errors.length > 0) {
+			if (flags.has('json')) {
+				const first = result.errors[0]
+				console.log(
+					jsonErr(
+						first ??
+							ascendError('VALIDATION_ERROR', 'Failed to apply operations', {
+								details: { apply: result },
+							}),
+					),
+				)
+			}
 			for (const e of result.errors) console.error(e.message)
 			return 1
 		}
 		if (result.recalcRequired) {
 			const { value: recalc } = await withProgress('Recalculating formulas', () => wb.recalc())
 			if (recalc.errors.length > 0) {
+				if (flags.has('json')) {
+					const first = recalc.errors[0]
+					console.log(
+						jsonErr(
+							first
+								? {
+										...first.error,
+										...(first.error.refs ? {} : { refs: [first.ref] }),
+										details: { ...(first.error.details ?? {}), recalc },
+									}
+								: ascendError('FORMULA_EVAL_ERROR', 'Recalculation failed', {
+										details: { recalc },
+									}),
+						),
+					)
+				}
 				for (const error of recalc.errors) console.error(`${error.ref}: ${error.error.message}`)
 				return 1
 			}
@@ -77,12 +104,39 @@ export async function writeCommand(args: string[], flags: Map<string, string>): 
 	const ops = buildSetCellOps(sheetName, selector.ref, values)
 	const result = wb.apply(ops)
 	if (result.errors.length > 0) {
+		if (flags.has('json')) {
+			const first = result.errors[0]
+			console.log(
+				jsonErr(
+					first ??
+						ascendError('VALIDATION_ERROR', 'Failed to apply operations', {
+							details: { apply: result },
+						}),
+				),
+			)
+		}
 		for (const e of result.errors) console.error(e.message)
 		return 1
 	}
 	if (result.recalcRequired) {
 		const { value: recalc } = await withProgress('Recalculating formulas', () => wb.recalc())
 		if (recalc.errors.length > 0) {
+			if (flags.has('json')) {
+				const first = recalc.errors[0]
+				console.log(
+					jsonErr(
+						first
+							? {
+									...first.error,
+									...(first.error.refs ? {} : { refs: [first.ref] }),
+									details: { ...(first.error.details ?? {}), recalc },
+								}
+							: ascendError('FORMULA_EVAL_ERROR', 'Recalculation failed', {
+									details: { recalc },
+								}),
+					),
+				)
+			}
 			for (const error of recalc.errors) console.error(`${error.ref}: ${error.error.message}`)
 			return 1
 		}

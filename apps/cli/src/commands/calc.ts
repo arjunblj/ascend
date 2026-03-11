@@ -1,4 +1,5 @@
-import { jsonOut } from '../output/json.ts'
+import { ascendError } from '@ascend/schema'
+import { jsonErr, jsonOut } from '../output/json.ts'
 import { openWorkbookWithProgress, withProgress } from '../progress.ts'
 
 export const usage = `Usage: ascend calc <file> [flags]
@@ -23,6 +24,22 @@ export async function calcCommand(args: string[], flags: Map<string, string>): P
 	const { value: result } = await withProgress('Recalculating formulas', () => wb.recalc())
 
 	if (result.errors.length > 0) {
+		if (flags.has('json')) {
+			const first = result.errors[0]
+			console.log(
+				jsonErr(
+					first
+						? {
+								...first.error,
+								...(first.error.refs ? {} : { refs: [first.ref] }),
+								details: { ...(first.error.details ?? {}), recalc: result },
+							}
+						: ascendError('FORMULA_EVAL_ERROR', 'Recalculation failed', {
+								details: { recalc: result },
+							}),
+				),
+			)
+		}
 		for (const e of result.errors) console.error(`${e.ref}: ${e.error.message}`)
 		return 1
 	}

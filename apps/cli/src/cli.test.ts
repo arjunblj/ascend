@@ -422,6 +422,51 @@ describe('ascend cli', () => {
 		if (existsSync(opsFile)) unlinkSync(opsFile)
 	})
 
+	test('write --json returns a failure envelope on operation errors', async () => {
+		const tempFile = `${import.meta.dir}/${MULTI_SHEET_FILE}`
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'addSheet', name: 'Sheet2' }])
+		await wb.save(tempFile)
+
+		const opsFile = `${import.meta.dir}/write-ops.json`
+		await Bun.write(
+			opsFile,
+			JSON.stringify([{ op: 'setCells', sheet: 'Missing', updates: [{ ref: 'A1', value: 1 }] }]),
+		)
+
+		const { exitCode, stdout } = await run(
+			'write',
+			MULTI_SHEET_FILE,
+			'--ops',
+			'write-ops.json',
+			'--json',
+		)
+		expect(exitCode).toBe(1)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.ok).toBe(false)
+		expect(parsed.error.message).toContain('Sheet')
+		if (existsSync(opsFile)) unlinkSync(opsFile)
+	})
+
+	test('write --json returns a failure envelope when recalculation reports errors', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const opsFile = `${import.meta.dir}/write-ops.json`
+		await Bun.write(
+			opsFile,
+			JSON.stringify([{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=A1+1' }]),
+		)
+
+		const { exitCode, stdout } = await run('write', TEST_FILE, '--ops', 'write-ops.json', '--json')
+		expect(exitCode).toBe(1)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.ok).toBe(false)
+		expect(parsed.error.message).toContain('Circular reference detected')
+		expect(parsed.error.details.recalc.errors.length).toBeGreaterThan(0)
+		if (existsSync(opsFile)) unlinkSync(opsFile)
+	})
+
 	test('preview shows changes without mutating the workbook file', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -494,6 +539,25 @@ describe('ascend cli', () => {
 		expect(stderr).toContain('Circular reference detected')
 	})
 
+	test('formula set --json returns a failure envelope when recalculation reports errors', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const { exitCode, stdout } = await run(
+			'formula',
+			'set',
+			TEST_FILE,
+			'Sheet1!A1',
+			'=A1+1',
+			'--json',
+		)
+		expect(exitCode).toBe(1)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.ok).toBe(false)
+		expect(parsed.error.message).toContain('Circular reference detected')
+		expect(parsed.error.details.recalc.errors.length).toBeGreaterThan(0)
+	})
+
 	test('trace shows values and respects max depth', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -542,6 +606,19 @@ describe('ascend cli', () => {
 		const { exitCode, stderr } = await run('calc', TEST_FILE)
 		expect(exitCode).toBe(1)
 		expect(stderr).toContain('Circular reference detected')
+	})
+
+	test('calc --json returns a failure envelope when recalculation reports errors', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=A1+1' }])
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const { exitCode, stdout } = await run('calc', TEST_FILE, '--json')
+		expect(exitCode).toBe(1)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.ok).toBe(false)
+		expect(parsed.error.message).toContain('Circular reference detected')
+		expect(parsed.error.details.recalc.errors.length).toBeGreaterThan(0)
 	})
 
 	test('formula set and fill edit formulas from the CLI', async () => {

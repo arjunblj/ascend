@@ -134,17 +134,33 @@ function buildSmallNumberCache(): Map<number, CellValue> {
 }
 
 export function parseSheet(name: string, xml: string, ctx: SheetParseContext): Sheet {
+	const sheet = new Sheet(name)
+	parseSheetDataXml(xml, sheet, ctx)
+	if (ctx.valuesOnly) {
+		parseSheetPrXml(xml, sheet)
+		parseSheetFormatPrXml(xml, sheet)
+		parseSheetViewsXml(xml, sheet)
+		parseColsXml(xml, sheet)
+		parseMergeCellsXml(xml, sheet)
+		parseDrawingRefsXml(xml, sheet)
+		parseAutoFilterXml(xml, sheet)
+		parseSheetProtectionXml(xml, sheet)
+		parsePageMarginsXml(xml, sheet)
+		parsePageSetupXml(xml, sheet)
+		parsePrintOptionsXml(xml, sheet)
+		parseHeaderFooterXml(xml, sheet)
+		parseIgnoredErrorsXml(xml, sheet)
+		return sheet
+	}
+
 	const doc = parseXml(stripSheetDataForDom(xml))
 	const ws = doc.worksheet as XmlNode | undefined
-	const sheet = new Sheet(name)
-
 	if (!ws) return sheet
 
 	parseSheetPr(ws, sheet)
 	parseSheetFormatPr(ws, sheet)
 	parseSheetViews(ws, sheet)
 	parseCols(ws, sheet)
-	parseSheetDataXml(xml, sheet, ctx)
 	parseMergeCells(ws, sheet)
 	parseDrawingRefs(ws, sheet)
 	parseAutoFilter(ws, sheet)
@@ -154,13 +170,12 @@ export function parseSheet(name: string, xml: string, ctx: SheetParseContext): S
 	parsePrintOptions(ws, sheet)
 	parseHeaderFooter(ws, sheet)
 	parseIgnoredErrors(ws, sheet)
-	if (!ctx.valuesOnly && !ctx.formulaOnly) {
+	if (!ctx.formulaOnly) {
 		parseHyperlinks(ws, sheet, ctx.relationships ?? [], ctx.valuePool)
 		parseConditionalFormatting(ws, sheet, ctx.differentialStyles ?? [], ctx.valuePool)
 		parseDataValidations(ws, sheet, ctx.valuePool)
 		extractExtLst(xml, sheet)
 	}
-
 	return sheet
 }
 
@@ -345,6 +360,91 @@ function locateSheetData(xml: string): { contentStart: number; contentEnd: numbe
 	return { contentStart: tagEnd + 1, contentEnd: close }
 }
 
+function parseSheetPrXml(xml: string, sheet: Sheet): void {
+	const node = parseFirstFragmentNode(xml, 'sheetPr')
+	if (!node) return
+	parseSheetPr({ sheetPr: node }, sheet)
+}
+
+function parseSheetFormatPrXml(xml: string, sheet: Sheet): void {
+	const node = parseFirstFragmentNode(xml, 'sheetFormatPr')
+	if (!node) return
+	parseSheetFormatPr({ sheetFormatPr: node }, sheet)
+}
+
+function parseSheetViewsXml(xml: string, sheet: Sheet): void {
+	const node = parseFirstFragmentNode(xml, 'sheetViews')
+	if (!node) return
+	parseSheetViews({ sheetViews: node }, sheet)
+}
+
+function parseColsXml(xml: string, sheet: Sheet): void {
+	const node = parseFirstFragmentNode(xml, 'cols')
+	if (!node) return
+	parseCols({ cols: node }, sheet)
+}
+
+function parseMergeCellsXml(xml: string, sheet: Sheet): void {
+	const node = parseFirstFragmentNode(xml, 'mergeCells')
+	if (!node) return
+	parseMergeCells({ mergeCells: node }, sheet)
+}
+
+function parseDrawingRefsXml(xml: string, sheet: Sheet): void {
+	const hasDrawing = hasTag(xml, 'drawing')
+	const hasLegacyDrawing = hasTag(xml, 'legacyDrawing')
+	if (!hasDrawing && !hasLegacyDrawing) return
+	parseDrawingRefs(
+		{
+			...(hasDrawing ? { drawing: {} } : {}),
+			...(hasLegacyDrawing ? { legacyDrawing: {} } : {}),
+		},
+		sheet,
+	)
+}
+
+function parseAutoFilterXml(xml: string, sheet: Sheet): void {
+	const node = parseFirstFragmentNode(xml, 'autoFilter')
+	if (!node) return
+	parseAutoFilter({ autoFilter: node }, sheet)
+}
+
+function parseSheetProtectionXml(xml: string, sheet: Sheet): void {
+	const node = parseFirstFragmentNode(xml, 'sheetProtection')
+	if (!node) return
+	parseSheetProtection({ sheetProtection: node }, sheet)
+}
+
+function parsePageMarginsXml(xml: string, sheet: Sheet): void {
+	const node = parseFirstFragmentNode(xml, 'pageMargins')
+	if (!node) return
+	parsePageMargins({ pageMargins: node }, sheet)
+}
+
+function parsePageSetupXml(xml: string, sheet: Sheet): void {
+	const node = parseFirstFragmentNode(xml, 'pageSetup')
+	if (!node) return
+	parsePageSetup({ pageSetup: node }, sheet)
+}
+
+function parsePrintOptionsXml(xml: string, sheet: Sheet): void {
+	const node = parseFirstFragmentNode(xml, 'printOptions')
+	if (!node) return
+	parsePrintOptions({ printOptions: node }, sheet)
+}
+
+function parseHeaderFooterXml(xml: string, sheet: Sheet): void {
+	const node = parseFirstFragmentNode(xml, 'headerFooter')
+	if (!node) return
+	parseHeaderFooter({ headerFooter: node }, sheet)
+}
+
+function parseIgnoredErrorsXml(xml: string, sheet: Sheet): void {
+	const node = parseFirstFragmentNode(xml, 'ignoredErrors')
+	if (!node) return
+	parseIgnoredErrors({ ignoredErrors: node }, sheet)
+}
+
 function findTagEnd(xml: string, start: number): number {
 	return xml.indexOf('>', start + 1)
 }
@@ -357,6 +457,57 @@ function isSelfClosingTag(xml: string, tagStart: number, tagEnd: number): boolea
 		if (ch !== ' ' && ch !== '\n' && ch !== '\r' && ch !== '\t') return false
 	}
 	return false
+}
+
+function hasTag(xml: string, tagName: string): boolean {
+	return findTagStart(xml, tagName, 0) !== -1
+}
+
+function parseFirstFragmentNode(xml: string, tagName: string): XmlNode | undefined {
+	const fragment = extractTagFragment(xml, tagName, 0)
+	if (!fragment) return undefined
+	const doc = parseXml(fragment.xml)
+	return doc[tagName] as XmlNode | undefined
+}
+
+function extractTagFragment(
+	xml: string,
+	tagName: string,
+	fromIndex: number,
+): { xml: string; nextIndex: number } | undefined {
+	const start = findTagStart(xml, tagName, fromIndex)
+	if (start === -1) return undefined
+	const tagEnd = findTagEnd(xml, start)
+	if (tagEnd === -1) return undefined
+	if (isSelfClosingTag(xml, start, tagEnd)) {
+		return { xml: xml.slice(start, tagEnd + 1), nextIndex: tagEnd + 1 }
+	}
+	const close = xml.indexOf(`</${tagName}>`, tagEnd + 1)
+	if (close === -1) return undefined
+	const closeEnd = close + tagName.length + 3
+	return { xml: xml.slice(start, closeEnd), nextIndex: closeEnd }
+}
+
+function findTagStart(xml: string, tagName: string, fromIndex: number): number {
+	const needle = `<${tagName}`
+	let index = fromIndex
+	while (true) {
+		index = xml.indexOf(needle, index)
+		if (index === -1) return -1
+		const next = xml[index + needle.length]
+		if (
+			next === undefined ||
+			next === ' ' ||
+			next === '\n' ||
+			next === '\r' ||
+			next === '\t' ||
+			next === '>' ||
+			next === '/'
+		) {
+			return index
+		}
+		index += needle.length
+	}
 }
 
 function _parseSheetData(ws: XmlNode, sheet: Sheet, ctx: SheetParseContext): void {

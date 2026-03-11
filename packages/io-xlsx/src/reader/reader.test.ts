@@ -1375,6 +1375,46 @@ describe('readXlsx', () => {
 		)
 	})
 
+	it('preserves worksheet layout metadata in values mode', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheetViews><sheetView workbookViewId="0"><pane xSplit="1" ySplit="2"/></sheetView></sheetViews>
+  <cols><col min="1" max="1" width="24" customWidth="1"/></cols>
+  <sheetData>
+    <row r="1"><c r="A1" t="s"><v>0</v></c></row>
+  </sheetData>
+  <mergeCells><mergeCell ref="A1:B2"/></mergeCells>
+  <autoFilter ref="A1:B5"/>
+  <pageMargins left="0.7" right="0.8" top="0.9" bottom="1"/>
+  <printOptions gridLines="1"/>
+  <headerFooter><oddHeader>&amp;LTest</oddHeader></headerFooter>
+  <drawing r:id="rIdDrawing"/>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes, { mode: 'values' })
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet?.frozenRows).toBe(2)
+		expect(sheet?.frozenCols).toBe(1)
+		expect(sheet?.colWidths.get(0)).toBe(24)
+		expect(sheet?.merges).toEqual([{ start: { row: 0, col: 0 }, end: { row: 1, col: 1 } }])
+		expect(sheet?.autoFilter?.ref).toBe('A1:B5')
+		expect(sheet?.pageMargins).toEqual({ left: 0.7, right: 0.8, top: 0.9, bottom: 1 })
+		expect(sheet?.printOptions).toEqual({ gridLines: true })
+		expect(sheet?.headerFooter).toEqual({ oddHeader: '&LTest' })
+		expect(sheet?.drawingRefs).toEqual({ hasDrawing: true, hasLegacyDrawing: false })
+	})
+
 	it('preserves date decoding in values mode without full style hydration', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

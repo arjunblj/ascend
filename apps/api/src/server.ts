@@ -1,4 +1,10 @@
-import { ascendError, type CellValue, type Operation } from '@ascend/schema'
+import {
+	type AscendError,
+	AscendException,
+	ascendError,
+	type CellValue,
+	type Operation,
+} from '@ascend/schema'
 import { AscendWorkbook, WorkbookDocument } from '@ascend/sdk'
 import { binaryResponse, jsonFailure, jsonFailureError, jsonSuccess } from './response.ts'
 
@@ -29,6 +35,35 @@ function requireOptionalNumber(obj: unknown, key: string): number | undefined {
 	return typeof v === 'number' && Number.isFinite(v) ? v : undefined
 }
 
+function statusForError(ae: AscendError): number {
+	if (
+		ae.code === 'SHEET_NOT_FOUND' ||
+		ae.code === 'NAME_NOT_FOUND' ||
+		ae.code === 'TABLE_NOT_FOUND'
+	)
+		return 404
+	if (
+		ae.code === 'IMPORT_ERROR' ||
+		ae.code === 'INVALID_REF' ||
+		ae.code === 'INVALID_RANGE' ||
+		ae.code === 'VALIDATION_ERROR' ||
+		ae.code === 'INVALID_ARGUMENT'
+	)
+		return 400
+	return 500
+}
+
+function handleError(e: unknown, fileContext?: string): Response {
+	if (e instanceof AscendException) {
+		const status = statusForError(e.ascendError)
+		return jsonFailureError(e.ascendError, status)
+	}
+	const msg = e instanceof Error ? e.message : String(e)
+	if (msg.includes('ENOENT') || msg.includes('not found'))
+		return jsonFailure(fileContext ? `File not found: ${fileContext}` : 'File not found', 404)
+	return jsonFailure(msg, 500)
+}
+
 export function createServer(opts?: { port?: number }) {
 	return Bun.serve({
 		port: opts?.port ?? (Number(process.env.PORT) || 3000),
@@ -57,10 +92,7 @@ export function createServer(opts?: { port?: number }) {
 						if (!sheet) return jsonFailure('Sheet not found', 400)
 						return jsonSuccess(sheet)
 					} catch (e) {
-						const msg = e instanceof Error ? e.message : String(e)
-						if (msg.includes('ENOENT') || msg.includes('not found'))
-							return jsonFailure(`File not found: ${file}`, 400)
-						return jsonFailure(msg, 500)
+						return handleError(e, file)
 					}
 				}
 
@@ -117,10 +149,7 @@ export function createServer(opts?: { port?: number }) {
 						})
 						return jsonSuccess(display ? displayCells(info) : info)
 					} catch (e) {
-						const msg = e instanceof Error ? e.message : String(e)
-						if (msg.includes('ENOENT') || msg.includes('not found'))
-							return jsonFailure(`File not found: ${file}`, 400)
-						return jsonFailure(msg, 500)
+						return handleError(e, file)
 					}
 				}
 
@@ -159,10 +188,7 @@ export function createServer(opts?: { port?: number }) {
 						await wb.save(file)
 						return jsonSuccess(result)
 					} catch (e) {
-						const msg = e instanceof Error ? e.message : String(e)
-						if (msg.includes('ENOENT') || msg.includes('not found'))
-							return jsonFailure(`File not found: ${file}`, 400)
-						return jsonFailure(msg, 500)
+						return handleError(e, file)
 					}
 				}
 
@@ -192,10 +218,7 @@ export function createServer(opts?: { port?: number }) {
 						}
 						return jsonSuccess(result)
 					} catch (e) {
-						const msg = e instanceof Error ? e.message : String(e)
-						if (msg.includes('ENOENT') || msg.includes('not found'))
-							return jsonFailure(`File not found: ${file}`, 400)
-						return jsonFailure(msg, 500)
+						return handleError(e, file)
 					}
 				}
 
@@ -221,10 +244,7 @@ export function createServer(opts?: { port?: number }) {
 						await wb.save(file)
 						return jsonSuccess(result)
 					} catch (e) {
-						const msg = e instanceof Error ? e.message : String(e)
-						if (msg.includes('ENOENT') || msg.includes('not found'))
-							return jsonFailure(`File not found: ${file}`, 400)
-						return jsonFailure(msg, 500)
+						return handleError(e, file)
 					}
 				}
 
@@ -236,10 +256,7 @@ export function createServer(opts?: { port?: number }) {
 						const wb = await WorkbookDocument.open(file, { mode: 'formula' })
 						return jsonSuccess(wb.check())
 					} catch (e) {
-						const msg = e instanceof Error ? e.message : String(e)
-						if (msg.includes('ENOENT') || msg.includes('not found'))
-							return jsonFailure(`File not found: ${file}`, 400)
-						return jsonFailure(msg, 500)
+						return handleError(e, file)
 					}
 				}
 
@@ -251,10 +268,7 @@ export function createServer(opts?: { port?: number }) {
 						const wb = await WorkbookDocument.open(file, { mode: 'formula' })
 						return jsonSuccess(wb.lint())
 					} catch (e) {
-						const msg = e instanceof Error ? e.message : String(e)
-						if (msg.includes('ENOENT') || msg.includes('not found'))
-							return jsonFailure(`File not found: ${file}`, 400)
-						return jsonFailure(msg, 500)
+						return handleError(e, file)
 					}
 				}
 
@@ -270,10 +284,7 @@ export function createServer(opts?: { port?: number }) {
 						if (!result) return jsonFailure('Cell not found', 400)
 						return jsonSuccess(result)
 					} catch (e) {
-						const msg = e instanceof Error ? e.message : String(e)
-						if (msg.includes('ENOENT') || msg.includes('not found'))
-							return jsonFailure(`File not found: ${file}`, 400)
-						return jsonFailure(msg, 500)
+						return handleError(e, file)
 					}
 				}
 
@@ -289,10 +300,7 @@ export function createServer(opts?: { port?: number }) {
 						const diff = wbA.diff(wbB)
 						return jsonSuccess(diff)
 					} catch (e) {
-						const msg = e instanceof Error ? e.message : String(e)
-						if (msg.includes('ENOENT') || msg.includes('not found'))
-							return jsonFailure('File not found', 400)
-						return jsonFailure(msg, 500)
+						return handleError(e)
 					}
 				}
 
@@ -325,10 +333,7 @@ export function createServer(opts?: { port?: number }) {
 						}
 						return jsonFailure(`Unsupported format: ${format}`, 400)
 					} catch (e) {
-						const msg = e instanceof Error ? e.message : String(e)
-						if (msg.includes('ENOENT') || msg.includes('not found'))
-							return jsonFailure(`File not found: ${file}`, 400)
-						return jsonFailure(msg, 500)
+						return handleError(e, file)
 					}
 				}
 

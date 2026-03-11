@@ -12,7 +12,7 @@ import type {
 	SheetTabColor,
 } from '@ascend/core'
 import { parseA1, parseRange, toA1 } from '@ascend/core'
-import type { CellValue } from '@ascend/schema'
+import { AscendException, ascendError, type CellValue } from '@ascend/schema'
 import type {
 	CellInfo,
 	CompactCellInfo,
@@ -310,8 +310,14 @@ export class SheetHandle {
 	private requireSheet(): Sheet {
 		const sheet = this.resolveSheet()
 		if (sheet) return sheet
-		throw new Error(
-			`Sheet "${this.sheetName}" is no longer available in the current workbook view.`,
+		throw new AscendException(
+			ascendError(
+				'SHEET_NOT_FOUND',
+				`Sheet "${this.sheetName}" is no longer available in the current workbook view.`,
+				{
+					refs: [this.sheetName],
+				},
+			),
 		)
 	}
 }
@@ -363,7 +369,9 @@ function makeCompactCellInfo(
 function toCellInfo(cell: CompactCellInfo, explicitRef?: string): CellInfo {
 	const ref = explicitRef ?? cell.ref
 	if (!ref) {
-		throw new Error('CellInfo conversion requires a reference')
+		throw new AscendException(
+			ascendError('INVALID_ARGUMENT', 'CellInfo conversion requires a reference'),
+		)
 	}
 	return {
 		ref,

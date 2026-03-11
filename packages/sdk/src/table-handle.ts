@@ -1,5 +1,5 @@
 import type { AutoFilter, RangeRef, Sheet, Table, TableColumn, TableStyleInfo } from '@ascend/core'
-import type { CellValue } from '@ascend/schema'
+import { AscendException, ascendError, type CellValue } from '@ascend/schema'
 import type { TableWindowInfo } from './types.ts'
 
 export class TableHandle {
@@ -128,8 +128,14 @@ export class TableHandle {
 	private requireTable(): { readonly table: Table; readonly sheet: Sheet } {
 		const resolved = this.resolveTable()
 		if (resolved) return resolved
-		throw new Error(
-			`Table "${this.tableName}" is no longer available in the current workbook view.`,
+		throw new AscendException(
+			ascendError(
+				'TABLE_NOT_FOUND',
+				`Table "${this.tableName}" is no longer available in the current workbook view.`,
+				{
+					refs: [this.tableName],
+				},
+			),
 		)
 	}
 }

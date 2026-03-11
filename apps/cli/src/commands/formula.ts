@@ -85,7 +85,7 @@ async function setFormula(args: string[], flags: Map<string, string>): Promise<n
 	const cellRef = args[1]
 	const expr = args[2]
 	if (!file || !cellRef || !expr) {
-		console.error("Usage: ascend formula set <file> <sheet!cell> '<formula>'")
+		cliError("Usage: ascend formula set <file> <sheet!cell> '<formula>'", flags)
 		return 1
 	}
 
@@ -102,8 +102,9 @@ async function setFormula(args: string[], flags: Map<string, string>): Promise<n
 						}),
 				),
 			)
+		} else {
+			for (const error of result.errors) cliError(error.message, flags)
 		}
-		for (const error of result.errors) console.error(error.message)
 		return 1
 	}
 	if (result.recalcRequired) {
@@ -124,8 +125,9 @@ async function setFormula(args: string[], flags: Map<string, string>): Promise<n
 								}),
 					),
 				)
+			} else {
+				for (const error of recalc.errors) cliError(`${error.ref}: ${error.error.message}`, flags)
 			}
-			for (const error of recalc.errors) console.error(`${error.ref}: ${error.error.message}`)
 			return 1
 		}
 	}
@@ -144,7 +146,7 @@ async function fillFormula(args: string[], flags: Map<string, string>): Promise<
 	const rangeRef = args[1]
 	const expr = args[2]
 	if (!file || !rangeRef || !expr) {
-		console.error("Usage: ascend formula fill <file> <sheet!range> '<formula>'")
+		cliError("Usage: ascend formula fill <file> <sheet!range> '<formula>'", flags)
 		return 1
 	}
 
@@ -161,8 +163,9 @@ async function fillFormula(args: string[], flags: Map<string, string>): Promise<
 						}),
 				),
 			)
+		} else {
+			for (const error of result.errors) cliError(error.message, flags)
 		}
-		for (const error of result.errors) console.error(error.message)
 		return 1
 	}
 	if (result.recalcRequired) {
@@ -183,8 +186,9 @@ async function fillFormula(args: string[], flags: Map<string, string>): Promise<
 								}),
 					),
 				)
+			} else {
+				for (const error of recalc.errors) cliError(`${error.ref}: ${error.error.message}`, flags)
 			}
-			for (const error of recalc.errors) console.error(`${error.ref}: ${error.error.message}`)
 			return 1
 		}
 	}

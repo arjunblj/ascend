@@ -1,4 +1,10 @@
-import { ascendError, type CellValue, machineFailure, type Operation } from '@ascend/schema'
+import {
+	AscendException,
+	ascendError,
+	type CellValue,
+	machineFailure,
+	type Operation,
+} from '@ascend/schema'
 import { Ascend, WorkbookDocument } from '@ascend/sdk'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
@@ -19,21 +25,27 @@ export function createServer(): McpServer {
 			sheet: z.string().optional().describe('Sheet name to inspect'),
 		},
 		async ({ file, sheet }) => {
-			const wb = await WorkbookDocument.open(
-				file,
-				sheet ? { mode: 'values', sheets: [sheet] } : { mode: 'metadata-only' },
-			)
-			if (sheet) {
-				const data = wb.inspectSheet(sheet)
-				if (!data) {
-					return errorResponse(`Sheet "${sheet}" not found`)
+			try {
+				const wb = await WorkbookDocument.open(
+					file,
+					sheet ? { mode: 'values', sheets: [sheet] } : { mode: 'metadata-only' },
+				)
+				if (sheet) {
+					const data = wb.inspectSheet(sheet)
+					if (!data) {
+						return errorResponse(`Sheet "${sheet}" not found`)
+					}
+					return {
+						...okResponse(data, `Inspected sheet "${sheet}"`),
+					}
 				}
-				return {
-					...okResponse(data, `Inspected sheet "${sheet}"`),
-				}
+				const data = wb.inspect()
+				return okResponse(data, `Inspected workbook "${file}"`)
+			} catch (e) {
+				return errorResponse(
+					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
+				)
 			}
-			const data = wb.inspect()
-			return okResponse(data, `Inspected workbook "${file}"`)
 		},
 	)
 
@@ -60,36 +72,42 @@ export function createServer(): McpServer {
 				.describe('Explicit headers for object mode; defaults to first-row headers'),
 		},
 		async ({ file, range, sheet, rowOffset, rowLimit, format, display, headers }) => {
-			const wb = await WorkbookDocument.open(
-				file,
-				sheet ? { mode: 'values', sheets: [sheet] } : { mode: 'values' },
-			)
-			const sheetName = sheet ?? wb.sheets[0]
-			if (!sheetName) {
-				return errorResponse('No sheets in workbook')
+			try {
+				const wb = await WorkbookDocument.open(
+					file,
+					sheet ? { mode: 'values', sheets: [sheet] } : { mode: 'values' },
+				)
+				const sheetName = sheet ?? wb.sheets[0]
+				if (!sheetName) {
+					return errorResponse('No sheets in workbook')
+				}
+				const handle = wb.sheet(sheetName)
+				if (!handle) {
+					return errorResponse(`Sheet "${sheetName}" not found`)
+				}
+				const readOpts = {
+					...(rowOffset !== undefined ? { rowOffset } : {}),
+					...(rowLimit !== undefined ? { rowLimit } : {}),
+				}
+				const mode = format ?? 'cells'
+				const info =
+					mode === 'rows'
+						? handle.readRows(range, readOpts)
+						: mode === 'objects'
+							? handle.readObjects(range, {
+									...readOpts,
+									headers: headers && headers.length > 0 ? headers : 'first-row',
+								})
+							: handle.readWindow(range, readOpts)
+				return okResponse(
+					display ? displayReadResult(mode, info) : info,
+					`Read range ${range} from "${sheetName}"`,
+				)
+			} catch (e) {
+				return errorResponse(
+					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
+				)
 			}
-			const handle = wb.sheet(sheetName)
-			if (!handle) {
-				return errorResponse(`Sheet "${sheetName}" not found`)
-			}
-			const readOpts = {
-				...(rowOffset !== undefined ? { rowOffset } : {}),
-				...(rowLimit !== undefined ? { rowLimit } : {}),
-			}
-			const mode = format ?? 'cells'
-			const info =
-				mode === 'rows'
-					? handle.readRows(range, readOpts)
-					: mode === 'objects'
-						? handle.readObjects(range, {
-								...readOpts,
-								headers: headers && headers.length > 0 ? headers : 'first-row',
-							})
-						: handle.readWindow(range, readOpts)
-			return okResponse(
-				display ? displayReadResult(mode, info) : info,
-				`Read range ${range} from "${sheetName}"`,
-			)
 		},
 	)
 
@@ -101,20 +119,26 @@ export function createServer(): McpServer {
 			ops: z.array(z.record(z.string(), z.unknown())).describe('Operations to preview'),
 		},
 		async ({ file, ops }) => {
-			const wb = await Ascend.open(file)
-			const result = wb.preview(ops as unknown as readonly Operation[])
-			if (result.errors.length > 0) {
-				const first = result.errors[0]
+			try {
+				const wb = await Ascend.open(file)
+				const result = wb.preview(ops as unknown as readonly Operation[])
+				if (result.errors.length > 0) {
+					const first = result.errors[0]
+					return errorResponse(
+						first
+							? {
+									...first,
+									details: { ...(first.details ?? {}), preview: result },
+								}
+							: ascendError('VALIDATION_ERROR', 'Preview failed', { details: { preview: result } }),
+					)
+				}
+				return okResponse(result, `Previewed ${ops.length} operation(s)`)
+			} catch (e) {
 				return errorResponse(
-					first
-						? {
-								...first,
-								details: { ...(first.details ?? {}), preview: result },
-							}
-						: ascendError('VALIDATION_ERROR', 'Preview failed', { details: { preview: result } }),
+					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
 				)
 			}
-			return okResponse(result, `Previewed ${ops.length} operation(s)`)
 		},
 	)
 
@@ -126,28 +150,36 @@ export function createServer(): McpServer {
 			ops: z.array(z.record(z.string(), z.unknown())).describe('Operations to apply'),
 		},
 		async ({ file, ops }) => {
-			const wb = await Ascend.open(file)
-			const result = wb.apply(ops as unknown as readonly Operation[])
-			if (result.errors.length > 0) {
-				const first = result.errors[0]
-				return errorResponse(first ?? ascendError('VALIDATION_ERROR', 'Failed to apply operations'))
-			}
-			if (result.recalcRequired) {
-				const recalc = wb.recalc()
-				if (recalc.errors.length > 0) {
-					const first = recalc.errors[0]
+			try {
+				const wb = await Ascend.open(file)
+				const result = wb.apply(ops as unknown as readonly Operation[])
+				if (result.errors.length > 0) {
+					const first = result.errors[0]
 					return errorResponse(
-						first
-							? ascendError('FORMULA_EVAL_ERROR', `${first.ref}: ${first.error.message}`, {
-									refs: [first.ref],
-									details: { evalError: first.error },
-								})
-							: ascendError('FORMULA_EVAL_ERROR', 'Recalculation failed'),
+						first ?? ascendError('VALIDATION_ERROR', 'Failed to apply operations'),
 					)
 				}
+				if (result.recalcRequired) {
+					const recalc = wb.recalc()
+					if (recalc.errors.length > 0) {
+						const first = recalc.errors[0]
+						return errorResponse(
+							first
+								? ascendError('FORMULA_EVAL_ERROR', `${first.ref}: ${first.error.message}`, {
+										refs: [first.ref],
+										details: { evalError: first.error },
+									})
+								: ascendError('FORMULA_EVAL_ERROR', 'Recalculation failed'),
+						)
+					}
+				}
+				await wb.save(file)
+				return okResponse(result, `Applied ${ops.length} operation(s)`)
+			} catch (e) {
+				return errorResponse(
+					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
+				)
 			}
-			await wb.save(file)
-			return okResponse(result, `Applied ${ops.length} operation(s)`)
 		},
 	)
 
@@ -158,21 +190,27 @@ export function createServer(): McpServer {
 			file: z.string().describe('Path to workbook file'),
 		},
 		async ({ file }) => {
-			const wb = await Ascend.open(file)
-			const result = wb.recalc()
-			if (result.errors.length > 0) {
-				const first = result.errors[0]
+			try {
+				const wb = await Ascend.open(file)
+				const result = wb.recalc()
+				if (result.errors.length > 0) {
+					const first = result.errors[0]
+					return errorResponse(
+						first
+							? ascendError('FORMULA_EVAL_ERROR', `${first.ref}: ${first.error.message}`, {
+									refs: [first.ref],
+									details: { evalError: first.error },
+								})
+							: ascendError('FORMULA_EVAL_ERROR', 'Recalculation failed'),
+					)
+				}
+				await wb.save(file)
+				return okResponse(result, `Recalculated workbook "${file}"`)
+			} catch (e) {
 				return errorResponse(
-					first
-						? ascendError('FORMULA_EVAL_ERROR', `${first.ref}: ${first.error.message}`, {
-								refs: [first.ref],
-								details: { evalError: first.error },
-							})
-						: ascendError('FORMULA_EVAL_ERROR', 'Recalculation failed'),
+					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
 				)
 			}
-			await wb.save(file)
-			return okResponse(result, `Recalculated workbook "${file}"`)
 		},
 	)
 
@@ -183,24 +221,30 @@ export function createServer(): McpServer {
 			file: z.string().describe('Path to workbook file'),
 		},
 		async ({ file }) => {
-			const wb = await WorkbookDocument.open(file, { mode: 'formula' })
-			const result = wb.check()
-			if (!result.valid) {
-				const summary = `${result.issues.length} issue(s) found`
-				return {
-					...errorResponse(
-						ascendError('VALIDATION_ERROR', summary, {
-							details: { issues: result.issues },
-						}),
-					),
-					structuredContent: machineFailure(
-						ascendError('VALIDATION_ERROR', summary, {
-							details: { check: result },
-						}),
-					) as unknown as Record<string, unknown>,
+			try {
+				const wb = await WorkbookDocument.open(file, { mode: 'formula' })
+				const result = wb.check()
+				if (!result.valid) {
+					const summary = `${result.issues.length} issue(s) found`
+					return {
+						...errorResponse(
+							ascendError('VALIDATION_ERROR', summary, {
+								details: { issues: result.issues },
+							}),
+						),
+						structuredContent: machineFailure(
+							ascendError('VALIDATION_ERROR', summary, {
+								details: { check: result },
+							}),
+						) as unknown as Record<string, unknown>,
+					}
 				}
+				return okResponse(result, `Checked workbook "${file}"`)
+			} catch (e) {
+				return errorResponse(
+					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
+				)
 			}
-			return okResponse(result, `Checked workbook "${file}"`)
 		},
 	)
 
@@ -211,9 +255,15 @@ export function createServer(): McpServer {
 			file: z.string().describe('Path to workbook file'),
 		},
 		async ({ file }) => {
-			const wb = await WorkbookDocument.open(file, { mode: 'formula' })
-			const result = wb.lint()
-			return okResponse(result, `Linted workbook "${file}"`)
+			try {
+				const wb = await WorkbookDocument.open(file, { mode: 'formula' })
+				const result = wb.lint()
+				return okResponse(result, `Linted workbook "${file}"`)
+			} catch (e) {
+				return errorResponse(
+					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
+				)
+			}
 		},
 	)
 
@@ -225,12 +275,18 @@ export function createServer(): McpServer {
 			cell: z.string().describe('Cell reference (e.g. "Sheet1!A1" or "A1")'),
 		},
 		async ({ file, cell }) => {
-			const wb = await WorkbookDocument.open(file, { mode: 'formula' })
-			const result = wb.trace(cell)
-			if (!result) {
-				return errorResponse(`Cannot trace "${cell}"`)
+			try {
+				const wb = await WorkbookDocument.open(file, { mode: 'formula' })
+				const result = wb.trace(cell)
+				if (!result) {
+					return errorResponse(`Cannot trace "${cell}"`)
+				}
+				return okResponse(result, `Traced cell "${cell}"`)
+			} catch (e) {
+				return errorResponse(
+					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
+				)
 			}
-			return okResponse(result, `Traced cell "${cell}"`)
 		},
 	)
 
@@ -242,9 +298,15 @@ export function createServer(): McpServer {
 			fileB: z.string().describe('Path to second workbook'),
 		},
 		async ({ fileA, fileB }) => {
-			const [a, b] = await Promise.all([Ascend.open(fileA), Ascend.open(fileB)])
-			const result = a.diff(b)
-			return okResponse(result, `Diffed "${fileA}" against "${fileB}"`)
+			try {
+				const [a, b] = await Promise.all([Ascend.open(fileA), Ascend.open(fileB)])
+				const result = a.diff(b)
+				return okResponse(result, `Diffed "${fileA}" against "${fileB}"`)
+			} catch (e) {
+				return errorResponse(
+					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
+				)
+			}
 		},
 	)
 
@@ -257,19 +319,25 @@ export function createServer(): McpServer {
 			format: z.string().optional().describe('Output format (inferred from extension if omitted)'),
 		},
 		async ({ file, output, format }) => {
-			const wb = await Ascend.open(file)
-			const normalized = format ? normalizeExportFormat(format) : inferExportFormat(output)
-			if (!normalized) return errorResponse(`Unsupported format: ${format ?? output}`)
-			const target = ensureOutputExtension(output, normalized)
-			if (normalized === 'json') {
-				await Bun.write(target, JSON.stringify(wb.toJSON(), null, 2))
-			} else if (normalized === 'csv' || normalized === 'tsv') {
-				const text = wb.toCsv(normalized === 'tsv' ? { dialect: { delimiter: '\t' } } : undefined)
-				await Bun.write(target, text)
-			} else {
-				await wb.save(target)
+			try {
+				const wb = await Ascend.open(file)
+				const normalized = format ? normalizeExportFormat(format) : inferExportFormat(output)
+				if (!normalized) return errorResponse(`Unsupported format: ${format ?? output}`)
+				const target = ensureOutputExtension(output, normalized)
+				if (normalized === 'json') {
+					await Bun.write(target, JSON.stringify(wb.toJSON(), null, 2))
+				} else if (normalized === 'csv' || normalized === 'tsv') {
+					const text = wb.toCsv(normalized === 'tsv' ? { dialect: { delimiter: '\t' } } : undefined)
+					await Bun.write(target, text)
+				} else {
+					await wb.save(target)
+				}
+				return okResponse({ exported: target }, `Exported workbook to "${target}"`)
+			} catch (e) {
+				return errorResponse(
+					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
+				)
 			}
-			return okResponse({ exported: target }, `Exported workbook to "${target}"`)
 		},
 	)
 

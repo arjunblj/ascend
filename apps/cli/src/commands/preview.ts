@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { ascendError, type CellValue, type Operation } from '@ascend/schema'
-import { jsonErr, jsonOut } from '../output/json.ts'
+import { cliError, jsonErr, jsonOut } from '../output/json.ts'
 import { bullet, heading, table } from '../output/pretty.ts'
 import { openWorkbookWithProgress } from '../progress.ts'
 import { buildSetCellOps, parseWriteSelector, resolveSheetName } from './mutation-helpers.ts'
@@ -24,8 +24,10 @@ Flags:
 export async function previewCommand(args: string[], flags: Map<string, string>): Promise<number> {
 	const file = args[0]
 	if (!file) {
-		console.error('Usage: ascend preview <file> <selector> <json-values> [--sheet <name>]')
-		console.error('       ascend preview <file> --ops <file.json>')
+		cliError(
+			'Usage: ascend preview <file> <selector> <json-values> [--sheet <name>]\n       ascend preview <file> --ops <file.json>',
+			flags,
+		)
 		return 1
 	}
 
@@ -100,7 +102,7 @@ async function resolvePreviewOps(
 	const selectorArg = args[1]
 	const valuesStr = args[2]
 	if (!selectorArg || !valuesStr) {
-		console.error('Usage: ascend preview <file> <selector> <json-values> [--sheet <name>]')
+		cliError('Usage: ascend preview <file> <selector> <json-values> [--sheet <name>]', flags)
 		return null
 	}
 
@@ -108,10 +110,11 @@ async function resolvePreviewOps(
 	const selector = parseWriteSelector(selectorArg, flags.get('sheet'))
 	const sheetName = resolveSheetName(wb, selector.sheet)
 	if (!sheetName) {
-		console.error(
+		cliError(
 			wb.sheets.length === 0
 				? 'No sheets in workbook'
 				: 'Multiple sheets available; specify a sheet explicitly',
+			flags,
 		)
 		return null
 	}

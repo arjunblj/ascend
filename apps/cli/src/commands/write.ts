@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { ascendError, type Operation } from '@ascend/schema'
-import { jsonErr, jsonOut } from '../output/json.ts'
+import { cliError, jsonErr, jsonOut } from '../output/json.ts'
 import { openWorkbookWithProgress, withProgress } from '../progress.ts'
 import { buildSetCellOps, parseWriteSelector, resolveSheetName } from './mutation-helpers.ts'
 
@@ -23,8 +23,10 @@ Flags:
 export async function writeCommand(args: string[], flags: Map<string, string>): Promise<number> {
 	const file = args[0]
 	if (!file) {
-		console.error('Usage: ascend write <file> <selector> <json-values> [--sheet <name>]')
-		console.error('       ascend write <file> --ops <file.json>')
+		cliError(
+			'Usage: ascend write <file> <selector> <json-values> [--sheet <name>]\n       ascend write <file> --ops <file.json>',
+			flags,
+		)
 		return 1
 	}
 
@@ -46,8 +48,9 @@ export async function writeCommand(args: string[], flags: Map<string, string>): 
 							}),
 					),
 				)
+			} else {
+				for (const e of result.errors) cliError(e.message, flags)
 			}
-			for (const e of result.errors) console.error(e.message)
 			return 1
 		}
 		if (result.recalcRequired) {
@@ -68,8 +71,9 @@ export async function writeCommand(args: string[], flags: Map<string, string>): 
 									}),
 						),
 					)
+				} else {
+					for (const error of recalc.errors) cliError(`${error.ref}: ${error.error.message}`, flags)
 				}
-				for (const error of recalc.errors) console.error(`${error.ref}: ${error.error.message}`)
 				return 1
 			}
 		}
@@ -85,7 +89,7 @@ export async function writeCommand(args: string[], flags: Map<string, string>): 
 	const selectorArg = args[1]
 	const valuesStr = args[2]
 	if (!selectorArg || !valuesStr) {
-		console.error('Usage: ascend write <file> <selector> <json-values> [--sheet <name>]')
+		cliError('Usage: ascend write <file> <selector> <json-values> [--sheet <name>]', flags)
 		return 1
 	}
 
@@ -93,10 +97,11 @@ export async function writeCommand(args: string[], flags: Map<string, string>): 
 	const selector = parseWriteSelector(selectorArg, flags.get('sheet'))
 	const sheetName = resolveSheetName(wb, selector.sheet)
 	if (!sheetName) {
-		console.error(
+		cliError(
 			wb.sheets.length === 0
 				? 'No sheets in workbook'
 				: 'Multiple sheets available; specify a sheet explicitly',
+			flags,
 		)
 		return 1
 	}
@@ -114,8 +119,9 @@ export async function writeCommand(args: string[], flags: Map<string, string>): 
 						}),
 				),
 			)
+		} else {
+			for (const e of result.errors) cliError(e.message, flags)
 		}
-		for (const e of result.errors) console.error(e.message)
 		return 1
 	}
 	if (result.recalcRequired) {
@@ -136,8 +142,9 @@ export async function writeCommand(args: string[], flags: Map<string, string>): 
 								}),
 					),
 				)
+			} else {
+				for (const error of recalc.errors) cliError(`${error.ref}: ${error.error.message}`, flags)
 			}
-			for (const error of recalc.errors) console.error(`${error.ref}: ${error.error.message}`)
 			return 1
 		}
 	}

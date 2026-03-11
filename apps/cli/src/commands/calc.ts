@@ -1,5 +1,5 @@
 import { ascendError } from '@ascend/schema'
-import { jsonErr, jsonOut } from '../output/json.ts'
+import { cliError, jsonErr, jsonOut } from '../output/json.ts'
 import { openWorkbookWithProgress, withProgress } from '../progress.ts'
 
 export const usage = `Usage: ascend calc <file> [flags]
@@ -16,7 +16,7 @@ Flags:
 export async function calcCommand(args: string[], flags: Map<string, string>): Promise<number> {
 	const file = args[0]
 	if (!file) {
-		console.error('Usage: ascend calc <file>')
+		cliError('Usage: ascend calc <file>', flags)
 		return 1
 	}
 
@@ -39,8 +39,9 @@ export async function calcCommand(args: string[], flags: Map<string, string>): P
 							}),
 				),
 			)
+		} else {
+			for (const e of result.errors) cliError(`${e.ref}: ${e.error.message}`, flags)
 		}
-		for (const e of result.errors) console.error(`${e.ref}: ${e.error.message}`)
 		return 1
 	}
 

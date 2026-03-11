@@ -17,6 +17,10 @@ export type ErrorCode =
 	| 'PROTECTION_ERROR'
 	| 'MERGE_CONFLICT'
 	| 'STYLE_ERROR'
+	| 'FILE_NOT_FOUND'
+	| 'FILE_READ_ERROR'
+	| 'INVALID_ARGUMENT'
+	| 'INTERNAL_ERROR'
 
 export interface AscendError {
 	readonly code: ErrorCode

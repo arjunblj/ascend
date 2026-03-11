@@ -38,7 +38,7 @@ describe('golden round-trip fidelity', () => {
 		sheet.cells.set(0, 0, { value: numberValue(0), formula: null, styleId: S0 })
 		sheet.cells.set(0, 1, { value: numberValue(42), formula: null, styleId: S0 })
 		sheet.cells.set(0, 2, { value: numberValue(-100), formula: null, styleId: S0 })
-		sheet.cells.set(0, 3, { value: numberValue(2.71828), formula: null, styleId: S0 })
+		sheet.cells.set(0, 3, { value: numberValue(Math.E), formula: null, styleId: S0 })
 		sheet.cells.set(0, 4, { value: numberValue(1e15), formula: null, styleId: S0 })
 		sheet.cells.set(0, 5, { value: numberValue(-0.0001), formula: null, styleId: S0 })
 

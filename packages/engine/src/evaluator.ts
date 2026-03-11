@@ -826,6 +826,7 @@ function areasOf(arg: EvalArg): readonly EvalArea[] | null {
 					endRow: arg.ref.row,
 					endCol: arg.ref.col,
 				},
+				topLeft: arg.value,
 				values: [[arg.value]],
 				forEachValue: (fn) => fn(arg.value),
 			},
@@ -834,6 +835,7 @@ function areasOf(arg: EvalArg): readonly EvalArea[] | null {
 	return [
 		{
 			ref: arg.ref,
+			topLeft: arg.value,
 			values: arg.values ?? [[arg.value]],
 			...(arg.forEachValue ? { forEachValue: arg.forEachValue } : {}),
 		},
@@ -869,6 +871,9 @@ function makeRangeArea(
 			endRow,
 			endCol,
 		},
+		get topLeft() {
+			return sheet?.cells.getValue(materializedStartRow, materializedStartCol) ?? EMPTY
+		},
 		get values() {
 			if (!cachedValues) {
 				cachedValues = getRangeValues(
@@ -901,11 +906,15 @@ function makeMultiAreaArg(areas: readonly EvalArea[]): EvalArg {
 	const firstArea = areas[0]
 	if (!firstArea) return { value: errorValue('#NULL!') }
 	return {
-		value: firstArea.values[0]?.[0] ?? EMPTY,
+		get value() {
+			return firstArea.topLeft ?? firstArea.values[0]?.[0] ?? EMPTY
+		},
 		kind: 'range',
 		...(areas.length === 1
 			? {
-					values: firstArea.values,
+					get values() {
+						return firstArea.values
+					},
 					ref: firstArea.ref,
 					shapeRows: (firstArea.ref.endRow ?? firstArea.ref.row) - firstArea.ref.row + 1,
 					shapeCols: (firstArea.ref.endCol ?? firstArea.ref.col) - firstArea.ref.col + 1,

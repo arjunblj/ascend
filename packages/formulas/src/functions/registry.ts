@@ -13,6 +13,7 @@ export interface EvalRef {
 export interface EvalArea {
 	readonly ref: EvalRef
 	readonly values: readonly (readonly CellValue[])[]
+	readonly topLeft?: CellValue
 	readonly forEachValue?: (fn: (value: CellValue) => void) => void
 }
 

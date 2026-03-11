@@ -281,4 +281,20 @@ describe('SparseGrid', () => {
 		expect(clone.get(0, 0)?.value).toEqual(stringValue('beta'))
 		expect(clone.get(1, 1)?.formula).toBe('A1*2')
 	})
+
+	test('clone isolates mutable array cell values', () => {
+		const grid = new SparseGrid()
+		grid.set(0, 0, makeCell({ kind: 'array', rows: [[numberValue(1)], [numberValue(2)]] }))
+
+		const clone = grid.clone()
+		const clonedValue = clone.get(0, 0)?.value
+		expect(clonedValue?.kind).toBe('array')
+		if (!clonedValue || clonedValue.kind !== 'array') return
+
+		;(clonedValue.rows[0] as { 0: Cell['value'] })[0] = numberValue(99)
+		const originalValue = grid.get(0, 0)?.value
+		expect(originalValue?.kind).toBe('array')
+		if (!originalValue || originalValue.kind !== 'array') return
+		expect(originalValue.rows[0]?.[0]).toEqual(numberValue(1))
+	})
 })

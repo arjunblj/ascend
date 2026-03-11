@@ -45,7 +45,7 @@ export type CellFormulaBinding =
 const DEFAULT_STYLE_ID = 0 as StyleId
 
 export class SparseGrid {
-	private readonly data = new Map<number, StoredCell>()
+	private data = new Map<number, StoredCell>()
 	private readonly styledStringCache = new Map<string, StyledStringCell>()
 	private readonly styledBooleanCache = new Map<string, StyledBooleanCell>()
 	private readonly styledNumberCache = new Map<StyleId, Map<number, StyledNumberCell>>()
@@ -56,6 +56,7 @@ export class SparseGrid {
 	private _minCol = Number.POSITIVE_INFINITY
 	private _maxCol = Number.NEGATIVE_INFINITY
 	private _boundsDirty = false
+	private _hasMutableStorage = false
 
 	get(row: number, col: number): Cell | undefined {
 		return materializeCell(this.data.get(packKey(row, col)))
@@ -75,7 +76,9 @@ export class SparseGrid {
 	): void {
 		const key = packKey(row, col)
 		const isNew = !this.data.has(key)
-		this.data.set(key, this.compactResolvedCell(value, formula, styleId, formulaInfo))
+		const stored = this.compactResolvedCell(value, formula, styleId, formulaInfo)
+		this.data.set(key, stored)
+		if (isMutableStoredCell(stored)) this._hasMutableStorage = true
 		if (isNew) {
 			if (key < this._lastInsertedKey) this._isKeyOrderSorted = false
 			else this._lastInsertedKey = key
@@ -302,6 +305,7 @@ export class SparseGrid {
 		this._minCol = Number.POSITIVE_INFINITY
 		this._maxCol = Number.NEGATIVE_INFINITY
 		this._boundsDirty = false
+		this._hasMutableStorage = false
 	}
 
 	insertRows(at: number, count: number): void {
@@ -335,12 +339,15 @@ export class SparseGrid {
 	}
 
 	copyFrom(other: SparseGrid): void {
-		this.data.clear()
+		this.data = new Map(other.data)
 		this.styledStringCache.clear()
 		this.styledBooleanCache.clear()
 		this.styledNumberCache.clear()
-		for (const [key, cell] of other.data) {
-			this.data.set(key, cloneCell(cell))
+		if (other._hasMutableStorage) {
+			for (const [key, cell] of this.data) {
+				const cloned = cloneCell(cell)
+				if (cloned !== cell) this.data.set(key, cloned)
+			}
 		}
 		this._minRow = other._minRow
 		this._maxRow = other._maxRow
@@ -349,6 +356,7 @@ export class SparseGrid {
 		this._boundsDirty = other._boundsDirty
 		this._isKeyOrderSorted = other._isKeyOrderSorted
 		this._lastInsertedKey = other._lastInsertedKey
+		this._hasMutableStorage = other._hasMutableStorage
 	}
 
 	private _recomputeBounds(): void {
@@ -378,10 +386,7 @@ export class SparseGrid {
 			if (!next) continue
 			nextData.set(packKey(next.row, next.col), cell)
 		}
-		this.data.clear()
-		for (const [key, cell] of nextData) {
-			this.data.set(key, cell)
-		}
+		this.data = nextData
 		let lastInsertedKey = Number.NEGATIVE_INFINITY
 		for (const key of nextData.keys()) lastInsertedKey = key
 		this._lastInsertedKey = lastInsertedKey
@@ -558,6 +563,18 @@ function cloneCell(cell: StoredCell): StoredCell {
 	if (typeof cell === 'string' || typeof cell === 'number' || typeof cell === 'boolean') return cell
 	if (cell === EMPTY) return cell
 	return cloneCellValue(cell) as StoredCell
+}
+
+function isMutableStoredCell(cell: StoredCell): boolean {
+	if (cell instanceof HeapCell) {
+		return cell.value.kind === 'array' || cell.value.kind === 'richText'
+	}
+	return (
+		typeof cell === 'object' &&
+		cell !== null &&
+		'kind' in cell &&
+		(cell.kind === 'array' || cell.kind === 'richText')
+	)
 }
 
 function materializeCell(cell: StoredCell | undefined): Cell | undefined {

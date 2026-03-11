@@ -902,10 +902,35 @@ function handleSetNumberFormat(
 	return ok(patch(affected, [op.sheet]))
 }
 
+function operationAffectsFormulas(op: Operation): boolean {
+	switch (op.op) {
+		case 'setComment':
+		case 'setHyperlink':
+		case 'setNumberFormat':
+		case 'setStyle':
+		case 'freezePane':
+		case 'setColWidth':
+		case 'setRowHeight':
+		case 'mergeCells':
+		case 'unmergeCells':
+			return false
+		case 'setCells':
+			return false
+		case 'createTable':
+			return false
+		case 'clearRange':
+			return op.what === 'all' || op.what === 'formulas'
+		default:
+			return true
+	}
+}
+
 // --- Public API ---
 
 export function applyOperation(workbook: Workbook, op: Operation): Result<PatchResult> {
-	invalidateWorkbookAnalysis(workbook)
+	if (operationAffectsFormulas(op)) {
+		invalidateWorkbookAnalysis(workbook)
+	}
 	invalidateSheetIndexCache(workbook)
 	switch (op.op) {
 		case 'setCells':

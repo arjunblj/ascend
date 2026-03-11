@@ -76,6 +76,26 @@ describe('analyzeWorkbook', () => {
 		expect(formula?.rangeDeps).toEqual([])
 	})
 
+	test('formula group detection reuses AST for consecutive column cells with same shape', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		s.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		s.cells.set(2, 0, { value: numberValue(3), formula: null, styleId: sid })
+		s.cells.set(0, 1, { value: EMPTY, formula: 'A1*2', styleId: sid })
+		s.cells.set(1, 1, { value: EMPTY, formula: 'A2*2', styleId: sid })
+		s.cells.set(2, 1, { value: EMPTY, formula: 'A3*2', styleId: sid })
+
+		const analysis = analyzeWorkbook(wb)
+		expect(analysis.formulas.size).toBe(3)
+		const b1 = analysis.formulas.get(cellKey(0, 0, 1))
+		const b2 = analysis.formulas.get(cellKey(0, 1, 1))
+		const b3 = analysis.formulas.get(cellKey(0, 2, 1))
+		expect(b1?.deps).toEqual([cellKey(0, 0, 0)])
+		expect(b2?.deps).toEqual([cellKey(0, 1, 0)])
+		expect(b3?.deps).toEqual([cellKey(0, 2, 0)])
+	})
+
 	test('expands 3D sheet-span references into dependencies across contiguous sheets', () => {
 		const wb = createWorkbook()
 		const s1 = wb.addSheet('Sheet1')

@@ -82,6 +82,29 @@ export function resolveSheetIndex(
 	return sheetNameIndex.get(sheetName.toLowerCase()) ?? -1
 }
 
+function tryReuseFromCellAbove(
+	workbook: Workbook,
+	sheetIndex: number,
+	row: number,
+	col: number,
+	cell: { formula: string | null; formulaInfo?: { kind?: string } },
+	formulas: ReadonlyMap<CellKey, IndexedFormula>,
+): FormulaNode | null {
+	if (row === 0) return null
+	const prevKey = cellKey(sheetIndex, row - 1, col)
+	const prev = formulas.get(prevKey)
+	if (!prev?.ast) return null
+	const rewritten = rewriteRefs(prev.ast, (ref: FormulaCellRef) => ({
+		...ref,
+		row: ref.rowAbsolute ? ref.row : ref.row + 1,
+		col: ref.colAbsolute ? ref.col : ref.col,
+	}))
+	const rewrittenText = printFormula(rewritten)
+	const currentText = resolveCellFormulaText(workbook, sheetIndex, row, col, cell)
+	if (currentText !== rewrittenText) return null
+	return rewritten
+}
+
 export function analyzeWorkbookFormulas(
 	workbook: Workbook,
 	options: AnalyzeWorkbookOptions = {},
@@ -97,42 +120,57 @@ export function analyzeWorkbookFormulas(
 	for (let sheetIndex = 0; sheetIndex < workbook.sheets.length; sheetIndex++) {
 		const sheet = workbook.sheets[sheetIndex]
 		if (!sheet) continue
-		for (const [row, col, cell] of sheet.cells.iterate()) {
-			if (!cellHasFormula(cell)) continue
-			if (!inRange(sheet.name, row, col, options.range)) continue
+		for (const [row, rowCells] of sheet.cells.iterateRows()) {
+			for (const [col, cell] of rowCells) {
+				if (!cellHasFormula(cell)) continue
+				if (!inRange(sheet.name, row, col, options.range)) continue
 
-			const key = cellKey(sheetIndex, row, col)
-			const formulaText = resolveCellFormulaText(workbook, sheetIndex, row, col, cell)
-			const parsed = parseIndexedFormula(workbook, sheetIndex, row, col, cell, sharedMasterCache)
-			if (!parsed.ok) {
+				const key = cellKey(sheetIndex, row, col)
+				const formulaText = resolveCellFormulaText(workbook, sheetIndex, row, col, cell)
+				let ast: FormulaNode | undefined
+				const reused = tryReuseFromCellAbove(workbook, sheetIndex, row, col, cell, formulas)
+				if (reused) {
+					ast = reused
+				} else {
+					const parsed = parseIndexedFormula(
+						workbook,
+						sheetIndex,
+						row,
+						col,
+						cell,
+						sharedMasterCache,
+					)
+					if (!parsed.ok) {
+						formulas.set(key, {
+							key,
+							sheetIndex,
+							sheetName: sheet.name,
+							row,
+							col,
+							formula: formulaText ?? cell.formula ?? '',
+							refs: [],
+							volatile: false,
+							parseError: parsed.error.message,
+						})
+						continue
+					}
+					ast = parsed.value
+				}
+
+				const refs = extractRefsWithNames(ast, workbook, sheetNameIndex, sheetIndex, [])
+				const volatile = hasVolatileFunction(ast)
 				formulas.set(key, {
 					key,
 					sheetIndex,
 					sheetName: sheet.name,
 					row,
 					col,
-					formula: formulaText ?? cell.formula ?? '',
-					refs: [],
-					volatile: false,
-					parseError: parsed.error.message,
+					formula: formulaText ?? printFormula(ast),
+					ast,
+					refs,
+					volatile,
 				})
-				continue
 			}
-
-			const ast = parsed.value
-			const refs = extractRefsWithNames(ast, workbook, sheetNameIndex, sheetIndex, [])
-			const volatile = hasVolatileFunction(ast)
-			formulas.set(key, {
-				key,
-				sheetIndex,
-				sheetName: sheet.name,
-				row,
-				col,
-				formula: formulaText ?? printFormula(ast),
-				ast,
-				refs,
-				volatile,
-			})
 		}
 	}
 

@@ -8,6 +8,51 @@ import type {
 	StyleId,
 	StyleRegistry,
 } from '@ascend/core'
+
+function colorKey(c: Color | undefined): string {
+	if (!c) return ''
+	if (c.kind === 'theme') return `theme:${c.theme}:${c.tint ?? ''}`
+	if (c.kind === 'rgb') return `rgb:${c.rgb}`
+	if (c.kind === 'indexed') return `idx:${c.index}`
+	return 'auto'
+}
+
+function borderEdgeKey(e: BorderEdge | undefined): string {
+	if (!e) return ''
+	return `${e.style ?? ''}:${colorKey(e.color)}`
+}
+
+function fontKey(f: FontStyle | undefined): string {
+	if (!f || !hasProps(f)) return '{}'
+	return [
+		f.name ?? '',
+		String(f.size ?? ''),
+		String(f.bold ?? ''),
+		String(f.italic ?? ''),
+		String(f.underline ?? ''),
+		String(f.strikethrough ?? ''),
+		colorKey(f.color),
+	].join('|')
+}
+
+function fillKey(f: FillStyle | undefined): string {
+	if (!f || !hasProps(f)) return ''
+	return [f.pattern ?? 'none', colorKey(f.fgColor), colorKey(f.bgColor)].join('|')
+}
+
+function borderKey(b: BorderStyle | undefined): string {
+	if (!b || !hasProps(b)) return '{}'
+	return [
+		borderEdgeKey(b.top),
+		borderEdgeKey(b.bottom),
+		borderEdgeKey(b.left),
+		borderEdgeKey(b.right),
+		borderEdgeKey(b.diagonal),
+		String(b.diagonalUp ?? ''),
+		String(b.diagonalDown ?? ''),
+	].join('|')
+}
+
 import { escapeXml } from '../xml.ts'
 
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
@@ -93,16 +138,16 @@ export function buildStylesXml(
 	differentialStyles: readonly import('@ascend/core').CellStyle[] = [],
 ): StylesResult {
 	const fonts: FontStyle[] = [{}]
-	const fontKeys = new Map<string, number>([['{}', 0]])
+	const fontKeys = new Map<string, number>([[fontKey(undefined), 0]])
 
 	const fills: FillStyle[] = [{ pattern: 'none' }, { pattern: 'gray125' }]
 	const fillKeys = new Map<string, number>([
-		[JSON.stringify({ pattern: 'none' }), 0],
-		[JSON.stringify({ pattern: 'gray125' }), 1],
+		[fillKey({ pattern: 'none' }), 0],
+		[fillKey({ pattern: 'gray125' }), 1],
 	])
 
 	const borders: BorderStyle[] = [{}]
-	const borderKeys = new Map<string, number>([['{}', 0]])
+	const borderKeys = new Map<string, number>([[borderKey(undefined), 0]])
 
 	const customNumFmts = new Map<string, number>()
 	let nextNumFmtId = 164
@@ -112,9 +157,9 @@ export function buildStylesXml(
 
 	for (let i = 0; i < registry.size; i++) {
 		const style = registry.get(i as StyleId) ?? {}
-		const fontId = lookupOrAdd(style.font, fonts, fontKeys)
+		const fontId = lookupOrAdd(style.font, fonts, fontKeys, fontKey)
 		const fillId = lookupOrAddFill(style.fill, fills, fillKeys)
-		const borderId = lookupOrAdd(style.border, borders, borderKeys)
+		const borderId = lookupOrAdd(style.border, borders, borderKeys, borderKey)
 		const numFmtId = resolveNumFmtId(style.numberFormat, customNumFmts, nextNumFmtId)
 		if (numFmtId >= nextNumFmtId) nextNumFmtId = numFmtId + 1
 
@@ -168,9 +213,10 @@ function lookupOrAdd<T extends object>(
 	value: T | undefined,
 	table: T[],
 	keys: Map<string, number>,
+	keyFn: (v: T) => string,
 ): number {
 	const v = value && hasProps(value) ? value : ({} as T)
-	const key = JSON.stringify(v)
+	const key = keyFn(v)
 	let idx = keys.get(key)
 	if (idx === undefined) {
 		idx = table.length
@@ -186,7 +232,7 @@ function lookupOrAddFill(
 	keys: Map<string, number>,
 ): number {
 	const f: FillStyle = fill && hasProps(fill) ? fill : { pattern: 'none' }
-	const key = JSON.stringify(f)
+	const key = fillKey(f)
 	let idx = keys.get(key)
 	if (idx === undefined) {
 		idx = table.length

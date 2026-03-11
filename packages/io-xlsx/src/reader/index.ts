@@ -188,7 +188,7 @@ export function readXlsx(
 	const themePart = wbRels.find((r) => r.type === REL_THEME)
 	const themePath = themePart ? resolvePath(workbookPath, themePart.target) : undefined
 	if (themePath) consumed.add(themePath)
-	if (themePath) {
+	if (themePath && mode === 'full') {
 		const themeXml = readPart(archive, themePath)
 		if (themeXml) {
 			workbook.themeMetadata = parseThemeXml(themeXml)
@@ -207,7 +207,8 @@ export function readXlsx(
 	}
 	const metadataRel = wbRels.find((rel) => rel.type === REL_SHEET_METADATA)
 	const metadataPath = metadataRel ? resolvePath(workbookPath, metadataRel.target) : undefined
-	const metadataXml = metadataPath ? readPart(archive, metadataPath) : undefined
+	const needsMetadata = mode === 'full' || mode === 'formula'
+	const metadataXml = needsMetadata && metadataPath ? readPart(archive, metadataPath) : undefined
 	const metadata = metadataXml ? parseMetadataXml(metadataXml) : undefined
 	if (metadataPath && metadataRel) {
 		consumed.add(metadataPath)
@@ -246,6 +247,8 @@ export function readXlsx(
 	} else {
 		const valuePool = new ValueInternPool()
 		const ssXml = ssPath ? readPart(archive, ssPath) : undefined
+		// Fast-path: small SST (<500KB) parses eagerly. Large SST also parses eagerly; lazy SST
+		// for selective/window loading is a future optimization target.
 		const sharedStrings = ssXml
 			? parseSharedStrings(ssXml, {
 					normalize: (value) => valuePool.internValue(value),

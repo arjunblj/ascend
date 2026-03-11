@@ -949,7 +949,7 @@ describe('readXlsx', () => {
 </a:theme>`,
 		})
 
-		const result = readXlsx(bytes, { mode: 'metadata-only' })
+		const result = readXlsx(bytes, { mode: 'full' })
 		expect(result.ok).toBe(true)
 		if (!result.ok) return
 

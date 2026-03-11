@@ -30,7 +30,12 @@ export {
 	type SheetDiff,
 	type WorkbookDiff,
 } from './diff.ts'
-export { type EvalContext, evaluate } from './evaluator.ts'
+export {
+	clearFormulaParseCache,
+	type EvalContext,
+	evaluate,
+	invalidateSheetIndexCache,
+} from './evaluator.ts'
 export { applyOperation, applyOperations, type PatchResult } from './operations.ts'
 export {
 	compareSnapshots,

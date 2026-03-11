@@ -41,20 +41,48 @@ export type InputValue = string | number | boolean | null | Date
 
 export const EMPTY: CellValue = { kind: 'empty' } as const
 
+const TRUE_VALUE: CellValue = { kind: 'boolean', value: true } as const
+const FALSE_VALUE: CellValue = { kind: 'boolean', value: false } as const
+const ZERO_VALUE: CellValue = { kind: 'number', value: 0 } as const
+const ONE_VALUE: CellValue = { kind: 'number', value: 1 } as const
+const EMPTY_STRING_VALUE: CellValue = { kind: 'string', value: '' } as const
+
+const ERROR_CACHE: Record<string, CellValue> = {
+	'#NULL!': { kind: 'error', value: '#NULL!' } as const,
+	'#DIV/0!': { kind: 'error', value: '#DIV/0!' } as const,
+	'#VALUE!': { kind: 'error', value: '#VALUE!' } as const,
+	'#REF!': { kind: 'error', value: '#REF!' } as const,
+	'#NAME?': { kind: 'error', value: '#NAME?' } as const,
+	'#NUM!': { kind: 'error', value: '#NUM!' } as const,
+	'#N/A': { kind: 'error', value: '#N/A' } as const,
+	'#GETTING_DATA': { kind: 'error', value: '#GETTING_DATA' } as const,
+	'#SPILL!': { kind: 'error', value: '#SPILL!' } as const,
+	'#CALC!': { kind: 'error', value: '#CALC!' } as const,
+}
+
+const SMALL_INT_CACHE: CellValue[] = new Array(257)
+for (let i = -1; i <= 255; i++) {
+	SMALL_INT_CACHE[i + 1] = { kind: 'number', value: i } as const
+}
+
 export function numberValue(v: number): CellValue {
+	if (v === 0) return ZERO_VALUE
+	if (v === 1) return ONE_VALUE
+	if (v === (v | 0) && v >= -1 && v <= 255) return SMALL_INT_CACHE[v + 1] as CellValue
 	return { kind: 'number', value: v }
 }
 
 export function stringValue(v: string): CellValue {
+	if (v === '') return EMPTY_STRING_VALUE
 	return { kind: 'string', value: v }
 }
 
 export function booleanValue(v: boolean): CellValue {
-	return { kind: 'boolean', value: v }
+	return v ? TRUE_VALUE : FALSE_VALUE
 }
 
 export function errorValue(v: ExcelError): CellValue {
-	return { kind: 'error', value: v }
+	return ERROR_CACHE[v] ?? { kind: 'error', value: v }
 }
 
 export function arrayValue(rows: readonly (readonly ScalarCellValue[])[]): CellValue {

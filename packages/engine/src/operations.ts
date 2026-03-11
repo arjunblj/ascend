@@ -5,6 +5,7 @@ import { dateToSerial, parseFormula, printFormula, rewriteRefs } from '@ascend/f
 import type { CellValue, InputValue, Operation, Result } from '@ascend/schema'
 import { ascendError, booleanValue, EMPTY, err, numberValue, ok, stringValue } from '@ascend/schema'
 import { invalidateWorkbookAnalysis } from './analysis.ts'
+import { invalidateSheetIndexCache } from './evaluator.ts'
 import {
 	rewriteDefinedNameFormulasForShift,
 	rewriteSheetMetadataFormulasForRename,
@@ -306,6 +307,7 @@ function handleAddSheet(
 		const idx = workbook.sheets.indexOf(sheet)
 		workbook.sheets.splice(idx, 1)
 		workbook.sheets.splice(op.position, 0, sheet)
+		workbook.invalidateSheetCache()
 	}
 	return ok(patch([], [op.name]))
 }
@@ -475,6 +477,7 @@ function handleRenameSheet(
 
 	const oldName = sheet.name
 	sheet.name = op.newName
+	workbook.invalidateSheetCache()
 	clearFormulaMetadata(workbook)
 	rewriteSheetNameInFormulas(workbook, oldName, op.newName)
 	rewriteSheetNameInDefinedNames(workbook, oldName, op.newName)
@@ -504,6 +507,7 @@ function handleMoveSheet(
 	const idx = workbook.sheets.indexOf(sheet)
 	workbook.sheets.splice(idx, 1)
 	workbook.sheets.splice(op.position, 0, sheet)
+	workbook.invalidateSheetCache()
 
 	return ok(patch([], [op.sheet]))
 }
@@ -902,6 +906,7 @@ function handleSetNumberFormat(
 
 export function applyOperation(workbook: Workbook, op: Operation): Result<PatchResult> {
 	invalidateWorkbookAnalysis(workbook)
+	invalidateSheetIndexCache(workbook)
 	switch (op.op) {
 		case 'setCells':
 			return handleSetCells(workbook, op)

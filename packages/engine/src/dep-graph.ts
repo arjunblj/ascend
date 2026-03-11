@@ -34,7 +34,7 @@ export class DependencyGraph {
 	private readonly dependents = new Map<CellKey, Set<CellKey>>()
 	private readonly rangeDependents = new Map<
 		number,
-		Map<number, Array<{ range: RangeDependency; formulaKey: CellKey }>>
+		Array<{ range: RangeDependency; formulaKey: CellKey }>
 	>()
 
 	addFormula(
@@ -55,16 +55,12 @@ export class DependencyGraph {
 			set.add(key)
 		}
 		for (const range of rangeDeps) {
-			let byRow = this.rangeDependents.get(range.sheetIndex)
-			if (!byRow) {
-				byRow = new Map()
-				this.rangeDependents.set(range.sheetIndex, byRow)
+			let arr = this.rangeDependents.get(range.sheetIndex)
+			if (!arr) {
+				arr = []
+				this.rangeDependents.set(range.sheetIndex, arr)
 			}
-			for (let row = range.startRow; row <= range.endRow; row++) {
-				const entries = byRow.get(row)
-				if (entries) entries.push({ range, formulaKey: key })
-				else byRow.set(row, [{ range, formulaKey: key }])
-			}
+			arr.push({ range, formulaKey: key })
 		}
 	}
 
@@ -79,16 +75,14 @@ export class DependencyGraph {
 			}
 		}
 		for (const range of entry.rangeDeps) {
-			const byRow = this.rangeDependents.get(range.sheetIndex)
-			if (!byRow) continue
-			for (let row = range.startRow; row <= range.endRow; row++) {
-				const entries = byRow.get(row)
-				if (!entries) continue
-				const filtered = entries.filter((candidate) => candidate.formulaKey !== key)
-				if (filtered.length === 0) byRow.delete(row)
-				else if (filtered.length !== entries.length) byRow.set(row, filtered)
+			const arr = this.rangeDependents.get(range.sheetIndex)
+			if (!arr) continue
+			const filtered = arr.filter((candidate) => candidate.formulaKey !== key)
+			if (filtered.length === 0) this.rangeDependents.delete(range.sheetIndex)
+			else if (filtered.length !== arr.length) {
+				arr.length = 0
+				arr.push(...filtered)
 			}
-			if (byRow.size === 0) this.rangeDependents.delete(range.sheetIndex)
 		}
 		this.formulas.delete(key)
 	}
@@ -111,7 +105,7 @@ export class DependencyGraph {
 		const direct = this.dependents.get(key)
 		const result = new Set(direct ? [...direct] : [])
 		const [sheetIndex, row, col] = parseCellKey(key)
-		for (const entry of this.rangeDependents.get(sheetIndex)?.get(row) ?? []) {
+		for (const entry of this.rangeDependents.get(sheetIndex) ?? []) {
 			if (containsCell(entry.range, row, col)) {
 				result.add(entry.formulaKey)
 			}
@@ -160,12 +154,11 @@ export class DependencyGraph {
 				for (const range of entry.rangeDeps) {
 					const sheetRows = dirtyBySheetRow.get(range.sheetIndex)
 					if (!sheetRows) continue
-					for (let row = range.startRow; row <= range.endRow; row++) {
-						const cols = sheetRows.get(row)
-						if (!cols) continue
+					for (const [row, cols] of sheetRows) {
 						for (const col of cols) {
-							if (col < range.startCol || col > range.endCol) continue
-							visit(cellKey(range.sheetIndex, row, col))
+							if (containsCell(range, row, col)) {
+								visit(cellKey(range.sheetIndex, row, col))
+							}
 						}
 					}
 				}

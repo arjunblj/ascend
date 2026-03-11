@@ -3,6 +3,7 @@ import type { FormulaNode } from '@ascend/formulas'
 import {
 	type EvalArea,
 	type EvalArg,
+	type FunctionEvalContext,
 	functionRegistry,
 	parseFormula,
 	toNumber,
@@ -30,8 +31,53 @@ export interface EvalContext {
 	readonly letBindings?: ReadonlyMap<string, CellValue>
 }
 
+class FunctionEvalCtx implements FunctionEvalContext {
+	now!: Date
+	today!: Date
+	randomSeed!: number
+	locale!: string
+	dateSystem!: '1900' | '1904'
+	sheetIndex?: number
+	row?: number
+	col?: number
+
+	update(ctx: EvalContext): this {
+		const cc = ctx.calcContext
+		this.now = cc.now
+		this.today = cc.today
+		this.randomSeed = cc.randomSeed
+		this.locale = cc.locale
+		this.dateSystem = cc.dateSystem
+		this.sheetIndex = ctx.sheetIndex
+		this.row = ctx.row
+		this.col = ctx.col
+		return this
+	}
+}
+
+const sharedFnCtx = new FunctionEvalCtx()
+
+const formulaParseCache = new Map<string, FormulaNode | null>()
+
+function cachedParseFormula(formula: string): { ok: true; value: FormulaNode } | { ok: false } {
+	if (formulaParseCache.has(formula)) {
+		const cached = formulaParseCache.get(formula)
+		return cached ? { ok: true, value: cached } : { ok: false }
+	}
+	const result = parseFormula(formula)
+	if (formulaParseCache.size > 4096) formulaParseCache.clear()
+	formulaParseCache.set(formula, result.ok ? result.value : null)
+	return result
+}
+
+export function clearFormulaParseCache(): void {
+	formulaParseCache.clear()
+}
+
 const EXCEL_MAX_ROWS = 1_048_576
 const EXCEL_MAX_COLS = 16_384
+
+const sheetIndexCache = new WeakMap<Workbook, Map<string, number>>()
 
 function resolveSheetIndex(
 	wb: Workbook,
@@ -39,8 +85,20 @@ function resolveSheetIndex(
 	currentSheet: number,
 ): number {
 	if (sheetName === undefined) return currentSheet
-	const idx = wb.sheets.findIndex((s) => s.name.toLowerCase() === sheetName.toLowerCase())
-	return idx
+	let cache = sheetIndexCache.get(wb)
+	if (!cache) {
+		cache = new Map()
+		for (let i = 0; i < wb.sheets.length; i++) {
+			const s = wb.sheets[i]
+			if (s) cache.set(s.name.toLowerCase(), i)
+		}
+		sheetIndexCache.set(wb, cache)
+	}
+	return cache.get(sheetName.toLowerCase()) ?? -1
+}
+
+export function invalidateSheetIndexCache(wb: Workbook): void {
+	sheetIndexCache.delete(wb)
 }
 
 function getCellValue(wb: Workbook, sheetIndex: number, row: number, col: number): CellValue {
@@ -287,12 +345,7 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 	}
 
 	const args = argNodes.map((argNode) => resolveArg(argNode, ctx))
-	return def.evaluate(args, {
-		...ctx.calcContext,
-		sheetIndex: ctx.sheetIndex,
-		row: ctx.row,
-		col: ctx.col,
-	})
+	return def.evaluate(args, sharedFnCtx.update(ctx))
 }
 
 function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
@@ -422,7 +475,7 @@ function resolveIndirectReference(argNodes: readonly FormulaNode[], ctx: EvalCon
 				: true
 
 	if (useA1) {
-		const parsed = parseFormula(refText)
+		const parsed = cachedParseFormula(refText)
 		if (!parsed.ok) return { value: errorValue('#REF!') }
 		const resolved = resolveReferenceNode(parsed.value, ctx)
 		return resolved ?? { value: errorValue('#REF!') }
@@ -592,7 +645,7 @@ function resolveSpillReference(target: FormulaNode, ctx: EvalContext): EvalArg |
 	const cell = sheet.cells.get(targetRef.ref.row, targetRef.ref.col)
 	const binding = cell?.formulaInfo
 	if (!binding || !isSpillFormulaBinding(binding)) return { value: errorValue('#REF!') }
-	const parsed = parseFormula(binding.ref)
+	const parsed = cachedParseFormula(binding.ref)
 	if (!parsed.ok || parsed.value.type !== 'rangeRef') return null
 	return makeRangeArg(
 		ctx.workbook,
@@ -999,7 +1052,7 @@ function resolveDefinedName(
 			: `sheet:${entry.scope.sheetId}:${entry.name.toLowerCase()}`
 	if (ctx.definedNameStack?.includes(entryKey)) return null
 
-	const parsed = parseFormula(entry.formula)
+	const parsed = cachedParseFormula(entry.formula)
 	if (!parsed.ok) return null
 
 	let sheetIndex = ctx.sheetIndex

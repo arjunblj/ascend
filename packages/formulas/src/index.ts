@@ -28,6 +28,7 @@ export {
 	type EvalArg,
 	type FnArg,
 	type FunctionDef,
+	type FunctionEvalContext,
 	functionRegistry,
 	iterAreaRows,
 	rangeShape,

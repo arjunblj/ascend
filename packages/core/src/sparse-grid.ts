@@ -473,6 +473,12 @@ function unpackKey(key: number): readonly [number, number] {
 	return [row, col] as const
 }
 
+function cloneCellValue(value: CellValue): CellValue {
+	if (value.kind === 'array') return structuredClone(value)
+	if (value.kind === 'richText') return { kind: 'richText', runs: [...value.runs] }
+	return value
+}
+
 function cloneCell(cell: StoredCell): StoredCell {
 	if (
 		cell instanceof StyledNumberCell ||
@@ -484,11 +490,11 @@ function cloneCell(cell: StoredCell): StoredCell {
 		return cell
 	}
 	if (cell instanceof HeapCell) {
-		return new HeapCell(structuredClone(cell.value), cell.styleId, cell.formula, cell.formulaInfo)
+		return new HeapCell(cloneCellValue(cell.value), cell.styleId, cell.formula, cell.formulaInfo)
 	}
 	if (typeof cell === 'string' || typeof cell === 'number' || typeof cell === 'boolean') return cell
 	if (cell === EMPTY) return cell
-	return structuredClone(cell)
+	return cloneCellValue(cell) as StoredCell
 }
 
 function materializeCell(cell: StoredCell | undefined): Cell | undefined {

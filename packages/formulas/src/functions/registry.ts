@@ -127,10 +127,18 @@ export function cellOf(arg: EvalArg | undefined): CellValue {
 export function flattenArgs(args: EvalArg[]): CellValue[] {
 	const result: CellValue[] = []
 	for (const arg of args) {
+		if (arg.forEachValue) {
+			arg.forEachValue((cell) => result.push(cell))
+			continue
+		}
 		if (arg.areas?.length) {
 			for (const area of arg.areas) {
-				for (const row of area.values) {
-					for (const cell of row) result.push(cell)
+				if (area.forEachValue) {
+					area.forEachValue((cell) => result.push(cell))
+				} else {
+					for (const row of area.values) {
+						for (const cell of row) result.push(cell)
+					}
 				}
 			}
 			continue
@@ -155,13 +163,41 @@ export function flattenArgs(args: EvalArg[]): CellValue[] {
 export function collectNumbers(args: EvalArg[]): number[] | CellValue {
 	const nums: number[] = []
 	for (const arg of args) {
+		if (arg.forEachValue) {
+			let err: CellValue | undefined
+			arg.forEachValue((cell) => {
+				if (err) return
+				if (cell.kind === 'error') {
+					err = cell
+					return
+				}
+				if (cell.kind === 'number') nums.push(cell.value)
+				else if (cell.kind === 'date') nums.push(cell.serial)
+			})
+			if (err) return err
+			continue
+		}
 		if (arg.areas?.length) {
 			for (const area of arg.areas) {
-				for (const row of area.values) {
-					for (const cell of row) {
-						if (cell.kind === 'error') return cell
+				if (area.forEachValue) {
+					let err: CellValue | undefined
+					area.forEachValue((cell) => {
+						if (err) return
+						if (cell.kind === 'error') {
+							err = cell
+							return
+						}
 						if (cell.kind === 'number') nums.push(cell.value)
 						else if (cell.kind === 'date') nums.push(cell.serial)
+					})
+					if (err) return err
+				} else {
+					for (const row of area.values) {
+						for (const cell of row) {
+							if (cell.kind === 'error') return cell
+							if (cell.kind === 'number') nums.push(cell.value)
+							else if (cell.kind === 'date') nums.push(cell.serial)
+						}
 					}
 				}
 			}
@@ -213,26 +249,34 @@ export function valuesEqual(a: CellValue, b: CellValue): boolean {
 	return a.kind === 'empty' && b.kind === 'empty'
 }
 
+const wildcardCache = new Map<string, RegExp>()
+
 export function wildcardMatch(pattern: string, text: string): boolean {
-	let re = '^'
 	const p = pattern.toLowerCase()
-	let i = 0
-	while (i < p.length) {
-		const ch = p[i] ?? ''
-		if (ch === '~' && i + 1 < p.length) {
+	let compiled = wildcardCache.get(p)
+	if (!compiled) {
+		let re = '^'
+		let i = 0
+		while (i < p.length) {
+			const ch = p[i] ?? ''
+			if (ch === '~' && i + 1 < p.length) {
+				i++
+				re += escapeRe(p[i] ?? '')
+			} else if (ch === '*') {
+				re += '.*'
+			} else if (ch === '?') {
+				re += '.'
+			} else {
+				re += escapeRe(ch)
+			}
 			i++
-			re += escapeRe(p[i] ?? '')
-		} else if (ch === '*') {
-			re += '.*'
-		} else if (ch === '?') {
-			re += '.'
-		} else {
-			re += escapeRe(ch)
 		}
-		i++
+		re += '$'
+		compiled = new RegExp(re)
+		if (wildcardCache.size > 1024) wildcardCache.clear()
+		wildcardCache.set(p, compiled)
 	}
-	re += '$'
-	return new RegExp(re).test(text.toLowerCase())
+	return compiled.test(text.toLowerCase())
 }
 
 const RE_SPECIAL = new Set(['.', '+', '*', '^', '$', '{', '}', '(', ')', '|', '[', ']', '\\'])

@@ -89,6 +89,7 @@ export interface WorkbookPreservedXml {
 export class Workbook {
 	readonly id: WorkbookId
 	readonly sheets: Sheet[] = []
+	private _sheetIndex: Map<string, number> | null = null
 	readonly definedNames = new DefinedNameCollection()
 	readonly styles = new StyleRegistry()
 	readonly differentialStyles: CellStyle[] = []
@@ -128,17 +129,36 @@ export class Workbook {
 	addSheet(name: string, id?: SheetId): Sheet {
 		const sheet = createSheet(name, id)
 		this.sheets.push(sheet)
+		this._sheetIndex = null
 		return sheet
 	}
 
+	private _getSheetIndex(): Map<string, number> {
+		if (!this._sheetIndex) {
+			this._sheetIndex = new Map()
+			for (const [i, s] of this.sheets.entries()) {
+				this._sheetIndex.set(s.name, i)
+				this._sheetIndex.set(s.id, i)
+			}
+		}
+		return this._sheetIndex
+	}
+
 	getSheet(nameOrId: string): Sheet | undefined {
-		return this.sheets.find((s) => s.name === nameOrId || s.id === nameOrId)
+		const idx = this._getSheetIndex().get(nameOrId)
+		return idx !== undefined ? this.sheets[idx] : undefined
+	}
+
+	/** Call after modifying sheets array directly (e.g. from apply operations). */
+	invalidateSheetCache(): void {
+		this._sheetIndex = null
 	}
 
 	removeSheet(nameOrId: string): boolean {
 		const index = this.sheets.findIndex((s) => s.name === nameOrId || s.id === nameOrId)
 		if (index === -1) return false
 		this.sheets.splice(index, 1)
+		this._sheetIndex = null
 		return true
 	}
 

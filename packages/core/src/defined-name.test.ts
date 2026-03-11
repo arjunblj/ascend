@@ -18,4 +18,19 @@ describe('DefinedNameCollection', () => {
 		expect(names.delete('Budget')).toBe(true)
 		expect(names.resolve('Budget')).toBeUndefined()
 	})
+
+	test('copyFrom preserves lookup behavior without aliasing collection mutations', () => {
+		const names = new DefinedNameCollection()
+		names.set('Rate', '0.1')
+		names.set('Rate', '0.2', { kind: 'sheet', sheetId: 'sheet-1' })
+
+		const clone = new DefinedNameCollection()
+		clone.copyFrom(names)
+		expect(clone.resolve('Rate', 'sheet-1')?.formula).toBe('0.2')
+		expect(clone.resolve('Rate', 'sheet-2')?.formula).toBe('0.1')
+
+		clone.set('Rate', '0.3', { kind: 'sheet', sheetId: 'sheet-1' })
+		expect(clone.resolve('Rate', 'sheet-1')?.formula).toBe('0.3')
+		expect(names.resolve('Rate', 'sheet-1')?.formula).toBe('0.2')
+	})
 })

@@ -189,13 +189,7 @@ export class Workbook {
 		clone.preservedXml = this.preservedXml ? { ...this.preservedXml } : null
 		clone.sourceArchiveBytes = this.sourceArchiveBytes
 		for (const sheet of this.sheets) clone.sheets.push(sheet.clone())
-		for (const definedName of this.definedNames.list()) {
-			clone.definedNames.set(
-				definedName.name,
-				definedName.formula,
-				definedName.scope.kind === 'sheet' ? { ...definedName.scope } : definedName.scope,
-			)
-		}
+		clone.definedNames.copyFrom(this.definedNames)
 		clone.styles.copyFrom(this.styles)
 		clone.differentialStyles.push(...this.differentialStyles.map(cloneCellStyle))
 		clone.pivotCaches.push(...this.pivotCaches.map((entry) => ({ ...entry })))

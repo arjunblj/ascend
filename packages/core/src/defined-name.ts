@@ -80,10 +80,21 @@ export class DefinedNameCollection {
 
 	clone(): DefinedNameCollection {
 		const clone = new DefinedNameCollection()
-		for (const item of this.items) {
-			clone.set(item.name, item.formula, item.scope)
-		}
+		clone.copyFrom(this)
 		return clone
+	}
+
+	copyFrom(other: DefinedNameCollection): void {
+		this.items.length = 0
+		this.workbookIndex.clear()
+		this.sheetIndex.clear()
+		this.items.push(...other.items)
+		for (const [name, entry] of other.workbookIndex) {
+			this.workbookIndex.set(name, entry)
+		}
+		for (const [sheetId, names] of other.sheetIndex) {
+			this.sheetIndex.set(sheetId, new Map(names))
+		}
 	}
 
 	private findIndex(name: string, scope: DefinedNameScope): number {

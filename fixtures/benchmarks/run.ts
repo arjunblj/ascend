@@ -255,6 +255,22 @@ function buildDefinedNameHeavyWorkbook(nameCount: number, formulaCount: number):
 	return workbook
 }
 
+function buildSdkDefinedNameEditWorkbook(nameCount: number): Workbook {
+	const workbook = createWorkbook()
+	const sheet = workbook.addSheet('Sheet1')
+	for (let i = 0; i < nameCount; i++) {
+		sheet.cells.set(i, 0, {
+			value: numberValue(i + 1),
+			formula: null,
+			styleId: SID,
+		})
+		workbook.definedNames.set(`Name${i + 1}`, `Sheet1!A${i + 1}`)
+	}
+	sheet.cells.set(0, 2, { value: EMPTY, formula: 'Name1+Name2', styleId: SID })
+	recalculate(workbook, defaultCalcContext())
+	return workbook
+}
+
 const scenarios: readonly Scenario[] = [
 	{
 		name: 'write-dense-40k',
@@ -546,6 +562,32 @@ const scenarios: readonly Scenario[] = [
 					applyErrors: apply.errors.length,
 					recalcChanged: recalc.changed.length,
 					bytes: bytes.byteLength,
+				},
+			}
+		},
+	},
+	{
+		name: 'workflow-sdk-defined-names-edit-cycle',
+		category: 'workflow',
+		build() {
+			const workbook = buildSdkDefinedNameEditWorkbook(5000)
+			const bytes = mustWrite(workbook)
+			return { bytes, rows: 5000, cols: 3, cells: 15_000 }
+		},
+		async run(input) {
+			const wb = await AscendWorkbook.open(requireBytes(input))
+			const preview = wb.preview([
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 99 }] },
+			])
+			const apply = wb.apply([
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 99 }] },
+			])
+			const recalc = wb.recalc()
+			return {
+				assertions: {
+					previewChanges: preview.cellChanges.length,
+					applyErrors: apply.errors.length,
+					recalcChanged: recalc.changed.length,
 				},
 			}
 		},
@@ -900,6 +942,7 @@ const scenarioSets = {
 	smoke: [
 		'read-full-dense',
 		'workflow-sdk-edit-cycle',
+		'workflow-sdk-defined-names-edit-cycle',
 		'recalc-incremental',
 		'recalc-if-short-circuit',
 		'recalc-lookup-exact-incremental',

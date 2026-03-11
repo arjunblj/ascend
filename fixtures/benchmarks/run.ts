@@ -625,9 +625,22 @@ const scenarios: readonly Scenario[] = [
 
 function getRssBytes(): number | undefined {
 	try {
-		return process.memoryUsage.rss()
+		const usage = process.memoryUsage()
+		return typeof (process.memoryUsage as { rss?: () => number }).rss === 'function'
+			? (process.memoryUsage as { rss: () => number }).rss()
+			: typeof usage.rss === 'number'
+				? usage.rss
+				: undefined
 	} catch {
 		return undefined
+	}
+}
+
+function runGc(): void {
+	try {
+		;(Bun as unknown as { gc?: (force?: boolean) => void }).gc?.(true)
+	} catch {
+		// Best effort only.
 	}
 }
 
@@ -641,6 +654,7 @@ function renderSummary(results: readonly BenchmarkCaseResult[]): string {
 		'bytes',
 		'throughput',
 		'rss-delta',
+		'retained-rss',
 	]
 	const rows = results.map((result) => [
 		result.name,
@@ -653,6 +667,9 @@ function renderSummary(results: readonly BenchmarkCaseResult[]): string {
 			? formatRate(result.metrics.throughputPerSec)
 			: 'n/a',
 		result.metrics.rssDeltaBytes !== undefined ? formatBytes(result.metrics.rssDeltaBytes) : 'n/a',
+		result.metrics.retainedRssDeltaBytes !== undefined
+			? formatBytes(result.metrics.retainedRssDeltaBytes)
+			: 'n/a',
 	])
 
 	const widths = headers.map((header, index) =>
@@ -675,17 +692,21 @@ async function runScenario(scenario: Scenario, repeat: number): Promise<Benchmar
 		readonly durationMs: number
 		readonly throughputPerSec: number
 		readonly rssDeltaBytes?: number
+		readonly retainedRssDeltaBytes?: number
 	}> = []
 	let firstInput: ScenarioInput | undefined
 	let assertions: Record<string, string | number | boolean | null> | undefined
 	for (let i = 0; i < repeat; i++) {
 		const input = scenario.build()
 		firstInput ??= input
+		runGc()
 		const rssBefore = getRssBytes()
 		const start = performance.now()
 		const runResult = await scenario.run(input)
 		const durationMs = performance.now() - start
 		const rssAfter = getRssBytes()
+		runGc()
+		const rssAfterGc = getRssBytes()
 		samples.push({
 			durationMs,
 			throughputPerSec:
@@ -693,6 +714,10 @@ async function runScenario(scenario: Scenario, repeat: number): Promise<Benchmar
 			rssDeltaBytes:
 				rssBefore !== undefined && rssAfter !== undefined
 					? Math.max(0, rssAfter - rssBefore)
+					: undefined,
+			retainedRssDeltaBytes:
+				rssBefore !== undefined && rssAfterGc !== undefined
+					? Math.max(0, rssAfterGc - rssBefore)
 					: undefined,
 		})
 		assertions ??= runResult?.assertions

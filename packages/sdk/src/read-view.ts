@@ -48,6 +48,14 @@ import type {
 	WorkbookLoadInfo,
 } from './types.ts'
 
+/**
+ * Read-only view over a workbook. Caching strategy:
+ * - workbookInfoCache: single cached WorkbookInfo from inspect()
+ * - sheetInspectCache: per-sheet SheetInspectInfo
+ * - formulaInfoCache: per-cell-ref FormulaInfo (formula() results)
+ * - sheetHandleCache / tableHandleCache: handles reused for repeated access
+ * - formulaAnalysis/dependencyAnalysis: cached at engine level (WeakMap keyed by workbook)
+ */
 export class WorkbookReadView {
 	protected wb: Workbook
 	protected compat: CompatibilityReport
@@ -176,24 +184,16 @@ export class WorkbookReadView {
 	sheet(name: string): SheetHandle | undefined {
 		const cached = this.sheetHandleCache.get(name)
 		if (cached) return cached
-		if (!this.wb.getSheet(name)) return undefined
-		let cachedWorkbook = this.wb
-		let cachedSheetIndex = this.wb.sheets.findIndex((sheet) => sheet.name === name)
-		const resolveSheetIndex = (): number => {
-			if (this.wb !== cachedWorkbook) {
-				cachedWorkbook = this.wb
-				cachedSheetIndex = this.wb.sheets.findIndex((sheet) => sheet.name === name)
-			}
-			return cachedSheetIndex
-		}
+		const sheet = this.wb.getSheet(name)
+		if (!sheet) return undefined
+		const sheetIndex = this.wb.sheets.findIndex((s) => s.name === name)
 		const handle = new SheetHandle(
 			name,
 			() => this.wb.getSheet(name),
-			(row, col, cell) => {
-				const sheetIndex = resolveSheetIndex()
-				if (sheetIndex === -1) return cell.formula
-				return resolveCellFormulaText(this.wb, sheetIndex, row, col, cell)
-			},
+			(row, col, cell) =>
+				sheetIndex >= 0
+					? resolveCellFormulaText(this.wb, sheetIndex, row, col, cell)
+					: cell.formula,
 		)
 		this.sheetHandleCache.set(name, handle)
 		return handle

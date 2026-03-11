@@ -147,8 +147,6 @@ export class AscendWorkbook extends WorkbookReadView {
 		}
 		const clone = cloneWorkbook(this.wb)
 		const errors: import('@ascend/schema').AscendError[] = []
-		const dirtyFlags = this.deriveDirtyFlags(ops)
-		const sourceArchive = this.getSourceArchive(false)
 
 		const result = applyOperations(clone, ops)
 		if (!result.ok) {
@@ -188,22 +186,43 @@ export class AscendWorkbook extends WorkbookReadView {
 		const fastDiff = buildFastPreviewDiff(this.wb, clone, ops, result.value, recalcResult)
 		const diff = fastDiff ?? diffWorkbooks(this.wb, clone)
 		const cellChanges = diff.sheets.flatMap((s) => s.cellsChanged)
-		const plan = summarizePlannedWrite(clone, this.caps.length > 0 ? this.caps : undefined, {
-			dirtySheetNames: result.value.sheetsModified,
-			workbookMetaDirty: dirtyFlags.workbookMetaDirty,
-			calcStateDirty: dirtyFlags.workbookMetaDirty || result.value.recalcRequired,
-			sharedStringsDirty: dirtyFlags.sharedStringsDirty,
-			stylesDirty: dirtyFlags.stylesDirty,
-			...(sourceArchive ? { sourceArchive } : {}),
-		})
-
-		return {
+		let cachedWritePlan: WritePlanInfo | undefined
+		let writePlanComputed = false
+		let cachedDirtyFlags:
+			| {
+					workbookMetaDirty: boolean
+					sharedStringsDirty: boolean
+					stylesDirty: boolean
+			  }
+			| undefined
+		const previewResult: import('./types.ts').PreviewResult = {
 			diff,
 			sheetDiffs: diff.sheets,
 			cellChanges,
 			errors,
-			...(plan.ok ? { writePlan: plan.value } : {}),
 		}
+		Object.defineProperty(previewResult, 'writePlan', {
+			configurable: true,
+			enumerable: true,
+			get: () => {
+				if (!writePlanComputed) {
+					writePlanComputed = true
+					cachedDirtyFlags ??= this.deriveDirtyFlags(ops)
+					const sourceArchive = this.getSourceArchive(false)
+					const plan = summarizePlannedWrite(clone, this.caps.length > 0 ? this.caps : undefined, {
+						dirtySheetNames: result.value.sheetsModified,
+						workbookMetaDirty: cachedDirtyFlags.workbookMetaDirty,
+						calcStateDirty: cachedDirtyFlags.workbookMetaDirty || result.value.recalcRequired,
+						sharedStringsDirty: cachedDirtyFlags.sharedStringsDirty,
+						stylesDirty: cachedDirtyFlags.stylesDirty,
+						...(sourceArchive ? { sourceArchive } : {}),
+					})
+					cachedWritePlan = plan.ok ? plan.value : undefined
+				}
+				return cachedWritePlan
+			},
+		})
+		return previewResult
 	}
 
 	apply(ops: readonly Operation[]): ApplyResult {

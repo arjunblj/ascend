@@ -42,26 +42,29 @@ export function boolAttr(node: XmlNode, name: string): boolean | undefined {
 	return val === '1' || val === 'true'
 }
 
-export function escapeXml(s: string): string {
-	if (!needsEscape(s)) return s
-	let out = ''
-	for (let i = 0; i < s.length; i++) {
-		const ch = s.charCodeAt(i)
-		if (ch === 38) out += '&amp;'
-		else if (ch === 60) out += '&lt;'
-		else if (ch === 62) out += '&gt;'
-		else if (ch === 34) out += '&quot;'
-		else out += s[i]
+const XML_ESCAPE_RE = /[&<>"]/g
+
+function escapeXmlChar(ch: string): string {
+	switch (ch) {
+		case '&':
+			return '&amp;'
+		case '<':
+			return '&lt;'
+		case '>':
+			return '&gt;'
+		case '"':
+			return '&quot;'
+		default:
+			return ch
 	}
-	return out
 }
 
-function needsEscape(s: string): boolean {
-	for (let i = 0; i < s.length; i++) {
-		const ch = s.charCodeAt(i)
-		if (ch === 38 || ch === 60 || ch === 62 || ch === 34) return true
-	}
-	return false
+export function escapeXml(s: string): string {
+	if (s.length === 0) return s
+	XML_ESCAPE_RE.lastIndex = 0
+	if (!XML_ESCAPE_RE.test(s)) return s
+	XML_ESCAPE_RE.lastIndex = 0
+	return s.replace(XML_ESCAPE_RE, escapeXmlChar)
 }
 
 function normalizeMarkupCompatibility(content: string): string {

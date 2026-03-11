@@ -1,4 +1,4 @@
-import { ascendError, type CellValue, type Operation } from '@ascend/schema'
+import { ascendError, type CellValue, machineFailure, type Operation } from '@ascend/schema'
 import { Ascend, WorkbookDocument } from '@ascend/sdk'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
@@ -128,22 +128,26 @@ export function createServer(): McpServer {
 		async ({ file, ops }) => {
 			const wb = await Ascend.open(file)
 			const result = wb.apply(ops as unknown as readonly Operation[])
-			if (result.errors.length === 0) {
-				if (result.recalcRequired) {
-					const recalc = wb.recalc()
-					if (recalc.errors.length > 0) {
-						const first = recalc.errors[0]
-						return errorResponse(
-							first ? `${first.ref}: ${first.error.message}` : 'Recalculation failed',
-						)
-					}
+			if (result.errors.length > 0) {
+				const first = result.errors[0]
+				return errorResponse(first ?? ascendError('VALIDATION_ERROR', 'Failed to apply operations'))
+			}
+			if (result.recalcRequired) {
+				const recalc = wb.recalc()
+				if (recalc.errors.length > 0) {
+					const first = recalc.errors[0]
+					return errorResponse(
+						first
+							? ascendError('FORMULA_EVAL_ERROR', `${first.ref}: ${first.error.message}`, {
+									refs: [first.ref],
+									details: { evalError: first.error },
+								})
+							: ascendError('FORMULA_EVAL_ERROR', 'Recalculation failed'),
+					)
 				}
-				await wb.save(file)
 			}
-			return {
-				...okResponse(result, `Applied ${ops.length} operation(s)`),
-				isError: result.errors.length > 0,
-			}
+			await wb.save(file)
+			return okResponse(result, `Applied ${ops.length} operation(s)`)
 		},
 	)
 
@@ -159,7 +163,12 @@ export function createServer(): McpServer {
 			if (result.errors.length > 0) {
 				const first = result.errors[0]
 				return errorResponse(
-					first ? `${first.ref}: ${first.error.message}` : 'Recalculation failed',
+					first
+						? ascendError('FORMULA_EVAL_ERROR', `${first.ref}: ${first.error.message}`, {
+								refs: [first.ref],
+								details: { evalError: first.error },
+							})
+						: ascendError('FORMULA_EVAL_ERROR', 'Recalculation failed'),
 				)
 			}
 			await wb.save(file)
@@ -176,7 +185,22 @@ export function createServer(): McpServer {
 		async ({ file }) => {
 			const wb = await WorkbookDocument.open(file, { mode: 'formula' })
 			const result = wb.check()
-			return { ...okResponse(result, `Checked workbook "${file}"`), isError: !result.valid }
+			if (!result.valid) {
+				const summary = `${result.issues.length} issue(s) found`
+				return {
+					...errorResponse(
+						ascendError('VALIDATION_ERROR', summary, {
+							details: { issues: result.issues },
+						}),
+					),
+					structuredContent: machineFailure(
+						ascendError('VALIDATION_ERROR', summary, {
+							details: { check: result },
+						}),
+					) as unknown as Record<string, unknown>,
+				}
+			}
+			return okResponse(result, `Checked workbook "${file}"`)
 		},
 	)
 

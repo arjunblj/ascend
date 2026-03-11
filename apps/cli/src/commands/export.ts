@@ -1,5 +1,5 @@
 import { writeFile } from 'node:fs/promises'
-import { jsonOut } from '../output/json.ts'
+import { cliError, jsonOut } from '../output/json.ts'
 import { openWorkbookWithProgress, withProgress } from '../progress.ts'
 
 export const usage = `Usage: ascend export <file> <output> [flags]
@@ -20,14 +20,14 @@ export async function exportCommand(args: string[], flags: Map<string, string>):
 	const file = args[0]
 	const output = args[1]
 	if (!file || !output) {
-		console.error('Usage: ascend export <file> <output> [--format csv|json]')
+		cliError('Usage: ascend export <file> <output> [--format csv|json]', flags)
 		return 1
 	}
 
 	const { workbook: wb } = await openWorkbookWithProgress(file)
 	const format = normalizeExportFormat(flags.get('format') ?? inferFormat(output))
 	if (!format) {
-		console.error('Invalid export format. Use one of: csv, tsv, json, xlsx, xlsm')
+		cliError('Invalid export format. Use one of: csv, tsv, json, xlsx, xlsm', flags)
 		return 1
 	}
 

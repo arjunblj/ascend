@@ -1,5 +1,5 @@
 import { AscendWorkbook } from '@ascend/sdk'
-import { jsonOut } from '../output/json.ts'
+import { cliError, jsonOut } from '../output/json.ts'
 import { heading, table } from '../output/pretty.ts'
 import { withProgress } from '../progress.ts'
 
@@ -19,7 +19,7 @@ export async function diffCommand(args: string[], flags: Map<string, string>): P
 	const fileA = args[0]
 	const fileB = args[1]
 	if (!fileA || !fileB) {
-		console.error('Usage: ascend diff <file-a> <file-b>')
+		cliError('Usage: ascend diff <file-a> <file-b>', flags)
 		return 1
 	}
 

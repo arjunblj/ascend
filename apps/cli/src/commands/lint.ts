@@ -1,4 +1,4 @@
-import { jsonOut } from '../output/json.ts'
+import { cliError, jsonOut } from '../output/json.ts'
 import { table } from '../output/pretty.ts'
 import { openWorkbookDocumentWithProgress } from '../progress.ts'
 
@@ -16,7 +16,7 @@ Flags:
 export async function lintCommand(args: string[], flags: Map<string, string>): Promise<number> {
 	const file = args[0]
 	if (!file) {
-		console.error('Usage: ascend lint <file>')
+		cliError('Usage: ascend lint <file>', flags)
 		return 1
 	}
 

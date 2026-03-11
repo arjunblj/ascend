@@ -13,6 +13,7 @@ import { previewCommand, usage as previewUsage } from './commands/preview.ts'
 import { readCommand, usage as readUsage } from './commands/read.ts'
 import { traceCommand, usage as traceUsage } from './commands/trace.ts'
 import { writeCommand, usage as writeUsage } from './commands/write.ts'
+import { jsonErr } from './output/json.ts'
 
 const VERSION = '0.0.0'
 
@@ -163,7 +164,11 @@ async function main(): Promise<void> {
 		process.exit(code)
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err)
-		console.error(`Error: ${message}`)
+		if (flags.has('json')) {
+			console.log(jsonErr(message))
+		} else {
+			console.error(`Error: ${message}`)
+		}
 		process.exit(1)
 	}
 }

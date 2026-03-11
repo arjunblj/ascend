@@ -1,4 +1,4 @@
-import { jsonOut } from '../output/json.ts'
+import { cliError, jsonOut } from '../output/json.ts'
 import { bullet, formatCellValue, heading } from '../output/pretty.ts'
 import { openWorkbookDocumentWithProgress } from '../progress.ts'
 
@@ -19,14 +19,14 @@ export async function traceCommand(args: string[], flags: Map<string, string>): 
 	const file = args[0]
 	const cellRef = args[1]
 	if (!file || !cellRef) {
-		console.error('Usage: ascend trace <file> <cell>')
+		cliError('Usage: ascend trace <file> <cell>', flags)
 		return 1
 	}
 
 	const { document: session } = await openWorkbookDocumentWithProgress(file, { mode: 'formula' })
 	const maxDepth = parseOptionalInt(flags.get('max-depth'))
 	if (flags.has('max-depth') && (maxDepth == null || maxDepth < 0)) {
-		console.error('Invalid --max-depth. Use a non-negative integer.')
+		cliError('Invalid --max-depth. Use a non-negative integer.', flags)
 		return 1
 	}
 	const validatedMaxDepth = maxDepth ?? undefined
@@ -36,7 +36,7 @@ export async function traceCommand(args: string[], flags: Map<string, string>): 
 	)
 
 	if (!result) {
-		console.error(`Could not trace "${cellRef}"`)
+		cliError(`Could not trace "${cellRef}"`, flags)
 		return 1
 	}
 

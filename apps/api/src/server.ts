@@ -135,15 +135,23 @@ export function createServer(opts?: { port?: number }) {
 						const wb = await AscendWorkbook.open(file)
 						const result = wb.apply(ops)
 						if (result.errors.length > 0) {
-							return jsonFailure(result.errors[0]?.message ?? 'Failed to apply operations', 400)
+							const first = result.errors[0]
+							return jsonFailureError(
+								first ?? ascendError('VALIDATION_ERROR', 'Failed to apply operations'),
+								400,
+							)
 						}
 						if (result.recalcRequired) {
 							const recalc = wb.recalc()
 							if (recalc.errors.length > 0) {
-								return jsonFailure(
-									recalc.errors[0]
-										? `${recalc.errors[0].ref}: ${recalc.errors[0].error.message}`
-										: 'Recalculation failed',
+								const first = recalc.errors[0]
+								return jsonFailureError(
+									first
+										? ascendError('FORMULA_EVAL_ERROR', `${first.ref}: ${first.error.message}`, {
+												refs: [first.ref],
+												details: { evalError: first.error },
+											})
+										: ascendError('FORMULA_EVAL_ERROR', 'Recalculation failed'),
 									400,
 								)
 							}
@@ -199,10 +207,14 @@ export function createServer(opts?: { port?: number }) {
 						const wb = await AscendWorkbook.open(file)
 						const result = wb.recalc()
 						if (result.errors.length > 0) {
-							return jsonFailure(
-								result.errors[0]
-									? `${result.errors[0].ref}: ${result.errors[0].error.message}`
-									: 'Recalculation failed',
+							const first = result.errors[0]
+							return jsonFailureError(
+								first
+									? ascendError('FORMULA_EVAL_ERROR', `${first.ref}: ${first.error.message}`, {
+											refs: [first.ref],
+											details: { evalError: first.error },
+										})
+									: ascendError('FORMULA_EVAL_ERROR', 'Recalculation failed'),
 								400,
 							)
 						}

@@ -1,5 +1,5 @@
 import { AscendWorkbook } from '@ascend/sdk'
-import { jsonOut } from '../output/json.ts'
+import { cliError, jsonOut } from '../output/json.ts'
 import { withProgress } from '../progress.ts'
 
 export const usage = `Usage: ascend create <output.xlsx> [flags]
@@ -16,7 +16,7 @@ Flags:
 export async function createCommand(args: string[], flags: Map<string, string>): Promise<number> {
 	const file = args[0]
 	if (!file) {
-		console.error('Usage: ascend create <file>')
+		cliError('Usage: ascend create <file>', flags)
 		return 1
 	}
 

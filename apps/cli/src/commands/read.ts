@@ -1,5 +1,5 @@
 import type { CompactCellInfo, WorkbookDocument } from '@ascend/sdk'
-import { jsonOut } from '../output/json.ts'
+import { cliError, jsonOut } from '../output/json.ts'
 import { formatCellValue, table } from '../output/pretty.ts'
 import { openWorkbookDocumentWithProgress } from '../progress.ts'
 
@@ -24,14 +24,14 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 	const file = args[0]
 	const selectorArg = args[1]
 	if (!file || !selectorArg) {
-		console.error('Usage: ascend read <file> <selector> [--sheet <name>]')
+		cliError('Usage: ascend read <file> <selector> [--sheet <name>]', flags)
 		return 1
 	}
 
 	const requestedSheet = flags.get('sheet')
 	const explicitMode = parseReadMode(flags.get('mode'))
 	if (flags.has('mode') && explicitMode === null) {
-		console.error('Invalid --mode. Use one of: values, full')
+		cliError('Invalid --mode. Use one of: values, full', flags)
 		return 1
 	}
 	const selector = parseSelector(selectorArg, requestedSheet)
@@ -42,12 +42,12 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 
 	const rowOffset = parseOptionalInt(flags.get('row-offset'))
 	if (flags.has('row-offset') && rowOffset == null) {
-		console.error('Invalid --row-offset. Use a non-negative integer.')
+		cliError('Invalid --row-offset. Use a non-negative integer.', flags)
 		return 1
 	}
 	const rowLimit = parseOptionalInt(flags.get('row-limit'))
 	if (flags.has('row-limit') && (rowLimit == null || rowLimit < 1)) {
-		console.error('Invalid --row-limit. Use a positive integer.')
+		cliError('Invalid --row-limit. Use a positive integer.', flags)
 		return 1
 	}
 	const validatedRowOffset = rowOffset ?? undefined
@@ -58,7 +58,7 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 		case 'table': {
 			const handle = wb.table(selector.name)
 			if (!handle) {
-				console.error(`Table "${selector.name}" not found`)
+				cliError(`Table "${selector.name}" not found`, flags)
 				return 1
 			}
 			const page = handle.readRows({
@@ -98,7 +98,7 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 		case 'name': {
 			const handle = wb.definedName(selector.name, selector.sheetName)
 			if (!handle) {
-				console.error(`Defined name "${selector.name}" not found`)
+				cliError(`Defined name "${selector.name}" not found`, flags)
 				return 1
 			}
 			const resolvedRange = resolveNamedRead(handle)
@@ -142,6 +142,7 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 				validatedRowLimit,
 				flags.has('json'),
 				display,
+				flags,
 			)
 		}
 		case 'range':
@@ -153,6 +154,7 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 				validatedRowLimit,
 				flags.has('json'),
 				display,
+				flags,
 			)
 	}
 }
@@ -178,19 +180,21 @@ function readRangeLike(
 	rowLimit: number | undefined,
 	asJson = false,
 	display = false,
+	flags: Map<string, string> = new Map(),
 ): number {
 	if (!sheetName) {
-		console.error(
+		cliError(
 			wb.sheets.length === 0
 				? 'No sheets in workbook'
 				: 'Multiple sheets available; specify a sheet explicitly',
+			flags,
 		)
 		return 1
 	}
 
 	const sheet = wb.sheet(sheetName)
 	if (!sheet) {
-		console.error(`Sheet "${sheetName}" not found`)
+		cliError(`Sheet "${sheetName}" not found`, flags)
 		return 1
 	}
 

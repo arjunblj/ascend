@@ -169,11 +169,12 @@ export function planWriteXlsx(
 			!canReusePreservedStyles
 				? buildPreservedStylesXml(preservedStylesXml, preservedStyles, workbook.styles)
 				: undefined
-		const generatedStylesResult = options.summaryOnly
-			? undefined
-			: preservedStyles !== undefined && !canReusePreservedStyles
-				? undefined
-				: buildStylesXml(workbook.styles, workbook.differentialStyles)
+		const needsGeneratedStyles =
+			!options.summaryOnly && (!preservedStyles || canReusePreservedStyles || !preservedStylesXml)
+		const generatedStylesResult = needsGeneratedStyles
+			? buildStylesXml(workbook.styles, workbook.differentialStyles)
+			: undefined
+		const resolvedStylesResult = stylesResult ?? generatedStylesResult
 		const xfMap =
 			canReusePreservedStyles && preservedStyles
 				? new Map(
@@ -182,13 +183,9 @@ export function planWriteXlsx(
 							xfIndex,
 						]),
 					)
-				: options.summaryOnly
+				: options.summaryOnly || !resolvedStylesResult
 					? new Map<number, number>()
-					: (
-							stylesResult ??
-							generatedStylesResult ??
-							buildStylesXml(workbook.styles, workbook.differentialStyles)
-						).xfMap
+					: resolvedStylesResult.xfMap
 		const stylesXml = options.summaryOnly
 			? ''
 			: preservedStyles !== undefined
@@ -862,14 +859,16 @@ export function planWriteXlsx(
 				owner: { kind: 'package' },
 				origin: 'generated',
 			},
-			() =>
-				buildContentTypesXml(
+			() => {
+				const built = plan.build()
+				return buildContentTypesXml(
 					workbook.sheets.length,
 					hasSharedStrings,
 					workbookContentType,
 					capsules?.filter((capsule) => !(options.calcStateDirty && isCalcChainCapsule(capsule))),
-					plan.build().extraOverrides.length > 0 ? plan.build().extraOverrides : undefined,
-				),
+					built.extraOverrides.length > 0 ? built.extraOverrides : undefined,
+				)
+			},
 		)
 
 		return ok(plan.build())

@@ -1,5 +1,5 @@
 import type { WorkbookDocument } from '@ascend/sdk'
-import { jsonOut } from '../output/json.ts'
+import { cliError, jsonOut } from '../output/json.ts'
 import { bullet, formatCellValue, heading, table } from '../output/pretty.ts'
 import { openWorkbookDocumentWithProgress } from '../progress.ts'
 
@@ -22,7 +22,7 @@ Flags:
 export async function inspectCommand(args: string[], flags: Map<string, string>): Promise<number> {
 	const file = args[0]
 	if (!file) {
-		console.error('Usage: ascend inspect <file> [sheet]')
+		cliError('Usage: ascend inspect <file> [sheet]', flags)
 		return 1
 	}
 
@@ -38,12 +38,12 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 		detail === 'views'
 	const parsedMode = parseInspectMode(flags.get('mode'))
 	if (flags.has('mode') && parsedMode === null) {
-		console.error('Invalid --mode. Use one of: metadata, values, full')
+		cliError('Invalid --mode. Use one of: metadata, values, full', flags)
 		return 1
 	}
 	const explicitMode = parsedMode ?? undefined
 	if (detail && sheetArg && explicitMode && explicitMode !== 'full') {
-		console.error('Sheet detail views require --mode full')
+		cliError('Sheet detail views require --mode full', flags)
 		return 1
 	}
 
@@ -92,12 +92,13 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 	}
 
 	if (detail && sheetArg) {
-		return printSheetDetail(wb, sheetArg, detail, flags.has('json'))
+		return printSheetDetail(wb, sheetArg, detail, flags.has('json'), flags)
 	}
 
 	if (detail) {
-		console.error(
+		cliError(
 			'Sheet detail requires a sheet name. Use: ascend inspect <file> <sheet> --detail <type>',
+			flags,
 		)
 		return 1
 	}
@@ -105,7 +106,7 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 	if (sheetArg) {
 		const sheet = wb.inspectSheet(sheetArg)
 		if (!sheet) {
-			console.error(`Sheet "${sheetArg}" not found`)
+			cliError(`Sheet "${sheetArg}" not found`, flags)
 			return 1
 		}
 		if (flags.has('json')) {
@@ -288,10 +289,11 @@ function printSheetDetail(
 	sheetName: string,
 	detail: string,
 	json: boolean,
+	flags: Map<string, string>,
 ): number {
 	const handle = wb.sheet(sheetName)
 	if (!handle) {
-		console.error(`Sheet "${sheetName}" not found`)
+		cliError(`Sheet "${sheetName}" not found`, flags)
 		return 1
 	}
 	switch (detail) {
@@ -446,8 +448,9 @@ function printSheetDetail(
 			return printCompatibilityDetail(wb, json)
 		}
 		default:
-			console.error(
+			cliError(
 				`Unknown detail type: ${detail}. Options: cf, dv, hyperlinks, comments, drawings, images, tables, compatibility, pivots, slicers, names, external-refs, views`,
+				flags,
 			)
 			return 1
 	}

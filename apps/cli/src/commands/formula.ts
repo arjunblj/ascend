@@ -1,5 +1,5 @@
 import { ascendError } from '@ascend/schema'
-import { jsonErr, jsonOut } from '../output/json.ts'
+import { cliError, jsonErr, jsonOut } from '../output/json.ts'
 import { bullet, heading } from '../output/pretty.ts'
 import {
 	openWorkbookDocumentWithProgress,
@@ -30,10 +30,10 @@ export async function formulaCommand(args: string[], flags: Map<string, string>)
 		case 'fill':
 			return fillFormula(args.slice(1), flags)
 		default: {
-			console.error(`Unknown formula subcommand: ${action ?? '(missing)'}`)
+			const msg = `Unknown formula subcommand: ${action ?? '(missing)'}`
 			const suggestion = suggestClosest(action ?? '', ['show', 'set', 'fill'])
-			if (suggestion) console.error(`Did you mean "${suggestion}"?`)
-			console.error('Usage: ascend formula <show|set|fill> ...')
+			const hint = suggestion ? `\nDid you mean "${suggestion}"?` : ''
+			cliError(`${msg}${hint}\nUsage: ascend formula <show|set|fill> ...`, flags)
 			return 1
 		}
 	}
@@ -43,14 +43,14 @@ async function showFormula(args: string[], flags: Map<string, string>): Promise<
 	const file = args[0]
 	const cellRef = args[1]
 	if (!file || !cellRef) {
-		console.error('Usage: ascend formula show <file> <sheet!cell>')
+		cliError('Usage: ascend formula show <file> <sheet!cell>', flags)
 		return 1
 	}
 
 	const { document: session } = await openWorkbookDocumentWithProgress(file, { mode: 'formula' })
 	const info = session.formula(cellRef)
 	if (!info) {
-		console.error(`No formula found at "${cellRef}"`)
+		cliError(`No formula found at "${cellRef}"`, flags)
 		return 1
 	}
 

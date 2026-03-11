@@ -11,8 +11,10 @@ export function parseSharedStrings(
 	xml: string,
 	options: {
 		readonly normalize?: (value: CellValue) => CellValue
+		readonly lazy?: boolean
 	} = {},
 ): SharedStringResolver {
+	if (options.lazy) return createLazySharedStrings(xml, options.normalize)
 	return createEagerSharedStrings(xml, options.normalize)
 }
 
@@ -46,6 +48,59 @@ function createEagerSharedStrings(
 		count: entries.length,
 		get(index: number): CellValue | undefined {
 			return entries[index]
+		},
+	}
+}
+
+function createLazySharedStrings(
+	xml: string,
+	normalize?: (value: CellValue) => CellValue,
+): SharedStringResolver {
+	const offsets: number[] = []
+	let cursor = 0
+	while (true) {
+		const pos = xml.indexOf('<si', cursor)
+		if (pos === -1) break
+		offsets.push(pos)
+		cursor = pos + 3
+	}
+
+	if (offsets.length === 0 && xml.includes('<si')) {
+		return createEagerSharedStrings(xml, normalize)
+	}
+
+	const entries = new Array<CellValue | undefined>(offsets.length)
+	const resolved = new Uint8Array(offsets.length)
+
+	return {
+		count: offsets.length,
+		get(index: number): CellValue | undefined {
+			if (index < 0 || index >= offsets.length) return undefined
+			if (resolved[index]) return entries[index]
+
+			const start = offsets[index] as number
+			const tagEnd = findTagEnd(xml, start)
+			if (tagEnd === -1) {
+				resolved[index] = 1
+				return undefined
+			}
+
+			let value: CellValue
+			if (isSelfClosingTag(xml, start, tagEnd)) {
+				value = { kind: 'string', value: '' }
+			} else {
+				const close = xml.indexOf('</si>', tagEnd + 1)
+				if (close === -1) {
+					resolved[index] = 1
+					return undefined
+				}
+				value = parseSharedStringChunk(xml.slice(tagEnd + 1, close))
+			}
+
+			const result = normalize ? normalize(value) : value
+			entries[index] = result
+			resolved[index] = 1
+			return result
 		},
 	}
 }

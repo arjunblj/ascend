@@ -248,11 +248,10 @@ export function readXlsx(
 	} else {
 		const valuePool = new ValueInternPool()
 		const ssXml = ssPath ? readPart(archive, ssPath) : undefined
-		// Fast-path: small SST (<500KB) parses eagerly. Large SST also parses eagerly; lazy SST
-		// for selective/window loading is a future optimization target.
 		const sharedStrings = ssXml
 			? parseSharedStrings(ssXml, {
 					normalize: (value) => valuePool.internValue(value),
+					lazy: valuesOnly || formulaOnly || selectedSheets !== null,
 				})
 			: emptySharedStrings()
 

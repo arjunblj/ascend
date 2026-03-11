@@ -91,6 +91,9 @@
         "@ascend/core": "workspace:*",
         "@ascend/schema": "workspace:*",
       },
+      "devDependencies": {
+        "@ascend/engine": "workspace:*",
+      },
     },
     "packages/io-csv": {
       "name": "@ascend/io-csv",

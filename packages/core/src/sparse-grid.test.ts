@@ -151,6 +151,43 @@ describe('SparseGrid', () => {
 		expect(grid.cellCount()).toBe(1)
 	})
 
+	test('set and get cell at high row number (1,048,575)', () => {
+		const grid = new SparseGrid()
+		const cell = makeCell(numberValue(42))
+		grid.set(1_048_575, 0, cell)
+		expect(grid.get(1_048_575, 0)).toEqual(cell)
+		expect(grid.getValue(1_048_575, 0)).toEqual(numberValue(42))
+	})
+
+	test('set and get cell at high column number (16,383)', () => {
+		const grid = new SparseGrid()
+		const cell = makeCell(stringValue('edge'))
+		grid.set(0, 16_383, cell)
+		expect(grid.get(0, 16_383)).toEqual(cell)
+		expect(grid.getValue(0, 16_383)).toEqual(stringValue('edge'))
+	})
+
+	test('usedRange with single cell', () => {
+		const grid = new SparseGrid()
+		grid.set(7, 13, makeCell(numberValue(1)))
+		expect(grid.usedRange()).toEqual({
+			start: { row: 7, col: 13 },
+			end: { row: 7, col: 13 },
+		})
+	})
+
+	test('empty grid operations', () => {
+		const grid = new SparseGrid()
+		expect(grid.usedRange()).toBeNull()
+		expect(grid.get(0, 0)).toBeUndefined()
+		expect(grid.getValue(0, 0)).toBeUndefined()
+		expect(grid.has(0, 0)).toBe(false)
+		expect(grid.delete(0, 0)).toBe(false)
+		expect(grid.cellCount()).toBe(0)
+		expect([...grid.iterate()]).toHaveLength(0)
+		expect([...grid.iterateRows()]).toHaveLength(0)
+	})
+
 	test('cells with formulas', () => {
 		const grid = new SparseGrid()
 		const cell = makeCell(numberValue(10), 'SUM(A1:A5)')

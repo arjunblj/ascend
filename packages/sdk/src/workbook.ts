@@ -38,6 +38,7 @@ import { buildWorkbookLoadInfo, openWorkbookSource } from './load.ts'
 import { WorkbookReadView } from './read-view.ts'
 import type {
 	ApplyResult,
+	BatchResult,
 	CheckIssue,
 	CheckResult,
 	LintResult,
@@ -241,6 +242,29 @@ export class AscendWorkbook extends WorkbookReadView {
 			recalcRequired: result.value.recalcRequired,
 			errors: [],
 		}
+	}
+
+	batch(ops: readonly Operation[]): BatchResult {
+		if (this.loadInfo.isPartial) {
+			return { errors: [partialWorkbookEditError()] }
+		}
+		const dirtyFlags = this.deriveDirtyFlags(ops)
+		const nextWorkbook = cloneWorkbook(this.wb)
+		const result = applyOperations(nextWorkbook, ops)
+		if (!result.ok) {
+			return { errors: [result.error] }
+		}
+
+		this.wb = nextWorkbook
+		this.markDirty()
+		for (const sheetName of result.value.sheetsModified) this.dirtySheets.add(sheetName)
+		this.workbookMetaDirty ||= dirtyFlags.workbookMetaDirty
+		this.calcStateDirty ||= dirtyFlags.workbookMetaDirty || result.value.recalcRequired
+		this.sharedStringsDirty ||= dirtyFlags.sharedStringsDirty
+		this.stylesDirty ||= dirtyFlags.stylesDirty
+		if (result.value.recalcRequired) this.mergePendingRecalcTargets(ops)
+		this.clearReadCaches()
+		return { errors: [] }
 	}
 
 	recalc(opts?: { range?: string }): RecalcResult {

@@ -966,3 +966,200 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(3, 0)?.value).toEqual(numberValue(100))
 	})
 })
+
+describe('iterative calculation', () => {
+	test('simple circular ref converges with iterative calc enabled', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: '0.5*B1', styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: '0.5*A1+1', styleId: sid })
+
+		const ctx = makeCtx({
+			iterativeCalc: {
+				enabled: true,
+				maxIterations: 100,
+				maxChange: 0.001,
+			},
+		})
+		recalculate(wb, ctx)
+
+		const a1 = sheet.cells.get(0, 0)?.value
+		const b1 = sheet.cells.get(0, 1)?.value
+		expect(a1?.kind).toBe('number')
+		expect(b1?.kind).toBe('number')
+		if (a1?.kind === 'number' && b1?.kind === 'number') {
+			expect(a1.value).toBeGreaterThanOrEqual(0)
+			expect(a1.value).toBeLessThanOrEqual(1)
+			expect(b1.value).toBeGreaterThanOrEqual(1)
+			expect(b1.value).toBeLessThanOrEqual(2)
+		}
+	})
+
+	test('max iterations respected', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'B1+1', styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'A1+1', styleId: sid })
+
+		const ctx = makeCtx({
+			iterativeCalc: {
+				enabled: true,
+				maxIterations: 5,
+				maxChange: 0.001,
+			},
+		})
+		recalculate(wb, ctx)
+
+		const a1 = sheet.cells.get(0, 0)?.value
+		const b1 = sheet.cells.get(0, 1)?.value
+		expect(a1?.kind).toBe('number')
+		expect(b1?.kind).toBe('number')
+		if (a1?.kind === 'number' && b1?.kind === 'number') {
+			expect(a1.value).toBeLessThanOrEqual(6)
+			expect(b1.value).toBeLessThanOrEqual(6)
+		}
+	})
+
+	test('without iterative calc, circular refs produce #REF!', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'B1', styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'A1', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#REF!'))
+		expect(sheet.cells.get(0, 1)?.value).toEqual(errorValue('#REF!'))
+		const circErrors = result.errors.filter((e) => e.error.code === 'CIRCULAR_REF')
+		expect(circErrors.length).toBeGreaterThan(0)
+	})
+})
+
+describe('shared formula evaluation', () => {
+	test('shared formulas A1:A10 = B1*2 shifted per row evaluate correctly', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		for (let r = 0; r < 10; r++) {
+			sheet.cells.set(r, 1, { value: numberValue(r + 1), formula: null, styleId: sid })
+		}
+		sheet.cells.set(0, 0, {
+			value: EMPTY,
+			formula: 'B1*2',
+			styleId: sid,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: true, masterRef: 'A1' },
+		})
+		for (let r = 1; r < 10; r++) {
+			sheet.cells.set(r, 0, {
+				value: EMPTY,
+				formula: null,
+				styleId: sid,
+				formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'A1' },
+			})
+		}
+
+		recalculate(wb, makeCtx())
+		for (let r = 0; r < 10; r++) {
+			const expected = (r + 1) * 2
+			expect(sheet.cells.get(r, 0)?.value).toEqual(numberValue(expected))
+		}
+	})
+
+	test('recalc after changing source cell updates shared formula results', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 1, { value: numberValue(5), formula: null, styleId: sid })
+		sheet.cells.set(0, 0, {
+			value: EMPTY,
+			formula: 'B1*2',
+			styleId: sid,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: true, masterRef: 'A1' },
+		})
+		sheet.cells.set(1, 0, {
+			value: EMPTY,
+			formula: null,
+			styleId: sid,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'A1' },
+		})
+		sheet.cells.set(1, 1, { value: numberValue(3), formula: null, styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(10))
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(6))
+
+		sheet.cells.set(0, 1, { value: numberValue(7), formula: null, styleId: sid })
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(14))
+	})
+})
+
+describe('large range correctness', () => {
+	test('SUM over 10K cells verifies exact result', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		let expectedSum = 0
+		for (let i = 0; i < 10_000; i++) {
+			const val = i + 1
+			expectedSum += val
+			sheet.cells.set(Math.floor(i / 100), i % 100, {
+				value: numberValue(val),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		sheet.cells.set(101, 0, {
+			value: EMPTY,
+			formula: 'SUM(A1:CV100)',
+			styleId: sid,
+		})
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(101, 0)?.value).toEqual(numberValue(expectedSum))
+	})
+
+	test('AVERAGE over 10K cells verifies correct average', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		let sum = 0
+		for (let i = 0; i < 10_000; i++) {
+			const val = i + 1
+			sum += val
+			sheet.cells.set(Math.floor(i / 100), i % 100, {
+				value: numberValue(val),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		const expectedAvg = sum / 10_000
+		sheet.cells.set(101, 0, {
+			value: EMPTY,
+			formula: 'AVERAGE(A1:CV100)',
+			styleId: sid,
+		})
+
+		recalculate(wb, makeCtx())
+		const result = sheet.cells.get(101, 0)?.value
+		expect(result?.kind).toBe('number')
+		if (result?.kind === 'number') {
+			expect(Math.abs(result.value - expectedAvg)).toBeLessThan(0.0001)
+		}
+	})
+
+	test('cross-sheet SUM - 3 sheets, SUM(Sheet1!A1:A100) on Sheet2', () => {
+		const wb = createWorkbook()
+		const s1 = wb.addSheet('Sheet1')
+		const s2 = wb.addSheet('Sheet2')
+		let expectedSum = 0
+		for (let r = 0; r < 100; r++) {
+			const val = r + 1
+			expectedSum += val
+			s1.cells.set(r, 0, { value: numberValue(val), formula: null, styleId: sid })
+		}
+		s2.cells.set(0, 0, {
+			value: EMPTY,
+			formula: 'SUM(Sheet1!A1:A100)',
+			styleId: sid,
+		})
+
+		recalculate(wb, makeCtx())
+		expect(s2.cells.get(0, 0)?.value).toEqual(numberValue(expectedSum))
+	})
+})

@@ -497,6 +497,24 @@ describe('AscendWorkbook', () => {
 		expect(a3?.value).toEqual({ kind: 'number', value: 30 })
 	})
 
+	test('batch applies multiple operations without recalc, caller recalcs once', () => {
+		const wb = AscendWorkbook.create()
+		const batchResult = wb.batch([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 10 }] },
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A2', value: 20 }] },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A3', formula: 'A1+A2' },
+		])
+		expect(batchResult.errors).toHaveLength(0)
+
+		expect(wb.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 10 })
+		expect(wb.sheet('Sheet1')?.cell('A2')?.value).toEqual({ kind: 'number', value: 20 })
+		expect(wb.sheet('Sheet1')?.cell('A3')?.formula).toBe('A1+A2')
+
+		const recalcResult = wb.recalc()
+		expect(recalcResult.errors).toHaveLength(0)
+		expect(wb.sheet('Sheet1')?.cell('A3')?.value).toEqual({ kind: 'number', value: 30 })
+	})
+
 	test('save to bytes and re-open roundtrips', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

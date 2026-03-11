@@ -147,3 +147,39 @@ describe('writeCsv', () => {
 		expect(writeResult.value).toContain('"hello,world"')
 	})
 })
+
+describe('Unicode and BOM', () => {
+	test('round-trips CSV with Unicode content (emoji, CJK)', () => {
+		const csv = 'text\nHello 世界 🌍\n日本語\n🎉'
+		const readResult = readCsv(csv)
+		expect(readResult.ok).toBe(true)
+		if (!readResult.ok) return
+
+		const writeResult = writeCsv(readResult.value)
+		expect(writeResult.ok).toBe(true)
+		if (!writeResult.ok) return
+
+		const reread = readCsv(writeResult.value)
+		expect(reread.ok).toBe(true)
+		if (!reread.ok) return
+
+		expect(cellValue(reread, 0, 0)).toEqual({ kind: 'string', value: 'text' })
+		expect(cellValue(reread, 1, 0)).toEqual({ kind: 'string', value: 'Hello 世界 🌍' })
+		expect(cellValue(reread, 2, 0)).toEqual({ kind: 'string', value: '日本語' })
+		expect(cellValue(reread, 3, 0)).toEqual({ kind: 'string', value: '🎉' })
+	})
+
+	test('BOM handling works with Unicode content', () => {
+		const csvWithBom = '\uFEFFname,value\n你好,42\n🎉,1'
+		const result = readCsv(csvWithBom)
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(cellValue(result, 0, 0)).toEqual({ kind: 'string', value: 'name' })
+		expect(cellValue(result, 0, 1)).toEqual({ kind: 'string', value: 'value' })
+		expect(cellValue(result, 1, 0)).toEqual({ kind: 'string', value: '你好' })
+		expect(cellValue(result, 1, 1)).toEqual({ kind: 'number', value: 42 })
+		expect(cellValue(result, 2, 0)).toEqual({ kind: 'string', value: '🎉' })
+		expect(cellValue(result, 2, 1)).toEqual({ kind: 'number', value: 1 })
+	})
+})

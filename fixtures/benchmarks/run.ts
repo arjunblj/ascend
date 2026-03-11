@@ -1,5 +1,6 @@
 import { createWorkbook, type StyleId, type Workbook } from '../../packages/core/src/index.ts'
 import { defaultCalcContext, recalculate } from '../../packages/engine/src/index.ts'
+import { readCsv, writeCsv } from '../../packages/io-csv/src/index.ts'
 import { readXlsx, writeXlsx } from '../../packages/io-xlsx/src/index.ts'
 import { EMPTY, numberValue } from '../../packages/schema/src/index.ts'
 import { AscendWorkbook } from '../../packages/sdk/src/index.ts'
@@ -16,6 +17,7 @@ const SID = 0 as StyleId
 interface ScenarioInput {
 	readonly workbook?: Workbook
 	readonly bytes?: Uint8Array
+	readonly content?: string
 	readonly rows: number
 	readonly cols: number
 	readonly cells: number
@@ -40,6 +42,11 @@ function requireBytes(input: ScenarioInput): Uint8Array {
 function requireWorkbook(input: ScenarioInput): Workbook {
 	if (!input.workbook) throw new Error('Scenario workbook was not built')
 	return input.workbook
+}
+
+function requireContent(input: ScenarioInput): string {
+	if (input.content === undefined) throw new Error('Scenario content was not built')
+	return input.content
 }
 
 function mustWrite(workbook: Workbook): Uint8Array {
@@ -415,6 +422,125 @@ const scenarios: readonly Scenario[] = [
 		},
 		run(input) {
 			recalculate(requireWorkbook(input), defaultCalcContext())
+		},
+	},
+	{
+		name: 'recalc-sparse-aggregation',
+		category: 'calc',
+		build() {
+			const workbook = createWorkbook()
+			workbook.addSheet('Sheet1')
+			const sheet = workbook.sheets[0]
+			if (!sheet) throw new Error('Benchmark workbook missing first sheet')
+			for (let r = 0; r < 100_000; r += 100) {
+				sheet.cells.set(r, 0, {
+					value: numberValue(Math.random() * 1000),
+					formula: null,
+					styleId: SID,
+				})
+			}
+			sheet.cells.set(0, 1, { value: EMPTY, formula: 'SUM(A1:A100000)', styleId: SID })
+			return { workbook, rows: 100_000, cols: 2, cells: 1001 }
+		},
+		run(input) {
+			recalculate(requireWorkbook(input), defaultCalcContext())
+		},
+	},
+	{
+		name: 'recalc-incremental',
+		category: 'calc',
+		build() {
+			const workbook = createWorkbook()
+			workbook.addSheet('Sheet1')
+			const sheet = workbook.sheets[0]
+			if (!sheet) throw new Error('Benchmark workbook missing first sheet')
+			for (let r = 0; r < 1000; r++) {
+				sheet.cells.set(r, 0, {
+					value: numberValue(r + 1),
+					formula: null,
+					styleId: SID,
+				})
+				sheet.cells.set(r, 1, {
+					value: EMPTY,
+					formula: `A${r + 1}*2`,
+					styleId: SID,
+				})
+			}
+			sheet.cells.set(0, 2, { value: EMPTY, formula: 'SUM(B1:B1000)', styleId: SID })
+			recalculate(workbook, defaultCalcContext())
+			sheet.cells.set(499, 0, {
+				value: numberValue(999),
+				formula: null,
+				styleId: SID,
+			})
+			return { workbook, rows: 1000, cols: 3, cells: 2002 }
+		},
+		run(input) {
+			recalculate(requireWorkbook(input), defaultCalcContext(), {
+				dirtyOnly: true,
+				dirtyRefs: ['Sheet1!A500'],
+			})
+		},
+	},
+	{
+		name: 'recalc-cross-sheet',
+		category: 'calc',
+		build() {
+			const workbook = createWorkbook()
+			const sheet1 = workbook.addSheet('Sheet1')
+			for (let r = 0; r < 1000; r++) {
+				sheet1.cells.set(r, 0, {
+					value: numberValue(r + 1),
+					formula: null,
+					styleId: SID,
+				})
+			}
+			for (let s = 1; s < 5; s++) {
+				const sheet = workbook.addSheet(`Sheet${s + 1}`)
+				for (let r = 0; r < 1000; r++) {
+					sheet.cells.set(r, 0, {
+						value: EMPTY,
+						formula: `Sheet1!A${r + 1}*2`,
+						styleId: SID,
+					})
+				}
+			}
+			return { workbook, rows: 1000, cols: 1, cells: 5000 }
+		},
+		run(input) {
+			recalculate(requireWorkbook(input), defaultCalcContext())
+		},
+	},
+	{
+		name: 'read-csv-large',
+		category: 'read',
+		build() {
+			const rows: string[] = []
+			for (let r = 0; r < 50_000; r++) {
+				const row: string[] = []
+				for (let c = 0; c < 10; c++) {
+					row.push(String(r * 10 + c + 1))
+				}
+				rows.push(row.join(','))
+			}
+			const content = rows.join('\n')
+			return { content, rows: 50_000, cols: 10, cells: 500_000 }
+		},
+		run(input) {
+			const result = readCsv(requireContent(input))
+			if (!result.ok) throw new Error(result.error.message)
+		},
+	},
+	{
+		name: 'write-csv-large',
+		category: 'write',
+		build() {
+			const workbook = buildDenseWorkbook(50_000, 10)
+			return { workbook, rows: 50_000, cols: 10, cells: 500_000 }
+		},
+		run(input) {
+			const result = writeCsv(requireWorkbook(input))
+			if (!result.ok) throw new Error(result.error.message)
 		},
 	},
 ]

@@ -325,6 +325,10 @@ export interface ApplyResult {
 	readonly errors: readonly AscendError[]
 }
 
+export interface BatchResult {
+	readonly errors: readonly AscendError[]
+}
+
 export interface RecalcResult {
 	readonly changed: readonly string[]
 	readonly errors: ReadonlyArray<{ ref: string; error: AscendError }>

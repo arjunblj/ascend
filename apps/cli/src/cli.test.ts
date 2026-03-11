@@ -444,6 +444,34 @@ describe('ascend cli', () => {
 		expect(reopened.sheet('Sheet1')?.cell('A2')?.value).toEqual({ kind: 'number', value: 4 })
 	})
 
+	test('preview --json returns a failure envelope when recalculation reports errors', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const opsFile = `${import.meta.dir}/preview-ops.json`
+		await Bun.write(
+			opsFile,
+			JSON.stringify([{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=A1+1' }]),
+		)
+
+		const { exitCode, stdout } = await run(
+			'preview',
+			TEST_FILE,
+			'--ops',
+			'preview-ops.json',
+			'--json',
+		)
+		expect(exitCode).toBe(1)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.ok).toBe(false)
+		expect(parsed.error.message).toContain('Circular reference detected')
+		expect(parsed.error.details.preview.errors.length).toBeGreaterThan(0)
+
+		const reopened = await AscendWorkbook.open(`${import.meta.dir}/${TEST_FILE}`)
+		expect(reopened.sheet('Sheet1')?.cell('A1')).toBeUndefined()
+		if (existsSync(opsFile)) unlinkSync(opsFile)
+	})
+
 	test('formula show returns parsed formula info', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=SUM(B1:B2)' }])

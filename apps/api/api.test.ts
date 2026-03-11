@@ -212,6 +212,29 @@ describe('API', () => {
 		expect(reopened.sheet('Sheet1')?.cell('A2')?.value).toEqual({ kind: 'number', value: 4 })
 	})
 
+	test('preview returns a failure envelope when recalculation reports errors', async () => {
+		const tempFile = join(tempDir, 'preview-recalc-error.xlsx')
+		const wb = AscendWorkbook.create()
+		await wb.save(tempFile)
+
+		const res = await fetch(`http://localhost:${server.port}/preview`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				file: tempFile,
+				ops: [{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=A1+1' }],
+			}),
+		})
+		expect(res.status).toBe(400)
+		const body = await res.json()
+		expect(body.ok).toBe(false)
+		expect(body.error.message).toContain('Circular reference detected')
+		expect(body.error.details.preview.errors.length).toBeGreaterThan(0)
+
+		const reopened = await AscendWorkbook.open(tempFile)
+		expect(reopened.sheet('Sheet1')?.cell('A1')).toBeUndefined()
+	})
+
 	test('write returns a failure envelope on operation errors', async () => {
 		const tempFile = join(tempDir, 'write-error.xlsx')
 		const wb = AscendWorkbook.create()

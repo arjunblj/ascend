@@ -1,4 +1,4 @@
-import type { CellValue, Operation } from '@ascend/schema'
+import { ascendError, type CellValue, type Operation } from '@ascend/schema'
 import { Ascend, WorkbookDocument } from '@ascend/sdk'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
@@ -103,10 +103,18 @@ export function createServer(): McpServer {
 		async ({ file, ops }) => {
 			const wb = await Ascend.open(file)
 			const result = wb.preview(ops as unknown as readonly Operation[])
-			return {
-				...okResponse(result, `Previewed ${ops.length} operation(s)`),
-				isError: result.errors.length > 0,
+			if (result.errors.length > 0) {
+				const first = result.errors[0]
+				return errorResponse(
+					first
+						? {
+								...first,
+								details: { ...(first.details ?? {}), preview: result },
+							}
+						: ascendError('VALIDATION_ERROR', 'Preview failed', { details: { preview: result } }),
+				)
 			}
+			return okResponse(result, `Previewed ${ops.length} operation(s)`)
 		},
 	)
 

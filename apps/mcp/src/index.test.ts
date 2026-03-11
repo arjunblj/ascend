@@ -99,6 +99,36 @@ describe('MCP server', () => {
 		expect(result.structuredContent?.error?.message).toContain('Circular reference detected')
 	})
 
+	test('ascend.preview returns an error response when recalculation fails', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.preview'].handler as (args: {
+			file: string
+			ops: unknown[]
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: {
+				ok?: boolean
+				error?: { message?: string; details?: { preview?: { errors?: unknown[] } } }
+			}
+		}>
+		const result = await handler({
+			file: TEMP_FILE,
+			ops: [{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=A1+1' }],
+		})
+
+		expect(result.isError).toBe(true)
+		expect(result.structuredContent?.ok).toBe(false)
+		expect(result.structuredContent?.error?.message).toContain('Circular reference detected')
+		expect(result.structuredContent?.error?.details?.preview?.errors?.length).toBeGreaterThan(0)
+
+		const reopened = await AscendWorkbook.open(TEMP_FILE)
+		expect(reopened.sheet('Sheet1')?.cell('A1')).toBeUndefined()
+	})
+
 	test('ascend.export writes JSON/TSV and rejects unsupported formats', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

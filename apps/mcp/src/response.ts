@@ -1,3 +1,4 @@
+import type { AscendError } from '@ascend/schema'
 import { machineFailure, machineSuccess } from '@ascend/schema'
 
 export function okResponse<T>(data: T, summary: string) {
@@ -7,10 +8,11 @@ export function okResponse<T>(data: T, summary: string) {
 	}
 }
 
-export function errorResponse(message: string) {
+export function errorResponse(error: string | AscendError) {
+	const message = typeof error === 'string' ? error : error.message
 	return {
 		content: [{ type: 'text' as const, text: message }],
-		structuredContent: machineFailure(message) as unknown as Record<string, unknown>,
+		structuredContent: machineFailure(error) as unknown as Record<string, unknown>,
 		isError: true,
 	}
 }

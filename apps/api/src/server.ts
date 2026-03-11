@@ -1,6 +1,6 @@
-import type { CellValue, Operation } from '@ascend/schema'
+import { ascendError, type CellValue, type Operation } from '@ascend/schema'
 import { AscendWorkbook, WorkbookDocument } from '@ascend/sdk'
-import { binaryResponse, jsonFailure, jsonSuccess } from './response.ts'
+import { binaryResponse, jsonFailure, jsonFailureError, jsonSuccess } from './response.ts'
 
 async function parseJson<T>(req: Request): Promise<T | null> {
 	try {
@@ -167,7 +167,22 @@ export function createServer(opts?: { port?: number }) {
 					const ops = opsArr as Operation[]
 					try {
 						const wb = await AscendWorkbook.open(file)
-						return jsonSuccess(wb.preview(ops))
+						const result = wb.preview(ops)
+						if (result.errors.length > 0) {
+							const first = result.errors[0]
+							return jsonFailureError(
+								first
+									? {
+											...first,
+											details: { ...(first.details ?? {}), preview: result },
+										}
+									: ascendError('VALIDATION_ERROR', 'Preview failed', {
+											details: { preview: result },
+										}),
+								400,
+							)
+						}
+						return jsonSuccess(result)
 					} catch (e) {
 						const msg = e instanceof Error ? e.message : String(e)
 						if (msg.includes('ENOENT') || msg.includes('not found'))

@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
-import type { CellValue, Operation } from '@ascend/schema'
-import { jsonOut } from '../output/json.ts'
+import { ascendError, type CellValue, type Operation } from '@ascend/schema'
+import { jsonErr, jsonOut } from '../output/json.ts'
 import { bullet, heading, table } from '../output/pretty.ts'
 import { openWorkbookWithProgress } from '../progress.ts'
 import { buildSetCellOps, parseWriteSelector, resolveSheetName } from './mutation-helpers.ts'
@@ -35,7 +35,21 @@ export async function previewCommand(args: string[], flags: Map<string, string>)
 
 	const result = wb.preview(ops)
 	if (flags.has('json')) {
-		console.log(jsonOut(result))
+		if (result.errors.length > 0) {
+			const first = result.errors[0]
+			console.log(
+				jsonErr(
+					first
+						? {
+								...first,
+								details: { ...(first.details ?? {}), preview: result },
+							}
+						: ascendError('VALIDATION_ERROR', 'Preview failed', { details: { preview: result } }),
+				),
+			)
+		} else {
+			console.log(jsonOut(result))
+		}
 	} else {
 		console.log(heading(`Preview: ${file}`))
 		console.log(bullet('Sheets changed', result.sheetDiffs.length))

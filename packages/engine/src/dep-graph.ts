@@ -36,6 +36,7 @@ export class DependencyGraph {
 		number,
 		Array<{ range: RangeDependency; formulaKey: CellKey }>
 	>()
+	private readonly _rangeDepsSortedBySheet = new Map<number, boolean>()
 	private _cachedDirtyIndex: {
 		set: ReadonlySet<CellKey>
 		size: number
@@ -66,6 +67,7 @@ export class DependencyGraph {
 				this.rangeDependents.set(range.sheetIndex, arr)
 			}
 			arr.push({ range, formulaKey: key })
+			this._rangeDepsSortedBySheet.set(range.sheetIndex, false)
 		}
 	}
 
@@ -83,10 +85,13 @@ export class DependencyGraph {
 			const arr = this.rangeDependents.get(range.sheetIndex)
 			if (!arr) continue
 			const filtered = arr.filter((candidate) => candidate.formulaKey !== key)
-			if (filtered.length === 0) this.rangeDependents.delete(range.sheetIndex)
-			else if (filtered.length !== arr.length) {
+			if (filtered.length === 0) {
+				this.rangeDependents.delete(range.sheetIndex)
+				this._rangeDepsSortedBySheet.delete(range.sheetIndex)
+			} else if (filtered.length !== arr.length) {
 				arr.length = 0
 				arr.push(...filtered)
+				this._rangeDepsSortedBySheet.set(range.sheetIndex, false)
 			}
 		}
 		this.formulas.delete(key)
@@ -110,9 +115,22 @@ export class DependencyGraph {
 		const direct = this.dependents.get(key)
 		const result = new Set(direct ? [...direct] : [])
 		const [sheetIndex, row, col] = parseCellKey(key)
-		for (const entry of this.rangeDependents.get(sheetIndex) ?? []) {
-			if (containsCell(entry.range, row, col)) {
-				result.add(entry.formulaKey)
+		const entries = this.rangeDependents.get(sheetIndex)
+		if (entries && entries.length > 0) {
+			this.ensureSorted(sheetIndex, entries)
+			let lo = 0
+			let hi = entries.length
+			while (lo < hi) {
+				const mid = (lo + hi) >>> 1
+				const midEntry = entries[mid]
+				if (midEntry && midEntry.range.startRow > row) hi = mid
+				else lo = mid + 1
+			}
+			for (let i = 0; i < hi; i++) {
+				const entry = entries[i]
+				if (entry && entry.range.endRow >= row && containsCell(entry.range, row, col)) {
+					result.add(entry.formulaKey)
+				}
 			}
 		}
 		return [...result]
@@ -242,7 +260,17 @@ export class DependencyGraph {
 		this.formulas.clear()
 		this.dependents.clear()
 		this.rangeDependents.clear()
+		this._rangeDepsSortedBySheet.clear()
 		this._cachedDirtyIndex = null
+	}
+
+	private ensureSorted(
+		sheetIndex: number,
+		entries: Array<{ range: RangeDependency; formulaKey: CellKey }>,
+	): void {
+		if (this._rangeDepsSortedBySheet.get(sheetIndex)) return
+		entries.sort((a, b) => a.range.startRow - b.range.startRow)
+		this._rangeDepsSortedBySheet.set(sheetIndex, true)
 	}
 
 	private getCachedDirtyIndex(

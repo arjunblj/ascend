@@ -29,7 +29,7 @@ import {
 } from './plan.ts'
 import type { RelEntry } from './relationships.ts'
 import { buildRelsXml } from './relationships.ts'
-import { buildSharedStrings, scanWorkbookWriteFacts } from './shared-strings.ts'
+import { scanWorkbookForWrite } from './shared-strings.ts'
 import { buildSheetXml } from './sheet.ts'
 import { buildPreservedStylesXml, buildStylesXml } from './styles.ts'
 import { buildTableXml } from './table.ts'
@@ -131,7 +131,11 @@ export function planWriteXlsx(
 			preserveSharedStrings && !options.summaryOnly && preservedSharedStringsXml
 				? materializeSharedStringEntries(preservedSharedStringsXml)
 				: []
-		const workbookWriteFacts = options.summaryOnly ? scanWorkbookWriteFacts(workbook) : undefined
+		const scanResult = scanWorkbookForWrite(workbook, {
+			summaryOnly: options.summaryOnly ?? false,
+			existingEntries: preservedSharedStringEntries,
+		})
+		const workbookWriteFacts = scanResult.facts
 		const ssTable = options.summaryOnly
 			? {
 					getIndex(): number | undefined {
@@ -140,10 +144,14 @@ export function planWriteXlsx(
 					toXml(): string {
 						return ''
 					},
-					count: preserveSharedStrings || workbookWriteFacts?.hasStringCells ? 1 : 0,
-					facts: workbookWriteFacts ?? scanWorkbookWriteFacts(workbook),
+					count: preserveSharedStrings || workbookWriteFacts.hasStringCells ? 1 : 0,
+					facts: workbookWriteFacts,
 				}
-			: buildSharedStrings(workbook, preservedSharedStringEntries)
+			: (() => {
+					const table = scanResult.sharedStringTable
+					if (!table) throw new Error('sharedStringTable required when not summaryOnly')
+					return table
+				})()
 		const hasSharedStrings =
 			preserveSharedStrings ||
 			(!options.summaryOnly ? ssTable.count > 0 : !!workbookWriteFacts?.hasStringCells)

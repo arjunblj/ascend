@@ -200,6 +200,7 @@ export function readXlsx(
 	}
 
 	const sheetPathToName = new Map<string, string>()
+	const sheetRelsByPath = new Map<string, Relationship[]>()
 	const formulaFeatures: FormulaFeatureSummary = {
 		sharedFormulaSheets: [],
 		arrayFormulaSheets: [],
@@ -310,6 +311,7 @@ export function readXlsx(
 			if (!sheetXml) continue
 			const sheetRelsXml = readPart(archive, getRelsPath(entry.path))
 			const sheetRelationships = sheetRelsXml ? parseRelationships(sheetRelsXml) : []
+			sheetRelsByPath.set(entry.path, sheetRelationships)
 			const sheetFormulaFeatures: SheetFormulaFeatures = {
 				hasSharedFormula: false,
 				hasArrayFormula: false,
@@ -387,7 +389,15 @@ export function readXlsx(
 	}
 	const capsules = isPartial
 		? []
-		: collectCapsules(archive, consumed, contentTypes, wbRels, sheetPathToName, workbookPath)
+		: collectCapsules(
+				archive,
+				consumed,
+				contentTypes,
+				wbRels,
+				sheetPathToName,
+				workbookPath,
+				sheetRelsByPath,
+			)
 	const report = buildReport(contentTypes, formulaFeatures, workbook, capsules, loadInfo)
 	if (loadInfo.isPartial) {
 		workbook.sourceArchiveBytes = null
@@ -426,6 +436,7 @@ function collectCapsules(
 	wbRels: Relationship[],
 	sheetPathToName: Map<string, string>,
 	workbookPath: string,
+	sheetRelsByPath: Map<string, Relationship[]>,
 ): PreservationCapsule[] {
 	const capsules: PreservationCapsule[] = []
 
@@ -436,9 +447,9 @@ function collectCapsules(
 
 	const sheetRelByTarget = new Map<string, { sheetName: string; rel: Relationship }>()
 	for (const [sheetPath, sheetName] of sheetPathToName) {
-		const sheetRelsXml = readPart(archive, getRelsPath(sheetPath))
-		if (!sheetRelsXml) continue
-		for (const rel of parseRelationships(sheetRelsXml)) {
+		const rels = sheetRelsByPath.get(sheetPath)
+		if (!rels) continue
+		for (const rel of rels) {
 			sheetRelByTarget.set(resolvePath(sheetPath, rel.target), { sheetName, rel })
 		}
 	}

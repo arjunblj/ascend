@@ -18,11 +18,19 @@ export interface WorkbookWriteFacts {
 	readonly dynamicArrayMetadataEntries: readonly DynamicArrayMetadataEntry[]
 }
 
-export function buildSharedStrings(
+export interface ScanWorkbookForWriteResult {
+	readonly sharedStringTable?: SharedStringTable
+	readonly facts: WorkbookWriteFacts
+}
+
+export function scanWorkbookForWrite(
 	workbook: Workbook,
-	existingEntries: readonly CellValue[] = [],
-): SharedStringTable {
-	const entries: CellValue[] = [...existingEntries]
+	options: {
+		readonly summaryOnly?: boolean
+		readonly existingEntries?: readonly CellValue[]
+	} = {},
+): ScanWorkbookForWriteResult {
+	const entries: CellValue[] = [...(options.existingEntries ?? [])]
 	const lookup = new Map<string, number>()
 	for (let index = 0; index < entries.length; index++) {
 		const entry = entries[index]
@@ -40,7 +48,7 @@ export function buildSharedStrings(
 			if (key !== undefined) {
 				hasStringCells = true
 				count += 1
-				if (!lookup.has(key)) {
+				if (!options.summaryOnly && !lookup.has(key)) {
 					lookup.set(key, entries.length)
 					entries.push(cell.value)
 				}
@@ -57,53 +65,48 @@ export function buildSharedStrings(
 			}
 		}
 	}
-	const facts = { hasStringCells, dynamicArrayMetadataEntries }
+	const facts: WorkbookWriteFacts = { hasStringCells, dynamicArrayMetadataEntries }
+
+	if (options.summaryOnly) {
+		return { facts }
+	}
 
 	return {
-		getIndex(value: CellValue): number | undefined {
-			const key = makeKey(value)
-			return key !== undefined ? lookup.get(key) : undefined
+		sharedStringTable: {
+			getIndex(value: CellValue): number | undefined {
+				const k = makeKey(value)
+				return k !== undefined ? lookup.get(k) : undefined
+			},
+			toXml(): string {
+				const parts: string[] = [
+					XML_HEADER,
+					`<sst xmlns="${NS}" count="${count}" uniqueCount="${entries.length}">`,
+				]
+				for (const entry of entries) {
+					parts.push(entryXml(entry))
+				}
+				parts.push('</sst>')
+				return parts.join('')
+			},
+			count,
+			facts,
 		},
-		toXml(): string {
-			const parts: string[] = [
-				XML_HEADER,
-				`<sst xmlns="${NS}" count="${count}" uniqueCount="${entries.length}">`,
-			]
-			for (const entry of entries) {
-				parts.push(entryXml(entry))
-			}
-			parts.push('</sst>')
-			return parts.join('')
-		},
-		count,
 		facts,
 	}
 }
 
+export function buildSharedStrings(
+	workbook: Workbook,
+	existingEntries: readonly CellValue[] = [],
+): SharedStringTable {
+	const result = scanWorkbookForWrite(workbook, { existingEntries })
+	const table = result.sharedStringTable
+	if (!table) throw new Error('buildSharedStrings requires summaryOnly: false')
+	return table
+}
+
 export function scanWorkbookWriteFacts(workbook: Workbook): WorkbookWriteFacts {
-	let hasStringCells = false
-	let dynamicArrayMetadataEntries: readonly DynamicArrayMetadataEntry[] = []
-	for (const sheet of workbook.sheets) {
-		for (const [, , cell] of sheet.cells.iterate()) {
-			if (!hasStringCells && (cell.value.kind === 'string' || cell.value.kind === 'richText')) {
-				hasStringCells = true
-			}
-			const binding = cell.formulaInfo
-			if (dynamicArrayMetadataEntries.length === 0 && binding) {
-				if (binding.kind === 'dynamicArray') {
-					dynamicArrayMetadataEntries = [
-						{ metadataIndex: 1, collapsed: binding.collapsed ?? false },
-					]
-				} else if (binding.kind === 'spill' && binding.isAnchor) {
-					dynamicArrayMetadataEntries = [{ metadataIndex: 1, collapsed: false }]
-				}
-			}
-			if (hasStringCells && dynamicArrayMetadataEntries.length > 0) {
-				return { hasStringCells, dynamicArrayMetadataEntries }
-			}
-		}
-	}
-	return { hasStringCells, dynamicArrayMetadataEntries }
+	return scanWorkbookForWrite(workbook, { summaryOnly: true }).facts
 }
 
 function makeKey(value: CellValue): string | undefined {

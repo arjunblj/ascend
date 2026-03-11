@@ -88,7 +88,16 @@ export class SparseGrid {
 
 	delete(row: number, col: number): boolean {
 		const deleted = this.data.delete(packKey(row, col))
-		if (deleted) this._boundsDirty = true
+		if (deleted) {
+			if (
+				row === this._minRow ||
+				row === this._maxRow ||
+				col === this._minCol ||
+				col === this._maxCol
+			) {
+				this._boundsDirty = true
+			}
+		}
 		return deleted
 	}
 
@@ -113,6 +122,60 @@ export class SparseGrid {
 			}
 			const cell = materializeCell(stored)
 			if (cell) yield [row, col, cell] as const
+		}
+	}
+
+	forEachValueInRange(
+		startRow: number,
+		startCol: number,
+		endRow: number,
+		endCol: number,
+		fn: (value: CellValue, row: number, col: number) => void,
+	): void {
+		for (const [key, stored] of this.data) {
+			const [row, col] = unpackKey(key)
+			if (row < startRow || row > endRow || col < startCol || col > endCol) continue
+			const value = readStoredValue(stored)
+			if (value) fn(value, row, col)
+		}
+	}
+
+	forEachRow(fn: (row: number, cells: ReadonlyMap<number, CellValue>) => void): void {
+		if (this._isKeyOrderSorted) {
+			let currentRow = Number.NaN
+			const rowCells = new Map<number, CellValue>()
+			for (const [key, stored] of this.data) {
+				const [row, col] = unpackKey(key)
+				const value = readStoredValue(stored)
+				if (!value) continue
+				if (!Number.isNaN(currentRow) && row !== currentRow) {
+					fn(currentRow, rowCells)
+					rowCells.clear()
+				}
+				currentRow = row
+				rowCells.set(col, value)
+			}
+			if (!Number.isNaN(currentRow)) {
+				fn(currentRow, rowCells)
+			}
+			return
+		}
+		const rows = new Map<number, Map<number, CellValue>>()
+		for (const [key, stored] of this.data) {
+			const [row, col] = unpackKey(key)
+			const value = readStoredValue(stored)
+			if (!value) continue
+			let rowCells = rows.get(row)
+			if (!rowCells) {
+				rowCells = new Map()
+				rows.set(row, rowCells)
+			}
+			rowCells.set(col, value)
+		}
+		const sortedRows = [...rows.entries()].sort((a, b) => a[0] - b[0])
+		for (const [row, rowCells] of sortedRows) {
+			const sortedCells = new Map([...rowCells.entries()].sort((a, b) => a[0] - b[0]))
+			fn(row, sortedCells)
 		}
 	}
 

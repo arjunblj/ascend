@@ -98,6 +98,37 @@ describe('SparseGrid', () => {
 		expect(coords).not.toContainEqual([5, 5])
 	})
 
+	test('forEachValueInRange calls fn with value, row, col for cells in range', () => {
+		const grid = new SparseGrid()
+		grid.set(0, 0, makeCell(numberValue(1)))
+		grid.set(0, 1, makeCell(numberValue(2)))
+		grid.set(1, 0, makeCell(numberValue(3)))
+		grid.set(5, 5, makeCell(numberValue(99)))
+
+		const collected: Array<[CellValue, number, number]> = []
+		grid.forEachValueInRange(0, 0, 1, 1, (value, row, col) => collected.push([value, row, col]))
+		expect(collected).toHaveLength(3)
+		expect(collected.map(([, r, c]) => [r, c])).not.toContainEqual([5, 5])
+	})
+
+	test('forEachRow calls fn with row and Map of col->value', () => {
+		const grid = new SparseGrid()
+		grid.set(2, 3, makeCell(stringValue('hello')))
+		grid.set(0, 1, makeCell(numberValue(2)))
+		grid.set(0, 0, makeCell(numberValue(1)))
+
+		const rows: Array<[number, Map<number, unknown>]> = []
+		grid.forEachRow((row, cells) => {
+			rows.push([row, new Map(cells)])
+		})
+		expect(rows).toHaveLength(2)
+		expect(rows[0][0]).toBe(0)
+		expect(rows[0][1].get(0)).toEqual(numberValue(1))
+		expect(rows[0][1].get(1)).toEqual(numberValue(2))
+		expect(rows[1][0]).toBe(2)
+		expect(rows[1][1].get(3)).toEqual(stringValue('hello'))
+	})
+
 	test('iterateRows yields sorted row-major cells', () => {
 		const grid = new SparseGrid()
 		grid.set(2, 3, makeCell(stringValue('hello')))

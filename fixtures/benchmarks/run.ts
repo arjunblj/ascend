@@ -193,6 +193,35 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'read-write-shared-formulas',
+		category: 'read',
+		build() {
+			const workbook = createWorkbook()
+			workbook.addSheet('Sheet1')
+			const sheet = workbook.sheets[0]
+			if (!sheet) throw new Error('Benchmark workbook missing first sheet')
+			for (let r = 0; r < 10_000; r++) {
+				sheet.cells.set(r, 0, {
+					value: numberValue(r + 1),
+					formula: null,
+					styleId: SID,
+				})
+				sheet.cells.set(r, 1, {
+					value: EMPTY,
+					formula: `A${r + 1}*2`,
+					styleId: SID,
+				})
+			}
+			const bytes = mustWrite(workbook)
+			return { bytes, rows: 10_000, cols: 2, cells: 20_000 }
+		},
+		run(input) {
+			const result = readXlsx(requireBytes(input))
+			if (!result.ok) throw new Error(result.error.message)
+			mustWrite(result.value.workbook)
+		},
+	},
+	{
 		name: 'read-large-200k',
 		category: 'read',
 		build() {
@@ -506,6 +535,55 @@ const scenarios: readonly Scenario[] = [
 				}
 			}
 			return { workbook, rows: 1000, cols: 1, cells: 5000 }
+		},
+		run(input) {
+			recalculate(requireWorkbook(input), defaultCalcContext())
+		},
+	},
+	{
+		name: 'recalc-dynamic-array',
+		category: 'calc',
+		build() {
+			const workbook = createWorkbook()
+			workbook.addSheet('Sheet1')
+			const sheet = workbook.sheets[0]
+			if (!sheet) throw new Error('Benchmark workbook missing first sheet')
+			for (let r = 0; r < 1000; r++) {
+				setNumberCell(workbook, r, 0, r + 1)
+			}
+			setFormulaCell(workbook, 0, 1, 'SEQUENCE(1000)')
+			setFormulaCell(workbook, 0, 2, 'SORT(A1:A1000)')
+			return { workbook, rows: 1000, cols: 3, cells: 3000 }
+		},
+		run(input) {
+			recalculate(requireWorkbook(input), defaultCalcContext())
+		},
+	},
+	{
+		name: 'recalc-sumifs-large',
+		category: 'calc',
+		build() {
+			const workbook = createWorkbook()
+			workbook.addSheet('Sheet1')
+			const sheet = workbook.sheets[0]
+			if (!sheet) throw new Error('Benchmark workbook missing first sheet')
+			const categories = ['cat1', 'cat2', 'cat3', 'cat4', 'cat5']
+			for (let r = 0; r < 10_000; r++) {
+				sheet.cells.set(r, 0, {
+					value: { kind: 'string', value: categories[r % 5] ?? 'cat1' },
+					formula: null,
+					styleId: SID,
+				})
+				sheet.cells.set(r, 1, {
+					value: numberValue(Math.random() * 1000),
+					formula: null,
+					styleId: SID,
+				})
+			}
+			for (let i = 0; i < 5; i++) {
+				setFormulaCell(workbook, i, 3, `SUMIFS(B1:B10000,A1:A10000,"${categories[i]}")`)
+			}
+			return { workbook, rows: 10_000, cols: 4, cells: 20_005 }
 		},
 		run(input) {
 			recalculate(requireWorkbook(input), defaultCalcContext())

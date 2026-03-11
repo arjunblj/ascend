@@ -447,6 +447,33 @@ registerFunction({
 		return ref ? numberValue(ref.col + 1) : errorValue('#VALUE!')
 	},
 })
+function formulaText(_args: EvalArg[]): CellValue {
+	return errorValue('#N/A')
+}
+
+function areasFn(args: EvalArg[]): CellValue {
+	const arg = args[0]
+	if (!arg) return errorValue('#VALUE!')
+	if (arg.areas?.length) return numberValue(arg.areas.length)
+	if (arg.ref) return numberValue(1)
+	if (arg.kind === 'range') return numberValue(1)
+	return errorValue('#VALUE!')
+}
+
+registerFunction({
+	name: 'FORMULATEXT',
+	minArgs: 1,
+	maxArgs: 1,
+	volatile: false,
+	evaluate: formulaText,
+})
+registerFunction({
+	name: 'AREAS',
+	minArgs: 1,
+	maxArgs: 1,
+	evaluate: areasFn,
+})
+
 registerFunction({
 	name: 'INDIRECT',
 	minArgs: 1,

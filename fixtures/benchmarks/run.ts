@@ -231,6 +231,30 @@ function buildSdkEditCycleWorkbook(rows: number): Workbook {
 	return workbook
 }
 
+function buildDefinedNameHeavyWorkbook(nameCount: number, formulaCount: number): Workbook {
+	const workbook = createWorkbook()
+	const sheet = workbook.addSheet('Sheet1')
+	for (let i = 0; i < nameCount; i++) {
+		const row = i
+		sheet.cells.set(row, 0, {
+			value: numberValue(i + 1),
+			formula: null,
+			styleId: SID,
+		})
+		workbook.definedNames.set(`Name${i + 1}`, `Sheet1!A${row + 1}`)
+	}
+	for (let i = 0; i < formulaCount; i++) {
+		const left = (i % nameCount) + 1
+		const right = ((i + 1) % nameCount) + 1
+		sheet.cells.set(i, 2, {
+			value: EMPTY,
+			formula: `Name${left}+Name${right}`,
+			styleId: SID,
+		})
+	}
+	return workbook
+}
+
 const scenarios: readonly Scenario[] = [
 	{
 		name: 'write-dense-40k',
@@ -651,6 +675,17 @@ const scenarios: readonly Scenario[] = [
 					lastValue: lastValue?.kind === 'number' ? lastValue.value : null,
 				},
 			}
+		},
+	},
+	{
+		name: 'recalc-defined-names-heavy',
+		category: 'calc',
+		build() {
+			const workbook = buildDefinedNameHeavyWorkbook(2000, 2000)
+			return { workbook, rows: 2000, cols: 3, cells: 6000 }
+		},
+		run(input) {
+			recalculate(requireWorkbook(input), defaultCalcContext())
 		},
 	},
 	{

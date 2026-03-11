@@ -8,6 +8,9 @@
 		"@ascend/schema": "workspace:*",
 		"@ascend/core": "workspace:*"
 	},
+	"devDependencies": {
+		"@ascend/engine": "workspace:*"
+	},
 	"scripts": {
 		"test": "bun test"
 	}

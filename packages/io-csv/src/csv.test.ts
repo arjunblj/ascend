@@ -112,6 +112,35 @@ describe('readCsv', () => {
 		})
 		expect(cellValue(result, 1, 1)).toEqual({ kind: 'number', value: 42 })
 	})
+
+	test('handles 10K rows correctly (scale test)', () => {
+		const header = 'id,name,value\n'
+		const rows: string[] = []
+		for (let i = 0; i < 10_000; i++) {
+			rows.push(`${i},row${i},${i * 1.5}`)
+		}
+		const csv = header + rows.join('\n')
+
+		const result = readCsv(csv)
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(cellValue(result, 0, 0)).toEqual({ kind: 'string', value: 'id' })
+		expect(cellValue(result, 0, 1)).toEqual({ kind: 'string', value: 'name' })
+		expect(cellValue(result, 0, 2)).toEqual({ kind: 'string', value: 'value' })
+
+		expect(cellValue(result, 1, 0)).toEqual({ kind: 'number', value: 0 })
+		expect(cellValue(result, 1, 1)).toEqual({ kind: 'string', value: 'row0' })
+		expect(cellValue(result, 1, 2)).toEqual({ kind: 'number', value: 0 })
+
+		expect(cellValue(result, 5000, 0)).toEqual({ kind: 'number', value: 4999 })
+		expect(cellValue(result, 5000, 1)).toEqual({ kind: 'string', value: 'row4999' })
+		expect(cellValue(result, 5000, 2)).toEqual({ kind: 'number', value: 7498.5 })
+
+		expect(cellValue(result, 10_000, 0)).toEqual({ kind: 'number', value: 9999 })
+		expect(cellValue(result, 10_000, 1)).toEqual({ kind: 'string', value: 'row9999' })
+		expect(cellValue(result, 10_000, 2)).toEqual({ kind: 'number', value: 14998.5 })
+	})
 })
 
 describe('writeCsv', () => {

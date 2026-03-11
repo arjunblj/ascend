@@ -18,43 +18,45 @@ const BOM = '\uFEFF'
 export function readCsv(content: string, dialect?: Partial<CsvDialect>): Result<Workbook> {
 	const d = resolveDialect(dialect)
 	const input = content.startsWith(BOM) ? content.slice(1) : content
-	let rows: string[][]
-
-	try {
-		rows = parseFields(input, d)
-	} catch (e) {
-		return err(ascendError('IMPORT_ERROR', e instanceof Error ? e.message : 'CSV parse failed'))
-	}
 
 	const workbook = createWorkbook()
 	const sheet = workbook.addSheet('Sheet1')
 
-	for (let r = 0; r < rows.length; r++) {
-		const row = rows[r]
-		if (!row) continue
-		for (let c = 0; c < row.length; c++) {
-			const raw = row[c] ?? ''
-			const value = detectType(raw)
-			if (value.kind !== 'empty') {
-				sheet.cells.setResolved(r, c, value, null, 0 as never)
+	try {
+		parseFields(input, d, (row, r) => {
+			for (let c = 0; c < row.length; c++) {
+				const raw = row[c] ?? ''
+				const value = detectType(raw)
+				if (value.kind !== 'empty') {
+					sheet.cells.setResolved(r, c, value, null, 0 as never)
+				}
 			}
-		}
+		})
+	} catch (e) {
+		return err(ascendError('IMPORT_ERROR', e instanceof Error ? e.message : 'CSV parse failed'))
 	}
 
 	return ok(workbook)
 }
 
-function parseFields(input: string, d: CsvDialect): string[][] {
-	const rows: string[][] = []
+type RowCallback = (row: string[], rowIndex: number) => void
+
+function parseFields(input: string, d: CsvDialect, onRow: RowCallback): void {
 	let row: string[] = []
+	let rowIndex = 0
 	let i = 0
 	const len = input.length
 	const { delimiter, quote, escape: escapeChar } = d
 
+	const emitRow = () => {
+		onRow(row, rowIndex++)
+		row = []
+	}
+
 	while (i <= len) {
 		if (i === len) {
-			if (row.length > 0 || rows.length > 0) {
-				rows.push(row)
+			if (row.length > 0 || rowIndex > 0) {
+				emitRow()
 			}
 			break
 		}
@@ -83,8 +85,7 @@ function parseFields(input: string, d: CsvDialect): string[][] {
 				} else {
 					i++
 				}
-				rows.push(row)
-				row = []
+				emitRow()
 			}
 		} else {
 			let field = ''
@@ -101,13 +102,10 @@ function parseFields(input: string, d: CsvDialect): string[][] {
 				} else if (i < len) {
 					i++
 				}
-				rows.push(row)
-				row = []
+				emitRow()
 			}
 		}
 	}
-
-	return rows
 }
 
 function detectType(raw: string): CellValue {

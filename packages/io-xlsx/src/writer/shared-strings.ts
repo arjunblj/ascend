@@ -1,6 +1,7 @@
 import type { Workbook } from '@ascend/core'
 import type { CellValue, RichTextRun } from '@ascend/schema'
 import { escapeXml } from '../xml.ts'
+import type { DynamicArrayMetadataEntry } from './metadata.ts'
 
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
@@ -9,6 +10,12 @@ export interface SharedStringTable {
 	getIndex(value: CellValue): number | undefined
 	toXml(): string
 	readonly count: number
+	readonly facts: WorkbookWriteFacts
+}
+
+export interface WorkbookWriteFacts {
+	readonly hasStringCells: boolean
+	readonly dynamicArrayMetadataEntries: readonly DynamicArrayMetadataEntry[]
 }
 
 export function buildSharedStrings(
@@ -24,19 +31,33 @@ export function buildSharedStrings(
 		if (key !== undefined && !lookup.has(key)) lookup.set(key, index)
 	}
 	let count = 0
+	let hasStringCells = false
+	let dynamicArrayMetadataEntries: readonly DynamicArrayMetadataEntry[] = []
 
 	for (const sheet of workbook.sheets) {
 		for (const [, , cell] of sheet.cells.iterate()) {
 			const key = makeKey(cell.value)
 			if (key !== undefined) {
+				hasStringCells = true
 				count += 1
 				if (!lookup.has(key)) {
 					lookup.set(key, entries.length)
 					entries.push(cell.value)
 				}
 			}
+			const binding = cell.formulaInfo
+			if (dynamicArrayMetadataEntries.length === 0 && binding) {
+				if (binding.kind === 'dynamicArray') {
+					dynamicArrayMetadataEntries = [
+						{ metadataIndex: 1, collapsed: binding.collapsed ?? false },
+					]
+				} else if (binding.kind === 'spill' && binding.isAnchor) {
+					dynamicArrayMetadataEntries = [{ metadataIndex: 1, collapsed: false }]
+				}
+			}
 		}
 	}
+	const facts = { hasStringCells, dynamicArrayMetadataEntries }
 
 	return {
 		getIndex(value: CellValue): number | undefined {
@@ -55,7 +76,34 @@ export function buildSharedStrings(
 			return parts.join('')
 		},
 		count,
+		facts,
 	}
+}
+
+export function scanWorkbookWriteFacts(workbook: Workbook): WorkbookWriteFacts {
+	let hasStringCells = false
+	let dynamicArrayMetadataEntries: readonly DynamicArrayMetadataEntry[] = []
+	for (const sheet of workbook.sheets) {
+		for (const [, , cell] of sheet.cells.iterate()) {
+			if (!hasStringCells && (cell.value.kind === 'string' || cell.value.kind === 'richText')) {
+				hasStringCells = true
+			}
+			const binding = cell.formulaInfo
+			if (dynamicArrayMetadataEntries.length === 0 && binding) {
+				if (binding.kind === 'dynamicArray') {
+					dynamicArrayMetadataEntries = [
+						{ metadataIndex: 1, collapsed: binding.collapsed ?? false },
+					]
+				} else if (binding.kind === 'spill' && binding.isAnchor) {
+					dynamicArrayMetadataEntries = [{ metadataIndex: 1, collapsed: false }]
+				}
+			}
+			if (hasStringCells && dynamicArrayMetadataEntries.length > 0) {
+				return { hasStringCells, dynamicArrayMetadataEntries }
+			}
+		}
+	}
+	return { hasStringCells, dynamicArrayMetadataEntries }
 }
 
 function makeKey(value: CellValue): string | undefined {

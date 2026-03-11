@@ -20,7 +20,7 @@ import { extractZip, type ZipArchive } from '../reader/zip.ts'
 import { buildCommentsVml, buildCommentsXml } from './comments.ts'
 import { buildContentTypesXml } from './content-types.ts'
 import { buildAppPropsXml, buildCorePropsXml } from './doc-props.ts'
-import { buildDynamicArrayMetadataXml, type DynamicArrayMetadataEntry } from './metadata.ts'
+import { buildDynamicArrayMetadataXml } from './metadata.ts'
 import {
 	summarizeWritePlan,
 	WritePlanBuilder,
@@ -29,7 +29,7 @@ import {
 } from './plan.ts'
 import type { RelEntry } from './relationships.ts'
 import { buildRelsXml } from './relationships.ts'
-import { buildSharedStrings } from './shared-strings.ts'
+import { buildSharedStrings, scanWorkbookWriteFacts } from './shared-strings.ts'
 import { buildSheetXml } from './sheet.ts'
 import { buildPreservedStylesXml, buildStylesXml } from './styles.ts'
 import { buildTableXml } from './table.ts'
@@ -131,6 +131,7 @@ export function planWriteXlsx(
 			preserveSharedStrings && !options.summaryOnly && preservedSharedStringsXml
 				? materializeSharedStringEntries(preservedSharedStringsXml)
 				: []
+		const workbookWriteFacts = options.summaryOnly ? scanWorkbookWriteFacts(workbook) : undefined
 		const ssTable = options.summaryOnly
 			? {
 					getIndex(): number | undefined {
@@ -139,12 +140,13 @@ export function planWriteXlsx(
 					toXml(): string {
 						return ''
 					},
-					count: preserveSharedStrings || workbookHasStringCells(workbook) ? 1 : 0,
+					count: preserveSharedStrings || workbookWriteFacts?.hasStringCells ? 1 : 0,
+					facts: workbookWriteFacts ?? scanWorkbookWriteFacts(workbook),
 				}
 			: buildSharedStrings(workbook, preservedSharedStringEntries)
 		const hasSharedStrings =
 			preserveSharedStrings ||
-			(!options.summaryOnly ? ssTable.count > 0 : workbookHasStringCells(workbook))
+			(!options.summaryOnly ? ssTable.count > 0 : !!workbookWriteFacts?.hasStringCells)
 
 		const preservedStyles = workbook.preservedStyles ?? undefined
 		const preserveStyles = preservedStyles !== undefined && !options.stylesDirty
@@ -216,7 +218,7 @@ export function planWriteXlsx(
 			}
 		}
 
-		const dynamicArrayMetadata = collectDynamicArrayMetadata(workbook)
+		const dynamicArrayMetadata = { entries: ssTable.facts.dynamicArrayMetadataEntries }
 		const shouldWriteDynamicArrayMetadata =
 			dynamicArrayMetadata.entries.length > 0 || workbook.preservedMetadata !== null
 		const dynamicArrayMetadataPath = workbook.preservedMetadata?.path ?? 'xl/metadata.xml'
@@ -943,43 +945,12 @@ function hasCompletePreservedStyleMap(
 	return true
 }
 
-function collectDynamicArrayMetadata(workbook: Workbook): {
-	readonly entries: readonly DynamicArrayMetadataEntry[]
-} {
-	for (const sheet of workbook.sheets) {
-		for (const [, , cell] of sheet.cells.iterate()) {
-			const binding = cell.formulaInfo
-			if (!binding) continue
-			if (binding.kind === 'dynamicArray') {
-				return {
-					entries: [{ metadataIndex: 1, collapsed: binding.collapsed ?? false }],
-				}
-			}
-			if (binding.kind === 'spill' && binding.isAnchor) {
-				return {
-					entries: [{ metadataIndex: 1, collapsed: false }],
-				}
-			}
-		}
-	}
-	return { entries: [] }
-}
-
 function isCalcChainCapsule(capsule: PreservationCapsule): boolean {
 	return (
 		capsule.relType === REL_CALC_CHAIN ||
 		capsule.contentType.includes('calcChain+xml') ||
 		capsule.partPath.endsWith('/calcChain.xml')
 	)
-}
-
-function workbookHasStringCells(workbook: Workbook): boolean {
-	for (const sheet of workbook.sheets) {
-		for (const [, , cell] of sheet.cells.iterate()) {
-			if (cell.value.kind === 'string' || cell.value.kind === 'richText') return true
-		}
-	}
-	return false
 }
 
 function computeRelativePath(fromDir: string, toPath: string): string {

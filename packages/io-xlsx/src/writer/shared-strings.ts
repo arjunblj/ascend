@@ -108,8 +108,16 @@ export function scanWorkbookWriteFacts(workbook: Workbook): WorkbookWriteFacts {
 
 function makeKey(value: CellValue): string | undefined {
 	if (value.kind === 'string') return `s:${value.value}`
-	if (value.kind === 'richText') return `r:${JSON.stringify(value.runs)}`
+	if (value.kind === 'richText') return richTextKey(value.runs)
 	return undefined
+}
+
+function richTextKey(runs: readonly import('@ascend/schema').RichTextRun[]): string {
+	let key = 'r:'
+	for (const run of runs) {
+		key += `${run.text}\x01${run.bold ? 1 : 0}\x01${run.italic ? 1 : 0}\x01${run.underline ? 1 : 0}\x01${run.strikethrough ? 1 : 0}\x01${run.fontSize ?? ''}\x01${run.color ?? ''}\x01${run.fontName ?? ''}\x02`
+	}
+	return key
 }
 
 function entryXml(value: CellValue): string {

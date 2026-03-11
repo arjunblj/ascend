@@ -4,7 +4,7 @@ import type { AscendError, CellValue } from '@ascend/schema'
 import { EMPTY, errorValue, topLeftScalar } from '@ascend/schema'
 import { analyzeWorkbook } from './analysis.ts'
 import type { CalcContext } from './calc-context.ts'
-import { type DependencyGraph, parseCellKey } from './dep-graph.ts'
+import { type CellKey, cellKey, type DependencyGraph, parseCellKey } from './dep-graph.ts'
 import { type EvalContext, evaluate } from './evaluator.ts'
 
 export interface RecalcResult {
@@ -190,7 +190,7 @@ export function recalculate(
 	opts?: { dirtyOnly?: boolean; range?: RangeRef; dirtyRefs?: readonly string[] },
 ): RecalcResult {
 	const start = performance.now()
-	const asts = new Map<string, FormulaNode>()
+	const asts = new Map<CellKey, FormulaNode>()
 	const changed: string[] = []
 	const errors: Array<{ ref: string; error: AscendError }> = []
 
@@ -212,7 +212,7 @@ export function recalculate(
 		asts.set(analyzed.key, analyzed.ast)
 	}
 
-	let evalOrder: string[]
+	let evalOrder: CellKey[]
 
 	if (opts?.dirtyOnly || (opts?.dirtyRefs?.length ?? 0) > 0) {
 		const dirtySeeds = [...graph.getVolatiles(), ...resolveDirtyKeys(workbook, opts?.dirtyRefs)]
@@ -225,7 +225,7 @@ export function recalculate(
 	}
 
 	const cycles = graph.detectCycles()
-	const cycleKeys = new Set<string>()
+	const cycleKeys = new Set<CellKey>()
 	for (const scc of cycles) {
 		for (const key of scc) cycleKeys.add(key)
 	}
@@ -313,9 +313,9 @@ export function recalculate(
 	}
 }
 
-function resolveDirtyKeys(workbook: Workbook, refs: readonly string[] | undefined): string[] {
+function resolveDirtyKeys(workbook: Workbook, refs: readonly string[] | undefined): CellKey[] {
 	if (!refs || refs.length === 0) return []
-	const keys: string[] = []
+	const keys: CellKey[] = []
 	for (const ref of refs) {
 		const bang = ref.indexOf('!')
 		const sheetName =
@@ -327,7 +327,7 @@ function resolveDirtyKeys(workbook: Workbook, refs: readonly string[] | undefine
 		const range = parseRange(localRef)
 		for (let row = range.start.row; row <= range.end.row; row++) {
 			for (let col = range.start.col; col <= range.end.col; col++) {
-				keys.push(`${sheetIndex}:${row}:${col}`)
+				keys.push(cellKey(sheetIndex, row, col))
 			}
 		}
 	}
@@ -338,9 +338,9 @@ function evalIterative(
 	workbook: Workbook,
 	ctx: CalcContext,
 	_graph: DependencyGraph,
-	asts: Map<string, FormulaNode>,
-	evalOrder: string[],
-	cycleKeys: Set<string>,
+	asts: Map<CellKey, FormulaNode>,
+	evalOrder: CellKey[],
+	cycleKeys: Set<CellKey>,
 	changed: string[],
 	_errors: Array<{ ref: string; error: AscendError }>,
 ): void {

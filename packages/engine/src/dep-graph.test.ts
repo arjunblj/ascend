@@ -1,15 +1,15 @@
 import { describe, expect, test } from 'bun:test'
-import { cellKey, DependencyGraph } from './dep-graph.ts'
+import { cellKey, DependencyGraph, parseCellKey } from './dep-graph.ts'
 
 describe('DependencyGraph', () => {
 	test('empty graph returns no dependents', () => {
 		const g = new DependencyGraph()
-		expect(g.getDependents('0:0:0')).toEqual([])
+		expect(g.getDependents(cellKey(0, 0, 0))).toEqual([])
 	})
 
 	test('empty graph returns no precedents', () => {
 		const g = new DependencyGraph()
-		expect(g.getPrecedents('0:0:0')).toEqual([])
+		expect(g.getPrecedents(cellKey(0, 0, 0))).toEqual([])
 	})
 
 	test('addFormula tracks precedents', () => {
@@ -42,7 +42,7 @@ describe('DependencyGraph', () => {
 			},
 		])
 		expect(g.getDependents(cellKey(0, 1, 0))).toEqual([formula])
-		expect(g.getPrecedents(formula)).toEqual(['0:0:0', '0:1:0', '0:2:0'])
+		expect(g.getPrecedents(formula)).toEqual([cellKey(0, 0, 0), cellKey(0, 1, 0), cellKey(0, 2, 0)])
 	})
 
 	test('dirty propagation includes range-backed dependents', () => {
@@ -75,7 +75,7 @@ describe('DependencyGraph', () => {
 
 	test('removing non-existent formula is a no-op', () => {
 		const g = new DependencyGraph()
-		g.removeFormula('0:99:99')
+		g.removeFormula(cellKey(0, 99, 99))
 		expect(g.getAllFormulaCells()).toEqual([])
 	})
 
@@ -200,9 +200,10 @@ describe('DependencyGraph', () => {
 		expect(dirty.has(b)).toBe(true)
 	})
 
-	test('cellKey format', () => {
-		expect(cellKey(0, 5, 2)).toBe('0:5:2')
-		expect(cellKey(1, 0, 0)).toBe('1:0:0')
+	test('cellKey packs and unpacks correctly', () => {
+		expect(parseCellKey(cellKey(0, 5, 2))).toEqual([0, 5, 2])
+		expect(parseCellKey(cellKey(1, 0, 0))).toEqual([1, 0, 0])
+		expect(parseCellKey(cellKey(3, 1048575, 16383))).toEqual([3, 1048575, 16383])
 	})
 
 	test('hasFormula returns correct state', () => {

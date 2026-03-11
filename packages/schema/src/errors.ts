@@ -39,6 +39,15 @@ export function err<E>(error: E): Result<never, E> {
 	return { ok: false, error }
 }
 
+export class AscendException extends Error {
+	readonly ascendError: AscendError
+	constructor(error: AscendError) {
+		super(error.message)
+		this.name = 'AscendException'
+		this.ascendError = error
+	}
+}
+
 export function ascendError(
 	code: ErrorCode,
 	message: string,

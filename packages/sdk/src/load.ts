@@ -2,7 +2,12 @@ import { readFile } from 'node:fs/promises'
 import type { Workbook } from '@ascend/core'
 import { readCsv } from '@ascend/io-csv'
 import { type PreservationCapsule, type ReadXlsxLoadInfo, readXlsx } from '@ascend/io-xlsx'
-import { type CompatibilityReport, type CsvDialect, emptyReport } from '@ascend/schema'
+import {
+	AscendException,
+	type CompatibilityReport,
+	type CsvDialect,
+	emptyReport,
+} from '@ascend/schema'
 import type { WorkbookLoadInfo } from './types.ts'
 
 const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04]
@@ -36,7 +41,7 @@ export async function openWorkbookSource(
 		const text = new TextDecoder().decode(bytes)
 		const dialect: Partial<CsvDialect> | undefined = ext === 'tsv' ? { delimiter: '\t' } : undefined
 		const result = readCsv(text, dialect)
-		if (!result.ok) throw new Error(result.error.message)
+		if (!result.ok) throw new AscendException(result.error)
 		return {
 			workbook: result.value,
 			capsules: [],
@@ -56,7 +61,7 @@ export async function openWorkbookSource(
 
 	if (ext === 'xlsx' || ext === 'xlsm' || isZip(bytes)) {
 		const result = readXlsx(bytes, options)
-		if (!result.ok) throw new Error(result.error.message)
+		if (!result.ok) throw new AscendException(result.error)
 		const loadInfo = buildWorkbookLoadInfo(result.value.loadInfo)
 		if (loadInfo.isPartial) {
 			result.value.workbook.sourceArchiveBytes = null
@@ -72,7 +77,7 @@ export async function openWorkbookSource(
 
 	const text = new TextDecoder().decode(bytes)
 	const result = readCsv(text)
-	if (!result.ok) throw new Error(result.error.message)
+	if (!result.ok) throw new AscendException(result.error)
 	return {
 		workbook: result.value,
 		capsules: [],

@@ -25,6 +25,7 @@ import {
 	type ZipArchive,
 } from '@ascend/io-xlsx'
 import {
+	AscendException,
 	ascendError,
 	type CompatibilityReport,
 	type CsvDialect,
@@ -114,7 +115,7 @@ export class AscendWorkbook extends WorkbookReadView {
 
 	static fromCsv(content: string, dialect?: Partial<CsvDialect>): AscendWorkbook {
 		const result = readCsv(content, dialect)
-		if (!result.ok) throw new Error(result.error.message)
+		if (!result.ok) throw new AscendException(result.error)
 		return new AscendWorkbook(
 			result.value,
 			[],
@@ -356,7 +357,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		if (ext === 'csv' || ext === 'tsv') {
 			const result =
 				ext === 'tsv' ? writeCsv(this.wb, { dialect: { delimiter: '\t' } }) : writeCsv(this.wb)
-			if (!result.ok) throw new Error(result.error.message)
+			if (!result.ok) throw new AscendException(result.error)
 			await writeFile(path, result.value, 'utf-8')
 			return
 		}
@@ -378,7 +379,7 @@ export class AscendWorkbook extends WorkbookReadView {
 			...(sourceArchive ? { sourceArchive } : {}),
 		}
 		const result = writeXlsx(this.wb, this.caps.length > 0 ? this.caps : undefined, writeOptions)
-		if (!result.ok) throw new Error(result.error.message)
+		if (!result.ok) throw new AscendException(result.error)
 		this.captureSerializedState(result.value)
 		return result.value
 	}
@@ -386,7 +387,7 @@ export class AscendWorkbook extends WorkbookReadView {
 	toCsv(opts?: { sheet?: string; range?: string; dialect?: Partial<CsvDialect> }): string {
 		this.assertWritable()
 		const result = writeCsv(this.wb, opts)
-		if (!result.ok) throw new Error(result.error.message)
+		if (!result.ok) throw new AscendException(result.error)
 		return result.value
 	}
 
@@ -406,14 +407,17 @@ export class AscendWorkbook extends WorkbookReadView {
 			this.caps.length > 0 ? this.caps : undefined,
 			writeOptions,
 		)
-		if (!result.ok) throw new Error(result.error.message)
+		if (!result.ok) throw new AscendException(result.error)
 		return result.value
 	}
 
 	private assertWritable(): void {
 		if (!this.loadInfo.isPartial) return
-		throw new Error(
-			'Cannot export a partial workbook view. Reopen the workbook with a full load before saving or exporting.',
+		throw new AscendException(
+			ascendError(
+				'EXPORT_ERROR',
+				'Cannot export a partial workbook view. Reopen the workbook with a full load before saving or exporting.',
+			),
 		)
 	}
 

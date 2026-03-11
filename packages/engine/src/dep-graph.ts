@@ -1,4 +1,4 @@
-export type CellKey = string
+export type CellKey = number
 
 export interface RangeDependency {
 	readonly sheetIndex: number
@@ -8,13 +8,19 @@ export interface RangeDependency {
 	readonly endCol: number
 }
 
+const COL_FACTOR = 16_384
+const SHEET_FACTOR = 16_384 * 1_048_576
+
 export function cellKey(sheetIndex: number, row: number, col: number): CellKey {
-	return `${sheetIndex}:${row}:${col}`
+	return sheetIndex * SHEET_FACTOR + row * COL_FACTOR + col
 }
 
 export function parseCellKey(key: CellKey): readonly [number, number, number] {
-	const parts = key.split(':')
-	return [Number(parts[0]), Number(parts[1]), Number(parts[2])] as const
+	const col = key % COL_FACTOR
+	const remainder = (key - col) / COL_FACTOR
+	const row = remainder % 1_048_576
+	const sheetIndex = (remainder - row) / 1_048_576
+	return [sheetIndex, row, col] as const
 }
 
 interface FormulaEntry {

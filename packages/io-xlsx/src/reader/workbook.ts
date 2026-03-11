@@ -2,6 +2,7 @@ import type { SheetState, WorkbookProperties, WorkbookProtection, WorkbookView }
 import type { CalcSettings } from '@ascend/schema'
 import { DEFAULT_CALC_SETTINGS } from '@ascend/schema'
 import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
+import { decodeXmlText } from './xml-utils.ts'
 
 export interface SheetEntry {
 	readonly name: string
@@ -318,16 +319,6 @@ function booleanAttr(attrs: Map<string, string>, name: string): boolean | undefi
 	const value = attrs.get(name)
 	if (value === undefined) return undefined
 	return value === '1' || value === 'true'
-}
-
-function decodeXmlText(text: string): string {
-	if (!text.includes('&')) return text
-	return text
-		.replace(/&lt;/g, '<')
-		.replace(/&gt;/g, '>')
-		.replace(/&quot;/g, '"')
-		.replace(/&apos;/g, "'")
-		.replace(/&amp;/g, '&')
 }
 
 function parsePivotCacheEntries(wb: XmlNode): readonly { cacheId: number; relId: string }[] {

@@ -46,8 +46,7 @@ function resolveSheetIndex(
 function getCellValue(wb: Workbook, sheetIndex: number, row: number, col: number): CellValue {
 	const sheet = wb.sheets[sheetIndex]
 	if (!sheet) return errorValue('#REF!')
-	const cell = sheet.cells.get(row, col)
-	return cell ? cell.value : EMPTY
+	return sheet.cells.getValue(row, col) ?? EMPTY
 }
 
 function getRangeValues(
@@ -64,8 +63,7 @@ function getRangeValues(
 	for (let r = startRow; r <= endRow; r++) {
 		const row: CellValue[] = []
 		for (let c = startCol; c <= endCol; c++) {
-			const cell = sheet.cells.get(r, c)
-			row.push(cell ? cell.value : EMPTY)
+			row.push(sheet.cells.getValue(r, c) ?? EMPTY)
 		}
 		rows.push(row)
 	}
@@ -774,8 +772,7 @@ function makeRangeArea(
 					forEachValue: (fn: (value: CellValue) => void) => {
 						for (let r = materializedStartRow; r <= materializedEndRow; r++) {
 							for (let c = materializedStartCol; c <= materializedEndCol; c++) {
-								const cell = sheet.cells.get(r, c)
-								fn(cell ? cell.value : EMPTY)
+								fn(sheet.cells.getValue(r, c) ?? EMPTY)
 							}
 						}
 					},

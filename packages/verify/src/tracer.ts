@@ -3,6 +3,7 @@ import {
 	type AnalyzedFormula,
 	analyzeWorkbookDependencies,
 	analyzeWorkbookFormulas,
+	type CellKey,
 	cellKey,
 	parseCellKey,
 	resolveCellFormulaText,
@@ -84,11 +85,11 @@ export function trace(
 	const dependencies = analysis?.dependencies ?? analyzeWorkbookDependencies(workbook)
 	const graph = dependencies.dependencyGraph
 	const targetKey = cellKey(sheetIndex, cellRef.row, cellRef.col)
-	const targetFormula = targetKey ? formulas.formulas.get(targetKey) : undefined
+	const targetFormula = formulas.formulas.get(targetKey)
 
 	const precedents: TraceNode[] = []
-	const visitedPre = new Set<string>()
-	const prQueue: { key: string; depth: number }[] = [{ key: targetKey, depth: 0 }]
+	const visitedPre = new Set<CellKey | string>()
+	const prQueue: { key: CellKey; depth: number }[] = [{ key: targetKey, depth: 0 }]
 	visitedPre.add(targetKey)
 	let preIndex = 0
 
@@ -134,8 +135,8 @@ export function trace(
 	}
 
 	const dependents: TraceNode[] = []
-	const visitedDep = new Set<string>()
-	const depQueue: { key: string; depth: number }[] = [{ key: targetKey, depth: 0 }]
+	const visitedDep = new Set<CellKey | string>()
+	const depQueue: { key: CellKey; depth: number }[] = [{ key: targetKey, depth: 0 }]
 	visitedDep.add(targetKey)
 	let depIndex = 0
 
@@ -177,11 +178,11 @@ function addSymbolicPrecedents(
 	workbook: Workbook,
 	formula: AnalyzedFormula,
 	depth: number,
-	visitedPre: Set<string>,
+	visitedPre: Set<CellKey | string>,
 	precedents: TraceNode[],
-	prQueue: Array<{ key: string; depth: number }>,
+	prQueue: Array<{ key: CellKey; depth: number }>,
 ): void {
-	const dependencyKeys = new Set<string>()
+	const dependencyKeys = new Set<CellKey | string>()
 	for (const refNode of formula.refs) {
 		const traceNode = formulaRefToTraceNode(workbook, formula.sheetIndex, refNode, depth)
 		if (!traceNode) continue
@@ -190,7 +191,7 @@ function addSymbolicPrecedents(
 		visitedPre.add(visitKey)
 		precedents.push(traceNode)
 		const dependencyKey = formulaRefToDependencyKey(workbook, formula.sheetIndex, refNode)
-		if (dependencyKey) dependencyKeys.add(dependencyKey)
+		if (dependencyKey !== null) dependencyKeys.add(dependencyKey)
 		if (refNode.kind === 'cell') {
 			const refSheetIndex = resolveFormulaRefSheetIndex(workbook, formula.sheetIndex, refNode)
 			if (refSheetIndex >= 0) {
@@ -334,7 +335,7 @@ function formulaRefToDependencyKey(
 	workbook: Workbook,
 	currentSheetIndex: number,
 	ref: FormulaRef,
-): string | null {
+): CellKey | string | null {
 	if (ref.kind === 'sheetSpan') {
 		if (ref.target.kind === 'sheetSpan') return null
 		return `sheetSpan:${ref.startSheet}:${ref.endSheet}:${formulaRefTargetText(ref.target)}`

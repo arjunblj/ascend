@@ -3,6 +3,7 @@ import type { StyleId } from '@ascend/core'
 import { createWorkbook } from '@ascend/core'
 import { EMPTY, numberValue } from '@ascend/schema'
 import { analyzeWorkbook } from './analysis.ts'
+import { cellKey } from './dep-graph.ts'
 
 const sid = 0 as StyleId
 
@@ -19,7 +20,7 @@ describe('analyzeWorkbook', () => {
 
 		const formulas = [...analysis.formulas.values()]
 		expect(formulas.some((formula) => formula.volatile)).toBe(true)
-		expect(analysis.dependencyGraph.getPrecedents('0:0:1')).toEqual(['0:0:0'])
+		expect(analysis.dependencyGraph.getPrecedents(cellKey(0, 0, 1))).toEqual([cellKey(0, 0, 0)])
 	})
 
 	test('can scope analysis to a range', () => {
@@ -55,8 +56,11 @@ describe('analyzeWorkbook', () => {
 				endCol: 0,
 			},
 		])
-		expect(analysis.dependencyGraph.getPrecedents('0:0:1')).toEqual(['0:0:0', '0:1:0'])
-		expect(analysis.dependencyGraph.getDependents('0:1:0')).toEqual(['0:0:1'])
+		expect(analysis.dependencyGraph.getPrecedents(cellKey(0, 0, 1))).toEqual([
+			cellKey(0, 0, 0),
+			cellKey(0, 1, 0),
+		])
+		expect(analysis.dependencyGraph.getDependents(cellKey(0, 1, 0))).toEqual([cellKey(0, 0, 1)])
 	})
 
 	test('LET bindings do not get treated as defined-name dependencies', () => {
@@ -68,7 +72,7 @@ describe('analyzeWorkbook', () => {
 
 		const analysis = analyzeWorkbook(wb)
 		const formula = [...analysis.formulas.values()][0]
-		expect(formula?.deps).toEqual(['0:0:0'])
+		expect(formula?.deps).toEqual([cellKey(0, 0, 0)])
 		expect(formula?.rangeDeps).toEqual([])
 	})
 
@@ -85,7 +89,7 @@ describe('analyzeWorkbook', () => {
 
 		const analysis = analyzeWorkbook(wb)
 		const formula = [...analysis.formulas.values()].find((entry) => entry.sheetName === 'Calc')
-		expect(formula?.deps).toEqual(['0:0:0', '1:0:0', '2:0:0'])
+		expect(formula?.deps).toEqual([cellKey(0, 0, 0), cellKey(1, 0, 0), cellKey(2, 0, 0)])
 		expect(formula?.rangeDeps).toEqual([])
 	})
 })

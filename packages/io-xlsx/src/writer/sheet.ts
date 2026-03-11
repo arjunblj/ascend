@@ -398,24 +398,19 @@ function formulaCellXml(ref: string, cell: Cell, xfIdx: number): string {
 	const tAttr = typeAttr ? ` t="${typeAttr}"` : ''
 	const vPart = valueStr !== undefined ? `<v>${valueStr}</v>` : ''
 	if (cell.formulaInfo?.kind === 'shared') {
-		const sharedAttrs = [
-			't="shared"',
-			`si="${escapeXml(cell.formulaInfo.sharedIndex)}"`,
-			...(cell.formulaInfo.isMaster && cell.formulaInfo.ref
-				? [`ref="${escapeXml(cell.formulaInfo.ref)}"`]
-				: []),
-		]
+		let fAttrs = `t="shared" si="${escapeXml(cell.formulaInfo.sharedIndex)}"`
+		if (cell.formulaInfo.isMaster && cell.formulaInfo.ref) {
+			fAttrs += ` ref="${escapeXml(cell.formulaInfo.ref)}"`
+		}
 		const formulaXml = cell.formulaInfo.isMaster
-			? `<f ${sharedAttrs.join(' ')}>${escapeXml(formulaText)}</f>`
-			: `<f ${sharedAttrs.join(' ')}/>`
+			? `<f ${fAttrs}>${escapeXml(formulaText)}</f>`
+			: `<f ${fAttrs}/>`
 		return `<c r="${ref}"${cmAttr}${sAttr}${tAttr}>${formulaXml}${vPart}</c>`
 	}
 	if (cell.formulaInfo?.kind === 'array') {
-		const arrayAttrs = [
-			't="array"',
-			...(cell.formulaInfo.ref ? [`ref="${escapeXml(cell.formulaInfo.ref)}"`] : []),
-		]
-		return `<c r="${ref}"${cmAttr}${sAttr}${tAttr}><f ${arrayAttrs.join(' ')}>${escapeXml(formulaText)}</f>${vPart}</c>`
+		let fAttrs = 't="array"'
+		if (cell.formulaInfo.ref) fAttrs += ` ref="${escapeXml(cell.formulaInfo.ref)}"`
+		return `<c r="${ref}"${cmAttr}${sAttr}${tAttr}><f ${fAttrs}>${escapeXml(formulaText)}</f>${vPart}</c>`
 	}
 	return `<c r="${ref}"${cmAttr}${sAttr}${tAttr}><f>${escapeXml(formulaText)}</f>${vPart}</c>`
 }

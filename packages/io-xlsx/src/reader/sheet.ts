@@ -21,6 +21,7 @@ import { parseAutoFilterNode } from './filtering.ts'
 import type { ParsedMetadataPart } from './metadata.ts'
 import type { Relationship } from './relationships.ts'
 import type { SharedStringResolver } from './shared-strings.ts'
+import { decodeXmlText, findTagEnd, isSelfClosingTag } from './xml-utils.ts'
 
 const SMALL_NUMBER_RANGE_START = -128
 const SMALL_NUMBER_RANGE_END = 512
@@ -258,12 +259,12 @@ function parseFastCell(
 ): { row: number; col: number; cell: Cell | undefined } | undefined {
 	const pos = resolveCellPosition(rawAttrs, fallbackPosition)
 	if (!pos) return undefined
-	if (rawAttr(rawAttrs, 't') === 'inlineStr' || innerXml.includes('<is')) {
+	const type = rawAttr(rawAttrs, 't')
+	if (type === 'inlineStr' || innerXml.includes('<is')) {
 		return parseSlowCell(rawAttrs, innerXml, ctx, sharedFormulaMasters, pos)
 	}
 
 	const pool = ctx.valuePool
-	const type = rawAttr(rawAttrs, 't')
 	const styleIdx = rawNumAttr(rawAttrs, 's') ?? 0
 	const rawValue = extractTagText(innerXml, 'v')
 	const styleId = ctx.valuesOnly ? (0 as StyleId) : (ctx.styleIds[styleIdx] ?? (0 as StyleId))
@@ -343,20 +344,6 @@ function locateSheetData(xml: string): { contentStart: number; contentEnd: numbe
 	return { contentStart: tagEnd + 1, contentEnd: close }
 }
 
-function findTagEnd(xml: string, start: number): number {
-	return xml.indexOf('>', start + 1)
-}
-
-function isSelfClosingTag(xml: string, tagStart: number, tagEnd: number): boolean {
-	for (let idx = tagEnd - 1; idx > tagStart; idx--) {
-		const ch = xml[idx]
-		if (!ch) break
-		if (ch === '/') return true
-		if (ch !== ' ' && ch !== '\n' && ch !== '\r' && ch !== '\t') return false
-	}
-	return false
-}
-
 function _parseSheetData(ws: XmlNode, sheet: Sheet, ctx: SheetParseContext): void {
 	const sd = ws.sheetData as XmlNode | undefined
 	if (!sd) return
@@ -429,8 +416,17 @@ function parseRawAttributes(rawAttrs: string): XmlNode {
 	return node
 }
 
+const ATTR_NEEDLES: Record<string, string> = {
+	r: 'r="',
+	t: 't="',
+	s: 's="',
+	cm: 'cm="',
+	ref: 'ref="',
+	si: 'si="',
+}
+
 function rawAttr(rawAttrs: string, name: string): string | undefined {
-	const needle = `${name}="`
+	const needle = ATTR_NEEDLES[name] ?? `${name}="`
 	const start = rawAttrs.indexOf(needle)
 	if (start === -1) return undefined
 	const valueStart = start + needle.length
@@ -508,16 +504,6 @@ function extractNodes(xml: string, tagName: string): Array<{ attrs: string; text
 		})
 	}
 	return nodes
-}
-
-function decodeXmlText(text: string): string {
-	if (!text.includes('&')) return text
-	return text
-		.replace(/&lt;/g, '<')
-		.replace(/&gt;/g, '>')
-		.replace(/&quot;/g, '"')
-		.replace(/&apos;/g, "'")
-		.replace(/&amp;/g, '&')
 }
 
 function parseCellRef(ref: string): { row: number; col: number } | undefined {

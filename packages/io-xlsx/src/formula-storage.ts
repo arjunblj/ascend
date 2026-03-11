@@ -145,11 +145,10 @@ function rewriteToStoredAst(node: FormulaNode): FormulaNode {
 	}
 }
 
+const STORAGE_PREFIX_RE = /_xlfn\.(?:_xlws\.)?|_xlws\./gi
+
 function stripStoragePrefixes(text: string): string {
-	return text
-		.replace(/_xlfn\._xlws\./gi, '')
-		.replace(/_xlfn\./gi, '')
-		.replace(/_xlws\./gi, '')
+	return text.replace(STORAGE_PREFIX_RE, '')
 }
 
 function shouldPrefixFutureFunction(name: string): boolean {

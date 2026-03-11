@@ -1,5 +1,6 @@
 import type { CellValue, RichTextRun } from '@ascend/schema'
 import { asArray, attr, numAttr, parseXml, type XmlNode } from '../xml.ts'
+import { decodeXmlText, findTagEnd, isSelfClosingTag } from './xml-utils.ts'
 
 export interface SharedStringResolver {
 	readonly count: number
@@ -262,31 +263,12 @@ function extractAttributeValue(
 	const tagEnd = findTagEnd(chunk, open)
 	if (tagEnd === -1) return undefined
 	const attrs = chunk.slice(open + tagName.length + 1, tagEnd)
-	const pattern = new RegExp(`${attribute}="([^"]*)"`)
-	const match = pattern.exec(attrs)
-	return match?.[1] ? decodeXmlText(match[1]) : undefined
-}
-
-function findTagEnd(xml: string, start: number): number {
-	return xml.indexOf('>', start + 1)
-}
-
-function isSelfClosingTag(xml: string, tagStart: number, tagEnd: number): boolean {
-	for (let idx = tagEnd - 1; idx > tagStart; idx--) {
-		const ch = xml[idx]
-		if (!ch) break
-		if (ch === '/') return true
-		if (ch !== ' ' && ch !== '\n' && ch !== '\r' && ch !== '\t') return false
-	}
-	return false
-}
-
-function decodeXmlText(text: string): string {
-	if (!text.includes('&')) return text
-	return text
-		.replace(/&lt;/g, '<')
-		.replace(/&gt;/g, '>')
-		.replace(/&quot;/g, '"')
-		.replace(/&apos;/g, "'")
-		.replace(/&amp;/g, '&')
+	const needle = `${attribute}="`
+	const start = attrs.indexOf(needle)
+	if (start === -1) return undefined
+	const valueStart = start + needle.length
+	const valueEnd = attrs.indexOf('"', valueStart)
+	if (valueEnd === -1) return undefined
+	const value = attrs.slice(valueStart, valueEnd)
+	return value ? decodeXmlText(value) : undefined
 }

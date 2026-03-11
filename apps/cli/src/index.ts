@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import { AscendException } from '@ascend/schema'
 import { calcCommand, usage as calcUsage } from './commands/calc.ts'
 import { checkCommand, usage as checkUsage } from './commands/check.ts'
 import { createCommand, usage as createUsage } from './commands/create.ts'
@@ -163,11 +164,16 @@ async function main(): Promise<void> {
 		const code = await cmd.run(args, flags)
 		process.exit(code)
 	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err)
 		if (flags.has('json')) {
-			console.log(jsonErr(message))
+			const error =
+				err instanceof AscendException
+					? err.ascendError
+					: err instanceof Error
+						? err.message
+						: String(err)
+			console.log(jsonErr(error))
 		} else {
-			console.error(`Error: ${message}`)
+			console.error(`Error: ${err instanceof Error ? err.message : String(err)}`)
 		}
 		process.exit(1)
 	}

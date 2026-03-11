@@ -9,10 +9,10 @@ export function jsonErr(error: string | AscendError): string {
 	return JSON.stringify(machineFailure(error), null, 2)
 }
 
-export function cliError(message: string, flags: Map<string, string>): void {
+export function cliError(error: string | AscendError, flags: Map<string, string>): void {
 	if (flags.has('json')) {
-		console.log(jsonErr(message))
+		console.log(jsonErr(error))
 	} else {
-		console.error(message)
+		console.error(typeof error === 'string' ? error : error.message)
 	}
 }

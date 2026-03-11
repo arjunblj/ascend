@@ -15,7 +15,10 @@ const parser = new XMLParser({
 })
 
 export function parseXml(content: string): XmlNode {
-	return parser.parse(normalizeMarkupCompatibility(content)) as XmlNode
+	const normalized = content.includes('mc:AlternateContent')
+		? normalizeMarkupCompatibility(content)
+		: content
+	return parser.parse(normalized) as XmlNode
 }
 
 export function asArray<T>(val: T | T[] | undefined | null): T[] {
@@ -61,8 +64,6 @@ function escapeXmlChar(ch: string): string {
 
 export function escapeXml(s: string): string {
 	if (s.length === 0) return s
-	XML_ESCAPE_RE.lastIndex = 0
-	if (!XML_ESCAPE_RE.test(s)) return s
 	XML_ESCAPE_RE.lastIndex = 0
 	return s.replace(XML_ESCAPE_RE, escapeXmlChar)
 }

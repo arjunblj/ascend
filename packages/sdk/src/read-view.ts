@@ -3,6 +3,8 @@ import {
 	analyzeWorkbook,
 	analyzeWorkbookDependencies,
 	analyzeWorkbookFormulas,
+	type CellKey,
+	cellKey,
 	createSnapshot,
 	diffWorkbooks,
 	resolveCellFormulaText,
@@ -372,7 +374,8 @@ export class WorkbookReadView {
 		if (this.formulaInfoCache.has(cellRef)) return this.formulaInfoCache.get(cellRef)
 		const { sheetName, ref } = parseFullRef(cellRef, this.wb)
 		const formulaKey = makeFormulaKey(this.wb, sheetName, ref)
-		const analyzed = formulaKey ? this.formulaAnalysis().formulas.get(formulaKey) : undefined
+		const analyzed =
+			formulaKey !== undefined ? this.formulaAnalysis().formulas.get(formulaKey) : undefined
 		const cell = this.sheet(sheetName)?.cell(ref)
 		if (!cell || !analyzed) {
 			this.formulaInfoCache.set(cellRef, undefined)
@@ -647,11 +650,11 @@ function buildDefinedNameInfo(
 	}
 }
 
-function makeFormulaKey(workbook: Workbook, sheetName: string, ref: string): string | undefined {
+function makeFormulaKey(workbook: Workbook, sheetName: string, ref: string): CellKey | undefined {
 	const sheetIndex = workbook.sheets.findIndex((sheet) => sheet.name === sheetName)
 	if (sheetIndex === -1) return undefined
 	const cellRef = parseA1(ref)
-	return `${sheetIndex}:${cellRef.row}:${cellRef.col}`
+	return cellKey(sheetIndex, cellRef.row, cellRef.col)
 }
 
 function resolveDefinedNameBySheet(

@@ -4,6 +4,7 @@ import type { AscendError, CellValue } from '@ascend/schema'
 import { EMPTY, errorValue, topLeftScalar } from '@ascend/schema'
 import { analyzeWorkbook } from './analysis.ts'
 import type { CalcContext } from './calc-context.ts'
+import { type CompiledFormula, compileFormula, evaluateCompiled } from './compiled-eval.ts'
 import { type CellKey, cellKey, type DependencyGraph, parseCellKey } from './dep-graph.ts'
 import { type EvalContext, evaluate } from './evaluator.ts'
 
@@ -48,6 +49,26 @@ function toScalarMatrix(value: CellValue): readonly (readonly CellValue[])[] | n
 
 function topLeftValue(value: CellValue): CellValue {
 	return topLeftScalar(value)
+}
+
+const compiledCache = new WeakMap<FormulaNode, CompiledFormula | false>()
+
+export function clearCompiledFormulaCache(): void {
+	// WeakMap entries are reclaimed automatically; this is a no-op placeholder
+	// kept for API symmetry with clearFormulaParseCache.
+}
+
+function evalFormula(_key: CellKey, ast: FormulaNode, ctx: EvalContext): CellValue {
+	let compiled = compiledCache.get(ast)
+	if (compiled === undefined) {
+		const result = compileFormula(ast)
+		compiled = result ?? false
+		compiledCache.set(ast, compiled)
+	}
+	if (compiled !== false) {
+		return evaluateCompiled(compiled, ctx)
+	}
+	return evaluate(ast, ctx)
 }
 
 function isSpillBinding(
@@ -281,7 +302,7 @@ export function recalculate(
 				row,
 				col,
 			}
-			const newValue = evaluate(ast, evalCtx)
+			const newValue = evalFormula(key, ast, evalCtx)
 			const oldCell = sheet.cells.get(row, col)
 			const spillMatrix = toScalarMatrix(newValue)
 			if (spillMatrix) {
@@ -365,7 +386,7 @@ function evalIterative(
 				row,
 				col,
 			}
-			const newValue = evaluate(ast, evalCtx)
+			const newValue = evalFormula(key, ast, evalCtx)
 			const oldCell = sheet.cells.get(row, col)
 			const oldValue = oldCell?.value ?? EMPTY
 			const spillMatrix = toScalarMatrix(newValue)
@@ -416,7 +437,7 @@ function evalIterative(
 			row,
 			col,
 		}
-		const newValue = evaluate(ast, evalCtx)
+		const newValue = evalFormula(key, ast, evalCtx)
 		const oldCell = sheet.cells.get(row, col)
 		const spillMatrix = toScalarMatrix(newValue)
 		if (spillMatrix) {

@@ -15,8 +15,9 @@ export {
 	type WorkbookDependencyAnalysis,
 	type WorkbookFormulaAnalysis,
 } from './analysis.ts'
-export { type RecalcResult, recalculate } from './calc.ts'
+export { clearCompiledFormulaCache, type RecalcResult, recalculate } from './calc.ts'
 export { type CalcContext, defaultCalcContext } from './calc-context.ts'
+export { type CompiledFormula, compileFormula, evaluateCompiled } from './compiled-eval.ts'
 export {
 	type CellKey,
 	cellKey,

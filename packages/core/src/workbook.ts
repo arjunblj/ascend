@@ -164,45 +164,126 @@ export class Workbook {
 
 	clone(): Workbook {
 		const clone = new Workbook(this.id)
-		clone.calcSettings = structuredClone(this.calcSettings)
-		clone.workbookProperties = structuredClone(this.workbookProperties)
-		clone.workbookProtection = this.workbookProtection
-			? structuredClone(this.workbookProtection)
+		clone.calcSettings = {
+			...this.calcSettings,
+			iterativeCalc: { ...this.calcSettings.iterativeCalc },
+		}
+		clone.workbookProperties = { ...this.workbookProperties }
+		clone.workbookProtection = this.workbookProtection ? { ...this.workbookProtection } : null
+		clone.styleMetadata = { ...this.styleMetadata }
+		clone.themeMetadata = { ...this.themeMetadata }
+		clone.preservedStyles = this.preservedStyles
+			? {
+					...this.preservedStyles,
+					xfByStyleId: { ...this.preservedStyles.xfByStyleId },
+					...(this.preservedStyles.baseStyleIdByStyleId
+						? { baseStyleIdByStyleId: { ...this.preservedStyles.baseStyleIdByStyleId } }
+						: {}),
+				}
 			: null
-		clone.styleMetadata = structuredClone(this.styleMetadata)
-		clone.themeMetadata = structuredClone(this.themeMetadata)
-		clone.preservedStyles = this.preservedStyles ? structuredClone(this.preservedStyles) : null
-		clone.preservedTheme = this.preservedTheme ? structuredClone(this.preservedTheme) : null
+		clone.preservedTheme = this.preservedTheme ? { ...this.preservedTheme } : null
 		clone.preservedSharedStrings = this.preservedSharedStrings
-			? structuredClone(this.preservedSharedStrings)
+			? { ...this.preservedSharedStrings }
 			: null
-		clone.preservedMetadata = this.preservedMetadata
-			? structuredClone(this.preservedMetadata)
-			: null
-		clone.preservedXml = this.preservedXml ? structuredClone(this.preservedXml) : null
+		clone.preservedMetadata = this.preservedMetadata ? { ...this.preservedMetadata } : null
+		clone.preservedXml = this.preservedXml ? { ...this.preservedXml } : null
 		clone.sourceArchiveBytes = this.sourceArchiveBytes
 		for (const sheet of this.sheets) clone.sheets.push(sheet.clone())
 		for (const definedName of this.definedNames.list()) {
 			clone.definedNames.set(
 				definedName.name,
 				definedName.formula,
-				structuredClone(definedName.scope),
+				definedName.scope.kind === 'sheet' ? { ...definedName.scope } : definedName.scope,
 			)
 		}
 		clone.styles.copyFrom(this.styles)
-		clone.differentialStyles.push(...this.differentialStyles.map((style) => structuredClone(style)))
-		clone.pivotCaches.push(...this.pivotCaches.map((entry) => structuredClone(entry)))
-		clone.pivotTables.push(...this.pivotTables.map((entry) => structuredClone(entry)))
-		clone.slicerCaches.push(...this.slicerCaches.map((entry) => structuredClone(entry)))
-		clone.slicers.push(...this.slicers.map((entry) => structuredClone(entry)))
-		clone.workbookViews.push(...this.workbookViews.map((view) => structuredClone(view)))
-		clone.externalReferences.push(
-			...this.externalReferences.map((reference) => structuredClone(reference)),
+		clone.differentialStyles.push(...this.differentialStyles.map(cloneCellStyle))
+		clone.pivotCaches.push(...this.pivotCaches.map((entry) => ({ ...entry })))
+		clone.pivotTables.push(...this.pivotTables.map((entry) => ({ ...entry })))
+		clone.slicerCaches.push(
+			...this.slicerCaches.map((entry) => ({
+				...entry,
+				pivotTableNames: [...entry.pivotTableNames],
+			})),
 		)
+		clone.slicers.push(...this.slicers.map((entry) => ({ ...entry })))
+		clone.workbookViews.push(...this.workbookViews.map((view) => ({ ...view })))
+		clone.externalReferences.push(...this.externalReferences)
 		return clone
 	}
 }
 
 export function createWorkbook(id?: WorkbookId): Workbook {
 	return new Workbook(id)
+}
+
+function cloneCellStyle(style: CellStyle): CellStyle {
+	return {
+		...(style.font
+			? { font: { ...style.font, ...(style.font.color ? { color: { ...style.font.color } } : {}) } }
+			: {}),
+		...(style.fill
+			? {
+					fill: {
+						...style.fill,
+						...(style.fill.fgColor ? { fgColor: { ...style.fill.fgColor } } : {}),
+						...(style.fill.bgColor ? { bgColor: { ...style.fill.bgColor } } : {}),
+					},
+				}
+			: {}),
+		...(style.border
+			? {
+					border: {
+						...style.border,
+						...(style.border.top
+							? {
+									top: {
+										...style.border.top,
+										...(style.border.top.color ? { color: { ...style.border.top.color } } : {}),
+									},
+								}
+							: {}),
+						...(style.border.bottom
+							? {
+									bottom: {
+										...style.border.bottom,
+										...(style.border.bottom.color
+											? { color: { ...style.border.bottom.color } }
+											: {}),
+									},
+								}
+							: {}),
+						...(style.border.left
+							? {
+									left: {
+										...style.border.left,
+										...(style.border.left.color ? { color: { ...style.border.left.color } } : {}),
+									},
+								}
+							: {}),
+						...(style.border.right
+							? {
+									right: {
+										...style.border.right,
+										...(style.border.right.color ? { color: { ...style.border.right.color } } : {}),
+									},
+								}
+							: {}),
+						...(style.border.diagonal
+							? {
+									diagonal: {
+										...style.border.diagonal,
+										...(style.border.diagonal.color
+											? { color: { ...style.border.diagonal.color } }
+											: {}),
+									},
+								}
+							: {}),
+					},
+				}
+			: {}),
+		...(style.alignment ? { alignment: { ...style.alignment } } : {}),
+		...(style.numberFormat ? { numberFormat: style.numberFormat } : {}),
+		...(style.protection ? { protection: { ...style.protection } } : {}),
+	}
 }

@@ -261,36 +261,43 @@ export class Sheet {
 	clone(): Sheet {
 		const clone = new Sheet(this.name, this.id)
 		clone.cells.copyFrom(this.cells)
-		clone.merges.push(...this.merges.map((merge) => structuredClone(merge)))
-		clone.tables.push(...this.tables.map((table) => structuredClone(table)))
+		clone.merges.push(...this.merges.map(cloneRangeRef))
+		clone.tables.push(...this.tables.map(cloneTable))
 		clone.state = this.state
+		clone.colWidths.clear()
 		for (const [key, value] of this.colWidths) clone.colWidths.set(key, value)
-		clone.colDefs.push(...this.colDefs.map((colDef) => structuredClone(colDef)))
+		clone.colDefs.push(...this.colDefs.map((colDef) => ({ ...colDef })))
+		clone.rowHeights.clear()
 		for (const [key, value] of this.rowHeights) clone.rowHeights.set(key, value)
 		clone.frozenRows = this.frozenRows
 		clone.frozenCols = this.frozenCols
-		for (const [key, value] of this.comments) clone.comments.set(key, structuredClone(value))
-		for (const [key, value] of this.hyperlinks) clone.hyperlinks.set(key, structuredClone(value))
-		clone.ignoredErrors.push(
-			...this.ignoredErrors.map((ignoredError) => structuredClone(ignoredError)),
-		)
-		clone.tabColor = this.tabColor ? structuredClone(this.tabColor) : null
-		clone.sheetFormatPr = this.sheetFormatPr ? structuredClone(this.sheetFormatPr) : null
+		for (const [key, value] of this.comments) clone.comments.set(key, { ...value })
+		for (const [key, value] of this.hyperlinks) clone.hyperlinks.set(key, { ...value })
+		clone.ignoredErrors.push(...this.ignoredErrors.map((ignoredError) => ({ ...ignoredError })))
+		clone.tabColor = this.tabColor ? { ...this.tabColor } : null
+		clone.sheetFormatPr = this.sheetFormatPr ? { ...this.sheetFormatPr } : null
 		clone.dataValidations.push(
-			...this.dataValidations.map((dataValidation) => structuredClone(dataValidation)),
+			...this.dataValidations.map((dataValidation) => ({ ...dataValidation })),
 		)
 		clone.conditionalFormats.push(
-			...this.conditionalFormats.map((conditionalFormat) => structuredClone(conditionalFormat)),
+			...this.conditionalFormats.map((conditionalFormat) => ({
+				...conditionalFormat,
+				rules: conditionalFormat.rules.map((rule) => ({
+					...rule,
+					formulas: [...rule.formulas],
+					...(rule.style ? { style: cloneCellStyle(rule.style) } : {}),
+				})),
+			})),
 		)
-		clone.imageRefs.push(...this.imageRefs.map((imageRef) => structuredClone(imageRef)))
-		clone.drawingRefs = structuredClone(this.drawingRefs)
-		clone.autoFilter = this.autoFilter ? structuredClone(this.autoFilter) : null
-		clone.protection = this.protection ? structuredClone(this.protection) : null
-		clone.pageMargins = this.pageMargins ? structuredClone(this.pageMargins) : null
-		clone.pageSetup = this.pageSetup ? structuredClone(this.pageSetup) : null
-		clone.printOptions = this.printOptions ? structuredClone(this.printOptions) : null
-		clone.headerFooter = this.headerFooter ? structuredClone(this.headerFooter) : null
-		clone.preservedXml = this.preservedXml ? structuredClone(this.preservedXml) : null
+		clone.imageRefs.push(...this.imageRefs.map(cloneImageRef))
+		clone.drawingRefs = { ...this.drawingRefs }
+		clone.autoFilter = this.autoFilter ? cloneAutoFilter(this.autoFilter) : null
+		clone.protection = this.protection ? { ...this.protection } : null
+		clone.pageMargins = this.pageMargins ? { ...this.pageMargins } : null
+		clone.pageSetup = this.pageSetup ? { ...this.pageSetup } : null
+		clone.printOptions = this.printOptions ? { ...this.printOptions } : null
+		clone.headerFooter = this.headerFooter ? { ...this.headerFooter } : null
+		clone.preservedXml = this.preservedXml ? { ...this.preservedXml } : null
 		clone.preservedExtLst = this.preservedExtLst
 		return clone
 	}
@@ -298,4 +305,142 @@ export class Sheet {
 
 export function createSheet(name: string, id?: SheetId): Sheet {
 	return new Sheet(name, id)
+}
+
+function cloneRangeRef(range: RangeRef): RangeRef {
+	return {
+		start: { ...range.start },
+		end: { ...range.end },
+	}
+}
+
+function cloneCellStyle(style: CellStyle): CellStyle {
+	return {
+		...(style.font
+			? { font: { ...style.font, ...(style.font.color ? { color: { ...style.font.color } } : {}) } }
+			: {}),
+		...(style.fill
+			? {
+					fill: {
+						...style.fill,
+						...(style.fill.fgColor ? { fgColor: { ...style.fill.fgColor } } : {}),
+						...(style.fill.bgColor ? { bgColor: { ...style.fill.bgColor } } : {}),
+					},
+				}
+			: {}),
+		...(style.border
+			? {
+					border: {
+						...style.border,
+						...(style.border.top
+							? {
+									top: {
+										...style.border.top,
+										...(style.border.top.color ? { color: { ...style.border.top.color } } : {}),
+									},
+								}
+							: {}),
+						...(style.border.bottom
+							? {
+									bottom: {
+										...style.border.bottom,
+										...(style.border.bottom.color
+											? { color: { ...style.border.bottom.color } }
+											: {}),
+									},
+								}
+							: {}),
+						...(style.border.left
+							? {
+									left: {
+										...style.border.left,
+										...(style.border.left.color ? { color: { ...style.border.left.color } } : {}),
+									},
+								}
+							: {}),
+						...(style.border.right
+							? {
+									right: {
+										...style.border.right,
+										...(style.border.right.color ? { color: { ...style.border.right.color } } : {}),
+									},
+								}
+							: {}),
+						...(style.border.diagonal
+							? {
+									diagonal: {
+										...style.border.diagonal,
+										...(style.border.diagonal.color
+											? { color: { ...style.border.diagonal.color } }
+											: {}),
+									},
+								}
+							: {}),
+					},
+				}
+			: {}),
+		...(style.alignment ? { alignment: { ...style.alignment } } : {}),
+		...(style.numberFormat ? { numberFormat: style.numberFormat } : {}),
+		...(style.protection ? { protection: { ...style.protection } } : {}),
+	}
+}
+
+function cloneAutoFilter(filter: AutoFilter): AutoFilter {
+	return {
+		...filter,
+		columns: filter.columns.map((column) => ({
+			...column,
+			...(column.values ? { values: [...column.values] } : {}),
+			...(column.dateGroupItems
+				? { dateGroupItems: column.dateGroupItems.map((item) => ({ ...item })) }
+				: {}),
+			...(column.customFilters
+				? { customFilters: column.customFilters.map((entry) => ({ ...entry })) }
+				: {}),
+		})),
+		...(filter.sortState
+			? {
+					sortState: {
+						...filter.sortState,
+						conditions: filter.sortState.conditions.map((condition) => ({ ...condition })),
+					},
+				}
+			: {}),
+	}
+}
+
+function cloneTable(table: Table): Table {
+	return {
+		...table,
+		ref: cloneRangeRef(table.ref),
+		columns: table.columns.map((column) => ({ ...column })),
+		...(table.autoFilter ? { autoFilter: cloneAutoFilter(table.autoFilter) } : {}),
+		...(table.sortState
+			? {
+					sortState: {
+						...table.sortState,
+						conditions: table.sortState.conditions.map((condition) => ({ ...condition })),
+					},
+				}
+			: {}),
+		...(table.tableStyleInfo ? { tableStyleInfo: { ...table.tableStyleInfo } } : {}),
+	}
+}
+
+function cloneImageRef(imageRef: SheetImageRef): SheetImageRef {
+	return {
+		...imageRef,
+		...(imageRef.anchor ? { anchor: cloneImageAnchor(imageRef.anchor) } : {}),
+	}
+}
+
+function cloneImageAnchor(anchor: SheetImageAnchor): SheetImageAnchor {
+	switch (anchor.kind) {
+		case 'oneCell':
+			return { ...anchor, from: { ...anchor.from } }
+		case 'twoCell':
+			return { ...anchor, from: { ...anchor.from }, to: { ...anchor.to } }
+		case 'absolute':
+			return { ...anchor }
+	}
 }

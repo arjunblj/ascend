@@ -15,7 +15,7 @@ Flags:
   --sheet <name>      Sheet name when selector is a plain range
   --mode <mode>       Load mode: values or full
   --row-offset <N>    Start reading from row offset N
-  --row-limit <N>     Limit number of rows returned
+  --row-limit <N>     Limit number of rows returned (default: 1000 for pretty output)
   --display           Render display strings for user-facing output
   --json              Output as JSON
 `
@@ -51,7 +51,8 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 		return 1
 	}
 	const validatedRowOffset = rowOffset ?? undefined
-	const validatedRowLimit = rowLimit ?? undefined
+	const prettyDefaultLimit = 1000
+	const validatedRowLimit = rowLimit ?? (flags.has('json') ? undefined : prettyDefaultLimit)
 	const display = flags.has('display')
 
 	switch (selector.kind) {

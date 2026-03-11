@@ -36,6 +36,11 @@ export class DependencyGraph {
 		number,
 		Array<{ range: RangeDependency; formulaKey: CellKey }>
 	>()
+	private _cachedDirtyIndex: {
+		set: ReadonlySet<CellKey>
+		size: number
+		index: Map<number, Map<number, Set<number>>>
+	} | null = null
 
 	addFormula(
 		key: CellKey,
@@ -139,7 +144,7 @@ export class DependencyGraph {
 		const visited = new Set<CellKey>()
 		const onStack = new Set<CellKey>()
 		const order: CellKey[] = []
-		const dirtyBySheetRow = indexDirtyCellsBySheetRow(dirtySet)
+		const dirtyBySheetRow = this.getCachedDirtyIndex(dirtySet)
 
 		const visit = (key: CellKey): void => {
 			if (visited.has(key)) return
@@ -237,6 +242,22 @@ export class DependencyGraph {
 		this.formulas.clear()
 		this.dependents.clear()
 		this.rangeDependents.clear()
+		this._cachedDirtyIndex = null
+	}
+
+	private getCachedDirtyIndex(
+		dirtySet: ReadonlySet<CellKey>,
+	): Map<number, Map<number, Set<number>>> {
+		if (
+			this._cachedDirtyIndex &&
+			this._cachedDirtyIndex.set === dirtySet &&
+			this._cachedDirtyIndex.size === dirtySet.size
+		) {
+			return this._cachedDirtyIndex.index
+		}
+		const index = indexDirtyCellsBySheetRow(dirtySet)
+		this._cachedDirtyIndex = { set: dirtySet, size: dirtySet.size, index }
+		return index
 	}
 }
 

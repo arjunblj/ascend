@@ -128,12 +128,12 @@ export function buildSheetXml(
 			rowAttrs.push(`ht="${rowHeight}"`)
 			rowAttrs.push('customHeight="1"')
 		}
-		parts.push(`<row ${rowAttrs.join(' ')}>`)
+		let rowXml = `<row ${rowAttrs.join(' ')}>`
 		for (const [col, cell] of cells) {
-			const ref = `${indexToColumn(col)}${row + 1}`
-			parts.push(cellXml(ref, cell, ssTable, xfMap))
+			rowXml += cellXml(`${indexToColumn(col)}${row + 1}`, cell, ssTable, xfMap)
 		}
-		parts.push('</row>')
+		rowXml += '</row>'
+		parts.push(rowXml)
 		if (populatedRow && populatedRow[0] === row) nextRow = rowIterator.next()
 		if (heightEntry && heightEntry[0] === row) rowHeightIndex++
 	}

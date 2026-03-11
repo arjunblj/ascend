@@ -160,10 +160,12 @@ function applyArrayResult(
 	}
 
 	const anchorValue = topLeftValue(matrix[0]?.[0] ?? EMPTY)
-	const spillRef = `${toA1Ref(row, col)}:${toA1Ref(
-		row + matrix.length - 1,
-		col + Math.max(...matrix.map((matrixRow) => matrixRow.length), 1) - 1,
-	)}`
+	let maxCols = 1
+	for (const matrixRow of matrix) {
+		const len = matrixRow?.length ?? 0
+		if (len > maxCols) maxCols = len
+	}
+	const spillRef = `${toA1Ref(row, col)}:${toA1Ref(row + matrix.length - 1, col + maxCols - 1)}`
 
 	sheet.cells.set(row, col, {
 		value: anchorValue,

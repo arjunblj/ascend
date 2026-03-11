@@ -257,6 +257,17 @@ describe('formula functions', () => {
 			expect(getResult(wb, 3, 0)).toEqual(numberValue(20))
 		})
 
+		test('VLOOKUP exact match returns the first duplicate hit', () => {
+			const wb = makeWorkbook()
+			setStr(wb, 0, 0, 'banana')
+			setStr(wb, 1, 0, 'banana')
+			setNum(wb, 0, 1, 20)
+			setNum(wb, 1, 1, 30)
+			setFormula(wb, 2, 0, 'VLOOKUP("banana",A1:B2,2,FALSE)')
+			recalc(wb)
+			expect(getResult(wb, 2, 0)).toEqual(numberValue(20))
+		})
+
 		test('VLOOKUP approximate match', () => {
 			const wb = makeWorkbook()
 			setNum(wb, 0, 0, 10)
@@ -336,9 +347,40 @@ describe('formula functions', () => {
 			recalc(wb)
 			expect(getResult(wb, 3, 0)).toEqual(numberValue(30))
 		})
+
+		test('XMATCH exact reverse search returns the last duplicate hit', () => {
+			const wb = makeWorkbook()
+			setStr(wb, 0, 0, 'banana')
+			setStr(wb, 1, 0, 'apple')
+			setStr(wb, 2, 0, 'banana')
+			setFormula(wb, 3, 0, 'XMATCH("banana",A1:A3,0,-1)')
+			recalc(wb)
+			expect(getResult(wb, 3, 0)).toEqual(numberValue(3))
+		})
 	})
 
 	describe('logical functions', () => {
+		test('IF short-circuits the untaken branch', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IF(FALSE,1/0,7)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(7))
+		})
+
+		test('IFERROR short-circuits the fallback branch when not needed', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IFERROR(42,1/0)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(42))
+		})
+
+		test('IFNA short-circuits the fallback branch when not needed', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IFNA(42,1/0)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(42))
+		})
+
 		test('IFS with no match returns #N/A', () => {
 			const wb = makeWorkbook()
 			setNum(wb, 0, 0, 50)

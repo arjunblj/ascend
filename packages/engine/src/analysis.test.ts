@@ -112,4 +112,17 @@ describe('analyzeWorkbook', () => {
 		expect(formula?.deps).toEqual([cellKey(0, 0, 0), cellKey(1, 0, 0), cellKey(2, 0, 0)])
 		expect(formula?.rangeDeps).toEqual([])
 	})
+
+	test('caches cycle membership alongside dependency analysis', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'B1+1', styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'A1+1', styleId: sid })
+
+		const analysis = analyzeWorkbook(wb)
+		expect(analysis.cycles).toHaveLength(1)
+		expect(new Set(analysis.cycles[0])).toEqual(new Set([cellKey(0, 0, 0), cellKey(0, 0, 1)]))
+		expect(analysis.cycleKeys.has(cellKey(0, 0, 0))).toBe(true)
+		expect(analysis.cycleKeys.has(cellKey(0, 0, 1))).toBe(true)
+	})
 })

@@ -1,8 +1,12 @@
 import { createWorkbook, type StyleId, type Workbook } from '../../packages/core/src/index.ts'
-import { defaultCalcContext, recalculate } from '../../packages/engine/src/index.ts'
+import {
+	applyOperations,
+	defaultCalcContext,
+	recalculate,
+} from '../../packages/engine/src/index.ts'
 import { readCsv, writeCsv } from '../../packages/io-csv/src/index.ts'
 import { readXlsx, writeXlsx } from '../../packages/io-xlsx/src/index.ts'
-import { EMPTY, numberValue } from '../../packages/schema/src/index.ts'
+import { booleanValue, EMPTY, numberValue, stringValue } from '../../packages/schema/src/index.ts'
 import { AscendWorkbook } from '../../packages/sdk/src/index.ts'
 import {
 	type BenchmarkCaseResult,
@@ -61,10 +65,30 @@ function setNumberCell(workbook: Workbook, row: number, col: number, value: numb
 	sheet.cells.set(row, col, { value: numberValue(value), formula: null, styleId: SID })
 }
 
+function setStringCell(workbook: Workbook, row: number, col: number, value: string): void {
+	const sheet = workbook.sheets[0]
+	if (!sheet) throw new Error('Benchmark workbook missing first sheet')
+	sheet.cells.set(row, col, { value: stringValue(value), formula: null, styleId: SID })
+}
+
+function setBooleanCell(workbook: Workbook, row: number, col: number, value: boolean): void {
+	const sheet = workbook.sheets[0]
+	if (!sheet) throw new Error('Benchmark workbook missing first sheet')
+	sheet.cells.set(row, col, { value: booleanValue(value), formula: null, styleId: SID })
+}
+
 function setFormulaCell(workbook: Workbook, row: number, col: number, formula: string): void {
 	const sheet = workbook.sheets[0]
 	if (!sheet) throw new Error('Benchmark workbook missing first sheet')
 	sheet.cells.set(row, col, { value: EMPTY, formula, styleId: SID })
+}
+
+function createDeterministicRandom(seed: number): () => number {
+	let state = seed >>> 0
+	return () => {
+		state = (Math.imul(state, 1664525) + 1013904223) >>> 0
+		return state / 0x1_0000_0000
+	}
 }
 
 function buildDenseWorkbook(rows: number, cols: number): Workbook {
@@ -141,6 +165,69 @@ function buildRangeAggregationWorkbook(length: number): Workbook {
 		setNumberCell(workbook, r, 0, r + 1)
 		setFormulaCell(workbook, r, 1, `SUM(A1:A${r + 1})`)
 	}
+	return workbook
+}
+
+function buildIfShortCircuitWorkbook(length: number): Workbook {
+	const workbook = createWorkbook()
+	workbook.addSheet('Sheet1')
+	for (let r = 0; r < length; r++) {
+		setNumberCell(workbook, r, 0, 1)
+		setNumberCell(workbook, r, 1, r + 1)
+		setFormulaCell(workbook, r, 2, `IF(A${r + 1}>0,B${r + 1},SUM(B1:B${length}))`)
+	}
+	return workbook
+}
+
+function buildLookupExactWorkbook(rowCount: number, queryCount: number): Workbook {
+	const workbook = createWorkbook()
+	workbook.addSheet('Sheet1')
+	for (let r = 0; r < rowCount; r++) {
+		setStringCell(workbook, r, 0, `key-${String(r + 1).padStart(5, '0')}`)
+		setNumberCell(workbook, r, 1, (r + 1) * 10)
+	}
+	for (let r = 0; r < queryCount; r++) {
+		const keyIndex = rowCount - ((r * 37) % rowCount) - 1
+		setStringCell(workbook, r, 3, `key-${String(keyIndex + 1).padStart(5, '0')}`)
+		setFormulaCell(
+			workbook,
+			r,
+			4,
+			`XLOOKUP(D${r + 1},A$1:A$${rowCount},B$1:B$${rowCount},"missing",0)`,
+		)
+	}
+	return workbook
+}
+
+function buildSpillChurnWorkbook(length: number): Workbook {
+	const workbook = createWorkbook()
+	workbook.addSheet('Sheet1')
+	for (let r = 0; r < length; r++) {
+		setNumberCell(workbook, r, 0, length - r)
+		setBooleanCell(workbook, r, 2, true)
+	}
+	setFormulaCell(workbook, 0, 1, `FILTER(A1:A${length},C1:C${length},0)`)
+	return workbook
+}
+
+function buildStructuralInsertRowsWorkbook(rowCount: number): Workbook {
+	const workbook = createWorkbook()
+	workbook.addSheet('Sheet1')
+	for (let r = 0; r < rowCount; r++) {
+		setNumberCell(workbook, r, 0, r + 1)
+		setFormulaCell(workbook, r, 1, `SUM(A1:A${r + 1})`)
+	}
+	return workbook
+}
+
+function buildSdkEditCycleWorkbook(rows: number): Workbook {
+	const workbook = createWorkbook()
+	workbook.addSheet('Sheet1')
+	for (let r = 0; r < rows; r++) {
+		setNumberCell(workbook, r, 0, r + 1)
+		setFormulaCell(workbook, r, 1, `A${r + 1}*2`)
+	}
+	recalculate(workbook, defaultCalcContext())
 	return workbook
 }
 
@@ -411,6 +498,35 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'workflow-sdk-edit-cycle',
+		category: 'workflow',
+		build() {
+			const workbook = buildSdkEditCycleWorkbook(5000)
+			const bytes = mustWrite(workbook)
+			return { bytes, rows: 5000, cols: 2, cells: 10_000 }
+		},
+		async run(input) {
+			const wb = await AscendWorkbook.open(requireBytes(input))
+			const updates = Array.from({ length: 100 }, (_, index) => ({
+				ref: `A${index + 1}`,
+				value: (index + 1) * 3,
+			}))
+			const ops = [{ op: 'setCells', sheet: 'Sheet1', updates }] as const
+			const preview = wb.preview(ops)
+			const apply = wb.apply(ops)
+			const recalc = wb.recalc()
+			const bytes = wb.toBytes()
+			return {
+				assertions: {
+					previewChanges: preview.cellChanges.length,
+					applyErrors: apply.errors.length,
+					recalcChanged: recalc.changed.length,
+					bytes: bytes.byteLength,
+				},
+			}
+		},
+	},
+	{
 		name: 'formula-inspect-chain',
 		category: 'workflow',
 		build() {
@@ -454,6 +570,24 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'recalc-if-short-circuit',
+		category: 'calc',
+		build() {
+			const workbook = buildIfShortCircuitWorkbook(5000)
+			return { workbook, rows: 5000, cols: 3, cells: 15_000 }
+		},
+		run(input) {
+			const workbook = requireWorkbook(input)
+			recalculate(workbook, defaultCalcContext())
+			const lastValue = workbook.sheets[0]?.cells.get(4999, 2)?.value
+			return {
+				assertions: {
+					lastValue: lastValue?.kind === 'number' ? lastValue.value : null,
+				},
+			}
+		},
+	},
+	{
 		name: 'recalc-sparse-aggregation',
 		category: 'calc',
 		build() {
@@ -461,9 +595,10 @@ const scenarios: readonly Scenario[] = [
 			workbook.addSheet('Sheet1')
 			const sheet = workbook.sheets[0]
 			if (!sheet) throw new Error('Benchmark workbook missing first sheet')
+			const random = createDeterministicRandom(0xc0ffee)
 			for (let r = 0; r < 100_000; r += 100) {
 				sheet.cells.set(r, 0, {
-					value: numberValue(Math.random() * 1000),
+					value: numberValue(random() * 1000),
 					formula: null,
 					styleId: SID,
 				})
@@ -473,6 +608,49 @@ const scenarios: readonly Scenario[] = [
 		},
 		run(input) {
 			recalculate(requireWorkbook(input), defaultCalcContext())
+		},
+	},
+	{
+		name: 'recalc-lookup-exact-large',
+		category: 'calc',
+		build() {
+			const workbook = buildLookupExactWorkbook(20_000, 2_000)
+			return { workbook, rows: 20_000, cols: 5, cells: 44_000 }
+		},
+		run(input) {
+			const workbook = requireWorkbook(input)
+			recalculate(workbook, defaultCalcContext())
+			const lastValue = workbook.sheets[0]?.cells.get(1999, 4)?.value
+			return {
+				assertions: {
+					lastValue: lastValue?.kind === 'number' ? lastValue.value : null,
+				},
+			}
+		},
+	},
+	{
+		name: 'recalc-lookup-exact-incremental',
+		category: 'calc',
+		build() {
+			const workbook = buildLookupExactWorkbook(20_000, 2_000)
+			recalculate(workbook, defaultCalcContext())
+			for (let r = 0; r < 2_000; r++) {
+				setStringCell(workbook, r, 3, `key-${String(((r * 53) % 20_000) + 1).padStart(5, '0')}`)
+			}
+			return { workbook, rows: 20_000, cols: 5, cells: 44_000 }
+		},
+		run(input) {
+			const workbook = requireWorkbook(input)
+			recalculate(workbook, defaultCalcContext(), {
+				dirtyOnly: true,
+				dirtyRefs: ['Sheet1!D1:D2000'],
+			})
+			const lastValue = workbook.sheets[0]?.cells.get(1999, 4)?.value
+			return {
+				assertions: {
+					lastValue: lastValue?.kind === 'number' ? lastValue.value : null,
+				},
+			}
 		},
 	},
 	{
@@ -560,6 +738,43 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'recalc-dynamic-spill-churn',
+		category: 'calc',
+		build() {
+			const workbook = buildSpillChurnWorkbook(2000)
+			return { workbook, rows: 2000, cols: 3, cells: 6000 }
+		},
+		run(input) {
+			const workbook = requireWorkbook(input)
+			const sheet = workbook.sheets[0]
+			if (!sheet) throw new Error('Benchmark workbook missing first sheet')
+			recalculate(workbook, defaultCalcContext())
+			for (let r = 0; r < 2000; r++) {
+				sheet.cells.set(r, 2, {
+					value: booleanValue(r % 10 === 0),
+					formula: null,
+					styleId: SID,
+				})
+			}
+			recalculate(workbook, defaultCalcContext())
+			for (let r = 0; r < 2000; r++) {
+				sheet.cells.set(r, 2, {
+					value: booleanValue(true),
+					formula: null,
+					styleId: SID,
+				})
+			}
+			recalculate(workbook, defaultCalcContext())
+			const anchorValue = sheet.cells.get(0, 1)?.value
+			return {
+				assertions: {
+					anchorKind: anchorValue?.kind ?? 'missing',
+					anchorValue: anchorValue?.kind === 'number' ? anchorValue.value : null,
+				},
+			}
+		},
+	},
+	{
 		name: 'recalc-sumifs-large',
 		category: 'calc',
 		build() {
@@ -568,6 +783,7 @@ const scenarios: readonly Scenario[] = [
 			const sheet = workbook.sheets[0]
 			if (!sheet) throw new Error('Benchmark workbook missing first sheet')
 			const categories = ['cat1', 'cat2', 'cat3', 'cat4', 'cat5']
+			const random = createDeterministicRandom(0x5eed1234)
 			for (let r = 0; r < 10_000; r++) {
 				sheet.cells.set(r, 0, {
 					value: { kind: 'string', value: categories[r % 5] ?? 'cat1' },
@@ -575,7 +791,7 @@ const scenarios: readonly Scenario[] = [
 					styleId: SID,
 				})
 				sheet.cells.set(r, 1, {
-					value: numberValue(Math.random() * 1000),
+					value: numberValue(random() * 1000),
 					formula: null,
 					styleId: SID,
 				})
@@ -587,6 +803,28 @@ const scenarios: readonly Scenario[] = [
 		},
 		run(input) {
 			recalculate(requireWorkbook(input), defaultCalcContext())
+		},
+	},
+	{
+		name: 'structural-insert-rows-recalc',
+		category: 'calc',
+		build() {
+			const workbook = buildStructuralInsertRowsWorkbook(4000)
+			return { workbook, rows: 4000, cols: 2, cells: 8000 }
+		},
+		run(input) {
+			const workbook = requireWorkbook(input)
+			const result = applyOperations(workbook, [
+				{ op: 'insertRows', sheet: 'Sheet1', at: 2000, count: 200 },
+			])
+			if (!result.ok) throw new Error(result.error.message)
+			recalculate(workbook, defaultCalcContext())
+			return {
+				assertions: {
+					changedRefs: result.value.affectedCells.length,
+					sheetsModified: result.value.sheetsModified.length,
+				},
+			}
 		},
 	},
 	{
@@ -622,6 +860,19 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 ]
+
+const scenarioSets = {
+	smoke: [
+		'read-full-dense',
+		'workflow-sdk-edit-cycle',
+		'recalc-incremental',
+		'recalc-if-short-circuit',
+		'recalc-lookup-exact-incremental',
+		'recalc-dynamic-spill-churn',
+		'structural-insert-rows-recalc',
+		'read-csv-large',
+	],
+} as const
 
 function getRssBytes(): number | undefined {
 	try {
@@ -785,6 +1036,7 @@ async function runScenarioIsolated(
 async function main(): Promise<void> {
 	const json = process.argv.includes('--json')
 	const scenarioName = readFlag('--scenario')
+	const scenarioSetName = readFlag('--set')
 	const repeat = Math.max(1, Number.parseInt(readFlag('--repeat') ?? '1', 10) || 1)
 	if (scenarioName) {
 		const scenario = scenarios.find((entry) => entry.name === scenarioName)
@@ -797,16 +1049,32 @@ async function main(): Promise<void> {
 		console.log(renderSummary([result]))
 		return
 	}
+	const selectedScenarios = scenarioSetName
+		? (() => {
+				const names = scenarioSets[scenarioSetName as keyof typeof scenarioSets]
+				if (!names) throw new Error(`Unknown synthetic benchmark set "${scenarioSetName}"`)
+				const selected = names
+					.map((name) => scenarios.find((entry) => entry.name === name))
+					.filter((entry): entry is Scenario => entry !== undefined)
+				if (selected.length !== names.length) {
+					throw new Error(`Synthetic benchmark set "${scenarioSetName}" is out of sync`)
+				}
+				return selected
+			})()
+		: scenarios
 	const results: BenchmarkCaseResult[] = []
-	for (const scenario of scenarios) {
+	for (const scenario of selectedScenarios) {
 		results.push(await runScenarioIsolated(scenario, repeat, json))
 	}
 	const suite = createBenchmarkSuite({
-		suite: 'ascend-synthetic-benchmarks',
+		suite: scenarioSetName
+			? `ascend-synthetic-benchmarks-${scenarioSetName}`
+			: 'ascend-synthetic-benchmarks',
 		kind: 'synthetic',
 		cases: results,
 		metadata: {
 			repeat,
+			...(scenarioSetName ? { set: scenarioSetName } : {}),
 		},
 	})
 	if (json) {

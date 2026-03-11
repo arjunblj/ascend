@@ -11,6 +11,8 @@ import {
 	cellOf,
 	compareValues,
 	type EvalArg,
+	type ExactLookupHit,
+	type FunctionEvalContext,
 	getRange,
 	numArg,
 	rangeShape,
@@ -19,11 +21,11 @@ import {
 	wildcardMatch,
 } from './registry.ts'
 
-function v(data: CellValue[], i: number): CellValue {
+function v(data: readonly CellValue[], i: number): CellValue {
 	return data[i] ?? EMPTY
 }
 
-function approximateMatch(lookup: CellValue, data: CellValue[]): number {
+function approximateMatch(lookup: CellValue, data: readonly CellValue[]): number {
 	let lo = 0
 	let hi = data.length - 1
 	let result = -1
@@ -39,7 +41,7 @@ function approximateMatch(lookup: CellValue, data: CellValue[]): number {
 	return result
 }
 
-function reverseApproximateMatch(lookup: CellValue, data: CellValue[]): number {
+function reverseApproximateMatch(lookup: CellValue, data: readonly CellValue[]): number {
 	let lo = 0
 	let hi = data.length - 1
 	let result = -1
@@ -55,14 +57,137 @@ function reverseApproximateMatch(lookup: CellValue, data: CellValue[]): number {
 	return result
 }
 
-function exactMatch(lookup: CellValue, data: CellValue[]): number {
+function exactMatch(lookup: CellValue, data: readonly CellValue[]): number {
 	for (let i = 0; i < data.length; i++) {
 		if (valuesEqual(lookup, v(data, i))) return i
 	}
 	return -1
 }
 
-function nextLargerMatch(lookup: CellValue, data: CellValue[]): number {
+function hasWildcardPattern(text: string): boolean {
+	for (let i = 0; i < text.length; i++) {
+		const ch = text[i]
+		if ((ch === '*' || ch === '?') && text[i - 1] !== '~') return true
+	}
+	return false
+}
+
+function exactLookupValueKey(value: CellValue): string | null {
+	const scalar = topLeftScalar(value)
+	switch (scalar.kind) {
+		case 'number':
+			return `n:${String(scalar.value === 0 ? 0 : scalar.value)}`
+		case 'date':
+			return `d:${scalar.serial}`
+		case 'string':
+			return `s:${scalar.value.toLowerCase()}`
+		case 'boolean':
+			return scalar.value ? 'b:1' : 'b:0'
+		case 'empty':
+			return 'e'
+		default:
+			return null
+	}
+}
+
+function lookupRangeCacheKey(
+	arg: EvalArg | undefined,
+	orientation: 'row' | 'column',
+): string | null {
+	const ref = arg?.ref
+	if (!ref || ref.kind !== 'range') return null
+	if (arg?.areas && arg.areas.length > 1) return null
+	return `${orientation}:${ref.sheetIndex}:${ref.row}:${ref.col}:${ref.endRow ?? ref.row}:${
+		ref.endCol ?? ref.col
+	}`
+}
+
+function getLookupVector(
+	arg: EvalArg | undefined,
+	matrix: readonly (readonly CellValue[])[],
+	orientation: 'row' | 'column',
+	ctx?: FunctionEvalContext,
+): readonly CellValue[] {
+	const cacheKey = lookupRangeCacheKey(arg, orientation)
+	if (cacheKey && ctx?.lookupVectorCache) {
+		const cached = ctx.lookupVectorCache.get(cacheKey)
+		if (cached) return cached
+		const built = orientation === 'row' ? [...(matrix[0] ?? [])] : extractColumn(matrix, 0)
+		ctx.lookupVectorCache.set(cacheKey, built)
+		return built
+	}
+	return orientation === 'row' ? [...(matrix[0] ?? [])] : extractColumn(matrix, 0)
+}
+
+function getArgVector(
+	arg: EvalArg | undefined,
+	ctx?: FunctionEvalContext,
+): { values: readonly CellValue[]; orientation: 'row' | 'column' } | null {
+	if (!arg || (arg.areas && arg.areas.length > 1)) return null
+	const shape = rangeShape(arg)
+	const orientation = shape.rows === 1 ? 'row' : shape.cols === 1 ? 'column' : null
+	if (!orientation) return null
+	const cacheKey = lookupRangeCacheKey(arg, orientation)
+	if (cacheKey && ctx?.lookupVectorCache) {
+		const cached = ctx.lookupVectorCache.get(cacheKey)
+		if (cached) return { values: cached, orientation }
+	}
+	let values: readonly CellValue[]
+	if (arg.forEachValue) {
+		const next: CellValue[] = []
+		arg.forEachValue((value) => next.push(value))
+		values = next
+	} else if (arg.kind === 'range' && arg.values) {
+		values = orientation === 'row' ? [...(arg.values[0] ?? [])] : extractColumn(arg.values, 0)
+	} else if (arg.value.kind === 'array') {
+		values =
+			orientation === 'row' ? [...(arg.value.rows[0] ?? [])] : extractColumn(arg.value.rows, 0)
+	} else {
+		values = [arg.value]
+	}
+	if (cacheKey && ctx?.lookupVectorCache) ctx.lookupVectorCache.set(cacheKey, values)
+	return { values, orientation }
+}
+
+function buildExactLookupIndex(data: readonly CellValue[]): Map<string, ExactLookupHit> {
+	const index = new Map<string, ExactLookupHit>()
+	for (let i = 0; i < data.length; i++) {
+		const key = exactLookupValueKey(v(data, i))
+		if (key === null) continue
+		const existing = index.get(key)
+		if (existing) index.set(key, { first: existing.first, last: i })
+		else index.set(key, { first: i, last: i })
+	}
+	return index
+}
+
+function getExactLookupIndex(
+	arg: EvalArg | undefined,
+	data: readonly CellValue[],
+	orientation: 'row' | 'column',
+	ctx?: FunctionEvalContext,
+): ReadonlyMap<string, ExactLookupHit> {
+	const cacheKey = lookupRangeCacheKey(arg, orientation)
+	if (!cacheKey || !ctx?.exactLookupCache) return buildExactLookupIndex(data)
+	const cached = ctx.exactLookupCache.get(cacheKey)
+	if (cached) return cached
+	const built = buildExactLookupIndex(data)
+	ctx.exactLookupCache.set(cacheKey, built)
+	return built
+}
+
+function indexedExactMatch(
+	lookup: CellValue,
+	index: ReadonlyMap<string, ExactLookupHit>,
+	fromEnd = false,
+): number {
+	const key = exactLookupValueKey(lookup)
+	if (key === null) return -1
+	const hit = index.get(key)
+	return hit ? (fromEnd ? hit.last : hit.first) : -1
+}
+
+function nextLargerMatch(lookup: CellValue, data: readonly CellValue[]): number {
 	let lo = 0
 	let hi = data.length - 1
 	let result = -1
@@ -78,7 +203,11 @@ function nextLargerMatch(lookup: CellValue, data: CellValue[]): number {
 	return result
 }
 
-function binaryExactSearch(lookup: CellValue, data: CellValue[], ascending: boolean): number {
+function binaryExactSearch(
+	lookup: CellValue,
+	data: readonly CellValue[],
+	ascending: boolean,
+): number {
 	let lo = 0
 	let hi = data.length - 1
 	while (lo <= hi) {
@@ -94,7 +223,7 @@ function binaryExactSearch(lookup: CellValue, data: CellValue[], ascending: bool
 
 function findInArray(
 	lookup: CellValue,
-	data: CellValue[],
+	data: readonly CellValue[],
 	matchMode: number,
 	searchMode: number,
 ): number {
@@ -164,7 +293,7 @@ function scalarOrLookupArray(
 
 // --- Implementations ---
 
-function vlookup(args: EvalArg[]): CellValue {
+function vlookup(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const table = getRange(args[1])
 	const col = numArg(args[2])
 	if (typeof col !== 'number') return col
@@ -172,28 +301,38 @@ function vlookup(args: EvalArg[]): CellValue {
 	if (colInt < 1 || table.length === 0 || colInt > (table[0]?.length ?? 0))
 		return errorValue('#REF!')
 
-	const firstCol = extractColumn(table, 0)
+	const firstCol = getLookupVector(args[1], table, 'column', ctx)
 	const approx = resolveApproximate(args.length > 3 ? cellOf(args[3]) : EMPTY)
+	const exactIndex = !approx ? getExactLookupIndex(args[1], firstCol, 'column', ctx) : null
 	return scalarOrLookupArray(args[0], (lookup) => {
 		if (lookup.kind === 'error') return lookup
-		const idx = approx ? approximateMatch(lookup, firstCol) : exactMatch(lookup, firstCol)
+		const idx = approx
+			? approximateMatch(lookup, firstCol)
+			: exactIndex
+				? indexedExactMatch(lookup, exactIndex)
+				: exactMatch(lookup, firstCol)
 		return idx < 0 ? errorValue('#N/A') : (table[idx]?.[colInt - 1] ?? EMPTY)
 	})
 }
 
-function hlookup(args: EvalArg[]): CellValue {
+function hlookup(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const table = getRange(args[1])
 	const row = numArg(args[2])
 	if (typeof row !== 'number') return row
 	const rowInt = Math.floor(row)
 
-	const firstRow = [...(table[0] ?? [])]
+	const firstRow = getLookupVector(args[1], table, 'row', ctx)
 	if (rowInt < 1 || rowInt > table.length || firstRow.length === 0) return errorValue('#REF!')
 
 	const approx = resolveApproximate(args.length > 3 ? cellOf(args[3]) : EMPTY)
+	const exactIndex = !approx ? getExactLookupIndex(args[1], firstRow, 'row', ctx) : null
 	return scalarOrLookupArray(args[0], (lookup) => {
 		if (lookup.kind === 'error') return lookup
-		const idx = approx ? approximateMatch(lookup, firstRow) : exactMatch(lookup, firstRow)
+		const idx = approx
+			? approximateMatch(lookup, firstRow)
+			: exactIndex
+				? indexedExactMatch(lookup, exactIndex)
+				: exactMatch(lookup, firstRow)
 		return idx < 0 ? errorValue('#N/A') : (table[rowInt - 1]?.[idx] ?? EMPTY)
 	})
 }
@@ -231,19 +370,32 @@ function indexFn(args: EvalArg[]): CellValue {
 	return array[row - 1]?.[0] ?? EMPTY
 }
 
-function matchFn(args: EvalArg[]): CellValue {
+function matchFn(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const array = getRange(args[1])
 	const matchType = args.length > 2 ? numArg(args[2]) : 1
 	if (typeof matchType !== 'number') return matchType
 
-	const flat: CellValue[] = array.length === 1 ? [...(array[0] ?? [])] : extractColumn(array, 0)
+	const flat = getLookupVector(args[1], array, array.length === 1 ? 'row' : 'column', ctx)
+	const exactIndex =
+		matchType === 0
+			? getExactLookupIndex(args[1], flat, array.length === 1 ? 'row' : 'column', ctx)
+			: null
 
-	return scalarOrLookupArray(args[0], (lookup) => matchScalar(lookup, flat, matchType))
+	return scalarOrLookupArray(args[0], (lookup) => matchScalar(lookup, flat, matchType, exactIndex))
 }
 
-function matchScalar(lookup: CellValue, flat: CellValue[], matchType: number): CellValue {
+function matchScalar(
+	lookup: CellValue,
+	flat: readonly CellValue[],
+	matchType: number,
+	exactIndex?: ReadonlyMap<string, ExactLookupHit> | null,
+): CellValue {
 	if (lookup.kind === 'error') return lookup
 	if (matchType === 0) {
+		if (exactIndex && (lookup.kind !== 'string' || !hasWildcardPattern(lookup.value))) {
+			const idx = indexedExactMatch(lookup, exactIndex)
+			if (idx >= 0) return numberValue(idx + 1)
+		}
 		for (let i = 0; i < flat.length; i++) {
 			const cell = v(flat, i)
 			if (lookup.kind === 'string' && cell.kind === 'string') {
@@ -265,41 +417,96 @@ function matchScalar(lookup: CellValue, flat: CellValue[], matchType: number): C
 	return errorValue('#N/A')
 }
 
-function xlookup(args: EvalArg[]): CellValue {
-	const lookupArray = getRange(args[1])
-	const returnArray = getRange(args[2])
+function xlookup(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const ifNotFound = args.length > 3 ? cellOf(args[3]) : null
 	const matchMode = args.length > 4 ? numArg(args[4]) : 0
 	if (typeof matchMode !== 'number') return matchMode
 	const searchMode = args.length > 5 ? numArg(args[5]) : 1
 	if (typeof searchMode !== 'number') return searchMode
 
-	let lookupFlat: CellValue[]
-	let vertical: boolean
-	if (lookupArray.length === 1) {
-		lookupFlat = [...(lookupArray[0] ?? [])]
-		vertical = false
-	} else {
-		lookupFlat = extractColumn(lookupArray, 0)
-		vertical = true
+	const lookupVector = getArgVector(args[1], ctx)
+	const returnVector = getArgVector(args[2], ctx)
+	if (lookupVector && returnVector && lookupVector.orientation === returnVector.orientation) {
+		const exactIndex =
+			matchMode === 0 && Math.abs(searchMode) !== 2
+				? getExactLookupIndex(args[1], lookupVector.values, lookupVector.orientation, ctx)
+				: null
+		return scalarOrLookupArray(args[0], (lookup) =>
+			xlookupVectorScalar(
+				lookup,
+				lookupVector.values,
+				returnVector.values,
+				ifNotFound,
+				matchMode,
+				searchMode,
+				exactIndex,
+			),
+		)
 	}
 
+	const lookupArray = getRange(args[1])
+	const returnArray = getRange(args[2])
+
+	let lookupFlat: readonly CellValue[]
+	let vertical: boolean
+	if (lookupArray.length === 1) {
+		lookupFlat = getLookupVector(args[1], lookupArray, 'row', ctx)
+		vertical = false
+	} else {
+		lookupFlat = getLookupVector(args[1], lookupArray, 'column', ctx)
+		vertical = true
+	}
+	const exactIndex =
+		matchMode === 0 && Math.abs(searchMode) !== 2
+			? getExactLookupIndex(args[1], lookupFlat, vertical ? 'column' : 'row', ctx)
+			: null
+
 	return scalarOrLookupArray(args[0], (lookup) =>
-		xlookupScalar(lookup, lookupFlat, returnArray, ifNotFound, matchMode, searchMode, vertical),
+		xlookupScalar(
+			lookup,
+			lookupFlat,
+			returnArray,
+			ifNotFound,
+			matchMode,
+			searchMode,
+			vertical,
+			exactIndex,
+		),
 	)
+}
+
+function xlookupVectorScalar(
+	lookup: CellValue,
+	lookupFlat: readonly CellValue[],
+	returnFlat: readonly CellValue[],
+	ifNotFound: CellValue | null,
+	matchMode: number,
+	searchMode: number,
+	exactIndex?: ReadonlyMap<string, ExactLookupHit> | null,
+): CellValue {
+	if (lookup.kind === 'error') return lookup
+	const idx =
+		matchMode === 0 && Math.abs(searchMode) !== 2 && exactIndex
+			? indexedExactMatch(lookup, exactIndex, searchMode === -1)
+			: findInArray(lookup, lookupFlat, matchMode, searchMode)
+	return idx < 0 ? (ifNotFound ?? errorValue('#N/A')) : (returnFlat[idx] ?? EMPTY)
 }
 
 function xlookupScalar(
 	lookup: CellValue,
-	lookupFlat: CellValue[],
+	lookupFlat: readonly CellValue[],
 	returnArray: readonly (readonly CellValue[])[],
 	ifNotFound: CellValue | null,
 	matchMode: number,
 	searchMode: number,
 	vertical: boolean,
+	exactIndex?: ReadonlyMap<string, ExactLookupHit> | null,
 ): CellValue {
 	if (lookup.kind === 'error') return lookup
-	const idx = findInArray(lookup, lookupFlat, matchMode, searchMode)
+	const idx =
+		matchMode === 0 && Math.abs(searchMode) !== 2 && exactIndex
+			? indexedExactMatch(lookup, exactIndex, searchMode === -1)
+			: findInArray(lookup, lookupFlat, matchMode, searchMode)
 	if (idx < 0) return ifNotFound ?? errorValue('#N/A')
 	if (vertical) {
 		const row = returnArray[idx] ?? []
@@ -313,19 +520,46 @@ function xlookupScalar(
 	return rows.length <= 1 ? (rows[0]?.[0] ?? EMPTY) : arrayValue(rows)
 }
 
-function xmatch(args: EvalArg[]): CellValue {
-	const lookupArray = getRange(args[1])
+function xmatch(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const matchMode = args.length > 2 ? numArg(args[2]) : 0
 	if (typeof matchMode !== 'number') return matchMode
 	const searchMode = args.length > 3 ? numArg(args[3]) : 1
 	if (typeof searchMode !== 'number') return searchMode
 
-	const flat: CellValue[] =
-		lookupArray.length === 1 ? [...(lookupArray[0] ?? [])] : extractColumn(lookupArray, 0)
+	const lookupVector = getArgVector(args[1], ctx)
+	if (lookupVector) {
+		const exactIndex =
+			matchMode === 0 && Math.abs(searchMode) !== 2
+				? getExactLookupIndex(args[1], lookupVector.values, lookupVector.orientation, ctx)
+				: null
+		return scalarOrLookupArray(args[0], (lookup) => {
+			if (lookup.kind === 'error') return lookup
+			const idx =
+				matchMode === 0 && Math.abs(searchMode) !== 2 && exactIndex
+					? indexedExactMatch(lookup, exactIndex, searchMode === -1)
+					: findInArray(lookup, lookupVector.values, matchMode, searchMode)
+			return idx < 0 ? errorValue('#N/A') : numberValue(idx + 1)
+		})
+	}
+
+	const lookupArray = getRange(args[1])
+	const flat = getLookupVector(
+		args[1],
+		lookupArray,
+		lookupArray.length === 1 ? 'row' : 'column',
+		ctx,
+	)
+	const exactIndex =
+		matchMode === 0 && Math.abs(searchMode) !== 2
+			? getExactLookupIndex(args[1], flat, lookupArray.length === 1 ? 'row' : 'column', ctx)
+			: null
 
 	return scalarOrLookupArray(args[0], (lookup) => {
 		if (lookup.kind === 'error') return lookup
-		const idx = findInArray(lookup, flat, matchMode, searchMode)
+		const idx =
+			matchMode === 0 && Math.abs(searchMode) !== 2 && exactIndex
+				? indexedExactMatch(lookup, exactIndex, searchMode === -1)
+				: findInArray(lookup, flat, matchMode, searchMode)
 		return idx < 0 ? errorValue('#N/A') : numberValue(idx + 1)
 	})
 }
@@ -349,9 +583,9 @@ function columnsFn(args: EvalArg[]): CellValue {
 function lookupFn(args: EvalArg[]): CellValue {
 	const lookupArray = getRange(args[1])
 	const resultArray = args.length > 2 ? getRange(args[2]) : lookupArray
-	const lookupFlat: CellValue[] =
+	const lookupFlat: readonly CellValue[] =
 		lookupArray.length === 1 ? [...(lookupArray[0] ?? [])] : extractColumn(lookupArray, 0)
-	const resultFlat: CellValue[] =
+	const resultFlat: readonly CellValue[] =
 		resultArray.length === 1 ? [...(resultArray[0] ?? [])] : extractColumn(resultArray, 0)
 	return scalarOrLookupArray(args[0], (lookup) => {
 		if (lookup.kind === 'error') return lookup

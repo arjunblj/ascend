@@ -46,12 +46,16 @@ export interface WorkbookFormulaAnalysis {
 
 export interface WorkbookDependencyAnalysis {
 	readonly dependencyGraph: DependencyGraph
+	readonly cycles: readonly (readonly CellKey[])[]
+	readonly cycleKeys: ReadonlySet<CellKey>
 	readonly sheetNameIndex: ReadonlyMap<string, number>
 }
 
 export interface WorkbookAnalysis {
 	readonly formulas: ReadonlyMap<CellKey, AnalyzedFormula>
 	readonly dependencyGraph: DependencyGraph
+	readonly cycles: readonly (readonly CellKey[])[]
+	readonly cycleKeys: ReadonlySet<CellKey>
 	readonly sheetNameIndex: ReadonlyMap<string, number>
 }
 
@@ -62,6 +66,16 @@ export interface AnalyzeWorkbookOptions {
 const workbookFormulaAnalysisCache = new WeakMap<Workbook, WorkbookFormulaAnalysis>()
 const workbookDependencyAnalysisCache = new WeakMap<Workbook, WorkbookDependencyAnalysis>()
 const workbookAnalysisCache = new WeakMap<Workbook, WorkbookAnalysis>()
+const analysisFormulaParseCache = new Map<string, ReturnType<typeof parseFormula>>()
+
+function cachedParseFormula(formula: string): ReturnType<typeof parseFormula> {
+	const cached = analysisFormulaParseCache.get(formula)
+	if (cached) return cached
+	const parsed = parseFormula(formula)
+	if (analysisFormulaParseCache.size > 4096) analysisFormulaParseCache.clear()
+	analysisFormulaParseCache.set(formula, parsed)
+	return parsed
+}
 
 export function createSheetNameIndex(workbook: Workbook): Map<string, number> {
 	const index = new Map<string, number>()
@@ -240,7 +254,7 @@ function parseIndexedFormula(
 	if (binding?.kind === 'shared') {
 		const cacheKey = `${sheetIndex}:${binding.sharedIndex ?? ''}`
 		if (binding.isMaster && cell.formula) {
-			const parsed = parseFormula(cell.formula)
+			const parsed = cachedParseFormula(cell.formula)
 			if (parsed.ok) sharedMasterCache.set(cacheKey, parsed.value)
 			return parsed
 		}
@@ -260,7 +274,7 @@ function parseIndexedFormula(
 			error: ascendError('FORMULA_PARSE_ERROR', 'Formula text is missing for this cell.'),
 		}
 	}
-	return parseFormula(cell.formula)
+	return cachedParseFormula(cell.formula)
 }
 
 function loadSharedMasterAst(
@@ -273,7 +287,7 @@ function loadSharedMasterAst(
 	if (!ref) return null
 	const masterCell = workbook.sheets[sheetIndex]?.cells.get(ref.row, ref.col)
 	if (!masterCell?.formula) return null
-	const parsed = parseFormula(masterCell.formula)
+	const parsed = cachedParseFormula(masterCell.formula)
 	return parsed.ok ? parsed.value : null
 }
 
@@ -329,6 +343,8 @@ export function analyzeWorkbook(
 	const analysis = {
 		formulas,
 		dependencyGraph: dependency.dependencyGraph,
+		cycles: dependency.cycles,
+		cycleKeys: dependency.cycleKeys,
 		sheetNameIndex: indexed.sheetNameIndex,
 	}
 	if (!options.range) workbookAnalysisCache.set(workbook, analysis)
@@ -355,8 +371,15 @@ export function analyzeWorkbookDependencies(
 			resolved.rangeDeps,
 		)
 	}
+	const cycles = dependencyGraph.detectCycles()
+	const cycleKeys = new Set<CellKey>()
+	for (const cycle of cycles) {
+		for (const key of cycle) cycleKeys.add(key)
+	}
 	const analysis = {
 		dependencyGraph,
+		cycles,
+		cycleKeys,
 		sheetNameIndex: indexed.sheetNameIndex,
 	}
 	if (!options.range) workbookDependencyAnalysisCache.set(workbook, analysis)
@@ -536,7 +559,7 @@ function extractRefsWithNames(
 				: `sheet:${entry.scope.sheetId}:${entry.name.toLowerCase()}`
 		if (seenNames.includes(entryKey)) continue
 
-		const parsed = parseFormula(entry.formula)
+		const parsed = cachedParseFormula(entry.formula)
 		if (!parsed.ok) continue
 
 		let formulaSheetIndex = sheetIndex

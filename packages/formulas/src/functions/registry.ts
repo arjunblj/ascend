@@ -29,6 +29,14 @@ export interface EvalArg {
 
 export type FnArg = EvalArg
 
+export interface ExactLookupHit {
+	readonly first: number
+	readonly last: number
+}
+
+export type ExactLookupCache = Map<string, ReadonlyMap<string, ExactLookupHit>>
+export type LookupVectorCache = Map<string, readonly CellValue[]>
+
 export interface FunctionEvalContext {
 	readonly now: Date
 	readonly today: Date
@@ -38,6 +46,8 @@ export interface FunctionEvalContext {
 	readonly sheetIndex?: number
 	readonly row?: number
 	readonly col?: number
+	readonly exactLookupCache: ExactLookupCache | undefined
+	readonly lookupVectorCache: LookupVectorCache | undefined
 }
 
 export interface FunctionDef {

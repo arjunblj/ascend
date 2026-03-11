@@ -239,6 +239,40 @@ describe('evaluator', () => {
 		})
 	})
 
+	describe('lazy logical evaluation', () => {
+		test('IF does not evaluate untaken true branch', () => {
+			const wb = createWorkbook()
+			wb.addSheet('Sheet1')
+
+			const result = evalFormula('IF(FALSE,1/0,7)', wb, 0, 0, 0)
+			expect(result).toEqual(numberValue(7))
+		})
+
+		test('IF does not evaluate untaken false branch', () => {
+			const wb = createWorkbook()
+			wb.addSheet('Sheet1')
+
+			const result = evalFormula('IF(TRUE,7,1/0)', wb, 0, 0, 0)
+			expect(result).toEqual(numberValue(7))
+		})
+
+		test('IFERROR does not evaluate fallback when value succeeds', () => {
+			const wb = createWorkbook()
+			wb.addSheet('Sheet1')
+
+			const result = evalFormula('IFERROR(42,1/0)', wb, 0, 0, 0)
+			expect(result).toEqual(numberValue(42))
+		})
+
+		test('IFNA does not evaluate fallback when value is not #N/A', () => {
+			const wb = createWorkbook()
+			wb.addSheet('Sheet1')
+
+			const result = evalFormula('IFNA(42,1/0)', wb, 0, 0, 0)
+			expect(result).toEqual(numberValue(42))
+		})
+	})
+
 	describe('direct evaluate calls', () => {
 		test('evaluate binary via workbook context', () => {
 			const wb = createWorkbook()

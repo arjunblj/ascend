@@ -1,5 +1,5 @@
 import { indexToColumn, parseRange, type RangeRef, type StyleId, type Workbook } from '@ascend/core'
-import type { FormulaNode } from '@ascend/formulas'
+import type { ExactLookupCache, FormulaNode, LookupVectorCache } from '@ascend/formulas'
 import type { AscendError, CellValue } from '@ascend/schema'
 import { EMPTY, errorValue, topLeftScalar } from '@ascend/schema'
 import { analyzeWorkbook } from './analysis.ts'
@@ -12,6 +12,17 @@ export interface RecalcResult {
 	readonly changed: string[]
 	readonly errors: Array<{ ref: string; error: AscendError }>
 	readonly duration: number
+}
+
+interface SpillEntry {
+	readonly row: number
+	readonly col: number
+	readonly ref: string
+}
+
+interface SpillIndexState {
+	readonly bySheet: Map<number, Map<string, SpillEntry[]>>
+	readonly initializedSheets: Set<number>
 }
 
 function valuesEqual(a: CellValue, b: CellValue): boolean {
@@ -81,26 +92,60 @@ function isSpillBinding(
 	)
 }
 
-function clearSpillFootprint(
+function getSheetSpillIndex(
+	spillIndex: SpillIndexState,
+	sheetIndex: number,
 	sheet: Workbook['sheets'][number],
-	anchorRef: string,
-	changed: string[],
-): void {
-	if (!sheet) return
-	const removals: Array<{ row: number; col: number; ref: string }> = []
-	for (const [row, col, cell] of sheet.cells.iterate()) {
-		if (
-			cell.formulaInfo &&
-			isSpillBinding(cell.formulaInfo) &&
-			cell.formulaInfo.anchorRef === anchorRef
-		) {
-			removals.push({ row, col, ref: toA1Ref(row, col) })
+): Map<string, SpillEntry[]> {
+	const existing = spillIndex.bySheet.get(sheetIndex)
+	if (spillIndex.initializedSheets.has(sheetIndex)) return existing ?? new Map()
+	const entries = existing ?? new Map<string, SpillEntry[]>()
+	if (sheet) {
+		for (const [row, col, cell] of sheet.cells.iterate()) {
+			if (!cell.formulaInfo || !isSpillBinding(cell.formulaInfo)) continue
+			const spillEntry = { row, col, ref: toA1Ref(row, col) }
+			const bucket = entries.get(cell.formulaInfo.anchorRef)
+			if (bucket) bucket.push(spillEntry)
+			else entries.set(cell.formulaInfo.anchorRef, [spillEntry])
 		}
 	}
+	spillIndex.bySheet.set(sheetIndex, entries)
+	spillIndex.initializedSheets.add(sheetIndex)
+	return entries
+}
+
+function recordSpillCell(
+	spillIndex: SpillIndexState,
+	sheetIndex: number,
+	sheet: Workbook['sheets'][number],
+	anchorRef: string,
+	row: number,
+	col: number,
+): void {
+	const entries = getSheetSpillIndex(spillIndex, sheetIndex, sheet)
+	const spillEntry = { row, col, ref: toA1Ref(row, col) }
+	const bucket = entries.get(anchorRef)
+	if (bucket) bucket.push(spillEntry)
+	else entries.set(anchorRef, [spillEntry])
+}
+
+function clearSpillFootprint(
+	sheet: Workbook['sheets'][number],
+	sheetIndex: number,
+	anchorRef: string,
+	changed: string[],
+	spillIndex: SpillIndexState,
+): boolean {
+	if (!sheet) return false
+	const entries = getSheetSpillIndex(spillIndex, sheetIndex, sheet)
+	const removals = entries.get(anchorRef)
+	if (!removals || removals.length === 0) return false
+	entries.delete(anchorRef)
 	for (const removal of removals) {
 		sheet.cells.delete(removal.row, removal.col)
 		changed.push(`${sheet.name}!${removal.ref}`)
 	}
+	return true
 }
 
 function isSpillBlocked(
@@ -142,11 +187,12 @@ function applyArrayResult(
 		| undefined,
 	matrix: readonly (readonly CellValue[])[],
 	changed: string[],
+	spillIndex: SpillIndexState,
 ): CellValue {
 	const sheet = workbook.sheets[sheetIndex]
 	if (!sheet) return errorValue('#REF!')
 	const anchorRef = `${sheet.name}!${toA1Ref(row, col)}`
-	clearSpillFootprint(sheet, anchorRef, changed)
+	clearSpillFootprint(sheet, sheetIndex, anchorRef, changed, spillIndex)
 	if (matrix.length === 0 || (matrix[0]?.length ?? 0) === 0) return EMPTY
 	if (isSpillBlocked(sheet, row, col, anchorRef, matrix)) {
 		const spillError = errorValue('#SPILL!')
@@ -178,6 +224,7 @@ function applyArrayResult(
 			isAnchor: true,
 		},
 	})
+	recordSpillCell(spillIndex, sheetIndex, sheet, anchorRef, row, col)
 	changed.push(anchorRef)
 
 	for (let rowOffset = 0; rowOffset < matrix.length; rowOffset++) {
@@ -197,6 +244,7 @@ function applyArrayResult(
 					isAnchor: false,
 				},
 			})
+			recordSpillCell(spillIndex, sheetIndex, sheet, anchorRef, targetRow, targetCol)
 			changed.push(`${sheet.name}!${toA1Ref(targetRow, targetCol)}`)
 		}
 	}
@@ -213,32 +261,26 @@ export function recalculate(
 	opts?: { dirtyOnly?: boolean; range?: RangeRef; dirtyRefs?: readonly string[] },
 ): RecalcResult {
 	const start = performance.now()
-	const asts = new Map<CellKey, FormulaNode>()
 	const changed: string[] = []
 	const errors: Array<{ ref: string; error: AscendError }> = []
+	const spillIndex: SpillIndexState = {
+		bySheet: new Map(),
+		initializedSheets: new Set(),
+	}
+	const exactLookupCache: ExactLookupCache = new Map()
+	const lookupVectorCache: LookupVectorCache = new Map()
 
 	const analysis = analyzeWorkbook(workbook, opts?.range ? { range: opts.range } : undefined)
 	const graph = analysis.dependencyGraph
-
-	for (const analyzed of analysis.formulas.values()) {
-		if (analyzed.parseError || !analyzed.ast) {
-			errors.push({
-				ref: cellRefString(workbook, analyzed.sheetIndex, analyzed.row, analyzed.col),
-				error: {
-					code: 'FORMULA_PARSE_ERROR',
-					message: `Failed to parse: ${analyzed.formula}`,
-					retryable: false,
-				},
-			})
-			continue
-		}
-		asts.set(analyzed.key, analyzed.ast)
-	}
+	const isDirtyRecalc = opts?.dirtyOnly || (opts?.dirtyRefs?.length ?? 0) > 0
 
 	let evalOrder: CellKey[]
 
-	if (opts?.dirtyOnly || (opts?.dirtyRefs?.length ?? 0) > 0) {
-		const dirtySeeds = [...graph.getVolatiles(), ...resolveDirtyKeys(workbook, opts?.dirtyRefs)]
+	if (isDirtyRecalc) {
+		const dirtySeeds = [
+			...graph.getVolatiles(),
+			...resolveDirtyKeys(workbook, analysis.sheetNameIndex, opts?.dirtyRefs),
+		]
 		const dirty = graph.getDirtySet(dirtySeeds)
 		evalOrder = graph.getEvalOrder(dirty)
 	} else {
@@ -247,14 +289,56 @@ export function recalculate(
 		evalOrder = graph.getEvalOrder(allSet)
 	}
 
-	const cycles = graph.detectCycles()
-	const cycleKeys = new Set<CellKey>()
-	for (const scc of cycles) {
-		for (const key of scc) cycleKeys.add(key)
+	const cycleKeys = analysis.cycleKeys
+	const asts = new Map<CellKey, FormulaNode>()
+	if (isDirtyRecalc) {
+		for (const key of evalOrder) {
+			const analyzed = analysis.formulas.get(key)
+			if (!analyzed) continue
+			if (analyzed.parseError || !analyzed.ast) {
+				errors.push({
+					ref: cellRefString(workbook, analyzed.sheetIndex, analyzed.row, analyzed.col),
+					error: {
+						code: 'FORMULA_PARSE_ERROR',
+						message: `Failed to parse: ${analyzed.formula}`,
+						retryable: false,
+					},
+				})
+				continue
+			}
+			asts.set(key, analyzed.ast)
+		}
+	} else {
+		for (const analyzed of analysis.formulas.values()) {
+			if (analyzed.parseError || !analyzed.ast) {
+				errors.push({
+					ref: cellRefString(workbook, analyzed.sheetIndex, analyzed.row, analyzed.col),
+					error: {
+						code: 'FORMULA_PARSE_ERROR',
+						message: `Failed to parse: ${analyzed.formula}`,
+						retryable: false,
+					},
+				})
+				continue
+			}
+			asts.set(analyzed.key, analyzed.ast)
+		}
 	}
 
 	if (ctx.iterativeCalc.enabled && cycleKeys.size > 0) {
-		evalIterative(workbook, ctx, graph, asts, evalOrder, cycleKeys, changed, errors)
+		evalIterative(
+			workbook,
+			ctx,
+			graph,
+			asts,
+			evalOrder,
+			cycleKeys,
+			changed,
+			errors,
+			spillIndex,
+			exactLookupCache,
+			lookupVectorCache,
+		)
 	} else {
 		for (const key of evalOrder) {
 			if (cycleKeys.has(key)) {
@@ -262,15 +346,14 @@ export function recalculate(
 				const sheet = workbook.sheets[si]
 				if (sheet) {
 					const oldCell = sheet.cells.get(row, col)
-					if (
+					const clearedSpill =
 						oldCell?.formulaInfo &&
 						isSpillBinding(oldCell.formulaInfo) &&
 						oldCell.formulaInfo.isAnchor
-					) {
-						clearSpillFootprint(sheet, oldCell.formulaInfo.anchorRef, changed)
-					}
+							? clearSpillFootprint(sheet, si, oldCell.formulaInfo.anchorRef, changed, spillIndex)
+							: false
 					const newValue = errorValue('#REF!')
-					if (!oldCell || !valuesEqual(oldCell.value, newValue)) {
+					if (!oldCell || clearedSpill || !valuesEqual(oldCell.value, newValue)) {
 						sheet.cells.set(row, col, {
 							value: newValue,
 							formula: oldCell?.formula ?? null,
@@ -303,22 +386,21 @@ export function recalculate(
 				sheetIndex: si,
 				row,
 				col,
+				exactLookupCache,
+				lookupVectorCache,
 			}
 			const newValue = evalFormula(key, ast, evalCtx)
 			const oldCell = sheet.cells.get(row, col)
 			const spillMatrix = toScalarMatrix(newValue)
 			if (spillMatrix) {
-				applyArrayResult(workbook, si, row, col, oldCell, spillMatrix, changed)
+				applyArrayResult(workbook, si, row, col, oldCell, spillMatrix, changed, spillIndex)
 				continue
 			}
-			if (
-				oldCell?.formulaInfo &&
-				isSpillBinding(oldCell.formulaInfo) &&
-				oldCell.formulaInfo.isAnchor
-			) {
-				clearSpillFootprint(sheet, oldCell.formulaInfo.anchorRef, changed)
-			}
-			if (!oldCell || !valuesEqual(oldCell.value, newValue)) {
+			const clearedSpill =
+				oldCell?.formulaInfo && isSpillBinding(oldCell.formulaInfo) && oldCell.formulaInfo.isAnchor
+					? clearSpillFootprint(sheet, si, oldCell.formulaInfo.anchorRef, changed, spillIndex)
+					: false
+			if (!oldCell || clearedSpill || !valuesEqual(oldCell.value, newValue)) {
 				sheet.cells.set(row, col, {
 					value: newValue,
 					formula: oldCell?.formula ?? null,
@@ -336,7 +418,11 @@ export function recalculate(
 	}
 }
 
-function resolveDirtyKeys(workbook: Workbook, refs: readonly string[] | undefined): CellKey[] {
+function resolveDirtyKeys(
+	workbook: Workbook,
+	sheetNameIndex: ReadonlyMap<string, number>,
+	refs: readonly string[] | undefined,
+): CellKey[] {
 	if (!refs || refs.length === 0) return []
 	const keys: CellKey[] = []
 	for (const ref of refs) {
@@ -345,7 +431,7 @@ function resolveDirtyKeys(workbook: Workbook, refs: readonly string[] | undefine
 			bang >= 0 ? ref.slice(0, bang).replace(/^'|'$/g, '') : workbook.sheets[0]?.name
 		const localRef = bang >= 0 ? ref.slice(bang + 1) : ref
 		if (!sheetName || !localRef) continue
-		const sheetIndex = workbook.sheets.findIndex((sheet) => sheet.name === sheetName)
+		const sheetIndex = sheetNameIndex.get(sheetName.toLowerCase()) ?? -1
 		if (sheetIndex === -1) continue
 		const range = parseRange(localRef)
 		for (let row = range.start.row; row <= range.end.row; row++) {
@@ -363,9 +449,12 @@ function evalIterative(
 	_graph: DependencyGraph,
 	asts: Map<CellKey, FormulaNode>,
 	evalOrder: CellKey[],
-	cycleKeys: Set<CellKey>,
+	cycleKeys: ReadonlySet<CellKey>,
 	changed: string[],
 	_errors: Array<{ ref: string; error: AscendError }>,
+	spillIndex: SpillIndexState,
+	exactLookupCache: ExactLookupCache,
+	lookupVectorCache: LookupVectorCache,
 ): void {
 	const maxIter = ctx.iterativeCalc.maxIterations
 	const maxChange = ctx.iterativeCalc.maxChange
@@ -387,32 +476,33 @@ function evalIterative(
 				sheetIndex: si,
 				row,
 				col,
+				exactLookupCache,
+				lookupVectorCache,
 			}
 			const newValue = evalFormula(key, ast, evalCtx)
 			const oldCell = sheet.cells.get(row, col)
 			const oldValue = oldCell?.value ?? EMPTY
 			const spillMatrix = toScalarMatrix(newValue)
 			if (spillMatrix) {
-				applyArrayResult(workbook, si, row, col, oldCell, spillMatrix, changed)
+				applyArrayResult(workbook, si, row, col, oldCell, spillMatrix, changed, spillIndex)
 				continue
 			}
-			if (
-				oldCell?.formulaInfo &&
-				isSpillBinding(oldCell.formulaInfo) &&
-				oldCell.formulaInfo.isAnchor
-			) {
-				clearSpillFootprint(sheet, oldCell.formulaInfo.anchorRef, changed)
-			}
+			const clearedSpill =
+				oldCell?.formulaInfo && isSpillBinding(oldCell.formulaInfo) && oldCell.formulaInfo.isAnchor
+					? clearSpillFootprint(sheet, si, oldCell.formulaInfo.anchorRef, changed, spillIndex)
+					: false
 
 			if (oldValue.kind === 'number' && newValue.kind === 'number') {
 				maxDelta = Math.max(maxDelta, Math.abs(newValue.value - oldValue.value))
 			}
 
-			sheet.cells.set(row, col, {
-				value: newValue,
-				formula: oldCell?.formula ?? null,
-				styleId: oldCell?.styleId ?? (0 as StyleId),
-			})
+			if (!oldCell || clearedSpill || !valuesEqual(oldCell.value, newValue)) {
+				sheet.cells.set(row, col, {
+					value: newValue,
+					formula: oldCell?.formula ?? null,
+					styleId: oldCell?.styleId ?? (0 as StyleId),
+				})
+			}
 		}
 
 		if (maxDelta <= maxChange) break
@@ -438,22 +528,21 @@ function evalIterative(
 			sheetIndex: si,
 			row,
 			col,
+			exactLookupCache,
+			lookupVectorCache,
 		}
 		const newValue = evalFormula(key, ast, evalCtx)
 		const oldCell = sheet.cells.get(row, col)
 		const spillMatrix = toScalarMatrix(newValue)
 		if (spillMatrix) {
-			applyArrayResult(workbook, si, row, col, oldCell, spillMatrix, changed)
+			applyArrayResult(workbook, si, row, col, oldCell, spillMatrix, changed, spillIndex)
 			continue
 		}
-		if (
-			oldCell?.formulaInfo &&
-			isSpillBinding(oldCell.formulaInfo) &&
-			oldCell.formulaInfo.isAnchor
-		) {
-			clearSpillFootprint(sheet, oldCell.formulaInfo.anchorRef, changed)
-		}
-		if (!oldCell || !valuesEqual(oldCell.value, newValue)) {
+		const clearedSpill =
+			oldCell?.formulaInfo && isSpillBinding(oldCell.formulaInfo) && oldCell.formulaInfo.isAnchor
+				? clearSpillFootprint(sheet, si, oldCell.formulaInfo.anchorRef, changed, spillIndex)
+				: false
+		if (!oldCell || clearedSpill || !valuesEqual(oldCell.value, newValue)) {
 			sheet.cells.set(row, col, {
 				value: newValue,
 				formula: oldCell?.formula ?? null,

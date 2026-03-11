@@ -3,8 +3,10 @@ import type { FormulaNode } from '@ascend/formulas'
 import {
 	type EvalArea,
 	type EvalArg,
+	type ExactLookupCache,
 	type FunctionEvalContext,
 	functionRegistry,
+	type LookupVectorCache,
 	parseFormula,
 	toNumber,
 } from '@ascend/formulas'
@@ -29,6 +31,8 @@ export interface EvalContext {
 	readonly col: number
 	readonly definedNameStack?: readonly string[]
 	readonly letBindings?: ReadonlyMap<string, CellValue>
+	readonly exactLookupCache?: ExactLookupCache
+	readonly lookupVectorCache?: LookupVectorCache
 }
 
 class FunctionEvalCtx implements FunctionEvalContext {
@@ -40,6 +44,8 @@ class FunctionEvalCtx implements FunctionEvalContext {
 	sheetIndex?: number
 	row?: number
 	col?: number
+	exactLookupCache: ExactLookupCache | undefined
+	lookupVectorCache: LookupVectorCache | undefined
 
 	update(ctx: EvalContext): this {
 		const cc = ctx.calcContext
@@ -51,6 +57,8 @@ class FunctionEvalCtx implements FunctionEvalContext {
 		this.sheetIndex = ctx.sheetIndex
 		this.row = ctx.row
 		this.col = ctx.col
+		this.exactLookupCache = ctx.exactLookupCache
+		this.lookupVectorCache = ctx.lookupVectorCache
 		return this
 	}
 }
@@ -149,6 +157,30 @@ function coerceToString(v: CellValue): string {
 			return v.value
 		case 'richText':
 			return v.runs.map((r) => r.text).join('')
+	}
+}
+
+function coerceToBoolean(v: CellValue): boolean | CellValue {
+	v = topLeftScalar(v)
+	switch (v.kind) {
+		case 'empty':
+			return false
+		case 'number':
+			return v.value !== 0
+		case 'string': {
+			const upper = v.value.toUpperCase()
+			if (upper === 'TRUE') return true
+			if (upper === 'FALSE') return false
+			return errorValue('#VALUE!')
+		}
+		case 'boolean':
+			return v.value
+		case 'error':
+			return v
+		case 'date':
+			return v.serial !== 0
+		case 'richText':
+			return errorValue('#VALUE!')
 	}
 }
 
@@ -337,6 +369,15 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 	if (upperName === 'LET') {
 		return evalLet(argNodes, ctx)
 	}
+	if (upperName === 'IF') {
+		return evalIf(argNodes, ctx)
+	}
+	if (upperName === 'IFERROR') {
+		return evalIfError(argNodes, ctx)
+	}
+	if (upperName === 'IFNA') {
+		return evalIfNa(argNodes, ctx)
+	}
 
 	const def = functionRegistry.get(upperName)
 	if (!def) return errorValue('#NAME?')
@@ -346,6 +387,27 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 
 	const args = argNodes.map((argNode) => resolveArg(argNode, ctx))
 	return def.evaluate(args, sharedFnCtx.update(ctx))
+}
+
+function evalLazyArg(node: FormulaNode | undefined, ctx: EvalContext): CellValue {
+	return referenceArgToValue(resolveArg(node ?? { type: 'missing' }, ctx))
+}
+
+function evalIf(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
+	const condition = coerceToBoolean(resolveArg(argNodes[0] ?? { type: 'missing' }, ctx).value)
+	if (typeof condition !== 'boolean') return condition
+	if (condition) return evalLazyArg(argNodes[1], ctx)
+	return argNodes.length >= 3 ? evalLazyArg(argNodes[2], ctx) : booleanValue(false)
+}
+
+function evalIfError(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
+	const value = evalLazyArg(argNodes[0], ctx)
+	return value.kind === 'error' ? evalLazyArg(argNodes[1], ctx) : value
+}
+
+function evalIfNa(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
+	const value = evalLazyArg(argNodes[0], ctx)
+	return value.kind === 'error' && value.value === '#N/A' ? evalLazyArg(argNodes[1], ctx) : value
 }
 
 function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {

@@ -30,3 +30,17 @@ jobs:
 
       - name: Test
         run: bun test --recursive
+
+  perf-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile
+
+      - name: Synthetic benchmark smoke
+        run: bun run fixtures/benchmarks/run.ts --set smoke --repeat 3

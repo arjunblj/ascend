@@ -74,8 +74,7 @@ function checkBrokenRefs(_wb: Workbook, analysis: WorkbookFormulaAnalysis): Chec
 }
 
 function checkCircularRefs(wb: Workbook, analysis: WorkbookDependencyAnalysis): CheckIssue[] {
-	const cycles = analysis.dependencyGraph.detectCycles()
-	return cycles.map((cycle) => {
+	return analysis.cycles.map((cycle) => {
 		const refs = cycle.map((key) => {
 			const [si, row, col] = parseCellKey(key)
 			const s = wb.sheets[si]

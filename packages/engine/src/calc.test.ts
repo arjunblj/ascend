@@ -73,6 +73,21 @@ describe('recalculate', () => {
 		expect(result.changed).not.toContain('Sheet1!D1')
 	})
 
+	test('dirty recalc only reports parse errors inside the affected subgraph', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'A1+1', styleId: sid })
+		sheet.cells.set(0, 3, { value: EMPTY, formula: 'SUM((', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		sheet.cells.set(0, 0, { value: numberValue(5), formula: null, styleId: sid })
+
+		const result = recalculate(wb, makeCtx(), { dirtyOnly: true, dirtyRefs: ['Sheet1!A1'] })
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(6))
+		expect(result.errors).toEqual([])
+	})
+
 	test('multi-sheet reference', () => {
 		const wb = createWorkbook()
 		const s1 = wb.addSheet('Data')
@@ -487,6 +502,32 @@ describe('recalculate', () => {
 		recalculate(wb, makeCtx())
 		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#SPILL!'))
 		expect(sheet.cells.get(1, 0)?.value).toEqual(stringValue('blocker'))
+	})
+
+	test('dirty recalc clears stale spill cells when a spill shrinks', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		for (let r = 0; r < 4; r++) {
+			sheet.cells.set(r, 0, { value: numberValue(r + 1), formula: null, styleId: sid })
+			sheet.cells.set(r, 1, {
+				value: { kind: 'boolean', value: true },
+				formula: null,
+				styleId: sid,
+			})
+		}
+		sheet.cells.set(0, 2, { value: EMPTY, formula: 'FILTER(A1:A4,B1:B4,0)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(3, 2)?.value).toEqual(numberValue(4))
+
+		sheet.cells.set(2, 1, { value: { kind: 'boolean', value: false }, formula: null, styleId: sid })
+		sheet.cells.set(3, 1, { value: { kind: 'boolean', value: false }, formula: null, styleId: sid })
+
+		recalculate(wb, makeCtx(), { dirtyOnly: true, dirtyRefs: ['Sheet1!B3:B4'] })
+		expect(sheet.cells.get(0, 2)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(2, 2)).toBeUndefined()
+		expect(sheet.cells.get(3, 2)).toBeUndefined()
 	})
 
 	test('spill operator resolves a spilled range', () => {

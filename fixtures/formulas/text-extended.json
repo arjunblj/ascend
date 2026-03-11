@@ -1,0 +1,95 @@
+{
+	"function": "text-extended",
+	"cases": [
+		{
+			"description": "CLEAN removes non-printable characters",
+			"setup": { "A1": "Hello\u0001World" },
+			"formula": "CLEAN(A1)",
+			"expected": { "kind": "string", "value": "HelloWorld" }
+		},
+		{
+			"description": "CLEAN returns unchanged string when no control chars",
+			"setup": { "A1": "Clean text" },
+			"formula": "CLEAN(A1)",
+			"expected": { "kind": "string", "value": "Clean text" }
+		},
+		{
+			"description": "CLEAN strips leading tab and newline",
+			"setup": { "A1": "\u0009\u000aHello" },
+			"formula": "CLEAN(A1)",
+			"expected": { "kind": "string", "value": "Hello" }
+		},
+		{
+			"description": "T returns text when value is text",
+			"setup": { "A1": "Revenue" },
+			"formula": "T(A1)",
+			"expected": { "kind": "string", "value": "Revenue" }
+		},
+		{
+			"description": "T returns empty string for number",
+			"setup": { "A1": 100 },
+			"formula": "T(A1)",
+			"expected": { "kind": "string", "value": "" }
+		},
+		{
+			"description": "T returns empty string for empty cell",
+			"setup": {},
+			"formula": "T(A1)",
+			"expected": { "kind": "string", "value": "" }
+		},
+		{
+			"description": "UNICHAR returns character for code point 65",
+			"setup": { "A1": 65 },
+			"formula": "UNICHAR(A1)",
+			"expected": { "kind": "string", "value": "A" }
+		},
+		{
+			"description": "UNICHAR returns emoji for code point 128512",
+			"setup": { "A1": 128512 },
+			"formula": "UNICHAR(A1)",
+			"expected": { "kind": "string", "value": "😀" }
+		},
+		{
+			"description": "UNICHAR returns #VALUE! for code point 0",
+			"setup": { "A1": 0 },
+			"formula": "UNICHAR(A1)",
+			"expected": { "kind": "error", "value": "#VALUE!" }
+		},
+		{
+			"description": "UNICODE returns code point of first character",
+			"setup": { "A1": "A" },
+			"formula": "UNICODE(A1)",
+			"expected": { "kind": "number", "value": 65 }
+		},
+		{
+			"description": "UNICODE returns code point for emoji",
+			"setup": { "A1": "😀" },
+			"formula": "UNICODE(A1)",
+			"expected": { "kind": "number", "value": 128512 }
+		},
+		{
+			"description": "UNICODE returns #VALUE! for empty string",
+			"setup": { "A1": "" },
+			"formula": "UNICODE(A1)",
+			"expected": { "kind": "error", "value": "#VALUE!" }
+		},
+		{
+			"description": "NUMBERVALUE parses with default separators",
+			"setup": { "A1": "1,250.50" },
+			"formula": "NUMBERVALUE(A1)",
+			"expected": { "kind": "number", "value": 1250.5 }
+		},
+		{
+			"description": "NUMBERVALUE parses European format with custom decimal",
+			"setup": { "A1": "1.234,56" },
+			"formula": "NUMBERVALUE(A1, \",\", \".\")",
+			"expected": { "kind": "number", "value": 1234.56 }
+		},
+		{
+			"description": "NUMBERVALUE parses with space as group separator",
+			"setup": { "A1": "1 234 567.89" },
+			"formula": "NUMBERVALUE(A1, \".\", \" \")",
+			"expected": { "kind": "number", "value": 1234567.89 }
+		}
+	]
+}

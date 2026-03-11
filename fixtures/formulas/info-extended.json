@@ -1,0 +1,77 @@
+{
+	"function": "info-extended",
+	"cases": [
+		{
+			"description": "ISEVEN returns TRUE for even number",
+			"setup": { "A1": 4 },
+			"formula": "ISEVEN(A1)",
+			"expected": { "kind": "boolean", "value": true }
+		},
+		{
+			"description": "ISEVEN returns FALSE for odd number",
+			"setup": { "A1": 5 },
+			"formula": "ISEVEN(A1)",
+			"expected": { "kind": "boolean", "value": false }
+		},
+		{
+			"description": "ISEVEN truncates and returns TRUE for 2.9",
+			"setup": {},
+			"formula": "ISEVEN(2.9)",
+			"expected": { "kind": "boolean", "value": true }
+		},
+		{
+			"description": "ISODD returns TRUE for odd number",
+			"setup": { "A1": 7 },
+			"formula": "ISODD(A1)",
+			"expected": { "kind": "boolean", "value": true }
+		},
+		{
+			"description": "ISODD returns FALSE for even number",
+			"setup": { "A1": 8 },
+			"formula": "ISODD(A1)",
+			"expected": { "kind": "boolean", "value": false }
+		},
+		{
+			"description": "ISODD truncates and returns FALSE for 4.7",
+			"setup": {},
+			"formula": "ISODD(4.7)",
+			"expected": { "kind": "boolean", "value": false }
+		},
+		{
+			"description": "ISNONTEXT returns TRUE for number",
+			"setup": { "A1": 42 },
+			"formula": "ISNONTEXT(A1)",
+			"expected": { "kind": "boolean", "value": true }
+		},
+		{
+			"description": "ISNONTEXT returns FALSE for text",
+			"setup": { "A1": "hello" },
+			"formula": "ISNONTEXT(A1)",
+			"expected": { "kind": "boolean", "value": false }
+		},
+		{
+			"description": "ISNONTEXT returns TRUE for empty cell",
+			"setup": {},
+			"formula": "ISNONTEXT(A1)",
+			"expected": { "kind": "boolean", "value": true }
+		},
+		{
+			"description": "ERROR.TYPE returns 2 for #DIV/0!",
+			"setup": {},
+			"formula": "ERROR.TYPE(1/0)",
+			"expected": { "kind": "number", "value": 2 }
+		},
+		{
+			"description": "ERROR.TYPE returns 7 for #N/A",
+			"setup": {},
+			"formula": "ERROR.TYPE(NA())",
+			"expected": { "kind": "number", "value": 7 }
+		},
+		{
+			"description": "ERROR.TYPE returns #N/A for non-error",
+			"setup": { "A1": 42 },
+			"formula": "ERROR.TYPE(A1)",
+			"expected": { "kind": "error", "value": "#N/A" }
+		}
+	]
+}

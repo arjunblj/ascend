@@ -492,4 +492,46 @@ export const textFunctions: FunctionDef[] = [
 		if (times < 0) return errorValue('#VALUE!')
 		return stringValue(s.repeat(times))
 	}),
+
+	fn('CLEAN', 1, 1, (args) => {
+		const s = strArg(args[0])
+		if (typeof s !== 'string') return s
+		return stringValue([...s].filter((c) => c.charCodeAt(0) > 31).join(''))
+	}),
+
+	fn('T', 1, 1, (args) => {
+		const v = topLeftScalar(args[0]?.value ?? EMPTY)
+		if (v.kind === 'string') return stringValue(v.value)
+		if (v.kind === 'richText') return stringValue(v.runs.map((r) => r.text).join(''))
+		return stringValue('')
+	}),
+
+	fn('UNICHAR', 1, 1, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		const code = Math.trunc(n)
+		if (code < 1 || code > 1114111) return errorValue('#VALUE!')
+		return stringValue(String.fromCodePoint(code))
+	}),
+
+	fn('UNICODE', 1, 1, (args) => {
+		const s = strArg(args[0])
+		if (typeof s !== 'string') return s
+		if (s.length === 0) return errorValue('#VALUE!')
+		return numberValue(s.codePointAt(0) ?? s.charCodeAt(0))
+	}),
+
+	fn('NUMBERVALUE', 1, 3, (args) => {
+		const text = strArg(args[0])
+		if (typeof text !== 'string') return text
+		const decimalSep = args[1] ? strArg(args[1]) : '.'
+		if (typeof decimalSep !== 'string') return decimalSep
+		const groupSep = args[2] ? strArg(args[2]) : ','
+		if (typeof groupSep !== 'string') return groupSep
+		let cleaned = text.trim()
+		cleaned = cleaned.split(groupSep).join('')
+		cleaned = cleaned.split(decimalSep).join('.')
+		const n = Number(cleaned)
+		return Number.isNaN(n) ? errorValue('#VALUE!') : numberValue(n)
+	}),
 ]

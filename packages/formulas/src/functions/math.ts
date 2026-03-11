@@ -24,7 +24,7 @@ function seededRandom(ctx?: FunctionEvalContext): number {
 	state ^= state >>> 15
 	state = Math.imul(state, 0x846ca68b) >>> 0
 	state ^= state >>> 16
-	return state / 0x1_0000_0000
+	return (state >>> 0) / 0x1_0000_0000
 }
 
 function toNum(v: CellValue): number | CellValue {
@@ -619,6 +619,238 @@ export const mathFunctions: FunctionDef[] = [
 	}),
 
 	fn('SUBTOTAL', 2, 255, subtotalFn),
+
+	fn('TRUNC', 1, 2, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		const d = args.length >= 2 ? numArg(args[1]) : 0
+		if (typeof d !== 'number') return d
+		const factor = 10 ** Math.trunc(d)
+		return numberValue(Math.trunc(n * factor) / factor)
+	}),
+
+	fn('MROUND', 2, 2, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		const m = numArg(args[1])
+		if (typeof m !== 'number') return m
+		if (n > 0 && m < 0) return errorValue('#NUM!')
+		if (n < 0 && m > 0) return errorValue('#NUM!')
+		if (m === 0) return numberValue(0)
+		return numberValue(Math.round(n / m) * m)
+	}),
+
+	fn('GCD', 1, 255, (args) => {
+		const nums: number[] = []
+		for (const arg of args) {
+			const n = numArg(arg)
+			if (typeof n !== 'number') return n
+			nums.push(Math.trunc(Math.abs(n)))
+		}
+		if (nums.length === 0) return numberValue(0)
+		let g = nums[0] ?? 0
+		for (let i = 1; i < nums.length; i++) {
+			let a = g
+			let b = nums[i] ?? 0
+			while (b !== 0) {
+				const t = b
+				b = a % b
+				a = t
+			}
+			g = a
+		}
+		return numberValue(g)
+	}),
+
+	fn('LCM', 1, 255, (args) => {
+		const nums: number[] = []
+		for (const arg of args) {
+			const n = numArg(arg)
+			if (typeof n !== 'number') return n
+			nums.push(Math.trunc(Math.abs(n)))
+		}
+		if (nums.length === 0) return numberValue(0)
+		const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b))
+		let l = nums[0] ?? 0
+		for (let i = 1; i < nums.length; i++) {
+			const n = nums[i] ?? 0
+			if (l === 0 || n === 0) {
+				l = 0
+				break
+			}
+			l = Math.abs(l * n) / gcd(l, n)
+		}
+		return numberValue(l)
+	}),
+
+	fn('FACT', 1, 1, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		const k = Math.trunc(n)
+		if (k < 0) return errorValue('#NUM!')
+		let f = 1
+		for (let i = 2; i <= k; i++) f *= i
+		return numberValue(f)
+	}),
+
+	fn('FACTDOUBLE', 1, 1, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		const k = Math.trunc(n)
+		if (k < 0) return errorValue('#NUM!')
+		let f = 1
+		for (let i = k; i > 0; i -= 2) f *= i
+		return numberValue(f)
+	}),
+
+	fn('COMBIN', 2, 2, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		const k = numArg(args[1])
+		if (typeof k !== 'number') return k
+		const ni = Math.trunc(n)
+		const ki = Math.trunc(k)
+		if (ni < 0 || ki < 0 || ki > ni) return errorValue('#NUM!')
+		if (ki === 0 || ki === ni) return numberValue(1)
+		let c = 1
+		for (let i = 0; i < ki; i++) c = (c * (ni - i)) / (i + 1)
+		return numberValue(Math.round(c))
+	}),
+
+	fn('PERMUT', 2, 2, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		const k = numArg(args[1])
+		if (typeof k !== 'number') return k
+		const ni = Math.trunc(n)
+		const ki = Math.trunc(k)
+		if (ni < 0 || ki < 0 || ki > ni) return errorValue('#NUM!')
+		let p = 1
+		for (let i = 0; i < ki; i++) p *= ni - i
+		return numberValue(p)
+	}),
+
+	fn('ODD', 1, 1, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		const x = Math.ceil(Math.abs(n))
+		const odd = x % 2 === 0 ? x + 1 : x
+		return numberValue(n >= 0 ? odd : -odd)
+	}),
+
+	fn('EVEN', 1, 1, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		const x = Math.ceil(Math.abs(n))
+		const even = x % 2 === 1 ? x + 1 : x
+		return numberValue(n >= 0 ? even : -even)
+	}),
+
+	fn('QUOTIENT', 2, 2, (args) => {
+		const num = numArg(args[0])
+		if (typeof num !== 'number') return num
+		const den = numArg(args[1])
+		if (typeof den !== 'number') return den
+		if (den === 0) return errorValue('#DIV/0!')
+		return numberValue(Math.trunc(num / den))
+	}),
+
+	fn('DEGREES', 1, 1, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		return numberValue((n * 180) / Math.PI)
+	}),
+
+	fn('RADIANS', 1, 1, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		return numberValue((n * Math.PI) / 180)
+	}),
+
+	fn('SIN', 1, 1, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		return numberValue(Math.sin(n))
+	}),
+
+	fn('COS', 1, 1, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		return numberValue(Math.cos(n))
+	}),
+
+	fn('TAN', 1, 1, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		return numberValue(Math.tan(n))
+	}),
+
+	fn('ASIN', 1, 1, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		if (n < -1 || n > 1) return errorValue('#NUM!')
+		return numberValue(Math.asin(n))
+	}),
+
+	fn('ACOS', 1, 1, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		if (n < -1 || n > 1) return errorValue('#NUM!')
+		return numberValue(Math.acos(n))
+	}),
+
+	fn('ATAN', 1, 1, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		return numberValue(Math.atan(n))
+	}),
+
+	fn('ATAN2', 2, 2, (args) => {
+		const x = numArg(args[0])
+		if (typeof x !== 'number') return x
+		const y = numArg(args[1])
+		if (typeof y !== 'number') return y
+		if (x === 0 && y === 0) return errorValue('#DIV/0!')
+		return numberValue(Math.atan2(y, x))
+	}),
+
+	fn('SINH', 1, 1, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		return numberValue(Math.sinh(n))
+	}),
+
+	fn('COSH', 1, 1, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		return numberValue(Math.cosh(n))
+	}),
+
+	fn('TANH', 1, 1, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		return numberValue(Math.tanh(n))
+	}),
+
+	fn('ASINH', 1, 1, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		return numberValue(Math.asinh(n))
+	}),
+
+	fn('ACOSH', 1, 1, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		if (n < 1) return errorValue('#NUM!')
+		return numberValue(Math.acosh(n))
+	}),
+
+	fn('ATANH', 1, 1, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		if (n <= -1 || n >= 1) return errorValue('#NUM!')
+		return numberValue(Math.atanh(n))
+	}),
 ]
 
 function subtotalNums(data: EvalArg[]): number[] | CellValue {

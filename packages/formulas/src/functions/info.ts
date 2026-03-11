@@ -1,6 +1,6 @@
 import type { CellValue } from '@ascend/schema'
 import { booleanValue, errorValue, numberValue } from '@ascend/schema'
-import { cellOf, type EvalArg, registerFunction } from './registry.ts'
+import { cellOf, type EvalArg, numArg, registerFunction } from './registry.ts'
 
 function isblank(args: EvalArg[]): CellValue {
 	return booleanValue(cellOf(args[0]).kind === 'empty')
@@ -69,6 +69,42 @@ function na(_args: EvalArg[]): CellValue {
 	return errorValue('#N/A')
 }
 
+function iseven(args: EvalArg[]): CellValue {
+	const n = numArg(args[0])
+	if (typeof n !== 'number') return n
+	return booleanValue(Math.trunc(n) % 2 === 0)
+}
+
+function isodd(args: EvalArg[]): CellValue {
+	const n = numArg(args[0])
+	if (typeof n !== 'number') return n
+	return booleanValue(Math.trunc(n) % 2 !== 0)
+}
+
+function isnontext(args: EvalArg[]): CellValue {
+	return booleanValue(cellOf(args[0]).kind !== 'string')
+}
+
+const ERROR_TYPE_MAP: Record<string, number> = {
+	'#NULL!': 1,
+	'#DIV/0!': 2,
+	'#VALUE!': 3,
+	'#REF!': 4,
+	'#NAME?': 5,
+	'#NUM!': 6,
+	'#N/A': 7,
+	'#GETTING_DATA': 8,
+	'#SPILL!': 9,
+	'#CALC!': 10,
+}
+
+function errorType(args: EvalArg[]): CellValue {
+	const v = cellOf(args[0])
+	if (v.kind !== 'error') return errorValue('#N/A')
+	const code = ERROR_TYPE_MAP[v.value]
+	return code !== undefined ? numberValue(code) : errorValue('#N/A')
+}
+
 // --- Registration ---
 
 registerFunction({ name: 'ISBLANK', minArgs: 1, maxArgs: 1, evaluate: isblank })
@@ -102,3 +138,7 @@ registerFunction({
 registerFunction({ name: 'TYPE', minArgs: 1, maxArgs: 1, evaluate: typeFn })
 registerFunction({ name: 'N', minArgs: 1, maxArgs: 1, evaluate: nFn })
 registerFunction({ name: 'NA', minArgs: 0, maxArgs: 0, evaluate: na })
+registerFunction({ name: 'ISEVEN', minArgs: 1, maxArgs: 1, evaluate: iseven })
+registerFunction({ name: 'ISODD', minArgs: 1, maxArgs: 1, evaluate: isodd })
+registerFunction({ name: 'ISNONTEXT', minArgs: 1, maxArgs: 1, evaluate: isnontext })
+registerFunction({ name: 'ERROR.TYPE', minArgs: 1, maxArgs: 1, evaluate: errorType })

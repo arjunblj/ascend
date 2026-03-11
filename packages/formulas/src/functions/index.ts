@@ -38,6 +38,8 @@ for (const fn of [
 }
 
 import './date.ts'
+import './database.ts'
+import './engineering.ts'
 import './info.ts'
 import './lookup.ts'
 import './stats.ts'

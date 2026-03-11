@@ -1,0 +1,213 @@
+{
+	"function": "database",
+	"cases": [
+		{
+			"description": "DSUM sums matching rows",
+			"setup": {
+				"A1": "Name",
+				"B1": "Type",
+				"C1": "Amount",
+				"A2": "Apple",
+				"B2": "Fruit",
+				"C2": 10,
+				"A3": "Carrot",
+				"B3": "Vegetable",
+				"C3": 5,
+				"A4": "Banana",
+				"B4": "Fruit",
+				"C4": 8,
+				"E1": "Type",
+				"E2": "Fruit"
+			},
+			"formula": "DSUM(A1:C4, \"Amount\", E1:E2)",
+			"expected": { "kind": "number", "value": 18 }
+		},
+		{
+			"description": "DSUM with numeric criteria",
+			"setup": {
+				"A1": "Item",
+				"B1": "Qty",
+				"A2": "X",
+				"B2": 5,
+				"A3": "Y",
+				"B3": 10,
+				"A4": "Z",
+				"B4": 3,
+				"E1": "Qty",
+				"E2": ">=5"
+			},
+			"formula": "DSUM(A1:B4, 2, E1:E2)",
+			"expected": { "kind": "number", "value": 15 }
+		},
+		{
+			"description": "DAVERAGE averages matching rows",
+			"setup": {
+				"A1": "Dept",
+				"B1": "Sales",
+				"A2": "North",
+				"B2": 100,
+				"A3": "South",
+				"B3": 200,
+				"A4": "North",
+				"B4": 150,
+				"E1": "Dept",
+				"E2": "North"
+			},
+			"formula": "DAVERAGE(A1:B4, \"Sales\", E1:E2)",
+			"expected": { "kind": "number", "value": 125 }
+		},
+		{
+			"description": "DAVERAGE no match returns #DIV/0!",
+			"setup": {
+				"A1": "X",
+				"B1": "Y",
+				"A2": 1,
+				"B2": 2,
+				"E1": "X",
+				"E2": 99
+			},
+			"formula": "DAVERAGE(A1:B2, \"Y\", E1:E2)",
+			"expected": { "kind": "error", "value": "#DIV/0!" }
+		},
+		{
+			"description": "DCOUNT counts numeric matching",
+			"setup": {
+				"A1": "Cat",
+				"B1": "Val",
+				"A2": "A",
+				"B2": 10,
+				"A3": "B",
+				"B3": 20,
+				"A4": "A",
+				"B4": "text",
+				"E1": "Cat",
+				"E2": "A"
+			},
+			"formula": "DCOUNT(A1:B4, \"Val\", E1:E2)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "DCOUNTA counts non-blank matching",
+			"setup": {
+				"A1": "Cat",
+				"B1": "Val",
+				"A2": "A",
+				"B2": 10,
+				"A3": "A",
+				"B3": "x",
+				"E1": "Cat",
+				"E2": "A"
+			},
+			"formula": "DCOUNTA(A1:B3, \"Val\", E1:E2)",
+			"expected": { "kind": "number", "value": 2 }
+		},
+		{
+			"description": "DMAX max of matching rows",
+			"setup": {
+				"A1": "Region",
+				"B1": "Score",
+				"A2": "East",
+				"B2": 80,
+				"A3": "West",
+				"B3": 90,
+				"A4": "East",
+				"B4": 70,
+				"E1": "Region",
+				"E2": "East"
+			},
+			"formula": "DMAX(A1:B4, \"Score\", E1:E2)",
+			"expected": { "kind": "number", "value": 80 }
+		},
+		{
+			"description": "DMIN min of matching rows",
+			"setup": {
+				"A1": "Region",
+				"B1": "Score",
+				"A2": "East",
+				"B2": 80,
+				"A3": "East",
+				"B3": 60,
+				"E1": "Region",
+				"E2": "East"
+			},
+			"formula": "DMIN(A1:B3, \"Score\", E1:E2)",
+			"expected": { "kind": "number", "value": 60 }
+		},
+		{
+			"description": "DPRODUCT product of matching rows",
+			"setup": {
+				"A1": "K",
+				"B1": "V",
+				"A2": "a",
+				"B2": 2,
+				"A3": "a",
+				"B3": 3,
+				"E1": "K",
+				"E2": "a"
+			},
+			"formula": "DPRODUCT(A1:B3, \"V\", E1:E2)",
+			"expected": { "kind": "number", "value": 6 }
+		},
+		{
+			"description": "DGET single match returns value",
+			"setup": {
+				"A1": "ID",
+				"B1": "Name",
+				"A2": 1,
+				"B2": "Alice",
+				"A3": 2,
+				"B3": "Bob",
+				"E1": "ID",
+				"E2": 1
+			},
+			"formula": "DGET(A1:B3, \"Name\", E1:E2)",
+			"expected": { "kind": "string", "value": "Alice" }
+		},
+		{
+			"description": "DGET no match returns #VALUE!",
+			"setup": {
+				"A1": "X",
+				"B1": "Y",
+				"A2": 1,
+				"B2": 10,
+				"E1": "X",
+				"E2": 99
+			},
+			"formula": "DGET(A1:B2, \"Y\", E1:E2)",
+			"expected": { "kind": "error", "value": "#VALUE!" }
+		},
+		{
+			"description": "DGET multiple matches returns #VALUE!",
+			"setup": {
+				"A1": "T",
+				"B1": "V",
+				"A2": "x",
+				"B2": 1,
+				"A3": "x",
+				"B3": 2,
+				"E1": "T",
+				"E2": "x"
+			},
+			"formula": "DGET(A1:B3, \"V\", E1:E2)",
+			"expected": { "kind": "error", "value": "#VALUE!" }
+		},
+		{
+			"description": "OR between criteria rows",
+			"setup": {
+				"A1": "Type",
+				"B1": "Amt",
+				"A2": "A",
+				"B2": 10,
+				"A3": "B",
+				"B3": 20,
+				"A4": "C",
+				"B4": 30,
+				"E1": "Type",
+				"E2": "A",
+				"E3": "C"
+			},
+			"formula": "DSUM(A1:B4, \"Amt\", E1:E3)",
+			"expected": { "kind": "number", "value": 40 }
+		}
+	]
+}

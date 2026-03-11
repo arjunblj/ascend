@@ -1,0 +1,338 @@
+{
+	"function": "MATH_EXTENDED",
+	"description": "Extended math functions",
+	"cases": [
+		{
+			"description": "TRUNC positive",
+			"setup": {},
+			"formula": "=TRUNC(4.7)",
+			"expected": { "kind": "number", "value": 4 }
+		},
+		{
+			"description": "TRUNC negative towards zero",
+			"setup": {},
+			"formula": "=TRUNC(-4.7)",
+			"expected": { "kind": "number", "value": -4 }
+		},
+		{
+			"description": "TRUNC with decimals",
+			"setup": { "A1": 3.14159 },
+			"formula": "=TRUNC(A1, 2)",
+			"expected": { "kind": "number", "value": 3.14 }
+		},
+		{
+			"description": "MROUND to nearest multiple",
+			"setup": {},
+			"formula": "=MROUND(10, 3)",
+			"expected": { "kind": "number", "value": 9 }
+		},
+		{
+			"description": "MROUND different signs returns #NUM!",
+			"setup": {},
+			"formula": "=MROUND(10, -3)",
+			"expected": { "kind": "error", "value": "#NUM!" }
+		},
+		{
+			"description": "GCD two numbers",
+			"setup": {},
+			"formula": "=GCD(24, 36)",
+			"expected": { "kind": "number", "value": 12 }
+		},
+		{
+			"description": "GCD multiple numbers",
+			"setup": {},
+			"formula": "=GCD(12, 18, 24)",
+			"expected": { "kind": "number", "value": 6 }
+		},
+		{
+			"description": "LCM two numbers",
+			"setup": {},
+			"formula": "=LCM(4, 6)",
+			"expected": { "kind": "number", "value": 12 }
+		},
+		{
+			"description": "LCM multiple numbers",
+			"setup": {},
+			"formula": "=LCM(2, 3, 4)",
+			"expected": { "kind": "number", "value": 12 }
+		},
+		{
+			"description": "FACT 5",
+			"setup": {},
+			"formula": "=FACT(5)",
+			"expected": { "kind": "number", "value": 120 }
+		},
+		{
+			"description": "FACT negative returns #NUM!",
+			"setup": {},
+			"formula": "=FACT(-1)",
+			"expected": { "kind": "error", "value": "#NUM!" }
+		},
+		{
+			"description": "FACTDOUBLE 7",
+			"setup": {},
+			"formula": "=FACTDOUBLE(7)",
+			"expected": { "kind": "number", "value": 105 }
+		},
+		{
+			"description": "FACTDOUBLE negative returns #NUM!",
+			"setup": {},
+			"formula": "=FACTDOUBLE(-2)",
+			"expected": { "kind": "error", "value": "#NUM!" }
+		},
+		{
+			"description": "COMBIN C(5,2)",
+			"setup": {},
+			"formula": "=COMBIN(5, 2)",
+			"expected": { "kind": "number", "value": 10 }
+		},
+		{
+			"description": "COMBIN k>n returns #NUM!",
+			"setup": {},
+			"formula": "=COMBIN(3, 5)",
+			"expected": { "kind": "error", "value": "#NUM!" }
+		},
+		{
+			"description": "PERMUT P(5,2)",
+			"setup": {},
+			"formula": "=PERMUT(5, 2)",
+			"expected": { "kind": "number", "value": 20 }
+		},
+		{
+			"description": "PERMUT k>n returns #NUM!",
+			"setup": {},
+			"formula": "=PERMUT(3, 5)",
+			"expected": { "kind": "error", "value": "#NUM!" }
+		},
+		{
+			"description": "RANDBETWEEN with seed",
+			"setup": { "A1": 1, "A2": 10 },
+			"formula": "=RANDBETWEEN(A1, A2)",
+			"context": { "randomSeed": 42 },
+			"expected": { "kind": "number", "value": 7 }
+		},
+		{
+			"description": "RANDBETWEEN inclusive bounds",
+			"setup": {},
+			"formula": "=RANDBETWEEN(5, 5)",
+			"context": { "randomSeed": 123 },
+			"expected": { "kind": "number", "value": 5 }
+		},
+		{
+			"description": "ODD positive",
+			"setup": {},
+			"formula": "=ODD(2)",
+			"expected": { "kind": "number", "value": 3 }
+		},
+		{
+			"description": "ODD negative away from zero",
+			"setup": {},
+			"formula": "=ODD(-2)",
+			"expected": { "kind": "number", "value": -3 }
+		},
+		{
+			"description": "EVEN positive",
+			"setup": {},
+			"formula": "=EVEN(1)",
+			"expected": { "kind": "number", "value": 2 }
+		},
+		{
+			"description": "EVEN negative",
+			"setup": {},
+			"formula": "=EVEN(-1)",
+			"expected": { "kind": "number", "value": -2 }
+		},
+		{
+			"description": "QUOTIENT integer division",
+			"setup": {},
+			"formula": "=QUOTIENT(7, 2)",
+			"expected": { "kind": "number", "value": 3 }
+		},
+		{
+			"description": "QUOTIENT divisor zero returns #DIV/0!",
+			"setup": {},
+			"formula": "=QUOTIENT(5, 0)",
+			"expected": { "kind": "error", "value": "#DIV/0!" }
+		},
+		{
+			"description": "DEGREES radians to degrees",
+			"setup": {},
+			"formula": "=DEGREES(PI())",
+			"expected": { "kind": "number", "approx": 180, "tolerance": 0.0001 }
+		},
+		{
+			"description": "DEGREES half pi",
+			"setup": {},
+			"formula": "=DEGREES(PI()/2)",
+			"expected": { "kind": "number", "approx": 90, "tolerance": 0.0001 }
+		},
+		{
+			"description": "RADIANS degrees to radians",
+			"setup": {},
+			"formula": "=RADIANS(180)",
+			"expected": { "kind": "number", "approx": 3.14159265, "tolerance": 0.0001 }
+		},
+		{
+			"description": "RADIANS 90 degrees",
+			"setup": {},
+			"formula": "=RADIANS(90)",
+			"expected": { "kind": "number", "approx": 1.5707963, "tolerance": 0.0001 }
+		},
+		{
+			"description": "SIN zero",
+			"setup": {},
+			"formula": "=SIN(0)",
+			"expected": { "kind": "number", "value": 0 }
+		},
+		{
+			"description": "SIN pi/2",
+			"setup": {},
+			"formula": "=SIN(PI()/2)",
+			"expected": { "kind": "number", "approx": 1, "tolerance": 0.0001 }
+		},
+		{
+			"description": "COS zero",
+			"setup": {},
+			"formula": "=COS(0)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "COS pi",
+			"setup": {},
+			"formula": "=COS(PI())",
+			"expected": { "kind": "number", "approx": -1, "tolerance": 0.0001 }
+		},
+		{
+			"description": "TAN zero",
+			"setup": {},
+			"formula": "=TAN(0)",
+			"expected": { "kind": "number", "value": 0 }
+		},
+		{
+			"description": "TAN pi/4",
+			"setup": {},
+			"formula": "=TAN(PI()/4)",
+			"expected": { "kind": "number", "approx": 1, "tolerance": 0.0001 }
+		},
+		{
+			"description": "ASIN valid",
+			"setup": {},
+			"formula": "=ASIN(0.5)",
+			"expected": { "kind": "number", "approx": 0.5235988, "tolerance": 0.0001 }
+		},
+		{
+			"description": "ASIN out of range returns #NUM!",
+			"setup": {},
+			"formula": "=ASIN(1.5)",
+			"expected": { "kind": "error", "value": "#NUM!" }
+		},
+		{
+			"description": "ACOS valid",
+			"setup": {},
+			"formula": "=ACOS(0)",
+			"expected": { "kind": "number", "approx": 1.5707963, "tolerance": 0.0001 }
+		},
+		{
+			"description": "ACOS out of range returns #NUM!",
+			"setup": {},
+			"formula": "=ACOS(2)",
+			"expected": { "kind": "error", "value": "#NUM!" }
+		},
+		{
+			"description": "ATAN zero",
+			"setup": {},
+			"formula": "=ATAN(0)",
+			"expected": { "kind": "number", "value": 0 }
+		},
+		{
+			"description": "ATAN one",
+			"setup": {},
+			"formula": "=ATAN(1)",
+			"expected": { "kind": "number", "approx": 0.7853982, "tolerance": 0.0001 }
+		},
+		{
+			"description": "ATAN2 quadrant 1",
+			"setup": {},
+			"formula": "=ATAN2(1, 1)",
+			"expected": { "kind": "number", "approx": 0.7853982, "tolerance": 0.0001 }
+		},
+		{
+			"description": "ATAN2 zero zero returns #DIV/0!",
+			"setup": {},
+			"formula": "=ATAN2(0, 0)",
+			"expected": { "kind": "error", "value": "#DIV/0!" }
+		},
+		{
+			"description": "SINH zero",
+			"setup": {},
+			"formula": "=SINH(0)",
+			"expected": { "kind": "number", "value": 0 }
+		},
+		{
+			"description": "SINH one",
+			"setup": {},
+			"formula": "=SINH(1)",
+			"expected": { "kind": "number", "approx": 1.1752012, "tolerance": 0.0001 }
+		},
+		{
+			"description": "COSH zero",
+			"setup": {},
+			"formula": "=COSH(0)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "COSH one",
+			"setup": {},
+			"formula": "=COSH(1)",
+			"expected": { "kind": "number", "approx": 1.5430806, "tolerance": 0.0001 }
+		},
+		{
+			"description": "TANH zero",
+			"setup": {},
+			"formula": "=TANH(0)",
+			"expected": { "kind": "number", "value": 0 }
+		},
+		{
+			"description": "TANH one",
+			"setup": {},
+			"formula": "=TANH(1)",
+			"expected": { "kind": "number", "approx": 0.7615942, "tolerance": 0.0001 }
+		},
+		{
+			"description": "ASINH zero",
+			"setup": {},
+			"formula": "=ASINH(0)",
+			"expected": { "kind": "number", "value": 0 }
+		},
+		{
+			"description": "ASINH one",
+			"setup": {},
+			"formula": "=ASINH(1)",
+			"expected": { "kind": "number", "approx": 0.8813736, "tolerance": 0.0001 }
+		},
+		{
+			"description": "ACOSH one",
+			"setup": {},
+			"formula": "=ACOSH(1)",
+			"expected": { "kind": "number", "value": 0 }
+		},
+		{
+			"description": "ACOSH below one returns #NUM!",
+			"setup": {},
+			"formula": "=ACOSH(0.5)",
+			"expected": { "kind": "error", "value": "#NUM!" }
+		},
+		{
+			"description": "ATANH zero",
+			"setup": {},
+			"formula": "=ATANH(0)",
+			"expected": { "kind": "number", "value": 0 }
+		},
+		{
+			"description": "ATANH out of range returns #NUM!",
+			"setup": {},
+			"formula": "=ATANH(1)",
+			"expected": { "kind": "error", "value": "#NUM!" }
+		}
+	]
+}

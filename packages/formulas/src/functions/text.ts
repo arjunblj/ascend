@@ -344,8 +344,8 @@ function formatNumber(value: number, code: string): string {
 
 	const sciMatch = fmt.match(/([Ee])([+-])(0+)/)
 	if (sciMatch) {
-		const beforeSci = fmt.slice(0, sciMatch.index!)
-		const expDigits = sciMatch[3]!.length
+		const beforeSci = fmt.slice(0, sciMatch.index ?? 0)
+		const expDigits = (sciMatch[3] ?? '').length
 		const decLen = beforeSci.includes('.')
 			? (beforeSci.split('.')[1] || '').replace(/[^0#]/g, '').length
 			: 0

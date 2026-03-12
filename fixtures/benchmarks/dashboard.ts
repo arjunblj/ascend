@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { type BenchmarkSuiteResult, formatBytes, formatRate } from './results.ts'
+import { type BenchmarkSuiteResult, formatRate } from './results.ts'
 
 function readSuite(path: string): BenchmarkSuiteResult {
 	return JSON.parse(readFileSync(path, 'utf-8')) as BenchmarkSuiteResult
@@ -36,7 +36,11 @@ async function main(): Promise<void> {
 	}
 
 	const suites = files.map((f) => readSuite(f))
-	const baseline = suites[0]!
+	const baseline = suites[0]
+	if (!baseline) {
+		console.error('No baseline suite found')
+		process.exit(1)
+	}
 
 	const allNames = new Set<string>()
 	for (const suite of suites) {
@@ -65,7 +69,7 @@ async function main(): Promise<void> {
 					: '—',
 			)
 			for (let i = 1; i < suites.length; i++) {
-				const caseI = suites[i]!.cases.find((c) => c.name === name)
+				const caseI = suites[i]?.cases.find((c) => c.name === name)
 				if (!caseI) {
 					row.push('missing', 'missing')
 				} else {
@@ -98,7 +102,8 @@ async function main(): Promise<void> {
 	console.log(mdTable(headers, rows))
 
 	if (suites.length >= 2) {
-		const candidate = suites[1]!
+		const candidate = suites[1]
+		if (!candidate) return
 		let regressions = 0
 		let improvements = 0
 		for (const name of sortedNames) {

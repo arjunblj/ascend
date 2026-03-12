@@ -36,6 +36,16 @@ export interface EvalContext {
 	readonly lookupVectorCache?: LookupVectorCache
 }
 
+export class MutableEvalContext implements EvalContext {
+	workbook!: Workbook
+	calcContext!: CalcContext
+	sheetIndex = 0
+	row = 0
+	col = 0
+	exactLookupCache?: ExactLookupCache
+	lookupVectorCache?: LookupVectorCache
+}
+
 class FunctionEvalCtx implements FunctionEvalContext {
 	now!: Date
 	today!: Date
@@ -100,7 +110,7 @@ export function invalidateSheetIndexCache(wb: Workbook): void {
 function getCellValue(wb: Workbook, sheetIndex: number, row: number, col: number): CellValue {
 	const sheet = wb.sheets[sheetIndex]
 	if (!sheet) return errorValue('#REF!')
-	return sheet.cells.getValue(row, col) ?? EMPTY
+	return sheet.cells.readValue(row, col)
 }
 
 function getRangeValues(
@@ -117,7 +127,7 @@ function getRangeValues(
 	for (let r = startRow; r <= endRow; r++) {
 		const row: CellValue[] = []
 		for (let c = startCol; c <= endCol; c++) {
-			row.push(sheet.cells.getValue(r, c) ?? EMPTY)
+			row.push(sheet.cells.readValue(r, c))
 		}
 		rows.push(row)
 	}
@@ -860,7 +870,7 @@ function makeRangeArea(
 			endCol,
 		},
 		get topLeft() {
-			return sheet?.cells.getValue(materializedStartRow, materializedStartCol) ?? EMPTY
+			return sheet?.cells.readValue(materializedStartRow, materializedStartCol) ?? EMPTY
 		},
 		get values() {
 			if (!cachedValues) {
@@ -880,7 +890,7 @@ function makeRangeArea(
 					forEachValue: (fn: (value: CellValue) => void) => {
 						for (let r = materializedStartRow; r <= materializedEndRow; r++) {
 							for (let c = materializedStartCol; c <= materializedEndCol; c++) {
-								fn(sheet.cells.getValue(r, c) ?? EMPTY)
+								fn(sheet.cells.readValue(r, c))
 							}
 						}
 					},

@@ -1,3 +1,11 @@
+/**
+ * DEP-1/DEP-2/DEP-5: analyzeWorkbook rebuilds the full dependency graph each call.
+ * DEP-1 incremental analysis would require diffing workbook state and patching
+ * the graph. DEP-2 range optimization is in dep-graph. DEP-5 shared-formula
+ * group detection: tryReuseFromCellAbove and parseIndexedFormula already reuse
+ * shared masters; batching would need analyzeWorkbook to return formula groups
+ * for calc to use.
+ */
 import type { RangeRef, Workbook } from '@ascend/core'
 import type { FormulaCellRef, FormulaNode, FormulaRef } from '@ascend/formulas'
 import {

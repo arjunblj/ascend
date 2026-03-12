@@ -1130,6 +1130,34 @@ describe('shared formula evaluation', () => {
 		recalculate(wb, makeCtx())
 		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(14))
 	})
+
+	test('shared formula group of 100 cells =A<row>*2 evaluates correctly (TEST-6)', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		for (let r = 0; r < 100; r++) {
+			sheet.cells.set(r, 0, { value: numberValue(r + 1), formula: null, styleId: sid })
+		}
+		sheet.cells.set(0, 1, {
+			value: EMPTY,
+			formula: 'A1*2',
+			styleId: sid,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: true, masterRef: 'B1' },
+		})
+		for (let r = 1; r < 100; r++) {
+			sheet.cells.set(r, 1, {
+				value: EMPTY,
+				formula: null,
+				styleId: sid,
+				formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'B1' },
+			})
+		}
+
+		recalculate(wb, makeCtx())
+		for (let r = 0; r < 100; r++) {
+			const expected = (r + 1) * 2
+			expect(sheet.cells.get(r, 1)?.value).toEqual(numberValue(expected))
+		}
+	})
 })
 
 describe('large range correctness', () => {

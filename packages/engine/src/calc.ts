@@ -1,3 +1,11 @@
+/**
+ * DEP-5 Formula group execution: recalculate evaluates cells one-by-one in
+ * evalOrder. Shared formulas (formulaInfo.kind==='shared') are resolved in
+ * analysis via parseIndexedFormula; each cell gets its own rewritten AST.
+ * Group execution would: (1) identify cells sharing the same master, (2) parse
+ * master once, (3) for each cell rewrite and evaluate in a batch. Requires
+ * analysis to expose shared groups and eval loop to dispatch group-eval path.
+ */
 import { indexToColumn, parseRange, type RangeRef, type StyleId, type Workbook } from '@ascend/core'
 import type { ExactLookupCache, FormulaNode, LookupVectorCache } from '@ascend/formulas'
 import type { AscendError, CellValue } from '@ascend/schema'
@@ -12,7 +20,7 @@ import {
 	type DependencyGraph,
 	parseCellKeyInto,
 } from './dep-graph.ts'
-import { type EvalContext, evaluate } from './evaluator.ts'
+import { type EvalContext, evaluate, MutableEvalContext } from './evaluator.ts'
 
 export interface RecalcResult {
 	readonly changed: string[]
@@ -359,6 +367,11 @@ export function recalculate(
 		)
 	} else {
 		const coords: CellCoords = { sheetIndex: 0, row: 0, col: 0 }
+		const mutableCtx = new MutableEvalContext()
+		mutableCtx.workbook = workbook
+		mutableCtx.calcContext = ctx
+		mutableCtx.exactLookupCache = exactLookupCache
+		mutableCtx.lookupVectorCache = lookupVectorCache
 		for (const key of evalOrder) {
 			if (cycleKeys.has(key)) {
 				parseCellKeyInto(key, coords)
@@ -410,16 +423,10 @@ export function recalculate(
 			const sheet = workbook.sheets[si]
 			if (!sheet) continue
 
-			const evalCtx: EvalContext = {
-				workbook,
-				calcContext: ctx,
-				sheetIndex: si,
-				row,
-				col,
-				exactLookupCache,
-				lookupVectorCache,
-			}
-			const newValue = evalFormula(key, ast, evalCtx)
+			mutableCtx.sheetIndex = si
+			mutableCtx.row = row
+			mutableCtx.col = col
+			const newValue = evalFormula(key, ast, mutableCtx)
 			const oldCell = sheet.cells.get(row, col)
 			const spillMatrix = toScalarMatrix(newValue)
 			if (spillMatrix) {
@@ -501,6 +508,11 @@ function evalIterative(
 	const maxChange = ctx.iterativeCalc.maxChange
 
 	const coords: CellCoords = { sheetIndex: 0, row: 0, col: 0 }
+	const mutableCtx = new MutableEvalContext()
+	mutableCtx.workbook = workbook
+	mutableCtx.calcContext = ctx
+	mutableCtx.exactLookupCache = exactLookupCache
+	mutableCtx.lookupVectorCache = lookupVectorCache
 	for (let iter = 0; iter < maxIter; iter++) {
 		let maxDelta = 0
 		for (const key of evalOrder) {
@@ -513,16 +525,10 @@ function evalIterative(
 			const sheet = workbook.sheets[si]
 			if (!sheet) continue
 
-			const evalCtx: EvalContext = {
-				workbook,
-				calcContext: ctx,
-				sheetIndex: si,
-				row,
-				col,
-				exactLookupCache,
-				lookupVectorCache,
-			}
-			const newValue = evalFormula(key, ast, evalCtx)
+			mutableCtx.sheetIndex = si
+			mutableCtx.row = row
+			mutableCtx.col = col
+			const newValue = evalFormula(key, ast, mutableCtx)
 			const oldCell = sheet.cells.get(row, col)
 			const oldValue = oldCell?.value ?? EMPTY
 			const spillMatrix = toScalarMatrix(newValue)
@@ -566,16 +572,10 @@ function evalIterative(
 		const sheet = workbook.sheets[si]
 		if (!sheet) continue
 
-		const evalCtx: EvalContext = {
-			workbook,
-			calcContext: ctx,
-			sheetIndex: si,
-			row,
-			col,
-			exactLookupCache,
-			lookupVectorCache,
-		}
-		const newValue = evalFormula(key, ast, evalCtx)
+		mutableCtx.sheetIndex = si
+		mutableCtx.row = row
+		mutableCtx.col = col
+		const newValue = evalFormula(key, ast, mutableCtx)
 		const oldCell = sheet.cells.get(row, col)
 		const spillMatrix = toScalarMatrix(newValue)
 		if (spillMatrix) {

@@ -108,6 +108,10 @@ export class SparseGrid {
 		return readStoredValue(this.data.get(packKey(row, col)))
 	}
 
+	readValue(row: number, col: number): CellValue {
+		return readStoredValue(this.data.get(packKey(row, col))) ?? EMPTY
+	}
+
 	has(row: number, col: number): boolean {
 		return this.data.has(packKey(row, col))
 	}

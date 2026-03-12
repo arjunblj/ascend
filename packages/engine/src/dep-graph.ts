@@ -1,3 +1,18 @@
+/**
+ * DEP-1 Incremental dependency graph: addFormula/removeFormula already support
+ * incremental updates. A full DEP-1 optimization would add batch add/remove and
+ * avoid clearing _cachedDirtyIndex on every change. Would require tracking
+ * dirty-index invalidation per key rather than full rebuild.
+ *
+ * DEP-2 Range dependency indexing: rangeDependents and getCachedDirtyIndex already
+ * provide O(log n) range lookups. Further optimization: spatial index (R-tree or
+ * interval tree) for range containment when many overlapping ranges exist.
+ *
+ * DEP-5 Formula group execution: formulas in the same shared group (sharedIndex)
+ * could be batched: parse master once, rewrite N times, evaluate in a tight loop
+ * with shared AST. Would require analysis to expose shared groups and calc to
+ * dispatch group-eval instead of per-cell. Large structural change.
+ */
 export type CellKey = number
 
 export interface RangeDependency {
@@ -125,7 +140,7 @@ export class DependencyGraph {
 
 	getDependents(key: CellKey): CellKey[] {
 		const direct = this.dependents.get(key)
-		const result = new Set(direct ? [...direct] : [])
+		const result = direct ? new Set(direct) : new Set<CellKey>()
 		const [sheetIndex, row, col] = parseCellKey(key)
 		const entries = this.rangeDependents.get(sheetIndex)
 		if (entries && entries.length > 0) {

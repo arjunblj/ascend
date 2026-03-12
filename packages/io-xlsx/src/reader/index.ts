@@ -1,3 +1,19 @@
+/**
+ * IO-2 Lazy sheet parsing assessment:
+ * The reader currently loads ALL selected sheets eagerly in a single pass. Shared strings,
+ * styles, and workbook metadata are parsed upfront; then each sheet in sheetsToParse is
+ * read from the archive and parseSheet() is called immediately. There is no on-demand
+ * sheet loading. To implement lazy parsing:
+ * - Keep the archive open and expose a getSheet(name) that parses on first access.
+ * - Defer shared-strings and styles parsing until at least one sheet needs them.
+ * - Workbook.definedNames resolution requires sheet names to exist; local names need
+ *   sheet metadata. A lazy model would need stub Sheet entries (name, state) populated
+ *   from workbook.xml, with cells deferred until getSheet().
+ * - collectCapsules() and buildReport() assume all consumed parts are known; partial
+ *   load would need to track which sheets have been hydrated.
+ * - Major refactor: Workbook would need to support "placeholder" sheets, and callers
+ *   (SDK, engine) would need to tolerate async sheet resolution. Deferred for now.
+ */
 import type { CellStyle, StyleId } from '@ascend/core'
 import { Workbook } from '@ascend/core'
 import type {

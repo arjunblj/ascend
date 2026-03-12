@@ -83,6 +83,17 @@ export { clearGlobalParseCache as clearFormulaParseCache } from '@ascend/formula
 const EXCEL_MAX_ROWS = 1_048_576
 const EXCEL_MAX_COLS = 16_384
 
+type RangeValueCache = Map<string, readonly (readonly CellValue[])[]>
+let activeRangeValueCache: RangeValueCache | null = null
+
+export function setRangeValueCache(cache: RangeValueCache): void {
+	activeRangeValueCache = cache
+}
+
+export function clearRangeValueCache(): void {
+	activeRangeValueCache = null
+}
+
 const sheetIndexCache = new WeakMap<Workbook, Map<string, number>>()
 
 function resolveSheetIndex(
@@ -131,6 +142,11 @@ function getRangeValues(
 ): readonly (readonly CellValue[])[] {
 	const sheet = wb.sheets[sheetIndex]
 	if (!sheet) return [[errorValue('#REF!')]]
+	const cacheKey = `${sheetIndex}:${startRow}:${startCol}:${endRow}:${endCol}`
+	if (activeRangeValueCache) {
+		const cached = activeRangeValueCache.get(cacheKey)
+		if (cached) return cached
+	}
 	const rows: CellValue[][] = []
 	for (let r = startRow; r <= endRow; r++) {
 		const row: CellValue[] = []
@@ -139,6 +155,7 @@ function getRangeValues(
 		}
 		rows.push(row)
 	}
+	activeRangeValueCache?.set(cacheKey, rows)
 	return rows
 }
 

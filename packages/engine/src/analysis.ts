@@ -16,7 +16,13 @@ import {
 	rewriteRefs,
 } from '@ascend/formulas'
 import { ascendError } from '@ascend/schema'
-import { type CellKey, cellKey, DependencyGraph, type RangeDependency } from './dep-graph.ts'
+import {
+	type CellKey,
+	cellKey,
+	DependencyGraph,
+	parseCellKey,
+	type RangeDependency,
+} from './dep-graph.ts'
 import { resolveStructuredRefRange } from './structured-refs.ts'
 
 export interface AnalyzedFormula {
@@ -404,6 +410,110 @@ export function invalidateWorkbookAnalysis(workbook: Workbook): void {
 	workbookFormulaAnalysisCache.delete(workbook)
 	workbookDependencyAnalysisCache.delete(workbook)
 	workbookAnalysisCache.delete(workbook)
+}
+
+export function patchWorkbookAnalysis(workbook: Workbook, changedCells: CellKey[]): void {
+	const cachedFormulas = workbookFormulaAnalysisCache.get(workbook)
+	if (!cachedFormulas) return
+
+	const cachedDeps = workbookDependencyAnalysisCache.get(workbook)
+	const cachedFull = workbookAnalysisCache.get(workbook)
+	const sheetNameIndex = cachedFormulas.sheetNameIndex
+	const formulas = cachedFormulas.formulas as Map<CellKey, IndexedFormula>
+	const nameResolveCache = new Map<string, FormulaRef[]>()
+
+	for (const key of changedCells) {
+		const [sheetIndex, row, col] = parseCellKey(key)
+		const sheet = workbook.sheets[sheetIndex]
+		if (!sheet) {
+			formulas.delete(key)
+			cachedDeps?.dependencyGraph.removeFormula(key)
+			cachedFull?.dependencyGraph.removeFormula(key)
+			continue
+		}
+		const cell = sheet.cells.get(row, col)
+		if (!cell || !cellHasFormula(cell)) {
+			formulas.delete(key)
+			cachedDeps?.dependencyGraph.removeFormula(key)
+			cachedFull?.dependencyGraph.removeFormula(key)
+			if (cachedDeps) {
+				;(cachedDeps.resolvedFormulas as Map<CellKey, AnalyzedFormula>).delete(key)
+			}
+			if (cachedFull) {
+				;(cachedFull.formulas as Map<CellKey, AnalyzedFormula>).delete(key)
+			}
+			continue
+		}
+
+		const formulaText = resolveCellFormulaText(workbook, sheetIndex, row, col, cell)
+		const parsed = cachedParseFormula(formulaText ?? cell.formula ?? '')
+		if (!parsed.ok) {
+			const entry: IndexedFormula = {
+				key,
+				sheetIndex,
+				sheetName: sheet.name,
+				row,
+				col,
+				formula: formulaText ?? cell.formula ?? '',
+				refs: [],
+				volatile: false,
+				parseError: parsed.error.message,
+			}
+			formulas.set(key, entry)
+			cachedDeps?.dependencyGraph.removeFormula(key)
+			cachedFull?.dependencyGraph.removeFormula(key)
+			continue
+		}
+
+		const ast = parsed.value
+		const refs = extractRefsWithNames(
+			ast,
+			workbook,
+			sheetNameIndex,
+			sheetIndex,
+			[],
+			nameResolveCache,
+		)
+		const volatile = hasVolatileFunction(ast)
+		const indexed: IndexedFormula = {
+			key,
+			sheetIndex,
+			sheetName: sheet.name,
+			row,
+			col,
+			formula: formulaText ?? printFormula(ast),
+			ast,
+			refs,
+			volatile,
+		}
+		formulas.set(key, indexed)
+
+		const resolved = resolveFormulaDependencies(workbook, sheetNameIndex, indexed)
+		if (cachedDeps) {
+			;(cachedDeps.resolvedFormulas as Map<CellKey, AnalyzedFormula>).set(key, resolved)
+			cachedDeps.dependencyGraph.removeFormula(key)
+			if (!resolved.parseError) {
+				cachedDeps.dependencyGraph.addFormula(
+					key,
+					[...resolved.deps],
+					resolved.volatile,
+					resolved.rangeDeps,
+				)
+			}
+		}
+		if (cachedFull) {
+			;(cachedFull.formulas as Map<CellKey, AnalyzedFormula>).set(key, resolved)
+			cachedFull.dependencyGraph.removeFormula(key)
+			if (!resolved.parseError) {
+				cachedFull.dependencyGraph.addFormula(
+					key,
+					[...resolved.deps],
+					resolved.volatile,
+					resolved.rangeDeps,
+				)
+			}
+		}
+	}
 }
 
 export function getSharedFormulaGroups(

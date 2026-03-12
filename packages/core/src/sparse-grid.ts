@@ -10,21 +10,19 @@ function internString(s: string): string {
 }
 
 /**
- * CORE-2/3/4 SparseGrid improvements (DEFERRED):
+ * CORE-2 Adaptive dense/sparse read cache (IMPLEMENTED):
+ * readValue() maintains an optional row-major CellValue[] cache when the grid
+ * fill ratio exceeds 50% and the bounding box is under 1M cells. The cache is
+ * lazily built on the first readValue() call and updated incrementally on
+ * setResolved()/delete(). The Map remains the source of truth.
  *
- * CORE-2 Adaptive dense/sparse: For dense regions (e.g. A1:Z1000), a contiguous
- * array or TypedArray could be faster than Map lookups. Hybrid: detect density
- * per row/block, use array for dense, Map for sparse. Requires density heuristics.
+ * CORE-3 Column-scan fast path (IMPLEMENTED):
+ * forEachValueInRange uses a direct Map.get() per row when the range covers a
+ * single column (startCol === endCol), skipping iteration over all columns.
  *
- * CORE-3 Column blocks: Group columns into blocks (e.g. 256 cols) to reduce
- * key space and improve cache locality for column-oriented access patterns.
- *
- * CORE-4 String interning: StyledStringCell uses Map<StyleId, Map<string, Cell>>
- * for dedup. A global string intern pool (ValueInternPool in io-xlsx) could
- * reduce memory for repeated strings across the workbook. Requires schema
- * changes to reference interned IDs.
- *
- * All are fundamental data structure changes; deferred for future work.
+ * CORE-4 String interning (DEFERRED): A global string intern pool could reduce
+ * memory for repeated strings across the workbook. Requires schema changes to
+ * reference interned IDs.
  *
  * CORE-7 Copy-on-write cloning (IMPLEMENTED):
  * copyFrom() shares the underlying data and rowIndex Maps between source and
@@ -94,6 +92,11 @@ export class SparseGrid {
 	private _boundsDirty = false
 	private _hasMutableStorage = false
 	private _shared = false
+	private _denseArray: (CellValue | undefined)[] | null = null
+	private _denseMinRow = 0
+	private _denseMinCol = 0
+	private _denseNumCols = 0
+	private _densityChecked = false
 
 	get(row: number, col: number): Cell | undefined {
 		return materializeCell(this.data.get(packKey(row, col)))
@@ -131,6 +134,20 @@ export class SparseGrid {
 		if (row > this._maxRow) this._maxRow = row
 		if (col < this._minCol) this._minCol = col
 		if (col > this._maxCol) this._maxCol = col
+		if (this._denseArray !== null) {
+			const r = row - this._denseMinRow
+			const c = col - this._denseMinCol
+			if (r >= 0 && c >= 0 && c < this._denseNumCols) {
+				const idx = r * this._denseNumCols + c
+				if (idx < this._denseArray.length) {
+					this._denseArray[idx] = value
+				} else {
+					this._denseArray = null
+				}
+			} else {
+				this._denseArray = null
+			}
+		}
 	}
 
 	delete(row: number, col: number): boolean {
@@ -150,6 +167,16 @@ export class SparseGrid {
 			) {
 				this._boundsDirty = true
 			}
+			if (this._denseArray !== null) {
+				const r = row - this._denseMinRow
+				const c = col - this._denseMinCol
+				if (r >= 0 && c >= 0 && c < this._denseNumCols) {
+					const idx = r * this._denseNumCols + c
+					if (idx < this._denseArray.length) {
+						this._denseArray[idx] = undefined
+					}
+				}
+			}
 		}
 		return deleted
 	}
@@ -159,6 +186,21 @@ export class SparseGrid {
 	}
 
 	readValue(row: number, col: number): CellValue {
+		let arr = this._denseArray
+		if (arr === null && !this._densityChecked) {
+			this._densityChecked = true
+			this._maybeEnableDenseCache()
+			arr = this._denseArray
+		}
+		if (arr !== null) {
+			const r = row - this._denseMinRow
+			const c = col - this._denseMinCol
+			if (r >= 0 && c >= 0 && c < this._denseNumCols) {
+				const idx = r * this._denseNumCols + c
+				if (idx < arr.length) return arr[idx] ?? EMPTY
+			}
+			return EMPTY
+		}
 		return readStoredValue(this.data.get(packKey(row, col))) ?? EMPTY
 	}
 
@@ -185,6 +227,17 @@ export class SparseGrid {
 		endCol: number,
 		fn: (value: CellValue, row: number, col: number) => void,
 	): void {
+		if (startCol === endCol) {
+			for (let r = startRow; r <= endRow; r++) {
+				const rowMap = this.rowIndex.get(r)
+				if (!rowMap) continue
+				const stored = rowMap.get(startCol)
+				if (!stored) continue
+				const value = readStoredValue(stored)
+				if (value) fn(value, r, startCol)
+			}
+			return
+		}
 		for (let r = startRow; r <= endRow; r++) {
 			const rowMap = this.rowIndex.get(r)
 			if (!rowMap) continue
@@ -352,6 +405,8 @@ export class SparseGrid {
 		this._maxCol = Number.NEGATIVE_INFINITY
 		this._boundsDirty = false
 		this._hasMutableStorage = false
+		this._denseArray = null
+		this._densityChecked = false
 	}
 
 	insertRows(at: number, count: number): void {
@@ -410,6 +465,8 @@ export class SparseGrid {
 		this._isKeyOrderSorted = other._isKeyOrderSorted
 		this._lastInsertedKey = other._lastInsertedKey
 		this._hasMutableStorage = other._hasMutableStorage
+		this._denseArray = null
+		this._densityChecked = false
 	}
 
 	private ensureWritable(): void {
@@ -423,6 +480,7 @@ export class SparseGrid {
 		}
 		this._rebuildRowIndex()
 		this._shared = false
+		this._denseArray = null
 	}
 
 	private _recomputeBounds(): void {
@@ -473,6 +531,27 @@ export class SparseGrid {
 		for (const key of nextData.keys()) lastInsertedKey = key
 		this._lastInsertedKey = lastInsertedKey
 		this._boundsDirty = true
+		this._denseArray = null
+		this._densityChecked = false
+	}
+
+	private _maybeEnableDenseCache(): void {
+		if (this.data.size < 2) return
+		if (this._boundsDirty) this._recomputeBounds()
+		const numRows = this._maxRow - this._minRow + 1
+		const numCols = this._maxCol - this._minCol + 1
+		const gridSize = numRows * numCols
+		if (gridSize <= 0 || gridSize > 1_000_000) return
+		if (this.data.size / gridSize <= 0.5) return
+		this._denseMinRow = this._minRow
+		this._denseMinCol = this._minCol
+		this._denseNumCols = numCols
+		const arr = new Array<CellValue | undefined>(gridSize)
+		for (const [key, stored] of this.data) {
+			const [r, c] = unpackKey(key)
+			arr[(r - this._minRow) * numCols + (c - this._minCol)] = readStoredValue(stored)
+		}
+		this._denseArray = arr
 	}
 
 	private compactResolvedCell(

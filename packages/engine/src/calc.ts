@@ -25,7 +25,13 @@ import {
 	type DependencyGraph,
 	parseCellKeyInto,
 } from './dep-graph.ts'
-import { type EvalContext, evaluate, MutableEvalContext } from './evaluator.ts'
+import {
+	clearRangeValueCache,
+	type EvalContext,
+	evaluate,
+	MutableEvalContext,
+	setRangeValueCache,
+} from './evaluator.ts'
 
 export interface RecalcResult {
 	readonly changed: string[]
@@ -289,6 +295,7 @@ export function recalculate(
 	}
 	const exactLookupCache: ExactLookupCache = new Map()
 	const lookupVectorCache: LookupVectorCache = new Map()
+	setRangeValueCache(new Map())
 
 	const analysis = analyzeWorkbook(workbook, opts?.range ? { range: opts.range } : undefined)
 	const graph = analysis.dependencyGraph
@@ -493,6 +500,8 @@ export function recalculate(
 			evalCell(key)
 		}
 	}
+
+	clearRangeValueCache()
 
 	return {
 		changed,

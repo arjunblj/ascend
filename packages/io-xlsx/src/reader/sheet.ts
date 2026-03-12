@@ -174,6 +174,7 @@ function parseSheetDataXml(xml: string, sheet: Sheet, ctx: SheetParseContext): v
 	const useFastPath = ctx.valuesOnly || ctx.formulaOnly
 	let rowCursor = sheetData.contentStart
 	let currentRow = -1
+	const fallbackPos = { row: 0, col: 0 }
 
 	while (true) {
 		const rowOpen = xml.indexOf('<row', rowCursor)
@@ -209,9 +210,11 @@ function parseSheetDataXml(xml: string, sheet: Sheet, ctx: SheetParseContext): v
 				!selfClosing && cellClose !== -1 && cellClose <= rowClose
 					? xml.slice(cellTagEnd + 1, cellClose)
 					: ''
+			fallbackPos.row = row
+			fallbackPos.col = nextCol
 			const parsed = useFastPath
-				? parseFastCell(rawAttrs, innerXml, ctx, sharedFormulaMasters, { row, col: nextCol })
-				: parseSlowCell(rawAttrs, innerXml, ctx, sharedFormulaMasters, { row, col: nextCol })
+				? parseFastCell(rawAttrs, innerXml, ctx, sharedFormulaMasters, fallbackPos)
+				: parseSlowCell(rawAttrs, innerXml, ctx, sharedFormulaMasters, fallbackPos)
 			cellCursor =
 				selfClosing || cellClose === -1 || cellClose > rowClose ? cellTagEnd + 1 : cellClose + 4
 			if (!parsed) continue
@@ -324,12 +327,9 @@ function parseFastCell(
 	return {
 		row: pos.row,
 		col: pos.col,
-		cell: {
-			value,
-			formula: formulaSpec.text,
-			styleId,
-			...(binding ? { formulaInfo: binding } : {}),
-		},
+		cell: binding
+			? { value, formula: formulaSpec.text, styleId, formulaInfo: binding }
+			: { value, formula: formulaSpec.text, styleId },
 	}
 }
 

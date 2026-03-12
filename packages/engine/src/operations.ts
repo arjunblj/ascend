@@ -4,7 +4,8 @@ import type { FormulaCellRef, FormulaNode } from '@ascend/formulas'
 import { cachedParseFormula, dateToSerial, printFormula, rewriteRefs } from '@ascend/formulas'
 import type { CellValue, InputValue, Operation, Result } from '@ascend/schema'
 import { ascendError, booleanValue, EMPTY, err, numberValue, ok, stringValue } from '@ascend/schema'
-import { invalidateWorkbookAnalysis } from './analysis.ts'
+import { invalidateWorkbookAnalysis, patchWorkbookAnalysis } from './analysis.ts'
+import { type CellKey, cellKey } from './dep-graph.ts'
 import { invalidateSheetIndexCache } from './evaluator.ts'
 import {
 	rewriteDefinedNameFormulasForShift,
@@ -902,6 +903,30 @@ function handleSetNumberFormat(
 	return ok(patch(affected, [op.sheet]))
 }
 
+function resolveAffectedCellKeys(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setFormula' | 'fillFormula' }>,
+): CellKey[] {
+	const sheet = workbook.getSheet(op.sheet)
+	if (!sheet) return []
+	const sheetIndex = workbook.sheets.indexOf(sheet)
+	if (sheetIndex < 0) return []
+	if (op.op === 'setFormula') {
+		const ref = parseA1(op.ref)
+		return [cellKey(sheetIndex, ref.row, ref.col)]
+	}
+	const rangeResult = safeParseRange(op.range)
+	if (!rangeResult.ok) return []
+	const range = rangeResult.value
+	const keys: CellKey[] = []
+	for (let row = range.start.row; row <= range.end.row; row++) {
+		for (let col = range.start.col; col <= range.end.col; col++) {
+			keys.push(cellKey(sheetIndex, row, col))
+		}
+	}
+	return keys
+}
+
 function operationAffectsFormulas(op: Operation): boolean {
 	switch (op.op) {
 		case 'setComment':
@@ -928,17 +953,21 @@ function operationAffectsFormulas(op: Operation): boolean {
 // --- Public API ---
 
 export function applyOperation(workbook: Workbook, op: Operation): Result<PatchResult> {
-	if (operationAffectsFormulas(op)) {
+	const useIncrementalPatch = op.op === 'setFormula' || op.op === 'fillFormula'
+	if (operationAffectsFormulas(op) && !useIncrementalPatch) {
 		invalidateWorkbookAnalysis(workbook)
 	}
 	invalidateSheetIndexCache(workbook)
+	let result: Result<PatchResult>
 	switch (op.op) {
 		case 'setCells':
 			return handleSetCells(workbook, op)
 		case 'setFormula':
-			return handleSetFormula(workbook, op)
+			result = handleSetFormula(workbook, op)
+			break
 		case 'fillFormula':
-			return handleFillFormula(workbook, op)
+			result = handleFillFormula(workbook, op)
+			break
 		case 'insertRows':
 			return handleInsertRows(workbook, op)
 		case 'deleteRows':
@@ -988,6 +1017,13 @@ export function applyOperation(workbook: Workbook, op: Operation): Result<PatchR
 		default:
 			return assertUnreachable(op)
 	}
+	if (result.ok) {
+		const changedKeys = resolveAffectedCellKeys(workbook, op)
+		if (changedKeys.length > 0) {
+			patchWorkbookAnalysis(workbook, changedKeys)
+		}
+	}
+	return result
 }
 
 export function applyOperations(

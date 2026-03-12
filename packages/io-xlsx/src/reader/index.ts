@@ -1,11 +1,16 @@
 /**
- * IO-1 Streaming read (DEFERRED): The reader loads the entire XLSX into memory
- * (extractZip returns full archive). Streaming would require: (1) ZIP streaming
- * API (e.g. unzip-it, yauzl) that yields entries without buffering whole file,
- * (2) SAX/streaming XML parser for sheet parts (sax-js, fast-xml-parser stream),
- * (3) incremental Workbook construction as sheet rows arrive. Shared strings and
- * styles must still be buffered (they're referenced by index). Major refactor;
- * deferred for now.
+ * IO-1 Streaming read (PARTIAL):
+ * Sheet cell data uses a hand-written incremental scanner (parseSheetDataXml in
+ * sheet.ts) that processes <row>/<c> elements via indexOf/slice without building
+ * a DOM. Sheet metadata (views, merges, formatting) still uses a DOM parse of
+ * the remaining XML after stripping <sheetData>. The hot path reuses a mutable
+ * position object to avoid per-cell allocation.
+ *
+ * Full streaming from ZIP to Workbook would additionally require:
+ * (1) ZIP streaming API (e.g. unzip-it, yauzl) to avoid buffering the whole
+ *     archive, (2) streaming shared-strings/styles parsing (they are index-
+ *     referenced and must be available before sheet cells), and (3) incremental
+ *     Workbook construction as sheet rows arrive.
  *
  * IO-2 Lazy sheet parsing:
  * The reader loads all selected sheets eagerly in a single pass. Shared strings,

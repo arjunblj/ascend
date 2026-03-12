@@ -81,9 +81,20 @@ export class DependencyGraph {
 		rangeDeps: readonly RangeDependency[] = [],
 	): void {
 		this.removeFormula(key)
-		const depSet = new Set(dependsOn)
+		const aboveKey = key - COL_FACTOR
+		const aboveEntry = aboveKey >= 0 ? this.formulas.get(aboveKey) : undefined
+		let depSet: ReadonlySet<CellKey>
+		let sharedRangeDeps = rangeDeps
+		if (aboveEntry && setsMatchArray(aboveEntry.dependsOn, dependsOn)) {
+			depSet = aboveEntry.dependsOn
+			if (rangeDepsEqual(aboveEntry.rangeDeps, rangeDeps)) {
+				sharedRangeDeps = aboveEntry.rangeDeps
+			}
+		} else {
+			depSet = new Set(dependsOn)
+		}
 		this._cachedEvalOrder = null
-		this.formulas.set(key, { dependsOn: depSet, rangeDeps, volatile: isVolatile })
+		this.formulas.set(key, { dependsOn: depSet, rangeDeps: sharedRangeDeps, volatile: isVolatile })
 		for (const dep of depSet) {
 			let set = this.dependents.get(dep)
 			if (!set) {
@@ -333,6 +344,32 @@ function containsCell(range: RangeDependency, row: number, col: number): boolean
 	return (
 		row >= range.startRow && row <= range.endRow && col >= range.startCol && col <= range.endCol
 	)
+}
+
+function setsMatchArray(existing: ReadonlySet<CellKey>, incoming: CellKey[]): boolean {
+	if (existing.size !== incoming.length) return false
+	for (const dep of incoming) {
+		if (!existing.has(dep)) return false
+	}
+	return true
+}
+
+function rangeDepsEqual(a: readonly RangeDependency[], b: readonly RangeDependency[]): boolean {
+	if (a.length !== b.length) return false
+	for (let i = 0; i < a.length; i++) {
+		const ra = a[i]
+		const rb = b[i]
+		if (!ra || !rb) return false
+		if (
+			ra.sheetIndex !== rb.sheetIndex ||
+			ra.startRow !== rb.startRow ||
+			ra.startCol !== rb.startCol ||
+			ra.endRow !== rb.endRow ||
+			ra.endCol !== rb.endCol
+		)
+			return false
+	}
+	return true
 }
 
 function indexDirtyCellsBySheetRow(

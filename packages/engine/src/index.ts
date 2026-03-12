@@ -8,6 +8,7 @@ export {
 	createSheetNameIndex,
 	type IndexedFormula,
 	invalidateWorkbookAnalysis,
+	patchWorkbookAnalysis,
 	resolveCellFormulaText,
 	resolveFormulaDependencies,
 	resolveSheetIndex,
@@ -33,9 +34,11 @@ export {
 } from './diff.ts'
 export {
 	clearFormulaParseCache,
+	clearRangeValueCache,
 	type EvalContext,
 	evaluate,
 	invalidateSheetIndexCache,
+	setRangeValueCache,
 } from './evaluator.ts'
 export { applyOperation, applyOperations, type PatchResult } from './operations.ts'
 export {

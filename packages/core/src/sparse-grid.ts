@@ -46,8 +46,8 @@ const DEFAULT_STYLE_ID = 0 as StyleId
 
 export class SparseGrid {
 	private data = new Map<number, StoredCell>()
-	private readonly styledStringCache = new Map<string, StyledStringCell>()
-	private readonly styledBooleanCache = new Map<string, StyledBooleanCell>()
+	private readonly styledStringCache = new Map<StyleId, Map<string, StyledStringCell>>()
+	private readonly styledBooleanCache = new Map<StyleId, Map<string, StyledBooleanCell>>()
 	private readonly styledNumberCache = new Map<StyleId, Map<number, StyledNumberCell>>()
 	private _isKeyOrderSorted = true
 	private _lastInsertedKey = Number.NEGATIVE_INFINITY
@@ -435,21 +435,30 @@ export class SparseGrid {
 					}
 					case 'string': {
 						const text = compactValue.scalarValue as string
-						const key = `${styleId}|${text}`
-						let cached = this.styledStringCache.get(key)
+						let byText = this.styledStringCache.get(styleId)
+						if (!byText) {
+							byText = new Map()
+							this.styledStringCache.set(styleId, byText)
+						}
+						let cached = byText.get(text)
 						if (!cached) {
 							cached = new StyledStringCell(text, styleId)
-							this.styledStringCache.set(key, cached)
+							byText.set(text, cached)
 						}
 						return cached
 					}
 					case 'boolean': {
 						const bool = compactValue.scalarValue as boolean
-						const key = `${styleId}|${bool ? 1 : 0}`
-						let cached = this.styledBooleanCache.get(key)
+						const textKey = bool ? '1' : '0'
+						let byText = this.styledBooleanCache.get(styleId)
+						if (!byText) {
+							byText = new Map()
+							this.styledBooleanCache.set(styleId, byText)
+						}
+						let cached = byText.get(textKey)
 						if (!cached) {
 							cached = new StyledBooleanCell(bool, styleId)
-							this.styledBooleanCache.set(key, cached)
+							byText.set(textKey, cached)
 						}
 						return cached
 					}

@@ -159,6 +159,24 @@
 			"setup": {},
 			"formula": "YEARFRAC(DATE(2012, 1, 1), DATE(2012, 7, 30), 3)",
 			"expected": { "kind": "number", "approx": 0.57808219, "tolerance": 1e-6 }
+		},
+		{
+			"description": "DATE(1900,1,1) returns serial 1",
+			"setup": {},
+			"formula": "DATE(1900,1,1)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "DATE(2024,2,29) leap year date",
+			"setup": {},
+			"formula": "DATE(2024,2,29)",
+			"expected": { "kind": "number", "value": 45351 }
+		},
+		{
+			"description": "YEAR(60) phantom Feb 29 1900",
+			"setup": {},
+			"formula": "YEAR(60)",
+			"expected": { "kind": "number", "value": 1900 }
 		}
 	]
 }

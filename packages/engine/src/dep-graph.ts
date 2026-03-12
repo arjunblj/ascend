@@ -15,12 +15,28 @@ export function cellKey(sheetIndex: number, row: number, col: number): CellKey {
 	return sheetIndex * SHEET_FACTOR + row * COL_FACTOR + col
 }
 
+export interface CellCoords {
+	sheetIndex: number
+	row: number
+	col: number
+}
+
 export function parseCellKey(key: CellKey): readonly [number, number, number] {
 	const col = key % COL_FACTOR
 	const remainder = (key - col) / COL_FACTOR
 	const row = remainder % 1_048_576
 	const sheetIndex = (remainder - row) / 1_048_576
 	return [sheetIndex, row, col] as const
+}
+
+export function parseCellKeyInto(key: CellKey, out: CellCoords): void {
+	const col = key % COL_FACTOR
+	const remainder = (key - col) / COL_FACTOR
+	const row = remainder % 1_048_576
+	const sheetIndex = (remainder - row) / 1_048_576
+	out.sheetIndex = sheetIndex
+	out.row = row
+	out.col = col
 }
 
 interface FormulaEntry {
@@ -299,8 +315,10 @@ function indexDirtyCellsBySheetRow(
 	dirtySet: ReadonlySet<CellKey>,
 ): Map<number, Map<number, Set<number>>> {
 	const indexed = new Map<number, Map<number, Set<number>>>()
+	const coords: CellCoords = { sheetIndex: 0, row: 0, col: 0 }
 	for (const key of dirtySet) {
-		const [sheetIndex, row, col] = parseCellKey(key)
+		parseCellKeyInto(key, coords)
+		const { sheetIndex, row, col } = coords
 		let rows = indexed.get(sheetIndex)
 		if (!rows) {
 			rows = new Map()

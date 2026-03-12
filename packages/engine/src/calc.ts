@@ -5,7 +5,13 @@ import { EMPTY, errorValue, topLeftScalar } from '@ascend/schema'
 import { analyzeWorkbook } from './analysis.ts'
 import type { CalcContext } from './calc-context.ts'
 import { type CompiledFormula, compileFormula, evaluateCompiled } from './compiled-eval.ts'
-import { type CellKey, cellKey, type DependencyGraph, parseCellKey } from './dep-graph.ts'
+import {
+	type CellCoords,
+	type CellKey,
+	cellKey,
+	type DependencyGraph,
+	parseCellKeyInto,
+} from './dep-graph.ts'
 import { type EvalContext, evaluate } from './evaluator.ts'
 
 export interface RecalcResult {
@@ -276,9 +282,10 @@ export function recalculate(
 	const isDirtyRecalc = opts?.dirtyOnly || (opts?.dirtyRefs?.length ?? 0) > 0
 
 	let evalOrder: CellKey[]
+	let dirtySeeds: CellKey[] = []
 
 	if (isDirtyRecalc) {
-		const dirtySeeds = [
+		dirtySeeds = [
 			...graph.getVolatiles(),
 			...resolveDirtyKeys(workbook, analysis.sheetNameIndex, opts?.dirtyRefs),
 		]
@@ -291,6 +298,16 @@ export function recalculate(
 	}
 
 	const cycleKeys = analysis.cycleKeys
+	const volatileKeys = new Set(graph.getVolatiles())
+	const mustEval: Set<CellKey> = new Set()
+	if (isDirtyRecalc) {
+		for (const seed of dirtySeeds) {
+			mustEval.add(seed)
+			for (const dep of graph.getDependents(seed)) {
+				mustEval.add(dep)
+			}
+		}
+	}
 	const asts = new Map<CellKey, FormulaNode>()
 	if (isDirtyRecalc) {
 		for (const key of evalOrder) {
@@ -341,9 +358,11 @@ export function recalculate(
 			lookupVectorCache,
 		)
 	} else {
+		const coords: CellCoords = { sheetIndex: 0, row: 0, col: 0 }
 		for (const key of evalOrder) {
 			if (cycleKeys.has(key)) {
-				const [si, row, col] = parseCellKey(key)
+				parseCellKeyInto(key, coords)
+				const { sheetIndex: si, row, col } = coords
 				const sheet = workbook.sheets[si]
 				if (sheet) {
 					const oldCell = sheet.cells.get(row, col)
@@ -371,13 +390,23 @@ export function recalculate(
 						},
 					})
 				}
+				if (isDirtyRecalc) {
+					for (const dep of graph.getDependents(key)) {
+						mustEval.add(dep)
+					}
+				}
+				continue
+			}
+
+			if (isDirtyRecalc && !mustEval.has(key) && !volatileKeys.has(key)) {
 				continue
 			}
 
 			const ast = asts.get(key)
 			if (!ast) continue
 
-			const [si, row, col] = parseCellKey(key)
+			parseCellKeyInto(key, coords)
+			const { sheetIndex: si, row, col } = coords
 			const sheet = workbook.sheets[si]
 			if (!sheet) continue
 
@@ -395,19 +424,30 @@ export function recalculate(
 			const spillMatrix = toScalarMatrix(newValue)
 			if (spillMatrix) {
 				applyArrayResult(workbook, si, row, col, oldCell, spillMatrix, changed, spillIndex)
+				if (isDirtyRecalc) {
+					for (const dep of graph.getDependents(key)) {
+						mustEval.add(dep)
+					}
+				}
 				continue
 			}
 			const clearedSpill =
 				oldCell?.formulaInfo && isSpillBinding(oldCell.formulaInfo) && oldCell.formulaInfo.isAnchor
 					? clearSpillFootprint(sheet, si, oldCell.formulaInfo.anchorRef, changed, spillIndex)
 					: false
-			if (!oldCell || clearedSpill || !valuesEqual(oldCell.value, newValue)) {
+			const valueChanged = !oldCell || clearedSpill || !valuesEqual(oldCell.value, newValue)
+			if (valueChanged) {
 				sheet.cells.set(row, col, {
 					value: newValue,
 					formula: oldCell?.formula ?? null,
 					styleId: oldCell?.styleId ?? (0 as StyleId),
 				})
 				changed.push(cellRefString(workbook, si, row, col))
+				if (isDirtyRecalc) {
+					for (const dep of graph.getDependents(key)) {
+						mustEval.add(dep)
+					}
+				}
 			}
 		}
 	}
@@ -460,6 +500,7 @@ function evalIterative(
 	const maxIter = ctx.iterativeCalc.maxIterations
 	const maxChange = ctx.iterativeCalc.maxChange
 
+	const coords: CellCoords = { sheetIndex: 0, row: 0, col: 0 }
 	for (let iter = 0; iter < maxIter; iter++) {
 		let maxDelta = 0
 		for (const key of evalOrder) {
@@ -467,7 +508,8 @@ function evalIterative(
 			const ast = asts.get(key)
 			if (!ast) continue
 
-			const [si, row, col] = parseCellKey(key)
+			parseCellKeyInto(key, coords)
+			const { sheetIndex: si, row, col } = coords
 			const sheet = workbook.sheets[si]
 			if (!sheet) continue
 
@@ -510,8 +552,8 @@ function evalIterative(
 	}
 
 	for (const key of cycleKeys) {
-		const [si, row, col] = parseCellKey(key)
-		changed.push(cellRefString(workbook, si, row, col))
+		parseCellKeyInto(key, coords)
+		changed.push(cellRefString(workbook, coords.sheetIndex, coords.row, coords.col))
 	}
 
 	for (const key of evalOrder) {
@@ -519,7 +561,8 @@ function evalIterative(
 		const ast = asts.get(key)
 		if (!ast) continue
 
-		const [si, row, col] = parseCellKey(key)
+		parseCellKeyInto(key, coords)
+		const { sheetIndex: si, row, col } = coords
 		const sheet = workbook.sheets[si]
 		if (!sheet) continue
 

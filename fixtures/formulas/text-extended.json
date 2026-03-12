@@ -90,6 +90,24 @@
 			"setup": { "A1": "1 234 567.89" },
 			"formula": "NUMBERVALUE(A1, \".\", \" \")",
 			"expected": { "kind": "number", "value": 1234567.89 }
+		},
+		{
+			"description": "UNICHAR with literal 128512 returns emoji",
+			"setup": {},
+			"formula": "UNICHAR(128512)",
+			"expected": { "kind": "string", "value": "😀" }
+		},
+		{
+			"description": "UNICODE with literal emoji returns code point",
+			"setup": {},
+			"formula": "UNICODE(\"😀\")",
+			"expected": { "kind": "number", "value": 128512 }
+		},
+		{
+			"description": "LEN returns length of string",
+			"setup": {},
+			"formula": "LEN(\"hello\")",
+			"expected": { "kind": "number", "value": 5 }
 		}
 	]
 }

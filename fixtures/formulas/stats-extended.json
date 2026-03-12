@@ -132,6 +132,53 @@
 			"setup": { "A1": 5, "A2": 5, "A3": 10 },
 			"formula": "MODE.SNGL(A1:A3)",
 			"expected": { "kind": "number", "value": 5 }
+		},
+		{
+			"description": "LARGE with 10 items k=1 returns max",
+			"setup": {
+				"A1": 5,
+				"A2": 3,
+				"A3": 8,
+				"A4": 1,
+				"A5": 9,
+				"A6": 2,
+				"A7": 7,
+				"A8": 4,
+				"A9": 6,
+				"A10": 10
+			},
+			"formula": "LARGE(A1:A10,1)",
+			"expected": { "kind": "number", "value": 10 }
+		},
+		{
+			"description": "SMALL with 10 items k=1 returns min",
+			"setup": {
+				"A1": 5,
+				"A2": 3,
+				"A3": 8,
+				"A4": 1,
+				"A5": 9,
+				"A6": 2,
+				"A7": 7,
+				"A8": 4,
+				"A9": 6,
+				"A10": 10
+			},
+			"formula": "SMALL(A1:A10,1)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "AGGREGATE(9, 6, range_with_error) SUM ignoring errors",
+			"setup": { "A1": 1, "A2": 3, "A3": 5 },
+			"setupFormulas": { "A2": "1/0" },
+			"formula": "AGGREGATE(9, 6, A1:A3)",
+			"expected": { "kind": "number", "value": 6 }
+		},
+		{
+			"description": "AGGREGATE(4, 0, range) MAX with no ignore",
+			"setup": { "A1": 2, "A2": 8, "A3": 5 },
+			"formula": "AGGREGATE(4, 0, A1:A3)",
+			"expected": { "kind": "number", "value": 8 }
 		}
 	]
 }

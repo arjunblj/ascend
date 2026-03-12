@@ -883,6 +883,64 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'recalc-criteria-caching',
+		category: 'calc',
+		build() {
+			const workbook = createWorkbook()
+			workbook.addSheet('Sheet1')
+			const sheet = workbook.sheets[0]
+			if (!sheet) throw new Error('Benchmark workbook missing first sheet')
+			const categories = ['cat1', 'cat2', 'cat3', 'cat4', 'cat5']
+			const random = createDeterministicRandom(0xdeadbeef)
+			for (let r = 0; r < 10_000; r++) {
+				sheet.cells.set(r, 0, {
+					value: { kind: 'string', value: categories[r % 5] ?? 'cat1' },
+					formula: null,
+					styleId: SID,
+				})
+				sheet.cells.set(r, 1, {
+					value: numberValue(random() * 1000),
+					formula: null,
+					styleId: SID,
+				})
+			}
+			for (let i = 0; i < 1000; i++) {
+				const cat = categories[i % 5] ?? 'cat1'
+				setFormulaCell(workbook, i, 3, `SUMIFS(B$1:B$10000,A$1:A$10000,"${cat}")`)
+			}
+			return { workbook, rows: 10_000, cols: 4, cells: 21_000 }
+		},
+		run(input) {
+			recalculate(requireWorkbook(input), defaultCalcContext())
+		},
+	},
+	{
+		name: 'recalc-quickselect',
+		category: 'calc',
+		build() {
+			const workbook = createWorkbook()
+			workbook.addSheet('Sheet1')
+			const sheet = workbook.sheets[0]
+			if (!sheet) throw new Error('Benchmark workbook missing first sheet')
+			const random = createDeterministicRandom(0x12345678)
+			for (let r = 0; r < 10_000; r++) {
+				sheet.cells.set(r, 0, {
+					value: numberValue(random() * 10000),
+					formula: null,
+					styleId: SID,
+				})
+			}
+			for (let i = 0; i < 50; i++) {
+				setFormulaCell(workbook, i, 1, `LARGE(A$1:A$10000,${i + 1})`)
+				setFormulaCell(workbook, i, 2, `SMALL(A$1:A$10000,${i + 1})`)
+			}
+			return { workbook, rows: 10_000, cols: 3, cells: 10_100 }
+		},
+		run(input) {
+			recalculate(requireWorkbook(input), defaultCalcContext())
+		},
+	},
+	{
 		name: 'structural-insert-rows-recalc',
 		category: 'calc',
 		build() {
@@ -947,6 +1005,8 @@ const scenarioSets = {
 		'recalc-if-short-circuit',
 		'recalc-lookup-exact-incremental',
 		'recalc-dynamic-spill-churn',
+		'recalc-criteria-caching',
+		'recalc-quickselect',
 		'structural-insert-rows-recalc',
 		'read-csv-large',
 	],
@@ -1016,7 +1076,11 @@ function renderSummary(results: readonly BenchmarkCaseResult[]): string {
 	].join('\n')
 }
 
-async function runScenario(scenario: Scenario, repeat: number): Promise<BenchmarkCaseResult> {
+async function runScenario(
+	scenario: Scenario,
+	repeat: number,
+	warmup: number,
+): Promise<BenchmarkCaseResult> {
 	const samples: Array<{
 		readonly durationMs: number
 		readonly throughputPerSec: number
@@ -1025,6 +1089,12 @@ async function runScenario(scenario: Scenario, repeat: number): Promise<Benchmar
 	}> = []
 	let firstInput: ScenarioInput | undefined
 	let assertions: Record<string, string | number | boolean | null> | undefined
+	for (let i = 0; i < warmup; i++) {
+		const input = scenario.build()
+		firstInput ??= input
+		await scenario.run(input)
+	}
+	runGc()
 	for (let i = 0; i < repeat; i++) {
 		const input = scenario.build()
 		firstInput ??= input
@@ -1074,9 +1144,14 @@ function readFlag(name: string): string | undefined {
 	return index >= 0 ? process.argv[index + 1] : undefined
 }
 
+function hasFlag(name: string): boolean {
+	return process.argv.includes(name)
+}
+
 async function runScenarioIsolated(
 	scenario: Scenario,
 	repeat: number,
+	warmup: number,
 	json: boolean,
 ): Promise<BenchmarkCaseResult> {
 	const proc = Bun.spawn(
@@ -1088,6 +1163,8 @@ async function runScenarioIsolated(
 			scenario.name,
 			'--repeat',
 			String(repeat),
+			'--warmup',
+			String(warmup),
 			'--json',
 		],
 		{
@@ -1113,14 +1190,17 @@ async function runScenarioIsolated(
 
 async function main(): Promise<void> {
 	const json = process.argv.includes('--json')
+	const ci = hasFlag('--ci')
 	const scenarioName = readFlag('--scenario')
 	const scenarioSetName = readFlag('--set')
 	const repeat = Math.max(1, Number.parseInt(readFlag('--repeat') ?? '1', 10) || 1)
+	const warmup = Math.max(0, Number.parseInt(readFlag('--warmup') ?? '1', 10) || 1)
+	const outputJson = json || ci
 	if (scenarioName) {
 		const scenario = scenarios.find((entry) => entry.name === scenarioName)
 		if (!scenario) throw new Error(`Unknown synthetic benchmark scenario "${scenarioName}"`)
-		const result = await runScenario(scenario, repeat)
-		if (json) {
+		const result = await runScenario(scenario, repeat, warmup)
+		if (outputJson) {
 			console.log(JSON.stringify(result, null, 2))
 			return
 		}
@@ -1142,7 +1222,7 @@ async function main(): Promise<void> {
 		: scenarios
 	const results: BenchmarkCaseResult[] = []
 	for (const scenario of selectedScenarios) {
-		results.push(await runScenarioIsolated(scenario, repeat, json))
+		results.push(await runScenarioIsolated(scenario, repeat, warmup, outputJson))
 	}
 	const suite = createBenchmarkSuite({
 		suite: scenarioSetName
@@ -1152,10 +1232,11 @@ async function main(): Promise<void> {
 		cases: results,
 		metadata: {
 			repeat,
+			warmup,
 			...(scenarioSetName ? { set: scenarioSetName } : {}),
 		},
 	})
-	if (json) {
+	if (outputJson) {
 		console.log(JSON.stringify(suite, null, 2))
 		return
 	}

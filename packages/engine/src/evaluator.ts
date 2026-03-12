@@ -13,6 +13,7 @@ import {
 import type { CellValue, ScalarCellValue } from '@ascend/schema'
 import {
 	arrayValue,
+	assertUnreachable,
 	booleanValue,
 	coerceCellValueToString,
 	EMPTY,
@@ -323,7 +324,7 @@ export function evaluate(node: FormulaNode, ctx: EvalContext): CellValue {
 				case '%':
 					return numberValue(n / 100)
 			}
-			break
+			return EMPTY
 		}
 
 		case 'function':
@@ -350,8 +351,9 @@ export function evaluate(node: FormulaNode, ctx: EvalContext): CellValue {
 		case 'sheetSpanRef': {
 			return evaluateReferenceNode(node, ctx)
 		}
+		default:
+			return assertUnreachable(node)
 	}
-	return EMPTY
 }
 
 function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {

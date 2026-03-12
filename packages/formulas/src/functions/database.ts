@@ -1,14 +1,8 @@
 import type { CellValue } from '@ascend/schema'
 import { EMPTY, errorValue, isEmpty, numberValue, topLeftScalar } from '@ascend/schema'
-import type { EvalArg } from './registry.ts'
+import { numericVal } from './math/helpers.ts'
+import type { EvalArg, FunctionDef } from './registry.ts'
 import { iterAreaRows, wildcardMatch } from './registry.ts'
-
-function numericVal(cell: CellValue): number | null {
-	const v = topLeftScalar(cell)
-	if (v.kind === 'number') return v.value
-	if (v.kind === 'date') return v.serial
-	return null
-}
 
 function isBlankLike(value: CellValue): boolean {
 	if (isEmpty(value)) return true
@@ -277,17 +271,6 @@ function dget(args: EvalArg[]): CellValue {
 	return values[0] ?? EMPTY
 }
 
-import { registerFunction } from './registry.ts'
-
-registerFunction({ name: 'DSUM', minArgs: 3, maxArgs: 3, evaluate: dsum })
-registerFunction({ name: 'DAVERAGE', minArgs: 3, maxArgs: 3, evaluate: daverage })
-registerFunction({ name: 'DCOUNT', minArgs: 3, maxArgs: 3, evaluate: dcount })
-registerFunction({ name: 'DCOUNTA', minArgs: 3, maxArgs: 3, evaluate: dcounta })
-registerFunction({ name: 'DMAX', minArgs: 3, maxArgs: 3, evaluate: dmax })
-registerFunction({ name: 'DMIN', minArgs: 3, maxArgs: 3, evaluate: dmin })
-registerFunction({ name: 'DPRODUCT', minArgs: 3, maxArgs: 3, evaluate: dproduct })
-registerFunction({ name: 'DGET', minArgs: 3, maxArgs: 3, evaluate: dget })
-
 function dstdev(args: EvalArg[]): CellValue {
 	const { values, error } = databaseFilter(args)
 	if (error) return error
@@ -346,7 +329,17 @@ function dvarp(args: EvalArg[]): CellValue {
 	return numberValue(sumSq / nums.length)
 }
 
-registerFunction({ name: 'DSTDEV', minArgs: 3, maxArgs: 3, evaluate: dstdev })
-registerFunction({ name: 'DSTDEVP', minArgs: 3, maxArgs: 3, evaluate: dstdevp })
-registerFunction({ name: 'DVAR', minArgs: 3, maxArgs: 3, evaluate: dvar })
-registerFunction({ name: 'DVARP', minArgs: 3, maxArgs: 3, evaluate: dvarp })
+export const databaseFunctions: FunctionDef[] = [
+	{ name: 'DSUM', minArgs: 3, maxArgs: 3, evaluate: dsum },
+	{ name: 'DAVERAGE', minArgs: 3, maxArgs: 3, evaluate: daverage },
+	{ name: 'DCOUNT', minArgs: 3, maxArgs: 3, evaluate: dcount },
+	{ name: 'DCOUNTA', minArgs: 3, maxArgs: 3, evaluate: dcounta },
+	{ name: 'DMAX', minArgs: 3, maxArgs: 3, evaluate: dmax },
+	{ name: 'DMIN', minArgs: 3, maxArgs: 3, evaluate: dmin },
+	{ name: 'DPRODUCT', minArgs: 3, maxArgs: 3, evaluate: dproduct },
+	{ name: 'DGET', minArgs: 3, maxArgs: 3, evaluate: dget },
+	{ name: 'DSTDEV', minArgs: 3, maxArgs: 3, evaluate: dstdev },
+	{ name: 'DSTDEVP', minArgs: 3, maxArgs: 3, evaluate: dstdevp },
+	{ name: 'DVAR', minArgs: 3, maxArgs: 3, evaluate: dvar },
+	{ name: 'DVARP', minArgs: 3, maxArgs: 3, evaluate: dvarp },
+]

@@ -1,6 +1,7 @@
 import type { CellValue } from '@ascend/schema'
 import { booleanValue, errorValue, numberValue } from '@ascend/schema'
-import { cellOf, type EvalArg, numArg, registerFunction } from './registry.ts'
+import type { FunctionDef } from './registry.ts'
+import { cellOf, type EvalArg, numArg } from './registry.ts'
 
 function isblank(args: EvalArg[]): CellValue {
 	return booleanValue(cellOf(args[0]).kind === 'empty')
@@ -105,46 +106,26 @@ function errorType(args: EvalArg[]): CellValue {
 	return code !== undefined ? numberValue(code) : errorValue('#N/A')
 }
 
-// --- Registration ---
-
-registerFunction({ name: 'ISBLANK', minArgs: 1, maxArgs: 1, evaluate: isblank })
-registerFunction({
-	name: 'ISERROR',
-	minArgs: 1,
-	maxArgs: 1,
-	evaluate: iserror,
-})
-registerFunction({ name: 'ISERR', minArgs: 1, maxArgs: 1, evaluate: iserr })
-registerFunction({ name: 'ISNA', minArgs: 1, maxArgs: 1, evaluate: isna })
-registerFunction({
-	name: 'ISNUMBER',
-	minArgs: 1,
-	maxArgs: 1,
-	evaluate: isnumber,
-})
-registerFunction({ name: 'ISTEXT', minArgs: 1, maxArgs: 1, evaluate: istext })
-registerFunction({
-	name: 'ISLOGICAL',
-	minArgs: 1,
-	maxArgs: 1,
-	evaluate: islogical,
-})
-registerFunction({
-	name: 'ISREF',
-	minArgs: 1,
-	maxArgs: 1,
-	evaluate: (args) => booleanValue(args[0]?.ref !== undefined),
-})
-registerFunction({ name: 'TYPE', minArgs: 1, maxArgs: 1, evaluate: typeFn })
-registerFunction({ name: 'N', minArgs: 1, maxArgs: 1, evaluate: nFn })
-registerFunction({ name: 'NA', minArgs: 0, maxArgs: 0, evaluate: na })
-registerFunction({ name: 'ISEVEN', minArgs: 1, maxArgs: 1, evaluate: iseven })
-registerFunction({ name: 'ISODD', minArgs: 1, maxArgs: 1, evaluate: isodd })
-registerFunction({ name: 'ISNONTEXT', minArgs: 1, maxArgs: 1, evaluate: isnontext })
-registerFunction({ name: 'ERROR.TYPE', minArgs: 1, maxArgs: 1, evaluate: errorType })
-registerFunction({
-	name: 'ISFORMULA',
-	minArgs: 1,
-	maxArgs: 1,
-	evaluate: () => booleanValue(false),
-})
+export const infoFunctions: FunctionDef[] = [
+	{ name: 'ISBLANK', minArgs: 1, maxArgs: 1, evaluate: isblank },
+	{ name: 'ISERROR', minArgs: 1, maxArgs: 1, evaluate: iserror },
+	{ name: 'ISERR', minArgs: 1, maxArgs: 1, evaluate: iserr },
+	{ name: 'ISNA', minArgs: 1, maxArgs: 1, evaluate: isna },
+	{ name: 'ISNUMBER', minArgs: 1, maxArgs: 1, evaluate: isnumber },
+	{ name: 'ISTEXT', minArgs: 1, maxArgs: 1, evaluate: istext },
+	{ name: 'ISLOGICAL', minArgs: 1, maxArgs: 1, evaluate: islogical },
+	{
+		name: 'ISREF',
+		minArgs: 1,
+		maxArgs: 1,
+		evaluate: (args) => booleanValue(args[0]?.ref !== undefined),
+	},
+	{ name: 'TYPE', minArgs: 1, maxArgs: 1, evaluate: typeFn },
+	{ name: 'N', minArgs: 1, maxArgs: 1, evaluate: nFn },
+	{ name: 'NA', minArgs: 0, maxArgs: 0, evaluate: na },
+	{ name: 'ISEVEN', minArgs: 1, maxArgs: 1, evaluate: iseven },
+	{ name: 'ISODD', minArgs: 1, maxArgs: 1, evaluate: isodd },
+	{ name: 'ISNONTEXT', minArgs: 1, maxArgs: 1, evaluate: isnontext },
+	{ name: 'ERROR.TYPE', minArgs: 1, maxArgs: 1, evaluate: errorType },
+	{ name: 'ISFORMULA', minArgs: 1, maxArgs: 1, evaluate: () => booleanValue(false) },
+]

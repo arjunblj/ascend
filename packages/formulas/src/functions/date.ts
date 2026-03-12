@@ -1,12 +1,12 @@
 import type { CellValue } from '@ascend/schema'
 import { errorValue, numberValue } from '@ascend/schema'
+import type { FunctionDef } from './registry.ts'
 import {
 	cellOf,
 	type EvalArg,
 	type FunctionEvalContext,
 	getRange,
 	numArg,
-	registerFunction,
 	toNumber,
 } from './registry.ts'
 
@@ -509,102 +509,6 @@ function workdayFn(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	return numberValue(serial)
 }
 
-// --- Registration ---
-
-registerFunction({ name: 'DATE', minArgs: 3, maxArgs: 3, evaluate: dateFn })
-registerFunction({
-	name: 'TODAY',
-	minArgs: 0,
-	maxArgs: 0,
-	evaluate: today,
-	volatile: true,
-})
-registerFunction({
-	name: 'NOW',
-	minArgs: 0,
-	maxArgs: 0,
-	evaluate: nowFn,
-	volatile: true,
-})
-registerFunction({ name: 'YEAR', minArgs: 1, maxArgs: 1, evaluate: yearFn })
-registerFunction({ name: 'MONTH', minArgs: 1, maxArgs: 1, evaluate: monthFn })
-registerFunction({ name: 'DAY', minArgs: 1, maxArgs: 1, evaluate: dayFn })
-registerFunction({ name: 'HOUR', minArgs: 1, maxArgs: 1, evaluate: hourFn })
-registerFunction({
-	name: 'MINUTE',
-	minArgs: 1,
-	maxArgs: 1,
-	evaluate: minuteFn,
-})
-registerFunction({
-	name: 'SECOND',
-	minArgs: 1,
-	maxArgs: 1,
-	evaluate: secondFn,
-})
-registerFunction({ name: 'TIME', minArgs: 3, maxArgs: 3, evaluate: timeFn })
-registerFunction({
-	name: 'TIMEVALUE',
-	minArgs: 1,
-	maxArgs: 1,
-	evaluate: timevalue,
-})
-registerFunction({
-	name: 'DATEVALUE',
-	minArgs: 1,
-	maxArgs: 1,
-	evaluate: datevalue,
-})
-registerFunction({
-	name: 'DATEDIF',
-	minArgs: 3,
-	maxArgs: 3,
-	evaluate: datedif,
-})
-registerFunction({ name: 'EDATE', minArgs: 2, maxArgs: 2, evaluate: edate })
-registerFunction({
-	name: 'EOMONTH',
-	minArgs: 2,
-	maxArgs: 2,
-	evaluate: eomonth,
-})
-registerFunction({
-	name: 'WEEKDAY',
-	minArgs: 1,
-	maxArgs: 2,
-	evaluate: weekday,
-})
-registerFunction({
-	name: 'WEEKNUM',
-	minArgs: 1,
-	maxArgs: 2,
-	evaluate: weeknum,
-})
-registerFunction({
-	name: 'NETWORKDAYS',
-	minArgs: 2,
-	maxArgs: 3,
-	evaluate: networkdays,
-})
-registerFunction({
-	name: 'WORKDAY',
-	minArgs: 2,
-	maxArgs: 3,
-	evaluate: workdayFn,
-})
-registerFunction({
-	name: 'DAYS360',
-	minArgs: 2,
-	maxArgs: 3,
-	evaluate: days360Fn,
-})
-registerFunction({
-	name: 'YEARFRAC',
-	minArgs: 2,
-	maxArgs: 3,
-	evaluate: yearfracFn,
-})
-
 function days360US(
 	start: DateParts,
 	end: DateParts,
@@ -736,71 +640,80 @@ function isoWeekNum(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	return numberValue(weekNo)
 }
 
-registerFunction({
-	name: 'ISOWEEKNUM',
-	minArgs: 1,
-	maxArgs: 1,
-	evaluate: isoWeekNum,
-})
-registerFunction({
-	name: 'DAYS',
-	minArgs: 2,
-	maxArgs: 2,
-	evaluate: (args) => {
-		const end = numArg(args[0])
-		if (typeof end !== 'number') return end
-		const start = numArg(args[1])
-		if (typeof start !== 'number') return start
-		return numberValue(Math.floor(end) - Math.floor(start))
-	},
-})
-registerFunction({
-	name: 'NETWORKDAYS.INTL',
-	minArgs: 2,
-	maxArgs: 4,
-	evaluate: (args, ctx?) => {
-		const sn = numArg(args[0])
-		if (typeof sn !== 'number') return sn
-		const en = numArg(args[1])
-		if (typeof en !== 'number') return en
-		const dateSystem = currentDateSystem(ctx)
-		const weekendResult = parseWeekendDays(args[2])
-		if ('kind' in weekendResult) return weekendResult
-		const holidays = args.length > 3 ? getHolidays(args[3]) : new Set<number>()
-		let start = Math.floor(sn)
-		let end = Math.floor(en)
-		const sign = start <= end ? 1 : -1
-		if (start > end) [start, end] = [end, start]
-		let count = 0
-		for (let d = start; d <= end; d++) {
-			const di = serialDayIndex(d, dateSystem)
-			if (di !== null && !weekendResult.has(di) && !holidays.has(d)) count++
-		}
-		return numberValue(count * sign)
-	},
-})
-registerFunction({
-	name: 'WORKDAY.INTL',
-	minArgs: 2,
-	maxArgs: 4,
-	evaluate: (args, ctx?) => {
-		const sn = numArg(args[0])
-		if (typeof sn !== 'number') return sn
-		const dn = numArg(args[1])
-		if (typeof dn !== 'number') return dn
-		const dateSystem = currentDateSystem(ctx)
-		const weekendResult = parseWeekendDays(args[2])
-		if ('kind' in weekendResult) return weekendResult
-		const holidays = args.length > 3 ? getHolidays(args[3]) : new Set<number>()
-		let serial = Math.floor(sn)
-		let days = Math.trunc(dn)
-		const step = days > 0 ? 1 : -1
-		days = Math.abs(days)
-		while (days > 0) {
-			serial += step
-			const di = serialDayIndex(serial, dateSystem)
-			if (di !== null && !weekendResult.has(di) && !holidays.has(serial)) days--
-		}
-		return numberValue(serial)
-	},
-})
+function daysFn(args: EvalArg[]): CellValue {
+	const end = numArg(args[0])
+	if (typeof end !== 'number') return end
+	const start = numArg(args[1])
+	if (typeof start !== 'number') return start
+	return numberValue(Math.floor(end) - Math.floor(start))
+}
+
+function networkdaysIntl(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
+	const sn = numArg(args[0])
+	if (typeof sn !== 'number') return sn
+	const en = numArg(args[1])
+	if (typeof en !== 'number') return en
+	const dateSystem = currentDateSystem(ctx)
+	const weekendResult = parseWeekendDays(args[2])
+	if ('kind' in weekendResult) return weekendResult
+	const holidays = args.length > 3 ? getHolidays(args[3]) : new Set<number>()
+	let start = Math.floor(sn)
+	let end = Math.floor(en)
+	const sign = start <= end ? 1 : -1
+	if (start > end) [start, end] = [end, start]
+	let count = 0
+	for (let d = start; d <= end; d++) {
+		const di = serialDayIndex(d, dateSystem)
+		if (di !== null && !weekendResult.has(di) && !holidays.has(d)) count++
+	}
+	return numberValue(count * sign)
+}
+
+function workdayIntl(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
+	const sn = numArg(args[0])
+	if (typeof sn !== 'number') return sn
+	const dn = numArg(args[1])
+	if (typeof dn !== 'number') return dn
+	const dateSystem = currentDateSystem(ctx)
+	const weekendResult = parseWeekendDays(args[2])
+	if ('kind' in weekendResult) return weekendResult
+	const holidays = args.length > 3 ? getHolidays(args[3]) : new Set<number>()
+	let serial = Math.floor(sn)
+	let days = Math.trunc(dn)
+	const step = days > 0 ? 1 : -1
+	days = Math.abs(days)
+	while (days > 0) {
+		serial += step
+		const di = serialDayIndex(serial, dateSystem)
+		if (di !== null && !weekendResult.has(di) && !holidays.has(serial)) days--
+	}
+	return numberValue(serial)
+}
+
+export const dateFunctions: FunctionDef[] = [
+	{ name: 'DATE', minArgs: 3, maxArgs: 3, evaluate: dateFn },
+	{ name: 'TODAY', minArgs: 0, maxArgs: 0, evaluate: today, volatile: true },
+	{ name: 'NOW', minArgs: 0, maxArgs: 0, evaluate: nowFn, volatile: true },
+	{ name: 'YEAR', minArgs: 1, maxArgs: 1, evaluate: yearFn },
+	{ name: 'MONTH', minArgs: 1, maxArgs: 1, evaluate: monthFn },
+	{ name: 'DAY', minArgs: 1, maxArgs: 1, evaluate: dayFn },
+	{ name: 'HOUR', minArgs: 1, maxArgs: 1, evaluate: hourFn },
+	{ name: 'MINUTE', minArgs: 1, maxArgs: 1, evaluate: minuteFn },
+	{ name: 'SECOND', minArgs: 1, maxArgs: 1, evaluate: secondFn },
+	{ name: 'TIME', minArgs: 3, maxArgs: 3, evaluate: timeFn },
+	{ name: 'TIMEVALUE', minArgs: 1, maxArgs: 1, evaluate: timevalue },
+	{ name: 'DATEVALUE', minArgs: 1, maxArgs: 1, evaluate: datevalue },
+	{ name: 'DATEDIF', minArgs: 3, maxArgs: 3, evaluate: datedif },
+	{ name: 'EDATE', minArgs: 2, maxArgs: 2, evaluate: edate },
+	{ name: 'EOMONTH', minArgs: 2, maxArgs: 2, evaluate: eomonth },
+	{ name: 'WEEKDAY', minArgs: 1, maxArgs: 2, evaluate: weekday },
+	{ name: 'WEEKNUM', minArgs: 1, maxArgs: 2, evaluate: weeknum },
+	{ name: 'NETWORKDAYS', minArgs: 2, maxArgs: 3, evaluate: networkdays },
+	{ name: 'WORKDAY', minArgs: 2, maxArgs: 3, evaluate: workdayFn },
+	{ name: 'DAYS360', minArgs: 2, maxArgs: 3, evaluate: days360Fn },
+	{ name: 'YEARFRAC', minArgs: 2, maxArgs: 3, evaluate: yearfracFn },
+	{ name: 'ISOWEEKNUM', minArgs: 1, maxArgs: 1, evaluate: isoWeekNum },
+	{ name: 'DAYS', minArgs: 2, maxArgs: 2, evaluate: daysFn },
+	{ name: 'NETWORKDAYS.INTL', minArgs: 2, maxArgs: 4, evaluate: networkdaysIntl },
+	{ name: 'WORKDAY.INTL', minArgs: 2, maxArgs: 4, evaluate: workdayIntl },
+]

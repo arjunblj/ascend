@@ -11,6 +11,7 @@ import {
 	topLeftScalar,
 } from '@ascend/schema'
 import type { EvalArg, FunctionDef } from './index.ts'
+import { numArg, toNum } from './math/helpers.ts'
 
 function fn(
 	name: string,
@@ -19,33 +20,6 @@ function fn(
 	evaluate: (args: EvalArg[]) => CellValue,
 ): FunctionDef {
 	return { name, minArgs, maxArgs, volatile: false, evaluate }
-}
-
-function toNum(v: CellValue): number | CellValue {
-	v = topLeftScalar(v)
-	switch (v.kind) {
-		case 'empty':
-			return 0
-		case 'number':
-			return v.value
-		case 'string': {
-			if (v.value.trim() === '') return 0
-			const n = Number(v.value)
-			return Number.isNaN(n) ? errorValue('#VALUE!') : n
-		}
-		case 'boolean':
-			return v.value ? 1 : 0
-		case 'error':
-			return v
-		case 'date':
-			return v.serial
-		case 'richText':
-			return errorValue('#VALUE!')
-	}
-}
-
-function numArg(arg: EvalArg | undefined): number | CellValue {
-	return toNum(arg?.value ?? EMPTY)
 }
 
 function cvStr(v: CellValue): string {

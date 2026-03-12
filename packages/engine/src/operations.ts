@@ -3,7 +3,16 @@ import { createTableId, parseA1, parseRange, toA1 } from '@ascend/core'
 import type { FormulaCellRef, FormulaNode } from '@ascend/formulas'
 import { cachedParseFormula, dateToSerial, printFormula, rewriteRefs } from '@ascend/formulas'
 import type { CellValue, InputValue, Operation, Result } from '@ascend/schema'
-import { ascendError, booleanValue, EMPTY, err, numberValue, ok, stringValue } from '@ascend/schema'
+import {
+	ascendError,
+	assertUnreachable,
+	booleanValue,
+	EMPTY,
+	err,
+	numberValue,
+	ok,
+	stringValue,
+} from '@ascend/schema'
 import { invalidateWorkbookAnalysis, patchWorkbookAnalysis } from './analysis.ts'
 import { type CellKey, cellKey } from './dep-graph.ts'
 import { invalidateSheetIndexCache } from './evaluator.ts'
@@ -1043,8 +1052,4 @@ export function applyOperations(
 	}
 
 	return ok(patch(allAffected, allSheets, needsRecalc))
-}
-
-function assertUnreachable(value: never): Result<PatchResult> {
-	return err(ascendError('VALIDATION_ERROR', `Unsupported operation: ${JSON.stringify(value)}`))
 }

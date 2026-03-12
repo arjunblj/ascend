@@ -7,6 +7,7 @@ import {
 	numberValue,
 	topLeftScalar,
 } from '@ascend/schema'
+import type { FunctionDef } from './registry.ts'
 import {
 	cellOf,
 	compareValues,
@@ -16,7 +17,6 @@ import {
 	getRange,
 	numArg,
 	rangeShape,
-	registerFunction,
 	valuesEqual,
 	wildcardMatch,
 } from './registry.ts'
@@ -639,48 +639,6 @@ function toColumnLabel(colIndex: number): string {
 	return label
 }
 
-// --- Registration ---
-
-registerFunction({ name: 'VLOOKUP', minArgs: 3, maxArgs: 4, evaluate: vlookup })
-registerFunction({ name: 'HLOOKUP', minArgs: 3, maxArgs: 4, evaluate: hlookup })
-registerFunction({ name: 'INDEX', minArgs: 2, maxArgs: 3, evaluate: indexFn })
-registerFunction({ name: 'MATCH', minArgs: 2, maxArgs: 3, evaluate: matchFn })
-registerFunction({
-	name: 'XLOOKUP',
-	minArgs: 3,
-	maxArgs: 6,
-	evaluate: xlookup,
-})
-registerFunction({ name: 'XMATCH', minArgs: 2, maxArgs: 4, evaluate: xmatch })
-registerFunction({ name: 'CHOOSE', minArgs: 2, maxArgs: 255, evaluate: choose })
-registerFunction({ name: 'LOOKUP', minArgs: 2, maxArgs: 3, evaluate: lookupFn })
-registerFunction({ name: 'ADDRESS', minArgs: 2, maxArgs: 5, evaluate: address })
-registerFunction({ name: 'ROWS', minArgs: 1, maxArgs: 1, evaluate: rowsFn })
-registerFunction({
-	name: 'COLUMNS',
-	minArgs: 1,
-	maxArgs: 1,
-	evaluate: columnsFn,
-})
-
-registerFunction({
-	name: 'ROW',
-	minArgs: 0,
-	maxArgs: 1,
-	evaluate: (args) => {
-		const ref = args[0]?.ref
-		return ref ? numberValue(ref.row + 1) : errorValue('#VALUE!')
-	},
-})
-registerFunction({
-	name: 'COLUMN',
-	minArgs: 0,
-	maxArgs: 1,
-	evaluate: (args) => {
-		const ref = args[0]?.ref
-		return ref ? numberValue(ref.col + 1) : errorValue('#VALUE!')
-	},
-})
 function formulaText(_args: EvalArg[]): CellValue {
 	return errorValue('#N/A')
 }
@@ -694,31 +652,38 @@ function areasFn(args: EvalArg[]): CellValue {
 	return errorValue('#VALUE!')
 }
 
-registerFunction({
-	name: 'FORMULATEXT',
-	minArgs: 1,
-	maxArgs: 1,
-	volatile: false,
-	evaluate: formulaText,
-})
-registerFunction({
-	name: 'AREAS',
-	minArgs: 1,
-	maxArgs: 1,
-	evaluate: areasFn,
-})
-
-registerFunction({
-	name: 'INDIRECT',
-	minArgs: 1,
-	maxArgs: 2,
-	volatile: true,
-	evaluate: () => errorValue('#REF!'),
-})
-registerFunction({
-	name: 'OFFSET',
-	minArgs: 3,
-	maxArgs: 5,
-	volatile: true,
-	evaluate: () => errorValue('#REF!'),
-})
+export const lookupFunctions: FunctionDef[] = [
+	{ name: 'VLOOKUP', minArgs: 3, maxArgs: 4, evaluate: vlookup },
+	{ name: 'HLOOKUP', minArgs: 3, maxArgs: 4, evaluate: hlookup },
+	{ name: 'INDEX', minArgs: 2, maxArgs: 3, evaluate: indexFn },
+	{ name: 'MATCH', minArgs: 2, maxArgs: 3, evaluate: matchFn },
+	{ name: 'XLOOKUP', minArgs: 3, maxArgs: 6, evaluate: xlookup },
+	{ name: 'XMATCH', minArgs: 2, maxArgs: 4, evaluate: xmatch },
+	{ name: 'CHOOSE', minArgs: 2, maxArgs: 255, evaluate: choose },
+	{ name: 'LOOKUP', minArgs: 2, maxArgs: 3, evaluate: lookupFn },
+	{ name: 'ADDRESS', minArgs: 2, maxArgs: 5, evaluate: address },
+	{ name: 'ROWS', minArgs: 1, maxArgs: 1, evaluate: rowsFn },
+	{ name: 'COLUMNS', minArgs: 1, maxArgs: 1, evaluate: columnsFn },
+	{
+		name: 'ROW',
+		minArgs: 0,
+		maxArgs: 1,
+		evaluate: (args) => {
+			const ref = args[0]?.ref
+			return ref ? numberValue(ref.row + 1) : errorValue('#VALUE!')
+		},
+	},
+	{
+		name: 'COLUMN',
+		minArgs: 0,
+		maxArgs: 1,
+		evaluate: (args) => {
+			const ref = args[0]?.ref
+			return ref ? numberValue(ref.col + 1) : errorValue('#VALUE!')
+		},
+	},
+	{ name: 'FORMULATEXT', minArgs: 1, maxArgs: 1, volatile: false, evaluate: formulaText },
+	{ name: 'AREAS', minArgs: 1, maxArgs: 1, evaluate: areasFn },
+	{ name: 'INDIRECT', minArgs: 1, maxArgs: 2, volatile: true, evaluate: () => errorValue('#REF!') },
+	{ name: 'OFFSET', minArgs: 3, maxArgs: 5, volatile: true, evaluate: () => errorValue('#REF!') },
+]

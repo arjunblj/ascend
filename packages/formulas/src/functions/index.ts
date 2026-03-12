@@ -23,11 +23,17 @@ export {
 	wildcardMatch,
 } from './registry.ts'
 
+import { databaseFunctions } from './database.ts'
+import { dateFunctions } from './date.ts'
 import { dynamicFunctions } from './dynamic.ts'
+import { engineeringFunctions } from './engineering.ts'
 import { financialFunctions } from './financial.ts'
+import { infoFunctions } from './info.ts'
 import { logicalFunctions } from './logical.ts'
+import { lookupFunctions } from './lookup.ts'
 import { mathFunctions } from './math/index.ts'
 import { registerFunction } from './registry.ts'
+import { statsFunctions } from './stats.ts'
 import { textFunctions } from './text.ts'
 
 for (const fn of [
@@ -36,13 +42,12 @@ for (const fn of [
 	...logicalFunctions,
 	...financialFunctions,
 	...dynamicFunctions,
+	...dateFunctions,
+	...databaseFunctions,
+	...engineeringFunctions,
+	...infoFunctions,
+	...lookupFunctions,
+	...statsFunctions,
 ]) {
 	registerFunction(fn)
 }
-
-import './date.ts'
-import './database.ts'
-import './engineering.ts'
-import './info.ts'
-import './lookup.ts'
-import './stats.ts'

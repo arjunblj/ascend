@@ -1,6 +1,7 @@
 import type { CellValue } from '@ascend/schema'
 import { errorValue, numberValue, stringValue } from '@ascend/schema'
-import { cellOf, type EvalArg, flattenArgs, numArg, registerFunction } from './registry.ts'
+import type { FunctionDef } from './registry.ts'
+import { cellOf, type EvalArg, flattenArgs, numArg } from './registry.ts'
 
 function strArg(arg: EvalArg | undefined): string | CellValue {
 	const v = cellOf(arg)
@@ -251,21 +252,6 @@ function gestep(args: EvalArg[]): CellValue {
 	return numberValue(num >= step ? 1 : 0)
 }
 
-registerFunction({ name: 'BIN2DEC', minArgs: 1, maxArgs: 1, evaluate: bin2dec })
-registerFunction({ name: 'DEC2BIN', minArgs: 1, maxArgs: 2, evaluate: dec2bin })
-registerFunction({ name: 'HEX2DEC', minArgs: 1, maxArgs: 1, evaluate: hex2dec })
-registerFunction({ name: 'DEC2HEX', minArgs: 1, maxArgs: 2, evaluate: dec2hex })
-registerFunction({ name: 'OCT2DEC', minArgs: 1, maxArgs: 1, evaluate: oct2dec })
-registerFunction({ name: 'DEC2OCT', minArgs: 1, maxArgs: 2, evaluate: dec2oct })
-registerFunction({ name: 'BIN2HEX', minArgs: 1, maxArgs: 2, evaluate: bin2hex })
-registerFunction({ name: 'BIN2OCT', minArgs: 1, maxArgs: 2, evaluate: bin2oct })
-registerFunction({ name: 'HEX2BIN', minArgs: 1, maxArgs: 2, evaluate: hex2bin })
-registerFunction({ name: 'HEX2OCT', minArgs: 1, maxArgs: 2, evaluate: hex2oct })
-registerFunction({ name: 'OCT2BIN', minArgs: 1, maxArgs: 2, evaluate: oct2bin })
-registerFunction({ name: 'OCT2HEX', minArgs: 1, maxArgs: 2, evaluate: oct2hex })
-registerFunction({ name: 'DELTA', minArgs: 1, maxArgs: 2, evaluate: delta })
-registerFunction({ name: 'GESTEP', minArgs: 1, maxArgs: 2, evaluate: gestep })
-
 const MAX_48BIT = 2 ** 48 - 1
 
 function bitIntArg(arg: EvalArg | undefined): number | CellValue {
@@ -276,78 +262,53 @@ function bitIntArg(arg: EvalArg | undefined): number | CellValue {
 	return x
 }
 
-registerFunction({
-	name: 'BITAND',
-	minArgs: 2,
-	maxArgs: 2,
-	evaluate(args) {
-		const a = bitIntArg(args[0])
-		if (typeof a !== 'number') return a
-		const b = bitIntArg(args[1])
-		if (typeof b !== 'number') return b
-		return numberValue(Number(BigInt(a) & BigInt(b)))
-	},
-})
+function bitand(args: EvalArg[]): CellValue {
+	const a = bitIntArg(args[0])
+	if (typeof a !== 'number') return a
+	const b = bitIntArg(args[1])
+	if (typeof b !== 'number') return b
+	return numberValue(Number(BigInt(a) & BigInt(b)))
+}
 
-registerFunction({
-	name: 'BITOR',
-	minArgs: 2,
-	maxArgs: 2,
-	evaluate(args) {
-		const a = bitIntArg(args[0])
-		if (typeof a !== 'number') return a
-		const b = bitIntArg(args[1])
-		if (typeof b !== 'number') return b
-		return numberValue(Number(BigInt(a) | BigInt(b)))
-	},
-})
+function bitor(args: EvalArg[]): CellValue {
+	const a = bitIntArg(args[0])
+	if (typeof a !== 'number') return a
+	const b = bitIntArg(args[1])
+	if (typeof b !== 'number') return b
+	return numberValue(Number(BigInt(a) | BigInt(b)))
+}
 
-registerFunction({
-	name: 'BITXOR',
-	minArgs: 2,
-	maxArgs: 2,
-	evaluate(args) {
-		const a = bitIntArg(args[0])
-		if (typeof a !== 'number') return a
-		const b = bitIntArg(args[1])
-		if (typeof b !== 'number') return b
-		return numberValue(Number(BigInt(a) ^ BigInt(b)))
-	},
-})
+function bitxor(args: EvalArg[]): CellValue {
+	const a = bitIntArg(args[0])
+	if (typeof a !== 'number') return a
+	const b = bitIntArg(args[1])
+	if (typeof b !== 'number') return b
+	return numberValue(Number(BigInt(a) ^ BigInt(b)))
+}
 
-registerFunction({
-	name: 'BITLSHIFT',
-	minArgs: 2,
-	maxArgs: 2,
-	evaluate(args) {
-		const n = bitIntArg(args[0])
-		if (typeof n !== 'number') return n
-		const shift = numArg(args[1])
-		if (typeof shift !== 'number') return shift
-		const s = Math.trunc(shift)
-		if (Math.abs(s) > 53) return errorValue('#NUM!')
-		const result = s >= 0 ? Number(BigInt(n) << BigInt(s)) : Number(BigInt(n) >> BigInt(-s))
-		if (result < 0 || result > MAX_48BIT) return errorValue('#NUM!')
-		return numberValue(result)
-	},
-})
+function bitlshift(args: EvalArg[]): CellValue {
+	const n = bitIntArg(args[0])
+	if (typeof n !== 'number') return n
+	const shift = numArg(args[1])
+	if (typeof shift !== 'number') return shift
+	const s = Math.trunc(shift)
+	if (Math.abs(s) > 53) return errorValue('#NUM!')
+	const result = s >= 0 ? Number(BigInt(n) << BigInt(s)) : Number(BigInt(n) >> BigInt(-s))
+	if (result < 0 || result > MAX_48BIT) return errorValue('#NUM!')
+	return numberValue(result)
+}
 
-registerFunction({
-	name: 'BITRSHIFT',
-	minArgs: 2,
-	maxArgs: 2,
-	evaluate(args) {
-		const n = bitIntArg(args[0])
-		if (typeof n !== 'number') return n
-		const shift = numArg(args[1])
-		if (typeof shift !== 'number') return shift
-		const s = Math.trunc(shift)
-		if (Math.abs(s) > 53) return errorValue('#NUM!')
-		const result = s >= 0 ? Number(BigInt(n) >> BigInt(s)) : Number(BigInt(n) << BigInt(-s))
-		if (result < 0 || result > MAX_48BIT) return errorValue('#NUM!')
-		return numberValue(result)
-	},
-})
+function bitrshift(args: EvalArg[]): CellValue {
+	const n = bitIntArg(args[0])
+	if (typeof n !== 'number') return n
+	const shift = numArg(args[1])
+	if (typeof shift !== 'number') return shift
+	const s = Math.trunc(shift)
+	if (Math.abs(s) > 53) return errorValue('#NUM!')
+	const result = s >= 0 ? Number(BigInt(n) >> BigInt(s)) : Number(BigInt(n) << BigInt(-s))
+	if (result < 0 || result > MAX_48BIT) return errorValue('#NUM!')
+	return numberValue(result)
+}
 
 const ERF_P = 0.3275911
 const ERF_A1 = 0.254829592
@@ -370,54 +331,34 @@ function erfcFn(x: number): number {
 	return 1 - erfFn(x)
 }
 
-registerFunction({
-	name: 'ERF',
-	minArgs: 1,
-	maxArgs: 2,
-	evaluate(args) {
-		const lower = numArg(args[0])
-		if (typeof lower !== 'number') return lower
-		if (args.length >= 2 && args[1]) {
-			const upper = numArg(args[1])
-			if (typeof upper !== 'number') return upper
-			return numberValue(erfFn(upper) - erfFn(lower))
-		}
-		return numberValue(erfFn(lower))
-	},
-})
+function erf(args: EvalArg[]): CellValue {
+	const lower = numArg(args[0])
+	if (typeof lower !== 'number') return lower
+	if (args.length >= 2 && args[1]) {
+		const upper = numArg(args[1])
+		if (typeof upper !== 'number') return upper
+		return numberValue(erfFn(upper) - erfFn(lower))
+	}
+	return numberValue(erfFn(lower))
+}
 
-registerFunction({
-	name: 'ERF.PRECISE',
-	minArgs: 1,
-	maxArgs: 1,
-	evaluate(args) {
-		const x = numArg(args[0])
-		if (typeof x !== 'number') return x
-		return numberValue(erfFn(x))
-	},
-})
+function erfPrecise(args: EvalArg[]): CellValue {
+	const x = numArg(args[0])
+	if (typeof x !== 'number') return x
+	return numberValue(erfFn(x))
+}
 
-registerFunction({
-	name: 'ERFC',
-	minArgs: 1,
-	maxArgs: 1,
-	evaluate(args) {
-		const x = numArg(args[0])
-		if (typeof x !== 'number') return x
-		return numberValue(erfcFn(x))
-	},
-})
+function erfc(args: EvalArg[]): CellValue {
+	const x = numArg(args[0])
+	if (typeof x !== 'number') return x
+	return numberValue(erfcFn(x))
+}
 
-registerFunction({
-	name: 'ERFC.PRECISE',
-	minArgs: 1,
-	maxArgs: 1,
-	evaluate(args) {
-		const x = numArg(args[0])
-		if (typeof x !== 'number') return x
-		return numberValue(erfcFn(x))
-	},
-})
+function erfcPrecise(args: EvalArg[]): CellValue {
+	const x = numArg(args[0])
+	if (typeof x !== 'number') return x
+	return numberValue(erfcFn(x))
+}
 
 interface Complex {
 	re: number
@@ -503,297 +444,259 @@ function resolveSuffix(a: string, b: string): string | null {
 	return a || b || 'i'
 }
 
-registerFunction({
-	name: 'COMPLEX',
-	minArgs: 2,
-	maxArgs: 3,
-	evaluate(args) {
-		const re = numArg(args[0])
-		if (typeof re !== 'number') return re
-		const im = numArg(args[1])
-		if (typeof im !== 'number') return im
-		let suffix = 'i'
-		if (args[2]) {
-			const s = strArg(args[2])
-			if (typeof s !== 'string') return s
-			if (s !== 'i' && s !== 'j') return errorValue('#VALUE!')
-			suffix = s
+function complexFn(args: EvalArg[]): CellValue {
+	const re = numArg(args[0])
+	if (typeof re !== 'number') return re
+	const im = numArg(args[1])
+	if (typeof im !== 'number') return im
+	let suffix = 'i'
+	if (args[2]) {
+		const s = strArg(args[2])
+		if (typeof s !== 'string') return s
+		if (s !== 'i' && s !== 'j') return errorValue('#VALUE!')
+		suffix = s
+	}
+	return stringValue(formatComplex(re, im, suffix))
+}
+
+function imreal(args: EvalArg[]): CellValue {
+	const c = complexArg(args[0])
+	if (!isComplex(c)) return c
+	return numberValue(c.re)
+}
+
+function imaginary(args: EvalArg[]): CellValue {
+	const c = complexArg(args[0])
+	if (!isComplex(c)) return c
+	return numberValue(c.im)
+}
+
+function imabs(args: EvalArg[]): CellValue {
+	const c = complexArg(args[0])
+	if (!isComplex(c)) return c
+	return numberValue(Math.sqrt(c.re * c.re + c.im * c.im))
+}
+
+function imargument(args: EvalArg[]): CellValue {
+	const c = complexArg(args[0])
+	if (!isComplex(c)) return c
+	if (c.re === 0 && c.im === 0) return errorValue('#DIV/0!')
+	return numberValue(Math.atan2(c.im, c.re))
+}
+
+function imconjugate(args: EvalArg[]): CellValue {
+	const c = complexArg(args[0])
+	if (!isComplex(c)) return c
+	return stringValue(formatComplex(c.re, -c.im, c.suffix || 'i'))
+}
+
+function imsum(args: EvalArg[]): CellValue {
+	const cells = flattenArgs(args)
+	let totalRe = 0
+	let totalIm = 0
+	let suffix = ''
+	for (const cell of cells) {
+		if (cell.kind === 'error') return cell
+		let c: Complex | null
+		if (cell.kind === 'number') {
+			c = { re: cell.value, im: 0, suffix: '' }
+		} else if (cell.kind === 'string') {
+			c = parseComplex(cell.value)
+		} else if (cell.kind === 'empty') {
+			continue
+		} else {
+			return errorValue('#VALUE!')
 		}
-		return stringValue(formatComplex(re, im, suffix))
-	},
-})
+		if (c === null) return errorValue('#VALUE!')
+		if (c.suffix && suffix && c.suffix !== suffix) return errorValue('#VALUE!')
+		if (c.suffix) suffix = c.suffix
+		totalRe += c.re
+		totalIm += c.im
+	}
+	return stringValue(formatComplex(totalRe, totalIm, suffix || 'i'))
+}
 
-registerFunction({
-	name: 'IMREAL',
-	minArgs: 1,
-	maxArgs: 1,
-	evaluate(args) {
-		const c = complexArg(args[0])
-		if (!isComplex(c)) return c
-		return numberValue(c.re)
-	},
-})
+function imsub(args: EvalArg[]): CellValue {
+	const a = complexArg(args[0])
+	if (!isComplex(a)) return a
+	const b = complexArg(args[1])
+	if (!isComplex(b)) return b
+	const sfx = resolveSuffix(a.suffix, b.suffix)
+	if (sfx === null) return errorValue('#VALUE!')
+	return stringValue(formatComplex(a.re - b.re, a.im - b.im, sfx))
+}
 
-registerFunction({
-	name: 'IMAGINARY',
-	minArgs: 1,
-	maxArgs: 1,
-	evaluate(args) {
-		const c = complexArg(args[0])
-		if (!isComplex(c)) return c
-		return numberValue(c.im)
-	},
-})
-
-registerFunction({
-	name: 'IMABS',
-	minArgs: 1,
-	maxArgs: 1,
-	evaluate(args) {
-		const c = complexArg(args[0])
-		if (!isComplex(c)) return c
-		return numberValue(Math.sqrt(c.re * c.re + c.im * c.im))
-	},
-})
-
-registerFunction({
-	name: 'IMARGUMENT',
-	minArgs: 1,
-	maxArgs: 1,
-	evaluate(args) {
-		const c = complexArg(args[0])
-		if (!isComplex(c)) return c
-		if (c.re === 0 && c.im === 0) return errorValue('#DIV/0!')
-		return numberValue(Math.atan2(c.im, c.re))
-	},
-})
-
-registerFunction({
-	name: 'IMCONJUGATE',
-	minArgs: 1,
-	maxArgs: 1,
-	evaluate(args) {
-		const c = complexArg(args[0])
-		if (!isComplex(c)) return c
-		return stringValue(formatComplex(c.re, -c.im, c.suffix || 'i'))
-	},
-})
-
-registerFunction({
-	name: 'IMSUM',
-	minArgs: 1,
-	maxArgs: 255,
-	evaluate(args) {
-		const cells = flattenArgs(args)
-		let totalRe = 0
-		let totalIm = 0
-		let suffix = ''
-		for (const cell of cells) {
-			if (cell.kind === 'error') return cell
-			let c: Complex | null
-			if (cell.kind === 'number') {
-				c = { re: cell.value, im: 0, suffix: '' }
-			} else if (cell.kind === 'string') {
-				c = parseComplex(cell.value)
-			} else if (cell.kind === 'empty') {
-				continue
-			} else {
-				return errorValue('#VALUE!')
-			}
-			if (c === null) return errorValue('#VALUE!')
-			if (c.suffix && suffix && c.suffix !== suffix) return errorValue('#VALUE!')
-			if (c.suffix) suffix = c.suffix
-			totalRe += c.re
-			totalIm += c.im
+function improduct(args: EvalArg[]): CellValue {
+	const cells = flattenArgs(args)
+	let re = 1
+	let im = 0
+	let suffix = ''
+	for (const cell of cells) {
+		if (cell.kind === 'error') return cell
+		let c: Complex | null
+		if (cell.kind === 'number') {
+			c = { re: cell.value, im: 0, suffix: '' }
+		} else if (cell.kind === 'string') {
+			c = parseComplex(cell.value)
+		} else if (cell.kind === 'empty') {
+			continue
+		} else {
+			return errorValue('#VALUE!')
 		}
-		return stringValue(formatComplex(totalRe, totalIm, suffix || 'i'))
-	},
-})
+		if (c === null) return errorValue('#VALUE!')
+		if (c.suffix && suffix && c.suffix !== suffix) return errorValue('#VALUE!')
+		if (c.suffix) suffix = c.suffix
+		const newRe = re * c.re - im * c.im
+		const newIm = re * c.im + im * c.re
+		re = newRe
+		im = newIm
+	}
+	return stringValue(formatComplex(re, im, suffix || 'i'))
+}
 
-registerFunction({
-	name: 'IMSUB',
-	minArgs: 2,
-	maxArgs: 2,
-	evaluate(args) {
-		const a = complexArg(args[0])
-		if (!isComplex(a)) return a
-		const b = complexArg(args[1])
-		if (!isComplex(b)) return b
-		const sfx = resolveSuffix(a.suffix, b.suffix)
-		if (sfx === null) return errorValue('#VALUE!')
-		return stringValue(formatComplex(a.re - b.re, a.im - b.im, sfx))
-	},
-})
+function imdiv(args: EvalArg[]): CellValue {
+	const a = complexArg(args[0])
+	if (!isComplex(a)) return a
+	const b = complexArg(args[1])
+	if (!isComplex(b)) return b
+	const sfx = resolveSuffix(a.suffix, b.suffix)
+	if (sfx === null) return errorValue('#VALUE!')
+	const denom = b.re * b.re + b.im * b.im
+	if (denom === 0) return errorValue('#NUM!')
+	return stringValue(
+		formatComplex((a.re * b.re + a.im * b.im) / denom, (a.im * b.re - a.re * b.im) / denom, sfx),
+	)
+}
 
-registerFunction({
-	name: 'IMPRODUCT',
-	minArgs: 1,
-	maxArgs: 255,
-	evaluate(args) {
-		const cells = flattenArgs(args)
-		let re = 1
-		let im = 0
-		let suffix = ''
-		for (const cell of cells) {
-			if (cell.kind === 'error') return cell
-			let c: Complex | null
-			if (cell.kind === 'number') {
-				c = { re: cell.value, im: 0, suffix: '' }
-			} else if (cell.kind === 'string') {
-				c = parseComplex(cell.value)
-			} else if (cell.kind === 'empty') {
-				continue
-			} else {
-				return errorValue('#VALUE!')
+function impower(args: EvalArg[]): CellValue {
+	const c = complexArg(args[0])
+	if (!isComplex(c)) return c
+	const n = numArg(args[1])
+	if (typeof n !== 'number') return n
+	if (c.re === 0 && c.im === 0 && n < 0) return errorValue('#NUM!')
+	if (c.re === 0 && c.im === 0) return stringValue(formatComplex(0, 0, c.suffix || 'i'))
+	const sfx = c.suffix || 'i'
+	if (Number.isInteger(n) && Math.abs(n) <= 100) {
+		let absN = Math.abs(n)
+		let rr = 1
+		let ri = 0
+		let br = c.re
+		let bi = c.im
+		while (absN > 0) {
+			if (absN & 1) {
+				const nr = rr * br - ri * bi
+				const ni = rr * bi + ri * br
+				rr = nr
+				ri = ni
 			}
-			if (c === null) return errorValue('#VALUE!')
-			if (c.suffix && suffix && c.suffix !== suffix) return errorValue('#VALUE!')
-			if (c.suffix) suffix = c.suffix
-			const newRe = re * c.re - im * c.im
-			const newIm = re * c.im + im * c.re
-			re = newRe
-			im = newIm
+			const nr = br * br - bi * bi
+			const ni = 2 * br * bi
+			br = nr
+			bi = ni
+			absN >>= 1
 		}
-		return stringValue(formatComplex(re, im, suffix || 'i'))
-	},
-})
-
-registerFunction({
-	name: 'IMDIV',
-	minArgs: 2,
-	maxArgs: 2,
-	evaluate(args) {
-		const a = complexArg(args[0])
-		if (!isComplex(a)) return a
-		const b = complexArg(args[1])
-		if (!isComplex(b)) return b
-		const sfx = resolveSuffix(a.suffix, b.suffix)
-		if (sfx === null) return errorValue('#VALUE!')
-		const denom = b.re * b.re + b.im * b.im
-		if (denom === 0) return errorValue('#NUM!')
-		return stringValue(
-			formatComplex((a.re * b.re + a.im * b.im) / denom, (a.im * b.re - a.re * b.im) / denom, sfx),
-		)
-	},
-})
-
-registerFunction({
-	name: 'IMPOWER',
-	minArgs: 2,
-	maxArgs: 2,
-	evaluate(args) {
-		const c = complexArg(args[0])
-		if (!isComplex(c)) return c
-		const n = numArg(args[1])
-		if (typeof n !== 'number') return n
-		if (c.re === 0 && c.im === 0 && n < 0) return errorValue('#NUM!')
-		if (c.re === 0 && c.im === 0) return stringValue(formatComplex(0, 0, c.suffix || 'i'))
-		const sfx = c.suffix || 'i'
-		if (Number.isInteger(n) && Math.abs(n) <= 100) {
-			let absN = Math.abs(n)
-			let rr = 1
-			let ri = 0
-			let br = c.re
-			let bi = c.im
-			while (absN > 0) {
-				if (absN & 1) {
-					const nr = rr * br - ri * bi
-					const ni = rr * bi + ri * br
-					rr = nr
-					ri = ni
-				}
-				const nr = br * br - bi * bi
-				const ni = 2 * br * bi
-				br = nr
-				bi = ni
-				absN >>= 1
-			}
-			if (n < 0) {
-				const d = rr * rr + ri * ri
-				rr = rr / d
-				ri = -ri / d
-			}
-			return stringValue(formatComplex(rr, ri, sfx))
+		if (n < 0) {
+			const d = rr * rr + ri * ri
+			rr = rr / d
+			ri = -ri / d
 		}
-		const r = Math.sqrt(c.re * c.re + c.im * c.im)
-		const theta = Math.atan2(c.im, c.re)
-		const rn = r ** n
-		return stringValue(formatComplex(rn * Math.cos(n * theta), rn * Math.sin(n * theta), sfx))
-	},
-})
+		return stringValue(formatComplex(rr, ri, sfx))
+	}
+	const r = Math.sqrt(c.re * c.re + c.im * c.im)
+	const theta = Math.atan2(c.im, c.re)
+	const rn = r ** n
+	return stringValue(formatComplex(rn * Math.cos(n * theta), rn * Math.sin(n * theta), sfx))
+}
 
-registerFunction({
-	name: 'IMSQRT',
-	minArgs: 1,
-	maxArgs: 1,
-	evaluate(args) {
-		const c = complexArg(args[0])
-		if (!isComplex(c)) return c
-		const r = Math.sqrt(c.re * c.re + c.im * c.im)
-		const theta = Math.atan2(c.im, c.re)
-		const sqrtR = Math.sqrt(r)
-		return stringValue(
-			formatComplex(sqrtR * Math.cos(theta / 2), sqrtR * Math.sin(theta / 2), c.suffix || 'i'),
-		)
-	},
-})
+function imsqrt(args: EvalArg[]): CellValue {
+	const c = complexArg(args[0])
+	if (!isComplex(c)) return c
+	const r = Math.sqrt(c.re * c.re + c.im * c.im)
+	const theta = Math.atan2(c.im, c.re)
+	const sqrtR = Math.sqrt(r)
+	return stringValue(
+		formatComplex(sqrtR * Math.cos(theta / 2), sqrtR * Math.sin(theta / 2), c.suffix || 'i'),
+	)
+}
 
-registerFunction({
-	name: 'IMEXP',
-	minArgs: 1,
-	maxArgs: 1,
-	evaluate(args) {
-		const c = complexArg(args[0])
-		if (!isComplex(c)) return c
-		const ea = Math.exp(c.re)
-		return stringValue(formatComplex(ea * Math.cos(c.im), ea * Math.sin(c.im), c.suffix || 'i'))
-	},
-})
+function imexp(args: EvalArg[]): CellValue {
+	const c = complexArg(args[0])
+	if (!isComplex(c)) return c
+	const ea = Math.exp(c.re)
+	return stringValue(formatComplex(ea * Math.cos(c.im), ea * Math.sin(c.im), c.suffix || 'i'))
+}
 
-registerFunction({
-	name: 'IMLN',
-	minArgs: 1,
-	maxArgs: 1,
-	evaluate(args) {
-		const c = complexArg(args[0])
-		if (!isComplex(c)) return c
-		const r = Math.sqrt(c.re * c.re + c.im * c.im)
-		if (r === 0) return errorValue('#NUM!')
-		const theta = Math.atan2(c.im, c.re)
-		return stringValue(formatComplex(Math.log(r), theta, c.suffix || 'i'))
-	},
-})
+function imln(args: EvalArg[]): CellValue {
+	const c = complexArg(args[0])
+	if (!isComplex(c)) return c
+	const r = Math.sqrt(c.re * c.re + c.im * c.im)
+	if (r === 0) return errorValue('#NUM!')
+	const theta = Math.atan2(c.im, c.re)
+	return stringValue(formatComplex(Math.log(r), theta, c.suffix || 'i'))
+}
 
-registerFunction({
-	name: 'IMSIN',
-	minArgs: 1,
-	maxArgs: 1,
-	evaluate(args) {
-		const c = complexArg(args[0])
-		if (!isComplex(c)) return c
-		return stringValue(
-			formatComplex(
-				Math.sin(c.re) * Math.cosh(c.im),
-				Math.cos(c.re) * Math.sinh(c.im),
-				c.suffix || 'i',
-			),
-		)
-	},
-})
+function imsin(args: EvalArg[]): CellValue {
+	const c = complexArg(args[0])
+	if (!isComplex(c)) return c
+	return stringValue(
+		formatComplex(
+			Math.sin(c.re) * Math.cosh(c.im),
+			Math.cos(c.re) * Math.sinh(c.im),
+			c.suffix || 'i',
+		),
+	)
+}
 
-registerFunction({
-	name: 'IMCOS',
-	minArgs: 1,
-	maxArgs: 1,
-	evaluate(args) {
-		const c = complexArg(args[0])
-		if (!isComplex(c)) return c
-		return stringValue(
-			formatComplex(
-				Math.cos(c.re) * Math.cosh(c.im),
-				-Math.sin(c.re) * Math.sinh(c.im),
-				c.suffix || 'i',
-			),
-		)
-	},
-})
+function imcos(args: EvalArg[]): CellValue {
+	const c = complexArg(args[0])
+	if (!isComplex(c)) return c
+	return stringValue(
+		formatComplex(
+			Math.cos(c.re) * Math.cosh(c.im),
+			-Math.sin(c.re) * Math.sinh(c.im),
+			c.suffix || 'i',
+		),
+	)
+}
+
+export const engineeringFunctions: FunctionDef[] = [
+	{ name: 'BIN2DEC', minArgs: 1, maxArgs: 1, evaluate: bin2dec },
+	{ name: 'DEC2BIN', minArgs: 1, maxArgs: 2, evaluate: dec2bin },
+	{ name: 'HEX2DEC', minArgs: 1, maxArgs: 1, evaluate: hex2dec },
+	{ name: 'DEC2HEX', minArgs: 1, maxArgs: 2, evaluate: dec2hex },
+	{ name: 'OCT2DEC', minArgs: 1, maxArgs: 1, evaluate: oct2dec },
+	{ name: 'DEC2OCT', minArgs: 1, maxArgs: 2, evaluate: dec2oct },
+	{ name: 'BIN2HEX', minArgs: 1, maxArgs: 2, evaluate: bin2hex },
+	{ name: 'BIN2OCT', minArgs: 1, maxArgs: 2, evaluate: bin2oct },
+	{ name: 'HEX2BIN', minArgs: 1, maxArgs: 2, evaluate: hex2bin },
+	{ name: 'HEX2OCT', minArgs: 1, maxArgs: 2, evaluate: hex2oct },
+	{ name: 'OCT2BIN', minArgs: 1, maxArgs: 2, evaluate: oct2bin },
+	{ name: 'OCT2HEX', minArgs: 1, maxArgs: 2, evaluate: oct2hex },
+	{ name: 'DELTA', minArgs: 1, maxArgs: 2, evaluate: delta },
+	{ name: 'GESTEP', minArgs: 1, maxArgs: 2, evaluate: gestep },
+	{ name: 'BITAND', minArgs: 2, maxArgs: 2, evaluate: bitand },
+	{ name: 'BITOR', minArgs: 2, maxArgs: 2, evaluate: bitor },
+	{ name: 'BITXOR', minArgs: 2, maxArgs: 2, evaluate: bitxor },
+	{ name: 'BITLSHIFT', minArgs: 2, maxArgs: 2, evaluate: bitlshift },
+	{ name: 'BITRSHIFT', minArgs: 2, maxArgs: 2, evaluate: bitrshift },
+	{ name: 'ERF', minArgs: 1, maxArgs: 2, evaluate: erf },
+	{ name: 'ERF.PRECISE', minArgs: 1, maxArgs: 1, evaluate: erfPrecise },
+	{ name: 'ERFC', minArgs: 1, maxArgs: 1, evaluate: erfc },
+	{ name: 'ERFC.PRECISE', minArgs: 1, maxArgs: 1, evaluate: erfcPrecise },
+	{ name: 'COMPLEX', minArgs: 2, maxArgs: 3, evaluate: complexFn },
+	{ name: 'IMREAL', minArgs: 1, maxArgs: 1, evaluate: imreal },
+	{ name: 'IMAGINARY', minArgs: 1, maxArgs: 1, evaluate: imaginary },
+	{ name: 'IMABS', minArgs: 1, maxArgs: 1, evaluate: imabs },
+	{ name: 'IMARGUMENT', minArgs: 1, maxArgs: 1, evaluate: imargument },
+	{ name: 'IMCONJUGATE', minArgs: 1, maxArgs: 1, evaluate: imconjugate },
+	{ name: 'IMSUM', minArgs: 1, maxArgs: 255, evaluate: imsum },
+	{ name: 'IMSUB', minArgs: 2, maxArgs: 2, evaluate: imsub },
+	{ name: 'IMPRODUCT', minArgs: 1, maxArgs: 255, evaluate: improduct },
+	{ name: 'IMDIV', minArgs: 2, maxArgs: 2, evaluate: imdiv },
+	{ name: 'IMPOWER', minArgs: 2, maxArgs: 2, evaluate: impower },
+	{ name: 'IMSQRT', minArgs: 1, maxArgs: 1, evaluate: imsqrt },
+	{ name: 'IMEXP', minArgs: 1, maxArgs: 1, evaluate: imexp },
+	{ name: 'IMLN', minArgs: 1, maxArgs: 1, evaluate: imln },
+	{ name: 'IMSIN', minArgs: 1, maxArgs: 1, evaluate: imsin },
+	{ name: 'IMCOS', minArgs: 1, maxArgs: 1, evaluate: imcos },
+]

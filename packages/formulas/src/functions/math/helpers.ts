@@ -60,8 +60,9 @@ export function getRange(arg: EvalArg | undefined): readonly (readonly CellValue
 }
 
 export function numericVal(cell: CellValue): number | null {
-	if (cell.kind === 'number') return cell.value
-	if (cell.kind === 'date') return cell.serial
+	const v = topLeftScalar(cell)
+	if (v.kind === 'number') return v.value
+	if (v.kind === 'date') return v.serial
 	return null
 }
 

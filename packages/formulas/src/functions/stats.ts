@@ -1,6 +1,7 @@
 import type { CellValue } from '@ascend/schema'
 import { arrayValue, errorValue, numberValue, topLeftScalar } from '@ascend/schema'
-import { collectNumbers, type EvalArg, getRange, numArg, registerFunction } from './registry.ts'
+import type { FunctionDef } from './registry.ts'
+import { collectNumbers, type EvalArg, getRange, numArg } from './registry.ts'
 
 function collectFrom(arg: EvalArg | undefined): number[] | CellValue {
 	if (!arg) return []
@@ -676,130 +677,55 @@ function normSInvFn(args: EvalArg[]): CellValue {
 	return numberValue(normSInvImpl(p))
 }
 
-// --- Registration ---
-
-registerFunction({ name: 'LARGE', minArgs: 2, maxArgs: 2, evaluate: largeFn })
-registerFunction({ name: 'SMALL', minArgs: 2, maxArgs: 2, evaluate: smallFn })
-registerFunction({ name: 'RANK', minArgs: 2, maxArgs: 3, evaluate: rankFn })
-registerFunction({
-	name: 'PERCENTILE',
-	minArgs: 2,
-	maxArgs: 2,
-	evaluate: percentileFn,
-})
-registerFunction({
-	name: 'MEDIAN',
-	minArgs: 1,
-	maxArgs: 255,
-	evaluate: medianFn,
-})
-registerFunction({ name: 'STDEV', minArgs: 1, maxArgs: 255, evaluate: (args) => stdevFn(args) })
-registerFunction({ name: 'STDEV.S', minArgs: 1, maxArgs: 255, evaluate: (args) => stdevFn(args) })
-registerFunction({
-	name: 'STDEV.P',
-	minArgs: 1,
-	maxArgs: 255,
-	evaluate: (args) => stdevFn(args, true),
-})
-registerFunction({
-	name: 'STDEVP',
-	minArgs: 1,
-	maxArgs: 255,
-	evaluate: (args) => stdevFn(args, true),
-})
-registerFunction({ name: 'VAR', minArgs: 1, maxArgs: 255, evaluate: (args) => varFn(args) })
-registerFunction({ name: 'VAR.S', minArgs: 1, maxArgs: 255, evaluate: (args) => varFn(args) })
-registerFunction({
-	name: 'VAR.P',
-	minArgs: 1,
-	maxArgs: 255,
-	evaluate: (args) => varFn(args, true),
-})
-registerFunction({
-	name: 'VARP',
-	minArgs: 1,
-	maxArgs: 255,
-	evaluate: (args) => varFn(args, true),
-})
-registerFunction({
-	name: 'PERCENTILE.INC',
-	minArgs: 2,
-	maxArgs: 2,
-	evaluate: percentileFn,
-})
-registerFunction({
-	name: 'PERCENTILE.EXC',
-	minArgs: 2,
-	maxArgs: 2,
-	evaluate: percentileExcFn,
-})
-registerFunction({
-	name: 'QUARTILE',
-	minArgs: 2,
-	maxArgs: 2,
-	evaluate: (args) => quartileFn(args),
-})
-registerFunction({
-	name: 'QUARTILE.INC',
-	minArgs: 2,
-	maxArgs: 2,
-	evaluate: (args) => quartileFn(args),
-})
-registerFunction({
-	name: 'QUARTILE.EXC',
-	minArgs: 2,
-	maxArgs: 2,
-	evaluate: (args) => quartileFn(args, true),
-})
-registerFunction({ name: 'MODE', minArgs: 1, maxArgs: 255, evaluate: modeFn })
-registerFunction({ name: 'MODE.SNGL', minArgs: 1, maxArgs: 255, evaluate: modeFn })
-registerFunction({ name: 'AVERAGEA', minArgs: 1, maxArgs: 255, evaluate: averageaFn })
-registerFunction({ name: 'MAXA', minArgs: 1, maxArgs: 255, evaluate: maxaFn })
-registerFunction({ name: 'MINA', minArgs: 1, maxArgs: 255, evaluate: minaFn })
-registerFunction({ name: 'RANK.EQ', minArgs: 2, maxArgs: 3, evaluate: rankFn })
-registerFunction({ name: 'RANK.AVG', minArgs: 2, maxArgs: 3, evaluate: rankAvgFn })
-registerFunction({ name: 'GEOMEAN', minArgs: 1, maxArgs: 255, evaluate: geomeanFn })
-registerFunction({ name: 'HARMEAN', minArgs: 1, maxArgs: 255, evaluate: harmeanFn })
-registerFunction({ name: 'TRIMMEAN', minArgs: 2, maxArgs: 2, evaluate: trimmeanFn })
-registerFunction({
-	name: 'PERCENTRANK.INC',
-	minArgs: 2,
-	maxArgs: 3,
-	evaluate: percentrankIncFn,
-})
-registerFunction({
-	name: 'PERCENTRANK.EXC',
-	minArgs: 2,
-	maxArgs: 3,
-	evaluate: percentrankExcFn,
-})
-registerFunction({ name: 'FORECAST.LINEAR', minArgs: 3, maxArgs: 3, evaluate: forecastLinearFn })
-registerFunction({ name: 'FORECAST', minArgs: 3, maxArgs: 3, evaluate: forecastLinearFn })
-registerFunction({ name: 'SLOPE', minArgs: 2, maxArgs: 2, evaluate: slopeFn })
-registerFunction({ name: 'INTERCEPT', minArgs: 2, maxArgs: 2, evaluate: interceptFn })
-registerFunction({ name: 'RSQ', minArgs: 2, maxArgs: 2, evaluate: rsqFn })
-registerFunction({ name: 'CORREL', minArgs: 2, maxArgs: 2, evaluate: correlFn })
-registerFunction({ name: 'PEARSON', minArgs: 2, maxArgs: 2, evaluate: correlFn })
-registerFunction({ name: 'STEYX', minArgs: 2, maxArgs: 2, evaluate: steyxFn })
-registerFunction({
-	name: 'COVARIANCE.P',
-	minArgs: 2,
-	maxArgs: 2,
-	evaluate: (args) => covarianceFn(args, true),
-})
-registerFunction({
-	name: 'COVARIANCE.S',
-	minArgs: 2,
-	maxArgs: 2,
-	evaluate: (args) => covarianceFn(args, false),
-})
-registerFunction({ name: 'AVEDEV', minArgs: 1, maxArgs: 255, evaluate: avedevFn })
-registerFunction({ name: 'DEVSQ', minArgs: 1, maxArgs: 255, evaluate: devsqFn })
-registerFunction({ name: 'KURT', minArgs: 1, maxArgs: 255, evaluate: kurtFn })
-registerFunction({ name: 'SKEW', minArgs: 1, maxArgs: 255, evaluate: skewFn })
-registerFunction({ name: 'FREQUENCY', minArgs: 2, maxArgs: 2, evaluate: frequencyFn })
-registerFunction({ name: 'MODE.MULT', minArgs: 1, maxArgs: 255, evaluate: modeMultFn })
-registerFunction({ name: 'NORM.DIST', minArgs: 4, maxArgs: 4, evaluate: normDistFn })
-registerFunction({ name: 'NORM.INV', minArgs: 3, maxArgs: 3, evaluate: normInvFn })
-registerFunction({ name: 'NORM.S.DIST', minArgs: 2, maxArgs: 2, evaluate: normSDistFn })
-registerFunction({ name: 'NORM.S.INV', minArgs: 1, maxArgs: 1, evaluate: normSInvFn })
+export const statsFunctions: FunctionDef[] = [
+	{ name: 'LARGE', minArgs: 2, maxArgs: 2, evaluate: largeFn },
+	{ name: 'SMALL', minArgs: 2, maxArgs: 2, evaluate: smallFn },
+	{ name: 'RANK', minArgs: 2, maxArgs: 3, evaluate: rankFn },
+	{ name: 'PERCENTILE', minArgs: 2, maxArgs: 2, evaluate: percentileFn },
+	{ name: 'MEDIAN', minArgs: 1, maxArgs: 255, evaluate: medianFn },
+	{ name: 'STDEV', minArgs: 1, maxArgs: 255, evaluate: (args) => stdevFn(args) },
+	{ name: 'STDEV.S', minArgs: 1, maxArgs: 255, evaluate: (args) => stdevFn(args) },
+	{ name: 'STDEV.P', minArgs: 1, maxArgs: 255, evaluate: (args) => stdevFn(args, true) },
+	{ name: 'STDEVP', minArgs: 1, maxArgs: 255, evaluate: (args) => stdevFn(args, true) },
+	{ name: 'VAR', minArgs: 1, maxArgs: 255, evaluate: (args) => varFn(args) },
+	{ name: 'VAR.S', minArgs: 1, maxArgs: 255, evaluate: (args) => varFn(args) },
+	{ name: 'VAR.P', minArgs: 1, maxArgs: 255, evaluate: (args) => varFn(args, true) },
+	{ name: 'VARP', minArgs: 1, maxArgs: 255, evaluate: (args) => varFn(args, true) },
+	{ name: 'PERCENTILE.INC', minArgs: 2, maxArgs: 2, evaluate: percentileFn },
+	{ name: 'PERCENTILE.EXC', minArgs: 2, maxArgs: 2, evaluate: percentileExcFn },
+	{ name: 'QUARTILE', minArgs: 2, maxArgs: 2, evaluate: (args) => quartileFn(args) },
+	{ name: 'QUARTILE.INC', minArgs: 2, maxArgs: 2, evaluate: (args) => quartileFn(args) },
+	{ name: 'QUARTILE.EXC', minArgs: 2, maxArgs: 2, evaluate: (args) => quartileFn(args, true) },
+	{ name: 'MODE', minArgs: 1, maxArgs: 255, evaluate: modeFn },
+	{ name: 'MODE.SNGL', minArgs: 1, maxArgs: 255, evaluate: modeFn },
+	{ name: 'AVERAGEA', minArgs: 1, maxArgs: 255, evaluate: averageaFn },
+	{ name: 'MAXA', minArgs: 1, maxArgs: 255, evaluate: maxaFn },
+	{ name: 'MINA', minArgs: 1, maxArgs: 255, evaluate: minaFn },
+	{ name: 'RANK.EQ', minArgs: 2, maxArgs: 3, evaluate: rankFn },
+	{ name: 'RANK.AVG', minArgs: 2, maxArgs: 3, evaluate: rankAvgFn },
+	{ name: 'GEOMEAN', minArgs: 1, maxArgs: 255, evaluate: geomeanFn },
+	{ name: 'HARMEAN', minArgs: 1, maxArgs: 255, evaluate: harmeanFn },
+	{ name: 'TRIMMEAN', minArgs: 2, maxArgs: 2, evaluate: trimmeanFn },
+	{ name: 'PERCENTRANK.INC', minArgs: 2, maxArgs: 3, evaluate: percentrankIncFn },
+	{ name: 'PERCENTRANK.EXC', minArgs: 2, maxArgs: 3, evaluate: percentrankExcFn },
+	{ name: 'FORECAST.LINEAR', minArgs: 3, maxArgs: 3, evaluate: forecastLinearFn },
+	{ name: 'FORECAST', minArgs: 3, maxArgs: 3, evaluate: forecastLinearFn },
+	{ name: 'SLOPE', minArgs: 2, maxArgs: 2, evaluate: slopeFn },
+	{ name: 'INTERCEPT', minArgs: 2, maxArgs: 2, evaluate: interceptFn },
+	{ name: 'RSQ', minArgs: 2, maxArgs: 2, evaluate: rsqFn },
+	{ name: 'CORREL', minArgs: 2, maxArgs: 2, evaluate: correlFn },
+	{ name: 'PEARSON', minArgs: 2, maxArgs: 2, evaluate: correlFn },
+	{ name: 'STEYX', minArgs: 2, maxArgs: 2, evaluate: steyxFn },
+	{ name: 'COVARIANCE.P', minArgs: 2, maxArgs: 2, evaluate: (args) => covarianceFn(args, true) },
+	{ name: 'COVARIANCE.S', minArgs: 2, maxArgs: 2, evaluate: (args) => covarianceFn(args, false) },
+	{ name: 'AVEDEV', minArgs: 1, maxArgs: 255, evaluate: avedevFn },
+	{ name: 'DEVSQ', minArgs: 1, maxArgs: 255, evaluate: devsqFn },
+	{ name: 'KURT', minArgs: 1, maxArgs: 255, evaluate: kurtFn },
+	{ name: 'SKEW', minArgs: 1, maxArgs: 255, evaluate: skewFn },
+	{ name: 'FREQUENCY', minArgs: 2, maxArgs: 2, evaluate: frequencyFn },
+	{ name: 'MODE.MULT', minArgs: 1, maxArgs: 255, evaluate: modeMultFn },
+	{ name: 'NORM.DIST', minArgs: 4, maxArgs: 4, evaluate: normDistFn },
+	{ name: 'NORM.INV', minArgs: 3, maxArgs: 3, evaluate: normInvFn },
+	{ name: 'NORM.S.DIST', minArgs: 2, maxArgs: 2, evaluate: normSDistFn },
+	{ name: 'NORM.S.INV', minArgs: 1, maxArgs: 1, evaluate: normSInvFn },
+]

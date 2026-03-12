@@ -8,6 +8,7 @@ interface MetricSample {
 	readonly heapUsedBytes?: number
 	readonly heapTotalBytes?: number
 	readonly heapAfterGcBytes?: number
+	readonly heapDeltaBytes?: number
 }
 
 export interface BenchmarkMetricSummary {
@@ -25,6 +26,7 @@ export interface BenchmarkMetricSummary {
 	readonly heapUsedBytes?: number
 	readonly heapTotalBytes?: number
 	readonly heapAfterGcBytes?: number
+	readonly heapDeltaBytes?: number
 }
 
 export interface BenchmarkCaseResult {
@@ -66,6 +68,7 @@ export interface BenchmarkMetricComparison {
 		| 'throughputPerSec'
 		| 'rssDeltaBytes'
 		| 'retainedRssDeltaBytes'
+		| 'heapDeltaBytes'
 	readonly direction: 'lower-better' | 'higher-better'
 	readonly baseline: number
 	readonly candidate: number
@@ -106,6 +109,7 @@ export interface CompareSuitesThresholds {
 	readonly throughputPerSec?: number
 	readonly rssDeltaBytes?: number
 	readonly retainedRssDeltaBytes?: number
+	readonly heapDeltaBytes?: number
 }
 
 export interface CompareSuitesConfig {
@@ -162,6 +166,7 @@ export function summarizeSamples(samples: readonly MetricSample[]): BenchmarkMet
 			'heapAfterGcBytes',
 			medianDefined(samples.map((sample) => sample.heapAfterGcBytes)),
 		),
+		...withDefined('heapDeltaBytes', medianDefined(samples.map((sample) => sample.heapDeltaBytes))),
 	}
 }
 
@@ -268,6 +273,20 @@ function buildComparisons(
 			? welchsTTest(baseRetained, nextRetained)
 			: null
 
+	const baseHeapDelta = base.samples
+		?.map((s) => s.heapDeltaBytes)
+		.filter((v): v is number => v !== undefined)
+	const nextHeapDelta = next.samples
+		?.map((s) => s.heapDeltaBytes)
+		.filter((v): v is number => v !== undefined)
+	const heapDeltaTTest =
+		baseHeapDelta &&
+		nextHeapDelta &&
+		baseHeapDelta.length >= T_TEST_MIN_SAMPLES &&
+		nextHeapDelta.length >= T_TEST_MIN_SAMPLES
+			? welchsTTest(baseHeapDelta, nextHeapDelta)
+			: null
+
 	return [
 		compareMetric(
 			'medianMs',
@@ -308,6 +327,14 @@ function buildComparisons(
 			next.metrics.retainedRssDeltaBytes,
 			thresholds.retainedRssDeltaBytes ?? DEFAULT_RSS_THRESHOLD,
 			retainedTTest?.pValue,
+		),
+		compareOptionalMetric(
+			'heapDeltaBytes',
+			'lower-better',
+			base.metrics.heapDeltaBytes,
+			next.metrics.heapDeltaBytes,
+			thresholds.heapDeltaBytes ?? DEFAULT_RSS_THRESHOLD,
+			heapDeltaTTest?.pValue,
 		),
 	].filter((entry): entry is BenchmarkMetricComparison => entry !== undefined)
 }

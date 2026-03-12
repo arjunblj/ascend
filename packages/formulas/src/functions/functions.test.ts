@@ -241,6 +241,95 @@ describe('formula functions', () => {
 			recalc(wb)
 			expect(getResult(wb, 0, 1)).toEqual(stringValue('12.5%'))
 		})
+
+		test('TEXT with #,##0.00 format', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 1234567.891)
+			setFormula(wb, 0, 1, 'TEXT(A1,"#,##0.00")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('1,234,567.89'))
+		})
+
+		test('TEXT with 0 digit placeholder', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 5)
+			setFormula(wb, 0, 1, 'TEXT(A1,"000")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('005'))
+		})
+
+		test('TEXT with # digit placeholder trims trailing zeros', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 1.5)
+			setFormula(wb, 0, 1, 'TEXT(A1,"0.##")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('1.5'))
+		})
+
+		test('TEXT with $#,##0.00 currency', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 9876.5)
+			setFormula(wb, 0, 1, 'TEXT(A1,"$#,##0.00")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('$9,876.50'))
+		})
+
+		test('TEXT with 0.00E+00 scientific', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 12345)
+			setFormula(wb, 0, 1, 'TEXT(A1,"0.00E+00")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('1.23E+4'))
+		})
+
+		test('TEXT with quoted literal text', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 42)
+			setStr(wb, 0, 2, '0" units"')
+			setFormula(wb, 0, 1, 'TEXT(A1,C1)')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('42 units'))
+		})
+
+		test('TEXT with date format m/d/yyyy', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 45658)
+			setFormula(wb, 0, 1, 'TEXT(A1,"m/d/yyyy")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('1/1/2025'))
+		})
+
+		test('TEXT with date format yyyy-mm-dd', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 45658)
+			setFormula(wb, 0, 1, 'TEXT(A1,"yyyy-mm-dd")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('2025-01-01'))
+		})
+
+		test('TEXT with 0.00% format', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 0.7523)
+			setFormula(wb, 0, 1, 'TEXT(A1,"0.00%")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('75.23%'))
+		})
+
+		test('TEXT with negative number', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, -1234.5)
+			setFormula(wb, 0, 1, 'TEXT(A1,"#,##0.00")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('-1,234.50'))
+		})
+
+		test('TEXT with @ text placeholder', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 99)
+			setFormula(wb, 0, 1, 'TEXT(A1,"@")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('99'))
+		})
 	})
 
 	describe('lookup functions', () => {

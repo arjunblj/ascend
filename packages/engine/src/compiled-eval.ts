@@ -48,6 +48,7 @@ const Op = {
 export interface CompiledFormula {
 	readonly ops: number[]
 	readonly constants: readonly (string | number | boolean | CellValue | FormulaNode)[]
+	readonly numericOnly: boolean
 }
 
 const coerceStr = coerceCellValueToString
@@ -155,6 +156,45 @@ function shouldCompile(node: FormulaNode): boolean {
 	}
 	scan(node)
 	return compilableNodes >= 3
+}
+
+function isNumericFormula(ops: readonly number[]): boolean {
+	let ip = 0
+	while (ip < ops.length) {
+		const op = ops[ip++] as number
+		switch (op) {
+			case Op.NUM:
+				ip++
+				break
+			case Op.EMPTY_VAL:
+			case Op.ADD:
+			case Op.SUB:
+			case Op.MUL:
+			case Op.DIV:
+			case Op.POW:
+			case Op.NEG:
+			case Op.PCT:
+			case Op.EQ:
+			case Op.NE:
+			case Op.LT:
+			case Op.GT:
+			case Op.LE:
+			case Op.GE:
+				break
+			case Op.CELL:
+			case Op.CELL_ADD:
+			case Op.CELL_SUB:
+			case Op.CELL_MUL:
+				ip += 2
+				break
+			case Op.CELL_SHEET:
+				ip += 3
+				break
+			default:
+				return false
+		}
+	}
+	return true
 }
 
 export function compileFormula(node: FormulaNode): CompiledFormula | null {
@@ -360,7 +400,131 @@ export function compileFormula(node: FormulaNode): CompiledFormula | null {
 	}
 
 	emit(node)
-	return { ops, constants }
+	return { ops, constants, numericOnly: isNumericFormula(ops) }
+}
+
+const NUMERIC_STACK_SIZE = 64
+const numericStack = new Float64Array(NUMERIC_STACK_SIZE)
+
+function evaluateCompiledNumeric(compiled: CompiledFormula, ctx: EvalContext): CellValue {
+	const { ops, constants } = compiled
+	const sheet = ctx.workbook.sheets[ctx.sheetIndex]
+	let ip = 0
+	let sp = 0
+	const len = ops.length
+
+	while (ip < len) {
+		const op = ops[ip] as number
+		ip++
+		switch (op) {
+			case Op.NUM:
+				numericStack[sp++] = constants[ops[ip++] as number] as number
+				break
+			case Op.EMPTY_VAL:
+				numericStack[sp++] = 0
+				break
+			case Op.CELL: {
+				const row = ops[ip] as number
+				const col = ops[ip + 1] as number
+				ip += 2
+				numericStack[sp++] = toNumber(sheet?.cells.readValue(row, col) ?? EMPTY) ?? NaN
+				break
+			}
+			case Op.CELL_SHEET: {
+				const nameIdx = ops[ip] as number
+				const row = ops[ip + 1] as number
+				const col = ops[ip + 2] as number
+				ip += 3
+				const si = resolveSheetIdx(ctx.workbook, constants[nameIdx] as string, ctx.sheetIndex)
+				if (si < 0) {
+					numericStack[sp++] = NaN
+				} else {
+					numericStack[sp++] =
+						toNumber(ctx.workbook.sheets[si]?.cells.readValue(row, col) ?? EMPTY) ?? NaN
+				}
+				break
+			}
+			case Op.ADD: {
+				const b = numericStack[--sp] as number
+				numericStack[sp - 1] = (numericStack[sp - 1] as number) + b
+				break
+			}
+			case Op.SUB: {
+				const b = numericStack[--sp] as number
+				numericStack[sp - 1] = (numericStack[sp - 1] as number) - b
+				break
+			}
+			case Op.MUL: {
+				const b = numericStack[--sp] as number
+				numericStack[sp - 1] = (numericStack[sp - 1] as number) * b
+				break
+			}
+			case Op.DIV: {
+				const b = numericStack[--sp] as number
+				numericStack[sp - 1] = b === 0 ? NaN : (numericStack[sp - 1] as number) / b
+				break
+			}
+			case Op.POW: {
+				const b = numericStack[--sp] as number
+				numericStack[sp - 1] = (numericStack[sp - 1] as number) ** b
+				break
+			}
+			case Op.NEG:
+				numericStack[sp - 1] = -(numericStack[sp - 1] as number)
+				break
+			case Op.PCT:
+				numericStack[sp - 1] = (numericStack[sp - 1] as number) / 100
+				break
+			case Op.CELL_ADD:
+			case Op.CELL_SUB:
+			case Op.CELL_MUL: {
+				const row = ops[ip] as number
+				const col = ops[ip + 1] as number
+				ip += 2
+				const cn = toNumber(sheet?.cells.readValue(row, col) ?? EMPTY) ?? NaN
+				const left = numericStack[sp - 1] as number
+				numericStack[sp - 1] =
+					op === Op.CELL_ADD ? left + cn : op === Op.CELL_SUB ? left - cn : left * cn
+				break
+			}
+			case Op.EQ:
+			case Op.NE:
+			case Op.LT:
+			case Op.GT:
+			case Op.LE:
+			case Op.GE: {
+				const rb = numericStack[--sp] as number
+				const la = numericStack[sp - 1] as number
+				let cmp: boolean
+				switch (op) {
+					case Op.EQ:
+						cmp = la === rb
+						break
+					case Op.NE:
+						cmp = la !== rb
+						break
+					case Op.LT:
+						cmp = la < rb
+						break
+					case Op.GT:
+						cmp = la > rb
+						break
+					case Op.LE:
+						cmp = la <= rb
+						break
+					default:
+						cmp = la >= rb
+						break
+				}
+				numericStack[sp - 1] = cmp ? 1 : 0
+				break
+			}
+		}
+	}
+
+	const result = numericStack[0] as number
+	if (!Number.isFinite(result)) return errorValue('#VALUE!')
+	return numberValue(result)
 }
 
 const STACK_SIZE = 64
@@ -368,6 +532,10 @@ const sharedStack: CellValue[] = new Array(STACK_SIZE)
 let stackDepth = 0
 
 export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): CellValue {
+	if (compiled.numericOnly) {
+		return evaluateCompiledNumeric(compiled, ctx)
+	}
+
 	const { ops, constants } = compiled
 	const baseDepth = stackDepth
 	const sheet = ctx.workbook.sheets[ctx.sheetIndex]

@@ -1191,6 +1191,7 @@ function renderSummary(results: readonly BenchmarkCaseResult[]): string {
 		'throughput',
 		'rss-delta',
 		'retained-rss',
+		'heap-delta',
 	]
 	const rows = results.map((result) => [
 		result.name,
@@ -1205,6 +1206,9 @@ function renderSummary(results: readonly BenchmarkCaseResult[]): string {
 		result.metrics.rssDeltaBytes !== undefined ? formatBytes(result.metrics.rssDeltaBytes) : 'n/a',
 		result.metrics.retainedRssDeltaBytes !== undefined
 			? formatBytes(result.metrics.retainedRssDeltaBytes)
+			: 'n/a',
+		result.metrics.heapDeltaBytes !== undefined
+			? formatBytes(result.metrics.heapDeltaBytes)
 			: 'n/a',
 	])
 
@@ -1233,6 +1237,7 @@ async function runScenario(
 		readonly throughputPerSec: number
 		readonly rssDeltaBytes?: number
 		readonly retainedRssDeltaBytes?: number
+		readonly heapDeltaBytes?: number
 	}> = []
 	let firstInput: ScenarioInput | undefined
 	let assertions: Record<string, string | number | boolean | null> | undefined
@@ -1247,9 +1252,11 @@ async function runScenario(
 		firstInput ??= input
 		runGc()
 		const rssBefore = getRssBytes()
+		const heapBefore = process.memoryUsage().heapUsed
 		const start = performance.now()
 		const runResult = await scenario.run(input)
 		const durationMs = performance.now() - start
+		const heapAfter = process.memoryUsage().heapUsed
 		const rssAfter = getRssBytes()
 		runGc()
 		const rssAfterGc = getRssBytes()
@@ -1265,6 +1272,7 @@ async function runScenario(
 				rssBefore !== undefined && rssAfterGc !== undefined
 					? Math.max(0, rssAfterGc - rssBefore)
 					: undefined,
+			heapDeltaBytes: Math.max(0, heapAfter - heapBefore),
 		})
 		assertions ??= runResult?.assertions
 	}

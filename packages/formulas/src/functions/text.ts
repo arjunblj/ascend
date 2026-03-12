@@ -10,6 +10,7 @@ import {
 	stringValue,
 	topLeftScalar,
 } from '@ascend/schema'
+import { serialToDate } from './date.ts'
 import type { EvalArg, FunctionDef } from './index.ts'
 import { numArg, toNum } from './math/helpers.ts'
 
@@ -125,28 +126,266 @@ function splitByDelimiter(text: string, delimiter: string, matchMode: number): s
 	return parts
 }
 
+const DATE_TOKEN_RE = /yyyy|yy|mmmm|mmm|mm|m|dddd|ddd|dd|d|hh|h|ss|s|AM\/PM|am\/pm|A\/P|a\/p/g
+const MONTH_NAMES = [
+	'January',
+	'February',
+	'March',
+	'April',
+	'May',
+	'June',
+	'July',
+	'August',
+	'September',
+	'October',
+	'November',
+	'December',
+]
+
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+function isDateFormat(fmt: string): boolean {
+	const stripped = fmt.replace(/"[^"]*"/g, '').replace(/\[[^\]]*\]/g, '')
+	return DATE_TOKEN_RE.test(stripped)
+}
+
+function serialToTime(serial: number): { hours: number; minutes: number; seconds: number } {
+	const frac = serial - Math.floor(serial)
+	const totalSeconds = Math.round(frac * 86400)
+	const hours = Math.floor(totalSeconds / 3600)
+	const minutes = Math.floor((totalSeconds % 3600) / 60)
+	const seconds = totalSeconds % 60
+	return { hours, minutes, seconds }
+}
+
+function dayOfWeek(serial: number): number {
+	return (Math.floor(serial) + 6) % 7
+}
+
+function formatDate(serial: number, fmt: string): string {
+	const parts = serialToDate(serial)
+	if (!parts) return ''
+	const { hours, minutes, seconds } = serialToTime(serial)
+
+	const hasAmPm = /AM\/PM|am\/pm|A\/P|a\/p/.test(fmt)
+	const hour12 = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours
+	const ampm = hours < 12 ? 'AM' : 'PM'
+
+	let result = ''
+	let i = 0
+	let prevTokenIsTime = false
+	while (i < fmt.length) {
+		if (fmt[i] === '"') {
+			const end = fmt.indexOf('"', i + 1)
+			if (end === -1) {
+				result += fmt.slice(i + 1)
+				break
+			}
+			result += fmt.slice(i + 1, end)
+			i = end + 1
+			continue
+		}
+
+		let matched = false
+		for (const tok of ['AM/PM', 'am/pm', 'A/P', 'a/p']) {
+			if (fmt.slice(i, i + tok.length) === tok) {
+				result += tok.includes('AM')
+					? ampm
+					: tok.includes('am')
+						? ampm.toLowerCase()
+						: tok.includes('A')
+							? ampm === 'AM'
+								? 'A'
+								: 'P'
+							: ampm === 'AM'
+								? 'a'
+								: 'p'
+				i += tok.length
+				matched = true
+				break
+			}
+		}
+		if (matched) continue
+
+		const remaining = fmt.slice(i)
+		const tokenMatch = remaining.match(/^(yyyy|yy|mmmm|mmm|mm|m|dddd|ddd|dd|d|hh|h|ss|s)/i)
+		if (tokenMatch) {
+			const tok = tokenMatch[0] as string
+			const tokLower = tok.toLowerCase()
+			switch (tokLower) {
+				case 'yyyy':
+					result += String(parts.year)
+					prevTokenIsTime = false
+					break
+				case 'yy':
+					result += String(parts.year % 100).padStart(2, '0')
+					prevTokenIsTime = false
+					break
+				case 'mmmm':
+					result += MONTH_NAMES[parts.month - 1] ?? ''
+					prevTokenIsTime = false
+					break
+				case 'mmm':
+					result += (MONTH_NAMES[parts.month - 1] ?? '').slice(0, 3)
+					prevTokenIsTime = false
+					break
+				case 'mm':
+					if (prevTokenIsTime) {
+						result += String(minutes).padStart(2, '0')
+					} else {
+						result += String(parts.month).padStart(2, '0')
+					}
+					break
+				case 'm':
+					if (prevTokenIsTime) {
+						result += String(minutes)
+					} else {
+						result += String(parts.month)
+					}
+					break
+				case 'dddd':
+					result += DAY_NAMES[dayOfWeek(serial)] ?? ''
+					prevTokenIsTime = false
+					break
+				case 'ddd':
+					result += (DAY_NAMES[dayOfWeek(serial)] ?? '').slice(0, 3)
+					prevTokenIsTime = false
+					break
+				case 'dd':
+					result += String(parts.day).padStart(2, '0')
+					prevTokenIsTime = false
+					break
+				case 'd':
+					result += String(parts.day)
+					prevTokenIsTime = false
+					break
+				case 'hh':
+					result += String(hasAmPm ? hour12 : hours).padStart(2, '0')
+					prevTokenIsTime = true
+					break
+				case 'h':
+					result += String(hasAmPm ? hour12 : hours)
+					prevTokenIsTime = true
+					break
+				case 'ss':
+					result += String(seconds).padStart(2, '0')
+					prevTokenIsTime = false
+					break
+				case 's':
+					result += String(seconds)
+					prevTokenIsTime = false
+					break
+			}
+			i += tok.length
+			continue
+		}
+
+		result += fmt[i]
+		i++
+	}
+	return result
+}
+
+const NUM_FMT_CHARS = new Set(['0', '#', '.', ','])
+
+function parseFormatSegments(fmt: string): { before: string; numFmt: string; after: string } {
+	let before = ''
+	let numFmt = ''
+	let after = ''
+	let phase: 'before' | 'num' | 'after' = 'before'
+	let i = 0
+
+	while (i < fmt.length) {
+		if (fmt[i] === '"') {
+			const end = fmt.indexOf('"', i + 1)
+			const literal = end === -1 ? fmt.slice(i + 1) : fmt.slice(i + 1, end)
+			if (phase === 'before') before += literal
+			else if (phase === 'num') {
+				phase = 'after'
+				after += literal
+			} else {
+				after += literal
+			}
+			i = end === -1 ? fmt.length : end + 1
+			continue
+		}
+
+		const ch = fmt[i] as string
+		if (NUM_FMT_CHARS.has(ch)) {
+			if (phase === 'before') phase = 'num'
+			if (phase === 'after') {
+				numFmt += after
+				after = ''
+				phase = 'num'
+			}
+			numFmt += ch
+		} else if (phase === 'before') {
+			before += ch
+		} else if (phase === 'num') {
+			phase = 'after'
+			after += ch
+		} else {
+			after += ch
+		}
+		i++
+	}
+
+	return { before, numFmt, after }
+}
+
 function formatNumber(value: number, code: string): string {
 	const fmt = code.trim()
 
+	if (fmt === '@') return String(value)
+
+	if (fmt === '' || fmt === 'General') return String(value)
+
+	if (isDateFormat(fmt)) return formatDate(value, fmt)
+
+	if (/[eE]\+/i.test(fmt)) {
+		const decMatch = fmt.match(/\.(0+)[eE]\+/i)
+		const dec = decMatch ? (decMatch[1] as string).length : 2
+		return value.toExponential(dec).replace('e+', 'E+').replace('e-', 'E-')
+	}
+
 	if (fmt.includes('%')) {
-		const pctFmt = fmt.replace(/%/g, '')
+		const pctFmt = fmt.replace(/%/g, '').replace(/"[^"]*"/g, '')
 		const dec = pctFmt.includes('.') ? (pctFmt.split('.')[1] || '').replace(/[^0#]/g, '').length : 0
 		return `${(value * 100).toFixed(dec)}%`
 	}
 
-	const hasComma = fmt.includes(',')
-	const dec = fmt.includes('.') ? (fmt.split('.')[1] || '').replace(/[^0#]/g, '').length : 0
+	const { before, numFmt, after } = parseFormatSegments(fmt)
+
+	const hasComma = numFmt.includes(',')
+	const dotIdx = numFmt.indexOf('.')
+	const intFmt = dotIdx >= 0 ? numFmt.slice(0, dotIdx) : numFmt
+	const decFmt = dotIdx >= 0 ? numFmt.slice(dotIdx + 1) : ''
+
+	const minIntDigits = (intFmt.match(/0/g) || []).length
+	const decPlaces = decFmt.replace(/[^0#]/g, '').length
+
 	const abs = Math.abs(value)
-	const fixed = abs.toFixed(dec)
-	const [intPart = '', decPart] = fixed.split('.')
+	const fixed = abs.toFixed(decPlaces)
+	const [rawInt = '', rawDec] = fixed.split('.')
 	const sign = value < 0 ? '-' : ''
 
-	if (hasComma) {
-		const withCommas = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-		return sign + withCommas + (decPart ? `.${decPart}` : '')
+	let intStr = rawInt
+	if (intStr.length < minIntDigits) {
+		intStr = intStr.padStart(minIntDigits, '0')
 	}
 
-	return sign + intPart + (decPart ? `.${decPart}` : '')
+	let decStr = rawDec ?? ''
+	if (decFmt.length > 0) {
+		while (decStr.length > 0 && decFmt[decStr.length - 1] === '#' && decStr.endsWith('0')) {
+			decStr = decStr.slice(0, -1)
+		}
+	}
+
+	if (hasComma) {
+		intStr = intStr.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+	}
+
+	return before + sign + intStr + (decStr ? `.${decStr}` : '') + after
 }
 
 export const textFunctions: FunctionDef[] = [

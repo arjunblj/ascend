@@ -1,7 +1,7 @@
 import type { Cell, CellStyle, RangeRef, Sheet, StyleId, Workbook } from '@ascend/core'
 import { createTableId, parseA1, parseRange, toA1 } from '@ascend/core'
 import type { FormulaCellRef, FormulaNode } from '@ascend/formulas'
-import { dateToSerial, parseFormula, printFormula, rewriteRefs } from '@ascend/formulas'
+import { cachedParseFormula, dateToSerial, printFormula, rewriteRefs } from '@ascend/formulas'
 import type { CellValue, InputValue, Operation, Result } from '@ascend/schema'
 import { ascendError, booleanValue, EMPTY, err, numberValue, ok, stringValue } from '@ascend/schema'
 import { invalidateWorkbookAnalysis } from './analysis.ts'
@@ -147,7 +147,7 @@ function handleFillFormula(
 	const rangeResult = safeParseRange(op.range)
 	if (!rangeResult.ok) return rangeResult
 	const baseFormula = normalizeFormulaInput(op.formula)
-	const parsed = parseFormula(baseFormula)
+	const parsed = cachedParseFormula(baseFormula)
 	if (!parsed.ok) {
 		return err(ascendError('VALIDATION_ERROR', `Invalid formula: ${op.formula}`))
 	}

@@ -265,3 +265,86 @@ registerFunction({ name: 'OCT2BIN', minArgs: 1, maxArgs: 2, evaluate: oct2bin })
 registerFunction({ name: 'OCT2HEX', minArgs: 1, maxArgs: 2, evaluate: oct2hex })
 registerFunction({ name: 'DELTA', minArgs: 1, maxArgs: 2, evaluate: delta })
 registerFunction({ name: 'GESTEP', minArgs: 1, maxArgs: 2, evaluate: gestep })
+
+const MAX_48BIT = 2 ** 48 - 1
+
+function bitIntArg(arg: EvalArg | undefined): number | CellValue {
+	const n = numArg(arg)
+	if (typeof n !== 'number') return n
+	const x = Math.trunc(n)
+	if (x < 0 || x > MAX_48BIT) return errorValue('#NUM!')
+	return x
+}
+
+registerFunction({
+	name: 'BITAND',
+	minArgs: 2,
+	maxArgs: 2,
+	evaluate(args) {
+		const a = bitIntArg(args[0])
+		if (typeof a !== 'number') return a
+		const b = bitIntArg(args[1])
+		if (typeof b !== 'number') return b
+		return numberValue(Number(BigInt(a) & BigInt(b)))
+	},
+})
+
+registerFunction({
+	name: 'BITOR',
+	minArgs: 2,
+	maxArgs: 2,
+	evaluate(args) {
+		const a = bitIntArg(args[0])
+		if (typeof a !== 'number') return a
+		const b = bitIntArg(args[1])
+		if (typeof b !== 'number') return b
+		return numberValue(Number(BigInt(a) | BigInt(b)))
+	},
+})
+
+registerFunction({
+	name: 'BITXOR',
+	minArgs: 2,
+	maxArgs: 2,
+	evaluate(args) {
+		const a = bitIntArg(args[0])
+		if (typeof a !== 'number') return a
+		const b = bitIntArg(args[1])
+		if (typeof b !== 'number') return b
+		return numberValue(Number(BigInt(a) ^ BigInt(b)))
+	},
+})
+
+registerFunction({
+	name: 'BITLSHIFT',
+	minArgs: 2,
+	maxArgs: 2,
+	evaluate(args) {
+		const n = bitIntArg(args[0])
+		if (typeof n !== 'number') return n
+		const shift = numArg(args[1])
+		if (typeof shift !== 'number') return shift
+		const s = Math.trunc(shift)
+		if (Math.abs(s) > 53) return errorValue('#NUM!')
+		const result = s >= 0 ? Number(BigInt(n) << BigInt(s)) : Number(BigInt(n) >> BigInt(-s))
+		if (result < 0 || result > MAX_48BIT) return errorValue('#NUM!')
+		return numberValue(result)
+	},
+})
+
+registerFunction({
+	name: 'BITRSHIFT',
+	minArgs: 2,
+	maxArgs: 2,
+	evaluate(args) {
+		const n = bitIntArg(args[0])
+		if (typeof n !== 'number') return n
+		const shift = numArg(args[1])
+		if (typeof shift !== 'number') return shift
+		const s = Math.trunc(shift)
+		if (Math.abs(s) > 53) return errorValue('#NUM!')
+		const result = s >= 0 ? Number(BigInt(n) >> BigInt(s)) : Number(BigInt(n) << BigInt(-s))
+		if (result < 0 || result > MAX_48BIT) return errorValue('#NUM!')
+		return numberValue(result)
+	},
+})

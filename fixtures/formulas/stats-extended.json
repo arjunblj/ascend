@@ -72,6 +72,66 @@
 			"setup": { "A1": 10, "A2": 20, "A3": 30 },
 			"formula": "SUBTOTAL(109, A1:A3)",
 			"expected": { "kind": "number", "value": 60 }
+		},
+		{
+			"description": "SUBTOTAL code 10 computes sample VAR (VAR.S)",
+			"setup": { "A1": 1, "A2": 2, "A3": 3 },
+			"formula": "SUBTOTAL(10, A1:A3)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "SUBTOTAL code 11 computes population VAR (VAR.P)",
+			"setup": { "A1": 1, "A2": 2, "A3": 3 },
+			"formula": "SUBTOTAL(11, A1:A3)",
+			"expected": { "kind": "number", "approx": 0.6667, "tolerance": 0.001 }
+		},
+		{
+			"description": "QUARTILE returns 1st quartile",
+			"setup": { "A1": 1, "A2": 2, "A3": 3, "A4": 4, "A5": 5 },
+			"formula": "QUARTILE(A1:A5, 1)",
+			"expected": { "kind": "number", "value": 2 }
+		},
+		{
+			"description": "QUARTILE returns median at Q2",
+			"setup": { "A1": 1, "A2": 2, "A3": 3, "A4": 4, "A5": 5 },
+			"formula": "QUARTILE(A1:A5, 2)",
+			"expected": { "kind": "number", "value": 3 }
+		},
+		{
+			"description": "QUARTILE returns 3rd quartile",
+			"setup": { "A1": 1, "A2": 2, "A3": 3, "A4": 4, "A5": 5 },
+			"formula": "QUARTILE(A1:A5, 3)",
+			"expected": { "kind": "number", "value": 4 }
+		},
+		{
+			"description": "QUARTILE Q0 returns minimum",
+			"setup": { "A1": 1, "A2": 2, "A3": 3 },
+			"formula": "QUARTILE(A1:A3, 0)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "QUARTILE Q4 returns maximum",
+			"setup": { "A1": 1, "A2": 2, "A3": 3 },
+			"formula": "QUARTILE(A1:A3, 4)",
+			"expected": { "kind": "number", "value": 3 }
+		},
+		{
+			"description": "MODE returns most frequent value",
+			"setup": { "A1": 1, "A2": 2, "A3": 2, "A4": 3, "A5": 3, "A6": 3 },
+			"formula": "MODE(A1:A6)",
+			"expected": { "kind": "number", "value": 3 }
+		},
+		{
+			"description": "MODE with no repeats returns #N/A",
+			"setup": { "A1": 1, "A2": 2, "A3": 3 },
+			"formula": "MODE(A1:A3)",
+			"expected": { "kind": "error", "value": "#N/A" }
+		},
+		{
+			"description": "MODE.SNGL is alias for MODE",
+			"setup": { "A1": 5, "A2": 5, "A3": 10 },
+			"formula": "MODE.SNGL(A1:A3)",
+			"expected": { "kind": "number", "value": 5 }
 		}
 	]
 }

@@ -3,6 +3,7 @@ import { toNumber } from '@ascend/formulas'
 import type { CellValue, ExcelError } from '@ascend/schema'
 import {
 	booleanValue,
+	coerceCellValueToString,
 	EMPTY,
 	errorValue,
 	numberValue,
@@ -41,25 +42,7 @@ export interface CompiledFormula {
 	readonly constants: readonly (string | number | boolean | CellValue | FormulaNode)[]
 }
 
-function coerceStr(v: CellValue): string {
-	v = topLeftScalar(v)
-	switch (v.kind) {
-		case 'number':
-			return String(v.value)
-		case 'string':
-			return v.value
-		case 'boolean':
-			return v.value ? 'TRUE' : 'FALSE'
-		case 'empty':
-			return ''
-		case 'date':
-			return String(v.serial)
-		case 'error':
-			return v.value
-		case 'richText':
-			return v.runs.map((r) => r.text).join('')
-	}
-}
+const coerceStr = coerceCellValueToString
 
 function comparePrimitive<T extends number | string>(op: number, a: T, b: T): boolean {
 	switch (op) {

@@ -106,3 +106,23 @@ export function topLeftScalar(v: CellValue): ScalarCellValue {
 	const firstRow = v.rows[0]
 	return firstRow?.[0] ?? (EMPTY as ScalarCellValue)
 }
+
+export function coerceCellValueToString(v: CellValue): string {
+	if (v.kind === 'array') v = topLeftScalar(v)
+	switch (v.kind) {
+		case 'number':
+			return String(v.value)
+		case 'string':
+			return v.value
+		case 'boolean':
+			return v.value ? 'TRUE' : 'FALSE'
+		case 'empty':
+			return ''
+		case 'date':
+			return String(v.serial)
+		case 'error':
+			return v.value
+		case 'richText':
+			return v.runs.map((r) => r.text).join('')
+	}
+}

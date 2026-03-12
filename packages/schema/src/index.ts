@@ -37,6 +37,7 @@ export type {
 export {
 	arrayValue,
 	booleanValue,
+	coerceCellValueToString,
 	EMPTY,
 	errorValue,
 	isArrayValue,

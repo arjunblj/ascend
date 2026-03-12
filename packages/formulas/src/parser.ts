@@ -516,6 +516,21 @@ export function parseFormula(formula: string): Result<FormulaNode> {
 	return parse(tokenize(formula))
 }
 
+const globalParseCache = new Map<string, Result<FormulaNode>>()
+
+export function cachedParseFormula(formula: string): Result<FormulaNode> {
+	const hit = globalParseCache.get(formula)
+	if (hit) return hit
+	const result = parseFormula(formula)
+	if (globalParseCache.size > 8192) globalParseCache.clear()
+	globalParseCache.set(formula, result)
+	return result
+}
+
+export function clearGlobalParseCache(): void {
+	globalParseCache.clear()
+}
+
 function isReferenceLike(node: FormulaNode): boolean {
 	switch (node.type) {
 		case 'cellRef':

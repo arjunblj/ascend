@@ -7,6 +7,36 @@ function collectFrom(arg: EvalArg | undefined): number[] | CellValue {
 	return collectNumbers([arg])
 }
 
+function quickselect(arr: number[], k: number, ascending: boolean): number {
+	let lo = 0
+	let hi = arr.length - 1
+	while (lo < hi) {
+		const pivot = arr[lo + ((hi - lo) >> 1)] as number
+		let i = lo
+		let j = hi
+		while (i <= j) {
+			if (ascending) {
+				while ((arr[i] as number) < pivot) i++
+				while ((arr[j] as number) > pivot) j--
+			} else {
+				while ((arr[i] as number) > pivot) i++
+				while ((arr[j] as number) < pivot) j--
+			}
+			if (i <= j) {
+				const tmp = arr[i] as number
+				arr[i] = arr[j] as number
+				arr[j] = tmp
+				i++
+				j--
+			}
+		}
+		if (k <= j) hi = j
+		else if (k >= i) lo = i
+		else break
+	}
+	return arr[k] as number
+}
+
 function largeFn(args: EvalArg[]): CellValue {
 	const numsOrErr = collectFrom(args[0])
 	if (!Array.isArray(numsOrErr)) return numsOrErr
@@ -14,8 +44,7 @@ function largeFn(args: EvalArg[]): CellValue {
 	if (typeof k !== 'number') return k
 	const ki = Math.floor(k)
 	if (ki < 1 || ki > numsOrErr.length) return errorValue('#NUM!')
-	numsOrErr.sort((a, b) => b - a)
-	return numberValue(numsOrErr[ki - 1] ?? 0)
+	return numberValue(quickselect(numsOrErr, ki - 1, false))
 }
 
 function smallFn(args: EvalArg[]): CellValue {
@@ -25,8 +54,7 @@ function smallFn(args: EvalArg[]): CellValue {
 	if (typeof k !== 'number') return k
 	const ki = Math.floor(k)
 	if (ki < 1 || ki > numsOrErr.length) return errorValue('#NUM!')
-	numsOrErr.sort((a, b) => a - b)
-	return numberValue(numsOrErr[ki - 1] ?? 0)
+	return numberValue(quickselect(numsOrErr, ki - 1, true))
 }
 
 function rankFn(args: EvalArg[]): CellValue {
@@ -115,6 +143,58 @@ function percentileExcFn(args: EvalArg[]): CellValue {
 	return numberValue((numsOrErr[i] ?? 0) + frac * ((numsOrErr[i + 1] ?? 0) - (numsOrErr[i] ?? 0)))
 }
 
+function quartileFn(args: EvalArg[], exclusive = false): CellValue {
+	const numsOrErr = collectFrom(args[0])
+	if (!Array.isArray(numsOrErr)) return numsOrErr
+	const q = numArg(args[1])
+	if (typeof q !== 'number') return q
+	const qi = Math.trunc(q)
+	if (exclusive) {
+		if (qi < 1 || qi > 3 || numsOrErr.length === 0) return errorValue('#NUM!')
+		numsOrErr.sort((a, b) => a - b)
+		const n = numsOrErr.length
+		const k = (qi / 4) * (n + 1) - 1
+		const i = Math.floor(k)
+		const frac = k - i
+		if (i < 0) return numberValue(numsOrErr[0] as number)
+		if (i + 1 >= n) return numberValue(numsOrErr[n - 1] as number)
+		return numberValue(
+			(numsOrErr[i] as number) + frac * ((numsOrErr[i + 1] as number) - (numsOrErr[i] as number)),
+		)
+	}
+	if (qi < 0 || qi > 4 || numsOrErr.length === 0) return errorValue('#NUM!')
+	numsOrErr.sort((a, b) => a - b)
+	const n = numsOrErr.length
+	if (qi === 0) return numberValue(numsOrErr[0] as number)
+	if (qi === 4) return numberValue(numsOrErr[n - 1] as number)
+	const k = (qi / 4) * (n - 1)
+	const i = Math.floor(k)
+	const frac = k - i
+	if (i + 1 >= n) return numberValue(numsOrErr[n - 1] as number)
+	return numberValue(
+		(numsOrErr[i] as number) + frac * ((numsOrErr[i + 1] as number) - (numsOrErr[i] as number)),
+	)
+}
+
+function modeFn(args: EvalArg[]): CellValue {
+	const numsOrErr = collectNumbers(args)
+	if (!Array.isArray(numsOrErr)) return numsOrErr
+	if (numsOrErr.length === 0) return errorValue('#N/A')
+	const freq = new Map<number, number>()
+	let maxCount = 0
+	let modeVal = 0
+	for (const n of numsOrErr) {
+		const c = (freq.get(n) ?? 0) + 1
+		freq.set(n, c)
+		if (c > maxCount) {
+			maxCount = c
+			modeVal = n
+		}
+	}
+	if (maxCount < 2) return errorValue('#N/A')
+	return numberValue(modeVal)
+}
+
 // --- Registration ---
 
 registerFunction({ name: 'LARGE', minArgs: 2, maxArgs: 2, evaluate: largeFn })
@@ -172,3 +252,23 @@ registerFunction({
 	maxArgs: 2,
 	evaluate: percentileExcFn,
 })
+registerFunction({
+	name: 'QUARTILE',
+	minArgs: 2,
+	maxArgs: 2,
+	evaluate: (args) => quartileFn(args),
+})
+registerFunction({
+	name: 'QUARTILE.INC',
+	minArgs: 2,
+	maxArgs: 2,
+	evaluate: (args) => quartileFn(args),
+})
+registerFunction({
+	name: 'QUARTILE.EXC',
+	minArgs: 2,
+	maxArgs: 2,
+	evaluate: (args) => quartileFn(args, true),
+})
+registerFunction({ name: 'MODE', minArgs: 1, maxArgs: 255, evaluate: modeFn })
+registerFunction({ name: 'MODE.SNGL', minArgs: 1, maxArgs: 255, evaluate: modeFn })

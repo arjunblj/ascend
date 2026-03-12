@@ -1066,9 +1066,23 @@ function subtotalFn(args: EvalArg[]): CellValue {
 			return subtotalDelegated(4, data)
 		case 105:
 			return subtotalDelegated(5, data)
-		case 110:
-		case 111:
-			return errorValue('#VALUE!')
+		case 10:
+		case 110: {
+			const nums = subtotalNums(data)
+			if (!Array.isArray(nums)) return nums
+			const divisor = nums.length - 1
+			if (divisor < 1) return errorValue('#DIV/0!')
+			const mean = nums.reduce((a, b) => a + b, 0) / nums.length
+			return numberValue(nums.reduce((acc, v) => acc + (v - mean) ** 2, 0) / divisor)
+		}
+		case 11:
+		case 111: {
+			const nums = subtotalNums(data)
+			if (!Array.isArray(nums)) return nums
+			if (nums.length === 0) return errorValue('#DIV/0!')
+			const mean = nums.reduce((a, b) => a + b, 0) / nums.length
+			return numberValue(nums.reduce((acc, v) => acc + (v - mean) ** 2, 0) / nums.length)
+		}
 		default:
 			return errorValue('#VALUE!')
 	}

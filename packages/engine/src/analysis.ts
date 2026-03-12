@@ -1,9 +1,9 @@
 import type { RangeRef, Workbook } from '@ascend/core'
 import type { FormulaCellRef, FormulaNode, FormulaRef } from '@ascend/formulas'
 import {
+	cachedParseFormula,
 	extractRefs,
 	functionRegistry,
-	parseFormula,
 	printFormula,
 	rewriteRefs,
 } from '@ascend/formulas'
@@ -67,16 +67,7 @@ export interface AnalyzeWorkbookOptions {
 const workbookFormulaAnalysisCache = new WeakMap<Workbook, WorkbookFormulaAnalysis>()
 const workbookDependencyAnalysisCache = new WeakMap<Workbook, WorkbookDependencyAnalysis>()
 const workbookAnalysisCache = new WeakMap<Workbook, WorkbookAnalysis>()
-const analysisFormulaParseCache = new Map<string, ReturnType<typeof parseFormula>>()
-
-function cachedParseFormula(formula: string): ReturnType<typeof parseFormula> {
-	const cached = analysisFormulaParseCache.get(formula)
-	if (cached) return cached
-	const parsed = parseFormula(formula)
-	if (analysisFormulaParseCache.size > 4096) analysisFormulaParseCache.clear()
-	analysisFormulaParseCache.set(formula, parsed)
-	return parsed
-}
+// Uses shared cachedParseFormula from @ascend/formulas
 
 export function createSheetNameIndex(workbook: Workbook): Map<string, number> {
 	const index = new Map<string, number>()
@@ -142,7 +133,7 @@ export function analyzeWorkbookFormulas(
 
 				const key = cellKey(sheetIndex, row, col)
 				const formulaText = resolveCellFormulaText(workbook, sheetIndex, row, col, cell)
-				let ast: FormulaNode | undefined
+				let ast: FormulaNode
 				const reused = tryReuseFromCellAbove(workbook, sheetIndex, row, col, cell, formulas)
 				if (reused) {
 					ast = reused
@@ -250,7 +241,7 @@ function parseIndexedFormula(
 		}
 	},
 	sharedMasterCache: Map<string, FormulaNode>,
-): ReturnType<typeof parseFormula> {
+): ReturnType<typeof cachedParseFormula> {
 	const binding = cell.formulaInfo
 	if (binding?.kind === 'shared') {
 		const cacheKey = `${sheetIndex}:${binding.sharedIndex ?? ''}`
@@ -335,7 +326,7 @@ export function analyzeWorkbook(
 		if (cached) return cached
 	}
 	const indexed = analyzeWorkbookFormulas(workbook, options)
-	const dependency = analyzeWorkbookDependencies(workbook, options)
+	const dependency = analyzeWorkbookDependenciesFrom(workbook, indexed)
 	const analysis = {
 		formulas: dependency.resolvedFormulas,
 		dependencyGraph: dependency.dependencyGraph,
@@ -356,6 +347,14 @@ export function analyzeWorkbookDependencies(
 		if (cached) return cached
 	}
 	const indexed = analyzeWorkbookFormulas(workbook, options)
+	return analyzeWorkbookDependenciesFrom(workbook, indexed, !options.range)
+}
+
+function analyzeWorkbookDependenciesFrom(
+	workbook: Workbook,
+	indexed: WorkbookFormulaAnalysis,
+	cache = true,
+): WorkbookDependencyAnalysis {
 	const dependencyGraph = new DependencyGraph()
 	const resolvedFormulas = new Map<CellKey, AnalyzedFormula>()
 	for (const formula of indexed.formulas.values()) {
@@ -381,7 +380,7 @@ export function analyzeWorkbookDependencies(
 		cycleKeys,
 		sheetNameIndex: indexed.sheetNameIndex,
 	}
-	if (!options.range) workbookDependencyAnalysisCache.set(workbook, analysis)
+	if (cache) workbookDependencyAnalysisCache.set(workbook, analysis)
 	return analysis
 }
 
@@ -479,10 +478,18 @@ function inRange(
 	)
 }
 
+const volatileFunctionNames: ReadonlySet<string> = (() => {
+	const names = new Set<string>()
+	for (const [name, def] of functionRegistry.entries()) {
+		if (def.volatile) names.add(name)
+	}
+	return names
+})()
+
 function hasVolatileFunction(node: FormulaNode): boolean {
 	switch (node.type) {
 		case 'function':
-			if (functionRegistry.get(node.name.toUpperCase())?.volatile) return true
+			if (volatileFunctionNames.has(node.name.toUpperCase())) return true
 			return node.args.some((arg) => hasVolatileFunction(arg))
 		case 'binary':
 			return hasVolatileFunction(node.left) || hasVolatileFunction(node.right)

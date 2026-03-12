@@ -1,6 +1,6 @@
 import type { Cell, Sheet, Workbook } from '@ascend/core'
 import type { FormulaCellRef, FormulaNode } from '@ascend/formulas'
-import { parseFormula, printFormula } from '@ascend/formulas'
+import { cachedParseFormula, printFormula } from '@ascend/formulas'
 import { shiftIndex } from './ref-shift.ts'
 
 export function rewriteWorkbookFormulasForShift(
@@ -14,7 +14,7 @@ export function rewriteWorkbookFormulasForShift(
 		const updates: [number, number, Cell][] = []
 		for (const [row, col, existing] of sheet.cells.iterate()) {
 			if (existing.formula === null) continue
-			const parsed = parseFormula(existing.formula)
+			const parsed = cachedParseFormula(existing.formula)
 			if (!parsed.ok) continue
 			const rewritten = rewriteNodeForShift(parsed.value, targetSheet, sheet.name, axis, at, delta)
 			const nextFormula = printFormula(rewritten)
@@ -48,7 +48,7 @@ export function rewriteDefinedNameFormulasForShift(
 		const scopeSheet = scope
 			? workbook.sheets.find((sheet) => sheet.id === scope.sheetId)?.name
 			: undefined
-		const parsed = parseFormula(entry.formula)
+		const parsed = cachedParseFormula(entry.formula)
 		if (!parsed.ok) continue
 		const rewritten = rewriteNodeForShift(
 			parsed.value,
@@ -73,7 +73,7 @@ export function rewriteFormulaTextForShift(
 	delta: number,
 ): string | undefined {
 	if (!formula) return formula
-	const parsed = parseFormula(formula)
+	const parsed = cachedParseFormula(formula)
 	if (!parsed.ok) return formula
 	return printFormula(rewriteNodeForShift(parsed.value, targetSheet, formulaSheet, axis, at, delta))
 }
@@ -87,7 +87,7 @@ export function rewriteSheetNameInFormulas(
 		const updates: [number, number, Cell][] = []
 		for (const [row, col, existing] of sheet.cells.iterate()) {
 			if (existing.formula === null) continue
-			const parsed = parseFormula(existing.formula)
+			const parsed = cachedParseFormula(existing.formula)
 			if (!parsed.ok) continue
 			const rewritten = rewriteSheetName(parsed.value, oldName, newName)
 			const nextFormula = printFormula(rewritten)
@@ -115,7 +115,7 @@ export function rewriteSheetNameInDefinedNames(
 ): void {
 	const entries = [...workbook.definedNames.list()]
 	for (const entry of entries) {
-		const parsed = parseFormula(entry.formula)
+		const parsed = cachedParseFormula(entry.formula)
 		if (!parsed.ok) continue
 		const rewritten = rewriteSheetName(parsed.value, oldName, newName)
 		const formula = printFormula(rewritten)
@@ -130,7 +130,7 @@ export function rewriteFormulaTextForRename(
 	newName: string,
 ): string | undefined {
 	if (!formula) return formula
-	const parsed = parseFormula(formula)
+	const parsed = cachedParseFormula(formula)
 	if (!parsed.ok) return formula
 	return printFormula(rewriteSheetName(parsed.value, oldName, newName))
 }

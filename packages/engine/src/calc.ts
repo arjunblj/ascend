@@ -26,8 +26,9 @@ interface SpillIndexState {
 }
 
 function valuesEqual(a: CellValue, b: CellValue): boolean {
-	a = topLeftScalar(a)
-	b = topLeftScalar(b)
+	if (a === b) return true
+	if (a.kind === 'array') a = topLeftScalar(a)
+	if (b.kind === 'array') b = topLeftScalar(b)
 	if (a.kind !== b.kind) return false
 	switch (a.kind) {
 		case 'empty':

@@ -156,6 +156,42 @@
 			"setup": {},
 			"formula": "GESTEP(1)",
 			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "BITAND of 13 and 25",
+			"setup": {},
+			"formula": "BITAND(13,25)",
+			"expected": { "kind": "number", "value": 9 }
+		},
+		{
+			"description": "BITOR of 13 and 25",
+			"setup": {},
+			"formula": "BITOR(13,25)",
+			"expected": { "kind": "number", "value": 29 }
+		},
+		{
+			"description": "BITXOR of 13 and 25",
+			"setup": {},
+			"formula": "BITXOR(13,25)",
+			"expected": { "kind": "number", "value": 20 }
+		},
+		{
+			"description": "BITLSHIFT of 4 by 2",
+			"setup": {},
+			"formula": "BITLSHIFT(4,2)",
+			"expected": { "kind": "number", "value": 16 }
+		},
+		{
+			"description": "BITRSHIFT of 16 by 2",
+			"setup": {},
+			"formula": "BITRSHIFT(16,2)",
+			"expected": { "kind": "number", "value": 4 }
+		},
+		{
+			"description": "BITAND negative number returns #NUM!",
+			"setup": {},
+			"formula": "BITAND(-1,5)",
+			"expected": { "kind": "error", "value": "#NUM!" }
 		}
 	]
 }

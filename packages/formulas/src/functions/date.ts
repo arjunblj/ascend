@@ -541,3 +541,25 @@ registerFunction({
 	maxArgs: 3,
 	evaluate: workdayFn,
 })
+
+function isoWeekNum(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
+	const s = numArg(args[0])
+	if (typeof s !== 'number') return s
+	const serial = Math.trunc(s)
+	const ds = ctx?.dateSystem ?? '1900'
+	const parts = serialToDate(serial, ds)
+	if (!parts) return errorValue('#NUM!')
+	const d = makeUTC(parts.year, parts.month, parts.day)
+	const dayOfWeek = d.getUTCDay() || 7
+	d.setUTCDate(d.getUTCDate() + 4 - dayOfWeek)
+	const yearStart = makeUTC(d.getUTCFullYear(), 1, 1)
+	const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / MS_PER_DAY + 1) / 7)
+	return numberValue(weekNo)
+}
+
+registerFunction({
+	name: 'ISOWEEKNUM',
+	minArgs: 1,
+	maxArgs: 1,
+	evaluate: isoWeekNum,
+})

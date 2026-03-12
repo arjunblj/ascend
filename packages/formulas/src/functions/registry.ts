@@ -262,8 +262,21 @@ export function valuesEqual(a: CellValue, b: CellValue): boolean {
 
 const wildcardCache = new Map<string, RegExp>()
 
+function hasWildcardChars(pattern: string): boolean {
+	for (let i = 0; i < pattern.length; i++) {
+		const ch = pattern[i]
+		if (ch === '~') {
+			i++
+			continue
+		}
+		if (ch === '*' || ch === '?') return true
+	}
+	return false
+}
+
 export function wildcardMatch(pattern: string, text: string): boolean {
 	const p = pattern.toLowerCase()
+	if (!hasWildcardChars(p)) return text.toLowerCase() === p
 	let compiled = wildcardCache.get(p)
 	if (!compiled) {
 		let re = '^'

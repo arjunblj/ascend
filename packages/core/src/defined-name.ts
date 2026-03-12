@@ -98,10 +98,12 @@ export class DefinedNameCollection {
 	}
 
 	private findIndex(name: string, scope: DefinedNameScope): number {
-		const lower = name.toLowerCase()
-		return this.items.findIndex(
-			(item) => sameScope(item.scope, scope) && item.name.toLowerCase() === lower,
-		)
+		const entry = this.getFromIndex(name, scope)
+		if (!entry) return -1
+		for (let i = 0; i < this.items.length; i++) {
+			if (this.items[i] === entry) return i
+		}
+		return -1
 	}
 
 	private getFromIndex(name: string, scope: DefinedNameScope): DefinedName | undefined {
@@ -135,10 +137,4 @@ export class DefinedNameCollection {
 		names.delete(lower)
 		if (names.size === 0) this.sheetIndex.delete(entry.scope.sheetId)
 	}
-}
-
-function sameScope(left: DefinedNameScope, right: DefinedNameScope): boolean {
-	if (left.kind !== right.kind) return false
-	if (left.kind === 'workbook') return true
-	return right.kind === 'sheet' && left.sheetId === right.sheetId
 }

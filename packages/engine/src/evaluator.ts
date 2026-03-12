@@ -7,13 +7,14 @@ import {
 	type FunctionEvalContext,
 	functionRegistry,
 	type LookupVectorCache,
-	parseFormula,
+	cachedParseFormula as sharedCachedParseFormula,
 	toNumber,
 } from '@ascend/formulas'
 import type { CellValue, ScalarCellValue } from '@ascend/schema'
 import {
 	arrayValue,
 	booleanValue,
+	coerceCellValueToString,
 	EMPTY,
 	errorValue,
 	numberValue,
@@ -65,22 +66,9 @@ class FunctionEvalCtx implements FunctionEvalContext {
 
 const sharedFnCtx = new FunctionEvalCtx()
 
-const formulaParseCache = new Map<string, FormulaNode | null>()
+const cachedParseFormula = sharedCachedParseFormula
 
-function cachedParseFormula(formula: string): { ok: true; value: FormulaNode } | { ok: false } {
-	if (formulaParseCache.has(formula)) {
-		const cached = formulaParseCache.get(formula)
-		return cached ? { ok: true, value: cached } : { ok: false }
-	}
-	const result = parseFormula(formula)
-	if (formulaParseCache.size > 4096) formulaParseCache.clear()
-	formulaParseCache.set(formula, result.ok ? result.value : null)
-	return result
-}
-
-export function clearFormulaParseCache(): void {
-	formulaParseCache.clear()
-}
+export { clearGlobalParseCache as clearFormulaParseCache } from '@ascend/formulas'
 
 const EXCEL_MAX_ROWS = 1_048_576
 const EXCEL_MAX_COLS = 16_384
@@ -141,23 +129,7 @@ function coerceToNumber(v: CellValue): number | null {
 }
 
 function coerceToString(v: CellValue): string {
-	v = topLeftScalar(v)
-	switch (v.kind) {
-		case 'number':
-			return String(v.value)
-		case 'string':
-			return v.value
-		case 'boolean':
-			return v.value ? 'TRUE' : 'FALSE'
-		case 'empty':
-			return ''
-		case 'date':
-			return String(v.serial)
-		case 'error':
-			return v.value
-		case 'richText':
-			return v.runs.map((r) => r.text).join('')
-	}
+	return coerceCellValueToString(v)
 }
 
 function coerceToBoolean(v: CellValue): boolean | CellValue {
@@ -955,14 +927,22 @@ function resolveSheetSpanIndices(
 	startSheet: string,
 	endSheet: string,
 ): number[] | null {
-	const start = workbook.sheets.findIndex(
-		(sheet) => sheet.name.toLowerCase() === startSheet.toLowerCase(),
-	)
-	const end = workbook.sheets.findIndex(
-		(sheet) => sheet.name.toLowerCase() === endSheet.toLowerCase(),
-	)
+	const startLower = startSheet.toLowerCase()
+	const endLower = endSheet.toLowerCase()
+	let start = -1
+	let end = -1
+	for (let i = 0; i < workbook.sheets.length; i++) {
+		const sheet = workbook.sheets[i]
+		if (!sheet) continue
+		const nameLower = sheet.name.toLowerCase()
+		if (nameLower === startLower) start = i
+		if (nameLower === endLower) end = i
+		if (start !== -1 && end !== -1) break
+	}
 	if (start === -1 || end === -1 || start > end) return null
-	return Array.from({ length: end - start + 1 }, (_, offset) => start + offset)
+	const result: number[] = new Array(end - start + 1)
+	for (let i = start; i <= end; i++) result[i - start] = i
+	return result
 }
 
 function applySheetToReferenceNode(

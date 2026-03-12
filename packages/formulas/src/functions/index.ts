@@ -26,7 +26,7 @@ export {
 import { dynamicFunctions } from './dynamic.ts'
 import { financialFunctions } from './financial.ts'
 import { logicalFunctions } from './logical.ts'
-import { mathFunctions } from './math.ts'
+import { mathFunctions } from './math/index.ts'
 import { registerFunction } from './registry.ts'
 import { textFunctions } from './text.ts'
 

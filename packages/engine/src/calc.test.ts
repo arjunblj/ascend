@@ -1444,7 +1444,7 @@ describe('large range correctness', () => {
 			sheet.cells.set(r, 0, { value: numberValue(r), formula: null, styleId: sid })
 			sheet.cells.set(r, 1, {
 				value: EMPTY,
-				formula: 'IF(A' + (r + 1) + '>100,A' + (r + 1) + '*2,A' + (r + 1) + '+10)',
+				formula: `IF(A${r + 1}>100,A${r + 1}*2,A${r + 1}+10)`,
 				styleId: sid,
 			})
 		}

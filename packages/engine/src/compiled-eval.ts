@@ -511,7 +511,7 @@ const sheetIdxCache = new WeakMap<import('@ascend/core').Workbook, Map<string, n
 function resolveSheetIdx(
 	wb: import('@ascend/core').Workbook,
 	sheetName: string,
-	currentSheet: number,
+	_currentSheet: number,
 ): number {
 	let cache = sheetIdxCache.get(wb)
 	if (!cache) {

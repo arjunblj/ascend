@@ -1,3 +1,25 @@
+/**
+ * CORE-1/2/3/4 SparseGrid improvements (DEFERRED):
+ *
+ * CORE-1 Row-index layout: packKey uses row*PACK_FACTOR+col. Switching to
+ * row-indexed Map<row, Map<col, Cell>> would improve row-scan locality and
+ * enable efficient row insert/delete without full rebuild. Tradeoff: column
+ * iteration becomes O(rows*cols) unless we add column index.
+ *
+ * CORE-2 Adaptive dense/sparse: For dense regions (e.g. A1:Z1000), a contiguous
+ * array or TypedArray could be faster than Map lookups. Hybrid: detect density
+ * per row/block, use array for dense, Map for sparse. Requires density heuristics.
+ *
+ * CORE-3 Column blocks: Group columns into blocks (e.g. 256 cols) to reduce
+ * key space and improve cache locality for column-oriented access patterns.
+ *
+ * CORE-4 String interning: StyledStringCell uses Map<StyleId, Map<string, Cell>>
+ * for dedup. A global string intern pool (ValueInternPool in io-xlsx) could
+ * reduce memory for repeated strings across the workbook. Requires schema
+ * changes to reference interned IDs.
+ *
+ * All are fundamental data structure changes; deferred for future work.
+ */
 import type { CellValue } from '@ascend/schema'
 import { booleanValue, EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
 import type { StyleId } from './ids.ts'

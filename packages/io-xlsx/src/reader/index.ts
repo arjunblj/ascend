@@ -1,4 +1,12 @@
 /**
+ * IO-1 Streaming read (DEFERRED): The reader loads the entire XLSX into memory
+ * (extractZip returns full archive). Streaming would require: (1) ZIP streaming
+ * API (e.g. unzip-it, yauzl) that yields entries without buffering whole file,
+ * (2) SAX/streaming XML parser for sheet parts (sax-js, fast-xml-parser stream),
+ * (3) incremental Workbook construction as sheet rows arrive. Shared strings and
+ * styles must still be buffered (they're referenced by index). Major refactor;
+ * deferred for now.
+ *
  * IO-2 Lazy sheet parsing assessment:
  * The reader currently loads ALL selected sheets eagerly in a single pass. Shared strings,
  * styles, and workbook metadata are parsed upfront; then each sheet in sheetsToParse is
@@ -13,6 +21,12 @@
  *   load would need to track which sheets have been hydrated.
  * - Major refactor: Workbook would need to support "placeholder" sheets, and callers
  *   (SDK, engine) would need to tolerate async sheet resolution. Deferred for now.
+ *
+ * IO-3 Streaming write (DEFERRED): The writer currently builds the full workbook
+ * in memory before serializing. Streaming write would: (1) open ZIP output stream,
+ * (2) write [Content_Types], _rels, workbook.xml, sharedStrings.xml, styles.xml
+ * as each is ready, (3) stream sheet XML row-by-row or chunk-by-chunk. Requires
+ * XML streaming writer and careful ordering of ZIP entries. Deferred for now.
  */
 import type { CellStyle, StyleId } from '@ascend/core'
 import { Workbook } from '@ascend/core'

@@ -113,6 +113,14 @@ function getCellValue(wb: Workbook, sheetIndex: number, row: number, col: number
 	return sheet.cells.readValue(row, col)
 }
 
+/**
+ * EVAL-2 Lazy range materialization: COMPLETE.
+ * makeRangeArea provides forEachValue that iterates via sheet.cells.readValue(r,c)
+ * per cell without materializing the full matrix. getRangeValues is only used when
+ * area.values is accessed (e.g. INDEX, matrix output). Formula functions (SUM,
+ * AVERAGE, etc.) use flattenArgs/collectNumbers which prefer forEachValue when
+ * available, avoiding full materialization for aggregation.
+ */
 function getRangeValues(
 	wb: Workbook,
 	sheetIndex: number,

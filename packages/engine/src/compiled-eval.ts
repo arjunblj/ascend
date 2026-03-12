@@ -82,6 +82,15 @@ function evalCmp(op: number, left: CellValue, right: CellValue): boolean {
 	return comparePrimitive(op, coerceStr(left), coerceStr(right))
 }
 
+/**
+ * EVAL-4 Compiled-eval coverage: threshold lowered from 5 to 3 compilable nodes.
+ * Compilable: number, string, boolean, error, missing, cellRef (no sheet), binary
+ * (arithmetic/comparison), unary. Fallback (Op.TREE): rangeRef, function, name,
+ * array, @, union/intersection. Next opcodes to add for broader coverage:
+ * - RANGE: push range area ref, defer to tree eval for value
+ * - FUNC: call function by name with args from stack (needs registry lookup)
+ * - NAME: resolve defined name, push result
+ */
 function shouldCompile(node: FormulaNode): boolean {
 	let compilableNodes = 0
 	function scan(n: FormulaNode): boolean {
@@ -112,7 +121,7 @@ function shouldCompile(node: FormulaNode): boolean {
 		}
 	}
 	scan(node)
-	return compilableNodes >= 5
+	return compilableNodes >= 3
 }
 
 export function compileFormula(node: FormulaNode): CompiledFormula | null {

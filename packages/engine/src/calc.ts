@@ -1,10 +1,18 @@
 /**
- * DEP-5 Formula group execution: recalculate evaluates cells one-by-one in
- * evalOrder. Shared formulas (formulaInfo.kind==='shared') are resolved in
- * analysis via parseIndexedFormula; each cell gets its own rewritten AST.
- * Group execution would: (1) identify cells sharing the same master, (2) parse
- * master once, (3) for each cell rewrite and evaluate in a batch. Requires
- * analysis to expose shared groups and eval loop to dispatch group-eval path.
+ * DEP-5 / EVAL-5 Formula group execution (DEFERRED): recalculate evaluates cells
+ * one-by-one in evalOrder. Shared formulas (formulaInfo.kind==='shared') are
+ * resolved in analysis via parseIndexedFormula; each cell gets its own rewritten
+ * AST. Group execution would: (1) identify cells sharing the same master,
+ * (2) parse master once, (3) for each cell rewrite and evaluate in a batch.
+ * Requires analysis to expose shared groups and eval loop to dispatch group-eval
+ * path. Large structural change; deferred for future work.
+ *
+ * EVAL-6 Common subexpression elimination (DEFERRED): formulas with repeated
+ * subexpressions (e.g. A1:A1000 used twice) are evaluated independently each
+ * time. CSE would: (1) identify shared sub-DAGs in the formula AST, (2) compute
+ * once and cache by (formula, cell-context) key, (3) reuse on subsequent refs.
+ * Requires eval context to support memoization and invalidation. Large structural
+ * change; deferred for future work.
  */
 import { indexToColumn, parseRange, type RangeRef, type StyleId, type Workbook } from '@ascend/core'
 import type { ExactLookupCache, FormulaNode, LookupVectorCache } from '@ascend/formulas'

@@ -1,6 +1,6 @@
 import type { CellValue } from '@ascend/schema'
-import { errorValue, numberValue } from '@ascend/schema'
-import { collectNumbers, type EvalArg, numArg, registerFunction } from './registry.ts'
+import { arrayValue, errorValue, numberValue, topLeftScalar } from '@ascend/schema'
+import { collectNumbers, type EvalArg, getRange, numArg, registerFunction } from './registry.ts'
 
 function collectFrom(arg: EvalArg | undefined): number[] | CellValue {
 	if (!arg) return []
@@ -357,6 +357,325 @@ function percentrankExcFn(args: EvalArg[]): CellValue {
 	return numberValue(Math.floor(rank * factor) / factor)
 }
 
+function collectPaired(
+	arg1: EvalArg | undefined,
+	arg2: EvalArg | undefined,
+): [number[], number[]] | CellValue {
+	const range1 = getRange(arg1)
+	const range2 = getRange(arg2)
+	const rows1 = range1.length
+	const cols1 = range1[0]?.length ?? 0
+	const rows2 = range2.length
+	const cols2 = range2[0]?.length ?? 0
+	if (rows1 !== rows2 || cols1 !== cols2) return errorValue('#N/A')
+	const a: number[] = []
+	const b: number[] = []
+	for (let r = 0; r < rows1; r++) {
+		for (let c = 0; c < cols1; c++) {
+			const v1 = range1[r]?.[c]
+			const v2 = range2[r]?.[c]
+			if (!v1 || !v2) continue
+			if (v1.kind === 'error') return v1
+			if (v2.kind === 'error') return v2
+			const n1 = v1.kind === 'number' ? v1.value : v1.kind === 'date' ? v1.serial : null
+			const n2 = v2.kind === 'number' ? v2.value : v2.kind === 'date' ? v2.serial : null
+			if (n1 !== null && n2 !== null) {
+				a.push(n1)
+				b.push(n2)
+			}
+		}
+	}
+	if (a.length === 0) return errorValue('#N/A')
+	return [a, b]
+}
+
+function linregSums(ys: number[], xs: number[]) {
+	const n = xs.length
+	let sumX = 0
+	let sumY = 0
+	let sumXY = 0
+	let sumX2 = 0
+	let sumY2 = 0
+	for (let i = 0; i < n; i++) {
+		const x = xs[i] as number
+		const y = ys[i] as number
+		sumX += x
+		sumY += y
+		sumXY += x * y
+		sumX2 += x * x
+		sumY2 += y * y
+	}
+	const ssxx = n * sumX2 - sumX * sumX
+	const ssyy = n * sumY2 - sumY * sumY
+	const ssxy = n * sumXY - sumX * sumY
+	return { n, sumX, sumY, ssxx, ssyy, ssxy }
+}
+
+function forecastLinearFn(args: EvalArg[]): CellValue {
+	const x = numArg(args[0])
+	if (typeof x !== 'number') return x
+	const paired = collectPaired(args[1], args[2])
+	if (!Array.isArray(paired)) return paired
+	const [ys, xs] = paired
+	const { n, sumX, sumY, ssxx, ssxy } = linregSums(ys, xs)
+	if (ssxx === 0) return errorValue('#DIV/0!')
+	const slope = ssxy / ssxx
+	const intercept = (sumY - slope * sumX) / n
+	return numberValue(intercept + slope * x)
+}
+
+function slopeFn(args: EvalArg[]): CellValue {
+	const paired = collectPaired(args[0], args[1])
+	if (!Array.isArray(paired)) return paired
+	const [ys, xs] = paired
+	const { ssxx, ssxy } = linregSums(ys, xs)
+	if (ssxx === 0) return errorValue('#DIV/0!')
+	return numberValue(ssxy / ssxx)
+}
+
+function interceptFn(args: EvalArg[]): CellValue {
+	const paired = collectPaired(args[0], args[1])
+	if (!Array.isArray(paired)) return paired
+	const [ys, xs] = paired
+	const { n, sumX, sumY, ssxx, ssxy } = linregSums(ys, xs)
+	if (ssxx === 0) return errorValue('#DIV/0!')
+	const slope = ssxy / ssxx
+	return numberValue((sumY - slope * sumX) / n)
+}
+
+function rsqFn(args: EvalArg[]): CellValue {
+	const paired = collectPaired(args[0], args[1])
+	if (!Array.isArray(paired)) return paired
+	const [ys, xs] = paired
+	const { ssxx, ssyy, ssxy } = linregSums(ys, xs)
+	const denom = ssxx * ssyy
+	if (denom === 0) return errorValue('#DIV/0!')
+	return numberValue((ssxy * ssxy) / denom)
+}
+
+function correlFn(args: EvalArg[]): CellValue {
+	const paired = collectPaired(args[0], args[1])
+	if (!Array.isArray(paired)) return paired
+	const [a, b] = paired
+	const { ssxx, ssyy, ssxy } = linregSums(a, b)
+	const denom = Math.sqrt(ssxx * ssyy)
+	if (denom === 0) return errorValue('#DIV/0!')
+	return numberValue(ssxy / denom)
+}
+
+function steyxFn(args: EvalArg[]): CellValue {
+	const paired = collectPaired(args[0], args[1])
+	if (!Array.isArray(paired)) return paired
+	const [ys, xs] = paired
+	const { n, sumX, sumY, ssxx, ssxy } = linregSums(ys, xs)
+	if (n < 3) return errorValue('#DIV/0!')
+	if (ssxx === 0) return errorValue('#DIV/0!')
+	const slope = ssxy / ssxx
+	const intercept = (sumY - slope * sumX) / n
+	let sse = 0
+	for (let i = 0; i < n; i++) {
+		const residual = (ys[i] as number) - (intercept + slope * (xs[i] as number))
+		sse += residual * residual
+	}
+	return numberValue(Math.sqrt(sse / (n - 2)))
+}
+
+function covarianceFn(args: EvalArg[], population: boolean): CellValue {
+	const paired = collectPaired(args[0], args[1])
+	if (!Array.isArray(paired)) return paired
+	const [a, b] = paired
+	const n = a.length
+	const divisor = population ? n : n - 1
+	if (divisor < 1) return errorValue('#DIV/0!')
+	let sumA = 0
+	let sumB = 0
+	for (let i = 0; i < n; i++) {
+		sumA += a[i] as number
+		sumB += b[i] as number
+	}
+	const meanA = sumA / n
+	const meanB = sumB / n
+	let cov = 0
+	for (let i = 0; i < n; i++) {
+		cov += ((a[i] as number) - meanA) * ((b[i] as number) - meanB)
+	}
+	return numberValue(cov / divisor)
+}
+
+function avedevFn(args: EvalArg[]): CellValue {
+	const numsOrErr = collectNumbers(args)
+	if (!Array.isArray(numsOrErr)) return numsOrErr
+	if (numsOrErr.length === 0) return errorValue('#NUM!')
+	const mean = numsOrErr.reduce((a, b) => a + b, 0) / numsOrErr.length
+	const sum = numsOrErr.reduce((acc, v) => acc + Math.abs(v - mean), 0)
+	return numberValue(sum / numsOrErr.length)
+}
+
+function devsqFn(args: EvalArg[]): CellValue {
+	const numsOrErr = collectNumbers(args)
+	if (!Array.isArray(numsOrErr)) return numsOrErr
+	if (numsOrErr.length === 0) return errorValue('#NUM!')
+	const mean = numsOrErr.reduce((a, b) => a + b, 0) / numsOrErr.length
+	return numberValue(numsOrErr.reduce((acc, v) => acc + (v - mean) ** 2, 0))
+}
+
+function kurtFn(args: EvalArg[]): CellValue {
+	const numsOrErr = collectNumbers(args)
+	if (!Array.isArray(numsOrErr)) return numsOrErr
+	const n = numsOrErr.length
+	if (n < 4) return errorValue('#DIV/0!')
+	const mean = numsOrErr.reduce((a, b) => a + b, 0) / n
+	const s2 = numsOrErr.reduce((acc, v) => acc + (v - mean) ** 2, 0) / (n - 1)
+	if (s2 === 0) return errorValue('#DIV/0!')
+	const s = Math.sqrt(s2)
+	let m4 = 0
+	for (const v of numsOrErr) m4 += ((v - mean) / s) ** 4
+	return numberValue(
+		(n * (n + 1) * m4) / ((n - 1) * (n - 2) * (n - 3)) - (3 * (n - 1) ** 2) / ((n - 2) * (n - 3)),
+	)
+}
+
+function skewFn(args: EvalArg[]): CellValue {
+	const numsOrErr = collectNumbers(args)
+	if (!Array.isArray(numsOrErr)) return numsOrErr
+	const n = numsOrErr.length
+	if (n < 3) return errorValue('#DIV/0!')
+	const mean = numsOrErr.reduce((a, b) => a + b, 0) / n
+	const s2 = numsOrErr.reduce((acc, v) => acc + (v - mean) ** 2, 0) / (n - 1)
+	if (s2 === 0) return errorValue('#DIV/0!')
+	const s = Math.sqrt(s2)
+	let m3 = 0
+	for (const v of numsOrErr) m3 += ((v - mean) / s) ** 3
+	return numberValue((n * m3) / ((n - 1) * (n - 2)))
+}
+
+function frequencyFn(args: EvalArg[]): CellValue {
+	const dataOrErr = collectFrom(args[0])
+	if (!Array.isArray(dataOrErr)) return dataOrErr
+	const binsOrErr = collectFrom(args[1])
+	if (!Array.isArray(binsOrErr)) return binsOrErr
+	binsOrErr.sort((a, b) => a - b)
+	const bLen = binsOrErr.length
+	const counts = new Array<number>(bLen + 1).fill(0)
+	for (const v of dataOrErr) {
+		let idx = bLen
+		for (let i = 0; i < bLen; i++) {
+			if (v <= (binsOrErr[i] as number)) {
+				idx = i
+				break
+			}
+		}
+		counts[idx] = (counts[idx] as number) + 1
+	}
+	return arrayValue(counts.map((c) => [topLeftScalar(numberValue(c))]))
+}
+
+function modeMultFn(args: EvalArg[]): CellValue {
+	const numsOrErr = collectNumbers(args)
+	if (!Array.isArray(numsOrErr)) return numsOrErr
+	if (numsOrErr.length === 0) return errorValue('#N/A')
+	const freq = new Map<number, number>()
+	let maxCount = 0
+	for (const n of numsOrErr) {
+		const c = (freq.get(n) ?? 0) + 1
+		freq.set(n, c)
+		if (c > maxCount) maxCount = c
+	}
+	if (maxCount < 2) return errorValue('#N/A')
+	const modes: number[] = []
+	for (const [val, count] of freq) {
+		if (count === maxCount) modes.push(val)
+	}
+	modes.sort((a, b) => a - b)
+	return arrayValue(modes.map((m) => [topLeftScalar(numberValue(m))]))
+}
+
+const SQRT_2PI = Math.sqrt(2 * Math.PI)
+
+function normPdf(z: number): number {
+	return Math.exp(-0.5 * z * z) / SQRT_2PI
+}
+
+function normCdf(z: number): number {
+	if (z < 0) return 1 - normCdf(-z)
+	const t = 1 / (1 + 0.2316419 * z)
+	const poly =
+		t * (0.31938153 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))))
+	return 1 - normPdf(z) * poly
+}
+
+function normSInvImpl(p: number): number {
+	const y = p - 0.5
+	if (Math.abs(y) < 0.42) {
+		const r = y * y
+		return (
+			(y * (((-25.44106049637 * r + 41.39119773534) * r + -18.61500062529) * r + 2.50662823884)) /
+			((((3.13082909833 * r + -21.06224101826) * r + 23.08336743743) * r + -8.4735109309) * r + 1)
+		)
+	}
+	let r = y > 0 ? 1 - p : p
+	r = Math.log(-Math.log(r))
+	let z =
+		0.3374754822726147 +
+		r *
+			(0.9761690190917186 +
+				r *
+					(0.1607979714918209 +
+						r *
+							(0.0276438810333863 +
+								r *
+									(0.0038405729373609 +
+										r *
+											(0.0003951896511919 +
+												r *
+													(0.0000321767881768 +
+														r * (0.0000002888167364 + r * 0.0000003960315187)))))))
+	if (y < 0) z = -z
+	return z
+}
+
+function normDistFn(args: EvalArg[]): CellValue {
+	const x = numArg(args[0])
+	if (typeof x !== 'number') return x
+	const mean = numArg(args[1])
+	if (typeof mean !== 'number') return mean
+	const stdev = numArg(args[2])
+	if (typeof stdev !== 'number') return stdev
+	const cumulative = numArg(args[3])
+	if (typeof cumulative !== 'number') return cumulative
+	if (stdev <= 0) return errorValue('#NUM!')
+	const z = (x - mean) / stdev
+	if (cumulative !== 0) return numberValue(normCdf(z))
+	return numberValue(normPdf(z) / stdev)
+}
+
+function normInvFn(args: EvalArg[]): CellValue {
+	const p = numArg(args[0])
+	if (typeof p !== 'number') return p
+	const mean = numArg(args[1])
+	if (typeof mean !== 'number') return mean
+	const stdev = numArg(args[2])
+	if (typeof stdev !== 'number') return stdev
+	if (p <= 0 || p >= 1 || stdev <= 0) return errorValue('#NUM!')
+	return numberValue(mean + stdev * normSInvImpl(p))
+}
+
+function normSDistFn(args: EvalArg[]): CellValue {
+	const z = numArg(args[0])
+	if (typeof z !== 'number') return z
+	const cumulative = numArg(args[1])
+	if (typeof cumulative !== 'number') return cumulative
+	if (cumulative !== 0) return numberValue(normCdf(z))
+	return numberValue(normPdf(z))
+}
+
+function normSInvFn(args: EvalArg[]): CellValue {
+	const p = numArg(args[0])
+	if (typeof p !== 'number') return p
+	if (p <= 0 || p >= 1) return errorValue('#NUM!')
+	return numberValue(normSInvImpl(p))
+}
+
 // --- Registration ---
 
 registerFunction({ name: 'LARGE', minArgs: 2, maxArgs: 2, evaluate: largeFn })
@@ -454,3 +773,33 @@ registerFunction({
 	maxArgs: 3,
 	evaluate: percentrankExcFn,
 })
+registerFunction({ name: 'FORECAST.LINEAR', minArgs: 3, maxArgs: 3, evaluate: forecastLinearFn })
+registerFunction({ name: 'FORECAST', minArgs: 3, maxArgs: 3, evaluate: forecastLinearFn })
+registerFunction({ name: 'SLOPE', minArgs: 2, maxArgs: 2, evaluate: slopeFn })
+registerFunction({ name: 'INTERCEPT', minArgs: 2, maxArgs: 2, evaluate: interceptFn })
+registerFunction({ name: 'RSQ', minArgs: 2, maxArgs: 2, evaluate: rsqFn })
+registerFunction({ name: 'CORREL', minArgs: 2, maxArgs: 2, evaluate: correlFn })
+registerFunction({ name: 'PEARSON', minArgs: 2, maxArgs: 2, evaluate: correlFn })
+registerFunction({ name: 'STEYX', minArgs: 2, maxArgs: 2, evaluate: steyxFn })
+registerFunction({
+	name: 'COVARIANCE.P',
+	minArgs: 2,
+	maxArgs: 2,
+	evaluate: (args) => covarianceFn(args, true),
+})
+registerFunction({
+	name: 'COVARIANCE.S',
+	minArgs: 2,
+	maxArgs: 2,
+	evaluate: (args) => covarianceFn(args, false),
+})
+registerFunction({ name: 'AVEDEV', minArgs: 1, maxArgs: 255, evaluate: avedevFn })
+registerFunction({ name: 'DEVSQ', minArgs: 1, maxArgs: 255, evaluate: devsqFn })
+registerFunction({ name: 'KURT', minArgs: 1, maxArgs: 255, evaluate: kurtFn })
+registerFunction({ name: 'SKEW', minArgs: 1, maxArgs: 255, evaluate: skewFn })
+registerFunction({ name: 'FREQUENCY', minArgs: 2, maxArgs: 2, evaluate: frequencyFn })
+registerFunction({ name: 'MODE.MULT', minArgs: 1, maxArgs: 255, evaluate: modeMultFn })
+registerFunction({ name: 'NORM.DIST', minArgs: 4, maxArgs: 4, evaluate: normDistFn })
+registerFunction({ name: 'NORM.INV', minArgs: 3, maxArgs: 3, evaluate: normInvFn })
+registerFunction({ name: 'NORM.S.DIST', minArgs: 2, maxArgs: 2, evaluate: normSDistFn })
+registerFunction({ name: 'NORM.S.INV', minArgs: 1, maxArgs: 1, evaluate: normSInvFn })

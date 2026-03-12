@@ -202,22 +202,22 @@ export class Sheet {
 	readonly id: SheetId
 	name: string
 	readonly cells: SparseGrid
-	readonly merges: RangeRef[]
-	readonly tables: Table[]
+	merges: RangeRef[]
+	tables: Table[]
 	state: SheetState
-	readonly colWidths: Map<number, number>
-	readonly colDefs: SheetColDef[]
-	readonly rowHeights: Map<number, number>
+	colWidths: Map<number, number>
+	colDefs: SheetColDef[]
+	rowHeights: Map<number, number>
 	frozenRows: number
 	frozenCols: number
-	readonly comments: Map<string, SheetComment>
-	readonly hyperlinks: Map<string, SheetHyperlink>
-	readonly ignoredErrors: SheetIgnoredError[]
+	comments: Map<string, SheetComment>
+	hyperlinks: Map<string, SheetHyperlink>
+	ignoredErrors: SheetIgnoredError[]
 	tabColor: SheetTabColor | null
 	sheetFormatPr: SheetFormatPr | null
-	readonly dataValidations: SheetDataValidation[]
-	readonly conditionalFormats: SheetConditionalFormat[]
-	readonly imageRefs: SheetImageRef[]
+	dataValidations: SheetDataValidation[]
+	conditionalFormats: SheetConditionalFormat[]
+	imageRefs: SheetImageRef[]
 	drawingRefs: SheetDrawingRefs
 	autoFilter: AutoFilter | null
 	protection: SheetProtection | null
@@ -227,6 +227,7 @@ export class Sheet {
 	headerFooter: SheetHeaderFooter | null
 	preservedXml: SheetPreservedXml | null
 	preservedExtLst: string | null
+	private _shared = false
 
 	constructor(name: string, id?: SheetId) {
 		this.id = id ?? createSheetId()
@@ -259,48 +260,61 @@ export class Sheet {
 		this.preservedExtLst = null
 	}
 
-	clone(): Sheet {
-		const clone = new Sheet(this.name, this.id)
-		clone.cells.copyFrom(this.cells)
-		clone.merges.push(...this.merges.map(cloneRangeRef))
-		clone.tables.push(...this.tables.map(cloneTable))
-		clone.state = this.state
-		clone.colWidths.clear()
-		for (const [key, value] of this.colWidths) clone.colWidths.set(key, value)
-		clone.colDefs.push(...this.colDefs.map((colDef) => ({ ...colDef })))
-		clone.rowHeights.clear()
-		for (const [key, value] of this.rowHeights) clone.rowHeights.set(key, value)
-		clone.frozenRows = this.frozenRows
-		clone.frozenCols = this.frozenCols
-		for (const [key, value] of this.comments) clone.comments.set(key, { ...value })
-		for (const [key, value] of this.hyperlinks) clone.hyperlinks.set(key, { ...value })
-		clone.ignoredErrors.push(...this.ignoredErrors.map((ignoredError) => ({ ...ignoredError })))
-		clone.tabColor = this.tabColor ? { ...this.tabColor } : null
-		clone.sheetFormatPr = this.sheetFormatPr ? { ...this.sheetFormatPr } : null
-		clone.dataValidations.push(
-			...this.dataValidations.map((dataValidation) => ({ ...dataValidation })),
-		)
-		clone.conditionalFormats.push(
-			...this.conditionalFormats.map((conditionalFormat) => ({
-				...conditionalFormat,
-				rules: conditionalFormat.rules.map((rule) => ({
-					...rule,
-					formulas: [...rule.formulas],
-					...(rule.style ? { style: cloneCellStyle(rule.style) } : {}),
-				})),
+	ensureWritable(): void {
+		if (!this._shared) return
+		this.merges = this.merges.map(cloneRangeRef)
+		this.tables = this.tables.map(cloneTable)
+		this.colWidths = new Map(this.colWidths)
+		this.colDefs = this.colDefs.map((d) => ({ ...d }))
+		this.rowHeights = new Map(this.rowHeights)
+		this.comments = new Map(this.comments)
+		this.hyperlinks = new Map(this.hyperlinks)
+		this.ignoredErrors = this.ignoredErrors.map((e) => ({ ...e }))
+		this.dataValidations = this.dataValidations.map((d) => ({ ...d }))
+		this.conditionalFormats = this.conditionalFormats.map((cf) => ({
+			...cf,
+			rules: cf.rules.map((r) => ({
+				...r,
+				formulas: [...r.formulas],
+				...(r.style ? { style: cloneCellStyle(r.style) } : {}),
 			})),
-		)
-		clone.imageRefs.push(...this.imageRefs.map(cloneImageRef))
-		clone.drawingRefs = { ...this.drawingRefs }
-		clone.autoFilter = this.autoFilter ? cloneAutoFilter(this.autoFilter) : null
-		clone.protection = this.protection ? { ...this.protection } : null
-		clone.pageMargins = this.pageMargins ? { ...this.pageMargins } : null
-		clone.pageSetup = this.pageSetup ? { ...this.pageSetup } : null
-		clone.printOptions = this.printOptions ? { ...this.printOptions } : null
-		clone.headerFooter = this.headerFooter ? { ...this.headerFooter } : null
-		clone.preservedXml = this.preservedXml ? { ...this.preservedXml } : null
-		clone.preservedExtLst = this.preservedExtLst
-		return clone
+		}))
+		this.imageRefs = this.imageRefs.map(cloneImageRef)
+		this.autoFilter = this.autoFilter ? cloneAutoFilter(this.autoFilter) : null
+		this._shared = false
+	}
+
+	clone(): Sheet {
+		const s = new Sheet(this.name, this.id)
+		s.cells.copyFrom(this.cells)
+		s.merges = this.merges
+		s.tables = this.tables
+		s.state = this.state
+		s.colWidths = this.colWidths
+		s.colDefs = this.colDefs
+		s.rowHeights = this.rowHeights
+		s.frozenRows = this.frozenRows
+		s.frozenCols = this.frozenCols
+		s.comments = this.comments
+		s.hyperlinks = this.hyperlinks
+		s.ignoredErrors = this.ignoredErrors
+		s.tabColor = this.tabColor
+		s.sheetFormatPr = this.sheetFormatPr
+		s.dataValidations = this.dataValidations
+		s.conditionalFormats = this.conditionalFormats
+		s.imageRefs = this.imageRefs
+		s.drawingRefs = this.drawingRefs
+		s.autoFilter = this.autoFilter
+		s.protection = this.protection
+		s.pageMargins = this.pageMargins
+		s.pageSetup = this.pageSetup
+		s.printOptions = this.printOptions
+		s.headerFooter = this.headerFooter
+		s.preservedXml = this.preservedXml
+		s.preservedExtLst = this.preservedExtLst
+		this._shared = true
+		s._shared = true
+		return s
 	}
 }
 

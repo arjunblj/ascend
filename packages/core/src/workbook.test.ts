@@ -22,6 +22,8 @@ describe('Workbook.clone', () => {
 		expect(cloneSheet).toBeDefined()
 		if (!cloneSheet) return
 
+		cloneSheet.ensureWritable()
+
 		const cloneTable = cloneSheet.tables[0]
 		expect(cloneTable).toBeDefined()
 		if (!cloneTable) return

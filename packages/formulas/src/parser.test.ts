@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it, test } from 'bun:test'
 import type { FormulaNode } from './ast.ts'
 import { parseFormula } from './parser.ts'
 import { printFormula } from './printer.ts'
@@ -466,5 +466,283 @@ describe('rewriteRefs', () => {
 		const original = p('1+2')
 		const same = rewriteRefs(original, (ref) => ref)
 		expect(same).toEqual(original)
+	})
+})
+
+describe('fuzz: parseFormula never throws', () => {
+	function xorshift32(state: { s: number }): number {
+		let s = state.s
+		s ^= s << 13
+		s ^= s >> 17
+		s ^= s << 5
+		state.s = s >>> 0
+		return (s >>> 0) / 0xffffffff
+	}
+
+	function pick<T>(arr: readonly T[], rng: { s: number }): T {
+		return arr[Math.floor(xorshift32(rng) * arr.length)] as T
+	}
+
+	function randInt(rng: { s: number }, min: number, max: number): number {
+		return min + Math.floor(xorshift32(rng) * (max - min + 1))
+	}
+
+	function randCol(rng: { s: number }): string {
+		const cols = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+		return cols[randInt(rng, 0, 25)] as string
+	}
+
+	function randCellRef(rng: { s: number }): string {
+		const abs = xorshift32(rng) < 0.3 ? '$' : ''
+		const rowAbs = xorshift32(rng) < 0.3 ? '$' : ''
+		return `${abs}${randCol(rng)}${rowAbs}${randInt(rng, 1, 999)}`
+	}
+
+	function randRange(rng: { s: number }): string {
+		return `${randCellRef(rng)}:${randCellRef(rng)}`
+	}
+
+	const FN_NAMES = [
+		'SUM',
+		'AVERAGE',
+		'COUNT',
+		'MAX',
+		'MIN',
+		'IF',
+		'VLOOKUP',
+		'INDEX',
+		'MATCH',
+		'CONCATENATE',
+		'LEFT',
+		'RIGHT',
+		'MID',
+		'LEN',
+		'TRIM',
+		'ROUND',
+		'ABS',
+		'AND',
+		'OR',
+		'NOT',
+		'IFERROR',
+		'SUMIF',
+		'COUNTIF',
+		'COUNTA',
+	] as const
+
+	const BINARY_OPS = ['+', '-', '*', '/', '^', '&', '=', '<>', '<', '>', '<=', '>='] as const
+
+	function randAtom(rng: { s: number }): string {
+		const kind = randInt(rng, 0, 5)
+		switch (kind) {
+			case 0:
+				return String(randInt(rng, 0, 9999))
+			case 1:
+				return `"${String.fromCharCode(...Array.from({ length: randInt(rng, 0, 8) }, () => randInt(rng, 65, 90)))}"` // random quoted string
+			case 2:
+				return randCellRef(rng)
+			case 3:
+				return xorshift32(rng) < 0.5 ? 'TRUE' : 'FALSE'
+			case 4:
+				return pick(['#N/A', '#DIV/0!', '#VALUE!', '#REF!', '#NAME?', '#NUM!', '#NULL!'], rng)
+			default:
+				return randRange(rng)
+		}
+	}
+
+	function randExpr(rng: { s: number }, depth: number): string {
+		if (depth <= 0) return randAtom(rng)
+		const kind = randInt(rng, 0, 5)
+		switch (kind) {
+			case 0: {
+				const fn = pick(FN_NAMES, rng)
+				const argc = randInt(rng, 1, 4)
+				const args = Array.from({ length: argc }, () => randExpr(rng, depth - 1))
+				return `${fn}(${args.join(',')})`
+			}
+			case 1:
+				return `${randExpr(rng, depth - 1)}${pick(BINARY_OPS, rng)}${randExpr(rng, depth - 1)}`
+			case 2:
+				return `(${randExpr(rng, depth - 1)})`
+			case 3:
+				return `-${randExpr(rng, depth - 1)}`
+			case 4:
+				return `${randExpr(rng, depth - 1)}%`
+			default:
+				return randAtom(rng)
+		}
+	}
+
+	function randGarbage(rng: { s: number }): string {
+		const chars =
+			'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-*/^&=<>(),:;!@#$%{}[] "'
+		const len = randInt(rng, 1, 40)
+		return Array.from({ length: len }, () => chars[randInt(rng, 0, chars.length - 1)]).join('')
+	}
+
+	it('valid formula patterns parse without throwing', () => {
+		const formulas = [
+			'SUM(A1:B10)',
+			'IF(A1>0,B1,C1)',
+			'VLOOKUP(D1,A:B,2,0)',
+			'AVERAGE(A1:A100)',
+			'COUNT(A:A)',
+			'MAX(1,2,3)',
+			'MIN(A1,B1)',
+			'CONCATENATE("a","b")',
+			'INDEX(A1:C10,2,3)',
+			'MATCH(A1,B1:B10,0)',
+			'SUMIF(A:A,">0")',
+			'COUNTIF(B:B,"test")',
+			'AND(TRUE,FALSE)',
+			'OR(A1>0,B1<10)',
+			'NOT(TRUE)',
+			'ROUND(3.14,1)',
+			'LEFT("hello",3)',
+			'RIGHT("world",3)',
+			'MID("test",2,2)',
+			'LEN("abc")',
+			'TRIM("  hi  ")',
+			'1+2*3',
+			'(1+2)*3',
+			'-A1',
+			'50%',
+			'A1&B1',
+			'A1=B1',
+			'A1<>B1',
+			'{1,2;3,4}',
+			'Sheet1!A1',
+			'SUM(Sheet1!A:A)',
+			'IF(AND(A1>0,B1<10),A1*B1,0)',
+			'IFERROR(A1/B1,0)',
+			'A1+B1*C1-D1/E1^2',
+		]
+		for (const f of formulas) {
+			const result = parseFormula(f)
+			expect(result.ok === true || result.ok === false).toBe(true)
+		}
+	})
+
+	it('invalid formula patterns parse without throwing', () => {
+		const formulas = [
+			')',
+			'(()',
+			'SUM(',
+			'+',
+			',,',
+			'===',
+			'!!!',
+			'{',
+			'}',
+			'(',
+			'SUM(,)',
+			'""',
+			'"""',
+			'1++2',
+			'--A1',
+			'SUM(1,2,',
+			'IF(A1>)',
+			')))',
+			'SUM(A1:)',
+			':B1',
+			'A1:',
+		]
+		for (const f of formulas) {
+			const result = parseFormula(f)
+			expect(result.ok === true || result.ok === false).toBe(true)
+		}
+	})
+
+	test('empty string', () => {
+		const result = parseFormula('')
+		expect(result.ok === true || result.ok === false).toBe(true)
+	})
+
+	test('very long formula (10K chars)', () => {
+		const long = `SUM(${Array.from({ length: 500 }, (_, i) => `A${i + 1}`).join(',')})` // ~3K chars
+		const result = parseFormula(long)
+		expect(result.ok === true || result.ok === false).toBe(true)
+
+		const longer = `${'A1+'.repeat(3333)}A1`
+		const result2 = parseFormula(longer)
+		expect(result2.ok === true || result2.ok === false).toBe(true)
+	})
+
+	test('deeply nested parens (100 levels)', () => {
+		const deep = `${'('.repeat(100)}1${')'.repeat(100)}`
+		const result = parseFormula(deep)
+		expect(result.ok === true || result.ok === false).toBe(true)
+	})
+
+	test('max args (255)', () => {
+		const args = Array.from({ length: 255 }, (_, i) => `A${i + 1}`).join(',')
+		const result = parseFormula(`SUM(${args})`)
+		expect(result.ok === true || result.ok === false).toBe(true)
+	})
+
+	test('special characters: unicode, newlines, tabs, null bytes', () => {
+		const specials = [
+			'"日本語"',
+			'"hello\\nworld"',
+			'A1+\t+B1',
+			'\0',
+			'"emoji🎉"',
+			'"null\\0byte"',
+			'SUM(\t)',
+			'"café"',
+			'"naïve"',
+			'"中文"',
+		]
+		for (const f of specials) {
+			const result = parseFormula(f)
+			expect(result.ok === true || result.ok === false).toBe(true)
+		}
+	})
+
+	test('random generated formulas never throw (100 cases)', () => {
+		const rng = { s: 42 }
+		for (let i = 0; i < 100; i++) {
+			const depth = randInt(rng, 0, 4)
+			const formula = xorshift32(rng) < 0.7 ? randExpr(rng, depth) : randGarbage(rng)
+			const result = parseFormula(formula)
+			expect(result.ok === true || result.ok === false).toBe(true)
+		}
+	})
+
+	test('random garbage strings never throw (50 cases)', () => {
+		const rng = { s: 99999 }
+		for (let i = 0; i < 50; i++) {
+			const formula = randGarbage(rng)
+			const result = parseFormula(formula)
+			expect(result.ok === true || result.ok === false).toBe(true)
+		}
+	})
+
+	test('corrupted valid formulas never throw (50 cases)', () => {
+		const rng = { s: 77777 }
+		const bases = [
+			'SUM(A1:B10)',
+			'IF(A1>0,B1,C1)',
+			'VLOOKUP(D1,A:B,2,0)',
+			'INDEX(A1:C10,2,3)',
+			'A1+B1*C1',
+		]
+		for (let i = 0; i < 50; i++) {
+			const base = pick(bases, rng)
+			const chars = [...base]
+			const mutations = randInt(rng, 1, 3)
+			for (let m = 0; m < mutations; m++) {
+				const action = randInt(rng, 0, 2)
+				const pos = randInt(rng, 0, chars.length - 1)
+				if (action === 0 && chars.length > 0) {
+					chars.splice(pos, 1)
+				} else if (action === 1) {
+					chars.splice(pos, 0, String.fromCharCode(randInt(rng, 32, 126)))
+				} else if (chars.length > 0) {
+					chars[pos] = String.fromCharCode(randInt(rng, 32, 126))
+				}
+			}
+			const result = parseFormula(chars.join(''))
+			expect(result.ok === true || result.ok === false).toBe(true)
+		}
 	})
 })

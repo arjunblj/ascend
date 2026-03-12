@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { EMPTY, numberValue, stringValue } from '@ascend/schema'
+import { type CellValue, EMPTY, numberValue, stringValue } from '@ascend/schema'
 import type { StyleId } from './ids.ts'
 import type { Cell } from './sparse-grid.ts'
 import { SparseGrid } from './sparse-grid.ts'
@@ -353,5 +353,197 @@ describe('SparseGrid', () => {
 		expect(clone.getValue(49, 0)).toEqual(numberValue(49))
 		expect(clone.has(0, 0)).toBe(true)
 		expect([...clone.iterate()]).toHaveLength(50)
+	})
+})
+
+describe('SparseGrid property-based', () => {
+	function xorshift32(state: { s: number }): number {
+		let s = state.s
+		s ^= s << 13
+		s ^= s >> 17
+		s ^= s << 5
+		state.s = s >>> 0
+		return (s >>> 0) / 0xffffffff
+	}
+
+	function randInt(rng: { s: number }, min: number, max: number): number {
+		return min + Math.floor(xorshift32(rng) * (max - min + 1))
+	}
+
+	test('COW invariant: clone a grid, mutate the clone, original unchanged', () => {
+		const rng = { s: 314159 }
+		for (let trial = 0; trial < 20; trial++) {
+			const grid = new SparseGrid()
+			const cellCount = randInt(rng, 5, 50)
+			const origValues = new Map<string, CellValue>()
+			for (let i = 0; i < cellCount; i++) {
+				const r = randInt(rng, 0, 30)
+				const c = randInt(rng, 0, 15)
+				const val = numberValue(randInt(rng, -1000, 1000))
+				grid.set(r, c, makeCell(val))
+				origValues.set(`${r},${c}`, val)
+			}
+
+			const clone = grid.clone()
+
+			for (let i = 0; i < 30; i++) {
+				const r = randInt(rng, 0, 30)
+				const c = randInt(rng, 0, 15)
+				if (xorshift32(rng) < 0.6) {
+					clone.set(r, c, makeCell(stringValue(`mutated_${i}`)))
+				} else {
+					clone.delete(r, c)
+				}
+			}
+
+			for (const [key, val] of origValues) {
+				const [r, c] = key.split(',').map(Number) as [number, number]
+				expect(grid.getValue(r, c)).toEqual(val)
+			}
+		}
+	})
+
+	test('dense cache consistency: readValue matches getValue for all cells', () => {
+		const rng = { s: 271828 }
+		const grid = new SparseGrid()
+		const positions: Array<[number, number]> = []
+
+		for (let i = 0; i < 200; i++) {
+			const r = randInt(rng, 0, 20)
+			const c = randInt(rng, 0, 10)
+			grid.set(r, c, makeCell(numberValue(i)))
+			positions.push([r, c])
+		}
+
+		for (let r = 0; r <= 25; r++) {
+			for (let c = 0; c <= 15; c++) {
+				const fromGet = grid.getValue(r, c)
+				const fromRead = grid.readValue(r, c)
+
+				if (fromGet === undefined) {
+					expect(fromRead).toEqual(EMPTY)
+				} else {
+					expect(fromRead).toEqual(fromGet)
+				}
+			}
+		}
+	})
+
+	test('row index consistency: after insertRows/deleteRows, getRange returns correct cells', () => {
+		const grid = new SparseGrid()
+		for (let r = 0; r < 10; r++) {
+			for (let c = 0; c < 3; c++) {
+				grid.set(r, c, makeCell(numberValue(r * 100 + c)))
+			}
+		}
+
+		grid.insertRows(5, 3)
+
+		for (let r = 0; r < 5; r++) {
+			for (let c = 0; c < 3; c++) {
+				expect(grid.getValue(r, c)).toEqual(numberValue(r * 100 + c))
+			}
+		}
+		for (let r = 5; r < 8; r++) {
+			for (let c = 0; c < 3; c++) {
+				expect(grid.has(r, c)).toBe(false)
+			}
+		}
+		for (let r = 8; r < 13; r++) {
+			for (let c = 0; c < 3; c++) {
+				expect(grid.getValue(r, c)).toEqual(numberValue((r - 3) * 100 + c))
+			}
+		}
+
+		const rangeEntries = [
+			...grid.getRange({
+				start: { row: 0, col: 0 },
+				end: { row: 12, col: 2 },
+			}),
+		]
+		expect(rangeEntries).toHaveLength(30)
+
+		grid.deleteRows(5, 3)
+		for (let r = 0; r < 10; r++) {
+			for (let c = 0; c < 3; c++) {
+				expect(grid.getValue(r, c)).toEqual(numberValue(r * 100 + c))
+			}
+		}
+	})
+
+	test('random mutation sequence: cellCount and usedRange are consistent', () => {
+		const rng = { s: 161803 }
+		const grid = new SparseGrid()
+		const tracker = new Map<string, boolean>()
+
+		for (let i = 0; i < 1000; i++) {
+			const op = randInt(rng, 0, 3)
+			switch (op) {
+				case 0: {
+					const r = randInt(rng, 0, 50)
+					const c = randInt(rng, 0, 20)
+					grid.set(r, c, makeCell(numberValue(i)))
+					tracker.set(`${r},${c}`, true)
+					break
+				}
+				case 1: {
+					const r = randInt(rng, 0, 50)
+					const c = randInt(rng, 0, 20)
+					grid.delete(r, c)
+					tracker.delete(`${r},${c}`)
+					break
+				}
+				case 2: {
+					if (grid.cellCount() > 0 && grid.cellCount() < 200) {
+						const at = randInt(rng, 0, 30)
+						const count = randInt(rng, 1, 3)
+						grid.insertRows(at, count)
+						const shifted = new Map<string, boolean>()
+						for (const key of tracker.keys()) {
+							const [r, c] = key.split(',').map(Number) as [number, number]
+							const nr = r >= at ? r + count : r
+							shifted.set(`${nr},${c}`, true)
+						}
+						tracker.clear()
+						for (const [k, v] of shifted) tracker.set(k, v)
+					}
+					break
+				}
+				case 3: {
+					if (grid.cellCount() > 0) {
+						const at = randInt(rng, 0, 30)
+						const count = randInt(rng, 1, 2)
+						grid.deleteRows(at, count)
+						const shifted = new Map<string, boolean>()
+						for (const key of tracker.keys()) {
+							const [r, c] = key.split(',').map(Number) as [number, number]
+							if (r >= at && r < at + count) continue
+							const nr = r >= at + count ? r - count : r
+							shifted.set(`${nr},${c}`, true)
+						}
+						tracker.clear()
+						for (const [k, v] of shifted) tracker.set(k, v)
+					}
+					break
+				}
+			}
+		}
+
+		expect(grid.cellCount()).toBe(tracker.size)
+
+		const range = grid.usedRange()
+		if (tracker.size === 0) {
+			expect(range).toBeNull()
+		} else {
+			expect(range).not.toBeNull()
+			if (!range) return
+			for (const key of tracker.keys()) {
+				const [r, c] = key.split(',').map(Number) as [number, number]
+				expect(r).toBeGreaterThanOrEqual(range.start.row)
+				expect(r).toBeLessThanOrEqual(range.end.row)
+				expect(c).toBeGreaterThanOrEqual(range.start.col)
+				expect(c).toBeLessThanOrEqual(range.end.col)
+			}
+		}
 	})
 })

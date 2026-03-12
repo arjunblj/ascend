@@ -36,7 +36,7 @@ import {
 } from '@ascend/schema'
 import { check as verifyCheck, lint as verifyLint } from '@ascend/verify'
 import { buildWorkbookLoadInfo, openWorkbookSource } from './load.ts'
-import { WorkbookReadView } from './read-view.ts'
+import { parseFullRef, WorkbookReadView } from './read-view.ts'
 import type {
 	ApplyResult,
 	BatchResult,
@@ -265,7 +265,9 @@ export class AscendWorkbook extends WorkbookReadView {
 		}
 	}
 
+	/** Apply an array of operations atomically and recalculate. */
 	batch(ops: readonly Operation[]): BatchResult
+	/** Execute `fn` (which may call `apply` multiple times) and defer recalculation until `fn` completes. */
 	batch(fn: () => void): void
 	batch(opsOrFn: readonly Operation[] | (() => void)): BatchResult | undefined {
 		if (typeof opsOrFn === 'function') {
@@ -731,17 +733,6 @@ function deriveRecalcTargets(ops: readonly Operation[]): {
 		return { fullRecalc: true, dirtyRefs: [] }
 	}
 	return { fullRecalc: false, dirtyRefs: refs }
-}
-
-function parseFullRef(cellRef: string, workbook: Workbook): { sheetName: string; ref: string } {
-	const bang = cellRef.indexOf('!')
-	if (bang !== -1) {
-		const sheetName = cellRef.substring(0, bang).replace(/^'|'$/g, '')
-		return { sheetName, ref: cellRef.substring(bang + 1) }
-	}
-	const firstSheet = workbook.sheets[0]
-	const sheetName = firstSheet ? firstSheet.name : 'Sheet1'
-	return { sheetName, ref: cellRef }
 }
 
 function collectSharedStringKeys(workbook: Workbook): Set<string> {

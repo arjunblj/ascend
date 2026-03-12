@@ -612,7 +612,10 @@ function buildTableInfo(
 	}
 }
 
-function parseFullRef(cellRef: string, workbook: Workbook): { sheetName: string; ref: string } {
+export function parseFullRef(
+	cellRef: string,
+	workbook: Workbook,
+): { sheetName: string; ref: string } {
 	const bang = cellRef.indexOf('!')
 	if (bang !== -1) {
 		const sheetName = cellRef.substring(0, bang).replace(/^'|'$/g, '')

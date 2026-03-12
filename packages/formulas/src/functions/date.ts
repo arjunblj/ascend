@@ -44,6 +44,25 @@ interface DateParts {
 	day: number
 }
 
+function daysSince1900ToYMD(days: number): DateParts {
+	let y = 1900
+	let d = Math.floor(days)
+	while (d >= 365) {
+		const daysInYear = isLeapYear(y) ? 366 : 365
+		if (d >= daysInYear) {
+			d -= daysInYear
+			y++
+		} else break
+	}
+	let m = 1
+	for (; m <= 12; m++) {
+		const dim = daysInMonth(y, m)
+		if (d < dim) break
+		d -= dim
+	}
+	return { year: y, month: m, day: d + 1 }
+}
+
 export function serialToDate(
 	serial: number,
 	dateSystem: '1900' | '1904' = '1900',
@@ -61,12 +80,7 @@ export function serialToDate(
 	if (serial < 1) return null
 	if (serial === 60) return { year: 1900, month: 2, day: 29 }
 	const days = serial < 60 ? serial - 1 : serial - 2
-	const d = new Date(EPOCH_1900_MS + days * MS_PER_DAY)
-	return {
-		year: d.getUTCFullYear(),
-		month: d.getUTCMonth() + 1,
-		day: d.getUTCDate(),
-	}
+	return daysSince1900ToYMD(days)
 }
 
 function isLeapYear(y: number): boolean {
@@ -541,6 +555,134 @@ registerFunction({
 	maxArgs: 3,
 	evaluate: workdayFn,
 })
+registerFunction({
+	name: 'DAYS360',
+	minArgs: 2,
+	maxArgs: 3,
+	evaluate: days360Fn,
+})
+registerFunction({
+	name: 'YEARFRAC',
+	minArgs: 2,
+	maxArgs: 3,
+	evaluate: yearfracFn,
+})
+
+function days360US(
+	start: DateParts,
+	end: DateParts,
+	daysInMonthFn: (y: number, m: number) => number,
+): [DateParts, DateParts] {
+	let d1 = start.day
+	const m1 = start.month
+	const y1 = start.year
+	let d2 = end.day
+	let m2 = end.month
+	let y2 = end.year
+
+	const lastDayStart = d1 === daysInMonthFn(y1, m1)
+	const lastDayEnd = d2 === daysInMonthFn(y2, m2)
+
+	if (lastDayStart) d1 = 30
+	if (lastDayEnd) {
+		if (d1 < 30) {
+			d2 = 1
+			m2++
+			if (m2 > 12) {
+				m2 = 1
+				y2++
+			}
+		} else {
+			d2 = 30
+		}
+	}
+
+	return [
+		{ year: y1, month: m1, day: d1 },
+		{ year: y2, month: m2, day: d2 },
+	]
+}
+
+function days360European(start: DateParts, end: DateParts): [DateParts, DateParts] {
+	let d1 = start.day
+	let d2 = end.day
+	if (d1 === 31) d1 = 30
+	if (d2 === 31) d2 = 30
+	return [
+		{ year: start.year, month: start.month, day: d1 },
+		{ year: end.year, month: end.month, day: d2 },
+	]
+}
+
+function days360Count(adj: [DateParts, DateParts]): number {
+	const [a, b] = adj
+	return 360 * (b.year - a.year) + 30 * (b.month - a.month) + (b.day - a.day)
+}
+
+function days360Fn(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
+	const sn = numArg(args[0])
+	if (typeof sn !== 'number') return sn
+	const en = numArg(args[1])
+	if (typeof en !== 'number') return en
+
+	const dateSystem = currentDateSystem(ctx)
+	const sp = serialToDate(Math.floor(sn), dateSystem)
+	const ep = serialToDate(Math.floor(en), dateSystem)
+	if (!sp || !ep) return errorValue('#NUM!')
+
+	const method = args.length > 2 ? numArg(args[2]) : 0
+	if (typeof method !== 'number') return method
+
+	const adj = method === 1 ? days360European(sp, ep) : days360US(sp, ep, daysInMonth)
+	return numberValue(days360Count(adj))
+}
+
+function yearfracFn(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
+	const sn = numArg(args[0])
+	if (typeof sn !== 'number') return sn
+	const en = numArg(args[1])
+	if (typeof en !== 'number') return en
+
+	const basis = args.length > 2 ? numArg(args[2]) : 0
+	if (typeof basis !== 'number') return basis
+	if (basis < 0 || basis > 4) return errorValue('#NUM!')
+
+	const dateSystem = currentDateSystem(ctx)
+	const sp = serialToDate(Math.floor(sn), dateSystem)
+	const ep = serialToDate(Math.floor(en), dateSystem)
+	if (!sp || !ep) return errorValue('#NUM!')
+
+	let days: number
+	let divisor: number
+
+	if (basis === 0 || basis === 4) {
+		const adj = basis === 4 ? days360European(sp, ep) : days360US(sp, ep, daysInMonth)
+		days = days360Count(adj)
+		divisor = 360
+	} else if (basis === 1) {
+		const startSerial = Math.floor(sn)
+		const endSerial = Math.floor(en)
+		let total = 0
+		for (let y = sp.year; y <= ep.year; y++) {
+			const yearStart = dateToSerial(y, 1, 1, dateSystem)
+			const yearEnd = dateToSerial(y, 12, 31, dateSystem)
+			const overlapStart = Math.max(startSerial, yearStart)
+			const overlapEnd = Math.min(endSerial, yearEnd)
+			const overlapDays = Math.max(0, overlapEnd - overlapStart)
+			const daysInYear = isLeapYear(y) ? 366 : 365
+			total += overlapDays / daysInYear
+		}
+		return numberValue(total)
+	} else if (basis === 2) {
+		days = Math.floor(en) - Math.floor(sn)
+		divisor = 360
+	} else {
+		days = Math.floor(en) - Math.floor(sn)
+		divisor = 365
+	}
+
+	return numberValue(days / divisor)
+}
 
 function isoWeekNum(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const s = numArg(args[0])

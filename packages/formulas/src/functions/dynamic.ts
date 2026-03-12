@@ -117,29 +117,29 @@ function shouldIgnoreValue(value: ScalarCellValue, ignoreMode: number): boolean 
 	return false
 }
 
-function serializeCell(value: CellValue): string {
+function fingerprintCell(value: CellValue): string {
 	switch (value.kind) {
 		case 'number':
-			return `number:${value.value}`
+			return `n:${value.value}`
 		case 'string':
-			return `string:${value.value}`
+			return `s:${value.value}`
 		case 'boolean':
-			return `boolean:${value.value}`
+			return `b:${value.value}`
 		case 'date':
-			return `date:${value.serial}`
+			return `d:${value.serial}`
 		case 'error':
-			return `error:${value.value}`
+			return `e:${value.value}`
 		case 'richText':
-			return `richText:${JSON.stringify(value.runs)}`
+			return `t:${value.runs.map((r) => r.text).join('\x01')}`
 		case 'array':
-			return `array:${JSON.stringify(value.rows.map((row) => row.map((cell) => serializeCell(cell))))}`
+			return `a:${value.rows.map((row) => row.map((c) => fingerprintCell(c)).join('\x00')).join('\x01')}`
 		case 'empty':
-			return 'empty'
+			return ''
 	}
 }
 
-function serializeVector(values: readonly CellValue[]): string {
-	return values.map((value) => serializeCell(value)).join('|')
+function fingerprintVector(values: readonly CellValue[]): string {
+	return values.map((v) => fingerprintCell(v)).join('\x00')
 }
 
 function columnVectors(data: readonly (readonly CellValue[])[]): CellValue[][] {
@@ -289,7 +289,7 @@ export const dynamicFunctions: FunctionDef[] = [
 				const columns = columnVectors(data)
 				const unique: CellValue[][] = []
 				for (const column of columns) {
-					const key = serializeVector(column)
+					const key = fingerprintVector(column)
 					counts.set(key, (counts.get(key) ?? 0) + 1)
 					if (!seen.has(key)) {
 						seen.add(key)
@@ -297,7 +297,7 @@ export const dynamicFunctions: FunctionDef[] = [
 					}
 				}
 				const filtered = exactlyOnce
-					? unique.filter((column) => counts.get(serializeVector(column)) === 1)
+					? unique.filter((column) => counts.get(fingerprintVector(column)) === 1)
 					: unique
 				if (filtered.length === 0) return errorValue('#CALC!')
 				return scalarOrArray(transposeRows(filtered))
@@ -308,7 +308,7 @@ export const dynamicFunctions: FunctionDef[] = [
 			const unique: (readonly CellValue[])[] = []
 
 			for (const row of data) {
-				const key = serializeVector(row)
+				const key = fingerprintVector(row)
 				counts.set(key, (counts.get(key) ?? 0) + 1)
 				if (!seen.has(key)) {
 					seen.add(key)
@@ -318,7 +318,7 @@ export const dynamicFunctions: FunctionDef[] = [
 
 			if (exactlyOnce) {
 				const once = unique.filter((row) => {
-					const key = serializeVector(row)
+					const key = fingerprintVector(row)
 					return counts.get(key) === 1
 				})
 				if (once.length === 0) return errorValue('#CALC!')

@@ -267,6 +267,105 @@ export const financialFunctions: FunctionDef[] = [
 		},
 	},
 	{
+		name: 'SLN',
+		minArgs: 3,
+		maxArgs: 3,
+		evaluate(args) {
+			const cost = num(args[0])
+			if (typeof cost !== 'number') return cost
+			const salvage = num(args[1])
+			if (typeof salvage !== 'number') return salvage
+			const life = num(args[2])
+			if (typeof life !== 'number') return life
+			if (life <= 0) return errorValue('#NUM!')
+			return numberValue((cost - salvage) / life)
+		},
+	},
+	{
+		name: 'SYD',
+		minArgs: 4,
+		maxArgs: 4,
+		evaluate(args) {
+			const cost = num(args[0])
+			if (typeof cost !== 'number') return cost
+			const salvage = num(args[1])
+			if (typeof salvage !== 'number') return salvage
+			const life = num(args[2])
+			if (typeof life !== 'number') return life
+			const per = num(args[3])
+			if (typeof per !== 'number') return per
+			if (life <= 0 || per < 1 || per > life) return errorValue('#NUM!')
+			const sumOfYears = (life * (life + 1)) / 2
+			return numberValue(((cost - salvage) * (life - per + 1)) / sumOfYears)
+		},
+	},
+	{
+		name: 'DDB',
+		minArgs: 4,
+		maxArgs: 5,
+		evaluate(args) {
+			const cost = num(args[0])
+			if (typeof cost !== 'number') return cost
+			const salvage = num(args[1])
+			if (typeof salvage !== 'number') return salvage
+			const life = num(args[2])
+			if (typeof life !== 'number') return life
+			const period = num(args[3])
+			if (typeof period !== 'number') return period
+			const factor = args[4] ? num(args[4]) : 2
+			if (typeof factor !== 'number') return factor
+			if (cost < 0 || salvage < 0 || life <= 0 || period < 1 || period > life || factor <= 0) {
+				return errorValue('#NUM!')
+			}
+			let bookValue = cost
+			for (let p = 1; p < period; p++) {
+				const dep = Math.min((bookValue * factor) / life, bookValue - salvage)
+				bookValue -= dep
+				if (bookValue <= salvage) return numberValue(0)
+			}
+			const dep = Math.min((bookValue * factor) / life, bookValue - salvage)
+			return numberValue(dep)
+		},
+	},
+	{
+		name: 'DOLLARDE',
+		minArgs: 2,
+		maxArgs: 2,
+		evaluate(args) {
+			const fractionalDollar = num(args[0])
+			if (typeof fractionalDollar !== 'number') return fractionalDollar
+			const fraction = num(args[1])
+			if (typeof fraction !== 'number') return fraction
+			const frac = Math.trunc(fraction)
+			if (frac <= 0) return errorValue('#NUM!')
+			const intPart = Math.trunc(fractionalDollar)
+			const fracPart = fractionalDollar - intPart
+			const digits = Math.ceil(Math.log10(frac))
+			const divisor = 10 ** digits
+			const numerator = Math.round(fracPart * divisor)
+			return numberValue(intPart + numerator / frac)
+		},
+	},
+	{
+		name: 'DOLLARFR',
+		minArgs: 2,
+		maxArgs: 2,
+		evaluate(args) {
+			const decimalDollar = num(args[0])
+			if (typeof decimalDollar !== 'number') return decimalDollar
+			const fraction = num(args[1])
+			if (typeof fraction !== 'number') return fraction
+			const frac = Math.trunc(fraction)
+			if (frac <= 0) return errorValue('#NUM!')
+			const intPart = Math.trunc(decimalDollar)
+			const fracPart = decimalDollar - intPart
+			const numerator = Math.round(fracPart * frac)
+			const digits = Math.ceil(Math.log10(frac))
+			const divisor = 10 ** digits
+			return numberValue(intPart + numerator / divisor)
+		},
+	},
+	{
 		name: 'XNPV',
 		minArgs: 3,
 		maxArgs: 3,

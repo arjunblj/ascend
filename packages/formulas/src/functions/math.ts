@@ -69,7 +69,25 @@ function numericVal(cell: CellValue): number | null {
 // Supports: ">=10", "<=5", "<>0", ">3", "<3", "=text", exact match
 // ---------------------------------------------------------------------------
 
+const CRITERIA_CACHE_MAX = 1024
+const criteriaPredicateCache = new Map<string, (v: CellValue) => boolean>()
+
+function criteriaCacheKey(criteria: CellValue): string {
+	return JSON.stringify(criteria)
+}
+
 function parseCriteria(criteria: CellValue): (v: CellValue) => boolean {
+	const key = criteriaCacheKey(criteria)
+	const cached = criteriaPredicateCache.get(key)
+	if (cached) return cached
+
+	const predicate = parseCriteriaImpl(criteria)
+	if (criteriaPredicateCache.size >= CRITERIA_CACHE_MAX) criteriaPredicateCache.clear()
+	criteriaPredicateCache.set(key, predicate)
+	return predicate
+}
+
+function parseCriteriaImpl(criteria: CellValue): (v: CellValue) => boolean {
 	if (criteria.kind === 'number') {
 		const t = criteria.value
 		return (v) => {

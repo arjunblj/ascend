@@ -179,6 +179,79 @@
 			"setup": { "AA3": 9 },
 			"formula": "COLUMN(AA3)",
 			"expected": { "kind": "number", "value": 27 }
+		},
+		{
+			"description": "INDIRECT resolves a cell reference from text",
+			"setup": { "A1": 42 },
+			"formula": "INDIRECT(\"A1\")",
+			"expected": { "kind": "number", "value": 42 }
+		},
+		{
+			"description": "INDIRECT resolves a range reference via SUM",
+			"setup": { "A1": 1, "A2": 2, "A3": 3 },
+			"formula": "SUM(INDIRECT(\"A1:A3\"))",
+			"expected": { "kind": "number", "value": 6 }
+		},
+		{
+			"description": "INDIRECT with R1C1 style resolves a cell reference",
+			"setup": { "A1": 99 },
+			"formula": "INDIRECT(\"R1C1\", FALSE)",
+			"expected": { "kind": "number", "value": 99 }
+		},
+		{
+			"description": "INDIRECT with empty string returns #REF!",
+			"setup": {},
+			"formula": "INDIRECT(\"\")",
+			"expected": { "kind": "error", "value": "#REF!" }
+		},
+		{
+			"description": "OFFSET moves reference down by one row",
+			"setup": { "A1": 10, "A2": 20 },
+			"formula": "OFFSET(A1, 1, 0)",
+			"expected": { "kind": "number", "value": 20 }
+		},
+		{
+			"description": "OFFSET moves reference right by one column",
+			"setup": { "A1": 10, "B1": 30 },
+			"formula": "OFFSET(A1, 0, 1)",
+			"expected": { "kind": "number", "value": 30 }
+		},
+		{
+			"description": "OFFSET with height and width returns a range for SUM",
+			"setup": { "B2": 1, "B3": 2, "C2": 3, "C3": 4 },
+			"formula": "SUM(OFFSET(A1, 1, 1, 2, 2))",
+			"expected": { "kind": "number", "value": 10 }
+		},
+		{
+			"description": "OFFSET with negative row offset",
+			"setup": { "A3": 33, "A5": 55 },
+			"formula": "OFFSET(A5, -2, 0)",
+			"expected": { "kind": "number", "value": 33 }
+		},
+		{
+			"description": "OFFSET out of bounds returns #REF!",
+			"setup": { "A1": 1 },
+			"formula": "OFFSET(A1, -1, 0)",
+			"expected": { "kind": "error", "value": "#REF!" }
+		},
+		{
+			"description": "FORMULATEXT returns formula text from a cell",
+			"setup": {},
+			"setupFormulas": { "B1": "1+2" },
+			"formula": "FORMULATEXT(B1)",
+			"expected": { "kind": "string", "value": "=1+2" }
+		},
+		{
+			"description": "FORMULATEXT returns #N/A for a cell without a formula",
+			"setup": { "A1": 42 },
+			"formula": "FORMULATEXT(A1)",
+			"expected": { "kind": "error", "value": "#N/A" }
+		},
+		{
+			"description": "FORMULATEXT returns #N/A for an empty cell",
+			"setup": {},
+			"formula": "FORMULATEXT(C5)",
+			"expected": { "kind": "error", "value": "#N/A" }
 		}
 	]
 }

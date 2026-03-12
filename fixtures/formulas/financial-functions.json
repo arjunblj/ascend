@@ -72,6 +72,36 @@
 			"setup": {},
 			"formula": "PMT(0.06/12, 360, 200000, 0, 1)",
 			"expected": { "kind": "number", "approx": -1193.1353734383263, "tolerance": 1e-8 }
+		},
+		{
+			"description": "SLN returns straight-line depreciation",
+			"setup": {},
+			"formula": "SLN(10000, 1000, 9)",
+			"expected": { "kind": "number", "approx": 1000, "tolerance": 1e-10 }
+		},
+		{
+			"description": "SYD returns sum-of-years-digits depreciation for period 1",
+			"setup": {},
+			"formula": "SYD(10000, 1000, 5, 1)",
+			"expected": { "kind": "number", "approx": 3000, "tolerance": 1e-10 }
+		},
+		{
+			"description": "DDB returns double-declining balance for first period",
+			"setup": {},
+			"formula": "DDB(2400, 300, 10, 1)",
+			"expected": { "kind": "number", "approx": 480, "tolerance": 1e-8 }
+		},
+		{
+			"description": "DOLLARDE converts fractional dollar to decimal",
+			"setup": {},
+			"formula": "DOLLARDE(1.03, 32)",
+			"expected": { "kind": "number", "approx": 1.09375, "tolerance": 1e-10 }
+		},
+		{
+			"description": "DOLLARFR converts decimal to fractional dollar",
+			"setup": {},
+			"formula": "DOLLARFR(1.125, 16)",
+			"expected": { "kind": "number", "approx": 1.02, "tolerance": 1e-10 }
 		}
 	]
 }

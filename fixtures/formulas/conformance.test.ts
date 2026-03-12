@@ -13,6 +13,7 @@ const sid = 0 as StyleId
 interface ConformanceCase {
 	description: string
 	setup: Record<string, string | number | boolean>
+	setupFormulas?: Record<string, string>
 	formula: string
 	context?: {
 		dateSystem?: '1900' | '1904'
@@ -98,6 +99,17 @@ function runCase(
 			formula: null,
 			styleId: sid,
 		})
+	}
+
+	if (c.setupFormulas) {
+		for (const [a1, formula] of Object.entries(c.setupFormulas)) {
+			const { row, col } = parseA1(a1)
+			sheet.cells.set(row, col, {
+				value: EMPTY,
+				formula,
+				styleId: sid,
+			})
+		}
 	}
 
 	const formula = c.formula.startsWith('=') ? c.formula.slice(1) : c.formula

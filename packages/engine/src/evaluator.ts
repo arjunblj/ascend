@@ -338,6 +338,9 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 	if (upperName === 'INDIRECT' || upperName === 'OFFSET') {
 		return resolveReferenceFunction(upperName, argNodes, ctx).value
 	}
+	if (upperName === 'FORMULATEXT') {
+		return evalFormulaText(argNodes, ctx)
+	}
 	if (upperName === 'LET') {
 		return evalLet(argNodes, ctx)
 	}
@@ -380,6 +383,19 @@ function evalIfError(argNodes: readonly FormulaNode[], ctx: EvalContext): CellVa
 function evalIfNa(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
 	const value = evalLazyArg(argNodes[0], ctx)
 	return value.kind === 'error' && value.value === '#N/A' ? evalLazyArg(argNodes[1], ctx) : value
+}
+
+function evalFormulaText(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
+	const arg = resolveArg(argNodes[0] ?? { type: 'missing' }, ctx)
+	if (!arg.ref) {
+		if (arg.value.kind === 'error') return arg.value
+		return errorValue('#N/A')
+	}
+	const sheet = ctx.workbook.sheets[arg.ref.sheetIndex]
+	if (!sheet) return errorValue('#N/A')
+	const cell = sheet.cells.get(arg.ref.row, arg.ref.col)
+	if (!cell?.formula) return errorValue('#N/A')
+	return stringValue(`=${cell.formula}`)
 }
 
 function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {

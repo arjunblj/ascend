@@ -73,12 +73,21 @@ function resolveTableRef(
 	row: number,
 	col: number,
 ): { sheetIndex: number; table: Table } | null {
+	const tableNameLower = tableName.toLowerCase()
 	if (tableName.length > 0) {
+		const currentSheet = workbook.sheets[sheetIndex]
+		if (currentSheet) {
+			const table = currentSheet.tables.find(
+				(candidate) => candidate.name.toLowerCase() === tableNameLower,
+			)
+			if (table) return { sheetIndex, table }
+		}
 		for (let i = 0; i < workbook.sheets.length; i++) {
+			if (i === sheetIndex) continue
 			const sheet = workbook.sheets[i]
 			if (!sheet) continue
 			const table = sheet.tables.find(
-				(candidate) => candidate.name.toLowerCase() === tableName.toLowerCase(),
+				(candidate) => candidate.name.toLowerCase() === tableNameLower,
 			)
 			if (table) return { sheetIndex: i, table }
 		}

@@ -65,12 +65,14 @@ function rankFn(args: EvalArg[]): CellValue {
 	const order = args.length > 2 ? numArg(args[2]) : 0
 	if (typeof order !== 'number') return order
 
-	if (!numsOrErr.some((v) => v === num)) return errorValue('#N/A')
 	const ascending = order !== 0
 	let rank = 1
+	let found = false
 	for (const v of numsOrErr) {
-		if (ascending ? v < num : v > num) rank++
+		if (v === num) found = true
+		else if (ascending ? v < num : v > num) rank++
 	}
+	if (!found) return errorValue('#N/A')
 	return numberValue(rank)
 }
 

@@ -497,7 +497,7 @@ describe('AscendWorkbook', () => {
 		expect(a3?.value).toEqual({ kind: 'number', value: 30 })
 	})
 
-	test('batch applies multiple operations without recalc, caller recalcs once', () => {
+	test('batch(ops) applies multiple operations without recalc, caller recalcs once', () => {
 		const wb = AscendWorkbook.create()
 		const batchResult = wb.batch([
 			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 10 }] },
@@ -513,6 +513,30 @@ describe('AscendWorkbook', () => {
 		const recalcResult = wb.recalc()
 		expect(recalcResult.errors).toHaveLength(0)
 		expect(wb.sheet('Sheet1')?.cell('A3')?.value).toEqual({ kind: 'number', value: 30 })
+	})
+
+	test('batch(fn) defers recalc until all mutations complete, triggers single recalc', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setFormula', sheet: 'Sheet1', ref: 'A4', formula: 'A1+A2+A3' }])
+
+		let recalcCount = 0
+		const originalRecalc = wb.recalc.bind(wb)
+		wb.recalc = (...args: Parameters<typeof wb.recalc>) => {
+			recalcCount++
+			return originalRecalc(...args)
+		}
+
+		wb.batch(() => {
+			wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }])
+			wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A2', value: 2 }] }])
+			wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A3', value: 3 }] }])
+		})
+
+		expect(recalcCount).toBe(1)
+		expect(wb.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 1 })
+		expect(wb.sheet('Sheet1')?.cell('A2')?.value).toEqual({ kind: 'number', value: 2 })
+		expect(wb.sheet('Sheet1')?.cell('A3')?.value).toEqual({ kind: 'number', value: 3 })
+		expect(wb.sheet('Sheet1')?.cell('A4')?.value).toEqual({ kind: 'number', value: 6 })
 	})
 
 	test('save to bytes and re-open roundtrips', async () => {

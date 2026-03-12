@@ -115,7 +115,8 @@ export function trace(
 			continue
 		}
 
-		for (const pred of graph.getPrecedents(item.key)) {
+		const { cells, ranges } = graph.getPrecedents(item.key)
+		for (const pred of cells) {
 			if (visitedPre.has(pred)) continue
 			visitedPre.add(pred)
 			const [si, r, c] = parseCellKey(pred)
@@ -130,6 +131,14 @@ export function trace(
 				depth: item.depth + 1,
 			})
 			prQueue.push({ key: pred, depth: item.depth + 1 })
+		}
+		for (const rangeDep of ranges) {
+			const depKey = rangeDependencyKey(rangeDep)
+			if (visitedPre.has(depKey)) continue
+			visitedPre.add(depKey)
+			const traceNode = rangeDependencyToTraceNode(workbook, rangeDep, item.depth + 1)
+			if (!traceNode) continue
+			precedents.push(traceNode)
 		}
 	}
 

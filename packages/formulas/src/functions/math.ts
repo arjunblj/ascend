@@ -260,6 +260,30 @@ export const mathFunctions: FunctionDef[] = [
 		for (let i = 1; i < ranges.length; i++) {
 			if (!sameShape(ranges[0] ?? [], ranges[i] ?? [])) return errorValue('#VALUE!')
 		}
+		const useFastPath = (() => {
+			for (let c = 0; c < cols; c++) {
+				for (const range of ranges) {
+					const cell = range[0]?.[c] ?? EMPTY
+					if (cell.kind === 'error' || cell.kind === 'string' || cell.kind === 'boolean')
+						return false
+				}
+			}
+			return true
+		})()
+		if (useFastPath) {
+			let total = 0
+			for (let r = 0; r < rows; r++) {
+				for (let c = 0; c < cols; c++) {
+					let product = 1
+					for (const range of ranges) {
+						const cell = range[r]?.[c] ?? EMPTY
+						product *= cell.kind === 'number' ? cell.value : cell.kind === 'date' ? cell.serial : 0
+					}
+					total += product
+				}
+			}
+			return numberValue(total)
+		}
 		let total = 0
 		for (let r = 0; r < rows; r++) {
 			for (let c = 0; c < cols; c++) {

@@ -9,7 +9,7 @@ describe('DependencyGraph', () => {
 
 	test('empty graph returns no precedents', () => {
 		const g = new DependencyGraph()
-		expect(g.getPrecedents(cellKey(0, 0, 0))).toEqual([])
+		expect(g.getPrecedents(cellKey(0, 0, 0))).toEqual({ cells: [], ranges: [] })
 	})
 
 	test('addFormula tracks precedents', () => {
@@ -18,7 +18,9 @@ describe('DependencyGraph', () => {
 		const b = cellKey(0, 0, 1)
 		const c = cellKey(0, 0, 2)
 		g.addFormula(c, [a, b], false)
-		expect(g.getPrecedents(c).sort()).toEqual([a, b].sort())
+		const p = g.getPrecedents(c)
+		expect(p.ranges).toEqual([])
+		expect(p.cells.sort()).toEqual([a, b].sort())
 	})
 
 	test('addFormula tracks dependents', () => {
@@ -32,17 +34,18 @@ describe('DependencyGraph', () => {
 	test('range dependencies track dependents without eager expansion', () => {
 		const g = new DependencyGraph()
 		const formula = cellKey(0, 0, 2)
-		g.addFormula(formula, [], false, [
-			{
-				sheetIndex: 0,
-				startRow: 0,
-				startCol: 0,
-				endRow: 2,
-				endCol: 0,
-			},
-		])
+		const range = {
+			sheetIndex: 0,
+			startRow: 0,
+			startCol: 0,
+			endRow: 2,
+			endCol: 0,
+		}
+		g.addFormula(formula, [], false, [range])
 		expect(g.getDependents(cellKey(0, 1, 0))).toEqual([formula])
-		expect(g.getPrecedents(formula)).toEqual([cellKey(0, 0, 0), cellKey(0, 1, 0), cellKey(0, 2, 0)])
+		const p = g.getPrecedents(formula)
+		expect(p.cells).toEqual([])
+		expect(p.ranges).toEqual([range])
 	})
 
 	test('dirty propagation includes range-backed dependents', () => {
@@ -70,7 +73,7 @@ describe('DependencyGraph', () => {
 		g.addFormula(c, [a], false)
 		g.removeFormula(c)
 		expect(g.getDependents(a)).toEqual([])
-		expect(g.getPrecedents(c)).toEqual([])
+		expect(g.getPrecedents(c)).toEqual({ cells: [], ranges: [] })
 	})
 
 	test('removing non-existent formula is a no-op', () => {

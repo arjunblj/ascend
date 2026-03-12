@@ -113,18 +113,14 @@ export class DependencyGraph {
 		this.formulas.delete(key)
 	}
 
-	getPrecedents(key: CellKey): CellKey[] {
+	/** Precedents as cells and ranges; ranges are not expanded to avoid O(n) for large refs like SUM(A1:A10000). */
+	getPrecedents(key: CellKey): { cells: CellKey[]; ranges: RangeDependency[] } {
 		const entry = this.formulas.get(key)
-		if (!entry) return []
-		const precedents = [...entry.dependsOn]
-		for (const range of entry.rangeDeps) {
-			for (let row = range.startRow; row <= range.endRow; row++) {
-				for (let col = range.startCol; col <= range.endCol; col++) {
-					precedents.push(cellKey(range.sheetIndex, row, col))
-				}
-			}
+		if (!entry) return { cells: [], ranges: [] }
+		return {
+			cells: [...entry.dependsOn],
+			ranges: [...entry.rangeDeps],
 		}
-		return precedents
 	}
 
 	getDependents(key: CellKey): CellKey[] {

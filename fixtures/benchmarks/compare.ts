@@ -2,23 +2,54 @@ import { readFile } from 'node:fs/promises'
 import {
 	type BenchmarkMetricComparison,
 	type BenchmarkSuiteResult,
+	type CompareSuitesConfig,
 	compareSuites,
 	formatBytes,
 	formatRate,
 } from './results.ts'
 
+function parseThresholds(argv: string[]): {
+	thresholds?: CompareSuitesConfig['thresholds']
+	rest: string[]
+} {
+	const rest: string[] = []
+	const thresholds: NonNullable<CompareSuitesConfig['thresholds']> = {}
+	for (let i = 0; i < argv.length; i++) {
+		const arg = argv[i]
+		if (arg === '--threshold-median' && argv[i + 1]) {
+			thresholds.medianMs = Number.parseFloat(argv[++i] ?? '')
+		} else if (arg === '--threshold-p95' && argv[i + 1]) {
+			thresholds.p95Ms = Number.parseFloat(argv[++i] ?? '')
+		} else if (arg === '--threshold-throughput' && argv[i + 1]) {
+			thresholds.throughputPerSec = Number.parseFloat(argv[++i] ?? '')
+		} else if (arg === '--threshold-rss' && argv[i + 1]) {
+			const v = Number.parseFloat(argv[++i] ?? '')
+			thresholds.rssDeltaBytes = v
+			thresholds.retainedRssDeltaBytes = v
+		} else {
+			rest.push(arg)
+		}
+	}
+	return {
+		thresholds: Object.keys(thresholds).length > 0 ? thresholds : undefined,
+		rest,
+	}
+}
+
 async function main(): Promise<void> {
-	const [baselinePath, candidatePath] = process.argv.slice(2)
+	const { thresholds, rest } = parseThresholds(process.argv.slice(2))
+	const [baselinePath, candidatePath] = rest
 	if (!baselinePath || !candidatePath) {
 		throw new Error(
-			'Usage: bun run fixtures/benchmarks/compare.ts <baseline.json> <candidate.json> [--json]',
+			'Usage: bun run fixtures/benchmarks/compare.ts <baseline.json> <candidate.json> [--json] [--threshold-median N] [--threshold-p95 N] [--threshold-throughput N] [--threshold-rss N]',
 		)
 	}
 	const [baseline, candidate] = await Promise.all([
 		loadSuite(baselinePath),
 		loadSuite(candidatePath),
 	])
-	const comparison = compareSuites(baseline, candidate)
+	const config: CompareSuitesConfig | undefined = thresholds ? { thresholds } : undefined
+	const comparison = compareSuites(baseline, candidate, config)
 	if (process.argv.includes('--json')) {
 		console.log(JSON.stringify(comparison, null, 2))
 		process.exit(comparison.summary.regressed > 0 ? 1 : 0)

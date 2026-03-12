@@ -93,10 +93,24 @@ export interface BenchmarkSuiteComparison {
 	}
 }
 
-const DURATION_REGRESSION_THRESHOLD = 0.1
-const P95_REGRESSION_THRESHOLD = 0.15
-const RSS_REGRESSION_THRESHOLD = 0.15
-const THROUGHPUT_REGRESSION_THRESHOLD = 0.1
+const DEFAULT_MEDIAN_THRESHOLD = 0.1
+const DEFAULT_P95_THRESHOLD = 0.15
+const DEFAULT_RSS_THRESHOLD = 0.15
+const DEFAULT_THROUGHPUT_THRESHOLD = 0.1
+const T_TEST_MIN_SAMPLES = 3
+const T_TEST_SIGNIFICANCE_LEVEL = 0.05
+
+export interface CompareSuitesThresholds {
+	readonly medianMs?: number
+	readonly p95Ms?: number
+	readonly throughputPerSec?: number
+	readonly rssDeltaBytes?: number
+	readonly retainedRssDeltaBytes?: number
+}
+
+export interface CompareSuitesConfig {
+	readonly thresholds?: CompareSuitesThresholds
+}
 
 export function createBenchmarkSuite(input: {
 	readonly suite: string
@@ -154,7 +168,9 @@ export function summarizeSamples(samples: readonly MetricSample[]): BenchmarkMet
 export function compareSuites(
 	baseline: BenchmarkSuiteResult,
 	candidate: BenchmarkSuiteResult,
+	config?: CompareSuitesConfig,
 ): BenchmarkSuiteComparison {
+	const thresholds = config?.thresholds ?? {}
 	const baselineCases = new Map(baseline.cases.map((entry) => [entry.name, entry]))
 	const candidateCases = new Map(candidate.cases.map((entry) => [entry.name, entry]))
 	const names = [...new Set([...baselineCases.keys(), ...candidateCases.keys()])].sort((a, b) =>
@@ -173,28 +189,7 @@ export function compareSuites(
 			continue
 		}
 		if (!base || !next) continue
-		const comparisons = [
-			compareMetric('medianMs', 'lower-better', base.metrics.medianMs, next.metrics.medianMs),
-			compareMetric('p95Ms', 'lower-better', base.metrics.p95Ms, next.metrics.p95Ms),
-			compareOptionalMetric(
-				'throughputPerSec',
-				'higher-better',
-				base.metrics.throughputPerSec,
-				next.metrics.throughputPerSec,
-			),
-			compareOptionalMetric(
-				'rssDeltaBytes',
-				'lower-better',
-				base.metrics.rssDeltaBytes,
-				next.metrics.rssDeltaBytes,
-			),
-			compareOptionalMetric(
-				'retainedRssDeltaBytes',
-				'lower-better',
-				base.metrics.retainedRssDeltaBytes,
-				next.metrics.retainedRssDeltaBytes,
-			),
-		].filter((entry): entry is BenchmarkMetricComparison => entry !== undefined)
+		const comparisons = buildComparisons(base, next, thresholds)
 		const status = comparisons.some((entry) => entry.status === 'regressed')
 			? 'regressed'
 			: comparisons.some((entry) => entry.status === 'improved')
@@ -214,6 +209,107 @@ export function compareSuites(
 			added: cases.filter((entry) => entry.status === 'new').length,
 		},
 	}
+}
+
+function buildComparisons(
+	base: BenchmarkCaseResult,
+	next: BenchmarkCaseResult,
+	thresholds: CompareSuitesThresholds,
+): BenchmarkMetricComparison[] {
+	const baseDurations = base.samples?.map((s) => s.durationMs)
+	const nextDurations = next.samples?.map((s) => s.durationMs)
+	const durationTTest =
+		baseDurations &&
+		nextDurations &&
+		baseDurations.length >= T_TEST_MIN_SAMPLES &&
+		nextDurations.length >= T_TEST_MIN_SAMPLES
+			? welchsTTest(baseDurations, nextDurations)
+			: null
+
+	const baseThroughput = base.samples
+		?.map((s) => s.throughputPerSec)
+		.filter((v): v is number => v !== undefined)
+	const nextThroughput = next.samples
+		?.map((s) => s.throughputPerSec)
+		.filter((v): v is number => v !== undefined)
+	const throughputTTest =
+		baseThroughput &&
+		nextThroughput &&
+		baseThroughput.length >= T_TEST_MIN_SAMPLES &&
+		nextThroughput.length >= T_TEST_MIN_SAMPLES
+			? welchsTTest(baseThroughput, nextThroughput)
+			: null
+
+	const baseRss = base.samples
+		?.map((s) => s.rssDeltaBytes)
+		.filter((v): v is number => v !== undefined)
+	const nextRss = next.samples
+		?.map((s) => s.rssDeltaBytes)
+		.filter((v): v is number => v !== undefined)
+	const rssTTest =
+		baseRss &&
+		nextRss &&
+		baseRss.length >= T_TEST_MIN_SAMPLES &&
+		nextRss.length >= T_TEST_MIN_SAMPLES
+			? welchsTTest(baseRss, nextRss)
+			: null
+
+	const baseRetained = base.samples
+		?.map((s) => s.retainedRssDeltaBytes)
+		.filter((v): v is number => v !== undefined)
+	const nextRetained = next.samples
+		?.map((s) => s.retainedRssDeltaBytes)
+		.filter((v): v is number => v !== undefined)
+	const retainedTTest =
+		baseRetained &&
+		nextRetained &&
+		baseRetained.length >= T_TEST_MIN_SAMPLES &&
+		nextRetained.length >= T_TEST_MIN_SAMPLES
+			? welchsTTest(baseRetained, nextRetained)
+			: null
+
+	return [
+		compareMetric(
+			'medianMs',
+			'lower-better',
+			base.metrics.medianMs,
+			next.metrics.medianMs,
+			thresholds.medianMs ?? DEFAULT_MEDIAN_THRESHOLD,
+			durationTTest?.pValue,
+		),
+		compareMetric(
+			'p95Ms',
+			'lower-better',
+			base.metrics.p95Ms,
+			next.metrics.p95Ms,
+			thresholds.p95Ms ?? DEFAULT_P95_THRESHOLD,
+			durationTTest?.pValue,
+		),
+		compareOptionalMetric(
+			'throughputPerSec',
+			'higher-better',
+			base.metrics.throughputPerSec,
+			next.metrics.throughputPerSec,
+			thresholds.throughputPerSec ?? DEFAULT_THROUGHPUT_THRESHOLD,
+			throughputTTest?.pValue,
+		),
+		compareOptionalMetric(
+			'rssDeltaBytes',
+			'lower-better',
+			base.metrics.rssDeltaBytes,
+			next.metrics.rssDeltaBytes,
+			thresholds.rssDeltaBytes ?? DEFAULT_RSS_THRESHOLD,
+			rssTTest?.pValue,
+		),
+		compareOptionalMetric(
+			'retainedRssDeltaBytes',
+			'lower-better',
+			base.metrics.retainedRssDeltaBytes,
+			next.metrics.retainedRssDeltaBytes,
+			thresholds.retainedRssDeltaBytes ?? DEFAULT_RSS_THRESHOLD,
+			retainedTTest?.pValue,
+		),
+	].filter((entry): entry is BenchmarkMetricComparison => entry !== undefined)
 }
 
 export function formatBytes(bytes: number): string {
@@ -247,6 +343,48 @@ export function mean(values: readonly number[]): number {
 	return values.reduce((sum, value) => sum + value, 0) / values.length
 }
 
+export function variance(values: readonly number[]): number {
+	if (values.length < 2) return 0
+	const m = mean(values)
+	return values.reduce((sum, x) => sum + (x - m) ** 2, 0) / (values.length - 1)
+}
+
+export interface WelchsTTestResult {
+	readonly t: number
+	readonly df: number
+	readonly pValue: number
+}
+
+/**
+ * Welch's t-test for comparing two independent samples.
+ * Returns t-statistic, degrees of freedom (Welch-Satterthwaite), and p-value.
+ * P-value uses approximation: p = exp(-0.717*|t| - 0.416*t²) for two-tailed test.
+ */
+export function welchsTTest(
+	baseline: readonly number[],
+	candidate: readonly number[],
+): WelchsTTestResult {
+	if (baseline.length < 2 || candidate.length < 2) {
+		throw new Error('Welch t-test requires at least 2 samples in each group')
+	}
+	const n1 = baseline.length
+	const n2 = candidate.length
+	const m1 = mean(baseline)
+	const m2 = mean(candidate)
+	const v1 = variance(baseline)
+	const v2 = variance(candidate)
+	const se1Sq = v1 / n1
+	const se2Sq = v2 / n2
+	const sePooled = Math.sqrt(se1Sq + se2Sq)
+	if (sePooled === 0) {
+		return { t: 0, df: n1 + n2 - 2, pValue: 1 }
+	}
+	const t = (m1 - m2) / sePooled
+	const df = (se1Sq + se2Sq) ** 2 / (se1Sq ** 2 / (n1 - 1) + se2Sq ** 2 / (n2 - 1))
+	const pValue = Math.exp(-0.717 * Math.abs(t) - 0.416 * t * t)
+	return { t, df, pValue }
+}
+
 export function medianDefined(values: ReadonlyArray<number | undefined>): number | undefined {
 	const defined = values.filter((value): value is number => value !== undefined)
 	return defined.length > 0 ? median(defined) : undefined
@@ -257,25 +395,22 @@ function compareMetric(
 	direction: BenchmarkMetricComparison['direction'],
 	baseline: number,
 	candidate: number,
+	threshold: number,
+	pValue: number | undefined,
 ): BenchmarkMetricComparison {
 	const delta = candidate - baseline
 	const deltaPct = baseline === 0 ? null : delta / baseline
-	const threshold =
-		name === 'medianMs'
-			? DURATION_REGRESSION_THRESHOLD
-			: name === 'p95Ms'
-				? P95_REGRESSION_THRESHOLD
-				: name === 'throughputPerSec'
-					? THROUGHPUT_REGRESSION_THRESHOLD
-					: RSS_REGRESSION_THRESHOLD
-	const isRegression =
+	const thresholdExceeded =
 		direction === 'lower-better'
 			? deltaPct !== null && deltaPct > threshold
 			: deltaPct !== null && deltaPct < -threshold
-	const isImprovement =
+	const improvementExceeded =
 		direction === 'lower-better'
 			? deltaPct !== null && deltaPct < -threshold
 			: deltaPct !== null && deltaPct > threshold
+	const statisticallySignificant = pValue === undefined || pValue < T_TEST_SIGNIFICANCE_LEVEL
+	const isRegression = thresholdExceeded && statisticallySignificant
+	const isImprovement = improvementExceeded && statisticallySignificant
 	return {
 		name,
 		direction,
@@ -292,9 +427,11 @@ function compareOptionalMetric(
 	direction: BenchmarkMetricComparison['direction'],
 	baseline: number | undefined,
 	candidate: number | undefined,
+	threshold: number,
+	pValue: number | undefined,
 ): BenchmarkMetricComparison | undefined {
 	if (baseline === undefined || candidate === undefined) return undefined
-	return compareMetric(name, direction, baseline, candidate)
+	return compareMetric(name, direction, baseline, candidate, threshold, pValue)
 }
 
 function getRuntimeInfo(): BenchmarkRuntimeInfo {

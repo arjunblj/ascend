@@ -9,12 +9,19 @@ export interface RangeRef {
 	readonly sheet?: string
 }
 
+const COLUMN_TO_INDEX_CACHE = new Map<string, number>()
+
 export function columnToIndex(col: string): number {
+	const upper = col.toUpperCase()
+	const cached = COLUMN_TO_INDEX_CACHE.get(upper)
+	if (cached !== undefined) return cached
 	let result = 0
-	for (let i = 0; i < col.length; i++) {
-		result = result * 26 + (col.charCodeAt(i) - 64)
+	for (let i = 0; i < upper.length; i++) {
+		result = result * 26 + (upper.charCodeAt(i) - 64)
 	}
-	return result - 1
+	const index = result - 1
+	if (index >= 0 && index < 702) COLUMN_TO_INDEX_CACHE.set(upper, index)
+	return index
 }
 
 const COLUMN_CACHE: string[] = []
@@ -31,7 +38,9 @@ function computeColumnLabel(index: number): string {
 }
 
 for (let i = 0; i < 702; i++) {
-	COLUMN_CACHE.push(computeColumnLabel(i))
+	const label = computeColumnLabel(i)
+	COLUMN_CACHE.push(label)
+	COLUMN_TO_INDEX_CACHE.set(label, i)
 }
 
 export function indexToColumn(index: number): string {

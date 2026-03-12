@@ -122,6 +122,7 @@ export function analyzeWorkbookFormulas(
 	const sheetNameIndex = createSheetNameIndex(workbook)
 	const formulas = new Map<CellKey, IndexedFormula>()
 	const sharedMasterCache = new Map<string, FormulaNode>()
+	const nameResolveCache = new Map<string, FormulaRef[]>()
 
 	for (let sheetIndex = 0; sheetIndex < workbook.sheets.length; sheetIndex++) {
 		const sheet = workbook.sheets[sheetIndex]
@@ -163,7 +164,14 @@ export function analyzeWorkbookFormulas(
 					ast = parsed.value
 				}
 
-				const refs = extractRefsWithNames(ast, workbook, sheetNameIndex, sheetIndex, [])
+				const refs = extractRefsWithNames(
+					ast,
+					workbook,
+					sheetNameIndex,
+					sheetIndex,
+					[],
+					nameResolveCache,
+				)
 				const volatile = hasVolatileFunction(ast)
 				formulas.set(key, {
 					key,
@@ -550,6 +558,7 @@ function extractRefsWithNames(
 	sheetNameIndex: ReadonlyMap<string, number>,
 	sheetIndex: number,
 	seenNames: readonly string[],
+	nameResolveCache: Map<string, FormulaRef[]>,
 ): FormulaRef[] {
 	const refs = extractRefs(node)
 	const nameRefs = collectNameRefs(node)
@@ -565,9 +574,6 @@ function extractRefsWithNames(
 				: `sheet:${entry.scope.sheetId}:${entry.name.toLowerCase()}`
 		if (seenNames.includes(entryKey)) continue
 
-		const parsed = cachedParseFormula(entry.formula)
-		if (!parsed.ok) continue
-
 		let formulaSheetIndex = sheetIndex
 		if (entry.scope.kind === 'sheet') {
 			const scope = entry.scope
@@ -577,12 +583,22 @@ function extractRefsWithNames(
 			if (localSheetIndex >= 0) formulaSheetIndex = localSheetIndex
 		}
 
-		refs.push(
-			...extractRefsWithNames(parsed.value, workbook, sheetNameIndex, formulaSheetIndex, [
-				...seenNames,
-				entryKey,
-			]),
-		)
+		const cacheKey = `${entryKey}:${formulaSheetIndex}`
+		let resolved = nameResolveCache.get(cacheKey)
+		if (resolved === undefined) {
+			const parsed = cachedParseFormula(entry.formula)
+			if (!parsed.ok) continue
+			resolved = extractRefsWithNames(
+				parsed.value,
+				workbook,
+				sheetNameIndex,
+				formulaSheetIndex,
+				[...seenNames, entryKey],
+				nameResolveCache,
+			)
+			nameResolveCache.set(cacheKey, resolved)
+		}
+		refs.push(...resolved)
 	}
 	return refs
 }

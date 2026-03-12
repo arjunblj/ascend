@@ -20,7 +20,9 @@ describe('analyzeWorkbook', () => {
 
 		const formulas = [...analysis.formulas.values()]
 		expect(formulas.some((formula) => formula.volatile)).toBe(true)
-		expect(analysis.dependencyGraph.getPrecedents(cellKey(0, 0, 1))).toEqual([cellKey(0, 0, 0)])
+		const p = analysis.dependencyGraph.getPrecedents(cellKey(0, 0, 1))
+		expect(p.cells).toEqual([cellKey(0, 0, 0)])
+		expect(p.ranges).toEqual([])
 	})
 
 	test('can scope analysis to a range', () => {
@@ -56,9 +58,16 @@ describe('analyzeWorkbook', () => {
 				endCol: 0,
 			},
 		])
-		expect(analysis.dependencyGraph.getPrecedents(cellKey(0, 0, 1))).toEqual([
-			cellKey(0, 0, 0),
-			cellKey(0, 1, 0),
+		const p = analysis.dependencyGraph.getPrecedents(cellKey(0, 0, 1))
+		expect(p.cells).toEqual([])
+		expect(p.ranges).toEqual([
+			{
+				sheetIndex: 0,
+				startRow: 0,
+				startCol: 0,
+				endRow: 1,
+				endCol: 0,
+			},
 		])
 		expect(analysis.dependencyGraph.getDependents(cellKey(0, 1, 0))).toEqual([cellKey(0, 0, 1)])
 	})

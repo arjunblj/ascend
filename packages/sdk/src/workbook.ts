@@ -59,6 +59,7 @@ export class AscendWorkbook extends WorkbookReadView {
 	private readonly dirtySheets = new Set<string>()
 	private pendingDirtyRefs: string[] = []
 	private pendingFullRecalc = false
+	private _batchMode = false
 	private workbookMetaDirty = false
 	private calcStateDirty = false
 	private sharedStringsDirty = false
@@ -254,7 +255,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		this.sharedStringsDirty ||= dirtyFlags.sharedStringsDirty
 		this.stylesDirty ||= dirtyFlags.stylesDirty
 		if (result.value.recalcRequired) this.mergePendingRecalcTargets(ops)
-		this.clearReadCaches()
+		if (!this._batchMode) this.clearReadCaches()
 		return {
 			affectedCells: result.value.affectedCells,
 			sheetsModified: result.value.sheetsModified,
@@ -263,13 +264,35 @@ export class AscendWorkbook extends WorkbookReadView {
 		}
 	}
 
-	batch(ops: readonly Operation[]): BatchResult {
+	batch(ops: readonly Operation[]): BatchResult
+	batch(fn: () => void): void
+	batch(opsOrFn: readonly Operation[] | (() => void)): BatchResult | undefined {
+		if (typeof opsOrFn === 'function') {
+			if (this.loadInfo.isPartial) {
+				throw new AscendException(
+					ascendError(
+						'VALIDATION_ERROR',
+						'Cannot run batch in a partial workbook view. Reopen with a full load before editing.',
+					),
+				)
+			}
+			this._batchMode = true
+			let completed = false
+			try {
+				opsOrFn()
+				completed = true
+			} finally {
+				this._batchMode = false
+				if (completed) this.recalc()
+			}
+			return
+		}
 		if (this.loadInfo.isPartial) {
 			return { errors: [partialWorkbookEditError()] }
 		}
-		const dirtyFlags = this.deriveDirtyFlags(ops)
+		const dirtyFlags = this.deriveDirtyFlags(opsOrFn)
 		const nextWorkbook = cloneWorkbook(this.wb)
-		const result = applyOperations(nextWorkbook, ops)
+		const result = applyOperations(nextWorkbook, opsOrFn)
 		if (!result.ok) {
 			return { errors: [result.error] }
 		}
@@ -281,7 +304,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		this.calcStateDirty ||= dirtyFlags.workbookMetaDirty || result.value.recalcRequired
 		this.sharedStringsDirty ||= dirtyFlags.sharedStringsDirty
 		this.stylesDirty ||= dirtyFlags.stylesDirty
-		if (result.value.recalcRequired) this.mergePendingRecalcTargets(ops)
+		if (result.value.recalcRequired) this.mergePendingRecalcTargets(opsOrFn)
 		this.clearReadCaches()
 		return { errors: [] }
 	}

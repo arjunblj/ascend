@@ -191,8 +191,8 @@ function isNumericFormula(ops: readonly number[]): boolean {
 	return true
 }
 
-export function compileFormula(node: FormulaNode, skipCheck?: boolean): CompiledFormula | null {
-	if (!skipCheck && !shouldCompile(node)) return null
+export function compileFormula(node: FormulaNode): CompiledFormula | null {
+	if (!shouldCompile(node)) return null
 
 	const ops: number[] = []
 	const constants: (string | number | boolean | CellValue | FormulaNode)[] = []

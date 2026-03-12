@@ -30,6 +30,9 @@ const ATTR_RE = /([A-Za-z_][\w:.-]*)="([^"]*)"/g
 const TEXT_NODE_RE =
 	/<([A-Za-z_][\w:.-]*)\b([^>]*)>([\s\S]*?)<\/\1>|<([A-Za-z_][\w:.-]*)\b([^>]*)\/>/g
 
+const NO_FORMULA: { text: null; info: undefined } = { text: null, info: undefined }
+const NULL_FORMULA_TEXT: { text: null } = { text: null }
+
 interface CellPosition {
 	readonly row: number
 	readonly col: number
@@ -175,6 +178,7 @@ function parseSheetDataXml(xml: string, sheet: Sheet, ctx: SheetParseContext): v
 	let rowCursor = sheetData.contentStart
 	let currentRow = -1
 	const fallbackPos = { row: 0, col: 0 }
+	const cellOut = { row: 0, col: 0 }
 
 	while (true) {
 		const rowOpen = xml.indexOf('<row', rowCursor)
@@ -212,24 +216,13 @@ function parseSheetDataXml(xml: string, sheet: Sheet, ctx: SheetParseContext): v
 					: ''
 			fallbackPos.row = row
 			fallbackPos.col = nextCol
-			const parsed = useFastPath
-				? parseFastCell(rawAttrs, innerXml, ctx, sharedFormulaMasters, fallbackPos)
-				: parseSlowCell(rawAttrs, innerXml, ctx, sharedFormulaMasters, fallbackPos)
+			const ok = useFastPath
+				? parseFastCell(rawAttrs, innerXml, ctx, sharedFormulaMasters, fallbackPos, sheet, cellOut)
+				: parseSlowCell(rawAttrs, innerXml, ctx, sharedFormulaMasters, fallbackPos, sheet, cellOut)
 			cellCursor =
 				selfClosing || cellClose === -1 || cellClose > rowClose ? cellTagEnd + 1 : cellClose + 4
-			if (!parsed) continue
-			nextCol = parsed.col + 1
-			const cell = parsed.cell
-			if (cell) {
-				sheet.cells.setResolved(
-					parsed.row,
-					parsed.col,
-					cell.value,
-					cell.formula,
-					cell.styleId,
-					cell.formulaInfo,
-				)
-			}
+			if (!ok) continue
+			nextCol = cellOut.col + 1
 		}
 		rowCursor = rowClose + 6
 	}
@@ -240,17 +233,28 @@ function parseSlowCell(
 	innerXml: string,
 	ctx: SheetParseContext,
 	sharedFormulaMasters: SharedFormulaMasterMap,
-	fallbackPosition?: CellPosition,
-): { row: number; col: number; cell: Cell | undefined } | undefined {
+	fallbackPosition: CellPosition | undefined,
+	sheet: Sheet,
+	out: { row: number; col: number },
+): boolean {
 	const cellNode = buildCellNode(rawAttrs, innerXml)
 	const ref = attr(cellNode, 'r')
 	const pos = ref ? parseCellRef(ref) : fallbackPosition
-	if (!pos) return undefined
-	return {
-		row: pos.row,
-		col: pos.col,
-		cell: parseCellValue(cellNode, ctx, pos.row, pos.col, sharedFormulaMasters),
+	if (!pos) return false
+	out.row = pos.row
+	out.col = pos.col
+	const cell = parseCellValue(cellNode, ctx, pos.row, pos.col, sharedFormulaMasters)
+	if (cell) {
+		sheet.cells.setResolved(
+			pos.row,
+			pos.col,
+			cell.value,
+			cell.formula,
+			cell.styleId,
+			cell.formulaInfo,
+		)
 	}
+	return true
 }
 
 function parseFastCell(
@@ -258,13 +262,15 @@ function parseFastCell(
 	innerXml: string,
 	ctx: SheetParseContext,
 	sharedFormulaMasters: SharedFormulaMasterMap,
-	fallbackPosition?: CellPosition,
-): { row: number; col: number; cell: Cell | undefined } | undefined {
+	fallbackPosition: CellPosition | undefined,
+	sheet: Sheet,
+	out: { row: number; col: number },
+): boolean {
 	const pos = resolveCellPosition(rawAttrs, fallbackPosition)
-	if (!pos) return undefined
+	if (!pos) return false
 	const type = rawAttr(rawAttrs, 't')
 	if (type === 'inlineStr' || innerXml.includes('<is')) {
-		return parseSlowCell(rawAttrs, innerXml, ctx, sharedFormulaMasters, pos)
+		return parseSlowCell(rawAttrs, innerXml, ctx, sharedFormulaMasters, pos, sheet, out)
 	}
 
 	const pool = ctx.valuePool
@@ -274,7 +280,7 @@ function parseFastCell(
 	const metadataIndex = rawNumAttr(rawAttrs, 'cm')
 	const formulaSpec =
 		ctx.valuesOnly && rawValue !== undefined && rawValue !== ''
-			? { text: null, info: undefined }
+			? NO_FORMULA
 			: parseFormulaText(
 					extractRawFormulaNode(innerXml),
 					pos.row,
@@ -321,16 +327,13 @@ function parseFastCell(
 	} else if (formulaSpec.text) {
 		value = EMPTY
 	} else {
-		return undefined
+		return false
 	}
 
-	return {
-		row: pos.row,
-		col: pos.col,
-		cell: binding
-			? { value, formula: formulaSpec.text, styleId, formulaInfo: binding }
-			: { value, formula: formulaSpec.text, styleId },
-	}
+	out.row = pos.row
+	out.col = pos.col
+	sheet.cells.setResolved(pos.row, pos.col, value, formulaSpec.text, styleId, binding)
+	return true
 }
 
 function locateSheetData(xml: string): { contentStart: number; contentEnd: number } | null {
@@ -548,7 +551,7 @@ function parseCellValue(
 	const metadataIndex = numAttr(c, 'cm')
 	const formulaSpec =
 		ctx.valuesOnly && rawValue !== undefined && rawValue !== null && rawValue !== ''
-			? { text: null, info: undefined }
+			? NO_FORMULA
 			: parseFormulaText(c.f, row, col, sharedFormulaMasters, pool, ctx.formulaFeatures)
 	const formula = formulaSpec.text
 	const binding = attachDynamicArrayBinding(
@@ -611,7 +614,7 @@ function parseFormulaText(
 	pool?: ValueInternPool,
 	formulaFeatures?: SheetFormulaFeatures,
 ): { text: string | null; info?: Cell['formulaInfo'] } {
-	if (formulaNode === undefined || formulaNode === null) return { text: null }
+	if (formulaNode === undefined || formulaNode === null) return NULL_FORMULA_TEXT
 	if (
 		typeof formulaNode === 'string' ||
 		typeof formulaNode === 'number' ||
@@ -653,7 +656,7 @@ function parseFormulaText(
 			formulaFeatures,
 		)
 	}
-	return { text: null }
+	return NULL_FORMULA_TEXT
 }
 
 function parseResolvedFormulaText(
@@ -693,7 +696,7 @@ function parseResolvedFormulaText(
 			}
 		}
 		const master = sharedFormulaMasters.get(sharedIndex)
-		if (!master) return { text: null }
+		if (!master) return NULL_FORMULA_TEXT
 		return {
 			text: null,
 			info: {
@@ -718,7 +721,7 @@ function parseResolvedFormulaText(
 			info: { kind: 'array', ...(ref ? { ref } : {}) },
 		}
 	}
-	if (text === undefined || text === null) return { text: null }
+	if (text === undefined || text === null) return NULL_FORMULA_TEXT
 	const formula = normalizeStoredFormulaText(String(text))
 	return { text: pool ? pool.internString(formula) : formula }
 }

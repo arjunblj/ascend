@@ -1528,3 +1528,202 @@ describe('large range correctness', () => {
 		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(2))
 	})
 })
+
+describe('LAMBDA, MAP, REDUCE, SCAN', () => {
+	test('standalone LAMBDA returns #CALC!', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'LAMBDA(x,x+1)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#CALC!'))
+	})
+
+	test('defined name LAMBDA can be called as a function', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		wb.definedNames.set('AddOne', 'LAMBDA(x,x+1)')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'AddOne(10)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(11))
+	})
+
+	test('defined name LAMBDA with multiple parameters', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		wb.definedNames.set('Add', 'LAMBDA(a,b,a+b)')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'Add(3,7)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(10))
+	})
+
+	test('defined name LAMBDA with wrong arg count returns #VALUE!', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		wb.definedNames.set('AddOne', 'LAMBDA(x,x+1)')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'AddOne(1,2)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#VALUE!'))
+	})
+
+	test('MAP applies lambda to each element in a range', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, {
+			value: EMPTY,
+			formula: 'MAP(A1:A3,LAMBDA(x,x*10))',
+			styleId: sid,
+		})
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(10))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(20))
+		expect(sheet.cells.get(2, 1)?.value).toEqual(numberValue(30))
+	})
+
+	test('MAP with single-cell input returns scalar', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(5), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, {
+			value: EMPTY,
+			formula: 'MAP(A1,LAMBDA(x,x*2))',
+			styleId: sid,
+		})
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(10))
+	})
+
+	test('MAP with defined name lambda', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		wb.definedNames.set('Double', 'LAMBDA(x,x*2)')
+		sheet.cells.set(0, 0, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(4), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'MAP(A1:A2,Double)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(6))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(8))
+	})
+
+	test('REDUCE accumulates values with lambda', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, {
+			value: EMPTY,
+			formula: 'REDUCE(0,A1:A3,LAMBDA(acc,x,acc+x))',
+			styleId: sid,
+		})
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(6))
+	})
+
+	test('REDUCE with non-zero initial value', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, {
+			value: EMPTY,
+			formula: 'REDUCE(1,A1:A2,LAMBDA(acc,x,acc*x))',
+			styleId: sid,
+		})
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(6))
+	})
+
+	test('SCAN produces running accumulation results', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, {
+			value: EMPTY,
+			formula: 'SCAN(0,A1:A3,LAMBDA(acc,x,acc+x))',
+			styleId: sid,
+		})
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(3))
+		expect(sheet.cells.get(2, 1)?.value).toEqual(numberValue(6))
+	})
+
+	test('SCAN with multiplication', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(4), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, {
+			value: EMPTY,
+			formula: 'SCAN(1,A1:A3,LAMBDA(acc,x,acc*x))',
+			styleId: sid,
+		})
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(6))
+		expect(sheet.cells.get(2, 1)?.value).toEqual(numberValue(24))
+	})
+
+	test('MAP propagates error from lambda', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(0), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, {
+			value: EMPTY,
+			formula: 'MAP(A1:A2,LAMBDA(x,1/x))',
+			styleId: sid,
+		})
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(errorValue('#DIV/0!'))
+	})
+
+	test('REDUCE propagates error from lambda', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(0), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, {
+			value: EMPTY,
+			formula: 'REDUCE(1,A1,LAMBDA(acc,x,acc/x))',
+			styleId: sid,
+		})
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(errorValue('#DIV/0!'))
+	})
+
+	test('LAMBDA body can reference cells', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(100), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, {
+			value: EMPTY,
+			formula: 'MAP(B1:B2,LAMBDA(x,x+A1))',
+			styleId: sid,
+		})
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 2)?.value).toEqual(numberValue(101))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(numberValue(102))
+	})
+})

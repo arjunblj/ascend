@@ -32,6 +32,7 @@ export {
 	type FunctionDef,
 	type FunctionEvalContext,
 	functionRegistry,
+	getRange,
 	iterAreaRows,
 	type LookupVectorCache,
 	rangeShape,

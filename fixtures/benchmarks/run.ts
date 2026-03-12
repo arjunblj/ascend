@@ -4,6 +4,7 @@ import {
 	defaultCalcContext,
 	recalculate,
 } from '../../packages/engine/src/index.ts'
+import { clearGlobalParseCache, parseFormula } from '../../packages/formulas/src/index.ts'
 import { readCsv, writeCsv } from '../../packages/io-csv/src/index.ts'
 import { readXlsx, writeXlsx } from '../../packages/io-xlsx/src/index.ts'
 import { booleanValue, EMPTY, numberValue, stringValue } from '../../packages/schema/src/index.ts'
@@ -992,6 +993,152 @@ const scenarios: readonly Scenario[] = [
 		run(input) {
 			const result = writeCsv(requireWorkbook(input))
 			if (!result.ok) throw new Error(result.error.message)
+		},
+	},
+	{
+		name: 'recalc-single-dirty',
+		category: 'calc',
+		build() {
+			const workbook = buildFormulaChainWorkbook(10_000)
+			recalculate(workbook, defaultCalcContext())
+			setNumberCell(workbook, 0, 0, 42)
+			return { workbook, rows: 10_000, cols: 1, cells: 10_000 }
+		},
+		run(input) {
+			recalculate(requireWorkbook(input), defaultCalcContext(), {
+				dirtyOnly: true,
+				dirtyRefs: ['Sheet1!A1'],
+			})
+		},
+	},
+	{
+		name: 'recalc-volatile',
+		category: 'calc',
+		build() {
+			const workbook = createWorkbook()
+			workbook.addSheet('Sheet1')
+			for (let r = 0; r < 500; r++) {
+				setFormulaCell(workbook, r, 0, 'RAND()')
+			}
+			for (let r = 0; r < 500; r++) {
+				setFormulaCell(workbook, r, 1, 'NOW()')
+			}
+			return { workbook, rows: 500, cols: 2, cells: 1000 }
+		},
+		run(input) {
+			recalculate(requireWorkbook(input), defaultCalcContext())
+		},
+	},
+	{
+		name: 'recalc-nested-if',
+		category: 'calc',
+		build() {
+			const workbook = createWorkbook()
+			workbook.addSheet('Sheet1')
+			for (let r = 0; r < 2000; r++) {
+				setNumberCell(workbook, r, 0, (r * 7) % 100)
+				setFormulaCell(workbook, r, 1, `IF(A${r + 1}>50,IF(A${r + 1}>75,3,2),IF(A${r + 1}>25,1,0))`)
+			}
+			return { workbook, rows: 2000, cols: 2, cells: 4000 }
+		},
+		run(input) {
+			recalculate(requireWorkbook(input), defaultCalcContext())
+		},
+	},
+	{
+		name: 'recalc-index-match',
+		category: 'calc',
+		build() {
+			const workbook = createWorkbook()
+			workbook.addSheet('Sheet1')
+			for (let r = 0; r < 10_000; r++) {
+				setStringCell(workbook, r, 0, `key-${String(r + 1).padStart(5, '0')}`)
+				setNumberCell(workbook, r, 1, (r + 1) * 10)
+			}
+			for (let r = 0; r < 1000; r++) {
+				const keyIndex = 10_000 - ((r * 37) % 10_000) - 1
+				setStringCell(workbook, r, 3, `key-${String(keyIndex + 1).padStart(5, '0')}`)
+				setFormulaCell(workbook, r, 4, `INDEX(B$1:B$10000,MATCH(D${r + 1},A$1:A$10000,0))`)
+			}
+			return { workbook, rows: 10_000, cols: 5, cells: 22_000 }
+		},
+		run(input) {
+			recalculate(requireWorkbook(input), defaultCalcContext())
+		},
+	},
+	{
+		name: 'apply-operations-batch',
+		category: 'workflow',
+		build() {
+			const workbook = buildDenseWorkbook(500, 20)
+			return { workbook, rows: 500, cols: 20, cells: 10_000 }
+		},
+		run(input) {
+			const workbook = requireWorkbook(input)
+			const updates: Array<{ ref: string; value: number }> = []
+			for (let i = 0; i < 500; i++) {
+				const row = ((i * 7) % 500) + 1
+				const col = i % 20
+				const ref = `${String.fromCharCode(65 + col)}${row}`
+				updates.push({ ref, value: i * 10 })
+			}
+			applyOperations(workbook, [{ op: 'setCells', sheet: 'Sheet1', updates }])
+		},
+	},
+	{
+		name: 'parse-formulas-10k',
+		category: 'calc',
+		build() {
+			const formulas: string[] = []
+			for (let i = 0; i < 10_000; i++) {
+				switch (i % 3) {
+					case 0:
+						formulas.push(`SUM(A${i + 1}:A${i + 100})`)
+						break
+					case 1:
+						formulas.push(`IF(B${i + 1}>0,C${i + 1}*2,D${i + 1}+1)`)
+						break
+					default:
+						formulas.push(`VLOOKUP(E${i + 1},A$1:D$1000,3,FALSE)`)
+						break
+				}
+			}
+			return { content: formulas.join('\n'), rows: 10_000, cols: 1, cells: 10_000 }
+		},
+		run(input) {
+			const formulas = requireContent(input).split('\n')
+			clearGlobalParseCache()
+			for (const formula of formulas) {
+				parseFormula(formula)
+			}
+		},
+	},
+	{
+		name: 'recalc-1m-dense',
+		category: 'calc',
+		build() {
+			const workbook = createWorkbook()
+			workbook.addSheet('Sheet1')
+			const sheet = workbook.sheets[0]
+			if (!sheet) throw new Error('Benchmark workbook missing first sheet')
+			for (let r = 0; r < 100_000; r++) {
+				for (let c = 0; c < 10; c++) {
+					sheet.cells.set(r, c, {
+						value: numberValue(r * 10 + c + 1),
+						formula: null,
+						styleId: SID,
+					})
+				}
+			}
+			for (let i = 0; i < 1000; i++) {
+				const col = i % 10
+				const letter = String.fromCharCode(65 + col)
+				setFormulaCell(workbook, 100_000 + i, col, `SUM(${letter}1:${letter}100000)`)
+			}
+			return { workbook, rows: 101_000, cols: 10, cells: 1_001_000 }
+		},
+		run(input) {
+			recalculate(requireWorkbook(input), defaultCalcContext())
 		},
 	},
 ]

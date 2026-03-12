@@ -637,4 +637,36 @@ export const dynamicFunctions: FunctionDef[] = [
 			return 'kind' in chosen ? chosen : scalarOrArray(chosen)
 		},
 	},
+	{
+		name: 'LAMBDA',
+		minArgs: 2,
+		maxArgs: 255,
+		evaluate() {
+			return errorValue('#CALC!')
+		},
+	},
+	{
+		name: 'MAP',
+		minArgs: 2,
+		maxArgs: 2,
+		evaluate(args) {
+			return args[0]?.value ?? EMPTY
+		},
+	},
+	{
+		name: 'REDUCE',
+		minArgs: 3,
+		maxArgs: 3,
+		evaluate(args) {
+			return args[0]?.value ?? EMPTY
+		},
+	},
+	{
+		name: 'SCAN',
+		minArgs: 3,
+		maxArgs: 3,
+		evaluate(args) {
+			return args[0]?.value ?? EMPTY
+		},
+	},
 ]

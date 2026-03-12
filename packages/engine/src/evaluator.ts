@@ -6,6 +6,7 @@ import {
 	type ExactLookupCache,
 	type FunctionEvalContext,
 	functionRegistry,
+	getRange,
 	type LookupVectorCache,
 	cachedParseFormula as sharedCachedParseFormula,
 	toNumber,
@@ -373,6 +374,18 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 	if (upperName === 'LET') {
 		return evalLet(argNodes, ctx)
 	}
+	if (upperName === 'LAMBDA') {
+		return errorValue('#CALC!')
+	}
+	if (upperName === 'MAP') {
+		return evalMap(argNodes, ctx)
+	}
+	if (upperName === 'REDUCE') {
+		return evalReduce(argNodes, ctx)
+	}
+	if (upperName === 'SCAN') {
+		return evalScan(argNodes, ctx)
+	}
 	if (upperName === 'IF') {
 		return evalIf(argNodes, ctx)
 	}
@@ -393,7 +406,14 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 	}
 
 	const def = functionRegistry.get(upperName)
-	if (!def) return errorValue('#NAME?')
+	if (!def) {
+		const lambda = extractLambdaFromName(name, ctx)
+		if (lambda) {
+			const evaluatedArgs = argNodes.map((node) => evaluate(node, ctx))
+			return invokeLambda(lambda, evaluatedArgs)
+		}
+		return errorValue('#NAME?')
+	}
 	if (argNodes.length < def.minArgs || argNodes.length > def.maxArgs) {
 		return errorValue('#VALUE!')
 	}
@@ -1109,6 +1129,107 @@ function makeWholeColumnArg(
 			materializedEndCol: endCol,
 		}),
 	])
+}
+
+interface LambdaInfo {
+	readonly params: readonly string[]
+	readonly body: FormulaNode
+	readonly ctx: EvalContext
+}
+
+function extractLambda(node: FormulaNode, ctx: EvalContext): LambdaInfo | null {
+	if (node.type === 'function' && node.name.toUpperCase() === 'LAMBDA') {
+		if (node.args.length < 2) return null
+		const params: string[] = []
+		for (let i = 0; i < node.args.length - 1; i++) {
+			const p = node.args[i]
+			if (!p || p.type !== 'name') return null
+			params.push(p.name.toLowerCase())
+		}
+		return { params, body: node.args[node.args.length - 1] as FormulaNode, ctx }
+	}
+	if (node.type === 'name') {
+		if (!node.sheet && ctx.letBindings?.has(node.name.toLowerCase())) return null
+		const resolved = resolveDefinedName(node.name, node.sheet, ctx)
+		if (!resolved) return null
+		return extractLambda(resolved.ast, resolved.ctx)
+	}
+	return null
+}
+
+function extractLambdaFromName(name: string, ctx: EvalContext): LambdaInfo | null {
+	const resolved = resolveDefinedName(name, undefined, ctx)
+	if (!resolved) return null
+	return extractLambda(resolved.ast, resolved.ctx)
+}
+
+function invokeLambda(lambda: LambdaInfo, args: readonly CellValue[]): CellValue {
+	if (lambda.params.length !== args.length) return errorValue('#VALUE!')
+	const bindings = new Map<string, CellValue>(lambda.ctx.letBindings)
+	for (let i = 0; i < lambda.params.length; i++) {
+		bindings.set(lambda.params[i] as string, args[i] as CellValue)
+	}
+	return evaluate(lambda.body, { ...lambda.ctx, letBindings: bindings })
+}
+
+function evalMap(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
+	if (argNodes.length !== 2) return errorValue('#VALUE!')
+	const arrayArg = resolveArg(argNodes[0] as FormulaNode, ctx)
+	const lambda = extractLambda(argNodes[1] as FormulaNode, ctx)
+	if (!lambda) return errorValue('#VALUE!')
+	if (lambda.params.length !== 1) return errorValue('#VALUE!')
+	const range = getRange(arrayArg)
+	const rows: ScalarCellValue[][] = []
+	for (const row of range) {
+		const resultRow: ScalarCellValue[] = []
+		for (const cell of row) {
+			const result = invokeLambda(lambda, [cell])
+			if (result.kind === 'error') return result
+			resultRow.push(topLeftScalar(result))
+		}
+		rows.push(resultRow)
+	}
+	if (rows.length === 1 && rows[0]?.length === 1) return rows[0][0] ?? EMPTY
+	return arrayValue(rows)
+}
+
+function evalReduce(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
+	if (argNodes.length !== 3) return errorValue('#VALUE!')
+	let accumulator = evaluate(argNodes[0] as FormulaNode, ctx)
+	const arrayArg = resolveArg(argNodes[1] as FormulaNode, ctx)
+	const lambda = extractLambda(argNodes[2] as FormulaNode, ctx)
+	if (!lambda) return errorValue('#VALUE!')
+	if (lambda.params.length !== 2) return errorValue('#VALUE!')
+	const range = getRange(arrayArg)
+	for (const row of range) {
+		for (const cell of row) {
+			accumulator = invokeLambda(lambda, [accumulator, cell])
+			if (accumulator.kind === 'error') return accumulator
+		}
+	}
+	return accumulator
+}
+
+function evalScan(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
+	if (argNodes.length !== 3) return errorValue('#VALUE!')
+	let accumulator = evaluate(argNodes[0] as FormulaNode, ctx)
+	const arrayArg = resolveArg(argNodes[1] as FormulaNode, ctx)
+	const lambda = extractLambda(argNodes[2] as FormulaNode, ctx)
+	if (!lambda) return errorValue('#VALUE!')
+	if (lambda.params.length !== 2) return errorValue('#VALUE!')
+	const range = getRange(arrayArg)
+	const rows: ScalarCellValue[][] = []
+	for (const row of range) {
+		const resultRow: ScalarCellValue[] = []
+		for (const cell of row) {
+			accumulator = invokeLambda(lambda, [accumulator, cell])
+			if (accumulator.kind === 'error') return accumulator
+			resultRow.push(topLeftScalar(accumulator))
+		}
+		rows.push(resultRow)
+	}
+	if (rows.length === 1 && rows[0]?.length === 1) return rows[0][0] ?? EMPTY
+	return arrayValue(rows)
 }
 
 function evalLet(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {

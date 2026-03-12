@@ -388,6 +388,15 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 	if (upperName === 'IFNA') {
 		return evalIfNa(argNodes, ctx)
 	}
+	if (upperName === 'CHOOSE') {
+		return evalChoose(argNodes, ctx)
+	}
+	if (upperName === 'SWITCH') {
+		return evalSwitch(argNodes, ctx)
+	}
+	if (upperName === 'IFS') {
+		return evalIfs(argNodes, ctx)
+	}
 
 	const def = functionRegistry.get(upperName)
 	if (!def) return errorValue('#NAME?')
@@ -418,6 +427,54 @@ function evalIfError(argNodes: readonly FormulaNode[], ctx: EvalContext): CellVa
 function evalIfNa(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
 	const value = evalLazyArg(argNodes[0], ctx)
 	return value.kind === 'error' && value.value === '#N/A' ? evalLazyArg(argNodes[1], ctx) : value
+}
+
+function evalChoose(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
+	if (argNodes.length < 2) return errorValue('#VALUE!')
+	const idxVal = evaluate(argNodes[0] ?? { type: 'missing' }, ctx)
+	if (idxVal.kind === 'error') return idxVal
+	const n = coerceToNumber(idxVal)
+	if (n === null) return errorValue('#VALUE!')
+	const idx = Math.floor(n)
+	if (idx < 1 || idx >= argNodes.length) return errorValue('#VALUE!')
+	return evalLazyArg(argNodes[idx], ctx)
+}
+
+function evalSwitch(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
+	if (argNodes.length < 3) return errorValue('#VALUE!')
+	const expr = evaluate(argNodes[0] ?? { type: 'missing' }, ctx)
+	if (expr.kind === 'error') return expr
+	const remaining = argNodes.length - 1
+	const hasDefault = remaining % 2 === 1
+	const pairEnd = hasDefault ? argNodes.length - 1 : argNodes.length
+	for (let i = 1; i < pairEnd; i += 2) {
+		const val = evaluate(argNodes[i] ?? { type: 'missing' }, ctx)
+		if (val.kind === 'error') return val
+		if (switchValuesMatch(expr, val)) return evalLazyArg(argNodes[i + 1], ctx)
+	}
+	return hasDefault ? evalLazyArg(argNodes[argNodes.length - 1], ctx) : errorValue('#N/A')
+}
+
+function switchValuesMatch(a: CellValue, b: CellValue): boolean {
+	if (a.kind === 'number' && b.kind === 'number') return a.value === b.value
+	if (a.kind === 'string' && b.kind === 'string')
+		return a.value.toLowerCase() === b.value.toLowerCase()
+	if (a.kind === 'boolean' && b.kind === 'boolean') return a.value === b.value
+	if (a.kind === 'error' && b.kind === 'error') return a.value === b.value
+	if (a.kind === 'empty' && b.kind === 'empty') return true
+	return false
+}
+
+function evalIfs(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
+	if (argNodes.length < 2 || argNodes.length % 2 !== 0) return errorValue('#VALUE!')
+	for (let i = 0; i + 1 < argNodes.length; i += 2) {
+		const v = evaluate(argNodes[i] ?? { type: 'missing' }, ctx)
+		if (v.kind === 'error') return v
+		const cond = coerceToBoolean(v)
+		if (typeof cond !== 'boolean') return cond
+		if (cond) return evalLazyArg(argNodes[i + 1], ctx)
+	}
+	return errorValue('#N/A')
 }
 
 function evalFormulaText(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {

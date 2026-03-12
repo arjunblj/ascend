@@ -1454,4 +1454,77 @@ describe('large range correctness', () => {
 		expect(sheet.cells.get(50, 1)?.value).toEqual(numberValue(60))
 		expect(sheet.cells.get(150, 1)?.value).toEqual(numberValue(300))
 	})
+
+	test('constant folding: 2*3+A1 folds 2*3 to 6 at compile time', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(4), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: EMPTY, formula: '2*3+A1', styleId: sid })
+		sheet.cells.set(2, 0, { value: EMPTY, formula: '10/2-A1', styleId: sid })
+		sheet.cells.set(3, 0, { value: EMPTY, formula: '2^10+A1', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(10))
+		expect(sheet.cells.get(2, 0)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(3, 0)?.value).toEqual(numberValue(1028))
+	})
+
+	test('lazy CHOOSE only evaluates selected branch', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(0, 3, { value: numberValue(30), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, {
+			value: EMPTY,
+			formula: 'CHOOSE(A1,B1,C1,D1)',
+			styleId: sid,
+		})
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(20))
+	})
+
+	test('lazy SWITCH only evaluates matched branch', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('B'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, {
+			value: EMPTY,
+			formula: 'SWITCH(A1,"A",10,"B",20,"C",30,99)',
+			styleId: sid,
+		})
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(20))
+	})
+
+	test('lazy SWITCH returns default when no match', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Z'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, {
+			value: EMPTY,
+			formula: 'SWITCH(A1,"A",10,"B",20,99)',
+			styleId: sid,
+		})
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(99))
+	})
+
+	test('lazy IFS only evaluates first true condition result', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(75), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, {
+			value: EMPTY,
+			formula: 'IFS(A1>=90,4,A1>=80,3,A1>=70,2,A1>=60,1)',
+			styleId: sid,
+		})
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(2))
+	})
 })

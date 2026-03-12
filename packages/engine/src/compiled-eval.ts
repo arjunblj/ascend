@@ -165,6 +165,38 @@ export function compileFormula(node: FormulaNode): CompiledFormula | null {
 		return constants.length - 1
 	}
 
+	function tryFoldConstant(n: FormulaNode): number | null {
+		if (n.type === 'number') return n.value
+		if (n.type === 'boolean') return n.value ? 1 : 0
+		if (n.type === 'unary' && n.op === '-') {
+			const inner = tryFoldConstant(n.operand)
+			if (inner !== null) return -inner
+		}
+		if (n.type === 'unary' && n.op === '%') {
+			const inner = tryFoldConstant(n.operand)
+			if (inner !== null) return inner / 100
+		}
+		if (n.type === 'binary') {
+			const left = tryFoldConstant(n.left)
+			const right = tryFoldConstant(n.right)
+			if (left !== null && right !== null) {
+				switch (n.op) {
+					case '+':
+						return left + right
+					case '-':
+						return left - right
+					case '*':
+						return left * right
+					case '/':
+						return right !== 0 ? left / right : null
+					case '^':
+						return left ** right
+				}
+			}
+		}
+		return null
+	}
+
 	function emit(n: FormulaNode): void {
 		switch (n.type) {
 			case 'number':
@@ -189,9 +221,14 @@ export function compileFormula(node: FormulaNode): CompiledFormula | null {
 					ops.push(Op.CELL_SHEET, addConst(n.sheet), n.ref.row, n.ref.col)
 				}
 				break
-			case 'binary':
+			case 'binary': {
 				if (n.op === ',' || n.op === ' ') {
 					ops.push(Op.TREE, addConst(n))
+					break
+				}
+				const folded = tryFoldConstant(n)
+				if (folded !== null) {
+					ops.push(Op.NUM, addConst(folded))
 					break
 				}
 				emit(n.left)
@@ -235,9 +272,15 @@ export function compileFormula(node: FormulaNode): CompiledFormula | null {
 						break
 				}
 				break
-			case 'unary':
+			}
+			case 'unary': {
 				if (n.op === '@') {
 					ops.push(Op.TREE, addConst(n))
+					break
+				}
+				const foldedUnary = tryFoldConstant(n)
+				if (foldedUnary !== null) {
+					ops.push(Op.NUM, addConst(foldedUnary))
 					break
 				}
 				emit(n.operand)
@@ -252,6 +295,7 @@ export function compileFormula(node: FormulaNode): CompiledFormula | null {
 						break
 				}
 				break
+			}
 			case 'function':
 				emitFunction(n)
 				break

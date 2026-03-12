@@ -1237,7 +1237,10 @@ async function runScenario(
 		readonly throughputPerSec: number
 		readonly rssDeltaBytes?: number
 		readonly retainedRssDeltaBytes?: number
-		readonly heapDeltaBytes?: number
+		readonly heapDeltaBytes: number
+		readonly heapUsedBytes: number
+		readonly heapTotalBytes: number
+		readonly heapAfterGcBytes: number
 	}> = []
 	let firstInput: ScenarioInput | undefined
 	let assertions: Record<string, string | number | boolean | null> | undefined
@@ -1256,10 +1259,11 @@ async function runScenario(
 		const start = performance.now()
 		const runResult = await scenario.run(input)
 		const durationMs = performance.now() - start
-		const heapAfter = process.memoryUsage().heapUsed
+		const memAfter = process.memoryUsage()
 		const rssAfter = getRssBytes()
 		runGc()
 		const rssAfterGc = getRssBytes()
+		const heapAfterGc = process.memoryUsage().heapUsed
 		samples.push({
 			durationMs,
 			throughputPerSec:
@@ -1272,7 +1276,10 @@ async function runScenario(
 				rssBefore !== undefined && rssAfterGc !== undefined
 					? Math.max(0, rssAfterGc - rssBefore)
 					: undefined,
-			heapDeltaBytes: Math.max(0, heapAfter - heapBefore),
+			heapDeltaBytes: Math.max(0, memAfter.heapUsed - heapBefore),
+			heapUsedBytes: memAfter.heapUsed,
+			heapTotalBytes: memAfter.heapTotal,
+			heapAfterGcBytes: heapAfterGc,
 		})
 		assertions ??= runResult?.assertions
 	}

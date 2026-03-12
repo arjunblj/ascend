@@ -97,9 +97,10 @@ function lookupRangeCacheKey(
 	const ref = arg?.ref
 	if (!ref || ref.kind !== 'range') return null
 	if (arg?.areas && arg.areas.length > 1) return null
-	return `${orientation}:${ref.sheetIndex}:${ref.row}:${ref.col}:${ref.endRow ?? ref.row}:${
-		ref.endCol ?? ref.col
-	}`
+	if (orientation === 'column') {
+		return `column:${ref.sheetIndex}:${ref.col}:${ref.row}:${ref.endRow ?? ref.row}`
+	}
+	return `row:${ref.sheetIndex}:${ref.row}:${ref.col}:${ref.endCol ?? ref.col}`
 }
 
 function getLookupVector(

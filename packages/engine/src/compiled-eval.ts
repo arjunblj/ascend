@@ -174,12 +174,6 @@ function isNumericFormula(ops: readonly number[]): boolean {
 			case Op.POW:
 			case Op.NEG:
 			case Op.PCT:
-			case Op.EQ:
-			case Op.NE:
-			case Op.LT:
-			case Op.GT:
-			case Op.LE:
-			case Op.GE:
 				break
 			case Op.CELL:
 			case Op.CELL_ADD:
@@ -406,6 +400,18 @@ export function compileFormula(node: FormulaNode): CompiledFormula | null {
 const NUMERIC_STACK_SIZE = 64
 const numericStack = new Float64Array(NUMERIC_STACK_SIZE)
 
+function readCellNumeric(
+	sheet: import('@ascend/core').Sheet | undefined,
+	row: number,
+	col: number,
+): number | CellValue {
+	const cv = sheet?.cells.readValue(row, col)
+	if (!cv || cv.kind === 'empty') return 0
+	if (cv.kind === 'error') return cv
+	const n = toNumber(cv)
+	return n ?? errorValue('#VALUE!')
+}
+
 function evaluateCompiledNumeric(compiled: CompiledFormula, ctx: EvalContext): CellValue {
 	const { ops, constants } = compiled
 	const sheet = ctx.workbook.sheets[ctx.sheetIndex]
@@ -427,7 +433,9 @@ function evaluateCompiledNumeric(compiled: CompiledFormula, ctx: EvalContext): C
 				const row = ops[ip] as number
 				const col = ops[ip + 1] as number
 				ip += 2
-				numericStack[sp++] = toNumber(sheet?.cells.readValue(row, col) ?? EMPTY) ?? NaN
+				const n = readCellNumeric(sheet, row, col)
+				if (typeof n !== 'number') return n
+				numericStack[sp++] = n
 				break
 			}
 			case Op.CELL_SHEET: {
@@ -436,12 +444,10 @@ function evaluateCompiledNumeric(compiled: CompiledFormula, ctx: EvalContext): C
 				const col = ops[ip + 2] as number
 				ip += 3
 				const si = resolveSheetIdx(ctx.workbook, constants[nameIdx] as string, ctx.sheetIndex)
-				if (si < 0) {
-					numericStack[sp++] = NaN
-				} else {
-					numericStack[sp++] =
-						toNumber(ctx.workbook.sheets[si]?.cells.readValue(row, col) ?? EMPTY) ?? NaN
-				}
+				if (si < 0) return errorValue('#REF!')
+				const n = readCellNumeric(ctx.workbook.sheets[si], row, col)
+				if (typeof n !== 'number') return n
+				numericStack[sp++] = n
 				break
 			}
 			case Op.ADD: {
@@ -461,7 +467,8 @@ function evaluateCompiledNumeric(compiled: CompiledFormula, ctx: EvalContext): C
 			}
 			case Op.DIV: {
 				const b = numericStack[--sp] as number
-				numericStack[sp - 1] = b === 0 ? NaN : (numericStack[sp - 1] as number) / b
+				if (b === 0) return errorValue('#DIV/0!')
+				numericStack[sp - 1] = (numericStack[sp - 1] as number) / b
 				break
 			}
 			case Op.POW: {
@@ -481,50 +488,17 @@ function evaluateCompiledNumeric(compiled: CompiledFormula, ctx: EvalContext): C
 				const row = ops[ip] as number
 				const col = ops[ip + 1] as number
 				ip += 2
-				const cn = toNumber(sheet?.cells.readValue(row, col) ?? EMPTY) ?? NaN
+				const cn = readCellNumeric(sheet, row, col)
+				if (typeof cn !== 'number') return cn
 				const left = numericStack[sp - 1] as number
 				numericStack[sp - 1] =
 					op === Op.CELL_ADD ? left + cn : op === Op.CELL_SUB ? left - cn : left * cn
 				break
 			}
-			case Op.EQ:
-			case Op.NE:
-			case Op.LT:
-			case Op.GT:
-			case Op.LE:
-			case Op.GE: {
-				const rb = numericStack[--sp] as number
-				const la = numericStack[sp - 1] as number
-				let cmp: boolean
-				switch (op) {
-					case Op.EQ:
-						cmp = la === rb
-						break
-					case Op.NE:
-						cmp = la !== rb
-						break
-					case Op.LT:
-						cmp = la < rb
-						break
-					case Op.GT:
-						cmp = la > rb
-						break
-					case Op.LE:
-						cmp = la <= rb
-						break
-					default:
-						cmp = la >= rb
-						break
-				}
-				numericStack[sp - 1] = cmp ? 1 : 0
-				break
-			}
 		}
 	}
 
-	const result = numericStack[0] as number
-	if (!Number.isFinite(result)) return errorValue('#VALUE!')
-	return numberValue(result)
+	return numberValue(numericStack[0] as number)
 }
 
 const STACK_SIZE = 64

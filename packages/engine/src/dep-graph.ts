@@ -45,14 +45,74 @@ interface FormulaEntry {
 	readonly volatile: boolean
 }
 
+export class IntervalIndex {
+	private entries: Array<{
+		startRow: number
+		endRow: number
+		startCol: number
+		endCol: number
+		formulaKey: CellKey
+	}> = []
+	private sorted = true
+
+	insert(
+		startRow: number,
+		endRow: number,
+		startCol: number,
+		endCol: number,
+		formulaKey: CellKey,
+	): void {
+		this.entries.push({ startRow, endRow, startCol, endCol, formulaKey })
+		this.sorted = false
+	}
+
+	query(row: number, col: number): CellKey[] {
+		if (this.entries.length === 0) return []
+		this.ensureSorted()
+		let lo = 0
+		let hi = this.entries.length
+		while (lo < hi) {
+			const mid = (lo + hi) >>> 1
+			const midEntry = this.entries[mid]
+			if (midEntry && midEntry.startRow > row) hi = mid
+			else lo = mid + 1
+		}
+		const result: CellKey[] = []
+		for (let i = 0; i < hi; i++) {
+			const e = this.entries[i]
+			if (e && e.endRow >= row && col >= e.startCol && col <= e.endCol) {
+				result.push(e.formulaKey)
+			}
+		}
+		return result
+	}
+
+	remove(formulaKey: CellKey): void {
+		let write = 0
+		for (let i = 0; i < this.entries.length; i++) {
+			const entry = this.entries[i]
+			if (entry && entry.formulaKey !== formulaKey) {
+				this.entries[write++] = entry
+			}
+		}
+		this.entries.length = write
+	}
+
+	get size(): number {
+		return this.entries.length
+	}
+
+	private ensureSorted(): void {
+		if (this.sorted) return
+		this.entries.sort((a, b) => a.startRow - b.startRow)
+		this.sorted = true
+	}
+}
+
 export class DependencyGraph {
 	private readonly formulas = new Map<CellKey, FormulaEntry>()
 	private readonly dependents = new Map<CellKey, Set<CellKey>>()
-	private readonly rangeDependents = new Map<
-		number,
-		Array<{ range: RangeDependency; formulaKey: CellKey }>
-	>()
-	private readonly _rangeDepsSortedBySheet = new Map<number, boolean>()
+	private readonly rangeIndex = new Map<number, IntervalIndex>()
 	private _cachedDirtyIndex: {
 		set: ReadonlySet<CellKey>
 		size: number
@@ -90,13 +150,12 @@ export class DependencyGraph {
 			set.add(key)
 		}
 		for (const range of rangeDeps) {
-			let arr = this.rangeDependents.get(range.sheetIndex)
-			if (!arr) {
-				arr = []
-				this.rangeDependents.set(range.sheetIndex, arr)
+			let index = this.rangeIndex.get(range.sheetIndex)
+			if (!index) {
+				index = new IntervalIndex()
+				this.rangeIndex.set(range.sheetIndex, index)
 			}
-			arr.push({ range, formulaKey: key })
-			this._rangeDepsSortedBySheet.set(range.sheetIndex, false)
+			index.insert(range.startRow, range.endRow, range.startCol, range.endCol, key)
 		}
 	}
 
@@ -111,18 +170,14 @@ export class DependencyGraph {
 				if (set.size === 0) this.dependents.delete(dep)
 			}
 		}
+		const removedSheets = new Set<number>()
 		for (const range of entry.rangeDeps) {
-			const arr = this.rangeDependents.get(range.sheetIndex)
-			if (!arr) continue
-			const filtered = arr.filter((candidate) => candidate.formulaKey !== key)
-			if (filtered.length === 0) {
-				this.rangeDependents.delete(range.sheetIndex)
-				this._rangeDepsSortedBySheet.delete(range.sheetIndex)
-			} else if (filtered.length !== arr.length) {
-				arr.length = 0
-				arr.push(...filtered)
-				this._rangeDepsSortedBySheet.set(range.sheetIndex, false)
-			}
+			if (removedSheets.has(range.sheetIndex)) continue
+			removedSheets.add(range.sheetIndex)
+			const index = this.rangeIndex.get(range.sheetIndex)
+			if (!index) continue
+			index.remove(key)
+			if (index.size === 0) this.rangeIndex.delete(range.sheetIndex)
 		}
 		this.formulas.delete(key)
 	}
@@ -141,22 +196,10 @@ export class DependencyGraph {
 		const direct = this.dependents.get(key)
 		const result = direct ? new Set(direct) : new Set<CellKey>()
 		const [sheetIndex, row, col] = parseCellKey(key)
-		const entries = this.rangeDependents.get(sheetIndex)
-		if (entries && entries.length > 0) {
-			this.ensureSorted(sheetIndex, entries)
-			let lo = 0
-			let hi = entries.length
-			while (lo < hi) {
-				const mid = (lo + hi) >>> 1
-				const midEntry = entries[mid]
-				if (midEntry && midEntry.range.startRow > row) hi = mid
-				else lo = mid + 1
-			}
-			for (let i = 0; i < hi; i++) {
-				const entry = entries[i]
-				if (entry && entry.range.endRow >= row && containsCell(entry.range, row, col)) {
-					result.add(entry.formulaKey)
-				}
+		const index = this.rangeIndex.get(sheetIndex)
+		if (index) {
+			for (const k of index.query(row, col)) {
+				result.add(k)
 			}
 		}
 		return [...result]
@@ -295,19 +338,9 @@ export class DependencyGraph {
 	clear(): void {
 		this.formulas.clear()
 		this.dependents.clear()
-		this.rangeDependents.clear()
-		this._rangeDepsSortedBySheet.clear()
+		this.rangeIndex.clear()
 		this._cachedDirtyIndex = null
 		this._cachedEvalOrder = null
-	}
-
-	private ensureSorted(
-		sheetIndex: number,
-		entries: Array<{ range: RangeDependency; formulaKey: CellKey }>,
-	): void {
-		if (this._rangeDepsSortedBySheet.get(sheetIndex)) return
-		entries.sort((a, b) => a.range.startRow - b.range.startRow)
-		this._rangeDepsSortedBySheet.set(sheetIndex, true)
 	}
 
 	private getCachedDirtyIndex(

@@ -342,10 +342,20 @@ function formatNumber(value: number, code: string): string {
 
 	if (isDateFormat(fmt)) return formatDate(value, fmt)
 
-	if (/[eE]\+/i.test(fmt)) {
-		const decMatch = fmt.match(/\.(0+)[eE]\+/i)
-		const dec = decMatch ? (decMatch[1] as string).length : 2
-		return value.toExponential(dec).replace('e+', 'E+').replace('e-', 'E-')
+	const sciMatch = fmt.match(/([Ee])([+-])(0+)/)
+	if (sciMatch) {
+		const beforeSci = fmt.slice(0, sciMatch.index!)
+		const expDigits = sciMatch[3]!.length
+		const decLen = beforeSci.includes('.')
+			? (beforeSci.split('.')[1] || '').replace(/[^0#]/g, '').length
+			: 0
+		const abs = Math.abs(value)
+		const sign = value < 0 ? '-' : ''
+		const exp = abs === 0 ? 0 : Math.floor(Math.log10(abs))
+		const mantissa = abs === 0 ? 0 : abs / 10 ** exp
+		const expSign = sciMatch[2] === '+' ? (exp >= 0 ? '+' : '-') : exp < 0 ? '-' : ''
+		const expStr = String(Math.abs(exp)).padStart(expDigits, '0')
+		return sign + mantissa.toFixed(decLen) + sciMatch[1] + expSign + expStr
 	}
 
 	if (fmt.includes('%')) {
@@ -372,6 +382,9 @@ function formatNumber(value: number, code: string): string {
 	let intStr = rawInt
 	if (intStr.length < minIntDigits) {
 		intStr = intStr.padStart(minIntDigits, '0')
+	}
+	if (minIntDigits === 0 && abs === 0 && intFmt.length > 0) {
+		intStr = ''
 	}
 
 	let decStr = rawDec ?? ''

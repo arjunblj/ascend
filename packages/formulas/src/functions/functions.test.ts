@@ -279,7 +279,7 @@ describe('formula functions', () => {
 			setNum(wb, 0, 0, 12345)
 			setFormula(wb, 0, 1, 'TEXT(A1,"0.00E+00")')
 			recalc(wb)
-			expect(getResult(wb, 0, 1)).toEqual(stringValue('1.23E+4'))
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('1.23E+04'))
 		})
 
 		test('TEXT with quoted literal text', () => {
@@ -329,6 +329,38 @@ describe('formula functions', () => {
 			setFormula(wb, 0, 1, 'TEXT(A1,"@")')
 			recalc(wb)
 			expect(getResult(wb, 0, 1)).toEqual(stringValue('99'))
+		})
+
+		test('TEXT # placeholder gives empty for zero', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 0)
+			setFormula(wb, 0, 1, 'TEXT(A1,"#.##")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue(''))
+		})
+
+		test('TEXT with time format hh:mm:ss', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 45658.75)
+			setFormula(wb, 0, 1, 'TEXT(A1,"hh:mm:ss")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('18:00:00'))
+		})
+
+		test('TEXT with AM/PM time format', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 45658.75)
+			setFormula(wb, 0, 1, 'TEXT(A1,"h:mm AM/PM")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('6:00 PM'))
+		})
+
+		test('TEXT scientific E-00 only shows minus for negative exp', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 0.005)
+			setFormula(wb, 0, 1, 'TEXT(A1,"0.00E-00")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('5.00E-03'))
 		})
 	})
 

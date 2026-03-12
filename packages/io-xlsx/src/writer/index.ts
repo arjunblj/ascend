@@ -58,6 +58,7 @@ export interface WriteXlsxOptions {
 	readonly stylesDirty?: boolean
 	readonly summaryOnly?: boolean
 	readonly sourceArchive?: ZipArchive
+	readonly useSharedStrings?: boolean
 }
 
 export function writeXlsx(
@@ -152,9 +153,11 @@ export function planWriteXlsx(
 					if (!table) throw new Error('sharedStringTable required when not summaryOnly')
 					return table
 				})()
+		const useSharedStrings = options.useSharedStrings ?? true
 		const hasSharedStrings =
-			preserveSharedStrings ||
-			(!options.summaryOnly ? ssTable.count > 0 : !!workbookWriteFacts?.hasStringCells)
+			useSharedStrings &&
+			(preserveSharedStrings ||
+				(!options.summaryOnly ? ssTable.count > 0 : !!workbookWriteFacts?.hasStringCells))
 
 		const preservedStyles = workbook.preservedStyles ?? undefined
 		const preserveStyles = preservedStyles !== undefined && !options.stylesDirty
@@ -688,6 +691,7 @@ export function planWriteXlsx(
 									legacyDrawingRelId
 										? { legacyDrawingRelId }
 										: {}),
+									useInlineStrings: !useSharedStrings,
 								}),
 				)
 			}

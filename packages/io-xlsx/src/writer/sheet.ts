@@ -22,6 +22,7 @@ export interface SheetXmlOptions {
 		tooltip?: string
 	}[]
 	readonly legacyDrawingRelId?: string
+	readonly useInlineStrings?: boolean
 }
 
 export function buildSheetXml(
@@ -130,7 +131,13 @@ export function buildSheetXml(
 		}
 		let rowXml = `<row ${rowAttrs.join(' ')}>`
 		for (const [col, cell] of cells) {
-			rowXml += cellXml(`${indexToColumn(col)}${row + 1}`, cell, ssTable, xfMap)
+			rowXml += cellXml(
+				`${indexToColumn(col)}${row + 1}`,
+				cell,
+				ssTable,
+				xfMap,
+				options.useInlineStrings,
+			)
 		}
 		rowXml += '</row>'
 		parts.push(rowXml)
@@ -367,6 +374,7 @@ function cellXml(
 	cell: Cell,
 	ssTable: SharedStringTable,
 	xfMap: Map<number, number>,
+	useInlineStrings?: boolean,
 ): string {
 	const xfIdx = xfMap.get(cell.styleId as number) ?? 0
 
@@ -386,7 +394,7 @@ function cellXml(
 			: `<c r="${ref}" s="${xfIdx}"><v>${v.serial}</v></c>`
 	}
 
-	return regularCellXml(ref, cell, ssTable, xfIdx)
+	return regularCellXml(ref, cell, ssTable, xfIdx, useInlineStrings)
 }
 
 function formulaCellXml(ref: string, cell: Cell, xfIdx: number): string {
@@ -428,8 +436,16 @@ function regularCellXml(
 	cell: Cell,
 	ssTable: SharedStringTable,
 	xfIdx: number,
+	useInlineStrings?: boolean,
 ): string {
 	const sAttr = xfIdx !== 0 ? ` s="${xfIdx}"` : ''
+	if (useInlineStrings) {
+		const v = topLeftScalar(cell.value)
+		if (v.kind === 'string' || v.kind === 'richText') {
+			const text = v.kind === 'string' ? v.value : v.runs.map((r) => r.text).join('')
+			return `<c r="${ref}"${sAttr} t="inlineStr"><is><t>${escapeXml(text)}</t></is></c>`
+		}
+	}
 	const { typeAttr, valueStr } = regularValueAttrs(cell.value, ssTable)
 	const tAttr = typeAttr ? ` t="${typeAttr}"` : ''
 

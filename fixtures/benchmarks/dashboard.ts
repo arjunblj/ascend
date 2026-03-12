@@ -1,137 +1,119 @@
 import { readFileSync } from 'node:fs'
-import { type BenchmarkSuiteResult, formatRate } from './results.ts'
+import { type BenchmarkSuiteResult, formatBytes, formatRate } from './results.ts'
 
-function loadSuite(path: string): BenchmarkSuiteResult {
-	const raw = readFileSync(path, 'utf-8')
-	return JSON.parse(raw) as BenchmarkSuiteResult
+function readSuite(path: string): BenchmarkSuiteResult {
+	return JSON.parse(readFileSync(path, 'utf-8')) as BenchmarkSuiteResult
 }
 
-function pctStr(baseline: number, candidate: number): string {
+function deltaPct(baseline: number, current: number): string {
 	if (baseline === 0) return 'n/a'
-	const pct = ((candidate - baseline) / baseline) * 100
+	const pct = ((current - baseline) / baseline) * 100
 	const sign = pct > 0 ? '+' : ''
 	return `${sign}${pct.toFixed(1)}%`
 }
 
-function padRight(s: string, w: number): string {
-	return s + ' '.repeat(Math.max(0, w - s.length))
+function pad(value: string, width: number): string {
+	return value + ' '.repeat(Math.max(0, width - value.length))
 }
 
-function padLeft(s: string, w: number): string {
-	return ' '.repeat(Math.max(0, w - s.length)) + s
+function mdTable(headers: string[], rows: string[][]): string {
+	const widths = headers.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i]?.length ?? 0)))
+	const headerLine = `| ${headers.map((h, i) => pad(h, widths[i] ?? 0)).join(' | ')} |`
+	const sepLine = `| ${widths.map((w) => '-'.repeat(w)).join(' | ')} |`
+	const bodyLines = rows.map(
+		(row) => `| ${row.map((c, i) => pad(c, widths[i] ?? 0)).join(' | ')} |`,
+	)
+	return [headerLine, sepLine, ...bodyLines].join('\n')
 }
 
-function main(): void {
-	const args = process.argv.slice(2).filter((a) => !a.startsWith('-'))
-	if (args.length === 0) {
+async function main(): Promise<void> {
+	const files = process.argv.slice(2)
+	if (files.length === 0) {
 		console.error(
 			'Usage: bun run fixtures/benchmarks/dashboard.ts results1.json [results2.json ...]',
 		)
 		process.exit(1)
 	}
 
-	const suites = args.map((path) => ({ path, suite: loadSuite(path) }))
-	const baseline = suites[0]
-	if (!baseline) {
-		console.error('No results files provided')
-		process.exit(1)
-	}
+	const suites = files.map((f) => readSuite(f))
+	const baseline = suites[0]!
 
-	const allScenarios = new Set<string>()
-	for (const { suite } of suites) {
-		for (const c of suite.cases) allScenarios.add(c.name)
+	const allNames = new Set<string>()
+	for (const suite of suites) {
+		for (const c of suite.cases) allNames.add(c.name)
 	}
-	const scenarioNames = [...allScenarios].sort()
+	const sortedNames = [...allNames].sort()
 
-	const headers = ['scenario', 'median (ms)', 'throughput']
-	if (suites.length > 1) {
-		for (let i = 1; i < suites.length; i++) {
-			const label = suites[i]?.path.replace(/.*\//, '').replace(/\.json$/, '') ?? `run${i + 1}`
-			headers.push(`median-${label}`, `delta%`)
-		}
+	const headers = ['Scenario', 'Median (ms)', 'Throughput']
+	for (let i = 1; i < suites.length; i++) {
+		const label = files.length === 2 ? '' : ` (${i + 1})`
+		headers.push(`Δ% median${label}`, `Δ% throughput${label}`)
 	}
 
 	const rows: string[][] = []
-	for (const name of scenarioNames) {
-		const baseCase = baseline.suite.cases.find((c) => c.name === name)
-		const baseMedian = baseCase?.metrics.medianMs ?? 0
-		const baseThroughput = baseCase?.metrics.throughputPerSec
-
-		const row: string[] = [
-			name,
-			baseMedian.toFixed(2),
-			baseThroughput !== undefined ? formatRate(baseThroughput) : 'n/a',
-		]
-
-		for (let i = 1; i < suites.length; i++) {
-			const s = suites[i]
-			if (!s) {
-				row.push('n/a', 'n/a')
-				continue
+	for (const name of sortedNames) {
+		const baseCase = baseline.cases.find((c) => c.name === name)
+		const row: string[] = [name]
+		if (!baseCase) {
+			row.push('—', '—')
+			for (let i = 1; i < suites.length; i++) row.push('new', 'new')
+		} else {
+			row.push(baseCase.metrics.medianMs.toFixed(2))
+			row.push(
+				baseCase.metrics.throughputPerSec !== undefined
+					? formatRate(baseCase.metrics.throughputPerSec)
+					: '—',
+			)
+			for (let i = 1; i < suites.length; i++) {
+				const caseI = suites[i]!.cases.find((c) => c.name === name)
+				if (!caseI) {
+					row.push('missing', 'missing')
+				} else {
+					row.push(deltaPct(baseCase.metrics.medianMs, caseI.metrics.medianMs))
+					if (
+						baseCase.metrics.throughputPerSec !== undefined &&
+						caseI.metrics.throughputPerSec !== undefined
+					) {
+						row.push(deltaPct(baseCase.metrics.throughputPerSec, caseI.metrics.throughputPerSec))
+					} else {
+						row.push('—')
+					}
+				}
 			}
-			const candCase = s.suite.cases.find((c) => c.name === name)
-			if (!candCase) {
-				row.push('n/a', 'n/a')
-				continue
-			}
-			row.push(candCase.metrics.medianMs.toFixed(2), pctStr(baseMedian, candCase.metrics.medianMs))
 		}
 		rows.push(row)
 	}
 
-	const colWidths = headers.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i]?.length ?? 0)))
-	const rightAlignCols = new Set(headers.map((_, i) => i).filter((i) => i > 0))
+	const labels = files.map((f, i) => `${i + 1}. \`${f}\`${i === 0 ? ' (baseline)' : ''}`)
+	console.log(`## Benchmark Comparison\n`)
+	console.log(`${labels.join('\n')}\n`)
 
-	const pad = (s: string, i: number) =>
-		rightAlignCols.has(i) ? padLeft(s, colWidths[i] ?? 0) : padRight(s, colWidths[i] ?? 0)
-
-	const lines: string[] = []
-	lines.push('')
-	lines.push(`# Benchmark Dashboard`)
-	lines.push('')
-	if (baseline.suite.git.sha) {
-		lines.push(
-			`Baseline: \`${baseline.suite.git.sha.slice(0, 8)}\` (${baseline.suite.git.branch ?? 'unknown'})`,
-		)
+	if (baseline.git.sha) {
+		const parts: string[] = []
+		if (baseline.git.branch) parts.push(`branch: ${baseline.git.branch}`)
+		parts.push(`sha: ${baseline.git.sha.slice(0, 8)}`)
+		console.log(`> ${parts.join(', ')}\n`)
 	}
-	lines.push(`Generated: ${new Date().toISOString()}`)
-	lines.push('')
-	lines.push(`| ${headers.map((h, i) => pad(h, i)).join(' | ')} |`)
-	lines.push(`| ${colWidths.map((w) => '-'.repeat(w)).join(' | ')} |`)
-	for (const row of rows) {
-		lines.push(`| ${row.map((cell, i) => pad(cell, i)).join(' | ')} |`)
-	}
-	lines.push('')
 
-	if (suites.length > 1) {
-		const lastSuite = suites[suites.length - 1]
-		if (lastSuite) {
-			let improved = 0
-			let regressed = 0
-			let unchanged = 0
-			for (const name of scenarioNames) {
-				const baseCase = baseline.suite.cases.find((c) => c.name === name)
-				const candCase = lastSuite.suite.cases.find((c) => c.name === name)
-				if (!baseCase || !candCase) continue
-				const baseMs = baseCase.metrics.medianMs
-				const candMs = candCase.metrics.medianMs
-				if (baseMs === 0) {
-					unchanged++
-					continue
-				}
-				const delta = (candMs - baseMs) / baseMs
-				if (delta < -0.1) improved++
-				else if (delta > 0.1) regressed++
-				else unchanged++
-			}
-			lines.push(
-				`**Summary vs baseline:** ${improved} improved, ${regressed} regressed, ${unchanged} unchanged`,
-			)
-			lines.push('')
+	console.log(mdTable(headers, rows))
+
+	if (suites.length >= 2) {
+		const candidate = suites[1]!
+		let regressions = 0
+		let improvements = 0
+		for (const name of sortedNames) {
+			const b = baseline.cases.find((c) => c.name === name)
+			const n = candidate.cases.find((c) => c.name === name)
+			if (!b || !n) continue
+			const pct =
+				b.metrics.medianMs === 0
+					? 0
+					: (n.metrics.medianMs - b.metrics.medianMs) / b.metrics.medianMs
+			if (pct > 0.1) regressions++
+			else if (pct < -0.1) improvements++
 		}
+		console.log(`\n**Summary:** ${improvements} improved, ${regressions} regressed`)
 	}
-
-	console.log(lines.join('\n'))
 }
 
-main()
+await main()

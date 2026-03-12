@@ -1,18 +1,15 @@
 import type { Cell, CellStyle, RangeRef, Sheet, StyleId, Workbook } from '@ascend/core'
 import { createTableId, parseA1, parseRange, toA1 } from '@ascend/core'
 import type { FormulaCellRef, FormulaNode } from '@ascend/formulas'
-import { cachedParseFormula, dateToSerial, printFormula, rewriteRefs } from '@ascend/formulas'
-import type { CellValue, InputValue, Operation, Result } from '@ascend/schema'
 import {
-	ascendError,
-	assertUnreachable,
-	booleanValue,
-	EMPTY,
-	err,
-	numberValue,
-	ok,
-	stringValue,
-} from '@ascend/schema'
+	cachedParseFormula,
+	dateToSerial,
+	normalizeFormulaInput,
+	printFormula,
+	rewriteRefs,
+} from '@ascend/formulas'
+import type { CellValue, InputValue, Operation, Result } from '@ascend/schema'
+import { ascendError, booleanValue, EMPTY, err, numberValue, ok, stringValue } from '@ascend/schema'
 import { invalidateWorkbookAnalysis, patchWorkbookAnalysis } from './analysis.ts'
 import { type CellKey, cellKey } from './dep-graph.ts'
 import { invalidateSheetIndexCache } from './evaluator.ts'
@@ -181,80 +178,59 @@ function handleFillFormula(
 	return ok(patch(affected, [op.sheet], true))
 }
 
+function applyAxisShift(
+	workbook: Workbook,
+	sheetName: string,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+	delta: number,
+): Result<PatchResult> {
+	const result = getSheet(workbook, sheetName)
+	if (!result.ok) return result
+	const sheet = result.value
+
+	if (axis === 'row') {
+		delta > 0 ? sheet.cells.insertRows(at, count) : sheet.cells.deleteRows(at, count)
+	} else {
+		delta > 0 ? sheet.cells.insertCols(at, count) : sheet.cells.deleteCols(at, count)
+	}
+
+	shiftMerges(sheet.merges, axis, at, delta)
+	shiftSheetCellMetadata(sheet, axis, at, delta)
+	clearFormulaMetadata(workbook)
+	rewriteWorkbookFormulasForShift(workbook, sheetName, axis, at, delta)
+	rewriteDefinedNameFormulasForShift(workbook, sheetName, axis, at, delta)
+
+	return ok(patch([], [sheetName], true))
+}
+
 function handleInsertRows(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'insertRows' }>,
 ): Result<PatchResult> {
-	const result = getSheet(workbook, op.sheet)
-	if (!result.ok) return result
-	const sheet = result.value
-
-	sheet.cells.insertRows(op.at, op.count)
-
-	shiftMerges(sheet.merges, 'row', op.at, op.count)
-	shiftSheetCellMetadata(sheet, 'row', op.at, op.count)
-	clearFormulaMetadata(workbook)
-	rewriteWorkbookFormulasForShift(workbook, op.sheet, 'row', op.at, op.count)
-	rewriteDefinedNameFormulasForShift(workbook, op.sheet, 'row', op.at, op.count)
-
-	return ok(patch([], [op.sheet], true))
+	return applyAxisShift(workbook, op.sheet, 'row', op.at, op.count, op.count)
 }
 
 function handleDeleteRows(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'deleteRows' }>,
 ): Result<PatchResult> {
-	const result = getSheet(workbook, op.sheet)
-	if (!result.ok) return result
-	const sheet = result.value
-
-	sheet.cells.deleteRows(op.at, op.count)
-
-	shiftMerges(sheet.merges, 'row', op.at, -op.count)
-	shiftSheetCellMetadata(sheet, 'row', op.at, -op.count)
-	clearFormulaMetadata(workbook)
-	rewriteWorkbookFormulasForShift(workbook, op.sheet, 'row', op.at, -op.count)
-	rewriteDefinedNameFormulasForShift(workbook, op.sheet, 'row', op.at, -op.count)
-
-	return ok(patch([], [op.sheet], true))
+	return applyAxisShift(workbook, op.sheet, 'row', op.at, op.count, -op.count)
 }
 
 function handleInsertCols(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'insertCols' }>,
 ): Result<PatchResult> {
-	const result = getSheet(workbook, op.sheet)
-	if (!result.ok) return result
-	const sheet = result.value
-
-	sheet.cells.insertCols(op.at, op.count)
-
-	shiftMerges(sheet.merges, 'col', op.at, op.count)
-	shiftSheetCellMetadata(sheet, 'col', op.at, op.count)
-	clearFormulaMetadata(workbook)
-	rewriteWorkbookFormulasForShift(workbook, op.sheet, 'col', op.at, op.count)
-	rewriteDefinedNameFormulasForShift(workbook, op.sheet, 'col', op.at, op.count)
-
-	return ok(patch([], [op.sheet], true))
+	return applyAxisShift(workbook, op.sheet, 'col', op.at, op.count, op.count)
 }
 
 function handleDeleteCols(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'deleteCols' }>,
 ): Result<PatchResult> {
-	const result = getSheet(workbook, op.sheet)
-	if (!result.ok) return result
-	const sheet = result.value
-
-	sheet.cells.deleteCols(op.at, op.count)
-
-	shiftMerges(sheet.merges, 'col', op.at, -op.count)
-	shiftSheetCellMetadata(sheet, 'col', op.at, -op.count)
-	clearFormulaMetadata(workbook)
-	rewriteWorkbookFormulasForShift(workbook, op.sheet, 'col', op.at, -op.count)
-	rewriteDefinedNameFormulasForShift(workbook, op.sheet, 'col', op.at, -op.count)
-
-	return ok(patch([], [op.sheet], true))
+	return applyAxisShift(workbook, op.sheet, 'col', op.at, op.count, -op.count)
 }
 
 function shiftMerges(merges: RangeRef[], axis: 'row' | 'col', at: number, delta: number): void {
@@ -299,10 +275,6 @@ function translateFormula(node: FormulaNode, rowDelta: number, colDelta: number)
 		col: ref.colAbsolute ? ref.col : ref.col + colDelta,
 	}))
 	return printFormula(rewritten)
-}
-
-function normalizeFormulaInput(formula: string): string {
-	return formula.startsWith('=') ? formula.slice(1) : formula
 }
 
 function handleAddSheet(
@@ -959,6 +931,39 @@ function operationAffectsFormulas(op: Operation): boolean {
 	}
 }
 
+// --- Handler registry ---
+
+type OperationHandler = (workbook: Workbook, op: never) => Result<PatchResult>
+
+const handlers: Record<string, OperationHandler> = {
+	setCells: handleSetCells as OperationHandler,
+	setFormula: handleSetFormula as OperationHandler,
+	fillFormula: handleFillFormula as OperationHandler,
+	insertRows: handleInsertRows as OperationHandler,
+	deleteRows: handleDeleteRows as OperationHandler,
+	insertCols: handleInsertCols as OperationHandler,
+	deleteCols: handleDeleteCols as OperationHandler,
+	addSheet: handleAddSheet as OperationHandler,
+	createTable: handleCreateTable as OperationHandler,
+	appendRows: handleAppendRows as OperationHandler,
+	deleteSheet: handleDeleteSheet as OperationHandler,
+	renameSheet: handleRenameSheet as OperationHandler,
+	moveSheet: handleMoveSheet as OperationHandler,
+	mergeCells: handleMergeCells as OperationHandler,
+	unmergeCells: handleUnmergeCells as OperationHandler,
+	setComment: handleSetComment as OperationHandler,
+	setDefinedName: handleSetDefinedName as OperationHandler,
+	deleteDefinedName: handleDeleteDefinedName as OperationHandler,
+	clearRange: handleClearRange as OperationHandler,
+	freezePane: handleFreezePane as OperationHandler,
+	setColWidth: handleSetColWidth as OperationHandler,
+	setRowHeight: handleSetRowHeight as OperationHandler,
+	sortRange: handleSortRange as OperationHandler,
+	setHyperlink: handleSetHyperlink as OperationHandler,
+	setNumberFormat: handleSetNumberFormat as OperationHandler,
+	setStyle: handleSetStyle as OperationHandler,
+}
+
 // --- Public API ---
 
 export function applyOperation(workbook: Workbook, op: Operation): Result<PatchResult> {
@@ -967,67 +972,18 @@ export function applyOperation(workbook: Workbook, op: Operation): Result<PatchR
 		invalidateWorkbookAnalysis(workbook)
 	}
 	invalidateSheetIndexCache(workbook)
-	let result: Result<PatchResult>
-	switch (op.op) {
-		case 'setCells':
-			return handleSetCells(workbook, op)
-		case 'setFormula':
-			result = handleSetFormula(workbook, op)
-			break
-		case 'fillFormula':
-			result = handleFillFormula(workbook, op)
-			break
-		case 'insertRows':
-			return handleInsertRows(workbook, op)
-		case 'deleteRows':
-			return handleDeleteRows(workbook, op)
-		case 'insertCols':
-			return handleInsertCols(workbook, op)
-		case 'deleteCols':
-			return handleDeleteCols(workbook, op)
-		case 'addSheet':
-			return handleAddSheet(workbook, op)
-		case 'createTable':
-			return handleCreateTable(workbook, op)
-		case 'appendRows':
-			return handleAppendRows(workbook, op)
-		case 'deleteSheet':
-			return handleDeleteSheet(workbook, op)
-		case 'renameSheet':
-			return handleRenameSheet(workbook, op)
-		case 'moveSheet':
-			return handleMoveSheet(workbook, op)
-		case 'mergeCells':
-			return handleMergeCells(workbook, op)
-		case 'unmergeCells':
-			return handleUnmergeCells(workbook, op)
-		case 'setComment':
-			return handleSetComment(workbook, op)
-		case 'setDefinedName':
-			return handleSetDefinedName(workbook, op)
-		case 'deleteDefinedName':
-			return handleDeleteDefinedName(workbook, op)
-		case 'clearRange':
-			return handleClearRange(workbook, op)
-		case 'freezePane':
-			return handleFreezePane(workbook, op)
-		case 'setColWidth':
-			return handleSetColWidth(workbook, op)
-		case 'setRowHeight':
-			return handleSetRowHeight(workbook, op)
-		case 'sortRange':
-			return handleSortRange(workbook, op)
-		case 'setHyperlink':
-			return handleSetHyperlink(workbook, op)
-		case 'setNumberFormat':
-			return handleSetNumberFormat(workbook, op)
-		case 'setStyle':
-			return handleSetStyle(workbook, op)
-		default:
-			return assertUnreachable(op)
+
+	const handler = handlers[op.op]
+	if (!handler) {
+		return err(ascendError('VALIDATION_ERROR', `Unknown operation: ${op.op}`))
 	}
-	if (result.ok) {
-		const changedKeys = resolveAffectedCellKeys(workbook, op)
+	const result = handler(workbook, op as never)
+
+	if (useIncrementalPatch && result.ok) {
+		const changedKeys = resolveAffectedCellKeys(
+			workbook,
+			op as Extract<Operation, { op: 'setFormula' | 'fillFormula' }>,
+		)
 		if (changedKeys.length > 0) {
 			patchWorkbookAnalysis(workbook, changedKeys)
 		}

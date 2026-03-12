@@ -12,7 +12,7 @@ import {
 	type WorkbookFormulaAnalysis,
 	type WorkbookSnapshot,
 } from '@ascend/engine'
-import { parseFormula, printFormula } from '@ascend/formulas'
+import { normalizeFormulaInput, parseFormula, printFormula } from '@ascend/formulas'
 import type { CompatibilityReport } from '@ascend/schema'
 import { EMPTY } from '@ascend/schema'
 import { trace as verifyTrace } from '@ascend/verify'
@@ -621,10 +621,6 @@ function parseFullRef(cellRef: string, workbook: Workbook): { sheetName: string;
 	const firstSheet = workbook.sheets[0]
 	const sheetName = firstSheet ? firstSheet.name : 'Sheet1'
 	return { sheetName, ref: cellRef }
-}
-
-function normalizeFormulaInput(formula: string): string {
-	return formula.startsWith('=') ? formula.slice(1) : formula
 }
 
 function buildDefinedNameInfo(

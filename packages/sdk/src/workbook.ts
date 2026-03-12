@@ -16,6 +16,7 @@ import {
 	type PatchResult,
 	recalculate,
 } from '@ascend/engine'
+import { normalizeFormulaInput } from '@ascend/formulas'
 import { readCsv, writeCsv } from '@ascend/io-csv'
 import {
 	extractZip,
@@ -763,10 +764,6 @@ function makeSharedStringKey(value: import('@ascend/schema').CellValue | string)
 	if (value.kind === 'string') return `s:${value.value}`
 	if (value.kind === 'richText') return `r:${JSON.stringify(value.runs)}`
 	return null
-}
-
-function normalizeFormulaInput(formula: string): string {
-	return formula.startsWith('=') ? formula.slice(1) : formula
 }
 
 function resolveRecalcOptions(

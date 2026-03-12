@@ -40,7 +40,13 @@ export {
 	toNumber,
 } from './functions/index.ts'
 export { tokenize } from './lexer.ts'
-export { cachedParseFormula, clearGlobalParseCache, parse, parseFormula } from './parser.ts'
+export {
+	cachedParseFormula,
+	clearGlobalParseCache,
+	normalizeFormulaInput,
+	parse,
+	parseFormula,
+} from './parser.ts'
 export { printFormula } from './printer.ts'
 export { extractRefs, type FormulaRef, rewriteRefs } from './refs.ts'
 export { type Token, TokenType } from './tokens.ts'

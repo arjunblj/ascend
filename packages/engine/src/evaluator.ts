@@ -505,10 +505,6 @@ function evalFormulaText(argNodes: readonly FormulaNode[], ctx: EvalContext): Ce
 }
 
 function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
-	if (node.type === 'binary' && isReferenceBinaryOp(node.op)) {
-		const resolved = resolveReferenceNode(node, ctx)
-		if (resolved) return resolved
-	}
 	if (node.type === 'function') {
 		const upperName = node.name.toUpperCase()
 		if (upperName === 'INDIRECT' || upperName === 'OFFSET') {
@@ -517,49 +513,6 @@ function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
 		if (upperName === 'LET') {
 			const value = evalLet(node.args, ctx)
 			return value.kind === 'array' ? { value, kind: 'range', values: value.rows } : { value }
-		}
-	}
-
-	if (node.type === 'rangeRef') {
-		const si = resolveSheetIndex(ctx.workbook, node.sheet, ctx.sheetIndex)
-		if (si < 0) {
-			return { value: errorValue('#REF!') }
-		}
-		return makeRangeArg(
-			ctx.workbook,
-			si,
-			node.start.row,
-			node.start.col,
-			node.end.row,
-			node.end.col,
-		)
-	}
-
-	if (node.type === 'wholeRowRange') {
-		const si = resolveSheetIndex(ctx.workbook, node.sheet, ctx.sheetIndex)
-		if (si < 0) return { value: errorValue('#REF!') }
-		return makeWholeRowArg(ctx.workbook, si, node.startRow, node.endRow)
-	}
-
-	if (node.type === 'wholeColumnRange') {
-		const si = resolveSheetIndex(ctx.workbook, node.sheet, ctx.sheetIndex)
-		if (si < 0) return { value: errorValue('#REF!') }
-		return makeWholeColumnArg(ctx.workbook, si, node.startCol, node.endCol)
-	}
-
-	if (node.type === 'cellRef') {
-		const si = resolveSheetIndex(ctx.workbook, node.sheet, ctx.sheetIndex)
-		if (si < 0) {
-			return { value: errorValue('#REF!') }
-		}
-		return {
-			value: getCellValue(ctx.workbook, si, node.ref.row, node.ref.col),
-			ref: {
-				kind: 'cell',
-				sheetIndex: si,
-				row: node.ref.row,
-				col: node.ref.col,
-			},
 		}
 	}
 
@@ -572,26 +525,12 @@ function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
 		return resolveArg(resolved.ast, resolved.ctx)
 	}
 
-	if (node.type === 'structuredRef') {
-		const resolved = resolveStructuredRefRange(ctx.workbook, node, ctx.sheetIndex, ctx.row, ctx.col)
-		if (!resolved) return { value: errorValue('#REF!') }
-		return makeRangeArg(
-			ctx.workbook,
-			resolved.sheetIndex,
-			resolved.startRow,
-			resolved.startCol,
-			resolved.endRow,
-			resolved.endCol,
-		)
-	}
-
 	if (node.type === 'spillRef') {
 		return resolveSpillReference(node.target, ctx) ?? { value: errorValue('#REF!') }
 	}
 
-	if (node.type === 'sheetSpanRef') {
-		return resolveReferenceNode(node, ctx) ?? { value: errorValue('#REF!') }
-	}
+	const refResult = resolveReferenceNode(node, ctx)
+	if (refResult) return refResult
 
 	const value = evaluate(node, ctx)
 	if (value.kind === 'array') {

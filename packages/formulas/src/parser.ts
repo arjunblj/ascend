@@ -560,3 +560,7 @@ function canStartReferenceExpression(token: Token): boolean {
 			return false
 	}
 }
+
+export function normalizeFormulaInput(formula: string): string {
+	return formula.startsWith('=') ? formula.slice(1) : formula
+}

@@ -77,6 +77,41 @@ function rateNewton(
 	return Number.NaN
 }
 
+function yearFracBasis(dsm: number, basis: number): number {
+	const b = Math.trunc(basis)
+	if (b === 2 || b === 0 || b === 4) return dsm / 360
+	return dsm / 365
+}
+
+function vdbCalc(
+	cost: number,
+	salvage: number,
+	life: number,
+	startPeriod: number,
+	endPeriod: number,
+	factor: number,
+	noSwitch: boolean,
+): number {
+	let totalDep = 0
+	let bookValue = cost
+	const periods = Math.ceil(endPeriod)
+	for (let p = 0; p < periods; p++) {
+		let dep = (bookValue * factor) / life
+		if (!noSwitch) {
+			const remaining = life - p
+			if (remaining > 0) {
+				const slnDep = (bookValue - salvage) / remaining
+				if (slnDep > dep) dep = slnDep
+			}
+		}
+		dep = Math.max(0, Math.min(dep, bookValue - salvage))
+		const overlap = Math.max(0, Math.min(p + 1, endPeriod) - Math.max(p, startPeriod))
+		totalDep += dep * overlap
+		bookValue -= dep
+	}
+	return totalDep
+}
+
 export const financialFunctions: FunctionDef[] = [
 	{
 		name: 'PMT',
@@ -437,6 +472,328 @@ export const financialFunctions: FunctionDef[] = [
 				rate = next
 			}
 			return errorValue('#NUM!')
+		},
+	},
+	{
+		name: 'DB',
+		minArgs: 4,
+		maxArgs: 5,
+		evaluate(args) {
+			const cost = num(args[0])
+			if (typeof cost !== 'number') return cost
+			const salvage = num(args[1])
+			if (typeof salvage !== 'number') return salvage
+			const life = num(args[2])
+			if (typeof life !== 'number') return life
+			const period = num(args[3])
+			if (typeof period !== 'number') return period
+			const month = args[4] ? num(args[4]) : 12
+			if (typeof month !== 'number') return month
+			const iLife = Math.trunc(life)
+			const iPeriod = Math.trunc(period)
+			const iMonth = Math.trunc(month)
+			if (cost < 0 || salvage < 0 || iLife <= 0 || iPeriod < 1 || iMonth < 1 || iMonth > 12) {
+				return errorValue('#NUM!')
+			}
+			const maxPeriod = iMonth < 12 ? iLife + 1 : iLife
+			if (iPeriod > maxPeriod) return errorValue('#NUM!')
+			if (cost === 0) return numberValue(0)
+			const rate = Math.round((1 - (salvage / cost) ** (1 / iLife)) * 1000) / 1000
+			let bookValue = cost
+			for (let p = 1; p < iPeriod; p++) {
+				if (p === 1) bookValue -= (cost * rate * iMonth) / 12
+				else bookValue -= bookValue * rate
+			}
+			let dep: number
+			if (iPeriod === 1) dep = (cost * rate * iMonth) / 12
+			else if (iPeriod === iLife + 1) dep = (bookValue * rate * (12 - iMonth)) / 12
+			else dep = bookValue * rate
+			return numberValue(dep)
+		},
+	},
+	{
+		name: 'VDB',
+		minArgs: 5,
+		maxArgs: 7,
+		evaluate(args) {
+			const cost = num(args[0])
+			if (typeof cost !== 'number') return cost
+			const salvage = num(args[1])
+			if (typeof salvage !== 'number') return salvage
+			const life = num(args[2])
+			if (typeof life !== 'number') return life
+			const startPeriod = num(args[3])
+			if (typeof startPeriod !== 'number') return startPeriod
+			const endPeriod = num(args[4])
+			if (typeof endPeriod !== 'number') return endPeriod
+			const factor = args[5] ? num(args[5]) : 2
+			if (typeof factor !== 'number') return factor
+			const noSwitchArg = args[6] ? num(args[6]) : 0
+			if (typeof noSwitchArg !== 'number') return noSwitchArg
+			if (
+				cost < 0 ||
+				salvage < 0 ||
+				life <= 0 ||
+				startPeriod < 0 ||
+				endPeriod < startPeriod ||
+				factor <= 0
+			) {
+				return errorValue('#NUM!')
+			}
+			return numberValue(
+				vdbCalc(cost, salvage, life, startPeriod, endPeriod, factor, noSwitchArg !== 0),
+			)
+		},
+	},
+	{
+		name: 'MIRR',
+		minArgs: 3,
+		maxArgs: 3,
+		evaluate(args) {
+			const first = args[0]
+			if (!first) return errorValue('#VALUE!')
+			const nums = collectNumbers([first])
+			if (!Array.isArray(nums)) return nums
+			if (nums.length < 2) return errorValue('#DIV/0!')
+			const fRate = num(args[1])
+			if (typeof fRate !== 'number') return fRate
+			const rRate = num(args[2])
+			if (typeof rRate !== 'number') return rRate
+			const n = nums.length
+			let pvNeg = 0
+			let fvPos = 0
+			let hasNeg = false
+			let hasPos = false
+			for (let i = 0; i < n; i++) {
+				const v = nums[i] ?? 0
+				if (v < 0) {
+					pvNeg += v / (1 + fRate) ** i
+					hasNeg = true
+				} else if (v > 0) {
+					fvPos += v * (1 + rRate) ** (n - 1 - i)
+					hasPos = true
+				}
+			}
+			if (!hasNeg || !hasPos) return errorValue('#DIV/0!')
+			const result = (-fvPos / pvNeg) ** (1 / (n - 1)) - 1
+			if (!Number.isFinite(result)) return errorValue('#NUM!')
+			return numberValue(result)
+		},
+	},
+	{
+		name: 'ISPMT',
+		minArgs: 4,
+		maxArgs: 4,
+		evaluate(args) {
+			const rate = num(args[0])
+			if (typeof rate !== 'number') return rate
+			const per = num(args[1])
+			if (typeof per !== 'number') return per
+			const nper = num(args[2])
+			if (typeof nper !== 'number') return nper
+			const pv = num(args[3])
+			if (typeof pv !== 'number') return pv
+			if (nper === 0) return errorValue('#DIV/0!')
+			return numberValue(pv * rate * (per / nper - 1))
+		},
+	},
+	{
+		name: 'CUMIPMT',
+		minArgs: 6,
+		maxArgs: 6,
+		evaluate(args) {
+			const rate = num(args[0])
+			if (typeof rate !== 'number') return rate
+			const nper = num(args[1])
+			if (typeof nper !== 'number') return nper
+			const pv = num(args[2])
+			if (typeof pv !== 'number') return pv
+			const sp = num(args[3])
+			if (typeof sp !== 'number') return sp
+			const ep = num(args[4])
+			if (typeof ep !== 'number') return ep
+			const type = num(args[5])
+			if (typeof type !== 'number') return type
+			const iSp = Math.trunc(sp)
+			const iEp = Math.trunc(ep)
+			const iType = Math.trunc(type)
+			if (
+				rate <= 0 ||
+				nper <= 0 ||
+				pv <= 0 ||
+				iSp < 1 ||
+				iEp < iSp ||
+				(iType !== 0 && iType !== 1)
+			) {
+				return errorValue('#NUM!')
+			}
+			let total = 0
+			for (let p = iSp; p <= iEp; p++) {
+				total += ipmtCalc(rate, p, nper, pv, 0, iType)
+			}
+			return numberValue(total)
+		},
+	},
+	{
+		name: 'CUMPRINC',
+		minArgs: 6,
+		maxArgs: 6,
+		evaluate(args) {
+			const rate = num(args[0])
+			if (typeof rate !== 'number') return rate
+			const nper = num(args[1])
+			if (typeof nper !== 'number') return nper
+			const pv = num(args[2])
+			if (typeof pv !== 'number') return pv
+			const sp = num(args[3])
+			if (typeof sp !== 'number') return sp
+			const ep = num(args[4])
+			if (typeof ep !== 'number') return ep
+			const type = num(args[5])
+			if (typeof type !== 'number') return type
+			const iSp = Math.trunc(sp)
+			const iEp = Math.trunc(ep)
+			const iType = Math.trunc(type)
+			if (
+				rate <= 0 ||
+				nper <= 0 ||
+				pv <= 0 ||
+				iSp < 1 ||
+				iEp < iSp ||
+				(iType !== 0 && iType !== 1)
+			) {
+				return errorValue('#NUM!')
+			}
+			const pmtVal = pmt(rate, nper, pv, 0, iType)
+			let total = 0
+			for (let p = iSp; p <= iEp; p++) {
+				total += pmtVal - ipmtCalc(rate, p, nper, pv, 0, iType)
+			}
+			return numberValue(total)
+		},
+	},
+	{
+		name: 'EFFECT',
+		minArgs: 2,
+		maxArgs: 2,
+		evaluate(args) {
+			const nominalRate = num(args[0])
+			if (typeof nominalRate !== 'number') return nominalRate
+			const npery = num(args[1])
+			if (typeof npery !== 'number') return npery
+			const iNpery = Math.trunc(npery)
+			if (nominalRate <= 0 || iNpery < 1) return errorValue('#NUM!')
+			return numberValue((1 + nominalRate / iNpery) ** iNpery - 1)
+		},
+	},
+	{
+		name: 'NOMINAL',
+		minArgs: 2,
+		maxArgs: 2,
+		evaluate(args) {
+			const effectRate = num(args[0])
+			if (typeof effectRate !== 'number') return effectRate
+			const npery = num(args[1])
+			if (typeof npery !== 'number') return npery
+			const iNpery = Math.trunc(npery)
+			if (effectRate <= 0 || iNpery < 1) return errorValue('#NUM!')
+			return numberValue(iNpery * ((1 + effectRate) ** (1 / iNpery) - 1))
+		},
+	},
+	{
+		name: 'PDURATION',
+		minArgs: 3,
+		maxArgs: 3,
+		evaluate(args) {
+			const rate = num(args[0])
+			if (typeof rate !== 'number') return rate
+			const pv = num(args[1])
+			if (typeof pv !== 'number') return pv
+			const fv = num(args[2])
+			if (typeof fv !== 'number') return fv
+			if (rate <= 0 || pv <= 0 || fv <= 0) return errorValue('#NUM!')
+			return numberValue((Math.log(fv) - Math.log(pv)) / Math.log(1 + rate))
+		},
+	},
+	{
+		name: 'RRI',
+		minArgs: 3,
+		maxArgs: 3,
+		evaluate(args) {
+			const nper = num(args[0])
+			if (typeof nper !== 'number') return nper
+			const pv = num(args[1])
+			if (typeof pv !== 'number') return pv
+			const fv = num(args[2])
+			if (typeof fv !== 'number') return fv
+			if (nper <= 0 || pv === 0) return errorValue('#NUM!')
+			const result = (fv / pv) ** (1 / nper) - 1
+			if (!Number.isFinite(result)) return errorValue('#NUM!')
+			return numberValue(result)
+		},
+	},
+	{
+		name: 'FVSCHEDULE',
+		minArgs: 2,
+		maxArgs: 2,
+		evaluate(args) {
+			const principal = num(args[0])
+			if (typeof principal !== 'number') return principal
+			const second = args[1]
+			if (!second) return errorValue('#VALUE!')
+			const rates = collectNumbers([second])
+			if (!Array.isArray(rates)) return rates
+			let fv = principal
+			for (const rate of rates) {
+				fv *= 1 + rate
+			}
+			return numberValue(fv)
+		},
+	},
+	{
+		name: 'DISC',
+		minArgs: 4,
+		maxArgs: 5,
+		evaluate(args) {
+			const settlement = num(args[0])
+			if (typeof settlement !== 'number') return settlement
+			const maturity = num(args[1])
+			if (typeof maturity !== 'number') return maturity
+			const pr = num(args[2])
+			if (typeof pr !== 'number') return pr
+			const redemption = num(args[3])
+			if (typeof redemption !== 'number') return redemption
+			const basis = args[4] ? num(args[4]) : 0
+			if (typeof basis !== 'number') return basis
+			const iBasis = Math.trunc(basis)
+			if (iBasis < 0 || iBasis > 4) return errorValue('#NUM!')
+			const dsm = Math.floor(maturity) - Math.floor(settlement)
+			if (dsm <= 0 || pr <= 0 || redemption <= 0) return errorValue('#NUM!')
+			const yf = yearFracBasis(dsm, iBasis)
+			return numberValue((redemption - pr) / redemption / yf)
+		},
+	},
+	{
+		name: 'INTRATE',
+		minArgs: 4,
+		maxArgs: 5,
+		evaluate(args) {
+			const settlement = num(args[0])
+			if (typeof settlement !== 'number') return settlement
+			const maturity = num(args[1])
+			if (typeof maturity !== 'number') return maturity
+			const investment = num(args[2])
+			if (typeof investment !== 'number') return investment
+			const redemption = num(args[3])
+			if (typeof redemption !== 'number') return redemption
+			const basis = args[4] ? num(args[4]) : 0
+			if (typeof basis !== 'number') return basis
+			const iBasis = Math.trunc(basis)
+			if (iBasis < 0 || iBasis > 4) return errorValue('#NUM!')
+			const dsm = Math.floor(maturity) - Math.floor(settlement)
+			if (dsm <= 0 || investment <= 0 || redemption <= 0) return errorValue('#NUM!')
+			const yf = yearFracBasis(dsm, iBasis)
+			return numberValue((redemption - investment) / investment / yf)
 		},
 	},
 ]

@@ -1213,4 +1213,557 @@ describe('formula functions', () => {
 			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.95, 2)
 		})
 	})
+
+	describe('financial bond/depreciation functions', () => {
+		test('DB first year with 7 months', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'DB(1000,100,6,1,7)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(186.083, 2)
+		})
+
+		test('DB second year', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'DB(1000,100,6,2,7)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(259.639, 2)
+		})
+
+		test('DB with zero cost returns 0', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'DB(0,100,6,1)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(0))
+		})
+
+		test('VDB first period matches DDB', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'VDB(2400,300,10,0,1)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(480))
+		})
+
+		test('VDB fractional period', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'VDB(2400,300,10,0,0.5)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(240))
+		})
+
+		test('VDB with no_switch TRUE', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'VDB(2400,300,10,0,1,2,TRUE)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(480))
+		})
+
+		test('MIRR basic calculation', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, -100)
+			setNum(wb, 1, 0, 50)
+			setNum(wb, 2, 0, 40)
+			setNum(wb, 3, 0, 30)
+			setFormula(wb, 4, 0, 'MIRR(A1:A4,0.10,0.12)')
+			recalc(wb)
+			const r = getResult(wb, 4, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.112, 2)
+		})
+
+		test('MIRR with all positive returns #DIV/0!', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 100)
+			setNum(wb, 1, 0, 200)
+			setFormula(wb, 2, 0, 'MIRR(A1:A2,0.10,0.12)')
+			recalc(wb)
+			expect(getResult(wb, 2, 0)).toEqual(errorValue('#DIV/0!'))
+		})
+
+		test('ISPMT computes interest for specific period', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'ISPMT(0.1,1,3,8000000)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(-533333.33, 0)
+		})
+
+		test('ISPMT with zero nper returns #DIV/0!', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'ISPMT(0.1,1,0,1000)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(errorValue('#DIV/0!'))
+		})
+
+		test('CUMIPMT sums interest over periods', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'CUMIPMT(0.1,4,1000,1,1,0)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(-100, 0)
+		})
+
+		test('CUMIPMT with invalid args returns #NUM!', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'CUMIPMT(-0.1,4,1000,1,1,0)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(errorValue('#NUM!'))
+		})
+
+		test('CUMPRINC sums principal over periods', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'CUMPRINC(0.1,4,1000,1,4,0)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(-1000, 0)
+		})
+
+		test('CUMPRINC with start > end returns #NUM!', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'CUMPRINC(0.1,4,1000,3,1,0)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(errorValue('#NUM!'))
+		})
+
+		test('EFFECT computes effective annual rate', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'EFFECT(0.10,4)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.10381, 4)
+		})
+
+		test('EFFECT with invalid rate returns #NUM!', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'EFFECT(-0.1,4)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(errorValue('#NUM!'))
+		})
+
+		test('NOMINAL roundtrips with EFFECT', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'NOMINAL(EFFECT(0.10,4),4)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.1, 5)
+		})
+
+		test('NOMINAL computes nominal rate', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'NOMINAL(0.10,4)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.09645, 4)
+		})
+
+		test('PDURATION computes periods to reach target', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'PDURATION(0.10,1000,2000)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(7.2725, 3)
+		})
+
+		test('PDURATION with non-positive rate returns #NUM!', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'PDURATION(0,1000,2000)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(errorValue('#NUM!'))
+		})
+
+		test('RRI computes equivalent interest rate', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'RRI(10,1000,2000)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.07177, 4)
+		})
+
+		test('RRI with zero pv returns #NUM!', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'RRI(10,0,2000)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(errorValue('#NUM!'))
+		})
+
+		test('FVSCHEDULE with variable rates', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 1, 0.05)
+			setNum(wb, 1, 1, 0.1)
+			setNum(wb, 2, 1, 0.15)
+			setFormula(wb, 0, 0, 'FVSCHEDULE(100,B1:B3)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(132.825, 2)
+		})
+
+		test('FVSCHEDULE with single rate', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 1, 0.1)
+			setFormula(wb, 0, 0, 'FVSCHEDULE(1000,B1:B1)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(1100))
+		})
+
+		test('DISC computes discount rate', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'DISC(DATE(2024,1,1),DATE(2024,7,1),97,100,2)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.05934, 3)
+		})
+
+		test('DISC with invalid basis returns #NUM!', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'DISC(DATE(2024,1,1),DATE(2024,7,1),97,100,5)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(errorValue('#NUM!'))
+		})
+
+		test('INTRATE computes interest rate', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'INTRATE(DATE(2024,1,1),DATE(2024,7,1),97,100,2)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.06118, 3)
+		})
+
+		test('INTRATE with settlement >= maturity returns #NUM!', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'INTRATE(DATE(2024,7,1),DATE(2024,1,1),97,100)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(errorValue('#NUM!'))
+		})
+	})
+
+	describe('engineering functions - ERF/ERFC', () => {
+		test('ERF(0) is 0', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'ERF(0)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0, 5)
+		})
+
+		test('ERF(1) is approximately 0.8427', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'ERF(1)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.8427, 3)
+		})
+
+		test('ERF with two arguments computes difference', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'ERF(0,1)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.8427, 3)
+		})
+
+		test('ERF.PRECISE(1) matches ERF(1)', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'ERF.PRECISE(1)')
+			setFormula(wb, 0, 1, 'ERF(1)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(getResult(wb, 0, 1))
+		})
+
+		test('ERFC(0) is 1', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'ERFC(0)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(1, 5)
+		})
+
+		test('ERFC(1) is approximately 0.1573', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'ERFC(1)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.1573, 3)
+		})
+
+		test('ERFC.PRECISE(1) matches ERFC(1)', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'ERFC.PRECISE(1)')
+			setFormula(wb, 0, 1, 'ERFC(1)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(getResult(wb, 0, 1))
+		})
+
+		test('ERF + ERFC = 1', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'ERF(0.5)+ERFC(0.5)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(1, 7)
+		})
+	})
+
+	describe('engineering functions - complex numbers', () => {
+		test('COMPLEX creates complex number string', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'COMPLEX(3,4)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('3+4i'))
+		})
+
+		test('COMPLEX with j suffix', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'COMPLEX(3,4,"j")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('3+4j'))
+		})
+
+		test('COMPLEX with zero imaginary', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'COMPLEX(5,0)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('5'))
+		})
+
+		test('IMREAL extracts real part', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMREAL("3+4i")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(3))
+		})
+
+		test('IMREAL of pure imaginary is 0', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMREAL("4i")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(0))
+		})
+
+		test('IMAGINARY extracts imaginary part', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMAGINARY("3+4i")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(4))
+		})
+
+		test('IMAGINARY of pure real is 0', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMAGINARY("3")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(0))
+		})
+
+		test('IMABS of 3+4i is 5', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMABS("3+4i")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(5))
+		})
+
+		test('IMABS of real number', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMABS("-5")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(5))
+		})
+
+		test('IMARGUMENT of 1+i is pi/4', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMARGUMENT("1+i")')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(Math.PI / 4, 7)
+		})
+
+		test('IMARGUMENT of 0 returns #DIV/0!', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMARGUMENT("0")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(errorValue('#DIV/0!'))
+		})
+
+		test('IMCONJUGATE flips imaginary sign', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMCONJUGATE("3+4i")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('3-4i'))
+		})
+
+		test('IMCONJUGATE of real number', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMCONJUGATE("5")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('5'))
+		})
+
+		test('IMSUM adds complex numbers', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMSUM("3+4i","1+2i")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('4+6i'))
+		})
+
+		test('IMSUM with three arguments', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMSUM("1+i","2+2i","3+3i")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('6+6i'))
+		})
+
+		test('IMSUB subtracts complex numbers', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMSUB("3+4i","1+2i")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('2+2i'))
+		})
+
+		test('IMSUB resulting in real', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMSUB("3+4i","1+4i")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('2'))
+		})
+
+		test('IMPRODUCT multiplies complex numbers', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMPRODUCT("1+2i","3+4i")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('-5+10i'))
+		})
+
+		test('IMPRODUCT with real scaling', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMPRODUCT("3+4i","2")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('6+8i'))
+		})
+
+		test('IMDIV divides complex numbers', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMDIV("-5+10i","1+2i")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('3+4i'))
+		})
+
+		test('IMDIV by zero returns #NUM!', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMDIV("3+4i","0")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(errorValue('#NUM!'))
+		})
+
+		test('IMPOWER squares complex number', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMPOWER("3+4i",2)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('-7+24i'))
+		})
+
+		test('IMPOWER with i squared is -1', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMPOWER("i",2)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('-1'))
+		})
+
+		test('IMSQRT of -1 is i', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMSQRT("-1")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('i'))
+		})
+
+		test('IMSQRT of 4 is 2', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMSQRT("4")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('2'))
+		})
+
+		test('IMEXP of 0 is 1', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMEXP("0")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('1'))
+		})
+
+		test('IMEXP of i*pi is -1 (Euler identity)', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMEXP(COMPLEX(0,PI()))')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('-1'))
+		})
+
+		test('IMLN of 1 is 0', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMLN("1")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('0'))
+		})
+
+		test('IMLN of 0 returns #NUM!', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMLN("0")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(errorValue('#NUM!'))
+		})
+
+		test('IMSIN of 0 is 0', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMSIN("0")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('0'))
+		})
+
+		test('IMSIN of real argument matches SIN', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMREAL(IMSIN(COMPLEX(1,0)))')
+			setFormula(wb, 0, 1, 'SIN(1)')
+			recalc(wb)
+			const a = getResult(wb, 0, 0)
+			const b = getResult(wb, 0, 1)
+			expect(a?.kind).toBe('number')
+			expect(b?.kind).toBe('number')
+			if (a?.kind === 'number' && b?.kind === 'number') expect(a.value).toBeCloseTo(b.value, 7)
+		})
+
+		test('IMCOS of 0 is 1', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMCOS("0")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('1'))
+		})
+
+		test('IMCOS of real argument matches COS', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMREAL(IMCOS(COMPLEX(1,0)))')
+			setFormula(wb, 0, 1, 'COS(1)')
+			recalc(wb)
+			const a = getResult(wb, 0, 0)
+			const b = getResult(wb, 0, 1)
+			expect(a?.kind).toBe('number')
+			expect(b?.kind).toBe('number')
+			if (a?.kind === 'number' && b?.kind === 'number') expect(a.value).toBeCloseTo(b.value, 7)
+		})
+	})
 })

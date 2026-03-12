@@ -197,6 +197,166 @@ function modeFn(args: EvalArg[]): CellValue {
 	return numberValue(modeVal)
 }
 
+function collectNumbersA(args: EvalArg[]): number[] | CellValue {
+	const nums: number[] = []
+	for (const arg of args) {
+		if (arg.kind === 'range' && arg.values) {
+			for (const row of arg.values) {
+				for (const cell of row) {
+					if (cell.kind === 'error') return cell
+					if (cell.kind === 'number') nums.push(cell.value)
+					else if (cell.kind === 'date') nums.push(cell.serial)
+					else if (cell.kind === 'boolean') nums.push(cell.value ? 1 : 0)
+					else if (cell.kind === 'string') nums.push(0)
+				}
+			}
+		} else {
+			const n = numArg(arg)
+			if (typeof n !== 'number') return n
+			nums.push(n)
+		}
+	}
+	return nums
+}
+
+function averageaFn(args: EvalArg[]): CellValue {
+	const numsOrErr = collectNumbersA(args)
+	if (!Array.isArray(numsOrErr)) return numsOrErr
+	if (numsOrErr.length === 0) return errorValue('#DIV/0!')
+	const sum = numsOrErr.reduce((a, b) => a + b, 0)
+	return numberValue(sum / numsOrErr.length)
+}
+
+function maxaFn(args: EvalArg[]): CellValue {
+	const numsOrErr = collectNumbersA(args)
+	if (!Array.isArray(numsOrErr)) return numsOrErr
+	if (numsOrErr.length === 0) return numberValue(0)
+	let max = Number.NEGATIVE_INFINITY
+	for (const v of numsOrErr) if (v > max) max = v
+	return numberValue(max)
+}
+
+function minaFn(args: EvalArg[]): CellValue {
+	const numsOrErr = collectNumbersA(args)
+	if (!Array.isArray(numsOrErr)) return numsOrErr
+	if (numsOrErr.length === 0) return numberValue(0)
+	let min = Number.POSITIVE_INFINITY
+	for (const v of numsOrErr) if (v < min) min = v
+	return numberValue(min)
+}
+
+function rankAvgFn(args: EvalArg[]): CellValue {
+	const num = numArg(args[0])
+	if (typeof num !== 'number') return num
+	const numsOrErr = collectFrom(args[1])
+	if (!Array.isArray(numsOrErr)) return numsOrErr
+	const order = args.length > 2 ? numArg(args[2]) : 0
+	if (typeof order !== 'number') return order
+	const ascending = order !== 0
+	let rank = 1
+	let found = false
+	let tieCount = 0
+	for (const v of numsOrErr) {
+		if (v === num) {
+			found = true
+			tieCount++
+		} else if (ascending ? v < num : v > num) rank++
+	}
+	if (!found) return errorValue('#N/A')
+	return numberValue(rank + (tieCount - 1) / 2)
+}
+
+function geomeanFn(args: EvalArg[]): CellValue {
+	const numsOrErr = collectNumbers(args)
+	if (!Array.isArray(numsOrErr)) return numsOrErr
+	if (numsOrErr.length === 0) return errorValue('#NUM!')
+	let logSum = 0
+	for (const v of numsOrErr) {
+		if (v <= 0) return errorValue('#NUM!')
+		logSum += Math.log(v)
+	}
+	return numberValue(Math.exp(logSum / numsOrErr.length))
+}
+
+function harmeanFn(args: EvalArg[]): CellValue {
+	const numsOrErr = collectNumbers(args)
+	if (!Array.isArray(numsOrErr)) return numsOrErr
+	if (numsOrErr.length === 0) return errorValue('#NUM!')
+	let recipSum = 0
+	for (const v of numsOrErr) {
+		if (v <= 0) return errorValue('#NUM!')
+		recipSum += 1 / v
+	}
+	return numberValue(numsOrErr.length / recipSum)
+}
+
+function trimmeanFn(args: EvalArg[]): CellValue {
+	const numsOrErr = collectFrom(args[0])
+	if (!Array.isArray(numsOrErr)) return numsOrErr
+	const pct = numArg(args[1])
+	if (typeof pct !== 'number') return pct
+	if (pct < 0 || pct >= 1 || numsOrErr.length === 0) return errorValue('#NUM!')
+	numsOrErr.sort((a, b) => a - b)
+	const trimCount = Math.floor((numsOrErr.length * pct) / 2)
+	const trimmed = numsOrErr.slice(trimCount, numsOrErr.length - trimCount)
+	if (trimmed.length === 0) return errorValue('#NUM!')
+	const sum = trimmed.reduce((a, b) => a + b, 0)
+	return numberValue(sum / trimmed.length)
+}
+
+function percentrankIncFn(args: EvalArg[]): CellValue {
+	const numsOrErr = collectFrom(args[0])
+	if (!Array.isArray(numsOrErr)) return numsOrErr
+	const x = numArg(args[1])
+	if (typeof x !== 'number') return x
+	const sig = args.length > 2 ? numArg(args[2]) : 3
+	if (typeof sig !== 'number') return sig
+	const s = Math.floor(sig)
+	if (s < 1 || numsOrErr.length === 0) return errorValue('#NUM!')
+	numsOrErr.sort((a, b) => a - b)
+	const n = numsOrErr.length
+	if (x < (numsOrErr[0] as number) || x > (numsOrErr[n - 1] as number)) return errorValue('#N/A')
+	if (n === 1) return numberValue(1)
+	let i = 0
+	while (i < n && (numsOrErr[i] as number) < x) i++
+	let rank: number
+	if (i < n && (numsOrErr[i] as number) === x) {
+		rank = i / (n - 1)
+	} else {
+		const frac =
+			(x - (numsOrErr[i - 1] as number)) / ((numsOrErr[i] as number) - (numsOrErr[i - 1] as number))
+		rank = (i - 1 + frac) / (n - 1)
+	}
+	const factor = 10 ** s
+	return numberValue(Math.floor(rank * factor) / factor)
+}
+
+function percentrankExcFn(args: EvalArg[]): CellValue {
+	const numsOrErr = collectFrom(args[0])
+	if (!Array.isArray(numsOrErr)) return numsOrErr
+	const x = numArg(args[1])
+	if (typeof x !== 'number') return x
+	const sig = args.length > 2 ? numArg(args[2]) : 3
+	if (typeof sig !== 'number') return sig
+	const s = Math.floor(sig)
+	if (s < 1 || numsOrErr.length === 0) return errorValue('#NUM!')
+	numsOrErr.sort((a, b) => a - b)
+	const n = numsOrErr.length
+	if (x < (numsOrErr[0] as number) || x > (numsOrErr[n - 1] as number)) return errorValue('#N/A')
+	let i = 0
+	while (i < n && (numsOrErr[i] as number) < x) i++
+	let rank: number
+	if (i < n && (numsOrErr[i] as number) === x) {
+		rank = (i + 1) / (n + 1)
+	} else {
+		const frac =
+			(x - (numsOrErr[i - 1] as number)) / ((numsOrErr[i] as number) - (numsOrErr[i - 1] as number))
+		rank = (i + frac) / (n + 1)
+	}
+	const factor = 10 ** s
+	return numberValue(Math.floor(rank * factor) / factor)
+}
+
 // --- Registration ---
 
 registerFunction({ name: 'LARGE', minArgs: 2, maxArgs: 2, evaluate: largeFn })
@@ -274,3 +434,23 @@ registerFunction({
 })
 registerFunction({ name: 'MODE', minArgs: 1, maxArgs: 255, evaluate: modeFn })
 registerFunction({ name: 'MODE.SNGL', minArgs: 1, maxArgs: 255, evaluate: modeFn })
+registerFunction({ name: 'AVERAGEA', minArgs: 1, maxArgs: 255, evaluate: averageaFn })
+registerFunction({ name: 'MAXA', minArgs: 1, maxArgs: 255, evaluate: maxaFn })
+registerFunction({ name: 'MINA', minArgs: 1, maxArgs: 255, evaluate: minaFn })
+registerFunction({ name: 'RANK.EQ', minArgs: 2, maxArgs: 3, evaluate: rankFn })
+registerFunction({ name: 'RANK.AVG', minArgs: 2, maxArgs: 3, evaluate: rankAvgFn })
+registerFunction({ name: 'GEOMEAN', minArgs: 1, maxArgs: 255, evaluate: geomeanFn })
+registerFunction({ name: 'HARMEAN', minArgs: 1, maxArgs: 255, evaluate: harmeanFn })
+registerFunction({ name: 'TRIMMEAN', minArgs: 2, maxArgs: 2, evaluate: trimmeanFn })
+registerFunction({
+	name: 'PERCENTRANK.INC',
+	minArgs: 2,
+	maxArgs: 3,
+	evaluate: percentrankIncFn,
+})
+registerFunction({
+	name: 'PERCENTRANK.EXC',
+	minArgs: 2,
+	maxArgs: 3,
+	evaluate: percentrankExcFn,
+})

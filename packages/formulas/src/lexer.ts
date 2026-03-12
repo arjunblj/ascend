@@ -151,7 +151,7 @@ export function tokenize(formula: string): Token[] {
 			}
 
 			const upper = raw.toUpperCase()
-			if (upper === 'TRUE' || upper === 'FALSE') {
+			if ((upper === 'TRUE' || upper === 'FALSE') && formula.charAt(pos) !== '(') {
 				tokens.push({ type: TokenType.Boolean, value: upper, position: start })
 				continue
 			}

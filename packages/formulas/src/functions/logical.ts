@@ -159,6 +159,10 @@ export const logicalFunctions: FunctionDef[] = [
 		return v.kind === 'error' && v.value === '#N/A' ? (args[1]?.value ?? EMPTY) : v
 	}),
 
+	fn('TRUE', 0, 0, () => booleanValue(true)),
+
+	fn('FALSE', 0, 0, () => booleanValue(false)),
+
 	fn('SWITCH', 3, 254, (args) => {
 		const expr = args[0]?.value ?? EMPTY
 		if (isError(expr)) return expr

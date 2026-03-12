@@ -521,6 +521,103 @@ export const textFunctions: FunctionDef[] = [
 		return numberValue(s.codePointAt(0) ?? s.charCodeAt(0))
 	}),
 
+	fn('FIXED', 1, 3, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		const decimals = args.length >= 2 ? numArg(args[1]) : 2
+		if (typeof decimals !== 'number') return decimals
+		const ncv = args.length >= 3 ? topLeftScalar(args[2]?.value ?? EMPTY) : EMPTY
+		if (isError(ncv)) return ncv
+		const noCommas =
+			ncv.kind === 'boolean' ? ncv.value : ncv.kind === 'number' ? ncv.value !== 0 : false
+		const d = Math.trunc(decimals)
+		let text: string
+		if (d < 0) {
+			const factor = 10 ** -d
+			text = String(Math.round(n / factor) * factor)
+		} else {
+			text = n.toFixed(d)
+		}
+		if (!noCommas) {
+			const neg = text.startsWith('-')
+			const raw = neg ? text.slice(1) : text
+			const [intPart = '', decPart] = raw.split('.')
+			const withCommas = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+			text = (neg ? '-' : '') + withCommas + (decPart !== undefined ? `.${decPart}` : '')
+		}
+		return stringValue(text)
+	}),
+
+	fn('DOLLAR', 1, 2, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		const decimals = args.length >= 2 ? numArg(args[1]) : 2
+		if (typeof decimals !== 'number') return decimals
+		const d = Math.trunc(decimals)
+		let text: string
+		if (d < 0) {
+			const factor = 10 ** -d
+			text = String(Math.round(n / factor) * factor)
+		} else {
+			text = n.toFixed(d)
+		}
+		const neg = text.startsWith('-')
+		const raw = neg ? text.slice(1) : text
+		const [intPart = '', decPart] = raw.split('.')
+		const withCommas = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+		text = `${neg ? '-' : ''}$${withCommas}${decPart !== undefined ? `.${decPart}` : ''}`
+		return stringValue(text)
+	}),
+
+	fn('ARRAYTOTEXT', 1, 2, (args) => {
+		const format = args.length >= 2 ? numArg(args[1]) : 0
+		if (typeof format !== 'number') return format
+		const strict = Math.trunc(format) === 1
+		const arg = args[0]
+		if (!arg) return stringValue('')
+		const rows: readonly (readonly CellValue[])[] | null =
+			arg.kind === 'range' && arg.values
+				? arg.values
+				: arg.value.kind === 'array'
+					? arg.value.rows
+					: null
+		if (rows) {
+			if (strict) {
+				const rowStrs: string[] = []
+				for (const row of rows) {
+					const cellStrs: string[] = []
+					for (const cell of row) {
+						if (isError(cell)) return cell
+						cellStrs.push(cell.kind === 'string' ? `"${cell.value}"` : cvStr(cell))
+					}
+					rowStrs.push(cellStrs.join(','))
+				}
+				return stringValue(`{${rowStrs.join(';')}}`)
+			}
+			const parts: string[] = []
+			for (const row of rows) {
+				for (const cell of row) {
+					if (isError(cell)) return cell
+					if (!isEmpty(cell)) parts.push(cvStr(cell))
+				}
+			}
+			return stringValue(parts.join(', '))
+		}
+		const v = topLeftScalar(arg.value ?? EMPTY)
+		if (isError(v)) return v
+		if (strict && v.kind === 'string') return stringValue(`"${v.value}"`)
+		return stringValue(cvStr(v))
+	}),
+
+	fn('VALUETOTEXT', 1, 2, (args) => {
+		const v = topLeftScalar(args[0]?.value ?? EMPTY)
+		if (isError(v)) return v
+		const format = args.length >= 2 ? numArg(args[1]) : 0
+		if (typeof format !== 'number') return format
+		if (Math.trunc(format) === 1 && v.kind === 'string') return stringValue(`"${v.value}"`)
+		return stringValue(cvStr(v))
+	}),
+
 	fn('NUMBERVALUE', 1, 3, (args) => {
 		const text = strArg(args[0])
 		if (typeof text !== 'string') return text

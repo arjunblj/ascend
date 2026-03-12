@@ -91,4 +91,57 @@ export const roundingFunctions: FunctionDef[] = [
 		const even = x % 2 === 1 ? x + 1 : x
 		return numberValue(n >= 0 ? even : -even)
 	}),
+
+	fn('CEILING.MATH', 1, 3, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		const rawSig = args.length >= 2 ? numArg(args[1]) : 1
+		if (typeof rawSig !== 'number') return rawSig
+		if (rawSig === 0) return numberValue(0)
+		const sig = Math.abs(rawSig)
+		const mode = args.length >= 3 ? numArg(args[2]) : 0
+		if (typeof mode !== 'number') return mode
+		if (n >= 0 || mode === 0) return numberValue(Math.ceil(n / sig) * sig)
+		return numberValue(-Math.ceil(Math.abs(n) / sig) * sig)
+	}),
+
+	fn('CEILING.PRECISE', 1, 2, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		const rawSig = args.length >= 2 ? numArg(args[1]) : 1
+		if (typeof rawSig !== 'number') return rawSig
+		if (rawSig === 0) return numberValue(0)
+		return numberValue(Math.ceil(n / Math.abs(rawSig)) * Math.abs(rawSig))
+	}),
+
+	fn('FLOOR.MATH', 1, 3, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		const rawSig = args.length >= 2 ? numArg(args[1]) : 1
+		if (typeof rawSig !== 'number') return rawSig
+		if (rawSig === 0) return numberValue(0)
+		const sig = Math.abs(rawSig)
+		const mode = args.length >= 3 ? numArg(args[2]) : 0
+		if (typeof mode !== 'number') return mode
+		if (n >= 0 || mode === 0) return numberValue(Math.floor(n / sig) * sig)
+		return numberValue(-Math.floor(Math.abs(n) / sig) * sig)
+	}),
+
+	fn('FLOOR.PRECISE', 1, 2, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		const rawSig = args.length >= 2 ? numArg(args[1]) : 1
+		if (typeof rawSig !== 'number') return rawSig
+		if (rawSig === 0) return numberValue(0)
+		return numberValue(Math.floor(n / Math.abs(rawSig)) * Math.abs(rawSig))
+	}),
+
+	fn('ISO.CEILING', 1, 2, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		const rawSig = args.length >= 2 ? numArg(args[1]) : 1
+		if (typeof rawSig !== 'number') return rawSig
+		if (rawSig === 0) return numberValue(0)
+		return numberValue(Math.ceil(n / Math.abs(rawSig)) * Math.abs(rawSig))
+	}),
 ]

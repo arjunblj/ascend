@@ -1,4 +1,4 @@
-import { errorValue, numberValue } from '@ascend/schema'
+import { EMPTY, errorValue, numberValue, stringValue, topLeftScalar } from '@ascend/schema'
 import type { FunctionDef } from '../index.ts'
 import { fn, numArg } from './helpers.ts'
 
@@ -121,5 +121,109 @@ export const basicFunctions: FunctionDef[] = [
 		const n = numArg(args[0])
 		if (typeof n !== 'number') return n
 		return numberValue(Math.exp(n))
+	}),
+
+	fn('SUMSQ', 1, 255, (args) => {
+		let sum = 0
+		for (const arg of args) {
+			if (arg.kind === 'range' && arg.values) {
+				for (const row of arg.values) {
+					for (const cell of row) {
+						if (cell.kind === 'error') return cell
+						if (cell.kind === 'number') sum += cell.value ** 2
+						else if (cell.kind === 'date') sum += cell.serial ** 2
+					}
+				}
+			} else {
+				const n = numArg(arg)
+				if (typeof n !== 'number') return n
+				sum += n * n
+			}
+		}
+		return numberValue(sum)
+	}),
+
+	fn('ROMAN', 1, 2, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		const num = Math.trunc(n)
+		if (num < 0 || num > 3999) return errorValue('#VALUE!')
+		if (num === 0) return stringValue('')
+		const vals = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1]
+		const syms = ['M', 'CM', 'D', 'CD', 'C', 'XC', 'L', 'XL', 'X', 'IX', 'V', 'IV', 'I']
+		let result = ''
+		let remaining = num
+		for (let i = 0; i < vals.length; i++) {
+			while (remaining >= (vals[i] as number)) {
+				result += syms[i]
+				remaining -= vals[i] as number
+			}
+		}
+		return stringValue(result)
+	}),
+
+	fn('ARABIC', 1, 1, (args) => {
+		const v = topLeftScalar(args[0]?.value ?? EMPTY)
+		if (v.kind === 'error') return v
+		if (v.kind !== 'string') return errorValue('#VALUE!')
+		let s = v.value.trim().toUpperCase()
+		if (s === '' || s === '-') return numberValue(0)
+		let sign = 1
+		if (s.startsWith('-')) {
+			sign = -1
+			s = s.slice(1)
+		}
+		const romanVals: Record<string, number> = {
+			I: 1,
+			V: 5,
+			X: 10,
+			L: 50,
+			C: 100,
+			D: 500,
+			M: 1000,
+		}
+		let result = 0
+		let prev = 0
+		for (let i = s.length - 1; i >= 0; i--) {
+			const val = romanVals[s[i] as string]
+			if (val === undefined) return errorValue('#VALUE!')
+			if (val < prev) result -= val
+			else result += val
+			prev = val
+		}
+		return numberValue(sign * result)
+	}),
+
+	fn('BASE', 2, 3, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		const radix = numArg(args[1])
+		if (typeof radix !== 'number') return radix
+		const r = Math.trunc(radix)
+		if (r < 2 || r > 36) return errorValue('#NUM!')
+		const num = Math.trunc(n)
+		if (num < 0) return errorValue('#NUM!')
+		let result = num.toString(r).toUpperCase()
+		if (args.length >= 3) {
+			const minLen = numArg(args[2])
+			if (typeof minLen !== 'number') return minLen
+			const ml = Math.trunc(minLen)
+			if (ml < 0) return errorValue('#NUM!')
+			result = result.padStart(ml, '0')
+		}
+		return stringValue(result)
+	}),
+
+	fn('DECIMAL', 2, 2, (args) => {
+		const v = topLeftScalar(args[0]?.value ?? EMPTY)
+		if (v.kind === 'error') return v
+		const s = v.kind === 'string' ? v.value : v.kind === 'number' ? String(v.value) : ''
+		const radix = numArg(args[1])
+		if (typeof radix !== 'number') return radix
+		const r = Math.trunc(radix)
+		if (r < 2 || r > 36) return errorValue('#NUM!')
+		const result = Number.parseInt(s, r)
+		if (Number.isNaN(result)) return errorValue('#NUM!')
+		return numberValue(result)
 	}),
 ]

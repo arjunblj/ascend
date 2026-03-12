@@ -133,6 +133,43 @@ function addMonths(parts: DateParts, months: number): { year: number; month: num
 	return { year: newYear, month: newMonth }
 }
 
+function parseWeekendDays(arg: EvalArg | undefined): Set<number> | CellValue {
+	if (!arg) return new Set([0, 6])
+	const v = cellOf(arg)
+	if (v.kind === 'error') return v
+	if (v.kind === 'string' && v.value.length === 7) {
+		if (!/^[01]{7}$/.test(v.value)) return errorValue('#VALUE!')
+		const set = new Set<number>()
+		for (let i = 0; i < 7; i++) {
+			if (v.value[i] === '1') set.add((i + 1) % 7)
+		}
+		if (set.size === 7) return errorValue('#VALUE!')
+		return set
+	}
+	const n = toNumber(v)
+	if (n === null) return errorValue('#VALUE!')
+	const code = Math.trunc(n)
+	const patterns: Record<number, number[]> = {
+		1: [0, 6],
+		2: [0, 1],
+		3: [1, 2],
+		4: [2, 3],
+		5: [3, 4],
+		6: [4, 5],
+		7: [5, 6],
+		11: [0],
+		12: [1],
+		13: [2],
+		14: [3],
+		15: [4],
+		16: [5],
+		17: [6],
+	}
+	const days = patterns[code]
+	if (!days) return errorValue('#NUM!')
+	return new Set(days)
+}
+
 // --- Implementations ---
 
 function dateFn(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
@@ -704,4 +741,66 @@ registerFunction({
 	minArgs: 1,
 	maxArgs: 1,
 	evaluate: isoWeekNum,
+})
+registerFunction({
+	name: 'DAYS',
+	minArgs: 2,
+	maxArgs: 2,
+	evaluate: (args) => {
+		const end = numArg(args[0])
+		if (typeof end !== 'number') return end
+		const start = numArg(args[1])
+		if (typeof start !== 'number') return start
+		return numberValue(Math.floor(end) - Math.floor(start))
+	},
+})
+registerFunction({
+	name: 'NETWORKDAYS.INTL',
+	minArgs: 2,
+	maxArgs: 4,
+	evaluate: (args, ctx?) => {
+		const sn = numArg(args[0])
+		if (typeof sn !== 'number') return sn
+		const en = numArg(args[1])
+		if (typeof en !== 'number') return en
+		const dateSystem = currentDateSystem(ctx)
+		const weekendResult = parseWeekendDays(args[2])
+		if ('kind' in weekendResult) return weekendResult
+		const holidays = args.length > 3 ? getHolidays(args[3]) : new Set<number>()
+		let start = Math.floor(sn)
+		let end = Math.floor(en)
+		const sign = start <= end ? 1 : -1
+		if (start > end) [start, end] = [end, start]
+		let count = 0
+		for (let d = start; d <= end; d++) {
+			const di = serialDayIndex(d, dateSystem)
+			if (di !== null && !weekendResult.has(di) && !holidays.has(d)) count++
+		}
+		return numberValue(count * sign)
+	},
+})
+registerFunction({
+	name: 'WORKDAY.INTL',
+	minArgs: 2,
+	maxArgs: 4,
+	evaluate: (args, ctx?) => {
+		const sn = numArg(args[0])
+		if (typeof sn !== 'number') return sn
+		const dn = numArg(args[1])
+		if (typeof dn !== 'number') return dn
+		const dateSystem = currentDateSystem(ctx)
+		const weekendResult = parseWeekendDays(args[2])
+		if ('kind' in weekendResult) return weekendResult
+		const holidays = args.length > 3 ? getHolidays(args[3]) : new Set<number>()
+		let serial = Math.floor(sn)
+		let days = Math.trunc(dn)
+		const step = days > 0 ? 1 : -1
+		days = Math.abs(days)
+		while (days > 0) {
+			serial += step
+			const di = serialDayIndex(serial, dateSystem)
+			if (di !== null && !weekendResult.has(di) && !holidays.has(serial)) days--
+		}
+		return numberValue(serial)
+	},
 })

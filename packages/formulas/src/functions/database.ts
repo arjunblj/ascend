@@ -287,3 +287,66 @@ registerFunction({ name: 'DMAX', minArgs: 3, maxArgs: 3, evaluate: dmax })
 registerFunction({ name: 'DMIN', minArgs: 3, maxArgs: 3, evaluate: dmin })
 registerFunction({ name: 'DPRODUCT', minArgs: 3, maxArgs: 3, evaluate: dproduct })
 registerFunction({ name: 'DGET', minArgs: 3, maxArgs: 3, evaluate: dget })
+
+function dstdev(args: EvalArg[]): CellValue {
+	const { values, error } = databaseFilter(args)
+	if (error) return error
+	const nums: number[] = []
+	for (const v of values) {
+		const n = numericVal(v)
+		if (n !== null) nums.push(n)
+	}
+	const divisor = nums.length - 1
+	if (divisor < 1) return errorValue('#DIV/0!')
+	const mean = nums.reduce((a, b) => a + b, 0) / nums.length
+	const sumSq = nums.reduce((acc, v) => acc + (v - mean) ** 2, 0)
+	return numberValue(Math.sqrt(sumSq / divisor))
+}
+
+function dstdevp(args: EvalArg[]): CellValue {
+	const { values, error } = databaseFilter(args)
+	if (error) return error
+	const nums: number[] = []
+	for (const v of values) {
+		const n = numericVal(v)
+		if (n !== null) nums.push(n)
+	}
+	if (nums.length === 0) return errorValue('#DIV/0!')
+	const mean = nums.reduce((a, b) => a + b, 0) / nums.length
+	const sumSq = nums.reduce((acc, v) => acc + (v - mean) ** 2, 0)
+	return numberValue(Math.sqrt(sumSq / nums.length))
+}
+
+function dvar(args: EvalArg[]): CellValue {
+	const { values, error } = databaseFilter(args)
+	if (error) return error
+	const nums: number[] = []
+	for (const v of values) {
+		const n = numericVal(v)
+		if (n !== null) nums.push(n)
+	}
+	const divisor = nums.length - 1
+	if (divisor < 1) return errorValue('#DIV/0!')
+	const mean = nums.reduce((a, b) => a + b, 0) / nums.length
+	const sumSq = nums.reduce((acc, v) => acc + (v - mean) ** 2, 0)
+	return numberValue(sumSq / divisor)
+}
+
+function dvarp(args: EvalArg[]): CellValue {
+	const { values, error } = databaseFilter(args)
+	if (error) return error
+	const nums: number[] = []
+	for (const v of values) {
+		const n = numericVal(v)
+		if (n !== null) nums.push(n)
+	}
+	if (nums.length === 0) return errorValue('#DIV/0!')
+	const mean = nums.reduce((a, b) => a + b, 0) / nums.length
+	const sumSq = nums.reduce((acc, v) => acc + (v - mean) ** 2, 0)
+	return numberValue(sumSq / nums.length)
+}
+
+registerFunction({ name: 'DSTDEV', minArgs: 3, maxArgs: 3, evaluate: dstdev })
+registerFunction({ name: 'DSTDEVP', minArgs: 3, maxArgs: 3, evaluate: dstdevp })
+registerFunction({ name: 'DVAR', minArgs: 3, maxArgs: 3, evaluate: dvar })
+registerFunction({ name: 'DVARP', minArgs: 3, maxArgs: 3, evaluate: dvarp })

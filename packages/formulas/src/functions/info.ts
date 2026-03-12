@@ -142,3 +142,9 @@ registerFunction({ name: 'ISEVEN', minArgs: 1, maxArgs: 1, evaluate: iseven })
 registerFunction({ name: 'ISODD', minArgs: 1, maxArgs: 1, evaluate: isodd })
 registerFunction({ name: 'ISNONTEXT', minArgs: 1, maxArgs: 1, evaluate: isnontext })
 registerFunction({ name: 'ERROR.TYPE', minArgs: 1, maxArgs: 1, evaluate: errorType })
+registerFunction({
+	name: 'ISFORMULA',
+	minArgs: 1,
+	maxArgs: 1,
+	evaluate: () => booleanValue(false),
+})

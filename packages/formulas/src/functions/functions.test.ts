@@ -407,6 +407,305 @@ describe('formula functions', () => {
 		})
 	})
 
+	describe('stats functions', () => {
+		test('AVERAGEA includes text as 0 and booleans as 0/1', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 10)
+			setStr(wb, 1, 0, 'text')
+			setBool(wb, 2, 0, true)
+			setNum(wb, 3, 0, 5)
+			setFormula(wb, 4, 0, 'AVERAGEA(A1:A4)')
+			recalc(wb)
+			expect(getResult(wb, 4, 0)).toEqual(numberValue(4))
+		})
+
+		test('MAXA treats TRUE as 1 and text as 0', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, -5)
+			setStr(wb, 1, 0, 'text')
+			setBool(wb, 2, 0, true)
+			setFormula(wb, 3, 0, 'MAXA(A1:A3)')
+			recalc(wb)
+			expect(getResult(wb, 3, 0)).toEqual(numberValue(1))
+		})
+
+		test('MINA treats FALSE as 0 and text as 0', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 5)
+			setBool(wb, 1, 0, false)
+			setStr(wb, 2, 0, 'text')
+			setFormula(wb, 3, 0, 'MINA(A1:A3)')
+			recalc(wb)
+			expect(getResult(wb, 3, 0)).toEqual(numberValue(0))
+		})
+
+		test('RANK.EQ returns same as RANK', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 3)
+			setNum(wb, 1, 0, 1)
+			setNum(wb, 2, 0, 5)
+			setFormula(wb, 3, 0, 'RANK.EQ(3,A1:A3)')
+			setFormula(wb, 4, 0, 'RANK(3,A1:A3)')
+			recalc(wb)
+			expect(getResult(wb, 3, 0)).toEqual(getResult(wb, 4, 0))
+		})
+
+		test('RANK.AVG returns average for tied values', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 3)
+			setNum(wb, 1, 0, 3)
+			setNum(wb, 2, 0, 5)
+			setNum(wb, 3, 0, 1)
+			setFormula(wb, 4, 0, 'RANK.AVG(3,A1:A4)')
+			recalc(wb)
+			expect(getResult(wb, 4, 0)).toEqual(numberValue(2.5))
+		})
+
+		test('GEOMEAN of positive values', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 2)
+			setNum(wb, 1, 0, 8)
+			setFormula(wb, 2, 0, 'GEOMEAN(A1:A2)')
+			recalc(wb)
+			expect(getResult(wb, 2, 0)).toEqual(numberValue(4))
+		})
+
+		test('GEOMEAN with non-positive value returns #NUM!', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 2)
+			setNum(wb, 1, 0, 0)
+			setFormula(wb, 2, 0, 'GEOMEAN(A1:A2)')
+			recalc(wb)
+			expect(getResult(wb, 2, 0)).toEqual(errorValue('#NUM!'))
+		})
+
+		test('HARMEAN of positive values', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 2)
+			setNum(wb, 1, 0, 4)
+			setFormula(wb, 2, 0, 'HARMEAN(A1:A2)')
+			recalc(wb)
+			const r = getResult(wb, 2, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(8 / 3)
+		})
+
+		test('TRIMMEAN trims 40% and averages interior', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 1)
+			setNum(wb, 1, 0, 2)
+			setNum(wb, 2, 0, 3)
+			setNum(wb, 3, 0, 4)
+			setNum(wb, 4, 0, 5)
+			setFormula(wb, 5, 0, 'TRIMMEAN(A1:A5,0.4)')
+			recalc(wb)
+			expect(getResult(wb, 5, 0)).toEqual(numberValue(3))
+		})
+
+		test('PERCENTRANK.INC returns inclusive percentile rank', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 1)
+			setNum(wb, 1, 0, 2)
+			setNum(wb, 2, 0, 3)
+			setNum(wb, 3, 0, 4)
+			setNum(wb, 4, 0, 5)
+			setFormula(wb, 5, 0, 'PERCENTRANK.INC(A1:A5,3)')
+			recalc(wb)
+			expect(getResult(wb, 5, 0)).toEqual(numberValue(0.5))
+		})
+
+		test('PERCENTRANK.EXC returns exclusive percentile rank', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 1)
+			setNum(wb, 1, 0, 2)
+			setNum(wb, 2, 0, 3)
+			setNum(wb, 3, 0, 4)
+			setNum(wb, 4, 0, 5)
+			setFormula(wb, 5, 0, 'PERCENTRANK.EXC(A1:A5,3)')
+			recalc(wb)
+			expect(getResult(wb, 5, 0)).toEqual(numberValue(0.5))
+		})
+	})
+
+	describe('additional math functions', () => {
+		test('SUMSQ sums squares of values', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 3)
+			setNum(wb, 1, 0, 4)
+			setFormula(wb, 2, 0, 'SUMSQ(A1:A2)')
+			recalc(wb)
+			expect(getResult(wb, 2, 0)).toEqual(numberValue(25))
+		})
+
+		test('ROMAN converts Arabic to Roman numeral', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'ROMAN(499)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('CDXCIX'))
+		})
+
+		test('ARABIC converts Roman to Arabic number', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'ARABIC("CDXCIX")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(499))
+		})
+
+		test('BASE converts to target radix with padding', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'BASE(255,16,4)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('00FF'))
+		})
+
+		test('DECIMAL converts from target radix', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'DECIMAL("FF",16)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(255))
+		})
+	})
+
+	describe('additional rounding functions', () => {
+		test('CEILING.MATH rounds up to nearest multiple', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'CEILING.MATH(6.3,2)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(8))
+		})
+
+		test('CEILING.MATH with negative and mode rounds away from zero', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'CEILING.MATH(-4.1,2,1)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(-6))
+		})
+
+		test('CEILING.PRECISE rounds toward positive infinity', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'CEILING.PRECISE(-4.1,2)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(-4))
+		})
+
+		test('FLOOR.MATH rounds down to nearest multiple', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'FLOOR.MATH(6.7,2)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(6))
+		})
+
+		test('FLOOR.PRECISE rounds toward negative infinity', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'FLOOR.PRECISE(-4.1,2)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(-6))
+		})
+
+		test('ISO.CEILING same as CEILING.PRECISE', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'ISO.CEILING(-4.1,2)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(-4))
+		})
+	})
+
+	describe('logical constants', () => {
+		test('TRUE() returns TRUE', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'TRUE()')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(booleanValue(true))
+		})
+
+		test('FALSE() returns FALSE', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'FALSE()')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(booleanValue(false))
+		})
+	})
+
+	describe('text format functions', () => {
+		test('FIXED with decimals and commas', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'FIXED(1234567.89,2)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('1,234,567.89'))
+		})
+
+		test('FIXED with no commas flag', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'FIXED(1234.56,2,TRUE)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('1234.56'))
+		})
+
+		test('DOLLAR formats as currency', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'DOLLAR(1234.56)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('$1,234.56'))
+		})
+
+		test('VALUETOTEXT returns string representation', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 42)
+			setFormula(wb, 1, 0, 'VALUETOTEXT(A1)')
+			recalc(wb)
+			expect(getResult(wb, 1, 0)).toEqual(stringValue('42'))
+		})
+	})
+
+	describe('date functions - DAYS', () => {
+		test('DAYS computes difference between dates', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'DATE(2021,1,1)')
+			setFormula(wb, 0, 1, 'DATE(2022,1,1)')
+			setFormula(wb, 0, 2, 'DAYS(B1,A1)')
+			recalc(wb)
+			expect(getResult(wb, 0, 2)).toEqual(numberValue(365))
+		})
+	})
+
+	describe('database aggregate functions', () => {
+		test('DSTDEV computes sample standard deviation', () => {
+			const wb = makeWorkbook()
+			setStr(wb, 0, 0, 'Name')
+			setStr(wb, 0, 1, 'Score')
+			setStr(wb, 1, 0, 'A')
+			setNum(wb, 1, 1, 10)
+			setStr(wb, 2, 0, 'A')
+			setNum(wb, 2, 1, 20)
+			setStr(wb, 3, 0, 'A')
+			setNum(wb, 3, 1, 30)
+			setStr(wb, 5, 0, 'Name')
+			setStr(wb, 6, 0, 'A')
+			setFormula(wb, 7, 0, 'DSTDEV(A1:B4,2,A6:A7)')
+			recalc(wb)
+			expect(getResult(wb, 7, 0)).toEqual(numberValue(10))
+		})
+
+		test('DVARP computes population variance', () => {
+			const wb = makeWorkbook()
+			setStr(wb, 0, 0, 'Name')
+			setStr(wb, 0, 1, 'Score')
+			setStr(wb, 1, 0, 'A')
+			setNum(wb, 1, 1, 10)
+			setStr(wb, 2, 0, 'A')
+			setNum(wb, 2, 1, 20)
+			setStr(wb, 3, 0, 'A')
+			setNum(wb, 3, 1, 30)
+			setStr(wb, 5, 0, 'Name')
+			setStr(wb, 6, 0, 'A')
+			setFormula(wb, 7, 0, 'DVARP(A1:B4,2,A6:A7)')
+			recalc(wb)
+			const r = getResult(wb, 7, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(200 / 3)
+		})
+	})
+
 	describe('dynamic array functions', () => {
 		test('SORT descending', () => {
 			const wb = makeWorkbook()

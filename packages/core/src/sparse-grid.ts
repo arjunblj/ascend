@@ -1,11 +1,37 @@
-const STRING_POOL_LIMIT = 16_384
-const stringPool = new Map<string, string>()
+const YOUNG_POOL_LIMIT = 8_192
+const OLD_POOL_LIMIT = 32_768
+const PROMOTION_THRESHOLD = 3
+const youngPool = new Map<string, string>()
+const youngHits = new Map<string, number>()
+const oldPool = new Map<string, string>()
 
 function internString(s: string): string {
-	const cached = stringPool.get(s)
-	if (cached !== undefined) return cached
-	if (stringPool.size >= STRING_POOL_LIMIT) stringPool.clear()
-	stringPool.set(s, s)
+	const fromOld = oldPool.get(s)
+	if (fromOld !== undefined) return fromOld
+
+	const fromYoung = youngPool.get(s)
+	if (fromYoung !== undefined) {
+		const hits = (youngHits.get(s) ?? 0) + 1
+		youngHits.set(s, hits)
+		if (hits >= PROMOTION_THRESHOLD) {
+			youngPool.delete(s)
+			youngHits.delete(s)
+			if (oldPool.size >= OLD_POOL_LIMIT) {
+				const iter = oldPool.keys()
+				const quarter = OLD_POOL_LIMIT >> 2
+				for (let i = 0; i < quarter; i++) iter.next()
+			}
+			oldPool.set(s, s)
+		}
+		return fromYoung
+	}
+
+	if (youngPool.size >= YOUNG_POOL_LIMIT) {
+		youngPool.clear()
+		youngHits.clear()
+	}
+	youngPool.set(s, s)
+	youngHits.set(s, 1)
 	return s
 }
 

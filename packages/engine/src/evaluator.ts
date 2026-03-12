@@ -454,7 +454,7 @@ function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
 		if (si < 0) {
 			return { value: errorValue('#REF!') }
 		}
-		return makeLazyRangeArg(
+		return makeRangeArg(
 			ctx.workbook,
 			si,
 			node.start.row,
@@ -504,7 +504,7 @@ function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
 	if (node.type === 'structuredRef') {
 		const resolved = resolveStructuredRefRange(ctx.workbook, node, ctx.sheetIndex, ctx.row, ctx.col)
 		if (!resolved) return { value: errorValue('#REF!') }
-		return makeLazyRangeArg(
+		return makeRangeArg(
 			ctx.workbook,
 			resolved.sheetIndex,
 			resolved.startRow,
@@ -753,17 +753,6 @@ function isSpillFormulaBinding(
 }
 
 function makeRangeArg(
-	workbook: Workbook,
-	sheetIndex: number,
-	startRow: number,
-	startCol: number,
-	endRow: number,
-	endCol: number,
-): EvalArg {
-	return makeMultiAreaArg([makeRangeArea(workbook, sheetIndex, startRow, startCol, endRow, endCol)])
-}
-
-function makeLazyRangeArg(
 	workbook: Workbook,
 	sheetIndex: number,
 	startRow: number,

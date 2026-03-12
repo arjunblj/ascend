@@ -1339,4 +1339,119 @@ describe('large range correctness', () => {
 		recalculate(wb, makeCtx())
 		expect(s2.cells.get(0, 0)?.value).toEqual(numberValue(expectedSum))
 	})
+
+	test('compiled IF opcode: short-circuit true branch', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: EMPTY, formula: 'IF(A1>5,A1*2,B1*3)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(20))
+	})
+
+	test('compiled IF opcode: short-circuit false branch', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: EMPTY, formula: 'IF(A1>5,A1*2,B1*3)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(60))
+	})
+
+	test('compiled IF opcode: missing false branch defaults to FALSE', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(0), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: EMPTY, formula: 'IF(A1>0,A1+1)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(1, 0)?.value).toEqual({ kind: 'boolean', value: false })
+	})
+
+	test('compiled IF opcode: error condition propagates', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: '1/0', styleId: sid })
+		sheet.cells.set(1, 0, { value: EMPTY, formula: 'IF(A1>0,10,20)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(1, 0)?.value).toEqual(errorValue('#DIV/0!'))
+	})
+
+	test('compiled IFERROR opcode: non-error passes through', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: EMPTY, formula: 'IFERROR(A1*2+3,-1)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(23))
+	})
+
+	test('compiled IFERROR opcode: error returns fallback', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(0), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: EMPTY, formula: 'IFERROR(1/A1,-1)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(-1))
+	})
+
+	test('compiled IFNA opcode: non-NA passes through', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(5), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: EMPTY, formula: 'IFNA(A1+10,0)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(15))
+	})
+
+	test('compiled CELL_SHEET opcode: cross-sheet cell reference', () => {
+		const wb = createWorkbook()
+		const s1 = wb.addSheet('Sheet1')
+		const s2 = wb.addSheet('Sheet2')
+		s1.cells.set(0, 0, { value: numberValue(42), formula: null, styleId: sid })
+		s2.cells.set(0, 0, { value: EMPTY, formula: 'Sheet1!A1*2+1', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(s2.cells.get(0, 0)?.value).toEqual(numberValue(85))
+	})
+
+	test('compiled IF chain: nested IF compiles to bytecode', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(75), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, {
+			value: EMPTY,
+			formula: 'IF(A1>=90,4,IF(A1>=80,3,IF(A1>=70,2,1)))',
+			styleId: sid,
+		})
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(2))
+	})
+
+	test('many IF formulas benefit from compiled path', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		for (let r = 0; r < 200; r++) {
+			sheet.cells.set(r, 0, { value: numberValue(r), formula: null, styleId: sid })
+			sheet.cells.set(r, 1, {
+				value: EMPTY,
+				formula: 'IF(A' + (r + 1) + '>100,A' + (r + 1) + '*2,A' + (r + 1) + '+10)',
+				styleId: sid,
+			})
+		}
+
+		const result = recalculate(wb, makeCtx())
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(50, 1)?.value).toEqual(numberValue(60))
+		expect(sheet.cells.get(150, 1)?.value).toEqual(numberValue(300))
+	})
 })

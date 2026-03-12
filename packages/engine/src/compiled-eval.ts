@@ -20,6 +20,7 @@ const Op = {
 	ERR: 4,
 	EMPTY_VAL: 5,
 	CELL: 10,
+	CELL_SHEET: 11,
 	ADD: 20,
 	SUB: 21,
 	MUL: 22,
@@ -34,6 +35,10 @@ const Op = {
 	GT: 33,
 	LE: 34,
 	GE: 35,
+	IF: 40,
+	JMP: 41,
+	IFERROR_JMP: 42,
+	IFNA_JMP: 43,
 	TREE: 99,
 } as const
 
@@ -82,15 +87,32 @@ function evalCmp(op: number, left: CellValue, right: CellValue): boolean {
 	return comparePrimitive(op, coerceStr(left), coerceStr(right))
 }
 
-/**
- * EVAL-4 Compiled-eval coverage: threshold lowered from 5 to 3 compilable nodes.
- * Compilable: number, string, boolean, error, missing, cellRef (no sheet), binary
- * (arithmetic/comparison), unary. Fallback (Op.TREE): rangeRef, function, name,
- * array, @, union/intersection. Next opcodes to add for broader coverage:
- * - RANGE: push range area ref, defer to tree eval for value
- * - FUNC: call function by name with args from stack (needs registry lookup)
- * - NAME: resolve defined name, push result
- */
+function coerceToBoolForIf(v: CellValue): boolean | CellValue {
+	v = topLeftScalar(v)
+	switch (v.kind) {
+		case 'empty':
+			return false
+		case 'number':
+			return v.value !== 0
+		case 'string': {
+			const upper = v.value.toUpperCase()
+			if (upper === 'TRUE') return true
+			if (upper === 'FALSE') return false
+			return errorValue('#VALUE!')
+		}
+		case 'boolean':
+			return v.value
+		case 'error':
+			return v
+		case 'date':
+			return v.serial !== 0
+		case 'richText':
+			return errorValue('#VALUE!')
+	}
+}
+
+const COMPILABLE_FUNCTIONS = new Set(['IF', 'IFERROR', 'IFNA'])
+
 function shouldCompile(node: FormulaNode): boolean {
 	let compilableNodes = 0
 	function scan(n: FormulaNode): boolean {
@@ -103,7 +125,7 @@ function shouldCompile(node: FormulaNode): boolean {
 				compilableNodes++
 				return true
 			case 'cellRef':
-				if (n.sheet === undefined) compilableNodes++
+				compilableNodes++
 				return true
 			case 'binary':
 				if (n.op === ',' || n.op === ' ') return true
@@ -116,6 +138,14 @@ function shouldCompile(node: FormulaNode): boolean {
 				compilableNodes++
 				scan(n.operand)
 				return true
+			case 'function': {
+				const upper = n.name.toUpperCase()
+				if (COMPILABLE_FUNCTIONS.has(upper)) {
+					compilableNodes++
+					for (const arg of n.args) scan(arg)
+				}
+				return true
+			}
 			default:
 				return true
 		}
@@ -156,7 +186,7 @@ export function compileFormula(node: FormulaNode): CompiledFormula | null {
 				if (n.sheet === undefined) {
 					ops.push(Op.CELL, n.ref.row, n.ref.col)
 				} else {
-					ops.push(Op.TREE, addConst(n))
+					ops.push(Op.CELL_SHEET, addConst(n.sheet), n.ref.row, n.ref.col)
 				}
 				break
 			case 'binary':
@@ -222,9 +252,50 @@ export function compileFormula(node: FormulaNode): CompiledFormula | null {
 						break
 				}
 				break
+			case 'function':
+				emitFunction(n)
+				break
 			default:
 				ops.push(Op.TREE, addConst(n))
 		}
+	}
+
+	function emitFunction(n: FormulaNode & { type: 'function' }): void {
+		const upper = n.name.toUpperCase()
+		if (upper === 'IF' && n.args.length >= 2 && n.args.length <= 3) {
+			emit(n.args[0] as FormulaNode)
+			const ifPos = ops.length
+			ops.push(Op.IF, 0, 0)
+			emit(n.args[1] as FormulaNode)
+			const jmpPos = ops.length
+			ops.push(Op.JMP, 0)
+			ops[ifPos + 1] = ops.length
+			if (n.args.length >= 3) {
+				emit(n.args[2] as FormulaNode)
+			} else {
+				ops.push(Op.BOOL, addConst(false))
+			}
+			ops[ifPos + 2] = ops.length
+			ops[jmpPos + 1] = ops.length
+			return
+		}
+		if (upper === 'IFERROR' && n.args.length === 2) {
+			emit(n.args[0] as FormulaNode)
+			const jmpPos = ops.length
+			ops.push(Op.IFERROR_JMP, 0)
+			emit(n.args[1] as FormulaNode)
+			ops[jmpPos + 1] = ops.length
+			return
+		}
+		if (upper === 'IFNA' && n.args.length === 2) {
+			emit(n.args[0] as FormulaNode)
+			const jmpPos = ops.length
+			ops.push(Op.IFNA_JMP, 0)
+			emit(n.args[1] as FormulaNode)
+			ops[jmpPos + 1] = ops.length
+			return
+		}
+		ops.push(Op.TREE, addConst(n))
 	}
 
 	emit(node)
@@ -274,6 +345,21 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 				const col = ops[ip + 1] as number
 				ip += 2
 				stack.push(sheet?.cells.getValue(row, col) ?? EMPTY)
+				break
+			}
+			case Op.CELL_SHEET: {
+				const nameIdx = ops[ip] as number
+				const row = ops[ip + 1] as number
+				const col = ops[ip + 2] as number
+				ip += 3
+				const sheetName = constants[nameIdx] as string
+				const si = resolveSheetIdx(ctx.workbook, sheetName, ctx.sheetIndex)
+				if (si < 0) {
+					stack.push(errorValue('#REF!'))
+				} else {
+					const target = ctx.workbook.sheets[si]
+					stack.push(target?.cells.readValue(row, col) ?? EMPTY)
+				}
 				break
 			}
 			case Op.ADD:
@@ -369,6 +455,45 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 				stack.push(booleanValue(evalCmp(op, left, right)))
 				break
 			}
+			case Op.IF: {
+				const falseTarget = ops[ip] as number
+				const endTarget = ops[ip + 1] as number
+				ip += 2
+				const cond = coerceToBoolForIf(stack.pop() ?? EMPTY)
+				if (typeof cond !== 'boolean') {
+					stack.push(cond)
+					ip = endTarget
+				} else if (!cond) {
+					ip = falseTarget
+				}
+				break
+			}
+			case Op.JMP: {
+				ip = ops[ip] as number
+				break
+			}
+			case Op.IFERROR_JMP: {
+				const endTarget = ops[ip] as number
+				ip++
+				const v = topLeftScalar(stack[stack.length - 1] ?? EMPTY)
+				if (v.kind !== 'error') {
+					ip = endTarget
+				} else {
+					stack.pop()
+				}
+				break
+			}
+			case Op.IFNA_JMP: {
+				const endTarget = ops[ip] as number
+				ip++
+				const v = topLeftScalar(stack[stack.length - 1] ?? EMPTY)
+				if (!(v.kind === 'error' && v.value === '#N/A')) {
+					ip = endTarget
+				} else {
+					stack.pop()
+				}
+				break
+			}
 			case Op.TREE: {
 				const idx = ops[ip] as number
 				ip++
@@ -379,4 +504,23 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 		}
 	}
 	return stack[0] ?? EMPTY
+}
+
+const sheetIdxCache = new WeakMap<import('@ascend/core').Workbook, Map<string, number>>()
+
+function resolveSheetIdx(
+	wb: import('@ascend/core').Workbook,
+	sheetName: string,
+	currentSheet: number,
+): number {
+	let cache = sheetIdxCache.get(wb)
+	if (!cache) {
+		cache = new Map()
+		for (let i = 0; i < wb.sheets.length; i++) {
+			const s = wb.sheets[i]
+			if (s) cache.set(s.name.toLowerCase(), i)
+		}
+		sheetIdxCache.set(wb, cache)
+	}
+	return cache.get(sheetName.toLowerCase()) ?? -1
 }

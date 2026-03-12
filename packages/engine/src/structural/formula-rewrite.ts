@@ -11,12 +11,15 @@ export function rewriteWorkbookFormulasForShift(
 	delta: number,
 ): void {
 	for (const sheet of workbook.sheets) {
+		const isTarget = sheet.name === targetSheet
 		const updates: [number, number, Cell][] = []
 		for (const [row, col, existing] of sheet.cells.iterate()) {
 			if (existing.formula === null) continue
 			const parsed = cachedParseFormula(existing.formula)
 			if (!parsed.ok) continue
+			if (!isTarget && !astReferencesSheet(parsed.value, targetSheet)) continue
 			const rewritten = rewriteNodeForShift(parsed.value, targetSheet, sheet.name, axis, at, delta)
+			if (rewritten === parsed.value) continue
 			const nextFormula = printFormula(rewritten)
 			if (nextFormula === existing.formula) continue
 			updates.push([
@@ -50,14 +53,10 @@ export function rewriteDefinedNameFormulasForShift(
 			: undefined
 		const parsed = cachedParseFormula(entry.formula)
 		if (!parsed.ok) continue
-		const rewritten = rewriteNodeForShift(
-			parsed.value,
-			targetSheet,
-			scopeSheet ?? targetSheet,
-			axis,
-			at,
-			delta,
-		)
+		const formulaSheet = scopeSheet ?? targetSheet
+		if (formulaSheet !== targetSheet && !astReferencesSheet(parsed.value, targetSheet)) continue
+		const rewritten = rewriteNodeForShift(parsed.value, targetSheet, formulaSheet, axis, at, delta)
+		if (rewritten === parsed.value) continue
 		const formula = printFormula(rewritten)
 		if (formula === entry.formula) continue
 		workbook.definedNames.set(entry.name, formula, entry.scope)
@@ -292,66 +291,98 @@ function rewriteNodeForShift(
 	switch (node.type) {
 		case 'cellRef': {
 			const ref = shiftRef(node.ref, onTarget(node.sheet))
-			return node.sheet !== undefined
-				? { type: 'cellRef', ref, sheet: node.sheet }
-				: { type: 'cellRef', ref }
+			return ref === node.ref
+				? node
+				: node.sheet !== undefined
+					? { type: 'cellRef', ref, sheet: node.sheet }
+					: { type: 'cellRef', ref }
 		}
 		case 'rangeRef': {
 			const hit = onTarget(node.sheet)
 			const start = shiftRef(node.start, hit)
 			const end = shiftRef(node.end, hit)
-			return node.sheet !== undefined
-				? { type: 'rangeRef', start, end, sheet: node.sheet }
-				: { type: 'rangeRef', start, end }
+			return start === node.start && end === node.end
+				? node
+				: node.sheet !== undefined
+					? { type: 'rangeRef', start, end, sheet: node.sheet }
+					: { type: 'rangeRef', start, end }
 		}
 		case 'wholeRowRange': {
 			if (!onTarget(node.sheet) || axis !== 'row') return node
 			const startRow = shiftIndex(node.startRow, at, delta)
 			const endRow = shiftIndex(node.endRow, at, delta)
 			if (startRow === null || endRow === null) return node
-			return node.sheet !== undefined
-				? { type: 'wholeRowRange', startRow, endRow, sheet: node.sheet }
-				: { type: 'wholeRowRange', startRow, endRow }
+			return startRow === node.startRow && endRow === node.endRow
+				? node
+				: node.sheet !== undefined
+					? { type: 'wholeRowRange', startRow, endRow, sheet: node.sheet }
+					: { type: 'wholeRowRange', startRow, endRow }
 		}
 		case 'wholeColumnRange': {
 			if (!onTarget(node.sheet) || axis !== 'col') return node
 			const startCol = shiftIndex(node.startCol, at, delta)
 			const endCol = shiftIndex(node.endCol, at, delta)
 			if (startCol === null || endCol === null) return node
-			return node.sheet !== undefined
-				? { type: 'wholeColumnRange', startCol, endCol, sheet: node.sheet }
-				: { type: 'wholeColumnRange', startCol, endCol }
+			return startCol === node.startCol && endCol === node.endCol
+				? node
+				: node.sheet !== undefined
+					? { type: 'wholeColumnRange', startCol, endCol, sheet: node.sheet }
+					: { type: 'wholeColumnRange', startCol, endCol }
 		}
-		case 'binary':
-			return {
-				type: 'binary',
-				op: node.op,
-				left: rewriteNodeForShift(node.left, targetSheet, formulaSheet, axis, at, delta),
-				right: rewriteNodeForShift(node.right, targetSheet, formulaSheet, axis, at, delta),
-			}
-		case 'unary':
-			return {
-				type: 'unary',
-				op: node.op,
-				operand: rewriteNodeForShift(node.operand, targetSheet, formulaSheet, axis, at, delta),
-			}
-		case 'function':
-			return {
-				type: 'function',
-				name: node.name,
-				args: node.args.map((arg) =>
-					rewriteNodeForShift(arg, targetSheet, formulaSheet, axis, at, delta),
-				),
-			}
-		case 'array':
-			return {
-				type: 'array',
-				rows: node.rows.map((row) =>
-					row.map((cell) => rewriteNodeForShift(cell, targetSheet, formulaSheet, axis, at, delta)),
-				),
-			}
+		case 'binary': {
+			const left = rewriteNodeForShift(node.left, targetSheet, formulaSheet, axis, at, delta)
+			const right = rewriteNodeForShift(node.right, targetSheet, formulaSheet, axis, at, delta)
+			return left === node.left && right === node.right
+				? node
+				: { type: 'binary', op: node.op, left, right }
+		}
+		case 'unary': {
+			const operand = rewriteNodeForShift(node.operand, targetSheet, formulaSheet, axis, at, delta)
+			return operand === node.operand ? node : { type: 'unary', op: node.op, operand }
+		}
+		case 'function': {
+			const args = node.args.map((arg) =>
+				rewriteNodeForShift(arg, targetSheet, formulaSheet, axis, at, delta),
+			)
+			return args.every((arg, i) => arg === node.args[i])
+				? node
+				: { type: 'function', name: node.name, args }
+		}
+		case 'array': {
+			const rows = node.rows.map((row) =>
+				row.map((cell) => rewriteNodeForShift(cell, targetSheet, formulaSheet, axis, at, delta)),
+			)
+			return rows.every((row, ri) => row.every((cell, ci) => cell === node.rows[ri]?.[ci]))
+				? node
+				: { type: 'array', rows }
+		}
 		default:
 			return node
+	}
+}
+
+function astReferencesSheet(node: FormulaNode, sheetName: string): boolean {
+	switch (node.type) {
+		case 'cellRef':
+		case 'rangeRef':
+		case 'wholeRowRange':
+		case 'wholeColumnRange':
+		case 'name':
+			return node.sheet === sheetName
+		case 'sheetSpanRef':
+			return node.startSheet === sheetName || node.endSheet === sheetName
+		case 'binary':
+			return astReferencesSheet(node.left, sheetName) || astReferencesSheet(node.right, sheetName)
+		case 'unary':
+			return astReferencesSheet(node.operand, sheetName)
+		case 'spillRef':
+			return astReferencesSheet(node.target, sheetName)
+		case 'function':
+			return node.args.some((arg) => astReferencesSheet(arg, sheetName))
+		case 'array':
+			return node.rows.some((row) => row.some((cell) => astReferencesSheet(cell, sheetName)))
+		default:
+			return false
 	}
 }
 

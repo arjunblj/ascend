@@ -1,6 +1,7 @@
 import type { Workbook } from '@ascend/core'
 import type { CellValue, RichTextRun } from '@ascend/schema'
 import { escapeXml } from '../xml.ts'
+import { ChunkedStringBuilder } from './chunked-string-builder.ts'
 import type { DynamicArrayMetadataEntry } from './metadata.ts'
 
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
@@ -78,15 +79,14 @@ export function scanWorkbookForWrite(
 				return k !== undefined ? lookup.get(k) : undefined
 			},
 			toXml(): string {
-				const parts: string[] = [
-					XML_HEADER,
-					`<sst xmlns="${NS}" count="${count}" uniqueCount="${entries.length}">`,
-				]
+				const builder = new ChunkedStringBuilder()
+				builder.push(XML_HEADER)
+				builder.push(`<sst xmlns="${NS}" count="${count}" uniqueCount="${entries.length}">`)
 				for (const entry of entries) {
-					parts.push(entryXml(entry))
+					builder.push(entryXml(entry))
 				}
-				parts.push('</sst>')
-				return parts.join('')
+				builder.push('</sst>')
+				return builder.toString()
 			},
 			count,
 			facts,

@@ -59,6 +59,7 @@ export interface WriteXlsxOptions {
 	readonly summaryOnly?: boolean
 	readonly sourceArchive?: ZipArchive
 	readonly useSharedStrings?: boolean
+	readonly streaming?: boolean
 }
 
 export function writeXlsx(

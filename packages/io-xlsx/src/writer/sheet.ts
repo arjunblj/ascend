@@ -129,18 +129,13 @@ export function buildSheetXml(
 			rowAttrs.push(`ht="${rowHeight}"`)
 			rowAttrs.push('customHeight="1"')
 		}
-		let rowXml = `<row ${rowAttrs.join(' ')}>`
+		parts.push(`<row ${rowAttrs.join(' ')}>`)
 		for (const [col, cell] of cells) {
-			rowXml += cellXml(
-				`${indexToColumn(col)}${row + 1}`,
-				cell,
-				ssTable,
-				xfMap,
-				options.useInlineStrings,
+			parts.push(
+				cellXml(`${indexToColumn(col)}${row + 1}`, cell, ssTable, xfMap, options.useInlineStrings),
 			)
 		}
-		rowXml += '</row>'
-		parts.push(rowXml)
+		parts.push('</row>')
 		if (populatedRow && populatedRow[0] === row) nextRow = rowIterator.next()
 		if (heightEntry && heightEntry[0] === row) rowHeightIndex++
 	}

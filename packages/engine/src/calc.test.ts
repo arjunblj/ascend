@@ -1131,6 +1131,114 @@ describe('shared formula evaluation', () => {
 		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(14))
 	})
 
+	test('group batch execution of 100 shared formula cells with B+C matches single-cell results', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		for (let r = 0; r < 100; r++) {
+			sheet.cells.set(r, 1, { value: numberValue(r + 1), formula: null, styleId: sid })
+			sheet.cells.set(r, 2, { value: numberValue((r + 1) * 10), formula: null, styleId: sid })
+		}
+		sheet.cells.set(0, 0, {
+			value: EMPTY,
+			formula: 'B1+C1',
+			styleId: sid,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: true, masterRef: 'A1' },
+		})
+		for (let r = 1; r < 100; r++) {
+			sheet.cells.set(r, 0, {
+				value: EMPTY,
+				formula: null,
+				styleId: sid,
+				formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'A1' },
+			})
+		}
+
+		const result = recalculate(wb, makeCtx())
+		expect(result.errors).toEqual([])
+		for (let r = 0; r < 100; r++) {
+			const n = r + 1
+			expect(sheet.cells.get(r, 0)?.value).toEqual(numberValue(n + n * 10))
+		}
+	})
+
+	test('dirty recalc propagates correctly through shared formula groups', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		for (let r = 0; r < 10; r++) {
+			sheet.cells.set(r, 1, { value: numberValue(r + 1), formula: null, styleId: sid })
+		}
+		sheet.cells.set(0, 0, {
+			value: EMPTY,
+			formula: 'B1*3',
+			styleId: sid,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: true, masterRef: 'A1' },
+		})
+		for (let r = 1; r < 10; r++) {
+			sheet.cells.set(r, 0, {
+				value: EMPTY,
+				formula: null,
+				styleId: sid,
+				formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'A1' },
+			})
+		}
+
+		recalculate(wb, makeCtx())
+		for (let r = 0; r < 10; r++) {
+			expect(sheet.cells.get(r, 0)?.value).toEqual(numberValue((r + 1) * 3))
+		}
+
+		sheet.cells.set(4, 1, { value: numberValue(99), formula: null, styleId: sid })
+		recalculate(wb, makeCtx(), { dirtyOnly: true, dirtyRefs: ['Sheet1!B5'] })
+		expect(sheet.cells.get(4, 0)?.value).toEqual(numberValue(297))
+		for (let r = 0; r < 10; r++) {
+			if (r === 4) continue
+			expect(sheet.cells.get(r, 0)?.value).toEqual(numberValue((r + 1) * 3))
+		}
+	})
+
+	test('multiple shared formula groups on same sheet evaluate independently', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		for (let r = 0; r < 5; r++) {
+			sheet.cells.set(r, 0, { value: numberValue(r + 1), formula: null, styleId: sid })
+		}
+		sheet.cells.set(0, 1, {
+			value: EMPTY,
+			formula: 'A1*2',
+			styleId: sid,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: true, masterRef: 'B1' },
+		})
+		for (let r = 1; r < 5; r++) {
+			sheet.cells.set(r, 1, {
+				value: EMPTY,
+				formula: null,
+				styleId: sid,
+				formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'B1' },
+			})
+		}
+		sheet.cells.set(0, 2, {
+			value: EMPTY,
+			formula: 'A1+10',
+			styleId: sid,
+			formulaInfo: { kind: 'shared', sharedIndex: '1', isMaster: true, masterRef: 'C1' },
+		})
+		for (let r = 1; r < 5; r++) {
+			sheet.cells.set(r, 2, {
+				value: EMPTY,
+				formula: null,
+				styleId: sid,
+				formulaInfo: { kind: 'shared', sharedIndex: '1', isMaster: false, masterRef: 'C1' },
+			})
+		}
+
+		const result = recalculate(wb, makeCtx())
+		expect(result.errors).toEqual([])
+		for (let r = 0; r < 5; r++) {
+			expect(sheet.cells.get(r, 1)?.value).toEqual(numberValue((r + 1) * 2))
+			expect(sheet.cells.get(r, 2)?.value).toEqual(numberValue(r + 1 + 10))
+		}
+	})
+
 	test('shared formula group of 100 cells =A<row>*2 evaluates correctly (TEST-6)', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

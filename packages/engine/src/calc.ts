@@ -1,11 +1,8 @@
 /**
- * DEP-5 / EVAL-5 Formula group execution (DEFERRED): recalculate evaluates cells
- * one-by-one in evalOrder. Shared formulas (formulaInfo.kind==='shared') are
- * resolved in analysis via parseIndexedFormula; each cell gets its own rewritten
- * AST. Group execution would: (1) identify cells sharing the same master,
- * (2) parse master once, (3) for each cell rewrite and evaluate in a batch.
- * Requires analysis to expose shared groups and eval loop to dispatch group-eval
- * path. Large structural change; deferred for future work.
+ * EVAL-5 Formula group batch execution: shared formulas (formulaInfo.kind==='shared')
+ * pointing to the same master are evaluated as a group when encountered in evalOrder.
+ * getSharedFormulaGroups identifies groups; the eval loop batches them to eliminate
+ * per-cell overhead (AST lookup, context setup, dirty checks) for subsequent members.
  *
  * EVAL-6 Common subexpression elimination (DEFERRED): formulas with repeated
  * subexpressions (e.g. A1:A1000 used twice) are evaluated independently each
@@ -18,7 +15,7 @@ import { indexToColumn, parseRange, type RangeRef, type StyleId, type Workbook }
 import type { ExactLookupCache, FormulaNode, LookupVectorCache } from '@ascend/formulas'
 import type { AscendError, CellValue } from '@ascend/schema'
 import { EMPTY, errorValue, topLeftScalar } from '@ascend/schema'
-import { analyzeWorkbook } from './analysis.ts'
+import { analyzeWorkbook, getSharedFormulaGroups } from './analysis.ts'
 import type { CalcContext } from './calc-context.ts'
 import { type CompiledFormula, compileFormula, evaluateCompiled } from './compiled-eval.ts'
 import {
@@ -380,7 +377,24 @@ export function recalculate(
 		mutableCtx.calcContext = ctx
 		mutableCtx.exactLookupCache = exactLookupCache
 		mutableCtx.lookupVectorCache = lookupVectorCache
-		for (const key of evalOrder) {
+
+		const sharedGroups = getSharedFormulaGroups(workbook, analysis.formulas)
+		const evalOrderIndex = new Map<CellKey, number>()
+		let idx = 0
+		for (const k of evalOrder) {
+			evalOrderIndex.set(k, idx++)
+		}
+		for (const members of sharedGroups.values()) {
+			members.sort((a, b) => (evalOrderIndex.get(a) ?? -1) - (evalOrderIndex.get(b) ?? -1))
+		}
+		const cellToGroup = new Map<CellKey, string>()
+		for (const [gk, members] of sharedGroups) {
+			if (members.length < 2) continue
+			for (const member of members) cellToGroup.set(member, gk)
+		}
+		const processed = new Set<CellKey>()
+
+		const evalCell = (key: CellKey) => {
 			if (cycleKeys.has(key)) {
 				parseCellKeyInto(key, coords)
 				const { sheetIndex: si, row, col } = coords
@@ -416,20 +430,20 @@ export function recalculate(
 						mustEval.add(dep)
 					}
 				}
-				continue
+				return
 			}
 
 			if (isDirtyRecalc && !mustEval.has(key) && !volatileKeys.has(key)) {
-				continue
+				return
 			}
 
 			const ast = asts.get(key)
-			if (!ast) continue
+			if (!ast) return
 
 			parseCellKeyInto(key, coords)
 			const { sheetIndex: si, row, col } = coords
 			const sheet = workbook.sheets[si]
-			if (!sheet) continue
+			if (!sheet) return
 
 			mutableCtx.sheetIndex = si
 			mutableCtx.row = row
@@ -444,7 +458,7 @@ export function recalculate(
 						mustEval.add(dep)
 					}
 				}
-				continue
+				return
 			}
 			const clearedSpill =
 				oldCell?.formulaInfo && isSpillBinding(oldCell.formulaInfo) && oldCell.formulaInfo.isAnchor
@@ -464,6 +478,19 @@ export function recalculate(
 					}
 				}
 			}
+		}
+
+		for (const key of evalOrder) {
+			if (processed.has(key)) continue
+			const groupKey = cellToGroup.get(key)
+			if (groupKey !== undefined) {
+				const groupMembers = sharedGroups.get(groupKey)
+				if (!groupMembers) continue
+				for (const memberKey of groupMembers) processed.add(memberKey)
+				for (const memberKey of groupMembers) evalCell(memberKey)
+				continue
+			}
+			evalCell(key)
 		}
 	}
 

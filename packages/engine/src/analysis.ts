@@ -2,9 +2,9 @@
  * DEP-1/DEP-2/DEP-5: analyzeWorkbook rebuilds the full dependency graph each call.
  * DEP-1 incremental analysis would require diffing workbook state and patching
  * the graph. DEP-2 range optimization is in dep-graph. DEP-5 shared-formula
- * group detection: tryReuseFromCellAbove and parseIndexedFormula already reuse
- * shared masters; batching would need analyzeWorkbook to return formula groups
- * for calc to use.
+ * group detection: tryReuseFromCellAbove and parseIndexedFormula reuse shared
+ * masters; getSharedFormulaGroups exposes formula groups for calc to
+ * batch-evaluate (EVAL-5).
  */
 import type { RangeRef, Workbook } from '@ascend/core'
 import type { FormulaCellRef, FormulaNode, FormulaRef } from '@ascend/formulas'
@@ -404,6 +404,29 @@ export function invalidateWorkbookAnalysis(workbook: Workbook): void {
 	workbookFormulaAnalysisCache.delete(workbook)
 	workbookDependencyAnalysisCache.delete(workbook)
 	workbookAnalysisCache.delete(workbook)
+}
+
+export function getSharedFormulaGroups(
+	workbook: Workbook,
+	formulas: ReadonlyMap<CellKey, AnalyzedFormula>,
+): Map<string, CellKey[]> {
+	const groups = new Map<string, CellKey[]>()
+	for (const formula of formulas.values()) {
+		const sheet = workbook.sheets[formula.sheetIndex]
+		if (!sheet) continue
+		const cell = sheet.cells.get(formula.row, formula.col)
+		if (!cell?.formulaInfo) continue
+		const binding = cell.formulaInfo as { kind?: string; sharedIndex?: string }
+		if (binding.kind !== 'shared' || binding.sharedIndex === undefined) continue
+		const groupKey = `${formula.sheetIndex}:${binding.sharedIndex}`
+		let group = groups.get(groupKey)
+		if (!group) {
+			group = []
+			groups.set(groupKey, group)
+		}
+		group.push(formula.key)
+	}
+	return groups
 }
 
 export function resolveFormulaDependencies(

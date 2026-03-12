@@ -1,10 +1,16 @@
+const STRING_POOL_LIMIT = 16_384
+const stringPool = new Map<string, string>()
+
+function internString(s: string): string {
+	const cached = stringPool.get(s)
+	if (cached !== undefined) return cached
+	if (stringPool.size >= STRING_POOL_LIMIT) stringPool.clear()
+	stringPool.set(s, s)
+	return s
+}
+
 /**
- * CORE-1/2/3/4 SparseGrid improvements (DEFERRED):
- *
- * CORE-1 Row-index layout: packKey uses row*PACK_FACTOR+col. Switching to
- * row-indexed Map<row, Map<col, Cell>> would improve row-scan locality and
- * enable efficient row insert/delete without full rebuild. Tradeoff: column
- * iteration becomes O(rows*cols) unless we add column index.
+ * CORE-2/3/4 SparseGrid improvements (DEFERRED):
  *
  * CORE-2 Adaptive dense/sparse: For dense regions (e.g. A1:Z1000), a contiguous
  * array or TypedArray could be faster than Map lookups. Hybrid: detect density
@@ -19,6 +25,13 @@
  * changes to reference interned IDs.
  *
  * All are fundamental data structure changes; deferred for future work.
+ *
+ * CORE-7 Copy-on-write cloning (IMPLEMENTED):
+ * copyFrom() shares the underlying data and rowIndex Maps between source and
+ * clone, setting a _shared flag on both. The first mutating operation on either
+ * grid calls ensureWritable(), which forks the shared Maps (and deep-clones any
+ * mutable StoredCells). This makes workbook cloning O(1) in cell data when the
+ * cloned sheets are never modified (common for SDK preview snapshots).
  */
 import type { CellValue } from '@ascend/schema'
 import { booleanValue, EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
@@ -68,6 +81,7 @@ const DEFAULT_STYLE_ID = 0 as StyleId
 
 export class SparseGrid {
 	private data = new Map<number, StoredCell>()
+	private rowIndex = new Map<number, Map<number, StoredCell>>()
 	private readonly styledStringCache = new Map<StyleId, Map<string, StyledStringCell>>()
 	private readonly styledBooleanCache = new Map<StyleId, Map<string, StyledBooleanCell>>()
 	private readonly styledNumberCache = new Map<StyleId, Map<number, StyledNumberCell>>()
@@ -79,6 +93,7 @@ export class SparseGrid {
 	private _maxCol = Number.NEGATIVE_INFINITY
 	private _boundsDirty = false
 	private _hasMutableStorage = false
+	private _shared = false
 
 	get(row: number, col: number): Cell | undefined {
 		return materializeCell(this.data.get(packKey(row, col)))
@@ -96,10 +111,17 @@ export class SparseGrid {
 		styleId: StyleId,
 		formulaInfo?: CellFormulaBinding,
 	): void {
+		this.ensureWritable()
 		const key = packKey(row, col)
 		const isNew = !this.data.has(key)
 		const stored = this.compactResolvedCell(value, formula, styleId, formulaInfo)
 		this.data.set(key, stored)
+		let rowMap = this.rowIndex.get(row)
+		if (!rowMap) {
+			rowMap = new Map()
+			this.rowIndex.set(row, rowMap)
+		}
+		rowMap.set(col, stored)
 		if (isMutableStoredCell(stored)) this._hasMutableStorage = true
 		if (isNew) {
 			if (key < this._lastInsertedKey) this._isKeyOrderSorted = false
@@ -112,8 +134,14 @@ export class SparseGrid {
 	}
 
 	delete(row: number, col: number): boolean {
+		this.ensureWritable()
 		const deleted = this.data.delete(packKey(row, col))
 		if (deleted) {
+			const rowMap = this.rowIndex.get(row)
+			if (rowMap) {
+				rowMap.delete(col)
+				if (rowMap.size === 0) this.rowIndex.delete(row)
+			}
 			if (
 				row === this._minRow ||
 				row === this._maxRow ||
@@ -139,18 +167,14 @@ export class SparseGrid {
 	}
 
 	*getRange(range: RangeRef): Generator<readonly [number, number, Cell]> {
-		for (const [key, stored] of this.data) {
-			const [row, col] = unpackKey(key)
-			if (
-				row < range.start.row ||
-				row > range.end.row ||
-				col < range.start.col ||
-				col > range.end.col
-			) {
-				continue
+		for (let r = range.start.row; r <= range.end.row; r++) {
+			const rowMap = this.rowIndex.get(r)
+			if (!rowMap) continue
+			for (const [col, stored] of rowMap) {
+				if (col < range.start.col || col > range.end.col) continue
+				const cell = materializeCell(stored)
+				if (cell) yield [r, col, cell] as const
 			}
-			const cell = materializeCell(stored)
-			if (cell) yield [row, col, cell] as const
 		}
 	}
 
@@ -161,11 +185,14 @@ export class SparseGrid {
 		endCol: number,
 		fn: (value: CellValue, row: number, col: number) => void,
 	): void {
-		for (const [key, stored] of this.data) {
-			const [row, col] = unpackKey(key)
-			if (row < startRow || row > endRow || col < startCol || col > endCol) continue
-			const value = readStoredValue(stored)
-			if (value) fn(value, row, col)
+		for (let r = startRow; r <= endRow; r++) {
+			const rowMap = this.rowIndex.get(r)
+			if (!rowMap) continue
+			for (const [col, stored] of rowMap) {
+				if (col < startCol || col > endCol) continue
+				const value = readStoredValue(stored)
+				if (value) fn(value, r, col)
+			}
 		}
 	}
 
@@ -217,11 +244,14 @@ export class SparseGrid {
 		fn: (acc: T, value: CellValue, row: number, col: number) => T,
 	): T {
 		let acc = init
-		for (const [key, stored] of this.data) {
-			const [row, col] = unpackKey(key)
-			if (row < startRow || row > endRow || col < startCol || col > endCol) continue
-			const value = readStoredValue(stored)
-			if (value) acc = fn(acc, value, row, col)
+		for (let r = startRow; r <= endRow; r++) {
+			const rowMap = this.rowIndex.get(r)
+			if (!rowMap) continue
+			for (const [col, stored] of rowMap) {
+				if (col < startCol || col > endCol) continue
+				const value = readStoredValue(stored)
+				if (value) acc = fn(acc, value, r, col)
+			}
 		}
 		return acc
 	}
@@ -282,36 +312,19 @@ export class SparseGrid {
 	*iterateRowsInRange(
 		range: RangeRef,
 	): Generator<readonly [number, readonly (readonly [number, Cell])[]]> {
-		if (this._isKeyOrderSorted) {
-			const minKey = packKey(range.start.row, 0)
-			const maxKey = packKey(range.end.row, PACK_FACTOR - 1)
-			let currentRow = Number.NaN
-			let rowCells: Array<readonly [number, Cell]> = []
-			for (const [key, stored] of this.data) {
-				if (key < minKey) continue
-				if (key > maxKey) break
-				const [row, col] = unpackKey(key)
+		for (let r = range.start.row; r <= range.end.row; r++) {
+			const rowMap = this.rowIndex.get(r)
+			if (!rowMap) continue
+			const rowCells: Array<readonly [number, Cell]> = []
+			for (const [col, stored] of rowMap) {
 				if (col < range.start.col || col > range.end.col) continue
 				const cell = materializeCell(stored)
-				if (!cell) continue
-				if (!Number.isNaN(currentRow) && row !== currentRow) {
-					yield [currentRow, rowCells] as const
-					rowCells = []
-				}
-				currentRow = row
-				rowCells.push([col, cell] as const)
+				if (cell) rowCells.push([col, cell] as const)
 			}
-			if (!Number.isNaN(currentRow) && rowCells.length > 0) {
-				yield [currentRow, rowCells] as const
+			if (rowCells.length > 0) {
+				rowCells.sort((a, b) => a[0] - b[0])
+				yield [r, rowCells] as const
 			}
-			return
-		}
-		for (const [row, rowCells] of this.iterateRows()) {
-			if (row < range.start.row) continue
-			if (row > range.end.row) return
-			const filtered = rowCells.filter(([col]) => col >= range.start.col && col <= range.end.col)
-			if (filtered.length === 0) continue
-			yield [row, filtered] as const
 		}
 	}
 
@@ -320,7 +333,14 @@ export class SparseGrid {
 	}
 
 	clear(): void {
-		this.data.clear()
+		if (this._shared) {
+			this.data = new Map()
+			this.rowIndex = new Map()
+			this._shared = false
+		} else {
+			this.data.clear()
+			this.rowIndex.clear()
+		}
 		this.styledStringCache.clear()
 		this.styledBooleanCache.clear()
 		this.styledNumberCache.clear()
@@ -365,16 +385,23 @@ export class SparseGrid {
 	}
 
 	copyFrom(other: SparseGrid): void {
-		this.data = new Map(other.data)
-		this.styledStringCache.clear()
-		this.styledBooleanCache.clear()
-		this.styledNumberCache.clear()
 		if (other._hasMutableStorage) {
+			this.data = new Map(other.data)
 			for (const [key, cell] of this.data) {
 				const cloned = cloneCell(cell)
 				if (cloned !== cell) this.data.set(key, cloned)
 			}
+			this._rebuildRowIndex()
+			this._shared = false
+		} else {
+			this.data = other.data
+			this.rowIndex = other.rowIndex
+			this._shared = true
+			other._shared = true
 		}
+		this.styledStringCache.clear()
+		this.styledBooleanCache.clear()
+		this.styledNumberCache.clear()
 		this._minRow = other._minRow
 		this._maxRow = other._maxRow
 		this._minCol = other._minCol
@@ -383,6 +410,19 @@ export class SparseGrid {
 		this._isKeyOrderSorted = other._isKeyOrderSorted
 		this._lastInsertedKey = other._lastInsertedKey
 		this._hasMutableStorage = other._hasMutableStorage
+	}
+
+	private ensureWritable(): void {
+		if (!this._shared) return
+		this.data = new Map(this.data)
+		if (this._hasMutableStorage) {
+			for (const [key, cell] of this.data) {
+				const cloned = cloneCell(cell)
+				if (cloned !== cell) this.data.set(key, cloned)
+			}
+		}
+		this._rebuildRowIndex()
+		this._shared = false
 	}
 
 	private _recomputeBounds(): void {
@@ -400,19 +440,35 @@ export class SparseGrid {
 		this._boundsDirty = false
 	}
 
+	private _rebuildRowIndex(): void {
+		this.rowIndex = new Map()
+		for (const [key, cell] of this.data) {
+			const [r, c] = unpackKey(key)
+			let rowMap = this.rowIndex.get(r)
+			if (!rowMap) {
+				rowMap = new Map()
+				this.rowIndex.set(r, rowMap)
+			}
+			rowMap.set(c, cell)
+		}
+	}
+
 	private _rebuildAfterShift(
 		mapCell: (row: number, col: number) => { row: number; col: number } | null,
 		active: boolean,
 	): void {
 		if (!active || this.data.size === 0) return
+		const cloneMutable = this._shared && this._hasMutableStorage
 		const nextData = new Map<number, StoredCell>()
 		for (const [key, cell] of this.data) {
 			const [row, col] = unpackKey(key)
 			const next = mapCell(row, col)
 			if (!next) continue
-			nextData.set(packKey(next.row, next.col), cell)
+			nextData.set(packKey(next.row, next.col), cloneMutable ? cloneCell(cell) : cell)
 		}
 		this.data = nextData
+		this._shared = false
+		this._rebuildRowIndex()
 		let lastInsertedKey = Number.NEGATIVE_INFINITY
 		for (const key of nextData.keys()) lastInsertedKey = key
 		this._lastInsertedKey = lastInsertedKey
@@ -427,6 +483,9 @@ export class SparseGrid {
 	): StoredCell {
 		const compactValue = compactScalarValue(value)
 		if (compactValue) {
+			if (compactValue.kind === 'string') {
+				compactValue.scalarValue = internString(compactValue.scalarValue as string) as string
+			}
 			if (formula === null && formulaInfo === undefined && styleId === DEFAULT_STYLE_ID) {
 				switch (compactValue.kind) {
 					case 'number':

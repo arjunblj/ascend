@@ -8,10 +8,9 @@
  * provide O(log n) range lookups. Further optimization: spatial index (R-tree or
  * interval tree) for range containment when many overlapping ranges exist.
  *
- * DEP-5 Formula group execution: formulas in the same shared group (sharedIndex)
- * could be batched: parse master once, rewrite N times, evaluate in a tight loop
- * with shared AST. Would require analysis to expose shared groups and calc to
- * dispatch group-eval instead of per-cell. Large structural change.
+ * DEP-5 Formula group execution: implemented in EVAL-5. Shared formula groups
+ * are identified by getSharedFormulaGroups in analysis and batch-evaluated in
+ * the calc eval loop, eliminating per-cell overhead for group members.
  */
 export type CellKey = number
 
@@ -73,6 +72,7 @@ export class DependencyGraph {
 		size: number
 		index: Map<number, Map<number, Set<number>>>
 	} | null = null
+	private _cachedEvalOrder: CellKey[] | null = null
 
 	addFormula(
 		key: CellKey,
@@ -82,6 +82,7 @@ export class DependencyGraph {
 	): void {
 		this.removeFormula(key)
 		const depSet = new Set(dependsOn)
+		this._cachedEvalOrder = null
 		this.formulas.set(key, { dependsOn: depSet, rangeDeps, volatile: isVolatile })
 		for (const dep of depSet) {
 			let set = this.dependents.get(dep)
@@ -105,6 +106,7 @@ export class DependencyGraph {
 	removeFormula(key: CellKey): void {
 		const entry = this.formulas.get(key)
 		if (!entry) return
+		this._cachedEvalOrder = null
 		for (const dep of entry.dependsOn) {
 			const set = this.dependents.get(dep)
 			if (set) {
@@ -186,6 +188,16 @@ export class DependencyGraph {
 	}
 
 	getEvalOrder(dirtySet: Set<CellKey>): CellKey[] {
+		if (this._cachedEvalOrder === null) {
+			const allFormulaKeys = new Set(this.formulas.keys())
+			this._cachedEvalOrder = this._computeEvalOrder(allFormulaKeys)
+		}
+		const formulaOrder = this._cachedEvalOrder.filter((k) => dirtySet.has(k))
+		const nonFormulaKeys = [...dirtySet].filter((k) => !this.formulas.has(k))
+		return [...nonFormulaKeys, ...formulaOrder]
+	}
+
+	private _computeEvalOrder(dirtySet: Set<CellKey>): CellKey[] {
 		const visited = new Set<CellKey>()
 		const onStack = new Set<CellKey>()
 		const order: CellKey[] = []
@@ -289,6 +301,7 @@ export class DependencyGraph {
 		this.rangeDependents.clear()
 		this._rangeDepsSortedBySheet.clear()
 		this._cachedDirtyIndex = null
+		this._cachedEvalOrder = null
 	}
 
 	private ensureSorted(

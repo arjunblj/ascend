@@ -7,20 +7,25 @@
  * styles must still be buffered (they're referenced by index). Major refactor;
  * deferred for now.
  *
- * IO-2 Lazy sheet parsing assessment:
- * The reader currently loads ALL selected sheets eagerly in a single pass. Shared strings,
- * styles, and workbook metadata are parsed upfront; then each sheet in sheetsToParse is
- * read from the archive and parseSheet() is called immediately. There is no on-demand
- * sheet loading. To implement lazy parsing:
+ * IO-2 Lazy sheet parsing:
+ * The reader loads all selected sheets eagerly in a single pass. Shared strings,
+ * styles, and workbook metadata are parsed upfront; then each sheet in sheetsToParse
+ * is read from the archive and parseSheet() is called immediately.
+ *
+ * Mitigation: The `sheets` filter option accepts both sheet names (strings) and
+ * 0-based indices (numbers), letting callers load only the sheets they need without
+ * parsing all cell data. This covers the common case of inspecting a single sheet
+ * in a large workbook.
+ *
+ * Full lazy parsing would require:
  * - Keep the archive open and expose a getSheet(name) that parses on first access.
  * - Defer shared-strings and styles parsing until at least one sheet needs them.
- * - Workbook.definedNames resolution requires sheet names to exist; local names need
- *   sheet metadata. A lazy model would need stub Sheet entries (name, state) populated
- *   from workbook.xml, with cells deferred until getSheet().
+ * - Workbook.definedNames resolution requires sheet names; a lazy model would need
+ *   stub Sheet entries (name, state) with cells deferred until getSheet().
  * - collectCapsules() and buildReport() assume all consumed parts are known; partial
  *   load would need to track which sheets have been hydrated.
- * - Major refactor: Workbook would need to support "placeholder" sheets, and callers
- *   (SDK, engine) would need to tolerate async sheet resolution. Deferred for now.
+ * - Major refactor: Workbook would need "placeholder" sheets, callers (SDK, engine)
+ *   would need to tolerate async sheet resolution. Deferred for now.
  *
  * IO-3 Streaming write (DEFERRED): The writer currently builds the full workbook
  * in memory before serializing. Streaming write would: (1) open ZIP output stream,
@@ -84,7 +89,7 @@ export interface ReadXlsxResult {
 
 export interface ReadXlsxOptions {
 	readonly mode?: 'full' | 'metadata-only' | 'values' | 'formula'
-	readonly sheets?: readonly string[]
+	readonly sheets?: readonly (string | number)[]
 }
 
 export interface ReadXlsxLoadInfo {
@@ -108,9 +113,6 @@ export function readXlsx(
 	options: ReadXlsxOptions = {},
 ): Result<ReadXlsxResult, AscendError> {
 	const mode = options.mode ?? 'full'
-	const selectedSheets = options.sheets
-		? new Set(options.sheets.map((name) => name.toLowerCase()))
-		: null
 
 	let archive: ZipArchive
 	try {
@@ -144,6 +146,7 @@ export function readXlsx(
 		return err(ascendError('CORRUPT_FILE', `Missing workbook: ${workbookPath}`))
 	}
 	const wbInfo = parseWorkbookXml(wbXml)
+	const selectedSheets = resolveSheetFilter(options.sheets, wbInfo.sheets)
 
 	const wbRelsPath = getRelsPath(workbookPath)
 	const wbRelsXml = readPart(archive, wbRelsPath)
@@ -438,6 +441,23 @@ export function readXlsx(
 
 function readPart(archive: ZipArchive, path: string): string | undefined {
 	return archive.readText(path)
+}
+
+function resolveSheetFilter(
+	filter: readonly (string | number)[] | undefined,
+	sheets: readonly { readonly name: string }[],
+): Set<string> | null {
+	if (!filter || filter.length === 0) return null
+	const selected = new Set<string>()
+	for (const selector of filter) {
+		if (typeof selector === 'string') {
+			selected.add(selector.toLowerCase())
+		} else {
+			const entry = sheets[selector]
+			if (entry) selected.add(entry.name.toLowerCase())
+		}
+	}
+	return selected.size > 0 ? selected : null
 }
 
 function registerStyles(workbook: Workbook, cellStyles: CellStyle[]): StyleId[] {

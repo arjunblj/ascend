@@ -297,4 +297,61 @@ describe('SparseGrid', () => {
 		if (!originalValue || originalValue.kind !== 'array') return
 		expect(originalValue.rows[0]?.[0]).toEqual(numberValue(1))
 	})
+
+	test('copy-on-write: clear on clone does not affect original', () => {
+		const grid = new SparseGrid()
+		grid.set(0, 0, makeCell(numberValue(1)))
+		grid.set(1, 1, makeCell(numberValue(2)))
+
+		const clone = grid.clone()
+		clone.clear()
+
+		expect(grid.cellCount()).toBe(2)
+		expect(grid.get(0, 0)?.value).toEqual(numberValue(1))
+		expect(grid.get(1, 1)?.value).toEqual(numberValue(2))
+		expect(clone.cellCount()).toBe(0)
+	})
+
+	test('copy-on-write: row insert on clone does not affect original', () => {
+		const grid = new SparseGrid()
+		grid.set(0, 0, makeCell(numberValue(1)))
+		grid.set(2, 0, makeCell(numberValue(3)))
+
+		const clone = grid.clone()
+		clone.insertRows(1, 1)
+
+		expect(grid.get(0, 0)?.value).toEqual(numberValue(1))
+		expect(grid.get(2, 0)?.value).toEqual(numberValue(3))
+		expect(clone.get(0, 0)?.value).toEqual(numberValue(1))
+		expect(clone.get(3, 0)?.value).toEqual(numberValue(3))
+		expect(clone.get(2, 0)).toBeUndefined()
+	})
+
+	test('copy-on-write: mutating original after clone does not affect clone', () => {
+		const grid = new SparseGrid()
+		grid.set(0, 0, makeCell(numberValue(1)))
+		grid.set(1, 0, makeCell(numberValue(2)))
+
+		const clone = grid.clone()
+		grid.delete(0, 0)
+		grid.set(1, 0, makeCell(stringValue('changed')))
+
+		expect(clone.get(0, 0)?.value).toEqual(numberValue(1))
+		expect(clone.get(1, 0)?.value).toEqual(numberValue(2))
+		expect(grid.get(0, 0)).toBeUndefined()
+		expect(grid.get(1, 0)?.value).toEqual(stringValue('changed'))
+	})
+
+	test('copy-on-write: reads work before any mutation on clone', () => {
+		const grid = new SparseGrid()
+		for (let i = 0; i < 50; i++) {
+			grid.set(i, 0, makeCell(numberValue(i)))
+		}
+		const clone = grid.clone()
+		expect(clone.cellCount()).toBe(50)
+		expect(clone.get(25, 0)?.value).toEqual(numberValue(25))
+		expect(clone.getValue(49, 0)).toEqual(numberValue(49))
+		expect(clone.has(0, 0)).toBe(true)
+		expect([...clone.iterate()]).toHaveLength(50)
+	})
 })

@@ -1,16 +1,3 @@
-/**
- * EVAL-5 Formula group batch execution: shared formulas (formulaInfo.kind==='shared')
- * pointing to the same master are evaluated as a group when encountered in evalOrder.
- * getSharedFormulaGroups identifies groups; the eval loop batches them to eliminate
- * per-cell overhead (AST lookup, context setup, dirty checks) for subsequent members.
- *
- * EVAL-6 Common subexpression elimination (DEFERRED): formulas with repeated
- * subexpressions (e.g. A1:A1000 used twice) are evaluated independently each
- * time. CSE would: (1) identify shared sub-DAGs in the formula AST, (2) compute
- * once and cache by (formula, cell-context) key, (3) reuse on subsequent refs.
- * Requires eval context to support memoization and invalidation. Large structural
- * change; deferred for future work.
- */
 import { indexToColumn, parseRange, type RangeRef, type StyleId, type Workbook } from '@ascend/core'
 import type { ExactLookupCache, FormulaNode, LookupVectorCache } from '@ascend/formulas'
 import type { AscendError, CellValue } from '@ascend/schema'

@@ -1,12 +1,3 @@
-/**
- * CORE-7 Copy-on-write assessment: clone() currently does a full deep copy. CoW sheet
- * cloning would share SparseGrid/cells until first write. Deferred: clone isolation
- * semantics require that edits to a cloned sheet never affect the source. With CoW,
- * we would need copy-on-write semantics in SparseGrid.set/delete; the current
- * SparseGrid has no sharing layer. Introducing CoW would require SparseGrid to track
- * a shared backing store and fork on mutation, which is a significant structural
- * change. Risk: subtle bugs if any code path mutates without triggering the fork.
- */
 import type { AutoFilter } from './filter.ts'
 import { createSheetId, type SheetId } from './ids.ts'
 import type { RangeRef } from './refs.ts'

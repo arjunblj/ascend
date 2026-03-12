@@ -1,10 +1,3 @@
-/**
- * BENCH-5 Real-workbook benchmarks: fixtures/benchmarks/real-workbook.ts provides a
- * real-workbook benchmark suite. Corpus files suitable for real-workbook benchmarks
- * live in research/excel-corpus/ (see fixtures/corpus/corpus.test.ts CORPUS_DIR).
- * Candidates: conditional-formatting.xlsx, ms-excel-formulas-and-pivot-tables.xlsx,
- * excel-dashboard-v2.xlsx, bevreport-demo.xlsm. Run: bun run fixtures/benchmarks/real-workbook.ts <path>
- */
 import { createWorkbook, type StyleId, type Workbook } from '../../packages/core/src/index.ts'
 import {
 	applyOperations,

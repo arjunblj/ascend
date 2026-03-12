@@ -1,17 +1,3 @@
-/**
- * DEP-1 Incremental dependency graph: addFormula/removeFormula already support
- * incremental updates. A full DEP-1 optimization would add batch add/remove and
- * avoid clearing _cachedDirtyIndex on every change. Would require tracking
- * dirty-index invalidation per key rather than full rebuild.
- *
- * DEP-2 Range dependency indexing: rangeDependents and getCachedDirtyIndex already
- * provide O(log n) range lookups. Further optimization: spatial index (R-tree or
- * interval tree) for range containment when many overlapping ranges exist.
- *
- * DEP-5 Formula group execution: implemented in EVAL-5. Shared formula groups
- * are identified by getSharedFormulaGroups in analysis and batch-evaluated in
- * the calc eval loop, eliminating per-cell overhead for group members.
- */
 export type CellKey = number
 
 export interface RangeDependency {

@@ -35,28 +35,6 @@ function internString(s: string): string {
 	return s
 }
 
-/**
- * CORE-2 Adaptive dense/sparse read cache (IMPLEMENTED):
- * readValue() maintains an optional row-major CellValue[] cache when the grid
- * fill ratio exceeds 50% and the bounding box is under 1M cells. The cache is
- * lazily built on the first readValue() call and updated incrementally on
- * setResolved()/delete(). The Map remains the source of truth.
- *
- * CORE-3 Column-scan fast path (IMPLEMENTED):
- * forEachValueInRange uses a direct Map.get() per row when the range covers a
- * single column (startCol === endCol), skipping iteration over all columns.
- *
- * CORE-4 String interning (DEFERRED): A global string intern pool could reduce
- * memory for repeated strings across the workbook. Requires schema changes to
- * reference interned IDs.
- *
- * CORE-7 Copy-on-write cloning (IMPLEMENTED):
- * copyFrom() shares the underlying data and rowIndex Maps between source and
- * clone, setting a _shared flag on both. The first mutating operation on either
- * grid calls ensureWritable(), which forks the shared Maps (and deep-clones any
- * mutable StoredCells). This makes workbook cloning O(1) in cell data when the
- * cloned sheets are never modified (common for SDK preview snapshots).
- */
 import type { CellValue } from '@ascend/schema'
 import { booleanValue, EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
 import type { StyleId } from './ids.ts'

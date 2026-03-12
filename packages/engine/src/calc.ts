@@ -1,5 +1,10 @@
 import { indexToColumn, parseRange, type RangeRef, type StyleId, type Workbook } from '@ascend/core'
-import type { ExactLookupCache, FormulaNode, LookupVectorCache } from '@ascend/formulas'
+import {
+	clearCriteriaMatchCache,
+	type ExactLookupCache,
+	type FormulaNode,
+	type LookupVectorCache,
+} from '@ascend/formulas'
 import type { AscendError, CellValue } from '@ascend/schema'
 import { EMPTY, errorValue, topLeftScalar } from '@ascend/schema'
 import { analyzeWorkbook, getSharedFormulaGroups } from './analysis.ts'
@@ -481,7 +486,112 @@ export function recalculate(
 				const groupMembers = sharedGroups.get(groupKey)
 				if (!groupMembers) continue
 				for (const memberKey of groupMembers) processed.add(memberKey)
-				for (const memberKey of groupMembers) evalCell(memberKey)
+
+				const firstMember = groupMembers[0]
+				if (firstMember === undefined) continue
+				parseCellKeyInto(firstMember, coords)
+				const gsi = coords.sheetIndex
+				const gSheet = workbook.sheets[gsi]
+				if (!gSheet) continue
+				mutableCtx.sheetIndex = gsi
+				let groupCompilable: boolean | undefined
+
+				for (const memberKey of groupMembers) {
+					if (cycleKeys.has(memberKey)) {
+						parseCellKeyInto(memberKey, coords)
+						const oldCell = gSheet.cells.get(coords.row, coords.col)
+						const clearedSpill =
+							oldCell?.formulaInfo &&
+							isSpillBinding(oldCell.formulaInfo) &&
+							oldCell.formulaInfo.isAnchor
+								? clearSpillFootprint(
+										gSheet,
+										gsi,
+										oldCell.formulaInfo.anchorRef,
+										changed,
+										spillIndex,
+									)
+								: false
+						const cycleErr = errorValue('#REF!')
+						if (!oldCell || clearedSpill || !valuesEqual(oldCell.value, cycleErr)) {
+							gSheet.cells.set(coords.row, coords.col, {
+								value: cycleErr,
+								formula: oldCell?.formula ?? null,
+								styleId: oldCell?.styleId ?? (0 as StyleId),
+							})
+							changed.push(cellRefString(workbook, gsi, coords.row, coords.col))
+						}
+						errors.push({
+							ref: cellRefString(workbook, gsi, coords.row, coords.col),
+							error: {
+								code: 'CIRCULAR_REF',
+								message: 'Circular reference detected',
+								retryable: false,
+							},
+						})
+						if (isDirtyRecalc) {
+							for (const dep of graph.getDependents(memberKey)) mustEval.add(dep)
+						}
+						continue
+					}
+					if (isDirtyRecalc && !mustEval.has(memberKey) && !volatileKeys.has(memberKey)) {
+						continue
+					}
+					const ast = asts.get(memberKey)
+					if (!ast) continue
+					parseCellKeyInto(memberKey, coords)
+					mutableCtx.row = coords.row
+					mutableCtx.col = coords.col
+
+					let newValue: CellValue
+					if (groupCompilable === undefined) {
+						const compiled = compileFormula(ast)
+						groupCompilable = compiled !== null
+						newValue = compiled ? evaluateCompiled(compiled, mutableCtx) : evaluate(ast, mutableCtx)
+					} else if (groupCompilable) {
+						const compiled = compileFormula(ast, true)
+						newValue = compiled ? evaluateCompiled(compiled, mutableCtx) : evaluate(ast, mutableCtx)
+					} else {
+						newValue = evaluate(ast, mutableCtx)
+					}
+
+					const oldCell = gSheet.cells.get(coords.row, coords.col)
+					const spillMatrix = toScalarMatrix(newValue)
+					if (spillMatrix) {
+						applyArrayResult(
+							workbook,
+							gsi,
+							coords.row,
+							coords.col,
+							oldCell,
+							spillMatrix,
+							changed,
+							spillIndex,
+						)
+						if (isDirtyRecalc) {
+							for (const dep of graph.getDependents(memberKey)) mustEval.add(dep)
+						}
+						continue
+					}
+					const clearedSpill =
+						oldCell?.formulaInfo &&
+						isSpillBinding(oldCell.formulaInfo) &&
+						oldCell.formulaInfo.isAnchor
+							? clearSpillFootprint(gSheet, gsi, oldCell.formulaInfo.anchorRef, changed, spillIndex)
+							: false
+					const valueChanged = !oldCell || clearedSpill || !valuesEqual(oldCell.value, newValue)
+					if (valueChanged) {
+						gSheet.cells.set(coords.row, coords.col, {
+							value: newValue,
+							formula: oldCell?.formula ?? null,
+							styleId: oldCell?.styleId ?? (0 as StyleId),
+						})
+						changed.push(cellRefString(workbook, gsi, coords.row, coords.col))
+						if (isDirtyRecalc) {
+							for (const dep of graph.getDependents(memberKey)) mustEval.add(dep)
+						}
+					}
+				}
 				continue
 			}
 			evalCell(key)
@@ -489,6 +599,7 @@ export function recalculate(
 	}
 
 	clearRangeValueCache()
+	clearCriteriaMatchCache()
 
 	return {
 		changed,

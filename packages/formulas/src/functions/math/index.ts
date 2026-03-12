@@ -8,6 +8,8 @@ import { randomFunctions } from './random.ts'
 import { roundingFunctions } from './rounding.ts'
 import { trigFunctions } from './trig.ts'
 
+export { clearCriteriaMatchCache } from './conditional.ts'
+
 export const mathFunctions: FunctionDef[] = [
 	...aggregationFunctions,
 	...roundingFunctions,

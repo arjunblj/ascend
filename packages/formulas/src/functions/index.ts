@@ -31,6 +31,9 @@ import { financialFunctions } from './financial.ts'
 import { infoFunctions } from './info.ts'
 import { logicalFunctions } from './logical.ts'
 import { lookupFunctions } from './lookup.ts'
+
+export { clearCriteriaMatchCache } from './math/index.ts'
+
 import { mathFunctions } from './math/index.ts'
 import { registerFunction } from './registry.ts'
 import { statsFunctions } from './stats.ts'

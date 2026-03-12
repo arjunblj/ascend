@@ -51,9 +51,11 @@ export class IntervalIndex {
 		endRow: number
 		startCol: number
 		endCol: number
-		formulaKey: CellKey
+		formulaKeys: CellKey[]
 	}> = []
 	private sorted = true
+	private boundsMap = new Map<string, number>()
+	private _totalKeys = 0
 
 	insert(
 		startRow: number,
@@ -62,7 +64,20 @@ export class IntervalIndex {
 		endCol: number,
 		formulaKey: CellKey,
 	): void {
-		this.entries.push({ startRow, endRow, startCol, endCol, formulaKey })
+		const bk = `${startRow}:${endRow}:${startCol}:${endCol}`
+		const idx = this.boundsMap.get(bk)
+		if (idx !== undefined) {
+			const entry = this.entries[idx]
+			if (entry) {
+				entry.formulaKeys.push(formulaKey)
+				this._totalKeys++
+				return
+			}
+		}
+		const newIdx = this.entries.length
+		this.entries.push({ startRow, endRow, startCol, endCol, formulaKeys: [formulaKey] })
+		this.boundsMap.set(bk, newIdx)
+		this._totalKeys++
 		this.sorted = false
 	}
 
@@ -81,7 +96,7 @@ export class IntervalIndex {
 		for (let i = 0; i < hi; i++) {
 			const e = this.entries[i]
 			if (e && e.endRow >= row && col >= e.startCol && col <= e.endCol) {
-				result.push(e.formulaKey)
+				for (const k of e.formulaKeys) result.push(k)
 			}
 		}
 		return result
@@ -89,23 +104,46 @@ export class IntervalIndex {
 
 	remove(formulaKey: CellKey): void {
 		let write = 0
+		let compacted = false
 		for (let i = 0; i < this.entries.length; i++) {
 			const entry = this.entries[i]
-			if (entry && entry.formulaKey !== formulaKey) {
-				this.entries[write++] = entry
+			if (!entry) continue
+			const idx = entry.formulaKeys.indexOf(formulaKey)
+			if (idx !== -1) {
+				entry.formulaKeys.splice(idx, 1)
+				this._totalKeys--
+				if (entry.formulaKeys.length === 0) {
+					compacted = true
+					continue
+				}
 			}
+			this.entries[write++] = entry
 		}
-		this.entries.length = write
+		if (this.entries.length !== write) {
+			this.entries.length = write
+		}
+		if (compacted) this.rebuildBoundsMap()
 	}
 
 	get size(): number {
-		return this.entries.length
+		return this._totalKeys
 	}
 
 	private ensureSorted(): void {
 		if (this.sorted) return
 		this.entries.sort((a, b) => a.startRow - b.startRow)
+		this.rebuildBoundsMap()
 		this.sorted = true
+	}
+
+	private rebuildBoundsMap(): void {
+		this.boundsMap.clear()
+		for (let i = 0; i < this.entries.length; i++) {
+			const e = this.entries[i]
+			if (e) {
+				this.boundsMap.set(`${e.startRow}:${e.endRow}:${e.startCol}:${e.endCol}`, i)
+			}
+		}
 	}
 }
 

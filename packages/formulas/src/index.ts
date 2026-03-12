@@ -22,6 +22,7 @@ export type {
 	WholeRowRangeNode,
 } from './ast.ts'
 export {
+	clearCriteriaMatchCache,
 	compareValues,
 	dateToSerial,
 	type EvalArea,

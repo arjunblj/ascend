@@ -7,6 +7,37 @@ import { fn, getRange, numericVal, sameShape } from './helpers.ts'
 const CRITERIA_CACHE_MAX = 1024
 const criteriaPredicateCache = new Map<string, (v: CellValue) => boolean>()
 
+let criteriaMatchCache = new WeakMap<readonly (readonly CellValue[])[], Map<string, Uint8Array>>()
+
+export function clearCriteriaMatchCache(): void {
+	criteriaMatchCache = new WeakMap()
+}
+
+function getMatchBitmap(range: readonly (readonly CellValue[])[], criteria: CellValue): Uint8Array {
+	let inner = criteriaMatchCache.get(range)
+	if (!inner) {
+		inner = new Map()
+		criteriaMatchCache.set(range, inner)
+	}
+	const ck = criteriaCacheKey(criteria)
+	const cached = inner.get(ck)
+	if (cached) return cached
+
+	const match = parseCriteria(criteria)
+	const rows = range.length
+	const cols = range[0]?.length ?? 1
+	const bitmap = new Uint8Array(rows * cols)
+	for (let r = 0; r < rows; r++) {
+		const row = range[r]
+		if (!row) continue
+		for (let c = 0; c < cols; c++) {
+			if (match(row[c] ?? EMPTY)) bitmap[r * cols + c] = 1
+		}
+	}
+	inner.set(ck, bitmap)
+	return bitmap
+}
+
 function criteriaCacheKey(criteria: CellValue): string {
 	return JSON.stringify(criteria)
 }
@@ -115,15 +146,19 @@ function isBlankLike(value: CellValue): boolean {
 
 interface CriteriaPair {
 	range: readonly (readonly CellValue[])[]
-	match: (v: CellValue) => boolean
+	bitmap: Uint8Array
+	cols: number
 }
 
 function buildPairs(args: EvalArg[], startIdx: number): CriteriaPair[] {
 	const pairs: CriteriaPair[] = []
 	for (let i = startIdx; i + 1 < args.length; i += 2) {
+		const range = getRange(args[i])
+		const cols = range[0]?.length ?? 1
 		pairs.push({
-			range: getRange(args[i]),
-			match: parseCriteria(args[i + 1]?.value ?? EMPTY),
+			range,
+			bitmap: getMatchBitmap(range, args[i + 1]?.value ?? EMPTY),
+			cols,
 		})
 	}
 	return pairs
@@ -131,7 +166,7 @@ function buildPairs(args: EvalArg[], startIdx: number): CriteriaPair[] {
 
 function allPairsMatch(pairs: CriteriaPair[], r: number, c: number): boolean {
 	for (const p of pairs) {
-		if (!p.match(p.range[r]?.[c] ?? EMPTY)) return false
+		if (!p.bitmap[r * p.cols + c]) return false
 	}
 	return true
 }
@@ -139,12 +174,13 @@ function allPairsMatch(pairs: CriteriaPair[], r: number, c: number): boolean {
 export const conditionalFunctions: FunctionDef[] = [
 	fn('SUMIF', 2, 3, (args) => {
 		const range = getRange(args[0])
-		const match = parseCriteria(args[1]?.value ?? EMPTY)
+		const bitmap = getMatchBitmap(range, args[1]?.value ?? EMPTY)
+		const cols = range[0]?.length ?? 1
 		const sumRange = args.length >= 3 ? getRange(args[2]) : range
 		let sum = 0
 		for (let r = 0; r < range.length; r++) {
 			for (let c = 0; c < (range[r]?.length ?? 0); c++) {
-				if (match(range[r]?.[c] ?? EMPTY)) {
+				if (bitmap[r * cols + c]) {
 					const n = numericVal(sumRange[r]?.[c] ?? EMPTY)
 					if (n !== null) sum += n
 				}
@@ -171,11 +207,12 @@ export const conditionalFunctions: FunctionDef[] = [
 
 	fn('COUNTIF', 2, 2, (args) => {
 		const range = getRange(args[0])
-		const match = parseCriteria(args[1]?.value ?? EMPTY)
+		const bitmap = getMatchBitmap(range, args[1]?.value ?? EMPTY)
+		const cols = range[0]?.length ?? 1
 		let count = 0
-		for (const row of range) {
-			for (const cell of row) {
-				if (match(cell)) count++
+		for (let r = 0; r < range.length; r++) {
+			for (let c = 0; c < (range[r]?.length ?? 0); c++) {
+				if (bitmap[r * cols + c]) count++
 			}
 		}
 		return numberValue(count)
@@ -197,13 +234,14 @@ export const conditionalFunctions: FunctionDef[] = [
 
 	fn('AVERAGEIF', 2, 3, (args) => {
 		const range = getRange(args[0])
-		const match = parseCriteria(args[1]?.value ?? EMPTY)
+		const bitmap = getMatchBitmap(range, args[1]?.value ?? EMPTY)
+		const cols = range[0]?.length ?? 1
 		const avgRange = args.length >= 3 ? getRange(args[2]) : range
 		let sum = 0
 		let count = 0
 		for (let r = 0; r < range.length; r++) {
 			for (let c = 0; c < (range[r]?.length ?? 0); c++) {
-				if (match(range[r]?.[c] ?? EMPTY)) {
+				if (bitmap[r * cols + c]) {
 					const n = numericVal(avgRange[r]?.[c] ?? EMPTY)
 					if (n !== null) {
 						sum += n

@@ -49,6 +49,8 @@ const CHUNK_MASK = CHUNK_SIZE - 1
 const CHUNK_AREA = CHUNK_SIZE * CHUNK_SIZE
 const SPARSE_TO_DENSE_THRESHOLD = 96
 
+type ChunkBuffer = SharedArrayBuffer | ArrayBuffer
+
 enum SlotTag {
 	Empty = 0,
 	Number = 1,
@@ -200,8 +202,8 @@ class SparseChunk implements GridChunk {
 }
 
 class DenseChunk implements GridChunk {
-	private readonly metaBuffer = new SharedArrayBuffer(CHUNK_AREA * 10)
-	private readonly numberBuffer = new SharedArrayBuffer(CHUNK_AREA * 8)
+	private readonly metaBuffer = createChunkBuffer(CHUNK_AREA * 10)
+	private readonly numberBuffer = createChunkBuffer(CHUNK_AREA * 8)
 	private readonly occupied = new Uint8Array(this.metaBuffer, 0, CHUNK_AREA)
 	private readonly tags = new Uint8Array(this.metaBuffer, CHUNK_AREA, CHUNK_AREA)
 	private readonly styleIds = new Uint32Array(this.metaBuffer, CHUNK_AREA * 2, CHUNK_AREA)
@@ -782,6 +784,12 @@ function getChunkPosition(row: number, col: number): readonly [number, number, n
 	const chunkCol = col >> CHUNK_BITS
 	const localIndex = ((row & CHUNK_MASK) << CHUNK_BITS) | (col & CHUNK_MASK)
 	return [chunkRow, chunkCol, localIndex] as const
+}
+
+function createChunkBuffer(byteLength: number): ChunkBuffer {
+	return typeof SharedArrayBuffer === 'function'
+		? new SharedArrayBuffer(byteLength)
+		: new ArrayBuffer(byteLength)
 }
 
 function cloneCellValue(value: CellValue): CellValue {

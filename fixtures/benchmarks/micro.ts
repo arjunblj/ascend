@@ -5,11 +5,11 @@ import {
 	StyleRegistry,
 } from '../../packages/core/src/index.ts'
 import type { CellStyle } from '../../packages/core/src/style.ts'
+import { codegenFormula } from '../../packages/engine/src/codegen.ts'
 import type { RangeDependency } from '../../packages/engine/src/dep-graph.ts'
 import {
 	analyzeWorkbookFormulas,
 	cellKey,
-	codegenFormula,
 	compileFormula,
 	DependencyGraph,
 	defaultCalcContext,

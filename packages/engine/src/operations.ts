@@ -921,6 +921,7 @@ function operationAffectsFormulas(op: Operation): boolean {
 		case 'unmergeCells':
 			return false
 		case 'setCells':
+		case 'setRichText':
 			return false
 		case 'createTable':
 			return false
@@ -1092,8 +1093,12 @@ function handleHideCols(
 	const hidden = op.hidden ?? true
 	for (let c = op.at; c < op.at + op.count; c++) {
 		const idx = sheet.colDefs.findIndex((d) => d.min === c + 1 && d.max === c + 1)
-		if (idx >= 0) sheet.colDefs[idx] = { ...sheet.colDefs[idx]!, hidden }
-		else sheet.colDefs.push({ min: c + 1, max: c + 1, hidden })
+		if (idx >= 0) {
+			const existing = sheet.colDefs[idx]
+			if (existing) sheet.colDefs[idx] = { ...existing, hidden }
+		} else {
+			sheet.colDefs.push({ min: c + 1, max: c + 1, hidden })
+		}
 	}
 	return ok(patch([], [op.sheet]))
 }
@@ -1182,6 +1187,20 @@ function handleSetPrintArea(
 	return ok(patch([], [op.sheet]))
 }
 
+function handleSetRichText(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setRichText' }>,
+): Result<PatchResult> {
+	const sheetResult = getSheet(workbook, op.sheet)
+	if (!sheetResult.ok) return sheetResult
+	const sheet = sheetResult.value
+	sheet.ensureWritable()
+	const pos = parseA1(op.ref)
+	const richTextValue: CellValue = { kind: 'richText', runs: op.runs }
+	sheet.cells.setResolved(pos.row, pos.col, richTextValue, null, DEFAULT_SID)
+	return ok(patch([`${op.sheet}!${op.ref}`], [op.sheet]))
+}
+
 // --- Handler registry ---
 
 type OperationHandler = (workbook: Workbook, op: never) => Result<PatchResult>
@@ -1229,6 +1248,7 @@ const handlers: Record<string, OperationHandler> = {
 	deleteConditionalFormat: handleDeleteConditionalFormat as OperationHandler,
 	setPageSetup: handleSetPageSetup as OperationHandler,
 	setPrintArea: handleSetPrintArea as OperationHandler,
+	setRichText: handleSetRichText as OperationHandler,
 }
 
 // --- Public API ---

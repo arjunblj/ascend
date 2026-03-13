@@ -80,6 +80,141 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(1, 1)?.formula).toBe('A2*2')
 	})
 
+	test('setRichText writes rich text runs to a cell', () => {
+		const wb = setup()
+		const result = applyOperation(wb, {
+			op: 'setRichText',
+			sheet: 'Sheet1',
+			ref: 'B2',
+			runs: [
+				{ text: 'Hello', bold: true },
+				{ text: ' World', italic: true },
+			],
+		})
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(wb.getSheet('Sheet1')?.cells.get(1, 1)?.value).toEqual({
+			kind: 'richText',
+			runs: [
+				{ text: 'Hello', bold: true },
+				{ text: ' World', italic: true },
+			],
+		})
+	})
+
+	test('setConditionalFormat stores conditional formatting rules', () => {
+		const wb = setup()
+		const result = applyOperation(wb, {
+			op: 'setConditionalFormat',
+			sheet: 'Sheet1',
+			range: 'A1:A3',
+			rule: {
+				type: 'cellIs',
+				operator: 'greaterThan',
+				formula: '10',
+				priority: 1,
+			},
+		})
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(wb.getSheet('Sheet1')?.conditionalFormats).toEqual([
+			{
+				sqref: 'A1:A3',
+				rules: [
+					{
+						type: 'cellIs',
+						operator: 'greaterThan',
+						formulas: ['10'],
+						priority: 1,
+					},
+				],
+			},
+		])
+	})
+
+	test('setPageSetup and setPrintArea write print metadata', () => {
+		const wb = setup()
+		const result1 = applyOperation(wb, {
+			op: 'setPageSetup',
+			sheet: 'Sheet1',
+			setup: {
+				orientation: 'landscape',
+				scale: 80,
+				margins: { left: 0.5, right: 0.5 },
+			},
+		})
+		expect(result1.ok).toBe(true)
+		if (!result1.ok) return
+
+		const result2 = applyOperation(wb, {
+			op: 'setPrintArea',
+			sheet: 'Sheet1',
+			range: 'A1:B5',
+		})
+		expect(result2.ok).toBe(true)
+		if (!result2.ok) return
+
+		const sheet = wb.getSheet('Sheet1')
+		expect(sheet?.pageSetup).toEqual({ orientation: 'landscape', scale: 80 })
+		expect(sheet?.pageMargins).toEqual({ left: 0.5, right: 0.5 })
+		expect(wb.definedNames.resolve('_xlnm.Print_Area', sheet?.id, sheet?.id)?.formula).toBe(
+			"'Sheet1'!A1:B5",
+		)
+	})
+
+	test('setDataValidation stores validation metadata', () => {
+		const wb = setup()
+		const result = applyOperation(wb, {
+			op: 'setDataValidation',
+			sheet: 'Sheet1',
+			range: 'A1:A3',
+			rule: {
+				type: 'list',
+				formula1: '"Yes,No"',
+				allowBlank: false,
+			},
+		})
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(wb.getSheet('Sheet1')?.dataValidations).toEqual([
+			{
+				sqref: 'A1:A3',
+				type: 'list',
+				formula1: '"Yes,No"',
+				allowBlank: false,
+				showErrorMessage: true,
+			},
+		])
+	})
+
+	test('hideSheet and hideCols update sheet visibility metadata', () => {
+		const wb = setup()
+		const result1 = applyOperation(wb, {
+			op: 'hideSheet',
+			sheet: 'Sheet1',
+			hidden: true,
+		})
+		expect(result1.ok).toBe(true)
+		if (!result1.ok) return
+
+		const result2 = applyOperation(wb, {
+			op: 'hideCols',
+			sheet: 'Sheet1',
+			at: 1,
+			count: 1,
+			hidden: true,
+		})
+		expect(result2.ok).toBe(true)
+		if (!result2.ok) return
+
+		const sheet = wb.getSheet('Sheet1')
+		expect(sheet?.state).toBe('hidden')
+		expect(sheet?.colDefs).toContainEqual({ min: 2, max: 2, hidden: true })
+	})
+
 	test('addSheet creates a new sheet', () => {
 		const wb = setup()
 		const result = applyOperation(wb, { op: 'addSheet', name: 'Sheet2' })

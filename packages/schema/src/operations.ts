@@ -221,6 +221,19 @@ export type Operation =
 			readonly sheet: string
 			readonly range: string
 	  }
+	| {
+			readonly op: 'setRichText'
+			readonly sheet: string
+			readonly ref: string
+			readonly runs: readonly {
+				readonly text: string
+				readonly bold?: boolean
+				readonly italic?: boolean
+				readonly underline?: boolean
+				readonly color?: string
+				readonly size?: number
+			}[]
+	  }
 
 export interface ConditionalFormatRule {
 	readonly type:

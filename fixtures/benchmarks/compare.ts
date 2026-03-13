@@ -98,6 +98,7 @@ function formatMetricValue(name: BenchmarkMetricComparison['name'], value: numbe
 			return formatRate(value)
 		case 'rssDeltaBytes':
 		case 'retainedRssDeltaBytes':
+		case 'heapDeltaBytes':
 			return formatBytes(value)
 	}
 }

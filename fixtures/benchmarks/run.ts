@@ -1394,14 +1394,109 @@ async function runScenarioIsolated(
 	return parsed
 }
 
+function isNodeRuntime(): boolean {
+	return typeof process.versions.bun === 'undefined'
+}
+
+async function runWithProfile(
+	scenarioSetName: string | undefined,
+	repeat: number,
+	warmup: number,
+): Promise<void> {
+	if (!isNodeRuntime()) {
+		console.log('V8 profiling is only available under Node.js (not Bun/JSC).')
+		console.log('Re-run with: node --trace-deopt --trace-ic fixtures/benchmarks/run.ts ...')
+		return
+	}
+	const setFlag = scenarioSetName ? ['--set', scenarioSetName] : []
+	const deoptFile = `deopt-trace-${Date.now()}.log`
+	const { execSync } = await import('node:child_process')
+	const scriptPath = process.argv[1] ?? import.meta.path
+	const cmd = [
+		'node',
+		'--trace-deopt',
+		'--trace-ic',
+		scriptPath,
+		...setFlag,
+		'--repeat',
+		String(repeat),
+		'--warmup',
+		String(warmup),
+		'--json',
+	]
+	console.log(`Running: ${cmd.join(' ')}`)
+	console.log(`Capturing deopt/IC output to ${deoptFile}`)
+	try {
+		const result = execSync(cmd.join(' '), {
+			encoding: 'utf-8',
+			stdio: ['inherit', 'pipe', 'pipe'],
+			maxBuffer: 100 * 1024 * 1024,
+		})
+		const stderrText = result ?? ''
+		const { writeFileSync } = await import('node:fs')
+		writeFileSync(deoptFile, stderrText)
+		summarizeDeoptLog(stderrText)
+	} catch (err: unknown) {
+		const execErr = err as { stderr?: string }
+		if (execErr.stderr) {
+			const { writeFileSync } = await import('node:fs')
+			writeFileSync(deoptFile, execErr.stderr)
+			summarizeDeoptLog(execErr.stderr)
+		}
+		console.error('Profile run exited with error')
+	}
+}
+
+function summarizeDeoptLog(log: string): void {
+	const lines = log.split('\n')
+	const deoptReasons = new Map<string, number>()
+	const megamorphicSites = new Map<string, number>()
+	for (const line of lines) {
+		if (line.includes('[deoptimize')) {
+			const reasonMatch = line.match(/reason: (.+?)(?:\]|$)/)
+			const reason = reasonMatch?.[1]?.trim() ?? 'unknown'
+			deoptReasons.set(reason, (deoptReasons.get(reason) ?? 0) + 1)
+		}
+		if (line.includes('megamorphic')) {
+			const siteMatch = line.match(/\s(\S+:\d+:\d+)\s/)
+			const site = siteMatch?.[1] ?? line.slice(0, 80)
+			megamorphicSites.set(site, (megamorphicSites.get(site) ?? 0) + 1)
+		}
+	}
+	console.log('\n--- V8 Deoptimization Summary ---')
+	if (deoptReasons.size === 0) {
+		console.log('No deoptimizations detected.')
+	} else {
+		console.log(`Total deopt reasons: ${deoptReasons.size}`)
+		const sorted = [...deoptReasons.entries()].sort((a, b) => b[1] - a[1])
+		for (const [reason, count] of sorted.slice(0, 20)) {
+			console.log(`  ${String(count).padStart(6)} ${reason}`)
+		}
+	}
+	console.log('\n--- Top Megamorphic Call Sites ---')
+	if (megamorphicSites.size === 0) {
+		console.log('No megamorphic sites detected.')
+	} else {
+		const sorted = [...megamorphicSites.entries()].sort((a, b) => b[1] - a[1])
+		for (const [site, count] of sorted.slice(0, 20)) {
+			console.log(`  ${String(count).padStart(6)} ${site}`)
+		}
+	}
+}
+
 async function main(): Promise<void> {
 	const json = process.argv.includes('--json')
 	const ci = hasFlag('--ci')
+	const profile = hasFlag('--profile')
 	const scenarioName = readFlag('--scenario')
 	const scenarioSetName = readFlag('--set')
 	const repeat = Math.max(1, Number.parseInt(readFlag('--repeat') ?? '1', 10) || 1)
 	const warmup = Math.max(0, Number.parseInt(readFlag('--warmup') ?? '1', 10) || 1)
 	const outputJson = json || ci
+	if (profile) {
+		await runWithProfile(scenarioSetName, repeat, warmup)
+		return
+	}
 	if (scenarioName) {
 		const scenario = scenarios.find((entry) => entry.name === scenarioName)
 		if (!scenario) throw new Error(`Unknown synthetic benchmark scenario "${scenarioName}"`)

@@ -1,0 +1,124 @@
+name: Benchmarks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bench-smoke:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile
+
+      - name: Run smoke benchmarks
+        run: bun fixtures/benchmarks/run.ts --set smoke --repeat 3 --json > bench-current.json
+
+      - name: Upload current results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-smoke-${{ github.sha }}
+          path: bench-current.json
+
+      - name: Download baseline from main
+        id: baseline
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: bench.yml
+          branch: main
+          name: bench-full-*
+          name_is_regexp: true
+          path: baseline-dir
+          if_no_artifact_found: warn
+          search_artifacts: true
+
+      - name: Compare against baseline
+        id: compare
+        if: steps.baseline.outcome == 'success'
+        run: |
+          baseline_file=$(find baseline-dir -name 'bench-results.json' -type f | head -1)
+          if [ -z "$baseline_file" ]; then
+            echo "No baseline file found, skipping comparison"
+            echo "has_regression=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          set +e
+          bun fixtures/benchmarks/compare.ts "$baseline_file" bench-current.json --threshold-median 0.15 --json > comparison.json 2>&1
+          exit_code=$?
+          set -e
+          if [ $exit_code -ne 0 ]; then
+            echo "has_regression=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_regression=false" >> "$GITHUB_OUTPUT"
+          fi
+          cat comparison.json
+
+      - name: Post regression comment
+        if: steps.compare.outputs.has_regression == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let comparison;
+            try {
+              comparison = JSON.parse(fs.readFileSync('comparison.json', 'utf8'));
+            } catch {
+              return;
+            }
+            const regressed = (comparison.cases || []).filter(c => c.status === 'regressed');
+            if (regressed.length === 0) return;
+
+            let body = '## Benchmark Regression Detected\n\n';
+            body += `${regressed.length} scenario(s) regressed more than 15%:\n\n`;
+            body += '| Scenario | Metric | Baseline | Current | Change |\n';
+            body += '|----------|--------|----------|---------|--------|\n';
+            for (const c of regressed) {
+              for (const m of c.comparisons.filter(m => m.status === 'regressed')) {
+                const pct = m.deltaPct != null ? `${(m.deltaPct * 100).toFixed(1)}%` : 'n/a';
+                body += `| ${c.name} | ${m.name} | ${m.baseline.toFixed(2)} | ${m.candidate.toFixed(2)} | ${pct} |\n`;
+              }
+            }
+            body += '\n> Threshold: 15% regression on median timing';
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });
+
+  bench-full:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile
+
+      - name: Run full benchmark suite
+        run: bun fixtures/benchmarks/run.ts --repeat 3 --json > bench-results.json
+
+      - name: Upload full results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-full-${{ github.sha }}
+          path: bench-results.json

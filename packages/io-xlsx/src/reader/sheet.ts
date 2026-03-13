@@ -68,6 +68,11 @@ export interface SheetFormulaFeatures {
 	hasDynamicArrayFormula: boolean
 }
 
+export interface StreamedSheetRow {
+	readonly row: number
+	readonly cells: readonly (readonly [number, Cell])[]
+}
+
 export class ValueInternPool {
 	private readonly strings = new Map<string, string>()
 	private readonly stringValues = new Map<string, CellValue>()
@@ -224,6 +229,84 @@ function parseSheetDataXml(xml: string, sheet: Sheet, ctx: SheetParseContext): v
 			if (!ok) continue
 			nextCol = cellOut.col + 1
 		}
+		rowCursor = rowClose + 6
+	}
+}
+
+export function* streamSheetRowsXml(
+	name: string,
+	xml: string,
+	ctx: SheetParseContext,
+): Generator<StreamedSheetRow> {
+	const sheetData = locateSheetData(xml)
+	if (!sheetData) return
+	const sharedFormulaMasters: SharedFormulaMasterMap = new Map()
+	const useFastPath = ctx.valuesOnly || ctx.formulaOnly
+	let rowCursor = sheetData.contentStart
+	let currentRow = -1
+	const fallbackPos = { row: 0, col: 0 }
+	const cellOut = { row: 0, col: 0 }
+
+	while (true) {
+		const rowOpen = xml.indexOf('<row', rowCursor)
+		if (rowOpen === -1 || rowOpen >= sheetData.contentEnd) return
+		const rowTagEnd = findTagEnd(xml, rowOpen)
+		if (rowTagEnd === -1 || rowTagEnd >= sheetData.contentEnd) return
+		const rowAttrsRaw = xml.slice(rowOpen + 4, rowTagEnd)
+		const explicitRowIndex = rawNumAttr(rowAttrsRaw, 'r')
+		const row = explicitRowIndex !== undefined ? explicitRowIndex - 1 : currentRow + 1
+		currentRow = row
+		const rowSheet = new Sheet(name)
+		if (isSelfClosingTag(xml, rowOpen, rowTagEnd)) {
+			yield { row, cells: [] }
+			rowCursor = rowTagEnd + 1
+			continue
+		}
+
+		const rowClose = xml.indexOf('</row>', rowTagEnd + 1)
+		if (rowClose === -1 || rowClose > sheetData.contentEnd) return
+		let cellCursor = rowTagEnd + 1
+		let nextCol = 0
+		while (true) {
+			const cellOpen = xml.indexOf('<c', cellCursor)
+			if (cellOpen === -1 || cellOpen >= rowClose) break
+			const cellTagEnd = findTagEnd(xml, cellOpen)
+			if (cellTagEnd === -1 || cellTagEnd > rowClose) break
+			const rawAttrs = xml.slice(cellOpen + 2, cellTagEnd)
+			const selfClosing = isSelfClosingTag(xml, cellOpen, cellTagEnd)
+			const cellClose = selfClosing ? -1 : xml.indexOf('</c>', cellTagEnd + 1)
+			const innerXml =
+				!selfClosing && cellClose !== -1 && cellClose <= rowClose
+					? xml.slice(cellTagEnd + 1, cellClose)
+					: ''
+			fallbackPos.row = row
+			fallbackPos.col = nextCol
+			const ok = useFastPath
+				? parseFastCell(
+						rawAttrs,
+						innerXml,
+						ctx,
+						sharedFormulaMasters,
+						fallbackPos,
+						rowSheet,
+						cellOut,
+					)
+				: parseSlowCell(
+						rawAttrs,
+						innerXml,
+						ctx,
+						sharedFormulaMasters,
+						fallbackPos,
+						rowSheet,
+						cellOut,
+					)
+			cellCursor =
+				selfClosing || cellClose === -1 || cellClose > rowClose ? cellTagEnd + 1 : cellClose + 4
+			if (!ok) continue
+			nextCol = cellOut.col + 1
+		}
+		const entries = [...rowSheet.cells.iterateRows()]
+		yield { row, cells: entries[0]?.[1] ?? [] }
 		rowCursor = rowClose + 6
 	}
 }

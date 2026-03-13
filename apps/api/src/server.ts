@@ -153,6 +153,44 @@ export function createServer(opts?: { port?: number }) {
 					}
 				}
 
+				if (method === 'POST' && path === '/agent-view') {
+					const body = await parseJson<{
+						file?: string
+						range?: string
+						sheet?: string
+						rowChunkSize?: number
+						sampleRowLimit?: number
+						sampleValueLimit?: number
+					}>(req)
+					const file = body ? requireString(body, 'file') : null
+					const range = body ? requireString(body, 'range') : null
+					if (!file) return jsonFailure('Missing or invalid file', 400)
+					if (!range) return jsonFailure('Missing or invalid range', 400)
+					try {
+						const sheetName = body ? requireString(body, 'sheet') : null
+						const rowChunkSize = body ? requireOptionalNumber(body, 'rowChunkSize') : undefined
+						const sampleRowLimit = body ? requireOptionalNumber(body, 'sampleRowLimit') : undefined
+						const sampleValueLimit = body
+							? requireOptionalNumber(body, 'sampleValueLimit')
+							: undefined
+						const wb = await WorkbookDocument.open(
+							file,
+							sheetName ? { mode: 'formula', sheets: [sheetName] } : { mode: 'formula' },
+						)
+						const targetSheet = sheetName ?? wb.sheets[0]
+						if (!targetSheet) return jsonFailure('Sheet not found', 400)
+						const info = wb.agentView(targetSheet, range, {
+							...(rowChunkSize !== undefined ? { rowChunkSize } : {}),
+							...(sampleRowLimit !== undefined ? { sampleRowLimit } : {}),
+							...(sampleValueLimit !== undefined ? { sampleValueLimit } : {}),
+						})
+						if (!info) return jsonFailure('Sheet not found', 400)
+						return jsonSuccess(info)
+					} catch (e) {
+						return handleError(e, file)
+					}
+				}
+
 				if (method === 'POST' && path === '/write') {
 					const body = await parseJson<{ file?: string; ops?: unknown[] }>(req)
 					const file = body ? requireString(body, 'file') : null

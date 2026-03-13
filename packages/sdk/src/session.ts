@@ -7,6 +7,8 @@ import { WorkbookReadView } from './read-view.ts'
 import type { SheetHandle } from './sheet-handle.ts'
 import type { TableHandle } from './table-handle.ts'
 import type {
+	AgentViewOptions,
+	AgentViewResult,
 	CheckResult,
 	CompactRangeInfo,
 	CompactRangeWindowInfo,
@@ -215,6 +217,14 @@ export class WorkbookDocument {
 		opts?: import('./types.ts').AgentReadOptions,
 	): CompactRangeWindowInfo | undefined {
 		return this.view.readWindowCompact(sheetName, range, opts)
+	}
+
+	agentView(
+		sheetName: string,
+		range: string,
+		opts?: AgentViewOptions,
+	): AgentViewResult | undefined {
+		return this.view.agentView(sheetName, range, opts)
 	}
 
 	readRows(

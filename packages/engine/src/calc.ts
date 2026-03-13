@@ -9,6 +9,7 @@ import type { AscendError, CellValue } from '@ascend/schema'
 import { EMPTY, errorValue, topLeftScalar } from '@ascend/schema'
 import { analyzeWorkbook, getSharedFormulaGroups } from './analysis.ts'
 import type { CalcContext } from './calc-context.ts'
+import { codegenFormula } from './codegen.ts'
 import { type CompiledFormula, compileFormula, evaluateCompiled } from './compiled-eval.ts'
 import {
 	type CellCoords,
@@ -87,7 +88,14 @@ export function clearCompiledFormulaCache(): void {
 	// kept for API symmetry with clearFormulaParseCache.
 }
 
-function evalFormula(_key: CellKey, ast: FormulaNode, ctx: EvalContext): CellValue {
+function evalFormula(
+	_key: CellKey,
+	formulaText: string,
+	ast: FormulaNode,
+	ctx: EvalContext,
+): CellValue {
+	const generated = codegenFormula(formulaText, ast)
+	if (generated) return generated(ctx)
 	let compiled = compiledCache.get(ast)
 	if (compiled === undefined) {
 		const result = compileFormula(ast)
@@ -327,6 +335,7 @@ export function recalculate(
 		}
 	}
 	const asts = new Map<CellKey, FormulaNode>()
+	const formulaTexts = new Map<CellKey, string>()
 	if (isDirtyRecalc) {
 		for (const key of evalOrder) {
 			const analyzed = analysis.formulas.get(key)
@@ -343,6 +352,7 @@ export function recalculate(
 				continue
 			}
 			asts.set(key, analyzed.ast)
+			formulaTexts.set(key, analyzed.formula)
 		}
 	} else {
 		for (const analyzed of analysis.formulas.values()) {
@@ -358,6 +368,7 @@ export function recalculate(
 				continue
 			}
 			asts.set(analyzed.key, analyzed.ast)
+			formulaTexts.set(analyzed.key, analyzed.formula)
 		}
 	}
 
@@ -367,6 +378,7 @@ export function recalculate(
 			ctx,
 			graph,
 			asts,
+			formulaTexts,
 			evalOrder,
 			cycleKeys,
 			changed,
@@ -446,6 +458,8 @@ export function recalculate(
 
 			const ast = asts.get(key)
 			if (!ast) return
+			const formulaText = formulaTexts.get(key)
+			if (!formulaText) return
 
 			parseCellKeyInto(key, coords)
 			const { sheetIndex: si, row, col } = coords
@@ -455,7 +469,7 @@ export function recalculate(
 			mutableCtx.sheetIndex = si
 			mutableCtx.row = row
 			mutableCtx.col = col
-			const newValue = evalFormula(key, ast, mutableCtx)
+			const newValue = evalFormula(key, formulaText, ast, mutableCtx)
 			const oldCell = sheet.cells.get(row, col)
 			const spillMatrix = toScalarMatrix(newValue)
 			if (spillMatrix) {
@@ -543,6 +557,7 @@ function evalIterative(
 	ctx: CalcContext,
 	_graph: DependencyGraph,
 	asts: Map<CellKey, FormulaNode>,
+	formulaTexts: Map<CellKey, string>,
 	evalOrder: CellKey[],
 	cycleKeys: ReadonlySet<CellKey>,
 	changed: string[],
@@ -566,6 +581,8 @@ function evalIterative(
 			if (!cycleKeys.has(key)) continue
 			const ast = asts.get(key)
 			if (!ast) continue
+			const formulaText = formulaTexts.get(key)
+			if (!formulaText) continue
 
 			parseCellKeyInto(key, coords)
 			const { sheetIndex: si, row, col } = coords
@@ -575,7 +592,7 @@ function evalIterative(
 			mutableCtx.sheetIndex = si
 			mutableCtx.row = row
 			mutableCtx.col = col
-			const newValue = evalFormula(key, ast, mutableCtx)
+			const newValue = evalFormula(key, formulaText, ast, mutableCtx)
 			const oldCell = sheet.cells.get(row, col)
 			const oldValue = oldCell?.value ?? EMPTY
 			const spillMatrix = toScalarMatrix(newValue)
@@ -615,6 +632,8 @@ function evalIterative(
 		if (cycleKeys.has(key)) continue
 		const ast = asts.get(key)
 		if (!ast) continue
+		const formulaText = formulaTexts.get(key)
+		if (!formulaText) continue
 
 		parseCellKeyInto(key, coords)
 		const { sheetIndex: si, row, col } = coords
@@ -624,7 +643,7 @@ function evalIterative(
 		mutableCtx.sheetIndex = si
 		mutableCtx.row = row
 		mutableCtx.col = col
-		const newValue = evalFormula(key, ast, mutableCtx)
+		const newValue = evalFormula(key, formulaText, ast, mutableCtx)
 		const oldCell = sheet.cells.get(row, col)
 		const spillMatrix = toScalarMatrix(newValue)
 		if (spillMatrix) {

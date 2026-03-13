@@ -29,6 +29,7 @@ describe('MCP server', () => {
 
 		expect(names).toContain('ascend.inspect')
 		expect(names).toContain('ascend.read')
+		expect(names).toContain('ascend.agent_view')
 		expect(names).toContain('ascend.preview')
 		expect(names).toContain('ascend.write')
 		expect(names).toContain('ascend.calc')
@@ -37,7 +38,7 @@ describe('MCP server', () => {
 		expect(names).toContain('ascend.trace')
 		expect(names).toContain('ascend.diff')
 		expect(names).toContain('ascend.export')
-		expect(names.length).toBe(10)
+		expect(names.length).toBe(11)
 	})
 
 	test('ascend.write recalculates before saving when needed', async () => {

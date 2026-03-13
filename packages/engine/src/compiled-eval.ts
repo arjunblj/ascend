@@ -12,6 +12,7 @@ import {
 } from '@ascend/schema'
 import type { EvalContext } from './evaluator.ts'
 import { evaluate as treeEvaluate } from './evaluator.ts'
+import { getWasmRangeOps } from './wasm-range.ts'
 
 const Op = {
 	NUM: 1,
@@ -576,17 +577,87 @@ export function compileFormula(node: FormulaNode): CompiledFormula | null {
 
 let numericStackSize = 64
 let numericStack = new Float64Array(numericStackSize)
+let rangeScratchSize = 256
+let rangeScratch = new Float64Array(rangeScratchSize)
+const WASM_RANGE_THRESHOLD = 128
 
 function readCellNumeric(
 	sheet: import('@ascend/core').Sheet | undefined,
 	row: number,
 	col: number,
 ): number | CellValue {
-	const cv = sheet?.cells.readValue(row, col)
-	if (!cv || cv.kind === 'empty') return 0
+	const cells = sheet?.cells
+	if (!cells) return 0
+	const kind = cells.readKind(row, col)
+	if (kind === undefined || kind === 'empty') return 0
+	if (kind === 'error') return errorValue(cells.readError(row, col) ?? '#VALUE!')
+	const directNumber = cells.readNumber(row, col)
+	if (directNumber !== null) return directNumber
+	if (kind === 'string') {
+		const raw = cells.readString(row, col) ?? ''
+		const trimmed = raw.trim()
+		if (trimmed === '') return 0
+		const parsed = Number(trimmed)
+		return Number.isNaN(parsed) ? errorValue('#VALUE!') : parsed
+	}
+	const cv = cells.readValue(row, col)
 	if (cv.kind === 'error') return cv
 	const n = toNumber(cv)
 	return n ?? errorValue('#VALUE!')
+}
+
+function aggregateNumericRange(
+	sheet: import('@ascend/core').Sheet | undefined,
+	startRow: number,
+	startCol: number,
+	endRow: number,
+	endCol: number,
+): { sum: number; count: number; min: number; max: number; error: CellValue | null } {
+	const cells = sheet?.cells
+	if (!cells) return { sum: 0, count: 0, min: Infinity, max: -Infinity, error: null }
+	let count = 0
+	for (let row = startRow; row <= endRow; row++) {
+		for (let col = startCol; col <= endCol; col++) {
+			const kind = cells.readKind(row, col)
+			if (kind === undefined || kind === 'empty') continue
+			if (kind === 'error') {
+				return {
+					sum: 0,
+					count,
+					min: Infinity,
+					max: -Infinity,
+					error: errorValue(cells.readError(row, col) ?? '#VALUE!'),
+				}
+			}
+			if (kind !== 'number' && kind !== 'date') continue
+			if (count === rangeScratchSize) ensureRangeScratch(count + 1)
+			rangeScratch[count++] = cells.readNumber(row, col) ?? 0
+		}
+	}
+	if (count === 0) {
+		return { sum: 0, count: 0, min: Infinity, max: -Infinity, error: null }
+	}
+	const wasm = count >= WASM_RANGE_THRESHOLD ? getWasmRangeOps() : null
+	if (wasm) {
+		wasm.load(rangeScratch, count)
+		return {
+			sum: wasm.sum(count),
+			count,
+			min: wasm.min(count),
+			max: wasm.max(count),
+			error: null,
+		}
+	}
+	let sum = 0
+	let min = Infinity
+	let max = -Infinity
+	for (let i = 0; i < count; i++) {
+		const value = rangeScratch[i] ?? 0
+		sum += value
+		if (value < min) min = value
+		if (value > max) max = value
+	}
+	return { sum, count, min, max, error: null }
 }
 
 function evaluateCompiledNumeric(compiled: CompiledFormula, ctx: EvalContext): CellValue {
@@ -732,30 +803,8 @@ function evaluateCompiledNumeric(compiled: CompiledFormula, ctx: EvalContext): C
 					if (si < 0) return errorValue('#REF!')
 					target = ctx.workbook.sheets[si]
 				}
-				let sum = 0
-				let count = 0
-				let min = Infinity
-				let max = -Infinity
-				for (let r = sr; r <= er; r++) {
-					for (let c = sc; c <= ec; c++) {
-						const cv = target?.cells.readValue(r, c)
-						if (!cv || cv.kind === 'empty') continue
-						if (cv.kind === 'error') return cv
-						if (cv.kind === 'number') {
-							const v = cv.value
-							sum += v
-							count++
-							if (v < min) min = v
-							if (v > max) max = v
-						} else if (cv.kind === 'date') {
-							const v = cv.serial
-							sum += v
-							count++
-							if (v < min) min = v
-							if (v > max) max = v
-						}
-					}
-				}
+				const { sum, count, min, max, error } = aggregateNumericRange(target, sr, sc, er, ec)
+				if (error) return error
 				if (op === Op.SUM_RANGE) numericStack[sp++] = sum
 				else if (op === Op.COUNT_RANGE) numericStack[sp++] = count
 				else if (op === Op.AVERAGE_RANGE) {
@@ -782,6 +831,15 @@ function ensureNumericStack(needed: number): void {
 	newStack.set(numericStack)
 	numericStack = newStack
 	numericStackSize = newSize
+}
+
+function ensureRangeScratch(needed: number): void {
+	if (needed <= rangeScratchSize) return
+	const newSize = Math.max(rangeScratchSize * 2, needed)
+	const next = new Float64Array(newSize)
+	next.set(rangeScratch)
+	rangeScratch = next
+	rangeScratchSize = newSize
 }
 
 function ensureMixedStack(needed: number): void {
@@ -1131,34 +1189,13 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 					}
 					target = ctx.workbook.sheets[si]
 				}
-				let sum = 0
-				let count = 0
-				let min = Infinity
-				let max = -Infinity
-				let rangeErr: CellValue | null = null
-				for (let r = sr; r <= er && !rangeErr; r++) {
-					for (let c = sc; c <= ec; c++) {
-						const cv = target?.cells.readValue(r, c)
-						if (!cv || cv.kind === 'empty') continue
-						if (cv.kind === 'error') {
-							rangeErr = cv
-							break
-						}
-						if (cv.kind === 'number') {
-							const v = cv.value
-							sum += v
-							count++
-							if (v < min) min = v
-							if (v > max) max = v
-						} else if (cv.kind === 'date') {
-							const v = cv.serial
-							sum += v
-							count++
-							if (v < min) min = v
-							if (v > max) max = v
-						}
-					}
-				}
+				const {
+					sum,
+					count,
+					min,
+					max,
+					error: rangeErr,
+				} = aggregateNumericRange(target, sr, sc, er, ec)
 				if (rangeErr) {
 					sharedStack[stackDepth++] = rangeErr
 				} else if (op === Op.SUM_RANGE) sharedStack[stackDepth++] = numberValue(sum)

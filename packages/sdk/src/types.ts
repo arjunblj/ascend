@@ -250,6 +250,46 @@ export interface AgentReadOptions {
 	readonly changedSince?: string
 }
 
+export interface AgentViewOptions {
+	readonly rowChunkSize?: number
+	readonly sampleRowLimit?: number
+	readonly sampleValueLimit?: number
+}
+
+export interface AgentFormulaPatternInfo {
+	readonly pattern: string
+	readonly count: number
+}
+
+export interface AgentColumnSummary {
+	readonly col: number
+	readonly ref: string
+	readonly header: FlatCellValue | null
+	readonly kind: 'empty' | 'number' | 'string' | 'boolean' | 'formula' | 'mixed'
+	readonly nonEmptyCount: number
+	readonly formulaCount: number
+	readonly sampleValues: readonly FlatCellValue[]
+}
+
+export interface AgentSampleRow {
+	readonly row: number
+	readonly cells: readonly CompactCellInfo[]
+}
+
+export interface AgentViewResult {
+	readonly sheet: string
+	readonly range: RangeRef
+	readonly rowCount: number
+	readonly colCount: number
+	readonly nonEmptyCount: number
+	readonly formulaCount: number
+	readonly distinctFunctions: readonly string[]
+	readonly formulaPatterns: readonly AgentFormulaPatternInfo[]
+	readonly columns: readonly AgentColumnSummary[]
+	readonly samples: readonly AgentSampleRow[]
+	readonly notes: readonly string[]
+}
+
 export interface RangeInfo {
 	readonly ref: RangeRef
 	readonly cells: readonly CellInfo[]

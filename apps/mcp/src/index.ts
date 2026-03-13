@@ -112,6 +112,45 @@ export function createServer(): McpServer {
 	)
 
 	server.tool(
+		'ascend.agent_view',
+		'Read a compressed semantic summary for a worksheet range',
+		{
+			file: z.string().describe('Path to workbook file'),
+			range: z.string().describe('Cell range (e.g. "A1:Z200")'),
+			sheet: z.string().optional().describe('Sheet name (defaults to first sheet)'),
+			rowChunkSize: z.number().int().positive().optional().describe('Rows per streamed chunk'),
+			sampleRowLimit: z.number().int().positive().optional().describe('Maximum sample rows'),
+			sampleValueLimit: z
+				.number()
+				.int()
+				.positive()
+				.optional()
+				.describe('Maximum sample values per column'),
+		},
+		async ({ file, range, sheet, rowChunkSize, sampleRowLimit, sampleValueLimit }) => {
+			try {
+				const wb = await WorkbookDocument.open(
+					file,
+					sheet ? { mode: 'formula', sheets: [sheet] } : { mode: 'formula' },
+				)
+				const sheetName = sheet ?? wb.sheets[0]
+				if (!sheetName) return errorResponse('No sheets in workbook')
+				const view = wb.agentView(sheetName, range, {
+					...(rowChunkSize !== undefined ? { rowChunkSize } : {}),
+					...(sampleRowLimit !== undefined ? { sampleRowLimit } : {}),
+					...(sampleValueLimit !== undefined ? { sampleValueLimit } : {}),
+				})
+				if (!view) return errorResponse(`Sheet "${sheetName}" not found`)
+				return okResponse(view, `Generated agent view for ${range} on "${sheetName}"`)
+			} catch (e) {
+				return errorResponse(
+					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
+				)
+			}
+		},
+	)
+
+	server.tool(
 		'ascend.preview',
 		'Preview operations without saving the workbook',
 		{

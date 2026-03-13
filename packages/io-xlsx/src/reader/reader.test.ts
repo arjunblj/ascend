@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'bun:test'
+import type { StyleId } from '@ascend/core'
 import { strToU8, zipSync } from 'fflate'
 import { readXlsx } from './index.ts'
+import type { StreamedSheetRow } from './sheet.ts'
+import { readXlsxRowsStream } from './stream.ts'
+
+const S0 = 0 as StyleId
 
 function makeXlsx(parts: Record<string, string>): Uint8Array {
 	const entries: Record<string, Uint8Array> = {}
@@ -109,6 +114,31 @@ describe('readXlsx', () => {
 		expect(b2?.formula).toBe('B1*2')
 
 		expect(report.status).toBe('clean')
+	})
+
+	it('streams worksheet rows through the async reader path', async () => {
+		const result = await readXlsxRowsStream(minimalXlsx(), { sheet: 'Data', mode: 'formula' })
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+		const rows: StreamedSheetRow[] = []
+		for await (const row of result.value) rows.push(row)
+		expect(rows).toEqual([
+			{
+				row: 0,
+				cells: [
+					[0, { value: { kind: 'string', value: 'Hello' }, formula: null, styleId: S0 }],
+					[1, { value: { kind: 'number', value: 42 }, formula: null, styleId: S0 }],
+					[2, { value: { kind: 'boolean', value: true }, formula: null, styleId: S0 }],
+				],
+			},
+			{
+				row: 1,
+				cells: [
+					[0, { value: { kind: 'string', value: 'World' }, formula: null, styleId: S0 }],
+					[1, { value: { kind: 'number', value: 84 }, formula: 'B1*2', styleId: S0 }],
+				],
+			},
+		])
 	})
 
 	it('parses merge cells', () => {

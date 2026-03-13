@@ -5,9 +5,9 @@
 	"type": "module",
 	"main": "src/index.ts",
 	"dependencies": {
-		"@ascend/schema": "workspace:*",
 		"@ascend/core": "workspace:*",
-		"@ascend/formulas": "workspace:*"
+		"@ascend/formulas": "workspace:*",
+		"@ascend/schema": "workspace:*"
 	},
 	"scripts": {
 		"test": "bun test"

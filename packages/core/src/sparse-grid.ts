@@ -1,26 +1,4 @@
-const INTERN_LIMIT = 32_768
-const INTERN_EVICT = 4_096
-const internPool = new Map<string, string>()
-
-function internString(s: string): string {
-	const hit = internPool.get(s)
-	if (hit !== undefined) {
-		internPool.delete(s)
-		internPool.set(s, hit)
-		return hit
-	}
-	if (internPool.size >= INTERN_LIMIT) {
-		const iter = internPool.keys()
-		for (let i = 0; i < INTERN_EVICT; i++) {
-			const k = iter.next().value
-			if (k !== undefined) internPool.delete(k)
-		}
-	}
-	internPool.set(s, s)
-	return s
-}
-
-import type { CellValue } from '@ascend/schema'
+import type { CellValue, ExcelError } from '@ascend/schema'
 import { booleanValue, EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
 import type { StyleId } from './ids.ts'
 import type { RangeRef } from './refs.ts'
@@ -65,30 +43,305 @@ export type CellFormulaBinding =
 	| SpillFormulaInfo
 
 const DEFAULT_STYLE_ID = 0 as StyleId
+const CHUNK_BITS = 6
+const CHUNK_SIZE = 1 << CHUNK_BITS
+const CHUNK_MASK = CHUNK_SIZE - 1
+const CHUNK_AREA = CHUNK_SIZE * CHUNK_SIZE
+const SPARSE_TO_DENSE_THRESHOLD = 96
+
+enum SlotTag {
+	Empty = 0,
+	Number = 1,
+	String = 2,
+	Boolean = 3,
+	Error = 4,
+	Date = 5,
+	Heap = 6,
+}
+
+type CellValueKind = CellValue['kind']
+
+interface StoredSlot {
+	readonly tag: SlotTag
+	readonly styleId: StyleId
+	readonly formula: string | null
+	readonly formulaInfo: CellFormulaBinding | undefined
+	readonly numberValue: number | undefined
+	readonly stringId: number | undefined
+	readonly heapValue: CellValue | undefined
+}
+
+interface GridChunk {
+	readonly count: number
+	has(localIndex: number): boolean
+	getSlot(localIndex: number): StoredSlot | undefined
+	getKind(localIndex: number): CellValueKind | undefined
+	readValue(localIndex: number, stringTable: StringTable): CellValue | undefined
+	readNumber(localIndex: number): number | null
+	readString(localIndex: number, stringTable: StringTable): string | null
+	readError(localIndex: number, stringTable: StringTable): ExcelError | null
+	setSlot(localIndex: number, slot: StoredSlot): GridChunk
+	delete(localIndex: number): boolean
+	forEachRow(
+		localRow: number,
+		minLocalCol: number,
+		maxLocalCol: number,
+		fn: (localCol: number, slot: StoredSlot) => void,
+	): void
+}
+
+class StringTable {
+	private readonly ids = new Map<string, number>()
+	private readonly values = ['']
+
+	intern(value: string): number {
+		const existing = this.ids.get(value)
+		if (existing !== undefined) return existing
+		const id = this.values.length
+		this.values.push(value)
+		this.ids.set(value, id)
+		return id
+	}
+
+	lookup(id: number): string {
+		return this.values[id] ?? ''
+	}
+}
+
+class SparseChunk implements GridChunk {
+	private readonly slots = new Map<number, StoredSlot>()
+
+	get count(): number {
+		return this.slots.size
+	}
+
+	has(localIndex: number): boolean {
+		return this.slots.has(localIndex)
+	}
+
+	getSlot(localIndex: number): StoredSlot | undefined {
+		return this.slots.get(localIndex)
+	}
+
+	getKind(localIndex: number): CellValueKind | undefined {
+		return kindFromSlot(this.slots.get(localIndex))
+	}
+
+	readValue(localIndex: number, stringTable: StringTable): CellValue | undefined {
+		return readSlotValue(this.slots.get(localIndex), stringTable)
+	}
+
+	readNumber(localIndex: number): number | null {
+		const slot = this.slots.get(localIndex)
+		if (!slot) return null
+		return slot.tag === SlotTag.Number || slot.tag === SlotTag.Boolean || slot.tag === SlotTag.Date
+			? (slot.numberValue ?? 0)
+			: null
+	}
+
+	readString(localIndex: number, stringTable: StringTable): string | null {
+		const slot = this.slots.get(localIndex)
+		if (!slot || slot.tag !== SlotTag.String) return null
+		return stringTable.lookup(slot.stringId ?? 0)
+	}
+
+	readError(localIndex: number, stringTable: StringTable): ExcelError | null {
+		const slot = this.slots.get(localIndex)
+		if (!slot || slot.tag !== SlotTag.Error) return null
+		return stringTable.lookup(slot.stringId ?? 0) as ExcelError
+	}
+
+	setSlot(localIndex: number, slot: StoredSlot): GridChunk {
+		this.slots.set(localIndex, slot)
+		if (this.slots.size < SPARSE_TO_DENSE_THRESHOLD) return this
+		const dense = new DenseChunk()
+		for (const [index, existing] of this.slots) {
+			dense.setSlot(index, existing)
+		}
+		return dense
+	}
+
+	delete(localIndex: number): boolean {
+		return this.slots.delete(localIndex)
+	}
+
+	forEachRow(
+		localRow: number,
+		minLocalCol: number,
+		maxLocalCol: number,
+		fn: (localCol: number, slot: StoredSlot) => void,
+	): void {
+		const rowSlots: Array<readonly [number, StoredSlot]> = []
+		for (const [index, slot] of this.slots) {
+			const row = index >>> CHUNK_BITS
+			if (row !== localRow) continue
+			const col = index & CHUNK_MASK
+			if (col < minLocalCol || col > maxLocalCol) continue
+			rowSlots.push([col, slot] as const)
+		}
+		rowSlots.sort((a, b) => a[0] - b[0])
+		for (const [col, slot] of rowSlots) fn(col, slot)
+	}
+}
+
+class DenseChunk implements GridChunk {
+	private readonly metaBuffer = new SharedArrayBuffer(CHUNK_AREA * 10)
+	private readonly numberBuffer = new SharedArrayBuffer(CHUNK_AREA * 8)
+	private readonly occupied = new Uint8Array(this.metaBuffer, 0, CHUNK_AREA)
+	private readonly tags = new Uint8Array(this.metaBuffer, CHUNK_AREA, CHUNK_AREA)
+	private readonly styleIds = new Uint32Array(this.metaBuffer, CHUNK_AREA * 2, CHUNK_AREA)
+	private readonly stringIds = new Uint32Array(this.metaBuffer, CHUNK_AREA * 6, CHUNK_AREA)
+	private readonly numbers = new Float64Array(this.numberBuffer)
+	private readonly rowCounts = new Uint16Array(CHUNK_SIZE)
+	private formulas: Array<string | null | undefined> | null = null
+	private formulaInfos: Array<CellFormulaBinding | undefined> | null = null
+	private heapValues: Array<CellValue | undefined> | null = null
+	private _count = 0
+
+	get count(): number {
+		return this._count
+	}
+
+	has(localIndex: number): boolean {
+		return this.occupied[localIndex] === 1
+	}
+
+	getSlot(localIndex: number): StoredSlot | undefined {
+		if (!this.has(localIndex)) return undefined
+		const tag = this.tags[localIndex] as SlotTag
+		return {
+			tag,
+			styleId: this.styleIds[localIndex] as StyleId,
+			formula: this.formulas?.[localIndex] ?? null,
+			formulaInfo: this.formulaInfos?.[localIndex],
+			numberValue:
+				tag === SlotTag.Number || tag === SlotTag.Boolean || tag === SlotTag.Date
+					? (this.numbers[localIndex] ?? 0)
+					: undefined,
+			stringId:
+				tag === SlotTag.String || tag === SlotTag.Error
+					? (this.stringIds[localIndex] ?? 0)
+					: undefined,
+			heapValue: tag === SlotTag.Heap ? (this.heapValues?.[localIndex] ?? EMPTY) : undefined,
+		}
+	}
+
+	getKind(localIndex: number): CellValueKind | undefined {
+		if (!this.has(localIndex)) return undefined
+		const tag = (this.tags[localIndex] ?? SlotTag.Empty) as SlotTag
+		return tag === SlotTag.Heap
+			? (this.heapValues?.[localIndex]?.kind ?? 'array')
+			: kindFromTag(tag)
+	}
+
+	readValue(localIndex: number, stringTable: StringTable): CellValue | undefined {
+		if (!this.has(localIndex)) return undefined
+		return readDenseValue(
+			(this.tags[localIndex] ?? SlotTag.Empty) as SlotTag,
+			this.numbers[localIndex] ?? 0,
+			this.stringIds[localIndex] ?? 0,
+			this.heapValues?.[localIndex],
+			stringTable,
+		)
+	}
+
+	readNumber(localIndex: number): number | null {
+		if (!this.has(localIndex)) return null
+		const tag = (this.tags[localIndex] ?? SlotTag.Empty) as SlotTag
+		return tag === SlotTag.Number || tag === SlotTag.Boolean || tag === SlotTag.Date
+			? (this.numbers[localIndex] ?? 0)
+			: null
+	}
+
+	readString(localIndex: number, stringTable: StringTable): string | null {
+		if (!this.has(localIndex) || this.tags[localIndex] !== SlotTag.String) return null
+		return stringTable.lookup(this.stringIds[localIndex] ?? 0)
+	}
+
+	readError(localIndex: number, stringTable: StringTable): ExcelError | null {
+		if (!this.has(localIndex) || this.tags[localIndex] !== SlotTag.Error) return null
+		return stringTable.lookup(this.stringIds[localIndex] ?? 0) as ExcelError
+	}
+
+	setSlot(localIndex: number, slot: StoredSlot): GridChunk {
+		if (!this.has(localIndex)) {
+			this.occupied[localIndex] = 1
+			const rowIndex = localIndex >>> CHUNK_BITS
+			this.rowCounts[rowIndex] = (this.rowCounts[rowIndex] ?? 0) + 1
+			this._count++
+		}
+		this.tags[localIndex] = slot.tag
+		this.styleIds[localIndex] = slot.styleId
+		this.stringIds[localIndex] = slot.stringId ?? 0
+		this.numbers[localIndex] = slot.numberValue ?? 0
+		if (slot.formula !== null) {
+			if (this.formulas === null) this.formulas = new Array(CHUNK_AREA)
+			this.formulas[localIndex] = slot.formula
+		} else if (this.formulas !== null) {
+			this.formulas[localIndex] = null
+		}
+		if (slot.formulaInfo !== undefined) {
+			if (this.formulaInfos === null) this.formulaInfos = new Array(CHUNK_AREA)
+			this.formulaInfos[localIndex] = slot.formulaInfo
+		} else if (this.formulaInfos !== null) {
+			this.formulaInfos[localIndex] = undefined
+		}
+		if (slot.tag === SlotTag.Heap) {
+			if (this.heapValues === null) this.heapValues = new Array(CHUNK_AREA)
+			this.heapValues[localIndex] = slot.heapValue
+		} else if (this.heapValues !== null) {
+			this.heapValues[localIndex] = undefined
+		}
+		return this
+	}
+
+	delete(localIndex: number): boolean {
+		if (!this.has(localIndex)) return false
+		this.occupied[localIndex] = 0
+		this.tags[localIndex] = SlotTag.Empty
+		this.styleIds[localIndex] = DEFAULT_STYLE_ID
+		this.stringIds[localIndex] = 0
+		this.numbers[localIndex] = 0
+		if (this.formulas !== null) this.formulas[localIndex] = undefined
+		if (this.formulaInfos !== null) this.formulaInfos[localIndex] = undefined
+		if (this.heapValues !== null) this.heapValues[localIndex] = undefined
+		const rowIndex = localIndex >>> CHUNK_BITS
+		this.rowCounts[rowIndex] = Math.max(0, (this.rowCounts[rowIndex] ?? 0) - 1)
+		this._count--
+		return true
+	}
+
+	forEachRow(
+		localRow: number,
+		minLocalCol: number,
+		maxLocalCol: number,
+		fn: (localCol: number, slot: StoredSlot) => void,
+	): void {
+		if ((this.rowCounts[localRow] ?? 0) === 0) return
+		const rowBase = localRow << CHUNK_BITS
+		for (let localCol = minLocalCol; localCol <= maxLocalCol; localCol++) {
+			const localIndex = rowBase + localCol
+			if (!this.has(localIndex)) continue
+			const slot = this.getSlot(localIndex)
+			if (slot) fn(localCol, slot)
+		}
+	}
+}
 
 export class SparseGrid {
-	private data = new Map<number, StoredCell>()
-	private rowIndex = new Map<number, Map<number, StoredCell>>()
-	private readonly styledStringCache = new Map<StyleId, Map<string, StyledStringCell>>()
-	private readonly styledBooleanCache = new Map<StyleId, Map<string, StyledBooleanCell>>()
-	private readonly styledNumberCache = new Map<StyleId, Map<number, StyledNumberCell>>()
-	private _isKeyOrderSorted = true
-	private _lastInsertedKey = Number.NEGATIVE_INFINITY
+	private chunkRows = new Map<number, Map<number, GridChunk>>()
+	private stringTable = new StringTable()
+	private _cellCount = 0
+	private _shared = false
 	private _minRow = Number.POSITIVE_INFINITY
 	private _maxRow = Number.NEGATIVE_INFINITY
 	private _minCol = Number.POSITIVE_INFINITY
 	private _maxCol = Number.NEGATIVE_INFINITY
 	private _boundsDirty = false
-	private _hasMutableStorage = false
-	private _shared = false
-	private _denseArray: (CellValue | undefined)[] | null = null
-	private _denseMinRow = 0
-	private _denseMinCol = 0
-	private _denseNumCols = 0
-	private _densityChecked = false
 
 	get(row: number, col: number): Cell | undefined {
-		return materializeCell(this.data.get(packKey(row, col)))
+		const slot = this._getSlot(row, col)
+		return materializeCell(slot, this.stringTable)
 	}
 
 	set(row: number, col: number, cell: Cell): void {
@@ -104,107 +357,91 @@ export class SparseGrid {
 		formulaInfo?: CellFormulaBinding,
 	): void {
 		this.ensureWritable()
-		const key = packKey(row, col)
-		const isNew = !this.data.has(key)
-		const stored = this.compactResolvedCell(value, formula, styleId, formulaInfo)
-		this.data.set(key, stored)
-		let rowMap = this.rowIndex.get(row)
-		if (!rowMap) {
-			rowMap = new Map()
-			this.rowIndex.set(row, rowMap)
+		const slot = compactResolvedCell(value, formula, styleId, formulaInfo, this.stringTable)
+		const [chunkRow, chunkCol, localIndex] = getChunkPosition(row, col)
+		let cols = this.chunkRows.get(chunkRow)
+		if (!cols) {
+			cols = new Map()
+			this.chunkRows.set(chunkRow, cols)
 		}
-		rowMap.set(col, stored)
-		if (isMutableStoredCell(stored)) this._hasMutableStorage = true
-		if (isNew) {
-			if (key < this._lastInsertedKey) this._isKeyOrderSorted = false
-			else this._lastInsertedKey = key
+		let chunk = cols.get(chunkCol)
+		if (!chunk) {
+			chunk = new SparseChunk()
+			cols.set(chunkCol, chunk)
 		}
-		if (row < this._minRow) this._minRow = row
-		if (row > this._maxRow) this._maxRow = row
-		if (col < this._minCol) this._minCol = col
-		if (col > this._maxCol) this._maxCol = col
-		if (this._denseArray !== null) {
-			const r = row - this._denseMinRow
-			const c = col - this._denseMinCol
-			if (r >= 0 && c >= 0 && c < this._denseNumCols) {
-				const idx = r * this._denseNumCols + c
-				if (idx < this._denseArray.length) {
-					this._denseArray[idx] = value
-				} else {
-					this._denseArray = null
-				}
-			} else {
-				this._denseArray = null
-			}
-		}
+		const existed = chunk.has(localIndex)
+		const nextChunk = chunk.setSlot(localIndex, slot)
+		if (nextChunk !== chunk) cols.set(chunkCol, nextChunk)
+		if (!existed) this._cellCount++
+		this._trackBounds(row, col)
 	}
 
 	delete(row: number, col: number): boolean {
 		this.ensureWritable()
-		const deleted = this.data.delete(packKey(row, col))
-		if (deleted) {
-			const rowMap = this.rowIndex.get(row)
-			if (rowMap) {
-				rowMap.delete(col)
-				if (rowMap.size === 0) this.rowIndex.delete(row)
-			}
-			if (
-				row === this._minRow ||
-				row === this._maxRow ||
-				col === this._minCol ||
-				col === this._maxCol
-			) {
-				this._boundsDirty = true
-			}
-			if (this._denseArray !== null) {
-				const r = row - this._denseMinRow
-				const c = col - this._denseMinCol
-				if (r >= 0 && c >= 0 && c < this._denseNumCols) {
-					const idx = r * this._denseNumCols + c
-					if (idx < this._denseArray.length) {
-						this._denseArray[idx] = undefined
-					}
-				}
-			}
+		const [chunkRow, chunkCol, localIndex] = getChunkPosition(row, col)
+		const cols = this.chunkRows.get(chunkRow)
+		const chunk = cols?.get(chunkCol)
+		if (!chunk) return false
+		const deleted = chunk.delete(localIndex)
+		if (!deleted) return false
+		this._cellCount--
+		if (chunk.count === 0) {
+			cols?.delete(chunkCol)
+			if (cols && cols.size === 0) this.chunkRows.delete(chunkRow)
 		}
-		return deleted
+		if (
+			row === this._minRow ||
+			row === this._maxRow ||
+			col === this._minCol ||
+			col === this._maxCol
+		) {
+			this._boundsDirty = true
+		}
+		return true
 	}
 
 	getValue(row: number, col: number): CellValue | undefined {
-		return readStoredValue(this.data.get(packKey(row, col)))
+		const [chunkRow, chunkCol, localIndex] = getChunkPosition(row, col)
+		return this.chunkRows.get(chunkRow)?.get(chunkCol)?.readValue(localIndex, this.stringTable)
 	}
 
 	readValue(row: number, col: number): CellValue {
-		let arr = this._denseArray
-		if (arr === null && !this._densityChecked) {
-			this._densityChecked = true
-			this._maybeEnableDenseCache()
-			arr = this._denseArray
-		}
-		if (arr !== null) {
-			const r = row - this._denseMinRow
-			const c = col - this._denseMinCol
-			if (r >= 0 && c >= 0 && c < this._denseNumCols) {
-				const idx = r * this._denseNumCols + c
-				if (idx < arr.length) return arr[idx] ?? EMPTY
-			}
-			return EMPTY
-		}
-		return readStoredValue(this.data.get(packKey(row, col))) ?? EMPTY
+		return this.getValue(row, col) ?? EMPTY
+	}
+
+	readKind(row: number, col: number): CellValueKind | undefined {
+		const [chunkRow, chunkCol, localIndex] = getChunkPosition(row, col)
+		return this.chunkRows.get(chunkRow)?.get(chunkCol)?.getKind(localIndex)
+	}
+
+	readNumber(row: number, col: number): number | null {
+		const [chunkRow, chunkCol, localIndex] = getChunkPosition(row, col)
+		return this.chunkRows.get(chunkRow)?.get(chunkCol)?.readNumber(localIndex) ?? null
+	}
+
+	readString(row: number, col: number): string | null {
+		const [chunkRow, chunkCol, localIndex] = getChunkPosition(row, col)
+		return (
+			this.chunkRows.get(chunkRow)?.get(chunkCol)?.readString(localIndex, this.stringTable) ?? null
+		)
+	}
+
+	readError(row: number, col: number): ExcelError | null {
+		const [chunkRow, chunkCol, localIndex] = getChunkPosition(row, col)
+		return (
+			this.chunkRows.get(chunkRow)?.get(chunkCol)?.readError(localIndex, this.stringTable) ?? null
+		)
 	}
 
 	has(row: number, col: number): boolean {
-		return this.data.has(packKey(row, col))
+		const [chunkRow, chunkCol, localIndex] = getChunkPosition(row, col)
+		return this.chunkRows.get(chunkRow)?.get(chunkCol)?.has(localIndex) ?? false
 	}
 
 	*getRange(range: RangeRef): Generator<readonly [number, number, Cell]> {
-		for (let r = range.start.row; r <= range.end.row; r++) {
-			const rowMap = this.rowIndex.get(r)
-			if (!rowMap) continue
-			for (const [col, stored] of rowMap) {
-				if (col < range.start.col || col > range.end.col) continue
-				const cell = materializeCell(stored)
-				if (cell) yield [r, col, cell] as const
+		for (const [row, entries] of this.iterateRowsInRange(range)) {
+			for (const [col, cell] of entries) {
+				yield [row, col, cell] as const
 			}
 		}
 	}
@@ -216,64 +453,21 @@ export class SparseGrid {
 		endCol: number,
 		fn: (value: CellValue, row: number, col: number) => void,
 	): void {
-		if (startCol === endCol) {
-			for (let r = startRow; r <= endRow; r++) {
-				const rowMap = this.rowIndex.get(r)
-				if (!rowMap) continue
-				const stored = rowMap.get(startCol)
-				if (!stored) continue
-				const value = readStoredValue(stored)
-				if (value) fn(value, r, startCol)
-			}
-			return
-		}
-		for (let r = startRow; r <= endRow; r++) {
-			const rowMap = this.rowIndex.get(r)
-			if (!rowMap) continue
-			for (const [col, stored] of rowMap) {
-				if (col < startCol || col > endCol) continue
-				const value = readStoredValue(stored)
-				if (value) fn(value, r, col)
+		for (const [row, entries] of this.iterateRowsInRange({
+			start: { row: startRow, col: startCol },
+			end: { row: endRow, col: endCol },
+		})) {
+			for (const [col, cell] of entries) {
+				fn(cell.value, row, col)
 			}
 		}
 	}
 
 	forEachRow(fn: (row: number, cells: ReadonlyMap<number, CellValue>) => void): void {
-		if (this._isKeyOrderSorted) {
-			let currentRow = Number.NaN
+		for (const [row, entries] of this.iterateRows()) {
 			const rowCells = new Map<number, CellValue>()
-			for (const [key, stored] of this.data) {
-				const [row, col] = unpackKey(key)
-				const value = readStoredValue(stored)
-				if (!value) continue
-				if (!Number.isNaN(currentRow) && row !== currentRow) {
-					fn(currentRow, rowCells)
-					rowCells.clear()
-				}
-				currentRow = row
-				rowCells.set(col, value)
-			}
-			if (!Number.isNaN(currentRow)) {
-				fn(currentRow, rowCells)
-			}
-			return
-		}
-		const rows = new Map<number, Map<number, CellValue>>()
-		for (const [key, stored] of this.data) {
-			const [row, col] = unpackKey(key)
-			const value = readStoredValue(stored)
-			if (!value) continue
-			let rowCells = rows.get(row)
-			if (!rowCells) {
-				rowCells = new Map()
-				rows.set(row, rowCells)
-			}
-			rowCells.set(col, value)
-		}
-		const sortedRows = [...rows.entries()].sort((a, b) => a[0] - b[0])
-		for (const [row, rowCells] of sortedRows) {
-			const sortedCells = new Map([...rowCells.entries()].sort((a, b) => a[0] - b[0]))
-			fn(row, sortedCells)
+			for (const [col, cell] of entries) rowCells.set(col, cell.value)
+			fn(row, rowCells)
 		}
 	}
 
@@ -286,20 +480,14 @@ export class SparseGrid {
 		fn: (acc: T, value: CellValue, row: number, col: number) => T,
 	): T {
 		let acc = init
-		for (let r = startRow; r <= endRow; r++) {
-			const rowMap = this.rowIndex.get(r)
-			if (!rowMap) continue
-			for (const [col, stored] of rowMap) {
-				if (col < startCol || col > endCol) continue
-				const value = readStoredValue(stored)
-				if (value) acc = fn(acc, value, r, col)
-			}
-		}
+		this.forEachValueInRange(startRow, startCol, endRow, endCol, (value, row, col) => {
+			acc = fn(acc, value, row, col)
+		})
 		return acc
 	}
 
 	usedRange(): RangeRef | null {
-		if (this.data.size === 0) return null
+		if (this._cellCount === 0) return null
 		if (this._boundsDirty) this._recomputeBounds()
 		return {
 			start: { row: this._minRow, col: this._minCol },
@@ -308,94 +496,85 @@ export class SparseGrid {
 	}
 
 	*iterate(): Generator<readonly [number, number, Cell]> {
-		for (const [key, cell] of this.data) {
-			const [row, col] = unpackKey(key)
-			const materialized = materializeCell(cell)
-			if (materialized) yield [row, col, materialized] as const
+		for (const [row, entries] of this.iterateRows()) {
+			for (const [col, cell] of entries) {
+				yield [row, col, cell] as const
+			}
 		}
 	}
 
 	*iterateRows(): Generator<readonly [number, readonly (readonly [number, Cell])[]]> {
-		if (this._isKeyOrderSorted) {
-			let currentRow = Number.NaN
-			let rowCells: Array<readonly [number, Cell]> = []
-			for (const [key, stored] of this.data) {
-				const [row, col] = unpackKey(key)
-				const cell = materializeCell(stored)
-				if (!cell) continue
-				if (!Number.isNaN(currentRow) && row !== currentRow) {
-					yield [currentRow, rowCells] as const
-					rowCells = []
+		if (this._cellCount === 0) return
+		const sortedChunkRows = [...this.chunkRows.keys()].sort((a, b) => a - b)
+		for (const chunkRow of sortedChunkRows) {
+			const cols = this.chunkRows.get(chunkRow)
+			if (!cols) continue
+			const sortedChunkCols = [...cols.keys()].sort((a, b) => a - b)
+			for (let localRow = 0; localRow < CHUNK_SIZE; localRow++) {
+				const row = (chunkRow << CHUNK_BITS) + localRow
+				const rowCells: Array<readonly [number, Cell]> = []
+				for (const chunkCol of sortedChunkCols) {
+					const chunk = cols.get(chunkCol)
+					if (!chunk) continue
+					const baseCol = chunkCol << CHUNK_BITS
+					chunk.forEachRow(localRow, 0, CHUNK_MASK, (localCol, slot) => {
+						const cell = materializeCell(slot, this.stringTable)
+						if (cell) rowCells.push([baseCol + localCol, cell] as const)
+					})
 				}
-				currentRow = row
-				rowCells.push([col, cell] as const)
+				if (rowCells.length > 0) yield [row, rowCells] as const
 			}
-			if (!Number.isNaN(currentRow)) {
-				yield [currentRow, rowCells] as const
-			}
-			return
-		}
-		const rows = new Map<number, Array<readonly [number, Cell]>>()
-		for (const [key, stored] of this.data) {
-			const [row, col] = unpackKey(key)
-			const cell = materializeCell(stored)
-			if (!cell) continue
-			const rowCells = rows.get(row)
-			if (rowCells) rowCells.push([col, cell] as const)
-			else rows.set(row, [[col, cell] as const])
-		}
-		const sortedRows = [...rows.entries()].sort((a, b) => a[0] - b[0])
-		for (const [row, rowCells] of sortedRows) {
-			const cells = rowCells.sort((a, b) => a[0] - b[0])
-			yield [row, cells] as const
 		}
 	}
 
 	*iterateRowsInRange(
 		range: RangeRef,
 	): Generator<readonly [number, readonly (readonly [number, Cell])[]]> {
-		for (let r = range.start.row; r <= range.end.row; r++) {
-			const rowMap = this.rowIndex.get(r)
-			if (!rowMap) continue
-			const rowCells: Array<readonly [number, Cell]> = []
-			for (const [col, stored] of rowMap) {
-				if (col < range.start.col || col > range.end.col) continue
-				const cell = materializeCell(stored)
-				if (cell) rowCells.push([col, cell] as const)
-			}
-			if (rowCells.length > 0) {
-				rowCells.sort((a, b) => a[0] - b[0])
-				yield [r, rowCells] as const
+		if (this._cellCount === 0) return
+		const startChunkRow = range.start.row >> CHUNK_BITS
+		const endChunkRow = range.end.row >> CHUNK_BITS
+		for (let chunkRow = startChunkRow; chunkRow <= endChunkRow; chunkRow++) {
+			const cols = this.chunkRows.get(chunkRow)
+			if (!cols) continue
+			const sortedChunkCols = [...cols.keys()].sort((a, b) => a - b)
+			const rowStart = chunkRow === startChunkRow ? range.start.row & CHUNK_MASK : 0
+			const rowEnd = chunkRow === endChunkRow ? range.end.row & CHUNK_MASK : CHUNK_MASK
+			for (let localRow = rowStart; localRow <= rowEnd; localRow++) {
+				const row = (chunkRow << CHUNK_BITS) + localRow
+				const rowCells: Array<readonly [number, Cell]> = []
+				for (const chunkCol of sortedChunkCols) {
+					const chunk = cols.get(chunkCol)
+					if (!chunk) continue
+					const chunkStartCol = chunkCol << CHUNK_BITS
+					const chunkEndCol = chunkStartCol + CHUNK_MASK
+					if (chunkEndCol < range.start.col || chunkStartCol > range.end.col) continue
+					const minLocalCol =
+						chunkCol === range.start.col >> CHUNK_BITS ? range.start.col & CHUNK_MASK : 0
+					const maxLocalCol =
+						chunkCol === range.end.col >> CHUNK_BITS ? range.end.col & CHUNK_MASK : CHUNK_MASK
+					chunk.forEachRow(localRow, minLocalCol, maxLocalCol, (localCol, slot) => {
+						const cell = materializeCell(slot, this.stringTable)
+						if (cell) rowCells.push([chunkStartCol + localCol, cell] as const)
+					})
+				}
+				if (rowCells.length > 0) yield [row, rowCells] as const
 			}
 		}
 	}
 
 	cellCount(): number {
-		return this.data.size
+		return this._cellCount
 	}
 
 	clear(): void {
-		if (this._shared) {
-			this.data = new Map()
-			this.rowIndex = new Map()
-			this._shared = false
-		} else {
-			this.data.clear()
-			this.rowIndex.clear()
-		}
-		this.styledStringCache.clear()
-		this.styledBooleanCache.clear()
-		this.styledNumberCache.clear()
-		this._isKeyOrderSorted = true
-		this._lastInsertedKey = Number.NEGATIVE_INFINITY
+		this.chunkRows = new Map()
+		this._cellCount = 0
+		this._shared = false
 		this._minRow = Number.POSITIVE_INFINITY
 		this._maxRow = Number.NEGATIVE_INFINITY
 		this._minCol = Number.POSITIVE_INFINITY
 		this._maxCol = Number.NEGATIVE_INFINITY
 		this._boundsDirty = false
-		this._hasMutableStorage = false
-		this._denseArray = null
-		this._densityChecked = false
 	}
 
 	insertRows(at: number, count: number): void {
@@ -429,47 +608,76 @@ export class SparseGrid {
 	}
 
 	copyFrom(other: SparseGrid): void {
-		if (other._hasMutableStorage) {
-			this.data = new Map(other.data)
-			for (const [key, cell] of this.data) {
-				const cloned = cloneCell(cell)
-				if (cloned !== cell) this.data.set(key, cloned)
+		if (other._hasMutableValues()) {
+			const next = new SparseGrid()
+			next.stringTable = other.stringTable
+			for (const [row, col, cell] of other.iterate()) {
+				next.setResolved(
+					row,
+					col,
+					cloneCellValue(cell.value),
+					cell.formula,
+					cell.styleId,
+					cell.formulaInfo,
+				)
 			}
-			this._rebuildRowIndex()
+			this.chunkRows = next.chunkRows
+			this.stringTable = next.stringTable
+			this._cellCount = next._cellCount
+			this._minRow = next._minRow
+			this._maxRow = next._maxRow
+			this._minCol = next._minCol
+			this._maxCol = next._maxCol
+			this._boundsDirty = next._boundsDirty
 			this._shared = false
-		} else {
-			this.data = other.data
-			this.rowIndex = other.rowIndex
-			this._shared = true
-			other._shared = true
+			return
 		}
-		this.styledStringCache.clear()
-		this.styledBooleanCache.clear()
-		this.styledNumberCache.clear()
+		this.chunkRows = other.chunkRows
+		this.stringTable = other.stringTable
+		this._cellCount = other._cellCount
 		this._minRow = other._minRow
 		this._maxRow = other._maxRow
 		this._minCol = other._minCol
 		this._maxCol = other._maxCol
 		this._boundsDirty = other._boundsDirty
-		this._isKeyOrderSorted = other._isKeyOrderSorted
-		this._lastInsertedKey = other._lastInsertedKey
-		this._hasMutableStorage = other._hasMutableStorage
-		this._denseArray = null
-		this._densityChecked = false
+		this._shared = true
+		other._shared = true
 	}
 
 	private ensureWritable(): void {
 		if (!this._shared) return
-		this.data = new Map(this.data)
-		if (this._hasMutableStorage) {
-			for (const [key, cell] of this.data) {
-				const cloned = cloneCell(cell)
-				if (cloned !== cell) this.data.set(key, cloned)
-			}
+		const next = new SparseGrid()
+		next.stringTable = this.stringTable
+		for (const [row, col, cell] of this.iterate()) {
+			next.setResolved(
+				row,
+				col,
+				cloneCellValue(cell.value),
+				cell.formula,
+				cell.styleId,
+				cell.formulaInfo,
+			)
 		}
-		this._rebuildRowIndex()
+		this.chunkRows = next.chunkRows
+		this._cellCount = next._cellCount
+		this._minRow = next._minRow
+		this._maxRow = next._maxRow
+		this._minCol = next._minCol
+		this._maxCol = next._maxCol
+		this._boundsDirty = next._boundsDirty
 		this._shared = false
-		this._denseArray = null
+	}
+
+	private _getSlot(row: number, col: number): StoredSlot | undefined {
+		const [chunkRow, chunkCol, localIndex] = getChunkPosition(row, col)
+		return this.chunkRows.get(chunkRow)?.get(chunkCol)?.getSlot(localIndex)
+	}
+
+	private _trackBounds(row: number, col: number): void {
+		if (row < this._minRow) this._minRow = row
+		if (row > this._maxRow) this._maxRow = row
+		if (col < this._minCol) this._minCol = col
+		if (col > this._maxCol) this._maxCol = col
 	}
 
 	private _recomputeBounds(): void {
@@ -477,230 +685,59 @@ export class SparseGrid {
 		this._maxRow = Number.NEGATIVE_INFINITY
 		this._minCol = Number.POSITIVE_INFINITY
 		this._maxCol = Number.NEGATIVE_INFINITY
-		for (const key of this.data.keys()) {
-			const [row, col] = unpackKey(key)
+		for (const [row, entries] of this.iterateRows()) {
 			if (row < this._minRow) this._minRow = row
 			if (row > this._maxRow) this._maxRow = row
-			if (col < this._minCol) this._minCol = col
-			if (col > this._maxCol) this._maxCol = col
+			const first = entries[0]
+			const last = entries[entries.length - 1]
+			if (first && first[0] < this._minCol) this._minCol = first[0]
+			if (last && last[0] > this._maxCol) this._maxCol = last[0]
 		}
 		this._boundsDirty = false
-	}
-
-	private _rebuildRowIndex(): void {
-		this.rowIndex = new Map()
-		for (const [key, cell] of this.data) {
-			const [r, c] = unpackKey(key)
-			let rowMap = this.rowIndex.get(r)
-			if (!rowMap) {
-				rowMap = new Map()
-				this.rowIndex.set(r, rowMap)
-			}
-			rowMap.set(c, cell)
-		}
 	}
 
 	private _rebuildAfterShift(
 		mapCell: (row: number, col: number) => { row: number; col: number } | null,
 		active: boolean,
 	): void {
-		if (!active || this.data.size === 0) return
-		const cloneMutable = this._shared && this._hasMutableStorage
-		const nextData = new Map<number, StoredCell>()
-		for (const [key, cell] of this.data) {
-			const [row, col] = unpackKey(key)
-			const next = mapCell(row, col)
-			if (!next) continue
-			nextData.set(packKey(next.row, next.col), cloneMutable ? cloneCell(cell) : cell)
-		}
-		this.data = nextData
-		this._shared = false
-		this._rebuildRowIndex()
-		let lastInsertedKey = Number.NEGATIVE_INFINITY
-		for (const key of nextData.keys()) lastInsertedKey = key
-		this._lastInsertedKey = lastInsertedKey
-		this._boundsDirty = true
-		this._denseArray = null
-		this._densityChecked = false
-	}
-
-	private _maybeEnableDenseCache(): void {
-		if (this.data.size < 2) return
-		if (this._boundsDirty) this._recomputeBounds()
-		const numRows = this._maxRow - this._minRow + 1
-		const numCols = this._maxCol - this._minCol + 1
-		const gridSize = numRows * numCols
-		if (gridSize <= 0 || gridSize > 1_000_000) return
-		if (this.data.size / gridSize <= 0.5) return
-		this._denseMinRow = this._minRow
-		this._denseMinCol = this._minCol
-		this._denseNumCols = numCols
-		const arr = new Array<CellValue | undefined>(gridSize)
-		for (const [key, stored] of this.data) {
-			const [r, c] = unpackKey(key)
-			arr[(r - this._minRow) * numCols + (c - this._minCol)] = readStoredValue(stored)
-		}
-		this._denseArray = arr
-	}
-
-	private compactResolvedCell(
-		value: CellValue,
-		formula: string | null,
-		styleId: StyleId,
-		formulaInfo?: CellFormulaBinding,
-	): StoredCell {
-		const compactValue = compactScalarValue(value)
-		if (compactValue) {
-			if (compactValue.kind === 'string') {
-				compactValue.scalarValue = internString(compactValue.scalarValue as string) as string
-			}
-			if (formula === null && formulaInfo === undefined && styleId === DEFAULT_STYLE_ID) {
-				switch (compactValue.kind) {
-					case 'number':
-					case 'string':
-					case 'boolean':
-						return compactValue.scalarValue as string | number | boolean
-					case 'empty':
-						return EMPTY
-					default:
-						return new StyledSpecialScalarCell(
-							compactValue.kind,
-							compactValue.scalarValue,
-							DEFAULT_STYLE_ID,
-						)
-				}
-			}
-			if (formula === null && formulaInfo === undefined) {
-				switch (compactValue.kind) {
-					case 'number': {
-						const numericValue = compactValue.scalarValue as number
-						let valuesByStyle = this.styledNumberCache.get(styleId)
-						if (!valuesByStyle) {
-							valuesByStyle = new Map()
-							this.styledNumberCache.set(styleId, valuesByStyle)
-						}
-						let cached = valuesByStyle.get(numericValue)
-						if (!cached) {
-							cached = new StyledNumberCell(numericValue, styleId)
-							valuesByStyle.set(numericValue, cached)
-						}
-						return cached
-					}
-					case 'string': {
-						const text = compactValue.scalarValue as string
-						let byText = this.styledStringCache.get(styleId)
-						if (!byText) {
-							byText = new Map()
-							this.styledStringCache.set(styleId, byText)
-						}
-						let cached = byText.get(text)
-						if (!cached) {
-							cached = new StyledStringCell(text, styleId)
-							byText.set(text, cached)
-						}
-						return cached
-					}
-					case 'boolean': {
-						const bool = compactValue.scalarValue as boolean
-						const textKey = bool ? '1' : '0'
-						let byText = this.styledBooleanCache.get(styleId)
-						if (!byText) {
-							byText = new Map()
-							this.styledBooleanCache.set(styleId, byText)
-						}
-						let cached = byText.get(textKey)
-						if (!cached) {
-							cached = new StyledBooleanCell(bool, styleId)
-							byText.set(textKey, cached)
-						}
-						return cached
-					}
-					default:
-						return new StyledSpecialScalarCell(compactValue.kind, compactValue.scalarValue, styleId)
-				}
-			}
-			return new FormulaScalarCell(
-				compactValue.kind,
-				compactValue.scalarValue,
-				styleId,
-				formula,
-				formulaInfo,
+		if (!active || this._cellCount === 0) return
+		const next = new SparseGrid()
+		next.stringTable = this.stringTable
+		for (const [row, col, cell] of this.iterate()) {
+			const mapped = mapCell(row, col)
+			if (!mapped) continue
+			next.setResolved(
+				mapped.row,
+				mapped.col,
+				cloneCellValue(cell.value),
+				cell.formula,
+				cell.styleId,
+				cell.formulaInfo,
 			)
 		}
-		return new HeapCell(value, styleId, formula, formulaInfo)
+		this.chunkRows = next.chunkRows
+		this._cellCount = next._cellCount
+		this._minRow = next._minRow
+		this._maxRow = next._maxRow
+		this._minCol = next._minCol
+		this._maxCol = next._maxCol
+		this._boundsDirty = next._boundsDirty
+		this._shared = false
+	}
+
+	private _hasMutableValues(): boolean {
+		for (const [, , cell] of this.iterate()) {
+			if (cell.value.kind === 'array' || cell.value.kind === 'richText') return true
+		}
+		return false
 	}
 }
 
-type StoredCell =
-	| CellValue
-	| string
-	| number
-	| boolean
-	| StyledNumberCell
-	| StyledStringCell
-	| StyledBooleanCell
-	| StyledSpecialScalarCell
-	| FormulaScalarCell
-	| HeapCell
-
-class StyledNumberCell {
-	constructor(
-		readonly value: number,
-		readonly styleId: StyleId,
-	) {}
-}
-
-class StyledStringCell {
-	constructor(
-		readonly value: string,
-		readonly styleId: StyleId,
-	) {}
-}
-
-class StyledBooleanCell {
-	constructor(
-		readonly value: boolean,
-		readonly styleId: StyleId,
-	) {}
-}
-
-class StyledSpecialScalarCell {
-	constructor(
-		readonly valueKind: 'empty' | 'number' | 'string' | 'boolean' | 'error' | 'date',
-		readonly scalarValue: number | string | boolean | null,
-		readonly styleId: StyleId,
-	) {}
-}
-
-class FormulaScalarCell {
-	constructor(
-		readonly valueKind: 'empty' | 'number' | 'string' | 'boolean' | 'error' | 'date',
-		readonly scalarValue: number | string | boolean | null,
-		readonly styleId: StyleId,
-		readonly formula: string | null,
-		readonly formulaInfo?: CellFormulaBinding,
-	) {}
-}
-
-class HeapCell {
-	constructor(
-		readonly value: CellValue,
-		readonly styleId: StyleId,
-		readonly formula: string | null,
-		readonly formulaInfo?: CellFormulaBinding,
-	) {}
-}
-
-const PACK_FACTOR = 1 << 20
-
-function packKey(row: number, col: number): number {
-	return row * PACK_FACTOR + col
-}
-
-function unpackKey(key: number): readonly [number, number] {
-	const col = key % PACK_FACTOR
-	const row = (key - col) / PACK_FACTOR
-	return [row, col] as const
+function getChunkPosition(row: number, col: number): readonly [number, number, number] {
+	const chunkRow = row >> CHUNK_BITS
+	const chunkCol = col >> CHUNK_BITS
+	const localIndex = ((row & CHUNK_MASK) << CHUNK_BITS) | (col & CHUNK_MASK)
+	return [chunkRow, chunkCol, localIndex] as const
 }
 
 function cloneCellValue(value: CellValue): CellValue {
@@ -709,166 +746,166 @@ function cloneCellValue(value: CellValue): CellValue {
 	return value
 }
 
-function cloneCell(cell: StoredCell): StoredCell {
-	if (
-		cell instanceof StyledNumberCell ||
-		cell instanceof StyledStringCell ||
-		cell instanceof StyledBooleanCell ||
-		cell instanceof StyledSpecialScalarCell ||
-		cell instanceof FormulaScalarCell
-	) {
-		return cell
-	}
-	if (cell instanceof HeapCell) {
-		return new HeapCell(cloneCellValue(cell.value), cell.styleId, cell.formula, cell.formulaInfo)
-	}
-	if (typeof cell === 'string' || typeof cell === 'number' || typeof cell === 'boolean') return cell
-	if (cell === EMPTY) return cell
-	return cloneCellValue(cell) as StoredCell
-}
-
-function isMutableStoredCell(cell: StoredCell): boolean {
-	if (cell instanceof HeapCell) {
-		return cell.value.kind === 'array' || cell.value.kind === 'richText'
-	}
-	return (
-		typeof cell === 'object' &&
-		cell !== null &&
-		'kind' in cell &&
-		(cell.kind === 'array' || cell.kind === 'richText')
-	)
-}
-
-function materializeCell(cell: StoredCell | undefined): Cell | undefined {
-	if (cell === undefined) return undefined
-	if (cell instanceof StyledNumberCell) {
-		return {
-			value: numberValue(cell.value),
-			formula: null,
-			styleId: cell.styleId,
-			formulaInfo: undefined,
-		}
-	}
-	if (cell instanceof StyledStringCell) {
-		return {
-			value: stringValue(cell.value),
-			formula: null,
-			styleId: cell.styleId,
-			formulaInfo: undefined,
-		}
-	}
-	if (cell instanceof StyledBooleanCell) {
-		return {
-			value: booleanValue(cell.value),
-			formula: null,
-			styleId: cell.styleId,
-			formulaInfo: undefined,
-		}
-	}
-	if (cell instanceof StyledSpecialScalarCell) {
-		return {
-			value: materializeScalarValue(cell.valueKind, cell.scalarValue),
-			formula: null,
-			styleId: cell.styleId,
-			formulaInfo: undefined,
-		}
-	}
-	if (cell instanceof FormulaScalarCell) {
-		return {
-			value: materializeScalarValue(cell.valueKind, cell.scalarValue),
-			formula: cell.formula,
-			styleId: cell.styleId,
-			formulaInfo: cell.formulaInfo,
-		}
-	}
-	if (cell instanceof HeapCell) {
-		return {
-			value: cell.value,
-			formula: cell.formula,
-			styleId: cell.styleId,
-			formulaInfo: cell.formulaInfo,
-		}
-	}
-	if (typeof cell === 'string')
-		return {
-			value: stringValue(cell),
-			formula: null,
-			styleId: DEFAULT_STYLE_ID,
-			formulaInfo: undefined,
-		}
-	if (typeof cell === 'number')
-		return {
-			value: numberValue(cell),
-			formula: null,
-			styleId: DEFAULT_STYLE_ID,
-			formulaInfo: undefined,
-		}
-	if (typeof cell === 'boolean') {
-		return {
-			value: booleanValue(cell),
-			formula: null,
-			styleId: DEFAULT_STYLE_ID,
-			formulaInfo: undefined,
-		}
-	}
-	return { value: cell, formula: null, styleId: DEFAULT_STYLE_ID, formulaInfo: undefined }
-}
-
-function readStoredValue(cell: StoredCell | undefined): CellValue | undefined {
-	if (cell === undefined) return undefined
-	if (cell instanceof StyledNumberCell) return numberValue(cell.value)
-	if (cell instanceof StyledStringCell) return stringValue(cell.value)
-	if (cell instanceof StyledBooleanCell) return booleanValue(cell.value)
-	if (cell instanceof StyledSpecialScalarCell || cell instanceof FormulaScalarCell) {
-		return materializeScalarValue(cell.valueKind, cell.scalarValue)
-	}
-	if (cell instanceof HeapCell) return cell.value
-	if (typeof cell === 'string') return stringValue(cell)
-	if (typeof cell === 'number') return numberValue(cell)
-	if (typeof cell === 'boolean') return booleanValue(cell)
-	return cell
-}
-
-function compactScalarValue(value: CellValue): {
-	kind: 'empty' | 'number' | 'string' | 'boolean' | 'error' | 'date'
-	scalarValue: number | string | boolean | null
-} | null {
+function compactResolvedCell(
+	value: CellValue,
+	formula: string | null,
+	styleId: StyleId,
+	formulaInfo: CellFormulaBinding | undefined,
+	stringTable: StringTable,
+): StoredSlot {
 	switch (value.kind) {
 		case 'empty':
-			return { kind: 'empty', scalarValue: null }
+			return {
+				tag: SlotTag.Empty,
+				styleId,
+				formula,
+				formulaInfo,
+				numberValue: undefined,
+				stringId: undefined,
+				heapValue: undefined,
+			}
 		case 'number':
-			return { kind: 'number', scalarValue: value.value }
+			return {
+				tag: SlotTag.Number,
+				styleId,
+				formula,
+				formulaInfo,
+				numberValue: value.value,
+				stringId: undefined,
+				heapValue: undefined,
+			}
 		case 'string':
-			return { kind: 'string', scalarValue: value.value }
+			return {
+				tag: SlotTag.String,
+				styleId,
+				formula,
+				formulaInfo,
+				numberValue: undefined,
+				stringId: stringTable.intern(value.value),
+				heapValue: undefined,
+			}
 		case 'boolean':
-			return { kind: 'boolean', scalarValue: value.value }
+			return {
+				tag: SlotTag.Boolean,
+				styleId,
+				formula,
+				formulaInfo,
+				numberValue: value.value ? 1 : 0,
+				stringId: undefined,
+				heapValue: undefined,
+			}
 		case 'error':
-			return { kind: 'error', scalarValue: value.value }
+			return {
+				tag: SlotTag.Error,
+				styleId,
+				formula,
+				formulaInfo,
+				numberValue: undefined,
+				stringId: stringTable.intern(value.value),
+				heapValue: undefined,
+			}
 		case 'date':
-			return { kind: 'date', scalarValue: value.serial }
-		case 'array':
-			return null
+			return {
+				tag: SlotTag.Date,
+				styleId,
+				formula,
+				formulaInfo,
+				numberValue: value.serial,
+				stringId: undefined,
+				heapValue: undefined,
+			}
 		default:
-			return null
+			return {
+				tag: SlotTag.Heap,
+				styleId,
+				formula,
+				formulaInfo,
+				numberValue: undefined,
+				stringId: undefined,
+				heapValue: value,
+			}
 	}
 }
 
-function materializeScalarValue(
-	kind: 'empty' | 'number' | 'string' | 'boolean' | 'error' | 'date',
-	scalarValue: number | string | boolean | null,
-): CellValue {
-	switch (kind) {
-		case 'empty':
+function materializeCell(slot: StoredSlot | undefined, stringTable: StringTable): Cell | undefined {
+	if (!slot) return undefined
+	return {
+		value: readSlotValue(slot, stringTable) ?? EMPTY,
+		formula: slot.formula,
+		styleId: slot.styleId,
+		formulaInfo: slot.formulaInfo,
+	}
+}
+
+function readSlotValue(
+	slot: StoredSlot | undefined,
+	stringTable: StringTable,
+): CellValue | undefined {
+	if (!slot) return undefined
+	switch (slot.tag) {
+		case SlotTag.Empty:
 			return EMPTY
-		case 'number':
-			return numberValue(scalarValue as number)
-		case 'string':
-			return stringValue(scalarValue as string)
-		case 'boolean':
-			return booleanValue(Boolean(scalarValue))
-		case 'error':
-			return errorValue(scalarValue as never)
-		case 'date':
-			return { kind: 'date', serial: scalarValue as number }
+		case SlotTag.Number:
+			return numberValue(slot.numberValue ?? 0)
+		case SlotTag.String:
+			return stringValue(stringTable.lookup(slot.stringId ?? 0))
+		case SlotTag.Boolean:
+			return booleanValue((slot.numberValue ?? 0) !== 0)
+		case SlotTag.Error:
+			return errorValue(stringTable.lookup(slot.stringId ?? 0) as ExcelError)
+		case SlotTag.Date:
+			return { kind: 'date', serial: slot.numberValue ?? 0 }
+		case SlotTag.Heap:
+			return slot.heapValue
+	}
+}
+
+function readDenseValue(
+	tag: SlotTag,
+	number: number,
+	stringId: number,
+	heapValue: CellValue | undefined,
+	stringTable: StringTable,
+): CellValue {
+	switch (tag) {
+		case SlotTag.Empty:
+			return EMPTY
+		case SlotTag.Number:
+			return numberValue(number)
+		case SlotTag.String:
+			return stringValue(stringTable.lookup(stringId))
+		case SlotTag.Boolean:
+			return booleanValue(number !== 0)
+		case SlotTag.Error:
+			return errorValue(stringTable.lookup(stringId) as ExcelError)
+		case SlotTag.Date:
+			return { kind: 'date', serial: number }
+		case SlotTag.Heap:
+			return heapValue ?? EMPTY
+	}
+}
+
+function kindFromSlot(slot: StoredSlot | undefined): CellValueKind | undefined {
+	if (!slot) return undefined
+	return slot.tag === SlotTag.Heap ? (slot.heapValue?.kind ?? 'array') : kindFromTag(slot.tag)
+}
+
+function kindFromTag(tag: SlotTag): CellValueKind {
+	switch (tag) {
+		case SlotTag.Empty:
+			return 'empty'
+		case SlotTag.Number:
+			return 'number'
+		case SlotTag.String:
+			return 'string'
+		case SlotTag.Boolean:
+			return 'boolean'
+		case SlotTag.Error:
+			return 'error'
+		case SlotTag.Date:
+			return 'date'
+		case SlotTag.Heap: {
+			return 'array'
+		}
 	}
 }

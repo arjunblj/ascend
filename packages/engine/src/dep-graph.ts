@@ -40,7 +40,7 @@ export function parseCellKeyInto(key: CellKey, out: CellCoords): void {
 }
 
 interface FormulaEntry {
-	readonly dependsOn: ReadonlySet<CellKey>
+	readonly dependsOn: readonly CellKey[]
 	readonly rangeDeps: readonly RangeDependency[]
 	readonly volatile: boolean
 }
@@ -50,10 +50,10 @@ export { IntervalIndex } from './dep-graph-interval.ts'
 import { IntervalIndex } from './dep-graph-interval.ts'
 
 const _depCoords: CellCoords = { sheetIndex: 0, row: 0, col: 0 }
+const TOPO_RANK_GAP = 1_024
 
 export class DependencyGraph {
 	private readonly formulas = new Map<CellKey, FormulaEntry>()
-	private readonly dependents = new Map<CellKey, Set<CellKey>>()
 	private readonly rangeIndex = new Map<number, IntervalIndex>()
 	private _cachedDirtyIndex: {
 		set: ReadonlySet<CellKey>
@@ -62,6 +62,15 @@ export class DependencyGraph {
 		index: Map<number, Map<number, Set<number>>>
 	} | null = null
 	private _cachedEvalOrder: CellKey[] | null = null
+	private _rankByKey: Map<CellKey, number> | null = null
+	private _compiledDirectIndex: {
+		sourceIndex: Map<CellKey, number>
+		starts: Int32Array
+		counts: Int32Array
+		dependents: readonly CellKey[]
+		formulaKeys: readonly CellKey[]
+		volatileKeys: readonly CellKey[]
+	} | null = null
 
 	addFormula(
 		key: CellKey,
@@ -72,26 +81,20 @@ export class DependencyGraph {
 		this.removeFormula(key)
 		const aboveKey = key - COL_FACTOR
 		const aboveEntry = aboveKey >= 0 ? this.formulas.get(aboveKey) : undefined
-		let depSet: ReadonlySet<CellKey>
+		let deps: readonly CellKey[]
 		let sharedRangeDeps = rangeDeps
-		if (aboveEntry && setsMatchArray(aboveEntry.dependsOn, dependsOn)) {
-			depSet = aboveEntry.dependsOn
+		if (aboveEntry && arraysMatch(aboveEntry.dependsOn, dependsOn)) {
+			deps = aboveEntry.dependsOn
 			if (rangeDepsEqual(aboveEntry.rangeDeps, rangeDeps)) {
 				sharedRangeDeps = aboveEntry.rangeDeps
 			}
 		} else {
-			depSet = new Set(dependsOn)
+			deps = [...dependsOn]
 		}
 		this._cachedEvalOrder = null
-		this.formulas.set(key, { dependsOn: depSet, rangeDeps: sharedRangeDeps, volatile: isVolatile })
-		for (const dep of depSet) {
-			let set = this.dependents.get(dep)
-			if (!set) {
-				set = new Set()
-				this.dependents.set(dep, set)
-			}
-			set.add(key)
-		}
+		this._compiledDirectIndex = null
+		this.formulas.set(key, { dependsOn: deps, rangeDeps: sharedRangeDeps, volatile: isVolatile })
+		this._onFormulaAdded(key, deps)
 		for (const range of rangeDeps) {
 			let index = this.rangeIndex.get(range.sheetIndex)
 			if (!index) {
@@ -106,13 +109,8 @@ export class DependencyGraph {
 		const entry = this.formulas.get(key)
 		if (!entry) return
 		this._cachedEvalOrder = null
-		for (const dep of entry.dependsOn) {
-			const set = this.dependents.get(dep)
-			if (set) {
-				set.delete(key)
-				if (set.size === 0) this.dependents.delete(dep)
-			}
-		}
+		this._compiledDirectIndex = null
+		this._rankByKey?.delete(key)
 		const removedSheets = new Set<number>()
 		for (const range of entry.rangeDeps) {
 			if (removedSheets.has(range.sheetIndex)) continue
@@ -136,28 +134,25 @@ export class DependencyGraph {
 	}
 
 	getDependents(key: CellKey): CellKey[] {
-		const direct = this.dependents.get(key)
+		const direct = this._readDirectDependents(key)
 		parseCellKeyInto(key, _depCoords)
 		const index = this.rangeIndex.get(_depCoords.sheetIndex)
-		if (!direct && !index) return []
-		if (!index) return direct ? [...direct] : []
+		if (direct.length === 0 && !index) return []
+		if (!index) return direct
 		const rangeHits = index.query(_depCoords.row, _depCoords.col)
-		if (!direct) return rangeHits
+		if (direct.length === 0) return rangeHits
 		if (rangeHits.length === 0) return [...direct]
+		const directSet = new Set(direct)
 		const result: CellKey[] = [...direct]
 		for (let i = 0; i < rangeHits.length; i++) {
 			const k = rangeHits[i] as CellKey
-			if (!direct.has(k)) result.push(k)
+			if (!directSet.has(k)) result.push(k)
 		}
 		return result
 	}
 
 	getVolatiles(): CellKey[] {
-		const result: CellKey[] = []
-		for (const [key, entry] of this.formulas) {
-			if (entry.volatile) result.push(key)
-		}
-		return result
+		return [...this._ensureDirectIndex().volatileKeys]
 	}
 
 	getDirtySet(changedKeys: CellKey[]): Set<CellKey> {
@@ -167,20 +162,32 @@ export class DependencyGraph {
 			const current = queue.pop()
 			if (current === undefined || dirty.has(current)) continue
 			dirty.add(current)
-			for (const dep of this.getDependents(current)) {
+			this._forEachDependent(current, (dep) => {
 				if (!dirty.has(dep)) queue.push(dep)
-			}
+			})
 		}
 		return dirty
 	}
 
 	getEvalOrder(dirtySet: Set<CellKey>): CellKey[] {
 		if (this._cachedEvalOrder === null) {
-			const allFormulaKeys = new Set(this.formulas.keys())
+			const allFormulaKeys = new Set(this._ensureDirectIndex().formulaKeys)
 			this._cachedEvalOrder = this._computeEvalOrder(allFormulaKeys)
+			this._rebuildRanksFromOrder(this._cachedEvalOrder)
 		}
-		const formulaOrder = this._cachedEvalOrder.filter((k) => dirtySet.has(k))
-		const nonFormulaKeys = [...dirtySet].filter((k) => !this.formulas.has(k))
+		const formulaQueue = new BinaryMinHeap(
+			(a, b) => (this._rankByKey?.get(a) ?? 0) - (this._rankByKey?.get(b) ?? 0),
+		)
+		for (const key of dirtySet) {
+			if (this.formulas.has(key)) formulaQueue.push(key)
+		}
+		const formulaOrder: CellKey[] = []
+		while (formulaQueue.size > 0) {
+			const key = formulaQueue.pop()
+			if (key !== undefined) formulaOrder.push(key)
+		}
+		const formulaKeySet = new Set(this._ensureDirectIndex().formulaKeys)
+		const nonFormulaKeys = [...dirtySet].filter((k) => !formulaKeySet.has(k))
 		return [...nonFormulaKeys, ...formulaOrder]
 	}
 
@@ -261,7 +268,7 @@ export class DependencyGraph {
 				} else {
 					const solo = scc[0] as CellKey
 					const entry = this.formulas.get(solo)
-					if (entry?.dependsOn.has(solo)) {
+					if (entry?.dependsOn.includes(solo)) {
 						sccs.push(scc)
 					}
 				}
@@ -275,7 +282,7 @@ export class DependencyGraph {
 	}
 
 	getAllFormulaCells(): CellKey[] {
-		return [...this.formulas.keys()]
+		return [...this._ensureDirectIndex().formulaKeys]
 	}
 
 	hasFormula(key: CellKey): boolean {
@@ -284,10 +291,219 @@ export class DependencyGraph {
 
 	clear(): void {
 		this.formulas.clear()
-		this.dependents.clear()
 		this.rangeIndex.clear()
 		this._cachedDirtyIndex = null
 		this._cachedEvalOrder = null
+		this._rankByKey = null
+		this._compiledDirectIndex = null
+	}
+
+	private _onFormulaAdded(key: CellKey, dependsOn: readonly CellKey[]): void {
+		if (this._rankByKey === null) return
+		if (!this._rankByKey.has(key)) {
+			let maxRank = 0
+			for (const rank of this._rankByKey.values()) {
+				if (rank > maxRank) maxRank = rank
+			}
+			this._rankByKey.set(key, maxRank + TOPO_RANK_GAP)
+		}
+		for (let i = 0; i < dependsOn.length; i++) {
+			const dep = dependsOn[i] as CellKey
+			if (!this.formulas.has(dep)) continue
+			const depRank = this._rankByKey.get(dep)
+			const keyRank = this._rankByKey.get(key)
+			if (depRank === undefined || keyRank === undefined || depRank < keyRank) continue
+			if (!this._repairRanks(dep, key)) {
+				this._cachedEvalOrder = null
+				this._rankByKey = null
+				return
+			}
+		}
+	}
+
+	private _repairRanks(source: CellKey, target: CellKey): boolean {
+		const ranks = this._rankByKey
+		if (!ranks) return false
+		const upperRank = ranks.get(source)
+		const lowerRank = ranks.get(target)
+		if (upperRank === undefined || lowerRank === undefined || upperRank < lowerRank) return true
+		const forward = new Set<CellKey>()
+		const backward = new Set<CellKey>()
+		const forwardStack = [target]
+		while (forwardStack.length > 0) {
+			const current = forwardStack.pop() as CellKey
+			if (forward.has(current)) continue
+			const rank = ranks.get(current)
+			if (rank === undefined || rank > upperRank) continue
+			forward.add(current)
+			for (const dependent of this._scanFormulaDependents(current)) {
+				forwardStack.push(dependent)
+			}
+		}
+		if (forward.has(source)) return false
+		const backwardStack = [source]
+		while (backwardStack.length > 0) {
+			const current = backwardStack.pop() as CellKey
+			if (backward.has(current)) continue
+			const rank = ranks.get(current)
+			if (rank === undefined || rank < lowerRank) continue
+			backward.add(current)
+			const entry = this.formulas.get(current)
+			if (!entry) continue
+			for (let i = 0; i < entry.dependsOn.length; i++) {
+				const precedent = entry.dependsOn[i] as CellKey
+				if (this.formulas.has(precedent)) backwardStack.push(precedent)
+			}
+		}
+		const affected = new Set<CellKey>([...backward, ...forward])
+		if (affected.size === 0) return true
+		const indegree = new Map<CellKey, number>()
+		const dependents = new Map<CellKey, CellKey[]>()
+		for (const key of affected) {
+			indegree.set(key, 0)
+			dependents.set(key, [])
+		}
+		for (const key of affected) {
+			const entry = this.formulas.get(key)
+			if (!entry) continue
+			for (let i = 0; i < entry.dependsOn.length; i++) {
+				const precedent = entry.dependsOn[i] as CellKey
+				if (!affected.has(precedent)) continue
+				indegree.set(key, (indegree.get(key) ?? 0) + 1)
+				const bucket = dependents.get(precedent)
+				if (bucket) bucket.push(key)
+			}
+		}
+		const queue = [...affected]
+			.filter((key) => (indegree.get(key) ?? 0) === 0)
+			.sort((a, b) => (ranks.get(a) ?? 0) - (ranks.get(b) ?? 0))
+		const ordered: CellKey[] = []
+		while (queue.length > 0) {
+			const key = queue.shift() as CellKey
+			ordered.push(key)
+			for (const dependent of dependents.get(key) ?? []) {
+				const next = (indegree.get(dependent) ?? 0) - 1
+				indegree.set(dependent, next)
+				if (next === 0) {
+					queue.push(dependent)
+					queue.sort((a, b) => (ranks.get(a) ?? 0) - (ranks.get(b) ?? 0))
+				}
+			}
+		}
+		if (ordered.length !== affected.size) return false
+		const minRank = Math.min(...ordered.map((key) => ranks.get(key) ?? 0))
+		for (let i = 0; i < ordered.length; i++) {
+			ranks.set(ordered[i] as CellKey, minRank + i * TOPO_RANK_GAP)
+		}
+		return true
+	}
+
+	private _scanFormulaDependents(precedent: CellKey): CellKey[] {
+		const directIndex = this._compiledDirectIndex
+		if (directIndex) {
+			const slot = directIndex.sourceIndex.get(precedent)
+			if (slot === undefined) return []
+			const start = directIndex.starts[slot] ?? 0
+			const count = directIndex.counts[slot] ?? 0
+			return directIndex.dependents.slice(start, start + count)
+		}
+		const result: CellKey[] = []
+		for (const [formulaKey, entry] of this.formulas) {
+			if (entry.dependsOn.includes(precedent)) result.push(formulaKey)
+		}
+		return result
+	}
+
+	private _rebuildRanksFromOrder(order: readonly CellKey[]): void {
+		const ranks = new Map<CellKey, number>()
+		for (let i = 0; i < order.length; i++) {
+			ranks.set(order[i] as CellKey, (i + 1) * TOPO_RANK_GAP)
+		}
+		this._rankByKey = ranks
+	}
+
+	private _readDirectDependents(key: CellKey): CellKey[] {
+		const directIndex = this._ensureDirectIndex()
+		const slot = directIndex.sourceIndex.get(key)
+		if (slot === undefined) return []
+		const start = directIndex.starts[slot] ?? 0
+		const count = directIndex.counts[slot] ?? 0
+		if (count === 0) return []
+		return directIndex.dependents.slice(start, start + count)
+	}
+
+	private _forEachDependent(key: CellKey, fn: (dependent: CellKey) => void): void {
+		const directIndex = this._ensureDirectIndex()
+		const seen = new Set<CellKey>()
+		const slot = directIndex.sourceIndex.get(key)
+		if (slot !== undefined) {
+			const start = directIndex.starts[slot] ?? 0
+			const count = directIndex.counts[slot] ?? 0
+			for (let i = start; i < start + count; i++) {
+				const dependent = directIndex.dependents[i]
+				if (dependent === undefined || seen.has(dependent)) continue
+				seen.add(dependent)
+				fn(dependent)
+			}
+		}
+		parseCellKeyInto(key, _depCoords)
+		const index = this.rangeIndex.get(_depCoords.sheetIndex)
+		if (!index) return
+		const rangeHits = index.query(_depCoords.row, _depCoords.col)
+		for (let i = 0; i < rangeHits.length; i++) {
+			const dependent = rangeHits[i] as CellKey
+			if (seen.has(dependent)) continue
+			seen.add(dependent)
+			fn(dependent)
+		}
+	}
+
+	private _ensureDirectIndex(): {
+		sourceIndex: Map<CellKey, number>
+		starts: Int32Array
+		counts: Int32Array
+		dependents: readonly CellKey[]
+		formulaKeys: readonly CellKey[]
+		volatileKeys: readonly CellKey[]
+	} {
+		if (this._compiledDirectIndex) return this._compiledDirectIndex
+		const formulaKeys = [...this.formulas.keys()]
+		const volatileKeys: CellKey[] = []
+		const directBuckets = new Map<CellKey, CellKey[]>()
+		for (const [formulaKey, entry] of this.formulas) {
+			if (entry.volatile) volatileKeys.push(formulaKey)
+			for (let i = 0; i < entry.dependsOn.length; i++) {
+				const dep = entry.dependsOn[i] as CellKey
+				const bucket = directBuckets.get(dep)
+				if (bucket) bucket.push(formulaKey)
+				else directBuckets.set(dep, [formulaKey])
+			}
+		}
+		const sourceIndex = new Map<CellKey, number>()
+		const starts = new Int32Array(directBuckets.size)
+		const counts = new Int32Array(directBuckets.size)
+		const dependents: CellKey[] = []
+		let offset = 0
+		let slot = 0
+		for (const [source, bucket] of directBuckets) {
+			sourceIndex.set(source, slot)
+			starts[slot] = offset
+			counts[slot] = bucket.length
+			for (let i = 0; i < bucket.length; i++) {
+				dependents.push(bucket[i] as CellKey)
+			}
+			offset += bucket.length
+			slot++
+		}
+		this._compiledDirectIndex = {
+			sourceIndex,
+			starts,
+			counts,
+			dependents,
+			formulaKeys,
+			volatileKeys,
+		}
+		return this._compiledDirectIndex
 	}
 
 	private getCachedDirtyIndex(
@@ -315,10 +531,10 @@ function containsCell(range: RangeDependency, row: number, col: number): boolean
 	)
 }
 
-function setsMatchArray(existing: ReadonlySet<CellKey>, incoming: CellKey[]): boolean {
-	if (existing.size !== incoming.length) return false
-	for (const dep of incoming) {
-		if (!existing.has(dep)) return false
+function arraysMatch(existing: readonly CellKey[], incoming: readonly CellKey[]): boolean {
+	if (existing.length !== incoming.length) return false
+	for (let i = 0; i < existing.length; i++) {
+		if ((existing[i] as CellKey) !== (incoming[i] as CellKey)) return false
 	}
 	return true
 }
@@ -368,4 +584,71 @@ function indexDirtyCellsBySheetRow(
 		cols.add(col)
 	}
 	return indexed
+}
+
+class BinaryMinHeap {
+	private readonly values: CellKey[] = []
+
+	constructor(private readonly compare: (left: CellKey, right: CellKey) => number) {}
+
+	get size(): number {
+		return this.values.length
+	}
+
+	push(value: CellKey): void {
+		this.values.push(value)
+		this.bubbleUp(this.values.length - 1)
+	}
+
+	pop(): CellKey | undefined {
+		if (this.values.length === 0) return undefined
+		const first = this.values[0]
+		const last = this.values.pop()
+		if (last !== undefined && this.values.length > 0) {
+			this.values[0] = last
+			this.bubbleDown(0)
+		}
+		return first
+	}
+
+	private bubbleUp(index: number): void {
+		let current = index
+		while (current > 0) {
+			const parent = (current - 1) >>> 1
+			if (this.compare(this.values[current] as CellKey, this.values[parent] as CellKey) >= 0) break
+			;[this.values[current], this.values[parent]] = [
+				this.values[parent] as CellKey,
+				this.values[current] as CellKey,
+			]
+			current = parent
+		}
+	}
+
+	private bubbleDown(index: number): void {
+		let current = index
+		const length = this.values.length
+		while (true) {
+			const left = current * 2 + 1
+			const right = left + 1
+			let next = current
+			if (
+				left < length &&
+				this.compare(this.values[left] as CellKey, this.values[next] as CellKey) < 0
+			) {
+				next = left
+			}
+			if (
+				right < length &&
+				this.compare(this.values[right] as CellKey, this.values[next] as CellKey) < 0
+			) {
+				next = right
+			}
+			if (next === current) break
+			;[this.values[current], this.values[next]] = [
+				this.values[next] as CellKey,
+				this.values[current] as CellKey,
+			]
+			current = next
+		}
+	}
 }

@@ -1,4 +1,4 @@
-import { parseA1, type RangeRef, type Workbook } from '@ascend/core'
+import { indexToColumn, parseA1, type RangeRef, type Workbook } from '@ascend/core'
 import {
 	analyzeWorkbook,
 	analyzeWorkbookDependencies,
@@ -27,10 +27,16 @@ import {
 import { SheetHandle } from './sheet-handle.ts'
 import { TableHandle } from './table-handle.ts'
 import type {
+	AgentColumnSummary,
 	AgentReadOptions,
+	AgentSampleRow,
+	AgentViewOptions,
+	AgentViewResult,
+	CompactCellInfo,
 	CompactRangeInfo,
 	CompactRangeWindowInfo,
 	DefinedNameInfo,
+	FlatCellValue,
 	FormulaInfo,
 	PivotCacheInfo,
 	PivotTableInfo,
@@ -240,6 +246,135 @@ export class WorkbookReadView {
 		opts?: { rowOffset?: number; rowLimit?: number; headers?: readonly string[] | 'first-row' },
 	): RangeObjectsInfo | undefined {
 		return this.sheet(sheetName)?.readObjects(range, opts)
+	}
+
+	agentView(
+		sheetName: string,
+		range: string,
+		opts?: AgentViewOptions,
+	): AgentViewResult | undefined {
+		const sheet = this.sheet(sheetName)
+		if (!sheet) return undefined
+		const rowChunkSize = Math.max(1, opts?.rowChunkSize ?? 256)
+		const sampleRowLimit = Math.max(1, opts?.sampleRowLimit ?? 8)
+		const sampleValueLimit = Math.max(1, opts?.sampleValueLimit ?? 4)
+		let requestedRef: RangeRef | null = null
+		let rowCount = 0
+		let colCount = 0
+		let nonEmptyCount = 0
+		let formulaCount = 0
+		const distinctFunctions = new Set<string>()
+		const formulaPatterns = new Map<string, number>()
+		const columnKinds = new Map<number, Set<AgentColumnSummary['kind']>>()
+		const columnNonEmpty = new Map<number, number>()
+		const columnFormulaCount = new Map<number, number>()
+		const columnSamples = new Map<number, FlatCellValue[]>()
+		const firstRowValues = new Map<number, FlatCellValue | null>()
+		const samples: AgentSampleRow[] = []
+
+		for (const window of this.streamWindowsCompact(sheetName, range, {
+			rowLimit: rowChunkSize,
+			includeRefs: true,
+		})) {
+			if (!requestedRef) {
+				requestedRef = window.requestedRef
+				rowCount = window.requestedRef.end.row - window.requestedRef.start.row + 1
+				colCount = window.requestedRef.end.col - window.requestedRef.start.col + 1
+			}
+			const rows = groupCompactCellsByRow(window.cells)
+			for (const [row, cells] of rows) {
+				if (samples.length < sampleRowLimit && cells.length > 0) {
+					samples.push({ row, cells })
+				}
+			}
+			for (const cell of window.cells) {
+				if (cell.value.kind !== 'empty') {
+					nonEmptyCount++
+					columnNonEmpty.set(cell.col, (columnNonEmpty.get(cell.col) ?? 0) + 1)
+				}
+				if (cell.formula !== null) {
+					formulaCount++
+					columnFormulaCount.set(cell.col, (columnFormulaCount.get(cell.col) ?? 0) + 1)
+					for (const fn of extractFormulaFunctions(cell.formula)) distinctFunctions.add(fn)
+					const pattern = normalizeFormulaPattern(cell.formula)
+					formulaPatterns.set(pattern, (formulaPatterns.get(pattern) ?? 0) + 1)
+				}
+				const kind: AgentColumnSummary['kind'] =
+					cell.formula !== null
+						? 'formula'
+						: cell.value.kind === 'number' || cell.value.kind === 'date'
+							? 'number'
+							: cell.value.kind === 'string'
+								? 'string'
+								: cell.value.kind === 'boolean'
+									? 'boolean'
+									: cell.value.kind === 'empty'
+										? 'empty'
+										: 'mixed'
+				let kinds = columnKinds.get(cell.col)
+				if (!kinds) {
+					kinds = new Set()
+					columnKinds.set(cell.col, kinds)
+				}
+				kinds.add(kind)
+				const flat = flattenForAgent(cell.value)
+				if (flat !== null && (columnSamples.get(cell.col)?.length ?? 0) < sampleValueLimit) {
+					const bucket = columnSamples.get(cell.col)
+					if (bucket) bucket.push(flat)
+					else columnSamples.set(cell.col, [flat])
+				}
+				if (requestedRef && cell.row === requestedRef.start.row && !firstRowValues.has(cell.col)) {
+					firstRowValues.set(cell.col, flat)
+				}
+			}
+		}
+
+		if (!requestedRef) return undefined
+		const columns: AgentColumnSummary[] = []
+		for (let col = requestedRef.start.col; col <= requestedRef.end.col; col++) {
+			const kinds = columnKinds.get(col) ?? new Set<AgentColumnSummary['kind']>(['empty'])
+			let kind: AgentColumnSummary['kind'] = 'empty'
+			const nonEmptyKinds = [...kinds].filter((entry) => entry !== 'empty')
+			if ((columnFormulaCount.get(col) ?? 0) > 0 && (columnNonEmpty.get(col) ?? 0) === 0)
+				kind = 'formula'
+			else if (nonEmptyKinds.length === 1) kind = nonEmptyKinds[0] as AgentColumnSummary['kind']
+			else if (nonEmptyKinds.length > 1) kind = 'mixed'
+			columns.push({
+				col,
+				ref: indexToColumn(col),
+				header: firstRowValues.get(col) ?? null,
+				kind,
+				nonEmptyCount: columnNonEmpty.get(col) ?? 0,
+				formulaCount: columnFormulaCount.get(col) ?? 0,
+				sampleValues: columnSamples.get(col) ?? [],
+			})
+		}
+		const notes: string[] = []
+		const density = rowCount * colCount > 0 ? nonEmptyCount / (rowCount * colCount) : 0
+		if (density < 0.2) notes.push('Sparse window with many empty cells.')
+		if (formulaCount > 0)
+			notes.push(`${formulaCount} formula cells detected in the requested range.`)
+		const topPattern = [...formulaPatterns.entries()].sort((a, b) => b[1] - a[1])[0]
+		if (topPattern && topPattern[1] > 1) {
+			notes.push(`Most common formula pattern repeats ${topPattern[1]} times.`)
+		}
+
+		return {
+			sheet: sheetName,
+			range: requestedRef,
+			rowCount,
+			colCount,
+			nonEmptyCount,
+			formulaCount,
+			distinctFunctions: [...distinctFunctions].sort(),
+			formulaPatterns: [...formulaPatterns.entries()]
+				.sort((a, b) => b[1] - a[1])
+				.slice(0, 12)
+				.map(([pattern, count]) => ({ pattern, count })),
+			columns,
+			samples,
+			notes,
+		}
 	}
 
 	*streamRange(
@@ -675,4 +810,57 @@ function resolveDefinedNameBySheet(
 		workbook.definedNames.resolve(name, sheet.id, sheet.id) ??
 		workbook.definedNames.resolve(name, sheet.id)
 	)
+}
+
+function flattenForAgent(value: import('@ascend/schema').CellValue): FlatCellValue {
+	switch (value.kind) {
+		case 'empty':
+			return null
+		case 'number':
+			return value.value
+		case 'string':
+			return value.value
+		case 'boolean':
+			return value.value
+		case 'date':
+			return value.serial
+		case 'error':
+			return value.value
+		case 'richText':
+			return value.runs.map((run) => run.text).join('')
+		case 'array':
+			return null
+	}
+}
+
+function groupCompactCellsByRow(cells: readonly CompactCellInfo[]): Map<number, CompactCellInfo[]> {
+	const rows = new Map<number, CompactCellInfo[]>()
+	for (let i = 0; i < cells.length; i++) {
+		const cell = cells[i] as CompactCellInfo
+		const bucket = rows.get(cell.row)
+		if (bucket) bucket.push(cell)
+		else rows.set(cell.row, [cell])
+	}
+	for (const bucket of rows.values()) {
+		bucket.sort((left, right) => left.col - right.col)
+	}
+	return rows
+}
+
+function extractFormulaFunctions(formula: string): string[] {
+	const matches = formula.toUpperCase().match(/[A-Z][A-Z0-9._]*\s*\(/g) ?? []
+	const names = new Set<string>()
+	for (let i = 0; i < matches.length; i++) {
+		const match = matches[i]
+		if (!match) continue
+		names.add(match.replace(/\s*\($/, ''))
+	}
+	return [...names]
+}
+
+function normalizeFormulaPattern(formula: string): string {
+	return formula
+		.toUpperCase()
+		.replace(/\$?[A-Z]{1,3}\$?\d+/g, 'REF')
+		.replace(/\d+(\.\d+)?/g, '#')
 }

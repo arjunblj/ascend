@@ -3,7 +3,12 @@ export { configureSessionCache, WorkbookDocument } from './session.ts'
 export { SheetHandle } from './sheet-handle.ts'
 export { TableHandle } from './table-handle.ts'
 export type {
+	AgentColumnSummary,
+	AgentFormulaPatternInfo,
 	AgentReadOptions,
+	AgentSampleRow,
+	AgentViewOptions,
+	AgentViewResult,
 	ApplyResult,
 	CellInfo,
 	CheckIssue,

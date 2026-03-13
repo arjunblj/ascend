@@ -1,4 +1,5 @@
-import { inflateRawSync } from 'node:zlib'
+import { promisify } from 'node:util'
+import { inflateRaw, inflateRawSync } from 'node:zlib'
 
 const EOCD_SIGNATURE = 0x06054b50
 const ZIP64_EOCD_SIGNATURE = 0x06064b50
@@ -7,6 +8,7 @@ const CENTRAL_DIR_SIGNATURE = 0x02014b50
 const LOCAL_FILE_SIGNATURE = 0x04034b50
 const ZIP64_EXTRA_FIELD_ID = 0x0001
 const MAX_CACHED_PART_BYTES = 128 * 1024
+const inflateRawAsync = promisify(inflateRaw)
 
 export interface ZipEntry {
 	readonly path: string
@@ -71,6 +73,54 @@ export class ZipArchive {
 			this.textCache.set(path, text)
 		}
 		return text
+	}
+
+	async readBytesAsync(path: string): Promise<Uint8Array | undefined> {
+		const cached = this.bytesCache.get(path)
+		if (cached) return cached
+		const entry = this.entriesByPath.get(path)
+		if (!entry) return undefined
+		const compressed = this.bytes.subarray(
+			entry.dataOffset,
+			entry.dataOffset + entry.compressedSize,
+		)
+		let bytes: Uint8Array
+		if (entry.compressionMethod === 0) bytes = compressed
+		else if (entry.compressionMethod === 8)
+			bytes = new Uint8Array(await inflateRawAsync(compressed))
+		else
+			throw new Error(`Unsupported ZIP compression method ${entry.compressionMethod} for ${path}`)
+		if (bytes.byteLength <= MAX_CACHED_PART_BYTES) {
+			this.bytesCache.set(path, bytes)
+		}
+		return bytes
+	}
+
+	async readTextAsync(path: string): Promise<string | undefined> {
+		const cached = this.textCache.get(path)
+		if (cached !== undefined) return cached
+		const bytes = await this.readBytesAsync(path)
+		if (!bytes) return undefined
+		const text = this.decoder.decode(bytes)
+		if (bytes.byteLength <= MAX_CACHED_PART_BYTES) {
+			this.textCache.set(path, text)
+		}
+		return text
+	}
+
+	async readTextsAsync(paths: readonly string[]): Promise<Map<string, string>> {
+		const entries = await Promise.all(
+			paths.map(async (path) => {
+				const text = await this.readTextAsync(path)
+				return text === undefined ? null : ([path, text] as const)
+			}),
+		)
+		const results = new Map<string, string>()
+		for (const entry of entries) {
+			if (!entry) continue
+			results.set(entry[0], entry[1])
+		}
+		return results
 	}
 }
 

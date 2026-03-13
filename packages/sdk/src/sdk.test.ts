@@ -227,6 +227,34 @@ describe('AscendWorkbook', () => {
 		expect(handle?.cell('C3')).toBeUndefined()
 	})
 
+	test('agentView summarizes a range for LLM-friendly reads', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Name' },
+					{ ref: 'B1', value: 'Score' },
+					{ ref: 'A2', value: 'Alice' },
+					{ ref: 'B2', value: 10 },
+					{ ref: 'A3', value: 'Bob' },
+				],
+			},
+		])
+		wb.setFormula('Sheet1!B3', '=B2*2')
+		wb.recalc()
+		const view = wb.agentView('Sheet1', 'A1:B3')
+		expect(view).toBeDefined()
+		expect(view?.sheet).toBe('Sheet1')
+		expect(view?.nonEmptyCount).toBe(6)
+		expect(view?.formulaCount).toBe(1)
+		expect(view?.distinctFunctions).toEqual([])
+		expect(view?.columns[0]?.header).toBe('Name')
+		expect(view?.columns[1]?.kind).toBe('mixed')
+		expect(view?.samples[0]?.cells[0]?.value).toEqual({ kind: 'string', value: 'Name' })
+	})
+
 	test('sheet handle returns range info', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

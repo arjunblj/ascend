@@ -13,10 +13,9 @@ import {
 	defaultCalcContext,
 	type EvalContext,
 	evaluateCompiled,
-	recalculate,
 } from '../../packages/engine/src/index.ts'
 import { clearGlobalParseCache, parseFormula } from '../../packages/formulas/src/index.ts'
-import { EMPTY, numberValue, stringValue } from '../../packages/schema/src/index.ts'
+import { numberValue, stringValue } from '../../packages/schema/src/index.ts'
 
 const SID = 0 as StyleId
 
@@ -109,7 +108,8 @@ const benchmarks: readonly MicroBenchmark[] = [
 		run() {
 			const workbook = createWorkbook()
 			workbook.addSheet('Sheet1')
-			const sheet = workbook.sheets[0]!
+			const sheet = workbook.sheets[0]
+			if (!sheet) throw new Error('no sheet')
 			for (let r = 0; r < 100; r++) {
 				sheet.cells.set(r, 0, { value: numberValue(r + 1), formula: null, styleId: SID })
 			}
@@ -196,11 +196,11 @@ const benchmarks: readonly MicroBenchmark[] = [
 						size: 8 + (i % 20),
 						bold: i % 3 === 0,
 						italic: i % 5 === 0,
-						color: { kind: 'rgb', rgb: colors[i % colors.length]! },
+						color: { kind: 'rgb', rgb: colors[i % colors.length] ?? '#000000' },
 					},
 					fill: {
 						pattern: i % 2 === 0 ? 'solid' : 'none',
-						fgColor: { kind: 'rgb', rgb: colors[(i + 1) % colors.length]! },
+						fgColor: { kind: 'rgb', rgb: colors[(i + 1) % colors.length] ?? '#000000' },
 					},
 					numberFormat: i % 4 === 0 ? '#,##0.00' : undefined,
 				}

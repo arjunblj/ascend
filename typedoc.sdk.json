@@ -1,0 +1,10 @@
+{
+	"$schema": "https://typedoc.org/schema.json",
+	"name": "Ascend SDK API",
+	"entryPoints": ["packages/sdk/src/index.ts"],
+	"tsconfig": "packages/sdk/tsconfig.json",
+	"out": "dist/docs/sdk-api",
+	"readme": "none",
+	"excludePrivate": true,
+	"excludeInternal": true
+}

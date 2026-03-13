@@ -11,6 +11,7 @@
 		"lint": "biome check",
 		"lint:fix": "biome check --write",
 		"test": "bun test --recursive",
+		"docs:sdk": "typedoc --options typedoc.sdk.json",
 		"corpus:audit": "bun run fixtures/corpus/audit.ts",
 		"bench": "bun run fixtures/benchmarks/run.ts",
 		"bench:real": "bun run fixtures/benchmarks/real-workbook.ts",
@@ -22,6 +23,7 @@
 		"@types/bun": "^1.3.10",
 		"hyperformula": "^3.2.0",
 		"lefthook": "^1.11.0",
+		"typedoc": "^0.28.17",
 		"typescript": "^5.7.0"
 	}
 }

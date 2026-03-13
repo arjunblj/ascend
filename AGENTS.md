@@ -64,9 +64,11 @@ sdk < cli, api, mcp
 
 ## Cursor Cloud specific instructions
 
-- **Runtime**: Bun is installed at `~/.bun/bin/bun`. The update script runs `bun install` automatically.
-- **No external services**: This is a fully self-contained codebase. No databases, caches, or cloud services are needed. All I/O is file-based.
+- **Runtime**: Bun 1.3.10 is preinstalled at `~/.bun/bin/bun` and on `PATH`. The update script runs `bun install --frozen-lockfile`.
+- **No external services**: Fully self-contained codebase. No databases, caches, or cloud services needed. All I/O is file-based.
+- **Quick validation**: `bunx tsc --build`, `bunx biome check`, and `bun fixtures/benchmarks/run.ts --set canary --repeat 1 --json` all run without extra bootstrap after the update script.
+- **Benchmark sets**: `canary` (4 scenarios, ~2 s — quick cross-category gate), `smoke` (11 scenarios), `memory` (4 scenarios). Use `--set <name>` with `bun fixtures/benchmarks/run.ts`.
 - **API server**: `bun run apps/api/src/index.ts` starts on port 3000 (override with `PORT` env var). Endpoints accept JSON bodies with `file` as a filesystem path (not multipart upload).
 - **CLI**: Run via `bun run apps/cli/src/index.ts <command>`. The `formula` command uses subcommands: `formula set`, `formula show`, `formula fill`.
-- **Standard dev commands**: See the `## Commands` section above. All run via `bun`/`bunx`.
-- **Pre-commit hooks**: Lefthook is configured to run `bunx biome check --write --staged` on commit. Installed automatically by `bun install` via the `prepare` script.
+- **Standard dev commands**: See the `## Commands` section above.
+- **Pre-commit hooks**: Lefthook runs `bunx biome check --write --staged` on commit. Installed automatically by `bun install` via the `prepare` script.

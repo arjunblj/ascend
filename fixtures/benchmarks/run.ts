@@ -1187,6 +1187,7 @@ const scenarios: readonly Scenario[] = [
 ]
 
 const scenarioSets = {
+	canary: ['read-full-dense', 'write-dense-40k', 'recalc-incremental', 'workflow-sdk-edit-cycle'],
 	smoke: [
 		'read-full-dense',
 		'workflow-sdk-edit-cycle',

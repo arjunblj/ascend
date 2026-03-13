@@ -1,6 +1,7 @@
 import { indexToColumn, type Workbook } from '@ascend/core'
 import type { FormulaNode } from '@ascend/formulas'
 import {
+	type AggregateRangeCache,
 	type EvalArea,
 	type EvalArg,
 	type ExactLookupCache,
@@ -36,6 +37,7 @@ export interface EvalContext {
 	readonly letBindings?: ReadonlyMap<string, CellValue>
 	readonly exactLookupCache?: ExactLookupCache
 	readonly lookupVectorCache?: LookupVectorCache
+	readonly aggregateRangeCache?: AggregateRangeCache
 }
 
 export class MutableEvalContext implements EvalContext {
@@ -46,6 +48,7 @@ export class MutableEvalContext implements EvalContext {
 	col = 0
 	exactLookupCache?: ExactLookupCache
 	lookupVectorCache?: LookupVectorCache
+	aggregateRangeCache?: AggregateRangeCache
 }
 
 class FunctionEvalCtx implements FunctionEvalContext {
@@ -59,6 +62,7 @@ class FunctionEvalCtx implements FunctionEvalContext {
 	col?: number
 	exactLookupCache: ExactLookupCache | undefined
 	lookupVectorCache: LookupVectorCache | undefined
+	aggregateRangeCache: AggregateRangeCache | undefined
 
 	update(ctx: EvalContext): this {
 		const cc = ctx.calcContext
@@ -72,6 +76,7 @@ class FunctionEvalCtx implements FunctionEvalContext {
 		this.col = ctx.col
 		this.exactLookupCache = ctx.exactLookupCache
 		this.lookupVectorCache = ctx.lookupVectorCache
+		this.aggregateRangeCache = ctx.aggregateRangeCache
 		return this
 	}
 }

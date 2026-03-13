@@ -1,5 +1,6 @@
 import { indexToColumn, parseRange, type RangeRef, type StyleId, type Workbook } from '@ascend/core'
 import {
+	type AggregateRangeCache,
 	clearCriteriaMatchCache,
 	type ExactLookupCache,
 	type FormulaNode,
@@ -59,6 +60,7 @@ interface RecalcScratch {
 	readonly spillInitializedSheets: Set<number>
 	readonly exactLookupCache: ExactLookupCache
 	readonly lookupVectorCache: LookupVectorCache
+	readonly aggregateRangeCache: AggregateRangeCache
 	readonly rangeValueCache: Map<string, readonly (readonly CellValue[])[]>
 }
 
@@ -72,6 +74,7 @@ function getRecalcScratch(workbook: Workbook): RecalcScratch {
 			spillInitializedSheets: new Set(),
 			exactLookupCache: new Map(),
 			lookupVectorCache: new Map(),
+			aggregateRangeCache: new Map(),
 			rangeValueCache: new Map(),
 		}
 		recalcScratchByWorkbook.set(workbook, scratch)
@@ -80,6 +83,7 @@ function getRecalcScratch(workbook: Workbook): RecalcScratch {
 	scratch.spillInitializedSheets.clear()
 	scratch.exactLookupCache.clear()
 	scratch.lookupVectorCache.clear()
+	scratch.aggregateRangeCache.clear()
 	scratch.rangeValueCache.clear()
 	return scratch
 }
@@ -375,6 +379,7 @@ export function recalculate(
 	}
 	const exactLookupCache = scratch.exactLookupCache
 	const lookupVectorCache = scratch.lookupVectorCache
+	const aggregateRangeCache = scratch.aggregateRangeCache
 	setRangeValueCache(scratch.rangeValueCache)
 
 	const analysis = analyzeWorkbook(workbook, opts?.range ? { range: opts.range } : undefined)
@@ -475,6 +480,7 @@ export function recalculate(
 			spillIndex,
 			exactLookupCache,
 			lookupVectorCache,
+			aggregateRangeCache,
 		)
 	} else {
 		const coords: CellCoords = { sheetIndex: 0, row: 0, col: 0 }
@@ -483,6 +489,7 @@ export function recalculate(
 		mutableCtx.calcContext = ctx
 		mutableCtx.exactLookupCache = exactLookupCache
 		mutableCtx.lookupVectorCache = lookupVectorCache
+		mutableCtx.aggregateRangeCache = aggregateRangeCache
 
 		const sharedGroups = getSharedFormulaGroups(workbook, analysis.formulas)
 		const cellToGroup = new Map<CellKey, string>()
@@ -703,6 +710,7 @@ function evalIterative(
 	spillIndex: SpillIndexState,
 	exactLookupCache: ExactLookupCache,
 	lookupVectorCache: LookupVectorCache,
+	aggregateRangeCache: AggregateRangeCache,
 ): void {
 	const maxIter = ctx.iterativeCalc.maxIterations
 	const maxChange = ctx.iterativeCalc.maxChange
@@ -713,6 +721,7 @@ function evalIterative(
 	mutableCtx.calcContext = ctx
 	mutableCtx.exactLookupCache = exactLookupCache
 	mutableCtx.lookupVectorCache = lookupVectorCache
+	mutableCtx.aggregateRangeCache = aggregateRangeCache
 	for (let iter = 0; iter < maxIter; iter++) {
 		let maxDelta = 0
 		for (const key of evalOrder) {

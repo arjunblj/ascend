@@ -1,40 +1,64 @@
 import type { CellValue } from '@ascend/schema'
 import { EMPTY, errorValue, isEmpty, isError, numberValue } from '@ascend/schema'
-import type { FunctionDef } from '../index.ts'
+import type { EvalArg, FunctionDef, FunctionEvalContext } from '../index.ts'
 import { fn, getRange, numericVal, sameShape, toNum } from './helpers.ts'
 
+function singleRangeAggregateCacheKey(name: string, args: EvalArg[]): string | null {
+	if (args.length !== 1) return null
+	const ref = args[0]?.ref
+	if (!ref || ref.kind !== 'range') return null
+	return `${name}:${ref.sheetIndex}:${ref.row}:${ref.col}:${ref.endRow ?? ref.row}:${ref.endCol ?? ref.col}`
+}
+
+function withCachedSingleRangeAggregate(
+	name: 'SUM' | 'AVERAGE' | 'COUNT' | 'MIN' | 'MAX',
+	args: EvalArg[],
+	ctx: FunctionEvalContext | undefined,
+	compute: () => CellValue,
+): CellValue {
+	const key = ctx?.aggregateRangeCache ? singleRangeAggregateCacheKey(name, args) : null
+	if (!key || !ctx?.aggregateRangeCache) return compute()
+	const cached = ctx.aggregateRangeCache.get(key)
+	if (cached) return cached
+	const value = compute()
+	ctx.aggregateRangeCache.set(key, value)
+	return value
+}
+
 export const aggregationFunctions: FunctionDef[] = [
-	fn('SUM', 1, 255, (args) => {
-		let sum = 0
-		for (const arg of args) {
-			if (arg.forEachValue) {
-				let err: CellValue | undefined
-				arg.forEachValue((cell) => {
-					if (err) return
-					if (isError(cell)) {
-						err = cell
-						return
-					}
-					const n = numericVal(cell)
-					if (n !== null) sum += n
-				})
-				if (err) return err
-			} else if (arg.kind === 'range' && arg.values) {
-				for (const row of arg.values) {
-					for (const cell of row) {
-						if (isError(cell)) return cell
+	fn('SUM', 1, 255, (args, ctx) =>
+		withCachedSingleRangeAggregate('SUM', args, ctx, () => {
+			let sum = 0
+			for (const arg of args) {
+				if (arg.forEachValue) {
+					let err: CellValue | undefined
+					arg.forEachValue((cell) => {
+						if (err) return
+						if (isError(cell)) {
+							err = cell
+							return
+						}
 						const n = numericVal(cell)
 						if (n !== null) sum += n
+					})
+					if (err) return err
+				} else if (arg.kind === 'range' && arg.values) {
+					for (const row of arg.values) {
+						for (const cell of row) {
+							if (isError(cell)) return cell
+							const n = numericVal(cell)
+							if (n !== null) sum += n
+						}
 					}
+				} else {
+					const n = toNum(arg.value ?? EMPTY)
+					if (typeof n !== 'number') return n
+					sum += n
 				}
-			} else {
-				const n = toNum(arg.value ?? EMPTY)
-				if (typeof n !== 'number') return n
-				sum += n
 			}
-		}
-		return numberValue(sum)
-	}),
+			return numberValue(sum)
+		}),
+	),
 
 	fn('SUMPRODUCT', 1, 255, (args) => {
 		const ranges = args.map(getRange)
@@ -83,66 +107,70 @@ export const aggregationFunctions: FunctionDef[] = [
 		return numberValue(total)
 	}),
 
-	fn('AVERAGE', 1, 255, (args) => {
-		let sum = 0
-		let count = 0
-		for (const arg of args) {
-			if (arg.forEachValue) {
-				let err: CellValue | undefined
-				arg.forEachValue((cell) => {
-					if (err) return
-					if (isError(cell)) {
-						err = cell
-						return
-					}
-					const n = numericVal(cell)
-					if (n !== null) {
-						sum += n
-						count++
-					}
-				})
-				if (err) return err
-			} else if (arg.kind === 'range' && arg.values) {
-				for (const row of arg.values) {
-					for (const cell of row) {
-						if (isError(cell)) return cell
+	fn('AVERAGE', 1, 255, (args, ctx) =>
+		withCachedSingleRangeAggregate('AVERAGE', args, ctx, () => {
+			let sum = 0
+			let count = 0
+			for (const arg of args) {
+				if (arg.forEachValue) {
+					let err: CellValue | undefined
+					arg.forEachValue((cell) => {
+						if (err) return
+						if (isError(cell)) {
+							err = cell
+							return
+						}
 						const n = numericVal(cell)
 						if (n !== null) {
 							sum += n
 							count++
 						}
+					})
+					if (err) return err
+				} else if (arg.kind === 'range' && arg.values) {
+					for (const row of arg.values) {
+						for (const cell of row) {
+							if (isError(cell)) return cell
+							const n = numericVal(cell)
+							if (n !== null) {
+								sum += n
+								count++
+							}
+						}
 					}
+				} else {
+					const n = toNum(arg.value ?? EMPTY)
+					if (typeof n !== 'number') return n
+					sum += n
+					count++
 				}
-			} else {
-				const n = toNum(arg.value ?? EMPTY)
-				if (typeof n !== 'number') return n
-				sum += n
-				count++
 			}
-		}
-		return count === 0 ? errorValue('#DIV/0!') : numberValue(sum / count)
-	}),
+			return count === 0 ? errorValue('#DIV/0!') : numberValue(sum / count)
+		}),
+	),
 
-	fn('COUNT', 1, 255, (args) => {
-		let count = 0
-		for (const arg of args) {
-			if (arg.forEachValue) {
-				arg.forEachValue((cell) => {
-					if (cell.kind === 'number' || cell.kind === 'date') count++
-				})
-			} else if (arg.kind === 'range' && arg.values) {
-				for (const row of arg.values) {
-					for (const cell of row) {
+	fn('COUNT', 1, 255, (args, ctx) =>
+		withCachedSingleRangeAggregate('COUNT', args, ctx, () => {
+			let count = 0
+			for (const arg of args) {
+				if (arg.forEachValue) {
+					arg.forEachValue((cell) => {
 						if (cell.kind === 'number' || cell.kind === 'date') count++
+					})
+				} else if (arg.kind === 'range' && arg.values) {
+					for (const row of arg.values) {
+						for (const cell of row) {
+							if (cell.kind === 'number' || cell.kind === 'date') count++
+						}
 					}
+				} else {
+					const v = arg.value ?? EMPTY
+					if (v.kind === 'number' || v.kind === 'date' || v.kind === 'boolean') count++
 				}
-			} else {
-				const v = arg.value ?? EMPTY
-				if (v.kind === 'number' || v.kind === 'date' || v.kind === 'boolean') count++
 			}
-		}
-		return numberValue(count)
-	}),
+			return numberValue(count)
+		}),
+	),
 
 	fn('COUNTA', 1, 255, (args) => {
 		let count = 0
@@ -181,85 +209,89 @@ export const aggregationFunctions: FunctionDef[] = [
 		return numberValue(count)
 	}),
 
-	fn('MIN', 1, 255, (args) => {
-		let min = Number.POSITIVE_INFINITY
-		let found = false
-		for (const arg of args) {
-			if (arg.forEachValue) {
-				let err: CellValue | undefined
-				arg.forEachValue((cell) => {
-					if (err) return
-					if (isError(cell)) {
-						err = cell
-						return
-					}
-					const n = numericVal(cell)
-					if (n !== null) {
-						min = Math.min(min, n)
-						found = true
-					}
-				})
-				if (err) return err
-			} else if (arg.kind === 'range' && arg.values) {
-				for (const row of arg.values) {
-					for (const cell of row) {
-						if (isError(cell)) return cell
+	fn('MIN', 1, 255, (args, ctx) =>
+		withCachedSingleRangeAggregate('MIN', args, ctx, () => {
+			let min = Number.POSITIVE_INFINITY
+			let found = false
+			for (const arg of args) {
+				if (arg.forEachValue) {
+					let err: CellValue | undefined
+					arg.forEachValue((cell) => {
+						if (err) return
+						if (isError(cell)) {
+							err = cell
+							return
+						}
 						const n = numericVal(cell)
 						if (n !== null) {
 							min = Math.min(min, n)
 							found = true
 						}
+					})
+					if (err) return err
+				} else if (arg.kind === 'range' && arg.values) {
+					for (const row of arg.values) {
+						for (const cell of row) {
+							if (isError(cell)) return cell
+							const n = numericVal(cell)
+							if (n !== null) {
+								min = Math.min(min, n)
+								found = true
+							}
+						}
 					}
+				} else {
+					const n = toNum(arg.value ?? EMPTY)
+					if (typeof n !== 'number') return n
+					min = Math.min(min, n)
+					found = true
 				}
-			} else {
-				const n = toNum(arg.value ?? EMPTY)
-				if (typeof n !== 'number') return n
-				min = Math.min(min, n)
-				found = true
 			}
-		}
-		return numberValue(found ? min : 0)
-	}),
+			return numberValue(found ? min : 0)
+		}),
+	),
 
-	fn('MAX', 1, 255, (args) => {
-		let max = Number.NEGATIVE_INFINITY
-		let found = false
-		for (const arg of args) {
-			if (arg.forEachValue) {
-				let err: CellValue | undefined
-				arg.forEachValue((cell) => {
-					if (err) return
-					if (isError(cell)) {
-						err = cell
-						return
-					}
-					const n = numericVal(cell)
-					if (n !== null) {
-						max = Math.max(max, n)
-						found = true
-					}
-				})
-				if (err) return err
-			} else if (arg.kind === 'range' && arg.values) {
-				for (const row of arg.values) {
-					for (const cell of row) {
-						if (isError(cell)) return cell
+	fn('MAX', 1, 255, (args, ctx) =>
+		withCachedSingleRangeAggregate('MAX', args, ctx, () => {
+			let max = Number.NEGATIVE_INFINITY
+			let found = false
+			for (const arg of args) {
+				if (arg.forEachValue) {
+					let err: CellValue | undefined
+					arg.forEachValue((cell) => {
+						if (err) return
+						if (isError(cell)) {
+							err = cell
+							return
+						}
 						const n = numericVal(cell)
 						if (n !== null) {
 							max = Math.max(max, n)
 							found = true
 						}
+					})
+					if (err) return err
+				} else if (arg.kind === 'range' && arg.values) {
+					for (const row of arg.values) {
+						for (const cell of row) {
+							if (isError(cell)) return cell
+							const n = numericVal(cell)
+							if (n !== null) {
+								max = Math.max(max, n)
+								found = true
+							}
+						}
 					}
+				} else {
+					const n = toNum(arg.value ?? EMPTY)
+					if (typeof n !== 'number') return n
+					max = Math.max(max, n)
+					found = true
 				}
-			} else {
-				const n = toNum(arg.value ?? EMPTY)
-				if (typeof n !== 'number') return n
-				max = Math.max(max, n)
-				found = true
 			}
-		}
-		return numberValue(found ? max : 0)
-	}),
+			return numberValue(found ? max : 0)
+		}),
+	),
 
 	fn('PRODUCT', 1, 255, (args) => {
 		let product = 1

@@ -1,5 +1,6 @@
 export { dateToSerial, serialToDate } from './date.ts'
 export {
+	type AggregateRangeCache,
 	cellOf,
 	collectNumbers,
 	compareValues,

@@ -37,6 +37,7 @@ export interface ExactLookupHit {
 
 export type ExactLookupCache = Map<string, ReadonlyMap<string, ExactLookupHit>>
 export type LookupVectorCache = Map<string, readonly CellValue[]>
+export type AggregateRangeCache = Map<string, CellValue>
 
 export interface FunctionEvalContext {
 	readonly now: Date
@@ -49,6 +50,7 @@ export interface FunctionEvalContext {
 	readonly col?: number
 	readonly exactLookupCache: ExactLookupCache | undefined
 	readonly lookupVectorCache: LookupVectorCache | undefined
+	readonly aggregateRangeCache: AggregateRangeCache | undefined
 }
 
 export interface FunctionDef {

@@ -558,9 +558,25 @@ function rangeDepsEqual(a: readonly RangeDependency[], b: readonly RangeDependen
 }
 
 function hashCellKeySet(set: ReadonlySet<CellKey>): number {
-	let h = 0
-	for (const k of set) h = (h + k) | 0
-	return h
+	let h = 0x811c9dc5
+	for (const key of set) {
+		const low = key >>> 0
+		const high = Math.trunc(key / 0x1_0000_0000) >>> 0
+		h = fnv1a32(h, low)
+		h = fnv1a32(h, high)
+	}
+	return h | 0
+}
+
+function fnv1a32(hash: number, value: number): number {
+	hash ^= value & 0xff
+	hash = Math.imul(hash, 0x01000193)
+	hash ^= (value >>> 8) & 0xff
+	hash = Math.imul(hash, 0x01000193)
+	hash ^= (value >>> 16) & 0xff
+	hash = Math.imul(hash, 0x01000193)
+	hash ^= (value >>> 24) & 0xff
+	return Math.imul(hash, 0x01000193)
 }
 
 function indexDirtyFormulaCellsBySheetRow(

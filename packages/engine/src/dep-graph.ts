@@ -195,7 +195,7 @@ export class DependencyGraph {
 		const visited = new Set<CellKey>()
 		const onStack = new Set<CellKey>()
 		const order: CellKey[] = []
-		const dirtyBySheetRow = this.getCachedDirtyIndex(dirtySet)
+		const dirtyFormulaBySheetRow = this.getCachedDirtyFormulaIndex(dirtySet)
 
 		const visit = (key: CellKey): void => {
 			if (visited.has(key)) return
@@ -208,7 +208,7 @@ export class DependencyGraph {
 					if (dirtySet.has(dep)) visit(dep)
 				}
 				for (const range of entry.rangeDeps) {
-					const sheetRows = dirtyBySheetRow.get(range.sheetIndex)
+					const sheetRows = dirtyFormulaBySheetRow.get(range.sheetIndex)
 					if (!sheetRows) continue
 					for (const [row, cols] of sheetRows) {
 						for (const col of cols) {
@@ -506,7 +506,7 @@ export class DependencyGraph {
 		return this._compiledDirectIndex
 	}
 
-	private getCachedDirtyIndex(
+	private getCachedDirtyFormulaIndex(
 		dirtySet: ReadonlySet<CellKey>,
 	): Map<number, Map<number, Set<number>>> {
 		if (this._cachedDirtyIndex) {
@@ -514,7 +514,7 @@ export class DependencyGraph {
 			if (c.set === dirtySet && c.size === dirtySet.size) return c.index
 			if (c.size === dirtySet.size && c.hash === hashCellKeySet(dirtySet)) return c.index
 		}
-		const index = indexDirtyCellsBySheetRow(dirtySet)
+		const index = indexDirtyFormulaCellsBySheetRow(dirtySet, this.formulas)
 		this._cachedDirtyIndex = {
 			set: dirtySet,
 			size: dirtySet.size,
@@ -563,12 +563,14 @@ function hashCellKeySet(set: ReadonlySet<CellKey>): number {
 	return h
 }
 
-function indexDirtyCellsBySheetRow(
+function indexDirtyFormulaCellsBySheetRow(
 	dirtySet: ReadonlySet<CellKey>,
+	formulas: ReadonlyMap<CellKey, FormulaEntry>,
 ): Map<number, Map<number, Set<number>>> {
 	const indexed = new Map<number, Map<number, Set<number>>>()
 	const coords: CellCoords = { sheetIndex: 0, row: 0, col: 0 }
 	for (const key of dirtySet) {
+		if (!formulas.has(key)) continue
 		parseCellKeyInto(key, coords)
 		const { sheetIndex, row, col } = coords
 		let rows = indexed.get(sheetIndex)

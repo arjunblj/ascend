@@ -326,7 +326,7 @@ describe('tracer', () => {
 
 		const result = trace(wb, 'Sheet1', 'C1')
 		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		if (!result.ok) throw new Error(result.error.message)
 
 		expect(result.value.formula).toBe('A1+B1')
 		expect(result.value.precedents.length).toBe(2)
@@ -340,7 +340,7 @@ describe('tracer', () => {
 
 		const result = trace(wb, 'Sheet1', 'A1')
 		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		if (!result.ok) throw new Error(result.error.message)
 
 		expect(result.value.formula).toBeNull()
 		expect(result.value.precedents).toHaveLength(0)
@@ -355,7 +355,7 @@ describe('tracer', () => {
 
 		const result = trace(wb, 'Sheet1', 'A1')
 		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		if (!result.ok) throw new Error(result.error.message)
 
 		expect(result.value.dependents.length).toBe(2)
 	})
@@ -377,7 +377,7 @@ describe('tracer', () => {
 
 		const result = trace(wb, 'Sheet1', 'D1', { maxDepth: 1 })
 		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		if (!result.ok) throw new Error(result.error.message)
 
 		expect(result.value.precedents.length).toBe(1)
 		expect(result.value.precedents[0]?.ref).toBe('C1')
@@ -392,7 +392,7 @@ describe('tracer', () => {
 
 		const result = trace(wb, 'Sheet1', 'B1')
 		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		if (!result.ok) throw new Error(result.error.message)
 
 		expect(result.value.precedents).toHaveLength(1)
 		expect(result.value.precedents[0]?.ref).toBe('A:A')
@@ -406,7 +406,7 @@ describe('tracer', () => {
 
 		const result = trace(wb, 'Sheet1', 'B1')
 		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		if (!result.ok) throw new Error(result.error.message)
 
 		expect(result.value.cyclePath).toBeNull()
 	})
@@ -419,7 +419,7 @@ describe('tracer', () => {
 
 		const result = trace(wb, 'Sheet1', 'A1')
 		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		if (!result.ok) throw new Error(result.error.message)
 
 		expect(result.value.cyclePath).not.toBeNull()
 		const path = result.value.cyclePath ?? []
@@ -450,7 +450,7 @@ describe('tracer', () => {
 
 		const result = trace(wb, 'Sheet1', 'A5')
 		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		if (!result.ok) throw new Error(result.error.message)
 
 		expect(result.value.precedents).toHaveLength(1)
 		expect(result.value.precedents[0]?.ref).toBe('B2:B3')

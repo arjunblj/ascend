@@ -17,8 +17,15 @@ export function rewriteWorkbookFormulasForShift(
 			if (existing.formula === null) continue
 			const parsed = cachedParseFormula(existing.formula)
 			if (!parsed.ok) continue
-			if (!isTarget && !astReferencesSheet(parsed.value, targetSheet)) continue
-			const rewritten = rewriteNodeForShift(parsed.value, targetSheet, sheet.name, axis, at, delta)
+			if (!isTarget && !formulaAstReferencesSheet(parsed.value, targetSheet)) continue
+			const rewritten = rewriteFormulaAstForShift(
+				parsed.value,
+				targetSheet,
+				sheet.name,
+				axis,
+				at,
+				delta,
+			)
 			if (rewritten === parsed.value) continue
 			const nextFormula = printFormula(rewritten)
 			if (nextFormula === existing.formula) continue
@@ -54,8 +61,16 @@ export function rewriteDefinedNameFormulasForShift(
 		const parsed = cachedParseFormula(entry.formula)
 		if (!parsed.ok) continue
 		const formulaSheet = scopeSheet ?? targetSheet
-		if (formulaSheet !== targetSheet && !astReferencesSheet(parsed.value, targetSheet)) continue
-		const rewritten = rewriteNodeForShift(parsed.value, targetSheet, formulaSheet, axis, at, delta)
+		if (formulaSheet !== targetSheet && !formulaAstReferencesSheet(parsed.value, targetSheet))
+			continue
+		const rewritten = rewriteFormulaAstForShift(
+			parsed.value,
+			targetSheet,
+			formulaSheet,
+			axis,
+			at,
+			delta,
+		)
 		if (rewritten === parsed.value) continue
 		const formula = printFormula(rewritten)
 		if (formula === entry.formula) continue
@@ -74,7 +89,9 @@ export function rewriteFormulaTextForShift(
 	if (!formula) return formula
 	const parsed = cachedParseFormula(formula)
 	if (!parsed.ok) return formula
-	return printFormula(rewriteNodeForShift(parsed.value, targetSheet, formulaSheet, axis, at, delta))
+	return printFormula(
+		rewriteFormulaAstForShift(parsed.value, targetSheet, formulaSheet, axis, at, delta),
+	)
 }
 
 export function rewriteSheetNameInFormulas(
@@ -258,7 +275,7 @@ export function rewriteSheetMetadataFormulasForRename(
 	}
 }
 
-function rewriteNodeForShift(
+export function rewriteFormulaAstForShift(
 	node: FormulaNode,
 	targetSheet: string,
 	formulaSheet: string,
@@ -330,19 +347,33 @@ function rewriteNodeForShift(
 					: { type: 'wholeColumnRange', startCol, endCol }
 		}
 		case 'binary': {
-			const left = rewriteNodeForShift(node.left, targetSheet, formulaSheet, axis, at, delta)
-			const right = rewriteNodeForShift(node.right, targetSheet, formulaSheet, axis, at, delta)
+			const left = rewriteFormulaAstForShift(node.left, targetSheet, formulaSheet, axis, at, delta)
+			const right = rewriteFormulaAstForShift(
+				node.right,
+				targetSheet,
+				formulaSheet,
+				axis,
+				at,
+				delta,
+			)
 			return left === node.left && right === node.right
 				? node
 				: { type: 'binary', op: node.op, left, right }
 		}
 		case 'unary': {
-			const operand = rewriteNodeForShift(node.operand, targetSheet, formulaSheet, axis, at, delta)
+			const operand = rewriteFormulaAstForShift(
+				node.operand,
+				targetSheet,
+				formulaSheet,
+				axis,
+				at,
+				delta,
+			)
 			return operand === node.operand ? node : { type: 'unary', op: node.op, operand }
 		}
 		case 'function': {
 			const args = node.args.map((arg) =>
-				rewriteNodeForShift(arg, targetSheet, formulaSheet, axis, at, delta),
+				rewriteFormulaAstForShift(arg, targetSheet, formulaSheet, axis, at, delta),
 			)
 			return args.every((arg, i) => arg === node.args[i])
 				? node
@@ -350,7 +381,9 @@ function rewriteNodeForShift(
 		}
 		case 'array': {
 			const rows = node.rows.map((row) =>
-				row.map((cell) => rewriteNodeForShift(cell, targetSheet, formulaSheet, axis, at, delta)),
+				row.map((cell) =>
+					rewriteFormulaAstForShift(cell, targetSheet, formulaSheet, axis, at, delta),
+				),
 			)
 			return rows.every((row, ri) => row.every((cell, ci) => cell === node.rows[ri]?.[ci]))
 				? node
@@ -361,7 +394,7 @@ function rewriteNodeForShift(
 	}
 }
 
-function astReferencesSheet(node: FormulaNode, sheetName: string): boolean {
+export function formulaAstReferencesSheet(node: FormulaNode, sheetName: string): boolean {
 	switch (node.type) {
 		case 'cellRef':
 		case 'rangeRef':
@@ -372,15 +405,18 @@ function astReferencesSheet(node: FormulaNode, sheetName: string): boolean {
 		case 'sheetSpanRef':
 			return node.startSheet === sheetName || node.endSheet === sheetName
 		case 'binary':
-			return astReferencesSheet(node.left, sheetName) || astReferencesSheet(node.right, sheetName)
+			return (
+				formulaAstReferencesSheet(node.left, sheetName) ||
+				formulaAstReferencesSheet(node.right, sheetName)
+			)
 		case 'unary':
-			return astReferencesSheet(node.operand, sheetName)
+			return formulaAstReferencesSheet(node.operand, sheetName)
 		case 'spillRef':
-			return astReferencesSheet(node.target, sheetName)
+			return formulaAstReferencesSheet(node.target, sheetName)
 		case 'function':
-			return node.args.some((arg) => astReferencesSheet(arg, sheetName))
+			return node.args.some((arg) => formulaAstReferencesSheet(arg, sheetName))
 		case 'array':
-			return node.rows.some((row) => row.some((cell) => astReferencesSheet(cell, sheetName)))
+			return node.rows.some((row) => row.some((cell) => formulaAstReferencesSheet(cell, sheetName)))
 		default:
 			return false
 	}

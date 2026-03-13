@@ -10,7 +10,11 @@ import {
 } from '@ascend/formulas'
 import type { CellValue, InputValue, Operation, Result } from '@ascend/schema'
 import { ascendError, booleanValue, EMPTY, err, numberValue, ok, stringValue } from '@ascend/schema'
-import { invalidateWorkbookAnalysis, patchWorkbookAnalysis } from './analysis.ts'
+import {
+	invalidateWorkbookAnalysis,
+	patchWorkbookAnalysis,
+	shiftWorkbookAnalysisForAxis,
+} from './analysis.ts'
 import { type CellKey, cellKey } from './dep-graph.ts'
 import { invalidateSheetIndexCache } from './evaluator.ts'
 import {
@@ -70,13 +74,13 @@ function cellWithExisting(
 	value: CellValue,
 	formula: string | null,
 	styleId: StyleId,
-	existing?: Cell,
+	existingFormulaInfo?: Cell['formulaInfo'],
 ): Cell {
 	return {
 		value,
 		formula,
 		styleId,
-		...(formula !== null && existing?.formulaInfo ? { formulaInfo: existing.formulaInfo } : {}),
+		...(formula !== null && existingFormulaInfo ? { formulaInfo: existingFormulaInfo } : {}),
 	}
 }
 
@@ -102,15 +106,14 @@ function handleSetCells(
 	for (const update of op.updates) {
 		const ref = parseA1(update.ref)
 		const value = inputToCellValue(update.value, workbook.calcSettings.dateSystem)
-		const existing = sheet.cells.get(ref.row, ref.col)
 		sheet.cells.set(
 			ref.row,
 			ref.col,
 			cellWithExisting(
 				value,
-				existing?.formula ?? null,
-				existing?.styleId ?? DEFAULT_SID,
-				existing,
+				sheet.cells.readFormula(ref.row, ref.col) ?? null,
+				sheet.cells.readStyleId(ref.row, ref.col) ?? DEFAULT_SID,
+				sheet.cells.readFormulaInfo(ref.row, ref.col),
 			),
 		)
 		affected.push(update.ref)
@@ -128,15 +131,13 @@ function handleSetFormula(
 	const sheet = result.value
 
 	const ref = parseA1(op.ref)
-	const existing = sheet.cells.get(ref.row, ref.col)
 	sheet.cells.set(
 		ref.row,
 		ref.col,
 		cellWithExisting(
-			existing?.value ?? EMPTY,
+			sheet.cells.readValue(ref.row, ref.col),
 			normalizeFormulaInput(op.formula),
-			existing?.styleId ?? DEFAULT_SID,
-			undefined,
+			sheet.cells.readStyleId(ref.row, ref.col) ?? DEFAULT_SID,
 		),
 	)
 
@@ -165,11 +166,14 @@ function handleFillFormula(
 	for (let row = range.start.row; row <= range.end.row; row++) {
 		for (let col = range.start.col; col <= range.end.col; col++) {
 			const translated = translateFormula(parsed.value, row - anchor.row, col - anchor.col)
-			const existing = sheet.cells.get(row, col)
 			sheet.cells.set(
 				row,
 				col,
-				cellWithExisting(existing?.value ?? EMPTY, translated, existing?.styleId ?? DEFAULT_SID),
+				cellWithExisting(
+					sheet.cells.readValue(row, col),
+					translated,
+					sheet.cells.readStyleId(row, col) ?? DEFAULT_SID,
+				),
 			)
 			affected.push(toA1({ row, col }))
 		}
@@ -888,14 +892,19 @@ function handleSetStyle(
 	const affected: string[] = []
 	for (let row = range.start.row; row <= range.end.row; row++) {
 		for (let col = range.start.col; col <= range.end.col; col++) {
-			const existing = sheet.cells.get(row, col)
-			const currentStyle = workbook.styles.get(existing?.styleId ?? DEFAULT_SID) ?? {}
+			const existingStyleId = sheet.cells.readStyleId(row, col) ?? DEFAULT_SID
+			const currentStyle = workbook.styles.get(existingStyleId) ?? {}
 			const merged = mergeStyleInput(currentStyle, input)
 			const styleId = workbook.styles.register(merged)
 			sheet.cells.set(
 				row,
 				col,
-				cellWithExisting(existing?.value ?? EMPTY, existing?.formula ?? null, styleId, existing),
+				cellWithExisting(
+					sheet.cells.readValue(row, col),
+					sheet.cells.readFormula(row, col) ?? null,
+					styleId,
+					sheet.cells.readFormulaInfo(row, col),
+				),
 			)
 			affected.push(toA1({ row, col }))
 		}
@@ -918,20 +927,16 @@ function handleSetNumberFormat(
 	const affected: string[] = []
 	for (let row = range.start.row; row <= range.end.row; row++) {
 		for (let col = range.start.col; col <= range.end.col; col++) {
-			const existing = sheet.cells.get(row, col)
-			const currentStyle = workbook.styles.get(existing?.styleId ?? DEFAULT_SID) ?? {}
+			const existingStyleId = sheet.cells.readStyleId(row, col) ?? DEFAULT_SID
+			const currentStyle = workbook.styles.get(existingStyleId) ?? {}
 			const style: CellStyle = {
 				...currentStyle,
 				numberFormat: op.format,
 			}
 			const styleId = workbook.styles.register(style)
-			if (
-				workbook.preservedStyles &&
-				existing?.styleId !== undefined &&
-				styleId !== existing.styleId
-			) {
+			if (workbook.preservedStyles && styleId !== existingStyleId) {
 				const baseStyleId =
-					workbook.preservedStyles.baseStyleIdByStyleId?.[existing.styleId] ?? existing.styleId
+					workbook.preservedStyles.baseStyleIdByStyleId?.[existingStyleId] ?? existingStyleId
 				workbook.preservedStyles = {
 					...workbook.preservedStyles,
 					baseStyleIdByStyleId: {
@@ -943,7 +948,12 @@ function handleSetNumberFormat(
 			sheet.cells.set(
 				row,
 				col,
-				cellWithExisting(existing?.value ?? EMPTY, existing?.formula ?? null, styleId, existing),
+				cellWithExisting(
+					sheet.cells.readValue(row, col),
+					sheet.cells.readFormula(row, col) ?? null,
+					styleId,
+					sheet.cells.readFormulaInfo(row, col),
+				),
 			)
 			affected.push(toA1({ row, col }))
 		}
@@ -972,6 +982,25 @@ function resolveAffectedCellKeys(
 		for (let col = range.start.col; col <= range.end.col; col++) {
 			keys.push(cellKey(sheetIndex, row, col))
 		}
+	}
+	return keys
+}
+
+function resolvePatchResultCellKeys(
+	workbook: Workbook,
+	sheetName: string,
+	affectedCells: readonly string[],
+): CellKey[] {
+	const sheet = workbook.getSheet(sheetName)
+	if (!sheet) return []
+	const sheetIndex = workbook.sheets.indexOf(sheet)
+	if (sheetIndex < 0) return []
+	const keys: CellKey[] = []
+	for (const refText of affectedCells) {
+		try {
+			const ref = parseA1(refText)
+			keys.push(cellKey(sheetIndex, ref.row, ref.col))
+		} catch {}
 	}
 	return keys
 }
@@ -1410,7 +1439,15 @@ const handlers: Record<string, OperationHandler> = {
 // --- Public API ---
 
 export function applyOperation(workbook: Workbook, op: Operation): Result<PatchResult> {
-	const useIncrementalPatch = op.op === 'setFormula' || op.op === 'fillFormula'
+	const useIncrementalPatch =
+		op.op === 'setFormula' ||
+		op.op === 'fillFormula' ||
+		op.op === 'copyRange' ||
+		op.op === 'moveRange' ||
+		op.op === 'insertRows' ||
+		op.op === 'deleteRows' ||
+		op.op === 'insertCols' ||
+		op.op === 'deleteCols'
 	if (operationAffectsFormulas(op) && !useIncrementalPatch) {
 		invalidateWorkbookAnalysis(workbook)
 	}
@@ -1423,12 +1460,35 @@ export function applyOperation(workbook: Workbook, op: Operation): Result<PatchR
 	const result = handler(workbook, op as never)
 
 	if (useIncrementalPatch && result.ok) {
-		const changedKeys = resolveAffectedCellKeys(
-			workbook,
-			op as Extract<Operation, { op: 'setFormula' | 'fillFormula' }>,
-		)
-		if (changedKeys.length > 0) {
-			patchWorkbookAnalysis(workbook, changedKeys)
+		switch (op.op) {
+			case 'insertRows':
+				shiftWorkbookAnalysisForAxis(workbook, op.sheet, 'row', op.at, op.count)
+				break
+			case 'deleteRows':
+				shiftWorkbookAnalysisForAxis(workbook, op.sheet, 'row', op.at, -op.count)
+				break
+			case 'insertCols':
+				shiftWorkbookAnalysisForAxis(workbook, op.sheet, 'col', op.at, op.count)
+				break
+			case 'deleteCols':
+				shiftWorkbookAnalysisForAxis(workbook, op.sheet, 'col', op.at, -op.count)
+				break
+			case 'copyRange':
+			case 'moveRange': {
+				const changedKeys = resolvePatchResultCellKeys(
+					workbook,
+					op.sheet,
+					result.value.affectedCells,
+				)
+				if (changedKeys.length > 0) patchWorkbookAnalysis(workbook, changedKeys)
+				break
+			}
+			case 'setFormula':
+			case 'fillFormula': {
+				const changedKeys = resolveAffectedCellKeys(workbook, op)
+				if (changedKeys.length > 0) patchWorkbookAnalysis(workbook, changedKeys)
+				break
+			}
 		}
 	}
 	return result

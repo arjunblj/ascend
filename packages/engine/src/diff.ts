@@ -89,20 +89,19 @@ export function diffWorkbooks(before: Workbook, after: Workbook): WorkbookDiff {
 		const cellsChanged: CellChange[] = []
 
 		for (const [row, col, cellBefore] of beforeSheet.cells.iterate()) {
-			const cellAfter = afterSheet.cells.get(row, col)
-			if (!cellAfter) {
+			if (!afterSheet.cells.has(row, col)) {
 				cellsRemoved.push(toA1({ row, col }))
 			} else if (
-				!cellValuesEqual(cellBefore.value, cellAfter.value) ||
-				cellBefore.formula !== cellAfter.formula
+				!cellValuesEqual(cellBefore.value, afterSheet.cells.readValue(row, col)) ||
+				cellBefore.formula !== (afterSheet.cells.readFormula(row, col) ?? null)
 			) {
 				const ref = toA1({ row, col })
 				cellsChanged.push({
 					ref,
 					before: cellBefore.value,
-					after: cellAfter.value,
+					after: afterSheet.cells.readValue(row, col),
 					formulaBefore: cellBefore.formula,
-					formulaAfter: cellAfter.formula,
+					formulaAfter: afterSheet.cells.readFormula(row, col) ?? null,
 				})
 			}
 		}

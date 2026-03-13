@@ -37,7 +37,7 @@ function resolveSortColumns(
 
 	const headerMap = new Map<string, number>()
 	for (let col = range.start.col; col <= range.end.col; col++) {
-		const value = sheet.cells.get(range.start.row, col)?.value
+		const value = sheet.cells.readValue(range.start.row, col)
 		if (value?.kind === 'string' && value.value.trim() !== '') {
 			headerMap.set(value.value.trim().toLowerCase(), col)
 		}

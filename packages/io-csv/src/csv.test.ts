@@ -123,7 +123,7 @@ describe('readCsv', () => {
 
 		const result = readCsv(csv)
 		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		if (!result.ok) throw new Error(result.error.message)
 
 		expect(cellValue(result, 0, 0)).toEqual({ kind: 'string', value: 'id' })
 		expect(cellValue(result, 0, 1)).toEqual({ kind: 'string', value: 'name' })
@@ -148,15 +148,15 @@ describe('writeCsv', () => {
 		const csv = 'name,age\nAlice,30\nBob,25'
 		const readResult = readCsv(csv)
 		expect(readResult.ok).toBe(true)
-		if (!readResult.ok) return
+		if (!readResult.ok) throw new Error(readResult.error.message)
 
 		const writeResult = writeCsv(readResult.value)
 		expect(writeResult.ok).toBe(true)
-		if (!writeResult.ok) return
+		if (!writeResult.ok) throw new Error(writeResult.error.message)
 
 		const reread = readCsv(writeResult.value)
 		expect(reread.ok).toBe(true)
-		if (!reread.ok) return
+		if (!reread.ok) throw new Error(reread.error.message)
 
 		expect(cellValue(reread, 0, 0)).toEqual({ kind: 'string', value: 'name' })
 		expect(cellValue(reread, 1, 0)).toEqual({ kind: 'string', value: 'Alice' })
@@ -167,11 +167,11 @@ describe('writeCsv', () => {
 	test('quotes fields containing delimiter or newlines', () => {
 		const readResult = readCsv('a\n"hello,world"')
 		expect(readResult.ok).toBe(true)
-		if (!readResult.ok) return
+		if (!readResult.ok) throw new Error(readResult.error.message)
 
 		const writeResult = writeCsv(readResult.value)
 		expect(writeResult.ok).toBe(true)
-		if (!writeResult.ok) return
+		if (!writeResult.ok) throw new Error(writeResult.error.message)
 
 		expect(writeResult.value).toContain('"hello,world"')
 	})
@@ -182,15 +182,15 @@ describe('Unicode and BOM', () => {
 		const csv = 'text\nHello 世界 🌍\n日本語\n🎉'
 		const readResult = readCsv(csv)
 		expect(readResult.ok).toBe(true)
-		if (!readResult.ok) return
+		if (!readResult.ok) throw new Error(readResult.error.message)
 
 		const writeResult = writeCsv(readResult.value)
 		expect(writeResult.ok).toBe(true)
-		if (!writeResult.ok) return
+		if (!writeResult.ok) throw new Error(writeResult.error.message)
 
 		const reread = readCsv(writeResult.value)
 		expect(reread.ok).toBe(true)
-		if (!reread.ok) return
+		if (!reread.ok) throw new Error(reread.error.message)
 
 		expect(cellValue(reread, 0, 0)).toEqual({ kind: 'string', value: 'text' })
 		expect(cellValue(reread, 1, 0)).toEqual({ kind: 'string', value: 'Hello 世界 🌍' })
@@ -202,7 +202,7 @@ describe('Unicode and BOM', () => {
 		const csvWithBom = '\uFEFFname,value\n你好,42\n🎉,1'
 		const result = readCsv(csvWithBom)
 		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		if (!result.ok) throw new Error(result.error.message)
 
 		expect(cellValue(result, 0, 0)).toEqual({ kind: 'string', value: 'name' })
 		expect(cellValue(result, 0, 1)).toEqual({ kind: 'string', value: 'value' })

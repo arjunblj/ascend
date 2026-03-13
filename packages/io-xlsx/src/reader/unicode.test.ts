@@ -77,7 +77,7 @@ describe('Unicode cell values', () => {
 
 		const result = readXlsx(bytes)
 		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		if (!result.ok) throw new Error(result.error.message)
 
 		const sheet = result.value.workbook.sheets[0]
 		expect(sheet?.cells.get(0, 0)?.value).toEqual({ kind: 'string', value: '你好世界' })
@@ -101,11 +101,11 @@ describe('Unicode cell values', () => {
 
 		const written = writeXlsx(wb)
 		expect(written.ok).toBe(true)
-		if (!written.ok) return
+		if (!written.ok) throw new Error(written.error.message)
 
 		const read = readXlsx(written.value)
 		expect(read.ok).toBe(true)
-		if (!read.ok) return
+		if (!read.ok) throw new Error(read.error.message)
 
 		const s = read.value.workbook.sheets[0]
 		expect(s?.cells.get(0, 0)?.value).toEqual({ kind: 'string', value: '你好世界' })
@@ -156,18 +156,18 @@ describe('Unicode sheet names', () => {
 
 		const result = readXlsx(bytes)
 		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		if (!result.ok) throw new Error(result.error.message)
 
 		expect(result.value.workbook.sheets[0]?.name).toBe('データ')
 		expect(result.value.workbook.sheets[1]?.name).toBe('Résumé')
 
 		const written = writeXlsx(result.value.workbook, result.value.capsules)
 		expect(written.ok).toBe(true)
-		if (!written.ok) return
+		if (!written.ok) throw new Error(written.error.message)
 
 		const reread = readXlsx(written.value)
 		expect(reread.ok).toBe(true)
-		if (!reread.ok) return
+		if (!reread.ok) throw new Error(reread.error.message)
 
 		expect(reread.value.workbook.sheets[0]?.name).toBe('データ')
 		expect(reread.value.workbook.sheets[1]?.name).toBe('Résumé')
@@ -211,7 +211,7 @@ describe('Unicode in formulas', () => {
 
 		const result = readXlsx(bytes)
 		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		if (!result.ok) throw new Error(result.error.message)
 
 		const resumeSheet = result.value.workbook.getSheet('Résumé')
 		expect(resumeSheet).toBeDefined()
@@ -220,11 +220,11 @@ describe('Unicode in formulas', () => {
 
 		const written = writeXlsx(result.value.workbook, result.value.capsules)
 		expect(written.ok).toBe(true)
-		if (!written.ok) return
+		if (!written.ok) throw new Error(written.error.message)
 
 		const reread = readXlsx(written.value)
 		expect(reread.ok).toBe(true)
-		if (!reread.ok) return
+		if (!reread.ok) throw new Error(reread.error.message)
 
 		const rereadResume = reread.value.workbook.getSheet('Résumé')
 		expect(rereadResume?.cells.get(0, 0)?.formula).toBe("'データ'!A1")
@@ -266,7 +266,7 @@ describe('Rich text round-trip', () => {
 
 		const result = readXlsx(bytes)
 		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		if (!result.ok) throw new Error(result.error.message)
 
 		expect(result.value.workbook.sheets[0]?.cells.get(0, 0)?.value).toEqual({
 			kind: 'richText',
@@ -275,11 +275,11 @@ describe('Rich text round-trip', () => {
 
 		const written = writeXlsx(result.value.workbook, result.value.capsules)
 		expect(written.ok).toBe(true)
-		if (!written.ok) return
+		if (!written.ok) throw new Error(written.error.message)
 
 		const reread = readXlsx(written.value)
 		expect(reread.ok).toBe(true)
-		if (!reread.ok) return
+		if (!reread.ok) throw new Error(reread.error.message)
 
 		expect(reread.value.workbook.sheets[0]?.cells.get(0, 0)?.value).toEqual({
 			kind: 'richText',

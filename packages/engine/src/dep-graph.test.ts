@@ -138,6 +138,22 @@ describe('DependencyGraph', () => {
 		expect(order.indexOf(c)).toBeLessThan(order.indexOf(d))
 	})
 
+	test('topological sort keeps range precedents before dependent formulas', () => {
+		const g = new DependencyGraph()
+		const a1 = cellKey(0, 0, 0)
+		const a2 = cellKey(0, 1, 0)
+		const sumCell = cellKey(0, 2, 0)
+		g.addFormula(a1, [], false)
+		g.addFormula(a2, [a1], false)
+		g.addFormula(sumCell, [], false, [
+			{ sheetIndex: 0, startRow: 0, startCol: 0, endRow: 1, endCol: 0 },
+		])
+		const dirty = new Set([a1, a2, sumCell])
+		const order = g.getEvalOrder(dirty)
+		expect(order.indexOf(a1)).toBeLessThan(order.indexOf(sumCell))
+		expect(order.indexOf(a2)).toBeLessThan(order.indexOf(sumCell))
+	})
+
 	test('detect simple cycle A->B->A', () => {
 		const g = new DependencyGraph()
 		const a = cellKey(0, 0, 0)

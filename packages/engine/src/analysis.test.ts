@@ -4,6 +4,7 @@ import { createWorkbook } from '@ascend/core'
 import { EMPTY, numberValue } from '@ascend/schema'
 import { analyzeWorkbook, analyzeWorkbookDependencies } from './analysis.ts'
 import { cellKey } from './dep-graph.ts'
+import { applyOperation } from './operations.ts'
 
 const sid = 0 as StyleId
 
@@ -145,5 +146,55 @@ describe('analyzeWorkbook', () => {
 		const formula = analysis.resolvedFormulas.get(cellKey(0, 1, 0))
 		expect(formula?.deps).toEqual([cellKey(0, 0, 0)])
 		expect(formula?.rangeDeps).toEqual([])
+	})
+
+	test('insertRows incrementally shifts cached analysis keys and dependencies', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: EMPTY, formula: 'SUM(A1:A2)', styleId: sid })
+
+		const before = analyzeWorkbook(wb)
+		expect(before.formulas.has(cellKey(0, 2, 0))).toBe(true)
+
+		const result = applyOperation(wb, { op: 'insertRows', sheet: 'Sheet1', at: 1, count: 1 })
+		expect(result.ok).toBe(true)
+
+		const after = analyzeWorkbook(wb)
+		const shifted = after.formulas.get(cellKey(0, 3, 0))
+		expect(shifted?.formula).toBe('SUM(A1:A3)')
+		expect(shifted?.rangeDeps).toEqual([
+			{
+				sheetIndex: 0,
+				startRow: 0,
+				startCol: 0,
+				endRow: 2,
+				endCol: 0,
+			},
+		])
+		expect(after.formulas.has(cellKey(0, 2, 0))).toBe(false)
+	})
+
+	test('copyRange incrementally patches cached analysis for translated formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: EMPTY, formula: 'A1+B1', styleId: sid })
+
+		analyzeWorkbook(wb)
+		const result = applyOperation(wb, {
+			op: 'copyRange',
+			sheet: 'Sheet1',
+			source: 'C1:C1',
+			target: 'C2',
+		})
+		expect(result.ok).toBe(true)
+
+		const after = analyzeWorkbook(wb)
+		const copied = after.formulas.get(cellKey(0, 1, 2))
+		expect(copied?.formula).toBe('A2+B2')
+		expect(copied?.deps).toEqual([cellKey(0, 1, 0), cellKey(0, 1, 1)])
 	})
 })

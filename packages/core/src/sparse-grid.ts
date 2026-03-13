@@ -80,6 +80,9 @@ interface GridChunk {
 	readNumber(localIndex: number): number | null
 	readString(localIndex: number, stringTable: StringTable): string | null
 	readError(localIndex: number, stringTable: StringTable): ExcelError | null
+	readStyleId(localIndex: number): StyleId | undefined
+	readFormula(localIndex: number): string | null | undefined
+	readFormulaInfo(localIndex: number): CellFormulaBinding | undefined
 	setSlot(localIndex: number, slot: StoredSlot): GridChunk
 	delete(localIndex: number): boolean
 	forEachRow(
@@ -149,6 +152,18 @@ class SparseChunk implements GridChunk {
 		const slot = this.slots.get(localIndex)
 		if (!slot || slot.tag !== SlotTag.Error) return null
 		return stringTable.lookup(slot.stringId ?? 0) as ExcelError
+	}
+
+	readStyleId(localIndex: number): StyleId | undefined {
+		return this.slots.get(localIndex)?.styleId
+	}
+
+	readFormula(localIndex: number): string | null | undefined {
+		return this.slots.get(localIndex)?.formula
+	}
+
+	readFormulaInfo(localIndex: number): CellFormulaBinding | undefined {
+		return this.slots.get(localIndex)?.formulaInfo
 	}
 
 	setSlot(localIndex: number, slot: StoredSlot): GridChunk {
@@ -261,6 +276,20 @@ class DenseChunk implements GridChunk {
 	readError(localIndex: number, stringTable: StringTable): ExcelError | null {
 		if (!this.has(localIndex) || this.tags[localIndex] !== SlotTag.Error) return null
 		return stringTable.lookup(this.stringIds[localIndex] ?? 0) as ExcelError
+	}
+
+	readStyleId(localIndex: number): StyleId | undefined {
+		return this.has(localIndex) ? (this.styleIds[localIndex] as StyleId) : undefined
+	}
+
+	readFormula(localIndex: number): string | null | undefined {
+		if (!this.has(localIndex)) return undefined
+		return this.formulas?.[localIndex] ?? null
+	}
+
+	readFormulaInfo(localIndex: number): CellFormulaBinding | undefined {
+		if (!this.has(localIndex)) return undefined
+		return this.formulaInfos?.[localIndex]
 	}
 
 	setSlot(localIndex: number, slot: StoredSlot): GridChunk {
@@ -431,6 +460,21 @@ export class SparseGrid {
 		return (
 			this.chunkRows.get(chunkRow)?.get(chunkCol)?.readError(localIndex, this.stringTable) ?? null
 		)
+	}
+
+	readStyleId(row: number, col: number): StyleId | undefined {
+		const [chunkRow, chunkCol, localIndex] = getChunkPosition(row, col)
+		return this.chunkRows.get(chunkRow)?.get(chunkCol)?.readStyleId(localIndex)
+	}
+
+	readFormula(row: number, col: number): string | null | undefined {
+		const [chunkRow, chunkCol, localIndex] = getChunkPosition(row, col)
+		return this.chunkRows.get(chunkRow)?.get(chunkCol)?.readFormula(localIndex)
+	}
+
+	readFormulaInfo(row: number, col: number): CellFormulaBinding | undefined {
+		const [chunkRow, chunkCol, localIndex] = getChunkPosition(row, col)
+		return this.chunkRows.get(chunkRow)?.get(chunkCol)?.readFormulaInfo(localIndex)
 	}
 
 	has(row: number, col: number): boolean {

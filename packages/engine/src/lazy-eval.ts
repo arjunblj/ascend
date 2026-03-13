@@ -107,16 +107,12 @@ export class LazyEvalContext {
 		const coords = { sheetIndex: 0, row: 0, col: 0 }
 		parseCellKeyInto(key, coords)
 		const sheet = this.workbook.sheets[coords.sheetIndex]
-		const cell = sheet?.cells.get(coords.row, coords.col)
+		const hasCell = sheet?.cells.has(coords.row, coords.col) ?? false
+		const formula = sheet?.cells.readFormula(coords.row, coords.col) ?? null
+		const styleId = sheet?.cells.readStyleId(coords.row, coords.col)
 
-		if (sheet && cell) {
-			sheet.cells.setResolved(
-				coords.row,
-				coords.col,
-				errorValue('#REF!'),
-				cell.formula,
-				cell.styleId,
-			)
+		if (sheet && hasCell && styleId !== undefined) {
+			sheet.cells.setResolved(coords.row, coords.col, errorValue('#REF!'), formula, styleId)
 		}
 
 		this.ensurePrecedentsClean(key)
@@ -139,8 +135,8 @@ export class LazyEvalContext {
 		record.value = value
 		record.state = CellState.Clean
 
-		if (sheet && cell) {
-			sheet.cells.setResolved(coords.row, coords.col, value, cell.formula, cell.styleId)
+		if (sheet && hasCell && styleId !== undefined) {
+			sheet.cells.setResolved(coords.row, coords.col, value, formula, styleId)
 		}
 
 		return value

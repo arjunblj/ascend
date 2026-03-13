@@ -6,6 +6,23 @@ import { applyOperation, applyOperations } from './operations.ts'
 
 const sid = 0 as StyleId
 
+function expectOk<T, E extends { message: string }>(
+	result: { ok: true; value: T } | { ok: false; error: E },
+): asserts result is { ok: true; value: T } {
+	expect(result.ok).toBe(true)
+	if (!result.ok) throw new Error(result.error.message)
+}
+
+function expectErr<T, E>(
+	result: { ok: true; value: T } | { ok: false; error: E },
+): asserts result is {
+	ok: false
+	error: E
+} {
+	expect(result.ok).toBe(false)
+	if (result.ok) throw new Error('Expected operation to fail')
+}
+
 function cell(value: ReturnType<typeof numberValue>, formula: string | null = null) {
 	return { value, formula, styleId: sid }
 }
@@ -31,8 +48,7 @@ describe('applyOperation', () => {
 				{ ref: 'C1', value: 'new' },
 			],
 		})
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(result.value.affectedCells).toEqual(['A1', 'C1'])
 		expect(result.value.recalcRequired).toBe(true)
@@ -52,8 +68,7 @@ describe('applyOperation', () => {
 			sheet: 'Sheet1',
 			updates: [{ ref: 'D1', value: new Date(Date.UTC(1904, 0, 2)) }],
 		})
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(wb.getSheet('Sheet1')?.cells.get(0, 3)?.value).toEqual({
 			kind: 'date',
@@ -69,8 +84,7 @@ describe('applyOperation', () => {
 			ref: 'A1',
 			formula: 'SUM(A2:A3)',
 		})
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(result.value.affectedCells).toEqual(['A1'])
 		const c = wb.getSheet('Sheet1')?.cells.get(0, 0)
@@ -90,8 +104,7 @@ describe('applyOperation', () => {
 			range: 'B1:B2',
 			formula: '=A1*2',
 		})
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(sheet.cells.get(0, 1)?.formula).toBe('A1*2')
 		expect(sheet.cells.get(1, 1)?.formula).toBe('A2*2')
@@ -108,8 +121,7 @@ describe('applyOperation', () => {
 				{ text: ' World', italic: true },
 			],
 		})
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(wb.getSheet('Sheet1')?.cells.get(1, 1)?.value).toEqual({
 			kind: 'richText',
@@ -133,8 +145,7 @@ describe('applyOperation', () => {
 				priority: 1,
 			},
 		})
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(wb.getSheet('Sheet1')?.conditionalFormats).toEqual([
 			{
@@ -162,16 +173,14 @@ describe('applyOperation', () => {
 				margins: { left: 0.5, right: 0.5 },
 			},
 		})
-		expect(result1.ok).toBe(true)
-		if (!result1.ok) return
+		expectOk(result1)
 
 		const result2 = applyOperation(wb, {
 			op: 'setPrintArea',
 			sheet: 'Sheet1',
 			range: 'A1:B5',
 		})
-		expect(result2.ok).toBe(true)
-		if (!result2.ok) return
+		expectOk(result2)
 
 		const sheet = wb.getSheet('Sheet1')
 		expect(sheet?.pageSetup).toEqual({ orientation: 'landscape', scale: 80 })
@@ -193,8 +202,7 @@ describe('applyOperation', () => {
 				allowBlank: false,
 			},
 		})
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(wb.getSheet('Sheet1')?.dataValidations).toEqual([
 			{
@@ -219,8 +227,7 @@ describe('applyOperation', () => {
 			source: 'A1:C1',
 			target: 'A3',
 		})
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(sheet.cells.get(2, 0)?.value).toEqual(numberValue(10))
 		expect(sheet.cells.get(2, 1)?.value).toEqual(stringValue('hello'))
@@ -238,8 +245,7 @@ describe('applyOperation', () => {
 			source: 'A1:A2',
 			target: 'C1',
 		})
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(sheet.cells.get(0, 2)?.value).toEqual(numberValue(10))
 		expect(sheet.cells.get(1, 2)?.value).toEqual(numberValue(20))
@@ -254,8 +260,7 @@ describe('applyOperation', () => {
 			sheet: 'Sheet1',
 			hidden: true,
 		})
-		expect(result1.ok).toBe(true)
-		if (!result1.ok) return
+		expectOk(result1)
 
 		const result2 = applyOperation(wb, {
 			op: 'hideCols',
@@ -264,8 +269,7 @@ describe('applyOperation', () => {
 			count: 1,
 			hidden: true,
 		})
-		expect(result2.ok).toBe(true)
-		if (!result2.ok) return
+		expectOk(result2)
 
 		const sheet = wb.getSheet('Sheet1')
 		expect(sheet?.state).toBe('hidden')
@@ -281,8 +285,7 @@ describe('applyOperation', () => {
 			to: 3,
 			collapsed: true,
 		})
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		const sheet = wb.getSheet('Sheet1')
 		expect(sheet?.outlinePr).toEqual({ summaryBelow: true })
@@ -301,8 +304,7 @@ describe('applyOperation', () => {
 			to: 1,
 			collapsed: true,
 		})
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		const sheet = wb.getSheet('Sheet1')
 		expect(sheet?.outlinePr).toEqual({ summaryRight: true })
@@ -323,8 +325,7 @@ describe('applyOperation', () => {
 	test('addSheet rejects duplicate name', () => {
 		const wb = setup()
 		const result = applyOperation(wb, { op: 'addSheet', name: 'Sheet1' })
-		expect(result.ok).toBe(false)
-		if (result.ok) return
+		expectErr(result)
 		expect(result.error.code).toBe('NAME_CONFLICT')
 	})
 
@@ -613,8 +614,7 @@ describe('applyOperation', () => {
 			range: 'A1:A3',
 			what: 'all',
 		})
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		const s = wb.getSheet('Sheet1')
 		expect(s).toBeDefined()
@@ -632,8 +632,7 @@ describe('applyOperation', () => {
 			sheet: 'NoSuchSheet',
 			updates: [{ ref: 'A1', value: 1 }],
 		})
-		expect(result.ok).toBe(false)
-		if (result.ok) return
+		expectErr(result)
 		expect(result.error.code).toBe('SHEET_NOT_FOUND')
 	})
 
@@ -702,8 +701,7 @@ describe('applyOperation', () => {
 			url: 'https://example.com/report',
 			display: 'Report',
 		})
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(wb.getSheet('Sheet1')?.hyperlinks.get('B1')).toEqual({
 			target: 'https://example.com/report',
@@ -719,8 +717,7 @@ describe('applyOperation', () => {
 			range: 'A1:A2',
 			format: '0.00%',
 		})
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		const sheet = wb.getSheet('Sheet1')
 		expect(sheet).toBeDefined()
@@ -752,8 +749,7 @@ describe('applyOperation', () => {
 			range: 'A1:B3',
 			by: [{ column: 'Score' }],
 		})
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(sheet.cells.get(1, 0)?.value).toEqual(stringValue('A'))
 		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(1))
@@ -804,8 +800,7 @@ describe('applyOperation', () => {
 			name: 'BalanceTable',
 			hasHeaders: true,
 		})
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(sheet.tables).toHaveLength(1)
 		expect(sheet.tables[0]?.columns).toEqual([{ name: 'Name' }, { name: 'Value' }])
@@ -835,8 +830,7 @@ describe('applyOperation', () => {
 			table: 'BalanceTable',
 			rows: [['Debt', 20]],
 		})
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(sheet.tables[0]?.ref).toEqual({
 			start: { row: 0, col: 0 },
@@ -864,8 +858,7 @@ describe('applyOperation', () => {
 			table: 'DateTable',
 			rows: [[new Date(Date.UTC(1904, 0, 2))]],
 		})
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(sheet.cells.get(1, 0)?.value).toEqual({
 			kind: 'date',
@@ -904,8 +897,7 @@ describe('applyOperation', () => {
 			table: 'BalanceTable',
 			rows: [['Debt', 20]],
 		})
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(sheet.tables[0]?.autoFilter?.ref).toBe('A1:B3')
 		expect(sheet.tables[0]?.autoFilter?.sortState?.ref).toBe('A1:B3')
@@ -928,8 +920,7 @@ describe('applyOperations', () => {
 			},
 			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A3', formula: 'SUM(A1:A2)' },
 		])
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		const s = wb.getSheet('Sheet1')
 		expect(s).toBeDefined()

@@ -523,9 +523,9 @@ function evalFormulaText(argNodes: readonly FormulaNode[], ctx: EvalContext): Ce
 	}
 	const sheet = ctx.workbook.sheets[arg.ref.sheetIndex]
 	if (!sheet) return errorValue('#N/A')
-	const cell = sheet.cells.get(arg.ref.row, arg.ref.col)
-	if (!cell?.formula) return errorValue('#N/A')
-	return stringValue(`=${cell.formula}`)
+	const formula = sheet.cells.readFormula(arg.ref.row, arg.ref.col)
+	if (!formula) return errorValue('#N/A')
+	return stringValue(`=${formula}`)
 }
 
 function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
@@ -763,8 +763,7 @@ function resolveSpillReference(target: FormulaNode, ctx: EvalContext): EvalArg |
 	if (!targetRef.ref) return null
 	const sheet = ctx.workbook.sheets[targetRef.ref.sheetIndex]
 	if (!sheet) return null
-	const cell = sheet.cells.get(targetRef.ref.row, targetRef.ref.col)
-	const binding = cell?.formulaInfo
+	const binding = sheet.cells.readFormulaInfo(targetRef.ref.row, targetRef.ref.col)
 	if (!binding || !isSpillFormulaBinding(binding)) return { value: errorValue('#REF!') }
 	const parsed = cachedParseFormula(binding.ref)
 	if (!parsed.ok || parsed.value.type !== 'rangeRef') return null
@@ -1274,8 +1273,7 @@ function evalIsFormula(argNodes: readonly FormulaNode[], ctx: EvalContext): Cell
 	}
 	const sheet = ctx.workbook.sheets[arg.ref.sheetIndex]
 	if (!sheet) return booleanValue(false)
-	const cell = sheet.cells.get(arg.ref.row, arg.ref.col)
-	return booleanValue(cell?.formula != null)
+	return booleanValue(sheet.cells.readFormula(arg.ref.row, arg.ref.col) != null)
 }
 
 function evalSheet(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {

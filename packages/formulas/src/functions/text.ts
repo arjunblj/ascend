@@ -166,6 +166,9 @@ function formatDate(serial: number, fmt: string): string {
 	const parts = serialToDate(serial)
 	if (!parts) return ''
 	const { hours, minutes, seconds } = serialToTime(serial)
+	const totalSeconds = Math.round(serial * 86400)
+	const totalMinutes = Math.floor(totalSeconds / 60)
+	const totalHours = Math.floor(totalSeconds / 3600)
 
 	const hasAmPm = /AM\/PM|am\/pm|A\/P|a\/p/.test(fmt)
 	const hour12 = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours
@@ -183,6 +186,23 @@ function formatDate(serial: number, fmt: string): string {
 			}
 			result += fmt.slice(i + 1, end)
 			i = end + 1
+			continue
+		}
+
+		const elapsedToken = fmt.slice(i).match(/^\[(h+|m+|s+)\]/i)
+		if (elapsedToken) {
+			const token = (elapsedToken[1] ?? '').toLowerCase()
+			if (token.startsWith('h')) {
+				result += String(totalHours)
+				prevTokenIsTime = true
+			} else if (token.startsWith('m')) {
+				result += String(totalMinutes)
+				prevTokenIsTime = true
+			} else {
+				result += String(totalSeconds)
+				prevTokenIsTime = false
+			}
+			i += elapsedToken[0].length
 			continue
 		}
 
@@ -286,7 +306,154 @@ function formatDate(serial: number, fmt: string): string {
 	return result
 }
 
-const NUM_FMT_CHARS = new Set(['0', '#', '.', ','])
+const NUM_FMT_CHARS = new Set(['0', '#', '?', '.', ',', '%'])
+
+interface FormatSection {
+	raw: string
+	format: string
+	condition?: { op: '<' | '<=' | '>' | '>=' | '=' | '<>'; value: number }
+}
+
+function splitFormatSections(fmt: string): string[] {
+	const sections: string[] = []
+	let current = ''
+	let inQuote = false
+	let bracketDepth = 0
+	for (let i = 0; i < fmt.length; i++) {
+		const ch = fmt[i] ?? ''
+		if (ch === '"' && bracketDepth === 0) {
+			inQuote = !inQuote
+			current += ch
+			continue
+		}
+		if (!inQuote && ch === '[') {
+			bracketDepth++
+			current += ch
+			continue
+		}
+		if (!inQuote && ch === ']' && bracketDepth > 0) {
+			bracketDepth--
+			current += ch
+			continue
+		}
+		if (!inQuote && bracketDepth === 0 && ch === ';') {
+			sections.push(current)
+			current = ''
+			continue
+		}
+		if (ch === '\\' && i + 1 < fmt.length) {
+			current += ch + (fmt[i + 1] ?? '')
+			i++
+			continue
+		}
+		current += ch
+	}
+	sections.push(current)
+	return sections
+}
+
+function parseConditionToken(token: string): FormatSection['condition'] {
+	const match = /^(<=|>=|<>|=|<|>)(-?\d+(?:\.\d+)?)$/.exec(token.trim())
+	if (!match) return undefined
+	const value = Number(match[2])
+	if (Number.isNaN(value)) return undefined
+	return { op: match[1] as NonNullable<FormatSection['condition']>['op'], value }
+}
+
+function parseFormatSection(raw: string): FormatSection {
+	let format = ''
+	let condition: FormatSection['condition']
+	const colorToken = /^(black|blue|cyan|green|magenta|red|white|yellow|color\d+)$/i
+	for (let i = 0; i < raw.length; i++) {
+		const ch = raw[i] ?? ''
+		if (ch === '[') {
+			const end = raw.indexOf(']', i + 1)
+			if (end !== -1) {
+				const token = raw.slice(i + 1, end)
+				const parsedCondition = parseConditionToken(token)
+				if (parsedCondition) {
+					condition = parsedCondition
+				} else if (token.startsWith('$')) {
+					const currency = token.split('-')[0]?.slice(1) ?? ''
+					if (currency.length > 0) format += currency
+				} else if (!colorToken.test(token)) {
+					format += `[${token}]`
+				}
+				i = end
+				continue
+			}
+		}
+		format += ch
+	}
+	return { raw, format, ...(condition ? { condition } : {}) }
+}
+
+function conditionMatches(
+	value: number,
+	condition: NonNullable<FormatSection['condition']>,
+): boolean {
+	switch (condition.op) {
+		case '<':
+			return value < condition.value
+		case '<=':
+			return value <= condition.value
+		case '>':
+			return value > condition.value
+		case '>=':
+			return value >= condition.value
+		case '=':
+			return value === condition.value
+		case '<>':
+			return value !== condition.value
+	}
+}
+
+function selectNumericSection(
+	value: number,
+	fmt: string,
+): { format: string; autoSign: boolean; absValue: number } {
+	const sections = splitFormatSections(fmt).map(parseFormatSection)
+	const conditioned = sections.some((section) => section.condition)
+	if (conditioned) {
+		for (const section of sections) {
+			if (section.condition && conditionMatches(value, section.condition)) {
+				return { format: section.format, autoSign: false, absValue: value }
+			}
+		}
+		const fallback = sections.find((section) => !section.condition)
+		return {
+			format: fallback?.format ?? sections[0]?.format ?? fmt,
+			autoSign: value < 0,
+			absValue: Math.abs(value),
+		}
+	}
+	if (sections.length === 1)
+		return { format: sections[0]?.format ?? fmt, autoSign: value < 0, absValue: Math.abs(value) }
+	if (sections.length === 2) {
+		if (value < 0)
+			return {
+				format: sections[1]?.format ?? sections[0]?.format ?? fmt,
+				autoSign: false,
+				absValue: Math.abs(value),
+			}
+		return { format: sections[0]?.format ?? fmt, autoSign: false, absValue: value }
+	}
+	if (sections.length >= 3) {
+		if (value > 0) return { format: sections[0]?.format ?? fmt, autoSign: false, absValue: value }
+		if (value < 0)
+			return {
+				format: sections[1]?.format ?? sections[0]?.format ?? fmt,
+				autoSign: false,
+				absValue: Math.abs(value),
+			}
+		return {
+			format: sections[2]?.format ?? sections[0]?.format ?? fmt,
+			autoSign: false,
+			absValue: 0,
+		}
+	}
+	return { format: fmt, autoSign: value < 0, absValue: Math.abs(value) }
+}
 
 function parseFormatSegments(fmt: string): { before: string; numFmt: string; after: string } {
 	let before = ''
@@ -307,6 +474,26 @@ function parseFormatSegments(fmt: string): { before: string; numFmt: string; aft
 				after += literal
 			}
 			i = end === -1 ? fmt.length : end + 1
+			continue
+		}
+		if (fmt[i] === '\\' && i + 1 < fmt.length) {
+			const literal = fmt[i + 1] ?? ''
+			if (phase === 'before') before += literal
+			else if (phase === 'num') {
+				phase = 'after'
+				after += literal
+			} else {
+				after += literal
+			}
+			i += 2
+			continue
+		}
+		if (fmt[i] === '_' && i + 1 < fmt.length) {
+			i += 2
+			continue
+		}
+		if (fmt[i] === '*' && i + 1 < fmt.length) {
+			i += 2
 			continue
 		}
 
@@ -334,7 +521,8 @@ function parseFormatSegments(fmt: string): { before: string; numFmt: string; aft
 }
 
 function formatNumber(value: number, code: string): string {
-	const fmt = code.trim()
+	const { format: selectedFormat, autoSign, absValue } = selectNumericSection(value, code.trim())
+	const fmt = selectedFormat.trim()
 
 	if (fmt === '@') return String(value)
 
@@ -349,8 +537,8 @@ function formatNumber(value: number, code: string): string {
 		const decLen = beforeSci.includes('.')
 			? (beforeSci.split('.')[1] || '').replace(/[^0#]/g, '').length
 			: 0
-		const abs = Math.abs(value)
-		const sign = value < 0 ? '-' : ''
+		const abs = Math.abs(absValue)
+		const sign = autoSign && value < 0 ? '-' : ''
 		const exp = abs === 0 ? 0 : Math.floor(Math.log10(abs))
 		const mantissa = abs === 0 ? 0 : abs / 10 ** exp
 		const expSign = sciMatch[2] === '+' ? (exp >= 0 ? '+' : '-') : exp < 0 ? '-' : ''
@@ -358,26 +546,28 @@ function formatNumber(value: number, code: string): string {
 		return sign + mantissa.toFixed(decLen) + sciMatch[1] + expSign + expStr
 	}
 
-	if (fmt.includes('%')) {
-		const pctFmt = fmt.replace(/%/g, '').replace(/"[^"]*"/g, '')
-		const dec = pctFmt.includes('.') ? (pctFmt.split('.')[1] || '').replace(/[^0#]/g, '').length : 0
-		return `${(value * 100).toFixed(dec)}%`
-	}
-
 	const { before, numFmt, after } = parseFormatSegments(fmt)
-
-	const hasComma = numFmt.includes(',')
-	const dotIdx = numFmt.indexOf('.')
-	const intFmt = dotIdx >= 0 ? numFmt.slice(0, dotIdx) : numFmt
-	const decFmt = dotIdx >= 0 ? numFmt.slice(dotIdx + 1) : ''
+	if (numFmt === '') return before + after
+	const percentCount = (numFmt.match(/%/g) || []).length
+	const withoutPercent = numFmt.replace(/%/g, '')
+	let trailingCommas = 0
+	for (let i = withoutPercent.length - 1; i >= 0 && withoutPercent[i] === ','; i--) {
+		trailingCommas++
+	}
+	const numericFmt = withoutPercent.slice(0, withoutPercent.length - trailingCommas)
+	const hasComma = numericFmt.includes(',')
+	const dotIdx = numericFmt.indexOf('.')
+	const intFmt = dotIdx >= 0 ? numericFmt.slice(0, dotIdx) : numericFmt
+	const decFmt = dotIdx >= 0 ? numericFmt.slice(dotIdx + 1) : ''
 
 	const minIntDigits = (intFmt.match(/0/g) || []).length
-	const decPlaces = decFmt.replace(/[^0#]/g, '').length
+	const decPlaces = decFmt.replace(/[^0#?]/g, '').length
 
-	const abs = Math.abs(value)
+	const scaledValue = (absValue * 100 ** percentCount) / 1000 ** trailingCommas
+	const abs = Math.abs(scaledValue)
 	const fixed = abs.toFixed(decPlaces)
 	const [rawInt = '', rawDec] = fixed.split('.')
-	const sign = value < 0 ? '-' : ''
+	const sign = autoSign && value < 0 ? '-' : ''
 
 	let intStr = rawInt
 	if (intStr.length < minIntDigits) {
@@ -398,7 +588,7 @@ function formatNumber(value: number, code: string): string {
 		intStr = intStr.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 	}
 
-	return before + sign + intStr + (decStr ? `.${decStr}` : '') + after
+	return before + sign + intStr + (decStr ? `.${decStr}` : '') + after + '%'.repeat(percentCount)
 }
 
 export const textFunctions: FunctionDef[] = [

@@ -362,6 +362,60 @@ describe('formula functions', () => {
 			recalc(wb)
 			expect(getResult(wb, 0, 1)).toEqual(stringValue('5.00E-03'))
 		})
+
+		test('TEXT uses explicit negative and zero sections', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, -12.3)
+			setNum(wb, 1, 0, 0)
+			setFormula(wb, 0, 1, 'TEXT(A1,"0.0;(0.0);zero")')
+			setFormula(wb, 1, 1, 'TEXT(A2,"0.0;(0.0);zero")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('(12.3)'))
+			expect(getResult(wb, 1, 1)).toEqual(stringValue('zero'))
+		})
+
+		test('TEXT honors conditional sections', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 1500)
+			setNum(wb, 1, 0, 12)
+			setFormula(wb, 0, 1, 'TEXT(A1,"[>=1000]0.0,""K"";0")')
+			setFormula(wb, 1, 1, 'TEXT(A2,"[>=1000]0.0,""K"";0")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('1.5K'))
+			expect(getResult(wb, 1, 1)).toEqual(stringValue('12'))
+		})
+
+		test('TEXT supports scaling commas', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 12200000)
+			setFormula(wb, 0, 1, 'TEXT(A1,"0.0,,""M""")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('12.2M'))
+		})
+
+		test('TEXT supports multiple percent characters', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 0.0123)
+			setFormula(wb, 0, 1, 'TEXT(A1,"0.0%%")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('123.0%%'))
+		})
+
+		test('TEXT supports currency locale markers', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 42)
+			setFormula(wb, 0, 1, 'TEXT(A1,"[$USD]0.00")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('USD42.00'))
+		})
+
+		test('TEXT supports elapsed hours tokens', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 1.5)
+			setFormula(wb, 0, 1, 'TEXT(A1,"[h]:mm")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('36:00'))
+		})
 	})
 
 	describe('lookup functions', () => {

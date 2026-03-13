@@ -22,18 +22,24 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.3.10
 
       - run: bun install --frozen-lockfile
 
-      - name: Run smoke benchmarks
-        run: bun fixtures/benchmarks/run.ts --set smoke --repeat 3 --json > bench-current.json
+      - name: Run always-on canary benchmarks
+        run: bun fixtures/benchmarks/run.ts --set canary --repeat 3 --json > bench-current.json
+
+      - name: Run observe-only benchmark set
+        continue-on-error: true
+        run: bun fixtures/benchmarks/run.ts --set observe --repeat 3 --json > bench-observe.json
 
       - name: Upload current results
         uses: actions/upload-artifact@v4
         with:
           name: bench-smoke-${{ github.sha }}
-          path: bench-current.json
+          path: |
+            bench-current.json
+            bench-observe.json
 
       - name: Download baseline from main
         id: baseline
@@ -58,7 +64,7 @@ jobs:
             exit 0
           fi
           set +e
-          bun fixtures/benchmarks/compare.ts "$baseline_file" bench-current.json --threshold-median 0.15 --json > comparison.json 2>&1
+          bun fixtures/benchmarks/compare.ts "$baseline_file" bench-current.json --threshold-median 0.12 --threshold-rss 0.25 --json > comparison.json 2>&1
           exit_code=$?
           set -e
           if [ $exit_code -ne 0 ]; then
@@ -66,7 +72,35 @@ jobs:
           else
             echo "has_regression=false" >> "$GITHUB_OUTPUT"
           fi
-          cat comparison.json
+
+      - name: Upload comparison artifact
+        if: steps.compare.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-compare-${{ github.sha }}
+          path: comparison.json
+
+      - name: Summarize comparison
+        if: steps.compare.outcome == 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let comparison;
+            try {
+              comparison = JSON.parse(fs.readFileSync('comparison.json', 'utf8'));
+            } catch {
+              return;
+            }
+            const summary = comparison.summary || {};
+            let body = '## Benchmark Canary Summary\n\n';
+            body += `- Regressed: ${summary.regressed ?? 0}\n`;
+            body += `- Improved: ${summary.improved ?? 0}\n`;
+            body += `- Unchanged: ${summary.unchanged ?? 0}\n`;
+            body += `- Missing: ${summary.missing ?? 0}\n`;
+            body += `- Added: ${summary.added ?? 0}\n\n`;
+            body += '> Gating thresholds: median +12%, retained RSS +25% (canary set only)\n';
+            core.summary.addRaw(body).write();
 
       - name: Post regression comment
         if: steps.compare.outputs.has_regression == 'true'
@@ -93,7 +127,7 @@ jobs:
                 body += `| ${c.name} | ${m.name} | ${m.baseline.toFixed(2)} | ${m.candidate.toFixed(2)} | ${pct} |\n`;
               }
             }
-            body += '\n> Threshold: 15% regression on median timing';
+            body += '\n> Thresholds: 12% median timing regression or 25% retained RSS regression (canary set)';
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,
@@ -110,7 +144,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.3.10
 
       - run: bun install --frozen-lockfile
 

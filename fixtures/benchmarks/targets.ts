@@ -21,7 +21,9 @@ export interface TargetCheckResult {
 
 export function checkThroughputTargets(suite: BenchmarkSuiteResult): readonly TargetCheckResult[] {
 	return throughputTargets.map((target) => {
-		const matching = suite.cases.filter((c) => c.category === target.category)
+		const matching = suite.cases.filter(
+			(c) => c.category === target.category && typeof c.metrics.throughputPerSec === 'number',
+		)
 		if (matching.length === 0) {
 			return {
 				target,
@@ -30,15 +32,22 @@ export function checkThroughputTargets(suite: BenchmarkSuiteResult): readonly Ta
 				passed: false,
 			}
 		}
-		const best = matching.reduce((a, b) =>
-			(a.metrics.throughputPerSec ?? 0) > (b.metrics.throughputPerSec ?? 0) ? a : b,
-		)
-		const actual = best.metrics.throughputPerSec ?? 0
+		const throughputs = matching
+			.map((entry) => entry.metrics.throughputPerSec as number)
+			.sort((a, b) => a - b)
+		const median = throughputs[Math.floor(throughputs.length / 2)] ?? 0
+		const slowest =
+			matching.reduce((a, b) =>
+				(a.metrics.throughputPerSec ?? Number.POSITIVE_INFINITY) <
+				(b.metrics.throughputPerSec ?? Number.POSITIVE_INFINITY)
+					? a
+					: b,
+			) ?? matching[0]
 		return {
 			target,
-			actualCellsPerSec: actual,
-			scenarioName: best.name,
-			passed: actual >= target.minCellsPerSec,
+			actualCellsPerSec: median,
+			scenarioName: `median(${matching.length}) / slowest=${slowest?.name ?? 'n/a'}`,
+			passed: median >= target.minCellsPerSec,
 		}
 	})
 }

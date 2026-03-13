@@ -68,6 +68,7 @@ type StepName =
 	| 'workflow-inspect-read'
 	| 'workflow-session-open-read'
 	| 'workflow-session-warm-read'
+	| 'workflow-session-recalc'
 	| 'workflow-session-trace'
 	| 'workflow-session-check'
 	| 'workflow-session-open-lint'
@@ -197,6 +198,7 @@ async function main(): Promise<void> {
 		'workflow-inspect-read',
 		'workflow-session-open-read',
 		'workflow-session-warm-read',
+		'workflow-session-recalc',
 		'workflow-session-trace',
 		'workflow-session-check',
 		'workflow-session-open-lint',
@@ -439,6 +441,31 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 					sheet: probe.sheet,
 					range: probe.range,
 					totalCells: result.totalCells,
+				},
+			}
+		}
+		case 'workflow-session-recalc': {
+			let wb: AscendWorkbook | undefined = await AscendWorkbook.open(target)
+			const { result, timing } = await time(
+				'workflow-session-recalc',
+				async () => {
+					const recalc = wb?.recalc()
+					return {
+						changed: recalc?.changed.length ?? 0,
+						errors: recalc?.errors.length ?? 0,
+					}
+				},
+				{
+					beforeGc: () => {
+						wb = undefined
+					},
+				},
+			)
+			return {
+				timing,
+				assertions: {
+					changed: result.changed,
+					errors: result.errors,
 				},
 			}
 		}

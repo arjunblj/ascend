@@ -1,4 +1,4 @@
-import type { Workbook } from '@ascend/core'
+import { indexToColumn, type Workbook } from '@ascend/core'
 import type { FormulaNode } from '@ascend/formulas'
 import {
 	type EvalArea,
@@ -397,6 +397,15 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 	}
 	if (upperName === 'ISFORMULA') {
 		return evalIsFormula(argNodes, ctx)
+	}
+	if (upperName === 'CELL') {
+		return evalCellInfo(argNodes, ctx)
+	}
+	if (upperName === 'SHEETS') {
+		return evalSheets(argNodes, ctx)
+	}
+	if (upperName === 'SHEET') {
+		return evalSheet(argNodes, ctx)
 	}
 	if (upperName === 'IF') {
 		return evalIf(argNodes, ctx)
@@ -1267,6 +1276,78 @@ function evalIsFormula(argNodes: readonly FormulaNode[], ctx: EvalContext): Cell
 	if (!sheet) return booleanValue(false)
 	const cell = sheet.cells.get(arg.ref.row, arg.ref.col)
 	return booleanValue(cell?.formula != null)
+}
+
+function evalSheet(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
+	if (argNodes.length === 0) return numberValue(ctx.sheetIndex + 1)
+	const arg = resolveArg(argNodes[0] ?? { type: 'missing' }, ctx)
+	const sheetIndex = firstSheetIndexOf(arg)
+	if (sheetIndex !== null) return numberValue(sheetIndex + 1)
+	const name = coerceToString(arg.value)
+	for (let i = 0; i < ctx.workbook.sheets.length; i++) {
+		if (ctx.workbook.sheets[i]?.name.toLowerCase() === name.toLowerCase()) return numberValue(i + 1)
+	}
+	return errorValue('#N/A')
+}
+
+function evalSheets(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
+	if (argNodes.length === 0) return numberValue(ctx.workbook.sheets.length)
+	const arg = resolveArg(argNodes[0] ?? { type: 'missing' }, ctx)
+	const sheetCount = countSheetsOf(arg)
+	if (sheetCount !== null) return numberValue(sheetCount)
+	const name = coerceToString(arg.value)
+	for (const sheet of ctx.workbook.sheets) {
+		if (sheet?.name.toLowerCase() === name.toLowerCase()) return numberValue(1)
+	}
+	return errorValue('#N/A')
+}
+
+function evalCellInfo(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
+	const infoTypeValue = evaluate(argNodes[0] ?? { type: 'missing' }, ctx)
+	if (infoTypeValue.kind === 'error') return infoTypeValue
+	const infoType = coerceToString(infoTypeValue).toLowerCase()
+	const arg = resolveArg(argNodes[1] ?? { type: 'missing' }, ctx)
+	const targetRef = arg.ref ?? {
+		kind: 'cell' as const,
+		sheetIndex: ctx.sheetIndex,
+		row: ctx.row,
+		col: ctx.col,
+	}
+
+	switch (infoType) {
+		case 'address':
+			return stringValue(`$${indexToColumn(targetRef.col)}$${targetRef.row + 1}`)
+		case 'col':
+			return numberValue(targetRef.col + 1)
+		case 'row':
+			return numberValue(targetRef.row + 1)
+		case 'contents':
+			return topLeftScalar(arg.value)
+		case 'type': {
+			const value = topLeftScalar(arg.value)
+			if (value.kind === 'empty') return stringValue('b')
+			if (value.kind === 'string' || value.kind === 'richText') return stringValue('l')
+			return stringValue('v')
+		}
+		default:
+			return errorValue('#VALUE!')
+	}
+}
+
+function firstSheetIndexOf(arg: EvalArg): number | null {
+	if (arg.areas?.length) return arg.areas[0]?.ref.sheetIndex ?? null
+	if (arg.ref) return arg.ref.sheetIndex
+	return null
+}
+
+function countSheetsOf(arg: EvalArg): number | null {
+	if (arg.areas?.length) {
+		const sheets = new Set<number>()
+		for (const area of arg.areas) sheets.add(area.ref.sheetIndex)
+		return sheets.size
+	}
+	if (arg.ref) return 1
+	return null
 }
 
 function evalLet(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {

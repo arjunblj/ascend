@@ -2969,6 +2969,90 @@ describe('formula functions', () => {
 		})
 	})
 
+	describe('info functions - SHEET/SHEETS', () => {
+		test('SHEETS() returns sheet count', () => {
+			const wb = makeWorkbook()
+			wb.addSheet('Sheet2')
+			setFormula(wb, 0, 0, 'SHEETS()')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(2))
+		})
+
+		test('SHEET() returns current sheet number', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'SHEET()')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(1))
+		})
+
+		test('SHEET("Sheet2") resolves sheet name to index', () => {
+			const wb = makeWorkbook()
+			wb.addSheet('Sheet2')
+			setFormula(wb, 0, 0, 'SHEET("Sheet2")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(2))
+		})
+
+		test('SHEET(Sheet2!A1) resolves reference sheet index', () => {
+			const wb = makeWorkbook()
+			wb.addSheet('Sheet2')
+			wb.sheets[1]?.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: S0 })
+			setFormula(wb, 0, 0, 'SHEET(Sheet2!A1)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(2))
+		})
+
+		test('SHEETS(Sheet2!A1) returns 1 for single-sheet ref', () => {
+			const wb = makeWorkbook()
+			wb.addSheet('Sheet2')
+			wb.sheets[1]?.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: S0 })
+			setFormula(wb, 0, 0, 'SHEETS(Sheet2!A1)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(1))
+		})
+	})
+
+	describe('info functions - CELL', () => {
+		test('CELL("address", B3) returns absolute address', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 2, 1, 99)
+			setFormula(wb, 0, 0, 'CELL("address",B3)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('$B$3'))
+		})
+
+		test('CELL("row", B3) and CELL("col", B3) return coordinates', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 2, 1, 99)
+			setFormula(wb, 0, 0, 'CELL("row",B3)')
+			setFormula(wb, 0, 1, 'CELL("col",B3)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(3))
+			expect(getResult(wb, 0, 1)).toEqual(numberValue(2))
+		})
+
+		test('CELL("contents", ref) returns cell contents', () => {
+			const wb = makeWorkbook()
+			setStr(wb, 1, 0, 'hello')
+			setFormula(wb, 0, 0, 'CELL("contents",A2)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('hello'))
+		})
+
+		test('CELL("type", ref) classifies blank, label, and value', () => {
+			const wb = makeWorkbook()
+			setStr(wb, 0, 0, 'hello')
+			setNum(wb, 1, 0, 42)
+			setFormula(wb, 2, 0, 'CELL("type",A4)')
+			setFormula(wb, 2, 1, 'CELL("type",A1)')
+			setFormula(wb, 2, 2, 'CELL("type",A2)')
+			recalc(wb)
+			expect(getResult(wb, 2, 0)).toEqual(stringValue('b'))
+			expect(getResult(wb, 2, 1)).toEqual(stringValue('l'))
+			expect(getResult(wb, 2, 2)).toEqual(stringValue('v'))
+		})
+	})
+
 	describe('ISFORMULA', () => {
 		test('ISFORMULA returns TRUE for formula cells', () => {
 			const wb = makeWorkbook()

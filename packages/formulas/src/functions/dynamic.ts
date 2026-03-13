@@ -705,4 +705,7 @@ export const dynamicFunctions: FunctionDef[] = [
 			return errorValue('#VALUE!')
 		},
 	},
+	{ name: 'CELL', minArgs: 1, maxArgs: 2, evaluate: () => errorValue('#VALUE!') },
+	{ name: 'SHEET', minArgs: 0, maxArgs: 1, evaluate: () => numberValue(1) },
+	{ name: 'SHEETS', minArgs: 0, maxArgs: 1, evaluate: () => numberValue(1) },
 ]

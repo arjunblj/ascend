@@ -222,6 +222,18 @@ export type Operation =
 			readonly range: string
 	  }
 	| {
+			readonly op: 'copyRange'
+			readonly sheet: string
+			readonly source: string
+			readonly target: string
+	  }
+	| {
+			readonly op: 'moveRange'
+			readonly sheet: string
+			readonly source: string
+			readonly target: string
+	  }
+	| {
 			readonly op: 'setRichText'
 			readonly sheet: string
 			readonly ref: string

@@ -277,6 +277,74 @@ function translateFormula(node: FormulaNode, rowDelta: number, colDelta: number)
 	return printFormula(rewritten)
 }
 
+function collectRangeCells(
+	sheet: Sheet,
+	range: RangeRef,
+): Array<{ row: number; col: number; cell: Cell | undefined }> {
+	const cells: Array<{ row: number; col: number; cell: Cell | undefined }> = []
+	for (let row = range.start.row; row <= range.end.row; row++) {
+		for (let col = range.start.col; col <= range.end.col; col++) {
+			cells.push({ row, col, cell: sheet.cells.get(row, col) })
+		}
+	}
+	return cells
+}
+
+function handleTransferRange(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'copyRange' | 'moveRange' }>,
+): Result<PatchResult> {
+	const sheetResult = getSheet(workbook, op.sheet)
+	if (!sheetResult.ok) return sheetResult
+	const sheet = sheetResult.value
+	const sourceResult = safeParseRange(op.source)
+	if (!sourceResult.ok) return sourceResult
+	const targetStart = parseA1(op.target)
+	const source = sourceResult.value
+	const rowDelta = targetStart.row - source.start.row
+	const colDelta = targetStart.col - source.start.col
+	const snapshot = collectRangeCells(sheet, source)
+	const affected: string[] = []
+
+	for (const entry of snapshot) {
+		const targetRow = entry.row + rowDelta
+		const targetCol = entry.col + colDelta
+		const existingTarget = sheet.cells.get(targetRow, targetCol)
+		if (!entry.cell) {
+			sheet.cells.delete(targetRow, targetCol)
+			affected.push(toA1({ row: targetRow, col: targetCol }))
+			continue
+		}
+
+		let formula = entry.cell.formula
+		if (formula) {
+			const parsed = cachedParseFormula(formula)
+			if (parsed.ok) formula = translateFormula(parsed.value, rowDelta, colDelta)
+		}
+
+		sheet.cells.set(
+			targetRow,
+			targetCol,
+			cellWithExisting(
+				entry.cell.value,
+				formula,
+				entry.cell.styleId,
+				formula !== null ? undefined : existingTarget,
+			),
+		)
+		affected.push(toA1({ row: targetRow, col: targetCol }))
+	}
+
+	if (op.op === 'moveRange') {
+		for (const entry of snapshot) {
+			sheet.cells.delete(entry.row, entry.col)
+			affected.push(toA1({ row: entry.row, col: entry.col }))
+		}
+	}
+
+	return ok(patch(affected, [op.sheet], true))
+}
+
 function handleAddSheet(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'addSheet' }>,
@@ -1248,6 +1316,8 @@ const handlers: Record<string, OperationHandler> = {
 	deleteConditionalFormat: handleDeleteConditionalFormat as OperationHandler,
 	setPageSetup: handleSetPageSetup as OperationHandler,
 	setPrintArea: handleSetPrintArea as OperationHandler,
+	copyRange: handleTransferRange as OperationHandler,
+	moveRange: handleTransferRange as OperationHandler,
 	setRichText: handleSetRichText as OperationHandler,
 }
 

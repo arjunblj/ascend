@@ -190,6 +190,46 @@ describe('applyOperation', () => {
 		])
 	})
 
+	test('copyRange copies values and translates relative formulas', () => {
+		const wb = setup()
+		const sheet = wb.getSheet('Sheet1')
+		if (!sheet) return
+		sheet.cells.set(0, 2, { value: numberValue(0), formula: 'A1+B1', styleId: sid })
+
+		const result = applyOperation(wb, {
+			op: 'copyRange',
+			sheet: 'Sheet1',
+			source: 'A1:C1',
+			target: 'A3',
+		})
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(sheet.cells.get(2, 0)?.value).toEqual(numberValue(10))
+		expect(sheet.cells.get(2, 1)?.value).toEqual(stringValue('hello'))
+		expect(sheet.cells.get(2, 2)?.formula).toBe('A3+B3')
+	})
+
+	test('moveRange relocates source cells and clears original range', () => {
+		const wb = setup()
+		const sheet = wb.getSheet('Sheet1')
+		if (!sheet) return
+
+		const result = applyOperation(wb, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'A1:A2',
+			target: 'C1',
+		})
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(sheet.cells.get(0, 2)?.value).toEqual(numberValue(10))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(numberValue(20))
+		expect(sheet.cells.get(0, 0)).toBeUndefined()
+		expect(sheet.cells.get(1, 0)).toBeUndefined()
+	})
+
 	test('hideSheet and hideCols update sheet visibility metadata', () => {
 		const wb = setup()
 		const result1 = applyOperation(wb, {

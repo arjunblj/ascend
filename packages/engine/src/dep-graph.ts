@@ -59,7 +59,7 @@ export class DependencyGraph {
 		set: ReadonlySet<CellKey>
 		size: number
 		hash: number
-		index: Map<number, Map<number, Set<number>>>
+		index: Map<number, Map<number, number[]>>
 	} | null = null
 	private _cachedEvalOrder: CellKey[] | null = null
 	private _rankByKey: Map<CellKey, number> | null = null
@@ -195,7 +195,7 @@ export class DependencyGraph {
 		const visited = new Set<CellKey>()
 		const onStack = new Set<CellKey>()
 		const order: CellKey[] = []
-		const dirtyFormulaBySheetRow = this.getCachedDirtyFormulaIndex(dirtySet)
+		const dirtyFormulaBySheetCol = this.getCachedDirtyFormulaIndex(dirtySet)
 
 		const visit = (key: CellKey): void => {
 			if (visited.has(key)) return
@@ -208,13 +208,14 @@ export class DependencyGraph {
 					if (dirtySet.has(dep)) visit(dep)
 				}
 				for (const range of entry.rangeDeps) {
-					const sheetRows = dirtyFormulaBySheetRow.get(range.sheetIndex)
-					if (!sheetRows) continue
-					for (const [row, cols] of sheetRows) {
-						for (const col of cols) {
-							if (containsCell(range, row, col)) {
-								visit(cellKey(range.sheetIndex, row, col))
-							}
+					const sheetCols = dirtyFormulaBySheetCol.get(range.sheetIndex)
+					if (!sheetCols) continue
+					for (let col = range.startCol; col <= range.endCol; col++) {
+						const rows = sheetCols.get(col)
+						if (!rows) continue
+						for (const row of rows) {
+							if (row > range.endRow) break
+							if (row >= range.startRow) visit(cellKey(range.sheetIndex, row, col))
 						}
 					}
 				}
@@ -508,13 +509,13 @@ export class DependencyGraph {
 
 	private getCachedDirtyFormulaIndex(
 		dirtySet: ReadonlySet<CellKey>,
-	): Map<number, Map<number, Set<number>>> {
+	): Map<number, Map<number, number[]>> {
 		if (this._cachedDirtyIndex) {
 			const c = this._cachedDirtyIndex
 			if (c.set === dirtySet && c.size === dirtySet.size) return c.index
 			if (c.size === dirtySet.size && c.hash === hashCellKeySet(dirtySet)) return c.index
 		}
-		const index = indexDirtyFormulaCellsBySheetRow(dirtySet, this.formulas)
+		const index = indexDirtyFormulaCellsBySheetCol(dirtySet, this.formulas)
 		this._cachedDirtyIndex = {
 			set: dirtySet,
 			size: dirtySet.size,
@@ -523,12 +524,6 @@ export class DependencyGraph {
 		}
 		return index
 	}
-}
-
-function containsCell(range: RangeDependency, row: number, col: number): boolean {
-	return (
-		row >= range.startRow && row <= range.endRow && col >= range.startCol && col <= range.endCol
-	)
 }
 
 function arraysMatch(existing: readonly CellKey[], incoming: readonly CellKey[]): boolean {
@@ -579,27 +574,32 @@ function fnv1a32(hash: number, value: number): number {
 	return Math.imul(hash, 0x01000193)
 }
 
-function indexDirtyFormulaCellsBySheetRow(
+function indexDirtyFormulaCellsBySheetCol(
 	dirtySet: ReadonlySet<CellKey>,
 	formulas: ReadonlyMap<CellKey, FormulaEntry>,
-): Map<number, Map<number, Set<number>>> {
-	const indexed = new Map<number, Map<number, Set<number>>>()
+): Map<number, Map<number, number[]>> {
+	const indexed = new Map<number, Map<number, number[]>>()
 	const coords: CellCoords = { sheetIndex: 0, row: 0, col: 0 }
 	for (const key of dirtySet) {
 		if (!formulas.has(key)) continue
 		parseCellKeyInto(key, coords)
 		const { sheetIndex, row, col } = coords
-		let rows = indexed.get(sheetIndex)
-		if (!rows) {
-			rows = new Map()
-			indexed.set(sheetIndex, rows)
-		}
-		let cols = rows.get(row)
+		let cols = indexed.get(sheetIndex)
 		if (!cols) {
-			cols = new Set()
-			rows.set(row, cols)
+			cols = new Map()
+			indexed.set(sheetIndex, cols)
 		}
-		cols.add(col)
+		let rows = cols.get(col)
+		if (!rows) {
+			rows = []
+			cols.set(col, rows)
+		}
+		rows.push(row)
+	}
+	for (const cols of indexed.values()) {
+		for (const rows of cols.values()) {
+			rows.sort((a, b) => a - b)
+		}
 	}
 	return indexed
 }

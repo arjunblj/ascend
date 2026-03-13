@@ -8,7 +8,7 @@ import {
 	printFormula,
 	rewriteRefs,
 } from '@ascend/formulas'
-import type { CellValue, InputValue, Operation, Result } from '@ascend/schema'
+import type { CellValue, InputValue, Operation, Result, StyleInput } from '@ascend/schema'
 import { ascendError, booleanValue, EMPTY, err, numberValue, ok, stringValue } from '@ascend/schema'
 import {
 	invalidateWorkbookAnalysis,
@@ -865,7 +865,7 @@ function handleSetHyperlink(
 	return ok(patch([op.ref], [op.sheet]))
 }
 
-function mergeStyleInput(current: CellStyle, input: CellStyle): CellStyle {
+function mergeStyleInput(current: CellStyle, input: StyleInput): CellStyle {
 	return {
 		...current,
 		...(input.font && { font: { ...current.font, ...input.font } }),
@@ -888,13 +888,12 @@ function handleSetStyle(
 	if (!rangeResult.ok) return rangeResult
 	const range = rangeResult.value
 
-	const input = op.style as unknown as CellStyle
 	const affected: string[] = []
 	for (let row = range.start.row; row <= range.end.row; row++) {
 		for (let col = range.start.col; col <= range.end.col; col++) {
 			const existingStyleId = sheet.cells.readStyleId(row, col) ?? DEFAULT_SID
 			const currentStyle = workbook.styles.get(existingStyleId) ?? {}
-			const merged = mergeStyleInput(currentStyle, input)
+			const merged = mergeStyleInput(currentStyle, op.style)
 			const styleId = workbook.styles.register(merged)
 			sheet.cells.set(
 				row,

@@ -49,14 +49,20 @@ export function buildSheetXml(
 	out.push(XML_HEADER)
 	out.push(`<worksheet ${worksheetAttrs.join(' ')}>`)
 
-	if (sheet.tabColor) {
+	if (sheet.tabColor || sheet.outlinePr) {
 		out.push('<sheetPr>')
-		const tcAttrs: string[] = []
-		if (sheet.tabColor.rgb) tcAttrs.push(`rgb="${sheet.tabColor.rgb}"`)
-		if (sheet.tabColor.theme !== undefined) tcAttrs.push(`theme="${sheet.tabColor.theme}"`)
-		if (sheet.tabColor.tint !== undefined) tcAttrs.push(`tint="${sheet.tabColor.tint}"`)
-		if (sheet.tabColor.indexed !== undefined) tcAttrs.push(`indexed="${sheet.tabColor.indexed}"`)
-		out.push(`<tabColor ${tcAttrs.join(' ')}/>`)
+		if (sheet.tabColor) {
+			const tcAttrs: string[] = []
+			if (sheet.tabColor.rgb) tcAttrs.push(`rgb="${sheet.tabColor.rgb}"`)
+			if (sheet.tabColor.theme !== undefined) tcAttrs.push(`theme="${sheet.tabColor.theme}"`)
+			if (sheet.tabColor.tint !== undefined) tcAttrs.push(`tint="${sheet.tabColor.tint}"`)
+			if (sheet.tabColor.indexed !== undefined) tcAttrs.push(`indexed="${sheet.tabColor.indexed}"`)
+			out.push(`<tabColor ${tcAttrs.join(' ')}/>`)
+		}
+		if (sheet.outlinePr) {
+			const outlineAttrs = collectMixedAttrs(sheet.outlinePr)
+			if (outlineAttrs.length > 0) out.push(`<outlinePr ${outlineAttrs.join(' ')}/>`)
+		}
 		out.push('</sheetPr>')
 	}
 
@@ -112,26 +118,42 @@ export function buildSheetXml(
 
 	out.push('<sheetData>')
 	const rowHeights = [...sheet.rowHeights.entries()].sort((a, b) => a[0] - b[0])
+	const rowDefs = [...sheet.rowDefs.entries()].sort((a, b) => a[0] - b[0])
 	const rowIterator = sheet.cells.iterateRows()
 	let nextRow = rowIterator.next()
 	let rowHeightIndex = 0
-	while (!nextRow.done || rowHeightIndex < rowHeights.length) {
+	let rowDefIndex = 0
+	while (!nextRow.done || rowHeightIndex < rowHeights.length || rowDefIndex < rowDefs.length) {
 		const populatedRow = nextRow.done ? undefined : nextRow.value
 		const heightEntry = rowHeights[rowHeightIndex]
 		const heightRow = heightEntry?.[0]
+		const rowDefEntry = rowDefs[rowDefIndex]
+		const rowDefRow = rowDefEntry?.[0]
 		const row =
 			populatedRow === undefined
-				? (heightRow as number)
+				? heightRow === undefined
+					? (rowDefRow as number)
+					: rowDefRow === undefined
+						? (heightRow as number)
+						: Math.min(heightRow, rowDefRow)
 				: heightRow === undefined
-					? populatedRow[0]
-					: Math.min(populatedRow[0], heightRow)
+					? rowDefRow === undefined
+						? populatedRow[0]
+						: Math.min(populatedRow[0], rowDefRow)
+					: rowDefRow === undefined
+						? Math.min(populatedRow[0], heightRow)
+						: Math.min(populatedRow[0], heightRow, rowDefRow)
 		const cells = populatedRow && populatedRow[0] === row ? populatedRow[1] : []
 		const rowAttrs = [`r="${row + 1}"`]
 		const rowHeight = heightEntry && heightEntry[0] === row ? heightEntry[1] : undefined
+		const rowDef = rowDefEntry && rowDefEntry[0] === row ? rowDefEntry[1] : undefined
 		if (rowHeight !== undefined) {
 			rowAttrs.push(`ht="${rowHeight}"`)
 			rowAttrs.push('customHeight="1"')
 		}
+		if (rowDef?.hidden) rowAttrs.push('hidden="1"')
+		if (rowDef?.collapsed) rowAttrs.push('collapsed="1"')
+		if (rowDef?.outlineLevel !== undefined) rowAttrs.push(`outlineLevel="${rowDef.outlineLevel}"`)
 		out.push(`<row ${rowAttrs.join(' ')}>`)
 		for (const [col, cell] of cells) {
 			pushCellXml(
@@ -146,6 +168,7 @@ export function buildSheetXml(
 		out.push('</row>')
 		if (populatedRow && populatedRow[0] === row) nextRow = rowIterator.next()
 		if (heightEntry && heightEntry[0] === row) rowHeightIndex++
+		if (rowDefEntry && rowDefEntry[0] === row) rowDefIndex++
 	}
 
 	out.push('</sheetData>')

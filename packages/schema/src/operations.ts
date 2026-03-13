@@ -234,6 +234,22 @@ export type Operation =
 			readonly target: string
 	  }
 	| {
+			readonly op: 'groupRows'
+			readonly sheet: string
+			readonly from: number
+			readonly to: number
+			readonly collapsed?: boolean
+			readonly summaryBelow?: boolean
+	  }
+	| {
+			readonly op: 'groupCols'
+			readonly sheet: string
+			readonly from: number
+			readonly to: number
+			readonly collapsed?: boolean
+			readonly summaryRight?: boolean
+	  }
+	| {
 			readonly op: 'setRichText'
 			readonly sheet: string
 			readonly ref: string

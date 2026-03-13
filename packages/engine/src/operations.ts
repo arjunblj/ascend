@@ -987,6 +987,8 @@ function operationAffectsFormulas(op: Operation): boolean {
 		case 'setRowHeight':
 		case 'mergeCells':
 		case 'unmergeCells':
+		case 'groupRows':
+		case 'groupCols':
 			return false
 		case 'setCells':
 		case 'setRichText':
@@ -1255,6 +1257,88 @@ function handleSetPrintArea(
 	return ok(patch([], [op.sheet]))
 }
 
+function updateSheetOutlineLevels(sheet: Sheet): void {
+	const rowLevel = Math.max(0, ...[...sheet.rowDefs.values()].map((def) => def.outlineLevel ?? 0))
+	const colLevel = Math.max(0, ...sheet.colDefs.map((def) => def.outlineLevel ?? 0))
+	sheet.sheetFormatPr = {
+		...(sheet.sheetFormatPr ?? {}),
+		...(rowLevel > 0 ? { outlineLevelRow: rowLevel } : {}),
+		...(colLevel > 0 ? { outlineLevelCol: colLevel } : {}),
+	}
+}
+
+function handleGroupRows(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'groupRows' }>,
+): Result<PatchResult> {
+	const sheetResult = getSheet(workbook, op.sheet)
+	if (!sheetResult.ok) return sheetResult
+	const sheet = sheetResult.value
+	sheet.ensureWritable()
+	if (op.from > op.to || op.from < 0) {
+		return err(ascendError('VALIDATION_ERROR', 'Invalid row group range'))
+	}
+	const summaryBelow = op.summaryBelow ?? sheet.outlinePr?.summaryBelow ?? true
+	sheet.outlinePr = { ...(sheet.outlinePr ?? {}), summaryBelow }
+	for (let row = op.from; row <= op.to; row++) {
+		const existing = sheet.rowDefs.get(row)
+		sheet.rowDefs.set(row, {
+			...existing,
+			outlineLevel: Math.min(7, (existing?.outlineLevel ?? 0) + 1),
+			...(op.collapsed !== undefined ? { hidden: op.collapsed } : {}),
+		})
+	}
+	if (op.collapsed) {
+		const boundaryRow = summaryBelow ? op.to + 1 : op.from - 1
+		if (boundaryRow >= 0) {
+			const existing = sheet.rowDefs.get(boundaryRow)
+			sheet.rowDefs.set(boundaryRow, { ...existing, collapsed: true })
+		}
+	}
+	updateSheetOutlineLevels(sheet)
+	return ok(patch([], [op.sheet]))
+}
+
+function handleGroupCols(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'groupCols' }>,
+): Result<PatchResult> {
+	const sheetResult = getSheet(workbook, op.sheet)
+	if (!sheetResult.ok) return sheetResult
+	const sheet = sheetResult.value
+	sheet.ensureWritable()
+	if (op.from > op.to || op.from < 0) {
+		return err(ascendError('VALIDATION_ERROR', 'Invalid column group range'))
+	}
+	const summaryRight = op.summaryRight ?? sheet.outlinePr?.summaryRight ?? true
+	sheet.outlinePr = { ...(sheet.outlinePr ?? {}), summaryRight }
+	for (let col = op.from; col <= op.to; col++) {
+		const idx = sheet.colDefs.findIndex((def) => def.min === col && def.max === col)
+		const existing = idx >= 0 ? sheet.colDefs[idx] : undefined
+		const next = {
+			...(existing ?? { min: col, max: col }),
+			outlineLevel: Math.min(7, (existing?.outlineLevel ?? 0) + 1),
+			...(op.collapsed !== undefined ? { hidden: op.collapsed } : {}),
+		}
+		if (idx >= 0) sheet.colDefs[idx] = next
+		else sheet.colDefs.push(next)
+	}
+	if (op.collapsed) {
+		const boundaryCol = summaryRight ? op.to + 1 : op.from - 1
+		if (boundaryCol >= 0) {
+			const idx = sheet.colDefs.findIndex(
+				(def) => def.min === boundaryCol && def.max === boundaryCol,
+			)
+			const existing = idx >= 0 ? sheet.colDefs[idx] : undefined
+			const next = { ...(existing ?? { min: boundaryCol, max: boundaryCol }), collapsed: true }
+			if (idx >= 0) sheet.colDefs[idx] = next
+			else sheet.colDefs.push(next)
+		}
+	}
+	updateSheetOutlineLevels(sheet)
+	return ok(patch([], [op.sheet]))
+}
+
 function handleSetRichText(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'setRichText' }>,
@@ -1316,6 +1400,8 @@ const handlers: Record<string, OperationHandler> = {
 	deleteConditionalFormat: handleDeleteConditionalFormat as OperationHandler,
 	setPageSetup: handleSetPageSetup as OperationHandler,
 	setPrintArea: handleSetPrintArea as OperationHandler,
+	groupRows: handleGroupRows as OperationHandler,
+	groupCols: handleGroupCols as OperationHandler,
 	copyRange: handleTransferRange as OperationHandler,
 	moveRange: handleTransferRange as OperationHandler,
 	setRichText: handleSetRichText as OperationHandler,

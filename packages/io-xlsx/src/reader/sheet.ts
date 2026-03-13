@@ -198,6 +198,16 @@ function parseSheetDataXml(xml: string, sheet: Sheet, ctx: SheetParseContext): v
 		if (rowHeight !== undefined && rawAttr(rowAttrsRaw, 'customHeight') === '1') {
 			sheet.rowHeights.set(row, rowHeight)
 		}
+		const hidden = rawBoolAttr(rowAttrsRaw, 'hidden')
+		const collapsed = rawBoolAttr(rowAttrsRaw, 'collapsed')
+		const outlineLevel = rawNumAttr(rowAttrsRaw, 'outlineLevel')
+		if (hidden !== undefined || collapsed !== undefined || outlineLevel !== undefined) {
+			const rowDef: Record<string, boolean | number> = {}
+			if (hidden !== undefined) rowDef.hidden = hidden
+			if (collapsed !== undefined) rowDef.collapsed = collapsed
+			if (outlineLevel !== undefined) rowDef.outlineLevel = outlineLevel
+			sheet.rowDefs.set(row, rowDef as import('@ascend/core').SheetRowDef)
+		}
 		if (isSelfClosingTag(xml, rowOpen, rowTagEnd)) {
 			rowCursor = rowTagEnd + 1
 			continue
@@ -257,6 +267,16 @@ export function* streamSheetRowsXml(
 		const row = explicitRowIndex !== undefined ? explicitRowIndex - 1 : currentRow + 1
 		currentRow = row
 		const rowSheet = new Sheet(name)
+		const hidden = rawBoolAttr(rowAttrsRaw, 'hidden')
+		const collapsed = rawBoolAttr(rowAttrsRaw, 'collapsed')
+		const outlineLevel = rawNumAttr(rowAttrsRaw, 'outlineLevel')
+		if (hidden !== undefined || collapsed !== undefined || outlineLevel !== undefined) {
+			const rowDef: Record<string, boolean | number> = {}
+			if (hidden !== undefined) rowDef.hidden = hidden
+			if (collapsed !== undefined) rowDef.collapsed = collapsed
+			if (outlineLevel !== undefined) rowDef.outlineLevel = outlineLevel
+			rowSheet.rowDefs.set(row, rowDef as import('@ascend/core').SheetRowDef)
+		}
 		if (isSelfClosingTag(xml, rowOpen, rowTagEnd)) {
 			yield { row, cells: [] }
 			rowCursor = rowTagEnd + 1
@@ -505,6 +525,14 @@ function rawNumAttr(rawAttrs: string, name: string): number | undefined {
 	if (value === undefined) return undefined
 	const parsed = Number(value)
 	return Number.isNaN(parsed) ? undefined : parsed
+}
+
+function rawBoolAttr(rawAttrs: string, name: string): boolean | undefined {
+	const value = rawAttr(rawAttrs, name)
+	if (value === undefined) return undefined
+	if (value === '1' || value.toLowerCase() === 'true') return true
+	if (value === '0' || value.toLowerCase() === 'false') return false
+	return undefined
 }
 
 function fastParseNonNegInt(s: string): number {
@@ -881,6 +909,19 @@ function parseSheetPr(ws: XmlNode, sheet: Sheet): void {
 		const indexed = numAttr(tc, 'indexed')
 		if (indexed !== undefined) color.indexed = indexed
 		sheet.tabColor = color as import('@ascend/core').SheetTabColor
+	}
+	const outlinePr = pr.outlinePr as XmlNode | undefined
+	if (outlinePr) {
+		const parsed: Record<string, boolean> = {}
+		const summaryBelow = readBoolAttribute(outlinePr, 'summaryBelow')
+		if (summaryBelow !== undefined) parsed.summaryBelow = summaryBelow
+		const summaryRight = readBoolAttribute(outlinePr, 'summaryRight')
+		if (summaryRight !== undefined) parsed.summaryRight = summaryRight
+		const applyStyles = readBoolAttribute(outlinePr, 'applyStyles')
+		if (applyStyles !== undefined) parsed.applyStyles = applyStyles
+		const showOutlineSymbols = readBoolAttribute(outlinePr, 'showOutlineSymbols')
+		if (showOutlineSymbols !== undefined) parsed.showOutlineSymbols = showOutlineSymbols
+		sheet.outlinePr = parsed as import('@ascend/core').SheetOutlinePr
 	}
 }
 

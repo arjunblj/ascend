@@ -89,6 +89,19 @@ export interface SheetColDef {
 	readonly customWidth?: boolean
 }
 
+export interface SheetRowDef {
+	readonly hidden?: boolean
+	readonly collapsed?: boolean
+	readonly outlineLevel?: number
+}
+
+export interface SheetOutlinePr {
+	readonly summaryBelow?: boolean
+	readonly summaryRight?: boolean
+	readonly applyStyles?: boolean
+	readonly showOutlineSymbols?: boolean
+}
+
 export interface SheetPreservedXml {
 	readonly partPath?: string
 	readonly xml?: string
@@ -208,12 +221,14 @@ export class Sheet {
 	colWidths: Map<number, number>
 	colDefs: SheetColDef[]
 	rowHeights: Map<number, number>
+	rowDefs: Map<number, SheetRowDef>
 	frozenRows: number
 	frozenCols: number
 	comments: Map<string, SheetComment>
 	hyperlinks: Map<string, SheetHyperlink>
 	ignoredErrors: SheetIgnoredError[]
 	tabColor: SheetTabColor | null
+	outlinePr: SheetOutlinePr | null
 	sheetFormatPr: SheetFormatPr | null
 	dataValidations: SheetDataValidation[]
 	conditionalFormats: SheetConditionalFormat[]
@@ -239,12 +254,14 @@ export class Sheet {
 		this.colWidths = new Map()
 		this.colDefs = []
 		this.rowHeights = new Map()
+		this.rowDefs = new Map()
 		this.frozenRows = 0
 		this.frozenCols = 0
 		this.comments = new Map()
 		this.hyperlinks = new Map()
 		this.ignoredErrors = []
 		this.tabColor = null
+		this.outlinePr = null
 		this.sheetFormatPr = null
 		this.dataValidations = []
 		this.conditionalFormats = []
@@ -267,6 +284,7 @@ export class Sheet {
 		this.colWidths = new Map(this.colWidths)
 		this.colDefs = this.colDefs.map((d) => ({ ...d }))
 		this.rowHeights = new Map(this.rowHeights)
+		this.rowDefs = new Map([...this.rowDefs.entries()].map(([row, def]) => [row, { ...def }]))
 		this.comments = new Map(this.comments)
 		this.hyperlinks = new Map(this.hyperlinks)
 		this.ignoredErrors = this.ignoredErrors.map((e) => ({ ...e }))
@@ -293,12 +311,14 @@ export class Sheet {
 		s.colWidths = this.colWidths
 		s.colDefs = this.colDefs
 		s.rowHeights = this.rowHeights
+		s.rowDefs = this.rowDefs
 		s.frozenRows = this.frozenRows
 		s.frozenCols = this.frozenCols
 		s.comments = this.comments
 		s.hyperlinks = this.hyperlinks
 		s.ignoredErrors = this.ignoredErrors
 		s.tabColor = this.tabColor
+		s.outlinePr = this.outlinePr
 		s.sheetFormatPr = this.sheetFormatPr
 		s.dataValidations = this.dataValidations
 		s.conditionalFormats = this.conditionalFormats

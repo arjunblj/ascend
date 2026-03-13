@@ -1335,6 +1335,32 @@ describe('writeXlsx', () => {
 		expect(s.sheetFormatPr).toEqual({ defaultRowHeight: 14.5, defaultColWidth: 10 })
 	})
 
+	it('preserves row and column outline metadata on round-trip', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Outline')
+		sheet.cells.set(0, 0, { value: stringValue('hi'), formula: null, styleId: S0 })
+		sheet.outlinePr = { summaryBelow: false, summaryRight: false, showOutlineSymbols: true }
+		sheet.sheetFormatPr = { outlineLevelRow: 1, outlineLevelCol: 2 }
+		sheet.rowDefs.set(1, { hidden: true, outlineLevel: 1 })
+		sheet.rowDefs.set(2, { collapsed: true })
+		sheet.colDefs.push({ min: 0, max: 0, hidden: true, outlineLevel: 2 })
+		sheet.colDefs.push({ min: 1, max: 1, collapsed: true })
+
+		const { result } = roundTrip(wb)
+		const s = result.workbook.sheets[0]
+		if (!s) throw new Error('Expected round-tripped workbook to contain a sheet')
+		expect(s.outlinePr).toEqual({
+			summaryBelow: false,
+			summaryRight: false,
+			showOutlineSymbols: true,
+		})
+		expect(s.sheetFormatPr).toEqual({ outlineLevelRow: 1, outlineLevelCol: 2 })
+		expect(s.rowDefs.get(1)).toEqual({ hidden: true, outlineLevel: 1 })
+		expect(s.rowDefs.get(2)).toEqual({ collapsed: true })
+		expect(s.colDefs).toContainEqual({ min: 0, max: 0, hidden: true, outlineLevel: 2 })
+		expect(s.colDefs).toContainEqual({ min: 1, max: 1, collapsed: true })
+	})
+
 	it('preserves extLst blocks through round-trip when present', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('ExtLst')

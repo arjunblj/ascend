@@ -35,10 +35,12 @@ export type {
 	SheetIgnoredError,
 	SheetImageAnchor,
 	SheetImageRef,
+	SheetOutlinePr,
 	SheetPageMargins,
 	SheetPageSetup,
 	SheetPrintOptions,
 	SheetProtection,
+	SheetRowDef,
 	SheetState,
 	SheetTabColor,
 } from './sheet.ts'

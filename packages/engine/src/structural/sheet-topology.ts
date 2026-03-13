@@ -20,12 +20,46 @@ export function shiftSheetCellMetadata(
 	rewriteHyperlinkLocationsForShift(sheet, axis, at, delta)
 	shiftRowOrColMap(sheet.rowHeights, axis === 'row', at, delta)
 	shiftRowOrColMap(sheet.colWidths, axis === 'col', at, delta)
+	shiftRowDefs(sheet, axis, at, delta)
+	shiftColDefs(sheet, axis, at, delta)
 	shiftSqrefEntries(sheet.dataValidations, axis, at, delta)
 	shiftConditionalFormats(sheet.conditionalFormats, axis, at, delta)
 	shiftIgnoredErrors(sheet.ignoredErrors, axis, at, delta)
 	shiftSheetAutoFilter(sheet, axis, at, delta)
 	shiftSheetTables(sheet, axis, at, delta)
 	rewriteSheetMetadataFormulasForShift(sheet, axis, at, delta)
+}
+
+function shiftRowDefs(sheet: Sheet, axis: 'row' | 'col', at: number, delta: number): void {
+	if (axis !== 'row' || sheet.rowDefs.size === 0) return
+	const entries = [...sheet.rowDefs.entries()]
+	sheet.rowDefs.clear()
+	for (const [index, value] of entries) {
+		const next = shiftIndex(index, at, delta)
+		if (next !== null) sheet.rowDefs.set(next, value)
+	}
+}
+
+function shiftColDefs(sheet: Sheet, axis: 'row' | 'col', at: number, delta: number): void {
+	if (axis !== 'col' || sheet.colDefs.length === 0) return
+	const shifted = sheet.colDefs
+		.map((def) => {
+			const ref = shiftRangeRef(
+				{ start: { row: 0, col: def.min }, end: { row: 0, col: def.max } },
+				'col',
+				at,
+				delta,
+			)
+			return ref
+				? {
+						...def,
+						min: ref.start.col,
+						max: ref.end.col,
+					}
+				: null
+		})
+		.filter((def): def is NonNullable<typeof def> => def !== null)
+	sheet.colDefs = shifted
 }
 
 export function renameHyperlinkLocation(

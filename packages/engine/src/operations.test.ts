@@ -272,6 +272,46 @@ describe('applyOperation', () => {
 		expect(sheet?.colDefs).toContainEqual({ min: 2, max: 2, hidden: true })
 	})
 
+	test('groupRows assigns outline metadata and collapsed boundary row', () => {
+		const wb = setup()
+		const result = applyOperation(wb, {
+			op: 'groupRows',
+			sheet: 'Sheet1',
+			from: 1,
+			to: 3,
+			collapsed: true,
+		})
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		const sheet = wb.getSheet('Sheet1')
+		expect(sheet?.outlinePr).toEqual({ summaryBelow: true })
+		expect(sheet?.rowDefs.get(1)).toEqual({ hidden: true, outlineLevel: 1 })
+		expect(sheet?.rowDefs.get(3)).toEqual({ hidden: true, outlineLevel: 1 })
+		expect(sheet?.rowDefs.get(4)).toEqual({ collapsed: true })
+		expect(sheet?.sheetFormatPr?.outlineLevelRow).toBe(1)
+	})
+
+	test('groupCols assigns outline metadata and collapsed boundary column', () => {
+		const wb = setup()
+		const result = applyOperation(wb, {
+			op: 'groupCols',
+			sheet: 'Sheet1',
+			from: 0,
+			to: 1,
+			collapsed: true,
+		})
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		const sheet = wb.getSheet('Sheet1')
+		expect(sheet?.outlinePr).toEqual({ summaryRight: true })
+		expect(sheet?.colDefs).toContainEqual({ min: 0, max: 0, hidden: true, outlineLevel: 1 })
+		expect(sheet?.colDefs).toContainEqual({ min: 1, max: 1, hidden: true, outlineLevel: 1 })
+		expect(sheet?.colDefs).toContainEqual({ min: 2, max: 2, collapsed: true })
+		expect(sheet?.sheetFormatPr?.outlineLevelCol).toBe(1)
+	})
+
 	test('addSheet creates a new sheet', () => {
 		const wb = setup()
 		const result = applyOperation(wb, { op: 'addSheet', name: 'Sheet2' })

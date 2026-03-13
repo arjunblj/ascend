@@ -99,7 +99,7 @@ function tryReuseFromCellAbove(
 	sheetIndex: number,
 	row: number,
 	col: number,
-	cell: { formula: string | null; formulaInfo?: { kind?: string } },
+	cell: { formula: string | null; formulaInfo?: { kind?: string } | undefined },
 	formulas: ReadonlyMap<CellKey, IndexedFormula>,
 ): FormulaNode | null {
 	if (row === 0) return null
@@ -203,12 +203,14 @@ export function cellHasFormula(
 	cell:
 		| {
 				formula: string | null
-				formulaInfo?: {
-					kind?: string
-					sharedIndex?: string
-					isMaster?: boolean
-					masterRef?: string
-				}
+				formulaInfo?:
+					| {
+							kind?: string
+							sharedIndex?: string
+							isMaster?: boolean
+							masterRef?: string
+					  }
+					| undefined
 		  }
 		| null
 		| undefined,
@@ -224,12 +226,14 @@ export function resolveCellFormulaText(
 	col: number,
 	cell: {
 		formula: string | null
-		formulaInfo?: {
-			kind?: string
-			sharedIndex?: string
-			isMaster?: boolean
-			masterRef?: string
-		}
+		formulaInfo?:
+			| {
+					kind?: string
+					sharedIndex?: string
+					isMaster?: boolean
+					masterRef?: string
+			  }
+			| undefined
 	},
 ): string | null {
 	if (cell.formula) return cell.formula
@@ -247,12 +251,14 @@ function parseIndexedFormula(
 	col: number,
 	cell: {
 		formula: string | null
-		formulaInfo?: {
-			kind?: string
-			sharedIndex?: string
-			isMaster?: boolean
-			masterRef?: string
-		}
+		formulaInfo?:
+			| {
+					kind?: string
+					sharedIndex?: string
+					isMaster?: boolean
+					masterRef?: string
+			  }
+			| undefined
 	},
 	sharedMasterCache: Map<string, FormulaNode>,
 ): ReturnType<typeof cachedParseFormula> {

@@ -1,40 +1,22 @@
-const YOUNG_POOL_LIMIT = 8_192
-const OLD_POOL_LIMIT = 32_768
-const PROMOTION_THRESHOLD = 3
-const youngPool = new Map<string, string>()
-const youngHits = new Map<string, number>()
-const oldPool = new Map<string, string>()
+const INTERN_LIMIT = 32_768
+const INTERN_EVICT = 4_096
+const internPool = new Map<string, string>()
 
 function internString(s: string): string {
-	const fromOld = oldPool.get(s)
-	if (fromOld !== undefined) return fromOld
-
-	const fromYoung = youngPool.get(s)
-	if (fromYoung !== undefined) {
-		const hits = (youngHits.get(s) ?? 0) + 1
-		youngHits.set(s, hits)
-		if (hits >= PROMOTION_THRESHOLD) {
-			youngPool.delete(s)
-			youngHits.delete(s)
-			if (oldPool.size >= OLD_POOL_LIMIT) {
-				const iter = oldPool.keys()
-				const quarter = OLD_POOL_LIMIT >> 2
-				for (let i = 0; i < quarter; i++) {
-					const k = iter.next().value
-					if (k !== undefined) oldPool.delete(k)
-				}
-			}
-			oldPool.set(s, s)
+	const hit = internPool.get(s)
+	if (hit !== undefined) {
+		internPool.delete(s)
+		internPool.set(s, hit)
+		return hit
+	}
+	if (internPool.size >= INTERN_LIMIT) {
+		const iter = internPool.keys()
+		for (let i = 0; i < INTERN_EVICT; i++) {
+			const k = iter.next().value
+			if (k !== undefined) internPool.delete(k)
 		}
-		return fromYoung
 	}
-
-	if (youngPool.size >= YOUNG_POOL_LIMIT) {
-		youngPool.clear()
-		youngHits.clear()
-	}
-	youngPool.set(s, s)
-	youngHits.set(s, 1)
+	internPool.set(s, s)
 	return s
 }
 
@@ -47,7 +29,7 @@ export interface Cell {
 	readonly value: CellValue
 	readonly formula: string | null
 	readonly styleId: StyleId
-	readonly formulaInfo?: CellFormulaBinding
+	readonly formulaInfo?: CellFormulaBinding | undefined
 }
 
 export interface SharedFormulaInfo {
@@ -760,19 +742,35 @@ function isMutableStoredCell(cell: StoredCell): boolean {
 function materializeCell(cell: StoredCell | undefined): Cell | undefined {
 	if (cell === undefined) return undefined
 	if (cell instanceof StyledNumberCell) {
-		return { value: numberValue(cell.value), formula: null, styleId: cell.styleId }
+		return {
+			value: numberValue(cell.value),
+			formula: null,
+			styleId: cell.styleId,
+			formulaInfo: undefined,
+		}
 	}
 	if (cell instanceof StyledStringCell) {
-		return { value: stringValue(cell.value), formula: null, styleId: cell.styleId }
+		return {
+			value: stringValue(cell.value),
+			formula: null,
+			styleId: cell.styleId,
+			formulaInfo: undefined,
+		}
 	}
 	if (cell instanceof StyledBooleanCell) {
-		return { value: booleanValue(cell.value), formula: null, styleId: cell.styleId }
+		return {
+			value: booleanValue(cell.value),
+			formula: null,
+			styleId: cell.styleId,
+			formulaInfo: undefined,
+		}
 	}
 	if (cell instanceof StyledSpecialScalarCell) {
 		return {
 			value: materializeScalarValue(cell.valueKind, cell.scalarValue),
 			formula: null,
 			styleId: cell.styleId,
+			formulaInfo: undefined,
 		}
 	}
 	if (cell instanceof FormulaScalarCell) {
@@ -780,7 +778,7 @@ function materializeCell(cell: StoredCell | undefined): Cell | undefined {
 			value: materializeScalarValue(cell.valueKind, cell.scalarValue),
 			formula: cell.formula,
 			styleId: cell.styleId,
-			...(cell.formulaInfo ? { formulaInfo: cell.formulaInfo } : {}),
+			formulaInfo: cell.formulaInfo,
 		}
 	}
 	if (cell instanceof HeapCell) {
@@ -788,17 +786,32 @@ function materializeCell(cell: StoredCell | undefined): Cell | undefined {
 			value: cell.value,
 			formula: cell.formula,
 			styleId: cell.styleId,
-			...(cell.formulaInfo ? { formulaInfo: cell.formulaInfo } : {}),
+			formulaInfo: cell.formulaInfo,
 		}
 	}
 	if (typeof cell === 'string')
-		return { value: stringValue(cell), formula: null, styleId: DEFAULT_STYLE_ID }
+		return {
+			value: stringValue(cell),
+			formula: null,
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: undefined,
+		}
 	if (typeof cell === 'number')
-		return { value: numberValue(cell), formula: null, styleId: DEFAULT_STYLE_ID }
+		return {
+			value: numberValue(cell),
+			formula: null,
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: undefined,
+		}
 	if (typeof cell === 'boolean') {
-		return { value: booleanValue(cell), formula: null, styleId: DEFAULT_STYLE_ID }
+		return {
+			value: booleanValue(cell),
+			formula: null,
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: undefined,
+		}
 	}
-	return { value: cell, formula: null, styleId: DEFAULT_STYLE_ID }
+	return { value: cell, formula: null, styleId: DEFAULT_STYLE_ID, formulaInfo: undefined }
 }
 
 function readStoredValue(cell: StoredCell | undefined): CellValue | undefined {

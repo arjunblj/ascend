@@ -8,7 +8,7 @@ interface BuildFormulaInfoInput {
 	readonly ref: string
 	readonly formula: string
 	readonly value: CellValue
-	readonly binding?: CellFormulaBinding
+	readonly binding?: CellFormulaBinding | undefined
 	readonly tokens: readonly Token[]
 	readonly ast?: FormulaNode
 	readonly normalizedFormula?: string

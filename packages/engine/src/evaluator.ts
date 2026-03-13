@@ -418,7 +418,10 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 		return errorValue('#VALUE!')
 	}
 
-	const args = argNodes.map((argNode) => resolveArg(argNode, ctx))
+	const args: EvalArg[] = new Array(argNodes.length)
+	for (let i = 0; i < argNodes.length; i++) {
+		args[i] = resolveArg(argNodes[i] as FormulaNode, ctx)
+	}
 	return def.evaluate(args, sharedFnCtx.update(ctx))
 }
 

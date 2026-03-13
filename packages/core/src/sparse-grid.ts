@@ -361,6 +361,8 @@ class DenseChunk implements GridChunk {
 
 export class SparseGrid {
 	private chunkRows = new Map<number, Map<number, GridChunk>>()
+	private sortedChunkRows: number[] | null = null
+	private readonly sortedChunkCols = new Map<number, number[]>()
 	private stringTable = new StringTable()
 	private _cellCount = 0
 	private _shared = false
@@ -394,11 +396,13 @@ export class SparseGrid {
 		if (!cols) {
 			cols = new Map()
 			this.chunkRows.set(chunkRow, cols)
+			this.sortedChunkRows = null
 		}
 		let chunk = cols.get(chunkCol)
 		if (!chunk) {
 			chunk = new SparseChunk()
 			cols.set(chunkCol, chunk)
+			this.sortedChunkCols.delete(chunkRow)
 		}
 		const existed = chunk.has(localIndex)
 		const nextChunk = chunk.setSlot(localIndex, slot)
@@ -418,7 +422,11 @@ export class SparseGrid {
 		this._cellCount--
 		if (chunk.count === 0) {
 			cols?.delete(chunkCol)
-			if (cols && cols.size === 0) this.chunkRows.delete(chunkRow)
+			this.sortedChunkCols.delete(chunkRow)
+			if (cols && cols.size === 0) {
+				this.chunkRows.delete(chunkRow)
+				this.sortedChunkRows = null
+			}
 		}
 		if (
 			row === this._minRow ||
@@ -551,11 +559,10 @@ export class SparseGrid {
 
 	*iterateRows(): Generator<readonly [number, readonly (readonly [number, Cell])[]]> {
 		if (this._cellCount === 0) return
-		const sortedChunkRows = [...this.chunkRows.keys()].sort((a, b) => a - b)
-		for (const chunkRow of sortedChunkRows) {
+		for (const chunkRow of this._getSortedChunkRows()) {
 			const cols = this.chunkRows.get(chunkRow)
 			if (!cols) continue
-			const sortedChunkCols = [...cols.keys()].sort((a, b) => a - b)
+			const sortedChunkCols = this._getSortedChunkCols(chunkRow, cols)
 			for (let localRow = 0; localRow < CHUNK_SIZE; localRow++) {
 				const row = (chunkRow << CHUNK_BITS) + localRow
 				const rowCells: Array<readonly [number, Cell]> = []
@@ -582,7 +589,7 @@ export class SparseGrid {
 		for (let chunkRow = startChunkRow; chunkRow <= endChunkRow; chunkRow++) {
 			const cols = this.chunkRows.get(chunkRow)
 			if (!cols) continue
-			const sortedChunkCols = [...cols.keys()].sort((a, b) => a - b)
+			const sortedChunkCols = this._getSortedChunkCols(chunkRow, cols)
 			const rowStart = chunkRow === startChunkRow ? range.start.row & CHUNK_MASK : 0
 			const rowEnd = chunkRow === endChunkRow ? range.end.row & CHUNK_MASK : CHUNK_MASK
 			for (let localRow = rowStart; localRow <= rowEnd; localRow++) {
@@ -614,6 +621,8 @@ export class SparseGrid {
 
 	clear(): void {
 		this.chunkRows = new Map()
+		this.sortedChunkRows = null
+		this.sortedChunkCols.clear()
 		this._cellCount = 0
 		this._shared = false
 		this._minRow = Number.POSITIVE_INFINITY
@@ -668,6 +677,8 @@ export class SparseGrid {
 				)
 			}
 			this.chunkRows = next.chunkRows
+			this.sortedChunkRows = null
+			this.sortedChunkCols.clear()
 			this.stringTable = next.stringTable
 			this._cellCount = next._cellCount
 			this._minRow = next._minRow
@@ -679,6 +690,8 @@ export class SparseGrid {
 			return
 		}
 		this.chunkRows = other.chunkRows
+		this.sortedChunkRows = null
+		this.sortedChunkCols.clear()
 		this.stringTable = other.stringTable
 		this._cellCount = other._cellCount
 		this._minRow = other._minRow
@@ -705,6 +718,8 @@ export class SparseGrid {
 			)
 		}
 		this.chunkRows = next.chunkRows
+		this.sortedChunkRows = null
+		this.sortedChunkCols.clear()
 		this._cellCount = next._cellCount
 		this._minRow = next._minRow
 		this._maxRow = next._maxRow
@@ -712,6 +727,24 @@ export class SparseGrid {
 		this._maxCol = next._maxCol
 		this._boundsDirty = next._boundsDirty
 		this._shared = false
+	}
+
+	private _getSortedChunkRows(): readonly number[] {
+		if (this.sortedChunkRows) return this.sortedChunkRows
+		const sorted = [...this.chunkRows.keys()].sort((a, b) => a - b)
+		this.sortedChunkRows = sorted
+		return sorted
+	}
+
+	private _getSortedChunkCols(
+		chunkRow: number,
+		cols: ReadonlyMap<number, GridChunk>,
+	): readonly number[] {
+		const cached = this.sortedChunkCols.get(chunkRow)
+		if (cached) return cached
+		const sorted = [...cols.keys()].sort((a, b) => a - b)
+		this.sortedChunkCols.set(chunkRow, sorted)
+		return sorted
 	}
 
 	private _getSlot(row: number, col: number): StoredSlot | undefined {
@@ -762,6 +795,8 @@ export class SparseGrid {
 			)
 		}
 		this.chunkRows = next.chunkRows
+		this.sortedChunkRows = null
+		this.sortedChunkCols.clear()
 		this._cellCount = next._cellCount
 		this._minRow = next._minRow
 		this._maxRow = next._maxRow

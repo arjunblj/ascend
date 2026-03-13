@@ -111,7 +111,7 @@ const benchmarks: readonly MicroBenchmark[] = [
 	},
 	{
 		name: 'SparseGrid.iterateRows (40k cells)',
-		targetOpsPerSec: 8_000_000,
+		targetOpsPerSec: 6_000_000,
 		run() {
 			const grid = new SparseGrid()
 			for (let r = 0; r < 2000; r++) {

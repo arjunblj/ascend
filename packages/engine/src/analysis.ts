@@ -34,6 +34,15 @@ export interface AnalyzedFormula {
 	readonly deps: readonly CellKey[]
 	readonly rangeDeps: readonly RangeDependency[]
 	readonly volatile: boolean
+	readonly growingRangeAggregate?:
+		| {
+				readonly functionName: 'SUM'
+				readonly previousKey: CellKey
+				readonly appendSheetIndex: number
+				readonly appendRow: number
+				readonly appendCol: number
+		  }
+		| undefined
 	readonly parseError?: string
 }
 
@@ -47,6 +56,15 @@ export interface IndexedFormula {
 	readonly ast?: FormulaNode
 	readonly refs: readonly FormulaRef[]
 	readonly volatile: boolean
+	readonly growingRangeAggregate?:
+		| {
+				readonly functionName: 'SUM'
+				readonly previousKey: CellKey
+				readonly appendSheetIndex: number
+				readonly appendRow: number
+				readonly appendCol: number
+		  }
+		| undefined
 	readonly parseError?: string
 }
 
@@ -136,6 +154,55 @@ function tryReuseFromCellAbove(
 	return rewritten
 }
 
+function tryDetectGrowingRangeAggregate(
+	sheetNameIndex: ReadonlyMap<string, number>,
+	current: {
+		sheetIndex: number
+		row: number
+		col: number
+		ast: FormulaNode
+	},
+	formulas: ReadonlyMap<CellKey, IndexedFormula>,
+): IndexedFormula['growingRangeAggregate'] {
+	if (current.ast.type !== 'function') return undefined
+	if (current.ast.name.toUpperCase() !== 'SUM') return undefined
+	if (current.ast.args.length !== 1) return undefined
+	const currentArg = current.ast.args[0]
+	if (!currentArg || currentArg.type !== 'rangeRef') return undefined
+	const currentRangeSheet =
+		currentArg.sheet === undefined
+			? current.sheetIndex
+			: resolveSheetIndex(sheetNameIndex, currentArg.sheet, current.sheetIndex)
+	if (currentRangeSheet < 0) return undefined
+
+	const previous = formulas.get(cellKey(current.sheetIndex, current.row - 1, current.col))
+	if (!previous?.ast || previous.ast.type !== 'function') return undefined
+	if (previous.ast.name.toUpperCase() !== 'SUM' || previous.ast.args.length !== 1) return undefined
+	const previousArg = previous.ast.args[0]
+	if (!previousArg || previousArg.type !== 'rangeRef') return undefined
+	const previousRangeSheet =
+		previousArg.sheet === undefined
+			? previous.sheetIndex
+			: resolveSheetIndex(sheetNameIndex, previousArg.sheet, previous.sheetIndex)
+	if (previousRangeSheet !== currentRangeSheet) return undefined
+	if (
+		currentArg.start.row !== previousArg.start.row ||
+		currentArg.start.col !== previousArg.start.col ||
+		currentArg.end.col !== previousArg.end.col ||
+		currentArg.end.row !== previousArg.end.row + 1
+	) {
+		return undefined
+	}
+
+	return {
+		functionName: 'SUM',
+		previousKey: previous.key,
+		appendSheetIndex: currentRangeSheet,
+		appendRow: currentArg.end.row,
+		appendCol: currentArg.end.col,
+	}
+}
+
 export function analyzeWorkbookFormulas(
 	workbook: Workbook,
 	options: AnalyzeWorkbookOptions = {},
@@ -198,6 +265,11 @@ export function analyzeWorkbookFormulas(
 					nameResolveCache,
 				)
 				const volatile = hasVolatileFunction(ast)
+				const growingRangeAggregate = tryDetectGrowingRangeAggregate(
+					sheetNameIndex,
+					{ sheetIndex, row, col, ast },
+					formulas,
+				)
 				formulas.set(key, {
 					key,
 					sheetIndex,
@@ -208,6 +280,7 @@ export function analyzeWorkbookFormulas(
 					ast,
 					refs,
 					volatile,
+					...(growingRangeAggregate ? { growingRangeAggregate } : {}),
 				})
 			}
 		}
@@ -747,6 +820,9 @@ export function resolveFormulaDependencies(
 		...formula,
 		deps,
 		rangeDeps,
+		...(formula.growingRangeAggregate
+			? { growingRangeAggregate: formula.growingRangeAggregate }
+			: {}),
 	}
 }
 

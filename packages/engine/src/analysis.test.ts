@@ -106,6 +106,25 @@ describe('analyzeWorkbook', () => {
 		expect(b3?.deps).toEqual([cellKey(0, 2, 0)])
 	})
 
+	test('detects growing SUM ranges for decomposition reuse', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		s.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		s.cells.set(0, 1, { value: EMPTY, formula: 'SUM(A1:A1)', styleId: sid })
+		s.cells.set(1, 1, { value: EMPTY, formula: 'SUM(A1:A2)', styleId: sid })
+
+		const analysis = analyzeWorkbook(wb)
+		const second = analysis.formulas.get(cellKey(0, 1, 1))
+		expect(second?.growingRangeAggregate).toEqual({
+			functionName: 'SUM',
+			previousKey: cellKey(0, 0, 1),
+			appendSheetIndex: 0,
+			appendRow: 1,
+			appendCol: 0,
+		})
+	})
+
 	test('expands 3D sheet-span references into dependencies across contiguous sheets', () => {
 		const wb = createWorkbook()
 		const s1 = wb.addSheet('Sheet1')

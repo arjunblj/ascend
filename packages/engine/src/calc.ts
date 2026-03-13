@@ -6,7 +6,7 @@ import {
 	type LookupVectorCache,
 } from '@ascend/formulas'
 import type { AscendError, CellValue } from '@ascend/schema'
-import { EMPTY, errorValue, topLeftScalar } from '@ascend/schema'
+import { EMPTY, errorValue, numberValue, topLeftScalar } from '@ascend/schema'
 import { analyzeWorkbook, getSharedFormulaGroups } from './analysis.ts'
 import type { CalcContext } from './calc-context.ts'
 import { codegenFormula } from './codegen.ts'
@@ -16,6 +16,7 @@ import {
 	type CellKey,
 	cellKey,
 	type DependencyGraph,
+	parseCellKey,
 	parseCellKeyInto,
 } from './dep-graph.ts'
 import {
@@ -41,6 +42,14 @@ interface SpillEntry {
 interface SpillIndexState {
 	readonly bySheet: Map<number, Map<string, SpillEntry[]>>
 	readonly initializedSheets: Set<number>
+}
+
+interface GrowingRangeAggregateOptimization {
+	readonly functionName: 'SUM'
+	readonly previousKey: CellKey
+	readonly appendSheetIndex: number
+	readonly appendRow: number
+	readonly appendCol: number
 }
 
 interface RecalcScratch {
@@ -94,6 +103,31 @@ function valuesEqual(a: CellValue, b: CellValue): boolean {
 		default:
 			return false
 	}
+}
+
+function tryEvaluateGrowingRangeAggregate(
+	workbook: Workbook,
+	optimization: GrowingRangeAggregateOptimization,
+	completedKeys: ReadonlySet<CellKey>,
+): CellValue | null {
+	if (optimization.functionName !== 'SUM') return null
+	if (!completedKeys.has(optimization.previousKey)) return null
+	const [prevSheetIndex, prevRow, prevCol] = parseCellKey(optimization.previousKey)
+	const previousValue = workbook.sheets[prevSheetIndex]?.cells.readValue(prevRow, prevCol)
+	if (!previousValue) return null
+	const previousScalar = topLeftScalar(previousValue)
+	if (previousScalar.kind === 'error') return previousScalar
+	if (previousScalar.kind !== 'number') return null
+	const appendValue = workbook.sheets[optimization.appendSheetIndex]?.cells.readValue(
+		optimization.appendRow,
+		optimization.appendCol,
+	)
+	if (!appendValue) return null
+	const appendScalar = topLeftScalar(appendValue)
+	if (appendScalar.kind === 'error') return appendScalar
+	if (appendScalar.kind === 'number') return numberValue(previousScalar.value + appendScalar.value)
+	if (appendScalar.kind === 'date') return numberValue(previousScalar.value + appendScalar.serial)
+	return numberValue(previousScalar.value)
 }
 
 function cellRefString(wb: Workbook, sheetIndex: number, row: number, col: number): string {
@@ -370,6 +404,7 @@ export function recalculate(
 	const cycleKeys = analysis.cycleKeys
 	const volatileKeys = new Set(graph.getVolatiles())
 	const mustEval: Set<CellKey> = new Set()
+	const growingRangeAggregates = new Map<CellKey, GrowingRangeAggregateOptimization>()
 	if (isDirtyRecalc) {
 		for (const seed of dirtySeeds) {
 			mustEval.add(seed)
@@ -397,6 +432,9 @@ export function recalculate(
 			}
 			asts.set(key, analyzed.ast)
 			formulaTexts.set(key, analyzed.formula)
+			if (analyzed.growingRangeAggregate) {
+				growingRangeAggregates.set(key, analyzed.growingRangeAggregate)
+			}
 		}
 	} else {
 		for (const analyzed of analysis.formulas.values()) {
@@ -413,6 +451,9 @@ export function recalculate(
 			}
 			asts.set(analyzed.key, analyzed.ast)
 			formulaTexts.set(analyzed.key, analyzed.formula)
+			if (analyzed.growingRangeAggregate) {
+				growingRangeAggregates.set(analyzed.key, analyzed.growingRangeAggregate)
+			}
 		}
 	}
 
@@ -442,6 +483,8 @@ export function recalculate(
 		const sharedGroups = getSharedFormulaGroups(workbook, analysis.formulas)
 		const cellToGroup = new Map<CellKey, string>()
 		let hasSharedFormulaGroups = false
+		const hasGrowingRangeAggregates = growingRangeAggregates.size > 0
+		const completedKeys = hasGrowingRangeAggregates ? new Set<CellKey>() : null
 		if (sharedGroups.size > 0) {
 			const evalOrderIndex = new Map<CellKey, number>()
 			let idx = 0
@@ -510,7 +553,13 @@ export function recalculate(
 			mutableCtx.sheetIndex = si
 			mutableCtx.row = row
 			mutableCtx.col = col
-			const newValue = evalFormula(key, formulaText, ast, mutableCtx)
+			const growingRangeAggregate =
+				!isDirtyRecalc && hasGrowingRangeAggregates ? growingRangeAggregates.get(key) : undefined
+			const newValue =
+				growingRangeAggregate && completedKeys
+					? (tryEvaluateGrowingRangeAggregate(workbook, growingRangeAggregate, completedKeys) ??
+						evalFormula(key, formulaText, ast, mutableCtx))
+					: evalFormula(key, formulaText, ast, mutableCtx)
 			const hadCell = sheet.cells.has(row, col)
 			const oldValue = sheet.cells.readValue(row, col)
 			const oldFormula = sheet.cells.readFormula(row, col) ?? null
@@ -550,6 +599,7 @@ export function recalculate(
 					}
 				}
 			}
+			completedKeys?.add(key)
 		}
 
 		if (!hasSharedFormulaGroups) {

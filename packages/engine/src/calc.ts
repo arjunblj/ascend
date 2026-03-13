@@ -109,9 +109,15 @@ function tryEvaluateGrowingRangeAggregate(
 	workbook: Workbook,
 	optimization: GrowingRangeAggregateOptimization,
 	completedKeys: ReadonlySet<CellKey>,
+	scheduledFormulaKeys: ReadonlySet<CellKey>,
 ): CellValue | null {
 	if (optimization.functionName !== 'SUM') return null
-	if (!completedKeys.has(optimization.previousKey)) return null
+	if (
+		!completedKeys.has(optimization.previousKey) &&
+		scheduledFormulaKeys.has(optimization.previousKey)
+	) {
+		return null
+	}
 	const [prevSheetIndex, prevRow, prevCol] = parseCellKey(optimization.previousKey)
 	const previousValue = workbook.sheets[prevSheetIndex]?.cells.readValue(prevRow, prevCol)
 	if (!previousValue) return null
@@ -485,6 +491,7 @@ export function recalculate(
 		let hasSharedFormulaGroups = false
 		const hasGrowingRangeAggregates = growingRangeAggregates.size > 0
 		const completedKeys = hasGrowingRangeAggregates ? new Set<CellKey>() : null
+		const scheduledFormulaKeys = hasGrowingRangeAggregates ? new Set(asts.keys()) : null
 		if (sharedGroups.size > 0) {
 			const evalOrderIndex = new Map<CellKey, number>()
 			let idx = 0
@@ -553,12 +560,17 @@ export function recalculate(
 			mutableCtx.sheetIndex = si
 			mutableCtx.row = row
 			mutableCtx.col = col
-			const growingRangeAggregate =
-				!isDirtyRecalc && hasGrowingRangeAggregates ? growingRangeAggregates.get(key) : undefined
+			const growingRangeAggregate = hasGrowingRangeAggregates
+				? growingRangeAggregates.get(key)
+				: undefined
 			const newValue =
-				growingRangeAggregate && completedKeys
-					? (tryEvaluateGrowingRangeAggregate(workbook, growingRangeAggregate, completedKeys) ??
-						evalFormula(key, formulaText, ast, mutableCtx))
+				growingRangeAggregate && completedKeys && scheduledFormulaKeys
+					? (tryEvaluateGrowingRangeAggregate(
+							workbook,
+							growingRangeAggregate,
+							completedKeys,
+							scheduledFormulaKeys,
+						) ?? evalFormula(key, formulaText, ast, mutableCtx))
 					: evalFormula(key, formulaText, ast, mutableCtx)
 			const hadCell = sheet.cells.has(row, col)
 			const oldValue = sheet.cells.readValue(row, col)

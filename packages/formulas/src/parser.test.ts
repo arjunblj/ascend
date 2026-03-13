@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from 'bun:test'
 import type { FormulaNode } from './ast.ts'
-import { parseFormula } from './parser.ts'
+import { parseFormula, parseFormulaOrThrow } from './parser.ts'
 import { printFormula } from './printer.ts'
 import { extractRefs, rewriteRefs } from './refs.ts'
 
@@ -15,6 +15,19 @@ describe('parse', () => {
 		expect(p('42')).toEqual({ type: 'number', value: 42 })
 		expect(p('3.14')).toEqual({ type: 'number', value: 3.14 })
 		expect(p('1.5E+3')).toEqual({ type: 'number', value: 1500 })
+	})
+
+	it('parseFormulaOrThrow returns AST for valid formulas', () => {
+		expect(parseFormulaOrThrow('1+2')).toEqual({
+			type: 'binary',
+			op: '+',
+			left: { type: 'number', value: 1 },
+			right: { type: 'number', value: 2 },
+		})
+	})
+
+	it('parseFormulaOrThrow throws parser errors directly', () => {
+		expect(() => parseFormulaOrThrow(')')).toThrow(/Unexpected token|Expected/)
 	})
 
 	it('parses string literals', () => {

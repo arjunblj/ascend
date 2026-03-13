@@ -94,7 +94,7 @@ class FormulaParser {
 		}
 	}
 
-	parse(): FormulaNode {
+	parseOrThrow(): FormulaNode {
 		const node = this.parseExpression()
 		this.skipWhitespace()
 		if (this.peek().type !== TokenType.EOF) {
@@ -505,8 +505,7 @@ class FormulaParser {
 
 export function parse(tokens: readonly Token[]): Result<FormulaNode> {
 	try {
-		const parser = new FormulaParser(tokens)
-		return ok(parser.parse())
+		return ok(parseOrThrow(tokens))
 	} catch (e) {
 		return err(ascendError('FORMULA_PARSE_ERROR', e instanceof Error ? e.message : String(e)))
 	}
@@ -514,6 +513,14 @@ export function parse(tokens: readonly Token[]): Result<FormulaNode> {
 
 export function parseFormula(formula: string): Result<FormulaNode> {
 	return parse(tokenize(formula))
+}
+
+export function parseOrThrow(tokens: readonly Token[]): FormulaNode {
+	return new FormulaParser(tokens).parseOrThrow()
+}
+
+export function parseFormulaOrThrow(formula: string): FormulaNode {
+	return parseOrThrow(tokenize(formula))
 }
 
 const PARSE_CACHE_LIMIT = 8192

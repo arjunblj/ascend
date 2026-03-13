@@ -22,16 +22,19 @@ Agent-native spreadsheet platform. TypeScript monorepo with Bun.
 ## Commands
 
 ```bash
-bun install                    # install deps
-bun test --recursive           # run all tests
-bunx biome check               # lint + format check
-bunx biome check --write       # auto-fix
-bunx tsc --build               # typecheck all packages
+bun install                                     # install deps
+bun test --recursive                            # run all tests
+bunx biome check                                # lint + format check
+bunx biome check --write                        # auto-fix
+bunx tsc --build                                # typecheck all packages
+bun bench                                       # all synthetic benchmarks
+bun bench --scenario <name> --repeat N --json   # single scenario, JSON output
+bun run fixtures/benchmarks/micro.ts            # microbenchmarks
 ```
 
 ## Conventions
 
-- Conventional commits: `feat(scope):`, `fix(scope):`, `test(scope):`, `chore:`, `ci:`, `docs:`
+- Conventional commits: `feat(scope):`, `fix(scope):`, `perf(scope):`, `test(scope):`, `chore:`, `ci:`, `docs:`
 - Scopes match package names: `schema`, `core`, `formulas`, `engine`, `io-xlsx`, `io-csv`, `verify`, `sdk`, `cli`, `api`, `mcp`
 - Plain TypeScript everywhere. No frameworks in the engine packages.
 - Prefer one production implementation over layered legacy/compatibility paths when changing behavior.
@@ -40,6 +43,17 @@ bunx tsc --build               # typecheck all packages
 - Tests encode behavior and edge cases, not implementation details.
 - Keep user-facing formula/read metadata symbolic and explainable; do not eagerly flatten advanced references if that would hide what the workbook actually contains.
 - For substantive work, keep code quality, performance, and maintainability moving together: prefer simpler designs, shared helpers, and validation via tests, typecheck, lint, and benchmarks.
+
+## Benchmarks
+
+Benchmark suite in `fixtures/benchmarks/`:
+
+- `run.ts` — 40+ synthetic scenarios (read, write, calc, workflow); `--scenario <name> --repeat N --json` for automation
+- `micro.ts` — microbenchmarks (SparseGrid, formula parse, compiled eval, dep-graph, styles)
+- `results.ts` — statistical helpers, Welch's t-test, suite comparison
+- `targets.ts` — throughput targets (read 1M/s, write 500K/s, calc 100K/s)
+
+For autonomous optimization loops, see `.cursor/skills/autooptimize/`.
 
 ## Package Dependencies
 

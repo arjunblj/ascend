@@ -222,18 +222,6 @@ export function analyzeWorkbookFormulas(
 	const formulas = new Map<CellKey, IndexedFormula>()
 	const sharedMasterCache = new Map<string, FormulaNode>()
 	const nameResolveCache = new Map<string, FormulaRef[]>()
-	const formulaSeenOnce = new Set<string>()
-	const formulaTemplateCache = new Map<
-		string,
-		| {
-				readonly ast: FormulaNode
-				readonly refs: readonly FormulaRef[]
-				readonly volatile: boolean
-		  }
-		| {
-				readonly parseError: string
-		  }
-	>()
 
 	for (let sheetIndex = 0; sheetIndex < workbook.sheets.length; sheetIndex++) {
 		const sheet = workbook.sheets[sheetIndex]
@@ -247,24 +235,19 @@ export function analyzeWorkbookFormulas(
 				const key = cellKey(sheetIndex, row, col)
 				const formulaText = resolveCellFormulaText(workbook, sheetIndex, row, col, cell)
 				let ast: FormulaNode
-				let refs: readonly FormulaRef[]
-				let volatile: boolean
 				const reused = tryReuseFromCellAbove(workbook, sheetIndex, row, col, cell, formulas)
 				if (reused) {
 					ast = reused
-					refs = extractRefsWithNames(
-						ast,
-						workbook,
-						sheetNameIndex,
-						sheetIndex,
-						[],
-						nameResolveCache,
-					)
-					volatile = hasVolatileFunction(ast)
 				} else {
-					const templateKey = `${sheetIndex}:${formulaText ?? cell.formula ?? ''}`
-					const cachedTemplate = formulaTemplateCache.get(templateKey)
-					if (cachedTemplate && 'parseError' in cachedTemplate) {
+					const parsed = parseIndexedFormula(
+						workbook,
+						sheetIndex,
+						row,
+						col,
+						cell,
+						sharedMasterCache,
+					)
+					if (!parsed.ok) {
 						formulas.set(key, {
 							key,
 							sheetIndex,
@@ -274,59 +257,21 @@ export function analyzeWorkbookFormulas(
 							formula: formulaText ?? cell.formula ?? '',
 							refs: [],
 							volatile: false,
-							parseError: cachedTemplate.parseError,
+							parseError: parsed.error.message,
 						})
 						continue
 					}
-					if (cachedTemplate && 'ast' in cachedTemplate) {
-						ast = cachedTemplate.ast
-						refs = cachedTemplate.refs
-						volatile = cachedTemplate.volatile
-					} else {
-						const parsed = parseIndexedFormula(
-							workbook,
-							sheetIndex,
-							row,
-							col,
-							cell,
-							sharedMasterCache,
-						)
-						if (!parsed.ok) {
-							if (formulaSeenOnce.has(templateKey)) {
-								formulaTemplateCache.set(templateKey, { parseError: parsed.error.message })
-							} else {
-								formulaSeenOnce.add(templateKey)
-							}
-							formulas.set(key, {
-								key,
-								sheetIndex,
-								sheetName: sheet.name,
-								row,
-								col,
-								formula: formulaText ?? cell.formula ?? '',
-								refs: [],
-								volatile: false,
-								parseError: parsed.error.message,
-							})
-							continue
-						}
-						ast = parsed.value
-						refs = extractRefsWithNames(
-							ast,
-							workbook,
-							sheetNameIndex,
-							sheetIndex,
-							[],
-							nameResolveCache,
-						)
-						volatile = hasVolatileFunction(ast)
-						if (formulaSeenOnce.has(templateKey)) {
-							formulaTemplateCache.set(templateKey, { ast, refs, volatile })
-						} else {
-							formulaSeenOnce.add(templateKey)
-						}
-					}
+					ast = parsed.value
 				}
+				const refs = extractRefsWithNames(
+					ast,
+					workbook,
+					sheetNameIndex,
+					sheetIndex,
+					[],
+					nameResolveCache,
+				)
+				const volatile = hasVolatileFunction(ast)
 				const growingRangeAggregate = tryDetectGrowingRangeAggregate(
 					sheetNameIndex,
 					{ sheetIndex, row, col, ast },

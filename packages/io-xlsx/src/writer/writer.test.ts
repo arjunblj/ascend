@@ -11,6 +11,13 @@ import { planWriteXlsx, writeXlsx } from './index.ts'
 
 const S0 = 0 as StyleId
 
+function expectOk<T, E extends { message: string }>(
+	result: { ok: true; value: T } | { ok: false; error: E },
+): asserts result is { ok: true; value: T } {
+	expect(result.ok).toBe(true)
+	if (!result.ok) throw new Error(result.error.message)
+}
+
 function roundTrip(wb: Workbook, capsules?: PreservationCapsule[]) {
 	const written = writeXlsx(wb, capsules)
 	if (!written.ok) throw new Error(`write failed: ${written.error.message}`)
@@ -95,16 +102,14 @@ describe('writeXlsx', () => {
 		})
 
 		const written = writeXlsx(wb)
-		expect(written.ok).toBe(true)
-		if (!written.ok) return
+		expectOk(written)
 
 		const zip = unzipSync(written.value)
 		const xml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
 		expect(xml).toContain('<f t="array" ref="A1:A2">SUM(B1:B2)</f>')
 
 		const reopened = readXlsx(written.value)
-		expect(reopened.ok).toBe(true)
-		if (!reopened.ok) return
+		expectOk(reopened)
 		expect(reopened.value.workbook.sheets[0]?.cells.get(0, 0)?.formulaInfo).toEqual({
 			kind: 'array',
 			ref: 'A1:A2',
@@ -132,8 +137,7 @@ describe('writeXlsx', () => {
 		})
 
 		const written = writeXlsx(wb)
-		expect(written.ok).toBe(true)
-		if (!written.ok) return
+		expectOk(written)
 
 		const zip = unzipSync(written.value)
 		const contentTypes = new TextDecoder().decode(zip['[Content_Types].xml'] ?? new Uint8Array())
@@ -156,8 +160,7 @@ describe('writeXlsx', () => {
 		expect(sheetXml).toContain('_xlfn.SINGLE(A1)')
 
 		const reopened = readXlsx(written.value)
-		expect(reopened.ok).toBe(true)
-		if (!reopened.ok) return
+		expectOk(reopened)
 		expect(reopened.value.workbook.sheets[0]?.cells.get(0, 0)?.formulaInfo).toEqual({
 			kind: 'dynamicArray',
 			metadataIndex: 1,
@@ -212,8 +215,7 @@ describe('writeXlsx', () => {
 		})
 
 		const source = readXlsx(sourceBytes)
-		expect(source.ok).toBe(true)
-		if (!source.ok) return
+		expectOk(source)
 
 		const sourceZip = unzipSync(sourceBytes)
 		const originalSharedStrings = new TextDecoder().decode(
@@ -228,15 +230,13 @@ describe('writeXlsx', () => {
 			dirtySheetNames: ['Data'],
 			sharedStringsDirty: false,
 		})
-		expect(written.ok).toBe(true)
-		if (!written.ok) return
+		expectOk(written)
 
 		const zip = unzipSync(written.value)
 		const sharedStrings = new TextDecoder().decode(zip['xl/sharedStrings.xml'] ?? new Uint8Array())
 		expect(sharedStrings).toBe(originalSharedStrings)
 		const reopened = readXlsx(written.value)
-		expect(reopened.ok).toBe(true)
-		if (!reopened.ok) return
+		expectOk(reopened)
 		expect(reopened.value.workbook.sheets[0]?.cells.get(0, 0)?.value).toEqual({
 			kind: 'string',
 			value: 'Hello',
@@ -288,14 +288,12 @@ describe('writeXlsx', () => {
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
 		})
 		const source = readXlsx(sourceBytes)
-		expect(source.ok).toBe(true)
-		if (!source.ok) return
+		expectOk(source)
 
 		const plan = planWriteXlsx(source.value.workbook, source.value.capsules, {
 			dirtySheetNames: ['Sheet1'],
 		})
-		expect(plan.ok).toBe(true)
-		if (!plan.ok) return
+		expectOk(plan)
 
 		const workbookPart = plan.value.descriptors.find((entry) => entry.path === 'xl/workbook.xml')
 		const stylesPart = plan.value.descriptors.find((entry) => entry.path === 'xl/styles.xml')
@@ -380,20 +378,17 @@ describe('writeXlsx', () => {
 		})
 
 		const source = readXlsx(sourceBytes)
-		expect(source.ok).toBe(true)
-		if (!source.ok) return
+		expectOk(source)
 
 		const applied = applyOperations(source.value.workbook, [
 			{ op: 'setNumberFormat', sheet: 'Sheet1', range: 'A1:A1', format: '0.0%' },
 		])
-		expect(applied.ok).toBe(true)
-		if (!applied.ok) return
+		expectOk(applied)
 
 		const written = writeXlsx(source.value.workbook, source.value.capsules, {
 			dirtySheetNames: ['Sheet1'],
 		})
-		expect(written.ok).toBe(true)
-		if (!written.ok) return
+		expectOk(written)
 
 		const zip = unzipSync(written.value)
 		const stylesXml = new TextDecoder().decode(zip['xl/styles.xml'] ?? new Uint8Array())
@@ -404,8 +399,7 @@ describe('writeXlsx', () => {
 		expect(stylesXml).toContain('applyNumberFormat="1"')
 
 		const reopened = readXlsx(written.value)
-		expect(reopened.ok).toBe(true)
-		if (!reopened.ok) return
+		expectOk(reopened)
 		const cell = reopened.value.workbook.sheets[0]?.cells.get(0, 0)
 		const style = reopened.value.workbook.styles.get(cell?.styleId ?? (0 as StyleId))
 		expect(style?.numberFormat).toBe('0.0%')
@@ -1120,8 +1114,7 @@ describe('writeXlsx', () => {
 		wb.addSheet('Empty')
 
 		const written = writeXlsx(wb)
-		expect(written.ok).toBe(true)
-		if (!written.ok) return
+		expectOk(written)
 
 		const entries = unzipSync(written.value)
 		expect(entries['[Content_Types].xml']).toBeDefined()
@@ -1151,8 +1144,7 @@ describe('writeXlsx', () => {
 		}
 
 		const written = writeXlsx(wb)
-		expect(written.ok).toBe(true)
-		if (!written.ok) return
+		expectOk(written)
 
 		const fingerprint = fingerprintXlsx(written.value)
 		expect(fingerprint.partPaths).toEqual([
@@ -1246,21 +1238,18 @@ describe('writeXlsx', () => {
 		})
 
 		const source = readXlsx(sourceBytes)
-		expect(source.ok).toBe(true)
-		if (!source.ok) return
+		expectOk(source)
 
 		const applied = applyOperations(source.value.workbook, [
 			{ op: 'setCells', sheet: 'Calc', updates: [{ ref: 'A1', value: 3 }] },
 		])
-		expect(applied.ok).toBe(true)
-		if (!applied.ok) return
+		expectOk(applied)
 
 		const written = writeXlsx(source.value.workbook, source.value.capsules, {
 			dirtySheetNames: ['Calc'],
 			calcStateDirty: true,
 		})
-		expect(written.ok).toBe(true)
-		if (!written.ok) return
+		expectOk(written)
 
 		const zip = unzipSync(written.value)
 		const workbookXml = new TextDecoder().decode(zip['xl/workbook.xml'] ?? new Uint8Array())
@@ -1304,12 +1293,10 @@ describe('writeXlsx', () => {
 		})
 
 		const source = readXlsx(sourceBytes)
-		expect(source.ok).toBe(true)
-		if (!source.ok) return
+		expectOk(source)
 
 		const written = writeXlsx(source.value.workbook, source.value.capsules)
-		expect(written.ok).toBe(true)
-		if (!written.ok) return
+		expectOk(written)
 
 		const zip = unzipSync(written.value)
 		const workbookXml = new TextDecoder().decode(zip['xl/workbook.xml'] ?? new Uint8Array())

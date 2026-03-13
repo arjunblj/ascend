@@ -7,6 +7,23 @@ import { readXlsxRowsStream } from './stream.ts'
 
 const S0 = 0 as StyleId
 
+function expectOk<T, E extends { message: string }>(
+	result: { ok: true; value: T } | { ok: false; error: E },
+): asserts result is { ok: true; value: T } {
+	expect(result.ok).toBe(true)
+	if (!result.ok) throw new Error(result.error.message)
+}
+
+function expectErr<T, E>(
+	result: { ok: true; value: T } | { ok: false; error: E },
+): asserts result is {
+	ok: false
+	error: E
+} {
+	expect(result.ok).toBe(false)
+	if (result.ok) throw new Error('Expected readXlsx to fail')
+}
+
 function makeXlsx(parts: Record<string, string>): Uint8Array {
 	const entries: Record<string, Uint8Array> = {}
 	for (const [path, content] of Object.entries(parts)) {
@@ -81,8 +98,7 @@ function minimalXlsx(): Uint8Array {
 describe('readXlsx', () => {
 	it('parses a minimal XLSX with correct sheet and cell data', () => {
 		const result = readXlsx(minimalXlsx())
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		const { workbook, report } = result.value
 
@@ -118,8 +134,7 @@ describe('readXlsx', () => {
 
 	it('streams worksheet rows through the async reader path', async () => {
 		const result = await readXlsxRowsStream(minimalXlsx(), { sheet: 'Data', mode: 'formula' })
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 		const rows: StreamedSheetRow[] = []
 		for await (const row of result.value) rows.push(row)
 		expect(rows).toEqual([
@@ -143,8 +158,7 @@ describe('readXlsx', () => {
 
 	it('parses merge cells', () => {
 		const result = readXlsx(minimalXlsx())
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		const sheet = result.value.workbook.sheets[0]
 		expect(sheet).toBeDefined()
@@ -159,16 +173,14 @@ describe('readXlsx', () => {
 	it('returns error for invalid ZIP data', () => {
 		const garbage = new Uint8Array([1, 2, 3, 4, 5])
 		const result = readXlsx(garbage)
-		expect(result.ok).toBe(false)
-		if (result.ok) return
+		expectErr(result)
 		expect(result.error.code).toBe('CORRUPT_FILE')
 	})
 
 	it('returns error for ZIP missing required parts', () => {
 		const empty = makeXlsx({ 'dummy.txt': 'nothing' })
 		const result = readXlsx(empty)
-		expect(result.ok).toBe(false)
-		if (result.ok) return
+		expectErr(result)
 		expect(result.error.code).toBe('CORRUPT_FILE')
 	})
 
@@ -190,8 +202,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes)
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		const cell = result.value.workbook.sheets[0]?.cells.get(0, 0)
 		expect(cell?.value).toEqual({ kind: 'number', value: 99 })
@@ -223,8 +234,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes)
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		const sheet = result.value.workbook.sheets[0]
 		expect(sheet?.cells.get(0, 0)?.value).toEqual({ kind: 'string', value: 'Hello' })
@@ -237,8 +247,7 @@ describe('readXlsx', () => {
 
 	it('captures shared strings as a preserved workbook part', () => {
 		const result = readXlsx(minimalXlsx())
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(result.value.workbook.preservedSharedStrings).toEqual({
 			path: 'xl/sharedStrings.xml',
@@ -267,8 +276,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes)
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(result.value.workbook.sheets[0]?.cells.get(0, 0)?.value).toEqual({
 			kind: 'richText',
@@ -299,8 +307,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes)
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(result.value.workbook.sheets[0]?.cells.get(0, 0)?.value).toEqual({
 			kind: 'string',
@@ -328,8 +335,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes)
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		const cell = result.value.workbook.sheets[0]?.cells.get(0, 0)
 		expect(cell?.value).toEqual({ kind: 'error', value: '#DIV/0!' })
@@ -355,8 +361,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes)
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(result.value.workbook.definedNames.get('Total')).toBe('Data!$A$1')
 	})
@@ -380,8 +385,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes)
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(result.value.workbook.definedNames.get('Escaped')).toBe('Data!$A$1&"x"')
 	})
@@ -419,8 +423,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes)
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		const summary = result.value.workbook.getSheet('Summary')
 		expect(summary).toBeDefined()
@@ -447,8 +450,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes)
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		const cell = result.value.workbook.sheets[0]?.cells.get(0, 0)
 		expect(cell?.formula).toBe('SUM(B1:B2)')
@@ -480,8 +482,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes)
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(
 			result.value.report.features.find((feature) => feature.feature === 'sharedFormula'),
@@ -547,8 +548,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes)
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		const sheet = result.value.workbook.sheets[0]
 		expect(sheet?.cells.get(0, 0)?.formula).toBe('SEQUENCE(3)')
@@ -608,8 +608,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes)
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		const sheet = result.value.workbook.sheets[0]
 		expect(sheet?.tables).toHaveLength(1)
@@ -664,8 +663,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes)
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 		expect(result.value.workbook.sheets[0]?.autoFilter).toEqual({
 			ref: 'A1:B10',
 			columns: [
@@ -708,8 +706,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes)
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(
 			result.value.report.features.some((feature) => feature.feature === 'formulaFreshness'),
@@ -769,8 +766,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes)
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(result.value.workbook.pivotTables).toEqual([
 			{
@@ -825,8 +821,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes)
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(result.value.workbook.slicerCaches).toEqual([
 			{
@@ -881,8 +876,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes)
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(result.value.workbook.workbookProperties).toEqual({
 			date1904: true,
@@ -915,8 +909,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes)
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(result.value.workbook.workbookProtection).toEqual({
 			lockStructure: true,
@@ -980,8 +973,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes, { mode: 'full' })
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(result.value.workbook.themeMetadata).toEqual({
 			name: 'Office Twist',
@@ -1035,8 +1027,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes)
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		const sheet = result.value.workbook.sheets[0]
 		expect(sheet?.frozenRows).toBe(1)
@@ -1106,8 +1097,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes)
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 		expect(result.value.workbook.sheets[0]?.drawingRefs).toEqual({
 			hasDrawing: true,
 			hasLegacyDrawing: true,
@@ -1160,8 +1150,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes)
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 		expect(result.value.workbook.sheets[0]?.imageRefs).toEqual([
 			{
 				drawingPartPath: 'xl/drawings/drawing1.xml',
@@ -1215,8 +1204,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes)
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 		expect(result.value.workbook.sheets[0]?.comments.get('B2')).toEqual({
 			text: 'Hello',
 			author: 'Ada',
@@ -1255,8 +1243,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes)
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(result.value.workbook.styleMetadata).toEqual({
 			numFmtCount: 1,
@@ -1313,8 +1300,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes)
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		const sheet = result.value.workbook.sheets[0]
 		expect(sheet?.conditionalFormats).toEqual([
@@ -1355,8 +1341,7 @@ describe('readXlsx', () => {
 
 	it('supports metadata-only reads without parsing sheet cells', () => {
 		const result = readXlsx(minimalXlsx(), { mode: 'metadata-only' })
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(result.value.workbook.sheets).toHaveLength(1)
 		const sheet = result.value.workbook.sheets[0]
@@ -1391,8 +1376,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes, { mode: 'values' })
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		const sheet = result.value.workbook.sheets[0]
 		expect(sheet?.cells.get(0, 0)?.value).toEqual({ kind: 'number', value: 7 })
@@ -1430,8 +1414,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes, { mode: 'values' })
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		const sheet = result.value.workbook.sheets[0]
 		expect(sheet?.frozenRows).toBe(2)
@@ -1478,8 +1461,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes, { mode: 'values' })
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(result.value.workbook.sheets[0]?.cells.get(0, 0)?.value).toEqual({
 			kind: 'date',
@@ -1522,8 +1504,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes, { sheets: ['Archive'] })
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(result.value.workbook.sheets).toHaveLength(1)
 		expect(result.value.workbook.sheets[0]?.name).toBe('Archive')
@@ -1554,8 +1535,7 @@ describe('readXlsx', () => {
 		})
 
 		const result = readXlsx(bytes)
-		expect(result.ok).toBe(true)
-		if (!result.ok) return
+		expectOk(result)
 
 		expect(result.value.report.status).toBe('has-preserved')
 		expect(

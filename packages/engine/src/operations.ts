@@ -333,7 +333,7 @@ function handleTransferRange(
 				entry.cell.value,
 				formula,
 				entry.cell.styleId,
-				formula !== null ? undefined : existingTarget,
+				formula !== null ? undefined : existingTarget?.formulaInfo,
 			),
 		)
 		affected.push(toA1({ row: targetRow, col: targetCol }))
@@ -441,7 +441,7 @@ function handleAppendRows(
 						inputToCellValue(provided, workbook.calcSettings.dateSystem),
 						existing?.formula ?? null,
 						existing?.styleId ?? DEFAULT_SID,
-						existing,
+						existing?.formulaInfo,
 					),
 				)
 			} else {
@@ -772,7 +772,7 @@ function handleClearRange(
 					sheet.cells.set(
 						r,
 						c,
-						cellWithExisting(EMPTY, existing.formula, existing.styleId, existing),
+						cellWithExisting(EMPTY, existing.formula, existing.styleId, existing.formulaInfo),
 					)
 					break
 				case 'formulas':

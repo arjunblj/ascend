@@ -20,9 +20,51 @@ export interface CheckIssue {
 	readonly severity: 'error' | 'warning' | 'info'
 	readonly message: string
 	readonly refs?: readonly string[]
+	readonly suggestedFix?: string
 }
 
-function checkBrokenRefs(_wb: Workbook, analysis: WorkbookFormulaAnalysis): CheckIssue[] {
+function levenshtein(a: string, b: string): number {
+	const m = a.length
+	const n = b.length
+	let prev = new Array<number>(n + 1)
+	let curr = new Array<number>(n + 1)
+	for (let j = 0; j <= n; j++) prev[j] = j
+	for (let i = 1; i <= m; i++) {
+		curr[0] = i
+		for (let j = 1; j <= n; j++) {
+			curr[j] =
+				a[i - 1] === b[j - 1]
+					? (prev[j - 1] ?? 0)
+					: 1 + Math.min(prev[j] ?? i, curr[j - 1] ?? j, prev[j - 1] ?? Math.max(i, j))
+		}
+		;[prev, curr] = [curr, prev]
+	}
+	return prev[n] ?? 0
+}
+
+function findClosestSheetName(target: string, sheetNames: readonly string[]): string | null {
+	if (sheetNames.length === 0) return null
+	let best: string | null = null
+	let bestDist = Number.POSITIVE_INFINITY
+	const targetLower = target.toLowerCase()
+	for (const name of sheetNames) {
+		const dist = levenshtein(targetLower, name.toLowerCase())
+		if (dist < bestDist) {
+			bestDist = dist
+			best = name
+		}
+	}
+	if (best !== null && bestDist <= Math.max(target.length, best.length) * 0.5) {
+		return best
+	}
+	return null
+}
+
+function checkBrokenRefs(
+	_wb: Workbook,
+	analysis: WorkbookFormulaAnalysis,
+	sheetNames: readonly string[],
+): CheckIssue[] {
 	const issues: CheckIssue[] = []
 
 	for (const formula of analysis.formulas.values()) {
@@ -33,19 +75,23 @@ function checkBrokenRefs(_wb: Workbook, analysis: WorkbookFormulaAnalysis): Chec
 				const start = analysis.sheetNameIndex.get(ref.startSheet.toLowerCase())
 				const end = analysis.sheetNameIndex.get(ref.endSheet.toLowerCase())
 				if (start === undefined) {
+					const closest = findClosestSheetName(ref.startSheet, sheetNames)
 					issues.push({
 						rule: 'broken-refs',
 						severity: 'error',
 						message: `Reference to non-existent sheet "${ref.startSheet}"`,
 						refs: [cellAddr],
+						...(closest ? { suggestedFix: `Did you mean sheet "${closest}"?` } : {}),
 					})
 				}
 				if (end === undefined) {
+					const closest = findClosestSheetName(ref.endSheet, sheetNames)
 					issues.push({
 						rule: 'broken-refs',
 						severity: 'error',
 						message: `Reference to non-existent sheet "${ref.endSheet}"`,
 						refs: [cellAddr],
+						...(closest ? { suggestedFix: `Did you mean sheet "${closest}"?` } : {}),
 					})
 				}
 				if (start !== undefined && end !== undefined && start > end) {
@@ -60,11 +106,37 @@ function checkBrokenRefs(_wb: Workbook, analysis: WorkbookFormulaAnalysis): Chec
 			}
 			if (ref.sheet?.startsWith('[')) continue
 			if (ref.sheet && !analysis.sheetNameIndex.has(ref.sheet.toLowerCase())) {
+				const closest = findClosestSheetName(ref.sheet, sheetNames)
 				issues.push({
 					rule: 'broken-refs',
 					severity: 'error',
 					message: `Reference to non-existent sheet "${ref.sheet}"`,
 					refs: [cellAddr],
+					...(closest ? { suggestedFix: `Did you mean sheet "${closest}"?` } : {}),
+				})
+			}
+		}
+	}
+
+	return issues
+}
+
+function checkExternalRefs(analysis: WorkbookFormulaAnalysis): CheckIssue[] {
+	const issues: CheckIssue[] = []
+
+	for (const formula of analysis.formulas.values()) {
+		if (!formula.ast) continue
+		const cellAddr = `${formula.sheetName}!${toA1({ row: formula.row, col: formula.col })}`
+		for (const ref of formula.refs) {
+			if (ref.kind === 'sheetSpan') continue
+			if (ref.sheet?.startsWith('[')) {
+				issues.push({
+					rule: 'external-refs',
+					severity: 'warning',
+					message: `External workbook reference: ${ref.sheet}`,
+					refs: [cellAddr],
+					suggestedFix:
+						'Replace external reference with a local copy of the data or a defined name',
 				})
 			}
 		}
@@ -86,8 +158,22 @@ function checkCircularRefs(wb: Workbook, analysis: WorkbookDependencyAnalysis): 
 			severity: 'error' as const,
 			message: `Circular reference detected involving ${refs.length} cell(s)`,
 			refs,
+			suggestedFix: `Break the cycle by removing one of the references: ${refs.join(' → ')} → ${refs[0]}`,
 		}
 	})
+}
+
+function suggestedFixForError(errorType: string): string | null {
+	switch (errorType) {
+		case '#REF!':
+			return 'Check that all referenced cells and ranges still exist; a row, column, or sheet may have been deleted'
+		case '#NAME?':
+			return 'Check for misspelled function names or undefined named ranges'
+		case '#DIV/0!':
+			return 'Add a check for zero before dividing (e.g. IF(B1=0, 0, A1/B1))'
+		default:
+			return null
+	}
 }
 
 function checkFormulaErrors(wb: Workbook, analysis: WorkbookFormulaAnalysis): CheckIssue[] {
@@ -98,11 +184,14 @@ function checkFormulaErrors(wb: Workbook, analysis: WorkbookFormulaAnalysis): Ch
 		const cell = sheet?.cells.get(formula.row, formula.col)
 		if (!sheet || !cell || !cellHasFormula(cell)) continue
 		if (isError(cell.value)) {
+			const errorType = cell.value.value
+			const fix = suggestedFixForError(errorType)
 			issues.push({
 				rule: 'formula-errors',
 				severity: 'warning',
-				message: `Formula evaluates to ${cell.value.value}`,
+				message: `Formula evaluates to ${errorType}`,
 				refs: [`${sheet.name}!${toA1({ row: formula.row, col: formula.col })}`],
+				...(fix ? { suggestedFix: fix } : {}),
 			})
 		}
 	}
@@ -113,6 +202,7 @@ function checkFormulaErrors(wb: Workbook, analysis: WorkbookFormulaAnalysis): Ch
 function checkOrphanedNames(wb: Workbook): CheckIssue[] {
 	const issues: CheckIssue[] = []
 	const sheetNames = new Set(wb.sheets.map((s) => s.name.toLowerCase()))
+	const sheetNameList = wb.sheets.map((s) => s.name)
 
 	for (const entry of wb.definedNames.list()) {
 		const name = entry.name
@@ -121,11 +211,13 @@ function checkOrphanedNames(wb: Workbook): CheckIssue[] {
 		if (bang !== -1) {
 			const sheetPart = ref.substring(0, bang).replace(/^'|'$/g, '')
 			if (!sheetNames.has(sheetPart.toLowerCase())) {
+				const closest = findClosestSheetName(sheetPart, sheetNameList)
 				issues.push({
 					rule: 'orphaned-names',
 					severity: 'warning',
 					message: `Defined name "${name}" references non-existent sheet "${sheetPart}"`,
 					refs: [ref],
+					...(closest ? { suggestedFix: `Did you mean sheet "${closest}"?` } : {}),
 				})
 			}
 		}
@@ -164,8 +256,10 @@ export function check(
 ): CheckResult {
 	const formulas = analysis?.formulas ?? analyzeWorkbookFormulas(workbook)
 	const dependencies = analysis?.dependencies ?? analyzeWorkbookDependencies(workbook)
+	const sheetNames = workbook.sheets.map((s) => s.name)
 	const issues = [
-		...checkBrokenRefs(workbook, formulas),
+		...checkBrokenRefs(workbook, formulas, sheetNames),
+		...checkExternalRefs(formulas),
 		...checkCircularRefs(workbook, dependencies),
 		...checkFormulaErrors(workbook, formulas),
 		...checkOrphanedNames(workbook),

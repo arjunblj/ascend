@@ -54,6 +54,7 @@ function borderKey(b: BorderStyle | undefined): string {
 }
 
 import { escapeXml } from '../xml.ts'
+import { ChunkedStringBuilder } from './chunked-string-builder.ts'
 
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
@@ -170,43 +171,45 @@ export function buildStylesXml(
 		xfEntries.push(entry)
 	}
 
-	const parts: string[] = [XML_HEADER, `<styleSheet xmlns="${NS}">`]
+	const out = new ChunkedStringBuilder()
+	out.push(XML_HEADER)
+	out.push(`<styleSheet xmlns="${NS}">`)
 
 	if (customNumFmts.size > 0) {
-		parts.push(`<numFmts count="${customNumFmts.size}">`)
+		out.push(`<numFmts count="${customNumFmts.size}">`)
 		for (const [code, id] of customNumFmts) {
-			parts.push(`<numFmt numFmtId="${id}" formatCode="${escapeXml(code)}"/>`)
+			out.push(`<numFmt numFmtId="${id}" formatCode="${escapeXml(code)}"/>`)
 		}
-		parts.push('</numFmts>')
+		out.push('</numFmts>')
 	}
 
-	parts.push(`<fonts count="${fonts.length}">`)
-	for (const font of fonts) parts.push(fontXml(font))
-	parts.push('</fonts>')
+	out.push(`<fonts count="${fonts.length}">`)
+	for (const font of fonts) pushFontXml(out, font)
+	out.push('</fonts>')
 
-	parts.push(`<fills count="${fills.length}">`)
-	for (const fill of fills) parts.push(fillXml(fill))
-	parts.push('</fills>')
+	out.push(`<fills count="${fills.length}">`)
+	for (const fill of fills) pushFillXml(out, fill)
+	out.push('</fills>')
 
-	parts.push(`<borders count="${borders.length}">`)
-	for (const border of borders) parts.push(borderXml(border))
-	parts.push('</borders>')
+	out.push(`<borders count="${borders.length}">`)
+	for (const border of borders) pushBorderXml(out, border)
+	out.push('</borders>')
 
-	parts.push(`<cellXfs count="${xfEntries.length}">`)
-	for (const xf of xfEntries) parts.push(xfXml(xf))
-	parts.push('</cellXfs>')
+	out.push(`<cellXfs count="${xfEntries.length}">`)
+	for (const xf of xfEntries) pushXfXml(out, xf)
+	out.push('</cellXfs>')
 
 	if (differentialStyles.length > 0) {
-		parts.push(`<dxfs count="${differentialStyles.length}">`)
+		out.push(`<dxfs count="${differentialStyles.length}">`)
 		for (const style of differentialStyles) {
-			parts.push(dxfXml(style))
+			pushDxfXml(out, style)
 		}
-		parts.push('</dxfs>')
+		out.push('</dxfs>')
 	}
 
-	parts.push('</styleSheet>')
+	out.push('</styleSheet>')
 
-	return { xml: parts.join(''), xfMap }
+	return { xml: out.toString(), xfMap }
 }
 
 function lookupOrAdd<T extends object>(
@@ -372,48 +375,48 @@ function decodeXmlAttr(value: string): string {
 		.replace(/&amp;/g, '&')
 }
 
-function fontXml(font: FontStyle): string {
-	const parts: string[] = ['<font>']
-	if (font.bold) parts.push('<b/>')
-	if (font.italic) parts.push('<i/>')
-	if (font.strikethrough) parts.push('<strike/>')
+function pushFontXml(out: ChunkedStringBuilder, font: FontStyle): void {
+	out.push('<font>')
+	if (font.bold) out.push('<b/>')
+	if (font.italic) out.push('<i/>')
+	if (font.strikethrough) out.push('<strike/>')
 	if (font.underline !== undefined) {
-		if (font.underline === 'double') parts.push('<u val="double"/>')
-		else if (font.underline === 'single') parts.push('<u val="single"/>')
-		else if (font.underline) parts.push('<u/>')
+		if (font.underline === 'double') out.push('<u val="double"/>')
+		else if (font.underline === 'single') out.push('<u val="single"/>')
+		else if (font.underline) out.push('<u/>')
 	}
-	if (font.size !== undefined) parts.push(`<sz val="${font.size}"/>`)
-	if (font.color) parts.push(colorXml(font.color, 'color'))
-	if (font.name) parts.push(`<name val="${escapeXml(font.name)}"/>`)
-	parts.push('</font>')
-	return parts.join('')
+	if (font.size !== undefined) out.push(`<sz val="${font.size}"/>`)
+	if (font.color) out.push(colorXml(font.color, 'color'))
+	if (font.name) out.push(`<name val="${escapeXml(font.name)}"/>`)
+	out.push('</font>')
 }
 
-function fillXml(fill: FillStyle): string {
+function pushFillXml(out: ChunkedStringBuilder, fill: FillStyle): void {
 	const pattern = fill.pattern ?? 'none'
 	if (!fill.fgColor && !fill.bgColor) {
-		return `<fill><patternFill patternType="${pattern}"/></fill>`
+		out.push(`<fill><patternFill patternType="${pattern}"/></fill>`)
+		return
 	}
-	const parts: string[] = ['<fill>', `<patternFill patternType="${pattern}">`]
-	if (fill.fgColor) parts.push(colorXml(fill.fgColor, 'fgColor'))
-	if (fill.bgColor) parts.push(colorXml(fill.bgColor, 'bgColor'))
-	parts.push('</patternFill>', '</fill>')
-	return parts.join('')
+	out.push('<fill>')
+	out.push(`<patternFill patternType="${pattern}">`)
+	if (fill.fgColor) out.push(colorXml(fill.fgColor, 'fgColor'))
+	if (fill.bgColor) out.push(colorXml(fill.bgColor, 'bgColor'))
+	out.push('</patternFill>')
+	out.push('</fill>')
 }
 
-function borderXml(border: BorderStyle): string {
+function pushBorderXml(out: ChunkedStringBuilder, border: BorderStyle): void {
 	const attrs: string[] = []
 	if (border.diagonalUp) attrs.push(' diagonalUp="1"')
 	if (border.diagonalDown) attrs.push(' diagonalDown="1"')
 
-	const parts: string[] = [`<border${attrs.join('')}>`]
-	parts.push(edgeXml(border.left, 'left'))
-	parts.push(edgeXml(border.right, 'right'))
-	parts.push(edgeXml(border.top, 'top'))
-	parts.push(edgeXml(border.bottom, 'bottom'))
-	parts.push(edgeXml(border.diagonal, 'diagonal'))
-	parts.push('</border>')
-	return parts.join('')
+	out.push(`<border${attrs.join('')}>`)
+	out.push(edgeXml(border.left, 'left'))
+	out.push(edgeXml(border.right, 'right'))
+	out.push(edgeXml(border.top, 'top'))
+	out.push(edgeXml(border.bottom, 'bottom'))
+	out.push(edgeXml(border.diagonal, 'diagonal'))
+	out.push('</border>')
 }
 
 function edgeXml(edge: BorderEdge | undefined, tag: string): string {
@@ -439,7 +442,7 @@ function colorXml(color: Color, tag: string): string {
 	}
 }
 
-function xfXml(xf: XfEntry): string {
+function pushXfXml(out: ChunkedStringBuilder, xf: XfEntry): void {
 	const attrs: string[] = [
 		`numFmtId="${xf.numFmtId}"`,
 		`fontId="${xf.fontId}"`,
@@ -455,30 +458,29 @@ function xfXml(xf: XfEntry): string {
 	if (xf.protection) attrs.push('applyProtection="1"')
 
 	if (!xf.alignment && !xf.protection) {
-		return `<xf ${attrs.join(' ')}/>`
+		out.push(`<xf ${attrs.join(' ')}/>`)
+		return
 	}
 
-	const parts: string[] = [`<xf ${attrs.join(' ')}>`]
-	if (xf.alignment) parts.push(alignmentXml(xf.alignment))
-	if (xf.protection) parts.push(protectionXml(xf.protection))
-	parts.push('</xf>')
-	return parts.join('')
+	out.push(`<xf ${attrs.join(' ')}>`)
+	if (xf.alignment) out.push(alignmentXml(xf.alignment))
+	if (xf.protection) out.push(protectionXml(xf.protection))
+	out.push('</xf>')
 }
 
-function dxfXml(style: import('@ascend/core').CellStyle): string {
-	const parts: string[] = ['<dxf>']
-	if (style.font && hasProps(style.font)) parts.push(fontXml(style.font))
-	if (style.fill && hasProps(style.fill)) parts.push(fillXml(style.fill))
-	if (style.border && hasProps(style.border)) parts.push(borderXml(style.border))
+function pushDxfXml(out: ChunkedStringBuilder, style: import('@ascend/core').CellStyle): void {
+	out.push('<dxf>')
+	if (style.font && hasProps(style.font)) pushFontXml(out, style.font)
+	if (style.fill && hasProps(style.fill)) pushFillXml(out, style.fill)
+	if (style.border && hasProps(style.border)) pushBorderXml(out, style.border)
 	if (style.numberFormat && style.numberFormat !== 'General') {
 		const builtin = BUILTIN_FMT_CODES.get(style.numberFormat)
 		const numFmtId = builtin ?? 164
-		parts.push(`<numFmt numFmtId="${numFmtId}" formatCode="${escapeXml(style.numberFormat)}"/>`)
+		out.push(`<numFmt numFmtId="${numFmtId}" formatCode="${escapeXml(style.numberFormat)}"/>`)
 	}
-	if (style.alignment) parts.push(alignmentXml(style.alignment))
-	if (style.protection) parts.push(protectionXml(style.protection))
-	parts.push('</dxf>')
-	return parts.join('')
+	if (style.alignment) out.push(alignmentXml(style.alignment))
+	if (style.protection) out.push(protectionXml(style.protection))
+	out.push('</dxf>')
 }
 
 function alignmentXml(a: AlignmentStyle): string {

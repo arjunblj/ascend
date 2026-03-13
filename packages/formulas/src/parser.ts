@@ -516,13 +516,25 @@ export function parseFormula(formula: string): Result<FormulaNode> {
 	return parse(tokenize(formula))
 }
 
+const PARSE_CACHE_LIMIT = 8192
+const PARSE_CACHE_EVICT = 2048
 const globalParseCache = new Map<string, Result<FormulaNode>>()
 
 export function cachedParseFormula(formula: string): Result<FormulaNode> {
 	const hit = globalParseCache.get(formula)
-	if (hit) return hit
+	if (hit) {
+		globalParseCache.delete(formula)
+		globalParseCache.set(formula, hit)
+		return hit
+	}
 	const result = parseFormula(formula)
-	if (globalParseCache.size > 8192) globalParseCache.clear()
+	if (globalParseCache.size >= PARSE_CACHE_LIMIT) {
+		const iter = globalParseCache.keys()
+		for (let i = 0; i < PARSE_CACHE_EVICT; i++) {
+			const k = iter.next().value
+			if (k !== undefined) globalParseCache.delete(k)
+		}
+	}
 	globalParseCache.set(formula, result)
 	return result
 }

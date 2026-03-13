@@ -42,6 +42,17 @@ const Op = {
 	CELL_ADD: 50,
 	CELL_SUB: 51,
 	CELL_MUL: 52,
+	CELL_DIV: 53,
+	CELL_POW: 54,
+	ROUND: 60,
+	ROUNDUP: 61,
+	ROUNDDOWN: 62,
+	INT_OP: 63,
+	TRUNC: 64,
+	ABS: 65,
+	NOT: 70,
+	AND_JF: 71,
+	OR_JT: 72,
 	TREE: 99,
 } as const
 
@@ -115,7 +126,20 @@ function coerceToBoolForIf(v: CellValue): boolean | CellValue {
 	}
 }
 
-const COMPILABLE_FUNCTIONS = new Set(['IF', 'IFERROR', 'IFNA'])
+const COMPILABLE_FUNCTIONS = new Set([
+	'IF',
+	'IFERROR',
+	'IFNA',
+	'ROUND',
+	'ROUNDUP',
+	'ROUNDDOWN',
+	'INT',
+	'TRUNC',
+	'ABS',
+	'NOT',
+	'AND',
+	'OR',
+])
 
 function shouldCompile(node: FormulaNode): boolean {
 	let compilableNodes = 0
@@ -174,11 +198,20 @@ function isNumericFormula(ops: readonly number[]): boolean {
 			case Op.POW:
 			case Op.NEG:
 			case Op.PCT:
+			case Op.INT_OP:
+			case Op.ABS:
+				break
+			case Op.ROUND:
+			case Op.ROUNDUP:
+			case Op.ROUNDDOWN:
+			case Op.TRUNC:
 				break
 			case Op.CELL:
 			case Op.CELL_ADD:
 			case Op.CELL_SUB:
 			case Op.CELL_MUL:
+			case Op.CELL_DIV:
+			case Op.CELL_POW:
 				ip += 2
 				break
 			case Op.CELL_SHEET:
@@ -196,6 +229,7 @@ export function compileFormula(node: FormulaNode): CompiledFormula | null {
 
 	const ops: number[] = []
 	const constants: (string | number | boolean | CellValue | FormulaNode)[] = []
+	const andOrJumps: number[] = []
 
 	function addConst(val: string | number | boolean | CellValue | FormulaNode): number {
 		constants.push(val)
@@ -269,14 +303,30 @@ export function compileFormula(node: FormulaNode): CompiledFormula | null {
 					break
 				}
 				const superOp =
-					n.op === '+' ? Op.CELL_ADD : n.op === '-' ? Op.CELL_SUB : n.op === '*' ? Op.CELL_MUL : 0
+					n.op === '+'
+						? Op.CELL_ADD
+						: n.op === '-'
+							? Op.CELL_SUB
+							: n.op === '*'
+								? Op.CELL_MUL
+								: n.op === '/'
+									? Op.CELL_DIV
+									: n.op === '^'
+										? Op.CELL_POW
+										: 0
 				if (superOp) {
 					if (n.right.type === 'cellRef' && n.right.sheet === undefined) {
 						emit(n.left)
 						ops.push(superOp, n.right.ref.row, n.right.ref.col)
 						break
 					}
-					if (n.left.type === 'cellRef' && n.left.sheet === undefined && n.op !== '-') {
+					if (
+						n.left.type === 'cellRef' &&
+						n.left.sheet === undefined &&
+						n.op !== '-' &&
+						n.op !== '/' &&
+						n.op !== '^'
+					) {
 						emit(n.right)
 						ops.push(superOp, n.left.ref.row, n.left.ref.col)
 						break
@@ -390,6 +440,79 @@ export function compileFormula(node: FormulaNode): CompiledFormula | null {
 			ops[jmpPos + 1] = ops.length
 			return
 		}
+		if (upper === 'ROUND' && n.args.length === 2) {
+			emit(n.args[0] as FormulaNode)
+			emit(n.args[1] as FormulaNode)
+			ops.push(Op.ROUND)
+			return
+		}
+		if (upper === 'ROUNDUP' && n.args.length === 2) {
+			emit(n.args[0] as FormulaNode)
+			emit(n.args[1] as FormulaNode)
+			ops.push(Op.ROUNDUP)
+			return
+		}
+		if (upper === 'ROUNDDOWN' && n.args.length === 2) {
+			emit(n.args[0] as FormulaNode)
+			emit(n.args[1] as FormulaNode)
+			ops.push(Op.ROUNDDOWN)
+			return
+		}
+		if (upper === 'TRUNC' && n.args.length >= 1 && n.args.length <= 2) {
+			emit(n.args[0] as FormulaNode)
+			if (n.args.length === 2) {
+				emit(n.args[1] as FormulaNode)
+			} else {
+				ops.push(Op.NUM, addConst(0))
+			}
+			ops.push(Op.TRUNC)
+			return
+		}
+		if (upper === 'INT' && n.args.length === 1) {
+			emit(n.args[0] as FormulaNode)
+			ops.push(Op.INT_OP)
+			return
+		}
+		if (upper === 'ABS' && n.args.length === 1) {
+			emit(n.args[0] as FormulaNode)
+			ops.push(Op.ABS)
+			return
+		}
+		if (upper === 'NOT' && n.args.length === 1) {
+			emit(n.args[0] as FormulaNode)
+			ops.push(Op.NOT)
+			return
+		}
+		if (upper === 'AND' && n.args.length >= 1) {
+			for (let i = 0; i < n.args.length; i++) {
+				emit(n.args[i] as FormulaNode)
+				if (i < n.args.length - 1) {
+					const jfPos = ops.length
+					ops.push(Op.AND_JF, 0)
+					andOrJumps.push(jfPos)
+				}
+			}
+			ops.push(Op.NOT, Op.NOT)
+			const endTarget = ops.length
+			for (const pos of andOrJumps) ops[pos + 1] = endTarget
+			andOrJumps.length = 0
+			return
+		}
+		if (upper === 'OR' && n.args.length >= 1) {
+			for (let i = 0; i < n.args.length; i++) {
+				emit(n.args[i] as FormulaNode)
+				if (i < n.args.length - 1) {
+					const jtPos = ops.length
+					ops.push(Op.OR_JT, 0)
+					andOrJumps.push(jtPos)
+				}
+			}
+			ops.push(Op.NOT, Op.NOT)
+			const endTarget = ops.length
+			for (const pos of andOrJumps) ops[pos + 1] = endTarget
+			andOrJumps.length = 0
+			return
+		}
 		ops.push(Op.TREE, addConst(n))
 	}
 
@@ -397,8 +520,8 @@ export function compileFormula(node: FormulaNode): CompiledFormula | null {
 	return { ops, constants, numericOnly: isNumericFormula(ops) }
 }
 
-const NUMERIC_STACK_SIZE = 64
-const numericStack = new Float64Array(NUMERIC_STACK_SIZE)
+let numericStackSize = 64
+let numericStack = new Float64Array(numericStackSize)
 
 function readCellNumeric(
 	sheet: import('@ascend/core').Sheet | undefined,
@@ -418,6 +541,7 @@ function evaluateCompiledNumeric(compiled: CompiledFormula, ctx: EvalContext): C
 	let ip = 0
 	let sp = 0
 	const len = ops.length
+	ensureNumericStack(len)
 
 	while (ip < len) {
 		const op = ops[ip] as number
@@ -484,26 +608,86 @@ function evaluateCompiledNumeric(compiled: CompiledFormula, ctx: EvalContext): C
 				break
 			case Op.CELL_ADD:
 			case Op.CELL_SUB:
-			case Op.CELL_MUL: {
+			case Op.CELL_MUL:
+			case Op.CELL_DIV:
+			case Op.CELL_POW: {
 				const row = ops[ip] as number
 				const col = ops[ip + 1] as number
 				ip += 2
 				const cn = readCellNumeric(sheet, row, col)
 				if (typeof cn !== 'number') return cn
 				const left = numericStack[sp - 1] as number
-				numericStack[sp - 1] =
-					op === Op.CELL_ADD ? left + cn : op === Op.CELL_SUB ? left - cn : left * cn
+				if (op === Op.CELL_ADD) numericStack[sp - 1] = left + cn
+				else if (op === Op.CELL_SUB) numericStack[sp - 1] = left - cn
+				else if (op === Op.CELL_MUL) numericStack[sp - 1] = left * cn
+				else if (op === Op.CELL_DIV) {
+					if (cn === 0) return errorValue('#DIV/0!')
+					numericStack[sp - 1] = left / cn
+				} else numericStack[sp - 1] = left ** cn
 				break
 			}
+			case Op.ROUND: {
+				const digits = numericStack[--sp] as number
+				const val = numericStack[sp - 1] as number
+				const factor = 10 ** Math.trunc(digits)
+				numericStack[sp - 1] = Math.round(val * factor) / factor
+				break
+			}
+			case Op.ROUNDUP: {
+				const digits = numericStack[--sp] as number
+				const val = numericStack[sp - 1] as number
+				const factor = 10 ** Math.trunc(digits)
+				const scaled = val * factor
+				numericStack[sp - 1] = (scaled >= 0 ? Math.ceil(scaled) : Math.floor(scaled)) / factor
+				break
+			}
+			case Op.ROUNDDOWN: {
+				const digits = numericStack[--sp] as number
+				const val = numericStack[sp - 1] as number
+				const factor = 10 ** Math.trunc(digits)
+				numericStack[sp - 1] = Math.trunc(val * factor) / factor
+				break
+			}
+			case Op.INT_OP:
+				numericStack[sp - 1] = Math.floor(numericStack[sp - 1] as number)
+				break
+			case Op.TRUNC: {
+				const digits = numericStack[--sp] as number
+				const val = numericStack[sp - 1] as number
+				const factor = 10 ** Math.trunc(digits)
+				numericStack[sp - 1] = Math.trunc(val * factor) / factor
+				break
+			}
+			case Op.ABS:
+				numericStack[sp - 1] = Math.abs(numericStack[sp - 1] as number)
+				break
 		}
 	}
 
 	return numberValue(numericStack[0] as number)
 }
 
-const STACK_SIZE = 64
-const sharedStack: CellValue[] = new Array(STACK_SIZE)
+let mixedStackSize = 64
+let sharedStack: CellValue[] = new Array(mixedStackSize)
 let stackDepth = 0
+
+function ensureNumericStack(needed: number): void {
+	if (needed <= numericStackSize) return
+	const newSize = Math.max(numericStackSize * 2, needed)
+	const newStack = new Float64Array(newSize)
+	newStack.set(numericStack)
+	numericStack = newStack
+	numericStackSize = newSize
+}
+
+function ensureMixedStack(needed: number): void {
+	if (needed <= mixedStackSize) return
+	const newSize = Math.max(mixedStackSize * 2, needed)
+	const newStack: CellValue[] = new Array(newSize)
+	for (let i = 0; i < stackDepth; i++) newStack[i] = sharedStack[i] as CellValue
+	sharedStack = newStack
+	mixedStackSize = newSize
+}
 
 export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): CellValue {
 	if (compiled.numericOnly) {
@@ -515,6 +699,7 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 	const sheet = ctx.workbook.sheets[ctx.sheetIndex]
 	let ip = 0
 	const len = ops.length
+	ensureMixedStack(stackDepth + len)
 
 	while (ip < len) {
 		const op = ops[ip] as number
@@ -611,7 +796,9 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 			}
 			case Op.CELL_ADD:
 			case Op.CELL_SUB:
-			case Op.CELL_MUL: {
+			case Op.CELL_MUL:
+			case Op.CELL_DIV:
+			case Op.CELL_POW: {
 				const row = ops[ip] as number
 				const col = ops[ip + 1] as number
 				ip += 2
@@ -620,9 +807,13 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 				const ln = toNumber(left)
 				const cn = toNumber(cellVal)
 				if (ln !== null && cn !== null) {
-					sharedStack[stackDepth - 1] = numberValue(
-						op === Op.CELL_ADD ? ln + cn : op === Op.CELL_SUB ? ln - cn : ln * cn,
-					)
+					if (op === Op.CELL_DIV && cn === 0) {
+						sharedStack[stackDepth - 1] = errorValue('#DIV/0!')
+					} else if (op === Op.CELL_ADD) sharedStack[stackDepth - 1] = numberValue(ln + cn)
+					else if (op === Op.CELL_SUB) sharedStack[stackDepth - 1] = numberValue(ln - cn)
+					else if (op === Op.CELL_MUL) sharedStack[stackDepth - 1] = numberValue(ln * cn)
+					else if (op === Op.CELL_DIV) sharedStack[stackDepth - 1] = numberValue(ln / cn)
+					else sharedStack[stackDepth - 1] = numberValue(ln ** cn)
 				} else {
 					const sv = topLeftScalar(left)
 					const cv = topLeftScalar(cellVal)
@@ -718,6 +909,98 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 				ip++
 				const v = topLeftScalar(sharedStack[stackDepth - 1] ?? EMPTY)
 				if (!(v.kind === 'error' && v.value === '#N/A')) {
+					ip = endTarget
+				} else {
+					stackDepth--
+				}
+				break
+			}
+			case Op.ROUND:
+			case Op.ROUNDUP:
+			case Op.ROUNDDOWN:
+			case Op.TRUNC: {
+				const digitsVal = topLeftScalar(sharedStack[--stackDepth] ?? EMPTY)
+				const numVal = topLeftScalar(sharedStack[--stackDepth] ?? EMPTY)
+				if (numVal.kind === 'error') {
+					sharedStack[stackDepth++] = numVal
+					break
+				}
+				if (digitsVal.kind === 'error') {
+					sharedStack[stackDepth++] = digitsVal
+					break
+				}
+				const num = toNumber(numVal)
+				const digits = toNumber(digitsVal)
+				if (num === null || digits === null) {
+					sharedStack[stackDepth++] = errorValue('#VALUE!')
+					break
+				}
+				const factor = 10 ** Math.trunc(digits)
+				if (op === Op.ROUND)
+					sharedStack[stackDepth++] = numberValue(Math.round(num * factor) / factor)
+				else if (op === Op.ROUNDUP) {
+					const scaled = num * factor
+					sharedStack[stackDepth++] = numberValue(
+						(scaled >= 0 ? Math.ceil(scaled) : Math.floor(scaled)) / factor,
+					)
+				} else if (op === Op.ROUNDDOWN || op === Op.TRUNC)
+					sharedStack[stackDepth++] = numberValue(Math.trunc(num * factor) / factor)
+				break
+			}
+			case Op.INT_OP: {
+				const v = topLeftScalar(sharedStack[--stackDepth] ?? EMPTY)
+				if (v.kind === 'error') {
+					sharedStack[stackDepth++] = v
+					break
+				}
+				const n = toNumber(v)
+				sharedStack[stackDepth++] = n === null ? errorValue('#VALUE!') : numberValue(Math.floor(n))
+				break
+			}
+			case Op.ABS: {
+				const v = topLeftScalar(sharedStack[--stackDepth] ?? EMPTY)
+				if (v.kind === 'error') {
+					sharedStack[stackDepth++] = v
+					break
+				}
+				const n = toNumber(v)
+				sharedStack[stackDepth++] = n === null ? errorValue('#VALUE!') : numberValue(Math.abs(n))
+				break
+			}
+			case Op.NOT: {
+				const v = sharedStack[--stackDepth] ?? EMPTY
+				const b = coerceToBoolForIf(v)
+				if (typeof b !== 'boolean') {
+					sharedStack[stackDepth++] = b
+					break
+				}
+				sharedStack[stackDepth++] = booleanValue(!b)
+				break
+			}
+			case Op.AND_JF: {
+				const endTarget = ops[ip] as number
+				ip++
+				const v = sharedStack[stackDepth - 1] ?? EMPTY
+				const b = coerceToBoolForIf(v)
+				if (typeof b !== 'boolean') {
+					ip = endTarget
+				} else if (!b) {
+					sharedStack[stackDepth - 1] = booleanValue(false)
+					ip = endTarget
+				} else {
+					stackDepth--
+				}
+				break
+			}
+			case Op.OR_JT: {
+				const endTarget = ops[ip] as number
+				ip++
+				const v = sharedStack[stackDepth - 1] ?? EMPTY
+				const b = coerceToBoolForIf(v)
+				if (typeof b !== 'boolean') {
+					ip = endTarget
+				} else if (b) {
+					sharedStack[stackDepth - 1] = booleanValue(true)
 					ip = endTarget
 				} else {
 					stackDepth--

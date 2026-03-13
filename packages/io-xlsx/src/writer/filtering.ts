@@ -6,18 +6,18 @@ import type {
 	SortState,
 } from '@ascend/core'
 import { escapeXml } from '../xml.ts'
+import type { ChunkedStringBuilder } from './chunked-string-builder.ts'
 
-export function autoFilterXml(autoFilter: AutoFilter): string {
-	const parts: string[] = [`<autoFilter ref="${escapeXml(autoFilter.ref)}">`]
+export function pushAutoFilterXml(out: ChunkedStringBuilder, autoFilter: AutoFilter): void {
+	out.push(`<autoFilter ref="${escapeXml(autoFilter.ref)}">`)
 	for (const column of autoFilter.columns) {
-		parts.push(filterColumnXml(column))
+		pushFilterColumnXml(out, column)
 	}
-	if (autoFilter.sortState) parts.push(sortStateXml(autoFilter.sortState))
-	parts.push('</autoFilter>')
-	return parts.join('')
+	if (autoFilter.sortState) pushSortStateXml(out, autoFilter.sortState)
+	out.push('</autoFilter>')
 }
 
-function filterColumnXml(column: FilterColumn): string {
+function pushFilterColumnXml(out: ChunkedStringBuilder, column: FilterColumn): void {
 	const attrs = [`colId="${column.colId}"`]
 	if (column.hiddenButton !== undefined)
 		attrs.push(`hiddenButton="${column.hiddenButton ? '1' : '0'}"`)
@@ -25,32 +25,33 @@ function filterColumnXml(column: FilterColumn): string {
 
 	switch (column.kind) {
 		case 'filters': {
-			const parts: string[] = [`<filterColumn ${attrs.join(' ')}>`]
+			out.push(`<filterColumn ${attrs.join(' ')}>`)
 			const filterAttrs: string[] = []
 			if (column.blank !== undefined) filterAttrs.push(`blank="${column.blank ? '1' : '0'}"`)
 			if (column.calendarType) filterAttrs.push(`calendarType="${escapeXml(column.calendarType)}"`)
-			parts.push(`<filters${filterAttrs.length > 0 ? ` ${filterAttrs.join(' ')}` : ''}>`)
+			out.push(`<filters${filterAttrs.length > 0 ? ` ${filterAttrs.join(' ')}` : ''}>`)
 			for (const value of column.values ?? []) {
-				parts.push(`<filter val="${escapeXml(value)}"/>`)
+				out.push(`<filter val="${escapeXml(value)}"/>`)
 			}
 			for (const item of column.dateGroupItems ?? []) {
-				parts.push(dateGroupItemXml(item))
+				pushDateGroupItemXml(out, item)
 			}
-			parts.push('</filters></filterColumn>')
-			return parts.join('')
+			out.push('</filters></filterColumn>')
+			return
 		}
 		case 'customFilters': {
-			const parts: string[] = [`<filterColumn ${attrs.join(' ')}><customFilters`]
 			const innerAttrs: string[] = []
 			if (column.and !== undefined) innerAttrs.push(`and="${column.and ? '1' : '0'}"`)
-			parts[parts.length - 1] += innerAttrs.length > 0 ? ` ${innerAttrs.join(' ')}>` : '>'
+			out.push(
+				`<filterColumn ${attrs.join(' ')}><customFilters${innerAttrs.length > 0 ? ` ${innerAttrs.join(' ')}` : ''}>`,
+			)
 			for (const filter of column.customFilters ?? []) {
 				const customAttrs = [`val="${escapeXml(filter.val)}"`]
 				if (filter.operator) customAttrs.push(`operator="${escapeXml(filter.operator)}"`)
-				parts.push(`<customFilter ${customAttrs.join(' ')}/>`)
+				out.push(`<customFilter ${customAttrs.join(' ')}/>`)
 			}
-			parts.push('</customFilters></filterColumn>')
-			return parts.join('')
+			out.push('</customFilters></filterColumn>')
+			return
 		}
 		case 'dynamicFilter': {
 			const innerAttrs: string[] = []
@@ -59,7 +60,10 @@ function filterColumnXml(column: FilterColumn): string {
 			if (column.dynamicFilterMaxVal !== undefined) {
 				innerAttrs.push(`maxVal="${column.dynamicFilterMaxVal}"`)
 			}
-			return `<filterColumn ${attrs.join(' ')}><dynamicFilter ${innerAttrs.join(' ')}/></filterColumn>`
+			out.push(
+				`<filterColumn ${attrs.join(' ')}><dynamicFilter ${innerAttrs.join(' ')}/></filterColumn>`,
+			)
+			return
 		}
 		case 'top10': {
 			const innerAttrs: string[] = []
@@ -67,25 +71,32 @@ function filterColumnXml(column: FilterColumn): string {
 			if (column.percent !== undefined) innerAttrs.push(`percent="${column.percent ? '1' : '0'}"`)
 			if (column.val !== undefined) innerAttrs.push(`val="${column.val}"`)
 			if (column.filterVal !== undefined) innerAttrs.push(`filterVal="${column.filterVal}"`)
-			return `<filterColumn ${attrs.join(' ')}><top10 ${innerAttrs.join(' ')}/></filterColumn>`
+			out.push(`<filterColumn ${attrs.join(' ')}><top10 ${innerAttrs.join(' ')}/></filterColumn>`)
+			return
 		}
 		case 'colorFilter': {
 			const innerAttrs: string[] = []
 			if (column.dxfId !== undefined) innerAttrs.push(`dxfId="${column.dxfId}"`)
 			if (column.cellColor !== undefined)
 				innerAttrs.push(`cellColor="${column.cellColor ? '1' : '0'}"`)
-			return `<filterColumn ${attrs.join(' ')}><colorFilter ${innerAttrs.join(' ')}/></filterColumn>`
+			out.push(
+				`<filterColumn ${attrs.join(' ')}><colorFilter ${innerAttrs.join(' ')}/></filterColumn>`,
+			)
+			return
 		}
 		case 'iconFilter': {
 			const innerAttrs: string[] = []
 			if (column.iconSet) innerAttrs.push(`iconSet="${escapeXml(column.iconSet)}"`)
 			if (column.iconId !== undefined) innerAttrs.push(`iconId="${column.iconId}"`)
-			return `<filterColumn ${attrs.join(' ')}><iconFilter ${innerAttrs.join(' ')}/></filterColumn>`
+			out.push(
+				`<filterColumn ${attrs.join(' ')}><iconFilter ${innerAttrs.join(' ')}/></filterColumn>`,
+			)
+			return
 		}
 	}
 }
 
-function dateGroupItemXml(item: FilterDateGroupItem): string {
+function pushDateGroupItemXml(out: ChunkedStringBuilder, item: FilterDateGroupItem): void {
 	const attrs: string[] = []
 	if (item.year !== undefined) attrs.push(`year="${item.year}"`)
 	if (item.month !== undefined) attrs.push(`month="${item.month}"`)
@@ -94,10 +105,10 @@ function dateGroupItemXml(item: FilterDateGroupItem): string {
 	if (item.minute !== undefined) attrs.push(`minute="${item.minute}"`)
 	if (item.second !== undefined) attrs.push(`second="${item.second}"`)
 	if (item.dateTimeGrouping) attrs.push(`dateTimeGrouping="${escapeXml(item.dateTimeGrouping)}"`)
-	return `<dateGroupItem ${attrs.join(' ')}/>`
+	out.push(`<dateGroupItem ${attrs.join(' ')}/>`)
 }
 
-export function sortStateXml(sortState: SortState): string {
+export function pushSortStateXml(out: ChunkedStringBuilder, sortState: SortState): void {
 	const attrs = [`ref="${escapeXml(sortState.ref)}"`]
 	if (sortState.caseSensitive !== undefined) {
 		attrs.push(`caseSensitive="${sortState.caseSensitive ? '1' : '0'}"`)
@@ -106,15 +117,14 @@ export function sortStateXml(sortState: SortState): string {
 		attrs.push(`columnSort="${sortState.columnSort ? '1' : '0'}"`)
 	}
 	if (sortState.sortMethod) attrs.push(`sortMethod="${escapeXml(sortState.sortMethod)}"`)
-	const parts: string[] = [`<sortState ${attrs.join(' ')}>`]
+	out.push(`<sortState ${attrs.join(' ')}>`)
 	for (const condition of sortState.conditions) {
-		parts.push(sortConditionXml(condition))
+		pushSortConditionXml(out, condition)
 	}
-	parts.push('</sortState>')
-	return parts.join('')
+	out.push('</sortState>')
 }
 
-function sortConditionXml(condition: SortCondition): string {
+function pushSortConditionXml(out: ChunkedStringBuilder, condition: SortCondition): void {
 	const attrs = [`ref="${escapeXml(condition.ref)}"`]
 	if (condition.descending !== undefined)
 		attrs.push(`descending="${condition.descending ? '1' : '0'}"`)
@@ -123,5 +133,5 @@ function sortConditionXml(condition: SortCondition): string {
 	if (condition.dxfId !== undefined) attrs.push(`dxfId="${condition.dxfId}"`)
 	if (condition.iconSet) attrs.push(`iconSet="${escapeXml(condition.iconSet)}"`)
 	if (condition.iconId !== undefined) attrs.push(`iconId="${condition.iconId}"`)
-	return `<sortCondition ${attrs.join(' ')}/>`
+	out.push(`<sortCondition ${attrs.join(' ')}/>`)
 }

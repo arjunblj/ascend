@@ -19,7 +19,10 @@ function internString(s: string): string {
 			if (oldPool.size >= OLD_POOL_LIMIT) {
 				const iter = oldPool.keys()
 				const quarter = OLD_POOL_LIMIT >> 2
-				for (let i = 0; i < quarter; i++) iter.next()
+				for (let i = 0; i < quarter; i++) {
+					const k = iter.next().value
+					if (k !== undefined) oldPool.delete(k)
+				}
 			}
 			oldPool.set(s, s)
 		}

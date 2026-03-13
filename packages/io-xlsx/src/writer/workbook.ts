@@ -1,6 +1,7 @@
 import type { Workbook } from '@ascend/core'
 import { toStoredFormulaText } from '../formula-storage.ts'
 import { escapeXml } from '../xml.ts'
+import { ChunkedStringBuilder } from './chunked-string-builder.ts'
 
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 const NS_MAIN = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
@@ -12,7 +13,9 @@ export interface WorkbookXmlOptions {
 }
 
 export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions = {}): string {
-	const parts: string[] = [XML_HEADER, `<workbook xmlns="${NS_MAIN}" xmlns:r="${NS_R}">`]
+	const out = new ChunkedStringBuilder()
+	out.push(XML_HEADER)
+	out.push(`<workbook xmlns="${NS_MAIN}" xmlns:r="${NS_R}">`)
 
 	const workbookPrAttrs: string[] = []
 	if (workbook.calcSettings.dateSystem === '1904' || workbook.workbookProperties.date1904) {
@@ -28,28 +31,28 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 		workbookPrAttrs.push(`filterPrivacy="${workbook.workbookProperties.filterPrivacy ? '1' : '0'}"`)
 	}
 	if (workbookPrAttrs.length > 0) {
-		parts.push(`<workbookPr ${workbookPrAttrs.join(' ')}/>`)
+		out.push(`<workbookPr ${workbookPrAttrs.join(' ')}/>`)
 	}
 
 	if (workbook.workbookViews.length > 0) {
-		parts.push('<bookViews>')
+		out.push('<bookViews>')
 		for (const view of workbook.workbookViews) {
 			const attrs: string[] = []
 			if (view.activeTab !== undefined) attrs.push(`activeTab="${view.activeTab}"`)
 			if (view.firstSheet !== undefined) attrs.push(`firstSheet="${view.firstSheet}"`)
 			if (view.visibility) attrs.push(`visibility="${escapeXml(view.visibility)}"`)
 			if (view.tabRatio !== undefined) attrs.push(`tabRatio="${view.tabRatio}"`)
-			parts.push(`<workbookView ${attrs.join(' ')}/>`)
+			out.push(`<workbookView ${attrs.join(' ')}/>`)
 		}
-		parts.push('</bookViews>')
+		out.push('</bookViews>')
 	}
 
 	if (workbook.workbookProtection) {
 		const attrs = collectWorkbookProtectionAttrs(workbook.workbookProtection)
-		if (attrs.length > 0) parts.push(`<workbookProtection ${attrs.join(' ')}/>`)
+		if (attrs.length > 0) out.push(`<workbookProtection ${attrs.join(' ')}/>`)
 	}
 
-	parts.push('<sheets>')
+	out.push('<sheets>')
 	for (let i = 0; i < workbook.sheets.length; i++) {
 		const sheet = workbook.sheets[i]
 		if (!sheet) continue
@@ -57,12 +60,12 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 		if (sheet.state !== 'visible') {
 			attrs.push(`state="${sheet.state}"`)
 		}
-		parts.push(`<sheet ${attrs.join(' ')}/>`)
+		out.push(`<sheet ${attrs.join(' ')}/>`)
 	}
-	parts.push('</sheets>')
+	out.push('</sheets>')
 
 	if (workbook.definedNames.size > 0) {
-		parts.push('<definedNames>')
+		out.push('<definedNames>')
 		for (const definedName of workbook.definedNames.list()) {
 			const attrs = [`name="${escapeXml(definedName.name)}"`]
 			if (definedName.scope.kind === 'sheet') {
@@ -70,11 +73,11 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 				const sheetIndex = workbook.sheets.findIndex((sheet) => sheet.id === scope.sheetId)
 				if (sheetIndex >= 0) attrs.push(`localSheetId="${sheetIndex}"`)
 			}
-			parts.push(
+			out.push(
 				`<definedName ${attrs.join(' ')}>${escapeXml(toStoredFormulaText(definedName.formula))}</definedName>`,
 			)
 		}
-		parts.push('</definedNames>')
+		out.push('</definedNames>')
 	}
 
 	if (
@@ -82,11 +85,11 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 		options.externalReferenceRelIds &&
 		options.externalReferenceRelIds.length > 0
 	) {
-		parts.push('<externalReferences>')
+		out.push('<externalReferences>')
 		for (const relId of options.externalReferenceRelIds) {
-			parts.push(`<externalReference r:id="${relId}"/>`)
+			out.push(`<externalReference r:id="${relId}"/>`)
 		}
-		parts.push('</externalReferences>')
+		out.push('</externalReferences>')
 	}
 
 	const cs = workbook.calcSettings
@@ -107,13 +110,13 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 		calcAttrs.push(`iterateDelta="${cs.iterativeCalc.maxChange}"`)
 	}
 	if (calcAttrs.length > 0) {
-		parts.push(`<calcPr ${calcAttrs.join(' ')}/>`)
+		out.push(`<calcPr ${calcAttrs.join(' ')}/>`)
 	} else {
-		parts.push('<calcPr/>')
+		out.push('<calcPr/>')
 	}
 
-	parts.push('</workbook>')
-	return parts.join('')
+	out.push('</workbook>')
+	return out.toString()
 }
 
 function collectWorkbookProtectionAttrs(

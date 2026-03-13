@@ -49,11 +49,32 @@ interface SessionCacheEntry {
 	readonly identity: SessionIdentity
 	readonly document: WorkbookDocument
 	readonly sizeBytes: number
+	accessedAt: number
 }
 
-const MAX_CACHED_SESSIONS = 16
-const MAX_CACHED_SESSION_BYTES = 32 * 1024 * 1024
+export interface SessionCacheOptions {
+	readonly maxCacheSize?: number
+	readonly maxCacheAge?: number
+	readonly maxCacheBytes?: number
+}
+
+const cacheConfig = {
+	maxCacheSize: 50,
+	maxCacheAge: 5 * 60 * 1000,
+	maxCacheBytes: 32 * 1024 * 1024,
+}
+
 const sessionCache = new Map<string, SessionCacheEntry>()
+
+export function configureSessionCache(opts: SessionCacheOptions): void {
+	if (opts.maxCacheSize !== undefined) cacheConfig.maxCacheSize = opts.maxCacheSize
+	if (opts.maxCacheAge !== undefined) cacheConfig.maxCacheAge = opts.maxCacheAge
+	if (opts.maxCacheBytes !== undefined) cacheConfig.maxCacheBytes = opts.maxCacheBytes
+}
+
+function isEntryExpired(entry: SessionCacheEntry): boolean {
+	return Date.now() - entry.accessedAt > cacheConfig.maxCacheAge
+}
 
 export class WorkbookDocument {
 	private readonly cacheKey: string
@@ -85,8 +106,12 @@ export class WorkbookDocument {
 		const key = makeSessionKey(identity, options)
 		const cached = sessionCache.get(key)
 		if (cached && isIdentityEqual(cached.identity, identity)) {
-			touchCacheEntry(cached)
-			return cached.document
+			if (isEntryExpired(cached)) {
+				sessionCache.delete(key)
+			} else {
+				touchCacheEntry(cached)
+				return cached.document
+			}
 		}
 
 		const loaded = await openWorkbookSource(source, options)
@@ -171,7 +196,7 @@ export class WorkbookDocument {
 	readRangeCompact(
 		sheetName: string,
 		range: string,
-		opts?: { includeRefs?: boolean },
+		opts?: { includeRefs?: boolean; omitEmpty?: boolean; flatValues?: boolean },
 	): CompactRangeInfo | undefined {
 		return this.view.readRangeCompact(sheetName, range, opts)
 	}
@@ -187,7 +212,7 @@ export class WorkbookDocument {
 	readWindowCompact(
 		sheetName: string,
 		range: string,
-		opts?: { rowOffset?: number; rowLimit?: number; includeRefs?: boolean },
+		opts?: import('./types.ts').AgentReadOptions,
 	): CompactRangeWindowInfo | undefined {
 		return this.view.readWindowCompact(sheetName, range, opts)
 	}
@@ -324,6 +349,7 @@ export class WorkbookDocument {
 			identity: this.identity,
 			document: this,
 			sizeBytes: sessionSizeBytes(this.identity, this.view, usage),
+			accessedAt: Date.now(),
 		})
 	}
 }
@@ -416,14 +442,23 @@ function isIdentityEqual(left: SessionIdentity, right: SessionIdentity): boolean
 
 function touchCacheEntry(entry: SessionCacheEntry): void {
 	sessionCache.delete(entry.key)
+	entry.accessedAt = Date.now()
 	sessionCache.set(entry.key, entry)
 }
 
+function evictExpiredEntries(): void {
+	for (const [key, entry] of sessionCache) {
+		if (isEntryExpired(entry)) sessionCache.delete(key)
+	}
+}
+
 function setCacheEntry(entry: SessionCacheEntry): void {
+	entry.accessedAt = Date.now()
 	sessionCache.set(entry.key, entry)
+	evictExpiredEntries()
 	while (
-		sessionCache.size > MAX_CACHED_SESSIONS ||
-		totalCachedSessionBytes() > MAX_CACHED_SESSION_BYTES
+		sessionCache.size > cacheConfig.maxCacheSize ||
+		totalCachedSessionBytes() > cacheConfig.maxCacheBytes
 	) {
 		const oldest = sessionCache.keys().next().value
 		if (!oldest) break

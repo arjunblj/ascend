@@ -1,4 +1,5 @@
 import type { PreservationCapsule } from '../preserve.ts'
+import { ChunkedStringBuilder } from './chunked-string-builder.ts'
 
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 const NS = 'http://schemas.openxmlformats.org/package/2006/content-types'
@@ -20,31 +21,30 @@ export function buildContentTypesXml(
 	capsules?: PreservationCapsule[],
 	extraOverrides?: readonly { partPath: string; contentType: string }[],
 ): string {
-	const parts: string[] = [
-		XML_HEADER,
-		`<Types xmlns="${NS}">`,
-		`<Default Extension="rels" ContentType="${CT_RELS}"/>`,
-		`<Default Extension="xml" ContentType="${CT_XML}"/>`,
-		`<Override PartName="/xl/workbook.xml" ContentType="${workbookContentType}"/>`,
-	]
+	const out = new ChunkedStringBuilder()
+	out.push(XML_HEADER)
+	out.push(`<Types xmlns="${NS}">`)
+	out.push(`<Default Extension="rels" ContentType="${CT_RELS}"/>`)
+	out.push(`<Default Extension="xml" ContentType="${CT_XML}"/>`)
+	out.push(`<Override PartName="/xl/workbook.xml" ContentType="${workbookContentType}"/>`)
 
 	for (let i = 1; i <= sheetCount; i++) {
-		parts.push(`<Override PartName="/xl/worksheets/sheet${i}.xml" ContentType="${CT_WORKSHEET}"/>`)
+		out.push(`<Override PartName="/xl/worksheets/sheet${i}.xml" ContentType="${CT_WORKSHEET}"/>`)
 	}
 
 	if (hasSharedStrings) {
-		parts.push(`<Override PartName="/xl/sharedStrings.xml" ContentType="${CT_SHARED_STRINGS}"/>`)
+		out.push(`<Override PartName="/xl/sharedStrings.xml" ContentType="${CT_SHARED_STRINGS}"/>`)
 	}
 
-	parts.push(`<Override PartName="/xl/styles.xml" ContentType="${CT_STYLES}"/>`)
-	parts.push(`<Override PartName="/docProps/core.xml" ContentType="${CT_CORE_PROPS}"/>`)
-	parts.push(`<Override PartName="/docProps/app.xml" ContentType="${CT_APP_PROPS}"/>`)
+	out.push(`<Override PartName="/xl/styles.xml" ContentType="${CT_STYLES}"/>`)
+	out.push(`<Override PartName="/docProps/core.xml" ContentType="${CT_CORE_PROPS}"/>`)
+	out.push(`<Override PartName="/docProps/app.xml" ContentType="${CT_APP_PROPS}"/>`)
 
 	if (capsules) {
 		for (const capsule of capsules) {
 			if (capsule.contentType) {
 				const pn = capsule.partPath.startsWith('/') ? capsule.partPath : `/${capsule.partPath}`
-				parts.push(`<Override PartName="${pn}" ContentType="${capsule.contentType}"/>`)
+				out.push(`<Override PartName="${pn}" ContentType="${capsule.contentType}"/>`)
 			}
 		}
 	}
@@ -52,10 +52,10 @@ export function buildContentTypesXml(
 	if (extraOverrides) {
 		for (const override of extraOverrides) {
 			const pn = override.partPath.startsWith('/') ? override.partPath : `/${override.partPath}`
-			parts.push(`<Override PartName="${pn}" ContentType="${override.contentType}"/>`)
+			out.push(`<Override PartName="${pn}" ContentType="${override.contentType}"/>`)
 		}
 	}
 
-	parts.push('</Types>')
-	return parts.join('')
+	out.push('</Types>')
+	return out.toString()
 }

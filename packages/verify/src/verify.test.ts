@@ -96,6 +96,75 @@ describe('checker', () => {
 		const tableIssues = result.issues.filter((i) => i.rule === 'table-integrity')
 		expect(tableIssues.length).toBeGreaterThanOrEqual(1)
 	})
+
+	test('detects external workbook references', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, { value: EMPTY, formula: '[Book1.xlsx]Sheet1!A1', styleId: SID })
+		const result = check(wb)
+		const externalIssues = result.issues.filter((i) => i.rule === 'external-refs')
+		expect(externalIssues.length).toBeGreaterThanOrEqual(1)
+		expect(externalIssues[0]?.message).toContain('External workbook reference')
+		expect(externalIssues[0]?.suggestedFix).toBeDefined()
+	})
+
+	test('suggests closest sheet name for broken refs', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+		wb.addSheet('Summary')
+		const s = wb.sheets[0] as (typeof wb.sheets)[0]
+		s.cells.set(0, 0, { value: EMPTY, formula: 'Sumary!A1', styleId: SID })
+		const result = check(wb)
+		const brokenIssues = result.issues.filter((i) => i.rule === 'broken-refs')
+		expect(brokenIssues.length).toBeGreaterThanOrEqual(1)
+		expect(brokenIssues[0]?.suggestedFix).toContain('Summary')
+	})
+
+	test('includes suggestedFix for #REF! errors', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, { value: errorValue('#REF!'), formula: 'A2', styleId: SID })
+		const result = check(wb)
+		const refErrors = result.issues.filter(
+			(i) => i.rule === 'formula-errors' && i.message.includes('#REF!'),
+		)
+		expect(refErrors.length).toBeGreaterThanOrEqual(1)
+		expect(refErrors[0]?.suggestedFix).toContain('referenced cells')
+	})
+
+	test('includes suggestedFix for circular refs', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, { value: EMPTY, formula: 'B1', styleId: SID })
+		s.cells.set(0, 1, { value: EMPTY, formula: 'A1', styleId: SID })
+		const result = check(wb)
+		const circIssues = result.issues.filter((i) => i.rule === 'circular-refs')
+		expect(circIssues.length).toBeGreaterThanOrEqual(1)
+		expect(circIssues[0]?.suggestedFix).toContain('Break the cycle')
+	})
+
+	test('includes suggestedFix for #DIV/0! errors', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, { value: errorValue('#DIV/0!'), formula: '1/0', styleId: SID })
+		const result = check(wb)
+		const divErrors = result.issues.filter(
+			(i) => i.rule === 'formula-errors' && i.message.includes('#DIV/0!'),
+		)
+		expect(divErrors.length).toBeGreaterThanOrEqual(1)
+		expect(divErrors[0]?.suggestedFix).toContain('check for zero')
+	})
+
+	test('includes suggestedFix for orphaned names', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+		wb.addSheet('DataSheet')
+		wb.definedNames.set('MyRange', 'DtaSheet!A1:B5')
+		const result = check(wb)
+		const orphanIssues = result.issues.filter((i) => i.rule === 'orphaned-names')
+		expect(orphanIssues.length).toBeGreaterThanOrEqual(1)
+		expect(orphanIssues[0]?.suggestedFix).toContain('DataSheet')
+	})
 })
 
 describe('linter', () => {
@@ -137,6 +206,112 @@ describe('linter', () => {
 		s.cells.set(0, 0, { value: numberValue(0), formula: 'SUM(A1:A200)', styleId: SID })
 		const result = lint(wb)
 		const fragile = result.violations.filter((v) => v.rule === 'fragile-refs')
+		expect(fragile.length).toBeGreaterThanOrEqual(1)
+	})
+
+	test('detects unused defined names', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: SID })
+		s.cells.set(0, 1, { value: numberValue(2), formula: 'A1+1', styleId: SID })
+		wb.definedNames.set('TaxRate', 'Sheet1!A1')
+		wb.definedNames.set('Unused', 'Sheet1!B1')
+		const result = lint(wb)
+		const unused = result.violations.filter((v) => v.rule === 'unused-name')
+		expect(unused.length).toBe(2)
+		expect(unused.some((v) => v.message.includes('TaxRate'))).toBe(true)
+		expect(unused.some((v) => v.message.includes('Unused'))).toBe(true)
+	})
+
+	test('does not flag defined names that are referenced', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, { value: numberValue(0.08), formula: null, styleId: SID })
+		s.cells.set(0, 1, { value: numberValue(0), formula: 'A1*TaxRate', styleId: SID })
+		wb.definedNames.set('TaxRate', 'Sheet1!A1')
+		const result = lint(wb)
+		const unused = result.violations.filter((v) => v.rule === 'unused-name')
+		expect(unused).toHaveLength(0)
+	})
+
+	test('detects complex formulas (warning)', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, {
+			value: numberValue(0),
+			formula:
+				'IF(A2,IF(A3,IF(A4,IF(A5,IF(A6,IF(A7,IF(A8,IF(A9,IF(A10,IF(A11,1,0),0),0),0),0),0),0),0),0),0)',
+			styleId: SID,
+		})
+		const result = lint(wb)
+		const complex = result.violations.filter((v) => v.rule === 'complex-formula')
+		expect(complex.length).toBeGreaterThanOrEqual(1)
+		expect(complex[0]?.severity).toBe('warning')
+	})
+
+	test('detects complex formulas (error at depth > 20)', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		let formula = '1'
+		for (let i = 0; i < 21; i++) {
+			formula = `IF(TRUE,${formula},0)`
+		}
+		s.cells.set(0, 0, { value: numberValue(0), formula, styleId: SID })
+		const result = lint(wb)
+		const complex = result.violations.filter((v) => v.rule === 'complex-formula')
+		expect(complex.length).toBeGreaterThanOrEqual(1)
+		expect(complex[0]?.severity).toBe('error')
+	})
+
+	test('does not flag shallow formulas as complex', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, { value: numberValue(0), formula: 'SUM(A2:A10)', styleId: SID })
+		const result = lint(wb)
+		const complex = result.violations.filter((v) => v.rule === 'complex-formula')
+		expect(complex).toHaveLength(0)
+	})
+
+	test('respects custom volatile threshold', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		for (let i = 0; i < 4; i++) {
+			s.cells.set(i, 0, { value: numberValue(0), formula: 'NOW()', styleId: SID })
+		}
+		const defaultResult = lint(wb)
+		expect(defaultResult.violations.filter((v) => v.rule === 'volatile-overuse')).toHaveLength(0)
+
+		const customResult = lint(wb, undefined, { volatileThreshold: 3 })
+		const volatile = customResult.violations.filter((v) => v.rule === 'volatile-overuse')
+		expect(volatile.length).toBeGreaterThanOrEqual(1)
+	})
+
+	test('respects custom complexity thresholds', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, {
+			value: numberValue(0),
+			formula: 'IF(A2,IF(A3,IF(A4,IF(A5,1,0),0),0),0)',
+			styleId: SID,
+		})
+		const defaultResult = lint(wb)
+		expect(defaultResult.violations.filter((v) => v.rule === 'complex-formula')).toHaveLength(0)
+
+		const customResult = lint(wb, undefined, { complexityDepthWarning: 3 })
+		const complex = customResult.violations.filter((v) => v.rule === 'complex-formula')
+		expect(complex.length).toBeGreaterThanOrEqual(1)
+	})
+
+	test('respects custom fragile ref threshold', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, { value: numberValue(0), formula: 'SUM(A1:A20)', styleId: SID })
+
+		const defaultResult = lint(wb)
+		expect(defaultResult.violations.filter((v) => v.rule === 'fragile-refs')).toHaveLength(0)
+
+		const customResult = lint(wb, undefined, { fragileRefThreshold: 10 })
+		const fragile = customResult.violations.filter((v) => v.rule === 'fragile-refs')
 		expect(fragile.length).toBeGreaterThanOrEqual(1)
 	})
 })
@@ -221,6 +396,36 @@ describe('tracer', () => {
 
 		expect(result.value.precedents).toHaveLength(1)
 		expect(result.value.precedents[0]?.ref).toBe('A:A')
+	})
+
+	test('returns null cyclePath for non-circular cell', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: SID })
+		s.cells.set(0, 1, { value: numberValue(2), formula: 'A1+1', styleId: SID })
+
+		const result = trace(wb, 'Sheet1', 'B1')
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(result.value.cyclePath).toBeNull()
+	})
+
+	test('returns cyclePath for circular reference', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, { value: EMPTY, formula: 'B1', styleId: SID })
+		s.cells.set(0, 1, { value: EMPTY, formula: 'A1', styleId: SID })
+
+		const result = trace(wb, 'Sheet1', 'A1')
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(result.value.cyclePath).not.toBeNull()
+		const path = result.value.cyclePath ?? []
+		expect(path.length).toBeGreaterThanOrEqual(2)
+		expect(path.some((r) => r.includes('A1'))).toBe(true)
+		expect(path.some((r) => r.includes('B1'))).toBe(true)
 	})
 
 	test('reports structured-reference precedents from resolved dependency metadata', () => {

@@ -214,11 +214,13 @@ function applyArrayResult(
 	if (matrix.length === 0 || (matrix[0]?.length ?? 0) === 0) return EMPTY
 	if (isSpillBlocked(sheet, row, col, anchorRef, matrix)) {
 		const spillError = errorValue('#SPILL!')
-		sheet.cells.set(row, col, {
-			value: spillError,
-			formula: oldCell?.formula ?? null,
-			styleId: oldCell?.styleId ?? (0 as StyleId),
-		})
+		sheet.cells.setResolved(
+			row,
+			col,
+			spillError,
+			oldCell?.formula ?? null,
+			oldCell?.styleId ?? (0 as StyleId),
+		)
 		changed.push(anchorRef)
 		return spillError
 	}
@@ -231,17 +233,19 @@ function applyArrayResult(
 	}
 	const spillRef = `${toA1Ref(row, col)}:${toA1Ref(row + matrix.length - 1, col + maxCols - 1)}`
 
-	sheet.cells.set(row, col, {
-		value: anchorValue,
-		formula: oldCell?.formula ?? null,
-		styleId: oldCell?.styleId ?? (0 as StyleId),
-		formulaInfo: {
+	sheet.cells.setResolved(
+		row,
+		col,
+		anchorValue,
+		oldCell?.formula ?? null,
+		oldCell?.styleId ?? (0 as StyleId),
+		{
 			kind: 'spill',
 			anchorRef,
 			ref: spillRef,
 			isAnchor: true,
 		},
-	})
+	)
 	recordSpillCell(spillIndex, sheetIndex, sheet, anchorRef, row, col)
 	changed.push(anchorRef)
 
@@ -251,17 +255,19 @@ function applyArrayResult(
 			if (rowOffset === 0 && colOffset === 0) continue
 			const targetRow = row + rowOffset
 			const targetCol = col + colOffset
-			sheet.cells.set(targetRow, targetCol, {
-				value: topLeftValue(sourceRow[colOffset] ?? EMPTY),
-				formula: null,
-				styleId: oldCell?.styleId ?? (0 as StyleId),
-				formulaInfo: {
+			sheet.cells.setResolved(
+				targetRow,
+				targetCol,
+				topLeftValue(sourceRow[colOffset] ?? EMPTY),
+				null,
+				oldCell?.styleId ?? (0 as StyleId),
+				{
 					kind: 'spill',
 					anchorRef,
 					ref: spillRef,
 					isAnchor: false,
 				},
-			})
+			)
 			recordSpillCell(spillIndex, sheetIndex, sheet, anchorRef, targetRow, targetCol)
 			changed.push(`${sheet.name}!${toA1Ref(targetRow, targetCol)}`)
 		}
@@ -408,11 +414,13 @@ export function recalculate(
 							: false
 					const newValue = errorValue('#REF!')
 					if (!oldCell || clearedSpill || !valuesEqual(oldCell.value, newValue)) {
-						sheet.cells.set(row, col, {
-							value: newValue,
-							formula: oldCell?.formula ?? null,
-							styleId: oldCell?.styleId ?? (0 as StyleId),
-						})
+						sheet.cells.setResolved(
+							row,
+							col,
+							newValue,
+							oldCell?.formula ?? null,
+							oldCell?.styleId ?? (0 as StyleId),
+						)
 						changed.push(cellRefString(workbook, si, row, col))
 					}
 					errors.push({
@@ -465,11 +473,13 @@ export function recalculate(
 					: false
 			const valueChanged = !oldCell || clearedSpill || !valuesEqual(oldCell.value, newValue)
 			if (valueChanged) {
-				sheet.cells.set(row, col, {
-					value: newValue,
-					formula: oldCell?.formula ?? null,
-					styleId: oldCell?.styleId ?? (0 as StyleId),
-				})
+				sheet.cells.setResolved(
+					row,
+					col,
+					newValue,
+					oldCell?.formula ?? null,
+					oldCell?.styleId ?? (0 as StyleId),
+				)
 				changed.push(cellRefString(workbook, si, row, col))
 				if (isDirtyRecalc) {
 					for (const dep of graph.getDependents(key)) {
@@ -583,11 +593,13 @@ function evalIterative(
 			}
 
 			if (!oldCell || clearedSpill || !valuesEqual(oldCell.value, newValue)) {
-				sheet.cells.set(row, col, {
-					value: newValue,
-					formula: oldCell?.formula ?? null,
-					styleId: oldCell?.styleId ?? (0 as StyleId),
-				})
+				sheet.cells.setResolved(
+					row,
+					col,
+					newValue,
+					oldCell?.formula ?? null,
+					oldCell?.styleId ?? (0 as StyleId),
+				)
 			}
 		}
 
@@ -624,11 +636,13 @@ function evalIterative(
 				? clearSpillFootprint(sheet, si, oldCell.formulaInfo.anchorRef, changed, spillIndex)
 				: false
 		if (!oldCell || clearedSpill || !valuesEqual(oldCell.value, newValue)) {
-			sheet.cells.set(row, col, {
-				value: newValue,
-				formula: oldCell?.formula ?? null,
-				styleId: oldCell?.styleId ?? (0 as StyleId),
-			})
+			sheet.cells.setResolved(
+				row,
+				col,
+				newValue,
+				oldCell?.formula ?? null,
+				oldCell?.styleId ?? (0 as StyleId),
+			)
 			changed.push(cellRefString(workbook, si, row, col))
 		}
 	}

@@ -21,6 +21,7 @@ export interface TraceResult {
 	readonly value: CellValue
 	readonly precedents: readonly TraceNode[]
 	readonly dependents: readonly TraceNode[]
+	readonly cyclePath: readonly string[] | null
 }
 
 export interface TraceNode {
@@ -172,6 +173,21 @@ export function trace(
 		}
 	}
 
+	let cyclePath: readonly string[] | null = null
+	if (dependencies.cycleKeys.has(targetKey)) {
+		for (const cycle of dependencies.cycles) {
+			if (cycle.includes(targetKey)) {
+				cyclePath = cycle.map((key) => {
+					const [si, r, c] = parseCellKey(key)
+					const s = workbook.sheets[si]
+					const sName = s ? s.name : `Sheet${si}`
+					return `${sName}!${toA1({ row: r, col: c })}`
+				})
+				break
+			}
+		}
+	}
+
 	return ok({
 		cell: ref,
 		sheet: sheetName,
@@ -179,6 +195,7 @@ export function trace(
 		value,
 		precedents,
 		dependents,
+		cyclePath,
 	})
 }
 

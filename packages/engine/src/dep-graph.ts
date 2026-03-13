@@ -49,6 +49,8 @@ export { IntervalIndex } from './dep-graph-interval.ts'
 
 import { IntervalIndex } from './dep-graph-interval.ts'
 
+const _depCoords: CellCoords = { sheetIndex: 0, row: 0, col: 0 }
+
 export class DependencyGraph {
 	private readonly formulas = new Map<CellKey, FormulaEntry>()
 	private readonly dependents = new Map<CellKey, Set<CellKey>>()
@@ -56,6 +58,7 @@ export class DependencyGraph {
 	private _cachedDirtyIndex: {
 		set: ReadonlySet<CellKey>
 		size: number
+		hash: number
 		index: Map<number, Map<number, Set<number>>>
 	} | null = null
 	private _cachedEvalOrder: CellKey[] | null = null
@@ -134,15 +137,19 @@ export class DependencyGraph {
 
 	getDependents(key: CellKey): CellKey[] {
 		const direct = this.dependents.get(key)
-		const result = direct ? new Set(direct) : new Set<CellKey>()
-		const [sheetIndex, row, col] = parseCellKey(key)
-		const index = this.rangeIndex.get(sheetIndex)
-		if (index) {
-			for (const k of index.query(row, col)) {
-				result.add(k)
-			}
+		parseCellKeyInto(key, _depCoords)
+		const index = this.rangeIndex.get(_depCoords.sheetIndex)
+		if (!direct && !index) return []
+		if (!index) return direct ? [...direct] : []
+		const rangeHits = index.query(_depCoords.row, _depCoords.col)
+		if (!direct) return rangeHits
+		if (rangeHits.length === 0) return [...direct]
+		const result: CellKey[] = [...direct]
+		for (let i = 0; i < rangeHits.length; i++) {
+			const k = rangeHits[i] as CellKey
+			if (!direct.has(k)) result.push(k)
 		}
-		return [...result]
+		return result
 	}
 
 	getVolatiles(): CellKey[] {
@@ -286,15 +293,18 @@ export class DependencyGraph {
 	private getCachedDirtyIndex(
 		dirtySet: ReadonlySet<CellKey>,
 	): Map<number, Map<number, Set<number>>> {
-		if (
-			this._cachedDirtyIndex &&
-			this._cachedDirtyIndex.set === dirtySet &&
-			this._cachedDirtyIndex.size === dirtySet.size
-		) {
-			return this._cachedDirtyIndex.index
+		if (this._cachedDirtyIndex) {
+			const c = this._cachedDirtyIndex
+			if (c.set === dirtySet && c.size === dirtySet.size) return c.index
+			if (c.size === dirtySet.size && c.hash === hashCellKeySet(dirtySet)) return c.index
 		}
 		const index = indexDirtyCellsBySheetRow(dirtySet)
-		this._cachedDirtyIndex = { set: dirtySet, size: dirtySet.size, index }
+		this._cachedDirtyIndex = {
+			set: dirtySet,
+			size: dirtySet.size,
+			hash: hashCellKeySet(dirtySet),
+			index,
+		}
 		return index
 	}
 }
@@ -329,6 +339,12 @@ function rangeDepsEqual(a: readonly RangeDependency[], b: readonly RangeDependen
 			return false
 	}
 	return true
+}
+
+function hashCellKeySet(set: ReadonlySet<CellKey>): number {
+	let h = 0
+	for (const k of set) h = (h + k) | 0
+	return h
 }
 
 function indexDirtyCellsBySheetRow(

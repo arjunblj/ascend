@@ -243,18 +243,7 @@ function parseSlowCell(
 	if (!pos) return false
 	out.row = pos.row
 	out.col = pos.col
-	const cell = parseCellValue(cellNode, ctx, pos.row, pos.col, sharedFormulaMasters)
-	if (cell) {
-		sheet.cells.setResolved(
-			pos.row,
-			pos.col,
-			cell.value,
-			cell.formula,
-			cell.styleId,
-			cell.formulaInfo,
-		)
-	}
-	return true
+	return resolveCellToSheet(cellNode, ctx, pos.row, pos.col, sharedFormulaMasters, sheet)
 }
 
 function parseFastCell(
@@ -299,26 +288,26 @@ function parseFastCell(
 
 	let value: CellValue
 	if (type === 's') {
-		const idx = rawValue === undefined ? Number.NaN : Number(rawValue)
-		const entry = ctx.sharedStrings.get(idx)
-		value = entry ?? (pool ? pool.internValue(stringValue('')) : stringValue(''))
+		const idx = rawValue !== undefined ? fastParseNonNegInt(rawValue) : -1
+		if (idx < 0) {
+			value = pool ? pool.internValue(stringValue('')) : stringValue('')
+		} else {
+			const entry = ctx.sharedStrings.get(idx)
+			value = entry ?? (pool ? pool.internValue(stringValue('')) : stringValue(''))
+		}
 	} else if (type === 'b') {
-		const bv = rawValue === '1'
-		value = pool ? pool.internValue(booleanValue(bv)) : booleanValue(bv)
+		value = booleanValue(rawValue === '1')
 	} else if (type === 'e') {
-		value = pool
-			? pool.internValue(errorValue(String(rawValue ?? '#VALUE!') as ExcelError))
-			: errorValue(String(rawValue ?? '#VALUE!') as ExcelError)
+		value = errorValue((rawValue ?? '#VALUE!') as ExcelError)
 	} else if (type === 'str') {
-		value = pool
-			? pool.internValue(stringValue(pool.internString(String(rawValue ?? ''))))
-			: stringValue(String(rawValue ?? ''))
+		const text = rawValue ?? ''
+		value = pool ? pool.internValue(stringValue(pool.internString(text))) : stringValue(text)
 	} else if (rawValue !== undefined && rawValue !== '') {
 		const num = Number(rawValue)
 		if (Number.isNaN(num)) {
 			value = pool
-				? pool.internValue(stringValue(pool.internString(String(rawValue))))
-				: stringValue(String(rawValue))
+				? pool.internValue(stringValue(pool.internString(rawValue)))
+				: stringValue(rawValue)
 		} else if (ctx.isDateFormat[styleIdx]) {
 			value = { kind: 'date', serial: num }
 		} else {
@@ -365,17 +354,7 @@ function _parseSheetData(ws: XmlNode, sheet: Sheet, ctx: SheetParseContext): voi
 			const pos = parseCellRef(ref)
 			if (!pos) continue
 
-			const cell = parseCellValue(c, ctx, pos.row, pos.col, sharedFormulaMasters)
-			if (cell) {
-				sheet.cells.setResolved(
-					pos.row,
-					pos.col,
-					cell.value,
-					cell.formula,
-					cell.styleId,
-					cell.formulaInfo,
-				)
-			}
+			resolveCellToSheet(c, ctx, pos.row, pos.col, sharedFormulaMasters, sheet)
 		}
 	}
 }
@@ -443,6 +422,16 @@ function rawNumAttr(rawAttrs: string, name: string): number | undefined {
 	if (value === undefined) return undefined
 	const parsed = Number(value)
 	return Number.isNaN(parsed) ? undefined : parsed
+}
+
+function fastParseNonNegInt(s: string): number {
+	let result = 0
+	for (let i = 0; i < s.length; i++) {
+		const d = s.charCodeAt(i) - 48
+		if (d < 0 || d > 9) return -1
+		result = result * 10 + d
+	}
+	return s.length > 0 ? result : -1
 }
 
 function resolveCellPosition(
@@ -536,13 +525,14 @@ function parseCellRef(ref: string): { row: number; col: number } | undefined {
 	return { row: row - 1, col: col - 1 }
 }
 
-function parseCellValue(
+function resolveCellToSheet(
 	c: XmlNode,
 	ctx: SheetParseContext,
 	row: number,
 	col: number,
 	sharedFormulaMasters: SharedFormulaMasterMap,
-): Cell | undefined {
+	sheet: Sheet,
+): boolean {
 	const pool = ctx.valuePool
 	const type = attr(c, 't')
 	const styleIdx = numAttr(c, 's') ?? 0
@@ -567,18 +557,14 @@ function parseCellValue(
 	if (type === 's') {
 		const idx = typeof rawValue === 'number' ? rawValue : Number(rawValue)
 		const entry = ctx.sharedStrings.get(idx)
-		value = entry ?? (pool ? pool.internValue(stringValue('')) : stringValue(''))
+		value = entry ?? stringValue('')
 	} else if (type === 'b') {
-		const bv = rawValue === 1 || rawValue === true || rawValue === '1'
-		value = pool ? pool.internValue(booleanValue(bv)) : booleanValue(bv)
+		value = booleanValue(rawValue === 1 || rawValue === true || rawValue === '1')
 	} else if (type === 'e') {
-		value = pool
-			? pool.internValue(errorValue(String(rawValue ?? '#VALUE!') as ExcelError))
-			: errorValue(String(rawValue ?? '#VALUE!') as ExcelError)
+		value = errorValue((rawValue != null ? String(rawValue) : '#VALUE!') as ExcelError)
 	} else if (type === 'str') {
-		value = pool
-			? pool.internValue(stringValue(pool.internString(String(rawValue ?? ''))))
-			: stringValue(String(rawValue ?? ''))
+		const text = rawValue != null ? String(rawValue) : ''
+		value = pool ? pool.internValue(stringValue(pool.internString(text))) : stringValue(text)
 	} else if (type === 'inlineStr') {
 		value = parseInlineString(c, pool)
 	} else if (rawValue !== undefined && rawValue !== null && rawValue !== '') {
@@ -595,15 +581,11 @@ function parseCellValue(
 	} else if (formula) {
 		value = EMPTY
 	} else {
-		return undefined
+		return false
 	}
 
-	return {
-		value,
-		formula,
-		styleId,
-		...(binding ? { formulaInfo: binding } : {}),
-	}
+	sheet.cells.setResolved(row, col, value, formula, styleId, binding)
+	return true
 }
 
 function parseFormulaText(

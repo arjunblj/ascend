@@ -143,6 +143,44 @@ function borderEdgeKey(e: BorderEdge | undefined): string {
 	return `${e.style ?? ''}:${colorKey(e.color)}`
 }
 
+function cloneColor(c: Color): Color {
+	return { ...c }
+}
+
+function cloneBorderEdge(e: BorderEdge): BorderEdge {
+	return e.color ? { ...e, color: cloneColor(e.color) } : { ...e }
+}
+
+function cloneStyle(style: CellStyle): CellStyle {
+	const result: Record<string, unknown> = {}
+	if (style.font) {
+		result.font = style.font.color
+			? { ...style.font, color: cloneColor(style.font.color) }
+			: { ...style.font }
+	}
+	if (style.fill) {
+		const fill: Record<string, unknown> = { ...style.fill }
+		if (style.fill.fgColor) fill.fgColor = cloneColor(style.fill.fgColor)
+		if (style.fill.bgColor) fill.bgColor = cloneColor(style.fill.bgColor)
+		result.fill = fill
+	}
+	if (style.border) {
+		const border: Record<string, unknown> = {}
+		if (style.border.top) border.top = cloneBorderEdge(style.border.top)
+		if (style.border.bottom) border.bottom = cloneBorderEdge(style.border.bottom)
+		if (style.border.left) border.left = cloneBorderEdge(style.border.left)
+		if (style.border.right) border.right = cloneBorderEdge(style.border.right)
+		if (style.border.diagonal) border.diagonal = cloneBorderEdge(style.border.diagonal)
+		if (style.border.diagonalUp !== undefined) border.diagonalUp = style.border.diagonalUp
+		if (style.border.diagonalDown !== undefined) border.diagonalDown = style.border.diagonalDown
+		result.border = border
+	}
+	if (style.alignment) result.alignment = { ...style.alignment }
+	if (style.numberFormat !== undefined) result.numberFormat = style.numberFormat
+	if (style.protection) result.protection = { ...style.protection }
+	return result as CellStyle
+}
+
 export class StyleRegistry {
 	private styles: CellStyle[] = [DEFAULT_STYLE]
 	private hashBuckets = new Map<number, StyleId[]>()
@@ -165,7 +203,7 @@ export class StyleRegistry {
 
 		this.ensureWritable()
 		const id = this.styles.length as StyleId
-		this.styles.push(freezeDeep(structuredClone(style)))
+		this.styles.push(freezeDeep(cloneStyle(style)))
 		let b = this.hashBuckets.get(hash)
 		if (!b) {
 			b = []

@@ -29,7 +29,7 @@ import {
 } from './plan.ts'
 import type { RelEntry } from './relationships.ts'
 import { buildRelsXml } from './relationships.ts'
-import { scanWorkbookForWrite } from './shared-strings.ts'
+import { IncrementalSharedStringTable, scanWorkbookWriteFactsFast } from './shared-strings.ts'
 import { buildSheetXml } from './sheet.ts'
 import { buildPreservedStylesXml, buildStylesXml } from './styles.ts'
 import { buildTableXml } from './table.ts'
@@ -133,11 +133,8 @@ export function planWriteXlsx(
 			preserveSharedStrings && !options.summaryOnly && preservedSharedStringsXml
 				? materializeSharedStringEntries(preservedSharedStringsXml)
 				: []
-		const scanResult = scanWorkbookForWrite(workbook, {
-			summaryOnly: options.summaryOnly ?? false,
-			existingEntries: preservedSharedStringEntries,
-		})
-		const workbookWriteFacts = scanResult.facts
+		const workbookWriteFacts = scanWorkbookWriteFactsFast(workbook)
+		const useSharedStrings = options.useSharedStrings ?? true
 		const ssTable = options.summaryOnly
 			? {
 					getIndex(): number | undefined {
@@ -149,16 +146,9 @@ export function planWriteXlsx(
 					count: preserveSharedStrings || workbookWriteFacts.hasStringCells ? 1 : 0,
 					facts: workbookWriteFacts,
 				}
-			: (() => {
-					const table = scanResult.sharedStringTable
-					if (!table) throw new Error('sharedStringTable required when not summaryOnly')
-					return table
-				})()
-		const useSharedStrings = options.useSharedStrings ?? true
+			: new IncrementalSharedStringTable(preservedSharedStringEntries, workbookWriteFacts)
 		const hasSharedStrings =
-			useSharedStrings &&
-			(preserveSharedStrings ||
-				(!options.summaryOnly ? ssTable.count > 0 : !!workbookWriteFacts?.hasStringCells))
+			useSharedStrings && (preserveSharedStrings || workbookWriteFacts.hasStringCells)
 
 		const preservedStyles = workbook.preservedStyles ?? undefined
 		const preserveStyles = preservedStyles !== undefined && !options.stylesDirty
@@ -451,38 +441,6 @@ export function planWriteXlsx(
 			plan.addOverride(workbook.preservedTheme.path, workbook.preservedTheme.contentType)
 		}
 
-		if (hasSharedStrings) {
-			const preservedSharedStringBytes = preserveSharedStrings
-				? resolvePreservedBytes(sourceArchive, workbook.preservedSharedStrings?.path)
-				: undefined
-			if (preserveSharedStrings && preservedSharedStringBytes && !options.summaryOnly) {
-				recordBytes(
-					'xl/sharedStrings.xml',
-					{
-						owner: { kind: 'workbook' },
-						origin: resolvePreservedOrigin(workbook.preservedSharedStrings?.xml),
-						contentType:
-							'application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml',
-					},
-					() => preservedSharedStringBytes,
-				)
-			} else {
-				recordXml(
-					'xl/sharedStrings.xml',
-					{
-						owner: { kind: 'workbook' },
-						origin:
-							preservedSharedStringsXml !== undefined
-								? resolvePreservedOrigin(workbook.preservedSharedStrings?.xml)
-								: 'generated',
-						contentType:
-							'application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml',
-					},
-					() => preservedSharedStringsXml ?? ssTable.toXml(),
-				)
-			}
-		}
-
 		for (let i = 0; i < workbook.sheets.length; i++) {
 			const sheet = workbook.sheets[i]
 			if (!sheet) continue
@@ -727,6 +685,38 @@ export function planWriteXlsx(
 						origin: 'generated',
 					},
 					() => buildRelsXml(sheetRels),
+				)
+			}
+		}
+
+		if (hasSharedStrings) {
+			const preservedSharedStringBytes = preserveSharedStrings
+				? resolvePreservedBytes(sourceArchive, workbook.preservedSharedStrings?.path)
+				: undefined
+			if (preserveSharedStrings && preservedSharedStringBytes && !options.summaryOnly) {
+				recordBytes(
+					'xl/sharedStrings.xml',
+					{
+						owner: { kind: 'workbook' },
+						origin: resolvePreservedOrigin(workbook.preservedSharedStrings?.xml),
+						contentType:
+							'application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml',
+					},
+					() => preservedSharedStringBytes,
+				)
+			} else {
+				recordXml(
+					'xl/sharedStrings.xml',
+					{
+						owner: { kind: 'workbook' },
+						origin:
+							preservedSharedStringsXml !== undefined
+								? resolvePreservedOrigin(workbook.preservedSharedStrings?.xml)
+								: 'generated',
+						contentType:
+							'application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml',
+					},
+					() => preservedSharedStringsXml ?? ssTable.toXml(),
 				)
 			}
 		}

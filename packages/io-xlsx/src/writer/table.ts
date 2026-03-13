@@ -1,6 +1,7 @@
 import type { Table } from '@ascend/core'
 import { escapeXml } from '../xml.ts'
-import { autoFilterXml, sortStateXml } from './filtering.ts'
+import { ChunkedStringBuilder } from './chunked-string-builder.ts'
+import { pushAutoFilterXml, pushSortStateXml } from './filtering.ts'
 
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
@@ -27,16 +28,18 @@ export function buildTableXml(table: Table, tableNumber: number): string {
 		attrs.push(`headerRowBorderDxfId="${table.headerRowBorderDxfId}"`)
 	}
 
-	const parts: string[] = [XML_HEADER, `<table ${attrs.join(' ')}>`]
+	const out = new ChunkedStringBuilder()
+	out.push(XML_HEADER)
+	out.push(`<table ${attrs.join(' ')}>`)
 	if (table.autoFilter) {
-		parts.push(autoFilterXml(table.autoFilter))
+		pushAutoFilterXml(out, table.autoFilter)
 	} else if (table.hasHeaders) {
-		parts.push(`<autoFilter ref="${ref}"/>`)
+		out.push(`<autoFilter ref="${ref}"/>`)
 	}
 	if (table.sortState) {
-		parts.push(sortStateXml(table.sortState))
+		pushSortStateXml(out, table.sortState)
 	}
-	parts.push(`<tableColumns count="${table.columns.length}">`)
+	out.push(`<tableColumns count="${table.columns.length}">`)
 	for (let index = 0; index < table.columns.length; index++) {
 		const column = table.columns[index]
 		if (!column) continue
@@ -54,16 +57,16 @@ export function buildTableXml(table: Table, tableNumber: number): string {
 		if (column.totalsRowDxfId !== undefined) {
 			columnAttrs.push(`totalsRowDxfId="${column.totalsRowDxfId}"`)
 		}
-		parts.push(`<tableColumn ${columnAttrs.join(' ')}>`)
+		out.push(`<tableColumn ${columnAttrs.join(' ')}>`)
 		if (column.formula) {
-			parts.push(`<calculatedColumnFormula>${escapeXml(column.formula)}</calculatedColumnFormula>`)
+			out.push(`<calculatedColumnFormula>${escapeXml(column.formula)}</calculatedColumnFormula>`)
 		}
 		if (column.totalsRowFormula) {
-			parts.push(`<totalsRowFormula>${escapeXml(column.totalsRowFormula)}</totalsRowFormula>`)
+			out.push(`<totalsRowFormula>${escapeXml(column.totalsRowFormula)}</totalsRowFormula>`)
 		}
-		parts.push('</tableColumn>')
+		out.push('</tableColumn>')
 	}
-	parts.push('</tableColumns>')
+	out.push('</tableColumns>')
 	if (table.tableStyleInfo) {
 		const styleAttrs: string[] = []
 		if (table.tableStyleInfo.name) styleAttrs.push(`name="${escapeXml(table.tableStyleInfo.name)}"`)
@@ -79,10 +82,10 @@ export function buildTableXml(table: Table, tableNumber: number): string {
 		if (table.tableStyleInfo.showColumnStripes !== undefined) {
 			styleAttrs.push(`showColumnStripes="${table.tableStyleInfo.showColumnStripes ? '1' : '0'}"`)
 		}
-		parts.push(`<tableStyleInfo ${styleAttrs.join(' ')}/>`)
+		out.push(`<tableStyleInfo ${styleAttrs.join(' ')}/>`)
 	}
-	parts.push('</table>')
-	return parts.join('')
+	out.push('</table>')
+	return out.toString()
 }
 
 function toCellRef(row: number, col: number): string {

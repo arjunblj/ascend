@@ -176,6 +176,18 @@ export const dynamicFunctions: FunctionDef[] = [
 			if (typeof sortIndex !== 'number') return sortIndex
 			const sortOrder = args[2] ? num(args[2]) : 1
 			if (typeof sortOrder !== 'number') return sortOrder
+			const byCol = !!args[3] && !!toNumber(args[3].value)
+
+			if (byCol) {
+				const cols = transposeRows(data)
+				const row = Math.round(sortIndex) - 1
+				cols.sort((a, b) => {
+					const av = a[row] ?? EMPTY
+					const bv = b[row] ?? EMPTY
+					return compareValues(av, bv) * (sortOrder === -1 ? -1 : 1)
+				})
+				return scalarOrArray(transposeRows(cols))
+			}
 
 			const col = Math.round(sortIndex) - 1
 			const rows = data.map((r) => [...r])
@@ -450,7 +462,7 @@ export const dynamicFunctions: FunctionDef[] = [
 			const data = flattenByColumn(getRange(args[0]))
 			const wrap = num(args[1])
 			if (typeof wrap !== 'number') return wrap
-			const fill = topLeftScalar(args[2]?.value ?? EMPTY)
+			const fill = topLeftScalar(args[2]?.value ?? errorValue('#N/A'))
 			if (wrap <= 0) return errorValue('#VALUE!')
 			const rows: ScalarCellValue[][] = []
 			for (let index = 0; index < data.length; index += wrap) {
@@ -471,7 +483,7 @@ export const dynamicFunctions: FunctionDef[] = [
 			const data = flattenByRow(getRange(args[0]))[0] ?? []
 			const wrap = num(args[1])
 			if (typeof wrap !== 'number') return wrap
-			const fill = topLeftScalar(args[2]?.value ?? EMPTY)
+			const fill = topLeftScalar(args[2]?.value ?? errorValue('#N/A'))
 			if (wrap <= 0) return errorValue('#VALUE!')
 			const rows: ScalarCellValue[][] = []
 			for (let index = 0; index < data.length; index += wrap) {

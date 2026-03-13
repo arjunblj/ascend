@@ -14,10 +14,12 @@ import type {
 import { parseA1, parseRange, toA1 } from '@ascend/core'
 import { AscendException, ascendError, type CellValue } from '@ascend/schema'
 import type {
+	AgentReadOptions,
 	CellInfo,
 	CompactCellInfo,
 	CompactRangeInfo,
 	CompactRangeWindowInfo,
+	FlatCellValue,
 	RangeInfo,
 	RangeObjectsInfo,
 	RangeRowsInfo,
@@ -32,6 +34,11 @@ export class SheetHandle {
 		col: number,
 		cell: NonNullable<ReturnType<Sheet['cells']['get']>>,
 	) => string | null
+	private _changeVersion = 0
+	private readonly _changeSnapshots = new Map<
+		string,
+		{ token: string; cells: Map<string, CompactCellInfo> }
+	>()
 
 	constructor(
 		sheetName: string,
@@ -89,9 +96,21 @@ export class SheetHandle {
 		}
 	}
 
-	rangeCompact(rangeRef: string, opts?: { includeRefs?: boolean }): CompactRangeInfo {
+	rangeCompact(
+		rangeRef: string,
+		opts?: { includeRefs?: boolean; omitEmpty?: boolean; flatValues?: boolean },
+	): CompactRangeInfo {
 		const parsed = parseRange(rangeRef)
-		const cells = collectCellsCompact(this.requireSheet(), parsed, this.resolveFormula, opts)
+		let cells = collectCellsCompact(this.requireSheet(), parsed, this.resolveFormula, opts)
+		if (opts?.omitEmpty) {
+			cells = cells.filter((c) => c.value.kind !== 'empty')
+		}
+		if (opts?.flatValues) {
+			cells = cells.map((c) => ({
+				...c,
+				value: flattenCellValue(c.value) as unknown as CellValue,
+			}))
+		}
 		return {
 			ref: parsed,
 			cells,
@@ -115,10 +134,7 @@ export class SheetHandle {
 		}
 	}
 
-	readWindowCompact(
-		rangeRef: string,
-		opts?: { rowOffset?: number; rowLimit?: number; includeRefs?: boolean },
-	): CompactRangeWindowInfo {
+	readWindowCompact(rangeRef: string, opts?: AgentReadOptions): CompactRangeWindowInfo {
 		const requestedRef = parseRange(rangeRef)
 		const sheet = this.requireSheet()
 		const rowOffset = Math.max(0, opts?.rowOffset ?? 0)
@@ -135,9 +151,36 @@ export class SheetHandle {
 				row: Math.max(Math.min(endRow, requestedRef.end.row), requestedRef.start.row),
 			},
 		}
-		const cells = collectCellsCompact(sheet, windowRef, this.resolveFormula, opts)
+		let cells = collectCellsCompact(sheet, windowRef, this.resolveFormula, opts)
+		if (opts?.omitEmpty) {
+			cells = cells.filter((c) => c.value.kind !== 'empty')
+		}
+		if (opts?.flatValues) {
+			cells = cells.map((c) => ({
+				...c,
+				value: flattenCellValue(c.value) as unknown as CellValue,
+			}))
+		}
 		const consumedRows = Math.max(0, endRow - requestedRef.start.row + 1)
 		const hasMore = requestedRef.start.row + rowOffset + rowLimit - 1 < requestedRef.end.row
+		const snapshotKey = opts?.changedSince !== undefined ? `${this.sheetName}:${rangeRef}` : null
+		let changeToken: string | undefined
+		if (snapshotKey) {
+			const version = this._changeVersion++
+			changeToken = `${version}`
+			const previous = this._changeSnapshots.get(snapshotKey)
+			if (previous && opts?.changedSince === previous.token) {
+				const currentMap = buildCellMap(cells)
+				const changed = diffCellMaps(previous.cells, currentMap)
+				this._changeSnapshots.set(snapshotKey, { token: changeToken, cells: currentMap })
+				cells = changed
+			} else {
+				this._changeSnapshots.set(snapshotKey, {
+					token: changeToken,
+					cells: buildCellMap(cells),
+				})
+			}
+		}
 		return {
 			requestedRef,
 			ref: windowRef,
@@ -148,6 +191,7 @@ export class SheetHandle {
 			rowLimit,
 			hasMore,
 			...(hasMore ? { nextRowOffset: consumedRows } : {}),
+			...(changeToken !== undefined ? { changeToken } : {}),
 		}
 	}
 
@@ -408,6 +452,59 @@ function buildValueRows(
 		rows.push(values)
 	}
 	return rows
+}
+
+function flattenCellValue(value: CellValue): FlatCellValue {
+	switch (value.kind) {
+		case 'number':
+			return value.value
+		case 'string':
+			return value.value
+		case 'boolean':
+			return value.value
+		case 'empty':
+			return null
+		case 'error':
+			return value.value
+		case 'date':
+			return value.serial
+		case 'richText':
+			return value.runs.map((run: { text: string }) => run.text).join('')
+		default:
+			return null
+	}
+}
+
+function buildCellMap(cells: readonly CompactCellInfo[]): Map<string, CompactCellInfo> {
+	const map = new Map<string, CompactCellInfo>()
+	for (const cell of cells) {
+		map.set(`${cell.row},${cell.col}`, cell)
+	}
+	return map
+}
+
+function cellInfoEqual(a: CompactCellInfo, b: CompactCellInfo): boolean {
+	if (a.formula !== b.formula) return false
+	const av = a.value
+	const bv = b.value
+	if (av.kind !== bv.kind) return false
+	if (av.kind === 'empty') return true
+	if (av.kind === 'number' && bv.kind === 'number') return av.value === bv.value
+	if (av.kind === 'string' && bv.kind === 'string') return av.value === bv.value
+	if (av.kind === 'boolean' && bv.kind === 'boolean') return av.value === bv.value
+	return JSON.stringify(av) === JSON.stringify(bv)
+}
+
+function diffCellMaps(
+	previous: Map<string, CompactCellInfo>,
+	current: Map<string, CompactCellInfo>,
+): CompactCellInfo[] {
+	const changed: CompactCellInfo[] = []
+	for (const [key, cell] of current) {
+		const prev = previous.get(key)
+		if (!prev || !cellInfoEqual(prev, cell)) changed.push(cell)
+	}
+	return changed
 }
 
 function normalizeObjectHeader(value: CellValue | undefined, index: number): string {

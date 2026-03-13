@@ -1,7 +1,9 @@
-export { WorkbookDocument } from './session.ts'
+export type { SessionCacheOptions } from './session.ts'
+export { configureSessionCache, WorkbookDocument } from './session.ts'
 export { SheetHandle } from './sheet-handle.ts'
 export { TableHandle } from './table-handle.ts'
 export type {
+	AgentReadOptions,
 	ApplyResult,
 	CellInfo,
 	CheckIssue,
@@ -10,6 +12,7 @@ export type {
 	CompactRangeInfo,
 	CompactRangeWindowInfo,
 	DefinedNameInfo,
+	FlatCellValue,
 	FormulaInfo,
 	LintResult,
 	LintWarning,

@@ -230,6 +230,8 @@ export interface CellInfo {
 	readonly col: number
 }
 
+export type FlatCellValue = number | string | boolean | null
+
 export interface CompactCellInfo {
 	readonly ref?: string
 	readonly value: CellValue
@@ -237,6 +239,15 @@ export interface CompactCellInfo {
 	readonly formulaBinding: CellFormulaBinding | null
 	readonly row: number
 	readonly col: number
+}
+
+export interface AgentReadOptions {
+	readonly rowOffset?: number
+	readonly rowLimit?: number
+	readonly includeRefs?: boolean
+	readonly omitEmpty?: boolean
+	readonly flatValues?: boolean
+	readonly changedSince?: string
 }
 
 export interface RangeInfo {
@@ -267,6 +278,7 @@ export interface CompactRangeWindowInfo extends CompactRangeInfo {
 	readonly rowLimit: number
 	readonly hasMore: boolean
 	readonly nextRowOffset?: number
+	readonly changeToken?: string
 }
 
 export interface RangeRowsInfo {

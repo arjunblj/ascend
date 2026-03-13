@@ -176,6 +176,229 @@ interface ScenarioConfig {
 	readonly hf: () => TimingResult
 }
 
+function ascendIndexMatchScenario(): TimingResult {
+	const setupStart = performance.now()
+	const workbook = createWorkbook()
+	workbook.addSheet('Sheet1')
+	const sheet = workbook.sheets[0]
+	if (!sheet) throw new Error('Missing sheet')
+	for (let r = 0; r < 5000; r++) {
+		sheet.cells.set(r, 0, {
+			value: stringValue(`id-${String(r + 1).padStart(5, '0')}`),
+			formula: null,
+			styleId: SID,
+		})
+		for (let c = 1; c < 5; c++) {
+			sheet.cells.set(r, c, { value: numberValue((r + 1) * c * 10), formula: null, styleId: SID })
+		}
+	}
+	for (let i = 0; i < 500; i++) {
+		const keyIndex = 5000 - ((i * 37) % 5000) - 1
+		sheet.cells.set(i, 5, {
+			value: stringValue(`id-${String(keyIndex + 1).padStart(5, '0')}`),
+			formula: null,
+			styleId: SID,
+		})
+		sheet.cells.set(i, 6, {
+			value: EMPTY,
+			formula: `INDEX(C$1:C$5000,MATCH(F${i + 1},A$1:A$5000,0))`,
+			styleId: SID,
+		})
+	}
+	const setupMs = performance.now() - setupStart
+	const recalcStart = performance.now()
+	recalculate(workbook, defaultCalcContext())
+	const recalcMs = performance.now() - recalcStart
+	return { setupMs, recalcMs, totalMs: setupMs + recalcMs }
+}
+
+function hfIndexMatchScenario(): TimingResult {
+	const setupStart = performance.now()
+	const data: (number | string | null)[][] = []
+	for (let r = 0; r < 5000; r++) {
+		const row: (number | string | null)[] = [
+			`id-${String(r + 1).padStart(5, '0')}`,
+			(r + 1) * 10,
+			(r + 1) * 20,
+			(r + 1) * 30,
+			(r + 1) * 40,
+		]
+		if (r < 500) {
+			const keyIndex = 5000 - ((r * 37) % 5000) - 1
+			row.push(`id-${String(keyIndex + 1).padStart(5, '0')}`)
+			row.push(`=INDEX(C$1:C$5000,MATCH(F${r + 1},A$1:A$5000,0))`)
+		}
+		data.push(row)
+	}
+	const hf = HyperFormula.buildEmpty({ licenseKey: 'gpl-v3' })
+	hf.addSheet('Sheet1')
+	hf.suspendEvaluation()
+	hf.setCellContents({ sheet: 0, row: 0, col: 0 }, data)
+	const setupMs = performance.now() - setupStart
+	const recalcStart = performance.now()
+	hf.resumeEvaluation()
+	const recalcMs = performance.now() - recalcStart
+	hf.destroy()
+	return { setupMs, recalcMs, totalMs: setupMs + recalcMs }
+}
+
+function ascendSumifsScenario(): TimingResult {
+	const setupStart = performance.now()
+	const workbook = createWorkbook()
+	workbook.addSheet('Sheet1')
+	const sheet = workbook.sheets[0]
+	if (!sheet) throw new Error('Missing sheet')
+	const categories = ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon']
+	const regions = ['North', 'South', 'East', 'West']
+	for (let r = 0; r < 1000; r++) {
+		sheet.cells.set(r, 0, {
+			value: stringValue(categories[r % categories.length] ?? 'Alpha'),
+			formula: null,
+			styleId: SID,
+		})
+		sheet.cells.set(r, 1, {
+			value: stringValue(regions[r % regions.length] ?? 'North'),
+			formula: null,
+			styleId: SID,
+		})
+		sheet.cells.set(r, 2, { value: numberValue((r + 1) * 7), formula: null, styleId: SID })
+		sheet.cells.set(r, 3, { value: numberValue(r % 3 === 0 ? 1 : 0), formula: null, styleId: SID })
+		sheet.cells.set(r, 4, { value: numberValue((r % 50) + 1), formula: null, styleId: SID })
+	}
+	for (let i = 0; i < 100; i++) {
+		const cat = categories[i % categories.length] ?? 'Alpha'
+		const reg = regions[i % regions.length] ?? 'North'
+		sheet.cells.set(1000 + i, 0, {
+			value: EMPTY,
+			formula: `SUMIFS(C$1:C$1000,A$1:A$1000,"${cat}",B$1:B$1000,"${reg}")`,
+			styleId: SID,
+		})
+	}
+	const setupMs = performance.now() - setupStart
+	const recalcStart = performance.now()
+	recalculate(workbook, defaultCalcContext())
+	const recalcMs = performance.now() - recalcStart
+	return { setupMs, recalcMs, totalMs: setupMs + recalcMs }
+}
+
+function hfSumifsScenario(): TimingResult {
+	const setupStart = performance.now()
+	const categories = ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon']
+	const regions = ['North', 'South', 'East', 'West']
+	const data: (number | string | null)[][] = []
+	for (let r = 0; r < 1000; r++) {
+		data.push([
+			categories[r % categories.length] ?? 'Alpha',
+			regions[r % regions.length] ?? 'North',
+			(r + 1) * 7,
+			r % 3 === 0 ? 1 : 0,
+			(r % 50) + 1,
+		])
+	}
+	for (let i = 0; i < 100; i++) {
+		const cat = categories[i % categories.length] ?? 'Alpha'
+		const reg = regions[i % regions.length] ?? 'North'
+		while (data.length <= 1000 + i) data.push(new Array<null>(5).fill(null))
+		const row = data[1000 + i]
+		if (row) row[0] = `=SUMIFS(C$1:C$1000,A$1:A$1000,"${cat}",B$1:B$1000,"${reg}")`
+	}
+	const hf = HyperFormula.buildEmpty({ licenseKey: 'gpl-v3' })
+	hf.addSheet('Sheet1')
+	hf.suspendEvaluation()
+	hf.setCellContents({ sheet: 0, row: 0, col: 0 }, data)
+	const setupMs = performance.now() - setupStart
+	const recalcStart = performance.now()
+	hf.resumeEvaluation()
+	const recalcMs = performance.now() - recalcStart
+	hf.destroy()
+	return { setupMs, recalcMs, totalMs: setupMs + recalcMs }
+}
+
+function buildNestedIfFormula(depth: number, row: number): string {
+	if (depth <= 1) return `A${row}*2`
+	return `IF(A${row}>${depth},${depth},${buildNestedIfFormula(depth - 1, row)})`
+}
+
+function ascendNestedIfScenario(): TimingResult {
+	const setupStart = performance.now()
+	const workbook = createWorkbook()
+	workbook.addSheet('Sheet1')
+	const sheet = workbook.sheets[0]
+	if (!sheet) throw new Error('Missing sheet')
+	for (let r = 0; r < 1000; r++) {
+		sheet.cells.set(r, 0, { value: numberValue(r + 1), formula: null, styleId: SID })
+		sheet.cells.set(r, 1, {
+			value: EMPTY,
+			formula: buildNestedIfFormula(5, r + 1),
+			styleId: SID,
+		})
+	}
+	const setupMs = performance.now() - setupStart
+	const recalcStart = performance.now()
+	recalculate(workbook, defaultCalcContext())
+	const recalcMs = performance.now() - recalcStart
+	return { setupMs, recalcMs, totalMs: setupMs + recalcMs }
+}
+
+function hfNestedIfScenario(): TimingResult {
+	const setupStart = performance.now()
+	const data: (number | string | null)[][] = []
+	for (let r = 0; r < 1000; r++) {
+		data.push([r + 1, `=${buildNestedIfFormula(5, r + 1)}`])
+	}
+	const hf = HyperFormula.buildEmpty({ licenseKey: 'gpl-v3' })
+	hf.addSheet('Sheet1')
+	hf.suspendEvaluation()
+	hf.setCellContents({ sheet: 0, row: 0, col: 0 }, data)
+	const setupMs = performance.now() - setupStart
+	const recalcStart = performance.now()
+	hf.resumeEvaluation()
+	const recalcMs = performance.now() - recalcStart
+	hf.destroy()
+	return { setupMs, recalcMs, totalMs: setupMs + recalcMs }
+}
+
+function ascendDynamicSpillScenario(): TimingResult {
+	const setupStart = performance.now()
+	const workbook = createWorkbook()
+	workbook.addSheet('Sheet1')
+	const sheet = workbook.sheets[0]
+	if (!sheet) throw new Error('Missing sheet')
+	for (let i = 0; i < 100; i++) {
+		sheet.cells.set(i * 11, 0, {
+			value: EMPTY,
+			formula: `SEQUENCE(10,1,${i * 10 + 1},1)`,
+			styleId: SID,
+		})
+	}
+	const setupMs = performance.now() - setupStart
+	const recalcStart = performance.now()
+	recalculate(workbook, defaultCalcContext())
+	const recalcMs = performance.now() - recalcStart
+	return { setupMs, recalcMs, totalMs: setupMs + recalcMs }
+}
+
+function hfDynamicSpillScenario(): TimingResult {
+	const setupStart = performance.now()
+	const data: (string | null)[][] = []
+	for (let i = 0; i < 100; i++) {
+		const targetRow = i * 11
+		while (data.length <= targetRow) data.push([null])
+		const row = data[targetRow]
+		if (row) row[0] = `=SEQUENCE(10,1,${i * 10 + 1},1)`
+	}
+	const hf = HyperFormula.buildEmpty({ licenseKey: 'gpl-v3' })
+	hf.addSheet('Sheet1')
+	hf.suspendEvaluation()
+	hf.setCellContents({ sheet: 0, row: 0, col: 0 }, data)
+	const setupMs = performance.now() - setupStart
+	const recalcStart = performance.now()
+	hf.resumeEvaluation()
+	const recalcMs = performance.now() - recalcStart
+	hf.destroy()
+	return { setupMs, recalcMs, totalMs: setupMs + recalcMs }
+}
+
 const scenarios: readonly ScenarioConfig[] = [
 	{
 		name: '1000×10 grid + 100 SUM formulas',
@@ -188,6 +411,30 @@ const scenarios: readonly ScenarioConfig[] = [
 		cells: 5000 * 5 + 500 * 2,
 		ascend: ascendVlookupScenario,
 		hf: hfVlookupScenario,
+	},
+	{
+		name: '5000×5 grid + 500 INDEX/MATCH formulas',
+		cells: 5000 * 5 + 500 * 2,
+		ascend: ascendIndexMatchScenario,
+		hf: hfIndexMatchScenario,
+	},
+	{
+		name: '1000×5 grid + 100 SUMIFS formulas',
+		cells: 1000 * 5 + 100,
+		ascend: ascendSumifsScenario,
+		hf: hfSumifsScenario,
+	},
+	{
+		name: '1000 cells with nested IF chains',
+		cells: 1000 * 2,
+		ascend: ascendNestedIfScenario,
+		hf: hfNestedIfScenario,
+	},
+	{
+		name: '100 SEQUENCE formulas spilling to 10 cells each',
+		cells: 100 * 11,
+		ascend: ascendDynamicSpillScenario,
+		hf: hfDynamicSpillScenario,
 	},
 ]
 

@@ -4,13 +4,20 @@ import { analyzeWorkbookFormulas, type WorkbookFormulaAnalysis } from '@ascend/e
 import type { FormulaNode } from '@ascend/formulas'
 import { functionRegistry } from '@ascend/formulas'
 
+export interface LintOptions {
+	readonly volatileThreshold?: number
+	readonly fragileRefThreshold?: number
+	readonly complexityDepthWarning?: number
+	readonly complexityDepthError?: number
+}
+
 export interface LintResult {
 	readonly violations: readonly LintViolation[]
 }
 
 export interface LintViolation {
 	readonly rule: string
-	readonly severity: 'warning' | 'info'
+	readonly severity: 'warning' | 'info' | 'error'
 	readonly message: string
 	readonly ref: string
 	readonly formula: string
@@ -76,14 +83,12 @@ function walkForMagic(node: FormulaNode, out: number[]): void {
 	}
 }
 
-const LARGE_RANGE_THRESHOLD = 100
-
-function findFragileRefs(node: FormulaNode): boolean {
+function findFragileRefs(node: FormulaNode, threshold: number): boolean {
 	switch (node.type) {
 		case 'rangeRef': {
 			const rowSpan = Math.abs(node.end.row - node.start.row) + 1
 			const colSpan = Math.abs(node.end.col - node.start.col) + 1
-			if (rowSpan * colSpan >= LARGE_RANGE_THRESHOLD) {
+			if (rowSpan * colSpan >= threshold) {
 				const allAbsolute =
 					node.start.rowAbsolute &&
 					node.start.colAbsolute &&
@@ -94,25 +99,85 @@ function findFragileRefs(node: FormulaNode): boolean {
 			return false
 		}
 		case 'binary':
-			return findFragileRefs(node.left) || findFragileRefs(node.right)
+			return findFragileRefs(node.left, threshold) || findFragileRefs(node.right, threshold)
 		case 'unary':
-			return findFragileRefs(node.operand)
+			return findFragileRefs(node.operand, threshold)
 		case 'function':
-			return node.args.some((a) => findFragileRefs(a))
+			return node.args.some((a) => findFragileRefs(a, threshold))
 		case 'array':
-			return node.rows.some((row) => row.some((c) => findFragileRefs(c)))
+			return node.rows.some((row) => row.some((c) => findFragileRefs(c, threshold)))
 		case 'spillRef':
-			return findFragileRefs(node.target)
+			return findFragileRefs(node.target, threshold)
 		default:
 			return false
 	}
 }
 
-export function lint(workbook: Workbook, analysis?: WorkbookFormulaAnalysis): LintResult {
+function astDepth(node: FormulaNode): number {
+	switch (node.type) {
+		case 'binary':
+			return 1 + Math.max(astDepth(node.left), astDepth(node.right))
+		case 'unary':
+			return 1 + astDepth(node.operand)
+		case 'function':
+			return 1 + (node.args.length > 0 ? Math.max(...node.args.map(astDepth)) : 0)
+		case 'array':
+			return 1 + node.rows.reduce((max, row) => Math.max(max, ...row.map(astDepth)), 0)
+		case 'spillRef':
+			return 1 + astDepth(node.target)
+		case 'sheetSpanRef':
+			return 1 + astDepth(node.target)
+		default:
+			return 1
+	}
+}
+
+function collectNameReferences(node: FormulaNode, names: Set<string>): void {
+	switch (node.type) {
+		case 'name':
+			names.add(node.name.toLowerCase())
+			break
+		case 'binary':
+			collectNameReferences(node.left, names)
+			collectNameReferences(node.right, names)
+			break
+		case 'unary':
+			collectNameReferences(node.operand, names)
+			break
+		case 'function':
+			for (const arg of node.args) collectNameReferences(arg, names)
+			break
+		case 'array':
+			for (const row of node.rows) {
+				for (const cell of row) collectNameReferences(cell, names)
+			}
+			break
+		case 'spillRef':
+			collectNameReferences(node.target, names)
+			break
+		case 'sheetSpanRef':
+			collectNameReferences(node.target, names)
+			break
+		default:
+			break
+	}
+}
+
+export function lint(
+	workbook: Workbook,
+	analysis?: WorkbookFormulaAnalysis,
+	options?: LintOptions,
+): LintResult {
 	const violations: LintViolation[] = []
 	const compiled = analysis ?? analyzeWorkbookFormulas(workbook)
 
+	const volatileThreshold = options?.volatileThreshold ?? 10
+	const fragileRefThreshold = options?.fragileRefThreshold ?? 100
+	const complexityWarning = options?.complexityDepthWarning ?? 10
+	const complexityError = options?.complexityDepthError ?? 20
+
 	const sheetStats = new Map<string, { volatileCount: number; volatileCells: number }>()
+	const referencedNames = new Set<string>()
 
 	for (const formula of compiled.formulas.values()) {
 		const ref = `${formula.sheetName}!${toA1({ row: formula.row, col: formula.col })}`
@@ -147,7 +212,7 @@ export function lint(workbook: Workbook, analysis?: WorkbookFormulaAnalysis): Li
 			})
 		}
 
-		if (findFragileRefs(ast)) {
+		if (findFragileRefs(ast, fragileRefThreshold)) {
 			violations.push({
 				rule: 'fragile-refs',
 				severity: 'warning',
@@ -156,15 +221,48 @@ export function lint(workbook: Workbook, analysis?: WorkbookFormulaAnalysis): Li
 				formula: formula.formula,
 			})
 		}
+
+		const depth = astDepth(ast)
+		if (depth > complexityError) {
+			violations.push({
+				rule: 'complex-formula',
+				severity: 'error',
+				message: `Formula has depth ${depth} (exceeds error threshold of ${complexityError})`,
+				ref,
+				formula: formula.formula,
+			})
+		} else if (depth > complexityWarning) {
+			violations.push({
+				rule: 'complex-formula',
+				severity: 'warning',
+				message: `Formula has depth ${depth} (exceeds warning threshold of ${complexityWarning})`,
+				ref,
+				formula: formula.formula,
+			})
+		}
+
+		collectNameReferences(ast, referencedNames)
 	}
 
 	for (const [sheetName, stats] of sheetStats) {
-		if (stats.volatileCount > 10) {
+		if (stats.volatileCount > volatileThreshold) {
 			violations.push({
 				rule: 'volatile-overuse',
 				severity: 'warning',
 				message: `Sheet "${sheetName}" has ${stats.volatileCount} volatile function calls across ${stats.volatileCells} cell(s)`,
 				ref: `${sheetName}!A1`,
+				formula: '',
+			})
+		}
+	}
+
+	for (const entry of workbook.definedNames.list()) {
+		if (!referencedNames.has(entry.name.toLowerCase())) {
+			violations.push({
+				rule: 'unused-name',
+				severity: 'info',
+				message: `Defined name "${entry.name}" is never referenced by any formula`,
+				ref: entry.formula,
 				formula: '',
 			})
 		}

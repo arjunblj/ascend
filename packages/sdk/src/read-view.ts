@@ -27,6 +27,7 @@ import {
 import { SheetHandle } from './sheet-handle.ts'
 import { TableHandle } from './table-handle.ts'
 import type {
+	AgentReadOptions,
 	CompactRangeInfo,
 	CompactRangeWindowInfo,
 	DefinedNameInfo,
@@ -204,7 +205,7 @@ export class WorkbookReadView {
 	readRangeCompact(
 		sheetName: string,
 		range: string,
-		opts?: { includeRefs?: boolean },
+		opts?: { includeRefs?: boolean; omitEmpty?: boolean; flatValues?: boolean },
 	): CompactRangeInfo | undefined {
 		return this.sheet(sheetName)?.rangeCompact(range, opts)
 	}
@@ -220,7 +221,7 @@ export class WorkbookReadView {
 	readWindowCompact(
 		sheetName: string,
 		range: string,
-		opts?: { rowOffset?: number; rowLimit?: number; includeRefs?: boolean },
+		opts?: AgentReadOptions,
 	): CompactRangeWindowInfo | undefined {
 		return this.sheet(sheetName)?.readWindowCompact(range, opts)
 	}

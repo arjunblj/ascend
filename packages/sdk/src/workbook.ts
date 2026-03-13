@@ -453,6 +453,10 @@ export class AscendWorkbook extends WorkbookReadView {
 		return result.value
 	}
 
+	async *toStream(): AsyncGenerator<Uint8Array> {
+		yield this.toBytes()
+	}
+
 	toCsv(opts?: { sheet?: string; range?: string; dialect?: Partial<CsvDialect> }): string {
 		this.assertWritable()
 		const result = writeCsv(this.wb, opts)

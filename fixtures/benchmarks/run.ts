@@ -1141,6 +1141,49 @@ const scenarios: readonly Scenario[] = [
 			recalculate(requireWorkbook(input), defaultCalcContext())
 		},
 	},
+	...([1_000, 10_000, 100_000, 1_000_000] as const).map(
+		(cellCount): Scenario => ({
+			name: `memory-${cellCount >= 1_000_000 ? `${cellCount / 1_000_000}m` : `${cellCount / 1_000}k`}-cells`,
+			category: 'workflow',
+			build() {
+				return { rows: 0, cols: 0, cells: cellCount }
+			},
+			run() {
+				const cols = 10
+				const rows = Math.ceil(cellCount / cols)
+				runGc()
+				const rssBefore = getRssBytes() ?? 0
+				const heapBefore = process.memoryUsage().heapUsed
+				const workbook = createWorkbook()
+				workbook.addSheet('Sheet1')
+				const sheet = workbook.sheets[0]
+				if (!sheet) throw new Error('Benchmark workbook missing first sheet')
+				for (let r = 0; r < rows; r++) {
+					for (let c = 0; c < cols; c++) {
+						sheet.cells.set(r, c, {
+							value: numberValue(r * cols + c + 1),
+							formula: null,
+							styleId: SID,
+						})
+					}
+				}
+				runGc()
+				const rssAfter = getRssBytes() ?? 0
+				const heapAfter = process.memoryUsage().heapUsed
+				const rssDelta = Math.max(0, rssAfter - rssBefore)
+				const heapDelta = Math.max(0, heapAfter - heapBefore)
+				const bytesPerCell = cellCount > 0 ? rssDelta / cellCount : 0
+				return {
+					assertions: {
+						cellCount,
+						rssDeltaBytes: rssDelta,
+						heapDeltaBytes: heapDelta,
+						bytesPerCell: Math.round(bytesPerCell * 100) / 100,
+					},
+				}
+			},
+		}),
+	),
 ]
 
 const scenarioSets = {
@@ -1157,6 +1200,7 @@ const scenarioSets = {
 		'structural-insert-rows-recalc',
 		'read-csv-large',
 	],
+	memory: ['memory-1k-cells', 'memory-10k-cells', 'memory-100k-cells', 'memory-1m-cells'],
 } as const
 
 function getRssBytes(): number | undefined {

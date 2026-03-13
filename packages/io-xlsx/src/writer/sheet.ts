@@ -4,7 +4,8 @@ import type { CellValue } from '@ascend/schema'
 import { topLeftScalar } from '@ascend/schema'
 import { toStoredFormulaText } from '../formula-storage.ts'
 import { escapeXml } from '../xml.ts'
-import { autoFilterXml } from './filtering.ts'
+import { ChunkedStringBuilder } from './chunked-string-builder.ts'
+import { pushAutoFilterXml } from './filtering.ts'
 import type { SharedStringTable } from './shared-strings.ts'
 
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
@@ -44,17 +45,19 @@ export function buildSheetXml(
 	) {
 		worksheetAttrs.push(`xmlns:r="${NS_R}"`)
 	}
-	const parts: string[] = [XML_HEADER, `<worksheet ${worksheetAttrs.join(' ')}>`]
+	const out = new ChunkedStringBuilder()
+	out.push(XML_HEADER)
+	out.push(`<worksheet ${worksheetAttrs.join(' ')}>`)
 
 	if (sheet.tabColor) {
-		parts.push('<sheetPr>')
+		out.push('<sheetPr>')
 		const tcAttrs: string[] = []
 		if (sheet.tabColor.rgb) tcAttrs.push(`rgb="${sheet.tabColor.rgb}"`)
 		if (sheet.tabColor.theme !== undefined) tcAttrs.push(`theme="${sheet.tabColor.theme}"`)
 		if (sheet.tabColor.tint !== undefined) tcAttrs.push(`tint="${sheet.tabColor.tint}"`)
 		if (sheet.tabColor.indexed !== undefined) tcAttrs.push(`indexed="${sheet.tabColor.indexed}"`)
-		parts.push(`<tabColor ${tcAttrs.join(' ')}/>`)
-		parts.push('</sheetPr>')
+		out.push(`<tabColor ${tcAttrs.join(' ')}/>`)
+		out.push('</sheetPr>')
 	}
 
 	if (sheet.sheetFormatPr) {
@@ -68,29 +71,29 @@ export function buildSheetXml(
 		if (sheet.sheetFormatPr.outlineLevelCol !== undefined)
 			fmtAttrs.push(`outlineLevelCol="${sheet.sheetFormatPr.outlineLevelCol}"`)
 		if (sheet.sheetFormatPr.customHeight) fmtAttrs.push('customHeight="1"')
-		if (fmtAttrs.length > 0) parts.push(`<sheetFormatPr ${fmtAttrs.join(' ')}/>`)
+		if (fmtAttrs.length > 0) out.push(`<sheetFormatPr ${fmtAttrs.join(' ')}/>`)
 	}
 
 	const usedRange = sheet.cells.usedRange()
 	if (usedRange) {
 		const s = `${indexToColumn(usedRange.start.col)}${usedRange.start.row + 1}`
 		const e = `${indexToColumn(usedRange.end.col)}${usedRange.end.row + 1}`
-		parts.push(`<dimension ref="${s}:${e}"/>`)
+		out.push(`<dimension ref="${s}:${e}"/>`)
 	}
 
 	if (sheet.frozenRows > 0 || sheet.frozenCols > 0) {
 		const paneAttrs: string[] = ['state="frozen"']
 		if (sheet.frozenCols > 0) paneAttrs.push(`xSplit="${sheet.frozenCols}"`)
 		if (sheet.frozenRows > 0) paneAttrs.push(`ySplit="${sheet.frozenRows}"`)
-		parts.push('<sheetViews>')
-		parts.push('<sheetView workbookViewId="0">')
-		parts.push(`<pane ${paneAttrs.join(' ')}/>`)
-		parts.push('</sheetView>')
-		parts.push('</sheetViews>')
+		out.push('<sheetViews>')
+		out.push('<sheetView workbookViewId="0">')
+		out.push(`<pane ${paneAttrs.join(' ')}/>`)
+		out.push('</sheetView>')
+		out.push('</sheetViews>')
 	}
 
 	if (sheet.colWidths.size > 0 || sheet.colDefs.length > 0) {
-		parts.push('<cols>')
+		out.push('<cols>')
 		const colDefs: readonly SheetColDef[] =
 			sheet.colDefs.length > 0 ? sheet.colDefs : groupColumnWidths(sheet)
 		for (const group of colDefs) {
@@ -102,12 +105,12 @@ export function buildSheetXml(
 			if (group.collapsed) attrs.push('collapsed="1"')
 			if (group.outlineLevel !== undefined) attrs.push(`outlineLevel="${group.outlineLevel}"`)
 			if (group.customWidth ?? group.width !== undefined) attrs.push('customWidth="1"')
-			parts.push(`<col ${attrs.join(' ')}/>`)
+			out.push(`<col ${attrs.join(' ')}/>`)
 		}
-		parts.push('</cols>')
+		out.push('</cols>')
 	}
 
-	parts.push('<sheetData>')
+	out.push('<sheetData>')
 	const rowHeights = [...sheet.rowHeights.entries()].sort((a, b) => a[0] - b[0])
 	const rowIterator = sheet.cells.iterateRows()
 	let nextRow = rowIterator.next()
@@ -129,59 +132,64 @@ export function buildSheetXml(
 			rowAttrs.push(`ht="${rowHeight}"`)
 			rowAttrs.push('customHeight="1"')
 		}
-		parts.push(`<row ${rowAttrs.join(' ')}>`)
+		out.push(`<row ${rowAttrs.join(' ')}>`)
 		for (const [col, cell] of cells) {
-			parts.push(
-				cellXml(`${indexToColumn(col)}${row + 1}`, cell, ssTable, xfMap, options.useInlineStrings),
+			pushCellXml(
+				out,
+				`${indexToColumn(col)}${row + 1}`,
+				cell,
+				ssTable,
+				xfMap,
+				options.useInlineStrings,
 			)
 		}
-		parts.push('</row>')
+		out.push('</row>')
 		if (populatedRow && populatedRow[0] === row) nextRow = rowIterator.next()
 		if (heightEntry && heightEntry[0] === row) rowHeightIndex++
 	}
 
-	parts.push('</sheetData>')
+	out.push('</sheetData>')
 
 	if (sheet.merges.length > 0) {
-		parts.push(`<mergeCells count="${sheet.merges.length}">`)
+		out.push(`<mergeCells count="${sheet.merges.length}">`)
 		for (const merge of sheet.merges) {
 			const s = `${indexToColumn(merge.start.col)}${merge.start.row + 1}`
 			const e = `${indexToColumn(merge.end.col)}${merge.end.row + 1}`
-			parts.push(`<mergeCell ref="${s}:${e}"/>`)
+			out.push(`<mergeCell ref="${s}:${e}"/>`)
 		}
-		parts.push('</mergeCells>')
+		out.push('</mergeCells>')
 	}
 
 	if (sheet.protection) {
 		const attrs = collectProtectionAttrs(sheet.protection)
-		if (attrs.length > 0) parts.push(`<sheetProtection ${attrs.join(' ')}/>`)
+		if (attrs.length > 0) out.push(`<sheetProtection ${attrs.join(' ')}/>`)
 	}
 
 	if (sheet.autoFilter) {
-		parts.push(autoFilterXml(sheet.autoFilter))
+		pushAutoFilterXml(out, sheet.autoFilter)
 	}
 
 	if (sheet.conditionalFormats.length > 0) {
 		for (const conditionalFormat of sheet.conditionalFormats) {
-			parts.push(`<conditionalFormatting sqref="${escapeXml(conditionalFormat.sqref)}">`)
+			out.push(`<conditionalFormatting sqref="${escapeXml(conditionalFormat.sqref)}">`)
 			for (const rule of conditionalFormat.rules) {
 				const attrs = [`type="${escapeXml(rule.type)}"`]
 				if (rule.operator) attrs.push(`operator="${escapeXml(rule.operator)}"`)
 				if (rule.priority !== undefined) attrs.push(`priority="${rule.priority}"`)
 				if (rule.dxfId !== undefined) attrs.push(`dxfId="${rule.dxfId}"`)
 				if (rule.stopIfTrue) attrs.push('stopIfTrue="1"')
-				parts.push(`<cfRule ${attrs.join(' ')}>`)
+				out.push(`<cfRule ${attrs.join(' ')}>`)
 				for (const formula of rule.formulas) {
-					parts.push(`<formula>${escapeXml(formula)}</formula>`)
+					out.push(`<formula>${escapeXml(formula)}</formula>`)
 				}
-				parts.push('</cfRule>')
+				out.push('</cfRule>')
 			}
-			parts.push('</conditionalFormatting>')
+			out.push('</conditionalFormatting>')
 		}
 	}
 
 	if (sheet.dataValidations.length > 0) {
-		parts.push(`<dataValidations count="${sheet.dataValidations.length}">`)
+		out.push(`<dataValidations count="${sheet.dataValidations.length}">`)
 		for (const validation of sheet.dataValidations) {
 			const attrs = [`sqref="${escapeXml(validation.sqref)}"`]
 			if (validation.type) attrs.push(`type="${escapeXml(validation.type)}"`)
@@ -203,67 +211,67 @@ export function buildSheetXml(
 			if (validation.prompt) attrs.push(`prompt="${escapeXml(validation.prompt)}"`)
 			if (validation.errorTitle) attrs.push(`errorTitle="${escapeXml(validation.errorTitle)}"`)
 			if (validation.error) attrs.push(`error="${escapeXml(validation.error)}"`)
-			parts.push(`<dataValidation ${attrs.join(' ')}>`)
-			if (validation.formula1) parts.push(`<formula1>${escapeXml(validation.formula1)}</formula1>`)
-			if (validation.formula2) parts.push(`<formula2>${escapeXml(validation.formula2)}</formula2>`)
-			parts.push('</dataValidation>')
+			out.push(`<dataValidation ${attrs.join(' ')}>`)
+			if (validation.formula1) out.push(`<formula1>${escapeXml(validation.formula1)}</formula1>`)
+			if (validation.formula2) out.push(`<formula2>${escapeXml(validation.formula2)}</formula2>`)
+			out.push('</dataValidation>')
 		}
-		parts.push('</dataValidations>')
+		out.push('</dataValidations>')
 	}
 
 	if (hyperlinks.length > 0) {
-		parts.push('<hyperlinks>')
+		out.push('<hyperlinks>')
 		for (const hyperlink of hyperlinks) {
 			const attrs = [`ref="${escapeXml(hyperlink.ref)}"`]
 			if (hyperlink.relId) attrs.push(`r:id="${hyperlink.relId}"`)
 			if (hyperlink.location) attrs.push(`location="${escapeXml(hyperlink.location)}"`)
 			if (hyperlink.display) attrs.push(`display="${escapeXml(hyperlink.display)}"`)
 			if (hyperlink.tooltip) attrs.push(`tooltip="${escapeXml(hyperlink.tooltip)}"`)
-			parts.push(`<hyperlink ${attrs.join(' ')}/>`)
+			out.push(`<hyperlink ${attrs.join(' ')}/>`)
 		}
-		parts.push('</hyperlinks>')
+		out.push('</hyperlinks>')
 	}
 
 	if (sheet.printOptions) {
 		const attrs = collectMixedAttrs(sheet.printOptions)
-		if (attrs.length > 0) parts.push(`<printOptions ${attrs.join(' ')}/>`)
+		if (attrs.length > 0) out.push(`<printOptions ${attrs.join(' ')}/>`)
 	}
 
 	if (sheet.pageMargins) {
 		const attrs = collectNumericAttrs(sheet.pageMargins)
-		if (attrs.length > 0) parts.push(`<pageMargins ${attrs.join(' ')}/>`)
+		if (attrs.length > 0) out.push(`<pageMargins ${attrs.join(' ')}/>`)
 	}
 
 	if (sheet.pageSetup) {
 		const attrs = collectMixedAttrs(sheet.pageSetup)
-		if (attrs.length > 0) parts.push(`<pageSetup ${attrs.join(' ')}/>`)
+		if (attrs.length > 0) out.push(`<pageSetup ${attrs.join(' ')}/>`)
 	}
 
 	if (sheet.headerFooter) {
-		parts.push('<headerFooter>')
+		out.push('<headerFooter>')
 		if (sheet.headerFooter.oddHeader) {
-			parts.push(`<oddHeader>${escapeXml(sheet.headerFooter.oddHeader)}</oddHeader>`)
+			out.push(`<oddHeader>${escapeXml(sheet.headerFooter.oddHeader)}</oddHeader>`)
 		}
 		if (sheet.headerFooter.oddFooter) {
-			parts.push(`<oddFooter>${escapeXml(sheet.headerFooter.oddFooter)}</oddFooter>`)
+			out.push(`<oddFooter>${escapeXml(sheet.headerFooter.oddFooter)}</oddFooter>`)
 		}
 		if (sheet.headerFooter.evenHeader) {
-			parts.push(`<evenHeader>${escapeXml(sheet.headerFooter.evenHeader)}</evenHeader>`)
+			out.push(`<evenHeader>${escapeXml(sheet.headerFooter.evenHeader)}</evenHeader>`)
 		}
 		if (sheet.headerFooter.evenFooter) {
-			parts.push(`<evenFooter>${escapeXml(sheet.headerFooter.evenFooter)}</evenFooter>`)
+			out.push(`<evenFooter>${escapeXml(sheet.headerFooter.evenFooter)}</evenFooter>`)
 		}
 		if (sheet.headerFooter.firstHeader) {
-			parts.push(`<firstHeader>${escapeXml(sheet.headerFooter.firstHeader)}</firstHeader>`)
+			out.push(`<firstHeader>${escapeXml(sheet.headerFooter.firstHeader)}</firstHeader>`)
 		}
 		if (sheet.headerFooter.firstFooter) {
-			parts.push(`<firstFooter>${escapeXml(sheet.headerFooter.firstFooter)}</firstFooter>`)
+			out.push(`<firstFooter>${escapeXml(sheet.headerFooter.firstFooter)}</firstFooter>`)
 		}
-		parts.push('</headerFooter>')
+		out.push('</headerFooter>')
 	}
 
 	if (sheet.ignoredErrors.length > 0) {
-		parts.push('<ignoredErrors>')
+		out.push('<ignoredErrors>')
 		for (const ie of sheet.ignoredErrors) {
 			const attrs = [`sqref="${escapeXml(ie.sqref)}"`]
 			if (ie.numberStoredAsText) attrs.push('numberStoredAsText="1"')
@@ -275,33 +283,33 @@ export function buildSheetXml(
 			if (ie.emptyCellReference) attrs.push('emptyCellReference="1"')
 			if (ie.listDataValidation) attrs.push('listDataValidation="1"')
 			if (ie.calculatedColumn) attrs.push('calculatedColumn="1"')
-			parts.push(`<ignoredError ${attrs.join(' ')}/>`)
+			out.push(`<ignoredError ${attrs.join(' ')}/>`)
 		}
-		parts.push('</ignoredErrors>')
+		out.push('</ignoredErrors>')
 	}
 
 	if (drawingRelId) {
-		parts.push(`<drawing r:id="${drawingRelId}"/>`)
+		out.push(`<drawing r:id="${drawingRelId}"/>`)
 	}
 
 	if (legacyDrawingRelId) {
-		parts.push(`<legacyDrawing r:id="${legacyDrawingRelId}"/>`)
+		out.push(`<legacyDrawing r:id="${legacyDrawingRelId}"/>`)
 	}
 
 	if (tableRelIds.length > 0) {
-		parts.push(`<tableParts count="${tableRelIds.length}">`)
+		out.push(`<tableParts count="${tableRelIds.length}">`)
 		for (const relId of tableRelIds) {
-			parts.push(`<tablePart r:id="${relId}"/>`)
+			out.push(`<tablePart r:id="${relId}"/>`)
 		}
-		parts.push('</tableParts>')
+		out.push('</tableParts>')
 	}
 
 	if (sheet.preservedExtLst) {
-		parts.push(sheet.preservedExtLst)
+		out.push(sheet.preservedExtLst)
 	}
 
-	parts.push('</worksheet>')
-	return parts.join('')
+	out.push('</worksheet>')
+	return out.toString()
 }
 
 function groupColumnWidths(sheet: Sheet): SheetColDef[] {
@@ -364,32 +372,40 @@ function collectProtectionAttrs(protection: NonNullable<Sheet['protection']>): s
 	return attrs
 }
 
-function cellXml(
+function pushCellXml(
+	out: ChunkedStringBuilder,
 	ref: string,
 	cell: Cell,
 	ssTable: SharedStringTable,
 	xfMap: Map<number, number>,
 	useInlineStrings?: boolean,
-): string {
+): void {
 	const xfIdx = xfMap.get(cell.styleId as number) ?? 0
 
 	if (cell.formula || cell.formulaInfo?.kind === 'shared' || cell.formulaInfo?.kind === 'array') {
-		return formulaCellXml(ref, cell, xfIdx)
+		out.push(formulaCellXml(ref, cell, xfIdx))
+		return
 	}
 
 	const v = cell.value
 	if (v.kind === 'number') {
-		return xfIdx === 0
-			? `<c r="${ref}"><v>${v.value}</v></c>`
-			: `<c r="${ref}" s="${xfIdx}"><v>${v.value}</v></c>`
+		out.push(
+			xfIdx === 0
+				? `<c r="${ref}"><v>${v.value}</v></c>`
+				: `<c r="${ref}" s="${xfIdx}"><v>${v.value}</v></c>`,
+		)
+		return
 	}
 	if (v.kind === 'date') {
-		return xfIdx === 0
-			? `<c r="${ref}"><v>${v.serial}</v></c>`
-			: `<c r="${ref}" s="${xfIdx}"><v>${v.serial}</v></c>`
+		out.push(
+			xfIdx === 0
+				? `<c r="${ref}"><v>${v.serial}</v></c>`
+				: `<c r="${ref}" s="${xfIdx}"><v>${v.serial}</v></c>`,
+		)
+		return
 	}
 
-	return regularCellXml(ref, cell, ssTable, xfIdx, useInlineStrings)
+	out.push(regularCellXml(ref, cell, ssTable, xfIdx, useInlineStrings))
 }
 
 function formulaCellXml(ref: string, cell: Cell, xfIdx: number): string {

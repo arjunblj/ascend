@@ -315,6 +315,14 @@ export function recalculate(
 			...graph.getVolatiles(),
 			...resolveDirtyKeys(workbook, analysis.sheetNameIndex, opts?.dirtyRefs),
 		]
+		dirtySeeds.push(
+			...resolveBlockedSpillKeys(
+				workbook,
+				analysis.formulas,
+				analysis.sheetNameIndex,
+				opts?.dirtyRefs,
+			),
+		)
 		const dirty = graph.getDirtySet(dirtySeeds)
 		evalOrder = graph.getEvalOrder(dirty)
 	} else {
@@ -525,6 +533,33 @@ export function recalculate(
 		errors,
 		duration: performance.now() - start,
 	}
+}
+
+function resolveBlockedSpillKeys(
+	workbook: Workbook,
+	formulas: ReadonlyMap<CellKey, { key: CellKey; sheetIndex: number; row: number; col: number }>,
+	sheetNameIndex: ReadonlyMap<string, number>,
+	refs: readonly string[] | undefined,
+): CellKey[] {
+	if (!refs || refs.length === 0) return []
+	const dirtySheets = new Set<number>()
+	for (const ref of refs) {
+		const bang = ref.indexOf('!')
+		const sheetName =
+			bang >= 0 ? ref.slice(0, bang).replace(/^'|'$/g, '') : workbook.sheets[0]?.name
+		if (!sheetName) continue
+		const sheetIndex = sheetNameIndex.get(sheetName.toLowerCase())
+		if (sheetIndex !== undefined) dirtySheets.add(sheetIndex)
+	}
+	if (dirtySheets.size === 0) return []
+
+	const blocked: CellKey[] = []
+	for (const analyzed of formulas.values()) {
+		if (!dirtySheets.has(analyzed.sheetIndex)) continue
+		const cell = workbook.sheets[analyzed.sheetIndex]?.cells.get(analyzed.row, analyzed.col)
+		if (cell?.value.kind === 'error' && cell.value.value === '#SPILL!') blocked.push(analyzed.key)
+	}
+	return blocked
 }
 
 function resolveDirtyKeys(

@@ -273,6 +273,15 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 2)?.value).toEqual(numberValue(10))
 	})
 
+	test('non-overlapping intersection returns #NULL!', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'A1:A2 C1:C2', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#NULL!'))
+	})
+
 	test('COUNTA, COUNTBLANK, and PRODUCT support union references', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -512,6 +521,23 @@ describe('recalculate', () => {
 		recalculate(wb, makeCtx())
 		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#SPILL!'))
 		expect(sheet.cells.get(1, 0)?.value).toEqual(stringValue('blocker'))
+	})
+
+	test('dirty recalc expands spill once blocker is removed', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'SEQUENCE(3)', styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('blocker'), formula: null, styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#SPILL!'))
+
+		sheet.cells.delete(1, 0)
+		recalculate(wb, makeCtx(), { dirtyOnly: true, dirtyRefs: ['Sheet1!A2'] })
+
+		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(2, 0)?.value).toEqual(numberValue(3))
 	})
 
 	test('dirty recalc clears stale spill cells when a spill shrinks', () => {

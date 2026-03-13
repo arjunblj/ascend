@@ -53,6 +53,11 @@ const Op = {
 	NOT: 70,
 	AND_JF: 71,
 	OR_JT: 72,
+	SUM_RANGE: 80,
+	COUNT_RANGE: 81,
+	AVERAGE_RANGE: 82,
+	MIN_RANGE: 83,
+	MAX_RANGE: 84,
 	TREE: 99,
 } as const
 
@@ -139,9 +144,26 @@ const COMPILABLE_FUNCTIONS = new Set([
 	'NOT',
 	'AND',
 	'OR',
+	'SUM',
+	'COUNT',
+	'AVERAGE',
+	'MIN',
+	'MAX',
 ])
 
 function shouldCompile(node: FormulaNode): boolean {
+	if (node.type === 'function' && node.args.length === 1 && node.args[0]?.type === 'rangeRef') {
+		const upper = node.name.toUpperCase()
+		if (
+			upper === 'SUM' ||
+			upper === 'COUNT' ||
+			upper === 'AVERAGE' ||
+			upper === 'MIN' ||
+			upper === 'MAX'
+		) {
+			return true
+		}
+	}
 	let compilableNodes = 0
 	function scan(n: FormulaNode): boolean {
 		switch (n.type) {
@@ -153,6 +175,7 @@ function shouldCompile(node: FormulaNode): boolean {
 				compilableNodes++
 				return true
 			case 'cellRef':
+			case 'rangeRef':
 				compilableNodes++
 				return true
 			case 'binary':
@@ -216,6 +239,13 @@ function isNumericFormula(ops: readonly number[]): boolean {
 				break
 			case Op.CELL_SHEET:
 				ip += 3
+				break
+			case Op.SUM_RANGE:
+			case Op.COUNT_RANGE:
+			case Op.AVERAGE_RANGE:
+			case Op.MIN_RANGE:
+			case Op.MAX_RANGE:
+				ip += 5
 				break
 			default:
 				return false
@@ -513,6 +543,30 @@ export function compileFormula(node: FormulaNode): CompiledFormula | null {
 			andOrJumps.length = 0
 			return
 		}
+		if (
+			(upper === 'SUM' ||
+				upper === 'COUNT' ||
+				upper === 'AVERAGE' ||
+				upper === 'MIN' ||
+				upper === 'MAX') &&
+			n.args.length === 1 &&
+			(n.args[0] as FormulaNode).type === 'rangeRef'
+		) {
+			const arg = n.args[0] as FormulaNode & { type: 'rangeRef' }
+			const rangeOp =
+				upper === 'SUM'
+					? Op.SUM_RANGE
+					: upper === 'COUNT'
+						? Op.COUNT_RANGE
+						: upper === 'AVERAGE'
+							? Op.AVERAGE_RANGE
+							: upper === 'MIN'
+								? Op.MIN_RANGE
+								: Op.MAX_RANGE
+			const constIdx = arg.sheet !== undefined ? addConst(arg.sheet) : -1
+			ops.push(rangeOp, constIdx, arg.start.row, arg.start.col, arg.end.row, arg.end.col)
+			return
+		}
 		ops.push(Op.TREE, addConst(n))
 	}
 
@@ -661,6 +715,56 @@ function evaluateCompiledNumeric(compiled: CompiledFormula, ctx: EvalContext): C
 			case Op.ABS:
 				numericStack[sp - 1] = Math.abs(numericStack[sp - 1] as number)
 				break
+			case Op.SUM_RANGE:
+			case Op.COUNT_RANGE:
+			case Op.AVERAGE_RANGE:
+			case Op.MIN_RANGE:
+			case Op.MAX_RANGE: {
+				const ci = ops[ip] as number
+				const sr = ops[ip + 1] as number
+				const sc = ops[ip + 2] as number
+				const er = ops[ip + 3] as number
+				const ec = ops[ip + 4] as number
+				ip += 5
+				let target = sheet
+				if (ci !== -1) {
+					const si = resolveSheetIdx(ctx.workbook, constants[ci] as string, ctx.sheetIndex)
+					if (si < 0) return errorValue('#REF!')
+					target = ctx.workbook.sheets[si]
+				}
+				let sum = 0
+				let count = 0
+				let min = Infinity
+				let max = -Infinity
+				for (let r = sr; r <= er; r++) {
+					for (let c = sc; c <= ec; c++) {
+						const cv = target?.cells.readValue(r, c)
+						if (!cv || cv.kind === 'empty') continue
+						if (cv.kind === 'error') return cv
+						if (cv.kind === 'number') {
+							const v = cv.value
+							sum += v
+							count++
+							if (v < min) min = v
+							if (v > max) max = v
+						} else if (cv.kind === 'date') {
+							const v = cv.serial
+							sum += v
+							count++
+							if (v < min) min = v
+							if (v > max) max = v
+						}
+					}
+				}
+				if (op === Op.SUM_RANGE) numericStack[sp++] = sum
+				else if (op === Op.COUNT_RANGE) numericStack[sp++] = count
+				else if (op === Op.AVERAGE_RANGE) {
+					if (count === 0) return errorValue('#DIV/0!')
+					numericStack[sp++] = sum / count
+				} else if (op === Op.MIN_RANGE) numericStack[sp++] = count === 0 ? 0 : min
+				else numericStack[sp++] = count === 0 ? 0 : max
+				break
+			}
 		}
 	}
 
@@ -1005,6 +1109,64 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 				} else {
 					stackDepth--
 				}
+				break
+			}
+			case Op.SUM_RANGE:
+			case Op.COUNT_RANGE:
+			case Op.AVERAGE_RANGE:
+			case Op.MIN_RANGE:
+			case Op.MAX_RANGE: {
+				const ci = ops[ip] as number
+				const sr = ops[ip + 1] as number
+				const sc = ops[ip + 2] as number
+				const er = ops[ip + 3] as number
+				const ec = ops[ip + 4] as number
+				ip += 5
+				let target = sheet
+				if (ci !== -1) {
+					const si = resolveSheetIdx(ctx.workbook, constants[ci] as string, ctx.sheetIndex)
+					if (si < 0) {
+						sharedStack[stackDepth++] = errorValue('#REF!')
+						break
+					}
+					target = ctx.workbook.sheets[si]
+				}
+				let sum = 0
+				let count = 0
+				let min = Infinity
+				let max = -Infinity
+				let rangeErr: CellValue | null = null
+				for (let r = sr; r <= er && !rangeErr; r++) {
+					for (let c = sc; c <= ec; c++) {
+						const cv = target?.cells.readValue(r, c)
+						if (!cv || cv.kind === 'empty') continue
+						if (cv.kind === 'error') {
+							rangeErr = cv
+							break
+						}
+						if (cv.kind === 'number') {
+							const v = cv.value
+							sum += v
+							count++
+							if (v < min) min = v
+							if (v > max) max = v
+						} else if (cv.kind === 'date') {
+							const v = cv.serial
+							sum += v
+							count++
+							if (v < min) min = v
+							if (v > max) max = v
+						}
+					}
+				}
+				if (rangeErr) {
+					sharedStack[stackDepth++] = rangeErr
+				} else if (op === Op.SUM_RANGE) sharedStack[stackDepth++] = numberValue(sum)
+				else if (op === Op.COUNT_RANGE) sharedStack[stackDepth++] = numberValue(count)
+				else if (op === Op.AVERAGE_RANGE)
+					sharedStack[stackDepth++] = count === 0 ? errorValue('#DIV/0!') : numberValue(sum / count)
+				else if (op === Op.MIN_RANGE) sharedStack[stackDepth++] = numberValue(count === 0 ? 0 : min)
+				else sharedStack[stackDepth++] = numberValue(count === 0 ? 0 : max)
 				break
 			}
 			case Op.TREE: {

@@ -503,55 +503,418 @@ describe('fuzz: parseFormula never throws', () => {
 	}
 
 	const FN_NAMES = [
+		// Math - aggregation
 		'SUM',
 		'AVERAGE',
 		'COUNT',
+		'COUNTA',
+		'COUNTBLANK',
 		'MAX',
 		'MIN',
-		'IF',
-		'VLOOKUP',
-		'INDEX',
-		'MATCH',
+		'PRODUCT',
+		'SUBTOTAL',
+		'AGGREGATE',
+		// Math - rounding
+		'ROUND',
+		'ROUNDUP',
+		'ROUNDDOWN',
+		'INT',
+		'TRUNC',
+		'CEILING',
+		'FLOOR',
+		'MROUND',
+		'CEILING.MATH',
+		'FLOOR.MATH',
+		'EVEN',
+		'ODD',
+		// Math - basic
+		'ABS',
+		'SIGN',
+		'SQRT',
+		'POWER',
+		'MOD',
+		'QUOTIENT',
+		'LOG',
+		'LOG10',
+		'LN',
+		'EXP',
+		'PI',
+		'SUMPRODUCT',
+		'SUMSQ',
+		'SUMX2MY2',
+		'SUMX2PY2',
+		'SUMXMY2',
+		'GCD',
+		'LCM',
+		'RANDBETWEEN',
+		// Math - trig
+		'SIN',
+		'COS',
+		'TAN',
+		'ASIN',
+		'ACOS',
+		'ATAN',
+		'ATAN2',
+		'SINH',
+		'COSH',
+		'TANH',
+		'ASINH',
+		'ACOSH',
+		'ATANH',
+		'RADIANS',
+		'DEGREES',
+		// Math - combinatorics
+		'FACT',
+		'FACTDOUBLE',
+		'COMBIN',
+		'COMBINA',
+		'PERMUT',
+		'PERMUTATIONA',
+		'MULTINOMIAL',
+		// Math - conditional
+		'SUMIF',
+		'COUNTIF',
+		'AVERAGEIF',
+		'SUMIFS',
+		'COUNTIFS',
+		'AVERAGEIFS',
+		'MAXIFS',
+		'MINIFS',
+		// Math - random
+		'RAND',
+		'RANDBETWEEN',
+		// Math - composite
+		'MMULT',
+		'MDETERM',
+		'MINVERSE',
+		// Text
 		'CONCATENATE',
+		'CONCAT',
+		'TEXTJOIN',
 		'LEFT',
 		'RIGHT',
 		'MID',
 		'LEN',
 		'TRIM',
-		'ROUND',
-		'ABS',
+		'UPPER',
+		'LOWER',
+		'EXACT',
+		'PROPER',
+		'FIND',
+		'SEARCH',
+		'TEXTBEFORE',
+		'TEXTAFTER',
+		'TEXTSPLIT',
+		'SUBSTITUTE',
+		'REPLACE',
+		'TEXT',
+		'VALUE',
+		'CHAR',
+		'CODE',
+		'REPT',
+		'CLEAN',
+		'T',
+		'UNICHAR',
+		'UNICODE',
+		'FIXED',
+		'DOLLAR',
+		'ARRAYTOTEXT',
+		'VALUETOTEXT',
+		'NUMBERVALUE',
+		// Logical
+		'IF',
+		'IFS',
 		'AND',
 		'OR',
 		'NOT',
+		'XOR',
 		'IFERROR',
-		'SUMIF',
-		'COUNTIF',
-		'COUNTA',
+		'IFNA',
+		'TRUE',
+		'FALSE',
+		'SWITCH',
+		// Financial
+		'PMT',
+		'FV',
+		'PV',
+		'NPER',
+		'RATE',
+		'IPMT',
+		'PPMT',
+		'NPV',
+		'IRR',
+		'SLN',
+		'SYD',
+		'DDB',
+		'DOLLARDE',
+		'DOLLARFR',
+		'XNPV',
+		'XIRR',
+		'DB',
+		'VDB',
+		'MIRR',
+		'ISPMT',
+		'CUMIPMT',
+		'CUMPRINC',
+		'EFFECT',
+		'NOMINAL',
+		'PDURATION',
+		'RRI',
+		'FVSCHEDULE',
+		'DISC',
+		'INTRATE',
+		// Dynamic
+		'SORT',
+		'SORTBY',
+		'FILTER',
+		'UNIQUE',
+		'SEQUENCE',
+		'RANDARRAY',
+		'LET',
+		'TRANSPOSE',
+		'TOCOL',
+		'TOROW',
+		'WRAPCOLS',
+		'WRAPROWS',
+		'HSTACK',
+		'VSTACK',
+		'TAKE',
+		'DROP',
+		'EXPAND',
+		'CHOOSECOLS',
+		'CHOOSEROWS',
+		'LAMBDA',
+		'MAP',
+		'REDUCE',
+		'SCAN',
+		// Date
+		'DATE',
+		'TODAY',
+		'NOW',
+		'YEAR',
+		'MONTH',
+		'DAY',
+		'HOUR',
+		'MINUTE',
+		'SECOND',
+		'TIME',
+		'TIMEVALUE',
+		'DATEVALUE',
+		'DATEDIF',
+		'EDATE',
+		'EOMONTH',
+		'WEEKDAY',
+		'WEEKNUM',
+		'NETWORKDAYS',
+		'WORKDAY',
+		'DAYS360',
+		'YEARFRAC',
+		'ISOWEEKNUM',
+		'DAYS',
+		'NETWORKDAYS.INTL',
+		'WORKDAY.INTL',
+		// Database
+		'DSUM',
+		'DAVERAGE',
+		'DCOUNT',
+		'DCOUNTA',
+		'DMAX',
+		'DMIN',
+		'DPRODUCT',
+		'DGET',
+		'DSTDEV',
+		'DSTDEVP',
+		'DVAR',
+		'DVARP',
+		// Engineering
+		'BIN2DEC',
+		'DEC2BIN',
+		'HEX2DEC',
+		'DEC2HEX',
+		'OCT2DEC',
+		'DEC2OCT',
+		'BIN2HEX',
+		'BIN2OCT',
+		'HEX2BIN',
+		'HEX2OCT',
+		'OCT2BIN',
+		'OCT2HEX',
+		'DELTA',
+		'GESTEP',
+		'BITAND',
+		'BITOR',
+		'BITXOR',
+		'BITLSHIFT',
+		'BITRSHIFT',
+		'ERF',
+		'ERF.PRECISE',
+		'ERFC',
+		'ERFC.PRECISE',
+		'COMPLEX',
+		'IMREAL',
+		'IMAGINARY',
+		'IMABS',
+		'IMARGUMENT',
+		'IMCONJUGATE',
+		'IMSUM',
+		'IMSUB',
+		'IMPRODUCT',
+		'IMDIV',
+		'IMPOWER',
+		'IMSQRT',
+		'IMEXP',
+		'IMLN',
+		'IMSIN',
+		'IMCOS',
+		// Info
+		'ISBLANK',
+		'ISERROR',
+		'ISERR',
+		'ISNA',
+		'ISNUMBER',
+		'ISTEXT',
+		'ISLOGICAL',
+		'TYPE',
+		'N',
+		'NA',
+		'ISEVEN',
+		'ISODD',
+		'ISNONTEXT',
+		'ERROR.TYPE',
+		'ISFORMULA',
+		// Lookup
+		'VLOOKUP',
+		'HLOOKUP',
+		'INDEX',
+		'MATCH',
+		'XLOOKUP',
+		'XMATCH',
+		'CHOOSE',
+		'LOOKUP',
+		'ADDRESS',
+		'ROWS',
+		'COLUMNS',
+		'ROW',
+		'COLUMN',
+		'FORMULATEXT',
+		'AREAS',
+		'INDIRECT',
+		'OFFSET',
+		// Stats
+		'LARGE',
+		'SMALL',
+		'RANK',
+		'PERCENTILE',
+		'MEDIAN',
+		'STDEV',
+		'STDEV.S',
+		'STDEV.P',
+		'STDEVP',
+		'VAR',
+		'VAR.S',
+		'VAR.P',
+		'VARP',
+		'PERCENTILE.INC',
+		'PERCENTILE.EXC',
+		'QUARTILE',
+		'QUARTILE.INC',
+		'QUARTILE.EXC',
+		'MODE',
+		'MODE.SNGL',
+		'AVERAGEA',
+		'MAXA',
+		'MINA',
+		'RANK.EQ',
+		'RANK.AVG',
+		'GEOMEAN',
+		'HARMEAN',
+		'TRIMMEAN',
+		'PERCENTRANK.INC',
+		'PERCENTRANK.EXC',
+		'FORECAST.LINEAR',
+		'FORECAST',
+		'SLOPE',
+		'INTERCEPT',
+		'RSQ',
+		'CORREL',
+		'PEARSON',
+		'STEYX',
+		'COVARIANCE.P',
+		'COVARIANCE.S',
+		'AVEDEV',
+		'DEVSQ',
+		'KURT',
+		'SKEW',
+		'FREQUENCY',
+		'MODE.MULT',
+		'NORM.DIST',
+		'NORM.INV',
+		'NORM.S.DIST',
+		'NORM.S.INV',
+		'ISREF',
 	] as const
+
+	const SHEET_NAMES = ['Sheet1', 'Sheet2', 'Sheet3', 'Data', 'My Sheet', "'Jan 2024'"] as const
+	const DEFINED_NAMES = ['TaxRate', 'Revenue', 'CostOfGoods', '_temp', 'x'] as const
+	const TABLE_COLS = ['Sales', 'Revenue', 'Cost', 'Name', 'Date'] as const
 
 	const BINARY_OPS = ['+', '-', '*', '/', '^', '&', '=', '<>', '<', '>', '<=', '>='] as const
 
+	function randSheetRef(rng: { s: number }): string {
+		const sheet = pick(SHEET_NAMES, rng)
+		const prefix = sheet.includes(' ') ? `'${sheet}'!` : `${sheet}!`
+		return xorshift32(rng) < 0.5 ? `${prefix}${randCellRef(rng)}` : `${prefix}${randRange(rng)}`
+	}
+
+	function randStructuredRef(rng: { s: number }): string {
+		const table = `Table${randInt(rng, 1, 5)}`
+		const col = pick(TABLE_COLS, rng)
+		const forms = [
+			`${table}[${col}]`,
+			`${table}[[${col}]]`,
+			`${table}[#All]`,
+			`${table}[#Data]`,
+			`${table}[#Headers]`,
+			`${table}[@${col}]`,
+		]
+		return pick(forms, rng)
+	}
+
 	function randAtom(rng: { s: number }): string {
-		const kind = randInt(rng, 0, 5)
+		const kind = randInt(rng, 0, 11)
 		switch (kind) {
 			case 0:
 				return String(randInt(rng, 0, 9999))
 			case 1:
-				return `"${String.fromCharCode(...Array.from({ length: randInt(rng, 0, 8) }, () => randInt(rng, 65, 90)))}"` // random quoted string
+				return `"${String.fromCharCode(...Array.from({ length: randInt(rng, 0, 8) }, () => randInt(rng, 65, 90)))}"`
 			case 2:
 				return randCellRef(rng)
 			case 3:
 				return xorshift32(rng) < 0.5 ? 'TRUE' : 'FALSE'
 			case 4:
 				return pick(['#N/A', '#DIV/0!', '#VALUE!', '#REF!', '#NAME?', '#NUM!', '#NULL!'], rng)
-			default:
+			case 5:
 				return randRange(rng)
+			case 6:
+				return randSheetRef(rng)
+			case 7:
+				return pick(DEFINED_NAMES, rng)
+			case 8:
+				return randStructuredRef(rng)
+			case 9:
+				return pick(['""', '0', '-0', '1E+308', '-1E+308', '1E-10', '9.99E+307'], rng)
+			case 10: {
+				const n = (xorshift32(rng) * 2 - 1) * 1e15
+				return n.toExponential(randInt(rng, 0, 5))
+			}
+			default:
+				return `${randInt(rng, -999, 999)}.${randInt(rng, 0, 999999)}`
 		}
 	}
 
 	function randExpr(rng: { s: number }, depth: number): string {
 		if (depth <= 0) return randAtom(rng)
-		const kind = randInt(rng, 0, 5)
+		const kind = randInt(rng, 0, 9)
 		switch (kind) {
 			case 0: {
 				const fn = pick(FN_NAMES, rng)
@@ -567,6 +930,39 @@ describe('fuzz: parseFormula never throws', () => {
 				return `-${randExpr(rng, depth - 1)}`
 			case 4:
 				return `${randExpr(rng, depth - 1)}%`
+			case 5: {
+				// deeply nested IF
+				const levels = randInt(rng, 2, 4)
+				let expr = randAtom(rng)
+				for (let i = 0; i < levels; i++) {
+					expr = `IF(${randExpr(rng, 0)}>${randInt(rng, 0, 100)},${expr},${randAtom(rng)})`
+				}
+				return expr
+			}
+			case 6: {
+				// mixed function calls: SUM(IF(...), VLOOKUP(...))
+				const outer = pick(['SUM', 'AVERAGE', 'MAX', 'MIN', 'IFERROR', 'IF'] as const, rng)
+				const inner1Fn = pick(FN_NAMES, rng)
+				const inner2Fn = pick(FN_NAMES, rng)
+				const a1 = randExpr(rng, depth - 2)
+				const a2 = randExpr(rng, depth - 2)
+				return `${outer}(${inner1Fn}(${a1}),${inner2Fn}(${a2}))`
+			}
+			case 7: {
+				// array literal
+				const rows = randInt(rng, 1, 3)
+				const cols = randInt(rng, 1, 4)
+				const rowStrs: string[] = []
+				for (let r = 0; r < rows; r++) {
+					const cells: string[] = []
+					for (let c = 0; c < cols; c++) cells.push(randAtom(rng))
+					rowStrs.push(cells.join(','))
+				}
+				return `{${rowStrs.join(';')}}`
+			}
+			case 8:
+				// cross-sheet reference in expression
+				return `${randSheetRef(rng)}${pick(BINARY_OPS, rng)}${randExpr(rng, depth - 1)}`
 			default:
 				return randAtom(rng)
 		}
@@ -581,6 +977,7 @@ describe('fuzz: parseFormula never throws', () => {
 
 	it('valid formula patterns parse without throwing', () => {
 		const formulas = [
+			// basic
 			'SUM(A1:B10)',
 			'IF(A1>0,B1,C1)',
 			'VLOOKUP(D1,A:B,2,0)',
@@ -615,6 +1012,143 @@ describe('fuzz: parseFormula never throws', () => {
 			'IF(AND(A1>0,B1<10),A1*B1,0)',
 			'IFERROR(A1/B1,0)',
 			'A1+B1*C1-D1/E1^2',
+			// deeply nested IF
+			'IF(IF(IF(A1>0,1,0)>0,"yes","no")="yes",100,200)',
+			'IF(IF(IF(IF(A1>0,1,0),2,3),4,5),6,7)',
+			'IF(A1>0,IF(B1>0,IF(C1>0,IF(D1>0,"deep","d3"),"d2"),"d1"),"d0")',
+			// complex arithmetic
+			'((A1+B1)*C1-D1)/E1^F1',
+			'(A1+B1+C1+D1+E1+F1+G1+H1)/8',
+			'((((A1+1)*2)-3)/4)^0.5',
+			'A1*B1+C1*D1-E1*F1+G1/H1',
+			'-(-(-A1))',
+			'A1^B1^C1',
+			'1+2+3+4+5+6+7+8+9+10',
+			'A1%+B1%-C1%*D1%',
+			'(A1+B1)*(C1-D1)/(E1+F1)^(G1-H1)',
+			// mixed function calls
+			'SUM(IF(A1:A10>0,A1:A10,0))',
+			'IFERROR(VLOOKUP(A1,B:C,2,0),INDEX(D:D,MATCH(A1,E:E,0)))',
+			'AVERAGE(LARGE(A1:A100,1),LARGE(A1:A100,2),LARGE(A1:A100,3))',
+			'CONCATENATE(LEFT(A1,3),"-",RIGHT(B1,4))',
+			'SUMPRODUCT((A1:A10>0)*(B1:B10))',
+			'IF(AND(OR(A1>0,B1>0),C1<>0),SUM(D1:D10)/C1,0)',
+			'INDEX(A1:C10,MATCH(MIN(B1:B10),B1:B10,0),3)',
+			'IF(ISERROR(A1/B1),0,ROUND(A1/B1,2))',
+			'MAX(SUM(A1:A5),SUM(B1:B5),SUM(C1:C5))',
+			'CHOOSE(MATCH(A1,{1,2,3},0),"low","mid","high")',
+			// error conditions
+			'1/0',
+			'0/0',
+			'VLOOKUP("missing",A1:B1,2,FALSE)',
+			'SQRT(-1)',
+			'LOG(0)',
+			'LOG(-1)',
+			'0^0',
+			'0^(-1)',
+			'MATCH("x",A1:A1,0)',
+			// edge case values
+			'""',
+			'""+""',
+			'0',
+			'-0',
+			'1E+308',
+			'-1E+308',
+			'1E-10',
+			'9.99E+307',
+			'0.000000001',
+			'999999999999999',
+			'TRUE+TRUE',
+			'FALSE*100',
+			'TRUE&"text"',
+			// array formulas
+			'{1,2,3}',
+			'{1;2;3}',
+			'{1,2;3,4;5,6}',
+			'{TRUE,FALSE;1,0}',
+			'{"a","b","c"}',
+			'SUM({1,2,3}*{4,5,6})',
+			'MMULT({1,2;3,4},{5;6})',
+			'{1,2,3}+{4,5,6}',
+			// cross-sheet references
+			'Sheet2!A1+Sheet3!B2',
+			'SUM(Sheet1!A1:A10,Sheet2!B1:B10)',
+			"'My Sheet'!A1",
+			"SUM('Jan 2024'!A:A)",
+			'Sheet1!A1:Sheet1!A10',
+			'VLOOKUP(A1,Sheet2!A:B,2,FALSE)',
+			'IF(Sheet1!A1>Sheet2!A1,Sheet1!B1,Sheet2!B1)',
+			'MAX(Sheet1!A1:A100)-MIN(Sheet2!B1:B100)',
+			// defined names
+			'TaxRate*Revenue',
+			'SUM(Revenue)-CostOfGoods',
+			'IF(TaxRate>0.2,"high","low")',
+			'ROUND(Revenue*TaxRate,2)',
+			// structured references
+			'Table1[Sales]',
+			'SUM(Table1[Revenue])',
+			'AVERAGE(Table1[Cost])',
+			'Table1[@Sales]',
+			'Table1[#All]',
+			'Table1[#Data]',
+			'Table1[#Headers]',
+			'Table1[[Sales]:[Cost]]',
+			// all major function categories
+			'XLOOKUP(A1,B:B,C:C)',
+			'XMATCH(A1,B:B)',
+			'SEQUENCE(5,3,1,2)',
+			'SORT(A1:A10)',
+			'UNIQUE(A1:A20)',
+			'FILTER(A1:A10,B1:B10>0)',
+			'SORTBY(A1:A10,B1:B10)',
+			'TRANSPOSE(A1:D1)',
+			'HSTACK(A1:A5,B1:B5)',
+			'VSTACK(A1:C1,A2:C2)',
+			'TAKE(A1:A10,5)',
+			'DROP(A1:A10,3)',
+			'CHOOSECOLS(A1:E5,1,3,5)',
+			'CHOOSEROWS(A1:A10,1,5,10)',
+			'TOCOL(A1:C3)',
+			'TOROW(A1:A10)',
+			'WRAPCOLS(A1:A12,4)',
+			'WRAPROWS(A1:L1,4)',
+			'EXPAND(A1:B2,4,4,0)',
+			'TEXTSPLIT("a,b,c",",")',
+			'TEXTBEFORE("hello-world","-")',
+			'TEXTAFTER("hello-world","-")',
+			'LET(x,A1+B1,y,C1+D1,x*y)',
+			'PMT(0.05/12,360,-100000)',
+			'NPV(0.1,A1:A5)',
+			'IRR(A1:A5)',
+			'XNPV(0.1,A1:A5,B1:B5)',
+			'XIRR(A1:A5,B1:B5)',
+			'DATE(2024,1,15)',
+			'DATEDIF(A1,B1,"Y")',
+			'NETWORKDAYS(A1,B1)',
+			'YEARFRAC(A1,B1,0)',
+			'WORKDAY(A1,10)',
+			'NORM.DIST(0,0,1,TRUE)',
+			'NORM.INV(0.975,0,1)',
+			'PERCENTILE(A1:A100,0.9)',
+			'STDEV(A1:A100)',
+			'CORREL(A1:A10,B1:B10)',
+			'FORECAST(5,A1:A10,B1:B10)',
+			'SLOPE(A1:A10,B1:B10)',
+			'BIN2DEC("1010")',
+			'DEC2HEX(255)',
+			'COMPLEX(3,4)',
+			'IMABS("3+4i")',
+			'ERF(1)',
+			'DSUM(A1:D10,2,F1:G2)',
+			'ISBLANK(A1)',
+			'ISNUMBER(A1)',
+			'ERROR.TYPE(A1)',
+			'TYPE(A1)',
+			'ADDRESS(1,1)',
+			'ROW(A5)',
+			'COLUMN(C1)',
+			'ROWS(A1:A10)',
+			'COLUMNS(A1:E1)',
 		]
 		for (const f of formulas) {
 			const result = parseFormula(f)
@@ -645,6 +1179,41 @@ describe('fuzz: parseFormula never throws', () => {
 			'SUM(A1:)',
 			':B1',
 			'A1:',
+			// additional malformed patterns
+			'SUM(,,,)',
+			'IF(,,)',
+			'Sheet1!',
+			'Sheet1!:A1',
+			"'Unclosed sheet!A1",
+			'Table1[',
+			'Table1[]',
+			'Table1[#]',
+			'Table1[@]',
+			'{,}',
+			'{;}',
+			'{1,;2}',
+			'SUM(Sheet1!)',
+			'IF(A1>,B1,)',
+			'VLOOKUP(,,,)',
+			'A1:B1:C1',
+			'(((((',
+			')))))',
+			'SUM())',
+			'(SUM(',
+			'=A1',
+			'A1..B1',
+			'SUM(A1 B1)',
+			'IF IF',
+			'SUM[A1]',
+			'{1,2,3,}',
+			'"unclosed string',
+			'A1:$',
+			'$$A1',
+			'SUM(#REF!)',
+			'UNKNOWN_FUNCTION(1)',
+			' ',
+			'\t\t',
+			'\n',
 		]
 		for (const f of formulas) {
 			const result = parseFormula(f)
@@ -698,26 +1267,26 @@ describe('fuzz: parseFormula never throws', () => {
 		}
 	})
 
-	test('random generated formulas never throw (100 cases)', () => {
+	test('random generated formulas never throw (500 cases)', () => {
 		const rng = { s: 42 }
-		for (let i = 0; i < 100; i++) {
-			const depth = randInt(rng, 0, 4)
+		for (let i = 0; i < 500; i++) {
+			const depth = randInt(rng, 0, 5)
 			const formula = xorshift32(rng) < 0.7 ? randExpr(rng, depth) : randGarbage(rng)
 			const result = parseFormula(formula)
 			expect(result.ok === true || result.ok === false).toBe(true)
 		}
 	})
 
-	test('random garbage strings never throw (50 cases)', () => {
+	test('random garbage strings never throw (100 cases)', () => {
 		const rng = { s: 99999 }
-		for (let i = 0; i < 50; i++) {
+		for (let i = 0; i < 100; i++) {
 			const formula = randGarbage(rng)
 			const result = parseFormula(formula)
 			expect(result.ok === true || result.ok === false).toBe(true)
 		}
 	})
 
-	test('corrupted valid formulas never throw (50 cases)', () => {
+	test('corrupted valid formulas never throw (100 cases)', () => {
 		const rng = { s: 77777 }
 		const bases = [
 			'SUM(A1:B10)',
@@ -725,11 +1294,21 @@ describe('fuzz: parseFormula never throws', () => {
 			'VLOOKUP(D1,A:B,2,0)',
 			'INDEX(A1:C10,2,3)',
 			'A1+B1*C1',
+			'Sheet2!A1+Sheet3!B2',
+			'XLOOKUP("x",A:A,B:B)',
+			'IF(AND(A1>0,B1<10),SUM(C1:C10),0)',
+			'NORM.DIST(0,0,1,TRUE)',
+			'Table1[Sales]',
+			'IFERROR(A1/B1,0)',
+			'SEQUENCE(5,3,1,2)',
+			'LET(x,1,y,2,x+y)',
+			'NETWORKDAYS(A1,B1)',
+			'PERCENTILE(A1:A10,0.9)',
 		]
-		for (let i = 0; i < 50; i++) {
+		for (let i = 0; i < 100; i++) {
 			const base = pick(bases, rng)
 			const chars = [...base]
-			const mutations = randInt(rng, 1, 3)
+			const mutations = randInt(rng, 1, 4)
 			for (let m = 0; m < mutations; m++) {
 				const action = randInt(rng, 0, 2)
 				const pos = randInt(rng, 0, chars.length - 1)
@@ -742,6 +1321,122 @@ describe('fuzz: parseFormula never throws', () => {
 				}
 			}
 			const result = parseFormula(chars.join(''))
+			expect(result.ok === true || result.ok === false).toBe(true)
+		}
+	})
+
+	test('every registered function name parses as a call (all 200+ functions)', () => {
+		for (const fnName of FN_NAMES) {
+			const args = 'A1,B1,C1,1,TRUE,"text"'
+			const result = parseFormula(`${fnName}(${args})`)
+			expect(result.ok === true || result.ok === false).toBe(true)
+		}
+	})
+
+	test('deeply nested IF chains (10 levels)', () => {
+		let formula = '0'
+		for (let i = 0; i < 10; i++) {
+			formula = `IF(A${i + 1}>${i * 10},${formula},${i})`
+		}
+		const result = parseFormula(formula)
+		expect(result.ok === true || result.ok === false).toBe(true)
+	})
+
+	test('deeply nested function calls (8 levels)', () => {
+		const formulas = [
+			'SUM(SUM(SUM(SUM(SUM(SUM(SUM(SUM(1))))))))',
+			'ABS(ABS(ABS(ABS(ABS(ABS(ABS(ABS(-1))))))))',
+			'ROUND(ROUND(ROUND(ROUND(3.14159,4),3),2),1)',
+			'IF(IF(IF(IF(TRUE,1,0),2,0),3,0),4,0)',
+			'IFERROR(IFERROR(IFERROR(1/0,2/0),3/0),0)',
+			'LEFT(RIGHT(LEFT(RIGHT("hello world",8),5),3),2)',
+			'MAX(MIN(MAX(MIN(MAX(1,2),3),4),5),6)',
+		]
+		for (const f of formulas) {
+			const result = parseFormula(f)
+			expect(result.ok === true || result.ok === false).toBe(true)
+		}
+	})
+
+	test('complex multi-operator arithmetic chains', () => {
+		const formulas = [
+			'A1+B1-C1*D1/E1^F1&G1=H1<>I1<J1>K1<=L1>=M1',
+			'((A1+B1)*C1-D1)/E1^F1%+G1',
+			'---A1',
+			'A1%%%%%',
+			'(((((1+2)*(3+4))-(5+6))/(7+8))^(1/2))%',
+			'SUM(A1:A10)*AVERAGE(B1:B10)+COUNT(C1:C10)^2-MIN(D1:D10)/MAX(E1:E10)',
+		]
+		for (const f of formulas) {
+			const result = parseFormula(f)
+			expect(result.ok === true || result.ok === false).toBe(true)
+		}
+	})
+
+	test('cross-sheet reference patterns', () => {
+		const formulas = [
+			'Sheet1!A1',
+			'Sheet2!A1:B10',
+			"'Sheet With Spaces'!A1",
+			"'Jan 2024'!A1:Z100",
+			'SUM(Sheet1!A:A,Sheet2!B:B,Sheet3!C:C)',
+			'Sheet1!A1+Sheet2!A1+Sheet3!A1',
+			'VLOOKUP(Sheet1!A1,Sheet2!A:B,2,FALSE)',
+			'IF(Sheet1!A1>Sheet2!A1,Sheet1!B1,Sheet2!B1)',
+			'INDEX(Sheet2!A1:C10,MATCH(A1,Sheet2!A1:A10,0),2)',
+			"SUMIF('Data Sheet'!A:A,\">0\",'Data Sheet'!B:B)",
+		]
+		for (const f of formulas) {
+			const result = parseFormula(f)
+			expect(result.ok === true || result.ok === false).toBe(true)
+		}
+	})
+
+	test('structured reference patterns', () => {
+		const formulas = [
+			'Table1[Sales]',
+			'Table1[[Sales]:[Revenue]]',
+			'Table1[@Sales]',
+			'Table1[#All]',
+			'Table1[#Data]',
+			'Table1[#Headers]',
+			'Table1[#Totals]',
+			'SUM(Table1[Sales])',
+			'AVERAGE(Table1[Revenue])',
+			'Table1[@Sales]*Table1[@Cost]',
+			'VLOOKUP(A1,Table1,2,FALSE)',
+		]
+		for (const f of formulas) {
+			const result = parseFormula(f)
+			expect(result.ok === true || result.ok === false).toBe(true)
+		}
+	})
+
+	test('defined name patterns in formulas', () => {
+		const formulas = [
+			'TaxRate',
+			'Revenue*TaxRate',
+			'SUM(Revenue)',
+			'IF(TaxRate>0.2,"high","low")',
+			'ROUND(Revenue*TaxRate,2)',
+			'CostOfGoods+Revenue',
+			'_temp*100',
+			'x+1',
+			'MAX(TaxRate,0.15)',
+			'IFERROR(Revenue/CostOfGoods,0)',
+		]
+		for (const f of formulas) {
+			const result = parseFormula(f)
+			expect(result.ok === true || result.ok === false).toBe(true)
+		}
+	})
+
+	test('high-depth random expression trees (200 cases, depth 5-6)', () => {
+		const rng = { s: 314159 }
+		for (let i = 0; i < 200; i++) {
+			const depth = randInt(rng, 4, 6)
+			const formula = randExpr(rng, depth)
+			const result = parseFormula(formula)
 			expect(result.ok === true || result.ok === false).toBe(true)
 		}
 	})

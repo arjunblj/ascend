@@ -2394,4 +2394,516 @@ describe('formula functions', () => {
 			if (a?.kind === 'number' && b?.kind === 'number') expect(a.value).toBeCloseTo(b.value, 7)
 		})
 	})
+
+	describe('extended trig functions', () => {
+		test('COT(1) = cos(1)/sin(1)', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'COT(1)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(Math.cos(1) / Math.sin(1), 10)
+		})
+
+		test('COT(0) returns #DIV/0!', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'COT(0)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(errorValue('#DIV/0!'))
+		})
+
+		test('CSC(PI()/2) = 1', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'CSC(PI()/2)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(1, 10)
+		})
+
+		test('CSC(0) returns #DIV/0!', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'CSC(0)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(errorValue('#DIV/0!'))
+		})
+
+		test('SEC(0) = 1', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'SEC(0)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(1))
+		})
+
+		test('SECH(0) = 1', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'SECH(0)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(1))
+		})
+
+		test('COTH(1) = cosh(1)/sinh(1)', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'COTH(1)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(Math.cosh(1) / Math.sinh(1), 10)
+		})
+
+		test('CSCH(1) = 1/sinh(1)', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'CSCH(1)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(1 / Math.sinh(1), 10)
+		})
+
+		test('ACOT(1) = PI()/4', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'ACOT(1)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(Math.PI / 4, 10)
+		})
+
+		test('ACOTH(2) returns valid result', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'ACOTH(2)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.5 * Math.log(3), 10)
+		})
+
+		test('ACOTH(0.5) returns #NUM!', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'ACOTH(0.5)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(errorValue('#NUM!'))
+		})
+
+		test('large input returns #NUM!', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'COT(2^27)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(errorValue('#NUM!'))
+		})
+	})
+
+	describe('extended math functions', () => {
+		test('SQRTPI(1) = sqrt(PI)', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'SQRTPI(1)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(Math.sqrt(Math.PI), 10)
+		})
+
+		test('SQRTPI(-1) returns #NUM!', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'SQRTPI(-1)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(errorValue('#NUM!'))
+		})
+
+		test('COMBINA(4,3) = 20', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'COMBINA(4,3)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(20))
+		})
+
+		test('COMBINA(0,0) = 1', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'COMBINA(0,0)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(1))
+		})
+
+		test('PERMUTATIONA(3,2) = 9', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'PERMUTATIONA(3,2)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(9))
+		})
+
+		test('MULTINOMIAL(2,3,4) = 1260', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'MULTINOMIAL(2,3,4)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(1260))
+		})
+
+		test('SERIESSUM computes power series', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 1)
+			setNum(wb, 1, 0, -1 / 6)
+			setFormula(wb, 2, 0, 'SERIESSUM(PI()/4,1,2,A1:A2)')
+			recalc(wb)
+			const r = getResult(wb, 2, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') {
+				const x = Math.PI / 4
+				const expected = 1 * x + (-1 / 6) * x ** 3
+				expect(r.value).toBeCloseTo(expected, 10)
+			}
+		})
+
+		test('SUMX2MY2 computes sum of x²-y²', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 2)
+			setNum(wb, 1, 0, 3)
+			setNum(wb, 0, 1, 1)
+			setNum(wb, 1, 1, 2)
+			setFormula(wb, 2, 0, 'SUMX2MY2(A1:A2,B1:B2)')
+			recalc(wb)
+			expect(getResult(wb, 2, 0)).toEqual(numberValue(4 - 1 + (9 - 4)))
+		})
+
+		test('SUMX2PY2 computes sum of x²+y²', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 2)
+			setNum(wb, 1, 0, 3)
+			setNum(wb, 0, 1, 1)
+			setNum(wb, 1, 1, 2)
+			setFormula(wb, 2, 0, 'SUMX2PY2(A1:A2,B1:B2)')
+			recalc(wb)
+			expect(getResult(wb, 2, 0)).toEqual(numberValue(4 + 1 + (9 + 4)))
+		})
+
+		test('SUMXMY2 computes sum of (x-y)²', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 2)
+			setNum(wb, 1, 0, 3)
+			setNum(wb, 0, 1, 1)
+			setNum(wb, 1, 1, 2)
+			setFormula(wb, 2, 0, 'SUMXMY2(A1:A2,B1:B2)')
+			recalc(wb)
+			expect(getResult(wb, 2, 0)).toEqual(numberValue(1 + 1))
+		})
+	})
+
+	describe('matrix functions', () => {
+		test('MMULT multiplies 2x2 matrices', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 1)
+			setNum(wb, 0, 1, 2)
+			setNum(wb, 1, 0, 3)
+			setNum(wb, 1, 1, 4)
+			setNum(wb, 0, 2, 5)
+			setNum(wb, 0, 3, 6)
+			setNum(wb, 1, 2, 7)
+			setNum(wb, 1, 3, 8)
+			setFormula(wb, 3, 0, 'MMULT(A1:B2,C1:D2)')
+			recalc(wb)
+			expect(getResult(wb, 3, 0)).toEqual(numberValue(19))
+			expect(getResult(wb, 3, 1)).toEqual(numberValue(22))
+			expect(getResult(wb, 4, 0)).toEqual(numberValue(43))
+			expect(getResult(wb, 4, 1)).toEqual(numberValue(50))
+		})
+
+		test('MMULT incompatible dimensions returns #VALUE!', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 1)
+			setNum(wb, 0, 1, 2)
+			setNum(wb, 1, 0, 3)
+			setNum(wb, 1, 1, 4)
+			setNum(wb, 0, 2, 5)
+			setFormula(wb, 3, 0, 'MMULT(A1:B2,C1:C1)')
+			recalc(wb)
+			expect(getResult(wb, 3, 0)).toEqual(errorValue('#VALUE!'))
+		})
+
+		test('MDETERM of 2x2 matrix', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 1)
+			setNum(wb, 0, 1, 2)
+			setNum(wb, 1, 0, 3)
+			setNum(wb, 1, 1, 4)
+			setFormula(wb, 2, 0, 'MDETERM(A1:B2)')
+			recalc(wb)
+			const r = getResult(wb, 2, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(-2, 10)
+		})
+
+		test('MINVERSE of 2x2 matrix', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 4)
+			setNum(wb, 0, 1, 7)
+			setNum(wb, 1, 0, 2)
+			setNum(wb, 1, 1, 6)
+			setFormula(wb, 3, 0, 'MINVERSE(A1:B2)')
+			recalc(wb)
+			const v00 = getResult(wb, 3, 0)
+			const v01 = getResult(wb, 3, 1)
+			expect(v00?.kind).toBe('number')
+			if (v00?.kind === 'number') expect(v00.value).toBeCloseTo(0.6, 10)
+			if (v01?.kind === 'number') expect(v01.value).toBeCloseTo(-0.7, 10)
+		})
+
+		test('MUNIT(3) returns 3x3 identity via spill', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'MUNIT(3)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(1))
+			expect(getResult(wb, 0, 1)).toEqual(numberValue(0))
+			expect(getResult(wb, 1, 0)).toEqual(numberValue(0))
+			expect(getResult(wb, 1, 1)).toEqual(numberValue(1))
+			expect(getResult(wb, 2, 2)).toEqual(numberValue(1))
+		})
+
+		test('MUNIT(0) returns #VALUE!', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'MUNIT(0)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(errorValue('#VALUE!'))
+		})
+	})
+
+	describe('LAMBDA helpers', () => {
+		test('BYROW applies LAMBDA to each row', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 1)
+			setNum(wb, 0, 1, 2)
+			setNum(wb, 1, 0, 3)
+			setNum(wb, 1, 1, 4)
+			setNum(wb, 2, 0, 5)
+			setNum(wb, 2, 1, 6)
+			setFormula(wb, 0, 3, 'BYROW(A1:B3,LAMBDA(r,SUM(r)))')
+			recalc(wb)
+			expect(getResult(wb, 0, 3)).toEqual(numberValue(3))
+			expect(getResult(wb, 1, 3)).toEqual(numberValue(7))
+			expect(getResult(wb, 2, 3)).toEqual(numberValue(11))
+		})
+
+		test('BYCOL applies LAMBDA to each column', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 1)
+			setNum(wb, 0, 1, 2)
+			setNum(wb, 1, 0, 3)
+			setNum(wb, 1, 1, 4)
+			setFormula(wb, 3, 0, 'BYCOL(A1:B2,LAMBDA(c,SUM(c)))')
+			recalc(wb)
+			expect(getResult(wb, 3, 0)).toEqual(numberValue(4))
+			expect(getResult(wb, 3, 1)).toEqual(numberValue(6))
+		})
+
+		test('MAKEARRAY generates array with LAMBDA', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 5, 0, 'MAKEARRAY(3,3,LAMBDA(r,c,r*c))')
+			recalc(wb)
+			expect(getResult(wb, 5, 0)).toEqual(numberValue(1))
+			expect(getResult(wb, 5, 2)).toEqual(numberValue(3))
+			expect(getResult(wb, 6, 1)).toEqual(numberValue(4))
+			expect(getResult(wb, 7, 2)).toEqual(numberValue(9))
+		})
+
+		test('MAKEARRAY(0,1,...) returns #VALUE!', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'MAKEARRAY(0,1,LAMBDA(r,c,r))')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(errorValue('#VALUE!'))
+		})
+
+		test('BYROW with non-scalar lambda returns #CALC!', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 1)
+			setNum(wb, 0, 1, 2)
+			setFormula(wb, 2, 0, 'BYROW(A1:B1,LAMBDA(r,r))')
+			recalc(wb)
+			expect(getResult(wb, 2, 0)).toEqual(errorValue('#CALC!'))
+		})
+	})
+
+	describe('statistical distributions', () => {
+		test('GAMMALN(5) = ln(4!) = ln(24)', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'GAMMALN(5)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(Math.log(24), 8)
+		})
+
+		test('GAMMA(5) = 4! = 24', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'GAMMA(5)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(24, 8)
+		})
+
+		test('T.DIST(1, 10, TRUE) CDF', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'T.DIST(1, 10, TRUE)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.8295534, 4)
+		})
+
+		test('T.INV(0.5, 10) = 0', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'T.INV(0.5, 10)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0, 5)
+		})
+
+		test('CHISQ.DIST(3, 5, TRUE) CDF', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'CHISQ.DIST(3, 5, TRUE)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.30001, 3)
+		})
+
+		test('BINOM.DIST(3, 10, 0.5, FALSE) PMF', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'BINOM.DIST(3, 10, 0.5, FALSE)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.11719, 4)
+		})
+
+		test('POISSON.DIST(3, 5, FALSE) PMF', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'POISSON.DIST(3, 5, FALSE)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.14037, 4)
+		})
+
+		test('EXPON.DIST(1, 2, TRUE) CDF', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'EXPON.DIST(1, 2, TRUE)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(1 - Math.exp(-2), 10)
+		})
+
+		test('WEIBULL.DIST(1, 2, 3, TRUE) CDF', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'WEIBULL.DIST(1, 2, 3, TRUE)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(1 - Math.exp(-((1 / 3) ** 2)), 10)
+		})
+
+		test('BETA.DIST(0.5, 2, 3, TRUE)', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'BETA.DIST(0.5, 2, 3, TRUE)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.6875, 4)
+		})
+
+		test('LOGNORM.DIST CDF', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'LOGNORM.DIST(4, 3, 2, TRUE)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') {
+				expect(r.value).toBeGreaterThan(0)
+				expect(r.value).toBeLessThan(1)
+			}
+		})
+
+		test('FISHER(0.5)', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'FISHER(0.5)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.5 * Math.log(3), 10)
+		})
+
+		test('FISHERINV(FISHER(0.5)) = 0.5', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'FISHERINV(FISHER(0.5))')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.5, 10)
+		})
+
+		test('STANDARDIZE(42, 40, 1.5)', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'STANDARDIZE(42, 40, 1.5)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(4 / 3, 10)
+		})
+
+		test('CONFIDENCE.NORM(0.05, 1, 100)', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'CONFIDENCE.NORM(0.05, 1, 100)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.196, 2)
+		})
+
+		test('LINEST returns slope and intercept', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 1)
+			setNum(wb, 1, 0, 2)
+			setNum(wb, 2, 0, 3)
+			setNum(wb, 0, 1, 2)
+			setNum(wb, 1, 1, 4)
+			setNum(wb, 2, 1, 6)
+			setFormula(wb, 4, 0, 'LINEST(B1:B3,A1:A3)')
+			recalc(wb)
+			expect(getResult(wb, 4, 0)).toEqual(numberValue(2))
+			expect(getResult(wb, 4, 1)).toEqual(numberValue(0))
+		})
+	})
+
+	describe('ISFORMULA', () => {
+		test('ISFORMULA returns TRUE for formula cells', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, '1+1')
+			setFormula(wb, 1, 0, 'ISFORMULA(A1)')
+			recalc(wb)
+			expect(getResult(wb, 1, 0)).toEqual(booleanValue(true))
+		})
+
+		test('ISFORMULA returns FALSE for value cells', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 42)
+			setFormula(wb, 1, 0, 'ISFORMULA(A1)')
+			recalc(wb)
+			expect(getResult(wb, 1, 0)).toEqual(booleanValue(false))
+		})
+
+		test('ISFORMULA returns FALSE for empty cells', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 1, 0, 'ISFORMULA(A1)')
+			recalc(wb)
+			expect(getResult(wb, 1, 0)).toEqual(booleanValue(false))
+		})
+
+		test('ISFORMULA returns TRUE for error-producing formulas', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, '1/0')
+			setFormula(wb, 1, 0, 'ISFORMULA(A1)')
+			recalc(wb)
+			expect(getResult(wb, 1, 0)).toEqual(booleanValue(true))
+		})
+	})
 })

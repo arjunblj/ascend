@@ -681,4 +681,28 @@ export const dynamicFunctions: FunctionDef[] = [
 			return args[0]?.value ?? EMPTY
 		},
 	},
+	{
+		name: 'BYROW',
+		minArgs: 2,
+		maxArgs: 2,
+		evaluate(args) {
+			return args[0]?.value ?? EMPTY
+		},
+	},
+	{
+		name: 'BYCOL',
+		minArgs: 2,
+		maxArgs: 2,
+		evaluate(args) {
+			return args[0]?.value ?? EMPTY
+		},
+	},
+	{
+		name: 'MAKEARRAY',
+		minArgs: 3,
+		maxArgs: 3,
+		evaluate() {
+			return errorValue('#VALUE!')
+		},
+	},
 ]

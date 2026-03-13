@@ -386,6 +386,18 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 	if (upperName === 'SCAN') {
 		return evalScan(argNodes, ctx)
 	}
+	if (upperName === 'BYROW') {
+		return evalByRow(argNodes, ctx)
+	}
+	if (upperName === 'BYCOL') {
+		return evalByCol(argNodes, ctx)
+	}
+	if (upperName === 'MAKEARRAY') {
+		return evalMakeArray(argNodes, ctx)
+	}
+	if (upperName === 'ISFORMULA') {
+		return evalIsFormula(argNodes, ctx)
+	}
 	if (upperName === 'IF') {
 		return evalIf(argNodes, ctx)
 	}
@@ -521,7 +533,9 @@ function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
 
 	if (node.type === 'name') {
 		if (!node.sheet && ctx.letBindings?.has(node.name.toLowerCase())) {
-			return { value: ctx.letBindings.get(node.name.toLowerCase()) as CellValue }
+			const bound = ctx.letBindings.get(node.name.toLowerCase()) as CellValue
+			if (bound.kind === 'array') return { value: bound, kind: 'range', values: bound.rows }
+			return { value: bound }
 		}
 		const resolved = resolveDefinedName(node.name, node.sheet, ctx)
 		if (!resolved) return { value: errorValue('#NAME?') }
@@ -1172,6 +1186,87 @@ function evalScan(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue
 	}
 	if (rows.length === 1 && rows[0]?.length === 1) return rows[0][0] ?? EMPTY
 	return arrayValue(rows)
+}
+
+function evalByRow(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
+	if (argNodes.length !== 2) return errorValue('#VALUE!')
+	const arrayArg = resolveArg(argNodes[0] as FormulaNode, ctx)
+	const lambda = extractLambda(argNodes[1] as FormulaNode, ctx)
+	if (!lambda) return errorValue('#VALUE!')
+	if (lambda.params.length !== 1) return errorValue('#VALUE!')
+	const range = getRange(arrayArg)
+	const rows: ScalarCellValue[][] = []
+	for (const row of range) {
+		const rowArray = arrayValue([row.map((c) => topLeftScalar(c))])
+		const result = invokeLambda(lambda, [rowArray])
+		if (result.kind === 'error') return result
+		if (result.kind === 'array') return errorValue('#CALC!')
+		rows.push([topLeftScalar(result)])
+	}
+	if (rows.length === 1) return rows[0]?.[0] ?? EMPTY
+	return arrayValue(rows)
+}
+
+function evalByCol(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
+	if (argNodes.length !== 2) return errorValue('#VALUE!')
+	const arrayArg = resolveArg(argNodes[0] as FormulaNode, ctx)
+	const lambda = extractLambda(argNodes[1] as FormulaNode, ctx)
+	if (!lambda) return errorValue('#VALUE!')
+	if (lambda.params.length !== 1) return errorValue('#VALUE!')
+	const range = getRange(arrayArg)
+	const colCount = range.reduce((max, row) => Math.max(max, row.length), 0)
+	const results: ScalarCellValue[] = []
+	for (let col = 0; col < colCount; col++) {
+		const colData: ScalarCellValue[][] = range.map((row) => [topLeftScalar(row[col] ?? EMPTY)])
+		const colArray = arrayValue(colData)
+		const result = invokeLambda(lambda, [colArray])
+		if (result.kind === 'error') return result
+		if (result.kind === 'array') return errorValue('#CALC!')
+		results.push(topLeftScalar(result))
+	}
+	if (results.length === 1) return results[0] ?? EMPTY
+	return arrayValue([results])
+}
+
+function evalMakeArray(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
+	if (argNodes.length !== 3) return errorValue('#VALUE!')
+	const rowCountVal = evaluate(argNodes[0] as FormulaNode, ctx)
+	if (rowCountVal.kind === 'error') return rowCountVal
+	const rowCount = coerceToNumber(rowCountVal)
+	if (rowCount === null || rowCount < 1) return errorValue('#VALUE!')
+	const colCountVal = evaluate(argNodes[1] as FormulaNode, ctx)
+	if (colCountVal.kind === 'error') return colCountVal
+	const colCount = coerceToNumber(colCountVal)
+	if (colCount === null || colCount < 1) return errorValue('#VALUE!')
+	const lambda = extractLambda(argNodes[2] as FormulaNode, ctx)
+	if (!lambda) return errorValue('#VALUE!')
+	if (lambda.params.length !== 2) return errorValue('#VALUE!')
+	const r = Math.trunc(rowCount)
+	const c = Math.trunc(colCount)
+	const rows: ScalarCellValue[][] = []
+	for (let row = 0; row < r; row++) {
+		const resultRow: ScalarCellValue[] = []
+		for (let col = 0; col < c; col++) {
+			const result = invokeLambda(lambda, [numberValue(row + 1), numberValue(col + 1)])
+			if (result.kind === 'error') return result
+			resultRow.push(topLeftScalar(result))
+		}
+		rows.push(resultRow)
+	}
+	if (rows.length === 1 && rows[0]?.length === 1) return rows[0][0] ?? EMPTY
+	return arrayValue(rows)
+}
+
+function evalIsFormula(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
+	const arg = resolveArg(argNodes[0] ?? { type: 'missing' }, ctx)
+	if (!arg.ref) {
+		if (arg.value.kind === 'error') return arg.value
+		return booleanValue(false)
+	}
+	const sheet = ctx.workbook.sheets[arg.ref.sheetIndex]
+	if (!sheet) return booleanValue(false)
+	const cell = sheet.cells.get(arg.ref.row, arg.ref.col)
+	return booleanValue(cell?.formula != null)
 }
 
 function evalLet(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {

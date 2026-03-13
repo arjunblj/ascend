@@ -844,6 +844,69 @@ export const textFunctions: FunctionDef[] = [
 		return stringValue(cvStr(v))
 	}),
 
+	fn('HYPERLINK', 1, 2, (args) => {
+		const url = strArg(args[0])
+		if (typeof url !== 'string') return url
+		const display = args.length > 1 ? strArg(args[1]) : url
+		if (typeof display !== 'string') return display
+		return stringValue(display)
+	}),
+
+	fn('ENCODEURL', 1, 1, (args) => {
+		const s = strArg(args[0])
+		if (typeof s !== 'string') return s
+		return stringValue(encodeURIComponent(s))
+	}),
+
+	fn('REGEXTEST', 2, 2, (args) => {
+		const text = strArg(args[0])
+		if (typeof text !== 'string') return text
+		const pattern = strArg(args[1])
+		if (typeof pattern !== 'string') return pattern
+		try {
+			return booleanValue(new RegExp(pattern).test(text))
+		} catch {
+			return errorValue('#VALUE!')
+		}
+	}),
+
+	fn('REGEXEXTRACT', 2, 3, (args) => {
+		const text = strArg(args[0])
+		if (typeof text !== 'string') return text
+		const pattern = strArg(args[1])
+		if (typeof pattern !== 'string') return pattern
+		const returnMode = args.length > 2 ? numArg(args[2]) : 0
+		if (typeof returnMode !== 'number') return returnMode
+		try {
+			const re = new RegExp(pattern, 'g')
+			if (Math.trunc(returnMode) === 0) {
+				const match = re.exec(text)
+				return match ? stringValue(match[0] as string) : errorValue('#N/A')
+			}
+			const matches: string[] = []
+			for (const m of text.matchAll(re)) matches.push(m[0] as string)
+			if (matches.length === 0) return errorValue('#N/A')
+			if (matches.length === 1) return stringValue(matches[0] as string)
+			return arrayValue(matches.map((v) => [topLeftScalar(stringValue(v))]))
+		} catch {
+			return errorValue('#VALUE!')
+		}
+	}),
+
+	fn('REGEXREPLACE', 3, 3, (args) => {
+		const text = strArg(args[0])
+		if (typeof text !== 'string') return text
+		const pattern = strArg(args[1])
+		if (typeof pattern !== 'string') return pattern
+		const replacement = strArg(args[2])
+		if (typeof replacement !== 'string') return replacement
+		try {
+			return stringValue(text.replace(new RegExp(pattern, 'g'), replacement))
+		} catch {
+			return errorValue('#VALUE!')
+		}
+	}),
+
 	fn('NUMBERVALUE', 1, 3, (args) => {
 		const text = strArg(args[0])
 		if (typeof text !== 'string') return text

@@ -49,4 +49,31 @@ export const combinatoricsFunctions: FunctionDef[] = [
 		for (let i = 0; i < ki; i++) p *= ni - i
 		return numberValue(p)
 	}),
+
+	fn('COMBINA', 2, 2, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		const k = numArg(args[1])
+		if (typeof k !== 'number') return k
+		const ni = Math.trunc(n)
+		const ki = Math.trunc(k)
+		if (ni < 0 || ki < 0) return errorValue('#NUM!')
+		if (ni === 0 && ki === 0) return numberValue(1)
+		if (ni === 0) return errorValue('#NUM!')
+		const total = ni + ki - 1
+		let c = 1
+		for (let i = 0; i < ki; i++) c = (c * (total - i)) / (i + 1)
+		return numberValue(Math.round(c))
+	}),
+
+	fn('PERMUTATIONA', 2, 2, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		const k = numArg(args[1])
+		if (typeof k !== 'number') return k
+		const ni = Math.trunc(n)
+		const ki = Math.trunc(k)
+		if (ni < 0 || ki < 0) return errorValue('#NUM!')
+		return numberValue(ni ** ki)
+	}),
 ]

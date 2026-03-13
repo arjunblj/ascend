@@ -931,6 +931,188 @@ function operationAffectsFormulas(op: Operation): boolean {
 	}
 }
 
+function handleDeleteComment(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'deleteComment' }>,
+): Result<PatchResult> {
+	const sheetResult = getSheet(workbook, op.sheet)
+	if (!sheetResult.ok) return sheetResult
+	const sheet = sheetResult.value
+	sheet.ensureWritable()
+	sheet.comments.delete(op.ref.toUpperCase())
+	return ok(patch([`${op.sheet}!${op.ref}`], [op.sheet]))
+}
+
+function handleDeleteHyperlink(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'deleteHyperlink' }>,
+): Result<PatchResult> {
+	const sheetResult = getSheet(workbook, op.sheet)
+	if (!sheetResult.ok) return sheetResult
+	const sheet = sheetResult.value
+	sheet.ensureWritable()
+	sheet.hyperlinks.delete(op.ref.toUpperCase())
+	return ok(patch([`${op.sheet}!${op.ref}`], [op.sheet]))
+}
+
+function handleSetDataValidation(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setDataValidation' }>,
+): Result<PatchResult> {
+	const sheetResult = getSheet(workbook, op.sheet)
+	if (!sheetResult.ok) return sheetResult
+	const sheet = sheetResult.value
+	sheet.ensureWritable()
+	const existing = sheet.dataValidations.findIndex((dv) => dv.sqref === op.range)
+	const dv: Record<string, unknown> = {
+		sqref: op.range,
+		type: op.rule.type,
+		allowBlank: op.rule.allowBlank ?? true,
+		showErrorMessage: op.rule.showErrorMessage ?? true,
+	}
+	if (op.rule.formula1 !== undefined) dv.formula1 = op.rule.formula1
+	if (op.rule.formula2 !== undefined) dv.formula2 = op.rule.formula2
+	if (op.rule.operator !== undefined) dv.operator = op.rule.operator
+	if (op.rule.errorTitle !== undefined) dv.errorTitle = op.rule.errorTitle
+	if (op.rule.errorMessage !== undefined) dv.error = op.rule.errorMessage
+	if (op.rule.showInputMessage !== undefined) dv.showInputMessage = op.rule.showInputMessage
+	if (op.rule.promptTitle !== undefined) dv.promptTitle = op.rule.promptTitle
+	if (op.rule.prompt !== undefined) dv.prompt = op.rule.prompt
+	if (existing >= 0) sheet.dataValidations[existing] = dv as never
+	else sheet.dataValidations.push(dv as never)
+	return ok(patch([], [op.sheet]))
+}
+
+function handleDeleteDataValidation(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'deleteDataValidation' }>,
+): Result<PatchResult> {
+	const sheetResult = getSheet(workbook, op.sheet)
+	if (!sheetResult.ok) return sheetResult
+	const sheet = sheetResult.value
+	sheet.ensureWritable()
+	sheet.dataValidations = sheet.dataValidations.filter((dv) => dv.sqref !== op.range)
+	return ok(patch([], [op.sheet]))
+}
+
+function handleSetAutoFilter(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setAutoFilter' }>,
+): Result<PatchResult> {
+	const sheetResult = getSheet(workbook, op.sheet)
+	if (!sheetResult.ok) return sheetResult
+	const sheet = sheetResult.value
+	sheet.ensureWritable()
+	sheet.autoFilter = { ref: op.range, columns: [] }
+	return ok(patch([], [op.sheet]))
+}
+
+function handleClearAutoFilter(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'clearAutoFilter' }>,
+): Result<PatchResult> {
+	const sheetResult = getSheet(workbook, op.sheet)
+	if (!sheetResult.ok) return sheetResult
+	const sheet = sheetResult.value
+	sheet.ensureWritable()
+	sheet.autoFilter = null
+	return ok(patch([], [op.sheet]))
+}
+
+function handleSetSheetProtection(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setSheetProtection' }>,
+): Result<PatchResult> {
+	const sheetResult = getSheet(workbook, op.sheet)
+	if (!sheetResult.ok) return sheetResult
+	const sheet = sheetResult.value
+	sheet.ensureWritable()
+	const prot: Record<string, unknown> = { sheet: true }
+	if (op.password) prot.password = op.password
+	if (op.options?.formatCells !== undefined) prot.formatCells = op.options.formatCells
+	if (op.options?.formatColumns !== undefined) prot.formatColumns = op.options.formatColumns
+	if (op.options?.formatRows !== undefined) prot.formatRows = op.options.formatRows
+	if (op.options?.insertColumns !== undefined) prot.insertColumns = op.options.insertColumns
+	if (op.options?.insertRows !== undefined) prot.insertRows = op.options.insertRows
+	if (op.options?.deleteColumns !== undefined) prot.deleteColumns = op.options.deleteColumns
+	if (op.options?.deleteRows !== undefined) prot.deleteRows = op.options.deleteRows
+	if (op.options?.sort !== undefined) prot.sort = op.options.sort
+	if (op.options?.autoFilter !== undefined) prot.autoFilter = op.options.autoFilter
+	sheet.protection = prot as never
+	return ok(patch([], [op.sheet]))
+}
+
+function handleSetTabColor(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setTabColor' }>,
+): Result<PatchResult> {
+	const sheetResult = getSheet(workbook, op.sheet)
+	if (!sheetResult.ok) return sheetResult
+	const sheet = sheetResult.value
+	sheet.ensureWritable()
+	sheet.tabColor = { rgb: op.color }
+	return ok(patch([], [op.sheet]))
+}
+
+function handleHideSheet(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'hideSheet' }>,
+): Result<PatchResult> {
+	const sheetResult = getSheet(workbook, op.sheet)
+	if (!sheetResult.ok) return sheetResult
+	const sheet = sheetResult.value
+	sheet.ensureWritable()
+	sheet.state = (op.hidden ?? true) ? 'hidden' : 'visible'
+	return ok(patch([], [op.sheet]))
+}
+
+function handleHideRows(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'hideRows' }>,
+): Result<PatchResult> {
+	const sheetResult = getSheet(workbook, op.sheet)
+	if (!sheetResult.ok) return sheetResult
+	const sheet = sheetResult.value
+	sheet.ensureWritable()
+	const hidden = op.hidden ?? true
+	for (let r = op.at; r < op.at + op.count; r++) {
+		if (hidden) sheet.rowHeights.set(r, 0)
+	}
+	return ok(patch([], [op.sheet]))
+}
+
+function handleHideCols(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'hideCols' }>,
+): Result<PatchResult> {
+	const sheetResult = getSheet(workbook, op.sheet)
+	if (!sheetResult.ok) return sheetResult
+	const sheet = sheetResult.value
+	sheet.ensureWritable()
+	const hidden = op.hidden ?? true
+	for (let c = op.at; c < op.at + op.count; c++) {
+		const idx = sheet.colDefs.findIndex((d) => d.min === c + 1 && d.max === c + 1)
+		if (idx >= 0) sheet.colDefs[idx] = { ...sheet.colDefs[idx]!, hidden }
+		else sheet.colDefs.push({ min: c + 1, max: c + 1, hidden })
+	}
+	return ok(patch([], [op.sheet]))
+}
+
+function handleCopySheet(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'copySheet' }>,
+): Result<PatchResult> {
+	const sheetResult = getSheet(workbook, op.sheet)
+	if (!sheetResult.ok) return sheetResult
+	const source = sheetResult.value
+	const pos = op.position ?? workbook.sheets.length
+	const newSheet = source.clone()
+	newSheet.name = op.newName
+	workbook.sheets.splice(pos, 0, newSheet)
+	invalidateSheetIndexCache(workbook)
+	return ok(patch([], [op.newName]))
+}
+
 // --- Handler registry ---
 
 type OperationHandler = (workbook: Workbook, op: never) => Result<PatchResult>
@@ -962,6 +1144,18 @@ const handlers: Record<string, OperationHandler> = {
 	setHyperlink: handleSetHyperlink as OperationHandler,
 	setNumberFormat: handleSetNumberFormat as OperationHandler,
 	setStyle: handleSetStyle as OperationHandler,
+	deleteComment: handleDeleteComment as OperationHandler,
+	deleteHyperlink: handleDeleteHyperlink as OperationHandler,
+	setDataValidation: handleSetDataValidation as OperationHandler,
+	deleteDataValidation: handleDeleteDataValidation as OperationHandler,
+	setAutoFilter: handleSetAutoFilter as OperationHandler,
+	clearAutoFilter: handleClearAutoFilter as OperationHandler,
+	setSheetProtection: handleSetSheetProtection as OperationHandler,
+	setTabColor: handleSetTabColor as OperationHandler,
+	hideSheet: handleHideSheet as OperationHandler,
+	hideRows: handleHideRows as OperationHandler,
+	hideCols: handleHideCols as OperationHandler,
+	copySheet: handleCopySheet as OperationHandler,
 }
 
 // --- Public API ---

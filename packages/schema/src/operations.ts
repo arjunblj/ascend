@@ -137,3 +137,100 @@ export type Operation =
 			readonly row: number
 			readonly col: number
 	  }
+	| {
+			readonly op: 'deleteComment'
+			readonly sheet: string
+			readonly ref: string
+	  }
+	| {
+			readonly op: 'deleteHyperlink'
+			readonly sheet: string
+			readonly ref: string
+	  }
+	| {
+			readonly op: 'setDataValidation'
+			readonly sheet: string
+			readonly range: string
+			readonly rule: DataValidationRule
+	  }
+	| {
+			readonly op: 'deleteDataValidation'
+			readonly sheet: string
+			readonly range: string
+	  }
+	| {
+			readonly op: 'setAutoFilter'
+			readonly sheet: string
+			readonly range: string
+	  }
+	| { readonly op: 'clearAutoFilter'; readonly sheet: string }
+	| {
+			readonly op: 'setSheetProtection'
+			readonly sheet: string
+			readonly password?: string
+			readonly options?: SheetProtectionOptions
+	  }
+	| {
+			readonly op: 'setTabColor'
+			readonly sheet: string
+			readonly color: string
+	  }
+	| {
+			readonly op: 'hideSheet'
+			readonly sheet: string
+			readonly hidden?: boolean
+	  }
+	| {
+			readonly op: 'hideRows'
+			readonly sheet: string
+			readonly at: number
+			readonly count: number
+			readonly hidden?: boolean
+	  }
+	| {
+			readonly op: 'hideCols'
+			readonly sheet: string
+			readonly at: number
+			readonly count: number
+			readonly hidden?: boolean
+	  }
+	| {
+			readonly op: 'copySheet'
+			readonly sheet: string
+			readonly newName: string
+			readonly position?: number
+	  }
+
+export interface DataValidationRule {
+	readonly type: 'list' | 'whole' | 'decimal' | 'date' | 'time' | 'textLength' | 'custom'
+	readonly formula1?: string
+	readonly formula2?: string
+	readonly operator?:
+		| 'between'
+		| 'notBetween'
+		| 'equal'
+		| 'notEqual'
+		| 'greaterThan'
+		| 'lessThan'
+		| 'greaterThanOrEqual'
+		| 'lessThanOrEqual'
+	readonly allowBlank?: boolean
+	readonly showErrorMessage?: boolean
+	readonly errorTitle?: string
+	readonly errorMessage?: string
+	readonly showInputMessage?: boolean
+	readonly promptTitle?: string
+	readonly prompt?: string
+}
+
+export interface SheetProtectionOptions {
+	readonly formatCells?: boolean
+	readonly formatColumns?: boolean
+	readonly formatRows?: boolean
+	readonly insertColumns?: boolean
+	readonly insertRows?: boolean
+	readonly deleteColumns?: boolean
+	readonly deleteRows?: boolean
+	readonly sort?: boolean
+	readonly autoFilter?: boolean
+}

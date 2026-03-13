@@ -699,4 +699,150 @@ export const engineeringFunctions: FunctionDef[] = [
 	{ name: 'IMLN', minArgs: 1, maxArgs: 1, evaluate: imln },
 	{ name: 'IMSIN', minArgs: 1, maxArgs: 1, evaluate: imsin },
 	{ name: 'IMCOS', minArgs: 1, maxArgs: 1, evaluate: imcos },
+	{
+		name: 'IMLOG10',
+		minArgs: 1,
+		maxArgs: 1,
+		evaluate: (args) => {
+			const c = complexArg(args[0])
+			if (!isComplex(c)) return c
+			const r = Math.sqrt(c.re * c.re + c.im * c.im)
+			if (r === 0) return errorValue('#NUM!')
+			const ln10 = Math.log(10)
+			return stringValue(
+				formatComplex(Math.log(r) / ln10, Math.atan2(c.im, c.re) / ln10, c.suffix || 'i'),
+			)
+		},
+	},
+	{
+		name: 'IMLOG2',
+		minArgs: 1,
+		maxArgs: 1,
+		evaluate: (args) => {
+			const c = complexArg(args[0])
+			if (!isComplex(c)) return c
+			const r = Math.sqrt(c.re * c.re + c.im * c.im)
+			if (r === 0) return errorValue('#NUM!')
+			const ln2 = Math.log(2)
+			return stringValue(
+				formatComplex(Math.log(r) / ln2, Math.atan2(c.im, c.re) / ln2, c.suffix || 'i'),
+			)
+		},
+	},
+	{
+		name: 'IMTAN',
+		minArgs: 1,
+		maxArgs: 1,
+		evaluate: (args) => {
+			const c = complexArg(args[0])
+			if (!isComplex(c)) return c
+			const d = Math.cos(2 * c.re) + Math.cosh(2 * c.im)
+			if (d === 0) return errorValue('#NUM!')
+			return stringValue(
+				formatComplex(Math.sin(2 * c.re) / d, Math.sinh(2 * c.im) / d, c.suffix || 'i'),
+			)
+		},
+	},
+	{
+		name: 'IMSINH',
+		minArgs: 1,
+		maxArgs: 1,
+		evaluate: (args) => {
+			const c = complexArg(args[0])
+			if (!isComplex(c)) return c
+			return stringValue(
+				formatComplex(
+					Math.sinh(c.re) * Math.cos(c.im),
+					Math.cosh(c.re) * Math.sin(c.im),
+					c.suffix || 'i',
+				),
+			)
+		},
+	},
+	{
+		name: 'IMCOSH',
+		minArgs: 1,
+		maxArgs: 1,
+		evaluate: (args) => {
+			const c = complexArg(args[0])
+			if (!isComplex(c)) return c
+			return stringValue(
+				formatComplex(
+					Math.cosh(c.re) * Math.cos(c.im),
+					Math.sinh(c.re) * Math.sin(c.im),
+					c.suffix || 'i',
+				),
+			)
+		},
+	},
+	{
+		name: 'IMSEC',
+		minArgs: 1,
+		maxArgs: 1,
+		evaluate: (args) => {
+			const c = complexArg(args[0])
+			if (!isComplex(c)) return c
+			const cosRe = Math.cos(c.re) * Math.cosh(c.im)
+			const cosIm = -Math.sin(c.re) * Math.sinh(c.im)
+			const d = cosRe * cosRe + cosIm * cosIm
+			if (d === 0) return errorValue('#NUM!')
+			return stringValue(formatComplex(cosRe / d, -cosIm / d, c.suffix || 'i'))
+		},
+	},
+	{
+		name: 'IMCSC',
+		minArgs: 1,
+		maxArgs: 1,
+		evaluate: (args) => {
+			const c = complexArg(args[0])
+			if (!isComplex(c)) return c
+			const sinRe = Math.sin(c.re) * Math.cosh(c.im)
+			const sinIm = Math.cos(c.re) * Math.sinh(c.im)
+			const d = sinRe * sinRe + sinIm * sinIm
+			if (d === 0) return errorValue('#NUM!')
+			return stringValue(formatComplex(sinRe / d, -sinIm / d, c.suffix || 'i'))
+		},
+	},
+	{
+		name: 'IMCOT',
+		minArgs: 1,
+		maxArgs: 1,
+		evaluate: (args) => {
+			const c = complexArg(args[0])
+			if (!isComplex(c)) return c
+			const d = Math.cosh(2 * c.im) - Math.cos(2 * c.re)
+			if (d === 0) return errorValue('#NUM!')
+			return stringValue(
+				formatComplex(Math.sin(2 * c.re) / d, -Math.sinh(2 * c.im) / d, c.suffix || 'i'),
+			)
+		},
+	},
+	{
+		name: 'IMSECH',
+		minArgs: 1,
+		maxArgs: 1,
+		evaluate: (args) => {
+			const c = complexArg(args[0])
+			if (!isComplex(c)) return c
+			const coshRe = Math.cosh(c.re) * Math.cos(c.im)
+			const coshIm = Math.sinh(c.re) * Math.sin(c.im)
+			const d = coshRe * coshRe + coshIm * coshIm
+			if (d === 0) return errorValue('#NUM!')
+			return stringValue(formatComplex(coshRe / d, -coshIm / d, c.suffix || 'i'))
+		},
+	},
+	{
+		name: 'IMCSCH',
+		minArgs: 1,
+		maxArgs: 1,
+		evaluate: (args) => {
+			const c = complexArg(args[0])
+			if (!isComplex(c)) return c
+			const sinhRe = Math.sinh(c.re) * Math.cos(c.im)
+			const sinhIm = Math.cosh(c.re) * Math.sin(c.im)
+			const d = sinhRe * sinhRe + sinhIm * sinhIm
+			if (d === 0) return errorValue('#NUM!')
+			return stringValue(formatComplex(sinhRe / d, -sinhIm / d, c.suffix || 'i'))
+		},
+	},
 ]

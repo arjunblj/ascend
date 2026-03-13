@@ -1,5 +1,14 @@
-import { EMPTY, errorValue, numberValue, stringValue, topLeftScalar } from '@ascend/schema'
-import type { FunctionDef } from '../index.ts'
+import type { CellValue } from '@ascend/schema'
+import {
+	arrayValue,
+	EMPTY,
+	errorValue,
+	numberValue,
+	stringValue,
+	topLeftScalar,
+} from '@ascend/schema'
+import type { EvalArg, FunctionDef } from '../index.ts'
+import { collectNumbers, getRange } from '../registry.ts'
 import { fn, numArg } from './helpers.ts'
 
 export const basicFunctions: FunctionDef[] = [
@@ -226,4 +235,289 @@ export const basicFunctions: FunctionDef[] = [
 		if (Number.isNaN(result)) return errorValue('#NUM!')
 		return numberValue(result)
 	}),
+
+	fn('SQRTPI', 1, 1, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		if (n < 0) return errorValue('#NUM!')
+		return numberValue(Math.sqrt(n * Math.PI))
+	}),
+
+	fn('MULTINOMIAL', 1, 255, (args) => {
+		const numsOrErr = collectNumbers(args)
+		if (!Array.isArray(numsOrErr)) return numsOrErr
+		let total = 0
+		let denom = 1
+		for (const v of numsOrErr) {
+			const k = Math.trunc(v)
+			if (k < 0) return errorValue('#NUM!')
+			total += k
+			let f = 1
+			for (let i = 2; i <= k; i++) f *= i
+			denom *= f
+		}
+		let numer = 1
+		for (let i = 2; i <= total; i++) numer *= i
+		return numberValue(Math.round(numer / denom))
+	}),
+
+	fn('SERIESSUM', 4, 4, (args) => {
+		const x = numArg(args[0])
+		if (typeof x !== 'number') return x
+		const n = numArg(args[1])
+		if (typeof n !== 'number') return n
+		const m = numArg(args[2])
+		if (typeof m !== 'number') return m
+		const coeffRange = getRange(args[3])
+		const coeffs: number[] = []
+		for (const row of coeffRange) {
+			for (const cell of row) {
+				if (cell.kind === 'error') return cell
+				if (cell.kind === 'number') coeffs.push(cell.value)
+				else if (cell.kind === 'date') coeffs.push(cell.serial)
+				else coeffs.push(0)
+			}
+		}
+		let sum = 0
+		for (let i = 0; i < coeffs.length; i++) {
+			sum += (coeffs[i] as number) * x ** (n + i * m)
+		}
+		return numberValue(sum)
+	}),
+
+	fn('SUMX2MY2', 2, 2, (args) => {
+		const paired = collectPairedNumbers(args[0], args[1])
+		if (!Array.isArray(paired)) return paired
+		const [xs, ys] = paired
+		let sum = 0
+		for (let i = 0; i < xs.length; i++) {
+			sum += (xs[i] as number) ** 2 - (ys[i] as number) ** 2
+		}
+		return numberValue(sum)
+	}),
+
+	fn('SUMX2PY2', 2, 2, (args) => {
+		const paired = collectPairedNumbers(args[0], args[1])
+		if (!Array.isArray(paired)) return paired
+		const [xs, ys] = paired
+		let sum = 0
+		for (let i = 0; i < xs.length; i++) {
+			sum += (xs[i] as number) ** 2 + (ys[i] as number) ** 2
+		}
+		return numberValue(sum)
+	}),
+
+	fn('SUMXMY2', 2, 2, (args) => {
+		const paired = collectPairedNumbers(args[0], args[1])
+		if (!Array.isArray(paired)) return paired
+		const [xs, ys] = paired
+		let sum = 0
+		for (let i = 0; i < xs.length; i++) {
+			sum += ((xs[i] as number) - (ys[i] as number)) ** 2
+		}
+		return numberValue(sum)
+	}),
+
+	fn('MMULT', 2, 2, (args) => {
+		const a = getRange(args[0])
+		const b = getRange(args[1])
+		const aRows = a.length
+		const aCols = a[0]?.length ?? 0
+		const bRows = b.length
+		const bCols = b[0]?.length ?? 0
+		if (aCols !== bRows) return errorValue('#VALUE!')
+		const toNum = (v: CellValue): number | null => {
+			if (v.kind === 'number') return v.value
+			if (v.kind === 'date') return v.serial
+			if (v.kind === 'boolean') return v.value ? 1 : 0
+			if (v.kind === 'empty') return 0
+			return null
+		}
+		const rows: CellValue[][] = []
+		for (let i = 0; i < aRows; i++) {
+			const row: CellValue[] = []
+			for (let j = 0; j < bCols; j++) {
+				let sum = 0
+				for (let k = 0; k < aCols; k++) {
+					const av = toNum(a[i]?.[k] ?? EMPTY)
+					const bv = toNum(b[k]?.[j] ?? EMPTY)
+					if (av === null || bv === null) return errorValue('#VALUE!')
+					sum += av * bv
+				}
+				row.push(numberValue(sum))
+			}
+			rows.push(row)
+		}
+		if (rows.length === 1 && rows[0]?.length === 1) return rows[0][0] ?? EMPTY
+		return arrayValue(rows.map((r) => r.map((c) => topLeftScalar(c))))
+	}),
+
+	fn('MDETERM', 1, 1, (args) => {
+		const m = getRange(args[0])
+		const n = m.length
+		const cols = m[0]?.length ?? 0
+		if (n !== cols || n === 0) return errorValue('#VALUE!')
+		const toNum = (v: CellValue): number | null => {
+			if (v.kind === 'number') return v.value
+			if (v.kind === 'date') return v.serial
+			if (v.kind === 'boolean') return v.value ? 1 : 0
+			if (v.kind === 'empty') return 0
+			return null
+		}
+		const mat: number[][] = []
+		for (let i = 0; i < n; i++) {
+			const row: number[] = []
+			for (let j = 0; j < n; j++) {
+				const v = toNum(m[i]?.[j] ?? EMPTY)
+				if (v === null) return errorValue('#VALUE!')
+				row.push(v)
+			}
+			mat.push(row)
+		}
+		return numberValue(determinant(mat, n))
+	}),
+
+	fn('MINVERSE', 1, 1, (args) => {
+		const m = getRange(args[0])
+		const n = m.length
+		const cols = m[0]?.length ?? 0
+		if (n !== cols || n === 0) return errorValue('#VALUE!')
+		const toNum = (v: CellValue): number | null => {
+			if (v.kind === 'number') return v.value
+			if (v.kind === 'date') return v.serial
+			if (v.kind === 'boolean') return v.value ? 1 : 0
+			if (v.kind === 'empty') return 0
+			return null
+		}
+		const aug: number[][] = []
+		for (let i = 0; i < n; i++) {
+			const row: number[] = []
+			for (let j = 0; j < n; j++) {
+				const v = toNum(m[i]?.[j] ?? EMPTY)
+				if (v === null) return errorValue('#VALUE!')
+				row.push(v)
+			}
+			for (let j = 0; j < n; j++) row.push(i === j ? 1 : 0)
+			aug.push(row)
+		}
+		for (let col = 0; col < n; col++) {
+			let maxRow = col
+			let maxVal = Math.abs(aug[col]?.[col] ?? 0)
+			for (let row = col + 1; row < n; row++) {
+				const val = Math.abs(aug[row]?.[col] ?? 0)
+				if (val > maxVal) {
+					maxRow = row
+					maxVal = val
+				}
+			}
+			if (maxVal < 1e-15) return errorValue('#NUM!')
+			if (maxRow !== col) {
+				const tmp = aug[col]
+				aug[col] = aug[maxRow] as number[]
+				aug[maxRow] = tmp as number[]
+			}
+			const pivot = aug[col]?.[col] ?? 1
+			const pivotRow = aug[col]
+			if (!pivotRow) return errorValue('#NUM!')
+			for (let j = 0; j < 2 * n; j++) pivotRow[j] = (pivotRow[j] ?? 0) / pivot
+			for (let row = 0; row < n; row++) {
+				if (row === col) continue
+				const augRow = aug[row]
+				if (!augRow) continue
+				const factor = augRow[col] ?? 0
+				for (let j = 0; j < 2 * n; j++) augRow[j] = (augRow[j] ?? 0) - factor * (pivotRow[j] ?? 0)
+			}
+		}
+		const result: CellValue[][] = []
+		for (let i = 0; i < n; i++) {
+			const row: CellValue[] = []
+			for (let j = 0; j < n; j++) row.push(numberValue(aug[i]?.[n + j] ?? 0))
+			result.push(row)
+		}
+		if (n === 1) return result[0]?.[0] ?? EMPTY
+		return arrayValue(result.map((r) => r.map((c) => topLeftScalar(c))))
+	}),
+
+	fn('MUNIT', 1, 1, (args) => {
+		const d = numArg(args[0])
+		if (typeof d !== 'number') return d
+		const n = Math.trunc(d)
+		if (n < 1) return errorValue('#VALUE!')
+		const rows: CellValue[][] = []
+		for (let i = 0; i < n; i++) {
+			const row: CellValue[] = []
+			for (let j = 0; j < n; j++) row.push(numberValue(i === j ? 1 : 0))
+			rows.push(row)
+		}
+		if (n === 1) return numberValue(1)
+		return arrayValue(rows.map((r) => r.map((c) => topLeftScalar(c))))
+	}),
 ]
+
+function collectPairedNumbers(
+	arg1: EvalArg | undefined,
+	arg2: EvalArg | undefined,
+): [number[], number[]] | CellValue {
+	const range1 = getRange(arg1)
+	const range2 = getRange(arg2)
+	const xs: number[] = []
+	const ys: number[] = []
+	const rows1 = range1.length
+	const cols1 = range1[0]?.length ?? 0
+	const rows2 = range2.length
+	const cols2 = range2[0]?.length ?? 0
+	if (rows1 !== rows2 || cols1 !== cols2) return errorValue('#N/A')
+	for (let r = 0; r < rows1; r++) {
+		for (let c = 0; c < cols1; c++) {
+			const v1 = range1[r]?.[c]
+			const v2 = range2[r]?.[c]
+			if (!v1 || !v2) continue
+			if (v1.kind === 'error') return v1
+			if (v2.kind === 'error') return v2
+			const n1 = v1.kind === 'number' ? v1.value : v1.kind === 'date' ? v1.serial : null
+			const n2 = v2.kind === 'number' ? v2.value : v2.kind === 'date' ? v2.serial : null
+			if (n1 !== null && n2 !== null) {
+				xs.push(n1)
+				ys.push(n2)
+			}
+		}
+	}
+	if (xs.length === 0) return errorValue('#N/A')
+	return [xs, ys]
+}
+
+function determinant(m: number[][], n: number): number {
+	if (n === 1) return m[0]?.[0] ?? 0
+	if (n === 2) return (m[0]?.[0] ?? 0) * (m[1]?.[1] ?? 0) - (m[0]?.[1] ?? 0) * (m[1]?.[0] ?? 0)
+	const mat = m.map((r) => [...r])
+	let det = 1
+	for (let col = 0; col < n; col++) {
+		let maxRow = col
+		let maxVal = Math.abs(mat[col]?.[col] ?? 0)
+		for (let row = col + 1; row < n; row++) {
+			const val = Math.abs(mat[row]?.[col] ?? 0)
+			if (val > maxVal) {
+				maxRow = row
+				maxVal = val
+			}
+		}
+		if (maxVal < 1e-15) return 0
+		if (maxRow !== col) {
+			const tmp = mat[col]
+			mat[col] = mat[maxRow] as number[]
+			mat[maxRow] = tmp as number[]
+			det *= -1
+		}
+		det *= mat[col]?.[col] ?? 1
+		const pivot = mat[col]?.[col] ?? 1
+		for (let row = col + 1; row < n; row++) {
+			const factor = (mat[row]?.[col] ?? 0) / pivot
+			const matRow = mat[row]
+			if (!matRow) continue
+			for (let j = col + 1; j < n; j++) {
+				matRow[j] = (matRow[j] ?? 0) - factor * (mat[col]?.[j] ?? 0)
+			}
+		}
+	}
+	return det
+}

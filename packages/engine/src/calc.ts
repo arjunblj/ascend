@@ -48,8 +48,10 @@ interface GrowingRangeAggregateOptimization {
 	readonly functionName: 'SUM'
 	readonly previousKey: CellKey
 	readonly appendSheetIndex: number
-	readonly appendRow: number
-	readonly appendCol: number
+	readonly appendStartRow: number
+	readonly appendStartCol: number
+	readonly appendEndRow: number
+	readonly appendEndCol: number
 }
 
 interface RecalcScratch {
@@ -109,31 +111,27 @@ function tryEvaluateGrowingRangeAggregate(
 	workbook: Workbook,
 	optimization: GrowingRangeAggregateOptimization,
 	completedKeys: ReadonlySet<CellKey>,
-	scheduledFormulaKeys: ReadonlySet<CellKey>,
 ): CellValue | null {
 	if (optimization.functionName !== 'SUM') return null
-	if (
-		!completedKeys.has(optimization.previousKey) &&
-		scheduledFormulaKeys.has(optimization.previousKey)
-	) {
-		return null
-	}
+	if (!completedKeys.has(optimization.previousKey)) return null
 	const [prevSheetIndex, prevRow, prevCol] = parseCellKey(optimization.previousKey)
 	const previousValue = workbook.sheets[prevSheetIndex]?.cells.readValue(prevRow, prevCol)
 	if (!previousValue) return null
 	const previousScalar = topLeftScalar(previousValue)
 	if (previousScalar.kind === 'error') return previousScalar
 	if (previousScalar.kind !== 'number') return null
-	const appendValue = workbook.sheets[optimization.appendSheetIndex]?.cells.readValue(
-		optimization.appendRow,
-		optimization.appendCol,
-	)
-	if (!appendValue) return null
-	const appendScalar = topLeftScalar(appendValue)
-	if (appendScalar.kind === 'error') return appendScalar
-	if (appendScalar.kind === 'number') return numberValue(previousScalar.value + appendScalar.value)
-	if (appendScalar.kind === 'date') return numberValue(previousScalar.value + appendScalar.serial)
-	return numberValue(previousScalar.value)
+	const appendSheet = workbook.sheets[optimization.appendSheetIndex]
+	if (!appendSheet) return null
+	let sum = previousScalar.value
+	for (let row = optimization.appendStartRow; row <= optimization.appendEndRow; row++) {
+		for (let col = optimization.appendStartCol; col <= optimization.appendEndCol; col++) {
+			const appendScalar = topLeftScalar(appendSheet.cells.readValue(row, col))
+			if (appendScalar.kind === 'error') return appendScalar
+			if (appendScalar.kind === 'number') sum += appendScalar.value
+			else if (appendScalar.kind === 'date') sum += appendScalar.serial
+		}
+	}
+	return numberValue(sum)
 }
 
 function cellRefString(wb: Workbook, sheetIndex: number, row: number, col: number): string {
@@ -491,7 +489,6 @@ export function recalculate(
 		let hasSharedFormulaGroups = false
 		const hasGrowingRangeAggregates = growingRangeAggregates.size > 0
 		const completedKeys = hasGrowingRangeAggregates ? new Set<CellKey>() : null
-		const scheduledFormulaKeys = hasGrowingRangeAggregates ? new Set(asts.keys()) : null
 		if (sharedGroups.size > 0) {
 			const evalOrderIndex = new Map<CellKey, number>()
 			let idx = 0
@@ -560,17 +557,12 @@ export function recalculate(
 			mutableCtx.sheetIndex = si
 			mutableCtx.row = row
 			mutableCtx.col = col
-			const growingRangeAggregate = hasGrowingRangeAggregates
-				? growingRangeAggregates.get(key)
-				: undefined
+			const growingRangeAggregate =
+				!isDirtyRecalc && hasGrowingRangeAggregates ? growingRangeAggregates.get(key) : undefined
 			const newValue =
-				growingRangeAggregate && completedKeys && scheduledFormulaKeys
-					? (tryEvaluateGrowingRangeAggregate(
-							workbook,
-							growingRangeAggregate,
-							completedKeys,
-							scheduledFormulaKeys,
-						) ?? evalFormula(key, formulaText, ast, mutableCtx))
+				growingRangeAggregate && completedKeys
+					? (tryEvaluateGrowingRangeAggregate(workbook, growingRangeAggregate, completedKeys) ??
+						evalFormula(key, formulaText, ast, mutableCtx))
 					: evalFormula(key, formulaText, ast, mutableCtx)
 			const hadCell = sheet.cells.has(row, col)
 			const oldValue = sheet.cells.readValue(row, col)

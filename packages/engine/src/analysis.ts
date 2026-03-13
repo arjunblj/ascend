@@ -39,8 +39,10 @@ export interface AnalyzedFormula {
 				readonly functionName: 'SUM'
 				readonly previousKey: CellKey
 				readonly appendSheetIndex: number
-				readonly appendRow: number
-				readonly appendCol: number
+				readonly appendStartRow: number
+				readonly appendStartCol: number
+				readonly appendEndRow: number
+				readonly appendEndCol: number
 		  }
 		| undefined
 	readonly parseError?: string
@@ -61,8 +63,10 @@ export interface IndexedFormula {
 				readonly functionName: 'SUM'
 				readonly previousKey: CellKey
 				readonly appendSheetIndex: number
-				readonly appendRow: number
-				readonly appendCol: number
+				readonly appendStartRow: number
+				readonly appendStartCol: number
+				readonly appendEndRow: number
+				readonly appendEndCol: number
 		  }
 		| undefined
 	readonly parseError?: string
@@ -162,7 +166,7 @@ function tryDetectGrowingRangeAggregate(
 		col: number
 		ast: FormulaNode
 	},
-	formulas: ReadonlyMap<CellKey, IndexedFormula>,
+	previousInColumn: IndexedFormula | undefined,
 ): IndexedFormula['growingRangeAggregate'] {
 	if (current.ast.type !== 'function') return undefined
 	if (current.ast.name.toUpperCase() !== 'SUM') return undefined
@@ -175,7 +179,7 @@ function tryDetectGrowingRangeAggregate(
 			: resolveSheetIndex(sheetNameIndex, currentArg.sheet, current.sheetIndex)
 	if (currentRangeSheet < 0) return undefined
 
-	const previous = formulas.get(cellKey(current.sheetIndex, current.row - 1, current.col))
+	const previous = previousInColumn
 	if (!previous?.ast || previous.ast.type !== 'function') return undefined
 	if (previous.ast.name.toUpperCase() !== 'SUM' || previous.ast.args.length !== 1) return undefined
 	const previousArg = previous.ast.args[0]
@@ -188,8 +192,9 @@ function tryDetectGrowingRangeAggregate(
 	if (
 		currentArg.start.row !== previousArg.start.row ||
 		currentArg.start.col !== previousArg.start.col ||
+		currentArg.end.row <= previousArg.end.row ||
 		currentArg.end.col !== previousArg.end.col ||
-		currentArg.end.row !== previousArg.end.row + 1
+		current.row <= previous.row
 	) {
 		return undefined
 	}
@@ -198,8 +203,10 @@ function tryDetectGrowingRangeAggregate(
 		functionName: 'SUM',
 		previousKey: previous.key,
 		appendSheetIndex: currentRangeSheet,
-		appendRow: currentArg.end.row,
-		appendCol: currentArg.end.col,
+		appendStartRow: previousArg.end.row + 1,
+		appendStartCol: previousArg.start.col,
+		appendEndRow: currentArg.end.row,
+		appendEndCol: currentArg.end.col,
 	}
 }
 
@@ -219,6 +226,7 @@ export function analyzeWorkbookFormulas(
 	for (let sheetIndex = 0; sheetIndex < workbook.sheets.length; sheetIndex++) {
 		const sheet = workbook.sheets[sheetIndex]
 		if (!sheet) continue
+		const previousFormulaByCol = new Map<number, IndexedFormula>()
 		for (const [row, rowCells] of sheet.cells.iterateRows()) {
 			for (const [col, cell] of rowCells) {
 				if (!cellHasFormula(cell)) continue
@@ -268,9 +276,9 @@ export function analyzeWorkbookFormulas(
 				const growingRangeAggregate = tryDetectGrowingRangeAggregate(
 					sheetNameIndex,
 					{ sheetIndex, row, col, ast },
-					formulas,
+					previousFormulaByCol.get(col),
 				)
-				formulas.set(key, {
+				const indexed = {
 					key,
 					sheetIndex,
 					sheetName: sheet.name,
@@ -281,7 +289,9 @@ export function analyzeWorkbookFormulas(
 					refs,
 					volatile,
 					...(growingRangeAggregate ? { growingRangeAggregate } : {}),
-				})
+				} satisfies IndexedFormula
+				formulas.set(key, indexed)
+				previousFormulaByCol.set(col, indexed)
 			}
 		}
 	}

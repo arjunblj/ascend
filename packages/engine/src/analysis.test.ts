@@ -120,8 +120,33 @@ describe('analyzeWorkbook', () => {
 			functionName: 'SUM',
 			previousKey: cellKey(0, 0, 1),
 			appendSheetIndex: 0,
-			appendRow: 1,
-			appendCol: 0,
+			appendStartRow: 1,
+			appendStartCol: 0,
+			appendEndRow: 1,
+			appendEndCol: 0,
+		})
+	})
+
+	test('detects growing SUM ranges across row gaps', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		s.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		s.cells.set(2, 0, { value: numberValue(3), formula: null, styleId: sid })
+		s.cells.set(3, 0, { value: numberValue(4), formula: null, styleId: sid })
+		s.cells.set(0, 1, { value: EMPTY, formula: 'SUM(A1:A1)', styleId: sid })
+		s.cells.set(3, 1, { value: EMPTY, formula: 'SUM(A1:A4)', styleId: sid })
+
+		const analysis = analyzeWorkbook(wb)
+		const fourth = analysis.formulas.get(cellKey(0, 3, 1))
+		expect(fourth?.growingRangeAggregate).toEqual({
+			functionName: 'SUM',
+			previousKey: cellKey(0, 0, 1),
+			appendSheetIndex: 0,
+			appendStartRow: 1,
+			appendStartCol: 0,
+			appendEndRow: 3,
+			appendEndCol: 0,
 		})
 	})
 

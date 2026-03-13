@@ -382,6 +382,16 @@ describe('recalculate', () => {
 		expect(cell?.value).toEqual(numberValue(expectedSerial))
 	})
 
+	test('DATE respects 1904 date system in CalcContext', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'DATE(1904,1,2)', styleId: sid })
+
+		recalculate(wb, makeCtx({ dateSystem: '1904' }))
+
+		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(1))
+	})
+
 	test('RAND is deterministic per cell and seed', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

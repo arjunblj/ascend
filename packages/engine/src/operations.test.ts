@@ -44,6 +44,23 @@ describe('applyOperation', () => {
 		expect(s.cells.get(0, 2)?.value).toEqual(stringValue('new'))
 	})
 
+	test('setCells serializes Date inputs using workbook date system', () => {
+		const wb = setup()
+		wb.calcSettings = { ...wb.calcSettings, dateSystem: '1904' }
+		const result = applyOperation(wb, {
+			op: 'setCells',
+			sheet: 'Sheet1',
+			updates: [{ ref: 'D1', value: new Date(Date.UTC(1904, 0, 2)) }],
+		})
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(wb.getSheet('Sheet1')?.cells.get(0, 3)?.value).toEqual({
+			kind: 'date',
+			serial: 1,
+		})
+	})
+
 	test('setFormula sets formula on cell', () => {
 		const wb = setup()
 		const result = applyOperation(wb, {
@@ -772,6 +789,33 @@ describe('applyOperation', () => {
 		})
 		expect(sheet.cells.get(2, 0)?.value).toEqual(stringValue('Debt'))
 		expect(sheet.cells.get(2, 1)?.value).toEqual(numberValue(20))
+	})
+
+	test('appendRows serializes Date values using workbook date system', () => {
+		const wb = createWorkbook()
+		wb.calcSettings = { ...wb.calcSettings, dateSystem: '1904' }
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Date'), formula: null, styleId: sid })
+		applyOperation(wb, {
+			op: 'createTable',
+			sheet: 'Sheet1',
+			ref: 'A1:A1',
+			name: 'DateTable',
+			hasHeaders: true,
+		})
+
+		const result = applyOperation(wb, {
+			op: 'appendRows',
+			table: 'DateTable',
+			rows: [[new Date(Date.UTC(1904, 0, 2))]],
+		})
+		expect(result.ok).toBe(true)
+		if (!result.ok) return
+
+		expect(sheet.cells.get(1, 0)?.value).toEqual({
+			kind: 'date',
+			serial: 1,
+		})
 	})
 
 	test('appendRows expands table filter and sort metadata refs', () => {

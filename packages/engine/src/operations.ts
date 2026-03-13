@@ -32,7 +32,7 @@ export interface PatchResult {
 
 const DEFAULT_SID = 0 as unknown as StyleId
 
-function inputToCellValue(input: InputValue): CellValue {
+function inputToCellValue(input: InputValue, dateSystem: '1900' | '1904' = '1900'): CellValue {
 	if (input === null) return EMPTY
 	if (typeof input === 'number') return numberValue(input)
 	if (typeof input === 'string') return stringValue(input)
@@ -40,7 +40,7 @@ function inputToCellValue(input: InputValue): CellValue {
 	if (input instanceof Date) {
 		return {
 			kind: 'date',
-			serial: dateToSerial(input.getFullYear(), input.getMonth() + 1, input.getDate()),
+			serial: dateToSerial(input.getFullYear(), input.getMonth() + 1, input.getDate(), dateSystem),
 		}
 	}
 	return EMPTY
@@ -101,7 +101,7 @@ function handleSetCells(
 	const affected: string[] = []
 	for (const update of op.updates) {
 		const ref = parseA1(update.ref)
-		const value = inputToCellValue(update.value)
+		const value = inputToCellValue(update.value, workbook.calcSettings.dateSystem)
 		const existing = sheet.cells.get(ref.row, ref.col)
 		sheet.cells.set(
 			ref.row,
@@ -434,7 +434,7 @@ function handleAppendRows(
 					nextRow,
 					col,
 					cellWithExisting(
-						inputToCellValue(provided),
+						inputToCellValue(provided, workbook.calcSettings.dateSystem),
 						existing?.formula ?? null,
 						existing?.styleId ?? DEFAULT_SID,
 						existing,

@@ -1,6 +1,7 @@
 import type { CellValue } from '@ascend/schema'
 import { errorValue, numberValue } from '@ascend/schema'
-import type { EvalArg, FunctionDef } from './registry.ts'
+import { dateToSerial, serialToDate } from './date.ts'
+import type { EvalArg, FunctionDef, FunctionEvalContext } from './registry.ts'
 import { collectNumbers, getRange, numArg, toNumber } from './registry.ts'
 
 function num(arg: EvalArg | undefined): number | CellValue {
@@ -110,6 +111,212 @@ function vdbCalc(
 		bookValue -= dep
 	}
 	return totalDep
+}
+
+function currentDateSystem(ctx: FunctionEvalContext | undefined): '1900' | '1904' {
+	return ctx?.dateSystem ?? '1900'
+}
+
+function daysInMonth(year: number, month: number): number {
+	return new Date(Date.UTC(year, month, 0)).getUTCDate()
+}
+
+function isLeapYear(year: number): boolean {
+	return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0
+}
+
+function addMonthsPreserveEom(
+	parts: { year: number; month: number; day: number },
+	deltaMonths: number,
+	preserveEom: boolean,
+): { year: number; month: number; day: number } {
+	const monthIndex = parts.year * 12 + (parts.month - 1) + deltaMonths
+	const year = Math.floor(monthIndex / 12)
+	const month = (((monthIndex % 12) + 12) % 12) + 1
+	const day = preserveEom ? daysInMonth(year, month) : Math.min(parts.day, daysInMonth(year, month))
+	return { year, month, day }
+}
+
+function parseDateArg(serial: number, dateSystem: '1900' | '1904') {
+	return serialToDate(Math.floor(serial), dateSystem)
+}
+
+function dayCount30Us(
+	start: { year: number; month: number; day: number },
+	end: { year: number; month: number; day: number },
+): number {
+	let d1 = start.day
+	let d2 = end.day
+	if (d1 === 31) d1 = 30
+	if (d2 === 31 && d1 >= 30) d2 = 30
+	return (end.year - start.year) * 360 + (end.month - start.month) * 30 + (d2 - d1)
+}
+
+function dayCount30Eu(
+	start: { year: number; month: number; day: number },
+	end: { year: number; month: number; day: number },
+): number {
+	const d1 = start.day === 31 ? 30 : start.day
+	const d2 = end.day === 31 ? 30 : end.day
+	return (end.year - start.year) * 360 + (end.month - start.month) * 30 + (d2 - d1)
+}
+
+function dayCountBasis(
+	startSerial: number,
+	endSerial: number,
+	basis: number,
+	dateSystem: '1900' | '1904',
+): number {
+	const start = parseDateArg(startSerial, dateSystem)
+	const end = parseDateArg(endSerial, dateSystem)
+	if (!start || !end) return Number.NaN
+	switch (basis) {
+		case 0:
+			return dayCount30Us(start, end)
+		case 4:
+			return dayCount30Eu(start, end)
+		default:
+			return Math.floor(endSerial) - Math.floor(startSerial)
+	}
+}
+
+function yearFracActualActual(
+	startSerial: number,
+	endSerial: number,
+	dateSystem: '1900' | '1904',
+): number {
+	if (endSerial <= startSerial) return 0
+	const start = parseDateArg(startSerial, dateSystem)
+	const end = parseDateArg(endSerial, dateSystem)
+	if (!start || !end) return Number.NaN
+	if (start.year === end.year) {
+		return (Math.floor(endSerial) - Math.floor(startSerial)) / (isLeapYear(start.year) ? 366 : 365)
+	}
+	let total = 0
+	const startYearEnd = dateToSerial(start.year, 12, 31, dateSystem)
+	total += (startYearEnd + 1 - Math.floor(startSerial)) / (isLeapYear(start.year) ? 366 : 365)
+	for (let year = start.year + 1; year < end.year; year++) total += 1
+	const endYearStart = dateToSerial(end.year, 1, 1, dateSystem)
+	total += (Math.floor(endSerial) - endYearStart) / (isLeapYear(end.year) ? 366 : 365)
+	return total
+}
+
+function yearFracFromBasis(
+	startSerial: number,
+	endSerial: number,
+	basis: number,
+	dateSystem: '1900' | '1904',
+): number {
+	const days = dayCountBasis(startSerial, endSerial, basis, dateSystem)
+	switch (basis) {
+		case 0:
+		case 2:
+		case 4:
+			return days / 360
+		case 3:
+			return days / 365
+		default:
+			return yearFracActualActual(startSerial, endSerial, dateSystem)
+	}
+}
+
+function validateBasis(basis: number): number | null {
+	const value = Math.trunc(basis)
+	return value >= 0 && value <= 4 ? value : null
+}
+
+function validateFrequency(frequency: number): number | null {
+	const value = Math.trunc(frequency)
+	return value === 1 || value === 2 || value === 4 ? value : null
+}
+
+function resolveCouponWindow(
+	settlement: number,
+	maturity: number,
+	frequency: number,
+	dateSystem: '1900' | '1904',
+): { prev: number; next: number; monthsPerCoupon: number } | null {
+	const maturityParts = parseDateArg(maturity, dateSystem)
+	if (!maturityParts) return null
+	const preserveEom = maturityParts.day === daysInMonth(maturityParts.year, maturityParts.month)
+	const monthsPerCoupon = 12 / frequency
+	let nextParts = maturityParts
+	let nextSerial = dateToSerial(nextParts.year, nextParts.month, nextParts.day, dateSystem)
+	while (true) {
+		const prevParts = addMonthsPreserveEom(nextParts, -monthsPerCoupon, preserveEom)
+		const prevSerial = dateToSerial(prevParts.year, prevParts.month, prevParts.day, dateSystem)
+		if (prevSerial <= settlement) return { prev: prevSerial, next: nextSerial, monthsPerCoupon }
+		nextParts = prevParts
+		nextSerial = prevSerial
+	}
+}
+
+function couponPeriodDays(
+	prev: number,
+	next: number,
+	basis: number,
+	frequency: number,
+	dateSystem: '1900' | '1904',
+): number {
+	switch (basis) {
+		case 0:
+		case 2:
+		case 4:
+			return 360 / frequency
+		case 3:
+			return 365 / frequency
+		default:
+			return dayCountBasis(prev, next, basis, dateSystem)
+	}
+}
+
+function couponCountRemaining(
+	settlement: number,
+	maturity: number,
+	frequency: number,
+	dateSystem: '1900' | '1904',
+): number {
+	const window = resolveCouponWindow(settlement, maturity, frequency, dateSystem)
+	if (!window) return 0
+	const maturityParts = parseDateArg(maturity, dateSystem)
+	if (!maturityParts) return 0
+	const preserveEom = maturityParts.day === daysInMonth(maturityParts.year, maturityParts.month)
+	let count = 0
+	let current = window.next
+	let currentParts = parseDateArg(current, dateSystem)
+	while (currentParts && current <= maturity) {
+		count++
+		currentParts = addMonthsPreserveEom(currentParts, window.monthsPerCoupon, preserveEom)
+		current = dateToSerial(currentParts.year, currentParts.month, currentParts.day, dateSystem)
+	}
+	return count
+}
+
+function regularBondPrice(
+	settlement: number,
+	maturity: number,
+	rate: number,
+	yld: number,
+	redemption: number,
+	frequency: number,
+	basis: number,
+	dateSystem: '1900' | '1904',
+): number {
+	const coupon = (100 * rate) / frequency
+	const window = resolveCouponWindow(settlement, maturity, frequency, dateSystem)
+	if (!window) return Number.NaN
+	const a = dayCountBasis(window.prev, settlement, basis, dateSystem)
+	const e = couponPeriodDays(window.prev, window.next, basis, frequency, dateSystem)
+	const dsc = dayCountBasis(settlement, window.next, basis, dateSystem)
+	const n = couponCountRemaining(settlement, maturity, frequency, dateSystem)
+	const q = 1 + yld / frequency
+	if (n <= 1) {
+		const dsr = e - a
+		return (coupon + redemption) / (1 + (yld / frequency) * (dsr / e)) - (coupon * a) / e
+	}
+	let price = redemption / q ** (n - 1 + dsc / e)
+	for (let k = 1; k <= n; k++) price += coupon / q ** (k - 1 + dsc / e)
+	return price - (coupon * a) / e
 }
 
 export const financialFunctions: FunctionDef[] = [
@@ -748,6 +955,484 @@ export const financialFunctions: FunctionDef[] = [
 				fv *= 1 + rate
 			}
 			return numberValue(fv)
+		},
+	},
+	{
+		name: 'COUPPCD',
+		minArgs: 3,
+		maxArgs: 4,
+		evaluate(args, ctx) {
+			const settlement = num(args[0])
+			if (typeof settlement !== 'number') return settlement
+			const maturity = num(args[1])
+			if (typeof maturity !== 'number') return maturity
+			const frequency = num(args[2])
+			if (typeof frequency !== 'number') return frequency
+			const basis = args[3] ? num(args[3]) : 0
+			if (typeof basis !== 'number') return basis
+			const f = validateFrequency(frequency)
+			const b = validateBasis(basis)
+			if (f === null || b === null || settlement >= maturity) return errorValue('#NUM!')
+			const window = resolveCouponWindow(settlement, maturity, f, currentDateSystem(ctx))
+			return window ? numberValue(window.prev) : errorValue('#VALUE!')
+		},
+	},
+	{
+		name: 'COUPNCD',
+		minArgs: 3,
+		maxArgs: 4,
+		evaluate(args, ctx) {
+			const settlement = num(args[0])
+			if (typeof settlement !== 'number') return settlement
+			const maturity = num(args[1])
+			if (typeof maturity !== 'number') return maturity
+			const frequency = num(args[2])
+			if (typeof frequency !== 'number') return frequency
+			const basis = args[3] ? num(args[3]) : 0
+			if (typeof basis !== 'number') return basis
+			const f = validateFrequency(frequency)
+			const b = validateBasis(basis)
+			if (f === null || b === null || settlement >= maturity) return errorValue('#NUM!')
+			const window = resolveCouponWindow(settlement, maturity, f, currentDateSystem(ctx))
+			return window ? numberValue(window.next) : errorValue('#VALUE!')
+		},
+	},
+	{
+		name: 'COUPDAYBS',
+		minArgs: 3,
+		maxArgs: 4,
+		evaluate(args, ctx) {
+			const settlement = num(args[0])
+			if (typeof settlement !== 'number') return settlement
+			const maturity = num(args[1])
+			if (typeof maturity !== 'number') return maturity
+			const frequency = num(args[2])
+			if (typeof frequency !== 'number') return frequency
+			const basis = args[3] ? num(args[3]) : 0
+			if (typeof basis !== 'number') return basis
+			const f = validateFrequency(frequency)
+			const b = validateBasis(basis)
+			if (f === null || b === null || settlement >= maturity) return errorValue('#NUM!')
+			const ds = currentDateSystem(ctx)
+			const window = resolveCouponWindow(settlement, maturity, f, ds)
+			return window
+				? numberValue(dayCountBasis(window.prev, settlement, b, ds))
+				: errorValue('#VALUE!')
+		},
+	},
+	{
+		name: 'COUPDAYS',
+		minArgs: 3,
+		maxArgs: 4,
+		evaluate(args, ctx) {
+			const settlement = num(args[0])
+			if (typeof settlement !== 'number') return settlement
+			const maturity = num(args[1])
+			if (typeof maturity !== 'number') return maturity
+			const frequency = num(args[2])
+			if (typeof frequency !== 'number') return frequency
+			const basis = args[3] ? num(args[3]) : 0
+			if (typeof basis !== 'number') return basis
+			const f = validateFrequency(frequency)
+			const b = validateBasis(basis)
+			if (f === null || b === null || settlement >= maturity) return errorValue('#NUM!')
+			const ds = currentDateSystem(ctx)
+			const window = resolveCouponWindow(settlement, maturity, f, ds)
+			return window
+				? numberValue(couponPeriodDays(window.prev, window.next, b, f, ds))
+				: errorValue('#VALUE!')
+		},
+	},
+	{
+		name: 'COUPDAYSNC',
+		minArgs: 3,
+		maxArgs: 4,
+		evaluate(args, ctx) {
+			const settlement = num(args[0])
+			if (typeof settlement !== 'number') return settlement
+			const maturity = num(args[1])
+			if (typeof maturity !== 'number') return maturity
+			const frequency = num(args[2])
+			if (typeof frequency !== 'number') return frequency
+			const basis = args[3] ? num(args[3]) : 0
+			if (typeof basis !== 'number') return basis
+			const f = validateFrequency(frequency)
+			const b = validateBasis(basis)
+			if (f === null || b === null || settlement >= maturity) return errorValue('#NUM!')
+			const ds = currentDateSystem(ctx)
+			const window = resolveCouponWindow(settlement, maturity, f, ds)
+			return window
+				? numberValue(dayCountBasis(settlement, window.next, b, ds))
+				: errorValue('#VALUE!')
+		},
+	},
+	{
+		name: 'COUPNUM',
+		minArgs: 3,
+		maxArgs: 4,
+		evaluate(args, ctx) {
+			const settlement = num(args[0])
+			if (typeof settlement !== 'number') return settlement
+			const maturity = num(args[1])
+			if (typeof maturity !== 'number') return maturity
+			const frequency = num(args[2])
+			if (typeof frequency !== 'number') return frequency
+			const basis = args[3] ? num(args[3]) : 0
+			if (typeof basis !== 'number') return basis
+			const f = validateFrequency(frequency)
+			const b = validateBasis(basis)
+			if (f === null || b === null || settlement >= maturity) return errorValue('#NUM!')
+			return numberValue(couponCountRemaining(settlement, maturity, f, currentDateSystem(ctx)))
+		},
+	},
+	{
+		name: 'ACCRINTM',
+		minArgs: 4,
+		maxArgs: 5,
+		evaluate(args, ctx) {
+			const issue = num(args[0])
+			if (typeof issue !== 'number') return issue
+			const settlement = num(args[1])
+			if (typeof settlement !== 'number') return settlement
+			const rate = num(args[2])
+			if (typeof rate !== 'number') return rate
+			const par = num(args[3])
+			if (typeof par !== 'number') return par
+			const basis = args[4] ? num(args[4]) : 0
+			if (typeof basis !== 'number') return basis
+			const b = validateBasis(basis)
+			if (b === null || issue >= settlement || rate <= 0 || par <= 0) return errorValue('#NUM!')
+			return numberValue(
+				par * rate * yearFracFromBasis(issue, settlement, b, currentDateSystem(ctx)),
+			)
+		},
+	},
+	{
+		name: 'PRICE',
+		minArgs: 6,
+		maxArgs: 7,
+		evaluate(args, ctx) {
+			const settlement = num(args[0])
+			if (typeof settlement !== 'number') return settlement
+			const maturity = num(args[1])
+			if (typeof maturity !== 'number') return maturity
+			const rate = num(args[2])
+			if (typeof rate !== 'number') return rate
+			const yld = num(args[3])
+			if (typeof yld !== 'number') return yld
+			const redemption = num(args[4])
+			if (typeof redemption !== 'number') return redemption
+			const frequency = num(args[5])
+			if (typeof frequency !== 'number') return frequency
+			const basis = args[6] ? num(args[6]) : 0
+			if (typeof basis !== 'number') return basis
+			const f = validateFrequency(frequency)
+			const b = validateBasis(basis)
+			if (
+				f === null ||
+				b === null ||
+				settlement >= maturity ||
+				rate < 0 ||
+				yld < 0 ||
+				redemption <= 0
+			)
+				return errorValue('#NUM!')
+			return numberValue(
+				regularBondPrice(settlement, maturity, rate, yld, redemption, f, b, currentDateSystem(ctx)),
+			)
+		},
+	},
+	{
+		name: 'YIELD',
+		minArgs: 6,
+		maxArgs: 7,
+		evaluate(args, ctx) {
+			const settlement = num(args[0])
+			if (typeof settlement !== 'number') return settlement
+			const maturity = num(args[1])
+			if (typeof maturity !== 'number') return maturity
+			const rate = num(args[2])
+			if (typeof rate !== 'number') return rate
+			const pr = num(args[3])
+			if (typeof pr !== 'number') return pr
+			const redemption = num(args[4])
+			if (typeof redemption !== 'number') return redemption
+			const frequency = num(args[5])
+			if (typeof frequency !== 'number') return frequency
+			const basis = args[6] ? num(args[6]) : 0
+			if (typeof basis !== 'number') return basis
+			const f = validateFrequency(frequency)
+			const b = validateBasis(basis)
+			if (
+				f === null ||
+				b === null ||
+				settlement >= maturity ||
+				rate < 0 ||
+				pr <= 0 ||
+				redemption <= 0
+			)
+				return errorValue('#NUM!')
+			const ds = currentDateSystem(ctx)
+			const window = resolveCouponWindow(settlement, maturity, f, ds)
+			if (!window) return errorValue('#VALUE!')
+			const coupon = (100 * rate) / f
+			const a = dayCountBasis(window.prev, settlement, b, ds)
+			const e = couponPeriodDays(window.prev, window.next, b, f, ds)
+			const dsr = e - a
+			const n = couponCountRemaining(settlement, maturity, f, ds)
+			if (n <= 1) {
+				const result =
+					((redemption + coupon - (pr + (coupon * a) / e)) / (pr + (coupon * a) / e)) *
+					f *
+					(e / dsr)
+				return numberValue(result)
+			}
+			let guess = rate || 0.05
+			for (let i = 0; i < 100; i++) {
+				const price = regularBondPrice(settlement, maturity, rate, guess, redemption, f, b, ds)
+				const delta = 1e-6
+				const price2 = regularBondPrice(
+					settlement,
+					maturity,
+					rate,
+					guess + delta,
+					redemption,
+					f,
+					b,
+					ds,
+				)
+				const deriv = (price2 - price) / delta
+				if (Math.abs(deriv) < 1e-12) break
+				const next = guess - (price - pr) / deriv
+				if (Math.abs(next - guess) < 1e-10) return numberValue(next)
+				guess = next
+			}
+			return errorValue('#NUM!')
+		},
+	},
+	{
+		name: 'DURATION',
+		minArgs: 5,
+		maxArgs: 6,
+		evaluate(args, ctx) {
+			const settlement = num(args[0])
+			if (typeof settlement !== 'number') return settlement
+			const maturity = num(args[1])
+			if (typeof maturity !== 'number') return maturity
+			const couponRate = num(args[2])
+			if (typeof couponRate !== 'number') return couponRate
+			const yld = num(args[3])
+			if (typeof yld !== 'number') return yld
+			const frequency = num(args[4])
+			if (typeof frequency !== 'number') return frequency
+			const basis = args[5] ? num(args[5]) : 0
+			if (typeof basis !== 'number') return basis
+			const f = validateFrequency(frequency)
+			const b = validateBasis(basis)
+			if (f === null || b === null || settlement >= maturity || couponRate < 0 || yld < 0)
+				return errorValue('#NUM!')
+			const ds = currentDateSystem(ctx)
+			const window = resolveCouponWindow(settlement, maturity, f, ds)
+			if (!window) return errorValue('#VALUE!')
+			const n = couponCountRemaining(settlement, maturity, f, ds)
+			const coupon = (100 * couponRate) / f
+			const e = couponPeriodDays(window.prev, window.next, b, f, ds)
+			const dsc = dayCountBasis(settlement, window.next, b, ds)
+			const q = 1 + yld / f
+			let pvTotal = 0
+			let weighted = 0
+			for (let k = 1; k <= n; k++) {
+				const time = (k - 1 + dsc / e) / f
+				const cash = k === n ? coupon + 100 : coupon
+				const pv = cash / q ** (k - 1 + dsc / e)
+				pvTotal += pv
+				weighted += time * pv
+			}
+			return numberValue(weighted / pvTotal)
+		},
+	},
+	{
+		name: 'MDURATION',
+		minArgs: 5,
+		maxArgs: 6,
+		evaluate(args, ctx) {
+			const duration = (
+				financialFunctions.find((fn) => fn.name === 'DURATION') as FunctionDef
+			).evaluate(args, ctx)
+			if (duration.kind !== 'number') return duration
+			const frequency = num(args[4])
+			if (typeof frequency !== 'number') return frequency
+			const yld = num(args[3])
+			if (typeof yld !== 'number') return yld
+			return numberValue(duration.value / (1 + yld / frequency))
+		},
+	},
+	{
+		name: 'PRICEDISC',
+		minArgs: 4,
+		maxArgs: 5,
+		evaluate(args, ctx) {
+			const settlement = num(args[0])
+			if (typeof settlement !== 'number') return settlement
+			const maturity = num(args[1])
+			if (typeof maturity !== 'number') return maturity
+			const discount = num(args[2])
+			if (typeof discount !== 'number') return discount
+			const redemption = num(args[3])
+			if (typeof redemption !== 'number') return redemption
+			const basis = args[4] ? num(args[4]) : 0
+			if (typeof basis !== 'number') return basis
+			const b = validateBasis(basis)
+			if (b === null || settlement >= maturity || discount <= 0 || redemption <= 0)
+				return errorValue('#NUM!')
+			const yf = yearFracFromBasis(settlement, maturity, b, currentDateSystem(ctx))
+			return numberValue(redemption * (1 - discount * yf))
+		},
+	},
+	{
+		name: 'YIELDDISC',
+		minArgs: 4,
+		maxArgs: 5,
+		evaluate(args, ctx) {
+			const settlement = num(args[0])
+			if (typeof settlement !== 'number') return settlement
+			const maturity = num(args[1])
+			if (typeof maturity !== 'number') return maturity
+			const pr = num(args[2])
+			if (typeof pr !== 'number') return pr
+			const redemption = num(args[3])
+			if (typeof redemption !== 'number') return redemption
+			const basis = args[4] ? num(args[4]) : 0
+			if (typeof basis !== 'number') return basis
+			const b = validateBasis(basis)
+			if (b === null || settlement >= maturity || pr <= 0 || redemption <= 0)
+				return errorValue('#NUM!')
+			const yf = yearFracFromBasis(settlement, maturity, b, currentDateSystem(ctx))
+			return numberValue((redemption / pr - 1) / yf)
+		},
+	},
+	{
+		name: 'PRICEMAT',
+		minArgs: 5,
+		maxArgs: 6,
+		evaluate(args, ctx) {
+			const settlement = num(args[0])
+			if (typeof settlement !== 'number') return settlement
+			const maturity = num(args[1])
+			if (typeof maturity !== 'number') return maturity
+			const issue = num(args[2])
+			if (typeof issue !== 'number') return issue
+			const rate = num(args[3])
+			if (typeof rate !== 'number') return rate
+			const yld = num(args[4])
+			if (typeof yld !== 'number') return yld
+			const basis = args[5] ? num(args[5]) : 0
+			if (typeof basis !== 'number') return basis
+			const b = validateBasis(basis)
+			if (b === null || issue >= settlement || settlement >= maturity || rate < 0 || yld < 0)
+				return errorValue('#NUM!')
+			const ds = currentDateSystem(ctx)
+			const dim = yearFracFromBasis(issue, maturity, b, ds)
+			const dsm = yearFracFromBasis(settlement, maturity, b, ds)
+			const a = yearFracFromBasis(issue, settlement, b, ds)
+			return numberValue(100 * ((1 + dim * rate) / (1 + dsm * yld) - a * rate))
+		},
+	},
+	{
+		name: 'YIELDMAT',
+		minArgs: 5,
+		maxArgs: 6,
+		evaluate(args, ctx) {
+			const settlement = num(args[0])
+			if (typeof settlement !== 'number') return settlement
+			const maturity = num(args[1])
+			if (typeof maturity !== 'number') return maturity
+			const issue = num(args[2])
+			if (typeof issue !== 'number') return issue
+			const rate = num(args[3])
+			if (typeof rate !== 'number') return rate
+			const pr = num(args[4])
+			if (typeof pr !== 'number') return pr
+			const basis = args[5] ? num(args[5]) : 0
+			if (typeof basis !== 'number') return basis
+			const b = validateBasis(basis)
+			if (b === null || issue >= settlement || settlement >= maturity || rate < 0 || pr <= 0)
+				return errorValue('#NUM!')
+			const ds = currentDateSystem(ctx)
+			const dim = yearFracFromBasis(issue, maturity, b, ds)
+			const dsm = yearFracFromBasis(settlement, maturity, b, ds)
+			const a = yearFracFromBasis(issue, settlement, b, ds)
+			return numberValue(((1 + dim * rate) / (pr / 100 + a * rate) - 1) / dsm)
+		},
+	},
+	{
+		name: 'RECEIVED',
+		minArgs: 4,
+		maxArgs: 5,
+		evaluate(args, ctx) {
+			const settlement = num(args[0])
+			if (typeof settlement !== 'number') return settlement
+			const maturity = num(args[1])
+			if (typeof maturity !== 'number') return maturity
+			const investment = num(args[2])
+			if (typeof investment !== 'number') return investment
+			const discount = num(args[3])
+			if (typeof discount !== 'number') return discount
+			const basis = args[4] ? num(args[4]) : 0
+			if (typeof basis !== 'number') return basis
+			const b = validateBasis(basis)
+			if (b === null || settlement >= maturity || investment <= 0 || discount <= 0)
+				return errorValue('#NUM!')
+			const yf = yearFracFromBasis(settlement, maturity, b, currentDateSystem(ctx))
+			return numberValue(investment / (1 - discount * yf))
+		},
+	},
+	{
+		name: 'TBILLPRICE',
+		minArgs: 3,
+		maxArgs: 3,
+		evaluate(args) {
+			const settlement = num(args[0])
+			if (typeof settlement !== 'number') return settlement
+			const maturity = num(args[1])
+			if (typeof maturity !== 'number') return maturity
+			const discount = num(args[2])
+			if (typeof discount !== 'number') return discount
+			const dsm = Math.floor(maturity) - Math.floor(settlement)
+			if (settlement >= maturity || discount <= 0 || dsm > 365) return errorValue('#NUM!')
+			return numberValue(100 * (1 - (discount * dsm) / 360))
+		},
+	},
+	{
+		name: 'TBILLEQ',
+		minArgs: 3,
+		maxArgs: 3,
+		evaluate(args) {
+			const settlement = num(args[0])
+			if (typeof settlement !== 'number') return settlement
+			const maturity = num(args[1])
+			if (typeof maturity !== 'number') return maturity
+			const discount = num(args[2])
+			if (typeof discount !== 'number') return discount
+			const dsm = Math.floor(maturity) - Math.floor(settlement)
+			if (settlement >= maturity || discount <= 0 || dsm > 365) return errorValue('#NUM!')
+			return numberValue((365 * discount) / (360 - discount * dsm))
+		},
+	},
+	{
+		name: 'TBILLYIELD',
+		minArgs: 3,
+		maxArgs: 3,
+		evaluate(args) {
+			const settlement = num(args[0])
+			if (typeof settlement !== 'number') return settlement
+			const maturity = num(args[1])
+			if (typeof maturity !== 'number') return maturity
+			const pr = num(args[2])
+			if (typeof pr !== 'number') return pr
+			const dsm = Math.floor(maturity) - Math.floor(settlement)
+			if (settlement >= maturity || pr <= 0 || dsm > 365) return errorValue('#NUM!')
+			return numberValue(((100 - pr) / pr) * (360 / dsm))
 		},
 	},
 	{

@@ -2130,6 +2130,104 @@ describe('formula functions', () => {
 			recalc(wb)
 			expect(getResult(wb, 0, 0)).toEqual(errorValue('#NUM!'))
 		})
+
+		test('coupon date helpers match expected semiannual schedule', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'COUPPCD(DATE(2024,3,15),DATE(2024,12,31),2,0)')
+			setFormula(wb, 0, 1, 'COUPNCD(DATE(2024,3,15),DATE(2024,12,31),2,0)')
+			setFormula(wb, 0, 2, 'COUPDAYBS(DATE(2024,3,15),DATE(2024,12,31),2,0)')
+			setFormula(wb, 0, 3, 'COUPDAYS(DATE(2024,3,15),DATE(2024,12,31),2,0)')
+			setFormula(wb, 0, 4, 'COUPDAYSNC(DATE(2024,3,15),DATE(2024,12,31),2,0)')
+			setFormula(wb, 0, 5, 'COUPNUM(DATE(2024,3,15),DATE(2024,12,31),2,0)')
+			setFormula(wb, 1, 0, 'COUPPCD(DATE(2024,3,15),DATE(2024,12,31),2,0)=DATE(2023,12,31)')
+			setFormula(wb, 1, 1, 'COUPNCD(DATE(2024,3,15),DATE(2024,12,31),2,0)=DATE(2024,6,30)')
+			recalc(wb)
+			expect(getResult(wb, 1, 0)).toEqual(booleanValue(true))
+			expect(getResult(wb, 1, 1)).toEqual(booleanValue(true))
+			expect(getResult(wb, 0, 2)).toEqual(numberValue(75))
+			expect(getResult(wb, 0, 3)).toEqual(numberValue(180))
+			expect(getResult(wb, 0, 4)).toEqual(numberValue(105))
+			expect(getResult(wb, 0, 5)).toEqual(numberValue(2))
+		})
+
+		test('PRICE and YIELD are approximately inverse', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'PRICE(DATE(2024,3,15),DATE(2029,12,31),0.08,0.06,100,2,0)')
+			setFormula(wb, 0, 1, 'YIELD(DATE(2024,3,15),DATE(2029,12,31),0.08,A1,100,2,0)')
+			recalc(wb)
+			const y = getResult(wb, 0, 1)
+			expect(y?.kind).toBe('number')
+			if (y?.kind === 'number') expect(y.value).toBeCloseTo(0.06, 4)
+		})
+
+		test('PRICEDISC and YIELDDISC are approximately inverse', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'PRICEDISC(DATE(2024,1,1),DATE(2024,7,1),0.06,100,2)')
+			setFormula(wb, 0, 1, 'YIELDDISC(DATE(2024,1,1),DATE(2024,7,1),A1,100,2)')
+			recalc(wb)
+			const y = getResult(wb, 0, 1)
+			expect(y?.kind).toBe('number')
+			if (y?.kind === 'number') expect(y.value).toBeCloseTo(0.06188, 4)
+		})
+
+		test('PRICEMAT and YIELDMAT are approximately inverse', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'PRICEMAT(DATE(2024,1,1),DATE(2024,7,1),DATE(2023,7,1),0.05,0.06,2)')
+			setFormula(wb, 0, 1, 'YIELDMAT(DATE(2024,1,1),DATE(2024,7,1),DATE(2023,7,1),0.05,A1,2)')
+			recalc(wb)
+			const y = getResult(wb, 0, 1)
+			expect(y?.kind).toBe('number')
+			if (y?.kind === 'number') expect(y.value).toBeCloseTo(0.06, 4)
+		})
+
+		test('DURATION and MDURATION maintain modified-duration identity', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'DURATION(DATE(2024,3,15),DATE(2029,12,31),0.08,0.06,2,0)')
+			setFormula(wb, 0, 1, 'MDURATION(DATE(2024,3,15),DATE(2029,12,31),0.08,0.06,2,0)')
+			recalc(wb)
+			const d = getResult(wb, 0, 0)
+			const md = getResult(wb, 0, 1)
+			expect(d?.kind).toBe('number')
+			expect(md?.kind).toBe('number')
+			if (d?.kind === 'number' && md?.kind === 'number') {
+				expect(md.value).toBeCloseTo(d.value / 1.03, 4)
+			}
+		})
+
+		test('ACCRINTM computes accrued interest at maturity', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'ACCRINTM(DATE(2024,1,1),DATE(2024,7,1),0.1,1000,2)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(50.56, 2)
+		})
+
+		test('RECEIVED computes amount at maturity', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'RECEIVED(DATE(2024,1,1),DATE(2024,7,1),970,0.06,2)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeGreaterThan(970)
+		})
+
+		test('TBILL functions compute known values', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'TBILLPRICE(DATE(2024,1,1),DATE(2024,6,29),0.05)')
+			setFormula(wb, 0, 1, 'TBILLYIELD(DATE(2024,1,1),DATE(2024,6,29),A1)')
+			setFormula(wb, 0, 2, 'TBILLEQ(DATE(2024,1,1),DATE(2024,6,29),0.05)')
+			recalc(wb)
+			const price = getResult(wb, 0, 0)
+			const y = getResult(wb, 0, 1)
+			const eq = getResult(wb, 0, 2)
+			expect(price?.kind).toBe('number')
+			expect(y?.kind).toBe('number')
+			expect(eq?.kind).toBe('number')
+			if (price?.kind === 'number') expect(price.value).toBeCloseTo(97.5, 3)
+			if (y?.kind === 'number') expect(y.value).toBeCloseTo(0.05128, 4)
+			if (eq?.kind === 'number') expect(eq.value).toBeCloseTo(0.05199, 4)
+		})
 	})
 
 	describe('engineering functions - CONVERT', () => {

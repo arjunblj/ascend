@@ -377,6 +377,11 @@ export interface ApplyResult {
 	readonly errors: readonly AscendError[]
 }
 
+export interface ApplyAndRecalcResult {
+	readonly apply: ApplyResult
+	readonly recalc: RecalcResult | null
+}
+
 export interface BatchResult {
 	readonly errors: readonly AscendError[]
 }

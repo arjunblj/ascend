@@ -9,6 +9,7 @@ export type {
 	AgentSampleRow,
 	AgentViewOptions,
 	AgentViewResult,
+	ApplyAndRecalcResult,
 	ApplyResult,
 	CellInfo,
 	CheckIssue,

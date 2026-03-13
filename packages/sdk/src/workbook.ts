@@ -38,6 +38,7 @@ import { check as verifyCheck, lint as verifyLint } from '@ascend/verify'
 import { buildWorkbookLoadInfo, openWorkbookSource } from './load.ts'
 import { parseFullRef, WorkbookReadView } from './read-view.ts'
 import type {
+	ApplyAndRecalcResult,
 	ApplyResult,
 	BatchResult,
 	CheckIssue,
@@ -262,6 +263,17 @@ export class AscendWorkbook extends WorkbookReadView {
 			sheetsModified: result.value.sheetsModified,
 			recalcRequired: result.value.recalcRequired,
 			errors: [],
+		}
+	}
+
+	applyAndRecalc(ops: readonly Operation[], opts?: { range?: string }): ApplyAndRecalcResult {
+		const apply = this.apply(ops)
+		if (apply.errors.length > 0 || !apply.recalcRequired) {
+			return { apply, recalc: null }
+		}
+		return {
+			apply,
+			recalc: this.recalc(opts),
 		}
 	}
 

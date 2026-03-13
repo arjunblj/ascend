@@ -525,6 +525,44 @@ describe('AscendWorkbook', () => {
 		expect(a3?.value).toEqual({ kind: 'number', value: 30 })
 	})
 
+	test('applyAndRecalc applies operations and returns recalculation details', () => {
+		const wb = AscendWorkbook.create()
+		const result = wb.applyAndRecalc([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 10 },
+					{ ref: 'A2', value: 20 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A3', formula: 'A1+A2' },
+		])
+
+		expect(result.apply.errors).toHaveLength(0)
+		expect(result.apply.recalcRequired).toBe(true)
+		expect(result.recalc?.errors).toHaveLength(0)
+		expect(result.recalc?.changed.length).toBeGreaterThanOrEqual(1)
+		expect(wb.sheet('Sheet1')?.cell('A3')?.value).toEqual({ kind: 'number', value: 30 })
+	})
+
+	test('applyAndRecalc skips recalculation when apply fails', () => {
+		const wb = AscendWorkbook.create()
+		let recalcCount = 0
+		const originalRecalc = wb.recalc.bind(wb)
+		wb.recalc = (...args: Parameters<typeof wb.recalc>) => {
+			recalcCount++
+			return originalRecalc(...args)
+		}
+		const result = wb.applyAndRecalc([
+			{ op: 'setCells', sheet: 'Missing', updates: [{ ref: 'A1', value: 1 }] },
+		])
+
+		expect(result.apply.errors).toHaveLength(1)
+		expect(result.recalc).toBeNull()
+		expect(recalcCount).toBe(0)
+	})
+
 	test('batch(ops) applies multiple operations without recalc, caller recalcs once', () => {
 		const wb = AscendWorkbook.create()
 		const batchResult = wb.batch([

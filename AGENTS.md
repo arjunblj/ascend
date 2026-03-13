@@ -61,3 +61,12 @@ schema < core < formulas < engine < verify < sdk
 schema < core < io-xlsx
 schema < core < io-csv
 sdk < cli, api, mcp
+
+## Cursor Cloud specific instructions
+
+- **Runtime**: Bun is installed at `~/.bun/bin/bun`. The update script runs `bun install` automatically.
+- **No external services**: This is a fully self-contained codebase. No databases, caches, or cloud services are needed. All I/O is file-based.
+- **API server**: `bun run apps/api/src/index.ts` starts on port 3000 (override with `PORT` env var). Endpoints accept JSON bodies with `file` as a filesystem path (not multipart upload).
+- **CLI**: Run via `bun run apps/cli/src/index.ts <command>`. The `formula` command uses subcommands: `formula set`, `formula show`, `formula fill`.
+- **Standard dev commands**: See the `## Commands` section above. All run via `bun`/`bunx`.
+- **Pre-commit hooks**: Lefthook is configured to run `bunx biome check --write --staged` on commit. Installed automatically by `bun install` via the `prepare` script.

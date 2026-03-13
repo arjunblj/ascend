@@ -2228,6 +2228,86 @@ describe('formula functions', () => {
 			if (y?.kind === 'number') expect(y.value).toBeCloseTo(0.05128, 4)
 			if (eq?.kind === 'number') expect(eq.value).toBeCloseTo(0.05199, 4)
 		})
+
+		test('ACCRINT computes positive accrued interest before first coupon', () => {
+			const wb = makeWorkbook()
+			setFormula(
+				wb,
+				0,
+				0,
+				'ACCRINT(DATE(2024,1,1),DATE(2024,7,1),DATE(2024,3,15),0.08,1000,2,0,TRUE)',
+			)
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeGreaterThan(0)
+		})
+
+		test('ODDFPRICE and ODDFYIELD are approximately inverse', () => {
+			const wb = makeWorkbook()
+			setFormula(
+				wb,
+				0,
+				0,
+				'ODDFPRICE(DATE(2024,3,15),DATE(2029,12,31),DATE(2023,10,1),DATE(2024,7,1),0.08,0.06,100,2,0)',
+			)
+			setFormula(
+				wb,
+				0,
+				1,
+				'ODDFYIELD(DATE(2024,3,15),DATE(2029,12,31),DATE(2023,10,1),DATE(2024,7,1),0.08,A1,100,2,0)',
+			)
+			recalc(wb)
+			const y = getResult(wb, 0, 1)
+			expect(y?.kind).toBe('number')
+			if (y?.kind === 'number') expect(y.value).toBeCloseTo(0.06, 4)
+		})
+
+		test('ODDLPRICE and ODDLYIELD are approximately inverse', () => {
+			const wb = makeWorkbook()
+			setFormula(
+				wb,
+				0,
+				0,
+				'ODDLPRICE(DATE(2024,10,1),DATE(2024,12,31),DATE(2024,7,1),0.08,0.06,100,2,0)',
+			)
+			setFormula(
+				wb,
+				0,
+				1,
+				'ODDLYIELD(DATE(2024,10,1),DATE(2024,12,31),DATE(2024,7,1),0.08,A1,100,2,0)',
+			)
+			recalc(wb)
+			const y = getResult(wb, 0, 1)
+			expect(y?.kind).toBe('number')
+			if (y?.kind === 'number') expect(y.value).toBeCloseTo(0.06, 4)
+		})
+
+		test('AMORLINC computes first and later depreciation amounts', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'AMORLINC(1000,DATE(2024,1,1),DATE(2024,7,1),100,0,0.1,0)')
+			setFormula(wb, 0, 1, 'AMORLINC(1000,DATE(2024,1,1),DATE(2024,7,1),100,1,0.1,0)')
+			recalc(wb)
+			const first = getResult(wb, 0, 0)
+			const later = getResult(wb, 0, 1)
+			expect(first?.kind).toBe('number')
+			expect(later?.kind).toBe('number')
+			if (first?.kind === 'number' && later?.kind === 'number') {
+				expect(first.value).toBeGreaterThan(0)
+				expect(later.value).toBeCloseTo(100, 0)
+			}
+		})
+
+		test('AMORDEGRC computes declining depreciation and rejects basis 2', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'AMORDEGRC(1000,DATE(2024,1,1),DATE(2024,7,1),100,0,0.2,0)')
+			setFormula(wb, 0, 1, 'AMORDEGRC(1000,DATE(2024,1,1),DATE(2024,7,1),100,0,0.2,2)')
+			recalc(wb)
+			const valid = getResult(wb, 0, 0)
+			expect(valid?.kind).toBe('number')
+			if (valid?.kind === 'number') expect(valid.value).toBeGreaterThan(0)
+			expect(getResult(wb, 0, 1)).toEqual(errorValue('#NUM!'))
+		})
 	})
 
 	describe('engineering functions - CONVERT', () => {

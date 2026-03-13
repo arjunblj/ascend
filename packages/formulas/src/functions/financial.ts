@@ -319,6 +319,100 @@ function regularBondPrice(
 	return price - (coupon * a) / e
 }
 
+function oddFirstCouponAmount(
+	issue: number,
+	firstCoupon: number,
+	rate: number,
+	basis: number,
+	dateSystem: '1900' | '1904',
+): number {
+	return 100 * rate * yearFracFromBasis(issue, firstCoupon, basis, dateSystem)
+}
+
+function oddFirstAccrued(
+	issue: number,
+	settlement: number,
+	rate: number,
+	basis: number,
+	dateSystem: '1900' | '1904',
+): number {
+	return 100 * rate * yearFracFromBasis(issue, settlement, basis, dateSystem)
+}
+
+function oddFirstBondPrice(
+	settlement: number,
+	maturity: number,
+	issue: number,
+	firstCoupon: number,
+	rate: number,
+	yld: number,
+	redemption: number,
+	frequency: number,
+	basis: number,
+	dateSystem: '1900' | '1904',
+): number {
+	const window = resolveCouponWindow(firstCoupon - 1, maturity, frequency, dateSystem)
+	if (!window) return Number.NaN
+	const schedule: number[] = [firstCoupon]
+	let current = firstCoupon
+	const maturityParts = parseDateArg(maturity, dateSystem)
+	if (!maturityParts) return Number.NaN
+	const preserveEom = maturityParts.day === daysInMonth(maturityParts.year, maturityParts.month)
+	const monthsPerCoupon = 12 / frequency
+	while (current < maturity) {
+		const currentParts = parseDateArg(current, dateSystem)
+		if (!currentParts) return Number.NaN
+		const nextParts = addMonthsPreserveEom(currentParts, monthsPerCoupon, preserveEom)
+		current = dateToSerial(nextParts.year, nextParts.month, nextParts.day, dateSystem)
+		if (current <= maturity) schedule.push(current)
+	}
+	const q = 1 + yld / frequency
+	const regularCoupon = (100 * rate) / frequency
+	const firstAmount = oddFirstCouponAmount(issue, firstCoupon, rate, basis, dateSystem)
+	const accrued = oddFirstAccrued(issue, settlement, rate, basis, dateSystem)
+	let price = -accrued
+	for (let i = 0; i < schedule.length; i++) {
+		const payDate = schedule[i]
+		if (payDate === undefined) continue
+		const t = yearFracFromBasis(settlement, payDate, basis, dateSystem) * frequency
+		const amount = i === 0 ? firstAmount : regularCoupon
+		price += amount / q ** t
+	}
+	const lastDate = schedule[schedule.length - 1]
+	if (lastDate !== undefined) {
+		const t = yearFracFromBasis(settlement, lastDate, basis, dateSystem) * frequency
+		price += redemption / q ** t
+	}
+	return price
+}
+
+function oddLastBondPrice(
+	settlement: number,
+	maturity: number,
+	lastInterest: number,
+	rate: number,
+	yld: number,
+	redemption: number,
+	frequency: number,
+	basis: number,
+	dateSystem: '1900' | '1904',
+): number {
+	const c = (100 * rate) / frequency
+	const dc = frequency * yearFracFromBasis(lastInterest, maturity, basis, dateSystem)
+	const dsc = frequency * yearFracFromBasis(settlement, maturity, basis, dateSystem)
+	const a = frequency * yearFracFromBasis(lastInterest, settlement, basis, dateSystem)
+	return (redemption + c * dc) / (1 + (yld / frequency) * dsc) - c * a
+}
+
+function amorCoeff(rate: number): number | null {
+	const life = 1 / rate
+	if (life > 0 && life < 3) return null
+	if (life >= 3 && life <= 4) return 1.5
+	if (life >= 5 && life <= 6) return 2
+	if (life > 6) return 2.5
+	return null
+}
+
 export const financialFunctions: FunctionDef[] = [
 	{
 		name: 'PMT',
@@ -958,6 +1052,43 @@ export const financialFunctions: FunctionDef[] = [
 		},
 	},
 	{
+		name: 'ACCRINT',
+		minArgs: 6,
+		maxArgs: 8,
+		evaluate(args, ctx) {
+			const issue = num(args[0])
+			if (typeof issue !== 'number') return issue
+			const firstInterest = num(args[1])
+			if (typeof firstInterest !== 'number') return firstInterest
+			const settlement = num(args[2])
+			if (typeof settlement !== 'number') return settlement
+			const rate = num(args[3])
+			if (typeof rate !== 'number') return rate
+			const par = num(args[4])
+			if (typeof par !== 'number') return par
+			const frequency = num(args[5])
+			if (typeof frequency !== 'number') return frequency
+			const basis = args[6] ? num(args[6]) : 0
+			if (typeof basis !== 'number') return basis
+			const calcMethod = args[7] ? num(args[7]) : 1
+			if (typeof calcMethod !== 'number') return calcMethod
+			const f = validateFrequency(frequency)
+			const b = validateBasis(basis)
+			if (f === null || b === null || issue >= settlement || rate <= 0 || par <= 0) {
+				return errorValue('#NUM!')
+			}
+			const ds = currentDateSystem(ctx)
+			if (Math.trunc(calcMethod) === 0) {
+				const window = resolveCouponWindow(settlement, firstInterest, f, ds)
+				if (!window) return errorValue('#VALUE!')
+				const a = dayCountBasis(window.prev, settlement, b, ds)
+				const e = couponPeriodDays(window.prev, window.next, b, f, ds)
+				return numberValue(((par * rate) / f) * (a / e))
+			}
+			return numberValue(par * rate * yearFracFromBasis(issue, settlement, b, ds))
+		},
+	},
+	{
 		name: 'COUPPCD',
 		minArgs: 3,
 		maxArgs: 4,
@@ -1385,6 +1516,309 @@ export const financialFunctions: FunctionDef[] = [
 				return errorValue('#NUM!')
 			const yf = yearFracFromBasis(settlement, maturity, b, currentDateSystem(ctx))
 			return numberValue(investment / (1 - discount * yf))
+		},
+	},
+	{
+		name: 'ODDFPRICE',
+		minArgs: 8,
+		maxArgs: 9,
+		evaluate(args, ctx) {
+			const settlement = num(args[0])
+			if (typeof settlement !== 'number') return settlement
+			const maturity = num(args[1])
+			if (typeof maturity !== 'number') return maturity
+			const issue = num(args[2])
+			if (typeof issue !== 'number') return issue
+			const firstCoupon = num(args[3])
+			if (typeof firstCoupon !== 'number') return firstCoupon
+			const rate = num(args[4])
+			if (typeof rate !== 'number') return rate
+			const yld = num(args[5])
+			if (typeof yld !== 'number') return yld
+			const redemption = num(args[6])
+			if (typeof redemption !== 'number') return redemption
+			const frequency = num(args[7])
+			if (typeof frequency !== 'number') return frequency
+			const basis = args[8] ? num(args[8]) : 0
+			if (typeof basis !== 'number') return basis
+			const f = validateFrequency(frequency)
+			const b = validateBasis(basis)
+			if (
+				f === null ||
+				b === null ||
+				!(maturity > firstCoupon && firstCoupon > settlement && settlement > issue) ||
+				rate < 0 ||
+				yld < 0 ||
+				redemption <= 0
+			) {
+				return errorValue('#NUM!')
+			}
+			return numberValue(
+				oddFirstBondPrice(
+					settlement,
+					maturity,
+					issue,
+					firstCoupon,
+					rate,
+					yld,
+					redemption,
+					f,
+					b,
+					currentDateSystem(ctx),
+				),
+			)
+		},
+	},
+	{
+		name: 'ODDFYIELD',
+		minArgs: 8,
+		maxArgs: 9,
+		evaluate(args, ctx) {
+			const settlement = num(args[0])
+			if (typeof settlement !== 'number') return settlement
+			const maturity = num(args[1])
+			if (typeof maturity !== 'number') return maturity
+			const issue = num(args[2])
+			if (typeof issue !== 'number') return issue
+			const firstCoupon = num(args[3])
+			if (typeof firstCoupon !== 'number') return firstCoupon
+			const rate = num(args[4])
+			if (typeof rate !== 'number') return rate
+			const pr = num(args[5])
+			if (typeof pr !== 'number') return pr
+			const redemption = num(args[6])
+			if (typeof redemption !== 'number') return redemption
+			const frequency = num(args[7])
+			if (typeof frequency !== 'number') return frequency
+			const basis = args[8] ? num(args[8]) : 0
+			if (typeof basis !== 'number') return basis
+			const f = validateFrequency(frequency)
+			const b = validateBasis(basis)
+			if (
+				f === null ||
+				b === null ||
+				!(maturity > firstCoupon && firstCoupon > settlement && settlement > issue) ||
+				rate < 0 ||
+				pr <= 0 ||
+				redemption <= 0
+			) {
+				return errorValue('#NUM!')
+			}
+			const ds = currentDateSystem(ctx)
+			let guess = rate || 0.05
+			for (let i = 0; i < 100; i++) {
+				const price = oddFirstBondPrice(
+					settlement,
+					maturity,
+					issue,
+					firstCoupon,
+					rate,
+					guess,
+					redemption,
+					f,
+					b,
+					ds,
+				)
+				const delta = 1e-6
+				const price2 = oddFirstBondPrice(
+					settlement,
+					maturity,
+					issue,
+					firstCoupon,
+					rate,
+					guess + delta,
+					redemption,
+					f,
+					b,
+					ds,
+				)
+				const deriv = (price2 - price) / delta
+				if (Math.abs(deriv) < 1e-12) break
+				const next = guess - (price - pr) / deriv
+				if (Math.abs(next - guess) < 1e-10) return numberValue(next)
+				guess = next
+			}
+			return errorValue('#NUM!')
+		},
+	},
+	{
+		name: 'ODDLPRICE',
+		minArgs: 7,
+		maxArgs: 8,
+		evaluate(args, ctx) {
+			const settlement = num(args[0])
+			if (typeof settlement !== 'number') return settlement
+			const maturity = num(args[1])
+			if (typeof maturity !== 'number') return maturity
+			const lastInterest = num(args[2])
+			if (typeof lastInterest !== 'number') return lastInterest
+			const rate = num(args[3])
+			if (typeof rate !== 'number') return rate
+			const yld = num(args[4])
+			if (typeof yld !== 'number') return yld
+			const redemption = num(args[5])
+			if (typeof redemption !== 'number') return redemption
+			const frequency = num(args[6])
+			if (typeof frequency !== 'number') return frequency
+			const basis = args[7] ? num(args[7]) : 0
+			if (typeof basis !== 'number') return basis
+			const f = validateFrequency(frequency)
+			const b = validateBasis(basis)
+			if (
+				f === null ||
+				b === null ||
+				!(maturity > settlement && settlement > lastInterest) ||
+				rate < 0 ||
+				yld < 0 ||
+				redemption <= 0
+			) {
+				return errorValue('#NUM!')
+			}
+			return numberValue(
+				oddLastBondPrice(
+					settlement,
+					maturity,
+					lastInterest,
+					rate,
+					yld,
+					redemption,
+					f,
+					b,
+					currentDateSystem(ctx),
+				),
+			)
+		},
+	},
+	{
+		name: 'ODDLYIELD',
+		minArgs: 7,
+		maxArgs: 8,
+		evaluate(args, ctx) {
+			const settlement = num(args[0])
+			if (typeof settlement !== 'number') return settlement
+			const maturity = num(args[1])
+			if (typeof maturity !== 'number') return maturity
+			const lastInterest = num(args[2])
+			if (typeof lastInterest !== 'number') return lastInterest
+			const rate = num(args[3])
+			if (typeof rate !== 'number') return rate
+			const pr = num(args[4])
+			if (typeof pr !== 'number') return pr
+			const redemption = num(args[5])
+			if (typeof redemption !== 'number') return redemption
+			const frequency = num(args[6])
+			if (typeof frequency !== 'number') return frequency
+			const basis = args[7] ? num(args[7]) : 0
+			if (typeof basis !== 'number') return basis
+			const f = validateFrequency(frequency)
+			const b = validateBasis(basis)
+			if (
+				f === null ||
+				b === null ||
+				!(maturity > settlement && settlement > lastInterest) ||
+				rate < 0 ||
+				pr <= 0 ||
+				redemption <= 0
+			) {
+				return errorValue('#NUM!')
+			}
+			const ds = currentDateSystem(ctx)
+			const c = (100 * rate) / f
+			const dc = f * yearFracFromBasis(lastInterest, maturity, b, ds)
+			const dsc = f * yearFracFromBasis(settlement, maturity, b, ds)
+			const a = f * yearFracFromBasis(lastInterest, settlement, b, ds)
+			return numberValue(((redemption + c * dc - (pr + c * a)) / (pr + c * a)) * (f / dsc))
+		},
+	},
+	{
+		name: 'AMORLINC',
+		minArgs: 6,
+		maxArgs: 7,
+		evaluate(args, ctx) {
+			const cost = num(args[0])
+			if (typeof cost !== 'number') return cost
+			const purchased = num(args[1])
+			if (typeof purchased !== 'number') return purchased
+			const firstPeriod = num(args[2])
+			if (typeof firstPeriod !== 'number') return firstPeriod
+			const salvage = num(args[3])
+			if (typeof salvage !== 'number') return salvage
+			const period = num(args[4])
+			if (typeof period !== 'number') return period
+			const rate = num(args[5])
+			if (typeof rate !== 'number') return rate
+			const basis = args[6] ? num(args[6]) : 0
+			if (typeof basis !== 'number') return basis
+			const b = validateBasis(basis)
+			const p = Math.trunc(period)
+			if (
+				b === null ||
+				b === 2 ||
+				rate <= 0 ||
+				p < 0 ||
+				salvage < 0 ||
+				salvage > cost ||
+				purchased > firstPeriod
+			) {
+				return errorValue('#NUM!')
+			}
+			const ds = currentDateSystem(ctx)
+			const first = cost * rate * yearFracFromBasis(purchased, firstPeriod, b, ds)
+			const full = cost * rate
+			if (p === 0) return numberValue(first)
+			const remaining = cost - salvage - first
+			if (remaining <= 0) return numberValue(0)
+			if (remaining >= full * p) return numberValue(full)
+			return numberValue(Math.max(0, remaining - full * (p - 1)))
+		},
+	},
+	{
+		name: 'AMORDEGRC',
+		minArgs: 6,
+		maxArgs: 7,
+		evaluate(args, ctx) {
+			const cost = num(args[0])
+			if (typeof cost !== 'number') return cost
+			const purchased = num(args[1])
+			if (typeof purchased !== 'number') return purchased
+			const firstPeriod = num(args[2])
+			if (typeof firstPeriod !== 'number') return firstPeriod
+			const salvage = num(args[3])
+			if (typeof salvage !== 'number') return salvage
+			const period = num(args[4])
+			if (typeof period !== 'number') return period
+			const rate = num(args[5])
+			if (typeof rate !== 'number') return rate
+			const basis = args[6] ? num(args[6]) : 0
+			if (typeof basis !== 'number') return basis
+			const b = validateBasis(basis)
+			const p = Math.trunc(period)
+			const coeff = amorCoeff(rate)
+			if (
+				b === null ||
+				b === 2 ||
+				coeff === null ||
+				rate <= 0 ||
+				p < 0 ||
+				salvage < 0 ||
+				salvage > cost ||
+				purchased > firstPeriod
+			) {
+				return errorValue('#NUM!')
+			}
+			const ds = currentDateSystem(ctx)
+			const first = Math.round(
+				cost * rate * coeff * yearFracFromBasis(purchased, firstPeriod, b, ds),
+			)
+			if (p === 0) return numberValue(first)
+			let book = cost - first
+			for (let i = 1; i <= p; i++) {
+				const dep = Math.min(Math.round(book * rate * coeff), Math.max(0, book - salvage))
+				if (i === p) return numberValue(dep)
+				book -= dep
+				if (book <= salvage) return numberValue(0)
+			}
+			return numberValue(0)
 		},
 	},
 	{

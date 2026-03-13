@@ -351,6 +351,33 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 2)?.value).toEqual(numberValue(20))
 	})
 
+	test('structured references support #Headers and #All specifiers', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Qty'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Price'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(4), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: numberValue(5), formula: null, styleId: sid })
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } },
+			columns: [{ name: 'Qty' }, { name: 'Price' }],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+		sheet.cells.set(4, 0, { value: EMPTY, formula: 'COLUMNS(Sales[#Headers])', styleId: sid })
+		sheet.cells.set(4, 1, { value: EMPTY, formula: 'ROWS(Sales[#All])', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(4, 0)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(4, 1)?.value).toEqual(numberValue(3))
+	})
+
 	test('COUNTIF supports wildcard criteria', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

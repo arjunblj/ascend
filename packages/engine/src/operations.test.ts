@@ -481,6 +481,21 @@ describe('applyOperation', () => {
 		expect(s.tables[0]?.autoFilter?.ref).toBe('B1:C2')
 	})
 
+	test('deleteCols rewrites formulas and whole-column references', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, cell(numberValue(1)))
+		s.cells.set(0, 1, cell(numberValue(2)))
+		s.cells.set(0, 2, cell(numberValue(3)))
+		s.cells.set(1, 0, cell(EMPTY, 'SUM(A1:C1)'))
+		s.cells.set(2, 0, cell(EMPTY, 'SUM(A:C)'))
+
+		applyOperation(wb, { op: 'deleteCols', sheet: 'Sheet1', at: 1, count: 1 })
+
+		expect(s.cells.get(1, 0)?.formula).toBe('SUM(A1:B1)')
+		expect(s.cells.get(2, 0)?.formula).toBe('SUM(A:B)')
+	})
+
 	test('renameSheet updates sheet name', () => {
 		const wb = setup()
 		wb.definedNames.set('Budget', 'Sheet1!A1')

@@ -1113,6 +1113,75 @@ function handleCopySheet(
 	return ok(patch([], [op.newName]))
 }
 
+function handleSetConditionalFormat(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setConditionalFormat' }>,
+): Result<PatchResult> {
+	const sheetResult = getSheet(workbook, op.sheet)
+	if (!sheetResult.ok) return sheetResult
+	const sheet = sheetResult.value
+	sheet.ensureWritable()
+	const existing = sheet.conditionalFormats.findIndex((cf) => cf.sqref === op.range)
+	const rule: Record<string, unknown> = {
+		type: op.rule.type,
+		formulas: [op.rule.formula, op.rule.formula2].filter((f): f is string => f !== undefined),
+	}
+	if (op.rule.operator) rule.operator = op.rule.operator
+	if (op.rule.priority !== undefined) rule.priority = op.rule.priority
+	if (op.rule.stopIfTrue !== undefined) rule.stopIfTrue = op.rule.stopIfTrue
+	if (op.rule.style) rule.style = op.rule.style
+	const cf = { sqref: op.range, rules: [rule] }
+	if (existing >= 0) sheet.conditionalFormats[existing] = cf as never
+	else sheet.conditionalFormats.push(cf as never)
+	return ok(patch([], [op.sheet]))
+}
+
+function handleDeleteConditionalFormat(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'deleteConditionalFormat' }>,
+): Result<PatchResult> {
+	const sheetResult = getSheet(workbook, op.sheet)
+	if (!sheetResult.ok) return sheetResult
+	const sheet = sheetResult.value
+	sheet.ensureWritable()
+	sheet.conditionalFormats = sheet.conditionalFormats.filter((cf) => cf.sqref !== op.range)
+	return ok(patch([], [op.sheet]))
+}
+
+function handleSetPageSetup(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setPageSetup' }>,
+): Result<PatchResult> {
+	const sheetResult = getSheet(workbook, op.sheet)
+	if (!sheetResult.ok) return sheetResult
+	const sheet = sheetResult.value
+	sheet.ensureWritable()
+	const setup: Record<string, unknown> = {}
+	if (op.setup.orientation) setup.orientation = op.setup.orientation
+	if (op.setup.paperSize !== undefined) setup.paperSize = op.setup.paperSize
+	if (op.setup.scale !== undefined) setup.scale = op.setup.scale
+	if (op.setup.fitToWidth !== undefined) setup.fitToWidth = op.setup.fitToWidth
+	if (op.setup.fitToHeight !== undefined) setup.fitToHeight = op.setup.fitToHeight
+	sheet.pageSetup = setup as never
+	if (op.setup.margins) {
+		sheet.pageMargins = op.setup.margins as never
+	}
+	return ok(patch([], [op.sheet]))
+}
+
+function handleSetPrintArea(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setPrintArea' }>,
+): Result<PatchResult> {
+	const sheetResult = getSheet(workbook, op.sheet)
+	if (!sheetResult.ok) return sheetResult
+	workbook.definedNames.set('_xlnm.Print_Area', `'${op.sheet}'!${op.range}`, {
+		kind: 'sheet',
+		sheetId: sheetResult.value.id,
+	})
+	return ok(patch([], [op.sheet]))
+}
+
 // --- Handler registry ---
 
 type OperationHandler = (workbook: Workbook, op: never) => Result<PatchResult>
@@ -1156,6 +1225,10 @@ const handlers: Record<string, OperationHandler> = {
 	hideRows: handleHideRows as OperationHandler,
 	hideCols: handleHideCols as OperationHandler,
 	copySheet: handleCopySheet as OperationHandler,
+	setConditionalFormat: handleSetConditionalFormat as OperationHandler,
+	deleteConditionalFormat: handleDeleteConditionalFormat as OperationHandler,
+	setPageSetup: handleSetPageSetup as OperationHandler,
+	setPrintArea: handleSetPrintArea as OperationHandler,
 }
 
 // --- Public API ---

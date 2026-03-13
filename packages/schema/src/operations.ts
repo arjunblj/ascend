@@ -200,6 +200,70 @@ export type Operation =
 			readonly newName: string
 			readonly position?: number
 	  }
+	| {
+			readonly op: 'setConditionalFormat'
+			readonly sheet: string
+			readonly range: string
+			readonly rule: ConditionalFormatRule
+	  }
+	| {
+			readonly op: 'deleteConditionalFormat'
+			readonly sheet: string
+			readonly range: string
+	  }
+	| {
+			readonly op: 'setPageSetup'
+			readonly sheet: string
+			readonly setup: PageSetupInput
+	  }
+	| {
+			readonly op: 'setPrintArea'
+			readonly sheet: string
+			readonly range: string
+	  }
+
+export interface ConditionalFormatRule {
+	readonly type:
+		| 'cellIs'
+		| 'expression'
+		| 'colorScale'
+		| 'dataBar'
+		| 'iconSet'
+		| 'top10'
+		| 'aboveAverage'
+		| 'duplicateValues'
+		| 'containsText'
+	readonly operator?:
+		| 'greaterThan'
+		| 'lessThan'
+		| 'equal'
+		| 'between'
+		| 'greaterThanOrEqual'
+		| 'lessThanOrEqual'
+		| 'notEqual'
+		| 'notBetween'
+	readonly formula?: string
+	readonly formula2?: string
+	readonly priority?: number
+	readonly stopIfTrue?: boolean
+	readonly style?: StyleInput
+}
+
+export interface PageSetupInput {
+	readonly orientation?: 'portrait' | 'landscape'
+	readonly paperSize?: number
+	readonly scale?: number
+	readonly fitToWidth?: number
+	readonly fitToHeight?: number
+	readonly margins?: {
+		readonly left?: number
+		readonly right?: number
+		readonly top?: number
+		readonly bottom?: number
+		readonly header?: number
+		readonly footer?: number
+	}
+}
 
 export interface DataValidationRule {
 	readonly type: 'list' | 'whole' | 'decimal' | 'date' | 'time' | 'textLength' | 'custom'

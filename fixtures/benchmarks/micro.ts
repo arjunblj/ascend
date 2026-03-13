@@ -7,15 +7,19 @@ import {
 import type { CellStyle } from '../../packages/core/src/style.ts'
 import type { RangeDependency } from '../../packages/engine/src/dep-graph.ts'
 import {
+	analyzeWorkbookFormulas,
 	cellKey,
+	codegenFormula,
 	compileFormula,
 	DependencyGraph,
 	defaultCalcContext,
 	type EvalContext,
+	evaluate,
 	evaluateCompiled,
+	resolveFormulaDependencies,
 } from '../../packages/engine/src/index.ts'
 import { clearGlobalParseCache, parseFormula } from '../../packages/formulas/src/index.ts'
-import { numberValue, stringValue } from '../../packages/schema/src/index.ts'
+import { EMPTY, numberValue, stringValue } from '../../packages/schema/src/index.ts'
 
 const SID = 0 as StyleId
 
@@ -31,6 +35,37 @@ function createDeterministicRandom(seed: number): () => number {
 		state = (Math.imul(state, 1664525) + 1013904223) >>> 0
 		return state / 0x1_0000_0000
 	}
+}
+
+function buildRecalcPhaseWorkbook(rows: number): ReturnType<typeof createWorkbook> {
+	const workbook = createWorkbook()
+	workbook.addSheet('Sheet1')
+	const sheet = workbook.sheets[0]
+	if (!sheet) throw new Error('no sheet')
+	for (let r = 0; r < rows; r++) {
+		sheet.cells.set(r, 0, { value: numberValue(r + 1), formula: null, styleId: SID })
+		sheet.cells.set(r, 1, { value: EMPTY, formula: `A${r + 1}*2`, styleId: SID })
+		sheet.cells.set(r, 2, { value: EMPTY, formula: `B${r + 1}+A${Math.max(1, r)}`, styleId: SID })
+	}
+	return workbook
+}
+
+function buildDependencyGraphFixture(rows: number): {
+	readonly graph: DependencyGraph
+	readonly dirtySeeds: readonly number[]
+	readonly dirtySet: ReadonlySet<number>
+} {
+	const workbook = buildRecalcPhaseWorkbook(rows)
+	const indexed = analyzeWorkbookFormulas(workbook)
+	const graph = new DependencyGraph()
+	for (const formula of indexed.formulas.values()) {
+		const resolved = resolveFormulaDependencies(workbook, indexed.sheetNameIndex, formula)
+		if (resolved.parseError) continue
+		graph.addFormula(resolved.key, [...resolved.deps], resolved.volatile, resolved.rangeDeps)
+	}
+	const dirtySeeds = [cellKey(0, Math.floor(rows / 3), 0), cellKey(0, Math.floor(rows / 2), 0)]
+	const dirtySet = graph.getDirtySet([...dirtySeeds])
+	return { graph, dirtySeeds, dirtySet }
 }
 
 const benchmarks: readonly MicroBenchmark[] = [
@@ -69,6 +104,68 @@ const benchmarks: readonly MicroBenchmark[] = [
 				grid.setResolved(r, c, numberValue(i), null, SID)
 			}
 			return count
+		},
+	},
+	{
+		name: 'SparseGrid.iterateRows (40k cells)',
+		targetOpsPerSec: 8_000_000,
+		run() {
+			const grid = new SparseGrid()
+			for (let r = 0; r < 2000; r++) {
+				for (let c = 0; c < 20; c++) {
+					grid.setResolved(r, c, numberValue(r * 20 + c), null, SID)
+				}
+			}
+			let seen = 0
+			for (const [, entries] of grid.iterateRows()) {
+				seen += entries.length
+			}
+			return seen
+		},
+	},
+	{
+		name: 'SparseGrid.iterateRowsInRange (window scans)',
+		targetOpsPerSec: 5_000_000,
+		run() {
+			const grid = new SparseGrid()
+			for (let r = 0; r < 3000; r++) {
+				for (let c = 0; c < 16; c++) {
+					grid.setResolved(r, c, numberValue(r * 16 + c), null, SID)
+				}
+			}
+			let seen = 0
+			for (let i = 0; i < 5; i++) {
+				const startRow = i * 300
+				const endRow = startRow + 599
+				for (const [, entries] of grid.iterateRowsInRange({
+					start: { row: startRow, col: 0 },
+					end: { row: endRow, col: 15 },
+				})) {
+					seen += entries.length
+				}
+			}
+			return seen
+		},
+	},
+	{
+		name: 'SparseGrid structural row/col edits',
+		targetOpsPerSec: 40_000,
+		run() {
+			const grid = new SparseGrid()
+			for (let r = 0; r < 2000; r++) {
+				for (let c = 0; c < 8; c++) {
+					grid.setResolved(r, c, numberValue(r + c), null, SID)
+				}
+			}
+			const operations = 40
+			for (let i = 0; i < operations; i++) {
+				const at = 100 + (i % 120)
+				grid.insertRows(at, 1)
+				grid.deleteRows(at + 1, 1)
+				grid.insertCols((i % 5) + 1, 1)
+				grid.deleteCols((i % 5) + 2, 1)
+			}
+			return operations * 4
 		},
 	},
 	{
@@ -133,6 +230,91 @@ const benchmarks: readonly MicroBenchmark[] = [
 		},
 	},
 	{
+		name: 'Evaluator tree eval (10k formulas)',
+		targetOpsPerSec: 100_000,
+		run() {
+			const workbook = createWorkbook()
+			workbook.addSheet('Sheet1')
+			const sheet = workbook.sheets[0]
+			if (!sheet) throw new Error('no sheet')
+			for (let r = 0; r < 100; r++) {
+				sheet.cells.set(r, 0, { value: numberValue(r + 1), formula: null, styleId: SID })
+			}
+			const formula = 'A1+A2'
+			const parsed = parseFormula(formula)
+			if (!parsed.ok) throw new Error('Failed to parse formula for evaluator tree benchmark')
+			const ctx: EvalContext = {
+				workbook,
+				calcContext: defaultCalcContext(),
+				sheetIndex: 0,
+				row: 0,
+				col: 1,
+			}
+			const count = 10_000
+			for (let i = 0; i < count; i++) {
+				evaluate(parsed.value, ctx)
+			}
+			return count
+		},
+	},
+	{
+		name: 'Evaluator codegen eval (10k formulas)',
+		targetOpsPerSec: 100_000,
+		run() {
+			const workbook = createWorkbook()
+			workbook.addSheet('Sheet1')
+			const sheet = workbook.sheets[0]
+			if (!sheet) throw new Error('no sheet')
+			for (let r = 0; r < 100; r++) {
+				sheet.cells.set(r, 0, { value: numberValue(r + 1), formula: null, styleId: SID })
+			}
+			const formula = 'A1+A2'
+			const parsed = parseFormula(formula)
+			if (!parsed.ok) throw new Error('Failed to parse formula for evaluator codegen benchmark')
+			const generated = codegenFormula(formula, parsed.value)
+			if (!generated) throw new Error('Failed to compile codegen function for benchmark')
+			const ctx: EvalContext = {
+				workbook,
+				calcContext: defaultCalcContext(),
+				sheetIndex: 0,
+				row: 0,
+				col: 1,
+			}
+			const count = 10_000
+			for (let i = 0; i < count; i++) {
+				generated(ctx)
+			}
+			return count
+		},
+	},
+	{
+		name: 'Evaluator SUM range path (2k formulas)',
+		targetOpsPerSec: 50_000,
+		run() {
+			const workbook = createWorkbook()
+			workbook.addSheet('Sheet1')
+			const sheet = workbook.sheets[0]
+			if (!sheet) throw new Error('no sheet')
+			for (let r = 0; r < 512; r++) {
+				sheet.cells.set(r, 0, { value: numberValue((r % 13) + 1), formula: null, styleId: SID })
+			}
+			const parsed = parseFormula('SUM(A1:A512)')
+			if (!parsed.ok) throw new Error('Failed to parse SUM range formula benchmark')
+			const ctx: EvalContext = {
+				workbook,
+				calcContext: defaultCalcContext(),
+				sheetIndex: 0,
+				row: 0,
+				col: 1,
+			}
+			const count = 2_000
+			for (let i = 0; i < count; i++) {
+				evaluate(parsed.value, ctx)
+			}
+			return count
+		},
+	},
+	{
 		name: 'CellValue creation (100k numberValue + stringValue)',
 		targetOpsPerSec: 2_000_000,
 		run() {
@@ -179,6 +361,54 @@ const benchmarks: readonly MicroBenchmark[] = [
 			}
 			void totalDeps
 			return count
+		},
+	},
+	{
+		name: 'Recalc phase: analysis (3k formulas)',
+		targetOpsPerSec: 20_000,
+		run() {
+			const workbook = buildRecalcPhaseWorkbook(1000)
+			const range = { sheet: 'Sheet1', start: { row: 0, col: 0 }, end: { row: 999, col: 2 } }
+			const result = analyzeWorkbookFormulas(workbook, { range })
+			return result.formulas.size
+		},
+	},
+	{
+		name: 'Recalc phase: dependency graph build (3k formulas)',
+		targetOpsPerSec: 30_000,
+		run() {
+			const workbook = buildRecalcPhaseWorkbook(1000)
+			const indexed = analyzeWorkbookFormulas(workbook, {
+				range: { sheet: 'Sheet1', start: { row: 0, col: 0 }, end: { row: 999, col: 2 } },
+			})
+			const graph = new DependencyGraph()
+			let formulas = 0
+			for (const formula of indexed.formulas.values()) {
+				const resolved = resolveFormulaDependencies(workbook, indexed.sheetNameIndex, formula)
+				if (resolved.parseError) continue
+				graph.addFormula(resolved.key, [...resolved.deps], resolved.volatile, resolved.rangeDeps)
+				formulas++
+			}
+			void graph
+			return formulas
+		},
+	},
+	{
+		name: 'Recalc phase: dirty-set (1k formulas)',
+		targetOpsPerSec: 40_000,
+		run() {
+			const fixture = buildDependencyGraphFixture(1000)
+			const dirty = fixture.graph.getDirtySet([...fixture.dirtySeeds])
+			return dirty.size
+		},
+	},
+	{
+		name: 'Recalc phase: eval-order (1k formulas)',
+		targetOpsPerSec: 30_000,
+		run() {
+			const fixture = buildDependencyGraphFixture(1000)
+			const order = fixture.graph.getEvalOrder(new Set(fixture.dirtySet))
+			return order.length
 		},
 	},
 	{

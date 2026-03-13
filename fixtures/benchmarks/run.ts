@@ -1,8 +1,13 @@
 import { createWorkbook, type StyleId, type Workbook } from '../../packages/core/src/index.ts'
 import {
+	analyzeWorkbook,
+	analyzeWorkbookFormulas,
 	applyOperations,
+	cellKey,
+	DependencyGraph,
 	defaultCalcContext,
 	recalculate,
+	resolveFormulaDependencies,
 } from '../../packages/engine/src/index.ts'
 import { clearGlobalParseCache, parseFormula } from '../../packages/formulas/src/index.ts'
 import { readCsv, writeCsv } from '../../packages/io-csv/src/index.ts'
@@ -23,6 +28,7 @@ interface ScenarioInput {
 	readonly workbook?: Workbook
 	readonly bytes?: Uint8Array
 	readonly content?: string
+	readonly state?: unknown
 	readonly rows: number
 	readonly cols: number
 	readonly cells: number
@@ -52,6 +58,11 @@ function requireWorkbook(input: ScenarioInput): Workbook {
 function requireContent(input: ScenarioInput): string {
 	if (input.content === undefined) throw new Error('Scenario content was not built')
 	return input.content
+}
+
+function requireState<T>(input: ScenarioInput): T {
+	if (input.state === undefined) throw new Error('Scenario state was not built')
+	return input.state as T
 }
 
 function mustWrite(workbook: Workbook): Uint8Array {
@@ -208,6 +219,30 @@ function buildSpillChurnWorkbook(length: number): Workbook {
 		setBooleanCell(workbook, r, 2, true)
 	}
 	setFormulaCell(workbook, 0, 1, `FILTER(A1:A${length},C1:C${length},0)`)
+	return workbook
+}
+
+function buildRecalcPhaseWorkbook(rows: number): Workbook {
+	const workbook = createWorkbook()
+	workbook.addSheet('Sheet1')
+	for (let r = 0; r < rows; r++) {
+		setNumberCell(workbook, r, 0, (r % 1000) + 1)
+		setFormulaCell(workbook, r, 1, `A${r + 1}*2`)
+		setFormulaCell(workbook, r, 2, `B${r + 1}+A${Math.max(1, r)}`)
+	}
+	return workbook
+}
+
+function buildOverlappingRangeWorkbook(rows: number, formulaRows: number): Workbook {
+	const workbook = createWorkbook()
+	workbook.addSheet('Sheet1')
+	for (let r = 0; r < rows; r++) {
+		setNumberCell(workbook, r, 0, (r % 97) + 1)
+	}
+	for (let r = 0; r < formulaRows; r++) {
+		const end = Math.min(rows, r + 5000)
+		setFormulaCell(workbook, r, 1, `SUM(A1:A${end})`)
+	}
 	return workbook
 }
 
@@ -615,6 +650,161 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'workflow-first-window-cold',
+		category: 'workflow',
+		build() {
+			const workbook = buildDenseWorkbook(20_000, 20)
+			const bytes = mustWrite(workbook)
+			return { bytes, rows: 20_000, cols: 20, cells: 400_000 }
+		},
+		async run(input) {
+			const wb = await AscendWorkbook.open(requireBytes(input), { mode: 'values' })
+			const window = wb.readWindowCompact('Sheet1', 'A1:T20000', {
+				rowLimit: 200,
+				includeRefs: false,
+			})
+			if (!window) throw new Error('First-window cold benchmark failed to read Sheet1')
+			return {
+				assertions: {
+					returnedCells: window.cells.length,
+					hasMore: window.hasMore,
+				},
+			}
+		},
+	},
+	{
+		name: 'workflow-style-heavy-roundtrip',
+		category: 'workflow',
+		build() {
+			const workbook = buildDenseWorkbook(4000, 12)
+			const bytes = mustWrite(workbook)
+			return { bytes, rows: 4000, cols: 12, cells: 48_000 }
+		},
+		async run(input) {
+			const wb = await AscendWorkbook.open(requireBytes(input))
+			const formats = ['#,##0.00', '0.00%', 'yyyy-mm-dd', '$#,##0.00']
+			const updates = Array.from({ length: 240 }, (_, idx) => {
+				const col = String.fromCharCode(65 + (idx % 12))
+				const rowStart = ((idx * 17) % 3800) + 1
+				const rowEnd = rowStart + 199
+				return {
+					op: 'setNumberFormat' as const,
+					sheet: 'Sheet1',
+					range: `${col}${rowStart}:${col}${rowEnd}`,
+					format: formats[idx % formats.length] ?? '#,##0.00',
+				}
+			})
+			const preview = wb.preview(updates)
+			const apply = wb.apply(updates)
+			const bytes = wb.toBytes()
+			return {
+				assertions: {
+					previewChanges: preview.cellChanges.length,
+					applyErrors: apply.errors.length,
+					outputBytes: bytes.byteLength,
+				},
+			}
+		},
+	},
+	{
+		name: 'recalc-phase-analysis',
+		category: 'calc',
+		build() {
+			const workbook = buildRecalcPhaseWorkbook(3000)
+			return { workbook, rows: 3000, cols: 3, cells: 9000 }
+		},
+		run(input) {
+			const workbook = requireWorkbook(input)
+			const indexed = analyzeWorkbookFormulas(workbook, {
+				range: { sheet: 'Sheet1', start: { row: 0, col: 0 }, end: { row: 2999, col: 2 } },
+			})
+			return {
+				assertions: {
+					formulas: indexed.formulas.size,
+				},
+			}
+		},
+	},
+	{
+		name: 'recalc-phase-graph-build',
+		category: 'calc',
+		build() {
+			const workbook = buildRecalcPhaseWorkbook(3000)
+			return { workbook, rows: 3000, cols: 3, cells: 9000 }
+		},
+		run(input) {
+			const workbook = requireWorkbook(input)
+			const indexed = analyzeWorkbookFormulas(workbook, {
+				range: { sheet: 'Sheet1', start: { row: 0, col: 0 }, end: { row: 2999, col: 2 } },
+			})
+			const graph = new DependencyGraph()
+			let formulas = 0
+			for (const formula of indexed.formulas.values()) {
+				const resolved = resolveFormulaDependencies(workbook, indexed.sheetNameIndex, formula)
+				if (resolved.parseError) continue
+				graph.addFormula(resolved.key, [...resolved.deps], resolved.volatile, resolved.rangeDeps)
+				formulas++
+			}
+			return {
+				assertions: {
+					formulas,
+					cycles: graph.detectCycles().length,
+				},
+			}
+		},
+	},
+	{
+		name: 'recalc-phase-dirty-set',
+		category: 'calc',
+		build() {
+			const workbook = buildRecalcPhaseWorkbook(3000)
+			const analysis = analyzeWorkbook(workbook)
+			const dirtySeeds = [cellKey(0, 1499, 0), cellKey(0, 2399, 0)]
+			return {
+				workbook,
+				state: { graph: analysis.dependencyGraph, dirtySeeds },
+				rows: 3000,
+				cols: 3,
+				cells: 9000,
+			}
+		},
+		run(input) {
+			const state = requireState<{ graph: DependencyGraph; dirtySeeds: readonly number[] }>(input)
+			const dirty = state.graph.getDirtySet([...state.dirtySeeds])
+			return {
+				assertions: {
+					dirtySize: dirty.size,
+				},
+			}
+		},
+	},
+	{
+		name: 'recalc-phase-eval-order',
+		category: 'calc',
+		build() {
+			const workbook = buildRecalcPhaseWorkbook(3000)
+			const analysis = analyzeWorkbook(workbook)
+			const dirtySeeds = [cellKey(0, 1200, 0), cellKey(0, 2000, 0)]
+			const dirtySet = analysis.dependencyGraph.getDirtySet(dirtySeeds)
+			return {
+				workbook,
+				state: { graph: analysis.dependencyGraph, dirtySet },
+				rows: 3000,
+				cols: 3,
+				cells: 9000,
+			}
+		},
+		run(input) {
+			const state = requireState<{ graph: DependencyGraph; dirtySet: ReadonlySet<number> }>(input)
+			const order = state.graph.getEvalOrder(new Set(state.dirtySet))
+			return {
+				assertions: {
+					evalOrder: order.length,
+				},
+			}
+		},
+	},
+	{
 		name: 'recalc-formula-chain',
 		category: 'calc',
 		build() {
@@ -634,6 +824,28 @@ const scenarios: readonly Scenario[] = [
 		},
 		run(input) {
 			recalculate(requireWorkbook(input), defaultCalcContext())
+		},
+	},
+	{
+		name: 'recalc-overlapping-range-deps',
+		category: 'calc',
+		build() {
+			const workbook = buildOverlappingRangeWorkbook(12_000, 4_000)
+			recalculate(workbook, defaultCalcContext())
+			setNumberCell(workbook, 6000, 0, 42_424)
+			return { workbook, rows: 12_000, cols: 2, cells: 16_000 }
+		},
+		run(input) {
+			const workbook = requireWorkbook(input)
+			const recalc = recalculate(workbook, defaultCalcContext(), {
+				dirtyOnly: true,
+				dirtyRefs: ['Sheet1!A6001'],
+			})
+			return {
+				assertions: {
+					changed: recalc.changed.length,
+				},
+			}
 		},
 	},
 	{
@@ -1187,12 +1399,27 @@ const scenarios: readonly Scenario[] = [
 ]
 
 const scenarioSets = {
+	canary: [
+		'workflow-first-window-cold',
+		'workflow-style-heavy-roundtrip',
+		'recalc-phase-analysis',
+		'recalc-phase-dirty-set',
+		'recalc-incremental',
+		'recalc-overlapping-range-deps',
+	],
 	smoke: [
 		'read-full-dense',
 		'workflow-sdk-edit-cycle',
 		'workflow-sdk-defined-names-edit-cycle',
+		'workflow-first-window-cold',
+		'workflow-style-heavy-roundtrip',
+		'recalc-phase-analysis',
+		'recalc-phase-graph-build',
+		'recalc-phase-dirty-set',
+		'recalc-phase-eval-order',
 		'recalc-incremental',
 		'recalc-if-short-circuit',
+		'recalc-overlapping-range-deps',
 		'recalc-lookup-exact-incremental',
 		'recalc-dynamic-spill-churn',
 		'recalc-criteria-caching',
@@ -1200,6 +1427,7 @@ const scenarioSets = {
 		'structural-insert-rows-recalc',
 		'read-csv-large',
 	],
+	observe: ['recalc-1m-dense', 'memory-1m-cells', 'recalc-lookup-exact-large'],
 	memory: ['memory-1k-cells', 'memory-10k-cells', 'memory-100k-cells', 'memory-1m-cells'],
 } as const
 

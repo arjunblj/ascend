@@ -281,6 +281,11 @@ function parseFills(ss: XmlNode): FillStyle[] {
 }
 
 function parseFill(f: XmlNode): FillStyle {
+	const gradientFill = f.gradientFill as XmlNode | undefined
+	if (gradientFill && typeof gradientFill === 'object') {
+		const gradient = parseGradientFill(gradientFill)
+		if (gradient) return { gradient }
+	}
 	const pf = f.patternFill as XmlNode | undefined
 	if (!pf || typeof pf !== 'object') return {}
 
@@ -295,6 +300,33 @@ function parseFill(f: XmlNode): FillStyle {
 	if (bg) props.bgColor = bg
 
 	return props as FillStyle
+}
+
+function parseGradientFill(node: XmlNode): FillStyle['gradient'] | undefined {
+	const stops = asArray<XmlNode>(node.stop as XmlNode | XmlNode[])
+		.map((stop) => {
+			const position = numAttr(stop, 'position')
+			const color = parseColor(stop.color)
+			if (position === undefined || !color) return null
+			return { position, color }
+		})
+		.filter((stop): stop is NonNullable<typeof stop> => stop !== null)
+	if (stops.length === 0) return undefined
+	const type = attr(node, 'type')
+	const degree = numAttr(node, 'degree')
+	const left = numAttr(node, 'left')
+	const right = numAttr(node, 'right')
+	const top = numAttr(node, 'top')
+	const bottom = numAttr(node, 'bottom')
+	return {
+		...(type ? { type: type as 'linear' | 'path' } : {}),
+		...(degree !== undefined ? { degree } : {}),
+		...(left !== undefined ? { left } : {}),
+		...(right !== undefined ? { right } : {}),
+		...(top !== undefined ? { top } : {}),
+		...(bottom !== undefined ? { bottom } : {}),
+		stops,
+	}
 }
 
 function parseBorders(ss: XmlNode): BorderStyle[] {

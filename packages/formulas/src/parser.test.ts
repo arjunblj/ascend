@@ -187,6 +187,31 @@ describe('parse', () => {
 		expect(node.args).toHaveLength(3)
 	})
 
+	it('parses direct lambda invocation as internal call node', () => {
+		const node = p('LAMBDA(x,x+1)(5)')
+		expect(node).toEqual({
+			type: 'function',
+			name: '__CALL__',
+			args: [
+				{
+					type: 'function',
+					name: 'LAMBDA',
+					args: [
+						{ type: 'name', name: 'x' },
+						{
+							type: 'binary',
+							op: '+',
+							left: { type: 'name', name: 'x' },
+							right: { type: 'number', value: 1 },
+						},
+					],
+				},
+				{ type: 'number', value: 5 },
+			],
+		})
+		expect(printFormula(node)).toBe('LAMBDA(x,x+1)(5)')
+	})
+
 	it('parses function with missing arguments', () => {
 		const node = p('IF(A1,,0)')
 		expect(node.type).toBe('function')

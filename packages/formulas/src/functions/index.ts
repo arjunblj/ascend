@@ -24,6 +24,7 @@ export {
 	wildcardMatch,
 } from './registry.ts'
 
+import { compatibilityFunctions } from './compatibility.ts'
 import { databaseFunctions } from './database.ts'
 import { dateFunctions } from './date.ts'
 import { dynamicFunctions } from './dynamic.ts'
@@ -53,6 +54,7 @@ for (const fn of [
 	...infoFunctions,
 	...lookupFunctions,
 	...statsFunctions,
+	...compatibilityFunctions,
 	convertFunction,
 ]) {
 	registerFunction(fn)

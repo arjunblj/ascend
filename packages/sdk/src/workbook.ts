@@ -435,6 +435,34 @@ export class AscendWorkbook extends WorkbookReadView {
 		])
 	}
 
+	addSheet(name: string): ApplyResult {
+		return this.apply([{ op: 'addSheet', name }])
+	}
+
+	deleteSheet(sheet: string): ApplyResult {
+		return this.apply([{ op: 'deleteSheet', sheet }])
+	}
+
+	renameSheet(sheet: string, newName: string): ApplyResult {
+		return this.apply([{ op: 'renameSheet', sheet, newName }])
+	}
+
+	insertRows(sheet: string, at: number, count: number): ApplyResult {
+		return this.apply([{ op: 'insertRows', sheet, at, count }])
+	}
+
+	deleteRows(sheet: string, at: number, count: number): ApplyResult {
+		return this.apply([{ op: 'deleteRows', sheet, at, count }])
+	}
+
+	insertCols(sheet: string, at: number, count: number): ApplyResult {
+		return this.apply([{ op: 'insertCols', sheet, at, count }])
+	}
+
+	deleteCols(sheet: string, at: number, count: number): ApplyResult {
+		return this.apply([{ op: 'deleteCols', sheet, at, count }])
+	}
+
 	// --- Export ---
 
 	async save(path: string): Promise<void> {

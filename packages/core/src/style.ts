@@ -67,6 +67,22 @@ export interface FillStyle {
 	readonly pattern?: FillPattern
 	readonly fgColor?: Color
 	readonly bgColor?: Color
+	readonly gradient?: GradientFill
+}
+
+export interface GradientFillStop {
+	readonly position: number
+	readonly color: Color
+}
+
+export interface GradientFill {
+	readonly type?: 'linear' | 'path'
+	readonly degree?: number
+	readonly left?: number
+	readonly right?: number
+	readonly top?: number
+	readonly bottom?: number
+	readonly stops: readonly GradientFillStop[]
 }
 
 export interface BorderEdge {

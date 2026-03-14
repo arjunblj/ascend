@@ -38,6 +38,7 @@ export {
 	arrayValue,
 	booleanValue,
 	coerceCellValueToString,
+	dateValue,
 	EMPTY,
 	errorValue,
 	isArrayValue,

@@ -9,7 +9,7 @@ export type {
 	SortState,
 } from './filter.ts'
 export type { SheetId, StyleId, TableId, WorkbookId } from './ids.ts'
-export { createSheetId, createTableId, createWorkbookId } from './ids.ts'
+export { createSheetId, createTableId, createWorkbookId, DEFAULT_STYLE_ID } from './ids.ts'
 export type { PivotCacheInfo, PivotTableInfo, SlicerCacheInfo, SlicerInfo } from './pivot.ts'
 export type { CellRef, RangeRef } from './refs.ts'
 export {

@@ -11,6 +11,17 @@ export function cloneCellStyle(style: CellStyle): CellStyle {
 						...style.fill,
 						...(style.fill.fgColor ? { fgColor: { ...style.fill.fgColor } } : {}),
 						...(style.fill.bgColor ? { bgColor: { ...style.fill.bgColor } } : {}),
+						...(style.fill.gradient
+							? {
+									gradient: {
+										...style.fill.gradient,
+										stops: style.fill.gradient.stops.map((stop) => ({
+											...stop,
+											color: { ...stop.color },
+										})),
+									},
+								}
+							: {}),
 					},
 				}
 			: {}),

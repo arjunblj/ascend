@@ -1,3 +1,4 @@
+import { serialToDate } from '@ascend/formulas'
 import {
 	AscendException,
 	ascendError,
@@ -668,7 +669,7 @@ function formatDisplayCellValue(value: CellValue): string {
 		case 'error':
 			return value.value
 		case 'date': {
-			const parts = serialToDateParts(Math.floor(value.serial))
+			const parts = serialToDate(Math.floor(value.serial))
 			if (!parts) return `[date:${value.serial}]`
 			return `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`
 		}
@@ -676,30 +677,6 @@ function formatDisplayCellValue(value: CellValue): string {
 			return value.runs.map((run) => run.text).join('')
 	}
 	return ''
-}
-
-function serialToDateParts(
-	serial: number,
-	dateSystem: '1900' | '1904' = '1900',
-): { year: number; month: number; day: number } | null {
-	const msPerDay = 86_400_000
-	const makeUtc = (year: number, month: number, day: number) => {
-		const date = new Date(Date.UTC(year, month - 1, day))
-		if (year >= 0 && year < 100) date.setUTCFullYear(year)
-		return date
-	}
-	if (dateSystem === '1904') {
-		if (serial < 0) return null
-		const epoch = makeUtc(1904, 1, 1).getTime()
-		const date = new Date(epoch + serial * msPerDay)
-		return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() }
-	}
-	if (serial < 1) return null
-	if (serial === 60) return { year: 1900, month: 2, day: 29 }
-	const epoch = makeUtc(1900, 1, 1).getTime()
-	const days = serial < 60 ? serial - 1 : serial - 2
-	const date = new Date(epoch + days * msPerDay)
-	return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() }
 }
 
 if (import.meta.main) {

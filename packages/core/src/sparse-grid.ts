@@ -1,6 +1,13 @@
 import type { CellValue, ExcelError } from '@ascend/schema'
-import { booleanValue, EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
-import type { StyleId } from './ids.ts'
+import {
+	booleanValue,
+	dateValue,
+	EMPTY,
+	errorValue,
+	numberValue,
+	stringValue,
+} from '@ascend/schema'
+import { DEFAULT_STYLE_ID, type StyleId } from './ids.ts'
 import type { RangeRef } from './refs.ts'
 
 export interface Cell {
@@ -42,11 +49,11 @@ export type CellFormulaBinding =
 	| DynamicArrayFormulaInfo
 	| SpillFormulaInfo
 
-const DEFAULT_STYLE_ID = 0 as StyleId
 const CHUNK_BITS = 6
 const CHUNK_SIZE = 1 << CHUNK_BITS
 const CHUNK_MASK = CHUNK_SIZE - 1
 const CHUNK_AREA = CHUNK_SIZE * CHUNK_SIZE
+const CHUNK_COL_FACTOR = (16_383 >> CHUNK_BITS) + 1
 const SPARSE_TO_DENSE_THRESHOLD = 96
 const SLOT_TAG_MASK = 0b111
 const SLOT_OCCUPIED_BIT = 0b1000
@@ -315,34 +322,92 @@ class DenseChunk implements GridChunk {
 		return this.formulaInfos?.[localIndex]
 	}
 
+	setResolved(
+		localIndex: number,
+		value: CellValue,
+		formula: string | null,
+		styleId: StyleId,
+		formulaInfo: CellFormulaBinding | undefined,
+		stringTable: StringTable,
+	): void {
+		if (!this.has(localIndex)) {
+			const rowIndex = localIndex >>> CHUNK_BITS
+			this.rowCounts[rowIndex] = (this.rowCounts[rowIndex] ?? 0) + 1
+			this._count++
+		}
+		switch (value.kind) {
+			case 'empty':
+				this.writeResolved(localIndex, SlotTag.Empty, styleId, 0, 0, formula, formulaInfo)
+				return
+			case 'number':
+				this.writeResolved(
+					localIndex,
+					SlotTag.Number,
+					styleId,
+					value.value,
+					0,
+					formula,
+					formulaInfo,
+				)
+				return
+			case 'string':
+				this.writeResolved(
+					localIndex,
+					SlotTag.String,
+					styleId,
+					0,
+					stringTable.intern(value.value),
+					formula,
+					formulaInfo,
+				)
+				return
+			case 'boolean':
+				this.writeResolved(
+					localIndex,
+					SlotTag.Boolean,
+					styleId,
+					value.value ? 1 : 0,
+					0,
+					formula,
+					formulaInfo,
+				)
+				return
+			case 'error':
+				this.writeResolved(
+					localIndex,
+					SlotTag.Error,
+					styleId,
+					0,
+					stringTable.intern(value.value),
+					formula,
+					formulaInfo,
+				)
+				return
+			case 'date':
+				this.writeResolved(localIndex, SlotTag.Date, styleId, value.serial, 0, formula, formulaInfo)
+				return
+			default:
+				this.writeResolved(localIndex, SlotTag.Heap, styleId, 0, 0, formula, formulaInfo, value)
+				return
+		}
+	}
+
 	setSlot(localIndex: number, slot: StoredSlot): GridChunk {
 		if (!this.has(localIndex)) {
 			const rowIndex = localIndex >>> CHUNK_BITS
 			this.rowCounts[rowIndex] = (this.rowCounts[rowIndex] ?? 0) + 1
 			this._count++
 		}
-		this.slotMeta[localIndex] = SLOT_OCCUPIED_BIT | slot.tag
-		this.styleIds[localIndex] = slot.styleId
-		this.stringIds[localIndex] = slot.stringId ?? 0
-		this.numbers[localIndex] = slot.numberValue ?? 0
-		if (slot.formula !== null) {
-			if (this.formulas === null) this.formulas = new Array(CHUNK_AREA)
-			this.formulas[localIndex] = slot.formula
-		} else if (this.formulas !== null) {
-			this.formulas[localIndex] = null
-		}
-		if (slot.formulaInfo !== undefined) {
-			if (this.formulaInfos === null) this.formulaInfos = new Array(CHUNK_AREA)
-			this.formulaInfos[localIndex] = slot.formulaInfo
-		} else if (this.formulaInfos !== null) {
-			this.formulaInfos[localIndex] = undefined
-		}
-		if (slot.tag === SlotTag.Heap) {
-			if (this.heapValues === null) this.heapValues = new Array(CHUNK_AREA)
-			this.heapValues[localIndex] = slot.heapValue
-		} else if (this.heapValues !== null) {
-			this.heapValues[localIndex] = undefined
-		}
+		this.writeResolved(
+			localIndex,
+			slot.tag,
+			slot.styleId,
+			slot.numberValue ?? 0,
+			slot.stringId ?? 0,
+			slot.formula,
+			slot.formulaInfo,
+			slot.heapValue,
+		)
 		return this
 	}
 
@@ -363,6 +428,40 @@ class DenseChunk implements GridChunk {
 
 	private readTag(localIndex: number): SlotTag {
 		return ((this.slotMeta[localIndex] ?? 0) & SLOT_TAG_MASK) as SlotTag
+	}
+
+	private writeResolved(
+		localIndex: number,
+		tag: SlotTag,
+		styleId: StyleId,
+		numberValue: number,
+		stringId: number,
+		formula: string | null,
+		formulaInfo: CellFormulaBinding | undefined,
+		heapValue?: CellValue,
+	): void {
+		this.slotMeta[localIndex] = SLOT_OCCUPIED_BIT | tag
+		this.styleIds[localIndex] = styleId
+		this.stringIds[localIndex] = stringId
+		this.numbers[localIndex] = numberValue
+		if (formula !== null) {
+			if (this.formulas === null) this.formulas = new Array(CHUNK_AREA)
+			this.formulas[localIndex] = formula
+		} else if (this.formulas !== null) {
+			this.formulas[localIndex] = null
+		}
+		if (formulaInfo !== undefined) {
+			if (this.formulaInfos === null) this.formulaInfos = new Array(CHUNK_AREA)
+			this.formulaInfos[localIndex] = formulaInfo
+		} else if (this.formulaInfos !== null) {
+			this.formulaInfos[localIndex] = undefined
+		}
+		if (tag === SlotTag.Heap) {
+			if (this.heapValues === null) this.heapValues = new Array(CHUNK_AREA)
+			this.heapValues[localIndex] = heapValue
+		} else if (this.heapValues !== null) {
+			this.heapValues[localIndex] = undefined
+		}
 	}
 
 	forEachRow(
@@ -386,7 +485,7 @@ export class SparseGrid {
 	private chunkRows = new Map<number, Map<number, GridChunk>>()
 	private _sortedChunkRows: readonly number[] | null = null
 	private readonly _sortedChunkCols = new Map<number, readonly number[]>()
-	private _sharedChunks: Set<string> | null = null
+	private _sharedChunks: Set<number> | null = null
 	private stringTable = new StringTable()
 	private _cellCount = 0
 	private _shared = false
@@ -414,8 +513,9 @@ export class SparseGrid {
 		formulaInfo?: CellFormulaBinding,
 	): void {
 		this.ensureWritable()
-		const slot = compactResolvedCell(value, formula, styleId, formulaInfo, this.stringTable)
-		const [chunkRow, chunkCol, localIndex] = getChunkPosition(row, col)
+		const chunkRow = row >> CHUNK_BITS
+		const chunkCol = col >> CHUNK_BITS
+		const localIndex = ((row & CHUNK_MASK) << CHUNK_BITS) | (col & CHUNK_MASK)
 		let cols = this.chunkRows.get(chunkRow)
 		if (!cols) {
 			cols = new Map()
@@ -430,15 +530,22 @@ export class SparseGrid {
 		}
 		chunk = this.ensureChunkWritable(chunkRow, chunkCol, cols, chunk)
 		const existed = chunk.has(localIndex)
-		const nextChunk = chunk.setSlot(localIndex, slot)
-		if (nextChunk !== chunk) cols.set(chunkCol, nextChunk)
+		if (chunk instanceof DenseChunk) {
+			chunk.setResolved(localIndex, value, formula, styleId, formulaInfo, this.stringTable)
+		} else {
+			const slot = compactResolvedCell(value, formula, styleId, formulaInfo, this.stringTable)
+			const nextChunk = chunk.setSlot(localIndex, slot)
+			if (nextChunk !== chunk) cols.set(chunkCol, nextChunk)
+		}
 		if (!existed) this._cellCount++
 		this._trackBounds(row, col)
 	}
 
 	delete(row: number, col: number): boolean {
 		this.ensureWritable()
-		const [chunkRow, chunkCol, localIndex] = getChunkPosition(row, col)
+		const chunkRow = row >> CHUNK_BITS
+		const chunkCol = col >> CHUNK_BITS
+		const localIndex = ((row & CHUNK_MASK) << CHUNK_BITS) | (col & CHUNK_MASK)
 		const cols = this.chunkRows.get(chunkRow)
 		let chunk = cols?.get(chunkCol)
 		if (!chunk) return false
@@ -466,7 +573,9 @@ export class SparseGrid {
 	}
 
 	getValue(row: number, col: number): CellValue | undefined {
-		const [chunkRow, chunkCol, localIndex] = getChunkPosition(row, col)
+		const chunkRow = row >> CHUNK_BITS
+		const chunkCol = col >> CHUNK_BITS
+		const localIndex = ((row & CHUNK_MASK) << CHUNK_BITS) | (col & CHUNK_MASK)
 		return this.chunkRows.get(chunkRow)?.get(chunkCol)?.readValue(localIndex, this.stringTable)
 	}
 
@@ -475,46 +584,62 @@ export class SparseGrid {
 	}
 
 	readKind(row: number, col: number): CellValueKind | undefined {
-		const [chunkRow, chunkCol, localIndex] = getChunkPosition(row, col)
+		const chunkRow = row >> CHUNK_BITS
+		const chunkCol = col >> CHUNK_BITS
+		const localIndex = ((row & CHUNK_MASK) << CHUNK_BITS) | (col & CHUNK_MASK)
 		return this.chunkRows.get(chunkRow)?.get(chunkCol)?.getKind(localIndex)
 	}
 
 	readNumber(row: number, col: number): number | null {
-		const [chunkRow, chunkCol, localIndex] = getChunkPosition(row, col)
+		const chunkRow = row >> CHUNK_BITS
+		const chunkCol = col >> CHUNK_BITS
+		const localIndex = ((row & CHUNK_MASK) << CHUNK_BITS) | (col & CHUNK_MASK)
 		return this.chunkRows.get(chunkRow)?.get(chunkCol)?.readNumber(localIndex) ?? null
 	}
 
 	readString(row: number, col: number): string | null {
-		const [chunkRow, chunkCol, localIndex] = getChunkPosition(row, col)
+		const chunkRow = row >> CHUNK_BITS
+		const chunkCol = col >> CHUNK_BITS
+		const localIndex = ((row & CHUNK_MASK) << CHUNK_BITS) | (col & CHUNK_MASK)
 		return (
 			this.chunkRows.get(chunkRow)?.get(chunkCol)?.readString(localIndex, this.stringTable) ?? null
 		)
 	}
 
 	readError(row: number, col: number): ExcelError | null {
-		const [chunkRow, chunkCol, localIndex] = getChunkPosition(row, col)
+		const chunkRow = row >> CHUNK_BITS
+		const chunkCol = col >> CHUNK_BITS
+		const localIndex = ((row & CHUNK_MASK) << CHUNK_BITS) | (col & CHUNK_MASK)
 		return (
 			this.chunkRows.get(chunkRow)?.get(chunkCol)?.readError(localIndex, this.stringTable) ?? null
 		)
 	}
 
 	readStyleId(row: number, col: number): StyleId | undefined {
-		const [chunkRow, chunkCol, localIndex] = getChunkPosition(row, col)
+		const chunkRow = row >> CHUNK_BITS
+		const chunkCol = col >> CHUNK_BITS
+		const localIndex = ((row & CHUNK_MASK) << CHUNK_BITS) | (col & CHUNK_MASK)
 		return this.chunkRows.get(chunkRow)?.get(chunkCol)?.readStyleId(localIndex)
 	}
 
 	readFormula(row: number, col: number): string | null | undefined {
-		const [chunkRow, chunkCol, localIndex] = getChunkPosition(row, col)
+		const chunkRow = row >> CHUNK_BITS
+		const chunkCol = col >> CHUNK_BITS
+		const localIndex = ((row & CHUNK_MASK) << CHUNK_BITS) | (col & CHUNK_MASK)
 		return this.chunkRows.get(chunkRow)?.get(chunkCol)?.readFormula(localIndex)
 	}
 
 	readFormulaInfo(row: number, col: number): CellFormulaBinding | undefined {
-		const [chunkRow, chunkCol, localIndex] = getChunkPosition(row, col)
+		const chunkRow = row >> CHUNK_BITS
+		const chunkCol = col >> CHUNK_BITS
+		const localIndex = ((row & CHUNK_MASK) << CHUNK_BITS) | (col & CHUNK_MASK)
 		return this.chunkRows.get(chunkRow)?.get(chunkCol)?.readFormulaInfo(localIndex)
 	}
 
 	has(row: number, col: number): boolean {
-		const [chunkRow, chunkCol, localIndex] = getChunkPosition(row, col)
+		const chunkRow = row >> CHUNK_BITS
+		const chunkCol = col >> CHUNK_BITS
+		const localIndex = ((row & CHUNK_MASK) << CHUNK_BITS) | (col & CHUNK_MASK)
 		return this.chunkRows.get(chunkRow)?.get(chunkCol)?.has(localIndex) ?? false
 	}
 
@@ -736,7 +861,7 @@ export class SparseGrid {
 	private ensureWritable(): void {
 		if (!this._shared) return
 		const nextChunkRows = new Map<number, Map<number, GridChunk>>()
-		const sharedChunks = new Set<string>()
+		const sharedChunks = new Set<number>()
 		for (const [chunkRow, cols] of this.chunkRows) {
 			const nextCols = new Map<number, GridChunk>()
 			for (const [chunkCol, chunk] of cols) {
@@ -753,7 +878,9 @@ export class SparseGrid {
 	}
 
 	private _getSlot(row: number, col: number): StoredSlot | undefined {
-		const [chunkRow, chunkCol, localIndex] = getChunkPosition(row, col)
+		const chunkRow = row >> CHUNK_BITS
+		const chunkCol = col >> CHUNK_BITS
+		const localIndex = ((row & CHUNK_MASK) << CHUNK_BITS) | (col & CHUNK_MASK)
 		return this.chunkRows.get(chunkRow)?.get(chunkCol)?.getSlot(localIndex)
 	}
 
@@ -862,15 +989,8 @@ export class SparseGrid {
 	}
 }
 
-function getChunkPosition(row: number, col: number): readonly [number, number, number] {
-	const chunkRow = row >> CHUNK_BITS
-	const chunkCol = col >> CHUNK_BITS
-	const localIndex = ((row & CHUNK_MASK) << CHUNK_BITS) | (col & CHUNK_MASK)
-	return [chunkRow, chunkCol, localIndex] as const
-}
-
-function sharedChunkKey(chunkRow: number, chunkCol: number): string {
-	return `${chunkRow}:${chunkCol}`
+function sharedChunkKey(chunkRow: number, chunkCol: number): number {
+	return chunkRow * CHUNK_COL_FACTOR + chunkCol
 }
 
 function createChunkBuffer(byteLength: number): ChunkBuffer {
@@ -993,7 +1113,7 @@ function readSlotValue(
 		case SlotTag.Error:
 			return errorValue(stringTable.lookup(slot.stringId ?? 0) as ExcelError)
 		case SlotTag.Date:
-			return { kind: 'date', serial: slot.numberValue ?? 0 }
+			return dateValue(slot.numberValue ?? 0)
 		case SlotTag.Heap:
 			return slot.heapValue
 	}
@@ -1018,7 +1138,7 @@ function readDenseValue(
 		case SlotTag.Error:
 			return errorValue(stringTable.lookup(stringId) as ExcelError)
 		case SlotTag.Date:
-			return { kind: 'date', serial: number }
+			return dateValue(number)
 		case SlotTag.Heap:
 			return heapValue ?? EMPTY
 	}

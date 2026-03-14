@@ -2,9 +2,10 @@ import { describe, expect, it } from 'bun:test'
 import type { StyleId } from '@ascend/core'
 import { createTableId, Workbook } from '@ascend/core'
 import { booleanValue, numberValue, stringValue } from '@ascend/schema'
-import { strToU8, unzipSync, zipSync } from 'fflate'
+import { unzipSync } from 'fflate'
 import { applyOperations } from '../../../engine/src/index.ts'
 import { fingerprintXlsx } from '../../test/fidelity-harness.ts'
+import { makeXlsx } from '../../test/helpers.ts'
 import type { PreservationCapsule } from '../preserve.ts'
 import { readXlsx } from '../reader/index.ts'
 import { planWriteXlsx, writeXlsx } from './index.ts'
@@ -24,14 +25,6 @@ function roundTrip(wb: Workbook, capsules?: PreservationCapsule[]) {
 	const read = readXlsx(written.value)
 	if (!read.ok) throw new Error(`read failed: ${read.error.message}`)
 	return { bytes: written.value, result: read.value }
-}
-
-function makeXlsx(parts: Record<string, string>): Uint8Array {
-	const entries: Record<string, Uint8Array> = {}
-	for (const [path, content] of Object.entries(parts)) {
-		entries[path] = strToU8(content)
-	}
-	return zipSync(entries)
 }
 
 describe('writeXlsx', () => {
@@ -333,6 +326,50 @@ describe('writeXlsx', () => {
 		expect(cell).toBeDefined()
 		const style = result.workbook.styles.get(cell?.styleId ?? (0 as StyleId))
 		expect(style?.numberFormat).toBe('0.00%')
+	})
+
+	it('round-trips gradient fills', () => {
+		const wb = new Workbook()
+		const gradientId = wb.styles.register({
+			fill: {
+				gradient: {
+					type: 'linear',
+					degree: 45,
+					stops: [
+						{ position: 0, color: { kind: 'rgb', rgb: 'FFFF0000' } },
+						{ position: 1, color: { kind: 'theme', theme: 1, tint: 0.25 } },
+					],
+				},
+			},
+		})
+		const sheet = wb.addSheet('Styled')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: gradientId })
+
+		const written = writeXlsx(wb)
+		expectOk(written)
+
+		const zip = unzipSync(written.value)
+		const stylesXml = new TextDecoder().decode(zip['xl/styles.xml'] ?? new Uint8Array())
+		expect(stylesXml).toContain('<gradientFill type="linear" degree="45">')
+		expect(stylesXml).toContain('<stop position="0">')
+		expect(stylesXml).toContain('<color rgb="FFFF0000"/>')
+		expect(stylesXml).toContain('<color theme="1" tint="0.25"/>')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		const style = reopened.value.workbook.styles.get(
+			reopened.value.workbook.sheets[0]?.cells.get(0, 0)?.styleId ?? S0,
+		)
+		expect(style?.fill).toEqual({
+			gradient: {
+				type: 'linear',
+				degree: 45,
+				stops: [
+					{ position: 0, color: { kind: 'rgb', rgb: 'FFFF0000' } },
+					{ position: 1, color: { kind: 'theme', theme: 1, tint: 0.25 } },
+				],
+			},
+		})
 	})
 
 	it('appends number-format styles onto preserved styles.xml without rebuilding it', () => {

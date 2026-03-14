@@ -37,6 +37,18 @@ function fontKey(f: FontStyle | undefined): string {
 
 function fillKey(f: FillStyle | undefined): string {
 	if (!f || !hasProps(f)) return ''
+	if (f.gradient) {
+		return [
+			'gradient',
+			f.gradient.type ?? '',
+			String(f.gradient.degree ?? ''),
+			String(f.gradient.left ?? ''),
+			String(f.gradient.right ?? ''),
+			String(f.gradient.top ?? ''),
+			String(f.gradient.bottom ?? ''),
+			...f.gradient.stops.flatMap((stop) => [String(stop.position), colorKey(stop.color)]),
+		].join('|')
+	}
 	return [f.pattern ?? 'none', colorKey(f.fgColor), colorKey(f.bgColor)].join('|')
 }
 
@@ -392,6 +404,25 @@ function pushFontXml(out: ChunkedStringBuilder, font: FontStyle): void {
 }
 
 function pushFillXml(out: ChunkedStringBuilder, fill: FillStyle): void {
+	if (fill.gradient) {
+		const attrs: string[] = []
+		if (fill.gradient.type) attrs.push(`type="${fill.gradient.type}"`)
+		if (fill.gradient.degree !== undefined) attrs.push(`degree="${fill.gradient.degree}"`)
+		if (fill.gradient.left !== undefined) attrs.push(`left="${fill.gradient.left}"`)
+		if (fill.gradient.right !== undefined) attrs.push(`right="${fill.gradient.right}"`)
+		if (fill.gradient.top !== undefined) attrs.push(`top="${fill.gradient.top}"`)
+		if (fill.gradient.bottom !== undefined) attrs.push(`bottom="${fill.gradient.bottom}"`)
+		out.push('<fill>')
+		out.push(`<gradientFill${attrs.length > 0 ? ` ${attrs.join(' ')}` : ''}>`)
+		for (const stop of fill.gradient.stops) {
+			out.push(`<stop position="${stop.position}">`)
+			out.push(colorXml(stop.color, 'color'))
+			out.push('</stop>')
+		}
+		out.push('</gradientFill>')
+		out.push('</fill>')
+		return
+	}
 	const pattern = fill.pattern ?? 'none'
 	if (!fill.fgColor && !fill.bgColor) {
 		out.push(`<fill><patternFill patternType="${pattern}"/></fill>`)

@@ -116,6 +116,37 @@ describe('Excel conformance', () => {
 		})
 	})
 
+	describe('compatibility aliases', () => {
+		test('NORMDIST matches NORM.DIST', () => {
+			const legacy = evalFormula('NORMDIST(0, 0, 1, TRUE)')
+			const modern = evalFormula('NORM.DIST(0, 0, 1, TRUE)')
+			expect(legacy).toEqual(modern)
+		})
+
+		test('NORMSDIST matches NORM.S.DIST cumulative form', () => {
+			const legacy = evalFormula('NORMSDIST(0)')
+			const modern = evalFormula('NORM.S.DIST(0, TRUE)')
+			expect(legacy).toEqual(modern)
+		})
+
+		test('TDIST dispatches correctly for one-tailed and two-tailed forms', () => {
+			expectNum(evalFormula('TDIST(1.5, 10, 1)'), 0.0822536632, 1e-9)
+			expectNum(evalFormula('TDIST(1.5, 10, 2)'), 0.1645073264, 1e-9)
+		})
+
+		test('LOGNORMDIST matches LOGNORM.DIST cumulative form', () => {
+			const legacy = evalFormula('LOGNORMDIST(2, 0, 1)')
+			const modern = evalFormula('LOGNORM.DIST(2, 0, 1, TRUE)')
+			expect(legacy).toEqual(modern)
+		})
+
+		test('HYPGEOMDIST matches non-cumulative HYPGEOM.DIST', () => {
+			const legacy = evalFormula('HYPGEOMDIST(1, 3, 5, 10)')
+			const modern = evalFormula('HYPGEOM.DIST(1, 3, 5, 10, FALSE)')
+			expect(legacy).toEqual(modern)
+		})
+	})
+
 	describe('text', () => {
 		test('TEXT number format', () => {
 			expect(evalFormula('TEXT(1234.5, "0.00")')).toEqual(stringValue('1234.50'))
@@ -224,6 +255,22 @@ describe('Excel conformance', () => {
 			const cells = { A1: 'Apple', A2: 'Banana', A3: 'Cherry' }
 			expectNum(evalFormula('MATCH("Cherry", A1:A3, 0)', cells), 3)
 		})
+
+		test('INDIRECT resolves A1 references from text', () => {
+			expectNum(evalFormula('INDIRECT("A1")', { A1: 42 }), 42)
+		})
+
+		test('INDIRECT resolves R1C1 references when A1 mode is FALSE', () => {
+			expectNum(evalFormula('INDIRECT("R1C1", FALSE)', { A1: 7 }), 7)
+		})
+
+		test('OFFSET resolves a single-cell reference', () => {
+			expectNum(evalFormula('OFFSET(A1, 1, 1)', { A1: 1, B2: 9 }), 9)
+		})
+
+		test('OFFSET resolves a rectangular range', () => {
+			expectNum(evalFormula('SUM(OFFSET(A1, 0, 0, 2, 2))', { A1: 1, B1: 2, A2: 3, B2: 4 }), 10)
+		})
 	})
 
 	describe('dynamic arrays', () => {
@@ -279,6 +326,14 @@ describe('Excel conformance', () => {
 			recalculate(wb, defaultCalcContext())
 			expectNum(sheet.cells.get(0, 3)?.value ?? EMPTY, 10)
 			expectNum(sheet.cells.get(1, 3)?.value ?? EMPTY, 30)
+		})
+
+		test('direct LAMBDA invocation evaluates', () => {
+			expectNum(evalFormula('LAMBDA(x, x+1)(5)'), 6)
+		})
+
+		test('LET-bound lambda invocation evaluates', () => {
+			expectNum(evalFormula('LET(f, LAMBDA(x, x+1), f(5))'), 6)
 		})
 	})
 

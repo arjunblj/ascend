@@ -1,9 +1,10 @@
-import { createWorkbook, type StyleId, type Workbook } from '@ascend/core'
+import { createWorkbook, DEFAULT_STYLE_ID, type Workbook } from '@ascend/core'
 import {
 	ascendError,
 	booleanValue,
 	type CellValue,
 	type CsvDialect,
+	dateValue,
 	EMPTY,
 	err,
 	numberValue,
@@ -14,8 +15,6 @@ import {
 import { resolveDialect } from './dialect.ts'
 
 const BOM = '\uFEFF'
-const DEFAULT_STYLE_ID = 0 as StyleId
-
 export function readCsv(content: string, dialect?: Partial<CsvDialect>): Result<Workbook> {
 	const d = resolveDialect(dialect)
 	const input = content.startsWith(BOM) ? content.slice(1) : content
@@ -123,7 +122,7 @@ function detectType(raw: string): CellValue {
 
 	const date = tryParseDate(raw)
 	if (date !== null) {
-		return { kind: 'date', serial: date }
+		return dateValue(date)
 	}
 
 	return stringValue(raw)

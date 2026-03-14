@@ -6,6 +6,8 @@ export type SheetId = Brand<string, 'SheetId'>
 export type TableId = Brand<string, 'TableId'>
 export type StyleId = Brand<number, 'StyleId'>
 
+export const DEFAULT_STYLE_ID = 0 as StyleId
+
 export function createWorkbookId(): WorkbookId {
 	return crypto.randomUUID() as WorkbookId
 }

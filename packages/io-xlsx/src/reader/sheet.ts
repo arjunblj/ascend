@@ -10,11 +10,18 @@ import type {
 	SheetDataValidation,
 	StyleId,
 } from '@ascend/core'
-import { indexToColumn, parseRange, Sheet } from '@ascend/core'
+import { DEFAULT_STYLE_ID, indexToColumn, parseRange, Sheet } from '@ascend/core'
 import type { FormulaNode } from '@ascend/formulas'
 import { parseFormula } from '@ascend/formulas'
 import type { CellValue, ExcelError } from '@ascend/schema'
-import { booleanValue, EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
+import {
+	booleanValue,
+	dateValue,
+	EMPTY,
+	errorValue,
+	numberValue,
+	stringValue,
+} from '@ascend/schema'
 import { normalizeStoredFormulaText } from '../formula-storage.ts'
 import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
 import { parseAutoFilterNode } from './filtering.ts'
@@ -368,7 +375,7 @@ function parseFastCell(
 	const pool = ctx.valuePool
 	const styleIdx = rawNumAttr(rawAttrs, 's') ?? 0
 	const rawValue = extractTagText(innerXml, 'v')
-	const styleId = ctx.valuesOnly ? (0 as StyleId) : (ctx.styleIds[styleIdx] ?? (0 as StyleId))
+	const styleId = ctx.valuesOnly ? DEFAULT_STYLE_ID : (ctx.styleIds[styleIdx] ?? DEFAULT_STYLE_ID)
 	const metadataIndex = rawNumAttr(rawAttrs, 'cm')
 	const formulaSpec =
 		ctx.valuesOnly && rawValue !== undefined && rawValue !== ''
@@ -412,7 +419,7 @@ function parseFastCell(
 				? pool.internValue(stringValue(pool.internString(rawValue)))
 				: stringValue(rawValue)
 		} else if (ctx.isDateFormat[styleIdx]) {
-			value = { kind: 'date', serial: num }
+			value = dateValue(num)
 		} else {
 			value = pool ? pool.internValue(numberValue(num)) : numberValue(num)
 		}
@@ -648,7 +655,7 @@ function resolveCellToSheet(
 	const type = attr(c, 't')
 	const styleIdx = numAttr(c, 's') ?? 0
 	const rawValue = c.v
-	const styleId = ctx.valuesOnly ? (0 as StyleId) : (ctx.styleIds[styleIdx] ?? (0 as StyleId))
+	const styleId = ctx.valuesOnly ? DEFAULT_STYLE_ID : (ctx.styleIds[styleIdx] ?? DEFAULT_STYLE_ID)
 	const metadataIndex = numAttr(c, 'cm')
 	const formulaSpec =
 		ctx.valuesOnly && rawValue !== undefined && rawValue !== null && rawValue !== ''
@@ -685,7 +692,7 @@ function resolveCellToSheet(
 				? pool.internValue(stringValue(pool.internString(String(rawValue))))
 				: stringValue(String(rawValue))
 		} else if (ctx.isDateFormat[styleIdx]) {
-			value = { kind: 'date', serial: num }
+			value = dateValue(num)
 		} else {
 			value = pool ? pool.internValue(numberValue(num)) : numberValue(num)
 		}

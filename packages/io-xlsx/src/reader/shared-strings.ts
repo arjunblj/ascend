@@ -1,6 +1,16 @@
 import type { CellValue, RichTextRun } from '@ascend/schema'
-import { asArray, attr, numAttr, parseXml, type XmlNode } from '../xml.ts'
+import { stringValue } from '@ascend/schema'
+import { XMLParser } from 'fast-xml-parser'
+import { asArray, attr, numAttr, type XmlNode } from '../xml.ts'
 import { decodeXmlText, findTagEnd, isSelfClosingTag } from './xml-utils.ts'
+
+const preserveTextParser = new XMLParser({
+	attributeNamePrefix: '@_',
+	ignoreAttributes: false,
+	parseTagValue: true,
+	trimValues: false,
+	processEntities: true,
+})
 
 export interface SharedStringResolver {
 	readonly count: number
@@ -87,7 +97,7 @@ function createLazySharedStrings(
 
 			let value: CellValue
 			if (isSelfClosingTag(xml, start, tagEnd)) {
-				value = { kind: 'string', value: '' }
+				value = stringValue('')
 			} else {
 				const close = xml.indexOf('</si>', tagEnd + 1)
 				if (close === -1) {
@@ -117,7 +127,7 @@ function parseSharedStringEntries(
 		const tagEnd = findTagEnd(xml, open)
 		if (tagEnd === -1) break
 		if (isSelfClosingTag(xml, open, tagEnd)) {
-			const parsed: CellValue = { kind: 'string', value: '' }
+			const parsed: CellValue = stringValue('')
 			entries.push(normalize ? normalize(parsed) : parsed)
 			cursor = tagEnd + 1
 			continue
@@ -136,7 +146,7 @@ function parseSharedStringEntriesWithDom(
 	normalize?: (value: CellValue) => CellValue,
 ): CellValue[] {
 	const entries: CellValue[] = []
-	const doc = parseXml(xml)
+	const doc = preserveTextParser.parse(xml) as XmlNode
 	const sst = doc.sst as XmlNode | undefined
 	if (!sst) return entries
 	for (const si of asArray<XmlNode>(sst.si as XmlNode | XmlNode[])) {
@@ -149,7 +159,7 @@ function parseSharedStringEntriesWithDom(
 function parseSharedStringChunk(chunk: string): CellValue {
 	if (!chunk.includes('<r')) {
 		const text = extractTextContent(chunk)
-		if (text !== undefined) return { kind: 'string', value: text }
+		if (text !== undefined) return stringValue(text)
 	}
 
 	const runs: RichTextRun[] = []
@@ -165,7 +175,7 @@ function parseSharedStringChunk(chunk: string): CellValue {
 		runs.push(parseRunChunk(runBody))
 		cursor = runClose + 4
 	}
-	if (runs.length === 0) return { kind: 'string', value: '' }
+	if (runs.length === 0) return stringValue('')
 	const first = runs[0]
 	if (
 		runs.length === 1 &&
@@ -178,26 +188,26 @@ function parseSharedStringChunk(chunk: string): CellValue {
 		!first.fontSize &&
 		!first.color
 	) {
-		return { kind: 'string', value: first.text }
+		return stringValue(first.text)
 	}
 	return { kind: 'richText', runs }
 }
 
 function parseSharedStringNode(si: XmlNode): CellValue {
 	if (si.t !== undefined) {
-		return { kind: 'string', value: String(si.t) }
+		return stringValue(getXmlTextValue(si.t))
 	}
 	if (si.r !== undefined) {
 		return parseRichText(si)
 	}
-	return { kind: 'string', value: '' }
+	return stringValue('')
 }
 
 function parseRichText(si: XmlNode): CellValue {
 	const runs: RichTextRun[] = []
 
 	for (const r of asArray<XmlNode>(si.r as XmlNode | XmlNode[])) {
-		const text = r.t !== undefined ? String(r.t) : ''
+		const text = r.t !== undefined ? getXmlTextValue(r.t) : ''
 		const rPr = r.rPr as XmlNode | undefined
 
 		if (rPr && typeof rPr === 'object') {
@@ -227,7 +237,7 @@ function parseRichText(si: XmlNode): CellValue {
 		!first.fontSize &&
 		!first.color
 	) {
-		return { kind: 'string', value: first.text }
+		return stringValue(first.text)
 	}
 
 	return { kind: 'richText', runs }
@@ -270,6 +280,20 @@ function parseFontProps(rPr: XmlNode): Pick<RichTextRun, 'fontName' | 'fontSize'
 	}
 
 	return result
+}
+
+function getXmlTextValue(node: unknown): string {
+	if (node === undefined || node === null) return ''
+	if (typeof node === 'string' || typeof node === 'number' || typeof node === 'boolean') {
+		return String(node)
+	}
+	if (typeof node === 'object') {
+		const text = (node as Record<string, unknown>)['#text']
+		if (typeof text === 'string' || typeof text === 'number' || typeof text === 'boolean') {
+			return String(text)
+		}
+	}
+	return ''
 }
 
 function parseFontPropsChunk(chunk: string): Pick<RichTextRun, 'fontName' | 'fontSize' | 'color'> {

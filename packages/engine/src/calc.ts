@@ -1,9 +1,10 @@
+import type { StyleId } from '@ascend/core'
 import {
+	DEFAULT_STYLE_ID,
 	indexToColumn,
 	parseA1,
 	parseRange,
 	type RangeRef,
-	type StyleId,
 	type Workbook,
 } from '@ascend/core'
 import {
@@ -612,7 +613,7 @@ export function recalculate(
 					const hadCell = sheet.cells.has(row, col)
 					const oldValue = sheet.cells.readValue(row, col)
 					const oldFormula = sheet.cells.readFormula(row, col) ?? null
-					const oldStyleId = sheet.cells.readStyleId(row, col) ?? (0 as StyleId)
+					const oldStyleId = sheet.cells.readStyleId(row, col) ?? DEFAULT_STYLE_ID
 					const oldFormulaInfo = sheet.cells.readFormulaInfo(row, col)
 					const clearedSpill =
 						oldFormulaInfo && isSpillBinding(oldFormulaInfo) && oldFormulaInfo.isAnchor
@@ -671,7 +672,7 @@ export function recalculate(
 			const hadCell = sheet.cells.has(row, col)
 			const oldValue = sheet.cells.readValue(row, col)
 			const oldFormula = sheet.cells.readFormula(row, col) ?? null
-			const oldStyleId = sheet.cells.readStyleId(row, col) ?? (0 as StyleId)
+			const oldStyleId = sheet.cells.readStyleId(row, col) ?? DEFAULT_STYLE_ID
 			const oldFormulaInfo = sheet.cells.readFormulaInfo(row, col)
 			const spillMatrix = toScalarMatrix(newValue)
 			if (spillMatrix) {
@@ -839,7 +840,7 @@ function evalIterative(
 			const hadCell = sheet.cells.has(row, col)
 			const oldValue = sheet.cells.readValue(row, col)
 			const oldFormula = sheet.cells.readFormula(row, col) ?? null
-			const oldStyleId = sheet.cells.readStyleId(row, col) ?? (0 as StyleId)
+			const oldStyleId = sheet.cells.readStyleId(row, col) ?? DEFAULT_STYLE_ID
 			const oldFormulaInfo = sheet.cells.readFormulaInfo(row, col)
 			const spillMatrix = toScalarMatrix(newValue)
 			if (spillMatrix) {
@@ -899,7 +900,7 @@ function evalIterative(
 		const hadCell = sheet.cells.has(row, col)
 		const oldValue = sheet.cells.readValue(row, col)
 		const oldFormula = sheet.cells.readFormula(row, col) ?? null
-		const oldStyleId = sheet.cells.readStyleId(row, col) ?? (0 as StyleId)
+		const oldStyleId = sheet.cells.readStyleId(row, col) ?? DEFAULT_STYLE_ID
 		const oldFormulaInfo = sheet.cells.readFormulaInfo(row, col)
 		const spillMatrix = toScalarMatrix(newValue)
 		if (spillMatrix) {

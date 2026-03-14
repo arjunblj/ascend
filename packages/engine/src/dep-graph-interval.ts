@@ -10,6 +10,7 @@ interface RangeEntry {
 
 export class IntervalIndex {
 	private entries: RangeEntry[] = []
+	private formulaIndices = new Map<CellKey, Set<number>>()
 	private subMax: Int32Array | null = null
 	private dirty = true
 
@@ -20,7 +21,14 @@ export class IntervalIndex {
 		endCol: number,
 		formulaKey: CellKey,
 	): void {
+		const index = this.entries.length
 		this.entries.push({ startRow, endRow, startCol, endCol, formulaKey })
+		let indices = this.formulaIndices.get(formulaKey)
+		if (!indices) {
+			indices = new Set()
+			this.formulaIndices.set(formulaKey, indices)
+		}
+		indices.add(index)
 		this.dirty = true
 	}
 
@@ -33,17 +41,15 @@ export class IntervalIndex {
 	}
 
 	remove(formulaKey: CellKey): void {
-		let write = 0
-		for (let i = 0; i < this.entries.length; i++) {
-			const entry = this.entries[i] as RangeEntry
-			if (entry.formulaKey !== formulaKey) {
-				this.entries[write++] = entry
-			}
+		const indices = this.formulaIndices.get(formulaKey)
+		if (!indices || indices.size === 0) return
+		while (indices.size > 0) {
+			const index = indices.values().next().value
+			if (index === undefined) break
+			this.removeAt(index)
 		}
-		if (write < this.entries.length) {
-			this.entries.length = write
-			this.dirty = true
-		}
+		this.formulaIndices.delete(formulaKey)
+		this.dirty = true
 	}
 
 	get size(): number {
@@ -54,8 +60,37 @@ export class IntervalIndex {
 		this.entries.sort((a, b) => a.startRow - b.startRow)
 		const n = this.entries.length
 		this.subMax = new Int32Array(n)
+		this.formulaIndices.clear()
+		for (let i = 0; i < n; i++) {
+			const entry = this.entries[i] as RangeEntry
+			let indices = this.formulaIndices.get(entry.formulaKey)
+			if (!indices) {
+				indices = new Set()
+				this.formulaIndices.set(entry.formulaKey, indices)
+			}
+			indices.add(i)
+		}
 		this.computeSubMax(0, n - 1)
 		this.dirty = false
+	}
+
+	private removeAt(index: number): void {
+		const lastIndex = this.entries.length - 1
+		if (index < 0 || index > lastIndex) return
+		const removed = this.entries[index] as RangeEntry
+		const removedIndices = this.formulaIndices.get(removed.formulaKey)
+		removedIndices?.delete(index)
+		if (index !== lastIndex) {
+			const lastEntry = this.entries[lastIndex] as RangeEntry
+			this.entries[index] = lastEntry
+			const lastIndices = this.formulaIndices.get(lastEntry.formulaKey)
+			lastIndices?.delete(lastIndex)
+			lastIndices?.add(index)
+		}
+		this.entries.pop()
+		if (removedIndices && removedIndices.size === 0) {
+			this.formulaIndices.delete(removed.formulaKey)
+		}
 	}
 
 	private computeSubMax(lo: number, hi: number): number {

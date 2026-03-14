@@ -110,6 +110,12 @@ function printNode(node: FormulaNode): string {
 		case 'name':
 			return (node.sheet !== undefined ? formatSheet(node.sheet) : '') + node.name
 		case 'function':
+			if (node.name === '__CALL__') {
+				const [callee, ...args] = node.args
+				if (!callee) return '__CALL__()'
+				const calleeStr = callee.type === 'binary' ? `(${printNode(callee)})` : printNode(callee)
+				return `${calleeStr}(${args.map(printFunctionArg).join(',')})`
+			}
 			return `${node.name}(${node.args.map(printFunctionArg).join(',')})`
 		case 'binary':
 			return printBinary(node)

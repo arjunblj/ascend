@@ -2,19 +2,11 @@ import { describe, expect, it } from 'bun:test'
 import type { StyleId } from '@ascend/core'
 import { Workbook } from '@ascend/core'
 import { stringValue } from '@ascend/schema'
-import { strToU8, zipSync } from 'fflate'
+import { makeXlsx } from '../../test/helpers.ts'
 import { writeXlsx } from '../writer/index.ts'
 import { readXlsx } from './index.ts'
 
 const S0 = 0 as StyleId
-
-function makeXlsx(parts: Record<string, string>): Uint8Array {
-	const entries: Record<string, Uint8Array> = {}
-	for (const [path, content] of Object.entries(parts)) {
-		entries[path] = strToU8(content)
-	}
-	return zipSync(entries)
-}
 
 const CONTENT_TYPES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">

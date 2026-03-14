@@ -208,13 +208,15 @@ class FormulaParser {
 
 	private parsePostfix(): FormulaNode {
 		let node = this.parseAtom()
-		while (this.isOp('%', '#')) {
-			const op = this.advance(true).value
-			if (op === '%') {
-				node = { type: 'unary', op: '%' as const, operand: node }
-			} else {
-				node = { type: 'spillRef', target: node }
+		while (true) {
+			if (this.peek(true).type === TokenType.OpenParen) {
+				node = this.parsePostfixCall(node)
+				continue
 			}
+			if (!this.isOp('%', '#')) break
+			const op = this.advance(true).value
+			if (op === '%') node = { type: 'unary', op: '%' as const, operand: node }
+			else node = { type: 'spillRef', target: node }
 		}
 		return node
 	}
@@ -303,6 +305,16 @@ class FormulaParser {
 
 	private parseFunctionCall(): FormulaNode {
 		const name = this.advance(true).value
+		const args = this.parseCallArgs()
+		return { type: 'function', name, args }
+	}
+
+	private parsePostfixCall(callee: FormulaNode): FormulaNode {
+		const args = this.parseCallArgs()
+		return { type: 'function', name: '__CALL__', args: [callee, ...args] }
+	}
+
+	private parseCallArgs(): FormulaNode[] {
 		this.expect(TokenType.OpenParen)
 		const args: FormulaNode[] = []
 
@@ -315,7 +327,7 @@ class FormulaParser {
 		}
 
 		this.expect(TokenType.CloseParen)
-		return { type: 'function', name, args }
+		return args
 	}
 
 	private parseArgOrMissing(): FormulaNode {

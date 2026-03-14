@@ -1,5 +1,5 @@
 import type { CellStyle, StyleId } from '@ascend/core'
-import { Workbook } from '@ascend/core'
+import { DEFAULT_STYLE_ID, Workbook } from '@ascend/core'
 import type {
 	AscendError,
 	CompatibilityReport,
@@ -272,7 +272,7 @@ export function readXlsx(
 							tableStyleCount: 0,
 						},
 					}
-			styleIds = new Array<StyleId>(parsedStyles.isDateFormat.length).fill(0 as StyleId)
+			styleIds = new Array<StyleId>(parsedStyles.isDateFormat.length).fill(DEFAULT_STYLE_ID)
 			isDateFormat = parsedStyles.isDateFormat
 			differentialStyles = []
 			workbook.styleMetadata = parsedStyles.metadata

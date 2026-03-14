@@ -1,5 +1,5 @@
-import type { StyleId } from './ids.ts'
-import type { BorderEdge, CellStyle, Color } from './style.ts'
+import { DEFAULT_STYLE_ID, type StyleId } from './ids.ts'
+import type { BorderEdge, CellStyle, Color, GradientFill } from './style.ts'
 
 export const DEFAULT_STYLE: CellStyle = Object.freeze({}) as CellStyle
 const DEFAULT_STYLE_HASH = styleHash(DEFAULT_STYLE)
@@ -45,6 +45,33 @@ function styleHash(style: CellStyle): number {
 		h = fnv1aStr(h, fill.pattern ?? '')
 		h = colorHash(h, fill.fgColor)
 		h = colorHash(h, fill.bgColor)
+		if (fill.gradient) {
+			h = fnv1aStr(h, fill.gradient.type ?? '')
+			h = fnv1aNum(
+				h,
+				fill.gradient.degree !== undefined ? Math.round(fill.gradient.degree * 10000) : undefined,
+			)
+			h = fnv1aNum(
+				h,
+				fill.gradient.left !== undefined ? Math.round(fill.gradient.left * 10000) : undefined,
+			)
+			h = fnv1aNum(
+				h,
+				fill.gradient.right !== undefined ? Math.round(fill.gradient.right * 10000) : undefined,
+			)
+			h = fnv1aNum(
+				h,
+				fill.gradient.top !== undefined ? Math.round(fill.gradient.top * 10000) : undefined,
+			)
+			h = fnv1aNum(
+				h,
+				fill.gradient.bottom !== undefined ? Math.round(fill.gradient.bottom * 10000) : undefined,
+			)
+			for (const stop of fill.gradient.stops) {
+				h = fnv1aNum(h, Math.round(stop.position * 10000))
+				h = colorHash(h, stop.color)
+			}
+		}
 	}
 	if (border) {
 		h = borderEdgeHash(h, border.top)
@@ -72,42 +99,123 @@ function styleHash(style: CellStyle): number {
 	return h >>> 0
 }
 
-function styleFingerprint(style: CellStyle): string {
-	const font = style.font
-	const fill = style.fill
-	const border = style.border
-	const alignment = style.alignment
-	const protection = style.protection
-	const parts: string[] = [
-		font?.name ?? '',
-		String(font?.size ?? ''),
-		String(font?.bold ?? ''),
-		String(font?.italic ?? ''),
-		String(font?.underline ?? ''),
-		String(font?.strikethrough ?? ''),
-		colorKey(font?.color),
-		fill?.pattern ?? '',
-		colorKey(fill?.fgColor),
-		colorKey(fill?.bgColor),
-		borderEdgeKey(border?.top),
-		borderEdgeKey(border?.bottom),
-		borderEdgeKey(border?.left),
-		borderEdgeKey(border?.right),
-		borderEdgeKey(border?.diagonal),
-		String(border?.diagonalUp ?? ''),
-		String(border?.diagonalDown ?? ''),
-		alignment?.horizontal ?? '',
-		alignment?.vertical ?? '',
-		String(alignment?.wrapText ?? ''),
-		String(alignment?.shrinkToFit ?? ''),
-		String(alignment?.textRotation ?? ''),
-		String(alignment?.indent ?? ''),
-		String(alignment?.readingOrder ?? ''),
-		style.numberFormat ?? '',
-		String(protection?.locked ?? ''),
-		String(protection?.hidden ?? ''),
-	]
-	return parts.join('|')
+function styleEquals(left: CellStyle, right: CellStyle): boolean {
+	return (
+		fontEquals(left.font, right.font) &&
+		fillEquals(left.fill, right.fill) &&
+		borderEquals(left.border, right.border) &&
+		alignmentEquals(left.alignment, right.alignment) &&
+		left.numberFormat === right.numberFormat &&
+		protectionEquals(left.protection, right.protection)
+	)
+}
+
+function fontEquals(
+	left: CellStyle['font'] | undefined,
+	right: CellStyle['font'] | undefined,
+): boolean {
+	return (
+		left?.name === right?.name &&
+		left?.size === right?.size &&
+		left?.bold === right?.bold &&
+		left?.italic === right?.italic &&
+		left?.underline === right?.underline &&
+		left?.strikethrough === right?.strikethrough &&
+		colorEquals(left?.color, right?.color)
+	)
+}
+
+function fillEquals(
+	left: CellStyle['fill'] | undefined,
+	right: CellStyle['fill'] | undefined,
+): boolean {
+	return (
+		left?.pattern === right?.pattern &&
+		colorEquals(left?.fgColor, right?.fgColor) &&
+		colorEquals(left?.bgColor, right?.bgColor) &&
+		gradientEquals(left?.gradient, right?.gradient)
+	)
+}
+
+function borderEquals(
+	left: CellStyle['border'] | undefined,
+	right: CellStyle['border'] | undefined,
+): boolean {
+	return (
+		borderEdgeEquals(left?.top, right?.top) &&
+		borderEdgeEquals(left?.bottom, right?.bottom) &&
+		borderEdgeEquals(left?.left, right?.left) &&
+		borderEdgeEquals(left?.right, right?.right) &&
+		borderEdgeEquals(left?.diagonal, right?.diagonal) &&
+		left?.diagonalUp === right?.diagonalUp &&
+		left?.diagonalDown === right?.diagonalDown
+	)
+}
+
+function alignmentEquals(
+	left: CellStyle['alignment'] | undefined,
+	right: CellStyle['alignment'] | undefined,
+): boolean {
+	return (
+		left?.horizontal === right?.horizontal &&
+		left?.vertical === right?.vertical &&
+		left?.wrapText === right?.wrapText &&
+		left?.shrinkToFit === right?.shrinkToFit &&
+		left?.textRotation === right?.textRotation &&
+		left?.indent === right?.indent &&
+		left?.readingOrder === right?.readingOrder
+	)
+}
+
+function protectionEquals(
+	left: CellStyle['protection'] | undefined,
+	right: CellStyle['protection'] | undefined,
+): boolean {
+	return left?.locked === right?.locked && left?.hidden === right?.hidden
+}
+
+function gradientEquals(left: GradientFill | undefined, right: GradientFill | undefined): boolean {
+	if (left === right) return true
+	if (!left || !right) return false
+	if (
+		left.type !== right.type ||
+		left.degree !== right.degree ||
+		left.left !== right.left ||
+		left.right !== right.right ||
+		left.top !== right.top ||
+		left.bottom !== right.bottom ||
+		left.stops.length !== right.stops.length
+	) {
+		return false
+	}
+	for (let i = 0; i < left.stops.length; i++) {
+		const leftStop = left.stops[i]
+		const rightStop = right.stops[i]
+		if (!leftStop || !rightStop) return false
+		if (leftStop.position !== rightStop.position || !colorEquals(leftStop.color, rightStop.color)) {
+			return false
+		}
+	}
+	return true
+}
+
+function colorEquals(left: Color | undefined, right: Color | undefined): boolean {
+	if (left === right) return true
+	if (!left || !right || left.kind !== right.kind) return false
+	switch (left.kind) {
+		case 'theme':
+			return right.kind === 'theme' && left.theme === right.theme && left.tint === right.tint
+		case 'rgb':
+			return right.kind === 'rgb' && left.rgb === right.rgb
+		case 'indexed':
+			return right.kind === 'indexed' && left.index === right.index
+		default:
+			return true
+	}
+}
+
+function borderEdgeEquals(left: BorderEdge | undefined, right: BorderEdge | undefined): boolean {
+	return left?.style === right?.style && colorEquals(left?.color, right?.color)
 }
 
 function colorHash(h: number, c: Color | undefined): number {
@@ -124,23 +232,10 @@ function colorHash(h: number, c: Color | undefined): number {
 	return h
 }
 
-function colorKey(c: Color | undefined): string {
-	if (!c) return ''
-	if (c.kind === 'theme') return `theme:${c.theme}:${c.tint ?? ''}`
-	if (c.kind === 'rgb') return `rgb:${c.rgb}`
-	if (c.kind === 'indexed') return `idx:${c.index}`
-	return 'auto'
-}
-
 function borderEdgeHash(h: number, e: BorderEdge | undefined): number {
 	if (!e) return h
 	h = fnv1aStr(h, e.style ?? '')
 	return colorHash(h, e.color)
-}
-
-function borderEdgeKey(e: BorderEdge | undefined): string {
-	if (!e) return ''
-	return `${e.style ?? ''}:${colorKey(e.color)}`
 }
 
 function cloneColor(c: Color): Color {
@@ -162,6 +257,15 @@ function cloneStyle(style: CellStyle): CellStyle {
 		const fill: Record<string, unknown> = { ...style.fill }
 		if (style.fill.fgColor) fill.fgColor = cloneColor(style.fill.fgColor)
 		if (style.fill.bgColor) fill.bgColor = cloneColor(style.fill.bgColor)
+		if (style.fill.gradient) {
+			fill.gradient = {
+				...style.fill.gradient,
+				stops: style.fill.gradient.stops.map((stop) => ({
+					...stop,
+					color: cloneColor(stop.color),
+				})),
+			}
+		}
 		result.fill = fill
 	}
 	if (style.border) {
@@ -187,17 +291,16 @@ export class StyleRegistry {
 	private shared = false
 
 	constructor() {
-		this.hashBuckets.set(DEFAULT_STYLE_HASH, [0 as StyleId])
+		this.hashBuckets.set(DEFAULT_STYLE_HASH, [DEFAULT_STYLE_ID])
 	}
 
 	register(style: CellStyle): StyleId {
 		const hash = styleHash(style)
 		const bucket = this.hashBuckets.get(hash)
 		if (bucket) {
-			const fp = styleFingerprint(style)
 			for (const id of bucket) {
 				const s = this.styles[id]
-				if (s && styleFingerprint(s) === fp) return id
+				if (s && styleEquals(s, style)) return id
 			}
 		}
 

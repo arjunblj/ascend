@@ -1,0 +1,5 @@
+*.xlsx
+!LICENSE
+!download.sh
+!run.sh
+!.gitignore

@@ -1539,6 +1539,43 @@ describe('AscendWorkbook', () => {
 		expect(wb.sheets).toEqual(['Sheet1'])
 	})
 
+	test('convenience methods addSheet, deleteSheet, insertRows, deleteRows', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'a' },
+					{ ref: 'A2', value: 'b' },
+					{ ref: 'A3', value: 'c' },
+				],
+			},
+		])
+
+		const addResult = wb.addSheet('Extra')
+		expect(addResult.errors).toHaveLength(0)
+		expect(wb.sheets).toEqual(['Sheet1', 'Extra'])
+
+		const deleteResult = wb.deleteSheet('Extra')
+		expect(deleteResult.errors).toHaveLength(0)
+		expect(wb.sheets).toEqual(['Sheet1'])
+
+		const insertResult = wb.insertRows('Sheet1', 1, 2)
+		expect(insertResult.errors).toHaveLength(0)
+		expect(wb.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'a' })
+		expect(wb.sheet('Sheet1')?.cell('A2')).toBeUndefined()
+		expect(wb.sheet('Sheet1')?.cell('A3')).toBeUndefined()
+		expect(wb.sheet('Sheet1')?.cell('A4')?.value).toEqual({ kind: 'string', value: 'b' })
+		expect(wb.sheet('Sheet1')?.cell('A5')?.value).toEqual({ kind: 'string', value: 'c' })
+
+		const deleteRowsResult = wb.deleteRows('Sheet1', 1, 2)
+		expect(deleteRowsResult.errors).toHaveLength(0)
+		expect(wb.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'a' })
+		expect(wb.sheet('Sheet1')?.cell('A2')?.value).toEqual({ kind: 'string', value: 'b' })
+		expect(wb.sheet('Sheet1')?.cell('A3')?.value).toEqual({ kind: 'string', value: 'c' })
+	})
+
 	test('SheetHandle exposes comments, hyperlinks, merges, frozenPanes, protection, autoFilter', () => {
 		const wb = AscendWorkbook.create()
 		const handle = wb.sheet('Sheet1')

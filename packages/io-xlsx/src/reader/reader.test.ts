@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import type { StyleId } from '@ascend/core'
-import { strToU8, zipSync } from 'fflate'
+import { makeXlsx } from '../../test/helpers.ts'
 import { readXlsx } from './index.ts'
 import type { StreamedSheetRow } from './sheet.ts'
 import { readXlsxRowsStream } from './stream.ts'
@@ -22,14 +22,6 @@ function expectErr<T, E>(
 } {
 	expect(result.ok).toBe(false)
 	if (result.ok) throw new Error('Expected readXlsx to fail')
-}
-
-function makeXlsx(parts: Record<string, string>): Uint8Array {
-	const entries: Record<string, Uint8Array> = {}
-	for (const [path, content] of Object.entries(parts)) {
-		entries[path] = strToU8(content)
-	}
-	return zipSync(entries)
 }
 
 const CONTENT_TYPES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -327,7 +319,7 @@ describe('readXlsx', () => {
 			'xl/workbook.xml': WORKBOOK_XML,
 			'xl/sharedStrings.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2" uniqueCount="2">
-  <si><t xml:space="preserve">&lt;tag&gt; &amp; &quot;q&quot;</t></si>
+  <si><t xml:space="preserve">  &lt;tag&gt; &amp; &quot;q&quot;  </t></si>
   <si><t/></si>
 </sst>`,
 			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -346,11 +338,40 @@ describe('readXlsx', () => {
 
 		expect(result.value.workbook.sheets[0]?.cells.get(0, 0)?.value).toEqual({
 			kind: 'string',
-			value: '<tag> & "q"',
+			value: '  <tag> & "q"  ',
 		})
 		expect(result.value.workbook.sheets[0]?.cells.get(0, 1)?.value).toEqual({
 			kind: 'string',
 			value: '',
+		})
+	})
+
+	it('preserves xml:space text in DOM fallback rich-text parsing', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">
+  <si><r><rPr><b/></rPr><t xml:space="preserve">  hi  </t></r></si>
+</sst>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1" t="s"><v>0</v></c>
+    </row>
+  </sheetData>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		expect(result.value.workbook.sheets[0]?.cells.get(0, 0)?.value).toEqual({
+			kind: 'richText',
+			runs: [{ text: '  hi  ', bold: true }],
 		})
 	})
 
@@ -1288,6 +1309,67 @@ describe('readXlsx', () => {
 			cellXfCount: 2,
 			dxfCount: 2,
 			tableStyleCount: 1,
+		})
+	})
+
+	it('parses gradient fills into the style model', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>`,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/styles.xml': `<?xml version="1.0"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="1"><font/></fonts>
+  <fills count="3">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+    <fill>
+      <gradientFill type="linear" degree="45">
+        <stop position="0"><color rgb="FFFF0000"/></stop>
+        <stop position="1"><color theme="1" tint="0.25"/></stop>
+      </gradientFill>
+    </fill>
+  </fills>
+  <borders count="1"><border/></borders>
+  <cellStyleXfs count="1"><xf/></cellStyleXfs>
+  <cellXfs count="2">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
+    <xf numFmtId="0" fontId="0" fillId="2" borderId="0"/>
+  </cellXfs>
+</styleSheet>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1"><c r="A1" s="1"><v>1</v></c></row>
+  </sheetData>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		const styleId = result.value.workbook.sheets[0]?.cells.get(0, 0)?.styleId ?? S0
+		expect(result.value.workbook.styles.get(styleId)?.fill).toEqual({
+			gradient: {
+				type: 'linear',
+				degree: 45,
+				stops: [
+					{ position: 0, color: { kind: 'rgb', rgb: 'FFFF0000' } },
+					{ position: 1, color: { kind: 'theme', theme: 1, tint: 0.25 } },
+				],
+			},
 		})
 	})
 

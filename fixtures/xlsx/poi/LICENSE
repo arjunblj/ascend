@@ -1,0 +1,13 @@
+XLSX test fixture subset
+
+Apache POI files:
+  Source: https://github.com/apache/poi/tree/trunk/test-data/spreadsheet
+  Copyright 2002-2025 The Apache Software Foundation
+  Licensed under the Apache License, Version 2.0
+  http://www.apache.org/licenses/LICENSE-2.0
+
+SheetJS files:
+  Source: https://oss.sheetjs.com/test_files/
+  Copyright SheetJS LLC
+  Licensed under the Apache License, Version 2.0
+  http://www.apache.org/licenses/LICENSE-2.0

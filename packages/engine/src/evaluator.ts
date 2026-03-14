@@ -35,7 +35,7 @@ export interface EvalContext {
 	readonly row: number
 	readonly col: number
 	readonly definedNameStack?: readonly string[]
-	readonly letBindings?: ReadonlyMap<string, CellValue>
+	readonly letBindings?: ReadonlyMap<string, LetBinding>
 	readonly exactLookupCache?: ExactLookupCache
 	readonly lookupVectorCache?: LookupVectorCache
 	readonly aggregateRangeCache?: AggregateRangeCache
@@ -91,6 +91,18 @@ export { invalidateSheetIndexCache } from './sheet-index.ts'
 
 const EXCEL_MAX_ROWS = 1_048_576
 const EXCEL_MAX_COLS = 16_384
+
+interface LambdaInfo {
+	readonly params: readonly string[]
+	readonly body: FormulaNode
+	readonly ctx: EvalContext
+}
+
+type LetBinding = CellValue | LambdaInfo
+
+function isLambdaBinding(binding: LetBinding): binding is LambdaInfo {
+	return typeof binding === 'object' && binding !== null && 'params' in binding && 'body' in binding
+}
 
 type RangeValueCache = Map<string, readonly (readonly CellValue[])[]>
 let activeRangeValueCache: RangeValueCache | null = null
@@ -408,6 +420,9 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 	if (upperName === 'IFS') {
 		return evalIfs(argNodes, ctx)
 	}
+	if (upperName === '__CALL__') {
+		return evalCall(argNodes, ctx)
+	}
 
 	const def = functionRegistry.get(upperName)
 	if (!def) {
@@ -525,7 +540,8 @@ function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
 
 	if (node.type === 'name') {
 		if (!node.sheet && ctx.letBindings?.has(node.name.toLowerCase())) {
-			const bound = ctx.letBindings.get(node.name.toLowerCase()) as CellValue
+			const bound = ctx.letBindings.get(node.name.toLowerCase()) as LetBinding
+			if (isLambdaBinding(bound)) return { value: errorValue('#CALC!') }
 			if (bound.kind === 'array') return { value: bound, kind: 'range', values: bound.rows }
 			return { value: bound }
 		}
@@ -1078,12 +1094,6 @@ function makeWholeColumnArg(
 	])
 }
 
-interface LambdaInfo {
-	readonly params: readonly string[]
-	readonly body: FormulaNode
-	readonly ctx: EvalContext
-}
-
 function extractLambda(node: FormulaNode, ctx: EvalContext): LambdaInfo | null {
 	if (node.type === 'function' && node.name.toUpperCase() === 'LAMBDA') {
 		if (node.args.length < 2) return null
@@ -1096,7 +1106,10 @@ function extractLambda(node: FormulaNode, ctx: EvalContext): LambdaInfo | null {
 		return { params, body: node.args[node.args.length - 1] as FormulaNode, ctx }
 	}
 	if (node.type === 'name') {
-		if (!node.sheet && ctx.letBindings?.has(node.name.toLowerCase())) return null
+		if (!node.sheet && ctx.letBindings?.has(node.name.toLowerCase())) {
+			const bound = ctx.letBindings.get(node.name.toLowerCase()) as LetBinding
+			return isLambdaBinding(bound) ? bound : null
+		}
 		const resolved = resolveDefinedName(node.name, node.sheet, ctx)
 		if (!resolved) return null
 		return extractLambda(resolved.ast, resolved.ctx)
@@ -1105,6 +1118,8 @@ function extractLambda(node: FormulaNode, ctx: EvalContext): LambdaInfo | null {
 }
 
 function extractLambdaFromName(name: string, ctx: EvalContext): LambdaInfo | null {
+	const letBound = ctx.letBindings?.get(name.toLowerCase())
+	if (letBound && isLambdaBinding(letBound)) return letBound
 	const resolved = resolveDefinedName(name, undefined, ctx)
 	if (!resolved) return null
 	return extractLambda(resolved.ast, resolved.ctx)
@@ -1112,11 +1127,22 @@ function extractLambdaFromName(name: string, ctx: EvalContext): LambdaInfo | nul
 
 function invokeLambda(lambda: LambdaInfo, args: readonly CellValue[]): CellValue {
 	if (lambda.params.length !== args.length) return errorValue('#VALUE!')
-	const bindings = new Map<string, CellValue>(lambda.ctx.letBindings)
+	const bindings = new Map<string, LetBinding>(lambda.ctx.letBindings)
 	for (let i = 0; i < lambda.params.length; i++) {
 		bindings.set(lambda.params[i] as string, args[i] as CellValue)
 	}
 	return evaluate(lambda.body, { ...lambda.ctx, letBindings: bindings })
+}
+
+function evalCall(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
+	const [callee, ...argExprs] = argNodes
+	if (!callee) return errorValue('#VALUE!')
+	const lambda = extractLambda(callee, ctx)
+	if (!lambda) return errorValue('#VALUE!')
+	return invokeLambda(
+		lambda,
+		argExprs.map((arg) => evaluate(arg, ctx)),
+	)
 }
 
 function evalMap(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
@@ -1333,13 +1359,14 @@ function countSheetsOf(arg: EvalArg): number | null {
 
 function evalLet(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
 	if (argNodes.length < 3 || argNodes.length % 2 === 0) return errorValue('#VALUE!')
-	const bindings = new Map<string, CellValue>(ctx.letBindings)
+	const bindings = new Map<string, LetBinding>(ctx.letBindings)
 	for (let i = 0; i < argNodes.length - 1; i += 2) {
 		const nameNode = argNodes[i] as FormulaNode
 		const valueNode = argNodes[i + 1] as FormulaNode
 		if (nameNode.type !== 'name') return errorValue('#VALUE!')
 		const boundCtx: EvalContext = { ...ctx, letBindings: bindings }
-		bindings.set(nameNode.name.toLowerCase(), evaluate(valueNode, boundCtx))
+		const lambda = extractLambda(valueNode, boundCtx)
+		bindings.set(nameNode.name.toLowerCase(), lambda ?? evaluate(valueNode, boundCtx))
 	}
 	const bodyNode = argNodes[argNodes.length - 1] as FormulaNode
 	return evaluate(bodyNode, { ...ctx, letBindings: bindings })
@@ -1391,7 +1418,8 @@ function parseR1C1Coordinate(token: string, currentIndex: number): number {
 
 function evaluateDefinedName(name: string, sheet: string | undefined, ctx: EvalContext): CellValue {
 	if (!sheet && ctx.letBindings?.has(name.toLowerCase())) {
-		return ctx.letBindings.get(name.toLowerCase()) as CellValue
+		const bound = ctx.letBindings.get(name.toLowerCase()) as LetBinding
+		return isLambdaBinding(bound) ? errorValue('#CALC!') : bound
 	}
 	const resolved = resolveDefinedName(name, sheet, ctx)
 	if (!resolved) return errorValue('#NAME?')

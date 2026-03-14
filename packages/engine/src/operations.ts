@@ -11,7 +11,14 @@ import type {
 	StyleId,
 	Workbook,
 } from '@ascend/core'
-import { createTableId, parseA1, parseA1Safe, parseRange, toA1 } from '@ascend/core'
+import {
+	createTableId,
+	DEFAULT_STYLE_ID,
+	parseA1,
+	parseA1Safe,
+	parseRange,
+	toA1,
+} from '@ascend/core'
 import type { FormulaCellRef, FormulaNode } from '@ascend/formulas'
 import {
 	cachedParseFormula,
@@ -54,7 +61,7 @@ export interface PatchResult {
 	readonly warnings?: readonly AscendError[]
 }
 
-const DEFAULT_SID = 0 as StyleId
+const DEFAULT_SID = DEFAULT_STYLE_ID
 
 function inputToCellValue(input: InputValue, dateSystem: '1900' | '1904' = '1900'): CellValue {
 	if (input === null) return EMPTY

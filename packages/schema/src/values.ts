@@ -89,6 +89,10 @@ export function errorValue(v: ExcelError): CellValue {
 	return ERROR_CACHE[v] ?? { kind: 'error', value: v }
 }
 
+export function dateValue(serial: number): CellValue {
+	return { kind: 'date', serial }
+}
+
 export function arrayValue(rows: readonly (readonly ScalarCellValue[])[]): CellValue {
 	return { kind: 'array', rows }
 }

@@ -31,6 +31,10 @@ export const REL_SLICER_CACHE = 'http://schemas.microsoft.com/office/2007/relati
 export const REL_VML_DRAWING =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing'
 
+const STRICT_REL_PREFIX = 'http://purl.oclc.org/ooxml/officeDocument/relationships/'
+const TRANSITIONAL_REL_PREFIX =
+	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
+
 const RELATIONSHIP_RE = /<Relationship\b([^>]*)\/>/g
 const ATTR_RE = /([A-Za-z_][\w:.-]*)="([^"]*)"/g
 
@@ -50,9 +54,16 @@ export function parseRelationships(xml: string): Relationship[] {
 			else if (key === 'Type') type = value
 			else if (key === 'Target') target = value
 		}
-		if (id && type && target) rels.push({ id, type, target })
+		if (id && type && target) rels.push({ id, type: normalizeRelationshipType(type), target })
 	}
 	return rels
+}
+
+function normalizeRelationshipType(type: string): string {
+	if (!type.startsWith(STRICT_REL_PREFIX)) return type
+	const suffix = type.slice(STRICT_REL_PREFIX.length)
+	if (suffix === 'sheetMetadata') return type
+	return `${TRANSITIONAL_REL_PREFIX}${suffix}`
 }
 
 export function getRelsPath(partPath: string): string {

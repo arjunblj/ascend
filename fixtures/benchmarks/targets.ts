@@ -7,9 +7,9 @@ export interface ThroughputTarget {
 }
 
 export const throughputTargets: readonly ThroughputTarget[] = [
-	{ category: 'read', metric: 'read throughput', minCellsPerSec: 1_000_000 },
-	{ category: 'write', metric: 'write throughput', minCellsPerSec: 500_000 },
-	{ category: 'calc', metric: 'recalc throughput', minCellsPerSec: 100_000 },
+	{ category: 'read', metric: 'read throughput', minCellsPerSec: 3_000_000 },
+	{ category: 'write', metric: 'write throughput', minCellsPerSec: 1_500_000 },
+	{ category: 'calc', metric: 'recalc throughput', minCellsPerSec: 500_000 },
 ]
 
 export interface TargetCheckResult {

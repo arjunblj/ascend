@@ -29,6 +29,7 @@ describe('MCP server', () => {
 
 		expect(names).toContain('ascend.inspect')
 		expect(names).toContain('ascend.read')
+		expect(names).toContain('ascend.find')
 		expect(names).toContain('ascend.agent_view')
 		expect(names).toContain('ascend.preview')
 		expect(names).toContain('ascend.write')
@@ -38,7 +39,7 @@ describe('MCP server', () => {
 		expect(names).toContain('ascend.trace')
 		expect(names).toContain('ascend.diff')
 		expect(names).toContain('ascend.export')
-		expect(names.length).toBe(11)
+		expect(names.length).toBe(12)
 	})
 
 	test('ascend.write recalculates before saving when needed', async () => {
@@ -166,5 +167,134 @@ describe('MCP server', () => {
 
 		const bad = await handler({ file: TEMP_FILE, output: `${TEMP_FILE}.weird`, format: 'weird' })
 		expect(bad.isError).toBe(true)
+	})
+
+	test('ascend.read can return TSV output', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Name' },
+					{ ref: 'B1', value: 'Score' },
+					{ ref: 'A2', value: 'Alice' },
+					{ ref: 'B2', value: 10 },
+				],
+			},
+		])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.read'].handler as (args: {
+			file: string
+			range: string
+			format: 'tsv'
+		}) => Promise<{
+			structuredContent?: { ok?: boolean; data?: { format?: string; tsv?: string } }
+		}>
+
+		const result = await handler({ file: TEMP_FILE, range: 'A1:B2', format: 'tsv' })
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.format).toBe('tsv')
+		expect(result.structuredContent?.data?.tsv).toBe('Name\tScore\nAlice\t10')
+	})
+
+	test('ascend.read can return sparse compact output', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Name' },
+					{ ref: 'C2', value: 10 },
+				],
+			},
+		])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.read'].handler as (args: {
+			file: string
+			range: string
+			format: 'compact'
+		}) => Promise<{
+			structuredContent?: { ok?: boolean; data?: { format?: string; cells?: unknown[] } }
+		}>
+
+		const result = await handler({ file: TEMP_FILE, range: 'A1:C2', format: 'compact' })
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.format).toBe('compact')
+		expect(result.structuredContent?.data?.cells).toEqual([
+			[0, 0, 'Name'],
+			[1, 2, 10],
+		])
+	})
+
+	test('ascend.find can search values and formulas', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Alice' },
+					{ ref: 'A2', value: 'Bob' },
+					{ ref: 'B1', value: 10 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'C1', formula: '=SUM(B1:B1)' },
+		])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.find'].handler as (args: {
+			file: string
+			query: string
+			in?: 'value' | 'formula' | 'both'
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: { matches?: Array<{ ref: string; matchedOn: 'value' | 'formula' }> }
+			}
+		}>
+
+		const valueResult = await handler({ file: TEMP_FILE, query: 'Alice', in: 'value' })
+		expect(valueResult.structuredContent?.ok).toBe(true)
+		expect(valueResult.structuredContent?.data?.matches?.[0]?.ref).toBe('A1')
+		expect(valueResult.structuredContent?.data?.matches?.[0]?.matchedOn).toBe('value')
+
+		const formulaResult = await handler({ file: TEMP_FILE, query: 'SUM', in: 'formula' })
+		expect(formulaResult.structuredContent?.ok).toBe(true)
+		expect(formulaResult.structuredContent?.data?.matches?.[0]?.ref).toBe('C1')
+		expect(formulaResult.structuredContent?.data?.matches?.[0]?.matchedOn).toBe('formula')
+	})
+
+	test('sheet-not-found MCP errors include suggested fixes', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.read'].handler as (args: {
+			file: string
+			range: string
+			sheet: string
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: {
+				error?: { code?: string; suggestedFix?: string; details?: { availableSheets?: string[] } }
+			}
+		}>
+
+		const result = await handler({ file: TEMP_FILE, range: 'A1:A1', sheet: 'Missing' })
+		expect(result.isError).toBe(true)
+		expect(result.structuredContent?.error?.code).toBe('SHEET_NOT_FOUND')
+		expect(result.structuredContent?.error?.suggestedFix).toContain('Sheet1')
+		expect(result.structuredContent?.error?.details?.availableSheets).toContain('Sheet1')
 	})
 })

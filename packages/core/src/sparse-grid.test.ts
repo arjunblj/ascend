@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { type CellValue, EMPTY, numberValue, stringValue } from '@ascend/schema'
+import {
+	type CellValue,
+	EMPTY,
+	numberValue,
+	type ScalarCellValue,
+	stringValue,
+} from '@ascend/schema'
 import type { StyleId } from './ids.ts'
 import type { Cell } from './sparse-grid.ts'
 import { SparseGrid } from './sparse-grid.ts'
@@ -147,6 +153,36 @@ describe('SparseGrid', () => {
 		])
 	})
 
+	test('iterateRows stays sorted after chunk insertions and deletions', () => {
+		const grid = new SparseGrid()
+		grid.set(0, 70, makeCell(numberValue(70)))
+		grid.set(0, 1, makeCell(numberValue(1)))
+		grid.set(64, 0, makeCell(numberValue(64)))
+		expect([...grid.iterateRows()]).toEqual([
+			[
+				0,
+				[
+					[1, makeCell(numberValue(1))],
+					[70, makeCell(numberValue(70))],
+				],
+			],
+			[64, [[0, makeCell(numberValue(64))]]],
+		])
+
+		grid.delete(0, 1)
+		grid.set(0, 130, makeCell(numberValue(130)))
+		expect([...grid.iterateRows()]).toEqual([
+			[
+				0,
+				[
+					[70, makeCell(numberValue(70))],
+					[130, makeCell(numberValue(130))],
+				],
+			],
+			[64, [[0, makeCell(numberValue(64))]]],
+		])
+	})
+
 	test('iterateRowsInRange yields only populated cells within row and column bounds', () => {
 		const grid = new SparseGrid()
 		grid.set(0, 0, makeCell(numberValue(1)))
@@ -284,18 +320,25 @@ describe('SparseGrid', () => {
 
 	test('clone isolates mutable array cell values', () => {
 		const grid = new SparseGrid()
-		grid.set(0, 0, makeCell({ kind: 'array', rows: [[numberValue(1)], [numberValue(2)]] }))
+		grid.set(
+			0,
+			0,
+			makeCell({
+				kind: 'array',
+				rows: [[numberValue(1) as ScalarCellValue], [numberValue(2) as ScalarCellValue]],
+			}),
+		)
 
 		const clone = grid.clone()
 		const clonedValue = clone.get(0, 0)?.value
 		expect(clonedValue?.kind).toBe('array')
 		if (!clonedValue || clonedValue.kind !== 'array') return
 
-		;(clonedValue.rows[0] as { 0: Cell['value'] })[0] = numberValue(99)
+		;(clonedValue.rows[0] as ScalarCellValue[])[0] = numberValue(99) as ScalarCellValue
 		const originalValue = grid.get(0, 0)?.value
 		expect(originalValue?.kind).toBe('array')
 		if (!originalValue || originalValue.kind !== 'array') return
-		expect(originalValue.rows[0]?.[0]).toEqual(numberValue(1))
+		expect(originalValue.rows[0]?.[0]).toEqual(numberValue(1) as ScalarCellValue)
 	})
 
 	test('copy-on-write: clear on clone does not affect original', () => {

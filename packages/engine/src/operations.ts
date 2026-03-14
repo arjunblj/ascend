@@ -1,5 +1,17 @@
-import type { Cell, CellStyle, RangeRef, Sheet, StyleId, Workbook } from '@ascend/core'
-import { createTableId, parseA1, parseRange, toA1 } from '@ascend/core'
+import type {
+	Cell,
+	CellStyle,
+	RangeRef,
+	Sheet,
+	SheetConditionalFormat,
+	SheetConditionalFormatRule,
+	SheetDataValidation,
+	SheetPageSetup,
+	SheetProtection,
+	StyleId,
+	Workbook,
+} from '@ascend/core'
+import { createTableId, parseA1, parseA1Safe, parseRange, toA1 } from '@ascend/core'
 import type { FormulaCellRef, FormulaNode } from '@ascend/formulas'
 import {
 	cachedParseFormula,
@@ -8,7 +20,14 @@ import {
 	printFormula,
 	rewriteRefs,
 } from '@ascend/formulas'
-import type { CellValue, InputValue, Operation, Result, StyleInput } from '@ascend/schema'
+import type {
+	AscendError,
+	CellValue,
+	InputValue,
+	Operation,
+	Result,
+	StyleInput,
+} from '@ascend/schema'
 import { ascendError, booleanValue, EMPTY, err, numberValue, ok, stringValue } from '@ascend/schema'
 import {
 	invalidateWorkbookAnalysis,
@@ -32,9 +51,10 @@ export interface PatchResult {
 	readonly affectedCells: string[]
 	readonly sheetsModified: string[]
 	readonly recalcRequired: boolean
+	readonly warnings?: readonly AscendError[]
 }
 
-const DEFAULT_SID = 0 as unknown as StyleId
+const DEFAULT_SID = 0 as StyleId
 
 function inputToCellValue(input: InputValue, dateSystem: '1900' | '1904' = '1900'): CellValue {
 	if (input === null) return EMPTY
@@ -58,12 +78,18 @@ function getSheet(workbook: Workbook, name: string): Result<Sheet> {
 	return ok(sheet)
 }
 
-function patch(affected: string[], sheets: string[], recalc = false): PatchResult {
-	return {
+function patch(
+	affected: string[],
+	sheets: string[],
+	recalc = false,
+	warnings?: readonly AscendError[],
+): PatchResult {
+	const result = {
 		affectedCells: affected,
 		sheetsModified: [...new Set(sheets)],
 		recalcRequired: recalc,
 	}
+	return warnings && warnings.length > 0 ? { ...result, warnings } : result
 }
 
 function cell(value: CellValue, formula: string | null, styleId: StyleId): Cell {
@@ -989,6 +1015,7 @@ function resolvePatchResultCellKeys(
 	workbook: Workbook,
 	sheetName: string,
 	affectedCells: readonly string[],
+	warnings?: AscendError[],
 ): CellKey[] {
 	const sheet = workbook.getSheet(sheetName)
 	if (!sheet) return []
@@ -996,10 +1023,17 @@ function resolvePatchResultCellKeys(
 	if (sheetIndex < 0) return []
 	const keys: CellKey[] = []
 	for (const refText of affectedCells) {
-		try {
-			const ref = parseA1(refText)
-			keys.push(cellKey(sheetIndex, ref.row, ref.col))
-		} catch {}
+		const ref = parseA1Safe(refText)
+		if (!ref) {
+			warnings?.push(
+				ascendError(
+					'INVALID_REF',
+					`Failed to resolve affected cell reference "${refText}" in sheet "${sheetName}"`,
+				),
+			)
+			continue
+		}
+		keys.push(cellKey(sheetIndex, ref.row, ref.col))
 	}
 	return keys
 }
@@ -1063,22 +1097,24 @@ function handleSetDataValidation(
 	const sheet = sheetResult.value
 	sheet.ensureWritable()
 	const existing = sheet.dataValidations.findIndex((dv) => dv.sqref === op.range)
-	const dv: Record<string, unknown> = {
+	const dv: SheetDataValidation = {
 		sqref: op.range,
 		type: op.rule.type,
 		allowBlank: op.rule.allowBlank ?? true,
 		showErrorMessage: op.rule.showErrorMessage ?? true,
+		...(op.rule.formula1 !== undefined ? { formula1: op.rule.formula1 } : {}),
+		...(op.rule.formula2 !== undefined ? { formula2: op.rule.formula2 } : {}),
+		...(op.rule.operator !== undefined ? { operator: op.rule.operator } : {}),
+		...(op.rule.errorTitle !== undefined ? { errorTitle: op.rule.errorTitle } : {}),
+		...(op.rule.errorMessage !== undefined ? { error: op.rule.errorMessage } : {}),
+		...(op.rule.showInputMessage !== undefined
+			? { showInputMessage: op.rule.showInputMessage }
+			: {}),
+		...(op.rule.promptTitle !== undefined ? { promptTitle: op.rule.promptTitle } : {}),
+		...(op.rule.prompt !== undefined ? { prompt: op.rule.prompt } : {}),
 	}
-	if (op.rule.formula1 !== undefined) dv.formula1 = op.rule.formula1
-	if (op.rule.formula2 !== undefined) dv.formula2 = op.rule.formula2
-	if (op.rule.operator !== undefined) dv.operator = op.rule.operator
-	if (op.rule.errorTitle !== undefined) dv.errorTitle = op.rule.errorTitle
-	if (op.rule.errorMessage !== undefined) dv.error = op.rule.errorMessage
-	if (op.rule.showInputMessage !== undefined) dv.showInputMessage = op.rule.showInputMessage
-	if (op.rule.promptTitle !== undefined) dv.promptTitle = op.rule.promptTitle
-	if (op.rule.prompt !== undefined) dv.prompt = op.rule.prompt
-	if (existing >= 0) sheet.dataValidations[existing] = dv as never
-	else sheet.dataValidations.push(dv as never)
+	if (existing >= 0) sheet.dataValidations[existing] = dv
+	else sheet.dataValidations.push(dv)
 	return ok(patch([], [op.sheet]))
 }
 
@@ -1126,18 +1162,20 @@ function handleSetSheetProtection(
 	if (!sheetResult.ok) return sheetResult
 	const sheet = sheetResult.value
 	sheet.ensureWritable()
-	const prot: Record<string, unknown> = { sheet: true }
-	if (op.password) prot.password = op.password
-	if (op.options?.formatCells !== undefined) prot.formatCells = op.options.formatCells
-	if (op.options?.formatColumns !== undefined) prot.formatColumns = op.options.formatColumns
-	if (op.options?.formatRows !== undefined) prot.formatRows = op.options.formatRows
-	if (op.options?.insertColumns !== undefined) prot.insertColumns = op.options.insertColumns
-	if (op.options?.insertRows !== undefined) prot.insertRows = op.options.insertRows
-	if (op.options?.deleteColumns !== undefined) prot.deleteColumns = op.options.deleteColumns
-	if (op.options?.deleteRows !== undefined) prot.deleteRows = op.options.deleteRows
-	if (op.options?.sort !== undefined) prot.sort = op.options.sort
-	if (op.options?.autoFilter !== undefined) prot.autoFilter = op.options.autoFilter
-	sheet.protection = prot as never
+	const prot: SheetProtection = {
+		sheet: true,
+		...(op.password ? { password: op.password } : {}),
+		...(op.options?.formatCells !== undefined ? { formatCells: op.options.formatCells } : {}),
+		...(op.options?.formatColumns !== undefined ? { formatColumns: op.options.formatColumns } : {}),
+		...(op.options?.formatRows !== undefined ? { formatRows: op.options.formatRows } : {}),
+		...(op.options?.insertColumns !== undefined ? { insertColumns: op.options.insertColumns } : {}),
+		...(op.options?.insertRows !== undefined ? { insertRows: op.options.insertRows } : {}),
+		...(op.options?.deleteColumns !== undefined ? { deleteColumns: op.options.deleteColumns } : {}),
+		...(op.options?.deleteRows !== undefined ? { deleteRows: op.options.deleteRows } : {}),
+		...(op.options?.sort !== undefined ? { sort: op.options.sort } : {}),
+		...(op.options?.autoFilter !== undefined ? { autoFilter: op.options.autoFilter } : {}),
+	}
+	sheet.protection = prot
 	return ok(patch([], [op.sheet]))
 }
 
@@ -1225,17 +1263,17 @@ function handleSetConditionalFormat(
 	const sheet = sheetResult.value
 	sheet.ensureWritable()
 	const existing = sheet.conditionalFormats.findIndex((cf) => cf.sqref === op.range)
-	const rule: Record<string, unknown> = {
+	const rule: SheetConditionalFormatRule = {
 		type: op.rule.type,
 		formulas: [op.rule.formula, op.rule.formula2].filter((f): f is string => f !== undefined),
+		...(op.rule.operator ? { operator: op.rule.operator } : {}),
+		...(op.rule.priority !== undefined ? { priority: op.rule.priority } : {}),
+		...(op.rule.stopIfTrue !== undefined ? { stopIfTrue: op.rule.stopIfTrue } : {}),
+		...(op.rule.style ? { style: op.rule.style } : {}),
 	}
-	if (op.rule.operator) rule.operator = op.rule.operator
-	if (op.rule.priority !== undefined) rule.priority = op.rule.priority
-	if (op.rule.stopIfTrue !== undefined) rule.stopIfTrue = op.rule.stopIfTrue
-	if (op.rule.style) rule.style = op.rule.style
-	const cf = { sqref: op.range, rules: [rule] }
-	if (existing >= 0) sheet.conditionalFormats[existing] = cf as never
-	else sheet.conditionalFormats.push(cf as never)
+	const cf: SheetConditionalFormat = { sqref: op.range, rules: [rule] }
+	if (existing >= 0) sheet.conditionalFormats[existing] = cf
+	else sheet.conditionalFormats.push(cf)
 	return ok(patch([], [op.sheet]))
 }
 
@@ -1259,15 +1297,16 @@ function handleSetPageSetup(
 	if (!sheetResult.ok) return sheetResult
 	const sheet = sheetResult.value
 	sheet.ensureWritable()
-	const setup: Record<string, unknown> = {}
-	if (op.setup.orientation) setup.orientation = op.setup.orientation
-	if (op.setup.paperSize !== undefined) setup.paperSize = op.setup.paperSize
-	if (op.setup.scale !== undefined) setup.scale = op.setup.scale
-	if (op.setup.fitToWidth !== undefined) setup.fitToWidth = op.setup.fitToWidth
-	if (op.setup.fitToHeight !== undefined) setup.fitToHeight = op.setup.fitToHeight
-	sheet.pageSetup = setup as never
+	const setup: SheetPageSetup = {
+		...(op.setup.orientation ? { orientation: op.setup.orientation } : {}),
+		...(op.setup.paperSize !== undefined ? { paperSize: op.setup.paperSize } : {}),
+		...(op.setup.scale !== undefined ? { scale: op.setup.scale } : {}),
+		...(op.setup.fitToWidth !== undefined ? { fitToWidth: op.setup.fitToWidth } : {}),
+		...(op.setup.fitToHeight !== undefined ? { fitToHeight: op.setup.fitToHeight } : {}),
+	}
+	sheet.pageSetup = setup
 	if (op.setup.margins) {
-		sheet.pageMargins = op.setup.margins as never
+		sheet.pageMargins = { ...op.setup.margins }
 	}
 	return ok(patch([], [op.sheet]))
 }
@@ -1438,6 +1477,7 @@ const handlers: Record<string, OperationHandler> = {
 // --- Public API ---
 
 export function applyOperation(workbook: Workbook, op: Operation): Result<PatchResult> {
+	const warnings: AscendError[] = []
 	const useIncrementalPatch =
 		op.op === 'setFormula' ||
 		op.op === 'fillFormula' ||
@@ -1478,6 +1518,7 @@ export function applyOperation(workbook: Workbook, op: Operation): Result<PatchR
 					workbook,
 					op.sheet,
 					result.value.affectedCells,
+					warnings,
 				)
 				if (changedKeys.length > 0) patchWorkbookAnalysis(workbook, changedKeys)
 				break
@@ -1490,6 +1531,15 @@ export function applyOperation(workbook: Workbook, op: Operation): Result<PatchR
 			}
 		}
 	}
+	if (result.ok && warnings.length > 0) {
+		return ok({
+			...result.value,
+			warnings:
+				result.value.warnings && result.value.warnings.length > 0
+					? [...result.value.warnings, ...warnings]
+					: warnings,
+		})
+	}
 	return result
 }
 
@@ -1499,6 +1549,7 @@ export function applyOperations(
 ): Result<PatchResult> {
 	const allAffected: string[] = []
 	const allSheets: string[] = []
+	const warnings: AscendError[] = []
 	let needsRecalc = false
 
 	for (const op of ops) {
@@ -1507,7 +1558,8 @@ export function applyOperations(
 		allAffected.push(...result.value.affectedCells)
 		allSheets.push(...result.value.sheetsModified)
 		if (result.value.recalcRequired) needsRecalc = true
+		if (result.value.warnings) warnings.push(...result.value.warnings)
 	}
 
-	return ok(patch(allAffected, allSheets, needsRecalc))
+	return ok(patch(allAffected, allSheets, needsRecalc, warnings.length > 0 ? warnings : undefined))
 }

@@ -12,12 +12,45 @@ import {
 } from '@ascend/schema'
 import type { EvalContext } from './evaluator.ts'
 import { evaluate as treeEvaluate } from './evaluator.ts'
+import { resolveSheetIndexInWorkbook as resolveSheetIndex } from './sheet-index.ts'
 
 export type CodegenFn = (ctx: EvalContext) => CellValue
 
+const CODEGEN_CACHE_MAX = 4096
 const codegenCache = new Map<string, CodegenFn | null>()
+const sharedCodegenCache = new Map<string, CodegenFn | null>()
 
 const CODEGEN_FUNCTIONS = new Set(['IF', 'IFERROR', 'IFNA'])
+const PARTIAL_CODEGEN_FUNCTIONS = new Set(['SUM', 'VLOOKUP', 'MATCH', 'INDEX'])
+
+interface SharedAnchor {
+	readonly row: number
+	readonly col: number
+}
+
+function getCachedCodegen(
+	cache: Map<string, CodegenFn | null>,
+	key: string,
+): CodegenFn | null | undefined {
+	const cached = cache.get(key)
+	if (cached === undefined) return undefined
+	cache.delete(key)
+	cache.set(key, cached)
+	return cached
+}
+
+function setCachedCodegen(
+	cache: Map<string, CodegenFn | null>,
+	key: string,
+	value: CodegenFn | null,
+): void {
+	if (cache.has(key)) cache.delete(key)
+	else if (cache.size >= CODEGEN_CACHE_MAX) {
+		const oldest = cache.keys().next().value
+		if (oldest !== undefined) cache.delete(oldest)
+	}
+	cache.set(key, value)
+}
 
 function canCodegen(node: FormulaNode): boolean {
 	switch (node.type) {
@@ -37,8 +70,15 @@ function canCodegen(node: FormulaNode): boolean {
 			return canCodegen(node.operand)
 		case 'function': {
 			const upper = node.name.toUpperCase()
-			if (!CODEGEN_FUNCTIONS.has(upper)) return false
-			return node.args.every(canCodegen)
+			if (CODEGEN_FUNCTIONS.has(upper)) return node.args.every(canCodegen)
+			if (
+				upper === 'SUM' &&
+				node.args.length === 1 &&
+				(node.args[0] as FormulaNode).type === 'rangeRef'
+			) {
+				return true
+			}
+			return PARTIAL_CODEGEN_FUNCTIONS.has(upper)
 		}
 		default:
 			return false
@@ -50,14 +90,30 @@ interface CodegenState {
 	varCounter: number
 	closureVars: Map<string, string>
 	treeNodes: Map<string, FormulaNode>
+	sharedAnchor?: SharedAnchor
 }
 
 function freshVar(state: CodegenState, prefix = 'v'): string {
 	return `${prefix}${state.varCounter++}`
 }
 
-function emitReadCell(state: CodegenState, row: number, col: number, sheet?: string): string {
+function emitReadCell(
+	state: CodegenState,
+	ref: {
+		row: number
+		col: number
+		rowAbsolute: boolean
+		colAbsolute: boolean
+	},
+	sheet?: string,
+): string {
 	const result = freshVar(state)
+	if (state.sharedAnchor) {
+		state.lines.push(
+			`var ${result} = _readSharedCell(ctx, _sheet, ${sheet === undefined ? 'null' : JSON.stringify(sheet)}, ${ref.row}, ${ref.col}, ${ref.rowAbsolute}, ${ref.colAbsolute}, ${state.sharedAnchor.row}, ${state.sharedAnchor.col});`,
+		)
+		return result
+	}
 	if (sheet !== undefined) {
 		const sheetVar = freshVar(state, 'si')
 		state.lines.push(
@@ -65,10 +121,10 @@ function emitReadCell(state: CodegenState, row: number, col: number, sheet?: str
 		)
 		state.lines.push(`if (${sheetVar} < 0) return _errorValue('#REF!');`)
 		state.lines.push(
-			`var ${result} = ctx.workbook.sheets[${sheetVar}]?.cells.readValue(${row}, ${col}) ?? _EMPTY;`,
+			`var ${result} = ctx.workbook.sheets[${sheetVar}]?.cells.readValue(${ref.row}, ${ref.col}) ?? _EMPTY;`,
 		)
 	} else {
-		state.lines.push(`var ${result} = _sheet.cells.readValue(${row}, ${col}) ?? _EMPTY;`)
+		state.lines.push(`var ${result} = _sheet.cells.readValue(${ref.row}, ${ref.col}) ?? _EMPTY;`)
 	}
 	return result
 }
@@ -109,7 +165,7 @@ function emitNode(state: CodegenState, node: FormulaNode): string {
 			return v
 		}
 		case 'cellRef': {
-			return emitReadCell(state, node.ref.row, node.ref.col, node.sheet)
+			return emitReadCell(state, node.ref, node.sheet)
 		}
 		case 'binary': {
 			return emitBinary(state, node)
@@ -229,8 +285,29 @@ function emitFunction(state: CodegenState, node: FormulaNode & { type: 'function
 	if (upper === 'IFNA' && node.args.length === 2) {
 		return emitIfNa(state, node.args)
 	}
+	if (
+		upper === 'SUM' &&
+		node.args.length === 1 &&
+		(node.args[0] as FormulaNode).type === 'rangeRef'
+	) {
+		return emitSumRange(state, node.args[0] as FormulaNode & { type: 'rangeRef' })
+	}
+	if (upper === 'VLOOKUP' || upper === 'MATCH' || upper === 'INDEX') {
+		return emitTreeFallback(state, node)
+	}
 
 	return emitTreeFallback(state, node)
+}
+
+function emitSumRange(state: CodegenState, node: FormulaNode & { type: 'rangeRef' }): string {
+	const result = freshVar(state)
+	const sheetExpr = node.sheet === undefined ? 'null' : JSON.stringify(node.sheet)
+	const anchorRow = state.sharedAnchor?.row ?? -1
+	const anchorCol = state.sharedAnchor?.col ?? -1
+	state.lines.push(
+		`var ${result} = _sumRange(ctx, _sheet, ${sheetExpr}, ${node.start.row}, ${node.start.col}, ${node.start.rowAbsolute}, ${node.start.colAbsolute}, ${node.end.row}, ${node.end.col}, ${node.end.rowAbsolute}, ${node.end.colAbsolute}, ${anchorRow}, ${anchorCol});`,
+	)
+	return result
 }
 
 function emitIf(state: CodegenState, args: readonly FormulaNode[]): string {
@@ -374,26 +451,89 @@ function coerceToBoolForCodegen(v: CellValue): boolean | CellValue {
 	}
 }
 
-const sheetIndexCache = new WeakMap<import('@ascend/core').Workbook, Map<string, number>>()
-
-function resolveSheetIndex(
-	wb: import('@ascend/core').Workbook,
-	sheetName: string,
-	_currentSheet: number,
-): number {
-	let cache = sheetIndexCache.get(wb)
-	if (!cache) {
-		cache = new Map()
-		for (let i = 0; i < wb.sheets.length; i++) {
-			const s = wb.sheets[i]
-			if (s) cache.set(s.name.toLowerCase(), i)
-		}
-		sheetIndexCache.set(wb, cache)
+function readSharedCell(
+	ctx: EvalContext,
+	currentSheet: import('@ascend/core').Workbook['sheets'][number] | undefined,
+	sheetName: string | null,
+	row: number,
+	col: number,
+	rowAbsolute: boolean,
+	colAbsolute: boolean,
+	anchorRow: number,
+	anchorCol: number,
+): CellValue {
+	const targetRow = rowAbsolute ? row : ctx.row + (row - anchorRow)
+	const targetCol = colAbsolute ? col : ctx.col + (col - anchorCol)
+	if (targetRow < 0 || targetCol < 0) return errorValue('#REF!')
+	if (sheetName === null) {
+		if (!currentSheet) return errorValue('#REF!')
+		return currentSheet.cells.readValue(targetRow, targetCol)
 	}
-	return cache.get(sheetName.toLowerCase()) ?? -1
+	const sheetIndex = resolveSheetIndex(ctx.workbook, sheetName, ctx.sheetIndex)
+	if (sheetIndex < 0) return errorValue('#REF!')
+	const targetSheet = ctx.workbook.sheets[sheetIndex]
+	if (!targetSheet) return errorValue('#REF!')
+	return targetSheet.cells.readValue(targetRow, targetCol)
 }
 
-function buildCodegenFn(node: FormulaNode): CodegenFn | null {
+function resolveRelativeIndex(
+	value: number,
+	absolute: boolean,
+	current: number,
+	anchor: number,
+): number {
+	return absolute || anchor < 0 ? value : current + (value - anchor)
+}
+
+function sumRange(
+	ctx: EvalContext,
+	currentSheet: import('@ascend/core').Workbook['sheets'][number] | undefined,
+	sheetName: string | null,
+	startRow: number,
+	startCol: number,
+	startRowAbsolute: boolean,
+	startColAbsolute: boolean,
+	endRow: number,
+	endCol: number,
+	endRowAbsolute: boolean,
+	endColAbsolute: boolean,
+	anchorRow: number,
+	anchorCol: number,
+): CellValue {
+	const resolvedStartRow = resolveRelativeIndex(startRow, startRowAbsolute, ctx.row, anchorRow)
+	const resolvedStartCol = resolveRelativeIndex(startCol, startColAbsolute, ctx.col, anchorCol)
+	const resolvedEndRow = resolveRelativeIndex(endRow, endRowAbsolute, ctx.row, anchorRow)
+	const resolvedEndCol = resolveRelativeIndex(endCol, endColAbsolute, ctx.col, anchorCol)
+	if (resolvedStartRow < 0 || resolvedStartCol < 0 || resolvedEndRow < 0 || resolvedEndCol < 0) {
+		return errorValue('#REF!')
+	}
+	let targetSheet = currentSheet
+	if (sheetName !== null) {
+		const sheetIndex = resolveSheetIndex(ctx.workbook, sheetName, ctx.sheetIndex)
+		if (sheetIndex < 0) return errorValue('#REF!')
+		targetSheet = ctx.workbook.sheets[sheetIndex]
+	}
+	if (!targetSheet) return errorValue('#REF!')
+	const fromRow = Math.min(resolvedStartRow, resolvedEndRow)
+	const toRow = Math.max(resolvedStartRow, resolvedEndRow)
+	const fromCol = Math.min(resolvedStartCol, resolvedEndCol)
+	const toCol = Math.max(resolvedStartCol, resolvedEndCol)
+	let total = 0
+	for (let row = fromRow; row <= toRow; row++) {
+		for (let col = fromCol; col <= toCol; col++) {
+			const kind = targetSheet.cells.readKind(row, col)
+			if (kind === undefined || kind === 'empty') continue
+			if (kind === 'error') {
+				return errorValue(targetSheet.cells.readError(row, col) ?? '#VALUE!')
+			}
+			if (kind !== 'number' && kind !== 'date') continue
+			total += targetSheet.cells.readNumber(row, col) ?? 0
+		}
+	}
+	return numberValue(total)
+}
+
+function buildCodegenFn(node: FormulaNode, sharedAnchor?: SharedAnchor): CodegenFn | null {
 	if (!canCodegen(node)) return null
 
 	const state: CodegenState = {
@@ -402,6 +542,7 @@ function buildCodegenFn(node: FormulaNode): CodegenFn | null {
 		closureVars: new Map(),
 		treeNodes: new Map(),
 	}
+	if (sharedAnchor) state.sharedAnchor = sharedAnchor
 
 	const resultVar = emitNode(state, node)
 	state.lines.push(`return ${resultVar};`)
@@ -418,6 +559,8 @@ function buildCodegenFn(node: FormulaNode): CodegenFn | null {
 		'_evalCmp',
 		'_coerceBool',
 		'_resolveSheet',
+		'_readSharedCell',
+		'_sumRange',
 		'_treeEval',
 	]
 	const closureValues: unknown[] = [
@@ -432,6 +575,8 @@ function buildCodegenFn(node: FormulaNode): CodegenFn | null {
 		evalCmp,
 		coerceToBoolForCodegen,
 		resolveSheetIndex,
+		readSharedCell,
+		sumRange,
 		treeEvaluate,
 	]
 
@@ -450,14 +595,29 @@ function buildCodegenFn(node: FormulaNode): CodegenFn | null {
 }
 
 export function codegenFormula(formulaText: string, ast: FormulaNode): CodegenFn | null {
-	const cached = codegenCache.get(formulaText)
+	const cached = getCachedCodegen(codegenCache, formulaText)
 	if (cached !== undefined) return cached
 
 	const fn = buildCodegenFn(ast)
-	codegenCache.set(formulaText, fn)
+	setCachedCodegen(codegenCache, formulaText, fn)
+	return fn
+}
+
+export function codegenSharedFormula(
+	formulaText: string,
+	ast: FormulaNode,
+	anchor: SharedAnchor,
+): CodegenFn | null {
+	const cacheKey = `${formulaText}@${anchor.row}:${anchor.col}`
+	const cached = getCachedCodegen(sharedCodegenCache, cacheKey)
+	if (cached !== undefined) return cached
+
+	const fn = buildCodegenFn(ast, anchor)
+	setCachedCodegen(sharedCodegenCache, cacheKey, fn)
 	return fn
 }
 
 export function clearCodegenCache(): void {
 	codegenCache.clear()
+	sharedCodegenCache.clear()
 }

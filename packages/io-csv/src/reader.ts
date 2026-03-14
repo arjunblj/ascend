@@ -1,4 +1,4 @@
-import { createWorkbook, type Workbook } from '@ascend/core'
+import { createWorkbook, type StyleId, type Workbook } from '@ascend/core'
 import {
 	ascendError,
 	booleanValue,
@@ -14,6 +14,7 @@ import {
 import { resolveDialect } from './dialect.ts'
 
 const BOM = '\uFEFF'
+const DEFAULT_STYLE_ID = 0 as StyleId
 
 export function readCsv(content: string, dialect?: Partial<CsvDialect>): Result<Workbook> {
 	const d = resolveDialect(dialect)
@@ -28,7 +29,7 @@ export function readCsv(content: string, dialect?: Partial<CsvDialect>): Result<
 				const raw = row[c] ?? ''
 				const value = detectType(raw)
 				if (value.kind !== 'empty') {
-					sheet.cells.setResolved(r, c, value, null, 0 as never)
+					sheet.cells.setResolved(r, c, value, null, DEFAULT_STYLE_ID)
 				}
 			}
 		})

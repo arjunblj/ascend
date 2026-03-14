@@ -156,6 +156,41 @@ describe('readXlsx', () => {
 		])
 	})
 
+	it('streams worksheet rows from an async iterable byte source', async () => {
+		const bytes = minimalXlsx()
+		async function* chunks() {
+			yield bytes.subarray(0, Math.floor(bytes.length / 2))
+			yield bytes.subarray(Math.floor(bytes.length / 2))
+		}
+
+		const result = await readXlsxRowsStream(chunks(), { sheet: 'Data', mode: 'values' })
+		expectOk(result)
+		const rows: StreamedSheetRow[] = []
+		for await (const row of result.value) rows.push(row)
+		expect(rows[0]?.cells[0]?.[1]?.value).toEqual({ kind: 'string', value: 'Hello' })
+		expect(rows[1]?.cells[0]?.[1]?.value).toEqual({ kind: 'string', value: 'World' })
+	})
+
+	it('streams an empty worksheet without yielding rows', async () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData />
+</worksheet>`,
+		})
+
+		const result = await readXlsxRowsStream(bytes, { sheet: 'Data', mode: 'values' })
+		expectOk(result)
+		const rows: StreamedSheetRow[] = []
+		for await (const row of result.value) rows.push(row)
+		expect(rows).toEqual([])
+	})
+
 	it('parses merge cells', () => {
 		const result = readXlsx(minimalXlsx())
 		expectOk(result)

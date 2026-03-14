@@ -63,3 +63,7 @@ export function getWasmRangeOps(): WasmRangeOps | null {
 	}
 	return wasmRangeOps
 }
+
+export function resetWasmRangeOpsForTest(): void {
+	wasmRangeOps = undefined
+}

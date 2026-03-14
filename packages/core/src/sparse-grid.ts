@@ -48,6 +48,8 @@ const CHUNK_SIZE = 1 << CHUNK_BITS
 const CHUNK_MASK = CHUNK_SIZE - 1
 const CHUNK_AREA = CHUNK_SIZE * CHUNK_SIZE
 const SPARSE_TO_DENSE_THRESHOLD = 96
+const SLOT_TAG_MASK = 0b111
+const SLOT_OCCUPIED_BIT = 0b1000
 
 type ChunkBuffer = SharedArrayBuffer | ArrayBuffer
 
@@ -75,6 +77,7 @@ interface StoredSlot {
 
 interface GridChunk {
 	readonly count: number
+	clone(): GridChunk
 	has(localIndex: number): boolean
 	getSlot(localIndex: number): StoredSlot | undefined
 	getKind(localIndex: number): CellValueKind | undefined
@@ -118,6 +121,14 @@ class SparseChunk implements GridChunk {
 
 	get count(): number {
 		return this.slots.size
+	}
+
+	clone(): GridChunk {
+		const next = new SparseChunk()
+		for (const [index, slot] of this.slots) {
+			next.slots.set(index, slot)
+		}
+		return next
 	}
 
 	has(localIndex: number): boolean {
@@ -202,12 +213,11 @@ class SparseChunk implements GridChunk {
 }
 
 class DenseChunk implements GridChunk {
-	private readonly metaBuffer = createChunkBuffer(CHUNK_AREA * 10)
+	private readonly metaBuffer = createChunkBuffer(CHUNK_AREA * 9)
 	private readonly numberBuffer = createChunkBuffer(CHUNK_AREA * 8)
-	private readonly occupied = new Uint8Array(this.metaBuffer, 0, CHUNK_AREA)
-	private readonly tags = new Uint8Array(this.metaBuffer, CHUNK_AREA, CHUNK_AREA)
-	private readonly styleIds = new Uint32Array(this.metaBuffer, CHUNK_AREA * 2, CHUNK_AREA)
-	private readonly stringIds = new Uint32Array(this.metaBuffer, CHUNK_AREA * 6, CHUNK_AREA)
+	private readonly slotMeta = new Uint8Array(this.metaBuffer, 0, CHUNK_AREA)
+	private readonly styleIds = new Uint32Array(this.metaBuffer, CHUNK_AREA, CHUNK_AREA)
+	private readonly stringIds = new Uint32Array(this.metaBuffer, CHUNK_AREA * 5, CHUNK_AREA)
 	private readonly numbers = new Float64Array(this.numberBuffer)
 	private readonly rowCounts = new Uint16Array(CHUNK_SIZE)
 	private formulas: Array<string | null | undefined> | null = null
@@ -219,13 +229,24 @@ class DenseChunk implements GridChunk {
 		return this._count
 	}
 
+	clone(): GridChunk {
+		const next = new DenseChunk()
+		new Uint8Array(next.metaBuffer).set(new Uint8Array(this.metaBuffer))
+		new Uint8Array(next.numberBuffer).set(new Uint8Array(this.numberBuffer))
+		next._count = this._count
+		next.formulas = this.formulas ? this.formulas.slice() : null
+		next.formulaInfos = this.formulaInfos ? this.formulaInfos.slice() : null
+		next.heapValues = this.heapValues ? this.heapValues.slice() : null
+		return next
+	}
+
 	has(localIndex: number): boolean {
-		return this.occupied[localIndex] === 1
+		return ((this.slotMeta[localIndex] ?? 0) & SLOT_OCCUPIED_BIT) !== 0
 	}
 
 	getSlot(localIndex: number): StoredSlot | undefined {
 		if (!this.has(localIndex)) return undefined
-		const tag = this.tags[localIndex] as SlotTag
+		const tag = this.readTag(localIndex)
 		return {
 			tag,
 			styleId: this.styleIds[localIndex] as StyleId,
@@ -245,7 +266,7 @@ class DenseChunk implements GridChunk {
 
 	getKind(localIndex: number): CellValueKind | undefined {
 		if (!this.has(localIndex)) return undefined
-		const tag = (this.tags[localIndex] ?? SlotTag.Empty) as SlotTag
+		const tag = this.readTag(localIndex)
 		return tag === SlotTag.Heap
 			? (this.heapValues?.[localIndex]?.kind ?? 'array')
 			: kindFromTag(tag)
@@ -254,7 +275,7 @@ class DenseChunk implements GridChunk {
 	readValue(localIndex: number, stringTable: StringTable): CellValue | undefined {
 		if (!this.has(localIndex)) return undefined
 		return readDenseValue(
-			(this.tags[localIndex] ?? SlotTag.Empty) as SlotTag,
+			this.readTag(localIndex),
 			this.numbers[localIndex] ?? 0,
 			this.stringIds[localIndex] ?? 0,
 			this.heapValues?.[localIndex],
@@ -264,19 +285,19 @@ class DenseChunk implements GridChunk {
 
 	readNumber(localIndex: number): number | null {
 		if (!this.has(localIndex)) return null
-		const tag = (this.tags[localIndex] ?? SlotTag.Empty) as SlotTag
+		const tag = this.readTag(localIndex)
 		return tag === SlotTag.Number || tag === SlotTag.Boolean || tag === SlotTag.Date
 			? (this.numbers[localIndex] ?? 0)
 			: null
 	}
 
 	readString(localIndex: number, stringTable: StringTable): string | null {
-		if (!this.has(localIndex) || this.tags[localIndex] !== SlotTag.String) return null
+		if (!this.has(localIndex) || this.readTag(localIndex) !== SlotTag.String) return null
 		return stringTable.lookup(this.stringIds[localIndex] ?? 0)
 	}
 
 	readError(localIndex: number, stringTable: StringTable): ExcelError | null {
-		if (!this.has(localIndex) || this.tags[localIndex] !== SlotTag.Error) return null
+		if (!this.has(localIndex) || this.readTag(localIndex) !== SlotTag.Error) return null
 		return stringTable.lookup(this.stringIds[localIndex] ?? 0) as ExcelError
 	}
 
@@ -296,12 +317,11 @@ class DenseChunk implements GridChunk {
 
 	setSlot(localIndex: number, slot: StoredSlot): GridChunk {
 		if (!this.has(localIndex)) {
-			this.occupied[localIndex] = 1
 			const rowIndex = localIndex >>> CHUNK_BITS
 			this.rowCounts[rowIndex] = (this.rowCounts[rowIndex] ?? 0) + 1
 			this._count++
 		}
-		this.tags[localIndex] = slot.tag
+		this.slotMeta[localIndex] = SLOT_OCCUPIED_BIT | slot.tag
 		this.styleIds[localIndex] = slot.styleId
 		this.stringIds[localIndex] = slot.stringId ?? 0
 		this.numbers[localIndex] = slot.numberValue ?? 0
@@ -328,8 +348,7 @@ class DenseChunk implements GridChunk {
 
 	delete(localIndex: number): boolean {
 		if (!this.has(localIndex)) return false
-		this.occupied[localIndex] = 0
-		this.tags[localIndex] = SlotTag.Empty
+		this.slotMeta[localIndex] = SlotTag.Empty
 		this.styleIds[localIndex] = DEFAULT_STYLE_ID
 		this.stringIds[localIndex] = 0
 		this.numbers[localIndex] = 0
@@ -340,6 +359,10 @@ class DenseChunk implements GridChunk {
 		this.rowCounts[rowIndex] = Math.max(0, (this.rowCounts[rowIndex] ?? 0) - 1)
 		this._count--
 		return true
+	}
+
+	private readTag(localIndex: number): SlotTag {
+		return ((this.slotMeta[localIndex] ?? 0) & SLOT_TAG_MASK) as SlotTag
 	}
 
 	forEachRow(
@@ -361,6 +384,9 @@ class DenseChunk implements GridChunk {
 
 export class SparseGrid {
 	private chunkRows = new Map<number, Map<number, GridChunk>>()
+	private _sortedChunkRows: readonly number[] | null = null
+	private readonly _sortedChunkCols = new Map<number, readonly number[]>()
+	private _sharedChunks: Set<string> | null = null
 	private stringTable = new StringTable()
 	private _cellCount = 0
 	private _shared = false
@@ -394,12 +420,15 @@ export class SparseGrid {
 		if (!cols) {
 			cols = new Map()
 			this.chunkRows.set(chunkRow, cols)
+			this.invalidateChunkOrder()
 		}
 		let chunk = cols.get(chunkCol)
 		if (!chunk) {
 			chunk = new SparseChunk()
 			cols.set(chunkCol, chunk)
+			this.invalidateChunkOrder(chunkRow)
 		}
+		chunk = this.ensureChunkWritable(chunkRow, chunkCol, cols, chunk)
 		const existed = chunk.has(localIndex)
 		const nextChunk = chunk.setSlot(localIndex, slot)
 		if (nextChunk !== chunk) cols.set(chunkCol, nextChunk)
@@ -411,14 +440,19 @@ export class SparseGrid {
 		this.ensureWritable()
 		const [chunkRow, chunkCol, localIndex] = getChunkPosition(row, col)
 		const cols = this.chunkRows.get(chunkRow)
-		const chunk = cols?.get(chunkCol)
+		let chunk = cols?.get(chunkCol)
 		if (!chunk) return false
+		chunk = this.ensureChunkWritable(chunkRow, chunkCol, cols, chunk)
 		const deleted = chunk.delete(localIndex)
 		if (!deleted) return false
 		this._cellCount--
 		if (chunk.count === 0) {
 			cols?.delete(chunkCol)
-			if (cols && cols.size === 0) this.chunkRows.delete(chunkRow)
+			this.invalidateChunkOrder(chunkRow)
+			if (cols && cols.size === 0) {
+				this.chunkRows.delete(chunkRow)
+				this.invalidateChunkOrder()
+			}
 		}
 		if (
 			row === this._minRow ||
@@ -551,11 +585,11 @@ export class SparseGrid {
 
 	*iterateRows(): Generator<readonly [number, readonly (readonly [number, Cell])[]]> {
 		if (this._cellCount === 0) return
-		const sortedChunkRows = [...this.chunkRows.keys()].sort((a, b) => a - b)
+		const sortedChunkRows = this.getSortedChunkRows()
 		for (const chunkRow of sortedChunkRows) {
 			const cols = this.chunkRows.get(chunkRow)
 			if (!cols) continue
-			const sortedChunkCols = [...cols.keys()].sort((a, b) => a - b)
+			const sortedChunkCols = this.getSortedChunkCols(chunkRow, cols)
 			for (let localRow = 0; localRow < CHUNK_SIZE; localRow++) {
 				const row = (chunkRow << CHUNK_BITS) + localRow
 				const rowCells: Array<readonly [number, Cell]> = []
@@ -582,7 +616,7 @@ export class SparseGrid {
 		for (let chunkRow = startChunkRow; chunkRow <= endChunkRow; chunkRow++) {
 			const cols = this.chunkRows.get(chunkRow)
 			if (!cols) continue
-			const sortedChunkCols = [...cols.keys()].sort((a, b) => a - b)
+			const sortedChunkCols = this.getSortedChunkCols(chunkRow, cols)
 			const rowStart = chunkRow === startChunkRow ? range.start.row & CHUNK_MASK : 0
 			const rowEnd = chunkRow === endChunkRow ? range.end.row & CHUNK_MASK : CHUNK_MASK
 			for (let localRow = rowStart; localRow <= rowEnd; localRow++) {
@@ -614,6 +648,9 @@ export class SparseGrid {
 
 	clear(): void {
 		this.chunkRows = new Map()
+		this._sortedChunkRows = null
+		this._sortedChunkCols.clear()
+		this._sharedChunks = null
 		this._cellCount = 0
 		this._shared = false
 		this._minRow = Number.POSITIVE_INFINITY
@@ -668,6 +705,9 @@ export class SparseGrid {
 				)
 			}
 			this.chunkRows = next.chunkRows
+			this._sortedChunkRows = null
+			this._sortedChunkCols.clear()
+			this._sharedChunks = null
 			this.stringTable = next.stringTable
 			this._cellCount = next._cellCount
 			this._minRow = next._minRow
@@ -679,6 +719,9 @@ export class SparseGrid {
 			return
 		}
 		this.chunkRows = other.chunkRows
+		this._sortedChunkRows = null
+		this._sortedChunkCols.clear()
+		this._sharedChunks = null
 		this.stringTable = other.stringTable
 		this._cellCount = other._cellCount
 		this._minRow = other._minRow
@@ -692,25 +735,20 @@ export class SparseGrid {
 
 	private ensureWritable(): void {
 		if (!this._shared) return
-		const next = new SparseGrid()
-		next.stringTable = this.stringTable
-		for (const [row, col, cell] of this.iterate()) {
-			next.setResolved(
-				row,
-				col,
-				cloneCellValue(cell.value),
-				cell.formula,
-				cell.styleId,
-				cell.formulaInfo,
-			)
+		const nextChunkRows = new Map<number, Map<number, GridChunk>>()
+		const sharedChunks = new Set<string>()
+		for (const [chunkRow, cols] of this.chunkRows) {
+			const nextCols = new Map<number, GridChunk>()
+			for (const [chunkCol, chunk] of cols) {
+				nextCols.set(chunkCol, chunk)
+				sharedChunks.add(sharedChunkKey(chunkRow, chunkCol))
+			}
+			nextChunkRows.set(chunkRow, nextCols)
 		}
-		this.chunkRows = next.chunkRows
-		this._cellCount = next._cellCount
-		this._minRow = next._minRow
-		this._maxRow = next._maxRow
-		this._minCol = next._minCol
-		this._maxCol = next._maxCol
-		this._boundsDirty = next._boundsDirty
+		this.chunkRows = nextChunkRows
+		this._sortedChunkRows = null
+		this._sortedChunkCols.clear()
+		this._sharedChunks = sharedChunks
 		this._shared = false
 	}
 
@@ -762,6 +800,9 @@ export class SparseGrid {
 			)
 		}
 		this.chunkRows = next.chunkRows
+		this._sortedChunkRows = null
+		this._sortedChunkCols.clear()
+		this._sharedChunks = null
 		this._cellCount = next._cellCount
 		this._minRow = next._minRow
 		this._maxRow = next._maxRow
@@ -769,6 +810,48 @@ export class SparseGrid {
 		this._maxCol = next._maxCol
 		this._boundsDirty = next._boundsDirty
 		this._shared = false
+	}
+
+	private invalidateChunkOrder(chunkRow?: number): void {
+		this._sortedChunkRows = null
+		if (chunkRow === undefined) {
+			this._sortedChunkCols.clear()
+			return
+		}
+		this._sortedChunkCols.delete(chunkRow)
+	}
+
+	private getSortedChunkRows(): readonly number[] {
+		if (this._sortedChunkRows) return this._sortedChunkRows
+		const sorted = [...this.chunkRows.keys()].sort((a, b) => a - b)
+		this._sortedChunkRows = sorted
+		return sorted
+	}
+
+	private getSortedChunkCols(
+		chunkRow: number,
+		cols: ReadonlyMap<number, GridChunk>,
+	): readonly number[] {
+		const cached = this._sortedChunkCols.get(chunkRow)
+		if (cached) return cached
+		const sorted = [...cols.keys()].sort((a, b) => a - b)
+		this._sortedChunkCols.set(chunkRow, sorted)
+		return sorted
+	}
+
+	private ensureChunkWritable(
+		chunkRow: number,
+		chunkCol: number,
+		cols: Map<number, GridChunk> | undefined,
+		chunk: GridChunk,
+	): GridChunk {
+		if (!cols || !this._sharedChunks) return chunk
+		const key = sharedChunkKey(chunkRow, chunkCol)
+		if (!this._sharedChunks.has(key)) return chunk
+		const next = chunk.clone()
+		cols.set(chunkCol, next)
+		this._sharedChunks.delete(key)
+		return next
 	}
 
 	private _hasMutableValues(): boolean {
@@ -784,6 +867,10 @@ function getChunkPosition(row: number, col: number): readonly [number, number, n
 	const chunkCol = col >> CHUNK_BITS
 	const localIndex = ((row & CHUNK_MASK) << CHUNK_BITS) | (col & CHUNK_MASK)
 	return [chunkRow, chunkCol, localIndex] as const
+}
+
+function sharedChunkKey(chunkRow: number, chunkCol: number): string {
+	return `${chunkRow}:${chunkCol}`
 }
 
 function createChunkBuffer(byteLength: number): ChunkBuffer {

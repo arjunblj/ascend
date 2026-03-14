@@ -25,6 +25,7 @@ import {
 	topLeftScalar,
 } from '@ascend/schema'
 import type { CalcContext } from './calc-context.ts'
+import { resolveSheetIndexInWorkbook as resolveSheetIndex } from './sheet-index.ts'
 import { resolveStructuredRefRange } from './structured-refs.ts'
 
 export interface EvalContext {
@@ -86,6 +87,7 @@ const sharedFnCtx = new FunctionEvalCtx()
 const cachedParseFormula = sharedCachedParseFormula
 
 export { clearGlobalParseCache as clearFormulaParseCache } from '@ascend/formulas'
+export { invalidateSheetIndexCache } from './sheet-index.ts'
 
 const EXCEL_MAX_ROWS = 1_048_576
 const EXCEL_MAX_COLS = 16_384
@@ -99,30 +101,6 @@ export function setRangeValueCache(cache: RangeValueCache): void {
 
 export function clearRangeValueCache(): void {
 	activeRangeValueCache = null
-}
-
-const sheetIndexCache = new WeakMap<Workbook, Map<string, number>>()
-
-function resolveSheetIndex(
-	wb: Workbook,
-	sheetName: string | undefined,
-	currentSheet: number,
-): number {
-	if (sheetName === undefined) return currentSheet
-	let cache = sheetIndexCache.get(wb)
-	if (!cache) {
-		cache = new Map()
-		for (let i = 0; i < wb.sheets.length; i++) {
-			const s = wb.sheets[i]
-			if (s) cache.set(s.name.toLowerCase(), i)
-		}
-		sheetIndexCache.set(wb, cache)
-	}
-	return cache.get(sheetName.toLowerCase()) ?? -1
-}
-
-export function invalidateSheetIndexCache(wb: Workbook): void {
-	sheetIndexCache.delete(wb)
 }
 
 function getCellValue(wb: Workbook, sheetIndex: number, row: number, col: number): CellValue {

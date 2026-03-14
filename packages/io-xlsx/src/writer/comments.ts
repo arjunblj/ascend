@@ -1,4 +1,4 @@
-import type { Sheet } from '@ascend/core'
+import { parseA1Safe, type Sheet } from '@ascend/core'
 import { escapeXml } from '../xml.ts'
 import { ChunkedStringBuilder } from './chunked-string-builder.ts'
 
@@ -44,7 +44,7 @@ export function buildCommentsVml(sheet: Sheet): string {
 	out.push('</v:shapetype>')
 	let shapeId = 1024
 	for (const [ref] of sheet.comments) {
-		const pos = parseA1Ref(ref)
+		const pos = parseA1Safe(ref)
 		if (!pos) continue
 		out.push(
 			`<v:shape id="_x0000_s${shapeId}" type="#_x0000_t202" style="position:absolute;margin-left:80pt;margin-top:5pt;width:104pt;height:64pt;z-index:1;visibility:hidden" fillcolor="#ffffe1" o:insetmode="auto">`,
@@ -74,17 +74,4 @@ function uniqueAuthors(sheet: Sheet): string[] {
 		authors.add(comment.author ?? '')
 	}
 	return [...authors]
-}
-
-function parseA1Ref(ref: string): { row: number; col: number } | null {
-	const match = /^([A-Za-z]+)(\d+)$/.exec(ref)
-	if (!match) return null
-	const colLabel = match[1]
-	const rowText = match[2]
-	if (!colLabel || !rowText) return null
-	let col = 0
-	for (const ch of colLabel.toUpperCase()) {
-		col = col * 26 + (ch.charCodeAt(0) - 64)
-	}
-	return { row: Number.parseInt(rowText, 10) - 1, col: col - 1 }
 }

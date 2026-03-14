@@ -154,6 +154,15 @@ describe('snapshot round-trip', () => {
 		expect(snap.names.Total).toBe('Sheet1!A1')
 	})
 
+	test('createSnapshot keys sheet-scoped names with the sheet name', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		wb.definedNames.set('LocalTotal', 'Sheet1!A1', { kind: 'sheet', sheetId: s.id })
+
+		const snap = createSnapshot(wb)
+		expect(snap.names['Sheet1!LocalTotal']).toBe('Sheet1!A1')
+	})
+
 	test('compareSnapshots detects changes', () => {
 		const wb1 = createWorkbook()
 		const s1 = wb1.addSheet('Sheet1')
@@ -173,5 +182,20 @@ describe('snapshot round-trip', () => {
 		expect(diff.sheets[0]?.cellsAdded).toEqual(['A2'])
 		expect(diff.sheets[0]?.cellsChanged).toHaveLength(1)
 		expect(diff.sheets[0]?.cellsChanged[0]?.ref).toBe('A1')
+	})
+
+	test('compareSnapshots ignores timestamp-only differences', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, cell(numberValue(1)))
+
+		const snap = createSnapshot(wb)
+		const sameButLater = { ...snap, timestamp: snap.timestamp + 1000 }
+
+		const diff = compareSnapshots(snap, sameButLater)
+		expect(diff.sheets).toEqual([])
+		expect(diff.namesAdded).toEqual([])
+		expect(diff.namesRemoved).toEqual([])
+		expect(diff.namesChanged).toEqual([])
 	})
 })

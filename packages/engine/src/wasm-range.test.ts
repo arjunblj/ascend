@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { getWasmRangeOps } from './wasm-range.ts'
+import { getWasmRangeOps, resetWasmRangeOpsForTest } from './wasm-range.ts'
 
 describe('getWasmRangeOps', () => {
 	test('returns a stable cached instance', () => {
@@ -41,5 +41,20 @@ describe('getWasmRangeOps', () => {
 		expect(ops.min(values.length)).toBe(-10_000)
 		expect(ops.max(values.length)).toBe(9_999)
 		expect(ops.sum(values.length)).toBe(-10_000)
+	})
+
+	test('returns null when WASM initialization fails', () => {
+		resetWasmRangeOpsForTest()
+		const originalModule = WebAssembly.Module
+		const failingModule = ((): never => {
+			throw new Error('simulated wasm init failure')
+		}) as unknown as typeof WebAssembly.Module
+		;(WebAssembly as { Module: typeof WebAssembly.Module }).Module = failingModule
+		try {
+			expect(getWasmRangeOps()).toBeNull()
+		} finally {
+			;(WebAssembly as { Module: typeof WebAssembly.Module }).Module = originalModule
+			resetWasmRangeOpsForTest()
+		}
 	})
 })

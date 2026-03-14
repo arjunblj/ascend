@@ -593,6 +593,30 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(3, 2)).toBeUndefined()
 	})
 
+	test('dirty recalc skips unchanged spill outputs', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, {
+			value: EMPTY,
+			formula: 'SEQUENCE(3,1,A1-A1+1)',
+			styleId: sid,
+		})
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(2, 1)?.value).toEqual(numberValue(3))
+
+		sheet.cells.set(0, 0, { value: numberValue(2), formula: null, styleId: sid })
+		const result = recalculate(wb, makeCtx(), { dirtyOnly: true, dirtyRefs: ['Sheet1!A1'] })
+
+		expect(result.changed).toEqual([])
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(2, 1)?.value).toEqual(numberValue(3))
+	})
+
 	test('spill operator resolves a spilled range', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -1327,6 +1351,34 @@ describe('shared formula evaluation', () => {
 		for (let r = 0; r < 100; r++) {
 			const expected = (r + 1) * 2
 			expect(sheet.cells.get(r, 1)?.value).toEqual(numberValue(expected))
+		}
+	})
+
+	test('shared formula groups preserve absolute refs while shifting relative refs', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(100), formula: null, styleId: sid })
+		for (let r = 0; r < 5; r++) {
+			sheet.cells.set(r, 1, { value: numberValue(r + 1), formula: null, styleId: sid })
+		}
+		sheet.cells.set(0, 2, {
+			value: EMPTY,
+			formula: '$A$1+B1',
+			styleId: sid,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: true, masterRef: 'C1' },
+		})
+		for (let r = 1; r < 5; r++) {
+			sheet.cells.set(r, 2, {
+				value: EMPTY,
+				formula: null,
+				styleId: sid,
+				formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'C1' },
+			})
+		}
+
+		recalculate(wb, makeCtx())
+		for (let r = 0; r < 5; r++) {
+			expect(sheet.cells.get(r, 2)?.value).toEqual(numberValue(100 + r + 1))
 		}
 	})
 })

@@ -17,6 +17,7 @@ export {
 	expandRange,
 	indexToColumn,
 	parseA1,
+	parseA1Safe,
 	parseRange,
 	toA1,
 	toRangeString,

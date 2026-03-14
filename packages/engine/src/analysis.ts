@@ -1,4 +1,4 @@
-import type { RangeRef, Workbook } from '@ascend/core'
+import { parseA1Safe, type RangeRef, type Workbook } from '@ascend/core'
 import type { FormulaCellRef, FormulaNode, FormulaRef } from '@ascend/formulas'
 import {
 	cachedParseFormula,
@@ -15,6 +15,7 @@ import {
 	parseCellKey,
 	type RangeDependency,
 } from './dep-graph.ts'
+import { resolveSheetIndexByMap } from './sheet-index.ts'
 import {
 	formulaAstReferencesSheet,
 	rewriteFormulaAstForShift,
@@ -131,8 +132,7 @@ export function resolveSheetIndex(
 	sheetName: string | undefined,
 	currentSheet: number,
 ): number {
-	if (sheetName === undefined) return currentSheet
-	return sheetNameIndex.get(sheetName.toLowerCase()) ?? -1
+	return resolveSheetIndexByMap(sheetNameIndex, sheetName, currentSheet)
 }
 
 function tryReuseFromCellAbove(
@@ -396,7 +396,7 @@ function loadSharedMasterAst(
 	binding: { masterRef?: string },
 ): FormulaNode | null {
 	if (!binding.masterRef) return null
-	const ref = parseCellA1(binding.masterRef)
+	const ref = parseA1Safe(binding.masterRef)
 	if (!ref) return null
 	const formula = workbook.sheets[sheetIndex]?.cells.readFormula(ref.row, ref.col)
 	if (!formula) return null
@@ -410,7 +410,7 @@ function rewriteSharedFormulaAst(
 	row: number,
 	col: number,
 ): FormulaNode {
-	const anchor = parseCellA1(masterRef)
+	const anchor = parseA1Safe(masterRef)
 	if (!anchor) return masterAst
 	const rowDelta = row - anchor.row
 	const colDelta = col - anchor.col
@@ -419,23 +419,6 @@ function rewriteSharedFormulaAst(
 		row: ref.rowAbsolute ? ref.row : ref.row + rowDelta,
 		col: ref.colAbsolute ? ref.col : ref.col + colDelta,
 	}))
-}
-
-function parseCellA1(ref: string | undefined): { row: number; col: number } | null {
-	if (!ref) return null
-	const match = /^([A-Za-z]+)(\d+)$/.exec(ref)
-	if (!match) return null
-	const colText = match[1]
-	const rowText = match[2]
-	if (!colText || !rowText) return null
-	let col = 0
-	for (const char of colText.toUpperCase()) {
-		col = col * 26 + (char.charCodeAt(0) - 64)
-	}
-	return {
-		row: Number.parseInt(rowText, 10) - 1,
-		col: col - 1,
-	}
 }
 
 export function analyzeWorkbook(

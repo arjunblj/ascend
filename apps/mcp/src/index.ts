@@ -5,7 +5,12 @@ import {
 	machineFailure,
 	type Operation,
 } from '@ascend/schema'
-import { Ascend, WorkbookDocument } from '@ascend/sdk'
+import {
+	Ascend,
+	type CompactRangeWindowInfo,
+	type RangeRowsInfo,
+	WorkbookDocument,
+} from '@ascend/sdk'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
@@ -33,7 +38,9 @@ export function createServer(): McpServer {
 				if (sheet) {
 					const data = wb.inspectSheet(sheet)
 					if (!data) {
-						return errorResponse(`Sheet "${sheet}" not found`)
+						return errorResponse(
+							sheetNotFoundError(sheet, await loadAvailableSheets(file, wb.sheets)),
+						)
 					}
 					return {
 						...okResponse(data, `Inspected sheet "${sheet}"`),
@@ -59,9 +66,11 @@ export function createServer(): McpServer {
 			rowOffset: z.number().int().nonnegative().optional().describe('Row offset within the range'),
 			rowLimit: z.number().int().positive().optional().describe('Maximum rows to return'),
 			format: z
-				.enum(['cells', 'rows', 'objects'])
+				.enum(['cells', 'rows', 'objects', 'tsv', 'compact'])
 				.optional()
-				.describe('Read format: cell records, row arrays, or object rows'),
+				.describe(
+					'Read format: cell records, row arrays, object rows, TSV text, or sparse compact cells',
+				),
 			display: z
 				.boolean()
 				.optional()
@@ -83,7 +92,9 @@ export function createServer(): McpServer {
 				}
 				const handle = wb.sheet(sheetName)
 				if (!handle) {
-					return errorResponse(`Sheet "${sheetName}" not found`)
+					return errorResponse(
+						sheetNotFoundError(sheetName, await loadAvailableSheets(file, wb.sheets)),
+					)
 				}
 				const readOpts = {
 					...(rowOffset !== undefined ? { rowOffset } : {}),
@@ -91,17 +102,123 @@ export function createServer(): McpServer {
 				}
 				const mode = format ?? 'cells'
 				const info =
-					mode === 'rows'
-						? handle.readRows(range, readOpts)
-						: mode === 'objects'
-							? handle.readObjects(range, {
+					mode === 'compact'
+						? buildCompactReadResult(
+								handle.readWindowCompact(range, {
 									...readOpts,
-									headers: headers && headers.length > 0 ? headers : 'first-row',
-								})
-							: handle.readWindow(range, readOpts)
+									includeRefs: false,
+									omitEmpty: true,
+									flatValues: true,
+								}),
+							)
+						: mode === 'tsv'
+							? buildTsvReadResult(handle.readRows(range, readOpts))
+							: mode === 'rows'
+								? handle.readRows(range, readOpts)
+								: mode === 'objects'
+									? handle.readObjects(range, {
+											...readOpts,
+											headers: headers && headers.length > 0 ? headers : 'first-row',
+										})
+									: handle.readWindow(range, readOpts)
 				return okResponse(
-					display ? displayReadResult(mode, info) : info,
+					mode === 'tsv' || mode === 'compact'
+						? info
+						: display
+							? displayReadResult(mode, info)
+							: info,
 					`Read range ${range} from "${sheetName}"`,
+				)
+			} catch (e) {
+				return errorResponse(
+					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
+				)
+			}
+		},
+	)
+
+	server.tool(
+		'ascend.find',
+		'Find cells by value or formula text',
+		{
+			file: z.string().describe('Path to workbook file'),
+			query: z.string().min(1).describe('Text to search for'),
+			sheet: z.string().optional().describe('Sheet name (defaults to first sheet)'),
+			in: z
+				.enum(['value', 'formula', 'both'])
+				.optional()
+				.describe('Search values, formulas, or both'),
+			caseSensitive: z.boolean().optional().describe('Match case exactly'),
+			limit: z.number().int().positive().max(500).optional().describe('Maximum matches to return'),
+		},
+		async ({ file, query, sheet, in: searchIn, caseSensitive, limit }) => {
+			try {
+				const wb = await WorkbookDocument.open(
+					file,
+					sheet ? { mode: 'formula', sheets: [sheet] } : { mode: 'formula' },
+				)
+				const sheetName = sheet ?? wb.sheets[0]
+				if (!sheetName) return errorResponse('No sheets in workbook')
+				const handle = wb.sheet(sheetName)
+				if (!handle) {
+					return errorResponse(
+						sheetNotFoundError(sheetName, await loadAvailableSheets(file, wb.sheets)),
+					)
+				}
+				const usedRange = handle.usedRange()
+				if (!usedRange) {
+					return okResponse(
+						{ sheet: sheetName, query, in: searchIn ?? 'both', matches: [], truncated: false },
+						`No populated cells to search in "${sheetName}"`,
+					)
+				}
+				const cells = handle.rangeCompact(rangeRefToString(usedRange), {
+					includeRefs: true,
+				}).cells
+				const searchMode = searchIn ?? 'both'
+				const maxMatches = limit ?? 100
+				const matches: Array<{
+					ref: string
+					row: number
+					col: number
+					value: string
+					formula: string | null
+					matchedOn: 'value' | 'formula'
+				}> = []
+				for (const cell of cells) {
+					const ref = cell.ref
+					if (!ref) continue
+					const valueText = formatDisplayCellValue(cell.value)
+					const formulaText = cell.formula ?? ''
+					const matchValue =
+						(searchMode === 'value' || searchMode === 'both') &&
+						includesQuery(valueText, query, caseSensitive ?? false)
+					const matchFormula =
+						(searchMode === 'formula' || searchMode === 'both') &&
+						cell.formula !== null &&
+						includesQuery(formulaText, query, caseSensitive ?? false)
+					if (!matchValue && !matchFormula) continue
+					matches.push({
+						ref,
+						row: cell.row,
+						col: cell.col,
+						value: valueText,
+						formula: cell.formula,
+						matchedOn: matchFormula ? 'formula' : 'value',
+					})
+					if (matches.length >= maxMatches) break
+				}
+				return okResponse(
+					{
+						sheet: sheetName,
+						query,
+						in: searchMode,
+						caseSensitive: caseSensitive ?? false,
+						limit: maxMatches,
+						truncated: matches.length >= maxMatches && cells.length > matches.length,
+						matches,
+					},
+					`Found ${matches.length} matching cells in "${sheetName}"`,
 				)
 			} catch (e) {
 				return errorResponse(
@@ -140,7 +257,11 @@ export function createServer(): McpServer {
 					...(sampleRowLimit !== undefined ? { sampleRowLimit } : {}),
 					...(sampleValueLimit !== undefined ? { sampleValueLimit } : {}),
 				})
-				if (!view) return errorResponse(`Sheet "${sheetName}" not found`)
+				if (!view) {
+					return errorResponse(
+						sheetNotFoundError(sheetName, await loadAvailableSheets(file, wb.sheets)),
+					)
+				}
 				return okResponse(view, `Generated agent view for ${range} on "${sheetName}"`)
 			} catch (e) {
 				return errorResponse(
@@ -438,6 +559,100 @@ function displayReadResult(mode: 'cells' | 'rows' | 'objects', info: unknown): u
 			value: formatDisplayCellValue(cell.value),
 		})),
 	}
+}
+
+function buildTsvReadResult(info: RangeRowsInfo) {
+	const rows = info.rows.map((row) =>
+		row.map((cell) => escapeDelimitedCell(formatDisplayCellValue(cell), '\t')),
+	)
+	return {
+		requestedRef: info.requestedRef,
+		ref: info.ref,
+		rowCount: info.rowCount,
+		colCount: info.colCount,
+		rowOffset: info.rowOffset,
+		rowLimit: info.rowLimit,
+		hasMore: info.hasMore,
+		...(info.nextRowOffset !== undefined ? { nextRowOffset: info.nextRowOffset } : {}),
+		format: 'tsv' as const,
+		tsv: rows.map((row) => row.join('\t')).join('\n'),
+	}
+}
+
+function buildCompactReadResult(info: CompactRangeWindowInfo) {
+	return {
+		requestedRef: info.requestedRef,
+		ref: info.ref,
+		rowCount: info.rowCount,
+		colCount: info.colCount,
+		rowOffset: info.rowOffset,
+		rowLimit: info.rowLimit,
+		hasMore: info.hasMore,
+		...(info.nextRowOffset !== undefined ? { nextRowOffset: info.nextRowOffset } : {}),
+		...(info.changeToken !== undefined ? { changeToken: info.changeToken } : {}),
+		format: 'compact' as const,
+		cells: info.cells.map((cell) => [
+			cell.row - info.ref.start.row,
+			cell.col - info.ref.start.col,
+			cell.value as unknown,
+			...(cell.formula ? [cell.formula] : []),
+		]),
+	}
+}
+
+function escapeDelimitedCell(value: string, delimiter: string): string {
+	if (!value.includes(delimiter) && !value.includes('\n') && !value.includes('"')) return value
+	return `"${value.replaceAll('"', '""')}"`
+}
+
+async function loadAvailableSheets(
+	file: string,
+	fallbackSheets: readonly string[],
+): Promise<readonly string[]> {
+	if (fallbackSheets.length > 0) return fallbackSheets
+	try {
+		const workbook = await WorkbookDocument.open(file, { mode: 'metadata-only' })
+		return workbook.sheets
+	} catch {
+		return fallbackSheets
+	}
+}
+
+function sheetNotFoundError(sheetName: string, availableSheets: readonly string[]) {
+	return ascendError('SHEET_NOT_FOUND', `Sheet "${sheetName}" not found`, {
+		details: { availableSheets },
+		suggestedFix:
+			availableSheets.length > 0
+				? `Use one of the available sheets: ${availableSheets.join(', ')}`
+				: 'Inspect the workbook first to list available sheets.',
+	})
+}
+
+function includesQuery(value: string, query: string, caseSensitive: boolean): boolean {
+	if (caseSensitive) return value.includes(query)
+	return value.toLowerCase().includes(query.toLowerCase())
+}
+
+function rangeRefToString(ref: {
+	start: { row: number; col: number }
+	end: { row: number; col: number }
+}): string {
+	return `${toA1Ref(ref.start.row, ref.start.col)}:${toA1Ref(ref.end.row, ref.end.col)}`
+}
+
+function toA1Ref(row: number, col: number): string {
+	return `${indexToColumnLocal(col)}${row + 1}`
+}
+
+function indexToColumnLocal(index: number): string {
+	let result = ''
+	let n = index + 1
+	while (n > 0) {
+		const rem = (n - 1) % 26
+		result = String.fromCharCode(65 + rem) + result
+		n = Math.floor((n - 1) / 26)
+	}
+	return result
 }
 
 function formatDisplayCellValue(value: CellValue): string {

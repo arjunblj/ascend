@@ -49,13 +49,20 @@ export function indexToColumn(index: number): string {
 
 const A1_RE = /^([A-Za-z]+)(\d+)$/
 
-export function parseA1(ref: string): CellRef {
+export function parseA1Safe(ref: string | undefined): CellRef | null {
+	if (!ref) return null
 	const m = A1_RE.exec(ref)
-	if (!m?.[1] || !m[2]) throw new Error(`Invalid A1 reference: ${ref}`)
+	if (!m?.[1] || !m[2]) return null
 	return {
 		row: Number.parseInt(m[2], 10) - 1,
 		col: columnToIndex(m[1].toUpperCase()),
 	}
+}
+
+export function parseA1(ref: string): CellRef {
+	const parsed = parseA1Safe(ref)
+	if (!parsed) throw new Error(`Invalid A1 reference: ${ref}`)
+	return parsed
 }
 
 export function toA1(ref: CellRef): string {

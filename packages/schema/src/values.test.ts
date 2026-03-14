@@ -21,6 +21,12 @@ describe('CellValue constructors', () => {
 		expect(isEmpty(v)).toBe(false)
 	})
 
+	test('numberValue reuses cached small integers across a wider range', () => {
+		expect(numberValue(-128)).toBe(numberValue(-128))
+		expect(numberValue(512)).toBe(numberValue(512))
+		expect(numberValue(513)).not.toBe(numberValue(513))
+	})
+
 	test('stringValue creates string cell', () => {
 		const v = stringValue('hello')
 		expect(v).toEqual({ kind: 'string', value: 'hello' })

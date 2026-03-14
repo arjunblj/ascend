@@ -1,4 +1,11 @@
-import { indexToColumn, parseRange, type RangeRef, type StyleId, type Workbook } from '@ascend/core'
+import {
+	indexToColumn,
+	parseA1,
+	parseRange,
+	type RangeRef,
+	type StyleId,
+	type Workbook,
+} from '@ascend/core'
 import {
 	type AggregateRangeCache,
 	clearCriteriaMatchCache,
@@ -10,7 +17,7 @@ import type { AscendError, CellValue } from '@ascend/schema'
 import { EMPTY, errorValue, numberValue, topLeftScalar } from '@ascend/schema'
 import { analyzeWorkbook, getSharedFormulaGroups } from './analysis.ts'
 import type { CalcContext } from './calc-context.ts'
-import { codegenFormula } from './codegen.ts'
+import { type CodegenFn, codegenFormula, codegenSharedFormula } from './codegen.ts'
 import { type CompiledFormula, compileFormula, evaluateCompiled } from './compiled-eval.ts'
 import {
 	type CellCoords,
@@ -151,6 +158,25 @@ function toScalarMatrix(value: CellValue): readonly (readonly CellValue[])[] | n
 
 function topLeftValue(value: CellValue): CellValue {
 	return topLeftScalar(value)
+}
+
+interface SharedFormulaPlan {
+	readonly members: readonly CellKey[]
+	readonly evaluator: CodegenFn | null
+}
+
+function parseSharedAnchorRef(
+	masterRef: string | undefined,
+	fallbackRow: number,
+	fallbackCol: number,
+): { row: number; col: number } {
+	if (!masterRef) return { row: fallbackRow, col: fallbackCol }
+	try {
+		const parsed = parseA1(masterRef)
+		return { row: parsed.row, col: parsed.col }
+	} catch {
+		return { row: fallbackRow, col: fallbackCol }
+	}
 }
 
 const compiledCache = new WeakMap<FormulaNode, CompiledFormula | false>()
@@ -308,14 +334,7 @@ function applyArrayResult(
 	const sheet = workbook.sheets[sheetIndex]
 	if (!sheet) return errorValue('#REF!')
 	const anchorRef = `${sheet.name}!${toA1Ref(row, col)}`
-	clearSpillFootprint(sheet, sheetIndex, anchorRef, changed, spillIndex)
 	if (matrix.length === 0 || (matrix[0]?.length ?? 0) === 0) return EMPTY
-	if (isSpillBlocked(sheet, row, col, anchorRef, matrix)) {
-		const spillError = errorValue('#SPILL!')
-		sheet.cells.setResolved(row, col, spillError, oldFormula, oldStyleId)
-		changed.push(anchorRef)
-		return spillError
-	}
 
 	const anchorValue = topLeftValue(matrix[0]?.[0] ?? EMPTY)
 	let maxCols = 1
@@ -324,6 +343,21 @@ function applyArrayResult(
 		if (len > maxCols) maxCols = len
 	}
 	const spillRef = `${toA1Ref(row, col)}:${toA1Ref(row + matrix.length - 1, col + maxCols - 1)}`
+	if (spillMatchesMatrix(sheet, sheetIndex, row, col, anchorRef, spillRef, matrix, spillIndex)) {
+		return anchorValue
+	}
+	clearSpillFootprint(sheet, sheetIndex, anchorRef, changed, spillIndex)
+	if (isSpillBlocked(sheet, row, col, anchorRef, matrix)) {
+		const spillError = errorValue('#SPILL!')
+		const currentValue = sheet.cells.readValue(row, col)
+		const currentBinding = sheet.cells.readFormulaInfo(row, col)
+		const alreadyBlocked = currentBinding === undefined && valuesEqual(currentValue, spillError)
+		if (!alreadyBlocked) {
+			sheet.cells.setResolved(row, col, spillError, oldFormula, oldStyleId)
+			changed.push(anchorRef)
+		}
+		return spillError
+	}
 
 	sheet.cells.setResolved(row, col, anchorValue, oldFormula, oldStyleId, {
 		kind: 'spill',
@@ -358,6 +392,49 @@ function applyArrayResult(
 		}
 	}
 	return anchorValue
+}
+
+function spillMatchesMatrix(
+	sheet: Workbook['sheets'][number],
+	sheetIndex: number,
+	row: number,
+	col: number,
+	anchorRef: string,
+	spillRef: string,
+	matrix: readonly (readonly CellValue[])[],
+	spillIndex: SpillIndexState,
+): boolean {
+	const existing = getSheetSpillIndex(spillIndex, sheetIndex, sheet).get(anchorRef)
+	if (!existing || existing.length === 0) return false
+	const expected = new Map<string, { value: CellValue; isAnchor: boolean }>()
+	for (let rowOffset = 0; rowOffset < matrix.length; rowOffset++) {
+		const sourceRow = matrix[rowOffset] ?? []
+		for (let colOffset = 0; colOffset < sourceRow.length; colOffset++) {
+			const targetRow = row + rowOffset
+			const targetCol = col + colOffset
+			expected.set(toA1Ref(targetRow, targetCol), {
+				value: topLeftValue(sourceRow[colOffset] ?? EMPTY),
+				isAnchor: rowOffset === 0 && colOffset === 0,
+			})
+		}
+	}
+	if (existing.length !== expected.size) return false
+	for (const entry of existing) {
+		const match = expected.get(entry.ref)
+		if (!match) return false
+		const value = sheet.cells.readValue(entry.row, entry.col)
+		if (!valuesEqual(value, match.value)) return false
+		const binding = sheet.cells.readFormulaInfo(entry.row, entry.col)
+		if (!binding || !isSpillBinding(binding)) return false
+		if (
+			binding.anchorRef !== anchorRef ||
+			binding.ref !== spillRef ||
+			binding.isAnchor !== match.isAnchor
+		) {
+			return false
+		}
+	}
+	return true
 }
 
 function toA1Ref(row: number, col: number): string {
@@ -492,7 +569,7 @@ export function recalculate(
 		mutableCtx.aggregateRangeCache = aggregateRangeCache
 
 		const sharedGroups = getSharedFormulaGroups(workbook, analysis.formulas)
-		const cellToGroup = new Map<CellKey, string>()
+		const cellToGroup = new Map<CellKey, SharedFormulaPlan>()
 		let hasSharedFormulaGroups = false
 		const hasGrowingRangeAggregates = growingRangeAggregates.size > 0
 		const completedKeys = hasGrowingRangeAggregates ? new Set<CellKey>() : null
@@ -502,15 +579,31 @@ export function recalculate(
 			for (const k of evalOrder) {
 				evalOrderIndex.set(k, idx++)
 			}
-			for (const [gk, members] of sharedGroups) {
+			for (const [_gk, members] of sharedGroups) {
 				if (members.length < 2) continue
 				hasSharedFormulaGroups = true
 				members.sort((a, b) => (evalOrderIndex.get(a) ?? -1) - (evalOrderIndex.get(b) ?? -1))
-				for (const member of members) cellToGroup.set(member, gk)
+				let evaluator: CodegenFn | null = null
+				for (const memberKey of members) {
+					parseCellKeyInto(memberKey, coords)
+					const memberSheet = workbook.sheets[coords.sheetIndex]
+					const binding = memberSheet?.cells.readFormulaInfo(coords.row, coords.col) as
+						| { kind?: string; isMaster?: boolean; masterRef?: string }
+						| undefined
+					if (!memberSheet || binding?.kind !== 'shared' || !binding.isMaster) continue
+					const masterAst = asts.get(memberKey)
+					const masterFormulaText = formulaTexts.get(memberKey)
+					if (!masterAst || !masterFormulaText) break
+					const anchor = parseSharedAnchorRef(binding.masterRef, coords.row, coords.col)
+					evaluator = codegenSharedFormula(masterFormulaText, masterAst, anchor)
+					break
+				}
+				const plan: SharedFormulaPlan = { members, evaluator }
+				for (const member of members) cellToGroup.set(member, plan)
 			}
 		}
 
-		const evalCell = (key: CellKey) => {
+		const evalCell = (key: CellKey, groupEvaluator?: CodegenFn | null) => {
 			if (cycleKeys.has(key)) {
 				parseCellKeyInto(key, coords)
 				const { sheetIndex: si, row, col } = coords
@@ -569,8 +662,12 @@ export function recalculate(
 			const newValue =
 				growingRangeAggregate && completedKeys
 					? (tryEvaluateGrowingRangeAggregate(workbook, growingRangeAggregate, completedKeys) ??
-						evalFormula(key, formulaText, ast, mutableCtx))
-					: evalFormula(key, formulaText, ast, mutableCtx)
+						(groupEvaluator
+							? groupEvaluator(mutableCtx)
+							: evalFormula(key, formulaText, ast, mutableCtx)))
+					: groupEvaluator
+						? groupEvaluator(mutableCtx)
+						: evalFormula(key, formulaText, ast, mutableCtx)
 			const hadCell = sheet.cells.has(row, col)
 			const oldValue = sheet.cells.readValue(row, col)
 			const oldFormula = sheet.cells.readFormula(row, col) ?? null
@@ -578,6 +675,7 @@ export function recalculate(
 			const oldFormulaInfo = sheet.cells.readFormulaInfo(row, col)
 			const spillMatrix = toScalarMatrix(newValue)
 			if (spillMatrix) {
+				const changedBefore = changed.length
 				applyArrayResult(
 					workbook,
 					si,
@@ -589,7 +687,7 @@ export function recalculate(
 					changed,
 					spillIndex,
 				)
-				if (isDirtyRecalc) {
+				if (isDirtyRecalc && changed.length > changedBefore) {
 					for (const dep of graph.getDependents(key)) {
 						mustEval.add(dep)
 					}
@@ -621,12 +719,10 @@ export function recalculate(
 			const processed = new Set<CellKey>()
 			for (const key of evalOrder) {
 				if (processed.has(key)) continue
-				const groupKey = cellToGroup.get(key)
-				if (groupKey !== undefined) {
-					const groupMembers = sharedGroups.get(groupKey)
-					if (!groupMembers) continue
-					for (const memberKey of groupMembers) processed.add(memberKey)
-					for (const memberKey of groupMembers) evalCell(memberKey)
+				const plan = cellToGroup.get(key)
+				if (plan) {
+					for (const memberKey of plan.members) processed.add(memberKey)
+					for (const memberKey of plan.members) evalCell(memberKey, plan.evaluator)
 					continue
 				}
 				evalCell(key)
@@ -747,6 +843,7 @@ function evalIterative(
 			const oldFormulaInfo = sheet.cells.readFormulaInfo(row, col)
 			const spillMatrix = toScalarMatrix(newValue)
 			if (spillMatrix) {
+				const changedBefore = changed.length
 				applyArrayResult(
 					workbook,
 					si,
@@ -758,6 +855,7 @@ function evalIterative(
 					changed,
 					spillIndex,
 				)
+				if (changed.length === changedBefore) continue
 				continue
 			}
 			const clearedSpill =

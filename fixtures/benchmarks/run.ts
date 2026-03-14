@@ -1046,6 +1046,39 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'recalc-shared-formula-group',
+		category: 'calc',
+		build() {
+			const workbook = createWorkbook()
+			workbook.addSheet('Sheet1')
+			const sheet = workbook.sheets[0]
+			if (!sheet) throw new Error('Benchmark workbook missing first sheet')
+			const rows = 100_000
+			for (let r = 0; r < rows; r++) {
+				sheet.cells.set(r, 1, { value: numberValue(r + 1), formula: null, styleId: SID })
+				sheet.cells.set(r, 2, { value: numberValue((r + 1) * 10), formula: null, styleId: SID })
+			}
+			sheet.cells.set(0, 0, {
+				value: EMPTY,
+				formula: 'B1+C1',
+				styleId: SID,
+				formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: true, masterRef: 'A1' },
+			})
+			for (let r = 1; r < rows; r++) {
+				sheet.cells.set(r, 0, {
+					value: EMPTY,
+					formula: null,
+					styleId: SID,
+					formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'A1' },
+				})
+			}
+			return { workbook, rows, cols: 3, cells: rows * 3 }
+		},
+		run(input) {
+			recalculate(requireWorkbook(input), defaultCalcContext())
+		},
+	},
+	{
 		name: 'recalc-index-match',
 		category: 'calc',
 		build() {

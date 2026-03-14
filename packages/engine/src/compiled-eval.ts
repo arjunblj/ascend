@@ -54,6 +54,7 @@ const Op = {
 	NOT: 70,
 	AND_JF: 71,
 	OR_JT: 72,
+	DUP: 73,
 	SUM_RANGE: 80,
 	COUNT_RANGE: 81,
 	AVERAGE_RANGE: 82,
@@ -206,53 +207,122 @@ function shouldCompile(node: FormulaNode): boolean {
 	return compilableNodes >= 3
 }
 
-function isNumericFormula(ops: readonly number[]): boolean {
-	let ip = 0
-	while (ip < ops.length) {
-		const op = ops[ip++] as number
-		switch (op) {
-			case Op.NUM:
-				ip++
-				break
-			case Op.EMPTY_VAL:
-			case Op.ADD:
-			case Op.SUB:
-			case Op.MUL:
-			case Op.DIV:
-			case Op.POW:
-			case Op.NEG:
-			case Op.PCT:
-			case Op.INT_OP:
-			case Op.ABS:
-				break
-			case Op.ROUND:
-			case Op.ROUNDUP:
-			case Op.ROUNDDOWN:
-			case Op.TRUNC:
-				break
-			case Op.CELL:
-			case Op.CELL_ADD:
-			case Op.CELL_SUB:
-			case Op.CELL_MUL:
-			case Op.CELL_DIV:
-			case Op.CELL_POW:
-				ip += 2
-				break
-			case Op.CELL_SHEET:
-				ip += 3
-				break
-			case Op.SUM_RANGE:
-			case Op.COUNT_RANGE:
-			case Op.AVERAGE_RANGE:
-			case Op.MIN_RANGE:
-			case Op.MAX_RANGE:
-				ip += 5
-				break
-			default:
-				return false
+function canEvaluateNumericCondition(node: FormulaNode): boolean {
+	switch (node.type) {
+		case 'number':
+		case 'boolean':
+		case 'missing':
+		case 'cellRef':
+			return true
+		case 'unary':
+			if (node.op === '@') return false
+			if (node.op === '-' || node.op === '%') return canEvaluateNumericValue(node.operand)
+			return canEvaluateNumericCondition(node.operand)
+		case 'binary':
+			if (node.op === ',' || node.op === ' ' || node.op === '&') return false
+			if (
+				node.op === '=' ||
+				node.op === '<>' ||
+				node.op === '<' ||
+				node.op === '>' ||
+				node.op === '<=' ||
+				node.op === '>='
+			) {
+				return canEvaluateNumericValue(node.left) && canEvaluateNumericValue(node.right)
+			}
+			return canEvaluateNumericValue(node.left) && canEvaluateNumericValue(node.right)
+		case 'function': {
+			const upper = node.name.toUpperCase()
+			if (upper === 'AND' || upper === 'OR') return node.args.every(canEvaluateNumericCondition)
+			if (upper === 'NOT' && node.args.length === 1) {
+				return canEvaluateNumericCondition(node.args[0] as FormulaNode)
+			}
+			return canEvaluateNumericValue(node)
 		}
+		default:
+			return false
 	}
-	return true
+}
+
+function isSameCellRef(
+	left: FormulaNode,
+	right: FormulaNode,
+): left is FormulaNode & { type: 'cellRef' } {
+	return (
+		left.type === 'cellRef' &&
+		right.type === 'cellRef' &&
+		left.sheet === right.sheet &&
+		left.ref.row === right.ref.row &&
+		left.ref.col === right.ref.col &&
+		left.ref.rowAbsolute === right.ref.rowAbsolute &&
+		left.ref.colAbsolute === right.ref.colAbsolute
+	)
+}
+
+function canEvaluateNumericValue(node: FormulaNode): boolean {
+	switch (node.type) {
+		case 'number':
+		case 'missing':
+		case 'cellRef':
+			return true
+		case 'boolean':
+		case 'string':
+		case 'error':
+			return false
+		case 'binary':
+			if (node.op === ',' || node.op === ' ') return false
+			if (
+				node.op === '=' ||
+				node.op === '<>' ||
+				node.op === '<' ||
+				node.op === '>' ||
+				node.op === '<=' ||
+				node.op === '>=' ||
+				node.op === '&'
+			) {
+				return false
+			}
+			return canEvaluateNumericValue(node.left) && canEvaluateNumericValue(node.right)
+		case 'unary':
+			if (node.op === '@') return false
+			return canEvaluateNumericValue(node.operand)
+		case 'function': {
+			const upper = node.name.toUpperCase()
+			if (upper === 'IF' && node.args.length === 3) {
+				return (
+					canEvaluateNumericCondition(node.args[0] as FormulaNode) &&
+					canEvaluateNumericValue(node.args[1] as FormulaNode) &&
+					canEvaluateNumericValue(node.args[2] as FormulaNode)
+				)
+			}
+			if (
+				(upper === 'ROUND' || upper === 'ROUNDUP' || upper === 'ROUNDDOWN' || upper === 'TRUNC') &&
+				node.args.length === 2
+			) {
+				return (
+					canEvaluateNumericValue(node.args[0] as FormulaNode) &&
+					canEvaluateNumericValue(node.args[1] as FormulaNode)
+				)
+			}
+			if ((upper === 'INT' || upper === 'ABS') && node.args.length === 1) {
+				return canEvaluateNumericValue(node.args[0] as FormulaNode)
+			}
+			if (
+				(upper === 'SUM' ||
+					upper === 'COUNT' ||
+					upper === 'AVERAGE' ||
+					upper === 'MIN' ||
+					upper === 'MAX') &&
+				node.args.length === 1 &&
+				(node.args[0] as FormulaNode).type === 'rangeRef'
+			) {
+				return true
+			}
+			return false
+		}
+		default:
+			return false
+	}
 }
 
 export function compileFormula(node: FormulaNode): CompiledFormula | null {
@@ -331,6 +401,59 @@ export function compileFormula(node: FormulaNode): CompiledFormula | null {
 				const folded = tryFoldConstant(n)
 				if (folded !== null) {
 					ops.push(Op.NUM, addConst(folded))
+					break
+				}
+				if (n.op === '^' && n.right.type === 'number' && n.right.value === 2) {
+					emit(n.left)
+					ops.push(Op.DUP, Op.MUL)
+					break
+				}
+				if (n.op === '/' && n.right.type === 'number' && n.right.value === 2) {
+					emit(n.left)
+					ops.push(Op.NUM, addConst(0.5), Op.MUL)
+					break
+				}
+				if (isSameCellRef(n.left, n.right)) {
+					emit(n.left)
+					ops.push(Op.DUP)
+					switch (n.op) {
+						case '+':
+							ops.push(Op.ADD)
+							break
+						case '-':
+							ops.push(Op.SUB)
+							break
+						case '*':
+							ops.push(Op.MUL)
+							break
+						case '/':
+							ops.push(Op.DIV)
+							break
+						case '^':
+							ops.push(Op.POW)
+							break
+						case '&':
+							ops.push(Op.CONCAT)
+							break
+						case '=':
+							ops.push(Op.EQ)
+							break
+						case '<>':
+							ops.push(Op.NE)
+							break
+						case '<':
+							ops.push(Op.LT)
+							break
+						case '>':
+							ops.push(Op.GT)
+							break
+						case '<=':
+							ops.push(Op.LE)
+							break
+						case '>=':
+							ops.push(Op.GE)
+							break
+					}
 					break
 				}
 				const superOp =
@@ -439,6 +562,17 @@ export function compileFormula(node: FormulaNode): CompiledFormula | null {
 	function emitFunction(n: FormulaNode & { type: 'function' }): void {
 		const upper = n.name.toUpperCase()
 		if (upper === 'IF' && n.args.length >= 2 && n.args.length <= 3) {
+			const condition = tryFoldConstant(n.args[0] as FormulaNode)
+			if (condition !== null) {
+				if (condition !== 0) {
+					emit(n.args[1] as FormulaNode)
+				} else if (n.args.length >= 3) {
+					emit(n.args[2] as FormulaNode)
+				} else {
+					ops.push(Op.BOOL, addConst(false))
+				}
+				return
+			}
 			emit(n.args[0] as FormulaNode)
 			const ifPos = ops.length
 			ops.push(Op.IF, 0, 0)
@@ -572,7 +706,7 @@ export function compileFormula(node: FormulaNode): CompiledFormula | null {
 	}
 
 	emit(node)
-	return { ops, constants, numericOnly: isNumericFormula(ops) }
+	return { ops, constants, numericOnly: canEvaluateNumericValue(node) }
 }
 
 let numericStackSize = 64
@@ -675,6 +809,9 @@ function evaluateCompiledNumeric(compiled: CompiledFormula, ctx: EvalContext): C
 			case Op.NUM:
 				numericStack[sp++] = constants[ops[ip++] as number] as number
 				break
+			case Op.BOOL:
+				numericStack[sp++] = (constants[ops[ip++] as number] as boolean) ? 1 : 0
+				break
 			case Op.EMPTY_VAL:
 				numericStack[sp++] = 0
 				break
@@ -731,6 +868,21 @@ function evaluateCompiledNumeric(compiled: CompiledFormula, ctx: EvalContext): C
 			case Op.PCT:
 				numericStack[sp - 1] = (numericStack[sp - 1] as number) / 100
 				break
+			case Op.DUP:
+				numericStack[sp] = numericStack[sp - 1] as number
+				sp++
+				break
+			case Op.EQ:
+			case Op.NE:
+			case Op.LT:
+			case Op.GT:
+			case Op.LE:
+			case Op.GE: {
+				const b = numericStack[--sp] as number
+				const a = numericStack[sp - 1] as number
+				numericStack[sp - 1] = comparePrimitive(op, a, b) ? 1 : 0
+				break
+			}
 			case Op.CELL_ADD:
 			case Op.CELL_SUB:
 			case Op.CELL_MUL:
@@ -785,6 +937,40 @@ function evaluateCompiledNumeric(compiled: CompiledFormula, ctx: EvalContext): C
 			}
 			case Op.ABS:
 				numericStack[sp - 1] = Math.abs(numericStack[sp - 1] as number)
+				break
+			case Op.NOT:
+				numericStack[sp - 1] = (numericStack[sp - 1] as number) === 0 ? 1 : 0
+				break
+			case Op.AND_JF: {
+				const endTarget = ops[ip] as number
+				ip++
+				if ((numericStack[sp - 1] as number) === 0) {
+					numericStack[sp - 1] = 0
+					ip = endTarget
+				} else {
+					sp--
+				}
+				break
+			}
+			case Op.OR_JT: {
+				const endTarget = ops[ip] as number
+				ip++
+				if ((numericStack[sp - 1] as number) !== 0) {
+					numericStack[sp - 1] = 1
+					ip = endTarget
+				} else {
+					sp--
+				}
+				break
+			}
+			case Op.IF: {
+				const falseTarget = ops[ip] as number
+				ip += 2
+				if ((numericStack[--sp] as number) === 0) ip = falseTarget
+				break
+			}
+			case Op.JMP:
+				ip = ops[ip] as number
 				break
 			case Op.SUM_RANGE:
 			case Op.COUNT_RANGE:
@@ -893,6 +1079,10 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 			}
 			case Op.EMPTY_VAL:
 				sharedStack[stackDepth++] = EMPTY
+				break
+			case Op.DUP:
+				sharedStack[stackDepth] = sharedStack[stackDepth - 1] ?? EMPTY
+				stackDepth++
 				break
 			case Op.CELL: {
 				const row = ops[ip] as number

@@ -32,6 +32,7 @@ import {
 	type CsvDialect,
 	EMPTY,
 	emptyReport,
+	type InputValue,
 	type Operation,
 } from '@ascend/schema'
 import { check as verifyCheck, lint as verifyLint } from '@ascend/verify'
@@ -420,6 +421,11 @@ export class AscendWorkbook extends WorkbookReadView {
 		return this.apply([
 			{ op: 'setFormula', sheet: sheetName, ref, formula: normalizeFormulaInput(formula) },
 		])
+	}
+
+	set(cellRef: string, value: InputValue): ApplyResult {
+		const { sheetName, ref } = parseFullRef(cellRef, this.wb)
+		return this.apply([{ op: 'setCells', sheet: sheetName, updates: [{ ref, value }] }])
 	}
 
 	fillFormula(rangeRef: string, formula: string): ApplyResult {

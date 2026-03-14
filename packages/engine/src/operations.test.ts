@@ -866,6 +866,33 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('appendRows rejects tables with totals rows', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('Cash'), formula: null, styleId: sid })
+		applyOperation(wb, {
+			op: 'createTable',
+			sheet: 'Sheet1',
+			ref: 'A1:A2',
+			name: 'BalanceTable',
+			hasHeaders: true,
+		})
+		const table = sheet.tables[0]
+		if (!table) throw new Error('expected table')
+		sheet.tables[0] = { ...table, hasTotals: true }
+
+		const result = applyOperation(wb, {
+			op: 'appendRows',
+			table: 'BalanceTable',
+			rows: [['Debt']],
+		})
+		expect(result.ok).toBe(false)
+		if (result.ok) return
+		expect(result.error.code).toBe('VALIDATION_ERROR')
+		expect(result.error.message).toContain('totals rows')
+	})
+
 	test('appendRows expands table filter and sort metadata refs', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

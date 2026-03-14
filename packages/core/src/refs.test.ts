@@ -4,6 +4,7 @@ import {
 	expandRange,
 	indexToColumn,
 	parseA1,
+	parseA1Safe,
 	parseRange,
 	toA1,
 	toRangeString,
@@ -79,6 +80,13 @@ describe('parseA1 / toA1', () => {
 		expect(() => parseA1('')).toThrow()
 		expect(() => parseA1('123')).toThrow()
 		expect(() => parseA1('A')).toThrow()
+	})
+
+	test('parseA1Safe returns null on invalid ref', () => {
+		expect(parseA1Safe(undefined)).toBeNull()
+		expect(parseA1Safe('')).toBeNull()
+		expect(parseA1Safe('123')).toBeNull()
+		expect(parseA1Safe('A1')).toEqual({ row: 0, col: 0 })
 	})
 })
 

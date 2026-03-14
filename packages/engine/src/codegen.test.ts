@@ -4,7 +4,7 @@ import { createWorkbook } from '@ascend/core'
 import { parseFormula } from '@ascend/formulas'
 import { booleanValue, EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
 import { defaultCalcContext } from './calc-context.ts'
-import { clearCodegenCache, codegenFormula } from './codegen.ts'
+import { clearCodegenCache, codegenFormula, codegenSharedFormula } from './codegen.ts'
 import type { EvalContext } from './evaluator.ts'
 
 const sid = 0 as StyleId
@@ -22,6 +22,21 @@ function codegenEval(formula: string, wb: ReturnType<typeof createWorkbook>, row
 	const parsed = parseFormula(formula)
 	if (!parsed.ok) throw new Error(`Parse failed: ${formula}`)
 	const fn = codegenFormula(formula, parsed.value)
+	if (!fn) return null
+	return fn(makeCtx(wb, 0, row, col))
+}
+
+function sharedCodegenEval(
+	formula: string,
+	wb: ReturnType<typeof createWorkbook>,
+	anchorRow: number,
+	anchorCol: number,
+	row: number,
+	col: number,
+) {
+	const parsed = parseFormula(formula)
+	if (!parsed.ok) throw new Error(`Parse failed: ${formula}`)
+	const fn = codegenSharedFormula(formula, parsed.value, { row: anchorRow, col: anchorCol })
 	if (!fn) return null
 	return fn(makeCtx(wb, 0, row, col))
 }
@@ -170,14 +185,32 @@ describe('codegen', () => {
 		expect(codegenEval('A1+1', wb)).toEqual(errorValue('#VALUE!'))
 	})
 
-	test('returns null for unsupported formulas (range functions)', () => {
+	test('SUM(range) is codegened and evaluates correctly', () => {
 		const wb = createWorkbook()
-		wb.addSheet('Sheet1')
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(3), formula: null, styleId: sid })
 
 		const parsed = parseFormula('SUM(A1:A10)')
 		if (!parsed.ok) throw new Error('parse failed')
 		const fn = codegenFormula('SUM(A1:A10)', parsed.value)
-		expect(fn).toBeNull()
+		expect(fn).not.toBeNull()
+		expect(fn?.(makeCtx(wb))).toEqual(numberValue(6))
+	})
+
+	test('lookup formulas can participate in outer codegen via node fallback', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('a'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('b'), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: stringValue('c'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: numberValue(30), formula: null, styleId: sid })
+
+		expect(codegenEval('VLOOKUP("b",A1:B3,2,FALSE)+1', wb)).toEqual(numberValue(21))
+		expect(codegenEval('INDEX(B1:B3,MATCH("c",A1:A3,0))+2', wb)).toEqual(numberValue(32))
 	})
 
 	test('caching returns same function for same formula text', () => {
@@ -220,5 +253,30 @@ describe('codegen', () => {
 		sheet.cells.set(0, 0, { value: numberValue(15), formula: null, styleId: sid })
 
 		expect(codegenEval('IF(A1>20,"big",IF(A1>10,"med","small"))', wb)).toEqual(stringValue('med'))
+	})
+
+	test('shared codegen shifts relative refs per target cell', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		for (let r = 0; r < 3; r++) {
+			sheet.cells.set(r, 1, { value: numberValue(r + 1), formula: null, styleId: sid })
+		}
+
+		expect(sharedCodegenEval('B1*2', wb, 0, 0, 0, 0)).toEqual(numberValue(2))
+		expect(sharedCodegenEval('B1*2', wb, 0, 0, 1, 0)).toEqual(numberValue(4))
+		expect(sharedCodegenEval('B1*2', wb, 0, 0, 2, 0)).toEqual(numberValue(6))
+	})
+
+	test('shared codegen preserves absolute refs while shifting relative refs', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(100), formula: null, styleId: sid })
+		for (let r = 0; r < 3; r++) {
+			sheet.cells.set(r, 1, { value: numberValue(r + 1), formula: null, styleId: sid })
+		}
+
+		expect(sharedCodegenEval('$A$1+B1', wb, 0, 2, 0, 2)).toEqual(numberValue(101))
+		expect(sharedCodegenEval('$A$1+B1', wb, 0, 2, 1, 2)).toEqual(numberValue(102))
+		expect(sharedCodegenEval('$A$1+B1', wb, 0, 2, 2, 2)).toEqual(numberValue(103))
 	})
 })

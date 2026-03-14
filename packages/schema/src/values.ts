@@ -60,15 +60,19 @@ const ERROR_CACHE: Record<string, CellValue> = {
 	'#CALC!': { kind: 'error', value: '#CALC!' } as const,
 }
 
-const SMALL_INT_CACHE: CellValue[] = new Array(257)
-for (let i = -1; i <= 255; i++) {
-	SMALL_INT_CACHE[i + 1] = { kind: 'number', value: i } as const
+const SMALL_INT_CACHE_MIN = -128
+const SMALL_INT_CACHE_MAX = 512
+const SMALL_INT_CACHE: CellValue[] = new Array(SMALL_INT_CACHE_MAX - SMALL_INT_CACHE_MIN + 1)
+for (let i = SMALL_INT_CACHE_MIN; i <= SMALL_INT_CACHE_MAX; i++) {
+	SMALL_INT_CACHE[i - SMALL_INT_CACHE_MIN] = { kind: 'number', value: i } as const
 }
 
 export function numberValue(v: number): CellValue {
 	if (v === 0) return ZERO_VALUE
 	if (v === 1) return ONE_VALUE
-	if (v === (v | 0) && v >= -1 && v <= 255) return SMALL_INT_CACHE[v + 1] as CellValue
+	if (v === (v | 0) && v >= SMALL_INT_CACHE_MIN && v <= SMALL_INT_CACHE_MAX) {
+		return SMALL_INT_CACHE[v - SMALL_INT_CACHE_MIN] as CellValue
+	}
 	return { kind: 'number', value: v }
 }
 

@@ -227,6 +227,17 @@ describe('AscendWorkbook', () => {
 		expect(handle?.cell('C3')).toBeUndefined()
 	})
 
+	test('set auto-coerces primitive values through setCells', () => {
+		const wb = AscendWorkbook.create()
+		expect(wb.set('Sheet1!A1', 42).errors).toEqual([])
+		expect(wb.set('Sheet1!A2', 'hello').errors).toEqual([])
+		expect(wb.set('Sheet1!A3', true).errors).toEqual([])
+
+		expect(wb.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 42 })
+		expect(wb.sheet('Sheet1')?.cell('A2')?.value).toEqual({ kind: 'string', value: 'hello' })
+		expect(wb.sheet('Sheet1')?.cell('A3')?.value).toEqual({ kind: 'boolean', value: true })
+	})
+
 	test('agentView summarizes a range for LLM-friendly reads', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

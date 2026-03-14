@@ -86,6 +86,12 @@ export class AscendWorkbook extends WorkbookReadView {
 		this.dirty = false
 	}
 
+	/**
+	 * Open a workbook from a file path or bytes.
+	 * @example
+	 * const wb = await AscendWorkbook.open('./data.xlsx')
+	 * const wb2 = await AscendWorkbook.open(bytes, { mode: 'values', sheets: ['Sheet1'] })
+	 */
 	static async open(
 		pathOrBytes: string | Uint8Array,
 		options?: {
@@ -103,6 +109,11 @@ export class AscendWorkbook extends WorkbookReadView {
 		)
 	}
 
+	/**
+	 * Create a new empty workbook with a default Sheet1.
+	 * @example
+	 * const wb = AscendWorkbook.create()
+	 */
 	static create(): AscendWorkbook {
 		const wb = createWorkbook()
 		wb.addSheet('Sheet1')
@@ -123,6 +134,11 @@ export class AscendWorkbook extends WorkbookReadView {
 		)
 	}
 
+	/**
+	 * Create a workbook from CSV content.
+	 * @example
+	 * const wb = AscendWorkbook.fromCsv('a,b,c\n1,2,3')
+	 */
 	static fromCsv(content: string, dialect?: Partial<CsvDialect>): AscendWorkbook {
 		const result = readCsv(content, dialect)
 		if (!result.ok) throw new AscendException(result.error)
@@ -234,6 +250,11 @@ export class AscendWorkbook extends WorkbookReadView {
 		return previewResult
 	}
 
+	/**
+	 * Apply operations to the workbook. Does not recalculate formulas.
+	 * @example
+	 * wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 42 }] }])
+	 */
 	apply(ops: readonly Operation[], options?: { collectAllErrors?: boolean }): ApplyResult {
 		if (this.loadInfo.isPartial) {
 			return {
@@ -273,6 +294,11 @@ export class AscendWorkbook extends WorkbookReadView {
 		}
 	}
 
+	/**
+	 * Apply operations and recalculate affected formulas.
+	 * @example
+	 * wb.applyAndRecalc([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 10 }] }])
+	 */
 	applyAndRecalc(ops: readonly Operation[], opts?: { range?: string }): ApplyAndRecalcResult {
 		const apply = this.apply(ops)
 		if (apply.errors.length > 0 || !apply.recalcRequired) {
@@ -284,9 +310,13 @@ export class AscendWorkbook extends WorkbookReadView {
 		}
 	}
 
-	/** Apply an array of operations atomically and recalculate. */
+	/**
+	 * Apply operations atomically and recalculate once, or run a function with deferred recalc.
+	 * @example
+	 * wb.batch([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }, { ref: 'B1', value: 2 }] }])
+	 * wb.batch(() => { wb.set('A1', 1); wb.set('B1', 2) })
+	 */
 	batch(ops: readonly Operation[]): BatchResult
-	/** Execute `fn` (which may call `apply` multiple times) and defer recalculation until `fn` completes. */
 	batch(fn: () => void): void
 	batch(opsOrFn: readonly Operation[] | (() => void)): BatchResult | undefined {
 		if (typeof opsOrFn === 'function') {
@@ -332,6 +362,12 @@ export class AscendWorkbook extends WorkbookReadView {
 		return { errors: [] }
 	}
 
+	/**
+	 * Recalculate formulas. Optionally limit to a range.
+	 * @example
+	 * wb.recalc()
+	 * wb.recalc({ range: 'Sheet1!A1:C10' })
+	 */
 	recalc(opts?: { range?: string }): RecalcResult {
 		if (this.loadInfo.isPartial) {
 			return {
@@ -384,7 +420,11 @@ export class AscendWorkbook extends WorkbookReadView {
 		}
 	}
 
-	/** Evaluate a formula against the current workbook state without writing to a cell. */
+	/**
+	 * Evaluate a formula against the current workbook state without writing to a cell.
+	 * @example
+	 * const result = wb.eval('SUM(A1:A10)')
+	 */
 	eval(formula: string): CellValue {
 		const normalized = normalizeFormulaInput(formula)
 		const parsed = cachedParseFormula(normalized)
@@ -441,6 +481,11 @@ export class AscendWorkbook extends WorkbookReadView {
 		return { clean: warnings.length === 0, warnings }
 	}
 
+	/**
+	 * Find cells matching a value in a sheet.
+	 * @example
+	 * const matches = wb.find('Sheet1', { value: 'hello', match: 'contains' })
+	 */
 	find(
 		sheet: string,
 		options: {
@@ -489,6 +534,11 @@ export class AscendWorkbook extends WorkbookReadView {
 		return results
 	}
 
+	/**
+	 * Set a cell formula.
+	 * @example
+	 * wb.setFormula('Sheet1!B1', '=A1*2')
+	 */
 	setFormula(cellRef: string, formula: string): ApplyResult {
 		const { sheetName, ref } = parseFullRef(cellRef, this.wb)
 		return this.apply([
@@ -496,6 +546,11 @@ export class AscendWorkbook extends WorkbookReadView {
 		])
 	}
 
+	/**
+	 * Set a cell value.
+	 * @example
+	 * wb.set('Sheet1!A1', 42)
+	 */
 	set(cellRef: string, value: InputValue): ApplyResult {
 		const { sheetName, ref } = parseFullRef(cellRef, this.wb)
 		return this.apply([{ op: 'setCells', sheet: sheetName, updates: [{ ref, value }] }])
@@ -508,14 +563,29 @@ export class AscendWorkbook extends WorkbookReadView {
 		])
 	}
 
+	/**
+	 * Add a new sheet.
+	 * @example
+	 * wb.addSheet('Data')
+	 */
 	addSheet(name: string): ApplyResult {
 		return this.apply([{ op: 'addSheet', name }])
 	}
 
+	/**
+	 * Return a builder for batched operations.
+	 * @example
+	 * wb.builder().set('A1', 1).set('B1', 2).commit()
+	 */
 	builder(): BatchBuilder {
 		return new BatchBuilder(this)
 	}
 
+	/**
+	 * Delete a sheet.
+	 * @example
+	 * wb.deleteSheet('Sheet2')
+	 */
 	deleteSheet(sheet: string): ApplyResult {
 		return this.apply([{ op: 'deleteSheet', sheet }])
 	}
@@ -542,6 +612,11 @@ export class AscendWorkbook extends WorkbookReadView {
 
 	// --- Export ---
 
+	/**
+	 * Save the workbook to a file. Supports .xlsx, .xlsm, .csv, .tsv.
+	 * @example
+	 * await wb.save('./output.xlsx')
+	 */
 	async save(path: string): Promise<void> {
 		this.assertWritable()
 		const ext = path.split('.').pop()?.toLowerCase() ?? ''
@@ -558,6 +633,11 @@ export class AscendWorkbook extends WorkbookReadView {
 		await writeFile(path, bytes)
 	}
 
+	/**
+	 * Serialize the workbook to XLSX bytes.
+	 * @example
+	 * const bytes = wb.toBytes()
+	 */
 	toBytes(): Uint8Array {
 		this.assertWritable()
 		if (this.originalBytes && !this.dirty) return this.originalBytes
@@ -580,6 +660,12 @@ export class AscendWorkbook extends WorkbookReadView {
 		yield this.toBytes()
 	}
 
+	/**
+	 * Export the workbook or a sheet/range to CSV.
+	 * @example
+	 * const csv = wb.toCsv()
+	 * const csv2 = wb.toCsv({ sheet: 'Data', dialect: { delimiter: ';' } })
+	 */
 	toCsv(opts?: { sheet?: string; range?: string; dialect?: Partial<CsvDialect> }): string {
 		this.assertWritable()
 		const result = writeCsv(this.wb, opts)

@@ -88,6 +88,24 @@ describe('recalculate', () => {
 		expect(result.errors).toEqual([])
 	})
 
+	test('Salsa backdating: when formula output unchanged, downstream dependents are not re-evaluated', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(5), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'IF(A1>0,"yes","no")', styleId: sid })
+		sheet.cells.set(0, 2, { value: EMPTY, formula: 'B1&"!"', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(stringValue('yes'))
+		expect(sheet.cells.get(0, 2)?.value).toEqual(stringValue('yes!'))
+
+		sheet.cells.set(0, 0, { value: numberValue(10), formula: null, styleId: sid })
+		const result = recalculate(wb, makeCtx(), { dirtyOnly: true, dirtyRefs: ['Sheet1!A1'] })
+		expect(sheet.cells.get(0, 1)?.value).toEqual(stringValue('yes'))
+		expect(sheet.cells.get(0, 2)?.value).toEqual(stringValue('yes!'))
+		expect(result.changed).toEqual([])
+	})
+
 	test('multi-sheet reference', () => {
 		const wb = createWorkbook()
 		const s1 = wb.addSheet('Data')

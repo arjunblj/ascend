@@ -472,8 +472,10 @@ export function recalculate(
 	if (isDirtyRecalc) {
 		for (const seed of dirtySeeds) {
 			mustEval.add(seed)
-			for (const dep of graph.getDependents(seed)) {
-				mustEval.add(dep)
+			if (!analysis.formulas.has(seed)) {
+				for (const dep of graph.getDependents(seed)) {
+					mustEval.add(dep)
+				}
 			}
 		}
 	}

@@ -4,6 +4,8 @@ import { XMLParser } from 'fast-xml-parser'
 import { asArray, attr, numAttr, type XmlNode } from '../xml.ts'
 import { decodeXmlText, findTagEnd, isSelfClosingTag } from './xml-utils.ts'
 
+type WritablePartial<T> = { -readonly [K in keyof T]?: T[K] }
+
 const preserveTextParser = new XMLParser({
 	attributeNamePrefix: '@_',
 	ignoreAttributes: false,
@@ -259,18 +261,18 @@ function parseRunChunk(chunk: string): RichTextRun {
 }
 
 function parseFontProps(rPr: XmlNode): Pick<RichTextRun, 'fontName' | 'fontSize' | 'color'> {
-	const result: Pick<RichTextRun, 'fontName' | 'fontSize' | 'color'> = {}
+	const result: WritablePartial<Pick<RichTextRun, 'fontName' | 'fontSize' | 'color'>> = {}
 
 	const rFont = rPr.rFont
 	if (typeof rFont === 'object' && rFont !== null) {
 		const name = attr(rFont as XmlNode, 'val')
-		if (name) (result as Record<string, unknown>).fontName = name
+		if (name) result.fontName = name
 	}
 
 	const sz = rPr.sz
 	if (typeof sz === 'object' && sz !== null) {
 		const size = numAttr(sz as XmlNode, 'val')
-		if (size !== undefined) (result as Record<string, unknown>).fontSize = size
+		if (size !== undefined) result.fontSize = size
 	}
 
 	const color = rPr.color
@@ -281,14 +283,14 @@ function parseFontProps(rPr: XmlNode): Pick<RichTextRun, 'fontName' | 'fontSize'
 		const tint = numAttr(colorNode, 'tint')
 		const indexed = numAttr(colorNode, 'indexed')
 		if (theme !== undefined) {
-			;(result as Record<string, unknown>).color =
+			result.color =
 				tint !== undefined
 					? { kind: 'theme' as const, theme, tint }
 					: { kind: 'theme' as const, theme }
 		} else if (indexed !== undefined) {
-			;(result as Record<string, unknown>).color = { kind: 'indexed' as const, index: indexed }
+			result.color = { kind: 'indexed' as const, index: indexed }
 		} else if (rgb) {
-			;(result as Record<string, unknown>).color = rgb
+			result.color = rgb
 		}
 	}
 
@@ -310,13 +312,13 @@ function getXmlTextValue(node: unknown): string {
 }
 
 function parseFontPropsChunk(chunk: string): Pick<RichTextRun, 'fontName' | 'fontSize' | 'color'> {
-	const result: Pick<RichTextRun, 'fontName' | 'fontSize' | 'color'> = {}
+	const result: WritablePartial<Pick<RichTextRun, 'fontName' | 'fontSize' | 'color'>> = {}
 	const fontName = extractAttributeValue(chunk, 'rFont', 'val')
-	if (fontName) (result as Record<string, unknown>).fontName = fontName
+	if (fontName) result.fontName = fontName
 	const fontSize = extractAttributeValue(chunk, 'sz', 'val')
 	if (fontSize !== undefined) {
 		const parsed = Number(fontSize)
-		if (!Number.isNaN(parsed)) (result as Record<string, unknown>).fontSize = parsed
+		if (!Number.isNaN(parsed)) result.fontSize = parsed
 	}
 	const themeStr = extractAttributeValue(chunk, 'color', 'theme')
 	const tintStr = extractAttributeValue(chunk, 'color', 'tint')
@@ -326,7 +328,7 @@ function parseFontPropsChunk(chunk: string): Pick<RichTextRun, 'fontName' | 'fon
 		const theme = Number(themeStr)
 		const tint = tintStr !== undefined ? Number(tintStr) : undefined
 		if (!Number.isNaN(theme)) {
-			;(result as Record<string, unknown>).color =
+			result.color =
 				tint !== undefined && !Number.isNaN(tint)
 					? { kind: 'theme' as const, theme, tint }
 					: { kind: 'theme' as const, theme }
@@ -334,10 +336,10 @@ function parseFontPropsChunk(chunk: string): Pick<RichTextRun, 'fontName' | 'fon
 	} else if (indexedStr !== undefined) {
 		const index = Number(indexedStr)
 		if (!Number.isNaN(index)) {
-			;(result as Record<string, unknown>).color = { kind: 'indexed' as const, index }
+			result.color = { kind: 'indexed' as const, index }
 		}
 	} else if (rgbStr) {
-		;(result as Record<string, unknown>).color = rgbStr
+		result.color = rgbStr
 	}
 	return result
 }

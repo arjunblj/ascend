@@ -216,7 +216,7 @@ function canEvaluateNumericCondition(node: FormulaNode): boolean {
 			return true
 		case 'unary':
 			if (node.op === '@') return false
-			if (node.op === '-' || node.op === '%') return canEvaluateNumericValue(node.operand)
+			if (node.op === '-' || node.op === '%') return canEvaluateNumericValue(node.operand, false)
 			return canEvaluateNumericCondition(node.operand)
 		case 'binary':
 			if (node.op === ',' || node.op === ' ' || node.op === '&') return false
@@ -228,16 +228,18 @@ function canEvaluateNumericCondition(node: FormulaNode): boolean {
 				node.op === '<=' ||
 				node.op === '>='
 			) {
-				return canEvaluateNumericValue(node.left) && canEvaluateNumericValue(node.right)
+				return (
+					canEvaluateNumericValue(node.left, false) && canEvaluateNumericValue(node.right, false)
+				)
 			}
-			return canEvaluateNumericValue(node.left) && canEvaluateNumericValue(node.right)
+			return canEvaluateNumericValue(node.left, false) && canEvaluateNumericValue(node.right, false)
 		case 'function': {
 			const upper = node.name.toUpperCase()
 			if (upper === 'AND' || upper === 'OR') return node.args.every(canEvaluateNumericCondition)
 			if (upper === 'NOT' && node.args.length === 1) {
 				return canEvaluateNumericCondition(node.args[0] as FormulaNode)
 			}
-			return canEvaluateNumericValue(node)
+			return canEvaluateNumericValue(node, false)
 		}
 		default:
 			return false
@@ -259,7 +261,7 @@ function isSameCellRef(
 	)
 }
 
-function canEvaluateNumericValue(node: FormulaNode): boolean {
+function canEvaluateNumericValue(node: FormulaNode, atRoot = true): boolean {
 	switch (node.type) {
 		case 'number':
 		case 'missing':
@@ -271,28 +273,31 @@ function canEvaluateNumericValue(node: FormulaNode): boolean {
 			return false
 		case 'binary':
 			if (node.op === ',' || node.op === ' ') return false
+			if (node.op === '&') return false
 			if (
 				node.op === '=' ||
 				node.op === '<>' ||
 				node.op === '<' ||
 				node.op === '>' ||
 				node.op === '<=' ||
-				node.op === '>=' ||
-				node.op === '&'
+				node.op === '>='
 			) {
-				return false
+				if (atRoot) return false
+				return (
+					canEvaluateNumericValue(node.left, false) && canEvaluateNumericValue(node.right, false)
+				)
 			}
-			return canEvaluateNumericValue(node.left) && canEvaluateNumericValue(node.right)
+			return canEvaluateNumericValue(node.left, false) && canEvaluateNumericValue(node.right, false)
 		case 'unary':
 			if (node.op === '@') return false
-			return canEvaluateNumericValue(node.operand)
+			return canEvaluateNumericValue(node.operand, false)
 		case 'function': {
 			const upper = node.name.toUpperCase()
 			if (upper === 'IF' && node.args.length === 3) {
 				return (
 					canEvaluateNumericCondition(node.args[0] as FormulaNode) &&
-					canEvaluateNumericValue(node.args[1] as FormulaNode) &&
-					canEvaluateNumericValue(node.args[2] as FormulaNode)
+					canEvaluateNumericValue(node.args[1] as FormulaNode, false) &&
+					canEvaluateNumericValue(node.args[2] as FormulaNode, false)
 				)
 			}
 			if (
@@ -300,12 +305,12 @@ function canEvaluateNumericValue(node: FormulaNode): boolean {
 				node.args.length === 2
 			) {
 				return (
-					canEvaluateNumericValue(node.args[0] as FormulaNode) &&
-					canEvaluateNumericValue(node.args[1] as FormulaNode)
+					canEvaluateNumericValue(node.args[0] as FormulaNode, false) &&
+					canEvaluateNumericValue(node.args[1] as FormulaNode, false)
 				)
 			}
 			if ((upper === 'INT' || upper === 'ABS') && node.args.length === 1) {
-				return canEvaluateNumericValue(node.args[0] as FormulaNode)
+				return canEvaluateNumericValue(node.args[0] as FormulaNode, false)
 			}
 			if (
 				(upper === 'SUM' ||

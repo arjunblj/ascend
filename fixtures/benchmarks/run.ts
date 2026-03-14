@@ -221,6 +221,87 @@ function buildStructuralInsertRowsWorkbook(rowCount: number): Workbook {
 	return workbook
 }
 
+function buildStyleHeavyWorkbook(cellCount: number): Workbook {
+	const workbook = createWorkbook()
+	workbook.addSheet('Sheet1')
+	const sheet = workbook.sheets[0]
+	if (!sheet) throw new Error('Benchmark workbook missing first sheet')
+	const fonts = ['Arial', 'Calibri', 'Helvetica', 'Times New Roman', 'Courier New']
+	for (let i = 0; i < cellCount; i++) {
+		const row = Math.floor(i / 100)
+		const col = i % 100
+		const styleId = workbook.styles.register({
+			font: {
+				name: fonts[i % fonts.length],
+				size: 10 + (i % 6),
+				bold: i % 3 === 0,
+				color: {
+					kind: 'rgb',
+					rgb: `FF${String((i * 37) % 256).padStart(2, '0')}${String((i * 17) % 256).padStart(2, '0')}${String((i * 7) % 256).padStart(2, '0')}`,
+				},
+			},
+			fill: {
+				pattern: 'solid',
+				fgColor: {
+					kind: 'rgb',
+					rgb: `FF${String((i * 13) % 256).padStart(2, '0')}${String((i * 31) % 256).padStart(2, '0')}${String((i * 19) % 256).padStart(2, '0')}`,
+				},
+			},
+			numberFormat: ['0', '0.00', '#,##0', '0.0%', '[$-409]m/d/yy', 'General'][i % 6],
+		}) as StyleId
+		sheet.cells.set(row, col, {
+			value: numberValue(i + 1),
+			formula: null,
+			styleId,
+		})
+	}
+	return workbook
+}
+
+function buildStructuralInsertLargeWorkbook(rows: number, cols: number): Workbook {
+	const workbook = createWorkbook()
+	workbook.addSheet('Sheet1')
+	const sheet = workbook.sheets[0]
+	if (!sheet) throw new Error('Benchmark workbook missing first sheet')
+	for (let r = 0; r < rows; r++) {
+		for (let c = 0; c < cols; c++) {
+			sheet.cells.set(r, c, {
+				value: numberValue(r * cols + c + 1),
+				formula: null,
+				styleId: SID,
+			})
+		}
+	}
+	const colLetter = (n: number) =>
+		n < 26
+			? String.fromCharCode(65 + n)
+			: String.fromCharCode(64 + Math.floor(n / 26)) + String.fromCharCode(65 + (n % 26))
+	sheet.cells.set(0, cols, {
+		value: EMPTY,
+		formula: `SUM(A1:${colLetter(cols - 1)}${rows})`,
+		styleId: SID,
+	})
+	sheet.cells.set(1, cols, { value: EMPTY, formula: `AVERAGE(A1:A${rows})`, styleId: SID })
+	sheet.cells.set(2, cols, { value: EMPTY, formula: `SUM(A1:B${rows})`, styleId: SID })
+	return workbook
+}
+
+function buildFormulaCompilationUniqueWorkbook(formulaCount: number): Workbook {
+	const workbook = createWorkbook()
+	workbook.addSheet('Sheet1')
+	const sheet = workbook.sheets[0]
+	if (!sheet) throw new Error('Benchmark workbook missing first sheet')
+	for (let r = 0; r < formulaCount; r++) {
+		sheet.cells.set(r, 0, { value: numberValue(r + 1), formula: null, styleId: SID })
+		sheet.cells.set(r, 1, {
+			value: EMPTY,
+			formula: `A${r + 1}+${r + 1}`,
+			styleId: SID,
+		})
+	}
+	return workbook
+}
+
 function buildSdkEditCycleWorkbook(rows: number): Workbook {
 	const workbook = createWorkbook()
 	workbook.addSheet('Sheet1')
@@ -301,6 +382,17 @@ const scenarios: readonly Scenario[] = [
 		build() {
 			const workbook = buildMultiSheetWorkbook(8, 1000, 10)
 			return { workbook, rows: 1000, cols: 10, cells: 80_000 }
+		},
+		run(input) {
+			mustWrite(requireWorkbook(input))
+		},
+	},
+	{
+		name: 'style-heavy-workbook',
+		category: 'write',
+		build() {
+			const workbook = buildStyleHeavyWorkbook(1000)
+			return { workbook, rows: 10, cols: 100, cells: 1000 }
 		},
 		run(input) {
 			mustWrite(requireWorkbook(input))
@@ -964,6 +1056,28 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'structural-insert-large',
+		category: 'calc',
+		build() {
+			const workbook = buildStructuralInsertLargeWorkbook(1000, 100)
+			return { workbook, rows: 1000, cols: 101, cells: 100_000 }
+		},
+		run(input) {
+			const workbook = requireWorkbook(input)
+			const result = applyOperations(workbook, [
+				{ op: 'insertRows', sheet: 'Sheet1', at: 500, count: 100 },
+			])
+			if (!result.ok) throw new Error(result.error.message)
+			recalculate(workbook, defaultCalcContext())
+			return {
+				assertions: {
+					changedRefs: result.value.affectedCells.length,
+					sheetsModified: result.value.sheetsModified.length,
+				},
+			}
+		},
+	},
+	{
 		name: 'read-csv-large',
 		category: 'read',
 		build() {
@@ -1116,6 +1230,17 @@ const scenarios: readonly Scenario[] = [
 				updates.push({ ref, value: i * 10 })
 			}
 			applyOperations(workbook, [{ op: 'setCells', sheet: 'Sheet1', updates }])
+		},
+	},
+	{
+		name: 'formula-compilation-unique',
+		category: 'calc',
+		build() {
+			const workbook = buildFormulaCompilationUniqueWorkbook(5000)
+			return { workbook, rows: 5000, cols: 2, cells: 5000 }
+		},
+		run(input) {
+			recalculate(requireWorkbook(input), defaultCalcContext())
 		},
 	},
 	{

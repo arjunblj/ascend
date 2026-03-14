@@ -14,6 +14,8 @@ import type {
 } from '@ascend/core'
 import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
 
+type WritablePartial<T> = { -readonly [K in keyof T]?: T[K] }
+
 const BUILTIN_DATE_FMT_IDS = new Set([
 	14, 15, 16, 17, 18, 19, 20, 21, 22, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 45, 46, 47, 50, 51,
 	52, 53, 54, 55, 56, 57, 58,
@@ -173,7 +175,7 @@ function parseDxfStyle(
 	_borders: BorderStyle[],
 	numFmts: Map<number, string>,
 ): CellStyle {
-	const style: Record<string, unknown> = {}
+	const style: WritablePartial<CellStyle> = {}
 
 	const fontNode = dxf.font as XmlNode | undefined
 	if (fontNode) {
@@ -229,7 +231,7 @@ function parseFonts(ss: XmlNode): FontStyle[] {
 }
 
 function parseFont(f: XmlNode): FontStyle {
-	const props: Record<string, unknown> = {}
+	const props: WritablePartial<FontStyle> = {}
 
 	const nameNode = f.name
 	if (typeof nameNode === 'object' && nameNode !== null) {
@@ -292,7 +294,7 @@ function parseFill(f: XmlNode): FillStyle {
 	const pf = f.patternFill as XmlNode | undefined
 	if (!pf || typeof pf !== 'object') return {}
 
-	const props: Record<string, unknown> = {}
+	const props: WritablePartial<FillStyle> = {}
 	const pattern = attr(pf, 'patternType')
 	if (pattern) props.pattern = pattern as FillPattern
 
@@ -340,7 +342,7 @@ function parseBorders(ss: XmlNode): BorderStyle[] {
 }
 
 function parseBorder(b: XmlNode): BorderStyle {
-	const props: Record<string, unknown> = {}
+	const props: WritablePartial<BorderStyle> = {}
 
 	const top = parseBorderEdge(b.top)
 	if (top) props.top = top
@@ -368,7 +370,7 @@ function parseBorderEdge(el: unknown): BorderEdge | undefined {
 	if (!style || style === 'none') return undefined
 
 	const color = parseColor(node.color)
-	const props: Record<string, unknown> = { style: style as BorderLineStyle }
+	const props: WritablePartial<BorderEdge> = { style: style as BorderLineStyle }
 	if (color) props.color = color
 	return props as BorderEdge
 }
@@ -417,7 +419,7 @@ function buildCellStyles(
 		const border = borders[borderId]
 		const formatCode = numFmts.get(numFmtId)
 
-		const style: Record<string, unknown> = {}
+		const style: WritablePartial<CellStyle> = {}
 		if (font && hasProps(font)) style.font = font
 		if (fill && hasProps(fill)) style.fill = fill
 		if (border && hasProps(border)) style.border = border
@@ -459,7 +461,7 @@ function parseAlignment(xf: XmlNode): AlignmentStyle | undefined {
 	if (typeof el !== 'object' || el === null) return undefined
 	const a = el as XmlNode
 
-	const props: Record<string, unknown> = {}
+	const props: WritablePartial<AlignmentStyle> = {}
 
 	const h = attr(a, 'horizontal')
 	if (h) props.horizontal = h as HorizontalAlign
@@ -490,10 +492,10 @@ function parseProtection(xf: XmlNode): { locked?: boolean; hidden?: boolean } | 
 	const hidden = boolAttr(p, 'hidden')
 	if (locked === undefined && hidden === undefined) return undefined
 
-	const props: Record<string, unknown> = {}
+	const props: { locked?: boolean; hidden?: boolean } = {}
 	if (locked !== undefined) props.locked = locked
 	if (hidden !== undefined) props.hidden = hidden
-	return props as { locked?: boolean; hidden?: boolean }
+	return props
 }
 
 function checkDateFormat(numFmtId: number, formatCode: string | undefined): boolean {

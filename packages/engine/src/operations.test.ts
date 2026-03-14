@@ -636,6 +636,36 @@ describe('applyOperation', () => {
 		expect(result.error.code).toBe('SHEET_NOT_FOUND')
 	})
 
+	test('errors include suggestedFix for self-correction', () => {
+		const wb = setup()
+		wb.addSheet('Sheet2')
+
+		const sheetNotFound = applyOperation(wb, {
+			op: 'setCells',
+			sheet: 'NoSuchSheet',
+			updates: [{ ref: 'A1', value: 1 }],
+		})
+		expectErr(sheetNotFound)
+		expect(sheetNotFound.error.suggestedFix).toContain('Available sheets:')
+		expect(sheetNotFound.error.suggestedFix).toContain('Sheet1')
+		expect(sheetNotFound.error.suggestedFix).toContain('Sheet2')
+
+		const invalidRange = applyOperation(wb, {
+			op: 'fillFormula',
+			sheet: 'Sheet1',
+			range: 'not-a-range',
+			formula: '=1',
+		})
+		expectErr(invalidRange)
+		expect(invalidRange.error.code).toBe('INVALID_RANGE')
+		expect(invalidRange.error.suggestedFix).toContain('A1')
+
+		const nameConflict = applyOperation(wb, { op: 'addSheet', name: 'Sheet1' })
+		expectErr(nameConflict)
+		expect(nameConflict.error.code).toBe('NAME_CONFLICT')
+		expect(nameConflict.error.suggestedFix).toBeDefined()
+	})
+
 	test('mergeCells adds merge to sheet', () => {
 		const wb = setup()
 		const result = applyOperation(wb, {

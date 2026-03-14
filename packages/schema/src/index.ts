@@ -31,6 +31,7 @@ export type {
 	CellValue,
 	ExcelError,
 	InputValue,
+	RichTextColor,
 	RichTextRun,
 	ScalarCellValue,
 } from './values.ts'
@@ -47,4 +48,5 @@ export {
 	numberValue,
 	stringValue,
 	topLeftScalar,
+	valuesEqual,
 } from './values.ts'

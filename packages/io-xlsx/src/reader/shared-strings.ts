@@ -275,8 +275,21 @@ function parseFontProps(rPr: XmlNode): Pick<RichTextRun, 'fontName' | 'fontSize'
 
 	const color = rPr.color
 	if (typeof color === 'object' && color !== null) {
-		const rgb = attr(color as XmlNode, 'rgb')
-		if (rgb) (result as Record<string, unknown>).color = rgb
+		const colorNode = color as XmlNode
+		const rgb = attr(colorNode, 'rgb')
+		const theme = numAttr(colorNode, 'theme')
+		const tint = numAttr(colorNode, 'tint')
+		const indexed = numAttr(colorNode, 'indexed')
+		if (theme !== undefined) {
+			;(result as Record<string, unknown>).color =
+				tint !== undefined
+					? { kind: 'theme' as const, theme, tint }
+					: { kind: 'theme' as const, theme }
+		} else if (indexed !== undefined) {
+			;(result as Record<string, unknown>).color = { kind: 'indexed' as const, index: indexed }
+		} else if (rgb) {
+			;(result as Record<string, unknown>).color = rgb
+		}
 	}
 
 	return result
@@ -305,8 +318,27 @@ function parseFontPropsChunk(chunk: string): Pick<RichTextRun, 'fontName' | 'fon
 		const parsed = Number(fontSize)
 		if (!Number.isNaN(parsed)) (result as Record<string, unknown>).fontSize = parsed
 	}
-	const color = extractAttributeValue(chunk, 'color', 'rgb')
-	if (color) (result as Record<string, unknown>).color = color
+	const themeStr = extractAttributeValue(chunk, 'color', 'theme')
+	const tintStr = extractAttributeValue(chunk, 'color', 'tint')
+	const indexedStr = extractAttributeValue(chunk, 'color', 'indexed')
+	const rgbStr = extractAttributeValue(chunk, 'color', 'rgb')
+	if (themeStr !== undefined) {
+		const theme = Number(themeStr)
+		const tint = tintStr !== undefined ? Number(tintStr) : undefined
+		if (!Number.isNaN(theme)) {
+			;(result as Record<string, unknown>).color =
+				tint !== undefined && !Number.isNaN(tint)
+					? { kind: 'theme' as const, theme, tint }
+					: { kind: 'theme' as const, theme }
+		}
+	} else if (indexedStr !== undefined) {
+		const index = Number(indexedStr)
+		if (!Number.isNaN(index)) {
+			;(result as Record<string, unknown>).color = { kind: 'indexed' as const, index }
+		}
+	} else if (rgbStr) {
+		;(result as Record<string, unknown>).color = rgbStr
+	}
 	return result
 }
 

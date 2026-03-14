@@ -1,7 +1,9 @@
 import type { DefinedName, Workbook } from '@ascend/core'
 import { toA1 } from '@ascend/core'
 import type { CellValue } from '@ascend/schema'
-import { topLeftScalar } from '@ascend/schema'
+import { valuesEqual } from '@ascend/schema'
+
+export const cellValuesEqual = valuesEqual
 
 export interface CellChange {
 	readonly ref: string
@@ -23,48 +25,6 @@ export interface WorkbookDiff {
 	readonly namesAdded: string[]
 	readonly namesRemoved: string[]
 	readonly namesChanged: string[]
-}
-
-export function cellValuesEqual(a: CellValue, b: CellValue): boolean {
-	a = topLeftScalar(a)
-	b = topLeftScalar(b)
-	if (a.kind !== b.kind) return false
-	switch (a.kind) {
-		case 'empty':
-			return true
-		case 'number':
-			return a.value === (b as typeof a).value
-		case 'string':
-			return a.value === (b as typeof a).value
-		case 'boolean':
-			return a.value === (b as typeof a).value
-		case 'error':
-			return a.value === (b as typeof a).value
-		case 'date':
-			return a.serial === (b as typeof a).serial
-		case 'richText': {
-			const runsA = a.runs
-			const runsB = (b as typeof a).runs
-			if (runsA.length !== runsB.length) return false
-			for (let index = 0; index < runsA.length; index++) {
-				const left = runsA[index]
-				const right = runsB[index]
-				if (
-					left?.text !== right?.text ||
-					left?.bold !== right?.bold ||
-					left?.italic !== right?.italic ||
-					left?.underline !== right?.underline ||
-					left?.strikethrough !== right?.strikethrough ||
-					left?.fontName !== right?.fontName ||
-					left?.fontSize !== right?.fontSize ||
-					left?.color !== right?.color
-				) {
-					return false
-				}
-			}
-			return true
-		}
-	}
 }
 
 export function diffWorkbooks(before: Workbook, after: Workbook): WorkbookDiff {
@@ -92,7 +52,7 @@ export function diffWorkbooks(before: Workbook, after: Workbook): WorkbookDiff {
 			if (!afterSheet.cells.has(row, col)) {
 				cellsRemoved.push(toA1({ row, col }))
 			} else if (
-				!cellValuesEqual(cellBefore.value, afterSheet.cells.readValue(row, col)) ||
+				!valuesEqual(cellBefore.value, afterSheet.cells.readValue(row, col)) ||
 				cellBefore.formula !== (afterSheet.cells.readFormula(row, col) ?? null)
 			) {
 				const ref = toA1({ row, col })

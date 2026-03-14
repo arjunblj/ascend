@@ -346,6 +346,40 @@ describe('readXlsx', () => {
 		})
 	})
 
+	it('parses theme and indexed colors in shared string rich text runs', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">
+  <si>
+    <r><rPr><b/><color theme="1" tint="0.25"/></rPr><t>theme</t></r>
+    <r><rPr><i/><color indexed="64"/></rPr><t>indexed</t></r>
+  </si>
+</sst>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1"><c r="A1" t="s"><v>0</v></c></row>
+  </sheetData>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		const cell = result.value.workbook.sheets[0]?.cells.get(0, 0)
+		expect(cell?.value).toEqual({
+			kind: 'richText',
+			runs: [
+				{ text: 'theme', bold: true, color: { kind: 'theme', theme: 1, tint: 0.25 } },
+				{ text: 'indexed', italic: true, color: { kind: 'indexed', index: 64 } },
+			],
+		})
+	})
+
 	it('preserves xml:space text in DOM fallback rich-text parsing', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': CONTENT_TYPES,

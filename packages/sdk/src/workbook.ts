@@ -13,10 +13,12 @@ import {
 	defaultCalcContext,
 	cellValuesEqual as diffCellValuesEqual,
 	diffWorkbooks,
+	type EvalContext,
+	evaluate,
 	type PatchResult,
 	recalculate,
 } from '@ascend/engine'
-import { normalizeFormulaInput } from '@ascend/formulas'
+import { cachedParseFormula, normalizeFormulaInput } from '@ascend/formulas'
 import { readCsv, writeCsv } from '@ascend/io-csv'
 import {
 	extractZip,
@@ -28,10 +30,13 @@ import {
 import {
 	AscendException,
 	ascendError,
+	type CellValue,
 	type CompatibilityReport,
 	type CsvDialect,
+	coerceCellValueToString,
 	EMPTY,
 	emptyReport,
+	errorValue,
 	type InputValue,
 	type Operation,
 } from '@ascend/schema'
@@ -377,6 +382,24 @@ export class AscendWorkbook extends WorkbookReadView {
 		}
 	}
 
+	/** Evaluate a formula against the current workbook state without writing to a cell. */
+	eval(formula: string): CellValue {
+		const normalized = normalizeFormulaInput(formula)
+		const parsed = cachedParseFormula(normalized)
+		if (!parsed.ok) return errorValue('#VALUE!')
+		const ctx: EvalContext = {
+			workbook: this.wb,
+			calcContext: defaultCalcContext({
+				dateSystem: this.wb.calcSettings.dateSystem,
+				iterativeCalc: this.wb.calcSettings.iterativeCalc,
+			}),
+			sheetIndex: 0,
+			row: 0,
+			col: 0,
+		}
+		return evaluate(parsed.value, ctx)
+	}
+
 	// --- Verification ---
 
 	check(): CheckResult {
@@ -416,6 +439,54 @@ export class AscendWorkbook extends WorkbookReadView {
 		return { clean: warnings.length === 0, warnings }
 	}
 
+	find(
+		sheet: string,
+		options: {
+			value: string | number | boolean
+			match?: 'exact' | 'contains' | 'startsWith' | 'endsWith'
+		},
+	): Array<{ ref: string; value: CellValue }> {
+		const s = this.wb.getSheet(sheet)
+		if (!s) return []
+		const results: Array<{ ref: string; value: CellValue }> = []
+		const { value: searchValue, match = 'exact' } = options
+
+		for (const [row, col, cell] of s.cells.iterate()) {
+			const cellValue = cell.value ?? EMPTY
+			const ref = indexToColumn(col) + (row + 1)
+
+			if (typeof searchValue === 'number' || typeof searchValue === 'boolean') {
+				const scalar = cellValue.kind === 'array' ? (cellValue.rows[0]?.[0] ?? EMPTY) : cellValue
+				if (scalar.kind === 'number' && searchValue === scalar.value) {
+					results.push({ ref, value: cellValue })
+				} else if (scalar.kind === 'boolean' && searchValue === scalar.value) {
+					results.push({ ref, value: cellValue })
+				}
+			} else {
+				const cellStr = coerceCellValueToString(cellValue)
+				const searchLower = searchValue.toLowerCase()
+				const cellLower = cellStr.toLowerCase()
+				let matches = false
+				switch (match) {
+					case 'exact':
+						matches = cellLower === searchLower
+						break
+					case 'contains':
+						matches = cellLower.includes(searchLower)
+						break
+					case 'startsWith':
+						matches = cellLower.startsWith(searchLower)
+						break
+					case 'endsWith':
+						matches = cellLower.endsWith(searchLower)
+						break
+				}
+				if (matches) results.push({ ref, value: cellValue })
+			}
+		}
+		return results
+	}
+
 	setFormula(cellRef: string, formula: string): ApplyResult {
 		const { sheetName, ref } = parseFullRef(cellRef, this.wb)
 		return this.apply([
@@ -437,6 +508,10 @@ export class AscendWorkbook extends WorkbookReadView {
 
 	addSheet(name: string): ApplyResult {
 		return this.apply([{ op: 'addSheet', name }])
+	}
+
+	builder(): BatchBuilder {
+		return new BatchBuilder(this)
 	}
 
 	deleteSheet(sheet: string): ApplyResult {
@@ -641,6 +716,42 @@ export class AscendWorkbook extends WorkbookReadView {
 		this.sourceArchive = extractZip(this.wb.sourceArchiveBytes)
 		return this.sourceArchive
 	}
+}
+
+export class BatchBuilder {
+	private ops: Operation[] = []
+
+	constructor(private wb: AscendWorkbook) {}
+
+	set(cellRef: string, value: InputValue): this {
+		const { sheet, ref } = parseCellRef(cellRef, this.wb.getWorkbookModel())
+		this.ops.push({ op: 'setCells', sheet, updates: [{ ref, value }] })
+		return this
+	}
+
+	formula(cellRef: string, formula: string): this {
+		const { sheet, ref } = parseCellRef(cellRef, this.wb.getWorkbookModel())
+		this.ops.push({ op: 'setFormula', sheet, ref, formula: normalizeFormulaInput(formula) })
+		return this
+	}
+
+	addSheet(name: string): this {
+		this.ops.push({ op: 'addSheet', name })
+		return this
+	}
+
+	commit(): ApplyResult {
+		return this.wb.apply(this.ops)
+	}
+
+	commitAndRecalc(opts?: { range?: string }): ApplyAndRecalcResult {
+		return this.wb.applyAndRecalc(this.ops, opts)
+	}
+}
+
+function parseCellRef(cellRef: string, workbook: Workbook): { sheet: string; ref: string } {
+	const parsed = parseFullRef(cellRef, workbook)
+	return { sheet: parsed.sheetName, ref: parsed.ref }
 }
 
 function partialWorkbookEditError() {

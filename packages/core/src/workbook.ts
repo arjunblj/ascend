@@ -21,6 +21,12 @@ export interface WorkbookProperties {
 	readonly date1904?: boolean
 }
 
+export interface NamedStyleInfo {
+	readonly name: string
+	readonly builtinId?: number
+	readonly hidden?: boolean
+}
+
 export interface WorkbookStyleMetadata {
 	readonly numFmtCount: number
 	readonly fontCount: number
@@ -29,6 +35,7 @@ export interface WorkbookStyleMetadata {
 	readonly cellXfCount: number
 	readonly dxfCount: number
 	readonly tableStyleCount: number
+	readonly namedStyles?: readonly NamedStyleInfo[]
 }
 
 export interface WorkbookProtection {

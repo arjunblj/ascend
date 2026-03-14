@@ -15,7 +15,7 @@ import {
 	type LookupVectorCache,
 } from '@ascend/formulas'
 import type { AscendError, CellValue } from '@ascend/schema'
-import { EMPTY, errorValue, numberValue, topLeftScalar } from '@ascend/schema'
+import { EMPTY, errorValue, numberValue, topLeftScalar, valuesEqual } from '@ascend/schema'
 import { analyzeWorkbook, getSharedFormulaGroups } from './analysis.ts'
 import type { CalcContext } from './calc-context.ts'
 import { type CodegenFn, codegenFormula, codegenSharedFormula } from './codegen.ts'
@@ -94,29 +94,6 @@ function getRecalcScratch(workbook: Workbook): RecalcScratch {
 	scratch.aggregateRangeCache.clear()
 	scratch.rangeValueCache.clear()
 	return scratch
-}
-
-function valuesEqual(a: CellValue, b: CellValue): boolean {
-	if (a === b) return true
-	if (a.kind === 'array') a = topLeftScalar(a)
-	if (b.kind === 'array') b = topLeftScalar(b)
-	if (a.kind !== b.kind) return false
-	switch (a.kind) {
-		case 'empty':
-			return true
-		case 'number':
-			return b.kind === 'number' && a.value === b.value
-		case 'string':
-			return b.kind === 'string' && a.value === b.value
-		case 'boolean':
-			return b.kind === 'boolean' && a.value === b.value
-		case 'error':
-			return b.kind === 'error' && a.value === b.value
-		case 'date':
-			return b.kind === 'date' && a.serial === b.serial
-		default:
-			return false
-	}
 }
 
 function tryEvaluateGrowingRangeAggregate(

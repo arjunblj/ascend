@@ -80,7 +80,12 @@ function inputToCellValue(input: InputValue, dateSystem: '1900' | '1904' = '1900
 function getSheet(workbook: Workbook, name: string): Result<Sheet> {
 	const sheet = workbook.getSheet(name)
 	if (!sheet) {
-		return err(ascendError('SHEET_NOT_FOUND', `Sheet "${name}" not found`))
+		const available = workbook.sheets.map((s) => s.name).join(', ')
+		return err(
+			ascendError('SHEET_NOT_FOUND', `Sheet "${name}" not found`, {
+				suggestedFix: available ? `Available sheets: ${available}` : 'Workbook has no sheets',
+			}),
+		)
 	}
 	return ok(sheet)
 }
@@ -121,7 +126,11 @@ function safeParseRange(range: string): Result<RangeRef> {
 	try {
 		return ok(parseRange(range))
 	} catch {
-		return err(ascendError('INVALID_RANGE', `Invalid range: ${range}`))
+		return err(
+			ascendError('INVALID_RANGE', `Invalid range: ${range}`, {
+				suggestedFix: 'Expected format: A1 for single cell, or A1:B10 for range',
+			}),
+		)
 	}
 }
 
@@ -387,7 +396,11 @@ function handleAddSheet(
 	op: Extract<Operation, { op: 'addSheet' }>,
 ): Result<PatchResult> {
 	if (workbook.getSheet(op.name)) {
-		return err(ascendError('NAME_CONFLICT', `Sheet "${op.name}" already exists`))
+		return err(
+			ascendError('NAME_CONFLICT', `Sheet "${op.name}" already exists`, {
+				suggestedFix: 'Choose a different sheet name, or delete the existing sheet first',
+			}),
+		)
 	}
 	const sheet = workbook.addSheet(op.name)
 	if (op.position !== undefined) {
@@ -409,7 +422,12 @@ function handleCreateTable(
 	const rangeResult = safeParseRange(op.ref)
 	if (!rangeResult.ok) return rangeResult
 	if (sheet.tables.some((table) => table.name === op.name)) {
-		return err(ascendError('NAME_CONFLICT', `Table "${op.name}" already exists`))
+		return err(
+			ascendError('NAME_CONFLICT', `Table "${op.name}" already exists`, {
+				suggestedFix:
+					'Choose a different table name or use a range that does not overlap with existing tables',
+			}),
+		)
 	}
 
 	const ref = rangeResult.value
@@ -538,7 +556,12 @@ function handleDeleteSheet(
 ): Result<PatchResult> {
 	const targetSheet = workbook.getSheet(op.sheet)
 	if (!targetSheet) {
-		return err(ascendError('SHEET_NOT_FOUND', `Sheet "${op.sheet}" not found`))
+		const available = workbook.sheets.map((s) => s.name).join(', ')
+		return err(
+			ascendError('SHEET_NOT_FOUND', `Sheet "${op.sheet}" not found`, {
+				suggestedFix: available ? `Available sheets: ${available}` : 'Workbook has no sheets',
+			}),
+		)
 	}
 	const removedPivotNames = workbook.pivotTables
 		.filter((entry) => entry.sheetName === op.sheet)
@@ -559,7 +582,11 @@ function handleRenameSheet(
 	const sheet = result.value
 
 	if (workbook.getSheet(op.newName)) {
-		return err(ascendError('NAME_CONFLICT', `Sheet "${op.newName}" already exists`))
+		return err(
+			ascendError('NAME_CONFLICT', `Sheet "${op.newName}" already exists`, {
+				suggestedFix: 'Choose a different name; a sheet with that name already exists',
+			}),
+		)
 	}
 
 	const oldName = sheet.name
@@ -744,7 +771,12 @@ function handleSetDefinedName(
 	if (op.scope) {
 		const sheet = _workbook.getSheet(op.scope)
 		if (!sheet) {
-			return err(ascendError('SHEET_NOT_FOUND', `Sheet "${op.scope}" not found`))
+			const available = _workbook.sheets.map((s) => s.name).join(', ')
+			return err(
+				ascendError('SHEET_NOT_FOUND', `Sheet "${op.scope}" not found`, {
+					suggestedFix: available ? `Available sheets: ${available}` : 'Workbook has no sheets',
+				}),
+			)
 		}
 		_workbook.definedNames.set(op.name, op.ref, { kind: 'sheet', sheetId: sheet.id })
 	} else {
@@ -760,7 +792,12 @@ function handleDeleteDefinedName(
 	if (op.scope) {
 		const sheet = workbook.getSheet(op.scope)
 		if (!sheet) {
-			return err(ascendError('SHEET_NOT_FOUND', `Sheet "${op.scope}" not found`))
+			const available = workbook.sheets.map((s) => s.name).join(', ')
+			return err(
+				ascendError('SHEET_NOT_FOUND', `Sheet "${op.scope}" not found`, {
+					suggestedFix: available ? `Available sheets: ${available}` : 'Workbook has no sheets',
+				}),
+			)
 		}
 		if (!workbook.definedNames.delete(op.name, { kind: 'sheet', sheetId: sheet.id })) {
 			return err(

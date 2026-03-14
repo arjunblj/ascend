@@ -201,6 +201,62 @@ describe('AscendWorkbook', () => {
 		expect(detail?.pageMargins?.left).toBe(0.5)
 	})
 
+	test('find returns cells matching search criteria', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Total' },
+					{ ref: 'A2', value: 'Total Revenue' },
+					{ ref: 'A3', value: 'Grand Total' },
+					{ ref: 'B1', value: 'other' },
+					{ ref: 'C1', value: 42 },
+					{ ref: 'C2', value: 42 },
+					{ ref: 'C3', value: 100 },
+				],
+			},
+		])
+
+		const containsTotal = wb.find('Sheet1', { value: 'Total', match: 'contains' })
+		expect(containsTotal.map((r) => r.ref)).toEqual(['A1', 'A2', 'A3'])
+		expect(containsTotal[0]?.value).toEqual({ kind: 'string', value: 'Total' })
+		expect(containsTotal[1]?.value).toEqual({ kind: 'string', value: 'Total Revenue' })
+		expect(containsTotal[2]?.value).toEqual({ kind: 'string', value: 'Grand Total' })
+
+		const exact42 = wb.find('Sheet1', { value: 42 })
+		expect(exact42.map((r) => r.ref)).toEqual(['C1', 'C2'])
+		expect(exact42[0]?.value).toEqual({ kind: 'number', value: 42 })
+		expect(exact42[1]?.value).toEqual({ kind: 'number', value: 42 })
+	})
+
+	test('find uses case-insensitive string matching', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'HELLO' },
+					{ ref: 'A2', value: 'hello' },
+					{ ref: 'A3', value: 'HeLLo World' },
+				],
+			},
+		])
+
+		const exact = wb.find('Sheet1', { value: 'hello', match: 'exact' })
+		expect(exact.map((r) => r.ref)).toEqual(['A1', 'A2'])
+
+		const contains = wb.find('Sheet1', { value: 'hello', match: 'contains' })
+		expect(contains.map((r) => r.ref)).toEqual(['A1', 'A2', 'A3'])
+	})
+
+	test('find returns empty array for nonexistent sheet', () => {
+		const wb = AscendWorkbook.create()
+		expect(wb.find('Missing', { value: 'x' })).toEqual([])
+	})
+
 	test('sheet handle reads cells', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -227,6 +283,16 @@ describe('AscendWorkbook', () => {
 		expect(handle?.cell('C3')).toBeUndefined()
 	})
 
+	test('builder fluent API batches set, formula, and commit', () => {
+		const wb = AscendWorkbook.create()
+		const result = wb.builder().set('Sheet1!A1', 42).formula('Sheet1!B1', '=A1*2').commit()
+		expect(result.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 42 })
+		expect(wb.sheet('Sheet1')?.cell('B1')?.formula).toBe('A1*2')
+		wb.recalc()
+		expect(wb.sheet('Sheet1')?.cell('B1')?.value).toEqual({ kind: 'number', value: 84 })
+	})
+
 	test('set auto-coerces primitive values through setCells', () => {
 		const wb = AscendWorkbook.create()
 		expect(wb.set('Sheet1!A1', 42).errors).toEqual([])
@@ -236,6 +302,15 @@ describe('AscendWorkbook', () => {
 		expect(wb.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 42 })
 		expect(wb.sheet('Sheet1')?.cell('A2')?.value).toEqual({ kind: 'string', value: 'hello' })
 		expect(wb.sheet('Sheet1')?.cell('A3')?.value).toEqual({ kind: 'boolean', value: true })
+	})
+
+	test('eval evaluates formula against workbook state without writing to cell', () => {
+		const wb = AscendWorkbook.create()
+		wb.set('Sheet1!A1', 1)
+		wb.set('Sheet1!A2', 2)
+		wb.set('Sheet1!A3', 3)
+		const result = wb.eval('=SUM(Sheet1!A1:A3)')
+		expect(result).toEqual({ kind: 'number', value: 6 })
 	})
 
 	test('agentView summarizes a range for LLM-friendly reads', () => {

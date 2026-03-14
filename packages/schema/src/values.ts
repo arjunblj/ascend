@@ -10,6 +10,11 @@ export type ExcelError =
 	| '#SPILL!'
 	| '#CALC!'
 
+export type RichTextColor =
+	| { readonly kind: 'rgb'; readonly rgb: string }
+	| { readonly kind: 'theme'; readonly theme: number; readonly tint?: number }
+	| { readonly kind: 'indexed'; readonly index: number }
+
 export interface RichTextRun {
 	readonly text: string
 	readonly bold?: boolean
@@ -18,7 +23,7 @@ export interface RichTextRun {
 	readonly strikethrough?: boolean
 	readonly fontName?: string
 	readonly fontSize?: number
-	readonly color?: string
+	readonly color?: string | RichTextColor
 }
 
 export type ScalarCellValue =
@@ -113,6 +118,63 @@ export function topLeftScalar(v: CellValue): ScalarCellValue {
 	if (v.kind !== 'array') return v
 	const firstRow = v.rows[0]
 	return firstRow?.[0] ?? (EMPTY as ScalarCellValue)
+}
+
+function richTextColorsEqual(
+	a: string | RichTextColor | undefined,
+	b: string | RichTextColor | undefined,
+): boolean {
+	if (a === b) return true
+	if (a === undefined || b === undefined) return false
+	if (typeof a === 'string' || typeof b === 'string') return a === b
+	if (a.kind !== b.kind) return false
+	if (a.kind === 'rgb' && b.kind === 'rgb') return a.rgb === b.rgb
+	if (a.kind === 'theme' && b.kind === 'theme') return a.theme === b.theme && a.tint === b.tint
+	if (a.kind === 'indexed' && b.kind === 'indexed') return a.index === b.index
+	return false
+}
+
+export function valuesEqual(a: CellValue, b: CellValue): boolean {
+	if (a === b) return true
+	a = topLeftScalar(a)
+	b = topLeftScalar(b)
+	if (a.kind !== b.kind) return false
+	switch (a.kind) {
+		case 'empty':
+			return true
+		case 'number':
+			return a.value === (b as typeof a).value
+		case 'string':
+			return a.value === (b as typeof a).value
+		case 'boolean':
+			return a.value === (b as typeof a).value
+		case 'error':
+			return a.value === (b as typeof a).value
+		case 'date':
+			return a.serial === (b as typeof a).serial
+		case 'richText': {
+			const runsA = a.runs
+			const runsB = (b as typeof a).runs
+			if (runsA.length !== runsB.length) return false
+			for (let index = 0; index < runsA.length; index++) {
+				const left = runsA[index]
+				const right = runsB[index]
+				if (
+					left?.text !== right?.text ||
+					left?.bold !== right?.bold ||
+					left?.italic !== right?.italic ||
+					left?.underline !== right?.underline ||
+					left?.strikethrough !== right?.strikethrough ||
+					left?.fontName !== right?.fontName ||
+					left?.fontSize !== right?.fontSize ||
+					!richTextColorsEqual(left?.color, right?.color)
+				) {
+					return false
+				}
+			}
+			return true
+		}
+	}
 }
 
 export function coerceCellValueToString(v: CellValue): string {

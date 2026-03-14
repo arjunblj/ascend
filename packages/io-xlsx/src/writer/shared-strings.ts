@@ -109,7 +109,17 @@ function makeKey(value: CellValue): string | undefined {
 function richTextKey(runs: readonly import('@ascend/schema').RichTextRun[]): string {
 	let key = 'r:'
 	for (const run of runs) {
-		key += `${run.text}\x01${run.bold ? 1 : 0}\x01${run.italic ? 1 : 0}\x01${run.underline ? 1 : 0}\x01${run.strikethrough ? 1 : 0}\x01${run.fontSize ?? ''}\x01${run.color ?? ''}\x01${run.fontName ?? ''}\x02`
+		const colorKey =
+			run.color === undefined
+				? ''
+				: typeof run.color === 'string'
+					? run.color
+					: run.color.kind === 'rgb'
+						? run.color.rgb
+						: run.color.kind === 'theme'
+							? `t${run.color.theme}:${run.color.tint ?? ''}`
+							: `i${run.color.index}`
+		key += `${run.text}\x01${run.bold ? 1 : 0}\x01${run.italic ? 1 : 0}\x01${run.underline ? 1 : 0}\x01${run.strikethrough ? 1 : 0}\x01${run.fontSize ?? ''}\x01${colorKey}\x01${run.fontName ?? ''}\x02`
 	}
 	return key
 }
@@ -138,7 +148,21 @@ function runPropsXml(run: RichTextRun): string {
 	if (run.underline) parts.push('<u/>')
 	if (run.strikethrough) parts.push('<strike/>')
 	if (run.fontSize !== undefined) parts.push(`<sz val="${run.fontSize}"/>`)
-	if (run.color) parts.push(`<color rgb="${escapeXml(run.color)}"/>`)
+	if (run.color) {
+		if (typeof run.color === 'string') {
+			parts.push(`<color rgb="${escapeXml(run.color)}"/>`)
+		} else if (run.color.kind === 'rgb') {
+			parts.push(`<color rgb="${escapeXml(run.color.rgb)}"/>`)
+		} else if (run.color.kind === 'theme') {
+			parts.push(
+				run.color.tint !== undefined
+					? `<color theme="${run.color.theme}" tint="${run.color.tint}"/>`
+					: `<color theme="${run.color.theme}"/>`,
+			)
+		} else if (run.color.kind === 'indexed') {
+			parts.push(`<color indexed="${run.color.index}"/>`)
+		}
+	}
 	if (run.fontName) parts.push(`<rFont val="${escapeXml(run.fontName)}"/>`)
 	return parts.join('')
 }

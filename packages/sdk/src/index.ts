@@ -60,4 +60,4 @@ export type {
 	WorkbookViewInfo,
 	WritePlanInfo,
 } from './types.ts'
-export { AscendWorkbook, AscendWorkbook as Ascend } from './workbook.ts'
+export { AscendWorkbook, AscendWorkbook as Ascend, BatchBuilder } from './workbook.ts'

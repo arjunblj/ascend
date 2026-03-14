@@ -70,8 +70,8 @@ export type {
 } from './style.ts'
 export { DEFAULT_STYLE, StyleRegistry } from './style-registry.ts'
 export type { Table, TableColumn, TableStyleInfo } from './table.ts'
-
 export type {
+	NamedStyleInfo,
 	WorkbookPreservedMetadata,
 	WorkbookPreservedStyles,
 	WorkbookPreservedTheme,

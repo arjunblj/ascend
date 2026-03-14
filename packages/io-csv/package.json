@@ -6,7 +6,8 @@
 	"main": "src/index.ts",
 	"dependencies": {
 		"@ascend/schema": "workspace:*",
-		"@ascend/core": "workspace:*"
+		"@ascend/core": "workspace:*",
+		"@ascend/formulas": "workspace:*"
 	},
 	"scripts": {
 		"test": "bun test"

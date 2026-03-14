@@ -1,4 +1,5 @@
 import { createWorkbook, DEFAULT_STYLE_ID, type Workbook } from '@ascend/core'
+import { dateToSerial } from '@ascend/formulas'
 import {
 	ascendError,
 	booleanValue,
@@ -135,11 +136,5 @@ function tryParseDate(raw: string): number | null {
 	const d = new Date(raw)
 	if (Number.isNaN(d.getTime())) return null
 
-	return dateToSerial(d)
-}
-
-function dateToSerial(d: Date): number {
-	const epoch = new Date(1899, 11, 30)
-	const diff = d.getTime() - epoch.getTime()
-	return Math.round(diff / 86_400_000)
+	return dateToSerial(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate())
 }

@@ -9,6 +9,7 @@ import type {
 	FillStyle,
 	FontStyle,
 	HorizontalAlign,
+	NamedStyleInfo,
 	VerticalAlign,
 } from '@ascend/core'
 import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
@@ -98,6 +99,7 @@ export function parseStyles(xml: string): ParsedStyles {
 	const tableStyleCount = countNodes(ss.tableStyles, 'tableStyle')
 	const differentialStyles = parseDxfs(ss, fonts, fills, borders, numFmts)
 
+	const namedStyles = parseCellStyleNames(ss)
 	const built = buildCellStyles(ss, fonts, fills, borders, numFmts)
 	return {
 		...built,
@@ -110,6 +112,7 @@ export function parseStyles(xml: string): ParsedStyles {
 			cellXfCount: Math.max(0, cellXfCount),
 			dxfCount: Math.max(0, dxfCount),
 			tableStyleCount: Math.max(0, tableStyleCount),
+			...(namedStyles.length > 0 ? { namedStyles } : {}),
 		},
 	}
 }
@@ -503,6 +506,24 @@ function checkDateFormat(numFmtId: number, formatCode: string | undefined): bool
 function hasProps(obj: object): boolean {
 	for (const _ in obj) return true
 	return false
+}
+
+function parseCellStyleNames(ss: XmlNode): NamedStyleInfo[] {
+	const node = ss.cellStyles as XmlNode | undefined
+	if (!node) return []
+	const result: NamedStyleInfo[] = []
+	for (const cs of asArray<XmlNode>(node.cellStyle as XmlNode | XmlNode[])) {
+		const name = attr(cs, 'name')
+		if (!name) continue
+		const builtinId = numAttr(cs, 'builtinId')
+		const hidden = attr(cs, 'hidden') === '1' ? true : undefined
+		result.push({
+			name,
+			...(builtinId !== undefined ? { builtinId } : {}),
+			...(hidden !== undefined ? { hidden } : {}),
+		})
+	}
+	return result
 }
 
 function countNodes(node: unknown, key: string): number {

@@ -132,7 +132,9 @@ export class ValueInternPool {
 						...run,
 						text: this.internString(run.text),
 						...(run.fontName ? { fontName: this.internString(run.fontName) } : {}),
-						...(run.color ? { color: this.internString(run.color) } : {}),
+						...(run.color
+							? { color: typeof run.color === 'string' ? this.internString(run.color) : run.color }
+							: {}),
 					})),
 				}
 			default:
@@ -864,9 +866,67 @@ function parseInlineString(c: XmlNode, pool?: ValueInternPool): CellValue {
 		return pool ? pool.internValue(stringValue(pool.internString(text))) : stringValue(text)
 	}
 
-	const runs = asArray<XmlNode>(is.r as XmlNode | XmlNode[])
-	const text = runs.map((r) => (r.t !== undefined ? String(r.t) : '')).join('')
-	return pool ? pool.internValue(stringValue(pool.internString(text))) : stringValue(text)
+	const rawRuns = asArray<XmlNode>(is.r as XmlNode | XmlNode[])
+	if (rawRuns.length === 0) return stringValue('')
+
+	const runs: import('@ascend/schema').RichTextRun[] = []
+	for (const r of rawRuns) {
+		const text = r.t !== undefined ? String(r.t) : ''
+		const rPr = r.rPr as XmlNode | undefined
+		if (rPr && typeof rPr === 'object') {
+			const run: import('@ascend/schema').RichTextRun = {
+				text: pool ? pool.internString(text) : text,
+				...(rPr.b !== undefined ? { bold: true } : {}),
+				...(rPr.i !== undefined ? { italic: true } : {}),
+				...(rPr.u !== undefined ? { underline: true } : {}),
+				...(rPr.strike !== undefined ? { strikethrough: true } : {}),
+				...parseInlineRunFontProps(rPr),
+			}
+			runs.push(run)
+		} else {
+			runs.push({ text: pool ? pool.internString(text) : text })
+		}
+	}
+
+	const first = runs[0]
+	if (
+		runs.length === 1 &&
+		first &&
+		!first.bold &&
+		!first.italic &&
+		!first.underline &&
+		!first.strikethrough &&
+		!first.fontName &&
+		!first.fontSize &&
+		!first.color
+	) {
+		return pool ? pool.internValue(stringValue(first.text)) : stringValue(first.text)
+	}
+
+	return { kind: 'richText', runs }
+}
+
+function parseInlineRunFontProps(
+	rPr: XmlNode,
+): Pick<import('@ascend/schema').RichTextRun, 'fontName' | 'fontSize' | 'color'> {
+	const result: Record<string, unknown> = {}
+	const rFont = rPr.rFont
+	if (typeof rFont === 'object' && rFont !== null) {
+		const name = attr(rFont as XmlNode, 'val')
+		if (name) result.fontName = name
+	}
+	const sz = rPr.sz
+	if (typeof sz === 'object' && sz !== null) {
+		const size = numAttr(sz as XmlNode, 'val')
+		if (size !== undefined) result.fontSize = size
+	}
+	const color = rPr.color
+	if (typeof color === 'object' && color !== null) {
+		const colorNode = color as XmlNode
+		const rgb = attr(colorNode, 'rgb')
+		if (rgb) result.color = rgb
+	}
+	return result as Pick<import('@ascend/schema').RichTextRun, 'fontName' | 'fontSize' | 'color'>
 }
 
 function parseMergeCells(ws: XmlNode, sheet: Sheet): void {

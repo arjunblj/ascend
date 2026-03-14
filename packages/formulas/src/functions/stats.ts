@@ -1373,6 +1373,141 @@ function linestFn(args: EvalArg[]): CellValue {
 	return arrayValue([[topLeftScalar(numberValue(slope)), topLeftScalar(numberValue(intercept))]])
 }
 
+function sampleMeanAndVar(arr: number[]): { mean: number; var: number; n: number } {
+	const n = arr.length
+	const mean = arr.reduce((a, b) => a + b, 0) / n
+	const sumSq = arr.reduce((acc, v) => acc + (v - mean) ** 2, 0)
+	const v = n > 1 ? sumSq / (n - 1) : 0
+	return { mean, var: v, n }
+}
+
+function tTestPValue(t: number, df: number, tails: number): number {
+	if (df < 1) return NaN
+	const x = df / (df + t * t)
+	const p = ibeta(x, df / 2, 0.5)
+	return tails === 1 ? 0.5 * p : p
+}
+
+function tTestFn(args: EvalArg[]): CellValue {
+	const tails = numArg(args[2])
+	if (typeof tails !== 'number') return tails
+	const typeArg = numArg(args[3])
+	if (typeof typeArg !== 'number') return typeArg
+	const tailsInt = Math.trunc(tails)
+	const typeInt = Math.trunc(typeArg)
+	if (tailsInt !== 1 && tailsInt !== 2) return errorValue('#NUM!')
+	if (typeInt < 1 || typeInt > 3) return errorValue('#NUM!')
+
+	let t: number
+	let df: number
+
+	if (typeInt === 1) {
+		const paired = collectPaired(args[0], args[1])
+		if (!Array.isArray(paired)) return paired
+		const [a1, a2] = paired
+		const diffs: number[] = []
+		for (let i = 0; i < a1.length; i++) diffs.push((a1[i] as number) - (a2[i] as number))
+		const n = diffs.length
+		if (n < 2) return errorValue('#DIV/0!')
+		const mean = diffs.reduce((a, b) => a + b, 0) / n
+		const sumSq = diffs.reduce((acc, v) => acc + (v - mean) ** 2, 0)
+		const se = Math.sqrt(sumSq / (n * (n - 1)))
+		if (se === 0) return errorValue('#DIV/0!')
+		t = mean / se
+		df = n - 1
+	} else {
+		const a1 = collectFrom(args[0])
+		if (!Array.isArray(a1)) return a1
+		const a2 = collectFrom(args[1])
+		if (!Array.isArray(a2)) return a2
+		if (a1.length < 2 || a2.length < 2) return errorValue('#DIV/0!')
+		const s1 = sampleMeanAndVar(a1)
+		const s2 = sampleMeanAndVar(a2)
+		if (typeInt === 2) {
+			const pooled = ((s1.n - 1) * s1.var + (s2.n - 1) * s2.var) / (s1.n + s2.n - 2)
+			if (pooled === 0) return errorValue('#DIV/0!')
+			const se = Math.sqrt(pooled * (1 / s1.n + 1 / s2.n))
+			t = (s1.mean - s2.mean) / se
+			df = s1.n + s2.n - 2
+		} else {
+			const se2 = s1.var / s1.n + s2.var / s2.n
+			if (se2 === 0) return errorValue('#DIV/0!')
+			const se = Math.sqrt(se2)
+			t = (s1.mean - s2.mean) / se
+			const v1 = s1.var / s1.n
+			const v2 = s2.var / s2.n
+			df = (v1 + v2) ** 2 / (v1 ** 2 / (s1.n - 1) + v2 ** 2 / (s2.n - 1))
+		}
+	}
+
+	const p = tTestPValue(Math.abs(t), df, tailsInt)
+	if (Number.isNaN(p)) return errorValue('#NUM!')
+	return numberValue(p)
+}
+
+function fTestFn(args: EvalArg[]): CellValue {
+	const a1 = collectFrom(args[0])
+	if (!Array.isArray(a1)) return a1
+	const a2 = collectFrom(args[1])
+	if (!Array.isArray(a2)) return a2
+	if (a1.length < 2 || a2.length < 2) return errorValue('#DIV/0!')
+	const s1 = sampleMeanAndVar(a1)
+	const s2 = sampleMeanAndVar(a2)
+	if (s1.var === 0 || s2.var === 0) return errorValue('#DIV/0!')
+	const df1 = s1.n - 1
+	const df2 = s2.n - 1
+	const F = s1.var >= s2.var ? s1.var / s2.var : s2.var / s1.var
+	const d1 = s1.var >= s2.var ? df1 : df2
+	const d2 = s1.var >= s2.var ? df2 : df1
+	const w = (d1 * F) / (d1 * F + d2)
+	const pOneTail = 1 - ibeta(w, d1 / 2, d2 / 2)
+	return numberValue(Math.min(1, 2 * pOneTail))
+}
+
+function chisqTestFn(args: EvalArg[]): CellValue {
+	const actual = collectFrom(args[0])
+	if (!Array.isArray(actual)) return actual
+	const expected = collectFrom(args[1])
+	if (!Array.isArray(expected)) return expected
+	if (actual.length !== expected.length) return errorValue('#N/A')
+	if (actual.length < 2) return errorValue('#NUM!')
+	let chi2 = 0
+	for (let i = 0; i < actual.length; i++) {
+		const a = actual[i] as number
+		const e = expected[i] as number
+		if (e === 0) return errorValue('#DIV/0!')
+		chi2 += (a - e) ** 2 / e
+	}
+	const df = actual.length - 1
+	const p = 1 - lowRegGamma(df / 2, chi2 / 2)
+	return numberValue(p)
+}
+
+function zTestFn(args: EvalArg[]): CellValue {
+	const arr = collectFrom(args[0])
+	if (!Array.isArray(arr)) return arr
+	const x = numArg(args[1])
+	if (typeof x !== 'number') return x
+	if (arr.length === 0) return errorValue('#DIV/0!')
+	const mean = arr.reduce((a, b) => a + b, 0) / arr.length
+	const n = arr.length
+	let se: number
+	if (args.length > 2 && args[2]?.value !== undefined) {
+		const sigma = numArg(args[2])
+		if (typeof sigma !== 'number') return sigma
+		if (sigma <= 0) return errorValue('#NUM!')
+		se = sigma / Math.sqrt(n)
+	} else {
+		if (n < 2) return errorValue('#DIV/0!')
+		const sumSq = arr.reduce((acc, v) => acc + (v - mean) ** 2, 0)
+		const stdev = Math.sqrt(sumSq / (n - 1))
+		if (stdev === 0) return errorValue('#DIV/0!')
+		se = stdev / Math.sqrt(n)
+	}
+	const z = (mean - x) / se
+	return numberValue(1 - normCdf(z))
+}
+
 export const statsFunctions: FunctionDef[] = [
 	{ name: 'LARGE', minArgs: 2, maxArgs: 2, evaluate: largeFn },
 	{ name: 'SMALL', minArgs: 2, maxArgs: 2, evaluate: smallFn },
@@ -1467,4 +1602,8 @@ export const statsFunctions: FunctionDef[] = [
 	{ name: 'VARA', minArgs: 1, maxArgs: 255, evaluate: (args) => varAFn(args, false) },
 	{ name: 'VARPA', minArgs: 1, maxArgs: 255, evaluate: (args) => varAFn(args, true) },
 	{ name: 'LINEST', minArgs: 1, maxArgs: 4, evaluate: linestFn },
+	{ name: 'T.TEST', minArgs: 4, maxArgs: 4, evaluate: tTestFn },
+	{ name: 'F.TEST', minArgs: 2, maxArgs: 2, evaluate: fTestFn },
+	{ name: 'CHISQ.TEST', minArgs: 2, maxArgs: 2, evaluate: chisqTestFn },
+	{ name: 'Z.TEST', minArgs: 2, maxArgs: 3, evaluate: zTestFn },
 ]

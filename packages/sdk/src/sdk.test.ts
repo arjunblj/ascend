@@ -7,8 +7,22 @@ import { createZip, encode } from '../../io-xlsx/src/writer/zip.ts'
 import { Ascend, AscendWorkbook, WorkbookDocument } from './index.ts'
 
 describe('AscendWorkbook', () => {
-	test('Ascend is an alias for AscendWorkbook', () => {
-		expect(Ascend).toBe(AscendWorkbook)
+	test('Ascend entry point exposes create, open, fromCsv', async () => {
+		const wb = Ascend.create()
+		expect(wb.sheets).toEqual(['Sheet1'])
+		expect(wb.sheet('Sheet1')?.cell('A1')).toBeUndefined()
+
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'via Ascend' }] }])
+		const bytes = wb.toBytes()
+		const reopened = await Ascend.open(bytes)
+		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+			kind: 'string',
+			value: 'via Ascend',
+		})
+
+		const csv = Ascend.fromCsv('a,b\n1,2')
+		expect(csv.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'a' })
+		expect(csv.sheet('Sheet1')?.cell('B2')?.value).toEqual({ kind: 'number', value: 2 })
 	})
 
 	test('create returns an empty workbook with one sheet', () => {
@@ -588,6 +602,25 @@ describe('AscendWorkbook', () => {
 		])
 		expect(result.errors).toHaveLength(1)
 		expect(wb.sheet('Sheet1')?.cell('A1')).toBeUndefined()
+	})
+
+	test('apply with collectAllErrors returns all validation errors', () => {
+		const wb = AscendWorkbook.create()
+		const result = wb.apply(
+			[
+				{ op: 'setCells', sheet: 'Missing', updates: [{ ref: 'A1', value: 1 }] },
+				{ op: 'addSheet', name: 'Sheet1' },
+				{ op: 'deleteSheet', sheet: 'NonExistent' },
+			],
+			{ collectAllErrors: true },
+		)
+		expect(result.errors).toHaveLength(3)
+		expect(result.errors[0]?.code).toBe('SHEET_NOT_FOUND')
+		expect(result.errors[0]?.message).toContain('Missing')
+		expect(result.errors[1]?.code).toBe('NAME_CONFLICT')
+		expect(result.errors[1]?.message).toContain('Sheet1')
+		expect(result.errors[2]?.code).toBe('SHEET_NOT_FOUND')
+		expect(result.errors[2]?.message).toContain('NonExistent')
 	})
 
 	test('recalc updates formula values', () => {

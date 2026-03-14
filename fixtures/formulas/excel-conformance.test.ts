@@ -975,6 +975,124 @@ describe('Excel conformance', () => {
 				0.001,
 			)
 		})
+
+		test('T.TEST paired two-tailed (Excel example)', () => {
+			const cells = {
+				A2: 3,
+				A3: 4,
+				A4: 5,
+				A5: 8,
+				A6: 9,
+				A7: 14,
+				A8: 1,
+				A9: 4,
+				A10: 2,
+				B2: 6,
+				B3: 19,
+				B4: 3,
+				B5: 2,
+				B6: 14,
+				B7: 5,
+				B8: 4,
+				B9: 17,
+				B10: 5,
+			}
+			const result = evalFormula('T.TEST(A2:A10, B2:B10, 2, 1)', cells)
+			expect(result.kind).toBe('number')
+			if (result.kind === 'number') {
+				expect(result.value).toBeGreaterThan(0)
+				expect(result.value).toBeLessThanOrEqual(1)
+			}
+		})
+
+		test('T.TEST equal variance type 2', () => {
+			const cells = {
+				A1: 1,
+				A2: 2,
+				A3: 3,
+				A4: 4,
+				A5: 5,
+				B1: 3,
+				B2: 4,
+				B3: 5,
+				B4: 6,
+				B5: 7,
+			}
+			const result = evalFormula('T.TEST(A1:A5, B1:B5, 2, 2)', cells)
+			expect(result.kind).toBe('number')
+			if (result.kind === 'number') expect(result.value).toBeGreaterThan(0)
+			if (result.kind === 'number') expect(result.value).toBeLessThanOrEqual(1)
+		})
+
+		test('F.TEST two-tailed (Excel example)', () => {
+			const cells = {
+				A2: 6,
+				A3: 7,
+				A4: 9,
+				A5: 15,
+				A6: 21,
+				B2: 20,
+				B3: 28,
+				B4: 31,
+				B5: 38,
+				B6: 40,
+			}
+			expectNum(evalFormula('F.TEST(A2:A6, B2:B6)', cells), 0.64831785, 0.001)
+		})
+
+		test('CHISQ.TEST goodness of fit', () => {
+			const cells = {
+				A1: 18,
+				A2: 22,
+				A3: 20,
+				B1: 20,
+				B2: 20,
+				B3: 20,
+			}
+			const result = evalFormula('CHISQ.TEST(A1:A3, B1:B3)', cells)
+			expect(result.kind).toBe('number')
+			if (result.kind === 'number') expect(result.value).toBeGreaterThan(0.5)
+			if (result.kind === 'number') expect(result.value).toBeLessThanOrEqual(1)
+		})
+
+		test('Z.TEST with sample stdev', () => {
+			const cells = { A1: 1, A2: 2, A3: 3, A4: 4, A5: 5 }
+			expectNum(evalFormula('Z.TEST(A1:A5, 3)', cells), 0.5, 0.01)
+		})
+
+		test('Z.TEST with known sigma', () => {
+			const cells = { A1: 1, A2: 2, A3: 3, A4: 4, A5: 5 }
+			expectNum(evalFormula('Z.TEST(A1:A5, 0, 2)', cells), 0.00135, 0.001)
+		})
+
+		test('T.TEST type 1 different length returns #N/A', () => {
+			const result = evalFormula('T.TEST(A1:A3, B1:B5, 2, 1)', {
+				A1: 1,
+				A2: 2,
+				A3: 3,
+				B1: 2,
+				B2: 3,
+				B3: 4,
+				B4: 5,
+				B5: 6,
+			})
+			expect(result.kind).toBe('error')
+		})
+
+		test('F.TEST single value returns #DIV/0!', () => {
+			const result = evalFormula('F.TEST(A1, B1:B2)', { A1: 5, B1: 1, B2: 2 })
+			expect(result.kind).toBe('error')
+		})
+
+		test('CHISQ.TEST zero expected returns #DIV/0!', () => {
+			const result = evalFormula('CHISQ.TEST(A1:A2, B1:B2)', { A1: 5, A2: 5, B1: 0, B2: 10 })
+			expect(result.kind).toBe('error')
+		})
+
+		test('Z.TEST single value without sigma returns #DIV/0!', () => {
+			const result = evalFormula('Z.TEST(A1, 5)', { A1: 10 })
+			expect(result.kind).toBe('error')
+		})
 	})
 
 	describe('financial edge cases', () => {

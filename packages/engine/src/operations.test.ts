@@ -998,4 +998,29 @@ describe('applyOperations', () => {
 		expect(result.ok).toBe(false)
 		expect(wb.getSheet('Sheet2')).toBeUndefined()
 	})
+
+	test('collectAllErrors returns all validation errors', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+		const result = applyOperations(
+			wb,
+			[
+				{ op: 'setCells', sheet: 'Missing', updates: [{ ref: 'A1', value: 1 }] },
+				{ op: 'addSheet', name: 'Sheet1' },
+				{ op: 'deleteSheet', sheet: 'NonExistent' },
+			],
+			{ collectAllErrors: true },
+		)
+		expect(result.ok).toBe(false)
+		if (result.ok) return
+		expect('errors' in result.error).toBe(true)
+		const errors = result.error.errors
+		expect(errors).toHaveLength(3)
+		expect(errors[0]?.code).toBe('SHEET_NOT_FOUND')
+		expect(errors[0]?.message).toContain('Missing')
+		expect(errors[1]?.code).toBe('NAME_CONFLICT')
+		expect(errors[1]?.message).toContain('Sheet1')
+		expect(errors[2]?.code).toBe('SHEET_NOT_FOUND')
+		expect(errors[2]?.message).toContain('NonExistent')
+	})
 })

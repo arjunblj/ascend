@@ -159,7 +159,7 @@ export class AscendWorkbook extends WorkbookReadView {
 
 		const result = applyOperations(clone, ops)
 		if (!result.ok) {
-			errors.push(result.error)
+			errors.push(...('errors' in result.error ? result.error.errors : [result.error]))
 			return {
 				diff: { sheets: [], namesAdded: [], namesRemoved: [], namesChanged: [] },
 				sheetDiffs: [],
@@ -234,7 +234,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		return previewResult
 	}
 
-	apply(ops: readonly Operation[]): ApplyResult {
+	apply(ops: readonly Operation[], options?: { collectAllErrors?: boolean }): ApplyResult {
 		if (this.loadInfo.isPartial) {
 			return {
 				affectedCells: [],
@@ -245,13 +245,14 @@ export class AscendWorkbook extends WorkbookReadView {
 		}
 		const dirtyFlags = this.deriveDirtyFlags(ops)
 		const nextWorkbook = cloneWorkbook(this.wb)
-		const result = applyOperations(nextWorkbook, ops)
+		const result = applyOperations(nextWorkbook, ops, options)
 		if (!result.ok) {
+			const errors = 'errors' in result.error ? result.error.errors : [result.error]
 			return {
 				affectedCells: [],
 				sheetsModified: [],
 				recalcRequired: false,
-				errors: [result.error],
+				errors,
 			}
 		}
 
@@ -315,7 +316,8 @@ export class AscendWorkbook extends WorkbookReadView {
 		const nextWorkbook = cloneWorkbook(this.wb)
 		const result = applyOperations(nextWorkbook, opsOrFn)
 		if (!result.ok) {
-			return { errors: [result.error] }
+			const errs = 'errors' in result.error ? result.error.errors : [result.error]
+			return { errors: errs }
 		}
 
 		this.wb = nextWorkbook
@@ -716,6 +718,13 @@ export class AscendWorkbook extends WorkbookReadView {
 		this.sourceArchive = extractZip(this.wb.sourceArchiveBytes)
 		return this.sourceArchive
 	}
+}
+
+/** Convenient entry point: `import { Ascend } from '@ascend/sdk'` then `Ascend.create()`, `Ascend.open(bytes)`, `Ascend.fromCsv(csv)`. */
+export const Ascend = {
+	open: AscendWorkbook.open,
+	create: AscendWorkbook.create,
+	fromCsv: AscendWorkbook.fromCsv,
 }
 
 export class BatchBuilder {

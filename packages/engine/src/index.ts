@@ -40,7 +40,13 @@ export {
 	invalidateSheetIndexCache,
 	setRangeValueCache,
 } from './evaluator.ts'
-export { applyOperation, applyOperations, type PatchResult } from './operations.ts'
+export {
+	type ApplyOperationsErrors,
+	type ApplyOperationsOptions,
+	applyOperation,
+	applyOperations,
+	type PatchResult,
+} from './operations.ts'
 export {
 	compareSnapshots,
 	createSnapshot,

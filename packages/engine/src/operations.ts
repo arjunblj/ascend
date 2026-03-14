@@ -61,6 +61,14 @@ export interface PatchResult {
 	readonly warnings?: readonly AscendError[]
 }
 
+export interface ApplyOperationsOptions {
+	readonly collectAllErrors?: boolean
+}
+
+export interface ApplyOperationsErrors {
+	readonly errors: readonly AscendError[]
+}
+
 const DEFAULT_SID = DEFAULT_STYLE_ID
 
 function inputToCellValue(input: InputValue, dateSystem: '1900' | '1904' = '1900'): CellValue {
@@ -1590,7 +1598,20 @@ export function applyOperation(workbook: Workbook, op: Operation): Result<PatchR
 export function applyOperations(
 	workbook: Workbook,
 	ops: readonly Operation[],
-): Result<PatchResult> {
+	options?: ApplyOperationsOptions,
+): Result<PatchResult, AscendError | ApplyOperationsErrors> {
+	const collectAllErrors = options?.collectAllErrors ?? false
+
+	if (collectAllErrors) {
+		const errors: AscendError[] = []
+		for (const op of ops) {
+			const clone = workbook.clone()
+			const result = applyOperation(clone, op)
+			if (!result.ok) errors.push(result.error)
+		}
+		if (errors.length > 0) return err({ errors })
+	}
+
 	const allAffected: string[] = []
 	const allSheets: string[] = []
 	const warnings: AscendError[] = []

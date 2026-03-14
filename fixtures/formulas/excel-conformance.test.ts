@@ -114,6 +114,34 @@ describe('Excel conformance', () => {
 		test('LARGE second largest', () => {
 			expectNum(evalFormula('LARGE(A1:A5, 2)', { A1: 3, A2: 1, A3: 5, A4: 2, A5: 4 }), 4)
 		})
+
+		test('TREND linear predictions', () => {
+			// y = 2x + 1: x=1,2,3 -> y=3,5,7
+			const cells = { A1: 3, A2: 5, A3: 7, B1: 1, B2: 2, B3: 3 }
+			expectNum(evalFormula('INDEX(TREND(A1:A3, B1:B3), 1)', cells), 3, 1e-6)
+			expectNum(evalFormula('INDEX(TREND(A1:A3, B1:B3), 2)', cells), 5, 1e-6)
+			expectNum(evalFormula('INDEX(TREND(A1:A3, B1:B3), 3)', cells), 7, 1e-6)
+			// Predict for x=4,5,6: y=9,11,13
+			expectNum(
+				evalFormula('INDEX(TREND(A1:A3, B1:B3, D1:D3), 1)', { ...cells, D1: 4, D2: 5, D3: 6 }),
+				9,
+				1e-6,
+			)
+		})
+
+		test('GROWTH exponential predictions', () => {
+			// y = 2*3^x: x=0,1,2 -> y=2,6,18
+			const cells = { A1: 2, A2: 6, A3: 18, B1: 0, B2: 1, B3: 2 }
+			expectNum(evalFormula('INDEX(GROWTH(A1:A3, B1:B3), 1)', cells), 2, 1e-6)
+			expectNum(evalFormula('INDEX(GROWTH(A1:A3, B1:B3), 2)', cells), 6, 1e-6)
+			expectNum(evalFormula('INDEX(GROWTH(A1:A3, B1:B3), 3)', cells), 18, 1e-6)
+			// Predict for x=3,4,5: y=54,162,486
+			expectNum(
+				evalFormula('INDEX(GROWTH(A1:A3, B1:B3, D1:D3), 1)', { ...cells, D1: 3, D2: 4, D3: 5 }),
+				54,
+				1e-6,
+			)
+		})
 	})
 
 	describe('compatibility aliases', () => {

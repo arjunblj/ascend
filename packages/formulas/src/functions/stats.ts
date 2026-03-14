@@ -409,7 +409,7 @@ function linregSums(ys: number[], xs: number[]) {
 	const ssxx = n * sumX2 - sumX * sumX
 	const ssyy = n * sumY2 - sumY * sumY
 	const ssxy = n * sumXY - sumX * sumY
-	return { n, sumX, sumY, ssxx, ssyy, ssxy }
+	return { n, sumX, sumY, sumX2, sumXY, ssxx, ssyy, ssxy }
 }
 
 function forecastLinearFn(args: EvalArg[]): CellValue {
@@ -1342,6 +1342,174 @@ function varAFn(args: EvalArg[], population: boolean): CellValue {
 	return numberValue(sumSq / divisor)
 }
 
+function extractNumbersFromRange(range: readonly (readonly CellValue[])[]): number[] | CellValue {
+	const nums: number[] = []
+	for (let r = 0; r < range.length; r++) {
+		const row = range[r]
+		const cols = row?.length ?? 0
+		for (let c = 0; c < cols; c++) {
+			const v = row?.[c]
+			if (!v) continue
+			if (v.kind === 'error') return v
+			const n = v.kind === 'number' ? v.value : v.kind === 'date' ? v.serial : null
+			if (n !== null) nums.push(n)
+		}
+	}
+	if (nums.length === 0) return errorValue('#N/A')
+	return nums
+}
+
+function trendFn(args: EvalArg[]): CellValue {
+	const yRange = getRange(args[0])
+	const ysOrErr = extractNumbersFromRange(yRange)
+	if (!Array.isArray(ysOrErr)) return ysOrErr
+	const ys = ysOrErr
+	const n = ys.length
+
+	let xs: number[]
+	if (args.length > 1 && args[1]?.value !== undefined) {
+		const xRange = getRange(args[1])
+		const xsOrErr = extractNumbersFromRange(xRange)
+		if (!Array.isArray(xsOrErr)) return xsOrErr
+		if (xsOrErr.length !== n) return errorValue('#N/A')
+		xs = xsOrErr
+	} else {
+		xs = Array.from({ length: n }, (_, i) => i + 1)
+	}
+
+	let useConst = true
+	if (args.length > 3) {
+		const v = numArg(args[3])
+		if (typeof v !== 'number') return v
+		useConst = v !== 0
+	}
+
+	const { n: nn, sumX, sumY, sumX2, sumXY, ssxx, ssxy } = linregSums(ys, xs)
+	const slope = useConst
+		? ssxx === 0
+			? errorValue('#DIV/0!')
+			: ssxy / ssxx
+		: sumX2 === 0
+			? errorValue('#DIV/0!')
+			: sumXY / sumX2
+	if (typeof slope !== 'number') return slope
+	const intercept = useConst ? (sumY - slope * sumX) / nn : 0
+
+	let newXs: number[]
+	if (args.length > 2 && args[2]?.value !== undefined) {
+		const newXRange = getRange(args[2])
+		const newXsOrErr = extractNumbersFromRange(newXRange)
+		if (!Array.isArray(newXsOrErr)) return newXsOrErr
+		newXs = newXsOrErr
+	} else {
+		newXs = xs
+	}
+
+	const pred = newXs.map((x) => intercept + slope * x)
+	return arrayValue(pred.map((v) => [topLeftScalar(numberValue(v))]))
+}
+
+function growthFn(args: EvalArg[]): CellValue {
+	const yRange = getRange(args[0])
+	const ysOrErr = extractNumbersFromRange(yRange)
+	if (!Array.isArray(ysOrErr)) return ysOrErr
+	const ys = ysOrErr
+	for (const y of ys) {
+		if (y <= 0) return errorValue('#NUM!')
+	}
+	const logYs = ys.map((y) => Math.log(y))
+	const n = logYs.length
+
+	let xs: number[]
+	if (args.length > 1 && args[1]?.value !== undefined) {
+		const xRange = getRange(args[1])
+		const xsOrErr = extractNumbersFromRange(xRange)
+		if (!Array.isArray(xsOrErr)) return xsOrErr
+		if (xsOrErr.length !== n) return errorValue('#N/A')
+		xs = xsOrErr
+	} else {
+		xs = Array.from({ length: n }, (_, i) => i + 1)
+	}
+
+	let useConst = true
+	if (args.length > 3) {
+		const v = numArg(args[3])
+		if (typeof v !== 'number') return v
+		useConst = v !== 0
+	}
+
+	const { n: nn, sumX, sumY, sumX2, sumXY, ssxx, ssxy } = linregSums(logYs, xs)
+	const slope = useConst
+		? ssxx === 0
+			? errorValue('#DIV/0!')
+			: ssxy / ssxx
+		: sumX2 === 0
+			? errorValue('#DIV/0!')
+			: sumXY / sumX2
+	if (typeof slope !== 'number') return slope
+	const intercept = useConst ? (sumY - slope * sumX) / nn : 0
+	const m = Math.exp(slope)
+	const b = Math.exp(intercept)
+
+	let newXs: number[]
+	if (args.length > 2 && args[2]?.value !== undefined) {
+		const newXRange = getRange(args[2])
+		const newXsOrErr = extractNumbersFromRange(newXRange)
+		if (!Array.isArray(newXsOrErr)) return newXsOrErr
+		newXs = newXsOrErr
+	} else {
+		newXs = xs
+	}
+
+	const pred = newXs.map((x) => b * m ** x)
+	return arrayValue(pred.map((v) => [topLeftScalar(numberValue(v))]))
+}
+
+function logestFn(args: EvalArg[]): CellValue {
+	const yRange = getRange(args[0])
+	const ysOrErr = extractNumbersFromRange(yRange)
+	if (!Array.isArray(ysOrErr)) return ysOrErr
+	const ys = ysOrErr
+	for (const y of ys) {
+		if (y <= 0) return errorValue('#NUM!')
+	}
+	const logYs = ys.map((y) => Math.log(y))
+	const n = logYs.length
+
+	let xs: number[]
+	if (args.length > 1 && args[1]?.value !== undefined) {
+		const xRange = getRange(args[1])
+		const xsOrErr = extractNumbersFromRange(xRange)
+		if (!Array.isArray(xsOrErr)) return xsOrErr
+		if (xsOrErr.length !== n) return errorValue('#N/A')
+		xs = xsOrErr
+	} else {
+		xs = Array.from({ length: n }, (_, i) => i + 1)
+	}
+
+	let useConst = true
+	if (args.length > 2) {
+		const v = numArg(args[2])
+		if (typeof v !== 'number') return v
+		useConst = v !== 0
+	}
+
+	const { n: nn, sumX, sumY, sumX2, sumXY, ssxx, ssxy } = linregSums(logYs, xs)
+	const slope = useConst
+		? ssxx === 0
+			? errorValue('#DIV/0!')
+			: ssxy / ssxx
+		: sumX2 === 0
+			? errorValue('#DIV/0!')
+			: sumXY / sumX2
+	if (typeof slope !== 'number') return slope
+	const intercept = useConst ? (sumY - slope * sumX) / nn : 0
+	const m = Math.exp(slope)
+	const b = Math.exp(intercept)
+
+	return arrayValue([[topLeftScalar(numberValue(m)), topLeftScalar(numberValue(b))]])
+}
+
 function linestFn(args: EvalArg[]): CellValue {
 	const yRange = getRange(args[0])
 	const xRange = args.length > 1 ? getRange(args[1]) : yRange.map((_, i) => [numberValue(i + 1)])
@@ -1602,6 +1770,9 @@ export const statsFunctions: FunctionDef[] = [
 	{ name: 'VARA', minArgs: 1, maxArgs: 255, evaluate: (args) => varAFn(args, false) },
 	{ name: 'VARPA', minArgs: 1, maxArgs: 255, evaluate: (args) => varAFn(args, true) },
 	{ name: 'LINEST', minArgs: 1, maxArgs: 4, evaluate: linestFn },
+	{ name: 'TREND', minArgs: 1, maxArgs: 4, evaluate: trendFn },
+	{ name: 'GROWTH', minArgs: 1, maxArgs: 4, evaluate: growthFn },
+	{ name: 'LOGEST', minArgs: 1, maxArgs: 4, evaluate: logestFn },
 	{ name: 'T.TEST', minArgs: 4, maxArgs: 4, evaluate: tTestFn },
 	{ name: 'F.TEST', minArgs: 2, maxArgs: 2, evaluate: fTestFn },
 	{ name: 'CHISQ.TEST', minArgs: 2, maxArgs: 2, evaluate: chisqTestFn },

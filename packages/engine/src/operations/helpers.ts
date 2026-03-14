@@ -1,0 +1,314 @@
+import type { Cell, CellStyle, RangeRef, Sheet, StyleId, Workbook } from '@ascend/core'
+import { DEFAULT_STYLE_ID, parseA1, parseA1Safe, parseRange } from '@ascend/core'
+import type { FormulaCellRef, FormulaNode } from '@ascend/formulas'
+import { dateToSerial, printFormula, rewriteRefs } from '@ascend/formulas'
+import type {
+	AscendError,
+	CellValue,
+	InputValue,
+	Operation,
+	Result,
+	StyleInput,
+} from '@ascend/schema'
+import { ascendError, booleanValue, EMPTY, err, numberValue, ok, stringValue } from '@ascend/schema'
+import { type CellKey, cellKey } from '../dep-graph.ts'
+
+export interface PatchResult {
+	readonly affectedCells: string[]
+	readonly sheetsModified: string[]
+	readonly recalcRequired: boolean
+	readonly warnings?: readonly AscendError[]
+}
+
+export const DEFAULT_SID = DEFAULT_STYLE_ID
+
+export function inputToCellValue(
+	input: InputValue,
+	dateSystem: '1900' | '1904' = '1900',
+): CellValue {
+	if (input === null) return EMPTY
+	if (typeof input === 'number') return numberValue(input)
+	if (typeof input === 'string') return stringValue(input)
+	if (typeof input === 'boolean') return booleanValue(input)
+	if (input instanceof Date) {
+		return {
+			kind: 'date',
+			serial: dateToSerial(input.getFullYear(), input.getMonth() + 1, input.getDate(), dateSystem),
+		}
+	}
+	return EMPTY
+}
+
+export function getSheet(workbook: Workbook, name: string): Result<Sheet> {
+	const sheet = workbook.getSheet(name)
+	if (!sheet) {
+		const available = workbook.sheets.map((s) => s.name).join(', ')
+		return err(
+			ascendError('SHEET_NOT_FOUND', `Sheet "${name}" not found`, {
+				suggestedFix: available ? `Available sheets: ${available}` : 'Workbook has no sheets',
+			}),
+		)
+	}
+	return ok(sheet)
+}
+
+export function patch(
+	affected: string[],
+	sheets: string[],
+	recalc = false,
+	warnings?: readonly AscendError[],
+): PatchResult {
+	const result = {
+		affectedCells: affected,
+		sheetsModified: [...new Set(sheets)],
+		recalcRequired: recalc,
+	}
+	return warnings && warnings.length > 0 ? { ...result, warnings } : result
+}
+
+export function cell(value: CellValue, formula: string | null, styleId: StyleId): Cell {
+	return { value, formula, styleId }
+}
+
+export function cellWithExisting(
+	value: CellValue,
+	formula: string | null,
+	styleId: StyleId,
+	existingFormulaInfo?: Cell['formulaInfo'],
+): Cell {
+	return {
+		value,
+		formula,
+		styleId,
+		...(formula !== null && existingFormulaInfo ? { formulaInfo: existingFormulaInfo } : {}),
+	}
+}
+
+export function safeParseRange(range: string): Result<RangeRef> {
+	try {
+		return ok(parseRange(range))
+	} catch {
+		return err(
+			ascendError('INVALID_RANGE', `Invalid range: ${range}`, {
+				suggestedFix: 'Expected format: A1 for single cell, or A1:B10 for range',
+			}),
+		)
+	}
+}
+
+export function translateFormula(node: FormulaNode, rowDelta: number, colDelta: number): string {
+	const rewritten = rewriteRefs(node, (ref: FormulaCellRef) => ({
+		...ref,
+		row: ref.rowAbsolute ? ref.row : ref.row + rowDelta,
+		col: ref.colAbsolute ? ref.col : ref.col + colDelta,
+	}))
+	return printFormula(rewritten)
+}
+
+export function collectRangeCells(
+	sheet: Sheet,
+	range: RangeRef,
+): Array<{ row: number; col: number; cell: Cell | undefined }> {
+	const cells: Array<{ row: number; col: number; cell: Cell | undefined }> = []
+	for (let row = range.start.row; row <= range.end.row; row++) {
+		for (let col = range.start.col; col <= range.end.col; col++) {
+			cells.push({ row, col, cell: sheet.cells.get(row, col) })
+		}
+	}
+	return cells
+}
+
+export function shiftMerges(
+	merges: RangeRef[],
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): void {
+	const updated: RangeRef[] = []
+	for (const m of merges) {
+		const s = axis === 'row' ? m.start.row : m.start.col
+		const e = axis === 'row' ? m.end.row : m.end.col
+
+		if (delta < 0) {
+			const deleteEnd = at - delta
+			if (s >= at && e < deleteEnd) continue
+		}
+
+		const shift = (v: number): number => {
+			if (delta > 0) return v >= at ? v + delta : v
+			const deleteEnd = at - delta
+			if (v >= deleteEnd) return v + delta
+			if (v >= at) return at
+			return v
+		}
+
+		if (axis === 'row') {
+			updated.push({
+				start: { row: shift(m.start.row), col: m.start.col },
+				end: { row: shift(m.end.row), col: m.end.col },
+			})
+		} else {
+			updated.push({
+				start: { row: m.start.row, col: shift(m.start.col) },
+				end: { row: m.end.row, col: shift(m.end.col) },
+			})
+		}
+	}
+	merges.length = 0
+	merges.push(...updated)
+}
+
+export function clearFormulaMetadataForSheet(sheet: Workbook['sheets'][number]): void {
+	for (const [row, col, existing] of sheet.cells.iterate()) {
+		if (!existing.formulaInfo) continue
+		sheet.cells.set(row, col, {
+			value: existing.value,
+			formula: existing.formula,
+			styleId: existing.styleId,
+		})
+	}
+}
+
+export function clearFormulaMetadata(workbook: Workbook): void {
+	for (const sheet of workbook.sheets) {
+		clearFormulaMetadataForSheet(sheet)
+	}
+}
+
+export function mergeStyleInput(current: CellStyle, input: StyleInput): CellStyle {
+	return {
+		...current,
+		...(input.font && { font: { ...current.font, ...input.font } }),
+		...(input.fill && { fill: { ...current.fill, ...input.fill } }),
+		...(input.border && { border: { ...current.border, ...input.border } }),
+		...(input.alignment && { alignment: { ...current.alignment, ...input.alignment } }),
+		...(input.numberFormat !== undefined && { numberFormat: input.numberFormat }),
+	}
+}
+
+export function resolveAffectedCellKeys(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setFormula' | 'fillFormula' }>,
+): CellKey[] {
+	const sheet = workbook.getSheet(op.sheet)
+	if (!sheet) return []
+	const sheetIndex = workbook.sheets.indexOf(sheet)
+	if (sheetIndex < 0) return []
+	if (op.op === 'setFormula') {
+		const ref = parseA1(op.ref)
+		return [cellKey(sheetIndex, ref.row, ref.col)]
+	}
+	const rangeResult = safeParseRange(op.range)
+	if (!rangeResult.ok) return []
+	const range = rangeResult.value
+	const keys: CellKey[] = []
+	for (let row = range.start.row; row <= range.end.row; row++) {
+		for (let col = range.start.col; col <= range.end.col; col++) {
+			keys.push(cellKey(sheetIndex, row, col))
+		}
+	}
+	return keys
+}
+
+export function resolvePatchResultCellKeys(
+	workbook: Workbook,
+	sheetName: string,
+	affectedCells: readonly string[],
+	warnings?: AscendError[],
+): CellKey[] {
+	const sheet = workbook.getSheet(sheetName)
+	if (!sheet) return []
+	const sheetIndex = workbook.sheets.indexOf(sheet)
+	if (sheetIndex < 0) return []
+	const keys: CellKey[] = []
+	for (const refText of affectedCells) {
+		const ref = parseA1Safe(refText)
+		if (!ref) {
+			warnings?.push(
+				ascendError(
+					'INVALID_REF',
+					`Failed to resolve affected cell reference "${refText}" in sheet "${sheetName}"`,
+				),
+			)
+			continue
+		}
+		keys.push(cellKey(sheetIndex, ref.row, ref.col))
+	}
+	return keys
+}
+
+export function operationAffectsFormulas(op: Operation): boolean {
+	switch (op.op) {
+		case 'setComment':
+		case 'setHyperlink':
+		case 'setNumberFormat':
+		case 'setStyle':
+		case 'freezePane':
+		case 'setColWidth':
+		case 'setRowHeight':
+		case 'mergeCells':
+		case 'unmergeCells':
+		case 'groupRows':
+		case 'groupCols':
+			return false
+		case 'setCells':
+		case 'setRichText':
+			return false
+		case 'createTable':
+			return false
+		case 'clearRange':
+			return op.what === 'all' || op.what === 'formulas'
+		default:
+			return true
+	}
+}
+
+export function updateSheetOutlineLevels(sheet: Sheet): void {
+	const rowLevel = Math.max(0, ...[...sheet.rowDefs.values()].map((def) => def.outlineLevel ?? 0))
+	const colLevel = Math.max(0, ...sheet.colDefs.map((def) => def.outlineLevel ?? 0))
+	sheet.sheetFormatPr = {
+		...(sheet.sheetFormatPr ?? {}),
+		...(rowLevel > 0 ? { outlineLevelRow: rowLevel } : {}),
+		...(colLevel > 0 ? { outlineLevelCol: colLevel } : {}),
+	}
+}
+
+export function buildTableColumns(
+	sheet: Sheet,
+	ref: RangeRef,
+	width: number,
+	hasHeaders: boolean,
+): Array<{ name: string }> {
+	const usedNames = new Set<string>()
+	const columns: Array<{ name: string }> = []
+	for (let colOffset = 0; colOffset < width; colOffset++) {
+		let name = `Column${colOffset + 1}`
+		if (hasHeaders) {
+			const cellValue = sheet.cells.get(ref.start.row, ref.start.col + colOffset)?.value
+			if (cellValue?.kind === 'string' && cellValue.value.trim() !== '') {
+				name = cellValue.value.trim()
+			}
+		}
+		let candidate = name
+		let suffix = 2
+		while (usedNames.has(candidate.toLowerCase())) {
+			candidate = `${name}_${suffix}`
+			suffix++
+		}
+		usedNames.add(candidate.toLowerCase())
+		columns.push({ name: candidate })
+	}
+	return columns
+}
+
+export function findTable(
+	workbook: Workbook,
+	name: string,
+): { table: Sheet['tables'][number]; sheet: Sheet } | null {
+	for (const sheet of workbook.sheets) {
+		for (const table of sheet.tables) {
+			if (table.name === name) return { table, sheet }
+		}
+	}
+	return null
+}

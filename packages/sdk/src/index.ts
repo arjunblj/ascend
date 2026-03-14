@@ -1,3 +1,4 @@
+export type { OperationSchema } from './ops.ts'
 export * as ops from './ops.ts'
 export { WorkbookReadView } from './read-view.ts'
 export type { SessionCacheOptions, WorkbookLoadOptions } from './session.ts'

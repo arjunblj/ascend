@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { extractZip } from '../../io-xlsx/src/reader/zip.ts'
 import { createZip, encode } from '../../io-xlsx/src/writer/zip.ts'
-import { Ascend, AscendWorkbook, WorkbookDocument } from './index.ts'
+import { Ascend, AscendWorkbook, ops, WorkbookDocument } from './index.ts'
 
 describe('AscendWorkbook', () => {
 	test('Ascend entry point exposes create, open, fromCsv', async () => {
@@ -1978,6 +1978,19 @@ describe('AscendWorkbook', () => {
 		expect(expanded.sheets).toEqual(['Sheet1', 'Data'])
 		expect(expanded.sheet('Data')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'loaded' })
 		WorkbookDocument.clearCache()
+	})
+})
+
+describe('ops.listOperations', () => {
+	test('returns all operation schemas with op, description, and requiredFields', () => {
+		const schemas = ops.listOperations()
+		expect(schemas.length).toBeGreaterThan(10)
+		const setCells = schemas.find((s) => s.op === 'setCells')
+		expect(setCells).toBeDefined()
+		expect(setCells?.description).toBe('Set cell values')
+		expect(setCells?.requiredFields).toEqual(['sheet', 'updates'])
+		const addSheet = schemas.find((s) => s.op === 'addSheet')
+		expect(addSheet?.optionalFields).toContain('position')
 	})
 })
 

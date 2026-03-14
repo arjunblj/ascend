@@ -51,6 +51,6 @@ export {
 	parseFormulaOrThrow,
 	parseOrThrow,
 } from './parser.ts'
-export { printFormula } from './printer.ts'
+export { printFormula, printFormulaWithOffset } from './printer.ts'
 export { extractRefs, type FormulaRef, rewriteRefs } from './refs.ts'
 export { type Token, TokenType } from './tokens.ts'

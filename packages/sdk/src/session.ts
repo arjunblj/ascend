@@ -78,6 +78,12 @@ function isEntryExpired(entry: SessionCacheEntry): boolean {
 	return Date.now() - entry.accessedAt > cacheConfig.maxCacheAge
 }
 
+/**
+ * Read-only document view of a workbook. Use for inspect, read, check, lint, trace,
+ * agent-view, and other operations that do not modify the file. Supports session
+ * caching for repeated opens of the same file. Use `AscendWorkbook` when you need
+ * to apply operations, recalculate, or save.
+ */
 export class WorkbookDocument {
 	private readonly cacheKey: string
 	private readonly identity: SessionIdentity

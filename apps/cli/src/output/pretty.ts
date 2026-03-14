@@ -1,5 +1,5 @@
-import { serialToDate } from '@ascend/formulas'
 import type { CellValue } from '@ascend/schema'
+import { formatDisplayCellValue } from '@ascend/sdk'
 
 export function formatCellValue(
 	v: CellValue,
@@ -7,34 +7,11 @@ export function formatCellValue(
 ): string {
 	const display = options?.display ?? false
 	const dateSystem = options?.dateSystem ?? '1900'
-	switch (v.kind) {
-		case 'empty':
-			return ''
-		case 'number':
-			return String(v.value)
-		case 'string':
-			return v.value
-		case 'boolean':
-			return v.value ? 'TRUE' : 'FALSE'
-		case 'error':
-			return v.value
-		case 'date':
-			if (!display) return `[date:${v.serial}]`
-			return formatDisplayDate(v.serial, dateSystem)
-		case 'richText':
-			return v.runs.map((r: { text: string }) => r.text).join('')
-		default:
-			return ''
+	if (v.kind === 'date') {
+		if (!display) return `[date:${v.serial}]`
+		return formatDisplayCellValue(v, { dateSystem })
 	}
-}
-
-function formatDisplayDate(serial: number, dateSystem: '1900' | '1904'): string {
-	const parts = serialToDate(Math.floor(serial), dateSystem)
-	if (!parts) return `[date:${serial}]`
-	const year = String(parts.year).padStart(4, '0')
-	const month = String(parts.month).padStart(2, '0')
-	const day = String(parts.day).padStart(2, '0')
-	return `${year}-${month}-${day}`
+	return formatDisplayCellValue(v, { dateSystem })
 }
 
 export function table(headers: string[], rows: string[][]): string {

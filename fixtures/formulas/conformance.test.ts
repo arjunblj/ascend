@@ -6,7 +6,14 @@ import { createWorkbook, parseA1 } from '@ascend/core'
 import type { CalcContext } from '@ascend/engine'
 import { defaultCalcContext, recalculate } from '@ascend/engine'
 import type { CellValue } from '@ascend/schema'
-import { booleanValue, EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
+import {
+	booleanValue,
+	EMPTY,
+	errorValue,
+	numberValue,
+	stringValue,
+	topLeftScalar,
+} from '@ascend/schema'
 
 const sid = 0 as StyleId
 
@@ -142,7 +149,10 @@ function runCase(
 	}
 
 	const cell = sheet.cells.get(formulaRow, formulaCol)
-	const actual = cell?.value ?? EMPTY
+	let actual = cell?.value ?? EMPTY
+	if (actual.kind === 'array') {
+		actual = topLeftScalar(actual)
+	}
 
 	if (c.expected.approx !== undefined && c.expected.tolerance !== undefined) {
 		const pass =
@@ -157,7 +167,9 @@ function runCase(
 }
 
 const fixturesDir = join(import.meta.dir, '.')
-const jsonFiles = (await readdir(fixturesDir)).filter((f) => f.endsWith('.json'))
+const jsonFiles = (await readdir(fixturesDir)).filter(
+	(f) => f.endsWith('.json') && f !== 'package.json',
+)
 const fixtures: Array<{ file: string; fixture: ConformanceFixture }> = []
 for (const file of jsonFiles) {
 	const content = await readFile(join(fixturesDir, file), 'utf-8')

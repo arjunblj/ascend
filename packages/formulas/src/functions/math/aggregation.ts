@@ -195,15 +195,16 @@ export const aggregationFunctions: FunctionDef[] = [
 	fn('COUNTBLANK', 1, 1, (args) => {
 		let count = 0
 		const arg = args[0]
-		if (arg?.forEachValue) {
-			arg.forEachValue((cell) => {
-				if (isEmpty(cell) || (cell.kind === 'string' && cell.value === '')) count++
-			})
+		const countBlank = (cell: CellValue) => {
+			if (isEmpty(cell) || (cell.kind === 'string' && cell.value === '')) count++
+		}
+		if (arg?.forEachCellInRange) {
+			arg.forEachCellInRange(countBlank)
+		} else if (arg?.forEachValue) {
+			arg.forEachValue(countBlank)
 		} else {
 			for (const row of getRange(arg)) {
-				for (const cell of row) {
-					if (isEmpty(cell) || (cell.kind === 'string' && cell.value === '')) count++
-				}
+				for (const cell of row) countBlank(cell)
 			}
 		}
 		return numberValue(count)

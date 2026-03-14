@@ -208,6 +208,74 @@
 			},
 			"formula": "DSUM(A1:B4, \"Amt\", E1:E3)",
 			"expected": { "kind": "number", "value": 40 }
+		},
+		{
+			"description": "DSTDEV sample stdev of matching rows",
+			"setup": {
+				"A1": "Dept",
+				"B1": "Score",
+				"A2": "North",
+				"B2": 80,
+				"A3": "South",
+				"B3": 90,
+				"A4": "North",
+				"B4": 70,
+				"E1": "Dept",
+				"E2": "North"
+			},
+			"formula": "DSTDEV(A1:B4, \"Score\", E1:E2)",
+			"expected": { "kind": "number", "approx": 7.071067812, "tolerance": 1e-6 }
+		},
+		{
+			"description": "DVAR sample variance of matching rows",
+			"setup": {
+				"A1": "Cat",
+				"B1": "Val",
+				"A2": "x",
+				"B2": 10,
+				"A3": "x",
+				"B3": 20,
+				"A4": "x",
+				"B4": 30,
+				"E1": "Cat",
+				"E2": "x"
+			},
+			"formula": "DVAR(A1:B4, \"Val\", E1:E2)",
+			"expected": { "kind": "number", "approx": 100, "tolerance": 1e-6 }
+		},
+		{
+			"description": "DSTDEVP population stdev of matching rows",
+			"setup": {
+				"A1": "Dept",
+				"B1": "Score",
+				"A2": "North",
+				"B2": 80,
+				"A3": "North",
+				"B3": 90,
+				"A4": "North",
+				"B4": 70,
+				"E1": "Dept",
+				"E2": "North"
+			},
+			"formula": "DSTDEVP(A1:B4, \"Score\", E1:E2)",
+			"expected": { "kind": "number", "approx": 8.164966, "tolerance": 1e-5 }
+		},
+		{
+			"description": "DVARP population variance of matching rows",
+			"setup": {
+				"A1": "Cat",
+				"B1": "Val",
+				"A2": "x",
+				"B2": 10,
+				"A3": "x",
+				"B3": 20,
+				"A4": "x",
+				"B4": 30,
+				"E1": "Cat",
+				"E2": "x"
+			},
+			"formula": "DVARP(A1:B4, \"Val\", E1:E2)",
+			"expected": { "kind": "number", "approx": 66.666667, "tolerance": 1e-5 }
 		}
 	]
 }

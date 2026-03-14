@@ -192,6 +192,84 @@
 			"setup": {},
 			"formula": "BITAND(-1,5)",
 			"expected": { "kind": "error", "value": "#NUM!" }
+		},
+		{
+			"description": "COMPLEX creates complex number string",
+			"setup": {},
+			"formula": "COMPLEX(3,4)",
+			"expected": { "kind": "string", "value": "3+4i" }
+		},
+		{
+			"description": "COMPLEX with j suffix",
+			"setup": {},
+			"formula": "COMPLEX(3,4,\"j\")",
+			"expected": { "kind": "string", "value": "3+4j" }
+		},
+		{
+			"description": "COMPLEX with zero imaginary",
+			"setup": {},
+			"formula": "COMPLEX(5,0)",
+			"expected": { "kind": "string", "value": "5" }
+		},
+		{
+			"description": "IMABS of 3+4i is 5",
+			"setup": {},
+			"formula": "IMABS(\"3+4i\")",
+			"expected": { "kind": "number", "value": 5 }
+		},
+		{
+			"description": "IMABS of real number",
+			"setup": {},
+			"formula": "IMABS(\"-5\")",
+			"expected": { "kind": "number", "value": 5 }
+		},
+		{
+			"description": "IMREAL extracts real part of complex number",
+			"setup": {},
+			"formula": "IMREAL(\"3+4i\")",
+			"expected": { "kind": "number", "value": 3 }
+		},
+		{
+			"description": "IMAGINARY extracts imaginary part of complex number",
+			"setup": {},
+			"formula": "IMAGINARY(\"3+4i\")",
+			"expected": { "kind": "number", "value": 4 }
+		},
+		{
+			"description": "IMCONJUGATE flips imaginary sign",
+			"setup": {},
+			"formula": "IMCONJUGATE(\"3+4i\")",
+			"expected": { "kind": "string", "value": "3-4i" }
+		},
+		{
+			"description": "IMSUM adds complex numbers",
+			"setup": {},
+			"formula": "IMSUM(\"3+4i\",\"1+2i\")",
+			"expected": { "kind": "string", "value": "4+6i" }
+		},
+		{
+			"description": "IMDIV divides complex numbers",
+			"setup": {},
+			"formula": "IMDIV(\"-5+10i\",\"1+2i\")",
+			"expected": { "kind": "string", "value": "3+4i" }
+		},
+		{
+			"description": "IMARGUMENT of 1+i returns pi/4",
+			"setup": {},
+			"formula": "IMARGUMENT(\"1+i\")",
+			"expected": { "kind": "number", "approx": 0.7853981633974483, "tolerance": 1e-8 }
+		},
+		{
+			"description": "IMARGUMENT of 0 returns #DIV/0!",
+			"setup": {},
+			"formula": "IMARGUMENT(\"0\")",
+			"expected": { "kind": "error", "value": "#DIV/0!" }
+		},
+		{
+			"description": "IMPOWER squares a complex number",
+			"setup": {},
+			"formula": "IMPOWER(\"1+1i\",2)",
+			"expected": { "kind": "string", "value": "2i" }
 		}
 	]
 }

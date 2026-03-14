@@ -1,7 +1,7 @@
 import type { Cell, CellStyle, RangeRef, Sheet, StyleId, Workbook } from '@ascend/core'
 import { DEFAULT_STYLE_ID, parseA1, parseA1Safe, parseRange } from '@ascend/core'
-import type { FormulaCellRef, FormulaNode } from '@ascend/formulas'
-import { dateToSerial, printFormula, rewriteRefs } from '@ascend/formulas'
+import type { FormulaNode } from '@ascend/formulas'
+import { dateToSerial, printFormulaWithOffset } from '@ascend/formulas'
 import type {
 	AscendError,
 	CellValue,
@@ -97,12 +97,7 @@ export function safeParseRange(range: string): Result<RangeRef> {
 }
 
 export function translateFormula(node: FormulaNode, rowDelta: number, colDelta: number): string {
-	const rewritten = rewriteRefs(node, (ref: FormulaCellRef) => ({
-		...ref,
-		row: ref.rowAbsolute ? ref.row : ref.row + rowDelta,
-		col: ref.colAbsolute ? ref.col : ref.col + colDelta,
-	}))
-	return printFormula(rewritten)
+	return printFormulaWithOffset(node, rowDelta, colDelta)
 }
 
 export function collectRangeCells(
@@ -161,11 +156,7 @@ export function shiftMerges(
 export function clearFormulaMetadataForSheet(sheet: Workbook['sheets'][number]): void {
 	for (const [row, col, existing] of sheet.cells.iterate()) {
 		if (!existing.formulaInfo) continue
-		sheet.cells.set(row, col, {
-			value: existing.value,
-			formula: existing.formula,
-			styleId: existing.styleId,
-		})
+		sheet.cells.clearFormulaInfo(row, col)
 	}
 }
 

@@ -8,7 +8,7 @@
 		"ascend": "src/index.ts"
 	},
 	"dependencies": {
-		"@ascend/formulas": "workspace:*",
+		"@ascend/core": "workspace:*",
 		"@ascend/schema": "workspace:*",
 		"@ascend/sdk": "workspace:*"
 	},

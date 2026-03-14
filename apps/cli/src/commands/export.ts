@@ -1,4 +1,5 @@
 import { writeFile } from 'node:fs/promises'
+import { inferExportFormat, normalizeExportFormat } from '@ascend/sdk'
 import { cliError, jsonOut } from '../output/json.ts'
 import { openWorkbookWithProgress, withProgress } from '../progress.ts'
 
@@ -25,7 +26,7 @@ export async function exportCommand(args: string[], flags: Map<string, string>):
 	}
 
 	const { workbook: wb } = await openWorkbookWithProgress(file)
-	const format = normalizeExportFormat(flags.get('format') ?? inferFormat(output))
+	const format = normalizeExportFormat(flags.get('format') ?? '') ?? inferExportFormat(output)
 	if (!format) {
 		cliError('Invalid export format. Use one of: csv, tsv, json, xlsx, xlsm', flags)
 		return 1
@@ -55,24 +56,4 @@ export async function exportCommand(args: string[], flags: Map<string, string>):
 		console.log(`Exported ${file} → ${output} (${format})`)
 	}
 	return 0
-}
-
-function inferFormat(path: string): string {
-	const ext = path.split('.').pop()?.toLowerCase() ?? ''
-	if (ext === 'csv' || ext === 'tsv' || ext === 'json' || ext === 'xlsx' || ext === 'xlsm')
-		return ext
-	return ext
-}
-
-function normalizeExportFormat(format: string): 'csv' | 'tsv' | 'json' | 'xlsx' | 'xlsm' | null {
-	switch (format.toLowerCase()) {
-		case 'csv':
-		case 'tsv':
-		case 'json':
-		case 'xlsx':
-		case 'xlsm':
-			return format.toLowerCase() as 'csv' | 'tsv' | 'json' | 'xlsx' | 'xlsm'
-		default:
-			return null
-	}
 }

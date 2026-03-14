@@ -9,5 +9,9 @@
 	},
 	"include": ["src"],
 	"exclude": ["src/**/*.test.ts"],
-	"references": [{ "path": "../../packages/schema" }, { "path": "../../packages/sdk" }]
+	"references": [
+		{ "path": "../../packages/schema" },
+		{ "path": "../../packages/core" },
+		{ "path": "../../packages/sdk" }
+	]
 }

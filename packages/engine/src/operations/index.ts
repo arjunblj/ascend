@@ -1,5 +1,5 @@
 import type { Workbook } from '@ascend/core'
-import type { AscendError, Operation, Result } from '@ascend/schema'
+import type { AscendError, CellUpdate, Operation, Result } from '@ascend/schema'
 import { ascendError, err, ok } from '@ascend/schema'
 import {
 	invalidateWorkbookAnalysis,
@@ -154,6 +154,34 @@ export function applyOperation(
 	return result
 }
 
+function coalesceSetCells(ops: readonly Operation[]): Operation[] {
+	const out: Operation[] = []
+	let pending: { sheet: string; updates: CellUpdate[] } | null = null
+
+	for (const op of ops) {
+		if (op.op === 'setCells') {
+			if (pending && pending.sheet === op.sheet) {
+				pending.updates = [...pending.updates, ...op.updates]
+			} else {
+				if (pending) {
+					out.push({ op: 'setCells', sheet: pending.sheet, updates: pending.updates })
+				}
+				pending = { sheet: op.sheet, updates: [...op.updates] }
+			}
+		} else {
+			if (pending) {
+				out.push({ op: 'setCells', sheet: pending.sheet, updates: pending.updates })
+				pending = null
+			}
+			out.push(op)
+		}
+	}
+	if (pending) {
+		out.push({ op: 'setCells', sheet: pending.sheet, updates: pending.updates })
+	}
+	return out
+}
+
 export function applyOperations(
 	workbook: Workbook,
 	ops: readonly Operation[],
@@ -171,12 +199,14 @@ export function applyOperations(
 		if (errors.length > 0) return err({ errors })
 	}
 
+	const coalesced = coalesceSetCells(ops)
+
 	const allAffected: string[] = []
 	const allSheets: string[] = []
 	const warnings: AscendError[] = []
 	let needsRecalc = false
 
-	for (const op of ops) {
+	for (const op of coalesced) {
 		const result = applyOperation(workbook, op)
 		if (!result.ok) return result
 		allAffected.push(...result.value.affectedCells)

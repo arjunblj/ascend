@@ -1,0 +1,95 @@
+{
+	"function": "smoke",
+	"cases": [
+		{
+			"description": "AREAS returns 1 for single range",
+			"setup": {},
+			"formula": "AREAS(A1:B2)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "RRI computes equivalent rate",
+			"setup": {},
+			"formula": "RRI(10, 1000, 2000)",
+			"expected": { "kind": "number", "approx": 0.07177, "tolerance": 0.001 }
+		},
+		{
+			"description": "MDURATION returns modified duration",
+			"setup": {},
+			"formula": "MDURATION(DATE(2024,3,15), DATE(2029,12,31), 0.08, 0.06, 2, 0)",
+			"expected": { "kind": "number", "approx": 4.1, "tolerance": 0.5 }
+		},
+		{
+			"description": "TBILLEQ returns bond-equivalent yield",
+			"setup": {},
+			"formula": "TBILLEQ(DATE(2024,1,1), DATE(2024,6,29), 0.05)",
+			"expected": { "kind": "number", "approx": 0.052, "tolerance": 0.01 }
+		},
+		{
+			"description": "GAUSS at 0 returns 0 (CDF(0)-0.5)",
+			"setup": {},
+			"formula": "GAUSS(0)",
+			"expected": { "kind": "number", "approx": 0, "tolerance": 1e-6 }
+		},
+		{
+			"description": "PHI at 0 returns standard normal PDF",
+			"setup": {},
+			"formula": "PHI(0)",
+			"expected": { "kind": "number", "approx": 0.3989, "tolerance": 0.001 }
+		},
+		{
+			"description": "BASE converts to hex",
+			"setup": {},
+			"formula": "BASE(255, 16)",
+			"expected": { "kind": "string", "value": "FF" }
+		},
+		{
+			"description": "DECIMAL converts from hex",
+			"setup": {},
+			"formula": "DECIMAL(\"FF\", 16)",
+			"expected": { "kind": "number", "value": 255 }
+		},
+		{
+			"description": "ARABIC converts Roman numeral",
+			"setup": {},
+			"formula": "ARABIC(\"X\")",
+			"expected": { "kind": "number", "value": 10 }
+		},
+		{
+			"description": "STDEVA with numbers returns sample stdev",
+			"setup": { "A1": 1, "A2": 2, "A3": 3 },
+			"formula": "STDEVA(A1:A3)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "VARA with numbers returns sample variance",
+			"setup": { "A1": 1, "A2": 2, "A3": 3 },
+			"formula": "VARA(A1:A3)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "INTRATE returns interest rate for discount security",
+			"setup": {},
+			"formula": "INTRATE(DATE(2024,1,1), DATE(2024,7,1), 97, 100, 2)",
+			"expected": { "kind": "number", "approx": 0.063, "tolerance": 0.02 }
+		},
+		{
+			"description": "RECEIVED returns amount at maturity",
+			"setup": {},
+			"formula": "RECEIVED(DATE(2024,1,1), DATE(2024,7,1), 1000, 0.05)",
+			"expected": { "kind": "number", "approx": 1025, "tolerance": 5 }
+		},
+		{
+			"description": "ACCRINT computes accrued interest for bond",
+			"setup": {},
+			"formula": "ACCRINT(DATE(2023,7,1), DATE(2024,1,1), DATE(2024,3,15), 0.08, 100, 2)",
+			"expected": { "kind": "number", "approx": 5.5, "tolerance": 2 }
+		},
+		{
+			"description": "COUPDAYBS returns days from coupon to settlement",
+			"setup": {},
+			"formula": "COUPDAYBS(DATE(2024,3,15), DATE(2029,12,31), 2)",
+			"expected": { "kind": "number", "approx": 75, "tolerance": 5 }
+		}
+	]
+}

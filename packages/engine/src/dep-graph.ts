@@ -169,10 +169,31 @@ export class DependencyGraph {
 		return dirty
 	}
 
+	/**
+	 * Returns cells in topological eval order. When the full order cache is stale,
+	 * we normally rebuild it from all formulas. For dirty-only recalc, when
+	 * dirtySet is smaller than all formulas, we skip the full rebuild and compute
+	 * order only for the dirty subset (lazy order). This avoids O(all formulas)
+	 * topological sort when only a small subset needs evaluation.
+	 */
 	getEvalOrder(dirtySet: Set<CellKey>): CellKey[] {
+		const allFormulaKeys = this._ensureDirectIndex().formulaKeys
+		const formulaKeySet = new Set(allFormulaKeys)
+		const nonFormulaKeys = [...dirtySet].filter((k) => !formulaKeySet.has(k))
+
+		const dirtyFormulaCount = [...dirtySet].filter((k) => this.formulas.has(k)).length
+		const usePartialOrder =
+			dirtySet.size < allFormulaKeys.length && dirtyFormulaCount < allFormulaKeys.length
+
+		if (usePartialOrder) {
+			const partialOrder = this._computeEvalOrder(dirtySet)
+			const formulaOrder = partialOrder.filter((k) => this.formulas.has(k))
+			return [...nonFormulaKeys, ...formulaOrder]
+		}
+
 		if (this._cachedEvalOrder === null) {
-			const allFormulaKeys = new Set(this._ensureDirectIndex().formulaKeys)
-			this._cachedEvalOrder = this._computeEvalOrder(allFormulaKeys)
+			const allSet = new Set(allFormulaKeys)
+			this._cachedEvalOrder = this._computeEvalOrder(allSet)
 			this._rebuildRanksFromOrder(this._cachedEvalOrder)
 		}
 		const formulaQueue = new BinaryMinHeap(
@@ -186,8 +207,6 @@ export class DependencyGraph {
 			const key = formulaQueue.pop()
 			if (key !== undefined) formulaOrder.push(key)
 		}
-		const formulaKeySet = new Set(this._ensureDirectIndex().formulaKeys)
-		const nonFormulaKeys = [...dirtySet].filter((k) => !formulaKeySet.has(k))
 		return [...nonFormulaKeys, ...formulaOrder]
 	}
 

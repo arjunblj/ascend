@@ -35,11 +35,12 @@ describe('MCP server', () => {
 		expect(names).toContain('ascend.write')
 		expect(names).toContain('ascend.calc')
 		expect(names).toContain('ascend.check')
+		expect(names).toContain('ascend.list_operations')
 		expect(names).toContain('ascend.lint')
 		expect(names).toContain('ascend.trace')
 		expect(names).toContain('ascend.diff')
 		expect(names).toContain('ascend.export')
-		expect(names.length).toBe(12)
+		expect(names.length).toBe(13)
 	})
 
 	test('ascend.write recalculates before saving when needed', async () => {
@@ -272,6 +273,48 @@ describe('MCP server', () => {
 		expect(formulaResult.structuredContent?.ok).toBe(true)
 		expect(formulaResult.structuredContent?.data?.matches?.[0]?.ref).toBe('C1')
 		expect(formulaResult.structuredContent?.data?.matches?.[0]?.matchedOn).toBe('formula')
+	})
+
+	test('ascend.write rejects invalid operations with validation error', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.write'].handler as (args: {
+			file: string
+			ops: unknown[]
+		}) => Promise<{ isError?: boolean; structuredContent?: { error?: { code?: string } } }>
+
+		const badOps = [
+			{ op: 'setCells', sheet: 'Sheet1' },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1' },
+			{ op: 'unknownOp', sheet: 'Sheet1' },
+		]
+		for (const ops of badOps) {
+			const result = await handler({ file: TEMP_FILE, ops: [ops] })
+			expect(result.isError).toBe(true)
+			expect(result.structuredContent?.error?.code).toBe('VALIDATION_ERROR')
+		}
+	})
+
+	test('ascend.preview rejects invalid operations with validation error', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.preview'].handler as (args: {
+			file: string
+			ops: unknown[]
+		}) => Promise<{ isError?: boolean; structuredContent?: { error?: { code?: string } } }>
+
+		const result = await handler({
+			file: TEMP_FILE,
+			ops: [{ op: 'setCells', sheet: 'Sheet1' }],
+		})
+		expect(result.isError).toBe(true)
+		expect(result.structuredContent?.error?.code).toBe('VALIDATION_ERROR')
 	})
 
 	test('sheet-not-found MCP errors include suggested fixes', async () => {

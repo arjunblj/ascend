@@ -1,6 +1,6 @@
 import type { Cell, Sheet, SheetColDef } from '@ascend/core'
 import { indexToColumn } from '@ascend/core'
-import type { CellValue } from '@ascend/schema'
+import type { CellValue, RichTextRun } from '@ascend/schema'
 import { topLeftScalar } from '@ascend/schema'
 import { toStoredFormulaText } from '../formula-storage.ts'
 import { escapeXml } from '../xml.ts'
@@ -24,6 +24,8 @@ export interface SheetXmlOptions {
 	}[]
 	readonly legacyDrawingRelId?: string
 	readonly useInlineStrings?: boolean
+	/** Map of "cfIdx:ruleIdx" -> dxfId for rules with style but no dxfId */
+	readonly cfDxfIdOverrides?: ReadonlyMap<string, number>
 }
 
 export function buildSheetXml(
@@ -87,13 +89,34 @@ export function buildSheetXml(
 		out.push(`<dimension ref="${s}:${e}"/>`)
 	}
 
-	if (sheet.frozenRows > 0 || sheet.frozenCols > 0) {
-		const paneAttrs: string[] = ['state="frozen"']
-		if (sheet.frozenCols > 0) paneAttrs.push(`xSplit="${sheet.frozenCols}"`)
-		if (sheet.frozenRows > 0) paneAttrs.push(`ySplit="${sheet.frozenRows}"`)
+	const hasFrozenPanes = sheet.frozenRows > 0 || sheet.frozenCols > 0
+	const hasSheetViewAttrs =
+		sheet.sheetView &&
+		(sheet.sheetView.zoomScale !== undefined ||
+			sheet.sheetView.showGridLines !== undefined ||
+			sheet.sheetView.showFormulas !== undefined ||
+			sheet.sheetView.rightToLeft !== undefined ||
+			sheet.sheetView.tabSelected !== undefined ||
+			sheet.sheetView.view !== undefined)
+	if (hasFrozenPanes || hasSheetViewAttrs) {
+		const viewAttrs: string[] = ['workbookViewId="0"']
+		if (sheet.sheetView) {
+			if (sheet.sheetView.zoomScale !== undefined)
+				viewAttrs.push(`zoomScale="${sheet.sheetView.zoomScale}"`)
+			if (sheet.sheetView.showGridLines === false) viewAttrs.push('showGridLines="0"')
+			if (sheet.sheetView.showFormulas) viewAttrs.push('showFormulas="1"')
+			if (sheet.sheetView.rightToLeft) viewAttrs.push('rightToLeft="1"')
+			if (sheet.sheetView.tabSelected) viewAttrs.push('tabSelected="1"')
+			if (sheet.sheetView.view) viewAttrs.push(`view="${sheet.sheetView.view}"`)
+		}
 		out.push('<sheetViews>')
-		out.push('<sheetView workbookViewId="0">')
-		out.push(`<pane ${paneAttrs.join(' ')}/>`)
+		out.push(`<sheetView ${viewAttrs.join(' ')}>`)
+		if (hasFrozenPanes) {
+			const paneAttrs: string[] = ['state="frozen"']
+			if (sheet.frozenCols > 0) paneAttrs.push(`xSplit="${sheet.frozenCols}"`)
+			if (sheet.frozenRows > 0) paneAttrs.push(`ySplit="${sheet.frozenRows}"`)
+			out.push(`<pane ${paneAttrs.join(' ')}/>`)
+		}
 		out.push('</sheetView>')
 		out.push('</sheetViews>')
 	}
@@ -193,13 +216,19 @@ export function buildSheetXml(
 	}
 
 	if (sheet.conditionalFormats.length > 0) {
-		for (const conditionalFormat of sheet.conditionalFormats) {
+		const cfDxfIdOverrides = options.cfDxfIdOverrides
+		for (let cfIdx = 0; cfIdx < sheet.conditionalFormats.length; cfIdx++) {
+			const conditionalFormat = sheet.conditionalFormats[cfIdx]
+			if (!conditionalFormat) continue
 			out.push(`<conditionalFormatting sqref="${escapeXml(conditionalFormat.sqref)}">`)
-			for (const rule of conditionalFormat.rules) {
+			for (let ruleIdx = 0; ruleIdx < conditionalFormat.rules.length; ruleIdx++) {
+				const rule = conditionalFormat.rules[ruleIdx]
+				if (!rule) continue
+				const effectiveDxfId = rule.dxfId ?? cfDxfIdOverrides?.get(`${cfIdx}:${ruleIdx}`)
 				const attrs = [`type="${escapeXml(rule.type)}"`]
 				if (rule.operator) attrs.push(`operator="${escapeXml(rule.operator)}"`)
 				if (rule.priority !== undefined) attrs.push(`priority="${rule.priority}"`)
-				if (rule.dxfId !== undefined) attrs.push(`dxfId="${rule.dxfId}"`)
+				if (effectiveDxfId !== undefined) attrs.push(`dxfId="${effectiveDxfId}"`)
 				if (rule.stopIfTrue) attrs.push('stopIfTrue="1"')
 				out.push(`<cfRule ${attrs.join(' ')}>`)
 				for (const formula of rule.formulas) {
@@ -475,9 +504,12 @@ function regularCellXml(
 	const sAttr = xfIdx !== 0 ? ` s="${xfIdx}"` : ''
 	if (useInlineStrings) {
 		const v = topLeftScalar(cell.value)
-		if (v.kind === 'string' || v.kind === 'richText') {
-			const text = v.kind === 'string' ? v.value : v.runs.map((r) => r.text).join('')
-			return `<c r="${ref}"${sAttr} t="inlineStr"><is><t>${escapeXml(text)}</t></is></c>`
+		if (v.kind === 'string') {
+			return `<c r="${ref}"${sAttr} t="inlineStr"><is><t>${escapeXml(v.value)}</t></is></c>`
+		}
+		if (v.kind === 'richText') {
+			const runsXml = v.runs.map((r) => inlineStrRunXml(r)).join('')
+			return `<c r="${ref}"${sAttr} t="inlineStr"><is>${runsXml}</is></c>`
 		}
 	}
 	const { typeAttr, valueStr } = regularValueAttrs(cell.value, ssTable)
@@ -511,6 +543,33 @@ function formulaValueAttrs(value: CellValue): {
 				valueStr: escapeXml(value.runs.map((r) => r.text).join('')),
 			}
 	}
+}
+
+function inlineStrRunXml(run: RichTextRun): string {
+	const parts: string[] = []
+	if (run.bold) parts.push('<b/>')
+	if (run.italic) parts.push('<i/>')
+	if (run.underline) parts.push('<u/>')
+	if (run.strikethrough) parts.push('<strike/>')
+	if (run.fontSize !== undefined) parts.push(`<sz val="${run.fontSize}"/>`)
+	if (run.color) {
+		if (typeof run.color === 'string') {
+			parts.push(`<color rgb="${escapeXml(run.color)}"/>`)
+		} else if (run.color.kind === 'rgb') {
+			parts.push(`<color rgb="${escapeXml(run.color.rgb)}"/>`)
+		} else if (run.color.kind === 'theme') {
+			parts.push(
+				run.color.tint !== undefined
+					? `<color theme="${run.color.theme}" tint="${run.color.tint}"/>`
+					: `<color theme="${run.color.theme}"/>`,
+			)
+		} else if (run.color.kind === 'indexed') {
+			parts.push(`<color indexed="${run.color.index}"/>`)
+		}
+	}
+	if (run.fontName) parts.push(`<rFont val="${escapeXml(run.fontName)}"/>`)
+	const rPrEl = parts.length > 0 ? `<rPr>${parts.join('')}</rPr>` : ''
+	return `<r>${rPrEl}<t>${escapeXml(run.text)}</t></r>`
 }
 
 function regularValueAttrs(

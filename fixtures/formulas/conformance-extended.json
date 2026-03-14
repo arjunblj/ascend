@@ -1,0 +1,155 @@
+{
+	"function": "conformance-extended",
+	"cases": [
+		{
+			"description": "TEXTBEFORE returns text before delimiter",
+			"setup": {},
+			"formula": "TEXTBEFORE(\"hello-world\", \"-\")",
+			"expected": { "kind": "string", "value": "hello" }
+		},
+		{
+			"description": "TEXTAFTER returns text after delimiter",
+			"setup": {},
+			"formula": "TEXTAFTER(\"hello-world\", \"-\")",
+			"expected": { "kind": "string", "value": "world" }
+		},
+		{
+			"description": "TEXTBEFORE with instance 2 returns text before second occurrence",
+			"setup": {},
+			"formula": "TEXTBEFORE(\"a-b-c-d\", \"-\", 2)",
+			"expected": { "kind": "string", "value": "a-b" }
+		},
+		{
+			"description": "TEXTAFTER with instance 2 returns text after second occurrence",
+			"setup": {},
+			"formula": "TEXTAFTER(\"a-b-c-d\", \"-\", 2)",
+			"expected": { "kind": "string", "value": "c-d" }
+		},
+		{
+			"description": "TEXTBEFORE delimiter not found returns #N/A",
+			"setup": {},
+			"formula": "TEXTBEFORE(\"hello\", \"xyz\")",
+			"expected": { "kind": "error", "value": "#N/A" }
+		},
+		{
+			"description": "TEXTSPLIT spills first element as anchor",
+			"setup": {},
+			"formula": "TEXTSPLIT(\"a,b,c\", \",\")",
+			"expected": { "kind": "string", "value": "a" }
+		},
+		{
+			"description": "TEXTSPLIT with row delimiter spills first element",
+			"setup": {},
+			"formula": "TEXTSPLIT(\"a;b|c;d\", \";\", \"|\")",
+			"expected": { "kind": "string", "value": "a" }
+		},
+		{
+			"description": "SORT with sort_index 2 sorts by second column",
+			"setup": { "A1": 30, "A2": 10, "A3": 20, "B1": 1, "B2": 3, "B3": 2 },
+			"formula": "SORT(A1:B3, 2, 1)",
+			"expected": { "kind": "number", "value": 30 }
+		},
+		{
+			"description": "SORT by column sorts columns by first row",
+			"setup": { "A1": 30, "A2": 10, "B1": 20, "B2": 5, "C1": 40, "C2": 15 },
+			"formula": "SORT(A1:C2, 1, 1, 1)",
+			"expected": { "kind": "number", "value": 20 }
+		},
+		{
+			"description": "SORTBY sorts by second column ascending",
+			"setup": { "A1": "C", "A2": "A", "A3": "B", "B1": 3, "B2": 1, "B3": 2 },
+			"formula": "SORTBY(A1:A3, B1:B3)",
+			"expected": { "kind": "string", "value": "A" }
+		},
+		{
+			"description": "UNIQUE with by_col returns first unique column value",
+			"setup": { "A1": "x", "A2": "y", "A3": "x", "B1": 1, "B2": 2, "B3": 3 },
+			"formula": "UNIQUE(A1:B3, FALSE, TRUE)",
+			"expected": { "kind": "string", "value": "x" }
+		},
+		{
+			"description": "XIRR converges for simple two-period cash flow one year apart",
+			"setup": { "A1": -100, "A2": 110, "B1": 44927, "B2": 45292 },
+			"formula": "XIRR(A1:A2, B1:B2)",
+			"expected": { "kind": "number", "approx": 0.1, "tolerance": 0.02 }
+		},
+		{
+			"description": "YIELD returns bond yield - PRICE and YIELD inverse",
+			"setup": { "A1": 112.5 },
+			"formula": "YIELD(DATE(2024,3,15), DATE(2029,12,31), 0.08, A1, 100, 2, 0)",
+			"expected": { "kind": "number", "approx": 0.055, "tolerance": 0.02 }
+		},
+		{
+			"description": "DURATION returns Macaulay duration",
+			"setup": {},
+			"formula": "DURATION(DATE(2024,3,15), DATE(2029,12,31), 0.08, 0.06, 2, 0)",
+			"expected": { "kind": "number", "approx": 4.7, "tolerance": 0.2 }
+		},
+		{
+			"description": "PRICE returns bond price for given yield",
+			"setup": {},
+			"formula": "PRICE(DATE(2024,3,15), DATE(2029,12,31), 0.08, 0.06, 100, 2, 0)",
+			"expected": { "kind": "number", "approx": 112, "tolerance": 5 }
+		},
+		{
+			"description": "NORM.DIST CDF at mean equals 0.5",
+			"setup": {},
+			"formula": "NORM.DIST(10, 10, 2, TRUE)",
+			"expected": { "kind": "number", "approx": 0.5, "tolerance": 1e-6 }
+		},
+		{
+			"description": "NORM.DIST PDF at 0 for standard normal",
+			"setup": {},
+			"formula": "NORM.DIST(0, 0, 1, FALSE)",
+			"expected": { "kind": "number", "approx": 0.3989422804, "tolerance": 1e-8 }
+		},
+		{
+			"description": "T.DIST CDF at 1 with 10 df",
+			"setup": {},
+			"formula": "T.DIST(1, 10, TRUE)",
+			"expected": { "kind": "number", "approx": 0.8296, "tolerance": 0.01 }
+		},
+		{
+			"description": "CHISQ.DIST CDF at 2 with 3 df",
+			"setup": {},
+			"formula": "CHISQ.DIST(2, 3, TRUE)",
+			"expected": { "kind": "number", "approx": 0.428, "tolerance": 0.01 }
+		},
+		{
+			"description": "BETADIST matches BETA.DIST for alpha=2 beta=5",
+			"setup": {},
+			"formula": "BETADIST(0.5, 2, 5, TRUE)",
+			"expected": { "kind": "number", "approx": 0.89, "tolerance": 0.05 }
+		},
+		{
+			"description": "BINOMDIST matches BINOM.DIST for 5 trials",
+			"setup": {},
+			"formula": "BINOMDIST(2, 5, 0.5, TRUE)",
+			"expected": { "kind": "number", "approx": 0.5, "tolerance": 0.01 }
+		},
+		{
+			"description": "CONVERT Celsius to Fahrenheit",
+			"setup": {},
+			"formula": "CONVERT(100, \"C\", \"F\")",
+			"expected": { "kind": "number", "approx": 212, "tolerance": 0.1 }
+		},
+		{
+			"description": "CONVERT Fahrenheit to Celsius",
+			"setup": {},
+			"formula": "CONVERT(32, \"F\", \"C\")",
+			"expected": { "kind": "number", "approx": 0, "tolerance": 0.1 }
+		},
+		{
+			"description": "CONVERT Kelvin to Celsius",
+			"setup": {},
+			"formula": "CONVERT(273.15, \"K\", \"C\")",
+			"expected": { "kind": "number", "approx": 0, "tolerance": 0.01 }
+		},
+		{
+			"description": "CONVERT meters to feet",
+			"setup": {},
+			"formula": "CONVERT(1, \"m\", \"ft\")",
+			"expected": { "kind": "number", "approx": 3.28, "tolerance": 0.01 }
+		}
+	]
+}

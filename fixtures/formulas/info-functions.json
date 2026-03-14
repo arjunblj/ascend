@@ -62,16 +62,100 @@
 			"expected": { "kind": "number", "value": 0 }
 		},
 		{
+			"description": "ISREF returns TRUE for a cell reference",
+			"setup": { "A1": 42 },
+			"formula": "ISREF(A1)",
+			"expected": { "kind": "boolean", "value": true }
+		},
+		{
 			"description": "ISREF returns TRUE for a range reference",
 			"setup": { "A1": 1, "A2": 2 },
 			"formula": "ISREF(A1:A2)",
 			"expected": { "kind": "boolean", "value": true }
 		},
 		{
+			"description": "ISREF returns FALSE for a number literal",
+			"setup": {},
+			"formula": "ISREF(1)",
+			"expected": { "kind": "boolean", "value": false }
+		},
+		{
+			"description": "ISREF returns FALSE for a text literal",
+			"setup": {},
+			"formula": "ISREF(\"text\")",
+			"expected": { "kind": "boolean", "value": false }
+		},
+		{
 			"description": "NA returns #N/A",
 			"setup": {},
 			"formula": "NA()",
 			"expected": { "kind": "error", "value": "#N/A" }
+		},
+		{
+			"description": "CELL address returns $A$1 for A1",
+			"setup": { "A1": 42 },
+			"formula": "CELL(\"address\", A1)",
+			"expected": { "kind": "string", "value": "$A$1" }
+		},
+		{
+			"description": "CELL col returns column number",
+			"setup": { "B5": 10 },
+			"formula": "CELL(\"col\", B5)",
+			"expected": { "kind": "number", "value": 2 }
+		},
+		{
+			"description": "CELL row returns row number",
+			"setup": { "B5": 10 },
+			"formula": "CELL(\"row\", B5)",
+			"expected": { "kind": "number", "value": 5 }
+		},
+		{
+			"description": "CELL type returns b for blank",
+			"setup": {},
+			"formula": "CELL(\"type\", A1)",
+			"expected": { "kind": "string", "value": "b" }
+		},
+		{
+			"description": "CELL type returns l for label",
+			"setup": { "A1": "hello" },
+			"formula": "CELL(\"type\", A1)",
+			"expected": { "kind": "string", "value": "l" }
+		},
+		{
+			"description": "CELL type returns v for value",
+			"setup": { "A1": 42 },
+			"formula": "CELL(\"type\", A1)",
+			"expected": { "kind": "string", "value": "v" }
+		},
+		{
+			"description": "CELL contents returns cell value",
+			"setup": { "A1": 99 },
+			"formula": "CELL(\"contents\", A1)",
+			"expected": { "kind": "number", "value": 99 }
+		},
+		{
+			"description": "CELL width returns default 8 when not set",
+			"setup": { "A1": 1 },
+			"formula": "CELL(\"width\", A1)",
+			"expected": { "kind": "number", "value": 8 }
+		},
+		{
+			"description": "CELL format returns G for general",
+			"setup": { "A1": 1 },
+			"formula": "CELL(\"format\", A1)",
+			"expected": { "kind": "string", "value": "G" }
+		},
+		{
+			"description": "CELL address with optional reference uses current cell",
+			"setup": {},
+			"formula": "CELL(\"address\")",
+			"expected": { "kind": "string", "value": "$A$11" }
+		},
+		{
+			"description": "CELL prefix returns empty for text with default alignment",
+			"setup": { "A1": "hello" },
+			"formula": "CELL(\"prefix\", A1)",
+			"expected": { "kind": "string", "value": "" }
 		}
 	]
 }

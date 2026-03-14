@@ -30,6 +30,8 @@ export const REL_CALC_CHAIN =
 export const REL_SLICER_CACHE = 'http://schemas.microsoft.com/office/2007/relationships/slicerCache'
 export const REL_VML_DRAWING =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing'
+export const REL_THREADED_COMMENT =
+	'http://schemas.microsoft.com/office/2017/10/relationships/threadedComment'
 
 const STRICT_REL_PREFIX = 'http://purl.oclc.org/ooxml/officeDocument/relationships/'
 const TRANSITIONAL_REL_PREFIX =

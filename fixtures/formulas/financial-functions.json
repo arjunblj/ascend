@@ -102,6 +102,52 @@
 			"setup": {},
 			"formula": "DOLLARFR(1.125, 16)",
 			"expected": { "kind": "number", "approx": 1.02, "tolerance": 1e-10 }
+		},
+		{
+			"description": "IRR with all same-sign cash flows returns #NUM!",
+			"setup": { "A1": 100, "A2": 200, "A3": 300 },
+			"formula": "IRR(A1:A3)",
+			"expected": { "kind": "error", "value": "#NUM!" }
+		},
+		{
+			"description": "XNPV with serial dates returns positive NPV for typical cash flows",
+			"setup": {
+				"A1": -10000,
+				"A2": 3000,
+				"A3": 4200,
+				"A4": 6800,
+				"B1": 43831,
+				"B2": 43982,
+				"B3": 44165,
+				"B4": 44348
+			},
+			"formula": "XNPV(0.1,A1:A4,B1:B4)",
+			"expected": { "kind": "number", "approx": 2674.49, "tolerance": 1 }
+		},
+		{
+			"description": "IRR with single sign change converges",
+			"setup": { "A1": -100, "A2": 110 },
+			"formula": "IRR(A1:A2)",
+			"expected": { "kind": "number", "approx": 0.1, "tolerance": 0.001 }
+		},
+		{
+			"description": "IRR with guess parameter when default may not converge",
+			"setup": { "A1": -70000, "A2": 12000, "A3": 15000, "A4": 18000, "A5": 21000 },
+			"formula": "IRR(A1:A5, 0.1)",
+			"expected": { "kind": "number", "approx": -0.021, "tolerance": 0.01 }
+		},
+		{
+			"description": "XNPV with serial date values",
+			"setup": {
+				"A1": -1000,
+				"A2": 500,
+				"A3": 600,
+				"B1": 44927,
+				"B2": 44988,
+				"B3": 45048
+			},
+			"formula": "XNPV(0.1,A1:A3,B1:B3)",
+			"expected": { "kind": "number", "approx": 73.44, "tolerance": 1 }
 		}
 	]
 }

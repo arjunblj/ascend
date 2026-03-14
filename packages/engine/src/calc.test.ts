@@ -546,6 +546,64 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(9))
 	})
 
+	test('INDIRECT resolves cross-sheet references', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+		const sheet2 = wb.addSheet('Sheet2')
+		sheet2.cells.set(0, 0, { value: numberValue(88), formula: null, styleId: sid })
+		const sheet1 = wb.sheets[0]
+		if (!sheet1) throw new Error('missing sheet')
+		sheet1.cells.set(0, 0, { value: EMPTY, formula: 'INDIRECT("Sheet2!A1")', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet1.cells.get(0, 0)?.value).toEqual(numberValue(88))
+	})
+
+	test('INDIRECT returns #REF! for nonexistent sheet', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'INDIRECT("NoSheet!A1")', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#REF!'))
+	})
+
+	test('INDIRECT resolves named ranges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(100), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(200), formula: null, styleId: sid })
+		wb.definedNames.set('MyRange', 'Sheet1!A1:A2')
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'SUM(INDIRECT("MyRange"))', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(300))
+	})
+
+	test('OFFSET with height and width returns a 2x2 range', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(4), formula: null, styleId: sid })
+		sheet.cells.set(2, 2, { value: EMPTY, formula: 'SUM(OFFSET(A1,0,0,2,2))', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(2, 2)?.value).toEqual(numberValue(10))
+	})
+
+	test('OFFSET defaults height/width to the base reference dimensions', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'SUM(OFFSET(A1:A2,0,0))', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(30))
+	})
+
 	test('SEQUENCE spills vertically into neighboring cells', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -657,6 +715,82 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(10))
 		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(20))
 		expect(sheet.cells.get(2, 1)?.value).toEqual(numberValue(30))
+	})
+
+	test('spill collision: dynamic array blocked by occupied cell returns #SPILL!', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'SEQUENCE(5)', styleId: sid })
+		sheet.cells.set(2, 0, { value: stringValue('blocker'), formula: null, styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#SPILL!'))
+	})
+
+	test('spill resize: FILTER result shrinks on recalc when fewer rows match', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		for (let r = 0; r < 4; r++) {
+			sheet.cells.set(r, 0, { value: numberValue(r + 1), formula: null, styleId: sid })
+			sheet.cells.set(r, 1, {
+				value: { kind: 'boolean', value: r < 2 },
+				formula: null,
+				styleId: sid,
+			})
+		}
+		sheet.cells.set(0, 2, { value: EMPTY, formula: 'FILTER(A1:A4,B1:B4)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 2)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(2, 2)?.value).toBeUndefined()
+	})
+
+	test('cross-sheet spill reference: formula on Sheet2 references Sheet1 spill anchor', () => {
+		const wb = createWorkbook()
+		const s1 = wb.addSheet('Sheet1')
+		const s2 = wb.addSheet('Sheet2')
+		s1.cells.set(0, 0, { value: EMPTY, formula: 'SEQUENCE(3)', styleId: sid })
+		s2.cells.set(0, 0, { value: EMPTY, formula: 'SUM(Sheet1!A1#)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(s2.cells.get(0, 0)?.value).toEqual(numberValue(6))
+	})
+
+	test('nested dynamic arrays: SORT(FILTER(...)) spills sorted filtered results', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(30), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(3, 0, { value: numberValue(5), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: { kind: 'boolean', value: true }, formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: { kind: 'boolean', value: false }, formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: { kind: 'boolean', value: true }, formula: null, styleId: sid })
+		sheet.cells.set(3, 1, { value: { kind: 'boolean', value: true }, formula: null, styleId: sid })
+		sheet.cells.set(0, 2, {
+			value: EMPTY,
+			formula: 'SORT(FILTER(A1:A4,B1:B4))',
+			styleId: sid,
+		})
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 2)?.value).toEqual(numberValue(5))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(numberValue(20))
+		expect(sheet.cells.get(2, 2)?.value).toEqual(numberValue(30))
+	})
+
+	test('FILTER with no matches returns #CALC! when no fallback', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: { kind: 'boolean', value: false }, formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: { kind: 'boolean', value: false }, formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: EMPTY, formula: 'FILTER(A1:A2,B1:B2)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 2)?.value).toEqual(errorValue('#CALC!'))
 	})
 
 	test('TRANSPOSE spills values across columns', () => {
@@ -1080,7 +1214,7 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(1, 0)?.value).toEqual(stringValue('Hello World'))
 	})
 
-	test('formula parse error is reported', () => {
+	test('formula parse error is reported and cell displays #VALUE!', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
 		sheet.cells.set(0, 0, { value: EMPTY, formula: '=INVALID(((', styleId: sid })
@@ -1088,6 +1222,7 @@ describe('recalculate', () => {
 		const result = recalculate(wb, makeCtx())
 		expect(result.errors.length).toBeGreaterThan(0)
 		expect(result.errors[0]?.error.code).toBe('FORMULA_PARSE_ERROR')
+		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#VALUE!'))
 	})
 
 	test('duration is tracked', () => {

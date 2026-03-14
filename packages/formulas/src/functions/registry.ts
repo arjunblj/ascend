@@ -14,7 +14,10 @@ export interface EvalArea {
 	readonly ref: EvalRef
 	readonly values: readonly (readonly CellValue[])[]
 	readonly topLeft?: CellValue
+	/** Iterate only occupied cells (sparse). Use for SUM, AVERAGE, etc. */
 	readonly forEachValue?: (fn: (value: CellValue) => void) => void
+	/** Iterate all cells in range including empty. Use for COUNTBLANK. */
+	readonly forEachCellInRange?: (fn: (value: CellValue) => void) => void
 }
 
 export interface EvalArg {
@@ -25,7 +28,10 @@ export interface EvalArg {
 	readonly areas?: readonly EvalArea[]
 	readonly shapeRows?: number
 	readonly shapeCols?: number
+	/** Iterate only occupied cells (sparse). Use for SUM, AVERAGE, etc. */
 	readonly forEachValue?: (fn: (value: CellValue) => void) => void
+	/** Iterate all cells in range including empty. Use for COUNTBLANK. */
+	readonly forEachCellInRange?: (fn: (value: CellValue) => void) => void
 }
 
 export type FnArg = EvalArg
@@ -259,6 +265,7 @@ export function valuesEqual(a: CellValue, b: CellValue): boolean {
 	if (a.kind === 'string' && b.kind === 'string')
 		return a.value.toLowerCase() === b.value.toLowerCase()
 	if (a.kind === 'boolean' && b.kind === 'boolean') return a.value === b.value
+	if (a.kind === 'error' && b.kind === 'error') return a.value === b.value
 	return a.kind === 'empty' && b.kind === 'empty'
 }
 
@@ -281,24 +288,24 @@ export function wildcardMatch(pattern: string, text: string): boolean {
 	if (!hasWildcardChars(p)) return text.toLowerCase() === p
 	let compiled = wildcardCache.get(p)
 	if (!compiled) {
-		let re = '^'
+		const parts: string[] = ['^']
 		let i = 0
 		while (i < p.length) {
 			const ch = p[i] ?? ''
 			if (ch === '~' && i + 1 < p.length) {
 				i++
-				re += escapeRe(p[i] ?? '')
+				parts.push(escapeRe(p[i] ?? ''))
 			} else if (ch === '*') {
-				re += '.*'
+				parts.push('.*')
 			} else if (ch === '?') {
-				re += '.'
+				parts.push('.')
 			} else {
-				re += escapeRe(ch)
+				parts.push(escapeRe(ch))
 			}
 			i++
 		}
-		re += '$'
-		compiled = new RegExp(re)
+		parts.push('$')
+		compiled = new RegExp(parts.join(''))
 		if (wildcardCache.size > 1024) wildcardCache.clear()
 		wildcardCache.set(p, compiled)
 	}

@@ -42,6 +42,7 @@ import {
 } from '@ascend/schema'
 import { check as verifyCheck, lint as verifyLint } from '@ascend/verify'
 import { buildWorkbookLoadInfo, openWorkbookSource } from './load.ts'
+import { getOperationsSchema, listOperations } from './ops.ts'
 import { parseFullRef, WorkbookReadView } from './read-view.ts'
 import type {
 	ApplyAndRecalcResult,
@@ -59,6 +60,11 @@ function cloneWorkbook(source: Workbook): Workbook {
 	return source.clone()
 }
 
+/**
+ * Full mutable workbook. Use for apply, recalc, save, export, and any editing.
+ * Opens the full workbook into memory. Use `WorkbookDocument` for read-only
+ * operations (inspect, read, check, lint, trace) when you don't need to modify.
+ */
 export class AscendWorkbook extends WorkbookReadView {
 	private readonly caps: PreservationCapsule[]
 	private originalBytes: Uint8Array | null
@@ -556,6 +562,19 @@ export class AscendWorkbook extends WorkbookReadView {
 		return this.apply([{ op: 'setCells', sheet: sheetName, updates: [{ ref, value }] }])
 	}
 
+	/**
+	 * Get a cell's value.
+	 * @example
+	 * const value = wb.get('Sheet1!A1')
+	 */
+	get(cellRef: string): CellValue {
+		const { sheetName, ref } = parseFullRef(cellRef, this.wb)
+		const handle = this.sheet(sheetName)
+		if (!handle) return EMPTY
+		const cell = handle.cell(ref)
+		return cell?.value ?? EMPTY
+	}
+
 	fillFormula(rangeRef: string, formula: string): ApplyResult {
 		const { sheetName, ref } = parseFullRef(rangeRef, this.wb)
 		return this.apply([
@@ -811,6 +830,8 @@ export const Ascend = {
 	open: AscendWorkbook.open,
 	create: AscendWorkbook.create,
 	fromCsv: AscendWorkbook.fromCsv,
+	listOperations,
+	getOperationsSchema,
 }
 
 export class BatchBuilder {
@@ -832,6 +853,46 @@ export class BatchBuilder {
 
 	addSheet(name: string): this {
 		this.ops.push({ op: 'addSheet', name })
+		return this
+	}
+
+	deleteSheet(sheet: string): this {
+		this.ops.push({ op: 'deleteSheet', sheet })
+		return this
+	}
+
+	insertRows(sheet: string, at: number, count: number): this {
+		this.ops.push({ op: 'insertRows', sheet, at, count })
+		return this
+	}
+
+	deleteRows(sheet: string, at: number, count: number): this {
+		this.ops.push({ op: 'deleteRows', sheet, at, count })
+		return this
+	}
+
+	insertCols(sheet: string, at: number, count: number): this {
+		this.ops.push({ op: 'insertCols', sheet, at, count })
+		return this
+	}
+
+	deleteCols(sheet: string, at: number, count: number): this {
+		this.ops.push({ op: 'deleteCols', sheet, at, count })
+		return this
+	}
+
+	clearRange(sheet: string, range: string): this {
+		this.ops.push({ op: 'clearRange', sheet, range, what: 'all' })
+		return this
+	}
+
+	mergeCells(sheet: string, range: string): this {
+		this.ops.push({ op: 'mergeCells', sheet, range })
+		return this
+	}
+
+	unmergeCells(sheet: string, range: string): this {
+		this.ops.push({ op: 'unmergeCells', sheet, range })
 		return this
 	}
 

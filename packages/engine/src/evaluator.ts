@@ -1,4 +1,4 @@
-import { indexToColumn, type Workbook } from '@ascend/core'
+import { DEFAULT_STYLE_ID, indexToColumn, type Workbook } from '@ascend/core'
 import type { FormulaNode } from '@ascend/formulas'
 import {
 	type AggregateRangeCache,
@@ -437,6 +437,11 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 		return errorValue('#VALUE!')
 	}
 
+	// EvalArg pooling: Not implemented. resolveArg returns many shapes (simple { value },
+	// range refs with ref/areas/forEachValue, multi-area with getters). Only the scalar path
+	// is poolable; range/ref paths create complex objects. V8 allocates small objects quickly;
+	// calc benchmarks show no allocation bottleneck. Pooling would require lifecycle management
+	// (reset between cell evals) and conditional fill logic, adding complexity without proven gain.
 	const args: EvalArg[] = new Array(argNodes.length)
 	for (let i = 0; i < argNodes.length; i++) {
 		args[i] = resolveArg(argNodes[i] as FormulaNode, ctx)
@@ -936,6 +941,15 @@ function makeRangeArea(
 		...(sheet
 			? {
 					forEachValue: (fn: (value: CellValue) => void) => {
+						sheet.cells.forEachValueInRange(
+							materializedStartRow,
+							materializedStartCol,
+							materializedEndRow,
+							materializedEndCol,
+							(value) => fn(value),
+						)
+					},
+					forEachCellInRange: (fn: (value: CellValue) => void) => {
 						for (let r = materializedStartRow; r <= materializedEndRow; r++) {
 							for (let c = materializedStartCol; c <= materializedEndCol; c++) {
 								fn(sheet.cells.readValue(r, c))
@@ -970,6 +984,17 @@ function makeMultiAreaArg(areas: readonly EvalArea[]): EvalArg {
 		forEachValue: (fn) => {
 			for (const area of areas) {
 				if (area.forEachValue) area.forEachValue(fn)
+				else {
+					for (const row of area.values) {
+						for (const value of row) fn(value)
+					}
+				}
+			}
+		},
+		forEachCellInRange: (fn) => {
+			for (const area of areas) {
+				if (area.forEachCellInRange) area.forEachCellInRange(fn)
+				else if (area.forEachValue) area.forEachValue(fn)
 				else {
 					for (const row of area.values) {
 						for (const value of row) fn(value)
@@ -1320,6 +1345,12 @@ function evalCellInfo(argNodes: readonly FormulaNode[], ctx: EvalContext): CellV
 		row: ctx.row,
 		col: ctx.col,
 	}
+	const sheet = ctx.workbook.sheets[targetRef.sheetIndex]
+	const cellStyle = sheet
+		? ctx.workbook.styles.get(
+				sheet.cells.readStyleId(targetRef.row, targetRef.col) ?? DEFAULT_STYLE_ID,
+			)
+		: undefined
 
 	switch (infoType) {
 		case 'address':
@@ -1336,6 +1367,19 @@ function evalCellInfo(argNodes: readonly FormulaNode[], ctx: EvalContext): CellV
 			if (value.kind === 'string' || value.kind === 'richText') return stringValue('l')
 			return stringValue('v')
 		}
+		case 'width':
+			return numberValue(sheet?.colWidths.get(targetRef.col) ?? 8)
+		case 'prefix': {
+			const value = topLeftScalar(arg.value)
+			if (value.kind !== 'string' && value.kind !== 'richText') return stringValue('')
+			const h = cellStyle?.alignment?.horizontal
+			if (h === 'left') return stringValue("'")
+			if (h === 'center') return stringValue('^')
+			if (h === 'right') return stringValue('"')
+			return stringValue('')
+		}
+		case 'format':
+			return stringValue(cellStyle?.numberFormat ?? 'G')
 		default:
 			return errorValue('#VALUE!')
 	}

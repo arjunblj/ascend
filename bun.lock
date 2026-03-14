@@ -17,7 +17,6 @@
       "name": "@ascend/api",
       "version": "0.0.0",
       "dependencies": {
-        "@ascend/formulas": "workspace:*",
         "@ascend/schema": "workspace:*",
         "@ascend/sdk": "workspace:*",
       },
@@ -29,7 +28,7 @@
         "ascend": "src/index.ts",
       },
       "dependencies": {
-        "@ascend/formulas": "workspace:*",
+        "@ascend/core": "workspace:*",
         "@ascend/schema": "workspace:*",
         "@ascend/sdk": "workspace:*",
       },
@@ -38,7 +37,6 @@
       "name": "@ascend/mcp",
       "version": "0.0.0",
       "dependencies": {
-        "@ascend/formulas": "workspace:*",
         "@ascend/schema": "workspace:*",
         "@ascend/sdk": "workspace:*",
         "@modelcontextprotocol/sdk": "^1.27.1",
@@ -87,6 +85,9 @@
         "@ascend/core": "workspace:*",
         "@ascend/formulas": "workspace:*",
         "@ascend/schema": "workspace:*",
+      },
+      "devDependencies": {
+        "@ascend/io-xlsx": "workspace:*",
       },
     },
     "packages/formulas": {

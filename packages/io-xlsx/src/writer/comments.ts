@@ -8,6 +8,11 @@ const VML_NS = 'urn:schemas-microsoft-com:vml'
 const OFFICE_NS = 'urn:schemas-microsoft-com:office:office'
 const EXCEL_NS = 'urn:schemas-microsoft-com:office:excel'
 
+/**
+ * Builds comments XML for a sheet.
+ * Note: SheetComment stores only plain text (`text: string`). Rich text in comments
+ * is flattened on read (see parseCommentsXml) and is not preserved on write.
+ */
 export function buildCommentsXml(sheet: Sheet): string {
 	const authors = uniqueAuthors(sheet)
 	const authorIds = new Map(authors.map((author, index) => [author, index] as const))

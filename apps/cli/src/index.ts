@@ -1,22 +1,26 @@
 #!/usr/bin/env bun
 
 import { AscendException } from '@ascend/schema'
+import { agentViewCommand, usage as agentViewUsage } from './commands/agent-view.ts'
 import { calcCommand, usage as calcUsage } from './commands/calc.ts'
 import { checkCommand, usage as checkUsage } from './commands/check.ts'
 import { createCommand, usage as createUsage } from './commands/create.ts'
 import { diffCommand, usage as diffUsage } from './commands/diff.ts'
 import { doctorCommand, usage as doctorUsage } from './commands/doctor.ts'
 import { exportCommand, usage as exportUsage } from './commands/export.ts'
+import { findCommand, usage as findUsage } from './commands/find.ts'
 import { formulaCommand, usage as formulaUsage } from './commands/formula.ts'
 import { inspectCommand, usage as inspectUsage } from './commands/inspect.ts'
 import { lintCommand, usage as lintUsage } from './commands/lint.ts'
 import { previewCommand, usage as previewUsage } from './commands/preview.ts'
 import { readCommand, usage as readUsage } from './commands/read.ts'
 import { traceCommand, usage as traceUsage } from './commands/trace.ts'
+import { tuiCommand, usage as tuiUsage } from './commands/tui.ts'
 import { writeCommand, usage as writeUsage } from './commands/write.ts'
 import { jsonErr } from './output/json.ts'
 
-const VERSION = '0.0.0'
+const pkg = await import('../package.json')
+const VERSION = pkg.version ?? '0.0.0'
 
 const HELP = `ascend — spreadsheet engine CLI
 
@@ -26,6 +30,8 @@ Commands:
   create <file>                 Create a new empty .xlsx workbook
   inspect <file> [sheet]        Show workbook/sheet structure
   read <file> <range>           Read cell values from a range
+  find <file> <query>           Search for cells matching a value
+  agent-view <file>             Get AI-friendly sheet summary
   preview <file> <range> <json> Preview workbook changes without saving
   write <file> <range> <json>   Write values to cells
   formula <subcommand>          Inspect or edit formulas
@@ -35,6 +41,7 @@ Commands:
   trace <file> <cell>           Trace precedents/dependents
   diff <file-a> <file-b>        Semantic diff between two workbooks
   export <file> <output>        Export workbook (csv, json, xlsx)
+  tui <file>                    Interactive terminal spreadsheet
   doctor                        Verify environment
 
 Global flags:
@@ -56,6 +63,11 @@ interface Command {
 
 const COMMANDS: Record<string, Command> = {
 	create: { run: createCommand, usage: createUsage },
+	'agent-view': {
+		run: agentViewCommand,
+		usage: agentViewUsage,
+		allowedFlags: ['sheet', 'range', 'json'],
+	},
 	inspect: {
 		run: inspectCommand,
 		usage: inspectUsage,
@@ -75,6 +87,12 @@ const COMMANDS: Record<string, Command> = {
 	trace: { run: traceCommand, usage: traceUsage, allowedFlags: ['json', 'max-depth'] },
 	diff: { run: diffCommand, usage: diffUsage, allowedFlags: ['json'] },
 	export: { run: exportCommand, usage: exportUsage, allowedFlags: ['format', 'sheet', 'json'] },
+	find: {
+		run: findCommand,
+		usage: findUsage,
+		allowedFlags: ['sheet', 'match', 'json'],
+	},
+	tui: { run: tuiCommand, usage: tuiUsage, allowedFlags: ['sheet'] },
 	doctor: { run: doctorCommand, usage: doctorUsage },
 }
 

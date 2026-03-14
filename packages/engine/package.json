@@ -9,6 +9,9 @@
 		"@ascend/formulas": "workspace:*",
 		"@ascend/schema": "workspace:*"
 	},
+	"devDependencies": {
+		"@ascend/io-xlsx": "workspace:*"
+	},
 	"scripts": {
 		"test": "bun test"
 	}

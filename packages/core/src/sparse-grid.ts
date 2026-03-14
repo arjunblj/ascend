@@ -54,6 +54,7 @@ const CHUNK_SIZE = 1 << CHUNK_BITS
 const CHUNK_MASK = CHUNK_SIZE - 1
 const CHUNK_AREA = CHUNK_SIZE * CHUNK_SIZE
 const CHUNK_COL_FACTOR = (16_383 >> CHUNK_BITS) + 1
+/** SparseChunk upgrades to DenseChunk when cell count reaches this. DenseChunk uses fixed arrays; SparseChunk uses a Map. Per-sheet auto-selection (HyperFormula-style) would create DenseChunk directly for high-fill sheets to skip upgrade cost, but requires fill-ratio heuristics at load time. Not implemented: XLSX load is cell-by-cell so we don't know fill ratio until after load; adding setExpectedDensity() would require API changes at io-xlsx; the upgrade cost is one-time O(96) copy per chunk. */
 const SPARSE_TO_DENSE_THRESHOLD = 96
 const SLOT_TAG_MASK = 0b111
 const SLOT_OCCUPIED_BIT = 0b1000
@@ -95,6 +96,7 @@ interface GridChunk {
 	readStyleId(localIndex: number): StyleId | undefined
 	readFormula(localIndex: number): string | null | undefined
 	readFormulaInfo(localIndex: number): CellFormulaBinding | undefined
+	clearFormulaInfo(localIndex: number): void
 	setSlot(localIndex: number, slot: StoredSlot): GridChunk
 	delete(localIndex: number): boolean
 	forEachRow(
@@ -102,6 +104,13 @@ interface GridChunk {
 		minLocalCol: number,
 		maxLocalCol: number,
 		fn: (localCol: number, slot: StoredSlot) => void,
+	): void
+	forEachValueInRow(
+		localRow: number,
+		minLocalCol: number,
+		maxLocalCol: number,
+		stringTable: StringTable,
+		fn: (localCol: number, value: CellValue) => void,
 	): void
 }
 
@@ -186,6 +195,12 @@ class SparseChunk implements GridChunk {
 		return this.slots.get(localIndex)?.formulaInfo
 	}
 
+	clearFormulaInfo(localIndex: number): void {
+		const slot = this.slots.get(localIndex)
+		if (!slot || !slot.formulaInfo) return
+		this.slots.set(localIndex, { ...slot, formulaInfo: undefined })
+	}
+
 	setSlot(localIndex: number, slot: StoredSlot): GridChunk {
 		this.slots.set(localIndex, slot)
 		if (this.slots.size < SPARSE_TO_DENSE_THRESHOLD) return this
@@ -206,18 +221,33 @@ class SparseChunk implements GridChunk {
 		maxLocalCol: number,
 		fn: (localCol: number, slot: StoredSlot) => void,
 	): void {
-		const rowSlots: Array<readonly [number, StoredSlot]> = []
-		for (const [index, slot] of this.slots) {
-			const row = index >>> CHUNK_BITS
-			if (row !== localRow) continue
-			const col = index & CHUNK_MASK
-			if (col < minLocalCol || col > maxLocalCol) continue
-			rowSlots.push([col, slot] as const)
+		const rowBase = localRow << CHUNK_BITS
+		for (let localCol = minLocalCol; localCol <= maxLocalCol; localCol++) {
+			const slot = this.slots.get(rowBase | localCol)
+			if (slot) fn(localCol, slot)
 		}
-		rowSlots.sort((a, b) => a[0] - b[0])
-		for (const [col, slot] of rowSlots) fn(col, slot)
+	}
+
+	forEachValueInRow(
+		localRow: number,
+		minLocalCol: number,
+		maxLocalCol: number,
+		stringTable: StringTable,
+		fn: (localCol: number, value: CellValue) => void,
+	): void {
+		const rowBase = localRow << CHUNK_BITS
+		for (let localCol = minLocalCol; localCol <= maxLocalCol; localCol++) {
+			const slot = this.slots.get(rowBase | localCol)
+			if (slot) {
+				const value = readSlotValue(slot, stringTable)
+				if (value !== undefined) fn(localCol, value)
+			}
+		}
 	}
 }
+
+const ROW_EMPTY_MIN = CHUNK_SIZE
+const ROW_EMPTY_MAX = -1
 
 class DenseChunk implements GridChunk {
 	private readonly metaBuffer = createChunkBuffer(CHUNK_AREA * 9)
@@ -227,10 +257,21 @@ class DenseChunk implements GridChunk {
 	private readonly stringIds = new Uint32Array(this.metaBuffer, CHUNK_AREA * 5, CHUNK_AREA)
 	private readonly numbers = new Float64Array(this.numberBuffer)
 	private readonly rowCounts = new Uint16Array(CHUNK_SIZE)
+	private readonly rowMinCol = new Int8Array(CHUNK_SIZE)
+	private readonly rowMaxCol = new Int8Array(CHUNK_SIZE)
 	private formulas: Array<string | null | undefined> | null = null
 	private formulaInfos: Array<CellFormulaBinding | undefined> | null = null
 	private heapValues: Array<CellValue | undefined> | null = null
 	private _count = 0
+	private _reusableSlot: StoredSlot = {
+		tag: SlotTag.Empty,
+		styleId: 0 as StyleId,
+		formula: null,
+		formulaInfo: undefined,
+		numberValue: undefined,
+		stringId: undefined,
+		heapValue: undefined,
+	}
 
 	get count(): number {
 		return this._count
@@ -240,6 +281,8 @@ class DenseChunk implements GridChunk {
 		const next = new DenseChunk()
 		new Uint8Array(next.metaBuffer).set(new Uint8Array(this.metaBuffer))
 		new Uint8Array(next.numberBuffer).set(new Uint8Array(this.numberBuffer))
+		next.rowMinCol.set(this.rowMinCol)
+		next.rowMaxCol.set(this.rowMaxCol)
 		next._count = this._count
 		next.formulas = this.formulas ? this.formulas.slice() : null
 		next.formulaInfos = this.formulaInfos ? this.formulaInfos.slice() : null
@@ -322,6 +365,10 @@ class DenseChunk implements GridChunk {
 		return this.formulaInfos?.[localIndex]
 	}
 
+	clearFormulaInfo(localIndex: number): void {
+		if (this.formulaInfos !== null) this.formulaInfos[localIndex] = undefined
+	}
+
 	setResolved(
 		localIndex: number,
 		value: CellValue,
@@ -332,8 +379,10 @@ class DenseChunk implements GridChunk {
 	): void {
 		if (!this.has(localIndex)) {
 			const rowIndex = localIndex >>> CHUNK_BITS
+			const localCol = localIndex & CHUNK_MASK
 			this.rowCounts[rowIndex] = (this.rowCounts[rowIndex] ?? 0) + 1
 			this._count++
+			this.updateRowBounds(rowIndex, localCol, true)
 		}
 		switch (value.kind) {
 			case 'empty':
@@ -395,8 +444,10 @@ class DenseChunk implements GridChunk {
 	setSlot(localIndex: number, slot: StoredSlot): GridChunk {
 		if (!this.has(localIndex)) {
 			const rowIndex = localIndex >>> CHUNK_BITS
+			const localCol = localIndex & CHUNK_MASK
 			this.rowCounts[rowIndex] = (this.rowCounts[rowIndex] ?? 0) + 1
 			this._count++
+			this.updateRowBounds(rowIndex, localCol, true)
 		}
 		this.writeResolved(
 			localIndex,
@@ -413,6 +464,8 @@ class DenseChunk implements GridChunk {
 
 	delete(localIndex: number): boolean {
 		if (!this.has(localIndex)) return false
+		const rowIndex = localIndex >>> CHUNK_BITS
+		const localCol = localIndex & CHUNK_MASK
 		this.slotMeta[localIndex] = SlotTag.Empty
 		this.styleIds[localIndex] = DEFAULT_STYLE_ID
 		this.stringIds[localIndex] = 0
@@ -420,10 +473,48 @@ class DenseChunk implements GridChunk {
 		if (this.formulas !== null) this.formulas[localIndex] = undefined
 		if (this.formulaInfos !== null) this.formulaInfos[localIndex] = undefined
 		if (this.heapValues !== null) this.heapValues[localIndex] = undefined
-		const rowIndex = localIndex >>> CHUNK_BITS
 		this.rowCounts[rowIndex] = Math.max(0, (this.rowCounts[rowIndex] ?? 0) - 1)
 		this._count--
+		this.updateRowBounds(rowIndex, localCol, false)
 		return true
+	}
+
+	private updateRowBounds(rowIndex: number, localCol: number, isAdd: boolean): void {
+		if (isAdd) {
+			const count = this.rowCounts[rowIndex] ?? 0
+			if (count === 1) {
+				this.rowMinCol[rowIndex] = localCol
+				this.rowMaxCol[rowIndex] = localCol
+			} else {
+				this.rowMinCol[rowIndex] = Math.min(this.rowMinCol[rowIndex] ?? ROW_EMPTY_MIN, localCol)
+				this.rowMaxCol[rowIndex] = Math.max(this.rowMaxCol[rowIndex] ?? ROW_EMPTY_MAX, localCol)
+			}
+		} else {
+			const count = this.rowCounts[rowIndex] ?? 0
+			if (count === 0) {
+				this.rowMinCol[rowIndex] = ROW_EMPTY_MIN
+				this.rowMaxCol[rowIndex] = ROW_EMPTY_MAX
+			} else if (
+				localCol === (this.rowMinCol[rowIndex] ?? ROW_EMPTY_MIN) ||
+				localCol === (this.rowMaxCol[rowIndex] ?? ROW_EMPTY_MAX)
+			) {
+				this.recomputeRowBounds(rowIndex)
+			}
+		}
+	}
+
+	private recomputeRowBounds(rowIndex: number): void {
+		const rowBase = rowIndex << CHUNK_BITS
+		let minC = ROW_EMPTY_MIN
+		let maxC = ROW_EMPTY_MAX
+		for (let localCol = 0; localCol <= CHUNK_MASK; localCol++) {
+			if (this.has(rowBase + localCol)) {
+				minC = Math.min(minC, localCol)
+				maxC = Math.max(maxC, localCol)
+			}
+		}
+		this.rowMinCol[rowIndex] = minC
+		this.rowMaxCol[rowIndex] = maxC
 	}
 
 	private readTag(localIndex: number): SlotTag {
@@ -471,12 +562,53 @@ class DenseChunk implements GridChunk {
 		fn: (localCol: number, slot: StoredSlot) => void,
 	): void {
 		if ((this.rowCounts[localRow] ?? 0) === 0) return
+		const rowMin = this.rowMinCol[localRow] ?? ROW_EMPTY_MIN
+		const rowMax = this.rowMaxCol[localRow] ?? ROW_EMPTY_MAX
+		if (rowMin > rowMax || rowMax < minLocalCol || rowMin > maxLocalCol) return
+		const startCol = Math.max(minLocalCol, rowMin)
+		const endCol = Math.min(maxLocalCol, rowMax)
 		const rowBase = localRow << CHUNK_BITS
-		for (let localCol = minLocalCol; localCol <= maxLocalCol; localCol++) {
+		const slot = this._reusableSlot as unknown as Record<string, unknown>
+		for (let localCol = startCol; localCol <= endCol; localCol++) {
 			const localIndex = rowBase + localCol
 			if (!this.has(localIndex)) continue
-			const slot = this.getSlot(localIndex)
-			if (slot) fn(localCol, slot)
+			const tag = this.readTag(localIndex)
+			slot.tag = tag
+			slot.styleId = this.styleIds[localIndex] as StyleId
+			slot.formula = this.formulas?.[localIndex] ?? null
+			slot.formulaInfo = this.formulaInfos?.[localIndex]
+			slot.numberValue =
+				tag === SlotTag.Number || tag === SlotTag.Boolean || tag === SlotTag.Date
+					? (this.numbers[localIndex] ?? 0)
+					: undefined
+			slot.stringId =
+				tag === SlotTag.String || tag === SlotTag.Error
+					? (this.stringIds[localIndex] ?? 0)
+					: undefined
+			slot.heapValue = tag === SlotTag.Heap ? (this.heapValues?.[localIndex] ?? EMPTY) : undefined
+			fn(localCol, this._reusableSlot)
+		}
+	}
+
+	forEachValueInRow(
+		localRow: number,
+		minLocalCol: number,
+		maxLocalCol: number,
+		stringTable: StringTable,
+		fn: (localCol: number, value: CellValue) => void,
+	): void {
+		if ((this.rowCounts[localRow] ?? 0) === 0) return
+		const rowMin = this.rowMinCol[localRow] ?? ROW_EMPTY_MIN
+		const rowMax = this.rowMaxCol[localRow] ?? ROW_EMPTY_MAX
+		if (rowMin > rowMax || rowMax < minLocalCol || rowMin > maxLocalCol) return
+		const startCol = Math.max(minLocalCol, rowMin)
+		const endCol = Math.min(maxLocalCol, rowMax)
+		const rowBase = localRow << CHUNK_BITS
+		for (let localCol = startCol; localCol <= endCol; localCol++) {
+			const localIndex = rowBase + localCol
+			if (!this.has(localIndex)) continue
+			const value = this.readValue(localIndex, stringTable)
+			if (value !== undefined) fn(localCol, value)
 		}
 	}
 }
@@ -636,6 +768,18 @@ export class SparseGrid {
 		return this.chunkRows.get(chunkRow)?.get(chunkCol)?.readFormulaInfo(localIndex)
 	}
 
+	clearFormulaInfo(row: number, col: number): void {
+		this.ensureWritable()
+		const chunkRow = row >> CHUNK_BITS
+		const chunkCol = col >> CHUNK_BITS
+		const localIndex = ((row & CHUNK_MASK) << CHUNK_BITS) | (col & CHUNK_MASK)
+		const cols = this.chunkRows.get(chunkRow)
+		const chunk = cols?.get(chunkCol)
+		if (!chunk || !chunk.readFormulaInfo(localIndex)) return
+		const writableChunk = this.ensureChunkWritable(chunkRow, chunkCol, cols, chunk)
+		writableChunk.clearFormulaInfo(localIndex)
+	}
+
 	has(row: number, col: number): boolean {
 		const chunkRow = row >> CHUNK_BITS
 		const chunkCol = col >> CHUNK_BITS
@@ -658,12 +802,32 @@ export class SparseGrid {
 		endCol: number,
 		fn: (value: CellValue, row: number, col: number) => void,
 	): void {
-		for (const [row, entries] of this.iterateRowsInRange({
-			start: { row: startRow, col: startCol },
-			end: { row: endRow, col: endCol },
-		})) {
-			for (const [col, cell] of entries) {
-				fn(cell.value, row, col)
+		if (this._cellCount === 0) return
+		const startChunkRow = startRow >> CHUNK_BITS
+		const endChunkRow = endRow >> CHUNK_BITS
+		const startChunkCol = startCol >> CHUNK_BITS
+		const endChunkCol = endCol >> CHUNK_BITS
+
+		for (let chunkRow = startChunkRow; chunkRow <= endChunkRow; chunkRow++) {
+			const cols = this.chunkRows.get(chunkRow)
+			if (!cols) continue
+			const localRowStart = chunkRow === startChunkRow ? startRow & CHUNK_MASK : 0
+			const localRowEnd = chunkRow === endChunkRow ? endRow & CHUNK_MASK : CHUNK_MASK
+
+			for (let localRow = localRowStart; localRow <= localRowEnd; localRow++) {
+				const row = (chunkRow << CHUNK_BITS) + localRow
+				for (let chunkCol = startChunkCol; chunkCol <= endChunkCol; chunkCol++) {
+					const chunk = cols.get(chunkCol)
+					if (!chunk) continue
+					const localColStart = chunkCol === startChunkCol ? startCol & CHUNK_MASK : 0
+					const localColEnd = chunkCol === endChunkCol ? endCol & CHUNK_MASK : CHUNK_MASK
+					const baseCol = chunkCol << CHUNK_BITS
+					for (let localCol = localColStart; localCol <= localColEnd; localCol++) {
+						const localIndex = (localRow << CHUNK_BITS) | localCol
+						const value = chunk.readValue(localIndex, this.stringTable)
+						if (value !== undefined) fn(value, row, baseCol + localCol)
+					}
+				}
 			}
 		}
 	}
@@ -786,15 +950,33 @@ export class SparseGrid {
 	}
 
 	insertRows(at: number, count: number): void {
-		this._rebuildAfterShift((row, col) => ({ row: row >= at ? row + count : row, col }), count > 0)
+		if (count === 0 || this._cellCount === 0) return
+		this.ensureWritable()
+		const atChunkRow = at >> CHUNK_BITS
+		const atLocalRow = at & CHUNK_MASK
+		const countChunks = count >> CHUNK_BITS
+		if (atLocalRow === 0 && (count & CHUNK_MASK) === 0 && countChunks > 0) {
+			this._shiftChunkRows(atChunkRow, countChunks)
+			return
+		}
+		this._rebuildAfterShift((row, col) => ({ row: row >= at ? row + count : row, col }), true)
 	}
 
 	deleteRows(at: number, count: number): void {
+		if (count === 0 || this._cellCount === 0) return
+		this.ensureWritable()
+		const atChunkRow = at >> CHUNK_BITS
+		const atLocalRow = at & CHUNK_MASK
+		const countChunks = count >> CHUNK_BITS
+		if (atLocalRow === 0 && (count & CHUNK_MASK) === 0 && countChunks > 0) {
+			this._shiftChunkRowsForDelete(atChunkRow, countChunks)
+			return
+		}
 		const deleteEnd = at + count
 		this._rebuildAfterShift((row, col) => {
 			if (row >= at && row < deleteEnd) return null
 			return { row: row >= deleteEnd ? row - count : row, col }
-		}, count > 0)
+		}, true)
 	}
 
 	insertCols(at: number, count: number): void {
@@ -905,6 +1087,42 @@ export class SparseGrid {
 			if (last && last[0] > this._maxCol) this._maxCol = last[0]
 		}
 		this._boundsDirty = false
+	}
+
+	private _shiftChunkRows(atChunkRow: number, countChunks: number): void {
+		const next = new Map<number, Map<number, GridChunk>>()
+		for (const [chunkRow, cols] of this.chunkRows) {
+			if (chunkRow < atChunkRow) {
+				next.set(chunkRow, cols)
+			} else {
+				next.set(chunkRow + countChunks, cols)
+			}
+		}
+		this.chunkRows = next
+		this._sortedChunkRows = null
+		this._sortedChunkCols.clear()
+		if (this._minRow >= atChunkRow << CHUNK_BITS) this._minRow += countChunks << CHUNK_BITS
+		if (this._maxRow >= atChunkRow << CHUNK_BITS) this._maxRow += countChunks << CHUNK_BITS
+	}
+
+	private _shiftChunkRowsForDelete(atChunkRow: number, countChunks: number): void {
+		const next = new Map<number, Map<number, GridChunk>>()
+		const deleteEndChunk = atChunkRow + countChunks
+		let removedCount = 0
+		for (const [chunkRow, cols] of this.chunkRows) {
+			if (chunkRow < atChunkRow) {
+				next.set(chunkRow, cols)
+			} else if (chunkRow >= deleteEndChunk) {
+				next.set(chunkRow - countChunks, cols)
+			} else {
+				for (const chunk of cols.values()) removedCount += chunk.count
+			}
+		}
+		this.chunkRows = next
+		this._sortedChunkRows = null
+		this._sortedChunkCols.clear()
+		this._cellCount -= removedCount
+		this._boundsDirty = true
 	}
 
 	private _rebuildAfterShift(

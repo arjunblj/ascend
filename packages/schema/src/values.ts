@@ -94,8 +94,19 @@ export function errorValue(v: ExcelError): CellValue {
 	return ERROR_CACHE[v] ?? { kind: 'error', value: v }
 }
 
+const dateCache = new Map<number, CellValue>()
+const DATE_CACHE_MAX = 256
+
 export function dateValue(serial: number): CellValue {
-	return { kind: 'date', serial }
+	let cached = dateCache.get(serial)
+	if (cached) return cached
+	cached = { kind: 'date', serial }
+	if (dateCache.size >= DATE_CACHE_MAX) {
+		const firstKey = dateCache.keys().next().value
+		if (firstKey !== undefined) dateCache.delete(firstKey)
+	}
+	dateCache.set(serial, cached)
+	return cached
 }
 
 export function arrayValue(rows: readonly (readonly ScalarCellValue[])[]): CellValue {

@@ -44,6 +44,8 @@ export type {
 	SheetRowDef,
 	SheetState,
 	SheetTabColor,
+	SheetView,
+	SheetViewType,
 } from './sheet.ts'
 export { createSheet, Sheet } from './sheet.ts'
 
@@ -68,6 +70,7 @@ export type {
 	HorizontalAlign,
 	VerticalAlign,
 } from './style.ts'
+export { cloneCellStyle } from './style-clone.ts'
 export { DEFAULT_STYLE, StyleRegistry } from './style-registry.ts'
 export type { Table, TableColumn, TableStyleInfo } from './table.ts'
 export type {

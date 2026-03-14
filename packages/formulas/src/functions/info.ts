@@ -127,5 +127,4 @@ export const infoFunctions: FunctionDef[] = [
 	{ name: 'ISODD', minArgs: 1, maxArgs: 1, evaluate: isodd },
 	{ name: 'ISNONTEXT', minArgs: 1, maxArgs: 1, evaluate: isnontext },
 	{ name: 'ERROR.TYPE', minArgs: 1, maxArgs: 1, evaluate: errorType },
-	{ name: 'ISFORMULA', minArgs: 1, maxArgs: 1, evaluate: () => booleanValue(false) },
 ]

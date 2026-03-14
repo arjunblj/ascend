@@ -1114,6 +1114,32 @@ describe('formula functions', () => {
 			expect(getResult(wb, 0, 0)).toEqual(errorValue('#CALC!'))
 		})
 
+		test('RANDARRAY with seed produces reproducible output', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'RANDARRAY(2,2,0,1,0,42)')
+			recalc(wb)
+			const a = getResult(wb, 0, 0)
+			const b = getResult(wb, 0, 1)
+			const c = getResult(wb, 1, 0)
+			const d = getResult(wb, 1, 1)
+			expect(a?.kind).toBe('number')
+			expect(b?.kind).toBe('number')
+			expect(c?.kind).toBe('number')
+			expect(d?.kind).toBe('number')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(a)
+			expect(getResult(wb, 0, 1)).toEqual(b)
+			expect(getResult(wb, 1, 0)).toEqual(c)
+			expect(getResult(wb, 1, 1)).toEqual(d)
+		})
+
+		test('RANDARRAY with invalid seed returns #VALUE!', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'RANDARRAY(1,1,0,1,0,"x")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(errorValue('#VALUE!'))
+		})
+
 		test('CHOOSECOLS selects specific columns', () => {
 			const wb = makeWorkbook()
 			setNum(wb, 0, 0, 1)

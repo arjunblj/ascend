@@ -158,6 +158,11 @@ function rangeLooksLikeReference(arg: EvalArg | undefined): boolean {
 	return arg.kind === 'range' || arg.value.kind === 'array'
 }
 
+function seedToUnit(seed: number): number {
+	const s = Math.trunc(seed) >>> 0
+	return ((s * 2654435761) >>> 0) / 4294967296
+}
+
 function resolveSelectionIndex(index: number, size: number): number | CellValue {
 	if (index === 0) return errorValue('#VALUE!')
 	const normalized = index < 0 ? size + index : index - 1
@@ -372,10 +377,17 @@ export const dynamicFunctions: FunctionDef[] = [
 	{
 		name: 'RANDARRAY',
 		minArgs: 0,
-		maxArgs: 5,
+		maxArgs: 6,
 		volatile: true,
 		evaluate(args, ctx) {
-			const seed = ctx?.randomSeed ?? Math.random()
+			let seed: number
+			if (args[5] !== undefined) {
+				const seedArg = toNumber(args[5].value)
+				if (seedArg === null || !Number.isFinite(seedArg)) return errorValue('#VALUE!')
+				seed = seedToUnit(seedArg)
+			} else {
+				seed = ctx?.randomSeed ?? Math.random()
+			}
 			const rowCount = args[0] ? num(args[0]) : 1
 			if (typeof rowCount !== 'number') return rowCount
 			const colCount = args[1] ? num(args[1]) : 1

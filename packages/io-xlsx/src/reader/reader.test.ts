@@ -728,6 +728,55 @@ describe('readXlsx', () => {
 		expect(result.value.report.features.some((feature) => feature.feature === 'table')).toBe(true)
 	})
 
+	it('parses tables when sheet relationships use strict OOXML namespace (purl.oclc.org)', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>
+  <Override PartName="/xl/tables/table1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/>
+</Types>`,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1"><v>42</v></c></row>
+    <row r="2"><c r="A2" t="s"><v>1</v></c><c r="B2"><v>10</v></c></row>
+  </sheetData>
+  <tableParts count="1"><tablePart r:id="rId1"/></tableParts>
+</worksheet>`,
+			'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://purl.oclc.org/ooxml/officeDocument/relationships/table" Target="../tables/table1.xml"/>
+</Relationships>`,
+			'xl/tables/table1.xml': `<?xml version="1.0"?>
+<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="StrictTable" displayName="StrictTable" ref="A1:B2" headerRowCount="1" totalsRowCount="0">
+  <autoFilter ref="A1:B2"/>
+  <tableColumns count="2">
+    <tableColumn id="1" name="Col1"/>
+    <tableColumn id="2" name="Col2"/>
+  </tableColumns>
+</table>`,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet?.tables).toHaveLength(1)
+		expect(sheet?.tables[0]?.name).toBe('StrictTable')
+		expect(sheet?.tables[0]?.ref).toEqual({ start: { row: 0, col: 0 }, end: { row: 1, col: 1 } })
+		expect(sheet?.tables[0]?.columns).toHaveLength(2)
+		expect(sheet?.cells.get(0, 0)?.value).toEqual({ kind: 'string', value: 'Hello' })
+		expect(sheet?.cells.get(0, 1)?.value).toEqual({ kind: 'number', value: 42 })
+	})
+
 	it('parses worksheet autoFilter criteria and sort state', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': CONTENT_TYPES,
@@ -1162,6 +1211,40 @@ describe('readXlsx', () => {
 			location: undefined,
 			display: 'Docs',
 			tooltip: 'Open docs',
+		})
+	})
+
+	it('parses full sheetView attributes (zoomScale, showGridLines, showFormulas, rightToLeft, tabSelected, view)', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetViews>
+    <sheetView workbookViewId="0" zoomScale="75" showGridLines="0" showFormulas="1" rightToLeft="1" tabSelected="1" view="pageBreakPreview">
+      <pane ySplit="2" xSplit="1" state="frozen"/>
+    </sheetView>
+  </sheetViews>
+  <sheetData><row r="1"><c r="A1" t="s"><v>0</v></c></row></sheetData>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet?.frozenRows).toBe(2)
+		expect(sheet?.frozenCols).toBe(1)
+		expect(sheet?.sheetView).toEqual({
+			zoomScale: 75,
+			showGridLines: false,
+			showFormulas: true,
+			rightToLeft: true,
+			tabSelected: true,
+			view: 'pageBreakPreview',
 		})
 	})
 
@@ -1668,6 +1751,52 @@ describe('readXlsx', () => {
 		)
 	})
 
+	it('handles 100K+ unique shared strings with lazy parsing', () => {
+		const count = 100_001
+		const sstEntries = Array.from({ length: count }, (_, i) => `<si><t>str_${i}</t></si>`)
+		const sstXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${count}" uniqueCount="${count}">
+${sstEntries.join('\n')}
+</sst>`
+
+		const rowEntries: string[] = []
+		for (let r = 1; r <= 1000; r++) {
+			rowEntries.push(`<row r="${r}"><c r="A${r}" t="s"><v>${r - 1}</v></c></row>`)
+		}
+		rowEntries.push(`<row r="1001"><c r="A1001" t="s"><v>100000</v></c></row>`)
+		const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+${rowEntries.join('\n')}
+  </sheetData>
+</worksheet>`
+
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': sstXml,
+			'xl/worksheets/sheet1.xml': sheetXml,
+		})
+
+		const result = readXlsx(bytes, { mode: 'values' })
+		expectOk(result)
+
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+
+		expect(sheet.cells.get(0, 0)?.value).toEqual({ kind: 'string', value: 'str_0' })
+		expect(sheet.cells.get(999, 0)?.value).toEqual({ kind: 'string', value: 'str_999' })
+		expect(sheet.cells.get(1000, 0)?.value).toEqual({ kind: 'string', value: 'str_100000' })
+
+		for (let i = 0; i <= 10; i++) {
+			const cell = sheet.cells.get(i, 0)
+			expect(cell?.value).toEqual({ kind: 'string', value: `str_${i}` })
+		}
+	})
+
 	it('reports preserved non-semantic parts explicitly', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -1698,5 +1827,57 @@ describe('readXlsx', () => {
 				locations: ['xl/custom/custom1.xml'],
 			}),
 		)
+	})
+
+	it('identifies and preserves threaded comments as preservedThreadedComments', () => {
+		const threadedCommentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<ThreadedComments xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">
+  <threadedComment ref="A1" personId="0" id="tc1" dT="2024-01-01T00:00:00.000">
+    <text>Comment text</text>
+  </threadedComment>
+</ThreadedComments>`
+
+		const sheetRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.microsoft.com/office/2017/10/relationships/threadedComment" Target="../threadedComments/threadedComment1.xml"/>
+</Relationships>`
+
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>
+  <Override PartName="/xl/threadedComments/threadedComment1.xml" ContentType="application/vnd.ms-excel.threadedcomments+xml"/>
+</Types>`,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': SHEET_XML,
+			'xl/worksheets/_rels/sheet1.xml.rels': sheetRels,
+			'xl/threadedComments/threadedComment1.xml': threadedCommentXml,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		expect(
+			result.value.report.features.find((f) => f.feature === 'preservedThreadedComments'),
+		).toEqual(
+			expect.objectContaining({
+				tier: 'preserved',
+				count: 1,
+				locations: ['xl/threadedComments/threadedComment1.xml'],
+			}),
+		)
+
+		const tcCapsule = result.value.capsules.find(
+			(c) => c.partPath === 'xl/threadedComments/threadedComment1.xml',
+		)
+		expect(tcCapsule).toBeDefined()
+		expect(tcCapsule?.anchor).toEqual({ kind: 'sheet', sheetName: 'Data' })
 	})
 })

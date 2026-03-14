@@ -1,4 +1,3 @@
-import { serialToDate } from '@ascend/formulas'
 import {
 	type AscendError,
 	AscendException,
@@ -6,7 +5,12 @@ import {
 	type CellValue,
 	type Operation,
 } from '@ascend/schema'
-import { AscendWorkbook, WorkbookDocument } from '@ascend/sdk'
+import {
+	AscendWorkbook,
+	formatDisplayCellValue,
+	normalizeExportFormat,
+	WorkbookDocument,
+} from '@ascend/sdk'
 import { binaryResponse, jsonFailure, jsonFailureError, jsonSuccess } from './response.ts'
 
 async function parseJson<T>(req: Request): Promise<T | null> {
@@ -416,41 +420,5 @@ function displayObjects<
 				Object.entries(row).map(([key, value]) => [key, formatDisplayCellValue(value)]),
 			),
 		),
-	}
-}
-
-function formatDisplayCellValue(value: CellValue): string {
-	switch (value.kind) {
-		case 'empty':
-			return ''
-		case 'number':
-			return String(value.value)
-		case 'string':
-			return value.value
-		case 'boolean':
-			return value.value ? 'TRUE' : 'FALSE'
-		case 'error':
-			return value.value
-		case 'date': {
-			const parts = serialToDate(Math.floor(value.serial))
-			if (!parts) return `[date:${value.serial}]`
-			return `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`
-		}
-		case 'richText':
-			return value.runs.map((run) => run.text).join('')
-	}
-	return ''
-}
-
-function normalizeExportFormat(format: string): 'csv' | 'tsv' | 'json' | 'xlsx' | 'xlsm' | null {
-	switch (format.toLowerCase()) {
-		case 'csv':
-		case 'tsv':
-		case 'json':
-		case 'xlsx':
-		case 'xlsm':
-			return format.toLowerCase() as 'csv' | 'tsv' | 'json' | 'xlsx' | 'xlsm'
-		default:
-			return null
 	}
 }

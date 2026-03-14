@@ -288,16 +288,60 @@ describe('Excel conformance', () => {
 			expectNum(evalFormula('INDIRECT("A1")', { A1: 42 }), 42)
 		})
 
+		test('INDIRECT with concatenated reference string', () => {
+			expectNum(evalFormula('INDIRECT("A" & "1")', { A1: 99 }), 99)
+		})
+
+		test('SUM(INDIRECT(...)) sums a range', () => {
+			expectNum(evalFormula('SUM(INDIRECT("A1:A3"))', { A1: 10, A2: 20, A3: 30 }), 60)
+		})
+
+		test('INDIRECT with invalid reference returns #NAME?', () => {
+			expect(evalFormula('INDIRECT("InvalidRef")')).toEqual(errorValue('#NAME?'))
+		})
+
+		test('INDIRECT with empty string returns #REF!', () => {
+			expect(evalFormula('INDIRECT("")')).toEqual(errorValue('#REF!'))
+		})
+
 		test('INDIRECT resolves R1C1 references when A1 mode is FALSE', () => {
 			expectNum(evalFormula('INDIRECT("R1C1", FALSE)', { A1: 7 }), 7)
+		})
+
+		test('INDIRECT with absolute R1C1 range', () => {
+			expectNum(evalFormula('SUM(INDIRECT("R1C1:R2C1", FALSE))', { A1: 3, A2: 7 }), 10)
 		})
 
 		test('OFFSET resolves a single-cell reference', () => {
 			expectNum(evalFormula('OFFSET(A1, 1, 1)', { A1: 1, B2: 9 }), 9)
 		})
 
+		test('OFFSET with row offset only', () => {
+			expectNum(evalFormula('OFFSET(A1, 1, 0)', { A1: 1, A2: 55 }), 55)
+		})
+
+		test('OFFSET with column offset only', () => {
+			expectNum(evalFormula('OFFSET(A1, 0, 1)', { A1: 1, B1: 77 }), 77)
+		})
+
 		test('OFFSET resolves a rectangular range', () => {
 			expectNum(evalFormula('SUM(OFFSET(A1, 0, 0, 2, 2))', { A1: 1, B1: 2, A2: 3, B2: 4 }), 10)
+		})
+
+		test('SUM(OFFSET(...)) sums a column range', () => {
+			expectNum(evalFormula('SUM(OFFSET(A1, 0, 0, 3, 1))', { A1: 10, A2: 20, A3: 30 }), 60)
+		})
+
+		test('OFFSET with negative row offset returns #REF!', () => {
+			expect(evalFormula('OFFSET(A1, -1, 0)', { A1: 1 })).toEqual(errorValue('#REF!'))
+		})
+
+		test('OFFSET with negative column offset returns #REF!', () => {
+			expect(evalFormula('OFFSET(A1, 0, -1)', { A1: 1 })).toEqual(errorValue('#REF!'))
+		})
+
+		test('OFFSET with zero height returns #REF!', () => {
+			expect(evalFormula('OFFSET(A1, 0, 0, 0, 1)', { A1: 1 })).toEqual(errorValue('#REF!'))
 		})
 	})
 

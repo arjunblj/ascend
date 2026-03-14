@@ -48,6 +48,14 @@ function formatCellRef(ref: FormulaCellRef): string {
 	return col + row
 }
 
+function applyRefOffset(ref: FormulaCellRef, rowDelta: number, colDelta: number): FormulaCellRef {
+	return {
+		...ref,
+		row: ref.rowAbsolute ? ref.row : ref.row + rowDelta,
+		col: ref.colAbsolute ? ref.col : ref.col + colDelta,
+	}
+}
+
 function binaryNeedsParens(
 	child: FormulaNode,
 	parentOp: BinaryOp,
@@ -61,13 +69,13 @@ function binaryNeedsParens(
 	return false
 }
 
-function printBinary(node: BinaryNode): string {
+function printBinary(node: BinaryNode, ctx: PrintContext): string {
 	const leftStr = binaryNeedsParens(node.left, node.op, 'left')
-		? `(${printNode(node.left)})`
-		: printNode(node.left)
+		? `(${printNode(node.left, ctx)})`
+		: printNode(node.left, ctx)
 	const rightStr = binaryNeedsParens(node.right, node.op, 'right')
 		? `(${printNode(node.right)})`
-		: printNode(node.right)
+		: printNode(node.right, ctx)
 	return `${leftStr}${node.op}${rightStr}`
 }
 
@@ -84,7 +92,9 @@ function printStructuredRef(node: StructuredRefNode): string {
 	return `${node.table}[${inner}]`
 }
 
-function printNode(node: FormulaNode): string {
+type PrintContext = { rowDelta: number; colDelta: number } | null
+
+function printNode(node: FormulaNode, ctx: PrintContext = null): string {
 	switch (node.type) {
 		case 'number':
 			return String(node.value)
@@ -94,15 +104,20 @@ function printNode(node: FormulaNode): string {
 			return node.value ? 'TRUE' : 'FALSE'
 		case 'error':
 			return node.value
-		case 'cellRef':
-			return (node.sheet !== undefined ? formatSheet(node.sheet) : '') + formatCellRef(node.ref)
-		case 'rangeRef':
+		case 'cellRef': {
+			const ref = ctx ? applyRefOffset(node.ref, ctx.rowDelta, ctx.colDelta) : node.ref
+			return (node.sheet !== undefined ? formatSheet(node.sheet) : '') + formatCellRef(ref)
+		}
+		case 'rangeRef': {
+			const start = ctx ? applyRefOffset(node.start, ctx.rowDelta, ctx.colDelta) : node.start
+			const end = ctx ? applyRefOffset(node.end, ctx.rowDelta, ctx.colDelta) : node.end
 			return (
 				(node.sheet !== undefined ? formatSheet(node.sheet) : '') +
-				formatCellRef(node.start) +
+				formatCellRef(start) +
 				':' +
-				formatCellRef(node.end)
+				formatCellRef(end)
 			)
+		}
 		case 'wholeRowRange':
 			return `${node.sheet !== undefined ? formatSheet(node.sheet) : ''}${node.startRow + 1}:${node.endRow + 1}`
 		case 'wholeColumnRange':
@@ -113,34 +128,39 @@ function printNode(node: FormulaNode): string {
 			if (node.name === '__CALL__') {
 				const [callee, ...args] = node.args
 				if (!callee) return '__CALL__()'
-				const calleeStr = callee.type === 'binary' ? `(${printNode(callee)})` : printNode(callee)
-				return `${calleeStr}(${args.map(printFunctionArg).join(',')})`
+				const calleeStr =
+					callee.type === 'binary' ? `(${printNode(callee, ctx)})` : printNode(callee, ctx)
+				return `${calleeStr}(${args.map((a) => printFunctionArg(a, ctx)).join(',')})`
 			}
-			return `${node.name}(${node.args.map(printFunctionArg).join(',')})`
+			return `${node.name}(${node.args.map((a) => printFunctionArg(a, ctx)).join(',')})`
 		case 'binary':
-			return printBinary(node)
+			return printBinary(node, ctx)
 		case 'unary': {
 			if (node.op === '%') {
 				const inner =
 					node.operand.type === 'binary' ||
 					(node.operand.type === 'unary' && node.operand.op !== '%')
-						? `(${printNode(node.operand)})`
-						: printNode(node.operand)
+						? `(${printNode(node.operand, ctx)})`
+						: printNode(node.operand, ctx)
 				return `${inner}%`
 			}
 			const inner =
-				node.operand.type === 'binary' ? `(${printNode(node.operand)})` : printNode(node.operand)
+				node.operand.type === 'binary'
+					? `(${printNode(node.operand, ctx)})`
+					: printNode(node.operand, ctx)
 			return `${node.op}${inner}`
 		}
 		case 'spillRef': {
 			const inner =
-				node.target.type === 'binary' ? `(${printNode(node.target)})` : printNode(node.target)
+				node.target.type === 'binary'
+					? `(${printNode(node.target, ctx)})`
+					: printNode(node.target, ctx)
 			return `${inner}#`
 		}
 		case 'sheetSpanRef':
-			return `${formatSheetSpan(node.startSheet, node.endSheet)}${printNode(node.target)}`
+			return `${formatSheetSpan(node.startSheet, node.endSheet)}${printNode(node.target, ctx)}`
 		case 'array':
-			return `{${node.rows.map((row) => row.map(printNode).join(',')).join(';')}}`
+			return `{${node.rows.map((row) => row.map((c) => printNode(c, ctx)).join(',')).join(';')}}`
 		case 'structuredRef':
 			return printStructuredRef(node)
 		case 'missing':
@@ -149,12 +169,20 @@ function printNode(node: FormulaNode): string {
 }
 
 export function printFormula(node: FormulaNode): string {
-	return printNode(node)
+	return printNode(node, null)
 }
 
-function printFunctionArg(node: FormulaNode): string {
+export function printFormulaWithOffset(
+	node: FormulaNode,
+	rowDelta: number,
+	colDelta: number,
+): string {
+	return printNode(node, { rowDelta, colDelta })
+}
+
+function printFunctionArg(node: FormulaNode, ctx: PrintContext): string {
 	if (node.type === 'binary' && node.op === ',') {
-		return `(${printNode(node)})`
+		return `(${printNode(node, ctx)})`
 	}
-	return printNode(node)
+	return printNode(node, ctx)
 }

@@ -1011,9 +1011,7 @@ function evaluateCompiledNumeric(compiled: CompiledFormula, ctx: EvalContext): C
 	return numberValue(numericStack[0] as number)
 }
 
-let mixedStackSize = 64
-let sharedStack: CellValue[] = new Array(mixedStackSize)
-let stackDepth = 0
+const MIXED_STACK_INITIAL_SIZE = 64
 
 function ensureNumericStack(needed: number): void {
 	if (needed <= numericStackSize) return
@@ -1033,26 +1031,26 @@ function ensureRangeScratch(needed: number): void {
 	rangeScratchSize = newSize
 }
 
-function ensureMixedStack(needed: number): void {
-	if (needed <= mixedStackSize) return
-	const newSize = Math.max(mixedStackSize * 2, needed)
-	const newStack: CellValue[] = new Array(newSize)
-	for (let i = 0; i < stackDepth; i++) newStack[i] = sharedStack[i] as CellValue
-	sharedStack = newStack
-	mixedStackSize = newSize
-}
-
 export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): CellValue {
 	if (compiled.numericOnly) {
 		return evaluateCompiledNumeric(compiled, ctx)
 	}
 
 	const { ops, constants } = compiled
-	const baseDepth = stackDepth
+	let stack: CellValue[] = new Array(MIXED_STACK_INITIAL_SIZE)
+	let stackDepth = 0
 	const sheet = ctx.workbook.sheets[ctx.sheetIndex]
 	let ip = 0
 	const len = ops.length
-	ensureMixedStack(stackDepth + len)
+
+	function ensureStack(needed: number): void {
+		if (needed <= stack.length) return
+		const newSize = Math.max(stack.length * 2, needed)
+		const newStack: CellValue[] = new Array(newSize)
+		for (let i = 0; i < stackDepth; i++) newStack[i] = stack[i] as CellValue
+		stack = newStack
+	}
+	ensureStack(stackDepth + len)
 
 	while (ip < len) {
 		const op = ops[ip] as number
@@ -1061,39 +1059,39 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 			case Op.NUM: {
 				const idx = ops[ip] as number
 				ip++
-				sharedStack[stackDepth++] = numberValue(constants[idx] as number)
+				stack[stackDepth++] = numberValue(constants[idx] as number)
 				break
 			}
 			case Op.STR: {
 				const idx = ops[ip] as number
 				ip++
-				sharedStack[stackDepth++] = stringValue(constants[idx] as string)
+				stack[stackDepth++] = stringValue(constants[idx] as string)
 				break
 			}
 			case Op.BOOL: {
 				const idx = ops[ip] as number
 				ip++
-				sharedStack[stackDepth++] = booleanValue(constants[idx] as boolean)
+				stack[stackDepth++] = booleanValue(constants[idx] as boolean)
 				break
 			}
 			case Op.ERR: {
 				const idx = ops[ip] as number
 				ip++
-				sharedStack[stackDepth++] = errorValue(constants[idx] as ExcelError)
+				stack[stackDepth++] = errorValue(constants[idx] as ExcelError)
 				break
 			}
 			case Op.EMPTY_VAL:
-				sharedStack[stackDepth++] = EMPTY
+				stack[stackDepth++] = EMPTY
 				break
 			case Op.DUP:
-				sharedStack[stackDepth] = sharedStack[stackDepth - 1] ?? EMPTY
+				stack[stackDepth] = stack[stackDepth - 1] ?? EMPTY
 				stackDepth++
 				break
 			case Op.CELL: {
 				const row = ops[ip] as number
 				const col = ops[ip + 1] as number
 				ip += 2
-				sharedStack[stackDepth++] = sheet?.cells.readValue(row, col) ?? EMPTY
+				stack[stackDepth++] = sheet?.cells.readValue(row, col) ?? EMPTY
 				break
 			}
 			case Op.CELL_SHEET: {
@@ -1104,10 +1102,10 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 				const sheetName = constants[nameIdx] as string
 				const si = resolveSheetIdx(ctx.workbook, sheetName, ctx.sheetIndex)
 				if (si < 0) {
-					sharedStack[stackDepth++] = errorValue('#REF!')
+					stack[stackDepth++] = errorValue('#REF!')
 				} else {
 					const target = ctx.workbook.sheets[si]
-					sharedStack[stackDepth++] = target?.cells.readValue(row, col) ?? EMPTY
+					stack[stackDepth++] = target?.cells.readValue(row, col) ?? EMPTY
 				}
 				break
 			}
@@ -1116,37 +1114,37 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 			case Op.MUL:
 			case Op.DIV:
 			case Op.POW: {
-				const right = topLeftScalar(sharedStack[--stackDepth] ?? EMPTY)
-				const left = topLeftScalar(sharedStack[--stackDepth] ?? EMPTY)
+				const right = topLeftScalar(stack[--stackDepth] ?? EMPTY)
+				const left = topLeftScalar(stack[--stackDepth] ?? EMPTY)
 				if (left.kind === 'error') {
-					sharedStack[stackDepth++] = left
+					stack[stackDepth++] = left
 					break
 				}
 				if (right.kind === 'error') {
-					sharedStack[stackDepth++] = right
+					stack[stackDepth++] = right
 					break
 				}
 				const ln = toNumber(left)
 				const rn = toNumber(right)
 				if (ln === null || rn === null) {
-					sharedStack[stackDepth++] = errorValue('#VALUE!')
+					stack[stackDepth++] = errorValue('#VALUE!')
 					break
 				}
 				switch (op) {
 					case Op.ADD:
-						sharedStack[stackDepth++] = numberValue(ln + rn)
+						stack[stackDepth++] = numberValue(ln + rn)
 						break
 					case Op.SUB:
-						sharedStack[stackDepth++] = numberValue(ln - rn)
+						stack[stackDepth++] = numberValue(ln - rn)
 						break
 					case Op.MUL:
-						sharedStack[stackDepth++] = numberValue(ln * rn)
+						stack[stackDepth++] = numberValue(ln * rn)
 						break
 					case Op.DIV:
-						sharedStack[stackDepth++] = rn === 0 ? errorValue('#DIV/0!') : numberValue(ln / rn)
+						stack[stackDepth++] = rn === 0 ? errorValue('#DIV/0!') : numberValue(ln / rn)
 						break
 					case Op.POW:
-						sharedStack[stackDepth++] = numberValue(ln ** rn)
+						stack[stackDepth++] = numberValue(ln ** rn)
 						break
 				}
 				break
@@ -1160,58 +1158,58 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 				const col = ops[ip + 1] as number
 				ip += 2
 				const cellVal = sheet?.cells.readValue(row, col) ?? EMPTY
-				const left = sharedStack[stackDepth - 1] ?? EMPTY
+				const left = stack[stackDepth - 1] ?? EMPTY
 				const ln = toNumber(left)
 				const cn = toNumber(cellVal)
 				if (ln !== null && cn !== null) {
 					if (op === Op.CELL_DIV && cn === 0) {
-						sharedStack[stackDepth - 1] = errorValue('#DIV/0!')
-					} else if (op === Op.CELL_ADD) sharedStack[stackDepth - 1] = numberValue(ln + cn)
-					else if (op === Op.CELL_SUB) sharedStack[stackDepth - 1] = numberValue(ln - cn)
-					else if (op === Op.CELL_MUL) sharedStack[stackDepth - 1] = numberValue(ln * cn)
-					else if (op === Op.CELL_DIV) sharedStack[stackDepth - 1] = numberValue(ln / cn)
-					else sharedStack[stackDepth - 1] = numberValue(ln ** cn)
+						stack[stackDepth - 1] = errorValue('#DIV/0!')
+					} else if (op === Op.CELL_ADD) stack[stackDepth - 1] = numberValue(ln + cn)
+					else if (op === Op.CELL_SUB) stack[stackDepth - 1] = numberValue(ln - cn)
+					else if (op === Op.CELL_MUL) stack[stackDepth - 1] = numberValue(ln * cn)
+					else if (op === Op.CELL_DIV) stack[stackDepth - 1] = numberValue(ln / cn)
+					else stack[stackDepth - 1] = numberValue(ln ** cn)
 				} else {
 					const sv = topLeftScalar(left)
 					const cv = topLeftScalar(cellVal)
-					if (sv.kind === 'error') sharedStack[stackDepth - 1] = sv
-					else if (cv.kind === 'error') sharedStack[stackDepth - 1] = cv
-					else sharedStack[stackDepth - 1] = errorValue('#VALUE!')
+					if (sv.kind === 'error') stack[stackDepth - 1] = sv
+					else if (cv.kind === 'error') stack[stackDepth - 1] = cv
+					else stack[stackDepth - 1] = errorValue('#VALUE!')
 				}
 				break
 			}
 			case Op.NEG: {
-				const v = topLeftScalar(sharedStack[--stackDepth] ?? EMPTY)
+				const v = topLeftScalar(stack[--stackDepth] ?? EMPTY)
 				if (v.kind === 'error') {
-					sharedStack[stackDepth++] = v
+					stack[stackDepth++] = v
 					break
 				}
 				const n = toNumber(v)
-				sharedStack[stackDepth++] = n === null ? errorValue('#VALUE!') : numberValue(-n)
+				stack[stackDepth++] = n === null ? errorValue('#VALUE!') : numberValue(-n)
 				break
 			}
 			case Op.PCT: {
-				const v = topLeftScalar(sharedStack[--stackDepth] ?? EMPTY)
+				const v = topLeftScalar(stack[--stackDepth] ?? EMPTY)
 				if (v.kind === 'error') {
-					sharedStack[stackDepth++] = v
+					stack[stackDepth++] = v
 					break
 				}
 				const n = toNumber(v)
-				sharedStack[stackDepth++] = n === null ? errorValue('#VALUE!') : numberValue(n / 100)
+				stack[stackDepth++] = n === null ? errorValue('#VALUE!') : numberValue(n / 100)
 				break
 			}
 			case Op.CONCAT: {
-				const right = topLeftScalar(sharedStack[--stackDepth] ?? EMPTY)
-				const left = topLeftScalar(sharedStack[--stackDepth] ?? EMPTY)
+				const right = topLeftScalar(stack[--stackDepth] ?? EMPTY)
+				const left = topLeftScalar(stack[--stackDepth] ?? EMPTY)
 				if (left.kind === 'error') {
-					sharedStack[stackDepth++] = left
+					stack[stackDepth++] = left
 					break
 				}
 				if (right.kind === 'error') {
-					sharedStack[stackDepth++] = right
+					stack[stackDepth++] = right
 					break
 				}
-				sharedStack[stackDepth++] = stringValue(coerceStr(left) + coerceStr(right))
+				stack[stackDepth++] = stringValue(coerceStr(left) + coerceStr(right))
 				break
 			}
 			case Op.EQ:
@@ -1220,26 +1218,26 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 			case Op.GT:
 			case Op.LE:
 			case Op.GE: {
-				const right = topLeftScalar(sharedStack[--stackDepth] ?? EMPTY)
-				const left = topLeftScalar(sharedStack[--stackDepth] ?? EMPTY)
+				const right = topLeftScalar(stack[--stackDepth] ?? EMPTY)
+				const left = topLeftScalar(stack[--stackDepth] ?? EMPTY)
 				if (left.kind === 'error') {
-					sharedStack[stackDepth++] = left
+					stack[stackDepth++] = left
 					break
 				}
 				if (right.kind === 'error') {
-					sharedStack[stackDepth++] = right
+					stack[stackDepth++] = right
 					break
 				}
-				sharedStack[stackDepth++] = booleanValue(evalCmp(op, left, right))
+				stack[stackDepth++] = booleanValue(evalCmp(op, left, right))
 				break
 			}
 			case Op.IF: {
 				const falseTarget = ops[ip] as number
 				const endTarget = ops[ip + 1] as number
 				ip += 2
-				const cond = coerceToBoolForIf(sharedStack[--stackDepth] ?? EMPTY)
+				const cond = coerceToBoolForIf(stack[--stackDepth] ?? EMPTY)
 				if (typeof cond !== 'boolean') {
-					sharedStack[stackDepth++] = cond
+					stack[stackDepth++] = cond
 					ip = endTarget
 				} else if (!cond) {
 					ip = falseTarget
@@ -1253,7 +1251,7 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 			case Op.IFERROR_JMP: {
 				const endTarget = ops[ip] as number
 				ip++
-				const v = topLeftScalar(sharedStack[stackDepth - 1] ?? EMPTY)
+				const v = topLeftScalar(stack[stackDepth - 1] ?? EMPTY)
 				if (v.kind !== 'error') {
 					ip = endTarget
 				} else {
@@ -1264,7 +1262,7 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 			case Op.IFNA_JMP: {
 				const endTarget = ops[ip] as number
 				ip++
-				const v = topLeftScalar(sharedStack[stackDepth - 1] ?? EMPTY)
+				const v = topLeftScalar(stack[stackDepth - 1] ?? EMPTY)
 				if (!(v.kind === 'error' && v.value === '#N/A')) {
 					ip = endTarget
 				} else {
@@ -1276,73 +1274,72 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 			case Op.ROUNDUP:
 			case Op.ROUNDDOWN:
 			case Op.TRUNC: {
-				const digitsVal = topLeftScalar(sharedStack[--stackDepth] ?? EMPTY)
-				const numVal = topLeftScalar(sharedStack[--stackDepth] ?? EMPTY)
+				const digitsVal = topLeftScalar(stack[--stackDepth] ?? EMPTY)
+				const numVal = topLeftScalar(stack[--stackDepth] ?? EMPTY)
 				if (numVal.kind === 'error') {
-					sharedStack[stackDepth++] = numVal
+					stack[stackDepth++] = numVal
 					break
 				}
 				if (digitsVal.kind === 'error') {
-					sharedStack[stackDepth++] = digitsVal
+					stack[stackDepth++] = digitsVal
 					break
 				}
 				const num = toNumber(numVal)
 				const digits = toNumber(digitsVal)
 				if (num === null || digits === null) {
-					sharedStack[stackDepth++] = errorValue('#VALUE!')
+					stack[stackDepth++] = errorValue('#VALUE!')
 					break
 				}
 				const factor = 10 ** Math.trunc(digits)
-				if (op === Op.ROUND)
-					sharedStack[stackDepth++] = numberValue(Math.round(num * factor) / factor)
+				if (op === Op.ROUND) stack[stackDepth++] = numberValue(Math.round(num * factor) / factor)
 				else if (op === Op.ROUNDUP) {
 					const scaled = num * factor
-					sharedStack[stackDepth++] = numberValue(
+					stack[stackDepth++] = numberValue(
 						(scaled >= 0 ? Math.ceil(scaled) : Math.floor(scaled)) / factor,
 					)
 				} else if (op === Op.ROUNDDOWN || op === Op.TRUNC)
-					sharedStack[stackDepth++] = numberValue(Math.trunc(num * factor) / factor)
+					stack[stackDepth++] = numberValue(Math.trunc(num * factor) / factor)
 				break
 			}
 			case Op.INT_OP: {
-				const v = topLeftScalar(sharedStack[--stackDepth] ?? EMPTY)
+				const v = topLeftScalar(stack[--stackDepth] ?? EMPTY)
 				if (v.kind === 'error') {
-					sharedStack[stackDepth++] = v
+					stack[stackDepth++] = v
 					break
 				}
 				const n = toNumber(v)
-				sharedStack[stackDepth++] = n === null ? errorValue('#VALUE!') : numberValue(Math.floor(n))
+				stack[stackDepth++] = n === null ? errorValue('#VALUE!') : numberValue(Math.floor(n))
 				break
 			}
 			case Op.ABS: {
-				const v = topLeftScalar(sharedStack[--stackDepth] ?? EMPTY)
+				const v = topLeftScalar(stack[--stackDepth] ?? EMPTY)
 				if (v.kind === 'error') {
-					sharedStack[stackDepth++] = v
+					stack[stackDepth++] = v
 					break
 				}
 				const n = toNumber(v)
-				sharedStack[stackDepth++] = n === null ? errorValue('#VALUE!') : numberValue(Math.abs(n))
+				stack[stackDepth++] = n === null ? errorValue('#VALUE!') : numberValue(Math.abs(n))
 				break
 			}
 			case Op.NOT: {
-				const v = sharedStack[--stackDepth] ?? EMPTY
+				const v = stack[--stackDepth] ?? EMPTY
 				const b = coerceToBoolForIf(v)
 				if (typeof b !== 'boolean') {
-					sharedStack[stackDepth++] = b
+					stack[stackDepth++] = b
 					break
 				}
-				sharedStack[stackDepth++] = booleanValue(!b)
+				stack[stackDepth++] = booleanValue(!b)
 				break
 			}
 			case Op.AND_JF: {
 				const endTarget = ops[ip] as number
 				ip++
-				const v = sharedStack[stackDepth - 1] ?? EMPTY
+				const v = stack[stackDepth - 1] ?? EMPTY
 				const b = coerceToBoolForIf(v)
 				if (typeof b !== 'boolean') {
 					ip = endTarget
 				} else if (!b) {
-					sharedStack[stackDepth - 1] = booleanValue(false)
+					stack[stackDepth - 1] = booleanValue(false)
 					ip = endTarget
 				} else {
 					stackDepth--
@@ -1352,12 +1349,12 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 			case Op.OR_JT: {
 				const endTarget = ops[ip] as number
 				ip++
-				const v = sharedStack[stackDepth - 1] ?? EMPTY
+				const v = stack[stackDepth - 1] ?? EMPTY
 				const b = coerceToBoolForIf(v)
 				if (typeof b !== 'boolean') {
 					ip = endTarget
 				} else if (b) {
-					sharedStack[stackDepth - 1] = booleanValue(true)
+					stack[stackDepth - 1] = booleanValue(true)
 					ip = endTarget
 				} else {
 					stackDepth--
@@ -1379,7 +1376,7 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 				if (ci !== -1) {
 					const si = resolveSheetIdx(ctx.workbook, constants[ci] as string, ctx.sheetIndex)
 					if (si < 0) {
-						sharedStack[stackDepth++] = errorValue('#REF!')
+						stack[stackDepth++] = errorValue('#REF!')
 						break
 					}
 					target = ctx.workbook.sheets[si]
@@ -1392,27 +1389,25 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 					error: rangeErr,
 				} = aggregateNumericRange(target, sr, sc, er, ec)
 				if (rangeErr) {
-					sharedStack[stackDepth++] = rangeErr
-				} else if (op === Op.SUM_RANGE) sharedStack[stackDepth++] = numberValue(sum)
-				else if (op === Op.COUNT_RANGE) sharedStack[stackDepth++] = numberValue(count)
+					stack[stackDepth++] = rangeErr
+				} else if (op === Op.SUM_RANGE) stack[stackDepth++] = numberValue(sum)
+				else if (op === Op.COUNT_RANGE) stack[stackDepth++] = numberValue(count)
 				else if (op === Op.AVERAGE_RANGE)
-					sharedStack[stackDepth++] = count === 0 ? errorValue('#DIV/0!') : numberValue(sum / count)
-				else if (op === Op.MIN_RANGE) sharedStack[stackDepth++] = numberValue(count === 0 ? 0 : min)
-				else sharedStack[stackDepth++] = numberValue(count === 0 ? 0 : max)
+					stack[stackDepth++] = count === 0 ? errorValue('#DIV/0!') : numberValue(sum / count)
+				else if (op === Op.MIN_RANGE) stack[stackDepth++] = numberValue(count === 0 ? 0 : min)
+				else stack[stackDepth++] = numberValue(count === 0 ? 0 : max)
 				break
 			}
 			case Op.TREE: {
 				const idx = ops[ip] as number
 				ip++
 				const node = constants[idx] as FormulaNode
-				sharedStack[stackDepth++] = treeEvaluate(node, ctx)
+				stack[stackDepth++] = treeEvaluate(node, ctx)
 				break
 			}
 		}
 	}
-	const result = sharedStack[baseDepth]
-	stackDepth = baseDepth
-	return result ?? EMPTY
+	return stack[0] ?? EMPTY
 }
 
 const sheetIdxCache = new WeakMap<import('@ascend/core').Workbook, Map<string, number>>()

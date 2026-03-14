@@ -481,21 +481,36 @@ export function recalculate(
 	}
 	const asts = new Map<CellKey, FormulaNode>()
 	const formulaTexts = new Map<CellKey, string>()
+	const evalOrderSet = new Set(evalOrder)
+	for (const analyzed of analysis.formulas.values()) {
+		if (!analyzed.parseError) continue
+		if (isDirtyRecalc && !evalOrderSet.has(analyzed.key)) continue
+		errors.push({
+			ref: cellRefString(workbook, analyzed.sheetIndex, analyzed.row, analyzed.col),
+			error: {
+				code: 'FORMULA_PARSE_ERROR',
+				message: `Failed to parse: ${analyzed.formula}`,
+				retryable: false,
+			},
+		})
+		const sheet = workbook.sheets[analyzed.sheetIndex]
+		if (sheet) {
+			const oldFormula = sheet.cells.readFormula(analyzed.row, analyzed.col) ?? null
+			const oldStyleId = sheet.cells.readStyleId(analyzed.row, analyzed.col) ?? DEFAULT_STYLE_ID
+			const parseErrorValue = errorValue('#VALUE!')
+			const oldValue = sheet.cells.readValue(analyzed.row, analyzed.col)
+			if (!valuesEqual(oldValue, parseErrorValue)) {
+				sheet.cells.setResolved(analyzed.row, analyzed.col, parseErrorValue, oldFormula, oldStyleId)
+				changed.push(cellRefString(workbook, analyzed.sheetIndex, analyzed.row, analyzed.col))
+			}
+		}
+	}
+
 	if (isDirtyRecalc) {
 		for (const key of evalOrder) {
 			const analyzed = analysis.formulas.get(key)
 			if (!analyzed) continue
-			if (analyzed.parseError || !analyzed.ast) {
-				errors.push({
-					ref: cellRefString(workbook, analyzed.sheetIndex, analyzed.row, analyzed.col),
-					error: {
-						code: 'FORMULA_PARSE_ERROR',
-						message: `Failed to parse: ${analyzed.formula}`,
-						retryable: false,
-					},
-				})
-				continue
-			}
+			if (analyzed.parseError || !analyzed.ast) continue
 			asts.set(key, analyzed.ast)
 			formulaTexts.set(key, analyzed.formula)
 			if (analyzed.growingRangeAggregate) {
@@ -504,17 +519,7 @@ export function recalculate(
 		}
 	} else {
 		for (const analyzed of analysis.formulas.values()) {
-			if (analyzed.parseError || !analyzed.ast) {
-				errors.push({
-					ref: cellRefString(workbook, analyzed.sheetIndex, analyzed.row, analyzed.col),
-					error: {
-						code: 'FORMULA_PARSE_ERROR',
-						message: `Failed to parse: ${analyzed.formula}`,
-						retryable: false,
-					},
-				})
-				continue
-			}
+			if (analyzed.parseError || !analyzed.ast) continue
 			asts.set(analyzed.key, analyzed.ast)
 			formulaTexts.set(analyzed.key, analyzed.formula)
 			if (analyzed.growingRangeAggregate) {

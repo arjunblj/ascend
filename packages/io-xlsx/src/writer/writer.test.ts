@@ -328,6 +328,153 @@ describe('writeXlsx', () => {
 		expect(style?.numberFormat).toBe('0.00%')
 	})
 
+	it('1904 date system round-trips correctly', () => {
+		const wb = new Workbook()
+		wb.calcSettings = { ...wb.calcSettings, dateSystem: '1904' }
+		const dateFmtId = wb.styles.register({ numberFormat: 'yyyy-mm-dd' })
+		const sheet = wb.addSheet('Dates')
+		sheet.cells.set(0, 0, {
+			value: { kind: 'date', serial: 0 },
+			formula: null,
+			styleId: dateFmtId,
+		})
+		sheet.cells.set(1, 0, {
+			value: { kind: 'date', serial: 1 },
+			formula: null,
+			styleId: dateFmtId,
+		})
+		sheet.cells.set(2, 0, {
+			value: { kind: 'date', serial: 100 },
+			formula: null,
+			styleId: dateFmtId,
+		})
+
+		const { bytes, result } = roundTrip(wb)
+		expect(result.workbook.calcSettings?.dateSystem).toBe('1904')
+		const s = result.workbook.sheets[0]
+		expect(s?.cells.get(0, 0)?.value).toEqual({ kind: 'date', serial: 0 })
+		expect(s?.cells.get(1, 0)?.value).toEqual({ kind: 'date', serial: 1 })
+		expect(s?.cells.get(2, 0)?.value).toEqual({ kind: 'date', serial: 100 })
+
+		const zip = unzipSync(bytes)
+		const wbXml = new TextDecoder().decode(zip['xl/workbook.xml'] ?? new Uint8Array())
+		expect(wbXml).toContain('date1904="1"')
+	})
+
+	describe('number format edge cases', () => {
+		it('round-trips custom number format #,##0.00', () => {
+			const wb = new Workbook()
+			const fmtId = wb.styles.register({ numberFormat: '#,##0.00' })
+			const sheet = wb.addSheet('Fmt')
+			sheet.cells.set(0, 0, { value: numberValue(1234.5), formula: null, styleId: fmtId })
+
+			const { result } = roundTrip(wb)
+			const style = result.workbook.styles.get(
+				result.workbook.sheets[0]?.cells.get(0, 0)?.styleId ?? S0,
+			)
+			expect(style?.numberFormat).toBe('#,##0.00')
+		})
+
+		it('round-trips percentage format 0.00%', () => {
+			const wb = new Workbook()
+			const fmtId = wb.styles.register({ numberFormat: '0.00%' })
+			const sheet = wb.addSheet('Fmt')
+			sheet.cells.set(0, 0, { value: numberValue(0.125), formula: null, styleId: fmtId })
+
+			const { result } = roundTrip(wb)
+			const style = result.workbook.styles.get(
+				result.workbook.sheets[0]?.cells.get(0, 0)?.styleId ?? S0,
+			)
+			expect(style?.numberFormat).toBe('0.00%')
+		})
+
+		it('round-trips currency format $#,##0', () => {
+			const wb = new Workbook()
+			const fmtId = wb.styles.register({ numberFormat: '$#,##0' })
+			const sheet = wb.addSheet('Fmt')
+			sheet.cells.set(0, 0, { value: numberValue(999), formula: null, styleId: fmtId })
+
+			const { result } = roundTrip(wb)
+			const style = result.workbook.styles.get(
+				result.workbook.sheets[0]?.cells.get(0, 0)?.styleId ?? S0,
+			)
+			expect(style?.numberFormat).toBe('$#,##0')
+		})
+
+		it('round-trips accounting format _($* #,##0.00_)', () => {
+			const wb = new Workbook()
+			const fmtId = wb.styles.register({ numberFormat: '_($* #,##0.00_)' })
+			const sheet = wb.addSheet('Fmt')
+			sheet.cells.set(0, 0, { value: numberValue(-1234.56), formula: null, styleId: fmtId })
+
+			const { result } = roundTrip(wb)
+			const style = result.workbook.styles.get(
+				result.workbook.sheets[0]?.cells.get(0, 0)?.styleId ?? S0,
+			)
+			expect(style?.numberFormat).toBe('_($* #,##0.00_)')
+		})
+
+		it('round-trips date format yyyy-mm-dd', () => {
+			const wb = new Workbook()
+			const fmtId = wb.styles.register({ numberFormat: 'yyyy-mm-dd' })
+			const sheet = wb.addSheet('Fmt')
+			sheet.cells.set(0, 0, {
+				value: { kind: 'date', serial: 45292 },
+				formula: null,
+				styleId: fmtId,
+			})
+
+			const { result } = roundTrip(wb)
+			const style = result.workbook.styles.get(
+				result.workbook.sheets[0]?.cells.get(0, 0)?.styleId ?? S0,
+			)
+			expect(style?.numberFormat).toBe('yyyy-mm-dd')
+		})
+
+		it('round-trips date format dd/mm/yyyy', () => {
+			const wb = new Workbook()
+			const fmtId = wb.styles.register({ numberFormat: 'dd/mm/yyyy' })
+			const sheet = wb.addSheet('Fmt')
+			sheet.cells.set(0, 0, {
+				value: { kind: 'date', serial: 44927 },
+				formula: null,
+				styleId: fmtId,
+			})
+
+			const { result } = roundTrip(wb)
+			const style = result.workbook.styles.get(
+				result.workbook.sheets[0]?.cells.get(0, 0)?.styleId ?? S0,
+			)
+			expect(style?.numberFormat).toBe('dd/mm/yyyy')
+		})
+
+		it('round-trips negative format with color [Red]', () => {
+			const wb = new Workbook()
+			const fmtId = wb.styles.register({ numberFormat: '#,##0.00;[Red]-#,##0.00' })
+			const sheet = wb.addSheet('Fmt')
+			sheet.cells.set(0, 0, { value: numberValue(-100), formula: null, styleId: fmtId })
+
+			const { result } = roundTrip(wb)
+			const style = result.workbook.styles.get(
+				result.workbook.sheets[0]?.cells.get(0, 0)?.styleId ?? S0,
+			)
+			expect(style?.numberFormat).toBe('#,##0.00;[Red]-#,##0.00')
+		})
+
+		it('round-trips text format @', () => {
+			const wb = new Workbook()
+			const fmtId = wb.styles.register({ numberFormat: '@' })
+			const sheet = wb.addSheet('Fmt')
+			sheet.cells.set(0, 0, { value: stringValue('ID-001'), formula: null, styleId: fmtId })
+
+			const { result } = roundTrip(wb)
+			const style = result.workbook.styles.get(
+				result.workbook.sheets[0]?.cells.get(0, 0)?.styleId ?? S0,
+			)
+			expect(style?.numberFormat).toBe('@')
+		})
+	})
+
 	it('round-trips gradient fills', () => {
 		const wb = new Workbook()
 		const gradientId = wb.styles.register({
@@ -825,6 +972,78 @@ describe('writeXlsx', () => {
 		})
 	})
 
+	it('preserves rich text inline strings when useSharedStrings is false (xlsx-2)', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Test')
+		sheet.cells.set(0, 0, {
+			value: {
+				kind: 'richText',
+				runs: [{ text: 'bold text', bold: true }, { text: ' normal' }],
+			},
+			formula: null,
+			styleId: S0,
+		})
+
+		const written = writeXlsx(wb, undefined, { useSharedStrings: false })
+		expectOk(written)
+
+		const zip = unzipSync(written.value)
+		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+		expect(sheetXml).toContain('<r><rPr><b/></rPr><t>bold text</t></r>')
+		expect(sheetXml).toContain('<r><t> normal</t></r>')
+		expect(sheetXml).toContain('t="inlineStr"')
+		expect(sheetXml).toContain('<is>')
+
+		const read = readXlsx(written.value)
+		expectOk(read)
+		expect(read.value.workbook.sheets[0]?.cells.get(0, 0)?.value).toEqual({
+			kind: 'richText',
+			runs: [{ text: 'bold text', bold: true }, { text: ' normal' }],
+		})
+	})
+
+	it('creates dxfId for CF rules with style but no dxfId (xlsx-4)', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Rules')
+		sheet.cells.set(0, 0, { value: numberValue(5), formula: null, styleId: S0 })
+		sheet.conditionalFormats.push({
+			sqref: 'A1:A5',
+			rules: [
+				{
+					type: 'cellIs',
+					operator: 'greaterThan',
+					priority: 1,
+					formulas: ['3'],
+					style: {
+						font: { bold: true },
+						fill: { pattern: 'solid', fgColor: { kind: 'rgb', rgb: 'FFC6EFCE' } },
+					},
+				},
+			],
+		})
+
+		const written = writeXlsx(wb)
+		expectOk(written)
+
+		const zip = unzipSync(written.value)
+		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+		const stylesXml = new TextDecoder().decode(zip['xl/styles.xml'] ?? new Uint8Array())
+		expect(sheetXml).toContain('dxfId="0"')
+		expect(stylesXml).toContain('<dxfs count="1">')
+		expect(stylesXml).toContain('<dxf>')
+		expect(stylesXml).toContain('<b/>')
+		expect(stylesXml).toContain('FFC6EFCE')
+
+		const { result } = roundTrip(wb)
+		const rule = result.workbook.sheets[0]?.conditionalFormats[0]?.rules[0]
+		expect(rule?.dxfId).toBeDefined()
+		expect(rule?.dxfId).toBeGreaterThanOrEqual(0)
+		expect(rule?.style).toEqual({
+			font: { bold: true },
+			fill: { pattern: 'solid', fgColor: { kind: 'rgb', rgb: 'FFC6EFCE' } },
+		})
+	})
+
 	it('preserves defined names on round-trip', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Data')
@@ -1073,6 +1292,39 @@ describe('writeXlsx', () => {
 		expect(tableXml).toContain('tableStyleInfo')
 	})
 
+	it('round-trips table created via createTable op through XLSX', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Data')
+		sheet.cells.set(0, 0, { value: stringValue('Product'), formula: null, styleId: S0 })
+		sheet.cells.set(0, 1, { value: stringValue('Amount'), formula: null, styleId: S0 })
+		sheet.cells.set(1, 0, { value: stringValue('Widget'), formula: null, styleId: S0 })
+		sheet.cells.set(1, 1, { value: numberValue(100), formula: null, styleId: S0 })
+		sheet.cells.set(2, 0, { value: stringValue('Gadget'), formula: null, styleId: S0 })
+		sheet.cells.set(2, 1, { value: numberValue(200), formula: null, styleId: S0 })
+
+		const applyResult = applyOperations(wb, [
+			{
+				op: 'createTable',
+				sheet: 'Data',
+				ref: 'A1:B3',
+				name: 'SalesTable',
+				hasHeaders: true,
+			},
+		])
+		expectOk(applyResult)
+
+		const { result } = roundTrip(wb)
+		const roundTrippedSheet = result.workbook.sheets[0]
+		expect(roundTrippedSheet?.tables).toHaveLength(1)
+		const table = roundTrippedSheet?.tables[0]
+		expect(table?.name).toBe('SalesTable')
+		expect(table?.hasHeaders).toBe(true)
+		expect(table?.ref).toEqual({ start: { row: 0, col: 0 }, end: { row: 2, col: 1 } })
+		expect(table?.columns).toHaveLength(2)
+		expect(table?.columns[0]?.name).toBe('Product')
+		expect(table?.columns[1]?.name).toBe('Amount')
+	})
+
 	it('emits table parts for semantic tables without capsules', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Inventory')
@@ -1144,6 +1396,51 @@ describe('writeXlsx', () => {
 		expect(chart).toBeDefined()
 		expect(chart?.contentType).toContain('chart')
 		expect(chart?.content).toBeUndefined()
+	})
+
+	it('preserves threaded comments XML through read-write round-trip', () => {
+		const threadedCommentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<ThreadedComments xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">
+  <threadedComment ref="A1" personId="0" id="tc1" dT="2024-01-01T00:00:00.000">
+    <text>Comment text</text>
+  </threadedComment>
+</ThreadedComments>`
+
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: S0 })
+
+		const capsules: PreservationCapsule[] = [
+			{
+				partPath: 'xl/threadedComments/threadedComment1.xml',
+				contentType: 'application/vnd.ms-excel.threadedcomments+xml',
+				relationships: [],
+				content: new TextEncoder().encode(threadedCommentXml),
+				anchor: { kind: 'sheet', sheetName: 'Sheet1' },
+				relType: 'http://schemas.microsoft.com/office/2017/10/relationships/threadedComment',
+			},
+		]
+
+		const { bytes, result } = roundTrip(wb, capsules)
+
+		const entries = unzipSync(bytes)
+		expect(entries['xl/threadedComments/threadedComment1.xml']).toBeDefined()
+		const decoded = new TextDecoder().decode(entries['xl/threadedComments/threadedComment1.xml'])
+		expect(decoded).toContain('<ThreadedComments')
+		expect(decoded).toContain('threadedComment ref="A1"')
+		expect(decoded).toContain('<text>Comment text</text>')
+
+		const tcCapsule = result.capsules.find(
+			(c) => c.partPath === 'xl/threadedComments/threadedComment1.xml',
+		)
+		expect(tcCapsule).toBeDefined()
+		expect(result.report.features.find((f) => f.feature === 'preservedThreadedComments')).toEqual(
+			expect.objectContaining({
+				tier: 'preserved',
+				count: 1,
+				locations: ['xl/threadedComments/threadedComment1.xml'],
+			}),
+		)
 	})
 
 	it('produces a valid ZIP file', () => {
@@ -1345,6 +1642,32 @@ describe('writeXlsx', () => {
 		expect(workbookXml).toContain('calcId="191029"')
 	})
 
+	it('preserves sheetView attributes (zoomScale, showGridLines, showFormulas, rightToLeft, tabSelected, view) on round-trip', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('View')
+		sheet.cells.set(0, 0, { value: stringValue('hi'), formula: null, styleId: S0 })
+		sheet.sheetView = {
+			zoomScale: 125,
+			showGridLines: false,
+			showFormulas: true,
+			rightToLeft: true,
+			tabSelected: true,
+			view: 'pageLayout',
+		}
+
+		const { result } = roundTrip(wb)
+		const s = result.workbook.sheets[0]
+		if (!s) throw new Error('Expected round-tripped workbook to contain a sheet')
+		expect(s.sheetView).toEqual({
+			zoomScale: 125,
+			showGridLines: false,
+			showFormulas: true,
+			rightToLeft: true,
+			tabSelected: true,
+			view: 'pageLayout',
+		})
+	})
+
 	it('preserves sheetPr tabColor and sheetFormatPr on round-trip', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Colored')
@@ -1403,6 +1726,64 @@ describe('writeXlsx', () => {
 		expect(read.value.workbook.sheets[0]?.preservedExtLst).toContain('<extLst>')
 	})
 
+	it('preserves sparkline extLst XML through read-write round-trip', () => {
+		const sparklineExtLst = `<extLst><ext uri="{05C60535-1F16-4fd2-B633-F4F36F0B64E0}" xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">
+  <x14:sparklineGroups xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main">
+    <x14:sparklineGroup>
+      <x14:f>Sheet1!A1:A5</x14:f>
+      <x14:sparklines>
+        <x14:sparkline f="Sheet1!B1:B5"/>
+      </x14:sparklines>
+    </x14:sparklineGroup>
+  </x14:sparklineGroups>
+</ext></extLst>`
+
+		const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>
+${sparklineExtLst}
+</worksheet>`
+
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+			'xl/worksheets/sheet1.xml': sheetXml,
+		})
+
+		const read = readXlsx(bytes)
+		if (!read.ok) throw new Error(read.error.message)
+		const preserved = read.value.workbook.sheets[0]?.preservedExtLst
+		expect(preserved).toBeDefined()
+		expect(preserved).toContain('x14:sparklineGroups')
+		expect(preserved).toContain('x14:sparkline')
+
+		const written = writeXlsx(read.value.workbook, read.value.capsules)
+		if (!written.ok) throw new Error(written.error.message)
+		const zip = unzipSync(written.value)
+		const writtenSheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'])
+		expect(writtenSheetXml).toContain('<extLst>')
+		expect(writtenSheetXml).toContain('x14:sparklineGroups')
+		expect(writtenSheetXml).toContain('Sheet1!A1:A5')
+	})
+
 	it('emits dimension element for non-empty sheets', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Dim')
@@ -1438,5 +1819,121 @@ describe('writeXlsx', () => {
 				evalError: true,
 			},
 		])
+	})
+
+	describe('round-trip fidelity', () => {
+		it('round-trips mixed data types (numbers, strings, booleans, dates, errors)', () => {
+			const wb = new Workbook()
+			const dateFmtId = wb.styles.register({ numberFormat: 'yyyy-mm-dd' })
+			const sheet = wb.addSheet('Mixed')
+			sheet.cells.set(0, 0, { value: numberValue(42), formula: null, styleId: S0 })
+			sheet.cells.set(0, 1, { value: stringValue('text'), formula: null, styleId: S0 })
+			sheet.cells.set(0, 2, { value: booleanValue(true), formula: null, styleId: S0 })
+			sheet.cells.set(0, 3, { value: booleanValue(false), formula: null, styleId: S0 })
+			sheet.cells.set(0, 4, {
+				value: { kind: 'date', serial: 45292 },
+				formula: null,
+				styleId: dateFmtId,
+			})
+			sheet.cells.set(0, 5, {
+				value: { kind: 'error', value: '#DIV/0!' },
+				formula: null,
+				styleId: S0,
+			})
+
+			const { result } = roundTrip(wb)
+			const s = result.workbook.sheets[0]
+			expect(s?.cells.get(0, 0)?.value).toEqual({ kind: 'number', value: 42 })
+			expect(s?.cells.get(0, 1)?.value).toEqual({ kind: 'string', value: 'text' })
+			expect(s?.cells.get(0, 2)?.value).toEqual({ kind: 'boolean', value: true })
+			expect(s?.cells.get(0, 3)?.value).toEqual({ kind: 'boolean', value: false })
+			expect(s?.cells.get(0, 4)?.value).toEqual({ kind: 'date', serial: 45292 })
+			expect(s?.cells.get(0, 5)?.value).toEqual({ kind: 'error', value: '#DIV/0!' })
+		})
+
+		it('round-trips formulas with various complexity', () => {
+			const wb = new Workbook()
+			const sheet = wb.addSheet('Formulas')
+			sheet.cells.set(0, 0, { value: numberValue(10), formula: null, styleId: S0 })
+			sheet.cells.set(0, 1, { value: numberValue(20), formula: null, styleId: S0 })
+			sheet.cells.set(1, 0, { value: numberValue(30), formula: 'A1+B1', styleId: S0 })
+			sheet.cells.set(1, 1, { value: numberValue(600), formula: 'A1*B1*2', styleId: S0 })
+			sheet.cells.set(2, 0, { value: numberValue(3), formula: 'SUM(A1:B2)', styleId: S0 })
+			sheet.cells.set(2, 1, {
+				value: numberValue(2),
+				formula: 'IF(A1>B1,"big","small")',
+				styleId: S0,
+			})
+
+			const { result } = roundTrip(wb)
+			const s = result.workbook.sheets[0]
+			expect(s?.cells.get(1, 0)?.formula).toBe('A1+B1')
+			expect(s?.cells.get(1, 1)?.formula).toBe('A1*B1*2')
+			expect(s?.cells.get(2, 0)?.formula).toBe('SUM(A1:B2)')
+			expect(s?.cells.get(2, 1)?.formula).toBe('IF(A1>B1,"big","small")')
+		})
+
+		it('round-trips styled cells (bold, italic, colors, number formats)', () => {
+			const wb = new Workbook()
+			const boldId = wb.styles.register({ font: { bold: true } })
+			const italicId = wb.styles.register({ font: { italic: true } })
+			const colorId = wb.styles.register({
+				font: { color: { kind: 'rgb', rgb: 'FF0000FF' } },
+			})
+			const pctId = wb.styles.register({ numberFormat: '0.00%' })
+			const sheet = wb.addSheet('Styled')
+			sheet.cells.set(0, 0, { value: stringValue('Bold'), formula: null, styleId: boldId })
+			sheet.cells.set(0, 1, { value: stringValue('Italic'), formula: null, styleId: italicId })
+			sheet.cells.set(0, 2, { value: stringValue('Blue'), formula: null, styleId: colorId })
+			sheet.cells.set(0, 3, { value: numberValue(0.75), formula: null, styleId: pctId })
+
+			const { result } = roundTrip(wb)
+			const s = result.workbook.sheets[0]
+			const styles = result.workbook.styles
+			expect(styles.get(s?.cells.get(0, 0)?.styleId ?? S0)?.font?.bold).toBe(true)
+			expect(styles.get(s?.cells.get(0, 1)?.styleId ?? S0)?.font?.italic).toBe(true)
+			expect(styles.get(s?.cells.get(0, 2)?.styleId ?? S0)?.font?.color).toEqual({
+				kind: 'rgb',
+				rgb: 'FF0000FF',
+			})
+			expect(styles.get(s?.cells.get(0, 3)?.styleId ?? S0)?.numberFormat).toBe('0.00%')
+		})
+
+		it('round-trips merged cells', () => {
+			const wb = new Workbook()
+			const sheet = wb.addSheet('Merged')
+			sheet.cells.set(0, 0, { value: stringValue('Title'), formula: null, styleId: S0 })
+			sheet.merges.push({ start: { row: 0, col: 0 }, end: { row: 0, col: 2 } })
+			sheet.merges.push({ start: { row: 2, col: 0 }, end: { row: 4, col: 1 } })
+
+			const { result } = roundTrip(wb)
+			const s = result.workbook.sheets[0]
+			expect(s?.merges).toHaveLength(2)
+			expect(s?.merges[0]).toEqual({ start: { row: 0, col: 0 }, end: { row: 0, col: 2 } })
+			expect(s?.merges[1]).toEqual({ start: { row: 2, col: 0 }, end: { row: 4, col: 1 } })
+		})
+
+		it('round-trips multiple sheets with cross-sheet references', () => {
+			const wb = new Workbook()
+			const data = wb.addSheet('Data')
+			const summary = wb.addSheet('Summary')
+			data.cells.set(0, 0, { value: numberValue(100), formula: null, styleId: S0 })
+			data.cells.set(1, 0, { value: numberValue(200), formula: null, styleId: S0 })
+			summary.cells.set(0, 0, {
+				value: numberValue(300),
+				formula: 'SUM(Data!A1:A2)',
+				styleId: S0,
+			})
+
+			const { result } = roundTrip(wb)
+			expect(result.workbook.sheets).toHaveLength(2)
+			expect(result.workbook.sheets[0]?.name).toBe('Data')
+			expect(result.workbook.sheets[1]?.name).toBe('Summary')
+			expect(result.workbook.sheets[1]?.cells.get(0, 0)?.formula).toBe('SUM(Data!A1:A2)')
+			expect(result.workbook.sheets[1]?.cells.get(0, 0)?.value).toEqual({
+				kind: 'number',
+				value: 300,
+			})
+		})
 	})
 })

@@ -32,7 +32,6 @@ import { decodeXmlText, findTagEnd, isSelfClosingTag } from './xml-utils.ts'
 
 const SMALL_NUMBER_RANGE_START = -128
 const SMALL_NUMBER_RANGE_END = 512
-const SHEET_DATA_RE = /<sheetData\b[^>]*>([\s\S]*?)<\/sheetData>|<sheetData\b[^>]*\/>/
 const ATTR_RE = /([A-Za-z_][\w:.-]*)="([^"]*)"/g
 const TEXT_NODE_RE =
 	/<([A-Za-z_][\w:.-]*)\b([^>]*)>([\s\S]*?)<\/\1>|<([A-Za-z_][\w:.-]*)\b([^>]*)\/>/g
@@ -153,8 +152,12 @@ function buildSmallNumberCache(): Map<number, CellValue> {
 
 export function parseSheet(name: string, xml: string, ctx: SheetParseContext): Sheet {
 	const sheet = new Sheet(name)
-	parseSheetDataXml(xml, sheet, ctx)
-	const doc = parseXml(stripSheetDataForDom(xml))
+	const sheetDataLoc = locateSheetData(xml)
+	if (sheetDataLoc) parseSheetDataFromLoc(xml, sheetDataLoc, sheet, ctx)
+	const strippedXml = sheetDataLoc
+		? `${xml.slice(0, sheetDataLoc.tagStart)}<sheetData/>${xml.slice(sheetDataLoc.closeEnd)}`
+		: xml
+	const doc = parseXml(strippedXml)
 	const ws = doc.worksheet as XmlNode | undefined
 	if (!ws) return sheet
 
@@ -180,13 +183,12 @@ export function parseSheet(name: string, xml: string, ctx: SheetParseContext): S
 	return sheet
 }
 
-function stripSheetDataForDom(xml: string): string {
-	return xml.replace(SHEET_DATA_RE, '<sheetData/>')
-}
-
-function parseSheetDataXml(xml: string, sheet: Sheet, ctx: SheetParseContext): void {
-	const sheetData = locateSheetData(xml)
-	if (!sheetData) return
+function parseSheetDataFromLoc(
+	xml: string,
+	sheetData: SheetDataLocation,
+	sheet: Sheet,
+	ctx: SheetParseContext,
+): void {
 	const sharedFormulaMasters: SharedFormulaMasterMap = new Map()
 	const useFastPath = ctx.valuesOnly || ctx.formulaOnly
 	let rowCursor = sheetData.contentStart
@@ -265,6 +267,7 @@ export function* streamSheetRowsXml(
 	let currentRow = -1
 	const fallbackPos = { row: 0, col: 0 }
 	const cellOut = { row: 0, col: 0 }
+	const rowSheet = new Sheet(name)
 
 	while (true) {
 		const rowOpen = xml.indexOf('<row', rowCursor)
@@ -275,7 +278,8 @@ export function* streamSheetRowsXml(
 		const explicitRowIndex = rawNumAttr(rowAttrsRaw, 'r')
 		const row = explicitRowIndex !== undefined ? explicitRowIndex - 1 : currentRow + 1
 		currentRow = row
-		const rowSheet = new Sheet(name)
+		rowSheet.cells.clear()
+		rowSheet.rowDefs.clear()
 		const hidden = rawBoolAttr(rowAttrsRaw, 'hidden')
 		const collapsed = rawBoolAttr(rowAttrsRaw, 'collapsed')
 		const outlineLevel = rawNumAttr(rowAttrsRaw, 'outlineLevel')
@@ -437,7 +441,14 @@ function parseFastCell(
 	return true
 }
 
-function locateSheetData(xml: string): { contentStart: number; contentEnd: number } | null {
+interface SheetDataLocation {
+	readonly contentStart: number
+	readonly contentEnd: number
+	readonly tagStart: number
+	readonly closeEnd: number
+}
+
+function locateSheetData(xml: string): SheetDataLocation | null {
 	const open = xml.indexOf('<sheetData')
 	if (open === -1) return null
 	const tagEnd = findTagEnd(xml, open)
@@ -445,7 +456,7 @@ function locateSheetData(xml: string): { contentStart: number; contentEnd: numbe
 	if (isSelfClosingTag(xml, open, tagEnd)) return null
 	const close = xml.indexOf('</sheetData>', tagEnd + 1)
 	if (close === -1) return null
-	return { contentStart: tagEnd + 1, contentEnd: close }
+	return { contentStart: tagEnd + 1, contentEnd: close, tagStart: open, closeEnd: close + 12 }
 }
 
 function _parseSheetData(ws: XmlNode, sheet: Sheet, ctx: SheetParseContext): void {
@@ -491,12 +502,40 @@ function buildCellNode(rawAttrs: string, innerXml: string): XmlNode {
 function buildInlineStringNode(innerXml: string): XmlNode {
 	const runs: XmlNode[] = []
 	for (const run of extractNodes(innerXml, 'r')) {
-		const text = extractTextNode(run.text ?? '', 't')
-		runs.push({ t: text?.text ?? '' })
+		runs.push(buildInlineRunNode(run.text ?? ''))
 	}
 	if (runs.length > 0) return { r: runs }
 	const directText = extractTextNode(innerXml, 't')
 	return directText ? { t: directText.text ?? '' } : {}
+}
+
+function buildInlineRunNode(runInnerXml: string): XmlNode {
+	const textNode = extractTextNode(runInnerXml, 't')
+	const result: XmlNode = { t: textNode?.text ?? '' }
+	const rPrNode = extractTextNode(runInnerXml, 'rPr')
+	if (!rPrNode?.text) return result
+	const rPr: XmlNode = {}
+	if (runInnerXml.includes('<b')) rPr.b = {}
+	if (runInnerXml.includes('<i')) rPr.i = {}
+	if (runInnerXml.includes('<u')) rPr.u = {}
+	if (runInnerXml.includes('<strike')) rPr.strike = {}
+	const rFont = extractTextNode(runInnerXml, 'rFont') ?? extractTextNode(runInnerXml, 'font')
+	if (rFont?.attrs) {
+		const valMatch = /val="([^"]*)"/.exec(rFont.attrs)
+		if (valMatch) rPr.rFont = { '@_val': valMatch[1] }
+	}
+	const sz = extractTextNode(runInnerXml, 'sz')
+	if (sz?.attrs) {
+		const valMatch = /val="([^"]*)"/.exec(sz.attrs)
+		if (valMatch) rPr.sz = { '@_val': Number(valMatch[1]) }
+	}
+	const color = extractTextNode(runInnerXml, 'color')
+	if (color?.attrs) {
+		const rgbMatch = /rgb="([^"]*)"/.exec(color.attrs)
+		if (rgbMatch) rPr.color = { '@_rgb': rgbMatch[1] }
+	}
+	if (Object.keys(rPr).length > 0) result.rPr = rPr
+	return result
 }
 
 function parseRawAttributes(rawAttrs: string): XmlNode {
@@ -1014,13 +1053,33 @@ function parseSheetViews(ws: XmlNode, sheet: Sheet): void {
 	if (!viewsNode) return
 	const firstView = asArray<XmlNode>(viewsNode.sheetView as XmlNode | XmlNode[])[0]
 	if (!firstView) return
-	const pane = firstView.pane as XmlNode | undefined
-	if (!pane) return
 
-	const ySplit = numAttr(pane, 'ySplit')
-	if (ySplit !== undefined) sheet.frozenRows = Math.trunc(ySplit)
-	const xSplit = numAttr(pane, 'xSplit')
-	if (xSplit !== undefined) sheet.frozenCols = Math.trunc(xSplit)
+	const pane = firstView.pane as XmlNode | undefined
+	if (pane) {
+		const ySplit = numAttr(pane, 'ySplit')
+		if (ySplit !== undefined) sheet.frozenRows = Math.trunc(ySplit)
+		const xSplit = numAttr(pane, 'xSplit')
+		if (xSplit !== undefined) sheet.frozenCols = Math.trunc(xSplit)
+	}
+
+	const viewAttrs: Record<string, number | boolean | string> = {}
+	const zoomScale = numAttr(firstView, 'zoomScale')
+	if (zoomScale !== undefined) viewAttrs.zoomScale = zoomScale
+	const showGridLines = readBoolAttribute(firstView, 'showGridLines')
+	if (showGridLines !== undefined) viewAttrs.showGridLines = showGridLines
+	const showFormulas = readBoolAttribute(firstView, 'showFormulas')
+	if (showFormulas !== undefined) viewAttrs.showFormulas = showFormulas
+	const rightToLeft = readBoolAttribute(firstView, 'rightToLeft')
+	if (rightToLeft !== undefined) viewAttrs.rightToLeft = rightToLeft
+	const tabSelected = readBoolAttribute(firstView, 'tabSelected')
+	if (tabSelected !== undefined) viewAttrs.tabSelected = tabSelected
+	const viewVal = attr(firstView, 'view')
+	if (viewVal === 'normal' || viewVal === 'pageBreakPreview' || viewVal === 'pageLayout') {
+		viewAttrs.view = viewVal
+	}
+	if (Object.keys(viewAttrs).length > 0) {
+		sheet.sheetView = viewAttrs as import('@ascend/core').SheetView
+	}
 }
 
 function parseCols(ws: XmlNode, sheet: Sheet): void {

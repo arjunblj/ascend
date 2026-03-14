@@ -20,8 +20,9 @@ const CODEGEN_CACHE_MAX = 4096
 const codegenCache = new Map<string, CodegenFn | null>()
 const sharedCodegenCache = new Map<string, CodegenFn | null>()
 
-const CODEGEN_FUNCTIONS = new Set(['IF', 'IFERROR', 'IFNA'])
-const PARTIAL_CODEGEN_FUNCTIONS = new Set(['SUM', 'VLOOKUP', 'MATCH', 'INDEX'])
+const CODEGEN_FUNCTIONS = new Set(['IF', 'IFERROR', 'IFNA', 'AND', 'OR', 'NOT'])
+const RANGE_AGG_FUNCTIONS = new Set(['SUM', 'AVERAGE', 'COUNT', 'COUNTA', 'MIN', 'MAX'])
+const PARTIAL_CODEGEN_FUNCTIONS = new Set(['VLOOKUP', 'MATCH', 'INDEX'])
 
 interface SharedAnchor {
 	readonly row: number
@@ -72,11 +73,14 @@ function canCodegen(node: FormulaNode): boolean {
 			const upper = node.name.toUpperCase()
 			if (CODEGEN_FUNCTIONS.has(upper)) return node.args.every(canCodegen)
 			if (
-				upper === 'SUM' &&
+				RANGE_AGG_FUNCTIONS.has(upper) &&
 				node.args.length === 1 &&
 				(node.args[0] as FormulaNode).type === 'rangeRef'
 			) {
 				return true
+			}
+			if (upper === 'ROUND' && node.args.length >= 1 && node.args.length <= 2) {
+				return node.args.every(canCodegen)
 			}
 			return PARTIAL_CODEGEN_FUNCTIONS.has(upper)
 		}
@@ -285,27 +289,170 @@ function emitFunction(state: CodegenState, node: FormulaNode & { type: 'function
 	if (upper === 'IFNA' && node.args.length === 2) {
 		return emitIfNa(state, node.args)
 	}
+	if (upper === 'AND' || upper === 'OR') return emitAndOr(state, node.args, upper === 'AND')
+	if (upper === 'NOT' && node.args.length === 1) return emitNot(state, node.args)
+	if (upper === 'ROUND' && node.args.length >= 1 && node.args.length <= 2) {
+		return emitRound(state, node.args)
+	}
 	if (
-		upper === 'SUM' &&
+		RANGE_AGG_FUNCTIONS.has(upper) &&
 		node.args.length === 1 &&
 		(node.args[0] as FormulaNode).type === 'rangeRef'
 	) {
-		return emitSumRange(state, node.args[0] as FormulaNode & { type: 'rangeRef' })
+		return emitRangeAggregate(state, node.args[0] as FormulaNode & { type: 'rangeRef' }, upper)
 	}
-	if (upper === 'VLOOKUP' || upper === 'MATCH' || upper === 'INDEX') {
-		return emitTreeFallback(state, node)
-	}
+	if (upper === 'INDEX') return emitIndex(state, node)
+	if (upper === 'MATCH') return emitMatch(state, node)
+	if (upper === 'VLOOKUP') return emitVlookup(state, node)
 
 	return emitTreeFallback(state, node)
 }
 
-function emitSumRange(state: CodegenState, node: FormulaNode & { type: 'rangeRef' }): string {
+function emitRangeAggregate(
+	state: CodegenState,
+	node: FormulaNode & { type: 'rangeRef' },
+	func: string,
+): string {
 	const result = freshVar(state)
 	const sheetExpr = node.sheet === undefined ? 'null' : JSON.stringify(node.sheet)
 	const anchorRow = state.sharedAnchor?.row ?? -1
 	const anchorCol = state.sharedAnchor?.col ?? -1
 	state.lines.push(
-		`var ${result} = _sumRange(ctx, _sheet, ${sheetExpr}, ${node.start.row}, ${node.start.col}, ${node.start.rowAbsolute}, ${node.start.colAbsolute}, ${node.end.row}, ${node.end.col}, ${node.end.rowAbsolute}, ${node.end.colAbsolute}, ${anchorRow}, ${anchorCol});`,
+		`var ${result} = _rangeAgg(ctx, _sheet, ${sheetExpr}, ${node.start.row}, ${node.start.col}, ${node.start.rowAbsolute}, ${node.start.colAbsolute}, ${node.end.row}, ${node.end.col}, ${node.end.rowAbsolute}, ${node.end.colAbsolute}, ${anchorRow}, ${anchorCol}, ${JSON.stringify(func)});`,
+	)
+	return result
+}
+
+function emitAndOr(state: CodegenState, args: readonly FormulaNode[], isAnd: boolean): string {
+	const result = freshVar(state)
+	state.lines.push(`var ${result};`)
+	for (let i = 0; i < args.length; i++) {
+		const argVar = emitNode(state, args[i] as FormulaNode)
+		const boolVar = freshVar(state, 'ab')
+		state.lines.push(`var ${boolVar} = _coerceBool(${argVar});`)
+		state.lines.push(`if (typeof ${boolVar} !== 'boolean') return ${boolVar};`)
+		if (isAnd) {
+			state.lines.push(`if (!${boolVar}) { ${result} = _booleanValue(false); }`)
+		} else {
+			state.lines.push(`if (${boolVar}) { ${result} = _booleanValue(true); }`)
+		}
+	}
+	state.lines.push(`if (${result} === undefined) ${result} = _booleanValue(${isAnd});`)
+	return result
+}
+
+function emitNot(state: CodegenState, args: readonly FormulaNode[]): string {
+	const argVar = emitNode(state, args[0] as FormulaNode)
+	const boolVar = freshVar(state, 'nb')
+	state.lines.push(`var ${boolVar} = _coerceBool(${argVar});`)
+	state.lines.push(`if (typeof ${boolVar} !== 'boolean') return ${boolVar};`)
+	const result = freshVar(state)
+	state.lines.push(`var ${result} = _booleanValue(!${boolVar});`)
+	return result
+}
+
+function emitRound(state: CodegenState, args: readonly FormulaNode[]): string {
+	const valueVar = emitNode(state, args[0] as FormulaNode)
+	const sv = freshVar(state, 'rv')
+	state.lines.push(`var ${sv} = _topLeft(${valueVar});`)
+	state.lines.push(`if (${sv}.kind === 'error') return ${sv};`)
+	const nv = emitCoerceNumber(state, sv)
+	let digitsExpr = '0'
+	if (args.length >= 2) {
+		const digitsVar = emitNode(state, args[1] as FormulaNode)
+		const ds = freshVar(state, 'ds')
+		state.lines.push(`var ${ds} = _topLeft(${digitsVar});`)
+		state.lines.push(`if (${ds}.kind === 'error') return ${ds};`)
+		digitsExpr = emitCoerceNumber(state, ds)
+	}
+	const result = freshVar(state)
+	state.lines.push(
+		`var _m${state.varCounter} = Math.pow(10, Math.floor(${digitsExpr})); var ${result} = _numberValue(Math.round(${nv} * _m${state.varCounter}) / _m${state.varCounter});`,
+	)
+	state.varCounter++
+	return result
+}
+
+function emitIndex(state: CodegenState, node: FormulaNode & { type: 'function' }): string {
+	const args = node.args
+	if (args.length < 2 || args.length > 3) return emitTreeFallback(state, node)
+	const rangeArg = args[0]
+	if (!rangeArg || rangeArg.type !== 'rangeRef') return emitTreeFallback(state, node)
+
+	const rowVar = emitNode(state, args[1] as FormulaNode)
+	let colExpr = 'null'
+	if (args.length > 2) colExpr = emitNode(state, args[2] as FormulaNode)
+
+	const nodeKey = `_tree${state.treeNodes.size}`
+	state.treeNodes.set(nodeKey, node)
+
+	const result = freshVar(state)
+	const sheetExpr = rangeArg.sheet === undefined ? 'null' : JSON.stringify(rangeArg.sheet)
+	const anchorRow = state.sharedAnchor?.row ?? -1
+	const anchorCol = state.sharedAnchor?.col ?? -1
+	state.lines.push(
+		`var ${result} = _indexRange(ctx, _sheet, ${sheetExpr}, ${rangeArg.start.row}, ${rangeArg.start.col}, ${rangeArg.start.rowAbsolute}, ${rangeArg.start.colAbsolute}, ${rangeArg.end.row}, ${rangeArg.end.col}, ${rangeArg.end.rowAbsolute}, ${rangeArg.end.colAbsolute}, ${anchorRow}, ${anchorCol}, ${rowVar}, ${colExpr}, ${nodeKey});`,
+	)
+	return result
+}
+
+function emitMatch(state: CodegenState, node: FormulaNode & { type: 'function' }): string {
+	const args = node.args
+	if (args.length < 2 || args.length > 3) return emitTreeFallback(state, node)
+	const rangeArg = args[1]
+	if (!rangeArg || rangeArg.type !== 'rangeRef') return emitTreeFallback(state, node)
+
+	if (args.length >= 3) {
+		const typeArg = args[2]
+		if (!typeArg || typeArg.type !== 'number' || typeArg.value !== 0)
+			return emitTreeFallback(state, node)
+	} else {
+		return emitTreeFallback(state, node)
+	}
+
+	const lookupVar = emitNode(state, args[0] as FormulaNode)
+	const nodeKey = `_tree${state.treeNodes.size}`
+	state.treeNodes.set(nodeKey, node)
+
+	const result = freshVar(state)
+	const sheetExpr = rangeArg.sheet === undefined ? 'null' : JSON.stringify(rangeArg.sheet)
+	const anchorRow = state.sharedAnchor?.row ?? -1
+	const anchorCol = state.sharedAnchor?.col ?? -1
+	state.lines.push(
+		`var ${result} = _matchExact(ctx, _sheet, ${sheetExpr}, ${rangeArg.start.row}, ${rangeArg.start.col}, ${rangeArg.start.rowAbsolute}, ${rangeArg.start.colAbsolute}, ${rangeArg.end.row}, ${rangeArg.end.col}, ${rangeArg.end.rowAbsolute}, ${rangeArg.end.colAbsolute}, ${anchorRow}, ${anchorCol}, ${lookupVar}, ${nodeKey});`,
+	)
+	return result
+}
+
+function emitVlookup(state: CodegenState, node: FormulaNode & { type: 'function' }): string {
+	const args = node.args
+	if (args.length < 3 || args.length > 4) return emitTreeFallback(state, node)
+	const tableArg = args[1]
+	if (!tableArg || tableArg.type !== 'rangeRef') return emitTreeFallback(state, node)
+
+	if (args.length >= 4) {
+		const approxArg = args[3]
+		if (!approxArg) return emitTreeFallback(state, node)
+		const isExact =
+			(approxArg.type === 'boolean' && approxArg.value === false) ||
+			(approxArg.type === 'number' && approxArg.value === 0)
+		if (!isExact) return emitTreeFallback(state, node)
+	} else {
+		return emitTreeFallback(state, node)
+	}
+
+	const lookupVar = emitNode(state, args[0] as FormulaNode)
+	const colIdxVar = emitNode(state, args[2] as FormulaNode)
+
+	const nodeKey = `_tree${state.treeNodes.size}`
+	state.treeNodes.set(nodeKey, node)
+
+	const result = freshVar(state)
+	const sheetExpr = tableArg.sheet === undefined ? 'null' : JSON.stringify(tableArg.sheet)
+	const anchorRow = state.sharedAnchor?.row ?? -1
+	const anchorCol = state.sharedAnchor?.col ?? -1
+	state.lines.push(
+		`var ${result} = _vlookupExact(ctx, _sheet, ${sheetExpr}, ${tableArg.start.row}, ${tableArg.start.col}, ${tableArg.start.rowAbsolute}, ${tableArg.start.colAbsolute}, ${tableArg.end.row}, ${tableArg.end.col}, ${tableArg.end.rowAbsolute}, ${tableArg.end.colAbsolute}, ${anchorRow}, ${anchorCol}, ${lookupVar}, ${colIdxVar}, ${nodeKey});`,
 	)
 	return result
 }
@@ -485,7 +632,7 @@ function resolveRelativeIndex(
 	return absolute || anchor < 0 ? value : current + (value - anchor)
 }
 
-function sumRange(
+function rangeAggregate(
 	ctx: EvalContext,
 	currentSheet: import('@ascend/core').Workbook['sheets'][number] | undefined,
 	sheetName: string | null,
@@ -499,6 +646,7 @@ function sumRange(
 	endColAbsolute: boolean,
 	anchorRow: number,
 	anchorCol: number,
+	func: string,
 ): CellValue {
 	const resolvedStartRow = resolveRelativeIndex(startRow, startRowAbsolute, ctx.row, anchorRow)
 	const resolvedStartCol = resolveRelativeIndex(startCol, startColAbsolute, ctx.col, anchorCol)
@@ -518,7 +666,13 @@ function sumRange(
 	const toRow = Math.max(resolvedStartRow, resolvedEndRow)
 	const fromCol = Math.min(resolvedStartCol, resolvedEndCol)
 	const toCol = Math.max(resolvedStartCol, resolvedEndCol)
-	let total = 0
+
+	let acc = 0
+	let count = 0
+	let countA = 0
+	let minVal = Number.POSITIVE_INFINITY
+	let maxVal = Number.NEGATIVE_INFINITY
+
 	for (let row = fromRow; row <= toRow; row++) {
 		for (let col = fromCol; col <= toCol; col++) {
 			const kind = targetSheet.cells.readKind(row, col)
@@ -526,11 +680,280 @@ function sumRange(
 			if (kind === 'error') {
 				return errorValue(targetSheet.cells.readError(row, col) ?? '#VALUE!')
 			}
+			countA++
 			if (kind !== 'number' && kind !== 'date') continue
-			total += targetSheet.cells.readNumber(row, col) ?? 0
+			const n = targetSheet.cells.readNumber(row, col) ?? 0
+			acc += n
+			count++
+			if (n < minVal) minVal = n
+			if (n > maxVal) maxVal = n
 		}
 	}
-	return numberValue(total)
+
+	switch (func) {
+		case 'SUM':
+			return numberValue(acc)
+		case 'AVERAGE':
+			return count === 0 ? errorValue('#DIV/0!') : numberValue(acc / count)
+		case 'COUNT':
+			return numberValue(count)
+		case 'COUNTA':
+			return numberValue(countA)
+		case 'MIN':
+			return count === 0 ? numberValue(0) : numberValue(minVal)
+		case 'MAX':
+			return count === 0 ? numberValue(0) : numberValue(maxVal)
+		default:
+			return numberValue(acc)
+	}
+}
+
+function lookupValueKey(value: CellValue): string | null {
+	const scalar = topLeftScalar(value)
+	switch (scalar.kind) {
+		case 'number':
+			return `n:${String(scalar.value === 0 ? 0 : scalar.value)}`
+		case 'date':
+			return `d:${scalar.serial}`
+		case 'string':
+			return `s:${scalar.value.toLowerCase()}`
+		case 'boolean':
+			return scalar.value ? 'b:1' : 'b:0'
+		case 'empty':
+			return 'e'
+		default:
+			return null
+	}
+}
+
+function getLookupIndex(
+	ctx: EvalContext,
+	sheetIndex: number,
+	col: number,
+	startRow: number,
+	endRow: number,
+): ReadonlyMap<string, { first: number; last: number }> {
+	const cacheKey = `column:${sheetIndex}:${col}:${startRow}:${endRow}`
+	if (ctx.exactLookupCache) {
+		const cached = ctx.exactLookupCache.get(cacheKey)
+		if (cached) return cached
+	}
+	const sheet = ctx.workbook.sheets[sheetIndex]
+	const index = new Map<string, { first: number; last: number }>()
+	if (sheet) {
+		for (let i = startRow; i <= endRow; i++) {
+			const key = lookupValueKey(sheet.cells.readValue(i, col))
+			if (key === null) continue
+			const offset = i - startRow
+			const existing = index.get(key)
+			if (existing) index.set(key, { first: existing.first, last: offset })
+			else index.set(key, { first: offset, last: offset })
+		}
+	}
+	ctx.exactLookupCache?.set(cacheKey, index)
+	return index
+}
+
+function indexedLookup(
+	lookup: CellValue,
+	index: ReadonlyMap<string, { first: number; last: number }>,
+): number {
+	const key = lookupValueKey(lookup)
+	if (key === null) return -1
+	const hit = index.get(key)
+	return hit ? hit.first : -1
+}
+
+function hasWildcardChars(text: string): boolean {
+	for (let i = 0; i < text.length; i++) {
+		const ch = text[i]
+		if ((ch === '*' || ch === '?') && text[i - 1] !== '~') return true
+	}
+	return false
+}
+
+function indexRange(
+	ctx: EvalContext,
+	currentSheet: import('@ascend/core').Workbook['sheets'][number] | undefined,
+	sheetName: string | null,
+	startRow: number,
+	startCol: number,
+	startRowAbsolute: boolean,
+	startColAbsolute: boolean,
+	endRow: number,
+	endCol: number,
+	endRowAbsolute: boolean,
+	endColAbsolute: boolean,
+	anchorRow: number,
+	anchorCol: number,
+	rowVal: CellValue,
+	colVal: CellValue | null,
+	fallbackNode: FormulaNode,
+): CellValue {
+	const sr = resolveRelativeIndex(startRow, startRowAbsolute, ctx.row, anchorRow)
+	const sc = resolveRelativeIndex(startCol, startColAbsolute, ctx.col, anchorCol)
+	const er = resolveRelativeIndex(endRow, endRowAbsolute, ctx.row, anchorRow)
+	const ec = resolveRelativeIndex(endCol, endColAbsolute, ctx.col, anchorCol)
+	if (sr < 0 || sc < 0 || er < 0 || ec < 0) return errorValue('#REF!')
+
+	let sheet = currentSheet
+	if (sheetName !== null) {
+		const si = resolveSheetIndex(ctx.workbook, sheetName, ctx.sheetIndex)
+		if (si < 0) return errorValue('#REF!')
+		sheet = ctx.workbook.sheets[si]
+	}
+	if (!sheet) return errorValue('#REF!')
+
+	const rowScalar = topLeftScalar(rowVal)
+	if (rowScalar.kind === 'error') return rowScalar
+	const rn = toNumber(rowScalar)
+	if (rn === null) return errorValue('#VALUE!')
+	const row = Math.floor(rn)
+	const rows = er - sr + 1
+	const cols = ec - sc + 1
+
+	if (colVal !== null) {
+		const colScalar = topLeftScalar(colVal)
+		if (colScalar.kind === 'error') return colScalar
+		const cn = toNumber(colScalar)
+		if (cn === null) return errorValue('#VALUE!')
+		const col = Math.floor(cn)
+		if (row === 0 || col === 0) return treeEvaluate(fallbackNode, ctx)
+		if (row < 1 || row > rows || col < 1 || col > cols) return errorValue('#REF!')
+		return sheet.cells.readValue(sr + row - 1, sc + col - 1)
+	}
+
+	if (cols === 1) {
+		if (row < 1 || row > rows) return errorValue('#REF!')
+		return sheet.cells.readValue(sr + row - 1, sc)
+	}
+	if (rows === 1) {
+		if (row < 1 || row > cols) return errorValue('#REF!')
+		return sheet.cells.readValue(sr, sc + row - 1)
+	}
+	if (row < 1 || row > rows) return errorValue('#REF!')
+	return sheet.cells.readValue(sr + row - 1, sc)
+}
+
+function matchExact(
+	ctx: EvalContext,
+	_currentSheet: import('@ascend/core').Workbook['sheets'][number] | undefined,
+	sheetName: string | null,
+	startRow: number,
+	startCol: number,
+	startRowAbsolute: boolean,
+	startColAbsolute: boolean,
+	endRow: number,
+	endCol: number,
+	endRowAbsolute: boolean,
+	endColAbsolute: boolean,
+	anchorRow: number,
+	anchorCol: number,
+	lookupVal: CellValue,
+	fallbackNode: FormulaNode,
+): CellValue {
+	if (lookupVal.kind === 'array') return treeEvaluate(fallbackNode, ctx)
+	const lookup = topLeftScalar(lookupVal)
+	if (lookup.kind === 'error') return lookup
+	if (lookup.kind === 'string' && hasWildcardChars(lookup.value))
+		return treeEvaluate(fallbackNode, ctx)
+
+	const sr = resolveRelativeIndex(startRow, startRowAbsolute, ctx.row, anchorRow)
+	const sc = resolveRelativeIndex(startCol, startColAbsolute, ctx.col, anchorCol)
+	const er = resolveRelativeIndex(endRow, endRowAbsolute, ctx.row, anchorRow)
+	const ec = resolveRelativeIndex(endCol, endColAbsolute, ctx.col, anchorCol)
+	if (sr < 0 || sc < 0 || er < 0 || ec < 0) return errorValue('#REF!')
+
+	let targetSheetIndex = ctx.sheetIndex
+	if (sheetName !== null) {
+		targetSheetIndex = resolveSheetIndex(ctx.workbook, sheetName, ctx.sheetIndex)
+		if (targetSheetIndex < 0) return errorValue('#REF!')
+	}
+
+	const rows = er - sr + 1
+	const cols = ec - sc + 1
+	const isRow = rows === 1 && cols > 1
+
+	if (isRow) {
+		const rowCacheKey = `row:${targetSheetIndex}:${sr}:${sc}:${ec}`
+		let rowIndex: ReadonlyMap<string, { first: number; last: number }> | undefined
+		if (ctx.exactLookupCache) {
+			rowIndex = ctx.exactLookupCache.get(rowCacheKey)
+		}
+		if (!rowIndex) {
+			const sheet = ctx.workbook.sheets[targetSheetIndex]
+			const built = new Map<string, { first: number; last: number }>()
+			if (sheet) {
+				for (let i = sc; i <= ec; i++) {
+					const key = lookupValueKey(sheet.cells.readValue(sr, i))
+					if (key === null) continue
+					const offset = i - sc
+					const existing = built.get(key)
+					if (existing) built.set(key, { first: existing.first, last: offset })
+					else built.set(key, { first: offset, last: offset })
+				}
+			}
+			rowIndex = built
+			ctx.exactLookupCache?.set(rowCacheKey, built)
+		}
+		const idx = indexedLookup(lookup, rowIndex)
+		return idx < 0 ? errorValue('#N/A') : numberValue(idx + 1)
+	}
+
+	const index = getLookupIndex(ctx, targetSheetIndex, sc, sr, er)
+	const idx = indexedLookup(lookup, index)
+	return idx < 0 ? errorValue('#N/A') : numberValue(idx + 1)
+}
+
+function vlookupExact(
+	ctx: EvalContext,
+	currentSheet: import('@ascend/core').Workbook['sheets'][number] | undefined,
+	sheetName: string | null,
+	startRow: number,
+	startCol: number,
+	startRowAbsolute: boolean,
+	startColAbsolute: boolean,
+	endRow: number,
+	endCol: number,
+	endRowAbsolute: boolean,
+	endColAbsolute: boolean,
+	anchorRow: number,
+	anchorCol: number,
+	lookupVal: CellValue,
+	colIdxVal: CellValue,
+	fallbackNode: FormulaNode,
+): CellValue {
+	if (lookupVal.kind === 'array') return treeEvaluate(fallbackNode, ctx)
+
+	const sr = resolveRelativeIndex(startRow, startRowAbsolute, ctx.row, anchorRow)
+	const sc = resolveRelativeIndex(startCol, startColAbsolute, ctx.col, anchorCol)
+	const er = resolveRelativeIndex(endRow, endRowAbsolute, ctx.row, anchorRow)
+	const ec = resolveRelativeIndex(endCol, endColAbsolute, ctx.col, anchorCol)
+	if (sr < 0 || sc < 0 || er < 0 || ec < 0) return errorValue('#REF!')
+
+	let sheet = currentSheet
+	let targetSheetIndex = ctx.sheetIndex
+	if (sheetName !== null) {
+		targetSheetIndex = resolveSheetIndex(ctx.workbook, sheetName, ctx.sheetIndex)
+		if (targetSheetIndex < 0) return errorValue('#REF!')
+		sheet = ctx.workbook.sheets[targetSheetIndex]
+	}
+	if (!sheet) return errorValue('#REF!')
+
+	const colScalar = topLeftScalar(colIdxVal)
+	if (colScalar.kind === 'error') return colScalar
+	const cn = toNumber(colScalar)
+	if (cn === null) return errorValue('#VALUE!')
+	const colInt = Math.floor(cn)
+	const cols = ec - sc + 1
+	if (colInt < 1 || colInt > cols) return errorValue('#REF!')
+
+	const lookup = topLeftScalar(lookupVal)
+	if (lookup.kind === 'error') return lookup
+
+	const index = getLookupIndex(ctx, targetSheetIndex, sc, sr, er)
+	const idx = indexedLookup(lookup, index)
+	return idx < 0 ? errorValue('#N/A') : sheet.cells.readValue(sr + idx, sc + colInt - 1)
 }
 
 function buildCodegenFn(node: FormulaNode, sharedAnchor?: SharedAnchor): CodegenFn | null {
@@ -560,8 +983,11 @@ function buildCodegenFn(node: FormulaNode, sharedAnchor?: SharedAnchor): Codegen
 		'_coerceBool',
 		'_resolveSheet',
 		'_readSharedCell',
-		'_sumRange',
+		'_rangeAgg',
 		'_treeEval',
+		'_indexRange',
+		'_matchExact',
+		'_vlookupExact',
 	]
 	const closureValues: unknown[] = [
 		numberValue,
@@ -576,8 +1002,11 @@ function buildCodegenFn(node: FormulaNode, sharedAnchor?: SharedAnchor): Codegen
 		coerceToBoolForCodegen,
 		resolveSheetIndex,
 		readSharedCell,
-		sumRange,
+		rangeAggregate,
 		treeEvaluate,
+		indexRange,
+		matchExact,
+		vlookupExact,
 	]
 
 	for (const [key, node] of state.treeNodes) {

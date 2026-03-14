@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import type { StyleId } from '@ascend/core'
 import { createTableId, createWorkbook } from '@ascend/core'
 import { EMPTY, numberValue, stringValue } from '@ascend/schema'
+import { recalculate } from './calc.ts'
+import { defaultCalcContext } from './calc-context.ts'
 import { applyOperation, applyOperations } from './operations.ts'
 
 const sid = 0 as StyleId
@@ -535,6 +537,93 @@ describe('applyOperation', () => {
 
 		expect(s.cells.get(1, 0)?.formula).toBe('SUM(A1:B1)')
 		expect(s.cells.get(2, 0)?.formula).toBe('SUM(A:B)')
+	})
+
+	test('insertRows within formula range expands range end', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		for (let r = 0; r < 10; r++) {
+			s.cells.set(r, 0, cell(numberValue(r + 1)))
+		}
+		s.cells.set(10, 0, cell(EMPTY, 'SUM(A1:A10)'))
+
+		applyOperation(wb, { op: 'insertRows', sheet: 'Sheet1', at: 4, count: 3 })
+
+		expect(s.cells.get(13, 0)?.formula).toBe('SUM(A1:A13)')
+	})
+
+	test('deleteRows within formula range shrinks range end', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		for (let r = 0; r < 10; r++) {
+			s.cells.set(r, 0, cell(numberValue(r + 1)))
+		}
+		s.cells.set(10, 0, cell(EMPTY, 'SUM(A1:A10)'))
+
+		applyOperation(wb, { op: 'deleteRows', sheet: 'Sheet1', at: 2, count: 3 })
+
+		expect(s.cells.get(7, 0)?.formula).toBe('SUM(A1:A7)')
+	})
+
+	test('insertCols shifts formula references', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, cell(numberValue(1)))
+		s.cells.set(0, 1, cell(numberValue(2)))
+		s.cells.set(0, 2, cell(numberValue(3)))
+		s.cells.set(1, 0, cell(EMPTY, 'B1+C1'))
+
+		applyOperation(wb, { op: 'insertCols', sheet: 'Sheet1', at: 1, count: 1 })
+
+		expect(s.cells.get(1, 0)?.formula).toBe('C1+D1')
+	})
+
+	test('copyRange translates relative references when copying to new columns', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, cell(numberValue(10)))
+		s.cells.set(1, 0, cell(numberValue(20)))
+		s.cells.set(0, 1, cell(EMPTY, 'A1+A2'))
+
+		applyOperation(wb, {
+			op: 'copyRange',
+			sheet: 'Sheet1',
+			source: 'A1:B1',
+			target: 'C1',
+		})
+
+		expect(s.cells.get(0, 3)?.formula).toBe('C1+C2')
+	})
+
+	test('moveRange preserves absolute references', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, cell(numberValue(100)))
+		s.cells.set(2, 0, cell(EMPTY, '$A$1+1'))
+
+		applyOperation(wb, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'A3',
+			target: 'B3',
+		})
+
+		expect(s.cells.get(2, 1)?.formula).toBe('$A$1+1')
+	})
+
+	test('deleteSheet referenced by formula yields #REF! on recalc', () => {
+		const wb = createWorkbook()
+		const s1 = wb.addSheet('Sheet1')
+		const s2 = wb.addSheet('Sheet2')
+		s2.cells.set(0, 0, cell(numberValue(42)))
+		s1.cells.set(0, 0, cell(EMPTY, 'Sheet2!A1'))
+
+		recalculate(wb, defaultCalcContext())
+		expect(s1.cells.get(0, 0)?.value).toEqual(numberValue(42))
+
+		applyOperation(wb, { op: 'deleteSheet', sheet: 'Sheet2' })
+		recalculate(wb, defaultCalcContext())
+		expect(s1.cells.get(0, 0)?.value).toEqual({ kind: 'error', value: '#REF!' })
 	})
 
 	test('renameSheet updates sheet name', () => {

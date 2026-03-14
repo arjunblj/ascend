@@ -7,6 +7,72 @@ export interface OperationSchema {
 	readonly optionalFields?: readonly string[]
 }
 
+export interface OperationJsonSchema {
+	readonly op: string
+	readonly description: string
+	readonly schema: {
+		readonly type: 'object'
+		readonly required: readonly string[]
+		readonly properties: Record<
+			string,
+			{ readonly type: string; readonly description?: string; readonly enum?: readonly string[] }
+		>
+	}
+}
+
+const FIELD_SCHEMAS: Record<
+	string,
+	{ type: string; description?: string; enum?: readonly string[] }
+> = {
+	sheet: { type: 'string', description: 'Sheet name' },
+	updates: {
+		type: 'array',
+		description: 'Array of { ref: string, value: number|string|boolean|null }',
+	},
+	ref: { type: 'string', description: 'Cell reference (e.g. A1)' },
+	formula: { type: 'string', description: 'Formula text' },
+	range: { type: 'string', description: 'Cell range (e.g. A1:B10)' },
+	what: {
+		type: 'string',
+		enum: ['values', 'formulas', 'styles', 'all'],
+		description: 'What to clear',
+	},
+	at: { type: 'integer', description: 'Row or column index (0-based)' },
+	count: { type: 'integer', description: 'Number of rows/columns' },
+	name: { type: 'string', description: 'Sheet or table name' },
+	position: { type: 'integer', description: 'Position index' },
+	newName: { type: 'string', description: 'New name' },
+	hasHeaders: { type: 'boolean', description: 'Whether range has header row' },
+	table: { type: 'string', description: 'Table name' },
+	rows: { type: 'array', description: 'Array of row arrays' },
+	by: { type: 'array', description: 'Sort specs: [{ column, descending? }]' },
+	col: { type: 'integer', description: 'Column index' },
+	width: { type: 'number', description: 'Column width' },
+	row: { type: 'integer', description: 'Row index' },
+	height: { type: 'number', description: 'Row height' },
+	text: { type: 'string', description: 'Comment or cell text' },
+	author: { type: 'string', description: 'Comment author' },
+	url: { type: 'string', description: 'Hyperlink URL' },
+	display: { type: 'string', description: 'Display text for hyperlink' },
+	format: { type: 'string', description: 'Number format code' },
+	scope: { type: 'string', description: 'Scope (workbook or sheet name)' },
+	style: { type: 'object', description: 'Style object (font, fill, border, alignment)' },
+	password: { type: 'string', description: 'Protection password' },
+	options: { type: 'object', description: 'Protection options' },
+	color: { type: 'string', description: 'Color (hex or theme)' },
+	hidden: { type: 'boolean', description: 'Whether to hide' },
+	rule: { type: 'object', description: 'Validation or format rule' },
+	setup: { type: 'object', description: 'Page setup object' },
+	source: { type: 'string', description: 'Source range' },
+	target: { type: 'string', description: 'Target range' },
+	from: { type: 'integer', description: 'Start row/col index' },
+	to: { type: 'integer', description: 'End row/col index' },
+	collapsed: { type: 'boolean', description: 'Whether group is collapsed' },
+	summaryBelow: { type: 'boolean', description: 'Summary row below' },
+	summaryRight: { type: 'boolean', description: 'Summary column to right' },
+	runs: { type: 'array', description: 'Rich text runs' },
+}
+
 export function listOperations(): readonly OperationSchema[] {
 	return [
 		{ op: 'setCells', description: 'Set cell values', requiredFields: ['sheet', 'updates'] },
@@ -209,6 +275,36 @@ export function listOperations(): readonly OperationSchema[] {
 			requiredFields: ['sheet', 'ref', 'runs'],
 		},
 	]
+}
+
+export function getOperationsSchema(): readonly OperationJsonSchema[] {
+	const ops = listOperations()
+	return ops.map((op) => {
+		const required = ['op', ...op.requiredFields] as const
+		const properties: Record<
+			string,
+			{ type: string; description?: string; enum?: readonly string[] }
+		> = {
+			op: {
+				type: 'string',
+				enum: [op.op],
+				description: 'Operation type',
+			},
+		}
+		for (const field of [...op.requiredFields, ...(op.optionalFields ?? [])]) {
+			const schema = FIELD_SCHEMAS[field] ?? { type: 'string' }
+			properties[field] = schema
+		}
+		return {
+			op: op.op,
+			description: op.description,
+			schema: {
+				type: 'object',
+				required,
+				properties,
+			},
+		}
+	})
 }
 
 export function setCell(sheet: string, ref: string, value: InputValue): Operation {

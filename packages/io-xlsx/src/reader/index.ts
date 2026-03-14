@@ -534,6 +534,7 @@ function capsuleFamily(path: string): string {
 	if (path.includes('/slicers/') || path.includes('/slicerCaches/')) return 'preservedSlicer'
 	if (path.includes('/tables/')) return 'preservedTable'
 	if (path.includes('/metadata')) return 'preservedMetadata'
+	if (path.includes('/threadedComments/')) return 'preservedThreadedComments'
 	return 'preservedOther'
 }
 
@@ -620,10 +621,10 @@ function buildReport(
 	if (tableLocations.length > 0) {
 		features.push({
 			feature: 'table',
-			tier: 'normalized',
+			tier: 'exact',
 			count: tableLocations.length,
 			locations: tableLocations,
-			note: 'Tables are imported for read access, but full round-trip table semantics are not complete.',
+			note: 'Tables round-trip with style info, auto-filter, sort state, and total row semantics.',
 		})
 	}
 

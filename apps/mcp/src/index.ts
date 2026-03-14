@@ -1,4 +1,3 @@
-import { serialToDate } from '@ascend/formulas'
 import {
 	AscendException,
 	ascendError,
@@ -9,12 +8,19 @@ import {
 import {
 	Ascend,
 	type CompactRangeWindowInfo,
+	ensureOutputExtension,
+	escapeDelimitedCell,
+	formatDisplayCellValue,
+	inferExportFormat,
+	normalizeExportFormat,
 	type RangeRowsInfo,
+	toA1Ref,
 	WorkbookDocument,
 } from '@ascend/sdk'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
+import { parseOperations } from './operation-schema.ts'
 import { errorResponse, okResponse } from './response.ts'
 
 export function createServer(): McpServer {
@@ -280,9 +286,13 @@ export function createServer(): McpServer {
 			ops: z.array(z.record(z.string(), z.unknown())).describe('Operations to preview'),
 		},
 		async ({ file, ops }) => {
+			const parsed = parseOperations(ops)
+			if (!parsed.ok) {
+				return errorResponse(ascendError('VALIDATION_ERROR', parsed.error))
+			}
 			try {
 				const wb = await Ascend.open(file)
-				const result = wb.preview(ops as unknown as readonly Operation[])
+				const result = wb.preview(parsed.value as readonly Operation[])
 				if (result.errors.length > 0) {
 					const first = result.errors[0]
 					return errorResponse(
@@ -311,9 +321,13 @@ export function createServer(): McpServer {
 			ops: z.array(z.record(z.string(), z.unknown())).describe('Operations to apply'),
 		},
 		async ({ file, ops }) => {
+			const parsed = parseOperations(ops)
+			if (!parsed.ok) {
+				return errorResponse(ascendError('VALIDATION_ERROR', parsed.error))
+			}
 			try {
 				const wb = await Ascend.open(file)
-				const result = wb.apply(ops as unknown as readonly Operation[])
+				const result = wb.apply(parsed.value as readonly Operation[])
 				if (result.errors.length > 0) {
 					const first = result.errors[0]
 					return errorResponse(
@@ -372,6 +386,17 @@ export function createServer(): McpServer {
 					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
 				)
 			}
+		},
+	)
+
+	server.tool(
+		'ascend.list_operations',
+		'List all available spreadsheet operations with their parameters and JSON Schema for LLM tool use',
+		{},
+		async () => {
+			const ops = Ascend.listOperations()
+			const schemas = Ascend.getOperationsSchema()
+			return okResponse({ operations: ops, schemas }, `${ops.length} operations available`)
 		},
 	)
 
@@ -505,31 +530,6 @@ export function createServer(): McpServer {
 	return server
 }
 
-function normalizeExportFormat(format: string): 'csv' | 'tsv' | 'json' | 'xlsx' | 'xlsm' | null {
-	switch (format.toLowerCase()) {
-		case 'csv':
-		case 'tsv':
-		case 'json':
-		case 'xlsx':
-		case 'xlsm':
-			return format.toLowerCase() as 'csv' | 'tsv' | 'json' | 'xlsx' | 'xlsm'
-		default:
-			return null
-	}
-}
-
-function inferExportFormat(path: string): 'csv' | 'tsv' | 'json' | 'xlsx' | 'xlsm' | null {
-	const ext = path.split('.').pop()?.toLowerCase() ?? ''
-	return normalizeExportFormat(ext)
-}
-
-function ensureOutputExtension(
-	output: string,
-	format: 'csv' | 'tsv' | 'json' | 'xlsx' | 'xlsm',
-): string {
-	return output.endsWith(`.${format}`) ? output : `${output.replace(/\.[^.]+$/, '')}.${format}`
-}
-
 function displayReadResult(mode: 'cells' | 'rows' | 'objects', info: unknown): unknown {
 	if (mode === 'rows') {
 		const rowsInfo = info as { rows: readonly (readonly CellValue[])[] }
@@ -601,11 +601,6 @@ function buildCompactReadResult(info: CompactRangeWindowInfo) {
 	}
 }
 
-function escapeDelimitedCell(value: string, delimiter: string): string {
-	if (!value.includes(delimiter) && !value.includes('\n') && !value.includes('"')) return value
-	return `"${value.replaceAll('"', '""')}"`
-}
-
 async function loadAvailableSheets(
 	file: string,
 	fallbackSheets: readonly string[],
@@ -639,44 +634,6 @@ function rangeRefToString(ref: {
 	end: { row: number; col: number }
 }): string {
 	return `${toA1Ref(ref.start.row, ref.start.col)}:${toA1Ref(ref.end.row, ref.end.col)}`
-}
-
-function toA1Ref(row: number, col: number): string {
-	return `${indexToColumnLocal(col)}${row + 1}`
-}
-
-function indexToColumnLocal(index: number): string {
-	let result = ''
-	let n = index + 1
-	while (n > 0) {
-		const rem = (n - 1) % 26
-		result = String.fromCharCode(65 + rem) + result
-		n = Math.floor((n - 1) / 26)
-	}
-	return result
-}
-
-function formatDisplayCellValue(value: CellValue): string {
-	switch (value.kind) {
-		case 'empty':
-			return ''
-		case 'number':
-			return String(value.value)
-		case 'string':
-			return value.value
-		case 'boolean':
-			return value.value ? 'TRUE' : 'FALSE'
-		case 'error':
-			return value.value
-		case 'date': {
-			const parts = serialToDate(Math.floor(value.serial))
-			if (!parts) return `[date:${value.serial}]`
-			return `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`
-		}
-		case 'richText':
-			return value.runs.map((run) => run.text).join('')
-	}
-	return ''
 }
 
 if (import.meta.main) {

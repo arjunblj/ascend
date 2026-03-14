@@ -1,4 +1,4 @@
-import type { Workbook } from '@ascend/core'
+import { cloneCellStyle, type Workbook } from '@ascend/core'
 import type { AscendError, CellValue, Result } from '@ascend/schema'
 import { ascendError, err, ok } from '@ascend/schema'
 import type { PreservationCapsule } from '../preserve.ts'
@@ -173,6 +173,9 @@ export function planWriteXlsx(
 				: undefined
 		const needsGeneratedStyles =
 			!options.summaryOnly && (!preservedStyles || canReusePreservedStyles || !preservedStylesXml)
+		const cfDxfIdOverridesBySheet = needsGeneratedStyles
+			? collectCfRuleDxfOverrides(workbook)
+			: new Map<string, Map<string, number>>()
 		const generatedStylesResult = needsGeneratedStyles
 			? buildStylesXml(workbook.styles, workbook.differentialStyles)
 			: undefined
@@ -639,8 +642,9 @@ export function planWriteXlsx(
 						contentType:
 							'application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml',
 					},
-					() =>
-						preserveSheetXml
+					() => {
+						const cfOverrides = cfDxfIdOverridesBySheet.get(sheet.name)
+						return preserveSheetXml
 							? (preservedSheetXmlText ?? '')
 							: buildSheetXml(sheet, ssTable, xfMap, {
 									tableRelIds,
@@ -651,7 +655,9 @@ export function planWriteXlsx(
 										? { legacyDrawingRelId }
 										: {}),
 									useInlineStrings: !useSharedStrings,
-								}),
+									...(cfOverrides ? { cfDxfIdOverrides: cfOverrides } : {}),
+								})
+					},
 				)
 			}
 			if (
@@ -935,6 +941,26 @@ function hasPreservedPart(
 	partPath: string | undefined,
 ): boolean {
 	return inlineText !== undefined || (!!archive && !!partPath && archive.has(partPath))
+}
+
+function collectCfRuleDxfOverrides(workbook: Workbook): Map<string, Map<string, number>> {
+	const bySheet = new Map<string, Map<string, number>>()
+	for (const sheet of workbook.sheets) {
+		const overrides = new Map<string, number>()
+		for (let cfIdx = 0; cfIdx < sheet.conditionalFormats.length; cfIdx++) {
+			const cf = sheet.conditionalFormats[cfIdx]
+			if (!cf) continue
+			for (let ruleIdx = 0; ruleIdx < cf.rules.length; ruleIdx++) {
+				const rule = cf.rules[ruleIdx]
+				if (!rule || rule.dxfId !== undefined || !rule.style) continue
+				const dxfId = workbook.differentialStyles.length
+				workbook.differentialStyles.push(cloneCellStyle(rule.style))
+				overrides.set(`${cfIdx}:${ruleIdx}`, dxfId)
+			}
+		}
+		if (overrides.size > 0) bySheet.set(sheet.name, overrides)
+	}
+	return bySheet
 }
 
 function hasCompletePreservedStyleMap(

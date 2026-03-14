@@ -211,6 +211,17 @@ export interface SheetFormatPr {
 	readonly customHeight?: boolean
 }
 
+export type SheetViewType = 'normal' | 'pageBreakPreview' | 'pageLayout'
+
+export interface SheetView {
+	readonly zoomScale?: number
+	readonly showGridLines?: boolean
+	readonly showFormulas?: boolean
+	readonly rightToLeft?: boolean
+	readonly tabSelected?: boolean
+	readonly view?: SheetViewType
+}
+
 export class Sheet {
 	readonly id: SheetId
 	name: string
@@ -224,6 +235,7 @@ export class Sheet {
 	rowDefs: Map<number, SheetRowDef>
 	frozenRows: number
 	frozenCols: number
+	sheetView: SheetView | null
 	comments: Map<string, SheetComment>
 	hyperlinks: Map<string, SheetHyperlink>
 	ignoredErrors: SheetIgnoredError[]
@@ -257,6 +269,7 @@ export class Sheet {
 		this.rowDefs = new Map()
 		this.frozenRows = 0
 		this.frozenCols = 0
+		this.sheetView = null
 		this.comments = new Map()
 		this.hyperlinks = new Map()
 		this.ignoredErrors = []
@@ -314,6 +327,7 @@ export class Sheet {
 		s.rowDefs = this.rowDefs
 		s.frozenRows = this.frozenRows
 		s.frozenCols = this.frozenCols
+		s.sheetView = this.sheetView
 		s.comments = this.comments
 		s.hyperlinks = this.hyperlinks
 		s.ignoredErrors = this.ignoredErrors

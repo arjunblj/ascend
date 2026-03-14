@@ -1,5 +1,16 @@
-export type { OperationSchema } from './ops.ts'
+export { indexToColumn, parseA1 } from '@ascend/core'
+export type { ExportFormat, FormatDisplayOptions } from './format-helpers.ts'
+export {
+	ensureOutputExtension,
+	escapeDelimitedCell,
+	formatDisplayCellValue,
+	inferExportFormat,
+	normalizeExportFormat,
+	toA1Ref,
+} from './format-helpers.ts'
+export type { OperationJsonSchema, OperationSchema } from './ops.ts'
 export * as ops from './ops.ts'
+export { getOperationsSchema, listOperations } from './ops.ts'
 export { WorkbookReadView } from './read-view.ts'
 export type { SessionCacheOptions, WorkbookLoadOptions } from './session.ts'
 export { configureSessionCache, WorkbookDocument } from './session.ts'

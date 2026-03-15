@@ -745,7 +745,7 @@ function readCellNumeric(
 	return n ?? errorValue('#VALUE!')
 }
 
-function aggregateNumericRange(
+export function aggregateNumericRange(
 	sheet: import('@ascend/core').Sheet | undefined,
 	startRow: number,
 	startCol: number,

@@ -25,6 +25,7 @@ import {
 	topLeftScalar,
 } from '@ascend/schema'
 import type { CalcContext } from './calc-context.ts'
+import { aggregateNumericRange } from './compiled-eval.ts'
 import { resolveSheetIndexInWorkbook as resolveSheetIndex } from './sheet-index.ts'
 import { resolveStructuredRefRange } from './structured-refs.ts'
 
@@ -422,6 +423,41 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 	}
 	if (upperName === '__CALL__') {
 		return evalCall(argNodes, ctx)
+	}
+
+	if (
+		argNodes.length === 1 &&
+		argNodes[0]?.type === 'rangeRef' &&
+		(upperName === 'SUM' ||
+			upperName === 'COUNT' ||
+			upperName === 'AVERAGE' ||
+			upperName === 'MIN' ||
+			upperName === 'MAX')
+	) {
+		const rangeNode = argNodes[0]
+		const si = resolveSheetIndex(ctx.workbook, rangeNode.sheet, ctx.sheetIndex)
+		if (si >= 0) {
+			const { sum, count, min, max, error } = aggregateNumericRange(
+				ctx.workbook.sheets[si],
+				rangeNode.start.row,
+				rangeNode.start.col,
+				rangeNode.end.row,
+				rangeNode.end.col,
+			)
+			if (error) return error
+			switch (upperName) {
+				case 'SUM':
+					return numberValue(sum)
+				case 'COUNT':
+					return numberValue(count)
+				case 'AVERAGE':
+					return count === 0 ? errorValue('#DIV/0!') : numberValue(sum / count)
+				case 'MIN':
+					return numberValue(count === 0 ? 0 : min)
+				case 'MAX':
+					return numberValue(count === 0 ? 0 : max)
+			}
+		}
 	}
 
 	const def = functionRegistry.get(upperName)

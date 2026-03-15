@@ -70,7 +70,7 @@ export function writeXlsx(
 	try {
 		const plan = planWriteXlsx(workbook, capsules, options)
 		if (!plan.ok) return plan
-		return ok(createZip(new Map(plan.value.parts)))
+		return ok(createZip(plan.value.parts))
 	} catch (e) {
 		return err(
 			ascendError(

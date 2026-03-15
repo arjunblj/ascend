@@ -92,6 +92,7 @@ export interface WorkbookAnalysis {
 	readonly cycles: readonly (readonly CellKey[])[]
 	readonly cycleKeys: ReadonlySet<CellKey>
 	readonly sheetNameIndex: ReadonlyMap<string, number>
+	readonly sharedFormulaGroups: ReadonlyMap<string, CellKey[]>
 }
 
 export interface AnalyzeWorkbookOptions {
@@ -110,6 +111,7 @@ interface MutableWorkbookAnalysis {
 	dependencyGraph: DependencyGraph
 	cycles: readonly (readonly CellKey[])[]
 	cycleKeys: Set<CellKey>
+	sharedFormulaGroups: Map<string, CellKey[]>
 }
 
 const workbookFormulaAnalysisCache = new WeakMap<Workbook, WorkbookFormulaAnalysis>()
@@ -437,6 +439,7 @@ export function analyzeWorkbook(
 		cycles: dependency.cycles,
 		cycleKeys: dependency.cycleKeys,
 		sheetNameIndex: indexed.sheetNameIndex,
+		sharedFormulaGroups: getSharedFormulaGroups(workbook, dependency.resolvedFormulas),
 	}
 	if (!options.range) workbookAnalysisCache.set(workbook, analysis)
 	return analysis
@@ -465,12 +468,7 @@ function analyzeWorkbookDependenciesFrom(
 		const resolved = resolveFormulaDependencies(workbook, indexed.sheetNameIndex, formula)
 		resolvedFormulas.set(resolved.key, resolved)
 		if (resolved.parseError) continue
-		dependencyGraph.addFormula(
-			resolved.key,
-			[...resolved.deps],
-			resolved.volatile,
-			resolved.rangeDeps,
-		)
+		dependencyGraph.addFormula(resolved.key, resolved.deps, resolved.volatile, resolved.rangeDeps)
 	}
 	const cycles = dependencyGraph.detectCycles()
 	const cycleKeys = new Set<CellKey>()
@@ -593,7 +591,7 @@ export function patchWorkbookAnalysis(workbook: Workbook, changedCells: CellKey[
 			if (!resolved.parseError) {
 				cachedDeps.dependencyGraph.addFormula(
 					key,
-					[...resolved.deps],
+					resolved.deps,
 					resolved.volatile,
 					resolved.rangeDeps,
 				)
@@ -605,7 +603,7 @@ export function patchWorkbookAnalysis(workbook: Workbook, changedCells: CellKey[
 			if (!resolved.parseError) {
 				cachedFull.dependencyGraph.addFormula(
 					key,
-					[...resolved.deps],
+					resolved.deps,
 					resolved.volatile,
 					resolved.rangeDeps,
 				)
@@ -725,6 +723,7 @@ export function shiftWorkbookAnalysisForAxis(
 		mutableFull.dependencyGraph = nextDependency.dependencyGraph
 		mutableFull.cycles = nextDependency.cycles
 		mutableFull.cycleKeys = nextDependency.cycleKeys as Set<CellKey>
+		mutableFull.sharedFormulaGroups = getSharedFormulaGroups(workbook, mutableFull.formulas)
 	}
 }
 

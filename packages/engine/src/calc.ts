@@ -16,7 +16,7 @@ import {
 } from '@ascend/formulas'
 import type { AscendError, CellValue } from '@ascend/schema'
 import { EMPTY, errorValue, numberValue, topLeftScalar, valuesEqual } from '@ascend/schema'
-import { analyzeWorkbook, getSharedFormulaGroups } from './analysis.ts'
+import { analyzeWorkbook } from './analysis.ts'
 import type { CalcContext } from './calc-context.ts'
 import { type CodegenFn, codegenFormula, codegenSharedFormula } from './codegen.ts'
 import { type CompiledFormula, compileFormula, evaluateCompiled } from './compiled-eval.ts'
@@ -439,6 +439,10 @@ export function recalculate(
 
 	const analysis = analyzeWorkbook(workbook, opts?.range ? { range: opts.range } : undefined)
 	const graph = analysis.dependencyGraph
+	// Parallelism note: graph.getIndependentSubgraphs() returns connected components; cells in
+	// different subgraphs could be evaluated in parallel. The evaluator mutates workbook cell
+	// values during evaluation, so true parallelism would require thread-safe writes or a
+	// different architecture (e.g. immutable snapshots per subgraph).
 	const isDirtyRecalc = opts?.dirtyOnly || (opts?.dirtyRefs?.length ?? 0) > 0
 
 	let evalOrder: CellKey[]
@@ -553,7 +557,7 @@ export function recalculate(
 		mutableCtx.lookupVectorCache = lookupVectorCache
 		mutableCtx.aggregateRangeCache = aggregateRangeCache
 
-		const sharedGroups = getSharedFormulaGroups(workbook, analysis.formulas)
+		const sharedGroups = analysis.sharedFormulaGroups
 		const cellToGroup = new Map<CellKey, SharedFormulaPlan>()
 		let hasSharedFormulaGroups = false
 		const hasGrowingRangeAggregates = growingRangeAggregates.size > 0

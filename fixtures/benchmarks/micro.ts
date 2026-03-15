@@ -182,6 +182,28 @@ const benchmarks: readonly MicroBenchmark[] = [
 		},
 	},
 	{
+		name: 'DependencyGraph.getIndependentSubgraphs (multi-sheet)',
+		targetOpsPerSec: 5000,
+		run() {
+			const graph = new DependencyGraph()
+			const numSheets = 10
+			const formulasPerSheet = 100
+			for (let s = 0; s < numSheets; s++) {
+				const anchor = cellKey(s, 0, 0)
+				graph.addFormula(anchor, [], false)
+				for (let r = 1; r < formulasPerSheet; r++) {
+					const key = cellKey(s, r, 0)
+					graph.addFormula(key, [cellKey(s, r - 1, 0)], false)
+				}
+			}
+			const subgraphs = graph.getIndependentSubgraphs()
+			if (subgraphs.length !== numSheets) {
+				throw new Error(`Expected ${numSheets} subgraphs, got ${subgraphs.length}`)
+			}
+			return subgraphs.length
+		},
+	},
+	{
 		name: 'StyleRegistry register (1000 styles)',
 		targetOpsPerSec: 20_000,
 		run() {

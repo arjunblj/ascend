@@ -1,15 +1,118 @@
-import { strToU8, zipSync } from 'fflate'
+import { deflateRawSync } from 'node:zlib'
 
-const COMPRESS_OPTS = { level: 2 as const }
+const textEncoder = new TextEncoder()
+const DEFLATE_OPTS = { level: 2 } as const
 
-export function createZip(parts: Map<string, Uint8Array>): Uint8Array {
-	const entries: Record<string, [Uint8Array, typeof COMPRESS_OPTS]> = {}
-	for (const [path, data] of parts) {
-		entries[path] = [data, COMPRESS_OPTS]
+const LOCAL_FILE_SIGNATURE = 0x04034b50
+const CENTRAL_DIR_SIGNATURE = 0x02014b50
+const EOCD_SIGNATURE = 0x06054b50
+
+const CRC_TABLE = /* @__PURE__ */ (() => {
+	const t = new Uint32Array(256)
+	for (let i = 0; i < 256; i++) {
+		let c = i
+		for (let j = 0; j < 8; j++) {
+			c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+		}
+		t[i] = c
 	}
-	return zipSync(entries)
+	return t
+})()
+
+function crc32(data: Uint8Array): number {
+	let crc = 0xffffffff
+	for (let i = 0; i < data.byteLength; i++) {
+		const idx = (crc ^ (data[i] as number)) & 0xff
+		crc = ((CRC_TABLE[idx] as number) ^ (crc >>> 8)) >>> 0
+	}
+	return (crc ^ 0xffffffff) >>> 0
+}
+
+interface CompressedEntry {
+	nameBytes: Uint8Array
+	data: Uint8Array
+	uncompressedSize: number
+	compressedSize: number
+	method: number
+	crc: number
+}
+
+export function createZip(parts: ReadonlyMap<string, Uint8Array>): Uint8Array {
+	const entries: CompressedEntry[] = []
+	let dataSize = 0
+
+	for (const [path, raw] of parts) {
+		const nameBytes = textEncoder.encode(path)
+		const crc = crc32(raw)
+		const deflated = new Uint8Array(deflateRawSync(raw, DEFLATE_OPTS))
+		const useStore = deflated.byteLength >= raw.byteLength
+		const data = useStore ? raw : deflated
+		entries.push({
+			nameBytes,
+			data,
+			uncompressedSize: raw.byteLength,
+			compressedSize: data.byteLength,
+			method: useStore ? 0 : 8,
+			crc,
+		})
+		dataSize += 30 + nameBytes.byteLength + data.byteLength
+	}
+
+	let centralSize = 0
+	for (const entry of entries) {
+		centralSize += 46 + entry.nameBytes.byteLength
+	}
+
+	const out = new Uint8Array(dataSize + centralSize + 22)
+	const view = new DataView(out.buffer)
+	let offset = 0
+	const localOffsets: number[] = []
+
+	for (const entry of entries) {
+		localOffsets.push(offset)
+		view.setUint32(offset, LOCAL_FILE_SIGNATURE, true)
+		view.setUint16(offset + 4, 20, true)
+		view.setUint16(offset + 8, entry.method, true)
+		view.setUint32(offset + 14, entry.crc, true)
+		view.setUint32(offset + 18, entry.compressedSize, true)
+		view.setUint32(offset + 22, entry.uncompressedSize, true)
+		view.setUint16(offset + 26, entry.nameBytes.byteLength, true)
+		offset += 30
+		out.set(entry.nameBytes, offset)
+		offset += entry.nameBytes.byteLength
+		out.set(entry.data, offset)
+		offset += entry.data.byteLength
+	}
+
+	const centralDirOffset = offset
+	for (let i = 0; i < entries.length; i++) {
+		const entry = entries[i]
+		const localOffset = localOffsets[i]
+		if (!entry || localOffset === undefined) continue
+		view.setUint32(offset, CENTRAL_DIR_SIGNATURE, true)
+		view.setUint16(offset + 4, 20, true)
+		view.setUint16(offset + 6, 20, true)
+		view.setUint16(offset + 10, entry.method, true)
+		view.setUint32(offset + 16, entry.crc, true)
+		view.setUint32(offset + 20, entry.compressedSize, true)
+		view.setUint32(offset + 24, entry.uncompressedSize, true)
+		view.setUint16(offset + 28, entry.nameBytes.byteLength, true)
+		view.setUint32(offset + 42, localOffset, true)
+		offset += 46
+		out.set(entry.nameBytes, offset)
+		offset += entry.nameBytes.byteLength
+	}
+
+	const centralDirSize = offset - centralDirOffset
+	view.setUint32(offset, EOCD_SIGNATURE, true)
+	view.setUint16(offset + 8, entries.length, true)
+	view.setUint16(offset + 10, entries.length, true)
+	view.setUint32(offset + 12, centralDirSize, true)
+	view.setUint32(offset + 16, centralDirOffset, true)
+
+	return out
 }
 
 export function encode(s: string): Uint8Array {
-	return strToU8(s)
+	return textEncoder.encode(s)
 }

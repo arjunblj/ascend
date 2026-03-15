@@ -74,7 +74,7 @@ export class DependencyGraph {
 
 	addFormula(
 		key: CellKey,
-		dependsOn: CellKey[],
+		dependsOn: readonly CellKey[],
 		isVolatile: boolean,
 		rangeDeps: readonly RangeDependency[] = [],
 	): void {
@@ -89,7 +89,7 @@ export class DependencyGraph {
 				sharedRangeDeps = aboveEntry.rangeDeps
 			}
 		} else {
-			deps = [...dependsOn]
+			deps = dependsOn
 		}
 		this._cachedEvalOrder = null
 		this._compiledDirectIndex = null
@@ -157,15 +157,67 @@ export class DependencyGraph {
 
 	getDirtySet(changedKeys: CellKey[]): Set<CellKey> {
 		const dirty = new Set<CellKey>()
-		const queue = [...changedKeys]
-		while (queue.length > 0) {
-			const current = queue.pop()
-			if (current === undefined || dirty.has(current)) continue
-			dirty.add(current)
-			this._forEachDependent(current, (dep) => {
-				if (!dirty.has(dep)) queue.push(dep)
-			})
+		for (const key of changedKeys) dirty.add(key)
+
+		const directIndex = this._ensureDirectIndex()
+		let frontier = changedKeys
+
+		while (frontier.length > 0) {
+			const nextFrontier: CellKey[] = []
+
+			for (let f = 0; f < frontier.length; f++) {
+				const key = frontier[f] as CellKey
+				const slot = directIndex.sourceIndex.get(key)
+				if (slot === undefined) continue
+				const start = directIndex.starts[slot] ?? 0
+				const count = directIndex.counts[slot] ?? 0
+				for (let i = start; i < start + count; i++) {
+					const dep = directIndex.dependents[i]
+					if (dep !== undefined && !dirty.has(dep)) {
+						dirty.add(dep)
+						nextFrontier.push(dep)
+					}
+				}
+			}
+
+			if (this.rangeIndex.size > 0) {
+				const bySheet = groupCellKeysBySheetCol(frontier)
+				for (const [sheet, cellsByCol] of bySheet) {
+					const index = this.rangeIndex.get(sheet)
+					if (!index) continue
+
+					let totalCells = 0
+					for (const rows of cellsByCol.values()) totalCells += rows.length
+
+					if (totalCells * 4 > index.size) {
+						const hits = index.queryBatch(cellsByCol)
+						for (let i = 0; i < hits.length; i++) {
+							const hit = hits[i] as CellKey
+							if (!dirty.has(hit)) {
+								dirty.add(hit)
+								nextFrontier.push(hit)
+							}
+						}
+					} else {
+						for (const [col, rows] of cellsByCol) {
+							for (const row of rows) {
+								const hits = index.query(row, col)
+								for (let i = 0; i < hits.length; i++) {
+									const hit = hits[i] as CellKey
+									if (!dirty.has(hit)) {
+										dirty.add(hit)
+										nextFrontier.push(hit)
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+
+			frontier = nextFrontier
 		}
+
 		return dirty
 	}
 
@@ -303,6 +355,55 @@ export class DependencyGraph {
 
 	getAllFormulaCells(): CellKey[] {
 		return [...this._ensureDirectIndex().formulaKeys]
+	}
+
+	/**
+	 * Returns independent subgraphs (connected components) of the formula dependency graph.
+	 * Cells in different subgraphs have no formula-to-formula dependency path between them
+	 * and could theoretically be evaluated in parallel.
+	 * Uses only direct cell dependencies (dependsOn); range deps are not expanded.
+	 */
+	getIndependentSubgraphs(): readonly (readonly CellKey[])[] {
+		const formulaKeys = this._ensureDirectIndex().formulaKeys
+		if (formulaKeys.length === 0) return []
+		const keyToId = new Map<CellKey, number>()
+		for (let i = 0; i < formulaKeys.length; i++) {
+			keyToId.set(formulaKeys[i] as CellKey, i)
+		}
+		const parent = new Uint32Array(formulaKeys.length)
+		for (let i = 0; i < parent.length; i++) parent[i] = i
+
+		const find = (x: number): number => {
+			if (parent[x] !== x) parent[x] = find(parent[x] as number)
+			return parent[x] as number
+		}
+		const union = (a: number, b: number): void => {
+			const ra = find(a)
+			const rb = find(b)
+			if (ra !== rb) parent[ra] = rb
+		}
+
+		for (const key of formulaKeys) {
+			const entry = this.formulas.get(key)
+			if (!entry) continue
+			const idA = keyToId.get(key)
+			if (idA === undefined) continue
+			for (const dep of entry.dependsOn) {
+				if (!this.formulas.has(dep)) continue
+				const idB = keyToId.get(dep)
+				if (idB !== undefined) union(idA, idB)
+			}
+		}
+
+		const byRoot = new Map<number, CellKey[]>()
+		for (let i = 0; i < formulaKeys.length; i++) {
+			const root = find(i)
+			const bucket = byRoot.get(root)
+			const key = formulaKeys[i] as CellKey
+			if (bucket) bucket.push(key)
+			else byRoot.set(root, [key])
+		}
+		return [...byRoot.values()]
 	}
 
 	hasFormula(key: CellKey): boolean {
@@ -452,32 +553,6 @@ export class DependencyGraph {
 		return directIndex.dependents.slice(start, start + count)
 	}
 
-	private _forEachDependent(key: CellKey, fn: (dependent: CellKey) => void): void {
-		const directIndex = this._ensureDirectIndex()
-		const seen = new Set<CellKey>()
-		const slot = directIndex.sourceIndex.get(key)
-		if (slot !== undefined) {
-			const start = directIndex.starts[slot] ?? 0
-			const count = directIndex.counts[slot] ?? 0
-			for (let i = start; i < start + count; i++) {
-				const dependent = directIndex.dependents[i]
-				if (dependent === undefined || seen.has(dependent)) continue
-				seen.add(dependent)
-				fn(dependent)
-			}
-		}
-		parseCellKeyInto(key, _depCoords)
-		const index = this.rangeIndex.get(_depCoords.sheetIndex)
-		if (!index) return
-		const rangeHits = index.query(_depCoords.row, _depCoords.col)
-		for (let i = 0; i < rangeHits.length; i++) {
-			const dependent = rangeHits[i] as CellKey
-			if (seen.has(dependent)) continue
-			seen.add(dependent)
-			fn(dependent)
-		}
-	}
-
 	private _ensureDirectIndex(): {
 		sourceIndex: Map<CellKey, number>
 		starts: Int32Array
@@ -591,6 +666,31 @@ function fnv1a32(hash: number, value: number): number {
 	hash = Math.imul(hash, 0x01000193)
 	hash ^= (value >>> 24) & 0xff
 	return Math.imul(hash, 0x01000193)
+}
+
+function groupCellKeysBySheetCol(keys: readonly CellKey[]): Map<number, Map<number, number[]>> {
+	const result = new Map<number, Map<number, number[]>>()
+	const coords: CellCoords = { sheetIndex: 0, row: 0, col: 0 }
+	for (const key of keys) {
+		parseCellKeyInto(key, coords)
+		let cols = result.get(coords.sheetIndex)
+		if (!cols) {
+			cols = new Map()
+			result.set(coords.sheetIndex, cols)
+		}
+		let rows = cols.get(coords.col)
+		if (!rows) {
+			rows = []
+			cols.set(coords.col, rows)
+		}
+		rows.push(coords.row)
+	}
+	for (const cols of result.values()) {
+		for (const rows of cols.values()) {
+			rows.sort((a, b) => a - b)
+		}
+	}
+	return result
 }
 
 function indexDirtyFormulaCellsBySheetCol(

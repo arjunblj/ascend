@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { cellKey, DependencyGraph, parseCellKey } from './dep-graph.ts'
+import { cellKey, DependencyGraph, IntervalIndex, parseCellKey } from './dep-graph.ts'
 
 describe('DependencyGraph', () => {
 	test('empty graph returns no dependents', () => {
@@ -239,5 +239,182 @@ describe('DependencyGraph', () => {
 		g.clear()
 		expect(g.getAllFormulaCells()).toEqual([])
 		expect(g.getDependents(cellKey(0, 1, 0))).toEqual([])
+	})
+
+	test('getDirtySet with overlapping cumulative SUM ranges', () => {
+		const g = new DependencyGraph()
+		const N = 200
+		for (let r = 0; r < N; r++) {
+			const formulaKey = cellKey(0, r, 1)
+			g.addFormula(formulaKey, [], false, [
+				{ sheetIndex: 0, startRow: 0, startCol: 0, endRow: r, endCol: 0 },
+			])
+		}
+
+		const allDataKeys = []
+		for (let r = 0; r < N; r++) allDataKeys.push(cellKey(0, r, 0))
+		const dirty = g.getDirtySet(allDataKeys)
+
+		for (let r = 0; r < N; r++) {
+			expect(dirty.has(cellKey(0, r, 0))).toBe(true)
+			expect(dirty.has(cellKey(0, r, 1))).toBe(true)
+		}
+		expect(dirty.size).toBe(N * 2)
+	})
+
+	test('getDirtySet with single cell change in overlapping ranges', () => {
+		const g = new DependencyGraph()
+		const N = 100
+		for (let r = 0; r < N; r++) {
+			g.addFormula(cellKey(0, r, 1), [], false, [
+				{ sheetIndex: 0, startRow: 0, startCol: 0, endRow: r, endCol: 0 },
+			])
+		}
+
+		const dirty = g.getDirtySet([cellKey(0, 50, 0)])
+		expect(dirty.has(cellKey(0, 50, 0))).toBe(true)
+		for (let r = 50; r < N; r++) {
+			expect(dirty.has(cellKey(0, r, 1))).toBe(true)
+		}
+		for (let r = 0; r < 50; r++) {
+			expect(dirty.has(cellKey(0, r, 1))).toBe(false)
+		}
+	})
+
+	test('getDirtySet batch vs per-cell gives identical results', () => {
+		const g = new DependencyGraph()
+		for (let r = 0; r < 50; r++) {
+			g.addFormula(cellKey(0, r, 1), [], false, [
+				{ sheetIndex: 0, startRow: 0, startCol: 0, endRow: r, endCol: 0 },
+			])
+		}
+
+		const singleCellResults = new Set<number>()
+		for (let r = 0; r < 50; r++) {
+			const dirty = g.getDirtySet([cellKey(0, r, 0)])
+			for (const k of dirty) singleCellResults.add(k)
+		}
+
+		const allKeys = []
+		for (let r = 0; r < 50; r++) allKeys.push(cellKey(0, r, 0))
+		const batchDirty = g.getDirtySet(allKeys)
+
+		for (const k of singleCellResults) {
+			expect(batchDirty.has(k)).toBe(true)
+		}
+		for (const k of batchDirty) {
+			if (k < cellKey(0, 0, 1)) continue
+			expect(singleCellResults.has(k)).toBe(true)
+		}
+	})
+
+	test('overlapping ranges: getDirtySet runs in subquadratic time', () => {
+		const N = 1000
+		const g = new DependencyGraph()
+		for (let r = 0; r < N; r++) {
+			g.addFormula(cellKey(0, r, 1), [], false, [
+				{ sheetIndex: 0, startRow: 0, startCol: 0, endRow: r, endCol: 0 },
+			])
+		}
+
+		const allDataKeys: number[] = []
+		for (let r = 0; r < N; r++) allDataKeys.push(cellKey(0, r, 0))
+
+		const start = performance.now()
+		const dirty = g.getDirtySet(allDataKeys)
+		const elapsed = performance.now() - start
+
+		expect(dirty.size).toBe(N * 2)
+		expect(elapsed).toBeLessThan(50)
+	})
+
+	test('getIndependentSubgraphs returns single component for connected chain', () => {
+		const g = new DependencyGraph()
+		const a = cellKey(0, 0, 0)
+		const b = cellKey(0, 1, 0)
+		const c = cellKey(0, 2, 0)
+		g.addFormula(b, [a], false)
+		g.addFormula(c, [b], false)
+		const subgraphs = g.getIndependentSubgraphs()
+		expect(subgraphs.length).toBe(1)
+		expect(subgraphs[0]?.length).toBe(2)
+		expect(subgraphs[0]).toContain(b)
+		expect(subgraphs[0]).toContain(c)
+	})
+
+	test('getIndependentSubgraphs returns multiple components for independent sheets', () => {
+		const g = new DependencyGraph()
+		const s1a = cellKey(0, 0, 0)
+		const s1b = cellKey(0, 1, 0)
+		const s2a = cellKey(1, 0, 0)
+		const s2b = cellKey(1, 1, 0)
+		g.addFormula(s1a, [], false)
+		g.addFormula(s1b, [s1a], false)
+		g.addFormula(s2a, [], false)
+		g.addFormula(s2b, [s2a], false)
+		const subgraphs = g.getIndependentSubgraphs()
+		expect(subgraphs.length).toBe(2)
+		const sizes = subgraphs.map((sg) => sg.length).sort((a, b) => a - b)
+		expect(sizes).toEqual([2, 2])
+	})
+
+	test('getIndependentSubgraphs returns one component per isolated formula', () => {
+		const g = new DependencyGraph()
+		const a = cellKey(0, 0, 0)
+		const b = cellKey(0, 1, 0)
+		const c = cellKey(0, 2, 0)
+		g.addFormula(a, [], false)
+		g.addFormula(b, [], false)
+		g.addFormula(c, [], false)
+		const subgraphs = g.getIndependentSubgraphs()
+		expect(subgraphs.length).toBe(3)
+		expect(subgraphs.every((sg) => sg.length === 1)).toBe(true)
+	})
+
+	test('getIndependentSubgraphs empty graph returns empty', () => {
+		const g = new DependencyGraph()
+		expect(g.getIndependentSubgraphs()).toEqual([])
+	})
+})
+
+describe('IntervalIndex', () => {
+	test('queryBatch returns all matching formula keys', () => {
+		const idx = new IntervalIndex()
+		const k1 = cellKey(0, 10, 0)
+		const k2 = cellKey(0, 11, 0)
+		const k3 = cellKey(0, 12, 0)
+		idx.insert(0, 5, 0, 0, k1)
+		idx.insert(3, 8, 0, 0, k2)
+		idx.insert(10, 15, 0, 0, k3)
+
+		const cells = new Map<number, number[]>([[0, [4]]])
+		const result = idx.queryBatch(cells)
+		expect(result.sort()).toEqual([k1, k2].sort())
+	})
+
+	test('queryBatch with no matches returns empty', () => {
+		const idx = new IntervalIndex()
+		idx.insert(0, 5, 0, 0, cellKey(0, 10, 0))
+		const cells = new Map<number, number[]>([[0, [6, 7, 8]]])
+		expect(idx.queryBatch(cells)).toEqual([])
+	})
+
+	test('queryBatch deduplicates formula keys', () => {
+		const idx = new IntervalIndex()
+		const fk = cellKey(0, 10, 0)
+		idx.insert(0, 5, 0, 0, fk)
+		idx.insert(3, 8, 0, 0, fk)
+		const cells = new Map<number, number[]>([[0, [4]]])
+		expect(idx.queryBatch(cells)).toEqual([fk])
+	})
+
+	test('queryBatch handles multi-column ranges', () => {
+		const idx = new IntervalIndex()
+		const fk = cellKey(0, 10, 0)
+		idx.insert(0, 5, 0, 2, fk)
+		const noMatch = new Map<number, number[]>([[3, [3]]])
+		expect(idx.queryBatch(noMatch)).toEqual([])
+		const match = new Map<number, number[]>([[1, [3]]])
+		expect(idx.queryBatch(match)).toEqual([fk])
 	})
 })

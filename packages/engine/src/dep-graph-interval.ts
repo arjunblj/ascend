@@ -40,6 +40,34 @@ export class IntervalIndex {
 		return result
 	}
 
+	/**
+	 * Batch query: find all formula keys whose range contains at least one of the
+	 * given cells. Cells are grouped by column with sorted row arrays so each
+	 * entry can be checked via binary search — O(M · C_avg · log N) total instead
+	 * of O(N · (log M + k)) for N separate point queries.
+	 */
+	queryBatch(cellsByCol: ReadonlyMap<number, readonly number[]>): CellKey[] {
+		if (this.entries.length === 0) return []
+		if (this.dirty) this.rebuild()
+		const result: CellKey[] = []
+		const seen = new Set<CellKey>()
+		for (let i = 0; i < this.entries.length; i++) {
+			const e = this.entries[i] as RangeEntry
+			if (seen.has(e.formulaKey)) continue
+			let found = false
+			for (let c = e.startCol; c <= e.endCol && !found; c++) {
+				const sortedRows = cellsByCol.get(c)
+				if (!sortedRows || sortedRows.length === 0) continue
+				found = hasRowInRange(sortedRows, e.startRow, e.endRow)
+			}
+			if (found) {
+				seen.add(e.formulaKey)
+				result.push(e.formulaKey)
+			}
+		}
+		return result
+	}
+
 	remove(formulaKey: CellKey): void {
 		const indices = this.formulaIndices.get(formulaKey)
 		if (!indices || indices.size === 0) return
@@ -121,4 +149,15 @@ export class IntervalIndex {
 		}
 		if (mid < hi) this.queryRange(mid + 1, hi, row, col, result)
 	}
+}
+
+function hasRowInRange(sortedRows: readonly number[], startRow: number, endRow: number): boolean {
+	let lo = 0
+	let hi = sortedRows.length - 1
+	while (lo <= hi) {
+		const mid = (lo + hi) >>> 1
+		if ((sortedRows[mid] as number) < startRow) lo = mid + 1
+		else hi = mid - 1
+	}
+	return lo < sortedRows.length && (sortedRows[lo] as number) <= endRow
 }

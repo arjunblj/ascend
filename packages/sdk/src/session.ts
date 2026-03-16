@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 import { check as verifyCheck, lint as verifyLint } from '@ascend/verify'
 import { openWorkbookSource } from './load.ts'
 import { WorkbookReadView } from './read-view.ts'
+import type { CellSelector } from './ref-selectors.ts'
 import type { SheetHandle } from './sheet-handle.ts'
 import type { TableHandle } from './table-handle.ts'
 import type {
@@ -281,12 +282,12 @@ export class WorkbookDocument {
 		yield* this.view.streamWindowsCompact(sheetName, range, opts)
 	}
 
-	trace(cellRef: string, opts?: { maxDepth?: number }): TraceResult | undefined {
+	trace(cellRef: CellSelector, opts?: { maxDepth?: number }): TraceResult | undefined {
 		this.refreshCacheFootprint('verify')
 		return this.view.trace(cellRef, opts)
 	}
 
-	formula(cellRef: string): FormulaInfo | undefined {
+	formula(cellRef: CellSelector): FormulaInfo | undefined {
 		return this.view.formula(cellRef)
 	}
 
@@ -433,7 +434,7 @@ export class WorkbookSession {
 		return this.document.readRange(sheetName, ref)
 	}
 
-	trace(ref: string, opts?: { maxDepth?: number }): TraceResult | undefined {
+	trace(ref: CellSelector, opts?: { maxDepth?: number }): TraceResult | undefined {
 		this.assertOpen()
 		return this.document.trace(ref, opts)
 	}

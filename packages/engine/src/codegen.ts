@@ -1,5 +1,5 @@
 import type { FormulaNode } from '@ascend/formulas'
-import { toNumber } from '@ascend/formulas'
+import { dateToSerial, formatNumber, serialToDate, toNumber, wildcardMatch } from '@ascend/formulas'
 import type { CellValue } from '@ascend/schema'
 import {
 	booleanValue,
@@ -17,40 +17,52 @@ import { resolveSheetIndexInWorkbook as resolveSheetIndex } from './sheet-index.
 export type CodegenFn = (ctx: EvalContext) => CellValue
 
 const CODEGEN_CACHE_MAX = 4096
-const codegenCache = new Map<string, CodegenFn | null>()
-const sharedCodegenCache = new Map<string, CodegenFn | null>()
+
+class GenerationalCache<V> {
+	private young = new Map<string, V>()
+	private old = new Map<string, V>()
+	private readonly maxSize: number
+
+	constructor(maxSize: number) {
+		this.maxSize = maxSize
+	}
+
+	get(key: string): V | undefined {
+		const fromYoung = this.young.get(key)
+		if (fromYoung !== undefined) return fromYoung
+		const fromOld = this.old.get(key)
+		if (fromOld !== undefined) {
+			this.young.set(key, fromOld)
+			return fromOld
+		}
+		return undefined
+	}
+
+	set(key: string, value: V): void {
+		this.young.set(key, value)
+		if (this.young.size >= this.maxSize) {
+			this.old = this.young
+			this.young = new Map()
+		}
+	}
+
+	clear(): void {
+		this.young.clear()
+		this.old.clear()
+	}
+}
+
+const codegenCache = new GenerationalCache<CodegenFn | null>(CODEGEN_CACHE_MAX)
+const sharedCodegenCache = new GenerationalCache<CodegenFn | null>(CODEGEN_CACHE_MAX)
 
 const CODEGEN_FUNCTIONS = new Set(['IF', 'IFERROR', 'IFNA', 'AND', 'OR', 'NOT'])
 const RANGE_AGG_FUNCTIONS = new Set(['SUM', 'AVERAGE', 'COUNT', 'COUNTA', 'MIN', 'MAX'])
 const PARTIAL_CODEGEN_FUNCTIONS = new Set(['VLOOKUP', 'MATCH', 'INDEX'])
+const DATE_EXTRACT_FUNCTIONS = new Set(['YEAR', 'MONTH', 'DAY'])
 
 interface SharedAnchor {
 	readonly row: number
 	readonly col: number
-}
-
-function getCachedCodegen(
-	cache: Map<string, CodegenFn | null>,
-	key: string,
-): CodegenFn | null | undefined {
-	const cached = cache.get(key)
-	if (cached === undefined) return undefined
-	cache.delete(key)
-	cache.set(key, cached)
-	return cached
-}
-
-function setCachedCodegen(
-	cache: Map<string, CodegenFn | null>,
-	key: string,
-	value: CodegenFn | null,
-): void {
-	if (cache.has(key)) cache.delete(key)
-	else if (cache.size >= CODEGEN_CACHE_MAX) {
-		const oldest = cache.keys().next().value
-		if (oldest !== undefined) cache.delete(oldest)
-	}
-	cache.set(key, value)
 }
 
 const SIMPLE_MATH_FUNCTIONS = new Set([
@@ -173,6 +185,19 @@ function canCodegen(node: FormulaNode): boolean {
 			if (TEXT_WITH_ARGS_FUNCTIONS.has(upper)) {
 				return node.args.every(canCodegen)
 			}
+			if (DATE_EXTRACT_FUNCTIONS.has(upper) && node.args.length === 1) {
+				return canCodegen(node.args[0] as FormulaNode)
+			}
+			if ((upper === 'TODAY' || upper === 'NOW') && node.args.length === 0) return true
+			if (
+				(upper === 'SUMIF' || upper === 'COUNTIF') &&
+				node.args.length === 2 &&
+				(node.args[0] as FormulaNode).type === 'rangeRef'
+			) {
+				return canCodegen(node.args[1] as FormulaNode)
+			}
+			if (upper === 'TEXT' && node.args.length === 2) return node.args.every(canCodegen)
+			if (upper === 'TEXTJOIN' && node.args.length >= 3) return node.args.every(canCodegen)
 			return PARTIAL_CODEGEN_FUNCTIONS.has(upper)
 		}
 		default:
@@ -554,6 +579,13 @@ function emitFunction(state: CodegenState, node: FormulaNode & { type: 'function
 	if (SIMPLE_MATH_FUNCTIONS.has(upper)) return emitSimpleMath(state, node)
 	if (SIMPLE_TEXT_FUNCTIONS.has(upper)) return emitSimpleText(state, node)
 	if (TEXT_WITH_ARGS_FUNCTIONS.has(upper)) return emitTextWithArgs(state, node)
+	if (DATE_EXTRACT_FUNCTIONS.has(upper)) return emitDateExtract(state, node, upper)
+	if (upper === 'TODAY') return emitToday(state)
+	if (upper === 'NOW') return emitNow(state)
+	if (upper === 'SUMIF') return emitSumif(state, node)
+	if (upper === 'COUNTIF') return emitCountif(state, node)
+	if (upper === 'TEXT') return emitTextFormat(state, node)
+	if (upper === 'TEXTJOIN') return emitTextJoin(state, node)
 	if (upper === 'INDEX') return emitIndex(state, node)
 	if (upper === 'MATCH') return emitMatch(state, node)
 	if (upper === 'VLOOKUP') return emitVlookup(state, node)
@@ -910,6 +942,129 @@ function emitTextWithArgs(state: CodegenState, node: FormulaNode & { type: 'func
 	}
 
 	return emitTreeFallback(state, node)
+}
+
+function emitDateExtract(
+	state: CodegenState,
+	node: FormulaNode & { type: 'function' },
+	field: string,
+): string {
+	const argVar = emitNode(state, node.args[0] as FormulaNode)
+	const sv = freshVar(state, 'de')
+	state.lines.push(`var ${sv} = _topLeft(${argVar});`)
+	state.lines.push(`if (${sv}.kind === 'error') return ${sv};`)
+	const nv = emitCoerceNumber(state, sv)
+	const parts = freshVar(state, 'dp')
+	state.lines.push(`var ${parts} = _serialToDate(Math.floor(${nv}), ctx.calcContext.dateSystem);`)
+	state.lines.push(`if (!${parts}) return _errorValue('#NUM!');`)
+	const result = freshVar(state)
+	const prop = field === 'YEAR' ? 'year' : field === 'MONTH' ? 'month' : 'day'
+	state.lines.push(`var ${result} = _numberValue(${parts}.${prop});`)
+	return result
+}
+
+function emitToday(state: CodegenState): string {
+	const d = freshVar(state, 'td')
+	state.lines.push(`var ${d} = ctx.calcContext.today;`)
+	const result = freshVar(state)
+	state.lines.push(
+		`var ${result} = _numberValue(_dateToSerial(${d}.getFullYear(), ${d}.getMonth() + 1, ${d}.getDate(), ctx.calcContext.dateSystem));`,
+	)
+	return result
+}
+
+function emitNow(state: CodegenState): string {
+	const d = freshVar(state, 'nd')
+	state.lines.push(`var ${d} = ctx.calcContext.now;`)
+	const serial = freshVar(state, 'ns')
+	state.lines.push(
+		`var ${serial} = _dateToSerial(${d}.getFullYear(), ${d}.getMonth() + 1, ${d}.getDate(), ctx.calcContext.dateSystem);`,
+	)
+	const frac = freshVar(state, 'nf')
+	state.lines.push(
+		`var ${frac} = (${d}.getHours() * 3600 + ${d}.getMinutes() * 60 + ${d}.getSeconds()) / 86400;`,
+	)
+	const result = freshVar(state)
+	state.lines.push(`var ${result} = _numberValue(${serial} + ${frac});`)
+	return result
+}
+
+function emitSumif(state: CodegenState, node: FormulaNode & { type: 'function' }): string {
+	const rangeArg = node.args[0] as FormulaNode & { type: 'rangeRef' }
+	const criteriaVar = emitNode(state, node.args[1] as FormulaNode)
+	const result = freshVar(state)
+	const sheetExpr = rangeArg.sheet === undefined ? 'null' : JSON.stringify(rangeArg.sheet)
+	const anchorRow = state.sharedAnchor?.row ?? -1
+	const anchorCol = state.sharedAnchor?.col ?? -1
+	state.lines.push(
+		`var ${result} = _sumifRange(ctx, _sheet, ${sheetExpr}, ${rangeArg.start.row}, ${rangeArg.start.col}, ${rangeArg.start.rowAbsolute}, ${rangeArg.start.colAbsolute}, ${rangeArg.end.row}, ${rangeArg.end.col}, ${rangeArg.end.rowAbsolute}, ${rangeArg.end.colAbsolute}, ${anchorRow}, ${anchorCol}, ${criteriaVar});`,
+	)
+	return result
+}
+
+function emitCountif(state: CodegenState, node: FormulaNode & { type: 'function' }): string {
+	const rangeArg = node.args[0] as FormulaNode & { type: 'rangeRef' }
+	const criteriaVar = emitNode(state, node.args[1] as FormulaNode)
+	const result = freshVar(state)
+	const sheetExpr = rangeArg.sheet === undefined ? 'null' : JSON.stringify(rangeArg.sheet)
+	const anchorRow = state.sharedAnchor?.row ?? -1
+	const anchorCol = state.sharedAnchor?.col ?? -1
+	state.lines.push(
+		`var ${result} = _countifRange(ctx, _sheet, ${sheetExpr}, ${rangeArg.start.row}, ${rangeArg.start.col}, ${rangeArg.start.rowAbsolute}, ${rangeArg.start.colAbsolute}, ${rangeArg.end.row}, ${rangeArg.end.col}, ${rangeArg.end.rowAbsolute}, ${rangeArg.end.colAbsolute}, ${anchorRow}, ${anchorCol}, ${criteriaVar});`,
+	)
+	return result
+}
+
+function emitTextFormat(state: CodegenState, node: FormulaNode & { type: 'function' }): string {
+	const valVar = emitNode(state, node.args[0] as FormulaNode)
+	const fmtVar = emitNode(state, node.args[1] as FormulaNode)
+	const vs = freshVar(state, 'tv')
+	state.lines.push(`var ${vs} = _topLeft(${valVar});`)
+	state.lines.push(`if (${vs}.kind === 'error') return ${vs};`)
+	const nv = emitCoerceNumber(state, vs)
+	const fs = freshVar(state, 'tf')
+	state.lines.push(`var ${fs} = _topLeft(${fmtVar});`)
+	state.lines.push(`if (${fs}.kind === 'error') return ${fs};`)
+	const fmtStr = freshVar(state, 'tfs')
+	state.lines.push(`var ${fmtStr} = _coerceStr(${fs});`)
+	const result = freshVar(state)
+	state.lines.push(`var ${result} = _stringValue(_formatNumber(${nv}, ${fmtStr}));`)
+	return result
+}
+
+function emitTextJoin(state: CodegenState, node: FormulaNode & { type: 'function' }): string {
+	const delimVar = emitNode(state, node.args[0] as FormulaNode)
+	const ds = freshVar(state, 'tjd')
+	state.lines.push(`var ${ds} = _topLeft(${delimVar});`)
+	state.lines.push(`if (${ds}.kind === 'error') return ${ds};`)
+	const delimStr = freshVar(state, 'tds')
+	state.lines.push(`var ${delimStr} = _coerceStr(${ds});`)
+
+	const ieVar = emitNode(state, node.args[1] as FormulaNode)
+	const ies = freshVar(state, 'tji')
+	state.lines.push(`var ${ies} = _topLeft(${ieVar});`)
+	state.lines.push(`if (${ies}.kind === 'error') return ${ies};`)
+	const ieBool = freshVar(state, 'tjib')
+	state.lines.push(
+		`var ${ieBool} = ${ies}.kind === 'boolean' ? ${ies}.value : ${ies}.kind !== 'empty';`,
+	)
+
+	const partsVar = freshVar(state, 'tjp')
+	state.lines.push(`var ${partsVar} = [];`)
+
+	for (let i = 2; i < node.args.length; i++) {
+		const argVar = emitNode(state, node.args[i] as FormulaNode)
+		const sv = freshVar(state, 'tjs')
+		state.lines.push(`var ${sv} = _topLeft(${argVar});`)
+		state.lines.push(`if (${sv}.kind === 'error') return ${sv};`)
+		state.lines.push(
+			`if (!${ieBool} || (${sv}.kind !== 'empty' && !(${sv}.kind === 'string' && ${sv}.value === ''))) ${partsVar}.push(_coerceStr(${sv}));`,
+		)
+	}
+
+	const result = freshVar(state)
+	state.lines.push(`var ${result} = _stringValue(${partsVar}.join(${delimStr}));`)
+	return result
 }
 
 function emitIndex(state: CodegenState, node: FormulaNode & { type: 'function' }): string {
@@ -1499,6 +1654,194 @@ function vlookupExact(
 	return idx < 0 ? errorValue('#N/A') : sheet.cells.readValue(sr + idx, sc + colInt - 1)
 }
 
+function hasWildcardCriteria(text: string): boolean {
+	for (let i = 0; i < text.length; i++) {
+		if (text[i] === '~') {
+			i++
+			continue
+		}
+		if (text[i] === '*' || text[i] === '?') return true
+	}
+	return false
+}
+
+function buildCriteriaMatcher(criteria: CellValue): (v: CellValue) => boolean {
+	if (criteria.kind === 'number') {
+		const t = criteria.value
+		return (v) => {
+			const n = toNumber(v)
+			return n !== null && n === t
+		}
+	}
+	if (criteria.kind === 'boolean') {
+		const t = criteria.value
+		return (v) => v.kind === 'boolean' && v.value === t
+	}
+	if (criteria.kind !== 'string') return () => false
+
+	const s = criteria.value
+	let op = ''
+	let rest = s
+	for (const prefix of ['>=', '<=', '<>', '>', '<', '='] as const) {
+		if (s.startsWith(prefix)) {
+			op = prefix
+			rest = s.slice(prefix.length)
+			break
+		}
+	}
+
+	const numRest = Number(rest)
+	const isNumeric = rest.trim() !== '' && !Number.isNaN(numRest)
+
+	const hasWild = hasWildcardCriteria(rest)
+
+	if (!op) {
+		if (s === '') return (v) => v.kind === 'empty' || (v.kind === 'string' && v.value === '')
+		if (hasWild) return (v) => v.kind === 'string' && wildcardMatch(s, v.value)
+		const lower = s.toLowerCase()
+		return (v) => {
+			if (v.kind === 'string') return v.value.toLowerCase() === lower
+			if (isNumeric && v.kind === 'number') return v.value === numRest
+			if (v.kind === 'boolean') return v.value === (lower === 'true')
+			return false
+		}
+	}
+
+	if (isNumeric) {
+		return (v) => {
+			const n = toNumber(v)
+			if (n === null) return false
+			switch (op) {
+				case '>=':
+					return n >= numRest
+				case '<=':
+					return n <= numRest
+				case '>':
+					return n > numRest
+				case '<':
+					return n < numRest
+				case '<>':
+					return n !== numRest
+				case '=':
+					return n === numRest
+				default:
+					return false
+			}
+		}
+	}
+
+	return (v) => {
+		if (op === '=' && rest === '')
+			return v.kind === 'empty' || (v.kind === 'string' && v.value === '')
+		if (op === '<>' && rest === '')
+			return v.kind !== 'empty' && !(v.kind === 'string' && v.value === '')
+		if (v.kind !== 'string') return false
+		if (hasWild) {
+			const m = wildcardMatch(rest, v.value)
+			return op === '=' ? m : !m
+		}
+		const lower = rest.toLowerCase()
+		if (op === '=') return v.value.toLowerCase() === lower
+		if (op === '<>') return v.value.toLowerCase() !== lower
+		return false
+	}
+}
+
+function resolveRangeSheet(
+	ctx: EvalContext,
+	currentSheet: import('@ascend/core').Workbook['sheets'][number] | undefined,
+	sheetName: string | null,
+): import('@ascend/core').Workbook['sheets'][number] | undefined {
+	if (sheetName === null) return currentSheet
+	const si = resolveSheetIndex(ctx.workbook, sheetName, ctx.sheetIndex)
+	if (si < 0) return undefined
+	return ctx.workbook.sheets[si]
+}
+
+function sumifRange(
+	ctx: EvalContext,
+	currentSheet: import('@ascend/core').Workbook['sheets'][number] | undefined,
+	sheetName: string | null,
+	startRow: number,
+	startCol: number,
+	startRowAbsolute: boolean,
+	startColAbsolute: boolean,
+	endRow: number,
+	endCol: number,
+	endRowAbsolute: boolean,
+	endColAbsolute: boolean,
+	anchorRow: number,
+	anchorCol: number,
+	criteriaVal: CellValue,
+): CellValue {
+	const sr = resolveRelativeIndex(startRow, startRowAbsolute, ctx.row, anchorRow)
+	const sc = resolveRelativeIndex(startCol, startColAbsolute, ctx.col, anchorCol)
+	const er = resolveRelativeIndex(endRow, endRowAbsolute, ctx.row, anchorRow)
+	const ec = resolveRelativeIndex(endCol, endColAbsolute, ctx.col, anchorCol)
+	if (sr < 0 || sc < 0 || er < 0 || ec < 0) return errorValue('#REF!')
+
+	const sheet = resolveRangeSheet(ctx, currentSheet, sheetName)
+	if (!sheet) return errorValue('#REF!')
+
+	const fromRow = Math.min(sr, er)
+	const toRow = Math.max(sr, er)
+	const fromCol = Math.min(sc, ec)
+	const toCol = Math.max(sc, ec)
+
+	const match = buildCriteriaMatcher(topLeftScalar(criteriaVal))
+	let sum = 0
+	for (let row = fromRow; row <= toRow; row++) {
+		for (let col = fromCol; col <= toCol; col++) {
+			const cell = sheet.cells.readValue(row, col)
+			if (match(cell)) {
+				const n = toNumber(cell)
+				if (n !== null) sum += n
+			}
+		}
+	}
+	return numberValue(sum)
+}
+
+function countifRange(
+	ctx: EvalContext,
+	currentSheet: import('@ascend/core').Workbook['sheets'][number] | undefined,
+	sheetName: string | null,
+	startRow: number,
+	startCol: number,
+	startRowAbsolute: boolean,
+	startColAbsolute: boolean,
+	endRow: number,
+	endCol: number,
+	endRowAbsolute: boolean,
+	endColAbsolute: boolean,
+	anchorRow: number,
+	anchorCol: number,
+	criteriaVal: CellValue,
+): CellValue {
+	const sr = resolveRelativeIndex(startRow, startRowAbsolute, ctx.row, anchorRow)
+	const sc = resolveRelativeIndex(startCol, startColAbsolute, ctx.col, anchorCol)
+	const er = resolveRelativeIndex(endRow, endRowAbsolute, ctx.row, anchorRow)
+	const ec = resolveRelativeIndex(endCol, endColAbsolute, ctx.col, anchorCol)
+	if (sr < 0 || sc < 0 || er < 0 || ec < 0) return errorValue('#REF!')
+
+	const sheet = resolveRangeSheet(ctx, currentSheet, sheetName)
+	if (!sheet) return errorValue('#REF!')
+
+	const fromRow = Math.min(sr, er)
+	const toRow = Math.max(sr, er)
+	const fromCol = Math.min(sc, ec)
+	const toCol = Math.max(sc, ec)
+
+	const match = buildCriteriaMatcher(topLeftScalar(criteriaVal))
+	let count = 0
+	for (let row = fromRow; row <= toRow; row++) {
+		for (let col = fromCol; col <= toCol; col++) {
+			if (match(sheet.cells.readValue(row, col))) count++
+		}
+	}
+	return numberValue(count)
+}
+
 function buildCodegenFn(node: FormulaNode, sharedAnchor?: SharedAnchor): CodegenFn | null {
 	if (!canCodegen(node)) return null
 
@@ -1532,6 +1875,11 @@ function buildCodegenFn(node: FormulaNode, sharedAnchor?: SharedAnchor): Codegen
 		'_indexRange',
 		'_matchExact',
 		'_vlookupExact',
+		'_serialToDate',
+		'_dateToSerial',
+		'_formatNumber',
+		'_sumifRange',
+		'_countifRange',
 	]
 	const closureValues: unknown[] = [
 		numberValue,
@@ -1551,6 +1899,11 @@ function buildCodegenFn(node: FormulaNode, sharedAnchor?: SharedAnchor): Codegen
 		indexRange,
 		matchExact,
 		vlookupExact,
+		serialToDate,
+		dateToSerial,
+		formatNumber,
+		sumifRange,
+		countifRange,
 	]
 
 	for (const [key, node] of state.treeNodes) {
@@ -1568,11 +1921,11 @@ function buildCodegenFn(node: FormulaNode, sharedAnchor?: SharedAnchor): Codegen
 }
 
 export function codegenFormula(formulaText: string, ast: FormulaNode): CodegenFn | null {
-	const cached = getCachedCodegen(codegenCache, formulaText)
+	const cached = codegenCache.get(formulaText)
 	if (cached !== undefined) return cached
 
 	const fn = buildCodegenFn(ast)
-	setCachedCodegen(codegenCache, formulaText, fn)
+	codegenCache.set(formulaText, fn)
 	return fn
 }
 
@@ -1582,11 +1935,11 @@ export function codegenSharedFormula(
 	anchor: SharedAnchor,
 ): CodegenFn | null {
 	const cacheKey = `${formulaText}@${anchor.row}:${anchor.col}`
-	const cached = getCachedCodegen(sharedCodegenCache, cacheKey)
+	const cached = sharedCodegenCache.get(cacheKey)
 	if (cached !== undefined) return cached
 
 	const fn = buildCodegenFn(ast, anchor)
-	setCachedCodegen(sharedCodegenCache, cacheKey, fn)
+	sharedCodegenCache.set(cacheKey, fn)
 	return fn
 }
 

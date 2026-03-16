@@ -1,5 +1,6 @@
 import type { Cell, Sheet, SheetColDef } from '@ascend/core'
 import { indexToColumn } from '@ascend/core'
+import { type FormulaNode, parseFormula, printFormulaWithOffset } from '@ascend/formulas'
 import type { CellValue, RichTextRun } from '@ascend/schema'
 import { topLeftScalar } from '@ascend/schema'
 import { toStoredFormulaText } from '../formula-storage.ts'
@@ -11,6 +12,7 @@ import type { SharedStringTable } from './shared-strings.ts'
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
 const NS_R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+const MAX_SHARED_FORMULA_LENGTH = 8192
 
 export interface SheetXmlOptions {
 	readonly tableRelIds?: readonly string[]
@@ -39,6 +41,7 @@ function buildSheetXmlToSink(
 	options: SheetXmlOptions,
 	out: SheetXmlSink,
 ): void {
+	const sharedFormulaExpansions = buildSharedFormulaExpansions(sheet)
 	const tableRelIds = options.tableRelIds ?? []
 	const hyperlinks = options.hyperlinks ?? []
 	const drawingRelId = options.drawingRelId
@@ -189,6 +192,7 @@ function buildSheetXmlToSink(
 				cell,
 				ssTable,
 				xfMap,
+				sharedFormulaExpansions,
 				options.useInlineStrings,
 			)
 		}
@@ -234,6 +238,15 @@ function buildSheetXmlToSink(
 				if (rule.priority !== undefined) attrs.push(`priority="${rule.priority}"`)
 				if (effectiveDxfId !== undefined) attrs.push(`dxfId="${effectiveDxfId}"`)
 				if (rule.stopIfTrue) attrs.push('stopIfTrue="1"')
+				if (rule.rank !== undefined) attrs.push(`rank="${rule.rank}"`)
+				if (rule.percent !== undefined) attrs.push(`percent="${rule.percent ? '1' : '0'}"`)
+				if (rule.bottom !== undefined) attrs.push(`bottom="${rule.bottom ? '1' : '0'}"`)
+				if (rule.aboveAverage !== undefined)
+					attrs.push(`aboveAverage="${rule.aboveAverage ? '1' : '0'}"`)
+				if (rule.equalAverage !== undefined)
+					attrs.push(`equalAverage="${rule.equalAverage ? '1' : '0'}"`)
+				if (rule.timePeriod) attrs.push(`timePeriod="${escapeXml(rule.timePeriod)}"`)
+
 				out.push(`<cfRule ${attrs.join(' ')}>`)
 				for (const formula of rule.formulas) {
 					out.push(`<formula>${escapeXml(formula)}</formula>`)
@@ -326,6 +339,9 @@ function buildSheetXmlToSink(
 		out.push('</headerFooter>')
 	}
 
+	appendBreaks(out, 'rowBreaks', sheet.rowBreaks)
+	appendBreaks(out, 'colBreaks', sheet.colBreaks)
+
 	if (sheet.ignoredErrors.length > 0) {
 		out.push('<ignoredErrors>')
 		for (const ie of sheet.ignoredErrors) {
@@ -365,6 +381,25 @@ function buildSheetXmlToSink(
 	}
 
 	out.push('</worksheet>')
+}
+
+function appendBreaks(
+	out: SheetXmlSink,
+	tagName: 'rowBreaks' | 'colBreaks',
+	breaks: readonly { id: number; min?: number; max?: number; man?: boolean; pt?: boolean }[],
+): void {
+	if (breaks.length === 0) return
+	const manualBreakCount = breaks.reduce((count, brk) => count + (brk.man ? 1 : 0), 0)
+	out.push(`<${tagName} count="${breaks.length}" manualBreakCount="${manualBreakCount}">`)
+	for (const brk of breaks) {
+		const attrs = [`id="${brk.id}"`]
+		if (brk.min !== undefined) attrs.push(`min="${brk.min}"`)
+		if (brk.max !== undefined) attrs.push(`max="${brk.max}"`)
+		if (brk.man !== undefined) attrs.push(`man="${brk.man ? '1' : '0'}"`)
+		if (brk.pt !== undefined) attrs.push(`pt="${brk.pt ? '1' : '0'}"`)
+		out.push(`<brk ${attrs.join(' ')}/>`)
+	}
+	out.push(`</${tagName}>`)
 }
 
 export function buildSheetXml(
@@ -454,12 +489,13 @@ function pushCellXml(
 	cell: Cell,
 	ssTable: SharedStringTable,
 	xfMap: Map<number, number>,
+	sharedFormulaExpansions: ReadonlyMap<string, SharedFormulaExpansion>,
 	useInlineStrings?: boolean,
 ): void {
 	const xfIdx = xfMap.get(cell.styleId as number) ?? 0
 
 	if (cell.formula || cell.formulaInfo?.kind === 'shared' || cell.formulaInfo?.kind === 'array') {
-		out.push(formulaCellXml(ref, cell, xfIdx))
+		out.push(formulaCellXml(ref, cell, xfIdx, sharedFormulaExpansions))
 		return
 	}
 
@@ -484,7 +520,12 @@ function pushCellXml(
 	out.push(regularCellXml(ref, cell, ssTable, xfIdx, useInlineStrings))
 }
 
-function formulaCellXml(ref: string, cell: Cell, xfIdx: number): string {
+function formulaCellXml(
+	ref: string,
+	cell: Cell,
+	xfIdx: number,
+	sharedFormulaExpansions: ReadonlyMap<string, SharedFormulaExpansion>,
+): string {
 	const formulaText = cell.formula ? toStoredFormulaText(cell.formula) : ''
 	const sAttr = xfIdx !== 0 ? ` s="${xfIdx}"` : ''
 	const dynamicArrayMetadataIndex = dynamicArrayCellMetadataIndex(cell.formulaInfo)
@@ -493,6 +534,10 @@ function formulaCellXml(ref: string, cell: Cell, xfIdx: number): string {
 	const tAttr = typeAttr ? ` t="${typeAttr}"` : ''
 	const vPart = valueStr !== undefined ? `<v>${valueStr}</v>` : ''
 	if (cell.formulaInfo?.kind === 'shared') {
+		const expanded = sharedFormulaExpansions.get(ref)
+		if (expanded) {
+			return `<c r="${ref}"${cmAttr}${sAttr}${tAttr}><f>${escapeXml(expanded.formulaText)}</f>${vPart}</c>`
+		}
 		let fAttrs = `t="shared" si="${escapeXml(cell.formulaInfo.sharedIndex)}"`
 		if (cell.formulaInfo.isMaster && cell.formulaInfo.ref) {
 			fAttrs += ` ref="${escapeXml(cell.formulaInfo.ref)}"`
@@ -516,6 +561,56 @@ function dynamicArrayCellMetadataIndex(
 	if (binding?.kind === 'dynamicArray') return binding.metadataIndex
 	if (binding?.kind === 'spill' && binding.isAnchor) return 1
 	return undefined
+}
+
+interface SharedFormulaExpansion {
+	readonly formulaText: string
+}
+
+interface SharedFormulaMaster {
+	readonly ast: FormulaNode
+	readonly row: number
+	readonly col: number
+	readonly formulaText: string
+}
+
+function buildSharedFormulaExpansions(sheet: Sheet): ReadonlyMap<string, SharedFormulaExpansion> {
+	const masters = new Map<string, SharedFormulaMaster>()
+	for (const [row, col, cell] of sheet.cells.iterate()) {
+		if (cell.formulaInfo?.kind !== 'shared' || !cell.formulaInfo.isMaster || !cell.formula) continue
+		const formulaText = toStoredFormulaText(cell.formula)
+		if (formulaText.length <= MAX_SHARED_FORMULA_LENGTH) continue
+		const parsed = parseFormula(formulaText)
+		if (!parsed.ok) continue
+		const masterRef = cell.formulaInfo.masterRef ?? `${indexToColumn(col)}${row + 1}`
+		masters.set(masterRef, {
+			ast: parsed.value,
+			row,
+			col,
+			formulaText,
+		})
+	}
+
+	if (masters.size === 0) return new Map()
+
+	const expansions = new Map<string, SharedFormulaExpansion>()
+	for (const [row, col, cell] of sheet.cells.iterate()) {
+		if (cell.formulaInfo?.kind !== 'shared') continue
+		const ref = `${indexToColumn(col)}${row + 1}`
+		const masterRef = cell.formulaInfo.masterRef ?? ref
+		const master = masters.get(masterRef)
+		if (!master) continue
+		if (cell.formulaInfo.isMaster) {
+			expansions.set(ref, { formulaText: master.formulaText })
+			continue
+		}
+		const rowDelta = row - master.row
+		const colDelta = col - master.col
+		expansions.set(ref, {
+			formulaText: printFormulaWithOffset(master.ast, rowDelta, colDelta),
+		})
+	}
+	return expansions
 }
 
 function regularCellXml(

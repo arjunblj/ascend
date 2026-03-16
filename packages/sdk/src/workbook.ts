@@ -44,7 +44,13 @@ import {
 import { check as verifyCheck, lint as verifyLint } from '@ascend/verify'
 import { buildWorkbookLoadInfo, openWorkbookSource } from './load.ts'
 import { getOperationsSchema, listOperations } from './ops.ts'
-import { parseFullRef, WorkbookReadView } from './read-view.ts'
+import { WorkbookReadView } from './read-view.ts'
+import {
+	type CellSelector,
+	normalizeCellSelector,
+	normalizeRangeSelector,
+	type RangeSelector,
+} from './ref-selectors.ts'
 import type {
 	ApplyAndRecalcResult,
 	ApplyResult,
@@ -577,8 +583,8 @@ export class AscendWorkbook extends WorkbookReadView {
 	 * @example
 	 * wb.setFormula('Sheet1!B1', '=A1*2')
 	 */
-	setFormula(cellRef: string, formula: string): ApplyResult {
-		const { sheetName, ref } = parseFullRef(cellRef, this.wb)
+	setFormula(cellRef: CellSelector, formula: string): ApplyResult {
+		const { sheetName, ref } = normalizeCellSelector(cellRef, this.wb)
 		return this.apply([
 			{ op: 'setFormula', sheet: sheetName, ref, formula: normalizeFormulaInput(formula) },
 		])
@@ -589,8 +595,8 @@ export class AscendWorkbook extends WorkbookReadView {
 	 * @example
 	 * wb.set('Sheet1!A1', 42)
 	 */
-	set(cellRef: string, value: InputValue): ApplyResult {
-		const { sheetName, ref } = parseFullRef(cellRef, this.wb)
+	set(cellRef: CellSelector, value: InputValue): ApplyResult {
+		const { sheetName, ref } = normalizeCellSelector(cellRef, this.wb)
 		return this.apply([{ op: 'setCells', sheet: sheetName, updates: [{ ref, value }] }])
 	}
 
@@ -599,16 +605,16 @@ export class AscendWorkbook extends WorkbookReadView {
 	 * @example
 	 * const value = wb.get('Sheet1!A1')
 	 */
-	get(cellRef: string): CellValue {
-		const { sheetName, ref } = parseFullRef(cellRef, this.wb)
+	get(cellRef: CellSelector): CellValue {
+		const { sheetName, ref } = normalizeCellSelector(cellRef, this.wb)
 		const handle = this.sheet(sheetName)
 		if (!handle) return EMPTY
 		const cell = handle.cell(ref)
 		return cell?.value ?? EMPTY
 	}
 
-	fillFormula(rangeRef: string, formula: string): ApplyResult {
-		const { sheetName, ref } = parseFullRef(rangeRef, this.wb)
+	fillFormula(rangeRef: RangeSelector, formula: string): ApplyResult {
+		const { sheetName, ref } = normalizeRangeSelector(rangeRef, this.wb)
 		return this.apply([
 			{ op: 'fillFormula', sheet: sheetName, range: ref, formula: normalizeFormulaInput(formula) },
 		])
@@ -871,13 +877,22 @@ export class BatchBuilder {
 
 	constructor(private wb: AscendWorkbook) {}
 
-	set(cellRef: string, value: InputValue): this {
+	set(cellRef: CellSelector, value: InputValue): this {
 		const { sheet, ref } = parseCellRef(cellRef, this.wb.getWorkbookModel())
+		const last = this.ops[this.ops.length - 1]
+		if (last?.op === 'setCells' && last.sheet === sheet) {
+			this.ops[this.ops.length - 1] = {
+				op: 'setCells',
+				sheet,
+				updates: [...last.updates, { ref, value }],
+			}
+			return this
+		}
 		this.ops.push({ op: 'setCells', sheet, updates: [{ ref, value }] })
 		return this
 	}
 
-	formula(cellRef: string, formula: string): this {
+	formula(cellRef: CellSelector, formula: string): this {
 		const { sheet, ref } = parseCellRef(cellRef, this.wb.getWorkbookModel())
 		this.ops.push({ op: 'setFormula', sheet, ref, formula: normalizeFormulaInput(formula) })
 		return this
@@ -937,8 +952,8 @@ export class BatchBuilder {
 	}
 }
 
-function parseCellRef(cellRef: string, workbook: Workbook): { sheet: string; ref: string } {
-	const parsed = parseFullRef(cellRef, workbook)
+function parseCellRef(cellRef: CellSelector, workbook: Workbook): { sheet: string; ref: string } {
+	const parsed = normalizeCellSelector(cellRef, workbook)
 	return { sheet: parsed.sheetName, ref: parsed.ref }
 }
 

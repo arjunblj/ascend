@@ -1,12 +1,16 @@
 import { describe, expect, test } from 'bun:test'
-import type { CellStyle } from '@ascend/core'
+import type { CellStyle, SheetConditionalFormat } from '@ascend/core'
 import { createWorkbook } from '@ascend/core'
-import { EMPTY, numberValue, stringValue } from '@ascend/schema'
+import type { CellValue } from '@ascend/schema'
+import { booleanValue, EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
 import { evaluateConditionalFormats } from './conditional-format.ts'
 
 const sid = 0
 const greenFill: CellStyle = {
 	fill: { pattern: 'solid', fgColor: { kind: 'rgb', rgb: 'FFC6EFCE' } },
+}
+const redFill: CellStyle = {
+	fill: { pattern: 'solid', fgColor: { kind: 'rgb', rgb: 'FFFFC7CE' } },
 }
 const boldStyle: CellStyle = { font: { bold: true } }
 
@@ -14,183 +18,1064 @@ function setCell(
 	sheet: ReturnType<ReturnType<typeof createWorkbook>['addSheet']>,
 	row: number,
 	col: number,
-	value: ReturnType<typeof numberValue> | ReturnType<typeof stringValue> | typeof EMPTY,
+	value: CellValue,
 ) {
 	sheet.cells.set(row, col, { value, formula: null, styleId: sid })
 }
 
+function makeRule(
+	type: string,
+	opts: {
+		operator?: string
+		formulas?: string[]
+		priority?: number
+		style?: CellStyle
+		stopIfTrue?: boolean
+		rank?: number
+		percent?: boolean
+		bottom?: boolean
+		aboveAverage?: boolean
+		equalAverage?: boolean
+		timePeriod?: string
+	} = {},
+) {
+	return {
+		type,
+		operator: opts.operator,
+		formulas: opts.formulas ?? [],
+		priority: opts.priority ?? 1,
+		style: opts.style ?? greenFill,
+		stopIfTrue: opts.stopIfTrue,
+		...(opts.rank !== undefined ? { rank: opts.rank } : {}),
+		...(opts.percent !== undefined ? { percent: opts.percent } : {}),
+		...(opts.bottom !== undefined ? { bottom: opts.bottom } : {}),
+		...(opts.aboveAverage !== undefined ? { aboveAverage: opts.aboveAverage } : {}),
+		...(opts.equalAverage !== undefined ? { equalAverage: opts.equalAverage } : {}),
+		...(opts.timePeriod !== undefined ? { timePeriod: opts.timePeriod } : {}),
+	}
+}
+
+function makeCf(sqref: string, ...rules: ReturnType<typeof makeRule>[]): SheetConditionalFormat {
+	return { sqref, rules }
+}
+
 describe('evaluateConditionalFormats', () => {
-	test('cellIs greaterThan rule matches correct cells', () => {
-		const wb = createWorkbook()
-		const sheet = wb.addSheet('Sheet1')
-		setCell(sheet, 0, 0, numberValue(1))
-		setCell(sheet, 1, 0, numberValue(5))
-		setCell(sheet, 2, 0, numberValue(10))
-		setCell(sheet, 3, 0, numberValue(4))
+	// ── cellIs operator tests ─────────────────────────────────────────
 
-		sheet.conditionalFormats.push({
-			sqref: 'A1:A5',
-			rules: [
-				{
-					type: 'cellIs',
-					operator: 'greaterThan',
-					formulas: ['3'],
-					priority: 1,
-					style: greenFill,
-				},
-			],
+	describe('cellIs', () => {
+		test('equal', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(5))
+			setCell(sheet, 1, 0, numberValue(3))
+			setCell(sheet, 2, 0, numberValue(5))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A3', makeRule('cellIs', { operator: 'equal', formulas: ['5'] })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeDefined()
+			expect(result.get('A2')).toBeUndefined()
+			expect(result.get('A3')).toBeDefined()
 		})
 
-		const result = evaluateConditionalFormats(sheet, wb)
+		test('notEqual', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(5))
+			setCell(sheet, 1, 0, numberValue(3))
 
-		expect(result.get('A1')).toBeUndefined()
-		expect(result.get('A2')).toBeDefined()
-		expect(result.get('A2')?.[0]).toMatchObject({
-			ruleIndex: 0,
-			priority: 1,
-			type: 'cellIs',
-			format: greenFill,
+			sheet.conditionalFormats.push(
+				makeCf('A1:A2', makeRule('cellIs', { operator: 'notEqual', formulas: ['5'] })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeUndefined()
+			expect(result.get('A2')).toBeDefined()
 		})
-		expect(result.get('A3')).toBeDefined()
-		expect(result.get('A4')).toBeDefined()
-		expect(result.get('A5')).toBeUndefined()
+
+		test('greaterThan', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(1))
+			setCell(sheet, 1, 0, numberValue(5))
+			setCell(sheet, 2, 0, numberValue(10))
+			setCell(sheet, 3, 0, numberValue(4))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A5', makeRule('cellIs', { operator: 'greaterThan', formulas: ['3'] })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeUndefined()
+			expect(result.get('A2')).toBeDefined()
+			expect(result.get('A2')?.[0]).toMatchObject({
+				ruleIndex: 0,
+				priority: 1,
+				type: 'cellIs',
+				format: greenFill,
+			})
+			expect(result.get('A3')).toBeDefined()
+			expect(result.get('A4')).toBeDefined()
+			expect(result.get('A5')).toBeUndefined()
+		})
+
+		test('lessThan', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(1))
+			setCell(sheet, 1, 0, numberValue(5))
+			setCell(sheet, 2, 0, numberValue(10))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A3', makeRule('cellIs', { operator: 'lessThan', formulas: ['5'] })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeDefined()
+			expect(result.get('A2')).toBeUndefined()
+			expect(result.get('A3')).toBeUndefined()
+		})
+
+		test('greaterThanOrEqual', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(4))
+			setCell(sheet, 1, 0, numberValue(5))
+			setCell(sheet, 2, 0, numberValue(6))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A3', makeRule('cellIs', { operator: 'greaterThanOrEqual', formulas: ['5'] })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeUndefined()
+			expect(result.get('A2')).toBeDefined()
+			expect(result.get('A3')).toBeDefined()
+		})
+
+		test('lessThanOrEqual', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(4))
+			setCell(sheet, 1, 0, numberValue(5))
+			setCell(sheet, 2, 0, numberValue(6))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A3', makeRule('cellIs', { operator: 'lessThanOrEqual', formulas: ['5'] })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeDefined()
+			expect(result.get('A2')).toBeDefined()
+			expect(result.get('A3')).toBeUndefined()
+		})
+
+		test('between (inclusive)', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(1))
+			setCell(sheet, 1, 0, numberValue(3))
+			setCell(sheet, 2, 0, numberValue(5))
+			setCell(sheet, 3, 0, numberValue(8))
+			setCell(sheet, 4, 0, numberValue(10))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A5', makeRule('cellIs', { operator: 'between', formulas: ['3', '8'] })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeUndefined()
+			expect(result.get('A2')).toBeDefined() // 3 is inclusive lower bound
+			expect(result.get('A3')).toBeDefined() // 5 is in range
+			expect(result.get('A4')).toBeDefined() // 8 is inclusive upper bound
+			expect(result.get('A5')).toBeUndefined()
+		})
+
+		test('notBetween', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(1))
+			setCell(sheet, 1, 0, numberValue(5))
+			setCell(sheet, 2, 0, numberValue(10))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A3', makeRule('cellIs', { operator: 'notBetween', formulas: ['3', '8'] })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeDefined()
+			expect(result.get('A2')).toBeUndefined()
+			expect(result.get('A3')).toBeDefined()
+		})
+
+		test('empty cell never matches cellIs', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, EMPTY)
+
+			sheet.conditionalFormats.push(
+				makeCf('A1', makeRule('cellIs', { operator: 'equal', formulas: ['0'] })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeUndefined()
+		})
+
+		test('cellIs with formula reference', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(10))
+			setCell(sheet, 0, 1, numberValue(10)) // B1 = 10 used as threshold
+
+			sheet.conditionalFormats.push(
+				makeCf('A1', makeRule('cellIs', { operator: 'greaterThanOrEqual', formulas: ['B1'] })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeDefined()
+		})
 	})
 
-	test('containsText rule matches correct cells', () => {
-		const wb = createWorkbook()
-		const sheet = wb.addSheet('Sheet1')
-		setCell(sheet, 0, 0, stringValue('hello world'))
-		setCell(sheet, 1, 0, stringValue('foo bar'))
-		setCell(sheet, 2, 0, stringValue('hello'))
-		setCell(sheet, 3, 0, stringValue('goodbye'))
+	// ── expression (custom formula) ───────────────────────────────────
 
-		sheet.conditionalFormats.push({
-			sqref: 'A1:A4',
-			rules: [
-				{
-					type: 'containsText',
-					formulas: ['"hello"'],
-					priority: 1,
-					style: boldStyle,
-				},
-			],
+	describe('expression', () => {
+		test('simple boolean formula', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(1))
+			setCell(sheet, 1, 0, numberValue(5))
+			setCell(sheet, 2, 0, numberValue(10))
+
+			sheet.conditionalFormats.push(makeCf('A1:A3', makeRule('expression', { formulas: ['A1>3'] })))
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeUndefined()
+			expect(result.get('A2')).toBeDefined()
+			expect(result.get('A3')).toBeDefined()
 		})
 
-		const result = evaluateConditionalFormats(sheet, wb)
+		test('formula referencing another column', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(10))
+			setCell(sheet, 0, 1, numberValue(5))
+			setCell(sheet, 1, 0, numberValue(3))
+			setCell(sheet, 1, 1, numberValue(7))
 
-		expect(result.get('A1')).toBeDefined()
-		expect(result.get('A2')).toBeUndefined()
-		expect(result.get('A3')).toBeDefined()
-		expect(result.get('A4')).toBeUndefined()
-	})
+			sheet.conditionalFormats.push(
+				makeCf('A1:A2', makeRule('expression', { formulas: ['A1>B1'] })),
+			)
 
-	test('containsBlanks rule matches empty cells', () => {
-		const wb = createWorkbook()
-		const sheet = wb.addSheet('Sheet1')
-		setCell(sheet, 0, 0, numberValue(1))
-		setCell(sheet, 1, 0, EMPTY)
-		setCell(sheet, 2, 0, stringValue(''))
-		setCell(sheet, 3, 0, stringValue('x'))
-
-		sheet.conditionalFormats.push({
-			sqref: 'A1:A4',
-			rules: [
-				{
-					type: 'containsBlanks',
-					formulas: [],
-					priority: 1,
-					style: greenFill,
-				},
-			],
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeDefined() // 10 > 5
+			expect(result.get('A2')).toBeUndefined() // 3 < 7
 		})
 
-		const result = evaluateConditionalFormats(sheet, wb)
+		test('formula with no formula returns false', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(1))
 
-		expect(result.get('A1')).toBeUndefined()
-		expect(result.get('A2')).toBeDefined()
-		expect(result.get('A2')?.[0]).toMatchObject({ type: 'containsBlanks' })
-		expect(result.get('A3')).toBeDefined()
-		expect(result.get('A4')).toBeUndefined()
-	})
+			sheet.conditionalFormats.push(makeCf('A1', makeRule('expression', { formulas: [] })))
 
-	test('notContainsBlanks rule matches non-empty cells', () => {
-		const wb = createWorkbook()
-		const sheet = wb.addSheet('Sheet1')
-		setCell(sheet, 0, 0, EMPTY)
-		setCell(sheet, 1, 0, numberValue(42))
-		setCell(sheet, 2, 0, stringValue('hello'))
-
-		sheet.conditionalFormats.push({
-			sqref: 'A1:A3',
-			rules: [
-				{
-					type: 'notContainsBlanks',
-					formulas: [],
-					priority: 1,
-					style: boldStyle,
-				},
-			],
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeUndefined()
 		})
 
-		const result = evaluateConditionalFormats(sheet, wb)
+		test('formula returning numeric truthy/falsy', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(0))
+			setCell(sheet, 1, 0, numberValue(42))
 
-		expect(result.get('A1')).toBeUndefined()
-		expect(result.get('A2')).toBeDefined()
-		expect(result.get('A3')).toBeDefined()
+			sheet.conditionalFormats.push(makeCf('A1:A2', makeRule('expression', { formulas: ['A1'] })))
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeUndefined() // 0 is falsy
+			expect(result.get('A2')).toBeDefined() // 42 is truthy
+		})
 	})
 
-	test('beginsWith and endsWith rules', () => {
-		const wb = createWorkbook()
-		const sheet = wb.addSheet('Sheet1')
-		setCell(sheet, 0, 0, stringValue('hello'))
-		setCell(sheet, 1, 0, stringValue('world'))
-		setCell(sheet, 2, 0, stringValue('hello world'))
+	// ── colorScale (visual rule — structure round-trip) ───────────────
 
-		sheet.conditionalFormats.push({
-			sqref: 'A1:A3',
-			rules: [
-				{
-					type: 'beginsWith',
-					formulas: ['"hel"'],
-					priority: 1,
-					style: boldStyle,
-				},
-			],
+	describe('colorScale', () => {
+		test('2-color scale rule structure is stored and retrievable', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(10))
+			setCell(sheet, 1, 0, numberValue(50))
+			setCell(sheet, 2, 0, numberValue(90))
+
+			const rule = {
+				type: 'colorScale' as const,
+				formulas: [] as string[],
+				priority: 1,
+			}
+			sheet.conditionalFormats.push({ sqref: 'A1:A3', rules: [rule] })
+
+			expect(sheet.conditionalFormats).toHaveLength(1)
+			expect(sheet.conditionalFormats[0].rules[0].type).toBe('colorScale')
+			expect(sheet.conditionalFormats[0].sqref).toBe('A1:A3')
 		})
 
-		const result = evaluateConditionalFormats(sheet, wb)
+		test('3-color scale rule round-trips through clone', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
 
-		expect(result.get('A1')).toBeDefined()
-		expect(result.get('A2')).toBeUndefined()
-		expect(result.get('A3')).toBeDefined()
+			const rule = {
+				type: 'colorScale' as const,
+				formulas: [] as string[],
+				priority: 1,
+			}
+			sheet.conditionalFormats.push({ sqref: 'A1:A10', rules: [rule] })
+
+			const cloned = sheet.clone()
+			expect(cloned.conditionalFormats).toHaveLength(1)
+			expect(cloned.conditionalFormats[0].rules[0].type).toBe('colorScale')
+			expect(cloned.conditionalFormats[0].sqref).toBe('A1:A10')
+		})
 	})
 
-	test('cellIs lessThan and between', () => {
-		const wb = createWorkbook()
-		const sheet = wb.addSheet('Sheet1')
-		setCell(sheet, 0, 0, numberValue(1))
-		setCell(sheet, 1, 0, numberValue(5))
-		setCell(sheet, 2, 0, numberValue(10))
+	// ── dataBar (visual rule — structure round-trip) ──────────────────
 
-		sheet.conditionalFormats.push({
-			sqref: 'A1:A3',
-			rules: [
-				{
-					type: 'cellIs',
-					operator: 'between',
-					formulas: ['3', '8'],
-					priority: 1,
-					style: greenFill,
-				},
-			],
+	describe('dataBar', () => {
+		test('dataBar rule structure is stored', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(10))
+			setCell(sheet, 1, 0, numberValue(50))
+			setCell(sheet, 2, 0, numberValue(90))
+
+			const rule = {
+				type: 'dataBar' as const,
+				formulas: [] as string[],
+				priority: 1,
+			}
+			sheet.conditionalFormats.push({ sqref: 'A1:A3', rules: [rule] })
+
+			expect(sheet.conditionalFormats[0].rules[0].type).toBe('dataBar')
 		})
 
-		const result = evaluateConditionalFormats(sheet, wb)
+		test('dataBar with negative values is stored correctly', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(-20))
+			setCell(sheet, 1, 0, numberValue(0))
+			setCell(sheet, 2, 0, numberValue(50))
 
-		expect(result.get('A1')).toBeUndefined()
-		expect(result.get('A2')).toBeDefined()
-		expect(result.get('A3')).toBeUndefined()
+			const rule = {
+				type: 'dataBar' as const,
+				formulas: [] as string[],
+				priority: 1,
+			}
+			sheet.conditionalFormats.push({ sqref: 'A1:A3', rules: [rule] })
+
+			const cloned = sheet.clone()
+			expect(cloned.conditionalFormats[0].rules[0].type).toBe('dataBar')
+		})
 	})
+
+	// ── iconSet (visual rule — structure round-trip) ──────────────────
+
+	describe('iconSet', () => {
+		test('3-icon set rule structure round-trips', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(10))
+			setCell(sheet, 1, 0, numberValue(50))
+			setCell(sheet, 2, 0, numberValue(90))
+
+			const rule = {
+				type: 'iconSet' as const,
+				formulas: [] as string[],
+				priority: 1,
+			}
+			sheet.conditionalFormats.push({ sqref: 'A1:A3', rules: [rule] })
+
+			const cloned = sheet.clone()
+			expect(cloned.conditionalFormats[0].rules[0].type).toBe('iconSet')
+		})
+
+		test('5-icon set rule structure is stored', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			for (let i = 0; i < 5; i++) {
+				setCell(sheet, i, 0, numberValue(i * 25))
+			}
+
+			const rule = {
+				type: 'iconSet' as const,
+				formulas: [] as string[],
+				priority: 1,
+			}
+			sheet.conditionalFormats.push({ sqref: 'A1:A5', rules: [rule] })
+
+			expect(sheet.conditionalFormats[0].rules[0].type).toBe('iconSet')
+			expect(sheet.conditionalFormats[0].sqref).toBe('A1:A5')
+		})
+	})
+
+	// ── top10 (boolean — currently returns false / coverage gap) ──────
+
+	describe('top10', () => {
+		test('top 3 values match', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(100))
+			setCell(sheet, 1, 0, numberValue(80))
+			setCell(sheet, 2, 0, numberValue(60))
+			setCell(sheet, 3, 0, numberValue(40))
+			setCell(sheet, 4, 0, numberValue(20))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A5', makeRule('top10', { rank: 3, style: greenFill })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.size).toBe(3)
+			expect(result.get('A1')).toBeDefined()
+			expect(result.get('A2')).toBeDefined()
+			expect(result.get('A3')).toBeDefined()
+			expect(result.get('A4')).toBeUndefined()
+			expect(result.get('A5')).toBeUndefined()
+		})
+
+		test('bottom 3 values match', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			for (let i = 0; i < 10; i++) setCell(sheet, i, 0, numberValue((i + 1) * 10))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A10', makeRule('top10', { rank: 3, bottom: true, style: redFill })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.size).toBe(3)
+			expect(result.get('A1')).toBeDefined()
+			expect(result.get('A2')).toBeDefined()
+			expect(result.get('A3')).toBeDefined()
+			expect(result.get('A4')).toBeUndefined()
+		})
+
+		test('top 10 percent mode matches top 2 of 20', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			for (let i = 0; i < 20; i++) setCell(sheet, i, 0, numberValue(i + 1))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A20', makeRule('top10', { rank: 10, percent: true, style: greenFill })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.size).toBe(2)
+			expect(result.get('A19')).toBeDefined()
+			expect(result.get('A20')).toBeDefined()
+			expect(result.get('A18')).toBeUndefined()
+		})
+
+		test('non-numeric cells are skipped', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(10))
+			setCell(sheet, 1, 0, stringValue('hello'))
+			setCell(sheet, 2, 0, numberValue(20))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A3', makeRule('top10', { rank: 1, style: greenFill })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.size).toBe(1)
+			expect(result.get('A3')).toBeDefined()
+		})
+	})
+
+	// ── aboveAverage ─────────────────────────────────────────────────
+
+	describe('aboveAverage', () => {
+		test('above average (strictly greater)', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(10))
+			setCell(sheet, 1, 0, numberValue(20))
+			setCell(sheet, 2, 0, numberValue(30))
+			setCell(sheet, 3, 0, numberValue(40))
+			setCell(sheet, 4, 0, numberValue(50))
+
+			sheet.conditionalFormats.push(makeCf('A1:A5', makeRule('aboveAverage', { style: greenFill })))
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.size).toBe(2)
+			expect(result.get('A4')).toBeDefined()
+			expect(result.get('A5')).toBeDefined()
+			expect(result.get('A3')).toBeUndefined()
+		})
+
+		test('below average (strictly less)', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(10))
+			setCell(sheet, 1, 0, numberValue(20))
+			setCell(sheet, 2, 0, numberValue(30))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A3', makeRule('aboveAverage', { aboveAverage: false, style: redFill })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.size).toBe(1)
+			expect(result.get('A1')).toBeDefined()
+			expect(result.get('A2')).toBeUndefined()
+		})
+
+		test('equal or above average', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(20))
+			setCell(sheet, 1, 0, numberValue(20))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A2', makeRule('aboveAverage', { equalAverage: true, style: greenFill })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.size).toBe(2)
+		})
+
+		test('equal or below average', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(20))
+			setCell(sheet, 1, 0, numberValue(20))
+
+			sheet.conditionalFormats.push(
+				makeCf(
+					'A1:A2',
+					makeRule('aboveAverage', {
+						aboveAverage: false,
+						equalAverage: true,
+						style: redFill,
+					}),
+				),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.size).toBe(2)
+		})
+	})
+
+	// ── duplicateValues ──────────────────────────────────────────────
+
+	describe('duplicateValues', () => {
+		test('highlights cells whose value appears more than once', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(1))
+			setCell(sheet, 1, 0, numberValue(2))
+			setCell(sheet, 2, 0, numberValue(1))
+			setCell(sheet, 3, 0, numberValue(3))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A4', makeRule('duplicateValues', { style: redFill })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.size).toBe(2)
+			expect(result.get('A1')).toBeDefined()
+			expect(result.get('A3')).toBeDefined()
+			expect(result.get('A2')).toBeUndefined()
+			expect(result.get('A4')).toBeUndefined()
+		})
+
+		test('empty cells are not treated as duplicates', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, EMPTY)
+			setCell(sheet, 1, 0, EMPTY)
+			setCell(sheet, 2, 0, numberValue(5))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A3', makeRule('duplicateValues', { style: redFill })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.size).toBe(0)
+		})
+	})
+
+	// ── uniqueValues ─────────────────────────────────────────────────
+
+	describe('uniqueValues', () => {
+		test('highlights cells whose value appears exactly once', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(1))
+			setCell(sheet, 1, 0, numberValue(2))
+			setCell(sheet, 2, 0, numberValue(1))
+			setCell(sheet, 3, 0, numberValue(3))
+
+			sheet.conditionalFormats.push(makeCf('A1:A4', makeRule('uniqueValues', { style: greenFill })))
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.size).toBe(2)
+			expect(result.get('A2')).toBeDefined()
+			expect(result.get('A4')).toBeDefined()
+			expect(result.get('A1')).toBeUndefined()
+			expect(result.get('A3')).toBeUndefined()
+		})
+
+		test('empty cells are not treated as unique', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, EMPTY)
+			setCell(sheet, 1, 0, numberValue(5))
+
+			sheet.conditionalFormats.push(makeCf('A1:A2', makeRule('uniqueValues', { style: greenFill })))
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.size).toBe(1)
+			expect(result.get('A2')).toBeDefined()
+			expect(result.get('A1')).toBeUndefined()
+		})
+	})
+
+	// ── containsText ─────────────────────────────────────────────────
+
+	describe('containsText', () => {
+		test('matches substring anywhere in cell', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, stringValue('hello world'))
+			setCell(sheet, 1, 0, stringValue('foo bar'))
+			setCell(sheet, 2, 0, stringValue('hello'))
+			setCell(sheet, 3, 0, stringValue('goodbye'))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A4', makeRule('containsText', { formulas: ['"hello"'] })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeDefined()
+			expect(result.get('A2')).toBeUndefined()
+			expect(result.get('A3')).toBeDefined()
+			expect(result.get('A4')).toBeUndefined()
+		})
+
+		test('no formula matches nothing', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, stringValue('anything'))
+
+			sheet.conditionalFormats.push(makeCf('A1', makeRule('containsText', { formulas: [] })))
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeUndefined()
+		})
+
+		test('matches numeric cell converted to string', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(12345))
+
+			sheet.conditionalFormats.push(makeCf('A1', makeRule('containsText', { formulas: ['"234"'] })))
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeDefined()
+		})
+	})
+
+	// ── notContainsText ──────────────────────────────────────────────
+
+	describe('notContainsText', () => {
+		test('matches cells that do not contain the pattern', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, stringValue('apple'))
+			setCell(sheet, 1, 0, stringValue('banana'))
+			setCell(sheet, 2, 0, stringValue('pineapple'))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A3', makeRule('notContainsText', { formulas: ['"apple"'] })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeUndefined()
+			expect(result.get('A2')).toBeDefined()
+			expect(result.get('A3')).toBeUndefined()
+		})
+
+		test('no formula matches everything', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, stringValue('anything'))
+
+			sheet.conditionalFormats.push(makeCf('A1', makeRule('notContainsText', { formulas: [] })))
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeDefined()
+		})
+	})
+
+	// ── beginsWith ───────────────────────────────────────────────────
+
+	describe('beginsWith', () => {
+		test('matches cells starting with prefix', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, stringValue('hello'))
+			setCell(sheet, 1, 0, stringValue('world'))
+			setCell(sheet, 2, 0, stringValue('hello world'))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A3', makeRule('beginsWith', { formulas: ['"hel"'] })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeDefined()
+			expect(result.get('A2')).toBeUndefined()
+			expect(result.get('A3')).toBeDefined()
+		})
+
+		test('no formula matches nothing', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, stringValue('hello'))
+
+			sheet.conditionalFormats.push(makeCf('A1', makeRule('beginsWith', { formulas: [] })))
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeUndefined()
+		})
+	})
+
+	// ── endsWith ─────────────────────────────────────────────────────
+
+	describe('endsWith', () => {
+		test('matches cells ending with suffix', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, stringValue('hello'))
+			setCell(sheet, 1, 0, stringValue('world'))
+			setCell(sheet, 2, 0, stringValue('hello world'))
+
+			sheet.conditionalFormats.push(makeCf('A1:A3', makeRule('endsWith', { formulas: ['"orld"'] })))
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeUndefined()
+			expect(result.get('A2')).toBeDefined()
+			expect(result.get('A3')).toBeDefined()
+		})
+
+		test('no formula matches nothing', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, stringValue('hello'))
+
+			sheet.conditionalFormats.push(makeCf('A1', makeRule('endsWith', { formulas: [] })))
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeUndefined()
+		})
+	})
+
+	// ── containsBlanks ───────────────────────────────────────────────
+
+	describe('containsBlanks', () => {
+		test('matches empty and empty-string cells', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(1))
+			setCell(sheet, 1, 0, EMPTY)
+			setCell(sheet, 2, 0, stringValue(''))
+			setCell(sheet, 3, 0, stringValue('x'))
+
+			sheet.conditionalFormats.push(makeCf('A1:A4', makeRule('containsBlanks')))
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeUndefined()
+			expect(result.get('A2')).toBeDefined()
+			expect(result.get('A2')?.[0]).toMatchObject({ type: 'containsBlanks' })
+			expect(result.get('A3')).toBeDefined()
+			expect(result.get('A4')).toBeUndefined()
+		})
+
+		test('boolean and error values are not blank', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, booleanValue(false))
+			setCell(sheet, 1, 0, errorValue('#N/A'))
+
+			sheet.conditionalFormats.push(makeCf('A1:A2', makeRule('containsBlanks')))
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeUndefined()
+			expect(result.get('A2')).toBeUndefined()
+		})
+	})
+
+	// ── notContainsBlanks ────────────────────────────────────────────
+
+	describe('notContainsBlanks', () => {
+		test('matches non-empty cells', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, EMPTY)
+			setCell(sheet, 1, 0, numberValue(42))
+			setCell(sheet, 2, 0, stringValue('hello'))
+			setCell(sheet, 3, 0, stringValue(''))
+
+			sheet.conditionalFormats.push(makeCf('A1:A4', makeRule('notContainsBlanks')))
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeUndefined()
+			expect(result.get('A2')).toBeDefined()
+			expect(result.get('A3')).toBeDefined()
+			expect(result.get('A4')).toBeUndefined() // empty string is blank
+		})
+	})
+
+	// ── timePeriod ───────────────────────────────────────────────────
+
+	describe('timePeriod', () => {
+		const EXCEL_EPOCH_OFFSET = 25569
+		const MS_PER_DAY = 86400000
+
+		function currentSerial(): number {
+			const now = new Date()
+			const utcMidnight = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
+			return Math.floor(utcMidnight / MS_PER_DAY) + EXCEL_EPOCH_OFFSET
+		}
+
+		test('today matches cell with today serial', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			const today = currentSerial()
+			setCell(sheet, 0, 0, numberValue(today))
+			setCell(sheet, 1, 0, numberValue(today - 1))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A2', makeRule('timePeriod', { timePeriod: 'today' })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeDefined()
+			expect(result.get('A2')).toBeUndefined()
+		})
+
+		test('yesterday matches cell with yesterday serial', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			const today = currentSerial()
+			setCell(sheet, 0, 0, numberValue(today))
+			setCell(sheet, 1, 0, numberValue(today - 1))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A2', makeRule('timePeriod', { timePeriod: 'yesterday' })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeUndefined()
+			expect(result.get('A2')).toBeDefined()
+		})
+
+		test('tomorrow matches cell with tomorrow serial', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			const today = currentSerial()
+			setCell(sheet, 0, 0, numberValue(today + 1))
+			setCell(sheet, 1, 0, numberValue(today))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A2', makeRule('timePeriod', { timePeriod: 'tomorrow' })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeDefined()
+			expect(result.get('A2')).toBeUndefined()
+		})
+
+		test('last7Days matches cells within past 7 days', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			const today = currentSerial()
+			setCell(sheet, 0, 0, numberValue(today))
+			setCell(sheet, 1, 0, numberValue(today - 6))
+			setCell(sheet, 2, 0, numberValue(today - 7))
+			setCell(sheet, 3, 0, numberValue(today + 1))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A4', makeRule('timePeriod', { timePeriod: 'last7Days' })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeDefined()
+			expect(result.get('A2')).toBeDefined()
+			expect(result.get('A3')).toBeUndefined()
+			expect(result.get('A4')).toBeUndefined()
+		})
+
+		test('thisMonth matches cells in the same month', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			const today = currentSerial()
+			const now = new Date()
+			const firstOfMonth =
+				Math.floor(Date.UTC(now.getFullYear(), now.getMonth(), 1) / MS_PER_DAY) + EXCEL_EPOCH_OFFSET
+			const prevMonthDay = firstOfMonth - 1
+
+			setCell(sheet, 0, 0, numberValue(today))
+			setCell(sheet, 1, 0, numberValue(firstOfMonth))
+			setCell(sheet, 2, 0, numberValue(prevMonthDay))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A3', makeRule('timePeriod', { timePeriod: 'thisMonth' })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeDefined()
+			expect(result.get('A2')).toBeDefined()
+			expect(result.get('A3')).toBeUndefined()
+		})
+
+		test('non-numeric cells do not match timePeriod', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, stringValue('hello'))
+
+			sheet.conditionalFormats.push(makeCf('A1', makeRule('timePeriod', { timePeriod: 'today' })))
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.size).toBe(0)
+		})
+
+		test('timePeriod falls back to operator field', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			const today = currentSerial()
+			setCell(sheet, 0, 0, numberValue(today))
+
+			sheet.conditionalFormats.push(makeCf('A1', makeRule('timePeriod', { operator: 'today' })))
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeDefined()
+		})
+	})
+
+	// ── containsErrors ───────────────────────────────────────────────
+
+	describe('containsErrors', () => {
+		test('matches cells with error values', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, errorValue('#DIV/0!'))
+			setCell(sheet, 1, 0, numberValue(42))
+			setCell(sheet, 2, 0, errorValue('#N/A'))
+
+			sheet.conditionalFormats.push(makeCf('A1:A3', makeRule('containsErrors', { style: redFill })))
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.size).toBe(2)
+			expect(result.get('A1')).toBeDefined()
+			expect(result.get('A2')).toBeUndefined()
+			expect(result.get('A3')).toBeDefined()
+		})
+	})
+
+	// ── notContainsErrors ────────────────────────────────────────────
+
+	describe('notContainsErrors', () => {
+		test('matches cells without error values', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, errorValue('#DIV/0!'))
+			setCell(sheet, 1, 0, numberValue(42))
+			setCell(sheet, 2, 0, EMPTY)
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A3', makeRule('notContainsErrors', { style: greenFill })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.size).toBe(2)
+			expect(result.get('A1')).toBeUndefined()
+			expect(result.get('A2')).toBeDefined()
+			expect(result.get('A3')).toBeDefined()
+		})
+	})
+
+	// ── stopIfTrue and priority interaction ──────────────────────────
+
+	describe('stopIfTrue and priority', () => {
+		test('stopIfTrue prevents later rules from matching', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(10))
+
+			sheet.conditionalFormats.push({
+				sqref: 'A1',
+				rules: [
+					{
+						type: 'cellIs',
+						operator: 'greaterThan',
+						formulas: ['5'],
+						priority: 1,
+						style: greenFill,
+						stopIfTrue: true,
+					},
+					{
+						type: 'cellIs',
+						operator: 'greaterThan',
+						formulas: ['3'],
+						priority: 2,
+						style: redFill,
+					},
+				],
+			})
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			const matches = result.get('A1')
+			expect(matches).toBeDefined()
+			expect(matches).toHaveLength(1)
+			expect(matches?.[0]?.format).toEqual(greenFill)
+		})
+
+		test('rules evaluated in priority order', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(10))
+
+			sheet.conditionalFormats.push({
+				sqref: 'A1',
+				rules: [
+					{
+						type: 'cellIs',
+						operator: 'greaterThan',
+						formulas: ['5'],
+						priority: 2,
+						style: redFill,
+					},
+					{
+						type: 'cellIs',
+						operator: 'greaterThan',
+						formulas: ['3'],
+						priority: 1,
+						style: greenFill,
+					},
+				],
+			})
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			const matches = result.get('A1')
+			expect(matches).toBeDefined()
+			expect(matches).toHaveLength(2)
+			expect(matches?.[0]?.priority).toBe(1)
+			expect(matches?.[1]?.priority).toBe(2)
+		})
+	})
+
+	// ── cells outside sqref ──────────────────────────────────────────
 
 	test('cells outside sqref are not evaluated', () => {
 		const wb = createWorkbook()
@@ -198,38 +1083,63 @@ describe('evaluateConditionalFormats', () => {
 		setCell(sheet, 0, 0, numberValue(100))
 		setCell(sheet, 0, 1, numberValue(100))
 
+		sheet.conditionalFormats.push(
+			makeCf('A1', makeRule('cellIs', { operator: 'greaterThan', formulas: ['50'] })),
+		)
+
+		const result = evaluateConditionalFormats(sheet, wb)
+		expect(result.get('A1')).toBeDefined()
+		expect(result.get('B1')).toBeUndefined()
+	})
+
+	// ── multiple rules on same range ─────────────────────────────────
+
+	test('multiple rules can match the same cell', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		setCell(sheet, 0, 0, numberValue(10))
+
 		sheet.conditionalFormats.push({
 			sqref: 'A1',
 			rules: [
 				{
 					type: 'cellIs',
 					operator: 'greaterThan',
-					formulas: ['50'],
+					formulas: ['5'],
 					priority: 1,
 					style: greenFill,
+				},
+				{
+					type: 'cellIs',
+					operator: 'greaterThan',
+					formulas: ['3'],
+					priority: 2,
+					style: boldStyle,
 				},
 			],
 		})
 
 		const result = evaluateConditionalFormats(sheet, wb)
-
-		expect(result.get('A1')).toBeDefined()
-		expect(result.get('B1')).toBeUndefined()
+		const matches = result.get('A1')
+		expect(matches).toHaveLength(2)
 	})
 
-	test('formula rules evaluate relative to the top-left cell of sqref', () => {
+	// ── disjoint sqref ranges ────────────────────────────────────────
+
+	test('disjoint sqref ranges (space-separated)', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
-		setCell(sheet, 0, 0, numberValue(1))
-		setCell(sheet, 1, 0, numberValue(5))
-		setCell(sheet, 2, 0, numberValue(10))
+		setCell(sheet, 0, 0, numberValue(10))
+		setCell(sheet, 0, 1, numberValue(1))
+		setCell(sheet, 0, 2, numberValue(10))
 
 		sheet.conditionalFormats.push({
-			sqref: 'A1:A3',
+			sqref: 'A1 C1',
 			rules: [
 				{
-					type: 'expression',
-					formulas: ['A1>3'],
+					type: 'cellIs',
+					operator: 'greaterThan',
+					formulas: ['5'],
 					priority: 1,
 					style: greenFill,
 				},
@@ -237,8 +1147,19 @@ describe('evaluateConditionalFormats', () => {
 		})
 
 		const result = evaluateConditionalFormats(sheet, wb)
-		expect(result.get('A1')).toBeUndefined()
-		expect(result.get('A2')).toBeDefined()
-		expect(result.get('A3')).toBeDefined()
+		expect(result.get('A1')).toBeDefined()
+		expect(result.get('B1')).toBeUndefined()
+		expect(result.get('C1')).toBeDefined()
+	})
+
+	// ── empty conditional formats array ──────────────────────────────
+
+	test('no conditional formats returns empty map', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		setCell(sheet, 0, 0, numberValue(42))
+
+		const result = evaluateConditionalFormats(sheet, wb)
+		expect(result.size).toBe(0)
 	})
 })

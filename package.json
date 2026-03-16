@@ -11,9 +11,17 @@
 		"lint": "biome check",
 		"lint:fix": "biome check --write",
 		"test": "bun test --recursive",
+		"test:coverage": "bun test --recursive --coverage --coverage-reporter=lcov --coverage-dir=.coverage",
+		"coverage:audit": "bun run fixtures/coverage/audit.ts .coverage/lcov.info",
 		"docs:sdk": "typedoc --options typedoc.sdk.json",
 		"corpus:audit": "bun run fixtures/corpus/audit.ts",
+		"audit:error-propagation": "bun run fixtures/formulas/error-propagation-audit.ts",
 		"bench": "bun run fixtures/benchmarks/run.ts",
+		"bench:chunk-ab": "bun run fixtures/benchmarks/chunk-size-ab.ts",
+		"bench:zip-ab": "bun run fixtures/benchmarks/zip-ab.ts",
+		"bench:soa-eval": "bun run fixtures/benchmarks/soa-eval.ts",
+		"bench:wasm-agg-eval": "bun run fixtures/benchmarks/wasm-aggregates-eval.ts",
+		"bench:indirect-literal": "bun run fixtures/benchmarks/indirect-literal.ts",
 		"bench:real": "bun run fixtures/benchmarks/real-workbook.ts",
 		"bench:compare": "bun run fixtures/benchmarks/compare.ts",
 		"prepare": "lefthook install"
@@ -21,9 +29,11 @@
 	"devDependencies": {
 		"@biomejs/biome": "2.4.6",
 		"@types/bun": "^1.3.10",
+		"fflate": "^0.8.2",
 		"hyperformula": "^3.2.0",
 		"lefthook": "^1.11.0",
 		"typedoc": "^0.28.17",
-		"typescript": "^5.7.0"
+		"typescript": "^5.7.0",
+		"wabt": "^1.0.39"
 	}
 }

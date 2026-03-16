@@ -33,6 +33,7 @@ export {
 	type FnArg,
 	type FunctionDef,
 	type FunctionEvalContext,
+	formatNumber,
 	functionRegistry,
 	getRange,
 	iterAreaRows,
@@ -40,6 +41,7 @@ export {
 	rangeShape,
 	serialToDate,
 	toNumber,
+	wildcardMatch,
 } from './functions/index.ts'
 export { tokenize } from './lexer.ts'
 export {

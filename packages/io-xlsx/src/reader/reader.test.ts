@@ -1234,6 +1234,8 @@ describe('readXlsx', () => {
   <pageSetup orientation="landscape" fitToWidth="1" fitToHeight="2"/>
   <printOptions gridLines="1" headings="1"/>
   <headerFooter><oddHeader>&amp;LTest</oddHeader><oddFooter>&amp;R1</oddFooter></headerFooter>
+  <rowBreaks count="1" manualBreakCount="1"><brk id="5" min="0" max="16383" man="1"/></rowBreaks>
+  <colBreaks count="1" manualBreakCount="1"><brk id="2" min="0" max="1048575" man="1"/></colBreaks>
   <ignoredErrors><ignoredError sqref="A1:B2" numberStoredAsText="1"/></ignoredErrors>
   <hyperlinks><hyperlink ref="A1" r:id="rIdHyper" display="Docs" tooltip="Open docs"/></hyperlinks>
 </worksheet>`,
@@ -1283,6 +1285,8 @@ describe('readXlsx', () => {
 			firstHeader: undefined,
 			firstFooter: undefined,
 		})
+		expect(sheet?.rowBreaks).toEqual([{ id: 5, min: 0, max: 16383, man: true }])
+		expect(sheet?.colBreaks).toEqual([{ id: 2, min: 0, max: 1048575, man: true }])
 		expect(sheet?.ignoredErrors).toEqual([{ sqref: 'A1:B2', numberStoredAsText: true }])
 		expect(sheet?.hyperlinks.get('A1')).toEqual({
 			target: 'https://example.com/docs',
@@ -2059,7 +2063,44 @@ ${rowEntries.join('\n')}
 			(c) => c.partPath === 'xl/threadedComments/threadedComment1.xml',
 		)
 		expect(tcCapsule).toBeDefined()
-		expect(tcCapsule?.anchor).toEqual({ kind: 'sheet', sheetName: 'Data' })
+		expect(tcCapsule?.anchor).toEqual(expect.objectContaining({ kind: 'sheet', sheetName: 'Data' }))
+	})
+})
+
+describe('stub cells', () => {
+	it('reads cells with type attribute but no value element', () => {
+		const stubSheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1" t="s"/>
+      <c r="B1" t="n"/>
+      <c r="C1" t="b"/>
+      <c r="D1" t="e"/>
+      <c r="E1" t="str"/>
+    </row>
+  </sheetData>
+</worksheet>`
+
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': stubSheetXml,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet).toBeDefined()
+		expect(sheet?.cells.get(0, 0)?.value).toEqual({ kind: 'string', value: '' })
+		expect(sheet?.cells.get(0, 1)?.value).toEqual({ kind: 'number', value: 0 })
+		expect(sheet?.cells.get(0, 2)?.value).toEqual({ kind: 'boolean', value: false })
+		expect(sheet?.cells.get(0, 3)?.value).toEqual({ kind: 'error', value: '#VALUE!' })
+		expect(sheet?.cells.get(0, 4)?.value).toEqual({ kind: 'string', value: '' })
 	})
 })
 

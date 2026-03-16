@@ -1,4 +1,4 @@
-import { cloneCellStyle, type Workbook } from '@ascend/core'
+import { cloneCellStyle, type SheetId, type Workbook } from '@ascend/core'
 import type { AscendError, CellValue, Result } from '@ascend/schema'
 import { ascendError, err, ok } from '@ascend/schema'
 import type { PreservationCapsule } from '../preserve.ts'
@@ -7,6 +7,8 @@ import {
 	REL_CALC_CHAIN,
 	REL_COMMENTS,
 	REL_DRAWING,
+	REL_IMAGE,
+	REL_PIVOT_CACHE_DEFINITION,
 	REL_SHARED_STRINGS,
 	REL_SHEET_METADATA,
 	REL_STYLES,
@@ -20,9 +22,11 @@ import { extractZip, type ZipArchive } from '../reader/zip.ts'
 import { buildCommentsVml, buildCommentsXml } from './comments.ts'
 import { buildContentTypesXml } from './content-types.ts'
 import { buildAppPropsXml, buildCorePropsXml } from './doc-props.ts'
+import { buildDrawingXml } from './drawing.ts'
 import { buildDynamicArrayMetadataXml } from './metadata.ts'
 import {
 	summarizeWritePlan,
+	type WritePartOwner,
 	WritePlanBuilder,
 	type WritePlanResult,
 	type WritePlanSummary,
@@ -33,6 +37,7 @@ import { IncrementalSharedStringTable, scanWorkbookWriteFactsFast } from './shar
 import { buildSheetXml, buildSheetXmlStreaming } from './sheet.ts'
 import { buildPreservedStylesXml, buildStylesXml } from './styles.ts'
 import { buildTableXml } from './table.ts'
+import { buildThemeXml } from './theme.ts'
 import { buildWorkbookXml } from './workbook.ts'
 import { createZip, encode, StreamingZipBuilder } from './zip.ts'
 
@@ -47,8 +52,10 @@ const REL_HYPERLINK =
 const CT_SHEET_METADATA =
 	'application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml'
 const CT_COMMENTS = 'application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml'
+const CT_DRAWING = 'application/vnd.openxmlformats-officedocument.drawing+xml'
 const CT_TABLE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml'
 const CT_VML = 'application/vnd.openxmlformats-officedocument.vmlDrawing'
+const CT_THEME = 'application/vnd.openxmlformats-officedocument.theme+xml'
 
 export interface WriteXlsxOptions {
 	readonly dirtySheetNames?: readonly string[]
@@ -166,11 +173,15 @@ export function planWriteXlsx(
 		const effectiveStylesDirty = options.stylesDirty ?? dirtyPatchMode
 		const effectiveSharedStringsDirty = options.sharedStringsDirty ?? dirtyPatchMode
 		const effectiveWorkbookMetaDirty = options.workbookMetaDirty ?? dirtyPatchMode
+		const sheetNameById = new Map<string, string>(
+			workbook.sheets.map((sheet) => [sheet.id as string, sheet.name]),
+		)
 		const sheetCapsuleMap = new Map<string, PreservationCapsule[]>()
 		const workbookCapsules: PreservationCapsule[] = []
 		let nextGeneratedTableNumber = 1
 		let nextGeneratedCommentsNumber = 1
 		let nextGeneratedVmlNumber = 1
+		let nextGeneratedDrawingNumber = 1
 
 		const preservedSharedStringsXml = workbook.preservedSharedStrings
 			? resolvePreservedText(
@@ -276,13 +287,14 @@ export function planWriteXlsx(
 
 		if (capsules) {
 			for (const capsule of capsules) {
-				if (options.calcStateDirty && isCalcChainCapsule(capsule)) continue
+				if (isCalcChainCapsule(capsule)) continue
 				if (capsule.anchor.kind === 'sheet') {
-					const sheetName = capsule.anchor.sheetName
-					let list = sheetCapsuleMap.get(sheetName)
+					const sheetId: SheetId = capsule.anchor.sheetId as SheetId
+					if (!sheetNameById.has(sheetId)) continue
+					let list = sheetCapsuleMap.get(sheetId)
 					if (!list) {
 						list = []
-						sheetCapsuleMap.set(sheetName, list)
+						sheetCapsuleMap.set(sheetId, list)
 					}
 					list.push(capsule)
 				} else {
@@ -326,6 +338,10 @@ export function planWriteXlsx(
 		const hasPreservedTheme = workbook.preservedTheme
 			? hasPreservedPart(sourceArchive, workbook.preservedTheme.xml, workbook.preservedTheme.path)
 			: false
+		const shouldGenerateTheme = !workbook.preservedTheme && hasThemeMetadata(workbook.themeMetadata)
+		const generatedThemePath = workbook.preservedTheme?.path ?? 'xl/theme/theme1.xml'
+		const generatedThemeTarget = generatedThemePath.replace(/^xl\//, '')
+		const generatedThemeContentType = workbook.preservedTheme?.contentType ?? CT_THEME
 		const preservedThemeXml =
 			workbook.preservedTheme && !options.summaryOnly
 				? resolvePreservedText(
@@ -334,11 +350,14 @@ export function planWriteXlsx(
 						workbook.preservedTheme.path,
 					)
 				: undefined
-		if (workbook.preservedTheme && (hasPreservedTheme || preservedThemeXml)) {
+		if (
+			(workbook.preservedTheme && (hasPreservedTheme || preservedThemeXml)) ||
+			shouldGenerateTheme
+		) {
 			wbRels.push({
 				id: `rId${rIdCounter}`,
 				type: REL_THEME,
-				target: workbook.preservedTheme.path.replace(/^xl\//, ''),
+				target: generatedThemeTarget,
 			})
 			rIdCounter++
 		}
@@ -361,8 +380,22 @@ export function planWriteXlsx(
 			rIdCounter++
 		}
 
+		const pivotCachePartPaths = new Set(workbook.pivotCaches.map((c) => c.partPath))
+		const pivotCacheRelIds: string[] = []
+		for (const cache of workbook.pivotCaches) {
+			const target = cache.partPath.replace(/^xl\//, '')
+			pivotCacheRelIds.push(`rId${rIdCounter}`)
+			wbRels.push({
+				id: `rId${rIdCounter}`,
+				type: REL_PIVOT_CACHE_DEFINITION,
+				target,
+			})
+			rIdCounter++
+		}
+
 		for (const capsule of workbookCapsules) {
 			if (!capsule.relType) continue
+			if (pivotCachePartPaths.has(capsule.partPath)) continue
 			const target = capsule.partPath.replace(/^xl\//, '')
 			wbRels.push({
 				id: `rId${rIdCounter}`,
@@ -424,7 +457,9 @@ export function planWriteXlsx(
 		const preserveWorkbookXml = options.summaryOnly
 			? hasPreservedWorkbookXml && hasPreservedWorkbookRels
 			: !!(preservedWorkbookXmlText && preservedWorkbookRelsText)
-		const preserveWorkbookCalcState = preserveWorkbookXml && !options.calcStateDirty
+		const preservedRelsHasCalcChain = preservedWorkbookRelsText?.includes('calcChain') === true
+		const preserveWorkbookCalcState =
+			preserveWorkbookXml && !options.calcStateDirty && !preservedRelsHasCalcChain
 		const preserveWorkbookRels =
 			preserveWorkbookCalcState &&
 			(!shouldWriteDynamicArrayMetadata ||
@@ -457,6 +492,7 @@ export function planWriteXlsx(
 						? (preservedWorkbookXmlText ?? '')
 						: buildWorkbookXml(workbook, {
 								externalReferenceRelIds,
+								pivotCacheRelIds,
 								...(options.calcStateDirty !== undefined
 									? { calcStateDirty: options.calcStateDirty }
 									: {}),
@@ -513,12 +549,23 @@ export function planWriteXlsx(
 				)
 			}
 			plan.addOverride(workbook.preservedTheme.path, workbook.preservedTheme.contentType)
+		} else if (shouldGenerateTheme) {
+			recordXml(
+				generatedThemePath,
+				{
+					owner: { kind: 'workbook' },
+					origin: 'generated',
+					contentType: generatedThemeContentType,
+				},
+				() => buildThemeXml(workbook.themeMetadata),
+			)
+			plan.addOverride(generatedThemePath, generatedThemeContentType)
 		}
 
 		for (let i = 0; i < workbook.sheets.length; i++) {
 			const sheet = workbook.sheets[i]
 			if (!sheet) continue
-			const sheetCapsules = sheetCapsuleMap.get(sheet.name) ?? []
+			const sheetCapsules = sheetCapsuleMap.get(sheet.id) ?? []
 			const preservedSheetXml = sheet.preservedXml
 			const sheetRels: RelEntry[] = []
 			let sheetRelId = 1
@@ -566,6 +613,7 @@ export function planWriteXlsx(
 				display?: string
 				tooltip?: string
 			}> = []
+			let hasGeneratedDrawing = false
 			for (const capsule of sheetCapsules) {
 				if (!capsule.relType) continue
 				if (capsule.relType === REL_TABLE) continue
@@ -692,6 +740,61 @@ export function planWriteXlsx(
 					sheetRelId++
 					nextGeneratedTableNumber++
 				}
+				const generatedImages = sheet.imageRefs.filter(
+					(image) => image.content && image.contentType,
+				)
+				if (generatedImages.length > 0 && !drawingRelId) {
+					const drawingPartPath =
+						generatedImages[0]?.drawingPartPath ||
+						`xl/drawings/drawing${nextGeneratedDrawingNumber}.xml`
+					recordXml(
+						drawingPartPath,
+						{
+							owner: { kind: 'sheet', sheetName: sheet.name },
+							origin: 'generated',
+							contentType: CT_DRAWING,
+						},
+						() => buildDrawingXml(generatedImages),
+					)
+					const drawingDir = drawingPartPath.substring(0, drawingPartPath.lastIndexOf('/') + 1)
+					recordXml(
+						getRelsPath(drawingPartPath),
+						{
+							owner: { kind: 'sheet', sheetName: sheet.name },
+							origin: 'generated',
+						},
+						() =>
+							buildRelsXml(
+								generatedImages.map((image) => ({
+									id: image.relId,
+									type: REL_IMAGE,
+									target: computeRelativePath(drawingDir, image.targetPath),
+								})),
+							),
+					)
+					plan.addOverride(drawingPartPath, CT_DRAWING)
+					for (const image of generatedImages) {
+						recordBytes(
+							image.targetPath,
+							{
+								owner: { kind: 'sheet', sheetName: sheet.name },
+								origin: 'generated',
+								contentType: image.contentType as string,
+							},
+							() => image.content as Uint8Array,
+						)
+						plan.addOverride(image.targetPath, image.contentType as string)
+					}
+					drawingRelId = `rId${sheetRelId}`
+					sheetRels.push({
+						id: drawingRelId,
+						type: REL_DRAWING,
+						target: computeRelativePath('xl/worksheets/', drawingPartPath),
+					})
+					sheetRelId++
+					nextGeneratedDrawingNumber++
+					hasGeneratedDrawing = true
+				}
 			}
 			if (preserveSheetXml && preservedSheetXmlBytes && !options.summaryOnly) {
 				recordBytes(
@@ -708,7 +811,9 @@ export function planWriteXlsx(
 				const cfOverrides = cfDxfIdOverridesBySheet.get(sheet.name)
 				const sheetOptions = {
 					tableRelIds,
-					...(sheet.drawingRefs.hasDrawing && drawingRelId ? { drawingRelId } : {}),
+					...((sheet.drawingRefs.hasDrawing || hasGeneratedDrawing) && drawingRelId
+						? { drawingRelId }
+						: {}),
 					hyperlinks: hyperlinkEntries,
 					...((sheet.drawingRefs.hasLegacyDrawing || sheet.comments.size > 0) && legacyDrawingRelId
 						? { legacyDrawingRelId }
@@ -741,7 +846,9 @@ export function planWriteXlsx(
 							? (preservedSheetXmlText ?? '')
 							: buildSheetXml(sheet, ssTable, xfMap, {
 									tableRelIds,
-									...(sheet.drawingRefs.hasDrawing && drawingRelId ? { drawingRelId } : {}),
+									...((sheet.drawingRefs.hasDrawing || hasGeneratedDrawing) && drawingRelId
+										? { drawingRelId }
+										: {}),
 									hyperlinks: hyperlinkEntries,
 									...((sheet.drawingRefs.hasLegacyDrawing || sheet.comments.size > 0) &&
 									legacyDrawingRelId
@@ -858,17 +965,16 @@ export function planWriteXlsx(
 
 		if (capsules) {
 			for (const capsule of capsules) {
-				if (options.calcStateDirty && isCalcChainCapsule(capsule)) continue
+				if (isCalcChainCapsule(capsule)) continue
 				if (plan.isCapsulePathSkipped(capsule.partPath)) continue
 				const content = capsule.content ?? sourceArchive?.readBytes(capsule.partPath)
 				if (!content) continue
+				const owner = resolveCapsuleOwner(capsule, sheetNameById)
+				if (!owner) continue
 				recordBytes(
 					capsule.partPath,
 					{
-						owner:
-							capsule.anchor.kind === 'sheet'
-								? { kind: 'sheet', sheetName: capsule.anchor.sheetName }
-								: { kind: 'workbook' },
+						owner,
 						origin: 'capsule',
 						contentType: capsule.contentType,
 					},
@@ -880,10 +986,7 @@ export function planWriteXlsx(
 					recordXml(
 						capsuleRelsPath,
 						{
-							owner:
-								capsule.anchor.kind === 'sheet'
-									? { kind: 'sheet', sheetName: capsule.anchor.sheetName }
-									: { kind: 'workbook' },
+							owner,
 							origin: 'capsule',
 						},
 						() => buildRelsXml(capsule.relationships),
@@ -970,7 +1073,7 @@ export function planWriteXlsx(
 					workbook.sheets.length,
 					hasSharedStrings,
 					workbookContentType,
-					capsules?.filter((capsule) => !(options.calcStateDirty && isCalcChainCapsule(capsule))),
+					capsules?.filter((capsule) => !isCalcChainCapsule(capsule)),
 					built.extraOverrides.length > 0 ? built.extraOverrides : undefined,
 				)
 			},
@@ -1013,6 +1116,15 @@ function materializeSharedStringEntries(xml: string): CellValue[] {
 	return entries
 }
 
+function resolveCapsuleOwner(
+	capsule: PreservationCapsule,
+	sheetNameById: ReadonlyMap<string, string>,
+): WritePartOwner | null {
+	if (capsule.anchor.kind !== 'sheet') return { kind: 'workbook' }
+	const sheetName = sheetNameById.get(capsule.anchor.sheetId)
+	return sheetName ? { kind: 'sheet', sheetName } : null
+}
+
 function resolvePreservedText(
 	archive: ZipArchive | undefined,
 	inlineText: string | undefined,
@@ -1037,6 +1149,16 @@ function hasPreservedPart(
 	partPath: string | undefined,
 ): boolean {
 	return inlineText !== undefined || (!!archive && !!partPath && archive.has(partPath))
+}
+
+function hasThemeMetadata(metadata: Workbook['themeMetadata']): boolean {
+	return (
+		metadata.colorCount > 0 ||
+		(metadata.name?.trim().length ?? 0) > 0 ||
+		(metadata.colorSchemeName?.trim().length ?? 0) > 0 ||
+		(metadata.majorFontLatin?.trim().length ?? 0) > 0 ||
+		(metadata.minorFontLatin?.trim().length ?? 0) > 0
+	)
 }
 
 function collectCfRuleDxfOverrides(workbook: Workbook): Map<string, Map<string, number>> {

@@ -13,12 +13,20 @@ export * as ops from './ops.ts'
 export { getOperationsSchema, listOperations } from './ops.ts'
 export { WorkbookReadView } from './read-view.ts'
 export type {
+	CellSelector,
+	CellSelectorObject,
+	RangeSelector,
+	RangeSelectorObject,
+} from './ref-selectors.ts'
+export type {
 	SessionCacheOptions,
 	WorkbookLoadOptions,
 	WorkbookSessionOpenOptions,
 } from './session.ts'
 export { configureSessionCache, WorkbookDocument, WorkbookSession } from './session.ts'
 export { SheetHandle } from './sheet-handle.ts'
+export type { WorkbookRowStreamSource } from './stream.ts'
+export { streamWorkbookRows } from './stream.ts'
 export { TableHandle } from './table-handle.ts'
 export type {
 	AgentColumnSummary,

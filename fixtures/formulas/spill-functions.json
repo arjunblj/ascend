@@ -1,0 +1,345 @@
+{
+	"function": "spill",
+	"cases": [
+		{
+			"description": "SEQUENCE(5) anchor holds first value",
+			"setup": {},
+			"formula": "SEQUENCE(5)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "SEQUENCE(5) third element via INDEX",
+			"setup": {},
+			"formula": "INDEX(SEQUENCE(5), 3)",
+			"expected": { "kind": "number", "value": 3 }
+		},
+		{
+			"description": "SEQUENCE(5) fifth element via INDEX",
+			"setup": {},
+			"formula": "INDEX(SEQUENCE(5), 5)",
+			"expected": { "kind": "number", "value": 5 }
+		},
+		{
+			"description": "SEQUENCE with custom start and step",
+			"setup": {},
+			"formula": "SEQUENCE(4, 1, 10, 5)",
+			"expected": { "kind": "number", "value": 10 }
+		},
+		{
+			"description": "SEQUENCE with custom start and step, last element via INDEX",
+			"setup": {},
+			"formula": "INDEX(SEQUENCE(4, 1, 10, 5), 4)",
+			"expected": { "kind": "number", "value": 25 }
+		},
+		{
+			"description": "SEQUENCE 2D grid, anchor holds first value",
+			"setup": {},
+			"formula": "SEQUENCE(2, 3, 1, 1)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "SEQUENCE 2D grid, (2,3) via INDEX",
+			"setup": {},
+			"formula": "INDEX(SEQUENCE(2, 3), 2, 3)",
+			"expected": { "kind": "number", "value": 6 }
+		},
+		{
+			"description": "SORT ascending, anchor holds smallest value",
+			"setup": { "A1": 30, "A2": 10, "A3": 20 },
+			"formula": "SORT(A1:A3)",
+			"expected": { "kind": "number", "value": 10 }
+		},
+		{
+			"description": "SORT ascending, last element via INDEX is largest",
+			"setup": { "A1": 30, "A2": 10, "A3": 20 },
+			"formula": "INDEX(SORT(A1:A3), 3)",
+			"expected": { "kind": "number", "value": 30 }
+		},
+		{
+			"description": "SORT descending, anchor holds largest value",
+			"setup": { "A1": 30, "A2": 10, "A3": 20 },
+			"formula": "SORT(A1:A3, 1, -1)",
+			"expected": { "kind": "number", "value": 30 }
+		},
+		{
+			"description": "SORT multi-column by first column, anchor holds alphabetical first",
+			"setup": { "A1": "Cherry", "B1": 30, "A2": "Apple", "B2": 10, "A3": "Banana", "B3": 20 },
+			"formula": "SORT(A1:B3)",
+			"expected": { "kind": "string", "value": "Apple" }
+		},
+		{
+			"description": "SORT multi-column by second column, anchor holds row with smallest col2",
+			"setup": { "A1": "x", "B1": 30, "A2": "y", "B2": 10, "A3": "z", "B3": 20 },
+			"formula": "SORT(A1:B3, 2)",
+			"expected": { "kind": "string", "value": "y" }
+		},
+		{
+			"description": "SORT multi-column by second column, value column via INDEX",
+			"setup": { "A1": "x", "B1": 30, "A2": "y", "B2": 10, "A3": "z", "B3": 20 },
+			"formula": "INDEX(SORT(A1:B3, 2), 1, 2)",
+			"expected": { "kind": "number", "value": 10 }
+		},
+		{
+			"description": "FILTER with boolean criteria, anchor holds first matching row",
+			"setup": { "A1": 10, "A2": 20, "A3": 30, "B1": true, "B2": false, "B3": true },
+			"formula": "FILTER(A1:A3, B1:B3)",
+			"expected": { "kind": "number", "value": 10 }
+		},
+		{
+			"description": "FILTER second matching row via INDEX",
+			"setup": { "A1": 10, "A2": 20, "A3": 30, "B1": true, "B2": false, "B3": true },
+			"formula": "INDEX(FILTER(A1:A3, B1:B3), 2)",
+			"expected": { "kind": "number", "value": 30 }
+		},
+		{
+			"description": "FILTER with numeric criteria (non-zero = true)",
+			"setup": { "A1": 100, "A2": 200, "A3": 300, "B1": 1, "B2": 0, "B3": 1 },
+			"formula": "FILTER(A1:A3, B1:B3)",
+			"expected": { "kind": "number", "value": 100 }
+		},
+		{
+			"description": "FILTER returns fallback when no matches",
+			"setup": { "A1": 10, "A2": 20, "B1": false, "B2": false },
+			"formula": "FILTER(A1:A2, B1:B2, \"none\")",
+			"expected": { "kind": "string", "value": "none" }
+		},
+		{
+			"description": "FILTER with no matches and no fallback returns #CALC!",
+			"setup": { "A1": 10, "A2": 20, "B1": false, "B2": false },
+			"formula": "FILTER(A1:A2, B1:B2)",
+			"expected": { "kind": "error", "value": "#CALC!" }
+		},
+		{
+			"description": "UNIQUE removes duplicates, anchor holds first unique value",
+			"setup": { "A1": "apple", "A2": "banana", "A3": "apple", "A4": "cherry", "A5": "banana" },
+			"formula": "UNIQUE(A1:A5)",
+			"expected": { "kind": "string", "value": "apple" }
+		},
+		{
+			"description": "UNIQUE preserves first-seen order, second unique via INDEX",
+			"setup": { "A1": "apple", "A2": "banana", "A3": "apple", "A4": "cherry", "A5": "banana" },
+			"formula": "INDEX(UNIQUE(A1:A5), 2)",
+			"expected": { "kind": "string", "value": "banana" }
+		},
+		{
+			"description": "UNIQUE third unique element via INDEX",
+			"setup": { "A1": "apple", "A2": "banana", "A3": "apple", "A4": "cherry", "A5": "banana" },
+			"formula": "INDEX(UNIQUE(A1:A5), 3)",
+			"expected": { "kind": "string", "value": "cherry" }
+		},
+		{
+			"description": "UNIQUE with numbers, anchor holds first value",
+			"setup": { "A1": 5, "A2": 3, "A3": 5, "A4": 1, "A5": 3 },
+			"formula": "UNIQUE(A1:A5)",
+			"expected": { "kind": "number", "value": 5 }
+		},
+		{
+			"description": "Nested SORT(FILTER(...)) sorts filtered results, anchor holds smallest match",
+			"setup": {
+				"A1": 50,
+				"A2": 30,
+				"A3": 10,
+				"A4": 40,
+				"A5": 20,
+				"B1": true,
+				"B2": false,
+				"B3": true,
+				"B4": true,
+				"B5": false
+			},
+			"formula": "SORT(FILTER(A1:A5, B1:B5))",
+			"expected": { "kind": "number", "value": 10 }
+		},
+		{
+			"description": "Nested SORT(FILTER(...)) last element via INDEX is largest match",
+			"setup": {
+				"A1": 50,
+				"A2": 30,
+				"A3": 10,
+				"A4": 40,
+				"A5": 20,
+				"B1": true,
+				"B2": false,
+				"B3": true,
+				"B4": true,
+				"B5": false
+			},
+			"formula": "INDEX(SORT(FILTER(A1:A5, B1:B5)), 3)",
+			"expected": { "kind": "number", "value": 50 }
+		},
+		{
+			"description": "HSTACK combines two column ranges, anchor holds first element",
+			"setup": { "A1": 1, "A2": 2, "C1": 10, "C2": 20 },
+			"formula": "HSTACK(A1:A2, C1:C2)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "HSTACK second column via INDEX",
+			"setup": { "A1": 1, "A2": 2, "C1": 10, "C2": 20 },
+			"formula": "INDEX(HSTACK(A1:A2, C1:C2), 1, 2)",
+			"expected": { "kind": "number", "value": 10 }
+		},
+		{
+			"description": "HSTACK second row second column via INDEX",
+			"setup": { "A1": 1, "A2": 2, "C1": 10, "C2": 20 },
+			"formula": "INDEX(HSTACK(A1:A2, C1:C2), 2, 2)",
+			"expected": { "kind": "number", "value": 20 }
+		},
+		{
+			"description": "VSTACK combines two ranges vertically, anchor holds first element",
+			"setup": { "A1": 1, "A2": 2, "A4": 10, "A5": 20 },
+			"formula": "VSTACK(A1:A2, A4:A5)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "VSTACK third element via INDEX comes from second range",
+			"setup": { "A1": 1, "A2": 2, "A4": 10, "A5": 20 },
+			"formula": "INDEX(VSTACK(A1:A2, A4:A5), 3)",
+			"expected": { "kind": "number", "value": 10 }
+		},
+		{
+			"description": "VSTACK fourth element via INDEX",
+			"setup": { "A1": 1, "A2": 2, "A4": 10, "A5": 20 },
+			"formula": "INDEX(VSTACK(A1:A2, A4:A5), 4)",
+			"expected": { "kind": "number", "value": 20 }
+		},
+		{
+			"description": "TAKE first 2 rows, anchor holds first value",
+			"setup": { "A1": 10, "A2": 20, "A3": 30, "A4": 40 },
+			"formula": "TAKE(A1:A4, 2)",
+			"expected": { "kind": "number", "value": 10 }
+		},
+		{
+			"description": "TAKE first 2 rows, second element via INDEX",
+			"setup": { "A1": 10, "A2": 20, "A3": 30, "A4": 40 },
+			"formula": "INDEX(TAKE(A1:A4, 2), 2)",
+			"expected": { "kind": "number", "value": 20 }
+		},
+		{
+			"description": "TAKE last 2 rows with negative count, anchor holds third element",
+			"setup": { "A1": 10, "A2": 20, "A3": 30, "A4": 40 },
+			"formula": "TAKE(A1:A4, -2)",
+			"expected": { "kind": "number", "value": 30 }
+		},
+		{
+			"description": "DROP first 2 rows, anchor holds third element",
+			"setup": { "A1": 10, "A2": 20, "A3": 30, "A4": 40 },
+			"formula": "DROP(A1:A4, 2)",
+			"expected": { "kind": "number", "value": 30 }
+		},
+		{
+			"description": "DROP last 2 rows with negative count, anchor holds first element",
+			"setup": { "A1": 10, "A2": 20, "A3": 30, "A4": 40 },
+			"formula": "DROP(A1:A4, -2)",
+			"expected": { "kind": "number", "value": 10 }
+		},
+		{
+			"description": "DROP first 2 rows, second remaining element via INDEX",
+			"setup": { "A1": 10, "A2": 20, "A3": 30, "A4": 40 },
+			"formula": "INDEX(DROP(A1:A4, 2), 2)",
+			"expected": { "kind": "number", "value": 40 }
+		},
+		{
+			"description": "CHOOSECOLS picks second column",
+			"setup": { "A1": 10, "B1": 20, "C1": 30, "A2": 40, "B2": 50, "C2": 60 },
+			"formula": "CHOOSECOLS(A1:C2, 2)",
+			"expected": { "kind": "number", "value": 20 }
+		},
+		{
+			"description": "CHOOSECOLS picks third column, second row via INDEX",
+			"setup": { "A1": 10, "B1": 20, "C1": 30, "A2": 40, "B2": 50, "C2": 60 },
+			"formula": "INDEX(CHOOSECOLS(A1:C2, 3), 2)",
+			"expected": { "kind": "number", "value": 60 }
+		},
+		{
+			"description": "CHOOSECOLS with negative index picks from end",
+			"setup": { "A1": 10, "B1": 20, "C1": 30 },
+			"formula": "CHOOSECOLS(A1:C1, -1)",
+			"expected": { "kind": "number", "value": 30 }
+		},
+		{
+			"description": "CHOOSEROWS picks second row",
+			"setup": { "A1": 10, "A2": 20, "A3": 30 },
+			"formula": "CHOOSEROWS(A1:A3, 2)",
+			"expected": { "kind": "number", "value": 20 }
+		},
+		{
+			"description": "CHOOSEROWS picks third row",
+			"setup": { "A1": 10, "A2": 20, "A3": 30 },
+			"formula": "CHOOSEROWS(A1:A3, 3)",
+			"expected": { "kind": "number", "value": 30 }
+		},
+		{
+			"description": "CHOOSEROWS with negative index picks from end",
+			"setup": { "A1": 10, "A2": 20, "A3": 30 },
+			"formula": "CHOOSEROWS(A1:A3, -1)",
+			"expected": { "kind": "number", "value": 30 }
+		},
+		{
+			"description": "CHOOSEROWS reorders rows, second row via INDEX",
+			"setup": { "A1": 10, "A2": 20, "A3": 30 },
+			"formula": "INDEX(CHOOSEROWS(A1:A3, 3, 1), 2)",
+			"expected": { "kind": "number", "value": 10 }
+		},
+		{
+			"description": "TOCOL flattens 2D to column, anchor holds first value",
+			"setup": { "A1": 1, "B1": 2, "A2": 3, "B2": 4 },
+			"formula": "TOCOL(A1:B2)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "TOCOL flattens by row, second element via INDEX",
+			"setup": { "A1": 1, "B1": 2, "A2": 3, "B2": 4 },
+			"formula": "INDEX(TOCOL(A1:B2), 2)",
+			"expected": { "kind": "number", "value": 2 }
+		},
+		{
+			"description": "TOCOL flattens by row, fourth element via INDEX",
+			"setup": { "A1": 1, "B1": 2, "A2": 3, "B2": 4 },
+			"formula": "INDEX(TOCOL(A1:B2), 4)",
+			"expected": { "kind": "number", "value": 4 }
+		},
+		{
+			"description": "TOROW flattens column to row, anchor holds first value",
+			"setup": { "A1": 10, "A2": 20, "A3": 30 },
+			"formula": "TOROW(A1:A3)",
+			"expected": { "kind": "number", "value": 10 }
+		},
+		{
+			"description": "TOROW second element via INDEX",
+			"setup": { "A1": 10, "A2": 20, "A3": 30 },
+			"formula": "INDEX(TOROW(A1:A3), 2)",
+			"expected": { "kind": "number", "value": 20 }
+		},
+		{
+			"description": "TOROW third element via INDEX",
+			"setup": { "A1": 10, "A2": 20, "A3": 30 },
+			"formula": "INDEX(TOROW(A1:A3), 3)",
+			"expected": { "kind": "number", "value": 30 }
+		},
+		{
+			"description": "SORTBY sorts by secondary key column, anchor holds sorted first",
+			"setup": { "A1": "C", "A2": "A", "A3": "B", "B1": 3, "B2": 1, "B3": 2 },
+			"formula": "SORTBY(A1:A3, B1:B3)",
+			"expected": { "kind": "string", "value": "A" }
+		},
+		{
+			"description": "SORTBY descending, anchor holds item with largest key",
+			"setup": { "A1": "C", "A2": "A", "A3": "B", "B1": 3, "B2": 1, "B3": 2 },
+			"formula": "SORTBY(A1:A3, B1:B3, -1)",
+			"expected": { "kind": "string", "value": "C" }
+		},
+		{
+			"description": "TRANSPOSE column to row, anchor holds first value",
+			"setup": { "A1": 10, "A2": 20, "A3": 30 },
+			"formula": "TRANSPOSE(A1:A3)",
+			"expected": { "kind": "number", "value": 10 }
+		},
+		{
+			"description": "TRANSPOSE column to row, second element via INDEX",
+			"setup": { "A1": 10, "A2": 20, "A3": 30 },
+			"formula": "INDEX(TRANSPOSE(A1:A3), 2)",
+			"expected": { "kind": "number", "value": 20 }
+		}
+	]
+}

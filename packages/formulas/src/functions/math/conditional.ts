@@ -171,8 +171,18 @@ function allPairsMatch(pairs: CriteriaPair[], r: number, c: number): boolean {
 	return true
 }
 
+function firstScalarError(args: readonly (EvalArg | undefined)[]): CellValue | null {
+	for (const arg of args) {
+		const value = arg?.value ?? EMPTY
+		if (value.kind === 'error') return value
+	}
+	return null
+}
+
 export const conditionalFunctions: FunctionDef[] = [
 	fn('SUMIF', 2, 3, (args) => {
+		const directError = firstScalarError(args)
+		if (directError) return directError
 		const range = getRange(args[0])
 		const bitmap = getMatchBitmap(range, args[1]?.value ?? EMPTY)
 		const cols = range[0]?.length ?? 1
@@ -190,6 +200,8 @@ export const conditionalFunctions: FunctionDef[] = [
 	}),
 
 	fn('SUMIFS', 3, 255, (args) => {
+		const directError = firstScalarError(args)
+		if (directError) return directError
 		const sumRange = getRange(args[0])
 		const pairs = buildPairs(args, 1)
 		if (pairs.some((pair) => !sameShape(sumRange, pair.range))) return errorValue('#VALUE!')
@@ -206,6 +218,8 @@ export const conditionalFunctions: FunctionDef[] = [
 	}),
 
 	fn('COUNTIF', 2, 2, (args) => {
+		const directError = firstScalarError(args)
+		if (directError) return directError
 		const range = getRange(args[0])
 		const bitmap = getMatchBitmap(range, args[1]?.value ?? EMPTY)
 		const cols = range[0]?.length ?? 1
@@ -219,6 +233,8 @@ export const conditionalFunctions: FunctionDef[] = [
 	}),
 
 	fn('COUNTIFS', 2, 255, (args) => {
+		const directError = firstScalarError(args)
+		if (directError) return directError
 		const pairs = buildPairs(args, 0)
 		const first = pairs[0]?.range
 		if (!first) return numberValue(0)
@@ -233,6 +249,8 @@ export const conditionalFunctions: FunctionDef[] = [
 	}),
 
 	fn('AVERAGEIF', 2, 3, (args) => {
+		const directError = firstScalarError(args)
+		if (directError) return directError
 		const range = getRange(args[0])
 		const bitmap = getMatchBitmap(range, args[1]?.value ?? EMPTY)
 		const cols = range[0]?.length ?? 1
@@ -254,6 +272,8 @@ export const conditionalFunctions: FunctionDef[] = [
 	}),
 
 	fn('AVERAGEIFS', 3, 255, (args) => {
+		const directError = firstScalarError(args)
+		if (directError) return directError
 		const avgRange = getRange(args[0])
 		const pairs = buildPairs(args, 1)
 		if (pairs.some((pair) => !sameShape(avgRange, pair.range))) return errorValue('#VALUE!')
@@ -274,6 +294,8 @@ export const conditionalFunctions: FunctionDef[] = [
 	}),
 
 	fn('MINIFS', 3, 255, (args) => {
+		const directError = firstScalarError(args)
+		if (directError) return directError
 		const minRange = getRange(args[0])
 		const pairs = buildPairs(args, 1)
 		if (pairs.some((pair) => !sameShape(minRange, pair.range))) return errorValue('#VALUE!')
@@ -294,6 +316,8 @@ export const conditionalFunctions: FunctionDef[] = [
 	}),
 
 	fn('MAXIFS', 3, 255, (args) => {
+		const directError = firstScalarError(args)
+		if (directError) return directError
 		const maxRange = getRange(args[0])
 		const pairs = buildPairs(args, 1)
 		if (pairs.some((pair) => !sameShape(maxRange, pair.range))) return errorValue('#VALUE!')

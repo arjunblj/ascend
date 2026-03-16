@@ -146,6 +146,8 @@ export interface SheetImageRef {
 	readonly drawingPartPath: string
 	readonly relId: string
 	readonly targetPath: string
+	readonly contentType?: string
+	readonly content?: Uint8Array
 	readonly anchor?: SheetImageAnchor
 	readonly name?: string
 	readonly description?: string
@@ -176,6 +178,12 @@ export interface SheetConditionalFormatRule {
 	readonly stopIfTrue?: boolean
 	readonly formulas: readonly string[]
 	readonly style?: CellStyle
+	readonly rank?: number
+	readonly percent?: boolean
+	readonly bottom?: boolean
+	readonly aboveAverage?: boolean
+	readonly equalAverage?: boolean
+	readonly timePeriod?: string
 }
 
 export interface SheetConditionalFormat {
@@ -209,6 +217,14 @@ export interface SheetFormatPr {
 	readonly outlineLevelRow?: number
 	readonly outlineLevelCol?: number
 	readonly customHeight?: boolean
+}
+
+export interface SheetBreak {
+	readonly id: number
+	readonly min?: number
+	readonly max?: number
+	readonly man?: boolean
+	readonly pt?: boolean
 }
 
 export type SheetViewType = 'normal' | 'pageBreakPreview' | 'pageLayout'
@@ -252,6 +268,8 @@ export class Sheet {
 	pageSetup: SheetPageSetup | null
 	printOptions: SheetPrintOptions | null
 	headerFooter: SheetHeaderFooter | null
+	rowBreaks: SheetBreak[]
+	colBreaks: SheetBreak[]
 	preservedXml: SheetPreservedXml | null
 	preservedExtLst: string | null
 	private _shared = false
@@ -286,6 +304,8 @@ export class Sheet {
 		this.pageSetup = null
 		this.printOptions = null
 		this.headerFooter = null
+		this.rowBreaks = []
+		this.colBreaks = []
 		this.preservedXml = null
 		this.preservedExtLst = null
 	}
@@ -302,6 +322,8 @@ export class Sheet {
 		this.hyperlinks = new Map(this.hyperlinks)
 		this.ignoredErrors = this.ignoredErrors.map((e) => ({ ...e }))
 		this.dataValidations = this.dataValidations.map((d) => ({ ...d }))
+		this.rowBreaks = this.rowBreaks.map((b) => ({ ...b }))
+		this.colBreaks = this.colBreaks.map((b) => ({ ...b }))
 		this.conditionalFormats = this.conditionalFormats.map((cf) => ({
 			...cf,
 			rules: cf.rules.map((r) => ({
@@ -344,6 +366,8 @@ export class Sheet {
 		s.pageSetup = this.pageSetup
 		s.printOptions = this.printOptions
 		s.headerFooter = this.headerFooter
+		s.rowBreaks = this.rowBreaks
+		s.colBreaks = this.colBreaks
 		s.preservedXml = this.preservedXml
 		s.preservedExtLst = this.preservedExtLst
 		this._shared = true
@@ -408,6 +432,7 @@ function cloneTable(table: Table): Table {
 function cloneImageRef(imageRef: SheetImageRef): SheetImageRef {
 	return {
 		...imageRef,
+		...(imageRef.content ? { content: new Uint8Array(imageRef.content) } : {}),
 		...(imageRef.anchor ? { anchor: cloneImageAnchor(imageRef.anchor) } : {}),
 	}
 }

@@ -83,6 +83,7 @@ const BUILTIN_FMT_CODES = new Map<string, number>([
 	['# ?/?', 12],
 	['# ??/??', 13],
 	['mm-dd-yy', 14],
+	['m/d/yy', 14],
 	['d-mmm-yy', 15],
 	['d-mmm', 16],
 	['mmm-yy', 17],

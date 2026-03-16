@@ -1,0 +1,58 @@
+import type { SheetAnchorMarker, SheetImageRef } from '@ascend/core'
+import { ChunkedStringBuilder } from './chunked-string-builder.ts'
+
+const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+const NS_XDR = 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing'
+const NS_A = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+const NS_R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+
+export function buildDrawingXml(images: readonly SheetImageRef[]): string {
+	const out = new ChunkedStringBuilder()
+	out.push(XML_HEADER)
+	out.push(`<xdr:wsDr xmlns:xdr="${NS_XDR}" xmlns:a="${NS_A}" xmlns:r="${NS_R}">`)
+	for (let i = 0; i < images.length; i++) {
+		const image = images[i]
+		if (!image) continue
+		out.push(anchorXml(image, i))
+	}
+	out.push('</xdr:wsDr>')
+	return out.toString()
+}
+
+function anchorXml(image: SheetImageRef, index: number): string {
+	const picXml = pictureXml(image, index)
+	const clientData = '<xdr:clientData/>'
+	const anchor = image.anchor ?? {
+		kind: 'oneCell',
+		from: { row: 0, col: 0 },
+		cx: 320000,
+		cy: 240000,
+	}
+	switch (anchor.kind) {
+		case 'oneCell':
+			return `<xdr:oneCellAnchor>${markerXml('from', anchor.from)}<xdr:ext cx="${anchor.cx ?? 320000}" cy="${anchor.cy ?? 240000}"/>${picXml}${clientData}</xdr:oneCellAnchor>`
+		case 'twoCell':
+			return `<xdr:twoCellAnchor${anchor.editAs ? ` editAs="${escapeXml(anchor.editAs)}"` : ''}>${markerXml('from', anchor.from)}${markerXml('to', anchor.to)}${picXml}${clientData}</xdr:twoCellAnchor>`
+		case 'absolute':
+			return `<xdr:absoluteAnchor><xdr:pos x="${anchor.x}" y="${anchor.y}"/><xdr:ext cx="${anchor.cx ?? 320000}" cy="${anchor.cy ?? 240000}"/>${picXml}${clientData}</xdr:absoluteAnchor>`
+	}
+}
+
+function pictureXml(image: SheetImageRef, index: number): string {
+	const name = escapeXml(image.name ?? `Image ${index + 1}`)
+	const descr = image.description ? ` descr="${escapeXml(image.description)}"` : ''
+	return `<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="${index + 1}" name="${name}"${descr}/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="${escapeXml(image.relId)}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic>`
+}
+
+function markerXml(tag: 'from' | 'to', marker: SheetAnchorMarker): string {
+	return `<xdr:${tag}><xdr:col>${marker.col}</xdr:col><xdr:colOff>${marker.colOff ?? 0}</xdr:colOff><xdr:row>${marker.row}</xdr:row><xdr:rowOff>${marker.rowOff ?? 0}</xdr:rowOff></xdr:${tag}>`
+}
+
+function escapeXml(value: string): string {
+	return value
+		.replaceAll('&', '&amp;')
+		.replaceAll('<', '&lt;')
+		.replaceAll('>', '&gt;')
+		.replaceAll('"', '&quot;')
+		.replaceAll("'", '&apos;')
+}

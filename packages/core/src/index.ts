@@ -24,6 +24,7 @@ export {
 } from './refs.ts'
 export type {
 	SheetAnchorMarker,
+	SheetBreak,
 	SheetColDef,
 	SheetComment,
 	SheetConditionalFormat,

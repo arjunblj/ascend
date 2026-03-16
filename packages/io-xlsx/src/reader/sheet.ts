@@ -4,6 +4,7 @@ import type {
 	CellStyle,
 	DynamicArrayFormulaInfo,
 	RangeRef,
+	SheetBreak,
 	SheetColDef,
 	SheetConditionalFormat,
 	SheetConditionalFormatRule,
@@ -183,8 +184,13 @@ function applyDensityHintFromDimension(sheet: Sheet, xml: string): void {
 	}
 }
 
-export function parseSheet(name: string, xml: string, ctx: SheetParseContext): Sheet {
-	const sheet = new Sheet(name)
+export function parseSheet(
+	name: string,
+	xml: string,
+	ctx: SheetParseContext,
+	sheetId?: Sheet['id'],
+): Sheet {
+	const sheet = new Sheet(name, sheetId)
 	applyDensityHintFromDimension(sheet, xml)
 	const sheetDataLoc = locateSheetData(xml)
 	if (sheetDataLoc) parseSheetDataFromLoc(xml, sheetDataLoc, sheet, ctx)
@@ -207,6 +213,7 @@ export function parseSheet(name: string, xml: string, ctx: SheetParseContext): S
 	parsePageSetup(ws, sheet)
 	parsePrintOptions(ws, sheet)
 	parseHeaderFooter(ws, sheet)
+	parsePageBreaks(ws, sheet)
 	parseIgnoredErrors(ws, sheet)
 	if (!ctx.valuesOnly && !ctx.formulaOnly) {
 		parseHyperlinks(ws, sheet, ctx.relationships ?? [], ctx.valuePool)
@@ -461,6 +468,8 @@ function parseFastCell(
 		value = EMPTY
 	} else if (ctx.valuesOnly && innerXml.includes('<f')) {
 		value = EMPTY
+	} else if (type) {
+		value = type === 'n' ? (pool ? pool.internValue(numberValue(0)) : numberValue(0)) : EMPTY
 	} else {
 		return false
 	}
@@ -775,6 +784,8 @@ function resolveCellToSheet(
 		value = EMPTY
 	} else if (ctx.valuesOnly && c.f !== undefined && c.f !== null) {
 		value = EMPTY
+	} else if (type) {
+		value = type === 'n' ? (pool ? pool.internValue(numberValue(0)) : numberValue(0)) : EMPTY
 	} else {
 		return false
 	}
@@ -1255,6 +1266,31 @@ function parseHeaderFooter(ws: XmlNode, sheet: Sheet): void {
 	sheet.headerFooter = parsed
 }
 
+function parsePageBreaks(ws: XmlNode, sheet: Sheet): void {
+	parseBreakCollection(ws.rowBreaks as XmlNode | undefined, sheet.rowBreaks)
+	parseBreakCollection(ws.colBreaks as XmlNode | undefined, sheet.colBreaks)
+}
+
+function parseBreakCollection(node: XmlNode | undefined, target: SheetBreak[]): void {
+	if (!node) return
+	for (const brk of asArray<XmlNode>(node.brk as XmlNode | XmlNode[] | undefined)) {
+		const id = numAttr(brk, 'id')
+		if (id === undefined) continue
+		const min = numAttr(brk, 'min')
+		const max = numAttr(brk, 'max')
+		const man = boolAttr(brk, 'man')
+		const pt = boolAttr(brk, 'pt')
+		const parsed: SheetBreak = {
+			id,
+			...(min !== undefined ? { min } : {}),
+			...(max !== undefined ? { max } : {}),
+			...(man !== undefined ? { man } : {}),
+			...(pt !== undefined ? { pt } : {}),
+		}
+		target.push(parsed)
+	}
+}
+
 function parseIgnoredErrors(ws: XmlNode, sheet: Sheet): void {
 	const ignoredErrors = ws.ignoredErrors as XmlNode | undefined
 	if (!ignoredErrors) return
@@ -1359,6 +1395,12 @@ function parseConditionalFormatting(
 				stopIfTrue?: boolean
 				formulas: readonly string[]
 				style?: CellStyle
+				rank?: number
+				percent?: boolean
+				bottom?: boolean
+				aboveAverage?: boolean
+				equalAverage?: boolean
+				timePeriod?: string
 			} = {
 				type,
 				formulas,
@@ -1369,6 +1411,18 @@ function parseConditionalFormatting(
 			if (priority !== undefined) parsedRule.priority = priority
 			const stopIfTrue = readBoolAttribute(rule, 'stopIfTrue')
 			if (stopIfTrue !== undefined) parsedRule.stopIfTrue = stopIfTrue
+			const rank = numAttr(rule, 'rank')
+			if (rank !== undefined) parsedRule.rank = rank
+			const percent = readBoolAttribute(rule, 'percent')
+			if (percent !== undefined) parsedRule.percent = percent
+			const bottom = readBoolAttribute(rule, 'bottom')
+			if (bottom !== undefined) parsedRule.bottom = bottom
+			const cfAboveAverage = readBoolAttribute(rule, 'aboveAverage')
+			if (cfAboveAverage !== undefined) parsedRule.aboveAverage = cfAboveAverage
+			const equalAverage = readBoolAttribute(rule, 'equalAverage')
+			if (equalAverage !== undefined) parsedRule.equalAverage = equalAverage
+			const timePeriod = attr(rule, 'timePeriod')
+			if (timePeriod) parsedRule.timePeriod = timePeriod
 			if (dxfId !== undefined) {
 				parsedRule.dxfId = dxfId
 				const style = differentialStyles[dxfId]

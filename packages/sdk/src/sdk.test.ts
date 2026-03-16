@@ -307,6 +307,63 @@ describe('AscendWorkbook', () => {
 		expect(wb.sheet('Sheet1')?.cell('B1')?.value).toEqual({ kind: 'number', value: 84 })
 	})
 
+	test('typed cell selectors work for set/get and sheet cell access', () => {
+		const wb = AscendWorkbook.create()
+		expect(wb.set({ sheet: 'Sheet1', cell: { row: 0, col: 0 } }, 42).errors).toEqual([])
+		expect(wb.get({ sheet: 'Sheet1', cell: { row: 0, col: 0 } })).toEqual({
+			kind: 'number',
+			value: 42,
+		})
+		expect(wb.sheet('Sheet1')?.cell({ cell: { row: 0, col: 0 } })?.value).toEqual({
+			kind: 'number',
+			value: 42,
+		})
+	})
+
+	test('typed range selectors work for fillFormula', () => {
+		const wb = AscendWorkbook.create()
+		wb.set('Sheet1!A1', 2)
+		wb.set('Sheet1!A2', 3)
+		const result = wb.fillFormula(
+			{
+				sheet: 'Sheet1',
+				range: {
+					start: { row: 0, col: 1 },
+					end: { row: 1, col: 1 },
+				},
+			},
+			'=A1*10',
+		)
+		expect(result.errors).toEqual([])
+		wb.recalc()
+		expect(wb.get('Sheet1!B1')).toEqual({ kind: 'number', value: 20 })
+		expect(wb.get('Sheet1!B2')).toEqual({ kind: 'number', value: 30 })
+	})
+
+	test('builder coalesces adjacent set() calls per sheet into a single setCells op', () => {
+		const wb = AscendWorkbook.create()
+		const builder = wb
+			.builder()
+			.set('Sheet1!A1', 1)
+			.set('Sheet1!A2', 2)
+			.set('Sheet2!A1', 3)
+			.set('Sheet2!A2', 4) as unknown as {
+			ops: Array<{ op: string; sheet?: string; updates?: unknown[] }>
+		}
+
+		expect(builder.ops).toHaveLength(2)
+		expect(builder.ops[0]).toMatchObject({
+			op: 'setCells',
+			sheet: 'Sheet1',
+		})
+		expect(builder.ops[1]).toMatchObject({
+			op: 'setCells',
+			sheet: 'Sheet2',
+		})
+		expect(builder.ops[0]?.updates).toHaveLength(2)
+		expect(builder.ops[1]?.updates).toHaveLength(2)
+	})
+
 	test('set auto-coerces primitive values through setCells', () => {
 		const wb = AscendWorkbook.create()
 		expect(wb.set('Sheet1!A1', 42).errors).toEqual([])

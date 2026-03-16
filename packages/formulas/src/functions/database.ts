@@ -10,6 +10,14 @@ function isBlankLike(value: CellValue): boolean {
 	return false
 }
 
+function firstScalarError(args: readonly (EvalArg | undefined)[]): CellValue | null {
+	for (const arg of args) {
+		const value = arg?.value ?? EMPTY
+		if (value.kind === 'error') return value
+	}
+	return null
+}
+
 function parseCriteria(criteria: CellValue): (v: CellValue) => boolean {
 	if (criteria.kind === 'number') {
 		const t = criteria.value
@@ -101,6 +109,8 @@ export interface DatabaseFilterResult {
 }
 
 export function databaseFilter(args: EvalArg[]): DatabaseFilterResult {
+	const directError = firstScalarError(args)
+	if (directError) return { values: [], error: directError }
 	const dbRange = iterAreaRows(args[0])
 	const fieldArg = args[1]
 	const criteriaRange = iterAreaRows(args[2])

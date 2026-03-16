@@ -15,6 +15,27 @@ describe('extractZip', () => {
 		const archive = extractZip(zip64Bytes)
 		expect(archive.readText('hello.txt')).toBe('hello zip64')
 	})
+
+	test('reads ZIP64 archives emitted by writer when entry count exceeds EOCD16 limits', () => {
+		const parts = new Map<string, Uint8Array>()
+		for (let i = 0; i < 70_000; i++) {
+			parts.set(`f${i}.txt`, new Uint8Array(0))
+		}
+		const bytes = createZip(parts)
+		const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+		const eocdOffset = findSignature(bytes, EOCD_SIGNATURE)
+		expect(view.getUint16(eocdOffset + 8, true)).toBe(0xffff)
+		expect(view.getUint16(eocdOffset + 10, true)).toBe(0xffff)
+		expect(findSignature(bytes, ZIP64_EOCD_SIGNATURE)).toBeGreaterThan(0)
+		expect(findSignature(bytes, ZIP64_EOCD_LOCATOR_SIGNATURE)).toBeGreaterThan(0)
+
+		const archive = extractZip(bytes)
+		expect(archive.readBytes('f0.txt')?.byteLength).toBe(0)
+		expect(archive.readBytes('f69999.txt')?.byteLength).toBe(0)
+		let entryCount = 0
+		for (const _ of archive.entries()) entryCount++
+		expect(entryCount).toBe(70_000)
+	})
 })
 
 function promoteToZip64(bytes: Uint8Array): Uint8Array {

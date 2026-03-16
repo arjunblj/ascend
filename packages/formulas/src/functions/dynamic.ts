@@ -209,6 +209,10 @@ export const dynamicFunctions: FunctionDef[] = [
 		minArgs: 2,
 		maxArgs: 255,
 		evaluate(args) {
+			const first = args[0]?.value ?? EMPTY
+			if (first.kind === 'error') return first
+			const second = args[1]?.value ?? EMPTY
+			if (second.kind === 'error') return second
 			const data = getRange(args[0])
 			if (data.length === 0) return EMPTY
 			const sortKeys: Array<{ values: CellValue[]; order: 1 | -1 }> = []
@@ -605,6 +609,8 @@ export const dynamicFunctions: FunctionDef[] = [
 		minArgs: 2,
 		maxArgs: 4,
 		evaluate(args) {
+			const source = args[0]?.value ?? EMPTY
+			if (source.kind === 'error') return source
 			const data = getRange(args[0]).map((row) => row.map((cell) => topLeftScalar(cell)))
 			const targetRows = num(args[1])
 			if (typeof targetRows !== 'number') return targetRows
@@ -661,6 +667,7 @@ export const dynamicFunctions: FunctionDef[] = [
 			return 'kind' in chosen ? chosen : scalarOrArray(chosen)
 		},
 	},
+	// Stub: actual evaluation is bypassed by the engine evaluator (codegen)
 	{
 		name: 'LAMBDA',
 		minArgs: 2,
@@ -669,6 +676,7 @@ export const dynamicFunctions: FunctionDef[] = [
 			return errorValue('#CALC!')
 		},
 	},
+	// Stub: actual evaluation is bypassed by the engine evaluator (codegen)
 	{
 		name: 'MAP',
 		minArgs: 2,
@@ -677,6 +685,7 @@ export const dynamicFunctions: FunctionDef[] = [
 			return args[0]?.value ?? EMPTY
 		},
 	},
+	// Stub: actual evaluation is bypassed by the engine evaluator (codegen)
 	{
 		name: 'REDUCE',
 		minArgs: 3,
@@ -685,6 +694,7 @@ export const dynamicFunctions: FunctionDef[] = [
 			return args[0]?.value ?? EMPTY
 		},
 	},
+	// Stub: actual evaluation is bypassed by the engine evaluator (codegen)
 	{
 		name: 'SCAN',
 		minArgs: 3,
@@ -693,6 +703,7 @@ export const dynamicFunctions: FunctionDef[] = [
 			return args[0]?.value ?? EMPTY
 		},
 	},
+	// Stub: actual evaluation is bypassed by the engine evaluator (codegen)
 	{
 		name: 'BYROW',
 		minArgs: 2,
@@ -701,6 +712,7 @@ export const dynamicFunctions: FunctionDef[] = [
 			return args[0]?.value ?? EMPTY
 		},
 	},
+	// Stub: actual evaluation is bypassed by the engine evaluator (codegen)
 	{
 		name: 'BYCOL',
 		minArgs: 2,
@@ -709,6 +721,7 @@ export const dynamicFunctions: FunctionDef[] = [
 			return args[0]?.value ?? EMPTY
 		},
 	},
+	// Stub: actual evaluation is bypassed by the engine evaluator (codegen)
 	{
 		name: 'MAKEARRAY',
 		minArgs: 3,

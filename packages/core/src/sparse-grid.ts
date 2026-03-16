@@ -49,7 +49,7 @@ export type CellFormulaBinding =
 	| DynamicArrayFormulaInfo
 	| SpillFormulaInfo
 
-const CHUNK_BITS = 6
+const CHUNK_BITS = resolveChunkBits()
 const CHUNK_SIZE = 1 << CHUNK_BITS
 const CHUNK_MASK = CHUNK_SIZE - 1
 const CHUNK_AREA = CHUNK_SIZE * CHUNK_SIZE
@@ -121,6 +121,13 @@ class StringTable {
 	private readonly ids = new Map<string, number>()
 	private readonly values = ['']
 
+	constructor() {
+		for (const value of COMMON_INTERNED_STRINGS) {
+			this.ids.set(value, this.values.length)
+			this.values.push(value)
+		}
+	}
+
 	intern(value: string): number {
 		const existing = this.ids.get(value)
 		if (existing !== undefined) return existing
@@ -134,6 +141,20 @@ class StringTable {
 		return this.values[id] ?? ''
 	}
 }
+
+const COMMON_INTERNED_STRINGS = [
+	'TRUE',
+	'FALSE',
+	'#NULL!',
+	'#DIV/0!',
+	'#VALUE!',
+	'#REF!',
+	'#NAME?',
+	'#NUM!',
+	'#N/A',
+	'#SPILL!',
+	'#CALC!',
+] as const
 
 class SparseChunk implements GridChunk {
 	private readonly slots = new Map<number, StoredSlot>()
@@ -201,7 +222,15 @@ class SparseChunk implements GridChunk {
 	clearFormulaInfo(localIndex: number): void {
 		const slot = this.slots.get(localIndex)
 		if (!slot || !slot.formulaInfo) return
-		this.slots.set(localIndex, { ...slot, formulaInfo: undefined })
+		this.slots.set(localIndex, {
+			tag: slot.tag,
+			styleId: slot.styleId,
+			formula: slot.formula,
+			formulaInfo: undefined,
+			numberValue: slot.numberValue,
+			stringId: slot.stringId,
+			heapValue: slot.heapValue,
+		})
 	}
 
 	setSlot(localIndex: number, slot: StoredSlot): GridChunk {
@@ -284,6 +313,7 @@ class DenseChunk implements GridChunk {
 		const next = new DenseChunk()
 		new Uint8Array(next.metaBuffer).set(new Uint8Array(this.metaBuffer))
 		new Uint8Array(next.numberBuffer).set(new Uint8Array(this.numberBuffer))
+		next.rowCounts.set(this.rowCounts)
 		next.rowMinCol.set(this.rowMinCol)
 		next.rowMaxCol.set(this.rowMaxCol)
 		next._count = this._count
@@ -1251,6 +1281,15 @@ export class SparseGrid {
 
 function sharedChunkKey(chunkRow: number, chunkCol: number): number {
 	return chunkRow * CHUNK_COL_FACTOR + chunkCol
+}
+
+function resolveChunkBits(): number {
+	const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process
+		?.env
+	const raw = env?.ASCEND_CHUNK_BITS
+	if (!raw) return 6
+	const parsed = Number.parseInt(raw, 10)
+	return parsed === 5 || parsed === 6 ? parsed : 6
 }
 
 function createChunkBuffer(byteLength: number): ChunkBuffer {

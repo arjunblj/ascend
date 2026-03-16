@@ -165,6 +165,106 @@ function evaluateFormulaNumber(
 	return scalarToNumber(value)
 }
 
+interface RangeContext {
+	readonly allValues: CellValue[]
+	readonly allNumerics: number[]
+}
+
+const RANGE_CONTEXT_TYPES = new Set(['duplicateValues', 'uniqueValues', 'top10', 'aboveAverage'])
+
+function needsRangeContext(type: string): boolean {
+	return RANGE_CONTEXT_TYPES.has(type)
+}
+
+function buildRangeContext(sheet: Sheet, sqref: string): RangeContext {
+	const allValues: CellValue[] = []
+	const allNumerics: number[] = []
+	const parts = sqref.split(/\s+/)
+	for (const part of parts) {
+		try {
+			const range = parseRange(part)
+			for (const ref of expandRange(range)) {
+				const value = sheet.cells.readValue(ref.row, ref.col)
+				allValues.push(value)
+				const n = scalarToNumber(value)
+				if (n !== null) allNumerics.push(n)
+			}
+		} catch {
+			// skip invalid range
+		}
+	}
+	return { allValues, allNumerics }
+}
+
+const EXCEL_EPOCH_OFFSET = 25569
+const MS_PER_DAY = 86400000
+
+function todaySerial(): number {
+	const now = new Date()
+	const utcMidnight = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
+	return Math.floor(utcMidnight / MS_PER_DAY) + EXCEL_EPOCH_OFFSET
+}
+
+function serialToDateParts(serial: number): {
+	year: number
+	month: number
+	day: number
+} {
+	const date = new Date((serial - EXCEL_EPOCH_OFFSET) * MS_PER_DAY)
+	return {
+		year: date.getUTCFullYear(),
+		month: date.getUTCMonth(),
+		day: date.getUTCDate(),
+	}
+}
+
+function isoWeekStart(serial: number): number {
+	const date = new Date((serial - EXCEL_EPOCH_OFFSET) * MS_PER_DAY)
+	const dow = date.getUTCDay()
+	const mondayOffset = dow === 0 ? -6 : 1 - dow
+	return serial + mondayOffset
+}
+
+function matchTimePeriod(period: string, cellSerial: number, today: number): boolean {
+	switch (period) {
+		case 'today':
+			return cellSerial === today
+		case 'yesterday':
+			return cellSerial === today - 1
+		case 'tomorrow':
+			return cellSerial === today + 1
+		case 'last7Days':
+			return cellSerial >= today - 6 && cellSerial <= today
+		case 'thisWeek':
+			return isoWeekStart(cellSerial) === isoWeekStart(today)
+		case 'lastWeek':
+			return isoWeekStart(cellSerial) === isoWeekStart(today) - 7
+		case 'nextWeek':
+			return isoWeekStart(cellSerial) === isoWeekStart(today) + 7
+		case 'thisMonth': {
+			const cell = serialToDateParts(cellSerial)
+			const now = serialToDateParts(today)
+			return cell.year === now.year && cell.month === now.month
+		}
+		case 'lastMonth': {
+			const cell = serialToDateParts(cellSerial)
+			const now = serialToDateParts(today)
+			const prevMonth = now.month === 0 ? 11 : now.month - 1
+			const prevYear = now.month === 0 ? now.year - 1 : now.year
+			return cell.year === prevYear && cell.month === prevMonth
+		}
+		case 'nextMonth': {
+			const cell = serialToDateParts(cellSerial)
+			const now = serialToDateParts(today)
+			const nextMonth = now.month === 11 ? 0 : now.month + 1
+			const nextYear = now.month === 11 ? now.year + 1 : now.year
+			return cell.year === nextYear && cell.month === nextMonth
+		}
+		default:
+			return false
+	}
+}
+
 function ruleMatches(
 	rule: SheetConditionalFormatRule,
 	workbook: Workbook,
@@ -174,6 +274,7 @@ function ruleMatches(
 	cellValue: CellValue,
 	row: number,
 	col: number,
+	rangeContext?: RangeContext,
 ): boolean {
 	const type = rule.type
 	const formulas = rule.formulas ?? []
@@ -247,6 +348,75 @@ function ruleMatches(
 		return !isEmpty(cellValue) && !(cellValue.kind === 'string' && cellValue.value === '')
 	}
 
+	if (type === 'containsErrors') {
+		return topLeftScalar(cellValue).kind === 'error'
+	}
+
+	if (type === 'notContainsErrors') {
+		return topLeftScalar(cellValue).kind !== 'error'
+	}
+
+	if (type === 'duplicateValues') {
+		if (!rangeContext || isEmpty(cellValue)) return false
+		const key = scalarToString(cellValue)
+		let count = 0
+		for (const v of rangeContext.allValues) {
+			if (!isEmpty(v) && scalarToString(v) === key) count++
+		}
+		return count > 1
+	}
+
+	if (type === 'uniqueValues') {
+		if (!rangeContext || isEmpty(cellValue)) return false
+		const key = scalarToString(cellValue)
+		let count = 0
+		for (const v of rangeContext.allValues) {
+			if (!isEmpty(v) && scalarToString(v) === key) count++
+		}
+		return count === 1
+	}
+
+	if (type === 'top10') {
+		if (!rangeContext) return false
+		const cellNum = scalarToNumber(cellValue)
+		if (cellNum === null) return false
+		const sorted = [...rangeContext.allNumerics].sort((a, b) => a - b)
+		const total = sorted.length
+		if (total === 0) return false
+
+		const rank = rule.rank ?? 10
+		const isPercent = rule.percent ?? false
+		const isBottom = rule.bottom ?? false
+		const n = isPercent ? Math.max(1, Math.ceil((total * rank) / 100)) : Math.min(rank, total)
+
+		if (isBottom) {
+			return cellNum <= (sorted[n - 1] ?? 0)
+		}
+		return cellNum >= (sorted[total - n] ?? 0)
+	}
+
+	if (type === 'aboveAverage') {
+		if (!rangeContext || rangeContext.allNumerics.length === 0) return false
+		const cellNum = scalarToNumber(cellValue)
+		if (cellNum === null) return false
+		const sum = rangeContext.allNumerics.reduce((a, b) => a + b, 0)
+		const mean = sum / rangeContext.allNumerics.length
+		const above = rule.aboveAverage !== false
+		const equal = rule.equalAverage === true
+		if (above && equal) return cellNum >= mean
+		if (above) return cellNum > mean
+		if (equal) return cellNum <= mean
+		return cellNum < mean
+	}
+
+	if (type === 'timePeriod') {
+		const cellNum = scalarToNumber(cellValue)
+		if (cellNum === null) return false
+		const period = rule.timePeriod ?? rule.operator
+		if (!period) return false
+		return matchTimePeriod(period, Math.floor(cellNum), todaySerial())
+	}
+
 	return false
 }
 
@@ -273,6 +443,13 @@ export function evaluateConditionalFormats(
 			} catch {
 				// skip invalid range
 			}
+		}
+	}
+
+	const rangeContexts = new Map<string, RangeContext>()
+	for (const { rule, sqref } of rules) {
+		if (needsRangeContext(rule.type) && !rangeContexts.has(sqref)) {
+			rangeContexts.set(sqref, buildRangeContext(sheet, sqref))
 		}
 	}
 
@@ -311,6 +488,7 @@ export function evaluateConditionalFormats(
 					cellValue,
 					row,
 					col,
+					rangeContexts.get(sqref),
 				)
 			) {
 				continue

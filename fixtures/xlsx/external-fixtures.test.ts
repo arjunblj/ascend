@@ -34,6 +34,29 @@ function countCells(workbook: {
 	return n
 }
 
+function summarizeWorkbook(workbook: {
+	sheets: readonly {
+		merges: readonly unknown[]
+		cells: { iterate: () => Iterable<unknown> }
+	}[]
+	definedNames: { list: () => readonly unknown[] }
+	themeMetadata: { colorCount: number }
+}): {
+	sheetCount: number
+	cellCount: number
+	mergeCount: number
+	definedNameCount: number
+	themeColorCount: number
+} {
+	return {
+		sheetCount: workbook.sheets.length,
+		cellCount: countCells(workbook),
+		mergeCount: workbook.sheets.reduce((sum, sheet) => sum + sheet.merges.length, 0),
+		definedNameCount: workbook.definedNames.list().length,
+		themeColorCount: workbook.themeMetadata.colorCount,
+	}
+}
+
 if (getExternalFixtures().length > 0) {
 	describe('External XLSX fixtures', () => {
 		for (const fixture of getExternalFixtures()) {
@@ -62,6 +85,36 @@ if (getExternalFixtures().length > 0) {
 				expect(reopened.value.workbook.sheets.length).toBe(initial.value.workbook.sheets.length)
 			})
 		}
+
+		it('keeps UK government spend workbook structurally rich', () => {
+			const result = readXlsx(loadExternalFixture('uk-gov-spend-nice-2026-02.xlsx'))
+			expectOk(result)
+			expect(summarizeWorkbook(result.value.workbook)).toMatchObject({
+				sheetCount: 2,
+				mergeCount: 2,
+				definedNameCount: 13,
+				themeColorCount: 12,
+			})
+		})
+
+		it('keeps Census workbook large and merge-heavy', () => {
+			const result = readXlsx(loadExternalFixture('us-census-construction-2025-10.xlsx'))
+			expectOk(result)
+			const summary = summarizeWorkbook(result.value.workbook)
+			expect(summary.sheetCount).toBe(3)
+			expect(summary.cellCount).toBeGreaterThan(1000)
+			expect(summary.mergeCount).toBeGreaterThanOrEqual(10)
+			expect(summary.definedNameCount).toBeGreaterThanOrEqual(2)
+		})
+
+		it('keeps SEC workbook multi-sheet and dense', () => {
+			const result = readXlsx(loadExternalFixture('sec-mmf-statistics-2022-02.xlsx'))
+			expectOk(result)
+			const summary = summarizeWorkbook(result.value.workbook)
+			expect(summary.sheetCount).toBeGreaterThanOrEqual(10)
+			expect(summary.cellCount).toBeGreaterThan(5000)
+			expect(summary.themeColorCount).toBe(12)
+		})
 	})
 } else {
 	describe('External XLSX fixtures', () => {

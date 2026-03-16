@@ -9,6 +9,7 @@ const NS_R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationship
 
 export interface WorkbookXmlOptions {
 	readonly externalReferenceRelIds?: readonly string[]
+	readonly pivotCacheRelIds?: readonly string[]
 	readonly calcStateDirty?: boolean
 }
 
@@ -81,6 +82,24 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 	}
 
 	if (
+		workbook.pivotCaches.length > 0 &&
+		options.pivotCacheRelIds &&
+		options.pivotCacheRelIds.length === workbook.pivotCaches.length
+	) {
+		out.push('<pivotCaches>')
+		for (let i = 0; i < workbook.pivotCaches.length; i++) {
+			const cache = workbook.pivotCaches[i]
+			const relId = options.pivotCacheRelIds[i]
+			if (!cache || !relId) continue
+			const attrs: string[] = []
+			if (cache.cacheId !== undefined) attrs.push(`cacheId="${cache.cacheId}"`)
+			attrs.push(`r:id="${escapeXml(relId)}"`)
+			out.push(`<pivotCache ${attrs.join(' ')}/>`)
+		}
+		out.push('</pivotCaches>')
+	}
+
+	if (
 		workbook.externalReferences.length > 0 &&
 		options.externalReferenceRelIds &&
 		options.externalReferenceRelIds.length > 0
@@ -96,7 +115,7 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 	const calcAttrs: string[] = []
 	const calcMode = options.calcStateDirty ? 'auto' : cs.calcMode
 	if (calcMode !== 'auto') calcAttrs.push(`calcMode="${calcMode}"`)
-	if (options.calcStateDirty || cs.fullCalcOnLoad) calcAttrs.push('fullCalcOnLoad="1"')
+	calcAttrs.push('fullCalcOnLoad="1"')
 	if (options.calcStateDirty || cs.calcCompleted === false) calcAttrs.push('calcCompleted="0"')
 	else if (cs.calcCompleted === true) calcAttrs.push('calcCompleted="1"')
 	if (options.calcStateDirty || cs.calcOnSave === true) calcAttrs.push('calcOnSave="1"')

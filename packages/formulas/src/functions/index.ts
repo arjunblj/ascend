@@ -23,6 +23,7 @@ export {
 	valuesEqual,
 	wildcardMatch,
 } from './registry.ts'
+export { formatNumber } from './text.ts'
 
 import { compatibilityFunctions } from './compatibility.ts'
 import { databaseFunctions } from './database.ts'

@@ -628,10 +628,14 @@ function choose(args: EvalArg[]): CellValue {
 }
 
 function rowsFn(args: EvalArg[]): CellValue {
+	const value = args[0]?.value
+	if (value?.kind === 'error' && !args[0]?.ref && args[0]?.kind !== 'range') return value
 	return numberValue(rangeShape(args[0]).rows)
 }
 
 function columnsFn(args: EvalArg[]): CellValue {
+	const value = args[0]?.value
+	if (value?.kind === 'error' && !args[0]?.ref && args[0]?.kind !== 'range') return value
 	return numberValue(rangeShape(args[0]).cols)
 }
 
@@ -737,8 +741,11 @@ export const lookupFunctions: FunctionDef[] = [
 			return ref ? numberValue(ref.col + 1) : errorValue('#VALUE!')
 		},
 	},
+	// Stub: actual evaluation is bypassed by the engine evaluator (codegen)
 	{ name: 'FORMULATEXT', minArgs: 1, maxArgs: 1, volatile: false, evaluate: formulaText },
 	{ name: 'AREAS', minArgs: 1, maxArgs: 1, evaluate: areasFn },
+	// Stub: actual evaluation is bypassed by the engine evaluator (codegen)
 	{ name: 'INDIRECT', minArgs: 1, maxArgs: 2, volatile: true, evaluate: () => errorValue('#REF!') },
+	// Stub: actual evaluation is bypassed by the engine evaluator (codegen)
 	{ name: 'OFFSET', minArgs: 3, maxArgs: 5, volatile: true, evaluate: () => errorValue('#REF!') },
 ]

@@ -423,6 +423,14 @@ describe('formula functions', () => {
 			expect(getResult(wb, 0, 1)).toEqual(stringValue('USD42.00'))
 		})
 
+		test('TEXT ignores locale id markers while preserving date formatting', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 44927)
+			setFormula(wb, 0, 1, 'TEXT(A1,"[$-409]m/d/yy")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('1/1/23'))
+		})
+
 		test('TEXT supports elapsed hours tokens', () => {
 			const wb = makeWorkbook()
 			setNum(wb, 0, 0, 1.5)
@@ -949,6 +957,95 @@ describe('formula functions', () => {
 			setFormula(wb, 0, 2, 'DAYS(B1,A1)')
 			recalc(wb)
 			expect(getResult(wb, 0, 2)).toEqual(numberValue(365))
+		})
+	})
+
+	describe('date functions - 1900 leap year bug', () => {
+		test('DATEVALUE("1900-01-01") → serial 1', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'DATEVALUE("1900-01-01")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(1))
+		})
+
+		test('DATEVALUE("1900-02-28") → serial 59', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'DATEVALUE("1900-02-28")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(59))
+		})
+
+		test('DATEVALUE("1900-03-01") → serial 61 (skips phantom serial 60)', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'DATEVALUE("1900-03-01")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(61))
+		})
+
+		test('DATE(1900,1,1) → serial 1', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'DATE(1900,1,1)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(1))
+		})
+
+		test('DATE(2024,1,1) → serial 45292', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'DATE(2024,1,1)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(45292))
+		})
+
+		test('YEAR/MONTH/DAY round-trip through serial 60 (phantom Feb 29, 1900)', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 60)
+			setFormula(wb, 0, 1, 'YEAR(A1)')
+			setFormula(wb, 0, 2, 'MONTH(A1)')
+			setFormula(wb, 0, 3, 'DAY(A1)')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(numberValue(1900))
+			expect(getResult(wb, 0, 2)).toEqual(numberValue(2))
+			expect(getResult(wb, 0, 3)).toEqual(numberValue(29))
+		})
+
+		test('YEAR/MONTH/DAY for serial 61 = Mar 1, 1900', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 61)
+			setFormula(wb, 0, 1, 'YEAR(A1)')
+			setFormula(wb, 0, 2, 'MONTH(A1)')
+			setFormula(wb, 0, 3, 'DAY(A1)')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(numberValue(1900))
+			expect(getResult(wb, 0, 2)).toEqual(numberValue(3))
+			expect(getResult(wb, 0, 3)).toEqual(numberValue(1))
+		})
+
+		test('WEEKDAY for dates before March 1, 1900', () => {
+			const wb = makeWorkbook()
+			// Serial 1 = Jan 1, 1900 → Sunday (1) in Excel (historically Monday, but Excel says Sunday)
+			setFormula(wb, 0, 0, 'WEEKDAY(1,1)')
+			// Serial 59 = Feb 28, 1900 → Tuesday (3)
+			setFormula(wb, 0, 1, 'WEEKDAY(59,1)')
+			// Serial 60 = phantom Feb 29, 1900 → Wednesday (4)
+			setFormula(wb, 0, 2, 'WEEKDAY(60,1)')
+			// Serial 61 = Mar 1, 1900 → Thursday (5)
+			setFormula(wb, 0, 3, 'WEEKDAY(61,1)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(1))
+			expect(getResult(wb, 0, 1)).toEqual(numberValue(3))
+			expect(getResult(wb, 0, 2)).toEqual(numberValue(4))
+			expect(getResult(wb, 0, 3)).toEqual(numberValue(5))
+		})
+
+		test('serial numbers are contiguous across the phantom date gap', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'DATE(1900,2,28)')
+			setFormula(wb, 0, 1, 'DATE(1900,3,1)')
+			setFormula(wb, 0, 2, 'DATE(1900,3,1)-DATE(1900,2,28)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(59))
+			expect(getResult(wb, 0, 1)).toEqual(numberValue(61))
+			expect(getResult(wb, 0, 2)).toEqual(numberValue(2))
 		})
 	})
 

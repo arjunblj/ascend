@@ -429,6 +429,7 @@ function diffPackageSummary(source: PackageSummary, dirty: PackageSummary): stri
 	for (const family of Object.keys(source.families).sort()) {
 		const before = source.families[family] ?? 0
 		const after = dirty.families[family] ?? 0
+		if (family === 'calcChain' && before > 0 && after === 0) continue
 		if (after < before) {
 			regressions.push(`${family} parts dropped: ${before} -> ${after}`)
 		}
@@ -481,6 +482,13 @@ function diffSemanticSummary(
 		const before = source.compatibilityFeatures[key]
 		const after = dirty.compatibilityFeatures[key]
 		if (!before) continue
+		if (
+			key === 'calcChain' &&
+			!after &&
+			dirty.compatibilityFeatures.formulaFreshness !== undefined
+		) {
+			continue
+		}
 		if (!after) {
 			regressions.push(`compatibility feature missing after edit: ${key}`)
 			continue

@@ -14,6 +14,12 @@ import type {
 } from '@ascend/core'
 import { parseA1, parseRange, toA1, toRangeString } from '@ascend/core'
 import { AscendException, ascendError, type CellValue } from '@ascend/schema'
+import {
+	type CellSelector,
+	parseLocalCellSelector,
+	parseLocalRangeSelector,
+	type RangeSelector,
+} from './ref-selectors.ts'
 import type {
 	AgentReadOptions,
 	CellInfo,
@@ -77,13 +83,14 @@ export class SheetHandle {
 		return used ? used.end.col + 1 : 0
 	}
 
-	cell(ref: string): CellInfo | undefined {
+	cell(ref: CellSelector): CellInfo | undefined {
 		const compact = this.cellCompact(ref)
-		return compact ? toCellInfo(compact, ref) : undefined
+		const refText = typeof ref === 'string' ? ref : parseLocalCellSelector(ref).ref
+		return compact ? toCellInfo(compact, refText) : undefined
 	}
 
-	cellCompact(ref: string): CompactCellInfo | undefined {
-		const parsed = parseA1(ref)
+	cellCompact(ref: CellSelector): CompactCellInfo | undefined {
+		const { ref: refText, cell: parsed } = parseLocalCellSelector(ref)
 		const cell = this.requireSheet().cells.get(parsed.row, parsed.col)
 		if (!cell) return undefined
 		return makeCompactCellInfo(
@@ -91,11 +98,11 @@ export class SheetHandle {
 			parsed.col,
 			cell,
 			this.resolveFormula(parsed.row, parsed.col, cell),
-			ref,
+			refText,
 		)
 	}
 
-	range(rangeRef: string): RangeInfo {
+	range(rangeRef: RangeSelector): RangeInfo {
 		const compact = this.rangeCompact(rangeRef, { includeRefs: true })
 		return {
 			ref: compact.ref,
@@ -106,10 +113,10 @@ export class SheetHandle {
 	}
 
 	rangeCompact(
-		rangeRef: string,
+		rangeRef: RangeSelector,
 		opts?: { includeRefs?: boolean; omitEmpty?: boolean; flatValues?: boolean },
 	): CompactRangeInfo {
-		const parsed = parseRange(rangeRef)
+		const { ref: parsed } = parseLocalRangeSelector(rangeRef)
 		let cells = collectCellsCompact(this.requireSheet(), parsed, this.resolveFormula, opts)
 		if (opts?.omitEmpty) {
 			cells = cells.filter((c) => c.value.kind !== 'empty')

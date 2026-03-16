@@ -4,6 +4,7 @@ import { basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defaultCalcContext, recalculate } from '../../packages/engine/src/index.ts'
 import { readXlsx, writeXlsx } from '../../packages/io-xlsx/src/index.ts'
+import { AscendWorkbook } from '../../packages/sdk/src/index.ts'
 
 const poiDir = fileURLToPath(new URL('./poi/', import.meta.url))
 const poiFixtures = readdirSync(poiDir)
@@ -74,6 +75,19 @@ if (poiFixtures.length > 0) {
 				0,
 			)
 			expect(count).toBeGreaterThan(0)
+		})
+
+		it('preserves x14/extLst conditional formatting payloads on round-trip', () => {
+			const initial = readXlsx(loadFixture('NewStyleConditionalFormattings.xlsx'))
+			expectOk(initial)
+			const sheet = initial.value.workbook.sheets[0]
+			expect(sheet?.preservedExtLst?.includes('<extLst')).toBe(true)
+
+			const written = writeXlsx(initial.value.workbook, initial.value.capsules)
+			expectOk(written)
+			const reopened = readXlsx(written.value)
+			expectOk(reopened)
+			expect(reopened.value.workbook.sheets[0]?.preservedExtLst?.includes('<extLst')).toBe(true)
 		})
 
 		it('captures data validation rules from DataValidationEvaluations.xlsx', () => {
@@ -242,6 +256,18 @@ if (poiFixtures.length > 0) {
 			expect(e5?.value).toMatchObject({ kind: 'number', value: 18 })
 		})
 
+		it('reads and recalculates legacy array formulas from MatrixFormulaEvalTestData.xlsx', () => {
+			const result = readXlsx(loadFixture('MatrixFormulaEvalTestData.xlsx'))
+			expectOk(result)
+			expect(result.value.report.features.some((f) => f.feature === 'arrayFormula')).toBe(true)
+			const hasArrayMaster = result.value.workbook.sheets.some((sheet) =>
+				[...sheet.cells.iterate()].some(([, , cell]) => cell.formulaInfo?.kind === 'array'),
+			)
+			expect(hasArrayMaster).toBe(true)
+			const recalc = recalculate(result.value.workbook, defaultCalcContext())
+			expect(recalc.errors).toEqual([])
+		})
+
 		it('reads hidden sheets from TwoSheetsOneHidden.xlsx', () => {
 			const result = readXlsx(loadFixture('TwoSheetsOneHidden.xlsx'))
 			expectOk(result)
@@ -328,6 +354,26 @@ if (poiFixtures.length > 0) {
 				(c) => c.contentType?.includes('chart') || c.relType?.includes('chart'),
 			)
 			expect(chartCapsules.length).toBeGreaterThan(0)
+		})
+
+		it('preserves drawing-backed images when renaming sheets in WithDrawing.xlsx', async () => {
+			const wb = await AscendWorkbook.open(loadFixture('WithDrawing.xlsx'))
+			const originalSheetName = wb.sheets[0]
+			expect(originalSheetName).toBeDefined()
+			if (!originalSheetName) return
+
+			const before = wb.inspect().sheets[0]
+			expect(before?.hasDrawingRefs).toBe(true)
+			expect(before?.imageCount ?? 0).toBeGreaterThan(0)
+
+			const rename = wb.renameSheet(originalSheetName, `${originalSheetName} Renamed`)
+			expect(rename.errors).toHaveLength(0)
+
+			const reopened = await AscendWorkbook.open(wb.toBytes())
+			const after = reopened.inspect().sheets[0]
+			expect(after?.name).toBe(`${originalSheetName} Renamed`)
+			expect(after?.hasDrawingRefs).toBe(true)
+			expect(after?.imageCount).toBe(before?.imageCount)
 		})
 	})
 } else {

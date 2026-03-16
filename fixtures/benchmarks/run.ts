@@ -1639,6 +1639,7 @@ const scenarioSets = {
 	smoke: [
 		'read-full-dense',
 		'read-values-dense',
+		'write-csv-large',
 		'workflow-sdk-edit-cycle',
 		'workflow-sdk-defined-names-edit-cycle',
 		'recalc-incremental',

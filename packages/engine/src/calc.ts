@@ -70,6 +70,7 @@ interface RecalcScratch {
 	readonly lookupVectorCache: LookupVectorCache
 	readonly aggregateRangeCache: AggregateRangeCache
 	readonly rangeValueCache: Map<string, readonly (readonly CellValue[])[]>
+	readonly evalContext: MutableEvalContext
 }
 
 const recalcScratchByWorkbook = new WeakMap<Workbook, RecalcScratch>()
@@ -84,6 +85,7 @@ function getRecalcScratch(workbook: Workbook): RecalcScratch {
 			lookupVectorCache: new Map(),
 			aggregateRangeCache: new Map(),
 			rangeValueCache: new Map(),
+			evalContext: new MutableEvalContext(),
 		}
 		recalcScratchByWorkbook.set(workbook, scratch)
 	}
@@ -480,6 +482,12 @@ export function recalculate(
 	const exactLookupCache = scratch.exactLookupCache
 	const lookupVectorCache = scratch.lookupVectorCache
 	const aggregateRangeCache = scratch.aggregateRangeCache
+	const mutableCtx = scratch.evalContext
+	mutableCtx.workbook = workbook
+	mutableCtx.calcContext = ctx
+	mutableCtx.exactLookupCache = exactLookupCache
+	mutableCtx.lookupVectorCache = lookupVectorCache
+	mutableCtx.aggregateRangeCache = aggregateRangeCache
 	setRangeValueCache(scratch.rangeValueCache)
 
 	clearOrphanedSpills(workbook, spillIndex, changed)
@@ -594,15 +602,10 @@ export function recalculate(
 			exactLookupCache,
 			lookupVectorCache,
 			aggregateRangeCache,
+			mutableCtx,
 		)
 	} else {
 		const coords: CellCoords = { sheetIndex: 0, row: 0, col: 0 }
-		const mutableCtx = new MutableEvalContext()
-		mutableCtx.workbook = workbook
-		mutableCtx.calcContext = ctx
-		mutableCtx.exactLookupCache = exactLookupCache
-		mutableCtx.lookupVectorCache = lookupVectorCache
-		mutableCtx.aggregateRangeCache = aggregateRangeCache
 
 		const sharedGroups = analysis.sharedFormulaGroups
 		const cellToGroup = new Map<CellKey, SharedFormulaPlan>()
@@ -845,12 +848,12 @@ function evalIterative(
 	exactLookupCache: ExactLookupCache,
 	lookupVectorCache: LookupVectorCache,
 	aggregateRangeCache: AggregateRangeCache,
+	mutableCtx: MutableEvalContext,
 ): void {
 	const maxIter = ctx.iterativeCalc.maxIterations
 	const maxChange = ctx.iterativeCalc.maxChange
 
 	const coords: CellCoords = { sheetIndex: 0, row: 0, col: 0 }
-	const mutableCtx = new MutableEvalContext()
 	mutableCtx.workbook = workbook
 	mutableCtx.calcContext = ctx
 	mutableCtx.exactLookupCache = exactLookupCache

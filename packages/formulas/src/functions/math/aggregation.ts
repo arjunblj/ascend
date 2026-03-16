@@ -165,6 +165,7 @@ export const aggregationFunctions: FunctionDef[] = [
 					}
 				} else {
 					const v = arg.value ?? EMPTY
+					if (v.kind === 'error') return v
 					if (v.kind === 'number' || v.kind === 'date' || v.kind === 'boolean') count++
 				}
 			}
@@ -186,7 +187,9 @@ export const aggregationFunctions: FunctionDef[] = [
 					}
 				}
 			} else {
-				if (!isEmpty(arg.value ?? EMPTY)) count++
+				const value = arg.value ?? EMPTY
+				if (value.kind === 'error') return value
+				if (!isEmpty(value)) count++
 			}
 		}
 		return numberValue(count)
@@ -195,6 +198,15 @@ export const aggregationFunctions: FunctionDef[] = [
 	fn('COUNTBLANK', 1, 1, (args) => {
 		let count = 0
 		const arg = args[0]
+		const directValue = arg?.value ?? EMPTY
+		if (
+			directValue.kind === 'error' &&
+			!arg?.kind &&
+			!arg?.forEachValue &&
+			!arg?.forEachCellInRange
+		) {
+			return directValue
+		}
 		const countBlank = (cell: CellValue) => {
 			if (isEmpty(cell) || (cell.kind === 'string' && cell.value === '')) count++
 		}

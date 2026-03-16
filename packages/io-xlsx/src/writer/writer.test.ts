@@ -12,11 +12,25 @@ import { planWriteXlsx, writeXlsx, writeXlsxStreaming } from './index.ts'
 
 const S0 = 0 as StyleId
 
-function expectOk<T, E extends { message: string }>(
+function expectOk<T, E>(
 	result: { ok: true; value: T } | { ok: false; error: E },
 ): asserts result is { ok: true; value: T } {
 	expect(result.ok).toBe(true)
-	if (!result.ok) throw new Error(result.error.message)
+	if (!result.ok) throw new Error(formatTestError(result.error))
+}
+
+function formatTestError(error: unknown): string {
+	if (error && typeof error === 'object') {
+		const candidate = error as { message?: unknown; errors?: Array<{ message?: unknown }> }
+		if (typeof candidate.message === 'string') return candidate.message
+		if (Array.isArray(candidate.errors)) {
+			const messages = candidate.errors
+				.map((entry) => (typeof entry?.message === 'string' ? entry.message : null))
+				.filter((entry): entry is string => entry !== null)
+			if (messages.length > 0) return messages.join('; ')
+		}
+	}
+	return 'Unknown test error'
 }
 
 function roundTrip(wb: Workbook, capsules?: PreservationCapsule[]) {
@@ -136,6 +150,53 @@ describe('writeXlsx', () => {
 		})
 	})
 
+	it('splits oversized shared formulas into explicit formulas per cell', () => {
+		const wb = new Workbook()
+		const other = wb.addSheet('Other')
+		other.cells.set(0, 1, { value: numberValue(2), formula: null, styleId: S0 })
+		other.cells.set(1, 1, { value: numberValue(3), formula: null, styleId: S0 })
+		const sheet = wb.addSheet('SharedLong')
+		const longFormula = Array.from({ length: 1000 }, () => 'Other!B1').join('+')
+		sheet.cells.set(0, 0, {
+			value: numberValue(1800),
+			formula: longFormula,
+			styleId: S0,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: '0',
+				isMaster: true,
+				masterRef: 'A1',
+				ref: 'A1:A2',
+			},
+		})
+		sheet.cells.set(1, 0, {
+			value: numberValue(2700),
+			formula: null,
+			styleId: S0,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: '0',
+				isMaster: false,
+				masterRef: 'A1',
+			},
+		})
+
+		const written = writeXlsx(wb)
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		const xml = new TextDecoder().decode(zip['xl/worksheets/sheet2.xml'] ?? new Uint8Array())
+		expect(xml).not.toContain('t="shared"')
+		expect(xml).toContain('<f>Other!B1+Other!B1')
+		expect(xml).toContain('<f>Other!B2+Other!B2')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.sheets[1]?.cells.get(0, 0)?.formula).toBe(longFormula)
+		expect(
+			reopened.value.workbook.sheets[1]?.cells.get(1, 0)?.formula?.startsWith('Other!B2'),
+		).toBe(true)
+	})
+
 	it('round-trips regular formulas that could be shared, preserving formula text', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Formulas')
@@ -234,6 +295,48 @@ describe('writeXlsx', () => {
 		expect(reopened.value.workbook.sheets[0]?.cells.get(0, 0)?.formula).toBe('SEQUENCE(3)')
 		expect(reopened.value.workbook.sheets[0]?.cells.get(0, 1)?.formula).toBe('SUM(A1#)')
 		expect(reopened.value.workbook.sheets[0]?.cells.get(0, 2)?.formula).toBe('@A1')
+	})
+
+	it('round-trips _xlfn. prefix for future functions', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Xlfn')
+		const formulas = [
+			'IFS(A1>0,"pos",A1<0,"neg",TRUE,"zero")',
+			'TEXTJOIN(",",TRUE,A1:A3)',
+			'SWITCH(A1,1,"one",2,"two","other")',
+			'MAXIFS(A1:A3,B1:B3,">0")',
+			'CONCAT(A1,B1)',
+			'IFNA(A1,0)',
+			'XOR(TRUE,FALSE)',
+		]
+		for (const [i, formula] of formulas.entries()) {
+			sheet.cells.set(i, 0, {
+				value: stringValue(''),
+				formula,
+				styleId: S0,
+			})
+		}
+
+		const written = writeXlsx(wb)
+		expectOk(written)
+
+		const zip = unzipSync(written.value)
+		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+
+		expect(sheetXml).toContain('_xlfn.IFS(')
+		expect(sheetXml).toContain('_xlfn.TEXTJOIN(')
+		expect(sheetXml).toContain('_xlfn.SWITCH(')
+		expect(sheetXml).toContain('_xlfn.MAXIFS(')
+		expect(sheetXml).toContain('_xlfn.CONCAT(')
+		expect(sheetXml).toContain('_xlfn.IFNA(')
+		expect(sheetXml).toContain('_xlfn.XOR(')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		const cells = reopened.value.workbook.sheets[0]?.cells
+		for (let i = 0; i < formulas.length; i++) {
+			expect(cells?.get(i, 0)?.formula).toBe(formulas[i])
+		}
 	})
 
 	it('preserves sharedStrings.xml when string indices are unchanged', () => {
@@ -792,6 +895,8 @@ describe('writeXlsx', () => {
 			oddHeader: '&LTest',
 			oddFooter: '&R1',
 		}
+		sheet.rowBreaks = [{ id: 5, min: 0, max: 16383, man: true }]
+		sheet.colBreaks = [{ id: 2, min: 0, max: 1048575, man: true }]
 
 		const { result } = roundTrip(wb)
 		const s = result.workbook.sheets[0]
@@ -825,6 +930,8 @@ describe('writeXlsx', () => {
 			oddHeader: '&LTest',
 			oddFooter: '&R1',
 		})
+		expect(s?.rowBreaks).toEqual([{ id: 5, min: 0, max: 16383, man: true }])
+		expect(s?.colBreaks).toEqual([{ id: 2, min: 0, max: 1048575, man: true }])
 	})
 
 	it('preserves macro-enabled workbook content type when workbook capsules are present', () => {
@@ -995,7 +1102,7 @@ describe('writeXlsx', () => {
 				content: new TextEncoder().encode(
 					'<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"/>',
 				),
-				anchor: { kind: 'sheet', sheetName: 'Visuals' },
+				anchor: { kind: 'sheet', sheetId: sheet.id, sheetName: sheet.name },
 				relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing',
 			},
 			{
@@ -1003,12 +1110,98 @@ describe('writeXlsx', () => {
 				contentType: 'application/vnd.openxmlformats-officedocument.vmlDrawing',
 				relationships: [],
 				content: new TextEncoder().encode('<xml xmlns:v="urn:schemas-microsoft-com:vml"/>'),
-				anchor: { kind: 'sheet', sheetName: 'Visuals' },
+				anchor: { kind: 'sheet', sheetId: sheet.id, sheetName: sheet.name },
 				relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing',
 			},
 		]
 
 		const { result, bytes } = roundTrip(wb, capsules)
+		expect(result.workbook.sheets[0]?.drawingRefs).toEqual({
+			hasDrawing: true,
+			hasLegacyDrawing: true,
+		})
+		const fingerprint = fingerprintXlsx(bytes)
+		expect(fingerprint.sheets[0]?.xml.tagCounts).toMatchObject({
+			drawing: 1,
+			legacyDrawing: 1,
+		})
+		expect(fingerprint.sheetRels[0]?.xml.tagCounts).toMatchObject({
+			Relationships: 1,
+			Relationship: 2,
+		})
+	})
+
+	it('generates drawing XML and media parts for programmatic image refs', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Images')
+		sheet.imageRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			relId: 'rIdImage1',
+			targetPath: 'xl/media/image1.png',
+			contentType: 'image/png',
+			content: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+			anchor: {
+				kind: 'oneCell',
+				from: { row: 1, col: 1 },
+				cx: 320000,
+				cy: 240000,
+			},
+			name: 'Logo',
+			description: 'Brand logo',
+		})
+
+		const written = writeXlsx(wb)
+		expectOk(written)
+		const entries = unzipSync(written.value)
+		expect(entries['xl/drawings/drawing1.xml']).toBeDefined()
+		expect(entries['xl/drawings/_rels/drawing1.xml.rels']).toBeDefined()
+		expect(entries['xl/media/image1.png']).toBeDefined()
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.sheets[0]?.drawingRefs.hasDrawing).toBe(true)
+		expect(reopened.value.workbook.sheets[0]?.imageRefs).toHaveLength(1)
+		expect(reopened.value.workbook.sheets[0]?.imageRefs[0]).toMatchObject({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			targetPath: 'xl/media/image1.png',
+			name: 'Logo',
+			description: 'Brand logo',
+			anchor: {
+				kind: 'oneCell',
+			},
+		})
+	})
+
+	it('keeps sheet-owned drawing capsules attached after renaming a sheet', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Visuals')
+		sheet.cells.set(0, 0, { value: stringValue('Chart host'), formula: null, styleId: S0 })
+		sheet.drawingRefs = { hasDrawing: true, hasLegacyDrawing: true }
+
+		const capsules: PreservationCapsule[] = [
+			{
+				partPath: 'xl/drawings/drawing1.xml',
+				contentType: 'application/vnd.openxmlformats-officedocument.drawing+xml',
+				relationships: [],
+				content: new TextEncoder().encode(
+					'<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"/>',
+				),
+				anchor: { kind: 'sheet', sheetId: sheet.id, sheetName: sheet.name },
+				relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing',
+			},
+			{
+				partPath: 'xl/drawings/vmlDrawing1.vml',
+				contentType: 'application/vnd.openxmlformats-officedocument.vmlDrawing',
+				relationships: [],
+				content: new TextEncoder().encode('<xml xmlns:v="urn:schemas-microsoft-com:vml"/>'),
+				anchor: { kind: 'sheet', sheetId: sheet.id, sheetName: sheet.name },
+				relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing',
+			},
+		]
+
+		sheet.name = 'Dashboard'
+		const { result, bytes } = roundTrip(wb, capsules)
+		expect(result.workbook.sheets[0]?.name).toBe('Dashboard')
 		expect(result.workbook.sheets[0]?.drawingRefs).toEqual({
 			hasDrawing: true,
 			hasLegacyDrawing: true,
@@ -1370,6 +1563,38 @@ describe('writeXlsx', () => {
 		expect(fingerprint.contentTypes?.normalized).toContain('/xl/theme/theme1.xml')
 	})
 
+	it('generates workbook theme part from theme metadata when no preserved theme exists', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('ThemeMeta')
+		sheet.cells.set(0, 0, { value: stringValue('Brand'), formula: null, styleId: S0 })
+		wb.themeMetadata = {
+			name: 'Generated Theme',
+			colorSchemeName: 'Generated Colors',
+			colorCount: 12,
+			majorFontLatin: 'Aptos Display',
+			minorFontLatin: 'Aptos',
+		}
+
+		const { result, bytes } = roundTrip(wb)
+		const zip = unzipSync(bytes)
+		const themeXml = new TextDecoder().decode(zip['xl/theme/theme1.xml'] ?? new Uint8Array())
+		expect(themeXml).toContain('name="Generated Theme"')
+		expect(themeXml).toContain('name="Generated Colors"')
+		expect(themeXml).toContain('typeface="Aptos Display"')
+		expect(themeXml).toContain('typeface="Aptos"')
+		expect(result.workbook.preservedTheme).toEqual({
+			path: 'xl/theme/theme1.xml',
+			contentType: 'application/vnd.openxmlformats-officedocument.theme+xml',
+		})
+		expect(result.workbook.themeMetadata).toEqual({
+			name: 'Generated Theme',
+			colorSchemeName: 'Generated Colors',
+			colorCount: 12,
+			majorFontLatin: 'Aptos Display',
+			minorFontLatin: 'Aptos',
+		})
+	})
+
 	it('preserves table-part sheet wiring when table capsules are present', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Balance')
@@ -1399,7 +1624,7 @@ describe('writeXlsx', () => {
     <tableColumn id="2" name="Value"/>
   </tableColumns>
 </table>`),
-				anchor: { kind: 'sheet', sheetName: 'Balance' },
+				anchor: { kind: 'sheet', sheetId: sheet.id, sheetName: sheet.name },
 				relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/table',
 			},
 		]
@@ -1608,7 +1833,7 @@ describe('writeXlsx', () => {
 				contentType: 'application/vnd.ms-excel.threadedcomments+xml',
 				relationships: [],
 				content: new TextEncoder().encode(threadedCommentXml),
-				anchor: { kind: 'sheet', sheetName: 'Sheet1' },
+				anchor: { kind: 'sheet', sheetId: sheet.id, sheetName: sheet.name },
 				relType: 'http://schemas.microsoft.com/office/2017/10/relationships/threadedComment',
 			},
 		]
@@ -1684,6 +1909,26 @@ describe('writeXlsx', () => {
 			value: rows * cols,
 		})
 	}, 30_000)
+
+	it('streaming write plan emits worksheet XML through streamingBuild', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Data')
+		for (let r = 0; r < 10_000; r++) {
+			sheet.cells.set(r, 0, {
+				value: numberValue(r + 1),
+				formula: null,
+				styleId: S0,
+			})
+		}
+
+		const plan = planWriteXlsx(wb, undefined, { streaming: true })
+		expectOk(plan)
+		const sheetPart = plan.value.descriptors.find(
+			(entry) => entry.path === 'xl/worksheets/sheet1.xml',
+		)
+		expect(sheetPart?.streamingBuild).toBeDefined()
+		expect(plan.value.parts.has('xl/worksheets/sheet1.xml')).toBe(false)
+	})
 
 	it('emits a stable structure fingerprint for synthetic workbooks', () => {
 		const wb = new Workbook()

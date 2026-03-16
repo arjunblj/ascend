@@ -520,7 +520,7 @@ function parseFormatSegments(fmt: string): { before: string; numFmt: string; aft
 	return { before, numFmt, after }
 }
 
-function formatNumber(value: number, code: string): string {
+export function formatNumber(value: number, code: string): string {
 	const { format: selectedFormat, autoSign, absValue } = selectNumericSection(value, code.trim())
 	const fmt = selectedFormat.trim()
 
@@ -917,6 +917,7 @@ export const textFunctions: FunctionDef[] = [
 
 	fn('T', 1, 1, (args) => {
 		const v = topLeftScalar(args[0]?.value ?? EMPTY)
+		if (v.kind === 'error') return v
 		if (v.kind === 'string') return stringValue(v.value)
 		if (v.kind === 'richText') return stringValue(v.runs.map((r) => r.text).join(''))
 		return stringValue('')

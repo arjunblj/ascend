@@ -24,6 +24,7 @@ import {
 	hasVolatileFunction,
 	tokenizeFormulaInput,
 } from './formula-info.ts'
+import { type CellSelector, normalizeCellSelector } from './ref-selectors.ts'
 import { SheetHandle } from './sheet-handle.ts'
 import { TableHandle } from './table-handle.ts'
 import type {
@@ -475,9 +476,9 @@ export class WorkbookReadView {
 		return this.wb.slicers.map((entry) => ({ ...entry }))
 	}
 
-	trace(cellRef: string, opts?: { maxDepth?: number }): TraceResult | undefined {
+	trace(cellRef: CellSelector, opts?: { maxDepth?: number }): TraceResult | undefined {
 		if (this.dependencyVerificationIssue()) return undefined
-		const { sheetName, ref } = parseFullRef(cellRef, this.wb)
+		const { sheetName, ref } = normalizeCellSelector(cellRef, this.wb)
 		const result = verifyTrace(this.wb, sheetName, ref, opts, {
 			formulas: this.formulaAnalysis(),
 			dependencies: this.dependencyAnalysis(),
@@ -504,18 +505,18 @@ export class WorkbookReadView {
 		}
 	}
 
-	formula(cellRef: string): FormulaInfo | undefined {
-		if (this.formulaInfoCache.has(cellRef)) return this.formulaInfoCache.get(cellRef)
-		const { sheetName, ref } = parseFullRef(cellRef, this.wb)
+	formula(cellRef: CellSelector): FormulaInfo | undefined {
+		const { sheetName, ref, cacheKey } = normalizeCellSelector(cellRef, this.wb)
+		if (this.formulaInfoCache.has(cacheKey)) return this.formulaInfoCache.get(cacheKey)
 		const sheet = this.wb.getSheet(sheetName)
 		if (!sheet) {
-			this.formulaInfoCache.set(cellRef, undefined)
+			this.formulaInfoCache.set(cacheKey, undefined)
 			return undefined
 		}
 		const parsedRef = parseA1(ref)
 		const rawCell = sheet.cells.get(parsedRef.row, parsedRef.col)
 		if (!rawCell) {
-			this.formulaInfoCache.set(cellRef, undefined)
+			this.formulaInfoCache.set(cacheKey, undefined)
 			return undefined
 		}
 		const resolvedFormula = resolveCellFormulaText(
@@ -526,7 +527,7 @@ export class WorkbookReadView {
 			rawCell,
 		)
 		if (!resolvedFormula) {
-			this.formulaInfoCache.set(cellRef, undefined)
+			this.formulaInfoCache.set(cacheKey, undefined)
 			return undefined
 		}
 
@@ -545,7 +546,7 @@ export class WorkbookReadView {
 				volatile: false,
 				parseError: parsed.error.message,
 			})
-			this.formulaInfoCache.set(cellRef, info)
+			this.formulaInfoCache.set(cacheKey, info)
 			return info
 		}
 
@@ -561,7 +562,7 @@ export class WorkbookReadView {
 			volatile: hasVolatileFunction(parsed.value),
 			references: collectFormulaReferences(parsed.value),
 		})
-		this.formulaInfoCache.set(cellRef, info)
+		this.formulaInfoCache.set(cacheKey, info)
 		return info
 	}
 
@@ -746,20 +747,6 @@ function buildTableInfo(
 		...(headerRow ? { headerRow } : {}),
 		...(totalsRow ? { totalsRow } : {}),
 	}
-}
-
-export function parseFullRef(
-	cellRef: string,
-	workbook: Workbook,
-): { sheetName: string; ref: string } {
-	const bang = cellRef.indexOf('!')
-	if (bang !== -1) {
-		const sheetName = cellRef.substring(0, bang).replace(/^'|'$/g, '')
-		return { sheetName, ref: cellRef.substring(bang + 1) }
-	}
-	const firstSheet = workbook.sheets[0]
-	const sheetName = firstSheet ? firstSheet.name : 'Sheet1'
-	return { sheetName, ref: cellRef }
 }
 
 function buildDefinedNameInfo(

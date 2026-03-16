@@ -441,6 +441,21 @@ describe('SparseGrid', () => {
 		expect(clone.has(0, 0)).toBe(true)
 		expect([...clone.iterate()]).toHaveLength(50)
 	})
+
+	test('copy-on-write: DenseChunk clone preserves all cells after mutation', () => {
+		const grid = new SparseGrid()
+		grid.setExpectedDensity('dense')
+		grid.set(0, 0, makeCell(numberValue(1)))
+		grid.set(1, 1, makeCell(numberValue(2)))
+		grid.set(2, 2, makeCell(numberValue(3)))
+		const clone = grid.clone()
+		clone.set(0, 0, makeCell(stringValue('mutated')))
+		expect(clone.cellCount()).toBe(3)
+		expect([...clone.iterate()]).toHaveLength(3)
+		expect(clone.get(0, 0)?.value).toEqual(stringValue('mutated'))
+		expect(clone.get(1, 1)?.value).toEqual(numberValue(2))
+		expect(clone.get(2, 2)?.value).toEqual(numberValue(3))
+	})
 })
 
 describe('SparseGrid property-based', () => {

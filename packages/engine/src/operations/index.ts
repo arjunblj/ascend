@@ -217,3 +217,96 @@ export function applyOperations(
 
 	return ok(patch(allAffected, allSheets, needsRecalc, warnings.length > 0 ? warnings : undefined))
 }
+
+function restoreWorkbookFromSnapshot(workbook: Workbook, snapshot: Workbook): void {
+	workbook.sheets.splice(0, workbook.sheets.length, ...snapshot.sheets)
+	workbook.invalidateSheetCache()
+	workbook.definedNames.copyFrom(snapshot.definedNames)
+	workbook.styles.copyFrom(snapshot.styles)
+	workbook.differentialStyles.splice(0, workbook.differentialStyles.length)
+	workbook.differentialStyles.push(...snapshot.differentialStyles)
+	workbook.pivotCaches.splice(0, workbook.pivotCaches.length)
+	workbook.pivotCaches.push(...snapshot.pivotCaches.map((e) => ({ ...e })))
+	workbook.pivotTables.splice(0, workbook.pivotTables.length)
+	workbook.pivotTables.push(...snapshot.pivotTables.map((e) => ({ ...e })))
+	workbook.slicerCaches.splice(0, workbook.slicerCaches.length)
+	workbook.slicerCaches.push(
+		...snapshot.slicerCaches.map((e) => ({ ...e, pivotTableNames: [...e.pivotTableNames] })),
+	)
+	workbook.slicers.splice(0, workbook.slicers.length)
+	workbook.slicers.push(...snapshot.slicers.map((e) => ({ ...e })))
+	workbook.workbookViews.splice(0, workbook.workbookViews.length)
+	workbook.workbookViews.push(...snapshot.workbookViews.map((v) => ({ ...v })))
+	workbook.externalReferences.splice(0, workbook.externalReferences.length)
+	workbook.externalReferences.push(...snapshot.externalReferences)
+	workbook.workbookProperties = { ...snapshot.workbookProperties }
+	workbook.workbookProtection = snapshot.workbookProtection
+		? { ...snapshot.workbookProtection }
+		: null
+	workbook.styleMetadata = { ...snapshot.styleMetadata }
+	workbook.themeMetadata = { ...snapshot.themeMetadata }
+	workbook.preservedStyles = snapshot.preservedStyles
+		? {
+				...snapshot.preservedStyles,
+				xfByStyleId: { ...snapshot.preservedStyles.xfByStyleId },
+				...(snapshot.preservedStyles.baseStyleIdByStyleId
+					? { baseStyleIdByStyleId: { ...snapshot.preservedStyles.baseStyleIdByStyleId } }
+					: {}),
+			}
+		: null
+	workbook.preservedTheme = snapshot.preservedTheme ? { ...snapshot.preservedTheme } : null
+	workbook.preservedSharedStrings = snapshot.preservedSharedStrings
+		? { ...snapshot.preservedSharedStrings }
+		: null
+	workbook.preservedMetadata = snapshot.preservedMetadata ? { ...snapshot.preservedMetadata } : null
+	workbook.preservedXml = snapshot.preservedXml ? { ...snapshot.preservedXml } : null
+	workbook.calcSettings = {
+		...snapshot.calcSettings,
+		iterativeCalc: { ...snapshot.calcSettings.iterativeCalc },
+	}
+	invalidateWorkbookAnalysis(workbook)
+	invalidateSheetIndexCache(workbook)
+}
+
+/**
+ * Applies operations atomically: all succeed or all fail. On failure, the workbook
+ * is rolled back to its state before any mutations.
+ */
+export function applyWithTransaction(
+	workbook: Workbook,
+	ops: readonly Operation[],
+	options?: ApplyOperationsOptions,
+): Result<import('./helpers.ts').PatchResult, AscendError | ApplyOperationsErrors> {
+	const collectAllErrors = options?.collectAllErrors ?? false
+	if (collectAllErrors) {
+		const errors: AscendError[] = []
+		const validationClone = workbook.clone()
+		for (const op of coalesceSetCells(ops)) {
+			const result = applyOperation(validationClone, op)
+			if (!result.ok) errors.push(result.error)
+		}
+		if (errors.length > 0) return err({ errors })
+	}
+
+	const snapshot = workbook.clone()
+	const coalesced = coalesceSetCells(ops)
+
+	const allAffected: string[] = []
+	const allSheets: string[] = []
+	const warnings: AscendError[] = []
+	let needsRecalc = false
+
+	for (const op of coalesced) {
+		const result = applyOperation(workbook, op)
+		if (!result.ok) {
+			restoreWorkbookFromSnapshot(workbook, snapshot)
+			return result
+		}
+		allAffected.push(...result.value.affectedCells)
+		allSheets.push(...result.value.sheetsModified)
+		if (result.value.recalcRequired) needsRecalc = true
+		if (result.value.warnings) warnings.push(...result.value.warnings)
+	}
+
+	return ok(patch(allAffected, allSheets, needsRecalc, warnings.length > 0 ? warnings : undefined))
+}

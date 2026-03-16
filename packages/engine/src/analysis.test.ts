@@ -2,7 +2,12 @@ import { describe, expect, test } from 'bun:test'
 import type { StyleId } from '@ascend/core'
 import { createWorkbook } from '@ascend/core'
 import { EMPTY, numberValue } from '@ascend/schema'
-import { analyzeWorkbook, analyzeWorkbookDependencies } from './analysis.ts'
+import {
+	analyzeWorkbook,
+	analyzeWorkbookDependencies,
+	analyzeWorkbookFormulas,
+	invalidateWorkbookAnalysis,
+} from './analysis.ts'
 import { cellKey } from './dep-graph.ts'
 import { applyOperation } from './operations.ts'
 
@@ -240,5 +245,39 @@ describe('analyzeWorkbook', () => {
 		const copied = after.formulas.get(cellKey(0, 1, 2))
 		expect(copied?.formula).toBe('A2+B2')
 		expect(copied?.deps).toEqual([cellKey(0, 1, 0), cellKey(0, 1, 1)])
+	})
+
+	test('analyzeWorkbook returns cached result on second call (formulas parsed once, shared across tools)', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'A1+1', styleId: sid })
+
+		const first = analyzeWorkbook(wb)
+		const second = analyzeWorkbook(wb)
+		expect(second).toBe(first)
+
+		const formulasFirst = analyzeWorkbookFormulas(wb)
+		const formulasSecond = analyzeWorkbookFormulas(wb)
+		expect(formulasSecond).toBe(formulasFirst)
+
+		const depsFirst = analyzeWorkbookDependencies(wb)
+		const depsSecond = analyzeWorkbookDependencies(wb)
+		expect(depsSecond).toBe(depsFirst)
+	})
+
+	test('invalidateWorkbookAnalysis clears cache so next analyzeWorkbook returns fresh result', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'A1+1', styleId: sid })
+
+		const before = analyzeWorkbook(wb)
+		invalidateWorkbookAnalysis(wb)
+		const after = analyzeWorkbook(wb)
+
+		expect(after).not.toBe(before)
+		expect(after.formulas.size).toBe(1)
+		expect(after.formulas.get(cellKey(0, 0, 1))?.formula).toBe('A1+1')
 	})
 })

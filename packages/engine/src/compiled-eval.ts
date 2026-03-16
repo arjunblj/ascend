@@ -12,6 +12,7 @@ import {
 } from '@ascend/schema'
 import type { EvalContext } from './evaluator.ts'
 import { evaluate as treeEvaluate } from './evaluator.ts'
+import { resolveSheetIndexInWorkbook } from './sheet-index.ts'
 import { getWasmRangeOps } from './wasm-range.ts'
 
 const Op = {
@@ -834,7 +835,11 @@ function evaluateCompiledNumeric(compiled: CompiledFormula, ctx: EvalContext): C
 				const row = ops[ip + 1] as number
 				const col = ops[ip + 2] as number
 				ip += 3
-				const si = resolveSheetIdx(ctx.workbook, constants[nameIdx] as string, ctx.sheetIndex)
+				const si = resolveSheetIndexInWorkbook(
+					ctx.workbook,
+					constants[nameIdx] as string,
+					ctx.sheetIndex,
+				)
 				if (si < 0) return errorValue('#REF!')
 				const n = readCellNumeric(ctx.workbook.sheets[si], row, col)
 				if (typeof n !== 'number') return n
@@ -990,7 +995,11 @@ function evaluateCompiledNumeric(compiled: CompiledFormula, ctx: EvalContext): C
 				ip += 5
 				let target = sheet
 				if (ci !== -1) {
-					const si = resolveSheetIdx(ctx.workbook, constants[ci] as string, ctx.sheetIndex)
+					const si = resolveSheetIndexInWorkbook(
+						ctx.workbook,
+						constants[ci] as string,
+						ctx.sheetIndex,
+					)
 					if (si < 0) return errorValue('#REF!')
 					target = ctx.workbook.sheets[si]
 				}
@@ -1100,7 +1109,7 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 				const col = ops[ip + 2] as number
 				ip += 3
 				const sheetName = constants[nameIdx] as string
-				const si = resolveSheetIdx(ctx.workbook, sheetName, ctx.sheetIndex)
+				const si = resolveSheetIndexInWorkbook(ctx.workbook, sheetName, ctx.sheetIndex)
 				if (si < 0) {
 					stack[stackDepth++] = errorValue('#REF!')
 				} else {
@@ -1374,7 +1383,11 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 				ip += 5
 				let target = sheet
 				if (ci !== -1) {
-					const si = resolveSheetIdx(ctx.workbook, constants[ci] as string, ctx.sheetIndex)
+					const si = resolveSheetIndexInWorkbook(
+						ctx.workbook,
+						constants[ci] as string,
+						ctx.sheetIndex,
+					)
 					if (si < 0) {
 						stack[stackDepth++] = errorValue('#REF!')
 						break
@@ -1408,23 +1421,4 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 		}
 	}
 	return stack[0] ?? EMPTY
-}
-
-const sheetIdxCache = new WeakMap<import('@ascend/core').Workbook, Map<string, number>>()
-
-function resolveSheetIdx(
-	wb: import('@ascend/core').Workbook,
-	sheetName: string,
-	_currentSheet: number,
-): number {
-	let cache = sheetIdxCache.get(wb)
-	if (!cache) {
-		cache = new Map()
-		for (let i = 0; i < wb.sheets.length; i++) {
-			const s = wb.sheets[i]
-			if (s) cache.set(s.name.toLowerCase(), i)
-		}
-		sheetIdxCache.set(wb, cache)
-	}
-	return cache.get(sheetName.toLowerCase()) ?? -1
 }

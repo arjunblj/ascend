@@ -2,7 +2,8 @@ import type { Workbook } from '@ascend/core'
 import { parseA1, toA1 } from '@ascend/core'
 import { cachedParseFormula, normalizeFormulaInput } from '@ascend/formulas'
 import type { Operation, Result } from '@ascend/schema'
-import { ascendError, EMPTY, err, ok } from '@ascend/schema'
+import { ascendError, EMPTY, err, ok, richTextValue } from '@ascend/schema'
+import { validateCellValue } from '../data-validation.ts'
 import type { PatchResult } from './helpers.ts'
 import {
 	cell,
@@ -25,9 +26,14 @@ export function handleSetCells(
 	const sheet = result.value
 
 	const affected: string[] = []
+	const warnings: ReturnType<typeof ascendError>[] = []
 	for (const update of op.updates) {
 		const ref = parseA1(update.ref)
 		const value = inputToCellValue(update.value, workbook.calcSettings.dateSystem)
+		const validation = validateCellValue(sheet, ref.row, ref.col, value, workbook)
+		if (!validation.valid && validation.message) {
+			warnings.push(ascendError('VALIDATION_ERROR', validation.message, { refs: [update.ref] }))
+		}
 		sheet.cells.set(
 			ref.row,
 			ref.col,
@@ -41,7 +47,7 @@ export function handleSetCells(
 		affected.push(update.ref)
 	}
 
-	return ok(patch(affected, [op.sheet], true))
+	return ok(patch(affected, [op.sheet], true, warnings.length > 0 ? warnings : undefined))
 }
 
 export function handleSetFormula(
@@ -113,8 +119,7 @@ export function handleSetRichText(
 	const sheet = sheetResult.value
 	sheet.ensureWritable()
 	const pos = parseA1(op.ref)
-	const richTextValue = { kind: 'richText' as const, runs: op.runs }
-	sheet.cells.setResolved(pos.row, pos.col, richTextValue, null, DEFAULT_SID)
+	sheet.cells.setResolved(pos.row, pos.col, richTextValue(op.runs), null, DEFAULT_SID)
 	return ok(patch([`${op.sheet}!${op.ref}`], [op.sheet]))
 }
 

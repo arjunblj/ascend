@@ -20,6 +20,14 @@ export { clearCompiledFormulaCache, type RecalcResult, recalculate } from './cal
 export { type CalcContext, defaultCalcContext } from './calc-context.ts'
 export { type CompiledFormula, compileFormula, evaluateCompiled } from './compiled-eval.ts'
 export {
+	type ConditionalFormatResult,
+	evaluateConditionalFormats,
+} from './conditional-format.ts'
+export {
+	type ValidationResult,
+	validateCellValue,
+} from './data-validation.ts'
+export {
 	type CellKey,
 	cellKey,
 	DependencyGraph,
@@ -45,6 +53,7 @@ export {
 	type ApplyOperationsOptions,
 	applyOperation,
 	applyOperations,
+	applyWithTransaction,
 	type PatchResult,
 } from './operations.ts'
 export {

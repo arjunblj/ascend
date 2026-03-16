@@ -114,10 +114,23 @@ interface MutableWorkbookAnalysis {
 	sharedFormulaGroups: Map<string, CellKey[]>
 }
 
+/**
+ * Analysis caching: formulas are parsed once per workbook and shared across read-oriented tools
+ * (trace, check, lint). WeakMap keyed by Workbook identity; no generation counter needed because
+ * the engine invalidates or patches the cache when formulas change via applyOperation.
+ *
+ * - workbookFormulaAnalysisCache: parsed ASTs, refs, volatile flags (analyzeWorkbookFormulas)
+ * - workbookDependencyAnalysisCache: dependency graph, cycles (analyzeWorkbookDependencies)
+ * - workbookAnalysisCache: full analysis including shared formula groups (analyzeWorkbook)
+ *
+ * Invalidation: invalidateWorkbookAnalysis(workbook) clears all caches (used when operations
+ * like deleteSheet, addSheet, etc. affect formulas in non-incremental ways).
+ * Incremental updates: patchWorkbookAnalysis(workbook, changedCells) and
+ * shiftWorkbookAnalysisForAxis(...) update cached data for setFormula, copyRange, insertRows, etc.
+ */
 const workbookFormulaAnalysisCache = new WeakMap<Workbook, WorkbookFormulaAnalysis>()
 const workbookDependencyAnalysisCache = new WeakMap<Workbook, WorkbookDependencyAnalysis>()
 const workbookAnalysisCache = new WeakMap<Workbook, WorkbookAnalysis>()
-// Uses shared cachedParseFormula from @ascend/formulas
 
 export function createSheetNameIndex(workbook: Workbook): Map<string, number> {
 	const index = new Map<string, number>()

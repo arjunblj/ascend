@@ -46,6 +46,7 @@ export {
 	isEmpty,
 	isError,
 	numberValue,
+	richTextValue,
 	stringValue,
 	topLeftScalar,
 	valuesEqual,

@@ -16,7 +16,7 @@ import {
 } from '@ascend/formulas'
 import type { AscendError, CellValue } from '@ascend/schema'
 import { EMPTY, errorValue, numberValue, topLeftScalar, valuesEqual } from '@ascend/schema'
-import { analyzeWorkbook } from './analysis.ts'
+import { analyzeWorkbook, invalidateWorkbookAnalysis } from './analysis.ts'
 import type { CalcContext } from './calc-context.ts'
 import { type CodegenFn, codegenFormula, codegenSharedFormula } from './codegen.ts'
 import { type CompiledFormula, compileFormula, evaluateCompiled } from './compiled-eval.ts'
@@ -419,6 +419,51 @@ function toA1Ref(row: number, col: number): string {
 	return `${indexToColumn(col)}${row + 1}`
 }
 
+function clearOrphanedSpills(
+	workbook: Workbook,
+	spillIndex: SpillIndexState,
+	changed: string[],
+): void {
+	for (let si = 0; si < workbook.sheets.length; si++) {
+		const sheet = workbook.sheets[si]
+		if (!sheet) continue
+		const entries = getSheetSpillIndex(spillIndex, si, sheet)
+		for (const anchorRef of [...entries.keys()]) {
+			const bang = anchorRef.lastIndexOf('!')
+			if (bang < 0) continue
+			const sheetName = anchorRef.slice(0, bang).replace(/^'|'$/g, '')
+			const cellPart = anchorRef.slice(bang + 1)
+			const anchorSheet = workbook.sheets.find((s) => s?.name === sheetName)
+			if (!anchorSheet) continue
+			let anchorRow: number
+			let anchorCol: number
+			try {
+				const parsed = parseA1(cellPart)
+				anchorRow = parsed.row
+				anchorCol = parsed.col
+			} catch {
+				continue
+			}
+			if (anchorSheet.cells.readFormula(anchorRow, anchorCol) != null) continue
+			const preserveAnchor = anchorSheet.cells.has(anchorRow, anchorCol)
+			if (!preserveAnchor) {
+				anchorSheet.cells.delete(anchorRow, anchorCol)
+				changed.push(anchorRef)
+			}
+			const removals = entries.get(anchorRef)
+			if (removals && removals.length > 0) {
+				entries.delete(anchorRef)
+				for (const removal of removals) {
+					if (preserveAnchor && removal.row === anchorRow && removal.col === anchorCol) continue
+					anchorSheet.cells.delete(removal.row, removal.col)
+					changed.push(`${anchorSheet.name}!${removal.ref}`)
+				}
+				invalidateWorkbookAnalysis(workbook)
+			}
+		}
+	}
+}
+
 export function recalculate(
 	workbook: Workbook,
 	ctx: CalcContext,
@@ -436,6 +481,8 @@ export function recalculate(
 	const lookupVectorCache = scratch.lookupVectorCache
 	const aggregateRangeCache = scratch.aggregateRangeCache
 	setRangeValueCache(scratch.rangeValueCache)
+
+	clearOrphanedSpills(workbook, spillIndex, changed)
 
 	const analysis = analyzeWorkbook(workbook, opts?.range ? { range: opts.range } : undefined)
 	const graph = analysis.dependencyGraph
@@ -687,6 +734,8 @@ export function recalculate(
 				oldFormulaInfo && isSpillBinding(oldFormulaInfo) && oldFormulaInfo.isAnchor
 					? clearSpillFootprint(sheet, si, oldFormulaInfo.anchorRef, changed, spillIndex)
 					: false
+			// Volatile optimization: when value unchanged (e.g. TODAY() same date), we do not add
+			// dependents to mustEval, so they are skipped in evalCell and not re-evaluated.
 			const valueChanged = !hadCell || clearedSpill || !valuesEqual(oldValue, newValue)
 			if (valueChanged) {
 				sheet.cells.setResolved(row, col, newValue, oldFormula, oldStyleId)

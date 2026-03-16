@@ -113,6 +113,10 @@ export function arrayValue(rows: readonly (readonly ScalarCellValue[])[]): CellV
 	return { kind: 'array', rows }
 }
 
+export function richTextValue(runs: readonly RichTextRun[]): CellValue {
+	return { kind: 'richText', runs }
+}
+
 export function isError(v: CellValue): v is CellValue & { kind: 'error' } {
 	return v.kind === 'error'
 }

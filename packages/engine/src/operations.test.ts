@@ -4,7 +4,7 @@ import { createTableId, createWorkbook } from '@ascend/core'
 import { EMPTY, numberValue, stringValue } from '@ascend/schema'
 import { recalculate } from './calc.ts'
 import { defaultCalcContext } from './calc-context.ts'
-import { applyOperation, applyOperations } from './operations.ts'
+import { applyOperation, applyOperations, applyWithTransaction } from './operations.ts'
 
 const sid = 0 as StyleId
 
@@ -1111,5 +1111,49 @@ describe('applyOperations', () => {
 		expect(errors[1]?.message).toContain('Sheet1')
 		expect(errors[2]?.code).toBe('SHEET_NOT_FOUND')
 		expect(errors[2]?.message).toContain('NonExistent')
+	})
+})
+
+describe('applyWithTransaction', () => {
+	test('batch of 3 operations where all succeed - workbook is modified', () => {
+		const wb = createWorkbook()
+		const result = applyWithTransaction(wb, [
+			{ op: 'addSheet', name: 'Sheet1' },
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'A2', value: 2 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A3', formula: 'SUM(A1:A2)' },
+		])
+		expectOk(result)
+
+		const s = wb.getSheet('Sheet1')
+		expect(s).toBeDefined()
+		if (!s) return
+		expect(s.cells.get(0, 0)?.value).toEqual(numberValue(1))
+		expect(s.cells.get(1, 0)?.value).toEqual(numberValue(2))
+		expect(s.cells.get(2, 0)?.formula).toBe('SUM(A1:A2)')
+		expect(result.value.recalcRequired).toBe(true)
+	})
+
+	test('batch of 3 operations where the 3rd fails - workbook is NOT modified (rolled back)', () => {
+		const wb = createWorkbook()
+		const result = applyWithTransaction(wb, [
+			{ op: 'addSheet', name: 'Sheet1' },
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [{ ref: 'A1', value: 99 }],
+			},
+			{ op: 'deleteSheet', sheet: 'NonExistent' },
+		])
+		expectErr(result)
+
+		expect(wb.getSheet('Sheet1')).toBeUndefined()
+		expect(wb.sheets).toHaveLength(0)
 	})
 })

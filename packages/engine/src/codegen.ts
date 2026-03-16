@@ -53,6 +53,62 @@ function setCachedCodegen(
 	cache.set(key, value)
 }
 
+const SIMPLE_MATH_FUNCTIONS = new Set([
+	'ABS',
+	'SIGN',
+	'INT',
+	'MOD',
+	'POWER',
+	'SQRT',
+	'LN',
+	'LOG10',
+	'EXP',
+	'ROUNDUP',
+	'ROUNDDOWN',
+	'TRUNC',
+	'CEILING',
+	'FLOOR',
+	'PI',
+	'DEGREES',
+	'RADIANS',
+	'SIN',
+	'COS',
+	'TAN',
+	'ASIN',
+	'ACOS',
+	'ATAN',
+])
+
+const SIMPLE_TEXT_FUNCTIONS = new Set(['LEN', 'UPPER', 'LOWER', 'TRIM', 'PROPER'])
+
+const TEXT_WITH_ARGS_FUNCTIONS = new Set(['LEFT', 'RIGHT', 'MID', 'CONCATENATE', 'CONCAT', 'REPT'])
+
+function isConstantNode(node: FormulaNode): boolean {
+	switch (node.type) {
+		case 'number':
+		case 'string':
+		case 'boolean':
+		case 'error':
+			return true
+		case 'binary':
+			if (node.op === ',' || node.op === ' ') return false
+			return isConstantNode(node.left) && isConstantNode(node.right)
+		case 'unary':
+			if (node.op === '@') return false
+			return isConstantNode(node.operand)
+		case 'function': {
+			const upper = node.name.toUpperCase()
+			if (upper === 'PI') return true
+			if (SIMPLE_MATH_FUNCTIONS.has(upper) || upper === 'ROUND') {
+				return node.args.every(isConstantNode)
+			}
+			return false
+		}
+		default:
+			return false
+	}
+}
+
 function canCodegen(node: FormulaNode): boolean {
 	switch (node.type) {
 		case 'number':
@@ -82,6 +138,41 @@ function canCodegen(node: FormulaNode): boolean {
 			if (upper === 'ROUND' && node.args.length >= 1 && node.args.length <= 2) {
 				return node.args.every(canCodegen)
 			}
+			if (SIMPLE_MATH_FUNCTIONS.has(upper)) {
+				const expected1 = new Set([
+					'ABS',
+					'SIGN',
+					'INT',
+					'SQRT',
+					'LN',
+					'LOG10',
+					'EXP',
+					'DEGREES',
+					'RADIANS',
+					'SIN',
+					'COS',
+					'TAN',
+					'ASIN',
+					'ACOS',
+					'ATAN',
+				])
+				const expected0 = new Set(['PI'])
+				const expected2 = new Set(['MOD', 'POWER', 'ROUNDUP', 'ROUNDDOWN', 'CEILING', 'FLOOR'])
+				const expected12 = new Set(['TRUNC'])
+				if (expected0.has(upper) && node.args.length === 0) return true
+				if (expected1.has(upper) && node.args.length === 1)
+					return canCodegen(node.args[0] as FormulaNode)
+				if (expected2.has(upper) && node.args.length === 2) return node.args.every(canCodegen)
+				if (expected12.has(upper) && node.args.length >= 1 && node.args.length <= 2)
+					return node.args.every(canCodegen)
+				return false
+			}
+			if (SIMPLE_TEXT_FUNCTIONS.has(upper) && node.args.length === 1) {
+				return canCodegen(node.args[0] as FormulaNode)
+			}
+			if (TEXT_WITH_ARGS_FUNCTIONS.has(upper)) {
+				return node.args.every(canCodegen)
+			}
 			return PARTIAL_CODEGEN_FUNCTIONS.has(upper)
 		}
 		default:
@@ -95,6 +186,28 @@ interface CodegenState {
 	closureVars: Map<string, string>
 	treeNodes: Map<string, FormulaNode>
 	sharedAnchor?: SharedAnchor
+	nodeHashes: Map<string, string>
+}
+
+function hashNode(node: FormulaNode): string | null {
+	switch (node.type) {
+		case 'cellRef':
+			return `cell:${node.ref.row}:${node.ref.col}:${node.ref.rowAbsolute}:${node.ref.colAbsolute}:${node.sheet ?? ''}`
+		case 'function': {
+			const upper = node.name.toUpperCase()
+			if (
+				RANGE_AGG_FUNCTIONS.has(upper) &&
+				node.args.length === 1 &&
+				(node.args[0] as FormulaNode).type === 'rangeRef'
+			) {
+				const r = node.args[0] as FormulaNode & { type: 'rangeRef' }
+				return `range:${upper}:${r.start.row}:${r.start.col}:${r.start.rowAbsolute}:${r.start.colAbsolute}:${r.end.row}:${r.end.col}:${r.end.rowAbsolute}:${r.end.colAbsolute}:${r.sheet ?? ''}`
+			}
+			return null
+		}
+		default:
+			return null
+	}
 }
 
 function freshVar(state: CodegenState, prefix = 'v'): string {
@@ -141,7 +254,126 @@ function emitCoerceNumber(state: CodegenState, valueVar: string): string {
 	return result
 }
 
+function tryFoldConstant(node: FormulaNode): number | null {
+	switch (node.type) {
+		case 'number':
+			return node.value
+		case 'boolean':
+			return node.value ? 1 : 0
+		case 'binary': {
+			const l = tryFoldConstant(node.left)
+			const r = tryFoldConstant(node.right)
+			if (l === null || r === null) return null
+			switch (node.op) {
+				case '+':
+					return l + r
+				case '-':
+					return l - r
+				case '*':
+					return l * r
+				case '/':
+					return r === 0 ? null : l / r
+				case '^':
+					return l ** r
+				default:
+					return null
+			}
+		}
+		case 'unary': {
+			const v = tryFoldConstant(node.operand)
+			if (v === null) return null
+			switch (node.op) {
+				case '+':
+					return v
+				case '-':
+					return -v
+				case '%':
+					return v / 100
+				default:
+					return null
+			}
+		}
+		case 'function': {
+			const upper = node.name.toUpperCase()
+			if (upper === 'PI' && node.args.length === 0) return Math.PI
+			if (node.args.length === 1) {
+				const a = tryFoldConstant(node.args[0] as FormulaNode)
+				if (a === null) return null
+				switch (upper) {
+					case 'ABS':
+						return Math.abs(a)
+					case 'SIGN':
+						return Math.sign(a)
+					case 'INT':
+						return Math.floor(a)
+					case 'SQRT':
+						return a < 0 ? null : Math.sqrt(a)
+					case 'LN':
+						return a <= 0 ? null : Math.log(a)
+					case 'LOG10':
+						return a <= 0 ? null : Math.log10(a)
+					case 'EXP':
+						return Math.exp(a)
+					case 'DEGREES':
+						return a * (180 / Math.PI)
+					case 'RADIANS':
+						return a * (Math.PI / 180)
+					case 'SIN':
+						return Math.sin(a)
+					case 'COS':
+						return Math.cos(a)
+					case 'TAN':
+						return Math.tan(a)
+					case 'ASIN':
+						return a < -1 || a > 1 ? null : Math.asin(a)
+					case 'ACOS':
+						return a < -1 || a > 1 ? null : Math.acos(a)
+					case 'ATAN':
+						return Math.atan(a)
+					default:
+						return null
+				}
+			}
+			if (node.args.length === 2) {
+				const a = tryFoldConstant(node.args[0] as FormulaNode)
+				const b = tryFoldConstant(node.args[1] as FormulaNode)
+				if (a === null || b === null) return null
+				switch (upper) {
+					case 'MOD':
+						return b === 0 ? null : a - b * Math.floor(a / b)
+					case 'POWER':
+						return a < 0 && b !== Math.floor(b) ? null : a ** b
+					case 'ROUND': {
+						const m = 10 ** Math.floor(b)
+						return Math.round(a * m) / m
+					}
+					default:
+						return null
+				}
+			}
+			return null
+		}
+		default:
+			return null
+	}
+}
+
 function emitNode(state: CodegenState, node: FormulaNode): string {
+	if (
+		isConstantNode(node) &&
+		node.type !== 'number' &&
+		node.type !== 'string' &&
+		node.type !== 'boolean' &&
+		node.type !== 'error'
+	) {
+		const folded = tryFoldConstant(node)
+		if (folded !== null && Number.isFinite(folded)) {
+			const v = freshVar(state)
+			state.lines.push(`var ${v} = _numberValue(${folded});`)
+			return v
+		}
+	}
+
 	switch (node.type) {
 		case 'number': {
 			const v = freshVar(state)
@@ -169,7 +401,14 @@ function emitNode(state: CodegenState, node: FormulaNode): string {
 			return v
 		}
 		case 'cellRef': {
-			return emitReadCell(state, node.ref, node.sheet)
+			const h = hashNode(node)
+			if (h) {
+				const cached = state.nodeHashes.get(h)
+				if (cached !== undefined) return cached
+			}
+			const result = emitReadCell(state, node.ref, node.sheet)
+			if (h) state.nodeHashes.set(h, result)
+			return result
 		}
 		case 'binary': {
 			return emitBinary(state, node)
@@ -299,8 +538,22 @@ function emitFunction(state: CodegenState, node: FormulaNode & { type: 'function
 		node.args.length === 1 &&
 		(node.args[0] as FormulaNode).type === 'rangeRef'
 	) {
-		return emitRangeAggregate(state, node.args[0] as FormulaNode & { type: 'rangeRef' }, upper)
+		const h = hashNode(node)
+		if (h) {
+			const cached = state.nodeHashes.get(h)
+			if (cached !== undefined) return cached
+		}
+		const result = emitRangeAggregate(
+			state,
+			node.args[0] as FormulaNode & { type: 'rangeRef' },
+			upper,
+		)
+		if (h) state.nodeHashes.set(h, result)
+		return result
 	}
+	if (SIMPLE_MATH_FUNCTIONS.has(upper)) return emitSimpleMath(state, node)
+	if (SIMPLE_TEXT_FUNCTIONS.has(upper)) return emitSimpleText(state, node)
+	if (TEXT_WITH_ARGS_FUNCTIONS.has(upper)) return emitTextWithArgs(state, node)
 	if (upper === 'INDEX') return emitIndex(state, node)
 	if (upper === 'MATCH') return emitMatch(state, node)
 	if (upper === 'VLOOKUP') return emitVlookup(state, node)
@@ -371,6 +624,292 @@ function emitRound(state: CodegenState, args: readonly FormulaNode[]): string {
 	)
 	state.varCounter++
 	return result
+}
+
+function emitSimpleMath(state: CodegenState, node: FormulaNode & { type: 'function' }): string {
+	const upper = node.name.toUpperCase()
+	if (upper === 'PI' && node.args.length === 0) {
+		const result = freshVar(state)
+		state.lines.push(`var ${result} = _numberValue(${Math.PI});`)
+		return result
+	}
+
+	if (node.args.length === 1) {
+		const argVar = emitNode(state, node.args[0] as FormulaNode)
+		const sv = freshVar(state, 'sm')
+		state.lines.push(`var ${sv} = _topLeft(${argVar});`)
+		state.lines.push(`if (${sv}.kind === 'error') return ${sv};`)
+		const nv = emitCoerceNumber(state, sv)
+		const result = freshVar(state)
+		switch (upper) {
+			case 'ABS':
+				state.lines.push(`var ${result} = _numberValue(Math.abs(${nv}));`)
+				break
+			case 'SIGN':
+				state.lines.push(`var ${result} = _numberValue(Math.sign(${nv}));`)
+				break
+			case 'INT':
+				state.lines.push(`var ${result} = _numberValue(Math.floor(${nv}));`)
+				break
+			case 'SQRT':
+				state.lines.push(
+					`if (${nv} < 0) return _errorValue('#NUM!'); var ${result} = _numberValue(Math.sqrt(${nv}));`,
+				)
+				break
+			case 'LN':
+				state.lines.push(
+					`if (${nv} <= 0) return _errorValue('#NUM!'); var ${result} = _numberValue(Math.log(${nv}));`,
+				)
+				break
+			case 'LOG10':
+				state.lines.push(
+					`if (${nv} <= 0) return _errorValue('#NUM!'); var ${result} = _numberValue(Math.log10(${nv}));`,
+				)
+				break
+			case 'EXP':
+				state.lines.push(`var ${result} = _numberValue(Math.exp(${nv}));`)
+				break
+			case 'DEGREES':
+				state.lines.push(`var ${result} = _numberValue(${nv} * ${180 / Math.PI});`)
+				break
+			case 'RADIANS':
+				state.lines.push(`var ${result} = _numberValue(${nv} * ${Math.PI / 180});`)
+				break
+			case 'SIN':
+				state.lines.push(`var ${result} = _numberValue(Math.sin(${nv}));`)
+				break
+			case 'COS':
+				state.lines.push(`var ${result} = _numberValue(Math.cos(${nv}));`)
+				break
+			case 'TAN':
+				state.lines.push(`var ${result} = _numberValue(Math.tan(${nv}));`)
+				break
+			case 'ASIN':
+				state.lines.push(
+					`if (${nv} < -1 || ${nv} > 1) return _errorValue('#NUM!'); var ${result} = _numberValue(Math.asin(${nv}));`,
+				)
+				break
+			case 'ACOS':
+				state.lines.push(
+					`if (${nv} < -1 || ${nv} > 1) return _errorValue('#NUM!'); var ${result} = _numberValue(Math.acos(${nv}));`,
+				)
+				break
+			case 'ATAN':
+				state.lines.push(`var ${result} = _numberValue(Math.atan(${nv}));`)
+				break
+			case 'TRUNC':
+				state.lines.push(`var ${result} = _numberValue(Math.trunc(${nv}));`)
+				break
+			default:
+				state.lines.push(`var ${result} = _numberValue(${nv});`)
+		}
+		return result
+	}
+
+	if (node.args.length === 2) {
+		const arg1Var = emitNode(state, node.args[0] as FormulaNode)
+		const arg2Var = emitNode(state, node.args[1] as FormulaNode)
+		const s1 = freshVar(state, 'sa')
+		const s2 = freshVar(state, 'sb')
+		state.lines.push(`var ${s1} = _topLeft(${arg1Var}); var ${s2} = _topLeft(${arg2Var});`)
+		state.lines.push(
+			`if (${s1}.kind === 'error') return ${s1}; if (${s2}.kind === 'error') return ${s2};`,
+		)
+		const n1 = emitCoerceNumber(state, s1)
+		const n2 = emitCoerceNumber(state, s2)
+		const result = freshVar(state)
+		switch (upper) {
+			case 'MOD':
+				state.lines.push(
+					`if (${n2} === 0) return _errorValue('#DIV/0!'); var ${result} = _numberValue(${n1} - ${n2} * Math.floor(${n1} / ${n2}));`,
+				)
+				break
+			case 'POWER': {
+				state.lines.push(
+					`if (${n1} < 0 && ${n2} !== Math.floor(${n2})) return _errorValue('#NUM!'); var ${result} = _numberValue(${n1} ** ${n2});`,
+				)
+				break
+			}
+			case 'ROUNDUP': {
+				state.lines.push(
+					`var _m${state.varCounter} = Math.pow(10, Math.floor(${n2})); var ${result} = _numberValue(${n1} >= 0 ? Math.ceil(${n1} * _m${state.varCounter}) / _m${state.varCounter} : Math.floor(${n1} * _m${state.varCounter}) / _m${state.varCounter});`,
+				)
+				state.varCounter++
+				break
+			}
+			case 'ROUNDDOWN': {
+				state.lines.push(
+					`var _m${state.varCounter} = Math.pow(10, Math.floor(${n2})); var ${result} = _numberValue(Math.trunc(${n1} * _m${state.varCounter}) / _m${state.varCounter});`,
+				)
+				state.varCounter++
+				break
+			}
+			case 'TRUNC': {
+				state.lines.push(
+					`var _m${state.varCounter} = Math.pow(10, Math.floor(${n2})); var ${result} = _numberValue(Math.trunc(${n1} * _m${state.varCounter}) / _m${state.varCounter});`,
+				)
+				state.varCounter++
+				break
+			}
+			case 'CEILING': {
+				state.lines.push(
+					`if (${n2} === 0) return _numberValue(0); if (${n1} > 0 && ${n2} < 0) return _errorValue('#NUM!'); var ${result} = _numberValue(Math.ceil(${n1} / ${n2}) * ${n2});`,
+				)
+				break
+			}
+			case 'FLOOR': {
+				state.lines.push(
+					`if (${n2} === 0) return _errorValue('#DIV/0!'); if (${n1} > 0 && ${n2} < 0) return _errorValue('#NUM!'); var ${result} = _numberValue(Math.floor(${n1} / ${n2}) * ${n2});`,
+				)
+				break
+			}
+			default:
+				state.lines.push(`var ${result} = _numberValue(${n1});`)
+		}
+		return result
+	}
+
+	return emitTreeFallback(state, node)
+}
+
+function emitSimpleText(state: CodegenState, node: FormulaNode & { type: 'function' }): string {
+	const upper = node.name.toUpperCase()
+	const argVar = emitNode(state, node.args[0] as FormulaNode)
+	const sv = freshVar(state, 'st')
+	state.lines.push(`var ${sv} = _topLeft(${argVar});`)
+	state.lines.push(`if (${sv}.kind === 'error') return ${sv};`)
+	const str = freshVar(state, 'ts')
+	state.lines.push(`var ${str} = _coerceStr(${sv});`)
+	const result = freshVar(state)
+	switch (upper) {
+		case 'LEN':
+			state.lines.push(`var ${result} = _numberValue(${str}.length);`)
+			break
+		case 'UPPER':
+			state.lines.push(`var ${result} = _stringValue(${str}.toUpperCase());`)
+			break
+		case 'LOWER':
+			state.lines.push(`var ${result} = _stringValue(${str}.toLowerCase());`)
+			break
+		case 'TRIM':
+			state.lines.push(`var ${result} = _stringValue(${str}.replace(/^ +| +$|( ) +/g, '$1'));`)
+			break
+		case 'PROPER':
+			state.lines.push(
+				`var ${result} = _stringValue(${str}.toLowerCase().replace(/(?:^|[^a-zA-Z\u00C0-\u024F])([a-zA-Z\u00C0-\u024F])/g, function(m,c){return m.slice(0,-1)+c.toUpperCase();}));`,
+			)
+			break
+		default:
+			state.lines.push(`var ${result} = _stringValue(${str});`)
+	}
+	return result
+}
+
+function emitTextWithArgs(state: CodegenState, node: FormulaNode & { type: 'function' }): string {
+	const upper = node.name.toUpperCase()
+
+	if ((upper === 'CONCATENATE' || upper === 'CONCAT') && node.args.length >= 1) {
+		const parts: string[] = []
+		for (const arg of node.args) {
+			const argVar = emitNode(state, arg as FormulaNode)
+			const sv = freshVar(state, 'cc')
+			state.lines.push(`var ${sv} = _topLeft(${argVar});`)
+			state.lines.push(`if (${sv}.kind === 'error') return ${sv};`)
+			parts.push(`_coerceStr(${sv})`)
+		}
+		const result = freshVar(state)
+		state.lines.push(`var ${result} = _stringValue(${parts.join(' + ')});`)
+		return result
+	}
+
+	if (upper === 'LEFT' && node.args.length >= 1 && node.args.length <= 2) {
+		const argVar = emitNode(state, node.args[0] as FormulaNode)
+		const sv = freshVar(state, 'lt')
+		state.lines.push(`var ${sv} = _topLeft(${argVar});`)
+		state.lines.push(`if (${sv}.kind === 'error') return ${sv};`)
+		const str = freshVar(state, 'ls')
+		state.lines.push(`var ${str} = _coerceStr(${sv});`)
+		let countExpr = '1'
+		if (node.args.length === 2) {
+			const countVar = emitNode(state, node.args[1] as FormulaNode)
+			const cs = freshVar(state, 'lc')
+			state.lines.push(`var ${cs} = _topLeft(${countVar});`)
+			state.lines.push(`if (${cs}.kind === 'error') return ${cs};`)
+			countExpr = emitCoerceNumber(state, cs)
+		}
+		const result = freshVar(state)
+		state.lines.push(
+			`if (${countExpr} < 0) return _errorValue('#VALUE!'); var ${result} = _stringValue(${str}.substring(0, ${countExpr}));`,
+		)
+		return result
+	}
+
+	if (upper === 'RIGHT' && node.args.length >= 1 && node.args.length <= 2) {
+		const argVar = emitNode(state, node.args[0] as FormulaNode)
+		const sv = freshVar(state, 'rt')
+		state.lines.push(`var ${sv} = _topLeft(${argVar});`)
+		state.lines.push(`if (${sv}.kind === 'error') return ${sv};`)
+		const str = freshVar(state, 'rs')
+		state.lines.push(`var ${str} = _coerceStr(${sv});`)
+		let countExpr = '1'
+		if (node.args.length === 2) {
+			const countVar = emitNode(state, node.args[1] as FormulaNode)
+			const cs = freshVar(state, 'rc')
+			state.lines.push(`var ${cs} = _topLeft(${countVar});`)
+			state.lines.push(`if (${cs}.kind === 'error') return ${cs};`)
+			countExpr = emitCoerceNumber(state, cs)
+		}
+		const result = freshVar(state)
+		state.lines.push(
+			`if (${countExpr} < 0) return _errorValue('#VALUE!'); var ${result} = _stringValue(${countExpr} === 0 ? '' : ${str}.slice(-Math.trunc(${countExpr})));`,
+		)
+		return result
+	}
+
+	if (upper === 'MID' && node.args.length === 3) {
+		const argVar = emitNode(state, node.args[0] as FormulaNode)
+		const startVar = emitNode(state, node.args[1] as FormulaNode)
+		const lenVar = emitNode(state, node.args[2] as FormulaNode)
+		const sv = freshVar(state, 'mt')
+		state.lines.push(`var ${sv} = _topLeft(${argVar});`)
+		state.lines.push(`if (${sv}.kind === 'error') return ${sv};`)
+		const str = freshVar(state, 'ms')
+		state.lines.push(`var ${str} = _coerceStr(${sv});`)
+		const ss = freshVar(state, 'ms2')
+		state.lines.push(`var ${ss} = _topLeft(${startVar});`)
+		state.lines.push(`if (${ss}.kind === 'error') return ${ss};`)
+		const startN = emitCoerceNumber(state, ss)
+		const ls = freshVar(state, 'ml')
+		state.lines.push(`var ${ls} = _topLeft(${lenVar});`)
+		state.lines.push(`if (${ls}.kind === 'error') return ${ls};`)
+		const lenN = emitCoerceNumber(state, ls)
+		const result = freshVar(state)
+		state.lines.push(
+			`if (${startN} < 1 || ${lenN} < 0) return _errorValue('#VALUE!'); var ${result} = _stringValue(${str}.substring(${startN} - 1, ${startN} - 1 + ${lenN}));`,
+		)
+		return result
+	}
+
+	if (upper === 'REPT' && node.args.length === 2) {
+		const argVar = emitNode(state, node.args[0] as FormulaNode)
+		const countVar = emitNode(state, node.args[1] as FormulaNode)
+		const sv = freshVar(state, 'rpt')
+		state.lines.push(`var ${sv} = _topLeft(${argVar});`)
+		state.lines.push(`if (${sv}.kind === 'error') return ${sv};`)
+		const str = freshVar(state, 'rps')
+		state.lines.push(`var ${str} = _coerceStr(${sv});`)
+		const cs = freshVar(state, 'rpc')
+		state.lines.push(`var ${cs} = _topLeft(${countVar});`)
+		state.lines.push(`if (${cs}.kind === 'error') return ${cs};`)
+		const cn = emitCoerceNumber(state, cs)
+		const result = freshVar(state)
+		state.lines.push(
+			`if (${cn} < 0) return _errorValue('#VALUE!'); var ${result} = _stringValue(${str}.repeat(Math.floor(${cn})));`,
+		)
+		return result
+	}
+
+	return emitTreeFallback(state, node)
 }
 
 function emitIndex(state: CodegenState, node: FormulaNode & { type: 'function' }): string {
@@ -484,6 +1023,8 @@ function emitIfError(state: CodegenState, args: readonly FormulaNode[]): string 
 		varCounter: state.varCounter,
 		closureVars: state.closureVars,
 		treeNodes: state.treeNodes,
+		nodeHashes: new Map(),
+		...(state.sharedAnchor !== undefined && { sharedAnchor: state.sharedAnchor }),
 	}
 	const innerVar = emitNode(innerState, args[0] as FormulaNode)
 	innerState.lines.push(`return ${innerVar};`)
@@ -510,6 +1051,8 @@ function emitIfNa(state: CodegenState, args: readonly FormulaNode[]): string {
 		varCounter: state.varCounter,
 		closureVars: state.closureVars,
 		treeNodes: state.treeNodes,
+		nodeHashes: new Map(),
+		...(state.sharedAnchor !== undefined && { sharedAnchor: state.sharedAnchor }),
 	}
 	const innerVar = emitNode(innerState, args[0] as FormulaNode)
 	innerState.lines.push(`return ${innerVar};`)
@@ -712,9 +1255,9 @@ function lookupValueKey(value: CellValue): string | null {
 	const scalar = topLeftScalar(value)
 	switch (scalar.kind) {
 		case 'number':
-			return `n:${String(scalar.value === 0 ? 0 : scalar.value)}`
+			return `v:${String(scalar.value === 0 ? 0 : scalar.value)}`
 		case 'date':
-			return `d:${scalar.serial}`
+			return `v:${String(scalar.serial === 0 ? 0 : scalar.serial)}`
 		case 'string':
 			return `s:${scalar.value.toLowerCase()}`
 		case 'boolean':
@@ -964,6 +1507,7 @@ function buildCodegenFn(node: FormulaNode, sharedAnchor?: SharedAnchor): Codegen
 		varCounter: 0,
 		closureVars: new Map(),
 		treeNodes: new Map(),
+		nodeHashes: new Map(),
 	}
 	if (sharedAnchor) state.sharedAnchor = sharedAnchor
 

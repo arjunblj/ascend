@@ -279,4 +279,23 @@ describe('codegen', () => {
 		expect(sharedCodegenEval('$A$1+B1', wb, 0, 2, 1, 2)).toEqual(numberValue(102))
 		expect(sharedCodegenEval('$A$1+B1', wb, 0, 2, 2, 2)).toEqual(numberValue(103))
 	})
+
+	test('CSE: repeated SUM in same formula computes once and reuses', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		for (let r = 0; r < 100; r++) {
+			sheet.cells.set(r, 0, { value: numberValue(r + 1), formula: null, styleId: sid })
+		}
+
+		expect(codegenEval('IF(SUM(A1:A100)>0, SUM(A1:A100), 0)', wb)).toEqual(numberValue(5050))
+		expect(codegenEval('IF(SUM(A1:A100)<0, 0, SUM(A1:A100))', wb)).toEqual(numberValue(5050))
+	})
+
+	test('CSE: repeated cell ref in same formula reuses', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(42), formula: null, styleId: sid })
+
+		expect(codegenEval('A1+A1*A1', wb)).toEqual(numberValue(42 + 42 * 42))
+	})
 })

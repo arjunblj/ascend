@@ -396,6 +396,96 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(4, 1)?.value).toEqual(numberValue(3))
 	})
 
+	describe('structured table references (Table1 with Name, Revenue, Quantity)', () => {
+		function makeTable1Workbook() {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			sheet.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: sid })
+			sheet.cells.set(0, 1, { value: stringValue('Revenue'), formula: null, styleId: sid })
+			sheet.cells.set(0, 2, { value: stringValue('Quantity'), formula: null, styleId: sid })
+			sheet.cells.set(1, 0, { value: stringValue('A'), formula: null, styleId: sid })
+			sheet.cells.set(1, 1, { value: numberValue(100), formula: null, styleId: sid })
+			sheet.cells.set(1, 2, { value: numberValue(10), formula: null, styleId: sid })
+			sheet.cells.set(2, 0, { value: stringValue('B'), formula: null, styleId: sid })
+			sheet.cells.set(2, 1, { value: numberValue(200), formula: null, styleId: sid })
+			sheet.cells.set(2, 2, { value: numberValue(20), formula: null, styleId: sid })
+			sheet.cells.set(3, 0, { value: stringValue('C'), formula: null, styleId: sid })
+			sheet.cells.set(3, 1, { value: numberValue(300), formula: null, styleId: sid })
+			sheet.cells.set(3, 2, { value: numberValue(30), formula: null, styleId: sid })
+			sheet.tables.push({
+				id: createTableId(),
+				name: 'Table1',
+				sheetId: sheet.id,
+				ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 2 } },
+				columns: [{ name: 'Name' }, { name: 'Revenue' }, { name: 'Quantity' }],
+				hasHeaders: true,
+				hasTotals: false,
+			})
+			return { wb, sheet }
+		}
+
+		test('Table1[Revenue] resolves to data column (used in SUM)', () => {
+			const { wb, sheet } = makeTable1Workbook()
+			sheet.cells.set(5, 0, { value: EMPTY, formula: 'SUM(Table1[Revenue])', styleId: sid })
+
+			const result = recalculate(wb, makeCtx())
+			expect(result.errors).toEqual([])
+			expect(sheet.cells.get(5, 0)?.value).toEqual(numberValue(600))
+		})
+
+		test('Table1[@Revenue] resolves to same-row value (implicit intersection)', () => {
+			const { wb, sheet } = makeTable1Workbook()
+			sheet.cells.set(1, 4, { value: EMPTY, formula: 'Table1[@Revenue]', styleId: sid })
+			sheet.cells.set(2, 4, { value: EMPTY, formula: 'Table1[@Revenue]', styleId: sid })
+			sheet.cells.set(3, 4, { value: EMPTY, formula: 'Table1[@Revenue]', styleId: sid })
+
+			const result = recalculate(wb, makeCtx())
+			expect(result.errors).toEqual([])
+			expect(sheet.cells.get(1, 4)?.value).toEqual(numberValue(100))
+			expect(sheet.cells.get(2, 4)?.value).toEqual(numberValue(200))
+			expect(sheet.cells.get(3, 4)?.value).toEqual(numberValue(300))
+		})
+
+		test('Table1[#Headers] references header row', () => {
+			const { wb, sheet } = makeTable1Workbook()
+			sheet.cells.set(5, 0, { value: EMPTY, formula: 'COLUMNS(Table1[#Headers])', styleId: sid })
+			sheet.cells.set(5, 1, { value: EMPTY, formula: 'ROWS(Table1[#Headers])', styleId: sid })
+
+			const result = recalculate(wb, makeCtx())
+			expect(result.errors).toEqual([])
+			expect(sheet.cells.get(5, 0)?.value).toEqual(numberValue(3))
+			expect(sheet.cells.get(5, 1)?.value).toEqual(numberValue(1))
+		})
+
+		test('Table1[#All] references all rows including headers', () => {
+			const { wb, sheet } = makeTable1Workbook()
+			sheet.cells.set(5, 0, { value: EMPTY, formula: 'ROWS(Table1[#All])', styleId: sid })
+			sheet.cells.set(5, 1, { value: EMPTY, formula: 'COLUMNS(Table1[#All])', styleId: sid })
+
+			const result = recalculate(wb, makeCtx())
+			expect(result.errors).toEqual([])
+			expect(sheet.cells.get(5, 0)?.value).toEqual(numberValue(4))
+			expect(sheet.cells.get(5, 1)?.value).toEqual(numberValue(3))
+		})
+
+		test('Table1[#Data] references data rows only (excludes headers)', () => {
+			const { wb, sheet } = makeTable1Workbook()
+			sheet.cells.set(5, 0, { value: EMPTY, formula: 'SUM(Table1[#Data])', styleId: sid })
+
+			const result = recalculate(wb, makeCtx())
+			expect(result.errors).toEqual([])
+			expect(sheet.cells.get(5, 0)?.value).toEqual(numberValue(660))
+		})
+
+		test('Table1[#Totals] returns #REF! when table has no totals row', () => {
+			const { wb, sheet } = makeTable1Workbook()
+			sheet.cells.set(5, 0, { value: EMPTY, formula: 'SUM(Table1[#Totals])', styleId: sid })
+
+			recalculate(wb, makeCtx())
+			expect(sheet.cells.get(5, 0)?.value).toEqual(errorValue('#REF!'))
+		})
+	})
+
 	test('COUNTIF supports wildcard criteria', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -434,6 +524,25 @@ describe('recalculate', () => {
 		const cell = sheet.cells.get(0, 0)
 		const expectedSerial = dateToSerial(2025, 1, 15)
 		expect(cell?.value).toEqual(numberValue(expectedSerial))
+	})
+
+	test('volatile cells with unchanged value do not propagate to dependents: TODAY() same date skips dependents', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'TODAY()', styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'A1+1', styleId: sid })
+
+		const fixedDate = new Date(2025, 0, 15)
+		const ctx = makeCtx({ today: fixedDate, now: fixedDate })
+
+		recalculate(wb, ctx)
+		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(dateToSerial(2025, 1, 15)))
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(dateToSerial(2025, 1, 15) + 1))
+
+		const result = recalculate(wb, ctx, { dirtyOnly: true })
+		expect(result.changed).toEqual([])
+		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(dateToSerial(2025, 1, 15)))
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(dateToSerial(2025, 1, 15) + 1))
 	})
 
 	test('DATE respects 1904 date system in CalcContext', () => {
@@ -615,6 +724,17 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 0)?.value).toEqual(numberValue(3))
 	})
 
+	test('basic spill: SEQUENCE(3,1) spills to 3 cells vertically', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'SEQUENCE(3,1)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(2, 0)?.value).toEqual(numberValue(3))
+	})
+
 	test('blocked spill returns #SPILL! in the anchor cell', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -624,6 +744,17 @@ describe('recalculate', () => {
 		recalculate(wb, makeCtx())
 		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#SPILL!'))
 		expect(sheet.cells.get(1, 0)?.value).toEqual(stringValue('blocker'))
+	})
+
+	test('spill conflict: non-empty cell blocks spill range produces #SPILL!', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'SEQUENCE(4)', styleId: sid })
+		sheet.cells.set(3, 0, { value: numberValue(99), formula: null, styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#SPILL!'))
+		expect(sheet.cells.get(3, 0)?.value).toEqual(numberValue(99))
 	})
 
 	test('dirty recalc expands spill once blocker is removed', () => {
@@ -667,6 +798,35 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(1, 2)?.value).toEqual(numberValue(2))
 		expect(sheet.cells.get(2, 2)).toBeUndefined()
 		expect(sheet.cells.get(3, 2)).toBeUndefined()
+	})
+
+	test('spill shrink/grow: dynamic array size change updates spill range correctly', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		for (let r = 0; r < 5; r++) {
+			sheet.cells.set(r, 0, { value: numberValue(r + 1), formula: null, styleId: sid })
+			sheet.cells.set(r, 1, {
+				value: { kind: 'boolean', value: r < 2 },
+				formula: null,
+				styleId: sid,
+			})
+		}
+		sheet.cells.set(0, 2, { value: EMPTY, formula: 'FILTER(A1:A5,B1:B5)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 2)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(2, 2)).toBeUndefined()
+
+		sheet.cells.set(2, 1, { value: { kind: 'boolean', value: true }, formula: null, styleId: sid })
+		sheet.cells.set(3, 1, { value: { kind: 'boolean', value: true }, formula: null, styleId: sid })
+
+		recalculate(wb, makeCtx(), { dirtyOnly: true, dirtyRefs: ['Sheet1!B3:B4'] })
+		expect(sheet.cells.get(0, 2)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(2, 2)?.value).toEqual(numberValue(3))
+		expect(sheet.cells.get(3, 2)?.value).toEqual(numberValue(4))
+		expect(sheet.cells.get(4, 2)).toBeUndefined()
 	})
 
 	test('dirty recalc skips unchanged spill outputs', () => {
@@ -725,6 +885,24 @@ describe('recalculate', () => {
 
 		recalculate(wb, makeCtx())
 		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#SPILL!'))
+	})
+
+	test('spill cell clearing: when spill anchor is deleted, all spill cells are cleared', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'SEQUENCE(3)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(2, 0)?.value).toEqual(numberValue(3))
+
+		sheet.cells.delete(0, 0)
+		recalculate(wb, makeCtx())
+
+		expect(sheet.cells.get(0, 0)).toBeUndefined()
+		expect(sheet.cells.get(1, 0)).toBeUndefined()
+		expect(sheet.cells.get(2, 0)).toBeUndefined()
 	})
 
 	test('spill resize: FILTER result shrinks on recalc when fewer rows match', () => {

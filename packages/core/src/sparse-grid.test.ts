@@ -385,6 +385,50 @@ describe('SparseGrid', () => {
 		expect(grid.get(1, 0)?.value).toEqual(stringValue('changed'))
 	})
 
+	test('setExpectedDensity dense: new chunks are DenseChunk directly', () => {
+		const grid = new SparseGrid()
+		grid.setExpectedDensity('dense')
+		grid.setResolved(0, 0, numberValue(1), null, S0)
+		grid.setResolved(100, 100, numberValue(2), null, S0)
+		expect(grid.getChunkKindAt(0, 0)).toBe('dense')
+		expect(grid.getChunkKindAt(100, 100)).toBe('dense')
+	})
+
+	test('setExpectedDensity sparse: new chunks start as SparseChunk', () => {
+		const grid = new SparseGrid()
+		grid.setExpectedDensity('sparse')
+		grid.setResolved(0, 0, numberValue(1), null, S0)
+		expect(grid.getChunkKindAt(0, 0)).toBe('sparse')
+	})
+
+	test('setExpectedDensity sparse: SparseChunk upgrades to DenseChunk at threshold', () => {
+		const grid = new SparseGrid()
+		grid.setExpectedDensity('sparse')
+		// 100 cells in single chunk (0,0) to exceed SPARSE_TO_DENSE_THRESHOLD (96)
+		for (let i = 0; i < 100; i++) {
+			grid.setResolved(i >> 6, i & 63, numberValue(i), null, S0)
+		}
+		expect(grid.getChunkKindAt(0, 0)).toBe('dense')
+	})
+
+	test('setExpectedDensity auto: switches to dense when fill ratio > 50%', () => {
+		const grid = new SparseGrid()
+		grid.setExpectedDensity('auto')
+		// Fill 4 chunks with >8192 total cells (4*4096*0.5) to trigger dense switch
+		const cellsPerChunk = 2200
+		for (let chunk = 0; chunk < 4; chunk++) {
+			const baseRow = chunk * 64
+			for (let i = 0; i < cellsPerChunk; i++) {
+				const r = baseRow + (i >> 6)
+				const c = i & 63
+				grid.setResolved(r, c, numberValue(chunk * 1000 + i), null, S0)
+			}
+		}
+		// 5th chunk - should be DenseChunk due to auto switch
+		grid.setResolved(256, 0, numberValue(1), null, S0)
+		expect(grid.getChunkKindAt(256, 0)).toBe('dense')
+	})
+
 	test('copy-on-write: reads work before any mutation on clone', () => {
 		const grid = new SparseGrid()
 		for (let i = 0; i < 50; i++) {

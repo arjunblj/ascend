@@ -1414,8 +1414,26 @@ function evalCellInfo(argNodes: readonly FormulaNode[], ctx: EvalContext): CellV
 			if (h === 'right') return stringValue('"')
 			return stringValue('')
 		}
-		case 'format':
-			return stringValue(cellStyle?.numberFormat ?? 'G')
+		case 'format': {
+			const fmt = cellStyle?.numberFormat ?? 'G'
+			if (fmt === 'General' || fmt === 'G') return stringValue('G')
+			return stringValue(fmt)
+		}
+		case 'color':
+			return numberValue(cellStyle?.numberFormat?.includes('[Red') ? 1 : 0)
+		case 'protect':
+			return numberValue(cellStyle?.protection?.locked === false ? 0 : 1)
+		case 'parentheses':
+			return numberValue(cellStyle?.numberFormat?.includes('(') ? 1 : 0)
+		case 'filename': {
+			const sheetObj = ctx.workbook.sheets[targetRef.sheetIndex]
+			const sheetName = sheetObj?.name ?? `Sheet${targetRef.sheetIndex + 1}`
+			return stringValue(`[Workbook]${sheetName}`)
+		}
+		case 'sheet':
+			return stringValue(
+				ctx.workbook.sheets[targetRef.sheetIndex]?.name ?? `Sheet${targetRef.sheetIndex + 1}`,
+			)
 		default:
 			return errorValue('#VALUE!')
 	}

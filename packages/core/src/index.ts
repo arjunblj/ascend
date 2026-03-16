@@ -54,9 +54,10 @@ export type {
 	Cell,
 	CellFormulaBinding,
 	DynamicArrayFormulaInfo,
+	ExpectedDensity,
 	SharedFormulaInfo,
 } from './sparse-grid.ts'
-export { SparseGrid } from './sparse-grid.ts'
+export { SPARSE_TO_DENSE_THRESHOLD, SparseGrid } from './sparse-grid.ts'
 export type {
 	AlignmentStyle,
 	BorderEdge,

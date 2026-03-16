@@ -1,3 +1,16 @@
+/**
+ * IntervalIndex: range-to-formula dependency tracking for dirty propagation.
+ *
+ * Overlapping ranges: When a cell changes in A1:A50, both SUM(A1:A100) and
+ * SUM(A1:A50) are correctly marked dirty — query(row,col) returns any formula
+ * whose range contains that cell.
+ *
+ * aggregateRangeCache (formulas package): Caches exact range aggregates per
+ * key `name:sheet:row:col:endRow:endCol`. Overlapping ranges (e.g. A1:A100
+ * vs A1:A50) are separate entries; the cache does not derive subrange results
+ * from a superset. Future optimization: when SUM(A1:A100) is cached, SUM(A1:A50)
+ * could be computed from the cached iteration instead of from scratch.
+ */
 import type { CellKey } from './dep-graph.ts'
 
 interface RangeEntry {

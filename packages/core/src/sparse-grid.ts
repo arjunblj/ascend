@@ -54,8 +54,11 @@ const CHUNK_SIZE = 1 << CHUNK_BITS
 const CHUNK_MASK = CHUNK_SIZE - 1
 const CHUNK_AREA = CHUNK_SIZE * CHUNK_SIZE
 const CHUNK_COL_FACTOR = (16_383 >> CHUNK_BITS) + 1
-/** SparseChunk upgrades to DenseChunk when cell count reaches this. DenseChunk uses fixed arrays; SparseChunk uses a Map. Per-sheet auto-selection (HyperFormula-style) would create DenseChunk directly for high-fill sheets to skip upgrade cost, but requires fill-ratio heuristics at load time. Not implemented: XLSX load is cell-by-cell so we don't know fill ratio until after load; adding setExpectedDensity() would require API changes at io-xlsx; the upgrade cost is one-time O(96) copy per chunk. */
-const SPARSE_TO_DENSE_THRESHOLD = 96
+/** SparseChunk upgrades to DenseChunk when cell count reaches this. DenseChunk uses fixed arrays; SparseChunk uses a Map. */
+export const SPARSE_TO_DENSE_THRESHOLD = 96
+
+const AUTO_DENSE_SAMPLE_CHUNKS = 4
+const AUTO_DENSE_FILL_RATIO = 0.5
 const SLOT_TAG_MASK = 0b111
 const SLOT_OCCUPIED_BIT = 0b1000
 
@@ -297,21 +300,21 @@ class DenseChunk implements GridChunk {
 	getSlot(localIndex: number): StoredSlot | undefined {
 		if (!this.has(localIndex)) return undefined
 		const tag = this.readTag(localIndex)
-		return {
-			tag,
-			styleId: this.styleIds[localIndex] as StyleId,
-			formula: this.formulas?.[localIndex] ?? null,
-			formulaInfo: this.formulaInfos?.[localIndex],
-			numberValue:
-				tag === SlotTag.Number || tag === SlotTag.Boolean || tag === SlotTag.Date
-					? (this.numbers[localIndex] ?? 0)
-					: undefined,
-			stringId:
-				tag === SlotTag.String || tag === SlotTag.Error
-					? (this.stringIds[localIndex] ?? 0)
-					: undefined,
-			heapValue: tag === SlotTag.Heap ? (this.heapValues?.[localIndex] ?? EMPTY) : undefined,
-		}
+		const slot = this._reusableSlot as unknown as Record<string, unknown>
+		slot.tag = tag
+		slot.styleId = this.styleIds[localIndex] as StyleId
+		slot.formula = this.formulas?.[localIndex] ?? null
+		slot.formulaInfo = this.formulaInfos?.[localIndex]
+		slot.numberValue =
+			tag === SlotTag.Number || tag === SlotTag.Boolean || tag === SlotTag.Date
+				? (this.numbers[localIndex] ?? 0)
+				: undefined
+		slot.stringId =
+			tag === SlotTag.String || tag === SlotTag.Error
+				? (this.stringIds[localIndex] ?? 0)
+				: undefined
+		slot.heapValue = tag === SlotTag.Heap ? (this.heapValues?.[localIndex] ?? EMPTY) : undefined
+		return this._reusableSlot
 	}
 
 	getKind(localIndex: number): CellValueKind | undefined {
@@ -613,6 +616,8 @@ class DenseChunk implements GridChunk {
 	}
 }
 
+export type ExpectedDensity = 'sparse' | 'dense' | 'auto'
+
 export class SparseGrid {
 	private chunkRows = new Map<number, Map<number, GridChunk>>()
 	private _sortedChunkRows: readonly number[] | null = null
@@ -626,6 +631,22 @@ export class SparseGrid {
 	private _minCol = Number.POSITIVE_INFINITY
 	private _maxCol = Number.NEGATIVE_INFINITY
 	private _boundsDirty = false
+	private _expectedDensity: ExpectedDensity = 'sparse'
+	private _autoChunkCount = 0
+	private _autoTotalCells = 0
+
+	setExpectedDensity(density: ExpectedDensity): void {
+		this._expectedDensity = density
+	}
+
+	/** Returns the chunk implementation type at (row,col) for testing. */
+	getChunkKindAt(row: number, col: number): 'sparse' | 'dense' | undefined {
+		const chunkRow = row >> CHUNK_BITS
+		const chunkCol = col >> CHUNK_BITS
+		const chunk = this.chunkRows.get(chunkRow)?.get(chunkCol)
+		if (!chunk) return undefined
+		return chunk instanceof DenseChunk ? 'dense' : 'sparse'
+	}
 
 	get(row: number, col: number): Cell | undefined {
 		const slot = this._getSlot(row, col)
@@ -656,7 +677,7 @@ export class SparseGrid {
 		}
 		let chunk = cols.get(chunkCol)
 		if (!chunk) {
-			chunk = new SparseChunk()
+			chunk = this._createNewChunk()
 			cols.set(chunkCol, chunk)
 			this.invalidateChunkOrder(chunkRow)
 		}
@@ -669,7 +690,10 @@ export class SparseGrid {
 			const nextChunk = chunk.setSlot(localIndex, slot)
 			if (nextChunk !== chunk) cols.set(chunkCol, nextChunk)
 		}
-		if (!existed) this._cellCount++
+		if (!existed) {
+			this._cellCount++
+			if (this._expectedDensity === 'auto') this._autoTotalCells++
+		}
 		this._trackBounds(row, col)
 	}
 
@@ -947,6 +971,8 @@ export class SparseGrid {
 		this._minCol = Number.POSITIVE_INFINITY
 		this._maxCol = Number.NEGATIVE_INFINITY
 		this._boundsDirty = false
+		this._autoChunkCount = 0
+		this._autoTotalCells = 0
 	}
 
 	insertRows(at: number, count: number): void {
@@ -1038,6 +1064,22 @@ export class SparseGrid {
 		this._boundsDirty = other._boundsDirty
 		this._shared = true
 		other._shared = true
+	}
+
+	private _createNewChunk(): GridChunk {
+		if (this._expectedDensity === 'auto') {
+			if (this._autoChunkCount >= AUTO_DENSE_SAMPLE_CHUNKS) {
+				const fillRatio = this._autoTotalCells / (AUTO_DENSE_SAMPLE_CHUNKS * CHUNK_AREA)
+				if (fillRatio > AUTO_DENSE_FILL_RATIO) {
+					this._expectedDensity = 'dense'
+					this._autoChunkCount++
+					return new DenseChunk()
+				}
+			}
+			this._autoChunkCount++
+		}
+		if (this._expectedDensity === 'dense') return new DenseChunk()
+		return new SparseChunk()
 	}
 
 	private ensureWritable(): void {

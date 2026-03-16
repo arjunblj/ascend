@@ -6,8 +6,14 @@ import {
 } from '../../packages/engine/src/index.ts'
 import { clearGlobalParseCache, parseFormula } from '../../packages/formulas/src/index.ts'
 import { readCsv, writeCsv } from '../../packages/io-csv/src/index.ts'
-import { readXlsx, writeXlsx } from '../../packages/io-xlsx/src/index.ts'
-import { booleanValue, EMPTY, numberValue, stringValue } from '../../packages/schema/src/index.ts'
+import { readXlsx, writeXlsx, writeXlsxStreaming } from '../../packages/io-xlsx/src/index.ts'
+import {
+	booleanValue,
+	dateValue,
+	EMPTY,
+	numberValue,
+	stringValue,
+} from '../../packages/schema/src/index.ts'
 import { AscendWorkbook } from '../../packages/sdk/src/index.ts'
 import {
 	type BenchmarkCaseResult,
@@ -54,8 +60,8 @@ function requireContent(input: ScenarioInput): string {
 	return input.content
 }
 
-function mustWrite(workbook: Workbook): Uint8Array {
-	const result = writeXlsx(workbook)
+function mustWrite(workbook: Workbook, options?: Parameters<typeof writeXlsx>[2]): Uint8Array {
+	const result = writeXlsx(workbook, undefined, options)
 	if (!result.ok) throw new Error(result.error.message)
 	return result.value
 }
@@ -113,6 +119,23 @@ function buildStringDenseWorkbook(rows: number, cols: number): Workbook {
 			const value = c % 2 === 0 ? `label-${r}-${c}` : `shared-${c % 5}`
 			sheet.cells.set(r, c, {
 				value: { kind: 'string', value },
+				formula: null,
+				styleId: SID,
+			})
+		}
+	}
+	return workbook
+}
+
+function buildUniqueStringWorkbook(rows: number, cols: number): Workbook {
+	const workbook = createWorkbook()
+	workbook.addSheet('Sheet1')
+	const sheet = workbook.sheets[0]
+	if (!sheet) throw new Error('Benchmark workbook missing first sheet')
+	for (let r = 0; r < rows; r++) {
+		for (let c = 0; c < cols; c++) {
+			sheet.cells.set(r, c, {
+				value: stringValue(`unique-${r}-${c}`),
 				formula: null,
 				styleId: SID,
 			})
@@ -217,6 +240,131 @@ function buildStructuralInsertRowsWorkbook(rowCount: number): Workbook {
 	for (let r = 0; r < rowCount; r++) {
 		setNumberCell(workbook, r, 0, r + 1)
 		setFormulaCell(workbook, r, 1, `SUM(A1:A${r + 1})`)
+	}
+	return workbook
+}
+
+function buildMixedDataWorkbook(rows: number, cols: number): Workbook {
+	const workbook = createWorkbook()
+	workbook.addSheet('Sheet1')
+	const sheet = workbook.sheets[0]
+	if (!sheet) throw new Error('Benchmark workbook missing first sheet')
+	for (let r = 0; r < rows; r++) {
+		for (let c = 0; c < cols; c++) {
+			const kind = (r + c) % 4
+			if (kind === 0) {
+				sheet.cells.set(r, c, {
+					value: numberValue(r * cols + c + 1),
+					formula: null,
+					styleId: SID,
+				})
+			} else if (kind === 1) {
+				sheet.cells.set(r, c, {
+					value: stringValue(`row-${r}-col-${c}`),
+					formula: null,
+					styleId: SID,
+				})
+			} else if (kind === 2) {
+				sheet.cells.set(r, c, {
+					value: booleanValue((r + c) % 2 === 0),
+					formula: null,
+					styleId: SID,
+				})
+			} else {
+				sheet.cells.set(r, c, {
+					value: dateValue(44927 + (r % 365)),
+					formula: null,
+					styleId: SID,
+				})
+			}
+		}
+	}
+	return workbook
+}
+
+function buildReadStyleHeavyWorkbook(rows: number, uniqueStyles: number): Workbook {
+	const workbook = createWorkbook()
+	workbook.addSheet('Sheet1')
+	const sheet = workbook.sheets[0]
+	if (!sheet) throw new Error('Benchmark workbook missing first sheet')
+	const fonts = ['Arial', 'Calibri', 'Helvetica', 'Times New Roman', 'Courier New']
+	const formats = ['General', '0.00', '#,##0', '0.0%', '[$-409]m/d/yy', '@']
+	const styleIds: StyleId[] = []
+	for (let i = 0; i < uniqueStyles; i++) {
+		const styleId = workbook.styles.register({
+			font: {
+				name: fonts[i % fonts.length],
+				size: 9 + (i % 8),
+				bold: i % 5 === 0,
+				color: {
+					kind: 'rgb',
+					rgb: `FF${String((i * 37) % 256).padStart(2, '0')}${String((i * 17) % 256).padStart(2, '0')}${String((i * 7) % 256).padStart(2, '0')}`,
+				},
+			},
+			fill: {
+				pattern: 'solid',
+				fgColor: {
+					kind: 'rgb',
+					rgb: `FF${String((i * 13) % 256).padStart(2, '0')}${String((i * 31) % 256).padStart(2, '0')}${String((i * 19) % 256).padStart(2, '0')}`,
+				},
+			},
+			numberFormat: formats[i % formats.length],
+		}) as StyleId
+		styleIds.push(styleId)
+		sheet.cells.set(i, 0, {
+			value: numberValue(i + 1),
+			formula: null,
+			styleId,
+		})
+	}
+	for (let r = uniqueStyles; r < rows; r++) {
+		const styleId = styleIds[r % uniqueStyles] ?? SID
+		sheet.cells.set(r, 0, {
+			value: numberValue(r + 1),
+			formula: null,
+			styleId,
+		})
+	}
+	return workbook
+}
+
+function buildReadStringHeavyWorkbook(rows: number, uniqueStrings: number): Workbook {
+	const workbook = createWorkbook()
+	workbook.addSheet('Sheet1')
+	const sheet = workbook.sheets[0]
+	if (!sheet) throw new Error('Benchmark workbook missing first sheet')
+	for (let r = 0; r < rows; r++) {
+		const idx = r % uniqueStrings
+		sheet.cells.set(r, 0, {
+			value: stringValue(`unique-string-${idx}-${'x'.repeat((idx % 20) + 1)}`),
+			formula: null,
+			styleId: SID,
+		})
+		sheet.cells.set(r, 1, {
+			value: stringValue(`another-${idx}-${String(r).padStart(5, '0')}`),
+			formula: null,
+			styleId: SID,
+		})
+	}
+	return workbook
+}
+
+function buildReadFormulaDenseWorkbook(rows: number, _cols: number): Workbook {
+	const workbook = createWorkbook()
+	workbook.addSheet('Sheet1')
+	const sheet = workbook.sheets[0]
+	if (!sheet) throw new Error('Benchmark workbook missing first sheet')
+	for (let r = 0; r < rows; r++) {
+		const row1 = r + 1
+		sheet.cells.set(r, 0, {
+			value: numberValue(row1),
+			formula: null,
+			styleId: SID,
+		})
+		setFormulaCell(workbook, r, 1, `A${row1}*2`)
+		setFormulaCell(workbook, r, 2, `SUM(A$1:A${row1})`)
+		setFormulaCell(workbook, r, 3, `B${row1}+C${row1}`)
+		setFormulaCell(workbook, r, 4, `IF(A${row1}>100,"big","small")`)
 	}
 	return workbook
 }
@@ -377,6 +525,31 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'write-xlsx-100k-rows',
+		category: 'write',
+		build() {
+			const workbook = buildDenseWorkbook(100_000, 10)
+			return { workbook, rows: 100_000, cols: 10, cells: 1_000_000 }
+		},
+		run(input) {
+			mustWrite(requireWorkbook(input))
+		},
+	},
+	{
+		name: 'write-xlsx-streaming-100k-rows',
+		category: 'write',
+		build() {
+			const workbook = buildDenseWorkbook(100_000, 10)
+			return { workbook, rows: 100_000, cols: 10, cells: 1_000_000 }
+		},
+		async run(input) {
+			const result = await writeXlsxStreaming(requireWorkbook(input), undefined, {
+				streaming: true,
+			})
+			if (!result.ok) throw new Error(result.error.message)
+		},
+	},
+	{
 		name: 'write-multi-sheet',
 		category: 'write',
 		build() {
@@ -388,6 +561,26 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'write-dirty-single-sheet',
+		category: 'write',
+		build() {
+			const workbook = buildMultiSheetWorkbook(3, 5000, 10)
+			const bytes = mustWrite(workbook)
+			return { bytes, rows: 5000, cols: 10, cells: 150_000 }
+		},
+		run(input) {
+			const result = readXlsx(requireBytes(input))
+			if (!result.ok) throw new Error(result.error.message)
+			const sheet = result.value.workbook.sheets[0]
+			if (!sheet) throw new Error('Missing Sheet1')
+			sheet.cells.set(0, 0, { value: numberValue(999), formula: null, styleId: SID })
+			const written = writeXlsx(result.value.workbook, result.value.capsules, {
+				dirtySheetNames: ['Sheet1'],
+			})
+			if (!written.ok) throw new Error(written.error.message)
+		},
+	},
+	{
 		name: 'style-heavy-workbook',
 		category: 'write',
 		build() {
@@ -396,6 +589,28 @@ const scenarios: readonly Scenario[] = [
 		},
 		run(input) {
 			mustWrite(requireWorkbook(input))
+		},
+	},
+	{
+		name: 'write-unique-strings-sst',
+		category: 'write',
+		build() {
+			const workbook = buildUniqueStringWorkbook(2000, 20)
+			return { workbook, rows: 2000, cols: 20, cells: 40_000 }
+		},
+		run(input) {
+			mustWrite(requireWorkbook(input), { useSharedStrings: true })
+		},
+	},
+	{
+		name: 'write-unique-strings-inline',
+		category: 'write',
+		build() {
+			const workbook = buildUniqueStringWorkbook(2000, 20)
+			return { workbook, rows: 2000, cols: 20, cells: 40_000 }
+		},
+		run(input) {
+			mustWrite(requireWorkbook(input), { useInlineStrings: true })
 		},
 	},
 	{
@@ -445,12 +660,75 @@ const scenarios: readonly Scenario[] = [
 		name: 'read-large-200k',
 		category: 'read',
 		build() {
-			const workbook = buildDenseWorkbook(10_000, 20)
+			const rows = 200_000
+			const cols = 5
+			const workbook = buildMixedDataWorkbook(rows, cols)
 			const bytes = mustWrite(workbook)
-			return { bytes, rows: 10_000, cols: 20, cells: 200_000 }
+			return { bytes, rows, cols, cells: rows * cols }
 		},
 		run(input) {
 			const result = readXlsx(requireBytes(input))
+			if (!result.ok) throw new Error(result.error.message)
+		},
+	},
+	{
+		name: 'read-style-heavy',
+		category: 'read',
+		build() {
+			const rows = 5_000
+			const uniqueStyles = 2_500
+			const workbook = buildReadStyleHeavyWorkbook(rows, uniqueStyles)
+			const bytes = mustWrite(workbook)
+			return { bytes, rows, cols: 1, cells: rows }
+		},
+		run(input) {
+			const result = readXlsx(requireBytes(input))
+			if (!result.ok) throw new Error(result.error.message)
+		},
+	},
+	{
+		name: 'read-string-heavy',
+		category: 'read',
+		build() {
+			const rows = 20_000
+			const cols = 2
+			const uniqueStrings = 10_500
+			const workbook = buildReadStringHeavyWorkbook(rows, uniqueStrings)
+			const bytes = mustWrite(workbook)
+			return { bytes, rows, cols, cells: rows * cols }
+		},
+		run(input) {
+			const result = readXlsx(requireBytes(input))
+			if (!result.ok) throw new Error(result.error.message)
+		},
+	},
+	{
+		name: 'read-formula-dense',
+		category: 'read',
+		build() {
+			const rows = 10_000
+			const cols = 5
+			const workbook = buildReadFormulaDenseWorkbook(rows, cols)
+			const bytes = mustWrite(workbook)
+			return { bytes, rows, cols, cells: rows * cols }
+		},
+		run(input) {
+			const result = readXlsx(requireBytes(input))
+			if (!result.ok) throw new Error(result.error.message)
+		},
+	},
+	{
+		name: 'read-large-200k-values',
+		category: 'read',
+		build() {
+			const rows = 200_000
+			const cols = 5
+			const workbook = buildMixedDataWorkbook(rows, cols)
+			const bytes = mustWrite(workbook)
+			return { bytes, rows, cols, cells: rows * cols }
+		},
+		run(input) {
+			const result = readXlsx(requireBytes(input), { mode: 'values' })
 			if (!result.ok) throw new Error(result.error.message)
 		},
 	},
@@ -477,6 +755,19 @@ const scenarios: readonly Scenario[] = [
 		},
 		run(input) {
 			const result = readXlsx(requireBytes(input))
+			if (!result.ok) throw new Error(result.error.message)
+		},
+	},
+	{
+		name: 'read-values-dense',
+		category: 'read',
+		build() {
+			const workbook = buildDenseWorkbook(2000, 20)
+			const bytes = mustWrite(workbook)
+			return { bytes, rows: 2000, cols: 20, cells: 40_000 }
+		},
+		run(input) {
+			const result = readXlsx(requireBytes(input), { mode: 'values' })
 			if (!result.ok) throw new Error(result.error.message)
 		},
 	},
@@ -1347,6 +1638,7 @@ const scenarios: readonly Scenario[] = [
 const scenarioSets = {
 	smoke: [
 		'read-full-dense',
+		'read-values-dense',
 		'workflow-sdk-edit-cycle',
 		'workflow-sdk-defined-names-edit-cycle',
 		'recalc-incremental',
@@ -1359,6 +1651,13 @@ const scenarioSets = {
 		'read-csv-large',
 	],
 	memory: ['memory-1k-cells', 'memory-10k-cells', 'memory-100k-cells', 'memory-1m-cells'],
+	'large-read': [
+		'read-large-200k',
+		'read-style-heavy',
+		'read-string-heavy',
+		'read-formula-dense',
+		'read-large-200k-values',
+	],
 } as const
 
 function getRssBytes(): number | undefined {

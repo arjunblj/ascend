@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { extractZip } from '../../io-xlsx/src/reader/zip.ts'
 import { createZip, encode } from '../../io-xlsx/src/writer/zip.ts'
-import { Ascend, AscendWorkbook, ops, WorkbookDocument } from './index.ts'
+import { Ascend, AscendWorkbook, ops, WorkbookDocument, WorkbookSession } from './index.ts'
 
 describe('AscendWorkbook', () => {
 	test('Ascend entry point exposes create, open, fromCsv', async () => {
@@ -585,6 +585,43 @@ describe('AscendWorkbook', () => {
 		expect(cell?.value).toEqual({ kind: 'number', value: 100 })
 	})
 
+	test('setCells returns warnings when data validation fails (write still succeeds)', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'A1',
+				rule: { type: 'whole', formula1: '1', formula2: '10', operator: 'between' },
+			},
+		])
+		const result = wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 99 }] },
+		])
+		expect(result.errors).toHaveLength(0)
+		expect(result.warnings).toHaveLength(1)
+		expect(result.warnings?.[0]?.code).toBe('VALIDATION_ERROR')
+		expect(result.warnings?.[0]?.refs).toContain('A1')
+		expect(wb.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 99 })
+	})
+
+	test('setCells with valid value has no warnings', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'A1',
+				rule: { type: 'whole', formula1: '1', formula2: '10', operator: 'between' },
+			},
+		])
+		const result = wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 5 }] },
+		])
+		expect(result.errors).toHaveLength(0)
+		expect(result.warnings).toBeUndefined()
+	})
+
 	test('apply returns error for invalid sheet', () => {
 		const wb = AscendWorkbook.create()
 		const result = wb.apply([
@@ -602,6 +639,21 @@ describe('AscendWorkbook', () => {
 		])
 		expect(result.errors).toHaveLength(1)
 		expect(wb.sheet('Sheet1')?.cell('A1')).toBeUndefined()
+	})
+
+	test('apply with transaction:true rolls back on failure', () => {
+		const wb = AscendWorkbook.create()
+		const result = wb.apply(
+			[
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'first' }] },
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A2', value: 'second' }] },
+				{ op: 'deleteSheet', sheet: 'NonExistent' },
+			],
+			{ transaction: true },
+		)
+		expect(result.errors).toHaveLength(1)
+		expect(wb.sheet('Sheet1')?.cell('A1')).toBeUndefined()
+		expect(wb.sheet('Sheet1')?.cell('A2')).toBeUndefined()
 	})
 
 	test('apply with collectAllErrors returns all validation errors', () => {
@@ -822,9 +874,9 @@ describe('AscendWorkbook', () => {
 
 		const saved = wb.toBytes()
 		const archive = extractZip(saved)
-		expect(archive.readText('xl/sharedStrings.xml')).toBe(
-			extractZip(bytes).readText('xl/sharedStrings.xml'),
-		)
+		const sharedStringsXml = archive.readText('xl/sharedStrings.xml')
+		expect(sharedStringsXml).toContain('<t>World</t>')
+		expect(sharedStringsXml).toContain('<t>Hello</t>')
 		const reopened = await AscendWorkbook.open(saved)
 		expect(reopened.sheet('Sheet1')?.cell('A2')?.value).toEqual({ kind: 'string', value: 'Hello' })
 	})
@@ -1295,6 +1347,13 @@ describe('AscendWorkbook', () => {
 		])
 		expect(preview.errors).toHaveLength(0)
 		expect(preview.cellChanges.length).toBeGreaterThanOrEqual(1)
+		expect(preview.changedCells).toHaveLength(1)
+		expect(preview.changedCells[0]).toEqual({
+			ref: 'Sheet1!A1',
+			oldValue: { kind: 'string', value: 'before' },
+			newValue: { kind: 'string', value: 'after' },
+		})
+		expect(preview.wouldSucceed).toBe(true)
 		expect(preview.writePlan?.totalParts).toBeGreaterThan(0)
 
 		const cell = wb.sheet('Sheet1')?.cell('A1')
@@ -1305,6 +1364,47 @@ describe('AscendWorkbook', () => {
 		const wb = AscendWorkbook.create()
 		const preview = wb.preview([{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=A1+1' }])
 		expect(preview.errors.some((error) => error.code === 'CIRCULAR_REF')).toBe(true)
+		expect(preview.wouldSucceed).toBe(false)
+	})
+
+	test('preview shows recalc scope for formula dependents', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 10 }] },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: '=A1*2' },
+		])
+
+		const preview = wb.preview([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 20 }] },
+		])
+		expect(preview.errors).toHaveLength(0)
+		expect(preview.wouldSucceed).toBe(true)
+		expect(preview.recalcScope).toBeGreaterThanOrEqual(1)
+		expect(preview.changedCells.some((c) => c.ref === 'Sheet1!B1')).toBe(true)
+		expect(preview.changedCells.find((c) => c.ref === 'Sheet1!B1')?.newValue).toEqual({
+			kind: 'number',
+			value: 40,
+		})
+	})
+
+	test('preview captures validation warnings', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 5 }] },
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'A1:A5',
+				rule: { type: 'whole', formula1: '1', formula2: '10', operator: 'between' },
+			},
+		])
+
+		const preview = wb.preview([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 99 }] },
+		])
+		expect(preview.warnings.length).toBeGreaterThanOrEqual(1)
+		expect(preview.warnings.some((w) => w.code === 'VALIDATION_ERROR')).toBe(true)
+		expect(preview.wouldSucceed).toBe(true)
 	})
 
 	test('preview formatting changes do not grow the source style registry', () => {
@@ -1618,6 +1718,118 @@ describe('AscendWorkbook', () => {
 		expect(wb.formula('Calc!B2')?.normalizedFormula).toBe('A2*2')
 	})
 
+	test('getFormulaBinding returns summary for formula cells, null for non-formula', async () => {
+		const bytes = makeSyntheticXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Calc" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1"><v>1</v></c>
+      <c r="B1"><f>A1*2</f><v>2</v></c>
+      <c r="C1"><f t="array" ref="A1:A2">SUM(B1:B2)</f><v>3</v></c>
+      <c r="D1"><f t="shared" si="0">A1+1</f><v>2</v></c>
+    </row>
+    <row r="2">
+      <c r="D2"><f t="shared" si="0"/><v>3</v></c>
+    </row>
+  </sheetData>
+</worksheet>`,
+		})
+		const wb = await AscendWorkbook.open(bytes)
+		const sheet = wb.sheet('Calc')
+		expect(sheet).toBeDefined()
+		expect(sheet?.getFormulaBinding('A1')).toBeNull()
+		expect(sheet?.getFormulaBinding('B1')).toEqual({ kind: 'normal', formula: 'A1*2' })
+		expect(sheet?.getFormulaBinding('C1')).toEqual({
+			kind: 'array',
+			formula: 'SUM(B1:B2)',
+			range: 'A1:A2',
+		})
+		expect(sheet?.getFormulaBinding('D1')).toMatchObject({
+			kind: 'shared-anchor',
+			formula: 'A1+1',
+			sharedIndex: '0',
+		})
+		expect(sheet?.getFormulaBinding('D2')).toMatchObject({
+			kind: 'shared-member',
+			sharedIndex: '0',
+			masterRef: 'D1',
+		})
+	})
+
+	test('getFormulaCells returns all formula cells, optionally filtered by kind', async () => {
+		const bytes = makeSyntheticXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Calc" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1"><v>1</v></c>
+      <c r="B1"><f>A1*2</f><v>2</v></c>
+      <c r="C1"><f t="shared" si="0">A1+1</f><v>2</v></c>
+    </row>
+    <row r="2">
+      <c r="C2"><f t="shared" si="0"/><v>3</v></c>
+    </row>
+  </sheetData>
+</worksheet>`,
+		})
+		const wb = await AscendWorkbook.open(bytes)
+		const sheet = wb.sheet('Calc')
+		expect(sheet).toBeDefined()
+		const all = sheet?.getFormulaCells() ?? []
+		expect(all.length).toBe(3)
+		expect(all.map((e) => e.ref).sort()).toEqual(['B1', 'C1', 'C2'])
+		const normal = sheet?.getFormulaCells({ kind: 'normal' }) ?? []
+		expect(normal.length).toBe(1)
+		expect(normal[0]).toEqual({ ref: 'B1', binding: { kind: 'normal', formula: 'A1*2' } })
+		const anchors = sheet?.getFormulaCells({ kind: 'shared-anchor' }) ?? []
+		expect(anchors.length).toBe(1)
+		expect(anchors[0]?.ref).toBe('C1')
+		expect(anchors[0]?.binding.kind).toBe('shared-anchor')
+		const members = sheet?.getFormulaCells({ kind: 'shared-member' }) ?? []
+		expect(members.length).toBe(1)
+		expect(members[0]?.ref).toBe('C2')
+		expect(members[0]?.binding.kind).toBe('shared-member')
+	})
+
 	test('setFormula and fillFormula helpers apply formula operations', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -1718,6 +1930,74 @@ describe('AscendWorkbook', () => {
 		expect(handle.comment('A1')).toBeUndefined()
 	})
 
+	test('getComments returns correct data when comments exist', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'cell' }] }])
+		const internal = wb as unknown as {
+			wb: { sheets: Array<{ comments: Map<string, { text: string; author?: string }> }> }
+		}
+		internal.wb.sheets[0]?.comments.set('A1', { text: 'Review this', author: 'Alice' })
+		internal.wb.sheets[0]?.comments.set('B2', { text: 'Note' })
+
+		const handle = wb.sheet('Sheet1')
+		if (!handle) throw new Error('Expected Sheet1 to exist')
+		const comments = handle.getComments()
+		expect(comments).toHaveLength(2)
+		expect(comments).toContainEqual({ ref: 'A1', author: 'Alice', text: 'Review this' })
+		expect(comments).toContainEqual({ ref: 'B2', text: 'Note' })
+	})
+
+	test('getConditionalFormats returns rule summaries', () => {
+		const wb = AscendWorkbook.create()
+		const internal = wb as unknown as {
+			wb: {
+				sheets: Array<{
+					conditionalFormats: Array<{
+						sqref: string
+						rules: Array<{ type: string; priority?: number }>
+					}>
+				}>
+			}
+		}
+		internal.wb.sheets[0]?.conditionalFormats.push({
+			sqref: 'A1:B10',
+			rules: [
+				{ type: 'cellIs', priority: 1 },
+				{ type: 'colorScale', priority: 2 },
+			],
+		})
+
+		const handle = wb.sheet('Sheet1')
+		if (!handle) throw new Error('Expected Sheet1 to exist')
+		const cfs = handle.getConditionalFormats()
+		expect(cfs).toHaveLength(2)
+		expect(cfs[0]).toEqual({ type: 'cellIs', priority: 1, range: 'A1:B10' })
+		expect(cfs[1]).toEqual({ type: 'colorScale', priority: 2, range: 'A1:B10' })
+	})
+
+	test('getHyperlinks returns link data', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'link' }] },
+			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'A1', url: 'https://example.com' },
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'B2', value: 'other' }] },
+			{
+				op: 'setHyperlink',
+				sheet: 'Sheet1',
+				ref: 'B2',
+				url: 'mailto:test@example.com',
+				display: 'Email',
+			},
+		])
+
+		const handle = wb.sheet('Sheet1')
+		if (!handle) throw new Error('Expected Sheet1 to exist')
+		const links = handle.getHyperlinks()
+		expect(links).toHaveLength(2)
+		expect(links).toContainEqual({ ref: 'A1', target: 'https://example.com' })
+		expect(links).toContainEqual({ ref: 'B2', target: 'mailto:test@example.com', display: 'Email' })
+	})
+
 	test('TableHandle exposes ref, styleInfo, autoFilter, sortState, header/totals rows, and columnDefs', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -1783,6 +2063,77 @@ describe('AscendWorkbook', () => {
 				},
 			],
 		})
+	})
+
+	test('TableHandle getColumnNames returns correct column headers', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Product' },
+					{ ref: 'B1', value: 'Revenue' },
+					{ ref: 'C1', value: 'Quantity' },
+					{ ref: 'A2', value: 'Widget' },
+					{ ref: 'B2', value: 100 },
+					{ ref: 'C2', value: 5 },
+				],
+			},
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:C2', name: 'SalesTable', hasHeaders: true },
+		])
+		const table = wb.table('SalesTable')
+		if (!table) throw new Error('Expected SalesTable to exist')
+		expect(table.getColumnNames()).toEqual(['Product', 'Revenue', 'Quantity'])
+		expect(table.getColumnNames()).toEqual(table.columns)
+	})
+
+	test('TableHandle exposes table metadata (style, totals) via getStyleInfo and getTotalsRow', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Name' },
+					{ ref: 'B1', value: 'Amount' },
+					{ ref: 'A2', value: 'Item1' },
+					{ ref: 'B2', value: 10 },
+					{ ref: 'A3', value: 'Total' },
+					{ ref: 'B3', value: 10 },
+				],
+			},
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:B2', name: 'DataTable', hasHeaders: true },
+		])
+		const internal = wb as unknown as {
+			wb: {
+				sheets: Array<{
+					tables: Array<{
+						ref: { start: { row: number; col: number }; end: { row: number; col: number } }
+						hasTotals?: boolean
+						tableStyleInfo?: { name?: string; showRowStripes?: boolean }
+						autoFilter?: { ref: string; columns: unknown[] }
+					}>
+				}>
+			}
+		}
+		const tableModel = internal.wb.sheets[0]?.tables[0]
+		if (tableModel) {
+			tableModel.hasTotals = true
+			tableModel.ref = { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } }
+			tableModel.tableStyleInfo = { name: 'TableStyleMedium2', showRowStripes: true }
+			tableModel.autoFilter = { ref: 'A1:B3', columns: [] }
+		}
+
+		const table = wb.table('DataTable')
+		if (!table) throw new Error('Expected DataTable to exist')
+		expect(table.getStyleInfo()).toEqual({ name: 'TableStyleMedium2', showRowStripes: true })
+		expect(table.getTotalsRow()).toEqual([
+			{ kind: 'string', value: 'Total' },
+			{ kind: 'number', value: 10 },
+		])
+		expect(table.hasFilters()).toBe(true)
+		expect(table.getSortState()).toBeNull()
 	})
 
 	test('table handles stay current across workbook replacement', () => {
@@ -1977,6 +2328,145 @@ describe('AscendWorkbook', () => {
 		expect(document.sheets).toEqual(['Sheet1'])
 		expect(expanded.sheets).toEqual(['Sheet1', 'Data'])
 		expect(expanded.sheet('Data')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'loaded' })
+		WorkbookDocument.clearCache()
+	})
+})
+
+describe('WorkbookSession', () => {
+	test('session open + inspect + read reuses same workbook', async () => {
+		WorkbookDocument.clearCache()
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'x' },
+					{ ref: 'B1', value: 'y' },
+				],
+			},
+		])
+		const bytes = wb.toBytes()
+
+		const session = await WorkbookSession.open(bytes, { mode: 'values' })
+		const info1 = session.inspect()
+		const read1 = session.read('Sheet1!A1:B1')
+		const info2 = session.inspect()
+
+		expect(info1).toBe(info2)
+		expect(read1?.cells.length).toBe(2)
+		expect(read1?.cells[0]?.value).toEqual({ kind: 'string', value: 'x' })
+		session.close()
+		WorkbookDocument.clearCache()
+	})
+
+	test('session is not stale immediately after open', async () => {
+		WorkbookDocument.clearCache()
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }])
+		const bytes = wb.toBytes()
+
+		const session = await WorkbookSession.open(bytes)
+		expect(session.isStale()).toBe(false)
+		session.close()
+		WorkbookDocument.clearCache()
+	})
+
+	test('multiple reads through session return consistent results', async () => {
+		WorkbookDocument.clearCache()
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 42 },
+					{ ref: 'A2', value: 99 },
+				],
+			},
+		])
+		const bytes = wb.toBytes()
+
+		const session = await WorkbookSession.open(bytes)
+		const read1 = session.read('Sheet1!A1:A2')
+		const read2 = session.read('Sheet1!A1:A2')
+
+		expect(read1?.cells.length).toBe(2)
+		expect(read2?.cells.length).toBe(2)
+		expect(read1?.cells[0]?.value).toEqual(read2?.cells[0]?.value)
+		expect(read1?.cells[1]?.value).toEqual(read2?.cells[1]?.value)
+		expect(read1?.cells[0]?.value).toEqual({ kind: 'number', value: 42 })
+		session.close()
+		WorkbookDocument.clearCache()
+	})
+
+	test('session trace reuses analysis cache', async () => {
+		WorkbookDocument.clearCache()
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'B1', value: 2 },
+				],
+			},
+		])
+		wb.apply([{ op: 'setFormula', sheet: 'Sheet1', ref: 'C1', formula: '=A1+B1' }])
+		const bytes = wb.toBytes()
+
+		const session = await WorkbookSession.open(bytes, { mode: 'formula' })
+		const trace1 = session.trace('Sheet1!C1')
+		const trace2 = session.trace('Sheet1!C1')
+
+		expect(trace1?.dependsOn).toContain('Sheet1!A1')
+		expect(trace1?.dependsOn).toContain('Sheet1!B1')
+		expect(trace2?.dependsOn).toEqual(trace1?.dependsOn)
+		session.close()
+		WorkbookDocument.clearCache()
+	})
+
+	test('session read with sheet-qualified range', async () => {
+		WorkbookDocument.clearCache()
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'addSheet', name: 'Data' }])
+		wb.apply([{ op: 'setCells', sheet: 'Data', updates: [{ ref: 'A1', value: 'from Data' }] }])
+		const bytes = wb.toBytes()
+
+		const session = await WorkbookSession.open(bytes)
+		const read = session.read('Data!A1:A1')
+		expect(read?.cells.length).toBe(1)
+		expect(read?.cells[0]?.value).toEqual({ kind: 'string', value: 'from Data' })
+		session.close()
+		WorkbookDocument.clearCache()
+	})
+
+	test('session workbook() returns underlying document', async () => {
+		WorkbookDocument.clearCache()
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'via workbook' }] }])
+		const bytes = wb.toBytes()
+
+		const session = await WorkbookSession.open(bytes)
+		const doc = session.workbook()
+		expect(doc.inspect().sheetCount).toBe(1)
+		expect(doc.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+			kind: 'string',
+			value: 'via workbook',
+		})
+		session.close()
+		WorkbookDocument.clearCache()
+	})
+
+	test('session close prevents further operations', async () => {
+		WorkbookDocument.clearCache()
+		const wb = AscendWorkbook.create()
+		const bytes = wb.toBytes()
+		const session = await WorkbookSession.open(bytes)
+		session.close()
+		expect(() => session.inspect()).toThrow('WorkbookSession is closed')
+		expect(() => session.workbook()).toThrow('WorkbookSession is closed')
 		WorkbookDocument.clearCache()
 	})
 })

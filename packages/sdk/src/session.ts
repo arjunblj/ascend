@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { statSync } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { check as verifyCheck, lint as verifyLint } from '@ascend/verify'
@@ -370,6 +371,120 @@ export class WorkbookDocument {
 	}
 }
 
+export interface WorkbookSessionOpenOptions extends WorkbookLoadOptions {}
+
+/**
+ * Session that holds a loaded workbook and reuses parsed state (analysis, dependency graph)
+ * across repeated inspect, read, and trace calls. Faster than opening independently for
+ * each operation. Use for read-only workflows that perform multiple operations on the same file.
+ */
+export class WorkbookSession {
+	private document: WorkbookDocument
+	private readonly source: { path?: string; bytes?: Uint8Array }
+	private readonly options: WorkbookLoadOptions
+	private fileIdentity: SessionFileIdentity | null
+	private closed = false
+
+	private constructor(
+		document: WorkbookDocument,
+		source: { path?: string; bytes?: Uint8Array },
+		options: WorkbookLoadOptions,
+		fileIdentity: SessionFileIdentity | null,
+	) {
+		this.document = document
+		this.source = source
+		this.options = options
+		this.fileIdentity = fileIdentity
+	}
+
+	static async open(
+		pathOrBytes: string | Uint8Array,
+		options: WorkbookSessionOpenOptions = {},
+	): Promise<WorkbookSession> {
+		const opts = normalizeOptions(options)
+		const source =
+			typeof pathOrBytes === 'string' ? { path: resolve(pathOrBytes) } : { bytes: pathOrBytes }
+		const opened =
+			source.path !== undefined
+				? await openStablePathDocument(source.path, opts)
+				: { document: await WorkbookDocument.open(pathOrBytes, opts), identity: null }
+		const document = opened.document
+		const fileIdentity = opened.identity
+		return new WorkbookSession(document, source, opts, fileIdentity)
+	}
+
+	inspect(): WorkbookInfo {
+		this.assertOpen()
+		return this.document.inspect()
+	}
+
+	read(
+		range: string,
+		opts?: { includeRefs?: boolean; omitEmpty?: boolean; flatValues?: boolean },
+	): RangeInfo | CompactRangeInfo | undefined {
+		this.assertOpen()
+		const defaultSheet = this.document.sheets[0] ?? 'Sheet1'
+		const { sheetName, ref } = parseRangeRef(range, defaultSheet)
+		const sheet = this.document.sheet(sheetName)
+		if (!sheet) return undefined
+		if (opts && (opts.flatValues || opts.omitEmpty || opts.includeRefs)) {
+			return this.document.readRangeCompact(sheetName, ref, opts)
+		}
+		return this.document.readRange(sheetName, ref)
+	}
+
+	trace(ref: string, opts?: { maxDepth?: number }): TraceResult | undefined {
+		this.assertOpen()
+		return this.document.trace(ref, opts)
+	}
+
+	isStale(): boolean {
+		if (this.closed) return false
+		if (this.source.bytes || !this.fileIdentity) return false
+		try {
+			const info = statSync(this.fileIdentity.path)
+			return info.size !== this.fileIdentity.size || info.mtimeMs !== this.fileIdentity.mtimeMs
+		} catch {
+			return true
+		}
+	}
+
+	async refresh(): Promise<void> {
+		this.assertOpen()
+		const path = this.source.path
+		if (!path) return
+		WorkbookDocument.drop(path, this.options)
+		const opened = await openStablePathDocument(path, this.options)
+		this.document = opened.document
+		this.fileIdentity = opened.identity
+	}
+
+	workbook(): WorkbookDocument {
+		this.assertOpen()
+		return this.document
+	}
+
+	close(): void {
+		this.closed = true
+		this.document = null as unknown as WorkbookDocument
+	}
+
+	private assertOpen(): void {
+		if (this.closed) throw new Error('WorkbookSession is closed')
+	}
+}
+
+function parseRangeRef(range: string, defaultSheet: string): { sheetName: string; ref: string } {
+	const bang = range.indexOf('!')
+	if (bang !== -1) {
+		return {
+			sheetName: range.substring(0, bang).replace(/^'|'$/g, ''),
+			ref: range.substring(bang + 1),
+		}
+	}
+	return { sheetName: defaultSheet, ref: range }
+}
+
 function normalizeOptions(options: WorkbookLoadOptions): WorkbookLoadOptions {
 	return {
 		...(options.mode ? { mode: options.mode } : {}),
@@ -427,6 +542,28 @@ async function readIdentity(file: string): Promise<SessionFileIdentity> {
 		size: info.size,
 		mtimeMs: info.mtimeMs,
 	}
+}
+
+async function openStablePathDocument(
+	path: string,
+	options: WorkbookLoadOptions,
+): Promise<{ document: WorkbookDocument; identity: SessionFileIdentity }> {
+	let lastDocument: WorkbookDocument | null = null
+	for (let attempt = 0; attempt < 2; attempt++) {
+		const before = await readIdentity(path)
+		const document = await WorkbookDocument.open(path, options)
+		const after = await readIdentity(path)
+		if (isIdentityEqual(before, after)) return { document, identity: after }
+		lastDocument = document
+		WorkbookDocument.drop(path, options)
+	}
+	if (!lastDocument) {
+		return {
+			document: await WorkbookDocument.open(path, options),
+			identity: await readIdentity(path),
+		}
+	}
+	return { document: lastDocument, identity: await readIdentity(path) }
 }
 
 function readBytesIdentity(bytes: Uint8Array): SessionBytesIdentity {

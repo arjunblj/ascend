@@ -19,6 +19,11 @@ import { numberValue, stringValue } from '../../packages/schema/src/index.ts'
 
 const SID = 0 as StyleId
 
+// Monomorphism/GC audit (see packages/core sparse-grid, schema values, engine evaluator):
+// - DenseChunk.getSlot reuses _reusableSlot to avoid per-call allocation
+// - CellValue factories (numberValue, stringValue, richTextValue) produce consistent shapes
+// - EvalArea/EvalArg: conditional spread kept for exactOptionalPropertyTypes compatibility
+
 interface MicroBenchmark {
 	readonly name: string
 	readonly targetOpsPerSec: number
@@ -34,6 +39,29 @@ function createDeterministicRandom(seed: number): () => number {
 }
 
 const benchmarks: readonly MicroBenchmark[] = [
+	{
+		name: 'SparseGrid.get (100k cell reads)',
+		targetOpsPerSec: 300_000,
+		run() {
+			const grid = new SparseGrid()
+			for (let r = 0; r < 1000; r++) {
+				for (let c = 0; c < 10; c++) {
+					grid.setResolved(r, c, numberValue(r * 10 + c), null, SID)
+				}
+			}
+			const count = 100_000
+			const random = createDeterministicRandom(0xbe_ac01)
+			let checksum = 0
+			for (let i = 0; i < count; i++) {
+				const r = (random() * 1000) | 0
+				const c = (random() * 10) | 0
+				const cell = grid.get(r, c)
+				if (cell?.value.kind === 'number') checksum += cell.value.value
+			}
+			void checksum
+			return count
+		},
+	},
 	{
 		name: 'SparseGrid.readValue (100k reads)',
 		targetOpsPerSec: 500_000,
@@ -69,6 +97,37 @@ const benchmarks: readonly MicroBenchmark[] = [
 				grid.setResolved(r, c, numberValue(i), null, SID)
 			}
 			return count
+		},
+	},
+	{
+		name: 'SparseGrid 40K dense (default, triggers upgrade)',
+		targetOpsPerSec: 150_000,
+		run() {
+			const grid = new SparseGrid()
+			const rows = 200
+			const cols = 200
+			for (let r = 0; r < rows; r++) {
+				for (let c = 0; c < cols; c++) {
+					grid.setResolved(r, c, numberValue(r * cols + c), null, SID)
+				}
+			}
+			return rows * cols
+		},
+	},
+	{
+		name: 'SparseGrid 40K dense (density hint, no upgrade)',
+		targetOpsPerSec: 200_000,
+		run() {
+			const grid = new SparseGrid()
+			grid.setExpectedDensity('dense')
+			const rows = 200
+			const cols = 200
+			for (let r = 0; r < rows; r++) {
+				for (let c = 0; c < cols; c++) {
+					grid.setResolved(r, c, numberValue(r * cols + c), null, SID)
+				}
+			}
+			return rows * cols
 		},
 	},
 	{

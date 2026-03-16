@@ -160,6 +160,69 @@ export interface SheetHyperlinkInfo extends SheetHyperlink {
 	readonly ref: string
 }
 
+/** Summary of a conditional format rule for SDK inspection. */
+export interface ConditionalFormatRuleSummary {
+	readonly type: string
+	readonly priority?: number
+	readonly range: string
+}
+
+/** Summary of a data validation for SDK inspection. */
+export interface DataValidationSummary {
+	readonly type?: string
+	readonly formula?: string
+	readonly range: string
+}
+
+/** Summary of a comment for SDK inspection. */
+export interface CommentSummary {
+	readonly ref: string
+	readonly author?: string
+	readonly text: string
+}
+
+/** Summary of a hyperlink for SDK inspection. */
+export interface HyperlinkSummary {
+	readonly ref: string
+	readonly target?: string
+	readonly display?: string
+}
+
+/** Summary of a merge range for SDK inspection. */
+export interface MergeRangeSummary {
+	readonly range: string
+}
+
+/** Formula binding summary for SDK inspection. */
+export type FormulaBindingSummary =
+	| { readonly kind: 'normal'; readonly formula: string }
+	| {
+			readonly kind: 'shared-anchor'
+			readonly formula: string
+			readonly sharedIndex: string
+			readonly range?: string
+	  }
+	| {
+			readonly kind: 'shared-member'
+			readonly sharedIndex: string
+			readonly masterRef?: string
+	  }
+	| { readonly kind: 'array'; readonly formula: string; readonly range?: string }
+	| { readonly kind: 'dynamic-array'; readonly formula: string }
+	| { readonly kind: 'spill'; readonly anchorRef: string }
+
+/** Formula cell entry with ref and binding for getFormulaCells. */
+export interface FormulaCellEntry {
+	readonly ref: string
+	readonly binding: FormulaBindingSummary
+}
+
+/** Page setup metadata for SDK inspection. */
+export interface PageMetadataSummary {
+	readonly margins?: SheetPageMargins
+	readonly setup?: SheetPageSetup
+}
+
 export interface TableInfo {
 	readonly name: string
 	readonly ref: RangeRef
@@ -362,10 +425,24 @@ export interface TableWindowInfo {
 	readonly rows: readonly TableRowInfo[]
 }
 
+export interface ChangedCell {
+	readonly ref: string
+	readonly oldValue: CellValue
+	readonly newValue: CellValue
+}
+
 export interface PreviewResult {
 	readonly diff: WorkbookDiff
 	readonly sheetDiffs: readonly SheetDiff[]
 	readonly cellChanges: readonly CellChange[]
+	/** Agent-friendly list of changed cells with full refs (e.g. Sheet1!A1). */
+	readonly changedCells: readonly ChangedCell[]
+	/** Number of cells that would be recalculated (formula dependents). */
+	readonly recalcScope: number
+	/** Validation warnings from apply (e.g. data validation violations). */
+	readonly warnings: readonly AscendError[]
+	/** True if apply + recalc would complete without errors. */
+	readonly wouldSucceed: boolean
 	readonly errors: readonly AscendError[]
 	readonly writePlan?: WritePlanInfo
 }
@@ -375,6 +452,7 @@ export interface ApplyResult {
 	readonly sheetsModified: readonly string[]
 	readonly recalcRequired: boolean
 	readonly errors: readonly AscendError[]
+	readonly warnings?: readonly AscendError[]
 }
 
 export interface ApplyAndRecalcResult {

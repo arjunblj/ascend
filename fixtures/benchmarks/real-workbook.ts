@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { access, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { AscendWorkbook, WorkbookDocument } from '../../packages/sdk/src/index.ts'
+import { AscendWorkbook, WorkbookDocument, WorkbookSession } from '../../packages/sdk/src/index.ts'
 import {
 	type BenchmarkCaseResult,
 	createBenchmarkSuite,
@@ -75,6 +75,9 @@ type StepName =
 	| 'workflow-session-second-lint'
 	| 'workflow-session-upgrade-lint'
 	| 'workflow-session-lint'
+	| 'workflow-workbook-session-reuse'
+	| 'workflow-workbook-session-5-opens'
+	| 'workflow-workbook-session-warm-read'
 	| 'preview-numeric-edit'
 	| 'preview-format-edit'
 	| 'no-op-save-bytes'
@@ -204,6 +207,9 @@ async function main(): Promise<void> {
 		'workflow-session-second-lint',
 		'workflow-session-upgrade-lint',
 		'workflow-session-lint',
+		'workflow-workbook-session-reuse',
+		'workflow-workbook-session-5-opens',
+		'workflow-workbook-session-warm-read',
 		'preview-numeric-edit',
 		'preview-format-edit',
 		'no-op-save-bytes',
@@ -639,6 +645,121 @@ async function runStep(target: string, step: StepName): Promise<StepResult> {
 				assertions: {
 					lintWarnings: result.lintWarnings,
 					clean: result.clean,
+				},
+			}
+		}
+		case 'workflow-workbook-session-reuse': {
+			WorkbookDocument.clearCache()
+			const session = await WorkbookSession.open(target, { mode: 'formula' })
+			const probe = pickReadProbe(session.workbook())
+			const formulaProbe = pickFormulaProbe(session.workbook())
+			const { result, timing } = await time(
+				'workflow-workbook-session-reuse',
+				async () => {
+					const info = session.inspect()
+					const read1 = session.read(`${probe.sheet}!${probe.range}`)
+					const traceResult = session.trace(`${formulaProbe.sheet}!${formulaProbe.ref}`)
+					const read2 = session.read(`${probe.sheet}!${probe.range}`)
+					return {
+						sheetCount: info.sheetCount,
+						read1Cells: read1 && 'cells' in read1 ? read1.cells.length : 0,
+						tracePrecedents: traceResult?.dependsOn.length ?? 0,
+						read2Cells: read2 && 'cells' in read2 ? read2.cells.length : 0,
+					}
+				},
+				{
+					beforeGc: () => {
+						session.close()
+						WorkbookDocument.clearCache()
+					},
+				},
+			)
+			return {
+				timing,
+				assertions: {
+					sheetCount: result.sheetCount,
+					read1Cells: result.read1Cells,
+					tracePrecedents: result.tracePrecedents,
+					read2Cells: result.read2Cells,
+				},
+			}
+		}
+		case 'workflow-workbook-session-5-opens': {
+			WorkbookDocument.clearCache()
+			const probe = await (async () => {
+				const doc = await WorkbookDocument.open(target, { mode: 'formula' })
+				const p = pickReadProbe(doc)
+				const fp = pickFormulaProbe(doc)
+				WorkbookDocument.clearCache()
+				return { read: p, formula: fp }
+			})()
+			const { result, timing } = await time('workflow-workbook-session-5-opens', async () => {
+				const doc1 = await WorkbookDocument.open(target, { mode: 'formula' })
+				const info = doc1.inspect()
+				WorkbookDocument.clearCache()
+
+				const doc2 = await WorkbookDocument.open(target, { mode: 'formula' })
+				const read1 = doc2.readRange(probe.read.sheet, probe.read.range)
+				WorkbookDocument.clearCache()
+
+				const doc3 = await WorkbookDocument.open(target, { mode: 'formula' })
+				const traceResult = doc3.trace(`${probe.formula.sheet}!${probe.formula.ref}`)
+				WorkbookDocument.clearCache()
+
+				const doc4 = await WorkbookDocument.open(target, { mode: 'formula' })
+				const read2 = doc4.readRange(probe.read.sheet, probe.read.range)
+				WorkbookDocument.clearCache()
+
+				const doc5 = await WorkbookDocument.open(target, { mode: 'formula' })
+				const read3 = doc5.readRange(probe.read.sheet, probe.read.range)
+				WorkbookDocument.clearCache()
+
+				return {
+					sheetCount: info.sheetCount,
+					read1Cells: read1?.cells?.length ?? 0,
+					tracePrecedents: traceResult?.dependsOn.length ?? 0,
+					read2Cells: read2?.cells?.length ?? 0,
+					read3Cells: read3?.cells?.length ?? 0,
+				}
+			})
+			return {
+				timing,
+				assertions: {
+					sheetCount: result.sheetCount,
+					read1Cells: result.read1Cells,
+					tracePrecedents: result.tracePrecedents,
+					read2Cells: result.read2Cells,
+					read3Cells: result.read3Cells,
+				},
+			}
+		}
+		case 'workflow-workbook-session-warm-read': {
+			WorkbookDocument.clearCache()
+			const session = await WorkbookSession.open(target, { mode: 'values' })
+			const probe = pickReadProbe(session.workbook())
+			const rangeRef = `${probe.sheet}!${probe.range}`
+			const { result, timing } = await time(
+				'workflow-workbook-session-warm-read',
+				async () => {
+					const read1 = session.read(rangeRef)
+					const read2 = session.read(rangeRef)
+					return {
+						read1Cells: read1 && 'cells' in read1 ? read1.cells.length : 0,
+						read2Cells: read2 && 'cells' in read2 ? read2.cells.length : 0,
+					}
+				},
+				{
+					beforeGc: () => {
+						session.close()
+						WorkbookDocument.clearCache()
+					},
+				},
+			)
+			return {
+				timing,
+				assertions: {
+					read1Cells: result.read1Cells,
+					read2Cells: result.read2Cells,
 				},
 			}
 		}

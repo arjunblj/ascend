@@ -1,5 +1,6 @@
 import type {
 	AutoFilter,
+	CellFormulaBinding,
 	RangeRef,
 	Sheet,
 	SheetComment,
@@ -11,15 +12,23 @@ import type {
 	SheetProtection,
 	SheetTabColor,
 } from '@ascend/core'
-import { parseA1, parseRange, toA1 } from '@ascend/core'
+import { parseA1, parseRange, toA1, toRangeString } from '@ascend/core'
 import { AscendException, ascendError, type CellValue } from '@ascend/schema'
 import type {
 	AgentReadOptions,
 	CellInfo,
+	CommentSummary,
 	CompactCellInfo,
 	CompactRangeInfo,
 	CompactRangeWindowInfo,
+	ConditionalFormatRuleSummary,
+	DataValidationSummary,
 	FlatCellValue,
+	FormulaBindingSummary,
+	FormulaCellEntry,
+	HyperlinkSummary,
+	MergeRangeSummary,
+	PageMetadataSummary,
 	RangeInfo,
 	RangeObjectsInfo,
 	RangeRowsInfo,
@@ -351,6 +360,132 @@ export class SheetHandle {
 		return this.requireSheet().hyperlinks.get(ref)
 	}
 
+	/**
+	 * Return an array of conditional format rule summaries (type, priority, range).
+	 */
+	getConditionalFormats(): readonly ConditionalFormatRuleSummary[] {
+		const sheet = this.requireSheet()
+		const summaries: ConditionalFormatRuleSummary[] = []
+		for (const cf of sheet.conditionalFormats) {
+			const range = cf.sqref
+			for (const rule of cf.rules) {
+				summaries.push({
+					type: rule.type,
+					...(rule.priority !== undefined ? { priority: rule.priority } : {}),
+					range,
+				})
+			}
+		}
+		return summaries
+	}
+
+	/**
+	 * Return an array of data validation summaries (type, formula, range).
+	 */
+	getDataValidations(): readonly DataValidationSummary[] {
+		const sheet = this.requireSheet()
+		return sheet.dataValidations.map((dv) => ({
+			...(dv.type ? { type: dv.type } : {}),
+			...(dv.formula1 ? { formula: dv.formula1 } : {}),
+			range: dv.sqref,
+		}))
+	}
+
+	/**
+	 * Return an array of comment summaries (ref, author, text).
+	 */
+	getComments(): readonly CommentSummary[] {
+		const sheet = this.requireSheet()
+		return [...sheet.comments.entries()].map(([ref, c]) => ({
+			ref,
+			...(c.author !== undefined ? { author: c.author } : {}),
+			text: c.text,
+		}))
+	}
+
+	/**
+	 * Return an array of hyperlink summaries (ref, target, display).
+	 */
+	getHyperlinks(): readonly HyperlinkSummary[] {
+		const sheet = this.requireSheet()
+		return [...sheet.hyperlinks.entries()].map(([ref, h]) => ({
+			ref,
+			...(h.target !== undefined ? { target: h.target } : {}),
+			...(h.display !== undefined ? { display: h.display } : {}),
+		}))
+	}
+
+	/**
+	 * Return an array of merge range summaries.
+	 */
+	getMerges(): readonly MergeRangeSummary[] {
+		const sheet = this.requireSheet()
+		return sheet.merges.map((m) => ({ range: toRangeString(m) }))
+	}
+
+	/**
+	 * Return page setup info if present (margins, orientation, etc.).
+	 */
+	getPageMetadata(): PageMetadataSummary | null {
+		const sheet = this.requireSheet()
+		if (!sheet.pageMargins && !sheet.pageSetup) return null
+		return {
+			...(sheet.pageMargins ? { margins: sheet.pageMargins } : {}),
+			...(sheet.pageSetup ? { setup: sheet.pageSetup } : {}),
+		}
+	}
+
+	/**
+	 * Return true if the sheet has an auto-filter applied.
+	 */
+	hasAutoFilter(): boolean {
+		return this.requireSheet().autoFilter !== null
+	}
+
+	/**
+	 * Return true if the sheet has drawings (charts, images, shapes).
+	 */
+	hasDrawings(): boolean {
+		const refs = this.requireSheet().drawingRefs
+		return refs.hasDrawing || refs.hasLegacyDrawing
+	}
+
+	/**
+	 * Return a summary of the formula binding at the given cell.
+	 * Returns null for non-formula cells.
+	 */
+	getFormulaBinding(ref: string): FormulaBindingSummary | null {
+		const parsed = parseA1(ref)
+		const cell = this.requireSheet().cells.get(parsed.row, parsed.col)
+		if (!cell) return null
+		const formula = this.resolveFormula(parsed.row, parsed.col, cell)
+		const binding = toFormulaBindingSummary(formula, cell.formulaInfo)
+		if (!binding) return null
+		return binding
+	}
+
+	/**
+	 * Return all formula cells in the sheet with their binding info.
+	 * Optionally filter by kind (e.g. 'normal', 'shared-anchor', 'shared-member', 'array', 'dynamic-array', 'spill').
+	 */
+	getFormulaCells(options?: { kind?: string }): readonly FormulaCellEntry[] {
+		const sheet = this.requireSheet()
+		const entries: FormulaCellEntry[] = []
+		for (const [row, rowCells] of sheet.cells.iterateRows()) {
+			for (const [col, cell] of rowCells) {
+				const formula = this.resolveFormula(row, col, cell)
+				const binding = toFormulaBindingSummary(formula, cell.formulaInfo)
+				if (!binding) continue
+				if (options?.kind && binding.kind !== options.kind) continue
+				entries.push({
+					ref: toA1({ row, col }),
+					binding,
+				})
+			}
+		}
+		return entries
+	}
+
 	private requireSheet(): Sheet {
 		const sheet = this.resolveSheet()
 		if (sheet) return sheet
@@ -363,6 +498,43 @@ export class SheetHandle {
 				},
 			),
 		)
+	}
+}
+
+function toFormulaBindingSummary(
+	formula: string | null,
+	info: CellFormulaBinding | undefined,
+): FormulaBindingSummary | null {
+	if (info?.kind === 'spill') {
+		return { kind: 'spill', anchorRef: info.anchorRef }
+	}
+	if (formula === null) return null
+	if (!info) return { kind: 'normal', formula }
+	switch (info.kind) {
+		case 'shared':
+			if (info.isMaster) {
+				return {
+					kind: 'shared-anchor',
+					formula,
+					sharedIndex: info.sharedIndex,
+					...(info.ref ? { range: info.ref } : {}),
+				}
+			}
+			return {
+				kind: 'shared-member',
+				sharedIndex: info.sharedIndex,
+				...(info.masterRef ? { masterRef: info.masterRef } : {}),
+			}
+		case 'array':
+			return {
+				kind: 'array',
+				formula,
+				...(info.ref ? { range: info.ref } : {}),
+			}
+		case 'dynamicArray':
+			return { kind: 'dynamic-array', formula }
+		default:
+			return { kind: 'normal', formula }
 	}
 }
 

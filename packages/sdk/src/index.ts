@@ -12,8 +12,12 @@ export type { OperationJsonSchema, OperationSchema } from './ops.ts'
 export * as ops from './ops.ts'
 export { getOperationsSchema, listOperations } from './ops.ts'
 export { WorkbookReadView } from './read-view.ts'
-export type { SessionCacheOptions, WorkbookLoadOptions } from './session.ts'
-export { configureSessionCache, WorkbookDocument } from './session.ts'
+export type {
+	SessionCacheOptions,
+	WorkbookLoadOptions,
+	WorkbookSessionOpenOptions,
+} from './session.ts'
+export { configureSessionCache, WorkbookDocument, WorkbookSession } from './session.ts'
 export { SheetHandle } from './sheet-handle.ts'
 export { TableHandle } from './table-handle.ts'
 export type {
@@ -28,21 +32,30 @@ export type {
 	BatchResult,
 	CellFormulaReferenceInfo,
 	CellInfo,
+	ChangedCell,
 	CheckIssue,
 	CheckResult,
+	CommentSummary,
 	CompactCellInfo,
 	CompactRangeInfo,
 	CompactRangeWindowInfo,
 	CompoundFormulaReferenceInfo,
+	ConditionalFormatRuleSummary,
+	DataValidationSummary,
 	DefinedNameInfo,
 	FlatCellValue,
+	FormulaBindingSummary,
+	FormulaCellEntry,
 	FormulaInfo,
 	FormulaReferenceInfo,
 	FormulaReferenceScope,
+	HyperlinkSummary,
 	ImplicitIntersectionFormulaReferenceInfo,
 	LintResult,
 	LintWarning,
+	MergeRangeSummary,
 	NameFormulaReferenceInfo,
+	PageMetadataSummary,
 	PivotCacheInfo,
 	PivotTableInfo,
 	PreviewResult,

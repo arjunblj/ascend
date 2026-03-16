@@ -9,6 +9,7 @@ import {
 } from '@ascend/core'
 import {
 	applyOperations,
+	applyWithTransaction,
 	type CalcContext,
 	defaultCalcContext,
 	cellValuesEqual as diffCellValuesEqual,
@@ -173,6 +174,10 @@ export class AscendWorkbook extends WorkbookReadView {
 				diff: { sheets: [], namesAdded: [], namesRemoved: [], namesChanged: [] },
 				sheetDiffs: [],
 				cellChanges: [],
+				changedCells: [],
+				recalcScope: 0,
+				warnings: [],
+				wouldSucceed: false,
 				errors: [partialWorkbookEditError()],
 			}
 		}
@@ -186,9 +191,15 @@ export class AscendWorkbook extends WorkbookReadView {
 				diff: { sheets: [], namesAdded: [], namesRemoved: [], namesChanged: [] },
 				sheetDiffs: [],
 				cellChanges: [],
+				changedCells: [],
+				recalcScope: 0,
+				warnings: [],
+				wouldSucceed: false,
 				errors,
 			}
 		}
+
+		const warnings = [...(result.value.warnings ?? [])]
 
 		let recalcResult: import('./types.ts').RecalcResult | undefined
 		if (result.value.recalcRequired) {
@@ -217,6 +228,14 @@ export class AscendWorkbook extends WorkbookReadView {
 		const fastDiff = buildFastPreviewDiff(this.wb, clone, ops, result.value, recalcResult)
 		const diff = fastDiff ?? diffWorkbooks(this.wb, clone)
 		const cellChanges = diff.sheets.flatMap((s) => s.cellsChanged)
+		const changedCells = diff.sheets.flatMap((s) =>
+			s.cellsChanged.map((c) => ({
+				ref: `${s.name}!${c.ref}`,
+				oldValue: c.before,
+				newValue: c.after,
+			})),
+		)
+		const recalcScope = recalcResult?.changed.length ?? 0
 		let cachedWritePlan: WritePlanInfo | undefined
 		let writePlanComputed = false
 		let cachedDirtyFlags:
@@ -230,6 +249,10 @@ export class AscendWorkbook extends WorkbookReadView {
 			diff,
 			sheetDiffs: diff.sheets,
 			cellChanges,
+			changedCells,
+			recalcScope,
+			warnings,
+			wouldSucceed: errors.length === 0,
 			errors,
 		}
 		Object.defineProperty(previewResult, 'writePlan', {
@@ -258,10 +281,15 @@ export class AscendWorkbook extends WorkbookReadView {
 
 	/**
 	 * Apply operations to the workbook. Does not recalculate formulas.
+	 * When transaction is true, the batch is atomic: all operations succeed or none apply.
 	 * @example
 	 * wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 42 }] }])
+	 * wb.apply(ops, { transaction: true })
 	 */
-	apply(ops: readonly Operation[], options?: { collectAllErrors?: boolean }): ApplyResult {
+	apply(
+		ops: readonly Operation[],
+		options?: { collectAllErrors?: boolean; transaction?: boolean },
+	): ApplyResult {
 		if (this.loadInfo.isPartial) {
 			return {
 				affectedCells: [],
@@ -272,7 +300,8 @@ export class AscendWorkbook extends WorkbookReadView {
 		}
 		const dirtyFlags = this.deriveDirtyFlags(ops)
 		const nextWorkbook = cloneWorkbook(this.wb)
-		const result = applyOperations(nextWorkbook, ops, options)
+		const applyFn = options?.transaction ? applyWithTransaction : applyOperations
+		const result = applyFn(nextWorkbook, ops, options)
 		if (!result.ok) {
 			const errors = 'errors' in result.error ? result.error.errors : [result.error]
 			return {
@@ -297,6 +326,9 @@ export class AscendWorkbook extends WorkbookReadView {
 			sheetsModified: result.value.sheetsModified,
 			recalcRequired: result.value.recalcRequired,
 			errors: [],
+			...(result.value.warnings && result.value.warnings.length > 0
+				? { warnings: result.value.warnings }
+				: {}),
 		}
 	}
 

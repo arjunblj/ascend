@@ -360,6 +360,222 @@ function erfcPrecise(args: EvalArg[]): CellValue {
 	return numberValue(erfcFn(x))
 }
 
+const EULER_GAMMA = 0.5772156649015329
+
+function harmonicNumber(k: number): number {
+	let h = 0
+	for (let i = 1; i <= k; i++) h += 1 / i
+	return h
+}
+
+function besselJ0(x: number): number {
+	if (x === 0) return 1
+	let sum = 1
+	let term = 1
+	const x2 = (x / 2) ** 2
+	for (let k = 1; k < 200; k++) {
+		term *= -x2 / (k * k)
+		sum += term
+		if (Math.abs(term) < Math.abs(sum) * 1e-15) break
+	}
+	return sum
+}
+
+function besselJ1(x: number): number {
+	if (x === 0) return 0
+	let sum = x / 2
+	let term = sum
+	const x2 = (x / 2) ** 2
+	for (let k = 1; k < 200; k++) {
+		term *= -x2 / (k * (k + 1))
+		sum += term
+		if (Math.abs(term) < Math.abs(sum) * 1e-15) break
+	}
+	return sum
+}
+
+function besselJ(x: number, n: number): number {
+	if (x === 0) return n === 0 ? 1 : 0
+	let sum = 0
+	let term = (x / 2) ** n / factorial(n)
+	for (let k = 0; k < 200; k++) {
+		if (k > 0) term *= -((x / 2) ** 2) / (k * (n + k))
+		sum += term
+		if (Math.abs(term) < Math.abs(sum || 1) * 1e-15) break
+	}
+	return sum
+}
+
+function besselI0(x: number): number {
+	let sum = 1
+	let term = 1
+	const x2 = (x / 2) ** 2
+	for (let k = 1; k < 200; k++) {
+		term *= x2 / (k * k)
+		sum += term
+		if (Math.abs(term) < Math.abs(sum) * 1e-15) break
+	}
+	return sum
+}
+
+function besselI1(x: number): number {
+	if (x === 0) return 0
+	let sum = x / 2
+	let term = sum
+	const x2 = (x / 2) ** 2
+	for (let k = 1; k < 200; k++) {
+		term *= x2 / (k * (k + 1))
+		sum += term
+		if (Math.abs(term) < Math.abs(sum) * 1e-15) break
+	}
+	return sum
+}
+
+function besselI(x: number, n: number): number {
+	if (x === 0) return n === 0 ? 1 : 0
+	let sum = 0
+	let term = (x / 2) ** n / factorial(n)
+	for (let k = 0; k < 200; k++) {
+		if (k > 0) term *= (x / 2) ** 2 / (k * (n + k))
+		sum += term
+		if (Math.abs(term) < Math.abs(sum || 1) * 1e-15) break
+	}
+	return sum
+}
+
+function factorial(n: number): number {
+	let out = 1
+	for (let i = 2; i <= n; i++) out *= i
+	return out
+}
+
+function besselY0(x: number): number {
+	const j0 = besselJ0(x)
+	let sum = 0
+	let term = 1
+	const x2 = (x / 2) ** 2
+	for (let k = 1; k < 200; k++) {
+		term *= -x2 / (k * k)
+		sum += harmonicNumber(k) * term
+		if (Math.abs(term) < Math.abs(sum) * 1e-15) break
+	}
+	return (2 / Math.PI) * (Math.log(x / 2) + EULER_GAMMA) * j0 + (2 / Math.PI) * sum
+}
+
+function besselY1(x: number): number {
+	const j1 = besselJ1(x)
+	let sum = 0
+	let term = x / 2
+	const x2 = (x / 2) ** 2
+	for (let k = 0; k < 200; k++) {
+		const h = k === 0 ? 1 : harmonicNumber(k) + harmonicNumber(k + 1)
+		sum += h * term
+		term *= -x2 / ((k + 1) * (k + 2))
+		if (Math.abs(term) < Math.abs(sum) * 1e-15) break
+	}
+	return (
+		(2 / Math.PI) * (Math.log(x / 2) + EULER_GAMMA) * j1 - 2 / (Math.PI * x) - (1 / Math.PI) * sum
+	)
+}
+
+function besselY(x: number, n: number): number {
+	if (n === 0) return besselY0(x)
+	if (n === 1) return besselY1(x)
+	let y0 = besselY0(x)
+	let y1 = besselY1(x)
+	for (let i = 1; i < n; i++) {
+		const y2 = ((2 * i) / x) * y1 - y0
+		y0 = y1
+		y1 = y2
+	}
+	return y1
+}
+
+function besselK0(x: number): number {
+	const i0 = besselI0(x)
+	let sum = 0
+	let term = 1
+	const x2 = (x / 2) ** 2
+	for (let k = 1; k < 200; k++) {
+		term *= x2 / (k * k)
+		sum += harmonicNumber(k) * term
+		if (Math.abs(term) < Math.abs(sum) * 1e-15) break
+	}
+	return -(Math.log(x / 2) + EULER_GAMMA) * i0 + sum
+}
+
+function besselK1(x: number): number {
+	const i1 = besselI1(x)
+	let sum = 0
+	let term = x / 2
+	const x2 = (x / 2) ** 2
+	for (let k = 0; k < 200; k++) {
+		const psi =
+			k === 0 ? 1 - 2 * EULER_GAMMA : harmonicNumber(k) + harmonicNumber(k + 1) - 2 * EULER_GAMMA
+		sum += psi * term
+		term *= x2 / ((k + 1) * (k + 2))
+		if (Math.abs(term) < Math.abs(sum) * 1e-15) break
+	}
+	return 1 / x + Math.log(x / 2) * i1 - sum / 2
+}
+
+function besselK(x: number, n: number): number {
+	if (n === 0) return besselK0(x)
+	if (n === 1) return besselK1(x)
+	let k0 = besselK0(x)
+	let k1 = besselK1(x)
+	for (let i = 1; i < n; i++) {
+		const k2 = ((2 * i) / x) * k1 + k0
+		k0 = k1
+		k1 = k2
+	}
+	return k1
+}
+
+function besselOrderArg(arg: EvalArg | undefined): number | CellValue {
+	const n = numArg(arg)
+	if (typeof n !== 'number') return n
+	const k = Math.trunc(n)
+	if (k < 0) return errorValue('#NUM!')
+	return k
+}
+
+function besselI_(args: EvalArg[]): CellValue {
+	const x = numArg(args[0])
+	if (typeof x !== 'number') return x
+	const n = besselOrderArg(args[1])
+	if (typeof n !== 'number') return n
+	if (Number.isNaN(x)) return errorValue('#NUM!')
+	return numberValue(besselI(x, n))
+}
+
+function besselJ_(args: EvalArg[]): CellValue {
+	const x = numArg(args[0])
+	if (typeof x !== 'number') return x
+	const n = besselOrderArg(args[1])
+	if (typeof n !== 'number') return n
+	if (Number.isNaN(x)) return errorValue('#NUM!')
+	return numberValue(besselJ(x, n))
+}
+
+function besselK_(args: EvalArg[]): CellValue {
+	const x = numArg(args[0])
+	if (typeof x !== 'number') return x
+	const n = besselOrderArg(args[1])
+	if (typeof n !== 'number') return n
+	if (Number.isNaN(x) || x <= 0) return errorValue('#NUM!')
+	return numberValue(besselK(x, n))
+}
+
+function besselY_(args: EvalArg[]): CellValue {
+	const x = numArg(args[0])
+	if (typeof x !== 'number') return x
+	const n = besselOrderArg(args[1])
+	if (typeof n !== 'number') return n
+	if (Number.isNaN(x) || x <= 0) return errorValue('#NUM!')
+	return numberValue(besselY(x, n))
+}
+
 interface Complex {
 	re: number
 	im: number
@@ -683,6 +899,10 @@ export const engineeringFunctions: FunctionDef[] = [
 	{ name: 'ERF.PRECISE', minArgs: 1, maxArgs: 1, evaluate: erfPrecise },
 	{ name: 'ERFC', minArgs: 1, maxArgs: 1, evaluate: erfc },
 	{ name: 'ERFC.PRECISE', minArgs: 1, maxArgs: 1, evaluate: erfcPrecise },
+	{ name: 'BESSELI', minArgs: 2, maxArgs: 2, evaluate: besselI_ },
+	{ name: 'BESSELJ', minArgs: 2, maxArgs: 2, evaluate: besselJ_ },
+	{ name: 'BESSELK', minArgs: 2, maxArgs: 2, evaluate: besselK_ },
+	{ name: 'BESSELY', minArgs: 2, maxArgs: 2, evaluate: besselY_ },
 	{ name: 'COMPLEX', minArgs: 2, maxArgs: 3, evaluate: complexFn },
 	{ name: 'IMREAL', minArgs: 1, maxArgs: 1, evaluate: imreal },
 	{ name: 'IMAGINARY', minArgs: 1, maxArgs: 1, evaluate: imaginary },

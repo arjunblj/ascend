@@ -37,6 +37,7 @@ import { lookupFunctions } from './lookup.ts'
 export { clearCriteriaMatchCache } from './math/index.ts'
 
 import { convertFunction } from './convert.ts'
+import { etsFunctions } from './forecast-ets.ts'
 import { mathFunctions } from './math/index.ts'
 import { registerFunction } from './registry.ts'
 import { statsFunctions } from './stats.ts'
@@ -54,6 +55,7 @@ for (const fn of [
 	...infoFunctions,
 	...lookupFunctions,
 	...statsFunctions,
+	...etsFunctions,
 	...compatibilityFunctions,
 	convertFunction,
 ]) {

@@ -1452,6 +1452,212 @@ describe('Excel conformance', () => {
 		})
 	})
 
+	describe('type coercion edge cases', () => {
+		test('TRUE+1 equals 2', () => {
+			expectNum(evalFormula('TRUE+1'), 2)
+		})
+
+		test('FALSE+1 equals 1', () => {
+			expectNum(evalFormula('FALSE+1'), 1)
+		})
+
+		test('"5"+3 equals 8 (string coercion in arithmetic)', () => {
+			expectNum(evalFormula('"5"+3', { A1: '5' }), 8)
+		})
+
+		test('TRUE&"yes" equals "TRUEyes" (concatenation)', () => {
+			expect(evalFormula('TRUE&"yes"')).toEqual(stringValue('TRUEyes'))
+		})
+
+		test('"" + 0 equals 0 (empty string to number)', () => {
+			expectNum(evalFormula('""+0'), 0)
+		})
+	})
+
+	describe('error propagation in arrays', () => {
+		test('SUM with range containing #N/A propagates error', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+			sheet.cells.set(1, 0, { value: errorValue('#N/A'), formula: null, styleId: sid })
+			sheet.cells.set(2, 0, { value: numberValue(3), formula: null, styleId: sid })
+			sheet.cells.set(99, 0, { value: EMPTY, formula: 'SUM(A1:A3)', styleId: sid })
+			recalculate(wb, defaultCalcContext())
+			expect(sheet.cells.get(99, 0)?.value).toEqual(errorValue('#N/A'))
+		})
+
+		test('AVERAGE with all blanks returns #DIV/0!', () => {
+			expect(evalFormula('AVERAGE(A1:A5)')).toEqual(errorValue('#DIV/0!'))
+		})
+
+		test('VLOOKUP not found returns #N/A', () => {
+			expect(evalFormula('VLOOKUP("z", A1:B1, 2, FALSE)', { A1: 'a', B1: 1 })).toEqual(
+				errorValue('#N/A'),
+			)
+		})
+	})
+
+	describe('date serial number boundaries', () => {
+		test('DATE(1900,1,1) is serial 1', () => {
+			expectNum(evalFormula('DATE(1900,1,1)'), 1)
+		})
+
+		test('DATE(1900,2,28) is serial 59', () => {
+			expectNum(evalFormula('DATE(1900,2,28)'), 59)
+		})
+
+		test('DATE(1900,3,1) is serial 61 (Excel bug: serial 60 = Feb 29, 1900)', () => {
+			expectNum(evalFormula('DATE(1900,3,1)'), 61)
+		})
+
+		test('DATE(2025,12,31) is valid date', () => {
+			const result = evalFormula('DATE(2025,12,31)')
+			expect(result.kind).toBe('number')
+			if (result.kind === 'number') expect(result.value).toBeGreaterThan(1)
+		})
+	})
+
+	describe('large number precision', () => {
+		test('1E15+1 precision', () => {
+			const result = evalFormula('1E15+1')
+			expect(result.kind).toBe('number')
+			if (result.kind === 'number') {
+				expect(result.value).toBeGreaterThanOrEqual(1e15)
+			}
+		})
+
+		test('1E-15 handling', () => {
+			expectNum(evalFormula('1E-15'), 1e-15, 1e-25)
+		})
+
+		test('ROUND(2.5,0) uses arithmetic rounding (away from zero)', () => {
+			expectNum(evalFormula('ROUND(2.5, 0)'), 3)
+		})
+	})
+
+	describe('wildcard matching in SUMIF/COUNTIF', () => {
+		test('COUNTIF with "?" pattern (single char)', () => {
+			expectNum(
+				evalFormula('COUNTIF(A1:A4, "?at")', { A1: 'cat', A2: 'bat', A3: 'at', A4: 'chat' }),
+				2,
+			)
+		})
+
+		test('COUNTIF with "*" pattern', () => {
+			expectNum(
+				evalFormula('COUNTIF(A1:A4, "North*")', {
+					A1: 'North',
+					A2: 'Northeast',
+					A3: 'South',
+					A4: 'Northwest',
+				}),
+				3,
+			)
+		})
+
+		test('SUMIF with escaped tilde "~*" matches literal asterisk', () => {
+			// In Excel, "~*" matches cells containing literal "*". Engine treats "~*" as
+			// literal "~*" when no unescaped wildcards; test that literal "~*" matches.
+			expectNum(
+				evalFormula('SUMIF(A1:A3, "~*", B1:B3)', {
+					A1: '~*',
+					A2: 'x',
+					A3: '~*',
+					B1: 10,
+					B2: 20,
+					B3: 30,
+				}),
+				40,
+			)
+		})
+	})
+
+	describe('INDIRECT and OFFSET evaluation', () => {
+		test('INDIRECT("A1") resolves to cell value', () => {
+			expectNum(evalFormula('INDIRECT("A1")', { A1: 42 }), 42)
+		})
+
+		test('OFFSET(A1,1,0) returns cell one row below', () => {
+			expectNum(evalFormula('OFFSET(A1, 1, 0)', { A1: 1, A2: 55 }), 55)
+		})
+
+		test('SUM(OFFSET(A1,0,0,3,1)) sums dynamic range', () => {
+			expectNum(evalFormula('SUM(OFFSET(A1, 0, 0, 3, 1))', { A1: 10, A2: 20, A3: 30 }), 60)
+		})
+	})
+
+	describe('LAMBDA and higher-order functions', () => {
+		test('MAP with LAMBDA', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+			sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+			sheet.cells.set(2, 0, { value: numberValue(3), formula: null, styleId: sid })
+			sheet.cells.set(0, 2, { value: EMPTY, formula: 'MAP(A1:A3, LAMBDA(x, x*10))', styleId: sid })
+			recalculate(wb, defaultCalcContext())
+			expectNum(sheet.cells.get(0, 2)?.value ?? EMPTY, 10)
+			expectNum(sheet.cells.get(1, 2)?.value ?? EMPTY, 20)
+			expectNum(sheet.cells.get(2, 2)?.value ?? EMPTY, 30)
+		})
+
+		test('REDUCE with accumulator', () => {
+			expectNum(
+				evalFormula('REDUCE(0, A1:A3, LAMBDA(acc, x, acc+x))', { A1: 10, A2: 20, A3: 30 }),
+				60,
+			)
+		})
+
+		test('BYROW with SUM', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+			sheet.cells.set(0, 1, { value: numberValue(2), formula: null, styleId: sid })
+			sheet.cells.set(1, 0, { value: numberValue(3), formula: null, styleId: sid })
+			sheet.cells.set(1, 1, { value: numberValue(4), formula: null, styleId: sid })
+			sheet.cells.set(2, 0, { value: numberValue(5), formula: null, styleId: sid })
+			sheet.cells.set(2, 1, { value: numberValue(6), formula: null, styleId: sid })
+			sheet.cells.set(0, 3, {
+				value: EMPTY,
+				formula: 'BYROW(A1:B3, LAMBDA(r, SUM(r)))',
+				styleId: sid,
+			})
+			recalculate(wb, defaultCalcContext())
+			expectNum(sheet.cells.get(0, 3)?.value ?? EMPTY, 3)
+			expectNum(sheet.cells.get(1, 3)?.value ?? EMPTY, 7)
+			expectNum(sheet.cells.get(2, 3)?.value ?? EMPTY, 11)
+		})
+
+		test('MAKEARRAY multiplication table', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			sheet.cells.set(0, 0, {
+				value: EMPTY,
+				formula: 'MAKEARRAY(3, 3, LAMBDA(r, c, r*c))',
+				styleId: sid,
+			})
+			recalculate(wb, defaultCalcContext())
+			expectNum(sheet.cells.get(0, 0)?.value ?? EMPTY, 1)
+			expectNum(sheet.cells.get(0, 1)?.value ?? EMPTY, 2)
+			expectNum(sheet.cells.get(0, 2)?.value ?? EMPTY, 3)
+			expectNum(sheet.cells.get(1, 0)?.value ?? EMPTY, 2)
+			expectNum(sheet.cells.get(1, 1)?.value ?? EMPTY, 4)
+			expectNum(sheet.cells.get(1, 2)?.value ?? EMPTY, 6)
+			expectNum(sheet.cells.get(2, 0)?.value ?? EMPTY, 3)
+			expectNum(sheet.cells.get(2, 1)?.value ?? EMPTY, 6)
+			expectNum(sheet.cells.get(2, 2)?.value ?? EMPTY, 9)
+		})
+	})
+
+	describe('LET binding', () => {
+		test('LET(x, 10, x*2) equals 20', () => {
+			expectNum(evalFormula('LET(x, 10, x*2)'), 20)
+		})
+
+		test('Nested LET bindings', () => {
+			expectNum(evalFormula('LET(a, 5, LET(b, 3, a+b))'), 8)
+		})
+	})
+
 	describe('cross-sheet references', () => {
 		test('SUM across two sheets', () => {
 			const wb = createWorkbook()

@@ -76,9 +76,9 @@ function exactLookupValueKey(value: CellValue): string | null {
 	const scalar = topLeftScalar(value)
 	switch (scalar.kind) {
 		case 'number':
-			return `n:${String(scalar.value === 0 ? 0 : scalar.value)}`
+			return `v:${String(scalar.value === 0 ? 0 : scalar.value)}`
 		case 'date':
-			return `d:${scalar.serial}`
+			return `v:${String(scalar.serial === 0 ? 0 : scalar.serial)}`
 		case 'string':
 			return `s:${scalar.value.toLowerCase()}`
 		case 'boolean':
@@ -124,6 +124,19 @@ function getArgVector(
 	arg: EvalArg | undefined,
 	ctx?: FunctionEvalContext,
 ): { values: readonly CellValue[]; orientation: 'row' | 'column' } | null {
+	const result = getArgVectorWithIndex(arg, ctx, false)
+	return result ? { values: result.values, orientation: result.orientation } : null
+}
+
+function getArgVectorWithIndex(
+	arg: EvalArg | undefined,
+	ctx?: FunctionEvalContext,
+	buildIndex = false,
+): {
+	values: readonly CellValue[]
+	orientation: 'row' | 'column'
+	exactIndex?: ReadonlyMap<string, ExactLookupHit>
+} | null {
 	if (!arg || (arg.areas && arg.areas.length > 1)) return null
 	const shape = rangeShape(arg)
 	const orientation = shape.rows === 1 ? 'row' : shape.cols === 1 ? 'column' : null
@@ -131,23 +144,66 @@ function getArgVector(
 	const cacheKey = lookupRangeCacheKey(arg, orientation)
 	if (cacheKey && ctx?.lookupVectorCache) {
 		const cached = ctx.lookupVectorCache.get(cacheKey)
-		if (cached) return { values: cached, orientation }
+		if (cached) {
+			let exactIndex: ReadonlyMap<string, ExactLookupHit> | undefined
+			if (buildIndex && cacheKey && ctx.exactLookupCache) {
+				exactIndex = ctx.exactLookupCache.get(cacheKey)
+				if (!exactIndex) {
+					exactIndex = buildExactLookupIndex(cached)
+					ctx.exactLookupCache.set(cacheKey, exactIndex as Map<string, ExactLookupHit>)
+				}
+			}
+			return {
+				values: cached,
+				orientation,
+				...(buildIndex && exactIndex ? { exactIndex } : {}),
+			}
+		}
 	}
 	let values: readonly CellValue[]
+	let exactIndex: Map<string, ExactLookupHit> | undefined
 	if (arg.forEachValue) {
 		const next: CellValue[] = []
-		arg.forEachValue((value) => next.push(value))
+		const index =
+			buildIndex && cacheKey && ctx?.exactLookupCache
+				? new Map<string, ExactLookupHit>()
+				: undefined
+		arg.forEachValue((value) => {
+			const i = next.length
+			next.push(value)
+			if (index) {
+				const key = exactLookupValueKey(value)
+				if (key !== null) {
+					const existing = index.get(key)
+					if (existing) index.set(key, { first: existing.first, last: i })
+					else index.set(key, { first: i, last: i })
+				}
+			}
+		})
 		values = next
+		exactIndex = index
 	} else if (arg.kind === 'range' && arg.values) {
 		values = orientation === 'row' ? [...(arg.values[0] ?? [])] : extractColumn(arg.values, 0)
+		exactIndex =
+			buildIndex && cacheKey && ctx?.exactLookupCache ? buildExactLookupIndex(values) : undefined
 	} else if (arg.value.kind === 'array') {
 		values =
 			orientation === 'row' ? [...(arg.value.rows[0] ?? [])] : extractColumn(arg.value.rows, 0)
+		exactIndex =
+			buildIndex && cacheKey && ctx?.exactLookupCache ? buildExactLookupIndex(values) : undefined
 	} else {
 		values = [arg.value]
+		exactIndex =
+			buildIndex && cacheKey && ctx?.exactLookupCache ? buildExactLookupIndex(values) : undefined
 	}
 	if (cacheKey && ctx?.lookupVectorCache) ctx.lookupVectorCache.set(cacheKey, values)
-	return { values, orientation }
+	if (cacheKey && exactIndex && ctx?.exactLookupCache)
+		ctx.exactLookupCache.set(cacheKey, exactIndex)
+	return {
+		values,
+		orientation,
+		...(buildIndex && exactIndex ? { exactIndex } : {}),
+	}
 }
 
 function buildExactLookupIndex(data: readonly CellValue[]): Map<string, ExactLookupHit> {
@@ -425,13 +481,11 @@ function xlookup(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const searchMode = args.length > 5 ? numArg(args[5]) : 1
 	if (typeof searchMode !== 'number') return searchMode
 
-	const lookupVector = getArgVector(args[1], ctx)
+	const needExactIndex = matchMode === 0 && Math.abs(searchMode) !== 2
+	const lookupVector = getArgVectorWithIndex(args[1], ctx, needExactIndex)
 	const returnVector = getArgVector(args[2], ctx)
 	if (lookupVector && returnVector && lookupVector.orientation === returnVector.orientation) {
-		const exactIndex =
-			matchMode === 0 && Math.abs(searchMode) !== 2
-				? getExactLookupIndex(args[1], lookupVector.values, lookupVector.orientation, ctx)
-				: null
+		const exactIndex = needExactIndex ? (lookupVector.exactIndex ?? null) : null
 		return scalarOrLookupArray(args[0], (lookup) =>
 			xlookupVectorScalar(
 				lookup,

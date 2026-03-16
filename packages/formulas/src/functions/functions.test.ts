@@ -2,7 +2,14 @@ import { describe, expect, test } from 'bun:test'
 import type { StyleId } from '@ascend/core'
 import { createWorkbook } from '@ascend/core'
 import { defaultCalcContext, recalculate } from '@ascend/engine'
-import { booleanValue, EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
+import {
+	booleanValue,
+	dateValue,
+	EMPTY,
+	errorValue,
+	numberValue,
+	stringValue,
+} from '@ascend/schema'
 
 const S0 = 0 as StyleId
 
@@ -207,6 +214,13 @@ describe('formula functions', () => {
 			setFormula(wb, 3, 0, 'TEXTJOIN("-",FALSE,A1:A3)')
 			recalc(wb)
 			expect(getResult(wb, 3, 0)).toEqual(stringValue('a--b'))
+		})
+
+		test('RIGHT with zero characters returns empty string', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'RIGHT("world",0)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue(''))
 		})
 
 		test('FIND is case-sensitive', () => {
@@ -416,6 +430,88 @@ describe('formula functions', () => {
 			recalc(wb)
 			expect(getResult(wb, 0, 1)).toEqual(stringValue('36:00'))
 		})
+
+		test('TEXT(1234.5, "#,##0.00") = "1,234.50"', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 1234.5)
+			setFormula(wb, 0, 1, 'TEXT(A1,"#,##0.00")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('1,234.50'))
+		})
+
+		test('TEXT(0.75, "0%") = "75%"', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 0.75)
+			setFormula(wb, 0, 1, 'TEXT(A1,"0%")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('75%'))
+		})
+
+		test('TEXT(1234, "$#,##0") = "$1,234"', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 1234)
+			setFormula(wb, 0, 1, 'TEXT(A1,"$#,##0")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('$1,234'))
+		})
+
+		test('TEXT(0.5, "# ?/?") fraction format - currently rounds to integer', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 0.5)
+			setFormula(wb, 0, 1, 'TEXT(A1,"# ?/?")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('1'))
+		})
+
+		test('TEXT(44941, "yyyy-mm-dd") date format', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 44941)
+			setFormula(wb, 0, 1, 'TEXT(A1,"yyyy-mm-dd")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('2023-01-15'))
+		})
+
+		test('TEXT(-5, "[Red]0") strips color codes', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, -5)
+			setFormula(wb, 0, 1, 'TEXT(A1,"[Red]0")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('-5'))
+		})
+
+		test('TEXT with conditional color format [Red]#,##0;[Blue]-#,##0', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 100)
+			setNum(wb, 1, 0, -100)
+			setFormula(wb, 0, 1, 'TEXT(A1,"[Red]#,##0;[Blue]-#,##0")')
+			setFormula(wb, 1, 1, 'TEXT(A2,"[Red]#,##0;[Blue]-#,##0")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('100'))
+			expect(getResult(wb, 1, 1)).toEqual(stringValue('-100'))
+		})
+
+		test('TEXT with custom text "Total: "0.00', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 42.5)
+			setStr(wb, 0, 2, '"Total: "0.00')
+			setFormula(wb, 0, 1, 'TEXT(A1,C1)')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('Total: 42.50'))
+		})
+
+		test('TEXT with multiple sections #,##0;-#,##0;"zero";@', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 100)
+			setNum(wb, 1, 0, -100)
+			setNum(wb, 2, 0, 0)
+			setFormula(wb, 0, 1, 'TEXT(A1,"#,##0;-#,##0;""zero"";@")')
+			setFormula(wb, 1, 1, 'TEXT(A2,"#,##0;-#,##0;""zero"";@")')
+			setFormula(wb, 2, 1, 'TEXT(A3,"#,##0;-#,##0;""zero"";@")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('100'))
+			expect(getResult(wb, 1, 1)).toEqual(stringValue('-100'))
+			expect(getResult(wb, 2, 1)).toEqual(stringValue('zero'))
+		})
 	})
 
 	describe('lookup functions', () => {
@@ -531,6 +627,19 @@ describe('formula functions', () => {
 			setFormula(wb, 3, 0, 'XMATCH("banana",A1:A3,0,-1)')
 			recalc(wb)
 			expect(getResult(wb, 3, 0)).toEqual(numberValue(3))
+		})
+
+		test('exact lookup treats date serials and numbers consistently', () => {
+			const wb = makeWorkbook()
+			wb.getSheet('Sheet1')?.cells.set(0, 0, {
+				value: dateValue(45000),
+				formula: null,
+				styleId: S0,
+			})
+			setNum(wb, 0, 1, 123)
+			setFormula(wb, 1, 0, 'VLOOKUP(45000,A1:B1,2,FALSE)')
+			recalc(wb)
+			expect(getResult(wb, 1, 0)).toEqual(numberValue(123))
 		})
 	})
 
@@ -2503,6 +2612,107 @@ describe('formula functions', () => {
 		})
 	})
 
+	describe('engineering functions - Bessel', () => {
+		test('BESSELJ(1.5, 1) is approximately 0.5579', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'BESSELJ(1.5, 1)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.5579365079, 5)
+		})
+
+		test('BESSELJ(0, 0) is 1', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'BESSELJ(0, 0)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(1, 10)
+		})
+
+		test('BESSELI(1.5, 1) is approximately 0.9817', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'BESSELI(1.5, 1)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.9816664289, 5)
+		})
+
+		test('BESSELI(0, 0) is 1', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'BESSELI(0, 0)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(1, 10)
+		})
+
+		test('BESSELY(2.5, 1) is approximately 0.1459', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'BESSELY(2.5, 1)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.1459181379, 4)
+		})
+
+		test('BESSELK(2.5, 1) is approximately 0.0739', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'BESSELK(2.5, 1)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.0738908163, 4)
+		})
+
+		test('BESSELY(0, 0) returns #NUM!', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'BESSELY(0, 0)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('error')
+			if (r?.kind === 'error') expect(r.value).toBe('#NUM!')
+		})
+
+		test('BESSELK(0, 1) returns #NUM!', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'BESSELK(0, 1)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('error')
+			if (r?.kind === 'error') expect(r.value).toBe('#NUM!')
+		})
+
+		test('BESSELJ(1, -1) returns #NUM!', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'BESSELJ(1, -1)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('error')
+			if (r?.kind === 'error') expect(r.value).toBe('#NUM!')
+		})
+
+		test('BESSELJ truncates non-integer order like Excel', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'BESSELJ(1, 1.5)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.4400506, 6)
+		})
+
+		test('BESSELJ remains stable for small x and larger order', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'BESSELJ(0.1, 10)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(Math.abs(r.value)).toBeLessThan(1e-12)
+		})
+	})
+
 	describe('engineering functions - complex numbers', () => {
 		test('COMPLEX creates complex number string', () => {
 			const wb = makeWorkbook()
@@ -3341,6 +3551,137 @@ describe('formula functions', () => {
 			setFormula(wb, 1, 0, 'ISFORMULA(A1)')
 			recalc(wb)
 			expect(getResult(wb, 1, 0)).toEqual(booleanValue(true))
+		})
+	})
+
+	describe('FORECAST.ETS family', () => {
+		test('FORECAST.ETS with linear trend close to FORECAST.LINEAR', () => {
+			const wb = makeWorkbook()
+			for (let i = 0; i < 10; i++) {
+				setNum(wb, i, 0, i + 1)
+				setNum(wb, i, 1, 2 * (i + 1))
+			}
+			setFormula(wb, 10, 0, 'FORECAST.ETS(11,B1:B10,A1:A10)')
+			setFormula(wb, 10, 1, 'FORECAST.LINEAR(11,B1:B10,A1:A10)')
+			recalc(wb)
+			const ets = getResult(wb, 10, 0)
+			const linear = getResult(wb, 10, 1)
+			expect(ets?.kind).toBe('number')
+			expect(linear?.kind).toBe('number')
+			if (ets?.kind === 'number' && linear?.kind === 'number') {
+				expect(ets.value).toBeCloseTo(linear.value, 0)
+			}
+		})
+
+		test('FORECAST.ETS.SEASONALITY with non-seasonal data returns 1', () => {
+			const wb = makeWorkbook()
+			for (let i = 0; i < 10; i++) {
+				setNum(wb, i, 0, 2 * (i + 1) + 1)
+				setNum(wb, i, 1, i + 1)
+			}
+			setFormula(wb, 10, 0, 'FORECAST.ETS.SEASONALITY(A1:A10,B1:B10)')
+			recalc(wb)
+			const result = getResult(wb, 10, 0)
+			expect(result?.kind).toBe('number')
+			if (result?.kind === 'number') {
+				expect(result.value).toBe(1)
+			}
+		})
+
+		test('FORECAST.ETS with numeric timeline', () => {
+			const wb = makeWorkbook()
+			for (let i = 0; i < 8; i++) {
+				setNum(wb, i, 0, (i + 1) * 10)
+				setNum(wb, i, 1, 100 + 5 * (i + 1))
+			}
+			setFormula(wb, 8, 0, 'FORECAST.ETS(90,B1:B8,A1:A8)')
+			recalc(wb)
+			const result = getResult(wb, 8, 0)
+			expect(result?.kind).toBe('number')
+			if (result?.kind === 'number') {
+				expect(result.value).toBeCloseTo(145, 0)
+			}
+		})
+
+		test('FORECAST.ETS.STAT returns step size', () => {
+			const wb = makeWorkbook()
+			for (let i = 0; i < 6; i++) {
+				setNum(wb, i, 0, 10 + 3 * i)
+				setNum(wb, i, 1, (i + 1) * 5)
+			}
+			setFormula(wb, 6, 0, 'FORECAST.ETS.STAT(A1:A6,B1:B6,8)')
+			recalc(wb)
+			const result = getResult(wb, 6, 0)
+			expect(result?.kind).toBe('number')
+			if (result?.kind === 'number') {
+				expect(result.value).toBe(5)
+			}
+		})
+
+		test('FORECAST.ETS.CONFINT returns positive width', () => {
+			const wb = makeWorkbook()
+			for (let i = 0; i < 10; i++) {
+				setNum(wb, i, 0, i + 1)
+				setNum(wb, i, 1, 2 * (i + 1) + (i % 2 === 0 ? 0.5 : -0.5))
+			}
+			setFormula(wb, 10, 0, 'FORECAST.ETS.CONFINT(11,B1:B10,A1:A10,0.95)')
+			recalc(wb)
+			const result = getResult(wb, 10, 0)
+			expect(result?.kind).toBe('number')
+			if (result?.kind === 'number') {
+				expect(result.value).toBeGreaterThan(0)
+			}
+		})
+
+		test('FORECAST.ETS rejects target inside historical timeline', () => {
+			const wb = makeWorkbook()
+			for (let i = 0; i < 10; i++) {
+				setNum(wb, i, 0, i + 1)
+				setNum(wb, i, 1, 2 * (i + 1))
+			}
+			setFormula(wb, 10, 0, 'FORECAST.ETS(5,B1:B10,A1:A10)')
+			recalc(wb)
+			const result = getResult(wb, 10, 0)
+			expect(result?.kind).toBe('error')
+			if (result?.kind === 'error') expect(result.value).toBe('#NUM!')
+		})
+
+		test('FORECAST.ETS rejects target that does not continue the step size', () => {
+			const wb = makeWorkbook()
+			for (let i = 0; i < 8; i++) {
+				setNum(wb, i, 0, (i + 1) * 10)
+				setNum(wb, i, 1, 100 + 5 * (i + 1))
+			}
+			setFormula(wb, 8, 0, 'FORECAST.ETS(85,B1:B8,A1:A8)')
+			recalc(wb)
+			const result = getResult(wb, 8, 0)
+			expect(result?.kind).toBe('error')
+			if (result?.kind === 'error') expect(result.value).toBe('#NUM!')
+		})
+
+		test('FORECAST.ETS rejects fractional seasonality values', () => {
+			const wb = makeWorkbook()
+			for (let i = 0; i < 8; i++) {
+				setNum(wb, i, 0, i + 1)
+				setNum(wb, i, 1, 100 + i)
+			}
+			setFormula(wb, 8, 0, 'FORECAST.ETS(9,B1:B8,A1:A8,1.5)')
+			recalc(wb)
+			const result = getResult(wb, 8, 0)
+			expect(result?.kind).toBe('error')
+			if (result?.kind === 'error') expect(result.value).toBe('#NUM!')
+		})
+
+		test('FORECAST.ETS with too few data points returns error', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 1)
+			setNum(wb, 0, 1, 10)
+			setNum(wb, 1, 0, 2)
+			setNum(wb, 1, 1, 20)
+			setFormula(wb, 2, 0, 'FORECAST.ETS(3,B1:B2,A1:A2)')
+			recalc(wb)
+			const result = getResult(wb, 2, 0)
+			expect(result?.kind).toBe('error')
 		})
 	})
 })

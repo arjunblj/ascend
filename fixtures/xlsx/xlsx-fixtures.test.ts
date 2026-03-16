@@ -23,6 +23,31 @@ function expectOk<T, E extends { message: string }>(
 
 if (poiFixtures.length > 0) {
 	describe('POI XLSX fixtures', () => {
+		it('opens all POI .xlsx files without crashing', () => {
+			const results: { name: string; ok: boolean; error?: string }[] = []
+			for (const name of poiFixtures) {
+				const result = readXlsx(loadFixture(name), { mode: 'values' })
+				results.push({
+					name,
+					ok: result.ok,
+					error: result.ok ? undefined : result.error.message,
+				})
+			}
+			const passed = results.filter((r) => r.ok).length
+			const total = results.length
+			const pct = total > 0 ? (passed / total) * 100 : 0
+			for (const r of results) {
+				if (r.ok) {
+					console.log(`  ✓ ${r.name}`)
+				} else {
+					console.log(`  ✗ ${r.name}: ${r.error}`)
+				}
+			}
+			console.log(`  ${passed}/${total} opened (${pct.toFixed(1)}%)`)
+			expect(total).toBeGreaterThan(0)
+			expect(pct).toBe(100)
+		})
+
 		for (const fixture of poiFixtures) {
 			it(`reads ${fixture}`, () => {
 				const result = readXlsx(loadFixture(fixture))
@@ -179,6 +204,42 @@ if (poiFixtures.length > 0) {
 				if (cell.formula) formulaCount++
 			}
 			expect(formulaCount).toBeGreaterThan(0)
+		})
+
+		it('reads shared_formulas.xlsx with correct master/member structure', () => {
+			const result = readXlsx(loadFixture('shared_formulas.xlsx'))
+			expectOk(result)
+			const sheet = result.value.workbook.sheets[0]
+			expect(sheet).toBeDefined()
+			if (!sheet) return
+			const hasSharedMaster = [...sheet.cells.iterate()].some(
+				([, , cell]) => cell.formulaInfo?.kind === 'shared' && cell.formulaInfo?.isMaster,
+			)
+			const hasSharedMember = [...sheet.cells.iterate()].some(
+				([, , cell]) => cell.formulaInfo?.kind === 'shared' && !cell.formulaInfo?.isMaster,
+			)
+			expect(hasSharedMaster).toBe(true)
+			expect(hasSharedMember).toBe(true)
+			const masterCell = [...sheet.cells.iterate()].find(
+				([, , cell]) => cell.formulaInfo?.kind === 'shared' && cell.formulaInfo?.isMaster,
+			)
+			expect(masterCell).toBeDefined()
+			expect(masterCell?.[2]?.formula).toBeDefined()
+			expect(masterCell?.[2]?.formula?.length ?? 0).toBeGreaterThan(0)
+		})
+
+		it('reads TestShiftRowSharedFormula.xlsx with shared formulas and correct values', () => {
+			const result = readXlsx(loadFixture('TestShiftRowSharedFormula.xlsx'))
+			expectOk(result)
+			const sheet = result.value.workbook.sheets[0]
+			expect(sheet).toBeDefined()
+			if (!sheet) return
+			expect(result.value.report.features.some((f) => f.feature === 'sharedFormula')).toBe(true)
+			recalculate(result.value.workbook, defaultCalcContext())
+			const d5 = sheet.cells.get(4, 3)
+			const e5 = sheet.cells.get(4, 4)
+			expect(d5?.value).toMatchObject({ kind: 'number', value: 15 })
+			expect(e5?.value).toMatchObject({ kind: 'number', value: 18 })
 		})
 
 		it('reads hidden sheets from TwoSheetsOneHidden.xlsx', () => {

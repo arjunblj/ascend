@@ -55,6 +55,7 @@ export interface ReadXlsxResult {
 export interface ReadXlsxOptions {
 	readonly mode?: 'full' | 'metadata-only' | 'values' | 'formula'
 	readonly sheets?: readonly (string | number)[]
+	readonly maxRows?: number
 }
 
 export interface ReadXlsxLoadInfo {
@@ -325,6 +326,7 @@ export function readXlsx(
 				formulaOnly,
 				formulaFeatures: sheetFormulaFeatures,
 				...(metadata ? { metadata } : {}),
+				...(options.maxRows !== undefined ? { maxRows: options.maxRows } : {}),
 			})
 			if (sheetFormulaFeatures.hasSharedFormula) {
 				formulaFeatures.sharedFormulaSheets.push(entry.name)
@@ -373,7 +375,7 @@ export function readXlsx(
 	const hasAllSheets = loadedSheetNames.length === sourceSheetNames.length
 	const cellsHydrated = mode !== 'metadata-only'
 	const richSheetMetadataHydrated = !valuesOnly && !formulaOnly && mode !== 'metadata-only'
-	const fidelityPartial = mode === 'values' || mode === 'formula'
+	const fidelityPartial = mode === 'values' || mode === 'formula' || options.maxRows !== undefined
 	const isPartial = !hasAllSheets || !cellsHydrated || fidelityPartial
 	const loadInfo: ReadXlsxLoadInfo = {
 		mode: selectedSheets ? 'selective' : mode,

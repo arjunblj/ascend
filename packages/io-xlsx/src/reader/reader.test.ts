@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'bun:test'
 import type { StyleId } from '@ascend/core'
+import { createWorkbook, Workbook } from '@ascend/core'
+import { booleanValue, dateValue, EMPTY, numberValue, stringValue } from '@ascend/schema'
+import { defaultCalcContext, recalculate } from '../../../engine/src/index.ts'
 import { makeXlsx } from '../../test/helpers.ts'
+import { writeXlsx } from '../writer/index.ts'
 import { readXlsx } from './index.ts'
 import type { StreamedSheetRow } from './sheet.ts'
 import { readXlsxRowsStream } from './stream.ts'
@@ -209,6 +213,28 @@ describe('readXlsx', () => {
 		const result = readXlsx(empty)
 		expectErr(result)
 		expect(result.error.code).toBe('CORRUPT_FILE')
+	})
+
+	it('applies density hint from dimension for dense sheets', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Dense')
+		const sheet = wb.sheets[0]
+		if (!sheet) throw new Error('no sheet')
+		for (let r = 0; r < 64; r++) {
+			for (let c = 0; c < 64; c++) {
+				sheet.cells.set(r, c, {
+					value: numberValue(r * 64 + c),
+					formula: null,
+					styleId: S0,
+				})
+			}
+		}
+		const written = writeXlsx(wb)
+		if (!written.ok) throw new Error(written.error.message)
+		const result = readXlsx(written.value)
+		expectOk(result)
+		const readSheet = result.value.workbook.sheets[0]
+		expect(readSheet?.cells.getChunkKindAt(0, 0)).toBe('dense')
 	})
 
 	it('handles workbook with no shared strings', () => {
@@ -593,6 +619,58 @@ describe('readXlsx', () => {
 			masterRef: 'A1',
 		})
 		expect(result.value.workbook.sheets[0]?.cells.get(1, 0)?.formula).toBeNull()
+	})
+
+	it('reads shared formulas with master formula text, member shared info, and correct values after recalc', async () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="B1"><v>42</v></c>
+      <c r="A1"><f t="shared" si="0">B1*2</f><v>84</v></c>
+    </row>
+    <row r="2">
+      <c r="B2"><v>84</v></c>
+      <c r="A2"><f t="shared" si="0"/><v>168</v></c>
+    </row>
+  </sheetData>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet).toBeDefined()
+
+		const masterCell = sheet?.cells.get(0, 0)
+		expect(masterCell?.formula).toBe('B1*2')
+		expect(masterCell?.formulaInfo).toMatchObject({
+			kind: 'shared',
+			sharedIndex: '0',
+			isMaster: true,
+			masterRef: 'A1',
+		})
+
+		const memberCell = sheet?.cells.get(1, 0)
+		expect(memberCell?.formula).toBeNull()
+		expect(memberCell?.formulaInfo).toMatchObject({
+			kind: 'shared',
+			sharedIndex: '0',
+			isMaster: false,
+			masterRef: 'A1',
+		})
+
+		recalculate(result.value.workbook, defaultCalcContext())
+
+		expect(sheet?.cells.get(0, 0)?.value).toMatchObject({ kind: 'number', value: 84 })
+		expect(sheet?.cells.get(1, 0)?.value).toMatchObject({ kind: 'number', value: 168 })
 	})
 
 	it('imports dynamic-array metadata and normalizes storage formulas', () => {
@@ -1623,6 +1701,73 @@ describe('readXlsx', () => {
 		)
 	})
 
+	it('values mode returns cell values but never formulas', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1"><v>100</v></c>
+      <c r="B1"><f>SUM(A:A)</f></c>
+      <c r="C1"><f>A1*2</f><v>200</v></c>
+    </row>
+  </sheetData>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes, { mode: 'values' })
+		expectOk(result)
+
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet?.cells.get(0, 0)?.value).toEqual({ kind: 'number', value: 100 })
+		expect(sheet?.cells.get(0, 0)?.formula).toBeNull()
+
+		expect(sheet?.cells.get(0, 1)?.value).toEqual(EMPTY)
+		expect(sheet?.cells.get(0, 1)?.formula).toBeNull()
+
+		expect(sheet?.cells.get(0, 2)?.value).toEqual({ kind: 'number', value: 200 })
+		expect(sheet?.cells.get(0, 2)?.formula).toBeNull()
+	})
+
+	it('values mode reads dense workbooks successfully across repeated runs', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		if (!sheet) throw new Error('Missing sheet')
+		for (let r = 0; r < 500; r++) {
+			for (let c = 0; c < 20; c++) {
+				sheet.cells.set(r, c, {
+					value: numberValue(r * 20 + c),
+					formula: null,
+					styleId: S0,
+				})
+			}
+		}
+		const written = writeXlsx(wb)
+		if (!written.ok) throw new Error(written.error.message)
+		const bytes = new Uint8Array(written.value)
+
+		const iterations = 8
+		for (let i = 0; i < iterations; i++) {
+			const fullResult = readXlsx(bytes)
+			if (!fullResult.ok) throw new Error(fullResult.error.message)
+			const valuesResult = readXlsx(bytes, { mode: 'values' })
+			if (!valuesResult.ok) throw new Error(valuesResult.error.message)
+			const fullSheet = fullResult.value.workbook.sheets[0]
+			const valuesSheet = valuesResult.value.workbook.sheets[0]
+			expect(valuesSheet?.cells.get(499, 19)?.value).toEqual(fullSheet?.cells.get(499, 19)?.value)
+		}
+	})
+
 	it('preserves worksheet layout metadata in values mode', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': CONTENT_TYPES,
@@ -1797,6 +1942,42 @@ ${rowEntries.join('\n')}
 		}
 	})
 
+	it('stops parsing after maxRows when maxRows option is set', () => {
+		const rowEntries = Array.from(
+			{ length: 20 },
+			(_, i) => `<row r="${i + 1}"><c r="A${i + 1}"><v>${i + 1}</v></c></row>`,
+		)
+		const sheetXml = `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+${rowEntries.join('\n')}
+  </sheetData>
+</worksheet>`
+
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': sheetXml,
+		})
+
+		const result = readXlsx(bytes, { maxRows: 10 })
+		expectOk(result)
+		expect(result.value.loadInfo.isPartial).toBe(true)
+		expect(result.value.workbook.sourceArchiveBytes).toBeNull()
+
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+
+		expect(sheet.cells.get(0, 0)?.value).toEqual({ kind: 'number', value: 1 })
+		expect(sheet.cells.get(9, 0)?.value).toEqual({ kind: 'number', value: 10 })
+		expect(sheet.cells.get(10, 0)).toBeUndefined()
+		expect(sheet.cells.get(19, 0)).toBeUndefined()
+	})
+
 	it('reports preserved non-semantic parts explicitly', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -1879,5 +2060,106 @@ ${rowEntries.join('\n')}
 		)
 		expect(tcCapsule).toBeDefined()
 		expect(tcCapsule?.anchor).toEqual({ kind: 'sheet', sheetName: 'Data' })
+	})
+})
+
+describe('round-trip fidelity', () => {
+	function roundTrip(wb: Workbook) {
+		const written = writeXlsx(wb)
+		if (!written.ok) throw new Error(`write failed: ${written.error.message}`)
+		const read = readXlsx(written.value)
+		if (!read.ok) throw new Error(`read failed: ${read.error.message}`)
+		return { bytes: written.value, result: read.value }
+	}
+
+	it('preserves cell values (number, string, boolean, date, empty)', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Values')
+		sheet.cells.set(0, 0, { value: numberValue(42), formula: null, styleId: S0 })
+		sheet.cells.set(0, 1, { value: stringValue('Hello'), formula: null, styleId: S0 })
+		sheet.cells.set(0, 2, { value: booleanValue(true), formula: null, styleId: S0 })
+		const dateFmtId = wb.styles.register({ numberFormat: 'yyyy-mm-dd' })
+		sheet.cells.set(0, 3, {
+			value: dateValue(45292),
+			formula: null,
+			styleId: dateFmtId,
+		})
+		sheet.cells.set(0, 4, { value: EMPTY, formula: null, styleId: S0 })
+
+		const { result } = roundTrip(wb)
+		const s = result.workbook.sheets[0]
+		expect(s).toBeDefined()
+		expect(s?.name).toBe('Values')
+		expect(s?.cells.get(0, 0)?.value).toEqual({ kind: 'number', value: 42 })
+		expect(s?.cells.get(0, 1)?.value).toEqual({ kind: 'string', value: 'Hello' })
+		expect(s?.cells.get(0, 2)?.value).toEqual({ kind: 'boolean', value: true })
+		expect(s?.cells.get(0, 3)?.value).toEqual({ kind: 'date', serial: 45292 })
+		const emptyCell = s?.cells.get(0, 4)
+		expect(emptyCell === undefined || emptyCell?.value?.kind === 'empty').toBe(true)
+	})
+
+	it('preserves formula text strings', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Formulas')
+		sheet.cells.set(0, 0, { value: numberValue(10), formula: null, styleId: S0 })
+		sheet.cells.set(0, 1, { value: numberValue(20), formula: null, styleId: S0 })
+		sheet.cells.set(0, 2, { value: numberValue(30), formula: 'A1+B1', styleId: S0 })
+		sheet.cells.set(1, 0, { value: numberValue(55), formula: 'SUM(A1:A10)', styleId: S0 })
+
+		const { result } = roundTrip(wb)
+		const s = result.workbook.sheets[0]
+		expect(s?.cells.get(0, 2)?.formula).toBe('A1+B1')
+		expect(s?.cells.get(1, 0)?.formula).toBe('SUM(A1:A10)')
+	})
+
+	it('preserves styles (number formats, bold font)', () => {
+		const wb = new Workbook()
+		const boldId = wb.styles.register({ font: { bold: true } })
+		const pctId = wb.styles.register({ numberFormat: '0.0%' })
+		const sheet = wb.addSheet('Styled')
+		sheet.cells.set(0, 0, { value: stringValue('Bold'), formula: null, styleId: boldId })
+		sheet.cells.set(0, 1, { value: numberValue(0.75), formula: null, styleId: pctId })
+
+		const { result } = roundTrip(wb)
+		const s = result.workbook.sheets[0]
+		const cell0 = s?.cells.get(0, 0)
+		const cell1 = s?.cells.get(0, 1)
+		expect(result.workbook.styles.get(cell0?.styleId ?? S0)?.font?.bold).toBe(true)
+		expect(result.workbook.styles.get(cell1?.styleId ?? S0)?.numberFormat).toBe('0.0%')
+	})
+
+	it('preserves multi-sheet workbook (names and data)', () => {
+		const wb = new Workbook()
+		const s1 = wb.addSheet('Input')
+		s1.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: S0 })
+		s1.cells.set(0, 1, { value: numberValue(2), formula: null, styleId: S0 })
+		const s2 = wb.addSheet('Summary')
+		s2.cells.set(0, 0, { value: stringValue('Total'), formula: null, styleId: S0 })
+		s2.cells.set(0, 1, { value: numberValue(3), formula: 'Input!A1+Input!B1', styleId: S0 })
+		const s3 = wb.addSheet('Archive')
+		s3.cells.set(0, 0, { value: stringValue('Archived'), formula: null, styleId: S0 })
+
+		const { result } = roundTrip(wb)
+		expect(result.workbook.sheets).toHaveLength(3)
+		expect(result.workbook.sheets[0]?.name).toBe('Input')
+		expect(result.workbook.sheets[1]?.name).toBe('Summary')
+		expect(result.workbook.sheets[2]?.name).toBe('Archive')
+		expect(result.workbook.sheets[0]?.cells.get(0, 0)?.value).toEqual({
+			kind: 'number',
+			value: 1,
+		})
+		expect(result.workbook.sheets[0]?.cells.get(0, 1)?.value).toEqual({
+			kind: 'number',
+			value: 2,
+		})
+		expect(result.workbook.sheets[1]?.cells.get(0, 0)?.value).toEqual({
+			kind: 'string',
+			value: 'Total',
+		})
+		expect(result.workbook.sheets[1]?.cells.get(0, 1)?.formula).toBe('Input!A1+Input!B1')
+		expect(result.workbook.sheets[2]?.cells.get(0, 0)?.value).toEqual({
+			kind: 'string',
+			value: 'Archived',
+		})
 	})
 })

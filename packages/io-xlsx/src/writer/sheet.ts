@@ -28,12 +28,17 @@ export interface SheetXmlOptions {
 	readonly cfDxfIdOverrides?: ReadonlyMap<string, number>
 }
 
-export function buildSheetXml(
+interface SheetXmlSink {
+	push(s: string): void
+}
+
+function buildSheetXmlToSink(
 	sheet: Sheet,
 	ssTable: SharedStringTable,
 	xfMap: Map<number, number>,
-	options: SheetXmlOptions = {},
-): string {
+	options: SheetXmlOptions,
+	out: SheetXmlSink,
+): void {
 	const tableRelIds = options.tableRelIds ?? []
 	const hyperlinks = options.hyperlinks ?? []
 	const drawingRelId = options.drawingRelId
@@ -47,7 +52,6 @@ export function buildSheetXml(
 	) {
 		worksheetAttrs.push(`xmlns:r="${NS_R}"`)
 	}
-	const out = new ChunkedStringBuilder()
 	out.push(XML_HEADER)
 	out.push(`<worksheet ${worksheetAttrs.join(' ')}>`)
 
@@ -361,7 +365,27 @@ export function buildSheetXml(
 	}
 
 	out.push('</worksheet>')
+}
+
+export function buildSheetXml(
+	sheet: Sheet,
+	ssTable: SharedStringTable,
+	xfMap: Map<number, number>,
+	options: SheetXmlOptions = {},
+): string {
+	const out = new ChunkedStringBuilder()
+	buildSheetXmlToSink(sheet, ssTable, xfMap, options, out)
 	return out.toString()
+}
+
+export function buildSheetXmlStreaming(
+	sheet: Sheet,
+	ssTable: SharedStringTable,
+	xfMap: Map<number, number>,
+	options: SheetXmlOptions,
+	onChunk: (chunk: string) => void,
+): void {
+	buildSheetXmlToSink(sheet, ssTable, xfMap, options, { push: onChunk })
 }
 
 function groupColumnWidths(sheet: Sheet): SheetColDef[] {
@@ -425,7 +449,7 @@ function collectProtectionAttrs(protection: NonNullable<Sheet['protection']>): s
 }
 
 function pushCellXml(
-	out: ChunkedStringBuilder,
+	out: SheetXmlSink,
 	ref: string,
 	cell: Cell,
 	ssTable: SharedStringTable,

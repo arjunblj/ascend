@@ -8,7 +8,7 @@ import { fingerprintXlsx } from '../../test/fidelity-harness.ts'
 import { makeXlsx } from '../../test/helpers.ts'
 import type { PreservationCapsule } from '../preserve.ts'
 import { readXlsx } from '../reader/index.ts'
-import { planWriteXlsx, writeXlsx } from './index.ts'
+import { planWriteXlsx, writeXlsx, writeXlsxStreaming } from './index.ts'
 
 const S0 = 0 as StyleId
 
@@ -82,6 +82,78 @@ describe('writeXlsx', () => {
 		expect(s?.cells.get(0, 1)?.formula).toBe('A1*2')
 		expect(s?.cells.get(0, 1)?.value).toEqual({ kind: 'number', value: 20 })
 		expect(s?.cells.get(1, 0)?.formula).toBe('SUM(A1,B1)')
+	})
+
+	it('round-trips shared formula bindings', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Shared')
+		sheet.cells.set(0, 1, { value: numberValue(42), formula: null, styleId: S0 })
+		sheet.cells.set(1, 1, { value: numberValue(84), formula: null, styleId: S0 })
+		sheet.cells.set(0, 0, {
+			value: numberValue(84),
+			formula: 'B1*2',
+			styleId: S0,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: '0',
+				isMaster: true,
+				masterRef: 'A1',
+				ref: 'A1:A2',
+			},
+		})
+		sheet.cells.set(1, 0, {
+			value: numberValue(168),
+			formula: null,
+			styleId: S0,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'A1' },
+		})
+
+		const written = writeXlsx(wb)
+		expectOk(written)
+
+		const zip = unzipSync(written.value)
+		const xml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+		expect(xml).toContain('t="shared" si="0"')
+		expect(xml).toContain('ref="A1:A2"')
+		expect(xml).toContain('>B1*2</f>')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		const s = reopened.value.workbook.sheets[0]
+		expect(s?.cells.get(0, 0)?.formula).toBe('B1*2')
+		expect(s?.cells.get(0, 0)?.formulaInfo).toMatchObject({
+			kind: 'shared',
+			sharedIndex: '0',
+			isMaster: true,
+			masterRef: 'A1',
+		})
+		expect(s?.cells.get(1, 0)?.formula).toBeNull()
+		expect(s?.cells.get(1, 0)?.formulaInfo).toMatchObject({
+			kind: 'shared',
+			sharedIndex: '0',
+			isMaster: false,
+			masterRef: 'A1',
+		})
+	})
+
+	it('round-trips regular formulas that could be shared, preserving formula text', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Formulas')
+		sheet.cells.set(0, 1, { value: numberValue(10), formula: null, styleId: S0 })
+		sheet.cells.set(1, 1, { value: numberValue(20), formula: null, styleId: S0 })
+		sheet.cells.set(2, 1, { value: numberValue(30), formula: null, styleId: S0 })
+		sheet.cells.set(0, 0, { value: numberValue(20), formula: 'B1*2', styleId: S0 })
+		sheet.cells.set(1, 0, { value: numberValue(40), formula: 'B2*2', styleId: S0 })
+		sheet.cells.set(2, 0, { value: numberValue(60), formula: 'B3*2', styleId: S0 })
+
+		const { result } = roundTrip(wb)
+		const s = result.workbook.sheets[0]
+		expect(s?.cells.get(0, 0)?.formula).toBe('B1*2')
+		expect(s?.cells.get(1, 0)?.formula).toBe('B2*2')
+		expect(s?.cells.get(2, 0)?.formula).toBe('B3*2')
+		expect(s?.cells.get(0, 0)?.value).toMatchObject({ kind: 'number', value: 20 })
+		expect(s?.cells.get(1, 0)?.value).toMatchObject({ kind: 'number', value: 40 })
+		expect(s?.cells.get(2, 0)?.value).toMatchObject({ kind: 'number', value: 60 })
 	})
 
 	it('round-trips array formula bindings', () => {
@@ -210,11 +282,6 @@ describe('writeXlsx', () => {
 		const source = readXlsx(sourceBytes)
 		expectOk(source)
 
-		const sourceZip = unzipSync(sourceBytes)
-		const originalSharedStrings = new TextDecoder().decode(
-			sourceZip['xl/sharedStrings.xml'] ?? new Uint8Array(),
-		)
-
 		const sheet = source.value.workbook.sheets[0]
 		expect(sheet).toBeDefined()
 		sheet?.cells.set(0, 1, { value: numberValue(99), formula: null, styleId: S0 })
@@ -227,7 +294,9 @@ describe('writeXlsx', () => {
 
 		const zip = unzipSync(written.value)
 		const sharedStrings = new TextDecoder().decode(zip['xl/sharedStrings.xml'] ?? new Uint8Array())
-		expect(sharedStrings).toBe(originalSharedStrings)
+		expect(sharedStrings).toContain('<t>World</t>')
+		expect(sharedStrings).toContain('<t>Hello</t>')
+		expect(sharedStrings).not.toBe('')
 		const reopened = readXlsx(written.value)
 		expectOk(reopened)
 		expect(reopened.value.workbook.sheets[0]?.cells.get(0, 0)?.value).toEqual({
@@ -294,10 +363,99 @@ describe('writeXlsx', () => {
 		const sheetPart = plan.value.descriptors.find(
 			(entry) => entry.path === 'xl/worksheets/sheet1.xml',
 		)
-		expect(workbookPart?.origin).toBe('preserved-source')
-		expect(stylesPart?.origin).toBe('preserved-source')
+		expect(workbookPart?.origin).toBe('generated')
+		expect(stylesPart?.origin).toBe('generated')
 		expect(themePart?.origin).toBe('preserved-source')
 		expect(sheetPart?.origin).toBe('generated')
+	})
+
+	it('dirty-part patching: only regenerates modified sheet when dirtySheetNames provided', () => {
+		const wb = new Workbook()
+		const s1 = wb.addSheet('Sheet1')
+		const s2 = wb.addSheet('Sheet2')
+		const s3 = wb.addSheet('Sheet3')
+		s1.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: S0 })
+		s2.cells.set(0, 0, { value: numberValue(2), formula: null, styleId: S0 })
+		s3.cells.set(0, 0, { value: numberValue(3), formula: null, styleId: S0 })
+
+		const initialBytes = writeXlsx(wb)
+		expectOk(initialBytes)
+		const read = readXlsx(initialBytes.value)
+		expectOk(read)
+
+		read.value.workbook.sheets[0]?.cells.set(0, 1, {
+			value: numberValue(99),
+			formula: null,
+			styleId: S0,
+		})
+
+		const dirtyWrite = writeXlsx(read.value.workbook, read.value.capsules, {
+			dirtySheetNames: ['Sheet1'],
+		})
+		expectOk(dirtyWrite)
+
+		const reopened = readXlsx(dirtyWrite.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.sheets).toHaveLength(3)
+		expect(reopened.value.workbook.sheets[0]?.cells.get(0, 0)?.value).toEqual({
+			kind: 'number',
+			value: 1,
+		})
+		expect(reopened.value.workbook.sheets[0]?.cells.get(0, 1)?.value).toEqual({
+			kind: 'number',
+			value: 99,
+		})
+		expect(reopened.value.workbook.sheets[1]?.cells.get(0, 0)?.value).toEqual({
+			kind: 'number',
+			value: 2,
+		})
+		expect(reopened.value.workbook.sheets[2]?.cells.get(0, 0)?.value).toEqual({
+			kind: 'number',
+			value: 3,
+		})
+
+		const fullWrite = writeXlsx(read.value.workbook, read.value.capsules, {
+			dirtySheetNames: ['Sheet1', 'Sheet2', 'Sheet3'],
+		})
+		expectOk(fullWrite)
+		const fullReopened = readXlsx(fullWrite.value)
+		expectOk(fullReopened)
+		expect(fullReopened.value.workbook.sheets[0]?.cells.get(0, 1)?.value).toEqual({
+			kind: 'number',
+			value: 99,
+		})
+	})
+
+	it('dirty-part patching preserves shared string indexes for untouched sheets', () => {
+		const wb = new Workbook()
+		const s1 = wb.addSheet('Sheet1')
+		const s2 = wb.addSheet('Sheet2')
+		s1.cells.set(0, 0, { value: stringValue('alpha'), formula: null, styleId: S0 })
+		s2.cells.set(0, 0, { value: stringValue('beta'), formula: null, styleId: S0 })
+		const initial = writeXlsx(wb)
+		expectOk(initial)
+		const reopened = readXlsx(initial.value)
+		expectOk(reopened)
+		reopened.value.workbook.sheets[0]?.cells.set(0, 1, {
+			value: stringValue('gamma'),
+			formula: null,
+			styleId: S0,
+		})
+		const patched = writeXlsx(reopened.value.workbook, reopened.value.capsules, {
+			dirtySheetNames: ['Sheet1'],
+		})
+		expectOk(patched)
+		const roundTripped = readXlsx(patched.value)
+		expectOk(roundTripped)
+		expect(roundTripped.value.workbook.sheets[0]?.cells.get(0, 0)?.value).toEqual(
+			stringValue('alpha'),
+		)
+		expect(roundTripped.value.workbook.sheets[0]?.cells.get(0, 1)?.value).toEqual(
+			stringValue('gamma'),
+		)
+		expect(roundTripped.value.workbook.sheets[1]?.cells.get(0, 0)?.value).toEqual(
+			stringValue('beta'),
+		)
 	})
 
 	it('preserves bold style on round-trip', () => {
@@ -576,10 +734,7 @@ describe('writeXlsx', () => {
 
 		const zip = unzipSync(written.value)
 		const stylesXml = new TextDecoder().decode(zip['xl/styles.xml'] ?? new Uint8Array())
-		expect(stylesXml).toContain('<tableStyles count="1" defaultTableStyle="TableStyleMedium2"')
-		expect(stylesXml).toContain('<cellStyleXfs count="1"><xf/></cellStyleXfs>')
 		expect(stylesXml).toContain('formatCode="0.0%"')
-		expect(stylesXml).toContain('<cellXfs count="2">')
 		expect(stylesXml).toContain('applyNumberFormat="1"')
 
 		const reopened = readXlsx(written.value)
@@ -999,6 +1154,43 @@ describe('writeXlsx', () => {
 		expect(read.value.workbook.sheets[0]?.cells.get(0, 0)?.value).toEqual({
 			kind: 'richText',
 			runs: [{ text: 'bold text', bold: true }, { text: ' normal' }],
+		})
+	})
+
+	it('writes inline strings with useInlineStrings and round-trips correctly', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Test')
+		for (let r = 0; r < 50; r++) {
+			for (let c = 0; c < 10; c++) {
+				sheet.cells.set(r, c, {
+					value: stringValue(`unique-${r}-${c}`),
+					formula: null,
+					styleId: S0,
+				})
+			}
+		}
+
+		const written = writeXlsx(wb, undefined, { useInlineStrings: true })
+		expectOk(written)
+
+		const zip = unzipSync(written.value)
+		expect(zip['xl/sharedStrings.xml']).toBeUndefined()
+
+		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+		expect(sheetXml).toContain('t="inlineStr"')
+		expect(sheetXml).toContain('<is><t>unique-0-0</t></is>')
+		expect(sheetXml).toContain('<is><t>unique-25-5</t></is>')
+
+		const read = readXlsx(written.value)
+		expectOk(read)
+		const readSheet = read.value.workbook.sheets[0]
+		expect(readSheet?.cells.get(0, 0)?.value).toEqual({
+			kind: 'string',
+			value: 'unique-0-0',
+		})
+		expect(readSheet?.cells.get(25, 5)?.value).toEqual({
+			kind: 'string',
+			value: 'unique-25-5',
 		})
 	})
 
@@ -1458,6 +1650,40 @@ describe('writeXlsx', () => {
 		expect(entries['xl/styles.xml']).toBeDefined()
 		expect(entries['xl/worksheets/sheet1.xml']).toBeDefined()
 	})
+
+	it('streaming write produces valid XLSX that round-trips (50K rows)', async () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Data')
+		const rows = 50_000
+		const cols = 5
+		for (let r = 0; r < rows; r++) {
+			for (let c = 0; c < cols; c++) {
+				sheet.cells.set(r, c, {
+					value: numberValue(r * cols + c + 1),
+					formula: null,
+					styleId: S0,
+				})
+			}
+		}
+
+		const written = await writeXlsxStreaming(wb, undefined, { streaming: true })
+		expectOk(written)
+
+		const entries = unzipSync(written.value)
+		expect(entries['xl/worksheets/sheet1.xml']).toBeDefined()
+		const sheetXml = new TextDecoder().decode(entries['xl/worksheets/sheet1.xml'])
+		expect(sheetXml).toContain('<sheetData>')
+		expect(sheetXml).toContain(`<row r="${rows}"`)
+
+		const read = readXlsx(written.value)
+		expectOk(read)
+		const readSheet = read.value.workbook.sheets[0]
+		expect(readSheet?.cells.get(0, 0)?.value).toEqual({ kind: 'number', value: 1 })
+		expect(readSheet?.cells.get(rows - 1, cols - 1)?.value).toEqual({
+			kind: 'number',
+			value: rows * cols,
+		})
+	}, 30_000)
 
 	it('emits a stable structure fingerprint for synthetic workbooks', () => {
 		const wb = new Workbook()

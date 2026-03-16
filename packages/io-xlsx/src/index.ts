@@ -6,5 +6,10 @@ export { readXlsxRowsStream } from './reader/stream.ts'
 export type { ZipArchive } from './reader/zip.ts'
 export { extractZip } from './reader/zip.ts'
 export type { WriteXlsxOptions } from './writer/index.ts'
-export { planWriteXlsx, summarizePlannedWrite, writeXlsx } from './writer/index.ts'
+export {
+	planWriteXlsx,
+	summarizePlannedWrite,
+	writeXlsx,
+	writeXlsxStreaming,
+} from './writer/index.ts'
 export type { WritePlanResult, WritePlanSummary } from './writer/plan.ts'

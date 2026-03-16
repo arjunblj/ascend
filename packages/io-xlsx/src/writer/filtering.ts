@@ -6,9 +6,12 @@ import type {
 	SortState,
 } from '@ascend/core'
 import { escapeXml } from '../xml.ts'
-import type { ChunkedStringBuilder } from './chunked-string-builder.ts'
 
-export function pushAutoFilterXml(out: ChunkedStringBuilder, autoFilter: AutoFilter): void {
+interface XmlSink {
+	push(s: string): void
+}
+
+export function pushAutoFilterXml(out: XmlSink, autoFilter: AutoFilter): void {
 	out.push(`<autoFilter ref="${escapeXml(autoFilter.ref)}">`)
 	for (const column of autoFilter.columns) {
 		pushFilterColumnXml(out, column)
@@ -17,7 +20,7 @@ export function pushAutoFilterXml(out: ChunkedStringBuilder, autoFilter: AutoFil
 	out.push('</autoFilter>')
 }
 
-function pushFilterColumnXml(out: ChunkedStringBuilder, column: FilterColumn): void {
+function pushFilterColumnXml(out: XmlSink, column: FilterColumn): void {
 	const attrs = [`colId="${column.colId}"`]
 	if (column.hiddenButton !== undefined)
 		attrs.push(`hiddenButton="${column.hiddenButton ? '1' : '0'}"`)
@@ -96,7 +99,7 @@ function pushFilterColumnXml(out: ChunkedStringBuilder, column: FilterColumn): v
 	}
 }
 
-function pushDateGroupItemXml(out: ChunkedStringBuilder, item: FilterDateGroupItem): void {
+function pushDateGroupItemXml(out: XmlSink, item: FilterDateGroupItem): void {
 	const attrs: string[] = []
 	if (item.year !== undefined) attrs.push(`year="${item.year}"`)
 	if (item.month !== undefined) attrs.push(`month="${item.month}"`)
@@ -108,7 +111,7 @@ function pushDateGroupItemXml(out: ChunkedStringBuilder, item: FilterDateGroupIt
 	out.push(`<dateGroupItem ${attrs.join(' ')}/>`)
 }
 
-export function pushSortStateXml(out: ChunkedStringBuilder, sortState: SortState): void {
+export function pushSortStateXml(out: XmlSink, sortState: SortState): void {
 	const attrs = [`ref="${escapeXml(sortState.ref)}"`]
 	if (sortState.caseSensitive !== undefined) {
 		attrs.push(`caseSensitive="${sortState.caseSensitive ? '1' : '0'}"`)
@@ -124,7 +127,7 @@ export function pushSortStateXml(out: ChunkedStringBuilder, sortState: SortState
 	out.push('</sortState>')
 }
 
-function pushSortConditionXml(out: ChunkedStringBuilder, condition: SortCondition): void {
+function pushSortConditionXml(out: XmlSink, condition: SortCondition): void {
 	const attrs = [`ref="${escapeXml(condition.ref)}"`]
 	if (condition.descending !== undefined)
 		attrs.push(`descending="${condition.descending ? '1' : '0'}"`)

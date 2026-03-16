@@ -21,3 +21,6 @@ research/
 
 # External XLSX fixtures (downloaded via fixtures/xlsx/download-fixtures.sh)
 fixtures/xlsx/external/
+
+# Stress test XLSX fixtures (generated via bun run fixtures/xlsx/generate-stress.ts)
+fixtures/xlsx/stress/*.xlsx

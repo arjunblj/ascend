@@ -10,7 +10,13 @@ import type {
 	SheetDataValidation,
 	StyleId,
 } from '@ascend/core'
-import { DEFAULT_STYLE_ID, indexToColumn, parseRange, Sheet } from '@ascend/core'
+import {
+	DEFAULT_STYLE_ID,
+	indexToColumn,
+	parseRange,
+	Sheet,
+	SPARSE_TO_DENSE_THRESHOLD,
+} from '@ascend/core'
 import type { FormulaNode } from '@ascend/formulas'
 import { parseFormula } from '@ascend/formulas'
 import type { CellValue, ExcelError } from '@ascend/schema'
@@ -20,6 +26,7 @@ import {
 	EMPTY,
 	errorValue,
 	numberValue,
+	richTextValue,
 	stringValue,
 } from '@ascend/schema'
 import { normalizeStoredFormulaText } from '../formula-storage.ts'
@@ -66,6 +73,7 @@ export interface SheetParseContext {
 	readonly formulaOnly?: boolean
 	readonly formulaFeatures?: SheetFormulaFeatures
 	readonly metadata?: ParsedMetadataPart
+	readonly maxRows?: number
 }
 
 export interface SheetFormulaFeatures {
@@ -120,7 +128,7 @@ export class ValueInternPool {
 				const text = this.internString(value.value)
 				const cached = this.stringValues.get(text)
 				if (cached) return cached
-				const interned: CellValue = { kind: 'string', value: text }
+				const interned = stringValue(text)
 				this.stringValues.set(text, interned)
 				return interned
 			}
@@ -150,8 +158,34 @@ function buildSmallNumberCache(): Map<number, CellValue> {
 	return cache
 }
 
+const CHUNK_SIZE = 64
+
+function parseDimensionRef(xml: string): string | null {
+	const m = /<dimension\s+ref="([^"]+)"/.exec(xml)
+	return m?.[1] ?? null
+}
+
+function applyDensityHintFromDimension(sheet: Sheet, xml: string): void {
+	const ref = parseDimensionRef(xml)
+	if (!ref) return
+	try {
+		const range = parseRange(ref)
+		const rows = range.end.row - range.start.row + 1
+		const cols = range.end.col - range.start.col + 1
+		if (rows <= 0 || cols <= 0) return
+		const numChunks = Math.ceil(rows / CHUNK_SIZE) * Math.ceil(cols / CHUNK_SIZE)
+		const cellsPerChunk = (rows * cols) / numChunks
+		if (cellsPerChunk >= SPARSE_TO_DENSE_THRESHOLD) {
+			sheet.cells.setExpectedDensity('dense')
+		}
+	} catch {
+		// ignore invalid dimension ref
+	}
+}
+
 export function parseSheet(name: string, xml: string, ctx: SheetParseContext): Sheet {
 	const sheet = new Sheet(name)
+	applyDensityHintFromDimension(sheet, xml)
 	const sheetDataLoc = locateSheetData(xml)
 	if (sheetDataLoc) parseSheetDataFromLoc(xml, sheetDataLoc, sheet, ctx)
 	const strippedXml = sheetDataLoc
@@ -190,7 +224,6 @@ function parseSheetDataFromLoc(
 	ctx: SheetParseContext,
 ): void {
 	const sharedFormulaMasters: SharedFormulaMasterMap = new Map()
-	const useFastPath = ctx.valuesOnly || ctx.formulaOnly
 	let rowCursor = sheetData.contentStart
 	let currentRow = -1
 	const fallbackPos = { row: 0, col: 0 }
@@ -205,6 +238,7 @@ function parseSheetDataFromLoc(
 		const explicitRowIndex = rawNumAttr(rowAttrsRaw, 'r')
 		const row = explicitRowIndex !== undefined ? explicitRowIndex - 1 : currentRow + 1
 		currentRow = row
+		if (ctx.maxRows !== undefined && row >= ctx.maxRows) return
 		const rowHeight = rawNumAttr(rowAttrsRaw, 'ht')
 		if (rowHeight !== undefined && rawAttr(rowAttrsRaw, 'customHeight') === '1') {
 			sheet.rowHeights.set(row, rowHeight)
@@ -242,9 +276,15 @@ function parseSheetDataFromLoc(
 					: ''
 			fallbackPos.row = row
 			fallbackPos.col = nextCol
-			const ok = useFastPath
-				? parseFastCell(rawAttrs, innerXml, ctx, sharedFormulaMasters, fallbackPos, sheet, cellOut)
-				: parseSlowCell(rawAttrs, innerXml, ctx, sharedFormulaMasters, fallbackPos, sheet, cellOut)
+			const ok = parseFastCell(
+				rawAttrs,
+				innerXml,
+				ctx,
+				sharedFormulaMasters,
+				fallbackPos,
+				sheet,
+				cellOut,
+			)
 			cellCursor =
 				selfClosing || cellClose === -1 || cellClose > rowClose ? cellTagEnd + 1 : cellClose + 4
 			if (!ok) continue
@@ -262,7 +302,6 @@ export function* streamSheetRowsXml(
 	const sheetData = locateSheetData(xml)
 	if (!sheetData) return
 	const sharedFormulaMasters: SharedFormulaMasterMap = new Map()
-	const useFastPath = ctx.valuesOnly || ctx.formulaOnly
 	let rowCursor = sheetData.contentStart
 	let currentRow = -1
 	const fallbackPos = { row: 0, col: 0 }
@@ -314,25 +353,15 @@ export function* streamSheetRowsXml(
 					: ''
 			fallbackPos.row = row
 			fallbackPos.col = nextCol
-			const ok = useFastPath
-				? parseFastCell(
-						rawAttrs,
-						innerXml,
-						ctx,
-						sharedFormulaMasters,
-						fallbackPos,
-						rowSheet,
-						cellOut,
-					)
-				: parseSlowCell(
-						rawAttrs,
-						innerXml,
-						ctx,
-						sharedFormulaMasters,
-						fallbackPos,
-						rowSheet,
-						cellOut,
-					)
+			const ok = parseFastCell(
+				rawAttrs,
+				innerXml,
+				ctx,
+				sharedFormulaMasters,
+				fallbackPos,
+				rowSheet,
+				cellOut,
+			)
 			cellCursor =
 				selfClosing || cellClose === -1 || cellClose > rowClose ? cellTagEnd + 1 : cellClose + 4
 			if (!ok) continue
@@ -380,20 +409,19 @@ function parseFastCell(
 
 	const pool = ctx.valuePool
 	const styleIdx = rawNumAttr(rawAttrs, 's') ?? 0
-	const rawValue = extractTagText(innerXml, 'v')
+	const rawValue = extractVTagText(innerXml)
 	const styleId = ctx.valuesOnly ? DEFAULT_STYLE_ID : (ctx.styleIds[styleIdx] ?? DEFAULT_STYLE_ID)
 	const metadataIndex = rawNumAttr(rawAttrs, 'cm')
-	const formulaSpec =
-		ctx.valuesOnly && rawValue !== undefined && rawValue !== ''
-			? NO_FORMULA
-			: parseFormulaText(
-					extractRawFormulaNode(innerXml),
-					pos.row,
-					pos.col,
-					sharedFormulaMasters,
-					pool,
-					ctx.formulaFeatures,
-				)
+	const formulaSpec = ctx.valuesOnly
+		? NO_FORMULA
+		: parseFormulaText(
+				extractRawFormulaNode(innerXml),
+				pos.row,
+				pos.col,
+				sharedFormulaMasters,
+				pool,
+				ctx.formulaFeatures,
+			)
 	const binding = attachDynamicArrayBinding(
 		formulaSpec.info,
 		formulaSpec.text,
@@ -430,6 +458,8 @@ function parseFastCell(
 			value = pool ? pool.internValue(numberValue(num)) : numberValue(num)
 		}
 	} else if (formulaSpec.text) {
+		value = EMPTY
+	} else if (ctx.valuesOnly && innerXml.includes('<f')) {
 		value = EMPTY
 	} else {
 		return false
@@ -569,9 +599,13 @@ function rawAttr(rawAttrs: string, name: string): string | undefined {
 }
 
 function rawNumAttr(rawAttrs: string, name: string): number | undefined {
-	const value = rawAttr(rawAttrs, name)
-	if (value === undefined) return undefined
-	const parsed = Number(value)
+	const needle = ATTR_NEEDLES[name] ?? `${name}="`
+	const start = rawAttrs.indexOf(needle)
+	if (start === -1) return undefined
+	const valueStart = start + needle.length
+	const valueEnd = rawAttrs.indexOf('"', valueStart)
+	if (valueEnd === -1) return undefined
+	const parsed = Number(rawAttrs.slice(valueStart, valueEnd))
 	return Number.isNaN(parsed) ? undefined : parsed
 }
 
@@ -615,14 +649,15 @@ function extractTextNode(
 	return undefined
 }
 
-function extractTagText(xml: string, tagName: string): string | undefined {
-	const open = xml.indexOf(`<${tagName}`)
+function extractVTagText(xml: string): string | undefined {
+	const open = xml.indexOf('<v')
 	if (open === -1) return undefined
 	const contentStart = xml.indexOf('>', open)
 	if (contentStart === -1) return undefined
-	const close = xml.indexOf(`</${tagName}>`, contentStart + 1)
+	const close = xml.indexOf('</v>', contentStart + 1)
 	if (close === -1) return undefined
-	return decodeXmlText(xml.slice(contentStart + 1, close))
+	const slice = xml.slice(contentStart + 1, close)
+	return slice.includes('&') ? decodeXmlText(slice) : slice
 }
 
 interface RawFormulaNode {
@@ -698,10 +733,9 @@ function resolveCellToSheet(
 	const rawValue = c.v
 	const styleId = ctx.valuesOnly ? DEFAULT_STYLE_ID : (ctx.styleIds[styleIdx] ?? DEFAULT_STYLE_ID)
 	const metadataIndex = numAttr(c, 'cm')
-	const formulaSpec =
-		ctx.valuesOnly && rawValue !== undefined && rawValue !== null && rawValue !== ''
-			? NO_FORMULA
-			: parseFormulaText(c.f, row, col, sharedFormulaMasters, pool, ctx.formulaFeatures)
+	const formulaSpec = ctx.valuesOnly
+		? NO_FORMULA
+		: parseFormulaText(c.f, row, col, sharedFormulaMasters, pool, ctx.formulaFeatures)
 	const formula = formulaSpec.text
 	const binding = attachDynamicArrayBinding(
 		formulaSpec.info,
@@ -739,11 +773,13 @@ function resolveCellToSheet(
 		}
 	} else if (formula) {
 		value = EMPTY
+	} else if (ctx.valuesOnly && c.f !== undefined && c.f !== null) {
+		value = EMPTY
 	} else {
 		return false
 	}
 
-	sheet.cells.setResolved(row, col, value, formula, styleId, binding)
+	sheet.cells.setResolved(row, col, value, ctx.valuesOnly ? null : formula, styleId, binding)
 	return true
 }
 
@@ -942,7 +978,7 @@ function parseInlineString(c: XmlNode, pool?: ValueInternPool): CellValue {
 		return pool ? pool.internValue(stringValue(first.text)) : stringValue(first.text)
 	}
 
-	return { kind: 'richText', runs }
+	return richTextValue(runs)
 }
 
 function parseInlineRunFontProps(

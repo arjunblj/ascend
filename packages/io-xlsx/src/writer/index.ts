@@ -30,11 +30,11 @@ import {
 import type { RelEntry } from './relationships.ts'
 import { buildRelsXml } from './relationships.ts'
 import { IncrementalSharedStringTable, scanWorkbookWriteFactsFast } from './shared-strings.ts'
-import { buildSheetXml } from './sheet.ts'
+import { buildSheetXml, buildSheetXmlStreaming } from './sheet.ts'
 import { buildPreservedStylesXml, buildStylesXml } from './styles.ts'
 import { buildTableXml } from './table.ts'
 import { buildWorkbookXml } from './workbook.ts'
-import { createZip } from './zip.ts'
+import { createZip, encode, StreamingZipBuilder } from './zip.ts'
 
 const REL_OFFICE_DOC =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument'
@@ -58,7 +58,10 @@ export interface WriteXlsxOptions {
 	readonly stylesDirty?: boolean
 	readonly summaryOnly?: boolean
 	readonly sourceArchive?: ZipArchive
+	/** Use shared string table (default: true). When false, strings are written inline per cell. */
 	readonly useSharedStrings?: boolean
+	/** Use inline strings instead of shared string table. When true, overrides useSharedStrings. */
+	readonly useInlineStrings?: boolean
 	readonly streaming?: boolean
 }
 
@@ -81,6 +84,41 @@ export function writeXlsx(
 	}
 }
 
+export async function writeXlsxStreaming(
+	workbook: Workbook,
+	capsules?: PreservationCapsule[],
+	options: WriteXlsxOptions = {},
+): Promise<Result<Uint8Array, AscendError>> {
+	try {
+		const plan = planWriteXlsx(workbook, capsules, { ...options, streaming: true })
+		if (!plan.ok) return plan
+		const zip = await createZipStreaming(plan.value)
+		return ok(zip)
+	} catch (e) {
+		return err(
+			ascendError(
+				'EXPORT_ERROR',
+				`Failed to write XLSX: ${e instanceof Error ? e.message : 'unknown'}`,
+			),
+		)
+	}
+}
+
+async function createZipStreaming(plan: import('./plan.ts').WritePlanResult): Promise<Uint8Array> {
+	const builder = new StreamingZipBuilder()
+	for (const descriptor of plan.descriptors) {
+		if (descriptor.streamingBuild) {
+			builder.addStreamingEntry(descriptor.path)
+			descriptor.streamingBuild((chunk) => builder.writeChunk(encode(chunk)))
+			await builder.closeEntry()
+		} else {
+			const part = plan.parts.get(descriptor.path)
+			if (part) builder.addEntry(descriptor.path, part)
+		}
+	}
+	return builder.finalize()
+}
+
 export function planWriteXlsx(
 	workbook: Workbook,
 	capsules?: PreservationCapsule[],
@@ -99,6 +137,17 @@ export function planWriteXlsx(
 			}
 			plan.putXml(path, buildXml(), descriptor)
 		}
+		const recordStreamingSheet = (
+			path: string,
+			descriptor: Omit<import('./plan.ts').WritePartDescriptor, 'path'>,
+			build: (onChunk: (chunk: string) => void) => void,
+		): void => {
+			if (options.summaryOnly) {
+				plan.recordOnly(path, descriptor)
+				return
+			}
+			plan.putStreamingSheet(path, descriptor, build)
+		}
 		const recordBytes = (
 			path: string,
 			descriptor: Omit<import('./plan.ts').WritePartDescriptor, 'path'>,
@@ -113,48 +162,70 @@ export function planWriteXlsx(
 		const sourceArchive =
 			options.sourceArchive ??
 			(workbook.sourceArchiveBytes ? extractZip(workbook.sourceArchiveBytes) : undefined)
+		const dirtyPatchMode = (options.dirtySheetNames?.length ?? 0) > 0 && sourceArchive !== undefined
+		const effectiveStylesDirty = options.stylesDirty ?? dirtyPatchMode
+		const effectiveSharedStringsDirty = options.sharedStringsDirty ?? dirtyPatchMode
+		const effectiveWorkbookMetaDirty = options.workbookMetaDirty ?? dirtyPatchMode
 		const sheetCapsuleMap = new Map<string, PreservationCapsule[]>()
 		const workbookCapsules: PreservationCapsule[] = []
 		let nextGeneratedTableNumber = 1
 		let nextGeneratedCommentsNumber = 1
 		let nextGeneratedVmlNumber = 1
 
-		const preserveSharedStrings = Boolean(
-			workbook.preservedSharedStrings && !options.sharedStringsDirty,
-		)
-		const preservedSharedStringsXml = preserveSharedStrings
+		const preservedSharedStringsXml = workbook.preservedSharedStrings
 			? resolvePreservedText(
 					sourceArchive,
-					workbook.preservedSharedStrings?.xml,
-					workbook.preservedSharedStrings?.path,
+					workbook.preservedSharedStrings.xml,
+					workbook.preservedSharedStrings.path,
 				)
 			: undefined
+		const hasPreservedSheetXmlInDirtyPatchMode =
+			dirtyPatchMode &&
+			workbook.sheets.some(
+				(sheet) =>
+					!(options.dirtySheetNames ?? []).includes(sheet.name) &&
+					hasPreservedPart(sourceArchive, sheet.preservedXml?.xml, sheet.preservedXml?.partPath),
+			)
+		const useInlineStringsRequested =
+			options.useInlineStrings ?? !(options.useSharedStrings ?? true)
+		const useInlineStrings = useInlineStringsRequested && !hasPreservedSheetXmlInDirtyPatchMode
+		const useSharedStrings = !useInlineStrings
+		const preserveSharedStrings = Boolean(
+			workbook.preservedSharedStrings &&
+				!effectiveSharedStringsDirty &&
+				preservedSharedStringsXml !== undefined,
+		)
 		const preservedSharedStringEntries =
-			preserveSharedStrings && !options.summaryOnly && preservedSharedStringsXml
+			!options.summaryOnly && preservedSharedStringsXml
 				? materializeSharedStringEntries(preservedSharedStringsXml)
 				: []
 		const workbookWriteFacts = scanWorkbookWriteFactsFast(workbook)
-		const useSharedStrings = options.useSharedStrings ?? true
-		const ssTable = options.summaryOnly
-			? {
-					getIndex(): number | undefined {
-						return undefined
-					},
-					toXml(): string {
-						return ''
-					},
-					count: preserveSharedStrings || workbookWriteFacts.hasStringCells ? 1 : 0,
-					facts: workbookWriteFacts,
-				}
-			: new IncrementalSharedStringTable(preservedSharedStringEntries, workbookWriteFacts)
+		const ssTable =
+			options.summaryOnly || useInlineStrings
+				? {
+						getIndex(): number | undefined {
+							return undefined
+						},
+						toXml(): string {
+							return ''
+						},
+						count: preserveSharedStrings || workbookWriteFacts.hasStringCells ? 1 : 0,
+						facts: workbookWriteFacts,
+					}
+				: new IncrementalSharedStringTable(
+						preserveSharedStrings || hasPreservedSheetXmlInDirtyPatchMode
+							? preservedSharedStringEntries
+							: [],
+						workbookWriteFacts,
+					)
 		const hasSharedStrings =
 			useSharedStrings && (preserveSharedStrings || workbookWriteFacts.hasStringCells)
 
 		const preservedStyles = workbook.preservedStyles ?? undefined
-		const preserveStyles = preservedStyles !== undefined && !options.stylesDirty
+		const preserveStyles = preservedStyles !== undefined && !effectiveStylesDirty
 		const canReusePreservedStyles =
 			preservedStyles !== undefined &&
-			!options.stylesDirty &&
+			!effectiveStylesDirty &&
 			hasCompletePreservedStyleMap(preservedStyles.xfByStyleId, workbook.styles.size)
 		const preservedStylesXml =
 			preserveStyles && preservedStyles && !options.summaryOnly
@@ -193,7 +264,7 @@ export function planWriteXlsx(
 					: resolvedStylesResult.xfMap
 		const stylesXml = options.summaryOnly
 			? ''
-			: preservedStyles !== undefined
+			: preserveStyles && (stylesResult?.xml ?? preservedStylesXml)
 				? (stylesResult?.xml ?? preservedStylesXml ?? '')
 				: (generatedStylesResult?.xml ?? '')
 		if (preservedStyles && !options.summaryOnly) {
@@ -311,7 +382,7 @@ export function planWriteXlsx(
 
 		const preservedWorkbookXml = workbook.preservedXml
 		const hasPreservedWorkbookXml =
-			!options.workbookMetaDirty &&
+			!effectiveWorkbookMetaDirty &&
 			!!preservedWorkbookXml &&
 			hasPreservedPart(
 				sourceArchive,
@@ -319,7 +390,7 @@ export function planWriteXlsx(
 				preservedWorkbookXml.workbookPath,
 			)
 		const hasPreservedWorkbookRels =
-			!options.workbookMetaDirty &&
+			!effectiveWorkbookMetaDirty &&
 			!!preservedWorkbookXml &&
 			hasPreservedPart(
 				sourceArchive,
@@ -343,11 +414,11 @@ export function planWriteXlsx(
 					)
 				: undefined
 		const preservedWorkbookXmlBytes =
-			!options.workbookMetaDirty && preservedWorkbookXml
+			!effectiveWorkbookMetaDirty && preservedWorkbookXml
 				? resolvePreservedBytes(sourceArchive, preservedWorkbookXml.workbookPath)
 				: undefined
 		const preservedWorkbookRelsBytes =
-			!options.workbookMetaDirty && preservedWorkbookXml
+			!effectiveWorkbookMetaDirty && preservedWorkbookXml
 				? resolvePreservedBytes(sourceArchive, preservedWorkbookXml.workbookRelsPath)
 				: undefined
 		const preserveWorkbookXml = options.summaryOnly
@@ -633,6 +704,28 @@ export function planWriteXlsx(
 					},
 					() => preservedSheetXmlBytes,
 				)
+			} else if (options.streaming && !preserveSheetXml) {
+				const cfOverrides = cfDxfIdOverridesBySheet.get(sheet.name)
+				const sheetOptions = {
+					tableRelIds,
+					...(sheet.drawingRefs.hasDrawing && drawingRelId ? { drawingRelId } : {}),
+					hyperlinks: hyperlinkEntries,
+					...((sheet.drawingRefs.hasLegacyDrawing || sheet.comments.size > 0) && legacyDrawingRelId
+						? { legacyDrawingRelId }
+						: {}),
+					useInlineStrings,
+					...(cfOverrides ? { cfDxfIdOverrides: cfOverrides } : {}),
+				}
+				recordStreamingSheet(
+					`xl/worksheets/sheet${i + 1}.xml`,
+					{
+						owner: { kind: 'sheet', sheetName: sheet.name },
+						origin: 'generated',
+						contentType:
+							'application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml',
+					},
+					(onChunk) => buildSheetXmlStreaming(sheet, ssTable, xfMap, sheetOptions, onChunk),
+				)
 			} else {
 				recordXml(
 					`xl/worksheets/sheet${i + 1}.xml`,
@@ -654,7 +747,7 @@ export function planWriteXlsx(
 									legacyDrawingRelId
 										? { legacyDrawingRelId }
 										: {}),
-									useInlineStrings: !useSharedStrings,
+									useInlineStrings,
 									...(cfOverrides ? { cfDxfIdOverrides: cfOverrides } : {}),
 								})
 					},
@@ -696,10 +789,13 @@ export function planWriteXlsx(
 		}
 
 		if (hasSharedStrings) {
-			const preservedSharedStringBytes = preserveSharedStrings
+			const canReuseSharedStringsXml =
+				preserveSharedStrings &&
+				(useInlineStrings || ssTable.count <= preservedSharedStringEntries.length)
+			const preservedSharedStringBytes = canReuseSharedStringsXml
 				? resolvePreservedBytes(sourceArchive, workbook.preservedSharedStrings?.path)
 				: undefined
-			if (preserveSharedStrings && preservedSharedStringBytes && !options.summaryOnly) {
+			if (canReuseSharedStringsXml && preservedSharedStringBytes && !options.summaryOnly) {
 				recordBytes(
 					'xl/sharedStrings.xml',
 					{
@@ -716,13 +812,13 @@ export function planWriteXlsx(
 					{
 						owner: { kind: 'workbook' },
 						origin:
-							preservedSharedStringsXml !== undefined
+							canReuseSharedStringsXml && preservedSharedStringsXml !== undefined
 								? resolvePreservedOrigin(workbook.preservedSharedStrings?.xml)
 								: 'generated',
 						contentType:
 							'application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml',
 					},
-					() => preservedSharedStringsXml ?? ssTable.toXml(),
+					() => (canReuseSharedStringsXml ? (preservedSharedStringsXml ?? '') : ssTable.toXml()),
 				)
 			}
 		}

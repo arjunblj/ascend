@@ -12,6 +12,8 @@ export interface WritePartDescriptor {
 	readonly owner: WritePartOwner
 	readonly origin: WritePartOrigin
 	readonly contentType?: string
+	/** When set, part is built via streaming; not in parts map. */
+	readonly streamingBuild?: (onChunk: (chunk: string) => void) => void
 }
 
 export interface WritePlanResult {
@@ -52,6 +54,18 @@ export class WritePlanBuilder {
 
 	recordOnly(path: string, descriptor: Omit<WritePartDescriptor, 'path'>): void {
 		this.record(path, descriptor)
+	}
+
+	putStreamingSheet(
+		path: string,
+		descriptor: Omit<WritePartDescriptor, 'path'>,
+		build: (onChunk: (chunk: string) => void) => void,
+	): void {
+		if (this.includeParts) {
+			this.descriptors.push({ path, ...descriptor, streamingBuild: build })
+		} else {
+			this.record(path, descriptor)
+		}
 	}
 
 	addOverride(partPath: string, contentType: string): void {

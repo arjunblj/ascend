@@ -55,8 +55,11 @@ export function formatDisplayCellValue(value: CellValue, options?: FormatDisplay
 		}
 		case 'richText':
 			return value.runs.map((run) => run.text).join('')
+		case 'array':
+			return value.rows
+				.map((row) => row.map((v) => formatDisplayCellValue(v, options)).join(','))
+				.join(';')
 	}
-	return ''
 }
 
 export function escapeDelimitedCell(value: string, delimiter: string): string {

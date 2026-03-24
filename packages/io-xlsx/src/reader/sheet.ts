@@ -374,8 +374,8 @@ export function* streamSheetRowsXml(
 			if (!ok) continue
 			nextCol = cellOut.col + 1
 		}
-		const entries = [...rowSheet.cells.iterateRows()]
-		yield { row, cells: entries[0]?.[1] ?? [] }
+		const first = rowSheet.cells.iterateRows().next()
+		yield { row, cells: first.done ? [] : first.value[1] }
 		rowCursor = rowClose + 6
 	}
 }
@@ -496,29 +496,6 @@ function locateSheetData(xml: string): SheetDataLocation | null {
 	const close = xml.indexOf('</sheetData>', tagEnd + 1)
 	if (close === -1) return null
 	return { contentStart: tagEnd + 1, contentEnd: close, tagStart: open, closeEnd: close + 12 }
-}
-
-function _parseSheetData(ws: XmlNode, sheet: Sheet, ctx: SheetParseContext): void {
-	const sd = ws.sheetData as XmlNode | undefined
-	if (!sd) return
-	const sharedFormulaMasters: SharedFormulaMasterMap = new Map()
-
-	for (const row of asArray<XmlNode>(sd.row as XmlNode | XmlNode[])) {
-		const rowIndex = numAttr(row, 'r')
-		const rowHeight = numAttr(row, 'ht')
-		if (rowIndex !== undefined && rowHeight !== undefined && attr(row, 'customHeight') === '1') {
-			sheet.rowHeights.set(rowIndex - 1, rowHeight)
-		}
-		for (const c of asArray<XmlNode>(row.c as XmlNode | XmlNode[])) {
-			const ref = attr(c, 'r')
-			if (!ref) continue
-
-			const pos = parseCellRef(ref)
-			if (!pos) continue
-
-			resolveCellToSheet(c, ctx, pos.row, pos.col, sharedFormulaMasters, sheet)
-		}
-	}
 }
 
 function buildCellNode(rawAttrs: string, innerXml: string): XmlNode {

@@ -15,6 +15,7 @@ export type { CellRef, RangeRef } from './refs.ts'
 export {
 	columnToIndex,
 	expandRange,
+	forEachCellInRange,
 	indexToColumn,
 	parseA1,
 	parseA1Safe,

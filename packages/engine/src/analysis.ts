@@ -128,9 +128,59 @@ interface MutableWorkbookAnalysis {
  * Incremental updates: patchWorkbookAnalysis(workbook, changedCells) and
  * shiftWorkbookAnalysisForAxis(...) update cached data for setFormula, copyRange, insertRows, etc.
  */
-const workbookFormulaAnalysisCache = new WeakMap<Workbook, WorkbookFormulaAnalysis>()
-const workbookDependencyAnalysisCache = new WeakMap<Workbook, WorkbookDependencyAnalysis>()
-const workbookAnalysisCache = new WeakMap<Workbook, WorkbookAnalysis>()
+interface AnalysisCacheEntry {
+	formulas?: WorkbookFormulaAnalysis
+	dependencies?: WorkbookDependencyAnalysis
+	full?: WorkbookAnalysis
+}
+
+const analysisCache = new WeakMap<Workbook, AnalysisCacheEntry>()
+
+function getCacheEntry(workbook: Workbook): AnalysisCacheEntry {
+	let entry = analysisCache.get(workbook)
+	if (!entry) {
+		entry = {}
+		analysisCache.set(workbook, entry)
+	}
+	return entry
+}
+
+const workbookFormulaAnalysisCache = {
+	get(wb: Workbook) {
+		return getCacheEntry(wb).formulas
+	},
+	set(wb: Workbook, v: WorkbookFormulaAnalysis) {
+		getCacheEntry(wb).formulas = v
+	},
+	delete(wb: Workbook) {
+		const e = analysisCache.get(wb)
+		if (e) delete e.formulas
+	},
+}
+const workbookDependencyAnalysisCache = {
+	get(wb: Workbook) {
+		return getCacheEntry(wb).dependencies
+	},
+	set(wb: Workbook, v: WorkbookDependencyAnalysis) {
+		getCacheEntry(wb).dependencies = v
+	},
+	delete(wb: Workbook) {
+		const e = analysisCache.get(wb)
+		if (e) delete e.dependencies
+	},
+}
+const workbookAnalysisCache = {
+	get(wb: Workbook) {
+		return getCacheEntry(wb).full
+	},
+	set(wb: Workbook, v: WorkbookAnalysis) {
+		getCacheEntry(wb).full = v
+	},
+	delete(wb: Workbook) {
+		const e = analysisCache.get(wb)
+		if (e) delete e.full
+	},
+}
 
 export function createSheetNameIndex(workbook: Workbook): Map<string, number> {
 	const index = new Map<string, number>()

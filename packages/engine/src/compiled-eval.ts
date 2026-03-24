@@ -715,6 +715,9 @@ export function compileFormula(node: FormulaNode): CompiledFormula | null {
 	return { ops, constants, numericOnly: canEvaluateNumericValue(node) }
 }
 
+// Module-level scratch buffers — reused across evaluations to avoid allocation.
+// NOT safe for concurrent use. The engine is single-threaded by design; if
+// multi-threaded evaluation is ever introduced, these must become thread-local.
 let numericStackSize = 64
 let numericStack = new Float64Array(numericStackSize)
 let rangeScratchSize = 256

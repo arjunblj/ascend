@@ -105,8 +105,23 @@ function isLambdaBinding(binding: LetBinding): binding is LambdaInfo {
 	return typeof binding === 'object' && binding !== null && 'params' in binding && 'body' in binding
 }
 
-type RangeValueCache = Map<string, readonly (readonly CellValue[])[]>
+type RangeValueCache = Map<number, readonly (readonly CellValue[])[]>
 let activeRangeValueCache: RangeValueCache | null = null
+
+const RANGE_KEY_SHIFT_SI = 40
+const RANGE_KEY_SHIFT_R1 = 30
+const RANGE_KEY_SHIFT_C1 = 20
+const RANGE_KEY_SHIFT_R2 = 10
+
+function rangeCacheKey(si: number, r1: number, c1: number, r2: number, c2: number): number {
+	return (
+		si * 2 ** RANGE_KEY_SHIFT_SI +
+		r1 * 2 ** RANGE_KEY_SHIFT_R1 +
+		c1 * 2 ** RANGE_KEY_SHIFT_C1 +
+		r2 * 2 ** RANGE_KEY_SHIFT_R2 +
+		c2
+	)
+}
 
 export function setRangeValueCache(cache: RangeValueCache): void {
 	activeRangeValueCache = cache
@@ -132,9 +147,9 @@ function getRangeValues(
 ): readonly (readonly CellValue[])[] {
 	const sheet = wb.sheets[sheetIndex]
 	if (!sheet) return [[errorValue('#REF!')]]
-	const cacheKey = `${sheetIndex}:${startRow}:${startCol}:${endRow}:${endCol}`
+	const key = rangeCacheKey(sheetIndex, startRow, startCol, endRow, endCol)
 	if (activeRangeValueCache) {
-		const cached = activeRangeValueCache.get(cacheKey)
+		const cached = activeRangeValueCache.get(key)
 		if (cached) return cached
 	}
 	const rows: CellValue[][] = []
@@ -145,7 +160,7 @@ function getRangeValues(
 		}
 		rows.push(row)
 	}
-	activeRangeValueCache?.set(cacheKey, rows)
+	activeRangeValueCache?.set(key, rows)
 	return rows
 }
 

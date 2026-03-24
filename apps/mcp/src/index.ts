@@ -1,10 +1,4 @@
-import {
-	AscendException,
-	ascendError,
-	type CellValue,
-	machineFailure,
-	type Operation,
-} from '@ascend/schema'
+import { AscendException, ascendError, type CellValue, type Operation } from '@ascend/schema'
 import {
 	Ascend,
 	type CompactRangeWindowInfo,
@@ -55,6 +49,31 @@ export function createServer(): McpServer {
 				}
 				const data = wb.inspect()
 				return okResponse(data, `Inspected workbook "${file}"`)
+			} catch (e) {
+				return errorResponse(
+					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
+				)
+			}
+		},
+	)
+
+	server.tool(
+		'ascend.list_sheets',
+		'List all sheet names and tables in a workbook (lightweight alternative to inspect)',
+		{
+			file: z.string().describe('Path to workbook file'),
+		},
+		async ({ file }) => {
+			try {
+				const wb = await WorkbookDocument.open(file, { mode: 'metadata-only' })
+				const info = wb.inspect()
+				const sheets = info.sheets.map((s) => ({
+					name: s.name,
+					rows: s.rowCount,
+					cols: s.colCount,
+					tableCount: s.tableCount,
+				}))
+				return okResponse({ sheets }, `${sheets.length} sheet(s) in "${file}"`)
 			} catch (e) {
 				return errorResponse(
 					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
@@ -412,18 +431,11 @@ export function createServer(): McpServer {
 				const result = wb.check()
 				if (!result.valid) {
 					const summary = `${result.issues.length} issue(s) found`
-					return {
-						...errorResponse(
-							ascendError('VALIDATION_ERROR', summary, {
-								details: { issues: result.issues },
-							}),
-						),
-						structuredContent: machineFailure(
-							ascendError('VALIDATION_ERROR', summary, {
-								details: { check: result },
-							}),
-						) as unknown as Record<string, unknown>,
-					}
+					return errorResponse(
+						ascendError('VALIDATION_ERROR', summary, {
+							details: { check: result },
+						}),
+					)
 				}
 				return okResponse(result, `Checked workbook "${file}"`)
 			} catch (e) {

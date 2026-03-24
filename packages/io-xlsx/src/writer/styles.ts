@@ -324,13 +324,33 @@ function resolvePreservedNumFmtId(
 	return id
 }
 
+function shallowEqual(a: object, b: object): boolean {
+	const aEntries = Object.entries(a)
+	const bKeys = Object.keys(b)
+	if (aEntries.length !== bKeys.length) return false
+	for (const [k, v] of aEntries) {
+		if ((b as Record<string, unknown>)[k] !== v) return false
+	}
+	return true
+}
+
+function optionalFieldEqual(a: object | undefined, b: object | undefined): boolean {
+	if (a === b) return true
+	if (!a || !b) return false
+	return shallowEqual(a, b)
+}
+
 function stylesDifferOnlyByNumberFormat(
 	style: import('@ascend/core').CellStyle,
 	baseStyle: import('@ascend/core').CellStyle,
 ): boolean {
-	const { numberFormat: _fmtA, ...restA } = style
-	const { numberFormat: _fmtB, ...restB } = baseStyle
-	return JSON.stringify(restA) === JSON.stringify(restB)
+	return (
+		optionalFieldEqual(style.font, baseStyle.font) &&
+		optionalFieldEqual(style.fill, baseStyle.fill) &&
+		optionalFieldEqual(style.border, baseStyle.border) &&
+		optionalFieldEqual(style.alignment, baseStyle.alignment) &&
+		optionalFieldEqual(style.protection, baseStyle.protection)
+	)
 }
 
 function patchXfNumFmt(xfXmlSource: string, numFmtId: number): string {

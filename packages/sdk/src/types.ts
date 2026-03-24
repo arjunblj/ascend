@@ -492,7 +492,7 @@ export interface CheckResult {
 }
 
 export interface CheckIssue {
-	readonly severity: 'error' | 'warning'
+	readonly severity: 'error' | 'warning' | 'info'
 	readonly message: string
 	readonly ref?: string
 }

@@ -1,4 +1,4 @@
-import { ascendError } from '@ascend/schema'
+import { ascendError, levenshtein } from '@ascend/schema'
 import { cliError, jsonErr, jsonOut } from '../output/json.ts'
 import { bullet, heading } from '../output/pretty.ts'
 import {
@@ -224,24 +224,4 @@ function formatReferenceSummary(reference: {
 		return `${reference.kind}(${members})`
 	}
 	return reference.text
-}
-
-function levenshtein(a: string, b: string): number {
-	if (a === b) return 0
-	if (a.length === 0) return b.length
-	if (b.length === 0) return a.length
-	const prev = Array.from({ length: b.length + 1 }, (_, i) => i)
-	const curr = new Array<number>(b.length + 1).fill(0)
-	for (let i = 0; i < a.length; i++) {
-		curr[0] = i + 1
-		for (let j = 0; j < b.length; j++) {
-			const left = curr[j] ?? 0
-			const up = prev[j + 1] ?? 0
-			const diag = prev[j] ?? 0
-			const cost = (a[i] ?? '') === (b[j] ?? '') ? 0 : 1
-			curr[j + 1] = Math.min(left + 1, up + 1, diag + cost)
-		}
-		for (let j = 0; j < prev.length; j++) prev[j] = curr[j] ?? 0
-	}
-	return prev[b.length] ?? Math.max(a.length, b.length)
 }

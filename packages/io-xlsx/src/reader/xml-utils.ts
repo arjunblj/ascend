@@ -1,4 +1,4 @@
-const XML_ENTITY_RE = /&(?:lt|gt|quot|apos|amp);/g
+const XML_ENTITY_RE = /&(?:lt|gt|quot|apos|amp|#x[0-9a-fA-F]+|#\d+);/g
 const XML_ENTITY_MAP: Record<string, string> = {
 	'&lt;': '<',
 	'&gt;': '>',
@@ -7,9 +7,17 @@ const XML_ENTITY_MAP: Record<string, string> = {
 	'&amp;': '&',
 }
 
+function resolveXmlEntity(m: string): string {
+	const mapped = XML_ENTITY_MAP[m]
+	if (mapped) return mapped
+	if (m.startsWith('&#x')) return String.fromCodePoint(Number.parseInt(m.slice(3, -1), 16))
+	if (m.startsWith('&#')) return String.fromCodePoint(Number.parseInt(m.slice(2, -1), 10))
+	return m
+}
+
 export function decodeXmlText(text: string): string {
 	if (!text.includes('&')) return text
-	return text.replace(XML_ENTITY_RE, (m) => XML_ENTITY_MAP[m] ?? m)
+	return text.replace(XML_ENTITY_RE, resolveXmlEntity)
 }
 
 export function findTagEnd(xml: string, start: number): number {

@@ -58,15 +58,41 @@ function statusForError(ae: AscendError): number {
 	return 500
 }
 
+function isFileNotFoundError(e: unknown): boolean {
+	if (
+		typeof e === 'object' &&
+		e !== null &&
+		'code' in e &&
+		(e as { code: string }).code === 'ENOENT'
+	)
+		return true
+	if (typeof e === 'object' && e !== null && 'errno' in e && (e as { errno: number }).errno === -2)
+		return true
+	return false
+}
+
 function handleError(e: unknown, fileContext?: string): Response {
 	if (e instanceof AscendException) {
 		const status = statusForError(e.ascendError)
 		return jsonFailureError(e.ascendError, status)
 	}
-	const msg = e instanceof Error ? e.message : String(e)
-	if (msg.includes('ENOENT') || msg.includes('not found'))
+	if (isFileNotFoundError(e))
 		return jsonFailure(fileContext ? `File not found: ${fileContext}` : 'File not found', 404)
+	const msg = e instanceof Error ? e.message : String(e)
 	return jsonFailure(msg, 500)
+}
+
+const CORS_HEADERS: Record<string, string> = {
+	'Access-Control-Allow-Origin': '*',
+	'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+	'Access-Control-Allow-Headers': 'Content-Type',
+}
+
+function withCors(res: Response): Response {
+	for (const [k, v] of Object.entries(CORS_HEADERS)) {
+		res.headers.set(k, v)
+	}
+	return res
 }
 
 export function createServer(opts?: { port?: number }) {
@@ -77,9 +103,13 @@ export function createServer(opts?: { port?: number }) {
 			const method = req.method
 			const path = url.pathname
 
+			if (method === 'OPTIONS') {
+				return withCors(new Response(null, { status: 204 }))
+			}
+
 			try {
 				if (method === 'GET' && path === '/health') {
-					return jsonSuccess({ status: 'ok' })
+					return withCors(jsonSuccess({ status: 'ok' }))
 				}
 
 				if (method === 'POST' && path === '/inspect') {
@@ -380,10 +410,10 @@ export function createServer(opts?: { port?: number }) {
 					}
 				}
 
-				return jsonFailure('Not Found', 404)
+				return withCors(jsonFailure('Not Found', 404))
 			} catch (e) {
 				const msg = e instanceof Error ? e.message : String(e)
-				return jsonFailure(msg, 500)
+				return withCors(jsonFailure(msg, 500))
 			}
 		},
 	})

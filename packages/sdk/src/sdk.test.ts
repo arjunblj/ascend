@@ -2122,7 +2122,7 @@ describe('AscendWorkbook', () => {
 		})
 	})
 
-	test('TableHandle getColumnNames returns correct column headers', () => {
+	test('TableHandle columns getter returns correct column headers', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
 			{
@@ -2141,11 +2141,10 @@ describe('AscendWorkbook', () => {
 		])
 		const table = wb.table('SalesTable')
 		if (!table) throw new Error('Expected SalesTable to exist')
-		expect(table.getColumnNames()).toEqual(['Product', 'Revenue', 'Quantity'])
-		expect(table.getColumnNames()).toEqual(table.columns)
+		expect(table.columns).toEqual(['Product', 'Revenue', 'Quantity'])
 	})
 
-	test('TableHandle exposes table metadata (style, totals) via getStyleInfo and getTotalsRow', () => {
+	test('TableHandle exposes table metadata (style, totals) via getters', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
 			{
@@ -2184,13 +2183,13 @@ describe('AscendWorkbook', () => {
 
 		const table = wb.table('DataTable')
 		if (!table) throw new Error('Expected DataTable to exist')
-		expect(table.getStyleInfo()).toEqual({ name: 'TableStyleMedium2', showRowStripes: true })
-		expect(table.getTotalsRow()).toEqual([
+		expect(table.styleInfo).toEqual({ name: 'TableStyleMedium2', showRowStripes: true })
+		expect(table.totalsRow()).toEqual([
 			{ kind: 'string', value: 'Total' },
 			{ kind: 'number', value: 10 },
 		])
 		expect(table.hasFilters()).toBe(true)
-		expect(table.getSortState()).toBeNull()
+		expect(table.sortState).toBeNull()
 	})
 
 	test('table handles stay current across workbook replacement', () => {

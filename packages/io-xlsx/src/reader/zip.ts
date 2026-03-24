@@ -71,6 +71,7 @@ export class ZipArchive {
 		const text = this.decoder.decode(bytes)
 		if (bytes.byteLength <= MAX_CACHED_PART_BYTES) {
 			this.textCache.set(path, text)
+			this.bytesCache.delete(path)
 		}
 		return text
 	}

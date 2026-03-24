@@ -69,7 +69,7 @@ interface RecalcScratch {
 	readonly exactLookupCache: ExactLookupCache
 	readonly lookupVectorCache: LookupVectorCache
 	readonly aggregateRangeCache: AggregateRangeCache
-	readonly rangeValueCache: Map<string, readonly (readonly CellValue[])[]>
+	readonly rangeValueCache: Map<number, readonly (readonly CellValue[])[]>
 	readonly evalContext: MutableEvalContext
 }
 

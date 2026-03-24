@@ -305,7 +305,7 @@ export class WorkbookDocument {
 		})
 		this.refreshCacheFootprint('verify')
 		const issues = result.issues.map((issue) => ({
-			severity: issue.severity === 'info' ? 'warning' : issue.severity,
+			severity: issue.severity,
 			message: issue.message,
 			...(issue.refs?.[0] ? { ref: issue.refs[0] } : {}),
 		}))

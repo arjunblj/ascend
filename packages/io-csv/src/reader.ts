@@ -63,21 +63,22 @@ function parseFields(input: string, d: CsvDialect, onRow: RowCallback): void {
 		}
 
 		if (input[i] === quote) {
-			let field = ''
-			i++ // skip opening quote
+			i++
+			const start = i
+			let hasEscape = false
 			while (i < len) {
 				if (input[i] === escapeChar && i + 1 < len && input[i + 1] === quote) {
-					field += quote
+					hasEscape = true
 					i += 2
 				} else if (input[i] === quote) {
-					i++ // skip closing quote
 					break
 				} else {
-					field += input[i]
 					i++
 				}
 			}
-			row.push(field)
+			const raw = input.slice(start, i)
+			row.push(hasEscape ? raw.replaceAll(escapeChar + quote, quote) : raw)
+			if (i < len) i++
 			if (i < len && input[i] === delimiter) {
 				i++
 			} else if (i < len && (input[i] === '\r' || input[i] === '\n')) {
@@ -89,12 +90,11 @@ function parseFields(input: string, d: CsvDialect, onRow: RowCallback): void {
 				emitRow()
 			}
 		} else {
-			let field = ''
+			const start = i
 			while (i < len && input[i] !== delimiter && input[i] !== '\r' && input[i] !== '\n') {
-				field += input[i]
 				i++
 			}
-			row.push(field)
+			row.push(input.slice(start, i))
 			if (i < len && input[i] === delimiter) {
 				i++
 			} else {

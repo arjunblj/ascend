@@ -8,7 +8,7 @@ import {
 	type WorkbookDependencyAnalysis,
 	type WorkbookFormulaAnalysis,
 } from '@ascend/engine'
-import { isError } from '@ascend/schema'
+import { isError, levenshtein } from '@ascend/schema'
 
 export interface CheckResult {
 	readonly passed: boolean
@@ -21,25 +21,6 @@ export interface CheckIssue {
 	readonly message: string
 	readonly refs?: readonly string[]
 	readonly suggestedFix?: string
-}
-
-function levenshtein(a: string, b: string): number {
-	const m = a.length
-	const n = b.length
-	let prev = new Array<number>(n + 1)
-	let curr = new Array<number>(n + 1)
-	for (let j = 0; j <= n; j++) prev[j] = j
-	for (let i = 1; i <= m; i++) {
-		curr[0] = i
-		for (let j = 1; j <= n; j++) {
-			curr[j] =
-				a[i - 1] === b[j - 1]
-					? (prev[j - 1] ?? 0)
-					: 1 + Math.min(prev[j] ?? i, curr[j - 1] ?? j, prev[j - 1] ?? Math.max(i, j))
-		}
-		;[prev, curr] = [curr, prev]
-	}
-	return prev[n] ?? 0
 }
 
 function findClosestSheetName(target: string, sheetNames: readonly string[]): string | null {

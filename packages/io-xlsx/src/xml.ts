@@ -64,6 +64,7 @@ function escapeXmlChar(ch: string): string {
 
 export function escapeXml(s: string): string {
 	if (s.length === 0) return s
+	if (!XML_ESCAPE_RE.test(s)) return s
 	XML_ESCAPE_RE.lastIndex = 0
 	return s.replace(XML_ESCAPE_RE, escapeXmlChar)
 }

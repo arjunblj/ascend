@@ -419,6 +419,7 @@ export function readXlsx(
 
 		return ok({ workbook, report, capsules, loadInfo })
 	} catch (e) {
+		if (e instanceof TypeError || e instanceof ReferenceError) throw e
 		return err(
 			ascendError(
 				'CORRUPT_FILE',

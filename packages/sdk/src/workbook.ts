@@ -37,7 +37,6 @@ import {
 	coerceCellValueToString,
 	EMPTY,
 	emptyReport,
-	errorValue,
 	type InputValue,
 	type Operation,
 } from '@ascend/schema'
@@ -65,6 +64,23 @@ import type {
 
 function cloneWorkbook(source: Workbook): Workbook {
 	return source.clone()
+}
+
+function stringMatches(
+	haystack: string,
+	needle: string,
+	mode: 'exact' | 'contains' | 'startsWith' | 'endsWith',
+): boolean {
+	switch (mode) {
+		case 'exact':
+			return haystack === needle
+		case 'contains':
+			return haystack.includes(needle)
+		case 'startsWith':
+			return haystack.startsWith(needle)
+		case 'endsWith':
+			return haystack.endsWith(needle)
+	}
 }
 
 /**
@@ -466,13 +482,19 @@ export class AscendWorkbook extends WorkbookReadView {
 
 	/**
 	 * Evaluate a formula against the current workbook state without writing to a cell.
+	 * Throws on parse errors. Returns the computed CellValue (which may be an error
+	 * value like #REF! if the formula references invalid cells).
 	 * @example
 	 * const result = wb.eval('SUM(A1:A10)')
 	 */
 	eval(formula: string): CellValue {
 		const normalized = normalizeFormulaInput(formula)
 		const parsed = cachedParseFormula(normalized)
-		if (!parsed.ok) return errorValue('#VALUE!')
+		if (!parsed.ok) {
+			throw new AscendException(
+				ascendError('INVALID_ARGUMENT', `Failed to parse formula: ${formula}`),
+			)
+		}
 		const ctx: EvalContext = {
 			workbook: this.wb,
 			calcContext: defaultCalcContext({
@@ -503,12 +525,12 @@ export class AscendWorkbook extends WorkbookReadView {
 		const issues: CheckIssue[] = result.issues.map((issue) =>
 			issue.refs?.[0]
 				? {
-						severity: issue.severity === 'info' ? 'warning' : issue.severity,
+						severity: issue.severity,
 						message: issue.message,
 						ref: issue.refs[0],
 					}
 				: {
-						severity: issue.severity === 'info' ? 'warning' : issue.severity,
+						severity: issue.severity,
 						message: issue.message,
 					},
 		)
@@ -526,53 +548,56 @@ export class AscendWorkbook extends WorkbookReadView {
 	}
 
 	/**
-	 * Find cells matching a value in a sheet.
+	 * Find cells matching a value or formula in a sheet.
 	 * @example
 	 * const matches = wb.find('Sheet1', { value: 'hello', match: 'contains' })
+	 * const formulas = wb.find('Sheet1', { value: 'SUM', match: 'contains', in: 'formula' })
 	 */
 	find(
 		sheet: string,
 		options: {
 			value: string | number | boolean
 			match?: 'exact' | 'contains' | 'startsWith' | 'endsWith'
+			in?: 'value' | 'formula' | 'both'
 		},
-	): Array<{ ref: string; value: CellValue }> {
+	): Array<{ ref: string; value: CellValue; formula?: string }> {
 		const s = this.wb.getSheet(sheet)
 		if (!s) return []
-		const results: Array<{ ref: string; value: CellValue }> = []
-		const { value: searchValue, match = 'exact' } = options
+		const results: Array<{ ref: string; value: CellValue; formula?: string }> = []
+		const { value: searchValue, match = 'exact', in: searchIn = 'value' } = options
 
 		for (const [row, col, cell] of s.cells.iterate()) {
 			const cellValue = cell.value ?? EMPTY
 			const ref = indexToColumn(col) + (row + 1)
+			const formula = s.cells.readFormula(row, col)
 
 			if (typeof searchValue === 'number' || typeof searchValue === 'boolean') {
-				const scalar = cellValue.kind === 'array' ? (cellValue.rows[0]?.[0] ?? EMPTY) : cellValue
-				if (scalar.kind === 'number' && searchValue === scalar.value) {
-					results.push({ ref, value: cellValue })
-				} else if (scalar.kind === 'boolean' && searchValue === scalar.value) {
-					results.push({ ref, value: cellValue })
+				if (searchIn === 'value' || searchIn === 'both') {
+					const scalar = cellValue.kind === 'array' ? (cellValue.rows[0]?.[0] ?? EMPTY) : cellValue
+					if (scalar.kind === 'number' && searchValue === scalar.value) {
+						results.push({ ref, value: cellValue, ...(formula ? { formula } : {}) })
+						continue
+					}
+					if (scalar.kind === 'boolean' && searchValue === scalar.value) {
+						results.push({ ref, value: cellValue, ...(formula ? { formula } : {}) })
+					}
 				}
 			} else {
-				const cellStr = coerceCellValueToString(cellValue)
 				const searchLower = searchValue.toLowerCase()
-				const cellLower = cellStr.toLowerCase()
-				let matches = false
-				switch (match) {
-					case 'exact':
-						matches = cellLower === searchLower
-						break
-					case 'contains':
-						matches = cellLower.includes(searchLower)
-						break
-					case 'startsWith':
-						matches = cellLower.startsWith(searchLower)
-						break
-					case 'endsWith':
-						matches = cellLower.endsWith(searchLower)
-						break
+				let matched = false
+
+				if (searchIn === 'value' || searchIn === 'both') {
+					const cellStr = coerceCellValueToString(cellValue)
+					matched = stringMatches(cellStr.toLowerCase(), searchLower, match)
 				}
-				if (matches) results.push({ ref, value: cellValue })
+
+				if (!matched && (searchIn === 'formula' || searchIn === 'both') && formula) {
+					matched = stringMatches(formula.toLowerCase(), searchLower, match)
+				}
+
+				if (matched) {
+					results.push({ ref, value: cellValue, ...(formula ? { formula } : {}) })
+				}
 			}
 		}
 		return results

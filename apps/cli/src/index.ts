@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { AscendException } from '@ascend/schema'
+import { AscendException, levenshtein } from '@ascend/schema'
 import { agentViewCommand, usage as agentViewUsage } from './commands/agent-view.ts'
 import { calcCommand, usage as calcUsage } from './commands/calc.ts'
 import { checkCommand, usage as checkUsage } from './commands/check.ts'
@@ -12,6 +12,7 @@ import { findCommand, usage as findUsage } from './commands/find.ts'
 import { formulaCommand, usage as formulaUsage } from './commands/formula.ts'
 import { inspectCommand, usage as inspectUsage } from './commands/inspect.ts'
 import { lintCommand, usage as lintUsage } from './commands/lint.ts'
+import { listCommand, usage as listUsage } from './commands/list.ts'
 import { previewCommand, usage as previewUsage } from './commands/preview.ts'
 import { readCommand, usage as readUsage } from './commands/read.ts'
 import { traceCommand, usage as traceUsage } from './commands/trace.ts'
@@ -29,6 +30,7 @@ Usage: ascend <command> [args] [flags]
 Commands:
   create <file>                 Create a new empty .xlsx workbook
   inspect <file> [sheet]        Show workbook/sheet structure
+  list <file>                   List sheets and tables
   read <file> <range>           Read cell values from a range
   find <file> <query>           Search for cells matching a value
   agent-view <file>             Get AI-friendly sheet summary
@@ -73,6 +75,7 @@ const COMMANDS: Record<string, Command> = {
 		usage: inspectUsage,
 		allowedFlags: ['sheet', 'detail', 'mode', 'json', 'verbose'],
 	},
+	list: { run: listCommand, usage: listUsage, allowedFlags: ['json'] },
 	read: {
 		run: readCommand,
 		usage: readUsage,
@@ -209,24 +212,4 @@ function suggestClosest(input: string, candidates: readonly string[]): string | 
 	return best.distance <= Math.max(2, Math.floor(best.candidate.length / 3))
 		? best.candidate
 		: undefined
-}
-
-function levenshtein(a: string, b: string): number {
-	if (a === b) return 0
-	if (a.length === 0) return b.length
-	if (b.length === 0) return a.length
-	const prev = Array.from({ length: b.length + 1 }, (_, i) => i)
-	const curr = new Array<number>(b.length + 1).fill(0)
-	for (let i = 0; i < a.length; i++) {
-		curr[0] = i + 1
-		for (let j = 0; j < b.length; j++) {
-			const left = curr[j] ?? 0
-			const up = prev[j + 1] ?? 0
-			const diag = prev[j] ?? 0
-			const cost = (a[i] ?? '') === (b[j] ?? '') ? 0 : 1
-			curr[j + 1] = Math.min(left + 1, up + 1, diag + cost)
-		}
-		for (let j = 0; j < prev.length; j++) prev[j] = curr[j] ?? 0
-	}
-	return prev[b.length] ?? Math.max(a.length, b.length)
 }

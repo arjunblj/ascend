@@ -1,12 +1,4 @@
-import type {
-	AutoFilter,
-	RangeRef,
-	Sheet,
-	SortState,
-	Table,
-	TableColumn,
-	TableStyleInfo,
-} from '@ascend/core'
+import type { AutoFilter, RangeRef, Sheet, Table, TableColumn, TableStyleInfo } from '@ascend/core'
 import { AscendException, ascendError, type CellValue } from '@ascend/schema'
 import type { TableWindowInfo } from './types.ts'
 
@@ -63,22 +55,6 @@ export class TableHandle {
 
 	get columnDefs(): readonly TableColumn[] {
 		return this.requireTable().table.columns
-	}
-
-	getTotalsRow(): readonly CellValue[] | null {
-		return this.totalsRow()
-	}
-
-	getSortState(): SortState | null {
-		return this.requireTable().table.sortState ?? null
-	}
-
-	getStyleInfo(): TableStyleInfo | undefined {
-		return this.requireTable().table.tableStyleInfo
-	}
-
-	getColumnNames(): readonly string[] {
-		return this.requireTable().table.columns.map((c) => c.name)
 	}
 
 	hasFilters(): boolean {

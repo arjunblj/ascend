@@ -887,8 +887,10 @@ export class SparseGrid {
 	}
 
 	forEachRow(fn: (row: number, cells: ReadonlyMap<number, CellValue>) => void): void {
+		if (this._cellCount === 0) return
+		const rowCells = new Map<number, CellValue>()
 		for (const [row, entries] of this.iterateRows()) {
-			const rowCells = new Map<number, CellValue>()
+			rowCells.clear()
 			for (const [col, cell] of entries) rowCells.set(col, cell.value)
 			fn(row, rowCells)
 		}

@@ -2,6 +2,7 @@ import { DEFAULT_STYLE_ID, type StyleId } from './ids.ts'
 import type { BorderEdge, CellStyle, Color, GradientFill } from './style.ts'
 
 export const DEFAULT_STYLE: CellStyle = Object.freeze({}) as CellStyle
+const styleHashCache = new WeakMap<CellStyle, number>()
 const DEFAULT_STYLE_HASH = styleHash(DEFAULT_STYLE)
 
 function fnv1aStr(h: number, s: string): number {
@@ -246,7 +247,7 @@ function cloneBorderEdge(e: BorderEdge): BorderEdge {
 	return e.color ? { ...e, color: cloneColor(e.color) } : { ...e }
 }
 
-function cloneStyle(style: CellStyle): CellStyle {
+export function cloneStyle(style: CellStyle): CellStyle {
 	const result: Record<string, unknown> = {}
 	if (style.font) {
 		result.font = style.font.color
@@ -295,7 +296,11 @@ export class StyleRegistry {
 	}
 
 	register(style: CellStyle): StyleId {
-		const hash = styleHash(style)
+		let hash = styleHashCache.get(style)
+		if (hash === undefined) {
+			hash = styleHash(style)
+			styleHashCache.set(style, hash)
+		}
 		const bucket = this.hashBuckets.get(hash)
 		if (bucket) {
 			for (const id of bucket) {

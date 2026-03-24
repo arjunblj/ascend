@@ -102,3 +102,11 @@ export function expandRange(range: RangeRef): CellRef[] {
 	}
 	return cells
 }
+
+export function forEachCellInRange(range: RangeRef, fn: (row: number, col: number) => void): void {
+	for (let row = range.start.row; row <= range.end.row; row++) {
+		for (let col = range.start.col; col <= range.end.col; col++) {
+			fn(row, col)
+		}
+	}
+}

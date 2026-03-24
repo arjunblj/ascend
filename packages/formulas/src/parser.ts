@@ -16,29 +16,30 @@ const EOF_TOKEN: Token = { type: TokenType.EOF, value: '', position: -1 }
 
 function parseCellRefValue(raw: string): FormulaCellRef {
 	let i = 0
-	const colAbsolute = raw.charAt(i) === '$'
+	const colAbsolute = raw[i] === '$'
 	if (colAbsolute) i++
 
-	let colStr = ''
-	while (i < raw.length && /[A-Za-z]/.test(raw.charAt(i))) {
-		colStr += raw.charAt(i)
-		i++
+	const colStart = i
+	while (i < raw.length) {
+		const ch = raw.charCodeAt(i)
+		if ((ch >= 65 && ch <= 90) || (ch >= 97 && ch <= 122)) i++
+		else break
 	}
 
-	const rowAbsolute = raw.charAt(i) === '$'
+	const rowAbsolute = raw[i] === '$'
 	if (rowAbsolute) i++
 
-	const rowStr = raw.slice(i)
 	return {
-		row: Number.parseInt(rowStr, 10) - 1,
-		col: columnToIndex(colStr.toUpperCase()),
+		row: Number.parseInt(raw.slice(i), 10) - 1,
+		col: columnToIndex(raw.slice(colStart, i - (rowAbsolute ? 1 : 0))),
 		rowAbsolute,
 		colAbsolute,
 	}
 }
 
+const COL_LABEL_RE = /^[A-Za-z]{1,3}$/
 function isColumnLabel(raw: string): boolean {
-	return /^[A-Za-z]{1,3}$/.test(raw)
+	return COL_LABEL_RE.test(raw)
 }
 
 class FormulaParser {

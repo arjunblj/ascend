@@ -42,4 +42,16 @@ describe('operation schema agent DX', () => {
 		})
 		expect(schema?.recoveryActions.join('\n')).toContain('imageIndex')
 	})
+
+	test('setPivotCache is exposed with refresh guidance for analytics edits', () => {
+		const schema = getOperationsSchema().find((entry) => entry.op === 'setPivotCache')
+		expect(schema?.schema.required).toEqual(['op'])
+		expect(schema?.schema.properties.pivotTable?.description).toContain('Pivot table')
+		expect(schema?.examples[0]).toMatchObject({
+			op: 'setPivotCache',
+			pivotTable: 'PivotTable1',
+			refreshOnLoad: true,
+		})
+		expect(schema?.recoveryActions.join('\n')).toContain('invalid=true')
+	})
 })

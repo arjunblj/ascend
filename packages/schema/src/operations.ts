@@ -376,6 +376,18 @@ export type Operation =
 			readonly name?: string
 			readonly imageIndex?: number
 	  }
+	| {
+			readonly op: 'setPivotCache'
+			readonly cacheId?: number
+			readonly partPath?: string
+			readonly pivotTable?: string
+			readonly sourceSheet?: string
+			readonly sourceRef?: string
+			readonly refreshOnLoad?: boolean
+			readonly enableRefresh?: boolean
+			readonly invalid?: boolean
+			readonly saveData?: boolean
+	  }
 
 export interface WorkbookProtectionInput {
 	readonly lockStructure?: boolean

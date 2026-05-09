@@ -15,6 +15,7 @@ import {
 	resolveAffectedCellKeys,
 	resolvePatchResultCellKeys,
 } from './helpers.ts'
+import * as pivotOps from './pivot-ops.ts'
 import * as sheetOps from './sheet-ops.ts'
 import * as structuralOps from './structural-ops.ts'
 import * as tableOps from './table-ops.ts'
@@ -88,6 +89,7 @@ const handlers: Record<string, OperationHandler> = {
 	renameTable: tableOps.handleRenameTable as OperationHandler,
 	resizeTable: tableOps.handleResizeTable as OperationHandler,
 	replaceImage: visualOps.handleReplaceImage as OperationHandler,
+	setPivotCache: pivotOps.handleSetPivotCache as OperationHandler,
 }
 
 export function applyOperation(

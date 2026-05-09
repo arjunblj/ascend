@@ -1125,6 +1125,43 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('setPivotCache updates source and refresh metadata by pivot table', () => {
+		const wb = setup()
+		wb.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'Sheet1',
+			name: 'PivotTable1',
+			cacheId: 34,
+		})
+		wb.pivotCaches.push({
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			cacheId: 34,
+			sourceSheet: 'Raw',
+			sourceRef: 'A1:D10',
+		})
+
+		const result = applyOperation(wb, {
+			op: 'setPivotCache',
+			pivotTable: 'PivotTable1',
+			sourceSheet: 'RawData',
+			sourceRef: 'A1:E20',
+			refreshOnLoad: true,
+			invalid: true,
+			saveData: false,
+		})
+		expectOk(result)
+
+		expect(result.value.sheetsModified).toEqual(['Sheet1'])
+		expect(result.value.recalcRequired).toBe(false)
+		expect(wb.pivotCaches[0]).toMatchObject({
+			sourceSheet: 'RawData',
+			sourceRef: 'A1:E20',
+			refreshOnLoad: true,
+			invalid: true,
+			saveData: false,
+		})
+	})
+
 	test('appendRows expands table filter and sort metadata refs', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

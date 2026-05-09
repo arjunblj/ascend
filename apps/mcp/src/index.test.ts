@@ -454,6 +454,14 @@ describe('MCP server', () => {
 				contentBase64: 'iVBORw0KGgo=',
 				contentType: 'image/png',
 			},
+			{
+				op: 'setPivotCache',
+				pivotTable: 'PivotTable1',
+				sourceSheet: 'RawData',
+				sourceRef: 'A1:E200',
+				refreshOnLoad: true,
+				invalid: true,
+			},
 		])
 
 		expect(result.ok).toBe(true)

@@ -318,6 +318,18 @@ const operationSchema = z.discriminatedUnion('op', [
 		name: z.string().optional(),
 		imageIndex: z.number().int().nonnegative().optional(),
 	}),
+	z.object({
+		op: z.literal('setPivotCache'),
+		cacheId: z.number().int().nonnegative().optional(),
+		partPath: z.string().optional(),
+		pivotTable: z.string().optional(),
+		sourceSheet: z.string().optional(),
+		sourceRef: z.string().optional(),
+		refreshOnLoad: z.boolean().optional(),
+		enableRefresh: z.boolean().optional(),
+		invalid: z.boolean().optional(),
+		saveData: z.boolean().optional(),
+	}),
 ])
 
 export const operationsSchema = z.array(operationSchema)

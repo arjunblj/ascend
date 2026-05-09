@@ -24,6 +24,7 @@ import { buildContentTypesXml } from './content-types.ts'
 import { buildAppPropsXml, buildCorePropsXml } from './doc-props.ts'
 import { buildDrawingXml } from './drawing.ts'
 import { buildDynamicArrayMetadataXml } from './metadata.ts'
+import { updatePivotCacheDefinitionXml } from './pivot-cache.ts'
 import {
 	summarizeWritePlan,
 	type WritePartOwner,
@@ -974,6 +975,31 @@ export function planWriteXlsx(
 				if (!content) continue
 				const owner = resolveCapsuleOwner(capsule, sheetNameById)
 				if (!owner) continue
+				const pivotCache = workbook.pivotCaches.find((cache) => cache.partPath === capsule.partPath)
+				if (pivotCache && isPivotCacheDefinitionCapsule(capsule)) {
+					recordXml(
+						capsule.partPath,
+						{
+							owner,
+							origin: 'generated',
+							contentType: capsule.contentType,
+						},
+						() => updatePivotCacheDefinitionXml(new TextDecoder().decode(content), pivotCache),
+					)
+					plan.addOverride(capsule.partPath, capsule.contentType)
+					if (capsule.relationships.length > 0) {
+						const capsuleRelsPath = getRelsPath(capsule.partPath)
+						recordXml(
+							capsuleRelsPath,
+							{
+								owner,
+								origin: 'capsule',
+							},
+							() => buildRelsXml(capsule.relationships),
+						)
+					}
+					continue
+				}
 				recordBytes(
 					capsule.partPath,
 					{
@@ -1202,6 +1228,14 @@ function isCalcChainCapsule(capsule: PreservationCapsule): boolean {
 		capsule.relType === REL_CALC_CHAIN ||
 		capsule.contentType.includes('calcChain+xml') ||
 		capsule.partPath.endsWith('/calcChain.xml')
+	)
+}
+
+function isPivotCacheDefinitionCapsule(capsule: PreservationCapsule): boolean {
+	return (
+		capsule.relType === REL_PIVOT_CACHE_DEFINITION ||
+		capsule.contentType.includes('pivotCacheDefinition+xml') ||
+		capsule.partPath.includes('/pivotCache/pivotCacheDefinition')
 	)
 }
 

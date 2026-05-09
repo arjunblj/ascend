@@ -129,6 +129,15 @@ const FIELD_SCHEMAS: Record<
 	contentBase64: { type: 'string', description: 'Base64-encoded binary content' },
 	contentType: { type: 'string', description: 'MIME content type, such as image/png' },
 	imageIndex: { type: 'integer', description: 'Zero-based image index on the sheet' },
+	cacheId: { type: 'integer', description: 'Pivot cache id' },
+	partPath: { type: 'string', description: 'XLSX package part path' },
+	pivotTable: { type: 'string', description: 'Pivot table name that uses the cache' },
+	sourceSheet: { type: 'string', description: 'Worksheet name for a pivot cache source' },
+	sourceRef: { type: 'string', description: 'A1 range for a pivot cache source' },
+	refreshOnLoad: { type: 'boolean', description: 'Whether Excel should refresh the cache on open' },
+	enableRefresh: { type: 'boolean', description: 'Whether refresh is enabled for the cache' },
+	invalid: { type: 'boolean', description: 'Whether the cache should be treated as stale' },
+	saveData: { type: 'boolean', description: 'Whether cache records are saved in the workbook' },
 	from: { type: 'integer', description: 'Start row/col index' },
 	to: { type: 'integer', description: 'End row/col index' },
 	collapsed: { type: 'boolean', description: 'Whether group is collapsed' },
@@ -360,6 +369,22 @@ export function listOperations(): readonly OperationSchema[] {
 			requiredFields: ['sheet', 'contentBase64', 'contentType'],
 			optionalFields: ['targetPath', 'relId', 'name', 'imageIndex'],
 		},
+		{
+			op: 'setPivotCache',
+			description: 'Edit pivot cache source and refresh metadata without recalculating output',
+			requiredFields: [],
+			optionalFields: [
+				'cacheId',
+				'partPath',
+				'pivotTable',
+				'sourceSheet',
+				'sourceRef',
+				'refreshOnLoad',
+				'enableRefresh',
+				'invalid',
+				'saveData',
+			],
+		},
 	])
 }
 
@@ -510,6 +535,12 @@ function operationRecoveryActions(op: string): readonly string[] {
 				'Ensure contentBase64 bytes match contentType.',
 				...common,
 			]
+		case 'setPivotCache':
+			return [
+				'Use inspect --detail pivots to choose cacheId, partPath, or pivotTable.',
+				'Set invalid=true and refreshOnLoad=true when changing source ranges without recalculating pivot output.',
+				...common,
+			]
 		default:
 			return common
 	}
@@ -634,6 +665,15 @@ function operationExample(op: string): Record<string, unknown> {
 				targetPath: 'xl/media/image1.png',
 				contentBase64: 'iVBORw0KGgo=',
 				contentType: 'image/png',
+			}
+		case 'setPivotCache':
+			return {
+				op,
+				pivotTable: 'PivotTable1',
+				sourceSheet: 'RawData',
+				sourceRef: 'A1:E200',
+				refreshOnLoad: true,
+				invalid: true,
 			}
 		default:
 			return { op }

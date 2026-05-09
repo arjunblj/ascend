@@ -5,11 +5,19 @@ export interface OperationSchema {
 	readonly description: string
 	readonly requiredFields: readonly string[]
 	readonly optionalFields?: readonly string[]
+	readonly recoveryActions: readonly string[]
+	readonly approval?: OperationApprovalMetadata
 }
 
 export interface OperationJsonSchema {
 	readonly op: string
 	readonly description: string
+	readonly schemaDialect: 'json-schema-draft-2020-12-compatible'
+	readonly standardSchema: {
+		readonly version: 1
+		readonly vendor: 'ascend'
+		readonly name: string
+	}
 	readonly schema: {
 		readonly type: 'object'
 		readonly required: readonly string[]
@@ -19,11 +27,26 @@ export interface OperationJsonSchema {
 		>
 	}
 	readonly examples: readonly Record<string, unknown>[]
+	readonly invalidExamples: readonly OperationInvalidExample[]
+	readonly recoveryActions: readonly string[]
+	readonly approval?: OperationApprovalMetadata
 }
 
 export type ParseOperationsResult =
 	| { readonly ok: true; readonly value: readonly Operation[] }
 	| { readonly ok: false; readonly error: string; readonly issues: readonly string[] }
+
+export interface OperationApprovalMetadata {
+	readonly required: boolean
+	readonly reason: string
+	readonly approvalHint: string
+}
+
+export interface OperationInvalidExample {
+	readonly input: Record<string, unknown>
+	readonly issue: string
+	readonly recoveryAction: string
+}
 
 const FIELD_SCHEMAS: Record<
 	string,
@@ -79,7 +102,7 @@ const FIELD_SCHEMAS: Record<
 }
 
 export function listOperations(): readonly OperationSchema[] {
-	return [
+	return enrichOperationSchemas([
 		{ op: 'setCells', description: 'Set cell values', requiredFields: ['sheet', 'updates'] },
 		{
 			op: 'setFormula',
@@ -279,7 +302,7 @@ export function listOperations(): readonly OperationSchema[] {
 			description: 'Set rich text in a cell',
 			requiredFields: ['sheet', 'ref', 'runs'],
 		},
-	]
+	])
 }
 
 export function getOperationsSchema(): readonly OperationJsonSchema[] {
@@ -303,12 +326,17 @@ export function getOperationsSchema(): readonly OperationJsonSchema[] {
 		return {
 			op: op.op,
 			description: op.description,
+			schemaDialect: 'json-schema-draft-2020-12-compatible',
+			standardSchema: { version: 1, vendor: 'ascend', name: op.op },
 			schema: {
 				type: 'object',
 				required,
 				properties,
 			},
 			examples: [operationExample(op.op)],
+			invalidExamples: invalidOperationExamples(op),
+			recoveryActions: op.recoveryActions,
+			...(op.approval ? { approval: op.approval } : {}),
 		}
 	})
 }
@@ -347,6 +375,93 @@ export function parseOperations(input: unknown): ParseOperationsResult {
 	})
 	if (issues.length > 0) return { ok: false, error: issues[0] ?? 'Invalid operations', issues }
 	return { ok: true, value: ops }
+}
+
+function enrichOperationSchemas(
+	ops: readonly Omit<OperationSchema, 'recoveryActions' | 'approval'>[],
+): readonly OperationSchema[] {
+	return ops.map((op) => {
+		const approval = operationApproval(op.op)
+		return {
+			...op,
+			recoveryActions: operationRecoveryActions(op.op),
+			...(approval ? { approval } : {}),
+		}
+	})
+}
+
+function operationApproval(op: string): OperationApprovalMetadata | undefined {
+	if (
+		op === 'deleteSheet' ||
+		op === 'deleteRows' ||
+		op === 'deleteCols' ||
+		op === 'deleteTable' ||
+		op === 'deleteDefinedName'
+	) {
+		return {
+			required: true,
+			reason: 'This operation can remove workbook content or metadata.',
+			approvalHint: 'Run ascend plan first and pass the emitted approval id to ascend commit.',
+		}
+	}
+	if (op === 'clearRange') {
+		return {
+			required: true,
+			reason:
+				'Approval is required when what is "all" because values, formulas, and styles are removed.',
+			approvalHint: 'Prefer what="values" or what="formulas" when full clearing is not intended.',
+		}
+	}
+	return undefined
+}
+
+function operationRecoveryActions(op: string): readonly string[] {
+	const common = [
+		'Run ascend ops --op <operation> --json for the canonical schema and examples.',
+		'Run ascend plan <file> --ops ops.json --json before commit.',
+	]
+	switch (op) {
+		case 'setCells':
+			return ['Ensure updates is a non-empty array of { ref, value } objects.', ...common]
+		case 'setFormula':
+		case 'fillFormula':
+			return [
+				'Use formula text with or without a leading "=" and verify with ascend plan.',
+				...common,
+			]
+		case 'deleteSheet':
+		case 'deleteRows':
+		case 'deleteCols':
+		case 'deleteTable':
+		case 'deleteDefinedName':
+			return [
+				'Review plan.approvals and provide --approval only for intentional deletion.',
+				...common,
+			]
+		case 'clearRange':
+			return [
+				'Use what="values", "formulas", or "styles" unless all content should be removed.',
+				...common,
+			]
+		case 'createTable':
+		case 'resizeTable':
+			return ['Confirm the table range includes the intended header and data rows.', ...common]
+		default:
+			return common
+	}
+}
+
+function invalidOperationExamples(op: OperationSchema): readonly OperationInvalidExample[] {
+	const missingField = op.requiredFields[0]
+	return [
+		{
+			input: { op: op.op },
+			issue: missingField
+				? `Missing required field "${missingField}".`
+				: 'Operation is missing required fields.',
+			recoveryAction: `Add all required fields: ${['op', ...op.requiredFields].join(', ')}.`,
+		},
+	]
 }
 
 function operationExample(op: string): Record<string, unknown> {

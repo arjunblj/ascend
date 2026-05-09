@@ -44,7 +44,13 @@ export {
 	normalizeExportFormat,
 	toA1Ref,
 } from './format-helpers.ts'
-export type { OperationJsonSchema, OperationSchema, ParseOperationsResult } from './ops.ts'
+export type {
+	OperationApprovalMetadata,
+	OperationInvalidExample,
+	OperationJsonSchema,
+	OperationSchema,
+	ParseOperationsResult,
+} from './ops.ts'
 export * as ops from './ops.ts'
 export { getOperationsSchema, listOperations, parseOperations } from './ops.ts'
 export { WorkbookReadView } from './read-view.ts'

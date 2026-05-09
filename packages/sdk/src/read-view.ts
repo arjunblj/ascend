@@ -52,6 +52,7 @@ import type {
 	TraceResult,
 	WorkbookInfo,
 	WorkbookLoadInfo,
+	WorkbookVisualInventoryInfo,
 } from './types.ts'
 
 /**
@@ -143,6 +144,69 @@ export class WorkbookReadView {
 		}
 		this.workbookInfoCache = info
 		return info
+	}
+
+	visualInventory(): WorkbookVisualInventoryInfo {
+		let totalImages = 0
+		const sheets = this.wb.sheets.map((sheet) => {
+			const drawingRefs = this.loadInfo.cellsHydrated ? { ...sheet.drawingRefs } : null
+			const imageRefs = this.loadInfo.richSheetMetadataHydrated ? [...sheet.imageRefs] : null
+			if (imageRefs) totalImages += imageRefs.length
+			return {
+				sheet: sheet.name,
+				drawingRefs,
+				hasDrawing: drawingRefs ? drawingRefs.hasDrawing : null,
+				hasLegacyDrawing: drawingRefs ? drawingRefs.hasLegacyDrawing : null,
+				imageRefs,
+				imageCount: imageRefs ? imageRefs.length : null,
+			}
+		})
+		const packageFeatures = this.compat.features.flatMap((feature) => {
+			const category = classifyVisualFeature(feature.feature)
+			return category ? [{ ...feature, category, locations: [...feature.locations] }] : []
+		})
+		const packageChartFeatureCount = packageFeatures
+			.filter((feature) => feature.category === 'chart')
+			.reduce((sum, feature) => sum + feature.count, 0)
+		const packageDrawingFeatureCount = packageFeatures
+			.filter(
+				(feature) => feature.category === 'drawing' || feature.category === 'shape-or-control',
+			)
+			.reduce((sum, feature) => sum + feature.count, 0)
+		const packageMediaFeatureCount = packageFeatures
+			.filter((feature) => feature.category === 'image')
+			.reduce((sum, feature) => sum + feature.count, 0)
+		const notes: string[] = []
+		if (!this.loadInfo.cellsHydrated) notes.push('Drawing references require full sheet hydration.')
+		if (!this.loadInfo.richSheetMetadataHydrated)
+			notes.push('Image references require rich sheet metadata hydration.')
+		if (packageChartFeatureCount > 0)
+			notes.push('Chart parts are currently inventoried and preserved, not structurally editable.')
+		if (packageDrawingFeatureCount > 0)
+			notes.push(
+				'Drawing and shape parts are currently preserve-first except parsed image anchors.',
+			)
+		return {
+			load: this.loadInfo,
+			packageFeatures,
+			sheets,
+			sheetImageCount: this.loadInfo.richSheetMetadataHydrated ? totalImages : null,
+			packageChartFeatureCount,
+			packageDrawingFeatureCount,
+			packageMediaFeatureCount,
+			hasPreservedCharts: packageFeatures.some(
+				(feature) => feature.category === 'chart' && feature.tier === 'preserved',
+			),
+			hasPreservedDrawings: packageFeatures.some(
+				(feature) =>
+					(feature.category === 'drawing' || feature.category === 'shape-or-control') &&
+					feature.tier === 'preserved',
+			),
+			hasPreservedMedia: packageFeatures.some(
+				(feature) => feature.category === 'image' && feature.tier === 'preserved',
+			),
+			notes,
+		}
 	}
 
 	inspectSheet(name: string): SheetInspectInfo | undefined {
@@ -679,6 +743,18 @@ export class WorkbookReadView {
 		this.loadInfo = loadInfo
 		this.clearReadCaches()
 	}
+}
+
+function classifyVisualFeature(
+	feature: string,
+): 'chart' | 'drawing' | 'image' | 'shape-or-control' | null {
+	const normalized = feature.toLowerCase()
+	if (normalized.includes('chart')) return 'chart'
+	if (normalized.includes('media') || normalized.includes('image')) return 'image'
+	if (normalized.includes('activex') || normalized.includes('control')) return 'shape-or-control'
+	if (normalized.includes('drawing') || normalized.includes('vml') || normalized.includes('shape'))
+		return 'drawing'
+	return null
 }
 
 function buildSheetInfo(

@@ -117,11 +117,14 @@ export type {
 	TableWindowInfo,
 	TraceNodeInfo,
 	TraceResult,
+	VisualFeatureCategory,
+	VisualPackageFeatureInfo,
 	WholeColumnFormulaReferenceInfo,
 	WholeRowFormulaReferenceInfo,
 	WorkbookInfo,
 	WorkbookLoadInfo,
 	WorkbookViewInfo,
+	WorkbookVisualInventoryInfo,
 	WritePlanInfo,
 } from './types.ts'
 export { Ascend, AscendWorkbook, BatchBuilder } from './workbook.ts'

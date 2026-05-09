@@ -28,6 +28,7 @@ import type {
 	SlicerInfo,
 	TraceResult,
 	WorkbookInfo,
+	WorkbookVisualInventoryInfo,
 } from './types.ts'
 
 export interface WorkbookLoadOptions {
@@ -189,6 +190,10 @@ export class WorkbookDocument {
 
 	inspect(): WorkbookInfo {
 		return this.view.inspect()
+	}
+
+	visualInventory(): WorkbookVisualInventoryInfo {
+		return this.view.visualInventory()
 	}
 
 	inspectSheet(name: string): SheetInspectInfo | undefined {

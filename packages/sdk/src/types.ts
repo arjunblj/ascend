@@ -24,7 +24,7 @@ import type {
 } from '@ascend/core'
 import type { CellChange, SheetDiff, WorkbookDiff } from '@ascend/engine'
 import type { FormulaNode, Token } from '@ascend/formulas'
-import type { AscendError, CellValue, CompatibilityReport } from '@ascend/schema'
+import type { AscendError, CellValue, CompatibilityReport, FeatureReport } from '@ascend/schema'
 
 export interface WorkbookInfo {
 	readonly sheetCount: number
@@ -257,6 +257,35 @@ export interface SheetInspectInfo extends SheetInfo {
 	readonly pageSetup: SheetPageSetup | null
 	readonly printOptions: SheetPrintOptions | null
 	readonly headerFooter: SheetHeaderFooter | null
+}
+
+export type VisualFeatureCategory = 'chart' | 'drawing' | 'image' | 'shape-or-control'
+
+export interface VisualPackageFeatureInfo extends FeatureReport {
+	readonly category: VisualFeatureCategory
+}
+
+export interface SheetVisualInventoryInfo {
+	readonly sheet: string
+	readonly drawingRefs: SheetDrawingRefs | null
+	readonly hasDrawing: boolean | null
+	readonly hasLegacyDrawing: boolean | null
+	readonly imageRefs: readonly SheetImageRef[] | null
+	readonly imageCount: number | null
+}
+
+export interface WorkbookVisualInventoryInfo {
+	readonly load: WorkbookLoadInfo
+	readonly packageFeatures: readonly VisualPackageFeatureInfo[]
+	readonly sheets: readonly SheetVisualInventoryInfo[]
+	readonly sheetImageCount: number | null
+	readonly packageChartFeatureCount: number
+	readonly packageDrawingFeatureCount: number
+	readonly packageMediaFeatureCount: number
+	readonly hasPreservedCharts: boolean
+	readonly hasPreservedDrawings: boolean
+	readonly hasPreservedMedia: boolean
+	readonly notes: readonly string[]
 }
 
 export interface WorkbookLoadInfo {

@@ -13,7 +13,7 @@ Arguments:
 
 Flags:
   --sheet <name>  Sheet name (alternative to positional argument)
-  --detail <type> Show detail for: cf, dv, hyperlinks, tables, comments, drawings, images, compatibility, pivots, slicers, names, external-refs, views
+  --detail <type> Show detail for: cf, dv, hyperlinks, tables, comments, drawings, images, compatibility, visuals, pivots, slicers, names, external-refs, views
   --mode <mode>   Load mode: metadata, values, or full
   --json          Output as JSON
   --verbose       Show compatibility report and timing
@@ -35,7 +35,8 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 		detail === 'slicers' ||
 		detail === 'names' ||
 		detail === 'external-refs' ||
-		detail === 'views'
+		detail === 'views' ||
+		detail === 'visuals'
 	const parsedMode = parseInspectMode(flags.get('mode'))
 	if (flags.has('mode') && parsedMode === null) {
 		cliError('Invalid --mode. Use one of: metadata, values, full', flags)
@@ -89,6 +90,10 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 
 	if (detail === 'views') {
 		return printWorkbookViewsDetail(wb, flags.has('json'))
+	}
+
+	if (detail === 'visuals') {
+		return printVisualInventoryDetail(wb, flags.has('json'))
 	}
 
 	if (detail && sheetArg) {
@@ -449,7 +454,7 @@ function printSheetDetail(
 		}
 		default:
 			cliError(
-				`Unknown detail type: ${detail}. Options: cf, dv, hyperlinks, comments, drawings, images, tables, compatibility, pivots, slicers, names, external-refs, views`,
+				`Unknown detail type: ${detail}. Options: cf, dv, hyperlinks, comments, drawings, images, tables, compatibility, visuals, pivots, slicers, names, external-refs, views`,
 				flags,
 			)
 			return 1
@@ -467,6 +472,51 @@ function printCompatibilityDetail(wb: WorkbookDocument, json: boolean): number {
 	for (const f of report.features) {
 		console.log(bullet(`${f.feature} (${f.tier})`, `${f.count} location(s)`))
 		if (f.note) console.log(`    ${f.note}`)
+	}
+	return 0
+}
+
+function printVisualInventoryDetail(wb: WorkbookDocument, json: boolean): number {
+	const inventory = wb.visualInventory()
+	if (json) {
+		console.log(jsonOut(inventory))
+		return 0
+	}
+	console.log(heading('Visual Inventory'))
+	console.log(bullet('Sheet images', formatCount(inventory.sheetImageCount)))
+	console.log(bullet('Package chart features', String(inventory.packageChartFeatureCount)))
+	console.log(bullet('Package drawing features', String(inventory.packageDrawingFeatureCount)))
+	console.log(bullet('Package media features', String(inventory.packageMediaFeatureCount)))
+	if (inventory.packageFeatures.length > 0) {
+		console.log('')
+		console.log(heading('Package Features'))
+		for (const feature of inventory.packageFeatures) {
+			console.log(
+				bullet(
+					`${feature.feature} (${feature.category}, ${feature.tier})`,
+					`${feature.count} location(s)`,
+				),
+			)
+		}
+	}
+	if (inventory.sheets.length > 0) {
+		console.log('')
+		console.log(
+			table(
+				['Sheet', 'Drawing', 'Legacy', 'Images'],
+				inventory.sheets.map((sheet) => [
+					sheet.sheet,
+					formatLoadedBool(sheet.hasDrawing),
+					formatLoadedBool(sheet.hasLegacyDrawing),
+					formatCount(sheet.imageCount),
+				]),
+			),
+		)
+	}
+	if (inventory.notes.length > 0) {
+		console.log('')
+		console.log(heading('Notes'))
+		for (const note of inventory.notes) console.log(bullet('-', note))
 	}
 	return 0
 }

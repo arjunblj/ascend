@@ -73,6 +73,60 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(9))
 	})
 
+	test('full recalc fast-paths simple shared relative binary formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		for (let row = 0; row < 4; row++) {
+			sheet.cells.set(row, 1, { value: numberValue(row + 1), formula: null, styleId: sid })
+			sheet.cells.set(row, 2, { value: numberValue((row + 1) * 10), formula: null, styleId: sid })
+		}
+		sheet.cells.set(0, 0, {
+			value: EMPTY,
+			formula: 'B1+C1',
+			styleId: sid,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: true, masterRef: 'A1' },
+		})
+		for (let row = 1; row < 4; row++) {
+			sheet.cells.set(row, 0, {
+				value: EMPTY,
+				formula: null,
+				styleId: sid,
+				formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'A1' },
+			})
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(result.changed).toEqual(['Sheet1!A1', 'Sheet1!A2', 'Sheet1!A3', 'Sheet1!A4'])
+		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(11))
+		expect(sheet.cells.get(3, 0)?.value).toEqual(numberValue(44))
+		expect(sheet.cells.get(3, 0)?.formulaInfo).toEqual({
+			kind: 'shared',
+			sharedIndex: '0',
+			isMaster: false,
+			masterRef: 'A1',
+		})
+	})
+
+	test('shared relative binary fast path handles division by zero like arithmetic eval', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 1, { value: numberValue(4), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: numberValue(0), formula: null, styleId: sid })
+		sheet.cells.set(0, 0, {
+			value: EMPTY,
+			formula: 'B1/C1',
+			styleId: sid,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: true, masterRef: 'A1' },
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#DIV/0!'))
+	})
+
 	test('growing range aggregate optimization evaluates COUNT, AVERAGE, MIN, and MAX', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

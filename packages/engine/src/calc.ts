@@ -1,4 +1,4 @@
-import type { StyleId } from '@ascend/core'
+import type { CellFormulaBinding, StyleId } from '@ascend/core'
 import {
 	DEFAULT_STYLE_ID,
 	indexToColumn,
@@ -9,8 +9,10 @@ import {
 } from '@ascend/core'
 import {
 	type AggregateRangeCache,
+	cachedParseFormula,
 	clearCriteriaMatchCache,
 	type ExactLookupCache,
+	type FormulaCellRef,
 	type FormulaNode,
 	type LookupVectorCache,
 	type NumericVectorCache,
@@ -409,6 +411,24 @@ interface SharedFormulaPlan {
 	readonly evaluator: CodegenFn | null
 }
 
+interface SharedRelativeBinaryGroup {
+	readonly sheetIndex: number
+	readonly anchorRow: number
+	readonly anchorCol: number
+	readonly op: '+' | '-' | '*' | '/'
+	readonly left: FormulaCellRef
+	readonly right: FormulaCellRef
+	readonly members: SharedRelativeBinaryMember[]
+}
+
+interface SharedRelativeBinaryMember {
+	readonly sheetIndex: number
+	readonly row: number
+	readonly col: number
+	readonly formula: string | null
+	readonly formulaInfo: CellFormulaBinding
+}
+
 function parseSharedAnchorRef(
 	masterRef: string | undefined,
 	fallbackRow: number,
@@ -421,6 +441,169 @@ function parseSharedAnchorRef(
 	} catch {
 		return { row: fallbackRow, col: fallbackCol }
 	}
+}
+
+function tryFastFullSharedRelativeBinaryRecalc(
+	workbook: Workbook,
+	changed: string[],
+	start: number,
+): RecalcResult | null {
+	const groups = new Map<string, SharedRelativeBinaryGroup>()
+	let formulaCount = 0
+	for (let sheetIndex = 0; sheetIndex < workbook.sheets.length; sheetIndex++) {
+		const sheet = workbook.sheets[sheetIndex]
+		if (!sheet) continue
+		for (const [row, entries] of sheet.cells.iterateRows()) {
+			for (const [col, cell] of entries) {
+				if (cell.formula === null && cell.formulaInfo === undefined) continue
+				const binding = cell.formulaInfo
+				if (binding?.kind !== 'shared' || binding.sharedIndex === undefined) return null
+				const anchor = parseSharedAnchorRef(binding.masterRef, row, col)
+				const masterFormula =
+					binding.isMaster && cell.formula
+						? cell.formula
+						: (workbook.sheets[sheetIndex]?.cells.readFormula(anchor.row, anchor.col) ?? null)
+				if (!masterFormula) return null
+				const template = parseSharedRelativeBinaryTemplate(masterFormula)
+				if (!template) return null
+				const groupKey = `${sheetIndex}:${binding.sharedIndex}`
+				let group = groups.get(groupKey)
+				if (!group) {
+					group = {
+						sheetIndex,
+						anchorRow: anchor.row,
+						anchorCol: anchor.col,
+						...template,
+						members: [],
+					}
+					groups.set(groupKey, group)
+				} else if (
+					group.sheetIndex !== sheetIndex ||
+					group.anchorRow !== anchor.row ||
+					group.anchorCol !== anchor.col ||
+					group.op !== template.op ||
+					!formulaRefsEqual(group.left, template.left) ||
+					!formulaRefsEqual(group.right, template.right)
+				) {
+					return null
+				}
+				group.members.push({ sheetIndex, row, col, formula: cell.formula, formulaInfo: binding })
+				formulaCount++
+			}
+		}
+	}
+	if (formulaCount === 0) return null
+	for (const group of groups.values()) {
+		for (const member of group.members) {
+			if (!sharedRelativeBinarySourcesAreNumeric(workbook, group, member)) return null
+		}
+	}
+	for (const group of groups.values()) {
+		for (const member of group.members) {
+			const sheet = workbook.sheets[member.sheetIndex]
+			if (!sheet) return null
+			const newValue = evaluateSharedRelativeBinary(workbook, group, member)
+			if (!newValue) return null
+			const oldValue = sheet.cells.readValue(member.row, member.col)
+			if (valuesEqual(oldValue, newValue)) continue
+			const oldStyleId = sheet.cells.readStyleId(member.row, member.col) ?? DEFAULT_STYLE_ID
+			if (newValue.kind === 'number') {
+				sheet.cells.setNumberResolved(
+					member.row,
+					member.col,
+					newValue.value,
+					member.formula,
+					oldStyleId,
+					member.formulaInfo,
+				)
+			} else {
+				sheet.cells.setResolved(
+					member.row,
+					member.col,
+					newValue,
+					member.formula,
+					oldStyleId,
+					member.formulaInfo,
+				)
+			}
+			changed.push(cellRefString(workbook, member.sheetIndex, member.row, member.col))
+		}
+	}
+	return { changed, errors: [], duration: performance.now() - start }
+}
+
+function parseSharedRelativeBinaryTemplate(formula: string): {
+	readonly op: '+' | '-' | '*' | '/'
+	readonly left: FormulaCellRef
+	readonly right: FormulaCellRef
+} | null {
+	const parsed = cachedParseFormula(formula)
+	if (!parsed.ok) return null
+	const ast = parsed.value
+	if (ast.type !== 'binary') return null
+	if (ast.op !== '+' && ast.op !== '-' && ast.op !== '*' && ast.op !== '/') return null
+	if (ast.left.type !== 'cellRef' || ast.right.type !== 'cellRef') return null
+	if (ast.left.sheet !== undefined || ast.right.sheet !== undefined) return null
+	return { op: ast.op, left: ast.left.ref, right: ast.right.ref }
+}
+
+function formulaRefsEqual(left: FormulaCellRef, right: FormulaCellRef): boolean {
+	return (
+		left.row === right.row &&
+		left.col === right.col &&
+		left.rowAbsolute === right.rowAbsolute &&
+		left.colAbsolute === right.colAbsolute
+	)
+}
+
+function sharedRelativeBinarySourcesAreNumeric(
+	workbook: Workbook,
+	group: SharedRelativeBinaryGroup,
+	member: SharedRelativeBinaryMember,
+): boolean {
+	const left = readSharedRelativeBinarySource(workbook, group, member, group.left)
+	if (left?.kind !== 'number') return false
+	const right = readSharedRelativeBinarySource(workbook, group, member, group.right)
+	return right?.kind === 'number'
+}
+
+function evaluateSharedRelativeBinary(
+	workbook: Workbook,
+	group: SharedRelativeBinaryGroup,
+	member: SharedRelativeBinaryMember,
+): CellValue | null {
+	const left = readSharedRelativeBinarySource(workbook, group, member, group.left)
+	const right = readSharedRelativeBinarySource(workbook, group, member, group.right)
+	if (left?.kind !== 'number' || right?.kind !== 'number') return null
+	switch (group.op) {
+		case '+':
+			return numberValue(left.value + right.value)
+		case '-':
+			return numberValue(left.value - right.value)
+		case '*':
+			return numberValue(left.value * right.value)
+		case '/':
+			return right.value === 0 ? errorValue('#DIV/0!') : numberValue(left.value / right.value)
+	}
+}
+
+function readSharedRelativeBinarySource(
+	workbook: Workbook,
+	group: SharedRelativeBinaryGroup,
+	member: SharedRelativeBinaryMember,
+	ref: FormulaCellRef,
+): CellValue | null {
+	const rowOffset = member.row - group.anchorRow
+	const colOffset = member.col - group.anchorCol
+	const row = ref.rowAbsolute ? ref.row : ref.row + rowOffset
+	const col = ref.colAbsolute ? ref.col : ref.col + colOffset
+	const sheet = workbook.sheets[group.sheetIndex]
+	if (!sheet) return null
+	if (row < 0 || col < 0) return null
+	const sourceFormula = sheet.cells.readFormula(row, col)
+	if (sourceFormula !== null && sourceFormula !== undefined) return null
+	if (sheet.cells.readFormulaInfo(row, col) !== undefined) return null
+	return sheet.cells.readValue(row, col)
 }
 
 const compiledCache = new WeakMap<FormulaNode, CompiledFormula | false>()
@@ -872,6 +1055,12 @@ export function recalculate(
 			clearRangeValueCache()
 			clearCriteriaMatchCache()
 			return fast
+		}
+		const sharedFast = tryFastFullSharedRelativeBinaryRecalc(workbook, changed, start)
+		if (sharedFast) {
+			clearRangeValueCache()
+			clearCriteriaMatchCache()
+			return sharedFast
 		}
 	}
 	if (isDirtyRecalc && !opts?.range) {

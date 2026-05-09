@@ -66,8 +66,14 @@ export async function checkCommand(args: string[], flags: Map<string, string>): 
 		console.log(`${file}: ${result.issues.length} issue(s) found\n`)
 		console.log(
 			table(
-				['Severity', 'Message', 'Ref'],
-				result.issues.map((i) => [i.severity, i.message, i.ref ?? '']),
+				['Severity', 'Rule', 'Message', 'Ref', 'Suggested Fix'],
+				result.issues.map((i) => [
+					i.severity,
+					i.rule ?? '',
+					i.message,
+					i.ref ?? '',
+					i.suggestedFix ?? '',
+				]),
 			),
 		)
 	}

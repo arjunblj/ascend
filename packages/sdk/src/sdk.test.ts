@@ -1413,6 +1413,8 @@ describe('AscendWorkbook', () => {
 		const reopened = await AscendWorkbook.open(bytes, { sheets: ['Archive'], mode: 'formula' })
 		const check = reopened.check()
 		expect(check.valid).toBe(false)
+		expect(check.issues[0]?.rule).toBe('partial-dependency-analysis')
+		expect(check.issues[0]?.suggestedFix).toContain('all referenced sheets')
 		expect(check.issues[0]?.message).toContain(
 			'Cannot verify workbook dependencies from this partial view',
 		)
@@ -1608,6 +1610,22 @@ describe('AscendWorkbook', () => {
 		const result = wb.check()
 		expect(result.valid).toBe(true)
 		expect(result.issues).toHaveLength(0)
+	})
+
+	test('check preserves structured verification metadata for agent repair', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'renameSheet', sheet: 'Sheet1', newName: 'SummaryData' }])
+		wb.apply([{ op: 'setFormula', sheet: 'SummaryData', ref: 'A1', formula: '=Summary!B1' }])
+
+		const result = wb.check()
+		expect(result.valid).toBe(false)
+		const issue = result.issues.find((entry) => entry.rule === 'broken-refs')
+		expect(issue).toBeDefined()
+		expect(issue?.severity).toBe('error')
+		expect(issue?.ref).toBe('SummaryData!A1')
+		expect(issue?.refs).toEqual(['SummaryData!A1'])
+		expect(issue?.message).toContain('Summary')
+		expect(issue?.suggestedFix).toContain('SummaryData')
 	})
 
 	test('lint detects formula parse errors', () => {

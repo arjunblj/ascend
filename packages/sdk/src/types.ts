@@ -713,9 +713,12 @@ export interface CheckResult {
 }
 
 export interface CheckIssue {
+	readonly rule?: string
 	readonly severity: 'error' | 'warning' | 'info'
 	readonly message: string
 	readonly ref?: string
+	readonly refs?: readonly string[]
+	readonly suggestedFix?: string
 }
 
 export interface LintResult {

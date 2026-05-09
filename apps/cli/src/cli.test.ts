@@ -915,6 +915,30 @@ describe('ascend cli', () => {
 		expect(parsed.data.valid).toBe(true)
 	})
 
+	test('check surfaces structured issue metadata for agent repair', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'renameSheet', sheet: 'Sheet1', newName: 'SummaryData' }])
+		wb.apply([{ op: 'setFormula', sheet: 'SummaryData', ref: 'A1', formula: '=Summary!B1' }])
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const json = await run('check', TEST_FILE, '--json')
+		expect(json.exitCode).toBe(2)
+		const parsed = JSON.parse(json.stdout)
+		expect(parsed.ok).toBe(true)
+		expect(parsed.data.valid).toBe(false)
+		const issue = parsed.data.issues.find(
+			(entry: { rule?: string }) => entry.rule === 'broken-refs',
+		)
+		expect(issue.ref).toBe('SummaryData!A1')
+		expect(issue.refs).toEqual(['SummaryData!A1'])
+		expect(issue.suggestedFix).toContain('SummaryData')
+
+		const pretty = await run('check', TEST_FILE)
+		expect(pretty.exitCode).toBe(2)
+		expect(pretty.stdout).toContain('broken-refs')
+		expect(pretty.stdout).toContain('Suggested Fix')
+	})
+
 	test('export writes TSV output and rejects unsupported formats', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

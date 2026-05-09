@@ -3,6 +3,7 @@ import { statSync } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { check as verifyCheck, lint as verifyLint } from '@ascend/verify'
+import { partialDependencyCheckIssue, sdkCheckIssueFromVerify } from './check-issues.ts'
 import { openWorkbookSource } from './load.ts'
 import { WorkbookReadView } from './read-view.ts'
 import type { CellSelector } from './ref-selectors.ts'
@@ -307,7 +308,7 @@ export class WorkbookDocument {
 		if (issue) {
 			return {
 				valid: false,
-				issues: [{ severity: 'warning', message: issue }],
+				issues: [partialDependencyCheckIssue(issue)],
 			}
 		}
 		const result = verifyCheck(this.view.getWorkbookModel(), {
@@ -315,11 +316,7 @@ export class WorkbookDocument {
 			dependencies: this.view.dependencyAnalysis(),
 		})
 		this.refreshCacheFootprint('verify')
-		const issues = result.issues.map((issue) => ({
-			severity: issue.severity,
-			message: issue.message,
-			...(issue.refs?.[0] ? { ref: issue.refs[0] } : {}),
-		}))
+		const issues = result.issues.map(sdkCheckIssueFromVerify)
 		return { valid: result.passed, issues }
 	}
 

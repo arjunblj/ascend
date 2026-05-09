@@ -719,6 +719,44 @@ describe('MCP server', () => {
 		expect(allText.length).toBeGreaterThan(0)
 	})
 
+	test('ascend.check preserves structured issue metadata for agent repair', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'renameSheet', sheet: 'Sheet1', newName: 'SummaryData' }])
+		wb.apply([{ op: 'setFormula', sheet: 'SummaryData', ref: 'A1', formula: '=Summary!B1' }])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test
+		const handler = (server as any)._registeredTools['ascend.check'].handler as (args: {
+			file: string
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: {
+				error?: {
+					details?: {
+						check?: {
+							issues?: Array<{
+								rule?: string
+								ref?: string
+								refs?: string[]
+								suggestedFix?: string
+							}>
+						}
+					}
+				}
+			}
+		}>
+
+		const result = await handler({ file: TEMP_FILE })
+		expect(result.isError).toBe(true)
+		const issue = result.structuredContent?.error?.details?.check?.issues?.find(
+			(entry) => entry.rule === 'broken-refs',
+		)
+		expect(issue?.ref).toBe('SummaryData!A1')
+		expect(issue?.refs).toEqual(['SummaryData!A1'])
+		expect(issue?.suggestedFix).toContain('SummaryData')
+	})
+
 	test('ascend.lint returns result', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(TEMP_FILE)

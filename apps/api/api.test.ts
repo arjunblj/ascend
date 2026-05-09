@@ -223,6 +223,28 @@ describe('API', () => {
 		})
 	})
 
+	test('check returns structured issue metadata for agent repair', async () => {
+		const tempFile = join(tempDir, 'check-issues.xlsx')
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'renameSheet', sheet: 'Sheet1', newName: 'SummaryData' }])
+		wb.apply([{ op: 'setFormula', sheet: 'SummaryData', ref: 'A1', formula: '=Summary!B1' }])
+		await wb.save(tempFile)
+
+		const res = await api(`/check`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ file: tempFile }),
+		})
+		expect(res.status).toBe(200)
+		const body = await res.json()
+		expect(body.ok).toBe(true)
+		expect(body.data.valid).toBe(false)
+		const issue = body.data.issues.find((entry: { rule?: string }) => entry.rule === 'broken-refs')
+		expect(issue.ref).toBe('SummaryData!A1')
+		expect(issue.refs).toEqual(['SummaryData!A1'])
+		expect(issue.suggestedFix).toContain('SummaryData')
+	})
+
 	test('read returns versioned machine envelope', async () => {
 		const tempFile = join(tempDir, 'read.xlsx')
 		const wb = AscendWorkbook.create()

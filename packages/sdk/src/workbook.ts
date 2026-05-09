@@ -42,6 +42,7 @@ import {
 } from '@ascend/schema'
 import { check as verifyCheck, lint as verifyLint } from '@ascend/verify'
 import { getCapability, listCapabilities, summarizeCapabilities } from './capabilities.ts'
+import { partialDependencyCheckIssue, sdkCheckIssueFromVerify } from './check-issues.ts'
 import { buildWorkbookLoadInfo, openWorkbookSource } from './load.ts'
 import { getOperationsSchema, listOperations, parseOperations } from './ops.ts'
 import { WorkbookReadView } from './read-view.ts'
@@ -532,25 +533,14 @@ export class AscendWorkbook extends WorkbookReadView {
 		if (issue) {
 			return {
 				valid: false,
-				issues: [{ severity: 'warning', message: issue }],
+				issues: [partialDependencyCheckIssue(issue)],
 			}
 		}
 		const result = verifyCheck(this.wb, {
 			formulas: this.formulaAnalysis(),
 			dependencies: this.dependencyAnalysis(),
 		})
-		const issues: CheckIssue[] = result.issues.map((issue) =>
-			issue.refs?.[0]
-				? {
-						severity: issue.severity,
-						message: issue.message,
-						ref: issue.refs[0],
-					}
-				: {
-						severity: issue.severity,
-						message: issue.message,
-					},
-		)
+		const issues: CheckIssue[] = result.issues.map(sdkCheckIssueFromVerify)
 		return { valid: result.passed, issues }
 	}
 

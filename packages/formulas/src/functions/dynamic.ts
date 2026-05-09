@@ -169,6 +169,20 @@ function resolveSelectionIndex(index: number, size: number): number | CellValue 
 	return normalized < 0 || normalized >= size ? errorValue('#VALUE!') : normalized
 }
 
+function sortOrder(arg: EvalArg | undefined): 1 | -1 | CellValue {
+	if (!arg) return 1
+	const order = num(arg)
+	if (typeof order !== 'number') return order
+	return order === 1 || order === -1 ? order : errorValue('#VALUE!')
+}
+
+function sortIndex(arg: EvalArg | undefined, size: number): number | CellValue {
+	const index = arg ? num(arg) : 1
+	if (typeof index !== 'number') return index
+	const normalized = Math.round(index) - 1
+	return normalized >= 0 && normalized < size ? normalized : errorValue('#VALUE!')
+}
+
 export const dynamicFunctions: FunctionDef[] = [
 	{
 		name: 'SORT',
@@ -177,29 +191,30 @@ export const dynamicFunctions: FunctionDef[] = [
 		evaluate(args) {
 			const data = getRange(args[0])
 			if (data.length === 0) return EMPTY
-			const sortIndex = args[1] ? num(args[1]) : 1
-			if (typeof sortIndex !== 'number') return sortIndex
-			const sortOrder = args[2] ? num(args[2]) : 1
-			if (typeof sortOrder !== 'number') return sortOrder
+			const order = sortOrder(args[2])
+			if (typeof order !== 'number') return order
 			const byCol = !!args[3] && !!toNumber(args[3].value)
 
 			if (byCol) {
 				const cols = transposeRows(data)
-				const row = Math.round(sortIndex) - 1
+				const row = sortIndex(args[1], data.length)
+				if (typeof row !== 'number') return row
 				cols.sort((a, b) => {
 					const av = a[row] ?? EMPTY
 					const bv = b[row] ?? EMPTY
-					return compareValues(av, bv) * (sortOrder === -1 ? -1 : 1)
+					return compareValues(av, bv) * order
 				})
 				return scalarOrArray(transposeRows(cols))
 			}
 
-			const col = Math.round(sortIndex) - 1
+			const colCount = data.reduce((max, row) => Math.max(max, row.length), 0)
+			const col = sortIndex(args[1], colCount)
+			if (typeof col !== 'number') return col
 			const rows = data.map((r) => [...r])
 			rows.sort((a, b) => {
 				const av = a[col] ?? EMPTY
 				const bv = b[col] ?? EMPTY
-				return compareValues(av, bv) * (sortOrder === -1 ? -1 : 1)
+				return compareValues(av, bv) * order
 			})
 			return scalarOrArray(rows)
 		},
@@ -221,12 +236,13 @@ export const dynamicFunctions: FunctionDef[] = [
 				const byArg = args[index]
 				if (!byArg) break
 				const values = getRange(byArg).map((row) => row[0] ?? EMPTY)
+				if (values.length !== data.length) return errorValue('#VALUE!')
 				let order: 1 | -1 = 1
 				const next = args[index + 1]
 				if (next && !rangeLooksLikeReference(next)) {
-					const parsedOrder = num(next)
+					const parsedOrder = sortOrder(next)
 					if (typeof parsedOrder !== 'number') return parsedOrder
-					order = parsedOrder === -1 ? -1 : 1
+					order = parsedOrder
 					index += 2
 				} else {
 					index += 1
@@ -619,11 +635,18 @@ export const dynamicFunctions: FunctionDef[] = [
 				: data.reduce((max, row) => Math.max(max, row.length), 0)
 			if (typeof targetCols !== 'number') return targetCols
 			const fill = topLeftScalar(args[3]?.value ?? errorValue('#N/A'))
+			const sourceRows = data.length
+			const sourceCols = data.reduce((max, row) => Math.max(max, row.length), 0)
+			const rowCount = Math.trunc(targetRows)
+			const colCount = Math.trunc(targetCols)
+			if (rowCount <= 0 || colCount <= 0 || rowCount < sourceRows || colCount < sourceCols) {
+				return errorValue('#VALUE!')
+			}
 			const rows: ScalarCellValue[][] = []
-			for (let row = 0; row < targetRows; row++) {
+			for (let row = 0; row < rowCount; row++) {
 				const source = data[row] ?? []
 				const next: ScalarCellValue[] = []
-				for (let col = 0; col < targetCols; col++) {
+				for (let col = 0; col < colCount; col++) {
 					next.push(source[col] ?? fill)
 				}
 				rows.push(next)

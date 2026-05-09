@@ -1198,6 +1198,33 @@ describe('formula functions', () => {
 			expect(getResult(wb, 3, 2)).toEqual(numberValue(30))
 		})
 
+		test('SORT rejects invalid sort indexes and orders', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 30)
+			setNum(wb, 1, 0, 10)
+			setNum(wb, 2, 0, 20)
+			setFormula(wb, 3, 0, 'SORT(A1:A3,0)')
+			setFormula(wb, 4, 0, 'SORT(A1:A3,2)')
+			setFormula(wb, 5, 0, 'SORT(A1:A3,1,0)')
+			recalc(wb)
+			expect(getResult(wb, 3, 0)).toEqual(errorValue('#VALUE!'))
+			expect(getResult(wb, 4, 0)).toEqual(errorValue('#VALUE!'))
+			expect(getResult(wb, 5, 0)).toEqual(errorValue('#VALUE!'))
+		})
+
+		test('SORT by_col rejects indexes outside the row axis', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 3)
+			setNum(wb, 0, 1, 1)
+			setNum(wb, 0, 2, 2)
+			setNum(wb, 1, 0, 30)
+			setNum(wb, 1, 1, 10)
+			setNum(wb, 1, 2, 20)
+			setFormula(wb, 2, 0, 'SORT(A1:C2,3,1,TRUE)')
+			recalc(wb)
+			expect(getResult(wb, 2, 0)).toEqual(errorValue('#VALUE!'))
+		})
+
 		test('SORTBY sorts by external array', () => {
 			const wb = makeWorkbook()
 			setStr(wb, 0, 0, 'c')
@@ -1244,6 +1271,21 @@ describe('formula functions', () => {
 			expect(getResult(wb, 3, 0)).toEqual(stringValue('y'))
 			expect(getResult(wb, 4, 0)).toEqual(stringValue('z'))
 			expect(getResult(wb, 5, 0)).toEqual(stringValue('x'))
+		})
+
+		test('SORTBY rejects mismatched sort arrays and invalid orders', () => {
+			const wb = makeWorkbook()
+			setStr(wb, 0, 0, 'a')
+			setStr(wb, 1, 0, 'b')
+			setStr(wb, 2, 0, 'c')
+			setNum(wb, 0, 1, 1)
+			setNum(wb, 1, 1, 2)
+			setNum(wb, 2, 1, 3)
+			setFormula(wb, 3, 0, 'SORTBY(A1:A3,B1:B2)')
+			setFormula(wb, 4, 0, 'SORTBY(A1:A3,B1:B3,0)')
+			recalc(wb)
+			expect(getResult(wb, 3, 0)).toEqual(errorValue('#VALUE!'))
+			expect(getResult(wb, 4, 0)).toEqual(errorValue('#VALUE!'))
 		})
 
 		test('UNIQUE removes duplicate rows', () => {
@@ -1657,6 +1699,21 @@ describe('formula functions', () => {
 			expect(getResult(wb, 1, 1)).toEqual(numberValue(0))
 			expect(getResult(wb, 2, 0)).toEqual(numberValue(0))
 			expect(getResult(wb, 2, 1)).toEqual(numberValue(0))
+		})
+
+		test('EXPAND rejects dimensions that cannot contain the source array', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 1)
+			setNum(wb, 0, 1, 2)
+			setNum(wb, 1, 0, 3)
+			setNum(wb, 1, 1, 4)
+			setFormula(wb, 3, 0, 'EXPAND(A1:B2,1,2)')
+			setFormula(wb, 4, 0, 'EXPAND(A1:B2,2,1)')
+			setFormula(wb, 5, 0, 'EXPAND(A1:B2,0,2)')
+			recalc(wb)
+			expect(getResult(wb, 3, 0)).toEqual(errorValue('#VALUE!'))
+			expect(getResult(wb, 4, 0)).toEqual(errorValue('#VALUE!'))
+			expect(getResult(wb, 5, 0)).toEqual(errorValue('#VALUE!'))
 		})
 	})
 

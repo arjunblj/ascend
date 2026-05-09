@@ -1,0 +1,9 @@
+[
+	{ "kind": "command", "command": "new" },
+	{ "kind": "command", "command": "format {\"bold\":true,\"numberFormat\":\"0.00\"}" },
+	{ "kind": "command", "command": "filter {\"range\":\"A1:C100\"}" },
+	{
+		"kind": "command",
+		"command": "validate {\"range\":\"A1:A100\",\"rule\":{\"type\":\"whole\",\"operator\":\"between\",\"formula1\":\"1\",\"formula2\":\"100\"}}"
+	}
+]

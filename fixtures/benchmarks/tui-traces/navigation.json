@@ -1,0 +1,9 @@
+[
+	{ "kind": "command", "command": "new" },
+	{ "kind": "key", "key": "ArrowRight" },
+	{ "kind": "key", "key": "ArrowRight" },
+	{ "kind": "key", "key": "ArrowDown" },
+	{ "kind": "key", "key": "ArrowDown" },
+	{ "kind": "key", "key": "PageDown" },
+	{ "kind": "key", "key": "Home" }
+]

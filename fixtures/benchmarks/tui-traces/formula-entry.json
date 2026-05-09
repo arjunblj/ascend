@@ -1,0 +1,12 @@
+[
+	{ "kind": "command", "command": "new" },
+	{ "kind": "key", "key": "text", "text": "1" },
+	{ "kind": "key", "key": "Enter" },
+	{ "kind": "key", "key": "ArrowRight" },
+	{ "kind": "key", "key": "text", "text": "=" },
+	{ "kind": "key", "key": "text", "text": "A" },
+	{ "kind": "key", "key": "text", "text": "1" },
+	{ "kind": "key", "key": "text", "text": "*" },
+	{ "kind": "key", "key": "text", "text": "2" },
+	{ "kind": "key", "key": "Enter" }
+]

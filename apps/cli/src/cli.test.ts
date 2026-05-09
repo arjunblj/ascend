@@ -6,6 +6,7 @@ const CLI = new URL('./index.ts', import.meta.url).pathname
 const TEST_FILE = 'test-output.xlsx'
 const MULTI_SHEET_FILE = 'test-multi.xlsx'
 const NAMED_RANGE_FILE = 'test-named.xlsx'
+const TUI_TEST_FILE = 'test-tui.xlsx'
 const PIVOT_CORPUS_FILE = '../../../research/excel-corpus/ms-excel-formulas-and-pivot-tables.xlsx'
 const SLICER_CORPUS_FILE = '../../../research/excel-corpus/excel-dashboard-v2.xlsx'
 
@@ -30,6 +31,7 @@ afterAll(() => {
 		TEST_FILE,
 		MULTI_SHEET_FILE,
 		NAMED_RANGE_FILE,
+		TUI_TEST_FILE,
 		'exported.tsv',
 		'exported.json',
 		'plan-ops.json',
@@ -49,6 +51,11 @@ function parseJsonl(text: string): Array<Record<string, unknown>> {
 		.map((line) => line.trim())
 		.filter((line) => line.length > 0)
 		.map((line) => JSON.parse(line))
+}
+
+function parseTrailingTelemetry(text: string): unknown {
+	const start = text.lastIndexOf('\n[')
+	return JSON.parse(text.slice(start >= 0 ? start + 1 : 0))
 }
 
 describe('ascend cli', () => {
@@ -92,6 +99,48 @@ describe('ascend cli', () => {
 		expect(exitCode).toBe(0)
 		expect(stdout).toContain('Created')
 		expect(existsSync(`${import.meta.dir}/${TEST_FILE}`)).toBe(true)
+	})
+
+	test('tui renders a non-TTY first frame and telemetry JSON', async () => {
+		const { stdout, exitCode } = await run('tui', '--telemetry-json')
+		expect(exitCode).toBe(0)
+		expect(stdout).toContain('Ascend')
+		expect(stdout).toContain('File  Home')
+		const telemetry = parseTrailingTelemetry(stdout)
+		expect(Array.isArray(telemetry)).toBe(true)
+		expect((telemetry as unknown[]).length).toBeGreaterThan(0)
+	})
+
+	test('tui accepts renderer selection and startup calibration flags', async () => {
+		const { stdout, exitCode } = await run('tui', '--renderer', 'ansi', '--calibrate')
+		expect(exitCode).toBe(0)
+		expect(stdout).toContain('Terminal Calibration')
+		expect(stdout).toContain('Keyboard:')
+	})
+
+	test('tui boolean flags do not consume a following workbook path', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'loaded' }] }])
+		await wb.save(`${import.meta.dir}/${TUI_TEST_FILE}`)
+
+		const { stdout, exitCode } = await run('tui', '--calibrate', TUI_TEST_FILE, '--renderer=ansi')
+		expect(exitCode).toBe(0)
+		expect(stdout).toContain('Terminal Calibration')
+		expect(stdout).toContain('loaded')
+	})
+
+	test('open forwards --sheet into the TUI entrypoint', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'addSheet', name: 'Data' },
+			{ op: 'setCells', sheet: 'Data', updates: [{ ref: 'A1', value: 'data' }] },
+		])
+		await wb.save(`${import.meta.dir}/${TUI_TEST_FILE}`)
+
+		const { stdout, exitCode } = await run('open', TUI_TEST_FILE, '--sheet', 'Data')
+		expect(exitCode).toBe(0)
+		expect(stdout).toContain('data')
+		expect(stdout).toContain('Data')
 	})
 
 	test('ops --json exposes operation schemas with examples', async () => {
@@ -879,5 +928,109 @@ describe('ascend cli', () => {
 		const bad = await run('export', TEST_FILE, 'out.weird', '--format', 'weird')
 		expect(bad.exitCode).toBe(1)
 		expect(bad.stderr).toContain('Invalid export format')
+	})
+
+	test('lint on clean workbook passes', async () => {
+		const { exitCode, stdout } = await run('lint', TEST_FILE)
+		expect(exitCode).toBe(0)
+		expect(stdout).toContain('no lint warnings')
+	})
+
+	test('lint --json returns machine envelope', async () => {
+		const { exitCode, stdout } = await run('lint', TEST_FILE, '--json')
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.ok).toBe(true)
+	})
+
+	test('trace shows precedents for formula cell', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 5 }] },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: '=A1*2' },
+		])
+		wb.recalc()
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const { exitCode, stdout } = await run('trace', TEST_FILE, 'Sheet1!B1')
+		expect(exitCode).toBe(0)
+		expect(stdout).toContain('A1')
+	})
+
+	test('diff two workbooks shows changes', async () => {
+		const wb1 = AscendWorkbook.create()
+		wb1.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }])
+		await wb1.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const wb2 = AscendWorkbook.create()
+		wb2.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 99 }] }])
+		await wb2.save(`${import.meta.dir}/${MULTI_SHEET_FILE}`)
+
+		const { exitCode, stdout } = await run('diff', TEST_FILE, MULTI_SHEET_FILE)
+		expect(exitCode).toBe(0)
+		expect(stdout).toContain('Sheet1')
+	})
+
+	test('calc recalculates formulas', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 10 }] },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: '=A1+5' },
+		])
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const { exitCode, stdout } = await run('calc', TEST_FILE)
+		expect(exitCode).toBe(0)
+		expect(stdout.toLowerCase()).toContain('recalculated')
+	})
+
+	test('list shows sheet names', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'addSheet', name: 'MySheet' }])
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const { exitCode, stdout } = await run('list', TEST_FILE)
+		expect(exitCode).toBe(0)
+		expect(stdout).toContain('MySheet')
+	})
+
+	test('find searches for values', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'hello' },
+					{ ref: 'A2', value: 'world' },
+				],
+			},
+		])
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const { exitCode, stdout } = await run('find', TEST_FILE, 'hello')
+		expect(exitCode).toBe(0)
+		expect(stdout).toContain('A1')
+	})
+
+	test('export --json writes JSON output', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'x' },
+					{ ref: 'B1', value: 1 },
+				],
+			},
+		])
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const { exitCode } = await run('export', TEST_FILE, 'exported.json', '--format', 'json')
+		expect(exitCode).toBe(0)
+		const jsonText = await Bun.file(`${import.meta.dir}/exported.json`).text()
+		const parsed = JSON.parse(jsonText)
+		expect(parsed).toBeDefined()
 	})
 })

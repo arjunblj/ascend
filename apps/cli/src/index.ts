@@ -17,6 +17,7 @@ import { formulaCommand, usage as formulaUsage } from './commands/formula.ts'
 import { inspectCommand, usage as inspectUsage } from './commands/inspect.ts'
 import { lintCommand, usage as lintUsage } from './commands/lint.ts'
 import { listCommand, usage as listUsage } from './commands/list.ts'
+import { openCommand, usage as openUsage } from './commands/open.ts'
 import { opsCommand, usage as opsUsage } from './commands/ops.ts'
 import { planCommand, usage as planUsage } from './commands/plan.ts'
 import { previewCommand, usage as previewUsage } from './commands/preview.ts'
@@ -57,7 +58,8 @@ Commands:
   trace <file> <cell>           Trace precedents/dependents
   diff <file-a> <file-b>        Semantic diff between two workbooks
   export <file> <output>        Export workbook (csv, json, xlsx)
-  tui <file>                    Interactive terminal spreadsheet
+  tui [file]                    Interactive terminal spreadsheet
+  open [file]                   Friendly terminal spreadsheet entrypoint
   doctor                        Verify environment
 
 Global flags:
@@ -138,11 +140,33 @@ const COMMANDS: Record<string, Command> = {
 		usage: findUsage,
 		allowedFlags: ['sheet', 'match', 'json'],
 	},
-	tui: { run: tuiCommand, usage: tuiUsage, allowedFlags: ['sheet'] },
+	tui: {
+		run: tuiCommand,
+		usage: tuiUsage,
+		allowedFlags: ['sheet', 'renderer', 'calibrate', 'telemetry-json'],
+	},
+	open: {
+		run: openCommand,
+		usage: openUsage,
+		allowedFlags: ['sheet', 'renderer', 'calibrate', 'telemetry-json'],
+	},
 	doctor: { run: doctorCommand, usage: doctorUsage },
 }
 
 const GLOBAL_FLAGS = new Set(['help', 'h', 'version', 'v'])
+const BOOLEAN_FLAGS = new Set([
+	'help',
+	'h',
+	'version',
+	'v',
+	'json',
+	'verbose',
+	'in-place',
+	'examples',
+	'list',
+	'telemetry-json',
+	'calibrate',
+])
 
 function parseArgs(argv: string[]): {
 	command: string | undefined
@@ -156,9 +180,14 @@ function parseArgs(argv: string[]): {
 	while (i < argv.length) {
 		const arg = argv[i] as string
 		if (arg.startsWith('--')) {
-			const key = arg.slice(2)
+			const [key = '', inlineValue] = arg.slice(2).split(/=(.*)/s, 2)
+			if (inlineValue !== undefined) {
+				flags.set(key, inlineValue)
+				i += 1
+				continue
+			}
 			const next = argv[i + 1]
-			if (next && !next.startsWith('-')) {
+			if (!BOOLEAN_FLAGS.has(key) && next && !next.startsWith('-')) {
 				flags.set(key, next)
 				i += 2
 			} else {

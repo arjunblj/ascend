@@ -9,6 +9,7 @@
 		{ "path": "packages/io-csv" },
 		{ "path": "packages/verify" },
 		{ "path": "packages/sdk" },
+		{ "path": "apps/tui" },
 		{ "path": "apps/cli" },
 		{ "path": "apps/api" },
 		{ "path": "apps/mcp" }

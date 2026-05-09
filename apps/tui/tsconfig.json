@@ -12,7 +12,6 @@
 	"references": [
 		{ "path": "../../packages/schema" },
 		{ "path": "../../packages/core" },
-		{ "path": "../../packages/sdk" },
-		{ "path": "../tui" }
+		{ "path": "../../packages/sdk" }
 	]
 }

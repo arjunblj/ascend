@@ -44,8 +44,10 @@ import type {
 	CompactRangeInfo,
 	CompactRangeWindowInfo,
 	DefinedNameInfo,
+	ExternalReferenceUsageInfo,
 	FlatCellValue,
 	FormulaInfo,
+	FormulaReferenceInfo,
 	PivotCacheInfo,
 	PivotRefreshPlanInfo,
 	PivotRefreshRecommendedOp,
@@ -115,7 +117,7 @@ export class WorkbookReadView {
 			}
 			return buildSheetInfo(sheet, cellsHydrated, richSheetMetadataHydrated, used, count)
 		})
-		const info = {
+		const info: WorkbookInfo = {
 			sheetCount: this.loadInfo.sourceSheets.length,
 			loadedSheetCount: this.loadInfo.loadedSheets.length,
 			sheets,
@@ -145,6 +147,7 @@ export class WorkbookReadView {
 			externalReferenceDetails: this.wb.externalReferenceDetails.map((entry) => ({
 				...entry,
 			})),
+			externalReferenceUsages: buildExternalReferenceUsages(this.wb, this.formulaAnalysis()),
 			charts: this.wb.chartParts.map(copyChartInfo),
 			hasWorkbookProtection: this.wb.workbookProtection !== null,
 			pivotTables: this.wb.pivotTables.map(copyPivotTableInfo),
@@ -753,6 +756,10 @@ export class WorkbookReadView {
 		return [...this.wb.externalReferences]
 	}
 
+	externalReferenceUsages(): readonly ExternalReferenceUsageInfo[] {
+		return buildExternalReferenceUsages(this.wb, this.formulaAnalysis())
+	}
+
 	definedName(name: string, scopeSheetName?: string): DefinedNameInfo | undefined {
 		let entry = scopeSheetName
 			? resolveDefinedNameBySheet(this.wb, name, scopeSheetName)
@@ -959,6 +966,86 @@ function copyPivotTableInfo(pivot: PivotTableInfo): PivotTableInfo {
 		pageFields: pivot.pageFields.map((field) => ({ ...field })),
 		dataFields: pivot.dataFields.map((field) => ({ ...field })),
 	}
+}
+
+function buildExternalReferenceUsages(
+	workbook: Workbook,
+	analysis: WorkbookFormulaAnalysis,
+): ExternalReferenceUsageInfo[] {
+	const usages: ExternalReferenceUsageInfo[] = []
+	for (const formula of analysis.formulas.values()) {
+		if (!formula.ast) continue
+		for (const group of externalReferenceGroups(collectFormulaReferences(formula.ast))) {
+			usages.push({
+				workbook: group.workbook,
+				...(group.sheet ? { sheet: group.sheet } : {}),
+				sourceKind: 'cellFormula',
+				sourceRef: `${formula.sheetName}!${indexToColumn(formula.col)}${formula.row + 1}`,
+				formula: formula.formula,
+				references: group.references,
+			})
+		}
+	}
+
+	for (const name of workbook.definedNames.list()) {
+		const parsed = parseFormula(normalizeFormulaInput(name.formula))
+		if (!parsed.ok) continue
+		for (const group of externalReferenceGroups(collectFormulaReferences(parsed.value))) {
+			usages.push({
+				workbook: group.workbook,
+				...(group.sheet ? { sheet: group.sheet } : {}),
+				sourceKind: 'definedName',
+				name: name.name,
+				formula: name.formula,
+				references: group.references,
+			})
+		}
+	}
+	return usages
+}
+
+function externalReferenceGroups(
+	references: readonly FormulaReferenceInfo[],
+): Array<{ workbook: string; sheet?: string; references: string[] }> {
+	const groups = new Map<string, { workbook: string; sheet?: string; references: string[] }>()
+	for (const reference of flattenFormulaReferences(references)) {
+		if (reference.scope?.kind !== 'external') continue
+		const key = `${reference.scope.workbook}\u0000${reference.scope.sheet}`
+		const existing = groups.get(key)
+		if (existing) {
+			existing.references.push(reference.text)
+			continue
+		}
+		groups.set(key, {
+			workbook: reference.scope.workbook,
+			sheet: reference.scope.sheet,
+			references: [reference.text],
+		})
+	}
+	return [...groups.values()].map((group) => ({
+		...group,
+		references: [...new Set(group.references)],
+	}))
+}
+
+function flattenFormulaReferences(
+	references: readonly FormulaReferenceInfo[],
+): FormulaReferenceInfo[] {
+	const out: FormulaReferenceInfo[] = []
+	for (const reference of references) {
+		if (reference.kind === 'union' || reference.kind === 'intersection') {
+			out.push(...flattenFormulaReferences(reference.members))
+			continue
+		}
+		out.push(reference)
+		if (
+			(reference.kind === 'spill' || reference.kind === 'implicitIntersection') &&
+			reference.target
+		) {
+			out.push(...flattenFormulaReferences([reference.target]))
+		}
+	}
+	return out
 }
 
 function buildPivotRefreshPlans(

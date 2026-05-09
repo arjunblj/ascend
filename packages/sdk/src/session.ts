@@ -16,6 +16,7 @@ import type {
 	CompactRangeInfo,
 	CompactRangeWindowInfo,
 	DefinedNameInfo,
+	ExternalReferenceUsageInfo,
 	FormulaInfo,
 	LintResult,
 	PivotCacheInfo,
@@ -380,6 +381,10 @@ export class WorkbookDocument {
 
 	workbookViews(): readonly import('./types.ts').WorkbookViewInfo[] {
 		return this.view.workbookViews()
+	}
+
+	externalReferenceUsages(): readonly ExternalReferenceUsageInfo[] {
+		return this.view.externalReferenceUsages()
 	}
 
 	externalReferences(): readonly string[] {

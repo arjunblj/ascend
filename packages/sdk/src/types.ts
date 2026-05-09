@@ -58,6 +58,7 @@ export interface WorkbookInfo {
 	readonly workbookViews: readonly WorkbookViewInfo[]
 	readonly externalReferences: readonly string[]
 	readonly externalReferenceDetails: readonly ExternalReferenceInfo[]
+	readonly externalReferenceUsages: readonly ExternalReferenceUsageInfo[]
 	readonly charts: readonly ChartPartInfo[]
 	readonly hasWorkbookProtection: boolean
 	readonly pivotTables: readonly PivotTableInfo[]
@@ -128,6 +129,16 @@ export interface ExternalReferenceInfo {
 	readonly relId?: string
 	readonly target?: string
 	readonly targetMode?: string
+}
+
+export interface ExternalReferenceUsageInfo {
+	readonly workbook: string
+	readonly sheet?: string
+	readonly sourceKind: 'cellFormula' | 'definedName'
+	readonly sourceRef?: string
+	readonly name?: string
+	readonly formula: string
+	readonly references: readonly string[]
 }
 
 export interface PivotCacheInfo {

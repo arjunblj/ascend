@@ -594,10 +594,14 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'connections.external-workbooks',
 		'connections',
 		'External workbook connections',
-		'inspectable',
+		'editable',
 		'P0',
-		'List connection targets and formula refs with refresh/loss policy.',
-		'External references are visible but not refreshable.',
+		'Add optional resolution hooks for controlled headless external workbook reads.',
+		'External link targets are inspectable/editable, and SDK inspect maps formula/name usages before rewrites.',
+		[
+			'packages/engine/src/operations.test.ts',
+			'packages/sdk/src/external-reference-usages.test.ts',
+		],
 	),
 	cap(
 		'connections.query-tables',

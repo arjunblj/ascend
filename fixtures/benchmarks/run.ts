@@ -1798,9 +1798,49 @@ async function runScenario(
 			repeat,
 		},
 		metrics: summarizeSamples(samples),
+		reproCommand: commandString([
+			'bun',
+			'run',
+			'fixtures/benchmarks/run.ts',
+			'--scenario',
+			scenario.name,
+			'--repeat',
+			String(repeat),
+			'--warmup',
+			String(warmup),
+			'--json',
+		]),
+		profileCommand: commandString([
+			'bun',
+			'run',
+			'fixtures/benchmarks/profile-bun.ts',
+			'--mode',
+			'all-md',
+			'--label',
+			`synthetic-${scenario.name}`,
+			'--',
+			'bun',
+			'run',
+			'fixtures/benchmarks/run.ts',
+			'--scenario',
+			scenario.name,
+			'--repeat',
+			String(repeat),
+			'--warmup',
+			String(warmup),
+			'--json',
+		]),
 		...(repeat > 1 ? { samples } : {}),
 		...(assertions ? { assertions } : {}),
 	}
+}
+
+function commandString(args: readonly string[]): string {
+	return args.map(shellQuote).join(' ')
+}
+
+function shellQuote(value: string): string {
+	return /^[A-Za-z0-9_./:=@+-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`
 }
 
 function readFlag(name: string): string | undefined {

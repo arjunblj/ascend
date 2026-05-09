@@ -30,43 +30,54 @@ run_image() {
 		set -- bash
 	fi
 
-	docker run --rm "${tty_args[@]}" "${resource_args[@]}" \
-		--workdir /workspace \
-		--mount "type=bind,src=$repo_root,target=/workspace" \
-		--mount "type=volume,src=ascend-sota-node-modules,target=/workspace/node_modules" \
-		--mount "type=volume,src=ascend-sota-bun-cache,target=/root/.bun/install/cache" \
-		--mount "type=volume,src=ascend-sota-cargo,target=/root/.cargo" \
-		--mount "type=volume,src=ascend-sota-cargo-target,target=/tmp/ascend-cargo-target" \
-		--mount "type=volume,src=ascend-sota-go,target=/go" \
-		--mount "type=volume,src=ascend-sota-maven,target=/tmp/ascend-m2-repository" \
-		--mount "type=volume,src=ascend-sota-nuget,target=/tmp/ascend-nuget-packages" \
-		--mount "type=volume,src=ascend-sota-dotnet-home,target=/tmp/ascend-dotnet-home" \
-		--env MAVEN_REPO_LOCAL=/tmp/ascend-m2-repository \
-		--env NUGET_PACKAGES=/tmp/ascend-nuget-packages \
-		--env DOTNET_CLI_HOME=/tmp/ascend-dotnet-home \
-		--env DOTNET_CLI_TELEMETRY_OPTOUT=1 \
-		--env DOTNET_NOLOGO=1 \
-		--env CARGO_TARGET_DIR=/tmp/ascend-cargo-target \
-		--env GOMODCACHE=/go/pkg/mod \
-		--env GOCACHE=/go/build-cache \
-		"$image" "$@"
+	local -a docker_args=(
+		--rm
+		--workdir /workspace
+		--mount "type=bind,src=$repo_root,target=/workspace"
+		--mount "type=volume,src=ascend-sota-node-modules,target=/workspace/node_modules"
+		--mount "type=volume,src=ascend-sota-bun-cache,target=/root/.bun/install/cache"
+		--mount "type=volume,src=ascend-sota-cargo,target=/tmp/ascend-cargo-home"
+		--mount "type=volume,src=ascend-sota-cargo-target,target=/tmp/ascend-cargo-target"
+		--mount "type=volume,src=ascend-sota-go,target=/go"
+		--mount "type=volume,src=ascend-sota-maven,target=/tmp/ascend-m2-repository"
+		--mount "type=volume,src=ascend-sota-nuget,target=/tmp/ascend-nuget-packages"
+		--mount "type=volume,src=ascend-sota-dotnet-home,target=/tmp/ascend-dotnet-home"
+		--env MAVEN_REPO_LOCAL=/tmp/ascend-m2-repository
+		--env NUGET_PACKAGES=/tmp/ascend-nuget-packages
+		--env DOTNET_CLI_HOME=/tmp/ascend-dotnet-home
+		--env DOTNET_CLI_TELEMETRY_OPTOUT=1
+		--env DOTNET_NOLOGO=1
+		--env CARGO_HOME=/tmp/ascend-cargo-home
+		--env CARGO_TARGET_DIR=/tmp/ascend-cargo-target
+		--env GOMODCACHE=/go/pkg/mod
+		--env GOCACHE=/go/build-cache
+		--env PATH=/usr/local/go/bin:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+	)
+	if [[ ${#tty_args[@]} -gt 0 ]]; then
+		docker_args+=("${tty_args[@]}")
+	fi
+	if [[ ${#resource_args[@]} -gt 0 ]]; then
+		docker_args+=("${resource_args[@]}")
+	fi
+
+	docker run "${docker_args[@]}" "$image" "$@"
 }
 
 bootstrap_image() {
-	run_image bash -lc '
+	run_image bash -c '
 		set -euo pipefail
 		bun install --frozen-lockfile
 		python3 - <<PY
 import importlib.metadata as metadata
-for name in ["XlsxWriter", "fastexcel", "openpyxl", "polars", "psutil", "pyarrow", "pyexcelerate", "python-calamine", "xlsx2csv"]:
+for name in ["XlsxWriter", "fastxlsx", "fastexcel", "openpyxl", "polars", "psutil", "pyarrow", "pyexcelerate", "pyfastexcel", "pyopenxlsx", "python-calamine", "xlsx2csv"]:
 	print(f"{name}=={metadata.version(name)}")
 PY
 		cargo fetch --manifest-path fixtures/benchmarks/runners/rust-calamine/Cargo.toml
 		cargo fetch --manifest-path fixtures/benchmarks/runners/rust-xlsxwriter/Cargo.toml
 		cargo build --release --manifest-path fixtures/benchmarks/runners/rust-calamine/Cargo.toml
 		cargo build --release --manifest-path fixtures/benchmarks/runners/rust-xlsxwriter/Cargo.toml
-		go -C fixtures/benchmarks/runners/excelize mod download
-		go -C fixtures/benchmarks/runners/excelize build -o /tmp/ascend-excelize-runner .
+		(cd fixtures/benchmarks/runners/excelize && go mod download)
+		(cd fixtures/benchmarks/runners/excelize && go build -o /tmp/ascend-excelize-runner .)
 		mvn -q -Dmaven.repo.local="$MAVEN_REPO_LOCAL" -f fixtures/benchmarks/runners/apache-poi/pom.xml dependency:go-offline compile
 		mvn -q -Dmaven.repo.local="$MAVEN_REPO_LOCAL" -f fixtures/benchmarks/runners/fastexcel-java/pom.xml dependency:go-offline compile
 		dotnet restore fixtures/benchmarks/runners/closedxml/ClosedXmlRunner.csproj
@@ -77,6 +88,7 @@ PY
 		node --version
 		python3 --version
 		cargo --version
+		rustc --version
 		go version
 		java -version
 		mvn --version

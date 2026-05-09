@@ -272,6 +272,7 @@ static object? WorkloadValue(string workload, int row, int col, int cols)
         var key = row * cols + col;
         return key % 2 == 0 ? $"text-{key:00000000}" : key;
     }
+    if (workload == "mixed-closedxml-10text-5number") return col < 10 ? "Hello world" : col - 10;
     if (workload == "plain-text") return $"text-{row * cols + col:00000000}";
     if (workload is "selected-sheet" or "metadata-only" or "warm-workflow") return row * cols + col;
     if (workload == "feature-rich") return row == 0 && col == 0 ? "Ascend" : row * cols + col;

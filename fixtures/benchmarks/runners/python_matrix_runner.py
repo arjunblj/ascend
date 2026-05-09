@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.metadata as metadata
 import io
 import json
 import re
@@ -15,13 +16,20 @@ from pathlib import Path
 from typing import Any
 
 import openpyxl
-from memory_metrics import sample_with_memory
+from generated_xlsx_validation import (
+    can_validate_generated_workload,
+    expected_ordered_values_hash,
+    generated_cell_count,
+    generated_write_assertions,
+)
+from memory_metrics import memory_baseline, sample_with_memory
 
 WorkloadName = str
 WORKLOAD_CHOICES = [
     "dense-values",
     "mixed-10pct-text",
     "mixed-50pct-text",
+    "mixed-closedxml-10text-5number",
     "plain-text",
     "string-heavy",
     "sparse-wide",
@@ -59,6 +67,8 @@ def workload_value(workload: WorkloadName, row: int, col: int, cols: int) -> str
     if workload == "mixed-50pct-text":
         key = row * cols + col
         return f"text-{key:08d}" if key % 2 == 0 else key
+    if workload == "mixed-closedxml-10text-5number":
+        return "Hello world" if col < 10 else col - 10
     if workload == "plain-text":
         return f"text-{row * cols + col:08d}"
     if workload == "styles-heavy":
@@ -120,6 +130,8 @@ def expected_values_hash(workload: WorkloadName, rows: int, cols: int) -> str:
 
 
 def expected_cell_count(workload: WorkloadName, rows: int, cols: int) -> int:
+    if can_validate_generated_workload(workload):
+        return generated_cell_count(workload, rows, cols)
     return sum(
         1
         for row in range(rows)
@@ -128,21 +140,51 @@ def expected_cell_count(workload: WorkloadName, rows: int, cols: int) -> int:
     )
 
 
-def write_pyopenxlsx(workload: WorkloadName, rows: int, cols: int) -> bytes:
+def write_pyopenxlsx(
+	workload: WorkloadName,
+	rows: int,
+	cols: int,
+	write_strategy: str,
+) -> bytes:
     import pyopenxlsx
 
     workbook = pyopenxlsx.Workbook()
     sheet = workbook.active
     sheet.title = "Data"
-    for row in build_values(workload, rows, cols):
-        sheet.append(row)
+    if write_strategy == "append":
+        for row in build_values(workload, rows, cols):
+            sheet.append(row)
+    elif write_strategy == "write-rows":
+        sheet.write_rows(1, build_values(workload, rows, cols), start_col=1)
+    elif write_strategy == "write-range":
+        sheet.write_range(1, 1, build_values(workload, rows, cols))
+    elif write_strategy == "numpy-range":
+        if workload == "dense-values":
+            import numpy as np
+
+            sheet.write_range(1, 1, np.arange(rows * cols).reshape(rows, cols))
+        else:
+            sheet.write_rows(1, build_values(workload, rows, cols), start_col=1)
+    else:
+        raise ValueError(f"unsupported pyopenxlsx write strategy: {write_strategy}")
     with tempfile.NamedTemporaryFile(suffix=".xlsx") as output:
         workbook.save(output.name)
         return Path(output.name).read_bytes()
 
 
+def effective_pyopenxlsx_write_strategy(workload: WorkloadName, write_strategy: str) -> str:
+    if write_strategy == "numpy-range" and workload != "dense-values":
+        return "write-rows"
+    return write_strategy
+
+
 def write_fastxlsx(workload: WorkloadName, rows: int, cols: int) -> bytes:
-    from fastxlsx import DType, WriteOnlyWorkbook
+    try:
+        from fastxlsx import DType, WriteOnlyWorkbook
+    except ModuleNotFoundError as error:
+        raise RuntimeError(
+            "fastxlsx is not installed; install it in a Python >=3.8,<3.13 environment"
+        ) from error
 
     workbook = WriteOnlyWorkbook()
     sheet = workbook.create_sheet("Data")
@@ -167,9 +209,15 @@ def write_pyfastexcel(workload: WorkloadName, rows: int, cols: int) -> bytes:
         return Path(output.name).read_bytes()
 
 
-def write_workbook(library: str, workload: WorkloadName, rows: int, cols: int) -> bytes:
+def write_workbook(
+    library: str,
+    workload: WorkloadName,
+    rows: int,
+    cols: int,
+    write_strategy: str,
+) -> bytes:
     if library == "pyopenxlsx":
-        return write_pyopenxlsx(workload, rows, cols)
+        return write_pyopenxlsx(workload, rows, cols, write_strategy)
     if library == "fastxlsx":
         return write_fastxlsx(workload, rows, cols)
     if library == "pyfastexcel":
@@ -178,7 +226,12 @@ def write_workbook(library: str, workload: WorkloadName, rows: int, cols: int) -
 
 
 def read_fastxlsx(path: Path, rows: int, cols: int) -> tuple[str, list[str]]:
-    from fastxlsx import ReadOnlyWorkbook
+    try:
+        from fastxlsx import ReadOnlyWorkbook
+    except ModuleNotFoundError as error:
+        raise RuntimeError(
+            "fastxlsx is not installed; install it in a Python >=3.8,<3.13 environment"
+        ) from error
 
     workbook = ReadOnlyWorkbook(str(path))
     sheet_name = workbook.sheetnames[0]
@@ -237,13 +290,32 @@ def column_index(name: str) -> int:
 
 
 def write_assertions(
-    data: bytes,
-    library: str,
-    workload: WorkloadName,
-    rows: int,
-    cols: int,
-    expected_hash: str,
+	data: bytes,
+	library: str,
+	workload: WorkloadName,
+	rows: int,
+	cols: int,
+	expected_hash: str | None,
+	expected_ordered_hash: str | None,
+	write_strategy: str,
 ) -> dict[str, str | int | bool | None]:
+    if can_validate_generated_workload(workload):
+        return {
+            **generated_write_assertions(
+                data,
+                workload=workload,
+                rows=rows,
+                cols=cols,
+                runner_version=runner_version(library),
+                expected_ordered_hash=expected_ordered_hash,
+            ),
+            "requestedWriteStrategy": write_strategy,
+            "effectiveWriteStrategy": (
+                effective_pyopenxlsx_write_strategy(workload, write_strategy)
+                if library == "pyopenxlsx"
+                else write_strategy
+            ),
+        }
     workbook = openpyxl.load_workbook(io.BytesIO(data), read_only=False, data_only=True)
     try:
         sheet = workbook["Data"] if "Data" in workbook.sheetnames else workbook[workbook.sheetnames[0]]
@@ -268,7 +340,13 @@ def write_assertions(
         "cellCountMatches": len(values) == expected_cells,
         "semanticCellValuesHash": observed_hash,
         "expectedSemanticCellValuesHash": expected_hash,
-        "semanticCellValuesHashMatches": observed_hash == expected_hash,
+        "semanticCellValuesHashMatches": expected_hash is not None and observed_hash == expected_hash,
+        "requestedWriteStrategy": write_strategy,
+        "effectiveWriteStrategy": (
+            effective_pyopenxlsx_write_strategy(workload, write_strategy)
+            if library == "pyopenxlsx"
+            else write_strategy
+        ),
     }
 
 
@@ -291,8 +369,11 @@ def read_assertions(
 
 
 def runner_version(library: str) -> str:
-    module = __import__(library)
-    return str(getattr(module, "__version__", "unknown"))
+    try:
+        return metadata.version(library)
+    except metadata.PackageNotFoundError:
+        module = __import__(library)
+        return str(getattr(module, "__version__", "unknown"))
 
 
 def main() -> None:
@@ -306,6 +387,11 @@ def main() -> None:
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--warmup", type=int, default=0)
     parser.add_argument("--validation-mode", choices=["each", "final"], default="each")
+    parser.add_argument(
+        "--write-strategy",
+        choices=["append", "write-rows", "write-range", "numpy-range"],
+        default="append",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
@@ -319,24 +405,39 @@ def main() -> None:
         samples: list[dict[str, float]] = []
         assertions: dict[str, str | int | bool | None] | None = None
         for _ in range(max(1, args.repeat)):
+            before = memory_baseline()
             start = time.perf_counter()
             sheet_name, values = read_workbook(args.library, path, rows, cols)
             duration_ms = (time.perf_counter() - start) * 1000
             assertions = read_assertions(args.library, sheet_name, values)
-            samples.append(sample_with_memory(duration_ms))
+            samples.append(sample_with_memory(duration_ms, before))
         payload: dict[str, Any] = {"assertions": assertions or {}, "samples": samples}
     else:
         if args.rows is None or args.cols is None:
             raise ValueError("--rows and --cols are required for write")
         for _ in range(max(0, args.warmup)):
-            write_workbook(args.library, args.workload, args.rows, args.cols)
-        expected_hash = expected_values_hash(args.workload, args.rows, args.cols)
+            write_workbook(args.library, args.workload, args.rows, args.cols, args.write_strategy)
+        should_compute_expected_hash = (
+            not can_validate_generated_workload(args.workload)
+            or args.rows * args.cols <= 500_000
+        )
+        expected_hash = (
+            expected_values_hash(args.workload, args.rows, args.cols)
+            if should_compute_expected_hash
+            else None
+        )
+        expected_ordered_hash = (
+            expected_ordered_values_hash(args.workload, args.rows, args.cols)
+            if should_compute_expected_hash
+            else None
+        )
         samples = []
         assertions = None
         data: bytes | None = None
         for _ in range(max(1, args.repeat)):
+            before = memory_baseline()
             start = time.perf_counter()
-            data = write_workbook(args.library, args.workload, args.rows, args.cols)
+            data = write_workbook(args.library, args.workload, args.rows, args.cols, args.write_strategy)
             duration_ms = (time.perf_counter() - start) * 1000
             if args.validation_mode == "each":
                 assertions = write_assertions(
@@ -346,8 +447,10 @@ def main() -> None:
                     args.rows,
                     args.cols,
                     expected_hash,
+                    expected_ordered_hash,
+                    args.write_strategy,
                 )
-            samples.append(sample_with_memory(duration_ms))
+            samples.append(sample_with_memory(duration_ms, before))
         if args.validation_mode == "final":
             if data is None:
                 raise RuntimeError("no workbook bytes were produced")
@@ -358,7 +461,12 @@ def main() -> None:
                 args.rows,
                 args.cols,
                 expected_hash,
+                expected_ordered_hash,
+                args.write_strategy,
             )
+        if assertions is not None:
+            assertions["validationMode"] = args.validation_mode
+            assertions["validationSamples"] = args.repeat if args.validation_mode == "each" else 1
         payload = {"assertions": assertions or {}, "samples": samples}
 
     if args.json:

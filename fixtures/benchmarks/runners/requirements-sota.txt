@@ -7,6 +7,6 @@ psutil==7.1.3
 pyarrow==24.0.0
 pyexcelerate==0.13.0
 pyfastexcel==0.1.7
-pyopenxlsx==1.3.0
+pyopenxlsx==1.4.2
 python-calamine==0.6.2
 xlsx2csv==0.8.6

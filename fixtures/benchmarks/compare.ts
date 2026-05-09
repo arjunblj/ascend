@@ -10,10 +10,12 @@ import {
 
 function parseThresholds(argv: string[]): {
 	thresholds?: CompareSuitesConfig['thresholds']
+	explain: boolean
 	rest: string[]
 } {
 	const rest: string[] = []
 	const thresholds: NonNullable<CompareSuitesConfig['thresholds']> = {}
+	let explain = false
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i]
 		if (arg === '--threshold-median' && argv[i + 1]) {
@@ -26,22 +28,25 @@ function parseThresholds(argv: string[]): {
 			const v = Number.parseFloat(argv[++i] ?? '')
 			thresholds.rssDeltaBytes = v
 			thresholds.retainedRssDeltaBytes = v
+		} else if (arg === '--explain') {
+			explain = true
 		} else {
 			rest.push(arg)
 		}
 	}
 	return {
 		thresholds: Object.keys(thresholds).length > 0 ? thresholds : undefined,
+		explain,
 		rest,
 	}
 }
 
 async function main(): Promise<void> {
-	const { thresholds, rest } = parseThresholds(process.argv.slice(2))
+	const { thresholds, explain, rest } = parseThresholds(process.argv.slice(2))
 	const [baselinePath, candidatePath] = rest
 	if (!baselinePath || !candidatePath) {
 		throw new Error(
-			'Usage: bun run fixtures/benchmarks/compare.ts <baseline.json> <candidate.json> [--json] [--threshold-median N] [--threshold-p95 N] [--threshold-throughput N] [--threshold-rss N]',
+			'Usage: bun run fixtures/benchmarks/compare.ts <baseline.json> <candidate.json> [--json] [--explain] [--threshold-median N] [--threshold-p95 N] [--threshold-throughput N] [--threshold-rss N]',
 		)
 	}
 	const [baseline, candidate] = await Promise.all([
@@ -54,7 +59,7 @@ async function main(): Promise<void> {
 		console.log(JSON.stringify(comparison, null, 2))
 		process.exit(comparison.summary.regressed > 0 ? 1 : 0)
 	}
-	console.log(renderComparison(comparison))
+	console.log(renderComparison(comparison, { explain }))
 	process.exit(comparison.summary.regressed > 0 ? 1 : 0)
 }
 
@@ -63,7 +68,10 @@ async function loadSuite(path: string): Promise<BenchmarkSuiteResult> {
 	return JSON.parse(raw) as BenchmarkSuiteResult
 }
 
-function renderComparison(comparison: ReturnType<typeof compareSuites>): string {
+function renderComparison(
+	comparison: ReturnType<typeof compareSuites>,
+	options: { readonly explain: boolean },
+): string {
 	const lines = [
 		`Benchmark compare: ${comparison.baselineSuite} -> ${comparison.candidateSuite}`,
 		`regressed=${comparison.summary.regressed} improved=${comparison.summary.improved} unchanged=${comparison.summary.unchanged} missing=${comparison.summary.missing} added=${comparison.summary.added}`,
@@ -71,9 +79,12 @@ function renderComparison(comparison: ReturnType<typeof compareSuites>): string 
 	for (const entry of comparison.cases) {
 		lines.push(``)
 		lines.push(`${statusLabel(entry.status)} ${entry.name}`)
-		if (entry.comparisons.length === 0) continue
 		for (const metric of entry.comparisons) {
 			lines.push(`  ${renderMetric(metric)}`)
+		}
+		if (options.explain && (entry.status === 'regressed' || entry.status === 'new')) {
+			if (entry.reproCommand) lines.push(`  repro: ${entry.reproCommand}`)
+			if (entry.profileCommand) lines.push(`  profile: ${entry.profileCommand}`)
 		}
 	}
 	return lines.join('\n')

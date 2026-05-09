@@ -13,7 +13,7 @@ import zipfile
 from typing import Any
 
 import openpyxl
-from memory_metrics import sample_with_memory
+from memory_metrics import memory_baseline, sample_with_memory
 from openpyxl.cell import WriteOnlyCell
 from openpyxl.comments import Comment
 from openpyxl.formatting.rule import CellIsRule
@@ -27,6 +27,7 @@ WORKLOAD_CHOICES = [
     "dense-values",
     "mixed-10pct-text",
     "mixed-50pct-text",
+    "mixed-closedxml-10text-5number",
     "plain-text",
     "string-heavy",
     "sparse-wide",
@@ -64,6 +65,8 @@ def workload_value(workload: WorkloadName, row: int, col: int, cols: int) -> str
     if workload == "mixed-50pct-text":
         key = row * cols + col
         return f"text-{key:08d}" if key % 2 == 0 else key
+    if workload == "mixed-closedxml-10text-5number":
+        return "Hello world" if col < 10 else col - 10
     if workload == "plain-text":
         return f"text-{row * cols + col:08d}"
     if workload == "styles-heavy":
@@ -336,13 +339,14 @@ def main() -> None:
     assertions: dict[str, str | int | bool | None] | None = None
     data: bytes | None = None
     for _ in range(max(1, args.repeat)):
+        before = memory_baseline()
         start = time.perf_counter()
         data = write_workbook(args.workload, args.rows, args.cols, args.write_only)
         duration_ms = (time.perf_counter() - start) * 1000
         if args.validation_mode == "each":
             assertions = write_assertions(data, args.workload, args.rows, args.cols, expected_hash)
             assertions["runnerMode"] = "write-only" if args.write_only else "normal"
-        samples.append(sample_with_memory(duration_ms))
+        samples.append(sample_with_memory(duration_ms, before))
     if args.validation_mode == "final":
         if data is None:
             raise RuntimeError("no workbook bytes were produced")

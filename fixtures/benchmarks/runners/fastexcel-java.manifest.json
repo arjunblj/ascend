@@ -2,7 +2,7 @@
 	{
 		"name": "fastexcel-java",
 		"command": ["bash", "fixtures/benchmarks/runners/fastexcel_java_runner.sh"],
-		"categories": ["write"],
+		"categories": ["read", "write"],
 		"runtime": "java",
 		"adapterVersion": "1",
 		"libraryVersion": "reported-by-runner",
@@ -13,7 +13,8 @@
 		"capabilities": {
 			"internalTiming": true,
 			"valueOnlyRead": true,
-			"xlsmRoundtrip": false
+			"xlsmRoundtrip": false,
+			"finalValidation": true
 		}
 	}
 ]

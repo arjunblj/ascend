@@ -168,6 +168,84 @@
 		}
 	},
 	{
+		"name": "ascend-readxlsx-raw-values-operation-bytes",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_readxlsx_open_runner.ts",
+			"--mode",
+			"values",
+			"--source",
+			"bytes",
+			"--raw-values",
+			"--time-open-only"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-operation-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": true
+		}
+	},
+	{
+		"name": "ascend-readxlsx-raw-values-operation-path",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_readxlsx_open_runner.ts",
+			"--mode",
+			"values",
+			"--source",
+			"path",
+			"--raw-values",
+			"--time-open-only"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-operation-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": true
+		}
+	},
+	{
+		"name": "ascend-readxlsx-cell-materialization-bytes",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_readxlsx_open_runner.ts",
+			"--mode",
+			"values",
+			"--source",
+			"bytes",
+			"--raw-values",
+			"--materialize-cells"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-cell-materialization-timing",
+		"validationModel": "external-post-cell-materialization-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": true
+		}
+	},
+	{
 		"name": "ascend-readxlsx-values-rich-metadata-bytes",
 		"command": [
 			"bun",

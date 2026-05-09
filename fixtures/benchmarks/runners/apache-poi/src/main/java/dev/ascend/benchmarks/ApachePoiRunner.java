@@ -326,6 +326,9 @@ public final class ApachePoiRunner {
 			int key = row * cols + col;
 			return key % 2 == 0 ? "text-" + String.format("%08d", key) : key;
 		}
+		if ("mixed-closedxml-10text-5number".equals(workload)) {
+			return col < 10 ? "Hello world" : col - 10;
+		}
 		if ("plain-text".equals(workload)) {
 			return "text-" + String.format("%08d", row * cols + col);
 		}

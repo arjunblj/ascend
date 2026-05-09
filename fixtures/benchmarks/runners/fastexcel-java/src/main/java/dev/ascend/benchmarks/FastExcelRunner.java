@@ -13,6 +13,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.stream.Stream;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.FormulaError;
@@ -25,26 +26,50 @@ import org.dhatim.fastexcel.Worksheet;
 public final class FastExcelRunner {
 	private static final ObjectMapper JSON = new ObjectMapper();
 
-	private record Args(String operation, File file, int rows, int cols, String workload, int repeat, int warmup, boolean json) {}
+	private record Args(
+		String operation,
+		File file,
+		int rows,
+		int cols,
+		String workload,
+		int repeat,
+		int warmup,
+		String validationMode,
+		boolean json
+	) {}
 
 	public static void main(String[] argv) throws Exception {
 		PrintStream originalOut = System.out;
 		System.setOut(new PrintStream(new ByteArrayOutputStream()));
 		Args args = parseArgs(argv);
-		if (!"write".equals(args.operation)) {
-			throw new IllegalArgumentException("fastexcel Java runner currently supports --operation write");
-		}
 		for (int index = 0; index < args.warmup; index++) {
-			writeWorkbook(args.workload, args.rows, args.cols);
+			if ("read".equals(args.operation)) {
+				readCellCount(args.file);
+			} else {
+				writeWorkbook(args.workload, args.rows, args.cols);
+			}
 		}
 		List<Map<String, Number>> samples = new ArrayList<>();
 		Map<String, Object> assertions = null;
+		byte[] finalWriteBytes = null;
 		for (int index = 0; index < args.repeat; index++) {
 			long start = System.nanoTime();
+			if ("read".equals(args.operation)) {
+				readCellCount(args.file);
+				double durationMs = (System.nanoTime() - start) / 1_000_000.0;
+				if ("each".equals(args.validationMode)) assertions = readAssertions(args.file);
+				samples.add(memorySample(durationMs));
+				continue;
+			}
 			byte[] bytes = writeWorkbook(args.workload, args.rows, args.cols);
+			finalWriteBytes = bytes;
 			double durationMs = (System.nanoTime() - start) / 1_000_000.0;
-			assertions = writeAssertions(bytes, args.workload, args.rows, args.cols);
+			if ("each".equals(args.validationMode)) assertions = writeAssertions(bytes, args.workload, args.rows, args.cols);
 			samples.add(memorySample(durationMs));
+		}
+		if ("read".equals(args.operation) && "final".equals(args.validationMode)) assertions = readAssertions(args.file);
+		if ("write".equals(args.operation) && "final".equals(args.validationMode) && finalWriteBytes != null) {
+			assertions = writeAssertions(finalWriteBytes, args.workload, args.rows, args.cols);
 		}
 		Map<String, Object> payload = new HashMap<>();
 		payload.put("assertions", assertions == null ? Map.of() : assertions);
@@ -64,6 +89,7 @@ public final class FastExcelRunner {
 		String workload = "dense-values";
 		int repeat = 1;
 		int warmup = 0;
+		String validationMode = "each";
 		boolean json = false;
 		for (int index = 0; index < argv.length; index++) {
 			String arg = argv[index];
@@ -75,6 +101,7 @@ public final class FastExcelRunner {
 				case "--workload" -> workload = argv[++index];
 				case "--repeat" -> repeat = Math.max(1, Integer.parseInt(argv[++index]));
 				case "--warmup" -> warmup = Math.max(0, Integer.parseInt(argv[++index]));
+				case "--validation-mode" -> validationMode = argv[++index];
 				case "--json" -> json = true;
 				default -> throw new IllegalArgumentException("Unsupported argument " + arg);
 			}
@@ -84,7 +111,10 @@ public final class FastExcelRunner {
 		if ("write".equals(operation) && (rows <= 0 || cols <= 0)) {
 			throw new IllegalArgumentException("--rows and --cols are required for write");
 		}
-		return new Args(operation, file, rows, cols, workload, repeat, warmup, json);
+		if (!"each".equals(validationMode) && !"final".equals(validationMode)) {
+			throw new IllegalArgumentException("--validation-mode must be each or final");
+		}
+		return new Args(operation, file, rows, cols, workload, repeat, warmup, validationMode, json);
 	}
 
 	private static Map<String, Number> memorySample(double durationMs) {
@@ -152,6 +182,61 @@ public final class FastExcelRunner {
 		}
 	}
 
+	private static Map<String, Object> readAssertions(File file) throws Exception {
+		try (org.dhatim.fastexcel.reader.ReadableWorkbook workbook =
+				 new org.dhatim.fastexcel.reader.ReadableWorkbook(file)) {
+			List<String> semanticValues = new ArrayList<>();
+			int sheetCount = 0;
+			int cellCount = 0;
+			int formulaCount = 0;
+			try (Stream<org.dhatim.fastexcel.reader.Sheet> sheets = workbook.getSheets()) {
+				for (org.dhatim.fastexcel.reader.Sheet sheet : (Iterable<org.dhatim.fastexcel.reader.Sheet>) sheets::iterator) {
+					sheetCount++;
+					String sheetName = sheet.getName();
+					try (Stream<org.dhatim.fastexcel.reader.Row> rows = sheet.openStream()) {
+						for (org.dhatim.fastexcel.reader.Row row : (Iterable<org.dhatim.fastexcel.reader.Row>) rows::iterator) {
+							for (org.dhatim.fastexcel.reader.Cell cell : row) {
+								if (cell.getType() == org.dhatim.fastexcel.reader.CellType.FORMULA) formulaCount++;
+								String payload = scalarPayload(cell);
+								if (payload == null) continue;
+								cellCount++;
+								int rowNumber = normalizeFastExcelRowNumber(row.getRowNum());
+								int columnNumber = cell.getColumnIndex() + 1;
+								semanticValues.add(cellRef(sheetName, rowNumber, columnNumber) + "\t" + payload);
+							}
+						}
+					}
+				}
+			}
+			Map<String, Object> assertions = new HashMap<>();
+			assertions.put("runnerVersion", readerImplementationVersion());
+			assertions.put("sheetCount", sheetCount);
+			assertions.put("cellCount", cellCount);
+			assertions.put("formulaCount", formulaCount);
+			assertions.put("semanticCellValuesHash", hashLines(semanticValues));
+			assertions.put("runnerApi", "fastexcel-reader");
+			return assertions;
+		}
+	}
+
+	private static int readCellCount(File file) throws Exception {
+		int cellCount = 0;
+		try (org.dhatim.fastexcel.reader.ReadableWorkbook workbook =
+				 new org.dhatim.fastexcel.reader.ReadableWorkbook(file);
+			 Stream<org.dhatim.fastexcel.reader.Sheet> sheets = workbook.getSheets()) {
+			for (org.dhatim.fastexcel.reader.Sheet sheet : (Iterable<org.dhatim.fastexcel.reader.Sheet>) sheets::iterator) {
+				try (Stream<org.dhatim.fastexcel.reader.Row> rows = sheet.openStream()) {
+					for (org.dhatim.fastexcel.reader.Row row : (Iterable<org.dhatim.fastexcel.reader.Row>) rows::iterator) {
+						for (org.dhatim.fastexcel.reader.Cell cell : row) {
+							if (cell.getType() != org.dhatim.fastexcel.reader.CellType.EMPTY) cellCount++;
+						}
+					}
+				}
+			}
+		}
+		return cellCount;
+	}
+
 	private static Map<String, Object> readAssertionsFromBytes(byte[] bytes) throws Exception {
 		try (org.apache.poi.ss.usermodel.Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(bytes))) {
 			List<String> semanticValues = new ArrayList<>();
@@ -188,6 +273,9 @@ public final class FastExcelRunner {
 		if ("mixed-50pct-text".equals(workload)) {
 			int key = row * cols + col;
 			return key % 2 == 0 ? "text-" + String.format("%08d", key) : key;
+		}
+		if ("mixed-closedxml-10text-5number".equals(workload)) {
+			return col < 10 ? "Hello world" : col - 10;
 		}
 		if ("plain-text".equals(workload)) {
 			return "text-" + String.format("%08d", row * cols + col);
@@ -267,6 +355,20 @@ public final class FastExcelRunner {
 		return "s:" + value;
 	}
 
+	private static String scalarPayload(org.dhatim.fastexcel.reader.Cell cell) {
+		return switch (cell.getType()) {
+			case NUMBER -> "n:" + canonicalNumber(cell.asNumber().doubleValue());
+			case STRING -> "s:" + cell.asString();
+			case BOOLEAN -> "b:" + (Boolean.TRUE.equals(cell.asBoolean()) ? "true" : "false");
+			case ERROR -> "e:" + cell.getText();
+			case FORMULA -> {
+				Object value = cell.getValue();
+				yield value == null ? "empty" : scalarPayload(value);
+			}
+			case EMPTY -> null;
+		};
+	}
+
 	private static String canonicalNumber(double value) {
 		if (value == 0.0d) return "0";
 		if (Math.rint(value) == value) return Long.toString((long) value);
@@ -309,5 +411,15 @@ public final class FastExcelRunner {
 		Package pkg = Workbook.class.getPackage();
 		String version = pkg == null ? null : pkg.getImplementationVersion();
 		return version == null ? "0.20.0" : version;
+	}
+
+	private static String readerImplementationVersion() {
+		Package pkg = org.dhatim.fastexcel.reader.ReadableWorkbook.class.getPackage();
+		String version = pkg == null ? null : pkg.getImplementationVersion();
+		return version == null ? "0.20.0" : version;
+	}
+
+	private static int normalizeFastExcelRowNumber(int rowNum) {
+		return rowNum <= 0 ? rowNum + 1 : rowNum;
 	}
 }

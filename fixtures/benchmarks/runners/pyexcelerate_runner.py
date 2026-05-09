@@ -15,13 +15,20 @@ from typing import Any
 import openpyxl
 from pyexcelerate import Workbook
 import pyexcelerate
-from memory_metrics import sample_with_memory
+from generated_xlsx_validation import (
+    can_validate_generated_workload,
+    expected_ordered_values_hash,
+    generated_cell_count,
+    generated_write_assertions,
+)
+from memory_metrics import memory_baseline, sample_with_memory
 
 WorkloadName = str
 WORKLOAD_CHOICES = [
     "dense-values",
     "mixed-10pct-text",
     "mixed-50pct-text",
+    "mixed-closedxml-10text-5number",
     "plain-text",
     "string-heavy",
     "sparse-wide",
@@ -59,6 +66,8 @@ def workload_value(workload: WorkloadName, row: int, col: int, cols: int) -> str
     if workload == "mixed-50pct-text":
         key = row * cols + col
         return f"text-{key:08d}" if key % 2 == 0 else key
+    if workload == "mixed-closedxml-10text-5number":
+        return "Hello world" if col < 10 else col - 10
     if workload == "plain-text":
         return f"text-{row * cols + col:08d}"
     if workload == "styles-heavy":
@@ -153,6 +162,8 @@ def expected_values_hash(workload: WorkloadName, rows: int, cols: int) -> str:
 
 
 def expected_cell_count(workload: WorkloadName, rows: int, cols: int) -> int:
+    if can_validate_generated_workload(workload):
+        return generated_cell_count(workload, rows, cols)
     return sum(
         1
         for row in range(rows)
@@ -166,8 +177,23 @@ def write_assertions(
     workload: WorkloadName,
     rows: int,
     cols: int,
-    expected_hash: str,
+    expected_hash: str | None,
+    expected_ordered_hash: str | None = None,
 ) -> dict[str, str | int | bool | None]:
+    if can_validate_generated_workload(workload):
+        return {
+            **generated_write_assertions(
+                data,
+                workload=workload,
+                rows=rows,
+                cols=cols,
+                runner_version=pyexcelerate.__version__,
+                expected_ordered_hash=expected_ordered_hash,
+            ),
+            "formulaCount": formula_count(data),
+            "tablePartCount": table_part_count(data),
+            **feature_counts(data),
+        }
     workbook = openpyxl.load_workbook(io.BytesIO(data), read_only=False, data_only=False)
     try:
         sheet = workbook["Data"]
@@ -197,7 +223,7 @@ def write_assertions(
         "cellCountMatches": cell_count == expected_cell_count(workload, rows, cols),
         "semanticCellValuesHash": observed_hash,
         "expectedSemanticCellValuesHash": expected_hash,
-        "semanticCellValuesHashMatches": observed_hash == expected_hash,
+        "semanticCellValuesHashMatches": expected_hash is not None and observed_hash == expected_hash,
     }
 
 
@@ -284,22 +310,50 @@ def main() -> None:
 
     for _ in range(max(0, args.warmup)):
         write_workbook(args.workload, args.rows, args.cols, args.strategy)
-    expected_hash = expected_values_hash(args.workload, args.rows, args.cols)
+    should_compute_expected_hash = (
+        not can_validate_generated_workload(args.workload)
+        or args.rows * args.cols <= 500_000
+    )
+    expected_hash = (
+        expected_values_hash(args.workload, args.rows, args.cols)
+        if should_compute_expected_hash
+        else None
+    )
+    expected_ordered_hash = (
+        expected_ordered_values_hash(args.workload, args.rows, args.cols)
+        if should_compute_expected_hash
+        else None
+    )
     samples: list[dict[str, float]] = []
     assertions: dict[str, str | int | bool | None] | None = None
     data: bytes | None = None
     for _ in range(max(1, args.repeat)):
+        before = memory_baseline()
         start = time.perf_counter()
         data = write_workbook(args.workload, args.rows, args.cols, args.strategy)
         duration_ms = (time.perf_counter() - start) * 1000
         if args.validation_mode == "each":
-            assertions = write_assertions(data, args.workload, args.rows, args.cols, expected_hash)
+            assertions = write_assertions(
+                data,
+                args.workload,
+                args.rows,
+                args.cols,
+                expected_hash,
+                expected_ordered_hash,
+            )
             assertions["runnerStrategy"] = args.strategy
-        samples.append(sample_with_memory(duration_ms))
+        samples.append(sample_with_memory(duration_ms, before))
     if args.validation_mode == "final":
         if data is None:
             raise RuntimeError("no workbook bytes were produced")
-        assertions = write_assertions(data, args.workload, args.rows, args.cols, expected_hash)
+        assertions = write_assertions(
+            data,
+            args.workload,
+            args.rows,
+            args.cols,
+            expected_hash,
+            expected_ordered_hash,
+        )
         assertions["runnerStrategy"] = args.strategy
     if assertions is not None:
         assertions["validationMode"] = args.validation_mode

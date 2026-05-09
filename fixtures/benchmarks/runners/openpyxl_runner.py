@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import openpyxl
-from memory_metrics import sample_with_memory
+from memory_metrics import memory_baseline, sample_with_memory
 from package_fingerprint import roundtrip_feature_assertions, roundtrip_package_assertions
 
 
@@ -347,18 +347,21 @@ def main() -> None:
     samples: list[dict[str, float]] = []
     assertions: dict[str, str | int | bool | None] | None = None
     for _ in range(max(1, args.repeat)):
-        start = time.perf_counter()
         if args.metadata_only:
+            before = memory_baseline()
+            start = time.perf_counter()
             assertions = metadata_only_assertions(path)
             duration_ms = (time.perf_counter() - start) * 1000
-            samples.append(sample_with_memory(duration_ms))
+            samples.append(sample_with_memory(duration_ms, before))
             continue
+        before = memory_baseline()
+        start = time.perf_counter()
         result = run_operation(path, args.operation, args.read_only, args.data_only)
         duration_ms = (time.perf_counter() - start) * 1000
         assertions = assertions_for_result(
             path, args.operation, result, args.read_only, args.data_only
         )
-        samples.append(sample_with_memory(duration_ms))
+        samples.append(sample_with_memory(duration_ms, before))
     payload = {"assertions": assertions or {}, "samples": samples}
     if args.json:
         print(json.dumps(payload, separators=(",", ":")))

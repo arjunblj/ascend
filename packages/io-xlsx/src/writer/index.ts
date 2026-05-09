@@ -60,6 +60,21 @@ const CT_DRAWING = 'application/vnd.openxmlformats-officedocument.drawing+xml'
 const CT_TABLE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml'
 const CT_VML = 'application/vnd.openxmlformats-officedocument.vmlDrawing'
 const CT_THEME = 'application/vnd.openxmlformats-officedocument.theme+xml'
+const STREAMING_XML_BATCH_CHARS = 131_072
+
+interface XmlStreamingBatchSink {
+	write(chunk: string): void
+	flush(): Uint8Array | undefined
+	readonly length: number
+}
+
+type BunArrayBufferSink = {
+	start(options?: { asUint8Array?: boolean; highWaterMark?: number; stream?: boolean }): void
+	write(chunk: string): number | undefined
+	flush(): number | Uint8Array | ArrayBuffer
+}
+
+type BunArrayBufferSinkConstructor = new () => BunArrayBufferSink
 
 export interface WriteXlsxOptions {
 	readonly dirtySheetNames?: readonly string[]
@@ -73,6 +88,10 @@ export interface WriteXlsxOptions {
 	readonly useSharedStrings?: boolean
 	/** Use inline strings instead of shared string table. When true, overrides useSharedStrings. */
 	readonly useInlineStrings?: boolean
+	/** Use plain string cells (`t="str"`) for scalar strings and avoid a shared string table. */
+	readonly usePlainStrings?: boolean
+	/** Omit cell ref attributes on dense contiguous default-style scalar rows. */
+	readonly omitDenseCellRefs?: boolean
 	readonly streaming?: boolean
 }
 
@@ -120,7 +139,7 @@ async function createZipStreaming(plan: import('./plan.ts').WritePlanResult): Pr
 	for (const descriptor of plan.descriptors) {
 		if (descriptor.streamingBuild) {
 			builder.addStreamingEntry(descriptor.path)
-			descriptor.streamingBuild((chunk) => builder.writeChunk(encode(chunk)))
+			writeStreamingXmlEntry(builder, descriptor.streamingBuild)
 			await builder.closeEntry()
 		} else {
 			const part = plan.parts.get(descriptor.path)
@@ -128,6 +147,80 @@ async function createZipStreaming(plan: import('./plan.ts').WritePlanResult): Pr
 		}
 	}
 	return builder.finalize()
+}
+
+function writeStreamingXmlEntry(
+	builder: StreamingZipBuilder,
+	build: (onChunk: (chunk: string) => void) => void,
+): void {
+	let batch = createXmlStreamingBatchSink()
+	const flush = () => {
+		const bytes = batch.flush()
+		if (!bytes) return
+		builder.writeChunk(bytes)
+		batch = createXmlStreamingBatchSink()
+	}
+	build((chunk) => {
+		batch.write(chunk)
+		if (batch.length >= STREAMING_XML_BATCH_CHARS) flush()
+	})
+	flush()
+}
+
+function createXmlStreamingBatchSink(): XmlStreamingBatchSink {
+	return createBunStreamingBatchSink() ?? createStringStreamingBatchSink()
+}
+
+function createBunStreamingBatchSink(): XmlStreamingBatchSink | undefined {
+	const ctor = (
+		globalThis as { readonly Bun?: { readonly ArrayBufferSink?: BunArrayBufferSinkConstructor } }
+	).Bun?.ArrayBufferSink
+	if (typeof ctor !== 'function') return undefined
+	const sink = new ctor()
+	sink.start({
+		asUint8Array: true,
+		stream: true,
+		highWaterMark: STREAMING_XML_BATCH_CHARS,
+	})
+	let chars = 0
+	return {
+		write(chunk) {
+			chars += chunk.length
+			sink.write(chunk)
+		},
+		flush() {
+			if (chars === 0) return undefined
+			chars = 0
+			const flushed = sink.flush()
+			if (flushed instanceof Uint8Array) return flushed
+			if (flushed instanceof ArrayBuffer) return new Uint8Array(flushed)
+			return undefined
+		},
+		get length() {
+			return chars
+		},
+	}
+}
+
+function createStringStreamingBatchSink(): XmlStreamingBatchSink {
+	const chunks: string[] = []
+	let chars = 0
+	return {
+		write(chunk) {
+			chunks.push(chunk)
+			chars += chunk.length
+		},
+		flush() {
+			if (chars === 0) return undefined
+			const bytes = encode(chunks.join(''))
+			chunks.length = 0
+			chars = 0
+			return bytes
+		},
+		get length() {
+			return chars
+		},
+	}
 }
 
 export function planWriteXlsx(
@@ -201,10 +294,13 @@ export function planWriteXlsx(
 					!(options.dirtySheetNames ?? []).includes(sheet.name) &&
 					hasPreservedPart(sourceArchive, sheet.preservedXml?.xml, sheet.preservedXml?.partPath),
 			)
+		const usePlainStringsRequested = options.usePlainStrings ?? false
+		const usePlainStrings = usePlainStringsRequested && !hasPreservedSheetXmlInDirtyPatchMode
 		const useInlineStringsRequested =
 			options.useInlineStrings ?? !(options.useSharedStrings ?? true)
-		const useInlineStrings = useInlineStringsRequested && !hasPreservedSheetXmlInDirtyPatchMode
-		const useSharedStrings = !useInlineStrings
+		const useInlineStrings =
+			!usePlainStrings && useInlineStringsRequested && !hasPreservedSheetXmlInDirtyPatchMode
+		const useSharedStrings = !useInlineStrings && !usePlainStrings
 		const preserveSharedStrings = Boolean(
 			workbook.preservedSharedStrings &&
 				!effectiveSharedStringsDirty &&
@@ -214,9 +310,12 @@ export function planWriteXlsx(
 			!options.summaryOnly && preservedSharedStringsXml
 				? materializeSharedStringEntries(preservedSharedStringsXml)
 				: []
-		const workbookWriteFacts = scanWorkbookWriteFactsFast(workbook)
+		const needsWriteFactScan = useSharedStrings || workbookHasFormulaCells(workbook)
+		const workbookWriteFacts = needsWriteFactScan
+			? scanWorkbookWriteFactsFast(workbook)
+			: { hasStringCells: false, dynamicArrayMetadataEntries: [] }
 		const ssTable =
-			options.summaryOnly || useInlineStrings
+			options.summaryOnly || useInlineStrings || usePlainStrings
 				? {
 						getIndex(): number | undefined {
 							return undefined
@@ -826,6 +925,11 @@ export function planWriteXlsx(
 						? { legacyDrawingRelId }
 						: {}),
 					useInlineStrings,
+					usePlainStrings,
+					batchRows: true,
+					...(options.omitDenseCellRefs !== undefined
+						? { omitDenseCellRefs: options.omitDenseCellRefs }
+						: {}),
 					...(cfOverrides ? { cfDxfIdOverrides: cfOverrides } : {}),
 				}
 				recordStreamingSheet(
@@ -862,6 +966,11 @@ export function planWriteXlsx(
 										? { legacyDrawingRelId }
 										: {}),
 									useInlineStrings,
+									usePlainStrings,
+									batchRows: true,
+									...(options.omitDenseCellRefs !== undefined
+										? { omitDenseCellRefs: options.omitDenseCellRefs }
+										: {}),
 									...(cfOverrides ? { cfDxfIdOverrides: cfOverrides } : {}),
 								})
 					},
@@ -1255,6 +1364,10 @@ function collectCfRuleDxfOverrides(workbook: Workbook): Map<string, Map<string, 
 		if (overrides.size > 0) bySheet.set(sheet.name, overrides)
 	}
 	return bySheet
+}
+
+function workbookHasFormulaCells(workbook: Workbook): boolean {
+	return workbook.sheets.some((sheet) => sheet.cells.formulaCellCount() > 0)
 }
 
 function hasCompletePreservedStyleMap(

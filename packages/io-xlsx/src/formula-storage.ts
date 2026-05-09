@@ -285,6 +285,7 @@ function requiresStoredAstNormalization(formula: string): boolean {
 
 function needsStoredFormulaDenormalization(formula: string): boolean {
 	if (formula.includes('#') || formula.includes('@')) return true
+	if (!formula.includes('(')) return false
 	const upper = formula.toUpperCase()
 	for (const name of FUTURE_FUNCTIONS) {
 		if (name === 'ANCHORARRAY' || name === 'SINGLE') continue

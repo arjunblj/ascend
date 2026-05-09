@@ -1,5 +1,7 @@
+import { Readable } from 'node:stream'
 import { promisify } from 'node:util'
-import { inflateRaw, inflateRawSync } from 'node:zlib'
+import { createInflateRaw, inflateRaw, inflateRawSync } from 'node:zlib'
+import { Inflate } from 'fflate'
 
 const EOCD_SIGNATURE = 0x06054b50
 const ZIP64_EOCD_SIGNATURE = 0x06064b50
@@ -8,7 +10,12 @@ const CENTRAL_DIR_SIGNATURE = 0x02014b50
 const LOCAL_FILE_SIGNATURE = 0x04034b50
 const ZIP64_EXTRA_FIELD_ID = 0x0001
 const MAX_CACHED_PART_BYTES = 128 * 1024
+const STREAM_CHUNK_BYTES = 1024 * 1024
+const FULL_INFLATE_TEXT_CHUNK_LIMIT_BYTES = 64 * 1024 * 1024
+const SYNC_INFLATE_ASYNC_LIMIT_BYTES = 8 * 1024 * 1024
 const inflateRawAsync = promisify(inflateRaw)
+type BunInflateSync = (data: Uint8Array, options: { readonly windowBits: number }) => Uint8Array
+const bunInflateRawSync = getBunInflateRawSync()
 
 export interface ZipEntry {
 	readonly path: string
@@ -54,7 +61,7 @@ export class ZipArchive {
 		)
 		let bytes: Uint8Array
 		if (entry.compressionMethod === 0) bytes = compressed
-		else if (entry.compressionMethod === 8) bytes = new Uint8Array(inflateRawSync(compressed))
+		else if (entry.compressionMethod === 8) bytes = inflateRawBytesSync(compressed)
 		else
 			throw new Error(`Unsupported ZIP compression method ${entry.compressionMethod} for ${path}`)
 		if (bytes.byteLength <= MAX_CACHED_PART_BYTES) {
@@ -76,6 +83,114 @@ export class ZipArchive {
 		return text
 	}
 
+	*readTextChunks(path: string, chunkSize = STREAM_CHUNK_BYTES): IterableIterator<string> {
+		const entry = this.entriesByPath.get(path)
+		if (!entry) return
+		const compressed = this.bytes.subarray(
+			entry.dataOffset,
+			entry.dataOffset + entry.compressedSize,
+		)
+		const decoder = new TextDecoder('utf-8')
+		if (entry.compressionMethod === 0) {
+			yield* decodeTextChunks(compressed, decoder, chunkSize)
+			return
+		}
+		if (entry.compressionMethod !== 8) {
+			throw new Error(`Unsupported ZIP compression method ${entry.compressionMethod} for ${path}`)
+		}
+		if (bunInflateRawSync && entry.uncompressedSize <= FULL_INFLATE_TEXT_CHUNK_LIMIT_BYTES) {
+			yield* decodeTextChunks(inflateRawBytesSync(compressed), decoder, chunkSize)
+			return
+		}
+		const pending: string[] = []
+		const inflater = new Inflate((chunk, final) => {
+			const text = decoder.decode(chunk, { stream: !final })
+			if (text) pending.push(text)
+			if (final) {
+				const tail = decoder.decode()
+				if (tail) pending.push(tail)
+			}
+		})
+		for (let offset = 0; offset < compressed.byteLength; offset += chunkSize) {
+			inflater.push(
+				compressed.subarray(offset, offset + chunkSize),
+				offset + chunkSize >= compressed.byteLength,
+			)
+			while (pending.length > 0) {
+				const text = pending.shift()
+				if (text) yield text
+			}
+		}
+	}
+
+	async *readTextChunksAsync(path: string, chunkSize = STREAM_CHUNK_BYTES): AsyncGenerator<string> {
+		const entry = this.entriesByPath.get(path)
+		if (!entry) return
+		const compressed = this.bytes.subarray(
+			entry.dataOffset,
+			entry.dataOffset + entry.compressedSize,
+		)
+		const decoder = new TextDecoder('utf-8')
+		if (entry.compressionMethod === 0) {
+			for (let offset = 0; offset < compressed.byteLength; offset += chunkSize) {
+				const text = decoder.decode(compressed.subarray(offset, offset + chunkSize), {
+					stream: offset + chunkSize < compressed.byteLength,
+				})
+				if (text) yield text
+			}
+			const tail = decoder.decode()
+			if (tail) yield tail
+			return
+		}
+		if (entry.compressionMethod !== 8) {
+			throw new Error(`Unsupported ZIP compression method ${entry.compressionMethod} for ${path}`)
+		}
+		const source = Readable.from(
+			(function* () {
+				for (let offset = 0; offset < compressed.byteLength; offset += chunkSize) {
+					yield compressed.subarray(offset, offset + chunkSize)
+				}
+			})(),
+		)
+		for await (const chunk of source.pipe(createInflateRaw())) {
+			const text = decoder.decode(chunk as Uint8Array, { stream: true })
+			if (text) yield text
+		}
+		const tail = decoder.decode()
+		if (tail) yield tail
+	}
+
+	async *readByteChunksAsync(
+		path: string,
+		chunkSize = STREAM_CHUNK_BYTES,
+	): AsyncGenerator<Uint8Array> {
+		const entry = this.entriesByPath.get(path)
+		if (!entry) return
+		const compressed = this.bytes.subarray(
+			entry.dataOffset,
+			entry.dataOffset + entry.compressedSize,
+		)
+		if (entry.compressionMethod === 0) {
+			for (let offset = 0; offset < compressed.byteLength; offset += chunkSize) {
+				yield compressed.subarray(offset, offset + chunkSize)
+			}
+			return
+		}
+		if (entry.compressionMethod !== 8) {
+			throw new Error(`Unsupported ZIP compression method ${entry.compressionMethod} for ${path}`)
+		}
+		const source = Readable.from(
+			(function* () {
+				for (let offset = 0; offset < compressed.byteLength; offset += chunkSize) {
+					yield compressed.subarray(offset, offset + chunkSize)
+				}
+			})(),
+		)
+		for await (const chunk of source.pipe(createInflateRaw())) {
+			yield chunk as Uint8Array
+		}
+	}
+
 	async readBytesAsync(path: string): Promise<Uint8Array | undefined> {
 		const cached = this.bytesCache.get(path)
 		if (cached) return cached
@@ -87,9 +202,12 @@ export class ZipArchive {
 		)
 		let bytes: Uint8Array
 		if (entry.compressionMethod === 0) bytes = compressed
-		else if (entry.compressionMethod === 8)
-			bytes = new Uint8Array(await inflateRawAsync(compressed))
-		else
+		else if (entry.compressionMethod === 8) {
+			bytes =
+				bunInflateRawSync && entry.uncompressedSize <= SYNC_INFLATE_ASYNC_LIMIT_BYTES
+					? inflateRawBytesSync(compressed)
+					: await inflateRawAsync(compressed)
+		} else
 			throw new Error(`Unsupported ZIP compression method ${entry.compressionMethod} for ${path}`)
 		if (bytes.byteLength <= MAX_CACHED_PART_BYTES) {
 			this.bytesCache.set(path, bytes)
@@ -127,6 +245,31 @@ export class ZipArchive {
 
 export function extractZip(bytes: Uint8Array): ZipArchive {
 	return new ZipArchive(bytes)
+}
+
+function inflateRawBytesSync(compressed: Uint8Array): Uint8Array {
+	return bunInflateRawSync?.(compressed, { windowBits: -15 }) ?? inflateRawSync(compressed)
+}
+
+function* decodeTextChunks(
+	bytes: Uint8Array,
+	decoder: TextDecoder,
+	chunkSize: number,
+): IterableIterator<string> {
+	for (let offset = 0; offset < bytes.byteLength; offset += chunkSize) {
+		const text = decoder.decode(bytes.subarray(offset, offset + chunkSize), {
+			stream: offset + chunkSize < bytes.byteLength,
+		})
+		if (text) yield text
+	}
+	const tail = decoder.decode()
+	if (tail) yield tail
+}
+
+function getBunInflateRawSync(): BunInflateSync | undefined {
+	const maybeBun = (globalThis as { readonly Bun?: { readonly inflateSync?: BunInflateSync } }).Bun
+	if (typeof maybeBun?.inflateSync !== 'function') return undefined
+	return maybeBun.inflateSync.bind(maybeBun)
 }
 
 function parseEntries(bytes: Uint8Array, decoder: TextDecoder): Map<string, ZipEntry> {

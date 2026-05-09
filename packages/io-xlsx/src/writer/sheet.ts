@@ -27,6 +27,9 @@ export interface SheetXmlOptions {
 	}[]
 	readonly legacyDrawingRelId?: string
 	readonly useInlineStrings?: boolean
+	readonly usePlainStrings?: boolean
+	readonly batchRows?: boolean
+	readonly omitDenseCellRefs?: boolean
 	/** Map of "cfIdx:ruleIdx" -> dxfId for rules with style but no dxfId */
 	readonly cfDxfIdOverrides?: ReadonlyMap<string, number>
 }
@@ -42,7 +45,8 @@ function buildSheetXmlToSink(
 	options: SheetXmlOptions,
 	out: SheetXmlSink,
 ): void {
-	const sharedFormulaExpansions = buildSharedFormulaExpansions(sheet)
+	const sharedFormulaExpansions =
+		sheet.cells.formulaCellCount() > 0 ? buildSharedFormulaExpansions(sheet) : new Map()
 	const tableRelIds = options.tableRelIds ?? []
 	const hyperlinks = options.hyperlinks ?? []
 	const drawingRelId = options.drawingRelId
@@ -151,6 +155,7 @@ function buildSheetXmlToSink(
 	const rowHeights = [...sheet.rowHeights.entries()].sort((a, b) => a[0] - b[0])
 	const rowDefs = [...sheet.rowDefs.entries()].sort((a, b) => a[0] - b[0])
 	const rowIterator = sheet.cells.iterateRows()
+	const columnNameCache: string[] = []
 	let nextRow = rowIterator.next()
 	let rowHeightIndex = 0
 	let rowDefIndex = 0
@@ -185,19 +190,46 @@ function buildSheetXmlToSink(
 		if (rowDef?.hidden) rowAttrs.push('hidden="1"')
 		if (rowDef?.collapsed) rowAttrs.push('collapsed="1"')
 		if (rowDef?.outlineLevel !== undefined) rowAttrs.push(`outlineLevel="${rowDef.outlineLevel}"`)
-		out.push(`<row ${rowAttrs.join(' ')}>`)
+		const rowStart = `<row ${rowAttrs.join(' ')}>`
+		const rowParts = options.batchRows ? [rowStart] : undefined
+		const rowOut: SheetXmlSink =
+			rowParts === undefined ? out : { push: (chunk) => rowParts.push(chunk) }
+		if (rowParts === undefined) out.push(rowStart)
+		const rowNumber = row + 1
+		const omitCellRefs =
+			options.omitDenseCellRefs === true &&
+			canOmitDenseCellRefs(cells, options.useInlineStrings, options.usePlainStrings)
 		for (const [col, cell] of cells) {
+			const ref = omitCellRefs ? undefined : `${cachedColumnName(columnNameCache, col)}${rowNumber}`
+			if (
+				pushDefaultStyleScalarCellXml(
+					rowOut,
+					ref,
+					cell,
+					options.useInlineStrings,
+					options.usePlainStrings,
+				)
+			) {
+				continue
+			}
+			const resolvedRef = ref ?? `${cachedColumnName(columnNameCache, col)}${rowNumber}`
 			pushCellXml(
-				out,
-				`${indexToColumn(col)}${row + 1}`,
+				rowOut,
+				resolvedRef,
 				cell,
 				ssTable,
 				xfMap,
 				sharedFormulaExpansions,
 				options.useInlineStrings,
+				options.usePlainStrings,
 			)
 		}
-		out.push('</row>')
+		if (rowParts === undefined) {
+			out.push('</row>')
+		} else {
+			rowParts.push('</row>')
+			out.push(rowParts.join(''))
+		}
 		if (populatedRow && populatedRow[0] === row) nextRow = rowIterator.next()
 		if (heightEntry && heightEntry[0] === row) rowHeightIndex++
 		if (rowDefEntry && rowDefEntry[0] === row) rowDefIndex++
@@ -388,6 +420,57 @@ function buildSheetXmlToSink(
 	out.push('</worksheet>')
 }
 
+function cachedColumnName(cache: string[], col: number): string {
+	let name = cache[col]
+	if (name === undefined) {
+		name = indexToColumn(col)
+		cache[col] = name
+	}
+	return name
+}
+
+function canOmitDenseCellRefs(
+	cells: readonly (readonly [number, Cell])[],
+	useInlineStrings?: boolean,
+	usePlainStrings?: boolean,
+): boolean {
+	if (cells.length === 0) return false
+	for (let index = 0; index < cells.length; index++) {
+		const entry = cells[index]
+		if (!entry || entry[0] !== index) return false
+		const cell = entry[1]
+		if (
+			(cell.styleId as number) !== 0 ||
+			cell.formula ||
+			cell.formulaInfo ||
+			!canOmitDefaultStyleScalarCellRef(cell, useInlineStrings, usePlainStrings)
+		) {
+			return false
+		}
+	}
+	return true
+}
+
+function canOmitDefaultStyleScalarCellRef(
+	cell: Cell,
+	useInlineStrings?: boolean,
+	usePlainStrings?: boolean,
+): boolean {
+	const value = cell.value
+	if (
+		value.kind === 'number' ||
+		value.kind === 'date' ||
+		value.kind === 'boolean' ||
+		value.kind === 'error' ||
+		value.kind === 'empty'
+	) {
+		return true
+	}
+	if (value.kind === 'string') return useInlineStrings === true || usePlainStrings === true
+	if (value.kind === 'richText') return useInlineStrings === true || usePlainStrings === true
+	return false
+}
+
 function appendBreaks(
 	out: SheetXmlSink,
 	tagName: 'rowBreaks' | 'colBreaks',
@@ -488,6 +571,61 @@ function collectProtectionAttrs(protection: NonNullable<Sheet['protection']>): s
 	return attrs
 }
 
+function pushDefaultStyleScalarCellXml(
+	out: SheetXmlSink,
+	ref: string | undefined,
+	cell: Cell,
+	useInlineStrings?: boolean,
+	usePlainStrings?: boolean,
+): boolean {
+	if (
+		(cell.styleId as number) !== 0 ||
+		cell.formula ||
+		cell.formulaInfo?.kind === 'shared' ||
+		cell.formulaInfo?.kind === 'array'
+	) {
+		return false
+	}
+	const v = cell.value
+	const r = ref === undefined ? '' : ` r="${ref}"`
+	if (v.kind === 'number') {
+		out.push(`<c${r}><v>${v.value}</v></c>`)
+		return true
+	}
+	if (v.kind === 'date') {
+		out.push(`<c${r}><v>${v.serial}</v></c>`)
+		return true
+	}
+	if (v.kind === 'boolean') {
+		out.push(`<c${r} t="b"><v>${v.value ? '1' : '0'}</v></c>`)
+		return true
+	}
+	if (v.kind === 'error') {
+		out.push(`<c${r} t="e"><v>${escapeXml(v.value)}</v></c>`)
+		return true
+	}
+	if (v.kind === 'empty') {
+		out.push(`<c${r}/>`)
+		return true
+	}
+	if (v.kind === 'string') {
+		if (usePlainStrings) {
+			out.push(`<c${r} t="str"><v>${escapeXml(v.value)}</v></c>`)
+			return true
+		}
+		if (useInlineStrings) {
+			out.push(`<c${r} t="inlineStr"><is><t>${escapeXml(v.value)}</t></is></c>`)
+			return true
+		}
+	}
+	if ((usePlainStrings || useInlineStrings) && v.kind === 'richText') {
+		const runsXml = v.runs.map((r) => inlineStrRunXml(r)).join('')
+		out.push(`<c${r} t="inlineStr"><is>${runsXml}</is></c>`)
+		return true
+	}
+	return false
+}
+
 function pushCellXml(
 	out: SheetXmlSink,
 	ref: string,
@@ -496,8 +634,10 @@ function pushCellXml(
 	xfMap: Map<number, number>,
 	sharedFormulaExpansions: ReadonlyMap<string, SharedFormulaExpansion>,
 	useInlineStrings?: boolean,
+	usePlainStrings?: boolean,
 ): void {
-	const xfIdx = xfMap.get(cell.styleId as number) ?? 0
+	const styleId = cell.styleId as number
+	const xfIdx = styleId === 0 ? 0 : (xfMap.get(styleId) ?? 0)
 
 	if (cell.formula || cell.formulaInfo?.kind === 'shared' || cell.formulaInfo?.kind === 'array') {
 		out.push(formulaCellXml(ref, cell, xfIdx, sharedFormulaExpansions))
@@ -521,8 +661,35 @@ function pushCellXml(
 		)
 		return
 	}
+	if (v.kind === 'string') {
+		if (usePlainStrings) {
+			out.push(
+				xfIdx === 0
+					? `<c r="${ref}" t="str"><v>${escapeXml(v.value)}</v></c>`
+					: `<c r="${ref}" s="${xfIdx}" t="str"><v>${escapeXml(v.value)}</v></c>`,
+			)
+			return
+		}
+		if (useInlineStrings) {
+			out.push(
+				xfIdx === 0
+					? `<c r="${ref}" t="inlineStr"><is><t>${escapeXml(v.value)}</t></is></c>`
+					: `<c r="${ref}" s="${xfIdx}" t="inlineStr"><is><t>${escapeXml(v.value)}</t></is></c>`,
+			)
+			return
+		}
+	}
+	if ((usePlainStrings || useInlineStrings) && v.kind === 'richText') {
+		const runsXml = v.runs.map((r) => inlineStrRunXml(r)).join('')
+		out.push(
+			xfIdx === 0
+				? `<c r="${ref}" t="inlineStr"><is>${runsXml}</is></c>`
+				: `<c r="${ref}" s="${xfIdx}" t="inlineStr"><is>${runsXml}</is></c>`,
+		)
+		return
+	}
 
-	out.push(regularCellXml(ref, cell, ssTable, xfIdx, useInlineStrings))
+	out.push(regularCellXml(ref, cell, ssTable, xfIdx, useInlineStrings, usePlainStrings))
 }
 
 function formulaCellXml(
@@ -624,10 +791,23 @@ function regularCellXml(
 	ssTable: SharedStringTable,
 	xfIdx: number,
 	useInlineStrings?: boolean,
+	usePlainStrings?: boolean,
 ): string {
 	const sAttr = xfIdx !== 0 ? ` s="${xfIdx}"` : ''
+	if (usePlainStrings) {
+		const value = cell.value
+		const v = value.kind === 'array' ? topLeftScalar(value) : value
+		if (v.kind === 'string') {
+			return `<c r="${ref}"${sAttr} t="str"><v>${escapeXml(v.value)}</v></c>`
+		}
+		if (v.kind === 'richText') {
+			const runsXml = v.runs.map((r) => inlineStrRunXml(r)).join('')
+			return `<c r="${ref}"${sAttr} t="inlineStr"><is>${runsXml}</is></c>`
+		}
+	}
 	if (useInlineStrings) {
-		const v = topLeftScalar(cell.value)
+		const value = cell.value
+		const v = value.kind === 'array' ? topLeftScalar(value) : value
 		if (v.kind === 'string') {
 			return `<c r="${ref}"${sAttr} t="inlineStr"><is><t>${escapeXml(v.value)}</t></is></c>`
 		}

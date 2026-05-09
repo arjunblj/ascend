@@ -6,14 +6,46 @@ const EOCD_SIGNATURE = 0x06054b50
 const ZIP64_EOCD_SIGNATURE = 0x06064b50
 const ZIP64_EOCD_LOCATOR_SIGNATURE = 0x07064b50
 const ZIP64_EXTRA_FIELD_ID = 0x0001
+const LOCAL_FILE_SIGNATURE = 0x04034b50
 const CENTRAL_DIR_SIGNATURE = 0x02014b50
 
 describe('extractZip', () => {
+	test('writer records standard CRC32 values in ZIP headers', () => {
+		const bytes = createZip(new Map([['hello.txt', encode('hello')]]))
+		const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+		const localOffset = findSignature(bytes, LOCAL_FILE_SIGNATURE)
+		const centralOffset = findSignature(bytes, CENTRAL_DIR_SIGNATURE)
+		expect(view.getUint32(localOffset + 14, true)).toBe(0x3610a686)
+		expect(view.getUint32(centralOffset + 16, true)).toBe(0x3610a686)
+	})
+
 	test('reads ZIP64 archives when central directory uses ZIP64 metadata', () => {
 		const base = createZip(new Map([['hello.txt', encode('hello zip64')]]))
 		const zip64Bytes = promoteToZip64(base)
 		const archive = extractZip(zip64Bytes)
 		expect(archive.readText('hello.txt')).toBe('hello zip64')
+	})
+
+	test('streams deflated text chunks without changing decoded content', () => {
+		const text = 'alpha😀beta\n'.repeat(256)
+		const archive = extractZip(createZip(new Map([['hello.txt', encode(text)]])))
+		expect([...archive.readTextChunks('hello.txt', 7)].join('')).toBe(text)
+	})
+
+	test('streams deflated byte chunks without changing bytes', async () => {
+		const text = 'alpha😀beta\n'.repeat(256)
+		const expected = encode(text)
+		const archive = extractZip(createZip(new Map([['hello.txt', expected]])))
+		const chunks: Uint8Array[] = []
+		for await (const chunk of archive.readByteChunksAsync('hello.txt', 11)) chunks.push(chunk)
+		expect(concatBytes(chunks)).toEqual(expected)
+	})
+
+	test('streams stored text chunks without changing decoded content', () => {
+		const text = 'x'
+		const archive = extractZip(createZip(new Map([['stored.txt', encode(text)]])))
+		expect(archive.get('stored.txt')?.compressionMethod).toBe(0)
+		expect([...archive.readTextChunks('stored.txt', 1)].join('')).toBe(text)
 	})
 
 	test('reads ZIP64 archives emitted by writer when entry count exceeds EOCD16 limits', () => {

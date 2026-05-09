@@ -6,7 +6,9 @@ import { defaultCalcContext, recalculate } from '../../../engine/src/index.ts'
 import { makeXlsx } from '../../test/helpers.ts'
 import { writeXlsx } from '../writer/index.ts'
 import { readXlsx } from './index.ts'
+import { emptySharedStrings } from './shared-strings.ts'
 import type { StreamedSheetRow } from './sheet.ts'
+import { streamSheetRowsTextChunks } from './sheet.ts'
 import { readXlsxRowsStream } from './stream.ts'
 
 const S0 = 0 as StyleId
@@ -128,6 +130,32 @@ describe('readXlsx', () => {
 		expect(report.status).toBe('clean')
 	})
 
+	it('values mode reads plain string cells without full cell XML parsing', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1" t="str"><v>plain &amp; fast</v></c>
+      <c r="B1" t="str"><f>TEXT(1,"0")</f><v>cached text</v></c>
+    </row>
+  </sheetData>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes, { mode: 'values' })
+		expectOk(result)
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet?.cells.get(0, 0)?.value).toEqual({ kind: 'string', value: 'plain & fast' })
+		expect(sheet?.cells.get(0, 1)?.value).toEqual({ kind: 'string', value: 'cached text' })
+		expect(sheet?.cells.get(0, 1)?.formula).toBeNull()
+	})
+
 	it('streams worksheet rows through the async reader path', async () => {
 		const result = await readXlsxRowsStream(minimalXlsx(), { sheet: 'Data', mode: 'formula' })
 		expectOk(result)
@@ -187,6 +215,38 @@ describe('readXlsx', () => {
 		expect(rows).toEqual([])
 	})
 
+	it('streams worksheet text chunks split inside rows, cells, and values', () => {
+		const xml =
+			'<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c><c><v>2</v></c></row><row><c t="str"><v>plain &amp; text</v></c></row></sheetData></worksheet>'
+		const rows = [
+			...streamSheetRowsTextChunks(
+				'Data',
+				[xml.slice(0, 29), xml.slice(29, 53), xml.slice(53, 91), xml.slice(91)],
+				{
+					sharedStrings: emptySharedStrings(),
+					styleIds: [S0],
+					isDateFormat: [false],
+					valuesOnly: true,
+				},
+			),
+		]
+		expect(rows).toEqual([
+			{
+				row: 0,
+				cells: [
+					[0, { value: { kind: 'number', value: 1 }, formula: null, styleId: S0 }],
+					[1, { value: { kind: 'number', value: 2 }, formula: null, styleId: S0 }],
+				],
+			},
+			{
+				row: 1,
+				cells: [
+					[0, { value: { kind: 'string', value: 'plain & text' }, formula: null, styleId: S0 }],
+				],
+			},
+		])
+	})
+
 	it('parses merge cells', () => {
 		const result = readXlsx(minimalXlsx())
 		expectOk(result)
@@ -215,7 +275,7 @@ describe('readXlsx', () => {
 		expect(result.error.code).toBe('CORRUPT_FILE')
 	})
 
-	it('applies density hint from dimension for dense sheets', () => {
+	it('keeps parsed dense sheets in dense chunks', () => {
 		const wb = createWorkbook()
 		wb.addSheet('Dense')
 		const sheet = wb.sheets[0]
@@ -235,6 +295,35 @@ describe('readXlsx', () => {
 		expectOk(result)
 		const readSheet = result.value.workbook.sheets[0]
 		expect(readSheet?.cells.getChunkKindAt(0, 0)).toBe('dense')
+	})
+
+	it('does not densify sparse sheets from a stale large dimension', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="A1:XFD1048576"/>
+  <sheetData>
+    <row r="1"><c r="A1"><v>1</v></c></row>
+    <row r="1048576"><c r="XFD1048576"><v>2</v></c></row>
+  </sheetData>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+		const readSheet = result.value.workbook.sheets[0]
+		expect(readSheet?.cells.get(0, 0)?.value).toEqual({ kind: 'number', value: 1 })
+		expect(readSheet?.cells.get(1_048_575, 16_383)?.value).toEqual({
+			kind: 'number',
+			value: 2,
+		})
+		expect(readSheet?.cells.getChunkKindAt(0, 0)).toBe('sparse')
+		expect(readSheet?.cells.getChunkKindAt(1_048_575, 16_383)).toBe('sparse')
 	})
 
 	it('handles workbook with no shared strings', () => {
@@ -1577,6 +1666,85 @@ describe('readXlsx', () => {
 		})
 	})
 
+	it('values mode can opt into rich sheet metadata without hydrating formulas', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/comments1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml"/>
+</Types>`,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Data" sheetId="1" r:id="rId1"/>
+  </sheets>
+  <definedNames><definedName name="FeatureRange">Data!$A$1:$B$2</definedName></definedNames>
+</workbook>`,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheetData>
+    <row r="1"><c r="A1"><f>SUM(B1:B2)</f><v>7</v></c></row>
+  </sheetData>
+  <conditionalFormatting sqref="A1"><cfRule type="cellIs" operator="greaterThan" priority="1"><formula>0</formula></cfRule></conditionalFormatting>
+  <dataValidations count="1"><dataValidation type="list" sqref="B2"><formula1>"A,B"</formula1></dataValidation></dataValidations>
+  <hyperlinks><hyperlink ref="A1" r:id="rIdHyperlink" display="Ascend"/></hyperlinks>
+</worksheet>`,
+			'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdComments" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="../comments1.xml"/>
+  <Relationship Id="rIdHyperlink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/ascend" TargetMode="External"/>
+</Relationships>`,
+			'xl/comments1.xml': `<?xml version="1.0"?>
+<comments xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <authors><author>Ada</author></authors>
+  <commentList><comment ref="B2" authorId="0"><text><t>Review</t></text></comment></commentList>
+</comments>`,
+		})
+
+		const valuesOnly = readXlsx(bytes, { mode: 'values' })
+		expectOk(valuesOnly)
+		expect(valuesOnly.value.loadInfo.richSheetMetadataHydrated).toBe(false)
+		expect(valuesOnly.value.workbook.sheets[0]?.comments.size).toBe(0)
+		expect(valuesOnly.value.workbook.sheets[0]?.hyperlinks.size).toBe(0)
+		expect(valuesOnly.value.workbook.sheets[0]?.dataValidations).toHaveLength(0)
+		expect(valuesOnly.value.workbook.sheets[0]?.conditionalFormats).toHaveLength(0)
+		expect(valuesOnly.value.workbook.definedNames.get('FeatureRange')).toBe('Data!$A$1:$B$2')
+
+		const valuesWithMetadata = readXlsx(bytes, { mode: 'values', richMetadata: true })
+		expectOk(valuesWithMetadata)
+		const sheet = valuesWithMetadata.value.workbook.sheets[0]
+		expect(valuesWithMetadata.value.loadInfo.richSheetMetadataHydrated).toBe(true)
+		expect(valuesWithMetadata.value.loadInfo.isPartial).toBe(true)
+		expect(sheet?.cells.get(0, 0)?.formula).toBeNull()
+		expect(sheet?.comments.get('B2')).toEqual({ text: 'Review', author: 'Ada' })
+		expect(sheet?.hyperlinks.get('A1')).toEqual({
+			target: 'https://example.com/ascend',
+			display: 'Ascend',
+		})
+		expect(sheet?.dataValidations).toEqual([{ sqref: 'B2', type: 'list', formula1: '"A,B"' }])
+		expect(sheet?.conditionalFormats).toEqual([
+			{
+				sqref: 'A1',
+				rules: [
+					{
+						type: 'cellIs',
+						operator: 'greaterThan',
+						priority: 1,
+						formulas: ['0'],
+					},
+				],
+			},
+		])
+	})
+
 	it('captures style metadata richness for read-time inspection', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -1852,6 +2020,35 @@ describe('readXlsx', () => {
 
 		expect(sheet?.cells.get(0, 2)?.value).toEqual({ kind: 'number', value: 200 })
 		expect(sheet?.cells.get(0, 2)?.formula).toBeNull()
+	})
+
+	it('values mode reads simple inline strings without full cell XML parsing', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1" t="inlineStr"><is><t>hello &amp; goodbye</t></is></c>
+      <c r="B1" t="inlineStr"><f>A1</f><is><t>cached</t></is></c>
+    </row>
+  </sheetData>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes, { mode: 'values' })
+		expectOk(result)
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet?.cells.get(0, 0)?.value).toEqual({
+			kind: 'string',
+			value: 'hello & goodbye',
+		})
+		expect(sheet?.cells.get(0, 1)?.value).toEqual({ kind: 'string', value: 'cached' })
+		expect(sheet?.cells.get(0, 1)?.formula).toBeNull()
 	})
 
 	it('values mode reads dense workbooks successfully across repeated runs', () => {

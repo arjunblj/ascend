@@ -75,6 +75,8 @@ export interface ReadXlsxOptions {
 	readonly mode?: 'full' | 'metadata-only' | 'values' | 'formula'
 	readonly sheets?: readonly (string | number)[]
 	readonly maxRows?: number
+	readonly richMetadata?: boolean
+	readonly parseDates?: boolean
 }
 
 export interface ReadXlsxLoadInfo {
@@ -175,7 +177,7 @@ export function readXlsx(
 		consumed.add(workbookPath)
 		consumed.add(wbRelsPath)
 
-		if (mode !== 'values') {
+		if (mode === 'full') {
 			for (const entry of wbInfo.pivotCacheEntries) {
 				const rel = relMap.get(entry.relId)
 				if (!rel) continue
@@ -316,40 +318,49 @@ export function readXlsx(
 
 		const valuesOnly = mode === 'values'
 		const formulaOnly = mode === 'formula'
+		const hydrateRichSheetMetadata =
+			mode === 'full' || ((valuesOnly || formulaOnly) && options.richMetadata === true)
 		if (mode === 'metadata-only') {
 			for (const entry of sheetsToParse) {
 				const sheet = workbook.addSheet(entry.name, entry.sheetId as SheetId)
 				sheet.state = entry.state
 			}
 		} else {
-			const valuePool = new ValueInternPool()
+			const valuePool = valuesOnly ? undefined : new ValueInternPool()
 			const ssXml = ssPath ? readPart(archive, ssPath) : undefined
 			const sharedStrings = ssXml
 				? parseSharedStrings(ssXml, {
-						normalize: (value) => valuePool.internValue(value),
+						...(valuesOnly || formulaOnly
+							? {}
+							: { normalize: (value) => valuePool?.internValue(value) ?? value }),
 						lazy: valuesOnly || formulaOnly || selectedSheets !== null,
 					})
 				: emptySharedStrings()
 
-			const stylesXml = stylesPath ? readPart(archive, stylesPath) : undefined
+			const parseLiteStyles = !((valuesOnly || formulaOnly) && options.parseDates === false)
+			const stylesXml =
+				stylesPath && (parseLiteStyles || !(valuesOnly || formulaOnly))
+					? readPart(archive, stylesPath)
+					: undefined
 			let styleIds: StyleId[]
 			let isDateFormat: boolean[]
 			let differentialStyles: readonly CellStyle[]
 			if (valuesOnly || formulaOnly) {
-				const parsedStyles = stylesXml
-					? parseStylesLite(stylesXml)
-					: {
-							isDateFormat: [false],
-							metadata: {
-								numFmtCount: 0,
-								fontCount: 0,
-								fillCount: 0,
-								borderCount: 0,
-								cellXfCount: 1,
-								dxfCount: 0,
-								tableStyleCount: 0,
-							},
-						}
+				const parsedStyles =
+					stylesXml && parseLiteStyles
+						? parseStylesLite(stylesXml)
+						: {
+								isDateFormat: [false],
+								metadata: {
+									numFmtCount: 0,
+									fontCount: 0,
+									fillCount: 0,
+									borderCount: 0,
+									cellXfCount: 1,
+									dxfCount: 0,
+									tableStyleCount: 0,
+								},
+							}
 				styleIds = new Array<StyleId>(parsedStyles.isDateFormat.length).fill(DEFAULT_STYLE_ID)
 				isDateFormat = parsedStyles.isDateFormat
 				differentialStyles = []
@@ -380,11 +391,14 @@ export function readXlsx(
 				workbook.styleMetadata = parsedStyles.metadata
 				workbook.differentialStyles.push(...parsedStyles.differentialStyles)
 			}
+			const hasDateStyles = isDateFormat.some(Boolean)
 
 			for (const entry of sheetsToParse) {
 				const sheetXml = readPart(archive, entry.path)
 				if (!sheetXml) continue
-				const sheetRelsXml = readPart(archive, getRelsPath(entry.path))
+				const sheetRelsXml = hydrateRichSheetMetadata
+					? readPart(archive, getRelsPath(entry.path))
+					: undefined
 				const sheetRelationships = sheetRelsXml ? parseRelationships(sheetRelsXml) : []
 				sheetRelsByPath.set(entry.path, sheetRelationships)
 				const sheetFormulaFeatures: SheetFormulaFeatures = {
@@ -399,12 +413,14 @@ export function readXlsx(
 						sharedStrings,
 						styleIds,
 						isDateFormat,
+						hasDateStyles,
 						differentialStyles,
 						relationships: sheetRelationships,
-						valuePool,
 						valuesOnly,
 						formulaOnly,
+						richMetadata: hydrateRichSheetMetadata,
 						formulaFeatures: sheetFormulaFeatures,
+						...(valuePool ? { valuePool } : {}),
 						...(metadata ? { metadata } : {}),
 						...(options.maxRows !== undefined ? { maxRows: options.maxRows } : {}),
 					},
@@ -419,14 +435,14 @@ export function readXlsx(
 				if (sheetFormulaFeatures.hasDynamicArrayFormula) {
 					formulaFeatures.dynamicArraySheets.push(entry.name)
 				}
-				if (!valuesOnly && !formulaOnly) {
+				if (hydrateRichSheetMetadata) {
 					attachComments(archive, entry.path, sheet, sheetRelationships)
 					attachDrawingImages(archive, entry.path, sheet, sheetRelationships)
 					attachPivotTables(archive, entry.path, entry.name, workbook, sheetRelationships)
 				}
-				attachTables(archive, entry.path, sheet, sheetRelationships)
+				if (hydrateRichSheetMetadata) attachTables(archive, entry.path, sheet, sheetRelationships)
 				sheet.state = entry.state
-				if (!valuesOnly && !formulaOnly) {
+				if (hydrateRichSheetMetadata) {
 					sheet.preservedXml = {
 						partPath: entry.path,
 						...(sheetRelsXml ? { relsPath: getRelsPath(entry.path) } : {}),
@@ -456,7 +472,7 @@ export function readXlsx(
 		const loadedSheetNames = sheetsToParse.map((sheet) => sheet.name)
 		const hasAllSheets = loadedSheetNames.length === sourceSheetNames.length
 		const cellsHydrated = mode !== 'metadata-only'
-		const richSheetMetadataHydrated = !valuesOnly && !formulaOnly && mode !== 'metadata-only'
+		const richSheetMetadataHydrated = hydrateRichSheetMetadata
 		const fidelityPartial = mode === 'values' || mode === 'formula' || options.maxRows !== undefined
 		const isPartial = !hasAllSheets || !cellsHydrated || fidelityPartial
 		const loadInfo: ReadXlsxLoadInfo = {
@@ -956,7 +972,13 @@ function buildReport(
 		const reasons: string[] = []
 		if (!loadInfo.hasAllSheets) reasons.push('only selected sheets are loaded')
 		if (!loadInfo.cellsHydrated) reasons.push('sheet cells are not hydrated')
-		if (loadInfo.mode === 'values') reasons.push('only cell values are hydrated')
+		if (loadInfo.mode === 'values') {
+			reasons.push(
+				loadInfo.richSheetMetadataHydrated
+					? 'formulas, styles, and preservation capsules are not hydrated'
+					: 'only cell values are hydrated',
+			)
+		}
 		features.push({
 			feature: 'partialLoad',
 			tier: 'normalized',

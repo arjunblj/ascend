@@ -108,4 +108,60 @@ describe('readXlsx fuzz harness', () => {
 		expect(okCount).toBeGreaterThan(0)
 		expect(errCount).toBeGreaterThan(0)
 	})
+
+	test('handles empty bytes gracefully', () => {
+		let threw = false
+		try {
+			const result = readXlsx(new Uint8Array(0))
+			expect(result.ok).toBe(false)
+		} catch {
+			threw = true
+		}
+		expect(threw).toBe(false)
+	})
+
+	test('handles random garbage bytes gracefully', () => {
+		const random = rng(0xcafe1234)
+		let threw = false
+		for (let i = 0; i < 50; i++) {
+			const len = 4 + Math.floor(random() * 512)
+			const garbage = new Uint8Array(len)
+			for (let j = 0; j < len; j++) garbage[j] = Math.floor(random() * 256)
+			try {
+				readXlsx(garbage)
+			} catch {
+				threw = true
+			}
+		}
+		expect(threw).toBe(false)
+	})
+
+	test('handles truncated valid xlsx at various points', () => {
+		const base = makeMinimalXlsx()
+		const random = rng(0xfeed)
+		let threw = false
+		for (let i = 0; i < 30; i++) {
+			const cut = 1 + Math.floor(random() * (base.length - 1))
+			try {
+				readXlsx(base.subarray(0, cut))
+			} catch {
+				threw = true
+			}
+		}
+		expect(threw).toBe(false)
+	})
+
+	test('handles xlsx with missing required parts', () => {
+		const partial = zipSync({
+			'[Content_Types].xml': str(CONTENT_TYPES),
+			'_rels/.rels': str(ROOT_RELS),
+		})
+		let threw = false
+		try {
+			readXlsx(partial)
+		} catch {
+			threw = true
+		}
+		expect(threw).toBe(false)
+	})
 })

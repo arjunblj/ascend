@@ -1206,6 +1206,33 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('rewriteExternalLink updates selected external workbook target metadata', () => {
+		const wb = setup()
+		wb.externalReferences.push('xl/externalLinks/externalLink1.xml')
+		wb.externalReferenceDetails.push({
+			partPath: 'xl/externalLinks/externalLink1.xml',
+			relId: 'rId2',
+			linkRelId: 'rIdExt',
+			target: '../sources/source.xlsx',
+			targetMode: 'External',
+		})
+
+		const result = applyOperation(wb, {
+			op: 'rewriteExternalLink',
+			partPath: 'xl/externalLinks/externalLink1.xml',
+			linkRelId: 'rIdExt',
+			newTarget: '../sources/reforecast.xlsx',
+		})
+		expectOk(result)
+
+		expect(result.value.sheetsModified).toEqual([])
+		expect(result.value.recalcRequired).toBe(false)
+		expect(wb.externalReferenceDetails[0]).toMatchObject({
+			target: '../sources/reforecast.xlsx',
+			targetMode: 'External',
+		})
+	})
+
 	test('appendRows expands table filter and sort metadata refs', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

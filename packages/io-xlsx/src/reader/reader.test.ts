@@ -1210,6 +1210,7 @@ describe('readXlsx', () => {
 			{
 				partPath: 'xl/externalLinks/externalLink1.xml',
 				relId: 'rId2',
+				linkRelId: 'rIdExt',
 				target: '../sources/source.xlsx',
 				targetMode: 'External',
 			},

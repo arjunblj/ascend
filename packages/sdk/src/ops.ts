@@ -121,11 +121,14 @@ const FIELD_SCHEMAS: Record<
 	},
 	source: { type: 'string', description: 'Source range' },
 	target: { type: 'string', description: 'Target range' },
+	newTarget: { type: 'string', description: 'Replacement external workbook path or URL' },
 	targetPath: {
 		type: 'string',
 		description: 'XLSX package part path, such as xl/media/image1.png',
 	},
 	relId: { type: 'string', description: 'Relationship id inside the drawing part' },
+	linkRelId: { type: 'string', description: 'Relationship id inside the external link part' },
+	targetMode: { type: 'string', description: 'Relationship target mode, usually External' },
 	contentBase64: { type: 'string', description: 'Base64-encoded binary content' },
 	contentType: { type: 'string', description: 'MIME content type, such as image/png' },
 	imageIndex: { type: 'integer', description: 'Zero-based image index on the sheet' },
@@ -397,6 +400,12 @@ export function listOperations(): readonly OperationSchema[] {
 				'saveData',
 			],
 		},
+		{
+			op: 'rewriteExternalLink',
+			description: 'Rewrite an external workbook link target while preserving link package parts',
+			requiredFields: ['newTarget'],
+			optionalFields: ['partPath', 'relId', 'linkRelId', 'target', 'targetMode'],
+		},
 	])
 }
 
@@ -559,6 +568,12 @@ function operationRecoveryActions(op: string): readonly string[] {
 				'Set invalid=true and refreshOnLoad=true when changing source ranges without recalculating pivot output.',
 				...common,
 			]
+		case 'rewriteExternalLink':
+			return [
+				'Use inspect --detail external-refs to choose partPath, relId, linkRelId, or target.',
+				'Run ascend plan before commit to verify package preservation and formula-state warnings.',
+				...common,
+			]
 		default:
 			return common
 	}
@@ -700,6 +715,14 @@ function operationExample(op: string): Record<string, unknown> {
 				sourceRef: 'A1:E200',
 				refreshOnLoad: true,
 				invalid: true,
+			}
+		case 'rewriteExternalLink':
+			return {
+				op,
+				partPath: 'xl/externalLinks/externalLink1.xml',
+				linkRelId: 'rIdExt',
+				newTarget: '../sources/reforecast.xlsx',
+				targetMode: 'External',
 			}
 		default:
 			return { op }

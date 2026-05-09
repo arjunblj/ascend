@@ -20,6 +20,7 @@ import * as sheetOps from './sheet-ops.ts'
 import * as structuralOps from './structural-ops.ts'
 import * as tableOps from './table-ops.ts'
 import * as visualOps from './visual-ops.ts'
+import * as workbookOps from './workbook-ops.ts'
 
 export type { PatchResult } from './helpers.ts'
 
@@ -91,6 +92,7 @@ const handlers: Record<string, OperationHandler> = {
 	replaceImage: visualOps.handleReplaceImage as OperationHandler,
 	setChartSeriesSource: visualOps.handleSetChartSeriesSource as OperationHandler,
 	setPivotCache: pivotOps.handleSetPivotCache as OperationHandler,
+	rewriteExternalLink: workbookOps.handleRewriteExternalLink as OperationHandler,
 }
 
 export function applyOperation(

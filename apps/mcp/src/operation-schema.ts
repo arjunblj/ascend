@@ -330,6 +330,15 @@ const operationSchema = z.discriminatedUnion('op', [
 		invalid: z.boolean().optional(),
 		saveData: z.boolean().optional(),
 	}),
+	z.object({
+		op: z.literal('rewriteExternalLink'),
+		partPath: z.string().optional(),
+		relId: z.string().optional(),
+		linkRelId: z.string().optional(),
+		target: z.string().optional(),
+		newTarget: z.string(),
+		targetMode: z.string().optional(),
+	}),
 ])
 
 export const operationsSchema = z.array(operationSchema)

@@ -398,6 +398,15 @@ export type Operation =
 			readonly invalid?: boolean
 			readonly saveData?: boolean
 	  }
+	| {
+			readonly op: 'rewriteExternalLink'
+			readonly partPath?: string
+			readonly relId?: string
+			readonly linkRelId?: string
+			readonly target?: string
+			readonly newTarget: string
+			readonly targetMode?: string
+	  }
 
 export interface WorkbookProtectionInput {
 	readonly lockStructure?: boolean

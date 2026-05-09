@@ -1541,6 +1541,68 @@ describe('writeXlsx', () => {
 		})
 	})
 
+	it('rewrites external link relationship targets while preserving link parts', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Data')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: S0 })
+		wb.externalReferences.push('xl/externalLinks/externalLink1.xml')
+		wb.externalReferenceDetails.push({
+			partPath: 'xl/externalLinks/externalLink1.xml',
+			relId: 'rId2',
+			linkRelId: 'rIdExt',
+			target: '../sources/source.xlsx',
+			targetMode: 'External',
+		})
+
+		const capsules: PreservationCapsule[] = [
+			{
+				partPath: 'xl/externalLinks/externalLink1.xml',
+				contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml',
+				relationships: [
+					{
+						id: 'rIdExt',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath',
+						target: '../sources/source.xlsx',
+						targetMode: 'External',
+					},
+				],
+				content: new TextEncoder().encode(
+					'<externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"/>',
+				),
+				anchor: { kind: 'workbook' },
+				relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink',
+			},
+		]
+
+		const applied = applyOperations(wb, [
+			{
+				op: 'rewriteExternalLink',
+				partPath: 'xl/externalLinks/externalLink1.xml',
+				linkRelId: 'rIdExt',
+				newTarget: '../sources/reforecast & final.xlsx',
+			},
+		])
+		expectOk(applied)
+		const written = writeXlsx(wb, capsules, { workbookMetaDirty: true })
+		expectOk(written)
+
+		const parts = unzipSync(written.value)
+		const rels = new TextDecoder().decode(
+			parts['xl/externalLinks/_rels/externalLink1.xml.rels'] ?? new Uint8Array(),
+		)
+		expect(rels).toContain('Target="../sources/reforecast &amp; final.xlsx"')
+		expect(rels).toContain('TargetMode="External"')
+
+		const read = readXlsx(written.value)
+		expectOk(read)
+		expect(read.value.workbook.externalReferenceDetails[0]).toMatchObject({
+			partPath: 'xl/externalLinks/externalLink1.xml',
+			linkRelId: 'rIdExt',
+			target: '../sources/reforecast & final.xlsx',
+			targetMode: 'External',
+		})
+	})
+
 	it('preserves workbook theme parts on round-trip', () => {
 		const wb = new Workbook()
 		const themedStyle = wb.styles.register({

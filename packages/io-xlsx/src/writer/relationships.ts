@@ -16,10 +16,22 @@ export function buildRelsXml(entries: readonly RelEntry[]): string {
 	out.push(XML_HEADER)
 	out.push(`<Relationships xmlns="${NS}">`)
 	for (const e of entries) {
-		const attrs = [`Id="${e.id}"`, `Type="${e.type}"`, `Target="${e.target}"`]
-		if (e.targetMode) attrs.push(`TargetMode="${e.targetMode}"`)
+		const attrs = [
+			`Id="${escapeXmlAttr(e.id)}"`,
+			`Type="${escapeXmlAttr(e.type)}"`,
+			`Target="${escapeXmlAttr(e.target)}"`,
+		]
+		if (e.targetMode) attrs.push(`TargetMode="${escapeXmlAttr(e.targetMode)}"`)
 		out.push(`<Relationship ${attrs.join(' ')}/>`)
 	}
 	out.push('</Relationships>')
 	return out.toString()
+}
+
+function escapeXmlAttr(value: string): string {
+	return value
+		.replace(/&/g, '&amp;')
+		.replace(/"/g, '&quot;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
 }

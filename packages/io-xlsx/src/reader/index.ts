@@ -145,6 +145,7 @@ export function readXlsx(
 			workbook.externalReferenceDetails.push({
 				partPath,
 				relId,
+				...(linkRelationship?.id ? { linkRelId: linkRelationship.id } : {}),
 				...(linkRelationship?.target ? { target: linkRelationship.target } : {}),
 				...(linkRelationship?.targetMode ? { targetMode: linkRelationship.targetMode } : {}),
 			})
@@ -554,6 +555,7 @@ function collectCapsules(
 					id: r.id,
 					type: r.type,
 					target: r.target,
+					...(r.targetMode ? { targetMode: r.targetMode } : {}),
 				}))
 			: []
 

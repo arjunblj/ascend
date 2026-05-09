@@ -66,4 +66,16 @@ describe('operation schema agent DX', () => {
 		})
 		expect(schema?.recoveryActions.join('\n')).toContain('invalid=true')
 	})
+
+	test('rewriteExternalLink is exposed with external reference selector guidance', () => {
+		const schema = getOperationsSchema().find((entry) => entry.op === 'rewriteExternalLink')
+		expect(schema?.schema.required).toEqual(['op', 'newTarget'])
+		expect(schema?.schema.properties.linkRelId?.description).toContain('external link part')
+		expect(schema?.examples[0]).toMatchObject({
+			op: 'rewriteExternalLink',
+			partPath: 'xl/externalLinks/externalLink1.xml',
+			newTarget: '../sources/reforecast.xlsx',
+		})
+		expect(schema?.recoveryActions.join('\n')).toContain('external-refs')
+	})
 })

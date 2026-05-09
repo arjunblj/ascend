@@ -52,7 +52,7 @@ export function parseRelationships(xml: string): Relationship[] {
 		let targetMode: string | undefined
 		for (const attrMatch of rawAttrs.matchAll(ATTR_RE)) {
 			const key = attrMatch[1]
-			const value = attrMatch[2]
+			const value = attrMatch[2] ? decodeXmlAttr(attrMatch[2]) : undefined
 			if (!key || value === undefined) continue
 			if (key === 'Id') id = value
 			else if (key === 'Type') type = value
@@ -69,6 +69,15 @@ export function parseRelationships(xml: string): Relationship[] {
 		}
 	}
 	return rels
+}
+
+function decodeXmlAttr(value: string): string {
+	return value
+		.replace(/&quot;/g, '"')
+		.replace(/&apos;/g, "'")
+		.replace(/&lt;/g, '<')
+		.replace(/&gt;/g, '>')
+		.replace(/&amp;/g, '&')
 }
 
 function normalizeRelationshipType(type: string): string {

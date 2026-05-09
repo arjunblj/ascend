@@ -241,6 +241,7 @@ export function operationAffectsFormulas(op: Operation): boolean {
 		case 'unmergeCells':
 		case 'groupRows':
 		case 'groupCols':
+		case 'rewriteExternalLink':
 			return false
 		case 'setCells':
 		case 'setRichText':

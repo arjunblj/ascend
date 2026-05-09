@@ -51,6 +51,8 @@ const REL_EXT_PROPS =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties'
 const REL_HYPERLINK =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink'
+const REL_EXTERNAL_LINK_PATH =
+	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath'
 const CT_SHEET_METADATA =
 	'application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml'
 const CT_COMMENTS = 'application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml'
@@ -1044,8 +1046,24 @@ export function planWriteXlsx(
 							owner,
 							origin: 'capsule',
 						},
-						() => buildRelsXml(capsule.relationships),
+						() => buildRelsXml(resolveCapsuleRelationships(workbook, capsule)),
 					)
+				} else {
+					const generatedExternalLinkRels = buildGeneratedExternalLinkRelationships(
+						workbook,
+						capsule.partPath,
+					)
+					if (generatedExternalLinkRels.length > 0) {
+						const capsuleRelsPath = getRelsPath(capsule.partPath)
+						recordXml(
+							capsuleRelsPath,
+							{
+								owner,
+								origin: 'generated',
+							},
+							() => buildRelsXml(generatedExternalLinkRels),
+						)
+					}
 				}
 			}
 		}
@@ -1271,6 +1289,52 @@ function isChartCapsule(capsule: PreservationCapsule): boolean {
 		capsule.partPath.includes('/charts/') ||
 		capsule.partPath.includes('/chartEx/')
 	)
+}
+
+function resolveCapsuleRelationships(
+	workbook: Workbook,
+	capsule: PreservationCapsule,
+): readonly RelEntry[] {
+	const updatedExternalLinkRels = buildGeneratedExternalLinkRelationships(
+		workbook,
+		capsule.partPath,
+		capsule.relationships,
+	)
+	return updatedExternalLinkRels.length > 0 ? updatedExternalLinkRels : capsule.relationships
+}
+
+function buildGeneratedExternalLinkRelationships(
+	workbook: Workbook,
+	partPath: string,
+	relationships: readonly RelEntry[] = [],
+): readonly RelEntry[] {
+	const detail = workbook.externalReferenceDetails.find((entry) => entry.partPath === partPath)
+	if (!detail?.target) return []
+	const target = detail.target
+	if (relationships.length === 0) {
+		return [
+			{
+				id: detail.linkRelId ?? 'rId1',
+				type: REL_EXTERNAL_LINK_PATH,
+				target,
+				targetMode: detail.targetMode ?? 'External',
+			},
+		]
+	}
+	let changed = false
+	const updated = relationships.map((rel, index) => {
+		const matchesLinkRelId = detail.linkRelId !== undefined && rel.id === detail.linkRelId
+		const matchesDefaultLink =
+			detail.linkRelId === undefined && (rel.type === REL_EXTERNAL_LINK_PATH || index === 0)
+		if (!matchesLinkRelId && !matchesDefaultLink) return rel
+		changed = true
+		return {
+			...rel,
+			target,
+			...(detail.targetMode !== undefined ? { targetMode: detail.targetMode } : {}),
+		}
+	})
+	return changed ? updated : []
 }
 
 function computeRelativePath(fromDir: string, toPath: string): string {

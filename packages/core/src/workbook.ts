@@ -98,6 +98,7 @@ export interface WorkbookPreservedXml {
 export interface ExternalReferenceInfo {
 	readonly partPath: string
 	readonly relId?: string
+	readonly linkRelId?: string
 	readonly target?: string
 	readonly targetMode?: string
 }

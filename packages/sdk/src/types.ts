@@ -1,4 +1,5 @@
 import type {
+	ActiveContentInfo,
 	AutoFilter,
 	CellFormulaBinding,
 	ChartPartInfo,
@@ -23,6 +24,9 @@ import type {
 	TableStyleInfo,
 	WorkbookView,
 } from '@ascend/core'
+
+export type { ActiveContentInfo, ActiveContentKind } from '@ascend/core'
+
 import type { CellChange, SheetDiff, WorkbookDiff } from '@ascend/engine'
 import type { FormulaNode, Token } from '@ascend/formulas'
 import type { AscendError, CellValue, CompatibilityReport, FeatureReport } from '@ascend/schema'
@@ -45,6 +49,7 @@ export interface WorkbookInfo {
 	readonly slicerCacheCount: number
 	readonly timelineCount: number
 	readonly timelineCacheCount: number
+	readonly activeContentCount: number
 	readonly sourceFormat: string
 	readonly workbookViewCount: number
 	readonly externalReferenceCount: number
@@ -81,6 +86,7 @@ export interface WorkbookInfo {
 		readonly cacheName?: string
 		readonly caption?: string
 	}[]
+	readonly activeContent: readonly ActiveContentInfo[]
 	readonly styleSummary: {
 		readonly numFmtCount: number
 		readonly fontCount: number

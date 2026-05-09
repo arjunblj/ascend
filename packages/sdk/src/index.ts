@@ -73,6 +73,8 @@ export type { WorkbookRowStreamSource } from './stream.ts'
 export { streamWorkbookRows } from './stream.ts'
 export { TableHandle } from './table-handle.ts'
 export type {
+	ActiveContentInfo,
+	ActiveContentKind,
 	AgentColumnSummary,
 	AgentFormulaPatternInfo,
 	AgentReadOptions,

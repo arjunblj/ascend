@@ -9,6 +9,7 @@ import type { CellSelector } from './ref-selectors.ts'
 import type { SheetHandle } from './sheet-handle.ts'
 import type { TableHandle } from './table-handle.ts'
 import type {
+	ActiveContentInfo,
 	AgentViewOptions,
 	AgentViewResult,
 	CheckResult,
@@ -366,6 +367,10 @@ export class WorkbookDocument {
 
 	timelines(): readonly TimelineInfo[] {
 		return this.view.timelines()
+	}
+
+	activeContent(): readonly ActiveContentInfo[] {
+		return this.view.activeContent()
 	}
 
 	workbookViews(): readonly import('./types.ts').WorkbookViewInfo[] {

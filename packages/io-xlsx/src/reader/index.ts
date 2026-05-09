@@ -1,4 +1,4 @@
-import type { CellStyle, SheetId, StyleId } from '@ascend/core'
+import type { ActiveContentInfo, CellStyle, SheetId, StyleId } from '@ascend/core'
 import { DEFAULT_STYLE_ID, Workbook } from '@ascend/core'
 import type {
 	AscendError,
@@ -439,6 +439,7 @@ export function readXlsx(
 					workbookPath,
 					sheetRelsByPath,
 				)
+		if (!isPartial) workbook.activeContent.push(...collectActiveContent(capsules))
 		if (!isPartial) attachChartParts(archive, workbook, capsules)
 		const report = buildReport(contentTypes, formulaFeatures, workbook, capsules, loadInfo)
 		if (loadInfo.isPartial) {
@@ -649,6 +650,62 @@ function categorizeCapsules(capsules: readonly PreservationCapsule[]): Map<strin
 	return families
 }
 
+function collectActiveContent(capsules: readonly PreservationCapsule[]): ActiveContentInfo[] {
+	const activeContent: ActiveContentInfo[] = []
+	for (const capsule of capsules) {
+		const kind = classifyActiveContent(capsule)
+		if (!kind) continue
+		activeContent.push({
+			kind,
+			partPath: capsule.partPath,
+			contentType: capsule.contentType,
+			anchor: capsule.anchor.kind,
+			...(capsule.anchor.kind === 'sheet' ? { sheetName: capsule.anchor.sheetName } : {}),
+			...(capsule.relType ? { relType: capsule.relType } : {}),
+			relationshipCount: capsule.relationships.length,
+		})
+	}
+	return activeContent
+}
+
+function classifyActiveContent(capsule: PreservationCapsule): ActiveContentInfo['kind'] | null {
+	const path = capsule.partPath.toLowerCase()
+	const contentType = capsule.contentType.toLowerCase()
+	const relType = capsule.relType?.toLowerCase() ?? ''
+	if (
+		path.includes('vbaprojectsignature') ||
+		(contentType.includes('vba') && path.includes('signature'))
+	) {
+		return 'vbaSignature'
+	}
+	if (path.includes('vbaproject') || contentType.includes('vbaproject')) return 'vbaProject'
+	if (
+		path.includes('/activex/') ||
+		contentType.includes('activex') ||
+		relType.includes('activex')
+	) {
+		return 'activeX'
+	}
+	if (path.includes('/ctrlprops/') || contentType.includes('controlproperties'))
+		return 'formControl'
+	if (path.startsWith('customui/') || contentType.includes('customui')) return 'customUi'
+	if (relType.includes('control') || relType.includes('macro')) return 'unknownActiveContent'
+	return null
+}
+
+function preservedFeatureNote(feature: string): string | undefined {
+	if (feature === 'preservedMacro') {
+		return 'Macro project bytes are preserved exactly where possible; writes require explicit loss approval because macro semantics are not editable.'
+	}
+	if (feature === 'preservedActiveX') {
+		return 'ActiveX binaries and descriptors are preserved exactly where possible; writes require explicit loss approval because controls are active content.'
+	}
+	if (feature === 'preservedControl') {
+		return 'Form/control property parts are preserved exactly where possible; linked behavior is not semantically editable.'
+	}
+	return undefined
+}
+
 function buildReport(
 	contentTypes: {
 		overrides: ReadonlyMap<string, string>
@@ -660,14 +717,23 @@ function buildReport(
 ): CompatibilityReport {
 	const features: FeatureReport[] = []
 
-	const unsupportedTypes: [string, string][] = [
-		['chart', 'chart+xml'],
-		['pivotTable', 'pivotTable+xml'],
-		['drawing', 'drawing+xml'],
-		['vbaProject', 'vbaProject'],
+	const unsupportedTypes: { feature: string; pattern: string; note?: string }[] = [
+		{ feature: 'chart', pattern: 'chart+xml' },
+		{ feature: 'pivotTable', pattern: 'pivotTable+xml' },
+		{ feature: 'drawing', pattern: 'drawing+xml' },
+		{
+			feature: 'vbaProject',
+			pattern: 'vbaProject',
+			note: 'VBA project bytes are preserved, but macros are not executed or semantically edited.',
+		},
+		{
+			feature: 'activeX',
+			pattern: 'activeX',
+			note: 'ActiveX control parts are preserved, but active controls are not executed or semantically edited.',
+		},
 	]
 
-	for (const [feature, pattern] of unsupportedTypes) {
+	for (const { feature, pattern, note } of unsupportedTypes) {
 		const locations: string[] = []
 		for (const [path, ct] of contentTypes.overrides) {
 			if (ct.includes(pattern)) locations.push(path)
@@ -678,6 +744,7 @@ function buildReport(
 				tier: 'unsupported' as CompatibilityTier,
 				count: locations.length,
 				locations,
+				...(note ? { note } : {}),
 			})
 		}
 	}
@@ -755,11 +822,13 @@ function buildReport(
 	if (capsules.length > 0) {
 		const families = categorizeCapsules(capsules)
 		for (const [family, paths] of families) {
+			const note = preservedFeatureNote(family)
 			features.push({
 				feature: family,
 				tier: 'preserved',
 				count: paths.length,
 				locations: paths,
+				...(note ? { note } : {}),
 			})
 		}
 	}

@@ -275,6 +275,8 @@ function restoreWorkbookFromSnapshot(workbook: Workbook, snapshot: Workbook): vo
 			series: entry.series.map((series) => ({ ...series })),
 		})),
 	)
+	workbook.activeContent.splice(0, workbook.activeContent.length)
+	workbook.activeContent.push(...snapshot.activeContent.map((entry) => ({ ...entry })))
 	workbook.workbookViews.splice(0, workbook.workbookViews.length)
 	workbook.workbookViews.push(...snapshot.workbookViews.map((v) => ({ ...v })))
 	workbook.externalReferences.splice(0, workbook.externalReferences.length)

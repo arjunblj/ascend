@@ -1,4 +1,5 @@
 import { type CalcSettings, DEFAULT_CALC_SETTINGS } from '@ascend/schema'
+import type { ActiveContentInfo } from './active-content.ts'
 import type { ChartPartInfo } from './chart.ts'
 import { DefinedNameCollection } from './defined-name.ts'
 import { createWorkbookId, type SheetId, type WorkbookId } from './ids.ts'
@@ -124,6 +125,7 @@ export class Workbook {
 	readonly timelineCaches: TimelineCacheInfo[] = []
 	readonly timelines: TimelineInfo[] = []
 	readonly chartParts: ChartPartInfo[] = []
+	readonly activeContent: ActiveContentInfo[] = []
 	readonly workbookViews: WorkbookView[] = []
 	readonly externalReferences: string[] = []
 	readonly externalReferenceDetails: ExternalReferenceInfo[] = []
@@ -242,6 +244,7 @@ export class Workbook {
 				series: entry.series.map((series) => ({ ...series })),
 			})),
 		)
+		clone.activeContent.push(...this.activeContent.map((entry) => ({ ...entry })))
 		clone.workbookViews.push(...this.workbookViews.map((view) => ({ ...view })))
 		clone.externalReferences.push(...this.externalReferences)
 		clone.externalReferenceDetails.push(

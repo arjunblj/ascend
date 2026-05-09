@@ -34,6 +34,7 @@ import { type CellSelector, normalizeCellSelector } from './ref-selectors.ts'
 import { SheetHandle } from './sheet-handle.ts'
 import { TableHandle } from './table-handle.ts'
 import type {
+	ActiveContentInfo,
 	AgentColumnSummary,
 	AgentReadOptions,
 	AgentSampleRow,
@@ -132,6 +133,7 @@ export class WorkbookReadView {
 			slicerCacheCount: this.wb.slicerCaches.length,
 			timelineCount: this.wb.timelines.length,
 			timelineCacheCount: this.wb.timelineCaches.length,
+			activeContentCount: this.wb.activeContent.length,
 			sourceFormat: this.compat.sourceFormat,
 			workbookViewCount: this.wb.workbookViews.length,
 			externalReferenceCount: this.wb.externalReferences.length,
@@ -154,6 +156,7 @@ export class WorkbookReadView {
 				pivotTableNames: [...entry.pivotTableNames],
 			})),
 			timelines: this.wb.timelines.map((entry) => ({ ...entry })),
+			activeContent: this.wb.activeContent.map((entry) => ({ ...entry })),
 			styleSummary: { ...this.wb.styleMetadata },
 			themeSummary: {
 				hasThemePart: this.wb.preservedTheme !== null,
@@ -574,6 +577,10 @@ export class WorkbookReadView {
 
 	timelines(): readonly TimelineInfo[] {
 		return this.wb.timelines.map((entry) => ({ ...entry }))
+	}
+
+	activeContent(): readonly ActiveContentInfo[] {
+		return this.wb.activeContent.map((entry) => ({ ...entry }))
 	}
 
 	trace(cellRef: CellSelector, opts?: { maxDepth?: number }): TraceResult | undefined {

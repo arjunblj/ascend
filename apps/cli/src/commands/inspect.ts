@@ -698,13 +698,51 @@ function printNamesDetail(wb: WorkbookDocument, json: boolean): number {
 
 function printExternalRefsDetail(wb: WorkbookDocument, json: boolean): number {
 	const refs = wb.externalReferences()
+	const info = wb.inspect()
+	const usages = wb.externalReferenceUsages()
 	if (json) {
-		console.log(jsonOut(refs))
+		console.log(
+			jsonOut({
+				references: refs,
+				details: info.externalReferenceDetails,
+				usages,
+			}),
+		)
 		return 0
 	}
 	console.log(heading('External References'))
-	for (const ref of refs) console.log(bullet(ref, ref))
+	for (const detail of info.externalReferenceDetails) {
+		console.log(
+			bullet(
+				detail.partPath,
+				[
+					detail.target,
+					detail.relId ? `rel=${detail.relId}` : undefined,
+					detail.targetMode ? `mode=${detail.targetMode}` : undefined,
+				]
+					.filter(Boolean)
+					.join(' | '),
+			),
+		)
+	}
+	for (const ref of refs.filter(
+		(ref) => !info.externalReferenceDetails.some((d) => d.partPath === ref),
+	)) {
+		console.log(bullet(ref, ref))
+	}
 	if (refs.length === 0) console.log('  (none)')
+	if (usages.length > 0) {
+		console.log('')
+		console.log(heading('Formula Usages'))
+		for (const usage of usages) {
+			console.log(
+				bullet(
+					usage.sourceRef ?? usage.name ?? usage.sourceKind,
+					`${usage.workbook}${usage.sheet ? `:${usage.sheet}` : ''} | ${usage.references.join(', ')}`,
+				),
+			)
+		}
+	}
 	return 0
 }
 

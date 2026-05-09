@@ -350,7 +350,9 @@ describe('ascend cli', () => {
 		)
 		expect(exitCode).toBe(0)
 		const parsed = JSON.parse(stdout)
-		expect(Array.isArray(parsed.data)).toBe(true)
+		expect(Array.isArray(parsed.data.references)).toBe(true)
+		expect(Array.isArray(parsed.data.details)).toBe(true)
+		expect(Array.isArray(parsed.data.usages)).toBe(true)
 	})
 
 	test('read requires an explicit sheet when workbook has multiple sheets', async () => {

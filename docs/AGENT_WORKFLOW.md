@@ -29,5 +29,7 @@ MCP resources:
 
 Recovery search:
 
+- `ascend docs <query> --json` for local CLI documentation search without browsing.
+- `ascend docs --examples <query> --json` for runnable examples from the CLI.
 - `ascend.search_docs` for commands, workflow guidance, schemas, and safety policy.
 - `ascend.search_examples` for runnable SDK examples and MCP setup snippets.

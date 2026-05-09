@@ -163,7 +163,10 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 function inferOpenOptions(
 	selector: ReadSelector,
 	mode: 'values' | 'full',
-): { mode: 'values' | 'full'; sheets?: readonly string[] } {
+): { mode: 'values' | 'full'; sheets?: readonly string[]; richMetadata?: boolean } {
+	if (selector.kind === 'table') {
+		return mode === 'full' ? { mode } : { mode, richMetadata: true }
+	}
 	if (selector.kind === 'range' && selector.sheet) {
 		return { mode, sheets: [selector.sheet] }
 	}

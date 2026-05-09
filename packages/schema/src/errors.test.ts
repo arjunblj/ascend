@@ -33,9 +33,11 @@ describe('ascendError', () => {
 		const e = ascendError('SHEET_NOT_FOUND', 'Sheet "Q1" not found', {
 			refs: ['Q1!A1'],
 			suggestedFix: 'Check sheet name spelling',
+			retryStrategy: 'modified',
 			retryable: false,
 		})
 		expect(e.refs).toEqual(['Q1!A1'])
 		expect(e.suggestedFix).toBe('Check sheet name spelling')
+		expect(e.retryStrategy).toBe('modified')
 	})
 })

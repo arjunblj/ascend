@@ -39,6 +39,7 @@ import type {
 export interface WorkbookLoadOptions {
 	readonly mode?: 'full' | 'metadata-only' | 'values' | 'formula'
 	readonly sheets?: readonly string[]
+	readonly richMetadata?: boolean
 }
 
 interface SessionFileIdentity {
@@ -520,6 +521,7 @@ function normalizeOptions(options: WorkbookLoadOptions): WorkbookLoadOptions {
 	return {
 		...(options.mode ? { mode: options.mode } : {}),
 		...(options.sheets ? { sheets: [...options.sheets].sort((a, b) => a.localeCompare(b)) } : {}),
+		...(options.richMetadata ? { richMetadata: true } : {}),
 	}
 }
 
@@ -537,6 +539,7 @@ function mergeOpenOptions(
 	return normalizeOptions({
 		...(mode ? { mode } : {}),
 		...(mergedSheets ? { sheets: mergedSheets } : {}),
+		...(current.richMetadata || next.richMetadata ? { richMetadata: true } : {}),
 	})
 }
 
@@ -547,7 +550,10 @@ function sameOpenOptions(left: WorkbookLoadOptions, right: WorkbookLoadOptions):
 	const leftSheets = normalizedLeft.sheets ?? []
 	const rightSheets = normalizedRight.sheets ?? []
 	if (leftSheets.length !== rightSheets.length) return false
-	return leftSheets.every((sheet, index) => sheet === rightSheets[index])
+	return (
+		(normalizedLeft.richMetadata ?? false) === (normalizedRight.richMetadata ?? false) &&
+		leftSheets.every((sheet, index) => sheet === rightSheets[index])
+	)
 }
 
 function strongerMode(
@@ -611,6 +617,7 @@ function makeSessionKey(identity: SessionIdentity, options: WorkbookLoadOptions)
 		source: 'path' in identity ? identity.path : identity.key,
 		mode: normalized.mode ?? 'full',
 		sheets: normalized.sheets ?? [],
+		richMetadata: normalized.richMetadata ?? false,
 	})
 }
 

@@ -44,6 +44,29 @@ describe('AscendWorkbook', () => {
 		expect(info.load.isPartial).toBe(false)
 	})
 
+	test('cellStyle exposes a cloned exact cell style', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] },
+			{
+				op: 'setStyle',
+				sheet: 'Sheet1',
+				range: 'A1',
+				style: { numberFormat: '0.00', font: { bold: true } },
+			},
+		])
+
+		const style = wb.cellStyle('Sheet1!A1')
+		expect(style?.numberFormat).toBe('0.00')
+		expect(style?.font?.bold).toBe(true)
+		expect(wb.cellStyle('Sheet1!B1')).toBeUndefined()
+
+		if (style?.font) {
+			;(style.font as { bold?: boolean }).bold = false
+		}
+		expect(wb.cellStyle('Sheet1!A1')?.font?.bold).toBe(true)
+	})
+
 	test('inspect returns correct sheet info', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'hello' }] }])
@@ -1192,6 +1215,49 @@ describe('AscendWorkbook', () => {
 		expect(valuesInternal.originalBytes).toBeNull()
 		expect(valuesInternal.caps).toHaveLength(0)
 		expect(valuesInternal.wb.sourceArchiveBytes).toBeNull()
+		expect(() => reopened.toBytes()).toThrow(
+			'Cannot export a partial workbook view. Reopen the workbook with a full load before saving or exporting.',
+		)
+	})
+
+	test('values mode can expose rich sheet metadata as an opt-in partial view', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] }])
+		const internal = wb as unknown as {
+			wb: {
+				definedNames: { set(name: string, formula: string): void }
+				sheets: Array<{
+					comments: Map<string, { text: string; author?: string }>
+					hyperlinks: Map<string, { target?: string; display?: string }>
+					dataValidations: Array<Record<string, unknown>>
+					conditionalFormats: Array<Record<string, unknown>>
+				}>
+			}
+		}
+		const sheet = internal.wb.sheets[0]
+		sheet?.comments.set('B2', { text: 'Review', author: 'Ada' })
+		sheet?.hyperlinks.set('A1', { target: 'https://example.com/ascend', display: 'Ascend' })
+		sheet?.dataValidations.push({ sqref: 'B2', type: 'list', formula1: '"A,B"' })
+		sheet?.conditionalFormats.push({
+			sqref: 'A1',
+			rules: [{ type: 'cellIs', operator: 'greaterThan', formulas: ['0'] }],
+		})
+		internal.wb.definedNames.set('FeatureRange', 'Sheet1!$A$1:$B$2')
+		const bytes = wb.toBytes()
+
+		const reopened = await AscendWorkbook.open(bytes, { mode: 'values', richMetadata: true })
+		expect(reopened.inspect().load.mode).toBe('values')
+		expect(reopened.inspect().load.isPartial).toBe(true)
+		expect(reopened.inspect().load.richSheetMetadataHydrated).toBe(true)
+		expect(reopened.inspect().commentCount).toBe(1)
+		expect(reopened.inspect().dataValidationCount).toBe(1)
+		expect(reopened.inspect().conditionalFormatCount).toBe(1)
+		const detail = reopened.inspectSheet('Sheet1')
+		expect(detail?.comments?.[0]).toEqual({ ref: 'B2', author: 'Ada', text: 'Review' })
+		expect(detail?.hyperlinks?.[0]?.target).toBe('https://example.com/ascend')
+		expect(detail?.dataValidations).toHaveLength(1)
+		expect(detail?.conditionalFormats).toHaveLength(1)
+		expect(reopened.definedNames()[0]?.name).toBe('FeatureRange')
 		expect(() => reopened.toBytes()).toThrow(
 			'Cannot export a partial workbook view. Reopen the workbook with a full load before saving or exporting.',
 		)

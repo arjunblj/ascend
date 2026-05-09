@@ -15,6 +15,7 @@ export interface MachineFailure {
 		readonly message: string
 		readonly code?: string
 		readonly retryable?: boolean
+		readonly retryStrategy?: 'same' | 'modified' | 'none'
 		readonly refs?: readonly string[]
 		readonly details?: Record<string, unknown>
 		readonly suggestedFix?: string
@@ -46,6 +47,7 @@ export function machineFailure(error: string | AscendError): MachineFailure {
 			message: error.message,
 			code: error.code,
 			retryable: error.retryable,
+			...(error.retryStrategy ? { retryStrategy: error.retryStrategy } : {}),
 			...(error.refs ? { refs: error.refs } : {}),
 			...(error.details ? { details: error.details } : {}),
 			...(error.suggestedFix ? { suggestedFix: error.suggestedFix } : {}),

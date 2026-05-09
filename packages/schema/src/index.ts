@@ -23,6 +23,8 @@ export type { MachineEnvelope, MachineFailure, MachineSuccess } from './machine.
 export { MACHINE_FORMAT_VERSION, machineFailure, machineSuccess } from './machine.ts'
 export type {
 	CellUpdate,
+	ConditionalFormatRule,
+	DataValidationRule,
 	Operation,
 	PasteMode,
 	SortSpec,

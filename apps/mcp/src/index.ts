@@ -30,6 +30,9 @@ export function createServer(): McpServer {
 		version: '0.0.0',
 	})
 
+	registerAgentResources(server)
+	registerAgentPrompts(server)
+
 	server.tool(
 		'ascend.inspect',
 		'Inspect workbook or sheet metadata',
@@ -811,6 +814,136 @@ export function createServer(): McpServer {
 	)
 
 	return server
+}
+
+function registerAgentResources(server: McpServer): void {
+	server.registerResource(
+		'ascend.capabilities',
+		'ascend://capabilities',
+		{
+			title: 'Ascend Excel Capability Matrix',
+			description:
+				'Canonical coverage registry with statuses, priorities, OSS baselines, and gaps.',
+			mimeType: 'application/json',
+		},
+		(uri) => {
+			const capabilities = listCapabilities()
+			return jsonResource(uri, {
+				summary: summarizeCapabilities(capabilities),
+				capabilities,
+			})
+		},
+	)
+
+	server.registerResource(
+		'ascend.operations',
+		'ascend://operations',
+		{
+			title: 'Ascend Operation Schemas',
+			description:
+				'Operation catalog with schemas, examples, invalid examples, recovery actions, and approvals.',
+			mimeType: 'application/json',
+		},
+		(uri) =>
+			jsonResource(uri, {
+				operations: Ascend.listOperations(),
+				schemas: Ascend.getOperationsSchema(),
+			}),
+	)
+
+	server.registerResource(
+		'ascend.agent_workflow',
+		'ascend://agent-workflow',
+		{
+			title: 'Ascend Agent Workflow',
+			description:
+				'Recommended headless spreadsheet workflow for inspect, read, plan, commit, verify, and repair.',
+			mimeType: 'text/markdown',
+		},
+		(uri) => textResource(uri, buildAgentWorkflowGuide()),
+	)
+}
+
+function registerAgentPrompts(server: McpServer): void {
+	server.registerPrompt(
+		'ascend.agent_workflow',
+		{
+			title: 'Ascend Spreadsheet Agent Workflow',
+			description: 'Prime an agent to use Ascend safely for headless Excel edits.',
+			argsSchema: {
+				file: z.string().optional().describe('Workbook path to operate on'),
+				task: z.string().optional().describe('Spreadsheet task or edit intent'),
+			},
+		},
+		({ file, task }) => ({
+			description: 'Use Ascend MCP tools for a safe spreadsheet edit workflow.',
+			messages: [
+				{
+					role: 'user',
+					content: {
+						type: 'text',
+						text: buildAgentWorkflowPrompt(file, task),
+					},
+				},
+			],
+		}),
+	)
+}
+
+function jsonResource(uri: URL, data: unknown) {
+	return {
+		contents: [
+			{
+				uri: uri.href,
+				mimeType: 'application/json',
+				text: JSON.stringify(data, null, 2),
+			},
+		],
+	}
+}
+
+function textResource(uri: URL, text: string) {
+	return {
+		contents: [
+			{
+				uri: uri.href,
+				mimeType: 'text/markdown',
+				text,
+			},
+		],
+	}
+}
+
+function buildAgentWorkflowGuide(): string {
+	return [
+		'# Ascend Agent Workflow',
+		'',
+		'1. Inspect workbook structure with ascend.inspect or ascend.list_sheets.',
+		'2. Locate data with ascend.find, ascend.read, ascend.read_table, and ascend.visuals.',
+		'3. Fetch operation schemas from ascend.list_operations or ascend://operations.',
+		'4. Preview edits with ascend.plan before writing.',
+		'5. Commit with ascend.commit using output paths, input hash guards, approvals, and allow-loss only when explicit.',
+		'6. Verify with ascend.check, ascend.lint, ascend.trace, ascend.diff, and ascend.export as needed.',
+		'7. Use ascend.repair_plan when checks, lints, approvals, or unsupported-feature audits need recovery actions.',
+	].join('\n')
+}
+
+function buildAgentWorkflowPrompt(file?: string, task?: string): string {
+	const target = file
+		? `Workbook: ${file}`
+		: 'Workbook: ask for or infer the workbook path before editing.'
+	const intent = task ? `Task: ${task}` : 'Task: determine the requested spreadsheet change.'
+	return [
+		target,
+		intent,
+		'',
+		'Use Ascend as the source of truth for spreadsheet structure and edit safety.',
+		'Start with ascend.inspect or ascend.list_sheets, then use ascend.read, ascend.read_table, ascend.find, and ascend.visuals to gather only the necessary workbook context.',
+		'Before modifying anything, read ascend://operations or call ascend.list_operations and build operations that match the published schemas.',
+		'Always run ascend.plan and inspect approvals, unsupported features, preview diffs, recalc status, and modelOutput before commit.',
+		'Use ascend.commit with a non-destructive output path by default, pass expectSha256 when available, and only pass approvals or allowLoss values emitted by the plan.',
+		'After commit, verify with ascend.check, ascend.lint, ascend.diff, or ascend.export depending on the task.',
+	].join('\n')
 }
 
 function displayReadResult(mode: 'cells' | 'rows' | 'objects', info: unknown): unknown {

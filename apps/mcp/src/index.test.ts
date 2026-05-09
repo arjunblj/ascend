@@ -52,6 +52,67 @@ describe('MCP server', () => {
 		expect(names.length).toBe(21)
 	})
 
+	test('agent resources and prompts are registered', () => {
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: accessing private MCP registry internals for test verification
+		const resources = (server as any)._registeredResources as Record<string, unknown>
+		// biome-ignore lint/suspicious/noExplicitAny: accessing private MCP registry internals for test verification
+		const prompts = (server as any)._registeredPrompts as Record<string, unknown>
+
+		expect(Object.keys(resources)).toEqual([
+			'ascend://capabilities',
+			'ascend://operations',
+			'ascend://agent-workflow',
+		])
+		expect(Object.keys(prompts)).toContain('ascend.agent_workflow')
+	})
+
+	test('agent resources return canonical workflow context', async () => {
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: accessing private MCP registry internals for behavior testing
+		const resources = (server as any)._registeredResources as Record<
+			string,
+			{ readCallback: (uri: URL) => Promise<{ contents: Array<{ text?: string }> }> }
+		>
+
+		const capabilities = await resources['ascend://capabilities']?.readCallback(
+			new URL('ascend://capabilities'),
+		)
+		const operations = await resources['ascend://operations']?.readCallback(
+			new URL('ascend://operations'),
+		)
+		const workflow = await resources['ascend://agent-workflow']?.readCallback(
+			new URL('ascend://agent-workflow'),
+		)
+
+		expect(capabilities?.contents[0]?.text).toContain('"capabilities"')
+		expect(operations?.contents[0]?.text).toContain('"schemas"')
+		expect(workflow?.contents[0]?.text).toContain('ascend.plan')
+	})
+
+	test('agent workflow prompt includes safe plan and commit guidance', async () => {
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: accessing private MCP registry internals for behavior testing
+		const prompts = (server as any)._registeredPrompts as Record<
+			string,
+			{
+				callback: (args: { file?: string; task?: string }) => Promise<{
+					messages: Array<{ content: { text?: string } }>
+				}>
+			}
+		>
+
+		const prompt = await prompts['ascend.agent_workflow']?.callback({
+			file: 'book.xlsx',
+			task: 'update the forecast',
+		})
+		const text = prompt?.messages[0]?.content.text ?? ''
+		expect(text).toContain('Workbook: book.xlsx')
+		expect(text).toContain('ascend.plan')
+		expect(text).toContain('ascend.commit')
+		expect(text).toContain('allowLoss')
+	})
+
 	test('ascend.write recalculates before saving when needed', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

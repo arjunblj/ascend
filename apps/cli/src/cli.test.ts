@@ -8,6 +8,8 @@ const MULTI_SHEET_FILE = 'test-multi.xlsx'
 const NAMED_RANGE_FILE = 'test-named.xlsx'
 const PIVOT_CORPUS_FILE = '../../../research/excel-corpus/ms-excel-formulas-and-pivot-tables.xlsx'
 const SLICER_CORPUS_FILE = '../../../research/excel-corpus/excel-dashboard-v2.xlsx'
+const HAS_PIVOT_CORPUS_FILE = existsSync(`${import.meta.dir}/${PIVOT_CORPUS_FILE}`)
+const HAS_SLICER_CORPUS_FILE = existsSync(`${import.meta.dir}/${SLICER_CORPUS_FILE}`)
 
 function run(...args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
 	return new Promise((resolve) => {
@@ -306,51 +308,61 @@ describe('ascend cli', () => {
 		expect(parsed.data.commentCount).toBeNull()
 	})
 
-	test('inspect --detail pivots --json returns pivot inventory', async () => {
-		const { exitCode, stdout } = await run(
-			'inspect',
-			PIVOT_CORPUS_FILE,
-			'--detail',
-			'pivots',
-			'--json',
-		)
-		expect(exitCode).toBe(0)
-		const parsed = JSON.parse(stdout)
-		expect(parsed.data.pivotTables.length).toBeGreaterThan(0)
-		expect(parsed.data.pivotCaches.length).toBeGreaterThan(0)
-		expect(parsed.data.pivotRefreshPlans.length).toBe(parsed.data.pivotCaches.length)
-		expect(parsed.data.pivotRefreshPlans[0].canRefreshHeadlessly).toBe(false)
-	})
+	test.skipIf(!HAS_PIVOT_CORPUS_FILE)(
+		'inspect --detail pivots --json returns pivot inventory',
+		async () => {
+			const { exitCode, stdout } = await run(
+				'inspect',
+				PIVOT_CORPUS_FILE,
+				'--detail',
+				'pivots',
+				'--json',
+			)
+			expect(exitCode).toBe(0)
+			const parsed = JSON.parse(stdout)
+			expect(parsed.data.pivotTables.length).toBeGreaterThan(0)
+			expect(parsed.data.pivotCaches.length).toBeGreaterThan(0)
+			expect(parsed.data.pivotRefreshPlans.length).toBe(parsed.data.pivotCaches.length)
+			expect(parsed.data.pivotRefreshPlans[0].canRefreshHeadlessly).toBe(false)
+		},
+	)
 
-	test('inspect --detail slicers --json returns slicer inventory', { timeout: 10000 }, async () => {
-		const { exitCode, stdout } = await run(
-			'inspect',
-			SLICER_CORPUS_FILE,
-			'--detail',
-			'slicers',
-			'--json',
-		)
-		expect(exitCode).toBe(0)
-		const parsed = JSON.parse(stdout)
-		expect(parsed.data.slicerCaches.length).toBeGreaterThan(0)
-		expect(parsed.data.slicers.length).toBeGreaterThan(0)
-		expect(Array.isArray(parsed.data.timelineCaches)).toBe(true)
-		expect(Array.isArray(parsed.data.timelines)).toBe(true)
-	})
+	test.skipIf(!HAS_SLICER_CORPUS_FILE)(
+		'inspect --detail slicers --json returns slicer inventory',
+		{ timeout: 10000 },
+		async () => {
+			const { exitCode, stdout } = await run(
+				'inspect',
+				SLICER_CORPUS_FILE,
+				'--detail',
+				'slicers',
+				'--json',
+			)
+			expect(exitCode).toBe(0)
+			const parsed = JSON.parse(stdout)
+			expect(parsed.data.slicerCaches.length).toBeGreaterThan(0)
+			expect(parsed.data.slicers.length).toBeGreaterThan(0)
+			expect(Array.isArray(parsed.data.timelineCaches)).toBe(true)
+			expect(Array.isArray(parsed.data.timelines)).toBe(true)
+		},
+	)
 
-	test('inspect --detail drawings --json returns drawing flags', async () => {
-		const { exitCode, stdout } = await run(
-			'inspect',
-			PIVOT_CORPUS_FILE,
-			'Source data',
-			'--detail',
-			'drawings',
-			'--json',
-		)
-		expect(exitCode).toBe(0)
-		const parsed = JSON.parse(stdout)
-		expect(typeof parsed.data.drawingRefs.hasDrawing).toBe('boolean')
-	})
+	test.skipIf(!HAS_PIVOT_CORPUS_FILE)(
+		'inspect --detail drawings --json returns drawing flags',
+		async () => {
+			const { exitCode, stdout } = await run(
+				'inspect',
+				PIVOT_CORPUS_FILE,
+				'Source data',
+				'--detail',
+				'drawings',
+				'--json',
+			)
+			expect(exitCode).toBe(0)
+			const parsed = JSON.parse(stdout)
+			expect(typeof parsed.data.drawingRefs.hasDrawing).toBe('boolean')
+		},
+	)
 
 	test('inspect --detail names --json returns defined name inventory', async () => {
 		const wb = AscendWorkbook.create()

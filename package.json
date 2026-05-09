@@ -18,7 +18,7 @@
 		"lint:fix": "biome check --write",
 		"test": "bun test --recursive",
 		"test:coverage": "bun test --recursive --coverage --coverage-reporter=lcov --coverage-dir=.coverage",
-		"coverage:audit": "bun run fixtures/coverage/audit.ts .coverage/lcov.info",
+		"coverage:audit": "bun run scripts/coverage-audit.ts .coverage/lcov.info",
 		"docs:sdk": "typedoc --options typedoc.sdk.json",
 		"corpus:audit": "bun run fixtures/corpus/audit.ts",
 		"audit:error-propagation": "bun run fixtures/formulas/error-propagation-audit.ts",

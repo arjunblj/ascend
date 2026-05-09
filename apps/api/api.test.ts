@@ -3,23 +3,26 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AscendWorkbook } from '@ascend/sdk'
-import { createServer } from './src/server.ts'
+import { createApiFetch } from './src/server.ts'
 
-let server: ReturnType<typeof createServer>
-let tempDir: string
+const apiFetch = createApiFetch()
+let tempDir = ''
 
 beforeAll(() => {
-	server = createServer({ port: 0 })
 	tempDir = mkdtempSync(join(tmpdir(), 'ascend-api-test-'))
 })
 
 afterAll(() => {
-	rmSync(tempDir, { recursive: true, force: true })
+	if (tempDir.length > 0) rmSync(tempDir, { recursive: true, force: true })
 })
+
+function api(path: string, init?: RequestInit): Promise<Response> {
+	return apiFetch(new Request(`http://ascend.test${path}`, init))
+}
 
 describe('API', () => {
 	test('health check returns 200', async () => {
-		const res = await fetch(`http://localhost:${server.port}/health`)
+		const res = await api(`/health`)
 		expect(res.status).toBe(200)
 		const body = await res.json()
 		expect(body).toEqual({
@@ -30,14 +33,14 @@ describe('API', () => {
 	})
 
 	test('operations and capabilities endpoints expose agent schemas', async () => {
-		const operations = await fetch(`http://localhost:${server.port}/operations`)
+		const operations = await api(`/operations`)
 		expect(operations.status).toBe(200)
 		const opsBody = await operations.json()
 		expect(opsBody.ok).toBe(true)
 		expect(opsBody.data.operations.some((op: { op: string }) => op.op === 'setCells')).toBe(true)
 		expect(opsBody.data.schemas[0].examples.length).toBeGreaterThan(0)
 
-		const capabilities = await fetch(`http://localhost:${server.port}/capabilities?feature=pivots`)
+		const capabilities = await api(`/capabilities?feature=pivots`)
 		expect(capabilities.status).toBe(200)
 		const capsBody = await capabilities.json()
 		expect(capsBody.ok).toBe(true)
@@ -55,7 +58,7 @@ describe('API', () => {
 		await wb.save(tempFile)
 		const ops = [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'api-plan' }] }]
 
-		const plan = await fetch(`http://localhost:${server.port}/plan`, {
+		const plan = await api(`/plan`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ file: tempFile, ops }),
@@ -66,7 +69,7 @@ describe('API', () => {
 		expect(planBody.data.inputSha256).toMatch(/^[a-f0-9]{64}$/)
 		expect(planBody.data.preview.wouldSucceed).toBe(true)
 
-		const commit = await fetch(`http://localhost:${server.port}/commit`, {
+		const commit = await api(`/commit`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
@@ -90,7 +93,7 @@ describe('API', () => {
 		await wb.save(tempFile)
 		const ops = [{ op: 'deleteSheet', sheet: 'Scratch' }]
 
-		const plan = await fetch(`http://localhost:${server.port}/plan`, {
+		const plan = await api(`/plan`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ file: tempFile, ops }),
@@ -99,14 +102,14 @@ describe('API', () => {
 		const approvalId = planBody.data.approvals[0].id
 		expect(planBody.data.needsApproval).toBe(true)
 
-		const blocked = await fetch(`http://localhost:${server.port}/commit`, {
+		const blocked = await api(`/commit`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ file: tempFile, ops, output: outputFile }),
 		})
 		expect(blocked.status).toBe(400)
 
-		const committed = await fetch(`http://localhost:${server.port}/commit`, {
+		const committed = await api(`/commit`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ file: tempFile, ops, output: outputFile, approvals: [approvalId] }),
@@ -145,7 +148,7 @@ describe('API', () => {
 		})
 		await wb.save(tempFile)
 
-		const res = await fetch(`http://localhost:${server.port}/inspect`, {
+		const res = await api(`/inspect`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ file: tempFile }),
@@ -181,7 +184,7 @@ describe('API', () => {
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'B2', value: 42 }] }])
 		await wb.save(tempFile)
 
-		const res = await fetch(`http://localhost:${server.port}/inspect`, {
+		const res = await api(`/inspect`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ file: tempFile, sheet: 'Sheet1' }),
@@ -202,7 +205,7 @@ describe('API', () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(tempFile)
 
-		const res = await fetch(`http://localhost:${server.port}/visuals`, {
+		const res = await api(`/visuals`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ file: tempFile }),
@@ -226,7 +229,7 @@ describe('API', () => {
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 42 }] }])
 		await wb.save(tempFile)
 
-		const res = await fetch(`http://localhost:${server.port}/read`, {
+		const res = await api(`/read`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ file: tempFile, sheet: 'Sheet1', range: 'A1:A1' }),
@@ -258,7 +261,7 @@ describe('API', () => {
 		])
 		await wb.save(tempFile)
 
-		const res = await fetch(`http://localhost:${server.port}/read`, {
+		const res = await api(`/read`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
@@ -281,7 +284,7 @@ describe('API', () => {
 	})
 
 	test('read errors return machine failure envelope', async () => {
-		const res = await fetch(`http://localhost:${server.port}/read`, {
+		const res = await api(`/read`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ range: 'A1:A1' }),
@@ -303,7 +306,7 @@ describe('API', () => {
 		await wb.recalc()
 		await wb.save(tempFile)
 
-		const res = await fetch(`http://localhost:${server.port}/preview`, {
+		const res = await api(`/preview`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
@@ -328,7 +331,7 @@ describe('API', () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(tempFile)
 
-		const res = await fetch(`http://localhost:${server.port}/preview`, {
+		const res = await api(`/preview`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
@@ -351,7 +354,7 @@ describe('API', () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(tempFile)
 
-		const res = await fetch(`http://localhost:${server.port}/write`, {
+		const res = await api(`/write`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
@@ -370,7 +373,7 @@ describe('API', () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(tempFile)
 
-		const res = await fetch(`http://localhost:${server.port}/write`, {
+		const res = await api(`/write`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
@@ -390,7 +393,7 @@ describe('API', () => {
 		wb.apply([{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=A1+1' }])
 		await wb.save(tempFile)
 
-		const res = await fetch(`http://localhost:${server.port}/calc`, {
+		const res = await api(`/calc`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ file: tempFile }),
@@ -402,7 +405,7 @@ describe('API', () => {
 	})
 
 	test('unknown route returns 404', async () => {
-		const res = await fetch(`http://localhost:${server.port}/unknown`)
+		const res = await api(`/unknown`)
 		expect(res.status).toBe(404)
 		const body = await res.json()
 		expect(body.formatVersion).toBe(1)
@@ -427,7 +430,7 @@ describe('API', () => {
 		])
 		await wb.save(tempFile)
 
-		const tsvRes = await fetch(`http://localhost:${server.port}/export`, {
+		const tsvRes = await api(`/export`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ file: tempFile, format: 'tsv' }),
@@ -436,7 +439,7 @@ describe('API', () => {
 		expect(tsvRes.headers.get('Content-Type')).toContain('text/tab-separated-values')
 		expect(await tsvRes.text()).toContain('Name\tScore')
 
-		const badRes = await fetch(`http://localhost:${server.port}/export`, {
+		const badRes = await api(`/export`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ file: tempFile, format: 'weird' }),

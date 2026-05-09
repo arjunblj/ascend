@@ -136,8 +136,8 @@ function withCors(res: Response): Response {
 	return res
 }
 
-export function createServer(opts?: { port?: number }) {
-	const fetch = async (req: Request) => {
+export function createApiFetch() {
+	return async (req: Request) => {
 		const url = new URL(req.url)
 		const method = req.method
 		const path = url.pathname
@@ -608,11 +608,20 @@ export function createServer(opts?: { port?: number }) {
 			return withCors(jsonFailure(msg, 500))
 		}
 	}
+}
 
+export function createServer(opts?: { port?: number }) {
+	const fetch = createApiFetch()
 	const requestedPort = opts?.port ?? (Number(process.env.PORT) || 3000)
 	if (requestedPort !== 0) return Bun.serve({ port: requestedPort, fetch })
 
 	let lastError: unknown
+	try {
+		return Bun.serve({ port: 0, fetch })
+	} catch (error) {
+		lastError = error
+	}
+
 	for (let attempt = 0; attempt < 25; attempt++) {
 		const port = 20_000 + Math.floor(Math.random() * 40_000)
 		try {

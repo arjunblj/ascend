@@ -66,7 +66,7 @@ export async function writeDenseRowsXlsxStreaming(
 		for (const [path, data] of buildBaseParts(options.sheetName ?? DEFAULT_SHEET_NAME)) {
 			builder.addEntry(path, data)
 		}
-		builder.addStreamingEntry('xl/worksheets/sheet1.xml')
+		builder.addStreamingEntry('xl/worksheets/sheet1.xml', estimateDenseSheetXmlBytes(options))
 		await writeSheetXmlByteChunksAsync(options, (chunk) => builder.writeChunkAsync(chunk))
 		await builder.closeEntry()
 		return ok(builder.finalize())
@@ -181,6 +181,20 @@ function positiveEnvInt(name: string, fallback: number): number {
 	if (!raw) return fallback
 	const value = Number.parseInt(raw, 10)
 	return Number.isFinite(value) && value > 0 ? value : fallback
+}
+
+function estimateDenseSheetXmlBytes(options: WriteDenseRowsXlsxOptions): number {
+	const cellCount = options.rows * options.cols
+	const rowOverhead = options.rows * 18
+	const cellOverhead =
+		options.valueType === 'string'
+			? 36
+			: options.valueType === 'number'
+				? 20
+				: options.valueType === 'boolean'
+					? 18
+					: 28
+	return 512 + rowOverhead + cellCount * cellOverhead
 }
 
 async function writeSheetXmlByteChunksAsync(

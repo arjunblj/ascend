@@ -102,6 +102,10 @@ export interface WorkbookPreservedMetadata {
 	readonly path: string
 	readonly contentType: string
 	readonly xml?: string
+	readonly dynamicArrayMetadata?: readonly {
+		readonly metadataIndex: number
+		readonly collapsed?: boolean
+	}[]
 }
 
 export interface WorkbookPreservedXml {

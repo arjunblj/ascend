@@ -25,7 +25,7 @@ import { buildCommentsVml, buildCommentsXml } from './comments.ts'
 import { buildContentTypesXml } from './content-types.ts'
 import { buildAppPropsXml, buildCorePropsXml } from './doc-props.ts'
 import { buildDrawingXml } from './drawing.ts'
-import { buildDynamicArrayMetadataXml } from './metadata.ts'
+import { buildDynamicArrayMetadataXml, type DynamicArrayMetadataEntry } from './metadata.ts'
 import { updatePivotCacheDefinitionXml } from './pivot-cache.ts'
 import {
 	summarizeWritePlan,
@@ -414,7 +414,12 @@ export function planWriteXlsx(
 			dynamicArrayMetadata.entries.length > 0 || workbook.preservedMetadata !== null
 		const dynamicArrayMetadataPath = workbook.preservedMetadata?.path ?? 'xl/metadata.xml'
 		const dynamicArrayMetadataTarget = dynamicArrayMetadataPath.replace(/^xl\//, '')
-		const preserveDynamicArrayMetadata = workbook.preservedMetadata !== null
+		const preserveDynamicArrayMetadata =
+			workbook.preservedMetadata !== null &&
+			canPreserveDynamicArrayMetadata(
+				dynamicArrayMetadata.entries,
+				workbook.preservedMetadata.dynamicArrayMetadata,
+			)
 		const preservedDynamicArrayMetadataBytes = workbook.preservedMetadata
 			? resolvePreservedBytes(sourceArchive, workbook.preservedMetadata.path)
 			: undefined
@@ -1400,6 +1405,25 @@ function hasThemeMetadata(metadata: Workbook['themeMetadata']): boolean {
 		(metadata.majorFontLatin?.trim().length ?? 0) > 0 ||
 		(metadata.minorFontLatin?.trim().length ?? 0) > 0
 	)
+}
+
+function canPreserveDynamicArrayMetadata(
+	entries: readonly DynamicArrayMetadataEntry[],
+	preserved:
+		| readonly { readonly metadataIndex: number; readonly collapsed?: boolean }[]
+		| undefined,
+): boolean {
+	if (entries.length === 0) return true
+	if (!preserved) return false
+	const preservedByIndex = new Map<number, boolean | undefined>()
+	for (const entry of preserved) {
+		preservedByIndex.set(entry.metadataIndex, entry.collapsed)
+	}
+	for (const entry of entries) {
+		if (!preservedByIndex.has(entry.metadataIndex)) return false
+		if ((preservedByIndex.get(entry.metadataIndex) ?? false) !== entry.collapsed) return false
+	}
+	return true
 }
 
 function collectCfRuleDxfOverrides(workbook: Workbook): Map<string, Map<string, number>> {

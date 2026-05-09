@@ -266,6 +266,11 @@ export function readXlsx(
 				path: metadataPath,
 				contentType: resolveContentType(metadataPath, contentTypes),
 				...(metadataXml ? { xml: metadataXml } : {}),
+				...(metadata
+					? {
+							dynamicArrayMetadata: [...metadata.dynamicArrayByCellMetadataIndex.values()],
+						}
+					: {}),
 			}
 		}
 		const sheetsToParse: Array<{

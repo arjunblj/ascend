@@ -787,6 +787,40 @@ describe('applyOperation', () => {
 		expect(s.cells.get(3, 0)?.formula).toBe('SUM(1:3)')
 	})
 
+	test('insertRows rewrites local spill references', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, cell(EMPTY, 'SEQUENCE(2)'))
+		s.cells.set(0, 1, cell(EMPTY, 'SUM(A1#)'))
+
+		applyOperation(wb, { op: 'insertRows', sheet: 'Sheet1', at: 0, count: 1 })
+
+		expect(s.cells.get(1, 1)?.formula).toBe('SUM(A2#)')
+	})
+
+	test('insertRows rewrites sheet-qualified spill references from other sheets', () => {
+		const wb = createWorkbook()
+		const s1 = wb.addSheet('Sheet1')
+		const s2 = wb.addSheet('Sheet2')
+		s1.cells.set(0, 0, cell(EMPTY, 'SEQUENCE(2)'))
+		s2.cells.set(0, 0, cell(EMPTY, 'SUM(Sheet1!A1#)'))
+
+		applyOperation(wb, { op: 'insertRows', sheet: 'Sheet1', at: 0, count: 1 })
+
+		expect(s2.cells.get(0, 0)?.formula).toBe('SUM(Sheet1!A2#)')
+	})
+
+	test('insertCols rewrites spill references', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, cell(EMPTY, 'SEQUENCE(2)'))
+		s.cells.set(0, 1, cell(EMPTY, 'SUM(A1#)'))
+
+		applyOperation(wb, { op: 'insertCols', sheet: 'Sheet1', at: 0, count: 1 })
+
+		expect(s.cells.get(0, 2)?.formula).toBe('SUM(B1#)')
+	})
+
 	test('insertRows shifts comments, hyperlinks, validations, ignored errors, and row heights', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

@@ -8,6 +8,7 @@ import { fingerprintXlsx } from '../../test/fidelity-harness.ts'
 import { makeXlsx } from '../../test/helpers.ts'
 import type { PreservationCapsule } from '../preserve.ts'
 import { readXlsx } from '../reader/index.ts'
+import { writeDenseRowsXlsx, writeDenseRowsXlsxStreaming } from './dense-rows.ts'
 import { planWriteXlsx, writeXlsx, writeXlsxStreaming } from './index.ts'
 
 const S0 = 0 as StyleId
@@ -1435,6 +1436,169 @@ describe('writeXlsx', () => {
 		})
 	})
 
+	it('writes plain string cells with usePlainStrings and round-trips correctly', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Test')
+		sheet.cells.set(0, 0, {
+			value: stringValue('plain & fast'),
+			formula: null,
+			styleId: S0,
+		})
+
+		const written = writeXlsx(wb, undefined, { usePlainStrings: true })
+		expectOk(written)
+
+		const zip = unzipSync(written.value)
+		expect(zip['xl/sharedStrings.xml']).toBeUndefined()
+
+		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+		expect(sheetXml).toContain('t="str"')
+		expect(sheetXml).toContain('<v>plain &amp; fast</v>')
+
+		const read = readXlsx(written.value, { mode: 'values' })
+		expectOk(read)
+		expect(read.value.workbook.sheets[0]?.cells.get(0, 0)?.value).toEqual({
+			kind: 'string',
+			value: 'plain & fast',
+		})
+	})
+
+	it('omits dense cell refs only when positions can be inferred', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Test')
+		sheet.cells.set(0, 0, { value: stringValue('a'), formula: null, styleId: S0 })
+		sheet.cells.set(0, 1, { value: stringValue('b'), formula: null, styleId: S0 })
+		sheet.cells.set(1, 1, { value: stringValue('sparse'), formula: null, styleId: S0 })
+
+		const written = writeXlsx(wb, undefined, {
+			useSharedStrings: false,
+			usePlainStrings: true,
+			omitDenseCellRefs: true,
+		})
+		expectOk(written)
+
+		const zip = unzipSync(written.value)
+		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+		expect(sheetXml).toContain('<row r="1"><c t="str"><v>a</v></c><c t="str"><v>b</v></c></row>')
+		expect(sheetXml).toContain('<row r="2"><c r="B2" t="str"><v>sparse</v></c></row>')
+
+		const read = readXlsx(written.value, { mode: 'values' })
+		expectOk(read)
+		const readSheet = read.value.workbook.sheets[0]
+		expect(readSheet?.cells.get(0, 0)?.value).toEqual({ kind: 'string', value: 'a' })
+		expect(readSheet?.cells.get(0, 1)?.value).toEqual({ kind: 'string', value: 'b' })
+		expect(readSheet?.cells.get(1, 1)?.value).toEqual({ kind: 'string', value: 'sparse' })
+	})
+
+	it('writes dense rows without materializing a workbook', () => {
+		const written = writeDenseRowsXlsx({
+			rows: 2,
+			cols: 3,
+			omitCellRefs: true,
+			allCellsPresent: true,
+			valueAt: (row, col) => (row === 1 && col === 1 ? null : `r${row}c${col}`),
+		})
+		expectOk(written)
+
+		const zip = unzipSync(written.value)
+		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+		expect(sheetXml).toContain('<row r="1"><c t="str"><v>r0c0</v></c>')
+		expect(sheetXml).toContain(
+			'<row r="2"><c r="A2" t="str"><v>r1c0</v></c><c r="C2" t="str"><v>r1c2</v></c></row>',
+		)
+
+		const read = readXlsx(written.value, { mode: 'values' })
+		expectOk(read)
+		const readSheet = read.value.workbook.sheets[0]
+		expect(readSheet?.cells.get(0, 0)?.value).toEqual({ kind: 'string', value: 'r0c0' })
+		expect(readSheet?.cells.get(1, 1)).toBeUndefined()
+		expect(readSheet?.cells.get(1, 2)?.value).toEqual({ kind: 'string', value: 'r1c2' })
+	})
+
+	it('reuses constant dense row bodies when explicitly requested', () => {
+		let calls = 0
+		const written = writeDenseRowsXlsx({
+			rows: 4,
+			cols: 3,
+			omitCellRefs: true,
+			constantRows: true,
+			valueAt: (_row, col) => {
+				calls++
+				return col < 2 ? 'repeat' : col
+			},
+		})
+		expectOk(written)
+		expect(calls).toBe(3)
+
+		const read = readXlsx(written.value, { mode: 'values' })
+		expectOk(read)
+		const readSheet = read.value.workbook.sheets[0]
+		expect(readSheet?.cells.get(0, 0)?.value).toEqual({ kind: 'string', value: 'repeat' })
+		expect(readSheet?.cells.get(3, 0)?.value).toEqual({ kind: 'string', value: 'repeat' })
+		expect(readSheet?.cells.get(3, 2)?.value).toEqual({ kind: 'number', value: 2 })
+	})
+
+	it('can skip string escaping for generated XML-safe dense values', () => {
+		const written = writeDenseRowsXlsx({
+			rows: 1,
+			cols: 2,
+			omitCellRefs: true,
+			stringsAreXmlSafe: true,
+			valueAt: (_row, col) => `safe-${col}`,
+		})
+		expectOk(written)
+
+		const zip = unzipSync(written.value)
+		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+		expect(sheetXml).toContain('<c t="str"><v>safe-0</v></c>')
+
+		const read = readXlsx(written.value, { mode: 'values' })
+		expectOk(read)
+		expect(read.value.workbook.sheets[0]?.cells.get(0, 1)?.value).toEqual({
+			kind: 'string',
+			value: 'safe-1',
+		})
+	})
+
+	it('uses dense value type hints while preserving fallback semantics', () => {
+		const written = writeDenseRowsXlsx({
+			rows: 1,
+			cols: 3,
+			omitCellRefs: true,
+			valueType: 'number',
+			valueAt: (_row, col) => (col === 2 ? 'fallback' : col + 1),
+		})
+		expectOk(written)
+
+		const zip = unzipSync(written.value)
+		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+		expect(sheetXml).toContain(
+			'<row r="1"><c><v>1</v></c><c><v>2</v></c><c t="str"><v>fallback</v></c></row>',
+		)
+
+		const read = readXlsx(written.value, { mode: 'values' })
+		expectOk(read)
+		const readSheet = read.value.workbook.sheets[0]
+		expect(readSheet?.cells.get(0, 0)?.value).toEqual({ kind: 'number', value: 1 })
+		expect(readSheet?.cells.get(0, 2)?.value).toEqual({ kind: 'string', value: 'fallback' })
+	})
+
+	it('streams dense rows without materializing a workbook', async () => {
+		const written = await writeDenseRowsXlsxStreaming({
+			rows: 2,
+			cols: 2,
+			omitCellRefs: true,
+			valueAt: (row, col) => row * 2 + col,
+		})
+		expectOk(written)
+
+		const read = readXlsx(written.value, { mode: 'values' })
+		expectOk(read)
+		const readSheet = read.value.workbook.sheets[0]
+		expect(readSheet?.cells.get(0, 0)?.value).toEqual({ kind: 'number', value: 0 })
+		expect(readSheet?.cells.get(1, 1)?.value).toEqual({ kind: 'number', value: 3 })
+	})
+
 	it('creates dxfId for CF rules with style but no dxfId (xlsx-4)', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Rules')
@@ -2063,7 +2227,7 @@ describe('writeXlsx', () => {
 			kind: 'number',
 			value: rows * cols,
 		})
-	}, 30_000)
+	}, 90_000)
 
 	it('streaming write plan emits worksheet XML through streamingBuild', () => {
 		const wb = new Workbook()

@@ -1,4 +1,4 @@
-import { createDeflateRaw, deflateRawSync } from 'node:zlib'
+import { createDeflateRaw, deflateRawSync, constants as zlibConstants } from 'node:zlib'
 
 const textEncoder = new TextEncoder()
 type BunDeflateSync = (
@@ -6,15 +6,23 @@ type BunDeflateSync = (
 	options: { readonly level: number; readonly windowBits: number },
 ) => Uint8Array
 const bunDeflateRawSync = getBunDeflateRawSync()
+const HUGE_WORKSHEET_XML_BYTES = 256 * 1024 * 1024
+
+interface DeflateOptions {
+	readonly level: number
+	readonly strategy?: number
+}
 
 /** Larger worksheet XML: fastest useful deflate; small metadata parts: higher level for better compression. */
-function deflateLevelForPart(path: string, uncompressedSize: number): number {
+function deflateOptionsForPart(path: string, uncompressedSize: number): DeflateOptions {
 	if (/xl\/worksheets\/sheet\d+\.xml$/i.test(path)) {
-		return uncompressedSize > 256 * 1024 * 1024 ? 1 : 2
+		return uncompressedSize > HUGE_WORKSHEET_XML_BYTES
+			? { level: 1, strategy: zlibConstants.Z_FILTERED }
+			: { level: 2 }
 	}
-	if (uncompressedSize > 512_000) return 1
-	if (uncompressedSize < 32_000) return 6
-	return 2
+	if (uncompressedSize > 512_000) return { level: 1 }
+	if (uncompressedSize < 32_000) return { level: 6 }
+	return { level: 2 }
 }
 
 function shouldStoreWithoutDeflate(uncompressedSize: number): boolean {
@@ -128,7 +136,7 @@ export function createZip(parts: ReadonlyMap<string, Uint8Array>): Uint8Array {
 			})
 			continue
 		}
-		const deflated = deflateRawBytesSync(raw, deflateLevelForPart(path, raw.byteLength))
+		const deflated = deflateRawBytesSync(raw, deflateOptionsForPart(path, raw.byteLength))
 		const useStore = deflated.byteLength >= raw.byteLength
 		const data = useStore ? raw : deflated
 		entries.push({
@@ -178,7 +186,7 @@ export class StreamingZipBuilder {
 			})
 			return
 		}
-		const deflated = deflateRawBytesSync(data, deflateLevelForPart(path, data.byteLength))
+		const deflated = deflateRawBytesSync(data, deflateOptionsForPart(path, data.byteLength))
 		const useStore = deflated.byteLength >= data.byteLength
 		const entryData = useStore ? data : deflated
 		this.entries.push({
@@ -199,9 +207,7 @@ export class StreamingZipBuilder {
 		this.streamingCrc = 0xffffffff
 		this.streamingUncompressedSize = 0
 		this.streamingCompressedChunks = []
-		this.deflateStream = createDeflateRaw({
-			level: deflateLevelForPart(path, estimatedUncompressedSize),
-		})
+		this.deflateStream = createDeflateRaw(deflateOptionsForPart(path, estimatedUncompressedSize))
 		this.deflateStream.on('data', (chunk: Uint8Array) => {
 			this.streamingCompressedChunks.push(chunk)
 		})
@@ -289,10 +295,11 @@ export function encode(s: string): Uint8Array {
 	return textEncoder.encode(s)
 }
 
-function deflateRawBytesSync(data: Uint8Array, level: number): Uint8Array {
+function deflateRawBytesSync(data: Uint8Array, options: DeflateOptions): Uint8Array {
 	return (
-		bunDeflateRawSync?.(data, { level, windowBits: -15 }) ??
-		new Uint8Array(deflateRawSync(data, { level }))
+		(options.strategy === undefined
+			? bunDeflateRawSync?.(data, { level: options.level, windowBits: -15 })
+			: undefined) ?? new Uint8Array(deflateRawSync(data, options))
 	)
 }
 

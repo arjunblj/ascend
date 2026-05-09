@@ -2,6 +2,7 @@ export interface Relationship {
 	readonly id: string
 	readonly type: string
 	readonly target: string
+	readonly targetMode?: string
 }
 
 export const REL_OFFICE_DOC =
@@ -48,6 +49,7 @@ export function parseRelationships(xml: string): Relationship[] {
 		let id: string | undefined
 		let type: string | undefined
 		let target: string | undefined
+		let targetMode: string | undefined
 		for (const attrMatch of rawAttrs.matchAll(ATTR_RE)) {
 			const key = attrMatch[1]
 			const value = attrMatch[2]
@@ -55,8 +57,16 @@ export function parseRelationships(xml: string): Relationship[] {
 			if (key === 'Id') id = value
 			else if (key === 'Type') type = value
 			else if (key === 'Target') target = value
+			else if (key === 'TargetMode') targetMode = value
 		}
-		if (id && type && target) rels.push({ id, type: normalizeRelationshipType(type), target })
+		if (id && type && target) {
+			rels.push({
+				id,
+				type: normalizeRelationshipType(type),
+				target,
+				...(targetMode ? { targetMode } : {}),
+			})
+		}
 	}
 	return rels
 }

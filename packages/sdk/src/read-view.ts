@@ -126,6 +126,9 @@ export class WorkbookReadView {
 			externalReferenceCount: this.wb.externalReferences.length,
 			workbookViews: this.wb.workbookViews.map((view) => ({ ...view })),
 			externalReferences: [...this.wb.externalReferences],
+			externalReferenceDetails: this.wb.externalReferenceDetails.map((entry) => ({
+				...entry,
+			})),
 			hasWorkbookProtection: this.wb.workbookProtection !== null,
 			pivotTables: this.wb.pivotTables.map((entry) => ({ ...entry })),
 			pivotCaches: this.wb.pivotCaches.map((entry) => ({ ...entry })),

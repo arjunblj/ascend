@@ -247,6 +247,10 @@ function restoreWorkbookFromSnapshot(workbook: Workbook, snapshot: Workbook): vo
 	workbook.workbookViews.push(...snapshot.workbookViews.map((v) => ({ ...v })))
 	workbook.externalReferences.splice(0, workbook.externalReferences.length)
 	workbook.externalReferences.push(...snapshot.externalReferences)
+	workbook.externalReferenceDetails.splice(0, workbook.externalReferenceDetails.length)
+	workbook.externalReferenceDetails.push(
+		...snapshot.externalReferenceDetails.map((entry) => ({ ...entry })),
+	)
 	workbook.workbookProperties = { ...snapshot.workbookProperties }
 	workbook.workbookProtection = snapshot.workbookProtection
 		? { ...snapshot.workbookProtection }

@@ -137,7 +137,16 @@ export function readXlsx(
 		for (const relId of wbInfo.externalReferenceRelIds) {
 			const rel = relMap.get(relId)
 			if (!rel) continue
-			workbook.externalReferences.push(resolvePath(workbookPath, rel.target))
+			const partPath = resolvePath(workbookPath, rel.target)
+			workbook.externalReferences.push(partPath)
+			const relsXml = readPart(archive, getRelsPath(partPath))
+			const linkRelationship = relsXml ? parseRelationships(relsXml)[0] : undefined
+			workbook.externalReferenceDetails.push({
+				partPath,
+				relId,
+				...(linkRelationship?.target ? { target: linkRelationship.target } : {}),
+				...(linkRelationship?.targetMode ? { targetMode: linkRelationship.targetMode } : {}),
+			})
 		}
 
 		const consumed = new Set<string>()

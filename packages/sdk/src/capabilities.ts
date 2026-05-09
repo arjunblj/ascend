@@ -155,8 +155,9 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'External workbook links',
 		'inspectable',
 		'P0',
-		'Preserve, list, and safely rewrite external refs without flattening formulas.',
-		'External links are visible but not a complete update/refresh surface.',
+		'Add safe external-link target rewrite operations with loss audits.',
+		'External link package parts and relationship targets are inspectable, but not editable.',
+		['packages/io-xlsx/src/reader/reader.test.ts'],
 	),
 
 	cap(

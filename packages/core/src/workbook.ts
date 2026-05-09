@@ -94,6 +94,13 @@ export interface WorkbookPreservedXml {
 	readonly contentType?: string
 }
 
+export interface ExternalReferenceInfo {
+	readonly partPath: string
+	readonly relId?: string
+	readonly target?: string
+	readonly targetMode?: string
+}
+
 export class Workbook {
 	readonly id: WorkbookId
 	readonly sheets: Sheet[] = []
@@ -107,6 +114,7 @@ export class Workbook {
 	readonly slicers: SlicerInfo[] = []
 	readonly workbookViews: WorkbookView[] = []
 	readonly externalReferences: string[] = []
+	readonly externalReferenceDetails: ExternalReferenceInfo[] = []
 	workbookProperties: WorkbookProperties = {}
 	workbookProtection: WorkbookProtection | null = null
 	styleMetadata: WorkbookStyleMetadata = {
@@ -211,6 +219,9 @@ export class Workbook {
 		clone.slicers.push(...this.slicers.map((entry) => ({ ...entry })))
 		clone.workbookViews.push(...this.workbookViews.map((view) => ({ ...view })))
 		clone.externalReferences.push(...this.externalReferences)
+		clone.externalReferenceDetails.push(
+			...this.externalReferenceDetails.map((entry) => ({ ...entry })),
+		)
 		return clone
 	}
 }

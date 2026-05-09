@@ -1102,6 +1102,10 @@ describe('readXlsx', () => {
 </workbook>`,
 			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
 			'xl/externalLinks/externalLink1.xml': `<?xml version="1.0"?><externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"/>`,
+			'xl/externalLinks/_rels/externalLink1.xml.rels': `<?xml version="1.0"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdExt" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath" Target="../sources/source.xlsx" TargetMode="External"/>
+</Relationships>`,
 		})
 
 		const result = readXlsx(bytes)
@@ -1116,6 +1120,14 @@ describe('readXlsx', () => {
 			{ activeTab: 1, firstSheet: 2, visibility: 'visible', tabRatio: 600 },
 		])
 		expect(result.value.workbook.externalReferences).toEqual(['xl/externalLinks/externalLink1.xml'])
+		expect(result.value.workbook.externalReferenceDetails).toEqual([
+			{
+				partPath: 'xl/externalLinks/externalLink1.xml',
+				relId: 'rId2',
+				target: '../sources/source.xlsx',
+				targetMode: 'External',
+			},
+		])
 	})
 
 	it('parses workbook and sheet protection metadata', () => {

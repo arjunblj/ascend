@@ -46,6 +46,7 @@ export interface WorkbookInfo {
 	readonly externalReferenceCount: number
 	readonly workbookViews: readonly WorkbookViewInfo[]
 	readonly externalReferences: readonly string[]
+	readonly externalReferenceDetails: readonly ExternalReferenceInfo[]
 	readonly hasWorkbookProtection: boolean
 	readonly pivotTables: readonly {
 		readonly partPath: string
@@ -103,6 +104,13 @@ export interface PivotTableInfo {
 	readonly name?: string
 	readonly cacheId?: number
 	readonly locationRef?: string
+}
+
+export interface ExternalReferenceInfo {
+	readonly partPath: string
+	readonly relId?: string
+	readonly target?: string
+	readonly targetMode?: string
 }
 
 export interface PivotCacheInfo {

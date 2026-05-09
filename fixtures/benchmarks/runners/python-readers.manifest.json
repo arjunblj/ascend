@@ -230,5 +230,49 @@
 			"valueOnlyRead": true,
 			"xlsmRoundtrip": false
 		}
+	},
+	{
+		"name": "fastxlsx",
+		"command": [
+			"python3",
+			"fixtures/benchmarks/runners/python_matrix_runner.py",
+			"--library",
+			"fastxlsx"
+		],
+		"categories": ["read"],
+		"runtime": "python3",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-cell-materialization-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "python3 -m pip install fastxlsx openpyxl",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	},
+	{
+		"name": "pyopenxlsx",
+		"command": [
+			"python3",
+			"fixtures/benchmarks/runners/python_matrix_runner.py",
+			"--library",
+			"pyopenxlsx"
+		],
+		"categories": ["read"],
+		"runtime": "python3",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-cell-materialization-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "python3 -m pip install pyopenxlsx openpyxl",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
 	}
 ]

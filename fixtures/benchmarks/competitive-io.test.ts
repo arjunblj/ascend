@@ -412,6 +412,9 @@ describe('competitive IO helpers', () => {
 		expect(competitorMatches('sheetjs', 'external')).toBe(false)
 		expect(competitorMatches('fastexcel', 'external')).toBe(true)
 		expect(competitorMatches('fastexcel-java', 'external')).toBe(true)
+		expect(competitorMatches('fastxlsx', 'external')).toBe(true)
+		expect(competitorMatches('pyopenxlsx', 'external')).toBe(true)
+		expect(competitorMatches('pyfastexcel', 'external')).toBe(true)
 		expect(competitorMatches('pyexcelerate-range', 'external')).toBe(true)
 		expect(competitorMatches('pyexcelerate-cell', 'external')).toBe(true)
 		expect(competitorMatches('rust-calamine', 'external')).toBe(true)
@@ -450,6 +453,9 @@ describe('competitive IO helpers', () => {
 			'openpyxl',
 			'openpyxl-write-only',
 			'rust-xlsxwriter',
+			'fastxlsx',
+			'pyopenxlsx',
+			'pyfastexcel',
 		]) {
 			expect(names.has(name)).toBe(true)
 		}

@@ -599,6 +599,8 @@ describe('evaluateAssertions', () => {
 			const specs = normalizeExternalRunnerSpecs(parsed)
 			const rustCalamine = specs.find((spec) => spec.name === 'rust-calamine')
 			const excelize = specs.find((spec) => spec.name === 'excelize')
+			const fastxlsx = specs.find((spec) => spec.name === 'fastxlsx')
+			const pyopenxlsx = specs.find((spec) => spec.name === 'pyopenxlsx')
 			const openpyxlMetadataOnly = specs.find((spec) => spec.name === 'openpyxl-metadata-only')
 			const polarsEngines = specs
 				.filter((spec) => spec.name.startsWith('polars-'))
@@ -628,6 +630,18 @@ describe('evaluateAssertions', () => {
 				internalTiming: true,
 				metadataOnlyRead: true,
 			})
+			expect(fastxlsx?.command).toEqual([
+				'python3',
+				'fixtures/benchmarks/runners/python_matrix_runner.py',
+				'--library',
+				'fastxlsx',
+			])
+			expect(pyopenxlsx?.command).toEqual([
+				'python3',
+				'fixtures/benchmarks/runners/python_matrix_runner.py',
+				'--library',
+				'pyopenxlsx',
+			])
 			expect(polarsEngines).toEqual(['polars-calamine', 'polars-xlsx2csv', 'polars-openpyxl'])
 		}
 	})

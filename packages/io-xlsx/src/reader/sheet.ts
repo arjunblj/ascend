@@ -1378,6 +1378,9 @@ function parseConditionalFormatting(
 				aboveAverage?: boolean
 				equalAverage?: boolean
 				timePeriod?: string
+				colorScale?: SheetConditionalFormatRule['colorScale']
+				dataBar?: SheetConditionalFormatRule['dataBar']
+				iconSet?: SheetConditionalFormatRule['iconSet']
 			} = {
 				type,
 				formulas,
@@ -1400,6 +1403,12 @@ function parseConditionalFormatting(
 			if (equalAverage !== undefined) parsedRule.equalAverage = equalAverage
 			const timePeriod = attr(rule, 'timePeriod')
 			if (timePeriod) parsedRule.timePeriod = timePeriod
+			const colorScale = parseConditionalColorScale(rule.colorScale as XmlNode | undefined)
+			if (colorScale) parsedRule.colorScale = colorScale
+			const dataBar = parseConditionalDataBar(rule.dataBar as XmlNode | undefined)
+			if (dataBar) parsedRule.dataBar = dataBar
+			const iconSet = parseConditionalIconSet(rule.iconSet as XmlNode | undefined)
+			if (iconSet) parsedRule.iconSet = iconSet
 			if (dxfId !== undefined) {
 				parsedRule.dxfId = dxfId
 				const style = differentialStyles[dxfId]
@@ -1411,6 +1420,97 @@ function parseConditionalFormatting(
 			sheet.conditionalFormats.push({ sqref, rules } satisfies SheetConditionalFormat)
 		}
 	}
+}
+
+function parseConditionalColorScale(
+	node: XmlNode | undefined,
+): SheetConditionalFormatRule['colorScale'] | undefined {
+	if (!node) return undefined
+	return {
+		cfvo: parseConditionalCfvo(node),
+		colors: asArray<XmlNode>(node.color as XmlNode | XmlNode[] | undefined).map(parseCfColor),
+	}
+}
+
+function parseConditionalDataBar(
+	node: XmlNode | undefined,
+): SheetConditionalFormatRule['dataBar'] | undefined {
+	if (!node) return undefined
+	const parsed: {
+		cfvo: NonNullable<SheetConditionalFormatRule['dataBar']>['cfvo']
+		color?: NonNullable<NonNullable<SheetConditionalFormatRule['dataBar']>['color']>
+		minLength?: number
+		maxLength?: number
+		showValue?: boolean
+	} = {
+		cfvo: parseConditionalCfvo(node),
+	}
+	const colorNode = node.color as XmlNode | undefined
+	if (colorNode) parsed.color = parseCfColor(colorNode)
+	const minLength = numAttr(node, 'minLength')
+	if (minLength !== undefined) parsed.minLength = minLength
+	const maxLength = numAttr(node, 'maxLength')
+	if (maxLength !== undefined) parsed.maxLength = maxLength
+	const showValue = readBoolAttribute(node, 'showValue')
+	if (showValue !== undefined) parsed.showValue = showValue
+	return parsed
+}
+
+function parseConditionalIconSet(
+	node: XmlNode | undefined,
+): SheetConditionalFormatRule['iconSet'] | undefined {
+	if (!node) return undefined
+	const parsed: {
+		cfvo: NonNullable<SheetConditionalFormatRule['iconSet']>['cfvo']
+		iconSet?: string
+		showValue?: boolean
+		percent?: boolean
+		reverse?: boolean
+	} = {
+		cfvo: parseConditionalCfvo(node),
+	}
+	const iconSet = attr(node, 'iconSet')
+	if (iconSet) parsed.iconSet = iconSet
+	const showValue = readBoolAttribute(node, 'showValue')
+	if (showValue !== undefined) parsed.showValue = showValue
+	const percent = readBoolAttribute(node, 'percent')
+	if (percent !== undefined) parsed.percent = percent
+	const reverse = readBoolAttribute(node, 'reverse')
+	if (reverse !== undefined) parsed.reverse = reverse
+	return parsed
+}
+
+function parseConditionalCfvo(
+	node: XmlNode,
+): NonNullable<SheetConditionalFormatRule['colorScale']>['cfvo'] {
+	return asArray<XmlNode>(node.cfvo as XmlNode | XmlNode[] | undefined).map((entry) => {
+		const parsed: { type?: string; value?: string; gte?: boolean } = {}
+		const type = attr(entry, 'type')
+		if (type) parsed.type = type
+		const value = attr(entry, 'val')
+		if (value) parsed.value = value
+		const gte = readBoolAttribute(entry, 'gte')
+		if (gte !== undefined) parsed.gte = gte
+		return parsed
+	})
+}
+
+function parseCfColor(
+	node: XmlNode,
+): NonNullable<SheetConditionalFormatRule['colorScale']>['colors'][number] {
+	const parsed: { rgb?: string; theme?: number; tint?: number; indexed?: number; auto?: boolean } =
+		{}
+	const rgb = attr(node, 'rgb')
+	if (rgb) parsed.rgb = rgb
+	const theme = numAttr(node, 'theme')
+	if (theme !== undefined) parsed.theme = theme
+	const tint = numAttr(node, 'tint')
+	if (tint !== undefined) parsed.tint = tint
+	const indexed = numAttr(node, 'indexed')
+	if (indexed !== undefined) parsed.indexed = indexed
+	const auto = readBoolAttribute(node, 'auto')
+	if (auto !== undefined) parsed.auto = auto
+	return parsed
 }
 
 function parseDataValidations(ws: XmlNode, sheet: Sheet, pool?: ValueInternPool): void {

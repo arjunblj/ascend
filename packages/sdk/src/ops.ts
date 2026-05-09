@@ -112,7 +112,7 @@ const FIELD_SCHEMAS: Record<
 		type: 'object',
 		description:
 			'For setDataValidation: { type: "list"|"whole"|"decimal"|"date"|"time"|"textLength"|"custom", formula1?, formula2?, operator?, allowBlank?, showErrorMessage?, errorTitle?, errorMessage?, showInputMessage?, promptTitle?, prompt? }. ' +
-			'For setConditionalFormat: { type: "cellIs"|"expression"|"colorScale"|"dataBar"|"iconSet"|"top10"|"aboveAverage"|"duplicateValues"|"containsText", operator?, formula?, formula2?, priority?, stopIfTrue?, style? }.',
+			'For setConditionalFormat: { type: "cellIs"|"expression"|"colorScale"|"dataBar"|"iconSet"|"top10"|"aboveAverage"|"duplicateValues"|"containsText", operator?, formula?, formula2?, priority?, stopIfTrue?, style?, colorScale?, dataBar?, iconSet? }.',
 	},
 	setup: {
 		type: 'object',

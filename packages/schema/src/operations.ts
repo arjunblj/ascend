@@ -497,6 +497,44 @@ export interface ConditionalFormatRule {
 	readonly priority?: number
 	readonly stopIfTrue?: boolean
 	readonly style?: StyleInput
+	readonly colorScale?: ConditionalFormatColorScale
+	readonly dataBar?: ConditionalFormatDataBar
+	readonly iconSet?: ConditionalFormatIconSet
+}
+
+export interface ConditionalFormatValueObject {
+	readonly type?: string
+	readonly value?: string
+	readonly gte?: boolean
+}
+
+export interface ConditionalFormatColor {
+	readonly rgb?: string
+	readonly theme?: number
+	readonly tint?: number
+	readonly indexed?: number
+	readonly auto?: boolean
+}
+
+export interface ConditionalFormatColorScale {
+	readonly cfvo: readonly ConditionalFormatValueObject[]
+	readonly colors: readonly ConditionalFormatColor[]
+}
+
+export interface ConditionalFormatDataBar {
+	readonly cfvo: readonly ConditionalFormatValueObject[]
+	readonly color?: ConditionalFormatColor
+	readonly minLength?: number
+	readonly maxLength?: number
+	readonly showValue?: boolean
+}
+
+export interface ConditionalFormatIconSet {
+	readonly cfvo: readonly ConditionalFormatValueObject[]
+	readonly iconSet?: string
+	readonly showValue?: boolean
+	readonly percent?: boolean
+	readonly reverse?: boolean
 }
 
 export interface PageSetupInput {

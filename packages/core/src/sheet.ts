@@ -184,11 +184,82 @@ export interface SheetConditionalFormatRule {
 	readonly aboveAverage?: boolean
 	readonly equalAverage?: boolean
 	readonly timePeriod?: string
+	readonly colorScale?: SheetConditionalFormatColorScale
+	readonly dataBar?: SheetConditionalFormatDataBar
+	readonly iconSet?: SheetConditionalFormatIconSet
+}
+
+export interface SheetConditionalFormatValueObject {
+	readonly type?: string
+	readonly value?: string
+	readonly gte?: boolean
+}
+
+export interface SheetConditionalFormatColor {
+	readonly rgb?: string
+	readonly theme?: number
+	readonly tint?: number
+	readonly indexed?: number
+	readonly auto?: boolean
+}
+
+export interface SheetConditionalFormatColorScale {
+	readonly cfvo: readonly SheetConditionalFormatValueObject[]
+	readonly colors: readonly SheetConditionalFormatColor[]
+}
+
+export interface SheetConditionalFormatDataBar {
+	readonly cfvo: readonly SheetConditionalFormatValueObject[]
+	readonly color?: SheetConditionalFormatColor
+	readonly minLength?: number
+	readonly maxLength?: number
+	readonly showValue?: boolean
+}
+
+export interface SheetConditionalFormatIconSet {
+	readonly cfvo: readonly SheetConditionalFormatValueObject[]
+	readonly iconSet?: string
+	readonly showValue?: boolean
+	readonly percent?: boolean
+	readonly reverse?: boolean
 }
 
 export interface SheetConditionalFormat {
 	readonly sqref: string
 	readonly rules: readonly SheetConditionalFormatRule[]
+}
+
+function cloneConditionalFormatRule(rule: SheetConditionalFormatRule): SheetConditionalFormatRule {
+	return {
+		...rule,
+		formulas: [...rule.formulas],
+		...(rule.style ? { style: cloneCellStyle(rule.style) } : {}),
+		...(rule.colorScale
+			? {
+					colorScale: {
+						cfvo: rule.colorScale.cfvo.map((entry) => ({ ...entry })),
+						colors: rule.colorScale.colors.map((entry) => ({ ...entry })),
+					},
+				}
+			: {}),
+		...(rule.dataBar
+			? {
+					dataBar: {
+						...rule.dataBar,
+						cfvo: rule.dataBar.cfvo.map((entry) => ({ ...entry })),
+						...(rule.dataBar.color ? { color: { ...rule.dataBar.color } } : {}),
+					},
+				}
+			: {}),
+		...(rule.iconSet
+			? {
+					iconSet: {
+						...rule.iconSet,
+						cfvo: rule.iconSet.cfvo.map((entry) => ({ ...entry })),
+					},
+				}
+			: {}),
+	}
 }
 
 export interface SheetIgnoredError {
@@ -326,11 +397,7 @@ export class Sheet {
 		this.colBreaks = this.colBreaks.map((b) => ({ ...b }))
 		this.conditionalFormats = this.conditionalFormats.map((cf) => ({
 			...cf,
-			rules: cf.rules.map((r) => ({
-				...r,
-				formulas: [...r.formulas],
-				...(r.style ? { style: cloneCellStyle(r.style) } : {}),
-			})),
+			rules: cf.rules.map(cloneConditionalFormatRule),
 		}))
 		this.imageRefs = this.imageRefs.map(cloneImageRef)
 		this.autoFilter = this.autoFilter ? cloneAutoFilter(this.autoFilter) : null

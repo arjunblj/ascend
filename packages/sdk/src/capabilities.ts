@@ -194,6 +194,16 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'Common style operations exist; deeper style fidelity remains fixture-driven.',
 	),
 	cap(
+		'sheets.conditional-formatting',
+		'sheets/ranges',
+		'Conditional formatting',
+		'editable',
+		'P0',
+		'Add priority reorder operations, overlap diagnostics, and extLst/x14 rule preservation.',
+		'CellIs/expression rules and visual colorScale/dataBar/iconSet rules round-trip with core metadata.',
+		['packages/io-xlsx/src/writer/conditional-format-visual.test.ts'],
+	),
+	cap(
 		'sheets.rich-text',
 		'sheets/ranges',
 		'Rich text runs',

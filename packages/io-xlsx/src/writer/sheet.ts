@@ -6,6 +6,7 @@ import { topLeftScalar } from '@ascend/schema'
 import { toStoredFormulaText } from '../formula-storage.ts'
 import { escapeXml } from '../xml.ts'
 import { ChunkedStringBuilder } from './chunked-string-builder.ts'
+import { buildColorScaleXml, buildDataBarXml, buildIconSetXml } from './conditional-format.ts'
 import { pushAutoFilterXml } from './filtering.ts'
 import type { SharedStringTable } from './shared-strings.ts'
 
@@ -251,6 +252,9 @@ function buildSheetXmlToSink(
 				for (const formula of rule.formulas) {
 					out.push(`<formula>${escapeXml(formula)}</formula>`)
 				}
+				if (rule.colorScale) out.push(buildColorScaleXml(rule.colorScale))
+				if (rule.dataBar) out.push(buildDataBarXml(rule.dataBar))
+				if (rule.iconSet) out.push(buildIconSetXml(rule.iconSet))
 				out.push('</cfRule>')
 			}
 			out.push('</conditionalFormatting>')

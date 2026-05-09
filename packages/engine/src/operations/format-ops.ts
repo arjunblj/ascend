@@ -84,6 +84,31 @@ export function handleSetConditionalFormat(
 		...(op.rule.priority !== undefined ? { priority: op.rule.priority } : {}),
 		...(op.rule.stopIfTrue !== undefined ? { stopIfTrue: op.rule.stopIfTrue } : {}),
 		...(op.rule.style ? { style: op.rule.style } : {}),
+		...(op.rule.colorScale
+			? {
+					colorScale: {
+						cfvo: op.rule.colorScale.cfvo.map((entry) => ({ ...entry })),
+						colors: op.rule.colorScale.colors.map((entry) => ({ ...entry })),
+					},
+				}
+			: {}),
+		...(op.rule.dataBar
+			? {
+					dataBar: {
+						...op.rule.dataBar,
+						cfvo: op.rule.dataBar.cfvo.map((entry) => ({ ...entry })),
+						...(op.rule.dataBar.color ? { color: { ...op.rule.dataBar.color } } : {}),
+					},
+				}
+			: {}),
+		...(op.rule.iconSet
+			? {
+					iconSet: {
+						...op.rule.iconSet,
+						cfvo: op.rule.iconSet.cfvo.map((entry) => ({ ...entry })),
+					},
+				}
+			: {}),
 	}
 	const cf: SheetConditionalFormat = { sqref: op.range, rules: [rule] }
 	if (existing >= 0) sheet.conditionalFormats[existing] = cf

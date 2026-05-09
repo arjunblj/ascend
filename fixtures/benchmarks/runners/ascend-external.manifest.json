@@ -1,0 +1,219 @@
+[
+	{
+		"name": "ascend-external",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_runner.ts",
+			"--mode",
+			"formula",
+			"--source",
+			"path"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-file-path-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"xlsmRoundtrip": true
+		}
+	},
+	{
+		"name": "ascend-external-values",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_runner.ts",
+			"--mode",
+			"values",
+			"--source",
+			"path"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-file-path-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": true
+		}
+	},
+	{
+		"name": "ascend-external-values-ordered",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_runner.ts",
+			"--mode",
+			"values",
+			"--source",
+			"path",
+			"--stream-ordered-hashes"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-file-path-ordered-hash-timing",
+		"validationModel": "external-post-operation-ordered-hash-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": true
+		}
+	},
+	{
+		"name": "ascend-external-bytes",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_runner.ts",
+			"--mode",
+			"formula",
+			"--source",
+			"bytes"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-preloaded-bytes-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"xlsmRoundtrip": true
+		}
+	},
+	{
+		"name": "ascend-external-values-bytes",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_runner.ts",
+			"--mode",
+			"values",
+			"--source",
+			"bytes"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-preloaded-bytes-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": true
+		}
+	},
+	{
+		"name": "ascend-readxlsx-values-bytes",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_readxlsx_runner.ts",
+			"--mode",
+			"values",
+			"--source",
+			"bytes"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-preloaded-bytes-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": true
+		}
+	},
+	{
+		"name": "ascend-readxlsx-raw-values-bytes",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_readxlsx_runner.ts",
+			"--mode",
+			"values",
+			"--source",
+			"bytes",
+			"--raw-values"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-preloaded-raw-values-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": true
+		}
+	},
+	{
+		"name": "ascend-readxlsx-values-rich-metadata-bytes",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_readxlsx_runner.ts",
+			"--mode",
+			"values",
+			"--source",
+			"bytes",
+			"--rich-metadata"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-preloaded-bytes-rich-metadata-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": true
+		}
+	},
+	{
+		"name": "ascend-external-metadata-only-bytes",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_runner.ts",
+			"--mode",
+			"metadata-only",
+			"--source",
+			"bytes"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-preloaded-bytes-timing",
+		"validationModel": "external-post-metadata-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"metadataOnlyRead": true,
+			"xlsmRoundtrip": true
+		}
+	}
+]

@@ -1,0 +1,19 @@
+[
+	{
+		"name": "apache-poi",
+		"command": ["bash", "fixtures/benchmarks/runners/apache_poi_runner.sh"],
+		"categories": ["read", "write"],
+		"runtime": "java",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-materialized-workbook-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "jvm-heap-reported",
+		"installHint": "brew install openjdk maven",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	}
+]

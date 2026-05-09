@@ -1,0 +1,26 @@
+[
+	{
+		"name": "rust-xlsxwriter",
+		"command": [
+			"cargo",
+			"run",
+			"--quiet",
+			"--release",
+			"--manifest-path",
+			"fixtures/benchmarks/runners/rust-xlsxwriter/Cargo.toml",
+			"--"
+		],
+		"categories": ["write"],
+		"runtime": "rust",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "cargo build --release --manifest-path fixtures/benchmarks/runners/rust-xlsxwriter/Cargo.toml",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	}
+]

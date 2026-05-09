@@ -1,0 +1,19 @@
+[
+	{
+		"name": "fastexcel-java",
+		"command": ["bash", "fixtures/benchmarks/runners/fastexcel_java_runner.sh"],
+		"categories": ["write"],
+		"runtime": "java",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-materialized-workbook-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "jvm-heap-reported",
+		"installHint": "brew install openjdk maven",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	}
+]

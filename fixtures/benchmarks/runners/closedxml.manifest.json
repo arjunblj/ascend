@@ -1,0 +1,19 @@
+[
+	{
+		"name": "closedxml",
+		"command": ["bash", "fixtures/benchmarks/runners/closedxml_runner.sh"],
+		"categories": ["read", "write"],
+		"runtime": "dotnet",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-materialized-workbook-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "process-working-set-reported",
+		"installHint": "brew install dotnet@8",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	}
+]

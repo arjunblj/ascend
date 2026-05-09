@@ -1,0 +1,53 @@
+[
+	{
+		"name": "ascend-external-values-ordered",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_runner.ts",
+			"--mode",
+			"values",
+			"--source",
+			"path",
+			"--stream-ordered-hashes"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-file-path-ordered-hash-timing",
+		"validationModel": "external-post-operation-ordered-hash-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": true
+		}
+	},
+	{
+		"name": "rust-calamine",
+		"command": [
+			"cargo",
+			"run",
+			"--quiet",
+			"--release",
+			"--manifest-path",
+			"fixtures/benchmarks/runners/rust-calamine/Cargo.toml",
+			"--",
+			"--ordered-hashes"
+		],
+		"categories": ["read"],
+		"runtime": "rust",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-file-path-ordered-hash-timing",
+		"validationModel": "external-post-operation-ordered-hash-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "cargo build --release --manifest-path fixtures/benchmarks/runners/rust-calamine/Cargo.toml",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	}
+]

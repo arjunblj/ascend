@@ -1,0 +1,290 @@
+[
+	{
+		"name": "ascend-external-writer",
+		"command": ["bun", "fixtures/benchmarks/runners/ascend_writer_runner.ts"],
+		"categories": ["write"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "process-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	},
+	{
+		"name": "apache-poi",
+		"command": ["bash", "fixtures/benchmarks/runners/apache_poi_runner.sh"],
+		"categories": ["write"],
+		"runtime": "java",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "jvm-heap-reported",
+		"installHint": "brew install openjdk maven",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false,
+			"finalValidation": true
+		}
+	},
+	{
+		"name": "sheetjs",
+		"command": ["bun", "fixtures/benchmarks/runners/js_writer_runner.ts", "--library", "sheetjs"],
+		"categories": ["write"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "process-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	},
+	{
+		"name": "exceljs",
+		"command": ["bun", "fixtures/benchmarks/runners/js_writer_runner.ts", "--library", "exceljs"],
+		"categories": ["write"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "process-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	},
+	{
+		"name": "excelize",
+		"command": ["bash", "fixtures/benchmarks/runners/excelize_runner.sh"],
+		"categories": ["write"],
+		"runtime": "go",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "brew install go",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false,
+			"finalValidation": true
+		}
+	},
+	{
+		"name": "fastexcel-java",
+		"command": ["bash", "fixtures/benchmarks/runners/fastexcel_java_runner.sh"],
+		"categories": ["write"],
+		"runtime": "java",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "jvm-heap-reported",
+		"installHint": "brew install openjdk maven",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	},
+	{
+		"name": "closedxml",
+		"command": ["bash", "fixtures/benchmarks/runners/closedxml_runner.sh"],
+		"categories": ["write"],
+		"runtime": "dotnet",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "process-working-set-reported",
+		"installHint": "brew install dotnet@8; review the NPOI OSMF license, then run with ACCEPT_NPOI_OSMF_LICENSE=1",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	},
+	{
+		"name": "npoi",
+		"command": ["bash", "fixtures/benchmarks/runners/npoi_runner.sh"],
+		"categories": ["write"],
+		"runtime": "dotnet",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "process-working-set-reported",
+		"installHint": "brew install dotnet@8; review the NPOI OSMF license, then run with ACCEPT_NPOI_OSMF_LICENSE=1",
+		"licenseGate": {
+			"env": "ACCEPT_NPOI_OSMF_LICENSE",
+			"value": "1",
+			"reason": "NPOI requires explicit OSMF license acceptance."
+		},
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	},
+	{
+		"name": "xlsxwriter",
+		"command": ["python3", "fixtures/benchmarks/runners/xlsxwriter_runner.py"],
+		"categories": ["write"],
+		"runtime": "python3",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "python3 -m pip install XlsxWriter openpyxl",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false,
+			"finalValidation": true
+		}
+	},
+	{
+		"name": "xlsxwriter-constant-memory",
+		"command": ["python3", "fixtures/benchmarks/runners/xlsxwriter_runner.py", "--constant-memory"],
+		"categories": ["write"],
+		"runtime": "python3",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "python3 -m pip install XlsxWriter openpyxl",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false,
+			"finalValidation": true
+		}
+	},
+	{
+		"name": "pyexcelerate",
+		"command": ["python3", "fixtures/benchmarks/runners/pyexcelerate_runner.py"],
+		"categories": ["write"],
+		"runtime": "python3",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "python3 -m pip install pyexcelerate openpyxl",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false,
+			"finalValidation": true
+		}
+	},
+	{
+		"name": "pyexcelerate-range",
+		"command": [
+			"python3",
+			"fixtures/benchmarks/runners/pyexcelerate_runner.py",
+			"--strategy",
+			"range"
+		],
+		"categories": ["write"],
+		"runtime": "python3",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "python3 -m pip install pyexcelerate openpyxl",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false,
+			"finalValidation": true
+		}
+	},
+	{
+		"name": "pyexcelerate-cell",
+		"command": [
+			"python3",
+			"fixtures/benchmarks/runners/pyexcelerate_runner.py",
+			"--strategy",
+			"cell"
+		],
+		"categories": ["write"],
+		"runtime": "python3",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "python3 -m pip install pyexcelerate openpyxl",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false,
+			"finalValidation": true
+		}
+	},
+	{
+		"name": "openpyxl",
+		"command": ["python3", "fixtures/benchmarks/runners/openpyxl_writer_runner.py"],
+		"categories": ["write"],
+		"runtime": "python3",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "python3 -m pip install openpyxl",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false,
+			"finalValidation": true
+		}
+	},
+	{
+		"name": "openpyxl-write-only",
+		"command": ["python3", "fixtures/benchmarks/runners/openpyxl_writer_runner.py", "--write-only"],
+		"categories": ["write"],
+		"runtime": "python3",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "python3 -m pip install openpyxl",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false,
+			"finalValidation": true
+		}
+	},
+	{
+		"name": "rust-xlsxwriter",
+		"command": [
+			"cargo",
+			"run",
+			"--quiet",
+			"--release",
+			"--manifest-path",
+			"fixtures/benchmarks/runners/rust-xlsxwriter/Cargo.toml",
+			"--"
+		],
+		"categories": ["write"],
+		"runtime": "rust",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "cargo build --release --manifest-path fixtures/benchmarks/runners/rust-xlsxwriter/Cargo.toml",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	}
+]

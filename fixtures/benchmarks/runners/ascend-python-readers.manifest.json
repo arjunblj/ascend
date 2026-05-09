@@ -1,0 +1,451 @@
+[
+	{
+		"name": "ascend-external",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_runner.ts",
+			"--mode",
+			"formula",
+			"--source",
+			"path"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-file-path-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"xlsmRoundtrip": true
+		}
+	},
+	{
+		"name": "ascend-external-values",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_runner.ts",
+			"--mode",
+			"values",
+			"--source",
+			"path"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-file-path-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": true
+		}
+	},
+	{
+		"name": "ascend-external-values-ordered",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_runner.ts",
+			"--mode",
+			"values",
+			"--source",
+			"path",
+			"--stream-ordered-hashes"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-file-path-ordered-hash-timing",
+		"validationModel": "external-post-operation-ordered-hash-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": true
+		}
+	},
+	{
+		"name": "ascend-external-bytes",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_runner.ts",
+			"--mode",
+			"formula",
+			"--source",
+			"bytes"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-preloaded-bytes-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"xlsmRoundtrip": true
+		}
+	},
+	{
+		"name": "ascend-external-values-bytes",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_runner.ts",
+			"--mode",
+			"values",
+			"--source",
+			"bytes"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-preloaded-bytes-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": true
+		}
+	},
+	{
+		"name": "ascend-readxlsx-values-bytes",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_readxlsx_runner.ts",
+			"--mode",
+			"values",
+			"--source",
+			"bytes"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-preloaded-bytes-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": true
+		}
+	},
+	{
+		"name": "ascend-readxlsx-raw-values-bytes",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_readxlsx_runner.ts",
+			"--mode",
+			"values",
+			"--source",
+			"bytes",
+			"--raw-values"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-preloaded-raw-values-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": true
+		}
+	},
+	{
+		"name": "ascend-readxlsx-values-rich-metadata-bytes",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_readxlsx_runner.ts",
+			"--mode",
+			"values",
+			"--source",
+			"bytes",
+			"--rich-metadata"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-preloaded-bytes-rich-metadata-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": true
+		}
+	},
+	{
+		"name": "ascend-external-metadata-only-bytes",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_runner.ts",
+			"--mode",
+			"metadata-only",
+			"--source",
+			"bytes"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-preloaded-bytes-timing",
+		"validationModel": "external-post-metadata-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"metadataOnlyRead": true,
+			"xlsmRoundtrip": true
+		}
+	},
+	{
+		"name": "openpyxl",
+		"command": ["python3", "fixtures/benchmarks/runners/openpyxl_runner.py"],
+		"categories": ["read", "roundtrip"],
+		"runtime": "python3",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-operation-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "python3 -m pip install openpyxl",
+		"capabilities": {
+			"internalTiming": true,
+			"xlsmRoundtrip": true
+		}
+	},
+	{
+		"name": "openpyxl-read-only",
+		"command": ["python3", "fixtures/benchmarks/runners/openpyxl_runner.py", "--read-only"],
+		"categories": ["read"],
+		"runtime": "python3",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-read-only-stream-materialization-timing",
+		"validationModel": "external-post-materialization-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "python3 -m pip install openpyxl",
+		"capabilities": {
+			"internalTiming": true,
+			"xlsmRoundtrip": false
+		}
+	},
+	{
+		"name": "openpyxl-read-only-values",
+		"command": [
+			"python3",
+			"fixtures/benchmarks/runners/openpyxl_runner.py",
+			"--read-only",
+			"--data-only"
+		],
+		"categories": ["read"],
+		"runtime": "python3",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-read-only-data-only-stream-materialization-timing",
+		"validationModel": "external-post-materialization-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "python3 -m pip install openpyxl",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	},
+	{
+		"name": "openpyxl-metadata-only",
+		"command": ["python3", "fixtures/benchmarks/runners/openpyxl_runner.py", "--metadata-only"],
+		"categories": ["read"],
+		"runtime": "python3",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-metadata-only-load-timing",
+		"validationModel": "external-post-metadata-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "python3 -m pip install openpyxl",
+		"capabilities": {
+			"internalTiming": true,
+			"metadataOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	},
+	{
+		"name": "fastexcel",
+		"command": ["python3", "fixtures/benchmarks/runners/fastexcel_runner.py"],
+		"categories": ["read"],
+		"runtime": "python3",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-operation-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "python3 -m pip install fastexcel pyarrow",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	},
+	{
+		"name": "python-calamine",
+		"command": ["python3", "fixtures/benchmarks/runners/calamine_runner.py"],
+		"categories": ["read"],
+		"runtime": "python3",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-file-path-materialization-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "python3 -m pip install python-calamine",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	},
+	{
+		"name": "rust-calamine",
+		"command": [
+			"cargo",
+			"run",
+			"--quiet",
+			"--release",
+			"--manifest-path",
+			"fixtures/benchmarks/runners/rust-calamine/Cargo.toml",
+			"--"
+		],
+		"categories": ["read"],
+		"runtime": "rust",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-file-path-materialization-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "cargo build --release --manifest-path fixtures/benchmarks/runners/rust-calamine/Cargo.toml",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	},
+	{
+		"name": "apache-poi",
+		"command": ["bash", "fixtures/benchmarks/runners/apache_poi_runner.sh"],
+		"categories": ["read"],
+		"runtime": "java",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-materialized-workbook-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "jvm-heap-reported",
+		"installHint": "brew install openjdk maven",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	},
+	{
+		"name": "closedxml",
+		"command": ["bash", "fixtures/benchmarks/runners/closedxml_runner.sh"],
+		"categories": ["read"],
+		"runtime": "dotnet",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-materialized-workbook-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "process-working-set-reported",
+		"installHint": "brew install dotnet@8",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	},
+	{
+		"name": "polars-calamine",
+		"command": ["python3", "fixtures/benchmarks/runners/polars_runner.py", "--engine", "calamine"],
+		"categories": ["read"],
+		"runtime": "python3",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-operation-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "python3 -m pip install polars fastexcel pyarrow",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	},
+	{
+		"name": "polars-xlsx2csv",
+		"command": ["python3", "fixtures/benchmarks/runners/polars_runner.py", "--engine", "xlsx2csv"],
+		"categories": ["read"],
+		"runtime": "python3",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-operation-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "python3 -m pip install polars xlsx2csv pyarrow",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	},
+	{
+		"name": "polars-openpyxl",
+		"command": ["python3", "fixtures/benchmarks/runners/polars_runner.py", "--engine", "openpyxl"],
+		"categories": ["read"],
+		"runtime": "python3",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-operation-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "python3 -m pip install polars openpyxl pyarrow",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	},
+	{
+		"name": "excelize",
+		"command": ["bash", "fixtures/benchmarks/runners/excelize_runner.sh"],
+		"categories": ["read"],
+		"runtime": "go",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-file-path-materialization-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "brew install go",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	}
+]

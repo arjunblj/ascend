@@ -1,0 +1,27 @@
+[
+	{
+		"name": "rust-calamine",
+		"command": [
+			"cargo",
+			"run",
+			"--quiet",
+			"--release",
+			"--manifest-path",
+			"fixtures/benchmarks/runners/rust-calamine/Cargo.toml",
+			"--"
+		],
+		"categories": ["read"],
+		"runtime": "rust",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-file-path-materialization-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "cargo build --release --manifest-path fixtures/benchmarks/runners/rust-calamine/Cargo.toml",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	}
+]

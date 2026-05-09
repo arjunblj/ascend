@@ -1,0 +1,24 @@
+[
+	{
+		"name": "npoi",
+		"command": ["bash", "fixtures/benchmarks/runners/npoi_runner.sh"],
+		"categories": ["write"],
+		"runtime": "dotnet",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-materialized-workbook-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "process-working-set-reported",
+		"installHint": "brew install dotnet@8; review the NPOI OSMF license, then run with ACCEPT_NPOI_OSMF_LICENSE=1",
+		"licenseGate": {
+			"env": "ACCEPT_NPOI_OSMF_LICENSE",
+			"value": "1",
+			"reason": "NPOI requires explicit OSMF license acceptance."
+		},
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	}
+]

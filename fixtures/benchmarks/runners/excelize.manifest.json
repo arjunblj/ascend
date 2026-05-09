@@ -1,0 +1,19 @@
+[
+	{
+		"name": "excelize",
+		"command": ["bash", "fixtures/benchmarks/runners/excelize_runner.sh"],
+		"categories": ["read", "write"],
+		"runtime": "go",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-file-path-materialization-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "brew install go",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	}
+]

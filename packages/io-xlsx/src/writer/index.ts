@@ -303,6 +303,7 @@ export function planWriteXlsx(
 		const useInlineStrings =
 			!usePlainStrings && useInlineStringsRequested && !hasPreservedSheetXmlInDirtyPatchMode
 		const useSharedStrings = !useInlineStrings && !usePlainStrings
+		const omitDenseCellRefs = options.omitDenseCellRefs ?? true
 		const preserveSharedStrings = Boolean(
 			workbook.preservedSharedStrings &&
 				!effectiveSharedStringsDirty &&
@@ -946,9 +947,7 @@ export function planWriteXlsx(
 					useInlineStrings,
 					usePlainStrings,
 					batchRows: true,
-					...(options.omitDenseCellRefs !== undefined
-						? { omitDenseCellRefs: options.omitDenseCellRefs }
-						: {}),
+					omitDenseCellRefs,
 					...(cfOverrides ? { cfDxfIdOverrides: cfOverrides } : {}),
 				}
 				recordStreamingSheet(
@@ -987,9 +986,7 @@ export function planWriteXlsx(
 									useInlineStrings,
 									usePlainStrings,
 									batchRows: true,
-									...(options.omitDenseCellRefs !== undefined
-										? { omitDenseCellRefs: options.omitDenseCellRefs }
-										: {}),
+									omitDenseCellRefs,
 									...(cfOverrides ? { cfDxfIdOverrides: cfOverrides } : {}),
 								})
 					},

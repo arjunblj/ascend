@@ -568,8 +568,11 @@ export interface DataValidationRule {
 		| 'lessThanOrEqual'
 	readonly allowBlank?: boolean
 	readonly showErrorMessage?: boolean
+	readonly showDropDown?: boolean
 	readonly errorTitle?: string
 	readonly errorMessage?: string
+	readonly errorStyle?: string
+	readonly imeMode?: string
 	readonly showInputMessage?: boolean
 	readonly promptTitle?: string
 	readonly prompt?: string

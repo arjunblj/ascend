@@ -268,6 +268,7 @@ function buildSheetXmlToSink(
 			if (validation.type) attrs.push(`type="${escapeXml(validation.type)}"`)
 			if (validation.operator) attrs.push(`operator="${escapeXml(validation.operator)}"`)
 			if (validation.errorStyle) attrs.push(`errorStyle="${escapeXml(validation.errorStyle)}"`)
+			if (validation.imeMode) attrs.push(`imeMode="${escapeXml(validation.imeMode)}"`)
 			if (validation.allowBlank !== undefined) {
 				attrs.push(`allowBlank="${validation.allowBlank ? '1' : '0'}"`)
 			}

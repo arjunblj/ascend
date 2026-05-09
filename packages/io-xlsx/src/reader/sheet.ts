@@ -1532,6 +1532,7 @@ function parseDataValidations(ws: XmlNode, sheet: Sheet, pool?: ValueInternPool)
 			errorTitle?: string
 			error?: string
 			errorStyle?: string
+			imeMode?: string
 			formula1?: string
 			formula2?: string
 		} = { sqref }
@@ -1541,6 +1542,8 @@ function parseDataValidations(ws: XmlNode, sheet: Sheet, pool?: ValueInternPool)
 		if (operator) parsed.operator = operator
 		const errorStyle = attr(validation, 'errorStyle')
 		if (errorStyle) parsed.errorStyle = errorStyle
+		const imeMode = attr(validation, 'imeMode')
+		if (imeMode) parsed.imeMode = imeMode
 		const allowBlank = readBoolAttribute(validation, 'allowBlank')
 		if (allowBlank !== undefined) parsed.allowBlank = allowBlank
 		const showInputMessage = readBoolAttribute(validation, 'showInputMessage')
@@ -1570,6 +1573,7 @@ function parseDataValidations(ws: XmlNode, sheet: Sheet, pool?: ValueInternPool)
 			if (parsed.errorTitle) parsed.errorTitle = pool.internString(parsed.errorTitle)
 			if (parsed.error) parsed.error = pool.internString(parsed.error)
 			if (parsed.errorStyle) parsed.errorStyle = pool.internString(parsed.errorStyle)
+			if (parsed.imeMode) parsed.imeMode = pool.internString(parsed.imeMode)
 			if (parsed.formula1) parsed.formula1 = pool.internString(parsed.formula1)
 			if (parsed.formula2) parsed.formula2 = pool.internString(parsed.formula2)
 		}

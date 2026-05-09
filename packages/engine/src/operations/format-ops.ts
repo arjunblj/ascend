@@ -147,6 +147,9 @@ export function handleSetDataValidation(
 		...(op.rule.operator !== undefined ? { operator: op.rule.operator } : {}),
 		...(op.rule.errorTitle !== undefined ? { errorTitle: op.rule.errorTitle } : {}),
 		...(op.rule.errorMessage !== undefined ? { error: op.rule.errorMessage } : {}),
+		...(op.rule.errorStyle !== undefined ? { errorStyle: op.rule.errorStyle } : {}),
+		...(op.rule.imeMode !== undefined ? { imeMode: op.rule.imeMode } : {}),
+		...(op.rule.showDropDown !== undefined ? { showDropDown: op.rule.showDropDown } : {}),
 		...(op.rule.showInputMessage !== undefined
 			? { showInputMessage: op.rule.showInputMessage }
 			: {}),

@@ -166,6 +166,7 @@ export interface SheetDataValidation {
 	readonly errorTitle?: string
 	readonly error?: string
 	readonly errorStyle?: string
+	readonly imeMode?: string
 	readonly formula1?: string
 	readonly formula2?: string
 }

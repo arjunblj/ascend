@@ -14,7 +14,7 @@ import type { PreservationCapsule } from '../preserve.ts'
 import { parseChartXml } from './charts.ts'
 import { parseCommentsXml } from './comments.ts'
 import { type ContentTypes, parseContentTypes } from './content-types.ts'
-import { parseDrawingImageRefs } from './drawing.ts'
+import { parseDrawingImageRefs, parseDrawingObjectRefs } from './drawing.ts'
 import { parseMetadataXml } from './metadata.ts'
 import {
 	parsePivotCacheDefinitionXml,
@@ -915,6 +915,7 @@ function attachDrawingImages(
 		sheet.imageRefs.push(
 			...parseDrawingImageRefs(drawingXml, drawingPath, parseRelationships(drawingRelsXml)),
 		)
+		sheet.drawingObjectRefs.push(...parseDrawingObjectRefs(drawingXml, drawingPath))
 	}
 }
 

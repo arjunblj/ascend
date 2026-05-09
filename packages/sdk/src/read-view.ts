@@ -171,18 +171,25 @@ export class WorkbookReadView {
 
 	visualInventory(): WorkbookVisualInventoryInfo {
 		let totalImages = 0
+		let totalDrawingObjects = 0
 		const charts = this.wb.chartParts.map(copyChartInfo)
 		const sheets = this.wb.sheets.map((sheet) => {
 			const drawingRefs = this.loadInfo.cellsHydrated ? { ...sheet.drawingRefs } : null
 			const imageRefs = this.loadInfo.richSheetMetadataHydrated ? [...sheet.imageRefs] : null
+			const drawingObjectRefs = this.loadInfo.richSheetMetadataHydrated
+				? sheet.drawingObjectRefs.map((ref) => ({ ...ref }))
+				: null
 			if (imageRefs) totalImages += imageRefs.length
+			if (drawingObjectRefs) totalDrawingObjects += drawingObjectRefs.length
 			return {
 				sheet: sheet.name,
 				drawingRefs,
 				hasDrawing: drawingRefs ? drawingRefs.hasDrawing : null,
 				hasLegacyDrawing: drawingRefs ? drawingRefs.hasLegacyDrawing : null,
 				imageRefs,
+				drawingObjectRefs,
 				imageCount: imageRefs ? imageRefs.length : null,
+				drawingObjectCount: drawingObjectRefs ? drawingObjectRefs.length : null,
 			}
 		})
 		const packageFeatures = this.compat.features.flatMap((feature) => {
@@ -203,7 +210,7 @@ export class WorkbookReadView {
 		const notes: string[] = []
 		if (!this.loadInfo.cellsHydrated) notes.push('Drawing references require full sheet hydration.')
 		if (!this.loadInfo.richSheetMetadataHydrated)
-			notes.push('Image references require rich sheet metadata hydration.')
+			notes.push('Image and drawing-object references require rich sheet metadata hydration.')
 		if (charts.length > 0)
 			notes.push('Chart parts expose type, title, and series source refs; source edits are staged.')
 		else if (packageChartFeatureCount > 0)
@@ -217,6 +224,7 @@ export class WorkbookReadView {
 			packageFeatures,
 			sheets,
 			sheetImageCount: this.loadInfo.richSheetMetadataHydrated ? totalImages : null,
+			sheetDrawingObjectCount: this.loadInfo.richSheetMetadataHydrated ? totalDrawingObjects : null,
 			charts,
 			structuredChartCount: charts.length,
 			packageChartFeatureCount,
@@ -265,6 +273,9 @@ export class WorkbookReadView {
 			conditionalFormats: richSheetMetadataHydrated ? [...sheet.conditionalFormats] : null,
 			dataValidations: richSheetMetadataHydrated ? [...sheet.dataValidations] : null,
 			imageRefs: richSheetMetadataHydrated ? [...sheet.imageRefs] : null,
+			drawingObjectRefs: richSheetMetadataHydrated
+				? sheet.drawingObjectRefs.map((ref) => ({ ...ref }))
+				: null,
 			drawingRefs: cellsHydrated ? { ...sheet.drawingRefs } : null,
 			autoFilter: cellsHydrated ? sheet.autoFilter : null,
 			protection: cellsHydrated ? sheet.protection : null,

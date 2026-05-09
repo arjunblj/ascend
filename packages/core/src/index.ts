@@ -49,6 +49,8 @@ export type {
 	SheetConditionalFormatRule,
 	SheetConditionalFormatValueObject,
 	SheetDataValidation,
+	SheetDrawingObjectKind,
+	SheetDrawingObjectRef,
 	SheetDrawingRefs,
 	SheetFormatPr,
 	SheetHeaderFooter,

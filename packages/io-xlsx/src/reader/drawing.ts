@@ -1,4 +1,10 @@
-import type { SheetAnchorMarker, SheetImageAnchor, SheetImageRef } from '@ascend/core'
+import type {
+	SheetAnchorMarker,
+	SheetDrawingObjectKind,
+	SheetDrawingObjectRef,
+	SheetImageAnchor,
+	SheetImageRef,
+} from '@ascend/core'
 import { asArray, attr, numAttr, parseXml, type XmlNode } from '../xml.ts'
 import type { Relationship } from './relationships.ts'
 import { resolvePath } from './relationships.ts'
@@ -39,6 +45,180 @@ export function parseDrawingImageRefs(
 	}
 
 	return refs
+}
+
+export function parseDrawingObjectRefs(
+	drawingXml: string,
+	drawingPath: string,
+): readonly SheetDrawingObjectRef[] {
+	const doc = parseXml(drawingXml)
+	const wsDr = (doc['xdr:wsDr'] ?? doc.wsDr) as XmlNode | undefined
+	if (!wsDr) return []
+
+	const refs: SheetDrawingObjectRef[] = []
+	for (const { node, kind } of iterAnchors(wsDr)) {
+		for (const parsed of parseAnchoredDrawingObjects(node, drawingPath, kind)) {
+			refs.push(parsed)
+		}
+	}
+	return refs
+}
+
+function iterAnchors(
+	wsDr: XmlNode,
+): Array<{ node: XmlNode; kind: 'oneCell' | 'twoCell' | 'absolute' }> {
+	return [
+		...asArray<XmlNode>(wsDr['xdr:oneCellAnchor'] as XmlNode | XmlNode[] | undefined).map(
+			(node) => ({ node, kind: 'oneCell' as const }),
+		),
+		...asArray<XmlNode>(wsDr['xdr:twoCellAnchor'] as XmlNode | XmlNode[] | undefined).map(
+			(node) => ({ node, kind: 'twoCell' as const }),
+		),
+		...asArray<XmlNode>(wsDr['xdr:absoluteAnchor'] as XmlNode | XmlNode[] | undefined).map(
+			(node) => ({ node, kind: 'absolute' as const }),
+		),
+	]
+}
+
+function parseAnchoredDrawingObjects(
+	anchorNode: XmlNode,
+	drawingPartPath: string,
+	anchorKind: 'oneCell' | 'twoCell' | 'absolute',
+): SheetDrawingObjectRef[] {
+	const anchor =
+		anchorKind === 'oneCell'
+			? parseOneCellAnchor(anchorNode)
+			: anchorKind === 'twoCell'
+				? parseTwoCellAnchor(anchorNode)
+				: parseAbsoluteAnchor(anchorNode)
+	const refs: SheetDrawingObjectRef[] = []
+	for (const { node, kind, nonVisualNames } of drawingObjectCandidates(anchorNode)) {
+		const ref = parseDrawingObject(node, drawingPartPath, kind, nonVisualNames, anchor)
+		if (ref) refs.push(ref)
+	}
+	return refs
+}
+
+function drawingObjectCandidates(anchorNode: XmlNode): Array<{
+	node: XmlNode
+	kind: SheetDrawingObjectKind
+	nonVisualNames: readonly string[]
+}> {
+	return [
+		...asArray<XmlNode>(anchorNode['xdr:sp'] as XmlNode | XmlNode[] | undefined).map((node) => ({
+			node,
+			kind: hasTextBoxContent(node) ? ('textBox' as const) : ('shape' as const),
+			nonVisualNames: ['xdr:nvSpPr', 'nvSpPr'],
+		})),
+		...asArray<XmlNode>(anchorNode['xdr:graphicFrame'] as XmlNode | XmlNode[] | undefined).map(
+			(node) => ({
+				node,
+				kind: 'graphicFrame' as const,
+				nonVisualNames: ['xdr:nvGraphicFramePr', 'nvGraphicFramePr'],
+			}),
+		),
+		...asArray<XmlNode>(anchorNode['xdr:cxnSp'] as XmlNode | XmlNode[] | undefined).map((node) => ({
+			node,
+			kind: 'connector' as const,
+			nonVisualNames: ['xdr:nvCxnSpPr', 'nvCxnSpPr'],
+		})),
+		...asArray<XmlNode>(anchorNode['xdr:grpSp'] as XmlNode | XmlNode[] | undefined).map((node) => ({
+			node,
+			kind: 'groupShape' as const,
+			nonVisualNames: ['xdr:nvGrpSpPr', 'nvGrpSpPr'],
+		})),
+	]
+}
+
+function parseDrawingObject(
+	node: XmlNode,
+	drawingPartPath: string,
+	kind: SheetDrawingObjectKind,
+	nonVisualNames: readonly string[],
+	anchor: SheetImageAnchor | null,
+): SheetDrawingObjectRef | null {
+	const cNvPr = findNonVisualProps(node, nonVisualNames)
+	const id = cNvPr ? numAttr(cNvPr, 'id') : undefined
+	const name = cNvPr ? attr(cNvPr, 'name') : undefined
+	const description = cNvPr ? attr(cNvPr, 'descr') : undefined
+	const text = kind === 'textBox' ? extractDrawingText(node) : undefined
+	const relIds = collectRelationshipIds(node)
+	return {
+		drawingPartPath,
+		kind,
+		...(anchor ? { anchor } : {}),
+		...(id !== undefined ? { id } : {}),
+		...(name ? { name } : {}),
+		...(description ? { description } : {}),
+		...(text ? { text } : {}),
+		...(relIds.length > 0 ? { relIds } : {}),
+	}
+}
+
+function findNonVisualProps(node: XmlNode, names: readonly string[]): XmlNode | undefined {
+	for (const name of names) {
+		const nonVisual = node[name] as XmlNode | undefined
+		const cNvPr = (nonVisual?.['xdr:cNvPr'] ?? nonVisual?.cNvPr) as XmlNode | undefined
+		if (cNvPr) return cNvPr
+	}
+	return undefined
+}
+
+function hasTextBoxContent(node: XmlNode): boolean {
+	return Boolean(node['xdr:txBody'] ?? node.txBody ?? node['xdr:txbx'] ?? node.txbx)
+}
+
+function extractDrawingText(node: XmlNode): string | undefined {
+	const chunks: string[] = []
+	collectTextRuns(node, chunks)
+	const text = chunks.join('')
+	return text.length > 0 ? text : undefined
+}
+
+function collectTextRuns(value: unknown, chunks: string[]): void {
+	if (typeof value === 'string' || typeof value === 'number') return
+	if (Array.isArray(value)) {
+		for (const item of value) collectTextRuns(item, chunks)
+		return
+	}
+	if (!value || typeof value !== 'object') return
+	const node = value as XmlNode
+	for (const [key, child] of Object.entries(node)) {
+		if (key === 'a:t' || key === 't') {
+			if (typeof child === 'string' || typeof child === 'number') chunks.push(String(child))
+			else collectTextRuns(child, chunks)
+			continue
+		}
+		collectTextRuns(child, chunks)
+	}
+}
+
+function collectRelationshipIds(node: XmlNode): readonly string[] {
+	const relIds = new Set<string>()
+	visitXmlNodes(node, (current) => {
+		for (const [key, value] of Object.entries(current)) {
+			if (!key.startsWith('@_')) continue
+			const local = key.slice(2)
+			if (
+				(local.startsWith('r:') || local === 'embed' || local === 'link') &&
+				typeof value === 'string'
+			) {
+				relIds.add(value)
+			}
+		}
+	})
+	return [...relIds]
+}
+
+function visitXmlNodes(value: unknown, fn: (node: XmlNode) => void): void {
+	if (Array.isArray(value)) {
+		for (const item of value) visitXmlNodes(item, fn)
+		return
+	}
+	if (!value || typeof value !== 'object') return
+	const node = value as XmlNode
+	fn(node)
+	for (const child of Object.values(node)) visitXmlNodes(child, fn)
 }
 
 function parseAnchoredImage(

@@ -7,6 +7,7 @@ import type {
 	SheetComment,
 	SheetConditionalFormat,
 	SheetDataValidation,
+	SheetDrawingObjectRef,
 	SheetDrawingRefs,
 	SheetFormatPr,
 	SheetHeaderFooter,
@@ -326,6 +327,7 @@ export interface SheetInspectInfo extends SheetInfo {
 	readonly conditionalFormats: readonly SheetConditionalFormat[] | null
 	readonly dataValidations: readonly SheetDataValidation[] | null
 	readonly imageRefs: readonly SheetImageRef[] | null
+	readonly drawingObjectRefs: readonly SheetDrawingObjectRef[] | null
 	readonly drawingRefs: SheetDrawingRefs | null
 	readonly autoFilter: AutoFilter | null
 	readonly protection: SheetProtection | null
@@ -349,7 +351,9 @@ export interface SheetVisualInventoryInfo {
 	readonly hasDrawing: boolean | null
 	readonly hasLegacyDrawing: boolean | null
 	readonly imageRefs: readonly SheetImageRef[] | null
+	readonly drawingObjectRefs: readonly SheetDrawingObjectRef[] | null
 	readonly imageCount: number | null
+	readonly drawingObjectCount: number | null
 }
 
 export interface WorkbookVisualInventoryInfo {
@@ -357,6 +361,7 @@ export interface WorkbookVisualInventoryInfo {
 	readonly packageFeatures: readonly VisualPackageFeatureInfo[]
 	readonly sheets: readonly SheetVisualInventoryInfo[]
 	readonly sheetImageCount: number | null
+	readonly sheetDrawingObjectCount: number | null
 	readonly charts: readonly ChartPartInfo[]
 	readonly structuredChartCount: number
 	readonly packageChartFeatureCount: number

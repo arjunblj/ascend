@@ -35,11 +35,24 @@ describe('visual inventory', () => {
 				to: { row: 3, col: 2 },
 			},
 		})
+		sheet.drawingObjectRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			kind: 'textBox',
+			id: 2,
+			name: 'Callout',
+			text: 'Revenue up',
+			anchor: {
+				kind: 'twoCell',
+				from: { row: 4, col: 1 },
+				to: { row: 6, col: 4 },
+			},
+		})
 		const view = new WorkbookReadView(workbook, visualCompatibilityReport(), fullLoadInfo())
 
 		const inventory = view.visualInventory()
 
 		expect(inventory.sheetImageCount).toBe(1)
+		expect(inventory.sheetDrawingObjectCount).toBe(1)
 		expect(inventory.structuredChartCount).toBe(1)
 		expect(inventory.packageChartFeatureCount).toBe(2)
 		expect(inventory.packageDrawingFeatureCount).toBe(2)
@@ -52,8 +65,14 @@ describe('visual inventory', () => {
 			hasDrawing: true,
 			hasLegacyDrawing: false,
 			imageCount: 1,
+			drawingObjectCount: 1,
 		})
 		expect(inventory.sheets[0]?.imageRefs?.[0]?.anchor?.kind).toBe('twoCell')
+		expect(inventory.sheets[0]?.drawingObjectRefs?.[0]).toMatchObject({
+			kind: 'textBox',
+			name: 'Callout',
+			text: 'Revenue up',
+		})
 		expect(inventory.charts[0]).toMatchObject({
 			partPath: 'xl/charts/chart1.xml',
 			sheetName: 'Sheet1',
@@ -89,10 +108,14 @@ describe('visual inventory', () => {
 		const inventory = view.visualInventory()
 
 		expect(inventory.sheetImageCount).toBeNull()
+		expect(inventory.sheetDrawingObjectCount).toBeNull()
 		expect(inventory.sheets[0]?.drawingRefs).toBeNull()
 		expect(inventory.sheets[0]?.imageRefs).toBeNull()
+		expect(inventory.sheets[0]?.drawingObjectRefs).toBeNull()
 		expect(inventory.notes).toContain('Drawing references require full sheet hydration.')
-		expect(inventory.notes).toContain('Image references require rich sheet metadata hydration.')
+		expect(inventory.notes).toContain(
+			'Image and drawing-object references require rich sheet metadata hydration.',
+		)
 	})
 })
 

@@ -153,6 +153,25 @@ export interface SheetImageRef {
 	readonly description?: string
 }
 
+export type SheetDrawingObjectKind =
+	| 'shape'
+	| 'textBox'
+	| 'connector'
+	| 'groupShape'
+	| 'graphicFrame'
+	| 'unknown'
+
+export interface SheetDrawingObjectRef {
+	readonly drawingPartPath: string
+	readonly kind: SheetDrawingObjectKind
+	readonly anchor?: SheetImageAnchor
+	readonly id?: number
+	readonly name?: string
+	readonly description?: string
+	readonly text?: string
+	readonly relIds?: readonly string[]
+}
+
 export interface SheetDataValidation {
 	readonly sqref: string
 	readonly type?: string
@@ -333,6 +352,7 @@ export class Sheet {
 	dataValidations: SheetDataValidation[]
 	conditionalFormats: SheetConditionalFormat[]
 	imageRefs: SheetImageRef[]
+	drawingObjectRefs: SheetDrawingObjectRef[]
 	drawingRefs: SheetDrawingRefs
 	autoFilter: AutoFilter | null
 	protection: SheetProtection | null
@@ -369,6 +389,7 @@ export class Sheet {
 		this.dataValidations = []
 		this.conditionalFormats = []
 		this.imageRefs = []
+		this.drawingObjectRefs = []
 		this.drawingRefs = { hasDrawing: false, hasLegacyDrawing: false }
 		this.autoFilter = null
 		this.protection = null
@@ -401,6 +422,7 @@ export class Sheet {
 			rules: cf.rules.map(cloneConditionalFormatRule),
 		}))
 		this.imageRefs = this.imageRefs.map(cloneImageRef)
+		this.drawingObjectRefs = this.drawingObjectRefs.map(cloneDrawingObjectRef)
 		this.autoFilter = this.autoFilter ? cloneAutoFilter(this.autoFilter) : null
 		this._shared = false
 	}
@@ -427,6 +449,7 @@ export class Sheet {
 		s.dataValidations = this.dataValidations
 		s.conditionalFormats = this.conditionalFormats
 		s.imageRefs = this.imageRefs
+		s.drawingObjectRefs = this.drawingObjectRefs
 		s.drawingRefs = this.drawingRefs
 		s.autoFilter = this.autoFilter
 		s.protection = this.protection
@@ -502,6 +525,14 @@ function cloneImageRef(imageRef: SheetImageRef): SheetImageRef {
 		...imageRef,
 		...(imageRef.content ? { content: new Uint8Array(imageRef.content) } : {}),
 		...(imageRef.anchor ? { anchor: cloneImageAnchor(imageRef.anchor) } : {}),
+	}
+}
+
+function cloneDrawingObjectRef(drawingObjectRef: SheetDrawingObjectRef): SheetDrawingObjectRef {
+	return {
+		...drawingObjectRef,
+		...(drawingObjectRef.anchor ? { anchor: cloneImageAnchor(drawingObjectRef.anchor) } : {}),
+		...(drawingObjectRef.relIds ? { relIds: [...drawingObjectRef.relIds] } : {}),
 	}
 }
 

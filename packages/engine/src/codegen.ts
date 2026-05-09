@@ -67,6 +67,8 @@ const CODEGEN_FUNCTIONS = new Set(['IF', 'IFERROR', 'IFNA', 'AND', 'OR', 'NOT'])
 const RANGE_AGG_FUNCTIONS = new Set(['SUM', 'AVERAGE', 'COUNT', 'COUNTA', 'MIN', 'MAX'])
 const PARTIAL_CODEGEN_FUNCTIONS = new Set(['VLOOKUP', 'MATCH', 'INDEX'])
 const DATE_EXTRACT_FUNCTIONS = new Set(['YEAR', 'MONTH', 'DAY'])
+const EXCEL_MAX_ROWS = 1_048_576
+const EXCEL_MAX_COLS = 16_384
 
 interface SharedAnchor {
 	readonly row: number
@@ -271,10 +273,12 @@ function emitReadCell(
 		)
 		state.lines.push(`if (${sheetVar} < 0) return _errorValue('#REF!');`)
 		state.lines.push(
-			`var ${result} = ctx.workbook.sheets[${sheetVar}]?.cells.readValue(${ref.row}, ${ref.col}) ?? _EMPTY;`,
+			`var ${result} = _isCellInBounds(${ref.row}, ${ref.col}) ? (ctx.workbook.sheets[${sheetVar}]?.cells.readValue(${ref.row}, ${ref.col}) ?? _EMPTY) : _errorValue('#REF!');`,
 		)
 	} else {
-		state.lines.push(`var ${result} = _sheet.cells.readValue(${ref.row}, ${ref.col}) ?? _EMPTY;`)
+		state.lines.push(
+			`var ${result} = _isCellInBounds(${ref.row}, ${ref.col}) ? (_sheet.cells.readValue(${ref.row}, ${ref.col}) ?? _EMPTY) : _errorValue('#REF!');`,
+		)
 	}
 	return result
 }
@@ -1317,7 +1321,7 @@ function readSharedCell(
 ): CellValue {
 	const targetRow = rowAbsolute ? row : ctx.row + (row - anchorRow)
 	const targetCol = colAbsolute ? col : ctx.col + (col - anchorCol)
-	if (targetRow < 0 || targetCol < 0) return errorValue('#REF!')
+	if (!isCellInBounds(targetRow, targetCol)) return errorValue('#REF!')
 	if (sheetName === null) {
 		if (!currentSheet) return errorValue('#REF!')
 		return currentSheet.cells.readValue(targetRow, targetCol)
@@ -1327,6 +1331,24 @@ function readSharedCell(
 	const targetSheet = ctx.workbook.sheets[sheetIndex]
 	if (!targetSheet) return errorValue('#REF!')
 	return targetSheet.cells.readValue(targetRow, targetCol)
+}
+
+function isCellInBounds(row: number, col: number): boolean {
+	return row >= 0 && row < EXCEL_MAX_ROWS && col >= 0 && col < EXCEL_MAX_COLS
+}
+
+function isRangeInBounds(
+	startRow: number,
+	startCol: number,
+	endRow: number,
+	endCol: number,
+): boolean {
+	return (
+		isCellInBounds(startRow, startCol) &&
+		isCellInBounds(endRow, endCol) &&
+		startRow <= endRow &&
+		startCol <= endCol
+	)
 }
 
 function resolveRelativeIndex(
@@ -1372,6 +1394,7 @@ function rangeAggregate(
 	const toRow = Math.max(resolvedStartRow, resolvedEndRow)
 	const fromCol = Math.min(resolvedStartCol, resolvedEndCol)
 	const toCol = Math.max(resolvedStartCol, resolvedEndCol)
+	if (!isRangeInBounds(fromRow, fromCol, toRow, toCol)) return errorValue('#REF!')
 
 	if (func === 'COUNTA') {
 		let countA = 0
@@ -1891,6 +1914,7 @@ function buildCodegenFn(node: FormulaNode, sharedAnchor?: SharedAnchor): Codegen
 		'_formatNumber',
 		'_sumifRange',
 		'_countifRange',
+		'_isCellInBounds',
 	]
 	const closureValues: unknown[] = [
 		numberValue,
@@ -1915,6 +1939,7 @@ function buildCodegenFn(node: FormulaNode, sharedAnchor?: SharedAnchor): Codegen
 		formatNumber,
 		sumifRange,
 		countifRange,
+		isCellInBounds,
 	]
 
 	for (const [key, node] of state.treeNodes) {

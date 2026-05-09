@@ -137,9 +137,28 @@ export function clearRangeValueCache(): void {
 }
 
 function getCellValue(wb: Workbook, sheetIndex: number, row: number, col: number): CellValue {
+	if (!isCellInBounds(row, col)) return errorValue('#REF!')
 	const sheet = wb.sheets[sheetIndex]
 	if (!sheet) return errorValue('#REF!')
 	return sheet.cells.readValue(row, col)
+}
+
+function isCellInBounds(row: number, col: number): boolean {
+	return row >= 0 && row < EXCEL_MAX_ROWS && col >= 0 && col < EXCEL_MAX_COLS
+}
+
+function isRangeInBounds(
+	startRow: number,
+	startCol: number,
+	endRow: number,
+	endCol: number,
+): boolean {
+	return (
+		isCellInBounds(startRow, startCol) &&
+		isCellInBounds(endRow, endCol) &&
+		startRow <= endRow &&
+		startCol <= endCol
+	)
 }
 
 function getRangeValues(
@@ -910,6 +929,9 @@ function makeRangeArg(
 	endRow: number,
 	endCol: number,
 ): EvalArg {
+	if (!isRangeInBounds(startRow, startCol, endRow, endCol)) {
+		return { value: errorValue('#REF!') }
+	}
 	return makeMultiAreaArg([makeRangeArea(workbook, sheetIndex, startRow, startCol, endRow, endCol)])
 }
 

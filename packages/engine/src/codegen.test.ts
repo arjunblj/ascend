@@ -114,6 +114,23 @@ describe('codegen', () => {
 		expect(result).toEqual(EMPTY)
 	})
 
+	test('cell refs beyond Excel grid limits return #REF!', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+
+		expect(codegenEval('A1048577', wb)).toEqual(errorValue('#REF!'))
+		expect(codegenEval('XFE1', wb)).toEqual(errorValue('#REF!'))
+	})
+
+	test('range refs beyond Excel grid limits return #REF!', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+
+		expect(codegenEval('SUM(A1:A1048577)', wb)).toEqual(errorValue('#REF!'))
+		expect(codegenEval('SUM(A1:XFE1)', wb)).toEqual(errorValue('#REF!'))
+	})
+
 	test('comparisons', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

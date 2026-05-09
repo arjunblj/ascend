@@ -44,6 +44,16 @@ describe('INDIRECT/OFFSET edge cases', () => {
 		expect(v.kind).toBe('error')
 	})
 
+	test('INDIRECT references beyond Excel row and column limits return #REF!', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'INDIRECT("A1048577")', styleId: sid })
+		sheet.cells.set(1, 0, { value: EMPTY, formula: 'INDIRECT("XFE1")', styleId: sid })
+		recalculate(wb, defaultCalcContext())
+		expect(sheet.cells.readValue(0, 0)).toEqual({ kind: 'error', value: '#REF!' })
+		expect(sheet.cells.readValue(1, 0)).toEqual({ kind: 'error', value: '#REF!' })
+	})
+
 	test('OFFSET basic', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -63,6 +73,17 @@ describe('INDIRECT/OFFSET edge cases', () => {
 		sheet.cells.set(3, 0, { value: EMPTY, formula: 'SUM(OFFSET(A1,0,0,3,1))', styleId: sid })
 		recalculate(wb, defaultCalcContext())
 		expect(sheet.cells.readValue(3, 0)).toEqual(numberValue(6))
+	})
+
+	test('OFFSET references beyond Excel row and column limits return #REF!', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 1, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'OFFSET(B1,1048576,0)', styleId: sid })
+		sheet.cells.set(1, 0, { value: EMPTY, formula: 'OFFSET(B1,0,16383)', styleId: sid })
+		recalculate(wb, defaultCalcContext())
+		expect(sheet.cells.readValue(0, 0)).toEqual({ kind: 'error', value: '#REF!' })
+		expect(sheet.cells.readValue(1, 0)).toEqual({ kind: 'error', value: '#REF!' })
 	})
 
 	test('nested INDIRECT inside SUM', () => {

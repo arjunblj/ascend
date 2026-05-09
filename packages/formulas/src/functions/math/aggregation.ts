@@ -25,6 +25,15 @@ function withCachedSingleRangeAggregate(
 	return value
 }
 
+function countDirectValue(value: CellValue): 0 | 1 | CellValue {
+	if (value.kind === 'error') return value
+	if (value.kind === 'number' || value.kind === 'date' || value.kind === 'boolean') return 1
+	if (value.kind !== 'string') return 0
+	const trimmed = value.value.trim()
+	if (trimmed === '') return 0
+	return Number.isNaN(Number(trimmed)) ? 0 : 1
+}
+
 export const aggregationFunctions: FunctionDef[] = [
 	fn('SUM', 1, 255, (args, ctx) =>
 		withCachedSingleRangeAggregate('SUM', args, ctx, () => {
@@ -165,8 +174,9 @@ export const aggregationFunctions: FunctionDef[] = [
 					}
 				} else {
 					const v = arg.value ?? EMPTY
-					if (v.kind === 'error') return v
-					if (v.kind === 'number' || v.kind === 'date' || v.kind === 'boolean') count++
+					const increment = countDirectValue(v)
+					if (typeof increment !== 'number') return increment
+					count += increment
 				}
 			}
 			return numberValue(count)

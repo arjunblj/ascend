@@ -30,6 +30,9 @@ interface Args {
 	readonly warmup: number
 	readonly json: boolean
 	readonly aggregate: PrefixAggregate
+	readonly minOperationSpeedup?: number
+	readonly minTotalSpeedup?: number
+	readonly assertCorrectness: boolean
 }
 
 interface Sample {
@@ -138,6 +141,11 @@ function renderHelp(): string {
 		'  --repeat N           Number of measured samples. Defaults to 5.',
 		'  --warmup N           Number of warmup samples. Defaults to 1.',
 		'  --aggregate <name>   Prefix aggregate for hf-prefix-range profiles.',
+		'  --min-operation-speedup N',
+		'                       Fail unless Ascend operation median is at least N x HyperFormula.',
+		'  --min-total-speedup N',
+		'                       Fail unless Ascend total median is at least N x HyperFormula.',
+		'  --assert-correctness Fail unless all correctness match flags are true and Ascend errors are 0.',
 		'  --json               Emit JSON instead of a text summary.',
 		'  --help, -h           Show this help without running benchmarks.',
 		'',
@@ -156,6 +164,15 @@ function positiveInt(raw: string | undefined, fallback: number): number {
 function nonNegativeInt(raw: string | undefined, fallback: number): number {
 	const value = raw ? Number.parseInt(raw, 10) : fallback
 	return Number.isFinite(value) && value >= 0 ? value : fallback
+}
+
+function optionalPositiveNumber(raw: string | undefined): number | undefined {
+	if (raw === undefined) return undefined
+	const value = Number(raw)
+	if (!Number.isFinite(value) || value <= 0) {
+		throw new Error(`Expected a positive number, received "${raw}"`)
+	}
+	return value
 }
 
 function parseArgs(): Args {
@@ -189,6 +206,9 @@ function parseArgs(): Args {
 		warmup: nonNegativeInt(readOption(argv, '--warmup'), 1),
 		json: hasFlag(argv, '--json'),
 		aggregate: rawAggregate,
+		minOperationSpeedup: optionalPositiveNumber(readOption(argv, '--min-operation-speedup')),
+		minTotalSpeedup: optionalPositiveNumber(readOption(argv, '--min-total-speedup')),
+		assertCorrectness: hasFlag(argv, '--assert-correctness'),
 	}
 }
 
@@ -692,12 +712,64 @@ function runEngine(engine: EngineName, profile: Profile, args: Args): EngineCase
 	return { engine, samples, correctness }
 }
 
+function collectAssertionFailures(
+	args: Args,
+	comparison: {
+		readonly totalSpeedupVsHyperFormula: number
+		readonly operationSpeedupVsHyperFormula: number
+	},
+	cases: readonly EngineCase[],
+): string[] {
+	const failures: string[] = []
+	if (
+		args.minOperationSpeedup !== undefined &&
+		comparison.operationSpeedupVsHyperFormula < args.minOperationSpeedup
+	) {
+		failures.push(
+			`operation speedup ${comparison.operationSpeedupVsHyperFormula.toFixed(3)}x is below required ${args.minOperationSpeedup}x`,
+		)
+	}
+	if (
+		args.minTotalSpeedup !== undefined &&
+		comparison.totalSpeedupVsHyperFormula < args.minTotalSpeedup
+	) {
+		failures.push(
+			`total speedup ${comparison.totalSpeedupVsHyperFormula.toFixed(3)}x is below required ${args.minTotalSpeedup}x`,
+		)
+	}
+	if (args.assertCorrectness) {
+		for (const entry of cases) {
+			const matchFlags = Object.entries(entry.correctness).filter(([key]) =>
+				key.endsWith('Matches'),
+			)
+			if (matchFlags.length === 0) {
+				failures.push(`${entry.engine} exposed no correctness match flags`)
+			}
+			for (const [key, value] of matchFlags) {
+				if (value !== true) failures.push(`${entry.engine}.${key} was ${String(value)}`)
+			}
+			if (entry.engine === 'ascend' && (entry.correctness.errors ?? 0) !== 0) {
+				failures.push(`ascend errors=${String(entry.correctness.errors)}`)
+			}
+		}
+	}
+	return failures
+}
+
 const args = parseArgs()
 const profile = PROFILES[args.profile]
 const ascend = runEngine('ascend', profile, args)
 const hyperformula = runEngine('hyperformula', profile, args)
 const ascendSummary = summarize(ascend.samples)
 const hyperformulaSummary = summarize(hyperformula.samples)
+const comparison = {
+	totalSpeedupVsHyperFormula:
+		hyperformulaSummary.totalMedianMs / Math.max(ascendSummary.totalMedianMs, Number.EPSILON),
+	operationSpeedupVsHyperFormula:
+		hyperformulaSummary.operationMedianMs /
+		Math.max(ascendSummary.operationMedianMs, Number.EPSILON),
+}
+const assertionFailures = collectAssertionFailures(args, comparison, [ascend, hyperformula])
 const payload = {
 	formatVersion: 1,
 	suite: 'ascend-formula-sota',
@@ -727,13 +799,7 @@ const payload = {
 			correctness: hyperformula.correctness,
 		},
 	],
-	comparison: {
-		totalSpeedupVsHyperFormula:
-			hyperformulaSummary.totalMedianMs / Math.max(ascendSummary.totalMedianMs, Number.EPSILON),
-		operationSpeedupVsHyperFormula:
-			hyperformulaSummary.operationMedianMs /
-			Math.max(ascendSummary.operationMedianMs, Number.EPSILON),
-	},
+	comparison,
 }
 
 if (args.json) {
@@ -748,4 +814,10 @@ if (args.json) {
 	console.log(
 		`speedup vs HyperFormula: operation=${payload.comparison.operationSpeedupVsHyperFormula.toFixed(2)}x total=${payload.comparison.totalSpeedupVsHyperFormula.toFixed(2)}x`,
 	)
+}
+
+if (assertionFailures.length > 0) {
+	for (const failure of assertionFailures)
+		console.error(`formula-sota assertion failed: ${failure}`)
+	process.exit(1)
 }

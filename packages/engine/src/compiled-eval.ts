@@ -723,12 +723,33 @@ let numericStack = new Float64Array(numericStackSize)
 let rangeScratchSize = 256
 let rangeScratch = new Float64Array(rangeScratchSize)
 const WASM_RANGE_THRESHOLD = 128
+const EXCEL_MAX_ROWS = 1_048_576
+const EXCEL_MAX_COLS = 16_384
+
+function isCellInBounds(row: number, col: number): boolean {
+	return row >= 0 && row < EXCEL_MAX_ROWS && col >= 0 && col < EXCEL_MAX_COLS
+}
+
+function isRangeInBounds(
+	startRow: number,
+	startCol: number,
+	endRow: number,
+	endCol: number,
+): boolean {
+	return (
+		isCellInBounds(startRow, startCol) &&
+		isCellInBounds(endRow, endCol) &&
+		startRow <= endRow &&
+		startCol <= endCol
+	)
+}
 
 function readCellNumeric(
 	sheet: import('@ascend/core').Sheet | undefined,
 	row: number,
 	col: number,
 ): number | CellValue {
+	if (!isCellInBounds(row, col)) return errorValue('#REF!')
 	const cells = sheet?.cells
 	if (!cells) return 0
 	const kind = cells.readKind(row, col)
@@ -756,6 +777,9 @@ export function aggregateNumericRange(
 	endRow: number,
 	endCol: number,
 ): { sum: number; count: number; min: number; max: number; error: CellValue | null } {
+	if (!isRangeInBounds(startRow, startCol, endRow, endCol)) {
+		return { sum: 0, count: 0, min: Infinity, max: -Infinity, error: errorValue('#REF!') }
+	}
 	const cells = sheet?.cells
 	if (!cells) return { sum: 0, count: 0, min: Infinity, max: -Infinity, error: null }
 	const maxCells = Math.max(0, endRow - startRow + 1) * Math.max(0, endCol - startCol + 1)
@@ -1121,7 +1145,9 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 				const row = ops[ip] as number
 				const col = ops[ip + 1] as number
 				ip += 2
-				stack[stackDepth++] = sheet?.cells.readValue(row, col) ?? EMPTY
+				stack[stackDepth++] = isCellInBounds(row, col)
+					? (sheet?.cells.readValue(row, col) ?? EMPTY)
+					: errorValue('#REF!')
 				break
 			}
 			case Op.CELL_SHEET: {
@@ -1135,7 +1161,9 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 					stack[stackDepth++] = errorValue('#REF!')
 				} else {
 					const target = ctx.workbook.sheets[si]
-					stack[stackDepth++] = target?.cells.readValue(row, col) ?? EMPTY
+					stack[stackDepth++] = isCellInBounds(row, col)
+						? (target?.cells.readValue(row, col) ?? EMPTY)
+						: errorValue('#REF!')
 				}
 				break
 			}
@@ -1187,7 +1215,9 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 				const row = ops[ip] as number
 				const col = ops[ip + 1] as number
 				ip += 2
-				const cellVal = sheet?.cells.readValue(row, col) ?? EMPTY
+				const cellVal = isCellInBounds(row, col)
+					? (sheet?.cells.readValue(row, col) ?? EMPTY)
+					: errorValue('#REF!')
 				const left = stack[stackDepth - 1] ?? EMPTY
 				const ln = toNumber(left)
 				const cn = toNumber(cellVal)

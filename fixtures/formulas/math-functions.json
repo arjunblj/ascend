@@ -20,6 +20,12 @@
 			"expected": { "kind": "number", "value": 2 }
 		},
 		{
+			"description": "COUNT counts numeric text and booleans supplied directly",
+			"setup": {},
+			"formula": "COUNT(\"1\", TRUE, \"nope\", \"\")",
+			"expected": { "kind": "number", "value": 2 }
+		},
+		{
 			"description": "COUNTA counts non-empty cells",
 			"setup": { "A1": 1, "A2": "hello", "A3": 3 },
 			"formula": "COUNTA(A1:A3)",

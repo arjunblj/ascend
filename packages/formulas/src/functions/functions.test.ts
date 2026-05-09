@@ -103,6 +103,17 @@ describe('formula functions', () => {
 			expect(getResult(wb, 7, 0)).toEqual(numberValue(1))
 		})
 
+		test('COUNT counts numeric text and booleans supplied directly', () => {
+			const wb = makeWorkbook()
+			setStr(wb, 0, 0, '1')
+			setBool(wb, 1, 0, true)
+			setFormula(wb, 2, 0, 'COUNT("1", TRUE, "nope", "")')
+			setFormula(wb, 3, 0, 'COUNT(A1:A2)')
+			recalc(wb)
+			expect(getResult(wb, 2, 0)).toEqual(numberValue(2))
+			expect(getResult(wb, 3, 0)).toEqual(numberValue(0))
+		})
+
 		test('SUMIF with wildcard pattern', () => {
 			const wb = makeWorkbook()
 			setStr(wb, 0, 0, 'North')
@@ -1011,6 +1022,17 @@ describe('formula functions', () => {
 			setFormula(wb, 0, 0, 'DATEVALUE("1900-03-01")')
 			recalc(wb)
 			expect(getResult(wb, 0, 0)).toEqual(numberValue(61))
+		})
+
+		test('DATEVALUE applies Excel two-digit year cutoff', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'DATEVALUE("1/1/29")')
+			setFormula(wb, 0, 1, 'DATEVALUE("1/1/30")')
+			setFormula(wb, 0, 2, 'DATEVALUE("7/5/98")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(47119))
+			expect(getResult(wb, 0, 1)).toEqual(numberValue(10959))
+			expect(getResult(wb, 0, 2)).toEqual(numberValue(35981))
 		})
 
 		test('DATE(1900,1,1) → serial 1', () => {

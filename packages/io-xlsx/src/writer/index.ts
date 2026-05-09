@@ -1,4 +1,4 @@
-import { cloneCellStyle, type SheetId, type Workbook } from '@ascend/core'
+import { cloneCellStyle, type SheetId, type Table, type Workbook } from '@ascend/core'
 import type { AscendError, CellValue, Result } from '@ascend/schema'
 import { ascendError, err, ok } from '@ascend/schema'
 import type { PreservationCapsule } from '../preserve.ts'
@@ -19,6 +19,7 @@ import {
 	REL_WORKSHEET,
 } from '../reader/relationships.ts'
 import { parseSharedStrings } from '../reader/shared-strings.ts'
+import { parseTable } from '../reader/table.ts'
 import { extractZip, type ZipArchive } from '../reader/zip.ts'
 import { updateChartXml } from './chart.ts'
 import { buildCommentsVml, buildCommentsXml } from './comments.ts'
@@ -847,15 +848,33 @@ export function planWriteXlsx(
 					const tablePartPath =
 						tableCapsule?.partPath ?? `xl/tables/table${nextGeneratedTableNumber}.xml`
 					const tableContentType = tableCapsule?.contentType ?? CT_TABLE
-					recordXml(
-						tablePartPath,
-						{
-							owner: { kind: 'sheet', sheetName: sheet.name },
-							origin: 'generated',
-							contentType: tableContentType,
-						},
-						() => buildTableXml(table, nextGeneratedTableNumber),
-					)
+					const tableCapsuleContent = tableCapsule
+						? (tableCapsule.content ?? sourceArchive?.readBytes(tableCapsule.partPath))
+						: undefined
+					if (
+						tableCapsuleContent &&
+						canPreserveTableCapsule(table, tableCapsuleContent, sheet.id)
+					) {
+						recordBytes(
+							tablePartPath,
+							{
+								owner: { kind: 'sheet', sheetName: sheet.name },
+								origin: 'capsule',
+								contentType: tableContentType,
+							},
+							() => tableCapsuleContent,
+						)
+					} else {
+						recordXml(
+							tablePartPath,
+							{
+								owner: { kind: 'sheet', sheetName: sheet.name },
+								origin: 'generated',
+								contentType: tableContentType,
+							},
+							() => buildTableXml(table, nextGeneratedTableNumber),
+						)
+					}
 					plan.addOverride(tablePartPath, tableContentType)
 					if (tableCapsule) plan.skipCapsulePath(tableCapsule.partPath)
 					const relId = `rId${sheetRelId}`
@@ -1343,6 +1362,76 @@ function resolveCapsuleOwner(
 	if (capsule.anchor.kind !== 'sheet') return { kind: 'workbook' }
 	const sheetName = sheetNameById.get(capsule.anchor.sheetId)
 	return sheetName ? { kind: 'sheet', sheetName } : null
+}
+
+function canPreserveTableCapsule(table: Table, content: Uint8Array, sheetId: SheetId): boolean {
+	const parsed = parseTable(new TextDecoder().decode(content), sheetId)
+	return parsed ? tablesHaveSameWritableModel(table, parsed) : false
+}
+
+function tablesHaveSameWritableModel(left: Table, right: Table): boolean {
+	return (
+		left.name === right.name &&
+		left.sheetId === right.sheetId &&
+		left.hasHeaders === right.hasHeaders &&
+		left.hasTotals === right.hasTotals &&
+		(left.dxfId ?? null) === (right.dxfId ?? null) &&
+		(left.headerRowDxfId ?? null) === (right.headerRowDxfId ?? null) &&
+		(left.dataDxfId ?? null) === (right.dataDxfId ?? null) &&
+		(left.totalsRowDxfId ?? null) === (right.totalsRowDxfId ?? null) &&
+		(left.headerRowBorderDxfId ?? null) === (right.headerRowBorderDxfId ?? null) &&
+		rangesEqual(left.ref, right.ref) &&
+		tableColumnsEqual(left.columns, right.columns) &&
+		stableJson(left.autoFilter) === stableJson(right.autoFilter) &&
+		stableJson(left.sortState) === stableJson(right.sortState) &&
+		stableJson(left.tableStyleInfo) === stableJson(right.tableStyleInfo)
+	)
+}
+
+function rangesEqual(left: Table['ref'], right: Table['ref']): boolean {
+	return (
+		left.start.row === right.start.row &&
+		left.start.col === right.start.col &&
+		left.end.row === right.end.row &&
+		left.end.col === right.end.col
+	)
+}
+
+function tableColumnsEqual(
+	left: readonly Table['columns'][number][],
+	right: readonly Table['columns'][number][],
+): boolean {
+	if (left.length !== right.length) return false
+	for (let i = 0; i < left.length; i++) {
+		const leftColumn = left[i]
+		const rightColumn = right[i]
+		if (!leftColumn || !rightColumn) return false
+		if (
+			(leftColumn.id ?? null) !== (rightColumn.id ?? null) ||
+			leftColumn.name !== rightColumn.name ||
+			(leftColumn.formula ?? null) !== (rightColumn.formula ?? null) ||
+			(leftColumn.totalsRowFunction ?? null) !== (rightColumn.totalsRowFunction ?? null) ||
+			(leftColumn.totalsRowFormula ?? null) !== (rightColumn.totalsRowFormula ?? null) ||
+			(leftColumn.totalsRowLabel ?? null) !== (rightColumn.totalsRowLabel ?? null) ||
+			(leftColumn.dataDxfId ?? null) !== (rightColumn.dataDxfId ?? null) ||
+			(leftColumn.headerRowDxfId ?? null) !== (rightColumn.headerRowDxfId ?? null) ||
+			(leftColumn.totalsRowDxfId ?? null) !== (rightColumn.totalsRowDxfId ?? null)
+		) {
+			return false
+		}
+	}
+	return true
+}
+
+function stableJson(value: unknown): string {
+	if (value === undefined) return ''
+	if (value === null || typeof value !== 'object') return JSON.stringify(value)
+	if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`
+	const record = value as Record<string, unknown>
+	return `{${Object.keys(record)
+		.sort()
+		.map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
+		.join(',')}}`
 }
 
 function recordDocPropsPart(

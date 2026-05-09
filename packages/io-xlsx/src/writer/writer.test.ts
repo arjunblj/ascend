@@ -2131,23 +2131,27 @@ describe('writeXlsx', () => {
 			name: 'BalanceTable',
 			sheetId: sheet.id,
 			ref: { start: { row: 0, col: 0 }, end: { row: 1, col: 1 } },
-			columns: [{ name: 'Name' }, { name: 'Value' }],
+			columns: [
+				{ id: 1, name: 'Name' },
+				{ id: 2, name: 'Value' },
+			],
 			hasHeaders: true,
 			hasTotals: false,
 		})
 
-		const capsules: PreservationCapsule[] = [
-			{
-				partPath: 'xl/tables/table1.xml',
-				contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml',
-				relationships: [],
-				content: new TextEncoder().encode(`<?xml version="1.0"?>
+		const capsuleContent = new TextEncoder().encode(`<?xml version="1.0"?>
 <table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="Table1" displayName="BalanceTable" ref="A1:B2" headerRowCount="1" totalsRowCount="0">
   <tableColumns count="2">
     <tableColumn id="1" name="Name"/>
     <tableColumn id="2" name="Value"/>
   </tableColumns>
-</table>`),
+</table>`)
+		const capsules: PreservationCapsule[] = [
+			{
+				partPath: 'xl/tables/table1.xml',
+				contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml',
+				relationships: [],
+				content: capsuleContent,
 				anchor: { kind: 'sheet', sheetId: sheet.id, sheetName: sheet.name },
 				relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/table',
 			},
@@ -2164,6 +2168,54 @@ describe('writeXlsx', () => {
 			Relationships: 1,
 			Relationship: 1,
 		})
+		expect(unzipSync(bytes)['xl/tables/table1.xml']).toEqual(capsuleContent)
+	})
+
+	it('regenerates table parts when capsule-backed table metadata changes', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Balance')
+		sheet.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: S0 })
+		sheet.cells.set(0, 1, { value: stringValue('Value'), formula: null, styleId: S0 })
+		sheet.cells.set(1, 0, { value: stringValue('Cash'), formula: null, styleId: S0 })
+		sheet.cells.set(1, 1, { value: numberValue(10), formula: null, styleId: S0 })
+		sheet.cells.set(2, 0, { value: stringValue('Debt'), formula: null, styleId: S0 })
+		sheet.cells.set(2, 1, { value: numberValue(20), formula: null, styleId: S0 })
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'BalanceTable',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } },
+			columns: [
+				{ id: 1, name: 'Name' },
+				{ id: 2, name: 'Value' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+
+		const staleCapsuleContent = new TextEncoder().encode(`<?xml version="1.0"?>
+<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="Table1" displayName="BalanceTable" ref="A1:B2" headerRowCount="1" totalsRowCount="0">
+  <tableColumns count="2">
+    <tableColumn id="1" name="Name"/>
+    <tableColumn id="2" name="Value"/>
+  </tableColumns>
+</table>`)
+		const { bytes } = roundTrip(wb, [
+			{
+				partPath: 'xl/tables/table1.xml',
+				contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml',
+				relationships: [],
+				content: staleCapsuleContent,
+				anchor: { kind: 'sheet', sheetId: sheet.id, sheetName: sheet.name },
+				relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/table',
+			},
+		])
+
+		const tableEntry = unzipSync(bytes)['xl/tables/table1.xml']
+		expect(tableEntry).toBeDefined()
+		if (!tableEntry) return
+		expect(tableEntry).not.toEqual(staleCapsuleContent)
+		expect(new TextDecoder().decode(tableEntry)).toContain('ref="A1:B3"')
 	})
 
 	it('preserves richer table metadata on round-trip', () => {

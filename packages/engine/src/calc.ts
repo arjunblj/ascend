@@ -164,61 +164,53 @@ function scanRangeAggregateState(
 	let error = base?.error ?? null
 	for (let row = startRow; row <= endRow; row++) {
 		for (let col = startCol; col <= endCol; col++) {
-			const directNumber = sheet.cells.readNumber(row, col)
-			if (directNumber !== null) {
+			const rangeValue = readRangeAggregateNumericCell(sheet, row, col)
+			if (typeof rangeValue === 'number') {
 				switch (functionName) {
 					case 'SUM':
-						sum += directNumber
+						sum += rangeValue
 						break
 					case 'COUNT':
 						count++
 						break
 					case 'AVERAGE':
-						sum += directNumber
+						sum += rangeValue
 						count++
 						break
 					case 'MIN':
 						count++
-						if (directNumber < min) min = directNumber
+						if (rangeValue < min) min = rangeValue
 						break
 					case 'MAX':
 						count++
-						if (directNumber > max) max = directNumber
+						if (rangeValue > max) max = rangeValue
 						break
 				}
 				continue
 			}
-			const scalar = topLeftScalar(sheet.cells.readValue(row, col))
-			if (scalar.kind === 'error' && functionName !== 'COUNT') {
-				error = scalar
+			if (rangeValue?.kind === 'error' && functionName !== 'COUNT') {
+				error = rangeValue
 				return { sum, count, min, max, error }
-			}
-			const numeric =
-				scalar.kind === 'number' ? scalar.value : scalar.kind === 'date' ? scalar.serial : null
-			if (numeric === null) continue
-			switch (functionName) {
-				case 'SUM':
-					sum += numeric
-					break
-				case 'COUNT':
-					count++
-					break
-				case 'AVERAGE':
-					sum += numeric
-					count++
-					break
-				case 'MIN':
-					count++
-					if (numeric < min) min = numeric
-					break
-				case 'MAX':
-					count++
-					if (numeric > max) max = numeric
-					break
 			}
 		}
 	}
 	return { sum, count, min, max, error }
+}
+
+function readRangeAggregateNumericCell(
+	sheet: Workbook['sheets'][number],
+	row: number,
+	col: number,
+): number | CellValue | null {
+	const kind = sheet.cells.readKind(row, col)
+	if (kind === undefined || kind === 'empty') return null
+	if (kind === 'number' || kind === 'date') return sheet.cells.readNumber(row, col) ?? 0
+	if (kind === 'error') return sheet.cells.readValue(row, col)
+	const scalar = topLeftScalar(sheet.cells.readValue(row, col))
+	if (scalar.kind === 'number') return scalar.value
+	if (scalar.kind === 'date') return scalar.serial
+	if (scalar.kind === 'error') return scalar
+	return null
 }
 
 function rangeAggregateStateToValue(
@@ -280,53 +272,28 @@ function tryEvaluateGrowingRangeScalarAggregate(
 	if (!appendSheet) return null
 	for (let row = optimization.appendStartRow; row <= optimization.appendEndRow; row++) {
 		for (let col = optimization.appendStartCol; col <= optimization.appendEndCol; col++) {
-			const directNumber = appendSheet.cells.readNumber(row, col)
-			if (directNumber !== null) {
+			const rangeValue = readRangeAggregateNumericCell(appendSheet, row, col)
+			if (typeof rangeValue === 'number') {
 				switch (optimization.functionName) {
 					case 'SUM':
-						value += directNumber
+						value += rangeValue
 						break
 					case 'COUNT':
 						value += 1
 						break
 					case 'MIN':
-						if (value === 0 && directNumber > 0) return null
-						value = Math.min(value, directNumber)
+						if (value === 0 && rangeValue > 0) return null
+						value = Math.min(value, rangeValue)
 						break
 					case 'MAX':
-						if (value === 0 && directNumber < 0) return null
-						value = Math.max(value, directNumber)
+						if (value === 0 && rangeValue < 0) return null
+						value = Math.max(value, rangeValue)
 						break
 				}
 				continue
 			}
-			const appendScalar = topLeftScalar(appendSheet.cells.readValue(row, col))
-			if (appendScalar.kind === 'error') {
-				if (optimization.functionName !== 'COUNT') return appendScalar
-				continue
-			}
-			const appendNumeric =
-				appendScalar.kind === 'number'
-					? appendScalar.value
-					: appendScalar.kind === 'date'
-						? appendScalar.serial
-						: null
-			if (appendNumeric === null) continue
-			switch (optimization.functionName) {
-				case 'SUM':
-					value += appendNumeric
-					break
-				case 'COUNT':
-					value += 1
-					break
-				case 'MIN':
-					if (value === 0 && appendNumeric > 0) return null
-					value = Math.min(value, appendNumeric)
-					break
-				case 'MAX':
-					if (value === 0 && appendNumeric < 0) return null
-					value = Math.max(value, appendNumeric)
-					break
+			if (rangeValue?.kind === 'error') {
+				if (optimization.functionName !== 'COUNT') return rangeValue
 			}
 		}
 	}

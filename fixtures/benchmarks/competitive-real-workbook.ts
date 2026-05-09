@@ -111,6 +111,8 @@ interface CorpusTargetMetadata {
 	readonly knownUnsupported: readonly string[]
 }
 
+type CompetitiveCategory = 'read' | 'roundtrip' | 'edit-roundtrip'
+
 export interface WorkbookShapeSummary {
 	readonly sheetNames: readonly string[]
 	readonly sheetCount: number
@@ -239,8 +241,47 @@ export function roundtripAssertions(
 	}
 }
 
+interface EditTarget {
+	readonly sheetName: string
+	readonly ref: string
+	readonly oldValue: number
+	readonly newValue: number
+}
+
+function selectEditTarget(target: WorkbookTarget): EditTarget {
+	const selected = findFirstNumericNonFormulaCell(target.bytes)
+	if (!selected) {
+		throw new Error(`${target.name} has no non-formula numeric cell for edit-roundtrip`)
+	}
+	const newValue = selected.value === 424242 ? 424243 : 424242
+	return {
+		sheetName: selected.sheetName,
+		ref: selected.ref,
+		oldValue: selected.value,
+		newValue,
+	}
+}
+
+function editRoundtripAssertions(
+	bytes: Uint8Array,
+	target: WorkbookTarget,
+	edit: EditTarget,
+): Record<string, string | number | boolean | null> {
+	const assertions = roundtripAssertions(bytes, target)
+	const observed = readCellNumber(bytes, edit.sheetName, edit.ref)
+	return {
+		...assertions,
+		editSheetName: edit.sheetName,
+		editRef: edit.ref,
+		editOldValue: edit.oldValue,
+		editExpectedValue: edit.newValue,
+		editObservedValue: observed,
+		editCellValueMatches: observed === edit.newValue,
+	}
+}
+
 export function evaluateAssertions(
-	category: 'read' | 'roundtrip',
+	category: CompetitiveCategory,
 	expected: WorkbookShapeSummary,
 	assertions: Record<string, string | number | boolean | null> | undefined,
 	operationProfile = 'default',
@@ -330,7 +371,8 @@ export function evaluateAssertions(
 			},
 		}
 	}
-	const byteIdentical = observed.byteIdentical === true
+	const isEditRoundtrip = category === 'edit-roundtrip'
+	const byteIdentical = !isEditRoundtrip && observed.byteIdentical === true
 	const roundtripSheetCountMatches = observed.roundtripSheetCount === expected.sheetCount
 	const roundtripSheetNamesHashMatches =
 		observed.roundtripSheetNamesHash === expected.sheetNamesHash
@@ -343,7 +385,7 @@ export function evaluateAssertions(
 	const roundtripSemanticCellRefsHashMatches =
 		observed.roundtripSemanticCellRefsHash === expected.semanticCellRefsHash
 	const roundtripSemanticCellValuesHashMatches =
-		observed.roundtripSemanticCellValuesHash === expected.semanticCellValuesHash
+		isEditRoundtrip || observed.roundtripSemanticCellValuesHash === expected.semanticCellValuesHash
 	const roundtripFormulaTextHashMatches =
 		observed.roundtripFormulaTextHash === expected.formulaTextHash
 	const expectedPackage = expected.packageFingerprint
@@ -459,8 +501,12 @@ export function evaluateAssertions(
 		roundtripSemanticCellRefsHashMatches &&
 		roundtripSemanticCellValuesHashMatches &&
 		roundtripFormulaTextHashMatches
+	const editCellValueMatches = !isEditRoundtrip || observed.editCellValueMatches === true
 	const semanticAndPackageRoundtripMatches =
-		semanticRoundtripMatches && packageRoundtripMatches && featureRoundtripMatches
+		semanticRoundtripMatches &&
+		packageRoundtripMatches &&
+		featureRoundtripMatches &&
+		editCellValueMatches
 	return {
 		status: byteIdentical
 			? 'exact-package-match'
@@ -534,6 +580,7 @@ export function evaluateAssertions(
 			roundtripSemanticCellRefsHashMatches,
 			roundtripSemanticCellValuesHashMatches,
 			roundtripFormulaTextHashMatches,
+			editCellValueMatches,
 			semanticRoundtripMatches,
 			packageFingerprintRequired,
 			hasRoundtripPackageFingerprint,
@@ -619,7 +666,7 @@ export function evaluateAssertions(
 interface CompetitiveCase {
 	readonly name: string
 	readonly library: string
-	readonly category: 'read' | 'roundtrip'
+	readonly category: CompetitiveCategory
 	readonly executionScope?: 'in-process' | 'external-process'
 	readonly runnerProvenance?: RunnerProvenance
 	readonly timingModel?: string
@@ -820,11 +867,11 @@ function readCorpusSelection(): CorpusSelection {
 	}
 }
 
-function readCategoryFilter(): 'read' | 'roundtrip' | undefined {
+function readCategoryFilter(): CompetitiveCategory | undefined {
 	const raw = readFlag('--category')
 	if (raw === undefined) return undefined
-	if (raw === 'read' || raw === 'roundtrip') return raw
-	throw new Error('--category must be "read" or "roundtrip"')
+	if (raw === 'read' || raw === 'roundtrip' || raw === 'edit-roundtrip') return raw
+	throw new Error('--category must be "read", "roundtrip", or "edit-roundtrip"')
 }
 
 function runGc(): void {
@@ -1377,6 +1424,78 @@ function extractExpectedWorkbookShape(bytes: Uint8Array): WorkbookShapeSummary {
 		packageFingerprint: extractWorkbookPackageFingerprint(bytes),
 		featureSummary: extractWorkbookFeatureSummary(bytes),
 	}
+}
+
+function findFirstNumericNonFormulaCell(
+	bytes: Uint8Array,
+): { sheetName: string; ref: string; value: number } | null {
+	const archive = extractZip(bytes)
+	const workbookXml = archive.readText('xl/workbook.xml')
+	const workbookRelsXml = archive.readText('xl/_rels/workbook.xml.rels')
+	if (!workbookXml || !workbookRelsXml) return null
+	const workbookInfo = parseWorkbookXml(workbookXml)
+	const workbookRels = parseRelationships(workbookRelsXml)
+	const worksheetRels = new Map(
+		workbookRels
+			.filter((rel) => rel.type === REL_WORKSHEET)
+			.map((rel) => [rel.id, resolvePath('xl/workbook.xml', rel.target)]),
+	)
+	for (const sheet of workbookInfo.sheets) {
+		const partPath = worksheetRels.get(sheet.rId)
+		const xml = partPath ? archive.readText(partPath) : undefined
+		if (!xml) continue
+		for (const match of xml.matchAll(/<c\b([^>]*)>/g)) {
+			const attrs = match[1] ?? ''
+			const bodyStart = match.index + match[0].length
+			const bodyEnd = attrs.trimEnd().endsWith('/') ? bodyStart : xml.indexOf('</c>', bodyStart)
+			if (bodyEnd < bodyStart) continue
+			const body = xml.slice(bodyStart, bodyEnd)
+			if (/<f\b/.test(body)) continue
+			const type = /(?:^|\s)t="([^"]+)"/.exec(attrs)?.[1]
+			if (type && type !== 'n') continue
+			const ref = /(?:^|\s)r="([^"]+)"/.exec(attrs)?.[1]
+			if (!parseA1Safe(ref)) continue
+			const raw = extractCellValueText(body)
+			if (raw === null || raw === '') continue
+			const value = Number(raw)
+			if (!Number.isFinite(value)) continue
+			return { sheetName: sheet.name, ref: ref as string, value }
+		}
+	}
+	return null
+}
+
+function readCellNumber(bytes: Uint8Array, sheetName: string, ref: string): number | null {
+	const archive = extractZip(bytes)
+	const workbookXml = archive.readText('xl/workbook.xml')
+	const workbookRelsXml = archive.readText('xl/_rels/workbook.xml.rels')
+	if (!workbookXml || !workbookRelsXml) return null
+	const workbookInfo = parseWorkbookXml(workbookXml)
+	const sheet = workbookInfo.sheets.find((entry) => entry.name === sheetName)
+	if (!sheet) return null
+	const relationship = parseRelationships(workbookRelsXml).find(
+		(rel) => rel.type === REL_WORKSHEET && rel.id === sheet.rId,
+	)
+	if (!relationship) return null
+	const xml = archive.readText(resolvePath('xl/workbook.xml', relationship.target))
+	if (!xml) return null
+	const cell = findCellXml(xml, ref)
+	if (!cell) return null
+	const raw = extractCellValueText(cell.body)
+	if (raw === null || raw === '') return null
+	const value = Number(raw)
+	return Number.isFinite(value) ? value : null
+}
+
+function findCellXml(xml: string, ref: string): { attrs: string; body: string } | null {
+	for (const match of xml.matchAll(/<c\b([^>]*)>/g)) {
+		const attrs = match[1] ?? ''
+		if (/(?:^|\s)r="([^"]+)"/.exec(attrs)?.[1] !== ref) continue
+		const bodyStart = match.index + match[0].length
+		const bodyEnd = attrs.trimEnd().endsWith('/') ? bodyStart : xml.indexOf('</c>', bodyStart)
+		return { attrs, body: bodyEnd >= bodyStart ? xml.slice(bodyStart, bodyEnd) : '' }
+	}
+	return null
 }
 
 function scanSheetShapeXml(
@@ -2044,6 +2163,45 @@ async function loadCases(): Promise<{
 				}
 			},
 		},
+		{
+			name: 'ascend:edit-roundtrip',
+			library: 'ascend',
+			category: 'edit-roundtrip',
+			capabilities: { xlsmRoundtrip: true },
+			async runMeasured(target) {
+				const edit = selectEditTarget(target)
+				const start = performance.now()
+				const workbook = await Ascend.open(target.bytes)
+				workbook.apply([
+					{
+						op: 'setCells',
+						sheet: edit.sheetName,
+						updates: [{ ref: edit.ref, value: edit.newValue }],
+					},
+				])
+				const bytes = workbook.toBytes()
+				const durationMs = performance.now() - start
+				return {
+					durationMs,
+					assertions: editRoundtripAssertions(bytes, target, edit),
+				}
+			},
+			async run(target) {
+				const edit = selectEditTarget(target)
+				const workbook = await Ascend.open(target.bytes)
+				workbook.apply([
+					{
+						op: 'setCells',
+						sheet: edit.sheetName,
+						updates: [{ ref: edit.ref, value: edit.newValue }],
+					},
+				])
+				const bytes = workbook.toBytes()
+				return {
+					assertions: editRoundtripAssertions(bytes, target, edit),
+				}
+			},
+		},
 	]
 	const skipped: Array<{ library: string; reason: string }> = []
 
@@ -2119,6 +2277,47 @@ async function loadCases(): Promise<{
 					}
 				},
 			},
+			{
+				name: 'sheetjs:edit-roundtrip',
+				library: 'sheetjs',
+				category: 'edit-roundtrip',
+				capabilities: { xlsmRoundtrip: true },
+				async runMeasured(target) {
+					const edit = selectEditTarget(target)
+					const start = performance.now()
+					const workbook = sheetJs.read(target.bytes, {
+						type: 'buffer',
+						bookVBA: true,
+						cellStyles: true,
+					})
+					const worksheet = workbook.Sheets[edit.sheetName]
+					if (!worksheet) throw new Error(`SheetJS missing sheet ${edit.sheetName}`)
+					worksheet[edit.ref] = { t: 'n', v: edit.newValue }
+					const bookType = target.extension === '.xlsm' ? 'xlsm' : 'xlsx'
+					const bytes = sheetJs.write(workbook, { type: 'buffer', bookType }) as Uint8Array
+					const durationMs = performance.now() - start
+					return {
+						durationMs,
+						assertions: editRoundtripAssertions(bytes, target, edit),
+					}
+				},
+				async run(target) {
+					const edit = selectEditTarget(target)
+					const workbook = sheetJs.read(target.bytes, {
+						type: 'buffer',
+						bookVBA: true,
+						cellStyles: true,
+					})
+					const worksheet = workbook.Sheets[edit.sheetName]
+					if (!worksheet) throw new Error(`SheetJS missing sheet ${edit.sheetName}`)
+					worksheet[edit.ref] = { t: 'n', v: edit.newValue }
+					const bookType = target.extension === '.xlsm' ? 'xlsm' : 'xlsx'
+					const bytes = sheetJs.write(workbook, { type: 'buffer', bookType }) as Uint8Array
+					return {
+						assertions: editRoundtripAssertions(bytes, target, edit),
+					}
+				},
+			},
 		)
 	}
 
@@ -2175,6 +2374,39 @@ async function loadCases(): Promise<{
 					const bytes = (await workbook.xlsx.writeBuffer()) as ArrayBuffer
 					return {
 						assertions: roundtripAssertions(new Uint8Array(bytes), target),
+					}
+				},
+			},
+			{
+				name: 'exceljs:edit-roundtrip',
+				library: 'exceljs',
+				category: 'edit-roundtrip',
+				capabilities: { xlsmRoundtrip: false },
+				async runMeasured(target) {
+					const edit = selectEditTarget(target)
+					const workbook = new ExcelJS.Workbook()
+					const start = performance.now()
+					await workbook.xlsx.load(Buffer.from(target.bytes))
+					const worksheet = workbook.getWorksheet(edit.sheetName)
+					if (!worksheet) throw new Error(`ExcelJS missing sheet ${edit.sheetName}`)
+					worksheet.getCell(edit.ref).value = edit.newValue
+					const bytes = (await workbook.xlsx.writeBuffer()) as ArrayBuffer
+					const durationMs = performance.now() - start
+					return {
+						durationMs,
+						assertions: editRoundtripAssertions(new Uint8Array(bytes), target, edit),
+					}
+				},
+				async run(target) {
+					const edit = selectEditTarget(target)
+					const workbook = new ExcelJS.Workbook()
+					await workbook.xlsx.load(Buffer.from(target.bytes))
+					const worksheet = workbook.getWorksheet(edit.sheetName)
+					if (!worksheet) throw new Error(`ExcelJS missing sheet ${edit.sheetName}`)
+					worksheet.getCell(edit.ref).value = edit.newValue
+					const bytes = (await workbook.xlsx.writeBuffer()) as ArrayBuffer
+					return {
+						assertions: editRoundtripAssertions(new Uint8Array(bytes), target, edit),
 					}
 				},
 			},
@@ -2413,15 +2645,16 @@ function optionalSampleNumber(
 function skipReason(benchmarkCase: CompetitiveCase, target: WorkbookTarget): string | null {
 	if (
 		target.extension === '.xlsm' &&
-		benchmarkCase.category === 'roundtrip' &&
+		(benchmarkCase.category === 'roundtrip' || benchmarkCase.category === 'edit-roundtrip') &&
 		benchmarkCase.capabilities?.xlsmRoundtrip !== true
 	) {
-		return 'roundtrip for .xlsm requires explicit VBA/package preservation capability'
+		return `${benchmarkCase.category} for .xlsm requires explicit VBA/package preservation capability`
 	}
 	return null
 }
 
 function operationProfile(benchmarkCase: CompetitiveCase): string {
+	if (benchmarkCase.category === 'edit-roundtrip') return 'edit-roundtrip'
 	if (benchmarkCase.category === 'roundtrip') return 'no-op-roundtrip'
 	if (benchmarkCase.capabilities?.valueOnlyRead) return 'read-values'
 	if (benchmarkCase.name === 'ascend:read-values') return 'read-values'

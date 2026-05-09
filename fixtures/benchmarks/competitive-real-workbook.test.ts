@@ -237,6 +237,32 @@ describe('evaluateAssertions', () => {
 		expect(result.assertions.featureRoundtripMatches).toBe(true)
 	})
 
+	test('edit roundtrip allows the edited value hash to change but requires the edit to persist', () => {
+		const expected = shape({
+			packageFingerprint: packageFingerprint(),
+			featureSummary: featureSummary(),
+		})
+		const result = evaluateAssertions('edit-roundtrip', expected, {
+			...passingRoundtripAssertions(expected),
+			roundtripSemanticCellValuesHash: 'changed-by-edit',
+			editCellValueMatches: true,
+		})
+		expect(result.status).toBe('semantic-roundtrip-pass')
+		expect(result.assertions.roundtripSemanticCellValuesHashMatches).toBe(true)
+		expect(result.assertions.editCellValueMatches).toBe(true)
+	})
+
+	test('edit roundtrip fails when the edited cell value is not preserved', () => {
+		const expected = shape({ packageFingerprint: packageFingerprint() })
+		const result = evaluateAssertions('edit-roundtrip', expected, {
+			...passingRoundtripAssertions(expected),
+			roundtripSemanticCellValuesHash: 'changed-by-edit',
+			editCellValueMatches: false,
+		})
+		expect(result.status).toBe('semantic-roundtrip-mismatch')
+		expect(result.assertions.editCellValueMatches).toBe(false)
+	})
+
 	test('repeat correctness must be stable before ranking', () => {
 		expect(coalesceRepeatCorrectnessStatus(['pass', 'pass', 'pass'])).toBe('pass')
 		expect(coalesceRepeatCorrectnessStatus(['pass', 'semantic-mismatch', 'pass'])).toBe(

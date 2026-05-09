@@ -14,6 +14,7 @@ export {
 	flattenArgs,
 	functionRegistry,
 	getRange,
+	hasWildcardPatternSyntax,
 	iterAreaRows,
 	type LookupVectorCache,
 	type NumericVectorCache,

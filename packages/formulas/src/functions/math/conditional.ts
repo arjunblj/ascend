@@ -1,7 +1,7 @@
 import type { CellValue } from '@ascend/schema'
 import { EMPTY, errorValue, isEmpty, numberValue } from '@ascend/schema'
 import type { EvalArg, FunctionDef, FunctionEvalContext } from '../index.ts'
-import { wildcardMatch } from '../registry.ts'
+import { hasWildcardPatternSyntax, wildcardMatch } from '../registry.ts'
 import { fn, getRange, numericVal, sameShape } from './helpers.ts'
 
 const CRITERIA_CACHE_MAX = 1024
@@ -124,7 +124,7 @@ function parseCriteriaImpl(criteria: CellValue): (v: CellValue) => boolean {
 	const numRest = Number(rest)
 	const isNumeric = rest.trim() !== '' && !Number.isNaN(numRest)
 	const isBlankCriterion = rest === ''
-	const hasWildcards = /(^|[^~])[*?]/.test(rest)
+	const hasWildcards = hasWildcardPatternSyntax(rest)
 
 	if (!op) {
 		const lower = s.toLowerCase()

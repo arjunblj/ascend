@@ -273,12 +273,16 @@ export function valuesEqual(a: CellValue, b: CellValue): boolean {
 
 const wildcardCache = new Map<string, RegExp>()
 
-function hasWildcardChars(pattern: string): boolean {
+function isWildcardEscapeTarget(ch: string | undefined): boolean {
+	return ch === '*' || ch === '?' || ch === '~'
+}
+
+export function hasWildcardPatternSyntax(pattern: string): boolean {
 	for (let i = 0; i < pattern.length; i++) {
 		const ch = pattern[i]
-		if (ch === '~') {
+		if (ch === '~' && isWildcardEscapeTarget(pattern[i + 1])) {
 			i++
-			continue
+			return true
 		}
 		if (ch === '*' || ch === '?') return true
 	}
@@ -287,14 +291,14 @@ function hasWildcardChars(pattern: string): boolean {
 
 export function wildcardMatch(pattern: string, text: string): boolean {
 	const p = pattern.toLowerCase()
-	if (!hasWildcardChars(p)) return text.toLowerCase() === p
+	if (!hasWildcardPatternSyntax(p)) return text.toLowerCase() === p
 	let compiled = wildcardCache.get(p)
 	if (!compiled) {
 		const parts: string[] = ['^']
 		let i = 0
 		while (i < p.length) {
 			const ch = p[i] ?? ''
-			if (ch === '~' && i + 1 < p.length) {
+			if (ch === '~' && isWildcardEscapeTarget(p[i + 1])) {
 				i++
 				parts.push(escapeRe(p[i] ?? ''))
 			} else if (ch === '*') {
@@ -314,7 +318,7 @@ export function wildcardMatch(pattern: string, text: string): boolean {
 	return compiled.test(text.toLowerCase())
 }
 
-const RE_SPECIAL = new Set(['.', '+', '*', '^', '$', '{', '}', '(', ')', '|', '[', ']', '\\'])
+const RE_SPECIAL = new Set(['.', '+', '*', '?', '^', '$', '{', '}', '(', ')', '|', '[', ']', '\\'])
 
 function escapeRe(ch: string): string {
 	return RE_SPECIAL.has(ch) ? `\\${ch}` : ch

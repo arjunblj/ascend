@@ -128,6 +128,21 @@ describe('formula functions', () => {
 			expect(getResult(wb, 3, 0)).toEqual(numberValue(2))
 		})
 
+		test('COUNTIF escaped wildcards match literal characters', () => {
+			const wb = makeWorkbook()
+			setStr(wb, 0, 0, '*')
+			setStr(wb, 1, 0, '?')
+			setStr(wb, 2, 0, '~')
+			setStr(wb, 3, 0, '~*')
+			setFormula(wb, 4, 0, 'COUNTIF(A1:A4,"~*")')
+			setFormula(wb, 5, 0, 'COUNTIF(A1:A4,"~?")')
+			setFormula(wb, 6, 0, 'COUNTIF(A1:A4,"~~")')
+			recalc(wb)
+			expect(getResult(wb, 4, 0)).toEqual(numberValue(1))
+			expect(getResult(wb, 5, 0)).toEqual(numberValue(1))
+			expect(getResult(wb, 6, 0)).toEqual(numberValue(1))
+		})
+
 		test('SUMPRODUCT with mismatched dimensions returns #VALUE!', () => {
 			const wb = makeWorkbook()
 			setNum(wb, 0, 0, 1)

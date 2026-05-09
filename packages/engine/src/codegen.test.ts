@@ -446,6 +446,17 @@ describe('codegen', () => {
 		expect(codegenEval('COUNTIF(A1:A3,"apple")', wb)).toEqual(numberValue(2))
 	})
 
+	test('COUNTIF with escaped wildcard literals', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('*'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('?'), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: stringValue('~*'), formula: null, styleId: sid })
+
+		expect(codegenEval('COUNTIF(A1:A3,"~*")', wb)).toEqual(numberValue(1))
+		expect(codegenEval('COUNTIF(A1:A3,"~?")', wb)).toEqual(numberValue(1))
+	})
+
 	test('SUMIF/COUNTIF is codegen-able', () => {
 		const wb = createWorkbook()
 		wb.addSheet('Sheet1')

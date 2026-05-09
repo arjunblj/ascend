@@ -1,5 +1,12 @@
 import type { FormulaNode } from '@ascend/formulas'
-import { dateToSerial, formatNumber, serialToDate, toNumber, wildcardMatch } from '@ascend/formulas'
+import {
+	dateToSerial,
+	formatNumber,
+	hasWildcardPatternSyntax,
+	serialToDate,
+	toNumber,
+	wildcardMatch,
+} from '@ascend/formulas'
 import type { CellValue } from '@ascend/schema'
 import {
 	booleanValue,
@@ -1669,17 +1676,6 @@ function vlookupExact(
 	return idx < 0 ? errorValue('#N/A') : sheet.cells.readValue(sr + idx, sc + colInt - 1)
 }
 
-function hasWildcardCriteria(text: string): boolean {
-	for (let i = 0; i < text.length; i++) {
-		if (text[i] === '~') {
-			i++
-			continue
-		}
-		if (text[i] === '*' || text[i] === '?') return true
-	}
-	return false
-}
-
 function buildCriteriaMatcher(criteria: CellValue): (v: CellValue) => boolean {
 	if (criteria.kind === 'number') {
 		const t = criteria.value
@@ -1708,7 +1704,7 @@ function buildCriteriaMatcher(criteria: CellValue): (v: CellValue) => boolean {
 	const numRest = Number(rest)
 	const isNumeric = rest.trim() !== '' && !Number.isNaN(numRest)
 
-	const hasWild = hasWildcardCriteria(rest)
+	const hasWild = hasWildcardPatternSyntax(rest)
 
 	if (!op) {
 		if (s === '') return (v) => v.kind === 'empty' || (v.kind === 'string' && v.value === '')

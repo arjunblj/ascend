@@ -858,6 +858,58 @@ export function buildIsolatedLibraryFailureSuite(input: {
 	})
 }
 
+export function validateUpstreamProfileSuite(
+	profile: UpstreamProfile,
+	suite: BenchmarkSuiteResult,
+): void {
+	if (suite.cases.length === 0) {
+		throw new Error(`Profile ${profile.name} produced no benchmark cases`)
+	}
+	const expectedLogicalCells = profile.rows * profile.cols * profile.sheets
+	const expectedReadSource = profile.readSource ?? 'raw-ooxml'
+	const mismatches: string[] = []
+	for (const entry of suite.cases) {
+		if (entry.category !== profile.category) {
+			mismatches.push(`${entry.name}: category=${entry.category}`)
+		}
+		if (entry.dimensions.workload !== profile.workload) {
+			mismatches.push(`${entry.name}: workload=${String(entry.dimensions.workload)}`)
+		}
+		if (entry.dimensions.rows !== profile.rows) {
+			mismatches.push(`${entry.name}: rows=${String(entry.dimensions.rows)}`)
+		}
+		if (entry.dimensions.cols !== profile.cols) {
+			mismatches.push(`${entry.name}: cols=${String(entry.dimensions.cols)}`)
+		}
+		if (entry.dimensions.logicalCells !== expectedLogicalCells) {
+			mismatches.push(`${entry.name}: logicalCells=${String(entry.dimensions.logicalCells)}`)
+		}
+		if (entry.dimensions.cells !== expectedLogicalCells) {
+			mismatches.push(`${entry.name}: cells=${String(entry.dimensions.cells)}`)
+		}
+		if (profile.category === 'read' && entry.dimensions.readSource !== expectedReadSource) {
+			mismatches.push(`${entry.name}: readSource=${String(entry.dimensions.readSource)}`)
+		}
+		if (!Number.isFinite(entry.metrics.sampleCount) || entry.metrics.sampleCount <= 0) {
+			mismatches.push(`${entry.name}: sampleCount=${String(entry.metrics.sampleCount)}`)
+		}
+		if (
+			entry.dimensions.rankingEligible !== false &&
+			(!Number.isFinite(entry.metrics.medianMs) || entry.metrics.medianMs <= 0)
+		) {
+			mismatches.push(`${entry.name}: medianMs=${String(entry.metrics.medianMs)}`)
+		}
+	}
+	if (mismatches.length > 0) {
+		throw new Error(
+			[
+				`Profile ${profile.name} benchmark output does not match the upstream shape contract`,
+				...mismatches,
+			].join('\n'),
+		)
+	}
+}
+
 export function isKilledRunnerReason(value: unknown): boolean {
 	const message = value instanceof Error ? value.message : typeof value === 'string' ? value : ''
 	return /\b(exit(?:ed)? with code 137|code 137|signal: killed|sigkill)\b/i.test(message)
@@ -1018,6 +1070,7 @@ async function main(): Promise<void> {
 			timeoutMs,
 		})
 		for (const { suite, library, retries } of suites) {
+			validateUpstreamProfileSuite(profile, suite)
 			cases.push(
 				...annotateUpstreamCases(suite, profile, {
 					repeat,

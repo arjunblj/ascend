@@ -9,6 +9,7 @@ import {
 	splitLibraryList,
 	UPSTREAM_PROFILE_SETS,
 	UPSTREAM_PROFILES,
+	validateUpstreamProfileSuite,
 } from './upstream-profiles.ts'
 
 describe('upstream competitive profiles', () => {
@@ -177,6 +178,58 @@ describe('upstream competitive profiles', () => {
 		expect(result?.dimensions.rankingEligible).toBe(false)
 		expect(result?.dimensions.errorReason).toContain('timed out')
 		expect(result?.metrics.medianMs).toBe(0)
+	})
+
+	test('validates child benchmark suites against published profile shape', () => {
+		const profile = selectUpstreamProfiles('pyexcelerate-write-values-1000x100')[0]
+		expect(profile).toBeTruthy()
+		if (!profile) return
+
+		const suite = {
+			formatVersion: 1,
+			suite: 'fixture',
+			kind: 'real-workbook',
+			generatedAt: '2026-05-09T00:00:00.000Z',
+			runtime: { platform: 'test', arch: 'test' },
+			git: {},
+			cases: [
+				{
+					name: 'ascend:write-values',
+					category: 'write',
+					dimensions: {
+						library: 'ascend',
+						workload: 'dense-values',
+						readSource: 'ascend-writer',
+						rows: 1000,
+						cols: 100,
+						cells: 100_000,
+						logicalCells: 100_000,
+						correctnessStatus: 'pass',
+						rankingEligible: true,
+					},
+					metrics: {
+						sampleCount: 1,
+						minMs: 1,
+						medianMs: 1,
+						meanMs: 1,
+						p95Ms: 1,
+						maxMs: 1,
+					},
+				},
+			],
+		}
+		expect(() => validateUpstreamProfileSuite(profile, suite)).not.toThrow()
+		expect(() =>
+			validateUpstreamProfileSuite(profile, {
+				...suite,
+				cases: [
+					{
+						...suite.cases[0],
+						dimensions: { ...suite.cases[0].dimensions, rows: 999, cells: 99_900 },
+					},
+				],
+			}),
+		).toThrow('upstream shape contract')
 	})
 
 	test('recognizes killed external runners for isolated retry decisions', () => {

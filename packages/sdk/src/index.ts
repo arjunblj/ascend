@@ -7,6 +7,7 @@ export type {
 	AgentCommitResult,
 	AgentModelOutput,
 	AgentPlanResult,
+	AgentPostWriteVerification,
 	AgentTraceArtifact,
 	AgentTracePhase,
 	AgentWorkflowProgressEvent,

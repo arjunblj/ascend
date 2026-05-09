@@ -64,8 +64,11 @@ describe('agent workflow loss audit', () => {
 		})
 		expect(committed.lossAudit.ok).toBe(true)
 		expect(committed.outputSha256).toMatch(/^[a-f0-9]{64}$/)
+		expect(committed.postWrite.valid).toBe(true)
+		expect(committed.postWrite.outputSha256).toBe(committed.outputSha256)
 		expect(committed.trace.kind).toBe('commit')
 		expect(committed.trace.outputSha256).toBe(committed.outputSha256)
+		expect(committed.trace.phases.find((phase) => phase.phase === 'post-write')?.status).toBe('ok')
 		expect(committed.modelOutput.blocked).toBe(false)
 		expect(committed.modelOutput.digests.traceDigest).toBe(committed.trace.traceDigest)
 	})
@@ -83,7 +86,11 @@ describe('agent workflow loss audit', () => {
 			{ output },
 		)
 		expect(committed.lossAudit.ok).toBe(true)
+		expect(committed.postWrite.valid).toBe(true)
+		expect(committed.postWrite.reopened).toBe(true)
+		expect(committed.postWrite.check.valid).toBe(true)
 		expect(committed.trace.artifacts.map((artifact) => artifact.name)).toContain('apply')
+		expect(committed.trace.artifacts.map((artifact) => artifact.name)).toContain('postWrite')
 		expect(committed.modelOutput.counts.operations).toBe(1)
 	})
 
@@ -114,6 +121,7 @@ describe('agent workflow loss audit', () => {
 		expect(planEvents.at(-1)).toContain('finalize:ok')
 		expect(commitEvents[0]).toBe('1:hash-input:started')
 		expect(commitEvents.some((event) => event.includes('apply:ok'))).toBe(true)
+		expect(commitEvents.some((event) => event.includes('post-write:ok'))).toBe(true)
 		expect(commitEvents.at(-1)).toContain('finalize:ok')
 	})
 

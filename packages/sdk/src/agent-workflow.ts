@@ -49,7 +49,18 @@ export interface AgentCommitResult {
 	readonly check: ReturnType<AscendWorkbook['check']>
 	readonly lint: ReturnType<AscendWorkbook['lint']>
 	readonly preservation: ReturnType<AscendWorkbook['writePlanSummary']>
+	readonly postWrite: AgentPostWriteVerification
 	readonly lossAudit: LossAudit
+}
+
+export interface AgentPostWriteVerification {
+	readonly valid: boolean
+	readonly output: string
+	readonly outputSha256: string
+	readonly reopened: true
+	readonly check: ReturnType<AscendWorkbook['check']>
+	readonly lint: ReturnType<AscendWorkbook['lint']>
+	readonly preservation: ReturnType<AscendWorkbook['writePlanSummary']>
 }
 
 export interface LossAudit {
@@ -337,6 +348,9 @@ export async function commitAgentPlan(
 	await writeWorkbookAtomically(wb, output)
 	const outputSha256 = await fileSha256(output)
 	await progress('write', 'ok', `Workbook written to ${output}.`)
+	await progress('post-write', 'started', 'Reopening written workbook for verification.')
+	const postWrite = await verifyWrittenWorkbook(output, outputSha256)
+	await progressFromPhase(postWritePhase(postWrite), progress)
 	await progress('check', 'started', 'Running structural checks.')
 	const check = wb.check()
 	await progressFromPhase(checkPhase(check), progress)
@@ -363,6 +377,7 @@ export async function commitAgentPlan(
 			recalcPhase(recalc),
 			preservationPhase(preservation),
 			okPhase('write', `Workbook written to ${output}.`),
+			postWritePhase(postWrite),
 			checkPhase(check),
 			lintPhase(lint),
 		],
@@ -377,6 +392,13 @@ export async function commitAgentPlan(
 			artifact('lossAudit', lossAudit, `${lossAudit.blockedFeatures.length} blocked feature(s)`),
 			artifact('approvals', approvals, `${approvals.length} approval requirement(s)`),
 			artifact('preservation', preservation, `${preservation.totalParts} package part(s)`),
+			artifact(
+				'postWrite',
+				postWrite,
+				postWrite.valid
+					? 'written workbook reopened and verified'
+					: 'written workbook failed verification',
+			),
 		],
 	})
 
@@ -396,9 +418,29 @@ export async function commitAgentPlan(
 		check,
 		lint,
 		preservation,
+		postWrite,
 		lossAudit,
 	}
 	return result
+}
+
+async function verifyWrittenWorkbook(
+	output: string,
+	outputSha256: string,
+): Promise<AgentPostWriteVerification> {
+	const reopened = await AscendWorkbook.open(output, { richMetadata: true })
+	const check = reopened.check()
+	const lint = reopened.lint()
+	const preservation = reopened.writePlanSummary()
+	return {
+		valid: check.valid,
+		output,
+		outputSha256,
+		reopened: true,
+		check,
+		lint,
+		preservation,
+	}
 }
 
 export function auditLossPolicy(
@@ -745,6 +787,40 @@ function preservationPhase(
 		'preservation-audit',
 		`${preservation.totalParts} workbook package part(s) planned for write/preservation.`,
 		preservation.totalParts,
+	)
+}
+
+function postWritePhase(postWrite: AgentPostWriteVerification): AgentTracePhase {
+	const checkErrors = postWrite.check.issues.filter((issue) => issue.severity === 'error')
+	if (!postWrite.valid || checkErrors.length > 0) {
+		return phaseResult(
+			'post-write',
+			'failed',
+			`Written workbook reopened but structural verification found ${checkErrors.length} error(s).`,
+			checkErrors.length,
+			{ output: postWrite.output, outputSha256: postWrite.outputSha256, errors: checkErrors },
+		)
+	}
+	if (postWrite.check.issues.length > 0 || postWrite.lint.warnings.length > 0) {
+		return phaseResult(
+			'post-write',
+			'warning',
+			`Written workbook reopened with ${postWrite.check.issues.length} check issue(s) and ${postWrite.lint.warnings.length} lint warning(s).`,
+			postWrite.check.issues.length + postWrite.lint.warnings.length,
+			{
+				output: postWrite.output,
+				outputSha256: postWrite.outputSha256,
+				check: postWrite.check,
+				lint: postWrite.lint,
+			},
+		)
+	}
+	return phaseResult(
+		'post-write',
+		'ok',
+		'Written workbook reopened and passed post-write verification.',
+		0,
+		{ output: postWrite.output, outputSha256: postWrite.outputSha256 },
 	)
 }
 

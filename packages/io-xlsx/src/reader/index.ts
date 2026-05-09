@@ -665,6 +665,7 @@ function capsuleFamily(path: string): string {
 	if (path.includes('/media/')) return 'preservedMedia'
 	if (path.includes('/activeX/')) return 'preservedActiveX'
 	if (path.includes('/vbaProject')) return 'preservedMacro'
+	if (path.startsWith('_xmlsignatures/')) return 'preservedSignature'
 	if (path.includes('/printerSettings/')) return 'preservedPrinterSettings'
 	if (path.startsWith('customXml/')) return 'preservedCustomXml'
 	if (path.includes('/ctrlProps/')) return 'preservedControl'
@@ -760,6 +761,13 @@ function classifyActiveContent(capsule: PreservationCapsule): ActiveContentInfo[
 	) {
 		return 'vbaSignature'
 	}
+	if (
+		path.startsWith('_xmlsignatures/') ||
+		contentType.includes('digital-signature') ||
+		relType.includes('digital-signature')
+	) {
+		return 'digitalSignature'
+	}
 	if (path.includes('vbaproject') || contentType.includes('vbaproject')) return 'vbaProject'
 	if (
 		path.includes('/activex/') ||
@@ -784,6 +792,9 @@ function preservedFeatureNote(feature: string): string | undefined {
 	}
 	if (feature === 'preservedControl') {
 		return 'Form/control property parts are preserved exactly where possible; linked behavior is not semantically editable.'
+	}
+	if (feature === 'preservedSignature') {
+		return 'Digital signature parts are preserved, but any workbook edit can invalidate existing signatures unless the package is re-signed.'
 	}
 	if (feature === 'preservedQueryTable') {
 		return 'Query table parts are inventoried with connection IDs and refresh flags, then preserved exactly where possible.'

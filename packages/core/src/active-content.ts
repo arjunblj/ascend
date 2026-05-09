@@ -3,6 +3,7 @@ export type ActiveContentKind =
 	| 'activeX'
 	| 'formControl'
 	| 'vbaSignature'
+	| 'digitalSignature'
 	| 'customUi'
 	| 'unknownActiveContent'
 

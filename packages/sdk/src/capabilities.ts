@@ -600,10 +600,11 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'active.signatures',
 		'active content',
 		'Digital signatures',
-		'preserved',
+		'inspectable',
 		'P1',
-		'Detect invalidation risk and require explicit policy before writes.',
-		'Signatures are not re-signed after edits.',
+		'Require explicit re-sign or allow-loss policy before writing signed packages.',
+		'Digital signature origin/signature parts are inventoried and preserved with an explicit invalidation-risk compatibility note; signatures are not re-signed after edits.',
+		['packages/io-xlsx/src/reader/signature.test.ts'],
 	),
 
 	cap(

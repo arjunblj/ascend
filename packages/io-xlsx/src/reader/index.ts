@@ -27,6 +27,8 @@ import {
 import {
 	getRelsPath,
 	parseRelationships,
+	REL_CHART,
+	REL_CHARTSHEET,
 	REL_COMMENTS,
 	REL_DRAWING,
 	REL_OFFICE_DOC,
@@ -255,6 +257,7 @@ export function readXlsx(
 			sheetId: SheetId
 			state: (typeof wbInfo.sheets)[number]['state']
 		}> = []
+		const sourceWorksheetNames: string[] = []
 
 		for (const entry of wbInfo.sheets) {
 			const rel = relMap.get(entry.rId)
@@ -265,6 +268,28 @@ export function readXlsx(
 			consumed.add(sheetPath)
 			consumed.add(getRelsPath(sheetPath))
 
+			if (rel.type === REL_CHARTSHEET) {
+				const chartsheetRelsXml = readPart(archive, getRelsPath(sheetPath))
+				const chartsheetRelationships = chartsheetRelsXml
+					? parseRelationships(chartsheetRelsXml)
+					: []
+				sheetRelsByPath.set(sheetPath, chartsheetRelationships)
+				if (!selectedSheets || selectedSheets.has(entry.name.toLowerCase())) {
+					workbook.chartSheets.push({
+						name: entry.name,
+						sheetId: entry.sheetId,
+						relId: entry.rId,
+						partPath: sheetPath,
+						state: entry.state,
+						chartPartPaths: chartsheetRelationships
+							.filter((relationship) => relationship.type === REL_CHART)
+							.map((relationship) => resolvePath(sheetPath, relationship.target)),
+					})
+				}
+				continue
+			}
+
+			sourceWorksheetNames.push(entry.name)
 			if (selectedSheets && !selectedSheets.has(entry.name.toLowerCase())) continue
 			sheetsToParse.push({
 				name: entry.name,
@@ -412,7 +437,7 @@ export function readXlsx(
 			workbook.definedNames.set(dn.name, normalizeStoredFormulaText(dn.formula))
 		}
 
-		const sourceSheetNames = wbInfo.sheets.map((sheet) => sheet.name)
+		const sourceSheetNames = sourceWorksheetNames
 		const loadedSheetNames = sheetsToParse.map((sheet) => sheet.name)
 		const hasAllSheets = loadedSheetNames.length === sourceSheetNames.length
 		const cellsHydrated = mode !== 'metadata-only'
@@ -612,6 +637,7 @@ function resolveContentType(partPath: string, contentTypes: ContentTypes): strin
 }
 
 function capsuleFamily(path: string): string {
+	if (path.includes('/chartsheets/')) return 'preservedChartSheet'
 	if (path.includes('/charts/') || path.includes('/chartEx/')) return 'preservedChart'
 	if (path.includes('/drawings/') && path.endsWith('.vml')) return 'preservedVml'
 	if (path.includes('/drawings/')) return 'preservedDrawing'
@@ -718,6 +744,11 @@ function buildReport(
 	const features: FeatureReport[] = []
 
 	const unsupportedTypes: { feature: string; pattern: string; note?: string }[] = [
+		{
+			feature: 'chartSheet',
+			pattern: 'chartsheet+xml',
+			note: 'Chartsheets are inventoried but not editable as worksheet grids; writes require explicit loss approval.',
+		},
 		{ feature: 'chart', pattern: 'chart+xml' },
 		{ feature: 'pivotTable', pattern: 'pivotTable+xml' },
 		{ feature: 'drawing', pattern: 'drawing+xml' },

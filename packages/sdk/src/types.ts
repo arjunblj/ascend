@@ -3,6 +3,7 @@ import type {
 	AutoFilter,
 	CellFormulaBinding,
 	ChartPartInfo,
+	ChartSheetInfo,
 	RangeRef,
 	SheetComment,
 	SheetConditionalFormat,
@@ -44,6 +45,7 @@ export interface WorkbookInfo {
 	readonly dataValidationCount: number | null
 	readonly imageCount: number | null
 	readonly chartCount: number
+	readonly chartSheetCount: number
 	readonly pivotTableCount: number
 	readonly pivotCacheCount: number
 	readonly pivotRefreshPlans: readonly PivotRefreshPlanInfo[]
@@ -60,6 +62,7 @@ export interface WorkbookInfo {
 	readonly externalReferenceDetails: readonly ExternalReferenceInfo[]
 	readonly externalReferenceUsages: readonly ExternalReferenceUsageInfo[]
 	readonly charts: readonly ChartPartInfo[]
+	readonly chartSheets: readonly ChartSheetInfo[]
 	readonly hasWorkbookProtection: boolean
 	readonly pivotTables: readonly PivotTableInfo[]
 	readonly pivotCaches: readonly PivotCacheInfo[]
@@ -411,7 +414,9 @@ export interface WorkbookVisualInventoryInfo {
 	readonly sheetImageCount: number | null
 	readonly sheetDrawingObjectCount: number | null
 	readonly charts: readonly ChartPartInfo[]
+	readonly chartSheets: readonly ChartSheetInfo[]
 	readonly structuredChartCount: number
+	readonly chartSheetCount: number
 	readonly packageChartFeatureCount: number
 	readonly packageDrawingFeatureCount: number
 	readonly packageMediaFeatureCount: number

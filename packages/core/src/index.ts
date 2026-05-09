@@ -1,5 +1,5 @@
 export type { ActiveContentInfo, ActiveContentKind } from './active-content.ts'
-export type { ChartPartInfo, ChartSeriesInfo } from './chart.ts'
+export type { ChartPartInfo, ChartSeriesInfo, ChartSheetInfo } from './chart.ts'
 export type { DefinedName, DefinedNameScope } from './defined-name.ts'
 export { DefinedNameCollection } from './defined-name.ts'
 export type {

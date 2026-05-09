@@ -12,3 +12,12 @@ export interface ChartPartInfo {
 	readonly title?: string
 	readonly series: readonly ChartSeriesInfo[]
 }
+
+export interface ChartSheetInfo {
+	readonly name: string
+	readonly sheetId: string
+	readonly relId: string
+	readonly partPath: string
+	readonly state: 'visible' | 'hidden' | 'veryHidden'
+	readonly chartPartPaths: readonly string[]
+}

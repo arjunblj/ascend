@@ -442,10 +442,14 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'visuals.chartsheets',
 		'visuals',
 		'Chartsheets',
-		'unsupported',
+		'inspectable',
 		'P1',
-		'Inventory chartsheets and block lossy writes.',
-		'Chartsheets are not modeled as first-class sheets.',
+		'Add chartsheet editing only after lossless chart-sheet package preservation is guaranteed.',
+		'Chartsheets are inventoried separately from worksheet grids and blocked by the loss audit before writes.',
+		[
+			'packages/io-xlsx/src/reader/chartsheet.test.ts',
+			'packages/sdk/src/chartsheet-inventory.test.ts',
+		],
 	),
 	cap(
 		'visuals.images',

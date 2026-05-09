@@ -131,6 +131,7 @@ export class WorkbookReadView {
 			dataValidationCount: this.loadInfo.richSheetMetadataHydrated ? totalDataValidations : null,
 			imageCount: this.loadInfo.richSheetMetadataHydrated ? totalImages : null,
 			chartCount: this.wb.chartParts.length,
+			chartSheetCount: this.wb.chartSheets.length,
 			pivotTableCount: this.wb.pivotTables.length,
 			pivotCacheCount: this.wb.pivotCaches.length,
 			pivotRefreshPlans: buildPivotRefreshPlans(this.wb.pivotCaches, this.wb.pivotTables),
@@ -149,6 +150,7 @@ export class WorkbookReadView {
 			})),
 			externalReferenceUsages: buildExternalReferenceUsages(this.wb, this.formulaAnalysis()),
 			charts: this.wb.chartParts.map(copyChartInfo),
+			chartSheets: this.wb.chartSheets.map(copyChartSheetInfo),
 			hasWorkbookProtection: this.wb.workbookProtection !== null,
 			pivotTables: this.wb.pivotTables.map(copyPivotTableInfo),
 			pivotCaches: this.wb.pivotCaches.map(copyPivotCacheInfo),
@@ -179,6 +181,7 @@ export class WorkbookReadView {
 		let totalImages = 0
 		let totalDrawingObjects = 0
 		const charts = this.wb.chartParts.map(copyChartInfo)
+		const chartSheets = this.wb.chartSheets.map(copyChartSheetInfo)
 		const sheets = this.wb.sheets.map((sheet) => {
 			const drawingRefs = this.loadInfo.cellsHydrated ? { ...sheet.drawingRefs } : null
 			const imageRefs = this.loadInfo.richSheetMetadataHydrated ? [...sheet.imageRefs] : null
@@ -221,6 +224,8 @@ export class WorkbookReadView {
 			notes.push('Chart parts expose type, title, and series source refs; source edits are staged.')
 		else if (packageChartFeatureCount > 0)
 			notes.push('Chart parts are preserved but not structurally parsed in this load mode.')
+		if (chartSheets.length > 0)
+			notes.push('Chartsheets are inventoried and blocked by the loss audit before writes.')
 		if (packageDrawingFeatureCount > 0)
 			notes.push(
 				'Drawing and shape parts are currently preserve-first except parsed image anchors.',
@@ -232,7 +237,9 @@ export class WorkbookReadView {
 			sheetImageCount: this.loadInfo.richSheetMetadataHydrated ? totalImages : null,
 			sheetDrawingObjectCount: this.loadInfo.richSheetMetadataHydrated ? totalDrawingObjects : null,
 			charts,
+			chartSheets,
 			structuredChartCount: charts.length,
+			chartSheetCount: chartSheets.length,
 			packageChartFeatureCount,
 			packageDrawingFeatureCount,
 			packageMediaFeatureCount,
@@ -947,6 +954,15 @@ function copyChartInfo(chart: ChartPartInfo): ChartPartInfo {
 	return {
 		...chart,
 		series: chart.series.map((series) => ({ ...series })),
+	}
+}
+
+function copyChartSheetInfo(
+	chartSheet: import('@ascend/core').ChartSheetInfo,
+): import('@ascend/core').ChartSheetInfo {
+	return {
+		...chartSheet,
+		chartPartPaths: [...chartSheet.chartPartPaths],
 	}
 }
 

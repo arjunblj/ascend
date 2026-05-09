@@ -9,6 +9,9 @@ export const REL_OFFICE_DOC =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument'
 export const REL_WORKSHEET =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet'
+export const REL_CHARTSHEET =
+	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chartsheet'
+export const REL_CHART = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart'
 export const REL_STYLES =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles'
 export const REL_SHARED_STRINGS =

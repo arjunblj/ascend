@@ -33,6 +33,7 @@ import {
 	extractWorkbookFeatureSummary,
 	normalizeExternalRunnerSpecs,
 	normalizeExternalSampleAssertions,
+	resolveExternalRunnerCommand,
 } from './competitive-real-workbook.ts'
 import {
 	type BenchmarkCaseResult,
@@ -2269,7 +2270,7 @@ async function fileExists(path: string): Promise<boolean> {
 }
 
 async function commandAvailable(command: readonly string[]): Promise<boolean> {
-	const proc = Bun.spawn(command, {
+	const proc = Bun.spawn(resolveExternalRunnerCommand(command), {
 		stdout: 'pipe',
 		stderr: 'pipe',
 		cwd: process.cwd(),
@@ -2312,7 +2313,7 @@ async function runExternalReadRunner(
 		spec.capabilities?.finalValidation === true ? ['--validation-mode', validationMode] : []
 	const proc = Bun.spawn(
 		[
-			...spec.command,
+			...resolveExternalRunnerCommand(spec.command),
 			'--operation',
 			'read',
 			'--file',
@@ -2365,7 +2366,7 @@ async function runExternalWriteRunner(
 		spec.capabilities?.finalValidation === true ? ['--validation-mode', validationMode] : []
 	const proc = Bun.spawn(
 		[
-			...spec.command,
+			...resolveExternalRunnerCommand(spec.command),
 			'--operation',
 			'write',
 			'--rows',
@@ -2422,7 +2423,7 @@ async function runPythonWriteRunner(
 	const validationMode = readValidationModeFlag()
 	const proc = Bun.spawn(
 		[
-			'python3',
+			...resolveExternalRunnerCommand(['python3']),
 			runnerPath,
 			'--operation',
 			'write',

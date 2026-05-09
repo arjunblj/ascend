@@ -1792,6 +1792,17 @@ export function externalRunnerLicenseGateSatisfied(spec: ExternalRunnerSpec): bo
 	return process.env[gate.env] === expected
 }
 
+export function resolveExternalRunnerCommand(
+	command: readonly string[],
+	env: Pick<NodeJS.ProcessEnv, 'ASCEND_BENCH_PYTHON'> = process.env,
+): string[] {
+	const python = env.ASCEND_BENCH_PYTHON?.trim()
+	if (python && command[0] === 'python3') {
+		return [python, ...command.slice(1)]
+	}
+	return [...command]
+}
+
 export function normalizeExternalRunnerSpecs(parsed: unknown): ExternalRunnerSpec[] {
 	if (!Array.isArray(parsed)) throw new Error('--runner-manifest must be a JSON array')
 	const names = new Set<string>()
@@ -2525,7 +2536,13 @@ function externalRunnerCommand(
 	target: WorkbookTarget,
 	options: { repeat?: number; warmup?: number; json?: boolean } = {},
 ): string[] {
-	const command = [...spec.command, '--operation', category, '--file', target.path]
+	const command = [
+		...resolveExternalRunnerCommand(spec.command),
+		'--operation',
+		category,
+		'--file',
+		target.path,
+	]
 	if (category === 'edit-roundtrip') {
 		const edit = selectEditTarget(target)
 		command.push(

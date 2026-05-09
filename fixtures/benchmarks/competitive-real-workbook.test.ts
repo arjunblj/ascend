@@ -11,6 +11,7 @@ import {
 	normalizeExternalRunnerSpecs,
 	normalizeExternalSampleAssertions,
 	normalizeExternalSamples,
+	resolveExternalRunnerCommand,
 	selectCorpusTargets,
 	type WorkbookFeatureSummary,
 	type WorkbookPackageFingerprint,
@@ -459,6 +460,20 @@ describe('evaluateAssertions', () => {
 				categories: ['write'],
 			},
 		])
+	})
+
+	test('external runner commands can override python runtime', () => {
+		expect(
+			resolveExternalRunnerCommand(['python3', 'runner.py', '--json'], {
+				ASCEND_BENCH_PYTHON: 'fixtures/benchmarks/runners/sota_python.sh',
+			}),
+		).toEqual(['fixtures/benchmarks/runners/sota_python.sh', 'runner.py', '--json'])
+		expect(resolveExternalRunnerCommand(['bun', 'runner.ts'])).toEqual(['bun', 'runner.ts'])
+		expect(
+			resolveExternalRunnerCommand(['python3', 'runner.py'], {
+				ASCEND_BENCH_PYTHON: '   ',
+			}),
+		).toEqual(['python3', 'runner.py'])
 	})
 
 	test('rust calamine manifest follows the external runner protocol', () => {

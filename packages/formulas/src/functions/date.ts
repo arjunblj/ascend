@@ -465,6 +465,7 @@ function weeknum(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 
 	const rt = args.length > 1 ? numArg(args[1]) : 1
 	if (typeof rt !== 'number') return rt
+	if (rt === 21) return isoWeekNum([args[0] as EvalArg], ctx)
 
 	const parts = serialToDate(serial, dateSystem)
 	if (!parts) return errorValue('#NUM!')

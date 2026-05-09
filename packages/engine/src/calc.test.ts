@@ -558,6 +558,54 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 1)?.value).toEqual(booleanValue(true))
 	})
 
+	test('binary operators implicitly intersect direct whole-column operands', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(1, 3, { value: numberValue(0), formula: null, styleId: sid })
+		sheet.cells.set(1, 4, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(2, 3, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(2, 4, { value: numberValue(6), formula: null, styleId: sid })
+		sheet.cells.set(1, 14, { value: EMPTY, formula: 'E:E/D:D', styleId: sid })
+		sheet.cells.set(2, 14, { value: EMPTY, formula: 'E:E/$D:$D', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(1, 14)?.value).toEqual(errorValue('#DIV/0!'))
+		expect(sheet.cells.get(2, 14)?.value).toEqual(numberValue(2))
+	})
+
+	test('binary operators implicitly intersect whole-column concat operands', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(1, 0, { value: stringValue('north'), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: stringValue('-'), formula: null, styleId: sid })
+		sheet.cells.set(1, 2, { value: stringValue('east'), formula: null, styleId: sid })
+		sheet.cells.set(1, 3, { value: EMPTY, formula: 'A:A&B:B&C:C', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(1, 3)?.value).toEqual(stringValue('north-east'))
+	})
+
+	test('binary operators implicitly intersect direct whole-row operands', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 1, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(5), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: EMPTY, formula: '1:1+2:2', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(2, 1)?.value).toEqual(numberValue(8))
+	})
+
+	test('scalar text functions implicitly intersect whole-column operands', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(2, 0, { value: stringValue('1000 to 4999'), formula: null, styleId: sid })
+		sheet.cells.set(2, 14, { value: EMPTY, formula: 'RIGHT($A:$A,FIND(" ",$A:$A))', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(2, 14)?.value).toEqual(stringValue(' 4999'))
+	})
+
 	test('binary arithmetic broadcasts row and column arrays', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

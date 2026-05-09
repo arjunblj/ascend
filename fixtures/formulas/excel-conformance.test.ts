@@ -798,6 +798,11 @@ describe('Excel conformance', () => {
 			expectNum(evalFormula('WEEKDAY(DATE(2024,1,8), 2)'), 1)
 		})
 
+		test('WEEKNUM return_type 21 uses ISO week numbering', () => {
+			expectNum(evalFormula('WEEKNUM(DATE(2021,1,1), 21)'), 53)
+			expectNum(evalFormula('WEEKNUM(DATE(2024,1,4), 21)'), 1)
+		})
+
 		test('DAYS between dates', () => {
 			expectNum(evalFormula('DAYS(DATE(2024,3,1), DATE(2024,1,1))'), 60)
 		})

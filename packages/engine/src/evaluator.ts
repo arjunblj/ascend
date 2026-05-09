@@ -95,6 +95,36 @@ const cachedParseFormula = sharedCachedParseFormula
 export { clearGlobalParseCache as clearFormulaParseCache } from '@ascend/formulas'
 export { invalidateSheetIndexCache } from './sheet-index.ts'
 
+const SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS = new Set([
+	'CHAR',
+	'CLEAN',
+	'CODE',
+	'DOLLAR',
+	'EXACT',
+	'FIND',
+	'FIXED',
+	'LEFT',
+	'LEN',
+	'LOWER',
+	'MID',
+	'PROPER',
+	'REPLACE',
+	'REPT',
+	'RIGHT',
+	'SEARCH',
+	'SUBSTITUTE',
+	'T',
+	'TEXT',
+	'TEXTAFTER',
+	'TEXTBEFORE',
+	'TEXTSPLIT',
+	'TRIM',
+	'UNICHAR',
+	'UNICODE',
+	'UPPER',
+	'VALUE',
+])
+
 const EXCEL_MAX_ROWS = 1_048_576
 const EXCEL_MAX_COLS = 16_384
 
@@ -391,8 +421,8 @@ export function evaluate(node: FormulaNode, ctx: EvalContext): CellValue {
 
 		case 'binary': {
 			if (isReferenceBinaryOp(node.op)) return evaluateReferenceNode(node, ctx)
-			const left = evaluate(node.left, ctx)
-			const right = evaluate(node.right, ctx)
+			const left = evaluateBinaryOperand(node.left, ctx)
+			const right = evaluateBinaryOperand(node.right, ctx)
 			return evalBinary(node.op, left, right)
 		}
 
@@ -444,6 +474,14 @@ export function evaluate(node: FormulaNode, ctx: EvalContext): CellValue {
 		default:
 			return assertUnreachable(node)
 	}
+}
+
+function evaluateBinaryOperand(node: FormulaNode, ctx: EvalContext): CellValue {
+	if (node.type === 'wholeColumnRange' || node.type === 'wholeRowRange') {
+		const ref = resolveReferenceNode(node, ctx)
+		if (ref) return implicitIntersect(ref, ctx)
+	}
+	return evaluate(node, ctx)
 }
 
 function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
@@ -573,9 +611,20 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 	// (reset between cell evals) and conditional fill logic, adding complexity without proven gain.
 	const args: EvalArg[] = new Array(argNodes.length)
 	for (let i = 0; i < argNodes.length; i++) {
-		args[i] = resolveArg(argNodes[i] as FormulaNode, ctx)
+		args[i] = resolveFunctionArg(argNodes[i] as FormulaNode, ctx, upperName)
 	}
 	return def.evaluate(args, sharedFnCtx.update(ctx))
+}
+
+function resolveFunctionArg(node: FormulaNode, ctx: EvalContext, functionName: string): EvalArg {
+	if (
+		SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS.has(functionName) &&
+		(node.type === 'wholeColumnRange' || node.type === 'wholeRowRange')
+	) {
+		const ref = resolveReferenceNode(node, ctx)
+		if (ref) return { value: implicitIntersect(ref, ctx) }
+	}
+	return resolveArg(node, ctx)
 }
 
 function evalLazyArg(node: FormulaNode | undefined, ctx: EvalContext): CellValue {

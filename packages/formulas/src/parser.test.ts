@@ -285,6 +285,7 @@ describe('parse', () => {
 
 	it('parses whole-column ranges', () => {
 		expect(p('A:C')).toEqual({ type: 'wholeColumnRange', startCol: 0, endCol: 2 })
+		expect(p('$A:$C')).toEqual({ type: 'wholeColumnRange', startCol: 0, endCol: 2 })
 	})
 
 	it('parses whole-row ranges', () => {
@@ -317,6 +318,12 @@ describe('parse', () => {
 
 	it('parses sheet-qualified whole-column and whole-row ranges', () => {
 		expect(p('Sheet1!A:C')).toEqual({
+			type: 'wholeColumnRange',
+			startCol: 0,
+			endCol: 2,
+			sheet: 'Sheet1',
+		})
+		expect(p('Sheet1!$A:$C')).toEqual({
 			type: 'wholeColumnRange',
 			startCol: 0,
 			endCol: 2,

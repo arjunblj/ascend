@@ -37,9 +37,13 @@ function parseCellRefValue(raw: string): FormulaCellRef {
 	}
 }
 
-const COL_LABEL_RE = /^[A-Za-z]{1,3}$/
+const COL_LABEL_RE = /^\$?[A-Za-z]{1,3}$/
 function isColumnLabel(raw: string): boolean {
 	return COL_LABEL_RE.test(raw)
+}
+
+function columnLabelToIndex(raw: string): number {
+	return columnToIndex((raw.startsWith('$') ? raw.slice(1) : raw).toUpperCase())
 }
 
 function splitStructuredRefParts(content: string): string[] {
@@ -316,9 +320,9 @@ class FormulaParser {
 				this.lookahead(2, true).type === TokenType.Name &&
 				isColumnLabel(this.lookahead(2, true).value)
 			) {
-				const startCol = columnToIndex(this.advance(true).value.toUpperCase())
+				const startCol = columnLabelToIndex(this.advance(true).value)
 				this.expect(TokenType.Colon)
-				const endCol = columnToIndex(this.expect(TokenType.Name).value.toUpperCase())
+				const endCol = columnLabelToIndex(this.expect(TokenType.Name).value)
 				return { type: 'wholeColumnRange', startCol, endCol }
 			}
 			return this.parseNameOrSheetRef()
@@ -481,9 +485,9 @@ class FormulaParser {
 			this.lookahead(2, true).type === TokenType.Name &&
 			isColumnLabel(this.lookahead(2, true).value)
 		) {
-			const startCol = columnToIndex(this.advance(true).value.toUpperCase())
+			const startCol = columnLabelToIndex(this.advance(true).value)
 			this.expect(TokenType.Colon)
-			const endCol = columnToIndex(this.expect(TokenType.Name).value.toUpperCase())
+			const endCol = columnLabelToIndex(this.expect(TokenType.Name).value)
 			return { type: 'wholeColumnRange', startCol, endCol }
 		}
 		if (this.peek(true).type === TokenType.CellRef) {

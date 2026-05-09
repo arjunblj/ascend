@@ -417,4 +417,27 @@ describe('IntervalIndex', () => {
 		const match = new Map<number, number[]>([[1, [3]]])
 		expect(idx.queryBatch(match)).toEqual([fk])
 	})
+
+	test('query skips columns outside all indexed ranges', () => {
+		const idx = new IntervalIndex()
+		const fk = cellKey(0, 10, 0)
+		idx.insert(0, 10, 2, 2, fk)
+
+		expect(idx.query(5, 1)).toEqual([])
+		expect(idx.query(5, 3)).toEqual([])
+		expect(idx.query(5, 2)).toEqual([fk])
+	})
+
+	test('query column bounds update after removing a formula', () => {
+		const idx = new IntervalIndex()
+		const left = cellKey(0, 10, 0)
+		const right = cellKey(0, 11, 0)
+		idx.insert(0, 10, 0, 0, left)
+		idx.insert(0, 10, 2, 2, right)
+
+		idx.remove(left)
+
+		expect(idx.query(5, 0)).toEqual([])
+		expect(idx.query(5, 2)).toEqual([right])
+	})
 })

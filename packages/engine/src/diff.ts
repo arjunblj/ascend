@@ -20,11 +20,22 @@ export interface SheetDiff {
 	readonly cellsChanged: CellChange[]
 }
 
+export interface SheetFeatureDiff {
+	readonly name: string
+	readonly mergesChanged: boolean
+	readonly tablesChanged: boolean
+	readonly dataValidationsChanged: boolean
+	readonly conditionalFormatsChanged: boolean
+	readonly sheetProtectionChanged: boolean
+}
+
 export interface WorkbookDiff {
 	readonly sheets: SheetDiff[]
 	readonly namesAdded: string[]
 	readonly namesRemoved: string[]
 	readonly namesChanged: string[]
+	readonly workbookProtectionChanged: boolean
+	readonly sheetFeatures: readonly SheetFeatureDiff[]
 }
 
 export function diffWorkbooks(before: Workbook, after: Workbook): WorkbookDiff {
@@ -113,7 +124,44 @@ export function diffWorkbooks(before: Workbook, after: Workbook): WorkbookDiff {
 		}
 	}
 
-	return { sheets, namesAdded, namesRemoved, namesChanged }
+	const workbookProtectionChanged =
+		JSON.stringify(before.workbookProtection) !== JSON.stringify(after.workbookProtection)
+
+	const sheetNames = new Set([...beforeSheets.keys(), ...afterSheets.keys()])
+	const sheetFeatures: SheetFeatureDiff[] = []
+	for (const name of sheetNames) {
+		const bs = beforeSheets.get(name)
+		const as = afterSheets.get(name)
+		if (!bs || !as) continue
+		const featureDiff: SheetFeatureDiff = {
+			name,
+			mergesChanged: JSON.stringify(bs.merges) !== JSON.stringify(as.merges),
+			tablesChanged: JSON.stringify(bs.tables) !== JSON.stringify(as.tables),
+			dataValidationsChanged:
+				JSON.stringify(bs.dataValidations) !== JSON.stringify(as.dataValidations),
+			conditionalFormatsChanged:
+				JSON.stringify(bs.conditionalFormats) !== JSON.stringify(as.conditionalFormats),
+			sheetProtectionChanged: JSON.stringify(bs.protection) !== JSON.stringify(as.protection),
+		}
+		if (
+			featureDiff.mergesChanged ||
+			featureDiff.tablesChanged ||
+			featureDiff.dataValidationsChanged ||
+			featureDiff.conditionalFormatsChanged ||
+			featureDiff.sheetProtectionChanged
+		) {
+			sheetFeatures.push(featureDiff)
+		}
+	}
+
+	return {
+		sheets,
+		namesAdded,
+		namesRemoved,
+		namesChanged,
+		workbookProtectionChanged,
+		sheetFeatures,
+	}
 }
 
 function definedNameKey(workbook: Workbook, entry: DefinedName): string {

@@ -94,6 +94,28 @@ describe('applyOperation', () => {
 		expect(c?.value).toEqual(numberValue(10))
 	})
 
+	test('setCells replaces formula content with a literal value', () => {
+		const wb = setup()
+		expectOk(
+			applyOperation(wb, {
+				op: 'setFormula',
+				sheet: 'Sheet1',
+				ref: 'A1',
+				formula: 'A2+A3',
+			}),
+		)
+		const result = applyOperation(wb, {
+			op: 'setCells',
+			sheet: 'Sheet1',
+			updates: [{ ref: 'A1', value: 42 }],
+		})
+		expectOk(result)
+
+		const c = wb.getSheet('Sheet1')?.cells.get(0, 0)
+		expect(c?.value).toEqual(numberValue(42))
+		expect(c?.formula).toBeNull()
+	})
+
 	test('fillFormula translates references across a range', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

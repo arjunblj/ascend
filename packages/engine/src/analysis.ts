@@ -35,17 +35,17 @@ export interface AnalyzedFormula {
 	readonly deps: readonly CellKey[]
 	readonly rangeDeps: readonly RangeDependency[]
 	readonly volatile: boolean
-	readonly growingRangeAggregate?:
+	readonly rangeAggregate?:
 		| {
-				readonly functionName: 'SUM'
-				readonly previousKey: CellKey
-				readonly appendSheetIndex: number
-				readonly appendStartRow: number
-				readonly appendStartCol: number
-				readonly appendEndRow: number
-				readonly appendEndCol: number
+				readonly functionName: GrowingRangeAggregateFunction
+				readonly sheetIndex: number
+				readonly startRow: number
+				readonly startCol: number
+				readonly endRow: number
+				readonly endCol: number
 		  }
 		| undefined
+	readonly growingRangeAggregate?: GrowingRangeAggregate | undefined
 	readonly parseError?: string
 }
 
@@ -59,18 +59,33 @@ export interface IndexedFormula {
 	readonly ast?: FormulaNode
 	readonly refs: readonly FormulaRef[]
 	readonly volatile: boolean
-	readonly growingRangeAggregate?:
+	readonly rangeAggregate?:
 		| {
-				readonly functionName: 'SUM'
-				readonly previousKey: CellKey
-				readonly appendSheetIndex: number
-				readonly appendStartRow: number
-				readonly appendStartCol: number
-				readonly appendEndRow: number
-				readonly appendEndCol: number
+				readonly functionName: GrowingRangeAggregateFunction
+				readonly sheetIndex: number
+				readonly startRow: number
+				readonly startCol: number
+				readonly endRow: number
+				readonly endCol: number
 		  }
 		| undefined
+	readonly growingRangeAggregate?: GrowingRangeAggregate | undefined
 	readonly parseError?: string
+}
+
+export type GrowingRangeAggregateFunction = 'SUM' | 'COUNT' | 'AVERAGE' | 'MIN' | 'MAX'
+
+export interface GrowingRangeAggregate {
+	readonly functionName: GrowingRangeAggregateFunction
+	readonly previousKey: CellKey
+	readonly previousSheetIndex: number
+	readonly previousRow: number
+	readonly previousCol: number
+	readonly appendSheetIndex: number
+	readonly appendStartRow: number
+	readonly appendStartCol: number
+	readonly appendEndRow: number
+	readonly appendEndCol: number
 }
 
 export interface WorkbookFormulaAnalysis {
@@ -93,6 +108,12 @@ export interface WorkbookAnalysis {
 	readonly cycleKeys: ReadonlySet<CellKey>
 	readonly sheetNameIndex: ReadonlyMap<string, number>
 	readonly sharedFormulaGroups: ReadonlyMap<string, CellKey[]>
+	readonly growingAggregateAppendIndex: GrowingAggregateAppendIndex
+}
+
+export interface GrowingAggregateAppendIndex {
+	readonly size: number
+	get(key: CellKey): readonly CellKey[] | undefined
 }
 
 export interface AnalyzeWorkbookOptions {
@@ -112,6 +133,7 @@ interface MutableWorkbookAnalysis {
 	cycles: readonly (readonly CellKey[])[]
 	cycleKeys: Set<CellKey>
 	sharedFormulaGroups: Map<string, CellKey[]>
+	growingAggregateAppendIndex: GrowingAggregateAppendIndex
 }
 
 /**
@@ -223,7 +245,7 @@ function tryReuseFromCellAbove(
 	return rewritten
 }
 
-function tryDetectGrowingRangeAggregate(
+function tryGetSingleRangeAggregate(
 	sheetNameIndex: ReadonlyMap<string, number>,
 	current: {
 		sheetIndex: number
@@ -231,10 +253,10 @@ function tryDetectGrowingRangeAggregate(
 		col: number
 		ast: FormulaNode
 	},
-	previousInColumn: IndexedFormula | undefined,
-): IndexedFormula['growingRangeAggregate'] {
+): IndexedFormula['rangeAggregate'] {
 	if (current.ast.type !== 'function') return undefined
-	if (current.ast.name.toUpperCase() !== 'SUM') return undefined
+	const functionName = current.ast.name.toUpperCase()
+	if (!isGrowingRangeAggregateFunction(functionName)) return undefined
 	if (current.ast.args.length !== 1) return undefined
 	const currentArg = current.ast.args[0]
 	if (!currentArg || currentArg.type !== 'rangeRef') return undefined
@@ -243,35 +265,54 @@ function tryDetectGrowingRangeAggregate(
 			? current.sheetIndex
 			: resolveSheetIndex(sheetNameIndex, currentArg.sheet, current.sheetIndex)
 	if (currentRangeSheet < 0) return undefined
+	return {
+		functionName,
+		sheetIndex: currentRangeSheet,
+		startRow: currentArg.start.row,
+		startCol: currentArg.start.col,
+		endRow: currentArg.end.row,
+		endCol: currentArg.end.col,
+	}
+}
+
+function isGrowingRangeAggregateFunction(name: string): name is GrowingRangeAggregateFunction {
+	return (
+		name === 'SUM' || name === 'COUNT' || name === 'AVERAGE' || name === 'MIN' || name === 'MAX'
+	)
+}
+
+function tryDetectGrowingRangeAggregate(
+	currentRangeAggregate: IndexedFormula['rangeAggregate'],
+	previousInColumn: IndexedFormula | undefined,
+): IndexedFormula['growingRangeAggregate'] {
+	if (!currentRangeAggregate) return undefined
 
 	const previous = previousInColumn
-	if (!previous?.ast || previous.ast.type !== 'function') return undefined
-	if (previous.ast.name.toUpperCase() !== 'SUM' || previous.ast.args.length !== 1) return undefined
-	const previousArg = previous.ast.args[0]
-	if (!previousArg || previousArg.type !== 'rangeRef') return undefined
-	const previousRangeSheet =
-		previousArg.sheet === undefined
-			? previous.sheetIndex
-			: resolveSheetIndex(sheetNameIndex, previousArg.sheet, previous.sheetIndex)
-	if (previousRangeSheet !== currentRangeSheet) return undefined
+	const previousRangeAggregate = previous?.rangeAggregate
+	if (!previousRangeAggregate) return undefined
+	if (previousRangeAggregate.functionName !== currentRangeAggregate.functionName) return undefined
+	if (previousRangeAggregate.sheetIndex !== currentRangeAggregate.sheetIndex) return undefined
 	if (
-		currentArg.start.row !== previousArg.start.row ||
-		currentArg.start.col !== previousArg.start.col ||
-		currentArg.end.row <= previousArg.end.row ||
-		currentArg.end.col !== previousArg.end.col ||
-		current.row <= previous.row
+		currentRangeAggregate.startRow !== previousRangeAggregate.startRow ||
+		currentRangeAggregate.startCol !== previousRangeAggregate.startCol ||
+		currentRangeAggregate.endRow <= previousRangeAggregate.endRow ||
+		currentRangeAggregate.endCol !== previousRangeAggregate.endCol ||
+		previous.row >= currentRangeAggregate.endRow
 	) {
 		return undefined
 	}
 
 	return {
-		functionName: 'SUM',
+		functionName: currentRangeAggregate.functionName,
 		previousKey: previous.key,
-		appendSheetIndex: currentRangeSheet,
-		appendStartRow: previousArg.end.row + 1,
-		appendStartCol: previousArg.start.col,
-		appendEndRow: currentArg.end.row,
-		appendEndCol: currentArg.end.col,
+		previousSheetIndex: previous.sheetIndex,
+		previousRow: previous.row,
+		previousCol: previous.col,
+		appendSheetIndex: currentRangeAggregate.sheetIndex,
+		appendStartRow: previousRangeAggregate.endRow + 1,
+		appendStartCol: previousRangeAggregate.startCol,
+		appendEndRow: currentRangeAggregate.endRow,
+		appendEndCol: currentRangeAggregate.endCol,
 	}
 }
 
@@ -337,9 +378,14 @@ export function analyzeWorkbookFormulas(
 					nameResolveCache,
 				)
 				const volatile = hasVolatileFunction(ast)
+				const rangeAggregate = tryGetSingleRangeAggregate(sheetNameIndex, {
+					sheetIndex,
+					row,
+					col,
+					ast,
+				})
 				const growingRangeAggregate = tryDetectGrowingRangeAggregate(
-					sheetNameIndex,
-					{ sheetIndex, row, col, ast },
+					rangeAggregate,
 					previousFormulaByCol.get(col),
 				)
 				const indexed = {
@@ -352,6 +398,7 @@ export function analyzeWorkbookFormulas(
 					ast,
 					refs,
 					volatile,
+					...(rangeAggregate ? { rangeAggregate } : {}),
 					...(growingRangeAggregate ? { growingRangeAggregate } : {}),
 				} satisfies IndexedFormula
 				formulas.set(key, indexed)
@@ -503,6 +550,7 @@ export function analyzeWorkbook(
 		cycleKeys: dependency.cycleKeys,
 		sheetNameIndex: indexed.sheetNameIndex,
 		sharedFormulaGroups: getSharedFormulaGroups(workbook, dependency.resolvedFormulas),
+		growingAggregateAppendIndex: getGrowingAggregateAppendIndex(dependency.resolvedFormulas),
 	}
 	if (!options.range) workbookAnalysisCache.set(workbook, analysis)
 	return analysis
@@ -673,6 +721,10 @@ export function patchWorkbookAnalysis(workbook: Workbook, changedCells: CellKey[
 			}
 		}
 	}
+	if (cachedFull) {
+		;(cachedFull as unknown as MutableWorkbookAnalysis).growingAggregateAppendIndex =
+			getGrowingAggregateAppendIndex(cachedFull.formulas)
+	}
 }
 
 export function shiftWorkbookAnalysisForAxis(
@@ -787,6 +839,94 @@ export function shiftWorkbookAnalysisForAxis(
 		mutableFull.cycles = nextDependency.cycles
 		mutableFull.cycleKeys = nextDependency.cycleKeys as Set<CellKey>
 		mutableFull.sharedFormulaGroups = getSharedFormulaGroups(workbook, mutableFull.formulas)
+		mutableFull.growingAggregateAppendIndex = getGrowingAggregateAppendIndex(mutableFull.formulas)
+	}
+}
+
+export function getGrowingAggregateAppendIndex(
+	formulas: ReadonlyMap<CellKey, AnalyzedFormula>,
+): GrowingAggregateAppendIndex {
+	const appendKeys: CellKey[] = []
+	const formulaKeys: CellKey[] = []
+	let sorted = true
+	let previousAppendKey = Number.NEGATIVE_INFINITY
+	for (const formula of formulas.values()) {
+		const aggregate = formula.growingRangeAggregate
+		if (!aggregate) continue
+		if (
+			aggregate.functionName !== 'SUM' &&
+			aggregate.functionName !== 'COUNT' &&
+			aggregate.functionName !== 'AVERAGE' &&
+			aggregate.functionName !== 'MIN' &&
+			aggregate.functionName !== 'MAX'
+		) {
+			continue
+		}
+		if (
+			aggregate.appendStartRow !== aggregate.appendEndRow ||
+			aggregate.appendStartCol !== aggregate.appendEndCol
+		) {
+			continue
+		}
+		const key = cellKey(
+			aggregate.appendSheetIndex,
+			aggregate.appendStartRow,
+			aggregate.appendStartCol,
+		)
+		if (key < previousAppendKey) sorted = false
+		previousAppendKey = key
+		appendKeys.push(key)
+		formulaKeys.push(formula.key)
+	}
+	if (!sorted) {
+		const pairs = appendKeys.map((key, index) => [key, formulaKeys[index] as CellKey] as const)
+		pairs.sort((a, b) => a[0] - b[0])
+		for (let i = 0; i < pairs.length; i++) {
+			const pair = pairs[i] as readonly [CellKey, CellKey]
+			appendKeys[i] = pair[0]
+			formulaKeys[i] = pair[1]
+		}
+	}
+	return new SortedGrowingAggregateAppendIndex(appendKeys, formulaKeys)
+}
+
+class SortedGrowingAggregateAppendIndex implements GrowingAggregateAppendIndex {
+	private readonly single: CellKey[] = []
+	private readonly multi: CellKey[] = []
+
+	constructor(
+		private readonly appendKeys: readonly CellKey[],
+		private readonly formulaKeys: readonly CellKey[],
+	) {}
+
+	get size(): number {
+		return this.appendKeys.length
+	}
+
+	get(key: CellKey): readonly CellKey[] | undefined {
+		let lo = 0
+		let hi = this.appendKeys.length - 1
+		while (lo <= hi) {
+			const mid = (lo + hi) >>> 1
+			const midKey = this.appendKeys[mid] as CellKey
+			if (midKey < key) lo = mid + 1
+			else if (midKey > key) hi = mid - 1
+			else {
+				let start = mid
+				while (start > 0 && this.appendKeys[start - 1] === key) start--
+				let end = mid + 1
+				while (end < this.appendKeys.length && this.appendKeys[end] === key) end++
+				if (end - start === 1) {
+					this.single[0] = this.formulaKeys[start] as CellKey
+					this.single.length = 1
+					return this.single
+				}
+				this.multi.length = 0
+				for (let i = start; i < end; i++) this.multi.push(this.formulaKeys[i] as CellKey)
+				return this.multi
+			}
+		}
+		return undefined
 	}
 }
 

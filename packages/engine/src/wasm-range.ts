@@ -2,6 +2,8 @@ import { Buffer } from 'node:buffer'
 
 export interface WasmRangeOps {
 	load(values: Float64Array, count: number): void
+	/** Writable view into linear WASM memory for direct numeric fills (avoids an extra JS copy before sum/min/max). */
+	numericScratch(minDoubles: number): Float64Array | null
 	sum(count: number): number
 	min(count: number): number
 	max(count: number): number
@@ -39,6 +41,11 @@ function initWasmRangeOps(): WasmRangeOps | null {
 			load(values: Float64Array, count: number): void {
 				ensureCapacity(count)
 				view.set(values.subarray(0, count), 0)
+			},
+			numericScratch(minDoubles: number): Float64Array | null {
+				if (minDoubles < 128) return null
+				ensureCapacity(minDoubles)
+				return view.subarray(0, minDoubles)
 			},
 			sum(count: number): number {
 				return exports.sum_f64(0, count)

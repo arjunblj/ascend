@@ -38,6 +38,7 @@ export {
 	cellValuesEqual,
 	diffWorkbooks,
 	type SheetDiff,
+	type SheetFeatureDiff,
 	type WorkbookDiff,
 } from './diff.ts'
 export {

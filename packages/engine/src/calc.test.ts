@@ -27,6 +27,39 @@ describe('recalculate', () => {
 		expect(cell?.value).toEqual(numberValue(3))
 	})
 
+	test('growing range aggregate optimization evaluates COUNT, AVERAGE, MIN, and MAX', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const inputs = [numberValue(4), stringValue('ignored'), numberValue(2), numberValue(8)]
+		for (let row = 0; row < inputs.length; row++) {
+			sheet.cells.set(row, 0, { value: inputs[row] ?? EMPTY, formula: null, styleId: sid })
+		}
+		const cases = [
+			{ fn: 'COUNT', col: 1, expected: [1, 1, 2, 3] },
+			{ fn: 'AVERAGE', col: 2, expected: [4, 4, 3, 14 / 3] },
+			{ fn: 'MIN', col: 3, expected: [4, 4, 2, 2] },
+			{ fn: 'MAX', col: 4, expected: [4, 4, 4, 8] },
+		] as const
+		for (const c of cases) {
+			for (let row = 0; row < inputs.length; row++) {
+				sheet.cells.set(row, c.col, {
+					value: EMPTY,
+					formula: `${c.fn}(A$1:A${row + 1})`,
+					styleId: sid,
+				})
+			}
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (const c of cases) {
+			for (let row = 0; row < inputs.length; row++) {
+				expect(sheet.cells.get(row, c.col)?.value).toEqual(numberValue(c.expected[row] ?? 0))
+			}
+		}
+	})
+
 	test('chain of dependent formulas', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -86,6 +119,50 @@ describe('recalculate', () => {
 		const result = recalculate(wb, makeCtx(), { dirtyOnly: true, dirtyRefs: ['Sheet1!A1'] })
 		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(6))
 		expect(result.errors).toEqual([])
+	})
+
+	test('dirty recalc invalidates XLOOKUP exact index cache after lookup range edits', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('a'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('b'), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: stringValue('c'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: numberValue(30), formula: null, styleId: sid })
+		sheet.cells.set(0, 3, { value: stringValue('b'), formula: null, styleId: sid })
+		sheet.cells.set(0, 4, { value: EMPTY, formula: 'XLOOKUP(D1,A1:A3,B1:B3)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 4)?.value).toEqual(numberValue(20))
+
+		sheet.cells.set(1, 0, { value: stringValue('x'), formula: null, styleId: sid })
+		const result = recalculate(wb, makeCtx(), { dirtyOnly: true, dirtyRefs: ['Sheet1!A2'] })
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 4)?.value).toEqual(errorValue('#N/A'))
+	})
+
+	test('dirty recalc invalidates XLOOKUP return vector cache after return range edits', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('a'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('b'), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: stringValue('c'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: numberValue(30), formula: null, styleId: sid })
+		sheet.cells.set(0, 3, { value: stringValue('b'), formula: null, styleId: sid })
+		sheet.cells.set(0, 4, { value: EMPTY, formula: 'XLOOKUP(D1,A1:A3,B1:B3)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 4)?.value).toEqual(numberValue(20))
+
+		sheet.cells.set(1, 1, { value: numberValue(99), formula: null, styleId: sid })
+		const result = recalculate(wb, makeCtx(), { dirtyOnly: true, dirtyRefs: ['Sheet1!B2'] })
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 4)?.value).toEqual(numberValue(99))
 	})
 
 	test('Salsa backdating: when formula output unchanged, downstream dependents are not re-evaluated', () => {

@@ -124,6 +124,9 @@ describe('analyzeWorkbook', () => {
 		expect(second?.growingRangeAggregate).toEqual({
 			functionName: 'SUM',
 			previousKey: cellKey(0, 0, 1),
+			previousSheetIndex: 0,
+			previousRow: 0,
+			previousCol: 1,
 			appendSheetIndex: 0,
 			appendStartRow: 1,
 			appendStartCol: 0,
@@ -147,12 +150,31 @@ describe('analyzeWorkbook', () => {
 		expect(fourth?.growingRangeAggregate).toEqual({
 			functionName: 'SUM',
 			previousKey: cellKey(0, 0, 1),
+			previousSheetIndex: 0,
+			previousRow: 0,
+			previousCol: 1,
 			appendSheetIndex: 0,
 			appendStartRow: 1,
 			appendStartCol: 0,
 			appendEndRow: 3,
 			appendEndCol: 0,
 		})
+	})
+
+	test('detects growing aggregate ranges for COUNT, AVERAGE, MIN, and MAX', () => {
+		for (const functionName of ['COUNT', 'AVERAGE', 'MIN', 'MAX'] as const) {
+			const wb = createWorkbook()
+			const s = wb.addSheet('Sheet1')
+			s.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+			s.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+			s.cells.set(0, 1, { value: EMPTY, formula: `${functionName}(A1:A1)`, styleId: sid })
+			s.cells.set(1, 1, { value: EMPTY, formula: `${functionName}(A1:A2)`, styleId: sid })
+
+			const analysis = analyzeWorkbook(wb)
+			const second = analysis.formulas.get(cellKey(0, 1, 1))
+			expect(second?.growingRangeAggregate?.functionName).toBe(functionName)
+			expect(second?.growingRangeAggregate?.previousKey).toBe(cellKey(0, 0, 1))
+		}
 	})
 
 	test('expands 3D sheet-span references into dependencies across contiguous sheets', () => {

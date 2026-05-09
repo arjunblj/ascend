@@ -37,12 +37,7 @@ export function handleSetCells(
 		sheet.cells.set(
 			ref.row,
 			ref.col,
-			cellWithExisting(
-				value,
-				sheet.cells.readFormula(ref.row, ref.col) ?? null,
-				sheet.cells.readStyleId(ref.row, ref.col) ?? DEFAULT_SID,
-				sheet.cells.readFormulaInfo(ref.row, ref.col),
-			),
+			cellWithExisting(value, null, sheet.cells.readStyleId(ref.row, ref.col) ?? DEFAULT_SID),
 		)
 		affected.push(update.ref)
 	}

@@ -10,6 +10,7 @@ import {
 	stringValue,
 	topLeftScalar,
 } from '@ascend/schema'
+import { aggregateNumericRange } from './compiled-eval.ts'
 import type { EvalContext } from './evaluator.ts'
 import { evaluate as treeEvaluate } from './evaluator.ts'
 import { resolveSheetIndexInWorkbook as resolveSheetIndex } from './sheet-index.ts'
@@ -1365,12 +1366,47 @@ function rangeAggregate(
 	const fromCol = Math.min(resolvedStartCol, resolvedEndCol)
 	const toCol = Math.max(resolvedStartCol, resolvedEndCol)
 
-	let acc = 0
-	let count = 0
-	let countA = 0
-	let minVal = Number.POSITIVE_INFINITY
-	let maxVal = Number.NEGATIVE_INFINITY
+	if (func === 'COUNTA') {
+		let countA = 0
+		for (let row = fromRow; row <= toRow; row++) {
+			for (let col = fromCol; col <= toCol; col++) {
+				const kind = targetSheet.cells.readKind(row, col)
+				if (kind === undefined || kind === 'empty') continue
+				if (kind === 'error') {
+					return errorValue(targetSheet.cells.readError(row, col) ?? '#VALUE!')
+				}
+				countA++
+			}
+		}
+		return numberValue(countA)
+	}
 
+	if (
+		func === 'SUM' ||
+		func === 'AVERAGE' ||
+		func === 'COUNT' ||
+		func === 'MIN' ||
+		func === 'MAX'
+	) {
+		const r = aggregateNumericRange(targetSheet, fromRow, fromCol, toRow, toCol)
+		if (r.error) return r.error
+		switch (func) {
+			case 'SUM':
+				return numberValue(r.sum)
+			case 'AVERAGE':
+				return r.count === 0 ? errorValue('#DIV/0!') : numberValue(r.sum / r.count)
+			case 'COUNT':
+				return numberValue(r.count)
+			case 'MIN':
+				return r.count === 0 ? numberValue(0) : numberValue(r.min)
+			case 'MAX':
+				return r.count === 0 ? numberValue(0) : numberValue(r.max)
+			default:
+				return numberValue(r.sum)
+		}
+	}
+
+	let acc = 0
 	for (let row = fromRow; row <= toRow; row++) {
 		for (let col = fromCol; col <= toCol; col++) {
 			const kind = targetSheet.cells.readKind(row, col)
@@ -1378,32 +1414,11 @@ function rangeAggregate(
 			if (kind === 'error') {
 				return errorValue(targetSheet.cells.readError(row, col) ?? '#VALUE!')
 			}
-			countA++
 			if (kind !== 'number' && kind !== 'date') continue
-			const n = targetSheet.cells.readNumber(row, col) ?? 0
-			acc += n
-			count++
-			if (n < minVal) minVal = n
-			if (n > maxVal) maxVal = n
+			acc += targetSheet.cells.readNumber(row, col) ?? 0
 		}
 	}
-
-	switch (func) {
-		case 'SUM':
-			return numberValue(acc)
-		case 'AVERAGE':
-			return count === 0 ? errorValue('#DIV/0!') : numberValue(acc / count)
-		case 'COUNT':
-			return numberValue(count)
-		case 'COUNTA':
-			return numberValue(countA)
-		case 'MIN':
-			return count === 0 ? numberValue(0) : numberValue(minVal)
-		case 'MAX':
-			return count === 0 ? numberValue(0) : numberValue(maxVal)
-		default:
-			return numberValue(acc)
-	}
+	return numberValue(acc)
 }
 
 function lookupValueKey(value: CellValue): string | null {

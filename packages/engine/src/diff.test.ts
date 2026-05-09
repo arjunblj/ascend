@@ -26,6 +26,8 @@ describe('diffWorkbooks', () => {
 		expect(diff.namesAdded).toEqual([])
 		expect(diff.namesRemoved).toEqual([])
 		expect(diff.namesChanged).toEqual([])
+		expect(diff.workbookProtectionChanged).toBe(false)
+		expect(diff.sheetFeatures).toEqual([])
 	})
 
 	test('detects added cells', () => {
@@ -136,6 +138,30 @@ describe('diffWorkbooks', () => {
 		expect(diff.namesRemoved).toEqual(['OldName'])
 		expect(diff.namesChanged).toEqual(['Changed'])
 	})
+
+	test('detects sheet feature changes only when features change', () => {
+		const a = createWorkbook()
+		const sa = a.addSheet('Sheet1')
+		sa.merges.push({
+			start: { row: 0, col: 0 },
+			end: { row: 0, col: 1 },
+		})
+
+		const b = createWorkbook()
+		b.addSheet('Sheet1')
+
+		const diff = diffWorkbooks(a, b)
+		expect(diff.sheetFeatures).toEqual([
+			{
+				name: 'Sheet1',
+				mergesChanged: true,
+				tablesChanged: false,
+				dataValidationsChanged: false,
+				conditionalFormatsChanged: false,
+				sheetProtectionChanged: false,
+			},
+		])
+	})
 })
 
 describe('snapshot round-trip', () => {
@@ -161,6 +187,20 @@ describe('snapshot round-trip', () => {
 
 		const snap = createSnapshot(wb)
 		expect(snap.names['Sheet1!LocalTotal']).toBe('Sheet1!A1')
+	})
+
+	test('createSnapshot captures workbook and sheet feature state', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.merges.push({
+			start: { row: 0, col: 0 },
+			end: { row: 0, col: 1 },
+		})
+		wb.workbookProtection = { lockStructure: true }
+
+		const snap = createSnapshot(wb)
+		expect(snap.workbookProtectionJson).toContain('lockStructure')
+		expect(snap.sheets[0]?.mergesJson).toContain('start')
 	})
 
 	test('compareSnapshots detects changes', () => {
@@ -197,5 +237,37 @@ describe('snapshot round-trip', () => {
 		expect(diff.namesAdded).toEqual([])
 		expect(diff.namesRemoved).toEqual([])
 		expect(diff.namesChanged).toEqual([])
+		expect(diff.workbookProtectionChanged).toBe(false)
+		expect(diff.sheetFeatures).toEqual([])
+	})
+
+	test('compareSnapshots detects workbook protection and merge changes', () => {
+		const wb1 = createWorkbook()
+		const s1 = wb1.addSheet('Sheet1')
+		s1.merges.push({
+			start: { row: 0, col: 0 },
+			end: { row: 0, col: 1 },
+		})
+
+		const wb2 = createWorkbook()
+		const s2 = wb2.addSheet('Sheet1')
+		s2.merges.push({
+			start: { row: 1, col: 0 },
+			end: { row: 1, col: 1 },
+		})
+		wb2.workbookProtection = { lockStructure: true }
+
+		const diff = compareSnapshots(createSnapshot(wb1), createSnapshot(wb2))
+		expect(diff.workbookProtectionChanged).toBe(true)
+		expect(diff.sheetFeatures).toEqual([
+			{
+				name: 'Sheet1',
+				mergesChanged: true,
+				tablesChanged: false,
+				dataValidationsChanged: false,
+				conditionalFormatsChanged: false,
+				sheetProtectionChanged: false,
+			},
+		])
 	})
 })

@@ -1,17 +1,23 @@
 import type { Workbook } from '@ascend/core'
 import { toA1 } from '@ascend/core'
 import type { CellValue } from '@ascend/schema'
-import type { CellChange, SheetDiff, WorkbookDiff } from './diff.ts'
+import type { CellChange, SheetDiff, SheetFeatureDiff, WorkbookDiff } from './diff.ts'
 import { cellValuesEqual } from './diff.ts'
 
 export interface SheetSnapshot {
 	readonly name: string
 	readonly cells: Record<string, { value: CellValue; formula: string | null }>
+	readonly mergesJson: string
+	readonly tablesJson: string
+	readonly dataValidationsJson: string
+	readonly conditionalFormatsJson: string
+	readonly protectionJson: string
 }
 
 export interface WorkbookSnapshot {
 	readonly sheets: SheetSnapshot[]
 	readonly names: Record<string, string>
+	readonly workbookProtectionJson: string
 	readonly timestamp: number
 }
 
@@ -21,7 +27,15 @@ export function createSnapshot(workbook: Workbook): WorkbookSnapshot {
 		for (const [row, col, c] of sheet.cells.iterate()) {
 			cells[toA1({ row, col })] = { value: c.value, formula: c.formula }
 		}
-		return { name: sheet.name, cells }
+		return {
+			name: sheet.name,
+			cells,
+			mergesJson: JSON.stringify(sheet.merges),
+			tablesJson: JSON.stringify(sheet.tables),
+			dataValidationsJson: JSON.stringify(sheet.dataValidations),
+			conditionalFormatsJson: JSON.stringify(sheet.conditionalFormats),
+			protectionJson: JSON.stringify(sheet.protection),
+		}
 	})
 
 	const names: Record<string, string> = {}
@@ -35,7 +49,12 @@ export function createSnapshot(workbook: Workbook): WorkbookSnapshot {
 		names[key] = definedName.formula
 	}
 
-	return { sheets, names, timestamp: Date.now() }
+	return {
+		sheets,
+		names,
+		workbookProtectionJson: JSON.stringify(workbook.workbookProtection),
+		timestamp: Date.now(),
+	}
 }
 
 export function compareSnapshots(a: WorkbookSnapshot, b: WorkbookSnapshot): WorkbookDiff {
@@ -122,5 +141,38 @@ export function compareSnapshots(a: WorkbookSnapshot, b: WorkbookSnapshot): Work
 		}
 	}
 
-	return { sheets, namesAdded, namesRemoved, namesChanged }
+	const workbookProtectionChanged = a.workbookProtectionJson !== b.workbookProtectionJson
+	const sheetNames = new Set([...sheetsA.keys(), ...sheetsB.keys()])
+	const sheetFeatures: SheetFeatureDiff[] = []
+	for (const name of sheetNames) {
+		const sheetA = sheetsA.get(name)
+		const sheetB = sheetsB.get(name)
+		if (!sheetA || !sheetB) continue
+		const featureDiff: SheetFeatureDiff = {
+			name,
+			mergesChanged: sheetA.mergesJson !== sheetB.mergesJson,
+			tablesChanged: sheetA.tablesJson !== sheetB.tablesJson,
+			dataValidationsChanged: sheetA.dataValidationsJson !== sheetB.dataValidationsJson,
+			conditionalFormatsChanged: sheetA.conditionalFormatsJson !== sheetB.conditionalFormatsJson,
+			sheetProtectionChanged: sheetA.protectionJson !== sheetB.protectionJson,
+		}
+		if (
+			featureDiff.mergesChanged ||
+			featureDiff.tablesChanged ||
+			featureDiff.dataValidationsChanged ||
+			featureDiff.conditionalFormatsChanged ||
+			featureDiff.sheetProtectionChanged
+		) {
+			sheetFeatures.push(featureDiff)
+		}
+	}
+
+	return {
+		sheets,
+		namesAdded,
+		namesRemoved,
+		namesChanged,
+		workbookProtectionChanged,
+		sheetFeatures,
+	}
 }

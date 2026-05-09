@@ -128,6 +128,34 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(4, 1)?.value).toEqual(numberValue(110))
 	})
 
+	test('dirty recalc delta-updates head edits across cached prefix SUM formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		for (let row = 0; row < 5; row++) {
+			sheet.cells.set(row, 0, { value: numberValue(row + 1), formula: null, styleId: sid })
+			sheet.cells.set(row, 1, {
+				value: EMPTY,
+				formula: `SUM(A$1:A${row + 1})`,
+				styleId: sid,
+			})
+		}
+
+		expect(recalculate(wb, makeCtx()).errors).toEqual([])
+		sheet.cells.set(0, 0, { value: numberValue(100), formula: null, styleId: sid })
+		const result = recalculate(wb, makeCtx(), { dirtyRefs: ['Sheet1!A1'] })
+
+		expect(result.errors).toEqual([])
+		expect(result.changed).toEqual([
+			'Sheet1!B1',
+			'Sheet1!B2',
+			'Sheet1!B3',
+			'Sheet1!B4',
+			'Sheet1!B5',
+		])
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(100))
+		expect(sheet.cells.get(4, 1)?.value).toEqual(numberValue(114))
+	})
+
 	test('chain of dependent formulas', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

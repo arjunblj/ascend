@@ -2246,6 +2246,49 @@ describe('LAMBDA, MAP, REDUCE, SCAN', () => {
 		expect(sheet.cells.get(2, 1)?.value).toEqual(numberValue(30))
 	})
 
+	test('MAP applies multi-argument lambda across matching arrays', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: numberValue(30), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, {
+			value: EMPTY,
+			formula: 'MAP(A1:A3,B1:B3,LAMBDA(x,y,x+y))',
+			styleId: sid,
+		})
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 2)?.value).toEqual(numberValue(11))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(numberValue(22))
+		expect(sheet.cells.get(2, 2)?.value).toEqual(numberValue(33))
+	})
+
+	test('MAP returns #VALUE! for mismatched array shapes or lambda arity', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, {
+			value: EMPTY,
+			formula: 'MAP(A1:A2,B1,LAMBDA(x,y,x+y))',
+			styleId: sid,
+		})
+		sheet.cells.set(1, 2, {
+			value: EMPTY,
+			formula: 'MAP(A1:A2,B1:B2,LAMBDA(x,x*2))',
+			styleId: sid,
+		})
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 2)?.value).toEqual(errorValue('#VALUE!'))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(errorValue('#VALUE!'))
+	})
+
 	test('MAP with single-cell input returns scalar', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

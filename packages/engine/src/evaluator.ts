@@ -1277,17 +1277,32 @@ function evalCall(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue
 }
 
 function evalMap(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
-	if (argNodes.length !== 2) return errorValue('#VALUE!')
-	const arrayArg = resolveArg(argNodes[0] as FormulaNode, ctx)
-	const lambda = extractLambda(argNodes[1] as FormulaNode, ctx)
+	if (argNodes.length < 2) return errorValue('#VALUE!')
+	const lambdaNode = argNodes[argNodes.length - 1]
+	if (!lambdaNode) return errorValue('#VALUE!')
+	const lambda = extractLambda(lambdaNode, ctx)
 	if (!lambda) return errorValue('#VALUE!')
-	if (lambda.params.length !== 1) return errorValue('#VALUE!')
-	const range = getRange(arrayArg)
+	const arrayNodes = argNodes.slice(0, -1)
+	if (lambda.params.length !== arrayNodes.length) return errorValue('#VALUE!')
+	const ranges = arrayNodes.map((node) => getRange(resolveArg(node, ctx)))
+	const shape = rangeShapeOf(ranges[0])
+	if (!shape) return errorValue('#VALUE!')
+	for (let i = 1; i < ranges.length; i++) {
+		const candidateShape = rangeShapeOf(ranges[i])
+		if (
+			!candidateShape ||
+			candidateShape.rows !== shape.rows ||
+			candidateShape.cols !== shape.cols
+		) {
+			return errorValue('#VALUE!')
+		}
+	}
 	const rows: ScalarCellValue[][] = []
-	for (const row of range) {
+	for (let rowIndex = 0; rowIndex < shape.rows; rowIndex++) {
 		const resultRow: ScalarCellValue[] = []
-		for (const cell of row) {
-			const result = invokeLambda(lambda, [cell])
+		for (let colIndex = 0; colIndex < shape.cols; colIndex++) {
+			const args = ranges.map((range) => range[rowIndex]?.[colIndex] ?? EMPTY)
+			const result = invokeLambda(lambda, args)
 			if (result.kind === 'error') return result
 			resultRow.push(topLeftScalar(result))
 		}
@@ -1295,6 +1310,18 @@ function evalMap(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue 
 	}
 	if (rows.length === 1 && rows[0]?.length === 1) return rows[0][0] ?? EMPTY
 	return arrayValue(rows)
+}
+
+function rangeShapeOf(
+	range: readonly (readonly CellValue[])[] | undefined,
+): { rows: number; cols: number } | null {
+	const rows = range?.length ?? 0
+	const cols = range?.[0]?.length ?? 0
+	if (rows === 0 || cols === 0) return null
+	for (const row of range ?? []) {
+		if (row.length !== cols) return null
+	}
+	return { rows, cols }
 }
 
 function evalReduce(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {

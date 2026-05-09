@@ -703,7 +703,7 @@ export const dynamicFunctions: FunctionDef[] = [
 	{
 		name: 'MAP',
 		minArgs: 2,
-		maxArgs: 2,
+		maxArgs: 255,
 		evaluate(args) {
 			return args[0]?.value ?? EMPTY
 		},

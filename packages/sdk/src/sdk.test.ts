@@ -2588,7 +2588,7 @@ describe('capabilities registry', () => {
 			'P0',
 		)
 		expect(capabilities.find((capability) => capability.id === 'visuals.charts')?.status).toBe(
-			'preserved',
+			'editable',
 		)
 	})
 })

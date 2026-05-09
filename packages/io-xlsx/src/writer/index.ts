@@ -5,6 +5,7 @@ import type { PreservationCapsule } from '../preserve.ts'
 import {
 	getRelsPath,
 	REL_CALC_CHAIN,
+	REL_CHARTSHEET,
 	REL_COMMENTS,
 	REL_DRAWING,
 	REL_IMAGE,
@@ -270,9 +271,10 @@ export function planWriteXlsx(
 		const effectiveStylesDirty = options.stylesDirty ?? dirtyPatchMode
 		const effectiveSharedStringsDirty = options.sharedStringsDirty ?? dirtyPatchMode
 		const effectiveWorkbookMetaDirty = options.workbookMetaDirty ?? dirtyPatchMode
-		const sheetNameById = new Map<string, string>(
-			workbook.sheets.map((sheet) => [sheet.id as string, sheet.name]),
-		)
+		const sheetNameById = new Map<string, string>([
+			...workbook.sheets.map((sheet) => [sheet.id as string, sheet.name] as const),
+			...workbook.chartSheets.map((sheet) => [sheet.sheetId, sheet.name] as const),
+		])
 		const sheetCapsuleMap = new Map<string, PreservationCapsule[]>()
 		const workbookCapsules: PreservationCapsule[] = []
 		let nextGeneratedTableNumber = 1
@@ -496,9 +498,24 @@ export function planWriteXlsx(
 			rIdCounter++
 		}
 
+		const chartSheetPartPaths = new Set(workbook.chartSheets.map((sheet) => sheet.partPath))
+		const chartSheetRelIds: string[] = []
+		for (const chartSheet of workbook.chartSheets) {
+			const target = chartSheet.partPath.replace(/^xl\//, '')
+			const relId = `rId${rIdCounter}`
+			chartSheetRelIds.push(relId)
+			wbRels.push({
+				id: relId,
+				type: REL_CHARTSHEET,
+				target,
+			})
+			rIdCounter++
+		}
+
 		for (const capsule of workbookCapsules) {
 			if (!capsule.relType) continue
 			if (isPackageDocPropsCapsule(capsule)) continue
+			if (chartSheetPartPaths.has(capsule.partPath)) continue
 			if (pivotCachePartPaths.has(capsule.partPath)) continue
 			const target = capsule.partPath.replace(/^xl\//, '')
 			wbRels.push({
@@ -597,6 +614,7 @@ export function planWriteXlsx(
 						: buildWorkbookXml(workbook, {
 								externalReferenceRelIds,
 								pivotCacheRelIds,
+								chartSheetRelIds,
 								...(options.calcStateDirty !== undefined
 									? { calcStateDirty: options.calcStateDirty }
 									: {}),

@@ -282,8 +282,6 @@ export function readXlsx(
 
 			const sheetPath = resolvePath(workbookPath, rel.target)
 			sheetPathToAnchor.set(sheetPath, { sheetId: entry.sheetId, sheetName: entry.name })
-			consumed.add(sheetPath)
-			consumed.add(getRelsPath(sheetPath))
 
 			if (rel.type === REL_CHARTSHEET) {
 				const chartsheetRelsXml = readPart(archive, getRelsPath(sheetPath))
@@ -306,6 +304,8 @@ export function readXlsx(
 				continue
 			}
 
+			consumed.add(sheetPath)
+			consumed.add(getRelsPath(sheetPath))
 			sourceWorksheetNames.push(entry.name)
 			if (selectedSheets && !selectedSheets.has(entry.name.toLowerCase())) continue
 			sheetsToParse.push({

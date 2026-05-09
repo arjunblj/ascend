@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { unzipSync } from 'fflate'
 import { makeXlsx } from '../../test/helpers.ts'
+import { writeXlsx } from '../writer/index.ts'
 import { readXlsx } from './index.ts'
 
 function expectOk<T, E extends { message: string }>(
@@ -75,6 +77,36 @@ describe('chartsheet inventory', () => {
 			count: 1,
 			locations: ['xl/chartsheets/sheet1.xml'],
 			note: 'Chartsheets are inventoried but not editable as worksheet grids; writes require explicit loss approval.',
+		})
+
+		const written = writeXlsx(result.value.workbook, result.value.capsules, {
+			workbookMetaDirty: true,
+		})
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		expect(zip['xl/chartsheets/sheet1.xml']).toBeDefined()
+		expect(zip['xl/chartsheets/_rels/sheet1.xml.rels']).toBeDefined()
+		expect(zip['xl/charts/chart1.xml']).toBeDefined()
+		const workbookXml = new TextDecoder().decode(zip['xl/workbook.xml'] ?? new Uint8Array())
+		const workbookRels = new TextDecoder().decode(
+			zip['xl/_rels/workbook.xml.rels'] ?? new Uint8Array(),
+		)
+		expect(workbookXml).toContain('name="Sales Chart"')
+		expect(workbookXml).toContain('sheetId="2"')
+		expect(workbookXml).toContain('state="hidden"')
+		expect(workbookRels).toContain(
+			'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chartsheet"',
+		)
+		expect(workbookRels).toContain('Target="chartsheets/sheet1.xml"')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.chartSheets[0]).toMatchObject({
+			name: 'Sales Chart',
+			sheetId: '2',
+			partPath: 'xl/chartsheets/sheet1.xml',
+			state: 'hidden',
+			chartPartPaths: ['xl/charts/chart1.xml'],
 		})
 	})
 })

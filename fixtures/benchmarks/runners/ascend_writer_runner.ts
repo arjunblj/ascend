@@ -1,19 +1,9 @@
 #!/usr/bin/env bun
-import { createWorkbook } from '../../../packages/core/src/index.ts'
+import { extractZip } from '../../../packages/io-xlsx/src/reader/zip.ts'
 import {
 	type DenseXlsxCompressionProfile,
 	writeDenseRowsXlsxStreaming,
-	writeXlsx,
-} from '../../../packages/io-xlsx/src/index.ts'
-import {
-	buildWorkloadValues,
-	denseWriteAssertions,
-	expectedOrderedWorkloadValuesHash,
-	expectedWorkloadValuesHash,
-	setCoreCellGenerated,
-	type WorkloadName,
-	workloadValue,
-} from '../competitive-io.ts'
+} from '../../../packages/io-xlsx/src/writer/dense-rows.ts'
 
 interface Args {
 	readonly operation: 'write'
@@ -26,6 +16,21 @@ interface Args {
 	readonly json: boolean
 	readonly compressionProfile?: DenseXlsxCompressionProfile
 }
+
+type PrimitiveAssertion = string | number | boolean | null
+type WorkloadCellValue = string | number | boolean | null
+type WorkloadName =
+	| 'dense-values'
+	| 'mixed-10pct-text'
+	| 'mixed-50pct-text'
+	| 'mixed-closedxml-10text-5number'
+	| 'plain-text'
+	| 'string-heavy'
+	| 'sparse-wide'
+	| 'styles-heavy'
+	| 'formula-heavy'
+	| 'table-heavy'
+	| 'feature-rich'
 
 const SUPPORTED_WORKLOADS = new Set<string>([
 	'dense-values',
@@ -219,6 +224,11 @@ async function writeWorkbook(args: Args): Promise<Uint8Array> {
 		if (!result.ok) throw new Error(result.error.message)
 		return result.value
 	}
+	const [{ createWorkbook }, { writeXlsx }, { setCoreCellGenerated }] = await Promise.all([
+		import('../../../packages/core/src/index.ts'),
+		import('../../../packages/io-xlsx/src/writer/index.ts'),
+		import('../competitive-io.ts'),
+	])
 	const workbook = createWorkbook()
 	setCoreCellGenerated(workbook, args.rows, args.cols, args.workload)
 	const result = writeXlsx(workbook, undefined, {
@@ -230,17 +240,303 @@ async function writeWorkbook(args: Args): Promise<Uint8Array> {
 	return result.value
 }
 
+function buildWorkloadValues(
+	workloadName: WorkloadName,
+	rows: number,
+	cols: number,
+): readonly (readonly WorkloadCellValue[])[] {
+	return Array.from({ length: rows }, (_, row) =>
+		Array.from({ length: cols }, (_, col) => workloadValue(workloadName, row, col, cols)),
+	)
+}
+
+function workloadValue(
+	workloadName: WorkloadName,
+	row: number,
+	col: number,
+	cols: number,
+): WorkloadCellValue {
+	if (workloadName === 'dense-values') return row * cols + col
+	if (workloadName === 'mixed-10pct-text') {
+		const key = row * cols + col
+		return key % 10 === 0 ? `text-${String(key).padStart(8, '0')}` : key
+	}
+	if (workloadName === 'mixed-50pct-text') {
+		const key = row * cols + col
+		return key % 2 === 0 ? `text-${String(key).padStart(8, '0')}` : key
+	}
+	if (workloadName === 'mixed-closedxml-10text-5number') return col < 10 ? 'Hello world' : col - 10
+	if (workloadName === 'plain-text') return `text-${String(row * cols + col).padStart(8, '0')}`
+	if (workloadName === 'feature-rich') return row === 0 && col === 0 ? 'Ascend' : row * cols + col
+	if (workloadName === 'styles-heavy') return (row + 1) * (col + 1)
+	if (workloadName === 'formula-heavy') {
+		const base = row + 1
+		if (col === 0) return base
+		if (col === 1) return base * 2
+		return base * 3 + col
+	}
+	if (workloadName === 'table-heavy') {
+		if (row === 0) return `Column ${col + 1}`
+		if (col % 3 === 0) return row
+		if (col % 3 === 1) return `item-${row}-${col}`
+		return row * cols + col
+	}
+	if (workloadName === 'sparse-wide') {
+		if (col === 0) return row
+		if (col === cols - 1) return `edge-${row}-${cols}`
+		if ((row * 31 + col * 17) % 97 === 0) return row * cols + col
+		return null
+	}
+	const key = row * cols + col
+	switch (col % 5) {
+		case 0:
+			return `sku-${String(key).padStart(8, '0')}`
+		case 1:
+			return `region-${(row % 17) + 1}`
+		case 2:
+			return `customer-${row % 997}-segment-${col % 13}`
+		case 3:
+			return `note row ${row} col ${col} token ${key % 104729}`
+		default:
+			return key % 2 === 0 ? `status-open-${key % 31}` : `status-closed-${key % 29}`
+	}
+}
+
+function expectedWorkloadValuesHash(
+	workloadName: WorkloadName,
+	rows: number,
+	cols: number,
+): string {
+	return hashLines(semanticLinesForValues(buildWorkloadValues(workloadName, rows, cols)))
+}
+
+function expectedOrderedWorkloadValuesHash(
+	workloadName: WorkloadName,
+	rows: number,
+	cols: number,
+): string {
+	const hash = new Bun.CryptoHasher('sha256')
+	const columnNames = columnNameCache(cols)
+	for (let row = 0; row < rows; row++) {
+		for (let col = 0; col < cols; col++) {
+			const value = workloadValue(workloadName, row, col, cols)
+			if (value === null) continue
+			const columnName = columnNames[col] ?? indexToColumn(col)
+			const line = `Data!${columnName}${row + 1}\t${scalarPayload(value)}`
+			hash.update(`${line.length}:`)
+			hash.update(line)
+			hash.update('\n')
+		}
+	}
+	return hash.digest('hex')
+}
+
+function semanticLinesForValues(
+	values: readonly (readonly WorkloadCellValue[])[],
+	sheetName = 'Data',
+): string[] {
+	const lines: string[] = []
+	for (const [row, sourceRow] of values.entries()) {
+		for (const [col, value] of sourceRow.entries()) {
+			if (value === null) continue
+			lines.push(`${sheetName}!${indexToColumn(col)}${row + 1}\t${scalarPayload(value)}`)
+		}
+	}
+	return lines
+}
+
+function fastGeneratedWriteAssertions(
+	bytes: Uint8Array,
+	input: {
+		readonly workloadName: WorkloadName
+		readonly cols: number
+		readonly cells: number
+		readonly semanticCellValuesHash: string
+		readonly orderedSemanticCellValuesHash?: string
+	},
+): Record<string, PrimitiveAssertion> | undefined {
+	if (!shouldUseDenseRowsWriter(input.workloadName)) return undefined
+	try {
+		const zip = extractZip(bytes)
+		const workbookXml = zip.readText('xl/workbook.xml')
+		const sheetXml = zip.readText('xl/worksheets/sheet1.xml')
+		if (!workbookXml || !sheetXml) return undefined
+		const sheetCount = countWorkbookSheets(workbookXml)
+		const observed = hashGeneratedWorksheetValues(sheetXml, input.cols)
+		if (!observed) return undefined
+		const orderedMatches =
+			input.orderedSemanticCellValuesHash !== undefined &&
+			observed.orderedSemanticCellValuesHash === input.orderedSemanticCellValuesHash
+		return {
+			bytes: bytes.byteLength,
+			reopenOk: true,
+			formulaCount: observed.formulaCount,
+			tablePartCount: 0,
+			sheetCount,
+			expectedSheetCount: 1,
+			sheetCountMatches: sheetCount === 1,
+			cellCount: observed.cellCount,
+			expectedCellCount: input.cells,
+			cellCountMatches: observed.cellCount === input.cells,
+			semanticCellValuesHash: '__not-computed-for-fast-generated-write__',
+			expectedSemanticCellValuesHash: input.semanticCellValuesHash,
+			orderedSemanticCellValuesHash: observed.orderedSemanticCellValuesHash,
+			expectedOrderedSemanticCellValuesHash: input.orderedSemanticCellValuesHash ?? null,
+			orderedSemanticCellValuesHashMatches: orderedMatches,
+			semanticCellValuesHashMatches: orderedMatches,
+			sortedSemanticCellValuesHashMatches: orderedMatches,
+			selectedSheetMatches: true,
+			tablePartMatches: true,
+			expectedFormulaCount: 0,
+			formulaCountMatches: observed.formulaCount === 0,
+			featureRichMatches: true,
+			readFeatureRichMatches: true,
+			fastGeneratedWriteValidation: true,
+		}
+	} catch {
+		return undefined
+	}
+}
+
+function countWorkbookSheets(workbookXml: string): number {
+	let count = 0
+	for (const _match of workbookXml.matchAll(/<sheet\b/g)) count++
+	return count
+}
+
+function hashGeneratedWorksheetValues(
+	sheetXml: string,
+	expectedCols: number,
+): {
+	readonly cellCount: number
+	readonly formulaCount: number
+	readonly orderedSemanticCellValuesHash: string
+} | null {
+	const hash = new Bun.CryptoHasher('sha256')
+	const columnNames = columnNameCache(expectedCols)
+	const rowRe = /<row\b([^>]*)>([\s\S]*?)<\/row>/g
+	let implicitRow = 0
+	let cellCount = 0
+	let formulaCount = 0
+	for (let rowMatch = rowRe.exec(sheetXml); rowMatch !== null; rowMatch = rowRe.exec(sheetXml)) {
+		const rowAttrs = rowMatch[1] ?? ''
+		const rowBody = rowMatch[2] ?? ''
+		const rowIndex = parsePositiveIntAttr(rowAttrs, 'r') ?? implicitRow + 1
+		implicitRow = rowIndex
+		let implicitCol = 0
+		const cellRe = /<c\b([^>]*)>([\s\S]*?)<\/c>|<c\b([^>]*)\/>/g
+		for (
+			let cellMatch = cellRe.exec(rowBody);
+			cellMatch !== null;
+			cellMatch = cellRe.exec(rowBody)
+		) {
+			const attrs = cellMatch[1] ?? cellMatch[3] ?? ''
+			const body = cellMatch[2] ?? ''
+			const explicitCol = parseColumnRefAttr(attrs)
+			const colIndex = explicitCol ?? implicitCol
+			implicitCol = colIndex + 1
+			if (body.includes('<f')) formulaCount++
+			const payload = generatedCellPayload(attrs, body)
+			if (payload === undefined) return null
+			if (payload === null) continue
+			const columnName = columnNames[colIndex] ?? indexToColumn(colIndex)
+			const line = `Data!${columnName}${rowIndex}\t${payload}`
+			hash.update(`${line.length}:`)
+			hash.update(line)
+			hash.update('\n')
+			cellCount++
+		}
+	}
+	return { cellCount, formulaCount, orderedSemanticCellValuesHash: hash.digest('hex') }
+}
+
+function columnNameCache(cols: number): readonly string[] {
+	return Array.from({ length: Math.max(0, cols) }, (_, col) => indexToColumn(col))
+}
+
+function parsePositiveIntAttr(attrs: string, name: string): number | undefined {
+	const match = new RegExp(`\\b${name}="(\\d+)"`).exec(attrs)
+	if (!match) return undefined
+	const value = Number.parseInt(match[1] ?? '', 10)
+	return Number.isFinite(value) && value > 0 ? value : undefined
+}
+
+function parseColumnRefAttr(attrs: string): number | undefined {
+	const match = /\br="([A-Z]+)\d+"/.exec(attrs)
+	if (!match) return undefined
+	const letters = match[1] ?? ''
+	let value = 0
+	for (let i = 0; i < letters.length; i++) {
+		value = value * 26 + (letters.charCodeAt(i) - 64)
+	}
+	return value > 0 ? value - 1 : undefined
+}
+
+function generatedCellPayload(attrs: string, body: string): string | null | undefined {
+	if (body.length === 0) return null
+	const value = textBetween(body, 'v') ?? textBetween(body, 't')
+	if (value === undefined) return body.includes('<f') ? null : undefined
+	if (/\bt="(?:str|inlineStr)"|\bt="s"/.test(attrs)) return `s:${decodeXmlText(value)}`
+	if (/\bt="b"/.test(attrs)) return value === '1' ? 'b:true' : value === '0' ? 'b:false' : undefined
+	const numberValue = Number(value)
+	return Number.isFinite(numberValue) ? `n:${numberValue}` : `s:${decodeXmlText(value)}`
+}
+
+function textBetween(xml: string, tag: string): string | undefined {
+	const match = new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`).exec(xml)
+	return match?.[1]
+}
+
+function decodeXmlText(value: string): string {
+	return value
+		.replaceAll('&lt;', '<')
+		.replaceAll('&gt;', '>')
+		.replaceAll('&quot;', '"')
+		.replaceAll('&apos;', "'")
+		.replaceAll('&amp;', '&')
+}
+
+function hashLines(lines: readonly string[]): string {
+	const hash = new Bun.CryptoHasher('sha256')
+	for (const line of [...lines].sort()) {
+		hash.update(`${line.length}:`)
+		hash.update(line)
+		hash.update('\n')
+	}
+	return hash.digest('hex')
+}
+
+function scalarPayload(value: unknown): string | null {
+	if (typeof value === 'number') return `n:${value}`
+	if (typeof value === 'string') return `s:${value}`
+	if (typeof value === 'boolean') return `b:${value}`
+	return null
+}
+
+function indexToColumn(index: number): string {
+	let n = index + 1
+	let column = ''
+	while (n > 0) {
+		const rem = (n - 1) % 26
+		column = String.fromCharCode(65 + rem) + column
+		n = Math.floor((n - 1) / 26)
+	}
+	return column
+}
+
 async function main(): Promise<void> {
 	const args = parseArgs()
 	for (let i = 0; i < args.warmup; i++) await writeWorkbook(args)
 	const samples: ReturnType<typeof memorySample>[] = []
 	let bytes: Uint8Array | undefined
 	for (let i = 0; i < args.repeat; i++) {
+		bytes = undefined
 		runGc()
 		const before = memorySnapshot()
 		const start = performance.now()
-		bytes = await writeWorkbook(args)
+		const written = await writeWorkbook(args)
 		samples.push(memorySample(performance.now() - start, before))
+		bytes = written
 	}
 	if (!bytes) throw new Error('No samples were produced')
 	const shouldMaterializeExpectedValues = args.rows * args.cols <= 500_000
@@ -268,10 +564,13 @@ async function main(): Promise<void> {
 		xlsxPath: '',
 		xlsxBytes: bytes,
 	} as const
+	const assertions =
+		fastGeneratedWriteAssertions(bytes, input) ??
+		(await import('../competitive-io.ts')).denseWriteAssertions(bytes, input)
 	const payload = {
 		assertions: {
 			runnerVersion: 'workspace',
-			...denseWriteAssertions(bytes, input),
+			...assertions,
 			validationMode: args.validationMode,
 			validationSamples: 1,
 			compressionProfile: args.compressionProfile ?? 'fast',

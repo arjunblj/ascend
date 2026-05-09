@@ -22,37 +22,42 @@ export function buildContentTypesXml(
 	extraOverrides?: readonly { partPath: string; contentType: string }[],
 ): string {
 	const out = new ChunkedStringBuilder()
+	const overrides = new Set<string>()
+	const pushOverride = (partPath: string, contentType: string) => {
+		const pn = partPath.startsWith('/') ? partPath : `/${partPath}`
+		if (overrides.has(pn)) return
+		overrides.add(pn)
+		out.push(`<Override PartName="${pn}" ContentType="${contentType}"/>`)
+	}
 	out.push(XML_HEADER)
 	out.push(`<Types xmlns="${NS}">`)
 	out.push(`<Default Extension="rels" ContentType="${CT_RELS}"/>`)
 	out.push(`<Default Extension="xml" ContentType="${CT_XML}"/>`)
-	out.push(`<Override PartName="/xl/workbook.xml" ContentType="${workbookContentType}"/>`)
+	pushOverride('xl/workbook.xml', workbookContentType)
 
 	for (let i = 1; i <= sheetCount; i++) {
-		out.push(`<Override PartName="/xl/worksheets/sheet${i}.xml" ContentType="${CT_WORKSHEET}"/>`)
+		pushOverride(`xl/worksheets/sheet${i}.xml`, CT_WORKSHEET)
 	}
 
 	if (hasSharedStrings) {
-		out.push(`<Override PartName="/xl/sharedStrings.xml" ContentType="${CT_SHARED_STRINGS}"/>`)
+		pushOverride('xl/sharedStrings.xml', CT_SHARED_STRINGS)
 	}
 
-	out.push(`<Override PartName="/xl/styles.xml" ContentType="${CT_STYLES}"/>`)
-	out.push(`<Override PartName="/docProps/core.xml" ContentType="${CT_CORE_PROPS}"/>`)
-	out.push(`<Override PartName="/docProps/app.xml" ContentType="${CT_APP_PROPS}"/>`)
+	pushOverride('xl/styles.xml', CT_STYLES)
+	pushOverride('docProps/core.xml', CT_CORE_PROPS)
+	pushOverride('docProps/app.xml', CT_APP_PROPS)
 
 	if (capsules) {
 		for (const capsule of capsules) {
 			if (capsule.contentType) {
-				const pn = capsule.partPath.startsWith('/') ? capsule.partPath : `/${capsule.partPath}`
-				out.push(`<Override PartName="${pn}" ContentType="${capsule.contentType}"/>`)
+				pushOverride(capsule.partPath, capsule.contentType)
 			}
 		}
 	}
 
 	if (extraOverrides) {
 		for (const override of extraOverrides) {
-			const pn = override.partPath.startsWith('/') ? override.partPath : `/${override.partPath}`
-			out.push(`<Override PartName="${pn}" ContentType="${override.contentType}"/>`)
+			pushOverride(override.partPath, override.contentType)
 		}
 	}
 

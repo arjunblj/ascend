@@ -490,6 +490,7 @@ export function readXlsx(
 					archive,
 					consumed,
 					contentTypes,
+					rootRels,
 					wbRels,
 					sheetPathToAnchor,
 					workbookPath,
@@ -579,12 +580,18 @@ function collectCapsules(
 	archive: ZipArchive,
 	consumed: Set<string>,
 	contentTypes: ContentTypes,
+	rootRels: Relationship[],
 	wbRels: Relationship[],
 	sheetPathToAnchor: Map<string, { sheetId: string; sheetName: string }>,
 	workbookPath: string,
 	sheetRelsByPath: Map<string, Relationship[]>,
 ): PreservationCapsule[] {
 	const capsules: PreservationCapsule[] = []
+
+	const rootRelByTarget = new Map<string, Relationship>()
+	for (const rel of rootRels) {
+		rootRelByTarget.set(resolvePath('', rel.target), rel)
+	}
 
 	const wbRelByTarget = new Map<string, Relationship>()
 	for (const rel of wbRels) {
@@ -608,7 +615,6 @@ function collectCapsules(
 		if (consumed.has(partPath)) continue
 		if (partPath.endsWith('.rels')) continue
 		if (partPath.startsWith('_rels/')) continue
-		if (partPath.startsWith('docProps/')) continue
 
 		const ct = resolveContentType(partPath, contentTypes)
 		if (isCalcChainPart(partPath, ct)) continue
@@ -618,6 +624,8 @@ function collectCapsules(
 
 		const wbRef = wbRelByTarget.get(partPath)
 		if (wbRef) relType = wbRef.type
+		const rootRef = rootRelByTarget.get(partPath)
+		if (rootRef) relType = rootRef.type
 
 		const sheetRef = sheetRelByTarget.get(partPath)
 		if (sheetRef) {

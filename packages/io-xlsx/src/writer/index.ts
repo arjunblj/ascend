@@ -498,6 +498,7 @@ export function planWriteXlsx(
 
 		for (const capsule of workbookCapsules) {
 			if (!capsule.relType) continue
+			if (isPackageDocPropsCapsule(capsule)) continue
 			if (pivotCachePartPaths.has(capsule.partPath)) continue
 			const target = capsule.partPath.replace(/^xl\//, '')
 			wbRels.push({
@@ -1046,22 +1047,20 @@ export function planWriteXlsx(
 			}
 		}
 
-		recordXml(
+		recordDocPropsPart(
+			plan,
+			sourceArchive,
+			capsules,
 			'docProps/core.xml',
-			{
-				owner: { kind: 'package' },
-				origin: 'generated',
-				contentType: 'application/vnd.openxmlformats-package.core-properties+xml',
-			},
+			'application/vnd.openxmlformats-package.core-properties+xml',
 			() => buildCorePropsXml(),
 		)
-		recordXml(
+		recordDocPropsPart(
+			plan,
+			sourceArchive,
+			capsules,
 			'docProps/app.xml',
-			{
-				owner: { kind: 'package' },
-				origin: 'generated',
-				contentType: 'application/vnd.openxmlformats-officedocument.extended-properties+xml',
-			},
+			'application/vnd.openxmlformats-officedocument.extended-properties+xml',
 			() => buildAppPropsXml(),
 		)
 
@@ -1070,6 +1069,22 @@ export function planWriteXlsx(
 			{ id: 'rId2', type: REL_CORE_PROPS, target: 'docProps/core.xml' },
 			{ id: 'rId3', type: REL_EXT_PROPS, target: 'docProps/app.xml' },
 		]
+		let rootRIdCounter = 4
+		if (capsules) {
+			for (const capsule of capsules) {
+				if (!isPackageDocPropsCapsule(capsule)) continue
+				if (!capsule.relType) continue
+				if (capsule.partPath === 'docProps/core.xml' || capsule.partPath === 'docProps/app.xml') {
+					continue
+				}
+				rootRels.push({
+					id: `rId${rootRIdCounter}`,
+					type: capsule.relType,
+					target: capsule.partPath,
+				})
+				rootRIdCounter++
+			}
+		}
 		recordXml(
 			'_rels/.rels',
 			{
@@ -1310,6 +1325,32 @@ function resolveCapsuleOwner(
 	return sheetName ? { kind: 'sheet', sheetName } : null
 }
 
+function recordDocPropsPart(
+	plan: WritePlanBuilder,
+	sourceArchive: ZipArchive | undefined,
+	capsules: readonly PreservationCapsule[] | undefined,
+	path: string,
+	contentType: string,
+	buildXml: () => string,
+): void {
+	const capsule = capsules?.find((entry) => entry.partPath === path)
+	const content = capsule?.content ?? sourceArchive?.readBytes(path)
+	if (capsule && content) {
+		plan.putBytes(path, content, {
+			owner: { kind: 'package' },
+			origin: 'capsule',
+			contentType: capsule.contentType || contentType,
+		})
+		plan.skipCapsulePath(path)
+		return
+	}
+	plan.putXml(path, buildXml(), {
+		owner: { kind: 'package' },
+		origin: 'generated',
+		contentType,
+	})
+}
+
 function resolvePreservedText(
 	archive: ZipArchive | undefined,
 	inlineText: string | undefined,
@@ -1386,6 +1427,10 @@ function isCalcChainCapsule(capsule: PreservationCapsule): boolean {
 		capsule.contentType.includes('calcChain+xml') ||
 		capsule.partPath.endsWith('/calcChain.xml')
 	)
+}
+
+function isPackageDocPropsCapsule(capsule: PreservationCapsule): boolean {
+	return capsule.partPath.startsWith('docProps/')
 }
 
 function isPivotCacheDefinitionCapsule(capsule: PreservationCapsule): boolean {

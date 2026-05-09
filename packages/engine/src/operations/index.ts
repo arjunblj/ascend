@@ -89,6 +89,7 @@ const handlers: Record<string, OperationHandler> = {
 	deleteTable: tableOps.handleDeleteTable as OperationHandler,
 	renameTable: tableOps.handleRenameTable as OperationHandler,
 	resizeTable: tableOps.handleResizeTable as OperationHandler,
+	setTableColumn: tableOps.handleSetTableColumn as OperationHandler,
 	replaceImage: visualOps.handleReplaceImage as OperationHandler,
 	setChartSeriesSource: visualOps.handleSetChartSeriesSource as OperationHandler,
 	setPivotCache: pivotOps.handleSetPivotCache as OperationHandler,

@@ -322,6 +322,15 @@ const operationSchema = z.discriminatedUnion('op', [
 		ref: z.string(),
 	}),
 	z.object({
+		op: z.literal('setTableColumn'),
+		table: z.string(),
+		column: z.union([z.string(), z.number().int().nonnegative()]),
+		formula: z.string().nullable().optional(),
+		totalsRowFunction: z.string().nullable().optional(),
+		totalsRowFormula: z.string().nullable().optional(),
+		totalsRowLabel: z.string().nullable().optional(),
+	}),
+	z.object({
 		op: z.literal('replaceImage'),
 		sheet: z.string(),
 		contentBase64: z.string(),

@@ -1,5 +1,6 @@
-import type { Workbook } from '@ascend/core'
+import type { TableColumn, Workbook } from '@ascend/core'
 import { createTableId, toA1 } from '@ascend/core'
+import { normalizeFormulaInput } from '@ascend/formulas'
 import type { Operation, Result } from '@ascend/schema'
 import { ascendError, EMPTY, err, ok } from '@ascend/schema'
 import {
@@ -247,4 +248,95 @@ export function handleResizeTable(
 	}
 	clearFormulaMetadata(workbook)
 	return ok(patch([], [sheet.name], true))
+}
+
+export function handleSetTableColumn(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setTableColumn' }>,
+): Result<PatchResult> {
+	const located = findTable(workbook, op.table)
+	if (!located) {
+		return err(ascendError('NAME_NOT_FOUND', `Table "${op.table}" not found`))
+	}
+	const { table, sheet } = located
+	const columnIndex = resolveTableColumnIndex(table.columns, op.column)
+	if (columnIndex < 0) {
+		return err(
+			ascendError(
+				'NAME_NOT_FOUND',
+				`Column "${String(op.column)}" not found in table "${op.table}"`,
+				{
+					suggestedFix: `Available columns: ${table.columns.map((column) => column.name).join(', ')}`,
+				},
+			),
+		)
+	}
+
+	const column = table.columns[columnIndex]
+	if (!column) return err(ascendError('NAME_NOT_FOUND', `Column "${String(op.column)}" not found`))
+	const nextColumn = updateTableColumn(column, op)
+	const tableIndex = sheet.tables.findIndex((candidate) => candidate.id === table.id)
+	if (tableIndex >= 0) {
+		sheet.tables[tableIndex] = {
+			...table,
+			columns: table.columns.map((candidate, index) =>
+				index === columnIndex ? nextColumn : candidate,
+			),
+		}
+	}
+
+	const affected: string[] = []
+	if (op.formula !== undefined) {
+		const formula = op.formula === null ? null : normalizeFormulaInput(op.formula)
+		const col = table.ref.start.col + columnIndex
+		const startRow = table.ref.start.row + (table.hasHeaders ? 1 : 0)
+		const endRow = table.ref.end.row - (table.hasTotals ? 1 : 0)
+		for (let row = startRow; row <= endRow; row++) {
+			const existing = sheet.cells.get(row, col)
+			sheet.cells.set(
+				row,
+				col,
+				cellWithExisting(existing?.value ?? EMPTY, formula, existing?.styleId ?? DEFAULT_SID),
+			)
+			affected.push(toA1({ row, col }))
+		}
+		clearFormulaMetadata(workbook)
+	}
+
+	return ok(patch(affected, [sheet.name], op.formula !== undefined))
+}
+
+function resolveTableColumnIndex(columns: readonly TableColumn[], column: string | number): number {
+	if (typeof column === 'number') {
+		return Number.isInteger(column) && column >= 0 && column < columns.length ? column : -1
+	}
+	return columns.findIndex((candidate) => candidate.name.toLowerCase() === column.toLowerCase())
+}
+
+function updateTableColumn(
+	column: TableColumn,
+	op: Extract<Operation, { op: 'setTableColumn' }>,
+): TableColumn {
+	let next: TableColumn = { ...column }
+	if (op.formula !== undefined) {
+		const { formula: _formula, ...rest } = next
+		next = op.formula === null ? rest : { ...rest, formula: normalizeFormulaInput(op.formula) }
+	}
+	if (op.totalsRowFunction !== undefined) {
+		const { totalsRowFunction: _totalsRowFunction, ...rest } = next
+		next =
+			op.totalsRowFunction === null ? rest : { ...rest, totalsRowFunction: op.totalsRowFunction }
+	}
+	if (op.totalsRowFormula !== undefined) {
+		const { totalsRowFormula: _totalsRowFormula, ...rest } = next
+		next =
+			op.totalsRowFormula === null
+				? rest
+				: { ...rest, totalsRowFormula: normalizeFormulaInput(op.totalsRowFormula) }
+	}
+	if (op.totalsRowLabel !== undefined) {
+		const { totalsRowLabel: _totalsRowLabel, ...rest } = next
+		next = op.totalsRowLabel === null ? rest : { ...rest, totalsRowLabel: op.totalsRowLabel }
+	}
+	return next
 }

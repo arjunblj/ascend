@@ -88,6 +88,10 @@ const FIELD_SCHEMAS: Record<
 	hasHeaders: { type: 'boolean', description: 'Whether range has header row' },
 	table: { type: 'string', description: 'Table name' },
 	rows: { type: 'array', description: 'Array of row arrays' },
+	column: { type: 'string', description: 'Table column name or 0-based column index' },
+	totalsRowFunction: { type: 'string', description: 'Excel table totalsRowFunction value' },
+	totalsRowFormula: { type: 'string', description: 'Formula for the table totals row cell' },
+	totalsRowLabel: { type: 'string', description: 'Label for the table totals row cell' },
 	by: { type: 'array', description: 'Sort specs: [{ column, descending? }]' },
 	col: { type: 'integer', description: 'Column index' },
 	width: { type: 'number', description: 'Column width' },
@@ -395,6 +399,12 @@ export function listOperations(): readonly OperationSchema[] {
 			requiredFields: ['table', 'ref'],
 		},
 		{
+			op: 'setTableColumn',
+			description: 'Set calculated-column formula and totals metadata for a table column',
+			requiredFields: ['table', 'column'],
+			optionalFields: ['formula', 'totalsRowFunction', 'totalsRowFormula', 'totalsRowLabel'],
+		},
+		{
 			op: 'replaceImage',
 			description: 'Replace image media bytes while preserving the existing drawing anchor',
 			requiredFields: ['sheet', 'contentBase64', 'contentType'],
@@ -585,6 +595,12 @@ function operationRecoveryActions(op: string): readonly string[] {
 		case 'createTable':
 		case 'resizeTable':
 			return ['Confirm the table range includes the intended header and data rows.', ...common]
+		case 'setTableColumn':
+			return [
+				'Use a table column name or 0-based column index; set formula to null to clear calculated-column formulas.',
+				'Use totalsRowFunction, totalsRowFormula, or totalsRowLabel to edit totals metadata.',
+				...common,
+			]
 		case 'replaceImage':
 			return [
 				'Use inspect --detail images or visualInventory to select targetPath, relId, name, or imageIndex.',
@@ -738,6 +754,14 @@ function operationExample(op: string): Record<string, unknown> {
 			return { op, table: 'Sales', newName: 'SalesData' }
 		case 'resizeTable':
 			return { op, table: 'Sales', ref: 'A1:E20' }
+		case 'setTableColumn':
+			return {
+				op,
+				table: 'Sales',
+				column: 'Total',
+				formula: '=[@Qty]*[@Price]',
+				totalsRowFunction: 'sum',
+			}
 		case 'replaceImage':
 			return {
 				op,

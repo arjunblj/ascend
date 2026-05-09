@@ -1249,6 +1249,52 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(2, 0)?.value).toEqual(stringValue('Cash'))
 	})
 
+	test('setTableColumn applies calculated-column formulas and totals metadata', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Qty'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Price'), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: stringValue('Total'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(5), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: numberValue(7), formula: null, styleId: sid })
+		applyOperation(wb, {
+			op: 'createTable',
+			sheet: 'Sheet1',
+			ref: 'A1:C3',
+			name: 'Sales',
+			hasHeaders: true,
+		})
+
+		const result = applyOperation(wb, {
+			op: 'setTableColumn',
+			table: 'Sales',
+			column: 'Total',
+			formula: '=[@Qty]*[@Price]',
+			totalsRowFunction: 'sum',
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['C2', 'C3'])
+		expect(result.value.recalcRequired).toBe(true)
+		expect(sheet.tables[0]?.columns[2]).toMatchObject({
+			name: 'Total',
+			formula: '[@Qty]*[@Price]',
+			totalsRowFunction: 'sum',
+		})
+		expect(sheet.cells.get(1, 2)?.formula).toBe('[@Qty]*[@Price]')
+		expect(sheet.cells.get(2, 2)?.formula).toBe('[@Qty]*[@Price]')
+
+		const appended = applyOperation(wb, {
+			op: 'appendRows',
+			table: 'Sales',
+			rows: [[4, 8]],
+		})
+		expectOk(appended)
+		expect(sheet.cells.get(3, 2)?.formula).toBe('[@Qty]*[@Price]')
+	})
+
 	test('table management operations rename, resize, and delete table metadata', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

@@ -379,6 +379,15 @@ export type Operation =
 	| { readonly op: 'renameTable'; readonly table: string; readonly newName: string }
 	| { readonly op: 'resizeTable'; readonly table: string; readonly ref: string }
 	| {
+			readonly op: 'setTableColumn'
+			readonly table: string
+			readonly column: string | number
+			readonly formula?: string | null
+			readonly totalsRowFunction?: string | null
+			readonly totalsRowFormula?: string | null
+			readonly totalsRowLabel?: string | null
+	  }
+	| {
 			readonly op: 'replaceImage'
 			readonly sheet: string
 			readonly contentBase64: string

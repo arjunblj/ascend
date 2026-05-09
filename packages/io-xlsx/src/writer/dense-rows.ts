@@ -31,8 +31,8 @@ export interface WriteDenseRowsXlsxOptions {
 }
 
 const DEFAULT_SHEET_NAME = 'Data'
-const XML_BYTE_BATCH_TARGET = positiveEnvInt('ASCEND_DENSE_XML_BYTE_BATCH', 4 * 1024 * 1024)
-const XML_ROW_BATCH_TARGET = positiveEnvInt('ASCEND_DENSE_XML_ROW_BATCH', 2048)
+const XML_BYTE_BATCH_TARGET = positiveEnvInt('ASCEND_DENSE_XML_BYTE_BATCH', 256 * 1024)
+const XML_ROW_BATCH_TARGET = positiveEnvInt('ASCEND_DENSE_XML_ROW_BATCH', 256)
 
 interface XmlByteSink {
 	write(chunk: string): void

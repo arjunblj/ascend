@@ -239,6 +239,14 @@ export function handleHideCols(
 	return ok(patch([], [op.sheet]))
 }
 
+export function handleSetWorkbookProtection(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setWorkbookProtection' }>,
+): Result<PatchResult> {
+	workbook.workbookProtection = { ...op.protection }
+	return ok(patch([], []))
+}
+
 function removeSheetScopedDefinedNames(workbook: Workbook, sheetId: string): void {
 	const scopedEntries = workbook.definedNames
 		.list()

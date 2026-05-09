@@ -985,7 +985,7 @@ describe('applyOperation', () => {
 		})
 	})
 
-	test('appendRows rejects tables with totals rows', () => {
+	test('appendRows inserts before totals row when hasTotals', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
 		sheet.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: sid })
@@ -1006,10 +1006,76 @@ describe('applyOperation', () => {
 			table: 'BalanceTable',
 			rows: [['Debt']],
 		})
-		expect(result.ok).toBe(false)
-		if (result.ok) return
-		expect(result.error.code).toBe('VALIDATION_ERROR')
-		expect(result.error.message).toContain('totals rows')
+		expectOk(result)
+		expect(sheet.tables[0]?.ref.end.row).toBe(2)
+		expect(sheet.cells.get(1, 0)?.value).toEqual(stringValue('Debt'))
+		expect(sheet.cells.get(2, 0)?.value).toEqual(stringValue('Cash'))
+	})
+
+	test('table management operations rename, resize, and delete table metadata', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Value'), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: stringValue('Region'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('Cash'), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(1, 2, { value: stringValue('West'), formula: null, styleId: sid })
+		applyOperation(wb, {
+			op: 'createTable',
+			sheet: 'Sheet1',
+			ref: 'A1:B2',
+			name: 'Sales',
+			hasHeaders: true,
+		})
+		sheet.cells.set(3, 0, { value: EMPTY, formula: 'SUM(Sales[Value])', styleId: sid })
+		wb.definedNames.set('SalesValues', 'SUM(Sales[Value])')
+
+		const renamed = applyOperation(wb, {
+			op: 'renameTable',
+			table: 'Sales',
+			newName: 'Revenue',
+		})
+		expectOk(renamed)
+		expect(renamed.value.recalcRequired).toBe(true)
+		expect(sheet.tables[0]?.name).toBe('Revenue')
+		expect(sheet.cells.get(3, 0)?.formula).toBe('SUM(Revenue[Value])')
+		expect(wb.definedNames.get('SalesValues')).toBe('SUM(Revenue[Value])')
+
+		const resized = applyOperation(wb, { op: 'resizeTable', table: 'Revenue', ref: 'A1:C2' })
+		expectOk(resized)
+		expect(resized.value.recalcRequired).toBe(true)
+		expect(sheet.tables[0]?.ref.end.col).toBe(2)
+		expect(sheet.tables[0]?.columns.map((column) => column.name)).toEqual([
+			'Name',
+			'Value',
+			'Region',
+		])
+
+		const deleted = applyOperation(wb, { op: 'deleteTable', table: 'Revenue' })
+		expectOk(deleted)
+		expect(deleted.value.recalcRequired).toBe(true)
+		expect(sheet.tables).toHaveLength(0)
+		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(10))
+	})
+
+	test('setWorkbookProtection updates workbook-level protection metadata', () => {
+		const wb = createWorkbook()
+		const result = applyOperation(wb, {
+			op: 'setWorkbookProtection',
+			protection: {
+				lockStructure: true,
+				workbookAlgorithmName: 'SHA-512',
+				workbookSpinCount: 100000,
+			},
+		})
+		expectOk(result)
+		expect(result.value.recalcRequired).toBe(false)
+		expect(wb.workbookProtection).toEqual({
+			lockStructure: true,
+			workbookAlgorithmName: 'SHA-512',
+			workbookSpinCount: 100000,
+		})
 	})
 
 	test('appendRows expands table filter and sort metadata refs', () => {

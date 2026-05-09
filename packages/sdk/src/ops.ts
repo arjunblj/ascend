@@ -84,13 +84,41 @@ const FIELD_SCHEMAS: Record<
 	display: { type: 'string', description: 'Display text for hyperlink' },
 	format: { type: 'string', description: 'Number format code' },
 	scope: { type: 'string', description: 'Scope (workbook or sheet name)' },
-	style: { type: 'object', description: 'Style object (font, fill, border, alignment)' },
+	style: {
+		type: 'object',
+		description:
+			'Style object with nested font, fill, border, alignment, numberFormat, protection. ' +
+			'font: { name?, size?, bold?, italic?, underline?, strikethrough?, color?: { kind, rgb/theme/index } }. ' +
+			'fill: { pattern?, fgColor?, bgColor? }. ' +
+			'border: { top/bottom/left/right/diagonal?: { style?, color? }, diagonalUp?, diagonalDown? }. ' +
+			'alignment: { horizontal?, vertical?, wrapText?, shrinkToFit?, textRotation?, indent? }. ' +
+			'numberFormat: string (e.g. "#,##0.00"). ' +
+			'protection: { locked?, hidden? }.',
+	},
 	password: { type: 'string', description: 'Protection password' },
-	options: { type: 'object', description: 'Protection options' },
+	options: {
+		type: 'object',
+		description:
+			'Sheet protection options: formatCells?, formatColumns?, formatRows?, insertColumns?, insertRows?, deleteColumns?, deleteRows?, sort?, autoFilter? (all boolean).',
+	},
+	protection: {
+		type: 'object',
+		description:
+			'Workbook protection: lockStructure?, lockWindows?, lockRevision?, workbookPassword?, revisionsPassword?, plus optional Excel hash fields (workbookAlgorithmName, workbookHashValue, workbookSaltValue, workbookSpinCount, revisionsAlgorithmName, revisionsHashValue, revisionsSaltValue, revisionsSpinCount).',
+	},
 	color: { type: 'string', description: 'Color (hex or theme)' },
 	hidden: { type: 'boolean', description: 'Whether to hide' },
-	rule: { type: 'object', description: 'Validation or format rule' },
-	setup: { type: 'object', description: 'Page setup object' },
+	rule: {
+		type: 'object',
+		description:
+			'For setDataValidation: { type: "list"|"whole"|"decimal"|"date"|"time"|"textLength"|"custom", formula1?, formula2?, operator?, allowBlank?, showErrorMessage?, errorTitle?, errorMessage?, showInputMessage?, promptTitle?, prompt? }. ' +
+			'For setConditionalFormat: { type: "cellIs"|"expression"|"colorScale"|"dataBar"|"iconSet"|"top10"|"aboveAverage"|"duplicateValues"|"containsText", operator?, formula?, formula2?, priority?, stopIfTrue?, style? }.',
+	},
+	setup: {
+		type: 'object',
+		description:
+			'Page setup: { orientation?: "portrait"|"landscape", paperSize?: number, scale?, fitToWidth?, fitToHeight?, margins?: { left?, right?, top?, bottom?, header?, footer? } }.',
+	},
 	source: { type: 'string', description: 'Source range' },
 	target: { type: 'string', description: 'Target range' },
 	from: { type: 'integer', description: 'Start row/col index' },
@@ -301,6 +329,22 @@ export function listOperations(): readonly OperationSchema[] {
 			op: 'setRichText',
 			description: 'Set rich text in a cell',
 			requiredFields: ['sheet', 'ref', 'runs'],
+		},
+		{
+			op: 'setWorkbookProtection',
+			description: 'Set workbook-level protection metadata',
+			requiredFields: ['protection'],
+		},
+		{ op: 'deleteTable', description: 'Remove a table from its sheet', requiredFields: ['table'] },
+		{
+			op: 'renameTable',
+			description: 'Rename an existing table',
+			requiredFields: ['table', 'newName'],
+		},
+		{
+			op: 'resizeTable',
+			description: 'Change a table range (rebuilds columns if width changes)',
+			requiredFields: ['table', 'ref'],
 		},
 	])
 }

@@ -247,6 +247,12 @@ export function operationAffectsFormulas(op: Operation): boolean {
 			return false
 		case 'createTable':
 			return false
+		case 'setWorkbookProtection':
+			return false
+		case 'deleteTable':
+		case 'renameTable':
+		case 'resizeTable':
+			return true
 		case 'clearRange':
 			return op.what === 'all' || op.what === 'formulas'
 		default:

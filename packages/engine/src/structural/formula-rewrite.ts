@@ -140,6 +140,49 @@ export function rewriteSheetNameInDefinedNames(
 	}
 }
 
+export function rewriteTableNameInFormulas(
+	workbook: Workbook,
+	oldName: string,
+	newName: string,
+): void {
+	for (const sheet of workbook.sheets) {
+		const updates: [number, number, Cell][] = []
+		for (const [row, col, existing] of sheet.cells.iterate()) {
+			if (existing.formula === null) continue
+			const rewrittenFormula = rewriteFormulaTextForTableRename(existing.formula, oldName, newName)
+			if (rewrittenFormula === undefined) continue
+			if (rewrittenFormula === existing.formula) continue
+			updates.push([
+				row,
+				col,
+				{
+					value: existing.value,
+					formula: rewrittenFormula,
+					styleId: existing.styleId,
+				},
+			])
+		}
+		for (const [row, col, updated] of updates) {
+			sheet.cells.set(row, col, updated)
+		}
+		rewriteSheetMetadataFormulasForTableRename(sheet, oldName, newName)
+	}
+}
+
+export function rewriteTableNameInDefinedNames(
+	workbook: Workbook,
+	oldName: string,
+	newName: string,
+): void {
+	const entries = [...workbook.definedNames.list()]
+	for (const entry of entries) {
+		const formula = rewriteFormulaTextForTableRename(entry.formula, oldName, newName)
+		if (formula === undefined) continue
+		if (formula === entry.formula) continue
+		workbook.definedNames.set(entry.name, formula, entry.scope)
+	}
+}
+
 export function rewriteFormulaTextForRename(
 	formula: string | undefined,
 	oldName: string,
@@ -149,6 +192,17 @@ export function rewriteFormulaTextForRename(
 	const parsed = cachedParseFormula(formula)
 	if (!parsed.ok) return formula
 	return printFormula(rewriteSheetName(parsed.value, oldName, newName))
+}
+
+export function rewriteFormulaTextForTableRename(
+	formula: string | undefined,
+	oldName: string,
+	newName: string,
+): string | undefined {
+	if (!formula) return formula
+	const parsed = cachedParseFormula(formula)
+	if (!parsed.ok) return formula
+	return printFormula(rewriteTableName(parsed.value, oldName, newName))
 }
 
 export function rewriteSheetMetadataFormulasForShift(
@@ -261,6 +315,55 @@ export function rewriteSheetMetadataFormulasForRename(
 		const columns = table.columns.map((column) => {
 			const formula = rewriteFormulaTextForRename(column.formula, oldName, newName)
 			const totalsRowFormula = rewriteFormulaTextForRename(
+				column.totalsRowFormula,
+				oldName,
+				newName,
+			)
+			return {
+				...column,
+				...(formula !== undefined ? { formula } : {}),
+				...(totalsRowFormula !== undefined ? { totalsRowFormula } : {}),
+			}
+		})
+		sheet.tables[i] = { ...table, columns }
+	}
+}
+
+export function rewriteSheetMetadataFormulasForTableRename(
+	sheet: Sheet,
+	oldName: string,
+	newName: string,
+): void {
+	for (let i = 0; i < sheet.dataValidations.length; i++) {
+		const validation = sheet.dataValidations[i]
+		if (!validation) continue
+		const formula1 = rewriteFormulaTextForTableRename(validation.formula1, oldName, newName)
+		const formula2 = rewriteFormulaTextForTableRename(validation.formula2, oldName, newName)
+		sheet.dataValidations[i] = {
+			...validation,
+			...(formula1 !== undefined ? { formula1 } : {}),
+			...(formula2 !== undefined ? { formula2 } : {}),
+		}
+	}
+	for (let i = 0; i < sheet.conditionalFormats.length; i++) {
+		const format = sheet.conditionalFormats[i]
+		if (!format) continue
+		sheet.conditionalFormats[i] = {
+			...format,
+			rules: format.rules.map((rule) => ({
+				...rule,
+				formulas: rule.formulas.map(
+					(formula) => rewriteFormulaTextForTableRename(formula, oldName, newName) ?? formula,
+				),
+			})),
+		}
+	}
+	for (let i = 0; i < sheet.tables.length; i++) {
+		const table = sheet.tables[i]
+		if (!table) continue
+		const columns = table.columns.map((column) => {
+			const formula = rewriteFormulaTextForTableRename(column.formula, oldName, newName)
+			const totalsRowFormula = rewriteFormulaTextForTableRename(
 				column.totalsRowFormula,
 				oldName,
 				newName,
@@ -468,6 +571,49 @@ function rewriteSheetName(node: FormulaNode, oldName: string, newName: string): 
 			return {
 				type: 'array',
 				rows: node.rows.map((row) => row.map((cell) => rewriteSheetName(cell, oldName, newName))),
+			}
+		default:
+			return node
+	}
+}
+
+function rewriteTableName(node: FormulaNode, oldName: string, newName: string): FormulaNode {
+	switch (node.type) {
+		case 'structuredRef':
+			return node.table === oldName ? { ...node, table: newName } : node
+		case 'binary':
+			return {
+				type: 'binary',
+				op: node.op,
+				left: rewriteTableName(node.left, oldName, newName),
+				right: rewriteTableName(node.right, oldName, newName),
+			}
+		case 'unary':
+			return {
+				type: 'unary',
+				op: node.op,
+				operand: rewriteTableName(node.operand, oldName, newName),
+			}
+		case 'function':
+			return {
+				type: 'function',
+				name: node.name,
+				args: node.args.map((arg) => rewriteTableName(arg, oldName, newName)),
+			}
+		case 'array':
+			return {
+				type: 'array',
+				rows: node.rows.map((row) => row.map((cell) => rewriteTableName(cell, oldName, newName))),
+			}
+		case 'sheetSpanRef':
+			return {
+				...node,
+				target: rewriteTableName(node.target, oldName, newName),
+			}
+		case 'spillRef':
+			return {
+				type: 'spillRef',
+				target: rewriteTableName(node.target, oldName, newName),
 			}
 		default:
 			return node

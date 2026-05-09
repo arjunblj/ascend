@@ -362,6 +362,26 @@ export type Operation =
 				readonly size?: number
 			}[]
 	  }
+	| { readonly op: 'setWorkbookProtection'; readonly protection: WorkbookProtectionInput }
+	| { readonly op: 'deleteTable'; readonly table: string }
+	| { readonly op: 'renameTable'; readonly table: string; readonly newName: string }
+	| { readonly op: 'resizeTable'; readonly table: string; readonly ref: string }
+
+export interface WorkbookProtectionInput {
+	readonly lockStructure?: boolean
+	readonly lockWindows?: boolean
+	readonly lockRevision?: boolean
+	readonly workbookPassword?: string
+	readonly revisionsPassword?: string
+	readonly workbookAlgorithmName?: string
+	readonly workbookHashValue?: string
+	readonly workbookSaltValue?: string
+	readonly workbookSpinCount?: number
+	readonly revisionsAlgorithmName?: string
+	readonly revisionsHashValue?: string
+	readonly revisionsSaltValue?: string
+	readonly revisionsSpinCount?: number
+}
 
 export interface ConditionalFormatRule {
 	readonly type:

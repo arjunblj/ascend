@@ -2,12 +2,17 @@ import type { Workbook } from '@ascend/core'
 import { createTableId, toA1 } from '@ascend/core'
 import type { Operation, Result } from '@ascend/schema'
 import { ascendError, EMPTY, err, ok } from '@ascend/schema'
+import {
+	rewriteTableNameInDefinedNames,
+	rewriteTableNameInFormulas,
+} from '../structural/formula-rewrite.ts'
 import { expandSqrefRows } from '../structural/ref-shift.ts'
 import { sortSheetRange } from '../structural/sort-range.ts'
 import type { PatchResult } from './helpers.ts'
 import {
 	buildTableColumns,
 	cellWithExisting,
+	clearFormulaMetadata,
 	clearFormulaMetadataForSheet,
 	DEFAULT_SID,
 	findTable,
@@ -65,16 +70,15 @@ export function handleAppendRows(
 		return err(ascendError('NAME_NOT_FOUND', `Table "${op.table}" not found`))
 	}
 	const { table, sheet } = located
-	if (table.hasTotals) {
-		return err(
-			ascendError('VALIDATION_ERROR', 'appendRows does not support tables with totals rows yet'),
-		)
-	}
 	if (op.rows.length === 0) return ok(patch([], [sheet.name], false))
 
 	const width = table.columns.length
 	const affected: string[] = []
-	let nextRow = table.ref.end.row + 1
+	const originalEndRow = table.ref.end.row
+	if (table.hasTotals) {
+		sheet.cells.insertRows(originalEndRow, op.rows.length)
+	}
+	let nextRow = table.hasTotals ? originalEndRow : originalEndRow + 1
 	for (const row of op.rows) {
 		if (row.length > width) {
 			return err(
@@ -124,7 +128,7 @@ export function handleAppendRows(
 			...table,
 			ref: {
 				start: table.ref.start,
-				end: { row: table.ref.end.row + rowDelta, col: table.ref.end.col },
+				end: { row: originalEndRow + rowDelta, col: table.ref.end.col },
 			},
 			...(table.autoFilter
 				? {
@@ -169,4 +173,78 @@ export function handleSortRange(
 	const sorted = sortSheetRange(workbook, sheet, range, op.by)
 	if (!sorted.ok) return sorted
 	return ok(patch([], [op.sheet], sorted.value))
+}
+
+export function handleDeleteTable(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'deleteTable' }>,
+): Result<PatchResult> {
+	const located = findTable(workbook, op.table)
+	if (!located) {
+		return err(ascendError('NAME_NOT_FOUND', `Table "${op.table}" not found`))
+	}
+	const { table, sheet } = located
+	const idx = sheet.tables.findIndex((t) => t.id === table.id)
+	if (idx >= 0) sheet.tables.splice(idx, 1)
+	if (sheet.autoFilter?.ref) {
+		const af = safeParseRange(sheet.autoFilter.ref)
+		if (
+			af.ok &&
+			af.value.start.row === table.ref.start.row &&
+			af.value.start.col === table.ref.start.col &&
+			af.value.end.row === table.ref.end.row &&
+			af.value.end.col === table.ref.end.col
+		) {
+			sheet.autoFilter = null
+		}
+	}
+	clearFormulaMetadata(workbook)
+	return ok(patch([], [sheet.name], true))
+}
+
+export function handleRenameTable(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'renameTable' }>,
+): Result<PatchResult> {
+	const located = findTable(workbook, op.table)
+	if (!located) {
+		return err(ascendError('NAME_NOT_FOUND', `Table "${op.table}" not found`))
+	}
+	const { table, sheet } = located
+	if (sheet.tables.some((t) => t.name === op.newName && t.id !== table.id)) {
+		return err(ascendError('NAME_CONFLICT', `Table "${op.newName}" already exists`))
+	}
+	const idx = sheet.tables.findIndex((t) => t.id === table.id)
+	if (idx >= 0) {
+		sheet.tables[idx] = { ...table, name: op.newName }
+	}
+	clearFormulaMetadata(workbook)
+	rewriteTableNameInFormulas(workbook, table.name, op.newName)
+	rewriteTableNameInDefinedNames(workbook, table.name, op.newName)
+	return ok(patch([], [sheet.name], true))
+}
+
+export function handleResizeTable(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'resizeTable' }>,
+): Result<PatchResult> {
+	const located = findTable(workbook, op.table)
+	if (!located) {
+		return err(ascendError('NAME_NOT_FOUND', `Table "${op.table}" not found`))
+	}
+	const { table, sheet } = located
+	const rangeResult = safeParseRange(op.ref)
+	if (!rangeResult.ok) return rangeResult
+	const ref = rangeResult.value
+	const width = ref.end.col - ref.start.col + 1
+	const columns =
+		width === table.columns.length
+			? table.columns
+			: buildTableColumns(sheet, ref, width, table.hasHeaders)
+	const idx = sheet.tables.findIndex((t) => t.id === table.id)
+	if (idx >= 0) {
+		sheet.tables[idx] = { ...table, ref, columns }
+	}
+	clearFormulaMetadata(workbook)
+	return ok(patch([], [sheet.name], true))
 }

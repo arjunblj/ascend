@@ -82,6 +82,10 @@ const handlers: Record<string, OperationHandler> = {
 	deleteDefinedName: formatOps.handleDeleteDefinedName as OperationHandler,
 	groupRows: formatOps.handleGroupRows as OperationHandler,
 	groupCols: formatOps.handleGroupCols as OperationHandler,
+	setWorkbookProtection: sheetOps.handleSetWorkbookProtection as OperationHandler,
+	deleteTable: tableOps.handleDeleteTable as OperationHandler,
+	renameTable: tableOps.handleRenameTable as OperationHandler,
+	resizeTable: tableOps.handleResizeTable as OperationHandler,
 }
 
 export function applyOperation(

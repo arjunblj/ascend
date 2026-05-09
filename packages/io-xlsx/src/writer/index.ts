@@ -61,7 +61,7 @@ const CT_DRAWING = 'application/vnd.openxmlformats-officedocument.drawing+xml'
 const CT_TABLE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml'
 const CT_VML = 'application/vnd.openxmlformats-officedocument.vmlDrawing'
 const CT_THEME = 'application/vnd.openxmlformats-officedocument.theme+xml'
-const STREAMING_XML_BATCH_CHARS = 131_072
+const STREAMING_XML_BATCH_CHARS = 524_288
 
 interface XmlStreamingBatchSink {
 	write(chunk: string): void

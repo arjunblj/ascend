@@ -35,7 +35,7 @@
 			"description": "1900 leap year bug: DATE(1900,2,29) works",
 			"setup": {},
 			"formula": "DATE(1900, 2, 29)",
-			"expected": { "kind": "number", "value": 61 }
+			"expected": { "kind": "number", "value": 60 }
 		},
 		{
 			"description": "DATEVALUE parses ISO text for a fake settlement date",

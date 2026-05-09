@@ -21,20 +21,26 @@ function evalFormula(
 describe('date serial edge cases', () => {
 	test('DATE(1900,1,0) is serial 0 (Excel quirk)', () => {
 		const v = evalFormula('=DATE(1900,1,0)')
-		if (v.kind === 'date') expect(v.serial).toBe(0)
-		else if (v.kind === 'number') expect(v.value).toBe(0)
+		expect(v).toEqual(numberValue(0))
 	})
 
-	test('DATE(1900,2,29) wraps to March 1 (serial 61) — Ascend does not emulate the fake leap day', () => {
+	test('DATE(1900,2,29) is the Excel phantom leap day at serial 60', () => {
 		const v = evalFormula('=DATE(1900,2,29)')
-		if (v.kind === 'date') expect(v.serial).toBe(61)
-		else if (v.kind === 'number') expect(v.value).toBe(61)
+		expect(v).toEqual(numberValue(60))
+	})
+
+	test('DATE overflow can land on the Excel phantom leap day', () => {
+		expect(evalFormula('=DATE(1900,1,60)')).toEqual(numberValue(60))
+		expect(evalFormula('=DATE(1900,3,0)')).toEqual(numberValue(60))
+	})
+
+	test('DATEVALUE accepts the Excel phantom leap day', () => {
+		expect(evalFormula('=DATEVALUE("1900-02-29")')).toEqual(numberValue(60))
 	})
 
 	test('DATE(1900,3,1) is serial 61', () => {
 		const v = evalFormula('=DATE(1900,3,1)')
-		if (v.kind === 'date') expect(v.serial).toBe(61)
-		else if (v.kind === 'number') expect(v.value).toBe(61)
+		expect(v).toEqual(numberValue(61))
 	})
 
 	test('YEAR(1) = 1900', () => {
@@ -54,8 +60,7 @@ describe('date serial edge cases', () => {
 
 	test('1904 date system: DATE(1904,1,2) = serial 1', () => {
 		const v = evalFormula('=DATE(1904,1,2)', '1904')
-		if (v.kind === 'date') expect(v.serial).toBe(1)
-		else if (v.kind === 'number') expect(v.value).toBe(1)
+		expect(v).toEqual(numberValue(1))
 	})
 
 	test('1904 date system: YEAR(1) = 1904', () => {

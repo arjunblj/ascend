@@ -989,6 +989,19 @@ describe('formula functions', () => {
 			expect(getResult(wb, 0, 0)).toEqual(numberValue(1))
 		})
 
+		test('DATE(1900,2,29) → serial 60 phantom leap day', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'DATE(1900,2,29)')
+			setFormula(wb, 0, 1, 'DATE(1900,1,60)')
+			setFormula(wb, 0, 2, 'DATE(1900,3,0)')
+			setFormula(wb, 0, 3, 'DATEVALUE("1900-02-29")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(60))
+			expect(getResult(wb, 0, 1)).toEqual(numberValue(60))
+			expect(getResult(wb, 0, 2)).toEqual(numberValue(60))
+			expect(getResult(wb, 0, 3)).toEqual(numberValue(60))
+		})
+
 		test('DATE(2024,1,1) → serial 45292', () => {
 			const wb = makeWorkbook()
 			setFormula(wb, 0, 0, 'DATE(2024,1,1)')

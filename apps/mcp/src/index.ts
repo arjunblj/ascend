@@ -90,6 +90,25 @@ export function createServer(): McpServer {
 	)
 
 	server.tool(
+		'ascend.visuals',
+		'Inspect workbook visual inventory: charts, drawings, media, image anchors, and preserve-first visual gaps',
+		{
+			file: z.string().describe('Path to workbook file'),
+		},
+		async ({ file }) => {
+			try {
+				const wb = await WorkbookDocument.open(file, { mode: 'full' })
+				const inventory = wb.visualInventory()
+				return okResponse(inventory, `Inspected visual inventory for "${file}"`)
+			} catch (e) {
+				return errorResponse(
+					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
+				)
+			}
+		},
+	)
+
+	server.tool(
 		'ascend.read',
 		'Read cell values from a range',
 		{

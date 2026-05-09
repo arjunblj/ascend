@@ -184,6 +184,18 @@ export function createServer(opts?: { port?: number }) {
 				}
 			}
 
+			if (method === 'POST' && path === '/visuals') {
+				const body = await parseJson<{ file?: string }>(req)
+				const file = body ? requireString(body, 'file') : null
+				if (!file) return jsonFailure('Missing or invalid file', 400)
+				try {
+					const wb = await WorkbookDocument.open(file, { mode: 'full' })
+					return jsonSuccess(wb.visualInventory())
+				} catch (e) {
+					return handleError(e, file)
+				}
+			}
+
 			if (method === 'POST' && path === '/read') {
 				const body = await parseJson<{
 					file?: string

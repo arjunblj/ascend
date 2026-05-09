@@ -44,11 +44,12 @@ describe('MCP server', () => {
 		expect(names).toContain('ascend.diff')
 		expect(names).toContain('ascend.export')
 		expect(names).toContain('ascend.list_sheets')
+		expect(names).toContain('ascend.visuals')
 		expect(names).toContain('ascend.capabilities')
 		expect(names).toContain('ascend.plan')
 		expect(names).toContain('ascend.commit')
 		expect(names).toContain('ascend.repair_plan')
-		expect(names.length).toBe(20)
+		expect(names.length).toBe(21)
 	})
 
 	test('ascend.write recalculates before saving when needed', async () => {
@@ -510,6 +511,34 @@ describe('MCP server', () => {
 		const result = await handler({ file: TEMP_FILE })
 		const names = (result.structuredContent?.data?.sheets ?? []).map((s) => s.name)
 		expect(names).toContain('Alpha')
+	})
+
+	test('ascend.visuals returns visual inventory', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test
+		const handler = (server as any)._registeredTools['ascend.visuals'].handler as (args: {
+			file: string
+		}) => Promise<{
+			content?: Array<{ text?: string }>
+			structuredContent?: {
+				data?: {
+					load?: { mode?: string }
+					sheetImageCount?: number
+					sheets?: Array<{ sheet: string; imageCount: number }>
+				}
+			}
+		}>
+
+		const result = await handler({ file: TEMP_FILE })
+		expect(result.structuredContent?.data?.load?.mode).toBe('full')
+		expect(result.structuredContent?.data?.sheetImageCount).toBe(0)
+		expect(result.structuredContent?.data?.sheets?.[0]).toMatchObject({
+			sheet: 'Sheet1',
+			imageCount: 0,
+		})
 	})
 
 	test('file-not-found returns structured error', async () => {

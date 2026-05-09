@@ -162,6 +162,29 @@ describe('API', () => {
 		expect(body.data.colCount).toBe(2)
 	})
 
+	test('visuals returns full workbook visual inventory', async () => {
+		const tempFile = join(tempDir, 'visuals.xlsx')
+		const wb = AscendWorkbook.create()
+		await wb.save(tempFile)
+
+		const res = await fetch(`http://localhost:${server.port}/visuals`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ file: tempFile }),
+		})
+		expect(res.status).toBe(200)
+		const body = await res.json()
+		expect(body.ok).toBe(true)
+		expect(body.data.load.mode).toBe('full')
+		expect(body.data.sheetImageCount).toBe(0)
+		expect(body.data.sheets[0]).toMatchObject({
+			sheet: 'Sheet1',
+			hasDrawing: false,
+			hasLegacyDrawing: false,
+			imageCount: 0,
+		})
+	})
+
 	test('read returns versioned machine envelope', async () => {
 		const tempFile = join(tempDir, 'read.xlsx')
 		const wb = AscendWorkbook.create()

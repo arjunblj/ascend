@@ -642,6 +642,7 @@ function scanOrderedValuesRow(
 			rowText,
 			nextCol,
 			state,
+			sharedStrings,
 			fastOut,
 		)
 		if (fastNext !== -1) {
@@ -769,6 +770,7 @@ function scanCanonicalOrderedValuesCell(
 	fallbackRowText: string,
 	fallbackCol: number,
 	state: OrderedSheetScanState,
+	sharedStrings: SharedStringResolver,
 	out: { col: number },
 ): number {
 	if (!xml.startsWith('<c r="', start)) return -1
@@ -776,7 +778,6 @@ function scanCanonicalOrderedValuesCell(
 		parseExpectedCanonicalCellRef(xml, start + 6, end, fallbackRow, fallbackRowText, fallbackCol) ??
 		parseCanonicalCellRef(xml, start + 6, end)
 	if (!parsed) return -1
-	trackPhysicalCell(state, parsed.row, parsed.col)
 	const rowText = parsed.row === fallbackRow ? fallbackRowText : String(parsed.row + 1)
 	const ref = cellRef(state, parsed.col, rowText)
 	const numericValueStart = parseCanonicalNumericValueStart(xml, parsed.end)
@@ -785,11 +786,24 @@ function scanCanonicalOrderedValuesCell(
 		if (valueEnd === -1 || valueEnd > end || valueEnd === numericValueStart) return -1
 		const raw = xml.slice(numericValueStart, valueEnd)
 		const value = Number(raw)
-		trackSemanticCell(state, parsed.row, parsed.col)
+		trackPhysicalSemanticCell(state, parsed.row, parsed.col)
 		state.orderedRefs.update(ref)
 		state.orderedValues.update(
 			`${ref}\t${Number.isNaN(value) ? `s:${raw}` : `n:${canonicalNumber(value)}`}`,
 		)
+		out.col = parsed.col
+		return valueEnd + 8
+	}
+	const sharedStringValueStart = parseCanonicalSharedStringValueStart(xml, parsed.end)
+	if (sharedStringValueStart !== -1) {
+		const valueEnd = xml.indexOf('</v></c>', sharedStringValueStart)
+		if (valueEnd === -1 || valueEnd > end || valueEnd === sharedStringValueStart) return -1
+		const raw = xml.slice(sharedStringValueStart, valueEnd)
+		const index = Number.parseInt(raw, 10)
+		const value = Number.isFinite(index) ? (sharedStrings.getString?.(index) ?? '') : ''
+		trackPhysicalSemanticCell(state, parsed.row, parsed.col)
+		state.orderedRefs.update(ref)
+		state.orderedValues.update(`${ref}\ts:${value}`)
 		out.col = parsed.col
 		return valueEnd + 8
 	}
@@ -805,7 +819,7 @@ function scanCanonicalOrderedValuesCell(
 		}
 		if (!xml.startsWith('</t></is></c>', valueEnd)) return -1
 		const raw = xml.slice(inlineValueStart, valueEnd)
-		trackSemanticCell(state, parsed.row, parsed.col)
+		trackPhysicalSemanticCell(state, parsed.row, parsed.col)
 		state.orderedRefs.update(ref)
 		state.orderedValues.update(`${ref}\ts:${hasEntity ? decodeXmlText(raw) : raw}`)
 		out.col = parsed.col
@@ -843,6 +857,11 @@ function parseCanonicalNumericValueStart(xml: string, refEnd: number): number {
 	const styleEnd = xml.indexOf('"', refEnd + 5)
 	if (styleEnd === -1 || !xml.startsWith('><v>', styleEnd + 1)) return -1
 	return styleEnd + 5
+}
+
+function parseCanonicalSharedStringValueStart(xml: string, refEnd: number): number {
+	const prefix = '" t="s"><v>'
+	return xml.startsWith(prefix, refEnd) ? refEnd + prefix.length : -1
 }
 
 function parseCanonicalInlineStringValueStart(xml: string, refEnd: number): number {
@@ -1088,6 +1107,19 @@ function trackSemanticCell(state: OrderedSheetScanState, row: number, col: numbe
 
 function trackPhysicalCell(state: OrderedSheetScanState, row: number, col: number): void {
 	state.physicalCellCount += 1
+	if (row < state.physicalMinRow) state.physicalMinRow = row
+	if (col < state.physicalMinCol) state.physicalMinCol = col
+	if (row > state.physicalMaxRow) state.physicalMaxRow = row
+	if (col > state.physicalMaxCol) state.physicalMaxCol = col
+}
+
+function trackPhysicalSemanticCell(state: OrderedSheetScanState, row: number, col: number): void {
+	state.cellCount += 1
+	state.physicalCellCount += 1
+	if (row < state.minRow) state.minRow = row
+	if (col < state.minCol) state.minCol = col
+	if (row > state.maxRow) state.maxRow = row
+	if (col > state.maxCol) state.maxCol = col
 	if (row < state.physicalMinRow) state.physicalMinRow = row
 	if (col < state.physicalMinCol) state.physicalMinCol = col
 	if (row > state.physicalMaxRow) state.physicalMaxRow = row

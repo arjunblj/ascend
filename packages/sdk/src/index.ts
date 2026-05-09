@@ -1,4 +1,33 @@
 export { indexToColumn, parseA1 } from '@ascend/core'
+export type {
+	AgentCommitOptions,
+	AgentCommitResult,
+	AgentPlanResult,
+	RepairAction,
+	RepairPlanResult,
+} from './agent-workflow.ts'
+export {
+	commitAgentPlan,
+	createAgentPlan,
+	createRepairPlan,
+	digestPlan,
+	sha256Bytes,
+} from './agent-workflow.ts'
+export type {
+	CapabilityFilters,
+	CapabilityPriority,
+	CapabilityStatus,
+	CapabilitySummary,
+	CapabilitySurface,
+	ExcelCapability,
+} from './capabilities.ts'
+export {
+	EXCEL_CAPABILITIES,
+	getCapability,
+	isCapabilityGap,
+	listCapabilities,
+	summarizeCapabilities,
+} from './capabilities.ts'
 export type { ExportFormat, FormatDisplayOptions } from './format-helpers.ts'
 export {
 	ensureOutputExtension,
@@ -8,9 +37,9 @@ export {
 	normalizeExportFormat,
 	toA1Ref,
 } from './format-helpers.ts'
-export type { OperationJsonSchema, OperationSchema } from './ops.ts'
+export type { OperationJsonSchema, OperationSchema, ParseOperationsResult } from './ops.ts'
 export * as ops from './ops.ts'
-export { getOperationsSchema, listOperations } from './ops.ts'
+export { getOperationsSchema, listOperations, parseOperations } from './ops.ts'
 export { WorkbookReadView } from './read-view.ts'
 export type {
 	CellSelector,

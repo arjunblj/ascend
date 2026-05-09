@@ -1,9 +1,11 @@
 #!/usr/bin/env bun
 
-import { AscendException, levenshtein } from '@ascend/schema'
+import { AscendException, ascendError, levenshtein } from '@ascend/schema'
 import { agentViewCommand, usage as agentViewUsage } from './commands/agent-view.ts'
 import { calcCommand, usage as calcUsage } from './commands/calc.ts'
+import { capabilitiesCommand, usage as capabilitiesUsage } from './commands/capabilities.ts'
 import { checkCommand, usage as checkUsage } from './commands/check.ts'
+import { commitCommand, usage as commitUsage } from './commands/commit.ts'
 import { createCommand, usage as createUsage } from './commands/create.ts'
 import { diffCommand, usage as diffUsage } from './commands/diff.ts'
 import { doctorCommand, usage as doctorUsage } from './commands/doctor.ts'
@@ -13,8 +15,11 @@ import { formulaCommand, usage as formulaUsage } from './commands/formula.ts'
 import { inspectCommand, usage as inspectUsage } from './commands/inspect.ts'
 import { lintCommand, usage as lintUsage } from './commands/lint.ts'
 import { listCommand, usage as listUsage } from './commands/list.ts'
+import { opsCommand, usage as opsUsage } from './commands/ops.ts'
+import { planCommand, usage as planUsage } from './commands/plan.ts'
 import { previewCommand, usage as previewUsage } from './commands/preview.ts'
 import { readCommand, usage as readUsage } from './commands/read.ts'
+import { repairPlanCommand, usage as repairPlanUsage } from './commands/repair-plan.ts'
 import { traceCommand, usage as traceUsage } from './commands/trace.ts'
 import { tuiCommand, usage as tuiUsage } from './commands/tui.ts'
 import { writeCommand, usage as writeUsage } from './commands/write.ts'
@@ -34,6 +39,11 @@ Commands:
   read <file> <range>           Read cell values from a range
   find <file> <query>           Search for cells matching a value
   agent-view <file>             Get AI-friendly sheet summary
+  ops                           List operation schemas and examples
+  capabilities                  Show Excel capability coverage matrix
+  plan <file> --ops <json>      Validate and preview a safe edit plan
+  commit <file> --ops <json>    Commit an edit plan atomically
+  repair-plan <file>            Suggest next actions for unsafe files
   preview <file> <range> <json> Preview workbook changes without saving
   write <file> <range> <json>   Write values to cells
   formula <subcommand>          Inspect or edit formulas
@@ -81,6 +91,19 @@ const COMMANDS: Record<string, Command> = {
 		usage: readUsage,
 		allowedFlags: ['sheet', 'mode', 'row-offset', 'row-limit', 'display', 'json'],
 	},
+	ops: { run: opsCommand, usage: opsUsage, allowedFlags: ['op', 'json'] },
+	capabilities: {
+		run: capabilitiesCommand,
+		usage: capabilitiesUsage,
+		allowedFlags: ['feature', 'family', 'priority', 'status', 'gaps', 'json'],
+	},
+	plan: { run: planCommand, usage: planUsage, allowedFlags: ['ops', 'json'] },
+	commit: {
+		run: commitCommand,
+		usage: commitUsage,
+		allowedFlags: ['ops', 'output', 'in-place', 'backup', 'expect-sha256', 'json'],
+	},
+	'repair-plan': { run: repairPlanCommand, usage: repairPlanUsage, allowedFlags: ['json'] },
 	preview: { run: previewCommand, usage: previewUsage, allowedFlags: ['sheet', 'ops', 'json'] },
 	write: { run: writeCommand, usage: writeUsage, allowedFlags: ['sheet', 'ops', 'json'] },
 	formula: { run: formulaCommand, usage: formulaUsage, allowedFlags: ['json'] },
@@ -157,8 +180,21 @@ async function main(): Promise<void> {
 			console.log(HELP)
 			process.exit(0)
 		}
-		console.error(`Unknown command: ${command}`)
 		const suggestion = suggestClosest(command, Object.keys(COMMANDS))
+		if (flags.has('json')) {
+			console.log(
+				jsonErr(
+					ascendError('INVALID_ARGUMENT', `Unknown command: ${command}`, {
+						...(suggestion ? { details: { suggestion } } : {}),
+						suggestedFix: suggestion
+							? `Run "ascend ${suggestion} --help".`
+							: 'Run "ascend --help" for usage.',
+					}),
+				),
+			)
+			process.exit(1)
+		}
+		console.error(`Unknown command: ${command}`)
 		if (suggestion) console.error(`Did you mean "${suggestion}"?`)
 		console.error('Run "ascend --help" for usage')
 		process.exit(1)
@@ -174,8 +210,19 @@ async function main(): Promise<void> {
 	)
 	if (invalidFlags.length > 0) {
 		const invalid = invalidFlags[0] ?? ''
-		console.error(`Unknown flag for "${command}": --${invalid}`)
 		const suggestion = suggestClosest(invalid, cmd.allowedFlags ?? [])
+		if (flags.has('json')) {
+			console.log(
+				jsonErr(
+					ascendError('INVALID_ARGUMENT', `Unknown flag for "${command}": --${invalid}`, {
+						...(suggestion ? { details: { suggestion } } : {}),
+						suggestedFix: suggestion ? `Use "--${suggestion}".` : cmd.usage,
+					}),
+				),
+			)
+			process.exit(1)
+		}
+		console.error(`Unknown flag for "${command}": --${invalid}`)
 		if (suggestion) console.error(`Did you mean "--${suggestion}"?`)
 		console.error(cmd.usage)
 		process.exit(1)

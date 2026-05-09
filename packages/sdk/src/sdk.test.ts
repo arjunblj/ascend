@@ -4,7 +4,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { extractZip } from '../../io-xlsx/src/reader/zip.ts'
 import { createZip, encode } from '../../io-xlsx/src/writer/zip.ts'
-import { Ascend, AscendWorkbook, ops, WorkbookDocument, WorkbookSession } from './index.ts'
+import {
+	Ascend,
+	AscendWorkbook,
+	listCapabilities,
+	ops,
+	parseOperations,
+	WorkbookDocument,
+	WorkbookSession,
+} from './index.ts'
 
 describe('AscendWorkbook', () => {
 	test('Ascend entry point exposes create, open, fromCsv', async () => {
@@ -2537,6 +2545,39 @@ describe('ops.listOperations', () => {
 		expect(setCells?.requiredFields).toEqual(['sheet', 'updates'])
 		const addSheet = schemas.find((s) => s.op === 'addSheet')
 		expect(addSheet?.optionalFields).toContain('position')
+	})
+
+	test('operation schemas include examples and shared parser rejects unknown ops', () => {
+		const schema = ops.getOperationsSchema().find((entry) => entry.op === 'setCells')
+		expect(schema?.examples[0]?.op).toBe('setCells')
+		const parsed = parseOperations([{ op: 'missingOperation' }])
+		expect(parsed.ok).toBe(false)
+		if (!parsed.ok) expect(parsed.issues[0]).toContain('not supported')
+	})
+})
+
+describe('capabilities registry', () => {
+	test('classifies the major Excel feature families', () => {
+		const capabilities = listCapabilities()
+		for (const family of [
+			'workbook/package',
+			'sheets/ranges',
+			'tables/data',
+			'formula engine',
+			'visuals',
+			'analytics',
+			'active content',
+			'connections',
+			'agent UX',
+		]) {
+			expect(capabilities.some((capability) => capability.family === family)).toBe(true)
+		}
+		expect(capabilities.find((capability) => capability.id === 'analytics.pivots')?.priority).toBe(
+			'P0',
+		)
+		expect(capabilities.find((capability) => capability.id === 'visuals.charts')?.status).toBe(
+			'preserved',
+		)
 	})
 })
 

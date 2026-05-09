@@ -32,6 +32,9 @@ afterAll(() => {
 		NAMED_RANGE_FILE,
 		'exported.tsv',
 		'exported.json',
+		'plan-ops.json',
+		'commit-ops.json',
+		'commit-output.xlsx',
 	]) {
 		const path = `${import.meta.dir}/${f}`
 		if (existsSync(path)) unlinkSync(path)
@@ -65,11 +68,74 @@ describe('ascend cli', () => {
 		expect(stderr).toContain('Did you mean "inspect"?')
 	})
 
+	test('unknown command --json returns a failure envelope', async () => {
+		const { exitCode, stdout } = await run('inspcet', '--json')
+		expect(exitCode).toBe(1)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.ok).toBe(false)
+		expect(parsed.error.code).toBe('INVALID_ARGUMENT')
+		expect(parsed.error.details.suggestion).toBe('inspect')
+	})
+
 	test('create makes a workbook file', async () => {
 		const { stdout, exitCode } = await run('create', TEST_FILE)
 		expect(exitCode).toBe(0)
 		expect(stdout).toContain('Created')
 		expect(existsSync(`${import.meta.dir}/${TEST_FILE}`)).toBe(true)
+	})
+
+	test('ops --json exposes operation schemas with examples', async () => {
+		const { stdout, exitCode } = await run('ops', '--op', 'setCells', '--json')
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.ok).toBe(true)
+		expect(parsed.data.operations[0].op).toBe('setCells')
+		expect(parsed.data.schemas[0].examples[0].op).toBe('setCells')
+	})
+
+	test('capabilities --json exposes the Excel capability matrix', async () => {
+		const { stdout, exitCode } = await run('capabilities', '--feature', 'pivots', '--json')
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.ok).toBe(true)
+		expect(
+			parsed.data.capabilities.some(
+				(capability: { id: string }) => capability.id === 'analytics.pivots',
+			),
+		).toBe(true)
+	})
+
+	test('plan and commit implement safe agent workflow', async () => {
+		const opsFile = `${import.meta.dir}/commit-ops.json`
+		await Bun.write(
+			opsFile,
+			JSON.stringify([
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'agent-safe' }] },
+			]),
+		)
+		const plan = await run('plan', TEST_FILE, '--ops', 'commit-ops.json', '--json')
+		expect(plan.exitCode).toBe(0)
+		const planned = JSON.parse(plan.stdout)
+		expect(planned.ok).toBe(true)
+		expect(planned.data.inputSha256).toMatch(/^[a-f0-9]{64}$/)
+		expect(planned.data.preview.wouldSucceed).toBe(true)
+
+		const commit = await run(
+			'commit',
+			TEST_FILE,
+			'--ops',
+			'commit-ops.json',
+			'--output',
+			'commit-output.xlsx',
+			'--expect-sha256',
+			planned.data.inputSha256,
+			'--json',
+		)
+		expect(commit.exitCode).toBe(0)
+		const committed = JSON.parse(commit.stdout)
+		expect(committed.ok).toBe(true)
+		expect(committed.data.outputSha256).toMatch(/^[a-f0-9]{64}$/)
+		expect(existsSync(`${import.meta.dir}/commit-output.xlsx`)).toBe(true)
 	})
 
 	test('inspect shows sheet info', async () => {

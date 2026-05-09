@@ -41,8 +41,9 @@ import {
 	type Operation,
 } from '@ascend/schema'
 import { check as verifyCheck, lint as verifyLint } from '@ascend/verify'
+import { getCapability, listCapabilities, summarizeCapabilities } from './capabilities.ts'
 import { buildWorkbookLoadInfo, openWorkbookSource } from './load.ts'
-import { getOperationsSchema, listOperations } from './ops.ts'
+import { getOperationsSchema, listOperations, parseOperations } from './ops.ts'
 import { WorkbookReadView } from './read-view.ts'
 import {
 	type CellSelector,
@@ -895,6 +896,10 @@ export const Ascend = {
 	fromCsv: AscendWorkbook.fromCsv,
 	listOperations,
 	getOperationsSchema,
+	parseOperations,
+	listCapabilities,
+	getCapability,
+	summarizeCapabilities,
 }
 
 export class BatchBuilder {

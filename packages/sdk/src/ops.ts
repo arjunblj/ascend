@@ -18,7 +18,12 @@ export interface OperationJsonSchema {
 			{ readonly type: string; readonly description?: string; readonly enum?: readonly string[] }
 		>
 	}
+	readonly examples: readonly Record<string, unknown>[]
 }
+
+export type ParseOperationsResult =
+	| { readonly ok: true; readonly value: readonly Operation[] }
+	| { readonly ok: false; readonly error: string; readonly issues: readonly string[] }
 
 const FIELD_SCHEMAS: Record<
 	string,
@@ -303,8 +308,149 @@ export function getOperationsSchema(): readonly OperationJsonSchema[] {
 				required,
 				properties,
 			},
+			examples: [operationExample(op.op)],
 		}
 	})
+}
+
+export function parseOperations(input: unknown): ParseOperationsResult {
+	if (!Array.isArray(input)) {
+		return {
+			ok: false,
+			error: 'Operations payload must be an array',
+			issues: ['ops must be an array'],
+		}
+	}
+	const schemas = new Map(listOperations().map((op) => [op.op, op]))
+	const issues: string[] = []
+	const ops: Operation[] = []
+	input.forEach((item, index) => {
+		if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+			issues.push(`ops[${index}] must be an object`)
+			return
+		}
+		const record = item as Record<string, unknown>
+		const op = record.op
+		if (typeof op !== 'string') {
+			issues.push(`ops[${index}].op must be a string`)
+			return
+		}
+		const schema = schemas.get(op)
+		if (!schema) {
+			issues.push(`ops[${index}].op "${op}" is not supported`)
+			return
+		}
+		for (const field of schema.requiredFields) {
+			if (!(field in record)) issues.push(`ops[${index}].${field} is required for ${op}`)
+		}
+		ops.push(record as Operation)
+	})
+	if (issues.length > 0) return { ok: false, error: issues[0] ?? 'Invalid operations', issues }
+	return { ok: true, value: ops }
+}
+
+function operationExample(op: string): Record<string, unknown> {
+	switch (op) {
+		case 'setCells':
+			return { op, sheet: 'Sheet1', updates: [{ ref: 'A1', value: 123 }] }
+		case 'setFormula':
+			return { op, sheet: 'Sheet1', ref: 'B1', formula: '=SUM(A1:A10)' }
+		case 'fillFormula':
+			return { op, sheet: 'Sheet1', range: 'B2:B10', formula: '=A2*2' }
+		case 'clearRange':
+			return { op, sheet: 'Sheet1', range: 'A1:B10', what: 'values' }
+		case 'insertRows':
+		case 'deleteRows':
+		case 'hideRows':
+			return { op, sheet: 'Sheet1', at: 1, count: 2 }
+		case 'insertCols':
+		case 'deleteCols':
+		case 'hideCols':
+			return { op, sheet: 'Sheet1', at: 1, count: 2 }
+		case 'addSheet':
+			return { op, name: 'Summary' }
+		case 'deleteSheet':
+			return { op, sheet: 'OldData' }
+		case 'renameSheet':
+			return { op, sheet: 'Sheet1', newName: 'Data' }
+		case 'moveSheet':
+			return { op, sheet: 'Data', position: 0 }
+		case 'createTable':
+			return { op, sheet: 'Sheet1', ref: 'A1:D20', name: 'Sales', hasHeaders: true }
+		case 'appendRows':
+			return { op, table: 'Sales', rows: [['West', 1200]] }
+		case 'sortRange':
+			return { op, sheet: 'Sheet1', range: 'A1:D20', by: [{ column: 1, descending: true }] }
+		case 'mergeCells':
+		case 'unmergeCells':
+			return { op, sheet: 'Sheet1', range: 'A1:C1' }
+		case 'setColWidth':
+			return { op, sheet: 'Sheet1', col: 0, width: 18 }
+		case 'setRowHeight':
+			return { op, sheet: 'Sheet1', row: 0, height: 24 }
+		case 'setComment':
+			return { op, sheet: 'Sheet1', ref: 'A1', text: 'Reviewed', author: 'Ascend' }
+		case 'setHyperlink':
+			return { op, sheet: 'Sheet1', ref: 'A1', url: 'https://example.com', display: 'Example' }
+		case 'setNumberFormat':
+			return { op, sheet: 'Sheet1', range: 'A:A', format: '$#,##0.00' }
+		case 'setDefinedName':
+			return { op, name: 'SalesTotal', ref: 'Sheet1!$B$2:$B$20' }
+		case 'deleteDefinedName':
+			return { op, name: 'SalesTotal' }
+		case 'setStyle':
+			return { op, sheet: 'Sheet1', range: 'A1:D1', style: { font: { bold: true } } }
+		case 'freezePane':
+			return { op, sheet: 'Sheet1', row: 1, col: 0 }
+		case 'deleteComment':
+		case 'deleteHyperlink':
+			return { op, sheet: 'Sheet1', ref: 'A1' }
+		case 'setDataValidation':
+			return { op, sheet: 'Sheet1', range: 'A2:A20', rule: { type: 'list', formula1: '"Yes,No"' } }
+		case 'deleteDataValidation':
+		case 'setAutoFilter':
+		case 'deleteConditionalFormat':
+		case 'setPrintArea':
+			return { op, sheet: 'Sheet1', range: 'A1:D20' }
+		case 'clearAutoFilter':
+			return { op, sheet: 'Sheet1' }
+		case 'setSheetProtection':
+			return { op, sheet: 'Sheet1', options: { formatCells: false } }
+		case 'setTabColor':
+			return { op, sheet: 'Sheet1', color: '#4472C4' }
+		case 'hideSheet':
+			return { op, sheet: 'Sheet1', hidden: true }
+		case 'copySheet':
+			return { op, sheet: 'Sheet1', newName: 'Sheet1 Copy' }
+		case 'setConditionalFormat':
+			return {
+				op,
+				sheet: 'Sheet1',
+				range: 'A2:A20',
+				rule: { type: 'cellIs', operator: 'greaterThan', formula: '100' },
+			}
+		case 'setPageSetup':
+			return { op, sheet: 'Sheet1', setup: { orientation: 'landscape' } }
+		case 'copyRange':
+		case 'moveRange':
+			return { op, sheet: 'Sheet1', source: 'A1:B5', target: 'D1:E5' }
+		case 'groupRows':
+			return { op, sheet: 'Sheet1', from: 2, to: 10, collapsed: false }
+		case 'groupCols':
+			return { op, sheet: 'Sheet1', from: 2, to: 5, collapsed: false }
+		case 'setRichText':
+			return { op, sheet: 'Sheet1', ref: 'A1', runs: [{ text: 'Bold', font: { bold: true } }] }
+		case 'setWorkbookProtection':
+			return { op, protection: { lockStructure: true } }
+		case 'deleteTable':
+			return { op, table: 'Sales' }
+		case 'renameTable':
+			return { op, table: 'Sales', newName: 'SalesData' }
+		case 'resizeTable':
+			return { op, table: 'Sales', ref: 'A1:E20' }
+		default:
+			return { op }
+	}
 }
 
 export function setCell(sheet: string, ref: string, value: InputValue): Operation {

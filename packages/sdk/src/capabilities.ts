@@ -423,8 +423,8 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'Images',
 		'editable',
 		'P0',
-		'Add insert/delete image operations and deeper content-type roundtrip fixtures.',
-		'Image inventory and anchor-preserving replacement exist; insert/delete is still staged.',
+		'Extend insert/delete to complex preserved drawings without losing charts or shapes.',
+		'Image inventory, replacement, and generated-image insert/delete exist; complex preserved drawing edits remain guarded.',
 		[
 			'packages/engine/src/operations.test.ts',
 			'packages/io-xlsx/src/writer/writer.test.ts',

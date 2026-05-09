@@ -43,6 +43,23 @@ describe('operation schema agent DX', () => {
 		expect(schema?.recoveryActions.join('\n')).toContain('imageIndex')
 	})
 
+	test('insertImage and deleteImage expose image lifecycle guidance', () => {
+		const insert = getOperationsSchema().find((entry) => entry.op === 'insertImage')
+		expect(insert?.schema.required).toEqual(['op', 'sheet', 'contentBase64', 'contentType'])
+		expect(insert?.schema.properties.anchor?.description).toContain('Image anchor')
+		expect(insert?.examples[0]).toMatchObject({
+			op: 'insertImage',
+			sheet: 'Sheet1',
+			contentType: 'image/png',
+			name: 'Logo',
+		})
+
+		const deleteImage = getOperationsSchema().find((entry) => entry.op === 'deleteImage')
+		expect(deleteImage?.schema.required).toEqual(['op', 'sheet'])
+		expect(deleteImage?.examples[0]).toMatchObject({ op: 'deleteImage', imageIndex: 0 })
+		expect(deleteImage?.recoveryActions.join('\n')).toContain('imageIndex')
+	})
+
 	test('setChartSeriesSource is exposed with chart selector guidance', () => {
 		const schema = getOperationsSchema().find((entry) => entry.op === 'setChartSeriesSource')
 		expect(schema?.schema.required).toEqual(['op', 'seriesIndex'])

@@ -242,6 +242,8 @@ export function operationAffectsFormulas(op: Operation): boolean {
 		case 'groupRows':
 		case 'groupCols':
 		case 'rewriteExternalLink':
+		case 'insertImage':
+		case 'deleteImage':
 			return false
 		case 'setCells':
 		case 'setRichText':

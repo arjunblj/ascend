@@ -132,6 +132,12 @@ const FIELD_SCHEMAS: Record<
 	contentBase64: { type: 'string', description: 'Base64-encoded binary content' },
 	contentType: { type: 'string', description: 'MIME content type, such as image/png' },
 	imageIndex: { type: 'integer', description: 'Zero-based image index on the sheet' },
+	drawingPartPath: {
+		type: 'string',
+		description: 'Drawing XML part path, such as xl/drawings/drawing1.xml',
+	},
+	description: { type: 'string', description: 'Accessible image description' },
+	anchor: { type: 'object', description: 'Image anchor object: oneCell, twoCell, or absolute' },
 	chartIndex: { type: 'integer', description: 'Zero-based chart index after sheet/part filtering' },
 	seriesIndex: { type: 'integer', description: 'Zero-based chart series index' },
 	nameRef: { type: 'string', description: 'A1 formula reference for the chart series name' },
@@ -378,6 +384,18 @@ export function listOperations(): readonly OperationSchema[] {
 			optionalFields: ['targetPath', 'relId', 'name', 'imageIndex'],
 		},
 		{
+			op: 'insertImage',
+			description: 'Insert a new image with generated media and drawing relationships',
+			requiredFields: ['sheet', 'contentBase64', 'contentType'],
+			optionalFields: ['targetPath', 'drawingPartPath', 'relId', 'name', 'description', 'anchor'],
+		},
+		{
+			op: 'deleteImage',
+			description: 'Delete an image selected by targetPath, relId, name, or imageIndex',
+			requiredFields: ['sheet'],
+			optionalFields: ['targetPath', 'relId', 'name', 'imageIndex'],
+		},
+		{
 			op: 'setChartSeriesSource',
 			description:
 				'Edit a chart series source references while preserving unsupported chart styling',
@@ -556,6 +574,18 @@ function operationRecoveryActions(op: string): readonly string[] {
 				'Ensure contentBase64 bytes match contentType.',
 				...common,
 			]
+		case 'insertImage':
+			return [
+				'Provide image/* contentType and base64 image bytes; omit targetPath/relId for automatic allocation.',
+				'Use an anchor object to position the inserted image.',
+				...common,
+			]
+		case 'deleteImage':
+			return [
+				'Use inspect --detail images or visualInventory to select targetPath, relId, name, or imageIndex.',
+				'Run plan before commit to confirm the selected image is the only match.',
+				...common,
+			]
 		case 'setChartSeriesSource':
 			return [
 				'Use inspect --detail visuals or visualInventory to select partPath, sheet, chartIndex, and seriesIndex.',
@@ -699,6 +729,17 @@ function operationExample(op: string): Record<string, unknown> {
 				contentBase64: 'iVBORw0KGgo=',
 				contentType: 'image/png',
 			}
+		case 'insertImage':
+			return {
+				op,
+				sheet: 'Sheet1',
+				contentBase64: 'iVBORw0KGgo=',
+				contentType: 'image/png',
+				name: 'Logo',
+				anchor: { kind: 'oneCell', from: { row: 1, col: 1 }, cx: 320000, cy: 240000 },
+			}
+		case 'deleteImage':
+			return { op, sheet: 'Sheet1', imageIndex: 0 }
 		case 'setChartSeriesSource':
 			return {
 				op,

@@ -377,6 +377,26 @@ export type Operation =
 			readonly imageIndex?: number
 	  }
 	| {
+			readonly op: 'insertImage'
+			readonly sheet: string
+			readonly contentBase64: string
+			readonly contentType: string
+			readonly targetPath?: string
+			readonly drawingPartPath?: string
+			readonly relId?: string
+			readonly name?: string
+			readonly description?: string
+			readonly anchor?: ImageAnchorInput
+	  }
+	| {
+			readonly op: 'deleteImage'
+			readonly sheet: string
+			readonly targetPath?: string
+			readonly relId?: string
+			readonly name?: string
+			readonly imageIndex?: number
+	  }
+	| {
 			readonly op: 'setChartSeriesSource'
 			readonly seriesIndex: number
 			readonly partPath?: string
@@ -407,6 +427,34 @@ export type Operation =
 			readonly newTarget: string
 			readonly targetMode?: string
 	  }
+
+export type ImageAnchorInput =
+	| {
+			readonly kind: 'oneCell'
+			readonly from: ImageAnchorMarkerInput
+			readonly cx?: number
+			readonly cy?: number
+	  }
+	| {
+			readonly kind: 'twoCell'
+			readonly from: ImageAnchorMarkerInput
+			readonly to: ImageAnchorMarkerInput
+			readonly editAs?: string
+	  }
+	| {
+			readonly kind: 'absolute'
+			readonly x: number
+			readonly y: number
+			readonly cx?: number
+			readonly cy?: number
+	  }
+
+export interface ImageAnchorMarkerInput {
+	readonly col: number
+	readonly row: number
+	readonly colOff?: number
+	readonly rowOff?: number
+}
 
 export interface WorkbookProtectionInput {
 	readonly lockStructure?: boolean

@@ -5,6 +5,8 @@ import { ascendError, err, ok } from '@ascend/schema'
 import { getSheet, type PatchResult, patch } from './helpers.ts'
 
 type ReplaceImageOp = Extract<Operation, { op: 'replaceImage' }>
+type InsertImageOp = Extract<Operation, { op: 'insertImage' }>
+type DeleteImageOp = Extract<Operation, { op: 'deleteImage' }>
 type SetChartSeriesSourceOp = Extract<Operation, { op: 'setChartSeriesSource' }>
 
 export function handleReplaceImage(workbook: Workbook, op: ReplaceImageOp): Result<PatchResult> {
@@ -69,6 +71,108 @@ export function handleReplaceImage(workbook: Workbook, op: ReplaceImageOp): Resu
 		contentType: op.contentType,
 	}
 	sheet.drawingRefs = { ...sheet.drawingRefs, hasDrawing: true }
+
+	return ok(patch([], [sheet.name], false))
+}
+
+export function handleInsertImage(workbook: Workbook, op: InsertImageOp): Result<PatchResult> {
+	const sheetResult = getSheet(workbook, op.sheet)
+	if (!sheetResult.ok) return sheetResult
+	const sheet = sheetResult.value
+
+	const content = decodeBase64(op.contentBase64)
+	if (!content.ok) return content
+	if (!op.contentType.startsWith('image/')) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'contentType must be an image MIME type', {
+				suggestedFix:
+					'Use image/png, image/jpeg, image/gif, or another valid image/* content type.',
+			}),
+		)
+	}
+
+	const drawingPartPath =
+		op.drawingPartPath ?? sheet.imageRefs[0]?.drawingPartPath ?? 'xl/drawings/drawing1.xml'
+	const targetPath =
+		op.targetPath ?? nextImageTargetPath(workbook, imageExtensionForContentType(op.contentType))
+	const relId = op.relId ?? nextImageRelId(sheet)
+	if (sheet.imageRefs.some((image) => image.targetPath === targetPath || image.relId === relId)) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'insertImage targetPath or relId already exists on sheet', {
+				suggestedFix: 'Provide a unique targetPath/relId or omit them so Ascend can allocate one.',
+			}),
+		)
+	}
+
+	sheet.imageRefs.push({
+		drawingPartPath,
+		relId,
+		targetPath,
+		contentType: op.contentType,
+		content: content.value,
+		...(op.anchor ? { anchor: op.anchor } : {}),
+		...(op.name ? { name: op.name } : {}),
+		...(op.description ? { description: op.description } : {}),
+	})
+	sheet.drawingRefs = { ...sheet.drawingRefs, hasDrawing: true }
+
+	return ok(patch([], [sheet.name], false))
+}
+
+export function handleDeleteImage(workbook: Workbook, op: DeleteImageOp): Result<PatchResult> {
+	const sheetResult = getSheet(workbook, op.sheet)
+	if (!sheetResult.ok) return sheetResult
+	const sheet = sheetResult.value
+
+	if (
+		op.imageIndex === undefined &&
+		op.targetPath === undefined &&
+		op.relId === undefined &&
+		op.name === undefined
+	) {
+		return err(
+			ascendError(
+				'VALIDATION_ERROR',
+				'deleteImage requires targetPath, relId, name, or imageIndex',
+				{
+					suggestedFix: 'Use inspect --detail images to find image identity fields.',
+				},
+			),
+		)
+	}
+
+	const matches = sheet.imageRefs
+		.map((image, index) => ({ image, index }))
+		.filter(({ image, index }) => {
+			if (op.imageIndex !== undefined && index !== op.imageIndex) return false
+			if (op.targetPath !== undefined && image.targetPath !== op.targetPath) return false
+			if (op.relId !== undefined && image.relId !== op.relId) return false
+			if (op.name !== undefined && image.name !== op.name) return false
+			return true
+		})
+
+	if (matches.length === 0) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'No matching image found for deleteImage', {
+				suggestedFix:
+					'Inspect sheet imageRefs and provide a matching targetPath, relId, name, or imageIndex.',
+			}),
+		)
+	}
+	if (matches.length > 1) {
+		return err(
+			ascendError('VALIDATION_ERROR', `deleteImage matched ${matches.length} images`, {
+				suggestedFix: 'Provide a more specific selector, such as targetPath or imageIndex.',
+			}),
+		)
+	}
+
+	const match = matches[0]
+	if (!match) return err(ascendError('VALIDATION_ERROR', 'No matching image found for deleteImage'))
+	sheet.imageRefs.splice(match.index, 1)
+	if (sheet.imageRefs.length === 0) {
+		sheet.drawingRefs = { ...sheet.drawingRefs, hasDrawing: false }
+	}
 
 	return ok(patch([], [sheet.name], false))
 }
@@ -168,5 +272,38 @@ function decodeBase64(input: string): Result<Uint8Array> {
 				suggestedFix: 'Encode the replacement image as base64 and keep contentType aligned.',
 			}),
 		)
+	}
+}
+
+function nextImageRelId(sheet: Workbook['sheets'][number]): string {
+	const used = new Set(sheet.imageRefs.map((image) => image.relId))
+	let index = sheet.imageRefs.length + 1
+	while (used.has(`rIdImage${index}`)) index++
+	return `rIdImage${index}`
+}
+
+function nextImageTargetPath(workbook: Workbook, extension: string): string {
+	const used = new Set<string>()
+	for (const sheet of workbook.sheets) {
+		for (const image of sheet.imageRefs) used.add(image.targetPath)
+	}
+	let index = used.size + 1
+	while (used.has(`xl/media/image${index}.${extension}`)) index++
+	return `xl/media/image${index}.${extension}`
+}
+
+function imageExtensionForContentType(contentType: string): string {
+	switch (contentType) {
+		case 'image/jpeg':
+		case 'image/jpg':
+			return 'jpg'
+		case 'image/gif':
+			return 'gif'
+		case 'image/bmp':
+			return 'bmp'
+		case 'image/webp':
+			return 'webp'
+		default:
+			return 'png'
 	}
 }

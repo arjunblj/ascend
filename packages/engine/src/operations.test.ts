@@ -181,6 +181,59 @@ describe('applyOperation', () => {
 		expect(Array.from(sheet.imageRefs[0]?.content ?? [])).toEqual([4, 5, 6])
 	})
 
+	test('insertImage allocates image identity and anchor metadata', () => {
+		const wb = setup()
+		const result = applyOperation(wb, {
+			op: 'insertImage',
+			sheet: 'Sheet1',
+			contentBase64: 'BAUG',
+			contentType: 'image/png',
+			name: 'Logo',
+			description: 'Brand logo',
+			anchor: { kind: 'oneCell', from: { row: 1, col: 1 }, cx: 320000, cy: 240000 },
+		})
+		expectOk(result)
+
+		const sheet = wb.getSheet('Sheet1')
+		expect(sheet?.drawingRefs.hasDrawing).toBe(true)
+		expect(sheet?.imageRefs[0]).toMatchObject({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			relId: 'rIdImage1',
+			targetPath: 'xl/media/image1.png',
+			contentType: 'image/png',
+			name: 'Logo',
+			description: 'Brand logo',
+			anchor: { kind: 'oneCell', from: { row: 1, col: 1 }, cx: 320000, cy: 240000 },
+		})
+		expect(Array.from(sheet?.imageRefs[0]?.content ?? [])).toEqual([4, 5, 6])
+	})
+
+	test('deleteImage removes a selected image ref', () => {
+		const wb = setup()
+		const sheet = wb.getSheet('Sheet1')
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+		sheet.drawingRefs = { hasDrawing: true, hasLegacyDrawing: false }
+		sheet.imageRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			relId: 'rIdImage1',
+			targetPath: 'xl/media/image1.png',
+			contentType: 'image/png',
+			content: new Uint8Array([1, 2, 3]),
+			name: 'Logo',
+		})
+
+		const result = applyOperation(wb, {
+			op: 'deleteImage',
+			sheet: 'Sheet1',
+			name: 'Logo',
+		})
+		expectOk(result)
+
+		expect(sheet.imageRefs).toEqual([])
+		expect(sheet.drawingRefs.hasDrawing).toBe(false)
+	})
+
 	test('setChartSeriesSource updates parsed chart source refs', () => {
 		const wb = setup()
 		wb.chartParts.push({

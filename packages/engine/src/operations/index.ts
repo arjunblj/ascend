@@ -93,6 +93,8 @@ const handlers: Record<string, OperationHandler> = {
 	setChartSeriesSource: visualOps.handleSetChartSeriesSource as OperationHandler,
 	setPivotCache: pivotOps.handleSetPivotCache as OperationHandler,
 	rewriteExternalLink: workbookOps.handleRewriteExternalLink as OperationHandler,
+	insertImage: visualOps.handleInsertImage as OperationHandler,
+	deleteImage: visualOps.handleDeleteImage as OperationHandler,
 }
 
 export function applyOperation(

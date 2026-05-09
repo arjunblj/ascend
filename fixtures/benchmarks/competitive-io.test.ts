@@ -425,6 +425,8 @@ describe('competitive IO helpers', () => {
 		expect(competitorMatches('excelize', 'external')).toBe(true)
 		expect(competitorMatches('npoi', 'external')).toBe(true)
 		expect(competitorMatches('closedxml', 'python')).toBe(true)
+		expect(competitorMatches('ascend-external-values', 'external')).toBe(true)
+		expect(competitorMatches('ascend-readxlsx-raw-values-bytes', 'external')).toBe(true)
 		expect(competitorMatches('ascend-external-writer', 'external')).toBe(true)
 		expect(competitorMatches('rust-xlsxwriter', 'external')).toBe(true)
 	})

@@ -259,6 +259,15 @@ export function competitorMatches(library: string, selection: CompetitorSelectio
 	if (selection === 'js')
 		return library === 'ascend' || library === 'sheetjs' || library === 'exceljs'
 	return (
+		library === 'ascend-external' ||
+		library === 'ascend-external-values' ||
+		library === 'ascend-external-values-ordered' ||
+		library === 'ascend-external-bytes' ||
+		library === 'ascend-external-values-bytes' ||
+		library === 'ascend-readxlsx-raw-values-bytes' ||
+		library === 'ascend-readxlsx-values-bytes' ||
+		library === 'ascend-readxlsx-values-rich-metadata-bytes' ||
+		library === 'ascend-external-metadata-only-bytes' ||
 		library === 'ascend-external-writer' ||
 		library === 'openpyxl' ||
 		library === 'openpyxl-write-only' ||

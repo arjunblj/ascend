@@ -1631,6 +1631,29 @@ describe('writeXlsx', () => {
 		expect(readSheet?.cells.get(1, 1)?.value).toEqual({ kind: 'number', value: 3 })
 	})
 
+	it('supports compact dense writer compression without changing values', async () => {
+		const written = await writeDenseRowsXlsxStreaming({
+			rows: 200,
+			cols: 20,
+			omitCellRefs: true,
+			allCellsPresent: true,
+			stringsAreXmlSafe: true,
+			valueType: 'string',
+			compressionProfile: 'compact',
+			valueAt: (row, col) => `text-${row}-${col}`,
+		})
+		expectOk(written)
+
+		const read = readXlsx(written.value, { mode: 'values' })
+		expectOk(read)
+		const readSheet = read.value.workbook.sheets[0]
+		expect(readSheet?.cells.get(0, 0)?.value).toEqual({ kind: 'string', value: 'text-0-0' })
+		expect(readSheet?.cells.get(199, 19)?.value).toEqual({
+			kind: 'string',
+			value: 'text-199-19',
+		})
+	})
+
 	it('creates dxfId for CF rules with style but no dxfId (xlsx-4)', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Rules')

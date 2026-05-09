@@ -6,7 +6,11 @@ export type { StreamXlsxRowsOptions, XlsxByteSource } from './reader/stream.ts'
 export { readXlsxRowsStream } from './reader/stream.ts'
 export type { ZipArchive } from './reader/zip.ts'
 export { extractZip } from './reader/zip.ts'
-export type { DenseXlsxCellValue, WriteDenseRowsXlsxOptions } from './writer/dense-rows.ts'
+export type {
+	DenseXlsxCellValue,
+	DenseXlsxCompressionProfile,
+	WriteDenseRowsXlsxOptions,
+} from './writer/dense-rows.ts'
 export { writeDenseRowsXlsx, writeDenseRowsXlsxStreaming } from './writer/dense-rows.ts'
 export type { WriteXlsxOptions } from './writer/index.ts'
 export {

@@ -8,21 +8,43 @@ type BunDeflateSync = (
 const bunDeflateRawSync = getBunDeflateRawSync()
 const HUGE_WORKSHEET_XML_BYTES = 256 * 1024 * 1024
 
+export type ZipCompressionProfile = 'fast' | 'compact'
+
 interface DeflateOptions {
 	readonly level: number
 	readonly strategy?: number
 }
 
 /** Larger worksheet XML: fastest useful deflate; small metadata parts: higher level for better compression. */
-function deflateOptionsForPart(path: string, uncompressedSize: number): DeflateOptions {
+function deflateOptionsForPart(
+	path: string,
+	uncompressedSize: number,
+	profile: ZipCompressionProfile,
+): DeflateOptions {
 	if (/xl\/worksheets\/sheet\d+\.xml$/i.test(path)) {
+		if (profile === 'compact') {
+			return uncompressedSize > HUGE_WORKSHEET_XML_BYTES ? { level: 2 } : { level: 6 }
+		}
 		return uncompressedSize > HUGE_WORKSHEET_XML_BYTES
 			? { level: 1, strategy: zlibConstants.Z_FILTERED }
 			: { level: 2 }
 	}
+	if (profile === 'compact' && uncompressedSize > 512_000) return { level: 2 }
 	if (uncompressedSize > 512_000) return { level: 1 }
 	if (uncompressedSize < 32_000) return { level: 6 }
 	return { level: 2 }
+}
+
+interface ZipOptions {
+	readonly compressionProfile?: ZipCompressionProfile
+}
+
+function normalizeCompressionProfile(
+	profile: ZipCompressionProfile | undefined,
+): ZipCompressionProfile {
+	if (profile === undefined || profile === 'fast') return 'fast'
+	if (profile === 'compact') return 'compact'
+	throw new Error(`Unsupported ZIP compression profile "${profile}"`)
 }
 
 function shouldStoreWithoutDeflate(uncompressedSize: number): boolean {
@@ -119,8 +141,12 @@ interface CompressedEntry {
 	crc: number
 }
 
-export function createZip(parts: ReadonlyMap<string, Uint8Array>): Uint8Array {
+export function createZip(
+	parts: ReadonlyMap<string, Uint8Array>,
+	options: ZipOptions = {},
+): Uint8Array {
 	const entries: CompressedEntry[] = []
+	const compressionProfile = normalizeCompressionProfile(options.compressionProfile)
 
 	for (const [path, raw] of parts) {
 		const nameBytes = textEncoder.encode(path)
@@ -136,7 +162,10 @@ export function createZip(parts: ReadonlyMap<string, Uint8Array>): Uint8Array {
 			})
 			continue
 		}
-		const deflated = deflateRawBytesSync(raw, deflateOptionsForPart(path, raw.byteLength))
+		const deflated = deflateRawBytesSync(
+			raw,
+			deflateOptionsForPart(path, raw.byteLength, compressionProfile),
+		)
 		const useStore = deflated.byteLength >= raw.byteLength
 		const data = useStore ? raw : deflated
 		entries.push({
@@ -163,11 +192,16 @@ interface ZipEntry {
 
 export class StreamingZipBuilder {
 	private readonly entries: ZipEntry[] = []
+	private readonly compressionProfile: ZipCompressionProfile
 	private streamingNameBytes: Uint8Array | null = null
 	private streamingCrc = 0xffffffff
 	private streamingUncompressedSize = 0
 	private streamingCompressedChunks: Uint8Array[] = []
 	private deflateStream: ReturnType<typeof createDeflateRaw> | null = null
+
+	constructor(options: ZipOptions = {}) {
+		this.compressionProfile = normalizeCompressionProfile(options.compressionProfile)
+	}
 
 	addEntry(path: string, data: Uint8Array): void {
 		if (this.deflateStream) {
@@ -186,7 +220,10 @@ export class StreamingZipBuilder {
 			})
 			return
 		}
-		const deflated = deflateRawBytesSync(data, deflateOptionsForPart(path, data.byteLength))
+		const deflated = deflateRawBytesSync(
+			data,
+			deflateOptionsForPart(path, data.byteLength, this.compressionProfile),
+		)
 		const useStore = deflated.byteLength >= data.byteLength
 		const entryData = useStore ? data : deflated
 		this.entries.push({
@@ -207,7 +244,9 @@ export class StreamingZipBuilder {
 		this.streamingCrc = 0xffffffff
 		this.streamingUncompressedSize = 0
 		this.streamingCompressedChunks = []
-		this.deflateStream = createDeflateRaw(deflateOptionsForPart(path, estimatedUncompressedSize))
+		this.deflateStream = createDeflateRaw(
+			deflateOptionsForPart(path, estimatedUncompressedSize, this.compressionProfile),
+		)
 		this.deflateStream.on('data', (chunk: Uint8Array) => {
 			this.streamingCompressedChunks.push(chunk)
 		})

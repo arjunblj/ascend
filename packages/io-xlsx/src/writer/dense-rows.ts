@@ -2,10 +2,11 @@ import { indexToColumn } from '@ascend/core'
 import type { AscendError, Result } from '@ascend/schema'
 import { ascendError, err, ok } from '@ascend/schema'
 import { escapeXml } from '../xml.ts'
-import { createZip, encode, StreamingZipBuilder } from './zip.ts'
+import { createZip, encode, StreamingZipBuilder, type ZipCompressionProfile } from './zip.ts'
 
 export type DenseXlsxCellValue = string | number | boolean | null
 export type DenseXlsxCellValueType = 'boolean' | 'number' | 'string'
+export type DenseXlsxCompressionProfile = ZipCompressionProfile
 
 export interface WriteDenseRowsXlsxOptions {
 	readonly rows: number
@@ -25,6 +26,8 @@ export interface WriteDenseRowsXlsxOptions {
 	readonly valueTypes?: readonly (DenseXlsxCellValueType | undefined)[]
 	/** Hint that every generated cell is present; null mismatches fall back to referenced cells. */
 	readonly allCellsPresent?: boolean
+	/** ZIP compression policy: fast optimizes wall time; compact optimizes file size. */
+	readonly compressionProfile?: DenseXlsxCompressionProfile
 }
 
 const DEFAULT_SHEET_NAME = 'Data'
@@ -51,7 +54,7 @@ export function writeDenseRowsXlsx(
 		validateDenseRowsOptions(options)
 		const parts = buildBaseParts(options.sheetName ?? DEFAULT_SHEET_NAME)
 		parts.set('xl/worksheets/sheet1.xml', buildSheetXml(options))
-		return ok(createZip(parts))
+		return ok(createZip(parts, zipOptionsForDenseRows(options)))
 	} catch (error) {
 		return err(toExportError(error))
 	}
@@ -62,7 +65,7 @@ export async function writeDenseRowsXlsxStreaming(
 ): Promise<Result<Uint8Array, AscendError>> {
 	try {
 		validateDenseRowsOptions(options)
-		const builder = new StreamingZipBuilder()
+		const builder = new StreamingZipBuilder(zipOptionsForDenseRows(options))
 		for (const [path, data] of buildBaseParts(options.sheetName ?? DEFAULT_SHEET_NAME)) {
 			builder.addEntry(path, data)
 		}
@@ -96,6 +99,21 @@ function validateDenseRowsOptions(options: WriteDenseRowsXlsxOptions): void {
 			`valueTypes length must match cols: ${options.valueTypes.length} !== ${options.cols}`,
 		)
 	}
+	if (
+		options.compressionProfile !== undefined &&
+		options.compressionProfile !== 'fast' &&
+		options.compressionProfile !== 'compact'
+	) {
+		throw new Error(`Unsupported compressionProfile "${options.compressionProfile}"`)
+	}
+}
+
+function zipOptionsForDenseRows(options: WriteDenseRowsXlsxOptions): {
+	readonly compressionProfile?: DenseXlsxCompressionProfile
+} {
+	return options.compressionProfile === undefined
+		? {}
+		: { compressionProfile: options.compressionProfile }
 }
 
 function toExportError(error: unknown): AscendError {

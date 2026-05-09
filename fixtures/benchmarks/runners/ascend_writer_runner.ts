@@ -1,6 +1,10 @@
 #!/usr/bin/env bun
 import { createWorkbook } from '../../../packages/core/src/index.ts'
-import { writeDenseRowsXlsxStreaming, writeXlsx } from '../../../packages/io-xlsx/src/index.ts'
+import {
+	type DenseXlsxCompressionProfile,
+	writeDenseRowsXlsxStreaming,
+	writeXlsx,
+} from '../../../packages/io-xlsx/src/index.ts'
 import {
 	buildWorkloadValues,
 	denseWriteAssertions,
@@ -20,6 +24,7 @@ interface Args {
 	readonly warmup: number
 	readonly validationMode: 'final'
 	readonly json: boolean
+	readonly compressionProfile?: DenseXlsxCompressionProfile
 }
 
 const SUPPORTED_WORKLOADS = new Set<string>([
@@ -55,6 +60,12 @@ function nonNegativeInt(raw: string | undefined, fallback: number): number {
 	return Number.isFinite(value) && value >= 0 ? value : fallback
 }
 
+function compressionProfile(raw: string | undefined): DenseXlsxCompressionProfile | undefined {
+	if (raw === undefined) return undefined
+	if (raw === 'fast' || raw === 'compact') return raw
+	throw new Error(`Unsupported --compression-profile "${raw}"`)
+}
+
 function parseArgs(): Args {
 	const args = process.argv.slice(2)
 	const operation = readOption(args, '--operation')
@@ -70,6 +81,7 @@ function parseArgs(): Args {
 		warmup: nonNegativeInt(readOption(args, '--warmup'), 0),
 		validationMode: 'final',
 		json: hasFlag(args, '--json'),
+		compressionProfile: compressionProfile(readOption(args, '--compression-profile')),
 	}
 }
 
@@ -182,6 +194,7 @@ async function writeWorkbook(args: Args): Promise<Uint8Array> {
 			valueType: denseValueType(args.workload),
 			valueTypes: denseValueTypes(args.workload, args.cols),
 			allCellsPresent: args.workload !== 'sparse-wide',
+			compressionProfile: args.compressionProfile,
 			valueAt: (row, col) => workloadValue(args.workload, row, col, args.cols),
 		} as const
 		const result = await writeDenseRowsXlsxStreaming(options)
@@ -241,6 +254,7 @@ async function main(): Promise<void> {
 			...denseWriteAssertions(bytes, input),
 			validationMode: args.validationMode,
 			validationSamples: 1,
+			compressionProfile: args.compressionProfile ?? 'fast',
 		},
 		samples,
 	}

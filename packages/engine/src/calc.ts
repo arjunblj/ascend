@@ -103,6 +103,11 @@ interface TextPrefixAggregateBlock {
 	readonly aggregate: RangeAggregateOptimization
 }
 
+interface TailPrefixAggregateResult {
+	readonly value: CellValue
+	readonly state?: RangeAggregateState
+}
+
 type TextPrefixSourceSnapshot = number | null | 'error'
 
 interface RecalcScratch {
@@ -117,6 +122,7 @@ interface RecalcScratch {
 	readonly textPrefixTailIndex: Map<CellKey, TextPrefixAggregateBlock>
 	readonly textPrefixFormulaByGroupEnd: Map<string, TextPrefixAggregateBlock>
 	readonly textPrefixGroups: Map<string, readonly TextPrefixAggregateBlock[]>
+	readonly textPrefixAggregateStates: Map<string, RangeAggregateState>
 	readonly textPrefixSourceSnapshots: Map<CellKey, TextPrefixSourceSnapshot>
 	readonly evalContext: MutableEvalContext
 }
@@ -138,6 +144,7 @@ function getRecalcScratch(workbook: Workbook): RecalcScratch {
 			textPrefixTailIndex: new Map(),
 			textPrefixFormulaByGroupEnd: new Map(),
 			textPrefixGroups: new Map(),
+			textPrefixAggregateStates: new Map(),
 			textPrefixSourceSnapshots: new Map(),
 			evalContext: new MutableEvalContext(),
 		}
@@ -1393,11 +1400,13 @@ function tryFastFullPrefixAggregateTextRecalc(
 	scratch.textPrefixTailIndex.clear()
 	scratch.textPrefixFormulaByGroupEnd.clear()
 	scratch.textPrefixGroups.clear()
+	scratch.textPrefixAggregateStates.clear()
 	scratch.textPrefixSourceSnapshots.clear()
 	const groups = new Map<string, TextPrefixAggregateBlock[]>()
 	const formulaCells: TextPrefixAggregateBlock[] = []
 	const tailIndex = new Map<CellKey, TextPrefixAggregateBlock>()
 	const formulaByGroupEnd = new Map<string, TextPrefixAggregateBlock>()
+	const aggregateStates = new Map<string, RangeAggregateState>()
 	for (let sheetIndex = 0; sheetIndex < workbook.sheets.length; sheetIndex++) {
 		const sheet = workbook.sheets[sheetIndex]
 		if (!sheet) continue
@@ -1473,6 +1482,9 @@ function tryFastFullPrefixAggregateTextRecalc(
 			if (!state) return null
 			const sheet = workbook.sheets[block.sheetIndex]
 			if (!sheet) return null
+			if (needsRangeAggregateState(aggregate.functionName)) {
+				aggregateStates.set(`${prefixAggregateTextGroupKey(aggregate)}:${aggregate.endRow}`, state)
+			}
 			const newValue = rangeAggregateStateToValue(aggregate.functionName, state)
 			const oldValue = sheet.cells.readValue(block.row, block.col)
 			if (valuesEqual(oldValue, newValue)) continue
@@ -1494,6 +1506,7 @@ function tryFastFullPrefixAggregateTextRecalc(
 	for (const [key, block] of tailIndex) scratch.textPrefixTailIndex.set(key, block)
 	for (const [key, block] of formulaByGroupEnd) scratch.textPrefixFormulaByGroupEnd.set(key, block)
 	for (const [key, group] of groups) scratch.textPrefixGroups.set(key, group)
+	for (const [key, state] of aggregateStates) scratch.textPrefixAggregateStates.set(key, state)
 	cacheTextPrefixSourceSnapshots(workbook, groups, scratch.textPrefixSourceSnapshots)
 	return { changed, errors: [], duration: performance.now() - start }
 }
@@ -1518,13 +1531,15 @@ function tryFastDirtyPrefixAggregateTextRecalc(
 			currentFormula === indexed.formula &&
 			sheet.cells.readFormulaInfo(indexed.row, indexed.col) === undefined
 		) {
-			const newValue = tryFastDirtyTailPrefixValue(
+			const tail = tryFastDirtyTailPrefixValue(
 				workbook,
 				source,
 				indexed,
 				scratch.textPrefixFormulaByGroupEnd,
+				scratch.textPrefixAggregateStates,
 			)
-			if (newValue && writeTextPrefixAggregateValue(workbook, indexed, newValue, changed)) {
+			if (tail && writeTextPrefixAggregateValue(workbook, indexed, tail.value, changed)) {
+				cacheTailPrefixAggregateState(indexed, tail, scratch.textPrefixAggregateStates)
 				return { changed, errors: [], duration: performance.now() - start }
 			}
 		}
@@ -1589,7 +1604,8 @@ function tryFastDirtyPrefixAggregateTextRecalc(
 		let previousEndRow = first.aggregate.startRow - 1
 		for (const block of group) {
 			const aggregate = block.aggregate
-			let newValue = tryFastDirtyTailPrefixValue(workbook, source, block, formulaByGroupEnd)
+			const tail = tryFastDirtyTailPrefixValue(workbook, source, block, formulaByGroupEnd)
+			let newValue = tail?.value ?? null
 			if (newValue?.kind === 'number') {
 				if (aggregate.functionName === 'SUM') {
 					state = {
@@ -1610,6 +1626,9 @@ function tryFastDirtyPrefixAggregateTextRecalc(
 					}
 					previousEndRow = aggregate.endRow
 				}
+			} else if (tail?.state) {
+				state = tail.state
+				previousEndRow = aggregate.endRow
 			}
 			if (!newValue) {
 				if (aggregate.endRow < previousEndRow) return null
@@ -1631,6 +1650,7 @@ function tryFastDirtyPrefixAggregateTextRecalc(
 				newValue = rangeAggregateStateToValue(aggregate.functionName, state)
 			}
 			if (!writeTextPrefixAggregateValue(workbook, block, newValue, changed)) return null
+			cacheTextPrefixAggregateState(block, state, scratch.textPrefixAggregateStates)
 		}
 	}
 	return { changed, errors: [], duration: performance.now() - start }
@@ -1687,12 +1707,14 @@ function tryFastDirtyCachedPrefixAggregateTextRecalc(
 		for (const block of group) {
 			if (!sourceOverlapsAggregate(source, block.aggregate)) continue
 			const aggregate = block.aggregate
-			let newValue = tryFastDirtyTailPrefixValue(
+			const tail = tryFastDirtyTailPrefixValue(
 				workbook,
 				source,
 				block,
 				scratch.textPrefixFormulaByGroupEnd,
+				scratch.textPrefixAggregateStates,
 			)
+			let newValue = tail?.value ?? null
 			if (newValue?.kind === 'number') {
 				if (aggregate.functionName === 'SUM') {
 					state = {
@@ -1713,6 +1735,9 @@ function tryFastDirtyCachedPrefixAggregateTextRecalc(
 					}
 					previousEndRow = aggregate.endRow
 				}
+			} else if (tail?.state) {
+				state = tail.state
+				previousEndRow = aggregate.endRow
 			}
 			if (!newValue) {
 				if (aggregate.endRow < previousEndRow) return null
@@ -1734,6 +1759,7 @@ function tryFastDirtyCachedPrefixAggregateTextRecalc(
 				newValue = rangeAggregateStateToValue(aggregate.functionName, state)
 			}
 			if (!writeTextPrefixAggregateValue(workbook, block, newValue, changed)) return null
+			cacheTextPrefixAggregateState(block, state, scratch.textPrefixAggregateStates)
 		}
 	}
 	scratch.textPrefixSourceSnapshots.set(
@@ -1942,29 +1968,99 @@ function tryFastDirtyTailPrefixValue(
 	source: CellCoords,
 	block: TextPrefixAggregateBlock,
 	formulaByGroupEnd: ReadonlyMap<string, TextPrefixAggregateBlock>,
-): CellValue | null {
+	stateByGroupEnd?: ReadonlyMap<string, RangeAggregateState>,
+): TailPrefixAggregateResult | null {
 	const aggregate = block.aggregate
 	if (aggregate.endRow !== source.row || aggregate.endRow <= aggregate.startRow) return null
-	const previous = formulaByGroupEnd.get(
-		`${prefixAggregateTextGroupKey(aggregate)}:${aggregate.endRow - 1}`,
-	)
+	const groupKey = prefixAggregateTextGroupKey(aggregate)
+	const previousEndKey = `${groupKey}:${aggregate.endRow - 1}`
+	const previous = formulaByGroupEnd.get(previousEndKey)
 	if (!previous) return null
-	return tryEvaluateGrowingRangeScalarAggregate(
-		workbook,
-		{
-			functionName: aggregate.functionName,
-			previousKey: cellKey(previous.sheetIndex, previous.row, previous.col),
-			previousSheetIndex: previous.sheetIndex,
-			previousRow: previous.row,
-			previousCol: previous.col,
-			appendSheetIndex: source.sheetIndex,
-			appendStartRow: source.row,
-			appendStartCol: source.col,
-			appendEndRow: source.row,
-			appendEndCol: source.col,
-		},
-		true,
-	)
+	if (needsRangeAggregateState(aggregate.functionName)) {
+		const previousState = stateByGroupEnd?.get(previousEndKey)
+		const sourceSheet = workbook.sheets[source.sheetIndex]
+		if (!previousState || !sourceSheet) return null
+		const state = appendCellToRangeAggregateState(
+			aggregate.functionName,
+			previousState,
+			readRangeAggregateNumericCell(sourceSheet, source.row, source.col),
+		)
+		return { value: rangeAggregateStateToValue(aggregate.functionName, state), state }
+	}
+	const optimization = {
+		functionName: aggregate.functionName,
+		previousKey: cellKey(previous.sheetIndex, previous.row, previous.col),
+		previousSheetIndex: previous.sheetIndex,
+		previousRow: previous.row,
+		previousCol: previous.col,
+		appendSheetIndex: source.sheetIndex,
+		appendStartRow: source.row,
+		appendStartCol: source.col,
+		appendEndRow: source.row,
+		appendEndCol: source.col,
+	}
+	const scalarValue = tryEvaluateGrowingRangeScalarAggregate(workbook, optimization, true)
+	if (scalarValue) return { value: scalarValue }
+	return null
+}
+
+function cacheTailPrefixAggregateState(
+	block: TextPrefixAggregateBlock,
+	tail: TailPrefixAggregateResult,
+	stateByGroupEnd: Map<string, RangeAggregateState>,
+): void {
+	if (tail.state) {
+		stateByGroupEnd.set(
+			`${prefixAggregateTextGroupKey(block.aggregate)}:${block.aggregate.endRow}`,
+			tail.state,
+		)
+	}
+}
+
+function cacheTextPrefixAggregateState(
+	block: TextPrefixAggregateBlock,
+	state: RangeAggregateState | null,
+	stateByGroupEnd: Map<string, RangeAggregateState>,
+): void {
+	if (state && needsRangeAggregateState(block.aggregate.functionName)) {
+		stateByGroupEnd.set(
+			`${prefixAggregateTextGroupKey(block.aggregate)}:${block.aggregate.endRow}`,
+			state,
+		)
+	}
+}
+
+function appendCellToRangeAggregateState(
+	functionName: GrowingRangeAggregateFunction,
+	previous: RangeAggregateState,
+	rangeValue: number | CellValue | null,
+): RangeAggregateState {
+	if (previous.error) return previous
+	if (typeof rangeValue !== 'number') {
+		return rangeValue?.kind === 'error' ? { ...previous, error: rangeValue } : previous
+	}
+	switch (functionName) {
+		case 'AVERAGE':
+			return {
+				...previous,
+				sum: previous.sum + rangeValue,
+				count: previous.count + 1,
+			}
+		case 'MIN':
+			return {
+				...previous,
+				count: previous.count + 1,
+				min: Math.min(previous.min, rangeValue),
+			}
+		case 'MAX':
+			return {
+				...previous,
+				count: previous.count + 1,
+				max: Math.max(previous.max, rangeValue),
+			}
+		default:
+			return previous
+	}
 }
 
 function writeTextPrefixAggregateValue(

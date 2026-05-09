@@ -128,6 +128,30 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(4, 1)?.value).toEqual(numberValue(110))
 	})
 
+	test('dirty recalc updates tail AVERAGE from cached prefix state without counting blanks', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: EMPTY, formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(4), formula: null, styleId: sid })
+		for (let row = 0; row < 3; row++) {
+			sheet.cells.set(row, 1, {
+				value: EMPTY,
+				formula: `AVERAGE(A$1:A${row + 1})`,
+				styleId: sid,
+			})
+		}
+
+		expect(recalculate(wb, makeCtx()).errors).toEqual([])
+		sheet.cells.set(2, 0, { value: numberValue(8), formula: null, styleId: sid })
+		const result = recalculate(wb, makeCtx(), { dirtyRefs: ['Sheet1!A3'] })
+
+		expect(result.errors).toEqual([])
+		expect(result.changed).toEqual(['Sheet1!B3'])
+		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(2, 1)?.value).toEqual(numberValue(5))
+	})
+
 	test('dirty recalc delta-updates head edits across cached prefix SUM formulas', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

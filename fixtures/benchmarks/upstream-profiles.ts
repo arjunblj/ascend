@@ -80,6 +80,14 @@ export interface UpstreamProfile {
 	readonly notes: string
 }
 
+export interface UpstreamReplayCoverage {
+	readonly total: number
+	readonly exact: number
+	readonly nonExact: number
+	readonly byStatus: Record<UpstreamReplayStatus, number>
+	readonly nonExactProfiles: readonly UpstreamProfileName[]
+}
+
 type UpstreamShapeProfileInput = Omit<
 	UpstreamProfile,
 	| 'sourceKind'
@@ -645,6 +653,31 @@ export function assertExactUpstreamReplayProfiles(
 	)
 }
 
+export function summarizeUpstreamReplayCoverage(
+	profiles: readonly UpstreamProfile[],
+): UpstreamReplayCoverage {
+	const byStatus: Record<UpstreamReplayStatus, number> = {
+		'shape-clone': 0,
+		'exact-script': 0,
+		'exact-artifact': 0,
+	}
+	const nonExactProfiles: UpstreamProfileName[] = []
+	for (const profile of profiles) {
+		byStatus[profile.replayStatus] += 1
+		if (!isExactUpstreamReplayStatus(profile.replayStatus)) {
+			nonExactProfiles.push(profile.name)
+		}
+	}
+	const exact = byStatus['exact-script'] + byStatus['exact-artifact']
+	return {
+		total: profiles.length,
+		exact,
+		nonExact: profiles.length - exact,
+		byStatus,
+		nonExactProfiles,
+	}
+}
+
 export function buildCompetitiveIoArgs(input: {
 	readonly profile: UpstreamProfile
 	readonly repeat: number
@@ -1107,16 +1140,29 @@ function renderSummary(suite: BenchmarkSuiteResult): string {
 		value + ' '.repeat(Math.max(0, width - value.length))
 	const line = (cells: readonly string[]) =>
 		cells.map((cell, index) => pad(cell, widths[index] ?? 0)).join('  ')
+	const replayCoverage = renderReplayCoverageSummary(suite.metadata?.upstreamReplayCoverage)
 	return [
+		...(replayCoverage ? [replayCoverage, ''] : []),
 		line(headers),
 		widths.map((width) => '-'.repeat(width)).join('--'),
 		...rows.map(line),
 	].join('\n')
 }
 
+function renderReplayCoverageSummary(value: unknown): string | null {
+	if (!value || typeof value !== 'object') return null
+	const coverage = value as Partial<UpstreamReplayCoverage>
+	const total = typeof coverage.total === 'number' ? coverage.total : undefined
+	const exact = typeof coverage.exact === 'number' ? coverage.exact : undefined
+	const nonExact = typeof coverage.nonExact === 'number' ? coverage.nonExact : undefined
+	if (total === undefined || exact === undefined || nonExact === undefined) return null
+	return `Upstream exact replay coverage: ${exact}/${total} exact, ${nonExact} non-exact`
+}
+
 async function main(): Promise<void> {
 	const profileSet = readProfileSetFlag()
 	const profiles = selectUpstreamProfiles(readFlag('--profile'), profileSet)
+	const upstreamReplayCoverage = summarizeUpstreamReplayCoverage(profiles)
 	const requireExactReplay = hasFlag('--require-exact-replay')
 	if (requireExactReplay) assertExactUpstreamReplayProfiles(profiles, '--require-exact-replay')
 	const repeat = readPositiveIntFlag('--repeat', 3)
@@ -1197,6 +1243,7 @@ async function main(): Promise<void> {
 			isolatedKilledRetries: ISOLATED_KILLED_RETRIES,
 			timeoutMs,
 			childSuites,
+			upstreamReplayCoverage,
 			readRunnerManifest,
 			writeRunnerManifest,
 		},

@@ -9,6 +9,7 @@ import {
 	selectUpstreamProfiles,
 	shouldIsolateLibrariesForProfile,
 	splitLibraryList,
+	summarizeUpstreamReplayCoverage,
 	UPSTREAM_PROFILE_SETS,
 	UPSTREAM_PROFILES,
 	validateUpstreamProfileSuite,
@@ -113,6 +114,16 @@ describe('upstream competitive profiles', () => {
 		expect(() => assertExactUpstreamReplayProfiles([profile], 'claim gate')).toThrow(
 			'pyexcelerate-write-values-1000x100: sourceKind=published-shape replayStatus=shape-clone',
 		)
+	})
+
+	test('exact replay coverage summary exposes the public-proof denominator', () => {
+		const coverage = summarizeUpstreamReplayCoverage(UPSTREAM_PROFILES)
+
+		expect(coverage.total).toBe(UPSTREAM_PROFILES.length)
+		expect(coverage.exact).toBe(0)
+		expect(coverage.nonExact).toBe(UPSTREAM_PROFILES.length)
+		expect(coverage.byStatus['shape-clone']).toBe(UPSTREAM_PROFILES.length)
+		expect(coverage.nonExactProfiles).toContain('pyexcelerate-write-values-1000x100')
 	})
 
 	test('splits library lists for isolated heavy profile runs', () => {

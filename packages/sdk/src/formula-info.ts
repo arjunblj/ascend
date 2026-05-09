@@ -228,6 +228,7 @@ function structuredFormulaReferenceInfo(node: StructuredRefNode): FormulaReferen
 		table: node.table,
 		specifiers: [...node.specifiers],
 		...(node.column ? { column: node.column } : {}),
+		...(node.endColumn ? { endColumn: node.endColumn } : {}),
 	}
 }
 

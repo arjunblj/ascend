@@ -1,4 +1,4 @@
-import { AscendException, ascendError, type CellValue } from '@ascend/schema'
+import { AscendException, ascendError, type CellValue, EMPTY } from '@ascend/schema'
 import {
 	type AgentCommitOptions,
 	Ascend,
@@ -10,11 +10,15 @@ import {
 	ensureOutputExtension,
 	escapeDelimitedCell,
 	formatDisplayCellValue,
+	indexToColumn,
 	inferExportFormat,
 	listCapabilities,
 	normalizeExportFormat,
+	parseA1,
 	parseOperations,
+	type RangeObjectsInfo,
 	type RangeRowsInfo,
+	type RangeWindowInfo,
 	readAgentDoc,
 	searchAgentDocs,
 	summarizeCapabilities,
@@ -177,6 +181,10 @@ export function createServer(): McpServer {
 			sheet: z.string().optional().describe('Sheet name (defaults to first sheet)'),
 			rowOffset: z.number().int().nonnegative().optional().describe('Row offset within the range'),
 			rowLimit: z.number().int().positive().optional().describe('Maximum rows to return'),
+			changedSince: z
+				.string()
+				.optional()
+				.describe('For compact reads, return only cells changed since this prior changeToken'),
 			format: z
 				.enum(['cells', 'rows', 'objects', 'tsv', 'compact'])
 				.optional()
@@ -191,8 +199,25 @@ export function createServer(): McpServer {
 				.array(z.string())
 				.optional()
 				.describe('Explicit headers for object mode; defaults to first-row headers'),
+			cols: z
+				.array(z.string())
+				.optional()
+				.describe(
+					'Columns to return by absolute letter (A, C), 1-based position in the requested range, or object header',
+				),
 		},
-		async ({ file, range, sheet, rowOffset, rowLimit, format, display, headers }) => {
+		async ({
+			file,
+			range,
+			sheet,
+			rowOffset,
+			rowLimit,
+			changedSince,
+			format,
+			display,
+			headers,
+			cols,
+		}) => {
 			try {
 				const wb = await WorkbookDocument.open(
 					file,
@@ -221,18 +246,23 @@ export function createServer(): McpServer {
 									includeRefs: false,
 									omitEmpty: true,
 									flatValues: true,
+									changedSince: changedSince ?? '',
 								}),
+								cols,
 							)
 						: mode === 'tsv'
-							? buildTsvReadResult(handle.readRows(range, readOpts))
+							? buildTsvReadResult(handle.readRows(range, readOpts), cols)
 							: mode === 'rows'
-								? handle.readRows(range, readOpts)
+								? pruneRowsInfo(handle.readRows(range, readOpts), cols)
 								: mode === 'objects'
-									? handle.readObjects(range, {
-											...readOpts,
-											headers: headers && headers.length > 0 ? headers : 'first-row',
-										})
-									: handle.readWindow(range, readOpts)
+									? pruneObjectsInfo(
+											handle.readObjects(range, {
+												...readOpts,
+												headers: headers && headers.length > 0 ? headers : 'first-row',
+											}),
+											cols,
+										)
+									: pruneWindowInfo(handle.readWindow(range, readOpts), cols)
 				return okResponse(
 					mode === 'tsv' || mode === 'compact'
 						? info
@@ -458,6 +488,7 @@ export function createServer(): McpServer {
 				return errorResponse(
 					ascendError('VALIDATION_ERROR', parsed.error, {
 						details: { issues: parsed.issues },
+						retryStrategy: 'modified',
 						suggestedFix:
 							'Use ascend.list_operations for canonical operation schemas and examples.',
 					}),
@@ -499,6 +530,7 @@ export function createServer(): McpServer {
 				return errorResponse(
 					ascendError('VALIDATION_ERROR', parsed.error, {
 						details: { issues: parsed.issues },
+						retryStrategy: 'modified',
 						suggestedFix:
 							'Use ascend.list_operations for canonical operation schemas and examples.',
 					}),
@@ -656,6 +688,7 @@ export function createServer(): McpServer {
 				return errorResponse(
 					ascendError('VALIDATION_ERROR', parsed.error, {
 						details: { issues: parsed.issues },
+						retryStrategy: 'modified',
 						suggestedFix:
 							'Use ascend.list_operations for canonical operation schemas and examples.',
 					}),
@@ -708,6 +741,7 @@ export function createServer(): McpServer {
 				return errorResponse(
 					ascendError('VALIDATION_ERROR', parsed.error, {
 						details: { issues: parsed.issues },
+						retryStrategy: 'modified',
 						suggestedFix:
 							'Use ascend.list_operations for canonical operation schemas and examples.',
 					}),
@@ -1070,7 +1104,125 @@ function displayReadResult(mode: 'cells' | 'rows' | 'objects', info: unknown): u
 	}
 }
 
-function buildTsvReadResult(info: RangeRowsInfo) {
+interface SelectedColumnInfo {
+	readonly position: number
+	readonly col: number
+	readonly letter: string
+	readonly header?: string
+}
+
+function resolveColumnSelection(
+	cols: readonly string[] | undefined,
+	startCol: number,
+	colCount: number,
+	headers?: readonly string[],
+): readonly number[] | null {
+	if (!cols || cols.length === 0) return null
+	const selected: number[] = []
+	const seen = new Set<number>()
+	const headerLookup = headers
+		? new Map(headers.map((header, index) => [header.trim().toLowerCase(), index] as const))
+		: undefined
+	for (const raw of cols) {
+		const token = raw.trim()
+		if (token.length === 0) continue
+		const relative = resolveColumnToken(token, startCol, colCount, headerLookup)
+		if (relative === undefined || seen.has(relative)) continue
+		seen.add(relative)
+		selected.push(relative)
+	}
+	return selected
+}
+
+function resolveColumnToken(
+	token: string,
+	startCol: number,
+	colCount: number,
+	headerLookup?: ReadonlyMap<string, number>,
+): number | undefined {
+	if (/^\d+$/.test(token)) {
+		const relative = Number.parseInt(token, 10) - 1
+		return relative >= 0 && relative < colCount ? relative : undefined
+	}
+	if (/^[A-Za-z]{1,3}$/.test(token)) {
+		const parsed = parseA1(`${token.toUpperCase()}1`)
+		const relative = parsed.col - startCol
+		if (relative >= 0 && relative < colCount) return relative
+	}
+	const headerRelative = headerLookup?.get(token.toLowerCase())
+	return headerRelative !== undefined && headerRelative >= 0 && headerRelative < colCount
+		? headerRelative
+		: undefined
+}
+
+function selectedColumns(
+	selection: readonly number[],
+	startCol: number,
+	headers?: readonly string[],
+): readonly SelectedColumnInfo[] {
+	return selection.map((relative) => {
+		const absoluteCol = startCol + relative
+		return {
+			position: relative + 1,
+			col: absoluteCol,
+			letter: indexToColumn(absoluteCol),
+			...(headers?.[relative] !== undefined ? { header: headers[relative] } : {}),
+		}
+	})
+}
+
+function pruneRowsInfo(info: RangeRowsInfo, cols?: readonly string[]) {
+	const selection = resolveColumnSelection(cols, info.ref.start.col, info.colCount)
+	if (!selection) return info
+	return {
+		...info,
+		colCount: selection.length,
+		selectedColumns: selectedColumns(selection, info.ref.start.col),
+		rows: info.rows.map((row) => selection.map((relative) => row[relative] ?? EMPTY)),
+	}
+}
+
+function pruneObjectsInfo(info: RangeObjectsInfo, cols?: readonly string[]) {
+	const selection = resolveColumnSelection(cols, info.ref.start.col, info.colCount, info.headers)
+	if (!selection) return info
+	const headers = selection.map((relative) => info.headers[relative] ?? '')
+	return {
+		...info,
+		colCount: selection.length,
+		headers,
+		selectedColumns: selectedColumns(selection, info.ref.start.col, info.headers),
+		rows: info.rows.map((row) =>
+			Object.fromEntries(headers.map((header) => [header, row[header] ?? EMPTY])),
+		),
+	}
+}
+
+function pruneWindowInfo(info: RangeWindowInfo, cols?: readonly string[]) {
+	const selection = resolveColumnSelection(cols, info.ref.start.col, info.colCount)
+	if (!selection) return info
+	const selected = new Set(selection)
+	return {
+		...info,
+		colCount: selection.length,
+		selectedColumns: selectedColumns(selection, info.ref.start.col),
+		cells: info.cells.filter((cell) => selected.has(cell.col - info.ref.start.col)),
+	}
+}
+
+function pruneCompactWindowInfo(info: CompactRangeWindowInfo, cols?: readonly string[]) {
+	const selection = resolveColumnSelection(cols, info.ref.start.col, info.colCount)
+	if (!selection) return info
+	const selected = new Set(selection)
+	return {
+		...info,
+		colCount: selection.length,
+		selectedColumns: selectedColumns(selection, info.ref.start.col),
+		cells: info.cells.filter((cell) => selected.has(cell.col - info.ref.start.col)),
+	}
+}
+
+function buildTsvReadResult(sourceInfo: RangeRowsInfo, cols?: readonly string[]) {
+	const info = pruneRowsInfo(sourceInfo, cols)
 	const rows = info.rows.map((row) =>
 		row.map((cell) => escapeDelimitedCell(formatDisplayCellValue(cell), '\t')),
 	)
@@ -1083,12 +1235,14 @@ function buildTsvReadResult(info: RangeRowsInfo) {
 		rowLimit: info.rowLimit,
 		hasMore: info.hasMore,
 		...(info.nextRowOffset !== undefined ? { nextRowOffset: info.nextRowOffset } : {}),
+		...('selectedColumns' in info ? { selectedColumns: info.selectedColumns } : {}),
 		format: 'tsv' as const,
 		tsv: rows.map((row) => row.join('\t')).join('\n'),
 	}
 }
 
-function buildCompactReadResult(info: CompactRangeWindowInfo) {
+function buildCompactReadResult(sourceInfo: CompactRangeWindowInfo, cols?: readonly string[]) {
+	const info = pruneCompactWindowInfo(sourceInfo, cols)
 	return {
 		requestedRef: info.requestedRef,
 		ref: info.ref,
@@ -1099,6 +1253,7 @@ function buildCompactReadResult(info: CompactRangeWindowInfo) {
 		hasMore: info.hasMore,
 		...(info.nextRowOffset !== undefined ? { nextRowOffset: info.nextRowOffset } : {}),
 		...(info.changeToken !== undefined ? { changeToken: info.changeToken } : {}),
+		...('selectedColumns' in info ? { selectedColumns: info.selectedColumns } : {}),
 		format: 'compact' as const,
 		cells: info.cells.map((cell) => [
 			cell.row - info.ref.start.row,
@@ -1125,6 +1280,7 @@ async function loadAvailableSheets(
 function sheetNotFoundError(sheetName: string, availableSheets: readonly string[]) {
 	return ascendError('SHEET_NOT_FOUND', `Sheet "${sheetName}" not found`, {
 		details: { availableSheets },
+		retryStrategy: availableSheets.length > 0 ? 'modified' : 'none',
 		suggestedFix:
 			availableSheets.length > 0
 				? `Use one of the available sheets: ${availableSheets.join(', ')}`

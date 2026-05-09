@@ -51,7 +51,7 @@ Benchmark suite in `fixtures/benchmarks/`:
 - `run.ts` — 40+ synthetic scenarios (read, write, calc, workflow); `--scenario <name> --repeat N --json` for automation
 - `micro.ts` — microbenchmarks (SparseGrid, formula parse, compiled eval, dep-graph, styles)
 - `results.ts` — statistical helpers, Welch's t-test, suite comparison
-- `targets.ts` — throughput targets (read 1M/s, write 500K/s, calc 100K/s)
+- `targets.ts` — throughput targets (read 3M/s, write 1.5M/s, calc 500K/s; best scenario per category in CI)
 
 For autonomous optimization loops, see `.cursor/skills/autooptimize/`.
 

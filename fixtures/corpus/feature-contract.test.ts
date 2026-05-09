@@ -55,9 +55,10 @@ interface ContractSubject {
 	readonly compatibilityFeatures: ReadonlySet<string>
 }
 
-const MANIFEST = normalizeManifest(
-	JSON.parse(readFileSync(MANIFEST_PATH, 'utf-8')) as CorpusManifestEntry[],
-)
+const HAS_MANIFEST = existsSync(MANIFEST_PATH)
+const MANIFEST = HAS_MANIFEST
+	? normalizeManifest(JSON.parse(readFileSync(MANIFEST_PATH, 'utf-8')) as CorpusManifestEntry[])
+	: []
 
 function loadCorpusFile(filename: string): Uint8Array | null {
 	const path = resolve(CORPUS_DIR, filename)
@@ -382,20 +383,26 @@ function expectOk<T, E extends { message: string }>(
 	if (!result.ok) throw new Error(result.error.message)
 }
 
-for (const entry of MANIFEST) {
-	describe(`corpus feature contract: ${entry.file}`, () => {
-		const bytes = loadCorpusFile(entry.file)
-
-		it.skipIf(!bytes)('surfaces every declared feature family on read', async () => {
-			const subject = await loadContractSubject(requireBytes(bytes))
-			assertManifestReadCoverage(entry, subject)
-		})
-
-		it.skipIf(!bytes)('retains declared feature families after a safe edit', async () => {
-			const sourceBytes = requireBytes(bytes)
-			const before = await loadContractSubject(sourceBytes)
-			const after = await applySafeEditAndReload(sourceBytes)
-			assertManifestEditCoverage(entry, before, after)
-		})
+if (!HAS_MANIFEST) {
+	describe.skip('corpus feature contract', () => {
+		it('skips when the external corpus manifest is unavailable', () => {})
 	})
+} else {
+	for (const entry of MANIFEST) {
+		describe(`corpus feature contract: ${entry.file}`, () => {
+			const bytes = loadCorpusFile(entry.file)
+
+			it.skipIf(!bytes)('surfaces every declared feature family on read', async () => {
+				const subject = await loadContractSubject(requireBytes(bytes))
+				assertManifestReadCoverage(entry, subject)
+			})
+
+			it.skipIf(!bytes)('retains declared feature families after a safe edit', async () => {
+				const sourceBytes = requireBytes(bytes)
+				const before = await loadContractSubject(sourceBytes)
+				const after = await applySafeEditAndReload(sourceBytes)
+				assertManifestEditCoverage(entry, before, after)
+			})
+		})
+	}
 }

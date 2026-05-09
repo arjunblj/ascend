@@ -40,6 +40,26 @@ export function readCsv(content: string, dialect?: Partial<CsvDialect>): Result<
 	return ok(workbook)
 }
 
+/**
+ * Decode a UTF-8 byte stream into text and parse as CSV (full buffer after stream ends).
+ * For chunked processing without building a `Workbook`, use application-level line splitting.
+ */
+export async function readCsvFromUtf8Stream(
+	stream: ReadableStream<Uint8Array>,
+	dialect?: Partial<CsvDialect>,
+): Promise<Result<Workbook>> {
+	const decoder = new TextDecoder('utf-8')
+	let text = ''
+	const reader = stream.getReader()
+	for (;;) {
+		const { done, value } = await reader.read()
+		if (done) break
+		if (value) text += decoder.decode(value, { stream: true })
+	}
+	text += decoder.decode()
+	return readCsv(text, dialect)
+}
+
 type RowCallback = (row: string[], rowIndex: number) => void
 
 function parseFields(input: string, d: CsvDialect, onRow: RowCallback): void {

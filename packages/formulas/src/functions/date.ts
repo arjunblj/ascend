@@ -21,6 +21,23 @@ function makeUTC(y: number, m: number, d: number): Date {
 const EPOCH_1900_MS = makeUTC(1900, 1, 1).getTime()
 const EPOCH_1904_MS = makeUTC(1904, 1, 1).getTime()
 
+function normalizeYearMonth(year: number, month: number): { year: number; month: number } {
+	let y = Math.trunc(year)
+	const m = Math.trunc(month)
+	y += Math.floor((m - 1) / 12)
+	return { year: y, month: ((((m - 1) % 12) + 12) % 12) + 1 }
+}
+
+function daysInMonth1900System(year: number, month: number): number {
+	return year === 1900 && month === 2 ? 29 : daysInMonth(year, month)
+}
+
+function dayOfYear1900System(year: number, month: number, day: number): number {
+	let total = Math.trunc(day)
+	for (let m = 1; m < month; m++) total += daysInMonth1900System(year, m)
+	return total
+}
+
 export function dateToSerial(
 	year: number,
 	month: number,
@@ -30,6 +47,11 @@ export function dateToSerial(
 	const ms = makeUTC(year, month, day).getTime()
 	if (dateSystem === '1904') {
 		return Math.floor((ms - EPOCH_1904_MS) / MS_PER_DAY)
+	}
+
+	const normalized = normalizeYearMonth(year, month)
+	if (normalized.year === 1900) {
+		return dayOfYear1900System(normalized.year, normalized.month, day)
 	}
 
 	const days = Math.floor((ms - EPOCH_1900_MS) / MS_PER_DAY)
@@ -184,7 +206,7 @@ function dateFn(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	if (year >= 0 && year <= 1899) year += 1900
 	const dateSystem = currentDateSystem(ctx)
 	const serial = dateToSerial(year, Math.trunc(m), Math.trunc(d), dateSystem)
-	return serial < (dateSystem === '1904' ? 0 : 1) ? errorValue('#NUM!') : numberValue(serial)
+	return serial < 0 ? errorValue('#NUM!') : numberValue(serial)
 }
 
 function today(_args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
@@ -309,6 +331,7 @@ function parseDateText(value: string): DateParts | null {
 function validateDateParts(year: number, month: number, day: number): DateParts | null {
 	if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null
 	if (month < 1 || month > 12) return null
+	if (year === 1900 && month === 2 && day === 29) return { year, month, day }
 	if (day < 1 || day > daysInMonth(year, month)) return null
 	return { year, month, day }
 }

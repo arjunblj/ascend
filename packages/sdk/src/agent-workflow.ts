@@ -408,6 +408,7 @@ export function auditLossPolicy(
 	const allowed = allowLoss === 'all' ? 'all' : allowLoss.map((entry) => entry.toLowerCase())
 	const blockedFeatures = features.filter((feature) => {
 		if (feature.tier !== 'preserved' && feature.tier !== 'unsupported') return false
+		if (isSafePackagePreservationFeature(feature)) return false
 		if (allowed === 'all') return false
 		return !allowed.includes(feature.feature.toLowerCase()) && !allowed.includes(feature.tier)
 	})
@@ -503,7 +504,8 @@ export function sha256Bytes(bytes: Uint8Array): string {
 }
 
 async function fileSha256(file: string): Promise<string> {
-	return sha256Bytes(await readFile(file))
+	const bytes = await readFile(file)
+	return sha256Bytes(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength))
 }
 
 function sha256Text(text: string): string {
@@ -817,6 +819,7 @@ function buildApprovalRequirements(
 	const approvals: ApprovalRequirement[] = []
 	for (const feature of features) {
 		if (feature.tier !== 'preserved' && feature.tier !== 'unsupported') continue
+		if (isSafePackagePreservationFeature(feature)) continue
 		const featureKey = feature.feature.toLowerCase()
 		const tierKey = feature.tier.toLowerCase()
 		approvals.push({
@@ -836,6 +839,20 @@ function buildApprovalRequirements(
 		if (destructive) approvals.push(destructive)
 	}
 	return approvals
+}
+
+function isSafePackagePreservationFeature(feature: FeatureReport): boolean {
+	if (feature.feature !== 'preservedOther' || feature.tier !== 'preserved') return false
+	if (feature.locations.length === 0) return false
+	return feature.locations.every(isSafePackagePreservationLocation)
+}
+
+function isSafePackagePreservationLocation(location: string): boolean {
+	return (
+		location === 'docProps/core.xml' ||
+		location === 'docProps/app.xml' ||
+		location === 'docProps/custom.xml'
+	)
 }
 
 function destructiveOperationApproval(

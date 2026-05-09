@@ -1,0 +1,65 @@
+{
+	"function": "engineering-extended-2",
+	"cases": [
+		{
+			"description": "DEC2HEX 255 = FF",
+			"setup": {},
+			"formula": "=DEC2HEX(255)",
+			"expected": { "kind": "string", "value": "FF" }
+		},
+		{
+			"description": "HEX2DEC FF = 255",
+			"setup": {},
+			"formula": "=HEX2DEC(\"FF\")",
+			"expected": { "kind": "number", "value": 255 }
+		},
+		{
+			"description": "DEC2BIN 10 = 1010",
+			"setup": {},
+			"formula": "=DEC2BIN(10)",
+			"expected": { "kind": "string", "value": "1010" }
+		},
+		{
+			"description": "BIN2DEC 1010 = 10",
+			"setup": {},
+			"formula": "=BIN2DEC(\"1010\")",
+			"expected": { "kind": "number", "value": 10 }
+		},
+		{
+			"description": "COMPLEX creates imaginary number",
+			"setup": {},
+			"formula": "=COMPLEX(3, 4)",
+			"expected": { "kind": "string", "value": "3+4i" }
+		},
+		{
+			"description": "IMABS of 3+4i = 5",
+			"setup": {},
+			"formula": "=IMABS(\"3+4i\")",
+			"expected": { "kind": "number", "value": 5 }
+		},
+		{
+			"description": "ERF(1)",
+			"setup": {},
+			"formula": "=ERF(1)",
+			"expected": { "kind": "number", "approx": 0.8427, "tolerance": 0.001 }
+		},
+		{
+			"description": "DELTA equal values = 1",
+			"setup": {},
+			"formula": "=DELTA(5, 5)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "DELTA unequal values = 0",
+			"setup": {},
+			"formula": "=DELTA(5, 6)",
+			"expected": { "kind": "number", "value": 0 }
+		},
+		{
+			"description": "GESTEP 5 >= 4 = 1",
+			"setup": {},
+			"formula": "=GESTEP(5, 4)",
+			"expected": { "kind": "number", "value": 1 }
+		}
+	]
+}

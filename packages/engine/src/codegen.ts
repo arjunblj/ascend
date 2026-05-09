@@ -1,5 +1,12 @@
 import type { FormulaNode } from '@ascend/formulas'
-import { dateToSerial, formatNumber, serialToDate, toNumber, wildcardMatch } from '@ascend/formulas'
+import {
+	dateToSerial,
+	formatNumber,
+	hasWildcardPatternSyntax,
+	serialToDate,
+	toNumber,
+	wildcardMatch,
+} from '@ascend/formulas'
 import type { CellValue } from '@ascend/schema'
 import {
 	booleanValue,
@@ -10,6 +17,7 @@ import {
 	stringValue,
 	topLeftScalar,
 } from '@ascend/schema'
+import { aggregateNumericRange } from './compiled-eval.ts'
 import type { EvalContext } from './evaluator.ts'
 import { evaluate as treeEvaluate } from './evaluator.ts'
 import { resolveSheetIndexInWorkbook as resolveSheetIndex } from './sheet-index.ts'
@@ -369,8 +377,8 @@ function tryFoldConstant(node: FormulaNode): number | null {
 					case 'POWER':
 						return a < 0 && b !== Math.floor(b) ? null : a ** b
 					case 'ROUND': {
-						const m = 10 ** Math.floor(b)
-						return Math.round(a * m) / m
+						const m = 10 ** Math.trunc(b)
+						return (Math.sign(a) * Math.round(Math.abs(a) * m)) / m
 					}
 					default:
 						return null
@@ -652,7 +660,7 @@ function emitRound(state: CodegenState, args: readonly FormulaNode[]): string {
 	}
 	const result = freshVar(state)
 	state.lines.push(
-		`var _m${state.varCounter} = Math.pow(10, Math.floor(${digitsExpr})); var ${result} = _numberValue(Math.round(${nv} * _m${state.varCounter}) / _m${state.varCounter});`,
+		`var _m${state.varCounter} = Math.pow(10, Math.trunc(${digitsExpr})); var ${result} = _numberValue((Math.sign(${nv}) * Math.round(Math.abs(${nv}) * _m${state.varCounter})) / _m${state.varCounter});`,
 	)
 	state.varCounter++
 	return result
@@ -1365,12 +1373,47 @@ function rangeAggregate(
 	const fromCol = Math.min(resolvedStartCol, resolvedEndCol)
 	const toCol = Math.max(resolvedStartCol, resolvedEndCol)
 
-	let acc = 0
-	let count = 0
-	let countA = 0
-	let minVal = Number.POSITIVE_INFINITY
-	let maxVal = Number.NEGATIVE_INFINITY
+	if (func === 'COUNTA') {
+		let countA = 0
+		for (let row = fromRow; row <= toRow; row++) {
+			for (let col = fromCol; col <= toCol; col++) {
+				const kind = targetSheet.cells.readKind(row, col)
+				if (kind === undefined || kind === 'empty') continue
+				if (kind === 'error') {
+					return errorValue(targetSheet.cells.readError(row, col) ?? '#VALUE!')
+				}
+				countA++
+			}
+		}
+		return numberValue(countA)
+	}
 
+	if (
+		func === 'SUM' ||
+		func === 'AVERAGE' ||
+		func === 'COUNT' ||
+		func === 'MIN' ||
+		func === 'MAX'
+	) {
+		const r = aggregateNumericRange(targetSheet, fromRow, fromCol, toRow, toCol)
+		if (r.error) return r.error
+		switch (func) {
+			case 'SUM':
+				return numberValue(r.sum)
+			case 'AVERAGE':
+				return r.count === 0 ? errorValue('#DIV/0!') : numberValue(r.sum / r.count)
+			case 'COUNT':
+				return numberValue(r.count)
+			case 'MIN':
+				return r.count === 0 ? numberValue(0) : numberValue(r.min)
+			case 'MAX':
+				return r.count === 0 ? numberValue(0) : numberValue(r.max)
+			default:
+				return numberValue(r.sum)
+		}
+	}
+
+	let acc = 0
 	for (let row = fromRow; row <= toRow; row++) {
 		for (let col = fromCol; col <= toCol; col++) {
 			const kind = targetSheet.cells.readKind(row, col)
@@ -1378,32 +1421,11 @@ function rangeAggregate(
 			if (kind === 'error') {
 				return errorValue(targetSheet.cells.readError(row, col) ?? '#VALUE!')
 			}
-			countA++
 			if (kind !== 'number' && kind !== 'date') continue
-			const n = targetSheet.cells.readNumber(row, col) ?? 0
-			acc += n
-			count++
-			if (n < minVal) minVal = n
-			if (n > maxVal) maxVal = n
+			acc += targetSheet.cells.readNumber(row, col) ?? 0
 		}
 	}
-
-	switch (func) {
-		case 'SUM':
-			return numberValue(acc)
-		case 'AVERAGE':
-			return count === 0 ? errorValue('#DIV/0!') : numberValue(acc / count)
-		case 'COUNT':
-			return numberValue(count)
-		case 'COUNTA':
-			return numberValue(countA)
-		case 'MIN':
-			return count === 0 ? numberValue(0) : numberValue(minVal)
-		case 'MAX':
-			return count === 0 ? numberValue(0) : numberValue(maxVal)
-		default:
-			return numberValue(acc)
-	}
+	return numberValue(acc)
 }
 
 function lookupValueKey(value: CellValue): string | null {
@@ -1654,17 +1676,6 @@ function vlookupExact(
 	return idx < 0 ? errorValue('#N/A') : sheet.cells.readValue(sr + idx, sc + colInt - 1)
 }
 
-function hasWildcardCriteria(text: string): boolean {
-	for (let i = 0; i < text.length; i++) {
-		if (text[i] === '~') {
-			i++
-			continue
-		}
-		if (text[i] === '*' || text[i] === '?') return true
-	}
-	return false
-}
-
 function buildCriteriaMatcher(criteria: CellValue): (v: CellValue) => boolean {
 	if (criteria.kind === 'number') {
 		const t = criteria.value
@@ -1693,7 +1704,7 @@ function buildCriteriaMatcher(criteria: CellValue): (v: CellValue) => boolean {
 	const numRest = Number(rest)
 	const isNumeric = rest.trim() !== '' && !Number.isNaN(numRest)
 
-	const hasWild = hasWildcardCriteria(rest)
+	const hasWild = hasWildcardPatternSyntax(rest)
 
 	if (!op) {
 		if (s === '') return (v) => v.kind === 'empty' || (v.kind === 'string' && v.value === '')

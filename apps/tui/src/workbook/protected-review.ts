@@ -1,4 +1,4 @@
-import type { WorkbookInfo } from '@ascend/sdk'
+import { auditLossPolicy, type WorkbookInfo } from '@ascend/sdk'
 
 export function protectedReviewReasons(info: WorkbookInfo): readonly string[] {
 	const reasons: string[] = []
@@ -7,7 +7,7 @@ export function protectedReviewReasons(info: WorkbookInfo): readonly string[] {
 		reasons.push('PivotTables are inspectable but not fully refreshable.')
 	if (info.chartCount > 0)
 		reasons.push('Charts are preserved and previewed before semantic editing.')
-	for (const feature of info.compatibility.features) {
+	for (const feature of auditLossPolicy(info.compatibility.features).blockedFeatures) {
 		if (feature.tier === 'preserved' || feature.tier === 'unsupported') {
 			reasons.push(`${feature.feature}: ${feature.tier}`)
 		}

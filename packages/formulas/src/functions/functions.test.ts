@@ -128,6 +128,21 @@ describe('formula functions', () => {
 			expect(getResult(wb, 3, 0)).toEqual(numberValue(2))
 		})
 
+		test('COUNTIF escaped wildcards match literal characters', () => {
+			const wb = makeWorkbook()
+			setStr(wb, 0, 0, '*')
+			setStr(wb, 1, 0, '?')
+			setStr(wb, 2, 0, '~')
+			setStr(wb, 3, 0, '~*')
+			setFormula(wb, 4, 0, 'COUNTIF(A1:A4,"~*")')
+			setFormula(wb, 5, 0, 'COUNTIF(A1:A4,"~?")')
+			setFormula(wb, 6, 0, 'COUNTIF(A1:A4,"~~")')
+			recalc(wb)
+			expect(getResult(wb, 4, 0)).toEqual(numberValue(1))
+			expect(getResult(wb, 5, 0)).toEqual(numberValue(1))
+			expect(getResult(wb, 6, 0)).toEqual(numberValue(1))
+		})
+
 		test('SUMPRODUCT with mismatched dimensions returns #VALUE!', () => {
 			const wb = makeWorkbook()
 			setNum(wb, 0, 0, 1)
@@ -545,6 +560,22 @@ describe('formula functions', () => {
 			setFormula(wb, 2, 0, 'VLOOKUP("banana",A1:B2,2,FALSE)')
 			recalc(wb)
 			expect(getResult(wb, 2, 0)).toEqual(numberValue(20))
+		})
+
+		test('lookup functions preserve scalar input error identity', () => {
+			const wb = makeWorkbook()
+			wb.sheets[0]?.cells.set(0, 0, {
+				value: errorValue('#DIV/0!'),
+				formula: null,
+				styleId: S0,
+			})
+			setFormula(wb, 1, 0, 'VLOOKUP(A1,B1:C1,2,FALSE)')
+			setFormula(wb, 2, 0, 'HLOOKUP(A1,B1:C2,2,FALSE)')
+			setFormula(wb, 3, 0, 'INDEX(A1,1)')
+			recalc(wb)
+			expect(getResult(wb, 1, 0)).toEqual(errorValue('#DIV/0!'))
+			expect(getResult(wb, 2, 0)).toEqual(errorValue('#DIV/0!'))
+			expect(getResult(wb, 3, 0)).toEqual(errorValue('#DIV/0!'))
 		})
 
 		test('VLOOKUP approximate match', () => {
@@ -989,6 +1020,19 @@ describe('formula functions', () => {
 			expect(getResult(wb, 0, 0)).toEqual(numberValue(1))
 		})
 
+		test('DATE(1900,2,29) → serial 60 phantom leap day', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'DATE(1900,2,29)')
+			setFormula(wb, 0, 1, 'DATE(1900,1,60)')
+			setFormula(wb, 0, 2, 'DATE(1900,3,0)')
+			setFormula(wb, 0, 3, 'DATEVALUE("1900-02-29")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(60))
+			expect(getResult(wb, 0, 1)).toEqual(numberValue(60))
+			expect(getResult(wb, 0, 2)).toEqual(numberValue(60))
+			expect(getResult(wb, 0, 3)).toEqual(numberValue(60))
+		})
+
 		test('DATE(2024,1,1) → serial 45292', () => {
 			const wb = makeWorkbook()
 			setFormula(wb, 0, 0, 'DATE(2024,1,1)')
@@ -1198,6 +1242,33 @@ describe('formula functions', () => {
 			expect(getResult(wb, 3, 2)).toEqual(numberValue(30))
 		})
 
+		test('SORT rejects invalid sort indexes and orders', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 30)
+			setNum(wb, 1, 0, 10)
+			setNum(wb, 2, 0, 20)
+			setFormula(wb, 3, 0, 'SORT(A1:A3,0)')
+			setFormula(wb, 4, 0, 'SORT(A1:A3,2)')
+			setFormula(wb, 5, 0, 'SORT(A1:A3,1,0)')
+			recalc(wb)
+			expect(getResult(wb, 3, 0)).toEqual(errorValue('#VALUE!'))
+			expect(getResult(wb, 4, 0)).toEqual(errorValue('#VALUE!'))
+			expect(getResult(wb, 5, 0)).toEqual(errorValue('#VALUE!'))
+		})
+
+		test('SORT by_col rejects indexes outside the row axis', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 3)
+			setNum(wb, 0, 1, 1)
+			setNum(wb, 0, 2, 2)
+			setNum(wb, 1, 0, 30)
+			setNum(wb, 1, 1, 10)
+			setNum(wb, 1, 2, 20)
+			setFormula(wb, 2, 0, 'SORT(A1:C2,3,1,TRUE)')
+			recalc(wb)
+			expect(getResult(wb, 2, 0)).toEqual(errorValue('#VALUE!'))
+		})
+
 		test('SORTBY sorts by external array', () => {
 			const wb = makeWorkbook()
 			setStr(wb, 0, 0, 'c')
@@ -1244,6 +1315,21 @@ describe('formula functions', () => {
 			expect(getResult(wb, 3, 0)).toEqual(stringValue('y'))
 			expect(getResult(wb, 4, 0)).toEqual(stringValue('z'))
 			expect(getResult(wb, 5, 0)).toEqual(stringValue('x'))
+		})
+
+		test('SORTBY rejects mismatched sort arrays and invalid orders', () => {
+			const wb = makeWorkbook()
+			setStr(wb, 0, 0, 'a')
+			setStr(wb, 1, 0, 'b')
+			setStr(wb, 2, 0, 'c')
+			setNum(wb, 0, 1, 1)
+			setNum(wb, 1, 1, 2)
+			setNum(wb, 2, 1, 3)
+			setFormula(wb, 3, 0, 'SORTBY(A1:A3,B1:B2)')
+			setFormula(wb, 4, 0, 'SORTBY(A1:A3,B1:B3,0)')
+			recalc(wb)
+			expect(getResult(wb, 3, 0)).toEqual(errorValue('#VALUE!'))
+			expect(getResult(wb, 4, 0)).toEqual(errorValue('#VALUE!'))
 		})
 
 		test('UNIQUE removes duplicate rows', () => {
@@ -1657,6 +1743,21 @@ describe('formula functions', () => {
 			expect(getResult(wb, 1, 1)).toEqual(numberValue(0))
 			expect(getResult(wb, 2, 0)).toEqual(numberValue(0))
 			expect(getResult(wb, 2, 1)).toEqual(numberValue(0))
+		})
+
+		test('EXPAND rejects dimensions that cannot contain the source array', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 1)
+			setNum(wb, 0, 1, 2)
+			setNum(wb, 1, 0, 3)
+			setNum(wb, 1, 1, 4)
+			setFormula(wb, 3, 0, 'EXPAND(A1:B2,1,2)')
+			setFormula(wb, 4, 0, 'EXPAND(A1:B2,2,1)')
+			setFormula(wb, 5, 0, 'EXPAND(A1:B2,0,2)')
+			recalc(wb)
+			expect(getResult(wb, 3, 0)).toEqual(errorValue('#VALUE!'))
+			expect(getResult(wb, 4, 0)).toEqual(errorValue('#VALUE!'))
+			expect(getResult(wb, 5, 0)).toEqual(errorValue('#VALUE!'))
 		})
 	})
 

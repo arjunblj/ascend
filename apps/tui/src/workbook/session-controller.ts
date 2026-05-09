@@ -2,6 +2,7 @@ import type { Operation } from '@ascend/schema'
 import {
 	type ApplyAndRecalcResult,
 	AscendWorkbook,
+	auditLossPolicy,
 	type PreviewResult,
 	type WorkbookInfo,
 } from '@ascend/sdk'
@@ -130,9 +131,7 @@ export class WorkbookSessionController {
 
 function hasProtectedReviewSignals(info: WorkbookInfo): boolean {
 	return (
-		info.compatibility.features.some(
-			(feature) => feature.tier === 'preserved' || feature.tier === 'unsupported',
-		) ||
+		!auditLossPolicy(info.compatibility.features).ok ||
 		info.externalReferenceCount > 0 ||
 		info.pivotTableCount > 0 ||
 		info.chartCount > 0

@@ -78,11 +78,12 @@ if (getExternalFixtures().length > 0) {
 			it(`round-trips ${fixture}`, () => {
 				const initial = readXlsx(loadExternalFixture(fixture))
 				expectOk(initial)
+				const before = summarizeWorkbook(initial.value.workbook)
 				const written = writeXlsx(initial.value.workbook, initial.value.capsules)
 				expectOk(written)
 				const reopened = readXlsx(written.value)
 				expectOk(reopened)
-				expect(reopened.value.workbook.sheets.length).toBe(initial.value.workbook.sheets.length)
+				expect(summarizeWorkbook(reopened.value.workbook)).toEqual(before)
 			})
 		}
 

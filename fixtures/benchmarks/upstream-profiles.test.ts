@@ -9,6 +9,7 @@ import {
 	splitLibraryList,
 	UPSTREAM_PROFILE_SETS,
 	UPSTREAM_PROFILES,
+	validateUpstreamProfileSuite,
 } from './upstream-profiles.ts'
 
 describe('upstream competitive profiles', () => {
@@ -46,6 +47,15 @@ describe('upstream competitive profiles', () => {
 		expect(UPSTREAM_PROFILES.every((profile) => profile.sourceUrl.startsWith('https://'))).toBe(
 			true,
 		)
+		expect(
+			UPSTREAM_PROFILES.every(
+				(profile) =>
+					profile.sourceKind === 'published-shape' &&
+					profile.replayStatus === 'shape-clone' &&
+					profile.timingBoundary.includes('competitive-io') &&
+					profile.timingBoundary.includes('not the upstream project native timing harness'),
+			),
+		).toBe(true)
 	})
 
 	test('selects one or more named profiles', () => {
@@ -61,6 +71,17 @@ describe('upstream competitive profiles', () => {
 
 	test('selects curated profile sets for tight feedback loops', () => {
 		expect(UPSTREAM_PROFILE_SETS['write-smoke']).toContain('pyopenxlsx-write-5000x10')
+		expect(
+			selectUpstreamProfiles(undefined, 'write-memory').map((profile) => profile.name),
+		).toEqual([
+			'xlsxwriter-write-memory-200x50-50pct-text',
+			'xlsxwriter-write-memory-400x50-50pct-text',
+			'xlsxwriter-write-memory-800x50-50pct-text',
+			'xlsxwriter-write-memory-1600x50-50pct-text',
+			'xlsxwriter-write-memory-3200x50-50pct-text',
+			'xlsxwriter-write-memory-6400x50-50pct-text',
+			'xlsxwriter-write-memory-12800x50-50pct-text',
+		])
 		expect(selectUpstreamProfiles(undefined, 'read-smoke').map((profile) => profile.name)).toEqual([
 			'fastexcel-reader-65536',
 			'fastxlsx-read-5000x10-matrix',
@@ -168,6 +189,58 @@ describe('upstream competitive profiles', () => {
 		expect(result?.metrics.medianMs).toBe(0)
 	})
 
+	test('validates child benchmark suites against published profile shape', () => {
+		const profile = selectUpstreamProfiles('pyexcelerate-write-values-1000x100')[0]
+		expect(profile).toBeTruthy()
+		if (!profile) return
+
+		const suite = {
+			formatVersion: 1,
+			suite: 'fixture',
+			kind: 'real-workbook',
+			generatedAt: '2026-05-09T00:00:00.000Z',
+			runtime: { platform: 'test', arch: 'test' },
+			git: {},
+			cases: [
+				{
+					name: 'ascend:write-values',
+					category: 'write',
+					dimensions: {
+						library: 'ascend',
+						workload: 'dense-values',
+						readSource: 'ascend-writer',
+						rows: 1000,
+						cols: 100,
+						cells: 100_000,
+						logicalCells: 100_000,
+						correctnessStatus: 'pass',
+						rankingEligible: true,
+					},
+					metrics: {
+						sampleCount: 1,
+						minMs: 1,
+						medianMs: 1,
+						meanMs: 1,
+						p95Ms: 1,
+						maxMs: 1,
+					},
+				},
+			],
+		}
+		expect(() => validateUpstreamProfileSuite(profile, suite)).not.toThrow()
+		expect(() =>
+			validateUpstreamProfileSuite(profile, {
+				...suite,
+				cases: [
+					{
+						...suite.cases[0],
+						dimensions: { ...suite.cases[0].dimensions, rows: 999, cells: 99_900 },
+					},
+				],
+			}),
+		).toThrow('upstream shape contract')
+	})
+
 	test('recognizes killed external runners for isolated retry decisions', () => {
 		expect(isKilledRunnerReason('ascend-external-writer writer exited with code 137')).toBe(true)
 		expect(isKilledRunnerReason(new Error('signal: killed while running excelize'))).toBe(true)
@@ -223,6 +296,11 @@ describe('upstream competitive profiles', () => {
 		expect(cases[0]?.reproCommand).toContain('--timeout-ms 120000')
 		expect(cases[0]?.profileCommand).toContain('fixtures/benchmarks/profile-bun.ts')
 		expect(cases[0]?.profileCommand).toContain(cases[0]?.reproCommand ?? '')
+		expect(cases[0]?.dimensions.upstreamSourceKind).toBe('published-shape')
+		expect(cases[0]?.dimensions.upstreamReplayStatus).toBe('shape-clone')
+		expect(cases[0]?.dimensions.upstreamTimingBoundary).toContain(
+			'not the upstream project native timing harness',
+		)
 	})
 
 	test('builds competitive-io args for read profiles with external runner manifest', () => {

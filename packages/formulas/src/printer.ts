@@ -81,13 +81,19 @@ function printBinary(node: BinaryNode, ctx: PrintContext): string {
 
 function printStructuredRef(node: StructuredRefNode): string {
 	let inner: string
-	if (node.specifiers.length > 0 && node.column !== undefined) {
-		const specPart = node.specifiers.join(',')
-		inner = `${specPart}${node.column}`
+	const columnPart =
+		node.column && node.endColumn ? `[${node.column}]:[${node.endColumn}]` : node.column
+	if (node.specifiers.length > 0 && columnPart !== undefined) {
+		if (node.specifiers.length === 1 && node.specifiers[0] === '@') {
+			inner = `${node.specifiers[0]}${columnPart}`
+		} else {
+			const wrappedColumnPart = node.endColumn ? columnPart : `[${columnPart}]`
+			inner = `${node.specifiers.map((specifier) => `[${specifier}]`).join(',')},${wrappedColumnPart}`
+		}
 	} else if (node.specifiers.length > 0) {
 		inner = node.specifiers.join(',')
 	} else {
-		inner = node.column ?? ''
+		inner = columnPart ?? ''
 	}
 	return `${node.table}[${inner}]`
 }

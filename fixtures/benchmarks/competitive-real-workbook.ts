@@ -256,23 +256,34 @@ export function evaluateAssertions(
 		const firstUsedRangeMatches =
 			expected.usedRanges.length === 0 || observed.firstUsedRange === expected.usedRanges[0]
 		const usedRangesHashMatches = observed.usedRangesHash === expected.usedRangesHash
-		const semanticCellRefsHashMatches =
+		const orderedSemanticCellRefsHashMatches =
 			expected.orderedSemanticCellRefsHash !== undefined &&
 			observed.orderedSemanticCellRefsHash !== undefined
 				? observed.orderedSemanticCellRefsHash === expected.orderedSemanticCellRefsHash
-				: observed.semanticCellRefsHash === expected.semanticCellRefsHash
-		const semanticCellValuesHashMatches =
+				: null
+		const orderedSemanticCellValuesHashMatches =
 			expected.orderedSemanticCellValuesHash !== undefined &&
 			observed.orderedSemanticCellValuesHash !== undefined
 				? observed.orderedSemanticCellValuesHash === expected.orderedSemanticCellValuesHash
+				: null
+		const orderedFormulaTextHashMatches =
+			expected.orderedFormulaTextHash !== undefined && observed.orderedFormulaTextHash !== undefined
+				? observed.orderedFormulaTextHash === expected.orderedFormulaTextHash
+				: null
+		const semanticCellRefsHashMatches =
+			orderedSemanticCellRefsHashMatches !== null
+				? orderedSemanticCellRefsHashMatches
+				: observed.semanticCellRefsHash === expected.semanticCellRefsHash
+		const semanticCellValuesHashMatches =
+			orderedSemanticCellValuesHashMatches !== null
+				? orderedSemanticCellValuesHashMatches
 				: observed.semanticCellValuesHash === expected.semanticCellValuesHash
 		const formulaTextHashRequired =
 			formulaPreservationRequired && observed.compatibility !== 'has-unsupported'
 		const formulaTextHashMatches =
 			!formulaTextHashRequired ||
-			(expected.orderedFormulaTextHash !== undefined &&
-			observed.orderedFormulaTextHash !== undefined
-				? observed.orderedFormulaTextHash === expected.orderedFormulaTextHash
+			(orderedFormulaTextHashMatches !== null
+				? orderedFormulaTextHashMatches
 				: observed.formulaTextHash === expected.formulaTextHash)
 		const matches =
 			sheetCountMatches &&
@@ -313,6 +324,9 @@ export function evaluateAssertions(
 				semanticCellRefsHashMatches,
 				semanticCellValuesHashMatches,
 				formulaTextHashMatches,
+				orderedSemanticCellRefsHashMatches,
+				orderedSemanticCellValuesHashMatches,
+				orderedFormulaTextHashMatches,
 			},
 		}
 	}

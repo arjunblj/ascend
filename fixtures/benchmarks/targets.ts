@@ -12,35 +12,76 @@ export const throughputTargets: readonly ThroughputTarget[] = [
 	{ category: 'calc', metric: 'recalc throughput', minCellsPerSec: 500_000 },
 ]
 
+export interface ScenarioThroughputTarget {
+	readonly name: string
+	readonly metric: string
+	readonly minCellsPerSec: number
+}
+
+export const smokeScenarioThroughputTargets: readonly ScenarioThroughputTarget[] = [
+	{ name: 'read-full-dense', metric: 'read-full-dense throughput', minCellsPerSec: 800_000 },
+	{ name: 'read-values-dense', metric: 'read-values-dense throughput', minCellsPerSec: 2_500_000 },
+	{ name: 'write-csv-large', metric: 'write-csv-large throughput', minCellsPerSec: 3_000_000 },
+	{
+		name: 'workflow-sdk-edit-cycle',
+		metric: 'workflow-sdk-edit-cycle throughput',
+		minCellsPerSec: 80_000,
+	},
+	{
+		name: 'workflow-sdk-defined-names-edit-cycle',
+		metric: 'workflow-sdk-defined-names-edit-cycle throughput',
+		minCellsPerSec: 200_000,
+	},
+	{
+		name: 'recalc-incremental',
+		metric: 'recalc-incremental throughput',
+		minCellsPerSec: 1_000_000,
+	},
+	{
+		name: 'recalc-if-short-circuit',
+		metric: 'recalc-if-short-circuit throughput',
+		minCellsPerSec: 150_000,
+	},
+	{
+		name: 'recalc-lookup-exact-incremental',
+		metric: 'recalc-lookup-exact-incremental throughput',
+		minCellsPerSec: 1_000_000,
+	},
+	{
+		name: 'recalc-dynamic-spill-churn',
+		metric: 'recalc-dynamic-spill-churn throughput',
+		minCellsPerSec: 250_000,
+	},
+	{
+		name: 'recalc-criteria-caching',
+		metric: 'recalc-criteria-caching throughput',
+		minCellsPerSec: 500_000,
+	},
+	{ name: 'recalc-quickselect', metric: 'recalc-quickselect throughput', minCellsPerSec: 500_000 },
+	{
+		name: 'structural-insert-rows-recalc',
+		metric: 'structural-insert-rows-recalc throughput',
+		minCellsPerSec: 100_000,
+	},
+	{ name: 'read-csv-large', metric: 'read-csv-large throughput', minCellsPerSec: 2_000_000 },
+]
+
 export interface TargetCheckResult {
-	readonly target: ThroughputTarget
+	readonly target: ThroughputTarget | ScenarioThroughputTarget
 	readonly actualCellsPerSec: number | null
 	readonly scenarioName: string | null
 	readonly passed: boolean
+	readonly scope: 'category' | 'scenario'
 }
 
 export function checkThroughputTargets(suite: BenchmarkSuiteResult): readonly TargetCheckResult[] {
-	return throughputTargets.map((target) => {
-		const matching = suite.cases.filter((c) => c.category === target.category)
-		if (matching.length === 0) {
-			return {
-				target,
-				actualCellsPerSec: null,
-				scenarioName: null,
-				passed: false,
-			}
+	const results = throughputTargets.map((target) => checkCategoryTarget(suite, target))
+	if (suite.metadata?.set === 'smoke') {
+		for (const target of smokeScenarioThroughputTargets) {
+			results.push(checkScenarioTarget(suite, target))
 		}
-		const best = matching.reduce((a, b) =>
-			(a.metrics.throughputPerSec ?? 0) > (b.metrics.throughputPerSec ?? 0) ? a : b,
-		)
-		const actual = best.metrics.throughputPerSec ?? 0
-		return {
-			target,
-			actualCellsPerSec: actual,
-			scenarioName: best.name,
-			passed: actual >= target.minCellsPerSec,
-		}
-	})
+	}
+	return results
 }
 
 export function formatTargetResults(results: readonly TargetCheckResult[]): string {
@@ -50,13 +91,64 @@ export function formatTargetResults(results: readonly TargetCheckResult[]): stri
 		const actual = r.actualCellsPerSec !== null ? formatThroughput(r.actualCellsPerSec) : 'no data'
 		const required = formatThroughput(r.target.minCellsPerSec)
 		lines.push(
-			`  [${status}] ${r.target.metric.padEnd(20)} ${actual.padStart(10)} (target: ${required})${r.scenarioName ? `  [${r.scenarioName}]` : ''}`,
+			`  [${status}] ${r.target.metric.padEnd(44)} ${actual.padStart(10)} (target: ${required})${r.scenarioName ? `  [${r.scenarioName}]` : ''}`,
 		)
 	}
 	const passed = results.filter((r) => r.passed).length
 	lines.push('─'.repeat(72))
 	lines.push(`  ${passed}/${results.length} targets met`)
 	return lines.join('\n')
+}
+
+function checkCategoryTarget(
+	suite: BenchmarkSuiteResult,
+	target: ThroughputTarget,
+): TargetCheckResult {
+	const matching = suite.cases.filter((c) => c.category === target.category)
+	if (matching.length === 0) {
+		return {
+			target,
+			actualCellsPerSec: null,
+			scenarioName: null,
+			passed: false,
+			scope: 'category',
+		}
+	}
+	const best = matching.reduce((a, b) =>
+		(a.metrics.throughputPerSec ?? 0) > (b.metrics.throughputPerSec ?? 0) ? a : b,
+	)
+	const actual = best.metrics.throughputPerSec ?? 0
+	return {
+		target,
+		actualCellsPerSec: actual,
+		scenarioName: best.name,
+		passed: actual >= target.minCellsPerSec,
+		scope: 'category',
+	}
+}
+
+function checkScenarioTarget(
+	suite: BenchmarkSuiteResult,
+	target: ScenarioThroughputTarget,
+): TargetCheckResult {
+	const result = suite.cases.find((c) => c.name === target.name)
+	if (!result) {
+		return {
+			target,
+			actualCellsPerSec: null,
+			scenarioName: target.name,
+			passed: false,
+			scope: 'scenario',
+		}
+	}
+	const actual = result.metrics.throughputPerSec ?? 0
+	return {
+		target,
+		actualCellsPerSec: actual,
+		scenarioName: result.name,
+		passed: actual >= target.minCellsPerSec,
+		scope: 'scenario',
+	}
 }
 
 function formatThroughput(cellsPerSec: number): string {

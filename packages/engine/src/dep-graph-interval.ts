@@ -25,6 +25,8 @@ export class IntervalIndex {
 	private entries: RangeEntry[] = []
 	private formulaIndices = new Map<CellKey, Set<number>>()
 	private subMax: Int32Array | null = null
+	private minCol = Number.POSITIVE_INFINITY
+	private maxCol = Number.NEGATIVE_INFINITY
 	private dirty = true
 
 	insert(
@@ -36,6 +38,8 @@ export class IntervalIndex {
 	): void {
 		const index = this.entries.length
 		this.entries.push({ startRow, endRow, startCol, endCol, formulaKey })
+		if (startCol < this.minCol) this.minCol = startCol
+		if (endCol > this.maxCol) this.maxCol = endCol
 		let indices = this.formulaIndices.get(formulaKey)
 		if (!indices) {
 			indices = new Set()
@@ -47,6 +51,7 @@ export class IntervalIndex {
 
 	query(row: number, col: number): CellKey[] {
 		if (this.entries.length === 0) return []
+		if (col < this.minCol || col > this.maxCol) return []
 		if (this.dirty) this.rebuild()
 		const result: CellKey[] = []
 		this.queryRange(0, this.entries.length - 1, row, col, result)
@@ -61,6 +66,14 @@ export class IntervalIndex {
 	 */
 	queryBatch(cellsByCol: ReadonlyMap<number, readonly number[]>): CellKey[] {
 		if (this.entries.length === 0) return []
+		let hasRelevantColumn = false
+		for (const col of cellsByCol.keys()) {
+			if (col >= this.minCol && col <= this.maxCol) {
+				hasRelevantColumn = true
+				break
+			}
+		}
+		if (!hasRelevantColumn) return []
 		if (this.dirty) this.rebuild()
 		const result: CellKey[] = []
 		const seen = new Set<CellKey>()
@@ -90,6 +103,7 @@ export class IntervalIndex {
 			this.removeAt(index)
 		}
 		this.formulaIndices.delete(formulaKey)
+		this.recomputeColumnBounds()
 		this.dirty = true
 	}
 
@@ -113,6 +127,16 @@ export class IntervalIndex {
 		}
 		this.computeSubMax(0, n - 1)
 		this.dirty = false
+	}
+
+	private recomputeColumnBounds(): void {
+		this.minCol = Number.POSITIVE_INFINITY
+		this.maxCol = Number.NEGATIVE_INFINITY
+		for (let i = 0; i < this.entries.length; i++) {
+			const entry = this.entries[i] as RangeEntry
+			if (entry.startCol < this.minCol) this.minCol = entry.startCol
+			if (entry.endCol > this.maxCol) this.maxCol = entry.endCol
+		}
 	}
 
 	private removeAt(index: number): void {

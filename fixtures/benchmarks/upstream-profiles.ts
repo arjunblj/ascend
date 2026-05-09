@@ -45,7 +45,14 @@ type UpstreamProfileName =
 
 type Category = 'read' | 'write'
 type Competitor = 'js' | 'external' | 'all'
-type UpstreamProfileSetName = 'write-smoke' | 'write-heavy' | 'read-smoke' | 'docker-heavy'
+type UpstreamSourceKind = 'published-shape' | 'upstream-script' | 'pinned-artifact'
+type UpstreamReplayStatus = 'shape-clone' | 'exact-script' | 'exact-artifact'
+type UpstreamProfileSetName =
+	| 'write-smoke'
+	| 'write-memory'
+	| 'write-heavy'
+	| 'read-smoke'
+	| 'docker-heavy'
 type LibraryIsolationMode = 'auto' | 'always' | 'never'
 const AUTO_ISOLATE_CELL_THRESHOLD = 1_000_000
 const ISOLATED_KILLED_RETRIES = 1
@@ -55,6 +62,13 @@ export interface UpstreamProfile {
 	readonly sourceLibrary: string
 	readonly sourceBenchmark: string
 	readonly sourceUrl: string
+	readonly sourceKind: UpstreamSourceKind
+	readonly replayStatus: UpstreamReplayStatus
+	readonly timingBoundary: string
+	readonly upstreamRepo?: string
+	readonly upstreamCommit?: string
+	readonly upstreamCommand?: string
+	readonly artifactSha256?: string
 	readonly category: Category
 	readonly workload: WorkloadName
 	readonly rows: number
@@ -65,386 +79,415 @@ export interface UpstreamProfile {
 	readonly notes: string
 }
 
-export const UPSTREAM_PROFILES = [
-	{
-		name: 'openpyxl-write-1000x50-10pct-text',
-		sourceLibrary: 'openpyxl',
-		sourceBenchmark: 'openpyxl 3.0 write performance',
-		sourceUrl: 'https://openpyxl.readthedocs.io/en/3.0/performance.html',
-		category: 'write',
-		workload: 'mixed-10pct-text',
-		rows: 1000,
-		cols: 50,
-		sheets: 1,
-		competitor: 'all',
-		notes: 'Rows=1000, cols=50, one sheet, 10% text; compares openpyxl and XlsxWriter.',
-	},
-	{
-		name: 'xlsxwriter-write-memory-200x50-50pct-text',
-		sourceLibrary: 'XlsxWriter',
-		sourceBenchmark: 'XlsxWriter memory/performance figures',
-		sourceUrl: 'https://xlsxwriter.readthedocs.io/working_with_memory.html',
-		category: 'write',
-		workload: 'mixed-50pct-text',
-		rows: 200,
-		cols: 50,
-		sheets: 1,
-		competitor: 'all',
-		notes: 'Published XlsxWriter scaling table row count; 50 columns and 50/50 strings/numbers.',
-	},
-	{
-		name: 'xlsxwriter-write-memory-400x50-50pct-text',
-		sourceLibrary: 'XlsxWriter',
-		sourceBenchmark: 'XlsxWriter memory/performance figures',
-		sourceUrl: 'https://xlsxwriter.readthedocs.io/working_with_memory.html',
-		category: 'write',
-		workload: 'mixed-50pct-text',
-		rows: 400,
-		cols: 50,
-		sheets: 1,
-		competitor: 'all',
-		notes: 'Published XlsxWriter scaling table row count; 50 columns and 50/50 strings/numbers.',
-	},
-	{
-		name: 'xlsxwriter-write-memory-800x50-50pct-text',
-		sourceLibrary: 'XlsxWriter',
-		sourceBenchmark: 'XlsxWriter memory/performance figures',
-		sourceUrl: 'https://xlsxwriter.readthedocs.io/working_with_memory.html',
-		category: 'write',
-		workload: 'mixed-50pct-text',
-		rows: 800,
-		cols: 50,
-		sheets: 1,
-		competitor: 'all',
-		notes: 'Published XlsxWriter scaling table row count; 50 columns and 50/50 strings/numbers.',
-	},
-	{
-		name: 'xlsxwriter-write-memory-1600x50-50pct-text',
-		sourceLibrary: 'XlsxWriter',
-		sourceBenchmark: 'XlsxWriter memory/performance figures',
-		sourceUrl: 'https://xlsxwriter.readthedocs.io/working_with_memory.html',
-		category: 'write',
-		workload: 'mixed-50pct-text',
-		rows: 1600,
-		cols: 50,
-		sheets: 1,
-		competitor: 'all',
-		notes: 'Published XlsxWriter scaling table row count; 50 columns and 50/50 strings/numbers.',
-	},
-	{
-		name: 'xlsxwriter-write-memory-3200x50-50pct-text',
-		sourceLibrary: 'XlsxWriter',
-		sourceBenchmark: 'XlsxWriter memory/performance figures',
-		sourceUrl: 'https://xlsxwriter.readthedocs.io/working_with_memory.html',
-		category: 'write',
-		workload: 'mixed-50pct-text',
-		rows: 3200,
-		cols: 50,
-		sheets: 1,
-		competitor: 'all',
-		notes: 'Published XlsxWriter scaling table row count; 50 columns and 50/50 strings/numbers.',
-	},
-	{
-		name: 'xlsxwriter-write-memory-6400x50-50pct-text',
-		sourceLibrary: 'XlsxWriter',
-		sourceBenchmark: 'XlsxWriter memory/performance figures',
-		sourceUrl: 'https://xlsxwriter.readthedocs.io/working_with_memory.html',
-		category: 'write',
-		workload: 'mixed-50pct-text',
-		rows: 6400,
-		cols: 50,
-		sheets: 1,
-		competitor: 'all',
-		notes: 'Published XlsxWriter scaling table row count; 50 columns and 50/50 strings/numbers.',
-	},
-	{
-		name: 'xlsxwriter-write-memory-12800x50-50pct-text',
-		sourceLibrary: 'XlsxWriter',
-		sourceBenchmark: 'XlsxWriter memory/performance figures',
-		sourceUrl: 'https://xlsxwriter.readthedocs.io/working_with_memory.html',
-		category: 'write',
-		workload: 'mixed-50pct-text',
-		rows: 12800,
-		cols: 50,
-		sheets: 1,
-		competitor: 'all',
-		notes: 'Largest published XlsxWriter table row count; 50 columns and 50/50 strings/numbers.',
-	},
-	{
-		name: 'pyexcelerate-write-values-1000x100',
-		sourceLibrary: 'PyExcelerate',
-		sourceBenchmark: 'PyExcelerate value write benchmark',
-		sourceUrl: 'https://github.com/kz26/PyExcelerate',
-		category: 'write',
-		workload: 'dense-values',
-		rows: 1000,
-		cols: 100,
-		sheets: 1,
-		competitor: 'all',
-		notes: 'Published value benchmark shape for PyExcelerate, XlsxWriter, and openpyxl.',
-	},
-	{
-		name: 'pyexcelerate-write-styles-1000x100',
-		sourceLibrary: 'PyExcelerate',
-		sourceBenchmark: 'PyExcelerate style write benchmark',
-		sourceUrl: 'https://github.com/kz26/PyExcelerate',
-		category: 'write',
-		workload: 'styles-heavy',
-		rows: 1000,
-		cols: 100,
-		sheets: 1,
-		competitor: 'all',
-		notes: 'Published style benchmark shape mapped onto Ascend style-heavy correctness checks.',
-	},
-	{
-		name: 'apache-poi-ssperformance-xssf-50000x50',
-		sourceLibrary: 'Apache POI',
-		sourceBenchmark: 'SSPerformanceTest XSSF generation check',
-		sourceUrl: 'https://poi.apache.org/help/faq',
-		category: 'write',
-		workload: 'mixed-50pct-text',
-		rows: 50000,
-		cols: 50,
-		sheets: 1,
-		competitor: 'all',
-		notes: 'POI FAQ uses SSPerformanceTest with XSSF, 50,000 rows and 50 columns.',
-	},
-	{
-		name: 'excelize-generation-102400x50-plain-text',
-		sourceLibrary: 'Excelize',
-		sourceBenchmark: 'Excelize performance comparison of similar libs',
-		sourceUrl: 'https://xuri.me/excelize/en/performance.html',
-		category: 'write',
-		workload: 'plain-text',
-		rows: 102400,
-		cols: 50,
-		sheets: 1,
-		competitor: 'all',
-		notes:
-			'Excelize publishes a generation benchmark for a 102400 x 50 plain text matrix across Go, Python, Java, PHP, and NodeJS Excel libraries.',
-	},
-	{
-		name: 'closedxml-save-text-1000000x10',
-		sourceLibrary: 'ClosedXML',
-		sourceBenchmark: 'ClosedXML README save performance',
-		sourceUrl: 'https://github.com/ClosedXML/ClosedXML#performance',
-		category: 'write',
-		workload: 'plain-text',
-		rows: 1_000_000,
-		cols: 10,
-		sheets: 1,
-		competitor: 'all',
-		notes: 'ClosedXML publishes a text-only save benchmark with 1,000,000 rows and 10 columns.',
-	},
-	{
-		name: 'closedxml-load-text-1000000x10',
-		sourceLibrary: 'ClosedXML',
-		sourceBenchmark: 'ClosedXML README load performance',
-		sourceUrl: 'https://github.com/ClosedXML/ClosedXML#performance',
-		category: 'read',
-		workload: 'plain-text',
-		rows: 1_000_000,
-		cols: 10,
-		sheets: 1,
-		readSource: 'raw-ooxml',
-		competitor: 'all',
-		notes:
-			'ClosedXML publishes a text-only load benchmark using the 1,000,000-row x 10-column save-test workbook.',
-	},
-	{
-		name: 'closedxml-save-mixed-250000x15',
-		sourceLibrary: 'ClosedXML',
-		sourceBenchmark: 'ClosedXML README save performance',
-		sourceUrl: 'https://github.com/ClosedXML/ClosedXML#performance',
-		category: 'write',
-		workload: 'mixed-closedxml-10text-5number',
-		rows: 250_000,
-		cols: 15,
-		sheets: 1,
-		competitor: 'all',
-		notes:
-			'ClosedXML publishes a mixed save benchmark with 250,000 rows, 10 text columns, and 5 number columns.',
-	},
-	{
-		name: 'closedxml-load-mixed-250000x15',
-		sourceLibrary: 'ClosedXML',
-		sourceBenchmark: 'ClosedXML README load performance',
-		sourceUrl: 'https://github.com/ClosedXML/ClosedXML#performance',
-		category: 'read',
-		workload: 'mixed-closedxml-10text-5number',
-		rows: 250_000,
-		cols: 15,
-		sheets: 1,
-		readSource: 'raw-ooxml',
-		competitor: 'all',
-		notes:
-			'ClosedXML publishes a mixed load benchmark using the 250,000-row x 15-column save-test workbook.',
-	},
-	{
-		name: 'fastexcel-writer-100000x4',
-		sourceLibrary: 'fastexcel',
-		sourceBenchmark: 'fastexcel writer benchmark',
-		sourceUrl: 'https://github.com/dhatim/fastexcel',
-		category: 'write',
-		workload: 'mixed-50pct-text',
-		rows: 100000,
-		cols: 4,
-		sheets: 1,
-		competitor: 'all',
-		notes:
-			'fastexcel publishes a single-worksheet writer benchmark with 100,000 rows and 4 columns.',
-	},
-	{
-		name: 'fastexcel-reader-65536',
-		sourceLibrary: 'fastexcel-reader',
-		sourceBenchmark: 'fastexcel-reader 65,536-line read benchmark',
-		sourceUrl: 'https://github.com/dhatim/fastexcel',
-		category: 'read',
-		workload: 'mixed-50pct-text',
-		rows: 65536,
-		cols: 10,
-		sheets: 1,
-		readSource: 'raw-ooxml',
-		competitor: 'all',
-		notes:
-			'fastexcel publishes a 65,536-line read comparison; columns are fixed here to the value/label mixed reader lane.',
-	},
-	{
-		name: 'rust-xlsxwriter-write-4000x50-50pct-text',
-		sourceLibrary: 'rust_xlsxwriter',
-		sourceBenchmark: 'rust_xlsxwriter hyperfine performance program',
-		sourceUrl: 'https://rustxlsxwriter.github.io/performance.html',
-		category: 'write',
-		workload: 'mixed-50pct-text',
-		rows: 4000,
-		cols: 50,
-		sheets: 1,
-		competitor: 'all',
-		notes:
-			'Official rust_xlsxwriter benchmark writes 4,000 rows x 50 columns with alternating strings and numbers.',
-	},
-	{
-		name: 'fastxlsx-read-5000x10-matrix',
-		sourceLibrary: 'fastxlsx',
-		sourceBenchmark: 'FastXLSX reading performance matrix benchmark',
-		sourceUrl: 'https://pypi.org/project/fastxlsx/',
-		category: 'read',
-		workload: 'mixed-50pct-text',
-		rows: 5000,
-		cols: 10,
-		sheets: 1,
-		readSource: 'raw-ooxml',
-		competitor: 'all',
-		notes: 'FastXLSX publishes a 5,000 x 10 matrix read benchmark against pycalamine and openpyxl.',
-	},
-	{
-		name: 'fastxlsx-write-5000x10-matrix',
-		sourceLibrary: 'fastxlsx',
-		sourceBenchmark: 'FastXLSX writing performance matrix benchmark',
-		sourceUrl: 'https://pypi.org/project/fastxlsx/',
-		category: 'write',
-		workload: 'mixed-50pct-text',
-		rows: 5000,
-		cols: 10,
-		sheets: 1,
-		competitor: 'all',
-		notes:
-			'FastXLSX publishes a 5,000 x 10 matrix write benchmark against pyexcelerate, XlsxWriter, and openpyxl.',
-	},
-	{
-		name: 'pyopenxlsx-read-1000x20',
-		sourceLibrary: 'pyopenxlsx',
-		sourceBenchmark: 'pyopenxlsx 20,000-cell read benchmark',
-		sourceUrl: 'https://pypi.org/project/pyopenxlsx/',
-		category: 'read',
-		workload: 'dense-values',
-		rows: 1000,
-		cols: 20,
-		sheets: 1,
-		readSource: 'raw-ooxml',
-		competitor: 'all',
-		notes: 'pyopenxlsx publishes a 20,000-cell read comparison against openpyxl.',
-	},
-	{
-		name: 'pyopenxlsx-write-5000x10',
-		sourceLibrary: 'pyopenxlsx',
-		sourceBenchmark: 'pyopenxlsx 50,000-cell write benchmark',
-		sourceUrl: 'https://pypi.org/project/pyopenxlsx/',
-		category: 'write',
-		workload: 'dense-values',
-		rows: 5000,
-		cols: 10,
-		sheets: 1,
-		competitor: 'all',
-		notes: 'pyopenxlsx publishes a 50,000-cell write comparison against openpyxl.',
-	},
-	{
-		name: 'pyopenxlsx-bulk-write-50000x20',
-		sourceLibrary: 'pyopenxlsx',
-		sourceBenchmark: 'pyopenxlsx 1,000,000-cell bulk write benchmark',
-		sourceUrl: 'https://pypi.org/project/pyopenxlsx/',
-		category: 'write',
-		workload: 'dense-values',
-		rows: 50000,
-		cols: 20,
-		sheets: 1,
-		competitor: 'all',
-		notes:
-			'pyopenxlsx publishes a 1,000,000-cell bulk write benchmark and resource-usage comparison against openpyxl.',
-	},
-	{
-		name: 'pyfastexcel-write-50x30',
-		sourceLibrary: 'pyfastexcel',
-		sourceBenchmark: 'pyfastexcel 30-column write scaling benchmark',
-		sourceUrl: 'https://pyfastexcel.readthedocs.io/en/latest/benchmark/',
-		category: 'write',
-		workload: 'mixed-50pct-text',
-		rows: 50,
-		cols: 30,
-		sheets: 1,
-		competitor: 'all',
-		notes: 'pyfastexcel publishes write scaling results for 50 rows x 30 columns.',
-	},
-	{
-		name: 'pyfastexcel-write-500x30',
-		sourceLibrary: 'pyfastexcel',
-		sourceBenchmark: 'pyfastexcel 30-column write scaling benchmark',
-		sourceUrl: 'https://pyfastexcel.readthedocs.io/en/latest/benchmark/',
-		category: 'write',
-		workload: 'mixed-50pct-text',
-		rows: 500,
-		cols: 30,
-		sheets: 1,
-		competitor: 'all',
-		notes: 'pyfastexcel publishes write scaling results for 500 rows x 30 columns.',
-	},
-	{
-		name: 'pyfastexcel-write-5000x30',
-		sourceLibrary: 'pyfastexcel',
-		sourceBenchmark: 'pyfastexcel 30-column write scaling benchmark',
-		sourceUrl: 'https://pyfastexcel.readthedocs.io/en/latest/benchmark/',
-		category: 'write',
-		workload: 'mixed-50pct-text',
-		rows: 5000,
-		cols: 30,
-		sheets: 1,
-		competitor: 'all',
-		notes: 'pyfastexcel publishes write scaling results for 5,000 rows x 30 columns.',
-	},
-	{
-		name: 'pyfastexcel-write-50000x30',
-		sourceLibrary: 'pyfastexcel',
-		sourceBenchmark: 'pyfastexcel 30-column write scaling benchmark',
-		sourceUrl: 'https://pyfastexcel.readthedocs.io/en/latest/benchmark/',
-		category: 'write',
-		workload: 'mixed-50pct-text',
-		rows: 50000,
-		cols: 30,
-		sheets: 1,
-		competitor: 'all',
-		notes: 'pyfastexcel publishes write scaling results for 50,000 rows x 30 columns.',
-	},
-] as const satisfies readonly UpstreamProfile[]
+type UpstreamShapeProfileInput = Omit<
+	UpstreamProfile,
+	| 'sourceKind'
+	| 'replayStatus'
+	| 'timingBoundary'
+	| 'upstreamRepo'
+	| 'upstreamCommit'
+	| 'upstreamCommand'
+	| 'artifactSha256'
+>
+
+const SHAPE_CLONE_TIMING_BOUNDARIES = {
+	read: 'Ascend competitive-io read-values operation over a generated workbook matching the published shape; not the upstream project native timing harness.',
+	write:
+		'Ascend competitive-io write-values operation over generated inputs matching the published shape; not the upstream project native timing harness.',
+} as const satisfies Record<Category, string>
+
+function publishedShapeProfile(profile: UpstreamShapeProfileInput): UpstreamProfile {
+	return {
+		...profile,
+		sourceKind: 'published-shape',
+		replayStatus: 'shape-clone',
+		timingBoundary: SHAPE_CLONE_TIMING_BOUNDARIES[profile.category],
+	}
+}
+
+export const UPSTREAM_PROFILES = (
+	[
+		{
+			name: 'openpyxl-write-1000x50-10pct-text',
+			sourceLibrary: 'openpyxl',
+			sourceBenchmark: 'openpyxl 3.0 write performance',
+			sourceUrl: 'https://openpyxl.readthedocs.io/en/3.0/performance.html',
+			category: 'write',
+			workload: 'mixed-10pct-text',
+			rows: 1000,
+			cols: 50,
+			sheets: 1,
+			competitor: 'all',
+			notes: 'Rows=1000, cols=50, one sheet, 10% text; compares openpyxl and XlsxWriter.',
+		},
+		{
+			name: 'xlsxwriter-write-memory-200x50-50pct-text',
+			sourceLibrary: 'XlsxWriter',
+			sourceBenchmark: 'XlsxWriter memory/performance figures',
+			sourceUrl: 'https://xlsxwriter.readthedocs.io/working_with_memory.html',
+			category: 'write',
+			workload: 'mixed-50pct-text',
+			rows: 200,
+			cols: 50,
+			sheets: 1,
+			competitor: 'all',
+			notes: 'Published XlsxWriter scaling table row count; 50 columns and 50/50 strings/numbers.',
+		},
+		{
+			name: 'xlsxwriter-write-memory-400x50-50pct-text',
+			sourceLibrary: 'XlsxWriter',
+			sourceBenchmark: 'XlsxWriter memory/performance figures',
+			sourceUrl: 'https://xlsxwriter.readthedocs.io/working_with_memory.html',
+			category: 'write',
+			workload: 'mixed-50pct-text',
+			rows: 400,
+			cols: 50,
+			sheets: 1,
+			competitor: 'all',
+			notes: 'Published XlsxWriter scaling table row count; 50 columns and 50/50 strings/numbers.',
+		},
+		{
+			name: 'xlsxwriter-write-memory-800x50-50pct-text',
+			sourceLibrary: 'XlsxWriter',
+			sourceBenchmark: 'XlsxWriter memory/performance figures',
+			sourceUrl: 'https://xlsxwriter.readthedocs.io/working_with_memory.html',
+			category: 'write',
+			workload: 'mixed-50pct-text',
+			rows: 800,
+			cols: 50,
+			sheets: 1,
+			competitor: 'all',
+			notes: 'Published XlsxWriter scaling table row count; 50 columns and 50/50 strings/numbers.',
+		},
+		{
+			name: 'xlsxwriter-write-memory-1600x50-50pct-text',
+			sourceLibrary: 'XlsxWriter',
+			sourceBenchmark: 'XlsxWriter memory/performance figures',
+			sourceUrl: 'https://xlsxwriter.readthedocs.io/working_with_memory.html',
+			category: 'write',
+			workload: 'mixed-50pct-text',
+			rows: 1600,
+			cols: 50,
+			sheets: 1,
+			competitor: 'all',
+			notes: 'Published XlsxWriter scaling table row count; 50 columns and 50/50 strings/numbers.',
+		},
+		{
+			name: 'xlsxwriter-write-memory-3200x50-50pct-text',
+			sourceLibrary: 'XlsxWriter',
+			sourceBenchmark: 'XlsxWriter memory/performance figures',
+			sourceUrl: 'https://xlsxwriter.readthedocs.io/working_with_memory.html',
+			category: 'write',
+			workload: 'mixed-50pct-text',
+			rows: 3200,
+			cols: 50,
+			sheets: 1,
+			competitor: 'all',
+			notes: 'Published XlsxWriter scaling table row count; 50 columns and 50/50 strings/numbers.',
+		},
+		{
+			name: 'xlsxwriter-write-memory-6400x50-50pct-text',
+			sourceLibrary: 'XlsxWriter',
+			sourceBenchmark: 'XlsxWriter memory/performance figures',
+			sourceUrl: 'https://xlsxwriter.readthedocs.io/working_with_memory.html',
+			category: 'write',
+			workload: 'mixed-50pct-text',
+			rows: 6400,
+			cols: 50,
+			sheets: 1,
+			competitor: 'all',
+			notes: 'Published XlsxWriter scaling table row count; 50 columns and 50/50 strings/numbers.',
+		},
+		{
+			name: 'xlsxwriter-write-memory-12800x50-50pct-text',
+			sourceLibrary: 'XlsxWriter',
+			sourceBenchmark: 'XlsxWriter memory/performance figures',
+			sourceUrl: 'https://xlsxwriter.readthedocs.io/working_with_memory.html',
+			category: 'write',
+			workload: 'mixed-50pct-text',
+			rows: 12800,
+			cols: 50,
+			sheets: 1,
+			competitor: 'all',
+			notes: 'Largest published XlsxWriter table row count; 50 columns and 50/50 strings/numbers.',
+		},
+		{
+			name: 'pyexcelerate-write-values-1000x100',
+			sourceLibrary: 'PyExcelerate',
+			sourceBenchmark: 'PyExcelerate value write benchmark',
+			sourceUrl: 'https://github.com/kz26/PyExcelerate',
+			category: 'write',
+			workload: 'dense-values',
+			rows: 1000,
+			cols: 100,
+			sheets: 1,
+			competitor: 'all',
+			notes: 'Published value benchmark shape for PyExcelerate, XlsxWriter, and openpyxl.',
+		},
+		{
+			name: 'pyexcelerate-write-styles-1000x100',
+			sourceLibrary: 'PyExcelerate',
+			sourceBenchmark: 'PyExcelerate style write benchmark',
+			sourceUrl: 'https://github.com/kz26/PyExcelerate',
+			category: 'write',
+			workload: 'styles-heavy',
+			rows: 1000,
+			cols: 100,
+			sheets: 1,
+			competitor: 'all',
+			notes: 'Published style benchmark shape mapped onto Ascend style-heavy correctness checks.',
+		},
+		{
+			name: 'apache-poi-ssperformance-xssf-50000x50',
+			sourceLibrary: 'Apache POI',
+			sourceBenchmark: 'SSPerformanceTest XSSF generation check',
+			sourceUrl: 'https://poi.apache.org/help/faq',
+			category: 'write',
+			workload: 'mixed-50pct-text',
+			rows: 50000,
+			cols: 50,
+			sheets: 1,
+			competitor: 'all',
+			notes: 'POI FAQ uses SSPerformanceTest with XSSF, 50,000 rows and 50 columns.',
+		},
+		{
+			name: 'excelize-generation-102400x50-plain-text',
+			sourceLibrary: 'Excelize',
+			sourceBenchmark: 'Excelize performance comparison of similar libs',
+			sourceUrl: 'https://xuri.me/excelize/en/performance.html',
+			category: 'write',
+			workload: 'plain-text',
+			rows: 102400,
+			cols: 50,
+			sheets: 1,
+			competitor: 'all',
+			notes:
+				'Excelize publishes a generation benchmark for a 102400 x 50 plain text matrix across Go, Python, Java, PHP, and NodeJS Excel libraries.',
+		},
+		{
+			name: 'closedxml-save-text-1000000x10',
+			sourceLibrary: 'ClosedXML',
+			sourceBenchmark: 'ClosedXML README save performance',
+			sourceUrl: 'https://github.com/ClosedXML/ClosedXML#performance',
+			category: 'write',
+			workload: 'plain-text',
+			rows: 1_000_000,
+			cols: 10,
+			sheets: 1,
+			competitor: 'all',
+			notes: 'ClosedXML publishes a text-only save benchmark with 1,000,000 rows and 10 columns.',
+		},
+		{
+			name: 'closedxml-load-text-1000000x10',
+			sourceLibrary: 'ClosedXML',
+			sourceBenchmark: 'ClosedXML README load performance',
+			sourceUrl: 'https://github.com/ClosedXML/ClosedXML#performance',
+			category: 'read',
+			workload: 'plain-text',
+			rows: 1_000_000,
+			cols: 10,
+			sheets: 1,
+			readSource: 'raw-ooxml',
+			competitor: 'all',
+			notes:
+				'ClosedXML publishes a text-only load benchmark using the 1,000,000-row x 10-column save-test workbook.',
+		},
+		{
+			name: 'closedxml-save-mixed-250000x15',
+			sourceLibrary: 'ClosedXML',
+			sourceBenchmark: 'ClosedXML README save performance',
+			sourceUrl: 'https://github.com/ClosedXML/ClosedXML#performance',
+			category: 'write',
+			workload: 'mixed-closedxml-10text-5number',
+			rows: 250_000,
+			cols: 15,
+			sheets: 1,
+			competitor: 'all',
+			notes:
+				'ClosedXML publishes a mixed save benchmark with 250,000 rows, 10 text columns, and 5 number columns.',
+		},
+		{
+			name: 'closedxml-load-mixed-250000x15',
+			sourceLibrary: 'ClosedXML',
+			sourceBenchmark: 'ClosedXML README load performance',
+			sourceUrl: 'https://github.com/ClosedXML/ClosedXML#performance',
+			category: 'read',
+			workload: 'mixed-closedxml-10text-5number',
+			rows: 250_000,
+			cols: 15,
+			sheets: 1,
+			readSource: 'raw-ooxml',
+			competitor: 'all',
+			notes:
+				'ClosedXML publishes a mixed load benchmark using the 250,000-row x 15-column save-test workbook.',
+		},
+		{
+			name: 'fastexcel-writer-100000x4',
+			sourceLibrary: 'fastexcel',
+			sourceBenchmark: 'fastexcel writer benchmark',
+			sourceUrl: 'https://github.com/dhatim/fastexcel',
+			category: 'write',
+			workload: 'mixed-50pct-text',
+			rows: 100000,
+			cols: 4,
+			sheets: 1,
+			competitor: 'all',
+			notes:
+				'fastexcel publishes a single-worksheet writer benchmark with 100,000 rows and 4 columns.',
+		},
+		{
+			name: 'fastexcel-reader-65536',
+			sourceLibrary: 'fastexcel-reader',
+			sourceBenchmark: 'fastexcel-reader 65,536-line read benchmark',
+			sourceUrl: 'https://github.com/dhatim/fastexcel',
+			category: 'read',
+			workload: 'mixed-50pct-text',
+			rows: 65536,
+			cols: 10,
+			sheets: 1,
+			readSource: 'raw-ooxml',
+			competitor: 'all',
+			notes:
+				'fastexcel publishes a 65,536-line read comparison; columns are fixed here to the value/label mixed reader lane.',
+		},
+		{
+			name: 'rust-xlsxwriter-write-4000x50-50pct-text',
+			sourceLibrary: 'rust_xlsxwriter',
+			sourceBenchmark: 'rust_xlsxwriter hyperfine performance program',
+			sourceUrl: 'https://rustxlsxwriter.github.io/performance.html',
+			category: 'write',
+			workload: 'mixed-50pct-text',
+			rows: 4000,
+			cols: 50,
+			sheets: 1,
+			competitor: 'all',
+			notes:
+				'Official rust_xlsxwriter benchmark writes 4,000 rows x 50 columns with alternating strings and numbers.',
+		},
+		{
+			name: 'fastxlsx-read-5000x10-matrix',
+			sourceLibrary: 'fastxlsx',
+			sourceBenchmark: 'FastXLSX reading performance matrix benchmark',
+			sourceUrl: 'https://pypi.org/project/fastxlsx/',
+			category: 'read',
+			workload: 'mixed-50pct-text',
+			rows: 5000,
+			cols: 10,
+			sheets: 1,
+			readSource: 'raw-ooxml',
+			competitor: 'all',
+			notes:
+				'FastXLSX publishes a 5,000 x 10 matrix read benchmark against pycalamine and openpyxl.',
+		},
+		{
+			name: 'fastxlsx-write-5000x10-matrix',
+			sourceLibrary: 'fastxlsx',
+			sourceBenchmark: 'FastXLSX writing performance matrix benchmark',
+			sourceUrl: 'https://pypi.org/project/fastxlsx/',
+			category: 'write',
+			workload: 'mixed-50pct-text',
+			rows: 5000,
+			cols: 10,
+			sheets: 1,
+			competitor: 'all',
+			notes:
+				'FastXLSX publishes a 5,000 x 10 matrix write benchmark against pyexcelerate, XlsxWriter, and openpyxl.',
+		},
+		{
+			name: 'pyopenxlsx-read-1000x20',
+			sourceLibrary: 'pyopenxlsx',
+			sourceBenchmark: 'pyopenxlsx 20,000-cell read benchmark',
+			sourceUrl: 'https://pypi.org/project/pyopenxlsx/',
+			category: 'read',
+			workload: 'dense-values',
+			rows: 1000,
+			cols: 20,
+			sheets: 1,
+			readSource: 'raw-ooxml',
+			competitor: 'all',
+			notes: 'pyopenxlsx publishes a 20,000-cell read comparison against openpyxl.',
+		},
+		{
+			name: 'pyopenxlsx-write-5000x10',
+			sourceLibrary: 'pyopenxlsx',
+			sourceBenchmark: 'pyopenxlsx 50,000-cell write benchmark',
+			sourceUrl: 'https://pypi.org/project/pyopenxlsx/',
+			category: 'write',
+			workload: 'dense-values',
+			rows: 5000,
+			cols: 10,
+			sheets: 1,
+			competitor: 'all',
+			notes: 'pyopenxlsx publishes a 50,000-cell write comparison against openpyxl.',
+		},
+		{
+			name: 'pyopenxlsx-bulk-write-50000x20',
+			sourceLibrary: 'pyopenxlsx',
+			sourceBenchmark: 'pyopenxlsx 1,000,000-cell bulk write benchmark',
+			sourceUrl: 'https://pypi.org/project/pyopenxlsx/',
+			category: 'write',
+			workload: 'dense-values',
+			rows: 50000,
+			cols: 20,
+			sheets: 1,
+			competitor: 'all',
+			notes:
+				'pyopenxlsx publishes a 1,000,000-cell bulk write benchmark and resource-usage comparison against openpyxl.',
+		},
+		{
+			name: 'pyfastexcel-write-50x30',
+			sourceLibrary: 'pyfastexcel',
+			sourceBenchmark: 'pyfastexcel 30-column write scaling benchmark',
+			sourceUrl: 'https://pyfastexcel.readthedocs.io/en/latest/benchmark/',
+			category: 'write',
+			workload: 'mixed-50pct-text',
+			rows: 50,
+			cols: 30,
+			sheets: 1,
+			competitor: 'all',
+			notes: 'pyfastexcel publishes write scaling results for 50 rows x 30 columns.',
+		},
+		{
+			name: 'pyfastexcel-write-500x30',
+			sourceLibrary: 'pyfastexcel',
+			sourceBenchmark: 'pyfastexcel 30-column write scaling benchmark',
+			sourceUrl: 'https://pyfastexcel.readthedocs.io/en/latest/benchmark/',
+			category: 'write',
+			workload: 'mixed-50pct-text',
+			rows: 500,
+			cols: 30,
+			sheets: 1,
+			competitor: 'all',
+			notes: 'pyfastexcel publishes write scaling results for 500 rows x 30 columns.',
+		},
+		{
+			name: 'pyfastexcel-write-5000x30',
+			sourceLibrary: 'pyfastexcel',
+			sourceBenchmark: 'pyfastexcel 30-column write scaling benchmark',
+			sourceUrl: 'https://pyfastexcel.readthedocs.io/en/latest/benchmark/',
+			category: 'write',
+			workload: 'mixed-50pct-text',
+			rows: 5000,
+			cols: 30,
+			sheets: 1,
+			competitor: 'all',
+			notes: 'pyfastexcel publishes write scaling results for 5,000 rows x 30 columns.',
+		},
+		{
+			name: 'pyfastexcel-write-50000x30',
+			sourceLibrary: 'pyfastexcel',
+			sourceBenchmark: 'pyfastexcel 30-column write scaling benchmark',
+			sourceUrl: 'https://pyfastexcel.readthedocs.io/en/latest/benchmark/',
+			category: 'write',
+			workload: 'mixed-50pct-text',
+			rows: 50000,
+			cols: 30,
+			sheets: 1,
+			competitor: 'all',
+			notes: 'pyfastexcel publishes write scaling results for 50,000 rows x 30 columns.',
+		},
+	] as const satisfies readonly UpstreamShapeProfileInput[]
+).map(publishedShapeProfile)
 
 export const UPSTREAM_PROFILE_SETS = {
 	'write-smoke': [
@@ -453,6 +496,15 @@ export const UPSTREAM_PROFILE_SETS = {
 		'pyopenxlsx-write-5000x10',
 		'rust-xlsxwriter-write-4000x50-50pct-text',
 		'fastxlsx-write-5000x10-matrix',
+	],
+	'write-memory': [
+		'xlsxwriter-write-memory-200x50-50pct-text',
+		'xlsxwriter-write-memory-400x50-50pct-text',
+		'xlsxwriter-write-memory-800x50-50pct-text',
+		'xlsxwriter-write-memory-1600x50-50pct-text',
+		'xlsxwriter-write-memory-3200x50-50pct-text',
+		'xlsxwriter-write-memory-6400x50-50pct-text',
+		'xlsxwriter-write-memory-12800x50-50pct-text',
 	],
 	'write-heavy': [
 		'xlsxwriter-write-memory-12800x50-50pct-text',
@@ -844,6 +896,58 @@ export function buildIsolatedLibraryFailureSuite(input: {
 	})
 }
 
+export function validateUpstreamProfileSuite(
+	profile: UpstreamProfile,
+	suite: BenchmarkSuiteResult,
+): void {
+	if (suite.cases.length === 0) {
+		throw new Error(`Profile ${profile.name} produced no benchmark cases`)
+	}
+	const expectedLogicalCells = profile.rows * profile.cols * profile.sheets
+	const expectedReadSource = profile.readSource ?? 'raw-ooxml'
+	const mismatches: string[] = []
+	for (const entry of suite.cases) {
+		if (entry.category !== profile.category) {
+			mismatches.push(`${entry.name}: category=${entry.category}`)
+		}
+		if (entry.dimensions.workload !== profile.workload) {
+			mismatches.push(`${entry.name}: workload=${String(entry.dimensions.workload)}`)
+		}
+		if (entry.dimensions.rows !== profile.rows) {
+			mismatches.push(`${entry.name}: rows=${String(entry.dimensions.rows)}`)
+		}
+		if (entry.dimensions.cols !== profile.cols) {
+			mismatches.push(`${entry.name}: cols=${String(entry.dimensions.cols)}`)
+		}
+		if (entry.dimensions.logicalCells !== expectedLogicalCells) {
+			mismatches.push(`${entry.name}: logicalCells=${String(entry.dimensions.logicalCells)}`)
+		}
+		if (entry.dimensions.cells !== expectedLogicalCells) {
+			mismatches.push(`${entry.name}: cells=${String(entry.dimensions.cells)}`)
+		}
+		if (profile.category === 'read' && entry.dimensions.readSource !== expectedReadSource) {
+			mismatches.push(`${entry.name}: readSource=${String(entry.dimensions.readSource)}`)
+		}
+		if (!Number.isFinite(entry.metrics.sampleCount) || entry.metrics.sampleCount <= 0) {
+			mismatches.push(`${entry.name}: sampleCount=${String(entry.metrics.sampleCount)}`)
+		}
+		if (
+			entry.dimensions.rankingEligible !== false &&
+			(!Number.isFinite(entry.metrics.medianMs) || entry.metrics.medianMs <= 0)
+		) {
+			mismatches.push(`${entry.name}: medianMs=${String(entry.metrics.medianMs)}`)
+		}
+	}
+	if (mismatches.length > 0) {
+		throw new Error(
+			[
+				`Profile ${profile.name} benchmark output does not match the upstream shape contract`,
+				...mismatches,
+			].join('\n'),
+		)
+	}
+}
+
 export function isKilledRunnerReason(value: unknown): boolean {
 	const message = value instanceof Error ? value.message : typeof value === 'string' ? value : ''
 	return /\b(exit(?:ed)? with code 137|code 137|signal: killed|sigkill)\b/i.test(message)
@@ -895,6 +999,17 @@ export function annotateUpstreamCases(
 			upstreamSourceLibrary: profile.sourceLibrary,
 			upstreamSourceBenchmark: profile.sourceBenchmark,
 			upstreamSourceUrl: profile.sourceUrl,
+			upstreamSourceKind: profile.sourceKind,
+			upstreamReplayStatus: profile.replayStatus,
+			upstreamTimingBoundary: profile.timingBoundary,
+			...(profile.upstreamRepo === undefined ? {} : { upstreamRepo: profile.upstreamRepo }),
+			...(profile.upstreamCommit === undefined ? {} : { upstreamCommit: profile.upstreamCommit }),
+			...(profile.upstreamCommand === undefined
+				? {}
+				: { upstreamCommand: profile.upstreamCommand }),
+			...(profile.artifactSha256 === undefined
+				? {}
+				: { upstreamArtifactSha256: profile.artifactSha256 }),
 			upstreamSheets: profile.sheets,
 		},
 	}))
@@ -1004,6 +1119,7 @@ async function main(): Promise<void> {
 			timeoutMs,
 		})
 		for (const { suite, library, retries } of suites) {
+			validateUpstreamProfileSuite(profile, suite)
 			cases.push(
 				...annotateUpstreamCases(suite, profile, {
 					repeat,

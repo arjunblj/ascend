@@ -758,6 +758,9 @@ export function aggregateNumericRange(
 ): { sum: number; count: number; min: number; max: number; error: CellValue | null } {
 	const cells = sheet?.cells
 	if (!cells) return { sum: 0, count: 0, min: Infinity, max: -Infinity, error: null }
+	const maxCells = Math.max(0, endRow - startRow + 1) * Math.max(0, endCol - startCol + 1)
+	const wasmEarly = maxCells >= WASM_RANGE_THRESHOLD ? getWasmRangeOps() : null
+	const wasmPad = wasmEarly?.numericScratch(maxCells) ?? null
 	let count = 0
 	for (let row = startRow; row <= endRow; row++) {
 		for (let col = startCol; col <= endCol; col++) {
@@ -773,14 +776,28 @@ export function aggregateNumericRange(
 				}
 			}
 			if (kind !== 'number' && kind !== 'date') continue
-			if (count === rangeScratchSize) ensureRangeScratch(count + 1)
-			rangeScratch[count++] = cells.readNumber(row, col) ?? 0
+			const n = cells.readNumber(row, col) ?? 0
+			if (wasmPad) {
+				wasmPad[count++] = n
+			} else {
+				if (count === rangeScratchSize) ensureRangeScratch(count + 1)
+				rangeScratch[count++] = n
+			}
 		}
 	}
 	if (count === 0) {
 		return { sum: 0, count: 0, min: Infinity, max: -Infinity, error: null }
 	}
 	const wasm = count >= WASM_RANGE_THRESHOLD ? getWasmRangeOps() : null
+	if (wasm && wasmPad && count <= wasmPad.length) {
+		return {
+			sum: wasm.sum(count),
+			count,
+			min: wasm.min(count),
+			max: wasm.max(count),
+			error: null,
+		}
+	}
 	if (wasm) {
 		wasm.load(rangeScratch, count)
 		return {
@@ -791,11 +808,12 @@ export function aggregateNumericRange(
 			error: null,
 		}
 	}
+	const buf = wasmPad && count <= wasmPad.length ? wasmPad : rangeScratch
 	let sum = 0
 	let min = Infinity
 	let max = -Infinity
 	for (let i = 0; i < count; i++) {
-		const value = rangeScratch[i] ?? 0
+		const value = buf[i] ?? 0
 		sum += value
 		if (value < min) min = value
 		if (value > max) max = value
@@ -920,7 +938,7 @@ function evaluateCompiledNumeric(compiled: CompiledFormula, ctx: EvalContext): C
 				const digits = numericStack[--sp] as number
 				const val = numericStack[sp - 1] as number
 				const factor = 10 ** Math.trunc(digits)
-				numericStack[sp - 1] = Math.round(val * factor) / factor
+				numericStack[sp - 1] = (Math.sign(val) * Math.round(Math.abs(val) * factor)) / factor
 				break
 			}
 			case Op.ROUNDUP: {
@@ -1303,8 +1321,11 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 					break
 				}
 				const factor = 10 ** Math.trunc(digits)
-				if (op === Op.ROUND) stack[stackDepth++] = numberValue(Math.round(num * factor) / factor)
-				else if (op === Op.ROUNDUP) {
+				if (op === Op.ROUND) {
+					stack[stackDepth++] = numberValue(
+						(Math.sign(num) * Math.round(Math.abs(num) * factor)) / factor,
+					)
+				} else if (op === Op.ROUNDUP) {
 					const scaled = num * factor
 					stack[stackDepth++] = numberValue(
 						(scaled >= 0 ? Math.ceil(scaled) : Math.floor(scaled)) / factor,

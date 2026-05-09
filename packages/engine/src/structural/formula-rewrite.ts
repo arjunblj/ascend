@@ -474,6 +474,17 @@ export function rewriteFormulaAstForShift(
 			)
 			return operand === node.operand ? node : { type: 'unary', op: node.op, operand }
 		}
+		case 'spillRef': {
+			const target = rewriteFormulaAstForShift(
+				node.target,
+				targetSheet,
+				formulaSheet,
+				axis,
+				at,
+				delta,
+			)
+			return target === node.target ? node : { type: 'spillRef', target }
+		}
 		case 'function': {
 			const args = node.args.map((arg) =>
 				rewriteFormulaAstForShift(arg, targetSheet, formulaSheet, axis, at, delta),

@@ -1,6 +1,6 @@
 import type { CellValue } from '@ascend/schema'
 import { arrayValue, errorValue, numberValue, topLeftScalar } from '@ascend/schema'
-import type { FunctionDef } from './registry.ts'
+import type { FunctionDef, FunctionEvalContext } from './registry.ts'
 import { collectNumbers, type EvalArg, getRange, numArg } from './registry.ts'
 
 function collectFrom(arg: EvalArg | undefined): number[] | CellValue {
@@ -8,54 +8,46 @@ function collectFrom(arg: EvalArg | undefined): number[] | CellValue {
 	return collectNumbers([arg])
 }
 
-function quickselect(arr: number[], k: number, ascending: boolean): number {
-	let lo = 0
-	let hi = arr.length - 1
-	while (lo < hi) {
-		const pivot = arr[lo + ((hi - lo) >> 1)] as number
-		let i = lo
-		let j = hi
-		while (i <= j) {
-			if (ascending) {
-				while ((arr[i] as number) < pivot) i++
-				while ((arr[j] as number) > pivot) j--
-			} else {
-				while ((arr[i] as number) > pivot) i++
-				while ((arr[j] as number) < pivot) j--
-			}
-			if (i <= j) {
-				const tmp = arr[i] as number
-				arr[i] = arr[j] as number
-				arr[j] = tmp
-				i++
-				j--
-			}
-		}
-		if (k <= j) hi = j
-		else if (k >= i) lo = i
-		else break
+function numericRangeCacheKey(arg: EvalArg | undefined): string | null {
+	const ref = arg?.ref
+	if (!ref || ref.kind !== 'range') return null
+	return `NUMSORT:${ref.sheetIndex}:${ref.row}:${ref.col}:${ref.endRow ?? ref.row}:${ref.endCol ?? ref.col}`
+}
+
+function sortedNumericRange(
+	arg: EvalArg | undefined,
+	ctx: FunctionEvalContext | undefined,
+): number[] | CellValue {
+	const key = ctx?.numericVectorCache ? numericRangeCacheKey(arg) : null
+	if (key && ctx?.numericVectorCache) {
+		const cached = ctx.numericVectorCache.get(key)
+		if (cached) return cached
 	}
-	return arr[k] as number
+	const numsOrErr = collectFrom(arg)
+	if (!Array.isArray(numsOrErr)) return numsOrErr
+	numsOrErr.sort((a, b) => a - b)
+	if (key && ctx?.numericVectorCache) ctx.numericVectorCache.set(key, numsOrErr)
+	return numsOrErr
 }
 
-function largeFn(args: EvalArg[]): CellValue {
-	const numsOrErr = collectFrom(args[0])
+function largeFn(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
+	const numsOrErr = sortedNumericRange(args[0], ctx)
 	if (!Array.isArray(numsOrErr)) return numsOrErr
 	const k = numArg(args[1])
 	if (typeof k !== 'number') return k
 	const ki = Math.floor(k)
 	if (ki < 1 || ki > numsOrErr.length) return errorValue('#NUM!')
-	return numberValue(quickselect(numsOrErr, ki - 1, false))
+	return numberValue(numsOrErr[numsOrErr.length - ki] as number)
 }
 
-function smallFn(args: EvalArg[]): CellValue {
-	const numsOrErr = collectFrom(args[0])
+function smallFn(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
+	const numsOrErr = sortedNumericRange(args[0], ctx)
 	if (!Array.isArray(numsOrErr)) return numsOrErr
 	const k = numArg(args[1])
 	if (typeof k !== 'number') return k
 	const ki = Math.floor(k)
 	if (ki < 1 || ki > numsOrErr.length) return errorValue('#NUM!')
-	return numberValue(quickselect(numsOrErr, ki - 1, true))
+	return numberValue(numsOrErr[ki - 1] as number)
 }
 
 function rankFn(args: EvalArg[]): CellValue {

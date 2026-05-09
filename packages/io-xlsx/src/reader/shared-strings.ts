@@ -17,6 +17,7 @@ const preserveTextParser = new XMLParser({
 export interface SharedStringResolver {
 	readonly count: number
 	get(index: number): CellValue | undefined
+	getString?(index: number): string | undefined
 }
 
 export function parseSharedStrings(
@@ -36,6 +37,9 @@ export function emptySharedStrings(): SharedStringResolver {
 		get(): CellValue | undefined {
 			return undefined
 		},
+		getString(): string | undefined {
+			return undefined
+		},
 	}
 }
 
@@ -52,6 +56,10 @@ function createEagerSharedStrings(
 				get(index: number): CellValue | undefined {
 					return fallback[index]
 				},
+				getString(index: number): string | undefined {
+					const entry = fallback[index]
+					return entry?.kind === 'string' ? entry.value : undefined
+				},
 			}
 		}
 	}
@@ -60,6 +68,10 @@ function createEagerSharedStrings(
 		count: entries.length,
 		get(index: number): CellValue | undefined {
 			return entries[index]
+		},
+		getString(index: number): string | undefined {
+			const entry = entries[index]
+			return entry?.kind === 'string' ? entry.value : undefined
 		},
 	}
 }
@@ -83,12 +95,64 @@ function createLazySharedStrings(
 
 	const entries = new Array<CellValue | undefined>(offsets.length)
 	const resolved = new Uint8Array(offsets.length)
+	const plainTextEntries = new Array<string | null | undefined>(offsets.length)
+	const plainTextResolved = new Uint8Array(offsets.length)
 
 	return {
 		count: offsets.length,
+		getString(index: number): string | undefined {
+			if (index < 0 || index >= offsets.length) return undefined
+			if (plainTextResolved[index]) {
+				const text = plainTextEntries[index]
+				return text === null ? undefined : (text ?? '')
+			}
+			if (resolved[index]) {
+				const entry = entries[index]
+				return entry?.kind === 'string' ? entry.value : undefined
+			}
+
+			const start = offsets[index] as number
+			const fastText = parseSimplePlainSharedStringEntry(xml, start)
+			if (fastText !== undefined) {
+				plainTextResolved[index] = 1
+				plainTextEntries[index] = fastText
+				return fastText
+			}
+			const tagEnd = findTagEnd(xml, start)
+			if (tagEnd === -1) {
+				plainTextResolved[index] = 1
+				return undefined
+			}
+
+			let text: string | undefined
+			if (isSelfClosingTag(xml, start, tagEnd)) {
+				text = ''
+			} else {
+				const close = xml.indexOf('</si>', tagEnd + 1)
+				text = close === -1 ? undefined : parsePlainSharedStringEntry(xml, tagEnd + 1, close)
+			}
+			plainTextResolved[index] = 1
+			if (text === undefined) {
+				plainTextEntries[index] = null
+				return undefined
+			}
+			plainTextEntries[index] = text
+			return text
+		},
 		get(index: number): CellValue | undefined {
 			if (index < 0 || index >= offsets.length) return undefined
 			if (resolved[index]) return entries[index]
+			if (
+				plainTextResolved[index] &&
+				plainTextEntries[index] !== undefined &&
+				plainTextEntries[index] !== null
+			) {
+				const value = stringValue(plainTextEntries[index] ?? '')
+				const result = normalize ? normalize(value) : value
+				entries[index] = result
+				resolved[index] = 1
+				return result
+			}
 
 			const start = offsets[index] as number
 			const tagEnd = findTagEnd(xml, start)
@@ -106,7 +170,7 @@ function createLazySharedStrings(
 					resolved[index] = 1
 					return undefined
 				}
-				value = parseSharedStringChunk(xml.slice(tagEnd + 1, close))
+				value = parseSharedStringEntry(xml, tagEnd + 1, close)
 			}
 
 			const result = normalize ? normalize(value) : value
@@ -115,6 +179,15 @@ function createLazySharedStrings(
 			return result
 		},
 	}
+}
+
+function parseSimplePlainSharedStringEntry(xml: string, start: number): string | undefined {
+	if (!xml.startsWith('<si><t>', start)) return undefined
+	const valueStart = start + 7
+	const valueEnd = xml.indexOf('</t></si>', valueStart)
+	if (valueEnd === -1) return undefined
+	const text = xml.slice(valueStart, valueEnd)
+	return text.includes('&') ? decodeXmlText(text) : text
 }
 
 function parseSharedStringEntries(
@@ -136,11 +209,51 @@ function parseSharedStringEntries(
 		}
 		const close = xml.indexOf('</si>', tagEnd + 1)
 		if (close === -1) break
-		const parsed = parseSharedStringChunk(xml.slice(tagEnd + 1, close))
+		const parsed = parseSharedStringEntry(xml, tagEnd + 1, close)
 		entries.push(normalize ? normalize(parsed) : parsed)
 		cursor = close + 5
 	}
 	return entries
+}
+
+function parseSharedStringEntry(xml: string, start: number, end: number): CellValue {
+	if (!hasTagInRange(xml, start, end, 'r')) {
+		const text = extractTextContentRange(xml, start, end)
+		if (text !== undefined) return stringValue(text)
+	}
+	return parseSharedStringChunk(xml.slice(start, end))
+}
+
+function parsePlainSharedStringEntry(xml: string, start: number, end: number): string | undefined {
+	if (hasTagInRange(xml, start, end, 'r')) return undefined
+	return extractTextContentRange(xml, start, end)
+}
+
+function hasTagInRange(xml: string, start: number, end: number, tagName: string): boolean {
+	let cursor = start
+	while (true) {
+		const open = xml.indexOf('<', cursor)
+		if (open === -1 || open >= end) return false
+		const nameStart = open + 1
+		if (
+			xml.startsWith(tagName, nameStart) &&
+			isXmlNameTerminator(xml.charCodeAt(nameStart + tagName.length))
+		) {
+			return true
+		}
+		cursor = nameStart
+	}
+}
+
+function isXmlNameTerminator(code: number): boolean {
+	return (
+		code === 0x20 ||
+		code === 0x2f ||
+		code === 0x3e ||
+		code === 0x09 ||
+		code === 0x0a ||
+		code === 0x0d
+	)
 }
 
 function parseSharedStringEntriesWithDom(
@@ -353,6 +466,18 @@ function extractTextContent(chunk: string): string | undefined {
 	const textClose = chunk.indexOf('</t>', textTagEnd + 1)
 	if (textClose === -1) return undefined
 	return decodeXmlText(chunk.slice(textTagEnd + 1, textClose))
+}
+
+function extractTextContentRange(xml: string, start: number, end: number): string | undefined {
+	const textOpen = xml.indexOf('<t', start)
+	if (textOpen === -1 || textOpen >= end) return undefined
+	const textTagEnd = findTagEnd(xml, textOpen)
+	if (textTagEnd === -1 || textTagEnd >= end) return undefined
+	if (isSelfClosingTag(xml, textOpen, textTagEnd)) return ''
+	const textClose = xml.indexOf('</t>', textTagEnd + 1)
+	if (textClose === -1 || textClose > end) return undefined
+	const text = xml.slice(textTagEnd + 1, textClose)
+	return text.includes('&') ? decodeXmlText(text) : text
 }
 
 function extractSectionContent(chunk: string, tagName: string): string | undefined {

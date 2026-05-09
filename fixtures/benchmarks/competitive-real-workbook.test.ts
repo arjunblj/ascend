@@ -57,6 +57,9 @@ describe('evaluateAssertions', () => {
 		expect(result.assertions.semanticCellRefsHashMatches).toBe(true)
 		expect(result.assertions.semanticCellValuesHashMatches).toBe(true)
 		expect(result.assertions.formulaTextHashMatches).toBe(true)
+		expect(result.assertions.orderedSemanticCellRefsHashMatches).toBe(true)
+		expect(result.assertions.orderedSemanticCellValuesHashMatches).toBe(true)
+		expect(result.assertions.orderedFormulaTextHashMatches).toBe(true)
 	})
 
 	test('read-values profile does not require formula text preservation', () => {
@@ -499,7 +502,7 @@ describe('evaluateAssertions', () => {
 			{
 				name: 'fastexcel-java',
 				command: ['bash', 'fixtures/benchmarks/runners/fastexcel_java_runner.sh'],
-				categories: ['write'],
+				categories: ['read', 'write'],
 				adapterVersion: '1',
 				libraryVersion: 'reported-by-runner',
 				runtime: 'java',
@@ -511,6 +514,7 @@ describe('evaluateAssertions', () => {
 					xlsmRoundtrip: false,
 					internalTiming: true,
 					valueOnlyRead: true,
+					finalValidation: true,
 				},
 			},
 		])

@@ -107,6 +107,7 @@ export interface StructuredRefNode {
 	readonly table: string
 	readonly specifiers: readonly string[]
 	readonly column?: string
+	readonly endColumn?: string
 }
 
 export interface SpillRefNode {

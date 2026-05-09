@@ -2,7 +2,7 @@ import type { CellValue } from '@ascend/schema'
 import { EMPTY, errorValue, isEmpty, numberValue, topLeftScalar } from '@ascend/schema'
 import { numericVal } from './math/helpers.ts'
 import type { EvalArg, FunctionDef } from './registry.ts'
-import { iterAreaRows, wildcardMatch } from './registry.ts'
+import { hasWildcardPatternSyntax, iterAreaRows, wildcardMatch } from './registry.ts'
 
 function isBlankLike(value: CellValue): boolean {
 	if (isEmpty(value)) return true
@@ -46,7 +46,7 @@ function parseCriteria(criteria: CellValue): (v: CellValue) => boolean {
 	const numRest = Number(rest)
 	const isNumeric = rest.trim() !== '' && !Number.isNaN(numRest)
 	const isBlankCriterion = rest === ''
-	const hasWildcards = /(^|[^~])[*?]/.test(rest)
+	const hasWildcards = hasWildcardPatternSyntax(rest)
 
 	if (!op) {
 		const lower = s.toLowerCase()

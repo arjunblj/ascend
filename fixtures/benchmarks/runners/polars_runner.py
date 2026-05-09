@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import polars as pl
-from memory_metrics import sample_with_memory
+from memory_metrics import memory_baseline, sample_with_memory
 
 
 def column_name(index: int) -> str:
@@ -119,12 +119,13 @@ def main() -> None:
     samples: list[dict[str, float]] = []
     assertions: dict[str, str | int | bool | None] | None = None
     for _ in range(max(1, args.repeat)):
+        before = memory_baseline()
         start = time.perf_counter()
         sheets = read_materialized(path, args.engine)
         duration_ms = (time.perf_counter() - start) * 1000
         assertions = read_assertions(sheets)
         assertions["runnerEngine"] = args.engine
-        samples.append(sample_with_memory(duration_ms))
+        samples.append(sample_with_memory(duration_ms, before))
     payload: dict[str, Any] = {"assertions": assertions or {}, "samples": samples}
     if args.json:
         print(json.dumps(payload, separators=(",", ":")))

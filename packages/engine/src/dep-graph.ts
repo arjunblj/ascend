@@ -69,6 +69,7 @@ export class DependencyGraph {
 		counts: Int32Array
 		dependents: readonly CellKey[]
 		formulaKeys: readonly CellKey[]
+		formulaKeySet: ReadonlySet<CellKey>
 		volatileKeys: readonly CellKey[]
 	} | null = null
 
@@ -229,11 +230,16 @@ export class DependencyGraph {
 	 * topological sort when only a small subset needs evaluation.
 	 */
 	getEvalOrder(dirtySet: Set<CellKey>): CellKey[] {
-		const allFormulaKeys = this._ensureDirectIndex().formulaKeys
-		const formulaKeySet = new Set(allFormulaKeys)
-		const nonFormulaKeys = [...dirtySet].filter((k) => !formulaKeySet.has(k))
+		const directIndex = this._ensureDirectIndex()
+		const allFormulaKeys = directIndex.formulaKeys
+		const formulaKeySet = directIndex.formulaKeySet
+		let dirtyFormulaCount = 0
+		const nonFormulaKeys: CellKey[] = []
+		for (const k of dirtySet) {
+			if (!formulaKeySet.has(k)) nonFormulaKeys.push(k)
+			if (this.formulas.has(k)) dirtyFormulaCount++
+		}
 
-		const dirtyFormulaCount = [...dirtySet].filter((k) => this.formulas.has(k)).length
 		const usePartialOrder =
 			dirtySet.size < allFormulaKeys.length && dirtyFormulaCount < allFormulaKeys.length
 
@@ -245,8 +251,14 @@ export class DependencyGraph {
 
 		if (this._cachedEvalOrder === null) {
 			const allSet = new Set(allFormulaKeys)
-			this._cachedEvalOrder = this._computeEvalOrder(allSet)
+			this._cachedEvalOrder =
+				dirtyFormulaCount === allFormulaKeys.length && !this._hasFormulaPrecedents(allSet)
+					? [...allFormulaKeys]
+					: this._computeEvalOrder(allSet)
 			this._rebuildRanksFromOrder(this._cachedEvalOrder)
+		}
+		if (dirtyFormulaCount === allFormulaKeys.length) {
+			return [...nonFormulaKeys, ...this._cachedEvalOrder]
 		}
 		const formulaQueue = new BinaryMinHeap(
 			(a, b) => (this._rankByKey?.get(a) ?? 0) - (this._rankByKey?.get(b) ?? 0),
@@ -299,6 +311,24 @@ export class DependencyGraph {
 			visit(key)
 		}
 		return order
+	}
+
+	private _hasFormulaPrecedents(formulaSet: Set<CellKey>): boolean {
+		const dirtyFormulaBySheetCol = this.getCachedDirtyFormulaIndex(formulaSet)
+		for (const entry of this.formulas.values()) {
+			for (let i = 0; i < entry.dependsOn.length; i++) {
+				if (formulaSet.has(entry.dependsOn[i] as CellKey)) return true
+			}
+			for (const range of entry.rangeDeps) {
+				const sheetCols = dirtyFormulaBySheetCol.get(range.sheetIndex)
+				if (!sheetCols) continue
+				for (let col = range.startCol; col <= range.endCol; col++) {
+					const rows = sheetCols.get(col)
+					if (rows && sortedRowsOverlapRange(rows, range.startRow, range.endRow)) return true
+				}
+			}
+		}
+		return false
 	}
 
 	detectCycles(): CellKey[][] {
@@ -559,10 +589,12 @@ export class DependencyGraph {
 		counts: Int32Array
 		dependents: readonly CellKey[]
 		formulaKeys: readonly CellKey[]
+		formulaKeySet: ReadonlySet<CellKey>
 		volatileKeys: readonly CellKey[]
 	} {
 		if (this._compiledDirectIndex) return this._compiledDirectIndex
 		const formulaKeys = [...this.formulas.keys()]
+		const formulaKeySet = new Set(formulaKeys)
 		const volatileKeys: CellKey[] = []
 		const directBuckets = new Map<CellKey, CellKey[]>()
 		for (const [formulaKey, entry] of this.formulas) {
@@ -596,6 +628,7 @@ export class DependencyGraph {
 			counts,
 			dependents,
 			formulaKeys,
+			formulaKeySet,
 			volatileKeys,
 		}
 		return this._compiledDirectIndex
@@ -721,6 +754,21 @@ function indexDirtyFormulaCellsBySheetCol(
 		}
 	}
 	return indexed
+}
+
+function sortedRowsOverlapRange(
+	rows: readonly number[],
+	startRow: number,
+	endRow: number,
+): boolean {
+	let lo = 0
+	let hi = rows.length - 1
+	while (lo <= hi) {
+		const mid = (lo + hi) >>> 1
+		if ((rows[mid] as number) < startRow) lo = mid + 1
+		else hi = mid - 1
+	}
+	return lo < rows.length && (rows[lo] as number) <= endRow
 }
 
 class BinaryMinHeap {

@@ -10,6 +10,7 @@ const NS_R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationship
 export interface WorkbookXmlOptions {
 	readonly externalReferenceRelIds?: readonly string[]
 	readonly pivotCacheRelIds?: readonly string[]
+	readonly chartSheetRelIds?: readonly string[]
 	readonly calcStateDirty?: boolean
 }
 
@@ -60,6 +61,20 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 		const attrs = [`name="${escapeXml(sheet.name)}"`, `sheetId="${i + 1}"`, `r:id="rId${i + 1}"`]
 		if (sheet.state !== 'visible') {
 			attrs.push(`state="${sheet.state}"`)
+		}
+		out.push(`<sheet ${attrs.join(' ')}/>`)
+	}
+	for (let i = 0; i < workbook.chartSheets.length; i++) {
+		const chartSheet = workbook.chartSheets[i]
+		const relId = options.chartSheetRelIds?.[i]
+		if (!chartSheet || !relId) continue
+		const attrs = [
+			`name="${escapeXml(chartSheet.name)}"`,
+			`sheetId="${escapeXml(chartSheet.sheetId)}"`,
+			`r:id="${escapeXml(relId)}"`,
+		]
+		if (chartSheet.state !== 'visible') {
+			attrs.push(`state="${chartSheet.state}"`)
 		}
 		out.push(`<sheet ${attrs.join(' ')}/>`)
 	}

@@ -5,6 +5,7 @@ interface MetricSample {
 	readonly retainedRssDeltaBytes?: number
 	readonly rssAfterBytes?: number
 	readonly rssAfterGcBytes?: number
+	readonly peakRssBytes?: number
 	readonly heapUsedBytes?: number
 	readonly heapTotalBytes?: number
 	readonly heapAfterGcBytes?: number
@@ -16,6 +17,8 @@ export interface BenchmarkMetricSummary {
 	readonly minMs: number
 	readonly medianMs: number
 	readonly meanMs: number
+	readonly stddevMs?: number
+	readonly cvMs?: number
 	readonly p95Ms: number
 	readonly maxMs: number
 	readonly throughputPerSec?: number
@@ -23,6 +26,7 @@ export interface BenchmarkMetricSummary {
 	readonly retainedRssDeltaBytes?: number
 	readonly rssAfterBytes?: number
 	readonly rssAfterGcBytes?: number
+	readonly peakRssBytes?: number
 	readonly heapUsedBytes?: number
 	readonly heapTotalBytes?: number
 	readonly heapAfterGcBytes?: number
@@ -34,6 +38,8 @@ export interface BenchmarkCaseResult {
 	readonly category: string
 	readonly dimensions: Record<string, string | number | boolean>
 	readonly metrics: BenchmarkMetricSummary
+	readonly reproCommand?: string
+	readonly profileCommand?: string
 	readonly samples?: readonly MetricSample[]
 	readonly assertions?: Record<string, string | number | boolean | null>
 }
@@ -81,6 +87,8 @@ export interface BenchmarkCaseComparison {
 	readonly name: string
 	readonly status: 'new' | 'missing' | 'improved' | 'regressed' | 'unchanged'
 	readonly comparisons: readonly BenchmarkMetricComparison[]
+	readonly reproCommand?: string
+	readonly profileCommand?: string
 }
 
 export interface BenchmarkSuiteComparison {
@@ -144,6 +152,8 @@ export function summarizeSamples(samples: readonly MetricSample[]): BenchmarkMet
 		minMs: Math.min(...durations),
 		medianMs: median(durations),
 		meanMs: mean(durations),
+		stddevMs: standardDeviation(durations),
+		cvMs: coefficientOfVariation(durations),
 		p95Ms: percentile(durations, 0.95),
 		maxMs: Math.max(...durations),
 		...withDefined(
@@ -160,6 +170,7 @@ export function summarizeSamples(samples: readonly MetricSample[]): BenchmarkMet
 			'rssAfterGcBytes',
 			medianDefined(samples.map((sample) => sample.rssAfterGcBytes)),
 		),
+		...withDefined('peakRssBytes', medianDefined(samples.map((sample) => sample.peakRssBytes))),
 		...withDefined('heapUsedBytes', medianDefined(samples.map((sample) => sample.heapUsedBytes))),
 		...withDefined('heapTotalBytes', medianDefined(samples.map((sample) => sample.heapTotalBytes))),
 		...withDefined(
@@ -186,11 +197,21 @@ export function compareSuites(
 		const base = baselineCases.get(name)
 		const next = candidateCases.get(name)
 		if (!base && next) {
-			cases.push({ name, status: 'new', comparisons: [] })
+			cases.push({
+				name,
+				status: 'new',
+				comparisons: [],
+				...caseCommands(next),
+			})
 			continue
 		}
 		if (base && !next) {
-			cases.push({ name, status: 'missing', comparisons: [] })
+			cases.push({
+				name,
+				status: 'missing',
+				comparisons: [],
+				...caseCommands(base),
+			})
 			continue
 		}
 		if (!base || !next) continue
@@ -200,7 +221,7 @@ export function compareSuites(
 			: comparisons.some((entry) => entry.status === 'improved')
 				? 'improved'
 				: 'unchanged'
-		cases.push({ name, status, comparisons })
+		cases.push({ name, status, comparisons, ...caseCommands(next, base) })
 	}
 	return {
 		baselineSuite: baseline.suite,
@@ -213,6 +234,20 @@ export function compareSuites(
 			missing: cases.filter((entry) => entry.status === 'missing').length,
 			added: cases.filter((entry) => entry.status === 'new').length,
 		},
+	}
+}
+
+function caseCommands(
+	primary: BenchmarkCaseResult,
+	fallback?: BenchmarkCaseResult,
+): Pick<BenchmarkCaseComparison, 'reproCommand' | 'profileCommand'> {
+	return {
+		...((primary.reproCommand ?? fallback?.reproCommand)
+			? { reproCommand: primary.reproCommand ?? fallback?.reproCommand }
+			: {}),
+		...((primary.profileCommand ?? fallback?.profileCommand)
+			? { profileCommand: primary.profileCommand ?? fallback?.profileCommand }
+			: {}),
 	}
 }
 
@@ -374,6 +409,15 @@ export function variance(values: readonly number[]): number {
 	if (values.length < 2) return 0
 	const m = mean(values)
 	return values.reduce((sum, x) => sum + (x - m) ** 2, 0) / (values.length - 1)
+}
+
+export function standardDeviation(values: readonly number[]): number {
+	return Math.sqrt(variance(values))
+}
+
+export function coefficientOfVariation(values: readonly number[]): number {
+	const m = mean(values)
+	return m === 0 ? 0 : standardDeviation(values) / m
 }
 
 export interface WelchsTTestResult {

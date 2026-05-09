@@ -121,12 +121,14 @@ export class AscendWorkbook extends WorkbookReadView {
 	 * @example
 	 * const wb = await AscendWorkbook.open('./data.xlsx')
 	 * const wb2 = await AscendWorkbook.open(bytes, { mode: 'values', sheets: ['Sheet1'] })
+	 * const wb3 = await AscendWorkbook.open(bytes, { mode: 'values', richMetadata: true })
 	 */
 	static async open(
 		pathOrBytes: string | Uint8Array,
 		options?: {
 			mode?: 'full' | 'metadata-only' | 'values' | 'formula'
 			sheets?: readonly string[]
+			richMetadata?: boolean
 		},
 	): Promise<AscendWorkbook> {
 		const loaded = await openWorkbookSource(pathOrBytes, options)
@@ -194,7 +196,14 @@ export class AscendWorkbook extends WorkbookReadView {
 	preview(ops: readonly Operation[]): import('./types.ts').PreviewResult {
 		if (this.loadInfo.isPartial) {
 			return {
-				diff: { sheets: [], namesAdded: [], namesRemoved: [], namesChanged: [] },
+				diff: {
+					sheets: [],
+					namesAdded: [],
+					namesRemoved: [],
+					namesChanged: [],
+					workbookProtectionChanged: false,
+					sheetFeatures: [],
+				},
 				sheetDiffs: [],
 				cellChanges: [],
 				changedCells: [],
@@ -211,7 +220,14 @@ export class AscendWorkbook extends WorkbookReadView {
 		if (!result.ok) {
 			errors.push(...('errors' in result.error ? result.error.errors : [result.error]))
 			return {
-				diff: { sheets: [], namesAdded: [], namesRemoved: [], namesChanged: [] },
+				diff: {
+					sheets: [],
+					namesAdded: [],
+					namesRemoved: [],
+					namesChanged: [],
+					workbookProtectionChanged: false,
+					sheetFeatures: [],
+				},
 				sheetDiffs: [],
 				cellChanges: [],
 				changedCells: [],
@@ -1042,6 +1058,8 @@ function buildFastPreviewDiff(
 		namesAdded: [],
 		namesRemoved: [],
 		namesChanged: [],
+		workbookProtectionChanged: false,
+		sheetFeatures: [],
 	}
 }
 

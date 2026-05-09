@@ -25,7 +25,9 @@ export function jsonFailureError(error: string | AscendError, status: number): R
 }
 
 export function binaryResponse(body: Uint8Array, contentType: string): Response {
-	return new Response(body, {
+	const bytes = new Uint8Array(body.byteLength)
+	bytes.set(body)
+	return new Response(bytes.buffer as ArrayBuffer, {
 		headers: {
 			'Content-Type': contentType,
 		},

@@ -14,13 +14,22 @@ Thumbs.db
 *.swo
 
 coverage/
+.coverage/
 *.log
+profiles/
 
 research/
 .autoopt/
+.worktrees/
 
 # External XLSX fixtures (downloaded via fixtures/xlsx/download-fixtures.sh)
 fixtures/xlsx/external/
 
 # Stress test XLSX fixtures (generated via bun run fixtures/xlsx/generate-stress.ts)
 fixtures/xlsx/stress/*.xlsx
+
+# Benchmark runner build outputs
+fixtures/benchmarks/runners/**/__pycache__/
+fixtures/benchmarks/runners/**/bin/
+fixtures/benchmarks/runners/**/obj/
+fixtures/benchmarks/runners/**/target/

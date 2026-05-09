@@ -26,6 +26,7 @@ export interface AscendError {
 	readonly code: ErrorCode
 	readonly message: string
 	readonly retryable: boolean
+	readonly retryStrategy?: 'same' | 'modified' | 'none'
 	readonly refs?: readonly string[]
 	readonly details?: Record<string, unknown>
 	readonly suggestedFix?: string
@@ -55,12 +56,15 @@ export class AscendException extends Error {
 export function ascendError(
 	code: ErrorCode,
 	message: string,
-	opts?: Partial<Pick<AscendError, 'retryable' | 'refs' | 'details' | 'suggestedFix'>>,
+	opts?: Partial<
+		Pick<AscendError, 'retryable' | 'retryStrategy' | 'refs' | 'details' | 'suggestedFix'>
+	>,
 ): AscendError {
 	return {
 		code,
 		message,
 		retryable: opts?.retryable ?? false,
+		...(opts?.retryStrategy !== undefined ? { retryStrategy: opts.retryStrategy } : {}),
 		...(opts?.refs !== undefined ? { refs: opts.refs } : {}),
 		...(opts?.details !== undefined ? { details: opts.details } : {}),
 		...(opts?.suggestedFix !== undefined ? { suggestedFix: opts.suggestedFix } : {}),

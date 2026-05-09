@@ -28,8 +28,26 @@ jobs:
       - name: Typecheck
         run: bunx tsc --build
 
+      - name: Build JS packages
+        run: bun run build:js
+
       - name: Test
         run: bun test --recursive
+
+      - name: Coverage
+        run: bun run test:coverage
+
+      - name: Coverage audit
+        run: bun run coverage:audit
+
+      - name: Generate TypeDoc
+        run: bun run docs:sdk
+
+      - name: Upload SDK docs
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-docs-${{ github.sha }}
+          path: dist/docs/sdk-api
 
   perf-smoke:
     runs-on: ubuntu-latest

@@ -54,7 +54,15 @@ export function resolveStructuredRefRange(
 		)
 		if (columnIndex < 0) return null
 		startCol = table.ref.start.col + columnIndex
-		endCol = startCol
+		if (node.endColumn) {
+			const endColumnIndex = table.columns.findIndex(
+				(column) => column.name.toLowerCase() === node.endColumn?.toLowerCase(),
+			)
+			if (endColumnIndex < columnIndex) return null
+			endCol = table.ref.start.col + endColumnIndex
+		} else {
+			endCol = startCol
+		}
 	}
 
 	return {

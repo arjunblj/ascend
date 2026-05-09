@@ -14,6 +14,7 @@ enum Workload {
     DenseValues,
     Mixed10PctText,
     Mixed50PctText,
+    MixedClosedXml10Text5Number,
     PlainText,
     StringHeavy,
     SparseWide,
@@ -139,6 +140,7 @@ fn parse_workload(value: Option<String>) -> Result<Workload, String> {
         "dense-values" => Ok(Workload::DenseValues),
         "mixed-10pct-text" => Ok(Workload::Mixed10PctText),
         "mixed-50pct-text" => Ok(Workload::Mixed50PctText),
+        "mixed-closedxml-10text-5number" => Ok(Workload::MixedClosedXml10Text5Number),
         "plain-text" => Ok(Workload::PlainText),
         "string-heavy" => Ok(Workload::StringHeavy),
         "sparse-wide" => Ok(Workload::SparseWide),
@@ -155,6 +157,7 @@ fn workload_name(workload: Workload) -> &'static str {
         Workload::DenseValues => "dense-values",
         Workload::Mixed10PctText => "mixed-10pct-text",
         Workload::Mixed50PctText => "mixed-50pct-text",
+        Workload::MixedClosedXml10Text5Number => "mixed-closedxml-10text-5number",
         Workload::PlainText => "plain-text",
         Workload::StringHeavy => "string-heavy",
         Workload::SparseWide => "sparse-wide",
@@ -259,6 +262,13 @@ fn workload_value(
                 Some(WorkloadValue::Text(format!("text-{key:08}")))
             } else {
                 Some(WorkloadValue::Number(key as i64))
+            }
+        }
+        Workload::MixedClosedXml10Text5Number => {
+            if col < 10 {
+                Some(WorkloadValue::Text("Hello world".to_string()))
+            } else {
+                Some(WorkloadValue::Number((col - 10) as i64))
             }
         }
         Workload::PlainText => Some(WorkloadValue::Text(format!("text-{:08}", row * cols + col))),

@@ -51,7 +51,11 @@ export async function withProgress<T>(
 
 export async function openWorkbookWithProgress(
 	file: string | Uint8Array,
-	options?: { mode?: 'full' | 'metadata-only' | 'values' | 'formula'; sheets?: readonly string[] },
+	options?: {
+		mode?: 'full' | 'metadata-only' | 'values' | 'formula'
+		sheets?: readonly string[]
+		richMetadata?: boolean
+	},
 ): Promise<{ workbook: AscendWorkbook; durationMs: number }> {
 	const label = typeof file === 'string' ? `Opening ${file}` : 'Opening workbook'
 	const { value, durationMs } = await withProgress(label, () => AscendWorkbook.open(file, options))
@@ -60,7 +64,11 @@ export async function openWorkbookWithProgress(
 
 export async function openWorkbookDocumentWithProgress(
 	file: string,
-	options?: { mode?: 'full' | 'metadata-only' | 'values' | 'formula'; sheets?: readonly string[] },
+	options?: {
+		mode?: 'full' | 'metadata-only' | 'values' | 'formula'
+		sheets?: readonly string[]
+		richMetadata?: boolean
+	},
 ): Promise<{ document: WorkbookDocument; durationMs: number }> {
 	const label = `Opening ${file}`
 	const { value, durationMs } = await withProgress(label, () =>

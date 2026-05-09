@@ -21,6 +21,8 @@ describe('digital signature inventory', () => {
 				contentType: 'application/vnd.openxmlformats-package.digital-signature-origin',
 				anchor: 'workbook',
 				relationshipCount: 1,
+				relType:
+					'http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/origin',
 			},
 			{
 				kind: 'digitalSignature',

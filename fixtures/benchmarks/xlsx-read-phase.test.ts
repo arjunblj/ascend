@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import { buildWorkloadDataSet } from './competitive-io.ts'
+import { type Args, directOrderedReadAssertions } from './runners/ascend_runner.ts'
 
 describe('xlsx-read-phase CLI', () => {
 	test('reports ZIP inflate and decode phase timings', async () => {
@@ -120,5 +122,25 @@ describe('xlsx-read-phase CLI', () => {
 		}
 		expect(result.summary?.rowsStreamChunkedMedianMs).toBeNumber()
 		expect(result.summary?.rowsStreamChunkedCellsPerSecondMedian).toBeNumber()
+	})
+
+	test('direct ordered verifier counts shared-string physical cells once', async () => {
+		const input = await buildWorkloadDataSet('mixed-50pct-text', 8, 6, 'raw-ooxml')
+		const args: Args = {
+			operation: 'read',
+			file: input.xlsxPath,
+			mode: 'values',
+			source: 'path',
+			richMetadata: false,
+			orderedHashes: true,
+			streamOrderedHashes: false,
+			repeat: 1,
+			warmup: 0,
+			json: true,
+		}
+		const assertions = await directOrderedReadAssertions(args, undefined)
+		expect(assertions?.cellCount).toBe(48)
+		expect(assertions?.physicalCellCount).toBe(48)
+		expect(assertions?.firstPhysicalUsedRange).toBe(assertions?.firstUsedRange)
 	})
 })

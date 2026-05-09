@@ -348,9 +348,19 @@ function scalarOrLookupArray(
 	return arrayValue(rows)
 }
 
+function scalarInputError(arg: EvalArg | undefined): CellValue | null {
+	if (lookupInputMatrix(arg)) return null
+	const value = arg?.value ?? EMPTY
+	return value.kind === 'error' ? value : null
+}
+
 // --- Implementations ---
 
 function vlookup(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
+	const lookupError = scalarInputError(args[0])
+	if (lookupError) return lookupError
+	const tableError = scalarInputError(args[1])
+	if (tableError) return tableError
 	const table = getRange(args[1])
 	const col = numArg(args[2])
 	if (typeof col !== 'number') return col
@@ -373,6 +383,10 @@ function vlookup(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 }
 
 function hlookup(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
+	const lookupError = scalarInputError(args[0])
+	if (lookupError) return lookupError
+	const tableError = scalarInputError(args[1])
+	if (tableError) return tableError
 	const table = getRange(args[1])
 	const row = numArg(args[2])
 	if (typeof row !== 'number') return row
@@ -395,6 +409,8 @@ function hlookup(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 }
 
 function indexFn(args: EvalArg[]): CellValue {
+	const sourceError = scalarInputError(args[0])
+	if (sourceError) return sourceError
 	const array = getRange(args[0])
 	const rowNum = numArg(args[1])
 	if (typeof rowNum !== 'number') return rowNum

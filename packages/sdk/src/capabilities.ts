@@ -692,8 +692,9 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'Token-efficient reads',
 		'editable',
 		'P0',
-		'Expand compact/object/TSV modes and row-window parity across surfaces.',
-		'Agent read helpers exist; every surface should expose the same options.',
+		'Add larger-session cache telemetry and table-aware changedSince polling.',
+		'MCP and SDK expose row-windowed cells, objects, TSV, compact sparse reads, MCP column pruning/header selection, and compact changedSince/changeToken polling.',
+		['apps/mcp/src/index.test.ts', 'packages/sdk/src/sdk.test.ts'],
 	),
 	cap(
 		'agent.plan',

@@ -29,6 +29,13 @@ describe('SparseGrid', () => {
 		expect(grid.get(0, 0)).toEqual(cell)
 	})
 
+	test('setStringResolved stores plain strings directly', () => {
+		const grid = new SparseGrid()
+		grid.setStringResolved(0, 0, 'hello', null, S0)
+		expect(grid.get(0, 0)).toEqual(makeCell(stringValue('hello')))
+		expect(grid.readString(0, 0)).toBe('hello')
+	})
+
 	test('overwrite existing cell', () => {
 		const grid = new SparseGrid()
 		grid.set(0, 0, makeCell(numberValue(1)))
@@ -56,6 +63,20 @@ describe('SparseGrid', () => {
 		expect(grid.cellCount()).toBe(2)
 		grid.delete(0, 0)
 		expect(grid.cellCount()).toBe(1)
+	})
+
+	test('formulaCellCount tracks formula mutations', () => {
+		const grid = new SparseGrid()
+		expect(grid.formulaCellCount()).toBe(0)
+		grid.set(0, 0, makeCell(numberValue(1), 'A1+1'))
+		grid.set(0, 1, makeCell(numberValue(2)))
+		expect(grid.formulaCellCount()).toBe(1)
+		grid.set(0, 1, { ...makeCell(numberValue(2)), formulaInfo: { kind: 'array', ref: 'B1' } })
+		expect(grid.formulaCellCount()).toBe(2)
+		grid.clearFormulaInfo(0, 1)
+		expect(grid.formulaCellCount()).toBe(1)
+		grid.set(0, 0, makeCell(numberValue(3)))
+		expect(grid.formulaCellCount()).toBe(0)
 	})
 
 	test('usedRange returns null for empty grid', () => {
@@ -404,9 +425,9 @@ describe('SparseGrid', () => {
 	test('setExpectedDensity sparse: SparseChunk upgrades to DenseChunk at threshold', () => {
 		const grid = new SparseGrid()
 		grid.setExpectedDensity('sparse')
-		// 100 cells in single chunk (0,0) to exceed SPARSE_TO_DENSE_THRESHOLD (96)
+		// 100 cells in a 10x10 block stay inside chunk (0,0) for supported chunk sizes.
 		for (let i = 0; i < 100; i++) {
-			grid.setResolved(i >> 6, i & 63, numberValue(i), null, S0)
+			grid.setResolved(Math.floor(i / 10), i % 10, numberValue(i), null, S0)
 		}
 		expect(grid.getChunkKindAt(0, 0)).toBe('dense')
 	})

@@ -43,8 +43,8 @@ The best-performing pattern from production MCP spreadsheet servers (spreadsheet
 | Optimization | Impact | Effort |
 |-------------|--------|--------|
 | **TSV-format output mode for `ascend.read`** | 3-5x token reduction vs JSON cell arrays. Tabular data as TSV is the most token-efficient representation LLMs can parse. A 100-row × 10-col read as JSON objects: ~8,000 tokens. Same data as TSV: ~1,500 tokens. | Low — add a `format: 'tsv'` option that returns `{ text: string, rowCount: number, hasMore: boolean }` |
-| **Column-pruning in reads** | Agents often need 3-5 columns from a 20-column sheet. `cols` parameter accepting column letters or header names would avoid returning unwanted data. | Low |
-| **Diff-aware reads with change tokens** | `CompactRangeWindowInfo` already has `changeToken`. The MCP tool should accept a `changedSince` token so repeated reads only return deltas. Critical for agent loops that repeatedly check workbook state. | Medium — `changedSince` already exists in `AgentReadOptions`, wire it through MCP |
+| **Column-pruning in reads** | `ascend.read` accepts `cols` for MCP reads, resolving absolute column letters, 1-based positions in the requested range, and object headers. This avoids returning unwanted cells from wide sheets. | Done for MCP cells/rows/objects/TSV/compact reads |
+| **Diff-aware reads with change tokens** | `CompactRangeWindowInfo` has `changeToken`, and `ascend.read` compact mode accepts `changedSince` so repeated reads can return only changed sparse cells. Critical for agent loops that repeatedly check workbook state. | Done for compact MCP reads; extend to column-pruned/table reads if needed |
 | **Auto-summarize large results** | When a read would exceed ~4,000 tokens, automatically truncate and append a note: "Showing 50 of 2,340 rows. Use rowOffset/rowLimit to paginate." Currently the agent gets back a massive JSON blob and may not notice pagination fields. | Low |
 
 ### 1.4 MCP Tool Design Patterns

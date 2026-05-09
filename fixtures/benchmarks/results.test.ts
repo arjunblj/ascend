@@ -4,17 +4,20 @@ import { compareSuites, createBenchmarkSuite, summarizeSamples, welchsTTest } fr
 describe('summarizeSamples', () => {
 	test('aggregates duration and throughput metrics', () => {
 		const summary = summarizeSamples([
-			{ durationMs: 30, throughputPerSec: 1000, rssDeltaBytes: 10 },
-			{ durationMs: 10, throughputPerSec: 1200, rssDeltaBytes: 20 },
-			{ durationMs: 20, throughputPerSec: 1100, rssDeltaBytes: 30 },
+			{ durationMs: 30, throughputPerSec: 1000, rssDeltaBytes: 10, peakRssBytes: 300 },
+			{ durationMs: 10, throughputPerSec: 1200, rssDeltaBytes: 20, peakRssBytes: 100 },
+			{ durationMs: 20, throughputPerSec: 1100, rssDeltaBytes: 30, peakRssBytes: 200 },
 		])
 		expect(summary.sampleCount).toBe(3)
 		expect(summary.minMs).toBe(10)
 		expect(summary.medianMs).toBe(20)
+		expect(summary.stddevMs).toBe(10)
+		expect(summary.cvMs).toBe(0.5)
 		expect(summary.p95Ms).toBe(30)
 		expect(summary.maxMs).toBe(30)
 		expect(summary.throughputPerSec).toBe(1100)
 		expect(summary.rssDeltaBytes).toBe(20)
+		expect(summary.peakRssBytes).toBe(200)
 	})
 })
 
@@ -79,6 +82,9 @@ describe('compareSuites', () => {
 						throughputPerSec: 13_000,
 						rssDeltaBytes: 800,
 					},
+					reproCommand: 'bun run bench --scenario read-case --json',
+					profileCommand:
+						'bun run fixtures/benchmarks/profile-bun.ts -- bun run bench --scenario read-case --json',
 				},
 			],
 		})
@@ -101,6 +107,8 @@ describe('compareSuites', () => {
 				(entry) => entry.name === 'rssDeltaBytes' && entry.status === 'improved',
 			),
 		).toBe(true)
+		expect(comparison.cases[0]?.reproCommand).toBe('bun run bench --scenario read-case --json')
+		expect(comparison.cases[0]?.profileCommand).toContain('profile-bun.ts')
 	})
 
 	test('statistically insignificant differences do not flag as regression', () => {

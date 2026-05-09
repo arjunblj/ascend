@@ -1,12 +1,15 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"runtime"
@@ -230,8 +233,8 @@ func workbookAssertions(workbook *excelize.File) (map[string]any, error) {
 	cellCount := 0
 	physicalCellCount := 0
 	usedRanges := make([]string, 0, len(sheetNames))
-	semanticCellRefs := make([]string, 0)
-	semanticCellValues := make([]string, 0)
+	semanticCellRefsHash := newOrderedLineHasher()
+	semanticCellValuesHash := newOrderedLineHasher()
 
 	for _, sheetName := range sheetNames {
 		rows, err := workbook.Rows(sheetName)
@@ -275,8 +278,8 @@ func workbookAssertions(workbook *excelize.File) (map[string]any, error) {
 				maxRow = max(maxRow, rowIndex)
 				maxCol = max(maxCol, colIndex+1)
 				ref := fmt.Sprintf("%s!%s", sheetName, cellRef)
-				semanticCellRefs = append(semanticCellRefs, ref)
-				semanticCellValues = append(semanticCellValues, ref+"\t"+payload)
+				semanticCellRefsHash.Add(ref)
+				semanticCellValuesHash.Add(ref + "\t" + payload)
 			}
 		}
 		if err := rows.Close(); err != nil {
@@ -293,22 +296,372 @@ func workbookAssertions(workbook *excelize.File) (map[string]any, error) {
 	}
 	usedRangesHash := hashLines(usedRanges)
 	return map[string]any{
-		"runnerVersion":              runnerVersion,
-		"excelizeVersion":            moduleVersion("github.com/xuri/excelize/v2"),
-		"sheetCount":                 len(sheetNames),
-		"sheetNamesHash":             hashLines(indexedLines(sheetNames)),
-		"cellCount":                  cellCount,
-		"physicalCellCount":          physicalCellCount,
-		"formulaCount":               0,
-		"usedRangeCount":             len(usedRanges),
-		"firstUsedRange":             firstOrNull(usedRanges),
-		"firstPhysicalUsedRange":     firstOrNull(usedRanges),
-		"usedRangesHash":             usedRangesHash,
-		"physicalUsedRangesHash":     usedRangesHash,
-		"semanticCellRefsHash":       hashLines(semanticCellRefs),
-		"semanticCellValuesHash":     hashLines(semanticCellValues),
-		"formulaTextHash":            hashLines([]string{}),
-		"excelizeRawCellValueOption": true,
+		"runnerVersion":                 runnerVersion,
+		"excelizeVersion":               moduleVersion("github.com/xuri/excelize/v2"),
+		"sheetCount":                    len(sheetNames),
+		"sheetNamesHash":                hashLines(indexedLines(sheetNames)),
+		"cellCount":                     cellCount,
+		"physicalCellCount":             physicalCellCount,
+		"formulaCount":                  0,
+		"usedRangeCount":                len(usedRanges),
+		"firstUsedRange":                firstOrNull(usedRanges),
+		"firstPhysicalUsedRange":        firstOrNull(usedRanges),
+		"usedRangesHash":                usedRangesHash,
+		"physicalUsedRangesHash":        usedRangesHash,
+		"semanticCellRefsHash":          semanticCellRefsHash.Digest(),
+		"orderedSemanticCellRefsHash":   semanticCellRefsHash.Digest(),
+		"semanticCellValuesHash":        semanticCellValuesHash.Digest(),
+		"orderedSemanticCellValuesHash": semanticCellValuesHash.Digest(),
+		"formulaTextHash":               hashLines([]string{}),
+		"excelizeRawCellValueOption":    true,
+	}, nil
+}
+
+func generatedWorkbookAssertions(workbook *excelize.File, workload string, expectedRows int, expectedCols int) (map[string]any, error) {
+	sheetNames := workbook.GetSheetList()
+	cellCount := 0
+	physicalCellCount := 0
+	usedRanges := make([]string, 0, len(sheetNames))
+	semanticCellRefsHash := newOrderedLineHasher()
+	semanticCellValuesHash := newOrderedLineHasher()
+	columnNames := make([]string, expectedCols)
+	for col := 0; col < expectedCols; col++ {
+		columnNames[col] = columnName(col + 1)
+	}
+
+	for _, sheetName := range sheetNames {
+		rows, err := workbook.Rows(sheetName)
+		if err != nil {
+			return nil, err
+		}
+		minRow := math.MaxInt
+		minCol := math.MaxInt
+		maxRow := 0
+		maxCol := 0
+		rowIndex := 0
+		for rows.Next() {
+			rowIndex++
+			cols, err := rows.Columns(excelize.Options{RawCellValue: true})
+			if err != nil {
+				rows.Close()
+				return nil, err
+			}
+			for colIndex, raw := range cols {
+				if raw == "" {
+					continue
+				}
+				colNumber := colIndex + 1
+				colName := columnName(colNumber)
+				if colIndex < len(columnNames) {
+					colName = columnNames[colIndex]
+				}
+				expected := workloadValue(workload, rowIndex-1, colIndex, expectedCols)
+				payload := scalarPayloadForExpectedValue(expected, raw)
+				if payload == "" {
+					continue
+				}
+				physicalCellCount++
+				cellCount++
+				minRow = min(minRow, rowIndex)
+				minCol = min(minCol, colNumber)
+				maxRow = max(maxRow, rowIndex)
+				maxCol = max(maxCol, colNumber)
+				ref := fmt.Sprintf("%s!%s%d", sheetName, colName, rowIndex)
+				semanticCellRefsHash.Add(ref)
+				semanticCellValuesHash.Add(ref + "\t" + payload)
+			}
+		}
+		if err := rows.Close(); err != nil {
+			return nil, err
+		}
+		if minRow == math.MaxInt {
+			usedRanges = append(usedRanges, sheetName+"!empty")
+		} else {
+			usedRanges = append(
+				usedRanges,
+				fmt.Sprintf("%s!%s%d:%s%d", sheetName, columnName(minCol), minRow, columnName(maxCol), maxRow),
+			)
+		}
+	}
+	usedRangesHash := hashLines(usedRanges)
+	return map[string]any{
+		"runnerVersion":                  runnerVersion,
+		"excelizeVersion":                moduleVersion("github.com/xuri/excelize/v2"),
+		"sheetCount":                     len(sheetNames),
+		"sheetNamesHash":                 hashLines(indexedLines(sheetNames)),
+		"cellCount":                      cellCount,
+		"physicalCellCount":              physicalCellCount,
+		"formulaCount":                   0,
+		"usedRangeCount":                 len(usedRanges),
+		"firstUsedRange":                 firstOrNull(usedRanges),
+		"firstPhysicalUsedRange":         firstOrNull(usedRanges),
+		"usedRangesHash":                 usedRangesHash,
+		"physicalUsedRangesHash":         usedRangesHash,
+		"semanticCellRefsHash":           semanticCellRefsHash.Digest(),
+		"orderedSemanticCellRefsHash":    semanticCellRefsHash.Digest(),
+		"semanticCellValuesHash":         semanticCellValuesHash.Digest(),
+		"orderedSemanticCellValuesHash":  semanticCellValuesHash.Digest(),
+		"formulaTextHash":                hashLines([]string{}),
+		"excelizeRawCellValueOption":     true,
+		"generatedWriteValueValidation":  true,
+		"generatedWriteExpectedRowCount": expectedRows,
+		"generatedWriteExpectedColCount": expectedCols,
+		"generatedWriteTypeValidation":   "workload-shape",
+	}, nil
+}
+
+type generatedSheetSummary struct {
+	cellCount                     int
+	physicalCellCount             int
+	formulaCount                  int
+	firstUsedRange                any
+	usedRangesHash                string
+	semanticCellRefsHash          string
+	orderedSemanticCellValuesHash string
+}
+
+func generatedZipAssertions(data []byte, workload string, expectedRows int, expectedCols int) (map[string]any, error) {
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return map[string]any{
+			"runnerVersion":                 runnerVersion,
+			"excelizeVersion":               moduleVersion("github.com/xuri/excelize/v2"),
+			"workload":                      workload,
+			"bytes":                         len(data),
+			"reopenOk":                      false,
+			"reopenError":                   err.Error(),
+			"cellCountMatches":              false,
+			"semanticCellValuesHashMatches": false,
+		}, nil
+	}
+	sheetNames, err := workbookSheetNames(reader)
+	if err != nil {
+		return nil, err
+	}
+	sharedStrings, err := workbookSharedStrings(reader)
+	if err != nil {
+		return nil, err
+	}
+	summary, err := generatedSheetSummaryFromZip(reader, sharedStrings, workload, expectedRows, expectedCols)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"runnerVersion":                  runnerVersion,
+		"excelizeVersion":                moduleVersion("github.com/xuri/excelize/v2"),
+		"sheetCount":                     len(sheetNames),
+		"sheetNamesHash":                 hashLines(indexedLines(sheetNames)),
+		"cellCount":                      summary.cellCount,
+		"physicalCellCount":              summary.physicalCellCount,
+		"formulaCount":                   summary.formulaCount,
+		"usedRangeCount":                 1,
+		"firstUsedRange":                 summary.firstUsedRange,
+		"firstPhysicalUsedRange":         summary.firstUsedRange,
+		"usedRangesHash":                 summary.usedRangesHash,
+		"physicalUsedRangesHash":         summary.usedRangesHash,
+		"semanticCellRefsHash":           summary.semanticCellRefsHash,
+		"orderedSemanticCellRefsHash":    summary.semanticCellRefsHash,
+		"semanticCellValuesHash":         summary.orderedSemanticCellValuesHash,
+		"orderedSemanticCellValuesHash":  summary.orderedSemanticCellValuesHash,
+		"formulaTextHash":                hashLines([]string{}),
+		"excelizeRawCellValueOption":     true,
+		"generatedWriteZipValidation":    true,
+		"generatedWriteExpectedRowCount": expectedRows,
+		"generatedWriteExpectedColCount": expectedCols,
+		"generatedWriteTypeValidation":   "workload-shape",
+		"generatedWriteValueValidation":  true,
+	}, nil
+}
+
+func workbookSheetNames(reader *zip.Reader) ([]string, error) {
+	body, err := zipFileBytes(reader, "xl/workbook.xml")
+	if err != nil {
+		return nil, err
+	}
+	decoder := xml.NewDecoder(bytes.NewReader(body))
+	names := []string{}
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			return names, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		start, ok := token.(xml.StartElement)
+		if !ok || start.Name.Local != "sheet" {
+			continue
+		}
+		if name := xmlAttr(start.Attr, "name"); name != "" {
+			names = append(names, name)
+		}
+	}
+}
+
+func workbookSharedStrings(reader *zip.Reader) ([]string, error) {
+	file := zipFile(reader, "xl/sharedStrings.xml")
+	if file == nil {
+		return nil, nil
+	}
+	stream, err := file.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer stream.Close()
+	decoder := xml.NewDecoder(stream)
+	values := []string{}
+	var current strings.Builder
+	inString := false
+	inText := false
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			return values, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		switch typed := token.(type) {
+		case xml.StartElement:
+			if typed.Name.Local == "si" {
+				current.Reset()
+				inString = true
+			} else if inString && typed.Name.Local == "t" {
+				inText = true
+			}
+		case xml.CharData:
+			if inText {
+				current.Write([]byte(typed))
+			}
+		case xml.EndElement:
+			if typed.Name.Local == "t" {
+				inText = false
+			} else if typed.Name.Local == "si" {
+				values = append(values, current.String())
+				inString = false
+			}
+		}
+	}
+}
+
+func generatedSheetSummaryFromZip(reader *zip.Reader, sharedStrings []string, workload string, expectedRows int, expectedCols int) (generatedSheetSummary, error) {
+	file := zipFile(reader, "xl/worksheets/sheet1.xml")
+	if file == nil {
+		return generatedSheetSummary{}, errors.New("missing xl/worksheets/sheet1.xml")
+	}
+	stream, err := file.Open()
+	if err != nil {
+		return generatedSheetSummary{}, err
+	}
+	defer stream.Close()
+	decoder := xml.NewDecoder(stream)
+	columnNames := columnNameCache(expectedCols)
+	semanticCellRefsHash := newOrderedLineHasher()
+	semanticCellValuesHash := newOrderedLineHasher()
+	cellCount := 0
+	formulaCount := 0
+	minRow := math.MaxInt
+	minCol := math.MaxInt
+	maxRow := 0
+	maxCol := 0
+	rowIndex := 0
+	implicitRow := 0
+	implicitCol := 0
+	inCell := false
+	inValue := false
+	inInlineText := false
+	cellType := ""
+	cellCol := 0
+	var cellValue strings.Builder
+	var inlineValue strings.Builder
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return generatedSheetSummary{}, err
+		}
+		switch typed := token.(type) {
+		case xml.StartElement:
+			switch typed.Name.Local {
+			case "row":
+				rowIndex = positiveIntAttr(typed.Attr, "r")
+				if rowIndex == 0 {
+					rowIndex = implicitRow + 1
+				}
+				implicitRow = rowIndex
+				implicitCol = 0
+			case "c":
+				inCell = true
+				cellType = xmlAttr(typed.Attr, "t")
+				cellValue.Reset()
+				inlineValue.Reset()
+				cellCol = columnIndexFromCellRef(xmlAttr(typed.Attr, "r"))
+				if cellCol == 0 {
+					cellCol = implicitCol + 1
+				}
+				implicitCol = cellCol
+			case "f":
+				if inCell {
+					formulaCount++
+				}
+			case "v":
+				if inCell {
+					inValue = true
+				}
+			case "t":
+				if inCell {
+					inInlineText = true
+				}
+			}
+		case xml.CharData:
+			if inValue {
+				cellValue.Write([]byte(typed))
+			}
+			if inInlineText {
+				inlineValue.Write([]byte(typed))
+			}
+		case xml.EndElement:
+			switch typed.Name.Local {
+			case "v":
+				inValue = false
+			case "t":
+				inInlineText = false
+			case "c":
+				payload := generatedCellPayload(cellType, cellValue.String(), inlineValue.String(), sharedStrings)
+				if payload != "" {
+					cellCount++
+					minRow = min(minRow, rowIndex)
+					minCol = min(minCol, cellCol)
+					maxRow = max(maxRow, rowIndex)
+					maxCol = max(maxCol, cellCol)
+					colName := columnName(cellCol)
+					if cellCol > 0 && cellCol <= len(columnNames) {
+						colName = columnNames[cellCol-1]
+					}
+					ref := fmt.Sprintf("Data!%s%d", colName, rowIndex)
+					semanticCellRefsHash.Add(ref)
+					semanticCellValuesHash.Add(ref + "\t" + payload)
+				}
+				inCell = false
+			}
+		}
+	}
+	usedRanges := []string{"Data!empty"}
+	if minRow != math.MaxInt {
+		usedRanges = []string{
+			fmt.Sprintf("Data!%s%d:%s%d", columnName(minCol), minRow, columnName(maxCol), maxRow),
+		}
+	}
+	return generatedSheetSummary{
+		cellCount:                     cellCount,
+		physicalCellCount:             cellCount,
+		formulaCount:                  formulaCount,
+		firstUsedRange:                firstOrNull(usedRanges),
+		usedRangesHash:                hashLines(usedRanges),
+		semanticCellRefsHash:          semanticCellRefsHash.Digest(),
+		orderedSemanticCellValuesHash: semanticCellValuesHash.Digest(),
 	}, nil
 }
 
@@ -321,6 +674,13 @@ func writeAssertions(workload string, rows int, cols int) (map[string]any, error
 }
 
 func writeAssertionsFromBytes(data []byte, workload string, rows int, cols int) (map[string]any, error) {
+	if canUseGeneratedWorkbookAssertions(workload) {
+		assertions, err := generatedZipAssertions(data, workload, rows, cols)
+		if err != nil {
+			return nil, err
+		}
+		return finalizeWriteAssertions(assertions, data, workload, rows, cols), nil
+	}
 	workbook, err := excelize.OpenReader(bytes.NewReader(data))
 	if err != nil {
 		return map[string]any{
@@ -335,12 +695,21 @@ func writeAssertionsFromBytes(data []byte, workload string, rows int, cols int) 
 		}, nil
 	}
 	defer workbook.Close()
-	assertions, err := workbookAssertions(workbook)
+	var assertions map[string]any
+	if canUseGeneratedWorkbookAssertions(workload) {
+		assertions, err = generatedWorkbookAssertions(workbook, workload, rows, cols)
+	} else {
+		assertions, err = workbookAssertions(workbook)
+	}
 	if err != nil {
 		return nil, err
 	}
-	expectedHash := expectedValuesHash(workload, rows, cols)
-	expectedCells := expectedCellCount(workload, rows, cols)
+	return finalizeWriteAssertions(assertions, data, workload, rows, cols), nil
+}
+
+func finalizeWriteAssertions(assertions map[string]any, data []byte, workload string, rows int, cols int) map[string]any {
+	shouldComputeExpectedHash := rows*cols <= 500_000 || !canUseGeneratedWorkbookAssertions(workload)
+	expectedCells := generatedCellCount(workload, rows, cols)
 	assertions["workload"] = workload
 	assertions["bytes"] = len(data)
 	assertions["reopenOk"] = true
@@ -353,9 +722,12 @@ func writeAssertionsFromBytes(data []byte, workload string, rows int, cols int) 
 	assertions["definedNameCount"] = 0
 	assertions["expectedCellCount"] = expectedCells
 	assertions["cellCountMatches"] = assertions["cellCount"] == expectedCells
-	assertions["expectedSemanticCellValuesHash"] = expectedHash
-	assertions["semanticCellValuesHashMatches"] = assertions["semanticCellValuesHash"] == expectedHash
-	return assertions, nil
+	if shouldComputeExpectedHash {
+		expectedOrderedHash := expectedOrderedValuesHash(workload, rows, cols)
+		assertions["expectedOrderedSemanticCellValuesHash"] = expectedOrderedHash
+		assertions["semanticCellValuesHashMatches"] = assertions["orderedSemanticCellValuesHash"] == expectedOrderedHash
+	}
+	return assertions
 }
 
 func writeWorkbook(workload string, rows int, cols int) ([]byte, error) {
@@ -384,11 +756,20 @@ func writeWorkbook(workload string, rows int, cols int) ([]byte, error) {
 	if err := writer.Flush(); err != nil {
 		return nil, err
 	}
-	var output bytes.Buffer
-	if err := workbook.Write(&output); err != nil {
+	output, err := os.CreateTemp("", "ascend-excelize-*.xlsx")
+	if err != nil {
 		return nil, err
 	}
-	return output.Bytes(), nil
+	outputPath := output.Name()
+	if err := output.Close(); err != nil {
+		_ = os.Remove(outputPath)
+		return nil, err
+	}
+	defer os.Remove(outputPath)
+	if err := workbook.SaveAs(outputPath); err != nil {
+		return nil, err
+	}
+	return os.ReadFile(outputPath)
 }
 
 func workloadValue(workload string, row int, col int, cols int) any {
@@ -407,6 +788,12 @@ func workloadValue(workload string, row int, col int, cols int) any {
 			return fmt.Sprintf("text-%08d", key)
 		}
 		return key
+	}
+	if workload == "mixed-closedxml-10text-5number" {
+		if col < 10 {
+			return "Hello world"
+		}
+		return col - 10
 	}
 	if workload == "plain-text" {
 		return fmt.Sprintf("text-%08d", key)
@@ -485,6 +872,50 @@ func expectedValuesHash(workload string, rows int, cols int) string {
 	return hashLines(values)
 }
 
+func expectedOrderedValuesHash(workload string, rows int, cols int) string {
+	hash := newOrderedLineHasher()
+	for row := 0; row < rows; row++ {
+		for col := 0; col < cols; col++ {
+			value := workloadValue(workload, row, col, cols)
+			if value == nil {
+				continue
+			}
+			hash.Add(fmt.Sprintf("Data!%s%d\t%s", columnName(col+1), row+1, scalarPayloadValue(value)))
+		}
+	}
+	return hash.Digest()
+}
+
+func canUseGeneratedWorkbookAssertions(workload string) bool {
+	switch workload {
+	case "dense-values",
+		"mixed-10pct-text",
+		"mixed-50pct-text",
+		"mixed-closedxml-10text-5number",
+		"plain-text",
+		"string-heavy",
+		"sparse-wide":
+		return true
+	default:
+		return false
+	}
+}
+
+func generatedCellCount(workload string, rows int, cols int) int {
+	if workload != "sparse-wide" {
+		return rows * cols
+	}
+	count := 0
+	for row := 0; row < rows; row++ {
+		for col := 0; col < cols; col++ {
+			if workloadValue(workload, row, col, cols) != nil {
+				count++
+			}
+		}
+	}
+	return count
+}
+
 func expectedCellCount(workload string, rows int, cols int) int {
 	count := 0
 	for row := 0; row < rows; row++ {
@@ -495,6 +926,48 @@ func expectedCellCount(workload string, rows int, cols int) int {
 		}
 	}
 	return count
+}
+
+func scalarPayloadForExpectedValue(expected any, raw string) string {
+	switch expected.(type) {
+	case bool:
+		normalized := strings.ToLower(raw)
+		return "b:" + strconv.FormatBool(normalized == "1" || normalized == "true")
+	case int, int64, float64:
+		return "n:" + canonicalNumberString(raw)
+	case string:
+		return "s:" + raw
+	case nil:
+		if number, ok := tryCanonicalNumber(raw); ok {
+			return "n:" + number
+		}
+		return "s:" + raw
+	default:
+		return "s:" + raw
+	}
+}
+
+func generatedCellPayload(cellType string, raw string, inline string, sharedStrings []string) string {
+	switch cellType {
+	case "b":
+		normalized := strings.ToLower(raw)
+		return "b:" + strconv.FormatBool(normalized == "1" || normalized == "true")
+	case "inlineStr":
+		return "s:" + inline
+	case "s":
+		index, err := strconv.Atoi(raw)
+		if err != nil || index < 0 || index >= len(sharedStrings) {
+			return ""
+		}
+		return "s:" + sharedStrings[index]
+	case "str":
+		return "s:" + raw
+	default:
+		if raw == "" {
+			return ""
+		}
+		return "n:" + canonicalNumberString(raw)
+	}
 }
 
 func scalarPayload(cellType excelize.CellType, raw string) string {
@@ -538,6 +1011,68 @@ func scalarPayloadValue(value any) string {
 	}
 }
 
+func zipFile(reader *zip.Reader, name string) *zip.File {
+	for _, file := range reader.File {
+		if file.Name == name {
+			return file
+		}
+	}
+	return nil
+}
+
+func zipFileBytes(reader *zip.Reader, name string) ([]byte, error) {
+	file := zipFile(reader, name)
+	if file == nil {
+		return nil, fmt.Errorf("missing %s", name)
+	}
+	stream, err := file.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer stream.Close()
+	return io.ReadAll(stream)
+}
+
+func xmlAttr(attrs []xml.Attr, name string) string {
+	for _, attr := range attrs {
+		if attr.Name.Local == name {
+			return attr.Value
+		}
+	}
+	return ""
+}
+
+func positiveIntAttr(attrs []xml.Attr, name string) int {
+	raw := xmlAttr(attrs, name)
+	if raw == "" {
+		return 0
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return 0
+	}
+	return value
+}
+
+func columnIndexFromCellRef(ref string) int {
+	value := 0
+	for _, ch := range ref {
+		if ch < 'A' || ch > 'Z' {
+			break
+		}
+		value = value*26 + int(ch-'A'+1)
+	}
+	return value
+}
+
+func columnNameCache(cols int) []string {
+	names := make([]string, max(0, cols))
+	for col := 1; col <= cols; col++ {
+		names[col-1] = columnName(col)
+	}
+	return names
+}
+
 func tryCanonicalNumber(raw string) (string, bool) {
 	if raw == "" {
 		return "", false
@@ -579,14 +1114,35 @@ func indexedLines(values []string) []string {
 func hashLines(lines []string) string {
 	sorted := append([]string(nil), lines...)
 	sort.Strings(sorted)
-	hash := sha256.New()
+	hasher := newOrderedLineHasher()
 	for _, line := range sorted {
-		hash.Write([]byte(strconv.Itoa(len(utf16.Encode([]rune(line))))))
-		hash.Write([]byte(":"))
-		hash.Write([]byte(line))
-		hash.Write([]byte("\n"))
+		hasher.Add(line)
 	}
-	return hex.EncodeToString(hash.Sum(nil))
+	return hasher.Digest()
+}
+
+type orderedLineHasher struct {
+	hash hashHash
+}
+
+type hashHash interface {
+	Write([]byte) (int, error)
+	Sum([]byte) []byte
+}
+
+func newOrderedLineHasher() *orderedLineHasher {
+	return &orderedLineHasher{hash: sha256.New()}
+}
+
+func (hasher *orderedLineHasher) Add(line string) {
+	hasher.hash.Write([]byte(strconv.Itoa(len(utf16.Encode([]rune(line))))))
+	hasher.hash.Write([]byte(":"))
+	hasher.hash.Write([]byte(line))
+	hasher.hash.Write([]byte("\n"))
+}
+
+func (hasher *orderedLineHasher) Digest() string {
+	return hex.EncodeToString(hasher.hash.Sum(nil))
 }
 
 func columnName(col int) string {

@@ -14,9 +14,33 @@
 	"linter": {
 		"enabled": true,
 		"rules": {
-			"recommended": true
+			"recommended": true,
+			"performance": {
+				"noAccumulatingSpread": "warn"
+			}
 		}
 	},
+	"overrides": [
+		{
+			"includes": ["**/dist/**"],
+			"formatter": {
+				"enabled": false
+			},
+			"linter": {
+				"enabled": false
+			}
+		},
+		{
+			"includes": ["packages/*/src/**"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noConsole": "warn"
+					}
+				}
+			}
+		}
+	],
 	"javascript": {
 		"formatter": {
 			"quoteStyle": "single",

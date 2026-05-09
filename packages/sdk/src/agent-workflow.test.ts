@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createZip, encode } from '../../io-xlsx/src/writer/zip.ts'
-import { AscendWorkbook, commitAgentPlan, createAgentPlan } from './index.ts'
+import { AscendWorkbook, auditLossPolicy, commitAgentPlan, createAgentPlan } from './index.ts'
 
 const TEMP_DIR = join(tmpdir(), `ascend-agent-workflow-${process.pid}`)
 
@@ -12,6 +12,30 @@ afterEach(() => {
 })
 
 describe('agent workflow loss audit', () => {
+	test('docProps-only package preservation does not require lossy-write approval', () => {
+		const cleanDocPropsAudit = auditLossPolicy([
+			{
+				feature: 'preservedOther',
+				tier: 'preserved',
+				count: 3,
+				locations: ['docProps/core.xml', 'docProps/app.xml', 'docProps/custom.xml'],
+			},
+		])
+		expect(cleanDocPropsAudit.ok).toBe(true)
+		expect(cleanDocPropsAudit.blockedFeatures).toHaveLength(0)
+
+		const unknownPackageAudit = auditLossPolicy([
+			{
+				feature: 'preservedOther',
+				tier: 'preserved',
+				count: 1,
+				locations: ['xl/custom/custom1.xml'],
+			},
+		])
+		expect(unknownPackageAudit.ok).toBe(false)
+		expect(unknownPackageAudit.blockedFeatures[0]?.feature).toBe('preservedOther')
+	})
+
 	test('plans report blocked preserved features and commits require explicit allow-loss', async () => {
 		const input = join(TEMP_DIR, 'preserved.xlsx')
 		const output = join(TEMP_DIR, 'out.xlsx')

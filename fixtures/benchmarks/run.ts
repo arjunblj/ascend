@@ -1798,9 +1798,49 @@ async function runScenario(
 			repeat,
 		},
 		metrics: summarizeSamples(samples),
+		reproCommand: commandString([
+			'bun',
+			'run',
+			'fixtures/benchmarks/run.ts',
+			'--scenario',
+			scenario.name,
+			'--repeat',
+			String(repeat),
+			'--warmup',
+			String(warmup),
+			'--json',
+		]),
+		profileCommand: commandString([
+			'bun',
+			'run',
+			'fixtures/benchmarks/profile-bun.ts',
+			'--mode',
+			'all-md',
+			'--label',
+			`synthetic-${scenario.name}`,
+			'--',
+			'bun',
+			'run',
+			'fixtures/benchmarks/run.ts',
+			'--scenario',
+			scenario.name,
+			'--repeat',
+			String(repeat),
+			'--warmup',
+			String(warmup),
+			'--json',
+		]),
 		...(repeat > 1 ? { samples } : {}),
 		...(assertions ? { assertions } : {}),
 	}
+}
+
+function commandString(args: readonly string[]): string {
+	return args.map(shellQuote).join(' ')
+}
+
+function shellQuote(value: string): string {
+	return /^[A-Za-z0-9_./:=@+-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`
 }
 
 function readFlag(name: string): string | undefined {
@@ -1810,6 +1850,34 @@ function readFlag(name: string): string | undefined {
 
 function hasFlag(name: string): boolean {
 	return process.argv.includes(name)
+}
+
+function renderHelp(): string {
+	const scenarioNames = scenarios.map((scenario) => scenario.name).sort()
+	const setNames = Object.keys(scenarioSets).sort()
+	return [
+		'Ascend synthetic benchmark runner',
+		'',
+		'Usage:',
+		'  bun run fixtures/benchmarks/run.ts [--scenario <name> | --set <name>] [--repeat N] [--warmup N] [--json]',
+		'  bun run fixtures/benchmarks/run.ts --profile [--set <name>] [--repeat N] [--warmup N]',
+		'',
+		'Options:',
+		'  --scenario <name>  Run one benchmark scenario.',
+		'  --set <name>       Run a named scenario set.',
+		'  --repeat N         Number of measured samples. Defaults to 1.',
+		'  --warmup N         Number of warmup samples. Defaults to 1.',
+		'  --json             Emit JSON instead of a text summary.',
+		'  --ci               Emit JSON and CI-oriented target metadata.',
+		'  --profile          Run the selected set under V8 tracing when using Node.',
+		'  --help, -h         Show this help without running benchmarks.',
+		'',
+		'Scenario sets:',
+		...setNames.map((name) => `  ${name}`),
+		'',
+		'Scenarios:',
+		...scenarioNames.map((name) => `  ${name}`),
+	].join('\n')
 }
 
 async function runScenarioIsolated(
@@ -1943,6 +2011,10 @@ function summarizeDeoptLog(log: string): void {
 }
 
 async function main(): Promise<void> {
+	if (hasFlag('--help') || hasFlag('-h')) {
+		console.log(renderHelp())
+		return
+	}
 	const json = process.argv.includes('--json')
 	const ci = hasFlag('--ci')
 	const profile = hasFlag('--profile')

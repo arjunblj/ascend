@@ -1,6 +1,8 @@
 import {
 	type AutoFilter,
+	type CellStyle,
 	type ChartPartInfo,
+	cloneStyle,
 	indexToColumn,
 	parseA1,
 	type RangeRef,
@@ -362,6 +364,17 @@ export class WorkbookReadView {
 		opts?: { includeRefs?: boolean; omitEmpty?: boolean; flatValues?: boolean },
 	): CompactRangeInfo | undefined {
 		return this.sheet(sheetName)?.rangeCompact(range, opts)
+	}
+
+	cellStyle(cellRef: CellSelector): CellStyle | undefined {
+		const { sheetName, ref } = normalizeCellSelector(cellRef, this.wb)
+		const sheet = this.wb.getSheet(sheetName)
+		if (!sheet) return undefined
+		const parsed = parseA1(ref)
+		const styleId = sheet.cells.readStyleId(parsed.row, parsed.col)
+		if (styleId === undefined) return undefined
+		const style = this.wb.styles.get(styleId)
+		return style ? cloneStyle(style) : undefined
 	}
 
 	readWindow(

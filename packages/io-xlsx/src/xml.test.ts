@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'bun:test'
-import { parseXml } from './xml.ts'
+import { escapeXml, parseXml } from './xml.ts'
+
+describe('escapeXml', () => {
+	test('returns safe strings unchanged and escapes XML-sensitive characters', () => {
+		const safe = 'text-00001234'
+		expect(escapeXml(safe)).toBe(safe)
+		expect(escapeXml('A&B<"C">')).toBe('A&amp;B&lt;&quot;C&quot;&gt;')
+	})
+})
 
 describe('parseXml', () => {
 	test('normalizes mc:AlternateContent to fallback content', () => {

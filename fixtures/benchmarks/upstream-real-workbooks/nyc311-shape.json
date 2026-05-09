@@ -1,0 +1,19 @@
+{
+	"xlsxSha256": "74a9b50621cf9b0fe8cdb2d4072b5535a2c0e2d83247bb38a37a3b3d809202ea",
+	"sheetNames": ["NYC_311_SR_2010-2020-sample-1M"],
+	"sheetCount": 1,
+	"cellCount": 28056975,
+	"physicalCellCount": 28056975,
+	"formulaCount": 0,
+	"usedRanges": ["NYC_311_SR_2010-2020-sample-1M!A1:AO1000001"],
+	"physicalUsedRanges": ["NYC_311_SR_2010-2020-sample-1M!A1:AO1000001"],
+	"sheetNamesHash": "a26480c0e7922fd246da289530037280ce4f5b4806cba02355fb65583d8fb360",
+	"usedRangesHash": "ff9695f6d7617fe28205e81031da32e8314464952d20d7d6d08d1b64d4b97d28",
+	"physicalUsedRangesHash": "ff9695f6d7617fe28205e81031da32e8314464952d20d7d6d08d1b64d4b97d28",
+	"semanticCellRefsHash": "8eaf9829d7dc879ee429ca112cd33c1dd6357750a9ba28775b31e720ada239fc",
+	"semanticCellValuesHash": "71d4faa2dfaac4ecb8b2e35c95231d46b2dc0c8f0b72aa0a22a8f2eda053ab6c",
+	"orderedSemanticCellRefsHash": "4afd8471819fc1b0551f9597dbde9c3656d23fbf4ee829172f18f03d3363ed68",
+	"orderedSemanticCellValuesHash": "8f38321e10f7751d6dd19e1d0aaf3d6d8c58946edd35ac1600b489e520fff1ff",
+	"orderedFormulaTextHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+	"formulaTextHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

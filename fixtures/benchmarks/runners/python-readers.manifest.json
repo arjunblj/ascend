@@ -246,7 +246,7 @@
 		"timingModel": "external-internal-cell-materialization-timing",
 		"validationModel": "external-post-operation-assertions",
 		"memoryModel": "peak-rss-reported",
-		"installHint": "python3 -m pip install fastxlsx openpyxl",
+		"installHint": "Use Python >=3.8,<3.13, then run python3 -m pip install fastxlsx openpyxl",
 		"capabilities": {
 			"internalTiming": true,
 			"valueOnlyRead": true,

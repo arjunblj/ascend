@@ -71,6 +71,32 @@ describe('buildCompetitiveScoreboard', () => {
 		])
 	})
 
+	test('treats external Ascend adapters as Ascend for leader assertions', () => {
+		const suite = suiteWithCases([
+			matrixCase({
+				library: 'ascend-external-writer',
+				category: 'write',
+				workload: 'plain-text',
+				repeat: 5,
+				medianMs: 10,
+				file: 'excelize-generation-102400x50-plain-text',
+				timingLane: 'external-internal-generated-plain-text',
+			}),
+			matrixCase({
+				library: 'excelize',
+				category: 'write',
+				workload: 'plain-text',
+				repeat: 5,
+				medianMs: 12,
+				file: 'excelize-generation-102400x50-plain-text',
+				timingLane: 'external-internal-generated-plain-text',
+			}),
+		])
+		const scoreboard = buildCompetitiveScoreboard(suite)
+		expect(scoreboard.groups[0]?.winner).toBe('ascend-external-writer')
+		expect(assertScoreboardLeader(scoreboard, 'ascend')).toEqual([])
+	})
+
 	test('groups distinct operation profiles separately', () => {
 		const suite = suiteWithCases([
 			caseResult(

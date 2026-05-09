@@ -1,7 +1,55 @@
-import { createDeflateRaw, deflateRawSync } from 'node:zlib'
+import { createDeflateRaw, deflateRawSync, constants as zlibConstants } from 'node:zlib'
 
 const textEncoder = new TextEncoder()
-const DEFLATE_OPTS = { level: 2 } as const
+type BunDeflateSync = (
+	data: Uint8Array,
+	options: { readonly level: number; readonly windowBits: number },
+) => Uint8Array
+const bunDeflateRawSync = getBunDeflateRawSync()
+const HUGE_WORKSHEET_XML_BYTES = 256 * 1024 * 1024
+
+export type ZipCompressionProfile = 'fast' | 'compact'
+
+interface DeflateOptions {
+	readonly level: number
+	readonly strategy?: number
+}
+
+/** Larger worksheet XML: fastest useful deflate; small metadata parts: higher level for better compression. */
+function deflateOptionsForPart(
+	path: string,
+	uncompressedSize: number,
+	profile: ZipCompressionProfile,
+): DeflateOptions {
+	if (/xl\/worksheets\/sheet\d+\.xml$/i.test(path)) {
+		if (profile === 'compact') {
+			return uncompressedSize > HUGE_WORKSHEET_XML_BYTES ? { level: 2 } : { level: 6 }
+		}
+		return uncompressedSize > HUGE_WORKSHEET_XML_BYTES
+			? { level: 1, strategy: zlibConstants.Z_FILTERED }
+			: { level: 2 }
+	}
+	if (profile === 'compact' && uncompressedSize > 512_000) return { level: 2 }
+	if (uncompressedSize > 512_000) return { level: 1 }
+	if (uncompressedSize < 32_000) return { level: 6 }
+	return { level: 2 }
+}
+
+interface ZipOptions {
+	readonly compressionProfile?: ZipCompressionProfile
+}
+
+function normalizeCompressionProfile(
+	profile: ZipCompressionProfile | undefined,
+): ZipCompressionProfile {
+	if (profile === undefined || profile === 'fast') return 'fast'
+	if (profile === 'compact') return 'compact'
+	throw new Error(`Unsupported ZIP compression profile "${profile}"`)
+}
+
+function shouldStoreWithoutDeflate(uncompressedSize: number): boolean {
+	return uncompressedSize < 1024
+}
 
 const LOCAL_FILE_SIGNATURE = 0x04034b50
 const CENTRAL_DIR_SIGNATURE = 0x02014b50
@@ -14,7 +62,7 @@ const ZIP_VERSION = 20
 const UINT16_MAX = 0xffff
 const UINT32_MAX = 0xffffffff
 
-const CRC_TABLE = /* @__PURE__ */ (() => {
+const CRC_TABLES = /* @__PURE__ */ (() => {
 	const t = new Uint32Array(256)
 	for (let i = 0; i < 256; i++) {
 		let c = i
@@ -23,34 +71,101 @@ const CRC_TABLE = /* @__PURE__ */ (() => {
 		}
 		t[i] = c
 	}
-	return t
+	const tables = [t]
+	for (let tableIndex = 1; tableIndex < 8; tableIndex++) {
+		const previous = tables[tableIndex - 1] as Uint32Array
+		const next = new Uint32Array(256)
+		for (let i = 0; i < 256; i++) {
+			const c = previous[i] as number
+			next[i] = ((t[c & 0xff] as number) ^ (c >>> 8)) >>> 0
+		}
+		tables.push(next)
+	}
+	return tables as readonly Uint32Array[]
 })()
 
 function crc32(data: Uint8Array): number {
-	let crc = 0xffffffff
-	for (let i = 0; i < data.byteLength; i++) {
-		const idx = (crc ^ (data[i] as number)) & 0xff
-		crc = ((CRC_TABLE[idx] as number) ^ (crc >>> 8)) >>> 0
+	return (updateCrc32(0xffffffff, data) ^ 0xffffffff) >>> 0
+}
+
+function updateCrc32(crc: number, data: Uint8Array): number {
+	const t0 = CRC_TABLES[0] as Uint32Array
+	const t1 = CRC_TABLES[1] as Uint32Array
+	const t2 = CRC_TABLES[2] as Uint32Array
+	const t3 = CRC_TABLES[3] as Uint32Array
+	const t4 = CRC_TABLES[4] as Uint32Array
+	const t5 = CRC_TABLES[5] as Uint32Array
+	const t6 = CRC_TABLES[6] as Uint32Array
+	const t7 = CRC_TABLES[7] as Uint32Array
+	let i = 0
+	const length = data.byteLength
+	const blockLength = length - (length % 8)
+	while (i < blockLength) {
+		const word =
+			((data[i] as number) |
+				((data[i + 1] as number) << 8) |
+				((data[i + 2] as number) << 16) |
+				((data[i + 3] as number) << 24)) ^
+			crc
+		const next =
+			(data[i + 4] as number) |
+			((data[i + 5] as number) << 8) |
+			((data[i + 6] as number) << 16) |
+			((data[i + 7] as number) << 24)
+		crc =
+			((t7[word & 0xff] as number) ^
+				(t6[(word >>> 8) & 0xff] as number) ^
+				(t5[(word >>> 16) & 0xff] as number) ^
+				(t4[(word >>> 24) & 0xff] as number) ^
+				(t3[next & 0xff] as number) ^
+				(t2[(next >>> 8) & 0xff] as number) ^
+				(t1[(next >>> 16) & 0xff] as number) ^
+				(t0[(next >>> 24) & 0xff] as number)) >>>
+			0
+		i += 8
 	}
-	return (crc ^ 0xffffffff) >>> 0
+	while (i < length) {
+		crc = ((t0[(crc ^ (data[i] as number)) & 0xff] as number) ^ (crc >>> 8)) >>> 0
+		i++
+	}
+	return crc
 }
 
 interface CompressedEntry {
 	nameBytes: Uint8Array
-	data: Uint8Array
+	data?: Uint8Array
+	dataChunks?: readonly Uint8Array[]
 	uncompressedSize: number
 	compressedSize: number
 	method: number
 	crc: number
 }
 
-export function createZip(parts: ReadonlyMap<string, Uint8Array>): Uint8Array {
+export function createZip(
+	parts: ReadonlyMap<string, Uint8Array>,
+	options: ZipOptions = {},
+): Uint8Array {
 	const entries: CompressedEntry[] = []
+	const compressionProfile = normalizeCompressionProfile(options.compressionProfile)
 
 	for (const [path, raw] of parts) {
 		const nameBytes = textEncoder.encode(path)
 		const crc = crc32(raw)
-		const deflated = new Uint8Array(deflateRawSync(raw, DEFLATE_OPTS))
+		if (shouldStoreWithoutDeflate(raw.byteLength)) {
+			entries.push({
+				nameBytes,
+				data: raw,
+				uncompressedSize: raw.byteLength,
+				compressedSize: raw.byteLength,
+				method: 0,
+				crc,
+			})
+			continue
+		}
+		const deflated = deflateRawBytesSync(
+			raw,
+			deflateOptionsForPart(path, raw.byteLength, compressionProfile),
+		)
 		const useStore = deflated.byteLength >= raw.byteLength
 		const data = useStore ? raw : deflated
 		entries.push({
@@ -67,7 +182,8 @@ export function createZip(parts: ReadonlyMap<string, Uint8Array>): Uint8Array {
 
 interface ZipEntry {
 	nameBytes: Uint8Array
-	data: Uint8Array
+	data?: Uint8Array
+	dataChunks?: readonly Uint8Array[]
 	uncompressedSize: number
 	compressedSize: number
 	method: number
@@ -76,11 +192,16 @@ interface ZipEntry {
 
 export class StreamingZipBuilder {
 	private readonly entries: ZipEntry[] = []
+	private readonly compressionProfile: ZipCompressionProfile
 	private streamingNameBytes: Uint8Array | null = null
 	private streamingCrc = 0xffffffff
 	private streamingUncompressedSize = 0
 	private streamingCompressedChunks: Uint8Array[] = []
 	private deflateStream: ReturnType<typeof createDeflateRaw> | null = null
+
+	constructor(options: ZipOptions = {}) {
+		this.compressionProfile = normalizeCompressionProfile(options.compressionProfile)
+	}
 
 	addEntry(path: string, data: Uint8Array): void {
 		if (this.deflateStream) {
@@ -88,7 +209,21 @@ export class StreamingZipBuilder {
 		}
 		const nameBytes = textEncoder.encode(path)
 		const crc = crc32(data)
-		const deflated = new Uint8Array(deflateRawSync(data, DEFLATE_OPTS))
+		if (shouldStoreWithoutDeflate(data.byteLength)) {
+			this.entries.push({
+				nameBytes,
+				data,
+				uncompressedSize: data.byteLength,
+				compressedSize: data.byteLength,
+				method: 0,
+				crc,
+			})
+			return
+		}
+		const deflated = deflateRawBytesSync(
+			data,
+			deflateOptionsForPart(path, data.byteLength, this.compressionProfile),
+		)
 		const useStore = deflated.byteLength >= data.byteLength
 		const entryData = useStore ? data : deflated
 		this.entries.push({
@@ -101,7 +236,7 @@ export class StreamingZipBuilder {
 		})
 	}
 
-	addStreamingEntry(path: string): void {
+	addStreamingEntry(path: string, estimatedUncompressedSize = 1_000_000): void {
 		if (this.deflateStream) {
 			throw new Error('Streaming entry already open; call closeEntry first')
 		}
@@ -109,7 +244,9 @@ export class StreamingZipBuilder {
 		this.streamingCrc = 0xffffffff
 		this.streamingUncompressedSize = 0
 		this.streamingCompressedChunks = []
-		this.deflateStream = createDeflateRaw(DEFLATE_OPTS)
+		this.deflateStream = createDeflateRaw(
+			deflateOptionsForPart(path, estimatedUncompressedSize, this.compressionProfile),
+		)
 		this.deflateStream.on('data', (chunk: Uint8Array) => {
 			this.streamingCompressedChunks.push(chunk)
 		})
@@ -119,12 +256,31 @@ export class StreamingZipBuilder {
 		if (!this.deflateStream) {
 			throw new Error('No streaming entry open; call addStreamingEntry first')
 		}
-		for (let i = 0; i < data.byteLength; i++) {
-			const idx = (this.streamingCrc ^ (data[i] as number)) & 0xff
-			this.streamingCrc = ((CRC_TABLE[idx] as number) ^ (this.streamingCrc >>> 8)) >>> 0
-		}
+		this.streamingCrc = updateCrc32(this.streamingCrc, data)
 		this.streamingUncompressedSize += data.byteLength
 		this.deflateStream.write(data)
+	}
+
+	async writeChunkAsync(data: Uint8Array): Promise<void> {
+		if (!this.deflateStream) {
+			throw new Error('No streaming entry open; call addStreamingEntry first')
+		}
+		this.streamingCrc = updateCrc32(this.streamingCrc, data)
+		this.streamingUncompressedSize += data.byteLength
+		if (this.deflateStream.write(data)) return
+		const stream = this.deflateStream
+		await new Promise<void>((resolve, reject) => {
+			const handleDrain = () => {
+				stream.removeListener('error', handleError)
+				resolve()
+			}
+			const handleError = (error: Error) => {
+				stream.removeListener('drain', handleDrain)
+				reject(error)
+			}
+			stream.once('drain', handleDrain)
+			stream.once('error', handleError)
+		})
 	}
 
 	closeEntry(): Promise<void> {
@@ -145,16 +301,11 @@ export class StreamingZipBuilder {
 					(sum, c) => sum + c.byteLength,
 					0,
 				)
-				const data = new Uint8Array(compressedSize)
-				let offset = 0
-				for (const chunk of this.streamingCompressedChunks) {
-					data.set(chunk, offset)
-					offset += chunk.byteLength
-				}
+				const dataChunks = this.streamingCompressedChunks
 				const crc = (this.streamingCrc ^ 0xffffffff) >>> 0
 				this.entries.push({
 					nameBytes,
-					data,
+					dataChunks,
 					uncompressedSize: this.streamingUncompressedSize,
 					compressedSize,
 					method: 8,
@@ -183,6 +334,20 @@ export function encode(s: string): Uint8Array {
 	return textEncoder.encode(s)
 }
 
+function deflateRawBytesSync(data: Uint8Array, options: DeflateOptions): Uint8Array {
+	return (
+		(options.strategy === undefined
+			? bunDeflateRawSync?.(data, { level: options.level, windowBits: -15 })
+			: undefined) ?? new Uint8Array(deflateRawSync(data, options))
+	)
+}
+
+function getBunDeflateRawSync(): BunDeflateSync | undefined {
+	const maybeBun = (globalThis as { readonly Bun?: { readonly deflateSync?: BunDeflateSync } }).Bun
+	if (typeof maybeBun?.deflateSync !== 'function') return undefined
+	return maybeBun.deflateSync.bind(maybeBun)
+}
+
 interface ZipLayoutEntry {
 	readonly entry: CompressedEntry
 	readonly localOffset: number
@@ -203,7 +368,7 @@ function buildZip(entries: readonly CompressedEntry[]): Uint8Array {
 				})
 			: EMPTY_BYTES
 		const localOffset = dataSize
-		dataSize += 30 + entry.nameBytes.byteLength + localExtra.byteLength + entry.data.byteLength
+		dataSize += 30 + entry.nameBytes.byteLength + localExtra.byteLength + entry.compressedSize
 		const usesZip64Offset = localOffset > UINT32_MAX
 		const centralExtra =
 			usesZip64Sizes || usesZip64Offset
@@ -258,8 +423,10 @@ function buildZip(entries: readonly CompressedEntry[]): Uint8Array {
 		offset += entry.nameBytes.byteLength
 		out.set(localExtra, offset)
 		offset += localExtra.byteLength
-		out.set(entry.data, offset)
-		offset += entry.data.byteLength
+		for (const chunk of entryDataChunks(entry)) {
+			out.set(chunk, offset)
+			offset += chunk.byteLength
+		}
 	}
 
 	for (const item of layout) {
@@ -320,6 +487,12 @@ function centralDirSizeExceeds32(size: number): boolean {
 }
 
 const EMPTY_BYTES = new Uint8Array(0)
+
+function entryDataChunks(entry: CompressedEntry): readonly Uint8Array[] {
+	if (entry.data) return [entry.data]
+	if (entry.dataChunks) return entry.dataChunks
+	throw new Error('ZIP entry has no data')
+}
 
 function buildZip64Extra(fields: {
 	readonly uncompressedSize?: number

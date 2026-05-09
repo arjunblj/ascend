@@ -323,6 +323,98 @@ describe('MCP server', () => {
 		expect(result.structuredContent?.data?.tsv).toBe('Name\tScore\nAlice\t10')
 	})
 
+	test('ascend.read prunes TSV columns by letter and range position', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Name' },
+					{ ref: 'B1', value: 'Score' },
+					{ ref: 'C1', value: 'Notes' },
+					{ ref: 'A2', value: 'Alice' },
+					{ ref: 'B2', value: 10 },
+					{ ref: 'C2', value: 'ok' },
+				],
+			},
+		])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.read'].handler as (args: {
+			file: string
+			range: string
+			format: 'tsv'
+			cols?: string[]
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: { format?: string; tsv?: string; colCount?: number; selectedColumns?: unknown[] }
+			}
+		}>
+
+		const result = await handler({
+			file: TEMP_FILE,
+			range: 'A1:C2',
+			format: 'tsv',
+			cols: ['A', '3'],
+		})
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.format).toBe('tsv')
+		expect(result.structuredContent?.data?.colCount).toBe(2)
+		expect(result.structuredContent?.data?.tsv).toBe('Name\tNotes\nAlice\tok')
+		expect(result.structuredContent?.data?.selectedColumns).toEqual([
+			{ position: 1, col: 0, letter: 'A' },
+			{ position: 3, col: 2, letter: 'C' },
+		])
+	})
+
+	test('ascend.read prunes object columns by header', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Name' },
+					{ ref: 'B1', value: 'Score' },
+					{ ref: 'C1', value: 'Notes' },
+					{ ref: 'A2', value: 'Alice' },
+					{ ref: 'B2', value: 10 },
+					{ ref: 'C2', value: 'ok' },
+				],
+			},
+		])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.read'].handler as (args: {
+			file: string
+			range: string
+			format: 'objects'
+			cols?: string[]
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: { headers?: string[]; rows?: Array<Record<string, unknown>>; colCount?: number }
+			}
+		}>
+
+		const result = await handler({
+			file: TEMP_FILE,
+			range: 'A1:C2',
+			format: 'objects',
+			cols: ['Score'],
+		})
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.colCount).toBe(1)
+		expect(result.structuredContent?.data?.headers).toEqual(['Score'])
+		expect(result.structuredContent?.data?.rows).toEqual([{ Score: { kind: 'number', value: 10 } }])
+	})
+
 	test('ascend.read can return sparse compact output', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -343,8 +435,12 @@ describe('MCP server', () => {
 			file: string
 			range: string
 			format: 'compact'
+			changedSince?: string
 		}) => Promise<{
-			structuredContent?: { ok?: boolean; data?: { format?: string; cells?: unknown[] } }
+			structuredContent?: {
+				ok?: boolean
+				data?: { format?: string; cells?: unknown[]; changeToken?: string }
+			}
 		}>
 
 		const result = await handler({ file: TEMP_FILE, range: 'A1:C2', format: 'compact' })
@@ -354,6 +450,53 @@ describe('MCP server', () => {
 			[0, 0, 'Name'],
 			[1, 2, 10],
 		])
+		expect(result.structuredContent?.data?.changeToken).toBeDefined()
+
+		const unchanged = await handler({
+			file: TEMP_FILE,
+			range: 'A1:C2',
+			format: 'compact',
+			changedSince: result.structuredContent?.data?.changeToken,
+		})
+		expect(unchanged.structuredContent?.ok).toBe(true)
+		expect(unchanged.structuredContent?.data?.cells).toEqual([])
+		expect(unchanged.structuredContent?.data?.changeToken).toBeDefined()
+	})
+
+	test('ascend.read prunes compact cells by column', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Name' },
+					{ ref: 'C2', value: 10 },
+				],
+			},
+		])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.read'].handler as (args: {
+			file: string
+			range: string
+			format: 'compact'
+			cols?: string[]
+		}) => Promise<{
+			structuredContent?: { ok?: boolean; data?: { cells?: unknown[]; colCount?: number } }
+		}>
+
+		const result = await handler({
+			file: TEMP_FILE,
+			range: 'A1:C2',
+			format: 'compact',
+			cols: ['C'],
+		})
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.colCount).toBe(1)
+		expect(result.structuredContent?.data?.cells).toEqual([[1, 2, 10]])
 	})
 
 	test('ascend.read_table reads table rows by name', async () => {
@@ -619,6 +762,36 @@ describe('MCP server', () => {
 		const result = await handler({ file: TEMP_FILE })
 		const names = (result.structuredContent?.data?.sheets ?? []).map((s) => s.name)
 		expect(names).toContain('TestSheet')
+	})
+
+	test('sheet-not-found errors tell agents to modify the request', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'addSheet', name: 'Data' }])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test
+		const handler = (server as any)._registeredTools['ascend.inspect'].handler as (args: {
+			file: string
+			sheet?: string
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: {
+				error?: {
+					code?: string
+					retryStrategy?: string
+					details?: { availableSheets?: string[] }
+					suggestedFix?: string
+				}
+			}
+		}>
+
+		const result = await handler({ file: TEMP_FILE, sheet: 'Missing' })
+		expect(result.isError).toBe(true)
+		expect(result.structuredContent?.error?.code).toBe('SHEET_NOT_FOUND')
+		expect(result.structuredContent?.error?.retryStrategy).toBe('modified')
+		expect(result.structuredContent?.error?.details?.availableSheets).toContain('Data')
+		expect(result.structuredContent?.error?.suggestedFix).toContain('Data')
 	})
 
 	test('ascend.list_sheets returns sheet names', async () => {

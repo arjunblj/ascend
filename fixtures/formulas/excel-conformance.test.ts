@@ -504,7 +504,7 @@ describe('Excel conformance', () => {
 
 	describe('math edge cases', () => {
 		test('ROUND -0.5', () => {
-			expectNum(evalFormula('ROUND(-0.5, 0)'), 0)
+			expectNum(evalFormula('ROUND(-0.5, 0)'), -1)
 		})
 
 		test('ROUND 0.5 rounds away from zero', () => {
@@ -1556,19 +1556,22 @@ describe('Excel conformance', () => {
 		})
 
 		test('SUMIF with escaped tilde "~*" matches literal asterisk', () => {
-			// In Excel, "~*" matches cells containing literal "*". Engine treats "~*" as
-			// literal "~*" when no unescaped wildcards; test that literal "~*" matches.
 			expectNum(
 				evalFormula('SUMIF(A1:A3, "~*", B1:B3)', {
-					A1: '~*',
+					A1: '*',
 					A2: 'x',
 					A3: '~*',
 					B1: 10,
 					B2: 20,
 					B3: 30,
 				}),
-				40,
+				10,
 			)
+		})
+
+		test('COUNTIF escaped wildcard literals', () => {
+			expectNum(evalFormula('COUNTIF(A1:A4, "~?")', { A1: '?', A2: 'x', A3: '~?', A4: 'xy' }), 1)
+			expectNum(evalFormula('COUNTIF(A1:A4, "~~")', { A1: '~', A2: 'x', A3: '~~', A4: '?' }), 1)
 		})
 	})
 

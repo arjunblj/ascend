@@ -9,6 +9,7 @@ import {
 	functionRegistry,
 	getRange,
 	type LookupVectorCache,
+	type NumericVectorCache,
 	cachedParseFormula as sharedCachedParseFormula,
 	toNumber,
 } from '@ascend/formulas'
@@ -40,6 +41,7 @@ export interface EvalContext {
 	readonly exactLookupCache?: ExactLookupCache
 	readonly lookupVectorCache?: LookupVectorCache
 	readonly aggregateRangeCache?: AggregateRangeCache
+	readonly numericVectorCache?: NumericVectorCache
 }
 
 export class MutableEvalContext implements EvalContext {
@@ -51,6 +53,7 @@ export class MutableEvalContext implements EvalContext {
 	exactLookupCache?: ExactLookupCache
 	lookupVectorCache?: LookupVectorCache
 	aggregateRangeCache?: AggregateRangeCache
+	numericVectorCache?: NumericVectorCache
 }
 
 class FunctionEvalCtx implements FunctionEvalContext {
@@ -65,6 +68,7 @@ class FunctionEvalCtx implements FunctionEvalContext {
 	exactLookupCache: ExactLookupCache | undefined
 	lookupVectorCache: LookupVectorCache | undefined
 	aggregateRangeCache: AggregateRangeCache | undefined
+	numericVectorCache: NumericVectorCache | undefined
 
 	update(ctx: EvalContext): this {
 		const cc = ctx.calcContext
@@ -79,6 +83,7 @@ class FunctionEvalCtx implements FunctionEvalContext {
 		this.exactLookupCache = ctx.exactLookupCache
 		this.lookupVectorCache = ctx.lookupVectorCache
 		this.aggregateRangeCache = ctx.aggregateRangeCache
+		this.numericVectorCache = ctx.numericVectorCache
 		return this
 	}
 }
@@ -201,6 +206,56 @@ function isReferenceBinaryOp(op: string): op is ',' | ' ' {
 }
 
 function evalBinary(op: string, left: CellValue, right: CellValue): CellValue {
+	if (left.kind === 'array' || right.kind === 'array') {
+		return evalArrayBinary(op, left, right)
+	}
+	return evalScalarBinary(op, left, right)
+}
+
+function evalArrayBinary(op: string, left: CellValue, right: CellValue): CellValue {
+	const leftRows = left.kind === 'array' ? left.rows.length : 1
+	const rightRows = right.kind === 'array' ? right.rows.length : 1
+	const leftCols = left.kind === 'array' ? maxRowLength(left.rows) : 1
+	const rightCols = right.kind === 'array' ? maxRowLength(right.rows) : 1
+	const rows = broadcastLength(leftRows, rightRows)
+	const cols = broadcastLength(leftCols, rightCols)
+	if (rows === null || cols === null) return errorValue('#VALUE!')
+
+	const result: ScalarCellValue[][] = []
+	for (let row = 0; row < rows; row++) {
+		const resultRow: ScalarCellValue[] = []
+		for (let col = 0; col < cols; col++) {
+			resultRow.push(
+				topLeftScalar(
+					evalScalarBinary(op, arrayCellAt(left, row, col), arrayCellAt(right, row, col)),
+				),
+			)
+		}
+		result.push(resultRow)
+	}
+	return arrayValue(result)
+}
+
+function maxRowLength(rows: readonly (readonly ScalarCellValue[])[]): number {
+	let max = 0
+	for (const row of rows) max = Math.max(max, row.length)
+	return max
+}
+
+function broadcastLength(left: number, right: number): number | null {
+	if (left === right) return left
+	if (left === 1) return right
+	if (right === 1) return left
+	return null
+}
+
+function arrayCellAt(value: CellValue, row: number, col: number): CellValue {
+	if (value.kind !== 'array') return value
+	const sourceRow = value.rows[value.rows.length === 1 ? 0 : row]
+	return sourceRow?.[sourceRow.length === 1 ? 0 : col] ?? EMPTY
+}
+
+function evalScalarBinary(op: string, left: CellValue, right: CellValue): CellValue {
 	left = topLeftScalar(left)
 	right = topLeftScalar(right)
 	if (left.kind === 'error') return left
@@ -665,22 +720,20 @@ function resolveOffsetReference(argNodes: readonly FormulaNode[], ctx: EvalConte
 	if (base.value.kind === 'error') return base
 	if (!base.ref) return { value: errorValue('#VALUE!') }
 
-	const rowOffset = coerceToNumber(evaluate(argNodes[1] ?? { type: 'missing' }, ctx))
-	if (rowOffset === null) return { value: errorValue('#VALUE!') }
-	const colOffset = coerceToNumber(evaluate(argNodes[2] ?? { type: 'missing' }, ctx))
-	if (colOffset === null) return { value: errorValue('#VALUE!') }
+	const rowOffset = offsetNumberArg(argNodes[1], ctx)
+	if (typeof rowOffset !== 'number') return { value: rowOffset }
+	const colOffset = offsetNumberArg(argNodes[2], ctx)
+	if (typeof colOffset !== 'number') return { value: colOffset }
 
 	const baseHeight =
 		base.ref.kind === 'range' ? (base.ref.endRow ?? base.ref.row) - base.ref.row + 1 : 1
 	const baseWidth =
 		base.ref.kind === 'range' ? (base.ref.endCol ?? base.ref.col) - base.ref.col + 1 : 1
 
-	const height =
-		argNodes.length > 3 ? coerceToNumber(evaluate(argNodes[3] as FormulaNode, ctx)) : baseHeight
-	if (height === null) return { value: errorValue('#VALUE!') }
-	const width =
-		argNodes.length > 4 ? coerceToNumber(evaluate(argNodes[4] as FormulaNode, ctx)) : baseWidth
-	if (width === null) return { value: errorValue('#VALUE!') }
+	const height = argNodes.length > 3 ? offsetNumberArg(argNodes[3], ctx) : baseHeight
+	if (typeof height !== 'number') return { value: height }
+	const width = argNodes.length > 4 ? offsetNumberArg(argNodes[4], ctx) : baseWidth
+	if (typeof width !== 'number') return { value: width }
 
 	const targetHeight = Math.trunc(height)
 	const targetWidth = Math.trunc(width)
@@ -695,6 +748,13 @@ function resolveOffsetReference(argNodes: readonly FormulaNode[], ctx: EvalConte
 	}
 
 	return makeRangeArg(ctx.workbook, base.ref.sheetIndex, startRow, startCol, endRow, endCol)
+}
+
+function offsetNumberArg(node: FormulaNode | undefined, ctx: EvalContext): number | CellValue {
+	const value = evaluate(node ?? { type: 'missing' }, ctx)
+	if (value.kind === 'error') return value
+	const number = coerceToNumber(value)
+	return number === null ? errorValue('#VALUE!') : number
 }
 
 function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | null {
@@ -1222,17 +1282,32 @@ function evalCall(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue
 }
 
 function evalMap(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
-	if (argNodes.length !== 2) return errorValue('#VALUE!')
-	const arrayArg = resolveArg(argNodes[0] as FormulaNode, ctx)
-	const lambda = extractLambda(argNodes[1] as FormulaNode, ctx)
+	if (argNodes.length < 2) return errorValue('#VALUE!')
+	const lambdaNode = argNodes[argNodes.length - 1]
+	if (!lambdaNode) return errorValue('#VALUE!')
+	const lambda = extractLambda(lambdaNode, ctx)
 	if (!lambda) return errorValue('#VALUE!')
-	if (lambda.params.length !== 1) return errorValue('#VALUE!')
-	const range = getRange(arrayArg)
+	const arrayNodes = argNodes.slice(0, -1)
+	if (lambda.params.length !== arrayNodes.length) return errorValue('#VALUE!')
+	const ranges = arrayNodes.map((node) => getRange(resolveArg(node, ctx)))
+	const shape = rangeShapeOf(ranges[0])
+	if (!shape) return errorValue('#VALUE!')
+	for (let i = 1; i < ranges.length; i++) {
+		const candidateShape = rangeShapeOf(ranges[i])
+		if (
+			!candidateShape ||
+			candidateShape.rows !== shape.rows ||
+			candidateShape.cols !== shape.cols
+		) {
+			return errorValue('#VALUE!')
+		}
+	}
 	const rows: ScalarCellValue[][] = []
-	for (const row of range) {
+	for (let rowIndex = 0; rowIndex < shape.rows; rowIndex++) {
 		const resultRow: ScalarCellValue[] = []
-		for (const cell of row) {
-			const result = invokeLambda(lambda, [cell])
+		for (let colIndex = 0; colIndex < shape.cols; colIndex++) {
+			const args = ranges.map((range) => range[rowIndex]?.[colIndex] ?? EMPTY)
+			const result = invokeLambda(lambda, args)
 			if (result.kind === 'error') return result
 			resultRow.push(topLeftScalar(result))
 		}
@@ -1240,6 +1315,18 @@ function evalMap(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue 
 	}
 	if (rows.length === 1 && rows[0]?.length === 1) return rows[0][0] ?? EMPTY
 	return arrayValue(rows)
+}
+
+function rangeShapeOf(
+	range: readonly (readonly CellValue[])[] | undefined,
+): { rows: number; cols: number } | null {
+	const rows = range?.length ?? 0
+	const cols = range?.[0]?.length ?? 0
+	if (rows === 0 || cols === 0) return null
+	for (const row of range ?? []) {
+		if (row.length !== cols) return null
+	}
+	return { rows, cols }
 }
 
 function evalReduce(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {

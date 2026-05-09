@@ -298,6 +298,122 @@ describe('writeXlsx', () => {
 		expect(reopened.value.workbook.sheets[0]?.cells.get(0, 2)?.formula).toBe('@A1')
 	})
 
+	it('writes all dynamic-array metadata records referenced by cells', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Dynamic')
+		sheet.cells.set(0, 0, {
+			value: numberValue(1),
+			formula: 'SEQUENCE(2)',
+			styleId: S0,
+			formulaInfo: { kind: 'dynamicArray', metadataIndex: 1, collapsed: false },
+		})
+		sheet.cells.set(0, 2, {
+			value: numberValue(10),
+			formula: 'SEQUENCE(2,1,10)',
+			styleId: S0,
+			formulaInfo: { kind: 'dynamicArray', metadataIndex: 2, collapsed: true },
+		})
+
+		const written = writeXlsx(wb)
+		expectOk(written)
+
+		const zip = unzipSync(written.value)
+		const metadataXml = new TextDecoder().decode(zip['xl/metadata.xml'] ?? new Uint8Array())
+		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+
+		expect(metadataXml).toContain('<futureMetadata name="XLDAPR" count="2">')
+		expect(metadataXml).toContain('<cellMetadata count="2">')
+		expect(metadataXml).toContain('v="0"')
+		expect(metadataXml).toContain('v="1"')
+		expect(metadataXml).toContain('fCollapsed="1"')
+		expect(sheetXml).toContain('<c r="A1" cm="1"')
+		expect(sheetXml).toContain('<c r="C1" cm="2"')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.sheets[0]?.cells.get(0, 0)?.formulaInfo).toEqual({
+			kind: 'dynamicArray',
+			metadataIndex: 1,
+			collapsed: false,
+		})
+		expect(reopened.value.workbook.sheets[0]?.cells.get(0, 2)?.formulaInfo).toEqual({
+			kind: 'dynamicArray',
+			metadataIndex: 2,
+			collapsed: true,
+		})
+	})
+
+	it('regenerates preserved dynamic-array metadata when edits add records', () => {
+		const source = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/metadata.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://purl.oclc.org/ooxml/officeDocument/relationships/sheetMetadata" Target="metadata.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Dynamic" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+			'xl/metadata.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<metadata xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:xda="http://schemas.microsoft.com/office/spreadsheetml/2017/dynamicarray">
+  <metadataTypes count="1">
+    <metadataType name="XLDAPR" minSupportedVersion="120000" copy="1" pasteAll="1" pasteValues="1" merge="1" splitFirst="1" rowColShift="1" clearFormats="1" clearComments="1" assign="1" coerce="1" cellMeta="1"/>
+  </metadataTypes>
+  <futureMetadata name="XLDAPR" count="1">
+    <bk><extLst><ext uri="{bdbb8cdc-fa1e-496e-a857-3c3f30c029c3}"><xda:dynamicArrayProperties fDynamic="1" fCollapsed="0"/></ext></extLst></bk>
+  </futureMetadata>
+  <cellMetadata count="1">
+    <bk><rc t="1" v="0"/></bk>
+  </cellMetadata>
+</metadata>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1" cm="1"><f>_xlfn.SEQUENCE(2)</f><v>1</v></c></row></sheetData>
+</worksheet>`,
+		})
+		const read = readXlsx(source)
+		expectOk(read)
+		const sheet = read.value.workbook.sheets[0]
+		sheet?.cells.set(0, 2, {
+			value: numberValue(10),
+			formula: 'SEQUENCE(2,1,10)',
+			styleId: S0,
+			formulaInfo: { kind: 'dynamicArray', metadataIndex: 2, collapsed: true },
+		})
+
+		const written = writeXlsx(read.value.workbook, undefined, { dirtySheetNames: ['Dynamic'] })
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		const metadataXml = new TextDecoder().decode(zip['xl/metadata.xml'] ?? new Uint8Array())
+		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+		expect(metadataXml).toContain('<futureMetadata name="XLDAPR" count="2">')
+		expect(metadataXml).toContain('<cellMetadata count="2">')
+		expect(metadataXml).toContain('fCollapsed="1"')
+		expect(sheetXml).toContain('<c r="C1" cm="2"')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.sheets[0]?.cells.get(0, 2)?.formulaInfo).toEqual({
+			kind: 'dynamicArray',
+			metadataIndex: 2,
+			collapsed: true,
+		})
+	})
+
 	it('round-trips _xlfn. prefix for future functions', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Xlfn')
@@ -411,6 +527,85 @@ describe('writeXlsx', () => {
 			kind: 'string',
 			value: 'World',
 		})
+	})
+
+	it('preserves package docProps parts and custom property relationships', () => {
+		const coreXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
+  xmlns:dc="http://purl.org/dc/elements/1.1/"
+  xmlns:dcterms="http://purl.org/dc/terms/"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dc:creator>Original Author</dc:creator>
+  <cp:lastModifiedBy>Reviewer</cp:lastModifiedBy>
+  <dcterms:created xsi:type="dcterms:W3CDTF">2024-01-02T03:04:05Z</dcterms:created>
+</cp:coreProperties>`
+		const appXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties">
+  <Application>Excel</Application>
+  <Company>Acme Analytics</Company>
+</Properties>`
+		const customXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties"
+  xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
+  <property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="2" name="Desk">
+    <vt:lpwstr>Research</vt:lpwstr>
+  </property>
+</Properties>`
+		const sourceBytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+  <Override PartName="/docProps/custom.xml" ContentType="application/vnd.openxmlformats-officedocument.custom-properties+xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+  <Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties" Target="docProps/custom.xml"/>
+</Relationships>`,
+			'docProps/core.xml': coreXml,
+			'docProps/app.xml': appXml,
+			'docProps/custom.xml': customXml,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>
+</worksheet>`,
+		})
+
+		const source = readXlsx(sourceBytes)
+		expectOk(source)
+		expect(source.value.capsules.map((capsule) => capsule.partPath).sort()).toContain(
+			'docProps/custom.xml',
+		)
+
+		const written = writeXlsx(source.value.workbook, source.value.capsules)
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		const decode = (path: string) => new TextDecoder().decode(zip[path] ?? new Uint8Array())
+
+		expect(decode('docProps/core.xml')).toBe(coreXml)
+		expect(decode('docProps/app.xml')).toBe(appXml)
+		expect(decode('docProps/custom.xml')).toBe(customXml)
+		expect(decode('_rels/.rels')).toContain(
+			'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties"',
+		)
+		expect(decode('_rels/.rels')).toContain('Target="docProps/custom.xml"')
+		expect(decode('xl/_rels/workbook.xml.rels')).not.toContain('docProps/custom.xml')
 	})
 
 	it('classifies generated and preserved parts in the write plan', () => {
@@ -1583,6 +1778,38 @@ describe('writeXlsx', () => {
 		expect(readSheet?.cells.get(0, 2)?.value).toEqual({ kind: 'string', value: 'fallback' })
 	})
 
+	it('uses dense column value type hints while preserving fallback semantics', () => {
+		const written = writeDenseRowsXlsx({
+			rows: 2,
+			cols: 4,
+			omitCellRefs: true,
+			allCellsPresent: true,
+			stringsAreXmlSafe: true,
+			valueTypes: ['string', 'number', 'string', 'number'],
+			valueAt: (row, col) => {
+				if (row === 1 && col === 3) return 'fallback'
+				return col % 2 === 0 ? `text-${row}-${col}` : row * 10 + col
+			},
+		})
+		expectOk(written)
+
+		const zip = unzipSync(written.value)
+		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+		expect(sheetXml).toContain(
+			'<row r="1"><c t="str"><v>text-0-0</v></c><c><v>1</v></c><c t="str"><v>text-0-2</v></c><c><v>3</v></c></row>',
+		)
+		expect(sheetXml).toContain(
+			'<row r="2"><c t="str"><v>text-1-0</v></c><c><v>11</v></c><c t="str"><v>text-1-2</v></c><c t="str"><v>fallback</v></c></row>',
+		)
+
+		const read = readXlsx(written.value, { mode: 'values' })
+		expectOk(read)
+		const readSheet = read.value.workbook.sheets[0]
+		expect(readSheet?.cells.get(0, 0)?.value).toEqual({ kind: 'string', value: 'text-0-0' })
+		expect(readSheet?.cells.get(0, 1)?.value).toEqual({ kind: 'number', value: 1 })
+		expect(readSheet?.cells.get(1, 3)?.value).toEqual({ kind: 'string', value: 'fallback' })
+	})
+
 	it('streams dense rows without materializing a workbook', async () => {
 		const written = await writeDenseRowsXlsxStreaming({
 			rows: 2,
@@ -1597,6 +1824,29 @@ describe('writeXlsx', () => {
 		const readSheet = read.value.workbook.sheets[0]
 		expect(readSheet?.cells.get(0, 0)?.value).toEqual({ kind: 'number', value: 0 })
 		expect(readSheet?.cells.get(1, 1)?.value).toEqual({ kind: 'number', value: 3 })
+	})
+
+	it('supports compact dense writer compression without changing values', async () => {
+		const written = await writeDenseRowsXlsxStreaming({
+			rows: 200,
+			cols: 20,
+			omitCellRefs: true,
+			allCellsPresent: true,
+			stringsAreXmlSafe: true,
+			valueType: 'string',
+			compressionProfile: 'compact',
+			valueAt: (row, col) => `text-${row}-${col}`,
+		})
+		expectOk(written)
+
+		const read = readXlsx(written.value, { mode: 'values' })
+		expectOk(read)
+		const readSheet = read.value.workbook.sheets[0]
+		expect(readSheet?.cells.get(0, 0)?.value).toEqual({ kind: 'string', value: 'text-0-0' })
+		expect(readSheet?.cells.get(199, 19)?.value).toEqual({
+			kind: 'string',
+			value: 'text-199-19',
+		})
 	})
 
 	it('creates dxfId for CF rules with style but no dxfId (xlsx-4)', () => {

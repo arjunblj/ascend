@@ -2,10 +2,11 @@ import { indexToColumn } from '@ascend/core'
 import type { AscendError, Result } from '@ascend/schema'
 import { ascendError, err, ok } from '@ascend/schema'
 import { escapeXml } from '../xml.ts'
-import { createZip, encode, StreamingZipBuilder } from './zip.ts'
+import { createZip, encode, StreamingZipBuilder, type ZipCompressionProfile } from './zip.ts'
 
 export type DenseXlsxCellValue = string | number | boolean | null
 export type DenseXlsxCellValueType = 'boolean' | 'number' | 'string'
+export type DenseXlsxCompressionProfile = ZipCompressionProfile
 
 export interface WriteDenseRowsXlsxOptions {
 	readonly rows: number
@@ -21,13 +22,17 @@ export interface WriteDenseRowsXlsxOptions {
 	readonly stringsAreXmlSafe?: boolean
 	/** Hint for dense generated values; mismatches fall back to generic cell serialization. */
 	readonly valueType?: DenseXlsxCellValueType
+	/** Per-column value hints for dense generated rows; mismatches fall back to generic cell serialization. */
+	readonly valueTypes?: readonly (DenseXlsxCellValueType | undefined)[]
 	/** Hint that every generated cell is present; null mismatches fall back to referenced cells. */
 	readonly allCellsPresent?: boolean
+	/** ZIP compression policy: fast optimizes wall time; compact optimizes file size. */
+	readonly compressionProfile?: DenseXlsxCompressionProfile
 }
 
 const DEFAULT_SHEET_NAME = 'Data'
-const XML_BYTE_BATCH_TARGET = positiveEnvInt('ASCEND_DENSE_XML_BYTE_BATCH', 4 * 1024 * 1024)
-const XML_ROW_BATCH_TARGET = positiveEnvInt('ASCEND_DENSE_XML_ROW_BATCH', 2048)
+const XML_BYTE_BATCH_TARGET = positiveEnvInt('ASCEND_DENSE_XML_BYTE_BATCH', 256 * 1024)
+const XML_ROW_BATCH_TARGET = positiveEnvInt('ASCEND_DENSE_XML_ROW_BATCH', 256)
 
 interface XmlByteSink {
 	write(chunk: string): void
@@ -49,7 +54,7 @@ export function writeDenseRowsXlsx(
 		validateDenseRowsOptions(options)
 		const parts = buildBaseParts(options.sheetName ?? DEFAULT_SHEET_NAME)
 		parts.set('xl/worksheets/sheet1.xml', buildSheetXml(options))
-		return ok(createZip(parts))
+		return ok(createZip(parts, zipOptionsForDenseRows(options)))
 	} catch (error) {
 		return err(toExportError(error))
 	}
@@ -60,11 +65,11 @@ export async function writeDenseRowsXlsxStreaming(
 ): Promise<Result<Uint8Array, AscendError>> {
 	try {
 		validateDenseRowsOptions(options)
-		const builder = new StreamingZipBuilder()
+		const builder = new StreamingZipBuilder(zipOptionsForDenseRows(options))
 		for (const [path, data] of buildBaseParts(options.sheetName ?? DEFAULT_SHEET_NAME)) {
 			builder.addEntry(path, data)
 		}
-		builder.addStreamingEntry('xl/worksheets/sheet1.xml')
+		builder.addStreamingEntry('xl/worksheets/sheet1.xml', estimateDenseSheetXmlBytes(options))
 		await writeSheetXmlByteChunksAsync(options, (chunk) => builder.writeChunkAsync(chunk))
 		await builder.closeEntry()
 		return ok(builder.finalize())
@@ -89,6 +94,26 @@ function validateDenseRowsOptions(options: WriteDenseRowsXlsxOptions): void {
 	if (typeof options.valueAt !== 'function') {
 		throw new Error('valueAt must be a function')
 	}
+	if (options.valueTypes !== undefined && options.valueTypes.length !== options.cols) {
+		throw new Error(
+			`valueTypes length must match cols: ${options.valueTypes.length} !== ${options.cols}`,
+		)
+	}
+	if (
+		options.compressionProfile !== undefined &&
+		options.compressionProfile !== 'fast' &&
+		options.compressionProfile !== 'compact'
+	) {
+		throw new Error(`Unsupported compressionProfile "${options.compressionProfile}"`)
+	}
+}
+
+function zipOptionsForDenseRows(options: WriteDenseRowsXlsxOptions): {
+	readonly compressionProfile?: DenseXlsxCompressionProfile
+} {
+	return options.compressionProfile === undefined
+		? {}
+		: { compressionProfile: options.compressionProfile }
 }
 
 function toExportError(error: unknown): AscendError {
@@ -174,6 +199,20 @@ function positiveEnvInt(name: string, fallback: number): number {
 	if (!raw) return fallback
 	const value = Number.parseInt(raw, 10)
 	return Number.isFinite(value) && value > 0 ? value : fallback
+}
+
+function estimateDenseSheetXmlBytes(options: WriteDenseRowsXlsxOptions): number {
+	const cellCount = options.rows * options.cols
+	const rowOverhead = options.rows * 18
+	const cellOverhead =
+		options.valueType === 'string'
+			? 36
+			: options.valueType === 'number'
+				? 20
+				: options.valueType === 'boolean'
+					? 18
+					: 28
+	return 512 + rowOverhead + cellCount * cellOverhead
 }
 
 async function writeSheetXmlByteChunksAsync(
@@ -304,6 +343,9 @@ function buildPresentDenseRowXmlWithoutRefs(
 	options: WriteDenseRowsXlsxOptions,
 	row: number,
 ): string {
+	if (options.valueTypes !== undefined) {
+		return buildPresentColumnTypedRowXmlWithoutRefs(options, row, options.valueTypes)
+	}
 	if (options.valueType === 'string' && options.stringsAreXmlSafe === true) {
 		return buildPresentSafeStringRowXmlWithoutRefs(options, row)
 	}
@@ -320,6 +362,40 @@ function buildPresentGenericRowXmlWithoutRefs(
 	for (let col = 0; col < options.cols; col++) {
 		const value = options.valueAt(row, col)
 		if (value === null) return buildRowXmlWithRefs(options, row)
+		body += cellXml(value, undefined, options.stringsAreXmlSafe, options.valueType)
+	}
+	return body.length === 0 ? '' : `<row r="${row + 1}">${body}</row>`
+}
+
+function buildPresentColumnTypedRowXmlWithoutRefs(
+	options: WriteDenseRowsXlsxOptions,
+	row: number,
+	valueTypes: readonly (DenseXlsxCellValueType | undefined)[],
+): string {
+	let body = ''
+	for (let col = 0; col < options.cols; col++) {
+		const value = options.valueAt(row, col)
+		if (value === null) return buildRowXmlWithRefs(options, row)
+		const valueType = valueTypes[col]
+		if (valueType === 'number') {
+			if (typeof value !== 'number') return buildPresentGenericRowXmlWithoutRefs(options, row)
+			// biome-ignore lint/style/useTemplate: Bun/JSC is measurably faster with concatenation here.
+			body += '<c><v>' + value + '</v></c>'
+			continue
+		}
+		if (valueType === 'string') {
+			if (typeof value !== 'string') return buildPresentGenericRowXmlWithoutRefs(options, row)
+			body +=
+				'<c t="str"><v>' +
+				(options.stringsAreXmlSafe === true ? value : escapeXml(value)) +
+				'</v></c>'
+			continue
+		}
+		if (valueType === 'boolean') {
+			if (typeof value !== 'boolean') return buildPresentGenericRowXmlWithoutRefs(options, row)
+			body += value ? '<c t="b"><v>1</v></c>' : '<c t="b"><v>0</v></c>'
+			continue
+		}
 		body += cellXml(value, undefined, options.stringsAreXmlSafe, options.valueType)
 	}
 	return body.length === 0 ? '' : `<row r="${row + 1}">${body}</row>`

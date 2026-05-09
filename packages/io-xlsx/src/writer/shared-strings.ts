@@ -73,31 +73,55 @@ export class IncrementalSharedStringTable {
 
 export function scanWorkbookWriteFactsFast(workbook: Workbook): WorkbookWriteFacts {
 	let hasStringCells = false
-	let dynamicArrayMetadataEntries: readonly DynamicArrayMetadataEntry[] = []
+	const dynamicArrayMetadataByIndex = new Map<number, DynamicArrayMetadataEntry>()
 
 	for (const sheet of workbook.sheets) {
-		if (hasStringCells && dynamicArrayMetadataEntries.length > 0) break
 		for (const [, , cell] of sheet.cells.iterate()) {
 			if (!hasStringCells) {
 				const key = makeKey(cell.value)
 				if (key !== undefined) hasStringCells = true
 			}
-			if (dynamicArrayMetadataEntries.length === 0) {
-				const binding = cell.formulaInfo
-				if (binding) {
-					if (binding.kind === 'dynamicArray') {
-						dynamicArrayMetadataEntries = [
-							{ metadataIndex: 1, collapsed: binding.collapsed ?? false },
-						]
-					} else if (binding.kind === 'spill' && binding.isAnchor) {
-						dynamicArrayMetadataEntries = [{ metadataIndex: 1, collapsed: false }]
-					}
-				}
+			const binding = cell.formulaInfo
+			if (binding?.kind === 'dynamicArray') {
+				recordDynamicArrayMetadata(
+					dynamicArrayMetadataByIndex,
+					binding.metadataIndex,
+					binding.collapsed ?? false,
+				)
+			} else if (binding?.kind === 'spill' && binding.isAnchor) {
+				recordDynamicArrayMetadata(dynamicArrayMetadataByIndex, 1, false)
 			}
-			if (hasStringCells && dynamicArrayMetadataEntries.length > 0) break
 		}
 	}
+	const dynamicArrayMetadataEntries = materializeDynamicArrayMetadataEntries(
+		dynamicArrayMetadataByIndex,
+	)
 	return { hasStringCells, dynamicArrayMetadataEntries }
+}
+
+function recordDynamicArrayMetadata(
+	entries: Map<number, DynamicArrayMetadataEntry>,
+	metadataIndex: number,
+	collapsed: boolean,
+): void {
+	const normalizedIndex =
+		Number.isFinite(metadataIndex) && metadataIndex > 0 ? Math.trunc(metadataIndex) : 1
+	const existing = entries.get(normalizedIndex)
+	entries.set(normalizedIndex, {
+		metadataIndex: normalizedIndex,
+		collapsed: (existing?.collapsed ?? false) || collapsed,
+	})
+}
+
+function materializeDynamicArrayMetadataEntries(
+	entries: ReadonlyMap<number, DynamicArrayMetadataEntry>,
+): readonly DynamicArrayMetadataEntry[] {
+	const maxIndex = Math.max(0, ...entries.keys())
+	const result: DynamicArrayMetadataEntry[] = []
+	for (let metadataIndex = 1; metadataIndex <= maxIndex; metadataIndex++) {
+		result.push(entries.get(metadataIndex) ?? { metadataIndex, collapsed: false })
+	}
+	return result
 }
 
 function makeKey(value: CellValue): string | undefined {

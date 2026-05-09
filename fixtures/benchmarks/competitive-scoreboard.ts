@@ -30,6 +30,10 @@ const ASCEND_READ_LIBRARIES = [
 	'ascend-external-bytes',
 	'ascend-external-values-bytes',
 	'ascend-readxlsx-raw-values-bytes',
+	'ascend-readxlsx-raw-values-operation-bytes',
+	'ascend-readxlsx-raw-values-operation-path',
+	'ascend-readxlsx-row-stream-bytes',
+	'ascend-readxlsx-cell-materialization-bytes',
 	'ascend-readxlsx-values-bytes',
 	'ascend-readxlsx-values-rich-metadata-bytes',
 	'ascend-external-metadata-only-bytes',
@@ -270,7 +274,7 @@ const CLAIM_PROFILES: Record<ClaimProfileName, ClaimProfile> = {
 				libraries: ['pyexcelerate', 'pyexcelerate-range', 'pyexcelerate-cell'],
 			},
 			{ label: 'FastXLSX', libraries: ['fastxlsx'] },
-			{ label: 'pyopenxlsx', libraries: ['pyopenxlsx'] },
+			{ label: 'pyopenxlsx', libraries: ['pyopenxlsx', 'pyopenxlsx-bulk'] },
 			{ label: 'pyfastexcel', libraries: ['pyfastexcel'] },
 			{ label: 'fastexcel Java', libraries: ['fastexcel-java'] },
 			{ label: 'openpyxl', libraries: ['openpyxl', 'openpyxl-write-only'] },
@@ -436,7 +440,7 @@ const CLAIM_PROFILES: Record<ClaimProfileName, ClaimProfile> = {
 				category: 'write',
 				operationProfile: 'write-values',
 				workloads: ['plain-text'],
-				files: ['excelize-generation-102400x50-plain-text'],
+				files: ['excelize-generation-102400x50-plain-text', 'closedxml-save-text-1000000x10'],
 				competitors: [
 					{ label: 'Ascend', libraries: ASCEND_WRITE_LIBRARIES },
 					{ label: 'SheetJS', libraries: ['sheetjs'] },
@@ -450,6 +454,7 @@ const CLAIM_PROFILES: Record<ClaimProfileName, ClaimProfile> = {
 					{ label: 'openpyxl', libraries: ['openpyxl', 'openpyxl-write-only'] },
 					{ label: 'Apache POI', libraries: ['apache-poi', 'poi'] },
 					{ label: 'Excelize', libraries: ['excelize'] },
+					{ label: 'ClosedXML', libraries: ['closedxml'] },
 				],
 			},
 			{
@@ -494,6 +499,28 @@ const CLAIM_PROFILES: Record<ClaimProfileName, ClaimProfile> = {
 			{
 				category: 'write',
 				operationProfile: 'write-values',
+				workloads: ['mixed-closedxml-10text-5number'],
+				files: ['closedxml-save-mixed-250000x15'],
+				competitors: [
+					{ label: 'Ascend', libraries: ASCEND_WRITE_LIBRARIES },
+					{ label: 'SheetJS', libraries: ['sheetjs'] },
+					{ label: 'ExcelJS', libraries: ['exceljs'] },
+					{ label: 'XlsxWriter', libraries: ['xlsxwriter', 'xlsxwriter-constant-memory'] },
+					{
+						label: 'pyexcelerate',
+						libraries: ['pyexcelerate', 'pyexcelerate-range', 'pyexcelerate-cell'],
+					},
+					{ label: 'openpyxl', libraries: ['openpyxl', 'openpyxl-write-only'] },
+					{ label: 'Apache POI', libraries: ['apache-poi', 'poi'] },
+					{ label: 'fastexcel Java', libraries: ['fastexcel-java'] },
+					{ label: 'NPOI', libraries: ['npoi'] },
+					{ label: 'rust_xlsxwriter', libraries: ['rust-xlsxwriter', 'rust_xlsxwriter'] },
+					{ label: 'ClosedXML', libraries: ['closedxml'] },
+				],
+			},
+			{
+				category: 'write',
+				operationProfile: 'write-values',
 				workloads: ['dense-values'],
 				files: [
 					'pyexcelerate-write-values-1000x100',
@@ -510,7 +537,7 @@ const CLAIM_PROFILES: Record<ClaimProfileName, ClaimProfile> = {
 					{ label: 'pyexcelerate cell', libraries: ['pyexcelerate-cell'] },
 					{ label: 'openpyxl', libraries: ['openpyxl', 'openpyxl-write-only'] },
 					{ label: 'Apache POI', libraries: ['apache-poi', 'poi'] },
-					{ label: 'pyopenxlsx', libraries: ['pyopenxlsx'] },
+					{ label: 'pyopenxlsx', libraries: ['pyopenxlsx', 'pyopenxlsx-bulk'] },
 				],
 			},
 			{
@@ -584,6 +611,52 @@ const CLAIM_PROFILES: Record<ClaimProfileName, ClaimProfile> = {
 			{
 				category: 'read',
 				operationProfile: 'read-values',
+				workloads: ['plain-text'],
+				readSources: ['raw-ooxml'],
+				files: ['closedxml-load-text-1000000x10'],
+				competitors: [
+					{ label: 'Ascend', libraries: ASCEND_READ_LIBRARIES },
+					{ label: 'SheetJS', libraries: ['sheetjs'] },
+					{ label: 'ExcelJS', libraries: ['exceljs'] },
+					{
+						label: 'openpyxl',
+						libraries: ['openpyxl', 'openpyxl-read-only', 'openpyxl-read-only-values'],
+					},
+					{
+						label: 'Calamine',
+						libraries: ['calamine', 'python-calamine', 'rust-calamine', 'fastexcel'],
+					},
+					{ label: 'Apache POI', libraries: ['apache-poi', 'poi'] },
+					{ label: 'ClosedXML', libraries: ['closedxml'] },
+					{ label: 'Excelize', libraries: ['excelize'] },
+				],
+			},
+			{
+				category: 'read',
+				operationProfile: 'read-values',
+				workloads: ['mixed-closedxml-10text-5number'],
+				readSources: ['raw-ooxml'],
+				files: ['closedxml-load-mixed-250000x15'],
+				competitors: [
+					{ label: 'Ascend', libraries: ASCEND_READ_LIBRARIES },
+					{ label: 'SheetJS', libraries: ['sheetjs'] },
+					{ label: 'ExcelJS', libraries: ['exceljs'] },
+					{
+						label: 'openpyxl',
+						libraries: ['openpyxl', 'openpyxl-read-only', 'openpyxl-read-only-values'],
+					},
+					{
+						label: 'Calamine',
+						libraries: ['calamine', 'python-calamine', 'rust-calamine', 'fastexcel'],
+					},
+					{ label: 'Apache POI', libraries: ['apache-poi', 'poi'] },
+					{ label: 'ClosedXML', libraries: ['closedxml'] },
+					{ label: 'Excelize', libraries: ['excelize'] },
+				],
+			},
+			{
+				category: 'read',
+				operationProfile: 'read-values',
 				workloads: ['calamine-nyc311-1m'],
 				files: ['NYC_311_SR_2010-2020-sample-1M.xlsx'],
 				competitors: [
@@ -636,9 +709,10 @@ export function assertScoreboardLeader(
 	library: string,
 ): readonly string[] {
 	const failures: string[] = []
+	const leaderLibraries = scoreboardLeaderLibraries(library)
 	for (const group of scoreboard.groups) {
-		if (group.winner === null || group.winner === library) continue
-		const leader = group.entries.find((entry) => entry.library === library)
+		if (group.winner === null || leaderLibraries.has(group.winner)) continue
+		const leader = bestProfileEntry(group, leaderLibraries)
 		const winner = group.entries.find((entry) => entry.library === group.winner)
 		if (leader && winner && !isSignificantLeaderLoss(leader, winner)) continue
 		failures.push(
@@ -646,6 +720,13 @@ export function assertScoreboardLeader(
 		)
 	}
 	return failures
+}
+
+function scoreboardLeaderLibraries(library: string): ReadonlySet<string> {
+	if (library === 'ascend') {
+		return new Set([...ASCEND_READ_LIBRARIES, ...ASCEND_WRITE_LIBRARIES])
+	}
+	return new Set([library])
 }
 
 export function assertScoreboardProfileLeader(

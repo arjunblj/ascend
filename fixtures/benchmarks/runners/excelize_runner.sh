@@ -21,4 +21,5 @@ while (($#)); do
 	shift
 done
 
-exec go -C fixtures/benchmarks/runners/excelize run . "${ARGS[@]}"
+cd fixtures/benchmarks/runners/excelize
+exec go run . "${ARGS[@]}"

@@ -121,38 +121,84 @@ export function parseStyles(xml: string): ParsedStyles {
 }
 
 export function parseStylesLite(xml: string): ParsedStylesLite {
-	const doc = parseXml(xml)
-	const ss = doc.styleSheet as XmlNode | undefined
-	if (!ss) {
-		return {
-			isDateFormat: [false],
-			metadata: {
-				numFmtCount: 0,
-				fontCount: 0,
-				fillCount: 0,
-				borderCount: 0,
-				cellXfCount: 1,
-				dxfCount: 0,
-				tableStyleCount: 0,
-			},
-		}
-	}
-
-	const numFmts = parseNumFmts(ss)
-	const cellXfCount = countNodes(ss.cellXfs, 'xf')
-	const isDateFormat = buildDateFormatFlags(ss, numFmts)
+	const numFmts = parseNumFmtsLite(xml)
+	const cellXfsXml = extractXmlSection(xml, 'cellXfs')
+	const cellXfCount = countXmlChildren(cellXfsXml, 'xf')
+	const isDateFormat = buildDateFormatFlagsLite(cellXfsXml, numFmts)
 	return {
 		isDateFormat,
 		metadata: {
 			numFmtCount: Math.max(0, numFmts.size - BUILTIN_NUM_FMTS.size),
-			fontCount: Math.max(0, countNodes(ss.fonts, 'font')),
-			fillCount: Math.max(0, countNodes(ss.fills, 'fill')),
-			borderCount: Math.max(0, countNodes(ss.borders, 'border')),
+			fontCount: countXmlChildren(extractXmlSection(xml, 'fonts'), 'font'),
+			fillCount: countXmlChildren(extractXmlSection(xml, 'fills'), 'fill'),
+			borderCount: countXmlChildren(extractXmlSection(xml, 'borders'), 'border'),
 			cellXfCount: Math.max(0, cellXfCount),
-			dxfCount: Math.max(0, countNodes(ss.dxfs, 'dxf')),
-			tableStyleCount: Math.max(0, countNodes(ss.tableStyles, 'tableStyle')),
+			dxfCount: countXmlChildren(extractXmlSection(xml, 'dxfs'), 'dxf'),
+			tableStyleCount: countXmlChildren(extractXmlSection(xml, 'tableStyles'), 'tableStyle'),
 		},
 	}
+}
+
+function parseNumFmtsLite(xml: string): Map<number, string> {
+	const fmts = new Map(BUILTIN_NUM_FMTS)
+	const section = extractXmlSection(xml, 'numFmts')
+	if (!section) return fmts
+	for (const match of section.matchAll(/<numFmt\b([^>]*)\/?>/g)) {
+		const attrs = match[1] ?? ''
+		const id = rawXmlNumberAttr(attrs, 'numFmtId')
+		const code = rawXmlAttr(attrs, 'formatCode')
+		if (id !== undefined && code) fmts.set(id, decodeXmlAttribute(code))
+	}
+	return fmts
+}
+
+function buildDateFormatFlagsLite(
+	cellXfsXml: string | null,
+	numFmts: Map<number, string>,
+): boolean[] {
+	if (!cellXfsXml) return [false]
+	const isDateFormat: boolean[] = []
+	for (const match of cellXfsXml.matchAll(/<xf\b([^>]*)\/?>/g)) {
+		const numFmtId = rawXmlNumberAttr(match[1] ?? '', 'numFmtId') ?? 0
+		isDateFormat.push(checkDateFormat(numFmtId, numFmts.get(numFmtId)))
+	}
+	return isDateFormat.length > 0 ? isDateFormat : [false]
+}
+
+function extractXmlSection(xml: string, tag: string): string | null {
+	const open = new RegExp(`<${tag}\\b[^>]*>`, 'i').exec(xml)
+	if (!open || open.index === undefined) return null
+	const contentStart = open.index + open[0].length
+	const close = new RegExp(`</${tag}>`, 'i').exec(xml.slice(contentStart))
+	if (!close || close.index === undefined) return null
+	return xml.slice(contentStart, contentStart + close.index)
+}
+
+function countXmlChildren(section: string | null, tag: string): number {
+	if (!section) return 0
+	let count = 0
+	for (const _match of section.matchAll(new RegExp(`<${tag}\\b`, 'g'))) count++
+	return count
+}
+
+function rawXmlAttr(attrs: string, name: string): string | undefined {
+	return new RegExp(`(?:^|\\s)${name}="([^"]*)"`).exec(attrs)?.[1]
+}
+
+function rawXmlNumberAttr(attrs: string, name: string): number | undefined {
+	const raw = rawXmlAttr(attrs, name)
+	if (raw === undefined) return undefined
+	const value = Number.parseInt(raw, 10)
+	return Number.isFinite(value) ? value : undefined
+}
+
+function decodeXmlAttribute(value: string): string {
+	return value
+		.replace(/&quot;/g, '"')
+		.replace(/&apos;/g, "'")
+		.replace(/&lt;/g, '<')
+		.replace(/&gt;/g, '>')
+		.replace(/&amp;/g, '&')
 }
 
 function parseDxfs(
@@ -444,17 +490,6 @@ function buildCellStyles(
 	}
 
 	return { cellStyles, isDateFormat }
-}
-
-function buildDateFormatFlags(ss: XmlNode, numFmts: Map<number, string>): boolean[] {
-	const xfsNode = ss.cellXfs as XmlNode | undefined
-	if (!xfsNode) return [false]
-	const isDateFormat: boolean[] = []
-	for (const xf of asArray<XmlNode>(xfsNode.xf as XmlNode | XmlNode[])) {
-		const numFmtId = numAttr(xf, 'numFmtId') ?? 0
-		isDateFormat.push(checkDateFormat(numFmtId, numFmts.get(numFmtId)))
-	}
-	return isDateFormat.length > 0 ? isDateFormat : [false]
 }
 
 function parseAlignment(xf: XmlNode): AlignmentStyle | undefined {

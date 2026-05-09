@@ -1,4 +1,4 @@
-import type { Workbook } from '@ascend/core'
+import type { RangeRef, Workbook } from '@ascend/core'
 import { indexToColumn, toA1 } from '@ascend/core'
 import {
 	analyzeWorkbookDependencies,
@@ -207,6 +207,45 @@ function checkOrphanedNames(wb: Workbook): CheckIssue[] {
 	return issues
 }
 
+function rangesOverlap2D(a: RangeRef, b: RangeRef): boolean {
+	const r1 = Math.min(a.start.row, a.end.row)
+	const r2 = Math.max(a.start.row, a.end.row)
+	const c1 = Math.min(a.start.col, a.end.col)
+	const c2 = Math.max(a.start.col, a.end.col)
+	const q1 = Math.min(b.start.row, b.end.row)
+	const q2 = Math.max(b.start.row, b.end.row)
+	const d1 = Math.min(b.start.col, b.end.col)
+	const d2 = Math.max(b.start.col, b.end.col)
+	return r1 <= q2 && q1 <= r2 && c1 <= d2 && d1 <= c2
+}
+
+function checkMergeOverlaps(wb: Workbook): CheckIssue[] {
+	const issues: CheckIssue[] = []
+	for (const sheet of wb.sheets) {
+		const merges = sheet.merges
+		for (let i = 0; i < merges.length; i++) {
+			const a = merges[i]
+			if (!a) continue
+			for (let j = i + 1; j < merges.length; j++) {
+				const b = merges[j]
+				if (!b) continue
+				if (rangesOverlap2D(a, b)) {
+					const ra = `${indexToColumn(a.start.col)}${a.start.row + 1}:${indexToColumn(a.end.col)}${a.end.row + 1}`
+					const rb = `${indexToColumn(b.start.col)}${b.start.row + 1}:${indexToColumn(b.end.col)}${b.end.row + 1}`
+					issues.push({
+						rule: 'merge-overlap',
+						severity: 'warning',
+						message: `Overlapping merged ranges on sheet "${sheet.name}"`,
+						refs: [`${sheet.name}!${ra}`, `${sheet.name}!${rb}`],
+						suggestedFix: 'Unmerge or resize one of the ranges so they do not intersect',
+					})
+				}
+			}
+		}
+	}
+	return issues
+}
+
 function checkTableIntegrity(wb: Workbook): CheckIssue[] {
 	const issues: CheckIssue[] = []
 
@@ -244,6 +283,7 @@ export function check(
 		...checkCircularRefs(workbook, dependencies),
 		...checkFormulaErrors(workbook, formulas),
 		...checkOrphanedNames(workbook),
+		...checkMergeOverlaps(workbook),
 		...checkTableIntegrity(workbook),
 	]
 	return { passed: issues.length === 0, issues }

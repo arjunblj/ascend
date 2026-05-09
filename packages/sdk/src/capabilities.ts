@@ -495,8 +495,8 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'inspectable',
 		'P0',
 		'Add filter state edits and calculated output refresh after field-level inventory.',
-		'Pivot cache fields and row/column/page/data field layout are inspectable; full management and recalculation are not complete.',
-		['packages/io-xlsx/src/reader/reader.test.ts'],
+		'Pivot layout is inspectable and inspect payloads expose refresh/stale-output plans; full management and recalculation are not complete.',
+		['packages/io-xlsx/src/reader/reader.test.ts', 'packages/sdk/src/pivot-refresh-plan.test.ts'],
 	),
 	cap(
 		'analytics.pivot-caches',
@@ -505,8 +505,12 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'editable',
 		'P0',
 		'Add cache-record recalculation and broader Excel fixture coverage.',
-		'Pivot cache source and refresh metadata are editable; output recalculation is not implemented.',
-		['packages/io-xlsx/src/reader/reader.test.ts', 'packages/engine/src/operations.test.ts'],
+		'Pivot cache source and refresh metadata are editable; SDK refresh plans tell agents when Excel refresh is required because output recalculation is not implemented.',
+		[
+			'packages/io-xlsx/src/reader/reader.test.ts',
+			'packages/engine/src/operations.test.ts',
+			'packages/sdk/src/pivot-refresh-plan.test.ts',
+		],
 	),
 	cap(
 		'analytics.slicers',

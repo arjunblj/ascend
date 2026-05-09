@@ -47,6 +47,8 @@ import type {
 	FlatCellValue,
 	FormulaInfo,
 	PivotCacheInfo,
+	PivotRefreshPlanInfo,
+	PivotRefreshRecommendedOp,
 	PivotTableInfo,
 	RangeObjectsInfo,
 	RangeRowsInfo,
@@ -129,6 +131,7 @@ export class WorkbookReadView {
 			chartCount: this.wb.chartParts.length,
 			pivotTableCount: this.wb.pivotTables.length,
 			pivotCacheCount: this.wb.pivotCaches.length,
+			pivotRefreshPlans: buildPivotRefreshPlans(this.wb.pivotCaches, this.wb.pivotTables),
 			slicerCount: this.wb.slicers.length,
 			slicerCacheCount: this.wb.slicerCaches.length,
 			timelineCount: this.wb.timelines.length,
@@ -568,6 +571,10 @@ export class WorkbookReadView {
 		return this.wb.pivotCaches.map(copyPivotCacheInfo)
 	}
 
+	pivotRefreshPlans(): readonly PivotRefreshPlanInfo[] {
+		return buildPivotRefreshPlans(this.wb.pivotCaches, this.wb.pivotTables)
+	}
+
 	slicerCaches(): readonly SlicerCacheInfo[] {
 		return this.wb.slicerCaches.map((entry) => ({
 			...entry,
@@ -952,6 +959,90 @@ function copyPivotTableInfo(pivot: PivotTableInfo): PivotTableInfo {
 		pageFields: pivot.pageFields.map((field) => ({ ...field })),
 		dataFields: pivot.dataFields.map((field) => ({ ...field })),
 	}
+}
+
+function buildPivotRefreshPlans(
+	caches: readonly PivotCacheInfo[],
+	pivots: readonly PivotTableInfo[],
+): PivotRefreshPlanInfo[] {
+	return caches.map((cache) => {
+		const pivotTables = pivots
+			.filter((pivot) => pivot.cacheId !== undefined && pivot.cacheId === cache.cacheId)
+			.map((pivot) => ({
+				partPath: pivot.partPath,
+				sheetName: pivot.sheetName,
+				...(pivot.name !== undefined ? { name: pivot.name } : {}),
+				...(pivot.locationRef !== undefined ? { locationRef: pivot.locationRef } : {}),
+			}))
+		const outputState = pivotRefreshOutputState(cache)
+		const warnings = pivotRefreshWarnings(cache, pivotTables.length, outputState)
+		const recommendedOps = pivotRefreshRecommendedOps(cache, outputState)
+		return {
+			partPath: cache.partPath,
+			...(cache.cacheId !== undefined ? { cacheId: cache.cacheId } : {}),
+			...(cache.sourceSheet !== undefined ? { sourceSheet: cache.sourceSheet } : {}),
+			...(cache.sourceRef !== undefined ? { sourceRef: cache.sourceRef } : {}),
+			pivotTables,
+			outputState,
+			canRefreshHeadlessly: false,
+			requiresExternalRefresh: outputState !== 'cached',
+			warnings,
+			recommendedOps,
+		}
+	})
+}
+
+function pivotRefreshOutputState(cache: PivotCacheInfo): PivotRefreshPlanInfo['outputState'] {
+	if (cache.invalid) return 'stale'
+	if (cache.refreshOnLoad) return 'refresh-on-open'
+	if (cache.saveData === false) return 'not-saved'
+	if (cache.recordsPartPath === undefined && cache.recordCount === undefined) return 'unknown'
+	return 'cached'
+}
+
+function pivotRefreshWarnings(
+	cache: PivotCacheInfo,
+	pivotTableCount: number,
+	outputState: PivotRefreshPlanInfo['outputState'],
+): string[] {
+	const warnings: string[] = []
+	if (outputState === 'stale') {
+		warnings.push('Pivot output cells are stale until the cache is refreshed by Excel.')
+	}
+	if (outputState === 'refresh-on-open') {
+		warnings.push(
+			'Workbook requests pivot refresh on open; saved output may differ after Excel opens it.',
+		)
+	}
+	if (outputState === 'not-saved') {
+		warnings.push('Pivot cache records are not saved; a pivot-aware application must rebuild them.')
+	}
+	if (outputState === 'unknown') {
+		warnings.push('Pivot cache freshness is unknown because cache records were not inventoried.')
+	}
+	if (pivotTableCount > 0 && (cache.sourceSheet !== undefined || cache.sourceRef !== undefined)) {
+		warnings.push(
+			'Ascend can edit pivot cache metadata but does not recalculate pivot output cells headlessly.',
+		)
+	}
+	return warnings
+}
+
+function pivotRefreshRecommendedOps(
+	cache: PivotCacheInfo,
+	outputState: PivotRefreshPlanInfo['outputState'],
+): PivotRefreshRecommendedOp[] {
+	if (outputState === 'cached') return []
+	return [
+		{
+			op: 'setPivotCache',
+			...(cache.partPath !== undefined ? { partPath: cache.partPath } : {}),
+			...(cache.cacheId !== undefined ? { cacheId: cache.cacheId } : {}),
+			refreshOnLoad: true,
+			invalid: true,
+			saveData: false,
+		},
+	]
 }
 
 function flattenForAgent(value: import('@ascend/schema').CellValue): FlatCellValue {

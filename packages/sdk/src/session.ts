@@ -19,6 +19,7 @@ import type {
 	FormulaInfo,
 	LintResult,
 	PivotCacheInfo,
+	PivotRefreshPlanInfo,
 	PivotTableInfo,
 	RangeInfo,
 	RangeObjectsInfo,
@@ -351,6 +352,10 @@ export class WorkbookDocument {
 
 	pivotCaches(): readonly PivotCacheInfo[] {
 		return this.view.pivotCaches()
+	}
+
+	pivotRefreshPlans(): readonly PivotRefreshPlanInfo[] {
+		return this.view.pivotRefreshPlans()
 	}
 
 	slicerCaches(): readonly SlicerCacheInfo[] {

@@ -46,6 +46,7 @@ export interface WorkbookInfo {
 	readonly chartCount: number
 	readonly pivotTableCount: number
 	readonly pivotCacheCount: number
+	readonly pivotRefreshPlans: readonly PivotRefreshPlanInfo[]
 	readonly slicerCount: number
 	readonly slicerCacheCount: number
 	readonly timelineCount: number
@@ -148,6 +149,42 @@ export interface PivotCacheInfo {
 	readonly sourceRef?: string
 	readonly recordsPartPath?: string
 	readonly fields: readonly PivotCacheFieldInfo[]
+}
+
+export type PivotRefreshOutputState =
+	| 'cached'
+	| 'stale'
+	| 'refresh-on-open'
+	| 'not-saved'
+	| 'unknown'
+
+export interface PivotRefreshPlanInfo {
+	readonly partPath: string
+	readonly cacheId?: number
+	readonly sourceSheet?: string
+	readonly sourceRef?: string
+	readonly pivotTables: readonly PivotRefreshTableInfo[]
+	readonly outputState: PivotRefreshOutputState
+	readonly canRefreshHeadlessly: false
+	readonly requiresExternalRefresh: boolean
+	readonly warnings: readonly string[]
+	readonly recommendedOps: readonly PivotRefreshRecommendedOp[]
+}
+
+export interface PivotRefreshTableInfo {
+	readonly partPath: string
+	readonly sheetName: string
+	readonly name?: string
+	readonly locationRef?: string
+}
+
+export interface PivotRefreshRecommendedOp {
+	readonly op: 'setPivotCache'
+	readonly partPath?: string
+	readonly cacheId?: number
+	readonly refreshOnLoad?: boolean
+	readonly invalid?: boolean
+	readonly saveData?: boolean
 }
 
 export interface PivotCacheFieldInfo {

@@ -206,6 +206,56 @@ function isReferenceBinaryOp(op: string): op is ',' | ' ' {
 }
 
 function evalBinary(op: string, left: CellValue, right: CellValue): CellValue {
+	if (left.kind === 'array' || right.kind === 'array') {
+		return evalArrayBinary(op, left, right)
+	}
+	return evalScalarBinary(op, left, right)
+}
+
+function evalArrayBinary(op: string, left: CellValue, right: CellValue): CellValue {
+	const leftRows = left.kind === 'array' ? left.rows.length : 1
+	const rightRows = right.kind === 'array' ? right.rows.length : 1
+	const leftCols = left.kind === 'array' ? maxRowLength(left.rows) : 1
+	const rightCols = right.kind === 'array' ? maxRowLength(right.rows) : 1
+	const rows = broadcastLength(leftRows, rightRows)
+	const cols = broadcastLength(leftCols, rightCols)
+	if (rows === null || cols === null) return errorValue('#VALUE!')
+
+	const result: ScalarCellValue[][] = []
+	for (let row = 0; row < rows; row++) {
+		const resultRow: ScalarCellValue[] = []
+		for (let col = 0; col < cols; col++) {
+			resultRow.push(
+				topLeftScalar(
+					evalScalarBinary(op, arrayCellAt(left, row, col), arrayCellAt(right, row, col)),
+				),
+			)
+		}
+		result.push(resultRow)
+	}
+	return arrayValue(result)
+}
+
+function maxRowLength(rows: readonly (readonly ScalarCellValue[])[]): number {
+	let max = 0
+	for (const row of rows) max = Math.max(max, row.length)
+	return max
+}
+
+function broadcastLength(left: number, right: number): number | null {
+	if (left === right) return left
+	if (left === 1) return right
+	if (right === 1) return left
+	return null
+}
+
+function arrayCellAt(value: CellValue, row: number, col: number): CellValue {
+	if (value.kind !== 'array') return value
+	const sourceRow = value.rows[value.rows.length === 1 ? 0 : row]
+	return sourceRow?.[sourceRow.length === 1 ? 0 : col] ?? EMPTY
+}
+
+function evalScalarBinary(op: string, left: CellValue, right: CellValue): CellValue {
 	left = topLeftScalar(left)
 	right = topLeftScalar(right)
 	if (left.kind === 'error') return left

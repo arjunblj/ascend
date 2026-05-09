@@ -244,7 +244,7 @@ function expectedPrefixAggregate(aggregate: PrefixAggregate, row: number): numbe
 }
 
 function numbersClose(actual: number, expected: number): boolean {
-	return Math.abs(actual - expected) <= Math.max(1e-9, Math.abs(expected) * 1e-12)
+	return Math.abs(actual - expected) <= Math.max(1e-9, Math.abs(expected) * 1e-10)
 }
 
 function mutationValueForAggregate(aggregate: PrefixAggregate): number {

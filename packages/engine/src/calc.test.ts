@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { StyleId } from '@ascend/core'
 import { createTableId, createWorkbook } from '@ascend/core'
 import { dateToSerial } from '@ascend/formulas'
-import { EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
+import { booleanValue, EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
 import { recalculate } from './calc.ts'
 import type { CalcContext } from './calc-context.ts'
 import { defaultCalcContext } from './calc-context.ts'
@@ -308,6 +308,64 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(1))
 		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(2))
 		expect(sheet.cells.get(2, 1)?.value).toEqual(numberValue(3))
+	})
+
+	test('binary arithmetic spills range operands elementwise', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'A1:A3*2', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(4))
+		expect(sheet.cells.get(2, 1)?.value).toEqual(numberValue(6))
+	})
+
+	test('binary arithmetic spills array constants elementwise', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: '{1,2,3}+{10,20,30}', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(11))
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(22))
+		expect(sheet.cells.get(0, 2)?.value).toEqual(numberValue(33))
+	})
+
+	test('binary comparison spills boolean masks', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'A1:A3>1', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(booleanValue(false))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(booleanValue(true))
+		expect(sheet.cells.get(2, 1)?.value).toEqual(booleanValue(true))
+	})
+
+	test('binary arithmetic broadcasts row and column arrays', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(0, 3, { value: EMPTY, formula: 'A1:A3*B1:C1', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 3)?.value).toEqual(numberValue(10))
+		expect(sheet.cells.get(0, 4)?.value).toEqual(numberValue(20))
+		expect(sheet.cells.get(1, 3)?.value).toEqual(numberValue(20))
+		expect(sheet.cells.get(1, 4)?.value).toEqual(numberValue(40))
+		expect(sheet.cells.get(2, 3)?.value).toEqual(numberValue(30))
+		expect(sheet.cells.get(2, 4)?.value).toEqual(numberValue(60))
 	})
 
 	test('implicit intersection uses the formula row for single-column ranges', () => {

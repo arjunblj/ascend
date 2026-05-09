@@ -411,6 +411,61 @@ function shouldPreferCompiled(ast: FormulaNode): boolean {
 		: false
 }
 
+const ARRAY_RETURNING_FUNCTIONS = new Set([
+	'CHOOSECOLS',
+	'CHOOSEROWS',
+	'DROP',
+	'EXPAND',
+	'FILTER',
+	'HSTACK',
+	'MAKEARRAY',
+	'MAP',
+	'RANDARRAY',
+	'SCAN',
+	'SEQUENCE',
+	'SORT',
+	'SORTBY',
+	'TAKE',
+	'TEXTSPLIT',
+	'TOCOL',
+	'TOROW',
+	'TRANSPOSE',
+	'UNIQUE',
+	'VSTACK',
+	'WRAPCOLS',
+	'WRAPROWS',
+])
+
+function needsInterpreterArraySemantics(ast: FormulaNode): boolean {
+	return (
+		ast.type === 'binary' &&
+		ast.op !== ',' &&
+		ast.op !== ' ' &&
+		(nodeCanReturnArray(ast.left) || nodeCanReturnArray(ast.right))
+	)
+}
+
+function nodeCanReturnArray(node: FormulaNode): boolean {
+	switch (node.type) {
+		case 'array':
+		case 'rangeRef':
+		case 'wholeColumnRange':
+		case 'wholeRowRange':
+		case 'structuredRef':
+		case 'spillRef':
+		case 'sheetSpanRef':
+			return true
+		case 'binary':
+			return nodeCanReturnArray(node.left) || nodeCanReturnArray(node.right)
+		case 'unary':
+			return nodeCanReturnArray(node.operand)
+		case 'function':
+			return ARRAY_RETURNING_FUNCTIONS.has(node.name.toUpperCase())
+		default:
+			return false
+	}
+}
+
 export function clearCompiledFormulaCache(): void {
 	// WeakMap entries are reclaimed automatically; this is a no-op placeholder
 	// kept for API symmetry with clearFormulaParseCache.
@@ -422,6 +477,7 @@ function evalFormula(
 	ast: FormulaNode,
 	ctx: EvalContext,
 ): CellValue {
+	if (needsInterpreterArraySemantics(ast)) return evaluate(ast, ctx)
 	if (shouldPreferCompiled(ast)) {
 		let compiled = compiledCache.get(ast)
 		if (compiled === undefined) {

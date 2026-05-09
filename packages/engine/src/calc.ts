@@ -763,7 +763,6 @@ export function recalculate(
 	}
 	if (isDirtyRecalc && volatileKeysList.length === 0 && !dirtyRefsCanUnblockSpill) {
 		const fast =
-			tryFastDirtyPrefixAggregateRecalc(workbook, graph, analysis.formulas, dirtyRefKeys, start) ??
 			tryFastDirtyGrowingAggregateRecalc(
 				workbook,
 				graph,
@@ -772,7 +771,8 @@ export function recalculate(
 				scratch.growingAggregateStateCache,
 				dirtyRefKeys,
 				start,
-			)
+			) ??
+			tryFastDirtyPrefixAggregateRecalc(workbook, graph, analysis.formulas, dirtyRefKeys, start)
 		if (fast) {
 			clearRangeValueCache()
 			clearCriteriaMatchCache()
@@ -1133,12 +1133,15 @@ function tryFastDirtyPrefixAggregateRecalc(
 	const sourceCoords: CellCoords = { sheetIndex: 0, row: 0, col: 0 }
 	parseCellKeyInto(sourceKey, sourceCoords)
 
+	const directDependents = graph.getDependents(sourceKey)
+	if (directDependents.length === 0) return null
 	const affected: AnalyzedFormula[] = []
 	let groupKey: string | undefined
-	for (const formula of formulas.values()) {
+	for (const dependent of directDependents) {
+		const formula = formulas.get(dependent)
+		if (!formula) return null
 		const aggregate = formula.rangeAggregate
-		if (!aggregate) continue
-		if (!canFastRecalculatePrefixAggregate(aggregate, sourceCoords)) continue
+		if (!aggregate || !canFastRecalculatePrefixAggregate(aggregate, sourceCoords)) return null
 		const currentGroupKey = [
 			aggregate.functionName,
 			aggregate.sheetIndex,
@@ -1150,13 +1153,6 @@ function tryFastDirtyPrefixAggregateRecalc(
 		else if (groupKey !== currentGroupKey) return null
 		if (graph.getDependents(formula.key).length > 0) return null
 		affected.push(formula)
-	}
-	if (affected.length === 0) return null
-
-	const affectedKeys = new Set(affected.map((formula) => formula.key))
-	const directDependents = graph.getDependents(sourceKey)
-	for (const dependent of directDependents) {
-		if (!affectedKeys.has(dependent)) return null
 	}
 
 	affected.sort((a, b) => {

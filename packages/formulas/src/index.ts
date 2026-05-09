@@ -4,6 +4,7 @@ export type {
 	BinaryOp,
 	BooleanNode,
 	CellRefNode,
+	DynamicRangeRefNode,
 	ErrorNode,
 	FormulaCellRef,
 	FormulaNode,

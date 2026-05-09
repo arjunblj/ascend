@@ -27,6 +27,52 @@ describe('recalculate', () => {
 		expect(cell?.value).toEqual(numberValue(3))
 	})
 
+	test('SUM supports INDEX as a dynamic range endpoint', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		for (let row = 0; row < 5; row++) {
+			sheet.cells.set(row, 0, { value: numberValue(row + 1), formula: null, styleId: sid })
+		}
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'SUM(A1:INDEX(A:A,5))', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(15))
+	})
+
+	test('SUM supports OFFSET as a dynamic range endpoint', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		for (let row = 0; row < 4; row++) {
+			sheet.cells.set(row, 0, { value: numberValue(row + 2), formula: null, styleId: sid })
+		}
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'SUM(A1:OFFSET(A1,3,0))', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(14))
+	})
+
+	test('reference functions can form both dynamic range endpoints', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		for (let row = 0; row < 5; row++) {
+			sheet.cells.set(row, 0, { value: numberValue(row + 1), formula: null, styleId: sid })
+		}
+		sheet.cells.set(0, 1, {
+			value: EMPTY,
+			formula: 'SUM(INDEX(A:A,2):INDEX(A:A,4))',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(9))
+	})
+
 	test('growing range aggregate optimization evaluates COUNT, AVERAGE, MIN, and MAX', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

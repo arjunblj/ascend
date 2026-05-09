@@ -449,6 +449,7 @@ function nodeCanReturnArray(node: FormulaNode): boolean {
 	switch (node.type) {
 		case 'array':
 		case 'rangeRef':
+		case 'dynamicRangeRef':
 		case 'wholeColumnRange':
 		case 'wholeRowRange':
 		case 'structuredRef':
@@ -478,6 +479,8 @@ function hasExternalWorkbookReference(node: FormulaNode): boolean {
 			return node.startSheet.startsWith('[') || node.endSheet.startsWith('[')
 		case 'spillRef':
 			return hasExternalWorkbookReference(node.target)
+		case 'dynamicRangeRef':
+			return hasExternalWorkbookReference(node.start) || hasExternalWorkbookReference(node.end)
 		case 'binary':
 			return hasExternalWorkbookReference(node.left) || hasExternalWorkbookReference(node.right)
 		case 'unary':

@@ -207,7 +207,7 @@ class FormulaParser {
 	}
 
 	private parseReferenceIntersection(): FormulaNode {
-		let left = this.parsePostfix()
+		let left = this.parseReferenceRange()
 		while (isReferenceLike(left) && this.peek().type === TokenType.Whitespace) {
 			const savedPos = this.pos
 			this.advance()
@@ -215,13 +215,28 @@ class FormulaParser {
 				this.pos = savedPos
 				break
 			}
-			const right = this.parsePostfix()
+			const right = this.parseReferenceRange()
 			if (!isReferenceLike(right)) {
 				throw new Error(
 					`Intersection operator requires references at position ${this.peek(true).position}`,
 				)
 			}
 			left = { type: 'binary', op: ' ', left, right }
+		}
+		return left
+	}
+
+	private parseReferenceRange(): FormulaNode {
+		let left = this.parsePostfix()
+		while (isReferenceLike(left) && this.peek(true).type === TokenType.Colon) {
+			this.expect(TokenType.Colon)
+			const right = this.parsePostfix()
+			if (!isReferenceLike(right)) {
+				throw new Error(
+					`Range operator requires references at position ${this.peek(true).position}`,
+				)
+			}
+			left = makeRangeFromEndpoints(left, right)
 		}
 		return left
 	}
@@ -362,7 +377,10 @@ class FormulaParser {
 		const token = this.advance(true)
 		const ref = parseCellRefValue(token.value)
 
-		if (this.peek(true).type === TokenType.Colon) {
+		if (
+			this.peek(true).type === TokenType.Colon &&
+			this.lookahead(1, true).type === TokenType.CellRef
+		) {
 			this.expect(TokenType.Colon)
 			const endToken = this.expect(TokenType.CellRef)
 			const end = parseCellRefValue(endToken.value)
@@ -603,6 +621,7 @@ function isReferenceLike(node: FormulaNode): boolean {
 	switch (node.type) {
 		case 'cellRef':
 		case 'rangeRef':
+		case 'dynamicRangeRef':
 		case 'wholeRowRange':
 		case 'wholeColumnRange':
 		case 'name':
@@ -610,10 +629,68 @@ function isReferenceLike(node: FormulaNode): boolean {
 		case 'spillRef':
 		case 'sheetSpanRef':
 			return true
+		case 'function':
+			return isReferenceFunctionName(node.name)
 		case 'binary':
 			return node.op === ',' || node.op === ' '
 		default:
 			return false
+	}
+}
+
+function isReferenceFunctionName(name: string): boolean {
+	switch (name.toUpperCase()) {
+		case 'INDEX':
+		case 'INDIRECT':
+		case 'OFFSET':
+			return true
+		default:
+			return false
+	}
+}
+
+function makeRangeFromEndpoints(left: FormulaNode, right: FormulaNode): FormulaNode {
+	const normalizedRight = inheritEndpointSheet(left, right)
+	if (left.type === 'cellRef' && normalizedRight.type === 'cellRef') {
+		const sheet = left.sheet ?? normalizedRight.sheet
+		if (sheet !== undefined) {
+			return { type: 'rangeRef', start: left.ref, end: normalizedRight.ref, sheet }
+		}
+		return { type: 'rangeRef', start: left.ref, end: normalizedRight.ref }
+	}
+	return { type: 'dynamicRangeRef', start: left, end: normalizedRight }
+}
+
+function inheritEndpointSheet(left: FormulaNode, right: FormulaNode): FormulaNode {
+	const sheet = left.type === 'cellRef' ? left.sheet : undefined
+	if (sheet === undefined) return right
+	switch (right.type) {
+		case 'cellRef':
+			return right.sheet === undefined ? { type: 'cellRef', ref: right.ref, sheet } : right
+		case 'rangeRef':
+			return right.sheet === undefined
+				? { type: 'rangeRef', start: right.start, end: right.end, sheet }
+				: right
+		case 'wholeRowRange':
+			return right.sheet === undefined
+				? {
+						type: 'wholeRowRange',
+						startRow: right.startRow,
+						endRow: right.endRow,
+						sheet,
+					}
+				: right
+		case 'wholeColumnRange':
+			return right.sheet === undefined
+				? {
+						type: 'wholeColumnRange',
+						startCol: right.startCol,
+						endCol: right.endCol,
+						sheet,
+					}
+				: right
+		default:
+			return right
 	}
 }
 
@@ -622,6 +699,7 @@ function canStartReferenceExpression(token: Token): boolean {
 		case TokenType.CellRef:
 		case TokenType.Name:
 		case TokenType.Number:
+		case TokenType.Function:
 		case TokenType.OpenParen:
 			return true
 		default:

@@ -1060,6 +1060,8 @@ function hasVolatileFunction(node: FormulaNode): boolean {
 			return node.args.some((arg) => hasVolatileFunction(arg))
 		case 'binary':
 			return hasVolatileFunction(node.left) || hasVolatileFunction(node.right)
+		case 'dynamicRangeRef':
+			return hasVolatileFunction(node.start) || hasVolatileFunction(node.end)
 		case 'unary':
 			return hasVolatileFunction(node.operand)
 		case 'array':
@@ -1188,6 +1190,10 @@ function walkStructuredRefs(
 			walkStructuredRefs(node.left, result)
 			walkStructuredRefs(node.right, result)
 			break
+		case 'dynamicRangeRef':
+			walkStructuredRefs(node.start, result)
+			walkStructuredRefs(node.end, result)
+			break
 		case 'unary':
 			walkStructuredRefs(node.operand, result)
 			break
@@ -1228,6 +1234,10 @@ function walkNameRefs(
 		case 'binary':
 			walkNameRefs(node.left, result, shadowed)
 			walkNameRefs(node.right, result, shadowed)
+			break
+		case 'dynamicRangeRef':
+			walkNameRefs(node.start, result, shadowed)
+			walkNameRefs(node.end, result, shadowed)
 			break
 		case 'unary':
 			walkNameRefs(node.operand, result, shadowed)

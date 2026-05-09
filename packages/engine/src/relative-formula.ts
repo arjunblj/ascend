@@ -33,6 +33,12 @@ function shiftFormulaNode(node: FormulaNode, rowDelta: number, colDelta: number)
 					col: node.end.colAbsolute ? node.end.col : node.end.col + colDelta,
 				},
 			}
+		case 'dynamicRangeRef':
+			return {
+				...node,
+				start: shiftFormulaNode(node.start, rowDelta, colDelta),
+				end: shiftFormulaNode(node.end, rowDelta, colDelta),
+			}
 		case 'binary':
 			return {
 				...node,

@@ -463,6 +463,20 @@ export function rewriteFormulaAstForShift(
 				? node
 				: { type: 'binary', op: node.op, left, right }
 		}
+		case 'dynamicRangeRef': {
+			const start = rewriteFormulaAstForShift(
+				node.start,
+				targetSheet,
+				formulaSheet,
+				axis,
+				at,
+				delta,
+			)
+			const end = rewriteFormulaAstForShift(node.end, targetSheet, formulaSheet, axis, at, delta)
+			return start === node.start && end === node.end
+				? node
+				: { type: 'dynamicRangeRef', start, end }
+		}
 		case 'unary': {
 			const operand = rewriteFormulaAstForShift(
 				node.operand,
@@ -523,6 +537,11 @@ export function formulaAstReferencesSheet(node: FormulaNode, sheetName: string):
 				formulaAstReferencesSheet(node.left, sheetName) ||
 				formulaAstReferencesSheet(node.right, sheetName)
 			)
+		case 'dynamicRangeRef':
+			return (
+				formulaAstReferencesSheet(node.start, sheetName) ||
+				formulaAstReferencesSheet(node.end, sheetName)
+			)
 		case 'unary':
 			return formulaAstReferencesSheet(node.operand, sheetName)
 		case 'spillRef':
@@ -566,6 +585,12 @@ function rewriteSheetName(node: FormulaNode, oldName: string, newName: string): 
 				left: rewriteSheetName(node.left, oldName, newName),
 				right: rewriteSheetName(node.right, oldName, newName),
 			}
+		case 'dynamicRangeRef':
+			return {
+				type: 'dynamicRangeRef',
+				start: rewriteSheetName(node.start, oldName, newName),
+				end: rewriteSheetName(node.end, oldName, newName),
+			}
 		case 'unary':
 			return {
 				type: 'unary',
@@ -598,6 +623,12 @@ function rewriteTableName(node: FormulaNode, oldName: string, newName: string): 
 				op: node.op,
 				left: rewriteTableName(node.left, oldName, newName),
 				right: rewriteTableName(node.right, oldName, newName),
+			}
+		case 'dynamicRangeRef':
+			return {
+				type: 'dynamicRangeRef',
+				start: rewriteTableName(node.start, oldName, newName),
+				end: rewriteTableName(node.end, oldName, newName),
 			}
 		case 'unary':
 			return {

@@ -21,6 +21,8 @@ export interface WriteDenseRowsXlsxOptions {
 	readonly stringsAreXmlSafe?: boolean
 	/** Hint for dense generated values; mismatches fall back to generic cell serialization. */
 	readonly valueType?: DenseXlsxCellValueType
+	/** Per-column value hints for dense generated rows; mismatches fall back to generic cell serialization. */
+	readonly valueTypes?: readonly (DenseXlsxCellValueType | undefined)[]
 	/** Hint that every generated cell is present; null mismatches fall back to referenced cells. */
 	readonly allCellsPresent?: boolean
 }
@@ -88,6 +90,11 @@ function validateDenseRowsOptions(options: WriteDenseRowsXlsxOptions): void {
 	}
 	if (typeof options.valueAt !== 'function') {
 		throw new Error('valueAt must be a function')
+	}
+	if (options.valueTypes !== undefined && options.valueTypes.length !== options.cols) {
+		throw new Error(
+			`valueTypes length must match cols: ${options.valueTypes.length} !== ${options.cols}`,
+		)
 	}
 }
 
@@ -304,6 +311,9 @@ function buildPresentDenseRowXmlWithoutRefs(
 	options: WriteDenseRowsXlsxOptions,
 	row: number,
 ): string {
+	if (options.valueTypes !== undefined) {
+		return buildPresentColumnTypedRowXmlWithoutRefs(options, row, options.valueTypes)
+	}
 	if (options.valueType === 'string' && options.stringsAreXmlSafe === true) {
 		return buildPresentSafeStringRowXmlWithoutRefs(options, row)
 	}
@@ -320,6 +330,40 @@ function buildPresentGenericRowXmlWithoutRefs(
 	for (let col = 0; col < options.cols; col++) {
 		const value = options.valueAt(row, col)
 		if (value === null) return buildRowXmlWithRefs(options, row)
+		body += cellXml(value, undefined, options.stringsAreXmlSafe, options.valueType)
+	}
+	return body.length === 0 ? '' : `<row r="${row + 1}">${body}</row>`
+}
+
+function buildPresentColumnTypedRowXmlWithoutRefs(
+	options: WriteDenseRowsXlsxOptions,
+	row: number,
+	valueTypes: readonly (DenseXlsxCellValueType | undefined)[],
+): string {
+	let body = ''
+	for (let col = 0; col < options.cols; col++) {
+		const value = options.valueAt(row, col)
+		if (value === null) return buildRowXmlWithRefs(options, row)
+		const valueType = valueTypes[col]
+		if (valueType === 'number') {
+			if (typeof value !== 'number') return buildPresentGenericRowXmlWithoutRefs(options, row)
+			// biome-ignore lint/style/useTemplate: Bun/JSC is measurably faster with concatenation here.
+			body += '<c><v>' + value + '</v></c>'
+			continue
+		}
+		if (valueType === 'string') {
+			if (typeof value !== 'string') return buildPresentGenericRowXmlWithoutRefs(options, row)
+			body +=
+				'<c t="str"><v>' +
+				(options.stringsAreXmlSafe === true ? value : escapeXml(value)) +
+				'</v></c>'
+			continue
+		}
+		if (valueType === 'boolean') {
+			if (typeof value !== 'boolean') return buildPresentGenericRowXmlWithoutRefs(options, row)
+			body += value ? '<c t="b"><v>1</v></c>' : '<c t="b"><v>0</v></c>'
+			continue
+		}
 		body += cellXml(value, undefined, options.stringsAreXmlSafe, options.valueType)
 	}
 	return body.length === 0 ? '' : `<row r="${row + 1}">${body}</row>`

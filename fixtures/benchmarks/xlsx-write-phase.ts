@@ -161,6 +161,22 @@ function denseValueType(workload: WorkloadName): 'number' | 'string' | undefined
 	return undefined
 }
 
+function denseValueTypes(
+	workload: WorkloadName,
+	cols: number,
+): readonly ('number' | 'string' | undefined)[] | undefined {
+	if (workload === 'mixed-50pct-text' && cols % 2 === 0) {
+		return Array.from({ length: cols }, (_, col) => (col % 2 === 0 ? 'string' : 'number'))
+	}
+	if (workload === 'mixed-10pct-text' && cols % 10 === 0) {
+		return Array.from({ length: cols }, (_, col) => (col % 10 === 0 ? 'string' : 'number'))
+	}
+	if (workload === 'mixed-closedxml-10text-5number') {
+		return Array.from({ length: cols }, (_, col) => (col < 10 ? 'string' : 'number'))
+	}
+	return undefined
+}
+
 function shouldUseDirectDenseStreaming(args: Args): boolean {
 	return args.streaming && shouldUseDenseRowsWriter(args.workload)
 }
@@ -209,6 +225,7 @@ async function runSample(args: Args): Promise<PhaseSample> {
 				constantRows: args.workload === 'mixed-closedxml-10text-5number',
 				stringsAreXmlSafe: shouldUseXmlSafeGeneratedStrings(args.workload),
 				valueType: denseValueType(args.workload),
+				valueTypes: denseValueTypes(args.workload, args.cols),
 				allCellsPresent: true,
 				valueAt: (row, col) => workloadValue(args.workload, row, col, args.cols),
 			})

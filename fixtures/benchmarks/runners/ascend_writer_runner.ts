@@ -1,12 +1,14 @@
 #!/usr/bin/env bun
 import { createWorkbook } from '../../../packages/core/src/index.ts'
-import { writeXlsx } from '../../../packages/io-xlsx/src/index.ts'
+import { writeDenseRowsXlsxStreaming, writeXlsx } from '../../../packages/io-xlsx/src/index.ts'
 import {
 	buildWorkloadValues,
 	denseWriteAssertions,
+	expectedOrderedWorkloadValuesHash,
 	expectedWorkloadValuesHash,
 	setCoreCellGenerated,
 	type WorkloadName,
+	workloadValue,
 } from '../competitive-io.ts'
 
 interface Args {
@@ -24,6 +26,7 @@ const SUPPORTED_WORKLOADS = new Set<string>([
 	'dense-values',
 	'mixed-10pct-text',
 	'mixed-50pct-text',
+	'mixed-closedxml-10text-5number',
 	'plain-text',
 	'string-heavy',
 	'sparse-wide',
@@ -117,15 +120,80 @@ function generatedCellCount(args: Args): number {
 }
 
 function shouldUsePlainStrings(workload: WorkloadName): boolean {
-	return workload === 'string-heavy'
+	return workload === 'string-heavy' || workload === 'plain-text'
 }
 
-function writeWorkbook(args: Args): Uint8Array {
+function shouldUseDenseRowsWriter(workload: WorkloadName): boolean {
+	return (
+		workload === 'dense-values' ||
+		workload === 'mixed-10pct-text' ||
+		workload === 'mixed-50pct-text' ||
+		workload === 'mixed-closedxml-10text-5number' ||
+		workload === 'plain-text' ||
+		workload === 'string-heavy'
+	)
+}
+
+function canUseGeneratedHashFromHarness(workload: WorkloadName): boolean {
+	return shouldUseDenseRowsWriter(workload) || workload === 'sparse-wide'
+}
+
+function shouldUseXmlSafeGeneratedStrings(workload: WorkloadName): boolean {
+	return (
+		workload === 'mixed-10pct-text' ||
+		workload === 'mixed-50pct-text' ||
+		workload === 'mixed-closedxml-10text-5number' ||
+		workload === 'plain-text' ||
+		workload === 'string-heavy'
+	)
+}
+
+function denseValueType(workload: WorkloadName): 'number' | 'string' | undefined {
+	if (workload === 'dense-values') return 'number'
+	if (workload === 'plain-text' || workload === 'string-heavy') return 'string'
+	return undefined
+}
+
+function denseValueTypes(
+	workload: WorkloadName,
+	cols: number,
+): readonly ('number' | 'string' | undefined)[] | undefined {
+	if (workload === 'mixed-50pct-text' && cols % 2 === 0) {
+		return Array.from({ length: cols }, (_, col) => (col % 2 === 0 ? 'string' : 'number'))
+	}
+	if (workload === 'mixed-10pct-text' && cols % 10 === 0) {
+		return Array.from({ length: cols }, (_, col) => (col % 10 === 0 ? 'string' : 'number'))
+	}
+	if (workload === 'mixed-closedxml-10text-5number') {
+		return Array.from({ length: cols }, (_, col) => (col < 10 ? 'string' : 'number'))
+	}
+	return undefined
+}
+
+async function writeWorkbook(args: Args): Promise<Uint8Array> {
+	if (shouldUseDenseRowsWriter(args.workload)) {
+		const options = {
+			rows: args.rows,
+			cols: args.cols,
+			omitCellRefs: true,
+			cacheRepeatedRows: args.workload === 'mixed-closedxml-10text-5number',
+			constantRows: args.workload === 'mixed-closedxml-10text-5number',
+			stringsAreXmlSafe: shouldUseXmlSafeGeneratedStrings(args.workload),
+			valueType: denseValueType(args.workload),
+			valueTypes: denseValueTypes(args.workload, args.cols),
+			allCellsPresent: args.workload !== 'sparse-wide',
+			valueAt: (row, col) => workloadValue(args.workload, row, col, args.cols),
+		} as const
+		const result = await writeDenseRowsXlsxStreaming(options)
+		if (!result.ok) throw new Error(result.error.message)
+		return result.value
+	}
 	const workbook = createWorkbook()
 	setCoreCellGenerated(workbook, args.rows, args.cols, args.workload)
 	const result = writeXlsx(workbook, undefined, {
 		useSharedStrings: args.workload === 'feature-rich' ? undefined : false,
 		usePlainStrings: shouldUsePlainStrings(args.workload),
+		omitDenseCellRefs: shouldUsePlainStrings(args.workload),
 	})
 	if (!result.ok) throw new Error(result.error.message)
 	return result.value
@@ -133,12 +201,12 @@ function writeWorkbook(args: Args): Uint8Array {
 
 async function main(): Promise<void> {
 	const args = parseArgs()
-	for (let i = 0; i < args.warmup; i++) writeWorkbook(args)
+	for (let i = 0; i < args.warmup; i++) await writeWorkbook(args)
 	const samples: ReturnType<typeof memorySample>[] = []
 	let bytes: Uint8Array | undefined
 	for (let i = 0; i < args.repeat; i++) {
 		const start = performance.now()
-		bytes = writeWorkbook(args)
+		bytes = await writeWorkbook(args)
 		samples.push(memorySample(performance.now() - start))
 	}
 	if (!bytes) throw new Error('No samples were produced')
@@ -146,16 +214,24 @@ async function main(): Promise<void> {
 	const values = shouldMaterializeExpectedValues
 		? buildWorkloadValues(args.workload, args.rows, args.cols)
 		: []
+	const shouldComputeExpectedHashes =
+		shouldMaterializeExpectedValues || !canUseGeneratedHashFromHarness(args.workload)
 	const input = {
 		workloadName: args.workload,
 		readSource: 'ascend-writer',
+		sourceMode: 'generated-write',
 		rows: args.rows,
 		cols: args.cols,
 		cells: shouldMaterializeExpectedValues
 			? values.reduce((count, row) => count + row.filter((value) => value !== null).length, 0)
 			: generatedCellCount(args),
 		values,
-		semanticCellValuesHash: expectedWorkloadValuesHash(args.workload, args.rows, args.cols),
+		semanticCellValuesHash: shouldComputeExpectedHashes
+			? expectedWorkloadValuesHash(args.workload, args.rows, args.cols)
+			: '',
+		orderedSemanticCellValuesHash: shouldComputeExpectedHashes
+			? expectedOrderedWorkloadValuesHash(args.workload, args.rows, args.cols)
+			: undefined,
 		xlsxPath: '',
 		xlsxBytes: bytes,
 	} as const

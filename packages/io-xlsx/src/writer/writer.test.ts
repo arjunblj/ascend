@@ -1583,6 +1583,38 @@ describe('writeXlsx', () => {
 		expect(readSheet?.cells.get(0, 2)?.value).toEqual({ kind: 'string', value: 'fallback' })
 	})
 
+	it('uses dense column value type hints while preserving fallback semantics', () => {
+		const written = writeDenseRowsXlsx({
+			rows: 2,
+			cols: 4,
+			omitCellRefs: true,
+			allCellsPresent: true,
+			stringsAreXmlSafe: true,
+			valueTypes: ['string', 'number', 'string', 'number'],
+			valueAt: (row, col) => {
+				if (row === 1 && col === 3) return 'fallback'
+				return col % 2 === 0 ? `text-${row}-${col}` : row * 10 + col
+			},
+		})
+		expectOk(written)
+
+		const zip = unzipSync(written.value)
+		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+		expect(sheetXml).toContain(
+			'<row r="1"><c t="str"><v>text-0-0</v></c><c><v>1</v></c><c t="str"><v>text-0-2</v></c><c><v>3</v></c></row>',
+		)
+		expect(sheetXml).toContain(
+			'<row r="2"><c t="str"><v>text-1-0</v></c><c><v>11</v></c><c t="str"><v>text-1-2</v></c><c t="str"><v>fallback</v></c></row>',
+		)
+
+		const read = readXlsx(written.value, { mode: 'values' })
+		expectOk(read)
+		const readSheet = read.value.workbook.sheets[0]
+		expect(readSheet?.cells.get(0, 0)?.value).toEqual({ kind: 'string', value: 'text-0-0' })
+		expect(readSheet?.cells.get(0, 1)?.value).toEqual({ kind: 'number', value: 1 })
+		expect(readSheet?.cells.get(1, 3)?.value).toEqual({ kind: 'string', value: 'fallback' })
+	})
+
 	it('streams dense rows without materializing a workbook', async () => {
 		const written = await writeDenseRowsXlsxStreaming({
 			rows: 2,

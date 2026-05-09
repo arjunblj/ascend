@@ -108,6 +108,26 @@ interface TailPrefixAggregateResult {
 	readonly state?: RangeAggregateState
 }
 
+interface IndexMatchReturnPattern {
+	readonly sheetIndex: number
+	readonly returnStartRow: number
+	readonly returnCol: number
+	readonly returnEndRow: number
+	readonly lookupCellRow: number
+	readonly lookupCellCol: number
+	readonly lookupStartRow: number
+	readonly lookupCol: number
+	readonly lookupEndRow: number
+}
+
+interface IndexMatchReturnFormula {
+	readonly sheetIndex: number
+	readonly row: number
+	readonly col: number
+	readonly formula: string
+	readonly pattern: IndexMatchReturnPattern
+}
+
 type TextPrefixSourceSnapshot = number | null | 'error'
 
 interface RecalcScratch {
@@ -124,6 +144,8 @@ interface RecalcScratch {
 	readonly textPrefixGroups: Map<string, readonly TextPrefixAggregateBlock[]>
 	readonly textPrefixAggregateStates: Map<string, RangeAggregateState>
 	readonly textPrefixSourceSnapshots: Map<CellKey, TextPrefixSourceSnapshot>
+	readonly indexMatchReturnBySource: Map<CellKey, readonly IndexMatchReturnFormula[]>
+	indexMatchReturnFormulaCount: number
 	readonly evalContext: MutableEvalContext
 }
 
@@ -146,6 +168,8 @@ function getRecalcScratch(workbook: Workbook): RecalcScratch {
 			textPrefixGroups: new Map(),
 			textPrefixAggregateStates: new Map(),
 			textPrefixSourceSnapshots: new Map(),
+			indexMatchReturnBySource: new Map(),
+			indexMatchReturnFormulaCount: 0,
 			evalContext: new MutableEvalContext(),
 		}
 		recalcScratchByWorkbook.set(workbook, scratch)
@@ -841,6 +865,8 @@ export function recalculate(
 		exactLookupCache.clear()
 		lookupVectorCache.clear()
 		scratch.growingAggregateStateCache.clear()
+		scratch.indexMatchReturnBySource.clear()
+		scratch.indexMatchReturnFormulaCount = 0
 		const fast = tryFastFullPrefixAggregateTextRecalc(workbook, changed, start, scratch)
 		if (fast) {
 			clearRangeValueCache()
@@ -860,6 +886,18 @@ export function recalculate(
 			clearRangeValueCache()
 			clearCriteriaMatchCache()
 			return fast
+		}
+		const lookupFast = tryFastDirtyIndexMatchReturnTextRecalc(
+			workbook,
+			opts?.dirtyRefs,
+			changed,
+			start,
+			scratch,
+		)
+		if (lookupFast) {
+			clearRangeValueCache()
+			clearCriteriaMatchCache()
+			return lookupFast
 		}
 	}
 
@@ -1271,6 +1309,9 @@ export function recalculate(
 
 	clearRangeValueCache()
 	clearCriteriaMatchCache()
+	if (!isDirtyRecalc && !opts?.range) {
+		cacheIndexMatchReturnFormulas(workbook, scratch, analysis.formulas)
+	}
 
 	return {
 		changed,
@@ -1920,6 +1961,55 @@ function parseSimpleCellRef(
 	return { row: row - 1, col: col - 1 }
 }
 
+function parseIndexMatchReturnAst(
+	ast: FormulaNode,
+	sheetIndex: number,
+): IndexMatchReturnPattern | null {
+	if (ast.type !== 'function' || ast.name.toUpperCase() !== 'INDEX' || ast.args.length !== 2) {
+		return null
+	}
+	const returnRange = ast.args[0]
+	const rowArg = ast.args[1]
+	if (!returnRange || returnRange.type !== 'rangeRef' || returnRange.sheet !== undefined) {
+		return null
+	}
+	if (
+		returnRange.start.col !== returnRange.end.col ||
+		returnRange.end.row < returnRange.start.row
+	) {
+		return null
+	}
+	if (!rowArg || rowArg.type !== 'function' || rowArg.name.toUpperCase() !== 'MATCH') return null
+	if (rowArg.args.length !== 3) return null
+	const lookupCell = rowArg.args[0]
+	const lookupRange = rowArg.args[1]
+	const matchType = rowArg.args[2]
+	if (!lookupCell || lookupCell.type !== 'cellRef' || lookupCell.sheet !== undefined) return null
+	if (!lookupRange || lookupRange.type !== 'rangeRef' || lookupRange.sheet !== undefined)
+		return null
+	if (matchType?.type !== 'number' || matchType.value !== 0) return null
+	if (
+		lookupRange.start.col !== lookupRange.end.col ||
+		lookupRange.end.row < lookupRange.start.row
+	) {
+		return null
+	}
+	if (returnRange.end.row - returnRange.start.row !== lookupRange.end.row - lookupRange.start.row) {
+		return null
+	}
+	return {
+		sheetIndex,
+		returnStartRow: returnRange.start.row,
+		returnCol: returnRange.start.col,
+		returnEndRow: returnRange.end.row,
+		lookupCellRow: lookupCell.ref.row,
+		lookupCellCol: lookupCell.ref.col,
+		lookupStartRow: lookupRange.start.row,
+		lookupCol: lookupRange.start.col,
+		lookupEndRow: lookupRange.end.row,
+	}
+}
+
 function prefixAggregateTextGroupKey(aggregate: RangeAggregateOptimization): string {
 	return [
 		aggregate.functionName,
@@ -2061,6 +2151,211 @@ function appendCellToRangeAggregateState(
 		default:
 			return previous
 	}
+}
+
+function tryFastDirtyIndexMatchReturnTextRecalc(
+	workbook: Workbook,
+	dirtyRefs: readonly string[] | undefined,
+	changed: string[],
+	start: number,
+	scratch: RecalcScratch,
+): RecalcResult | null {
+	const source = resolveSingleDirtyCell(workbook, dirtyRefs)
+	if (!source) return null
+	const sourceSheet = workbook.sheets[source.sheetIndex]
+	if (!sourceSheet || sourceSheet.cells.readFormula(source.row, source.col) !== null) return null
+	const sourceKey = cellKey(source.sheetIndex, source.row, source.col)
+	const cached = scratch.indexMatchReturnBySource.get(sourceKey)
+	if (cached && cached.length > 0) {
+		if (countPlainFormulas(workbook) !== scratch.indexMatchReturnFormulaCount) return null
+		for (const formula of cached) {
+			const sheet = workbook.sheets[formula.sheetIndex]
+			if (!sheet) return null
+			if (sheet.cells.readFormula(formula.row, formula.col) !== formula.formula) return null
+			if (sheet.cells.readFormulaInfo(formula.row, formula.col) !== undefined) return null
+			if (
+				!writeFormulaValue(
+					workbook,
+					formula.sheetIndex,
+					formula.row,
+					formula.col,
+					formula.formula,
+					sourceSheet.cells.readValue(source.row, source.col),
+					changed,
+				)
+			) {
+				return null
+			}
+		}
+		return { changed, errors: [], duration: performance.now() - start }
+	}
+	return null
+}
+
+function firstExactLookupOffset(
+	sheet: NonNullable<Workbook['sheets'][number]>,
+	startRow: number,
+	col: number,
+	endRow: number,
+	lookupValue: CellValue,
+): number {
+	for (let row = startRow; row <= endRow; row++) {
+		if (valuesEqual(sheet.cells.readValue(row, col), lookupValue)) return row - startRow
+	}
+	return -1
+}
+
+function cacheIndexMatchReturnFormulas(
+	workbook: Workbook,
+	scratch: RecalcScratch,
+	formulas?: ReadonlyMap<CellKey, AnalyzedFormula>,
+): void {
+	scratch.indexMatchReturnBySource.clear()
+	scratch.indexMatchReturnFormulaCount = 0
+	const firstOffsetIndexes = new Map<string, ReadonlyMap<string, number>>()
+	if (formulas) {
+		const formulaCount = countPlainFormulas(workbook)
+		if (formulaCount < 1 || formulaCount !== formulas.size) return
+		scratch.indexMatchReturnFormulaCount = formulaCount
+		for (const formula of formulas.values()) {
+			if (formula.parseError || !formula.ast) {
+				scratch.indexMatchReturnBySource.clear()
+				scratch.indexMatchReturnFormulaCount = 0
+				return
+			}
+			const sheet = workbook.sheets[formula.sheetIndex]
+			if (!sheet || sheet.cells.readFormulaInfo(formula.row, formula.col) !== undefined) {
+				scratch.indexMatchReturnBySource.clear()
+				scratch.indexMatchReturnFormulaCount = 0
+				return
+			}
+			const pattern = parseIndexMatchReturnAst(formula.ast, formula.sheetIndex)
+			if (!pattern) {
+				scratch.indexMatchReturnBySource.clear()
+				scratch.indexMatchReturnFormulaCount = 0
+				return
+			}
+			cacheIndexMatchReturnFormula(workbook, scratch, firstOffsetIndexes, {
+				sheetIndex: formula.sheetIndex,
+				row: formula.row,
+				col: formula.col,
+				formula: formula.formula,
+				pattern,
+			})
+		}
+		return
+	}
+}
+
+function cacheIndexMatchReturnFormula(
+	workbook: Workbook,
+	scratch: RecalcScratch,
+	firstOffsetIndexes: Map<string, ReadonlyMap<string, number>>,
+	formula: IndexMatchReturnFormula,
+): void {
+	const sheet = workbook.sheets[formula.pattern.sheetIndex]
+	if (!sheet) return
+	const pattern = formula.pattern
+	const lookupValue = sheet.cells.readValue(pattern.lookupCellRow, pattern.lookupCellCol)
+	const offset =
+		firstExactLookupOffsetFromIndex(sheet, pattern, lookupValue, firstOffsetIndexes) ??
+		firstExactLookupOffset(
+			sheet,
+			pattern.lookupStartRow,
+			pattern.lookupCol,
+			pattern.lookupEndRow,
+			lookupValue,
+		)
+	if (offset < 0) return
+	const sourceRow = pattern.returnStartRow + offset
+	if (sourceRow > pattern.returnEndRow) return
+	const sourceKey = cellKey(pattern.sheetIndex, sourceRow, pattern.returnCol)
+	const existing = scratch.indexMatchReturnBySource.get(sourceKey)
+	if (existing) {
+		scratch.indexMatchReturnBySource.set(sourceKey, [...existing, formula])
+	} else {
+		scratch.indexMatchReturnBySource.set(sourceKey, [formula])
+	}
+}
+
+function firstExactLookupOffsetFromIndex(
+	sheet: NonNullable<Workbook['sheets'][number]>,
+	pattern: IndexMatchReturnPattern,
+	lookupValue: CellValue,
+	firstOffsetIndexes: Map<string, ReadonlyMap<string, number>>,
+): number | null {
+	const valueKey = exactCellValueKey(lookupValue)
+	if (valueKey === null) return null
+	const rangeKey = [
+		pattern.sheetIndex,
+		pattern.lookupStartRow,
+		pattern.lookupCol,
+		pattern.lookupEndRow,
+	].join(':')
+	let index = firstOffsetIndexes.get(rangeKey)
+	if (!index) {
+		const next = new Map<string, number>()
+		for (let row = pattern.lookupStartRow; row <= pattern.lookupEndRow; row++) {
+			const key = exactCellValueKey(sheet.cells.readValue(row, pattern.lookupCol))
+			if (key !== null && !next.has(key)) next.set(key, row - pattern.lookupStartRow)
+		}
+		index = next
+		firstOffsetIndexes.set(rangeKey, index)
+	}
+	return index.get(valueKey) ?? -1
+}
+
+function exactCellValueKey(value: CellValue): string | null {
+	const scalar = topLeftScalar(value)
+	switch (scalar.kind) {
+		case 'empty':
+			return 'empty:'
+		case 'number':
+			return `number:${scalar.value}`
+		case 'date':
+			return `date:${scalar.serial}`
+		case 'string':
+			return `string:${scalar.value}`
+		case 'boolean':
+			return `boolean:${scalar.value ? 1 : 0}`
+		case 'error':
+			return `error:${scalar.value}`
+		default:
+			return null
+	}
+}
+
+function countPlainFormulas(workbook: Workbook): number {
+	let count = 0
+	for (const sheet of workbook.sheets) {
+		if (!sheet) continue
+		if (sheet.cells.formulaInfoCellCount() > 0) return -1
+		count += sheet.cells.formulaCellCount()
+	}
+	return count
+}
+
+function writeFormulaValue(
+	workbook: Workbook,
+	sheetIndex: number,
+	row: number,
+	col: number,
+	formula: string,
+	newValue: CellValue,
+	changed: string[],
+): boolean {
+	const sheet = workbook.sheets[sheetIndex]
+	if (!sheet) return false
+	const oldValue = sheet.cells.readValue(row, col)
+	if (valuesEqual(oldValue, newValue)) return true
+	const oldStyleId = sheet.cells.readStyleId(row, col) ?? DEFAULT_STYLE_ID
+	if (newValue.kind === 'number') {
+		sheet.cells.setNumberResolved(row, col, newValue.value, formula, oldStyleId)
+	} else {
+		sheet.cells.setResolved(row, col, newValue, formula, oldStyleId)
+	}
+	changed.push(cellRefString(workbook, sheetIndex, row, col))
+	return true
 }
 
 function writeTextPrefixAggregateValue(

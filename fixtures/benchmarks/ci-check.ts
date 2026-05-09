@@ -1,27 +1,12 @@
 /**
  * Benchmark regression CI check.
- * Runs the smoke benchmark set and fails if any scenario is more than 15% slower than baseline.
- * Baseline thresholds are medianMs * 1.15 (15% regression tolerance).
+ * Runs the smoke benchmark set and fails if any category or smoke scenario misses
+ * its throughput floor.
  * Memory validation is enabled by default; use --no-check-memory to disable.
  */
 import { join } from 'node:path'
-
-const REGRESSION_THRESHOLD_PCT = 0.15
-
-const BASELINE_MEDIAN_MS: Record<string, number> = {
-	'read-full-dense': 11.5,
-	'read-values-dense': 10.49,
-	'workflow-sdk-edit-cycle': 52.58,
-	'workflow-sdk-defined-names-edit-cycle': 24.28,
-	'recalc-incremental': 0.53,
-	'recalc-if-short-circuit': 133.09,
-	'recalc-lookup-exact-incremental': 115.45,
-	'recalc-dynamic-spill-churn': 3.86,
-	'recalc-criteria-caching': 52.7,
-	'recalc-quickselect': 21.16,
-	'structural-insert-rows-recalc': 57.19,
-	'read-csv-large': 52.61,
-}
+import type { BenchmarkCaseResult, BenchmarkSuiteResult } from './results.ts'
+import { checkThroughputTargets, formatTargetResults } from './targets.ts'
 
 /** Memory ceilings (bytes) for key scenarios. Set at 1.5x observed values. */
 const MEMORY_CEILING_BYTES: Record<string, number> = {
@@ -31,14 +16,6 @@ const MEMORY_CEILING_BYTES: Record<string, number> = {
 }
 
 const MEMORY_SCENARIOS = Object.keys(MEMORY_CEILING_BYTES) as readonly string[]
-
-interface BenchmarkCaseResult {
-	readonly name: string
-	readonly metrics: {
-		readonly medianMs: number
-		readonly heapDeltaBytes?: number
-	}
-}
 
 async function runScenario(name: string): Promise<BenchmarkCaseResult> {
 	const runPath = join(import.meta.dir, 'run.ts')
@@ -57,7 +34,7 @@ async function runScenario(name: string): Promise<BenchmarkCaseResult> {
 	return JSON.parse(stdout) as BenchmarkCaseResult
 }
 
-async function runSmokeBenchmarks(): Promise<BenchmarkCaseResult[]> {
+async function runSmokeBenchmarks(): Promise<BenchmarkSuiteResult> {
 	const runPath = join(import.meta.dir, 'run.ts')
 	const proc = Bun.spawn(
 		['bun', 'run', runPath, '--set', 'smoke', '--repeat', '5', '--warmup', '1', '--json'],
@@ -71,14 +48,14 @@ async function runSmokeBenchmarks(): Promise<BenchmarkCaseResult[]> {
 	if (exitCode !== 0) {
 		throw new Error(`Benchmark run failed: ${stderr || 'unknown error'}`)
 	}
-	const suite = JSON.parse(stdout)
-	return suite.cases ?? []
+	return JSON.parse(stdout) as BenchmarkSuiteResult
 }
 
-async function runMemoryScenarios(): Promise<Map<string, BenchmarkCaseResult>> {
+async function runMemoryScenarios(
+	smokeSuite: BenchmarkSuiteResult,
+): Promise<Map<string, BenchmarkCaseResult>> {
 	const results = new Map<string, BenchmarkCaseResult>()
-	const smoke = await runSmokeBenchmarks()
-	for (const r of smoke) {
+	for (const r of smokeSuite.cases) {
 		results.set(r.name, r)
 	}
 	for (const name of MEMORY_SCENARIOS) {
@@ -97,91 +74,71 @@ function formatBytes(bytes: number): string {
 
 async function main(): Promise<void> {
 	const checkMemory = !process.argv.includes('--no-check-memory')
-	const results = checkMemory
-		? [...(await runMemoryScenarios()).values()]
-		: await runSmokeBenchmarks()
-
-	const maxThresholdMs = (name: string) => {
-		const base = BASELINE_MEDIAN_MS[name]
-		return base !== undefined ? base * (1 + REGRESSION_THRESHOLD_PCT) : Number.POSITIVE_INFINITY
-	}
-	const summary: Array<{
+	const smokeSuite = await runSmokeBenchmarks()
+	const targetResults = checkThroughputTargets(smokeSuite)
+	const memoryResults = checkMemory ? await runMemoryScenarios(smokeSuite) : new Map()
+	const memorySummary: Array<{
 		name: string
 		status: string
-		medianMs: number
-		thresholdMs: number
-		memoryStatus?: string
 		heapDeltaBytes?: number
 		memoryCeilingBytes?: number
 	}> = []
-	let hasTimingFailure = false
 	let hasMemoryFailure = false
 
-	for (const r of results) {
-		const threshold = maxThresholdMs(r.name)
-		const timingPass = r.metrics.medianMs <= threshold
-		if (!timingPass) hasTimingFailure = true
+	if (checkMemory) {
+		for (const [name, ceiling] of Object.entries(MEMORY_CEILING_BYTES)) {
+			const result = memoryResults.get(name)
+			const heapDeltaBytes = result?.metrics.heapDeltaBytes ?? 0
+			const memoryPass = heapDeltaBytes <= ceiling
+			if (!memoryPass) hasMemoryFailure = true
 
-		let memoryStatus: string | undefined
-		let heapDeltaBytes: number | undefined
-		let memoryCeilingBytes: number | undefined
-		if (checkMemory) {
-			const ceiling = MEMORY_CEILING_BYTES[r.name]
-			if (ceiling !== undefined) {
-				heapDeltaBytes = r.metrics.heapDeltaBytes ?? 0
-				memoryCeilingBytes = ceiling
-				const memoryPass = heapDeltaBytes <= ceiling
-				if (!memoryPass) hasMemoryFailure = true
-				memoryStatus = memoryPass ? 'PASS' : 'FAIL'
-			}
+			memorySummary.push({
+				name,
+				status: memoryPass ? 'PASS' : 'FAIL',
+				heapDeltaBytes,
+				memoryCeilingBytes: ceiling,
+			})
 		}
-
-		summary.push({
-			name: r.name,
-			status: timingPass ? 'PASS' : 'FAIL',
-			medianMs: r.metrics.medianMs,
-			thresholdMs: threshold,
-			memoryStatus,
-			heapDeltaBytes,
-			memoryCeilingBytes,
-		})
 	}
 
-	console.log('Benchmark CI check (smoke set, 15% regression threshold)')
+	console.log('Benchmark CI check (smoke throughput targets)')
+	console.log(formatTargetResults(targetResults))
+	console.log('')
 	if (checkMemory) {
 		console.log('Memory validation: enabled (use --no-check-memory to disable)\n')
+		console.log(`${'Scenario'.padEnd(40)}${'Status'.padEnd(8)}Heap delta / ceiling`)
+		console.log('-'.repeat(75))
+		for (const s of memorySummary) {
+			console.log(
+				s.name.padEnd(40) +
+					s.status.padEnd(8) +
+					`${s.heapDeltaBytes !== undefined ? formatBytes(s.heapDeltaBytes) : 'n/a'} / ${s.memoryCeilingBytes !== undefined ? formatBytes(s.memoryCeilingBytes) : 'n/a'}`,
+			)
+		}
+		console.log('')
 	} else {
 		console.log('Memory validation: disabled\n')
 	}
-	const hasMemoryCol = checkMemory && summary.some((s) => s.memoryStatus !== undefined)
-	const header = hasMemoryCol
-		? `${'Scenario'.padEnd(40)}${'Status'.padEnd(8)}${'Median(ms)'.padEnd(14)}Threshold(ms)  Memory`
-		: `${'Scenario'.padEnd(40)}${'Status'.padEnd(8)}${'Median(ms)'.padEnd(14)}Threshold(ms)`
-	console.log(header)
-	console.log('-'.repeat(hasMemoryCol ? 90 : 75))
-	for (const s of summary) {
-		const base = BASELINE_MEDIAN_MS[s.name]
-		const pct = base !== undefined ? ` (+${((s.medianMs / base - 1) * 100).toFixed(1)}%)` : ''
-		const memCol =
-			s.memoryStatus !== undefined
-				? `  ${s.memoryStatus} ${s.heapDeltaBytes !== undefined ? formatBytes(s.heapDeltaBytes) : 'n/a'}/${s.memoryCeilingBytes !== undefined ? formatBytes(s.memoryCeilingBytes) : 'n/a'}`
-				: ''
-		console.log(
-			s.name.padEnd(40) +
-				s.status.padEnd(8) +
-				s.medianMs.toFixed(2).padEnd(14) +
-				s.thresholdMs.toFixed(2) +
-				pct +
-				memCol,
-		)
-	}
-	console.log('')
-	if (hasTimingFailure) {
-		console.error('One or more scenarios exceeded the 15% regression threshold.')
+
+	const failedTargets = targetResults.filter((entry) => !entry.passed)
+	if (failedTargets.length > 0) {
+		console.error('One or more throughput targets failed.')
+		for (const item of failedTargets) {
+			const actual =
+				item.actualCellsPerSec === null ? 'no data' : `${item.actualCellsPerSec.toFixed(1)}/s`
+			console.error(
+				`- ${item.target.metric}: actual ${actual}, required ${item.target.minCellsPerSec.toFixed(1)}/s`,
+			)
+		}
 		process.exit(1)
 	}
 	if (hasMemoryFailure) {
 		console.error('One or more scenarios exceeded the memory ceiling (heapDeltaBytes).')
+		for (const item of memorySummary.filter((entry) => entry.status === 'FAIL')) {
+			console.error(
+				`- ${item.name}: actual ${item.heapDeltaBytes !== undefined ? formatBytes(item.heapDeltaBytes) : 'n/a'}, ceiling ${item.memoryCeilingBytes !== undefined ? formatBytes(item.memoryCeilingBytes) : 'n/a'}`,
+			)
+		}
 		process.exit(1)
 	}
 	console.log('All scenarios passed.')

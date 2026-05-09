@@ -1,4 +1,10 @@
-import { indexToColumn, parseA1, type RangeRef, type Workbook } from '@ascend/core'
+import {
+	type ChartPartInfo,
+	indexToColumn,
+	parseA1,
+	type RangeRef,
+	type Workbook,
+} from '@ascend/core'
 import {
 	analyzeWorkbook,
 	analyzeWorkbookDependencies,
@@ -117,6 +123,7 @@ export class WorkbookReadView {
 				: null,
 			dataValidationCount: this.loadInfo.richSheetMetadataHydrated ? totalDataValidations : null,
 			imageCount: this.loadInfo.richSheetMetadataHydrated ? totalImages : null,
+			chartCount: this.wb.chartParts.length,
 			pivotTableCount: this.wb.pivotTables.length,
 			pivotCacheCount: this.wb.pivotCaches.length,
 			slicerCount: this.wb.slicers.length,
@@ -129,6 +136,7 @@ export class WorkbookReadView {
 			externalReferenceDetails: this.wb.externalReferenceDetails.map((entry) => ({
 				...entry,
 			})),
+			charts: this.wb.chartParts.map(copyChartInfo),
 			hasWorkbookProtection: this.wb.workbookProtection !== null,
 			pivotTables: this.wb.pivotTables.map((entry) => ({ ...entry })),
 			pivotCaches: this.wb.pivotCaches.map((entry) => ({ ...entry })),
@@ -151,6 +159,7 @@ export class WorkbookReadView {
 
 	visualInventory(): WorkbookVisualInventoryInfo {
 		let totalImages = 0
+		const charts = this.wb.chartParts.map(copyChartInfo)
 		const sheets = this.wb.sheets.map((sheet) => {
 			const drawingRefs = this.loadInfo.cellsHydrated ? { ...sheet.drawingRefs } : null
 			const imageRefs = this.loadInfo.richSheetMetadataHydrated ? [...sheet.imageRefs] : null
@@ -183,8 +192,10 @@ export class WorkbookReadView {
 		if (!this.loadInfo.cellsHydrated) notes.push('Drawing references require full sheet hydration.')
 		if (!this.loadInfo.richSheetMetadataHydrated)
 			notes.push('Image references require rich sheet metadata hydration.')
-		if (packageChartFeatureCount > 0)
-			notes.push('Chart parts are currently inventoried and preserved, not structurally editable.')
+		if (charts.length > 0)
+			notes.push('Chart parts expose type, title, and series source refs; source edits are staged.')
+		else if (packageChartFeatureCount > 0)
+			notes.push('Chart parts are preserved but not structurally parsed in this load mode.')
 		if (packageDrawingFeatureCount > 0)
 			notes.push(
 				'Drawing and shape parts are currently preserve-first except parsed image anchors.',
@@ -194,6 +205,8 @@ export class WorkbookReadView {
 			packageFeatures,
 			sheets,
 			sheetImageCount: this.loadInfo.richSheetMetadataHydrated ? totalImages : null,
+			charts,
+			structuredChartCount: charts.length,
 			packageChartFeatureCount,
 			packageDrawingFeatureCount,
 			packageMediaFeatureCount,
@@ -876,6 +889,13 @@ function resolveDefinedNameBySheet(
 		workbook.definedNames.resolve(name, sheet.id, sheet.id) ??
 		workbook.definedNames.resolve(name, sheet.id)
 	)
+}
+
+function copyChartInfo(chart: ChartPartInfo): ChartPartInfo {
+	return {
+		...chart,
+		series: chart.series.map((series) => ({ ...series })),
+	}
 }
 
 function flattenForAgent(value: import('@ascend/schema').CellValue): FlatCellValue {

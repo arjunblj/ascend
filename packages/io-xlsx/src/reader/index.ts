@@ -11,6 +11,7 @@ import type {
 import { ascendError, emptyReport, err, ok } from '@ascend/schema'
 import { normalizeStoredFormulaText } from '../formula-storage.ts'
 import type { PreservationCapsule } from '../preserve.ts'
+import { parseChartXml } from './charts.ts'
 import { parseCommentsXml } from './comments.ts'
 import { type ContentTypes, parseContentTypes } from './content-types.ts'
 import { parseDrawingImageRefs } from './drawing.ts'
@@ -420,6 +421,7 @@ export function readXlsx(
 					workbookPath,
 					sheetRelsByPath,
 				)
+		if (!isPartial) attachChartParts(archive, workbook, capsules)
 		const report = buildReport(contentTypes, formulaFeatures, workbook, capsules, loadInfo)
 		if (loadInfo.isPartial) {
 			workbook.sourceArchiveBytes = null
@@ -440,6 +442,25 @@ export function readXlsx(
 
 function readPart(archive: ZipArchive, path: string): string | undefined {
 	return archive.readText(path)
+}
+
+function attachChartParts(
+	archive: ZipArchive,
+	workbook: Workbook,
+	capsules: readonly PreservationCapsule[],
+): void {
+	for (const capsule of capsules) {
+		if (!isChartCapsule(capsule)) continue
+		const xml = readPart(archive, capsule.partPath)
+		if (!xml) continue
+		workbook.chartParts.push(
+			parseChartXml(
+				xml,
+				capsule.partPath,
+				capsule.anchor.kind === 'sheet' ? capsule.anchor.sheetName : undefined,
+			),
+		)
+	}
 }
 
 function resolveSheetFilter(
@@ -551,6 +572,14 @@ function collectCapsules(
 
 function isCalcChainPart(partPath: string, contentType: string): boolean {
 	return contentType.includes('calcChain+xml') || partPath.endsWith('/calcChain.xml')
+}
+
+function isChartCapsule(capsule: PreservationCapsule): boolean {
+	return (
+		capsule.contentType.includes('chart+xml') ||
+		capsule.partPath.includes('/charts/') ||
+		capsule.partPath.includes('/chartEx/')
+	)
 }
 
 function resolveContentType(partPath: string, contentTypes: ContentTypes): string {

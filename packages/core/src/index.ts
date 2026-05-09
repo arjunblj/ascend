@@ -1,3 +1,4 @@
+export type { ChartPartInfo, ChartSeriesInfo } from './chart.ts'
 export type { DefinedName, DefinedNameScope } from './defined-name.ts'
 export { DefinedNameCollection } from './defined-name.ts'
 export type {

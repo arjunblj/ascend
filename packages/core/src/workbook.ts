@@ -1,4 +1,5 @@
 import { type CalcSettings, DEFAULT_CALC_SETTINGS } from '@ascend/schema'
+import type { ChartPartInfo } from './chart.ts'
 import { DefinedNameCollection } from './defined-name.ts'
 import { createWorkbookId, type SheetId, type WorkbookId } from './ids.ts'
 import type { PivotCacheInfo, PivotTableInfo, SlicerCacheInfo, SlicerInfo } from './pivot.ts'
@@ -112,6 +113,7 @@ export class Workbook {
 	readonly pivotTables: PivotTableInfo[] = []
 	readonly slicerCaches: SlicerCacheInfo[] = []
 	readonly slicers: SlicerInfo[] = []
+	readonly chartParts: ChartPartInfo[] = []
 	readonly workbookViews: WorkbookView[] = []
 	readonly externalReferences: string[] = []
 	readonly externalReferenceDetails: ExternalReferenceInfo[] = []
@@ -217,6 +219,12 @@ export class Workbook {
 			})),
 		)
 		clone.slicers.push(...this.slicers.map((entry) => ({ ...entry })))
+		clone.chartParts.push(
+			...this.chartParts.map((entry) => ({
+				...entry,
+				series: entry.series.map((series) => ({ ...series })),
+			})),
+		)
 		clone.workbookViews.push(...this.workbookViews.map((view) => ({ ...view })))
 		clone.externalReferences.push(...this.externalReferences)
 		clone.externalReferenceDetails.push(

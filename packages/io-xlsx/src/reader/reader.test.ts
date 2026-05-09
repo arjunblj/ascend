@@ -1019,6 +1019,60 @@ describe('readXlsx', () => {
 		])
 	})
 
+	it('discovers chart type, title, and series source ranges', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/charts/chart1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>
+</Types>`,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+			'xl/charts/chart1.xml': `<?xml version="1.0"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:title><c:tx><c:rich><a:p><a:r><a:t>Revenue &amp; margin</a:t></a:r></a:p></c:rich></c:tx></c:title>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:tx><c:strRef><c:f>Data!$B$1</c:f></c:strRef></c:tx>
+          <c:cat><c:strRef><c:f>Data!$A$2:$A$4</c:f></c:strRef></c:cat>
+          <c:val><c:numRef><c:f>Data!$B$2:$B$4</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		expect(result.value.workbook.chartParts).toEqual([
+			{
+				partPath: 'xl/charts/chart1.xml',
+				chartType: 'barChart',
+				title: 'Revenue & margin',
+				series: [
+					{
+						nameRef: 'Data!$B$1',
+						categoryRef: 'Data!$A$2:$A$4',
+						valueRef: 'Data!$B$2:$B$4',
+					},
+				],
+			},
+		])
+	})
+
 	it('discovers slicer and slicer cache inventory', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

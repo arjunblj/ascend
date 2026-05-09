@@ -8,6 +8,19 @@ describe('visual inventory', () => {
 	test('summarizes package visual features and sheet image anchors', () => {
 		const workbook = createWorkbook()
 		const sheet = workbook.addSheet('Sheet1')
+		workbook.chartParts.push({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Sheet1',
+			chartType: 'barChart',
+			title: 'Revenue',
+			series: [
+				{
+					nameRef: 'Sheet1!$B$1',
+					categoryRef: 'Sheet1!$A$2:$A$4',
+					valueRef: 'Sheet1!$B$2:$B$4',
+				},
+			],
+		})
 		sheet.drawingRefs = { hasDrawing: true, hasLegacyDrawing: false }
 		sheet.imageRefs.push({
 			drawingPartPath: 'xl/drawings/drawing1.xml',
@@ -27,6 +40,7 @@ describe('visual inventory', () => {
 		const inventory = view.visualInventory()
 
 		expect(inventory.sheetImageCount).toBe(1)
+		expect(inventory.structuredChartCount).toBe(1)
 		expect(inventory.packageChartFeatureCount).toBe(2)
 		expect(inventory.packageDrawingFeatureCount).toBe(2)
 		expect(inventory.packageMediaFeatureCount).toBe(1)
@@ -40,6 +54,19 @@ describe('visual inventory', () => {
 			imageCount: 1,
 		})
 		expect(inventory.sheets[0]?.imageRefs?.[0]?.anchor?.kind).toBe('twoCell')
+		expect(inventory.charts[0]).toMatchObject({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Sheet1',
+			chartType: 'barChart',
+			title: 'Revenue',
+			series: [
+				{
+					nameRef: 'Sheet1!$B$1',
+					categoryRef: 'Sheet1!$A$2:$A$4',
+					valueRef: 'Sheet1!$B$2:$B$4',
+				},
+			],
+		})
 		expect(inventory.packageFeatures.map((feature) => feature.category)).toEqual([
 			'chart',
 			'drawing',

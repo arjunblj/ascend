@@ -377,6 +377,16 @@ export type Operation =
 			readonly imageIndex?: number
 	  }
 	| {
+			readonly op: 'setChartSeriesSource'
+			readonly seriesIndex: number
+			readonly partPath?: string
+			readonly sheet?: string
+			readonly chartIndex?: number
+			readonly nameRef?: string
+			readonly categoryRef?: string
+			readonly valueRef?: string
+	  }
+	| {
 			readonly op: 'setPivotCache'
 			readonly cacheId?: number
 			readonly partPath?: string

@@ -181,6 +181,39 @@ describe('applyOperation', () => {
 		expect(Array.from(sheet.imageRefs[0]?.content ?? [])).toEqual([4, 5, 6])
 	})
 
+	test('setChartSeriesSource updates parsed chart source refs', () => {
+		const wb = setup()
+		wb.chartParts.push({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Sheet1',
+			chartType: 'barChart',
+			series: [
+				{
+					nameRef: 'Sheet1!$B$1',
+					categoryRef: 'Sheet1!$A$2:$A$4',
+					valueRef: 'Sheet1!$B$2:$B$4',
+				},
+			],
+		})
+
+		const result = applyOperation(wb, {
+			op: 'setChartSeriesSource',
+			partPath: 'xl/charts/chart1.xml',
+			seriesIndex: 0,
+			categoryRef: 'Sheet1!$A$2:$A$10',
+			valueRef: 'Sheet1!$C$2:$C$10',
+		})
+		expectOk(result)
+
+		expect(result.value.sheetsModified).toEqual(['Sheet1'])
+		expect(result.value.recalcRequired).toBe(false)
+		expect(wb.chartParts[0]?.series[0]).toMatchObject({
+			nameRef: 'Sheet1!$B$1',
+			categoryRef: 'Sheet1!$A$2:$A$10',
+			valueRef: 'Sheet1!$C$2:$C$10',
+		})
+	})
+
 	test('setConditionalFormat stores conditional formatting rules', () => {
 		const wb = setup()
 		const result = applyOperation(wb, {

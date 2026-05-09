@@ -129,6 +129,11 @@ const FIELD_SCHEMAS: Record<
 	contentBase64: { type: 'string', description: 'Base64-encoded binary content' },
 	contentType: { type: 'string', description: 'MIME content type, such as image/png' },
 	imageIndex: { type: 'integer', description: 'Zero-based image index on the sheet' },
+	chartIndex: { type: 'integer', description: 'Zero-based chart index after sheet/part filtering' },
+	seriesIndex: { type: 'integer', description: 'Zero-based chart series index' },
+	nameRef: { type: 'string', description: 'A1 formula reference for the chart series name' },
+	categoryRef: { type: 'string', description: 'A1 formula reference for category or x values' },
+	valueRef: { type: 'string', description: 'A1 formula reference for numeric values' },
 	cacheId: { type: 'integer', description: 'Pivot cache id' },
 	partPath: { type: 'string', description: 'XLSX package part path' },
 	pivotTable: { type: 'string', description: 'Pivot table name that uses the cache' },
@@ -370,6 +375,13 @@ export function listOperations(): readonly OperationSchema[] {
 			optionalFields: ['targetPath', 'relId', 'name', 'imageIndex'],
 		},
 		{
+			op: 'setChartSeriesSource',
+			description:
+				'Edit a chart series source references while preserving unsupported chart styling',
+			requiredFields: ['seriesIndex'],
+			optionalFields: ['partPath', 'sheet', 'chartIndex', 'nameRef', 'categoryRef', 'valueRef'],
+		},
+		{
 			op: 'setPivotCache',
 			description: 'Edit pivot cache source and refresh metadata without recalculating output',
 			requiredFields: [],
@@ -535,6 +547,12 @@ function operationRecoveryActions(op: string): readonly string[] {
 				'Ensure contentBase64 bytes match contentType.',
 				...common,
 			]
+		case 'setChartSeriesSource':
+			return [
+				'Use inspect --detail visuals or visualInventory to select partPath, sheet, chartIndex, and seriesIndex.',
+				'Provide at least one of nameRef, categoryRef, or valueRef.',
+				...common,
+			]
 		case 'setPivotCache':
 			return [
 				'Use inspect --detail pivots to choose cacheId, partPath, or pivotTable.',
@@ -665,6 +683,14 @@ function operationExample(op: string): Record<string, unknown> {
 				targetPath: 'xl/media/image1.png',
 				contentBase64: 'iVBORw0KGgo=',
 				contentType: 'image/png',
+			}
+		case 'setChartSeriesSource':
+			return {
+				op,
+				partPath: 'xl/charts/chart1.xml',
+				seriesIndex: 0,
+				categoryRef: 'Data!$A$2:$A$20',
+				valueRef: 'Data!$B$2:$B$20',
 			}
 		case 'setPivotCache':
 			return {

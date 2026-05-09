@@ -19,6 +19,7 @@ import {
 } from '../reader/relationships.ts'
 import { parseSharedStrings } from '../reader/shared-strings.ts'
 import { extractZip, type ZipArchive } from '../reader/zip.ts'
+import { updateChartXml } from './chart.ts'
 import { buildCommentsVml, buildCommentsXml } from './comments.ts'
 import { buildContentTypesXml } from './content-types.ts'
 import { buildAppPropsXml, buildCorePropsXml } from './doc-props.ts'
@@ -1000,6 +1001,31 @@ export function planWriteXlsx(
 					}
 					continue
 				}
+				const chart = workbook.chartParts.find((entry) => entry.partPath === capsule.partPath)
+				if (chart && isChartCapsule(capsule)) {
+					recordXml(
+						capsule.partPath,
+						{
+							owner,
+							origin: 'generated',
+							contentType: capsule.contentType,
+						},
+						() => updateChartXml(new TextDecoder().decode(content), chart),
+					)
+					plan.addOverride(capsule.partPath, capsule.contentType)
+					if (capsule.relationships.length > 0) {
+						const capsuleRelsPath = getRelsPath(capsule.partPath)
+						recordXml(
+							capsuleRelsPath,
+							{
+								owner,
+								origin: 'capsule',
+							},
+							() => buildRelsXml(capsule.relationships),
+						)
+					}
+					continue
+				}
 				recordBytes(
 					capsule.partPath,
 					{
@@ -1236,6 +1262,14 @@ function isPivotCacheDefinitionCapsule(capsule: PreservationCapsule): boolean {
 		capsule.relType === REL_PIVOT_CACHE_DEFINITION ||
 		capsule.contentType.includes('pivotCacheDefinition+xml') ||
 		capsule.partPath.includes('/pivotCache/pivotCacheDefinition')
+	)
+}
+
+function isChartCapsule(capsule: PreservationCapsule): boolean {
+	return (
+		capsule.contentType.includes('chart+xml') ||
+		capsule.partPath.includes('/charts/') ||
+		capsule.partPath.includes('/chartEx/')
 	)
 }
 

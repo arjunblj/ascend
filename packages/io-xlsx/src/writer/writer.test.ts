@@ -1863,6 +1863,51 @@ describe('writeXlsx', () => {
 		expect(chart?.content).toBeUndefined()
 	})
 
+	it('updates chart series refs inside preserved chart capsules', () => {
+		const wb = new Workbook()
+		wb.addSheet('Sheet1')
+		wb.chartParts.push({
+			partPath: 'xl/charts/chart1.xml',
+			chartType: 'barChart',
+			series: [
+				{
+					nameRef: 'Data!$C$1',
+					categoryRef: 'Data!$A$2:$A$10',
+					valueRef: 'Data!$C$2:$C$10',
+				},
+			],
+		})
+		const chartXml = `<?xml version="1.0"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart><c:plotArea><c:barChart><c:ser>
+    <c:tx><c:strRef><c:f>Data!$B$1</c:f></c:strRef></c:tx>
+    <c:cat><c:strRef><c:f>Data!$A$2:$A$4</c:f></c:strRef></c:cat>
+    <c:val><c:numRef><c:f>Data!$B$2:$B$4</c:f></c:numRef></c:val>
+  </c:ser></c:barChart></c:plotArea></c:chart>
+</c:chartSpace>`
+		const written = writeXlsx(wb, [
+			{
+				partPath: 'xl/charts/chart1.xml',
+				contentType: 'application/vnd.openxmlformats-officedocument.drawingml.chart+xml',
+				relationships: [],
+				content: new TextEncoder().encode(chartXml),
+				anchor: { kind: 'workbook' },
+				relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart',
+			},
+		])
+		expectOk(written)
+
+		const entries = unzipSync(written.value)
+		const updated = entries['xl/charts/chart1.xml']
+		expect(updated).toBeDefined()
+		if (!updated) return
+		const xml = new TextDecoder().decode(updated)
+		expect(xml).toContain('<c:f>Data!$C$1</c:f>')
+		expect(xml).toContain('<c:f>Data!$A$2:$A$10</c:f>')
+		expect(xml).toContain('<c:f>Data!$C$2:$C$10</c:f>')
+		expect(xml).not.toContain('<c:f>Data!$B$2:$B$4</c:f>')
+	})
+
 	it('preserves threaded comments XML through read-write round-trip', () => {
 		const threadedCommentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <ThreadedComments xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">

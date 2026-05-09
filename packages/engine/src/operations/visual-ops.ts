@@ -5,6 +5,7 @@ import { ascendError, err, ok } from '@ascend/schema'
 import { getSheet, type PatchResult, patch } from './helpers.ts'
 
 type ReplaceImageOp = Extract<Operation, { op: 'replaceImage' }>
+type SetChartSeriesSourceOp = Extract<Operation, { op: 'setChartSeriesSource' }>
 
 export function handleReplaceImage(workbook: Workbook, op: ReplaceImageOp): Result<PatchResult> {
 	const sheetResult = getSheet(workbook, op.sheet)
@@ -70,6 +71,88 @@ export function handleReplaceImage(workbook: Workbook, op: ReplaceImageOp): Resu
 	sheet.drawingRefs = { ...sheet.drawingRefs, hasDrawing: true }
 
 	return ok(patch([], [sheet.name], false))
+}
+
+export function handleSetChartSeriesSource(
+	workbook: Workbook,
+	op: SetChartSeriesSourceOp,
+): Result<PatchResult> {
+	if (op.nameRef === undefined && op.categoryRef === undefined && op.valueRef === undefined) {
+		return err(
+			ascendError(
+				'VALIDATION_ERROR',
+				'setChartSeriesSource requires nameRef, categoryRef, or valueRef',
+				{
+					suggestedFix:
+						'Inspect workbook charts and provide at least one updated series source reference.',
+				},
+			),
+		)
+	}
+	if (op.seriesIndex < 0 || !Number.isInteger(op.seriesIndex)) {
+		return err(ascendError('VALIDATION_ERROR', 'seriesIndex must be a non-negative integer'))
+	}
+
+	let candidates = workbook.chartParts.map((chart, index) => ({ chart, index }))
+	if (op.partPath !== undefined) {
+		candidates = candidates.filter(({ chart }) => chart.partPath === op.partPath)
+	}
+	if (op.sheet !== undefined) {
+		candidates = candidates.filter(({ chart }) => chart.sheetName === op.sheet)
+	}
+	if (op.chartIndex !== undefined) {
+		if (op.chartIndex < 0 || !Number.isInteger(op.chartIndex)) {
+			return err(ascendError('VALIDATION_ERROR', 'chartIndex must be a non-negative integer'))
+		}
+		const chart = candidates[op.chartIndex]
+		candidates = chart ? [chart] : []
+	}
+
+	if (candidates.length === 0) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'No matching chart found for setChartSeriesSource', {
+				suggestedFix:
+					'Use inspect --detail visuals or visualInventory to choose partPath, sheet, or chartIndex.',
+			}),
+		)
+	}
+	if (candidates.length > 1) {
+		return err(
+			ascendError('VALIDATION_ERROR', `setChartSeriesSource matched ${candidates.length} charts`, {
+				suggestedFix:
+					'Provide partPath or chartIndex to select exactly one chart before committing.',
+			}),
+		)
+	}
+
+	const match = candidates[0]
+	if (!match) {
+		return err(ascendError('VALIDATION_ERROR', 'No matching chart found for setChartSeriesSource'))
+	}
+	const series = match.chart.series[op.seriesIndex]
+	if (!series) {
+		return err(
+			ascendError('VALIDATION_ERROR', `Chart has no series at index ${op.seriesIndex}`, {
+				suggestedFix: 'Inspect chart series and choose an existing zero-based seriesIndex.',
+			}),
+		)
+	}
+
+	workbook.chartParts[match.index] = {
+		...match.chart,
+		series: match.chart.series.map((entry, index) =>
+			index === op.seriesIndex
+				? {
+						...entry,
+						...(op.nameRef !== undefined ? { nameRef: op.nameRef } : {}),
+						...(op.categoryRef !== undefined ? { categoryRef: op.categoryRef } : {}),
+						...(op.valueRef !== undefined ? { valueRef: op.valueRef } : {}),
+					}
+				: entry,
+		),
+	}
+
+	return ok(patch([], match.chart.sheetName ? [match.chart.sheetName] : [], false))
 }
 
 function decodeBase64(input: string): Result<Uint8Array> {

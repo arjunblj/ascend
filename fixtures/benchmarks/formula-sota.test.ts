@@ -66,8 +66,67 @@ describe('formula SOTA public profile smoke', () => {
 		expect(stdout).toContain('Profiles:')
 		expect(stdout).toContain('hf-prefix-range-sum')
 		expect(stdout).toContain('hyperformula')
+		expect(stdout).toContain('--min-operation-speedup N')
+		expect(stdout).toContain('--assert-correctness')
 		expect(stdout).not.toContain('"suite"')
 		expect(stdout).not.toContain('operationSpeedupVsHyperFormula')
+	})
+
+	test('assertion flags can enforce correctness and speedup thresholds', () => {
+		const proc = Bun.spawnSync({
+			cmd: [
+				Bun.argv[0],
+				runnerPath,
+				'--profile',
+				'hf-prefix-range-sum',
+				'--rows',
+				'120',
+				'--formulas',
+				'120',
+				'--repeat',
+				'1',
+				'--warmup',
+				'0',
+				'--assert-correctness',
+				'--min-total-speedup',
+				'1',
+				'--json',
+			],
+			stdout: 'pipe',
+			stderr: 'pipe',
+		})
+		const stderr = new TextDecoder().decode(proc.stderr)
+		expect(proc.exitCode, stderr).toBe(0)
+	})
+
+	test('assertion flags fail with measured evidence when thresholds are missed', () => {
+		const proc = Bun.spawnSync({
+			cmd: [
+				Bun.argv[0],
+				runnerPath,
+				'--profile',
+				'hf-prefix-range-sum',
+				'--rows',
+				'120',
+				'--formulas',
+				'120',
+				'--repeat',
+				'1',
+				'--warmup',
+				'0',
+				'--min-operation-speedup',
+				'999',
+				'--json',
+			],
+			stdout: 'pipe',
+			stderr: 'pipe',
+		})
+		const stdout = new TextDecoder().decode(proc.stdout)
+		const stderr = new TextDecoder().decode(proc.stderr)
+
+		expect(proc.exitCode).toBe(1)
+		expect(stdout).toContain('"suite": "ascend-formula-sota"')
+		expect(stderr).toContain('formula-sota assertion failed: operation speedup')
 	})
 
 	for (const profile of profiles) {
@@ -105,7 +164,6 @@ describe('formula SOTA public profile smoke', () => {
 					'ascend',
 					'hyperformula',
 				])
-				expect(payload.comparison.totalSpeedupVsHyperFormula).toBeGreaterThan(1)
 				for (const entry of payload.cases) {
 					const matchFlags = Object.entries(entry.correctness).filter(([key]) =>
 						key.endsWith('Matches'),

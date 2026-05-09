@@ -61,6 +61,17 @@ describe('upstream competitive profiles', () => {
 
 	test('selects curated profile sets for tight feedback loops', () => {
 		expect(UPSTREAM_PROFILE_SETS['write-smoke']).toContain('pyopenxlsx-write-5000x10')
+		expect(
+			selectUpstreamProfiles(undefined, 'write-memory').map((profile) => profile.name),
+		).toEqual([
+			'xlsxwriter-write-memory-200x50-50pct-text',
+			'xlsxwriter-write-memory-400x50-50pct-text',
+			'xlsxwriter-write-memory-800x50-50pct-text',
+			'xlsxwriter-write-memory-1600x50-50pct-text',
+			'xlsxwriter-write-memory-3200x50-50pct-text',
+			'xlsxwriter-write-memory-6400x50-50pct-text',
+			'xlsxwriter-write-memory-12800x50-50pct-text',
+		])
 		expect(selectUpstreamProfiles(undefined, 'read-smoke').map((profile) => profile.name)).toEqual([
 			'fastexcel-reader-65536',
 			'fastxlsx-read-5000x10-matrix',

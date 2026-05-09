@@ -93,11 +93,26 @@ function runGc(): void {
 	}
 }
 
-function memorySample(durationMs: number): {
+function memorySnapshot(): {
+	readonly rss: number
+	readonly heapUsed: number
+} {
+	const memory = process.memoryUsage()
+	const rss = typeof memory.rss === 'function' ? memory.rss() : memory.rss
+	return { rss, heapUsed: memory.heapUsed }
+}
+
+function memorySample(
+	durationMs: number,
+	before: ReturnType<typeof memorySnapshot>,
+): {
 	readonly durationMs: number
+	readonly rssDeltaBytes: number
+	readonly retainedRssDeltaBytes: number
 	readonly rssAfterBytes: number
 	readonly rssAfterGcBytes: number
 	readonly peakRssBytes: number
+	readonly heapDeltaBytes: number
 	readonly heapUsedBytes: number
 	readonly heapTotalBytes: number
 	readonly heapAfterGcBytes: number
@@ -109,9 +124,12 @@ function memorySample(durationMs: number): {
 	const rssAfterGc = typeof afterGc.rss === 'function' ? afterGc.rss() : afterGc.rss
 	return {
 		durationMs,
+		rssDeltaBytes: Math.max(0, rss - before.rss),
+		retainedRssDeltaBytes: Math.max(0, rssAfterGc - before.rss),
 		rssAfterBytes: rss,
 		rssAfterGcBytes: rssAfterGc,
 		peakRssBytes: Math.max(rss, rssAfterGc),
+		heapDeltaBytes: Math.max(0, memory.heapUsed - before.heapUsed),
 		heapUsedBytes: memory.heapUsed,
 		heapTotalBytes: memory.heapTotal,
 		heapAfterGcBytes: afterGc.heapUsed,
@@ -218,9 +236,11 @@ async function main(): Promise<void> {
 	const samples: ReturnType<typeof memorySample>[] = []
 	let bytes: Uint8Array | undefined
 	for (let i = 0; i < args.repeat; i++) {
+		runGc()
+		const before = memorySnapshot()
 		const start = performance.now()
 		bytes = await writeWorkbook(args)
-		samples.push(memorySample(performance.now() - start))
+		samples.push(memorySample(performance.now() - start, before))
 	}
 	if (!bytes) throw new Error('No samples were produced')
 	const shouldMaterializeExpectedValues = args.rows * args.cols <= 500_000

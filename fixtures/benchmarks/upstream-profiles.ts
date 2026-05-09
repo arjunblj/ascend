@@ -45,7 +45,12 @@ type UpstreamProfileName =
 
 type Category = 'read' | 'write'
 type Competitor = 'js' | 'external' | 'all'
-type UpstreamProfileSetName = 'write-smoke' | 'write-heavy' | 'read-smoke' | 'docker-heavy'
+type UpstreamProfileSetName =
+	| 'write-smoke'
+	| 'write-memory'
+	| 'write-heavy'
+	| 'read-smoke'
+	| 'docker-heavy'
 type LibraryIsolationMode = 'auto' | 'always' | 'never'
 const AUTO_ISOLATE_CELL_THRESHOLD = 1_000_000
 const ISOLATED_KILLED_RETRIES = 1
@@ -453,6 +458,15 @@ export const UPSTREAM_PROFILE_SETS = {
 		'pyopenxlsx-write-5000x10',
 		'rust-xlsxwriter-write-4000x50-50pct-text',
 		'fastxlsx-write-5000x10-matrix',
+	],
+	'write-memory': [
+		'xlsxwriter-write-memory-200x50-50pct-text',
+		'xlsxwriter-write-memory-400x50-50pct-text',
+		'xlsxwriter-write-memory-800x50-50pct-text',
+		'xlsxwriter-write-memory-1600x50-50pct-text',
+		'xlsxwriter-write-memory-3200x50-50pct-text',
+		'xlsxwriter-write-memory-6400x50-50pct-text',
+		'xlsxwriter-write-memory-12800x50-50pct-text',
 	],
 	'write-heavy': [
 		'xlsxwriter-write-memory-12800x50-50pct-text',

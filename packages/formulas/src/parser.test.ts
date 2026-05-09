@@ -98,9 +98,22 @@ describe('parse', () => {
 		})
 	})
 
-	it('parses unary minus after exponentiation precedence', () => {
+	it('parses unary minus before exponentiation precedence', () => {
 		const node = p('-2^2')
 		expect(node).toEqual({
+			type: 'binary',
+			op: '^',
+			left: {
+				type: 'unary',
+				op: '-',
+				operand: { type: 'number', value: 2 },
+			},
+			right: { type: 'number', value: 2 },
+		})
+	})
+
+	it('keeps explicit grouping and unary exponent operands unambiguous', () => {
+		expect(p('-(2^2)')).toEqual({
 			type: 'unary',
 			op: '-',
 			operand: {
@@ -108,6 +121,16 @@ describe('parse', () => {
 				op: '^',
 				left: { type: 'number', value: 2 },
 				right: { type: 'number', value: 2 },
+			},
+		})
+		expect(p('2^-2')).toEqual({
+			type: 'binary',
+			op: '^',
+			left: { type: 'number', value: 2 },
+			right: {
+				type: 'unary',
+				op: '-',
+				operand: { type: 'number', value: 2 },
 			},
 		})
 	})

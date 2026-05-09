@@ -1,5 +1,5 @@
 import type { PivotCacheInfo, PivotTableInfo, SlicerCacheInfo, SlicerInfo } from '@ascend/core'
-import { attr, numAttr, parseXml, type XmlNode } from '../xml.ts'
+import { attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
 import type { Relationship } from './relationships.ts'
 import { resolvePath } from './relationships.ts'
 
@@ -30,6 +30,16 @@ export function parsePivotCacheDefinitionXml(
 		cacheId?: number
 		relId?: string
 		recordCount?: number
+		refreshedVersion?: number
+		minRefreshableVersion?: number
+		createdVersion?: number
+		refreshedBy?: string
+		refreshedDate?: number
+		refreshOnLoad?: boolean
+		enableRefresh?: boolean
+		invalid?: boolean
+		saveData?: boolean
+		optimizeMemory?: boolean
 		sourceSheet?: string
 		sourceRef?: string
 		recordsPartPath?: string
@@ -37,12 +47,46 @@ export function parsePivotCacheDefinitionXml(
 	if (cacheId !== undefined) parsed.cacheId = cacheId
 	if (relId) parsed.relId = relId
 	if (recordCount !== undefined) parsed.recordCount = recordCount
+	setNumberIfDefined(parsed, 'refreshedVersion', numAttr(root, 'refreshedVersion'))
+	setNumberIfDefined(parsed, 'minRefreshableVersion', numAttr(root, 'minRefreshableVersion'))
+	setNumberIfDefined(parsed, 'createdVersion', numAttr(root, 'createdVersion'))
+	setStringIfDefined(parsed, 'refreshedBy', attr(root, 'refreshedBy'))
+	setNumberIfDefined(parsed, 'refreshedDate', numAttr(root, 'refreshedDate'))
+	setBoolIfDefined(parsed, 'refreshOnLoad', boolAttr(root, 'refreshOnLoad'))
+	setBoolIfDefined(parsed, 'enableRefresh', boolAttr(root, 'enableRefresh'))
+	setBoolIfDefined(parsed, 'invalid', boolAttr(root, 'invalid'))
+	setBoolIfDefined(parsed, 'saveData', boolAttr(root, 'saveData'))
+	setBoolIfDefined(parsed, 'optimizeMemory', boolAttr(root, 'optimizeMemory'))
 	const sourceSheet = worksheetSource ? attr(worksheetSource, 'sheet') : undefined
 	if (sourceSheet) parsed.sourceSheet = sourceSheet
 	const sourceRef = worksheetSource ? attr(worksheetSource, 'ref') : undefined
 	if (sourceRef) parsed.sourceRef = sourceRef
 	if (recordsRel) parsed.recordsPartPath = resolvePath(partPath, recordsRel.target)
 	return parsed as PivotCacheInfo
+}
+
+function setNumberIfDefined(
+	target: Record<string, unknown>,
+	key: string,
+	value: number | undefined,
+): void {
+	if (value !== undefined) target[key] = value
+}
+
+function setStringIfDefined(
+	target: Record<string, unknown>,
+	key: string,
+	value: string | undefined,
+): void {
+	if (value !== undefined) target[key] = value
+}
+
+function setBoolIfDefined(
+	target: Record<string, unknown>,
+	key: string,
+	value: boolean | undefined,
+): void {
+	if (value !== undefined) target[key] = value
 }
 
 export function parsePivotTableXml(

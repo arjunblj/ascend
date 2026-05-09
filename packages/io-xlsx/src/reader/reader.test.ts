@@ -969,7 +969,9 @@ describe('readXlsx', () => {
 			'xl/pivotCache/pivotCacheDefinition1.xml': `<?xml version="1.0"?>
 <pivotCacheDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
   xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
-  r:id="rIdRecords" recordCount="25">
+  r:id="rIdRecords" recordCount="25" refreshOnLoad="1" enableRefresh="1" saveData="0"
+  invalid="1" optimizeMemory="1" refreshedVersion="7" minRefreshableVersion="3"
+  createdVersion="6" refreshedBy="Ascend" refreshedDate="45123.5">
   <cacheSource type="worksheet">
     <worksheetSource ref="A1:D100" sheet="raw data"/>
   </cacheSource>
@@ -1000,6 +1002,16 @@ describe('readXlsx', () => {
 				cacheId: 34,
 				relId: 'rIdPivotCache',
 				recordCount: 25,
+				refreshedVersion: 7,
+				minRefreshableVersion: 3,
+				createdVersion: 6,
+				refreshedBy: 'Ascend',
+				refreshedDate: 45123.5,
+				refreshOnLoad: true,
+				enableRefresh: true,
+				invalid: true,
+				saveData: false,
+				optimizeMemory: true,
 				sourceSheet: 'raw data',
 				sourceRef: 'A1:D100',
 				recordsPartPath: 'xl/pivotCache/pivotCacheRecords1.xml',

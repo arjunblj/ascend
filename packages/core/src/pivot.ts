@@ -11,6 +11,16 @@ export interface PivotCacheInfo {
 	readonly cacheId?: number
 	readonly relId?: string
 	readonly recordCount?: number
+	readonly refreshedVersion?: number
+	readonly minRefreshableVersion?: number
+	readonly createdVersion?: number
+	readonly refreshedBy?: string
+	readonly refreshedDate?: number
+	readonly refreshOnLoad?: boolean
+	readonly enableRefresh?: boolean
+	readonly invalid?: boolean
+	readonly saveData?: boolean
+	readonly optimizeMemory?: boolean
 	readonly sourceSheet?: string
 	readonly sourceRef?: string
 	readonly recordsPartPath?: string

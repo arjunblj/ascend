@@ -463,8 +463,9 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'Pivot caches',
 		'inspectable',
 		'P0',
-		'Expose cache records, source refs, freshness, and refresh flags.',
-		'Pivot caches are inspectable/preserved but not recalculated.',
+		'Add safe source-range and refresh-on-open edit operations.',
+		'Pivot caches expose source refs and refresh/freshness flags; recalculation is not implemented.',
+		['packages/io-xlsx/src/reader/reader.test.ts'],
 	),
 	cap(
 		'analytics.slicers',

@@ -82,6 +82,41 @@ describe('API', () => {
 		expect(commitBody.data.outputSha256).toMatch(/^[a-f0-9]{64}$/)
 	})
 
+	test('commit endpoint requires approval for destructive operations', async () => {
+		const tempFile = join(tempDir, 'agent-approval.xlsx')
+		const outputFile = join(tempDir, 'agent-approval-output.xlsx')
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'addSheet', name: 'Scratch' }])
+		await wb.save(tempFile)
+		const ops = [{ op: 'deleteSheet', sheet: 'Scratch' }]
+
+		const plan = await fetch(`http://localhost:${server.port}/plan`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ file: tempFile, ops }),
+		})
+		const planBody = await plan.json()
+		const approvalId = planBody.data.approvals[0].id
+		expect(planBody.data.needsApproval).toBe(true)
+
+		const blocked = await fetch(`http://localhost:${server.port}/commit`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ file: tempFile, ops, output: outputFile }),
+		})
+		expect(blocked.status).toBe(400)
+
+		const committed = await fetch(`http://localhost:${server.port}/commit`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ file: tempFile, ops, output: outputFile, approvals: [approvalId] }),
+		})
+		expect(committed.status).toBe(200)
+		const committedBody = await committed.json()
+		expect(committedBody.ok).toBe(true)
+		expect(committedBody.data.approvals[0].id).toBe(approvalId)
+	})
+
 	test('inspect returns workbook info', async () => {
 		const tempFile = join(tempDir, 'test.xlsx')
 		const wb = AscendWorkbook.create()

@@ -25,11 +25,13 @@ describe('agent workflow loss audit', () => {
 		expect(plan.trace.kind).toBe('plan')
 		expect(plan.trace.traceDigest).toMatch(/^[a-f0-9]{64}$/)
 		expect(plan.trace.phases.find((phase) => phase.phase === 'loss-audit')?.status).toBe('blocked')
+		expect(plan.needsApproval).toBe(true)
+		expect(plan.approvals[0]?.kind).toBe('lossy-write')
 		expect(plan.modelOutput.blocked).toBe(true)
-		expect(plan.modelOutput.nextActions.join('\n')).toContain('allowLoss')
+		expect(plan.modelOutput.nextActions.join('\n')).toContain('approval')
 
 		await expect(commitAgentPlan(input, ops, { output })).rejects.toThrow(
-			'Workbook contains preserved or unsupported features',
+			'Commit requires explicit approval',
 		)
 
 		const committed = await commitAgentPlan(input, ops, {
@@ -59,6 +61,34 @@ describe('agent workflow loss audit', () => {
 		expect(committed.lossAudit.ok).toBe(true)
 		expect(committed.trace.artifacts.map((artifact) => artifact.name)).toContain('apply')
 		expect(committed.modelOutput.counts.operations).toBe(1)
+	})
+
+	test('destructive operations require explicit approval ids', async () => {
+		const input = join(TEMP_DIR, 'destructive.xlsx')
+		const output = join(TEMP_DIR, 'destructive-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'addSheet', name: 'Scratch' }])
+		await wb.save(input)
+		const ops = [{ op: 'deleteSheet' as const, sheet: 'Scratch' }]
+
+		const plan = await createAgentPlan(input, ops)
+		const approval = plan.approvals.find((entry) => entry.kind === 'destructive-operation')
+		expect(approval?.id).toBe('op:0:deletesheet')
+		expect(plan.trace.phases.find((phase) => phase.phase === 'approval-audit')?.status).toBe(
+			'blocked',
+		)
+
+		await expect(commitAgentPlan(input, ops, { output })).rejects.toThrow(
+			'Commit requires explicit approval',
+		)
+
+		const committed = await commitAgentPlan(input, ops, {
+			output,
+			approvals: [approval?.id ?? ''],
+		})
+		expect(committed.approvals[0]?.id).toBe(approval?.id)
+		expect(committed.modelOutput.blocked).toBe(false)
 	})
 })
 

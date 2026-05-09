@@ -10,6 +10,8 @@ export interface AgentPlanResult {
 	readonly inputSha256: string
 	readonly operationCount: number
 	readonly planDigest: string
+	readonly needsApproval: boolean
+	readonly approvals: readonly ApprovalRequirement[]
 	readonly trace: AgentWorkflowTrace
 	readonly modelOutput: AgentModelOutput
 	readonly preview: ReturnType<AscendWorkbook['preview']>
@@ -27,6 +29,7 @@ export interface AgentCommitOptions {
 	readonly backup?: string
 	readonly expectSha256?: string
 	readonly allowLoss?: readonly string[] | 'all'
+	readonly approvals?: readonly string[] | 'all'
 }
 
 export interface AgentCommitResult {
@@ -37,6 +40,7 @@ export interface AgentCommitResult {
 	readonly outputSha256: string
 	readonly planDigest: string
 	readonly operationCount: number
+	readonly approvals: readonly ApprovalRequirement[]
 	readonly trace: AgentWorkflowTrace
 	readonly modelOutput: AgentModelOutput
 	readonly apply: ReturnType<AscendWorkbook['apply']>
@@ -104,6 +108,19 @@ export interface AgentModelOutput {
 	}
 }
 
+export interface ApprovalRequirement {
+	readonly id: string
+	readonly kind: 'lossy-write' | 'destructive-operation'
+	readonly severity: 'medium' | 'high' | 'critical'
+	readonly title: string
+	readonly reason: string
+	readonly operationIndex?: number
+	readonly operation?: string
+	readonly feature?: string
+	readonly tier?: FeatureReport['tier']
+	readonly satisfies: readonly string[]
+}
+
 export interface RepairPlanResult {
 	readonly file: string
 	readonly inputSha256: string
@@ -130,6 +147,7 @@ export async function createAgentPlan(
 	const wb = await AscendWorkbook.open(file)
 	const preview = wb.preview(ops)
 	const lossAudit = auditLossPolicy(wb.report.features)
+	const approvals = buildApprovalRequirements(wb.report.features, ops)
 	const check = wb.check()
 	const lint = wb.lint()
 	const preservation = wb.writePlanSummary()
@@ -146,12 +164,14 @@ export async function createAgentPlan(
 			checkPhase(check),
 			lintPhase(lint),
 			lossAuditPhase(lossAudit),
+			approvalPhase(approvals),
 			preservationPhase(preservation),
 		],
 		artifacts: [
 			artifact('ops', ops, `${ops.length} operation(s)`),
 			artifact('preview', preview, `${preview.changedCells.length} changed cell(s)`),
 			artifact('lossAudit', lossAudit, `${lossAudit.blockedFeatures.length} blocked feature(s)`),
+			artifact('approvals', approvals, `${approvals.length} approval requirement(s)`),
 			artifact('preservation', preservation, `${preservation.totalParts} package part(s)`),
 		],
 	})
@@ -160,6 +180,8 @@ export async function createAgentPlan(
 		inputSha256,
 		operationCount: ops.length,
 		planDigest,
+		needsApproval: approvals.length > 0,
+		approvals,
 		trace,
 		modelOutput: modelOutputFromTrace(trace),
 		preview,
@@ -205,13 +227,19 @@ export async function commitAgentPlan(
 	}
 
 	const wb = await AscendWorkbook.open(file)
-	const lossAudit = auditLossPolicy(wb.report.features, options.allowLoss)
-	if (!lossAudit.ok) {
+	const approvals = buildApprovalRequirements(wb.report.features, ops)
+	const effectiveAllowLoss = mergeAllowLoss(
+		options.allowLoss,
+		approvalSatisfiedLossFeatures(approvals, options.approvals),
+	)
+	const lossAudit = auditLossPolicy(wb.report.features, effectiveAllowLoss)
+	const blockedApprovals = unsatisfiedApprovalRequirements(approvals, lossAudit, options.approvals)
+	if (blockedApprovals.length > 0) {
 		throw new AscendException(
-			ascendError('VALIDATION_ERROR', 'Workbook contains preserved or unsupported features', {
-				details: { lossAudit },
+			ascendError('VALIDATION_ERROR', 'Commit requires explicit approval', {
+				details: { approvals: blockedApprovals, lossAudit },
 				suggestedFix:
-					'Inspect the plan lossAudit. If the write is intentional, pass --allow-loss <feature> for every blocked feature or --allow-loss all.',
+					'Inspect plan.approvals. If the action is intentional, pass --approval <id> for each requirement, --approval all, or use --allow-loss for lossy workbook features.',
 			}),
 		)
 	}
@@ -257,6 +285,7 @@ export async function commitAgentPlan(
 				? okPhase('hash-guard', 'Input hash matched expected SHA-256.')
 				: okPhase('hash-guard', 'No input hash guard requested.'),
 			lossAuditPhase(lossAudit),
+			approvalPhase(approvals, options.approvals, blockedApprovals),
 			applyPhase(apply),
 			recalcPhase(recalc),
 			preservationPhase(preservation),
@@ -273,6 +302,7 @@ export async function commitAgentPlan(
 				recalc ? `${recalc.changed.length} recalculated cell(s)` : 'not required',
 			),
 			artifact('lossAudit', lossAudit, `${lossAudit.blockedFeatures.length} blocked feature(s)`),
+			artifact('approvals', approvals, `${approvals.length} approval requirement(s)`),
 			artifact('preservation', preservation, `${preservation.totalParts} package part(s)`),
 		],
 	})
@@ -285,6 +315,7 @@ export async function commitAgentPlan(
 		outputSha256,
 		planDigest,
 		operationCount: ops.length,
+		approvals,
 		trace,
 		modelOutput: modelOutputFromTrace(trace),
 		apply,
@@ -551,6 +582,31 @@ function lossAuditPhase(lossAudit: LossAudit): AgentTracePhase {
 	return okPhase('loss-audit', 'No unapproved preserved or unsupported feature loss detected.', 0)
 }
 
+function approvalPhase(
+	approvals: readonly ApprovalRequirement[],
+	granted: readonly string[] | 'all' = [],
+	blockedApprovals?: readonly ApprovalRequirement[],
+): AgentTracePhase {
+	if (approvals.length === 0)
+		return okPhase('approval-audit', 'No approval-gated action detected.', 0)
+	const unsatisfied =
+		blockedApprovals ?? approvals.filter((approval) => !isApprovalSatisfied(approval, granted))
+	if (unsatisfied.length > 0) {
+		return phaseResult(
+			'approval-audit',
+			'blocked',
+			`${unsatisfied.length} action(s) require explicit approval.`,
+			unsatisfied.length,
+			unsatisfied,
+		)
+	}
+	return okPhase(
+		'approval-audit',
+		`${approvals.length} approval requirement(s) satisfied.`,
+		approvals.length,
+	)
+}
+
 function featureAuditPhase(features: readonly unknown[]): AgentTracePhase {
 	if (features.length > 0)
 		return warningPhase(
@@ -613,6 +669,13 @@ function setCount<K extends keyof AgentModelOutput['counts']>(
 }
 
 function buildNextActions(trace: AgentWorkflowTrace): string[] {
+	if (
+		trace.phases.some((phase) => phase.phase === 'approval-audit' && phase.status === 'blocked')
+	) {
+		return [
+			'Inspect approvals and rerun commit with --approval <id> only if the action is intentional.',
+		]
+	}
 	if (trace.phases.some((phase) => phase.phase === 'loss-audit' && phase.status === 'blocked')) {
 		return [
 			'Inspect lossAudit.blockedFeatures.',
@@ -626,6 +689,144 @@ function buildNextActions(trace: AgentWorkflowTrace): string[] {
 	if (trace.kind === 'commit')
 		return ['Verify the output workbook hash and retain the traceDigest.']
 	return ['Follow the suggested repair actions in order.']
+}
+
+function buildApprovalRequirements(
+	features: readonly FeatureReport[],
+	ops: readonly Operation[],
+): ApprovalRequirement[] {
+	const approvals: ApprovalRequirement[] = []
+	for (const feature of features) {
+		if (feature.tier !== 'preserved' && feature.tier !== 'unsupported') continue
+		const featureKey = feature.feature.toLowerCase()
+		const tierKey = feature.tier.toLowerCase()
+		approvals.push({
+			id: `loss:${featureKey}:${shortDigest(feature.locations)}`,
+			kind: 'lossy-write',
+			severity: feature.tier === 'unsupported' ? 'critical' : 'high',
+			title: `Approve write with ${feature.feature}`,
+			reason:
+				'Workbook contains preserved or unsupported package features that require explicit approval before writing.',
+			feature: feature.feature,
+			tier: feature.tier,
+			satisfies: [`loss:${featureKey}`, featureKey, tierKey],
+		})
+	}
+	for (const [operationIndex, op] of ops.entries()) {
+		const destructive = destructiveOperationApproval(op, operationIndex)
+		if (destructive) approvals.push(destructive)
+	}
+	return approvals
+}
+
+function destructiveOperationApproval(
+	op: Operation,
+	operationIndex: number,
+): ApprovalRequirement | null {
+	switch (op.op) {
+		case 'deleteSheet':
+			return destructiveApproval(op, operationIndex, 'critical', `Delete sheet "${op.sheet}"`)
+		case 'deleteRows':
+			return destructiveApproval(
+				op,
+				operationIndex,
+				'high',
+				`Delete ${op.count} row(s) from "${op.sheet}"`,
+			)
+		case 'deleteCols':
+			return destructiveApproval(
+				op,
+				operationIndex,
+				'high',
+				`Delete ${op.count} column(s) from "${op.sheet}"`,
+			)
+		case 'clearRange':
+			return op.what === 'all'
+				? destructiveApproval(
+						op,
+						operationIndex,
+						'high',
+						`Clear all content in ${op.sheet}!${op.range}`,
+					)
+				: null
+		case 'deleteTable':
+			return destructiveApproval(op, operationIndex, 'medium', `Delete table "${op.table}"`)
+		case 'deleteDefinedName':
+			return destructiveApproval(op, operationIndex, 'medium', `Delete defined name "${op.name}"`)
+		default:
+			return null
+	}
+}
+
+function destructiveApproval(
+	op: Operation,
+	operationIndex: number,
+	severity: ApprovalRequirement['severity'],
+	title: string,
+): ApprovalRequirement {
+	const opKey = op.op.toLowerCase()
+	return {
+		id: `op:${operationIndex}:${opKey}`,
+		kind: 'destructive-operation',
+		severity,
+		title,
+		reason: 'Operation can remove workbook content or metadata and requires explicit approval.',
+		operationIndex,
+		operation: op.op,
+		satisfies: [`op:${operationIndex}`, opKey],
+	}
+}
+
+function approvalSatisfiedLossFeatures(
+	approvals: readonly ApprovalRequirement[],
+	granted: readonly string[] | 'all' | undefined,
+): readonly string[] {
+	if (!granted) return []
+	return approvals
+		.filter((approval) => approval.kind === 'lossy-write' && isApprovalSatisfied(approval, granted))
+		.map((approval) => approval.feature)
+		.filter((feature): feature is string => feature !== undefined)
+}
+
+function unsatisfiedApprovalRequirements(
+	approvals: readonly ApprovalRequirement[],
+	lossAudit: LossAudit,
+	granted: readonly string[] | 'all' | undefined,
+): ApprovalRequirement[] {
+	const blockedLossKeys = new Set(
+		lossAudit.blockedFeatures.map((feature) => `${feature.feature}:${feature.tier}`.toLowerCase()),
+	)
+	return approvals.filter((approval) => {
+		if (approval.kind === 'lossy-write') {
+			const key = `${approval.feature ?? ''}:${approval.tier ?? ''}`.toLowerCase()
+			return blockedLossKeys.has(key)
+		}
+		return !isApprovalSatisfied(approval, granted)
+	})
+}
+
+function isApprovalSatisfied(
+	approval: ApprovalRequirement,
+	granted: readonly string[] | 'all' | undefined,
+): boolean {
+	if (granted === 'all') return true
+	const normalized = new Set((granted ?? []).map((entry) => entry.toLowerCase()))
+	return (
+		normalized.has(approval.id.toLowerCase()) ||
+		approval.satisfies.some((entry) => normalized.has(entry.toLowerCase()))
+	)
+}
+
+function mergeAllowLoss(
+	base: readonly string[] | 'all' | undefined,
+	extra: readonly string[],
+): readonly string[] | 'all' {
+	if (base === 'all') return 'all'
+	return [...new Set([...(base ?? []), ...extra])]
+}
+
+function shortDigest(value: unknown): string {
+	return sha256Text(stableStringify(value)).slice(0, 10)
 }
 
 function phaseCount(

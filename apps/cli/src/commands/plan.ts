@@ -50,6 +50,10 @@ export async function planCommand(args: string[], flags: Map<string, string>): P
 	console.log(bullet('Would succeed', result.preview.wouldSucceed ? 'yes' : 'no'))
 	console.log(bullet('Cell changes', result.preview.cellChanges.length))
 	console.log(bullet('Write parts', result.preservation.totalParts))
+	console.log(bullet('Approval required', result.needsApproval ? 'yes' : 'no'))
+	for (const approval of result.approvals) {
+		console.log(bullet(`Approval ${approval.id}`, approval.title))
+	}
 	if (result.preview.errors.length > 0) {
 		console.log('')
 		for (const error of result.preview.errors) console.log(bullet('Error', error.message))

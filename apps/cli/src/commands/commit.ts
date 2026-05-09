@@ -19,6 +19,7 @@ Flags:
   --backup <backup.xlsx>    Backup path for --in-place
   --expect-sha256 <hash>    Reject commit if the input changed since plan
   --allow-loss <feature>    Allow preserved/unsupported feature loss by feature, tier, or "all"
+  --approval <id>           Approve an explicit plan approval id, comma-separated list, or "all"
   --json                    Output as JSON
 `
 
@@ -40,6 +41,9 @@ export async function commitCommand(args: string[], flags: Map<string, string>):
 		...(flags.get('allow-loss')
 			? { allowLoss: parseAllowLoss(flags.get('allow-loss') as string) }
 			: {}),
+		...(flags.get('approval')
+			? { approvals: parseApprovalFlags(flags.get('approval') as string) }
+			: {}),
 	}
 	const result = await commitAgentPlan(file, ops, options)
 	if (flags.has('json')) {
@@ -57,6 +61,14 @@ export async function commitCommand(args: string[], flags: Map<string, string>):
 }
 
 function parseAllowLoss(value: string): readonly string[] | 'all' {
+	return parseListOrAll(value)
+}
+
+function parseApprovalFlags(value: string): readonly string[] | 'all' {
+	return parseListOrAll(value)
+}
+
+function parseListOrAll(value: string): readonly string[] | 'all' {
 	const entries = value
 		.split(',')
 		.map((entry) => entry.trim())

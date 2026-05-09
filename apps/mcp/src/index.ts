@@ -637,8 +637,12 @@ export function createServer(): McpServer {
 				.union([z.string(), z.array(z.string())])
 				.optional()
 				.describe('Allow preserved/unsupported feature loss by feature, tier, or "all"'),
+			approvals: z
+				.union([z.string(), z.array(z.string())])
+				.optional()
+				.describe('Approve explicit plan approval ids, aliases, or "all"'),
 		},
-		async ({ file, ops, output, inPlace, backup, expectSha256, allowLoss }) => {
+		async ({ file, ops, output, inPlace, backup, expectSha256, allowLoss, approvals }) => {
 			const parsed = parseOperations(ops)
 			if (!parsed.ok) {
 				return errorResponse(
@@ -656,6 +660,7 @@ export function createServer(): McpServer {
 					...(backup ? { backup } : {}),
 					...(expectSha256 ? { expectSha256 } : {}),
 					...(allowLoss ? { allowLoss: parseAllowLoss(allowLoss) } : {}),
+					...(approvals ? { approvals: parseStringListOrAll(approvals) } : {}),
 				}
 				const result = await commitAgentPlan(file, parsed.value, options)
 				return okResponse(result, `Committed ${ops.length} operation(s)`)
@@ -915,6 +920,10 @@ function rangeRefToString(ref: {
 }
 
 function parseAllowLoss(value: string | string[]): readonly string[] | 'all' {
+	return parseStringListOrAll(value)
+}
+
+function parseStringListOrAll(value: string | string[]): readonly string[] | 'all' {
 	const entries = (Array.isArray(value) ? value : value.split(','))
 		.map((entry) => entry.trim())
 		.filter((entry) => entry.length > 0)

@@ -47,6 +47,14 @@ function requireOptionalNumber(obj: unknown, key: string): number | undefined {
 }
 
 function parseAllowLoss(value: unknown): readonly string[] | 'all' | undefined {
+	return parseStringListOrAll(value)
+}
+
+function parseApprovals(value: unknown): readonly string[] | 'all' | undefined {
+	return parseStringListOrAll(value)
+}
+
+function parseStringListOrAll(value: unknown): readonly string[] | 'all' | undefined {
 	const entries =
 		typeof value === 'string'
 			? value.split(',')
@@ -336,6 +344,7 @@ export function createServer(opts?: { port?: number }) {
 					backup?: string
 					expectSha256?: string
 					allowLoss?: string | string[]
+					approvals?: string | string[]
 				}>(req)
 				const file = body ? requireString(body, 'file') : null
 				const opsArr = body ? requireArray(body, 'ops') : null
@@ -358,6 +367,9 @@ export function createServer(opts?: { port?: number }) {
 					const allowLoss = body
 						? parseAllowLoss((body as Record<string, unknown>).allowLoss)
 						: undefined
+					const approvals = body
+						? parseApprovals((body as Record<string, unknown>).approvals)
+						: undefined
 					const inPlace =
 						body !== null &&
 						typeof body === 'object' &&
@@ -368,6 +380,7 @@ export function createServer(opts?: { port?: number }) {
 						...(backup ? { backup } : {}),
 						...(expectSha256 ? { expectSha256 } : {}),
 						...(allowLoss ? { allowLoss } : {}),
+						...(approvals ? { approvals } : {}),
 					}
 					const result = await commitAgentPlan(file, parsed.value, options)
 					return jsonSuccess(result)

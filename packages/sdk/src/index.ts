@@ -7,6 +7,7 @@ export type {
 	AgentTraceArtifact,
 	AgentTracePhase,
 	AgentWorkflowTrace,
+	ApprovalRequirement,
 	LossAudit,
 	RepairAction,
 	RepairPlanResult,

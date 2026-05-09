@@ -541,6 +541,37 @@ describe('MCP server', () => {
 		})
 	})
 
+	test('ascend.commit requires approval for destructive operations', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'addSheet', name: 'Scratch' }])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test
+		const handler = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+			file: string
+			ops: unknown[]
+			inPlace?: boolean
+			approvals?: string[] | string
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: { data?: { approvals?: Array<{ id: string }> } }
+		}>
+		const ops = [{ op: 'deleteSheet', sheet: 'Scratch' }]
+
+		const blocked = await handler({ file: TEMP_FILE, ops, inPlace: true })
+		expect(blocked.isError).toBe(true)
+
+		const committed = await handler({
+			file: TEMP_FILE,
+			ops,
+			inPlace: true,
+			approvals: ['op:0:deletesheet'],
+		})
+		expect(committed.isError).not.toBe(true)
+		expect(committed.structuredContent?.data?.approvals?.[0]?.id).toBe('op:0:deletesheet')
+	})
+
 	test('file-not-found returns structured error', async () => {
 		const server = createServer()
 		// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test

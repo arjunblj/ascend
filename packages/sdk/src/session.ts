@@ -26,6 +26,8 @@ import type {
 	SheetInspectInfo,
 	SlicerCacheInfo,
 	SlicerInfo,
+	TimelineCacheInfo,
+	TimelineInfo,
 	TraceResult,
 	WorkbookInfo,
 	WorkbookVisualInventoryInfo,
@@ -356,6 +358,14 @@ export class WorkbookDocument {
 
 	slicers(): readonly SlicerInfo[] {
 		return this.view.slicers()
+	}
+
+	timelineCaches(): readonly TimelineCacheInfo[] {
+		return this.view.timelineCaches()
+	}
+
+	timelines(): readonly TimelineInfo[] {
+		return this.view.timelines()
 	}
 
 	workbookViews(): readonly import('./types.ts').WorkbookViewInfo[] {

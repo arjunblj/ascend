@@ -55,6 +55,8 @@ import type {
 	SlicerCacheInfo,
 	SlicerInfo,
 	TableInfo,
+	TimelineCacheInfo,
+	TimelineInfo,
 	TraceResult,
 	WorkbookInfo,
 	WorkbookLoadInfo,
@@ -128,6 +130,8 @@ export class WorkbookReadView {
 			pivotCacheCount: this.wb.pivotCaches.length,
 			slicerCount: this.wb.slicers.length,
 			slicerCacheCount: this.wb.slicerCaches.length,
+			timelineCount: this.wb.timelines.length,
+			timelineCacheCount: this.wb.timelineCaches.length,
 			sourceFormat: this.compat.sourceFormat,
 			workbookViewCount: this.wb.workbookViews.length,
 			externalReferenceCount: this.wb.externalReferences.length,
@@ -145,6 +149,11 @@ export class WorkbookReadView {
 				pivotTableNames: [...entry.pivotTableNames],
 			})),
 			slicers: this.wb.slicers.map((entry) => ({ ...entry })),
+			timelineCaches: this.wb.timelineCaches.map((entry) => ({
+				...entry,
+				pivotTableNames: [...entry.pivotTableNames],
+			})),
+			timelines: this.wb.timelines.map((entry) => ({ ...entry })),
 			styleSummary: { ...this.wb.styleMetadata },
 			themeSummary: {
 				hasThemePart: this.wb.preservedTheme !== null,
@@ -554,6 +563,17 @@ export class WorkbookReadView {
 
 	slicers(): readonly SlicerInfo[] {
 		return this.wb.slicers.map((entry) => ({ ...entry }))
+	}
+
+	timelineCaches(): readonly TimelineCacheInfo[] {
+		return this.wb.timelineCaches.map((entry) => ({
+			...entry,
+			pivotTableNames: [...entry.pivotTableNames],
+		}))
+	}
+
+	timelines(): readonly TimelineInfo[] {
+		return this.wb.timelines.map((entry) => ({ ...entry }))
 	}
 
 	trace(cellRef: CellSelector, opts?: { maxDepth?: number }): TraceResult | undefined {

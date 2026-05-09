@@ -21,6 +21,8 @@ import {
 	parsePivotTableXml,
 	parseSlicerCacheXml,
 	parseSlicerXml,
+	parseTimelineCacheXml,
+	parseTimelineXml,
 } from './pivots.ts'
 import {
 	getRelsPath,
@@ -184,6 +186,21 @@ export function readXlsx(
 				const xml = readPart(archive, entry.path)
 				if (!xml) continue
 				workbook.slicers.push(...parseSlicerXml(xml, entry.path))
+			}
+			for (const entry of archive.entries()) {
+				if (!entry.path.startsWith('xl/timelineCaches/') || !entry.path.endsWith('.xml')) {
+					continue
+				}
+				const xml = readPart(archive, entry.path)
+				if (!xml) continue
+				const parsed = parseTimelineCacheXml(xml, entry.path)
+				if (parsed) workbook.timelineCaches.push(parsed)
+			}
+			for (const entry of archive.entries()) {
+				if (!entry.path.startsWith('xl/timelines/') || !entry.path.endsWith('.xml')) continue
+				const xml = readPart(archive, entry.path)
+				if (!xml) continue
+				workbook.timelines.push(...parseTimelineXml(xml, entry.path))
 			}
 		}
 
@@ -604,7 +621,14 @@ function capsuleFamily(path: string): string {
 	if (path.startsWith('customXml/')) return 'preservedCustomXml'
 	if (path.includes('/ctrlProps/')) return 'preservedControl'
 	if (path.includes('/pivotTables/') || path.includes('/pivotCache/')) return 'preservedPivot'
-	if (path.includes('/slicers/') || path.includes('/slicerCaches/')) return 'preservedSlicer'
+	if (
+		path.includes('/slicers/') ||
+		path.includes('/slicerCaches/') ||
+		path.includes('/timelines/') ||
+		path.includes('/timelineCaches/')
+	) {
+		return 'preservedSlicer'
+	}
 	if (path.includes('/tables/')) return 'preservedTable'
 	if (path.includes('/metadata')) return 'preservedMetadata'
 	if (path.includes('/threadedComments/')) return 'preservedThreadedComments'

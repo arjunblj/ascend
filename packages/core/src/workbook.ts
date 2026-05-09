@@ -2,7 +2,14 @@ import { type CalcSettings, DEFAULT_CALC_SETTINGS } from '@ascend/schema'
 import type { ChartPartInfo } from './chart.ts'
 import { DefinedNameCollection } from './defined-name.ts'
 import { createWorkbookId, type SheetId, type WorkbookId } from './ids.ts'
-import type { PivotCacheInfo, PivotTableInfo, SlicerCacheInfo, SlicerInfo } from './pivot.ts'
+import type {
+	PivotCacheInfo,
+	PivotTableInfo,
+	SlicerCacheInfo,
+	SlicerInfo,
+	TimelineCacheInfo,
+	TimelineInfo,
+} from './pivot.ts'
 import { createSheet, type Sheet } from './sheet.ts'
 import type { CellStyle } from './style.ts'
 import { cloneCellStyle } from './style-clone.ts'
@@ -114,6 +121,8 @@ export class Workbook {
 	readonly pivotTables: PivotTableInfo[] = []
 	readonly slicerCaches: SlicerCacheInfo[] = []
 	readonly slicers: SlicerInfo[] = []
+	readonly timelineCaches: TimelineCacheInfo[] = []
+	readonly timelines: TimelineInfo[] = []
 	readonly chartParts: ChartPartInfo[] = []
 	readonly workbookViews: WorkbookView[] = []
 	readonly externalReferences: string[] = []
@@ -220,6 +229,13 @@ export class Workbook {
 			})),
 		)
 		clone.slicers.push(...this.slicers.map((entry) => ({ ...entry })))
+		clone.timelineCaches.push(
+			...this.timelineCaches.map((entry) => ({
+				...entry,
+				pivotTableNames: [...entry.pivotTableNames],
+			})),
+		)
+		clone.timelines.push(...this.timelines.map((entry) => ({ ...entry })))
 		clone.chartParts.push(
 			...this.chartParts.map((entry) => ({
 				...entry,

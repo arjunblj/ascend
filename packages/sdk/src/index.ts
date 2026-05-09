@@ -132,6 +132,8 @@ export type {
 	TableInfo,
 	TableRowInfo,
 	TableWindowInfo,
+	TimelineCacheInfo,
+	TimelineInfo,
 	TraceNodeInfo,
 	TraceResult,
 	VisualFeatureCategory,

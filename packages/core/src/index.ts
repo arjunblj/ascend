@@ -20,6 +20,8 @@ export type {
 	PivotTableInfo,
 	SlicerCacheInfo,
 	SlicerInfo,
+	TimelineCacheInfo,
+	TimelineInfo,
 } from './pivot.ts'
 export type { CellRef, RangeRef } from './refs.ts'
 export {

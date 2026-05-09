@@ -43,6 +43,8 @@ export interface WorkbookInfo {
 	readonly pivotCacheCount: number
 	readonly slicerCount: number
 	readonly slicerCacheCount: number
+	readonly timelineCount: number
+	readonly timelineCacheCount: number
 	readonly sourceFormat: string
 	readonly workbookViewCount: number
 	readonly externalReferenceCount: number
@@ -61,6 +63,19 @@ export interface WorkbookInfo {
 		readonly pivotTableNames: readonly string[]
 	}[]
 	readonly slicers: readonly {
+		readonly partPath: string
+		readonly name?: string
+		readonly cacheName?: string
+		readonly caption?: string
+	}[]
+	readonly timelineCaches: readonly {
+		readonly partPath: string
+		readonly name?: string
+		readonly sourceName?: string
+		readonly pivotCacheId?: number
+		readonly pivotTableNames: readonly string[]
+	}[]
+	readonly timelines: readonly {
 		readonly partPath: string
 		readonly name?: string
 		readonly cacheName?: string
@@ -166,6 +181,21 @@ export interface SlicerCacheInfo {
 }
 
 export interface SlicerInfo {
+	readonly partPath: string
+	readonly name?: string
+	readonly cacheName?: string
+	readonly caption?: string
+}
+
+export interface TimelineCacheInfo {
+	readonly partPath: string
+	readonly name?: string
+	readonly sourceName?: string
+	readonly pivotCacheId?: number
+	readonly pivotTableNames: readonly string[]
+}
+
+export interface TimelineInfo {
 	readonly partPath: string
 	readonly name?: string
 	readonly cacheName?: string

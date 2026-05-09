@@ -262,6 +262,12 @@ function restoreWorkbookFromSnapshot(workbook: Workbook, snapshot: Workbook): vo
 	)
 	workbook.slicers.splice(0, workbook.slicers.length)
 	workbook.slicers.push(...snapshot.slicers.map((e) => ({ ...e })))
+	workbook.timelineCaches.splice(0, workbook.timelineCaches.length)
+	workbook.timelineCaches.push(
+		...snapshot.timelineCaches.map((e) => ({ ...e, pivotTableNames: [...e.pivotTableNames] })),
+	)
+	workbook.timelines.splice(0, workbook.timelines.length)
+	workbook.timelines.push(...snapshot.timelines.map((e) => ({ ...e })))
 	workbook.chartParts.splice(0, workbook.chartParts.length)
 	workbook.chartParts.push(
 		...snapshot.chartParts.map((entry) => ({

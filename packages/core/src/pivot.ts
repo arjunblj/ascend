@@ -75,3 +75,18 @@ export interface SlicerInfo {
 	readonly cacheName?: string
 	readonly caption?: string
 }
+
+export interface TimelineCacheInfo {
+	readonly partPath: string
+	readonly name?: string
+	readonly sourceName?: string
+	readonly pivotCacheId?: number
+	readonly pivotTableNames: readonly string[]
+}
+
+export interface TimelineInfo {
+	readonly partPath: string
+	readonly name?: string
+	readonly cacheName?: string
+	readonly caption?: string
+}

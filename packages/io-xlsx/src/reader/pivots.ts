@@ -7,6 +7,8 @@ import type {
 	PivotTableInfo,
 	SlicerCacheInfo,
 	SlicerInfo,
+	TimelineCacheInfo,
+	TimelineInfo,
 } from '@ascend/core'
 import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
 import type { Relationship } from './relationships.ts'
@@ -270,5 +272,64 @@ export function parseSlicerXml(xml: string, partPath: string): readonly SlicerIn
 		const caption = attr(node, 'caption')
 		if (caption) parsed.caption = caption
 		return parsed as SlicerInfo
+	})
+}
+
+export function parseTimelineCacheXml(xml: string, partPath: string): TimelineCacheInfo | null {
+	const doc = parseXml(xml)
+	const root = (doc.timelineCacheDefinition ??
+		doc['x15:timelineCacheDefinition'] ??
+		doc['x14:timelineCacheDefinition']) as XmlNode | undefined
+	if (!root) return null
+	const pivotTablesNode = root.pivotTables as XmlNode | undefined
+	const pivotTableNodes = pivotTablesNode
+		? ((pivotTablesNode.pivotTable as XmlNode | XmlNode[] | undefined) ?? [])
+		: []
+	const dataNode = root.data as XmlNode | undefined
+	const tabular = dataNode ? ((dataNode.tabular as XmlNode | undefined) ?? undefined) : undefined
+	const parsed: {
+		partPath: string
+		name?: string
+		sourceName?: string
+		pivotCacheId?: number
+		pivotTableNames: readonly string[]
+	} = {
+		partPath,
+		pivotTableNames: (Array.isArray(pivotTableNodes) ? pivotTableNodes : [pivotTableNodes])
+			.filter(Boolean)
+			.map((pivotTable) => attr(pivotTable as XmlNode, 'name') ?? '')
+			.filter(Boolean),
+	}
+	const name = attr(root, 'name')
+	if (name) parsed.name = name
+	const sourceName = attr(root, 'sourceName')
+	if (sourceName) parsed.sourceName = sourceName
+	const pivotCacheId = tabular ? numAttr(tabular, 'pivotCacheId') : undefined
+	if (pivotCacheId !== undefined) parsed.pivotCacheId = pivotCacheId
+	return parsed as TimelineCacheInfo
+}
+
+export function parseTimelineXml(xml: string, partPath: string): readonly TimelineInfo[] {
+	const doc = parseXml(xml)
+	const root = (doc.timelines ?? doc['x15:timelines'] ?? doc['x14:timelines']) as
+		| XmlNode
+		| undefined
+	if (!root) return []
+	const timelineNodes = root.timeline as XmlNode | XmlNode[] | undefined
+	const nodes = Array.isArray(timelineNodes) ? timelineNodes : timelineNodes ? [timelineNodes] : []
+	return nodes.map((node) => {
+		const parsed: {
+			partPath: string
+			name?: string
+			cacheName?: string
+			caption?: string
+		} = { partPath }
+		const name = attr(node, 'name')
+		if (name) parsed.name = name
+		const cacheName = attr(node, 'cache')
+		if (cacheName) parsed.cacheName = cacheName
+		const caption = attr(node, 'caption')
+		if (caption) parsed.caption = caption
+		return parsed as TimelineInfo
 	})
 }

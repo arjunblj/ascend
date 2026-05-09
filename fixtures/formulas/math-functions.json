@@ -93,6 +93,18 @@
 			"expected": { "kind": "number", "value": 150 }
 		},
 		{
+			"description": "SUMIF treats a one-cell sum range as the top-left of a criteria-shaped range",
+			"setup": { "A1": "x", "A2": "y", "A3": "x", "B1": 10, "B2": 20, "B3": 30 },
+			"formula": "SUMIF(A1:A3,\"x\",B1)",
+			"expected": { "kind": "number", "value": 40 }
+		},
+		{
+			"description": "AVERAGEIF treats a one-cell average range as the top-left of a criteria-shaped range",
+			"setup": { "A1": "x", "A2": "y", "A3": "x", "B1": 10, "B2": 20, "B3": 30 },
+			"formula": "AVERAGEIF(A1:A3,\"x\",B1)",
+			"expected": { "kind": "number", "value": 20 }
+		},
+		{
 			"description": "COUNTIFS counts athletes with 10+ points and an active flag",
 			"setup": {
 				"A1": 8,

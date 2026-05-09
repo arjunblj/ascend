@@ -19,11 +19,12 @@ type ProfileName =
 	| 'hf-indexed-index-match'
 	| 'hf-indexed-index-match-dirty-key'
 	| 'hf-indexed-index-match-dirty-value'
+type ProfileSelection = ProfileName | 'all'
 type EngineName = 'ascend' | 'hyperformula'
 type PrefixAggregate = 'SUM' | 'COUNT' | 'AVERAGE' | 'MIN' | 'MAX'
 
 interface Args {
-	readonly profile: ProfileName
+	readonly profile: ProfileSelection
 	readonly rows: number
 	readonly formulas: number
 	readonly repeat: number
@@ -59,6 +60,33 @@ interface Profile {
 interface EngineRun {
 	readonly sample: Sample
 	readonly correctness: Record<string, string | number | boolean>
+}
+
+interface ProfilePayload {
+	readonly formatVersion: 1
+	readonly suite: 'ascend-formula-sota'
+	readonly generatedAt: string
+	readonly profile: {
+		readonly name: ProfileName
+		readonly sourceBenchmark: string
+		readonly sourceUrl: string
+		readonly notes: string
+		readonly rows: number
+		readonly formulas: number
+		readonly aggregate?: PrefixAggregate
+		readonly repeat: number
+		readonly warmup: number
+	}
+	readonly cases: readonly {
+		readonly engine: EngineName
+		readonly metrics: ReturnType<typeof summarize>
+		readonly samples: readonly Sample[]
+		readonly correctness: Record<string, string | number | boolean>
+	}[]
+	readonly comparison: {
+		readonly totalSpeedupVsHyperFormula: number
+		readonly operationSpeedupVsHyperFormula: number
+	}
 }
 
 const PROFILES: Record<ProfileName, Profile> = {
@@ -135,7 +163,7 @@ function renderHelp(): string {
 		'  bun run fixtures/benchmarks/formula-sota.ts --profile <name> [--rows N] [--formulas N] [--repeat N] [--warmup N] [--aggregate SUM|COUNT|AVERAGE|MIN|MAX] [--json]',
 		'',
 		'Options:',
-		'  --profile <name>     Public comparator profile to run.',
+		'  --profile <name|all> Public comparator profile to run.',
 		'  --rows N             Source row count. Defaults depend on profile.',
 		'  --formulas N         Formula count. Defaults depend on profile.',
 		'  --repeat N           Number of measured samples. Defaults to 5.',
@@ -182,12 +210,12 @@ function parseArgs(): Args {
 		process.exit(0)
 	}
 	const rawProfile = readOption(argv, '--profile') ?? 'hf-prefix-range-sum'
-	if (!(rawProfile in PROFILES)) {
+	if (rawProfile !== 'all' && !(rawProfile in PROFILES)) {
 		throw new Error(
-			`Unsupported --profile "${rawProfile}". Expected ${Object.keys(PROFILES).join(', ')}`,
+			`Unsupported --profile "${rawProfile}". Expected all, ${Object.keys(PROFILES).join(', ')}`,
 		)
 	}
-	const profile = rawProfile as ProfileName
+	const profile = rawProfile as ProfileSelection
 	const rawAggregate = (readOption(argv, '--aggregate') ?? 'SUM').toUpperCase()
 	if (!isPrefixAggregate(rawAggregate)) {
 		throw new Error('Unsupported --aggregate. Expected SUM, COUNT, AVERAGE, MIN, or MAX')
@@ -196,11 +224,11 @@ function parseArgs(): Args {
 		profile,
 		rows: positiveInt(
 			readOption(argv, '--rows'),
-			profile.startsWith('hf-prefix-range') ? 5000 : 8000,
+			profile === 'all' || profile.startsWith('hf-prefix-range') ? 5000 : 8000,
 		),
 		formulas: positiveInt(
 			readOption(argv, '--formulas'),
-			profile.startsWith('hf-prefix-range') ? 5000 : 1000,
+			profile === 'all' || profile.startsWith('hf-prefix-range') ? 5000 : 1000,
 		),
 		repeat: positiveInt(readOption(argv, '--repeat'), 5),
 		warmup: nonNegativeInt(readOption(argv, '--warmup'), 1),
@@ -756,56 +784,80 @@ function collectAssertionFailures(
 	return failures
 }
 
-const args = parseArgs()
-const profile = PROFILES[args.profile]
-const ascend = runEngine('ascend', profile, args)
-const hyperformula = runEngine('hyperformula', profile, args)
-const ascendSummary = summarize(ascend.samples)
-const hyperformulaSummary = summarize(hyperformula.samples)
-const comparison = {
-	totalSpeedupVsHyperFormula:
-		hyperformulaSummary.totalMedianMs / Math.max(ascendSummary.totalMedianMs, Number.EPSILON),
-	operationSpeedupVsHyperFormula:
-		hyperformulaSummary.operationMedianMs /
-		Math.max(ascendSummary.operationMedianMs, Number.EPSILON),
-}
-const assertionFailures = collectAssertionFailures(args, comparison, [ascend, hyperformula])
-const payload = {
-	formatVersion: 1,
-	suite: 'ascend-formula-sota',
-	generatedAt: new Date().toISOString(),
-	profile: {
-		name: profile.name,
-		sourceBenchmark: profile.sourceBenchmark,
-		sourceUrl: profile.sourceUrl,
-		notes: profile.notes,
-		rows: args.rows,
-		formulas: args.formulas,
-		...(args.profile.startsWith('hf-prefix-range') ? { aggregate: args.aggregate } : {}),
-		repeat: args.repeat,
-		warmup: args.warmup,
-	},
-	cases: [
-		{
-			engine: ascend.engine,
-			metrics: ascendSummary,
-			samples: ascend.samples,
-			correctness: ascend.correctness,
+function runProfile(profile: Profile, args: Args, generatedAt: string): ProfilePayload {
+	const profileArgs: Args = { ...args, profile: profile.name }
+	const ascend = runEngine('ascend', profile, profileArgs)
+	const hyperformula = runEngine('hyperformula', profile, profileArgs)
+	const ascendSummary = summarize(ascend.samples)
+	const hyperformulaSummary = summarize(hyperformula.samples)
+	const comparison = {
+		totalSpeedupVsHyperFormula:
+			hyperformulaSummary.totalMedianMs / Math.max(ascendSummary.totalMedianMs, Number.EPSILON),
+		operationSpeedupVsHyperFormula:
+			hyperformulaSummary.operationMedianMs /
+			Math.max(ascendSummary.operationMedianMs, Number.EPSILON),
+	}
+	return {
+		formatVersion: 1,
+		suite: 'ascend-formula-sota',
+		generatedAt,
+		profile: {
+			name: profile.name,
+			sourceBenchmark: profile.sourceBenchmark,
+			sourceUrl: profile.sourceUrl,
+			notes: profile.notes,
+			rows: profileArgs.rows,
+			formulas: profileArgs.formulas,
+			...(profile.name.startsWith('hf-prefix-range') ? { aggregate: profileArgs.aggregate } : {}),
+			repeat: profileArgs.repeat,
+			warmup: profileArgs.warmup,
 		},
-		{
-			engine: hyperformula.engine,
-			metrics: hyperformulaSummary,
-			samples: hyperformula.samples,
-			correctness: hyperformula.correctness,
-		},
-	],
-	comparison,
+		cases: [
+			{
+				engine: ascend.engine,
+				metrics: ascendSummary,
+				samples: ascend.samples,
+				correctness: ascend.correctness,
+			},
+			{
+				engine: hyperformula.engine,
+				metrics: hyperformulaSummary,
+				samples: hyperformula.samples,
+				correctness: hyperformula.correctness,
+			},
+		],
+		comparison,
+	}
 }
 
-if (args.json) {
-	console.log(JSON.stringify(payload, null, 2))
-} else {
-	console.log(`${profile.name}: ${profile.notes}`)
+function selectedProfiles(selection: ProfileSelection): readonly Profile[] {
+	return selection === 'all' ? Object.values(PROFILES) : [PROFILES[selection]]
+}
+
+function geometricMean(values: readonly number[]): number {
+	if (values.length === 0) return 0
+	return Math.exp(
+		values.reduce((sum, value) => sum + Math.log(Math.max(value, Number.EPSILON)), 0) /
+			values.length,
+	)
+}
+
+function suiteSummary(profiles: readonly ProfilePayload[]) {
+	const operationSpeedups = profiles.map(
+		(profile) => profile.comparison.operationSpeedupVsHyperFormula,
+	)
+	const totalSpeedups = profiles.map((profile) => profile.comparison.totalSpeedupVsHyperFormula)
+	return {
+		profileCount: profiles.length,
+		minOperationSpeedupVsHyperFormula: Math.min(...operationSpeedups),
+		minTotalSpeedupVsHyperFormula: Math.min(...totalSpeedups),
+		geomeanOperationSpeedupVsHyperFormula: geometricMean(operationSpeedups),
+		geomeanTotalSpeedupVsHyperFormula: geometricMean(totalSpeedups),
+	}
+}
+
+function renderProfile(payload: ProfilePayload): void {
+	console.log(`${payload.profile.name}: ${payload.profile.notes}`)
 	for (const entry of payload.cases) {
 		console.log(
 			`${entry.engine}: setup=${entry.metrics.setupMedianMs.toFixed(2)}ms operation=${entry.metrics.operationMedianMs.toFixed(2)}ms total=${entry.metrics.totalMedianMs.toFixed(2)}ms`,
@@ -814,6 +866,54 @@ if (args.json) {
 	console.log(
 		`speedup vs HyperFormula: operation=${payload.comparison.operationSpeedupVsHyperFormula.toFixed(2)}x total=${payload.comparison.totalSpeedupVsHyperFormula.toFixed(2)}x`,
 	)
+}
+
+const args = parseArgs()
+const generatedAt = new Date().toISOString()
+const profilePayloads = selectedProfiles(args.profile).map((profile) =>
+	runProfile(profile, args, generatedAt),
+)
+const assertionFailures = profilePayloads.flatMap((payload) =>
+	collectAssertionFailures(args, payload.comparison, payload.cases).map(
+		(failure) => `${payload.profile.name}: ${failure}`,
+	),
+)
+
+if (args.profile === 'all') {
+	const payload = {
+		formatVersion: 1,
+		suite: 'ascend-formula-sota',
+		generatedAt,
+		selection: {
+			profile: args.profile,
+			rows: args.rows,
+			formulas: args.formulas,
+			aggregate: args.aggregate,
+			repeat: args.repeat,
+			warmup: args.warmup,
+		},
+		profiles: profilePayloads,
+		summary: suiteSummary(profilePayloads),
+	}
+	if (args.json) {
+		console.log(JSON.stringify(payload, null, 2))
+	} else {
+		for (const profile of profilePayloads) {
+			renderProfile(profile)
+			console.log('')
+		}
+		console.log(
+			`formula SOTA suite: profiles=${payload.summary.profileCount} minOperation=${payload.summary.minOperationSpeedupVsHyperFormula.toFixed(2)}x minTotal=${payload.summary.minTotalSpeedupVsHyperFormula.toFixed(2)}x geomeanOperation=${payload.summary.geomeanOperationSpeedupVsHyperFormula.toFixed(2)}x geomeanTotal=${payload.summary.geomeanTotalSpeedupVsHyperFormula.toFixed(2)}x`,
+		)
+	}
+} else {
+	const payload = profilePayloads[0]
+	if (!payload) throw new Error('No formula SOTA profile selected')
+	if (args.json) {
+		console.log(JSON.stringify(payload, null, 2))
+	} else {
+		renderProfile(payload)
+	}
 }
 
 if (assertionFailures.length > 0) {

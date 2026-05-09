@@ -50,6 +50,19 @@ interface FormulaSotaPayload {
 	}
 }
 
+interface FormulaSotaSuitePayload {
+	readonly suite: string
+	readonly selection: {
+		readonly profile: string
+	}
+	readonly profiles: readonly FormulaSotaPayload[]
+	readonly summary: {
+		readonly profileCount: number
+		readonly minOperationSpeedupVsHyperFormula: number
+		readonly geomeanTotalSpeedupVsHyperFormula: number
+	}
+}
+
 describe('formula SOTA public profile smoke', () => {
 	test('--help prints public comparator profiles without running benchmarks', () => {
 		const proc = Bun.spawnSync({
@@ -62,7 +75,7 @@ describe('formula SOTA public profile smoke', () => {
 
 		expect(proc.exitCode, stderr).toBe(0)
 		expect(stdout).toContain('Ascend formula SOTA benchmark runner')
-		expect(stdout).toContain('--profile <name>')
+		expect(stdout).toContain('<name|all>')
 		expect(stdout).toContain('Profiles:')
 		expect(stdout).toContain('hf-prefix-range-sum')
 		expect(stdout).toContain('hyperformula')
@@ -70,6 +83,42 @@ describe('formula SOTA public profile smoke', () => {
 		expect(stdout).toContain('--assert-correctness')
 		expect(stdout).not.toContain('"suite"')
 		expect(stdout).not.toContain('operationSpeedupVsHyperFormula')
+	})
+
+	test('--profile all runs every public comparator profile as one gated suite', () => {
+		const proc = Bun.spawnSync({
+			cmd: [
+				Bun.argv[0],
+				runnerPath,
+				'--profile',
+				'all',
+				'--rows',
+				'120',
+				'--formulas',
+				'40',
+				'--repeat',
+				'1',
+				'--warmup',
+				'0',
+				'--assert-correctness',
+				'--json',
+			],
+			stdout: 'pipe',
+			stderr: 'pipe',
+		})
+		const stderr = new TextDecoder().decode(proc.stderr)
+		expect(proc.exitCode, stderr).toBe(0)
+
+		const payload = JSON.parse(new TextDecoder().decode(proc.stdout)) as FormulaSotaSuitePayload
+		expect(payload.suite).toBe('ascend-formula-sota')
+		expect(payload.selection.profile).toBe('all')
+		expect(payload.profiles).toHaveLength(profiles.length)
+		expect(payload.summary.profileCount).toBe(profiles.length)
+		expect(payload.summary.minOperationSpeedupVsHyperFormula).toBeGreaterThan(0)
+		expect(payload.summary.geomeanTotalSpeedupVsHyperFormula).toBeGreaterThan(0)
+		expect(payload.profiles.map((entry) => entry.profile.name).sort()).toEqual(
+			profiles.map((entry) => entry.name).sort(),
+		)
 	})
 
 	test('assertion flags can enforce correctness and speedup thresholds', () => {
@@ -126,7 +175,9 @@ describe('formula SOTA public profile smoke', () => {
 
 		expect(proc.exitCode).toBe(1)
 		expect(stdout).toContain('"suite": "ascend-formula-sota"')
-		expect(stderr).toContain('formula-sota assertion failed: operation speedup')
+		expect(stderr).toContain(
+			'formula-sota assertion failed: hf-prefix-range-sum: operation speedup',
+		)
 	})
 
 	for (const profile of profiles) {

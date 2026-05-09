@@ -26,6 +26,7 @@ import type {
 	TableColumn,
 	TableStyleInfo,
 	WorkbookConnectionPartInfo,
+	WorkbookThemeColor,
 	WorkbookView,
 } from '@ascend/core'
 
@@ -117,6 +118,7 @@ export interface WorkbookInfo {
 		readonly name?: string
 		readonly colorSchemeName?: string
 		readonly colorCount: number
+		readonly colors: readonly WorkbookThemeColor[]
 		readonly majorFontLatin?: string
 		readonly minorFontLatin?: string
 	}

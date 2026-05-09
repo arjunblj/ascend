@@ -72,6 +72,13 @@ export interface WorkbookThemeMetadata {
 	readonly minorFontLatin?: string
 }
 
+export interface WorkbookThemeColor {
+	readonly slot: string
+	readonly rgb?: string
+	readonly systemColor?: string
+	readonly lastColor?: string
+}
+
 export interface WorkbookPreservedStyles {
 	readonly path?: string
 	readonly xml?: string
@@ -146,6 +153,7 @@ export class Workbook {
 	themeMetadata: WorkbookThemeMetadata = {
 		colorCount: 0,
 	}
+	readonly themeColors: WorkbookThemeColor[] = []
 	preservedStyles: WorkbookPreservedStyles | null = null
 	preservedTheme: WorkbookPreservedTheme | null = null
 	preservedSharedStrings: WorkbookPreservedSharedStrings | null = null
@@ -205,6 +213,7 @@ export class Workbook {
 		clone.workbookProtection = this.workbookProtection ? { ...this.workbookProtection } : null
 		clone.styleMetadata = { ...this.styleMetadata }
 		clone.themeMetadata = { ...this.themeMetadata }
+		clone.themeColors.push(...this.themeColors.map((color) => ({ ...color })))
 		clone.preservedStyles = this.preservedStyles
 			? {
 					...this.preservedStyles,

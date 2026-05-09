@@ -58,7 +58,7 @@ import { emptySharedStrings, parseSharedStrings } from './shared-strings.ts'
 import { parseSheet, type SheetFormulaFeatures, ValueInternPool } from './sheet.ts'
 import { parseStyles, parseStylesLite } from './styles.ts'
 import { parseTable } from './table.ts'
-import { parseThemeXml } from './theme.ts'
+import { parseThemeColorsXml, parseThemeXml } from './theme.ts'
 import { parseWorkbookXml } from './workbook.ts'
 import { extractZip, type ZipArchive } from './zip.ts'
 
@@ -236,6 +236,7 @@ export function readXlsx(
 			const themeXml = readPart(archive, themePath)
 			if (themeXml) {
 				workbook.themeMetadata = parseThemeXml(themeXml)
+				workbook.themeColors.push(...parseThemeColorsXml(themeXml))
 				workbook.preservedTheme = {
 					path: themePath,
 					contentType: resolveContentType(themePath, contentTypes),

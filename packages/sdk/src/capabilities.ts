@@ -118,10 +118,14 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'workbook.themes',
 		'workbook/package',
 		'Themes and theme colors',
-		'preserved',
+		'inspectable',
 		'P1',
-		'Expose theme inventory and safe theme replacement.',
-		'Theme parts are preserved but not yet a structured edit surface.',
+		'Add safe theme replacement with previewed style impact.',
+		'Theme name, color scheme, theme color slots, system color fallbacks, and major/minor font names are inspectable while the source theme part remains preserved.',
+		[
+			'packages/io-xlsx/src/reader/theme-inventory.test.ts',
+			'packages/sdk/src/theme-inventory.test.ts',
+		],
 	),
 	cap(
 		'workbook.views',

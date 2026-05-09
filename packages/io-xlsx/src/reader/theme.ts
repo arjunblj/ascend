@@ -1,4 +1,4 @@
-import type { WorkbookThemeMetadata } from '@ascend/core'
+import type { WorkbookThemeColor, WorkbookThemeMetadata } from '@ascend/core'
 import { attr, parseXml, type XmlNode } from '../xml.ts'
 
 export function parseThemeXml(xml: string): WorkbookThemeMetadata {
@@ -30,10 +30,54 @@ export function parseThemeXml(xml: string): WorkbookThemeMetadata {
 	return metadata
 }
 
+export function parseThemeColorsXml(xml: string): WorkbookThemeColor[] {
+	const colorScheme = readColorScheme(parseXml(xml))
+	if (!colorScheme) return []
+	const colors: WorkbookThemeColor[] = []
+	for (const [key, value] of Object.entries(colorScheme)) {
+		if (key.startsWith('@_')) continue
+		const node = Array.isArray(value) ? value[0] : value
+		if (!node || typeof node !== 'object') continue
+		const color = readThemeColor(stripNamespace(key), node as XmlNode)
+		if (color) colors.push(color)
+	}
+	return colors
+}
+
 function readLatinTypeface(node: XmlNode | undefined): string | undefined {
 	if (!node) return undefined
 	const latin = (node['a:latin'] ?? node.latin) as XmlNode | undefined
 	return latin ? attr(latin, 'typeface') : undefined
+}
+
+function readColorScheme(doc: XmlNode): XmlNode | undefined {
+	const theme = (doc['a:theme'] ?? doc.theme) as XmlNode | undefined
+	const themeElements = (theme?.['a:themeElements'] ?? theme?.themeElements) as XmlNode | undefined
+	return (themeElements?.['a:clrScheme'] ?? themeElements?.clrScheme) as XmlNode | undefined
+}
+
+function readThemeColor(slot: string, node: XmlNode): WorkbookThemeColor | null {
+	const srgb = (node['a:srgbClr'] ?? node.srgbClr) as XmlNode | undefined
+	if (srgb) {
+		const rgb = attr(srgb, 'val')
+		return rgb ? { slot, rgb } : { slot }
+	}
+	const system = (node['a:sysClr'] ?? node.sysClr) as XmlNode | undefined
+	if (system) {
+		const systemColor = attr(system, 'val')
+		const lastColor = attr(system, 'lastClr')
+		return {
+			slot,
+			...(systemColor ? { systemColor } : {}),
+			...(lastColor ? { lastColor } : {}),
+		}
+	}
+	return { slot }
+}
+
+function stripNamespace(name: string): string {
+	const colon = name.indexOf(':')
+	return colon >= 0 ? name.slice(colon + 1) : name
 }
 
 function countChildElements(node: XmlNode | undefined): number {

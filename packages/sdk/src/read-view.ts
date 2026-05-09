@@ -174,6 +174,7 @@ export class WorkbookReadView {
 			styleSummary: { ...this.wb.styleMetadata },
 			themeSummary: {
 				hasThemePart: this.wb.preservedTheme !== null,
+				colors: this.wb.themeColors.map((color) => ({ ...color })),
 				...this.wb.themeMetadata,
 			},
 			compatibility: this.compat,

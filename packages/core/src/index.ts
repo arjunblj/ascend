@@ -107,6 +107,7 @@ export type {
 	WorkbookProperties,
 	WorkbookProtection,
 	WorkbookStyleMetadata,
+	WorkbookThemeColor,
 	WorkbookThemeMetadata,
 	WorkbookView,
 } from './workbook.ts'

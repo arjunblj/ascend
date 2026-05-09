@@ -39,6 +39,8 @@ function countVolatileCalls(node: FormulaNode): number {
 		return isSelf + node.args.reduce((n, a) => n + countVolatileCalls(a), 0)
 	}
 	if (node.type === 'binary') return countVolatileCalls(node.left) + countVolatileCalls(node.right)
+	if (node.type === 'dynamicRangeRef')
+		return countVolatileCalls(node.start) + countVolatileCalls(node.end)
 	if (node.type === 'unary') return countVolatileCalls(node.operand)
 	if (node.type === 'array') {
 		return node.rows.reduce((n, row) => n + row.reduce((m, c) => m + countVolatileCalls(c), 0), 0)
@@ -63,6 +65,10 @@ function walkForMagic(node: FormulaNode, out: number[]): void {
 		case 'binary':
 			walkForMagic(node.left, out)
 			walkForMagic(node.right, out)
+			break
+		case 'dynamicRangeRef':
+			walkForMagic(node.start, out)
+			walkForMagic(node.end, out)
 			break
 		case 'unary':
 			walkForMagic(node.operand, out)
@@ -100,6 +106,8 @@ function findFragileRefs(node: FormulaNode, threshold: number): boolean {
 		}
 		case 'binary':
 			return findFragileRefs(node.left, threshold) || findFragileRefs(node.right, threshold)
+		case 'dynamicRangeRef':
+			return findFragileRefs(node.start, threshold) || findFragileRefs(node.end, threshold)
 		case 'unary':
 			return findFragileRefs(node.operand, threshold)
 		case 'function':
@@ -117,6 +125,8 @@ function astDepth(node: FormulaNode): number {
 	switch (node.type) {
 		case 'binary':
 			return 1 + Math.max(astDepth(node.left), astDepth(node.right))
+		case 'dynamicRangeRef':
+			return 1 + Math.max(astDepth(node.start), astDepth(node.end))
 		case 'unary':
 			return 1 + astDepth(node.operand)
 		case 'function':
@@ -140,6 +150,10 @@ function collectNameReferences(node: FormulaNode, names: Set<string>): void {
 		case 'binary':
 			collectNameReferences(node.left, names)
 			collectNameReferences(node.right, names)
+			break
+		case 'dynamicRangeRef':
+			collectNameReferences(node.start, names)
+			collectNameReferences(node.end, names)
 			break
 		case 'unary':
 			collectNameReferences(node.operand, names)

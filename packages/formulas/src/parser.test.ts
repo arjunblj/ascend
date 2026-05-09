@@ -267,6 +267,22 @@ describe('parse', () => {
 		expect(node.end).toEqual({ row: 9, col: 1, rowAbsolute: false, colAbsolute: false })
 	})
 
+	it('parses dynamic range endpoints', () => {
+		const node = p('A1:INDEX(A:A,5)')
+		expect(node.type).toBe('dynamicRangeRef')
+		if (node.type !== 'dynamicRangeRef') return
+		expect(node.start.type).toBe('cellRef')
+		expect(node.end.type).toBe('function')
+	})
+
+	it('parses reference functions as dynamic range starts', () => {
+		const node = p('INDEX(A:A,1):INDEX(A:A,5)')
+		expect(node.type).toBe('dynamicRangeRef')
+		if (node.type !== 'dynamicRangeRef') return
+		expect(node.start.type).toBe('function')
+		expect(node.end.type).toBe('function')
+	})
+
 	it('parses whole-column ranges', () => {
 		expect(p('A:C')).toEqual({ type: 'wholeColumnRange', startCol: 0, endCol: 2 })
 	})

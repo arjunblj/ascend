@@ -72,6 +72,8 @@ export function hasVolatileFunction(node: FormulaNode): boolean {
 			return node.args.some(hasVolatileFunction)
 		case 'binary':
 			return hasVolatileFunction(node.left) || hasVolatileFunction(node.right)
+		case 'dynamicRangeRef':
+			return hasVolatileFunction(node.start) || hasVolatileFunction(node.end)
 		case 'unary':
 			return hasVolatileFunction(node.operand)
 		case 'array':
@@ -97,6 +99,10 @@ export function collectFunctionNames(node: FormulaNode, out = new Set<string>())
 		case 'binary':
 			collectFunctionNames(node.left, out)
 			collectFunctionNames(node.right, out)
+			break
+		case 'dynamicRangeRef':
+			collectFunctionNames(node.start, out)
+			collectFunctionNames(node.end, out)
 			break
 		case 'unary':
 			collectFunctionNames(node.operand, out)
@@ -130,6 +136,10 @@ function appendFormulaReferences(node: FormulaNode, out: FormulaReferenceInfo[])
 			appendFormulaReferences(node.left, out)
 			appendFormulaReferences(node.right, out)
 			break
+		case 'dynamicRangeRef':
+			appendFormulaReferences(node.start, out)
+			appendFormulaReferences(node.end, out)
+			break
 		case 'unary':
 			appendFormulaReferences(node.operand, out)
 			break
@@ -155,6 +165,8 @@ function toFormulaReferenceInfo(node: FormulaNode): FormulaReferenceInfo | undef
 			return { kind: 'cell', text: printFormula(node), scope: formulaReferenceScope(node.sheet) }
 		case 'rangeRef':
 			return { kind: 'range', text: printFormula(node), scope: formulaReferenceScope(node.sheet) }
+		case 'dynamicRangeRef':
+			return { kind: 'range', text: printFormula(node), scope: formulaReferenceScope(undefined) }
 		case 'wholeRowRange':
 			return {
 				kind: 'wholeRow',

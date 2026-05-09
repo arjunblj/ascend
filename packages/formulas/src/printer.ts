@@ -124,6 +124,15 @@ function printNode(node: FormulaNode, ctx: PrintContext = null): string {
 				formatCellRef(end)
 			)
 		}
+		case 'dynamicRangeRef': {
+			const start =
+				node.start.type === 'binary'
+					? `(${printNode(node.start, ctx)})`
+					: printNode(node.start, ctx)
+			const end =
+				node.end.type === 'binary' ? `(${printNode(node.end, ctx)})` : printNode(node.end, ctx)
+			return `${start}:${end}`
+		}
 		case 'wholeRowRange':
 			return `${node.sheet !== undefined ? formatSheet(node.sheet) : ''}${node.startRow + 1}:${node.endRow + 1}`
 		case 'wholeColumnRange':

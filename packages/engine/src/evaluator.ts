@@ -373,6 +373,10 @@ export function evaluate(node: FormulaNode, ctx: EvalContext): CellValue {
 			return evaluateReferenceNode(node, ctx)
 		}
 
+		case 'dynamicRangeRef': {
+			return evaluateReferenceNode(node, ctx)
+		}
+
 		case 'wholeRowRange': {
 			return evaluateReferenceNode(node, ctx)
 		}
@@ -662,6 +666,10 @@ function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
 		if (upperName === 'INDIRECT' || upperName === 'OFFSET') {
 			return resolveReferenceFunction(upperName, node.args, ctx)
 		}
+		if (upperName === 'INDEX') {
+			const ref = resolveReferenceNode(node, ctx)
+			if (ref) return ref
+		}
 		if (upperName === 'LET') {
 			const value = evalLet(node.args, ctx)
 			return value.kind === 'array' ? { value, kind: 'range', values: value.rows } : { value }
@@ -699,13 +707,18 @@ function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
 }
 
 function resolveReferenceFunction(
-	name: 'INDIRECT' | 'OFFSET',
+	name: 'INDIRECT' | 'OFFSET' | 'INDEX',
 	argNodes: readonly FormulaNode[],
 	ctx: EvalContext,
 ): EvalArg {
-	return name === 'INDIRECT'
-		? resolveIndirectReference(argNodes, ctx)
-		: resolveOffsetReference(argNodes, ctx)
+	switch (name) {
+		case 'INDIRECT':
+			return resolveIndirectReference(argNodes, ctx)
+		case 'OFFSET':
+			return resolveOffsetReference(argNodes, ctx)
+		case 'INDEX':
+			return resolveIndexReference(argNodes, ctx)
+	}
 }
 
 function resolveIndirectReference(argNodes: readonly FormulaNode[], ctx: EvalContext): EvalArg {
@@ -776,6 +789,85 @@ function offsetNumberArg(node: FormulaNode | undefined, ctx: EvalContext): numbe
 	return number === null ? errorValue('#VALUE!') : number
 }
 
+function resolveIndexReference(argNodes: readonly FormulaNode[], ctx: EvalContext): EvalArg {
+	const source = resolveArg(argNodes[0] ?? { type: 'missing' }, ctx)
+	if (source.value.kind === 'error' && !source.ref && !source.areas?.length) return source
+	const areas = areasOf(source)
+	if (!areas || areas.length !== 1) return { value: errorValue('#VALUE!') }
+	const area = areas[0]
+	if (!area) return { value: errorValue('#VALUE!') }
+	const bounds = toAreaBounds(area.ref)
+	const height = bounds.endRow - bounds.startRow + 1
+	const width = bounds.endCol - bounds.startCol + 1
+
+	const rowNum = offsetNumberArg(argNodes[1], ctx)
+	if (typeof rowNum !== 'number') return { value: rowNum }
+	const row = Math.floor(rowNum)
+
+	if (argNodes.length > 2) {
+		const colNum = offsetNumberArg(argNodes[2], ctx)
+		if (typeof colNum !== 'number') return { value: colNum }
+		const col = Math.floor(colNum)
+		if (row === 0 && col === 0) return { value: errorValue('#VALUE!') }
+		if (row === 0) {
+			if (col < 1 || col > width) return { value: errorValue('#REF!') }
+			const targetCol = bounds.startCol + col - 1
+			return makeRangeArg(
+				ctx.workbook,
+				bounds.sheetIndex,
+				bounds.startRow,
+				targetCol,
+				bounds.endRow,
+				targetCol,
+			)
+		}
+		if (col === 0) {
+			if (row < 1 || row > height) return { value: errorValue('#REF!') }
+			const targetRow = bounds.startRow + row - 1
+			return makeRangeArg(
+				ctx.workbook,
+				bounds.sheetIndex,
+				targetRow,
+				bounds.startCol,
+				targetRow,
+				bounds.endCol,
+			)
+		}
+		if (row < 1 || row > height || col < 1 || col > width) {
+			return { value: errorValue('#REF!') }
+		}
+		return makeRangeArg(
+			ctx.workbook,
+			bounds.sheetIndex,
+			bounds.startRow + row - 1,
+			bounds.startCol + col - 1,
+			bounds.startRow + row - 1,
+			bounds.startCol + col - 1,
+		)
+	}
+
+	if (height === 1) {
+		if (row < 1 || row > width) return { value: errorValue('#REF!') }
+		return makeRangeArg(
+			ctx.workbook,
+			bounds.sheetIndex,
+			bounds.startRow,
+			bounds.startCol + row - 1,
+			bounds.startRow,
+			bounds.startCol + row - 1,
+		)
+	}
+	if (row < 1 || row > height) return { value: errorValue('#REF!') }
+	return makeRangeArg(
+		ctx.workbook,
+		bounds.sheetIndex,
+		bounds.startRow + row - 1,
+		bounds.startCol,
+		bounds.startRow + row - 1,
+		bounds.startCol,
+	)
+}
+
 function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | null {
 	switch (node.type) {
 		case 'cellRef': {
@@ -805,6 +897,8 @@ function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | nu
 				node.end.col,
 			)
 		}
+		case 'dynamicRangeRef':
+			return resolveDynamicRangeReference(node.start, node.end, ctx)
 		case 'wholeRowRange': {
 			const si = resolveSheetIndex(ctx.workbook, node.sheet, ctx.sheetIndex)
 			if (si < 0) return { value: errorValue('#REF!') }
@@ -889,9 +983,48 @@ function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | nu
 				? makeMultiAreaArg(intersections)
 				: { value: errorValue('#NULL!') }
 		}
+		case 'function': {
+			const upperName = node.name.toUpperCase()
+			if (upperName === 'INDIRECT' || upperName === 'OFFSET' || upperName === 'INDEX') {
+				return resolveReferenceFunction(upperName, node.args, ctx)
+			}
+			return null
+		}
 		default:
 			return null
 	}
+}
+
+function resolveDynamicRangeReference(
+	startNode: FormulaNode,
+	endNode: FormulaNode,
+	ctx: EvalContext,
+): EvalArg {
+	const start = resolveReferenceNode(startNode, ctx)
+	if (!start) return { value: errorValue('#VALUE!') }
+	if (start.value.kind === 'error') return start
+	const end = resolveReferenceNode(endNode, ctx)
+	if (!end) return { value: errorValue('#VALUE!') }
+	if (end.value.kind === 'error') return end
+	const startAreas = areasOf(start)
+	const endAreas = areasOf(end)
+	if (!startAreas || !endAreas || startAreas.length !== 1 || endAreas.length !== 1) {
+		return { value: errorValue('#VALUE!') }
+	}
+	const startArea = startAreas[0]
+	const endArea = endAreas[0]
+	if (!startArea || !endArea) return { value: errorValue('#VALUE!') }
+	const startBounds = toAreaBounds(startArea.ref)
+	const endBounds = toAreaBounds(endArea.ref)
+	if (startBounds.sheetIndex !== endBounds.sheetIndex) return { value: errorValue('#VALUE!') }
+	return makeRangeArg(
+		ctx.workbook,
+		startBounds.sheetIndex,
+		startBounds.startRow,
+		startBounds.startCol,
+		endBounds.endRow,
+		endBounds.endCol,
+	)
 }
 
 function resolveSpillReference(target: FormulaNode, ctx: EvalContext): EvalArg | null {
@@ -1194,6 +1327,12 @@ function applySheetToReferenceNode(
 			return { type: 'cellRef', ref: node.ref, sheet: sheet.name }
 		case 'rangeRef':
 			return { type: 'rangeRef', start: node.start, end: node.end, sheet: sheet.name }
+		case 'dynamicRangeRef':
+			return {
+				type: 'dynamicRangeRef',
+				start: applySheetToReferenceNode(node.start, sheetIndex, ctx),
+				end: applySheetToReferenceNode(node.end, sheetIndex, ctx),
+			}
 		case 'wholeRowRange':
 			return {
 				type: 'wholeRowRange',

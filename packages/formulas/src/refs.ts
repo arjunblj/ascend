@@ -47,6 +47,10 @@ function walk(node: FormulaNode, out: FormulaRef[]): void {
 					: { kind: 'range', start: node.start, end: node.end },
 			)
 			break
+		case 'dynamicRangeRef':
+			walk(node.start, out)
+			walk(node.end, out)
+			break
 		case 'wholeRowRange':
 			out.push(
 				node.sheet !== undefined
@@ -134,6 +138,12 @@ export function rewriteRefs(
 			}
 			return { type: 'rangeRef', start, end }
 		}
+		case 'dynamicRangeRef':
+			return {
+				type: 'dynamicRangeRef',
+				start: rewriteRefs(node.start, transform),
+				end: rewriteRefs(node.end, transform),
+			}
 		case 'wholeColumnRange':
 		case 'wholeRowRange':
 			return node

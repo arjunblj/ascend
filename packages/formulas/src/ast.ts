@@ -58,6 +58,12 @@ export interface RangeRefNode {
 	readonly sheet?: string
 }
 
+export interface DynamicRangeRefNode {
+	readonly type: 'dynamicRangeRef'
+	readonly start: FormulaNode
+	readonly end: FormulaNode
+}
+
 export interface WholeRowRangeNode {
 	readonly type: 'wholeRowRange'
 	readonly startRow: number
@@ -133,6 +139,7 @@ export type FormulaNode =
 	| ErrorNode
 	| CellRefNode
 	| RangeRefNode
+	| DynamicRangeRefNode
 	| WholeRowRangeNode
 	| WholeColumnRangeNode
 	| NameNode

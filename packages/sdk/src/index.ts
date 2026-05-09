@@ -1,5 +1,7 @@
 /** Convert a zero-based column index to an Excel column letter (`0 → "A"`, `25 → "Z"`, `26 → "AA"`). */
 export { indexToColumn, parseA1 } from '@ascend/core'
+export type { AgentDocEntry, AgentDocKind, AgentDocSearchResult } from './agent-docs.ts'
+export { loadAgentDocs, readAgentDoc, searchAgentDocs } from './agent-docs.ts'
 export type {
 	AgentCommitOptions,
 	AgentCommitResult,

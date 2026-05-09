@@ -15,6 +15,8 @@ import {
 	normalizeExportFormat,
 	parseOperations,
 	type RangeRowsInfo,
+	readAgentDoc,
+	searchAgentDocs,
 	summarizeCapabilities,
 	toA1Ref,
 	WorkbookDocument,
@@ -22,7 +24,6 @@ import {
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
-import { readAgentDoc, searchAgentDocs } from './docs.ts'
 import { errorResponse, okResponse } from './response.ts'
 
 export function createServer(): McpServer {

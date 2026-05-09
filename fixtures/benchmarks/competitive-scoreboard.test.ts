@@ -823,6 +823,32 @@ describe('buildCompetitiveScoreboard', () => {
 		)
 	})
 
+	test('xlsx roundtrip SOTA profile accepts evaluated correctness losers and requires Ascend leader', () => {
+		const suite = suiteWithCases([
+			editRoundtripCase('ascend', 'semantic-roundtrip-pass', 3, 3),
+			editRoundtripCase('sheetjs', 'package-roundtrip-mismatch', 1, 1),
+			editRoundtripCase('exceljs', 'package-roundtrip-mismatch', 5, 5),
+			editRoundtripCase('openpyxl', 'package-roundtrip-mismatch', 7, 7),
+			editRoundtripCase('excelize', 'feature-roundtrip-mismatch', 2, 2),
+		])
+		const scoreboard = buildCompetitiveScoreboard(suite)
+
+		expect(assertScoreboardCoverage(suite, 'xlsx-roundtrip-sota')).toEqual([])
+		expect(assertScoreboardProfileLeader(scoreboard, 'xlsx-roundtrip-sota', 'ascend')).toEqual([])
+		expect(scoreboard.groups[0]?.winner).toBe('ascend')
+	})
+
+	test('xlsx roundtrip SOTA profile requires external edited-roundtrip competitors', () => {
+		const suite = suiteWithCases([editRoundtripCase('ascend', 'semantic-roundtrip-pass', 3, 3)])
+
+		expect(assertScoreboardCoverage(suite, 'xlsx-roundtrip-sota')).toContain(
+			'xlsx-roundtrip-sota missing competitor=openpyxl category=edit-roundtrip operationProfile=edit-roundtrip workload=real-workbook file=styles_formulas.xlsx',
+		)
+		expect(assertScoreboardCoverage(suite, 'xlsx-roundtrip-sota')).toContain(
+			'xlsx-roundtrip-sota missing competitor=Excelize category=edit-roundtrip operationProfile=edit-roundtrip workload=real-workbook file=styles_formulas.xlsx',
+		)
+	})
+
 	test('upstream SOTA profile requires cross-language and method-level runners on published shapes', () => {
 		const suite = suiteWithCases([])
 		const failures = assertScoreboardCoverage(suite, 'upstream-xlsx-sota')
@@ -988,6 +1014,45 @@ function roundtripFeatureCase(
 			...matches,
 			...overrides,
 		},
+	}
+}
+
+function editRoundtripCase(
+	library: string,
+	correctnessStatus: string,
+	medianMs: number,
+	peakRssBytes: number,
+): BenchmarkSuiteResult['cases'][number] {
+	const repeat = 3
+	const durationSamples = [medianMs - 0.1, medianMs, medianMs + 0.1]
+	return {
+		name: `${library}:edit-roundtrip:styles_formulas.xlsx`,
+		category: 'edit-roundtrip',
+		dimensions: {
+			library,
+			workload: 'real-workbook',
+			file: 'styles_formulas.xlsx',
+			repeat,
+			operationProfile: 'edit-roundtrip',
+			timingLane: 'external-internal-file-path-materialization-timing',
+			correctnessStatus,
+			rankingEligible: correctnessStatus === 'semantic-roundtrip-pass',
+		},
+		metrics: {
+			sampleCount: repeat,
+			minMs: Math.min(...durationSamples),
+			medianMs,
+			meanMs: medianMs,
+			p95Ms: Math.max(...durationSamples),
+			maxMs: Math.max(...durationSamples),
+			throughputPerSec: 1000 / medianMs,
+			peakRssBytes,
+		},
+		samples: durationSamples.map((durationMs) => ({
+			durationMs,
+			throughputPerSec: 1000 / durationMs,
+			peakRssBytes,
+		})),
 	}
 }
 

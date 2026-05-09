@@ -2844,6 +2844,7 @@ function buildCompetitiveResult(
 		category: benchmarkCase.category,
 		dimensions: {
 			library: benchmarkCase.library,
+			workload: 'real-workbook',
 			file: target.name,
 			extension: target.extension,
 			bytes: target.sizeBytes,
@@ -2889,6 +2890,7 @@ function buildNonRankingResult(input: {
 		category: input.benchmarkCase.category,
 		dimensions: {
 			library: input.benchmarkCase.library,
+			workload: 'real-workbook',
 			file: input.target.name,
 			extension: input.target.extension,
 			bytes: input.target.sizeBytes,

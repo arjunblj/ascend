@@ -19,6 +19,7 @@ type RankingMetric =
 type ClaimProfileName =
 	| 'best-js-generated-io'
 	| 'xlsx-read-sota'
+	| 'xlsx-roundtrip-sota'
 	| 'xlsx-write-sota'
 	| 'upstream-xlsx-sota'
 
@@ -136,6 +137,8 @@ interface CaseRequirement {
 	readonly timingLanePrefix?: string
 	readonly competitors?: readonly CompetitorRequirement[]
 	readonly capabilityGaps?: readonly CompetitorRequirement[]
+	readonly allowIneligibleCompetitors?: readonly string[]
+	readonly requireSharedTimingLane?: boolean
 }
 
 interface ClaimProfile {
@@ -384,6 +387,29 @@ const CLAIM_PROFILES: Record<ClaimProfileName, ClaimProfile> = {
 					{ label: 'XlsxWriter constant-memory', libraries: ['xlsxwriter-constant-memory'] },
 					{ label: 'openpyxl write-only', libraries: ['openpyxl-write-only'] },
 				],
+			},
+		],
+	},
+	'xlsx-roundtrip-sota': {
+		name: 'xlsx-roundtrip-sota',
+		minRepeat: 3,
+		requireSamples: true,
+		requiredMetrics: ['medianMs', 'p95Ms', 'throughputPerSec', 'peakRssBytes'],
+		competitors: [
+			{ label: 'Ascend', libraries: ['ascend'] },
+			{ label: 'SheetJS', libraries: ['sheetjs'] },
+			{ label: 'ExcelJS', libraries: ['exceljs'] },
+			{ label: 'openpyxl', libraries: ['openpyxl'] },
+			{ label: 'Excelize', libraries: ['excelize'] },
+		],
+		cases: [
+			{
+				category: 'edit-roundtrip',
+				operationProfile: 'edit-roundtrip',
+				workloads: ['real-workbook'],
+				files: ['styles_formulas.xlsx'],
+				allowIneligibleCompetitors: ['SheetJS', 'ExcelJS', 'openpyxl', 'Excelize'],
+				requireSharedTimingLane: false,
 			},
 		],
 	},
@@ -823,7 +849,7 @@ export function inspectScoreboardCoverage(
 						if (failure) tupleFailures.push(failure)
 					}
 					failures.push(...tupleFailures)
-					if (tupleFailures.length === 0) {
+					if (tupleFailures.length === 0 && caseRequirement.requireSharedTimingLane !== false) {
 						const comparableFailure = comparableCoverageFailure(
 							suite,
 							profile,
@@ -1154,8 +1180,10 @@ function coverageFailureForCompetitor(
 	if (matches.length === 0) {
 		return `${profile.name} ${missingKind} competitor=${competitor.label} category=${requirement.category} operationProfile=${requirement.operationProfile} workload=${workload}${sourceLabel}${fileLabel}`
 	}
+	const allowIneligible =
+		requirement.allowIneligibleCompetitors?.includes(competitor.label) ?? false
 	const eligible = matches.filter((entry) => isCaseRankingEligible(entry))
-	if (eligible.length === 0) {
+	if (!allowIneligible && eligible.length === 0) {
 		const statuses = [
 			...new Set(
 				matches.map((entry) => dimensionString(entry, 'correctnessStatus') ?? 'not-evaluated'),
@@ -1163,7 +1191,8 @@ function coverageFailureForCompetitor(
 		].join(',')
 		return `${profile.name} ineligible competitor=${competitor.label} category=${requirement.category} operationProfile=${requirement.operationProfile} workload=${workload}${sourceLabel}${fileLabel} correctnessStatus=${statuses}`
 	}
-	const valid = eligible.find((entry) => caseSatisfiesEvidence(entry, profile))
+	const evidenceCandidates = allowIneligible ? matches : eligible
+	const valid = evidenceCandidates.find((entry) => caseSatisfiesEvidence(entry, profile))
 	if (!valid) {
 		return `${profile.name} weak-evidence competitor=${competitor.label} category=${requirement.category} operationProfile=${requirement.operationProfile} workload=${workload}${sourceLabel}${fileLabel} requiredRepeat=${profile.minRepeat} requiredMetrics=${profile.requiredMetrics.join(',')}`
 	}
@@ -1190,13 +1219,16 @@ function comparableCoverageFailure(
 	]
 	const hasSharedLane = lanes.some((lane) =>
 		competitors.every((competitor) =>
-			suite.cases.some(
-				(entry) =>
+			suite.cases.some((entry) => {
+				const allowIneligible =
+					requirement.allowIneligibleCompetitors?.includes(competitor.label) ?? false
+				return (
 					(dimensionString(entry, 'timingLane') ?? 'default') === lane &&
 					caseMatchesProfile(entry, requirement, workload, readSource, file, competitor) &&
-					isCaseRankingEligible(entry) &&
-					caseSatisfiesEvidence(entry, profile),
-			),
+					(allowIneligible || isCaseRankingEligible(entry)) &&
+					caseSatisfiesEvidence(entry, profile)
+				)
+			}),
 		),
 	)
 	return hasSharedLane
@@ -1440,7 +1472,7 @@ async function main(): Promise<void> {
 	const inputPath = args.find((arg) => !arg.startsWith('--') && !isOptionValue(args, arg))
 	if (!inputPath) {
 		throw new Error(
-			'Usage: bun run fixtures/benchmarks/competitive-scoreboard.ts <suite.json> [--json] [--metric medianMs|p95Ms|throughputPerSec|peakRssBytes|rssAfterBytes|rssDeltaBytes] [--category read|roundtrip] [--assert-leader ascend] [--require-profile best-js-generated-io|xlsx-read-sota|xlsx-write-sota|upstream-xlsx-sota] [--assert-profile-leader ascend]',
+			'Usage: bun run fixtures/benchmarks/competitive-scoreboard.ts <suite.json> [--json] [--metric medianMs|p95Ms|throughputPerSec|peakRssBytes|rssAfterBytes|rssDeltaBytes] [--category read|roundtrip|edit-roundtrip] [--assert-leader ascend] [--require-profile best-js-generated-io|xlsx-read-sota|xlsx-roundtrip-sota|xlsx-write-sota|upstream-xlsx-sota] [--assert-profile-leader ascend]',
 		)
 	}
 	const suite = JSON.parse(await readFile(inputPath, 'utf-8')) as BenchmarkSuiteResult

@@ -2,7 +2,11 @@ export { indexToColumn, parseA1 } from '@ascend/core'
 export type {
 	AgentCommitOptions,
 	AgentCommitResult,
+	AgentModelOutput,
 	AgentPlanResult,
+	AgentTraceArtifact,
+	AgentTracePhase,
+	AgentWorkflowTrace,
 	LossAudit,
 	RepairAction,
 	RepairPlanResult,

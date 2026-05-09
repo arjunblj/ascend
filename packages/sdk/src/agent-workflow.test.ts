@@ -22,6 +22,11 @@ describe('agent workflow loss audit', () => {
 		const plan = await createAgentPlan(input, ops)
 		expect(plan.lossAudit.ok).toBe(false)
 		expect(plan.lossAudit.blockedFeatures[0]?.feature).toBe('preservedOther')
+		expect(plan.trace.kind).toBe('plan')
+		expect(plan.trace.traceDigest).toMatch(/^[a-f0-9]{64}$/)
+		expect(plan.trace.phases.find((phase) => phase.phase === 'loss-audit')?.status).toBe('blocked')
+		expect(plan.modelOutput.blocked).toBe(true)
+		expect(plan.modelOutput.nextActions.join('\n')).toContain('allowLoss')
 
 		await expect(commitAgentPlan(input, ops, { output })).rejects.toThrow(
 			'Workbook contains preserved or unsupported features',
@@ -33,6 +38,10 @@ describe('agent workflow loss audit', () => {
 		})
 		expect(committed.lossAudit.ok).toBe(true)
 		expect(committed.outputSha256).toMatch(/^[a-f0-9]{64}$/)
+		expect(committed.trace.kind).toBe('commit')
+		expect(committed.trace.outputSha256).toBe(committed.outputSha256)
+		expect(committed.modelOutput.blocked).toBe(false)
+		expect(committed.modelOutput.digests.traceDigest).toBe(committed.trace.traceDigest)
 	})
 
 	test('clean workbooks commit without allow-loss', async () => {
@@ -48,6 +57,8 @@ describe('agent workflow loss audit', () => {
 			{ output },
 		)
 		expect(committed.lossAudit.ok).toBe(true)
+		expect(committed.trace.artifacts.map((artifact) => artifact.name)).toContain('apply')
+		expect(committed.modelOutput.counts.operations).toBe(1)
 	})
 })
 

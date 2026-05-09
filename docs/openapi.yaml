@@ -1,0 +1,245 @@
+openapi: 3.0.3
+info:
+  title: Ascend HTTP API
+  version: 0.0.0
+  description: |
+    Reference server in `apps/api`. All POST bodies are JSON. File fields are **local paths** on the server host.
+servers:
+  - url: http://localhost:3000
+paths:
+  /health:
+    get:
+      summary: Liveness
+      responses:
+        '200':
+          description: OK
+  /operations:
+    get:
+      summary: List canonical operation schemas and embedded examples
+      responses:
+        '200': { description: Operation catalog envelope }
+  /capabilities:
+    get:
+      summary: List Excel capability coverage, OSS baselines, gaps, and milestones
+      parameters:
+        - { name: feature, in: query, schema: { type: string } }
+        - { name: family, in: query, schema: { type: string } }
+        - { name: priority, in: query, schema: { enum: [P0, P1, P2, P3] } }
+        - { name: status, in: query, schema: { enum: [excel-equivalent, editable, inspectable, preserved, unsafe-blocked, unsupported] } }
+        - { name: gaps, in: query, schema: { type: boolean } }
+      responses:
+        '200': { description: Capability registry envelope }
+  /inspect:
+    post:
+      summary: Inspect workbook or single sheet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string }
+                sheet: { type: string }
+      responses:
+        '200': { description: Workbook or sheet inspect payload }
+  /read:
+    post:
+      summary: Read a range
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [file, range]
+              properties:
+                file: { type: string }
+                sheet: { type: string }
+                range: { type: string }
+                format: { enum: [cells, rows, objects] }
+                display: { type: boolean }
+                headers: { type: array, items: { type: string } }
+                rowOffset: { type: integer }
+                rowLimit: { type: integer }
+      responses:
+        '200': { description: Range payload }
+  /agent-view:
+    post:
+      summary: Read a compact semantic summary for an agent workflow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [file, range]
+              properties:
+                file: { type: string }
+                sheet: { type: string }
+                range: { type: string }
+                rowChunkSize: { type: integer }
+                sampleRowLimit: { type: integer }
+                sampleValueLimit: { type: integer }
+      responses:
+        '200': { description: Agent-oriented range profile }
+  /write:
+    post:
+      summary: Apply operations and save (implementation-specific)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [file, ops]
+              properties:
+                file: { type: string }
+                ops: { type: array }
+      responses:
+        '200': { description: Success envelope }
+  /preview:
+    post:
+      summary: Preview operations without saving
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [file, ops]
+              properties:
+                file: { type: string }
+                ops: { type: array }
+      responses:
+        '200': { description: Diff, warnings, and recalc scope preview }
+  /plan:
+    post:
+      summary: Validate, preview, recalc-audit, and preservation-audit operations without saving
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [file, ops]
+              properties:
+                file: { type: string }
+                ops: { type: array }
+      responses:
+        '200': { description: Agent plan with input hash, digest, preview, check, lint, and preservation summary }
+  /commit:
+    post:
+      summary: Commit operations atomically with optional input hash guard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [file, ops]
+              properties:
+                file: { type: string }
+                ops: { type: array }
+                output: { type: string }
+                inPlace: { type: boolean }
+                backup: { type: string }
+                expectSha256: { type: string }
+      responses:
+        '200': { description: Commit result with input/output hashes and plan digest }
+  /repair-plan:
+    post:
+      summary: Suggest safe next actions when check, lint, or unsupported-feature audits need attention
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string }
+      responses:
+        '200': { description: Repair action list }
+  /calc:
+    post:
+      summary: Recalculate workbook
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string }
+      responses:
+        '200': { description: Recalc result }
+  /check:
+    post:
+      summary: Structural check
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string }
+      responses:
+        '200': { description: Check result }
+  /lint:
+    post:
+      summary: Formula lint
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string }
+      responses:
+        '200': { description: Lint result }
+  /trace:
+    post:
+      summary: Trace precedents / dependents
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [file, cell]
+              properties:
+                file: { type: string }
+                cell: { type: string }
+      responses:
+        '200': { description: Trace result }
+  /diff:
+    post:
+      summary: Diff two workbooks
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fileA, fileB]
+              properties:
+                fileA: { type: string }
+                fileB: { type: string }
+      responses:
+        '200': { description: Diff result }
+  /export:
+    post:
+      summary: Export bytes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [file, format]
+              properties:
+                file: { type: string }
+                format: { type: string }
+      responses:
+        '200': { description: Binary or JSON depending on format }

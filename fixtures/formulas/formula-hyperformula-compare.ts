@@ -14,6 +14,10 @@ interface Scenario {
 	name: string
 	setup: Record<string, number | string | boolean>
 	formula: string
+	knownHyperFormulaDivergence?: {
+		readonly expectedAscend: string
+		readonly note: string
+	}
 }
 
 export const hyperFormulaComparisonScenarios: readonly Scenario[] = [
@@ -36,6 +40,82 @@ export const hyperFormulaComparisonScenarios: readonly Scenario[] = [
 	{ name: 'ROUND', setup: { A1: Math.PI }, formula: '=ROUND(A1,2)' },
 	{ name: 'LEFT', setup: { A1: 'Hello' }, formula: '=LEFT(A1,3)' },
 	{ name: 'RIGHT', setup: { A1: 'Hello' }, formula: '=RIGHT(A1,2)' },
+	{
+		name: 'SUMPRODUCT',
+		setup: { A1: 1, A2: 2, B1: 10, B2: 20 },
+		formula: '=SUMPRODUCT(A1:A2,B1:B2)',
+	},
+	{
+		name: 'COUNTIF',
+		setup: { A1: 'red', A2: 'blue', A3: 'red' },
+		formula: '=COUNTIF(A1:A3,"red")',
+	},
+	{
+		name: 'SUMIF',
+		setup: { A1: 'a', A2: 'b', A3: 'a', B1: 10, B2: 20, B3: 30 },
+		formula: '=SUMIF(A1:A3,"a",B1:B3)',
+	},
+	{
+		name: 'AVERAGEIF',
+		setup: { A1: 'a', A2: 'b', A3: 'a', B1: 10, B2: 20, B3: 30 },
+		formula: '=AVERAGEIF(A1:A3,"a",B1:B3)',
+	},
+	{ name: 'COUNTBLANK', setup: { A1: 1, A3: 3 }, formula: '=COUNTBLANK(A1:A3)' },
+	{ name: 'MEDIAN', setup: { A1: 5, A2: 1, A3: 9 }, formula: '=MEDIAN(A1:A3)' },
+	{
+		name: 'STDEV.S',
+		setup: { A1: 2, A2: 4, A3: 4, A4: 4, A5: 5, A6: 5, A7: 7, A8: 9 },
+		formula: '=STDEV.S(A1:A8)',
+	},
+	{
+		name: 'MATCH exact',
+		setup: { A1: 'alpha', A2: 'beta', A3: 'gamma' },
+		formula: '=MATCH("beta",A1:A3,0)',
+	},
+	{ name: 'INDEX 2D', setup: { A1: 10, B1: 20, A2: 30, B2: 40 }, formula: '=INDEX(A1:B2,2,2)' },
+	{
+		name: 'HLOOKUP',
+		setup: { A1: 'q1', B1: 'q2', A2: 10, B2: 20 },
+		formula: '=HLOOKUP("q2",A1:B2,2,FALSE)',
+	},
+	{
+		name: 'XLOOKUP',
+		setup: { A1: 'sku1', A2: 'sku2', B1: 7, B2: 11 },
+		formula: '=XLOOKUP("sku2",A1:A2,B1:B2)',
+	},
+	{ name: 'CHOOSE', setup: {}, formula: '=CHOOSE(2,"first","second","third")' },
+	{ name: 'CONCAT', setup: { A1: 'ab', A2: 'cd' }, formula: '=CONCAT(A1:A2)' },
+	{ name: 'TEXTJOIN', setup: { A1: 'north', A2: 'south' }, formula: '=TEXTJOIN(",",TRUE,A1:A2)' },
+	{ name: 'UPPER', setup: { A1: 'Alpha' }, formula: '=UPPER(A1)' },
+	{ name: 'LOWER', setup: { A1: 'Alpha' }, formula: '=LOWER(A1)' },
+	{ name: 'TRIM', setup: { A1: '  alpha   beta  ' }, formula: '=TRIM(A1)' },
+	{ name: 'SUBSTITUTE', setup: { A1: 'a-b-a' }, formula: '=SUBSTITUTE(A1,"a","x")' },
+	{ name: 'ROUNDUP', setup: { A1: 1.21 }, formula: '=ROUNDUP(A1,1)' },
+	{ name: 'ROUNDDOWN', setup: { A1: 1.29 }, formula: '=ROUNDDOWN(A1,1)' },
+	{ name: 'POWER', setup: { A1: 3, A2: 4 }, formula: '=POWER(A1,A2)' },
+	{ name: 'SQRT', setup: { A1: 81 }, formula: '=SQRT(A1)' },
+	{
+		name: 'MOD',
+		setup: { A1: -3, A2: 2 },
+		formula: '=MOD(A1,A2)',
+		knownHyperFormulaDivergence: {
+			expectedAscend: '1',
+			note: 'Excel MOD keeps the divisor sign for negative dividends.',
+		},
+	},
+	{
+		name: 'INT',
+		setup: { A1: -1.2 },
+		formula: '=INT(A1)',
+		knownHyperFormulaDivergence: {
+			expectedAscend: '-2',
+			note: 'Excel INT floors negative numbers rather than truncating toward zero.',
+		},
+	},
+	{ name: 'AND', setup: { A1: true, A2: 1 }, formula: '=AND(A1,A2)' },
+	{ name: 'OR', setup: { A1: false, A2: 1 }, formula: '=OR(A1,A2)' },
+	{ name: 'NOT', setup: { A1: false }, formula: '=NOT(A1)' },
+	{ name: 'IFERROR', setup: { A1: 1 }, formula: '=IFERROR(A1,"fallback")' },
 ]
 
 function inputToCV(v: number | string | boolean): CellValue {
@@ -63,6 +143,14 @@ function cvToString(cv: CellValue): string {
 	}
 }
 
+function numericallyClose(a: string, b: string): boolean {
+	const an = Number(a)
+	const bn = Number(b)
+	if (!Number.isFinite(an) || !Number.isFinite(bn)) return false
+	const scale = Math.max(1, Math.abs(an), Math.abs(bn))
+	return Math.abs(an - bn) <= scale * 1e-10
+}
+
 export interface HyperFormulaComparisonResult {
 	scenarios: number
 	mismatches: number
@@ -71,7 +159,7 @@ export interface HyperFormulaComparisonResult {
 		name: string
 		ascend: string
 		hyperformula: string
-		status: 'match' | 'skip' | 'diff'
+		status: 'match' | 'known-diff' | 'skip' | 'diff'
 	}>
 }
 
@@ -122,14 +210,32 @@ export function runHyperFormulaComparison(
 
 		const ascendStr = cvToString(ascendResult)
 		const unsupportedByComparator = hfStr === '#NAME?' && ascendStr !== '#NAME?'
-		const match = ascendStr === hfStr
-		const status = match ? 'match' : unsupportedByComparator ? 'skip' : 'diff'
+		const knownComparatorDivergence =
+			s.knownHyperFormulaDivergence !== undefined &&
+			ascendStr === s.knownHyperFormulaDivergence.expectedAscend
+		const match = ascendStr === hfStr || numericallyClose(ascendStr, hfStr)
+		const status = match
+			? 'match'
+			: knownComparatorDivergence
+				? 'known-diff'
+				: unsupportedByComparator
+					? 'skip'
+					: 'diff'
 		if (unsupportedByComparator) skipped++
-		else if (!match) mismatches++
+		else if (!match && !knownComparatorDivergence) mismatches++
 		rows.push({ name: s.name, ascend: ascendStr, hyperformula: hfStr, status })
 		if (options.log) {
+			const note = knownComparatorDivergence ? ` (${s.knownHyperFormulaDivergence?.note})` : ''
+			const label =
+				status === 'known-diff'
+					? 'KNOWN'
+					: status === 'skip'
+						? 'SKIP '
+						: status === 'diff'
+							? 'DIFF '
+							: 'MATCH'
 			console.log(
-				`${match ? 'MATCH' : unsupportedByComparator ? 'SKIP ' : 'DIFF '}  ${s.name.padEnd(16)} ascend=${ascendStr.padEnd(16)} hf=${hfStr}`,
+				`${label}  ${s.name.padEnd(16)} ascend=${ascendStr.padEnd(16)} hf=${hfStr}${note}`,
 			)
 		}
 	}

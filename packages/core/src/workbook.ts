@@ -1,6 +1,7 @@
 import { type CalcSettings, DEFAULT_CALC_SETTINGS } from '@ascend/schema'
 import type { ActiveContentInfo } from './active-content.ts'
 import type { ChartPartInfo, ChartSheetInfo } from './chart.ts'
+import type { WorkbookConnectionPartInfo } from './connection.ts'
 import { DefinedNameCollection } from './defined-name.ts'
 import { createWorkbookId, type SheetId, type WorkbookId } from './ids.ts'
 import type {
@@ -126,6 +127,7 @@ export class Workbook {
 	readonly timelines: TimelineInfo[] = []
 	readonly chartParts: ChartPartInfo[] = []
 	readonly chartSheets: ChartSheetInfo[] = []
+	readonly connectionParts: WorkbookConnectionPartInfo[] = []
 	readonly activeContent: ActiveContentInfo[] = []
 	readonly workbookViews: WorkbookView[] = []
 	readonly externalReferences: string[] = []
@@ -251,6 +253,7 @@ export class Workbook {
 				chartPartPaths: [...entry.chartPartPaths],
 			})),
 		)
+		clone.connectionParts.push(...this.connectionParts.map((entry) => ({ ...entry })))
 		clone.activeContent.push(...this.activeContent.map((entry) => ({ ...entry })))
 		clone.workbookViews.push(...this.workbookViews.map((view) => ({ ...view })))
 		clone.externalReferences.push(...this.externalReferences)

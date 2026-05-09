@@ -63,6 +63,7 @@ import type {
 	TimelineCacheInfo,
 	TimelineInfo,
 	TraceResult,
+	WorkbookConnectionPartInfo,
 	WorkbookInfo,
 	WorkbookLoadInfo,
 	WorkbookVisualInventoryInfo,
@@ -139,6 +140,7 @@ export class WorkbookReadView {
 			slicerCacheCount: this.wb.slicerCaches.length,
 			timelineCount: this.wb.timelines.length,
 			timelineCacheCount: this.wb.timelineCaches.length,
+			connectionPartCount: this.wb.connectionParts.length,
 			activeContentCount: this.wb.activeContent.length,
 			sourceFormat: this.compat.sourceFormat,
 			workbookViewCount: this.wb.workbookViews.length,
@@ -164,6 +166,7 @@ export class WorkbookReadView {
 				pivotTableNames: [...entry.pivotTableNames],
 			})),
 			timelines: this.wb.timelines.map((entry) => ({ ...entry })),
+			connectionParts: this.wb.connectionParts.map((entry) => ({ ...entry })),
 			activeContent: this.wb.activeContent.map((entry) => ({ ...entry })),
 			styleSummary: { ...this.wb.styleMetadata },
 			themeSummary: {
@@ -605,6 +608,10 @@ export class WorkbookReadView {
 
 	timelines(): readonly TimelineInfo[] {
 		return this.wb.timelines.map((entry) => ({ ...entry }))
+	}
+
+	connectionParts(): readonly WorkbookConnectionPartInfo[] {
+		return this.wb.connectionParts.map((entry) => ({ ...entry }))
 	}
 
 	activeContent(): readonly ActiveContentInfo[] {

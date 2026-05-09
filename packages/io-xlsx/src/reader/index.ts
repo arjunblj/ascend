@@ -1,4 +1,10 @@
-import type { ActiveContentInfo, CellStyle, SheetId, StyleId } from '@ascend/core'
+import type {
+	ActiveContentInfo,
+	CellStyle,
+	SheetId,
+	StyleId,
+	WorkbookConnectionPartInfo,
+} from '@ascend/core'
 import { DEFAULT_STYLE_ID, Workbook } from '@ascend/core'
 import type {
 	AscendError,
@@ -13,6 +19,7 @@ import { normalizeStoredFormulaText } from '../formula-storage.ts'
 import type { PreservationCapsule } from '../preserve.ts'
 import { parseChartXml } from './charts.ts'
 import { parseCommentsXml } from './comments.ts'
+import { parseConnectionPartInfos } from './connections.ts'
 import { type ContentTypes, parseContentTypes } from './content-types.ts'
 import { parseDrawingImageRefs, parseDrawingObjectRefs } from './drawing.ts'
 import { parseMetadataXml } from './metadata.ts'
@@ -465,6 +472,7 @@ export function readXlsx(
 					sheetRelsByPath,
 				)
 		if (!isPartial) workbook.activeContent.push(...collectActiveContent(capsules))
+		if (!isPartial) workbook.connectionParts.push(...collectConnectionParts(archive, capsules))
 		if (!isPartial) attachChartParts(archive, workbook, capsules)
 		const report = buildReport(contentTypes, formulaFeatures, workbook, capsules, loadInfo)
 		if (loadInfo.isPartial) {
@@ -639,6 +647,9 @@ function resolveContentType(partPath: string, contentTypes: ContentTypes): strin
 function capsuleFamily(path: string): string {
 	if (path.includes('/chartsheets/')) return 'preservedChartSheet'
 	if (path.includes('/charts/') || path.includes('/chartEx/')) return 'preservedChart'
+	if (path.includes('/queryTables/')) return 'preservedQueryTable'
+	if (path.endsWith('/connections.xml')) return 'preservedConnection'
+	if (path.includes('/customData/')) return 'preservedPowerQuery'
 	if (path.includes('/drawings/') && path.endsWith('.vml')) return 'preservedVml'
 	if (path.includes('/drawings/')) return 'preservedDrawing'
 	if (path.includes('/media/')) return 'preservedMedia'
@@ -694,6 +705,17 @@ function collectActiveContent(capsules: readonly PreservationCapsule[]): ActiveC
 	return activeContent
 }
 
+function collectConnectionParts(
+	archive: ZipArchive,
+	capsules: readonly PreservationCapsule[],
+): WorkbookConnectionPartInfo[] {
+	const connectionParts: WorkbookConnectionPartInfo[] = []
+	for (const capsule of capsules) {
+		connectionParts.push(...parseConnectionPartInfos(capsule, readPart(archive, capsule.partPath)))
+	}
+	return connectionParts
+}
+
 function classifyActiveContent(capsule: PreservationCapsule): ActiveContentInfo['kind'] | null {
 	const path = capsule.partPath.toLowerCase()
 	const contentType = capsule.contentType.toLowerCase()
@@ -728,6 +750,15 @@ function preservedFeatureNote(feature: string): string | undefined {
 	}
 	if (feature === 'preservedControl') {
 		return 'Form/control property parts are preserved exactly where possible; linked behavior is not semantically editable.'
+	}
+	if (feature === 'preservedQueryTable') {
+		return 'Query table parts are inventoried with connection IDs and refresh flags, then preserved exactly where possible.'
+	}
+	if (feature === 'preservedConnection') {
+		return 'Workbook connection metadata is inventoried with connection IDs and refresh flags, then preserved exactly where possible.'
+	}
+	if (feature === 'preservedPowerQuery') {
+		return 'Power Query mashup/customData parts are inventoried and preserved; query execution is not performed headlessly.'
 	}
 	return undefined
 }

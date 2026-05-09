@@ -298,6 +298,51 @@ describe('writeXlsx', () => {
 		expect(reopened.value.workbook.sheets[0]?.cells.get(0, 2)?.formula).toBe('@A1')
 	})
 
+	it('writes all dynamic-array metadata records referenced by cells', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Dynamic')
+		sheet.cells.set(0, 0, {
+			value: numberValue(1),
+			formula: 'SEQUENCE(2)',
+			styleId: S0,
+			formulaInfo: { kind: 'dynamicArray', metadataIndex: 1, collapsed: false },
+		})
+		sheet.cells.set(0, 2, {
+			value: numberValue(10),
+			formula: 'SEQUENCE(2,1,10)',
+			styleId: S0,
+			formulaInfo: { kind: 'dynamicArray', metadataIndex: 2, collapsed: true },
+		})
+
+		const written = writeXlsx(wb)
+		expectOk(written)
+
+		const zip = unzipSync(written.value)
+		const metadataXml = new TextDecoder().decode(zip['xl/metadata.xml'] ?? new Uint8Array())
+		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+
+		expect(metadataXml).toContain('<futureMetadata name="XLDAPR" count="2">')
+		expect(metadataXml).toContain('<cellMetadata count="2">')
+		expect(metadataXml).toContain('v="0"')
+		expect(metadataXml).toContain('v="1"')
+		expect(metadataXml).toContain('fCollapsed="1"')
+		expect(sheetXml).toContain('<c r="A1" cm="1"')
+		expect(sheetXml).toContain('<c r="C1" cm="2"')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.sheets[0]?.cells.get(0, 0)?.formulaInfo).toEqual({
+			kind: 'dynamicArray',
+			metadataIndex: 1,
+			collapsed: false,
+		})
+		expect(reopened.value.workbook.sheets[0]?.cells.get(0, 2)?.formulaInfo).toEqual({
+			kind: 'dynamicArray',
+			metadataIndex: 2,
+			collapsed: true,
+		})
+	})
+
 	it('round-trips _xlfn. prefix for future functions', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Xlfn')

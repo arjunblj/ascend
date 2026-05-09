@@ -68,6 +68,8 @@ const FIELD_SCHEMAS: Record<
 	mode: {
 		type: 'string',
 		enum: [
+			'merge',
+			'replace',
 			'all',
 			'values',
 			'formulas',
@@ -76,10 +78,10 @@ const FIELD_SCHEMAS: Record<
 			'validations',
 			'comments',
 			'hyperlinks',
-			'replace',
 			'append',
 		],
-		description: 'Paste mode for copy/move, or conditional-format update mode (replace|append).',
+		description:
+			'Paste mode for copy/move, workbook property mode (merge|replace), or conditional-format update mode (replace|append).',
 	},
 	priority: { type: 'integer', description: 'Conditional-format rule priority' },
 	ruleIndex: { type: 'integer', description: 'Zero-based conditional-format rule index' },
@@ -131,6 +133,11 @@ const FIELD_SCHEMAS: Record<
 		type: 'object',
 		description:
 			'Workbook protection: lockStructure?, lockWindows?, lockRevision?, workbookPassword?, revisionsPassword?, plus optional Excel hash fields (workbookAlgorithmName, workbookHashValue, workbookSaltValue, workbookSpinCount, revisionsAlgorithmName, revisionsHashValue, revisionsSaltValue, revisionsSpinCount).',
+	},
+	properties: {
+		type: 'object',
+		description:
+			'Workbook properties: codeName?, defaultThemeVersion?, filterPrivacy?, date1904?. Use null values to clear individual properties.',
 	},
 	color: { type: 'string', description: 'Color (hex or theme)' },
 	hidden: { type: 'boolean', description: 'Whether to hide' },
@@ -392,6 +399,12 @@ export function listOperations(): readonly OperationSchema[] {
 			requiredFields: ['sheet', 'ref', 'runs'],
 		},
 		{
+			op: 'setWorkbookProperties',
+			description: 'Set workbook-level package properties such as codeName and date system',
+			requiredFields: ['properties'],
+			optionalFields: ['mode'],
+		},
+		{
 			op: 'setWorkbookProtection',
 			description: 'Set workbook-level protection metadata',
 			requiredFields: ['protection'],
@@ -646,6 +659,12 @@ function operationRecoveryActions(op: string): readonly string[] {
 				'Run ascend plan before commit to verify package preservation and formula-state warnings.',
 				...common,
 			]
+		case 'setWorkbookProperties':
+			return [
+				'Use mode="merge" for targeted metadata edits or mode="replace" to rewrite workbookPr.',
+				'Use null property values to clear codeName, defaultThemeVersion, filterPrivacy, or date1904.',
+				...common,
+			]
 		default:
 			return common
 	}
@@ -756,6 +775,12 @@ function operationExample(op: string): Record<string, unknown> {
 			return { op, sheet: 'Sheet1', from: 2, to: 5, collapsed: false }
 		case 'setRichText':
 			return { op, sheet: 'Sheet1', ref: 'A1', runs: [{ text: 'Bold', font: { bold: true } }] }
+		case 'setWorkbookProperties':
+			return {
+				op,
+				properties: { codeName: 'Model', filterPrivacy: true, date1904: false },
+				mode: 'merge',
+			}
 		case 'setWorkbookProtection':
 			return { op, protection: { lockStructure: true } }
 		case 'deleteTable':

@@ -10,6 +10,13 @@ export interface SortSpec {
 	readonly descending?: boolean
 }
 
+export interface WorkbookPropertiesInput {
+	readonly codeName?: string | null
+	readonly defaultThemeVersion?: number | null
+	readonly filterPrivacy?: boolean | null
+	readonly date1904?: boolean | null
+}
+
 export type StyleColorInput =
 	| { readonly kind: 'theme'; readonly theme: number; readonly tint?: number }
 	| { readonly kind: 'rgb'; readonly rgb: string }
@@ -377,6 +384,11 @@ export type Operation =
 				readonly color?: string
 				readonly size?: number
 			}[]
+	  }
+	| {
+			readonly op: 'setWorkbookProperties'
+			readonly properties: WorkbookPropertiesInput
+			readonly mode?: 'merge' | 'replace'
 	  }
 	| { readonly op: 'setWorkbookProtection'; readonly protection: WorkbookProtectionInput }
 	| { readonly op: 'deleteTable'; readonly table: string }

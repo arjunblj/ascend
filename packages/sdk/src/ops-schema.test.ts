@@ -95,4 +95,17 @@ describe('operation schema agent DX', () => {
 		})
 		expect(schema?.recoveryActions.join('\n')).toContain('external-refs')
 	})
+
+	test('setWorkbookProperties is exposed with merge and clear guidance', () => {
+		const schema = getOperationsSchema().find((entry) => entry.op === 'setWorkbookProperties')
+		expect(schema?.schema.required).toEqual(['op', 'properties'])
+		expect(schema?.schema.properties.properties?.description).toContain('date1904')
+		expect(schema?.schema.properties.mode?.enum).toContain('merge')
+		expect(schema?.examples[0]).toMatchObject({
+			op: 'setWorkbookProperties',
+			properties: { codeName: 'Model', filterPrivacy: true, date1904: false },
+			mode: 'merge',
+		})
+		expect(schema?.recoveryActions.join('\n')).toContain('null property values')
+	})
 })

@@ -115,6 +115,16 @@ describe('ascend cli', () => {
 		).toBe(true)
 	})
 
+	test('agent-init prints the canonical agent workflow contract', async () => {
+		const { stdout, exitCode } = await run('agent-init', '--json')
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.ok).toBe(true)
+		expect(parsed.data.commands.plan).toContain('--progress jsonl')
+		expect(parsed.data.mcpResources).toContain('ascend://operations')
+		expect(parsed.data.safetyDefaults.join('\n')).toContain('--expect-sha256')
+	})
+
 	test('plan and commit implement safe agent workflow', async () => {
 		const opsFile = `${import.meta.dir}/commit-ops.json`
 		await Bun.write(

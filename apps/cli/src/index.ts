@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { AscendException, ascendError, levenshtein } from '@ascend/schema'
+import { agentInitCommand, usage as agentInitUsage } from './commands/agent-init.ts'
 import { agentViewCommand, usage as agentViewUsage } from './commands/agent-view.ts'
 import { calcCommand, usage as calcUsage } from './commands/calc.ts'
 import { capabilitiesCommand, usage as capabilitiesUsage } from './commands/capabilities.ts'
@@ -39,6 +40,7 @@ Commands:
   read <file> <range>           Read cell values from a range
   find <file> <query>           Search for cells matching a value
   agent-view <file>             Get AI-friendly sheet summary
+  agent-init                    Print the recommended agent workflow contract
   ops                           List operation schemas and examples
   capabilities                  Show Excel capability coverage matrix
   plan <file> --ops <json>      Validate and preview a safe edit plan
@@ -75,6 +77,7 @@ interface Command {
 
 const COMMANDS: Record<string, Command> = {
 	create: { run: createCommand, usage: createUsage },
+	'agent-init': { run: agentInitCommand, usage: agentInitUsage, allowedFlags: ['json'] },
 	'agent-view': {
 		run: agentViewCommand,
 		usage: agentViewUsage,

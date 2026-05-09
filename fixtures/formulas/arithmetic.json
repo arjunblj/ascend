@@ -50,6 +50,24 @@
 			"expected": { "kind": "number", "value": 1024 }
 		},
 		{
+			"description": "unary minus binds before exponentiation like Excel",
+			"setup": {},
+			"formula": "-2^2",
+			"expected": { "kind": "number", "value": 4 }
+		},
+		{
+			"description": "parentheses can force exponentiation before unary minus",
+			"setup": {},
+			"formula": "-(2^2)",
+			"expected": { "kind": "number", "value": -4 }
+		},
+		{
+			"description": "negative exponent operand remains supported",
+			"setup": {},
+			"formula": "2^-2",
+			"expected": { "kind": "number", "value": 0.25 }
+		},
+		{
 			"description": "division by zero returns #DIV/0!",
 			"setup": { "A1": 1, "A2": 0 },
 			"formula": "A1/A2",

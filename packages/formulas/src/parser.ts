@@ -161,20 +161,20 @@ class FormulaParser {
 	}
 
 	private parseMultiplication(allowUnionComma: boolean): FormulaNode {
-		let left = this.parseUnaryPrefix(allowUnionComma)
+		let left = this.parseExponentiation(allowUnionComma)
 		while (this.isOp('*', '/')) {
 			const op = this.advance(true).value as BinaryOp
-			const right = this.parseUnaryPrefix(allowUnionComma)
+			const right = this.parseExponentiation(allowUnionComma)
 			left = { type: 'binary', op, left, right }
 		}
 		return left
 	}
 
 	private parseExponentiation(allowUnionComma: boolean): FormulaNode {
-		const left = this.parseReferenceUnion(allowUnionComma)
+		const left = this.parseUnaryPrefix(allowUnionComma)
 		if (this.isOp('^')) {
 			this.advance(true)
-			const right = this.parseUnaryPrefix(allowUnionComma)
+			const right = this.parseExponentiation(allowUnionComma)
 			return { type: 'binary', op: '^', left, right }
 		}
 		return left
@@ -186,7 +186,7 @@ class FormulaParser {
 			const operand = this.parseUnaryPrefix(allowUnionComma)
 			return { type: 'unary', op, operand }
 		}
-		return this.parseExponentiation(allowUnionComma)
+		return this.parseReferenceUnion(allowUnionComma)
 	}
 
 	private parseReferenceUnion(allowUnionComma: boolean): FormulaNode {

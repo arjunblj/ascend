@@ -129,6 +129,32 @@ describe('formula functions', () => {
 			expect(getResult(wb, 4, 0)).toEqual(numberValue(70))
 		})
 
+		test('SUMIF uses third argument as top-left of criteria-shaped sum range', () => {
+			const wb = makeWorkbook()
+			setStr(wb, 0, 0, 'x')
+			setStr(wb, 1, 0, 'y')
+			setStr(wb, 2, 0, 'x')
+			setNum(wb, 0, 1, 10)
+			setNum(wb, 1, 1, 20)
+			setNum(wb, 2, 1, 30)
+			setFormula(wb, 3, 0, 'SUMIF(A1:A3,"x",B1)')
+			recalc(wb)
+			expect(getResult(wb, 3, 0)).toEqual(numberValue(40))
+		})
+
+		test('AVERAGEIF uses third argument as top-left of criteria-shaped average range', () => {
+			const wb = makeWorkbook()
+			setStr(wb, 0, 0, 'x')
+			setStr(wb, 1, 0, 'y')
+			setStr(wb, 2, 0, 'x')
+			setNum(wb, 0, 1, 10)
+			setNum(wb, 1, 1, 20)
+			setNum(wb, 2, 1, 30)
+			setFormula(wb, 3, 0, 'AVERAGEIF(A1:A3,"x",B1)')
+			recalc(wb)
+			expect(getResult(wb, 3, 0)).toEqual(numberValue(20))
+		})
+
 		test('COUNTIF with wildcard pattern', () => {
 			const wb = makeWorkbook()
 			setStr(wb, 0, 0, 'apple')

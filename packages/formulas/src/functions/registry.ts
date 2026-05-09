@@ -14,6 +14,7 @@ export interface EvalArea {
 	readonly ref: EvalRef
 	readonly values: readonly (readonly CellValue[])[]
 	readonly topLeft?: CellValue
+	readonly valueAtOffset?: (rowOffset: number, colOffset: number) => CellValue
 	/** Iterate only occupied cells (sparse). Use for SUM, AVERAGE, etc. */
 	readonly forEachValue?: (fn: (value: CellValue) => void) => void
 	/** Iterate all cells in range including empty. Use for COUNTBLANK. */
@@ -28,6 +29,7 @@ export interface EvalArg {
 	readonly areas?: readonly EvalArea[]
 	readonly shapeRows?: number
 	readonly shapeCols?: number
+	readonly valueAtOffset?: (rowOffset: number, colOffset: number) => CellValue
 	/** Iterate only occupied cells (sparse). Use for SUM, AVERAGE, etc. */
 	readonly forEachValue?: (fn: (value: CellValue) => void) => void
 	/** Iterate all cells in range including empty. Use for COUNTBLANK. */

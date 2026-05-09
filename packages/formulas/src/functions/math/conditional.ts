@@ -222,6 +222,15 @@ function firstScalarError(args: readonly (EvalArg | undefined)[]): CellValue | n
 	return null
 }
 
+function targetValueAt(
+	arg: EvalArg | undefined,
+	range: readonly (readonly CellValue[])[],
+	row: number,
+	col: number,
+): CellValue {
+	return arg?.valueAtOffset ? arg.valueAtOffset(row, col) : (range[row]?.[col] ?? EMPTY)
+}
+
 export const conditionalFunctions: FunctionDef[] = [
 	fn('SUMIF', 2, 3, (args, ctx) => {
 		const directError = firstScalarError(args)
@@ -235,7 +244,7 @@ export const conditionalFunctions: FunctionDef[] = [
 			for (let r = 0; r < range.length; r++) {
 				for (let c = 0; c < (range[r]?.length ?? 0); c++) {
 					if (bitmap[r * cols + c]) {
-						const n = numericVal(sumRange[r]?.[c] ?? EMPTY)
+						const n = numericVal(targetValueAt(args[2], sumRange, r, c))
 						if (n !== null) sum += n
 					}
 				}
@@ -312,7 +321,7 @@ export const conditionalFunctions: FunctionDef[] = [
 			for (let r = 0; r < range.length; r++) {
 				for (let c = 0; c < (range[r]?.length ?? 0); c++) {
 					if (bitmap[r * cols + c]) {
-						const n = numericVal(avgRange[r]?.[c] ?? EMPTY)
+						const n = numericVal(targetValueAt(args[2], avgRange, r, c))
 						if (n !== null) {
 							sum += n
 							count++

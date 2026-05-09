@@ -789,6 +789,8 @@ function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | nu
 					row: node.ref.row,
 					col: node.ref.col,
 				},
+				valueAtOffset: (rowOffset, colOffset) =>
+					getCellValue(ctx.workbook, si, node.ref.row + rowOffset, node.ref.col + colOffset),
 			}
 		}
 		case 'rangeRef': {
@@ -1058,6 +1060,8 @@ function makeRangeArea(
 		get topLeft() {
 			return sheet?.cells.readValue(materializedStartRow, materializedStartCol) ?? EMPTY
 		},
+		valueAtOffset: (rowOffset: number, colOffset: number) =>
+			getCellValue(workbook, sheetIndex, startRow + rowOffset, startCol + colOffset),
 		get values() {
 			if (!cachedValues) {
 				cachedValues = getRangeValues(
@@ -1111,6 +1115,7 @@ function makeMultiAreaArg(areas: readonly EvalArea[]): EvalArg {
 					ref: firstArea.ref,
 					shapeRows: (firstArea.ref.endRow ?? firstArea.ref.row) - firstArea.ref.row + 1,
 					shapeCols: (firstArea.ref.endCol ?? firstArea.ref.col) - firstArea.ref.col + 1,
+					...(firstArea.valueAtOffset ? { valueAtOffset: firstArea.valueAtOffset } : {}),
 				}
 			: {}),
 		areas,

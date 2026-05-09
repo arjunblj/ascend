@@ -832,10 +832,16 @@ describe('recalculate', () => {
 		const sheet = wb.addSheet('Sheet1')
 		sheet.cells.set(0, 0, { value: EMPTY, formula: '2^3^2', styleId: sid })
 		sheet.cells.set(1, 0, { value: EMPTY, formula: '-2^2', styleId: sid })
+		sheet.cells.set(2, 0, { value: EMPTY, formula: '-(2^2)', styleId: sid })
+		sheet.cells.set(3, 0, { value: EMPTY, formula: '(-2)^2', styleId: sid })
+		sheet.cells.set(4, 0, { value: EMPTY, formula: '2^-2', styleId: sid })
 
 		recalculate(wb, makeCtx())
 		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(512))
-		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(-4))
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(4))
+		expect(sheet.cells.get(2, 0)?.value).toEqual(numberValue(-4))
+		expect(sheet.cells.get(3, 0)?.value).toEqual(numberValue(4))
+		expect(sheet.cells.get(4, 0)?.value).toEqual(numberValue(0.25))
 	})
 
 	test('INDIRECT resolves A1-style ranges inside aggregate functions', () => {

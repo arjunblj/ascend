@@ -528,6 +528,7 @@ function printPivotDetail(wb: WorkbookDocument, json: boolean): number {
 			jsonOut({
 				pivotTables: wb.pivotTables(),
 				pivotCaches: wb.pivotCaches(),
+				pivotRefreshPlans: wb.pivotRefreshPlans(),
 			}),
 		)
 		return 0
@@ -567,6 +568,28 @@ function printPivotDetail(wb: WorkbookDocument, json: boolean): number {
 			)
 		}
 	}
+	const refreshPlans = wb.pivotRefreshPlans()
+	if (refreshPlans.length > 0) {
+		console.log('')
+		console.log(heading('Pivot Refresh Plans'))
+		for (const plan of refreshPlans) {
+			console.log(
+				bullet(
+					plan.partPath,
+					[
+						plan.outputState,
+						plan.requiresExternalRefresh ? 'external refresh required' : undefined,
+						plan.pivotTables.length > 0
+							? `pivots=${plan.pivotTables.map((pivot) => pivot.name ?? pivot.partPath).join(', ')}`
+							: undefined,
+					]
+						.filter(Boolean)
+						.join(' | '),
+				),
+			)
+			for (const warning of plan.warnings) console.log(`    warning: ${warning}`)
+		}
+	}
 	return 0
 }
 
@@ -577,6 +600,8 @@ function printSlicerDetail(wb: WorkbookDocument, json: boolean): number {
 			jsonOut({
 				slicerCaches: wb.slicerCaches(),
 				slicers: wb.slicers(),
+				timelineCaches: wb.timelineCaches(),
+				timelines: wb.timelines(),
 			}),
 		)
 		return 0
@@ -596,6 +621,38 @@ function printSlicerDetail(wb: WorkbookDocument, json: boolean): number {
 		console.log('')
 		console.log(heading('Slicer Caches'))
 		for (const cache of wb.slicerCaches()) {
+			console.log(
+				bullet(
+					cache.name ?? cache.partPath,
+					[
+						cache.sourceName,
+						cache.pivotCacheId !== undefined ? `pivotCache=${cache.pivotCacheId}` : undefined,
+						cache.pivotTableNames.length > 0
+							? `pivots=${cache.pivotTableNames.join(', ')}`
+							: undefined,
+					]
+						.filter(Boolean)
+						.join(' | '),
+				),
+			)
+		}
+	}
+	if (wb.timelines().length > 0) {
+		console.log('')
+		console.log(heading('Timelines'))
+		for (const timeline of wb.timelines()) {
+			console.log(
+				bullet(
+					timeline.name ?? timeline.partPath,
+					[timeline.cacheName, timeline.caption].filter(Boolean).join(' | '),
+				),
+			)
+		}
+	}
+	if (wb.timelineCaches().length > 0) {
+		console.log('')
+		console.log(heading('Timeline Caches'))
+		for (const cache of wb.timelineCaches()) {
 			console.log(
 				bullet(
 					cache.name ?? cache.partPath,

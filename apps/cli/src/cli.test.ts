@@ -279,6 +279,8 @@ describe('ascend cli', () => {
 		const parsed = JSON.parse(stdout)
 		expect(parsed.data.pivotTables.length).toBeGreaterThan(0)
 		expect(parsed.data.pivotCaches.length).toBeGreaterThan(0)
+		expect(parsed.data.pivotRefreshPlans.length).toBe(parsed.data.pivotCaches.length)
+		expect(parsed.data.pivotRefreshPlans[0].canRefreshHeadlessly).toBe(false)
 	})
 
 	test('inspect --detail slicers --json returns slicer inventory', { timeout: 10000 }, async () => {
@@ -293,6 +295,8 @@ describe('ascend cli', () => {
 		const parsed = JSON.parse(stdout)
 		expect(parsed.data.slicerCaches.length).toBeGreaterThan(0)
 		expect(parsed.data.slicers.length).toBeGreaterThan(0)
+		expect(Array.isArray(parsed.data.timelineCaches)).toBe(true)
+		expect(Array.isArray(parsed.data.timelines)).toBe(true)
 	})
 
 	test('inspect --detail drawings --json returns drawing flags', async () => {

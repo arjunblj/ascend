@@ -938,7 +938,7 @@ function evaluateCompiledNumeric(compiled: CompiledFormula, ctx: EvalContext): C
 				const digits = numericStack[--sp] as number
 				const val = numericStack[sp - 1] as number
 				const factor = 10 ** Math.trunc(digits)
-				numericStack[sp - 1] = Math.round(val * factor) / factor
+				numericStack[sp - 1] = (Math.sign(val) * Math.round(Math.abs(val) * factor)) / factor
 				break
 			}
 			case Op.ROUNDUP: {
@@ -1321,8 +1321,11 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 					break
 				}
 				const factor = 10 ** Math.trunc(digits)
-				if (op === Op.ROUND) stack[stackDepth++] = numberValue(Math.round(num * factor) / factor)
-				else if (op === Op.ROUNDUP) {
+				if (op === Op.ROUND) {
+					stack[stackDepth++] = numberValue(
+						(Math.sign(num) * Math.round(Math.abs(num) * factor)) / factor,
+					)
+				} else if (op === Op.ROUNDUP) {
 					const scaled = num * factor
 					stack[stackDepth++] = numberValue(
 						(scaled >= 0 ? Math.ceil(scaled) : Math.floor(scaled)) / factor,

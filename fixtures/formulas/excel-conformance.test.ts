@@ -504,7 +504,7 @@ describe('Excel conformance', () => {
 
 	describe('math edge cases', () => {
 		test('ROUND -0.5', () => {
-			expectNum(evalFormula('ROUND(-0.5, 0)'), 0)
+			expectNum(evalFormula('ROUND(-0.5, 0)'), -1)
 		})
 
 		test('ROUND 0.5 rounds away from zero', () => {

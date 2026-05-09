@@ -86,6 +86,14 @@ describe('codegen', () => {
 		expect(codegenEval('A1^2', wb)).toEqual(numberValue(9))
 	})
 
+	test('ROUND halves away from zero', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+
+		expect(codegenEval('ROUND(-0.5,0)', wb)).toEqual(numberValue(-1))
+		expect(codegenEval('ROUND(0.5,0)', wb)).toEqual(numberValue(1))
+	})
+
 	test('unary negation: -A1', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

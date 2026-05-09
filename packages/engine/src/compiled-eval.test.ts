@@ -47,6 +47,25 @@ describe('compiled numeric fast path', () => {
 		expect(compiled.numericOnly).toBe(false)
 	})
 
+	test('ROUND halves away from zero on numeric fast path', () => {
+		const wb = makeWorkbook()
+		const parsed = parseFormula('ROUND(-0.5,0)')
+		if (!parsed.ok) throw new Error('parse failed')
+		const compiled = compileFormula(parsed.value)
+		if (!compiled) throw new Error('compile failed')
+
+		expect(compiled.numericOnly).toBe(true)
+		expect(
+			evaluateCompiled(compiled, {
+				workbook: wb,
+				calcContext: defaultCalcContext(),
+				sheetIndex: 0,
+				row: 0,
+				col: 0,
+			}),
+		).toEqual(numberValue(-1))
+	})
+
 	test('numeric fast path supports AND conditions inside IF', () => {
 		const wb = makeWorkbook()
 		const sheet = wb.sheets[0]

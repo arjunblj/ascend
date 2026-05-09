@@ -370,8 +370,8 @@ function tryFoldConstant(node: FormulaNode): number | null {
 					case 'POWER':
 						return a < 0 && b !== Math.floor(b) ? null : a ** b
 					case 'ROUND': {
-						const m = 10 ** Math.floor(b)
-						return Math.round(a * m) / m
+						const m = 10 ** Math.trunc(b)
+						return (Math.sign(a) * Math.round(Math.abs(a) * m)) / m
 					}
 					default:
 						return null
@@ -653,7 +653,7 @@ function emitRound(state: CodegenState, args: readonly FormulaNode[]): string {
 	}
 	const result = freshVar(state)
 	state.lines.push(
-		`var _m${state.varCounter} = Math.pow(10, Math.floor(${digitsExpr})); var ${result} = _numberValue(Math.round(${nv} * _m${state.varCounter}) / _m${state.varCounter});`,
+		`var _m${state.varCounter} = Math.pow(10, Math.trunc(${digitsExpr})); var ${result} = _numberValue((Math.sign(${nv}) * Math.round(Math.abs(${nv}) * _m${state.varCounter})) / _m${state.varCounter});`,
 	)
 	state.varCounter++
 	return result

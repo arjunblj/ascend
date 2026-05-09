@@ -4,11 +4,13 @@ import type {
 	CellStyle,
 	DynamicArrayFormulaInfo,
 	RangeRef,
+	SheetAdvancedFilterInfo,
 	SheetBreak,
 	SheetColDef,
 	SheetConditionalFormat,
 	SheetConditionalFormatRule,
 	SheetDataValidation,
+	SheetSparklineGroupInfo,
 	StyleId,
 } from '@ascend/core'
 import {
@@ -219,6 +221,8 @@ export function parseSheet(
 		parseHyperlinks(ws, sheet, ctx.relationships ?? [], ctx.valuePool)
 		parseConditionalFormatting(ws, sheet, ctx.differentialStyles ?? [], ctx.valuePool)
 		parseDataValidations(ws, sheet, ctx.valuePool)
+		parseAdvancedFilters(ws, sheet)
+		parseSparklineGroups(ws, sheet)
 		extractExtLst(xml, sheet)
 	}
 	return sheet
@@ -1155,6 +1159,120 @@ function parseCols(ws: XmlNode, sheet: Sheet): void {
 function parseAutoFilter(ws: XmlNode, sheet: Sheet): void {
 	const autoFilter = parseAutoFilterNode(ws.autoFilter as XmlNode | undefined)
 	sheet.autoFilter = autoFilter as AutoFilter | null
+}
+
+function parseAdvancedFilters(ws: XmlNode, sheet: Sheet): void {
+	const customSheetViews = childNode(ws, 'customSheetViews')
+	if (!customSheetViews) return
+	for (const view of childNodes(customSheetViews, 'customSheetView')) {
+		const autoFilter = parseAutoFilterNode(childNode(view, 'autoFilter')) as AutoFilter | null
+		if (!autoFilter) continue
+		const viewName = attr(view, 'name')
+		const guid = attr(view, 'guid')
+		const parsed: SheetAdvancedFilterInfo = {
+			ref: autoFilter.ref,
+			autoFilter,
+			filterColumnCount: autoFilter.columns.length,
+			sortConditionCount: autoFilter.sortState?.conditions.length ?? 0,
+		}
+		if (viewName) Object.assign(parsed, { viewName })
+		if (guid) Object.assign(parsed, { guid })
+		sheet.advancedFilters.push(parsed)
+	}
+}
+
+function parseSparklineGroups(ws: XmlNode, sheet: Sheet): void {
+	const groups = findDescendantNodes(ws, 'sparklineGroup')
+	for (const [groupIndex, group] of groups.entries()) {
+		const sparklines = findDescendantNodes(group, 'sparkline')
+		const firstSparkline = sparklines[0]
+		const range = firstSparkline ? childText(firstSparkline, 'f') : undefined
+		const locationRange = firstSparkline ? childText(firstSparkline, 'sqref') : undefined
+		const colorSeries = readSparklineColor(group)
+		const type = attr(group, 'type')
+		const displayEmptyCellsAs = attr(group, 'displayEmptyCellsAs')
+		const dateAxis = readBoolAttribute(group, 'dateAxis')
+		const markers = readBoolAttribute(group, 'markers')
+		const highPoint = readBoolAttribute(group, 'high')
+		const lowPoint = readBoolAttribute(group, 'low')
+		const firstPoint = readBoolAttribute(group, 'first')
+		const lastPoint = readBoolAttribute(group, 'last')
+		const negative = readBoolAttribute(group, 'negative')
+		const displayXAxis = readBoolAttribute(group, 'displayXAxis')
+		const parsed: SheetSparklineGroupInfo = {
+			groupIndex,
+			count: sparklines.length,
+		}
+		if (type) Object.assign(parsed, { type })
+		if (displayEmptyCellsAs) Object.assign(parsed, { displayEmptyCellsAs })
+		if (dateAxis !== undefined) Object.assign(parsed, { dateAxis })
+		if (markers !== undefined) Object.assign(parsed, { markers })
+		if (highPoint !== undefined) Object.assign(parsed, { highPoint })
+		if (lowPoint !== undefined) Object.assign(parsed, { lowPoint })
+		if (firstPoint !== undefined) Object.assign(parsed, { firstPoint })
+		if (lastPoint !== undefined) Object.assign(parsed, { lastPoint })
+		if (negative !== undefined) Object.assign(parsed, { negative })
+		if (displayXAxis !== undefined) Object.assign(parsed, { displayXAxis })
+		if (colorSeries) Object.assign(parsed, { colorSeries })
+		if (range) Object.assign(parsed, { range })
+		if (locationRange) Object.assign(parsed, { locationRange })
+		sheet.sparklineGroups.push(parsed)
+	}
+}
+
+function childNode(node: XmlNode | undefined, localName: string): XmlNode | undefined {
+	if (!node) return undefined
+	for (const [key, value] of Object.entries(node)) {
+		if (key.startsWith('@_') || localPart(key) !== localName) continue
+		if (Array.isArray(value)) return value[0] as XmlNode | undefined
+		return value as XmlNode | undefined
+	}
+	return undefined
+}
+
+function childNodes(node: XmlNode | undefined, localName: string): XmlNode[] {
+	if (!node) return []
+	for (const [key, value] of Object.entries(node)) {
+		if (key.startsWith('@_') || localPart(key) !== localName) continue
+		return asArray<XmlNode>(value as XmlNode | XmlNode[] | undefined)
+	}
+	return []
+}
+
+function childText(node: XmlNode | undefined, localName: string): string | undefined {
+	const child = childNode(node, localName)
+	if (!child) return undefined
+	const text = child['#text']
+	if (text !== undefined && text !== null) return String(text)
+	if (typeof child === 'string' || typeof child === 'number' || typeof child === 'boolean') {
+		return String(child)
+	}
+	return undefined
+}
+
+function findDescendantNodes(node: XmlNode | undefined, localName: string): XmlNode[] {
+	if (!node) return []
+	const matches: XmlNode[] = []
+	for (const [key, value] of Object.entries(node)) {
+		if (key.startsWith('@_')) continue
+		for (const child of asArray<XmlNode>(value as XmlNode | XmlNode[] | undefined)) {
+			if (!child || typeof child !== 'object') continue
+			if (localPart(key) === localName) matches.push(child)
+			matches.push(...findDescendantNodes(child, localName))
+		}
+	}
+	return matches
+}
+
+function readSparklineColor(group: XmlNode): string | undefined {
+	const color = childNode(group, 'colorSeries')
+	if (!color) return undefined
+	return attr(color, 'rgb') ?? attr(color, 'theme') ?? attr(color, 'indexed')
+}
+
+function localPart(name: string): string {
+	const colon = name.indexOf(':')
+	return colon >= 0 ? name.slice(colon + 1) : name
 }
 
 function parseSheetProtection(ws: XmlNode, sheet: Sheet): void {

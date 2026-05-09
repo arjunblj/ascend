@@ -184,6 +184,33 @@ export interface SheetDrawingObjectRef {
 	readonly relIds?: readonly string[]
 }
 
+export interface SheetSparklineGroupInfo {
+	readonly groupIndex: number
+	readonly type?: string
+	readonly displayEmptyCellsAs?: string
+	readonly dateAxis?: boolean
+	readonly markers?: boolean
+	readonly highPoint?: boolean
+	readonly lowPoint?: boolean
+	readonly firstPoint?: boolean
+	readonly lastPoint?: boolean
+	readonly negative?: boolean
+	readonly displayXAxis?: boolean
+	readonly colorSeries?: string
+	readonly range?: string
+	readonly locationRange?: string
+	readonly count: number
+}
+
+export interface SheetAdvancedFilterInfo {
+	readonly viewName?: string
+	readonly guid?: string
+	readonly ref?: string
+	readonly autoFilter?: AutoFilter
+	readonly filterColumnCount: number
+	readonly sortConditionCount: number
+}
+
 export interface SheetDataValidation {
 	readonly sqref: string
 	readonly type?: string
@@ -366,6 +393,8 @@ export class Sheet {
 	conditionalFormats: SheetConditionalFormat[]
 	imageRefs: SheetImageRef[]
 	drawingObjectRefs: SheetDrawingObjectRef[]
+	sparklineGroups: SheetSparklineGroupInfo[]
+	advancedFilters: SheetAdvancedFilterInfo[]
 	drawingRefs: SheetDrawingRefs
 	autoFilter: AutoFilter | null
 	protection: SheetProtection | null
@@ -404,6 +433,8 @@ export class Sheet {
 		this.conditionalFormats = []
 		this.imageRefs = []
 		this.drawingObjectRefs = []
+		this.sparklineGroups = []
+		this.advancedFilters = []
 		this.drawingRefs = { hasDrawing: false, hasLegacyDrawing: false }
 		this.autoFilter = null
 		this.protection = null
@@ -438,6 +469,8 @@ export class Sheet {
 		}))
 		this.imageRefs = this.imageRefs.map(cloneImageRef)
 		this.drawingObjectRefs = this.drawingObjectRefs.map(cloneDrawingObjectRef)
+		this.sparklineGroups = this.sparklineGroups.map((group) => ({ ...group }))
+		this.advancedFilters = this.advancedFilters.map(cloneAdvancedFilterInfo)
 		this.autoFilter = this.autoFilter ? cloneAutoFilter(this.autoFilter) : null
 		this._shared = false
 	}
@@ -466,6 +499,8 @@ export class Sheet {
 		s.conditionalFormats = this.conditionalFormats
 		s.imageRefs = this.imageRefs
 		s.drawingObjectRefs = this.drawingObjectRefs
+		s.sparklineGroups = this.sparklineGroups
+		s.advancedFilters = this.advancedFilters
 		s.drawingRefs = this.drawingRefs
 		s.autoFilter = this.autoFilter
 		s.protection = this.protection
@@ -515,6 +550,13 @@ function cloneAutoFilter(filter: AutoFilter): AutoFilter {
 					},
 				}
 			: {}),
+	}
+}
+
+function cloneAdvancedFilterInfo(filter: SheetAdvancedFilterInfo): SheetAdvancedFilterInfo {
+	return {
+		...filter,
+		...(filter.autoFilter ? { autoFilter: cloneAutoFilter(filter.autoFilter) } : {}),
 	}
 }
 

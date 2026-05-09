@@ -39,6 +39,7 @@ export {
 	toRangeString,
 } from './refs.ts'
 export type {
+	SheetAdvancedFilterInfo,
 	SheetAnchorMarker,
 	SheetBreak,
 	SheetColDef,
@@ -66,6 +67,7 @@ export type {
 	SheetPrintOptions,
 	SheetProtection,
 	SheetRowDef,
+	SheetSparklineGroupInfo,
 	SheetState,
 	SheetTabColor,
 	SheetThreadedComment,

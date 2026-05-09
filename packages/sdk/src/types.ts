@@ -5,6 +5,7 @@ import type {
 	ChartPartInfo,
 	ChartSheetInfo,
 	RangeRef,
+	SheetAdvancedFilterInfo,
 	SheetComment,
 	SheetConditionalFormat,
 	SheetDataValidation,
@@ -19,6 +20,7 @@ import type {
 	SheetPageSetup,
 	SheetPrintOptions,
 	SheetProtection,
+	SheetSparklineGroupInfo,
 	SheetState,
 	SheetTabColor,
 	SheetThreadedComment,
@@ -56,6 +58,8 @@ export interface WorkbookInfo {
 	readonly conditionalFormatCount: number | null
 	readonly dataValidationCount: number | null
 	readonly imageCount: number | null
+	readonly sparklineGroupCount: number | null
+	readonly advancedFilterCount: number | null
 	readonly chartCount: number
 	readonly chartSheetCount: number
 	readonly pivotTableCount: number
@@ -315,6 +319,8 @@ export interface SheetInfo {
 	readonly hasFrozenPanes: boolean | null
 	readonly colWidthCount: number | null
 	readonly imageCount: number | null
+	readonly sparklineGroupCount: number | null
+	readonly advancedFilterCount: number | null
 	readonly rowHeightCount: number | null
 	readonly hyperlinkCount: number | null
 	readonly ignoredErrorCount: number | null
@@ -425,6 +431,8 @@ export interface SheetInspectInfo extends SheetInfo {
 	readonly dataValidations: readonly SheetDataValidation[] | null
 	readonly imageRefs: readonly SheetImageRef[] | null
 	readonly drawingObjectRefs: readonly SheetDrawingObjectRef[] | null
+	readonly sparklineGroups: readonly SheetSparklineGroupInfo[] | null
+	readonly advancedFilters: readonly SheetAdvancedFilterInfo[] | null
 	readonly drawingRefs: SheetDrawingRefs | null
 	readonly autoFilter: AutoFilter | null
 	readonly protection: SheetProtection | null

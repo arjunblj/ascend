@@ -348,10 +348,14 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'tables.advanced-filters',
 		'tables/data',
 		'Advanced filters',
-		'unsupported',
+		'inspectable',
 		'P2',
-		'Inventory advanced filter definitions and preserve parts before edit support.',
-		'Advanced filter definitions are not modeled yet.',
+		'Add safe advanced-filter edit operations after full fixture coverage.',
+		'Advanced filter/custom sheet view auto-filters are inventoried with filter and sort counts while raw worksheet XML remains preserved for roundtrip.',
+		[
+			'packages/io-xlsx/src/reader/advanced-filter-sparkline.test.ts',
+			'packages/sdk/src/advanced-filter-sparkline.test.ts',
+		],
 	),
 
 	cap(
@@ -497,10 +501,14 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'visuals.sparklines',
 		'visuals',
 		'Sparklines',
-		'preserved',
+		'inspectable',
 		'P2',
-		'Inventory sparkline groups and source ranges.',
-		'Sparkline XML is preserve-first.',
+		'Add safe sparkline source/style edit operations after preservation fixtures.',
+		'Sparkline groups are inventoried with type, source range, location range, count, marker flags, and series color while extension XML remains preserved.',
+		[
+			'packages/io-xlsx/src/reader/advanced-filter-sparkline.test.ts',
+			'packages/sdk/src/advanced-filter-sparkline.test.ts',
+		],
 	),
 
 	cap(

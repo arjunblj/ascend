@@ -1,4 +1,5 @@
 import {
+	type AutoFilter,
 	type ChartPartInfo,
 	indexToColumn,
 	parseA1,
@@ -108,6 +109,8 @@ export class WorkbookReadView {
 		let totalConditionalFormats = 0
 		let totalDataValidations = 0
 		let totalImages = 0
+		let totalSparklineGroups = 0
+		let totalAdvancedFilters = 0
 		const sheets = this.wb.sheets.map((sheet) => {
 			const cellsHydrated = this.loadInfo.cellsHydrated
 			const richSheetMetadataHydrated = this.loadInfo.richSheetMetadataHydrated
@@ -120,6 +123,8 @@ export class WorkbookReadView {
 				totalConditionalFormats += sheet.conditionalFormats.length
 				totalDataValidations += sheet.dataValidations.length
 				totalImages += sheet.imageRefs.length
+				totalSparklineGroups += sheet.sparklineGroups.length
+				totalAdvancedFilters += sheet.advancedFilters.length
 			}
 			return buildSheetInfo(sheet, cellsHydrated, richSheetMetadataHydrated, used, count)
 		})
@@ -137,6 +142,8 @@ export class WorkbookReadView {
 				: null,
 			dataValidationCount: this.loadInfo.richSheetMetadataHydrated ? totalDataValidations : null,
 			imageCount: this.loadInfo.richSheetMetadataHydrated ? totalImages : null,
+			sparklineGroupCount: this.loadInfo.richSheetMetadataHydrated ? totalSparklineGroups : null,
+			advancedFilterCount: this.loadInfo.richSheetMetadataHydrated ? totalAdvancedFilters : null,
 			chartCount: this.wb.chartParts.length,
 			chartSheetCount: this.wb.chartSheets.length,
 			pivotTableCount: this.wb.pivotTables.length,
@@ -303,6 +310,15 @@ export class WorkbookReadView {
 			imageRefs: richSheetMetadataHydrated ? [...sheet.imageRefs] : null,
 			drawingObjectRefs: richSheetMetadataHydrated
 				? sheet.drawingObjectRefs.map((ref) => ({ ...ref }))
+				: null,
+			sparklineGroups: richSheetMetadataHydrated
+				? sheet.sparklineGroups.map((group) => ({ ...group }))
+				: null,
+			advancedFilters: richSheetMetadataHydrated
+				? sheet.advancedFilters.map((filter) => ({
+						...filter,
+						...(filter.autoFilter ? { autoFilter: copyAutoFilterInfo(filter.autoFilter) } : {}),
+					}))
 				: null,
 			drawingRefs: cellsHydrated ? { ...sheet.drawingRefs } : null,
 			autoFilter: cellsHydrated ? sheet.autoFilter : null,
@@ -879,6 +895,8 @@ function buildSheetInfo(
 		hasFrozenPanes: cellsHydrated ? sheet.frozenRows > 0 || sheet.frozenCols > 0 : null,
 		colWidthCount: cellsHydrated ? sheet.colWidths.size : null,
 		imageCount: richSheetMetadataHydrated ? sheet.imageRefs.length : null,
+		sparklineGroupCount: richSheetMetadataHydrated ? sheet.sparklineGroups.length : null,
+		advancedFilterCount: richSheetMetadataHydrated ? sheet.advancedFilters.length : null,
 		rowHeightCount: cellsHydrated ? sheet.rowHeights.size : null,
 		hyperlinkCount: richSheetMetadataHydrated ? sheet.hyperlinks.size : null,
 		ignoredErrorCount: cellsHydrated ? sheet.ignoredErrors.length : null,
@@ -894,6 +912,30 @@ function buildSheetInfo(
 			: null,
 		hasProtection: cellsHydrated ? sheet.protection !== null : null,
 		cellDataLoaded: cellsHydrated,
+	}
+}
+
+function copyAutoFilterInfo(filter: AutoFilter): AutoFilter {
+	return {
+		...filter,
+		columns: filter.columns.map((column) => ({
+			...column,
+			...(column.values ? { values: [...column.values] } : {}),
+			...(column.dateGroupItems
+				? { dateGroupItems: column.dateGroupItems.map((item) => ({ ...item })) }
+				: {}),
+			...(column.customFilters
+				? { customFilters: column.customFilters.map((entry) => ({ ...entry })) }
+				: {}),
+		})),
+		...(filter.sortState
+			? {
+					sortState: {
+						...filter.sortState,
+						conditions: filter.sortState.conditions.map((condition) => ({ ...condition })),
+					},
+				}
+			: {}),
 	}
 }
 

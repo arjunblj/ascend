@@ -547,6 +547,22 @@ describe('formula functions', () => {
 			expect(getResult(wb, 2, 0)).toEqual(numberValue(20))
 		})
 
+		test('lookup functions preserve scalar input error identity', () => {
+			const wb = makeWorkbook()
+			wb.sheets[0]?.cells.set(0, 0, {
+				value: errorValue('#DIV/0!'),
+				formula: null,
+				styleId: S0,
+			})
+			setFormula(wb, 1, 0, 'VLOOKUP(A1,B1:C1,2,FALSE)')
+			setFormula(wb, 2, 0, 'HLOOKUP(A1,B1:C2,2,FALSE)')
+			setFormula(wb, 3, 0, 'INDEX(A1,1)')
+			recalc(wb)
+			expect(getResult(wb, 1, 0)).toEqual(errorValue('#DIV/0!'))
+			expect(getResult(wb, 2, 0)).toEqual(errorValue('#DIV/0!'))
+			expect(getResult(wb, 3, 0)).toEqual(errorValue('#DIV/0!'))
+		})
+
 		test('VLOOKUP approximate match', () => {
 			const wb = makeWorkbook()
 			setNum(wb, 0, 0, 10)

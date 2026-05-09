@@ -1581,13 +1581,39 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(0, 2)).toBeUndefined()
 	})
 
-	test('external workbook references currently evaluate to #REF!', () => {
+	test('external workbook references without cached values evaluate to #REF!', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
 		sheet.cells.set(0, 0, { value: EMPTY, formula: '[Book.xlsx]Sheet1!A1', styleId: sid })
 
 		recalculate(wb, makeCtx())
 		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#REF!'))
+	})
+
+	test('external workbook references preserve imported cached values', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, {
+			value: numberValue(42),
+			formula: '[Book.xlsx]Sheet1!A1',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 1, {
+			value: stringValue('cached'),
+			formula: 'IF(TRUE,[Book.xlsx]Sheet1!B1,"fallback")',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 2, {
+			value: errorValue('#N/A'),
+			formula: '[Book.xlsx]Sheet1!C1',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+		expect(result.changed).toEqual([])
+		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(42))
+		expect(sheet.cells.get(0, 1)?.value).toEqual(stringValue('cached'))
+		expect(sheet.cells.get(0, 2)?.value).toEqual(errorValue('#N/A'))
 	})
 
 	test('3D sheet-span references aggregate across contiguous sheets', () => {

@@ -466,6 +466,31 @@ function nodeCanReturnArray(node: FormulaNode): boolean {
 	}
 }
 
+function hasExternalWorkbookReference(node: FormulaNode): boolean {
+	switch (node.type) {
+		case 'cellRef':
+		case 'rangeRef':
+		case 'wholeColumnRange':
+		case 'wholeRowRange':
+		case 'name':
+			return node.sheet?.startsWith('[') ?? false
+		case 'sheetSpanRef':
+			return node.startSheet.startsWith('[') || node.endSheet.startsWith('[')
+		case 'spillRef':
+			return hasExternalWorkbookReference(node.target)
+		case 'binary':
+			return hasExternalWorkbookReference(node.left) || hasExternalWorkbookReference(node.right)
+		case 'unary':
+			return hasExternalWorkbookReference(node.operand)
+		case 'function':
+			return node.args.some(hasExternalWorkbookReference)
+		case 'array':
+			return node.rows.some((row) => row.some(hasExternalWorkbookReference))
+		default:
+			return false
+	}
+}
+
 export function clearCompiledFormulaCache(): void {
 	// WeakMap entries are reclaimed automatically; this is a no-op placeholder
 	// kept for API symmetry with clearFormulaParseCache.
@@ -1049,6 +1074,11 @@ export function recalculate(
 			const { sheetIndex: si, row, col } = coords
 			const sheet = workbook.sheets[si]
 			if (!sheet) return
+			const hadCell = sheet.cells.has(row, col)
+			const oldValue = sheet.cells.readValue(row, col)
+			const oldFormula = sheet.cells.readFormula(row, col) ?? null
+			const oldStyleId = sheet.cells.readStyleId(row, col) ?? DEFAULT_STYLE_ID
+			const oldFormulaInfo = sheet.cells.readFormulaInfo(row, col)
 
 			const growingRangeAggregate = hasGrowingRangeAggregates
 				? growingRangeAggregates.get(key)
@@ -1086,12 +1116,16 @@ export function recalculate(
 				if (!ast) return
 				const formulaText = formulaTexts.get(key)
 				if (!formulaText) return
-				mutableCtx.sheetIndex = si
-				mutableCtx.row = row
-				mutableCtx.col = col
-				newValue = groupEvaluator
-					? groupEvaluator(mutableCtx)
-					: evalFormula(key, formulaText, ast, mutableCtx)
+				if (hasExternalWorkbookReference(ast) && hadCell && oldValue.kind !== 'empty') {
+					newValue = oldValue
+				} else {
+					mutableCtx.sheetIndex = si
+					mutableCtx.row = row
+					mutableCtx.col = col
+					newValue = groupEvaluator
+						? groupEvaluator(mutableCtx)
+						: evalFormula(key, formulaText, ast, mutableCtx)
+				}
 				const rangeAggregate = rangeAggregateStates ? rangeAggregates.get(key) : undefined
 				if (rangeAggregate && needsRangeAggregateState(rangeAggregate.functionName)) {
 					const state = scanRangeAggregateState(
@@ -1106,11 +1140,6 @@ export function recalculate(
 					if (state) rangeAggregateStates?.set(key, state)
 				}
 			}
-			const hadCell = sheet.cells.has(row, col)
-			const oldValue = sheet.cells.readValue(row, col)
-			const oldFormula = sheet.cells.readFormula(row, col) ?? null
-			const oldStyleId = sheet.cells.readStyleId(row, col) ?? DEFAULT_STYLE_ID
-			const oldFormulaInfo = sheet.cells.readFormulaInfo(row, col)
 			const spillMatrix = toScalarMatrix(newValue)
 			if (spillMatrix) {
 				const changedBefore = changed.length

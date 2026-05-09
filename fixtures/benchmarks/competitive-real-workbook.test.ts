@@ -503,7 +503,7 @@ describe('evaluateAssertions', () => {
 			{
 				name: 'excelize',
 				command: ['bash', 'fixtures/benchmarks/runners/excelize_runner.sh'],
-				categories: ['read', 'write'],
+				categories: ['read', 'write', 'edit-roundtrip'],
 				adapterVersion: '1',
 				libraryVersion: 'reported-by-runner',
 				runtime: 'go',
@@ -651,6 +651,7 @@ describe('evaluateAssertions', () => {
 				valueOnlyRead: true,
 			})
 			expect(excelize?.command).toEqual(['bash', 'fixtures/benchmarks/runners/excelize_runner.sh'])
+			expect(excelize?.categories).toEqual(['read', 'edit-roundtrip'])
 			expect(excelize?.capabilities).toEqual({
 				xlsmRoundtrip: false,
 				internalTiming: true,

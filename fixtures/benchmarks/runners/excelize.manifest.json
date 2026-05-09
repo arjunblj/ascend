@@ -2,7 +2,7 @@
 	{
 		"name": "excelize",
 		"command": ["bash", "fixtures/benchmarks/runners/excelize_runner.sh"],
-		"categories": ["read", "write"],
+		"categories": ["read", "write", "edit-roundtrip"],
 		"runtime": "go",
 		"adapterVersion": "1",
 		"libraryVersion": "reported-by-runner",

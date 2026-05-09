@@ -12,6 +12,7 @@ import (
 	"io"
 	"math"
 	"os"
+	pathpkg "path"
 	"runtime"
 	"runtime/debug"
 	"sort"
@@ -35,6 +36,11 @@ type args struct {
 	repeat         int
 	warmup         int
 	validationMode string
+	editSheet      string
+	editRef        string
+	editValue      float64
+	editValueSet   bool
+	editOldValue   *float64
 	pretty         bool
 }
 
@@ -49,6 +55,11 @@ type payload struct {
 	Samples    []sample       `json:"samples"`
 }
 
+type Coord struct {
+	Row int
+	Col int
+}
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -61,12 +72,20 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	if parsed.operation != "read" && parsed.operation != "write" {
-		return fmt.Errorf("unsupported --operation %q: expected read or write", parsed.operation)
+	if parsed.operation != "read" && parsed.operation != "write" && parsed.operation != "edit-roundtrip" {
+		return fmt.Errorf("unsupported --operation %q: expected read, write, or edit-roundtrip", parsed.operation)
 	}
 	for i := 0; i < parsed.warmup; i++ {
 		if parsed.operation == "read" {
 			if _, err := readAssertions(parsed.file); err != nil {
+				return err
+			}
+		} else if parsed.operation == "edit-roundtrip" {
+			data, err := editRoundtripBytes(parsed.file, parsed.editSheet, parsed.editRef, parsed.editValue)
+			if err != nil {
+				return err
+			}
+			if _, err := editRoundtripAssertions(parsed.file, data, parsed.editSheet, parsed.editRef, parsed.editValue, parsed.editOldValue); err != nil {
 				return err
 			}
 		} else if _, err := writeWorkbook(parsed.workload, parsed.rows, parsed.cols); err != nil {
@@ -84,6 +103,11 @@ func run() error {
 			if err != nil {
 				return err
 			}
+		} else if parsed.operation == "edit-roundtrip" {
+			lastData, err = editRoundtripBytes(parsed.file, parsed.editSheet, parsed.editRef, parsed.editValue)
+			if err != nil {
+				return err
+			}
 		} else {
 			lastData, err = writeWorkbook(parsed.workload, parsed.rows, parsed.cols)
 			if err != nil {
@@ -93,6 +117,11 @@ func run() error {
 		durationMs := float64(time.Since(start).Nanoseconds()) / 1_000_000
 		if parsed.operation == "write" && parsed.validationMode == "each" {
 			assertions, err = writeAssertionsFromBytes(lastData, parsed.workload, parsed.rows, parsed.cols)
+			if err != nil {
+				return err
+			}
+		} else if parsed.operation == "edit-roundtrip" {
+			assertions, err = editRoundtripAssertions(parsed.file, lastData, parsed.editSheet, parsed.editRef, parsed.editValue, parsed.editOldValue)
 			if err != nil {
 				return err
 			}
@@ -113,7 +142,7 @@ func run() error {
 	}
 	if assertions != nil {
 		validationMode := parsed.validationMode
-		if parsed.operation == "read" {
+		if parsed.operation == "read" || parsed.operation == "edit-roundtrip" {
 			validationMode = "each"
 		}
 		assertions["validationMode"] = validationMode
@@ -190,6 +219,39 @@ func parseArgs(values []string) (args, error) {
 				return parsed, fmt.Errorf("unsupported --validation-mode %q: expected each or final", values[i])
 			}
 			parsed.validationMode = values[i]
+		case "--edit-sheet":
+			i++
+			if i >= len(values) {
+				return parsed, errors.New("missing value for --edit-sheet")
+			}
+			parsed.editSheet = values[i]
+		case "--edit-ref":
+			i++
+			if i >= len(values) {
+				return parsed, errors.New("missing value for --edit-ref")
+			}
+			parsed.editRef = values[i]
+		case "--edit-value":
+			i++
+			if i >= len(values) {
+				return parsed, errors.New("missing value for --edit-value")
+			}
+			value, err := strconv.ParseFloat(values[i], 64)
+			if err != nil {
+				return parsed, fmt.Errorf("--edit-value must be numeric")
+			}
+			parsed.editValue = value
+			parsed.editValueSet = true
+		case "--edit-old-value":
+			i++
+			if i >= len(values) {
+				return parsed, errors.New("missing value for --edit-old-value")
+			}
+			value, err := strconv.ParseFloat(values[i], 64)
+			if err != nil {
+				return parsed, fmt.Errorf("--edit-old-value must be numeric")
+			}
+			parsed.editOldValue = &value
 		case "--json":
 			parsed.pretty = false
 		default:
@@ -199,11 +261,14 @@ func parseArgs(values []string) (args, error) {
 	if parsed.operation == "" {
 		return parsed, errors.New("missing --operation")
 	}
-	if parsed.operation == "read" && parsed.file == "" {
+	if (parsed.operation == "read" || parsed.operation == "edit-roundtrip") && parsed.file == "" {
 		return parsed, errors.New("missing --file")
 	}
 	if parsed.operation == "write" && (parsed.rows <= 0 || parsed.cols <= 0) {
 		return parsed, errors.New("--rows and --cols are required for write")
+	}
+	if parsed.operation == "edit-roundtrip" && (parsed.editSheet == "" || parsed.editRef == "" || !parsed.editValueSet) {
+		return parsed, errors.New("edit-roundtrip requires --edit-sheet, --edit-ref, and --edit-value")
 	}
 	return parsed, nil
 }
@@ -226,6 +291,63 @@ func readAssertions(path string) (map[string]any, error) {
 	}
 	defer workbook.Close()
 	return workbookAssertions(workbook)
+}
+
+func editRoundtripBytes(path string, sheetName string, ref string, value float64) ([]byte, error) {
+	workbook, err := excelize.OpenFile(path)
+	if err != nil {
+		return nil, err
+	}
+	defer workbook.Close()
+	if err := workbook.SetCellValue(sheetName, ref, value); err != nil {
+		return nil, err
+	}
+	output, err := workbook.WriteToBuffer()
+	if err != nil {
+		return nil, err
+	}
+	return output.Bytes(), nil
+}
+
+func editRoundtripAssertions(path string, data []byte, sheetName string, ref string, expectedValue float64, oldValue *float64) (map[string]any, error) {
+	original, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	assertions, err := roundtripZipAssertions(data)
+	if err != nil {
+		return nil, err
+	}
+	observed := readZipCellNumber(data, sheetName, ref)
+	assertions["runnerVersion"] = runnerVersion
+	assertions["excelizeVersion"] = moduleVersion("github.com/xuri/excelize/v2")
+	assertions["bytes"] = len(data)
+	assertions["byteIdentical"] = sha256.Sum256(data) == sha256.Sum256(original)
+	assertions["editSheetName"] = sheetName
+	assertions["editRef"] = ref
+	if oldValue == nil {
+		assertions["editOldValue"] = nil
+	} else {
+		assertions["editOldValue"] = *oldValue
+	}
+	assertions["editExpectedValue"] = expectedValue
+	assertions["editObservedValue"] = observed
+	assertions["editCellValueMatches"] = observed != nil && *observed == expectedValue
+	return assertions, nil
+}
+
+func roundtripZipAssertions(data []byte) (map[string]any, error) {
+	assertions, err := workbookShapeAssertionsFromZip(data, "roundtrip")
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range packageFingerprintAssertions(data) {
+		assertions[key] = value
+	}
+	for key, value := range featureSummaryAssertions(data) {
+		assertions[key] = value
+	}
+	return assertions, nil
 }
 
 func workbookAssertions(workbook *excelize.File) (map[string]any, error) {
@@ -665,6 +787,284 @@ func generatedSheetSummaryFromZip(reader *zip.Reader, sharedStrings []string, wo
 	}, nil
 }
 
+type workbookSheet struct {
+	name string
+	path string
+}
+
+type relationship struct {
+	id         string
+	relType    string
+	target     string
+	targetMode string
+}
+
+type sheetZipSummary struct {
+	cellCount         int
+	physicalCellCount int
+	formulaCount      int
+	usedRange         string
+	physicalUsedRange string
+	semanticRefs      []string
+	semanticValues    []string
+	formulaTexts      []string
+}
+
+func workbookShapeAssertionsFromZip(data []byte, prefix string) (map[string]any, error) {
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return nil, err
+	}
+	sheets, err := workbookSheets(reader)
+	if err != nil {
+		return nil, err
+	}
+	sharedStrings, err := workbookSharedStrings(reader)
+	if err != nil {
+		return nil, err
+	}
+	sheetNames := make([]string, 0, len(sheets))
+	usedRanges := make([]string, 0, len(sheets))
+	physicalUsedRanges := make([]string, 0, len(sheets))
+	semanticRefs := []string{}
+	semanticValues := []string{}
+	formulaTexts := []string{}
+	cellCount := 0
+	physicalCellCount := 0
+	formulaCount := 0
+	for _, sheet := range sheets {
+		sheetNames = append(sheetNames, sheet.name)
+		summary, err := sheetSummaryFromZip(reader, sharedStrings, sheet.name, sheet.path)
+		if err != nil {
+			return nil, err
+		}
+		cellCount += summary.cellCount
+		physicalCellCount += summary.physicalCellCount
+		formulaCount += summary.formulaCount
+		usedRanges = append(usedRanges, summary.usedRange)
+		physicalUsedRanges = append(physicalUsedRanges, summary.physicalUsedRange)
+		semanticRefs = append(semanticRefs, summary.semanticRefs...)
+		semanticValues = append(semanticValues, summary.semanticValues...)
+		formulaTexts = append(formulaTexts, summary.formulaTexts...)
+	}
+	return map[string]any{
+		prefixKey(prefix, "sheetCount"):             len(sheetNames),
+		prefixKey(prefix, "sheetNamesHash"):         hashLines(indexedLines(sheetNames)),
+		prefixKey(prefix, "cellCount"):              cellCount,
+		prefixKey(prefix, "physicalCellCount"):      physicalCellCount,
+		prefixKey(prefix, "formulaCount"):           formulaCount,
+		prefixKey(prefix, "usedRangeCount"):         len(usedRanges),
+		prefixKey(prefix, "firstUsedRange"):         firstOrNull(usedRanges),
+		prefixKey(prefix, "firstPhysicalUsedRange"): firstOrNull(physicalUsedRanges),
+		prefixKey(prefix, "usedRangesHash"):         hashLines(usedRanges),
+		prefixKey(prefix, "physicalUsedRangesHash"): hashLines(physicalUsedRanges),
+		prefixKey(prefix, "semanticCellRefsHash"):   hashLines(semanticRefs),
+		prefixKey(prefix, "semanticCellValuesHash"): hashLines(semanticValues),
+		prefixKey(prefix, "formulaTextHash"):        hashLines(formulaTexts),
+	}, nil
+}
+
+func sheetSummaryFromZip(reader *zip.Reader, sharedStrings []string, sheetName string, sheetPath string) (sheetZipSummary, error) {
+	file := zipFile(reader, sheetPath)
+	if file == nil {
+		return sheetZipSummary{}, fmt.Errorf("missing %s", sheetPath)
+	}
+	stream, err := file.Open()
+	if err != nil {
+		return sheetZipSummary{}, err
+	}
+	defer stream.Close()
+	decoder := xml.NewDecoder(stream)
+	semanticRefs := []string{}
+	semanticValues := []string{}
+	formulaTexts := []string{}
+	semanticCoords := []Coord{}
+	physicalCoords := []Coord{}
+	rowIndex := 0
+	implicitRow := 0
+	implicitCol := 0
+	inCell := false
+	inValue := false
+	inInlineText := false
+	inFormula := false
+	cellType := ""
+	cellRow := 0
+	cellCol := 0
+	cellRef := ""
+	hasFormula := false
+	var cellValue strings.Builder
+	var inlineValue strings.Builder
+	var formulaValue strings.Builder
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return sheetZipSummary{}, err
+		}
+		switch typed := token.(type) {
+		case xml.StartElement:
+			switch typed.Name.Local {
+			case "row":
+				rowIndex = positiveIntAttr(typed.Attr, "r")
+				if rowIndex == 0 {
+					rowIndex = implicitRow + 1
+				}
+				implicitRow = rowIndex
+				implicitCol = 0
+			case "c":
+				inCell = true
+				cellType = xmlAttr(typed.Attr, "t")
+				cellValue.Reset()
+				inlineValue.Reset()
+				formulaValue.Reset()
+				hasFormula = false
+				cellRef = xmlAttr(typed.Attr, "r")
+				cellCol = columnIndexFromCellRef(cellRef)
+				cellRow = rowIndexFromCellRef(cellRef)
+				if cellCol == 0 {
+					cellCol = implicitCol + 1
+				}
+				if cellRow == 0 {
+					cellRow = rowIndex
+				}
+				implicitCol = cellCol
+				if cellRow > 0 && cellCol > 0 {
+					physicalCoords = append(physicalCoords, Coord{Row: cellRow, Col: cellCol})
+				}
+			case "f":
+				if inCell {
+					hasFormula = true
+					inFormula = true
+				}
+			case "v":
+				if inCell {
+					inValue = true
+				}
+			case "t":
+				if inCell {
+					inInlineText = true
+				}
+			}
+		case xml.CharData:
+			if inValue {
+				cellValue.Write([]byte(typed))
+			}
+			if inInlineText {
+				inlineValue.Write([]byte(typed))
+			}
+			if inFormula {
+				formulaValue.Write([]byte(typed))
+			}
+		case xml.EndElement:
+			switch typed.Name.Local {
+			case "f":
+				inFormula = false
+			case "v":
+				inValue = false
+			case "t":
+				inInlineText = false
+			case "c":
+				ref := cellRef
+				if ref == "" && cellRow > 0 && cellCol > 0 {
+					ref = fmt.Sprintf("%s%d", columnName(cellCol), cellRow)
+				}
+				if hasFormula {
+					formulaTexts = append(formulaTexts, fmt.Sprintf("%s!%s=%s", sheetName, ref, formulaValue.String()))
+				}
+				payload := zipCellPayload(cellType, cellValue.String(), inlineValue.String(), sharedStrings, hasFormula)
+				if payload != "" && cellRow > 0 && cellCol > 0 {
+					semanticCoords = append(semanticCoords, Coord{Row: cellRow, Col: cellCol})
+					fullRef := fmt.Sprintf("%s!%s", sheetName, ref)
+					semanticRefs = append(semanticRefs, fullRef)
+					semanticValues = append(semanticValues, fullRef+"\t"+payload)
+				}
+				inCell = false
+			}
+		}
+	}
+	return sheetZipSummary{
+		cellCount:         len(semanticCoords),
+		physicalCellCount: len(physicalCoords),
+		formulaCount:      len(formulaTexts),
+		usedRange:         UsedRange(sheetName, semanticCoords),
+		physicalUsedRange: UsedRange(sheetName, physicalCoords),
+		semanticRefs:      semanticRefs,
+		semanticValues:    semanticValues,
+		formulaTexts:      formulaTexts,
+	}, nil
+}
+
+func zipCellPayload(cellType string, raw string, inline string, sharedStrings []string, hasFormula bool) string {
+	if hasFormula {
+		return "empty"
+	}
+	return generatedCellPayload(cellType, raw, inline, sharedStrings)
+}
+
+func readZipCellNumber(data []byte, sheetName string, ref string) *float64 {
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return nil
+	}
+	sheets, err := workbookSheets(reader)
+	if err != nil {
+		return nil
+	}
+	for _, sheet := range sheets {
+		if sheet.name != sheetName {
+			continue
+		}
+		file := zipFile(reader, sheet.path)
+		if file == nil {
+			return nil
+		}
+		stream, err := file.Open()
+		if err != nil {
+			return nil
+		}
+		defer stream.Close()
+		decoder := xml.NewDecoder(stream)
+		inTarget := false
+		inValue := false
+		var value strings.Builder
+		for {
+			token, err := decoder.Token()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return nil
+			}
+			switch typed := token.(type) {
+			case xml.StartElement:
+				if typed.Name.Local == "c" {
+					inTarget = xmlAttr(typed.Attr, "r") == ref
+					value.Reset()
+				} else if inTarget && typed.Name.Local == "v" {
+					inValue = true
+				}
+			case xml.CharData:
+				if inValue {
+					value.Write([]byte(typed))
+				}
+			case xml.EndElement:
+				if typed.Name.Local == "v" {
+					inValue = false
+				} else if typed.Name.Local == "c" && inTarget {
+					observed, err := strconv.ParseFloat(value.String(), 64)
+					if err != nil {
+						return nil
+					}
+					return &observed
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func writeAssertions(workload string, rows int, cols int) (map[string]any, error) {
 	data, err := writeWorkbook(workload, rows, cols)
 	if err != nil {
@@ -1033,6 +1433,168 @@ func zipFileBytes(reader *zip.Reader, name string) ([]byte, error) {
 	return io.ReadAll(stream)
 }
 
+func workbookSheets(reader *zip.Reader) ([]workbookSheet, error) {
+	workbookBody, err := zipFileBytes(reader, "xl/workbook.xml")
+	if err != nil {
+		return nil, err
+	}
+	relsBody, err := zipFileBytes(reader, "xl/_rels/workbook.xml.rels")
+	if err != nil {
+		return nil, err
+	}
+	rels := parseRelationshipXML(relsBody)
+	relsByID := map[string]relationship{}
+	for _, rel := range rels {
+		relsByID[rel.id] = rel
+	}
+	decoder := xml.NewDecoder(bytes.NewReader(workbookBody))
+	sheets := []workbookSheet{}
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			return sheets, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		start, ok := token.(xml.StartElement)
+		if !ok || start.Name.Local != "sheet" {
+			continue
+		}
+		name := xmlAttr(start.Attr, "name")
+		rid := xmlAttr(start.Attr, "id")
+		rel, ok := relsByID[rid]
+		if name == "" || !ok || !strings.HasSuffix(rel.relType, "/worksheet") {
+			continue
+		}
+		sheets = append(sheets, workbookSheet{
+			name: name,
+			path: resolveOOXMLPath("xl/workbook.xml", rel.target),
+		})
+	}
+}
+
+func packageFingerprintAssertions(data []byte) map[string]any {
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return map[string]any{}
+	}
+	partPaths := zipPartPaths(reader)
+	contentTypeLines := contentTypeFingerprintLines(zipText(reader, "[Content_Types].xml"))
+	relationshipLines := []string{}
+	for _, relsPath := range partPaths {
+		if !isRelationshipPart(relsPath) {
+			continue
+		}
+		relsXML := zipText(reader, relsPath)
+		sourcePart := sourcePartForRelationships(relsPath)
+		for _, rel := range parseRelationshipXML([]byte(relsXML)) {
+			targetMode := rel.targetMode
+			if targetMode == "" {
+				targetMode = "Internal"
+			}
+			resolvedTarget := rel.target
+			if targetMode != "External" {
+				resolvedTarget = resolveOOXMLPath(sourcePart, rel.target)
+			}
+			relationshipLines = append(
+				relationshipLines,
+				strings.Join([]string{rootSourcePart(sourcePart), rel.relType, targetMode, rel.target, resolvedTarget}, "\t"),
+			)
+		}
+	}
+	preservedPaths := []string{}
+	preservedContentLines := []string{}
+	for _, partPath := range partPaths {
+		if !isPreservedNonCellPart(partPath) {
+			continue
+		}
+		preservedPaths = append(preservedPaths, partPath)
+		preservedContentLines = append(preservedContentLines, partPath+"\t"+sha256Hex(zipBytes(reader, partPath)))
+	}
+	return map[string]any{
+		"roundtripPackagePartCount":             len(partPaths),
+		"roundtripPackagePartNamesHash":         hashLines(partPaths),
+		"roundtripPackageContentTypeCount":      len(contentTypeLines),
+		"roundtripPackageContentTypesHash":      hashLines(contentTypeLines),
+		"roundtripPackageRelationshipCount":     len(relationshipLines),
+		"roundtripPackageRelationshipGraphHash": hashLines(relationshipLines),
+		"roundtripPreservedPartCount":           len(preservedPaths),
+		"roundtripPreservedPartNamesHash":       hashLines(preservedPaths),
+		"roundtripPreservedPartContentHash":     hashLines(preservedContentLines),
+	}
+}
+
+func featureSummaryAssertions(data []byte) map[string]any {
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return map[string]any{}
+	}
+	partPaths := zipPartPaths(reader)
+	sheets, _ := workbookSheets(reader)
+	featurePartLines := []string{}
+	for _, partPath := range partPaths {
+		if kind := classifyFeaturePart(partPath); kind != "" {
+			featurePartLines = append(featurePartLines, kind+"\t"+partPath)
+		}
+	}
+	worksheetFeatureLines := []string{}
+	for _, sheet := range sheets {
+		worksheetFeatureLines = append(
+			worksheetFeatureLines,
+			worksheetFeatureEntries(sheet.path, zipText(reader, sheet.path))...,
+		)
+	}
+	definedNameLines := definedNameEntries(zipText(reader, "xl/workbook.xml"))
+	sharedStringFeatureLines := sharedStringFeatureEntries(zipText(reader, "xl/sharedStrings.xml"))
+	calcChainFeatureLines := calcChainFeatureEntries(zipText(reader, "xl/calcChain.xml"))
+	inventoryLines := append([]string{}, featurePartLines...)
+	inventoryLines = append(inventoryLines, worksheetFeatureLines...)
+	inventoryLines = append(inventoryLines, definedNameLines...)
+	inventoryLines = append(inventoryLines, sharedStringFeatureLines...)
+	inventoryLines = append(inventoryLines, calcChainFeatureLines...)
+	return map[string]any{
+		"roundtripTablePartCount": countPartPaths(partPaths, func(path string) bool {
+			return strings.HasPrefix(path, "xl/tables/") && strings.HasSuffix(path, ".xml")
+		}),
+		"roundtripChartPartCount": countPartPaths(partPaths, func(path string) bool {
+			return strings.HasPrefix(path, "xl/charts/") && strings.HasSuffix(path, ".xml")
+		}),
+		"roundtripChartExPartCount": countPartPaths(partPaths, func(path string) bool {
+			return strings.HasPrefix(path, "xl/chartEx/") && strings.HasSuffix(path, ".xml")
+		}),
+		"roundtripDrawingPartCount": countPartPaths(partPaths, func(path string) bool {
+			return strings.HasPrefix(path, "xl/drawings/") && strings.HasSuffix(path, ".xml")
+		}),
+		"roundtripVmlDrawingPartCount": countPartPaths(partPaths, func(path string) bool {
+			return strings.HasPrefix(path, "xl/drawings/") && strings.HasSuffix(path, ".vml")
+		}),
+		"roundtripPivotTablePartCount": countPartPaths(partPaths, func(path string) bool {
+			return strings.HasPrefix(path, "xl/pivotTables/") && strings.HasSuffix(path, ".xml")
+		}),
+		"roundtripPivotCachePartCount": countPartPaths(partPaths, func(path string) bool {
+			return strings.HasPrefix(path, "xl/pivotCache/") && strings.HasSuffix(path, ".xml")
+		}),
+		"roundtripSlicerPartCount":  countPartPaths(partPaths, isSlicerPart),
+		"roundtripCommentPartCount": countPartPaths(partPaths, isCommentPart),
+		"roundtripThreadedCommentPartCount": countPartPaths(partPaths, func(path string) bool {
+			return strings.HasPrefix(path, "xl/threadedComments/") && strings.HasSuffix(path, ".xml")
+		}),
+		"roundtripMediaPartCount": countPartPaths(partPaths, func(path string) bool { return strings.HasPrefix(path, "xl/media/") }),
+		"roundtripExternalLinkPartCount": countPartPaths(partPaths, func(path string) bool {
+			return strings.HasPrefix(path, "xl/externalLinks/") && strings.HasSuffix(path, ".xml")
+		}),
+		"roundtripConnectionPartCount":                 countPartPaths(partPaths, func(path string) bool { return path == "xl/connections.xml" }),
+		"roundtripCustomXmlPartCount":                  countPartPaths(partPaths, func(path string) bool { return strings.HasPrefix(path, "customXml/") }),
+		"roundtripWorksheetHyperlinkCount":             countLinesWithPrefix(worksheetFeatureLines, "worksheet-hyperlink\t"),
+		"roundtripWorksheetDataValidationCount":        countLinesWithPrefix(worksheetFeatureLines, "worksheet-data-validation\t"),
+		"roundtripWorksheetConditionalFormattingCount": countLinesWithPrefix(worksheetFeatureLines, "worksheet-conditional-formatting\t"),
+		"roundtripDefinedNameCount":                    len(definedNameLines),
+		"roundtripFeaturePartNamesHash":                hashLines(featurePartLines),
+		"roundtripFeatureInventoryHash":                hashLines(inventoryLines),
+	}
+}
+
 func xmlAttr(attrs []xml.Attr, name string) string {
 	for _, attr := range attrs {
 		if attr.Name.Local == name {
@@ -1040,6 +1602,359 @@ func xmlAttr(attrs []xml.Attr, name string) string {
 		}
 	}
 	return ""
+}
+
+func parseRelationshipXML(body []byte) []relationship {
+	decoder := xml.NewDecoder(bytes.NewReader(body))
+	rels := []relationship{}
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			return rels
+		}
+		if err != nil {
+			return rels
+		}
+		start, ok := token.(xml.StartElement)
+		if !ok || start.Name.Local != "Relationship" {
+			continue
+		}
+		targetMode := xmlAttr(start.Attr, "TargetMode")
+		if targetMode == "" {
+			targetMode = "Internal"
+		}
+		rels = append(rels, relationship{
+			id:         xmlAttr(start.Attr, "Id"),
+			relType:    xmlAttr(start.Attr, "Type"),
+			target:     xmlAttr(start.Attr, "Target"),
+			targetMode: targetMode,
+		})
+	}
+}
+
+func resolveOOXMLPath(sourcePart string, target string) string {
+	if strings.HasPrefix(target, "/") {
+		return strings.TrimPrefix(pathpkg.Clean(target), "/")
+	}
+	base := pathpkg.Dir(sourcePart)
+	if sourcePart == "" || sourcePart == "." {
+		base = "."
+	}
+	return strings.TrimPrefix(pathpkg.Clean(pathpkg.Join(base, target)), "./")
+}
+
+func rootSourcePart(sourcePart string) string {
+	if sourcePart == "" {
+		return "/"
+	}
+	return sourcePart
+}
+
+func zipPartPaths(reader *zip.Reader) []string {
+	paths := []string{}
+	for _, file := range reader.File {
+		if !strings.HasSuffix(file.Name, "/") {
+			paths = append(paths, file.Name)
+		}
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+func zipBytes(reader *zip.Reader, name string) []byte {
+	file := zipFile(reader, name)
+	if file == nil {
+		return nil
+	}
+	stream, err := file.Open()
+	if err != nil {
+		return nil
+	}
+	defer stream.Close()
+	body, err := io.ReadAll(stream)
+	if err != nil {
+		return nil
+	}
+	return body
+}
+
+func zipText(reader *zip.Reader, name string) string {
+	return string(zipBytes(reader, name))
+}
+
+func sha256Hex(data []byte) string {
+	digest := sha256.Sum256(data)
+	return hex.EncodeToString(digest[:])
+}
+
+func contentTypeFingerprintLines(xmlText string) []string {
+	decoder := xml.NewDecoder(strings.NewReader(xmlText))
+	lines := []string{}
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			return lines
+		}
+		if err != nil {
+			return lines
+		}
+		start, ok := token.(xml.StartElement)
+		if !ok {
+			continue
+		}
+		switch start.Name.Local {
+		case "Default":
+			extension := xmlAttr(start.Attr, "Extension")
+			contentType := xmlAttr(start.Attr, "ContentType")
+			if extension != "" && contentType != "" {
+				lines = append(lines, "Default\t"+extension+"\t"+contentType)
+			}
+		case "Override":
+			partName := strings.TrimPrefix(xmlAttr(start.Attr, "PartName"), "/")
+			contentType := xmlAttr(start.Attr, "ContentType")
+			if partName != "" && contentType != "" {
+				lines = append(lines, "Override\t"+partName+"\t"+contentType)
+			}
+		}
+	}
+}
+
+func isRelationshipPart(path string) bool {
+	return path == "_rels/.rels" || strings.HasSuffix(path, ".rels")
+}
+
+func sourcePartForRelationships(relsPath string) string {
+	if relsPath == "_rels/.rels" {
+		return ""
+	}
+	marker := "/_rels/"
+	index := strings.LastIndex(relsPath, marker)
+	if index < 0 || !strings.HasSuffix(relsPath, ".rels") {
+		return ""
+	}
+	return relsPath[:index] + "/" + strings.TrimSuffix(relsPath[index+len(marker):], ".rels")
+}
+
+func isPreservedNonCellPart(path string) bool {
+	if path == "[Content_Types].xml" ||
+		path == "_rels/.rels" ||
+		strings.HasSuffix(path, ".rels") ||
+		path == "xl/workbook.xml" ||
+		path == "xl/sharedStrings.xml" ||
+		path == "xl/calcChain.xml" ||
+		path == "docProps/app.xml" ||
+		path == "docProps/core.xml" {
+		return false
+	}
+	if strings.HasPrefix(path, "xl/worksheets/sheet") && strings.HasSuffix(path, ".xml") {
+		return false
+	}
+	return true
+}
+
+func classifyFeaturePart(path string) string {
+	switch {
+	case strings.HasPrefix(path, "xl/tables/") && strings.HasSuffix(path, ".xml"):
+		return "table-part"
+	case strings.HasPrefix(path, "xl/charts/") && strings.HasSuffix(path, ".xml"):
+		return "chart-part"
+	case strings.HasPrefix(path, "xl/chartEx/") && strings.HasSuffix(path, ".xml"):
+		return "chart-ex-part"
+	case strings.HasPrefix(path, "xl/drawings/") && strings.HasSuffix(path, ".xml"):
+		return "drawing-part"
+	case strings.HasPrefix(path, "xl/drawings/") && strings.HasSuffix(path, ".vml"):
+		return "vml-drawing-part"
+	case strings.HasPrefix(path, "xl/pivotTables/") && strings.HasSuffix(path, ".xml"):
+		return "pivot-table-part"
+	case strings.HasPrefix(path, "xl/pivotCache/") && strings.HasSuffix(path, ".xml"):
+		return "pivot-cache-part"
+	case isSlicerPart(path):
+		return "slicer-part"
+	case isCommentPart(path):
+		return "comment-part"
+	case strings.HasPrefix(path, "xl/threadedComments/") && strings.HasSuffix(path, ".xml"):
+		return "threaded-comment-part"
+	case strings.HasPrefix(path, "xl/media/"):
+		return "media-part"
+	case strings.HasPrefix(path, "xl/externalLinks/") && strings.HasSuffix(path, ".xml"):
+		return "external-link-part"
+	case path == "xl/connections.xml":
+		return "connection-part"
+	case path == "xl/calcChain.xml":
+		return "calc-chain-part"
+	case strings.HasPrefix(path, "customXml/"):
+		return "custom-xml-part"
+	default:
+		return ""
+	}
+}
+
+func worksheetFeatureEntries(path string, xmlText string) []string {
+	decoder := xml.NewDecoder(strings.NewReader(xmlText))
+	lines := []string{}
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			return lines
+		}
+		if err != nil {
+			return lines
+		}
+		start, ok := token.(xml.StartElement)
+		if !ok {
+			continue
+		}
+		switch start.Name.Local {
+		case "mergeCell":
+			lines = append(lines, "worksheet-merge-cell\t"+path+"\t"+xmlAttr(start.Attr, "ref"))
+		case "autoFilter":
+			lines = append(lines, "worksheet-auto-filter\t"+path+"\t"+xmlAttr(start.Attr, "ref"))
+		case "sortState":
+			lines = append(lines, "worksheet-sort-state\t"+path+"\t"+canonicalXMLAttrs(start.Attr))
+		case "sheetProtection":
+			lines = append(lines, "worksheet-sheet-protection\t"+path+"\t"+canonicalXMLAttrs(start.Attr))
+		case "sheetView":
+			lines = append(lines, "worksheet-sheet-view\t"+path+"\t"+canonicalXMLAttrs(start.Attr))
+		case "hyperlink":
+			lines = append(lines, "worksheet-hyperlink\t"+path+"\t"+xmlAttr(start.Attr, "ref"))
+		case "dataValidation":
+			lines = append(lines, "worksheet-data-validation\t"+path+"\t"+xmlAttr(start.Attr, "sqref"))
+		case "conditionalFormatting":
+			lines = append(lines, "worksheet-conditional-formatting\t"+path+"\t"+xmlAttr(start.Attr, "sqref"))
+		}
+	}
+}
+
+func sharedStringFeatureEntries(xmlText string) []string {
+	decoder := xml.NewDecoder(strings.NewReader(xmlText))
+	lines := []string{}
+	index := -1
+	inString := false
+	hasRichText := false
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			return lines
+		}
+		if err != nil {
+			return lines
+		}
+		switch typed := token.(type) {
+		case xml.StartElement:
+			if typed.Name.Local == "si" {
+				index++
+				inString = true
+				hasRichText = false
+			} else if inString && typed.Name.Local == "r" {
+				hasRichText = true
+			}
+		case xml.EndElement:
+			if typed.Name.Local == "si" {
+				if hasRichText {
+					lines = append(lines, fmt.Sprintf("shared-string-rich-text\t%d\tpresent", index))
+				}
+				inString = false
+			}
+		}
+	}
+}
+
+func calcChainFeatureEntries(xmlText string) []string {
+	decoder := xml.NewDecoder(strings.NewReader(xmlText))
+	lines := []string{}
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			return lines
+		}
+		if err != nil {
+			return lines
+		}
+		start, ok := token.(xml.StartElement)
+		if ok && start.Name.Local == "c" {
+			lines = append(lines, "calc-chain-cell\t"+canonicalXMLAttrs(start.Attr))
+		}
+	}
+}
+
+func definedNameEntries(xmlText string) []string {
+	decoder := xml.NewDecoder(strings.NewReader(xmlText))
+	lines := []string{}
+	inName := false
+	name := ""
+	localSheetID := ""
+	var value strings.Builder
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			return lines
+		}
+		if err != nil {
+			return lines
+		}
+		switch typed := token.(type) {
+		case xml.StartElement:
+			if typed.Name.Local == "definedName" {
+				inName = true
+				name = xmlAttr(typed.Attr, "name")
+				localSheetID = xmlAttr(typed.Attr, "localSheetId")
+				value.Reset()
+			}
+		case xml.CharData:
+			if inName {
+				value.Write([]byte(typed))
+			}
+		case xml.EndElement:
+			if typed.Name.Local == "definedName" {
+				lines = append(lines, "defined-name\t"+name+"\t"+localSheetID+"\t"+value.String())
+				inName = false
+			}
+		}
+	}
+}
+
+func canonicalXMLAttrs(attrs []xml.Attr) string {
+	values := make([]string, 0, len(attrs))
+	for _, attr := range attrs {
+		values = append(values, attr.Name.Local+"="+attr.Value)
+	}
+	sort.Strings(values)
+	return strings.Join(values, ";")
+}
+
+func isSlicerPart(path string) bool {
+	return (strings.HasPrefix(path, "xl/slicers/") || strings.HasPrefix(path, "xl/slicerCaches/")) && strings.HasSuffix(path, ".xml")
+}
+
+func isCommentPart(path string) bool {
+	return (strings.HasPrefix(path, "xl/comments") || strings.HasPrefix(path, "xl/comments/")) && strings.HasSuffix(path, ".xml")
+}
+
+func countPartPaths(paths []string, predicate func(string) bool) int {
+	count := 0
+	for _, path := range paths {
+		if predicate(path) {
+			count++
+		}
+	}
+	return count
+}
+
+func countLinesWithPrefix(lines []string, prefix string) int {
+	count := 0
+	for _, line := range lines {
+		if strings.HasPrefix(line, prefix) {
+			count++
+		}
+	}
+	return count
+}
+
+func prefixKey(prefix string, name string) string {
+	if prefix == "" {
+		return name
+	}
+	return prefix + strings.ToUpper(name[:1]) + name[1:]
 }
 
 func positiveIntAttr(attrs []xml.Attr, name string) int {
@@ -1061,6 +1976,20 @@ func columnIndexFromCellRef(ref string) int {
 			break
 		}
 		value = value*26 + int(ch-'A'+1)
+	}
+	return value
+}
+
+func rowIndexFromCellRef(ref string) int {
+	value := 0
+	inRow := false
+	for _, ch := range ref {
+		if ch >= '0' && ch <= '9' {
+			inRow = true
+			value = value*10 + int(ch-'0')
+		} else if inRow {
+			break
+		}
 	}
 	return value
 }
@@ -1160,6 +2089,23 @@ func firstOrNull(values []string) any {
 		return nil
 	}
 	return values[0]
+}
+
+func UsedRange(sheetName string, coords []Coord) string {
+	if len(coords) == 0 {
+		return sheetName + "!empty"
+	}
+	minRow := math.MaxInt
+	minCol := math.MaxInt
+	maxRow := 0
+	maxCol := 0
+	for _, coord := range coords {
+		minRow = min(minRow, coord.Row)
+		minCol = min(minCol, coord.Col)
+		maxRow = max(maxRow, coord.Row)
+		maxCol = max(maxCol, coord.Col)
+	}
+	return fmt.Sprintf("%s!%s%d:%s%d", sheetName, columnName(minCol), minRow, columnName(maxCol), maxRow)
 }
 
 func peakRSSBytes() uint64 {

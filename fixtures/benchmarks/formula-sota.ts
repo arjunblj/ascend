@@ -22,6 +22,9 @@ type ProfileName =
 type ProfileSelection = ProfileName | 'all'
 type EngineName = 'ascend' | 'hyperformula'
 type PrefixAggregate = 'SUM' | 'COUNT' | 'AVERAGE' | 'MIN' | 'MAX'
+type PrefixAggregateSelection = PrefixAggregate | 'ALL'
+
+const PREFIX_AGGREGATES: readonly PrefixAggregate[] = ['SUM', 'COUNT', 'AVERAGE', 'MIN', 'MAX']
 
 interface Args {
 	readonly profile: ProfileSelection
@@ -30,10 +33,15 @@ interface Args {
 	readonly repeat: number
 	readonly warmup: number
 	readonly json: boolean
-	readonly aggregate: PrefixAggregate
+	readonly aggregate: PrefixAggregateSelection
 	readonly minOperationSpeedup?: number
 	readonly minTotalSpeedup?: number
 	readonly assertCorrectness: boolean
+}
+
+type ResolvedArgs = Omit<Args, 'profile' | 'aggregate'> & {
+	readonly profile: ProfileName
+	readonly aggregate: PrefixAggregate
 }
 
 interface Sample {
@@ -53,8 +61,8 @@ interface Profile {
 	readonly sourceBenchmark: string
 	readonly sourceUrl: string
 	readonly notes: string
-	runAscend(args: Args): EngineRun
-	runHyperFormula(args: Args): EngineRun
+	runAscend(args: ResolvedArgs): EngineRun
+	runHyperFormula(args: ResolvedArgs): EngineRun
 }
 
 interface EngineRun {
@@ -160,7 +168,7 @@ function renderHelp(): string {
 		'Ascend formula SOTA benchmark runner',
 		'',
 		'Usage:',
-		'  bun run fixtures/benchmarks/formula-sota.ts --profile <name> [--rows N] [--formulas N] [--repeat N] [--warmup N] [--aggregate SUM|COUNT|AVERAGE|MIN|MAX] [--json]',
+		'  bun run fixtures/benchmarks/formula-sota.ts --profile <name> [--rows N] [--formulas N] [--repeat N] [--warmup N] [--aggregate SUM|COUNT|AVERAGE|MIN|MAX|ALL] [--json]',
 		'',
 		'Options:',
 		'  --profile <name|all> Public comparator profile to run.',
@@ -168,7 +176,7 @@ function renderHelp(): string {
 		'  --formulas N         Formula count. Defaults depend on profile.',
 		'  --repeat N           Number of measured samples. Defaults to 5.',
 		'  --warmup N           Number of warmup samples. Defaults to 1.',
-		'  --aggregate <name>   Prefix aggregate for hf-prefix-range profiles.',
+		'  --aggregate <name>   Prefix aggregate for hf-prefix-range profiles. Defaults to ALL for --profile all, otherwise SUM.',
 		'  --min-operation-speedup N',
 		'                       Fail unless Ascend operation median is at least N x HyperFormula.',
 		'  --min-total-speedup N',
@@ -216,9 +224,11 @@ function parseArgs(): Args {
 		)
 	}
 	const profile = rawProfile as ProfileSelection
-	const rawAggregate = (readOption(argv, '--aggregate') ?? 'SUM').toUpperCase()
-	if (!isPrefixAggregate(rawAggregate)) {
-		throw new Error('Unsupported --aggregate. Expected SUM, COUNT, AVERAGE, MIN, or MAX')
+	const rawAggregate = (
+		readOption(argv, '--aggregate') ?? (profile === 'all' ? 'ALL' : 'SUM')
+	).toUpperCase()
+	if (!isPrefixAggregateSelection(rawAggregate)) {
+		throw new Error('Unsupported --aggregate. Expected SUM, COUNT, AVERAGE, MIN, MAX, or ALL')
 	}
 	return {
 		profile,
@@ -240,14 +250,8 @@ function parseArgs(): Args {
 	}
 }
 
-function isPrefixAggregate(value: string): value is PrefixAggregate {
-	return (
-		value === 'SUM' ||
-		value === 'COUNT' ||
-		value === 'AVERAGE' ||
-		value === 'MIN' ||
-		value === 'MAX'
-	)
+function isPrefixAggregateSelection(value: string): value is PrefixAggregateSelection {
+	return value === 'ALL' || (PREFIX_AGGREGATES as readonly string[]).includes(value)
 }
 
 function runGc(): void {
@@ -357,7 +361,7 @@ function expectedDirtyPrefixAggregate(
 	}
 }
 
-function runAscendPrefixRangeSum(args: Args): EngineRun {
+function runAscendPrefixRangeSum(args: ResolvedArgs): EngineRun {
 	const setupStart = performance.now()
 	const workbook = createWorkbook()
 	workbook.addSheet('Sheet1')
@@ -387,7 +391,7 @@ function runAscendPrefixRangeSum(args: Args): EngineRun {
 	}
 }
 
-function runHyperFormulaPrefixRangeSum(args: Args): EngineRun {
+function runHyperFormulaPrefixRangeSum(args: ResolvedArgs): EngineRun {
 	const setupStart = performance.now()
 	const rows = Math.max(args.rows, args.formulas)
 	const data: (number | string)[][] = []
@@ -417,11 +421,11 @@ function runHyperFormulaPrefixRangeSum(args: Args): EngineRun {
 	}
 }
 
-function prefixDirtyEditRow(args: Args, position: 'head' | 'tail'): number {
+function prefixDirtyEditRow(args: ResolvedArgs, position: 'head' | 'tail'): number {
 	return position === 'head' ? 0 : Math.max(0, Math.min(args.rows, args.formulas) - 1)
 }
 
-function runAscendPrefixRangeDirty(args: Args, position: 'head' | 'tail'): EngineRun {
+function runAscendPrefixRangeDirty(args: ResolvedArgs, position: 'head' | 'tail'): EngineRun {
 	const setupStart = performance.now()
 	const workbook = createWorkbook()
 	workbook.addSheet('Sheet1')
@@ -468,7 +472,7 @@ function runAscendPrefixRangeDirty(args: Args, position: 'head' | 'tail'): Engin
 	}
 }
 
-function runHyperFormulaPrefixRangeDirty(args: Args, position: 'head' | 'tail'): EngineRun {
+function runHyperFormulaPrefixRangeDirty(args: ResolvedArgs, position: 'head' | 'tail'): EngineRun {
 	const setupStart = performance.now()
 	const rows = Math.max(args.rows, args.formulas)
 	const data: (number | string)[][] = []
@@ -528,7 +532,7 @@ function mutatedLookupValue(formulaIndex: number): number {
 	return 9000000 + formulaIndex
 }
 
-function runAscendIndexedVlookup(args: Args): EngineRun {
+function runAscendIndexedVlookup(args: ResolvedArgs): EngineRun {
 	const setupStart = performance.now()
 	const workbook = createWorkbook()
 	workbook.addSheet('Sheet1')
@@ -566,7 +570,7 @@ function runAscendIndexedVlookup(args: Args): EngineRun {
 	}
 }
 
-function runAscendIndexedVlookupDirty(args: Args, editKind: 'key' | 'value'): EngineRun {
+function runAscendIndexedVlookupDirty(args: ResolvedArgs, editKind: 'key' | 'value'): EngineRun {
 	const setupStart = performance.now()
 	const workbook = createWorkbook()
 	workbook.addSheet('Sheet1')
@@ -624,7 +628,7 @@ function runAscendIndexedVlookupDirty(args: Args, editKind: 'key' | 'value'): En
 	}
 }
 
-function runHyperFormulaIndexedVlookup(args: Args): EngineRun {
+function runHyperFormulaIndexedVlookup(args: ResolvedArgs): EngineRun {
 	const setupStart = performance.now()
 	const data: (number | string | null)[][] = []
 	for (let row = 0; row < args.rows; row++) {
@@ -659,7 +663,10 @@ function runHyperFormulaIndexedVlookup(args: Args): EngineRun {
 	}
 }
 
-function runHyperFormulaIndexedVlookupDirty(args: Args, editKind: 'key' | 'value'): EngineRun {
+function runHyperFormulaIndexedVlookupDirty(
+	args: ResolvedArgs,
+	editKind: 'key' | 'value',
+): EngineRun {
 	const setupStart = performance.now()
 	const data: (number | string | null)[][] = []
 	for (let row = 0; row < args.rows; row++) {
@@ -723,7 +730,7 @@ function runHyperFormulaIndexedVlookupDirty(args: Args, editKind: 'key' | 'value
 	}
 }
 
-function runEngine(engine: EngineName, profile: Profile, args: Args): EngineCase {
+function runEngine(engine: EngineName, profile: Profile, args: ResolvedArgs): EngineCase {
 	for (let i = 0; i < args.warmup; i++) {
 		runGc()
 		if (engine === 'ascend') profile.runAscend(args)
@@ -784,8 +791,13 @@ function collectAssertionFailures(
 	return failures
 }
 
-function runProfile(profile: Profile, args: Args, generatedAt: string): ProfilePayload {
-	const profileArgs: Args = { ...args, profile: profile.name }
+function runProfile(
+	profile: Profile,
+	args: Args,
+	generatedAt: string,
+	aggregate: PrefixAggregate,
+): ProfilePayload {
+	const profileArgs: ResolvedArgs = { ...args, profile: profile.name, aggregate }
 	const ascend = runEngine('ascend', profile, profileArgs)
 	const hyperformula = runEngine('hyperformula', profile, profileArgs)
 	const ascendSummary = summarize(ascend.samples)
@@ -808,7 +820,7 @@ function runProfile(profile: Profile, args: Args, generatedAt: string): ProfileP
 			notes: profile.notes,
 			rows: profileArgs.rows,
 			formulas: profileArgs.formulas,
-			...(profile.name.startsWith('hf-prefix-range') ? { aggregate: profileArgs.aggregate } : {}),
+			...(isPrefixProfile(profile) ? { aggregate: profileArgs.aggregate } : {}),
 			repeat: profileArgs.repeat,
 			warmup: profileArgs.warmup,
 		},
@@ -832,6 +844,28 @@ function runProfile(profile: Profile, args: Args, generatedAt: string): ProfileP
 
 function selectedProfiles(selection: ProfileSelection): readonly Profile[] {
 	return selection === 'all' ? Object.values(PROFILES) : [PROFILES[selection]]
+}
+
+function isPrefixProfile(profile: Profile): boolean {
+	return profile.name.startsWith('hf-prefix-range')
+}
+
+function selectedProfileRuns(
+	selection: ProfileSelection,
+	aggregate: PrefixAggregateSelection,
+): readonly { profile: Profile; aggregate: PrefixAggregate }[] {
+	const runs: { profile: Profile; aggregate: PrefixAggregate }[] = []
+	for (const profile of selectedProfiles(selection)) {
+		if (!isPrefixProfile(profile)) {
+			runs.push({ profile, aggregate: 'SUM' })
+			continue
+		}
+		const aggregates = aggregate === 'ALL' ? PREFIX_AGGREGATES : [aggregate]
+		for (const selectedAggregate of aggregates) {
+			runs.push({ profile, aggregate: selectedAggregate })
+		}
+	}
+	return runs
 }
 
 function geometricMean(values: readonly number[]): number {
@@ -870,16 +904,17 @@ function renderProfile(payload: ProfilePayload): void {
 
 const args = parseArgs()
 const generatedAt = new Date().toISOString()
-const profilePayloads = selectedProfiles(args.profile).map((profile) =>
-	runProfile(profile, args, generatedAt),
+const profilePayloads = selectedProfileRuns(args.profile, args.aggregate).map((run) =>
+	runProfile(run.profile, args, generatedAt, run.aggregate),
 )
 const assertionFailures = profilePayloads.flatMap((payload) =>
 	collectAssertionFailures(args, payload.comparison, payload.cases).map(
-		(failure) => `${payload.profile.name}: ${failure}`,
+		(failure) =>
+			`${payload.profile.name}${payload.profile.aggregate ? `/${payload.profile.aggregate}` : ''}: ${failure}`,
 	),
 )
 
-if (args.profile === 'all') {
+if (args.profile === 'all' || profilePayloads.length > 1) {
 	const payload = {
 		formatVersion: 1,
 		suite: 'ascend-formula-sota',

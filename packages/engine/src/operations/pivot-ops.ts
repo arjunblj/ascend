@@ -53,7 +53,27 @@ export function handleSetPivotCache(workbook: Workbook, op: SetPivotCacheOp): Re
 	const sheetsModified = workbook.pivotTables
 		.filter((pivot) => pivot.cacheId !== undefined && pivot.cacheId === cache.cacheId)
 		.map((pivot) => pivot.sheetName)
-	return ok(patch([], sheetsModified, false))
+	const sourceChanged = op.sourceSheet !== undefined || op.sourceRef !== undefined
+	const warnings = sourceChanged
+		? [
+				ascendError(
+					'VALIDATION_ERROR',
+					'Pivot cache source changed; pivot table output is stale until Excel refreshes the cache.',
+					{
+						details: {
+							cacheId: cache.cacheId,
+							partPath: cache.partPath,
+							pivotSheets: sheetsModified,
+							refreshOnLoad: cache.refreshOnLoad === true,
+							invalid: cache.invalid === true,
+						},
+						suggestedFix:
+							'Set refreshOnLoad=true and invalid=true, then open the workbook in Excel or another pivot-aware engine to refresh output cells.',
+					},
+				),
+			]
+		: undefined
+	return ok(patch([], sheetsModified, false, warnings))
 }
 
 function hasPivotSelector(op: SetPivotCacheOp): boolean {

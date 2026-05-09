@@ -1250,6 +1250,12 @@ describe('applyOperation', () => {
 
 		expect(result.value.sheetsModified).toEqual(['Sheet1'])
 		expect(result.value.recalcRequired).toBe(false)
+		expect(result.value.warnings?.[0]?.message).toContain('Pivot cache source changed')
+		expect(result.value.warnings?.[0]?.details).toMatchObject({
+			cacheId: 34,
+			refreshOnLoad: true,
+			invalid: true,
+		})
 		expect(wb.pivotCaches[0]).toMatchObject({
 			sourceSheet: 'RawData',
 			sourceRef: 'A1:E20',

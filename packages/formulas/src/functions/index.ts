@@ -16,6 +16,7 @@ export {
 	getRange,
 	iterAreaRows,
 	type LookupVectorCache,
+	type NumericVectorCache,
 	numArg,
 	rangeShape,
 	registerFunction,

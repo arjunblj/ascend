@@ -38,6 +38,7 @@ export {
 	getRange,
 	iterAreaRows,
 	type LookupVectorCache,
+	type NumericVectorCache,
 	rangeShape,
 	serialToDate,
 	toNumber,

@@ -470,6 +470,32 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(3, 3)?.value).toEqual(numberValue(130))
 	})
 
+	test('order statistic cache refreshes between recalculations', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		for (let row = 0; row < 5; row++) {
+			sheet.cells.set(row, 0, {
+				value: numberValue(row + 1),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		sheet.cells.set(0, 2, { value: EMPTY, formula: 'LARGE(A$1:A$5,2)', styleId: sid })
+		sheet.cells.set(1, 2, { value: EMPTY, formula: 'LARGE(A$1:A$5,2)', styleId: sid })
+		sheet.cells.set(2, 2, { value: EMPTY, formula: 'SMALL(A$1:A$5,2)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 2)?.value).toEqual(numberValue(4))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(numberValue(4))
+		expect(sheet.cells.get(2, 2)?.value).toEqual(numberValue(2))
+
+		sheet.cells.set(0, 0, { value: numberValue(100), formula: null, styleId: sid })
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 2)?.value).toEqual(numberValue(5))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(numberValue(5))
+		expect(sheet.cells.get(2, 2)?.value).toEqual(numberValue(3))
+	})
+
 	test('current-row structured references resolve within a table body', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

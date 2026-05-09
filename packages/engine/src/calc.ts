@@ -13,6 +13,7 @@ import {
 	type ExactLookupCache,
 	type FormulaNode,
 	type LookupVectorCache,
+	type NumericVectorCache,
 } from '@ascend/formulas'
 import type { AscendError, CellValue } from '@ascend/schema'
 import { EMPTY, errorValue, numberValue, topLeftScalar, valuesEqual } from '@ascend/schema'
@@ -94,6 +95,7 @@ interface RecalcScratch {
 	readonly exactLookupCache: ExactLookupCache
 	readonly lookupVectorCache: LookupVectorCache
 	readonly aggregateRangeCache: AggregateRangeCache
+	readonly numericVectorCache: NumericVectorCache
 	readonly rangeValueCache: Map<number, readonly (readonly CellValue[])[]>
 	readonly growingAggregateStateCache: Map<CellKey, RangeAggregateState>
 	readonly evalContext: MutableEvalContext
@@ -110,6 +112,7 @@ function getRecalcScratch(workbook: Workbook): RecalcScratch {
 			exactLookupCache: new Map(),
 			lookupVectorCache: new Map(),
 			aggregateRangeCache: new Map(),
+			numericVectorCache: new Map(),
 			rangeValueCache: new Map(),
 			growingAggregateStateCache: new Map(),
 			evalContext: new MutableEvalContext(),
@@ -119,6 +122,7 @@ function getRecalcScratch(workbook: Workbook): RecalcScratch {
 	scratch.spillBySheet.clear()
 	scratch.spillInitializedSheets.clear()
 	scratch.aggregateRangeCache.clear()
+	scratch.numericVectorCache.clear()
 	scratch.rangeValueCache.clear()
 	return scratch
 }
@@ -731,12 +735,14 @@ export function recalculate(
 	const exactLookupCache = scratch.exactLookupCache
 	const lookupVectorCache = scratch.lookupVectorCache
 	const aggregateRangeCache = scratch.aggregateRangeCache
+	const numericVectorCache = scratch.numericVectorCache
 	const mutableCtx = scratch.evalContext
 	mutableCtx.workbook = workbook
 	mutableCtx.calcContext = ctx
 	mutableCtx.exactLookupCache = exactLookupCache
 	mutableCtx.lookupVectorCache = lookupVectorCache
 	mutableCtx.aggregateRangeCache = aggregateRangeCache
+	mutableCtx.numericVectorCache = numericVectorCache
 	setRangeValueCache(scratch.rangeValueCache)
 	const isDirtyRecalc = opts?.dirtyOnly || (opts?.dirtyRefs?.length ?? 0) > 0
 
@@ -894,6 +900,7 @@ export function recalculate(
 			exactLookupCache,
 			lookupVectorCache,
 			aggregateRangeCache,
+			numericVectorCache,
 			mutableCtx,
 		)
 	} else {
@@ -1447,6 +1454,7 @@ function evalIterative(
 	exactLookupCache: ExactLookupCache,
 	lookupVectorCache: LookupVectorCache,
 	aggregateRangeCache: AggregateRangeCache,
+	numericVectorCache: NumericVectorCache,
 	mutableCtx: MutableEvalContext,
 ): void {
 	const maxIter = ctx.iterativeCalc.maxIterations
@@ -1458,6 +1466,7 @@ function evalIterative(
 	mutableCtx.exactLookupCache = exactLookupCache
 	mutableCtx.lookupVectorCache = lookupVectorCache
 	mutableCtx.aggregateRangeCache = aggregateRangeCache
+	mutableCtx.numericVectorCache = numericVectorCache
 	for (let iter = 0; iter < maxIter; iter++) {
 		let maxDelta = 0
 		for (const key of evalOrder) {

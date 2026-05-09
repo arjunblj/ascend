@@ -9,6 +9,7 @@ import {
 	functionRegistry,
 	getRange,
 	type LookupVectorCache,
+	type NumericVectorCache,
 	cachedParseFormula as sharedCachedParseFormula,
 	toNumber,
 } from '@ascend/formulas'
@@ -40,6 +41,7 @@ export interface EvalContext {
 	readonly exactLookupCache?: ExactLookupCache
 	readonly lookupVectorCache?: LookupVectorCache
 	readonly aggregateRangeCache?: AggregateRangeCache
+	readonly numericVectorCache?: NumericVectorCache
 }
 
 export class MutableEvalContext implements EvalContext {
@@ -51,6 +53,7 @@ export class MutableEvalContext implements EvalContext {
 	exactLookupCache?: ExactLookupCache
 	lookupVectorCache?: LookupVectorCache
 	aggregateRangeCache?: AggregateRangeCache
+	numericVectorCache?: NumericVectorCache
 }
 
 class FunctionEvalCtx implements FunctionEvalContext {
@@ -65,6 +68,7 @@ class FunctionEvalCtx implements FunctionEvalContext {
 	exactLookupCache: ExactLookupCache | undefined
 	lookupVectorCache: LookupVectorCache | undefined
 	aggregateRangeCache: AggregateRangeCache | undefined
+	numericVectorCache: NumericVectorCache | undefined
 
 	update(ctx: EvalContext): this {
 		const cc = ctx.calcContext
@@ -79,6 +83,7 @@ class FunctionEvalCtx implements FunctionEvalContext {
 		this.exactLookupCache = ctx.exactLookupCache
 		this.lookupVectorCache = ctx.lookupVectorCache
 		this.aggregateRangeCache = ctx.aggregateRangeCache
+		this.numericVectorCache = ctx.numericVectorCache
 		return this
 	}
 }

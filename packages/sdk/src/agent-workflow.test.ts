@@ -63,6 +63,36 @@ describe('agent workflow loss audit', () => {
 		expect(committed.modelOutput.counts.operations).toBe(1)
 	})
 
+	test('plan and commit emit ordered workflow progress events', async () => {
+		const input = join(TEMP_DIR, 'progress.xlsx')
+		const output = join(TEMP_DIR, 'progress-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		await wb.save(input)
+		const ops = [{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }]
+		const planEvents: string[] = []
+		const commitEvents: string[] = []
+
+		await createAgentPlan(input, ops, {
+			onProgress: (event) => {
+				planEvents.push(`${event.sequence}:${event.phase}:${event.status}`)
+			},
+		})
+		await commitAgentPlan(input, ops, {
+			output,
+			onProgress: (event) => {
+				commitEvents.push(`${event.sequence}:${event.phase}:${event.status}`)
+			},
+		})
+
+		expect(planEvents[0]).toBe('1:hash-input:started')
+		expect(planEvents).toContain('3:load-workbook:started')
+		expect(planEvents.at(-1)).toContain('finalize:ok')
+		expect(commitEvents[0]).toBe('1:hash-input:started')
+		expect(commitEvents.some((event) => event.includes('apply:ok'))).toBe(true)
+		expect(commitEvents.at(-1)).toContain('finalize:ok')
+	})
+
 	test('destructive operations require explicit approval ids', async () => {
 		const input = join(TEMP_DIR, 'destructive.xlsx')
 		const output = join(TEMP_DIR, 'destructive-out.xlsx')

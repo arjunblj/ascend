@@ -3,6 +3,7 @@ import { ascendError, type Operation } from '@ascend/schema'
 import { createAgentPlan, parseOperations } from '@ascend/sdk'
 import { cliError, jsonErr, jsonOut } from '../output/json.ts'
 import { bullet, heading } from '../output/pretty.ts'
+import { createAgentProgressReporter } from '../progress.ts'
 
 export const usage = `Usage: ascend plan <file> --ops <file.json> [flags]
 
@@ -13,6 +14,7 @@ Arguments:
 
 Flags:
   --ops <file.json>   Operations JSON file
+  --progress jsonl    Emit machine-readable progress events to stderr
   --json              Output as JSON
 `
 
@@ -26,7 +28,8 @@ export async function planCommand(args: string[], flags: Map<string, string>): P
 
 	const ops = await readOpsFile(opsFile, flags)
 	if (!ops) return 1
-	const result = await createAgentPlan(file, ops)
+	const onProgress = createAgentProgressReporter(flags)
+	const result = await createAgentPlan(file, ops, onProgress ? { onProgress } : {})
 	if (flags.has('json')) {
 		if (result.preview.errors.length > 0) {
 			const first = result.preview.errors[0]

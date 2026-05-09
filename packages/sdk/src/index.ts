@@ -6,6 +6,8 @@ export type {
 	AgentPlanResult,
 	AgentTraceArtifact,
 	AgentTracePhase,
+	AgentWorkflowProgressEvent,
+	AgentWorkflowProgressHandler,
 	AgentWorkflowTrace,
 	ApprovalRequirement,
 	LossAudit,

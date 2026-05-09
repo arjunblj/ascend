@@ -35,11 +35,21 @@ afterAll(() => {
 		'plan-ops.json',
 		'commit-ops.json',
 		'commit-output.xlsx',
+		'progress-ops.json',
+		'progress-output.xlsx',
 	]) {
 		const path = `${import.meta.dir}/${f}`
 		if (existsSync(path)) unlinkSync(path)
 	}
 })
+
+function parseJsonl(text: string): Array<Record<string, unknown>> {
+	return text
+		.split('\n')
+		.map((line) => line.trim())
+		.filter((line) => line.length > 0)
+		.map((line) => JSON.parse(line))
+}
 
 describe('ascend cli', () => {
 	test('--version prints version', async () => {
@@ -136,6 +146,63 @@ describe('ascend cli', () => {
 		expect(committed.ok).toBe(true)
 		expect(committed.data.outputSha256).toMatch(/^[a-f0-9]{64}$/)
 		expect(existsSync(`${import.meta.dir}/commit-output.xlsx`)).toBe(true)
+	})
+
+	test('plan, commit, and check can emit JSONL progress events', async () => {
+		const opsFile = `${import.meta.dir}/progress-ops.json`
+		await Bun.write(
+			opsFile,
+			JSON.stringify([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'B1', value: 7 }] }]),
+		)
+
+		const plan = await run(
+			'plan',
+			TEST_FILE,
+			'--ops',
+			'progress-ops.json',
+			'--progress',
+			'jsonl',
+			'--json',
+		)
+		expect(plan.exitCode).toBe(0)
+		const planEvents = parseJsonl(plan.stderr)
+		expect(planEvents[0]).toMatchObject({
+			type: 'progress',
+			kind: 'plan',
+			phase: 'hash-input',
+			status: 'started',
+		})
+		expect(planEvents.some((event) => event.phase === 'finalize')).toBe(true)
+
+		const planned = JSON.parse(plan.stdout)
+		const commit = await run(
+			'commit',
+			TEST_FILE,
+			'--ops',
+			'progress-ops.json',
+			'--output',
+			'progress-output.xlsx',
+			'--expect-sha256',
+			planned.data.inputSha256,
+			'--progress',
+			'jsonl',
+			'--json',
+		)
+		expect(commit.exitCode).toBe(0)
+		const commitEvents = parseJsonl(commit.stderr)
+		expect(commitEvents.some((event) => event.kind === 'commit' && event.phase === 'write')).toBe(
+			true,
+		)
+
+		const check = await run('check', 'progress-output.xlsx', '--progress', 'jsonl', '--json')
+		expect(check.exitCode).toBe(0)
+		const checkEvents = parseJsonl(check.stderr)
+		expect(checkEvents.at(-1)).toMatchObject({
+			type: 'progress',
+			kind: 'check',
+			phase: 'check',
+			status: 'ok',
+		})
 	})
 
 	test('inspect shows sheet info', async () => {

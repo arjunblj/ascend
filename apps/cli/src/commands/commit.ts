@@ -3,6 +3,7 @@ import { ascendError, type Operation } from '@ascend/schema'
 import { type AgentCommitOptions, commitAgentPlan, parseOperations } from '@ascend/sdk'
 import { cliError, jsonOut } from '../output/json.ts'
 import { bullet, heading } from '../output/pretty.ts'
+import { createAgentProgressReporter } from '../progress.ts'
 
 export const usage = `Usage: ascend commit <file> --ops <file.json> --output <out.xlsx> [flags]
        ascend commit <file> --ops <file.json> --in-place [--backup <backup.xlsx>]
@@ -20,6 +21,7 @@ Flags:
   --expect-sha256 <hash>    Reject commit if the input changed since plan
   --allow-loss <feature>    Allow preserved/unsupported feature loss by feature, tier, or "all"
   --approval <id>           Approve an explicit plan approval id, comma-separated list, or "all"
+  --progress jsonl          Emit machine-readable progress events to stderr
   --json                    Output as JSON
 `
 
@@ -33,6 +35,7 @@ export async function commitCommand(args: string[], flags: Map<string, string>):
 
 	const ops = await readOpsFile(opsFile, flags)
 	if (!ops) return 1
+	const onProgress = createAgentProgressReporter(flags)
 	const options: AgentCommitOptions = {
 		...(flags.get('output') ? { output: flags.get('output') as string } : {}),
 		...(flags.has('in-place') ? { inPlace: true } : {}),
@@ -44,6 +47,7 @@ export async function commitCommand(args: string[], flags: Map<string, string>):
 		...(flags.get('approval')
 			? { approvals: parseApprovalFlags(flags.get('approval') as string) }
 			: {}),
+		...(onProgress ? { onProgress } : {}),
 	}
 	const result = await commitAgentPlan(file, ops, options)
 	if (flags.has('json')) {

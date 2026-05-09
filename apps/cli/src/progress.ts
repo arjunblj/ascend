@@ -1,4 +1,9 @@
-import { AscendWorkbook, WorkbookDocument } from '@ascend/sdk'
+import {
+	type AgentWorkflowProgressHandler,
+	type AgentWorkflowTrace,
+	AscendWorkbook,
+	WorkbookDocument,
+} from '@ascend/sdk'
 
 const SPINNER_FRAMES = ['-', '\\', '|', '/'] as const
 const DEFAULT_DELAY_MS = 350
@@ -62,6 +67,44 @@ export async function openWorkbookDocumentWithProgress(
 		WorkbookDocument.open(file, options),
 	)
 	return { document: value, durationMs }
+}
+
+export type CliProgressWriter = (event: object) => void
+
+export function createAgentProgressReporter(
+	flags: Map<string, string>,
+): AgentWorkflowProgressHandler | undefined {
+	const write = createJsonlProgressWriter(flags)
+	if (!write) return undefined
+	return (event) => write(event)
+}
+
+export function createJsonlProgressWriter(
+	flags: Map<string, string>,
+): CliProgressWriter | undefined {
+	const mode = flags.get('progress')
+	if (!mode) return undefined
+	if (mode !== 'jsonl') {
+		throw new Error(`Unsupported --progress mode: ${mode}. Use --progress jsonl.`)
+	}
+	return (event) => {
+		process.stderr.write(`${JSON.stringify({ type: 'progress', ...event })}\n`)
+	}
+}
+
+export function emitCliProgress(
+	write: CliProgressWriter | undefined,
+	event: {
+		readonly sequence: number
+		readonly kind: AgentWorkflowTrace['kind'] | 'check'
+		readonly phase: string
+		readonly status: 'started' | 'ok' | 'warning' | 'blocked' | 'failed' | 'skipped'
+		readonly summary: string
+		readonly count?: number
+		readonly details?: unknown
+	},
+): void {
+	write?.({ formatVersion: 1, ...event })
 }
 
 function clearStatusLine(): void {

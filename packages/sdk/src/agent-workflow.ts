@@ -30,6 +30,7 @@ export interface AgentCommitOptions {
 	readonly expectSha256?: string
 	readonly allowLoss?: readonly string[] | 'all'
 	readonly approvals?: readonly string[] | 'all'
+	readonly onProgress?: AgentWorkflowProgressHandler
 }
 
 export interface AgentCommitResult {
@@ -84,6 +85,22 @@ export interface AgentTraceArtifact {
 	readonly name: string
 	readonly digest: string
 	readonly summary: string
+}
+
+export type AgentWorkflowProgressHandler = (
+	event: AgentWorkflowProgressEvent,
+) => void | Promise<void>
+
+export interface AgentWorkflowProgressEvent {
+	readonly formatVersion: 1
+	readonly sequence: number
+	readonly kind: AgentWorkflowTrace['kind']
+	readonly phase: string
+	readonly status: AgentTracePhase['status'] | 'started' | 'skipped'
+	readonly summary: string
+	readonly count?: number
+	readonly refs?: readonly string[]
+	readonly details?: unknown
 }
 
 export interface AgentModelOutput {
@@ -142,16 +159,35 @@ export interface RepairAction {
 export async function createAgentPlan(
 	file: string,
 	ops: readonly Operation[],
+	options: { readonly onProgress?: AgentWorkflowProgressHandler } = {},
 ): Promise<AgentPlanResult> {
+	const progress = createProgressEmitter('plan', options.onProgress)
+	await progress('hash-input', 'started', 'Hashing input workbook.')
 	const inputSha256 = await fileSha256(file)
+	await progress('hash-input', 'ok', 'Input workbook hash captured.')
+	await progress('load-workbook', 'started', 'Opening workbook.')
 	const wb = await AscendWorkbook.open(file)
+	await progress('load-workbook', 'ok', 'Workbook opened.')
+	await progress('preview', 'started', 'Previewing operations.', { count: ops.length })
 	const preview = wb.preview(ops)
+	await progressFromPhase(previewPhase(preview), progress)
+	await progress('loss-audit', 'started', 'Auditing preserved and unsupported features.')
 	const lossAudit = auditLossPolicy(wb.report.features)
+	await progressFromPhase(lossAuditPhase(lossAudit), progress)
+	await progress('approval-audit', 'started', 'Auditing explicit approval requirements.')
 	const approvals = buildApprovalRequirements(wb.report.features, ops)
+	await progressFromPhase(approvalPhase(approvals), progress)
+	await progress('check', 'started', 'Running structural checks.')
 	const check = wb.check()
+	await progressFromPhase(checkPhase(check), progress)
+	await progress('lint', 'started', 'Running formula lint.')
 	const lint = wb.lint()
+	await progressFromPhase(lintPhase(lint), progress)
+	await progress('preservation-audit', 'started', 'Summarizing package preservation.')
 	const preservation = wb.writePlanSummary()
+	await progressFromPhase(preservationPhase(preservation), progress)
 	const planDigest = digestPlan(inputSha256, ops)
+	await progress('finalize', 'ok', 'Plan digest and trace finalized.')
 	const trace = finalizeTrace({
 		kind: 'plan',
 		file,
@@ -199,8 +235,14 @@ export async function commitAgentPlan(
 	ops: readonly Operation[],
 	options: AgentCommitOptions = {},
 ): Promise<AgentCommitResult> {
+	const progress = createProgressEmitter('commit', options.onProgress)
+	await progress('hash-input', 'started', 'Hashing input workbook.')
 	const inputSha256 = await fileSha256(file)
+	await progress('hash-input', 'ok', 'Input workbook hash captured.')
 	if (options.expectSha256 && options.expectSha256 !== inputSha256) {
+		await progress('hash-guard', 'failed', 'Input hash did not match expected SHA-256.', {
+			details: { expected: options.expectSha256, actual: inputSha256 },
+		})
 		throw new AscendException(
 			ascendError('VALIDATION_ERROR', 'Input workbook hash does not match --expect-sha256', {
 				details: { expected: options.expectSha256, actual: inputSha256 },
@@ -208,9 +250,17 @@ export async function commitAgentPlan(
 			}),
 		)
 	}
+	await progress(
+		'hash-guard',
+		'ok',
+		options.expectSha256
+			? 'Input hash matched expected SHA-256.'
+			: 'No input hash guard requested.',
+	)
 
 	const output = options.inPlace ? file : options.output
 	if (!output) {
+		await progress('output-policy', 'failed', 'Commit output target is missing.')
 		throw new AscendException(
 			ascendError('INVALID_ARGUMENT', 'Commit requires --output unless --in-place is set', {
 				suggestedFix: 'Pass --output out.xlsx or --in-place with an optional --backup path.',
@@ -218,6 +268,7 @@ export async function commitAgentPlan(
 		)
 	}
 	if (!options.inPlace && options.backup) {
+		await progress('output-policy', 'failed', '--backup was provided without --in-place.')
 		throw new AscendException(
 			ascendError('INVALID_ARGUMENT', '--backup is only valid with --in-place commits', {
 				suggestedFix:
@@ -225,15 +276,22 @@ export async function commitAgentPlan(
 			}),
 		)
 	}
+	await progress('output-policy', 'ok', `Commit output target resolved to ${output}.`)
 
+	await progress('load-workbook', 'started', 'Opening workbook.')
 	const wb = await AscendWorkbook.open(file)
+	await progress('load-workbook', 'ok', 'Workbook opened.')
+	await progress('approval-audit', 'started', 'Auditing explicit approval requirements.')
 	const approvals = buildApprovalRequirements(wb.report.features, ops)
 	const effectiveAllowLoss = mergeAllowLoss(
 		options.allowLoss,
 		approvalSatisfiedLossFeatures(approvals, options.approvals),
 	)
+	await progress('loss-audit', 'started', 'Auditing preserved and unsupported features.')
 	const lossAudit = auditLossPolicy(wb.report.features, effectiveAllowLoss)
 	const blockedApprovals = unsatisfiedApprovalRequirements(approvals, lossAudit, options.approvals)
+	await progressFromPhase(lossAuditPhase(lossAudit), progress)
+	await progressFromPhase(approvalPhase(approvals, options.approvals, blockedApprovals), progress)
 	if (blockedApprovals.length > 0) {
 		throw new AscendException(
 			ascendError('VALIDATION_ERROR', 'Commit requires explicit approval', {
@@ -243,13 +301,17 @@ export async function commitAgentPlan(
 			}),
 		)
 	}
+	await progress('apply', 'started', 'Applying operations.', { count: ops.length })
 	const apply = wb.apply(ops, { transaction: true })
+	await progressFromPhase(applyPhase(apply), progress)
 	if (apply.errors.length > 0)
 		throw new AscendException(apply.errors[0] ?? ascendError('VALIDATION_ERROR', 'Apply failed'))
 
 	let recalc: ReturnType<AscendWorkbook['recalc']> | null = null
 	if (apply.recalcRequired) {
+		await progress('recalc', 'started', 'Recalculating formulas.')
 		recalc = wb.recalc()
+		await progressFromPhase(recalcPhase(recalc), progress)
 		if (recalc.errors.length > 0) {
 			const first = recalc.errors[0]
 			throw new AscendException(
@@ -263,15 +325,26 @@ export async function commitAgentPlan(
 					: ascendError('FORMULA_EVAL_ERROR', 'Recalculation failed'),
 			)
 		}
+	} else {
+		await progressFromPhase(recalcPhase(recalc), progress)
 	}
 
 	if (options.inPlace && options.backup) await copyFile(file, options.backup)
+	await progress('preservation-audit', 'started', 'Summarizing package preservation.')
 	const preservation = wb.writePlanSummary()
+	await progressFromPhase(preservationPhase(preservation), progress)
+	await progress('write', 'started', `Writing workbook to ${output}.`)
 	await writeWorkbookAtomically(wb, output)
 	const outputSha256 = await fileSha256(output)
+	await progress('write', 'ok', `Workbook written to ${output}.`)
+	await progress('check', 'started', 'Running structural checks.')
 	const check = wb.check()
+	await progressFromPhase(checkPhase(check), progress)
+	await progress('lint', 'started', 'Running formula lint.')
 	const lint = wb.lint()
+	await progressFromPhase(lintPhase(lint), progress)
 	const planDigest = digestPlan(inputSha256, ops)
+	await progress('finalize', 'ok', 'Commit digest and trace finalized.')
 	const trace = finalizeTrace({
 		kind: 'commit',
 		file,
@@ -442,6 +515,52 @@ function finalizeTrace(
 ): AgentWorkflowTrace {
 	const base = { formatVersion: 1 as const, ...trace }
 	return { ...base, traceDigest: sha256Text(stableStringify(base)) }
+}
+
+function createProgressEmitter(
+	kind: AgentWorkflowTrace['kind'],
+	handler: AgentWorkflowProgressHandler | undefined,
+): (
+	phase: string,
+	status: AgentWorkflowProgressEvent['status'],
+	summary: string,
+	extras?: Pick<AgentWorkflowProgressEvent, 'count' | 'refs' | 'details'>,
+) => Promise<void> {
+	let sequence = 0
+	return async (phase, status, summary, extras = {}) => {
+		if (!handler) return
+		sequence += 1
+		await handler({
+			formatVersion: 1,
+			sequence,
+			kind,
+			phase,
+			status,
+			summary,
+			...definedProgressExtras(extras),
+		})
+	}
+}
+
+async function progressFromPhase(
+	phase: AgentTracePhase,
+	emit: ReturnType<typeof createProgressEmitter>,
+): Promise<void> {
+	await emit(phase.phase, phase.status, phase.summary, {
+		...(phase.count !== undefined ? { count: phase.count } : {}),
+		...(phase.refs ? { refs: phase.refs } : {}),
+		...(phase.details !== undefined ? { details: phase.details } : {}),
+	})
+}
+
+function definedProgressExtras(
+	extras: Pick<AgentWorkflowProgressEvent, 'count' | 'refs' | 'details'>,
+): Pick<AgentWorkflowProgressEvent, 'count' | 'refs' | 'details'> {
+	return {
+		...(extras.count !== undefined ? { count: extras.count } : {}),
+		...(extras.refs ? { refs: extras.refs } : {}),
+		...(extras.details !== undefined ? { details: extras.details } : {}),
+	}
 }
 
 function artifact(name: string, value: unknown, summary: string): AgentTraceArtifact {

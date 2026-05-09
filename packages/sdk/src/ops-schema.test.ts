@@ -30,4 +30,16 @@ describe('operation schema agent DX', () => {
 			expect(parsed.issues[0]).toContain('updates is required')
 		}
 	})
+
+	test('replaceImage is exposed with selector guidance for visual edits', () => {
+		const schema = getOperationsSchema().find((entry) => entry.op === 'replaceImage')
+		expect(schema?.schema.required).toEqual(['op', 'sheet', 'contentBase64', 'contentType'])
+		expect(schema?.schema.properties.targetPath?.description).toContain('xl/media')
+		expect(schema?.examples[0]).toMatchObject({
+			op: 'replaceImage',
+			sheet: 'Sheet1',
+			contentType: 'image/png',
+		})
+		expect(schema?.recoveryActions.join('\n')).toContain('imageIndex')
+	})
 })

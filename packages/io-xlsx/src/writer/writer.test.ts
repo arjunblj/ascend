@@ -1172,6 +1172,54 @@ describe('writeXlsx', () => {
 		})
 	})
 
+	it('overrides replaced image media while preserving existing drawing capsules', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Images')
+		sheet.imageRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			relId: 'rIdImage1',
+			targetPath: 'xl/media/image1.png',
+			contentType: 'image/png',
+			content: new Uint8Array([1, 2, 3]),
+			anchor: {
+				kind: 'oneCell',
+				from: { row: 1, col: 1 },
+				cx: 320000,
+				cy: 240000,
+			},
+			name: 'Logo',
+		})
+		const source = writeXlsx(wb)
+		expectOk(source)
+		const read = readXlsx(source.value)
+		expectOk(read)
+		const readSheet = read.value.workbook.sheets[0]
+		const image = readSheet?.imageRefs[0]
+		expect(image).toBeDefined()
+		if (!readSheet || !image) return
+		readSheet.imageRefs[0] = {
+			...image,
+			contentType: 'image/png',
+			content: new Uint8Array([4, 5, 6]),
+		}
+
+		const written = writeXlsx(read.value.workbook, read.value.capsules, {
+			dirtySheetNames: ['Images'],
+		})
+		expectOk(written)
+		const entries = unzipSync(written.value)
+		expect(Array.from(entries['xl/media/image1.png'] ?? [])).toEqual([4, 5, 6])
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.sheets[0]?.imageRefs[0]).toMatchObject({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			targetPath: 'xl/media/image1.png',
+			name: 'Logo',
+			anchor: { kind: 'oneCell' },
+		})
+	})
+
 	it('keeps sheet-owned drawing capsules attached after renaming a sheet', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Visuals')

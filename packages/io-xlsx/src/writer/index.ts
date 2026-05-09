@@ -743,6 +743,21 @@ export function planWriteXlsx(
 				const generatedImages = sheet.imageRefs.filter(
 					(image) => image.content && image.contentType,
 				)
+				if (generatedImages.length > 0) {
+					for (const image of generatedImages) {
+						recordBytes(
+							image.targetPath,
+							{
+								owner: { kind: 'sheet', sheetName: sheet.name },
+								origin: 'generated',
+								contentType: image.contentType as string,
+							},
+							() => image.content as Uint8Array,
+						)
+						plan.addOverride(image.targetPath, image.contentType as string)
+						plan.skipCapsulePath(image.targetPath)
+					}
+				}
 				if (generatedImages.length > 0 && !drawingRelId) {
 					const drawingPartPath =
 						generatedImages[0]?.drawingPartPath ||
@@ -773,18 +788,6 @@ export function planWriteXlsx(
 							),
 					)
 					plan.addOverride(drawingPartPath, CT_DRAWING)
-					for (const image of generatedImages) {
-						recordBytes(
-							image.targetPath,
-							{
-								owner: { kind: 'sheet', sheetName: sheet.name },
-								origin: 'generated',
-								contentType: image.contentType as string,
-							},
-							() => image.content as Uint8Array,
-						)
-						plan.addOverride(image.targetPath, image.contentType as string)
-					}
 					drawingRelId = `rId${sheetRelId}`
 					sheetRels.push({
 						id: drawingRelId,
@@ -1073,7 +1076,10 @@ export function planWriteXlsx(
 					workbook.sheets.length,
 					hasSharedStrings,
 					workbookContentType,
-					capsules?.filter((capsule) => !isCalcChainCapsule(capsule)),
+					capsules?.filter(
+						(capsule) =>
+							!isCalcChainCapsule(capsule) && !built.skippedCapsulePaths.has(capsule.partPath),
+					),
 					built.extraOverrides.length > 0 ? built.extraOverrides : undefined,
 				)
 			},

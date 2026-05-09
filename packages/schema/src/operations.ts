@@ -366,6 +366,16 @@ export type Operation =
 	| { readonly op: 'deleteTable'; readonly table: string }
 	| { readonly op: 'renameTable'; readonly table: string; readonly newName: string }
 	| { readonly op: 'resizeTable'; readonly table: string; readonly ref: string }
+	| {
+			readonly op: 'replaceImage'
+			readonly sheet: string
+			readonly contentBase64: string
+			readonly contentType: string
+			readonly targetPath?: string
+			readonly relId?: string
+			readonly name?: string
+			readonly imageIndex?: number
+	  }
 
 export interface WorkbookProtectionInput {
 	readonly lockStructure?: boolean

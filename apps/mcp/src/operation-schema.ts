@@ -308,6 +308,16 @@ const operationSchema = z.discriminatedUnion('op', [
 		table: z.string(),
 		ref: z.string(),
 	}),
+	z.object({
+		op: z.literal('replaceImage'),
+		sheet: z.string(),
+		contentBase64: z.string(),
+		contentType: z.string(),
+		targetPath: z.string().optional(),
+		relId: z.string().optional(),
+		name: z.string().optional(),
+		imageIndex: z.number().int().nonnegative().optional(),
+	}),
 ])
 
 export const operationsSchema = z.array(operationSchema)

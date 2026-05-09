@@ -134,6 +134,53 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('replaceImage swaps media bytes while preserving anchor metadata', () => {
+		const wb = setup()
+		const sheet = wb.getSheet('Sheet1')
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+		sheet.imageRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			relId: 'rIdImage1',
+			targetPath: 'xl/media/image1.png',
+			contentType: 'image/png',
+			content: new Uint8Array([1, 2, 3]),
+			anchor: {
+				kind: 'oneCell',
+				from: { row: 1, col: 1 },
+				cx: 320000,
+				cy: 240000,
+			},
+			name: 'Logo',
+			description: 'Brand logo',
+		})
+
+		const result = applyOperation(wb, {
+			op: 'replaceImage',
+			sheet: 'Sheet1',
+			name: 'Logo',
+			contentBase64: 'BAUG',
+			contentType: 'image/png',
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual([])
+		expect(result.value.sheetsModified).toEqual(['Sheet1'])
+		expect(result.value.recalcRequired).toBe(false)
+		expect(sheet.imageRefs[0]).toMatchObject({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			relId: 'rIdImage1',
+			targetPath: 'xl/media/image1.png',
+			name: 'Logo',
+			description: 'Brand logo',
+			anchor: {
+				kind: 'oneCell',
+				from: { row: 1, col: 1 },
+			},
+		})
+		expect(Array.from(sheet.imageRefs[0]?.content ?? [])).toEqual([4, 5, 6])
+	})
+
 	test('setConditionalFormat stores conditional formatting rules', () => {
 		const wb = setup()
 		const result = applyOperation(wb, {

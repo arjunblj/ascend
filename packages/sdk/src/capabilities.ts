@@ -410,10 +410,15 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'visuals.images',
 		'visuals',
 		'Images',
-		'inspectable',
+		'editable',
 		'P0',
-		'Add image replacement and anchor-preserving edit operations.',
-		'Drawings can be inventoried, but image replacement is not a first-class op.',
+		'Add insert/delete image operations and deeper content-type roundtrip fixtures.',
+		'Image inventory and anchor-preserving replacement exist; insert/delete is still staged.',
+		[
+			'packages/engine/src/operations.test.ts',
+			'packages/io-xlsx/src/writer/writer.test.ts',
+			'packages/sdk/src/visual-inventory.test.ts',
+		],
 	),
 	cap(
 		'visuals.drawings-shapes',

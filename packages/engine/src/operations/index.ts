@@ -18,6 +18,7 @@ import {
 import * as sheetOps from './sheet-ops.ts'
 import * as structuralOps from './structural-ops.ts'
 import * as tableOps from './table-ops.ts'
+import * as visualOps from './visual-ops.ts'
 
 export type { PatchResult } from './helpers.ts'
 
@@ -86,6 +87,7 @@ const handlers: Record<string, OperationHandler> = {
 	deleteTable: tableOps.handleDeleteTable as OperationHandler,
 	renameTable: tableOps.handleRenameTable as OperationHandler,
 	resizeTable: tableOps.handleResizeTable as OperationHandler,
+	replaceImage: visualOps.handleReplaceImage as OperationHandler,
 }
 
 export function applyOperation(

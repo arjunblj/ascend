@@ -121,6 +121,14 @@ const FIELD_SCHEMAS: Record<
 	},
 	source: { type: 'string', description: 'Source range' },
 	target: { type: 'string', description: 'Target range' },
+	targetPath: {
+		type: 'string',
+		description: 'XLSX package part path, such as xl/media/image1.png',
+	},
+	relId: { type: 'string', description: 'Relationship id inside the drawing part' },
+	contentBase64: { type: 'string', description: 'Base64-encoded binary content' },
+	contentType: { type: 'string', description: 'MIME content type, such as image/png' },
+	imageIndex: { type: 'integer', description: 'Zero-based image index on the sheet' },
 	from: { type: 'integer', description: 'Start row/col index' },
 	to: { type: 'integer', description: 'End row/col index' },
 	collapsed: { type: 'boolean', description: 'Whether group is collapsed' },
@@ -346,6 +354,12 @@ export function listOperations(): readonly OperationSchema[] {
 			description: 'Change a table range (rebuilds columns if width changes)',
 			requiredFields: ['table', 'ref'],
 		},
+		{
+			op: 'replaceImage',
+			description: 'Replace image media bytes while preserving the existing drawing anchor',
+			requiredFields: ['sheet', 'contentBase64', 'contentType'],
+			optionalFields: ['targetPath', 'relId', 'name', 'imageIndex'],
+		},
 	])
 }
 
@@ -490,6 +504,12 @@ function operationRecoveryActions(op: string): readonly string[] {
 		case 'createTable':
 		case 'resizeTable':
 			return ['Confirm the table range includes the intended header and data rows.', ...common]
+		case 'replaceImage':
+			return [
+				'Use inspect --detail images or visualInventory to select targetPath, relId, name, or imageIndex.',
+				'Ensure contentBase64 bytes match contentType.',
+				...common,
+			]
 		default:
 			return common
 	}
@@ -607,6 +627,14 @@ function operationExample(op: string): Record<string, unknown> {
 			return { op, table: 'Sales', newName: 'SalesData' }
 		case 'resizeTable':
 			return { op, table: 'Sales', ref: 'A1:E20' }
+		case 'replaceImage':
+			return {
+				op,
+				sheet: 'Sheet1',
+				targetPath: 'xl/media/image1.png',
+				contentBase64: 'iVBORw0KGgo=',
+				contentType: 'image/png',
+			}
 		default:
 			return { op }
 	}

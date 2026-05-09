@@ -438,7 +438,7 @@ describe('MCP server', () => {
 		}
 	})
 
-	test('MCP operation schema accepts all canonical table and workbook operations', () => {
+	test('MCP operation schema accepts capability extension operations', () => {
 		const result = parseOperations([
 			{
 				op: 'setWorkbookProtection',
@@ -447,6 +447,13 @@ describe('MCP server', () => {
 			{ op: 'deleteTable', table: 'Sales' },
 			{ op: 'renameTable', table: 'Sales', newName: 'Revenue' },
 			{ op: 'resizeTable', table: 'Revenue', ref: 'A1:D20' },
+			{
+				op: 'replaceImage',
+				sheet: 'Sheet1',
+				targetPath: 'xl/media/image1.png',
+				contentBase64: 'iVBORw0KGgo=',
+				contentType: 'image/png',
+			},
 		])
 
 		expect(result.ok).toBe(true)

@@ -135,8 +135,11 @@ function printNode(node: FormulaNode, ctx: PrintContext = null): string {
 		}
 		case 'wholeRowRange':
 			return `${node.sheet !== undefined ? formatSheet(node.sheet) : ''}${node.startRow + 1}:${node.endRow + 1}`
-		case 'wholeColumnRange':
-			return `${node.sheet !== undefined ? formatSheet(node.sheet) : ''}${indexToColumn(node.startCol)}:${indexToColumn(node.endCol)}`
+		case 'wholeColumnRange': {
+			const start = `${node.startColAbsolute ? '$' : ''}${indexToColumn(node.startCol)}`
+			const end = `${node.endColAbsolute ? '$' : ''}${indexToColumn(node.endCol)}`
+			return `${node.sheet !== undefined ? formatSheet(node.sheet) : ''}${start}:${end}`
+		}
 		case 'name':
 			return (node.sheet !== undefined ? formatSheet(node.sheet) : '') + node.name
 		case 'function':

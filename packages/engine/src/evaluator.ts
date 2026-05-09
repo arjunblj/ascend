@@ -1,4 +1,4 @@
-import { DEFAULT_STYLE_ID, indexToColumn, type Workbook } from '@ascend/core'
+import { DEFAULT_STYLE_ID, indexToColumn, parseRange, type Workbook } from '@ascend/core'
 import type { FormulaNode } from '@ascend/formulas'
 import {
 	type AggregateRangeCache,
@@ -498,6 +498,9 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 	if (upperName === 'FORMULATEXT') {
 		return evalFormulaText(argNodes, ctx)
 	}
+	if (upperName === 'GETPIVOTDATA') {
+		return evalGetPivotData(argNodes, ctx)
+	}
 	if (upperName === 'LET') {
 		return evalLet(argNodes, ctx)
 	}
@@ -707,6 +710,149 @@ function evalFormulaText(argNodes: readonly FormulaNode[], ctx: EvalContext): Ce
 	const formula = sheet.cells.readFormula(arg.ref.row, arg.ref.col)
 	if (!formula) return errorValue('#N/A')
 	return stringValue(`=${formula}`)
+}
+
+function evalGetPivotData(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
+	if (argNodes.length < 2 || argNodes.length % 2 !== 0) return errorValue('#REF!')
+	const dataFieldValue = evaluate(argNodes[0] ?? { type: 'missing' }, ctx)
+	if (dataFieldValue.kind === 'error') return dataFieldValue
+	const dataField = normalizePivotText(coerceToString(dataFieldValue))
+	if (dataField.length === 0) return errorValue('#REF!')
+
+	const anchor = resolveReferenceNode(argNodes[1] ?? { type: 'missing' }, ctx)
+	if (!anchor?.ref || anchor.ref.kind !== 'cell') {
+		return anchor?.value.kind === 'error' ? anchor.value : errorValue('#REF!')
+	}
+	const anchorSheet = ctx.workbook.sheets[anchor.ref.sheetIndex]
+	if (!anchorSheet) return errorValue('#REF!')
+
+	const filters: { field: string; item: string }[] = []
+	for (let i = 2; i + 1 < argNodes.length; i += 2) {
+		const fieldValue = evaluate(argNodes[i] ?? { type: 'missing' }, ctx)
+		if (fieldValue.kind === 'error') return fieldValue
+		const itemValue = evaluate(argNodes[i + 1] ?? { type: 'missing' }, ctx)
+		if (itemValue.kind === 'error') return itemValue
+		filters.push({
+			field: normalizePivotText(coerceToString(fieldValue)),
+			item: normalizePivotText(coerceToString(itemValue)),
+		})
+	}
+
+	for (const pivot of ctx.workbook.pivotTables) {
+		if (pivot.sheetName !== anchorSheet.name || !pivot.locationRef) continue
+		const bounds = parsePivotLocation(pivot.locationRef)
+		if (!bounds) continue
+		if (
+			anchor.ref.row < bounds.startRow ||
+			anchor.ref.row > bounds.endRow ||
+			anchor.ref.col < bounds.startCol ||
+			anchor.ref.col > bounds.endCol
+		) {
+			continue
+		}
+		const value = lookupVisiblePivotValue(ctx, anchor.ref.sheetIndex, bounds, dataField, filters)
+		if (value) return value
+	}
+	return errorValue('#REF!')
+}
+
+function parsePivotLocation(locationRef: string): {
+	startRow: number
+	startCol: number
+	endRow: number
+	endCol: number
+} | null {
+	try {
+		const range = parseRange(locationRef)
+		return {
+			startRow: range.start.row,
+			startCol: range.start.col,
+			endRow: range.end.row,
+			endCol: range.end.col,
+		}
+	} catch {
+		return null
+	}
+}
+
+function lookupVisiblePivotValue(
+	ctx: EvalContext,
+	sheetIndex: number,
+	bounds: { startRow: number; startCol: number; endRow: number; endCol: number },
+	dataField: string,
+	filters: readonly { field: string; item: string }[],
+): CellValue | null {
+	const header = findPivotDataHeader(ctx, sheetIndex, bounds, dataField)
+	if (!header) return null
+	const fieldColumns = filters.map((filter) => ({
+		filter,
+		col: findPivotFieldColumn(ctx, sheetIndex, bounds, header.row, header.col, filter.field),
+	}))
+	if (fieldColumns.some((entry) => entry.col === null)) return null
+
+	for (let row = header.row + 1; row <= bounds.endRow; row++) {
+		let matches = true
+		if (fieldColumns.length === 0) {
+			matches =
+				normalizePivotText(
+					coerceToString(getCellValue(ctx.workbook, sheetIndex, row, bounds.startCol)),
+				) === 'grand total'
+		} else {
+			for (const entry of fieldColumns) {
+				const col = entry.col
+				if (col === null) return null
+				const value = normalizePivotText(
+					coerceToString(getCellValue(ctx.workbook, sheetIndex, row, col)),
+				)
+				if (value !== entry.filter.item) {
+					matches = false
+					break
+				}
+			}
+		}
+		if (matches) return getCellValue(ctx.workbook, sheetIndex, row, header.col)
+	}
+	return null
+}
+
+function findPivotDataHeader(
+	ctx: EvalContext,
+	sheetIndex: number,
+	bounds: { startRow: number; startCol: number; endRow: number; endCol: number },
+	dataField: string,
+): { row: number; col: number } | null {
+	const maxHeaderRows = Math.min(bounds.endRow, bounds.startRow + 8)
+	for (let row = bounds.startRow; row <= maxHeaderRows; row++) {
+		for (let col = bounds.startCol; col <= bounds.endCol; col++) {
+			const value = normalizePivotText(
+				coerceToString(getCellValue(ctx.workbook, sheetIndex, row, col)),
+			)
+			if (value === dataField) return { row, col }
+		}
+	}
+	return null
+}
+
+function findPivotFieldColumn(
+	ctx: EvalContext,
+	sheetIndex: number,
+	bounds: { startRow: number; startCol: number; endRow: number; endCol: number },
+	headerRow: number,
+	dataCol: number,
+	fieldName: string,
+): number | null {
+	for (let col = bounds.startCol; col < dataCol; col++) {
+		const header = normalizePivotText(
+			coerceToString(getCellValue(ctx.workbook, sheetIndex, headerRow, col)),
+		)
+		if (header === fieldName) return col
+	}
+	if (dataCol > bounds.startCol) return bounds.startCol
+	return null
+}
+
+function normalizePivotText(value: string): string {
+	return value.trim().replace(/\s+/g, ' ').toLowerCase()
 }
 
 function resolveArg(node: FormulaNode, ctx: EvalContext): EvalArg {
@@ -1394,6 +1540,8 @@ function applySheetToReferenceNode(
 				type: 'wholeColumnRange',
 				startCol: node.startCol,
 				endCol: node.endCol,
+				...(node.startColAbsolute ? { startColAbsolute: true } : {}),
+				...(node.endColAbsolute ? { endColAbsolute: true } : {}),
 				sheet: sheet.name,
 			}
 		case 'name':

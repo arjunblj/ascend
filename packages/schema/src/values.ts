@@ -196,7 +196,7 @@ export function coerceCellValueToString(v: CellValue): string {
 	if (v.kind === 'array') v = topLeftScalar(v)
 	switch (v.kind) {
 		case 'number':
-			return String(v.value)
+			return formatGeneralNumber(v.value)
 		case 'string':
 			return v.value
 		case 'boolean':
@@ -210,4 +210,18 @@ export function coerceCellValueToString(v: CellValue): string {
 		case 'richText':
 			return v.runs.map((r) => r.text).join('')
 	}
+}
+
+function formatGeneralNumber(value: number): string {
+	if (!Number.isFinite(value)) return String(value)
+	if (Object.is(value, -0) || value === 0) return '0'
+	const formatted = value.toPrecision(15)
+	const [mantissa, exponent] = formatted.split(/[eE]/)
+	const trimmedMantissa = trimDecimalZeros(mantissa ?? formatted)
+	return exponent === undefined ? trimmedMantissa : `${trimmedMantissa}E${exponent}`
+}
+
+function trimDecimalZeros(value: string): string {
+	if (!value.includes('.')) return value
+	return value.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '')
 }

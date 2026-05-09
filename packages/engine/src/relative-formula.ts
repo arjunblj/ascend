@@ -39,6 +39,12 @@ function shiftFormulaNode(node: FormulaNode, rowDelta: number, colDelta: number)
 				start: shiftFormulaNode(node.start, rowDelta, colDelta),
 				end: shiftFormulaNode(node.end, rowDelta, colDelta),
 			}
+		case 'wholeColumnRange':
+			return {
+				...node,
+				startCol: node.startColAbsolute ? node.startCol : node.startCol + colDelta,
+				endCol: node.endColAbsolute ? node.endCol : node.endCol + colDelta,
+			}
 		case 'binary':
 			return {
 				...node,

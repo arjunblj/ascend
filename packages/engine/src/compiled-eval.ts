@@ -155,6 +155,7 @@ const COMPILABLE_FUNCTIONS = new Set([
 ])
 
 function shouldCompile(node: FormulaNode): boolean {
+	if (containsWholeDimensionRef(node)) return false
 	if (node.type === 'function' && node.args.length === 1 && node.args[0]?.type === 'rangeRef') {
 		const upper = node.name.toUpperCase()
 		if (
@@ -206,6 +207,30 @@ function shouldCompile(node: FormulaNode): boolean {
 	}
 	scan(node)
 	return compilableNodes >= 3
+}
+
+function containsWholeDimensionRef(node: FormulaNode): boolean {
+	switch (node.type) {
+		case 'wholeColumnRange':
+		case 'wholeRowRange':
+			return true
+		case 'binary':
+			return containsWholeDimensionRef(node.left) || containsWholeDimensionRef(node.right)
+		case 'unary':
+			return containsWholeDimensionRef(node.operand)
+		case 'function':
+			return node.args.some(containsWholeDimensionRef)
+		case 'array':
+			return node.rows.some((row) => row.some(containsWholeDimensionRef))
+		case 'dynamicRangeRef':
+			return containsWholeDimensionRef(node.start) || containsWholeDimensionRef(node.end)
+		case 'spillRef':
+			return containsWholeDimensionRef(node.target)
+		case 'sheetSpanRef':
+			return containsWholeDimensionRef(node.target)
+		default:
+			return false
+	}
 }
 
 function canEvaluateNumericCondition(node: FormulaNode): boolean {

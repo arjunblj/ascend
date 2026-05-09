@@ -285,7 +285,13 @@ describe('parse', () => {
 
 	it('parses whole-column ranges', () => {
 		expect(p('A:C')).toEqual({ type: 'wholeColumnRange', startCol: 0, endCol: 2 })
-		expect(p('$A:$C')).toEqual({ type: 'wholeColumnRange', startCol: 0, endCol: 2 })
+		expect(p('$A:$C')).toEqual({
+			type: 'wholeColumnRange',
+			startCol: 0,
+			endCol: 2,
+			startColAbsolute: true,
+			endColAbsolute: true,
+		})
 	})
 
 	it('parses whole-row ranges', () => {
@@ -327,6 +333,8 @@ describe('parse', () => {
 			type: 'wholeColumnRange',
 			startCol: 0,
 			endCol: 2,
+			startColAbsolute: true,
+			endColAbsolute: true,
 			sheet: 'Sheet1',
 		})
 		expect(p('Sheet1!1:3')).toEqual({
@@ -491,6 +499,7 @@ describe('printFormula', () => {
 
 	it('roundtrips whole-row and whole-column ranges', () => {
 		expect(printFormula(p('A:C'))).toBe('A:C')
+		expect(printFormula(p('D:D/$E:$E'))).toBe('D:D/$E:$E')
 		expect(printFormula(p('1:3'))).toBe('1:3')
 		expect(printFormula(p('Sheet1!A:C'))).toBe('Sheet1!A:C')
 	})

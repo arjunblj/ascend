@@ -144,9 +144,45 @@ export function rewriteRefs(
 				start: rewriteRefs(node.start, transform),
 				end: rewriteRefs(node.end, transform),
 			}
-		case 'wholeColumnRange':
+		case 'wholeColumnRange': {
+			const start = transform({
+				row: 0,
+				col: node.startCol,
+				rowAbsolute: true,
+				colAbsolute: node.startColAbsolute ?? false,
+			})
+			const end = transform({
+				row: 0,
+				col: node.endCol,
+				rowAbsolute: true,
+				colAbsolute: node.endColAbsolute ?? false,
+			})
+			return {
+				type: 'wholeColumnRange',
+				startCol: start.col,
+				endCol: end.col,
+				...(node.startColAbsolute ? { startColAbsolute: true } : {}),
+				...(node.endColAbsolute ? { endColAbsolute: true } : {}),
+				...(node.sheet !== undefined ? { sheet: node.sheet } : {}),
+			}
+		}
 		case 'wholeRowRange':
-			return node
+			return {
+				type: 'wholeRowRange',
+				startRow: transform({
+					row: node.startRow,
+					col: 0,
+					rowAbsolute: false,
+					colAbsolute: true,
+				}).row,
+				endRow: transform({
+					row: node.endRow,
+					col: 0,
+					rowAbsolute: false,
+					colAbsolute: true,
+				}).row,
+				...(node.sheet !== undefined ? { sheet: node.sheet } : {}),
+			}
 		case 'binary':
 			return {
 				type: 'binary',

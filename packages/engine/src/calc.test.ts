@@ -606,6 +606,136 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 14)?.value).toEqual(stringValue(' 4999'))
 	})
 
+	test('compiled IF formulas preserve whole-column implicit intersection', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 3, { value: numberValue(0), formula: null, styleId: sid })
+		sheet.cells.set(1, 3, { value: numberValue(1000), formula: null, styleId: sid })
+		sheet.cells.set(2, 3, { value: numberValue(5000), formula: null, styleId: sid })
+		for (let row = 0; row < 3; row++) {
+			sheet.cells.set(row, 4, {
+				value: EMPTY,
+				formula: 'IF(D:D<1000,"Less Than 1000",IF(D:D<4999,"1000 to 4999","5000+"))',
+				styleId: sid,
+			})
+		}
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 4)?.value).toEqual(stringValue('Less Than 1000'))
+		expect(sheet.cells.get(1, 4)?.value).toEqual(stringValue('1000 to 4999'))
+		expect(sheet.cells.get(2, 4)?.value).toEqual(stringValue('5000+'))
+	})
+
+	test('shared formulas shift relative whole-column refs and preserve absolute whole-column refs', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 3, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(0, 4, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(0, 5, { value: numberValue(6), formula: null, styleId: sid })
+		sheet.cells.set(0, 7, {
+			value: EMPTY,
+			formula: 'D:D/$E:$E',
+			styleId: sid,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: true, masterRef: 'H1' },
+		})
+		sheet.cells.set(0, 8, {
+			value: EMPTY,
+			formula: null,
+			styleId: sid,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'H1' },
+		})
+		sheet.cells.set(0, 9, {
+			value: EMPTY,
+			formula: null,
+			styleId: sid,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'H1' },
+		})
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 7)?.value).toEqual(numberValue(5))
+		expect(sheet.cells.get(0, 8)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(0, 9)?.value).toEqual(numberValue(3))
+	})
+
+	test('GETPIVOTDATA reads cached visible pivot output by row field', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Pivot Tables')
+		sheet.cells.set(3, 17, { value: stringValue('Segment'), formula: null, styleId: sid })
+		sheet.cells.set(3, 18, { value: stringValue('Sum of Revenue'), formula: null, styleId: sid })
+		sheet.cells.set(3, 19, { value: stringValue('Sum of Costs'), formula: null, styleId: sid })
+		sheet.cells.set(4, 17, { value: stringValue('Strategic'), formula: null, styleId: sid })
+		sheet.cells.set(4, 18, { value: numberValue(49_478_096), formula: null, styleId: sid })
+		sheet.cells.set(4, 19, { value: numberValue(32_125_000), formula: null, styleId: sid })
+		sheet.cells.set(5, 17, { value: stringValue('Grand Total'), formula: null, styleId: sid })
+		sheet.cells.set(5, 18, { value: numberValue(99_000_000), formula: null, styleId: sid })
+		sheet.cells.set(16, 17, { value: stringValue('Strategic'), formula: null, styleId: sid })
+		sheet.cells.set(16, 18, {
+			value: EMPTY,
+			formula: 'GETPIVOTDATA("Sum of Revenue",$R$4,"Segment",$R17)',
+			styleId: sid,
+		})
+		sheet.cells.set(16, 19, {
+			value: EMPTY,
+			formula: 'GETPIVOTDATA("Sum of Costs",$R$4,"Segment","Strategic")',
+			styleId: sid,
+		})
+		sheet.cells.set(16, 20, {
+			value: EMPTY,
+			formula: 'GETPIVOTDATA("Sum of Revenue",$R$4)',
+			styleId: sid,
+		})
+		wb.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'Pivot Tables',
+			name: 'PivotTable1',
+			cacheId: 1,
+			locationRef: 'R4:T6',
+			fields: [],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [],
+			dataFields: [{ fieldIndex: 0, name: 'Sum of Revenue', subtotal: 'sum' }],
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(16, 18)?.value).toEqual(numberValue(49_478_096))
+		expect(sheet.cells.get(16, 19)?.value).toEqual(numberValue(32_125_000))
+		expect(sheet.cells.get(16, 20)?.value).toEqual(numberValue(99_000_000))
+	})
+
+	test('GETPIVOTDATA returns #REF! for missing visible pivot items', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Pivot Tables')
+		sheet.cells.set(3, 29, { value: stringValue('Product_Category'), formula: null, styleId: sid })
+		sheet.cells.set(3, 30, { value: stringValue('Sum of Revenue'), formula: null, styleId: sid })
+		sheet.cells.set(4, 29, { value: stringValue('Services'), formula: null, styleId: sid })
+		sheet.cells.set(4, 30, { value: numberValue(98_854_675), formula: null, styleId: sid })
+		sheet.cells.set(16, 29, {
+			value: EMPTY,
+			formula: 'IFERROR(GETPIVOTDATA("Sum of Revenue",$AD$4,"Product_Category","Hardware"),0)',
+			styleId: sid,
+		})
+		wb.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable2.xml',
+			sheetName: 'Pivot Tables',
+			name: 'PivotTable2',
+			cacheId: 1,
+			locationRef: 'AD4:AE5',
+			fields: [],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [],
+			dataFields: [{ fieldIndex: 0, name: 'Sum of Revenue', subtotal: 'sum' }],
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(16, 29)?.value).toEqual(numberValue(0))
+	})
+
 	test('binary arithmetic broadcasts row and column arrays', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -1940,6 +2070,20 @@ describe('recalculate', () => {
 
 		recalculate(wb, makeCtx())
 		expect(sheet.cells.get(1, 0)?.value).toEqual(stringValue('Hello World'))
+	})
+
+	test('string concatenation uses Excel-like general number text', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, {
+			value: numberValue(5.2421445218367324e-14),
+			formula: null,
+			styleId: sid,
+		})
+		sheet.cells.set(0, 1, { value: EMPTY, formula: '"x"&A1', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(stringValue('x5.24214452183673E-14'))
 	})
 
 	test('formula parse error is reported and cell displays #VALUE!', () => {

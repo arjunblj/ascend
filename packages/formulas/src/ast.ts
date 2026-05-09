@@ -75,6 +75,8 @@ export interface WholeColumnRangeNode {
 	readonly type: 'wholeColumnRange'
 	readonly startCol: number
 	readonly endCol: number
+	readonly startColAbsolute?: boolean
+	readonly endColAbsolute?: boolean
 	readonly sheet?: string
 }
 

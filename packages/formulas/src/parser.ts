@@ -46,6 +46,16 @@ function columnLabelToIndex(raw: string): number {
 	return columnToIndex((raw.startsWith('$') ? raw.slice(1) : raw).toUpperCase())
 }
 
+function wholeColumnRangeNode(startRaw: string, endRaw: string): FormulaNode {
+	return {
+		type: 'wholeColumnRange',
+		startCol: columnLabelToIndex(startRaw),
+		endCol: columnLabelToIndex(endRaw),
+		...(startRaw.startsWith('$') ? { startColAbsolute: true } : {}),
+		...(endRaw.startsWith('$') ? { endColAbsolute: true } : {}),
+	}
+}
+
 function splitStructuredRefParts(content: string): string[] {
 	const parts: string[] = []
 	let start = 0
@@ -320,10 +330,10 @@ class FormulaParser {
 				this.lookahead(2, true).type === TokenType.Name &&
 				isColumnLabel(this.lookahead(2, true).value)
 			) {
-				const startCol = columnLabelToIndex(this.advance(true).value)
+				const startCol = this.advance(true).value
 				this.expect(TokenType.Colon)
-				const endCol = columnLabelToIndex(this.expect(TokenType.Name).value)
-				return { type: 'wholeColumnRange', startCol, endCol }
+				const endCol = this.expect(TokenType.Name).value
+				return wholeColumnRangeNode(startCol, endCol)
 			}
 			return this.parseNameOrSheetRef()
 		}
@@ -458,6 +468,8 @@ class FormulaParser {
 					type: 'wholeColumnRange',
 					startCol: target.startCol,
 					endCol: target.endCol,
+					...(target.startColAbsolute ? { startColAbsolute: true } : {}),
+					...(target.endColAbsolute ? { endColAbsolute: true } : {}),
 					sheet,
 				}
 			case 'name':
@@ -485,10 +497,10 @@ class FormulaParser {
 			this.lookahead(2, true).type === TokenType.Name &&
 			isColumnLabel(this.lookahead(2, true).value)
 		) {
-			const startCol = columnLabelToIndex(this.advance(true).value)
+			const startCol = this.advance(true).value
 			this.expect(TokenType.Colon)
-			const endCol = columnLabelToIndex(this.expect(TokenType.Name).value)
-			return { type: 'wholeColumnRange', startCol, endCol }
+			const endCol = this.expect(TokenType.Name).value
+			return wholeColumnRangeNode(startCol, endCol)
 		}
 		if (this.peek(true).type === TokenType.CellRef) {
 			return this.parseCellOrRange()
@@ -690,6 +702,8 @@ function inheritEndpointSheet(left: FormulaNode, right: FormulaNode): FormulaNod
 						type: 'wholeColumnRange',
 						startCol: right.startCol,
 						endCol: right.endCol,
+						...(right.startColAbsolute ? { startColAbsolute: true } : {}),
+						...(right.endColAbsolute ? { endColAbsolute: true } : {}),
 						sheet,
 					}
 				: right

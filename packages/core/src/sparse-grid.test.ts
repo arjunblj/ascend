@@ -68,15 +68,20 @@ describe('SparseGrid', () => {
 	test('formulaCellCount tracks formula mutations', () => {
 		const grid = new SparseGrid()
 		expect(grid.formulaCellCount()).toBe(0)
+		expect(grid.formulaInfoCellCount()).toBe(0)
 		grid.set(0, 0, makeCell(numberValue(1), 'A1+1'))
 		grid.set(0, 1, makeCell(numberValue(2)))
 		expect(grid.formulaCellCount()).toBe(1)
+		expect(grid.formulaInfoCellCount()).toBe(0)
 		grid.set(0, 1, { ...makeCell(numberValue(2)), formulaInfo: { kind: 'array', ref: 'B1' } })
 		expect(grid.formulaCellCount()).toBe(2)
+		expect(grid.formulaInfoCellCount()).toBe(1)
 		grid.clearFormulaInfo(0, 1)
 		expect(grid.formulaCellCount()).toBe(1)
+		expect(grid.formulaInfoCellCount()).toBe(0)
 		grid.set(0, 0, makeCell(numberValue(3)))
 		expect(grid.formulaCellCount()).toBe(0)
+		expect(grid.formulaInfoCellCount()).toBe(0)
 	})
 
 	test('usedRange returns null for empty grid', () => {

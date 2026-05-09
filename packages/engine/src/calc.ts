@@ -89,6 +89,20 @@ interface RangeAggregateState {
 	readonly error: CellValue | null
 }
 
+interface PrefixAggregateBlock {
+	readonly key: CellKey
+	readonly formula: AnalyzedFormula
+	readonly aggregate: RangeAggregateOptimization
+}
+
+interface TextPrefixAggregateBlock {
+	readonly sheetIndex: number
+	readonly row: number
+	readonly col: number
+	readonly formula: string
+	readonly aggregate: RangeAggregateOptimization
+}
+
 interface RecalcScratch {
 	readonly spillBySheet: Map<number, Map<string, SpillEntry[]>>
 	readonly spillInitializedSheets: Set<number>
@@ -98,6 +112,8 @@ interface RecalcScratch {
 	readonly numericVectorCache: NumericVectorCache
 	readonly rangeValueCache: Map<number, readonly (readonly CellValue[])[]>
 	readonly growingAggregateStateCache: Map<CellKey, RangeAggregateState>
+	readonly textPrefixTailIndex: Map<CellKey, TextPrefixAggregateBlock>
+	readonly textPrefixFormulaByGroupEnd: Map<string, TextPrefixAggregateBlock>
 	readonly evalContext: MutableEvalContext
 }
 
@@ -115,6 +131,8 @@ function getRecalcScratch(workbook: Workbook): RecalcScratch {
 			numericVectorCache: new Map(),
 			rangeValueCache: new Map(),
 			growingAggregateStateCache: new Map(),
+			textPrefixTailIndex: new Map(),
+			textPrefixFormulaByGroupEnd: new Map(),
 			evalContext: new MutableEvalContext(),
 		}
 		recalcScratchByWorkbook.set(workbook, scratch)
@@ -752,6 +770,7 @@ function clearOrphanedSpills(
 	spillIndex: SpillIndexState,
 	changed: string[],
 ): void {
+	if (!workbookHasFormulaInfo(workbook) && spillIndex.bySheet.size === 0) return
 	const sheetIndexByName = new Map<string, number>()
 	for (let i = 0; i < workbook.sheets.length; i++) {
 		const s = workbook.sheets[i]
@@ -798,6 +817,13 @@ function clearOrphanedSpills(
 	}
 }
 
+function workbookHasFormulaInfo(workbook: Workbook): boolean {
+	for (const sheet of workbook.sheets) {
+		if (sheet?.cells.formulaInfoCellCount() > 0) return true
+	}
+	return false
+}
+
 /**
  * Recalculate all formula cells, or an incremental subset when `dirtyOnly` / `dirtyRefs` is set.
  * Incremental mode uses the dependency graph (`getDirtySet` + partial topological order) so small
@@ -831,6 +857,31 @@ export function recalculate(
 	const isDirtyRecalc = opts?.dirtyOnly || (opts?.dirtyRefs?.length ?? 0) > 0
 
 	if (!isDirtyRecalc) clearOrphanedSpills(workbook, spillIndex, changed)
+	if (!isDirtyRecalc && !opts?.range) {
+		exactLookupCache.clear()
+		lookupVectorCache.clear()
+		scratch.growingAggregateStateCache.clear()
+		const fast = tryFastFullPrefixAggregateTextRecalc(workbook, changed, start, scratch)
+		if (fast) {
+			clearRangeValueCache()
+			clearCriteriaMatchCache()
+			return fast
+		}
+	}
+	if (isDirtyRecalc && !opts?.range) {
+		const fast = tryFastDirtyPrefixAggregateTextRecalc(
+			workbook,
+			opts?.dirtyRefs,
+			changed,
+			start,
+			scratch,
+		)
+		if (fast) {
+			clearRangeValueCache()
+			clearCriteriaMatchCache()
+			return fast
+		}
+	}
 
 	const analysis = analyzeWorkbook(workbook, opts?.range ? { range: opts.range } : undefined)
 	const graph = analysis.dependencyGraph
@@ -1002,6 +1053,28 @@ export function recalculate(
 			)
 				? scratch.growingAggregateStateCache
 				: null
+		const blockCompletedKeys =
+			!isDirtyRecalc && cycleKeys.size === 0 && rangeAggregates.size > 0
+				? tryFastFullPrefixAggregateBlocks(
+						workbook,
+						analysis.formulas,
+						evalOrderSet,
+						rangeAggregateStates,
+						changed,
+					)
+				: null
+		if (blockCompletedKeys && completedKeys) {
+			for (const key of blockCompletedKeys) completedKeys.add(key)
+		}
+		if (blockCompletedKeys?.size === evalOrder.length) {
+			clearRangeValueCache()
+			clearCriteriaMatchCache()
+			return {
+				changed,
+				errors,
+				duration: performance.now() - start,
+			}
+		}
 		if (sharedGroups.size > 0) {
 			const evalOrderIndex = new Map<CellKey, number>()
 			let idx = 0
@@ -1189,12 +1262,14 @@ export function recalculate(
 
 		if (!hasSharedFormulaGroups) {
 			for (const key of evalOrder) {
+				if (blockCompletedKeys?.has(key)) continue
 				evalCell(key)
 			}
 		} else {
 			const processed = new Set<CellKey>()
 			for (const key of evalOrder) {
 				if (processed.has(key)) continue
+				if (blockCompletedKeys?.has(key)) continue
 				const plan = cellToGroup.get(key)
 				if (plan) {
 					for (const memberKey of plan.members) processed.add(memberKey)
@@ -1326,6 +1401,576 @@ function canFastRecalculatePrefixAggregate(
 		source.row >= aggregate.startRow &&
 		source.row <= aggregate.endRow
 	)
+}
+
+function tryFastFullPrefixAggregateTextRecalc(
+	workbook: Workbook,
+	changed: string[],
+	start: number,
+	scratch: RecalcScratch,
+): RecalcResult | null {
+	scratch.textPrefixTailIndex.clear()
+	scratch.textPrefixFormulaByGroupEnd.clear()
+	const groups = new Map<string, TextPrefixAggregateBlock[]>()
+	const formulaCells: TextPrefixAggregateBlock[] = []
+	const tailIndex = new Map<CellKey, TextPrefixAggregateBlock>()
+	const formulaByGroupEnd = new Map<string, TextPrefixAggregateBlock>()
+	for (let sheetIndex = 0; sheetIndex < workbook.sheets.length; sheetIndex++) {
+		const sheet = workbook.sheets[sheetIndex]
+		if (!sheet) continue
+		for (const [row, entries] of sheet.cells.iterateRows()) {
+			for (const [col, cell] of entries) {
+				if (cell.formula === null) {
+					if (cell.formulaInfo !== undefined) return null
+					continue
+				}
+				if (cell.formulaInfo !== undefined) return null
+				const aggregate = parseSimplePrefixAggregateFormula(cell.formula, sheetIndex)
+				if (!aggregate) return null
+				const groupKey = [
+					aggregate.functionName,
+					aggregate.sheetIndex,
+					aggregate.startRow,
+					aggregate.startCol,
+					aggregate.endCol,
+				].join(':')
+				const block = { sheetIndex, row, col, formula: cell.formula, aggregate }
+				formulaCells.push(block)
+				const groupEndKey = `${prefixAggregateTextGroupKey(aggregate)}:${aggregate.endRow}`
+				formulaByGroupEnd.set(groupEndKey, block)
+				tailIndex.set(cellKey(aggregate.sheetIndex, aggregate.endRow, aggregate.startCol), block)
+				let group = groups.get(groupKey)
+				if (!group) {
+					group = []
+					groups.set(groupKey, group)
+				}
+				group.push(block)
+			}
+		}
+	}
+	if (formulaCells.length === 0 || groups.size === 0) return null
+
+	for (const group of groups.values()) {
+		group.sort((a, b) => a.aggregate.endRow - b.aggregate.endRow || a.row - b.row || a.col - b.col)
+		const first = group[0]
+		const last = group[group.length - 1]
+		if (!first || !last) return null
+		if (
+			textPrefixSourceContainsFormula(
+				formulaCells,
+				first.aggregate.sheetIndex,
+				first.aggregate.startRow,
+				first.aggregate.startCol,
+				last.aggregate.endRow,
+				first.aggregate.endCol,
+			)
+		) {
+			return null
+		}
+
+		let state: RangeAggregateState | null = null
+		let previousEndRow = first.aggregate.startRow - 1
+		for (const block of group) {
+			const aggregate = block.aggregate
+			if (aggregate.endRow < previousEndRow) return null
+			if (aggregate.endRow > previousEndRow) {
+				state = scanRangeAggregateState(
+					workbook,
+					aggregate.functionName,
+					aggregate.sheetIndex,
+					previousEndRow + 1,
+					aggregate.startCol,
+					aggregate.endRow,
+					aggregate.endCol,
+					state ?? undefined,
+				)
+				if (!state) return null
+				previousEndRow = aggregate.endRow
+			}
+			if (!state) return null
+			const sheet = workbook.sheets[block.sheetIndex]
+			if (!sheet) return null
+			const newValue = rangeAggregateStateToValue(aggregate.functionName, state)
+			const oldValue = sheet.cells.readValue(block.row, block.col)
+			if (valuesEqual(oldValue, newValue)) continue
+			const oldStyleId = sheet.cells.readStyleId(block.row, block.col) ?? DEFAULT_STYLE_ID
+			if (newValue.kind === 'number') {
+				sheet.cells.setNumberResolved(
+					block.row,
+					block.col,
+					newValue.value,
+					block.formula,
+					oldStyleId,
+				)
+			} else {
+				sheet.cells.setResolved(block.row, block.col, newValue, block.formula, oldStyleId)
+			}
+			changed.push(cellRefString(workbook, block.sheetIndex, block.row, block.col))
+		}
+	}
+	for (const [key, block] of tailIndex) scratch.textPrefixTailIndex.set(key, block)
+	for (const [key, block] of formulaByGroupEnd) scratch.textPrefixFormulaByGroupEnd.set(key, block)
+	return { changed, errors: [], duration: performance.now() - start }
+}
+
+function tryFastDirtyPrefixAggregateTextRecalc(
+	workbook: Workbook,
+	dirtyRefs: readonly string[] | undefined,
+	changed: string[],
+	start: number,
+	scratch: RecalcScratch,
+): RecalcResult | null {
+	const source = resolveSingleDirtyCell(workbook, dirtyRefs)
+	if (!source) return null
+	const indexed = scratch.textPrefixTailIndex.get(
+		cellKey(source.sheetIndex, source.row, source.col),
+	)
+	if (indexed && indexed.aggregate.endRow > indexed.aggregate.startRow) {
+		const sheet = workbook.sheets[indexed.sheetIndex]
+		const currentFormula = sheet?.cells.readFormula(indexed.row, indexed.col)
+		if (
+			sheet &&
+			currentFormula === indexed.formula &&
+			sheet.cells.readFormulaInfo(indexed.row, indexed.col) === undefined
+		) {
+			const newValue = tryFastDirtyTailPrefixValue(
+				workbook,
+				source,
+				indexed,
+				scratch.textPrefixFormulaByGroupEnd,
+			)
+			if (newValue && writeTextPrefixAggregateValue(workbook, indexed, newValue, changed)) {
+				return { changed, errors: [], duration: performance.now() - start }
+			}
+		}
+	}
+	const groups = new Map<string, TextPrefixAggregateBlock[]>()
+	const formulaCells: TextPrefixAggregateBlock[] = []
+	const formulaByGroupEnd = new Map<string, TextPrefixAggregateBlock>()
+	for (let sheetIndex = 0; sheetIndex < workbook.sheets.length; sheetIndex++) {
+		const sheet = workbook.sheets[sheetIndex]
+		if (!sheet) continue
+		for (const [row, entries] of sheet.cells.iterateRows()) {
+			for (const [col, cell] of entries) {
+				if (cell.formula === null) {
+					if (cell.formulaInfo !== undefined) return null
+					continue
+				}
+				if (cell.formulaInfo !== undefined) return null
+				const aggregate = parseSimplePrefixAggregateFormula(cell.formula, sheetIndex)
+				if (!aggregate) return null
+				const groupKey = prefixAggregateTextGroupKey(aggregate)
+				const block = { sheetIndex, row, col, formula: cell.formula, aggregate }
+				formulaCells.push(block)
+				formulaByGroupEnd.set(`${groupKey}:${aggregate.endRow}`, block)
+				if (sourceOverlapsAggregate(source, aggregate)) {
+					let group = groups.get(groupKey)
+					if (!group) {
+						group = []
+						groups.set(groupKey, group)
+					}
+					group.push(block)
+				}
+			}
+		}
+	}
+	if (formulaCells.length === 0 || groups.size === 0) return null
+	for (const group of groups.values()) {
+		group.sort((a, b) => a.aggregate.endRow - b.aggregate.endRow || a.row - b.row || a.col - b.col)
+		const first = group[0]
+		const last = group[group.length - 1]
+		if (!first || !last) return null
+		if (
+			textPrefixSourceContainsFormula(
+				formulaCells,
+				first.aggregate.sheetIndex,
+				first.aggregate.startRow,
+				first.aggregate.startCol,
+				last.aggregate.endRow,
+				first.aggregate.endCol,
+			)
+		) {
+			return null
+		}
+		let state: RangeAggregateState | null = null
+		let previousEndRow = first.aggregate.startRow - 1
+		for (const block of group) {
+			const aggregate = block.aggregate
+			let newValue = tryFastDirtyTailPrefixValue(workbook, source, block, formulaByGroupEnd)
+			if (newValue?.kind === 'number') {
+				if (aggregate.functionName === 'SUM') {
+					state = {
+						sum: newValue.value,
+						count: 0,
+						min: Number.POSITIVE_INFINITY,
+						max: Number.NEGATIVE_INFINITY,
+						error: null,
+					}
+					previousEndRow = aggregate.endRow
+				} else if (aggregate.functionName === 'COUNT') {
+					state = {
+						sum: 0,
+						count: newValue.value,
+						min: Number.POSITIVE_INFINITY,
+						max: Number.NEGATIVE_INFINITY,
+						error: null,
+					}
+					previousEndRow = aggregate.endRow
+				}
+			}
+			if (!newValue) {
+				if (aggregate.endRow < previousEndRow) return null
+				if (aggregate.endRow > previousEndRow) {
+					state = scanRangeAggregateState(
+						workbook,
+						aggregate.functionName,
+						aggregate.sheetIndex,
+						previousEndRow + 1,
+						aggregate.startCol,
+						aggregate.endRow,
+						aggregate.endCol,
+						state ?? undefined,
+					)
+					if (!state) return null
+					previousEndRow = aggregate.endRow
+				}
+				if (!state) return null
+				newValue = rangeAggregateStateToValue(aggregate.functionName, state)
+			}
+			if (!writeTextPrefixAggregateValue(workbook, block, newValue, changed)) return null
+		}
+	}
+	return { changed, errors: [], duration: performance.now() - start }
+}
+
+function parseSimplePrefixAggregateFormula(
+	formula: string,
+	sheetIndex: number,
+): RangeAggregateOptimization | null {
+	const text = formula.trim().replace(/^=/, '')
+	const open = text.indexOf('(')
+	if (open <= 0 || text.charCodeAt(text.length - 1) !== 41) return null
+	const functionName = parseGrowingAggregateFunction(text.slice(0, open))
+	if (!functionName) return null
+	const colon = text.indexOf(':', open + 1)
+	if (colon < 0) return null
+	const startCell = parseSimpleCellRef(text, open + 1, colon)
+	const endCell = parseSimpleCellRef(text, colon + 1, text.length - 1)
+	if (!startCell || !endCell) return null
+	if (startCell.col !== endCell.col || endCell.row < startCell.row) return null
+	return {
+		functionName,
+		sheetIndex,
+		startRow: startCell.row,
+		startCol: startCell.col,
+		endRow: endCell.row,
+		endCol: endCell.col,
+	}
+}
+
+function parseGrowingAggregateFunction(name: string): GrowingRangeAggregateFunction | null {
+	switch (name.trim().toUpperCase()) {
+		case 'SUM':
+			return 'SUM'
+		case 'COUNT':
+			return 'COUNT'
+		case 'AVERAGE':
+			return 'AVERAGE'
+		case 'MIN':
+			return 'MIN'
+		case 'MAX':
+			return 'MAX'
+		default:
+			return null
+	}
+}
+
+function parseSimpleCellRef(
+	text: string,
+	rawStart: number,
+	rawEnd: number,
+): { row: number; col: number } | null {
+	let i = rawStart
+	let end = rawEnd
+	while (i < end && text.charCodeAt(i) <= 32) i++
+	while (end > i && text.charCodeAt(end - 1) <= 32) end--
+	if (text.charCodeAt(i) === 36) i++
+	let col = 0
+	let sawCol = false
+	while (i < end) {
+		const code = text.charCodeAt(i)
+		const upper = code >= 97 && code <= 122 ? code - 32 : code
+		if (upper < 65 || upper > 90) break
+		col = col * 26 + (upper - 64)
+		sawCol = true
+		i++
+	}
+	if (!sawCol) return null
+	if (text.charCodeAt(i) === 36) i++
+	let row = 0
+	let sawRow = false
+	while (i < end) {
+		const code = text.charCodeAt(i)
+		if (code < 48 || code > 57) return null
+		row = row * 10 + (code - 48)
+		sawRow = true
+		i++
+	}
+	if (!sawRow || row < 1 || col < 1 || col > 16_384) return null
+	return { row: row - 1, col: col - 1 }
+}
+
+function prefixAggregateTextGroupKey(aggregate: RangeAggregateOptimization): string {
+	return [
+		aggregate.functionName,
+		aggregate.sheetIndex,
+		aggregate.startRow,
+		aggregate.startCol,
+		aggregate.endCol,
+	].join(':')
+}
+
+function sourceOverlapsAggregate(
+	source: CellCoords,
+	aggregate: RangeAggregateOptimization,
+): boolean {
+	return (
+		source.sheetIndex === aggregate.sheetIndex &&
+		source.row >= aggregate.startRow &&
+		source.row <= aggregate.endRow &&
+		source.col >= aggregate.startCol &&
+		source.col <= aggregate.endCol
+	)
+}
+
+function resolveSingleDirtyCell(
+	workbook: Workbook,
+	dirtyRefs: readonly string[] | undefined,
+): CellCoords | null {
+	if (!dirtyRefs || dirtyRefs.length !== 1) return null
+	const ref = dirtyRefs[0]
+	if (!ref) return null
+	const bang = ref.lastIndexOf('!')
+	const sheetName = bang >= 0 ? ref.slice(0, bang).replace(/^'|'$/g, '') : workbook.sheets[0]?.name
+	const localRef = bang >= 0 ? ref.slice(bang + 1) : ref
+	if (!sheetName || !localRef) return null
+	const sheetIndex = workbook.sheets.findIndex(
+		(sheet) => sheet?.name.toLowerCase() === sheetName.toLowerCase(),
+	)
+	if (sheetIndex < 0) return null
+	const range = parseRange(localRef)
+	if (range.start.row !== range.end.row || range.start.col !== range.end.col) return null
+	return { sheetIndex, row: range.start.row, col: range.start.col }
+}
+
+function tryFastDirtyTailPrefixValue(
+	workbook: Workbook,
+	source: CellCoords,
+	block: TextPrefixAggregateBlock,
+	formulaByGroupEnd: ReadonlyMap<string, TextPrefixAggregateBlock>,
+): CellValue | null {
+	const aggregate = block.aggregate
+	if (aggregate.endRow !== source.row || aggregate.endRow <= aggregate.startRow) return null
+	const previous = formulaByGroupEnd.get(
+		`${prefixAggregateTextGroupKey(aggregate)}:${aggregate.endRow - 1}`,
+	)
+	if (!previous) return null
+	return tryEvaluateGrowingRangeScalarAggregate(
+		workbook,
+		{
+			functionName: aggregate.functionName,
+			previousKey: cellKey(previous.sheetIndex, previous.row, previous.col),
+			previousSheetIndex: previous.sheetIndex,
+			previousRow: previous.row,
+			previousCol: previous.col,
+			appendSheetIndex: source.sheetIndex,
+			appendStartRow: source.row,
+			appendStartCol: source.col,
+			appendEndRow: source.row,
+			appendEndCol: source.col,
+		},
+		true,
+	)
+}
+
+function writeTextPrefixAggregateValue(
+	workbook: Workbook,
+	block: TextPrefixAggregateBlock,
+	newValue: CellValue,
+	changed: string[],
+): boolean {
+	const sheet = workbook.sheets[block.sheetIndex]
+	if (!sheet) return false
+	const oldValue = sheet.cells.readValue(block.row, block.col)
+	if (valuesEqual(oldValue, newValue)) return true
+	const oldStyleId = sheet.cells.readStyleId(block.row, block.col) ?? DEFAULT_STYLE_ID
+	if (newValue.kind === 'number') {
+		sheet.cells.setNumberResolved(block.row, block.col, newValue.value, block.formula, oldStyleId)
+	} else {
+		sheet.cells.setResolved(block.row, block.col, newValue, block.formula, oldStyleId)
+	}
+	changed.push(cellRefString(workbook, block.sheetIndex, block.row, block.col))
+	return true
+}
+
+function textPrefixSourceContainsFormula(
+	formulas: readonly TextPrefixAggregateBlock[],
+	sheetIndex: number,
+	startRow: number,
+	startCol: number,
+	endRow: number,
+	endCol: number,
+): boolean {
+	for (const formula of formulas) {
+		if (formula.sheetIndex !== sheetIndex) continue
+		if (
+			formula.row >= startRow &&
+			formula.row <= endRow &&
+			formula.col >= startCol &&
+			formula.col <= endCol
+		) {
+			return true
+		}
+	}
+	return false
+}
+
+function tryFastFullPrefixAggregateBlocks(
+	workbook: Workbook,
+	formulas: ReadonlyMap<CellKey, AnalyzedFormula>,
+	evalOrderSet: ReadonlySet<CellKey>,
+	rangeAggregateStates: Map<CellKey, RangeAggregateState> | null,
+	changed: string[],
+): Set<CellKey> | null {
+	const groups = new Map<string, PrefixAggregateBlock[]>()
+	for (const [key, formula] of formulas) {
+		if (!evalOrderSet.has(key) || formula.parseError) continue
+		const aggregate = formula.rangeAggregate
+		if (!aggregate || !canFastFullPrefixAggregate(aggregate)) continue
+		const groupKey = [
+			aggregate.functionName,
+			aggregate.sheetIndex,
+			aggregate.startRow,
+			aggregate.startCol,
+			aggregate.endCol,
+		].join(':')
+		let group = groups.get(groupKey)
+		if (!group) {
+			group = []
+			groups.set(groupKey, group)
+		}
+		group.push({ key, formula, aggregate })
+	}
+	if (groups.size === 0) return null
+
+	const completed = new Set<CellKey>()
+	const hasFormulaInfo = workbookHasFormulaInfo(workbook)
+	for (const group of groups.values()) {
+		if (group.length < 4) continue
+		group.sort((a, b) => a.aggregate.endRow - b.aggregate.endRow || a.key - b.key)
+		const first = group[0]
+		const last = group[group.length - 1]
+		if (!first || !last) continue
+		const sourceEndRow = last.aggregate.endRow
+		if (
+			rangeContainsFormula(
+				formulas,
+				first.aggregate.sheetIndex,
+				first.aggregate.startRow,
+				first.aggregate.startCol,
+				sourceEndRow,
+				first.aggregate.endCol,
+			)
+		) {
+			continue
+		}
+
+		let state: RangeAggregateState | null = null
+		let previousEndRow = first.aggregate.startRow - 1
+		for (const block of group) {
+			const { formula, aggregate } = block
+			if (aggregate.endRow < previousEndRow) continue
+			if (aggregate.endRow > previousEndRow) {
+				state = scanRangeAggregateState(
+					workbook,
+					aggregate.functionName,
+					aggregate.sheetIndex,
+					previousEndRow + 1,
+					aggregate.startCol,
+					aggregate.endRow,
+					aggregate.endCol,
+					state ?? undefined,
+				)
+				if (!state) break
+				previousEndRow = aggregate.endRow
+			}
+			if (!state) continue
+			const sheet = workbook.sheets[formula.sheetIndex]
+			if (!sheet) continue
+			if (hasFormulaInfo && sheet.cells.readFormulaInfo(formula.row, formula.col) !== undefined) {
+				continue
+			}
+			const oldFormula = sheet.cells.readFormula(formula.row, formula.col) ?? null
+			if (oldFormula === null) continue
+
+			const newValue = rangeAggregateStateToValue(aggregate.functionName, state)
+			const oldValue = sheet.cells.readValue(formula.row, formula.col)
+			if (!valuesEqual(oldValue, newValue)) {
+				const oldStyleId = sheet.cells.readStyleId(formula.row, formula.col) ?? DEFAULT_STYLE_ID
+				if (newValue.kind === 'number') {
+					sheet.cells.setNumberResolved(
+						formula.row,
+						formula.col,
+						newValue.value,
+						oldFormula,
+						oldStyleId,
+					)
+				} else {
+					sheet.cells.setResolved(formula.row, formula.col, newValue, oldFormula, oldStyleId)
+				}
+				changed.push(cellRefString(workbook, formula.sheetIndex, formula.row, formula.col))
+			}
+			if (rangeAggregateStates && needsRangeAggregateState(aggregate.functionName)) {
+				rangeAggregateStates.set(block.key, state)
+			}
+			completed.add(block.key)
+		}
+	}
+	return completed.size > 0 ? completed : null
+}
+
+function canFastFullPrefixAggregate(aggregate: RangeAggregateOptimization): boolean {
+	return (
+		aggregate.startCol === aggregate.endCol &&
+		aggregate.endRow >= aggregate.startRow &&
+		(aggregate.functionName === 'SUM' ||
+			aggregate.functionName === 'COUNT' ||
+			aggregate.functionName === 'AVERAGE' ||
+			aggregate.functionName === 'MIN' ||
+			aggregate.functionName === 'MAX')
+	)
+}
+
+function rangeContainsFormula(
+	formulas: ReadonlyMap<CellKey, AnalyzedFormula>,
+	sheetIndex: number,
+	startRow: number,
+	startCol: number,
+	endRow: number,
+	endCol: number,
+): boolean {
+	for (const formula of formulas.values()) {
+		if (formula.sheetIndex !== sheetIndex) continue
+		if (
+			formula.row >= startRow &&
+			formula.row <= endRow &&
+			formula.col >= startCol &&
+			formula.col <= endCol
+		) {
+			return true
+		}
+	}
+	return false
 }
 
 function tryFastDirtyGrowingAggregateRecalc(

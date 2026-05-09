@@ -101,6 +101,7 @@ interface GridChunk {
 	readFormulaInfo(localIndex: number): CellFormulaBinding | undefined
 	clearFormulaInfo(localIndex: number): void
 	countFormulaCells(): number
+	countFormulaInfoCells(): number
 	setStringResolved(
 		localIndex: number,
 		value: string,
@@ -267,6 +268,14 @@ class SparseChunk implements GridChunk {
 		let count = 0
 		for (const slot of this.slots.values()) {
 			if (slot.formula !== null || slot.formulaInfo !== undefined) count++
+		}
+		return count
+	}
+
+	countFormulaInfoCells(): number {
+		let count = 0
+		for (const slot of this.slots.values()) {
+			if (slot.formulaInfo !== undefined) count++
 		}
 		return count
 	}
@@ -478,6 +487,15 @@ class DenseChunk implements GridChunk {
 			) {
 				count++
 			}
+		}
+		return count
+	}
+
+	countFormulaInfoCells(): number {
+		if (this.formulaInfos === null) return 0
+		let count = 0
+		for (let localIndex = 0; localIndex < CHUNK_AREA; localIndex++) {
+			if (this.has(localIndex) && this.formulaInfos[localIndex] !== undefined) count++
 		}
 		return count
 	}
@@ -784,6 +802,7 @@ export class SparseGrid {
 	private stringTable = new StringTable()
 	private _cellCount = 0
 	private _formulaCellCount = 0
+	private _formulaInfoCellCount = 0
 	private _shared = false
 	private _minRow = Number.POSITIVE_INFINITY
 	private _maxRow = Number.NEGATIVE_INFINITY
@@ -837,7 +856,9 @@ export class SparseGrid {
 		let chunk = writable.chunk
 		chunk = this.ensureChunkWritable(chunkRow, chunkCol, cols, chunk)
 		const existed = chunk.has(localIndex)
-		const hadFormula = existed && slotHasFormula(chunk.getSlot(localIndex))
+		const oldSlot = chunk.getSlot(localIndex)
+		const hadFormula = existed && slotHasFormula(oldSlot)
+		const hadFormulaInfo = oldSlot?.formulaInfo !== undefined
 		const hasFormula = formula !== null || formulaInfo !== undefined
 		if (chunk instanceof DenseChunk) {
 			chunk.setResolved(localIndex, value, formula, styleId, formulaInfo, this.stringTable)
@@ -853,6 +874,9 @@ export class SparseGrid {
 			if (this._expectedDensity === 'auto') this._autoTotalCells++
 		}
 		if (hadFormula !== hasFormula) this._formulaCellCount += hasFormula ? 1 : -1
+		if (hadFormulaInfo !== (formulaInfo !== undefined)) {
+			this._formulaInfoCellCount += formulaInfo !== undefined ? 1 : -1
+		}
 		this._trackBounds(row, col)
 	}
 
@@ -873,7 +897,9 @@ export class SparseGrid {
 		let chunk = writable.chunk
 		chunk = this.ensureChunkWritable(chunkRow, chunkCol, cols, chunk)
 		const existed = chunk.has(localIndex)
-		const hadFormula = existed && slotHasFormula(chunk.getSlot(localIndex))
+		const oldSlot = chunk.getSlot(localIndex)
+		const hadFormula = existed && slotHasFormula(oldSlot)
+		const hadFormulaInfo = oldSlot?.formulaInfo !== undefined
 		const hasFormula = formula !== null || formulaInfo !== undefined
 		const nextChunk = chunk.setStringResolved(
 			localIndex,
@@ -890,6 +916,9 @@ export class SparseGrid {
 			if (this._expectedDensity === 'auto') this._autoTotalCells++
 		}
 		if (hadFormula !== hasFormula) this._formulaCellCount += hasFormula ? 1 : -1
+		if (hadFormulaInfo !== (formulaInfo !== undefined)) {
+			this._formulaInfoCellCount += formulaInfo !== undefined ? 1 : -1
+		}
 		this._trackBounds(row, col)
 	}
 
@@ -910,7 +939,9 @@ export class SparseGrid {
 		let chunk = writable.chunk
 		chunk = this.ensureChunkWritable(chunkRow, chunkCol, cols, chunk)
 		const existed = chunk.has(localIndex)
-		const hadFormula = existed && slotHasFormula(chunk.getSlot(localIndex))
+		const oldSlot = chunk.getSlot(localIndex)
+		const hadFormula = existed && slotHasFormula(oldSlot)
+		const hadFormulaInfo = oldSlot?.formulaInfo !== undefined
 		const hasFormula = formula !== null || formulaInfo !== undefined
 		const nextChunk = chunk.setNumberResolved(localIndex, value, formula, styleId, formulaInfo)
 		if (nextChunk !== chunk) cols.set(chunkCol, nextChunk)
@@ -920,6 +951,9 @@ export class SparseGrid {
 			if (this._expectedDensity === 'auto') this._autoTotalCells++
 		}
 		if (hadFormula !== hasFormula) this._formulaCellCount += hasFormula ? 1 : -1
+		if (hadFormulaInfo !== (formulaInfo !== undefined)) {
+			this._formulaInfoCellCount += formulaInfo !== undefined ? 1 : -1
+		}
 		this._trackBounds(row, col)
 	}
 
@@ -934,10 +968,12 @@ export class SparseGrid {
 		if (!chunk) return false
 		chunk = this.ensureChunkWritable(chunkRow, chunkCol, cols, chunk)
 		const hadFormula = slotHasFormula(chunk.getSlot(localIndex))
+		const hadFormulaInfo = chunk.readFormulaInfo(localIndex) !== undefined
 		const deleted = chunk.delete(localIndex)
 		if (!deleted) return false
 		this._cellCount--
 		if (hadFormula) this._formulaCellCount--
+		if (hadFormulaInfo) this._formulaInfoCellCount--
 		if (chunk.count === 0) {
 			cols?.delete(chunkCol)
 			this.invalidateChunkOrder(chunkRow)
@@ -1032,6 +1068,7 @@ export class SparseGrid {
 		const writableChunk = this.ensureChunkWritable(chunkRow, chunkCol, cols, chunk)
 		writableChunk.clearFormulaInfo(localIndex)
 		if (writableChunk.readFormula(localIndex) === null) this._formulaCellCount--
+		this._formulaInfoCellCount--
 	}
 
 	has(row: number, col: number): boolean {
@@ -1195,6 +1232,10 @@ export class SparseGrid {
 		return this._formulaCellCount
 	}
 
+	formulaInfoCellCount(): number {
+		return this._formulaInfoCellCount
+	}
+
 	clear(): void {
 		this.chunkRows = new Map()
 		this._clearWriteCache()
@@ -1203,6 +1244,7 @@ export class SparseGrid {
 		this._sharedChunks = null
 		this._cellCount = 0
 		this._formulaCellCount = 0
+		this._formulaInfoCellCount = 0
 		this._shared = false
 		this._minRow = Number.POSITIVE_INFINITY
 		this._maxRow = Number.NEGATIVE_INFINITY
@@ -1301,6 +1343,7 @@ export class SparseGrid {
 			this.stringTable = next.stringTable
 			this._cellCount = next._cellCount
 			this._formulaCellCount = next._formulaCellCount
+			this._formulaInfoCellCount = next._formulaInfoCellCount
 			this._minRow = next._minRow
 			this._maxRow = next._maxRow
 			this._minCol = next._minCol
@@ -1317,6 +1360,7 @@ export class SparseGrid {
 		this.stringTable = other.stringTable
 		this._cellCount = other._cellCount
 		this._formulaCellCount = other._formulaCellCount
+		this._formulaInfoCellCount = other._formulaInfoCellCount
 		this._minRow = other._minRow
 		this._maxRow = other._maxRow
 		this._minCol = other._minCol
@@ -1461,6 +1505,7 @@ export class SparseGrid {
 		const deleteEndChunk = atChunkRow + countChunks
 		let removedCount = 0
 		let removedFormulaCount = 0
+		let removedFormulaInfoCount = 0
 		for (const [chunkRow, cols] of this.chunkRows) {
 			if (chunkRow < atChunkRow) {
 				next.set(chunkRow, cols)
@@ -1470,6 +1515,7 @@ export class SparseGrid {
 				for (const chunk of cols.values()) {
 					removedCount += chunk.count
 					removedFormulaCount += chunk.countFormulaCells()
+					removedFormulaInfoCount += chunk.countFormulaInfoCells()
 				}
 			}
 		}
@@ -1479,6 +1525,7 @@ export class SparseGrid {
 		this._sortedChunkCols.clear()
 		this._cellCount -= removedCount
 		this._formulaCellCount -= removedFormulaCount
+		this._formulaInfoCellCount -= removedFormulaInfoCount
 		this._boundsDirty = true
 	}
 
@@ -1509,6 +1556,7 @@ export class SparseGrid {
 		const deleteEndChunk = atChunkCol + countChunks
 		let removedCount = 0
 		let removedFormulaCount = 0
+		let removedFormulaInfoCount = 0
 		for (const [chunkRow, cols] of this.chunkRows) {
 			const nextCols = new Map<number, GridChunk>()
 			for (const [chunkCol, chunk] of cols) {
@@ -1519,6 +1567,7 @@ export class SparseGrid {
 				} else {
 					removedCount += chunk.count
 					removedFormulaCount += chunk.countFormulaCells()
+					removedFormulaInfoCount += chunk.countFormulaInfoCells()
 				}
 			}
 			next.set(chunkRow, nextCols)
@@ -1529,6 +1578,7 @@ export class SparseGrid {
 		this._sortedChunkCols.clear()
 		this._cellCount -= removedCount
 		this._formulaCellCount -= removedFormulaCount
+		this._formulaInfoCellCount -= removedFormulaInfoCount
 		this._boundsDirty = true
 	}
 
@@ -1558,6 +1608,7 @@ export class SparseGrid {
 		this._sharedChunks = null
 		this._cellCount = next._cellCount
 		this._formulaCellCount = next._formulaCellCount
+		this._formulaInfoCellCount = next._formulaInfoCellCount
 		this._minRow = next._minRow
 		this._maxRow = next._maxRow
 		this._minCol = next._minCol

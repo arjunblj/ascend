@@ -106,6 +106,28 @@ describe('recalculate', () => {
 		}
 	})
 
+	test('dirty recalc updates a tail prefix aggregate from the indexed previous prefix', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		for (let row = 0; row < 5; row++) {
+			sheet.cells.set(row, 0, { value: numberValue(row + 1), formula: null, styleId: sid })
+			sheet.cells.set(row, 1, {
+				value: EMPTY,
+				formula: `SUM(A$1:A${row + 1})`,
+				styleId: sid,
+			})
+		}
+
+		expect(recalculate(wb, makeCtx()).errors).toEqual([])
+		sheet.cells.set(4, 0, { value: numberValue(100), formula: null, styleId: sid })
+		const result = recalculate(wb, makeCtx(), { dirtyRefs: ['Sheet1!A5'] })
+
+		expect(result.errors).toEqual([])
+		expect(result.changed).toEqual(['Sheet1!B5'])
+		expect(sheet.cells.get(3, 1)?.value).toEqual(numberValue(10))
+		expect(sheet.cells.get(4, 1)?.value).toEqual(numberValue(110))
+	})
+
 	test('chain of dependent formulas', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

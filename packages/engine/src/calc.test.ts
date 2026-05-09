@@ -418,6 +418,58 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 0)?.value).toEqual(errorValue('#VALUE!'))
 	})
 
+	test('conditional aggregate cache stays isolated and refreshes between recalculations', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const categories = ['East', 'West', 'East', 'West']
+		const values = [10, 20, 30, 40]
+		for (let row = 0; row < categories.length; row++) {
+			sheet.cells.set(row, 0, {
+				value: stringValue(categories[row] ?? ''),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 1, {
+				value: numberValue(values[row] ?? 0),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		sheet.cells.set(0, 3, {
+			value: EMPTY,
+			formula: 'SUMIF(A$1:A$4,"East",B$1:B$4)',
+			styleId: sid,
+		})
+		sheet.cells.set(1, 3, {
+			value: EMPTY,
+			formula: 'AVERAGEIF(A$1:A$4,"East",B$1:B$4)',
+			styleId: sid,
+		})
+		sheet.cells.set(2, 3, {
+			value: EMPTY,
+			formula: 'SUMIFS(B$1:B$4,A$1:A$4,"East")',
+			styleId: sid,
+		})
+		sheet.cells.set(3, 3, {
+			value: EMPTY,
+			formula: 'SUMIFS(B$1:B$4,A$1:A$4,"East")',
+			styleId: sid,
+		})
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 3)?.value).toEqual(numberValue(40))
+		expect(sheet.cells.get(1, 3)?.value).toEqual(numberValue(20))
+		expect(sheet.cells.get(2, 3)?.value).toEqual(numberValue(40))
+		expect(sheet.cells.get(3, 3)?.value).toEqual(numberValue(40))
+
+		sheet.cells.set(0, 1, { value: numberValue(100), formula: null, styleId: sid })
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 3)?.value).toEqual(numberValue(130))
+		expect(sheet.cells.get(1, 3)?.value).toEqual(numberValue(65))
+		expect(sheet.cells.get(2, 3)?.value).toEqual(numberValue(130))
+		expect(sheet.cells.get(3, 3)?.value).toEqual(numberValue(130))
+	})
+
 	test('current-row structured references resolve within a table body', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

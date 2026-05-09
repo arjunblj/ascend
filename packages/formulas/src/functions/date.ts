@@ -321,7 +321,7 @@ function parseDateText(value: string): DateParts | null {
 	const us = /^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})$/.exec(text)
 	if (us) {
 		const yearRaw = Number(us[3])
-		const year = yearRaw < 100 ? 2000 + yearRaw : yearRaw
+		const year = yearRaw < 100 ? (yearRaw <= 29 ? 2000 + yearRaw : 1900 + yearRaw) : yearRaw
 		return validateDateParts(year, Number(us[1]), Number(us[2]))
 	}
 

@@ -131,6 +131,18 @@
 			"expected": { "kind": "number", "value": 1 }
 		},
 		{
+			"description": "DATEVALUE maps two-digit years 00-29 into the 2000s",
+			"setup": {},
+			"formula": "DATEVALUE(\"1/1/29\")",
+			"expected": { "kind": "number", "value": 47119 }
+		},
+		{
+			"description": "DATEVALUE maps two-digit years 30-99 into the 1900s",
+			"setup": {},
+			"formula": "DATEVALUE(\"1/1/30\")",
+			"expected": { "kind": "number", "value": 10959 }
+		},
+		{
 			"description": "DAYS360 returns days between dates on 360-day year (US method)",
 			"setup": {},
 			"formula": "DAYS360(DATE(2011, 1, 1), DATE(2011, 12, 31))",

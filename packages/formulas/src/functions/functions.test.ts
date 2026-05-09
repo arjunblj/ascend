@@ -1024,6 +1024,17 @@ describe('formula functions', () => {
 			expect(getResult(wb, 0, 0)).toEqual(numberValue(61))
 		})
 
+		test('DATEVALUE applies Excel two-digit year cutoff', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'DATEVALUE("1/1/29")')
+			setFormula(wb, 0, 1, 'DATEVALUE("1/1/30")')
+			setFormula(wb, 0, 2, 'DATEVALUE("7/5/98")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(47119))
+			expect(getResult(wb, 0, 1)).toEqual(numberValue(10959))
+			expect(getResult(wb, 0, 2)).toEqual(numberValue(35981))
+		})
+
 		test('DATE(1900,1,1) → serial 1', () => {
 			const wb = makeWorkbook()
 			setFormula(wb, 0, 0, 'DATE(1900,1,1)')

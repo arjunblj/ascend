@@ -38,6 +38,12 @@ describe('date serial edge cases', () => {
 		expect(evalFormula('=DATEVALUE("1900-02-29")')).toEqual(numberValue(60))
 	})
 
+	test('DATEVALUE uses Excel two-digit year cutoff', () => {
+		expect(evalFormula('=DATEVALUE("1/1/29")')).toEqual(evalFormula('=DATE(2029,1,1)'))
+		expect(evalFormula('=DATEVALUE("1/1/30")')).toEqual(evalFormula('=DATE(1930,1,1)'))
+		expect(evalFormula('=DATEVALUE("7/5/98")')).toEqual(evalFormula('=DATE(1998,7,5)'))
+	})
+
 	test('DATE(1900,3,1) is serial 61', () => {
 		const v = evalFormula('=DATE(1900,3,1)')
 		expect(v).toEqual(numberValue(61))

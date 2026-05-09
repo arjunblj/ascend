@@ -720,22 +720,20 @@ function resolveOffsetReference(argNodes: readonly FormulaNode[], ctx: EvalConte
 	if (base.value.kind === 'error') return base
 	if (!base.ref) return { value: errorValue('#VALUE!') }
 
-	const rowOffset = coerceToNumber(evaluate(argNodes[1] ?? { type: 'missing' }, ctx))
-	if (rowOffset === null) return { value: errorValue('#VALUE!') }
-	const colOffset = coerceToNumber(evaluate(argNodes[2] ?? { type: 'missing' }, ctx))
-	if (colOffset === null) return { value: errorValue('#VALUE!') }
+	const rowOffset = offsetNumberArg(argNodes[1], ctx)
+	if (typeof rowOffset !== 'number') return { value: rowOffset }
+	const colOffset = offsetNumberArg(argNodes[2], ctx)
+	if (typeof colOffset !== 'number') return { value: colOffset }
 
 	const baseHeight =
 		base.ref.kind === 'range' ? (base.ref.endRow ?? base.ref.row) - base.ref.row + 1 : 1
 	const baseWidth =
 		base.ref.kind === 'range' ? (base.ref.endCol ?? base.ref.col) - base.ref.col + 1 : 1
 
-	const height =
-		argNodes.length > 3 ? coerceToNumber(evaluate(argNodes[3] as FormulaNode, ctx)) : baseHeight
-	if (height === null) return { value: errorValue('#VALUE!') }
-	const width =
-		argNodes.length > 4 ? coerceToNumber(evaluate(argNodes[4] as FormulaNode, ctx)) : baseWidth
-	if (width === null) return { value: errorValue('#VALUE!') }
+	const height = argNodes.length > 3 ? offsetNumberArg(argNodes[3], ctx) : baseHeight
+	if (typeof height !== 'number') return { value: height }
+	const width = argNodes.length > 4 ? offsetNumberArg(argNodes[4], ctx) : baseWidth
+	if (typeof width !== 'number') return { value: width }
 
 	const targetHeight = Math.trunc(height)
 	const targetWidth = Math.trunc(width)
@@ -750,6 +748,13 @@ function resolveOffsetReference(argNodes: readonly FormulaNode[], ctx: EvalConte
 	}
 
 	return makeRangeArg(ctx.workbook, base.ref.sheetIndex, startRow, startCol, endRow, endCol)
+}
+
+function offsetNumberArg(node: FormulaNode | undefined, ctx: EvalContext): number | CellValue {
+	const value = evaluate(node ?? { type: 'missing' }, ctx)
+	if (value.kind === 'error') return value
+	const number = coerceToNumber(value)
+	return number === null ? errorValue('#VALUE!') : number
 }
 
 function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | null {

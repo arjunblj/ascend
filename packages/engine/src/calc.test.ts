@@ -885,6 +885,22 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(11))
 	})
 
+	test('OFFSET preserves error identity from offset arguments', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(4), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'OFFSET(A1,#N/A,0)', styleId: sid })
+		sheet.cells.set(0, 2, { value: EMPTY, formula: 'OFFSET(A1,0,#DIV/0!)', styleId: sid })
+		sheet.cells.set(0, 3, { value: EMPTY, formula: 'OFFSET(A1,0,0,#NUM!,1)', styleId: sid })
+		sheet.cells.set(0, 4, { value: EMPTY, formula: 'OFFSET(A1,0,0,1,#NAME?)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(errorValue('#N/A'))
+		expect(sheet.cells.get(0, 2)?.value).toEqual(errorValue('#DIV/0!'))
+		expect(sheet.cells.get(0, 3)?.value).toEqual(errorValue('#NUM!'))
+		expect(sheet.cells.get(0, 4)?.value).toEqual(errorValue('#NAME?'))
+	})
+
 	test('dirty recalc re-evaluates OFFSET formulas through the volatile path', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

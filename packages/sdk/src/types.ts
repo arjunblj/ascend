@@ -782,6 +782,7 @@ export interface StructuredFormulaReferenceInfo extends FormulaReferenceBase {
 	readonly table: string
 	readonly specifiers: readonly string[]
 	readonly column?: string
+	readonly endColumn?: string
 }
 
 export interface SpillFormulaReferenceInfo extends FormulaReferenceBase {

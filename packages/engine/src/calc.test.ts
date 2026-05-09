@@ -646,6 +646,38 @@ describe('recalculate', () => {
 			expect(sheet.cells.get(5, 0)?.value).toEqual(numberValue(600))
 		})
 
+		test('Table1 column ranges resolve all columns inclusively', () => {
+			const { wb, sheet } = makeTable1Workbook()
+			sheet.cells.set(5, 0, {
+				value: EMPTY,
+				formula: 'SUM(Table1[[Revenue]:[Quantity]])',
+				styleId: sid,
+			})
+			sheet.cells.set(5, 1, {
+				value: EMPTY,
+				formula: 'COLUMNS(Table1[[Revenue]:[Quantity]])',
+				styleId: sid,
+			})
+
+			const result = recalculate(wb, makeCtx())
+			expect(result.errors).toEqual([])
+			expect(sheet.cells.get(5, 0)?.value).toEqual(numberValue(660))
+			expect(sheet.cells.get(5, 1)?.value).toEqual(numberValue(2))
+		})
+
+		test('current-row structured reference column ranges resolve same-row cells', () => {
+			const { wb, sheet } = makeTable1Workbook()
+			sheet.cells.set(2, 4, {
+				value: EMPTY,
+				formula: 'SUM(Table1[@[Revenue]:[Quantity]])',
+				styleId: sid,
+			})
+
+			const result = recalculate(wb, makeCtx())
+			expect(result.errors).toEqual([])
+			expect(sheet.cells.get(2, 4)?.value).toEqual(numberValue(220))
+		})
+
 		test('Table1[@Revenue] resolves to same-row value (implicit intersection)', () => {
 			const { wb, sheet } = makeTable1Workbook()
 			sheet.cells.set(1, 4, { value: EMPTY, formula: 'Table1[@Revenue]', styleId: sid })

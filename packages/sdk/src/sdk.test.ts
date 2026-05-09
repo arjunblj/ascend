@@ -1775,6 +1775,30 @@ describe('AscendWorkbook', () => {
 		expect(info?.refs).toContain('A:A')
 	})
 
+	test('formula metadata exposes structured reference column ranges', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setFormula',
+				sheet: 'Sheet1',
+				ref: 'A1',
+				formula: '=SUM(Table1[[Revenue]:[Quantity]])',
+			},
+		])
+		const info = wb.formula('Sheet1!A1')
+		expect(info?.references).toEqual([
+			{
+				kind: 'structured',
+				text: 'Table1[[Revenue]:[Quantity]]',
+				scope: { kind: 'local' },
+				table: 'Table1',
+				specifiers: [],
+				column: 'Revenue',
+				endColumn: 'Quantity',
+			},
+		])
+	})
+
 	test('formula metadata exposes workbook-qualified external references symbolically', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=[Book.xlsx]Sheet1!A1' }])

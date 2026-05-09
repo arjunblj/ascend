@@ -454,6 +454,12 @@ describe('printFormula', () => {
 		expect(printFormula(p('A:A 2:2'))).toBe('A:A 2:2')
 		expect(printFormula(p('SUM((A1,B2))'))).toBe('SUM((A1,B2))')
 	})
+
+	it('roundtrips structured reference column ranges', () => {
+		expect(printFormula(p('Table1[[Sales]:[Cost]]'))).toBe('Table1[[Sales]:[Cost]]')
+		expect(printFormula(p('Table1[@[Sales]:[Cost]]'))).toBe('Table1[@[Sales]:[Cost]]')
+		expect(printFormula(p('Table1[[#Data],[Sales]:[Cost]]'))).toBe('Table1[[#Data],[Sales]:[Cost]]')
+	})
 })
 
 describe('extractRefs', () => {
@@ -1131,6 +1137,8 @@ describe('fuzz: parseFormula never throws', () => {
 			'Table1[#Data]',
 			'Table1[#Headers]',
 			'Table1[[Sales]:[Cost]]',
+			'Table1[@[Sales]:[Cost]]',
+			'Table1[[#Data],[Sales]:[Cost]]',
 			// all major function categories
 			'XLOOKUP(A1,B:B,C:C)',
 			'XMATCH(A1,B:B)',

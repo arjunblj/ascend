@@ -42,6 +42,25 @@ function isColumnLabel(raw: string): boolean {
 	return COL_LABEL_RE.test(raw)
 }
 
+function splitStructuredRefParts(content: string): string[] {
+	const parts: string[] = []
+	let start = 0
+	let depth = 0
+	for (let i = 0; i < content.length; i++) {
+		const ch = content[i]
+		if (ch === '[') {
+			depth++
+		} else if (ch === ']') {
+			depth--
+		} else if (ch === ',' && depth === 0) {
+			parts.push(content.slice(start, i))
+			start = i + 1
+		}
+	}
+	parts.push(content.slice(start))
+	return parts
+}
+
 class FormulaParser {
 	private readonly tokens: readonly Token[]
 	private pos = 0
@@ -465,21 +484,32 @@ class FormulaParser {
 		const content = bracket.slice(1, -1)
 		const specifiers: string[] = []
 		let column: string | undefined
+		let endColumn: string | undefined
+
+		const setColumnSpec = (text: string): void => {
+			const range = /^\[([^\]]+)]\s*:\s*\[([^\]]+)]$/.exec(text)
+			if (range) {
+				column = range[1]
+				endColumn = range[2]
+				return
+			}
+			column = text.replace(/^\[|]$/g, '')
+		}
 
 		if (content.startsWith('@')) {
 			specifiers.push('@')
 			const col = content.slice(1)
-			if (col.length > 0) column = col
+			if (col.length > 0) setColumnSpec(col)
 		} else if (content.startsWith('#')) {
 			specifiers.push(content)
 		} else if (content.startsWith('[')) {
-			const parts = content.split('],[')
+			const parts = splitStructuredRefParts(content)
 			for (const part of parts) {
 				const cleaned = part.replace(/^\[|]$/g, '')
 				if (cleaned.startsWith('#')) {
 					specifiers.push(cleaned)
 				} else {
-					column = cleaned
+					setColumnSpec(part)
 				}
 			}
 		} else {
@@ -487,7 +517,13 @@ class FormulaParser {
 		}
 
 		if (column !== undefined) {
-			return { type: 'structuredRef', table, specifiers, column }
+			return {
+				type: 'structuredRef',
+				table,
+				specifiers,
+				column,
+				...(endColumn ? { endColumn } : {}),
+			}
 		}
 		return { type: 'structuredRef', table, specifiers }
 	}

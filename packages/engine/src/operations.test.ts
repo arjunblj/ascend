@@ -297,6 +297,72 @@ describe('applyOperation', () => {
 		])
 	})
 
+	test('setConditionalFormat can append and reassign rule priorities', () => {
+		const wb = setup()
+		applyOperation(wb, {
+			op: 'setConditionalFormat',
+			sheet: 'Sheet1',
+			range: 'A1:A3',
+			rule: { type: 'expression', formula: 'A1>0', priority: 9 },
+		})
+		const result = applyOperation(wb, {
+			op: 'setConditionalFormat',
+			sheet: 'Sheet1',
+			range: 'A1:A3',
+			mode: 'append',
+			reassignPriorities: true,
+			rule: { type: 'cellIs', operator: 'lessThan', formula: '100', priority: 4 },
+		})
+		expectOk(result)
+
+		expect(wb.getSheet('Sheet1')?.conditionalFormats).toEqual([
+			{
+				sqref: 'A1:A3',
+				rules: [
+					{ type: 'expression', formulas: ['A1>0'], priority: 1 },
+					{
+						type: 'cellIs',
+						operator: 'lessThan',
+						formulas: ['100'],
+						priority: 2,
+					},
+				],
+			},
+		])
+	})
+
+	test('deleteConditionalFormat can remove a single rule by priority', () => {
+		const wb = setup()
+		applyOperation(wb, {
+			op: 'setConditionalFormat',
+			sheet: 'Sheet1',
+			range: 'A1:A3',
+			rule: { type: 'expression', formula: 'A1>0', priority: 1 },
+		})
+		applyOperation(wb, {
+			op: 'setConditionalFormat',
+			sheet: 'Sheet1',
+			range: 'A1:A3',
+			mode: 'append',
+			rule: { type: 'expression', formula: 'A1<100', priority: 2 },
+		})
+
+		const result = applyOperation(wb, {
+			op: 'deleteConditionalFormat',
+			sheet: 'Sheet1',
+			range: 'A1:A3',
+			priority: 1,
+		})
+		expectOk(result)
+
+		expect(wb.getSheet('Sheet1')?.conditionalFormats).toEqual([
+			{
+				sqref: 'A1:A3',
+				rules: [{ type: 'expression', formulas: ['A1<100'], priority: 2 }],
+			},
+		])
+	})
+
 	test('setPageSetup and setPrintArea write print metadata', () => {
 		const wb = setup()
 		const result1 = applyOperation(wb, {

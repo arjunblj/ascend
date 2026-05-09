@@ -315,11 +315,15 @@ export type Operation =
 			readonly sheet: string
 			readonly range: string
 			readonly rule: ConditionalFormatRule
+			readonly mode?: 'replace' | 'append'
+			readonly reassignPriorities?: boolean
 	  }
 	| {
 			readonly op: 'deleteConditionalFormat'
 			readonly sheet: string
-			readonly range: string
+			readonly range?: string
+			readonly priority?: number
+			readonly ruleIndex?: number
 	  }
 	| {
 			readonly op: 'setPageSetup'

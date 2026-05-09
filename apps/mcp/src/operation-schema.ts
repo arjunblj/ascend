@@ -242,11 +242,15 @@ const operationSchema = z.discriminatedUnion('op', [
 		sheet: z.string(),
 		range: z.string(),
 		rule: z.record(z.string(), z.unknown()),
+		mode: z.enum(['replace', 'append']).optional(),
+		reassignPriorities: z.boolean().optional(),
 	}),
 	z.object({
 		op: z.literal('deleteConditionalFormat'),
 		sheet: z.string(),
-		range: z.string(),
+		range: z.string().optional(),
+		priority: z.number().int().positive().optional(),
+		ruleIndex: z.number().int().nonnegative().optional(),
 	}),
 	z.object({
 		op: z.literal('setPageSetup'),

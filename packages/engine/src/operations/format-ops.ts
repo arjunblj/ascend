@@ -77,42 +77,16 @@ export function handleSetConditionalFormat(
 	const sheet = sheetResult.value
 	sheet.ensureWritable()
 	const existing = sheet.conditionalFormats.findIndex((cf) => cf.sqref === op.range)
-	const rule: SheetConditionalFormatRule = {
-		type: op.rule.type,
-		formulas: [op.rule.formula, op.rule.formula2].filter((f): f is string => f !== undefined),
-		...(op.rule.operator ? { operator: op.rule.operator } : {}),
-		...(op.rule.priority !== undefined ? { priority: op.rule.priority } : {}),
-		...(op.rule.stopIfTrue !== undefined ? { stopIfTrue: op.rule.stopIfTrue } : {}),
-		...(op.rule.style ? { style: op.rule.style } : {}),
-		...(op.rule.colorScale
-			? {
-					colorScale: {
-						cfvo: op.rule.colorScale.cfvo.map((entry) => ({ ...entry })),
-						colors: op.rule.colorScale.colors.map((entry) => ({ ...entry })),
-					},
-				}
-			: {}),
-		...(op.rule.dataBar
-			? {
-					dataBar: {
-						...op.rule.dataBar,
-						cfvo: op.rule.dataBar.cfvo.map((entry) => ({ ...entry })),
-						...(op.rule.dataBar.color ? { color: { ...op.rule.dataBar.color } } : {}),
-					},
-				}
-			: {}),
-		...(op.rule.iconSet
-			? {
-					iconSet: {
-						...op.rule.iconSet,
-						cfvo: op.rule.iconSet.cfvo.map((entry) => ({ ...entry })),
-					},
-				}
-			: {}),
+	const rule = conditionalFormatRuleFromOperation(op.rule)
+	if (existing >= 0 && op.mode === 'append') {
+		const cf = sheet.conditionalFormats[existing]
+		if (cf) sheet.conditionalFormats[existing] = { ...cf, rules: [...cf.rules, rule] }
+	} else {
+		const cf: SheetConditionalFormat = { sqref: op.range, rules: [rule] }
+		if (existing >= 0) sheet.conditionalFormats[existing] = cf
+		else sheet.conditionalFormats.push(cf)
 	}
-	const cf: SheetConditionalFormat = { sqref: op.range, rules: [rule] }
-	if (existing >= 0) sheet.conditionalFormats[existing] = cf
-	else sheet.conditionalFormats.push(cf)
+	if (op.reassignPriorities) reassignConditionalFormatPriorities(sheet.conditionalFormats)
 	return ok(patch([], [op.sheet]))
 }
 
@@ -124,8 +98,81 @@ export function handleDeleteConditionalFormat(
 	if (!sheetResult.ok) return sheetResult
 	const sheet = sheetResult.value
 	sheet.ensureWritable()
-	sheet.conditionalFormats = sheet.conditionalFormats.filter((cf) => cf.sqref !== op.range)
+	if (op.range === undefined && op.priority === undefined && op.ruleIndex === undefined) {
+		return err(
+			ascendError(
+				'VALIDATION_ERROR',
+				'deleteConditionalFormat requires range, priority, or ruleIndex',
+				{
+					suggestedFix:
+						'Provide a sqref range to delete a block, or priority/ruleIndex to remove a specific rule.',
+				},
+			),
+		)
+	}
+	sheet.conditionalFormats = sheet.conditionalFormats
+		.map((cf) => {
+			if (op.range !== undefined && cf.sqref !== op.range) return cf
+			if (op.priority === undefined && op.ruleIndex === undefined) return null
+			const rules = cf.rules.filter((rule, index) => {
+				if (op.ruleIndex !== undefined && index !== op.ruleIndex) return true
+				if (op.priority !== undefined && rule.priority !== op.priority) return true
+				return false
+			})
+			return rules.length > 0 ? { ...cf, rules } : null
+		})
+		.filter((cf): cf is SheetConditionalFormat => cf !== null)
 	return ok(patch([], [op.sheet]))
+}
+
+function conditionalFormatRuleFromOperation(
+	rule: Extract<Operation, { op: 'setConditionalFormat' }>['rule'],
+): SheetConditionalFormatRule {
+	return {
+		type: rule.type,
+		formulas: [rule.formula, rule.formula2].filter((f): f is string => f !== undefined),
+		...(rule.operator ? { operator: rule.operator } : {}),
+		...(rule.priority !== undefined ? { priority: rule.priority } : {}),
+		...(rule.stopIfTrue !== undefined ? { stopIfTrue: rule.stopIfTrue } : {}),
+		...(rule.style ? { style: rule.style } : {}),
+		...(rule.colorScale
+			? {
+					colorScale: {
+						cfvo: rule.colorScale.cfvo.map((entry) => ({ ...entry })),
+						colors: rule.colorScale.colors.map((entry) => ({ ...entry })),
+					},
+				}
+			: {}),
+		...(rule.dataBar
+			? {
+					dataBar: {
+						...rule.dataBar,
+						cfvo: rule.dataBar.cfvo.map((entry) => ({ ...entry })),
+						...(rule.dataBar.color ? { color: { ...rule.dataBar.color } } : {}),
+					},
+				}
+			: {}),
+		...(rule.iconSet
+			? {
+					iconSet: {
+						...rule.iconSet,
+						cfvo: rule.iconSet.cfvo.map((entry) => ({ ...entry })),
+					},
+				}
+			: {}),
+	}
+}
+
+function reassignConditionalFormatPriorities(conditionalFormats: SheetConditionalFormat[]): void {
+	let priority = 1
+	for (let cfIndex = 0; cfIndex < conditionalFormats.length; cfIndex++) {
+		const cf = conditionalFormats[cfIndex]
+		if (!cf) continue
+		conditionalFormats[cfIndex] = {
+			...cf,
+			rules: cf.rules.map((rule) => ({ ...rule, priority: priority++ })),
+		}
+	}
 }
 
 export function handleSetDataValidation(

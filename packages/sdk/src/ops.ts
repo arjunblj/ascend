@@ -76,9 +76,16 @@ const FIELD_SCHEMAS: Record<
 			'validations',
 			'comments',
 			'hyperlinks',
+			'replace',
+			'append',
 		],
-		description:
-			'Copy/move paste mode. Use formats/styles for cell formatting, validations/comments/hyperlinks for metadata-only paste.',
+		description: 'Paste mode for copy/move, or conditional-format update mode (replace|append).',
+	},
+	priority: { type: 'integer', description: 'Conditional-format rule priority' },
+	ruleIndex: { type: 'integer', description: 'Zero-based conditional-format rule index' },
+	reassignPriorities: {
+		type: 'boolean',
+		description: 'Whether to rewrite conditional-format priorities to match stored rule order',
 	},
 	at: { type: 'integer', description: 'Row or column index (0-based)' },
 	count: { type: 'integer', description: 'Number of rows/columns' },
@@ -131,7 +138,7 @@ const FIELD_SCHEMAS: Record<
 		type: 'object',
 		description:
 			'For setDataValidation: { type: "list"|"whole"|"decimal"|"date"|"time"|"textLength"|"custom", formula1?, formula2?, operator?, allowBlank?, showDropDown?, showErrorMessage?, errorTitle?, errorMessage?, errorStyle?, imeMode?, showInputMessage?, promptTitle?, prompt? }. ' +
-			'For setConditionalFormat: { type: "cellIs"|"expression"|"colorScale"|"dataBar"|"iconSet"|"top10"|"aboveAverage"|"duplicateValues"|"containsText", operator?, formula?, formula2?, priority?, stopIfTrue?, style?, colorScale?, dataBar?, iconSet? }.',
+			'For setConditionalFormat: { type: "cellIs"|"expression"|"colorScale"|"dataBar"|"iconSet"|"top10"|"aboveAverage"|"duplicateValues"|"containsText", operator?, formula?, formula2?, priority?, stopIfTrue?, style?, colorScale?, dataBar?, iconSet? }. Use mode="append" to preserve existing overlapping rules.',
 	},
 	setup: {
 		type: 'object',
@@ -339,13 +346,15 @@ export function listOperations(): readonly OperationSchema[] {
 		},
 		{
 			op: 'setConditionalFormat',
-			description: 'Set conditional formatting rule',
+			description: 'Set or append a conditional formatting rule while preserving priority order',
 			requiredFields: ['sheet', 'range', 'rule'],
+			optionalFields: ['mode', 'reassignPriorities'],
 		},
 		{
 			op: 'deleteConditionalFormat',
-			description: 'Remove conditional formatting from a range',
-			requiredFields: ['sheet', 'range'],
+			description: 'Remove conditional formatting from a range or delete a specific rule',
+			requiredFields: ['sheet'],
+			optionalFields: ['range', 'priority', 'ruleIndex'],
 		},
 		{
 			op: 'setPageSetup',
@@ -715,9 +724,10 @@ function operationExample(op: string): Record<string, unknown> {
 			return { op, sheet: 'Sheet1', range: 'A2:A20', rule: { type: 'list', formula1: '"Yes,No"' } }
 		case 'deleteDataValidation':
 		case 'setAutoFilter':
-		case 'deleteConditionalFormat':
 		case 'setPrintArea':
 			return { op, sheet: 'Sheet1', range: 'A1:D20' }
+		case 'deleteConditionalFormat':
+			return { op, sheet: 'Sheet1', range: 'A1:D20', priority: 1 }
 		case 'clearAutoFilter':
 			return { op, sheet: 'Sheet1' }
 		case 'setSheetProtection':

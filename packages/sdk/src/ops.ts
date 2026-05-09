@@ -65,6 +65,21 @@ const FIELD_SCHEMAS: Record<
 		enum: ['values', 'formulas', 'styles', 'all'],
 		description: 'What to clear',
 	},
+	mode: {
+		type: 'string',
+		enum: [
+			'all',
+			'values',
+			'formulas',
+			'formats',
+			'styles',
+			'validations',
+			'comments',
+			'hyperlinks',
+		],
+		description:
+			'Copy/move paste mode. Use formats/styles for cell formatting, validations/comments/hyperlinks for metadata-only paste.',
+	},
 	at: { type: 'integer', description: 'Row or column index (0-based)' },
 	count: { type: 'integer', description: 'Number of rows/columns' },
 	name: { type: 'string', description: 'Sheet or table name' },
@@ -336,13 +351,15 @@ export function listOperations(): readonly OperationSchema[] {
 		{ op: 'setPrintArea', description: 'Set print area', requiredFields: ['sheet', 'range'] },
 		{
 			op: 'copyRange',
-			description: 'Copy a range to another location',
+			description: 'Copy a range to another location with optional Excel-like paste mode',
 			requiredFields: ['sheet', 'source', 'target'],
+			optionalFields: ['mode'],
 		},
 		{
 			op: 'moveRange',
-			description: 'Move a range to another location',
+			description: 'Move a range to another location with optional Excel-like paste mode',
 			requiredFields: ['sheet', 'source', 'target'],
+			optionalFields: ['mode'],
 		},
 		{
 			op: 'groupRows',
@@ -706,7 +723,7 @@ function operationExample(op: string): Record<string, unknown> {
 			return { op, sheet: 'Sheet1', setup: { orientation: 'landscape' } }
 		case 'copyRange':
 		case 'moveRange':
-			return { op, sheet: 'Sheet1', source: 'A1:B5', target: 'D1:E5' }
+			return { op, sheet: 'Sheet1', source: 'A1:B5', target: 'D1', mode: 'all' }
 		case 'groupRows':
 			return { op, sheet: 'Sheet1', from: 2, to: 10, collapsed: false }
 		case 'groupCols':

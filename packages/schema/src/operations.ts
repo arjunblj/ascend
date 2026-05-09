@@ -118,6 +118,16 @@ export interface StyleInput {
 	}
 }
 
+export type PasteMode =
+	| 'all'
+	| 'values'
+	| 'formulas'
+	| 'formats'
+	| 'styles'
+	| 'validations'
+	| 'comments'
+	| 'hyperlinks'
+
 export type Operation =
 	| { readonly op: 'setCells'; readonly sheet: string; readonly updates: readonly CellUpdate[] }
 	| {
@@ -326,12 +336,14 @@ export type Operation =
 			readonly sheet: string
 			readonly source: string
 			readonly target: string
+			readonly mode?: PasteMode
 	  }
 	| {
 			readonly op: 'moveRange'
 			readonly sheet: string
 			readonly source: string
 			readonly target: string
+			readonly mode?: PasteMode
 	  }
 	| {
 			readonly op: 'groupRows'

@@ -10,6 +10,17 @@ const sortSpecSchema = z.object({
 	descending: z.boolean().optional(),
 })
 
+const pasteModeSchema = z.enum([
+	'all',
+	'values',
+	'formulas',
+	'formats',
+	'styles',
+	'validations',
+	'comments',
+	'hyperlinks',
+])
+
 const operationSchema = z.discriminatedUnion('op', [
 	z.object({
 		op: z.literal('setCells'),
@@ -252,12 +263,14 @@ const operationSchema = z.discriminatedUnion('op', [
 		sheet: z.string(),
 		source: z.string(),
 		target: z.string(),
+		mode: pasteModeSchema.optional(),
 	}),
 	z.object({
 		op: z.literal('moveRange'),
 		sheet: z.string(),
 		source: z.string(),
 		target: z.string(),
+		mode: pasteModeSchema.optional(),
 	}),
 	z.object({
 		op: z.literal('groupRows'),

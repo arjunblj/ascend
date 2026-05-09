@@ -369,6 +369,105 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(2, 2)?.formula).toBe('A3+B3')
 	})
 
+	test('copyRange can paste values without carrying formulas or formats', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const sourceStyle = wb.styles.register({ numberFormat: '$#,##0.00' })
+		const targetStyle = wb.styles.register({ numberFormat: '0.0%' })
+		sheet.cells.set(0, 0, { value: numberValue(12), formula: 'B1*2', styleId: sourceStyle })
+		sheet.cells.set(2, 2, { value: numberValue(99), formula: 'Z1', styleId: targetStyle })
+
+		const result = applyOperation(wb, {
+			op: 'copyRange',
+			sheet: 'Sheet1',
+			source: 'A1',
+			target: 'C3',
+			mode: 'values',
+		})
+		expectOk(result)
+
+		expect(sheet.cells.get(2, 2)).toEqual({
+			value: numberValue(12),
+			formula: null,
+			styleId: targetStyle,
+		})
+		expect(result.value.recalcRequired).toBe(true)
+	})
+
+	test('copyRange can paste formats without changing values or formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const sourceStyle = wb.styles.register({ numberFormat: '$#,##0.00' })
+		sheet.cells.set(0, 0, { value: numberValue(12), formula: null, styleId: sourceStyle })
+		sheet.cells.set(2, 2, { value: numberValue(99), formula: 'A1+1', styleId: sid })
+
+		const result = applyOperation(wb, {
+			op: 'copyRange',
+			sheet: 'Sheet1',
+			source: 'A1',
+			target: 'C3',
+			mode: 'formats',
+		})
+		expectOk(result)
+
+		expect(sheet.cells.get(2, 2)).toEqual({
+			value: numberValue(99),
+			formula: 'A1+1',
+			styleId: sourceStyle,
+		})
+		expect(result.value.recalcRequired).toBe(false)
+	})
+
+	test('copyRange exposes comments, hyperlinks, and validation paste modes', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, cell(numberValue(1)))
+		sheet.cells.set(0, 1, cell(numberValue(2)))
+		sheet.comments.set('A1', { text: 'Review', author: 'Ascend' })
+		sheet.hyperlinks.set('B1', { target: 'https://example.com', display: 'Example' })
+		sheet.dataValidations.push({ sqref: 'A1:B1', type: 'whole', formula1: 'A1' })
+
+		expectOk(
+			applyOperation(wb, {
+				op: 'copyRange',
+				sheet: 'Sheet1',
+				source: 'A1',
+				target: 'C1',
+				mode: 'comments',
+			}),
+		)
+		expectOk(
+			applyOperation(wb, {
+				op: 'copyRange',
+				sheet: 'Sheet1',
+				source: 'B1',
+				target: 'D1',
+				mode: 'hyperlinks',
+			}),
+		)
+		expectOk(
+			applyOperation(wb, {
+				op: 'copyRange',
+				sheet: 'Sheet1',
+				source: 'A1:B1',
+				target: 'E1',
+				mode: 'validations',
+			}),
+		)
+
+		expect(sheet.comments.get('C1')).toEqual({ text: 'Review', author: 'Ascend' })
+		expect(sheet.hyperlinks.get('D1')).toEqual({
+			target: 'https://example.com',
+			display: 'Example',
+		})
+		expect(sheet.dataValidations.at(-1)).toEqual({
+			sqref: 'E1:F1',
+			type: 'whole',
+			formula1: 'E1',
+		})
+		expect(sheet.cells.get(0, 2)).toBeUndefined()
+	})
+
 	test('moveRange relocates source cells and clears original range', () => {
 		const wb = setup()
 		const sheet = wb.getSheet('Sheet1')

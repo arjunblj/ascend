@@ -24,6 +24,7 @@ export { MACHINE_FORMAT_VERSION, machineFailure, machineSuccess } from './machin
 export type {
 	CellUpdate,
 	Operation,
+	PasteMode,
 	SortSpec,
 	StyleInput,
 } from './operations.ts'

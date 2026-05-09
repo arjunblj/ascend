@@ -2169,6 +2169,10 @@ function tryFastDirtyIndexMatchReturnTextRecalc(
 	if (cached && cached.length > 0) {
 		if (countPlainFormulas(workbook) !== scratch.indexMatchReturnFormulaCount) return null
 		for (const formula of cached) {
+			if (sourceOverlapsIndexMatchLookup(source, formula.pattern)) {
+				clearIndexMatchReturnCache(scratch)
+				return null
+			}
 			const sheet = workbook.sheets[formula.sheetIndex]
 			if (!sheet) return null
 			if (sheet.cells.readFormula(formula.row, formula.col) !== formula.formula) return null
@@ -2189,6 +2193,7 @@ function tryFastDirtyIndexMatchReturnTextRecalc(
 		}
 		return { changed, errors: [], duration: performance.now() - start }
 	}
+	if (scratch.indexMatchReturnFormulaCount > 0) clearIndexMatchReturnCache(scratch)
 	return null
 }
 
@@ -2210,8 +2215,7 @@ function cacheIndexMatchReturnFormulas(
 	scratch: RecalcScratch,
 	formulas?: ReadonlyMap<CellKey, AnalyzedFormula>,
 ): void {
-	scratch.indexMatchReturnBySource.clear()
-	scratch.indexMatchReturnFormulaCount = 0
+	clearIndexMatchReturnCache(scratch)
 	const firstOffsetIndexes = new Map<string, ReadonlyMap<string, number>>()
 	if (formulas) {
 		const formulaCount = countPlainFormulas(workbook)
@@ -2245,6 +2249,23 @@ function cacheIndexMatchReturnFormulas(
 		}
 		return
 	}
+}
+
+function sourceOverlapsIndexMatchLookup(
+	source: CellCoords,
+	pattern: IndexMatchReturnPattern,
+): boolean {
+	return (
+		source.sheetIndex === pattern.sheetIndex &&
+		source.col === pattern.lookupCol &&
+		source.row >= pattern.lookupStartRow &&
+		source.row <= pattern.lookupEndRow
+	)
+}
+
+function clearIndexMatchReturnCache(scratch: RecalcScratch): void {
+	scratch.indexMatchReturnBySource.clear()
+	scratch.indexMatchReturnFormulaCount = 0
 }
 
 function cacheIndexMatchReturnFormula(

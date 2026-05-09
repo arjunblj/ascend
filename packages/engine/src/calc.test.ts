@@ -285,6 +285,41 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(0, 4)?.value).toEqual(numberValue(99))
 	})
 
+	test('dirty INDEX/MATCH return cache stays correct after lookup key edits', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('a'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('b'), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: stringValue('c'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: numberValue(30), formula: null, styleId: sid })
+		sheet.cells.set(0, 3, { value: stringValue('b'), formula: null, styleId: sid })
+		sheet.cells.set(0, 4, {
+			value: EMPTY,
+			formula: 'INDEX(B1:B3,MATCH(D1,A1:A3,0))',
+			styleId: sid,
+		})
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 4)?.value).toEqual(numberValue(20))
+
+		sheet.cells.set(0, 3, { value: stringValue('c'), formula: null, styleId: sid })
+		const keyResult = recalculate(wb, makeCtx(), { dirtyRefs: ['Sheet1!D1'] })
+		expect(keyResult.errors).toEqual([])
+		expect(sheet.cells.get(0, 4)?.value).toEqual(numberValue(30))
+
+		sheet.cells.set(1, 1, { value: numberValue(99), formula: null, styleId: sid })
+		const oldReturnResult = recalculate(wb, makeCtx(), { dirtyRefs: ['Sheet1!B2'] })
+		expect(oldReturnResult.errors).toEqual([])
+		expect(sheet.cells.get(0, 4)?.value).toEqual(numberValue(30))
+
+		sheet.cells.set(2, 1, { value: numberValue(77), formula: null, styleId: sid })
+		const newReturnResult = recalculate(wb, makeCtx(), { dirtyRefs: ['Sheet1!B3'] })
+		expect(newReturnResult.errors).toEqual([])
+		expect(sheet.cells.get(0, 4)?.value).toEqual(numberValue(77))
+	})
+
 	test('Salsa backdating: when formula output unchanged, downstream dependents are not re-evaluated', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

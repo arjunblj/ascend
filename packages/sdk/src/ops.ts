@@ -139,6 +139,16 @@ const FIELD_SCHEMAS: Record<
 		description:
 			'Workbook properties: codeName?, defaultThemeVersion?, filterPrivacy?, date1904?. Use null values to clear individual properties.',
 	},
+	view: {
+		type: 'object',
+		description:
+			'Workbook view metadata: activeTab?, firstSheet?, visibility?, tabRatio?. Use null values to clear individual fields, or null view to delete a view.',
+	},
+	settings: {
+		type: 'object',
+		description:
+			'Calculation settings: calcMode?, fullCalcOnLoad?, calcCompleted?, calcOnSave?, forceFullCalc?, calcId?, dateSystem?, iterativeCalc?.',
+	},
 	color: { type: 'string', description: 'Color (hex or theme)' },
 	hidden: { type: 'boolean', description: 'Whether to hide' },
 	rule: {
@@ -405,6 +415,17 @@ export function listOperations(): readonly OperationSchema[] {
 			optionalFields: ['mode'],
 		},
 		{
+			op: 'setWorkbookView',
+			description: 'Set, append, merge, replace, or delete workbook view metadata',
+			requiredFields: ['view'],
+			optionalFields: ['index', 'mode'],
+		},
+		{
+			op: 'setCalcSettings',
+			description: 'Set workbook calculation settings and date system metadata',
+			requiredFields: ['settings'],
+		},
+		{
 			op: 'setWorkbookProtection',
 			description: 'Set workbook-level protection metadata',
 			requiredFields: ['protection'],
@@ -665,6 +686,18 @@ function operationRecoveryActions(op: string): readonly string[] {
 				'Use null property values to clear codeName, defaultThemeVersion, filterPrivacy, or date1904.',
 				...common,
 			]
+		case 'setWorkbookView':
+			return [
+				'Use index=0 for the primary workbook view; index equal to view count appends a new view.',
+				'Use view=null to delete an existing view, or null field values to clear individual fields.',
+				...common,
+			]
+		case 'setCalcSettings':
+			return [
+				'Use dateSystem carefully because changing it can alter date serial interpretation.',
+				'Use iterativeCalc=null to disable iterative calculation and reset convergence defaults.',
+				...common,
+			]
 		default:
 			return common
 	}
@@ -781,6 +814,10 @@ function operationExample(op: string): Record<string, unknown> {
 				properties: { codeName: 'Model', filterPrivacy: true, date1904: false },
 				mode: 'merge',
 			}
+		case 'setWorkbookView':
+			return { op, index: 0, view: { activeTab: 0, firstSheet: 0 }, mode: 'merge' }
+		case 'setCalcSettings':
+			return { op, settings: { calcMode: 'manual', fullCalcOnLoad: true } }
 		case 'setWorkbookProtection':
 			return { op, protection: { lockStructure: true } }
 		case 'deleteTable':

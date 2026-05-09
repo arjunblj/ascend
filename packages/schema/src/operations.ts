@@ -17,6 +17,28 @@ export interface WorkbookPropertiesInput {
 	readonly date1904?: boolean | null
 }
 
+export interface WorkbookViewInput {
+	readonly activeTab?: number | null
+	readonly firstSheet?: number | null
+	readonly visibility?: string | null
+	readonly tabRatio?: number | null
+}
+
+export interface CalcSettingsInput {
+	readonly calcMode?: 'auto' | 'manual' | 'autoNoTable'
+	readonly fullCalcOnLoad?: boolean
+	readonly calcCompleted?: boolean | null
+	readonly calcOnSave?: boolean | null
+	readonly forceFullCalc?: boolean | null
+	readonly calcId?: number | null
+	readonly dateSystem?: '1900' | '1904'
+	readonly iterativeCalc?: {
+		readonly enabled?: boolean
+		readonly maxIterations?: number
+		readonly maxChange?: number
+	} | null
+}
+
 export type StyleColorInput =
 	| { readonly kind: 'theme'; readonly theme: number; readonly tint?: number }
 	| { readonly kind: 'rgb'; readonly rgb: string }
@@ -389,6 +411,16 @@ export type Operation =
 			readonly op: 'setWorkbookProperties'
 			readonly properties: WorkbookPropertiesInput
 			readonly mode?: 'merge' | 'replace'
+	  }
+	| {
+			readonly op: 'setWorkbookView'
+			readonly view: WorkbookViewInput | null
+			readonly index?: number
+			readonly mode?: 'merge' | 'replace'
+	  }
+	| {
+			readonly op: 'setCalcSettings'
+			readonly settings: CalcSettingsInput
 	  }
 	| { readonly op: 'setWorkbookProtection'; readonly protection: WorkbookProtectionInput }
 	| { readonly op: 'deleteTable'; readonly table: string }

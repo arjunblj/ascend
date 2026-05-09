@@ -108,4 +108,26 @@ describe('operation schema agent DX', () => {
 		})
 		expect(schema?.recoveryActions.join('\n')).toContain('null property values')
 	})
+
+	test('setWorkbookView and setCalcSettings expose workbook metadata guidance', () => {
+		const view = getOperationsSchema().find((entry) => entry.op === 'setWorkbookView')
+		expect(view?.schema.required).toEqual(['op', 'view'])
+		expect(view?.schema.properties.view?.description).toContain('activeTab')
+		expect(view?.examples[0]).toMatchObject({
+			op: 'setWorkbookView',
+			index: 0,
+			view: { activeTab: 0, firstSheet: 0 },
+			mode: 'merge',
+		})
+		expect(view?.recoveryActions.join('\n')).toContain('primary workbook view')
+
+		const calc = getOperationsSchema().find((entry) => entry.op === 'setCalcSettings')
+		expect(calc?.schema.required).toEqual(['op', 'settings'])
+		expect(calc?.schema.properties.settings?.description).toContain('dateSystem')
+		expect(calc?.examples[0]).toMatchObject({
+			op: 'setCalcSettings',
+			settings: { calcMode: 'manual', fullCalcOnLoad: true },
+		})
+		expect(calc?.recoveryActions.join('\n')).toContain('dateSystem carefully')
+	})
 })

@@ -87,6 +87,8 @@ const handlers: Record<string, OperationHandler> = {
 	groupCols: formatOps.handleGroupCols as OperationHandler,
 	setWorkbookProtection: sheetOps.handleSetWorkbookProtection as OperationHandler,
 	setWorkbookProperties: workbookOps.handleSetWorkbookProperties as OperationHandler,
+	setWorkbookView: workbookOps.handleSetWorkbookView as OperationHandler,
+	setCalcSettings: workbookOps.handleSetCalcSettings as OperationHandler,
 	deleteTable: tableOps.handleDeleteTable as OperationHandler,
 	renameTable: tableOps.handleRenameTable as OperationHandler,
 	resizeTable: tableOps.handleResizeTable as OperationHandler,

@@ -1,10 +1,12 @@
-import type { Workbook, WorkbookProperties } from '@ascend/core'
+import type { Workbook, WorkbookProperties, WorkbookView } from '@ascend/core'
 import type { Operation, Result } from '@ascend/schema'
 import { ascendError, err, ok } from '@ascend/schema'
 import { type PatchResult, patch } from './helpers.ts'
 
 type RewriteExternalLinkOp = Extract<Operation, { op: 'rewriteExternalLink' }>
 type SetWorkbookPropertiesOp = Extract<Operation, { op: 'setWorkbookProperties' }>
+type SetWorkbookViewOp = Extract<Operation, { op: 'setWorkbookView' }>
+type SetCalcSettingsOp = Extract<Operation, { op: 'setCalcSettings' }>
 
 const WORKBOOK_PROPERTY_KEYS = [
 	'codeName',
@@ -57,6 +59,112 @@ export function handleSetWorkbookProperties(
 	workbook.workbookProperties = next as WorkbookProperties
 
 	return ok(patch([], [], oldDateSystem !== workbook.calcSettings.dateSystem))
+}
+
+export function handleSetWorkbookView(
+	workbook: Workbook,
+	op: SetWorkbookViewOp,
+): Result<PatchResult> {
+	const index = op.index ?? 0
+	if (!Number.isInteger(index) || index < 0) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'setWorkbookView index must be a non-negative integer', {
+				suggestedFix: 'Use index=0 for the primary workbook view.',
+			}),
+		)
+	}
+	if (op.view === null) {
+		if (index >= workbook.workbookViews.length) {
+			return err(
+				ascendError('VALIDATION_ERROR', 'setWorkbookView cannot delete a missing view', {
+					suggestedFix: 'Inspect workbook views and choose an existing view index.',
+				}),
+			)
+		}
+		workbook.workbookViews.splice(index, 1)
+		return ok(patch([], [], false))
+	}
+
+	const mode = op.mode ?? 'merge'
+	if (mode !== 'merge' && mode !== 'replace') {
+		return err(
+			ascendError('VALIDATION_ERROR', 'setWorkbookView mode must be merge or replace', {
+				suggestedFix: 'Use mode="merge" to update selected view fields or mode="replace".',
+			}),
+		)
+	}
+	const validated = validateWorkbookView(op.view)
+	if (!validated.ok) return validated
+	if (index > workbook.workbookViews.length) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'setWorkbookView index cannot skip view slots', {
+				suggestedFix: `Use index=${workbook.workbookViews.length} to append the next view.`,
+			}),
+		)
+	}
+
+	const current = workbook.workbookViews[index]
+	const next: Record<string, string | number> = mode === 'replace' || !current ? {} : { ...current }
+	for (const key of ['activeTab', 'firstSheet', 'visibility', 'tabRatio'] as const) {
+		if (!(key in op.view)) continue
+		const value = op.view[key]
+		if (value === null || value === undefined) {
+			delete next[key]
+		} else {
+			next[key] = value
+		}
+	}
+	if (index === workbook.workbookViews.length) workbook.workbookViews.push(next as WorkbookView)
+	else workbook.workbookViews[index] = next as WorkbookView
+
+	return ok(patch([], [], false))
+}
+
+export function handleSetCalcSettings(
+	workbook: Workbook,
+	op: SetCalcSettingsOp,
+): Result<PatchResult> {
+	const validated = validateCalcSettings(op.settings)
+	if (!validated.ok) return validated
+	const old = workbook.calcSettings
+	const next = { ...old }
+	if (op.settings.calcMode !== undefined) next.calcMode = op.settings.calcMode
+	if (op.settings.fullCalcOnLoad !== undefined) next.fullCalcOnLoad = op.settings.fullCalcOnLoad
+	assignOptionalCalcSetting(next, 'calcCompleted', op.settings.calcCompleted)
+	assignOptionalCalcSetting(next, 'calcOnSave', op.settings.calcOnSave)
+	assignOptionalCalcSetting(next, 'forceFullCalc', op.settings.forceFullCalc)
+	assignOptionalCalcSetting(next, 'calcId', op.settings.calcId)
+	if (op.settings.dateSystem !== undefined) next.dateSystem = op.settings.dateSystem
+	if (op.settings.iterativeCalc === null) {
+		next.iterativeCalc = { enabled: false, maxIterations: 100, maxChange: 0.001 }
+	} else if (op.settings.iterativeCalc) {
+		next.iterativeCalc = { ...old.iterativeCalc, ...op.settings.iterativeCalc }
+	}
+	workbook.calcSettings = next
+	if (op.settings.dateSystem !== undefined) {
+		workbook.workbookProperties = {
+			...workbook.workbookProperties,
+			date1904: op.settings.dateSystem === '1904',
+		}
+	}
+	const recalcRequired =
+		old.dateSystem !== workbook.calcSettings.dateSystem ||
+		old.iterativeCalc.enabled !== workbook.calcSettings.iterativeCalc.enabled ||
+		old.iterativeCalc.maxIterations !== workbook.calcSettings.iterativeCalc.maxIterations ||
+		old.iterativeCalc.maxChange !== workbook.calcSettings.iterativeCalc.maxChange
+	return ok(patch([], [], recalcRequired))
+}
+
+function assignOptionalCalcSetting<
+	K extends 'calcCompleted' | 'calcOnSave' | 'forceFullCalc' | 'calcId',
+>(
+	target: Partial<Record<K, boolean | number>>,
+	key: K,
+	value: boolean | number | null | undefined,
+): void {
+	if (value === undefined) return
+	if (value === null) delete target[key]
+	else target[key] = value
 }
 
 export function handleRewriteExternalLink(
@@ -164,6 +272,60 @@ function validateWorkbookProperties(
 					suggestedFix: 'Use a non-negative integer theme version, or null to clear it.',
 				},
 			),
+		)
+	}
+	return ok(undefined)
+}
+
+function validateWorkbookView(view: NonNullable<SetWorkbookViewOp['view']>): Result<undefined> {
+	for (const key of ['activeTab', 'firstSheet', 'tabRatio'] as const) {
+		const value = view[key]
+		if (value === undefined || value === null) continue
+		if (!Number.isInteger(value) || value < 0) {
+			return err(
+				ascendError('VALIDATION_ERROR', `workbook view ${key} must be a non-negative integer`, {
+					suggestedFix: `Use a non-negative integer for ${key}, or null to clear it.`,
+				}),
+			)
+		}
+	}
+	return ok(undefined)
+}
+
+function validateCalcSettings(settings: SetCalcSettingsOp['settings']): Result<undefined> {
+	if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'setCalcSettings requires a settings object', {
+				suggestedFix: 'Provide settings such as { "calcMode": "manual" }.',
+			}),
+		)
+	}
+	if (
+		settings.calcId !== undefined &&
+		settings.calcId !== null &&
+		(!Number.isInteger(settings.calcId) || settings.calcId < 0)
+	) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'calcId must be a non-negative integer', {
+				suggestedFix: 'Use a non-negative integer calcId, or null to clear it.',
+			}),
+		)
+	}
+	const iterative = settings.iterativeCalc
+	if (iterative && iterative.maxIterations !== undefined) {
+		if (!Number.isInteger(iterative.maxIterations) || iterative.maxIterations < 1) {
+			return err(
+				ascendError('VALIDATION_ERROR', 'iterativeCalc.maxIterations must be positive', {
+					suggestedFix: 'Use a positive integer maxIterations value.',
+				}),
+			)
+		}
+	}
+	if (iterative && iterative.maxChange !== undefined && iterative.maxChange < 0) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'iterativeCalc.maxChange must be non-negative', {
+				suggestedFix: 'Use a non-negative maxChange convergence threshold.',
+			}),
 		)
 	}
 	return ok(undefined)

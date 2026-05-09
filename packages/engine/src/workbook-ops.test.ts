@@ -72,4 +72,55 @@ describe('workbook metadata operations', () => {
 		expectErr(result)
 		expect(result.error.message).toContain('defaultThemeVersion')
 	})
+
+	test('setWorkbookView merges, appends, and deletes view metadata', () => {
+		const wb = createWorkbook()
+		wb.workbookViews.push({ activeTab: 0, firstSheet: 0, visibility: 'visible' })
+
+		const merged = applyOperation(wb, {
+			op: 'setWorkbookView',
+			index: 0,
+			view: { activeTab: 2, visibility: null },
+		})
+		expectOk(merged)
+		expect(wb.workbookViews[0]).toEqual({ activeTab: 2, firstSheet: 0 })
+
+		const appended = applyOperation(wb, {
+			op: 'setWorkbookView',
+			index: 1,
+			mode: 'replace',
+			view: { activeTab: 1, tabRatio: 600 },
+		})
+		expectOk(appended)
+		expect(wb.workbookViews[1]).toEqual({ activeTab: 1, tabRatio: 600 })
+
+		const deleted = applyOperation(wb, { op: 'setWorkbookView', index: 0, view: null })
+		expectOk(deleted)
+		expect(wb.workbookViews).toEqual([{ activeTab: 1, tabRatio: 600 }])
+	})
+
+	test('setCalcSettings updates calculation metadata and date system coherently', () => {
+		const wb = createWorkbook()
+		const result = applyOperation(wb, {
+			op: 'setCalcSettings',
+			settings: {
+				calcMode: 'manual',
+				fullCalcOnLoad: true,
+				calcCompleted: null,
+				dateSystem: '1904',
+				iterativeCalc: { enabled: true, maxIterations: 50, maxChange: 0.0001 },
+			},
+		})
+		expectOk(result)
+
+		expect(wb.calcSettings).toMatchObject({
+			calcMode: 'manual',
+			fullCalcOnLoad: true,
+			dateSystem: '1904',
+			iterativeCalc: { enabled: true, maxIterations: 50, maxChange: 0.0001 },
+		})
+		expect(wb.calcSettings.calcCompleted).toBeUndefined()
+		expect(wb.workbookProperties.date1904).toBe(true)
+		expect(result.value.recalcRequired).toBe(true)
+	})
 })

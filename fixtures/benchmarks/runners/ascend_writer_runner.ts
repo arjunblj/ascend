@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { extractZip } from '../../../packages/io-xlsx/src/reader/zip.ts'
+import type { ZipArchive } from '../../../packages/io-xlsx/src/reader/zip.ts'
 import {
 	type DenseXlsxCompressionProfile,
 	writeDenseRowsXlsxStreaming,
@@ -346,6 +346,7 @@ function semanticLinesForValues(
 }
 
 function fastGeneratedWriteAssertions(
+	extractZip: (bytes: Uint8Array) => ZipArchive,
 	bytes: Uint8Array,
 	input: {
 		readonly workloadName: WorkloadName
@@ -564,8 +565,9 @@ async function main(): Promise<void> {
 		xlsxPath: '',
 		xlsxBytes: bytes,
 	} as const
+	const { extractZip } = await import('../../../packages/io-xlsx/src/reader/zip.ts')
 	const assertions =
-		fastGeneratedWriteAssertions(bytes, input) ??
+		fastGeneratedWriteAssertions(extractZip, bytes, input) ??
 		(await import('../competitive-io.ts')).denseWriteAssertions(bytes, input)
 	const payload = {
 		assertions: {

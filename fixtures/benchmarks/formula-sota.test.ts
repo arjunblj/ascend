@@ -41,6 +41,9 @@ interface FormulaSotaPayload {
 		readonly engine: string
 		readonly correctness: Record<string, string | number | boolean>
 	}[]
+	readonly comparison: {
+		readonly totalSpeedupVsHyperFormula: number
+	}
 }
 
 describe('formula SOTA public profile smoke', () => {
@@ -71,6 +74,7 @@ describe('formula SOTA public profile smoke', () => {
 			expect(payload.profile.sourceBenchmark.length).toBeGreaterThan(0)
 			expect(payload.profile.sourceUrl).toContain('hyperformula')
 			expect(payload.cases.map((entry) => entry.engine).sort()).toEqual(['ascend', 'hyperformula'])
+			expect(payload.comparison.totalSpeedupVsHyperFormula).toBeGreaterThan(1)
 			for (const entry of payload.cases) {
 				const matchFlags = Object.entries(entry.correctness).filter(([key]) =>
 					key.endsWith('Matches'),

@@ -29,6 +29,9 @@ interface Args {
 	readonly oracle: OracleMode
 	readonly json: boolean
 	readonly maxMismatches?: number
+	readonly maxErrors?: number
+	readonly minComparedFormulas?: number
+	readonly minPerfectWorkbooks?: number
 }
 
 interface FormulaSnapshot {
@@ -109,6 +112,14 @@ function positiveInt(raw: string | undefined): number | undefined {
 	return value
 }
 
+function nonNegativeIntOptional(raw: string | undefined): number | undefined {
+	if (raw === undefined) return undefined
+	const value = Number.parseInt(raw, 10)
+	if (!Number.isFinite(value) || value < 0)
+		throw new Error(`Expected non-negative integer for ${raw}`)
+	return value
+}
+
 function nonNegativeInt(raw: string | undefined, fallback: number): number {
 	if (raw === undefined) return fallback
 	const value = Number.parseInt(raw, 10)
@@ -129,7 +140,10 @@ function readArgs(): Args {
 		sampleSeed: nonNegativeInt(readFlag('--sample-seed'), 1),
 		oracle: 'cached-values',
 		json: hasFlag('--json'),
-		maxMismatches: positiveInt(readFlag('--max-mismatches')),
+		maxMismatches: nonNegativeIntOptional(readFlag('--max-mismatches')),
+		maxErrors: nonNegativeIntOptional(readFlag('--max-errors')),
+		minComparedFormulas: positiveInt(readFlag('--min-compared-formulas')),
+		minPerfectWorkbooks: positiveInt(readFlag('--min-perfect-workbooks')),
 	}
 }
 
@@ -330,6 +344,36 @@ export async function runFormulaCorpusCorrectness(args: Args): Promise<SuitePayl
 	}
 }
 
+export function formulaCorpusCorrectnessAssertionFailures(
+	payload: SuitePayload,
+	args: Pick<Args, 'maxErrors' | 'maxMismatches' | 'minComparedFormulas' | 'minPerfectWorkbooks'>,
+): readonly string[] {
+	const failures: string[] = []
+	if (args.maxMismatches !== undefined && payload.summary.mismatchCount > args.maxMismatches) {
+		failures.push(`mismatches ${payload.summary.mismatchCount} exceeded ${args.maxMismatches}`)
+	}
+	if (args.maxErrors !== undefined && payload.summary.errorCount > args.maxErrors) {
+		failures.push(`errors ${payload.summary.errorCount} exceeded ${args.maxErrors}`)
+	}
+	if (
+		args.minComparedFormulas !== undefined &&
+		payload.summary.comparedCount < args.minComparedFormulas
+	) {
+		failures.push(
+			`compared formulas ${payload.summary.comparedCount} below ${args.minComparedFormulas}`,
+		)
+	}
+	if (
+		args.minPerfectWorkbooks !== undefined &&
+		payload.summary.perfectWorkbookCount < args.minPerfectWorkbooks
+	) {
+		failures.push(
+			`perfect workbooks ${payload.summary.perfectWorkbookCount} below ${args.minPerfectWorkbooks}`,
+		)
+	}
+	return failures
+}
+
 function render(payload: SuitePayload): void {
 	console.log(
 		`formula corpus correctness: workbooks=${payload.summary.workbookCount} formulas=${payload.summary.formulaCount} mismatches=${payload.summary.mismatchCount} errors=${payload.summary.errorCount}`,
@@ -346,10 +390,9 @@ if (import.meta.main) {
 	const payload = await runFormulaCorpusCorrectness(args)
 	if (args.json) console.log(JSON.stringify(payload, null, 2))
 	else render(payload)
-	if (args.maxMismatches !== undefined && payload.summary.mismatchCount > args.maxMismatches) {
-		console.error(
-			`formula corpus correctness failed: mismatches ${payload.summary.mismatchCount} exceeded ${args.maxMismatches}`,
-		)
+	const failures = formulaCorpusCorrectnessAssertionFailures(payload, args)
+	if (failures.length > 0) {
+		console.error(`formula corpus correctness failed: ${failures.join('; ')}`)
 		process.exit(1)
 	}
 }

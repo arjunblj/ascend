@@ -2,13 +2,18 @@ import { describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createWorkbook, type StyleId } from '../../packages/core/src/index.ts'
 import { writeXlsx } from '../../packages/io-xlsx/src/index.ts'
 import { numberValue } from '../../packages/schema/src/index.ts'
 import type { CorpusManifestEntry } from '../corpus/manifest.ts'
-import { runFormulaCorpusCorrectness } from './formula-corpus-correctness.ts'
+import {
+	formulaCorpusCorrectnessAssertionFailures,
+	runFormulaCorpusCorrectness,
+} from './formula-corpus-correctness.ts'
 
 const SID = 0 as StyleId
+const runnerPath = fileURLToPath(new URL('./formula-corpus-correctness.ts', import.meta.url))
 
 async function writeFormulaWorkbook(input: {
 	readonly formulaValue: number
@@ -131,6 +136,76 @@ describe('formula corpus correctness runner', () => {
 			formula: 'SUM(A1:A2)',
 			cached: 'n:99',
 			calculated: 'n:3',
+		})
+	})
+
+	test('assertion gates require enough real formula evidence', async () => {
+		const root = await mkdtemp(join(tmpdir(), 'ascend-formula-corpus-'))
+		await mkdir(root, { recursive: true })
+		await writeFormulaWorkbook({ root, filename: 'correct.xlsx', formulaValue: 3 })
+		const manifest = await writeManifest(root, [manifestEntry('correct.xlsx')])
+
+		const payload = await runFormulaCorpusCorrectness({
+			corpusRoot: root,
+			manifest,
+			tags: [],
+			tiers: [],
+			sampleSeed: 1,
+			oracle: 'cached-values',
+			json: true,
+		})
+
+		expect(
+			formulaCorpusCorrectnessAssertionFailures(payload, {
+				maxErrors: 0,
+				maxMismatches: 0,
+				minComparedFormulas: 2,
+				minPerfectWorkbooks: 1,
+			}),
+		).toEqual([])
+		expect(
+			formulaCorpusCorrectnessAssertionFailures(payload, {
+				minComparedFormulas: 3,
+				minPerfectWorkbooks: 2,
+			}),
+		).toEqual(['compared formulas 2 below 3', 'perfect workbooks 1 below 2'])
+	})
+
+	test('CLI assertion gates accept strict zero mismatch and error thresholds', async () => {
+		const root = await mkdtemp(join(tmpdir(), 'ascend-formula-corpus-'))
+		await mkdir(root, { recursive: true })
+		await writeFormulaWorkbook({ root, filename: 'correct.xlsx', formulaValue: 3 })
+		const manifest = await writeManifest(root, [manifestEntry('correct.xlsx')])
+
+		const proc = Bun.spawnSync({
+			cmd: [
+				Bun.argv[0],
+				runnerPath,
+				'--corpus-root',
+				root,
+				'--manifest',
+				manifest,
+				'--max-mismatches',
+				'0',
+				'--max-errors',
+				'0',
+				'--min-compared-formulas',
+				'2',
+				'--min-perfect-workbooks',
+				'1',
+				'--json',
+			],
+			stdout: 'pipe',
+			stderr: 'pipe',
+		})
+
+		expect(proc.exitCode, new TextDecoder().decode(proc.stderr)).toBe(0)
+		const payload = JSON.parse(new TextDecoder().decode(proc.stdout))
+		expect(payload.summary).toMatchObject({
+			comparedCount: 2,
+			mismatchCount: 0,
+			errorCount: 0,
+			perfectWorkbookCount: 1,
 		})
 	})
 })

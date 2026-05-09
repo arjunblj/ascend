@@ -26,6 +26,7 @@ const INTENTIONAL_NON_PROPAGATORS = new Map<string, number>([
 	['ISBLANK', 1],
 	['ISERR', 1],
 	['ISERROR', 1],
+	['ISFORMULA', 1],
 	['ISLOGICAL', 1],
 	['ISNA', 1],
 	['ISNONTEXT', 1],
@@ -39,7 +40,7 @@ const INTENTIONAL_NON_PROPAGATORS = new Map<string, number>([
 	['TYPE', 1],
 ])
 
-function main(): void {
+export function runErrorPropagationAudit(): { unexpected: number; registered: number } {
 	const nonPropagating: Array<{
 		name: string
 		position: number
@@ -65,8 +66,8 @@ function main(): void {
 
 	console.log('Formula Error Propagation Audit')
 	console.log('='.repeat(72))
-	console.log(`registered functions: ${functionRegistry.size}`)
-	console.log(`non-propagating arg slots: ${nonPropagating.length}`)
+	console.log(`registered functions: ${String(functionRegistry.size)}`)
+	console.log(`non-propagating arg slots: ${String(nonPropagating.length)}`)
 	const grouped = new Map<string, number>()
 	for (const item of nonPropagating) grouped.set(item.name, (grouped.get(item.name) ?? 0) + 1)
 	const top = [...grouped.entries()].sort((a, b) => b[1] - a[1]).slice(0, 60)
@@ -78,9 +79,16 @@ function main(): void {
 		if (count > allowed) unexpected += count - allowed
 	}
 	console.log('-'.repeat(72))
-	console.log(`intentional exceptions tracked: ${INTENTIONAL_NON_PROPAGATORS.size}`)
-	console.log(`unexpected non-propagating slots: ${unexpected}`)
+	console.log(`intentional exceptions tracked: ${String(INTENTIONAL_NON_PROPAGATORS.size)}`)
+	console.log(`unexpected non-propagating slots: ${String(unexpected)}`)
+	return { unexpected, registered: functionRegistry.size }
+}
+
+function main(): void {
+	const { unexpected } = runErrorPropagationAudit()
 	if (unexpected > 0) process.exit(1)
 }
 
-main()
+if (import.meta.main) {
+	main()
+}

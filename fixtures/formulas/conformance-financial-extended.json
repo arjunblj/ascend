@@ -1,0 +1,65 @@
+{
+	"function": "financial-extended",
+	"cases": [
+		{
+			"description": "PMT monthly payment",
+			"setup": {},
+			"formula": "=PMT(0.06/12, 360, -200000)",
+			"expected": { "kind": "number", "approx": 1199.1, "tolerance": 0.5 }
+		},
+		{
+			"description": "FV of annuity",
+			"setup": {},
+			"formula": "=FV(0.05/12, 120, -100)",
+			"expected": { "kind": "number", "approx": 15528.23, "tolerance": 1.0 }
+		},
+		{
+			"description": "PV of future amount",
+			"setup": {},
+			"formula": "=PV(0.08, 5, 0, -10000)",
+			"expected": { "kind": "number", "approx": 6805.83, "tolerance": 1.0 }
+		},
+		{
+			"description": "NPV discounts all cashflows from period 1",
+			"setup": { "A1": -1000, "A2": 300, "A3": 420, "A4": 680 },
+			"formula": "=NPV(0.1, A1:A4)",
+			"expected": { "kind": "number", "approx": 118.84, "tolerance": 1.0 }
+		},
+		{
+			"description": "IRR simple",
+			"setup": { "A1": -1000, "A2": 300, "A3": 420, "A4": 680 },
+			"formula": "=IRR(A1:A4)",
+			"expected": { "kind": "number", "approx": 0.1634, "tolerance": 0.005 }
+		},
+		{
+			"description": "RATE 5-year loan",
+			"setup": {},
+			"formula": "=RATE(60, -200, 10000)",
+			"expected": { "kind": "number", "approx": 0.006183, "tolerance": 0.001 }
+		},
+		{
+			"description": "NPER to pay off loan",
+			"setup": {},
+			"formula": "=NPER(0.005, -200, 10000)",
+			"expected": { "kind": "number", "approx": 57.68, "tolerance": 0.5 }
+		},
+		{
+			"description": "SLN depreciation",
+			"setup": {},
+			"formula": "=SLN(30000, 7500, 10)",
+			"expected": { "kind": "number", "value": 2250 }
+		},
+		{
+			"description": "SYD depreciation year 1",
+			"setup": {},
+			"formula": "=SYD(30000, 7500, 10, 1)",
+			"expected": { "kind": "number", "approx": 4090.91, "tolerance": 0.05 }
+		},
+		{
+			"description": "DB depreciation",
+			"setup": {},
+			"formula": "=DB(1000000, 100000, 6, 1)",
+			"expected": { "kind": "number", "approx": 319000, "tolerance": 500 }
+		}
+	]
+}

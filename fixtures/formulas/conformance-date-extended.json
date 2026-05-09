@@ -1,0 +1,65 @@
+{
+	"function": "date-extended-2",
+	"cases": [
+		{
+			"description": "DATE(1900,1,1) serial is 1",
+			"setup": {},
+			"formula": "=DATE(1900,1,1)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "DATE(2000,1,1) serial is 36526",
+			"setup": {},
+			"formula": "=DATE(2000,1,1)",
+			"expected": { "kind": "number", "value": 36526 }
+		},
+		{
+			"description": "YEAR extracts year",
+			"setup": { "A1": 44927 },
+			"formula": "=YEAR(A1)",
+			"expected": { "kind": "number", "value": 2023 }
+		},
+		{
+			"description": "MONTH extracts month",
+			"setup": { "A1": 44927 },
+			"formula": "=MONTH(A1)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "DAY extracts day",
+			"setup": { "A1": 44927 },
+			"formula": "=DAY(A1)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "EDATE adds months",
+			"setup": {},
+			"formula": "=EDATE(DATE(2023,1,15), 3)",
+			"expected": { "kind": "number", "value": 45031 }
+		},
+		{
+			"description": "EOMONTH returns end of month",
+			"setup": {},
+			"formula": "=EOMONTH(DATE(2023,1,15), 0)",
+			"expected": { "kind": "number", "value": 44957 }
+		},
+		{
+			"description": "WEEKDAY Sunday = 1 (default)",
+			"setup": {},
+			"formula": "=WEEKDAY(DATE(2023,1,1))",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "DAYS between dates",
+			"setup": {},
+			"formula": "=DAYS(DATE(2023,12,31), DATE(2023,1,1))",
+			"expected": { "kind": "number", "value": 364 }
+		},
+		{
+			"description": "DATE with negative month wraps to previous year",
+			"setup": {},
+			"formula": "=MONTH(DATE(2023,-1,1))",
+			"expected": { "kind": "number", "value": 11 }
+		}
+	]
+}

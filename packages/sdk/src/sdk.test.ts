@@ -83,12 +83,18 @@ describe('AscendWorkbook', () => {
 			name: 'PivotTable1',
 			cacheId: 34,
 			locationRef: 'A1',
+			fields: [],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [],
+			dataFields: [],
 		})
 		internal.wb.pivotCaches.push({
 			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
 			cacheId: 34,
 			sourceSheet: 'Raw',
 			sourceRef: 'A1:D10',
+			fields: [],
 		})
 		internal.wb.slicerCaches.push({
 			partPath: 'xl/slicerCaches/slicerCache1.xml',
@@ -141,12 +147,18 @@ describe('AscendWorkbook', () => {
 			name: 'PivotTable1',
 			cacheId: 7,
 			locationRef: 'A1',
+			fields: [],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [],
+			dataFields: [],
 		})
 		internal.wb.pivotCaches.push({
 			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
 			cacheId: 7,
 			sourceSheet: 'Raw',
 			sourceRef: 'A1:D10',
+			fields: [],
 		})
 		internal.wb.slicerCaches.push({
 			partPath: 'xl/slicerCaches/slicerCache1.xml',

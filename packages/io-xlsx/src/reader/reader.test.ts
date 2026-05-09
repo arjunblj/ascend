@@ -965,6 +965,16 @@ describe('readXlsx', () => {
 			'xl/pivotTables/pivotTable1.xml': `<?xml version="1.0"?>
 <pivotTableDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="PivotTable11" cacheId="34">
   <location ref="O17"/>
+  <pivotFields count="4">
+    <pivotField axis="axisRow" showAll="0"/>
+    <pivotField axis="axisCol"/>
+    <pivotField axis="axisPage" hidden="1"/>
+    <pivotField dataField="1" defaultSubtotal="0"/>
+  </pivotFields>
+  <rowFields count="1"><field x="0"/></rowFields>
+  <colFields count="1"><field x="1"/></colFields>
+  <pageFields count="1"><pageField fld="2" name="Region filter"/></pageFields>
+  <dataFields count="1"><dataField fld="3" name="Sum of Sales" subtotal="sum" numFmtId="4"/></dataFields>
 </pivotTableDefinition>`,
 			'xl/pivotCache/pivotCacheDefinition1.xml': `<?xml version="1.0"?>
 <pivotCacheDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -975,6 +985,12 @@ describe('readXlsx', () => {
   <cacheSource type="worksheet">
     <worksheetSource ref="A1:D100" sheet="raw data"/>
   </cacheSource>
+  <cacheFields count="4">
+    <cacheField name="Region" databaseField="1"/>
+    <cacheField name="Quarter"/>
+    <cacheField name="Channel"/>
+    <cacheField name="Sales" numFmtId="4"/>
+  </cacheFields>
 </pivotCacheDefinition>`,
 			'xl/pivotCache/_rels/pivotCacheDefinition1.xml.rels': `<?xml version="1.0"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
@@ -994,6 +1010,16 @@ describe('readXlsx', () => {
 				name: 'PivotTable11',
 				cacheId: 34,
 				locationRef: 'O17',
+				fields: [
+					{ index: 0, axis: 'axisRow', showAll: false },
+					{ index: 1, axis: 'axisCol' },
+					{ index: 2, axis: 'axisPage', hidden: true },
+					{ index: 3, dataField: true, defaultSubtotal: false },
+				],
+				rowFields: [{ index: 0 }],
+				columnFields: [{ index: 1 }],
+				pageFields: [{ index: 2, name: 'Region filter' }],
+				dataFields: [{ fieldIndex: 3, name: 'Sum of Sales', subtotal: 'sum', numFmtId: 4 }],
 			},
 		])
 		expect(result.value.workbook.pivotCaches).toEqual([
@@ -1015,6 +1041,12 @@ describe('readXlsx', () => {
 				sourceSheet: 'raw data',
 				sourceRef: 'A1:D100',
 				recordsPartPath: 'xl/pivotCache/pivotCacheRecords1.xml',
+				fields: [
+					{ index: 0, name: 'Region', databaseField: true },
+					{ index: 1, name: 'Quarter' },
+					{ index: 2, name: 'Channel' },
+					{ index: 3, name: 'Sales', numFmtId: 4 },
+				],
 			},
 		])
 	})

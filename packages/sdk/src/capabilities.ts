@@ -461,8 +461,9 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'Pivot tables',
 		'inspectable',
 		'P0',
-		'Edit source ranges and refresh-on-open flags, then add calculated output refresh.',
-		'Pivot inventory exists, but full management and recalculation are not complete.',
+		'Add filter state edits and calculated output refresh after field-level inventory.',
+		'Pivot cache fields and row/column/page/data field layout are inspectable; full management and recalculation are not complete.',
+		['packages/io-xlsx/src/reader/reader.test.ts'],
 	),
 	cap(
 		'analytics.pivot-caches',

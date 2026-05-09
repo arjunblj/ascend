@@ -138,8 +138,8 @@ export class WorkbookReadView {
 			})),
 			charts: this.wb.chartParts.map(copyChartInfo),
 			hasWorkbookProtection: this.wb.workbookProtection !== null,
-			pivotTables: this.wb.pivotTables.map((entry) => ({ ...entry })),
-			pivotCaches: this.wb.pivotCaches.map((entry) => ({ ...entry })),
+			pivotTables: this.wb.pivotTables.map(copyPivotTableInfo),
+			pivotCaches: this.wb.pivotCaches.map(copyPivotCacheInfo),
 			slicerCaches: this.wb.slicerCaches.map((entry) => ({
 				...entry,
 				pivotTableNames: [...entry.pivotTableNames],
@@ -538,11 +538,11 @@ export class WorkbookReadView {
 	pivotTables(sheetName?: string): readonly PivotTableInfo[] {
 		return this.wb.pivotTables
 			.filter((entry) => (sheetName ? entry.sheetName === sheetName : true))
-			.map((entry) => ({ ...entry }))
+			.map(copyPivotTableInfo)
 	}
 
 	pivotCaches(): readonly PivotCacheInfo[] {
-		return this.wb.pivotCaches.map((entry) => ({ ...entry }))
+		return this.wb.pivotCaches.map(copyPivotCacheInfo)
 	}
 
 	slicerCaches(): readonly SlicerCacheInfo[] {
@@ -895,6 +895,24 @@ function copyChartInfo(chart: ChartPartInfo): ChartPartInfo {
 	return {
 		...chart,
 		series: chart.series.map((series) => ({ ...series })),
+	}
+}
+
+function copyPivotCacheInfo(cache: PivotCacheInfo): PivotCacheInfo {
+	return {
+		...cache,
+		fields: cache.fields.map((field) => ({ ...field })),
+	}
+}
+
+function copyPivotTableInfo(pivot: PivotTableInfo): PivotTableInfo {
+	return {
+		...pivot,
+		fields: pivot.fields.map((field) => ({ ...field })),
+		rowFields: pivot.rowFields.map((field) => ({ ...field })),
+		columnFields: pivot.columnFields.map((field) => ({ ...field })),
+		pageFields: pivot.pageFields.map((field) => ({ ...field })),
+		dataFields: pivot.dataFields.map((field) => ({ ...field })),
 	}
 }
 

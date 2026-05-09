@@ -430,6 +430,11 @@ describe('applyOperation', () => {
 			name: 'PivotTable1',
 			cacheId: 4,
 			locationRef: 'A1',
+			fields: [],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [],
+			dataFields: [],
 		})
 		wb.slicerCaches.push({
 			partPath: 'xl/slicerCaches/slicerCache1.xml',
@@ -1165,12 +1170,18 @@ describe('applyOperation', () => {
 			sheetName: 'Sheet1',
 			name: 'PivotTable1',
 			cacheId: 34,
+			fields: [],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [],
+			dataFields: [],
 		})
 		wb.pivotCaches.push({
 			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
 			cacheId: 34,
 			sourceSheet: 'Raw',
 			sourceRef: 'A1:D10',
+			fields: [],
 		})
 
 		const result = applyOperation(wb, {

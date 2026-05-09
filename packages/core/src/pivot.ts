@@ -4,6 +4,11 @@ export interface PivotTableInfo {
 	readonly name?: string
 	readonly cacheId?: number
 	readonly locationRef?: string
+	readonly fields: readonly PivotFieldInfo[]
+	readonly rowFields: readonly PivotFieldReference[]
+	readonly columnFields: readonly PivotFieldReference[]
+	readonly pageFields: readonly PivotFieldReference[]
+	readonly dataFields: readonly PivotDataFieldInfo[]
 }
 
 export interface PivotCacheInfo {
@@ -24,6 +29,36 @@ export interface PivotCacheInfo {
 	readonly sourceSheet?: string
 	readonly sourceRef?: string
 	readonly recordsPartPath?: string
+	readonly fields: readonly PivotCacheFieldInfo[]
+}
+
+export interface PivotCacheFieldInfo {
+	readonly index: number
+	readonly name?: string
+	readonly databaseField?: boolean
+	readonly numFmtId?: number
+}
+
+export interface PivotFieldInfo {
+	readonly index: number
+	readonly axis?: string
+	readonly name?: string
+	readonly hidden?: boolean
+	readonly dataField?: boolean
+	readonly defaultSubtotal?: boolean
+	readonly showAll?: boolean
+}
+
+export interface PivotFieldReference {
+	readonly index: number
+	readonly name?: string
+}
+
+export interface PivotDataFieldInfo {
+	readonly fieldIndex: number
+	readonly name?: string
+	readonly subtotal?: string
+	readonly numFmtId?: number
 }
 
 export interface SlicerCacheInfo {

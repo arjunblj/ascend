@@ -210,8 +210,8 @@ export class Workbook {
 		clone.definedNames.copyFrom(this.definedNames)
 		clone.styles.copyFrom(this.styles)
 		clone.differentialStyles.push(...this.differentialStyles.map(cloneCellStyle))
-		clone.pivotCaches.push(...this.pivotCaches.map((entry) => ({ ...entry })))
-		clone.pivotTables.push(...this.pivotTables.map((entry) => ({ ...entry })))
+		clone.pivotCaches.push(...this.pivotCaches.map(clonePivotCacheInfo))
+		clone.pivotTables.push(...this.pivotTables.map(clonePivotTableInfo))
 		clone.slicerCaches.push(
 			...this.slicerCaches.map((entry) => ({
 				...entry,
@@ -236,4 +236,22 @@ export class Workbook {
 
 export function createWorkbook(id?: WorkbookId): Workbook {
 	return new Workbook(id)
+}
+
+function clonePivotCacheInfo(entry: PivotCacheInfo): PivotCacheInfo {
+	return {
+		...entry,
+		fields: entry.fields.map((field) => ({ ...field })),
+	}
+}
+
+function clonePivotTableInfo(entry: PivotTableInfo): PivotTableInfo {
+	return {
+		...entry,
+		fields: entry.fields.map((field) => ({ ...field })),
+		rowFields: entry.rowFields.map((field) => ({ ...field })),
+		columnFields: entry.columnFields.map((field) => ({ ...field })),
+		pageFields: entry.pageFields.map((field) => ({ ...field })),
+		dataFields: entry.dataFields.map((field) => ({ ...field })),
+	}
 }

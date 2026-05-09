@@ -235,9 +235,23 @@ function restoreWorkbookFromSnapshot(workbook: Workbook, snapshot: Workbook): vo
 	workbook.differentialStyles.splice(0, workbook.differentialStyles.length)
 	workbook.differentialStyles.push(...snapshot.differentialStyles)
 	workbook.pivotCaches.splice(0, workbook.pivotCaches.length)
-	workbook.pivotCaches.push(...snapshot.pivotCaches.map((e) => ({ ...e })))
+	workbook.pivotCaches.push(
+		...snapshot.pivotCaches.map((e) => ({
+			...e,
+			fields: e.fields.map((field) => ({ ...field })),
+		})),
+	)
 	workbook.pivotTables.splice(0, workbook.pivotTables.length)
-	workbook.pivotTables.push(...snapshot.pivotTables.map((e) => ({ ...e })))
+	workbook.pivotTables.push(
+		...snapshot.pivotTables.map((e) => ({
+			...e,
+			fields: e.fields.map((field) => ({ ...field })),
+			rowFields: e.rowFields.map((field) => ({ ...field })),
+			columnFields: e.columnFields.map((field) => ({ ...field })),
+			pageFields: e.pageFields.map((field) => ({ ...field })),
+			dataFields: e.dataFields.map((field) => ({ ...field })),
+		})),
+	)
 	workbook.slicerCaches.splice(0, workbook.slicerCaches.length)
 	workbook.slicerCaches.push(
 		...snapshot.slicerCaches.map((e) => ({ ...e, pivotTableNames: [...e.pivotTableNames] })),

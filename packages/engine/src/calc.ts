@@ -16,7 +16,13 @@ import {
 } from '@ascend/formulas'
 import type { AscendError, CellValue } from '@ascend/schema'
 import { EMPTY, errorValue, numberValue, topLeftScalar, valuesEqual } from '@ascend/schema'
-import { analyzeWorkbook, invalidateWorkbookAnalysis } from './analysis.ts'
+import {
+	type AnalyzedFormula,
+	analyzeWorkbook,
+	type GrowingAggregateAppendIndex,
+	type GrowingRangeAggregateFunction,
+	invalidateWorkbookAnalysis,
+} from './analysis.ts'
 import type { CalcContext } from './calc-context.ts'
 import { type CodegenFn, codegenFormula, codegenSharedFormula } from './codegen.ts'
 import { type CompiledFormula, compileFormula, evaluateCompiled } from './compiled-eval.ts'
@@ -25,7 +31,6 @@ import {
 	type CellKey,
 	cellKey,
 	type DependencyGraph,
-	parseCellKey,
 	parseCellKeyInto,
 } from './dep-graph.ts'
 import {
@@ -54,13 +59,33 @@ interface SpillIndexState {
 }
 
 interface GrowingRangeAggregateOptimization {
-	readonly functionName: 'SUM'
+	readonly functionName: GrowingRangeAggregateFunction
 	readonly previousKey: CellKey
+	readonly previousSheetIndex: number
+	readonly previousRow: number
+	readonly previousCol: number
 	readonly appendSheetIndex: number
 	readonly appendStartRow: number
 	readonly appendStartCol: number
 	readonly appendEndRow: number
 	readonly appendEndCol: number
+}
+
+interface RangeAggregateOptimization {
+	readonly functionName: GrowingRangeAggregateFunction
+	readonly sheetIndex: number
+	readonly startRow: number
+	readonly startCol: number
+	readonly endRow: number
+	readonly endCol: number
+}
+
+interface RangeAggregateState {
+	readonly sum: number
+	readonly count: number
+	readonly min: number
+	readonly max: number
+	readonly error: CellValue | null
 }
 
 interface RecalcScratch {
@@ -70,6 +95,7 @@ interface RecalcScratch {
 	readonly lookupVectorCache: LookupVectorCache
 	readonly aggregateRangeCache: AggregateRangeCache
 	readonly rangeValueCache: Map<number, readonly (readonly CellValue[])[]>
+	readonly growingAggregateStateCache: Map<CellKey, RangeAggregateState>
 	readonly evalContext: MutableEvalContext
 }
 
@@ -85,44 +111,256 @@ function getRecalcScratch(workbook: Workbook): RecalcScratch {
 			lookupVectorCache: new Map(),
 			aggregateRangeCache: new Map(),
 			rangeValueCache: new Map(),
+			growingAggregateStateCache: new Map(),
 			evalContext: new MutableEvalContext(),
 		}
 		recalcScratchByWorkbook.set(workbook, scratch)
 	}
 	scratch.spillBySheet.clear()
 	scratch.spillInitializedSheets.clear()
-	scratch.exactLookupCache.clear()
-	scratch.lookupVectorCache.clear()
 	scratch.aggregateRangeCache.clear()
 	scratch.rangeValueCache.clear()
 	return scratch
 }
 
-function tryEvaluateGrowingRangeAggregate(
+function scanRangeAggregateState(
 	workbook: Workbook,
-	optimization: GrowingRangeAggregateOptimization,
-	completedKeys: ReadonlySet<CellKey>,
-): CellValue | null {
-	if (optimization.functionName !== 'SUM') return null
-	if (!completedKeys.has(optimization.previousKey)) return null
-	const [prevSheetIndex, prevRow, prevCol] = parseCellKey(optimization.previousKey)
-	const previousValue = workbook.sheets[prevSheetIndex]?.cells.readValue(prevRow, prevCol)
-	if (!previousValue) return null
-	const previousScalar = topLeftScalar(previousValue)
-	if (previousScalar.kind === 'error') return previousScalar
-	if (previousScalar.kind !== 'number') return null
-	const appendSheet = workbook.sheets[optimization.appendSheetIndex]
-	if (!appendSheet) return null
-	let sum = previousScalar.value
-	for (let row = optimization.appendStartRow; row <= optimization.appendEndRow; row++) {
-		for (let col = optimization.appendStartCol; col <= optimization.appendEndCol; col++) {
-			const appendScalar = topLeftScalar(appendSheet.cells.readValue(row, col))
-			if (appendScalar.kind === 'error') return appendScalar
-			if (appendScalar.kind === 'number') sum += appendScalar.value
-			else if (appendScalar.kind === 'date') sum += appendScalar.serial
+	functionName: GrowingRangeAggregateFunction,
+	sheetIndex: number,
+	startRow: number,
+	startCol: number,
+	endRow: number,
+	endCol: number,
+	base?: RangeAggregateState,
+): RangeAggregateState | null {
+	const sheet = workbook.sheets[sheetIndex]
+	if (!sheet) return null
+	let sum = base?.sum ?? 0
+	let count = base?.count ?? 0
+	let min = base?.min ?? Number.POSITIVE_INFINITY
+	let max = base?.max ?? Number.NEGATIVE_INFINITY
+	let error = base?.error ?? null
+	for (let row = startRow; row <= endRow; row++) {
+		for (let col = startCol; col <= endCol; col++) {
+			const directNumber = sheet.cells.readNumber(row, col)
+			if (directNumber !== null) {
+				switch (functionName) {
+					case 'SUM':
+						sum += directNumber
+						break
+					case 'COUNT':
+						count++
+						break
+					case 'AVERAGE':
+						sum += directNumber
+						count++
+						break
+					case 'MIN':
+						count++
+						if (directNumber < min) min = directNumber
+						break
+					case 'MAX':
+						count++
+						if (directNumber > max) max = directNumber
+						break
+				}
+				continue
+			}
+			const scalar = topLeftScalar(sheet.cells.readValue(row, col))
+			if (scalar.kind === 'error' && functionName !== 'COUNT') {
+				error = scalar
+				return { sum, count, min, max, error }
+			}
+			const numeric =
+				scalar.kind === 'number' ? scalar.value : scalar.kind === 'date' ? scalar.serial : null
+			if (numeric === null) continue
+			switch (functionName) {
+				case 'SUM':
+					sum += numeric
+					break
+				case 'COUNT':
+					count++
+					break
+				case 'AVERAGE':
+					sum += numeric
+					count++
+					break
+				case 'MIN':
+					count++
+					if (numeric < min) min = numeric
+					break
+				case 'MAX':
+					count++
+					if (numeric > max) max = numeric
+					break
+			}
 		}
 	}
-	return numberValue(sum)
+	return { sum, count, min, max, error }
+}
+
+function rangeAggregateStateToValue(
+	functionName: GrowingRangeAggregateFunction,
+	state: RangeAggregateState,
+): CellValue {
+	if (state.error) return state.error
+	switch (functionName) {
+		case 'SUM':
+			return numberValue(state.sum)
+		case 'COUNT':
+			return numberValue(state.count)
+		case 'AVERAGE':
+			return state.count === 0 ? errorValue('#DIV/0!') : numberValue(state.sum / state.count)
+		case 'MIN':
+			return numberValue(state.count === 0 ? 0 : state.min)
+		case 'MAX':
+			return numberValue(state.count === 0 ? 0 : state.max)
+	}
+}
+
+function needsRangeAggregateState(functionName: GrowingRangeAggregateFunction): boolean {
+	return functionName === 'AVERAGE' || functionName === 'MIN' || functionName === 'MAX'
+}
+
+function tryEvaluateGrowingRangeScalarAggregate(
+	workbook: Workbook,
+	optimization: GrowingRangeAggregateOptimization,
+	canUsePreviousValue: boolean,
+): CellValue | null {
+	if (
+		optimization.functionName !== 'SUM' &&
+		optimization.functionName !== 'COUNT' &&
+		optimization.functionName !== 'MIN' &&
+		optimization.functionName !== 'MAX'
+	) {
+		return null
+	}
+	if (!canUsePreviousValue) return null
+	const previousNumber = workbook.sheets[optimization.previousSheetIndex]?.cells.readNumber(
+		optimization.previousRow,
+		optimization.previousCol,
+	)
+	let value: number
+	if (previousNumber !== null && previousNumber !== undefined) {
+		value = previousNumber
+	} else {
+		const previousValue = workbook.sheets[optimization.previousSheetIndex]?.cells.readValue(
+			optimization.previousRow,
+			optimization.previousCol,
+		)
+		if (!previousValue) return null
+		const previousScalar = topLeftScalar(previousValue)
+		if (previousScalar.kind === 'error') return previousScalar
+		if (previousScalar.kind !== 'number') return null
+		value = previousScalar.value
+	}
+	const appendSheet = workbook.sheets[optimization.appendSheetIndex]
+	if (!appendSheet) return null
+	for (let row = optimization.appendStartRow; row <= optimization.appendEndRow; row++) {
+		for (let col = optimization.appendStartCol; col <= optimization.appendEndCol; col++) {
+			const directNumber = appendSheet.cells.readNumber(row, col)
+			if (directNumber !== null) {
+				switch (optimization.functionName) {
+					case 'SUM':
+						value += directNumber
+						break
+					case 'COUNT':
+						value += 1
+						break
+					case 'MIN':
+						if (value === 0 && directNumber > 0) return null
+						value = Math.min(value, directNumber)
+						break
+					case 'MAX':
+						if (value === 0 && directNumber < 0) return null
+						value = Math.max(value, directNumber)
+						break
+				}
+				continue
+			}
+			const appendScalar = topLeftScalar(appendSheet.cells.readValue(row, col))
+			if (appendScalar.kind === 'error') {
+				if (optimization.functionName !== 'COUNT') return appendScalar
+				continue
+			}
+			const appendNumeric =
+				appendScalar.kind === 'number'
+					? appendScalar.value
+					: appendScalar.kind === 'date'
+						? appendScalar.serial
+						: null
+			if (appendNumeric === null) continue
+			switch (optimization.functionName) {
+				case 'SUM':
+					value += appendNumeric
+					break
+				case 'COUNT':
+					value += 1
+					break
+				case 'MIN':
+					if (value === 0 && appendNumeric > 0) return null
+					value = Math.min(value, appendNumeric)
+					break
+				case 'MAX':
+					if (value === 0 && appendNumeric < 0) return null
+					value = Math.max(value, appendNumeric)
+					break
+			}
+		}
+	}
+	return numberValue(value)
+}
+
+function tryEvaluateGrowingRangeAggregate(
+	workbook: Workbook,
+	key: CellKey,
+	optimization: GrowingRangeAggregateOptimization,
+	rangeAggregateStates: Map<CellKey, RangeAggregateState>,
+): CellValue | null {
+	const previousState = rangeAggregateStates.get(optimization.previousKey)
+	if (!previousState) return null
+	const state = scanRangeAggregateState(
+		workbook,
+		optimization.functionName,
+		optimization.appendSheetIndex,
+		optimization.appendStartRow,
+		optimization.appendStartCol,
+		optimization.appendEndRow,
+		optimization.appendEndCol,
+		previousState,
+	)
+	if (!state) return null
+	rangeAggregateStates.set(key, state)
+	return rangeAggregateStateToValue(optimization.functionName, state)
+}
+
+function seedPreviousRangeAggregateState(
+	workbook: Workbook,
+	optimization: GrowingRangeAggregateOptimization,
+	rangeAggregates: ReadonlyMap<CellKey, RangeAggregateOptimization>,
+	formulas: ReadonlyMap<
+		CellKey,
+		{ readonly rangeAggregate?: RangeAggregateOptimization | undefined }
+	>,
+	rangeAggregateStates: Map<CellKey, RangeAggregateState>,
+): boolean {
+	if (rangeAggregateStates.has(optimization.previousKey)) return true
+	const previous =
+		rangeAggregates.get(optimization.previousKey) ??
+		formulas.get(optimization.previousKey)?.rangeAggregate
+	if (!previous || previous.functionName !== optimization.functionName) return false
+	const state = scanRangeAggregateState(
+		workbook,
+		previous.functionName,
+		previous.sheetIndex,
+		previous.startRow,
+		previous.startCol,
+		previous.endRow,
+		previous.endCol,
+	)
+	if (!state) return false
+	rangeAggregateStates.set(optimization.previousKey, state)
+	return true
 }
 
 function cellRefString(wb: Workbook, sheetIndex: number, row: number, col: number): string {
@@ -426,6 +664,11 @@ function clearOrphanedSpills(
 	spillIndex: SpillIndexState,
 	changed: string[],
 ): void {
+	const sheetIndexByName = new Map<string, number>()
+	for (let i = 0; i < workbook.sheets.length; i++) {
+		const s = workbook.sheets[i]
+		if (s) sheetIndexByName.set(s.name.toLowerCase(), i)
+	}
 	for (let si = 0; si < workbook.sheets.length; si++) {
 		const sheet = workbook.sheets[si]
 		if (!sheet) continue
@@ -435,7 +678,8 @@ function clearOrphanedSpills(
 			if (bang < 0) continue
 			const sheetName = anchorRef.slice(0, bang).replace(/^'|'$/g, '')
 			const cellPart = anchorRef.slice(bang + 1)
-			const anchorSheet = workbook.sheets.find((s) => s?.name === sheetName)
+			const anchorIdx = sheetIndexByName.get(sheetName.toLowerCase())
+			const anchorSheet = anchorIdx !== undefined ? workbook.sheets[anchorIdx] : undefined
 			if (!anchorSheet) continue
 			let anchorRow: number
 			let anchorCol: number
@@ -466,6 +710,11 @@ function clearOrphanedSpills(
 	}
 }
 
+/**
+ * Recalculate all formula cells, or an incremental subset when `dirtyOnly` / `dirtyRefs` is set.
+ * Incremental mode uses the dependency graph (`getDirtySet` + partial topological order) so small
+ * edits avoid rebuilding global eval order over the entire workbook when possible.
+ */
 export function recalculate(
 	workbook: Workbook,
 	ctx: CalcContext,
@@ -489,8 +738,9 @@ export function recalculate(
 	mutableCtx.lookupVectorCache = lookupVectorCache
 	mutableCtx.aggregateRangeCache = aggregateRangeCache
 	setRangeValueCache(scratch.rangeValueCache)
+	const isDirtyRecalc = opts?.dirtyOnly || (opts?.dirtyRefs?.length ?? 0) > 0
 
-	clearOrphanedSpills(workbook, spillIndex, changed)
+	if (!isDirtyRecalc) clearOrphanedSpills(workbook, spillIndex, changed)
 
 	const analysis = analyzeWorkbook(workbook, opts?.range ? { range: opts.range } : undefined)
 	const graph = analysis.dependencyGraph
@@ -498,24 +748,53 @@ export function recalculate(
 	// different subgraphs could be evaluated in parallel. The evaluator mutates workbook cell
 	// values during evaluation, so true parallelism would require thread-safe writes or a
 	// different architecture (e.g. immutable snapshots per subgraph).
-	const isDirtyRecalc = opts?.dirtyOnly || (opts?.dirtyRefs?.length ?? 0) > 0
+	const volatileKeysList = graph.getVolatiles()
+	const dirtyRefKeys = isDirtyRecalc
+		? resolveDirtyKeys(workbook, analysis.sheetNameIndex, opts?.dirtyRefs)
+		: []
+	const dirtyRefsCanUnblockSpill =
+		isDirtyRecalc && dirtyRefsMayUnblockSpill(workbook, analysis.sheetNameIndex, opts?.dirtyRefs)
+	if (isDirtyRecalc) {
+		invalidateLookupCachesForDirtyKeys(exactLookupCache, lookupVectorCache, dirtyRefKeys)
+	} else {
+		exactLookupCache.clear()
+		lookupVectorCache.clear()
+		scratch.growingAggregateStateCache.clear()
+	}
+	if (isDirtyRecalc && volatileKeysList.length === 0 && !dirtyRefsCanUnblockSpill) {
+		const fast =
+			tryFastDirtyPrefixAggregateRecalc(workbook, graph, analysis.formulas, dirtyRefKeys, start) ??
+			tryFastDirtyGrowingAggregateRecalc(
+				workbook,
+				graph,
+				analysis.formulas,
+				analysis.growingAggregateAppendIndex,
+				scratch.growingAggregateStateCache,
+				dirtyRefKeys,
+				start,
+			)
+		if (fast) {
+			clearRangeValueCache()
+			clearCriteriaMatchCache()
+			return fast
+		}
+	}
 
 	let evalOrder: CellKey[]
 	let dirtySeeds: CellKey[] = []
 
 	if (isDirtyRecalc) {
-		dirtySeeds = [
-			...graph.getVolatiles(),
-			...resolveDirtyKeys(workbook, analysis.sheetNameIndex, opts?.dirtyRefs),
-		]
-		dirtySeeds.push(
-			...resolveBlockedSpillKeys(
-				workbook,
-				analysis.formulas,
-				analysis.sheetNameIndex,
-				opts?.dirtyRefs,
-			),
-		)
+		dirtySeeds = [...volatileKeysList, ...dirtyRefKeys]
+		if (dirtyRefsCanUnblockSpill) {
+			dirtySeeds.push(
+				...resolveBlockedSpillKeys(
+					workbook,
+					analysis.formulas,
+					analysis.sheetNameIndex,
+					opts?.dirtyRefs,
+				),
+			)
+		}
 		const dirty = graph.getDirtySet(dirtySeeds)
 		evalOrder = graph.getEvalOrder(dirty)
 	} else {
@@ -525,8 +804,9 @@ export function recalculate(
 	}
 
 	const cycleKeys = analysis.cycleKeys
-	const volatileKeys = new Set(graph.getVolatiles())
+	const volatileKeys = volatileKeysList.length > 0 ? new Set(volatileKeysList) : null
 	const mustEval: Set<CellKey> = new Set()
+	const rangeAggregates = new Map<CellKey, RangeAggregateOptimization>()
 	const growingRangeAggregates = new Map<CellKey, GrowingRangeAggregateOptimization>()
 	if (isDirtyRecalc) {
 		for (const seed of dirtySeeds) {
@@ -541,9 +821,8 @@ export function recalculate(
 	const asts = new Map<CellKey, FormulaNode>()
 	const formulaTexts = new Map<CellKey, string>()
 	const evalOrderSet = new Set(evalOrder)
-	for (const analyzed of analysis.formulas.values()) {
-		if (!analyzed.parseError) continue
-		if (isDirtyRecalc && !evalOrderSet.has(analyzed.key)) continue
+	const handleParseError = (analyzed: AnalyzedFormula) => {
+		if (!analyzed.parseError) return
 		errors.push({
 			ref: cellRefString(workbook, analyzed.sheetIndex, analyzed.row, analyzed.col),
 			error: {
@@ -553,16 +832,23 @@ export function recalculate(
 			},
 		})
 		const sheet = workbook.sheets[analyzed.sheetIndex]
-		if (sheet) {
-			const oldFormula = sheet.cells.readFormula(analyzed.row, analyzed.col) ?? null
-			const oldStyleId = sheet.cells.readStyleId(analyzed.row, analyzed.col) ?? DEFAULT_STYLE_ID
-			const parseErrorValue = errorValue('#VALUE!')
-			const oldValue = sheet.cells.readValue(analyzed.row, analyzed.col)
-			if (!valuesEqual(oldValue, parseErrorValue)) {
-				sheet.cells.setResolved(analyzed.row, analyzed.col, parseErrorValue, oldFormula, oldStyleId)
-				changed.push(cellRefString(workbook, analyzed.sheetIndex, analyzed.row, analyzed.col))
-			}
+		if (!sheet) return
+		const oldFormula = sheet.cells.readFormula(analyzed.row, analyzed.col) ?? null
+		const oldStyleId = sheet.cells.readStyleId(analyzed.row, analyzed.col) ?? DEFAULT_STYLE_ID
+		const parseErrorValue = errorValue('#VALUE!')
+		const oldValue = sheet.cells.readValue(analyzed.row, analyzed.col)
+		if (!valuesEqual(oldValue, parseErrorValue)) {
+			sheet.cells.setResolved(analyzed.row, analyzed.col, parseErrorValue, oldFormula, oldStyleId)
+			changed.push(cellRefString(workbook, analyzed.sheetIndex, analyzed.row, analyzed.col))
 		}
+	}
+	if (isDirtyRecalc) {
+		for (const key of evalOrder) {
+			const analyzed = analysis.formulas.get(key)
+			if (analyzed) handleParseError(analyzed)
+		}
+	} else {
+		for (const analyzed of analysis.formulas.values()) handleParseError(analyzed)
 	}
 
 	if (isDirtyRecalc) {
@@ -572,6 +858,9 @@ export function recalculate(
 			if (analyzed.parseError || !analyzed.ast) continue
 			asts.set(key, analyzed.ast)
 			formulaTexts.set(key, analyzed.formula)
+			if (analyzed.rangeAggregate) {
+				rangeAggregates.set(key, analyzed.rangeAggregate)
+			}
 			if (analyzed.growingRangeAggregate) {
 				growingRangeAggregates.set(key, analyzed.growingRangeAggregate)
 			}
@@ -581,6 +870,9 @@ export function recalculate(
 			if (analyzed.parseError || !analyzed.ast) continue
 			asts.set(analyzed.key, analyzed.ast)
 			formulaTexts.set(analyzed.key, analyzed.formula)
+			if (analyzed.rangeAggregate) {
+				rangeAggregates.set(analyzed.key, analyzed.rangeAggregate)
+			}
 			if (analyzed.growingRangeAggregate) {
 				growingRangeAggregates.set(analyzed.key, analyzed.growingRangeAggregate)
 			}
@@ -612,6 +904,13 @@ export function recalculate(
 		let hasSharedFormulaGroups = false
 		const hasGrowingRangeAggregates = growingRangeAggregates.size > 0
 		const completedKeys = hasGrowingRangeAggregates ? new Set<CellKey>() : null
+		const rangeAggregateStates =
+			hasGrowingRangeAggregates &&
+			[...growingRangeAggregates.values()].some((aggregate) =>
+				needsRangeAggregateState(aggregate.functionName),
+			)
+				? scratch.growingAggregateStateCache
+				: null
 		if (sharedGroups.size > 0) {
 			const evalOrderIndex = new Map<CellKey, number>()
 			let idx = 0
@@ -679,34 +978,71 @@ export function recalculate(
 				return
 			}
 
-			if (isDirtyRecalc && !mustEval.has(key) && !volatileKeys.has(key)) {
+			if (isDirtyRecalc && !mustEval.has(key) && !volatileKeys?.has(key)) {
 				return
 			}
-
-			const ast = asts.get(key)
-			if (!ast) return
-			const formulaText = formulaTexts.get(key)
-			if (!formulaText) return
 
 			parseCellKeyInto(key, coords)
 			const { sheetIndex: si, row, col } = coords
 			const sheet = workbook.sheets[si]
 			if (!sheet) return
 
-			mutableCtx.sheetIndex = si
-			mutableCtx.row = row
-			mutableCtx.col = col
-			const growingRangeAggregate =
-				!isDirtyRecalc && hasGrowingRangeAggregates ? growingRangeAggregates.get(key) : undefined
-			const newValue =
-				growingRangeAggregate && completedKeys
-					? (tryEvaluateGrowingRangeAggregate(workbook, growingRangeAggregate, completedKeys) ??
-						(groupEvaluator
-							? groupEvaluator(mutableCtx)
-							: evalFormula(key, formulaText, ast, mutableCtx)))
-					: groupEvaluator
-						? groupEvaluator(mutableCtx)
-						: evalFormula(key, formulaText, ast, mutableCtx)
+			const growingRangeAggregate = hasGrowingRangeAggregates
+				? growingRangeAggregates.get(key)
+				: undefined
+			let newValue: CellValue | null = null
+			if (growingRangeAggregate && completedKeys) {
+				const canUsePreviousValue =
+					completedKeys.has(growingRangeAggregate.previousKey) ||
+					(isDirtyRecalc && !evalOrderSet.has(growingRangeAggregate.previousKey))
+				newValue = tryEvaluateGrowingRangeScalarAggregate(
+					workbook,
+					growingRangeAggregate,
+					canUsePreviousValue,
+				)
+				if (!newValue && rangeAggregateStates) {
+					if (canUsePreviousValue && !completedKeys.has(growingRangeAggregate.previousKey)) {
+						seedPreviousRangeAggregateState(
+							workbook,
+							growingRangeAggregate,
+							rangeAggregates,
+							analysis.formulas,
+							rangeAggregateStates,
+						)
+					}
+					newValue = tryEvaluateGrowingRangeAggregate(
+						workbook,
+						key,
+						growingRangeAggregate,
+						rangeAggregateStates,
+					)
+				}
+			}
+			if (!newValue) {
+				const ast = asts.get(key)
+				if (!ast) return
+				const formulaText = formulaTexts.get(key)
+				if (!formulaText) return
+				mutableCtx.sheetIndex = si
+				mutableCtx.row = row
+				mutableCtx.col = col
+				newValue = groupEvaluator
+					? groupEvaluator(mutableCtx)
+					: evalFormula(key, formulaText, ast, mutableCtx)
+				const rangeAggregate = rangeAggregateStates ? rangeAggregates.get(key) : undefined
+				if (rangeAggregate && needsRangeAggregateState(rangeAggregate.functionName)) {
+					const state = scanRangeAggregateState(
+						workbook,
+						rangeAggregate.functionName,
+						rangeAggregate.sheetIndex,
+						rangeAggregate.startRow,
+						rangeAggregate.startCol,
+						rangeAggregate.endRow,
+						rangeAggregate.endCol,
+					)
+					if (state) rangeAggregateStates?.set(key, state)
+				}
+			}
 			const hadCell = sheet.cells.has(row, col)
 			const oldValue = sheet.cells.readValue(row, col)
 			const oldFormula = sheet.cells.readFormula(row, col) ?? null
@@ -741,7 +1077,11 @@ export function recalculate(
 			// dependents to mustEval, so they are skipped in evalCell and not re-evaluated.
 			const valueChanged = !hadCell || clearedSpill || !valuesEqual(oldValue, newValue)
 			if (valueChanged) {
-				sheet.cells.setResolved(row, col, newValue, oldFormula, oldStyleId)
+				if (newValue.kind === 'number') {
+					sheet.cells.setNumberResolved(row, col, newValue.value, oldFormula, oldStyleId)
+				} else {
+					sheet.cells.setResolved(row, col, newValue, oldFormula, oldStyleId)
+				}
 				changed.push(cellRefString(workbook, si, row, col))
 				if (isDirtyRecalc) {
 					for (const dep of graph.getDependents(key)) {
@@ -781,6 +1121,243 @@ export function recalculate(
 	}
 }
 
+function tryFastDirtyPrefixAggregateRecalc(
+	workbook: Workbook,
+	graph: DependencyGraph,
+	formulas: ReadonlyMap<CellKey, AnalyzedFormula>,
+	dirtyRefKeys: readonly CellKey[],
+	start: number,
+): RecalcResult | null {
+	if (dirtyRefKeys.length !== 1) return null
+	const sourceKey = dirtyRefKeys[0] as CellKey
+	const sourceCoords: CellCoords = { sheetIndex: 0, row: 0, col: 0 }
+	parseCellKeyInto(sourceKey, sourceCoords)
+
+	const affected: AnalyzedFormula[] = []
+	let groupKey: string | undefined
+	for (const formula of formulas.values()) {
+		const aggregate = formula.rangeAggregate
+		if (!aggregate) continue
+		if (!canFastRecalculatePrefixAggregate(aggregate, sourceCoords)) continue
+		const currentGroupKey = [
+			aggregate.functionName,
+			aggregate.sheetIndex,
+			aggregate.startRow,
+			aggregate.startCol,
+			aggregate.endCol,
+		].join(':')
+		if (groupKey === undefined) groupKey = currentGroupKey
+		else if (groupKey !== currentGroupKey) return null
+		if (graph.getDependents(formula.key).length > 0) return null
+		affected.push(formula)
+	}
+	if (affected.length === 0) return null
+
+	const affectedKeys = new Set(affected.map((formula) => formula.key))
+	const directDependents = graph.getDependents(sourceKey)
+	for (const dependent of directDependents) {
+		if (!affectedKeys.has(dependent)) return null
+	}
+
+	affected.sort((a, b) => {
+		const ar = a.rangeAggregate?.endRow ?? a.row
+		const br = b.rangeAggregate?.endRow ?? b.row
+		return ar - br || a.key - b.key
+	})
+
+	const firstAggregate = affected[0]?.rangeAggregate
+	if (!firstAggregate) return null
+	let state: RangeAggregateState | null = null
+	let previousEndRow = firstAggregate.startRow - 1
+	const changed: string[] = []
+	for (const formula of affected) {
+		const aggregate = formula.rangeAggregate
+		if (!aggregate) return null
+		const sheet = workbook.sheets[formula.sheetIndex]
+		if (!sheet) return null
+		const oldFormulaInfo = sheet.cells.readFormulaInfo(formula.row, formula.col)
+		if (oldFormulaInfo !== undefined) return null
+		const oldFormula = sheet.cells.readFormula(formula.row, formula.col) ?? null
+		if (oldFormula === null) return null
+		if (aggregate.endRow < previousEndRow) return null
+		if (aggregate.endRow > previousEndRow) {
+			state = scanRangeAggregateState(
+				workbook,
+				aggregate.functionName,
+				aggregate.sheetIndex,
+				previousEndRow + 1,
+				aggregate.startCol,
+				aggregate.endRow,
+				aggregate.endCol,
+				state ?? undefined,
+			)
+			if (!state) return null
+			previousEndRow = aggregate.endRow
+		}
+		if (!state) return null
+		const newValue = rangeAggregateStateToValue(aggregate.functionName, state)
+		const oldValue = sheet.cells.readValue(formula.row, formula.col)
+		if (valuesEqual(oldValue, newValue)) continue
+		const oldStyleId = sheet.cells.readStyleId(formula.row, formula.col) ?? DEFAULT_STYLE_ID
+		if (newValue.kind === 'number') {
+			sheet.cells.setNumberResolved(
+				formula.row,
+				formula.col,
+				newValue.value,
+				oldFormula,
+				oldStyleId,
+			)
+		} else {
+			sheet.cells.setResolved(formula.row, formula.col, newValue, oldFormula, oldStyleId)
+		}
+		changed.push(cellRefString(workbook, formula.sheetIndex, formula.row, formula.col))
+	}
+	return { changed, errors: [], duration: performance.now() - start }
+}
+
+function canFastRecalculatePrefixAggregate(
+	aggregate: RangeAggregateOptimization,
+	source: CellCoords,
+): boolean {
+	if (
+		aggregate.functionName !== 'SUM' &&
+		aggregate.functionName !== 'COUNT' &&
+		aggregate.functionName !== 'AVERAGE' &&
+		aggregate.functionName !== 'MIN' &&
+		aggregate.functionName !== 'MAX'
+	) {
+		return false
+	}
+	return (
+		aggregate.sheetIndex === source.sheetIndex &&
+		aggregate.startCol === aggregate.endCol &&
+		aggregate.startCol === source.col &&
+		source.row >= aggregate.startRow &&
+		source.row <= aggregate.endRow
+	)
+}
+
+function tryFastDirtyGrowingAggregateRecalc(
+	workbook: Workbook,
+	graph: DependencyGraph,
+	formulas: ReadonlyMap<CellKey, AnalyzedFormula>,
+	growingAggregateAppendIndex: GrowingAggregateAppendIndex,
+	growingAggregateStateCache: Map<CellKey, RangeAggregateState>,
+	dirtyRefKeys: readonly CellKey[],
+	start: number,
+): RecalcResult | null {
+	if (dirtyRefKeys.length !== 1) return null
+	const sourceKey = dirtyRefKeys[0] as CellKey
+	const dependents = growingAggregateAppendIndex.get(sourceKey)
+	if (!dependents) return null
+	if (dependents.length !== 1) return null
+	const formulaKey = dependents[0] as CellKey
+	if (graph.getDependents(formulaKey).length > 0) return null
+	const analyzed = formulas.get(formulaKey)
+	const growingRangeAggregate = analyzed?.growingRangeAggregate
+	if (!analyzed || analyzed.parseError || !growingRangeAggregate) return null
+	if (
+		growingRangeAggregate.functionName !== 'SUM' &&
+		growingRangeAggregate.functionName !== 'COUNT' &&
+		growingRangeAggregate.functionName !== 'AVERAGE' &&
+		growingRangeAggregate.functionName !== 'MIN' &&
+		growingRangeAggregate.functionName !== 'MAX'
+	) {
+		return null
+	}
+	const sourceCoords: CellCoords = { sheetIndex: 0, row: 0, col: 0 }
+	parseCellKeyInto(sourceKey, sourceCoords)
+	if (
+		sourceCoords.sheetIndex !== growingRangeAggregate.appendSheetIndex ||
+		sourceCoords.row < growingRangeAggregate.appendStartRow ||
+		sourceCoords.row > growingRangeAggregate.appendEndRow ||
+		sourceCoords.col < growingRangeAggregate.appendStartCol ||
+		sourceCoords.col > growingRangeAggregate.appendEndCol
+	) {
+		return null
+	}
+	const sheet = workbook.sheets[analyzed.sheetIndex]
+	if (!sheet) return null
+	const oldFormulaInfo = sheet.cells.readFormulaInfo(analyzed.row, analyzed.col)
+	if (oldFormulaInfo !== undefined) return null
+	const oldFormula = sheet.cells.readFormula(analyzed.row, analyzed.col) ?? null
+	if (oldFormula === null) return null
+	let newValue = tryEvaluateGrowingRangeScalarAggregate(workbook, growingRangeAggregate, true)
+	if (!newValue && needsRangeAggregateState(growingRangeAggregate.functionName)) {
+		newValue = tryEvaluateGrowingRangeAggregate(
+			workbook,
+			formulaKey,
+			growingRangeAggregate,
+			growingAggregateStateCache,
+		)
+	}
+	if (!newValue) return null
+	const oldValue = sheet.cells.readValue(analyzed.row, analyzed.col)
+	const changed: string[] = []
+	if (!valuesEqual(oldValue, newValue)) {
+		const oldStyleId = sheet.cells.readStyleId(analyzed.row, analyzed.col) ?? DEFAULT_STYLE_ID
+		if (newValue.kind === 'number') {
+			sheet.cells.setNumberResolved(
+				analyzed.row,
+				analyzed.col,
+				newValue.value,
+				oldFormula,
+				oldStyleId,
+			)
+		} else {
+			sheet.cells.setResolved(analyzed.row, analyzed.col, newValue, oldFormula, oldStyleId)
+		}
+		changed.push(cellRefString(workbook, analyzed.sheetIndex, analyzed.row, analyzed.col))
+	}
+	return { changed, errors: [], duration: performance.now() - start }
+}
+
+function invalidateLookupCachesForDirtyKeys(
+	exactLookupCache: ExactLookupCache,
+	lookupVectorCache: LookupVectorCache,
+	dirtyKeys: readonly CellKey[],
+): void {
+	if (dirtyKeys.length === 0) return
+	invalidateLookupCache(exactLookupCache, dirtyKeys)
+	invalidateLookupCache(lookupVectorCache, dirtyKeys)
+}
+
+function invalidateLookupCache(cache: Map<string, unknown>, dirtyKeys: readonly CellKey[]): void {
+	for (const key of [...cache.keys()]) {
+		if (lookupCacheKeyOverlapsDirtyKeys(key, dirtyKeys)) cache.delete(key)
+	}
+}
+
+function lookupCacheKeyOverlapsDirtyKeys(cacheKey: string, dirtyKeys: readonly CellKey[]): boolean {
+	const parts = cacheKey.split(':')
+	if (parts.length !== 5) return true
+	const [axis, rawSheet, rawFixed, rawStart, rawEnd] = parts
+	const sheetIndex = Number(rawSheet)
+	const fixed = Number(rawFixed)
+	const start = Number(rawStart)
+	const end = Number(rawEnd)
+	if (
+		(axis !== 'column' && axis !== 'row') ||
+		!Number.isInteger(sheetIndex) ||
+		!Number.isInteger(fixed) ||
+		!Number.isInteger(start) ||
+		!Number.isInteger(end)
+	) {
+		return true
+	}
+	const coords: CellCoords = { sheetIndex: 0, row: 0, col: 0 }
+	for (const key of dirtyKeys) {
+		parseCellKeyInto(key, coords)
+		if (coords.sheetIndex !== sheetIndex) continue
+		if (axis === 'column') {
+			if (coords.col === fixed && coords.row >= start && coords.row <= end) return true
+		} else if (coords.row === fixed && coords.col >= start && coords.col <= end) {
+			return true
+		}
+	}
+	return false
+}
+
 function resolveBlockedSpillKeys(
 	workbook: Workbook,
 	formulas: ReadonlyMap<CellKey, { key: CellKey; sheetIndex: number; row: number; col: number }>,
@@ -807,6 +1384,32 @@ function resolveBlockedSpillKeys(
 		if (sheet.cells.readError(analyzed.row, analyzed.col) === '#SPILL!') blocked.push(analyzed.key)
 	}
 	return blocked
+}
+
+function dirtyRefsMayUnblockSpill(
+	workbook: Workbook,
+	sheetNameIndex: ReadonlyMap<string, number>,
+	refs: readonly string[] | undefined,
+): boolean {
+	if (!refs || refs.length === 0) return false
+	for (const ref of refs) {
+		const bang = ref.indexOf('!')
+		const sheetName =
+			bang >= 0 ? ref.slice(0, bang).replace(/^'|'$/g, '') : workbook.sheets[0]?.name
+		const localRef = bang >= 0 ? ref.slice(bang + 1) : ref
+		if (!sheetName || !localRef) continue
+		const sheetIndex = sheetNameIndex.get(sheetName.toLowerCase()) ?? -1
+		const sheet = workbook.sheets[sheetIndex]
+		if (!sheet) continue
+		const range = parseRange(localRef)
+		for (let row = range.start.row; row <= range.end.row; row++) {
+			for (let col = range.start.col; col <= range.end.col; col++) {
+				const value = sheet.cells.readValue(row, col)
+				if (!value || value.kind === 'empty') return true
+			}
+		}
+	}
+	return false
 }
 
 function resolveDirtyKeys(

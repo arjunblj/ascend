@@ -570,10 +570,10 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'active.vba-macros',
 		'active content',
 		'VBA macros',
-		'unsafe-blocked',
+		'inspectable',
 		'P0',
-		'Add macro module summaries without exposing or executing code.',
-		'VBA project parts are inventoried, preserved, and blocked by the loss audit before writes.',
+		'Add CFB module-name summaries without exposing source code.',
+		'VBA project parts are inventoried with opaque byte-size summaries, preserved, and marked with executionPolicy=blocked; macro execution and semantic edits remain blocked by policy.',
 		['packages/io-xlsx/src/reader/active-content.test.ts'],
 	),
 	cap(

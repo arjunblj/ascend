@@ -479,7 +479,7 @@ export function readXlsx(
 					workbookPath,
 					sheetRelsByPath,
 				)
-		if (!isPartial) workbook.activeContent.push(...collectActiveContent(capsules))
+		if (!isPartial) workbook.activeContent.push(...collectActiveContent(archive, capsules))
 		if (!isPartial) workbook.connectionParts.push(...collectConnectionParts(archive, capsules))
 		if (!isPartial) workbook.dataModelParts.push(...collectDataModelParts(capsules))
 		if (!isPartial) attachChartParts(archive, workbook, capsules)
@@ -698,11 +698,15 @@ function categorizeCapsules(capsules: readonly PreservationCapsule[]): Map<strin
 	return families
 }
 
-function collectActiveContent(capsules: readonly PreservationCapsule[]): ActiveContentInfo[] {
+function collectActiveContent(
+	archive: ZipArchive,
+	capsules: readonly PreservationCapsule[],
+): ActiveContentInfo[] {
 	const activeContent: ActiveContentInfo[] = []
 	for (const capsule of capsules) {
 		const kind = classifyActiveContent(capsule)
 		if (!kind) continue
+		const entry = archive.get(capsule.partPath)
 		activeContent.push({
 			kind,
 			partPath: capsule.partPath,
@@ -711,6 +715,8 @@ function collectActiveContent(capsules: readonly PreservationCapsule[]): ActiveC
 			...(capsule.anchor.kind === 'sheet' ? { sheetName: capsule.anchor.sheetName } : {}),
 			...(capsule.relType ? { relType: capsule.relType } : {}),
 			relationshipCount: capsule.relationships.length,
+			...(kind === 'vbaProject' && entry ? { byteSize: entry.uncompressedSize } : {}),
+			...(kind === 'vbaProject' ? { opaque: true, executionPolicy: 'blocked' as const } : {}),
 		})
 	}
 	return activeContent

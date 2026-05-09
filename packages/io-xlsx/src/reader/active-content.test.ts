@@ -62,6 +62,9 @@ describe('active content inventory', () => {
 				anchor: 'workbook',
 				relType: 'http://schemas.microsoft.com/office/2006/relationships/vbaProject',
 				relationshipCount: 0,
+				byteSize: 11,
+				opaque: true,
+				executionPolicy: 'blocked',
 			},
 			{
 				kind: 'activeX',

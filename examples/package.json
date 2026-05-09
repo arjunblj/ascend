@@ -1,0 +1,8 @@
+{
+	"name": "@ascend/examples",
+	"private": true,
+	"type": "module",
+	"dependencies": {
+		"@ascend/sdk": "workspace:*"
+	}
+}

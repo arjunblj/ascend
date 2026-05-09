@@ -1,0 +1,167 @@
+# Ascend Full Agent Context
+
+Ascend is a TypeScript/Bun monorepo for agent-native spreadsheet automation. It targets headless Excel-compatible workflows across CLI, SDK, MCP, and API surfaces.
+
+## Repository Map
+
+- `packages/schema`: shared values, errors, operation definitions, machine envelopes.
+- `packages/core`: workbook, sheet, sparse grid, styles, tables, pivots, charts, active content, package metadata.
+- `packages/formulas`: formula parser, AST, and function implementations.
+- `packages/engine`: operations, patching, dependency graph, recalculation, diff, analysis.
+- `packages/io-xlsx`: XLSX/XLSM reader/writer with preservation capsules.
+- `packages/io-csv`: CSV/TSV reader/writer.
+- `packages/verify`: structural checker, formula linter, dependency tracer.
+- `packages/sdk`: public workbook API, agent workflow, operation schemas, capability registry.
+- `apps/cli`: `ascend` command line interface.
+- `apps/mcp`: Model Context Protocol server.
+- `apps/api`: HTTP API with OpenAPI docs.
+- `fixtures`: workbooks, formula conformance, golden snapshots, benchmarks.
+- `examples`: runnable SDK and MCP examples.
+
+## Agent-First CLI Surface
+
+Use JSON for automation:
+
+- `ascend agent-init --json`
+- `ascend ops --json`
+- `ascend capabilities --json`
+- `ascend inspect <file> --json --verbose`
+- `ascend read <file> <selector> --json`
+- `ascend find <file> <query> --json`
+- `ascend plan <file> --ops ops.json --progress jsonl --json`
+- `ascend commit <file> --ops ops.json --output out.xlsx --expect-sha256 <hash> --progress jsonl --json`
+- `ascend repair-plan <file> --json`
+- `ascend check <file> --progress jsonl --json`
+- `ascend lint <file> --json`
+- `ascend trace <file> <cell> --json`
+- `ascend diff <file-a> <file-b> --json`
+- `ascend export <file> <output> --format csv|tsv|json|xlsx|xlsm --json`
+
+`plan` and `commit` are the preferred write path. `write` and `preview` remain available for compatibility and direct workflows.
+
+## Agent-First MCP Surface
+
+Resources:
+
+- `ascend://llms.txt`
+- `ascend://llms-full.txt`
+- `ascend://docs/agent-api.md`
+- `ascend://capabilities`
+- `ascend://operations`
+- `ascend://agent-workflow`
+
+Discovery tools:
+
+- `ascend.search_docs`: search local machine-readable docs and workflow guidance.
+- `ascend.search_examples`: search examples and setup snippets.
+- `ascend.list_operations`: return operation schemas, examples, invalid examples, recovery actions, and approvals.
+- `ascend.capabilities`: return capability coverage with OSS baseline and gaps.
+
+Workbook tools:
+
+- `ascend.inspect`
+- `ascend.list_sheets`
+- `ascend.read`
+- `ascend.read_table`
+- `ascend.find`
+- `ascend.visuals`
+- `ascend.agent_view`
+- `ascend.preview`
+- `ascend.write`
+- `ascend.calc`
+- `ascend.eval`
+- `ascend.plan`
+- `ascend.commit`
+- `ascend.repair_plan`
+- `ascend.check`
+- `ascend.lint`
+- `ascend.trace`
+- `ascend.diff`
+- `ascend.export`
+
+## Safe Edit Workflow
+
+1. Inspect workbook structure and compatibility.
+2. Locate relevant data with table, compact range, TSV, object, visual, pivot, slicer, name, and external-reference tools.
+3. Fetch operation schemas.
+4. Build operations.
+5. Run plan and inspect preview, recalc, loss audit, approval audit, and suggested repair actions.
+6. Commit to a separate output file by default.
+7. Verify with check, lint, trace, diff, or export.
+
+Never use destructive in-place writes unless the user asked for them. Never pass `allowLoss` unless the user accepts the specific preservation or unsupported feature risk.
+
+## Common Operation Examples
+
+Set values:
+
+```json
+[{ "op": "setCells", "sheet": "Sheet1", "updates": [{ "ref": "A1", "value": "Revenue" }] }]
+```
+
+Set formula:
+
+```json
+[{ "op": "setFormula", "sheet": "Sheet1", "ref": "B10", "formula": "=SUM(B2:B9)" }]
+```
+
+Update workbook metadata:
+
+```json
+[{ "op": "setWorkbookProperties", "properties": { "codeName": "Model", "filterPrivacy": true }, "mode": "merge" }]
+```
+
+Rewrite an external link:
+
+```json
+[{ "op": "rewriteExternalLink", "partPath": "xl/externalLinks/externalLink1.xml", "newTarget": "../sources/reforecast.xlsx" }]
+```
+
+Update a chart series:
+
+```json
+[{ "op": "setChartSeriesSource", "partPath": "xl/charts/chart1.xml", "seriesIndex": 0, "categoryRef": "Data!$A$2:$A$20", "valueRef": "Data!$B$2:$B$20" }]
+```
+
+## Capability Model
+
+Each Excel feature is classified as:
+
+- `excel-equivalent`
+- `editable`
+- `inspectable`
+- `preserved`
+- `unsafe-blocked`
+- `unsupported`
+
+The capability registry includes priority, surface coverage, OSS baseline, test links, gap reason, and next milestone. Use `ascend capabilities --json` or `ascend://capabilities`.
+
+## Machine Envelope
+
+JSON responses use a stable success/failure envelope. Failure envelopes include error code, message, details, retry strategy, and suggested fixes where available.
+
+## Search Recovery
+
+When unsure:
+
+- Use `ascend.search_docs` for commands, tools, operation schema names, safety policy, and workflow guidance.
+- Use `ascend.search_examples` for runnable SDK and MCP setup patterns.
+- Use `ascend.list_operations` before constructing writes.
+- Use `ascend.repair_plan` after failed checks, lints, loss audits, or recalc errors.
+
+## Verification Commands
+
+```bash
+bun test --recursive
+bunx biome check
+bunx tsc --build
+bun bench
+```
+
+Targeted:
+
+```bash
+bun test apps/mcp/src/index.test.ts
+bun test apps/cli/src/cli.test.ts
+bunx tsc --build apps/mcp apps/cli packages/sdk
+```

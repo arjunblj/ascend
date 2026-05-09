@@ -22,6 +22,7 @@ import {
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
+import { readAgentDoc, searchAgentDocs } from './docs.ts'
 import { errorResponse, okResponse } from './response.ts'
 
 export function createServer(): McpServer {
@@ -32,6 +33,61 @@ export function createServer(): McpServer {
 
 	registerAgentResources(server)
 	registerAgentPrompts(server)
+
+	server.tool(
+		'ascend.search_docs',
+		'Search Ascend machine-readable docs, workflow guidance, API references, and release notes for agent recovery',
+		{
+			query: z.string().min(1).describe('Search query, topic, command, tool, or workflow'),
+			limit: z.number().int().positive().max(20).optional().describe('Maximum results to return'),
+			tokens: z
+				.number()
+				.int()
+				.positive()
+				.max(8000)
+				.optional()
+				.describe('Approximate maximum tokens to include per result snippet'),
+		},
+		async ({ query, limit, tokens }) => {
+			const results = await searchAgentDocs({
+				query,
+				...(limit !== undefined ? { limit } : {}),
+				...(tokens !== undefined ? { tokens } : {}),
+			})
+			return okResponse(
+				{ query, results },
+				`Found ${results.length} Ascend documentation result(s) for "${query}"`,
+			)
+		},
+	)
+
+	server.tool(
+		'ascend.search_examples',
+		'Search Ascend examples and MCP setup snippets for concrete CLI, SDK, and MCP usage patterns',
+		{
+			query: z.string().min(1).describe('Search query, task, operation, or integration target'),
+			limit: z.number().int().positive().max(20).optional().describe('Maximum examples to return'),
+			tokens: z
+				.number()
+				.int()
+				.positive()
+				.max(8000)
+				.optional()
+				.describe('Approximate maximum tokens to include per result snippet'),
+		},
+		async ({ query, limit, tokens }) => {
+			const results = await searchAgentDocs({
+				query,
+				kind: 'example',
+				...(limit !== undefined ? { limit } : {}),
+				...(tokens !== undefined ? { tokens } : {}),
+			})
+			return okResponse(
+				{ query, results },
+				`Found ${results.length} Ascend example result(s) for "${query}"`,
+			)
+		},
+	)
 
 	server.tool(
 		'ascend.inspect',
@@ -818,6 +874,39 @@ export function createServer(): McpServer {
 
 function registerAgentResources(server: McpServer): void {
 	server.registerResource(
+		'ascend.llms',
+		'ascend://llms.txt',
+		{
+			title: 'Ascend llms.txt',
+			description: 'Short machine-readable map for agents using Ascend.',
+			mimeType: 'text/plain',
+		},
+		async (uri) => textResource(uri, (await readAgentDoc('llms.txt')) ?? ''),
+	)
+
+	server.registerResource(
+		'ascend.llms_full',
+		'ascend://llms-full.txt',
+		{
+			title: 'Ascend llms-full.txt',
+			description: 'Expanded machine-readable Ascend documentation bundle for agents.',
+			mimeType: 'text/plain',
+		},
+		async (uri) => textResource(uri, (await readAgentDoc('llms-full.txt')) ?? ''),
+	)
+
+	server.registerResource(
+		'ascend.agent_api',
+		'ascend://docs/agent-api.md',
+		{
+			title: 'Ascend Agent API Markdown Reference',
+			description: 'Markdown reference for CLI, MCP, SDK, operation schemas, and safe workflows.',
+			mimeType: 'text/markdown',
+		},
+		async (uri) => textResource(uri, (await readAgentDoc('docs/AGENT_API.md')) ?? ''),
+	)
+
+	server.registerResource(
 		'ascend.capabilities',
 		'ascend://capabilities',
 		{
@@ -920,11 +1009,12 @@ function buildAgentWorkflowGuide(): string {
 		'',
 		'1. Inspect workbook structure with ascend.inspect or ascend.list_sheets.',
 		'2. Locate data with ascend.find, ascend.read, ascend.read_table, and ascend.visuals.',
-		'3. Fetch operation schemas from ascend.list_operations or ascend://operations.',
-		'4. Preview edits with ascend.plan before writing.',
-		'5. Commit with ascend.commit using output paths, input hash guards, approvals, and allow-loss only when explicit.',
-		'6. Verify with ascend.check, ascend.lint, ascend.trace, ascend.diff, and ascend.export as needed.',
-		'7. Use ascend.repair_plan when checks, lints, approvals, or unsupported-feature audits need recovery actions.',
+		'3. Use ascend.search_docs or ascend.search_examples when you need command, schema, workflow, or example recovery context.',
+		'4. Fetch operation schemas from ascend.list_operations or ascend://operations.',
+		'5. Preview edits with ascend.plan before writing.',
+		'6. Commit with ascend.commit using output paths, input hash guards, approvals, and allow-loss only when explicit.',
+		'7. Verify with ascend.check, ascend.lint, ascend.trace, ascend.diff, and ascend.export as needed.',
+		'8. Use ascend.repair_plan when checks, lints, approvals, or unsupported-feature audits need recovery actions.',
 	].join('\n')
 }
 
@@ -938,6 +1028,7 @@ function buildAgentWorkflowPrompt(file?: string, task?: string): string {
 		intent,
 		'',
 		'Use Ascend as the source of truth for spreadsheet structure and edit safety.',
+		'If you need recovery context, call ascend.search_docs or ascend.search_examples before guessing.',
 		'Start with ascend.inspect or ascend.list_sheets, then use ascend.read, ascend.read_table, ascend.find, and ascend.visuals to gather only the necessary workbook context.',
 		'Before modifying anything, read ascend://operations or call ascend.list_operations and build operations that match the published schemas.',
 		'Always run ascend.plan and inspect approvals, unsupported features, preview diffs, recalc status, and modelOutput before commit.',

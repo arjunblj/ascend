@@ -20,6 +20,14 @@ Safety defaults:
 
 MCP resources:
 
+- `ascend://llms.txt`
+- `ascend://llms-full.txt`
+- `ascend://docs/agent-api.md`
 - `ascend://capabilities`
 - `ascend://operations`
 - `ascend://agent-workflow`
+
+Recovery search:
+
+- `ascend.search_docs` for commands, workflow guidance, schemas, and safety policy.
+- `ascend.search_examples` for runnable SDK examples and MCP setup snippets.

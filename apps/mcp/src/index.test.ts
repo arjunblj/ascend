@@ -29,6 +29,8 @@ describe('MCP server', () => {
 		const names = Object.keys(registered)
 
 		expect(names).toContain('ascend.inspect')
+		expect(names).toContain('ascend.search_docs')
+		expect(names).toContain('ascend.search_examples')
 		expect(names).toContain('ascend.read')
 		expect(names).toContain('ascend.read_table')
 		expect(names).toContain('ascend.find')
@@ -49,7 +51,7 @@ describe('MCP server', () => {
 		expect(names).toContain('ascend.plan')
 		expect(names).toContain('ascend.commit')
 		expect(names).toContain('ascend.repair_plan')
-		expect(names.length).toBe(21)
+		expect(names.length).toBe(23)
 	})
 
 	test('agent resources and prompts are registered', () => {
@@ -60,6 +62,9 @@ describe('MCP server', () => {
 		const prompts = (server as any)._registeredPrompts as Record<string, unknown>
 
 		expect(Object.keys(resources)).toEqual([
+			'ascend://llms.txt',
+			'ascend://llms-full.txt',
+			'ascend://docs/agent-api.md',
 			'ascend://capabilities',
 			'ascend://operations',
 			'ascend://agent-workflow',
@@ -78,6 +83,13 @@ describe('MCP server', () => {
 		const capabilities = await resources['ascend://capabilities']?.readCallback(
 			new URL('ascend://capabilities'),
 		)
+		const llms = await resources['ascend://llms.txt']?.readCallback(new URL('ascend://llms.txt'))
+		const llmsFull = await resources['ascend://llms-full.txt']?.readCallback(
+			new URL('ascend://llms-full.txt'),
+		)
+		const agentApi = await resources['ascend://docs/agent-api.md']?.readCallback(
+			new URL('ascend://docs/agent-api.md'),
+		)
 		const operations = await resources['ascend://operations']?.readCallback(
 			new URL('ascend://operations'),
 		)
@@ -85,9 +97,48 @@ describe('MCP server', () => {
 			new URL('ascend://agent-workflow'),
 		)
 
+		expect(llms?.contents[0]?.text).toContain('ascend.search_docs')
+		expect(llmsFull?.contents[0]?.text).toContain('Ascend Full Agent Context')
+		expect(agentApi?.contents[0]?.text).toContain('Ascend Agent API')
 		expect(capabilities?.contents[0]?.text).toContain('"capabilities"')
 		expect(operations?.contents[0]?.text).toContain('"schemas"')
 		expect(workflow?.contents[0]?.text).toContain('ascend.plan')
+	})
+
+	test('documentation search tools return local docs and examples', async () => {
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const docsHandler = (server as any)._registeredTools['ascend.search_docs'].handler as (args: {
+			query: string
+			limit?: number
+		}) => Promise<{
+			structuredContent?: { ok?: boolean; data?: { results?: Array<{ path?: string }> } }
+		}>
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const examplesHandler = (server as any)._registeredTools['ascend.search_examples']
+			.handler as (args: { query: string; limit?: number }) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: { results?: Array<{ kind?: string; path?: string }> }
+			}
+		}>
+
+		const docs = await docsHandler({ query: 'plan commit allowLoss', limit: 3 })
+		expect(docs.structuredContent?.ok).toBe(true)
+		expect(
+			docs.structuredContent?.data?.results?.some((result) => result.path?.includes('llms')),
+		).toBe(true)
+
+		const examples = await examplesHandler({ query: 'mcp setup cursor', limit: 3 })
+		expect(examples.structuredContent?.ok).toBe(true)
+		expect(
+			examples.structuredContent?.data?.results?.every((result) => result.kind === 'example'),
+		).toBe(true)
+		expect(
+			examples.structuredContent?.data?.results?.some(
+				(result) => result.path === 'examples/mcp-setup.md',
+			),
+		).toBe(true)
 	})
 
 	test('agent workflow prompt includes safe plan and commit guidance', async () => {

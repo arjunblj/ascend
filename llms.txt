@@ -1,0 +1,28 @@
+# Ascend
+
+Ascend is an agent-native spreadsheet engine for headless Excel, XLSM, CSV, and TSV workflows.
+
+## Primary Agent Entry Points
+
+- CLI: `ascend agent-init --json`, `ascend ops --json`, `ascend capabilities --json`, `ascend plan <file> --ops ops.json --json`, `ascend commit <file> --ops ops.json --output out.xlsx --json`
+- MCP resources: `ascend://llms.txt`, `ascend://llms-full.txt`, `ascend://docs/agent-api.md`, `ascend://operations`, `ascend://capabilities`, `ascend://agent-workflow`
+- MCP tools: `ascend.search_docs`, `ascend.search_examples`, `ascend.inspect`, `ascend.read`, `ascend.read_table`, `ascend.find`, `ascend.visuals`, `ascend.list_operations`, `ascend.capabilities`, `ascend.plan`, `ascend.commit`, `ascend.repair_plan`
+- SDK: `AscendWorkbook`, `WorkbookDocument`, operation helpers, schema discovery, safe plan/commit workflow
+
+## Recommended Workflow
+
+1. Inspect workbook structure.
+2. Read only the necessary ranges, tables, formulas, visuals, and capability warnings.
+3. Build operations from `ascend ops --json` or `ascend://operations`.
+4. Run `ascend plan` before every write.
+5. Commit to a new output path with input hash guards and explicit approvals.
+6. Verify with `check`, `lint`, `diff`, `trace`, or export.
+7. Use `repair-plan` when validation, formulas, or preservation audits fail.
+
+## Machine-Readable References
+
+- Full agent context: `llms-full.txt`
+- Markdown reference: `docs/AGENT_API.md`
+- Workflow guide: `docs/AGENT_WORKFLOW.md`
+- MCP setup: `examples/mcp-setup.md`
+- Examples: `examples/README.md`

@@ -64,6 +64,7 @@ import type {
 	TimelineInfo,
 	TraceResult,
 	WorkbookConnectionPartInfo,
+	WorkbookDataModelPartInfo,
 	WorkbookInfo,
 	WorkbookLoadInfo,
 	WorkbookVisualInventoryInfo,
@@ -144,6 +145,7 @@ export class WorkbookReadView {
 			timelineCount: this.wb.timelines.length,
 			timelineCacheCount: this.wb.timelineCaches.length,
 			connectionPartCount: this.wb.connectionParts.length,
+			dataModelPartCount: this.wb.dataModelParts.length,
 			activeContentCount: this.wb.activeContent.length,
 			sourceFormat: this.compat.sourceFormat,
 			workbookViewCount: this.wb.workbookViews.length,
@@ -170,6 +172,7 @@ export class WorkbookReadView {
 			})),
 			timelines: this.wb.timelines.map((entry) => ({ ...entry })),
 			connectionParts: this.wb.connectionParts.map((entry) => ({ ...entry })),
+			dataModelParts: this.wb.dataModelParts.map((entry) => ({ ...entry })),
 			activeContent: this.wb.activeContent.map((entry) => ({ ...entry })),
 			styleSummary: { ...this.wb.styleMetadata },
 			themeSummary: {
@@ -619,6 +622,10 @@ export class WorkbookReadView {
 
 	connectionParts(): readonly WorkbookConnectionPartInfo[] {
 		return this.wb.connectionParts.map((entry) => ({ ...entry }))
+	}
+
+	dataModelParts(): readonly WorkbookDataModelPartInfo[] {
+		return this.wb.dataModelParts.map((entry) => ({ ...entry }))
 	}
 
 	activeContent(): readonly ActiveContentInfo[] {

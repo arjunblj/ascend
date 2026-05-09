@@ -4,6 +4,7 @@ import type {
 	SheetId,
 	StyleId,
 	WorkbookConnectionPartInfo,
+	WorkbookDataModelPartInfo,
 } from '@ascend/core'
 import { DEFAULT_STYLE_ID, Workbook } from '@ascend/core'
 import type {
@@ -25,6 +26,7 @@ import {
 } from './comments.ts'
 import { parseConnectionPartInfos } from './connections.ts'
 import { type ContentTypes, parseContentTypes } from './content-types.ts'
+import { parseDataModelPartInfo } from './data-model.ts'
 import { parseDrawingImageRefs, parseDrawingObjectRefs } from './drawing.ts'
 import { parseMetadataXml } from './metadata.ts'
 import {
@@ -479,6 +481,7 @@ export function readXlsx(
 				)
 		if (!isPartial) workbook.activeContent.push(...collectActiveContent(capsules))
 		if (!isPartial) workbook.connectionParts.push(...collectConnectionParts(archive, capsules))
+		if (!isPartial) workbook.dataModelParts.push(...collectDataModelParts(capsules))
 		if (!isPartial) attachChartParts(archive, workbook, capsules)
 		const report = buildReport(contentTypes, formulaFeatures, workbook, capsules, loadInfo)
 		if (loadInfo.isPartial) {
@@ -656,6 +659,7 @@ function capsuleFamily(path: string): string {
 	if (path.includes('/queryTables/')) return 'preservedQueryTable'
 	if (path.endsWith('/connections.xml')) return 'preservedConnection'
 	if (path.includes('/customData/')) return 'preservedPowerQuery'
+	if (path.includes('/model/')) return 'preservedDataModel'
 	if (path.includes('/drawings/') && path.endsWith('.vml')) return 'preservedVml'
 	if (path.includes('/drawings/')) return 'preservedDrawing'
 	if (path.includes('/media/')) return 'preservedMedia'
@@ -722,6 +726,17 @@ function collectConnectionParts(
 	return connectionParts
 }
 
+function collectDataModelParts(
+	capsules: readonly PreservationCapsule[],
+): WorkbookDataModelPartInfo[] {
+	const dataModelParts: WorkbookDataModelPartInfo[] = []
+	for (const capsule of capsules) {
+		const part = parseDataModelPartInfo(capsule)
+		if (part) dataModelParts.push(part)
+	}
+	return dataModelParts
+}
+
 function collectThreadedCommentPeople(archive: ZipArchive): Map<string, string> {
 	const people = new Map<string, string>()
 	for (const entry of archive.entries()) {
@@ -781,6 +796,9 @@ function preservedFeatureNote(feature: string): string | undefined {
 	}
 	if (feature === 'preservedThreadedComments') {
 		return 'Threaded comments are inventoried with thread/person metadata and preserved; semantic edits require explicit support.'
+	}
+	if (feature === 'preservedDataModel') {
+		return 'Workbook data model parts are inventoried and preserved; Power Pivot/data-model execution is not performed headlessly.'
 	}
 	return undefined
 }

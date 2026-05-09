@@ -26,6 +26,7 @@ import type {
 	TableColumn,
 	TableStyleInfo,
 	WorkbookConnectionPartInfo,
+	WorkbookDataModelPartInfo,
 	WorkbookThemeColor,
 	WorkbookView,
 } from '@ascend/core'
@@ -35,6 +36,8 @@ export type {
 	ActiveContentKind,
 	WorkbookConnectionPartInfo,
 	WorkbookConnectionPartKind,
+	WorkbookDataModelPartInfo,
+	WorkbookDataModelPartKind,
 } from '@ascend/core'
 
 import type { CellChange, SheetDiff, WorkbookDiff } from '@ascend/engine'
@@ -63,6 +66,7 @@ export interface WorkbookInfo {
 	readonly timelineCount: number
 	readonly timelineCacheCount: number
 	readonly connectionPartCount: number
+	readonly dataModelPartCount: number
 	readonly activeContentCount: number
 	readonly sourceFormat: string
 	readonly workbookViewCount: number
@@ -103,6 +107,7 @@ export interface WorkbookInfo {
 		readonly caption?: string
 	}[]
 	readonly connectionParts: readonly WorkbookConnectionPartInfo[]
+	readonly dataModelParts: readonly WorkbookDataModelPartInfo[]
 	readonly activeContent: readonly ActiveContentInfo[]
 	readonly styleSummary: {
 		readonly numFmtCount: number

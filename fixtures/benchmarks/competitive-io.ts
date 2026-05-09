@@ -11,7 +11,6 @@
  *   bun run fixtures/benchmarks/competitive-io.ts --runner-manifest fixtures/benchmarks/runners/python-readers.manifest.json --workload sparse-wide --json
  *   bun run fixtures/benchmarks/competitive-io.ts --write-runner-manifest path/to/writers.json --workload table-heavy --json
  */
-import { createHash } from 'node:crypto'
 import { access, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -25,6 +24,7 @@ import {
 	type Workbook,
 } from '../../packages/core/src/index.ts'
 import { readXlsx, writeXlsx } from '../../packages/io-xlsx/src/index.ts'
+import { extractZip } from '../../packages/io-xlsx/src/reader/zip.ts'
 import { Ascend } from '../../packages/sdk/src/index.ts'
 import {
 	benchmarkProvenanceDimensions,
@@ -53,6 +53,7 @@ export type WorkloadName =
 	| 'dense-values'
 	| 'mixed-10pct-text'
 	| 'mixed-50pct-text'
+	| 'mixed-closedxml-10text-5number'
 	| 'plain-text'
 	| 'string-heavy'
 	| 'sparse-wide'
@@ -70,11 +71,14 @@ type CategorySelection = 'read' | 'write' | 'all'
 type CompetitorSelection = 'js' | 'python' | 'external' | 'all'
 type ValidationMode = 'each' | 'final'
 type ExecutionScopeSelection = 'in-process' | 'external-process' | 'all'
+type SourceMode = 'full' | 'generated-write'
 type LibraryAllowlist = ReadonlySet<string> | undefined
+const FAST_GENERATED_WRITE_HASH_NOT_COMPUTED = '__not-computed-for-fast-generated-write__'
 const ALL_WORKLOADS = [
 	'dense-values',
 	'mixed-10pct-text',
 	'mixed-50pct-text',
+	'mixed-closedxml-10text-5number',
 	'plain-text',
 	'string-heavy',
 	'sparse-wide',
@@ -91,11 +95,13 @@ const ALL_READ_SOURCES = ['ascend-writer', 'raw-ooxml'] as const
 export interface CompetitiveDataSet {
 	readonly workloadName: WorkloadName
 	readonly readSource: ReadSource
+	readonly sourceMode?: SourceMode
 	readonly rows: number
 	readonly cols: number
 	readonly cells: number
 	readonly values: readonly (readonly WorkloadCellValue[])[]
 	readonly semanticCellValuesHash: string
+	readonly orderedSemanticCellValuesHash?: string
 	readonly xlsxPath: string
 	readonly xlsxBytes: Uint8Array
 }
@@ -240,6 +246,27 @@ function readExecutionScopeFlag(): ExecutionScopeSelection {
 	)
 }
 
+function readSourceModeFlag(): SourceMode {
+	const raw = readFlag('--source-mode')
+	if (raw === undefined || raw === 'full') return 'full'
+	if (raw === 'generated-write') return raw
+	throw new Error('Unsupported --source-mode value. Expected full or generated-write.')
+}
+
+function assertSourceModeCompatible(input: {
+	readonly sourceMode: SourceMode
+	readonly categorySelection: CategorySelection
+	readonly executionScopeSelection: ExecutionScopeSelection
+}): void {
+	if (input.sourceMode !== 'generated-write') return
+	if (input.categorySelection !== 'write') {
+		throw new Error('--source-mode generated-write requires --category write')
+	}
+	if (input.executionScopeSelection !== 'external-process') {
+		throw new Error('--source-mode generated-write requires --execution-scope external-process')
+	}
+}
+
 export function parseLibraryAllowlist(raw: string | undefined): LibraryAllowlist {
 	if (raw === undefined || raw.trim() === '') return undefined
 	const libraries = raw
@@ -265,6 +292,10 @@ export function competitorMatches(library: string, selection: CompetitorSelectio
 		library === 'ascend-external-bytes' ||
 		library === 'ascend-external-values-bytes' ||
 		library === 'ascend-readxlsx-raw-values-bytes' ||
+		library === 'ascend-readxlsx-raw-values-operation-bytes' ||
+		library === 'ascend-readxlsx-raw-values-operation-path' ||
+		library === 'ascend-readxlsx-row-stream-bytes' ||
+		library === 'ascend-readxlsx-cell-materialization-bytes' ||
 		library === 'ascend-readxlsx-values-bytes' ||
 		library === 'ascend-readxlsx-values-rich-metadata-bytes' ||
 		library === 'ascend-external-metadata-only-bytes' ||
@@ -279,6 +310,7 @@ export function competitorMatches(library: string, selection: CompetitorSelectio
 		library === 'pyexcelerate-cell' ||
 		library === 'fastxlsx' ||
 		library === 'pyopenxlsx' ||
+		library === 'pyopenxlsx-bulk' ||
 		library === 'pyfastexcel' ||
 		library === 'fastexcel' ||
 		library === 'fastexcel-java' ||
@@ -336,8 +368,18 @@ function isRankingEligible(status: string): boolean {
 }
 
 export function hashLines(lines: readonly string[]): string {
-	const hash = createHash('sha256')
+	const hash = new Bun.CryptoHasher('sha256')
 	for (const line of [...lines].sort()) {
+		hash.update(`${line.length}:`)
+		hash.update(line)
+		hash.update('\n')
+	}
+	return hash.digest('hex')
+}
+
+export function hashOrderedLines(lines: readonly string[]): string {
+	const hash = new Bun.CryptoHasher('sha256')
+	for (const line of lines) {
 		hash.update(`${line.length}:`)
 		hash.update(line)
 		hash.update('\n')
@@ -365,6 +407,27 @@ export function expectedWorkloadValuesHash(
 	return hashLines(semanticLinesForValues(buildWorkloadValues(workloadName, rows, cols)))
 }
 
+export function expectedOrderedWorkloadValuesHash(
+	workloadName: WorkloadName,
+	rows: number,
+	cols: number,
+): string {
+	const hash = new Bun.CryptoHasher('sha256')
+	const columnNames = columnNameCache(cols)
+	for (let row = 0; row < rows; row++) {
+		for (let col = 0; col < cols; col++) {
+			const value = workloadValue(workloadName, row, col, cols)
+			if (value === null) continue
+			const columnName = columnNames[col] ?? indexToColumn(col)
+			const line = `Data!${columnName}${row + 1}\t${scalarPayload(value)}`
+			hash.update(`${line.length}:`)
+			hash.update(line)
+			hash.update('\n')
+		}
+	}
+	return hash.digest('hex')
+}
+
 export function buildWorkloadValues(
 	workloadName: WorkloadName,
 	rows: number,
@@ -375,7 +438,7 @@ export function buildWorkloadValues(
 	)
 }
 
-function workloadValue(
+export function workloadValue(
 	workloadName: WorkloadName,
 	row: number,
 	col: number,
@@ -389,6 +452,9 @@ function workloadValue(
 	if (workloadName === 'mixed-50pct-text') {
 		const key = row * cols + col
 		return key % 2 === 0 ? `text-${String(key).padStart(8, '0')}` : key
+	}
+	if (workloadName === 'mixed-closedxml-10text-5number') {
+		return col < 10 ? 'Hello world' : col - 10
 	}
 	if (workloadName === 'plain-text') {
 		return `text-${String(row * cols + col).padStart(8, '0')}`
@@ -451,6 +517,7 @@ function workloadValueAssertions(
 	input: CompetitiveDataSet,
 ): Record<string, PrimitiveAssertion> {
 	const semanticCellValuesHash = hashLines(values)
+	const orderedSemanticCellValuesHash = hashOrderedLines(values)
 	return {
 		sheetCount,
 		expectedSheetCount: 1,
@@ -460,6 +527,11 @@ function workloadValueAssertions(
 		cellCountMatches: values.length === input.cells,
 		semanticCellValuesHash,
 		expectedSemanticCellValuesHash: input.semanticCellValuesHash,
+		orderedSemanticCellValuesHash,
+		expectedOrderedSemanticCellValuesHash: input.orderedSemanticCellValuesHash ?? null,
+		orderedSemanticCellValuesHashMatches:
+			input.orderedSemanticCellValuesHash !== undefined &&
+			orderedSemanticCellValuesHash === input.orderedSemanticCellValuesHash,
 		semanticCellValuesHashMatches: semanticCellValuesHash === input.semanticCellValuesHash,
 	}
 }
@@ -700,6 +772,8 @@ export function denseWriteAssertions(
 	bytes: Uint8Array,
 	input: CompetitiveDataSet,
 ): Record<string, PrimitiveAssertion> {
+	const fastAssertions = generatedWriteAssertions(bytes, input)
+	if (fastAssertions) return fastAssertions
 	const read = readXlsx(bytes, { mode: 'values' })
 	if (!read.ok) {
 		return {
@@ -720,6 +794,166 @@ export function denseWriteAssertions(
 		...featureRichAssertions(bytes, input),
 		...denseWorkbookAssertions(read.value.workbook, input),
 	}
+}
+
+function generatedWriteAssertions(
+	bytes: Uint8Array,
+	input: CompetitiveDataSet,
+): Record<string, PrimitiveAssertion> | undefined {
+	if (input.sourceMode !== 'generated-write') return undefined
+	if (!canUseFastGeneratedWriteAssertions(input.workloadName)) return undefined
+	try {
+		const zip = extractZip(bytes)
+		const workbookXml = zip.readText('xl/workbook.xml')
+		const sheetXml = zip.readText('xl/worksheets/sheet1.xml')
+		if (!workbookXml || !sheetXml) return undefined
+		const sheetCount = countWorkbookSheets(workbookXml)
+		const observed = hashGeneratedWorksheetValues(sheetXml, input.cols)
+		if (!observed) return undefined
+		return {
+			bytes: bytes.byteLength,
+			reopenOk: true,
+			formulaCount: observed.formulaCount,
+			tablePartCount: 0,
+			sheetCount,
+			expectedSheetCount: 1,
+			sheetCountMatches: sheetCount === 1,
+			cellCount: observed.cellCount,
+			expectedCellCount: input.cells,
+			cellCountMatches: observed.cellCount === input.cells,
+			semanticCellValuesHash: FAST_GENERATED_WRITE_HASH_NOT_COMPUTED,
+			expectedSemanticCellValuesHash: input.semanticCellValuesHash,
+			orderedSemanticCellValuesHash: observed.orderedSemanticCellValuesHash,
+			expectedOrderedSemanticCellValuesHash: input.orderedSemanticCellValuesHash ?? null,
+			orderedSemanticCellValuesHashMatches:
+				input.orderedSemanticCellValuesHash !== undefined &&
+				observed.orderedSemanticCellValuesHash === input.orderedSemanticCellValuesHash,
+			semanticCellValuesHashMatches:
+				input.orderedSemanticCellValuesHash !== undefined &&
+				observed.orderedSemanticCellValuesHash === input.orderedSemanticCellValuesHash,
+			fastGeneratedWriteValidation: true,
+		}
+	} catch {
+		return undefined
+	}
+}
+
+function canUseFastGeneratedWriteAssertions(workloadName: WorkloadName): boolean {
+	return (
+		workloadName === 'dense-values' ||
+		workloadName === 'mixed-10pct-text' ||
+		workloadName === 'mixed-50pct-text' ||
+		workloadName === 'mixed-closedxml-10text-5number' ||
+		workloadName === 'plain-text' ||
+		workloadName === 'string-heavy' ||
+		workloadName === 'sparse-wide'
+	)
+}
+
+function countWorkbookSheets(workbookXml: string): number {
+	let count = 0
+	for (const _match of workbookXml.matchAll(/<sheet\b/g)) count++
+	return count
+}
+
+function hashGeneratedWorksheetValues(
+	sheetXml: string,
+	expectedCols: number,
+): {
+	readonly cellCount: number
+	readonly formulaCount: number
+	readonly orderedSemanticCellValuesHash: string
+} | null {
+	const hash = new Bun.CryptoHasher('sha256')
+	const columnNames = columnNameCache(expectedCols)
+	const rowRe = /<row\b([^>]*)>([\s\S]*?)<\/row>/g
+	let implicitRow = 0
+	let cellCount = 0
+	let formulaCount = 0
+	for (let rowMatch = rowRe.exec(sheetXml); rowMatch !== null; rowMatch = rowRe.exec(sheetXml)) {
+		const rowAttrs = rowMatch[1] ?? ''
+		const rowBody = rowMatch[2] ?? ''
+		const rowIndex = parsePositiveIntAttr(rowAttrs, 'r') ?? implicitRow + 1
+		implicitRow = rowIndex
+		let implicitCol = 0
+		const cellRe = /<c\b([^>]*)>([\s\S]*?)<\/c>|<c\b([^>]*)\/>/g
+		for (
+			let cellMatch = cellRe.exec(rowBody);
+			cellMatch !== null;
+			cellMatch = cellRe.exec(rowBody)
+		) {
+			const attrs = cellMatch[1] ?? cellMatch[3] ?? ''
+			const body = cellMatch[2] ?? ''
+			const explicitCol = parseColumnRefAttr(attrs)
+			const colIndex = explicitCol ?? implicitCol
+			implicitCol = colIndex + 1
+			if (body.includes('<f')) formulaCount++
+			const payload = generatedCellPayload(attrs, body)
+			if (payload === undefined) return null
+			if (payload === null) continue
+			const columnName = columnNames[colIndex] ?? indexToColumn(colIndex)
+			const line = `Data!${columnName}${rowIndex}\t${payload}`
+			hash.update(`${line.length}:`)
+			hash.update(line)
+			hash.update('\n')
+			cellCount++
+		}
+	}
+	return { cellCount, formulaCount, orderedSemanticCellValuesHash: hash.digest('hex') }
+}
+
+function columnNameCache(cols: number): readonly string[] {
+	return Array.from({ length: Math.max(0, cols) }, (_, col) => indexToColumn(col))
+}
+
+function parsePositiveIntAttr(attrs: string, name: string): number | undefined {
+	const match = new RegExp(`\\b${name}="(\\d+)"`).exec(attrs)
+	if (!match) return undefined
+	const value = Number.parseInt(match[1] ?? '', 10)
+	return Number.isFinite(value) && value > 0 ? value : undefined
+}
+
+function parseColumnRefAttr(attrs: string): number | undefined {
+	const match = /\br="([A-Z]+)\d+"/.exec(attrs)
+	if (!match) return undefined
+	const letters = match[1] ?? ''
+	let value = 0
+	for (let i = 0; i < letters.length; i++) {
+		value = value * 26 + (letters.charCodeAt(i) - 64)
+	}
+	return value > 0 ? value - 1 : undefined
+}
+
+function generatedCellPayload(attrs: string, body: string): string | null | undefined {
+	if (body.length === 0) return null
+	const type = /\bt="([^"]+)"/.exec(attrs)?.[1]
+	if (type === 's') return undefined
+	if (type === 'inlineStr') {
+		const text = firstTagText(body, 't')
+		return text === undefined ? null : `s:${decodeXmlText(text)}`
+	}
+	const value = firstTagText(body, 'v')
+	if (value === undefined) return null
+	if (type === 'b') return value === '1' || value === 'true' ? 'b:true' : 'b:false'
+	if (type === 'str') return `s:${decodeXmlText(value)}`
+	return `n:${value}`
+}
+
+function firstTagText(xml: string, tagName: string): string | undefined {
+	const open = xml.indexOf(`<${tagName}>`)
+	if (open < 0) return undefined
+	const start = open + tagName.length + 2
+	const end = xml.indexOf(`</${tagName}>`, start)
+	return end < 0 ? undefined : xml.slice(start, end)
+}
+
+function decodeXmlText(text: string): string {
+	return text
+		.replaceAll('&lt;', '<')
+		.replaceAll('&gt;', '>')
+		.replaceAll('&quot;', '"')
+		.replaceAll('&apos;', "'")
+		.replaceAll('&amp;', '&')
 }
 
 export function evaluateAssertions(
@@ -746,8 +980,13 @@ export function evaluateAssertions(
 	}
 	const sheetCountMatches = observed.sheetCountMatches === true || observed.sheetCount === 1
 	const cellCountMatches = observed.cellCountMatches === true || observed.cellCount === input.cells
-	const semanticCellValuesHashMatches =
+	const sortedSemanticCellValuesHashMatches =
 		observed.semanticCellValuesHash === input.semanticCellValuesHash
+	const orderedSemanticCellValuesHashMatches =
+		input.orderedSemanticCellValuesHash !== undefined &&
+		observed.orderedSemanticCellValuesHash === input.orderedSemanticCellValuesHash
+	const semanticCellValuesHashMatches =
+		sortedSemanticCellValuesHashMatches || orderedSemanticCellValuesHashMatches
 	const selectedSheetMatches =
 		observed.selectedSheetRead !== true ||
 		(observed.sourceSheetCount === expectedSourceSheetCount(input) &&
@@ -798,9 +1037,12 @@ export function evaluateAssertions(
 			expectedSheetCount: 1,
 			expectedCellCount: input.cells,
 			expectedSemanticCellValuesHash: input.semanticCellValuesHash,
+			expectedOrderedSemanticCellValuesHash: input.orderedSemanticCellValuesHash ?? null,
 			reopenOk,
 			sheetCountMatches,
 			cellCountMatches,
+			sortedSemanticCellValuesHashMatches,
+			orderedSemanticCellValuesHashMatches,
 			semanticCellValuesHashMatches,
 			selectedSheetMatches,
 			tablePartMatches,
@@ -1327,9 +1569,47 @@ export async function buildWorkloadDataSet(
 		cells: semanticLines.length,
 		values,
 		semanticCellValuesHash: hashLines(semanticLines),
+		orderedSemanticCellValuesHash: hashOrderedLines(semanticLines),
 		xlsxPath,
 		xlsxBytes: bytes,
 	}
+}
+
+export function buildGeneratedWriteDataSet(
+	workloadName: WorkloadName,
+	rows: number,
+	cols: number,
+): CompetitiveDataSet {
+	const semanticCellValuesHash = expectedWorkloadValuesHash(workloadName, rows, cols)
+	const orderedSemanticCellValuesHash = expectedOrderedWorkloadValuesHash(workloadName, rows, cols)
+	return {
+		workloadName,
+		readSource: 'ascend-writer',
+		sourceMode: 'generated-write',
+		rows,
+		cols,
+		cells: generatedWorkloadCellCount(workloadName, rows, cols),
+		values: [],
+		semanticCellValuesHash,
+		orderedSemanticCellValuesHash,
+		xlsxPath: '',
+		xlsxBytes: new Uint8Array(),
+	}
+}
+
+function generatedWorkloadCellCount(
+	workloadName: WorkloadName,
+	rows: number,
+	cols: number,
+): number {
+	if (workloadName !== 'sparse-wide') return rows * cols
+	let count = 0
+	for (let row = 0; row < rows; row++) {
+		for (let col = 0; col < cols; col++) {
+			if (workloadValue(workloadName, row, col, cols) !== null) count++
+		}
+	}
+	return count
 }
 
 export async function buildDenseDataSet(rows: number, cols: number): Promise<CompetitiveDataSet> {
@@ -1450,7 +1730,8 @@ function writeAscendGeneratedBytes(input: CompetitiveDataSet): Uint8Array {
 	setCoreCellGenerated(workbook, input.rows, input.cols, input.workloadName)
 	const result = writeXlsx(workbook, undefined, {
 		useSharedStrings: input.workloadName === 'feature-rich' ? undefined : false,
-		usePlainStrings: input.workloadName === 'string-heavy',
+		usePlainStrings: input.workloadName === 'string-heavy' || input.workloadName === 'plain-text',
+		omitDenseCellRefs: input.workloadName === 'string-heavy' || input.workloadName === 'plain-text',
 	})
 	if (!result.ok) throw new Error(result.error.message)
 	return result.value
@@ -2026,6 +2307,9 @@ async function runExternalReadRunner(
 	assertions?: Record<string, PrimitiveAssertion>
 	samples?: readonly MetricSample[]
 }> {
+	const validationMode = readValidationModeFlag()
+	const validationArgs =
+		spec.capabilities?.finalValidation === true ? ['--validation-mode', validationMode] : []
 	const proc = Bun.spawn(
 		[
 			...spec.command,
@@ -2037,6 +2321,7 @@ async function runExternalReadRunner(
 			String(repeat),
 			'--warmup',
 			String(warmup),
+			...validationArgs,
 			'--json',
 		],
 		{
@@ -2054,8 +2339,12 @@ async function runExternalReadRunner(
 		throw new Error(stderr.trim() || `${spec.name} runner exited with code ${exitCode}`)
 	}
 	const parsed = JSON.parse(stdout) as unknown
+	const assertions = normalizeAssertions(parsed)
 	return {
-		assertions: normalizeAssertions(parsed),
+		assertions:
+			spec.capabilities?.finalValidation === true
+				? annotateFinalValidationAssertions(assertions, validationMode, repeat)
+				: assertions,
 		assertionsBySample: normalizeExternalSampleAssertions(parsed, repeat, spec.name),
 		samples: normalizeExternalSamples(parsed, repeat, spec.name),
 	}
@@ -2107,8 +2396,12 @@ async function runExternalWriteRunner(
 		throw new Error(stderr.trim() || `${spec.name} writer exited with code ${exitCode}`)
 	}
 	const parsed = JSON.parse(stdout) as unknown
+	const assertions = normalizeAssertions(parsed)
 	return {
-		assertions: normalizeAssertions(parsed),
+		assertions:
+			spec.capabilities?.finalValidation === true
+				? annotateFinalValidationAssertions(assertions, validationMode, repeat)
+				: assertions,
 		assertionsBySample: normalizeExternalSampleAssertions(parsed, repeat, spec.name),
 		samples: normalizeExternalSamples(parsed, repeat, spec.name),
 	}
@@ -2254,6 +2547,19 @@ function optionalSampleNumber(
 	return { [key]: value }
 }
 
+function annotateFinalValidationAssertions(
+	assertions: Record<string, PrimitiveAssertion> | undefined,
+	validationMode: string,
+	repeat: number,
+): Record<string, PrimitiveAssertion> | undefined {
+	if (!assertions) return assertions
+	return {
+		...assertions,
+		validationMode,
+		validationSamples: validationMode === 'each' ? repeat : 1,
+	}
+}
+
 async function runCompetitiveCase(
 	benchmarkCase: CompetitiveCase,
 	input: CompetitiveDataSet,
@@ -2374,6 +2680,7 @@ function buildResult(
 			logicalCells: input.rows * input.cols,
 			density: input.rows * input.cols > 0 ? input.cells / (input.rows * input.cols) : 0,
 			bytes: input.xlsxBytes.byteLength,
+			...(input.sourceMode ? { sourceMode: input.sourceMode } : {}),
 			repeat,
 			executionScope: benchmarkCase.executionScope ?? 'in-process',
 			operationProfile: operationProfile(benchmarkCase),
@@ -2430,6 +2737,7 @@ export function buildNonRankingResult(input: {
 					? input.dataSet.cells / (input.dataSet.rows * input.dataSet.cols)
 					: 0,
 			bytes: input.dataSet.xlsxBytes.byteLength,
+			...(input.dataSet.sourceMode ? { sourceMode: input.dataSet.sourceMode } : {}),
 			repeat: input.repeat,
 			executionScope: input.executionScope ?? 'in-process',
 			operationProfile: operationProfile(input),
@@ -2499,6 +2807,8 @@ async function main(): Promise<void> {
 	const competitorSelection = readCompetitorFlag()
 	const validationMode = readValidationModeFlag()
 	const executionScopeSelection = readExecutionScopeFlag()
+	const sourceMode = readSourceModeFlag()
+	assertSourceModeCompatible({ sourceMode, categorySelection, executionScopeSelection })
 	const libraryAllowlist = parseLibraryAllowlist(readFlag('--libraries'))
 	const rowOverride =
 		readFlag('--rows') === undefined ? undefined : readPositiveIntFlag('--rows', 1)
@@ -2531,7 +2841,10 @@ async function main(): Promise<void> {
 		externalWriteRunnerSpecsByWorkload[workload] = loaded.externalWriteRunnerSpecs
 		for (const source of readSources) {
 			workloadDimensions.push({ workload, readSource: source, rows, cols })
-			const input = await buildWorkloadDataSet(workload, rows, cols, source)
+			const input =
+				sourceMode === 'generated-write'
+					? buildGeneratedWriteDataSet(workload, rows, cols)
+					: await buildWorkloadDataSet(workload, rows, cols, source)
 			for (const benchmarkCase of loaded.cases) {
 				if (categorySelection !== 'all' && benchmarkCase.category !== categorySelection) {
 					continue
@@ -2596,6 +2909,7 @@ async function main(): Promise<void> {
 			competitor: competitorSelection,
 			validationMode,
 			executionScope: executionScopeSelection,
+			sourceMode,
 			libraries: libraryAllowlist ? [...libraryAllowlist] : undefined,
 			workloads: workloadDimensions,
 			repeat,

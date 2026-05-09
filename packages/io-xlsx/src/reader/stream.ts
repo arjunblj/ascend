@@ -10,7 +10,12 @@ import {
 	resolvePath,
 } from './relationships.ts'
 import { emptySharedStrings, parseSharedStrings } from './shared-strings.ts'
-import { type StreamedSheetRow, streamSheetRowsXml, ValueInternPool } from './sheet.ts'
+import {
+	type StreamedSheetRow,
+	streamSheetRowsTextChunks,
+	streamSheetRowsXml,
+	ValueInternPool,
+} from './sheet.ts'
 import { parseStylesLite } from './styles.ts'
 import { parseWorkbookXml } from './workbook.ts'
 import { extractZip, type ZipArchive } from './zip.ts'
@@ -20,6 +25,7 @@ export type XlsxByteSource = Uint8Array | AsyncIterable<Uint8Array> | ReadableSt
 export interface StreamXlsxRowsOptions {
 	readonly sheet?: string | number
 	readonly mode?: 'values' | 'formula'
+	readonly chunkedSheetXml?: boolean
 }
 
 export async function readXlsxRowsStream(
@@ -72,18 +78,24 @@ export async function readXlsxRowsStream(
 		? resolvePath(workbookPath, sharedStringsRel.target)
 		: null
 	const stylesPath = stylesRel ? resolvePath(workbookPath, stylesRel.target) : null
-	const parseParts = await archive.readTextsAsync(
-		[sheetPath, sharedStringsPath, stylesPath].filter((path): path is string => path !== null),
-	)
-	const sheetXml = parseParts.get(sheetPath)
-	if (!sheetXml) {
+	if (!archive.has(sheetPath))
 		return err(ascendError('CORRUPT_FILE', `Missing worksheet: ${sheetPath}`))
-	}
-	const valuePool = new ValueInternPool()
+	const mode = options.mode ?? 'values'
+	const chunkedSheetXml = options.chunkedSheetXml === true
+	const sheetZipEntry = archive.get(sheetPath)
+	const shouldChunkSheetXml =
+		chunkedSheetXml &&
+		(sheetZipEntry?.uncompressedSize ?? Number.POSITIVE_INFINITY) > 64 * 1024 * 1024
+	const parsePaths =
+		mode === 'values' && shouldChunkSheetXml
+			? [sharedStringsPath, stylesPath].filter((path): path is string => path !== null)
+			: [sheetPath, sharedStringsPath, stylesPath].filter((path): path is string => path !== null)
+	const parseParts = await archive.readTextsAsync(parsePaths)
+	const valuePool = mode === 'values' ? undefined : new ValueInternPool()
 	const sharedStringsXml = sharedStringsPath ? parseParts.get(sharedStringsPath) : undefined
 	const sharedStrings = sharedStringsXml
 		? parseSharedStrings(sharedStringsXml, {
-				normalize: (value) => valuePool.internValue(value),
+				normalize: (value) => valuePool?.internValue(value) ?? value,
 				lazy: false,
 			})
 		: emptySharedStrings()
@@ -93,15 +105,19 @@ export async function readXlsxRowsStream(
 		: { isDateFormat: [false], metadata: undefined }
 	const styleCount = Math.max(1, stylesLite.isDateFormat.length)
 	const styleIds = Array.from({ length: styleCount }, (_, index) => index as StyleId)
-	const mode = options.mode ?? 'values'
-	const iterator = streamSheetRowsXml(sheetEntry.name, sheetXml, {
+	const ctx = {
 		sharedStrings,
 		styleIds,
 		isDateFormat: stylesLite.isDateFormat,
-		valuePool,
+		hasDateStyles: stylesLite.isDateFormat.some(Boolean),
+		...(valuePool ? { valuePool } : {}),
 		valuesOnly: mode === 'values',
 		formulaOnly: mode === 'formula',
-	})
+	}
+	const iterator =
+		mode === 'values' && shouldChunkSheetXml
+			? streamSheetRowsTextChunks(sheetEntry.name, archive.readTextChunks(sheetPath), ctx)
+			: streamSheetRowsXml(sheetEntry.name, parseParts.get(sheetPath) ?? '', ctx)
 	return ok(
 		(async function* () {
 			for (const row of iterator) yield row

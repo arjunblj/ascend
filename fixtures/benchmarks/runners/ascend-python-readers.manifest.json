@@ -168,6 +168,108 @@
 		}
 	},
 	{
+		"name": "ascend-readxlsx-raw-values-operation-bytes",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_readxlsx_open_runner.ts",
+			"--mode",
+			"values",
+			"--source",
+			"bytes",
+			"--raw-values",
+			"--time-open-only"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-operation-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": true
+		}
+	},
+	{
+		"name": "ascend-readxlsx-raw-values-operation-path",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_readxlsx_open_runner.ts",
+			"--mode",
+			"values",
+			"--source",
+			"path",
+			"--raw-values",
+			"--time-open-only"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-operation-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": true
+		}
+	},
+	{
+		"name": "ascend-readxlsx-row-stream-bytes",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_readxlsx_stream_runner.ts",
+			"--mode",
+			"values",
+			"--source",
+			"bytes"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-row-stream-timing",
+		"validationModel": "external-post-row-stream-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	},
+	{
+		"name": "ascend-readxlsx-cell-materialization-bytes",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_readxlsx_open_runner.ts",
+			"--mode",
+			"values",
+			"--source",
+			"bytes",
+			"--raw-values",
+			"--materialize-cells"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-cell-materialization-timing",
+		"validationModel": "external-post-cell-materialization-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": true
+		}
+	},
+	{
 		"name": "ascend-readxlsx-values-rich-metadata-bytes",
 		"command": [
 			"bun",
@@ -364,6 +466,24 @@
 		}
 	},
 	{
+		"name": "fastexcel-java",
+		"command": ["bash", "fixtures/benchmarks/runners/fastexcel_java_runner.sh"],
+		"categories": ["read"],
+		"runtime": "java",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-streaming-values-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "jvm-heap-reported",
+		"installHint": "brew install openjdk maven",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false,
+			"finalValidation": true
+		}
+	},
+	{
 		"name": "closedxml",
 		"command": ["bash", "fixtures/benchmarks/runners/closedxml_runner.sh"],
 		"categories": ["read"],
@@ -463,7 +583,7 @@
 		"timingModel": "external-internal-cell-materialization-timing",
 		"validationModel": "external-post-operation-assertions",
 		"memoryModel": "peak-rss-reported",
-		"installHint": "python3 -m pip install fastxlsx openpyxl",
+		"installHint": "Use Python >=3.8,<3.13, then run python3 -m pip install fastxlsx openpyxl",
 		"capabilities": {
 			"internalTiming": true,
 			"valueOnlyRead": true,

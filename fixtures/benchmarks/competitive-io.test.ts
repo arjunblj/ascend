@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { createWorkbook, type StyleId } from '../../packages/core/src/index.ts'
-import { readXlsx, writeXlsx } from '../../packages/io-xlsx/src/index.ts'
+import { readXlsx, writeDenseRowsXlsx, writeXlsx } from '../../packages/io-xlsx/src/index.ts'
 import {
+	buildGeneratedWriteDataSet,
 	buildNonRankingResult,
 	buildWorkloadDataSet,
 	buildWorkloadValues,
@@ -12,9 +13,11 @@ import {
 	denseWriteAssertions,
 	evaluateAssertions,
 	expectedDenseValuesHash,
+	expectedOrderedWorkloadValuesHash,
 	expectedSparseWideValuesHash,
 	expectedStringHeavyValuesHash,
 	expectedWorkloadValuesHash,
+	hashOrderedLines,
 	libraryAllowed,
 	normalizeExternalSamples,
 	parseLibraryAllowlist,
@@ -122,10 +125,66 @@ describe('competitive IO helpers', () => {
 		expect(sparseHash).not.toBe(expectedStringHeavyValuesHash(20, 32))
 	})
 
+	test('ClosedXML mixed workload encodes 10 text columns and 5 number columns', () => {
+		const values = buildWorkloadValues('mixed-closedxml-10text-5number', 2, 15)
+		expect(values[0]?.slice(0, 10)).toEqual(Array.from({ length: 10 }, () => 'Hello world'))
+		expect(values[0]?.slice(10, 15)).toEqual([0, 1, 2, 3, 4])
+		expect(values[1]?.slice(0, 10)).toEqual(Array.from({ length: 10 }, () => 'Hello world'))
+		expect(values[1]?.slice(10, 15)).toEqual([0, 1, 2, 3, 4])
+		expect(expectedWorkloadValuesHash('mixed-closedxml-10text-5number', 2, 15)).not.toBe(
+			expectedWorkloadValuesHash('mixed-50pct-text', 2, 15),
+		)
+	})
+
 	test('sparse-wide generated data set tracks logical width separately from populated cells', async () => {
 		const input = await buildWorkloadDataSet('sparse-wide', 20, 32)
 		expect(input.cells).toBeLessThan(input.rows * input.cols)
 		expect(input.semanticCellValuesHash).toBe(expectedSparseWideValuesHash(20, 32))
+	})
+
+	test('generated-write data set skips source XLSX while preserving ordered correctness target', () => {
+		const input = buildGeneratedWriteDataSet('sparse-wide', 3, 101)
+		const expectedOrderedHash = expectedOrderedWorkloadValuesHash('sparse-wide', 3, 101)
+
+		expect(input.sourceMode).toBe('generated-write')
+		expect(input.xlsxBytes.byteLength).toBe(0)
+		expect(input.values).toEqual([])
+		expect(input.cells).toBe(9)
+		expect(input.orderedSemanticCellValuesHash).toBe(expectedOrderedHash)
+
+		const evaluated = evaluateAssertions('write', input, {
+			sheetCount: 1,
+			cellCount: input.cells,
+			orderedSemanticCellValuesHash: expectedOrderedHash,
+			reopenOk: true,
+		})
+		expect(evaluated.status).toBe('pass')
+		expect(evaluated.assertions.orderedSemanticCellValuesHashMatches).toBe(true)
+	})
+
+	test('generated-write assertions use fast worksheet hash path for dense XML output', () => {
+		const input = buildGeneratedWriteDataSet('plain-text', 3, 4)
+		const written = writeDenseRowsXlsx({
+			rows: input.rows,
+			cols: input.cols,
+			omitCellRefs: true,
+			stringsAreXmlSafe: true,
+			valueType: 'string',
+			allCellsPresent: true,
+			valueAt: (row, col) => `text-${String(row * input.cols + col).padStart(8, '0')}`,
+		})
+		expect(written.ok).toBe(true)
+		if (!written.ok) return
+
+		const assertions = denseWriteAssertions(written.value, input)
+		const evaluated = evaluateAssertions('write', input, assertions)
+
+		expect(assertions.fastGeneratedWriteValidation).toBe(true)
+		expect(assertions.semanticCellValuesHash).toBe('__not-computed-for-fast-generated-write__')
+		expect(assertions.orderedSemanticCellValuesHash).toBe(input.orderedSemanticCellValuesHash)
+		expect(evaluated.status).toBe('pass')
+		expect(evaluated.assertions.sortedSemanticCellValuesHashMatches).toBe(false)
+		expect(evaluated.assertions.orderedSemanticCellValuesHashMatches).toBe(true)
 	})
 
 	test('advanced generated workloads have distinct semantic hashes', () => {
@@ -384,11 +443,31 @@ describe('competitive IO helpers', () => {
 	test('external batched samples preserve optional memory metrics', () => {
 		expect(
 			normalizeExternalSamples(
-				{ samples: [{ durationMs: 1, peakRssBytes: 1024, rssAfterBytes: 2048 }] },
+				{
+					samples: [
+						{
+							durationMs: 1,
+							peakRssBytes: 1024,
+							rssAfterBytes: 2048,
+							rssDeltaBytes: 512,
+							retainedRssDeltaBytes: 256,
+							heapDeltaBytes: 128,
+						},
+					],
+				},
 				1,
 				'runner',
 			),
-		).toEqual([{ durationMs: 1, peakRssBytes: 1024, rssAfterBytes: 2048 }])
+		).toEqual([
+			{
+				durationMs: 1,
+				peakRssBytes: 1024,
+				rssAfterBytes: 2048,
+				rssDeltaBytes: 512,
+				retainedRssDeltaBytes: 256,
+				heapDeltaBytes: 128,
+			},
+		])
 		expect(() =>
 			normalizeExternalSamples({ samples: [{ durationMs: 1, peakRssBytes: -1 }] }, 1, 'runner'),
 		).toThrow('External runner sample field "peakRssBytes" must be a non-negative finite number')
@@ -408,12 +487,27 @@ describe('competitive IO helpers', () => {
 		expect(evaluated.assertions.semanticCellValuesHashMatches).toBe(true)
 	})
 
+	test('external generated read assertions accept ordered semantic hashes for streaming lanes', () => {
+		const input = workloadInput('mixed-50pct-text', 4, 3)
+		const evaluated = evaluateAssertions('read', input, {
+			sheetCount: 1,
+			cellCount: input.cells,
+			orderedSemanticCellValuesHash: input.orderedSemanticCellValuesHash,
+		})
+
+		expect(evaluated.status).toBe('pass')
+		expect(evaluated.assertions.sortedSemanticCellValuesHashMatches).toBe(false)
+		expect(evaluated.assertions.orderedSemanticCellValuesHashMatches).toBe(true)
+		expect(evaluated.assertions.semanticCellValuesHashMatches).toBe(true)
+	})
+
 	test('external competitor selector includes non-JS SOTA runners', () => {
 		expect(competitorMatches('sheetjs', 'external')).toBe(false)
 		expect(competitorMatches('fastexcel', 'external')).toBe(true)
 		expect(competitorMatches('fastexcel-java', 'external')).toBe(true)
 		expect(competitorMatches('fastxlsx', 'external')).toBe(true)
 		expect(competitorMatches('pyopenxlsx', 'external')).toBe(true)
+		expect(competitorMatches('pyopenxlsx-bulk', 'external')).toBe(true)
 		expect(competitorMatches('pyfastexcel', 'external')).toBe(true)
 		expect(competitorMatches('pyexcelerate-range', 'external')).toBe(true)
 		expect(competitorMatches('pyexcelerate-cell', 'external')).toBe(true)
@@ -427,6 +521,9 @@ describe('competitive IO helpers', () => {
 		expect(competitorMatches('closedxml', 'python')).toBe(true)
 		expect(competitorMatches('ascend-external-values', 'external')).toBe(true)
 		expect(competitorMatches('ascend-readxlsx-raw-values-bytes', 'external')).toBe(true)
+		expect(competitorMatches('ascend-readxlsx-raw-values-operation-bytes', 'external')).toBe(true)
+		expect(competitorMatches('ascend-readxlsx-raw-values-operation-path', 'external')).toBe(true)
+		expect(competitorMatches('ascend-readxlsx-row-stream-bytes', 'external')).toBe(true)
 		expect(competitorMatches('ascend-external-writer', 'external')).toBe(true)
 		expect(competitorMatches('rust-xlsxwriter', 'external')).toBe(true)
 	})
@@ -457,10 +554,43 @@ describe('competitive IO helpers', () => {
 			'rust-xlsxwriter',
 			'fastxlsx',
 			'pyopenxlsx',
+			'pyopenxlsx-bulk',
 			'pyfastexcel',
 		]) {
 			expect(names.has(name)).toBe(true)
 		}
+	})
+
+	test('SOTA reader manifest includes Ascend materialized read lane for pyopenxlsx comparisons', () => {
+		const manifest = JSON.parse(
+			readFileSync('fixtures/benchmarks/runners/ascend-python-readers.manifest.json', 'utf-8'),
+		) as unknown
+		const specs = normalizeExternalRunnerSpecs(manifest)
+		const materialized = specs.find(
+			(spec) => spec.name === 'ascend-readxlsx-cell-materialization-bytes',
+		)
+		expect(materialized?.timingModel).toBe('external-internal-cell-materialization-timing')
+		expect(materialized?.capabilities?.valueOnlyRead).toBe(true)
+		expect(competitorMatches('ascend-readxlsx-cell-materialization-bytes', 'external')).toBe(true)
+		const openOnly = specs.find((spec) => spec.name === 'ascend-readxlsx-raw-values-operation-path')
+		expect(openOnly?.command).toContain(
+			'fixtures/benchmarks/runners/ascend_readxlsx_open_runner.ts',
+		)
+		const bytesOnly = specs.find(
+			(spec) => spec.name === 'ascend-readxlsx-raw-values-operation-bytes',
+		)
+		expect(bytesOnly?.command).toContain(
+			'fixtures/benchmarks/runners/ascend_readxlsx_open_runner.ts',
+		)
+		const stream = specs.find((spec) => spec.name === 'ascend-readxlsx-row-stream-bytes')
+		expect(stream?.timingModel).toBe('external-internal-row-stream-timing')
+		expect(stream?.command).toContain(
+			'fixtures/benchmarks/runners/ascend_readxlsx_stream_runner.ts',
+		)
+		const fastExcelJava = specs.find((spec) => spec.name === 'fastexcel-java')
+		expect(fastExcelJava?.timingModel).toBe('external-internal-streaming-values-timing')
+		expect(fastExcelJava?.capabilities?.valueOnlyRead).toBe(true)
+		expect(fastExcelJava?.capabilities?.finalValidation).toBe(true)
 	})
 
 	test('external generated runner failures become non-ranking benchmark rows', () => {
@@ -522,6 +652,17 @@ function workloadInput(workloadName: WorkloadName, rows: number, cols: number): 
 		cells: values.reduce((count, row) => count + row.filter((value) => value !== null).length, 0),
 		values,
 		semanticCellValuesHash,
+		orderedSemanticCellValuesHash: hashOrderedLines(
+			values.flatMap((row, rowIndex) =>
+				row.flatMap((value, colIndex) =>
+					value === null
+						? []
+						: [
+								`Data!${String.fromCharCode(65 + colIndex)}${rowIndex + 1}\t${scalarPayload(value)}`,
+							],
+				),
+			),
+		),
 		xlsxPath: '',
 		xlsxBytes: new Uint8Array(),
 	}
@@ -549,4 +690,11 @@ function workbookFromInput(input: DenseDataSet) {
 		}
 	}
 	return workbook
+}
+
+function scalarPayload(value: unknown): string | null {
+	if (typeof value === 'number') return `n:${value}`
+	if (typeof value === 'string') return `s:${value}`
+	if (typeof value === 'boolean') return `b:${value ? 'true' : 'false'}`
+	return null
 }

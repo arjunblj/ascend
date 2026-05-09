@@ -69,11 +69,13 @@ export interface SheetParseContext {
 	readonly sharedStrings: SharedStringResolver
 	readonly styleIds: StyleId[]
 	readonly isDateFormat: boolean[]
+	readonly hasDateStyles?: boolean
 	readonly differentialStyles?: readonly CellStyle[]
 	readonly relationships?: readonly Relationship[]
 	readonly valuePool?: ValueInternPool
 	readonly valuesOnly?: boolean
 	readonly formulaOnly?: boolean
+	readonly richMetadata?: boolean
 	readonly formulaFeatures?: SheetFormulaFeatures
 	readonly metadata?: ParsedMetadataPart
 	readonly maxRows?: number
@@ -176,13 +178,14 @@ function applyDensityHintFromDimension(sheet: Sheet, xml: string): void {
 		const rows = range.end.row - range.start.row + 1
 		const cols = range.end.col - range.start.col + 1
 		if (rows <= 0 || cols <= 0) return
+		if (rows >= 1_048_576 && cols >= 16_384) return
 		const numChunks = Math.ceil(rows / CHUNK_SIZE) * Math.ceil(cols / CHUNK_SIZE)
 		const cellsPerChunk = (rows * cols) / numChunks
 		if (cellsPerChunk >= SPARSE_TO_DENSE_THRESHOLD) {
 			sheet.cells.setExpectedDensity('dense')
 		}
 	} catch {
-		// ignore invalid dimension ref
+		// Ignore invalid dimension refs; the parser will still hydrate cells normally.
 	}
 }
 
@@ -196,6 +199,11 @@ export function parseSheet(
 	applyDensityHintFromDimension(sheet, xml)
 	const sheetDataLoc = locateSheetData(xml)
 	if (sheetDataLoc) parseSheetDataFromLoc(xml, sheetDataLoc, sheet, ctx)
+	const richMetadata = ctx.richMetadata === true
+	if (ctx.formulaOnly && !richMetadata) return sheet
+	if (ctx.valuesOnly && !richMetadata && !hasValuesModeSheetMetadata(xml, sheetDataLoc)) {
+		return sheet
+	}
 	const strippedXml = sheetDataLoc
 		? `${xml.slice(0, sheetDataLoc.tagStart)}<sheetData/>${xml.slice(sheetDataLoc.closeEnd)}`
 		: xml
@@ -217,7 +225,7 @@ export function parseSheet(
 	parseHeaderFooter(ws, sheet)
 	parsePageBreaks(ws, sheet)
 	parseIgnoredErrors(ws, sheet)
-	if (!ctx.valuesOnly && !ctx.formulaOnly) {
+	if (richMetadata) {
 		parseHyperlinks(ws, sheet, ctx.relationships ?? [], ctx.valuePool)
 		parseConditionalFormatting(ws, sheet, ctx.differentialStyles ?? [], ctx.valuePool)
 		parseDataValidations(ws, sheet, ctx.valuePool)
@@ -228,6 +236,82 @@ export function parseSheet(
 	return sheet
 }
 
+function hasValuesModeSheetMetadata(xml: string, sheetDataLoc: SheetDataLocation | null): boolean {
+	const beforeEnd = sheetDataLoc?.tagStart ?? xml.length
+	const afterStart = sheetDataLoc?.closeEnd ?? xml.length
+	return (
+		hasAnyTagInRange(xml, 0, beforeEnd, VALUES_MODE_SHEET_METADATA_TAGS) ||
+		hasAnyTagInRange(xml, afterStart, xml.length, VALUES_MODE_SHEET_METADATA_TAGS)
+	)
+}
+
+const VALUES_MODE_SHEET_METADATA_TAGS = [
+	'sheetPr',
+	'sheetFormatPr',
+	'sheetViews',
+	'cols',
+	'mergeCells',
+	'drawing',
+	'legacyDrawing',
+	'autoFilter',
+	'sheetProtection',
+	'pageMargins',
+	'pageSetup',
+	'printOptions',
+	'headerFooter',
+	'rowBreaks',
+	'colBreaks',
+	'ignoredErrors',
+] as const
+
+function hasAnyTagInRange(
+	xml: string,
+	start: number,
+	end: number,
+	tags: readonly string[],
+): boolean {
+	for (const tag of tags) {
+		if (hasWorksheetTagInRange(xml, start, end, tag)) return true
+	}
+	return false
+}
+
+function hasWorksheetTagInRange(xml: string, start: number, end: number, tagName: string): boolean {
+	if (end <= start) return false
+	const segment = xml.slice(start, end)
+	let cursor = 0
+	while (cursor < segment.length) {
+		const index = segment.indexOf(`<${tagName}`, cursor)
+		if (index === -1) return false
+		const next = segment.charCodeAt(index + tagName.length + 1)
+		if (next === 9 || next === 10 || next === 13 || next === 32 || next === 47 || next === 62) {
+			return true
+		}
+		cursor = index + tagName.length + 1
+	}
+	return false
+}
+
+function hasRowPresentationMetadata(rawAttrs: string): boolean {
+	return (
+		rawAttrs.includes('ht="') ||
+		rawAttrs.includes('customHeight="') ||
+		rawAttrs.includes('hidden="') ||
+		rawAttrs.includes('collapsed="') ||
+		rawAttrs.includes('outlineLevel="')
+	)
+}
+
+function hasRowPresentationMetadataInRange(xml: string, start: number, end: number): boolean {
+	return (
+		rawAttrValueStartInRange(xml, start, end, 'ht') !== -1 ||
+		rawAttrValueStartInRange(xml, start, end, 'customHeight') !== -1 ||
+		rawAttrValueStartInRange(xml, start, end, 'hidden') !== -1 ||
+		rawAttrValueStartInRange(xml, start, end, 'collapsed') !== -1 ||
+		rawAttrValueStartInRange(xml, start, end, 'outlineLevel') !== -1
+	)
+}
+
 function parseSheetDataFromLoc(
 	xml: string,
 	sheetData: SheetDataLocation,
@@ -235,6 +319,8 @@ function parseSheetDataFromLoc(
 	ctx: SheetParseContext,
 ): void {
 	const sharedFormulaMasters: SharedFormulaMasterMap = new Map()
+	const cellCtx =
+		ctx.formulaOnly && !sheetDataHasFormula(xml, sheetData) ? { ...ctx, valuesOnly: true } : ctx
 	let rowCursor = sheetData.contentStart
 	let currentRow = -1
 	const fallbackPos = { row: 0, col: 0 }
@@ -245,24 +331,27 @@ function parseSheetDataFromLoc(
 		if (rowOpen === -1 || rowOpen >= sheetData.contentEnd) return
 		const rowTagEnd = findTagEnd(xml, rowOpen)
 		if (rowTagEnd === -1 || rowTagEnd >= sheetData.contentEnd) return
-		const rowAttrsRaw = xml.slice(rowOpen + 4, rowTagEnd)
-		const explicitRowIndex = rawNumAttr(rowAttrsRaw, 'r')
+		const rowAttrStart = rowOpen + 4
+		const explicitRowIndex = rawPositiveIntAttrInRange(xml, rowAttrStart, rowTagEnd, 'r')
 		const row = explicitRowIndex !== undefined ? explicitRowIndex - 1 : currentRow + 1
 		currentRow = row
 		if (ctx.maxRows !== undefined && row >= ctx.maxRows) return
-		const rowHeight = rawNumAttr(rowAttrsRaw, 'ht')
-		if (rowHeight !== undefined && rawAttr(rowAttrsRaw, 'customHeight') === '1') {
-			sheet.rowHeights.set(row, rowHeight)
-		}
-		const hidden = rawBoolAttr(rowAttrsRaw, 'hidden')
-		const collapsed = rawBoolAttr(rowAttrsRaw, 'collapsed')
-		const outlineLevel = rawNumAttr(rowAttrsRaw, 'outlineLevel')
-		if (hidden !== undefined || collapsed !== undefined || outlineLevel !== undefined) {
-			const rowDef: Record<string, boolean | number> = {}
-			if (hidden !== undefined) rowDef.hidden = hidden
-			if (collapsed !== undefined) rowDef.collapsed = collapsed
-			if (outlineLevel !== undefined) rowDef.outlineLevel = outlineLevel
-			sheet.rowDefs.set(row, rowDef as import('@ascend/core').SheetRowDef)
+		if (hasRowPresentationMetadataInRange(xml, rowAttrStart, rowTagEnd)) {
+			const rowAttrsRaw = xml.slice(rowAttrStart, rowTagEnd)
+			const rowHeight = rawNumAttr(rowAttrsRaw, 'ht')
+			if (rowHeight !== undefined && rawAttr(rowAttrsRaw, 'customHeight') === '1') {
+				sheet.rowHeights.set(row, rowHeight)
+			}
+			const hidden = rawBoolAttr(rowAttrsRaw, 'hidden')
+			const collapsed = rawBoolAttr(rowAttrsRaw, 'collapsed')
+			const outlineLevel = rawNumAttr(rowAttrsRaw, 'outlineLevel')
+			if (hidden !== undefined || collapsed !== undefined || outlineLevel !== undefined) {
+				const rowDef: Record<string, boolean | number> = {}
+				if (hidden !== undefined) rowDef.hidden = hidden
+				if (collapsed !== undefined) rowDef.collapsed = collapsed
+				if (outlineLevel !== undefined) rowDef.outlineLevel = outlineLevel
+				sheet.rowDefs.set(row, rowDef as import('@ascend/core').SheetRowDef)
+			}
 		}
 		if (isSelfClosingTag(xml, rowOpen, rowTagEnd)) {
 			rowCursor = rowTagEnd + 1
@@ -271,6 +360,10 @@ function parseSheetDataFromLoc(
 
 		const rowClose = xml.indexOf('</row>', rowTagEnd + 1)
 		if (rowClose === -1 || rowClose > sheetData.contentEnd) return
+		if (parseSimpleValuesRow(xml, rowTagEnd + 1, rowClose, row, cellCtx, sheet)) {
+			rowCursor = rowClose + 6
+			continue
+		}
 		let cellCursor = rowTagEnd + 1
 		let nextCol = 0
 		while (true) {
@@ -281,16 +374,92 @@ function parseSheetDataFromLoc(
 			const rawAttrs = xml.slice(cellOpen + 2, cellTagEnd)
 			const selfClosing = isSelfClosingTag(xml, cellOpen, cellTagEnd)
 			const cellClose = selfClosing ? -1 : xml.indexOf('</c>', cellTagEnd + 1)
+			fallbackPos.row = row
+			fallbackPos.col = nextCol
+			if (
+				!selfClosing &&
+				cellClose !== -1 &&
+				cellClose <= rowClose &&
+				parseSimpleValuesNumberCell(
+					rawAttrs,
+					xml,
+					cellTagEnd + 1,
+					cellClose,
+					cellCtx,
+					fallbackPos,
+					sheet,
+					cellOut,
+				)
+			) {
+				cellCursor = cellClose + 4
+				nextCol = cellOut.col + 1
+				continue
+			}
+			if (
+				!selfClosing &&
+				cellClose !== -1 &&
+				cellClose <= rowClose &&
+				parseSimpleValuesSharedStringCell(
+					rawAttrs,
+					xml,
+					cellTagEnd + 1,
+					cellClose,
+					cellCtx,
+					fallbackPos,
+					sheet,
+					cellOut,
+				)
+			) {
+				cellCursor = cellClose + 4
+				nextCol = cellOut.col + 1
+				continue
+			}
+			if (
+				!selfClosing &&
+				cellClose !== -1 &&
+				cellClose <= rowClose &&
+				parseSimpleValuesPlainStringCell(
+					rawAttrs,
+					xml,
+					cellTagEnd + 1,
+					cellClose,
+					cellCtx,
+					fallbackPos,
+					sheet,
+					cellOut,
+				)
+			) {
+				cellCursor = cellClose + 4
+				nextCol = cellOut.col + 1
+				continue
+			}
+			if (
+				!selfClosing &&
+				cellClose !== -1 &&
+				cellClose <= rowClose &&
+				parseSimpleValuesInlineStringCell(
+					rawAttrs,
+					xml,
+					cellTagEnd + 1,
+					cellClose,
+					cellCtx,
+					fallbackPos,
+					sheet,
+					cellOut,
+				)
+			) {
+				cellCursor = cellClose + 4
+				nextCol = cellOut.col + 1
+				continue
+			}
 			const innerXml =
 				!selfClosing && cellClose !== -1 && cellClose <= rowClose
 					? xml.slice(cellTagEnd + 1, cellClose)
 					: ''
-			fallbackPos.row = row
-			fallbackPos.col = nextCol
 			const ok = parseFastCell(
 				rawAttrs,
 				innerXml,
-				ctx,
+				cellCtx,
 				sharedFormulaMasters,
 				fallbackPos,
 				sheet,
@@ -324,12 +493,341 @@ export function* streamSheetRowsXml(
 		if (rowOpen === -1 || rowOpen >= sheetData.contentEnd) return
 		const rowTagEnd = findTagEnd(xml, rowOpen)
 		if (rowTagEnd === -1 || rowTagEnd >= sheetData.contentEnd) return
-		const rowAttrsRaw = xml.slice(rowOpen + 4, rowTagEnd)
-		const explicitRowIndex = rawNumAttr(rowAttrsRaw, 'r')
-		const row = explicitRowIndex !== undefined ? explicitRowIndex - 1 : currentRow + 1
-		currentRow = row
-		rowSheet.cells.clear()
-		rowSheet.rowDefs.clear()
+		const rowCloseForSlice = xml.indexOf('</row>', rowTagEnd + 1)
+		const rowEndForSlice = isSelfClosingTag(xml, rowOpen, rowTagEnd)
+			? rowTagEnd + 1
+			: rowCloseForSlice === -1 || rowCloseForSlice > sheetData.contentEnd
+				? -1
+				: rowCloseForSlice + 6
+		if (rowEndForSlice === -1) return
+		const directParsed = parseStreamedValuesRowXml(xml, rowOpen, rowEndForSlice, currentRow, ctx)
+		if (directParsed) {
+			currentRow = directParsed.row
+			yield directParsed
+			rowCursor = rowEndForSlice
+			continue
+		}
+		const parsed = parseStreamedSheetRowXml(
+			xml.slice(rowOpen, rowEndForSlice),
+			currentRow,
+			ctx,
+			sharedFormulaMasters,
+			rowSheet,
+			fallbackPos,
+			cellOut,
+		)
+		if (!parsed) return
+		currentRow = parsed.row
+		yield parsed
+		rowCursor = rowEndForSlice
+	}
+}
+
+export function* streamSheetRowsTextChunks(
+	name: string,
+	chunks: Iterable<string>,
+	ctx: SheetParseContext,
+): Generator<StreamedSheetRow> {
+	const sharedFormulaMasters: SharedFormulaMasterMap = new Map()
+	let currentRow = -1
+	let buffer = ''
+	let inSheetData = false
+	const fallbackPos = { row: 0, col: 0 }
+	const cellOut = { row: 0, col: 0 }
+	const rowSheet = new Sheet(name)
+	for (const chunk of chunks) {
+		buffer += chunk
+		while (true) {
+			if (!inSheetData) {
+				const sheetDataOpen = buffer.indexOf('<sheetData')
+				if (sheetDataOpen === -1) {
+					buffer = buffer.slice(Math.max(0, buffer.length - '<sheetData'.length))
+					break
+				}
+				const sheetDataTagEnd = findTagEnd(buffer, sheetDataOpen)
+				if (sheetDataTagEnd === -1) {
+					buffer = buffer.slice(sheetDataOpen)
+					break
+				}
+				if (isSelfClosingTag(buffer, sheetDataOpen, sheetDataTagEnd)) return
+				buffer = buffer.slice(sheetDataTagEnd + 1)
+				inSheetData = true
+			}
+
+			const sheetDataClose = buffer.indexOf('</sheetData>')
+			const rowOpen = buffer.indexOf('<row')
+			if (rowOpen === -1 || (sheetDataClose !== -1 && sheetDataClose < rowOpen)) return
+			if (rowOpen > 0) {
+				buffer = buffer.slice(rowOpen)
+			}
+			const rowTagEnd = findTagEnd(buffer, 0)
+			if (rowTagEnd === -1) break
+			let rowEnd: number
+			if (isSelfClosingTag(buffer, 0, rowTagEnd)) {
+				rowEnd = rowTagEnd + 1
+			} else {
+				const rowClose = buffer.indexOf('</row>', rowTagEnd + 1)
+				if (rowClose === -1) break
+				rowEnd = rowClose + 6
+			}
+			const directParsed = parseStreamedValuesRowXml(buffer, 0, rowEnd, currentRow, ctx)
+			if (directParsed) {
+				buffer = buffer.slice(rowEnd)
+				currentRow = directParsed.row
+				yield directParsed
+				continue
+			}
+			const parsed = parseStreamedSheetRowXml(
+				buffer.slice(0, rowEnd),
+				currentRow,
+				ctx,
+				sharedFormulaMasters,
+				rowSheet,
+				fallbackPos,
+				cellOut,
+			)
+			buffer = buffer.slice(rowEnd)
+			if (!parsed) continue
+			currentRow = parsed.row
+			yield parsed
+		}
+	}
+}
+
+function parseStreamedValuesRowXml(
+	xml: string,
+	rowOpen: number,
+	rowEnd: number,
+	currentRow: number,
+	ctx: SheetParseContext,
+): StreamedSheetRow | null {
+	if (!ctx.valuesOnly || ctx.formulaOnly) return null
+	const rowTagEnd = findTagEnd(xml, rowOpen)
+	if (rowTagEnd === -1 || rowTagEnd > rowEnd) return null
+	const rowAttrsRaw = xml.slice(rowOpen + 4, rowTagEnd)
+	const explicitRowIndex = rawNumAttr(rowAttrsRaw, 'r')
+	const row = explicitRowIndex !== undefined ? explicitRowIndex - 1 : currentRow + 1
+	if (ctx.maxRows !== undefined && row >= ctx.maxRows) return null
+	if (isSelfClosingTag(xml, rowOpen, rowTagEnd)) return { row, cells: [] }
+
+	const rowClose = rowEnd >= 6 && xml.startsWith('</row>', rowEnd - 6) ? rowEnd - 6 : -1
+	if (rowClose === -1) return null
+	const canonical = parseCanonicalStreamedValuesRow(xml, rowTagEnd + 1, rowClose, row, ctx)
+	if (canonical) return canonical
+	let cellCursor = rowTagEnd + 1
+	let nextCol = 0
+	const cells: [number, Cell][] = []
+	const fallbackPos = { row, col: 0 }
+	const out = { row, col: 0 }
+	while (true) {
+		const cellOpen = xml.indexOf('<c', cellCursor)
+		if (cellOpen === -1 || cellOpen >= rowClose) break
+		const cellTagEnd = findTagEnd(xml, cellOpen)
+		if (cellTagEnd === -1 || cellTagEnd > rowClose) return null
+		const rawAttrs = xml.slice(cellOpen + 2, cellTagEnd)
+		const selfClosing = isSelfClosingTag(xml, cellOpen, cellTagEnd)
+		const cellClose = selfClosing ? -1 : xml.indexOf('</c>', cellTagEnd + 1)
+		if (!selfClosing && (cellClose === -1 || cellClose > rowClose)) return null
+		fallbackPos.col = nextCol
+		const parsed = parseDirectValuesCell(
+			rawAttrs,
+			xml,
+			cellTagEnd + 1,
+			selfClosing ? cellTagEnd + 1 : cellClose,
+			selfClosing,
+			ctx,
+			fallbackPos,
+			out,
+		)
+		if (parsed === undefined) return null
+		if (parsed) {
+			cells.push([out.col, parsed])
+			nextCol = out.col + 1
+		}
+		cellCursor = selfClosing ? cellTagEnd + 1 : cellClose + 4
+	}
+	return { row, cells }
+}
+
+function parseCanonicalStreamedValuesRow(
+	xml: string,
+	bodyStart: number,
+	bodyEnd: number,
+	row: number,
+	ctx: SheetParseContext,
+): StreamedSheetRow | null {
+	if (!ctx.valuesOnly || ctx.hasDateStyles) return null
+	let cursor = bodyStart
+	let nextCol = 0
+	const rowText = String(row + 1)
+	const cells: [number, Cell][] = []
+	const out: {
+		row: number
+		col: number
+		numberValue: number | undefined
+		stringValue: string | undefined
+	} = {
+		row,
+		col: 0,
+		numberValue: undefined,
+		stringValue: undefined,
+	}
+	while (true) {
+		cursor = skipXmlWhitespace(xml, cursor, bodyEnd)
+		if (cursor >= bodyEnd) return { row, cells }
+		const canonicalNext = parseCanonicalValuesCell(xml, cursor, bodyEnd, rowText, row, nextCol, out)
+		if (canonicalNext === -1) return null
+		const value =
+			out.numberValue !== undefined
+				? internValue(ctx, numberValue(out.numberValue))
+				: out.stringValue !== undefined
+					? internValue(ctx, stringValue(out.stringValue))
+					: undefined
+		if (value === undefined) return null
+		cells.push([out.col, { value, formula: null, styleId: DEFAULT_STYLE_ID }])
+		nextCol = out.col + 1
+		cursor = canonicalNext
+	}
+}
+
+function parseDirectValuesCell(
+	rawAttrs: string,
+	xml: string,
+	bodyStart: number,
+	bodyEnd: number,
+	selfClosing: boolean,
+	ctx: SheetParseContext,
+	fallbackPosition: CellPosition,
+	out: { row: number; col: number },
+): Cell | null | undefined {
+	if (rawAttrs.includes('cm="') || rawAttrs.includes('vm="')) return undefined
+	if (!resolveCellPositionInto(rawAttrs, fallbackPosition, out)) return undefined
+	const type = rawAttr(rawAttrs, 't')
+	const styleIdx = ctx.hasDateStyles && type !== 's' ? (rawNumAttr(rawAttrs, 's') ?? 0) : 0
+	const styleId = DEFAULT_STYLE_ID
+	if (selfClosing) {
+		if (type === 'n') return { value: internValue(ctx, numberValue(0)), formula: null, styleId }
+		return null
+	}
+
+	if (type === 'inlineStr' || xml.startsWith('<is', skipXmlWhitespace(xml, bodyStart, bodyEnd))) {
+		const text = parseSimpleInlineStringText(xml, bodyStart, bodyEnd)
+		if (text === undefined) return undefined
+		return { value: internValue(ctx, stringValue(text)), formula: null, styleId }
+	}
+
+	const rawValue = extractVTagTextInRange(xml, bodyStart, bodyEnd)
+	if (type === 's') {
+		const idx = rawValue !== undefined ? fastParseNonNegInt(rawValue) : -1
+		if (idx < 0) return { value: internValue(ctx, stringValue('')), formula: null, styleId }
+		const text = ctx.sharedStrings.getString?.(idx)
+		if (text !== undefined) {
+			return { value: internValue(ctx, stringValue(text)), formula: null, styleId }
+		}
+		const entry = ctx.sharedStrings.get(idx)
+		if (entry) return { value: internValue(ctx, entry), formula: null, styleId }
+		return { value: internValue(ctx, stringValue('')), formula: null, styleId }
+	}
+	if (type === 'b') {
+		return { value: internValue(ctx, booleanValue(rawValue === '1')), formula: null, styleId }
+	}
+	if (type === 'e') {
+		return {
+			value: internValue(ctx, errorValue((rawValue ?? '#VALUE!') as ExcelError)),
+			formula: null,
+			styleId,
+		}
+	}
+	if (type === 'str') {
+		return { value: internValue(ctx, stringValue(rawValue ?? '')), formula: null, styleId }
+	}
+	if (rawValue !== undefined && rawValue !== '') {
+		const num = Number(rawValue)
+		if (Number.isNaN(num)) {
+			return { value: internValue(ctx, stringValue(rawValue)), formula: null, styleId }
+		}
+		if (ctx.isDateFormat[styleIdx]) {
+			return { value: internValue(ctx, dateValue(num)), formula: null, styleId }
+		}
+		return { value: internValue(ctx, numberValue(num)), formula: null, styleId }
+	}
+	if (hasFormulaTagInRange(xml, bodyStart, bodyEnd)) {
+		return { value: EMPTY, formula: null, styleId }
+	}
+	if (type === 'n') return { value: internValue(ctx, numberValue(0)), formula: null, styleId }
+	if (type) return { value: EMPTY, formula: null, styleId }
+	return null
+}
+
+function internValue(ctx: SheetParseContext, value: CellValue): CellValue {
+	return ctx.valuePool ? ctx.valuePool.internValue(value) : value
+}
+
+function extractVTagTextInRange(xml: string, start: number, end: number): string | undefined {
+	const open = xml.indexOf('<v', start)
+	if (open === -1 || open >= end) return undefined
+	const contentStart = xml.indexOf('>', open)
+	if (contentStart === -1 || contentStart >= end) return undefined
+	const close = xml.indexOf('</v>', contentStart + 1)
+	if (close === -1 || close > end) return undefined
+	const slice = xml.slice(contentStart + 1, close)
+	return slice.includes('&') ? decodeXmlText(slice) : slice
+}
+
+function parseSimpleInlineStringText(xml: string, start: number, end: number): string | undefined {
+	let cursor = skipXmlWhitespace(xml, start, end)
+	if (xml.startsWith('<f', cursor)) {
+		cursor = skipSimpleElement(xml, cursor, end, 'f')
+		if (cursor === -1) return undefined
+		cursor = skipXmlWhitespace(xml, cursor, end)
+	}
+	if (!xml.startsWith('<is', cursor)) return undefined
+	const isTagEnd = findTagEnd(xml, cursor)
+	if (isTagEnd === -1 || isTagEnd >= end || isSelfClosingTag(xml, cursor, isTagEnd)) {
+		return undefined
+	}
+	cursor = skipXmlWhitespace(xml, isTagEnd + 1, end)
+	if (!xml.startsWith('<t', cursor)) return undefined
+	const textTagEnd = findTagEnd(xml, cursor)
+	if (textTagEnd === -1 || textTagEnd >= end || isSelfClosingTag(xml, cursor, textTagEnd)) {
+		return undefined
+	}
+	const textClose = xml.indexOf('</t>', textTagEnd + 1)
+	if (textClose === -1 || textClose > end) return undefined
+	const rawText = xml.slice(textTagEnd + 1, textClose)
+	if (rawText.includes('<')) return undefined
+	cursor = skipXmlWhitespace(xml, textClose + 4, end)
+	if (!xml.startsWith('</is>', cursor)) return undefined
+	cursor = skipXmlWhitespace(xml, cursor + 5, end)
+	if (cursor !== end) return undefined
+	return rawText.includes('&') ? decodeXmlText(rawText) : rawText
+}
+
+function hasFormulaTagInRange(xml: string, start: number, end: number): boolean {
+	const formulaOpen = xml.indexOf('<f', start)
+	return formulaOpen !== -1 && formulaOpen < end
+}
+
+function parseStreamedSheetRowXml(
+	rowXml: string,
+	currentRow: number,
+	ctx: SheetParseContext,
+	sharedFormulaMasters: SharedFormulaMasterMap,
+	rowSheet: Sheet,
+	fallbackPos: { row: number; col: number },
+	cellOut: { row: number; col: number },
+): StreamedSheetRow | null {
+	const rowOpen = rowXml.indexOf('<row')
+	if (rowOpen === -1) return null
+	const rowTagEnd = findTagEnd(rowXml, rowOpen)
+	if (rowTagEnd === -1) return null
+	const rowAttrsRaw = rowXml.slice(rowOpen + 4, rowTagEnd)
+	const explicitRowIndex = rawNumAttr(rowAttrsRaw, 'r')
+	const row = explicitRowIndex !== undefined ? explicitRowIndex - 1 : currentRow + 1
+	if (ctx.maxRows !== undefined && row >= ctx.maxRows) return null
+	rowSheet.cells.clear()
+	rowSheet.rowDefs.clear()
+	if (hasRowPresentationMetadata(rowAttrsRaw)) {
 		const hidden = rawBoolAttr(rowAttrsRaw, 'hidden')
 		const collapsed = rawBoolAttr(rowAttrsRaw, 'collapsed')
 		const outlineLevel = rawNumAttr(rowAttrsRaw, 'outlineLevel')
@@ -340,48 +838,119 @@ export function* streamSheetRowsXml(
 			if (outlineLevel !== undefined) rowDef.outlineLevel = outlineLevel
 			rowSheet.rowDefs.set(row, rowDef as import('@ascend/core').SheetRowDef)
 		}
-		if (isSelfClosingTag(xml, rowOpen, rowTagEnd)) {
-			yield { row, cells: [] }
-			rowCursor = rowTagEnd + 1
-			continue
-		}
+	}
+	if (isSelfClosingTag(rowXml, rowOpen, rowTagEnd)) return { row, cells: [] }
 
-		const rowClose = xml.indexOf('</row>', rowTagEnd + 1)
-		if (rowClose === -1 || rowClose > sheetData.contentEnd) return
-		let cellCursor = rowTagEnd + 1
-		let nextCol = 0
-		while (true) {
-			const cellOpen = xml.indexOf('<c', cellCursor)
-			if (cellOpen === -1 || cellOpen >= rowClose) break
-			const cellTagEnd = findTagEnd(xml, cellOpen)
-			if (cellTagEnd === -1 || cellTagEnd > rowClose) break
-			const rawAttrs = xml.slice(cellOpen + 2, cellTagEnd)
-			const selfClosing = isSelfClosingTag(xml, cellOpen, cellTagEnd)
-			const cellClose = selfClosing ? -1 : xml.indexOf('</c>', cellTagEnd + 1)
-			const innerXml =
-				!selfClosing && cellClose !== -1 && cellClose <= rowClose
-					? xml.slice(cellTagEnd + 1, cellClose)
-					: ''
-			fallbackPos.row = row
-			fallbackPos.col = nextCol
-			const ok = parseFastCell(
+	const rowClose = rowXml.indexOf('</row>', rowTagEnd + 1)
+	if (rowClose === -1) return null
+	let cellCursor = rowTagEnd + 1
+	let nextCol = 0
+	while (true) {
+		const cellOpen = rowXml.indexOf('<c', cellCursor)
+		if (cellOpen === -1 || cellOpen >= rowClose) break
+		const cellTagEnd = findTagEnd(rowXml, cellOpen)
+		if (cellTagEnd === -1 || cellTagEnd > rowClose) break
+		const rawAttrs = rowXml.slice(cellOpen + 2, cellTagEnd)
+		const selfClosing = isSelfClosingTag(rowXml, cellOpen, cellTagEnd)
+		const cellClose = selfClosing ? -1 : rowXml.indexOf('</c>', cellTagEnd + 1)
+		fallbackPos.row = row
+		fallbackPos.col = nextCol
+		if (
+			!selfClosing &&
+			cellClose !== -1 &&
+			cellClose <= rowClose &&
+			parseSimpleValuesNumberCell(
 				rawAttrs,
-				innerXml,
+				rowXml,
+				cellTagEnd + 1,
+				cellClose,
 				ctx,
-				sharedFormulaMasters,
 				fallbackPos,
 				rowSheet,
 				cellOut,
 			)
-			cellCursor =
-				selfClosing || cellClose === -1 || cellClose > rowClose ? cellTagEnd + 1 : cellClose + 4
-			if (!ok) continue
+		) {
+			cellCursor = cellClose + 4
 			nextCol = cellOut.col + 1
+			continue
 		}
-		const first = rowSheet.cells.iterateRows().next()
-		yield { row, cells: first.done ? [] : first.value[1] }
-		rowCursor = rowClose + 6
+		if (
+			!selfClosing &&
+			cellClose !== -1 &&
+			cellClose <= rowClose &&
+			parseSimpleValuesSharedStringCell(
+				rawAttrs,
+				rowXml,
+				cellTagEnd + 1,
+				cellClose,
+				ctx,
+				fallbackPos,
+				rowSheet,
+				cellOut,
+			)
+		) {
+			cellCursor = cellClose + 4
+			nextCol = cellOut.col + 1
+			continue
+		}
+		if (
+			!selfClosing &&
+			cellClose !== -1 &&
+			cellClose <= rowClose &&
+			parseSimpleValuesPlainStringCell(
+				rawAttrs,
+				rowXml,
+				cellTagEnd + 1,
+				cellClose,
+				ctx,
+				fallbackPos,
+				rowSheet,
+				cellOut,
+			)
+		) {
+			cellCursor = cellClose + 4
+			nextCol = cellOut.col + 1
+			continue
+		}
+		if (
+			!selfClosing &&
+			cellClose !== -1 &&
+			cellClose <= rowClose &&
+			parseSimpleValuesInlineStringCell(
+				rawAttrs,
+				rowXml,
+				cellTagEnd + 1,
+				cellClose,
+				ctx,
+				fallbackPos,
+				rowSheet,
+				cellOut,
+			)
+		) {
+			cellCursor = cellClose + 4
+			nextCol = cellOut.col + 1
+			continue
+		}
+		const innerXml =
+			!selfClosing && cellClose !== -1 && cellClose <= rowClose
+				? rowXml.slice(cellTagEnd + 1, cellClose)
+				: ''
+		const ok = parseFastCell(
+			rawAttrs,
+			innerXml,
+			ctx,
+			sharedFormulaMasters,
+			fallbackPos,
+			rowSheet,
+			cellOut,
+		)
+		cellCursor =
+			selfClosing || cellClose === -1 || cellClose > rowClose ? cellTagEnd + 1 : cellClose + 4
+		if (!ok) continue
+		nextCol = cellOut.col + 1
 	}
+	const first = rowSheet.cells.iterateRows().next()
+	return { row, cells: first.done ? [] : first.value[1] }
 }
 
 function parseSlowCell(
@@ -419,10 +988,13 @@ function parseFastCell(
 	}
 
 	const pool = ctx.valuePool
-	const styleIdx = rawNumAttr(rawAttrs, 's') ?? 0
 	const rawValue = extractVTagText(innerXml)
+	const styleIdx =
+		!ctx.valuesOnly ||
+		(ctx.hasDateStyles && type !== 's' && rawValue !== undefined && rawValue !== '')
+			? (rawNumAttr(rawAttrs, 's') ?? 0)
+			: 0
 	const styleId = ctx.valuesOnly ? DEFAULT_STYLE_ID : (ctx.styleIds[styleIdx] ?? DEFAULT_STYLE_ID)
-	const metadataIndex = rawNumAttr(rawAttrs, 'cm')
 	const formulaSpec = ctx.valuesOnly
 		? NO_FORMULA
 		: parseFormulaText(
@@ -433,20 +1005,37 @@ function parseFastCell(
 				pool,
 				ctx.formulaFeatures,
 			)
-	const binding = attachDynamicArrayBinding(
-		formulaSpec.info,
-		formulaSpec.text,
-		metadataIndex,
-		ctx.metadata,
-		ctx.formulaFeatures,
-	)
+	const binding = ctx.valuesOnly
+		? undefined
+		: attachDynamicArrayBinding(
+				formulaSpec.info,
+				formulaSpec.text,
+				rawNumAttr(rawAttrs, 'cm'),
+				ctx.metadata,
+				ctx.formulaFeatures,
+			)
 
 	let value: CellValue
 	if (type === 's') {
 		const idx = rawValue !== undefined ? fastParseNonNegInt(rawValue) : -1
 		if (idx < 0) {
+			if (ctx.valuesOnly) {
+				out.row = pos.row
+				out.col = pos.col
+				sheet.cells.setStringResolved(pos.row, pos.col, '', null, DEFAULT_STYLE_ID)
+				return true
+			}
 			value = pool ? pool.internValue(stringValue('')) : stringValue('')
 		} else {
+			if (ctx.valuesOnly) {
+				const text = ctx.sharedStrings.getString?.(idx)
+				if (text !== undefined) {
+					out.row = pos.row
+					out.col = pos.col
+					sheet.cells.setStringResolved(pos.row, pos.col, text, null, DEFAULT_STYLE_ID)
+					return true
+				}
+			}
 			const entry = ctx.sharedStrings.get(idx)
 			value = entry ?? (pool ? pool.internValue(stringValue('')) : stringValue(''))
 		}
@@ -484,6 +1073,568 @@ function parseFastCell(
 	return true
 }
 
+function parseSimpleValuesNumberCell(
+	rawAttrs: string,
+	xml: string,
+	bodyStart: number,
+	bodyEnd: number,
+	ctx: SheetParseContext,
+	fallbackPosition: CellPosition,
+	sheet: Sheet,
+	out: { row: number; col: number },
+): boolean {
+	if (!ctx.valuesOnly || ctx.hasDateStyles) return false
+	if (rawAttrs.includes('cm="') || rawAttrs.includes('vm="')) return false
+	const typeStart = rawAttrValueStart(rawAttrs, 't')
+	if (typeStart !== -1 && !rawAttrEquals(rawAttrs, 't', 'n')) return false
+	let cursor = skipXmlWhitespace(xml, bodyStart, bodyEnd)
+	if (!xml.startsWith('<v>', cursor)) return false
+	cursor += 3
+	const valueStart = cursor
+	while (cursor < bodyEnd && !xml.startsWith('</v>', cursor)) cursor += 1
+	if (cursor === bodyEnd || cursor === valueStart) return false
+	const valueText = xml.slice(valueStart, cursor)
+	if (valueText.includes('&')) return false
+	const value = Number(valueText)
+	if (Number.isNaN(value)) return false
+	cursor = skipXmlWhitespace(xml, cursor + 4, bodyEnd)
+	if (cursor !== bodyEnd) return false
+	if (!resolveCellPositionInto(rawAttrs, fallbackPosition, out)) return false
+	sheet.cells.setNumberResolved(out.row, out.col, value, null, DEFAULT_STYLE_ID)
+	return true
+}
+
+function parseSimpleValuesRow(
+	xml: string,
+	bodyStart: number,
+	bodyEnd: number,
+	row: number,
+	ctx: SheetParseContext,
+	sheet: Sheet,
+): boolean {
+	if (!ctx.valuesOnly || ctx.hasDateStyles) return false
+	let cursor = bodyStart
+	let nextCol = 0
+	const rowText = String(row + 1)
+	const out: {
+		row: number
+		col: number
+		numberValue: number | undefined
+		stringValue: string | undefined
+	} = {
+		row,
+		col: 0,
+		numberValue: undefined,
+		stringValue: undefined,
+	}
+	while (true) {
+		cursor = skipXmlWhitespace(xml, cursor, bodyEnd)
+		if (cursor >= bodyEnd) return true
+		const canonicalNext = parseCanonicalValuesCell(xml, cursor, bodyEnd, rowText, row, nextCol, out)
+		if (canonicalNext !== -1) {
+			if (out.numberValue !== undefined) {
+				sheet.cells.setNumberResolved(out.row, out.col, out.numberValue, null, DEFAULT_STYLE_ID)
+			} else if (out.stringValue !== undefined) {
+				sheet.cells.setStringResolved(out.row, out.col, out.stringValue, null, DEFAULT_STYLE_ID)
+			} else return false
+			nextCol = out.col + 1
+			cursor = canonicalNext
+			continue
+		}
+		if (!xml.startsWith('<c', cursor)) return false
+		const tagEnd = xml.indexOf('>', cursor + 2)
+		if (tagEnd === -1 || tagEnd >= bodyEnd) return false
+		if (!resolveSimpleNumberCellOpen(xml, cursor + 2, tagEnd, row, nextCol, out)) {
+			return false
+		}
+		cursor = skipXmlWhitespace(xml, tagEnd + 1, bodyEnd)
+		if (!xml.startsWith('<v>', cursor)) return false
+		cursor += 3
+		const valueStart = cursor
+		const valueEnd = xml.indexOf('</v>', valueStart)
+		if (valueEnd === -1 || valueEnd > bodyEnd || valueEnd === valueStart) return false
+		const value = parseSimpleXmlNumber(xml, valueStart, valueEnd)
+		if (value === undefined) return false
+		cursor = skipXmlWhitespace(xml, valueEnd + 4, bodyEnd)
+		if (!xml.startsWith('</c>', cursor)) return false
+		sheet.cells.setNumberResolved(out.row, out.col, value, null, DEFAULT_STYLE_ID)
+		nextCol = out.col + 1
+		cursor += 4
+	}
+}
+
+function parseCanonicalValuesCell(
+	xml: string,
+	cursor: number,
+	bodyEnd: number,
+	fallbackRowText: string,
+	fallbackRow: number,
+	fallbackCol: number,
+	out: {
+		row: number
+		col: number
+		numberValue: number | undefined
+		stringValue: string | undefined
+	},
+): number {
+	if (!xml.startsWith('<c r="', cursor)) return -1
+	let index = cursor + 6
+	let row = fallbackRow
+	let col = fallbackCol
+	const expectedRefEnd = consumeExpectedCellRef(xml, index, bodyEnd, fallbackRowText, fallbackCol)
+	if (expectedRefEnd === -1) {
+		const parsed = parseCellRefInXml(xml, index, bodyEnd)
+		if (!parsed) return -1
+		index = parsed.end
+		row = parsed.row
+		col = parsed.col
+	} else {
+		index = expectedRefEnd
+	}
+	out.row = row
+	out.col = col
+	out.numberValue = undefined
+	out.stringValue = undefined
+
+	const inlineValueStart = parseCanonicalInlineStringValueStart(xml, index)
+	if (inlineValueStart !== -1) {
+		let valueEnd = inlineValueStart
+		let hasEntity = false
+		while (valueEnd < bodyEnd) {
+			const code = xml.charCodeAt(valueEnd)
+			if (code === 60) break
+			if (code === 38) hasEntity = true
+			valueEnd += 1
+		}
+		if (!xml.startsWith('</t></is></c>', valueEnd)) return -1
+		const rawText = xml.slice(inlineValueStart, valueEnd)
+		out.stringValue = hasEntity ? decodeXmlText(rawText) : rawText
+		return valueEnd + 13
+	}
+
+	const contentStart = resolveCanonicalNumberContentStart(xml, index, bodyEnd)
+	if (contentStart === -1) return -1
+	const valueStart = resolveCanonicalValueStart(xml, contentStart, bodyEnd)
+	if (valueStart === -1) return -1
+	const parsedInt = parseCanonicalIntegerValue(xml, valueStart, bodyEnd)
+	if (parsedInt) {
+		out.numberValue = parsedInt.value
+		return parsedInt.next
+	}
+	const valueEnd = xml.indexOf('</v></c>', valueStart)
+	if (valueEnd === -1 || valueEnd > bodyEnd) return -1
+	const value = parseSimpleXmlNumber(xml, valueStart, valueEnd)
+	if (value === undefined) return -1
+	out.numberValue = value
+	return valueEnd + 8
+}
+
+function parseCanonicalInlineStringValueStart(xml: string, refEnd: number): number {
+	const prefix = '" t="inlineStr"><is><t>'
+	return xml.startsWith(prefix, refEnd) ? refEnd + prefix.length : -1
+}
+
+function resolveCanonicalNumberContentStart(xml: string, refEnd: number, bodyEnd: number): number {
+	if (xml.startsWith('">', refEnd)) return refEnd + 2
+	if (!xml.startsWith('" s="', refEnd)) return -1
+	const singleDigitStyleEnd = refEnd + 7
+	if (
+		singleDigitStyleEnd < bodyEnd &&
+		xml.charCodeAt(refEnd + 5) >= 48 &&
+		xml.charCodeAt(refEnd + 5) <= 57 &&
+		xml.charCodeAt(refEnd + 6) === 34 &&
+		xml.charCodeAt(singleDigitStyleEnd) === 62
+	) {
+		return singleDigitStyleEnd + 1
+	}
+	const styleEnd = xml.indexOf('"', refEnd + 5)
+	if (styleEnd === -1 || styleEnd >= bodyEnd || xml.charCodeAt(styleEnd + 1) !== 62) return -1
+	return styleEnd + 2
+}
+
+function resolveCanonicalValueStart(xml: string, contentStart: number, bodyEnd: number): number {
+	if (xml.startsWith('<v>', contentStart)) return contentStart + 3
+	if (!xml.startsWith('<f', contentStart)) return -1
+	if (xml.startsWith('<f>', contentStart)) {
+		const formulaClose = xml.indexOf('</f>', contentStart + 3)
+		const valueOpen = formulaClose + 4
+		return formulaClose !== -1 && valueOpen < bodyEnd && xml.startsWith('<v>', valueOpen)
+			? valueOpen + 3
+			: -1
+	}
+	const formulaTagEnd = findTagEnd(xml, contentStart)
+	if (formulaTagEnd === -1 || formulaTagEnd >= bodyEnd) return -1
+	const formulaEnd = isSelfClosingTag(xml, contentStart, formulaTagEnd)
+		? formulaTagEnd + 1
+		: xml.indexOf('</f>', formulaTagEnd + 1)
+	if (formulaEnd === -1 || formulaEnd >= bodyEnd) return -1
+	const valueOpen = isSelfClosingTag(xml, contentStart, formulaTagEnd) ? formulaEnd : formulaEnd + 4
+	return xml.startsWith('<v>', valueOpen) ? valueOpen + 3 : -1
+}
+
+function parseCanonicalIntegerValue(
+	xml: string,
+	start: number,
+	bodyEnd: number,
+): { value: number; next: number } | undefined {
+	let cursor = start
+	let sign = 1
+	if (xml.charCodeAt(cursor) === 45) {
+		sign = -1
+		cursor += 1
+	}
+	let value = 0
+	const digitStart = cursor
+	while (cursor < bodyEnd) {
+		const code = xml.charCodeAt(cursor)
+		if (code < 48 || code > 57) break
+		value = value * 10 + (code - 48)
+		cursor += 1
+	}
+	if (cursor === digitStart || !xml.startsWith('</v></c>', cursor)) return undefined
+	return { value: sign * value, next: cursor + 8 }
+}
+
+function consumeExpectedCellRef(
+	xml: string,
+	start: number,
+	end: number,
+	rowText: string,
+	col: number,
+): number {
+	if (col < 0 || col > 25) return -1
+	if (start >= end || xml.charCodeAt(start) !== 65 + col) return -1
+	let cursor = start + 1
+	for (let index = 0; index < rowText.length; index++) {
+		if (cursor >= end) return -1
+		if (xml.charCodeAt(cursor) !== rowText.charCodeAt(index)) return -1
+		cursor += 1
+	}
+	return cursor < end && xml.charCodeAt(cursor) === 34 ? cursor : -1
+}
+
+function parseCellRefInXml(
+	xml: string,
+	start: number,
+	end: number,
+): { row: number; col: number; end: number } | undefined {
+	let index = start
+	let col = 0
+	while (index < end) {
+		const code = xml.charCodeAt(index)
+		if (code >= 48 && code <= 57) break
+		if (code >= 65 && code <= 90) {
+			col = col * 26 + (code - 64)
+		} else if (code >= 97 && code <= 122) {
+			col = col * 26 + (code - 96)
+		} else {
+			return undefined
+		}
+		index += 1
+	}
+	if (index === start || index >= end) return undefined
+	let row = 0
+	while (index < end) {
+		const code = xml.charCodeAt(index)
+		if (code < 48 || code > 57) break
+		row = row * 10 + (code - 48)
+		index += 1
+	}
+	if (row <= 0 || col <= 0 || index >= end || xml.charCodeAt(index) !== 34) return undefined
+	return { row: row - 1, col: col - 1, end: index }
+}
+
+function parseSimpleXmlNumber(xml: string, start: number, end: number): number | undefined {
+	if (start >= end) return undefined
+	let cursor = start
+	let sign = 1
+	const first = xml.charCodeAt(cursor)
+	if (first === 45) {
+		sign = -1
+		cursor += 1
+		if (cursor >= end) return undefined
+	}
+	let value = 0
+	const digitStart = cursor
+	while (cursor < end) {
+		const code = xml.charCodeAt(cursor)
+		if (code < 48 || code > 57) break
+		value = value * 10 + (code - 48)
+		cursor += 1
+	}
+	if (cursor === end && cursor > digitStart) return sign * value
+	while (cursor < end) {
+		const code = xml.charCodeAt(cursor)
+		if (code === 38 || code === 60) return undefined
+		cursor += 1
+	}
+	const parsed = Number(xml.slice(start, end))
+	return Number.isNaN(parsed) ? undefined : parsed
+}
+
+function resolveSimpleNumberCellOpen(
+	xml: string,
+	attrStart: number,
+	attrEnd: number,
+	fallbackRow: number,
+	fallbackCol: number,
+	out: { row: number; col: number },
+): boolean {
+	let cursor = attrStart
+	let refStart = -1
+	let refEnd = -1
+	while (cursor < attrEnd) {
+		cursor = skipXmlWhitespace(xml, cursor, attrEnd)
+		if (cursor >= attrEnd) break
+		if (xml.charCodeAt(cursor) === 47) return false
+		const nameStart = cursor
+		while (cursor < attrEnd) {
+			const code = xml.charCodeAt(cursor)
+			if (code === 61 || code === 9 || code === 10 || code === 13 || code === 32) break
+			cursor += 1
+		}
+		const nameEnd = cursor
+		cursor = skipXmlWhitespace(xml, cursor, attrEnd)
+		if (xml.charCodeAt(cursor) !== 61) return false
+		cursor = skipXmlWhitespace(xml, cursor + 1, attrEnd)
+		if (xml.charCodeAt(cursor) !== 34) return false
+		const valueStart = cursor + 1
+		const valueEnd = xml.indexOf('"', valueStart)
+		if (valueEnd === -1 || valueEnd > attrEnd) return false
+		const nameLength = nameEnd - nameStart
+		if (nameLength === 1) {
+			const name = xml.charCodeAt(nameStart)
+			if (name === 114) {
+				refStart = valueStart
+				refEnd = valueEnd
+			} else if (name === 116) {
+				if (valueEnd !== valueStart + 1 || xml.charCodeAt(valueStart) !== 110) return false
+			}
+		} else if (
+			nameLength === 2 &&
+			((xml.charCodeAt(nameStart) === 99 && xml.charCodeAt(nameStart + 1) === 109) ||
+				(xml.charCodeAt(nameStart) === 118 && xml.charCodeAt(nameStart + 1) === 109))
+		) {
+			return false
+		}
+		cursor = valueEnd + 1
+	}
+	if (refStart === -1) {
+		out.row = fallbackRow
+		out.col = fallbackCol
+		return true
+	}
+	return resolveCellPositionInXml(xml, refStart, refEnd, out)
+}
+
+function resolveCellPositionInXml(
+	xml: string,
+	valueStart: number,
+	valueEnd: number,
+	out: { row: number; col: number },
+): boolean {
+	let index = valueStart
+	let col = 0
+	while (index < valueEnd) {
+		const code = xml.charCodeAt(index)
+		if (code >= 48 && code <= 57) break
+		if (code >= 65 && code <= 90) {
+			col = col * 26 + (code - 64)
+		} else if (code >= 97 && code <= 122) {
+			col = col * 26 + (code - 96)
+		} else {
+			return false
+		}
+		index += 1
+	}
+	if (index === valueStart || index >= valueEnd) return false
+	let row = 0
+	while (index < valueEnd) {
+		const code = xml.charCodeAt(index)
+		if (code < 48 || code > 57) return false
+		row = row * 10 + (code - 48)
+		index += 1
+	}
+	if (row <= 0 || col <= 0) return false
+	out.row = row - 1
+	out.col = col - 1
+	return true
+}
+
+function parseSimpleValuesSharedStringCell(
+	rawAttrs: string,
+	xml: string,
+	bodyStart: number,
+	bodyEnd: number,
+	ctx: SheetParseContext,
+	fallbackPosition: CellPosition,
+	sheet: Sheet,
+	out: { row: number; col: number },
+): boolean {
+	if (!ctx.valuesOnly || !rawAttrEquals(rawAttrs, 't', 's')) return false
+	if (rawAttrs.includes('cm="') || rawAttrs.includes('vm="')) return false
+	let cursor = skipXmlWhitespace(xml, bodyStart, bodyEnd)
+	if (!xml.startsWith('<v>', cursor)) return false
+	cursor += 3
+	let value = 0
+	const valueStart = cursor
+	while (cursor < bodyEnd) {
+		const code = xml.charCodeAt(cursor)
+		if (code < 48 || code > 57) break
+		value = value * 10 + (code - 48)
+		cursor += 1
+	}
+	if (cursor === valueStart || !xml.startsWith('</v>', cursor)) return false
+	cursor = skipXmlWhitespace(xml, cursor + 4, bodyEnd)
+	if (cursor !== bodyEnd) return false
+	const text = ctx.sharedStrings.getString?.(value)
+	if (text === undefined) return false
+	if (!resolveCellPositionInto(rawAttrs, fallbackPosition, out)) return false
+	sheet.cells.setStringResolved(out.row, out.col, text, null, DEFAULT_STYLE_ID)
+	return true
+}
+
+function parseSimpleValuesPlainStringCell(
+	rawAttrs: string,
+	xml: string,
+	bodyStart: number,
+	bodyEnd: number,
+	ctx: SheetParseContext,
+	fallbackPosition: CellPosition,
+	sheet: Sheet,
+	out: { row: number; col: number },
+): boolean {
+	if (!ctx.valuesOnly || !rawAttrEquals(rawAttrs, 't', 'str')) return false
+	if (rawAttrs.includes('cm="') || rawAttrs.includes('vm="')) return false
+	let cursor = skipXmlWhitespace(xml, bodyStart, bodyEnd)
+	if (xml.startsWith('<f', cursor)) {
+		cursor = skipSimpleElement(xml, cursor, bodyEnd, 'f')
+		if (cursor === -1) return false
+		cursor = skipXmlWhitespace(xml, cursor, bodyEnd)
+	}
+	if (!xml.startsWith('<v>', cursor)) return false
+	cursor += 3
+	const valueStart = cursor
+	const valueEnd = xml.indexOf('</v>', valueStart)
+	if (valueEnd === -1 || valueEnd > bodyEnd) return false
+	const rawText = xml.slice(valueStart, valueEnd)
+	if (rawText.includes('<')) return false
+	cursor = skipXmlWhitespace(xml, valueEnd + 4, bodyEnd)
+	if (cursor !== bodyEnd) return false
+	if (!resolveCellPositionInto(rawAttrs, fallbackPosition, out)) return false
+	sheet.cells.setStringResolved(out.row, out.col, decodeXmlText(rawText), null, DEFAULT_STYLE_ID)
+	return true
+}
+
+function parseSimpleValuesInlineStringCell(
+	rawAttrs: string,
+	xml: string,
+	bodyStart: number,
+	bodyEnd: number,
+	ctx: SheetParseContext,
+	fallbackPosition: CellPosition,
+	sheet: Sheet,
+	out: { row: number; col: number },
+): boolean {
+	if (!ctx.valuesOnly || !rawAttrEquals(rawAttrs, 't', 'inlineStr')) return false
+	if (rawAttrs.includes('cm="') || rawAttrs.includes('vm="')) return false
+	let cursor = skipXmlWhitespace(xml, bodyStart, bodyEnd)
+	if (xml.startsWith('<f', cursor)) {
+		cursor = skipSimpleElement(xml, cursor, bodyEnd, 'f')
+		if (cursor === -1) return false
+		cursor = skipXmlWhitespace(xml, cursor, bodyEnd)
+	}
+	if (!xml.startsWith('<is', cursor)) return false
+	const isTagEnd = findTagEnd(xml, cursor)
+	if (isTagEnd === -1 || isTagEnd >= bodyEnd || isSelfClosingTag(xml, cursor, isTagEnd)) {
+		return false
+	}
+	cursor = skipXmlWhitespace(xml, isTagEnd + 1, bodyEnd)
+	if (!xml.startsWith('<t', cursor)) return false
+	const textTagEnd = findTagEnd(xml, cursor)
+	if (textTagEnd === -1 || textTagEnd >= bodyEnd || isSelfClosingTag(xml, cursor, textTagEnd)) {
+		return false
+	}
+	const textClose = xml.indexOf('</t>', textTagEnd + 1)
+	if (textClose === -1 || textClose > bodyEnd) return false
+	const rawText = xml.slice(textTagEnd + 1, textClose)
+	if (rawText.includes('<')) return false
+	cursor = skipXmlWhitespace(xml, textClose + 4, bodyEnd)
+	if (!xml.startsWith('</is>', cursor)) return false
+	cursor = skipXmlWhitespace(xml, cursor + 5, bodyEnd)
+	if (cursor !== bodyEnd) return false
+	if (!resolveCellPositionInto(rawAttrs, fallbackPosition, out)) return false
+	sheet.cells.setStringResolved(out.row, out.col, decodeXmlText(rawText), null, DEFAULT_STYLE_ID)
+	return true
+}
+
+function skipSimpleElement(xml: string, start: number, end: number, tagName: string): number {
+	const tagEnd = findTagEnd(xml, start)
+	if (tagEnd === -1 || tagEnd > end) return -1
+	if (isSelfClosingTag(xml, start, tagEnd)) return tagEnd + 1
+	const closeNeedle = `</${tagName}>`
+	const close = xml.indexOf(closeNeedle, tagEnd + 1)
+	if (close === -1 || close + closeNeedle.length > end) return -1
+	return close + closeNeedle.length
+}
+
+function skipXmlWhitespace(xml: string, cursor: number, end: number): number {
+	while (cursor < end) {
+		const code = xml.charCodeAt(cursor)
+		if (code !== 9 && code !== 10 && code !== 13 && code !== 32) break
+		cursor += 1
+	}
+	return cursor
+}
+
+function rawAttrEquals(rawAttrs: string, name: string, expected: string): boolean {
+	const valueStart = rawAttrValueStart(rawAttrs, name)
+	if (valueStart === -1) return false
+	const valueEnd = rawAttrs.indexOf('"', valueStart)
+	return valueEnd === valueStart + expected.length && rawAttrs.startsWith(expected, valueStart)
+}
+
+function resolveCellPositionInto(
+	rawAttrs: string,
+	fallbackPosition: CellPosition,
+	out: { row: number; col: number },
+): boolean {
+	const valueStart = rawAttrValueStart(rawAttrs, 'r')
+	if (valueStart === -1) {
+		out.row = fallbackPosition.row
+		out.col = fallbackPosition.col
+		return true
+	}
+	const valueEnd = rawAttrs.indexOf('"', valueStart)
+	if (valueEnd === -1) return false
+	let index = valueStart
+	let col = 0
+	while (index < valueEnd) {
+		const code = rawAttrs.charCodeAt(index)
+		if (code >= 48 && code <= 57) break
+		if (code >= 65 && code <= 90) {
+			col = col * 26 + (code - 64)
+		} else if (code >= 97 && code <= 122) {
+			col = col * 26 + (code - 96)
+		} else {
+			return false
+		}
+		index += 1
+	}
+	if (index === valueStart || index >= valueEnd) return false
+	let row = 0
+	while (index < valueEnd) {
+		const code = rawAttrs.charCodeAt(index)
+		if (code < 48 || code > 57) return false
+		row = row * 10 + (code - 48)
+		index += 1
+	}
+	if (row <= 0 || col <= 0) return false
+	out.row = row - 1
+	out.col = col - 1
+	return true
+}
+
 interface SheetDataLocation {
 	readonly contentStart: number
 	readonly contentEnd: number
@@ -500,6 +1651,11 @@ function locateSheetData(xml: string): SheetDataLocation | null {
 	const close = xml.indexOf('</sheetData>', tagEnd + 1)
 	if (close === -1) return null
 	return { contentStart: tagEnd + 1, contentEnd: close, tagStart: open, closeEnd: close + 12 }
+}
+
+function sheetDataHasFormula(xml: string, sheetData: SheetDataLocation): boolean {
+	const formulaOpen = xml.indexOf('<f', sheetData.contentStart)
+	return formulaOpen !== -1 && formulaOpen < sheetData.contentEnd
 }
 
 function buildCellNode(rawAttrs: string, innerXml: string): XmlNode {
@@ -579,24 +1735,57 @@ const ATTR_NEEDLES: Record<string, string> = {
 }
 
 function rawAttr(rawAttrs: string, name: string): string | undefined {
-	const needle = ATTR_NEEDLES[name] ?? `${name}="`
-	const start = rawAttrs.indexOf(needle)
-	if (start === -1) return undefined
-	const valueStart = start + needle.length
+	const valueStart = rawAttrValueStart(rawAttrs, name)
+	if (valueStart === -1) return undefined
 	const valueEnd = rawAttrs.indexOf('"', valueStart)
 	if (valueEnd === -1) return undefined
 	return decodeXmlText(rawAttrs.slice(valueStart, valueEnd))
 }
 
 function rawNumAttr(rawAttrs: string, name: string): number | undefined {
-	const needle = ATTR_NEEDLES[name] ?? `${name}="`
-	const start = rawAttrs.indexOf(needle)
-	if (start === -1) return undefined
-	const valueStart = start + needle.length
+	const valueStart = rawAttrValueStart(rawAttrs, name)
+	if (valueStart === -1) return undefined
 	const valueEnd = rawAttrs.indexOf('"', valueStart)
 	if (valueEnd === -1) return undefined
 	const parsed = Number(rawAttrs.slice(valueStart, valueEnd))
 	return Number.isNaN(parsed) ? undefined : parsed
+}
+
+function rawAttrValueStart(rawAttrs: string, name: string): number {
+	const needle = ATTR_NEEDLES[name] ?? `${name}="`
+	const start = rawAttrs.indexOf(needle)
+	return start === -1 ? -1 : start + needle.length
+}
+
+function rawAttrValueStartInRange(xml: string, start: number, end: number, name: string): number {
+	const needle = ATTR_NEEDLES[name] ?? `${name}="`
+	const last = end - needle.length
+	for (let index = start; index <= last; index++) {
+		if (xml.charCodeAt(index) === needle.charCodeAt(0) && xml.startsWith(needle, index)) {
+			return index + needle.length
+		}
+	}
+	return -1
+}
+
+function rawPositiveIntAttrInRange(
+	xml: string,
+	start: number,
+	end: number,
+	name: string,
+): number | undefined {
+	let cursor = rawAttrValueStartInRange(xml, start, end, name)
+	if (cursor === -1) return undefined
+	let value = 0
+	const digitStart = cursor
+	while (cursor < end) {
+		const code = xml.charCodeAt(cursor)
+		if (code === 34) return cursor === digitStart ? undefined : value
+		if (code < 48 || code > 57) return undefined
+		value = value * 10 + (code - 48)
+		cursor += 1
+	}
+	return undefined
 }
 
 function rawBoolAttr(rawAttrs: string, name: string): boolean | undefined {

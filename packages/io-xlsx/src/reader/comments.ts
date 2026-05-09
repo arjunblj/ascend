@@ -1,5 +1,5 @@
-import type { SheetComment } from '@ascend/core'
-import { asArray, attr, parseXml, type XmlNode } from '../xml.ts'
+import type { SheetComment, SheetThreadedComment } from '@ascend/core'
+import { asArray, attr, boolAttr, parseXml, type XmlNode } from '../xml.ts'
 
 export function parseCommentsXml(xml: string): Map<string, SheetComment> {
 	const doc = parseXml(xml)
@@ -24,6 +24,60 @@ export function parseCommentsXml(xml: string): Map<string, SheetComment> {
 		entries.set(ref, author ? { text, author } : { text })
 	}
 	return entries
+}
+
+export function parseThreadedCommentsXml(
+	xml: string,
+	partPath: string,
+	people: ReadonlyMap<string, string> = new Map(),
+): SheetThreadedComment[] {
+	const doc = parseXml(xml)
+	const comments =
+		(doc.ThreadedComments as XmlNode | undefined) ?? (doc.threadedComments as XmlNode | undefined)
+	if (!comments) return []
+
+	return asArray<XmlNode>(comments.threadedComment as XmlNode | XmlNode[] | undefined).flatMap(
+		(comment) => {
+			const ref = attr(comment, 'ref')
+			if (!ref) return []
+			const id = attr(comment, 'id')
+			const parentId = attr(comment, 'parentId')
+			const personId = attr(comment, 'personId')
+			const author = personId ? people.get(personId) : undefined
+			const dateTime = attr(comment, 'dT')
+			const done = boolAttr(comment, 'done')
+			const text = readNodeText(comment.text) ?? ''
+			const parsed: SheetThreadedComment = {
+				ref,
+				text,
+				partPath,
+				...(id !== undefined ? { id } : {}),
+				...(parentId !== undefined ? { parentId } : {}),
+				...(personId !== undefined ? { personId } : {}),
+				...(author !== undefined ? { author } : {}),
+				...(dateTime !== undefined ? { dateTime } : {}),
+				...(done !== undefined ? { done } : {}),
+			}
+			return [parsed]
+		},
+	)
+}
+
+export function parseThreadedCommentPersonsXml(xml: string): Map<string, string> {
+	const doc = parseXml(xml)
+	const root =
+		(doc.personList as XmlNode | undefined) ??
+		(doc.persons as XmlNode | undefined) ??
+		(doc.PersonList as XmlNode | undefined)
+	const people = new Map<string, string>()
+	if (!root) return people
+	for (const person of asArray<XmlNode>(root.person as XmlNode | XmlNode[] | undefined)) {
+		const id = attr(person, 'id') ?? attr(person, 'personId')
+		const displayName =
+			attr(person, 'displayName') ?? attr(person, 'name') ?? attr(person, 'userId')
+		if (id && displayName) people.set(id, displayName)
+	}
+	return people
 }
 
 function extractCommentText(textNode: XmlNode | undefined): string {

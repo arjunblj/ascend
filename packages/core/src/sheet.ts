@@ -13,6 +13,18 @@ export interface SheetComment {
 	readonly author?: string
 }
 
+export interface SheetThreadedComment {
+	readonly ref: string
+	readonly text: string
+	readonly id?: string
+	readonly parentId?: string
+	readonly personId?: string
+	readonly author?: string
+	readonly dateTime?: string
+	readonly done?: boolean
+	readonly partPath?: string
+}
+
 export interface SheetHyperlink {
 	readonly target?: string
 	readonly location?: string
@@ -344,6 +356,7 @@ export class Sheet {
 	frozenCols: number
 	sheetView: SheetView | null
 	comments: Map<string, SheetComment>
+	threadedComments: SheetThreadedComment[]
 	hyperlinks: Map<string, SheetHyperlink>
 	ignoredErrors: SheetIgnoredError[]
 	tabColor: SheetTabColor | null
@@ -381,6 +394,7 @@ export class Sheet {
 		this.frozenCols = 0
 		this.sheetView = null
 		this.comments = new Map()
+		this.threadedComments = []
 		this.hyperlinks = new Map()
 		this.ignoredErrors = []
 		this.tabColor = null
@@ -412,6 +426,7 @@ export class Sheet {
 		this.rowHeights = new Map(this.rowHeights)
 		this.rowDefs = new Map([...this.rowDefs.entries()].map(([row, def]) => [row, { ...def }]))
 		this.comments = new Map(this.comments)
+		this.threadedComments = this.threadedComments.map((comment) => ({ ...comment }))
 		this.hyperlinks = new Map(this.hyperlinks)
 		this.ignoredErrors = this.ignoredErrors.map((e) => ({ ...e }))
 		this.dataValidations = this.dataValidations.map((d) => ({ ...d }))
@@ -441,6 +456,7 @@ export class Sheet {
 		s.frozenCols = this.frozenCols
 		s.sheetView = this.sheetView
 		s.comments = this.comments
+		s.threadedComments = this.threadedComments
 		s.hyperlinks = this.hyperlinks
 		s.ignoredErrors = this.ignoredErrors
 		s.tabColor = this.tabColor

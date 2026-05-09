@@ -21,6 +21,7 @@ import type {
 	SheetProtection,
 	SheetState,
 	SheetTabColor,
+	SheetThreadedComment,
 	SortState,
 	TableColumn,
 	TableStyleInfo,
@@ -47,6 +48,7 @@ export interface WorkbookInfo {
 	readonly definedNameDetails: readonly DefinedNameInfo[]
 	readonly cellCount: number | null
 	readonly commentCount: number | null
+	readonly threadedCommentCount: number | null
 	readonly conditionalFormatCount: number | null
 	readonly dataValidationCount: number | null
 	readonly imageCount: number | null
@@ -275,6 +277,7 @@ export interface SheetInfo {
 	readonly cellCount: number | null
 	readonly tableCount: number | null
 	readonly commentCount: number | null
+	readonly threadedCommentCount: number | null
 	readonly conditionalFormatCount: number | null
 	readonly dataValidationCount: number | null
 	readonly hasFrozenPanes: boolean | null
@@ -293,6 +296,8 @@ export interface SheetInfo {
 export interface SheetCommentInfo extends SheetComment {
 	readonly ref: string
 }
+
+export interface SheetThreadedCommentInfo extends SheetThreadedComment {}
 
 export interface SheetHyperlinkInfo extends SheetHyperlink {
 	readonly ref: string
@@ -381,6 +386,7 @@ export interface SheetInspectInfo extends SheetInfo {
 	readonly merges: readonly RangeRef[] | null
 	readonly tables: readonly TableInfo[] | null
 	readonly comments: readonly SheetCommentInfo[] | null
+	readonly threadedComments: readonly SheetThreadedCommentInfo[] | null
 	readonly hyperlinks: readonly SheetHyperlinkInfo[] | null
 	readonly ignoredErrors: readonly SheetIgnoredError[] | null
 	readonly conditionalFormats: readonly SheetConditionalFormat[] | null

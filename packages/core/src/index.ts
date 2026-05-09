@@ -67,6 +67,7 @@ export type {
 	SheetRowDef,
 	SheetState,
 	SheetTabColor,
+	SheetThreadedComment,
 	SheetView,
 	SheetViewType,
 } from './sheet.ts'

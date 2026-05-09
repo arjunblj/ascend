@@ -101,6 +101,7 @@ export class WorkbookReadView {
 		if (this.workbookInfoCache) return this.workbookInfoCache
 		let totalCells = 0
 		let totalComments = 0
+		let totalThreadedComments = 0
 		let totalConditionalFormats = 0
 		let totalDataValidations = 0
 		let totalImages = 0
@@ -112,6 +113,7 @@ export class WorkbookReadView {
 			if (count !== null) totalCells += count
 			if (richSheetMetadataHydrated) {
 				totalComments += sheet.comments.size
+				totalThreadedComments += sheet.threadedComments.length
 				totalConditionalFormats += sheet.conditionalFormats.length
 				totalDataValidations += sheet.dataValidations.length
 				totalImages += sheet.imageRefs.length
@@ -126,6 +128,7 @@ export class WorkbookReadView {
 			definedNameDetails: this.definedNames(),
 			cellCount: this.loadInfo.cellsHydrated ? totalCells : null,
 			commentCount: this.loadInfo.richSheetMetadataHydrated ? totalComments : null,
+			threadedCommentCount: this.loadInfo.richSheetMetadataHydrated ? totalThreadedComments : null,
 			conditionalFormatCount: this.loadInfo.richSheetMetadataHydrated
 				? totalConditionalFormats
 				: null,
@@ -281,6 +284,9 @@ export class WorkbookReadView {
 			tables: cellsHydrated ? sheet.tables.map((table) => buildTableInfo(table, sheet)) : null,
 			comments: richSheetMetadataHydrated
 				? [...sheet.comments.entries()].map(([ref, comment]) => ({ ref, ...comment }))
+				: null,
+			threadedComments: richSheetMetadataHydrated
+				? sheet.threadedComments.map((comment) => ({ ...comment }))
 				: null,
 			hyperlinks: richSheetMetadataHydrated
 				? [...sheet.hyperlinks.entries()].map(([ref, hyperlink]) => ({ ref, ...hyperlink }))
@@ -853,6 +859,7 @@ function buildSheetInfo(
 		cellCount: count,
 		tableCount: cellsHydrated ? sheet.tables.length : null,
 		commentCount: richSheetMetadataHydrated ? sheet.comments.size : null,
+		threadedCommentCount: richSheetMetadataHydrated ? sheet.threadedComments.length : null,
 		conditionalFormatCount: richSheetMetadataHydrated ? sheet.conditionalFormats.length : null,
 		dataValidationCount: richSheetMetadataHydrated ? sheet.dataValidations.length : null,
 		hasFrozenPanes: cellsHydrated ? sheet.frozenRows > 0 || sheet.frozenCols > 0 : null,

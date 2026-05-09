@@ -228,10 +228,14 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'sheets.threaded-comments',
 		'sheets/ranges',
 		'Threaded comments',
-		'preserved',
+		'inspectable',
 		'P1',
-		'Expose author/thread metadata and block lossy writes.',
-		'Threaded comments are preserved but not semantically editable.',
+		'Add explicit edit blockers and author/person roundtrip fixtures.',
+		'Threaded comments expose ref, text, thread IDs, parent IDs, person IDs, author names, timestamps, and preservation/loss-audit features; semantic edits remain blocked.',
+		[
+			'packages/io-xlsx/src/reader/threaded-comments.test.ts',
+			'packages/sdk/src/threaded-comments.test.ts',
+		],
 	),
 	cap(
 		'sheets.hyperlinks',

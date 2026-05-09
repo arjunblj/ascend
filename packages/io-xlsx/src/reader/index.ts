@@ -18,7 +18,11 @@ import { ascendError, emptyReport, err, ok } from '@ascend/schema'
 import { normalizeStoredFormulaText } from '../formula-storage.ts'
 import type { PreservationCapsule } from '../preserve.ts'
 import { parseChartXml } from './charts.ts'
-import { parseCommentsXml } from './comments.ts'
+import {
+	parseCommentsXml,
+	parseThreadedCommentPersonsXml,
+	parseThreadedCommentsXml,
+} from './comments.ts'
 import { parseConnectionPartInfos } from './connections.ts'
 import { type ContentTypes, parseContentTypes } from './content-types.ts'
 import { parseDrawingImageRefs, parseDrawingObjectRefs } from './drawing.ts'
@@ -46,6 +50,7 @@ import {
 	REL_STYLES,
 	REL_TABLE,
 	REL_THEME,
+	REL_THREADED_COMMENT,
 	type Relationship,
 	resolvePath,
 } from './relationships.ts'
@@ -716,6 +721,19 @@ function collectConnectionParts(
 	return connectionParts
 }
 
+function collectThreadedCommentPeople(archive: ZipArchive): Map<string, string> {
+	const people = new Map<string, string>()
+	for (const entry of archive.entries()) {
+		if (!entry.path.startsWith('xl/persons/') || !entry.path.endsWith('.xml')) continue
+		const xml = readPart(archive, entry.path)
+		if (!xml) continue
+		for (const [id, displayName] of parseThreadedCommentPersonsXml(xml)) {
+			people.set(id, displayName)
+		}
+	}
+	return people
+}
+
 function classifyActiveContent(capsule: PreservationCapsule): ActiveContentInfo['kind'] | null {
 	const path = capsule.partPath.toLowerCase()
 	const contentType = capsule.contentType.toLowerCase()
@@ -759,6 +777,9 @@ function preservedFeatureNote(feature: string): string | undefined {
 	}
 	if (feature === 'preservedPowerQuery') {
 		return 'Power Query mashup/customData parts are inventoried and preserved; query execution is not performed headlessly.'
+	}
+	if (feature === 'preservedThreadedComments') {
+		return 'Threaded comments are inventoried with thread/person metadata and preserved; semantic edits require explicit support.'
 	}
 	return undefined
 }
@@ -950,15 +971,28 @@ function attachComments(
 	sheetPath: string,
 	sheet: Workbook['sheets'][number],
 	sheetRelationships: readonly Relationship[],
+	threadedCommentPeople: ReadonlyMap<string, string> = collectThreadedCommentPeople(archive),
 ): void {
 	if (!sheet) return
 	const commentsRel = sheetRelationships.find((rel) => rel.type === REL_COMMENTS)
-	if (!commentsRel) return
-	const commentsPath = resolvePath(sheetPath, commentsRel.target)
-	const commentsXml = readPart(archive, commentsPath)
-	if (!commentsXml) return
-	for (const [ref, comment] of parseCommentsXml(commentsXml)) {
-		sheet.comments.set(ref, comment)
+	if (commentsRel) {
+		const commentsPath = resolvePath(sheetPath, commentsRel.target)
+		const commentsXml = readPart(archive, commentsPath)
+		if (commentsXml) {
+			for (const [ref, comment] of parseCommentsXml(commentsXml)) {
+				sheet.comments.set(ref, comment)
+			}
+		}
+	}
+	for (const rel of sheetRelationships.filter(
+		(relationship) => relationship.type === REL_THREADED_COMMENT,
+	)) {
+		const commentsPath = resolvePath(sheetPath, rel.target)
+		const commentsXml = readPart(archive, commentsPath)
+		if (!commentsXml) continue
+		sheet.threadedComments.push(
+			...parseThreadedCommentsXml(commentsXml, commentsPath, threadedCommentPeople),
+		)
 	}
 }
 

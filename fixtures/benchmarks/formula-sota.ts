@@ -124,6 +124,30 @@ function hasFlag(args: readonly string[], name: string): boolean {
 	return args.includes(name)
 }
 
+function renderHelp(): string {
+	return [
+		'Ascend formula SOTA benchmark runner',
+		'',
+		'Usage:',
+		'  bun run fixtures/benchmarks/formula-sota.ts --profile <name> [--rows N] [--formulas N] [--repeat N] [--warmup N] [--aggregate SUM|COUNT|AVERAGE|MIN|MAX] [--json]',
+		'',
+		'Options:',
+		'  --profile <name>     Public comparator profile to run.',
+		'  --rows N             Source row count. Defaults depend on profile.',
+		'  --formulas N         Formula count. Defaults depend on profile.',
+		'  --repeat N           Number of measured samples. Defaults to 5.',
+		'  --warmup N           Number of warmup samples. Defaults to 1.',
+		'  --aggregate <name>   Prefix aggregate for hf-prefix-range profiles.',
+		'  --json               Emit JSON instead of a text summary.',
+		'  --help, -h           Show this help without running benchmarks.',
+		'',
+		'Profiles:',
+		...Object.values(PROFILES)
+			.map((profile) => `  ${profile.name} - ${profile.sourceBenchmark} (${profile.sourceUrl})`)
+			.sort(),
+	].join('\n')
+}
+
 function positiveInt(raw: string | undefined, fallback: number): number {
 	const value = raw ? Number.parseInt(raw, 10) : fallback
 	return Number.isFinite(value) && value > 0 ? value : fallback
@@ -136,6 +160,10 @@ function nonNegativeInt(raw: string | undefined, fallback: number): number {
 
 function parseArgs(): Args {
 	const argv = process.argv.slice(2)
+	if (hasFlag(argv, '--help') || hasFlag(argv, '-h')) {
+		console.log(renderHelp())
+		process.exit(0)
+	}
 	const rawProfile = readOption(argv, '--profile') ?? 'hf-prefix-range-sum'
 	if (!(rawProfile in PROFILES)) {
 		throw new Error(

@@ -51,6 +51,25 @@ interface FormulaSotaPayload {
 }
 
 describe('formula SOTA public profile smoke', () => {
+	test('--help prints public comparator profiles without running benchmarks', () => {
+		const proc = Bun.spawnSync({
+			cmd: [Bun.argv[0], runnerPath, '--help'],
+			stdout: 'pipe',
+			stderr: 'pipe',
+		})
+		const stdout = new TextDecoder().decode(proc.stdout)
+		const stderr = new TextDecoder().decode(proc.stderr)
+
+		expect(proc.exitCode, stderr).toBe(0)
+		expect(stdout).toContain('Ascend formula SOTA benchmark runner')
+		expect(stdout).toContain('--profile <name>')
+		expect(stdout).toContain('Profiles:')
+		expect(stdout).toContain('hf-prefix-range-sum')
+		expect(stdout).toContain('hyperformula')
+		expect(stdout).not.toContain('"suite"')
+		expect(stdout).not.toContain('operationSpeedupVsHyperFormula')
+	})
+
 	for (const profile of profiles) {
 		const aggregateCases = 'aggregates' in profile ? profile.aggregates : [undefined]
 		for (const aggregate of aggregateCases) {

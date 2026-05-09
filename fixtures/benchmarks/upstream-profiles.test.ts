@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import {
 	annotateUpstreamCases,
+	assertExactUpstreamReplayProfiles,
 	buildCompetitiveIoArgs,
 	buildIsolatedLibraryFailureSuite,
+	isExactUpstreamReplayStatus,
 	isKilledRunnerReason,
 	selectUpstreamProfiles,
 	shouldIsolateLibrariesForProfile,
@@ -97,6 +99,20 @@ describe('upstream competitive profiles', () => {
 			'fastxlsx-read-5000x10-matrix',
 			'pyopenxlsx-read-1000x20',
 		])
+	})
+
+	test('exact replay gate rejects published-shape clones for public benchmark claims', () => {
+		const profile = selectUpstreamProfiles('pyexcelerate-write-values-1000x100')[0]
+		expect(profile).toBeTruthy()
+		if (!profile) return
+
+		expect(isExactUpstreamReplayStatus(profile.replayStatus)).toBe(false)
+		expect(() => assertExactUpstreamReplayProfiles([profile], 'claim gate')).toThrow(
+			'claim gate contains 1 profile(s) that are not exact upstream replays',
+		)
+		expect(() => assertExactUpstreamReplayProfiles([profile], 'claim gate')).toThrow(
+			'pyexcelerate-write-values-1000x100: sourceKind=published-shape replayStatus=shape-clone',
+		)
 	})
 
 	test('splits library lists for isolated heavy profile runs', () => {

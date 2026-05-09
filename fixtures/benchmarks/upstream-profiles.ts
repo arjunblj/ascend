@@ -47,6 +47,7 @@ type Category = 'read' | 'write'
 type Competitor = 'js' | 'external' | 'all'
 type UpstreamSourceKind = 'published-shape' | 'upstream-script' | 'pinned-artifact'
 type UpstreamReplayStatus = 'shape-clone' | 'exact-script' | 'exact-artifact'
+type ExactUpstreamReplayStatus = Extract<UpstreamReplayStatus, 'exact-script' | 'exact-artifact'>
 type UpstreamProfileSetName =
 	| 'write-smoke'
 	| 'write-memory'
@@ -620,6 +621,30 @@ export function selectUpstreamProfiles(
 	return selected
 }
 
+export function isExactUpstreamReplayStatus(
+	status: UpstreamReplayStatus,
+): status is ExactUpstreamReplayStatus {
+	return status === 'exact-script' || status === 'exact-artifact'
+}
+
+export function assertExactUpstreamReplayProfiles(
+	profiles: readonly UpstreamProfile[],
+	context = 'upstream profile selection',
+): void {
+	const nonExact = profiles.filter((profile) => !isExactUpstreamReplayStatus(profile.replayStatus))
+	if (nonExact.length === 0) return
+	throw new Error(
+		[
+			`${context} contains ${nonExact.length} profile(s) that are not exact upstream replays`,
+			...nonExact.map(
+				(profile) =>
+					`${profile.name}: sourceKind=${profile.sourceKind} replayStatus=${profile.replayStatus}`,
+			),
+			'Use exact upstream script/artifact profiles before making exact public benchmark claims.',
+		].join('\n'),
+	)
+}
+
 export function buildCompetitiveIoArgs(input: {
 	readonly profile: UpstreamProfile
 	readonly repeat: number
@@ -1092,6 +1117,8 @@ function renderSummary(suite: BenchmarkSuiteResult): string {
 async function main(): Promise<void> {
 	const profileSet = readProfileSetFlag()
 	const profiles = selectUpstreamProfiles(readFlag('--profile'), profileSet)
+	const requireExactReplay = hasFlag('--require-exact-replay')
+	if (requireExactReplay) assertExactUpstreamReplayProfiles(profiles, '--require-exact-replay')
 	const repeat = readPositiveIntFlag('--repeat', 3)
 	const warmup = readNonNegativeIntFlag('--warmup', 1)
 	const competitorOverride = readCompetitorOverrideFlag()
@@ -1110,6 +1137,7 @@ async function main(): Promise<void> {
 			repeat,
 			warmup,
 			competitorOverride,
+			requireExactReplay,
 			libraries,
 			validationMode,
 			executionScope,

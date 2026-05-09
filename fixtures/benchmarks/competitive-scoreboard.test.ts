@@ -878,6 +878,38 @@ describe('buildCompetitiveScoreboard', () => {
 			'upstream-xlsx-sota missing competitor=Polars openpyxl category=read operationProfile=read-values workload=calamine-nyc311-1m file=NYC_311_SR_2010-2020-sample-1M.xlsx',
 		)
 	})
+
+	test('upstream SOTA profile rejects shape-clone evidence for exact public claims', () => {
+		const libraries = [
+			'ascend',
+			'sheetjs',
+			'exceljs',
+			'xlsxwriter',
+			'pyexcelerate',
+			'pyexcelerate-range',
+			'pyexcelerate-cell',
+			'openpyxl',
+			'apache-poi',
+			'pyopenxlsx',
+		]
+		const suite = suiteWithCases(
+			libraries.map((library) =>
+				matrixCase({
+					library,
+					category: 'write',
+					workload: 'dense-values',
+					repeat: 5,
+					file: 'pyexcelerate-write-values-1000x100',
+					peakRssBytes: 1024,
+					upstreamReplayStatus: 'shape-clone',
+				}),
+			),
+		)
+
+		expect(assertScoreboardCoverage(suite, 'upstream-xlsx-sota')).toContain(
+			'upstream-xlsx-sota non-exact-upstream-replay category=write operationProfile=write-values workload=dense-values file=pyexcelerate-write-values-1000x100 upstreamReplayStatus=shape-clone',
+		)
+	})
 })
 
 function suiteWithCases(cases: BenchmarkSuiteResult['cases']): BenchmarkSuiteResult {
@@ -1069,6 +1101,7 @@ function matrixCase(input: {
 	readonly file?: string
 	readonly peakRssBytes?: number
 	readonly featureAssertions?: Record<string, number>
+	readonly upstreamReplayStatus?: string
 }): BenchmarkSuiteResult['cases'][number] {
 	const operationProfile =
 		input.operationProfile ?? (input.category === 'read' ? 'read-values' : 'write-values')
@@ -1091,6 +1124,7 @@ function matrixCase(input: {
 			operationProfile,
 			timingLane,
 			...(input.file ? { file: input.file } : {}),
+			...(input.upstreamReplayStatus ? { upstreamReplayStatus: input.upstreamReplayStatus } : {}),
 			correctnessStatus: input.correctnessStatus ?? 'pass',
 			rankingEligible: (input.correctnessStatus ?? 'pass') === 'pass',
 		},

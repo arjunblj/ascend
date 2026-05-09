@@ -146,6 +146,7 @@ interface ClaimProfile {
 	readonly minRepeat: number
 	readonly requireSamples: boolean
 	readonly requiredMetrics: readonly RankingMetric[]
+	readonly requireExactUpstreamReplay?: boolean
 	readonly competitors: readonly CompetitorRequirement[]
 	readonly cases: readonly CaseRequirement[]
 }
@@ -417,6 +418,7 @@ const CLAIM_PROFILES: Record<ClaimProfileName, ClaimProfile> = {
 		name: 'upstream-xlsx-sota',
 		minRepeat: 5,
 		requireSamples: true,
+		requireExactUpstreamReplay: true,
 		requiredMetrics: ['medianMs', 'p95Ms', 'throughputPerSec', 'peakRssBytes'],
 		competitors: [
 			{ label: 'Ascend', libraries: ASCEND_READ_LIBRARIES },
@@ -863,6 +865,19 @@ export function inspectScoreboardCoverage(
 						)
 						if (comparableFailure) failures.push(comparableFailure)
 					}
+					if (tupleFailures.length === 0 && profile.requireExactUpstreamReplay) {
+						const exactReplayFailure = exactUpstreamReplayFailure(
+							suite,
+							profile,
+							caseRequirement,
+							workload,
+							readSource,
+							file,
+							sourceLabel,
+							fileLabel,
+						)
+						if (exactReplayFailure) failures.push(exactReplayFailure)
+					}
 					for (const competitor of caseRequirement.capabilityGaps ?? []) {
 						gaps.push(
 							`${profile.name} coverage-gap competitor=${competitor.label} category=${caseRequirement.category} operationProfile=${caseRequirement.operationProfile} workload=${workload}${sourceLabel}${fileLabel} reason=unsupported-operation`,
@@ -1234,6 +1249,32 @@ function comparableCoverageFailure(
 	return hasSharedLane
 		? null
 		: `${profile.name} missing-comparable category=${requirement.category} operationProfile=${requirement.operationProfile} workload=${workload}${sourceLabel}${fileLabel} requiredCompetitors=${competitors.map((competitor) => competitor.label).join(',')}`
+}
+
+function exactUpstreamReplayFailure(
+	suite: BenchmarkSuiteResult,
+	profile: ClaimProfile,
+	requirement: CaseRequirement,
+	workload: string,
+	readSource: string | undefined,
+	file: string | undefined,
+	sourceLabel: string,
+	fileLabel: string,
+): string | null {
+	const matches = suite.cases.filter((entry) =>
+		caseMatchesProfileTuple(entry, requirement, workload, readSource, file),
+	)
+	if (matches.length === 0) return null
+	const statuses = [
+		...new Set(matches.map((entry) => dimensionString(entry, 'upstreamReplayStatus') ?? 'missing')),
+	]
+	const nonExact = statuses.filter((status) => !isExactUpstreamReplayStatus(status))
+	if (nonExact.length === 0) return null
+	return `${profile.name} non-exact-upstream-replay category=${requirement.category} operationProfile=${requirement.operationProfile} workload=${workload}${sourceLabel}${fileLabel} upstreamReplayStatus=${nonExact.join(',')}`
+}
+
+function isExactUpstreamReplayStatus(status: string): boolean {
+	return status === 'exact-script' || status === 'exact-artifact'
 }
 
 function caseMatchesProfileTuple(

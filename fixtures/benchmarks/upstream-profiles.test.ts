@@ -47,6 +47,15 @@ describe('upstream competitive profiles', () => {
 		expect(UPSTREAM_PROFILES.every((profile) => profile.sourceUrl.startsWith('https://'))).toBe(
 			true,
 		)
+		expect(
+			UPSTREAM_PROFILES.every(
+				(profile) =>
+					profile.sourceKind === 'published-shape' &&
+					profile.replayStatus === 'shape-clone' &&
+					profile.timingBoundary.includes('competitive-io') &&
+					profile.timingBoundary.includes('not the upstream project native timing harness'),
+			),
+		).toBe(true)
 	})
 
 	test('selects one or more named profiles', () => {
@@ -287,6 +296,11 @@ describe('upstream competitive profiles', () => {
 		expect(cases[0]?.reproCommand).toContain('--timeout-ms 120000')
 		expect(cases[0]?.profileCommand).toContain('fixtures/benchmarks/profile-bun.ts')
 		expect(cases[0]?.profileCommand).toContain(cases[0]?.reproCommand ?? '')
+		expect(cases[0]?.dimensions.upstreamSourceKind).toBe('published-shape')
+		expect(cases[0]?.dimensions.upstreamReplayStatus).toBe('shape-clone')
+		expect(cases[0]?.dimensions.upstreamTimingBoundary).toContain(
+			'not the upstream project native timing harness',
+		)
 	})
 
 	test('builds competitive-io args for read profiles with external runner manifest', () => {

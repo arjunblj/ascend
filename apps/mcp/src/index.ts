@@ -614,8 +614,12 @@ export function createServer(): McpServer {
 				.string()
 				.optional()
 				.describe('Reject if the input hash has changed since plan'),
+			allowLoss: z
+				.union([z.string(), z.array(z.string())])
+				.optional()
+				.describe('Allow preserved/unsupported feature loss by feature, tier, or "all"'),
 		},
-		async ({ file, ops, output, inPlace, backup, expectSha256 }) => {
+		async ({ file, ops, output, inPlace, backup, expectSha256, allowLoss }) => {
 			const parsed = parseOperations(ops)
 			if (!parsed.ok) {
 				return errorResponse(
@@ -632,6 +636,7 @@ export function createServer(): McpServer {
 					...(inPlace ? { inPlace: true } : {}),
 					...(backup ? { backup } : {}),
 					...(expectSha256 ? { expectSha256 } : {}),
+					...(allowLoss ? { allowLoss: parseAllowLoss(allowLoss) } : {}),
 				}
 				const result = await commitAgentPlan(file, parsed.value, options)
 				return okResponse(result, `Committed ${ops.length} operation(s)`)
@@ -888,6 +893,14 @@ function rangeRefToString(ref: {
 	end: { row: number; col: number }
 }): string {
 	return `${toA1Ref(ref.start.row, ref.start.col)}:${toA1Ref(ref.end.row, ref.end.col)}`
+}
+
+function parseAllowLoss(value: string | string[]): readonly string[] | 'all' {
+	const entries = (Array.isArray(value) ? value : value.split(','))
+		.map((entry) => entry.trim())
+		.filter((entry) => entry.length > 0)
+	if (entries.some((entry) => entry.toLowerCase() === 'all')) return 'all'
+	return entries
 }
 
 if (import.meta.main) {

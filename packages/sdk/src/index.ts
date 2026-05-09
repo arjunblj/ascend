@@ -3,10 +3,12 @@ export type {
 	AgentCommitOptions,
 	AgentCommitResult,
 	AgentPlanResult,
+	LossAudit,
 	RepairAction,
 	RepairPlanResult,
 } from './agent-workflow.ts'
 export {
+	auditLossPolicy,
 	commitAgentPlan,
 	createAgentPlan,
 	createRepairPlan,

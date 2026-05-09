@@ -101,7 +101,7 @@ const COMMANDS: Record<string, Command> = {
 	commit: {
 		run: commitCommand,
 		usage: commitUsage,
-		allowedFlags: ['ops', 'output', 'in-place', 'backup', 'expect-sha256', 'json'],
+		allowedFlags: ['ops', 'output', 'in-place', 'backup', 'expect-sha256', 'allow-loss', 'json'],
 	},
 	'repair-plan': { run: repairPlanCommand, usage: repairPlanUsage, allowedFlags: ['json'] },
 	preview: { run: previewCommand, usage: previewUsage, allowedFlags: ['sheet', 'ops', 'json'] },

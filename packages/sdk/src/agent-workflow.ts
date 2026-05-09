@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { copyFile, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
-import { AscendException, ascendError, type Operation } from '@ascend/schema'
+import { AscendException, ascendError, type FeatureReport, type Operation } from '@ascend/schema'
 import { listCapabilities, summarizeCapabilities } from './capabilities.ts'
 import { AscendWorkbook } from './workbook.ts'
 
@@ -15,6 +15,7 @@ export interface AgentPlanResult {
 	readonly lint: ReturnType<AscendWorkbook['lint']>
 	readonly preservation: ReturnType<AscendWorkbook['writePlanSummary']>
 	readonly unsupportedFeatures: readonly unknown[]
+	readonly lossAudit: LossAudit
 	readonly capabilities: ReturnType<typeof summarizeCapabilities>
 }
 
@@ -23,6 +24,7 @@ export interface AgentCommitOptions {
 	readonly inPlace?: boolean
 	readonly backup?: string
 	readonly expectSha256?: string
+	readonly allowLoss?: readonly string[] | 'all'
 }
 
 export interface AgentCommitResult {
@@ -38,6 +40,14 @@ export interface AgentCommitResult {
 	readonly check: ReturnType<AscendWorkbook['check']>
 	readonly lint: ReturnType<AscendWorkbook['lint']>
 	readonly preservation: ReturnType<AscendWorkbook['writePlanSummary']>
+	readonly lossAudit: LossAudit
+}
+
+export interface LossAudit {
+	readonly ok: boolean
+	readonly blockedFeatures: readonly FeatureReport[]
+	readonly allowedLoss: readonly string[] | 'all'
+	readonly policy: 'block-preserved-and-unsupported'
 }
 
 export interface RepairPlanResult {
@@ -63,6 +73,7 @@ export async function createAgentPlan(
 	const inputSha256 = await fileSha256(file)
 	const wb = await AscendWorkbook.open(file)
 	const preview = wb.preview(ops)
+	const lossAudit = auditLossPolicy(wb.report.features)
 	return {
 		file,
 		inputSha256,
@@ -73,6 +84,7 @@ export async function createAgentPlan(
 		lint: wb.lint(),
 		preservation: wb.writePlanSummary(),
 		unsupportedFeatures: wb.report.features,
+		lossAudit,
 		capabilities: summarizeCapabilities(listCapabilities({ gapsOnly: true })),
 	}
 }
@@ -110,6 +122,16 @@ export async function commitAgentPlan(
 	}
 
 	const wb = await AscendWorkbook.open(file)
+	const lossAudit = auditLossPolicy(wb.report.features, options.allowLoss)
+	if (!lossAudit.ok) {
+		throw new AscendException(
+			ascendError('VALIDATION_ERROR', 'Workbook contains preserved or unsupported features', {
+				details: { lossAudit },
+				suggestedFix:
+					'Inspect the plan lossAudit. If the write is intentional, pass --allow-loss <feature> for every blocked feature or --allow-loss all.',
+			}),
+		)
+	}
 	const apply = wb.apply(ops, { transaction: true })
 	if (apply.errors.length > 0)
 		throw new AscendException(apply.errors[0] ?? ascendError('VALIDATION_ERROR', 'Apply failed'))
@@ -150,8 +172,27 @@ export async function commitAgentPlan(
 		check: wb.check(),
 		lint: wb.lint(),
 		preservation,
+		lossAudit,
 	}
 	return result
+}
+
+export function auditLossPolicy(
+	features: readonly FeatureReport[],
+	allowLoss: readonly string[] | 'all' = [],
+): LossAudit {
+	const allowed = allowLoss === 'all' ? 'all' : allowLoss.map((entry) => entry.toLowerCase())
+	const blockedFeatures = features.filter((feature) => {
+		if (feature.tier !== 'preserved' && feature.tier !== 'unsupported') return false
+		if (allowed === 'all') return false
+		return !allowed.includes(feature.feature.toLowerCase()) && !allowed.includes(feature.tier)
+	})
+	return {
+		ok: blockedFeatures.length === 0,
+		blockedFeatures,
+		allowedLoss: allowLoss,
+		policy: 'block-preserved-and-unsupported',
+	}
 }
 
 export async function createRepairPlan(file: string): Promise<RepairPlanResult> {

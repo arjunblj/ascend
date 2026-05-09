@@ -18,6 +18,7 @@ Flags:
   --in-place                Replace the input file atomically
   --backup <backup.xlsx>    Backup path for --in-place
   --expect-sha256 <hash>    Reject commit if the input changed since plan
+  --allow-loss <feature>    Allow preserved/unsupported feature loss by feature, tier, or "all"
   --json                    Output as JSON
 `
 
@@ -36,6 +37,9 @@ export async function commitCommand(args: string[], flags: Map<string, string>):
 		...(flags.has('in-place') ? { inPlace: true } : {}),
 		...(flags.get('backup') ? { backup: flags.get('backup') as string } : {}),
 		...(flags.get('expect-sha256') ? { expectSha256: flags.get('expect-sha256') as string } : {}),
+		...(flags.get('allow-loss')
+			? { allowLoss: parseAllowLoss(flags.get('allow-loss') as string) }
+			: {}),
 	}
 	const result = await commitAgentPlan(file, ops, options)
 	if (flags.has('json')) {
@@ -50,6 +54,15 @@ export async function commitCommand(args: string[], flags: Map<string, string>):
 	console.log(bullet('Output SHA-256', result.outputSha256))
 	console.log(bullet('Plan digest', result.planDigest))
 	return 0
+}
+
+function parseAllowLoss(value: string): readonly string[] | 'all' {
+	const entries = value
+		.split(',')
+		.map((entry) => entry.trim())
+		.filter((entry) => entry.length > 0)
+	if (entries.some((entry) => entry.toLowerCase() === 'all')) return 'all'
+	return entries
 }
 
 async function readOpsFile(

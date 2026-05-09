@@ -46,6 +46,19 @@ function requireOptionalNumber(obj: unknown, key: string): number | undefined {
 	return typeof v === 'number' && Number.isFinite(v) ? v : undefined
 }
 
+function parseAllowLoss(value: unknown): readonly string[] | 'all' | undefined {
+	const entries =
+		typeof value === 'string'
+			? value.split(',')
+			: Array.isArray(value)
+				? value.filter((entry): entry is string => typeof entry === 'string')
+				: []
+	const normalized = entries.map((entry) => entry.trim()).filter((entry) => entry.length > 0)
+	if (normalized.length === 0) return undefined
+	if (normalized.some((entry) => entry.toLowerCase() === 'all')) return 'all'
+	return normalized
+}
+
 function statusForError(ae: AscendError): number {
 	if (
 		ae.code === 'SHEET_NOT_FOUND' ||
@@ -310,6 +323,7 @@ export function createServer(opts?: { port?: number }) {
 					inPlace?: boolean
 					backup?: string
 					expectSha256?: string
+					allowLoss?: string | string[]
 				}>(req)
 				const file = body ? requireString(body, 'file') : null
 				const opsArr = body ? requireArray(body, 'ops') : null
@@ -329,6 +343,9 @@ export function createServer(opts?: { port?: number }) {
 					const output = body ? requireString(body, 'output') : null
 					const backup = body ? requireString(body, 'backup') : null
 					const expectSha256 = body ? requireString(body, 'expectSha256') : null
+					const allowLoss = body
+						? parseAllowLoss((body as Record<string, unknown>).allowLoss)
+						: undefined
 					const inPlace =
 						body !== null &&
 						typeof body === 'object' &&
@@ -338,6 +355,7 @@ export function createServer(opts?: { port?: number }) {
 						...(inPlace ? { inPlace: true } : {}),
 						...(backup ? { backup } : {}),
 						...(expectSha256 ? { expectSha256 } : {}),
+						...(allowLoss ? { allowLoss } : {}),
 					}
 					const result = await commitAgentPlan(file, parsed.value, options)
 					return jsonSuccess(result)

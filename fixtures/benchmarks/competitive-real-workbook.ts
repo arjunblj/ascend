@@ -112,6 +112,7 @@ interface CorpusTargetMetadata {
 }
 
 type CompetitiveCategory = 'read' | 'roundtrip' | 'edit-roundtrip'
+type ExternalRunnerCategory = CompetitiveCategory | 'write'
 
 export interface WorkbookShapeSummary {
 	readonly sheetNames: readonly string[]
@@ -705,7 +706,7 @@ interface RunnerProvenance {
 export interface ExternalRunnerSpec {
 	readonly name: string
 	readonly command: readonly string[]
-	readonly categories?: readonly ('read' | 'roundtrip' | 'write')[]
+	readonly categories?: readonly ExternalRunnerCategory[]
 	readonly adapterVersion?: string
 	readonly libraryVersion?: string
 	readonly runtime?: string
@@ -1774,8 +1775,14 @@ async function loadExternalRunnerSpecs(): Promise<ExternalRunnerSpec[]> {
 		(spec) =>
 			externalRunnerLicenseGateSatisfied(spec) &&
 			(spec.categories === undefined ||
-				spec.categories.some((category) => category === 'read' || category === 'roundtrip')),
+				spec.categories.some((category) => isRunnableExternalRunnerCategory(category))),
 	)
+}
+
+function isRunnableExternalRunnerCategory(
+	category: ExternalRunnerCategory,
+): category is CompetitiveCategory {
+	return category === 'read' || category === 'roundtrip' || category === 'edit-roundtrip'
 }
 
 export function externalRunnerLicenseGateSatisfied(spec: ExternalRunnerSpec): boolean {
@@ -1811,7 +1818,11 @@ export function normalizeExternalRunnerSpecs(parsed: unknown): ExternalRunnerSpe
 			spec.categories &&
 			(!Array.isArray(spec.categories) ||
 				spec.categories.some(
-					(category) => category !== 'read' && category !== 'roundtrip' && category !== 'write',
+					(category) =>
+						category !== 'read' &&
+						category !== 'roundtrip' &&
+						category !== 'edit-roundtrip' &&
+						category !== 'write',
 				))
 		) {
 			throw new Error(`External runner "${spec.name}" has invalid categories`)
@@ -2416,8 +2427,7 @@ async function loadCases(): Promise<{
 	const externalRunnerSpecs = await loadExternalRunnerSpecs()
 	for (const spec of externalRunnerSpecs) {
 		const categories = (spec.categories ?? ['read', 'roundtrip']).filter(
-			(category): category is 'read' | 'roundtrip' =>
-				category === 'read' || category === 'roundtrip',
+			(category): category is CompetitiveCategory => isRunnableExternalRunnerCategory(category),
 		)
 		for (const category of categories) {
 			cases.push({
@@ -2455,17 +2465,14 @@ async function loadCases(): Promise<{
 
 async function runExternalRunner(
 	spec: ExternalRunnerSpec,
-	category: 'read' | 'roundtrip',
+	category: CompetitiveCategory,
 	target: WorkbookTarget,
 ): Promise<Record<string, string | number | boolean | null>> {
-	const proc = Bun.spawn(
-		[...spec.command, '--operation', category, '--file', target.path, '--json'],
-		{
-			stdout: 'pipe',
-			stderr: 'pipe',
-			cwd: process.cwd(),
-		},
-	)
+	const proc = Bun.spawn(externalRunnerCommand(spec, category, target, { json: true }), {
+		stdout: 'pipe',
+		stderr: 'pipe',
+		cwd: process.cwd(),
+	})
 	const [stdout, stderr, exitCode] = await Promise.all([
 		new Response(proc.stdout).text(),
 		new Response(proc.stderr).text(),
@@ -2480,7 +2487,7 @@ async function runExternalRunner(
 
 async function runExternalRunnerBatched(
 	spec: ExternalRunnerSpec,
-	category: 'read' | 'roundtrip',
+	category: CompetitiveCategory,
 	target: WorkbookTarget,
 	repeat: number,
 	warmup: number,
@@ -2489,18 +2496,7 @@ async function runExternalRunnerBatched(
 	samples?: readonly MetricSample[]
 }> {
 	const proc = Bun.spawn(
-		[
-			...spec.command,
-			'--operation',
-			category,
-			'--file',
-			target.path,
-			'--repeat',
-			String(repeat),
-			'--warmup',
-			String(warmup),
-			'--json',
-		],
+		externalRunnerCommand(spec, category, target, { repeat, warmup, json: true }),
 		{
 			stdout: 'pipe',
 			stderr: 'pipe',
@@ -2521,6 +2517,32 @@ async function runExternalRunnerBatched(
 		assertionsBySample: normalizeExternalSampleAssertions(parsed, repeat, spec.name),
 		samples: normalizeExternalSamples(parsed, repeat, spec.name),
 	}
+}
+
+function externalRunnerCommand(
+	spec: ExternalRunnerSpec,
+	category: CompetitiveCategory,
+	target: WorkbookTarget,
+	options: { repeat?: number; warmup?: number; json?: boolean } = {},
+): string[] {
+	const command = [...spec.command, '--operation', category, '--file', target.path]
+	if (category === 'edit-roundtrip') {
+		const edit = selectEditTarget(target)
+		command.push(
+			'--edit-sheet',
+			edit.sheetName,
+			'--edit-ref',
+			edit.ref,
+			'--edit-value',
+			String(edit.newValue),
+			'--edit-old-value',
+			String(edit.oldValue),
+		)
+	}
+	if (options.repeat !== undefined) command.push('--repeat', String(options.repeat))
+	if (options.warmup !== undefined) command.push('--warmup', String(options.warmup))
+	if (options.json) command.push('--json')
+	return command
 }
 
 export function normalizeAssertions(
@@ -3048,11 +3070,11 @@ async function main(): Promise<void> {
 					{
 						name: 'openpyxl',
 						command: ['python3', 'fixtures/benchmarks/runners/openpyxl_runner.py'],
-						categories: ['read', 'roundtrip'],
+						categories: ['read', 'roundtrip', 'edit-roundtrip'],
 					},
 				],
 				invocation:
-					'<command...> --operation <read|roundtrip> --file <path> [--repeat N --warmup N] --json',
+					'<command...> --operation <read|roundtrip|edit-roundtrip> --file <path> [--edit-sheet NAME --edit-ref A1 --edit-value N] [--repeat N --warmup N] --json',
 				output:
 					'JSON object or { "assertions": object, "samples": [{"durationMs": number}] } with primitive assertion values',
 				timingModel:

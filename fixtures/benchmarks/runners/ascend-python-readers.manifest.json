@@ -321,14 +321,14 @@
 	{
 		"name": "openpyxl",
 		"command": ["python3", "fixtures/benchmarks/runners/openpyxl_runner.py"],
-		"categories": ["read", "roundtrip"],
+		"categories": ["read", "roundtrip", "edit-roundtrip"],
 		"runtime": "python3",
 		"adapterVersion": "1",
 		"libraryVersion": "reported-by-runner",
 		"timingModel": "external-internal-operation-timing",
 		"validationModel": "external-post-operation-assertions",
 		"memoryModel": "peak-rss-reported",
-		"installHint": "python3 -m pip install openpyxl",
+		"installHint": "python3 -m pip install openpyxl psutil",
 		"capabilities": {
 			"internalTiming": true,
 			"xlsmRoundtrip": true
@@ -344,7 +344,7 @@
 		"timingModel": "external-internal-read-only-stream-materialization-timing",
 		"validationModel": "external-post-materialization-assertions",
 		"memoryModel": "peak-rss-reported",
-		"installHint": "python3 -m pip install openpyxl",
+		"installHint": "python3 -m pip install openpyxl psutil",
 		"capabilities": {
 			"internalTiming": true,
 			"xlsmRoundtrip": false
@@ -365,7 +365,7 @@
 		"timingModel": "external-internal-read-only-data-only-stream-materialization-timing",
 		"validationModel": "external-post-materialization-assertions",
 		"memoryModel": "peak-rss-reported",
-		"installHint": "python3 -m pip install openpyxl",
+		"installHint": "python3 -m pip install openpyxl psutil",
 		"capabilities": {
 			"internalTiming": true,
 			"valueOnlyRead": true,
@@ -382,7 +382,7 @@
 		"timingModel": "external-internal-metadata-only-load-timing",
 		"validationModel": "external-post-metadata-assertions",
 		"memoryModel": "peak-rss-reported",
-		"installHint": "python3 -m pip install openpyxl",
+		"installHint": "python3 -m pip install openpyxl psutil",
 		"capabilities": {
 			"internalTiming": true,
 			"metadataOnlyRead": true,

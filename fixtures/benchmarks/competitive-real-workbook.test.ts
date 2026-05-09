@@ -425,7 +425,7 @@ describe('evaluateAssertions', () => {
 				{
 					name: 'runner',
 					command: ['python3', 'runner.py'],
-					categories: ['read'],
+					categories: ['read', 'edit-roundtrip'],
 					runtime: 'python3',
 					timingModel: 'external-internal-operation-timing',
 					capabilities: {
@@ -444,7 +444,7 @@ describe('evaluateAssertions', () => {
 			{
 				name: 'runner',
 				command: ['python3', 'runner.py'],
-				categories: ['read'],
+				categories: ['read', 'edit-roundtrip'],
 				runtime: 'python3',
 				timingModel: 'external-internal-operation-timing',
 				capabilities: {
@@ -629,6 +629,7 @@ describe('evaluateAssertions', () => {
 			const specs = normalizeExternalRunnerSpecs(parsed)
 			const rustCalamine = specs.find((spec) => spec.name === 'rust-calamine')
 			const excelize = specs.find((spec) => spec.name === 'excelize')
+			const openpyxl = specs.find((spec) => spec.name === 'openpyxl')
 			const fastxlsx = specs.find((spec) => spec.name === 'fastxlsx')
 			const pyopenxlsx = specs.find((spec) => spec.name === 'pyopenxlsx')
 			const openpyxlMetadataOnly = specs.find((spec) => spec.name === 'openpyxl-metadata-only')
@@ -655,6 +656,7 @@ describe('evaluateAssertions', () => {
 				internalTiming: true,
 				valueOnlyRead: true,
 			})
+			expect(openpyxl?.categories).toEqual(['read', 'roundtrip', 'edit-roundtrip'])
 			expect(openpyxlMetadataOnly?.capabilities).toEqual({
 				xlsmRoundtrip: false,
 				internalTiming: true,

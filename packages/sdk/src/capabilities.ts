@@ -560,10 +560,11 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'analytics.getpivotdata',
 		'analytics',
 		'GETPIVOTDATA',
-		'unsupported',
+		'inspectable',
 		'P1',
-		'Implement GETPIVOTDATA over inspectable pivot metadata.',
-		'Pivot output querying is not implemented.',
+		'Resolve output values after headless pivot-cache recalculation exists.',
+		'GETPIVOTDATA-style SDK queries resolve matching pivot table/data-field metadata and return explicit warnings that output values are not recalculated headlessly.',
+		['packages/sdk/src/get-pivot-data.test.ts'],
 	),
 
 	cap(

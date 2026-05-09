@@ -48,6 +48,8 @@ import type {
 	FlatCellValue,
 	FormulaInfo,
 	FormulaReferenceInfo,
+	GetPivotDataQuery,
+	GetPivotDataResult,
 	PivotCacheInfo,
 	PivotRefreshPlanInfo,
 	PivotRefreshRecommendedOp,
@@ -598,6 +600,10 @@ export class WorkbookReadView {
 		return buildPivotRefreshPlans(this.wb.pivotCaches, this.wb.pivotTables)
 	}
 
+	getPivotData(query: GetPivotDataQuery): GetPivotDataResult {
+		return buildGetPivotDataResult(query, this.wb.pivotTables)
+	}
+
 	slicerCaches(): readonly SlicerCacheInfo[] {
 		return this.wb.slicerCaches.map((entry) => ({
 			...entry,
@@ -1003,6 +1009,59 @@ function copyPivotTableInfo(pivot: PivotTableInfo): PivotTableInfo {
 		columnFields: pivot.columnFields.map((field) => ({ ...field })),
 		pageFields: pivot.pageFields.map((field) => ({ ...field })),
 		dataFields: pivot.dataFields.map((field) => ({ ...field })),
+	}
+}
+
+function buildGetPivotDataResult(
+	query: GetPivotDataQuery,
+	pivots: readonly PivotTableInfo[],
+): GetPivotDataResult {
+	const normalizedDataField = query.dataField.toLowerCase()
+	const normalizedPivotTable = query.pivotTable?.toLowerCase()
+	const filters = query.filters ?? []
+	const matches = pivots.flatMap((pivot) => {
+		if (normalizedPivotTable && pivot.name?.toLowerCase() !== normalizedPivotTable) return []
+		const dataField = pivot.dataFields.find((field) => {
+			return (
+				field.name?.toLowerCase() === normalizedDataField ||
+				field.subtotal?.toLowerCase() === normalizedDataField
+			)
+		})
+		if (!dataField) return []
+		const pivotFieldNames = new Set(
+			pivot.fields.flatMap((field) => (field.name ? [field.name.toLowerCase()] : [])),
+		)
+		const matchedFilters = filters.filter((filter) =>
+			pivotFieldNames.has(filter.field.toLowerCase()),
+		)
+		const unmatchedFilters = filters.filter(
+			(filter) => !pivotFieldNames.has(filter.field.toLowerCase()),
+		)
+		return [
+			{
+				pivotTable: copyPivotTableInfo(pivot),
+				dataField: { ...dataField },
+				matchedFilters,
+				unmatchedFilters,
+			},
+		]
+	})
+	const warnings = [
+		'GETPIVOTDATA metadata can be resolved, but pivot output values are not recalculated headlessly.',
+	]
+	if (matches.length === 0) {
+		warnings.push('No matching pivot table/data field metadata was found.')
+	}
+	if (matches.some((match) => match.unmatchedFilters.length > 0)) {
+		warnings.push(
+			'Some requested field/item filters are not present in inspectable pivot metadata.',
+		)
+	}
+	return {
+		query,
+		matches,
+		canResolveOutput: false,
+		warnings,
 	}
 }
 

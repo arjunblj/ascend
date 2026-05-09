@@ -218,6 +218,31 @@ export interface PivotRefreshRecommendedOp {
 	readonly saveData?: boolean
 }
 
+export interface GetPivotDataQuery {
+	readonly dataField: string
+	readonly pivotTable?: string
+	readonly filters?: readonly GetPivotDataFilter[]
+}
+
+export interface GetPivotDataFilter {
+	readonly field: string
+	readonly item: string
+}
+
+export interface GetPivotDataMatchInfo {
+	readonly pivotTable: PivotTableInfo
+	readonly dataField: PivotDataFieldInfo
+	readonly matchedFilters: readonly GetPivotDataFilter[]
+	readonly unmatchedFilters: readonly GetPivotDataFilter[]
+}
+
+export interface GetPivotDataResult {
+	readonly query: GetPivotDataQuery
+	readonly matches: readonly GetPivotDataMatchInfo[]
+	readonly canResolveOutput: false
+	readonly warnings: readonly string[]
+}
+
 export interface PivotCacheFieldInfo {
 	readonly index: number
 	readonly name?: string

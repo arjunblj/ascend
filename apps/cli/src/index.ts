@@ -9,6 +9,7 @@ import { checkCommand, usage as checkUsage } from './commands/check.ts'
 import { commitCommand, usage as commitUsage } from './commands/commit.ts'
 import { createCommand, usage as createUsage } from './commands/create.ts'
 import { diffCommand, usage as diffUsage } from './commands/diff.ts'
+import { docsCommand, usage as docsUsage } from './commands/docs.ts'
 import { doctorCommand, usage as doctorUsage } from './commands/doctor.ts'
 import { exportCommand, usage as exportUsage } from './commands/export.ts'
 import { findCommand, usage as findUsage } from './commands/find.ts'
@@ -46,6 +47,7 @@ Commands:
   plan <file> --ops <json>      Validate and preview a safe edit plan
   commit <file> --ops <json>    Commit an edit plan atomically
   repair-plan <file>            Suggest next actions for unsafe files
+  docs [query]                  Search bundled agent docs and examples
   preview <file> <range> <json> Preview workbook changes without saving
   write <file> <range> <json>   Write values to cells
   formula <subcommand>          Inspect or edit formulas
@@ -117,6 +119,11 @@ const COMMANDS: Record<string, Command> = {
 		],
 	},
 	'repair-plan': { run: repairPlanCommand, usage: repairPlanUsage, allowedFlags: ['json'] },
+	docs: {
+		run: docsCommand,
+		usage: docsUsage,
+		allowedFlags: ['query', 'examples', 'path', 'list', 'limit', 'tokens', 'json'],
+	},
 	preview: { run: previewCommand, usage: previewUsage, allowedFlags: ['sheet', 'ops', 'json'] },
 	write: { run: writeCommand, usage: writeUsage, allowedFlags: ['sheet', 'ops', 'json'] },
 	formula: { run: formulaCommand, usage: formulaUsage, allowedFlags: ['json'] },

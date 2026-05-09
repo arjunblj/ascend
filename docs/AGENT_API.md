@@ -17,6 +17,7 @@ Core commands:
 - `ascend plan <file> --ops ops.json --progress jsonl --json` validates operations, previews diffs, audits recalc, approvals, and preservation risk.
 - `ascend commit <file> --ops ops.json --output out.xlsx --expect-sha256 <hash> --progress jsonl --json` writes safely.
 - `ascend repair-plan <file> --json` suggests recovery actions after failed checks, lints, or unsupported-feature audits.
+- `ascend docs <query> --json`, `ascend docs --examples <query> --json`, `ascend docs --path llms-full.txt`, and `ascend docs --list --json` expose local agent docs without browsing.
 - `ascend check <file> --json`, `ascend lint <file> --json`, `ascend trace <file> <ref> --json`, and `ascend diff <a> <b> --json` verify work.
 
 JSON stdout is wrapped in a versioned machine envelope. Long-running safe workflows can emit JSONL progress to stderr with `--progress jsonl`.

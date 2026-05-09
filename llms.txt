@@ -4,7 +4,7 @@ Ascend is an agent-native spreadsheet engine for headless Excel, XLSM, CSV, and 
 
 ## Primary Agent Entry Points
 
-- CLI: `ascend agent-init --json`, `ascend ops --json`, `ascend capabilities --json`, `ascend plan <file> --ops ops.json --json`, `ascend commit <file> --ops ops.json --output out.xlsx --json`
+- CLI: `ascend agent-init --json`, `ascend docs <query> --json`, `ascend ops --json`, `ascend capabilities --json`, `ascend plan <file> --ops ops.json --json`, `ascend commit <file> --ops ops.json --output out.xlsx --json`
 - MCP resources: `ascend://llms.txt`, `ascend://llms-full.txt`, `ascend://docs/agent-api.md`, `ascend://operations`, `ascend://capabilities`, `ascend://agent-workflow`
 - MCP tools: `ascend.search_docs`, `ascend.search_examples`, `ascend.inspect`, `ascend.read`, `ascend.read_table`, `ascend.find`, `ascend.visuals`, `ascend.list_operations`, `ascend.capabilities`, `ascend.plan`, `ascend.commit`, `ascend.repair_plan`
 - SDK: `AscendWorkbook`, `WorkbookDocument`, operation helpers, schema discovery, safe plan/commit workflow

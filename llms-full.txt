@@ -23,6 +23,10 @@ Ascend is a TypeScript/Bun monorepo for agent-native spreadsheet automation. It 
 Use JSON for automation:
 
 - `ascend agent-init --json`
+- `ascend docs <query> --json`
+- `ascend docs --examples <query> --json`
+- `ascend docs --path llms-full.txt`
+- `ascend docs --list --json`
 - `ascend ops --json`
 - `ascend capabilities --json`
 - `ascend inspect <file> --json --verbose`

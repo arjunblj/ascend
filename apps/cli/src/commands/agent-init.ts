@@ -34,6 +34,7 @@ const AGENT_INIT: AgentInitInfo = {
 	commands: {
 		inspect: 'ascend inspect <file> --json --verbose',
 		read: 'ascend read <file> <range> --json',
+		docs: 'ascend docs <query> --json',
 		operations: 'ascend ops --json',
 		capabilities: 'ascend capabilities --json',
 		plan: 'ascend plan <file> --ops ops.json --progress jsonl --json',
@@ -42,7 +43,14 @@ const AGENT_INIT: AgentInitInfo = {
 		check: 'ascend check <file> --progress jsonl --json',
 		repair: 'ascend repair-plan <file> --json',
 	},
-	mcpResources: ['ascend://capabilities', 'ascend://operations', 'ascend://agent-workflow'],
+	mcpResources: [
+		'ascend://llms.txt',
+		'ascend://llms-full.txt',
+		'ascend://docs/agent-api.md',
+		'ascend://capabilities',
+		'ascend://operations',
+		'ascend://agent-workflow',
+	],
 	safetyDefaults: [
 		'Prefer non-destructive --output writes over --in-place.',
 		'Use --expect-sha256 from plan output to reject stale inputs.',

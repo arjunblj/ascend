@@ -115,11 +115,50 @@ describe('ascend cli', () => {
 		).toBe(true)
 	})
 
+	test('docs --json searches bundled agent docs', async () => {
+		const { stdout, exitCode } = await run('docs', 'plan', 'commit', '--json')
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.ok).toBe(true)
+		expect(
+			parsed.data.results.some((result: { path: string }) => result.path.includes('llms')),
+		).toBe(true)
+	})
+
+	test('docs can list and read bundled docs', async () => {
+		const listed = await run('docs', '--list', '--json')
+		expect(listed.exitCode).toBe(0)
+		const list = JSON.parse(listed.stdout)
+		expect(list.data.docs.some((doc: { path: string }) => doc.path === 'llms.txt')).toBe(true)
+
+		const read = await run('docs', '--path', 'llms.txt', '--json')
+		expect(read.exitCode).toBe(0)
+		const doc = JSON.parse(read.stdout)
+		expect(doc.data.text).toContain('Ascend')
+	})
+
+	test('docs --examples searches examples only', async () => {
+		const { stdout, exitCode } = await run('docs', 'mcp', 'setup', '--examples', '--json')
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.ok).toBe(true)
+		expect(parsed.data.results.every((result: { kind: string }) => result.kind === 'example')).toBe(
+			true,
+		)
+		expect(
+			parsed.data.results.some(
+				(result: { path: string }) => result.path === 'examples/mcp-setup.md',
+			),
+		).toBe(true)
+	})
+
 	test('agent-init prints the canonical agent workflow contract', async () => {
 		const { stdout, exitCode } = await run('agent-init', '--json')
 		expect(exitCode).toBe(0)
 		const parsed = JSON.parse(stdout)
 		expect(parsed.ok).toBe(true)
+		expect(parsed.data.commands.docs).toContain('ascend docs')
+		expect(parsed.data.mcpResources).toContain('ascend://llms.txt')
 		expect(parsed.data.commands.plan).toContain('--progress jsonl')
 		expect(parsed.data.mcpResources).toContain('ascend://operations')
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('--expect-sha256')

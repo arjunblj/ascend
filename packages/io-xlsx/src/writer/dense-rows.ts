@@ -1,4 +1,3 @@
-import { indexToColumn } from '@ascend/core'
 import type { AscendError, Result } from '@ascend/schema'
 import { ascendError, err, ok } from '@ascend/schema'
 import { escapeXml } from '../xml.ts'
@@ -283,7 +282,7 @@ function buildRowXml(options: WriteDenseRowsXlsxOptions, row: number, state?: Ro
 		const value = values[col] ?? null
 		const xml = cellXml(
 			value,
-			`${indexToColumn(col)}${row + 1}`,
+			`${columnName(col)}${row + 1}`,
 			options.stringsAreXmlSafe,
 			options.valueType,
 		)
@@ -453,12 +452,7 @@ function buildRowXmlWithRefs(options: WriteDenseRowsXlsxOptions, row: number): s
 		if (value === null) continue
 		hasValue = true
 		cells.push(
-			cellXml(
-				value,
-				`${indexToColumn(col)}${row + 1}`,
-				options.stringsAreXmlSafe,
-				options.valueType,
-			),
+			cellXml(value, `${columnName(col)}${row + 1}`, options.stringsAreXmlSafe, options.valueType),
 		)
 	}
 	if (!hasValue) return ''
@@ -497,7 +491,18 @@ function cellXml(
 }
 
 function sheetDimension(cols: number, rows: number): string {
-	return `A1:${indexToColumn(Math.max(0, cols - 1))}${Math.max(1, rows)}`
+	return `A1:${columnName(Math.max(0, cols - 1))}${Math.max(1, rows)}`
+}
+
+function columnName(index: number): string {
+	let n = index + 1
+	let column = ''
+	while (n > 0) {
+		const rem = (n - 1) % 26
+		column = String.fromCharCode(65 + rem) + column
+		n = Math.floor((n - 1) / 26)
+	}
+	return column
 }
 
 function buildBaseParts(sheetName: string): Map<string, Uint8Array> {

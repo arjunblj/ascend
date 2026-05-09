@@ -120,6 +120,7 @@ export const infoFunctions: FunctionDef[] = [
 		maxArgs: 1,
 		evaluate: (args) => booleanValue(args[0]?.ref !== undefined),
 	},
+	{ name: 'ISFORMULA', minArgs: 1, maxArgs: 1, evaluate: () => booleanValue(false) },
 	{ name: 'TYPE', minArgs: 1, maxArgs: 1, evaluate: typeFn },
 	{ name: 'N', minArgs: 1, maxArgs: 1, evaluate: nFn },
 	{ name: 'NA', minArgs: 0, maxArgs: 0, evaluate: na },

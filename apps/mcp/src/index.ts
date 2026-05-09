@@ -1,20 +1,27 @@
-import { AscendException, ascendError, type CellValue, type Operation } from '@ascend/schema'
+import { AscendException, ascendError, type CellValue } from '@ascend/schema'
 import {
+	type AgentCommitOptions,
 	Ascend,
+	type CapabilityFilters,
 	type CompactRangeWindowInfo,
+	commitAgentPlan,
+	createAgentPlan,
+	createRepairPlan,
 	ensureOutputExtension,
 	escapeDelimitedCell,
 	formatDisplayCellValue,
 	inferExportFormat,
+	listCapabilities,
 	normalizeExportFormat,
+	parseOperations,
 	type RangeRowsInfo,
+	summarizeCapabilities,
 	toA1Ref,
 	WorkbookDocument,
 } from '@ascend/sdk'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
-import { parseOperations } from './operation-schema.ts'
 import { errorResponse, okResponse } from './response.ts'
 
 export function createServer(): McpServer {
@@ -255,6 +262,68 @@ export function createServer(): McpServer {
 	)
 
 	server.tool(
+		'ascend.read_table',
+		'Read a structured Excel table by name without manually resolving its range',
+		{
+			file: z.string().describe('Path to workbook file'),
+			table: z.string().describe('Excel table name'),
+			rowOffset: z.number().int().nonnegative().optional().describe('Data row offset'),
+			rowLimit: z.number().int().positive().optional().describe('Maximum data rows to return'),
+			display: z
+				.boolean()
+				.optional()
+				.describe('Return display strings instead of raw typed values'),
+		},
+		async ({ file, table, rowOffset, rowLimit, display }) => {
+			try {
+				const wb = await WorkbookDocument.open(file, { mode: 'full' })
+				const handle = wb.table(table)
+				if (!handle) return errorResponse(`Table "${table}" not found`)
+				const page = handle.readRows({
+					...(rowOffset !== undefined ? { offset: rowOffset } : {}),
+					...(rowLimit !== undefined ? { limit: rowLimit } : {}),
+				})
+				const rows = display
+					? page.rows.map((row) => ({
+							...row,
+							values: Object.fromEntries(
+								Object.entries(row.values).map(([key, value]) => [
+									key,
+									formatDisplayCellValue(value),
+								]),
+							),
+						}))
+					: page.rows
+				return okResponse(
+					{
+						name: handle.name,
+						columns: handle.columns,
+						ref: rangeRefToString(handle.ref),
+						rowCount: handle.rowCount,
+						hasHeaders: handle.hasHeaders,
+						hasTotals: handle.hasTotals,
+						headerRow: display
+							? handle.headerRow()?.map((cell) => formatDisplayCellValue(cell))
+							: handle.headerRow(),
+						totalsRow: display
+							? handle.totalsRow()?.map((cell) => formatDisplayCellValue(cell))
+							: handle.totalsRow(),
+						sortState: handle.sortState,
+						autoFilter: handle.autoFilter,
+						page: { ...page, rows },
+						rows: rows.map((row) => row.values),
+					},
+					`Read table "${table}"`,
+				)
+			} catch (e) {
+				return errorResponse(
+					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
+				)
+			}
+		},
+	)
+
+	server.tool(
 		'ascend.agent_view',
 		'Read a compressed semantic summary for a worksheet range',
 		{
@@ -307,11 +376,17 @@ export function createServer(): McpServer {
 		async ({ file, ops }) => {
 			const parsed = parseOperations(ops)
 			if (!parsed.ok) {
-				return errorResponse(ascendError('VALIDATION_ERROR', parsed.error))
+				return errorResponse(
+					ascendError('VALIDATION_ERROR', parsed.error, {
+						details: { issues: parsed.issues },
+						suggestedFix:
+							'Use ascend.list_operations for canonical operation schemas and examples.',
+					}),
+				)
 			}
 			try {
 				const wb = await Ascend.open(file)
-				const result = wb.preview(parsed.value as readonly Operation[])
+				const result = wb.preview(parsed.value)
 				if (result.errors.length > 0) {
 					const first = result.errors[0]
 					return errorResponse(
@@ -342,11 +417,17 @@ export function createServer(): McpServer {
 		async ({ file, ops }) => {
 			const parsed = parseOperations(ops)
 			if (!parsed.ok) {
-				return errorResponse(ascendError('VALIDATION_ERROR', parsed.error))
+				return errorResponse(
+					ascendError('VALIDATION_ERROR', parsed.error, {
+						details: { issues: parsed.issues },
+						suggestedFix:
+							'Use ascend.list_operations for canonical operation schemas and examples.',
+					}),
+				)
 			}
 			try {
 				const wb = await Ascend.open(file)
-				const result = wb.apply(parsed.value as readonly Operation[])
+				const result = wb.apply(parsed.value)
 				if (result.errors.length > 0) {
 					const first = result.errors[0]
 					return errorResponse(
@@ -409,6 +490,34 @@ export function createServer(): McpServer {
 	)
 
 	server.tool(
+		'ascend.eval',
+		'Evaluate a formula against a workbook without writing a scratch cell',
+		{
+			file: z.string().describe('Path to workbook file'),
+			formula: z.string().describe('Formula to evaluate, with or without a leading ='),
+			display: z.boolean().optional().describe('Return a display string alongside the typed value'),
+		},
+		async ({ file, formula, display }) => {
+			try {
+				const wb = await Ascend.open(file)
+				const value = wb.eval(formula)
+				return okResponse(
+					{
+						formula,
+						value,
+						...(display ? { display: formatDisplayCellValue(value) } : {}),
+					},
+					`Evaluated formula "${formula}"`,
+				)
+			} catch (e) {
+				return errorResponse(
+					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
+				)
+			}
+		},
+	)
+
+	server.tool(
 		'ascend.list_operations',
 		'List all available spreadsheet operations with their parameters and JSON Schema for LLM tool use',
 		{},
@@ -416,6 +525,139 @@ export function createServer(): McpServer {
 			const ops = Ascend.listOperations()
 			const schemas = Ascend.getOperationsSchema()
 			return okResponse({ operations: ops, schemas }, `${ops.length} operations available`)
+		},
+	)
+
+	server.tool(
+		'ascend.capabilities',
+		'List Ascend Excel capability coverage with OSS baseline gaps and next milestones',
+		{
+			feature: z.string().optional().describe('Filter by capability id, label, or family'),
+			family: z.string().optional().describe('Filter by exact capability family'),
+			priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional().describe('Priority filter'),
+			status: z
+				.enum([
+					'excel-equivalent',
+					'editable',
+					'inspectable',
+					'preserved',
+					'unsafe-blocked',
+					'unsupported',
+				])
+				.optional()
+				.describe('Status filter'),
+			gapsOnly: z.boolean().optional().describe('Only return non-editable/non-equivalent gaps'),
+		},
+		async ({ feature, family, priority, status, gapsOnly }) => {
+			const filters: CapabilityFilters = {
+				...(feature ? { feature } : {}),
+				...(family ? { family } : {}),
+				...(priority ? { priority } : {}),
+				...(status ? { status } : {}),
+				...(gapsOnly ? { gapsOnly: true } : {}),
+			}
+			const capabilities = listCapabilities(filters)
+			return okResponse(
+				{ summary: summarizeCapabilities(capabilities), capabilities },
+				`${capabilities.length} capabilities returned`,
+			)
+		},
+	)
+
+	server.tool(
+		'ascend.plan',
+		'Agent-safe edit planning: validate, preview, recalc-audit, and preservation-audit operations without saving',
+		{
+			file: z.string().describe('Path to workbook file'),
+			ops: z.array(z.record(z.string(), z.unknown())).describe('Operations to plan'),
+		},
+		async ({ file, ops }) => {
+			const parsed = parseOperations(ops)
+			if (!parsed.ok) {
+				return errorResponse(
+					ascendError('VALIDATION_ERROR', parsed.error, {
+						details: { issues: parsed.issues },
+						suggestedFix:
+							'Use ascend.list_operations for canonical operation schemas and examples.',
+					}),
+				)
+			}
+			try {
+				const result = await createAgentPlan(file, parsed.value)
+				if (result.preview.errors.length > 0) {
+					const first = result.preview.errors[0]
+					return errorResponse(
+						first
+							? { ...first, details: { ...(first.details ?? {}), plan: result } }
+							: ascendError('VALIDATION_ERROR', 'Plan failed', { details: { plan: result } }),
+					)
+				}
+				return okResponse(result, `Planned ${ops.length} operation(s)`)
+			} catch (e) {
+				return errorResponse(
+					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
+				)
+			}
+		},
+	)
+
+	server.tool(
+		'ascend.commit',
+		'Commit an agent edit plan atomically with optional input hash guard',
+		{
+			file: z.string().describe('Path to workbook file'),
+			ops: z.array(z.record(z.string(), z.unknown())).describe('Operations to commit'),
+			output: z.string().optional().describe('Non-destructive output path'),
+			inPlace: z.boolean().optional().describe('Replace the input file atomically'),
+			backup: z.string().optional().describe('Backup path for in-place commits'),
+			expectSha256: z
+				.string()
+				.optional()
+				.describe('Reject if the input hash has changed since plan'),
+		},
+		async ({ file, ops, output, inPlace, backup, expectSha256 }) => {
+			const parsed = parseOperations(ops)
+			if (!parsed.ok) {
+				return errorResponse(
+					ascendError('VALIDATION_ERROR', parsed.error, {
+						details: { issues: parsed.issues },
+						suggestedFix:
+							'Use ascend.list_operations for canonical operation schemas and examples.',
+					}),
+				)
+			}
+			try {
+				const options: AgentCommitOptions = {
+					...(output ? { output } : {}),
+					...(inPlace ? { inPlace: true } : {}),
+					...(backup ? { backup } : {}),
+					...(expectSha256 ? { expectSha256 } : {}),
+				}
+				const result = await commitAgentPlan(file, parsed.value, options)
+				return okResponse(result, `Committed ${ops.length} operation(s)`)
+			} catch (e) {
+				return errorResponse(
+					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
+				)
+			}
+		},
+	)
+
+	server.tool(
+		'ascend.repair_plan',
+		'Suggest safe next actions when check, lint, or unsupported-feature audits need attention',
+		{
+			file: z.string().describe('Path to workbook file'),
+		},
+		async ({ file }) => {
+			try {
+				const result = await createRepairPlan(file)
+				return okResponse(result, `${result.actions.length} repair action(s)`)
+			} catch (e) {
+				return errorResponse(
+					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
+				)
+			}
 		},
 	)
 

@@ -1,14 +1,20 @@
+import { type AscendError, AscendException, ascendError, type CellValue } from '@ascend/schema'
 import {
-	type AscendError,
-	AscendException,
-	ascendError,
-	type CellValue,
-	type Operation,
-} from '@ascend/schema'
-import {
+	type AgentCommitOptions,
 	AscendWorkbook,
+	type CapabilityFilters,
+	type CapabilityPriority,
+	type CapabilityStatus,
+	commitAgentPlan,
+	createAgentPlan,
+	createRepairPlan,
 	formatDisplayCellValue,
+	getOperationsSchema,
+	listCapabilities,
+	listOperations,
 	normalizeExportFormat,
+	parseOperations,
+	summarizeCapabilities,
 	WorkbookDocument,
 } from '@ascend/sdk'
 import { binaryResponse, jsonFailure, jsonFailureError, jsonSuccess } from './response.ts'
@@ -82,6 +88,20 @@ function handleError(e: unknown, fileContext?: string): Response {
 	return jsonFailure(msg, 500)
 }
 
+function sheetNotFoundResponse(sheetName: string, wb: WorkbookDocument | AscendWorkbook): Response {
+	const available = wb.inspect().sheets.map((s) => s.name)
+	return jsonFailureError(
+		ascendError('SHEET_NOT_FOUND', `Sheet "${sheetName}" not found`, {
+			suggestedFix:
+				available.length > 0
+					? `Available sheets: ${available.join(', ')}`
+					: 'Workbook has no sheets',
+			details: { availableSheets: available },
+		}),
+		404,
+	)
+}
+
 const CORS_HEADERS: Record<string, string> = {
 	'Access-Control-Allow-Origin': '*',
 	'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -96,214 +116,277 @@ function withCors(res: Response): Response {
 }
 
 export function createServer(opts?: { port?: number }) {
-	return Bun.serve({
-		port: opts?.port ?? (Number(process.env.PORT) || 3000),
-		async fetch(req) {
-			const url = new URL(req.url)
-			const method = req.method
-			const path = url.pathname
+	const fetch = async (req: Request) => {
+		const url = new URL(req.url)
+		const method = req.method
+		const path = url.pathname
 
-			if (method === 'OPTIONS') {
-				return withCors(new Response(null, { status: 204 }))
+		if (method === 'OPTIONS') {
+			return withCors(new Response(null, { status: 204 }))
+		}
+
+		try {
+			if (method === 'GET' && path === '/health') {
+				return withCors(jsonSuccess({ status: 'ok' }))
 			}
 
-			try {
-				if (method === 'GET' && path === '/health') {
-					return withCors(jsonSuccess({ status: 'ok' }))
-				}
+			if (method === 'GET' && path === '/operations') {
+				return withCors(
+					jsonSuccess({ operations: listOperations(), schemas: getOperationsSchema() }),
+				)
+			}
 
-				if (method === 'POST' && path === '/inspect') {
-					const body = await parseJson<{ file?: string; sheet?: string }>(req)
-					const file = body ? requireString(body, 'file') : null
+			if (method === 'GET' && path === '/capabilities') {
+				const feature = url.searchParams.get('feature')
+				const family = url.searchParams.get('family')
+				const priority = url.searchParams.get('priority')
+				const status = url.searchParams.get('status')
+				const filters: CapabilityFilters = {
+					...(feature ? { feature } : {}),
+					...(family ? { family } : {}),
+					...(priority ? { priority: priority as CapabilityPriority } : {}),
+					...(status ? { status: status as CapabilityStatus } : {}),
+					...(url.searchParams.get('gaps') === 'true' ? { gapsOnly: true } : {}),
+				}
+				const capabilities = listCapabilities(filters)
+				return withCors(jsonSuccess({ summary: summarizeCapabilities(capabilities), capabilities }))
+			}
+
+			if (method === 'POST' && path === '/inspect') {
+				const body = await parseJson<{ file?: string; sheet?: string }>(req)
+				const file = body ? requireString(body, 'file') : null
+				const sheetName = body ? requireString(body, 'sheet') : null
+				if (!file) return jsonFailure('Missing or invalid file', 400)
+				try {
+					const wb = await WorkbookDocument.open(
+						file,
+						sheetName ? { mode: 'values', sheets: [sheetName] } : { mode: 'metadata-only' },
+					)
+					if (!sheetName) return jsonSuccess(wb.inspect())
+					const sheet = wb.inspectSheet(sheetName)
+					if (!sheet) return sheetNotFoundResponse(sheetName, wb)
+					return jsonSuccess(sheet)
+				} catch (e) {
+					return handleError(e, file)
+				}
+			}
+
+			if (method === 'POST' && path === '/read') {
+				const body = await parseJson<{
+					file?: string
+					range?: string
+					sheet?: string
+					format?: string
+					headers?: string[]
+					display?: boolean
+				}>(req)
+				const file = body ? requireString(body, 'file') : null
+				const range = body ? requireString(body, 'range') : null
+				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!range) return jsonFailure('Missing or invalid range', 400)
+				try {
 					const sheetName = body ? requireString(body, 'sheet') : null
-					if (!file) return jsonFailure('Missing or invalid file', 400)
-					try {
-						const wb = await WorkbookDocument.open(
-							file,
-							sheetName ? { mode: 'values', sheets: [sheetName] } : { mode: 'metadata-only' },
-						)
-						if (!sheetName) return jsonSuccess(wb.inspect())
-						const sheet = wb.inspectSheet(sheetName)
-						if (!sheet) return jsonFailure('Sheet not found', 400)
-						return jsonSuccess(sheet)
-					} catch (e) {
-						return handleError(e, file)
+					const format = (body ? requireString(body, 'format') : null) ?? 'cells'
+					const headers = body ? requireArray(body, 'headers') : null
+					const rowOffset = body ? requireOptionalNumber(body, 'rowOffset') : undefined
+					const rowLimit = body ? requireOptionalNumber(body, 'rowLimit') : undefined
+					const display =
+						body !== null &&
+						typeof body === 'object' &&
+						(body as Record<string, unknown>).display === true
+					const wb = await WorkbookDocument.open(
+						file,
+						sheetName ? { mode: 'values', sheets: [sheetName] } : { mode: 'values' },
+					)
+					const sheet = sheetName ? wb.sheet(sheetName) : wb.sheet(wb.sheets[0] ?? '')
+					if (!sheet) {
+						const missing = sheetName ?? wb.sheets[0] ?? ''
+						return sheetNotFoundResponse(missing || '(default)', wb)
 					}
-				}
-
-				if (method === 'POST' && path === '/read') {
-					const body = await parseJson<{
-						file?: string
-						range?: string
-						sheet?: string
-						format?: string
-						headers?: string[]
-						display?: boolean
-					}>(req)
-					const file = body ? requireString(body, 'file') : null
-					const range = body ? requireString(body, 'range') : null
-					if (!file) return jsonFailure('Missing or invalid file', 400)
-					if (!range) return jsonFailure('Missing or invalid range', 400)
-					try {
-						const sheetName = body ? requireString(body, 'sheet') : null
-						const format = (body ? requireString(body, 'format') : null) ?? 'cells'
-						const headers = body ? requireArray(body, 'headers') : null
-						const rowOffset = body ? requireOptionalNumber(body, 'rowOffset') : undefined
-						const rowLimit = body ? requireOptionalNumber(body, 'rowLimit') : undefined
-						const display =
-							body !== null &&
-							typeof body === 'object' &&
-							(body as Record<string, unknown>).display === true
-						const wb = await WorkbookDocument.open(
-							file,
-							sheetName ? { mode: 'values', sheets: [sheetName] } : { mode: 'values' },
-						)
-						const sheet = sheetName ? wb.sheet(sheetName) : wb.sheet(wb.sheets[0] ?? '')
-						if (!sheet) return jsonFailure('Sheet not found', 400)
-						if (format === 'rows') {
-							const info = sheet.readRows(range, {
-								...(rowOffset !== undefined ? { rowOffset } : {}),
-								...(rowLimit !== undefined ? { rowLimit } : {}),
-							})
-							return jsonSuccess(display ? displayRows(info) : info)
-						}
-						if (format === 'objects') {
-							const info = sheet.readObjects(range, {
-								...(rowOffset !== undefined ? { rowOffset } : {}),
-								...(rowLimit !== undefined ? { rowLimit } : {}),
-								headers: headers?.every((entry) => typeof entry === 'string')
-									? (headers as string[])
-									: 'first-row',
-							})
-							return jsonSuccess(display ? displayObjects(info) : info)
-						}
-						if (format !== 'cells') return jsonFailure('Invalid read format', 400)
-						const info = sheet.readWindow(range, {
+					if (format === 'rows') {
+						const info = sheet.readRows(range, {
 							...(rowOffset !== undefined ? { rowOffset } : {}),
 							...(rowLimit !== undefined ? { rowLimit } : {}),
 						})
-						return jsonSuccess(display ? displayCells(info) : info)
-					} catch (e) {
-						return handleError(e, file)
+						return jsonSuccess(display ? displayRows(info) : info)
 					}
-				}
-
-				if (method === 'POST' && path === '/agent-view') {
-					const body = await parseJson<{
-						file?: string
-						range?: string
-						sheet?: string
-						rowChunkSize?: number
-						sampleRowLimit?: number
-						sampleValueLimit?: number
-					}>(req)
-					const file = body ? requireString(body, 'file') : null
-					const range = body ? requireString(body, 'range') : null
-					if (!file) return jsonFailure('Missing or invalid file', 400)
-					if (!range) return jsonFailure('Missing or invalid range', 400)
-					try {
-						const sheetName = body ? requireString(body, 'sheet') : null
-						const rowChunkSize = body ? requireOptionalNumber(body, 'rowChunkSize') : undefined
-						const sampleRowLimit = body ? requireOptionalNumber(body, 'sampleRowLimit') : undefined
-						const sampleValueLimit = body
-							? requireOptionalNumber(body, 'sampleValueLimit')
-							: undefined
-						const wb = await WorkbookDocument.open(
-							file,
-							sheetName ? { mode: 'formula', sheets: [sheetName] } : { mode: 'formula' },
-						)
-						const targetSheet = sheetName ?? wb.sheets[0]
-						if (!targetSheet) return jsonFailure('Sheet not found', 400)
-						const info = wb.agentView(targetSheet, range, {
-							...(rowChunkSize !== undefined ? { rowChunkSize } : {}),
-							...(sampleRowLimit !== undefined ? { sampleRowLimit } : {}),
-							...(sampleValueLimit !== undefined ? { sampleValueLimit } : {}),
+					if (format === 'objects') {
+						const info = sheet.readObjects(range, {
+							...(rowOffset !== undefined ? { rowOffset } : {}),
+							...(rowLimit !== undefined ? { rowLimit } : {}),
+							headers: headers?.every((entry) => typeof entry === 'string')
+								? (headers as string[])
+								: 'first-row',
 						})
-						if (!info) return jsonFailure('Sheet not found', 400)
-						return jsonSuccess(info)
-					} catch (e) {
-						return handleError(e, file)
+						return jsonSuccess(display ? displayObjects(info) : info)
 					}
+					if (format !== 'cells') return jsonFailure('Invalid read format', 400)
+					const info = sheet.readWindow(range, {
+						...(rowOffset !== undefined ? { rowOffset } : {}),
+						...(rowLimit !== undefined ? { rowLimit } : {}),
+					})
+					return jsonSuccess(display ? displayCells(info) : info)
+				} catch (e) {
+					return handleError(e, file)
 				}
+			}
 
-				if (method === 'POST' && path === '/write') {
-					const body = await parseJson<{ file?: string; ops?: unknown[] }>(req)
-					const file = body ? requireString(body, 'file') : null
-					const opsArr = body ? requireArray(body, 'ops') : null
-					if (!file) return jsonFailure('Missing or invalid file', 400)
-					if (!opsArr || opsArr.length === 0) return jsonFailure('Missing or invalid ops', 400)
-					const ops = opsArr as Operation[]
-					try {
-						const wb = await AscendWorkbook.open(file)
-						const result = wb.apply(ops)
-						if (result.errors.length > 0) {
-							const first = result.errors[0]
-							return jsonFailureError(
-								first ?? ascendError('VALIDATION_ERROR', 'Failed to apply operations'),
-								400,
-							)
-						}
-						if (result.recalcRequired) {
-							const recalc = wb.recalc()
-							if (recalc.errors.length > 0) {
-								const first = recalc.errors[0]
-								return jsonFailureError(
-									first
-										? ascendError('FORMULA_EVAL_ERROR', `${first.ref}: ${first.error.message}`, {
-												refs: [first.ref],
-												details: { evalError: first.error },
-											})
-										: ascendError('FORMULA_EVAL_ERROR', 'Recalculation failed'),
-									400,
-								)
-							}
-						}
-						await wb.save(file)
-						return jsonSuccess(result)
-					} catch (e) {
-						return handleError(e, file)
+			if (method === 'POST' && path === '/agent-view') {
+				const body = await parseJson<{
+					file?: string
+					range?: string
+					sheet?: string
+					rowChunkSize?: number
+					sampleRowLimit?: number
+					sampleValueLimit?: number
+				}>(req)
+				const file = body ? requireString(body, 'file') : null
+				const range = body ? requireString(body, 'range') : null
+				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!range) return jsonFailure('Missing or invalid range', 400)
+				try {
+					const sheetName = body ? requireString(body, 'sheet') : null
+					const rowChunkSize = body ? requireOptionalNumber(body, 'rowChunkSize') : undefined
+					const sampleRowLimit = body ? requireOptionalNumber(body, 'sampleRowLimit') : undefined
+					const sampleValueLimit = body
+						? requireOptionalNumber(body, 'sampleValueLimit')
+						: undefined
+					const wb = await WorkbookDocument.open(
+						file,
+						sheetName ? { mode: 'formula', sheets: [sheetName] } : { mode: 'formula' },
+					)
+					const targetSheet = sheetName ?? wb.sheets[0]
+					if (!targetSheet) return sheetNotFoundResponse(sheetName ?? '', wb)
+					const info = wb.agentView(targetSheet, range, {
+						...(rowChunkSize !== undefined ? { rowChunkSize } : {}),
+						...(sampleRowLimit !== undefined ? { sampleRowLimit } : {}),
+						...(sampleValueLimit !== undefined ? { sampleValueLimit } : {}),
+					})
+					if (!info) return sheetNotFoundResponse(targetSheet, wb)
+					return jsonSuccess(info)
+				} catch (e) {
+					return handleError(e, file)
+				}
+			}
+
+			if (method === 'POST' && path === '/plan') {
+				const body = await parseJson<{ file?: string; ops?: unknown[] }>(req)
+				const file = body ? requireString(body, 'file') : null
+				const opsArr = body ? requireArray(body, 'ops') : null
+				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!opsArr || opsArr.length === 0) return jsonFailure('Missing or invalid ops', 400)
+				const parsed = parseOperations(opsArr)
+				if (!parsed.ok) {
+					return jsonFailureError(
+						ascendError('VALIDATION_ERROR', parsed.error, {
+							details: { issues: parsed.issues },
+							suggestedFix: 'Call /operations for canonical operation schemas and examples.',
+						}),
+						400,
+					)
+				}
+				try {
+					const result = await createAgentPlan(file, parsed.value)
+					if (result.preview.errors.length > 0) {
+						const first = result.preview.errors[0]
+						return jsonFailureError(
+							first
+								? { ...first, details: { ...(first.details ?? {}), plan: result } }
+								: ascendError('VALIDATION_ERROR', 'Plan failed', { details: { plan: result } }),
+							400,
+						)
 					}
+					return jsonSuccess(result)
+				} catch (e) {
+					return handleError(e, file)
 				}
+			}
 
-				if (method === 'POST' && path === '/preview') {
-					const body = await parseJson<{ file?: string; ops?: unknown[] }>(req)
-					const file = body ? requireString(body, 'file') : null
-					const opsArr = body ? requireArray(body, 'ops') : null
-					if (!file) return jsonFailure('Missing or invalid file', 400)
-					if (!opsArr || opsArr.length === 0) return jsonFailure('Missing or invalid ops', 400)
-					const ops = opsArr as Operation[]
-					try {
-						const wb = await AscendWorkbook.open(file)
-						const result = wb.preview(ops)
-						if (result.errors.length > 0) {
-							const first = result.errors[0]
-							return jsonFailureError(
-								first
-									? {
-											...first,
-											details: { ...(first.details ?? {}), preview: result },
-										}
-									: ascendError('VALIDATION_ERROR', 'Preview failed', {
-											details: { preview: result },
-										}),
-								400,
-							)
-						}
-						return jsonSuccess(result)
-					} catch (e) {
-						return handleError(e, file)
+			if (method === 'POST' && path === '/commit') {
+				const body = await parseJson<{
+					file?: string
+					ops?: unknown[]
+					output?: string
+					inPlace?: boolean
+					backup?: string
+					expectSha256?: string
+				}>(req)
+				const file = body ? requireString(body, 'file') : null
+				const opsArr = body ? requireArray(body, 'ops') : null
+				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!opsArr || opsArr.length === 0) return jsonFailure('Missing or invalid ops', 400)
+				const parsed = parseOperations(opsArr)
+				if (!parsed.ok) {
+					return jsonFailureError(
+						ascendError('VALIDATION_ERROR', parsed.error, {
+							details: { issues: parsed.issues },
+							suggestedFix: 'Call /operations for canonical operation schemas and examples.',
+						}),
+						400,
+					)
+				}
+				try {
+					const output = body ? requireString(body, 'output') : null
+					const backup = body ? requireString(body, 'backup') : null
+					const expectSha256 = body ? requireString(body, 'expectSha256') : null
+					const inPlace =
+						body !== null &&
+						typeof body === 'object' &&
+						(body as Record<string, unknown>).inPlace === true
+					const options: AgentCommitOptions = {
+						...(output ? { output } : {}),
+						...(inPlace ? { inPlace: true } : {}),
+						...(backup ? { backup } : {}),
+						...(expectSha256 ? { expectSha256 } : {}),
 					}
+					const result = await commitAgentPlan(file, parsed.value, options)
+					return jsonSuccess(result)
+				} catch (e) {
+					return handleError(e, file)
 				}
+			}
 
-				if (method === 'POST' && path === '/calc') {
-					const body = await parseJson<{ file?: string }>(req)
-					const file = body ? requireString(body, 'file') : null
-					if (!file) return jsonFailure('Missing or invalid file', 400)
-					try {
-						const wb = await AscendWorkbook.open(file)
-						const result = wb.recalc()
-						if (result.errors.length > 0) {
-							const first = result.errors[0]
+			if (method === 'POST' && path === '/repair-plan') {
+				const body = await parseJson<{ file?: string }>(req)
+				const file = body ? requireString(body, 'file') : null
+				if (!file) return jsonFailure('Missing or invalid file', 400)
+				try {
+					return jsonSuccess(await createRepairPlan(file))
+				} catch (e) {
+					return handleError(e, file)
+				}
+			}
+
+			if (method === 'POST' && path === '/write') {
+				const body = await parseJson<{ file?: string; ops?: unknown[] }>(req)
+				const file = body ? requireString(body, 'file') : null
+				const opsArr = body ? requireArray(body, 'ops') : null
+				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!opsArr || opsArr.length === 0) return jsonFailure('Missing or invalid ops', 400)
+				const parsed = parseOperations(opsArr)
+				if (!parsed.ok) {
+					return jsonFailureError(
+						ascendError('VALIDATION_ERROR', parsed.error, {
+							details: { issues: parsed.issues },
+							suggestedFix: 'Call /operations for canonical operation schemas and examples.',
+						}),
+						400,
+					)
+				}
+				try {
+					const wb = await AscendWorkbook.open(file)
+					const result = wb.apply(parsed.value)
+					if (result.errors.length > 0) {
+						const first = result.errors[0]
+						return jsonFailureError(
+							first ?? ascendError('VALIDATION_ERROR', 'Failed to apply operations'),
+							400,
+						)
+					}
+					if (result.recalcRequired) {
+						const recalc = wb.recalc()
+						if (recalc.errors.length > 0) {
+							const first = recalc.errors[0]
 							return jsonFailureError(
 								first
 									? ascendError('FORMULA_EVAL_ERROR', `${first.ref}: ${first.error.message}`, {
@@ -314,109 +397,188 @@ export function createServer(opts?: { port?: number }) {
 								400,
 							)
 						}
-						await wb.save(file)
-						return jsonSuccess(result)
-					} catch (e) {
-						return handleError(e, file)
 					}
+					await wb.save(file)
+					return jsonSuccess(result)
+				} catch (e) {
+					return handleError(e, file)
 				}
-
-				if (method === 'POST' && path === '/check') {
-					const body = await parseJson<{ file?: string }>(req)
-					const file = body ? requireString(body, 'file') : null
-					if (!file) return jsonFailure('Missing or invalid file', 400)
-					try {
-						const wb = await WorkbookDocument.open(file, { mode: 'formula' })
-						return jsonSuccess(wb.check())
-					} catch (e) {
-						return handleError(e, file)
-					}
-				}
-
-				if (method === 'POST' && path === '/lint') {
-					const body = await parseJson<{ file?: string }>(req)
-					const file = body ? requireString(body, 'file') : null
-					if (!file) return jsonFailure('Missing or invalid file', 400)
-					try {
-						const wb = await WorkbookDocument.open(file, { mode: 'formula' })
-						return jsonSuccess(wb.lint())
-					} catch (e) {
-						return handleError(e, file)
-					}
-				}
-
-				if (method === 'POST' && path === '/trace') {
-					const body = await parseJson<{ file?: string; cell?: string }>(req)
-					const file = body ? requireString(body, 'file') : null
-					const cell = body ? requireString(body, 'cell') : null
-					if (!file) return jsonFailure('Missing or invalid file', 400)
-					if (!cell) return jsonFailure('Missing or invalid cell', 400)
-					try {
-						const wb = await WorkbookDocument.open(file, { mode: 'formula' })
-						const result = wb.trace(cell)
-						if (!result) return jsonFailure('Cell not found', 400)
-						return jsonSuccess(result)
-					} catch (e) {
-						return handleError(e, file)
-					}
-				}
-
-				if (method === 'POST' && path === '/diff') {
-					const body = await parseJson<{ fileA?: string; fileB?: string }>(req)
-					const fileA = body ? requireString(body, 'fileA') : null
-					const fileB = body ? requireString(body, 'fileB') : null
-					if (!fileA) return jsonFailure('Missing or invalid fileA', 400)
-					if (!fileB) return jsonFailure('Missing or invalid fileB', 400)
-					try {
-						const wbA = await AscendWorkbook.open(fileA)
-						const wbB = await AscendWorkbook.open(fileB)
-						const diff = wbA.diff(wbB)
-						return jsonSuccess(diff)
-					} catch (e) {
-						return handleError(e)
-					}
-				}
-
-				if (method === 'POST' && path === '/export') {
-					const body = await parseJson<{ file?: string; format?: string }>(req)
-					const file = body ? requireString(body, 'file') : null
-					const format = body ? requireString(body, 'format') : null
-					if (!file) return jsonFailure('Missing or invalid file', 400)
-					if (!format) return jsonFailure('Missing or invalid format', 400)
-					try {
-						const wb = await AscendWorkbook.open(file)
-						const fmt = normalizeExportFormat(format)
-						if (!fmt) return jsonFailure(`Unsupported format: ${format}`, 400)
-						if (fmt === 'xlsx' || fmt === 'xlsm') {
-							const bytes = wb.toBytes()
-							return binaryResponse(
-								bytes,
-								fmt === 'xlsm'
-									? 'application/vnd.ms-excel.sheet.macroEnabled.12+xml'
-									: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-							)
-						}
-						if (fmt === 'csv' || fmt === 'tsv') {
-							const csv = wb.toCsv(fmt === 'tsv' ? { dialect: { delimiter: '\t' } } : undefined)
-							const bytes = new TextEncoder().encode(csv)
-							return binaryResponse(bytes, fmt === 'tsv' ? 'text/tab-separated-values' : 'text/csv')
-						}
-						if (fmt === 'json') {
-							return jsonSuccess(wb.toJSON())
-						}
-						return jsonFailure(`Unsupported format: ${format}`, 400)
-					} catch (e) {
-						return handleError(e, file)
-					}
-				}
-
-				return withCors(jsonFailure('Not Found', 404))
-			} catch (e) {
-				const msg = e instanceof Error ? e.message : String(e)
-				return withCors(jsonFailure(msg, 500))
 			}
-		},
-	})
+
+			if (method === 'POST' && path === '/preview') {
+				const body = await parseJson<{ file?: string; ops?: unknown[] }>(req)
+				const file = body ? requireString(body, 'file') : null
+				const opsArr = body ? requireArray(body, 'ops') : null
+				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!opsArr || opsArr.length === 0) return jsonFailure('Missing or invalid ops', 400)
+				const parsed = parseOperations(opsArr)
+				if (!parsed.ok) {
+					return jsonFailureError(
+						ascendError('VALIDATION_ERROR', parsed.error, {
+							details: { issues: parsed.issues },
+							suggestedFix: 'Call /operations for canonical operation schemas and examples.',
+						}),
+						400,
+					)
+				}
+				try {
+					const wb = await AscendWorkbook.open(file)
+					const result = wb.preview(parsed.value)
+					if (result.errors.length > 0) {
+						const first = result.errors[0]
+						return jsonFailureError(
+							first
+								? {
+										...first,
+										details: { ...(first.details ?? {}), preview: result },
+									}
+								: ascendError('VALIDATION_ERROR', 'Preview failed', {
+										details: { preview: result },
+									}),
+							400,
+						)
+					}
+					return jsonSuccess(result)
+				} catch (e) {
+					return handleError(e, file)
+				}
+			}
+
+			if (method === 'POST' && path === '/calc') {
+				const body = await parseJson<{ file?: string }>(req)
+				const file = body ? requireString(body, 'file') : null
+				if (!file) return jsonFailure('Missing or invalid file', 400)
+				try {
+					const wb = await AscendWorkbook.open(file)
+					const result = wb.recalc()
+					if (result.errors.length > 0) {
+						const first = result.errors[0]
+						return jsonFailureError(
+							first
+								? ascendError('FORMULA_EVAL_ERROR', `${first.ref}: ${first.error.message}`, {
+										refs: [first.ref],
+										details: { evalError: first.error },
+									})
+								: ascendError('FORMULA_EVAL_ERROR', 'Recalculation failed'),
+							400,
+						)
+					}
+					await wb.save(file)
+					return jsonSuccess(result)
+				} catch (e) {
+					return handleError(e, file)
+				}
+			}
+
+			if (method === 'POST' && path === '/check') {
+				const body = await parseJson<{ file?: string }>(req)
+				const file = body ? requireString(body, 'file') : null
+				if (!file) return jsonFailure('Missing or invalid file', 400)
+				try {
+					const wb = await WorkbookDocument.open(file, { mode: 'formula' })
+					return jsonSuccess(wb.check())
+				} catch (e) {
+					return handleError(e, file)
+				}
+			}
+
+			if (method === 'POST' && path === '/lint') {
+				const body = await parseJson<{ file?: string }>(req)
+				const file = body ? requireString(body, 'file') : null
+				if (!file) return jsonFailure('Missing or invalid file', 400)
+				try {
+					const wb = await WorkbookDocument.open(file, { mode: 'formula' })
+					return jsonSuccess(wb.lint())
+				} catch (e) {
+					return handleError(e, file)
+				}
+			}
+
+			if (method === 'POST' && path === '/trace') {
+				const body = await parseJson<{ file?: string; cell?: string }>(req)
+				const file = body ? requireString(body, 'file') : null
+				const cell = body ? requireString(body, 'cell') : null
+				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!cell) return jsonFailure('Missing or invalid cell', 400)
+				try {
+					const wb = await WorkbookDocument.open(file, { mode: 'formula' })
+					const result = wb.trace(cell)
+					if (!result) return jsonFailure('Cell not found', 400)
+					return jsonSuccess(result)
+				} catch (e) {
+					return handleError(e, file)
+				}
+			}
+
+			if (method === 'POST' && path === '/diff') {
+				const body = await parseJson<{ fileA?: string; fileB?: string }>(req)
+				const fileA = body ? requireString(body, 'fileA') : null
+				const fileB = body ? requireString(body, 'fileB') : null
+				if (!fileA) return jsonFailure('Missing or invalid fileA', 400)
+				if (!fileB) return jsonFailure('Missing or invalid fileB', 400)
+				try {
+					const wbA = await AscendWorkbook.open(fileA)
+					const wbB = await AscendWorkbook.open(fileB)
+					const diff = wbA.diff(wbB)
+					return jsonSuccess(diff)
+				} catch (e) {
+					return handleError(e)
+				}
+			}
+
+			if (method === 'POST' && path === '/export') {
+				const body = await parseJson<{ file?: string; format?: string }>(req)
+				const file = body ? requireString(body, 'file') : null
+				const format = body ? requireString(body, 'format') : null
+				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!format) return jsonFailure('Missing or invalid format', 400)
+				try {
+					const wb = await AscendWorkbook.open(file)
+					const fmt = normalizeExportFormat(format)
+					if (!fmt) return jsonFailure(`Unsupported format: ${format}`, 400)
+					if (fmt === 'xlsx' || fmt === 'xlsm') {
+						const bytes = wb.toBytes()
+						return binaryResponse(
+							bytes,
+							fmt === 'xlsm'
+								? 'application/vnd.ms-excel.sheet.macroEnabled.12+xml'
+								: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+						)
+					}
+					if (fmt === 'csv' || fmt === 'tsv') {
+						const csv = wb.toCsv(fmt === 'tsv' ? { dialect: { delimiter: '\t' } } : undefined)
+						const bytes = new TextEncoder().encode(csv)
+						return binaryResponse(bytes, fmt === 'tsv' ? 'text/tab-separated-values' : 'text/csv')
+					}
+					if (fmt === 'json') {
+						return jsonSuccess(wb.toJSON())
+					}
+					return jsonFailure(`Unsupported format: ${format}`, 400)
+				} catch (e) {
+					return handleError(e, file)
+				}
+			}
+
+			return withCors(jsonFailure('Not Found', 404))
+		} catch (e) {
+			const msg = e instanceof Error ? e.message : String(e)
+			return withCors(jsonFailure(msg, 500))
+		}
+	}
+
+	const requestedPort = opts?.port ?? (Number(process.env.PORT) || 3000)
+	if (requestedPort !== 0) return Bun.serve({ port: requestedPort, fetch })
+
+	let lastError: unknown
+	for (let attempt = 0; attempt < 25; attempt++) {
+		const port = 20_000 + Math.floor(Math.random() * 40_000)
+		try {
+			return Bun.serve({ port, fetch })
+		} catch (error) {
+			lastError = error
+		}
+	}
+	throw lastError
 }
 
 function displayCells<T extends { cells: readonly { ref: string; value: CellValue }[] }>(

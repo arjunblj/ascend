@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AscendWorkbook } from '@ascend/sdk'
 import { createServer } from './index.ts'
+import { parseOperations } from './operation-schema.ts'
 
 const TEMP_FILE = join(
 	tmpdir(),
@@ -29,11 +30,13 @@ describe('MCP server', () => {
 
 		expect(names).toContain('ascend.inspect')
 		expect(names).toContain('ascend.read')
+		expect(names).toContain('ascend.read_table')
 		expect(names).toContain('ascend.find')
 		expect(names).toContain('ascend.agent_view')
 		expect(names).toContain('ascend.preview')
 		expect(names).toContain('ascend.write')
 		expect(names).toContain('ascend.calc')
+		expect(names).toContain('ascend.eval')
 		expect(names).toContain('ascend.check')
 		expect(names).toContain('ascend.list_operations')
 		expect(names).toContain('ascend.lint')
@@ -41,7 +44,11 @@ describe('MCP server', () => {
 		expect(names).toContain('ascend.diff')
 		expect(names).toContain('ascend.export')
 		expect(names).toContain('ascend.list_sheets')
-		expect(names.length).toBe(14)
+		expect(names).toContain('ascend.capabilities')
+		expect(names).toContain('ascend.plan')
+		expect(names).toContain('ascend.commit')
+		expect(names).toContain('ascend.repair_plan')
+		expect(names.length).toBe(20)
 	})
 
 	test('ascend.write recalculates before saving when needed', async () => {
@@ -236,6 +243,76 @@ describe('MCP server', () => {
 		])
 	})
 
+	test('ascend.read_table reads table rows by name', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Name' },
+					{ ref: 'B1', value: 'Score' },
+					{ ref: 'A2', value: 'Alice' },
+					{ ref: 'B2', value: 10 },
+					{ ref: 'A3', value: 'Bob' },
+					{ ref: 'B3', value: 20 },
+				],
+			},
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:B3', name: 'Scores', hasHeaders: true },
+		])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.read_table'].handler as (args: {
+			file: string
+			table: string
+			rowLimit?: number
+			display?: boolean
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: { name?: string; columns?: string[]; rows?: Array<Record<string, string>> }
+			}
+		}>
+
+		const result = await handler({ file: TEMP_FILE, table: 'Scores', rowLimit: 1, display: true })
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.name).toBe('Scores')
+		expect(result.structuredContent?.data?.columns).toEqual(['Name', 'Score'])
+		expect(result.structuredContent?.data?.rows).toEqual([{ Name: 'Alice', Score: '10' }])
+	})
+
+	test('ascend.eval evaluates formulas without writing scratch cells', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 7 },
+					{ ref: 'A2', value: 5 },
+				],
+			},
+		])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.eval'].handler as (args: {
+			file: string
+			formula: string
+			display?: boolean
+		}) => Promise<{
+			structuredContent?: { ok?: boolean; data?: { value?: unknown; display?: string } }
+		}>
+
+		const result = await handler({ file: TEMP_FILE, formula: '=SUM(A1:A2)', display: true })
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.value).toEqual({ kind: 'number', value: 12 })
+		expect(result.structuredContent?.data?.display).toBe('12')
+	})
+
 	test('ascend.find can search values and formulas', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -299,6 +376,20 @@ describe('MCP server', () => {
 		}
 	})
 
+	test('MCP operation schema accepts all canonical table and workbook operations', () => {
+		const result = parseOperations([
+			{
+				op: 'setWorkbookProtection',
+				protection: { lockStructure: true },
+			},
+			{ op: 'deleteTable', table: 'Sales' },
+			{ op: 'renameTable', table: 'Sales', newName: 'Revenue' },
+			{ op: 'resizeTable', table: 'Revenue', ref: 'A1:D20' },
+		])
+
+		expect(result.ok).toBe(true)
+	})
+
 	test('ascend.preview rejects invalid operations with validation error', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(TEMP_FILE)
@@ -340,5 +431,95 @@ describe('MCP server', () => {
 		expect(result.structuredContent?.error?.code).toBe('SHEET_NOT_FOUND')
 		expect(result.structuredContent?.error?.suggestedFix).toContain('Sheet1')
 		expect(result.structuredContent?.error?.details?.availableSheets).toContain('Sheet1')
+	})
+
+	test('ascend.check returns result on clean workbook', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test
+		const handler = (server as any)._registeredTools['ascend.check'].handler as (args: {
+			file: string
+		}) => Promise<{ content?: Array<{ text?: string }> }>
+
+		const result = await handler({ file: TEMP_FILE })
+		const allText = (result.content ?? []).map((c) => c.text ?? '').join('\n')
+		expect(allText.length).toBeGreaterThan(0)
+	})
+
+	test('ascend.lint returns result', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test
+		const handler = (server as any)._registeredTools['ascend.lint'].handler as (args: {
+			file: string
+		}) => Promise<{ content?: Array<{ text?: string }> }>
+
+		const result = await handler({ file: TEMP_FILE })
+		expect(result.content).toBeDefined()
+	})
+
+	test('ascend.list_operations returns operations', async () => {
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test
+		const handler = (server as any)._registeredTools['ascend.list_operations'].handler as (
+			args: Record<string, never>,
+		) => Promise<{ content?: Array<{ text?: string }> }>
+
+		const result = await handler({})
+		const allText = (result.content ?? []).map((c) => c.text ?? '').join('\n')
+		expect(allText).toContain('operations')
+	})
+
+	test('ascend.inspect returns workbook info', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'addSheet', name: 'TestSheet' }])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test
+		const handler = (server as any)._registeredTools['ascend.inspect'].handler as (args: {
+			file: string
+		}) => Promise<{
+			content?: Array<{ text?: string }>
+			structuredContent?: { data?: { sheets?: Array<{ name: string }> } }
+		}>
+
+		const result = await handler({ file: TEMP_FILE })
+		const names = (result.structuredContent?.data?.sheets ?? []).map((s) => s.name)
+		expect(names).toContain('TestSheet')
+	})
+
+	test('ascend.list_sheets returns sheet names', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'addSheet', name: 'Alpha' }])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test
+		const handler = (server as any)._registeredTools['ascend.list_sheets'].handler as (args: {
+			file: string
+		}) => Promise<{
+			content?: Array<{ text?: string }>
+			structuredContent?: { data?: { sheets?: Array<{ name: string }> } }
+		}>
+
+		const result = await handler({ file: TEMP_FILE })
+		const names = (result.structuredContent?.data?.sheets ?? []).map((s) => s.name)
+		expect(names).toContain('Alpha')
+	})
+
+	test('file-not-found returns structured error', async () => {
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test
+		const handler = (server as any)._registeredTools['ascend.inspect'].handler as (args: {
+			file: string
+		}) => Promise<{ isError?: boolean }>
+
+		const result = await handler({ file: '/nonexistent/path/to/file.xlsx' })
+		expect(result.isError).toBe(true)
 	})
 })

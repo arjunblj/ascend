@@ -290,6 +290,24 @@ const operationSchema = z.discriminatedUnion('op', [
 			}),
 		),
 	}),
+	z.object({
+		op: z.literal('setWorkbookProtection'),
+		protection: z.record(z.string(), z.unknown()),
+	}),
+	z.object({
+		op: z.literal('deleteTable'),
+		table: z.string(),
+	}),
+	z.object({
+		op: z.literal('renameTable'),
+		table: z.string(),
+		newName: z.string(),
+	}),
+	z.object({
+		op: z.literal('resizeTable'),
+		table: z.string(),
+		ref: z.string(),
+	}),
 ])
 
 export const operationsSchema = z.array(operationSchema)

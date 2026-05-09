@@ -29,6 +29,59 @@ describe('API', () => {
 		})
 	})
 
+	test('operations and capabilities endpoints expose agent schemas', async () => {
+		const operations = await fetch(`http://localhost:${server.port}/operations`)
+		expect(operations.status).toBe(200)
+		const opsBody = await operations.json()
+		expect(opsBody.ok).toBe(true)
+		expect(opsBody.data.operations.some((op: { op: string }) => op.op === 'setCells')).toBe(true)
+		expect(opsBody.data.schemas[0].examples.length).toBeGreaterThan(0)
+
+		const capabilities = await fetch(`http://localhost:${server.port}/capabilities?feature=pivots`)
+		expect(capabilities.status).toBe(200)
+		const capsBody = await capabilities.json()
+		expect(capsBody.ok).toBe(true)
+		expect(
+			capsBody.data.capabilities.some(
+				(capability: { id: string }) => capability.id === 'analytics.pivots',
+			),
+		).toBe(true)
+	})
+
+	test('plan and commit endpoints provide the safe write workflow', async () => {
+		const tempFile = join(tempDir, 'agent-workflow.xlsx')
+		const outputFile = join(tempDir, 'agent-workflow-output.xlsx')
+		const wb = AscendWorkbook.create()
+		await wb.save(tempFile)
+		const ops = [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'api-plan' }] }]
+
+		const plan = await fetch(`http://localhost:${server.port}/plan`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ file: tempFile, ops }),
+		})
+		expect(plan.status).toBe(200)
+		const planBody = await plan.json()
+		expect(planBody.ok).toBe(true)
+		expect(planBody.data.inputSha256).toMatch(/^[a-f0-9]{64}$/)
+		expect(planBody.data.preview.wouldSucceed).toBe(true)
+
+		const commit = await fetch(`http://localhost:${server.port}/commit`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				file: tempFile,
+				ops,
+				output: outputFile,
+				expectSha256: planBody.data.inputSha256,
+			}),
+		})
+		expect(commit.status).toBe(200)
+		const commitBody = await commit.json()
+		expect(commitBody.ok).toBe(true)
+		expect(commitBody.data.outputSha256).toMatch(/^[a-f0-9]{64}$/)
+	})
+
 	test('inspect returns workbook info', async () => {
 		const tempFile = join(tempDir, 'test.xlsx')
 		const wb = AscendWorkbook.create()

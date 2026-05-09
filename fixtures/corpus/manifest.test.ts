@@ -2,8 +2,10 @@ import { describe, expect, test } from 'bun:test'
 import {
 	type CorpusManifestEntry,
 	matchesSelection,
+	normalizeManifest,
 	normalizeManifestEntry,
 	selectManifestEntries,
+	validateManifestProvenance,
 } from './manifest.ts'
 
 const PIVOT_ENTRY: CorpusManifestEntry = {
@@ -38,6 +40,13 @@ const PIVOT_ENTRY: CorpusManifestEntry = {
 		pivot_caches: 2,
 		comments: 0,
 	},
+	sourceUrl: 'https://example.test/pivot.xlsx',
+	license: 'CC-BY-4.0',
+	sha256: 'a'.repeat(64),
+	downloadedAt: '2026-05-09T00:00:00.000Z',
+	redistributionAllowed: true,
+	citation: 'Example benchmark fixture.',
+	vendorable: true,
 }
 
 describe('normalizeManifestEntry', () => {
@@ -49,6 +58,38 @@ describe('normalizeManifestEntry', () => {
 		expect(normalized.featureTags).toContain('pivot')
 		expect(normalized.featureTags).toContain('slicer')
 		expect(normalized.featureTags).toContain('large')
+		expect(normalized.sourceUrl).toBe('https://example.test/pivot.xlsx')
+		expect(normalized.sha256).toBe('a'.repeat(64))
+	})
+})
+
+describe('validateManifestProvenance', () => {
+	test('accepts fully attributed and checksum-pinned entries', () => {
+		expect(validateManifestProvenance(normalizeManifest([PIVOT_ENTRY]))).toEqual([])
+	})
+
+	test('reports missing provenance fields and redistribution conflicts', () => {
+		const failures = validateManifestProvenance(
+			normalizeManifest([
+				{
+					...PIVOT_ENTRY,
+					file: 'missing-provenance.xlsx',
+					sourceUrl: undefined,
+					license: undefined,
+					sha256: 'not-a-sha',
+					redistributionAllowed: false,
+					citation: undefined,
+					vendorable: true,
+				},
+			]),
+		)
+		expect(failures).toContain('missing-provenance.xlsx: missing source or sourceUrl')
+		expect(failures).toContain('missing-provenance.xlsx: missing license')
+		expect(failures).toContain('missing-provenance.xlsx: missing valid sha256')
+		expect(failures).toContain('missing-provenance.xlsx: missing citation')
+		expect(failures).toContain(
+			'missing-provenance.xlsx: vendorable entry must allow redistribution',
+		)
 	})
 })
 

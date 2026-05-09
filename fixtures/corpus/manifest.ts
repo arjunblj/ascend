@@ -12,7 +12,12 @@ export interface CorpusManifestEntry {
 	readonly features: Record<string, boolean>
 	readonly counts: Record<string, number>
 	readonly source?: string
+	readonly sourceUrl?: string
 	readonly license?: string
+	readonly sha256?: string
+	readonly downloadedAt?: string
+	readonly redistributionAllowed?: boolean
+	readonly citation?: string
 	readonly vendorable?: boolean
 	readonly benchmarkTier?: CorpusBenchmarkTier
 	readonly assertionClass?: CorpusAssertionClass
@@ -28,7 +33,12 @@ export interface NormalizedCorpusManifestEntry {
 	readonly features: Record<string, boolean>
 	readonly counts: Record<string, number>
 	readonly source?: string
+	readonly sourceUrl?: string
 	readonly license?: string
+	readonly sha256?: string
+	readonly downloadedAt?: string
+	readonly redistributionAllowed?: boolean
+	readonly citation?: string
 	readonly vendorable: boolean
 	readonly benchmarkTier: CorpusBenchmarkTier
 	readonly assertionClass: CorpusAssertionClass
@@ -61,7 +71,14 @@ export function normalizeManifestEntry(entry: CorpusManifestEntry): NormalizedCo
 		features: { ...entry.features },
 		counts: { ...entry.counts },
 		...(entry.source ? { source: entry.source } : {}),
+		...(entry.sourceUrl ? { sourceUrl: entry.sourceUrl } : {}),
 		...(entry.license ? { license: entry.license } : {}),
+		...(entry.sha256 ? { sha256: entry.sha256 } : {}),
+		...(entry.downloadedAt ? { downloadedAt: entry.downloadedAt } : {}),
+		...(entry.redistributionAllowed !== undefined
+			? { redistributionAllowed: entry.redistributionAllowed }
+			: {}),
+		...(entry.citation ? { citation: entry.citation } : {}),
 		vendorable: entry.vendorable ?? false,
 		benchmarkTier: entry.benchmarkTier ?? deriveBenchmarkTier(entry),
 		assertionClass: entry.assertionClass ?? deriveAssertionClass(entry),
@@ -70,6 +87,33 @@ export function normalizeManifestEntry(entry: CorpusManifestEntry): NormalizedCo
 		knownUnsupported: [...(entry.knownUnsupported ?? [])],
 		...(entry.notes ? { notes: entry.notes } : {}),
 	}
+}
+
+export function validateManifestProvenance(
+	entries: readonly NormalizedCorpusManifestEntry[],
+): readonly string[] {
+	const failures: string[] = []
+	for (const entry of entries) {
+		if (!entry.source && !entry.sourceUrl) {
+			failures.push(`${entry.file}: missing source or sourceUrl`)
+		}
+		if (!entry.license) {
+			failures.push(`${entry.file}: missing license`)
+		}
+		if (!entry.sha256 || !/^[a-f0-9]{64}$/i.test(entry.sha256)) {
+			failures.push(`${entry.file}: missing valid sha256`)
+		}
+		if (entry.redistributionAllowed === undefined) {
+			failures.push(`${entry.file}: missing redistributionAllowed`)
+		}
+		if (!entry.citation) {
+			failures.push(`${entry.file}: missing citation`)
+		}
+		if (entry.vendorable && entry.redistributionAllowed !== true) {
+			failures.push(`${entry.file}: vendorable entry must allow redistribution`)
+		}
+	}
+	return failures
 }
 
 export function selectManifestEntries(

@@ -63,6 +63,11 @@ import { updateSlicerCacheDefinitionXml } from './slicer-cache.ts'
 import { buildPreservedStylesXml, buildStylesXml } from './styles.ts'
 import { buildTableXml } from './table.ts'
 import { buildThemeXml } from './theme.ts'
+import {
+	readThreadedCommentTextRefs,
+	type ThreadedCommentTextRef,
+	updateThreadedCommentsXml,
+} from './threaded-comments.ts'
 import { buildWorkbookXml } from './workbook.ts'
 import { createZip, encode, StreamingZipBuilder } from './zip.ts'
 
@@ -1473,6 +1478,38 @@ export function planWriteXlsx(
 						continue
 					}
 				}
+				if (isThreadedCommentCapsule(capsule)) {
+					const xml = new TextDecoder().decode(content)
+					const threadedCommentUpdates = collectThreadedCommentTextUpdates(
+						workbook,
+						capsule.partPath,
+						xml,
+					)
+					if (threadedCommentUpdates.length > 0) {
+						recordXml(
+							capsule.partPath,
+							{
+								owner,
+								origin: 'generated',
+								contentType: capsule.contentType,
+							},
+							() => updateThreadedCommentsXml(xml, threadedCommentUpdates),
+						)
+						plan.addOverride(capsule.partPath, capsule.contentType)
+						if (capsule.relationships.length > 0) {
+							const capsuleRelsPath = getRelsPath(capsule.partPath)
+							recordXml(
+								capsuleRelsPath,
+								{
+									owner,
+									origin: 'capsule',
+								},
+								() => buildRelsXml(capsule.relationships),
+							)
+						}
+						continue
+					}
+				}
 				recordBytes(
 					capsule.partPath,
 					{
@@ -2069,6 +2106,13 @@ function isDrawingCapsule(capsule: PreservationCapsule): boolean {
 	)
 }
 
+function isThreadedCommentCapsule(capsule: PreservationCapsule): boolean {
+	return (
+		capsule.contentType.includes('threadedcomments+xml') ||
+		capsule.partPath.includes('/threadedComments/')
+	)
+}
+
 function collectDrawingTextUpdates(
 	workbook: Workbook,
 	partPath: string,
@@ -2095,6 +2139,31 @@ function collectDrawingTextUpdates(
 	return updates
 }
 
+function collectThreadedCommentTextUpdates(
+	workbook: Workbook,
+	partPath: string,
+	sourceXml: string,
+): readonly ThreadedCommentTextRef[] {
+	const sourceRefs = readThreadedCommentTextRefs(sourceXml)
+	const updates: ThreadedCommentTextRef[] = []
+	const seen = new Set<string>()
+	for (const sheet of workbook.sheets) {
+		for (const comment of sheet.threadedComments) {
+			if (comment.partPath !== partPath) continue
+			const source = findMatchingThreadedComment(sourceRefs, comment)
+			if (!source || source.text === comment.text) continue
+			const key = comment.id !== undefined ? `id:${comment.id}` : `ref:${comment.ref}`
+			if (seen.has(key)) continue
+			updates.push({
+				...(comment.id !== undefined ? { id: comment.id } : { ref: comment.ref }),
+				text: comment.text,
+			})
+			seen.add(key)
+		}
+	}
+	return updates
+}
+
 function findMatchingDrawingObject(
 	sourceRefs: readonly SheetDrawingObjectRef[],
 	ref: SheetDrawingObjectRef,
@@ -2103,6 +2172,17 @@ function findMatchingDrawingObject(
 		if (ref.id !== undefined) return sourceRef.id === ref.id
 		if (ref.name !== undefined) return sourceRef.name === ref.name
 		return false
+	})
+	return matches.length === 1 ? matches[0] : undefined
+}
+
+function findMatchingThreadedComment(
+	sourceRefs: readonly ThreadedCommentTextRef[],
+	comment: { readonly id?: string; readonly ref: string },
+): ThreadedCommentTextRef | undefined {
+	const matches = sourceRefs.filter((sourceRef) => {
+		if (comment.id !== undefined) return sourceRef.id === comment.id
+		return sourceRef.ref?.toUpperCase() === comment.ref.toUpperCase()
 	})
 	return matches.length === 1 ? matches[0] : undefined
 }

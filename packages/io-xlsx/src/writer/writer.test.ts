@@ -3189,6 +3189,84 @@ describe('writeXlsx', () => {
 		)
 	})
 
+	it('writes edited threaded comment text while preserving thread attributes', () => {
+		const threadedCommentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<ThreadedComments xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">
+  <threadedComment ref="A1" personId="0" id="tc1" dT="2024-01-01T00:00:00.000">
+    <text>Comment text</text>
+  </threadedComment>
+  <threadedComment ref="A1" personId="1" id="tc2" parentId="tc1" dT="2024-01-02T00:00:00.000" done="1">
+    <text>Reviewed</text>
+    <mentions><mention mentionpersonId="0" mentionId="m1" startIndex="0" length="3"/></mentions>
+  </threadedComment>
+</ThreadedComments>`
+
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: S0 })
+		sheet.threadedComments.push(
+			{
+				ref: 'A1',
+				text: 'Comment text',
+				partPath: 'xl/threadedComments/threadedComment1.xml',
+				id: 'tc1',
+				personId: '0',
+				dateTime: '2024-01-01T00:00:00.000',
+			},
+			{
+				ref: 'A1',
+				text: 'Reviewed',
+				partPath: 'xl/threadedComments/threadedComment1.xml',
+				id: 'tc2',
+				parentId: 'tc1',
+				personId: '1',
+				dateTime: '2024-01-02T00:00:00.000',
+				done: true,
+			},
+		)
+		const applied = applyOperations(wb, [
+			{
+				op: 'setThreadedComment',
+				sheet: 'Sheet1',
+				threadedCommentId: 'tc2',
+				text: 'Reviewed & approved',
+			},
+		])
+		expectOk(applied)
+
+		const written = writeXlsx(wb, [
+			{
+				partPath: 'xl/threadedComments/threadedComment1.xml',
+				contentType: 'application/vnd.ms-excel.threadedcomments+xml',
+				relationships: [],
+				content: new TextEncoder().encode(threadedCommentXml),
+				anchor: { kind: 'sheet', sheetId: sheet.id, sheetName: sheet.name },
+				relType: 'http://schemas.microsoft.com/office/2017/10/relationships/threadedComment',
+			},
+		])
+		expectOk(written)
+
+		const entries = unzipSync(written.value)
+		const decoded = new TextDecoder().decode(entries['xl/threadedComments/threadedComment1.xml'])
+		expect(decoded).toContain('<text>Comment text</text>')
+		expect(decoded).toContain('<text>Reviewed &amp; approved</text>')
+		expect(decoded).toContain('parentId="tc1"')
+		expect(decoded).toContain('personId="1"')
+		expect(decoded).toContain('done="1"')
+		expect(decoded).toContain('<mentions>')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		const comments = reopened.value.workbook.getSheet('Sheet1')?.threadedComments
+		expect(comments?.[1]).toMatchObject({
+			id: 'tc2',
+			parentId: 'tc1',
+			personId: '1',
+			text: 'Reviewed & approved',
+			done: true,
+		})
+	})
+
 	it('produces a valid ZIP file', () => {
 		const wb = new Workbook()
 		wb.addSheet('Empty')

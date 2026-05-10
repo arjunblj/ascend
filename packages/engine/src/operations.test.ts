@@ -293,6 +293,106 @@ describe('applyOperation', () => {
 		expect(noText.error.message).toContain('no editable text body')
 	})
 
+	test('setThreadedComment updates existing text while preserving thread metadata', () => {
+		const wb = setup()
+		const sheet = wb.getSheet('Sheet1')
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+		sheet.threadedComments.push(
+			{
+				ref: 'A1',
+				text: 'Please review',
+				partPath: 'xl/threadedComments/threadedComment1.xml',
+				id: 'tc1',
+				personId: '0',
+				author: 'Ada Lovelace',
+				dateTime: '2024-01-01T00:00:00.000',
+			},
+			{
+				ref: 'A1',
+				text: 'Reviewed',
+				partPath: 'xl/threadedComments/threadedComment1.xml',
+				id: 'tc2',
+				parentId: 'tc1',
+				personId: '1',
+				author: 'Grace Hopper',
+				dateTime: '2024-01-02T00:00:00.000',
+				done: true,
+			},
+		)
+
+		const result = applyOperation(wb, {
+			op: 'setThreadedComment',
+			sheet: 'Sheet1',
+			threadedCommentId: 'tc2',
+			text: 'Reviewed and approved',
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['Sheet1!A1'])
+		expect(result.value.sheetsModified).toEqual(['Sheet1'])
+		expect(result.value.recalcRequired).toBe(false)
+		expect(sheet.threadedComments[1]).toEqual({
+			ref: 'A1',
+			text: 'Reviewed and approved',
+			partPath: 'xl/threadedComments/threadedComment1.xml',
+			id: 'tc2',
+			parentId: 'tc1',
+			personId: '1',
+			author: 'Grace Hopper',
+			dateTime: '2024-01-02T00:00:00.000',
+			done: true,
+		})
+	})
+
+	test('setThreadedComment validates selectors and ambiguous refs', () => {
+		const wb = setup()
+		const sheet = wb.getSheet('Sheet1')
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+		sheet.threadedComments.push(
+			{
+				ref: 'A1',
+				text: 'First',
+				partPath: 'xl/threadedComments/threadedComment1.xml',
+				id: 'tc1',
+			},
+			{
+				ref: 'A1',
+				text: 'Second',
+				partPath: 'xl/threadedComments/threadedComment1.xml',
+				id: 'tc2',
+				parentId: 'tc1',
+			},
+		)
+
+		const missingSelector = applyOperation(wb, {
+			op: 'setThreadedComment',
+			sheet: 'Sheet1',
+			text: 'Updated',
+		})
+		expectErr(missingSelector)
+		expect(missingSelector.error.message).toContain('requires partPath')
+
+		const ambiguous = applyOperation(wb, {
+			op: 'setThreadedComment',
+			sheet: 'Sheet1',
+			ref: 'A1',
+			text: 'Updated',
+		})
+		expectErr(ambiguous)
+		expect(ambiguous.error.message).toContain('matched 2 comments')
+
+		const badIndex = applyOperation(wb, {
+			op: 'setThreadedComment',
+			sheet: 'Sheet1',
+			commentIndex: -1,
+			text: 'Updated',
+		})
+		expectErr(badIndex)
+		expect(badIndex.error.message).toContain('commentIndex')
+	})
+
 	test('insertImage allocates image identity and anchor metadata', () => {
 		const wb = setup()
 		const result = applyOperation(wb, {

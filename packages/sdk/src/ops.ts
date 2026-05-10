@@ -199,6 +199,8 @@ const FIELD_SCHEMAS: Record<
 	cacheId: { type: 'integer', description: 'Pivot cache id' },
 	connectionId: { type: 'integer', description: 'Workbook connection id' },
 	partPath: { type: 'string', description: 'XLSX package part path' },
+	threadedCommentId: { type: 'string', description: 'Threaded comment id attribute' },
+	commentIndex: { type: 'integer', description: 'Zero-based threaded comment index on the sheet' },
 	pivotTable: { type: 'string', description: 'Pivot table name that uses the cache' },
 	fieldIndex: { type: 'integer', description: 'Zero-based pivot field index' },
 	itemIndex: { type: 'integer', description: 'Zero-based pivot field item index' },
@@ -502,6 +504,12 @@ export function listOperations(): readonly OperationSchema[] {
 			optionalFields: ['drawingPartPath', 'id', 'name', 'drawingObjectIndex'],
 		},
 		{
+			op: 'setThreadedComment',
+			description: 'Edit existing threaded comment text while preserving thread metadata',
+			requiredFields: ['sheet', 'text'],
+			optionalFields: ['partPath', 'threadedCommentId', 'ref', 'commentIndex'],
+		},
+		{
 			op: 'setChartSeriesSource',
 			description: 'Edit chart series source references while preserving opaque chart styling',
 			requiredFields: ['seriesIndex'],
@@ -703,6 +711,7 @@ function validateOperationField(
 		case 'categoryRef':
 		case 'valueRef':
 		case 'partPath':
+		case 'threadedCommentId':
 		case 'pivotTable':
 		case 'sourceSheet':
 		case 'sourceRef':
@@ -725,6 +734,7 @@ function validateOperationField(
 		case 'ruleIndex':
 		case 'imageIndex':
 		case 'drawingObjectIndex':
+		case 'commentIndex':
 		case 'id':
 		case 'chartIndex':
 		case 'seriesIndex':
@@ -1005,6 +1015,12 @@ function operationRecoveryActions(op: string): readonly string[] {
 				'This edits existing shape/text-box text and preserves anchors, geometry, and drawing relationships.',
 				...common,
 			]
+		case 'setThreadedComment':
+			return [
+				'Use inspectSheet threadedComments to choose threadedCommentId, partPath, ref, or commentIndex.',
+				'This edits existing threaded comment text and preserves person, parent, timestamp, done, mention, and extension metadata.',
+				...common,
+			]
 		case 'setChartSeriesSource':
 			return [
 				'Use inspect --detail visuals or visualInventory to select partPath, sheet, chartIndex, and seriesIndex.',
@@ -1221,6 +1237,13 @@ function operationExample(op: string): Record<string, unknown> {
 				drawingPartPath: 'xl/drawings/drawing1.xml',
 				id: 2,
 				text: 'Updated callout',
+			}
+		case 'setThreadedComment':
+			return {
+				op,
+				sheet: 'Sheet1',
+				threadedCommentId: '{thread-id}',
+				text: 'Updated review note',
 			}
 		case 'setChartSeriesSource':
 			return {

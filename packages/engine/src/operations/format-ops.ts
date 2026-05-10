@@ -292,6 +292,73 @@ export function handleSetComment(
 	return ok(patch([op.ref], [op.sheet]))
 }
 
+export function handleSetThreadedComment(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setThreadedComment' }>,
+): Result<PatchResult> {
+	const result = getSheet(workbook, op.sheet)
+	if (!result.ok) return result
+	const sheet = result.value
+	sheet.ensureWritable()
+
+	if (
+		op.partPath === undefined &&
+		op.threadedCommentId === undefined &&
+		op.ref === undefined &&
+		op.commentIndex === undefined
+	) {
+		return err(
+			ascendError(
+				'VALIDATION_ERROR',
+				'setThreadedComment requires partPath, threadedCommentId, ref, or commentIndex',
+				{
+					suggestedFix:
+						'Inspect sheet threadedComments and provide a stable threadedCommentId or commentIndex.',
+				},
+			),
+		)
+	}
+	if (
+		op.commentIndex !== undefined &&
+		(op.commentIndex < 0 || !Number.isInteger(op.commentIndex))
+	) {
+		return err(ascendError('VALIDATION_ERROR', 'commentIndex must be a non-negative integer'))
+	}
+
+	const matches = sheet.threadedComments
+		.map((comment, index) => ({ comment, index }))
+		.filter(({ comment, index }) => {
+			if (op.commentIndex !== undefined && index !== op.commentIndex) return false
+			if (op.partPath !== undefined && comment.partPath !== op.partPath) return false
+			if (op.threadedCommentId !== undefined && comment.id !== op.threadedCommentId) return false
+			if (op.ref !== undefined && comment.ref.toUpperCase() !== op.ref.toUpperCase()) return false
+			return true
+		})
+
+	if (matches.length === 0) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'No matching threaded comment found', {
+				suggestedFix:
+					'Inspect sheet threadedComments and provide a matching threadedCommentId, partPath, ref, or commentIndex.',
+			}),
+		)
+	}
+	if (matches.length > 1) {
+		return err(
+			ascendError('VALIDATION_ERROR', `setThreadedComment matched ${matches.length} comments`, {
+				suggestedFix:
+					'Provide a more specific selector, such as threadedCommentId or commentIndex.',
+			}),
+		)
+	}
+
+	const match = matches[0]
+	if (!match) return err(ascendError('VALIDATION_ERROR', 'No matching threaded comment found'))
+	sheet.threadedComments[match.index] = { ...match.comment, text: op.text }
+
+	return ok(patch([`${sheet.name}!${match.comment.ref}`], [sheet.name], false))
+}
+
 export function handleDeleteComment(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'deleteComment' }>,

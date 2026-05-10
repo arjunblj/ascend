@@ -80,6 +80,7 @@ const handlers: Record<string, OperationHandler> = {
 	setPageSetup: formatOps.handleSetPageSetup as OperationHandler,
 	setPrintArea: formatOps.handleSetPrintArea as OperationHandler,
 	setComment: formatOps.handleSetComment as OperationHandler,
+	setThreadedComment: formatOps.handleSetThreadedComment as OperationHandler,
 	deleteComment: formatOps.handleDeleteComment as OperationHandler,
 	setHyperlink: formatOps.handleSetHyperlink as OperationHandler,
 	deleteHyperlink: formatOps.handleDeleteHyperlink as OperationHandler,

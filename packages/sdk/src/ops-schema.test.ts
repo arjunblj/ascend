@@ -98,6 +98,19 @@ describe('operation schema agent DX', () => {
 		expect(schema?.recoveryActions.join('\n')).toContain('visualInventory')
 	})
 
+	test('setThreadedComment is exposed with threaded comment selector guidance', () => {
+		const schema = getOperationsSchema().find((entry) => entry.op === 'setThreadedComment')
+		expect(schema?.schema.required).toEqual(['op', 'sheet', 'text'])
+		expect(schema?.schema.properties.threadedCommentId?.description).toContain('Threaded comment')
+		expect(schema?.examples[0]).toMatchObject({
+			op: 'setThreadedComment',
+			sheet: 'Sheet1',
+			threadedCommentId: '{thread-id}',
+			text: 'Updated review note',
+		})
+		expect(schema?.recoveryActions.join('\n')).toContain('threadedComments')
+	})
+
 	test('setChartSeriesSource is exposed with chart selector guidance', () => {
 		const schema = getOperationsSchema().find((entry) => entry.op === 'setChartSeriesSource')
 		expect(schema?.schema.required).toEqual(['op', 'seriesIndex'])

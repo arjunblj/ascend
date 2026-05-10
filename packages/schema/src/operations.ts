@@ -475,6 +475,15 @@ export type Operation =
 			readonly drawingObjectIndex?: number
 	  }
 	| {
+			readonly op: 'setThreadedComment'
+			readonly sheet: string
+			readonly text: string
+			readonly partPath?: string
+			readonly threadedCommentId?: string
+			readonly ref?: string
+			readonly commentIndex?: number
+	  }
+	| {
 			readonly op: 'setChartSeriesSource'
 			readonly seriesIndex: number
 			readonly partPath?: string

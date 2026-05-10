@@ -41,6 +41,32 @@ describe('threaded comment SDK inventory', () => {
 			locations: ['xl/threadedComments/threadedComment1.xml'],
 		})
 	})
+
+	test('setThreadedComment saves edited text and preserves person/thread metadata', async () => {
+		const wb = await AscendWorkbook.open(threadedCommentWorkbook())
+		const result = wb.apply([
+			{
+				op: 'setThreadedComment',
+				sheet: 'Data',
+				threadedCommentId: 'tc2',
+				text: 'Reviewed & approved',
+			},
+		])
+		expect(result.errors).toEqual([])
+
+		const reopened = await AscendWorkbook.open(wb.toBytes())
+		expect(reopened.inspectSheet('Data')?.threadedComments?.[1]).toMatchObject({
+			ref: 'A1',
+			text: 'Reviewed & approved',
+			partPath: 'xl/threadedComments/threadedComment1.xml',
+			id: 'tc2',
+			parentId: 'tc1',
+			personId: '1',
+			author: 'Grace Hopper',
+			dateTime: '2024-01-02T00:00:00.000',
+			done: true,
+		})
+	})
 })
 
 function threadedCommentWorkbook(): Uint8Array {

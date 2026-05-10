@@ -11,6 +11,7 @@ import {
 import type { FormulaNode } from '@ascend/formulas'
 import {
 	type AggregateRangeCache,
+	dateToSerial,
 	type EvalArea,
 	type EvalArg,
 	type ExactLookupCache,
@@ -1322,6 +1323,7 @@ function resolveOffsetReference(argNodes: readonly FormulaNode[], ctx: EvalConte
 		endRow,
 		endCol,
 		ctx.calcContext.dateSystem,
+		ctx.calcContext.today,
 	)
 }
 
@@ -1375,6 +1377,7 @@ function resolveIndexReference(argNodes: readonly FormulaNode[], ctx: EvalContex
 				bounds.endRow,
 				targetCol,
 				ctx.calcContext.dateSystem,
+				ctx.calcContext.today,
 			)
 		}
 		if (col === 0) {
@@ -1388,6 +1391,7 @@ function resolveIndexReference(argNodes: readonly FormulaNode[], ctx: EvalContex
 				targetRow,
 				bounds.endCol,
 				ctx.calcContext.dateSystem,
+				ctx.calcContext.today,
 			)
 		}
 		if (row < 1 || row > height || col < 1 || col > width) {
@@ -1401,6 +1405,7 @@ function resolveIndexReference(argNodes: readonly FormulaNode[], ctx: EvalContex
 			bounds.startRow + row - 1,
 			bounds.startCol + col - 1,
 			ctx.calcContext.dateSystem,
+			ctx.calcContext.today,
 		)
 	}
 
@@ -1414,6 +1419,7 @@ function resolveIndexReference(argNodes: readonly FormulaNode[], ctx: EvalContex
 			bounds.startRow,
 			bounds.startCol + row - 1,
 			ctx.calcContext.dateSystem,
+			ctx.calcContext.today,
 		)
 	}
 	if (row < 1 || row > height) return { value: errorValue('#REF!') }
@@ -1425,6 +1431,7 @@ function resolveIndexReference(argNodes: readonly FormulaNode[], ctx: EvalContex
 		bounds.startRow + row - 1,
 		bounds.startCol,
 		ctx.calcContext.dateSystem,
+		ctx.calcContext.today,
 	)
 }
 
@@ -1456,6 +1463,7 @@ function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | nu
 				node.end.row,
 				node.end.col,
 				ctx.calcContext.dateSystem,
+				ctx.calcContext.today,
 			)
 		}
 		case 'dynamicRangeRef':
@@ -1469,6 +1477,7 @@ function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | nu
 				node.startRow,
 				node.endRow,
 				ctx.calcContext.dateSystem,
+				ctx.calcContext.today,
 			)
 		}
 		case 'wholeColumnRange': {
@@ -1480,6 +1489,7 @@ function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | nu
 				node.startCol,
 				node.endCol,
 				ctx.calcContext.dateSystem,
+				ctx.calcContext.today,
 			)
 		}
 		case 'name': {
@@ -1506,6 +1516,7 @@ function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | nu
 				resolved.endRow,
 				resolved.endCol,
 				ctx.calcContext.dateSystem,
+				ctx.calcContext.today,
 			)
 		}
 		case 'spillRef':
@@ -1551,6 +1562,7 @@ function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | nu
 					intersections.push(
 						makeRangeArea(ctx.workbook, leftRef.sheetIndex, startRow, startCol, endRow, endCol, {
 							dateSystem: ctx.calcContext.dateSystem,
+							today: ctx.calcContext.today,
 						}),
 					)
 				}
@@ -1601,6 +1613,7 @@ function resolveDynamicRangeReference(
 		endBounds.endRow,
 		endBounds.endCol,
 		ctx.calcContext.dateSystem,
+		ctx.calcContext.today,
 	)
 }
 
@@ -1621,6 +1634,7 @@ function resolveSpillReference(target: FormulaNode, ctx: EvalContext): EvalArg |
 		parsed.value.end.row,
 		parsed.value.end.col,
 		ctx.calcContext.dateSystem,
+		ctx.calcContext.today,
 	)
 }
 
@@ -1642,12 +1656,16 @@ function makeRangeArg(
 	endRow: number,
 	endCol: number,
 	dateSystem: '1900' | '1904' = '1900',
+	today?: Date,
 ): EvalArg {
 	if (!isRangeInBounds(startRow, startCol, endRow, endCol)) {
 		return { value: errorValue('#REF!') }
 	}
 	return makeMultiAreaArg([
-		makeRangeArea(workbook, sheetIndex, startRow, startCol, endRow, endCol, { dateSystem }),
+		makeRangeArea(workbook, sheetIndex, startRow, startCol, endRow, endCol, {
+			dateSystem,
+			...(today ? { today } : {}),
+		}),
 	])
 }
 
@@ -1749,18 +1767,23 @@ interface ActiveFilterRange {
 	readonly startCol: number
 	readonly endRow: number
 	readonly dateSystem: '1900' | '1904'
+	readonly today: Date
 	readonly columns: readonly PreparedFilterColumn[]
 }
+
+type FilterRangeBounds = Pick<ActiveFilterRange, 'startRow' | 'startCol' | 'endRow'>
 
 interface PreparedFilterColumn {
 	readonly source: FilterColumn
 	readonly acceptedValues?: ReadonlySet<string>
+	readonly dynamicAverage?: number
 	readonly top10Threshold?: number
 }
 
 function activeFilterRanges(
 	sheet: Sheet,
 	dateSystem: '1900' | '1904',
+	today: Date,
 ): readonly ActiveFilterRange[] {
 	const ranges: ActiveFilterRange[] = []
 	if (sheet.autoFilter && sheet.autoFilter.columns.length > 0) {
@@ -1769,6 +1792,7 @@ function activeFilterRanges(
 			ranges.push({
 				...range,
 				dateSystem,
+				today,
 				columns: prepareFilterColumns(sheet, range, sheet.autoFilter.columns),
 			})
 	}
@@ -1779,6 +1803,7 @@ function activeFilterRanges(
 			ranges.push({
 				...range,
 				dateSystem,
+				today,
 				columns: prepareFilterColumns(sheet, range, table.autoFilter.columns),
 			})
 	}
@@ -1787,13 +1812,14 @@ function activeFilterRanges(
 
 function prepareFilterColumns(
 	sheet: Sheet,
-	range: Omit<ActiveFilterRange, 'columns' | 'dateSystem'>,
+	range: FilterRangeBounds,
 	columns: readonly FilterColumn[],
 ): readonly PreparedFilterColumn[] {
 	return columns.map((source) => {
 		const prepared: {
 			source: FilterColumn
 			acceptedValues?: ReadonlySet<string>
+			dynamicAverage?: number
 			top10Threshold?: number
 		} = { source }
 		if (source.kind === 'filters') {
@@ -1803,11 +1829,15 @@ function prepareFilterColumns(
 			const threshold = computeTop10FilterThreshold(sheet, range, source)
 			if (threshold !== undefined) prepared.top10Threshold = threshold
 		}
+		if (source.kind === 'dynamicFilter') {
+			const average = computeDynamicFilterAverage(sheet, range, source)
+			if (average !== undefined) prepared.dynamicAverage = average
+		}
 		return prepared
 	})
 }
 
-function parseFilterRange(ref: string): Omit<ActiveFilterRange, 'columns' | 'dateSystem'> | null {
+function parseFilterRange(ref: string): FilterRangeBounds | null {
 	try {
 		const range = parseRange(ref)
 		return { startRow: range.start.row, startCol: range.start.col, endRow: range.end.row }
@@ -1819,7 +1849,7 @@ function parseFilterRange(ref: string): Omit<ActiveFilterRange, 'columns' | 'dat
 function rowFailsFilterCriteria(sheet: Sheet, row: number, range: ActiveFilterRange): boolean {
 	for (const column of range.columns) {
 		const cellValue = sheet.cells.readValue(row, range.startCol + column.source.colId)
-		const matches = cellMatchesFilterColumn(cellValue, column, range.dateSystem)
+		const matches = cellMatchesFilterColumn(cellValue, column, range.dateSystem, range.today)
 		if (matches === false) return true
 	}
 	return false
@@ -1829,9 +1859,13 @@ function cellMatchesFilterColumn(
 	value: CellValue,
 	column: PreparedFilterColumn,
 	dateSystem: '1900' | '1904',
+	today: Date,
 ): boolean | null {
 	const source = column.source
 	if (source.kind === 'customFilters') return cellMatchesCustomFilters(value, source)
+	if (source.kind === 'dynamicFilter') {
+		return cellMatchesDynamicFilter(value, source, column.dynamicAverage, dateSystem, today)
+	}
 	if (source.kind === 'top10') return cellMatchesTop10Filter(value, source, column.top10Threshold)
 	if (source.kind !== 'filters') return null
 	const acceptsBlank = source.blank === true
@@ -1849,7 +1883,7 @@ function cellMatchesFilterColumn(
 
 function computeTop10FilterThreshold(
 	sheet: Sheet,
-	range: Omit<ActiveFilterRange, 'columns' | 'dateSystem'>,
+	range: FilterRangeBounds,
 	column: FilterColumn,
 ): number | undefined {
 	if (column.filterVal !== undefined && Number.isFinite(column.filterVal)) {
@@ -1880,6 +1914,233 @@ function cellMatchesTop10Filter(
 	const comparable = filterTop10ComparableNumber(value)
 	if (comparable === null) return false
 	return column.top === false ? comparable <= threshold : comparable >= threshold
+}
+
+function computeDynamicFilterAverage(
+	sheet: Sheet,
+	range: FilterRangeBounds,
+	column: FilterColumn,
+): number | undefined {
+	const type = column.dynamicFilterType
+	if (type !== 'aboveAverage' && type !== 'belowAverage') return undefined
+	if (column.dynamicFilterVal !== undefined && Number.isFinite(column.dynamicFilterVal)) {
+		return column.dynamicFilterVal
+	}
+	let sum = 0
+	let count = 0
+	const col = range.startCol + column.colId
+	for (let row = range.startRow + 1; row <= range.endRow; row++) {
+		const value = filterDynamicComparableNumber(sheet.cells.readValue(row, col))
+		if (value === null) continue
+		sum += value
+		count += 1
+	}
+	return count > 0 ? sum / count : undefined
+}
+
+function cellMatchesDynamicFilter(
+	value: CellValue,
+	column: FilterColumn,
+	average: number | undefined,
+	dateSystem: '1900' | '1904',
+	today: Date,
+): boolean | null {
+	const type = column.dynamicFilterType
+	if (!type) return null
+	const comparable = filterDynamicComparableNumber(value)
+	if (type === 'aboveAverage' || type === 'belowAverage') {
+		if (average === undefined || comparable === null) return average === undefined ? null : false
+		return type === 'aboveAverage' ? comparable > average : comparable < average
+	}
+	const range = dynamicFilterRange(column, dateSystem, today)
+	if (range) {
+		if (comparable === null) return false
+		return comparable >= range.min && comparable < range.max
+	}
+	const parts = value.kind === 'date' ? serialToDateTimeParts(value.serial, dateSystem) : null
+	if (!parts) return null
+	const month = dynamicFilterMonth(type)
+	if (month !== null) return parts.month === month
+	const quarter = dynamicFilterQuarter(type)
+	if (quarter !== null) return Math.ceil(parts.month / 3) === quarter
+	return null
+}
+
+function dynamicFilterRange(
+	column: FilterColumn,
+	dateSystem: '1900' | '1904',
+	today: Date,
+): { readonly min: number; readonly max: number } | null {
+	const min = dynamicFilterBound(column.dynamicFilterVal, column.dynamicFilterValIso, dateSystem)
+	const max = dynamicFilterBound(
+		column.dynamicFilterMaxVal,
+		column.dynamicFilterMaxValIso,
+		dateSystem,
+	)
+	if (min !== undefined && max !== undefined && max > min) return { min, max }
+	return dynamicFilterRelativeRange(column.dynamicFilterType ?? '', today, dateSystem)
+}
+
+function dynamicFilterBound(
+	numeric: number | undefined,
+	iso: string | undefined,
+	dateSystem: '1900' | '1904',
+): number | undefined {
+	if (numeric !== undefined && Number.isFinite(numeric)) return numeric
+	return iso ? parseIsoDateTimeSerial(iso, dateSystem) : undefined
+}
+
+function dynamicFilterRelativeRange(
+	type: string,
+	today: Date,
+	dateSystem: '1900' | '1904',
+): { readonly min: number; readonly max: number } | null {
+	const day = startOfLocalDay(today)
+	switch (type) {
+		case 'yesterday':
+			return serialDateRange(addDays(day, -1), day, dateSystem)
+		case 'today':
+			return serialDateRange(day, addDays(day, 1), dateSystem)
+		case 'tomorrow':
+			return serialDateRange(addDays(day, 1), addDays(day, 2), dateSystem)
+		case 'lastWeek': {
+			const start = addDays(startOfWeek(day), -7)
+			return serialDateRange(start, addDays(start, 7), dateSystem)
+		}
+		case 'thisWeek': {
+			const start = startOfWeek(day)
+			return serialDateRange(start, addDays(start, 7), dateSystem)
+		}
+		case 'nextWeek': {
+			const start = addDays(startOfWeek(day), 7)
+			return serialDateRange(start, addDays(start, 7), dateSystem)
+		}
+		case 'lastMonth': {
+			const start = addMonths(startOfMonth(day), -1)
+			return serialDateRange(start, addMonths(start, 1), dateSystem)
+		}
+		case 'thisMonth': {
+			const start = startOfMonth(day)
+			return serialDateRange(start, addMonths(start, 1), dateSystem)
+		}
+		case 'nextMonth': {
+			const start = addMonths(startOfMonth(day), 1)
+			return serialDateRange(start, addMonths(start, 1), dateSystem)
+		}
+		case 'lastQuarter': {
+			const start = addMonths(startOfQuarter(day), -3)
+			return serialDateRange(start, addMonths(start, 3), dateSystem)
+		}
+		case 'thisQuarter': {
+			const start = startOfQuarter(day)
+			return serialDateRange(start, addMonths(start, 3), dateSystem)
+		}
+		case 'nextQuarter': {
+			const start = addMonths(startOfQuarter(day), 3)
+			return serialDateRange(start, addMonths(start, 3), dateSystem)
+		}
+		case 'lastYear':
+			return serialDateRange(
+				new Date(day.getFullYear() - 1, 0, 1),
+				new Date(day.getFullYear(), 0, 1),
+				dateSystem,
+			)
+		case 'thisYear':
+			return serialDateRange(
+				new Date(day.getFullYear(), 0, 1),
+				new Date(day.getFullYear() + 1, 0, 1),
+				dateSystem,
+			)
+		case 'nextYear':
+			return serialDateRange(
+				new Date(day.getFullYear() + 1, 0, 1),
+				new Date(day.getFullYear() + 2, 0, 1),
+				dateSystem,
+			)
+		case 'yearToDate':
+			return serialDateRange(new Date(day.getFullYear(), 0, 1), addDays(day, 1), dateSystem)
+		default:
+			return null
+	}
+}
+
+function startOfLocalDay(date: Date): Date {
+	return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+}
+
+function startOfWeek(date: Date): Date {
+	return addDays(date, -date.getDay())
+}
+
+function startOfMonth(date: Date): Date {
+	return new Date(date.getFullYear(), date.getMonth(), 1)
+}
+
+function startOfQuarter(date: Date): Date {
+	return new Date(date.getFullYear(), Math.floor(date.getMonth() / 3) * 3, 1)
+}
+
+function addDays(date: Date, days: number): Date {
+	return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days)
+}
+
+function addMonths(date: Date, months: number): Date {
+	return new Date(date.getFullYear(), date.getMonth() + months, 1)
+}
+
+function serialDateRange(
+	start: Date,
+	end: Date,
+	dateSystem: '1900' | '1904',
+): { readonly min: number; readonly max: number } {
+	return {
+		min: dateToSerial(start.getFullYear(), start.getMonth() + 1, start.getDate(), dateSystem),
+		max: dateToSerial(end.getFullYear(), end.getMonth() + 1, end.getDate(), dateSystem),
+	}
+}
+
+function parseIsoDateTimeSerial(value: string, dateSystem: '1900' | '1904'): number | undefined {
+	const match = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2})(?::(\d{2})(?::(\d{2}(?:\.\d+)?))?)?)?/.exec(
+		value.trim(),
+	)
+	if (!match) return undefined
+	const year = Number(match[1])
+	const month = Number(match[2])
+	const day = Number(match[3])
+	const hour = match[4] ? Number(match[4]) : 0
+	const minute = match[5] ? Number(match[5]) : 0
+	const second = match[6] ? Number(match[6]) : 0
+	if (
+		!Number.isInteger(year) ||
+		!Number.isInteger(month) ||
+		!Number.isInteger(day) ||
+		month < 1 ||
+		month > 12 ||
+		day < 1 ||
+		day > 31 ||
+		hour < 0 ||
+		hour >= 24 ||
+		minute < 0 ||
+		minute >= 60 ||
+		second < 0 ||
+		second >= 60
+	) {
+		return undefined
+	}
+	return (
+		dateToSerial(year, month, day, dateSystem) +
+		(hour * 3600 + minute * 60 + second) / SECONDS_PER_DAY
+	)
+}
+
+function dynamicFilterMonth(type: string): number | null {
+	const match = /^M([1-9]|1[0-2])$/.exec(type)
+	return match ? Number(match[1]) : null
+}
+
+function dynamicFilterQuarter(type: string): number | null {
+	const match = /^Q([1-4])$/.exec(type)
+	return match ? Number(match[1]) : null
 }
 
 function cellMatchesDateGroupItems(
@@ -2000,6 +2261,10 @@ function filterTop10ComparableNumber(value: CellValue): number | null {
 	return null
 }
 
+function filterDynamicComparableNumber(value: CellValue): number | null {
+	return filterTop10ComparableNumber(value)
+}
+
 function filterCriterionNumber(value: string): number | null {
 	const trimmed = value.trim()
 	if (trimmed === '') return null
@@ -2050,6 +2315,7 @@ function makeRangeArea(
 	endCol: number,
 	options: {
 		dateSystem?: '1900' | '1904'
+		today?: Date
 		materializedStartRow?: number
 		materializedStartCol?: number
 		materializedEndRow?: number
@@ -2059,11 +2325,12 @@ function makeRangeArea(
 	const sheet = workbook.sheets[sheetIndex]
 	let cachedValues: readonly (readonly CellValue[])[] | undefined
 	const dateSystem = options.dateSystem ?? '1900'
+	const today = options.today ?? startOfLocalDay(new Date())
 	const materializedStartRow = options.materializedStartRow ?? startRow
 	const materializedStartCol = options.materializedStartCol ?? startCol
 	const materializedEndRow = options.materializedEndRow ?? endRow
 	const materializedEndCol = options.materializedEndCol ?? endCol
-	const filteredRanges = sheet ? activeFilterRanges(sheet, dateSystem) : []
+	const filteredRanges = sheet ? activeFilterRanges(sheet, dateSystem, today) : []
 	return {
 		ref: {
 			kind: 'range',
@@ -2263,6 +2530,7 @@ function makeWholeRowArg(
 	startRow: number,
 	endRow: number,
 	dateSystem: '1900' | '1904' = '1900',
+	today?: Date,
 ): EvalArg {
 	const sheet = workbook.sheets[sheetIndex]
 	if (!sheet) return { value: errorValue('#REF!') }
@@ -2272,6 +2540,7 @@ function makeWholeRowArg(
 	return makeMultiAreaArg([
 		makeRangeArea(workbook, sheetIndex, startRow, 0, endRow, EXCEL_MAX_COLS - 1, {
 			dateSystem,
+			...(today ? { today } : {}),
 			materializedStartRow: startRow,
 			materializedStartCol,
 			materializedEndRow: endRow,
@@ -2286,6 +2555,7 @@ function makeWholeColumnArg(
 	startCol: number,
 	endCol: number,
 	dateSystem: '1900' | '1904' = '1900',
+	today?: Date,
 ): EvalArg {
 	const sheet = workbook.sheets[sheetIndex]
 	if (!sheet) return { value: errorValue('#REF!') }
@@ -2295,6 +2565,7 @@ function makeWholeColumnArg(
 	return makeMultiAreaArg([
 		makeRangeArea(workbook, sheetIndex, 0, startCol, EXCEL_MAX_ROWS - 1, endCol, {
 			dateSystem,
+			...(today ? { today } : {}),
 			materializedStartRow,
 			materializedStartCol: startCol,
 			materializedEndRow,
@@ -2669,6 +2940,7 @@ function resolveR1C1Reference(refText: string, ctx: EvalContext): EvalArg | null
 		end.row,
 		end.col,
 		ctx.calcContext.dateSystem,
+		ctx.calcContext.today,
 	)
 }
 

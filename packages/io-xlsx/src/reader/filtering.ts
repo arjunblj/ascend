@@ -43,6 +43,8 @@ function parseFilterColumn(node: XmlNode): FilterColumn {
 		dynamicFilterType?: string
 		dynamicFilterVal?: number
 		dynamicFilterMaxVal?: number
+		dynamicFilterValIso?: string
+		dynamicFilterMaxValIso?: string
 		top?: boolean
 		percent?: boolean
 		val?: number
@@ -105,6 +107,10 @@ function parseFilterColumn(node: XmlNode): FilterColumn {
 		if (val !== undefined) parsed.dynamicFilterVal = val
 		const maxVal = numAttr(dynamicFilter, 'maxVal')
 		if (maxVal !== undefined) parsed.dynamicFilterMaxVal = maxVal
+		const valIso = attr(dynamicFilter, 'valIso')
+		if (valIso) parsed.dynamicFilterValIso = valIso
+		const maxValIso = attr(dynamicFilter, 'maxValIso')
+		if (maxValIso) parsed.dynamicFilterMaxValIso = maxValIso
 		return parsed as FilterColumn
 	}
 

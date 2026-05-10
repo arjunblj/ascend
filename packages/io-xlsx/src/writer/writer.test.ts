@@ -1440,6 +1440,13 @@ describe('writeXlsx', () => {
 					blank: true,
 					values: ['Open', 'Closed'],
 				},
+				{
+					colId: 1,
+					kind: 'dynamicFilter',
+					dynamicFilterType: 'thisMonth',
+					dynamicFilterValIso: '2026-03-01T00:00:00',
+					dynamicFilterMaxValIso: '2026-04-01T00:00:00',
+				},
 			],
 			sortState: {
 				ref: 'A2:B10',
@@ -1458,6 +1465,13 @@ describe('writeXlsx', () => {
 					blank: true,
 					values: ['Open', 'Closed'],
 				},
+				{
+					colId: 1,
+					kind: 'dynamicFilter',
+					dynamicFilterType: 'thisMonth',
+					dynamicFilterValIso: '2026-03-01T00:00:00',
+					dynamicFilterMaxValIso: '2026-04-01T00:00:00',
+				},
 			],
 			sortState: {
 				ref: 'A2:B10',
@@ -1468,9 +1482,10 @@ describe('writeXlsx', () => {
 		const fingerprint = fingerprintXlsx(bytes)
 		expect(fingerprint.sheets[0]?.xml.tagCounts).toMatchObject({
 			autoFilter: 1,
-			filterColumn: 1,
+			filterColumn: 2,
 			filters: 1,
 			filter: 2,
+			dynamicFilter: 1,
 			sortState: 1,
 			sortCondition: 1,
 		})

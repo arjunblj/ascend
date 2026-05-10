@@ -63,6 +63,12 @@ function pushFilterColumnXml(out: XmlSink, column: FilterColumn): void {
 			if (column.dynamicFilterMaxVal !== undefined) {
 				innerAttrs.push(`maxVal="${column.dynamicFilterMaxVal}"`)
 			}
+			if (column.dynamicFilterValIso) {
+				innerAttrs.push(`valIso="${escapeXml(column.dynamicFilterValIso)}"`)
+			}
+			if (column.dynamicFilterMaxValIso) {
+				innerAttrs.push(`maxValIso="${escapeXml(column.dynamicFilterMaxValIso)}"`)
+			}
 			out.push(
 				`<filterColumn ${attrs.join(' ')}><dynamicFilter ${innerAttrs.join(' ')}/></filterColumn>`,
 			)

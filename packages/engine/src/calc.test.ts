@@ -3016,6 +3016,125 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(4, 0)?.value).toEqual(numberValue(70))
 	})
 
+	test('dynamic filter criteria evaluate above-average thresholds', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.autoFilter = {
+			ref: 'A1:B5',
+			columns: [{ colId: 1, kind: 'dynamicFilter', dynamicFilterType: 'aboveAverage' }],
+		}
+		sheet.cells.set(0, 0, { value: stringValue('Region'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Sales'), formula: null, styleId: sid })
+		for (const [index, value] of [10, 20, 30, 40].entries()) {
+			sheet.cells.set(index + 1, 0, {
+				value: stringValue(`R${index + 1}`),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(index + 1, 1, { value: numberValue(value), formula: null, styleId: sid })
+		}
+		sheet.cells.set(5, 0, { value: EMPTY, formula: 'SUBTOTAL(9,B2:B5)', styleId: sid })
+		sheet.cells.set(5, 1, { value: EMPTY, formula: 'AGGREGATE(9,4,B2:B5)', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(5, 0)?.value).toEqual(numberValue(70))
+		expect(sheet.cells.get(5, 1)?.value).toEqual(numberValue(70))
+	})
+
+	test('dynamic date ranges evaluate ISO thresholds', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.autoFilter = {
+			ref: 'A1:B5',
+			columns: [
+				{
+					colId: 0,
+					kind: 'dynamicFilter',
+					dynamicFilterType: 'thisMonth',
+					dynamicFilterValIso: '2026-03-01T00:00:00',
+					dynamicFilterMaxValIso: '2026-04-01T00:00:00',
+				},
+			],
+		}
+		sheet.cells.set(0, 0, { value: stringValue('Date'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Amount'), formula: null, styleId: sid })
+		for (const [index, [serial, amount]] of [
+			[dateToSerial(2026, 2, 28), 5],
+			[dateToSerial(2026, 3, 1), 10],
+			[dateToSerial(2026, 3, 31), 20],
+			[dateToSerial(2026, 4, 1), 30],
+		].entries()) {
+			sheet.cells.set(index + 1, 0, { value: dateValue(serial), formula: null, styleId: sid })
+			sheet.cells.set(index + 1, 1, { value: numberValue(amount), formula: null, styleId: sid })
+		}
+		sheet.cells.set(5, 0, { value: EMPTY, formula: 'SUBTOTAL(9,B2:B5)', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(5, 0)?.value).toEqual(numberValue(30))
+	})
+
+	test('dynamic relative date filters use the calculation date', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.autoFilter = {
+			ref: 'A1:B5',
+			columns: [{ colId: 0, kind: 'dynamicFilter', dynamicFilterType: 'thisMonth' }],
+		}
+		sheet.cells.set(0, 0, { value: stringValue('Date'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Amount'), formula: null, styleId: sid })
+		for (const [index, [serial, amount]] of [
+			[dateToSerial(2026, 4, 30), 5],
+			[dateToSerial(2026, 5, 1), 10],
+			[dateToSerial(2026, 5, 31), 20],
+			[dateToSerial(2026, 6, 1), 30],
+		].entries()) {
+			sheet.cells.set(index + 1, 0, { value: dateValue(serial), formula: null, styleId: sid })
+			sheet.cells.set(index + 1, 1, { value: numberValue(amount), formula: null, styleId: sid })
+		}
+		sheet.cells.set(5, 0, { value: EMPTY, formula: 'SUBTOTAL(9,B2:B5)', styleId: sid })
+
+		const result = recalculate(wb, makeCtx({ today: new Date(2026, 4, 10) }))
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(5, 0)?.value).toEqual(numberValue(30))
+	})
+
+	test('dynamic month and quarter filters evaluate date buckets', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.autoFilter = {
+			ref: 'A1:B5',
+			columns: [
+				{ colId: 0, kind: 'dynamicFilter', dynamicFilterType: 'M3' },
+				{ colId: 1, kind: 'dynamicFilter', dynamicFilterType: 'Q1' },
+			],
+		}
+		sheet.cells.set(0, 0, { value: stringValue('InvoiceDate'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('ShipDate'), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: stringValue('Amount'), formula: null, styleId: sid })
+		const rows = [
+			[dateToSerial(2026, 3, 5), dateToSerial(2026, 1, 15), 10],
+			[dateToSerial(2026, 3, 20), dateToSerial(2026, 3, 31), 20],
+			[dateToSerial(2026, 4, 1), dateToSerial(2026, 1, 5), 30],
+			[dateToSerial(2026, 3, 12), dateToSerial(2026, 4, 1), 40],
+		]
+		for (const [index, [invoiceDate, shipDate, amount]] of rows.entries()) {
+			sheet.cells.set(index + 1, 0, { value: dateValue(invoiceDate), formula: null, styleId: sid })
+			sheet.cells.set(index + 1, 1, { value: dateValue(shipDate), formula: null, styleId: sid })
+			sheet.cells.set(index + 1, 2, { value: numberValue(amount), formula: null, styleId: sid })
+		}
+		sheet.cells.set(5, 0, { value: EMPTY, formula: 'SUBTOTAL(9,C2:C5)', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(5, 0)?.value).toEqual(numberValue(30))
+	})
+
 	test('SUBTOTAL and AGGREGATE evaluate date group filter criteria', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

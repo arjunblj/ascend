@@ -1094,6 +1094,58 @@ describe('readXlsx', () => {
 		})
 	})
 
+	it('parses advanced worksheet autoFilter criteria', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData/>
+  <autoFilter ref="A1:D10">
+    <filterColumn colId="0"><dynamicFilter type="thisMonth" valIso="2026-03-01T00:00:00" maxValIso="2026-04-01T00:00:00"/></filterColumn>
+    <filterColumn colId="1"><top10 top="0" percent="1" val="40" filterVal="25"/></filterColumn>
+    <filterColumn colId="2"><colorFilter dxfId="3" cellColor="0"/></filterColumn>
+    <filterColumn colId="3"><iconFilter iconSet="3TrafficLights1" iconId="1"/></filterColumn>
+  </autoFilter>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+		expect(result.value.workbook.sheets[0]?.autoFilter?.columns).toEqual([
+			{
+				colId: 0,
+				kind: 'dynamicFilter',
+				dynamicFilterType: 'thisMonth',
+				dynamicFilterValIso: '2026-03-01T00:00:00',
+				dynamicFilterMaxValIso: '2026-04-01T00:00:00',
+			},
+			{
+				colId: 1,
+				kind: 'top10',
+				top: false,
+				percent: true,
+				val: 40,
+				filterVal: 25,
+			},
+			{
+				colId: 2,
+				kind: 'colorFilter',
+				dxfId: 3,
+				cellColor: false,
+			},
+			{
+				colId: 3,
+				kind: 'iconFilter',
+				iconSet: '3TrafficLights1',
+				iconId: 1,
+			},
+		])
+	})
+
 	it('parses top-level worksheet sort state', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': CONTENT_TYPES,

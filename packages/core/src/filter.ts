@@ -33,6 +33,8 @@ export interface FilterColumn {
 	readonly dynamicFilterType?: string
 	readonly dynamicFilterVal?: number
 	readonly dynamicFilterMaxVal?: number
+	readonly dynamicFilterValIso?: string
+	readonly dynamicFilterMaxValIso?: string
 	readonly top?: boolean
 	readonly percent?: boolean
 	readonly val?: number

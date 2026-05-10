@@ -77,7 +77,7 @@
 		"bench:sota:read-smoke:docker": "bash fixtures/benchmarks/runners/sota_docker.sh run bun run fixtures/benchmarks/upstream-profiles.ts --profile-set read-smoke --competitor external --execution-scope external-process --libraries ascend-readxlsx-row-stream-bytes,fastxlsx,fastexcel,python-calamine,rust-calamine --repeat 5 --warmup 1 --validation-mode final --json",
 		"bench:upstream-real": "bun run fixtures/benchmarks/upstream-real-workbooks.ts",
 		"bench:sota:real:calamine:smoke": "bun run fixtures/benchmarks/upstream-real-workbooks.ts --profile calamine-nyc311-1m --competitor external --runner-manifest fixtures/benchmarks/runners/nyc311-ordered-readers.manifest.json --repeat 1 --warmup 0 --json",
-		"bench:sota:real:calamine": "bun run fixtures/benchmarks/upstream-real-workbooks.ts --profile calamine-nyc311-1m --competitor external --runner-manifest fixtures/benchmarks/runners/nyc311-ordered-readers.manifest.json --repeat 3 --warmup 0 --json",
+		"bench:sota:real:calamine": "bun run fixtures/benchmarks/upstream-real-workbooks.ts --profile calamine-nyc311-1m --competitor external --runner-manifest fixtures/benchmarks/runners/nyc311-sota-readers.manifest.json --repeat 5 --warmup 0 --json",
 		"bench:sota:docker:build": "bash fixtures/benchmarks/runners/sota_docker.sh build",
 		"bench:sota:docker:bootstrap": "bash fixtures/benchmarks/runners/sota_docker.sh bootstrap",
 		"bench:sota:docker": "bash fixtures/benchmarks/runners/sota_docker.sh run",

@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { normalizeExternalRunnerSpecs } from './competitive-real-workbook.ts'
 import {
 	annotateUpstreamRealCases,
 	assertProfileWorkbookReady,
@@ -71,6 +73,31 @@ describe('upstream real workbook profiles', () => {
 			'3',
 			'research/excel-corpus/NYC_311_SR_2010-2020-sample-1M.xlsx',
 		])
+	})
+
+	test('NYC 311 SOTA manifest spans every required reader competitor on one timing lane', () => {
+		const manifest = JSON.parse(
+			readFileSync('fixtures/benchmarks/runners/nyc311-sota-readers.manifest.json', 'utf-8'),
+		) as unknown
+		const specs = normalizeExternalRunnerSpecs(manifest)
+		const names = new Set(specs.map((spec) => spec.name))
+		expect(names).toEqual(
+			new Set([
+				'ascend-external-values-ordered',
+				'rust-calamine',
+				'openpyxl-read-only-values',
+				'apache-poi',
+				'closedxml',
+				'polars-calamine',
+				'polars-xlsx2csv',
+				'polars-openpyxl',
+				'excelize',
+			]),
+		)
+		expect(new Set(specs.map((spec) => spec.timingModel))).toEqual(
+			new Set(['external-internal-file-path-values-timing']),
+		)
+		expect(specs.every((spec) => spec.capabilities?.valueOnlyRead === true)).toBe(true)
 	})
 
 	test('missing workbook message includes acquisition details', () => {

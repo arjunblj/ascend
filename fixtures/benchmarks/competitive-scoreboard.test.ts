@@ -968,6 +968,42 @@ describe('buildCompetitiveScoreboard', () => {
 		)
 	})
 
+	test('upstream SOTA profile accepts the exact-artifact NYC 311 reader evidence lane', () => {
+		const libraries = [
+			'ascend-external-values-ordered',
+			'rust-calamine',
+			'openpyxl-read-only-values',
+			'apache-poi',
+			'closedxml',
+			'polars-calamine',
+			'polars-xlsx2csv',
+			'polars-openpyxl',
+			'excelize',
+		]
+		const suite = suiteWithCases(
+			libraries.map((library, index) =>
+				matrixCase({
+					library,
+					category: 'read',
+					workload: 'calamine-nyc311-1m',
+					file: 'NYC_311_SR_2010-2020-sample-1M.xlsx',
+					repeat: 5,
+					medianMs: 100 + index,
+					timingLane: 'external-internal-file-path-values-timing',
+					peakRssBytes: 1024 + index,
+					upstreamReplayStatus: 'exact-artifact',
+					upstreamEvidence: true,
+					upstreamSourceKind: 'pinned-artifact',
+					upstreamExpectedXlsxSha256:
+						'74a9b50621cf9b0fe8cdb2d4072b5535a2c0e2d83247bb38a37a3b3d809202ea',
+				}),
+			),
+		)
+
+		const failures = assertScoreboardCoverage(suite, 'upstream-xlsx-sota')
+		expect(failures.filter((failure) => failure.includes('calamine-nyc311-1m'))).toEqual([])
+	})
+
 	test('upstream SOTA profile rejects shape-clone evidence for exact public claims', () => {
 		const libraries = [
 			'ascend',
@@ -1277,6 +1313,7 @@ function matrixCase(input: {
 	readonly upstreamReplayStatus?: string
 	readonly upstreamEvidence?: boolean
 	readonly upstreamSourceKind?: 'upstream-script' | 'pinned-artifact'
+	readonly upstreamExpectedXlsxSha256?: string
 }): BenchmarkSuiteResult['cases'][number] {
 	const operationProfile =
 		input.operationProfile ??
@@ -1310,6 +1347,9 @@ function matrixCase(input: {
 						upstreamSourceUrl: 'https://example.test/upstream',
 						upstreamTimingBoundary: 'External process benchmark over the upstream script workload.',
 						validationModel: 'external-post-operation-assertions',
+						...(input.upstreamExpectedXlsxSha256
+							? { upstreamExpectedXlsxSha256: input.upstreamExpectedXlsxSha256 }
+							: {}),
 					}
 				: {}),
 			correctnessStatus: input.correctnessStatus ?? 'pass',

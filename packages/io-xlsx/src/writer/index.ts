@@ -316,6 +316,12 @@ export function planWriteXlsx(
 		const effectiveSharedStringsDirty = options.sharedStringsDirty ?? dirtyPatchMode
 		const effectiveWorkbookMetaDirty = options.workbookMetaDirty ?? dirtyPatchMode
 		const effectiveCalcChainDirty = options.calcChainDirty ?? options.calcStateDirty ?? false
+		const invalidateDigitalSignatures =
+			effectiveWorkbookMetaDirty ||
+			effectiveSharedStringsDirty ||
+			effectiveStylesDirty ||
+			effectiveCalcChainDirty ||
+			(options.dirtySheetNames?.length ?? 0) > 0
 		const sheetNameById = new Map<string, string>([
 			...workbook.sheets.map((sheet) => [sheet.id as string, sheet.name] as const),
 			...workbook.chartSheets.map((sheet) => [sheet.sheetId, sheet.name] as const),
@@ -445,6 +451,10 @@ export function planWriteXlsx(
 
 		if (capsules) {
 			for (const capsule of capsules) {
+				if (invalidateDigitalSignatures && isDigitalSignatureCapsule(capsule)) {
+					plan.skipCapsulePath(capsule.partPath)
+					continue
+				}
 				if (isCalcChainCapsule(capsule) && effectiveCalcChainDirty) continue
 				if (capsule.anchor.kind === 'sheet') {
 					const sheetId: SheetId = capsule.anchor.sheetId as SheetId
@@ -1209,6 +1219,7 @@ export function planWriteXlsx(
 		let rootRIdCounter = 4
 		if (capsules) {
 			for (const capsule of capsules) {
+				if (plan.isCapsulePathSkipped(capsule.partPath)) continue
 				if (!isPackageDocPropsCapsule(capsule) && !isPackageSignatureOriginCapsule(capsule)) {
 					continue
 				}
@@ -1779,6 +1790,14 @@ function isPackageSignatureOriginCapsule(capsule: PreservationCapsule): boolean 
 		capsule.relType === REL_DIGITAL_SIGNATURE_ORIGIN ||
 		capsule.contentType.includes('digital-signature-origin') ||
 		capsule.partPath === '_xmlsignatures/origin.sigs'
+	)
+}
+
+function isDigitalSignatureCapsule(capsule: PreservationCapsule): boolean {
+	return (
+		capsule.partPath.startsWith('_xmlsignatures/') ||
+		capsule.contentType.includes('digital-signature') ||
+		capsule.relType?.includes('digital-signature') === true
 	)
 }
 

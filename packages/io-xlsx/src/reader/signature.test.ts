@@ -50,22 +50,41 @@ describe('digital signature inventory', () => {
 				?.note,
 		).toContain('invalidate')
 
-		const written = writeXlsx(result.value.workbook, result.value.capsules, {
+		const cleanWritten = writeXlsx(result.value.workbook, result.value.capsules)
+		expectOk(cleanWritten)
+		const cleanZip = unzipSync(cleanWritten.value)
+		expect(cleanZip['_xmlsignatures/origin.sigs']).toBeDefined()
+		expect(cleanZip['_xmlsignatures/sig1.xml']).toBeDefined()
+		const cleanRootRels = new TextDecoder().decode(cleanZip['_rels/.rels'] ?? new Uint8Array())
+		expect(cleanRootRels).toContain(
+			'Type="http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/origin"',
+		)
+		expect(cleanRootRels).toContain('Target="_xmlsignatures/origin.sigs"')
+
+		const dirtyWritten = writeXlsx(result.value.workbook, result.value.capsules, {
 			workbookMetaDirty: true,
 		})
-		expectOk(written)
-		const zip = unzipSync(written.value)
-		expect(zip['_xmlsignatures/origin.sigs']).toBeDefined()
-		expect(zip['_xmlsignatures/sig1.xml']).toBeDefined()
+		expectOk(dirtyWritten)
+		const zip = unzipSync(dirtyWritten.value)
+		expect(zip['_xmlsignatures/origin.sigs']).toBeUndefined()
+		expect(zip['_xmlsignatures/sig1.xml']).toBeUndefined()
+		expect(zip['_xmlsignatures/_rels/origin.sigs.rels']).toBeUndefined()
+		const contentTypes = new TextDecoder().decode(zip['[Content_Types].xml'] ?? new Uint8Array())
 		const rootRels = new TextDecoder().decode(zip['_rels/.rels'] ?? new Uint8Array())
 		const workbookRels = new TextDecoder().decode(
 			zip['xl/_rels/workbook.xml.rels'] ?? new Uint8Array(),
 		)
-		expect(rootRels).toContain(
-			'Type="http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/origin"',
-		)
-		expect(rootRels).toContain('Target="_xmlsignatures/origin.sigs"')
+		expect(contentTypes).not.toContain('digital-signature')
+		expect(rootRels).not.toContain('digital-signature/origin')
+		expect(rootRels).not.toContain('_xmlsignatures/origin.sigs')
 		expect(workbookRels).not.toContain('digital-signature/origin')
+
+		const reopened = readXlsx(dirtyWritten.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.activeContent).toEqual([])
+		expect(
+			reopened.value.report.features.some((feature) => feature.feature === 'preservedSignature'),
+		).toBe(false)
 	})
 })
 

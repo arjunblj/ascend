@@ -566,8 +566,9 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'inspectable',
 		'P0',
 		'Add calculated pivot output refresh after broadening filter-edit fixture coverage.',
-		'Pivot layout, page-filter selections, and field item visibility/detail flags are inspectable and safely editable with cache refresh-on-open markers; full pivot management and output recalculation are not complete.',
+		'Pivot layout, cache shared-item type/bounds/group metadata, page-filter selections, and field item visibility/detail flags are inspectable; cache source and filter item edits are safely editable with refresh-on-open markers while full pivot management and output recalculation remain incomplete.',
 		[
+			'fixtures/xlsx/calamine-fixtures.test.ts',
 			'packages/io-xlsx/src/reader/reader.test.ts',
 			'packages/io-xlsx/src/reader/pivots.test.ts',
 			'packages/io-xlsx/src/writer/writer.test.ts',

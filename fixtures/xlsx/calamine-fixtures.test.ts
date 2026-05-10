@@ -81,6 +81,43 @@ describe('Calamine XLSX/XLSM fixture corpus', () => {
 		)
 	})
 
+	test('surfaces real pivot cache shared item bounds and grouped fields', () => {
+		const result = readXlsx(loadFixture('pivots.xlsx'))
+		expectOk(result)
+		const cache = result.value.workbook.pivotCaches.find((entry) => entry.cacheId === 65)
+		expect(cache).toBeDefined()
+		const fields = cache?.fields ?? []
+
+		expect(fields.find((field) => field.name === 'Id')?.sharedItemsInfo).toMatchObject({
+			containsNumber: true,
+			containsInteger: true,
+			containsString: false,
+			minValue: 1,
+			maxValue: 10,
+		})
+		expect(fields.find((field) => field.name === 'Date')?.sharedItemsInfo).toMatchObject({
+			containsDate: true,
+			containsNonDate: false,
+			minDate: '1999-01-01T00:00:00',
+			maxDate: '2024-12-02T00:00:00',
+			count: 9,
+		})
+		expect(fields.find((field) => field.name === 'Value')?.fieldGroup).toEqual({ parent: 11 })
+		expect(fields.find((field) => field.name === 'Value2')?.fieldGroup).toMatchObject({
+			base: 3,
+			discreteItems: [
+				{ index: 0, value: 1 },
+				{ index: 1, value: 1 },
+				{ index: 2, value: 1 },
+				{ index: 3, value: 0 },
+			],
+			groupItems: [
+				{ index: 0, kind: 'number', value: '5' },
+				{ index: 1, kind: 'string', value: 'Group1' },
+			],
+		})
+	})
+
 	test('cached formulas in the Calamine subset have no semantic mismatches', async () => {
 		const payload = await runFormulaCorpusCorrectness({
 			corpusRoot: calamineDir,

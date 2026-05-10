@@ -38,13 +38,43 @@ export interface PivotCacheFieldInfo {
 	readonly databaseField?: boolean
 	readonly numFmtId?: number
 	readonly formula?: string
+	readonly sharedItemsInfo?: PivotCacheSharedItemsInfo
 	readonly sharedItems?: readonly PivotCacheSharedItemInfo[]
+	readonly fieldGroup?: PivotCacheFieldGroupInfo
 }
 
 export interface PivotCacheSharedItemInfo {
 	readonly index: number
 	readonly kind: 'string' | 'number' | 'date' | 'boolean' | 'error' | 'missing'
 	readonly value?: string
+}
+
+export interface PivotCacheSharedItemsInfo {
+	readonly count?: number
+	readonly containsBlank?: boolean
+	readonly containsDate?: boolean
+	readonly containsNonDate?: boolean
+	readonly containsNumber?: boolean
+	readonly containsInteger?: boolean
+	readonly containsString?: boolean
+	readonly containsMixedTypes?: boolean
+	readonly containsSemiMixedTypes?: boolean
+	readonly minValue?: number
+	readonly maxValue?: number
+	readonly minDate?: string
+	readonly maxDate?: string
+}
+
+export interface PivotCacheFieldGroupInfo {
+	readonly base?: number
+	readonly parent?: number
+	readonly discreteItems?: readonly PivotCacheFieldGroupDiscreteItemInfo[]
+	readonly groupItems?: readonly PivotCacheSharedItemInfo[]
+}
+
+export interface PivotCacheFieldGroupDiscreteItemInfo {
+	readonly index: number
+	readonly value?: number
 }
 
 export interface PivotFieldInfo {
@@ -88,6 +118,44 @@ export interface PivotDataFieldInfo {
 	readonly name?: string
 	readonly subtotal?: string
 	readonly numFmtId?: number
+}
+
+export function clonePivotCacheInfo(entry: PivotCacheInfo): PivotCacheInfo {
+	return {
+		...entry,
+		fields: entry.fields.map((field) => ({
+			...field,
+			...(field.sharedItemsInfo ? { sharedItemsInfo: { ...field.sharedItemsInfo } } : {}),
+			...(field.sharedItems ? { sharedItems: field.sharedItems.map((item) => ({ ...item })) } : {}),
+			...(field.fieldGroup
+				? {
+						fieldGroup: {
+							...field.fieldGroup,
+							...(field.fieldGroup.discreteItems
+								? { discreteItems: field.fieldGroup.discreteItems.map((item) => ({ ...item })) }
+								: {}),
+							...(field.fieldGroup.groupItems
+								? { groupItems: field.fieldGroup.groupItems.map((item) => ({ ...item })) }
+								: {}),
+						},
+					}
+				: {}),
+		})),
+	}
+}
+
+export function clonePivotTableInfo(entry: PivotTableInfo): PivotTableInfo {
+	return {
+		...entry,
+		fields: entry.fields.map((field) => ({
+			...field,
+			...(field.items ? { items: field.items.map((item) => ({ ...item })) } : {}),
+		})),
+		rowFields: entry.rowFields.map((field) => ({ ...field })),
+		columnFields: entry.columnFields.map((field) => ({ ...field })),
+		pageFields: entry.pageFields.map((field) => ({ ...field })),
+		dataFields: entry.dataFields.map((field) => ({ ...field })),
+	}
 }
 
 export interface SlicerCacheInfo {

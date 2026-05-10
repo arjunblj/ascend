@@ -1,4 +1,9 @@
-import { cloneActiveContentInfo, type Workbook } from '@ascend/core'
+import {
+	cloneActiveContentInfo,
+	clonePivotCacheInfo,
+	clonePivotTableInfo,
+	type Workbook,
+} from '@ascend/core'
 import type { AscendError, CellUpdate, Operation, Result } from '@ascend/schema'
 import { ascendError, err, ok } from '@ascend/schema'
 import {
@@ -255,31 +260,9 @@ function restoreWorkbookFromSnapshot(workbook: Workbook, snapshot: Workbook): vo
 	workbook.differentialStyles.splice(0, workbook.differentialStyles.length)
 	workbook.differentialStyles.push(...snapshot.differentialStyles)
 	workbook.pivotCaches.splice(0, workbook.pivotCaches.length)
-	workbook.pivotCaches.push(
-		...snapshot.pivotCaches.map((e) => ({
-			...e,
-			fields: e.fields.map((field) => ({
-				...field,
-				...(field.sharedItems
-					? { sharedItems: field.sharedItems.map((item) => ({ ...item })) }
-					: {}),
-			})),
-		})),
-	)
+	workbook.pivotCaches.push(...snapshot.pivotCaches.map(clonePivotCacheInfo))
 	workbook.pivotTables.splice(0, workbook.pivotTables.length)
-	workbook.pivotTables.push(
-		...snapshot.pivotTables.map((e) => ({
-			...e,
-			fields: e.fields.map((field) => ({
-				...field,
-				...(field.items ? { items: field.items.map((item) => ({ ...item })) } : {}),
-			})),
-			rowFields: e.rowFields.map((field) => ({ ...field })),
-			columnFields: e.columnFields.map((field) => ({ ...field })),
-			pageFields: e.pageFields.map((field) => ({ ...field })),
-			dataFields: e.dataFields.map((field) => ({ ...field })),
-		})),
-	)
+	workbook.pivotTables.push(...snapshot.pivotTables.map(clonePivotTableInfo))
 	workbook.slicerCaches.splice(0, workbook.slicerCaches.length)
 	workbook.slicerCaches.push(
 		...snapshot.slicerCaches.map((e) => ({

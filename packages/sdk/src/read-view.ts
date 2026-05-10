@@ -3,6 +3,8 @@ import {
 	type CellStyle,
 	type ChartPartInfo,
 	cloneActiveContentInfo,
+	clonePivotCacheInfo,
+	clonePivotTableInfo,
 	cloneStyle,
 	indexToColumn,
 	parseA1,
@@ -1073,13 +1075,7 @@ function copyChartSheetInfo(
 }
 
 function copyPivotCacheInfo(cache: PivotCacheInfo): PivotCacheInfo {
-	return {
-		...cache,
-		fields: cache.fields.map((field) => ({
-			...field,
-			...(field.sharedItems ? { sharedItems: field.sharedItems.map((item) => ({ ...item })) } : {}),
-		})),
-	}
+	return clonePivotCacheInfo(cache)
 }
 
 function copySlicerCacheInfo(cache: SlicerCacheInfo): SlicerCacheInfo {
@@ -1092,17 +1088,7 @@ function copySlicerCacheInfo(cache: SlicerCacheInfo): SlicerCacheInfo {
 }
 
 function copyPivotTableInfo(pivot: PivotTableInfo): PivotTableInfo {
-	return {
-		...pivot,
-		fields: pivot.fields.map((field) => ({
-			...field,
-			...(field.items ? { items: field.items.map((item) => ({ ...item })) } : {}),
-		})),
-		rowFields: pivot.rowFields.map((field) => ({ ...field })),
-		columnFields: pivot.columnFields.map((field) => ({ ...field })),
-		pageFields: pivot.pageFields.map((field) => ({ ...field })),
-		dataFields: pivot.dataFields.map((field) => ({ ...field })),
-	}
+	return clonePivotTableInfo(pivot)
 }
 
 function buildGetPivotDataResult(

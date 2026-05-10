@@ -1257,10 +1257,14 @@ describe('readXlsx', () => {
     <worksheetSource ref="A1:D100" sheet="raw data"/>
   </cacheSource>
   <cacheFields count="4">
-    <cacheField name="Region" databaseField="1"/>
+    <cacheField name="Region" databaseField="1">
+      <sharedItems count="2"><s v="West"/><s v="East"/></sharedItems>
+    </cacheField>
     <cacheField name="Quarter"/>
     <cacheField name="Channel"/>
-    <cacheField name="Sales" numFmtId="4"/>
+    <cacheField name="Sales" numFmtId="4">
+      <sharedItems containsSemiMixedTypes="0" containsString="0" containsNumber="1" containsInteger="1" minValue="5" maxValue="100"/>
+    </cacheField>
   </cacheFields>
 </pivotCacheDefinition>`,
 			'xl/pivotCache/_rels/pivotCacheDefinition1.xml.rels': `<?xml version="1.0"?>
@@ -1313,10 +1317,31 @@ describe('readXlsx', () => {
 				sourceRef: 'A1:D100',
 				recordsPartPath: 'xl/pivotCache/pivotCacheRecords1.xml',
 				fields: [
-					{ index: 0, name: 'Region', databaseField: true },
+					{
+						index: 0,
+						name: 'Region',
+						databaseField: true,
+						sharedItemsInfo: { count: 2 },
+						sharedItems: [
+							{ index: 0, kind: 'string', value: 'West' },
+							{ index: 1, kind: 'string', value: 'East' },
+						],
+					},
 					{ index: 1, name: 'Quarter' },
 					{ index: 2, name: 'Channel' },
-					{ index: 3, name: 'Sales', numFmtId: 4 },
+					{
+						index: 3,
+						name: 'Sales',
+						numFmtId: 4,
+						sharedItemsInfo: {
+							containsSemiMixedTypes: false,
+							containsString: false,
+							containsNumber: true,
+							containsInteger: true,
+							minValue: 5,
+							maxValue: 100,
+						},
+					},
 				],
 			},
 		])

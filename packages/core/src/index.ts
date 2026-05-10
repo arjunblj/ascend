@@ -24,9 +24,12 @@ export type {
 export type { SheetId, StyleId, TableId, WorkbookId } from './ids.ts'
 export { createSheetId, createTableId, createWorkbookId, DEFAULT_STYLE_ID } from './ids.ts'
 export type {
+	PivotCacheFieldGroupDiscreteItemInfo,
+	PivotCacheFieldGroupInfo,
 	PivotCacheFieldInfo,
 	PivotCacheInfo,
 	PivotCacheSharedItemInfo,
+	PivotCacheSharedItemsInfo,
 	PivotDataFieldInfo,
 	PivotFieldInfo,
 	PivotFieldItemInfo,
@@ -40,6 +43,7 @@ export type {
 	TimelineRangeInfo,
 	TimelineStateInfo,
 } from './pivot.ts'
+export { clonePivotCacheInfo, clonePivotTableInfo } from './pivot.ts'
 export type { CellRef, RangeRef } from './refs.ts'
 export {
 	columnToIndex,

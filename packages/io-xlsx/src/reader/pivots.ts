@@ -1,7 +1,9 @@
 import type {
+	PivotCacheFieldGroupInfo,
 	PivotCacheFieldInfo,
 	PivotCacheInfo,
 	PivotCacheSharedItemInfo,
+	PivotCacheSharedItemsInfo,
 	PivotDataFieldInfo,
 	PivotFieldInfo,
 	PivotFieldItemInfo,
@@ -152,20 +154,65 @@ function parseCacheFields(root: XmlNode): PivotCacheFieldInfo[] {
 			databaseField?: boolean
 			numFmtId?: number
 			formula?: string
+			sharedItemsInfo?: PivotCacheSharedItemsInfo
 			sharedItems?: readonly PivotCacheSharedItemInfo[]
+			fieldGroup?: PivotCacheFieldGroupInfo
 		} = { index }
 		setStringIfDefined(parsed, 'name', attr(node, 'name'))
 		setBoolIfDefined(parsed, 'databaseField', boolAttr(node, 'databaseField'))
 		setNumberIfDefined(parsed, 'numFmtId', numAttr(node, 'numFmtId'))
 		setStringIfDefined(parsed, 'formula', attr(node, 'formula'))
-		const sharedItems = parseCacheSharedItems(node)
+		const sharedItemsNode = childNode(node, 'sharedItems')
+		const sharedItemsInfo = parseCacheSharedItemsInfo(sharedItemsNode)
+		if (sharedItemsInfo) parsed.sharedItemsInfo = sharedItemsInfo
+		const sharedItems = parseCacheSharedItems(sharedItemsNode)
 		if (sharedItems.length > 0) parsed.sharedItems = sharedItems
+		const fieldGroup = parseCacheFieldGroup(childNode(node, 'fieldGroup'))
+		if (fieldGroup) parsed.fieldGroup = fieldGroup
 		return parsed
 	})
 }
 
-function parseCacheSharedItems(cacheField: XmlNode): PivotCacheSharedItemInfo[] {
-	const sharedItems = childNode(cacheField, 'sharedItems')
+function parseCacheSharedItemsInfo(
+	sharedItems: XmlNode | undefined,
+): PivotCacheSharedItemsInfo | undefined {
+	if (!sharedItems) return undefined
+	const parsed: {
+		count?: number
+		containsBlank?: boolean
+		containsDate?: boolean
+		containsNonDate?: boolean
+		containsNumber?: boolean
+		containsInteger?: boolean
+		containsString?: boolean
+		containsMixedTypes?: boolean
+		containsSemiMixedTypes?: boolean
+		minValue?: number
+		maxValue?: number
+		minDate?: string
+		maxDate?: string
+	} = {}
+	setNumberIfDefined(parsed, 'count', numAttr(sharedItems, 'count'))
+	setBoolIfDefined(parsed, 'containsBlank', boolAttr(sharedItems, 'containsBlank'))
+	setBoolIfDefined(parsed, 'containsDate', boolAttr(sharedItems, 'containsDate'))
+	setBoolIfDefined(parsed, 'containsNonDate', boolAttr(sharedItems, 'containsNonDate'))
+	setBoolIfDefined(parsed, 'containsNumber', boolAttr(sharedItems, 'containsNumber'))
+	setBoolIfDefined(parsed, 'containsInteger', boolAttr(sharedItems, 'containsInteger'))
+	setBoolIfDefined(parsed, 'containsString', boolAttr(sharedItems, 'containsString'))
+	setBoolIfDefined(parsed, 'containsMixedTypes', boolAttr(sharedItems, 'containsMixedTypes'))
+	setBoolIfDefined(
+		parsed,
+		'containsSemiMixedTypes',
+		boolAttr(sharedItems, 'containsSemiMixedTypes'),
+	)
+	setNumberIfDefined(parsed, 'minValue', numAttr(sharedItems, 'minValue'))
+	setNumberIfDefined(parsed, 'maxValue', numAttr(sharedItems, 'maxValue'))
+	setStringIfDefined(parsed, 'minDate', attr(sharedItems, 'minDate'))
+	setStringIfDefined(parsed, 'maxDate', attr(sharedItems, 'maxDate'))
+	return Object.keys(parsed).length > 0 ? (parsed as PivotCacheSharedItemsInfo) : undefined
+}
+
+function parseCacheSharedItems(sharedItems: XmlNode | undefined): PivotCacheSharedItemInfo[] {
 	if (!sharedItems) return []
 	const items: PivotCacheSharedItemInfo[] = []
 	for (const [key, value] of Object.entries(sharedItems)) {
@@ -183,6 +230,35 @@ function parseCacheSharedItems(cacheField: XmlNode): PivotCacheSharedItemInfo[] 
 		}
 	}
 	return items
+}
+
+function parseCacheFieldGroup(
+	fieldGroup: XmlNode | undefined,
+): PivotCacheFieldGroupInfo | undefined {
+	if (!fieldGroup) return undefined
+	const parsed: {
+		base?: number
+		parent?: number
+		discreteItems?: readonly { readonly index: number; readonly value?: number }[]
+		groupItems?: readonly PivotCacheSharedItemInfo[]
+	} = {}
+	setNumberIfDefined(parsed, 'base', numAttr(fieldGroup, 'base'))
+	setNumberIfDefined(parsed, 'parent', numAttr(fieldGroup, 'par'))
+	const discreteItems = parseDiscreteGroupItems(childNode(fieldGroup, 'discretePr'))
+	if (discreteItems.length > 0) parsed.discreteItems = discreteItems
+	const groupItems = parseCacheSharedItems(childNode(fieldGroup, 'groupItems'))
+	if (groupItems.length > 0) parsed.groupItems = groupItems
+	return Object.keys(parsed).length > 0 ? (parsed as PivotCacheFieldGroupInfo) : undefined
+}
+
+function parseDiscreteGroupItems(
+	discretePr: XmlNode | undefined,
+): readonly { readonly index: number; readonly value?: number }[] {
+	return childNodes(discretePr, 'x').map((node, index) => {
+		const parsed: { index: number; value?: number } = { index }
+		setNumberIfDefined(parsed, 'value', numAttr(node, 'v'))
+		return parsed
+	})
 }
 
 function sharedItemKind(localName: string): PivotCacheSharedItemInfo['kind'] | null {

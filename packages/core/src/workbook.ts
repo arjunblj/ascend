@@ -13,6 +13,7 @@ import type {
 	TimelineCacheInfo,
 	TimelineInfo,
 } from './pivot.ts'
+import { clonePivotCacheInfo, clonePivotTableInfo } from './pivot.ts'
 import { createSheet, type Sheet } from './sheet.ts'
 import type { CellStyle } from './style.ts'
 import { cloneCellStyle } from './style-clone.ts'
@@ -322,28 +323,4 @@ export class Workbook {
 
 export function createWorkbook(id?: WorkbookId): Workbook {
 	return new Workbook(id)
-}
-
-function clonePivotCacheInfo(entry: PivotCacheInfo): PivotCacheInfo {
-	return {
-		...entry,
-		fields: entry.fields.map((field) => ({
-			...field,
-			...(field.sharedItems ? { sharedItems: field.sharedItems.map((item) => ({ ...item })) } : {}),
-		})),
-	}
-}
-
-function clonePivotTableInfo(entry: PivotTableInfo): PivotTableInfo {
-	return {
-		...entry,
-		fields: entry.fields.map((field) => ({
-			...field,
-			...(field.items ? { items: field.items.map((item) => ({ ...item })) } : {}),
-		})),
-		rowFields: entry.rowFields.map((field) => ({ ...field })),
-		columnFields: entry.columnFields.map((field) => ({ ...field })),
-		pageFields: entry.pageFields.map((field) => ({ ...field })),
-		dataFields: entry.dataFields.map((field) => ({ ...field })),
-	}
 }

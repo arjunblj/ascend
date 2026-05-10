@@ -306,13 +306,43 @@ export interface PivotCacheFieldInfo {
 	readonly databaseField?: boolean
 	readonly numFmtId?: number
 	readonly formula?: string
+	readonly sharedItemsInfo?: PivotCacheSharedItemsInfo
 	readonly sharedItems?: readonly PivotCacheSharedItemInfo[]
+	readonly fieldGroup?: PivotCacheFieldGroupInfo
 }
 
 export interface PivotCacheSharedItemInfo {
 	readonly index: number
 	readonly kind: 'string' | 'number' | 'date' | 'boolean' | 'error' | 'missing'
 	readonly value?: string
+}
+
+export interface PivotCacheSharedItemsInfo {
+	readonly count?: number
+	readonly containsBlank?: boolean
+	readonly containsDate?: boolean
+	readonly containsNonDate?: boolean
+	readonly containsNumber?: boolean
+	readonly containsInteger?: boolean
+	readonly containsString?: boolean
+	readonly containsMixedTypes?: boolean
+	readonly containsSemiMixedTypes?: boolean
+	readonly minValue?: number
+	readonly maxValue?: number
+	readonly minDate?: string
+	readonly maxDate?: string
+}
+
+export interface PivotCacheFieldGroupInfo {
+	readonly base?: number
+	readonly parent?: number
+	readonly discreteItems?: readonly PivotCacheFieldGroupDiscreteItemInfo[]
+	readonly groupItems?: readonly PivotCacheSharedItemInfo[]
+}
+
+export interface PivotCacheFieldGroupDiscreteItemInfo {
+	readonly index: number
+	readonly value?: number
 }
 
 export interface PivotFieldInfo {

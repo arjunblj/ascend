@@ -117,7 +117,13 @@ describe('Workbook.clone', () => {
 				{
 					index: 0,
 					name: 'Region',
+					sharedItemsInfo: { count: 1, containsString: true },
 					sharedItems: [{ index: 0, kind: 'string', value: 'West' }],
+					fieldGroup: {
+						base: 2,
+						discreteItems: [{ index: 0, value: 1 }],
+						groupItems: [{ index: 0, kind: 'string', value: 'Group1' }],
+					},
 				},
 			],
 		})
@@ -139,16 +145,28 @@ describe('Workbook.clone', () => {
 		})
 
 		const clone = wb.clone()
+		const sharedItemsInfo = clone.pivotCaches[0]?.fields[0]?.sharedItemsInfo
 		const sharedItem = clone.pivotCaches[0]?.fields[0]?.sharedItems?.[0]
+		const discreteItem = clone.pivotCaches[0]?.fields[0]?.fieldGroup?.discreteItems?.[0]
+		const groupItem = clone.pivotCaches[0]?.fields[0]?.fieldGroup?.groupItems?.[0]
 		const item = clone.pivotTables[0]?.fields[0]?.items?.[0]
+		expect(sharedItemsInfo).toBeDefined()
 		expect(sharedItem).toBeDefined()
+		expect(discreteItem).toBeDefined()
+		expect(groupItem).toBeDefined()
 		expect(item).toBeDefined()
-		if (!sharedItem || !item) return
+		if (!sharedItemsInfo || !sharedItem || !discreteItem || !groupItem || !item) return
 
+		;(sharedItemsInfo as { count: number }).count = 2
 		;(sharedItem as { value: string }).value = 'East'
+		;(discreteItem as { value: number }).value = 0
+		;(groupItem as { value: string }).value = 'Group2'
 		;(item as { hidden: boolean }).hidden = false
 
+		expect(wb.pivotCaches[0]?.fields[0]?.sharedItemsInfo?.count).toBe(1)
 		expect(wb.pivotCaches[0]?.fields[0]?.sharedItems?.[0]?.value).toBe('West')
+		expect(wb.pivotCaches[0]?.fields[0]?.fieldGroup?.discreteItems?.[0]?.value).toBe(1)
+		expect(wb.pivotCaches[0]?.fields[0]?.fieldGroup?.groupItems?.[0]?.value).toBe('Group1')
 		expect(wb.pivotTables[0]?.fields[0]?.items?.[0]?.hidden).toBe(true)
 	})
 })

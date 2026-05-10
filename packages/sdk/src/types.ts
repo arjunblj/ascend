@@ -36,6 +36,9 @@ import type {
 export type {
 	ActiveContentInfo,
 	ActiveContentKind,
+	VbaModuleInfo,
+	VbaModuleKind,
+	VbaProjectInfo,
 	WorkbookConnectionPartInfo,
 	WorkbookConnectionPartKind,
 	WorkbookDataModelPartInfo,

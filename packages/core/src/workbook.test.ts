@@ -57,4 +57,31 @@ describe('Workbook.clone', () => {
 		expect(wb.calcSettings.iterativeCalc.enabled).toBe(true)
 		expect(wb.preservedStyles?.xfByStyleId[0]).toBe(1)
 	})
+
+	test('clones active content VBA summaries without aliasing nested modules', () => {
+		const wb = createWorkbook()
+		wb.activeContent.push({
+			kind: 'vbaProject',
+			partPath: 'xl/vbaProject.bin',
+			contentType: 'application/vnd.ms-office.vbaProject',
+			anchor: 'workbook',
+			relationshipCount: 0,
+			opaque: true,
+			executionPolicy: 'blocked',
+			vbaProject: {
+				moduleCount: 1,
+				projectStreamPresent: true,
+				modules: [{ name: 'Module1', kind: 'standard' }],
+			},
+		})
+
+		const clone = wb.clone()
+		const module = clone.activeContent[0]?.vbaProject?.modules[0]
+		expect(module).toBeDefined()
+		if (!module) return
+
+		;(module as { name: string }).name = 'Changed'
+
+		expect(wb.activeContent[0]?.vbaProject?.modules[0]?.name).toBe('Module1')
+	})
 })

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import { makeXlsx } from '../../test/helpers.ts'
 import { readXlsx } from './index.ts'
 
@@ -104,5 +105,35 @@ describe('active content inventory', () => {
 			tier: 'preserved',
 			locations: ['xl/ctrlProps/ctrlProp1.xml'],
 		})
+	})
+
+	test('summarizes real VBA project modules without exposing source code', () => {
+		const bytes = readFileSync(
+			new URL('../../../../fixtures/xlsx/calamine/vba.xlsm', import.meta.url),
+		)
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		const vbaProject = result.value.workbook.activeContent.find(
+			(content) => content.kind === 'vbaProject',
+		)
+		expect(vbaProject).toMatchObject({
+			partPath: 'xl/vbaProject.bin',
+			opaque: true,
+			executionPolicy: 'blocked',
+			vbaProject: {
+				moduleCount: 5,
+				projectStreamPresent: true,
+			},
+		})
+		expect(vbaProject?.vbaProject?.modules).toEqual([
+			{ name: 'ThisWorkbook', kind: 'document' },
+			{ name: 'Sheet1', kind: 'document' },
+			{ name: 'Sheet2', kind: 'document' },
+			{ name: 'Sheet3', kind: 'document' },
+			{ name: 'testVBA', kind: 'standard' },
+		])
+		expect(JSON.stringify(vbaProject?.vbaProject)).not.toContain('Attribute VB_Name')
 	})
 })

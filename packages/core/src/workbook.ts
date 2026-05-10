@@ -1,5 +1,5 @@
 import { type CalcSettings, DEFAULT_CALC_SETTINGS } from '@ascend/schema'
-import type { ActiveContentInfo } from './active-content.ts'
+import { type ActiveContentInfo, cloneActiveContentInfo } from './active-content.ts'
 import type { ChartPartInfo, ChartSheetInfo } from './chart.ts'
 import type { WorkbookConnectionPartInfo } from './connection.ts'
 import type { WorkbookDataModelPartInfo } from './data-model.ts'
@@ -287,7 +287,7 @@ export class Workbook {
 		)
 		clone.connectionParts.push(...this.connectionParts.map((entry) => ({ ...entry })))
 		clone.dataModelParts.push(...this.dataModelParts.map((entry) => ({ ...entry })))
-		clone.activeContent.push(...this.activeContent.map((entry) => ({ ...entry })))
+		clone.activeContent.push(...this.activeContent.map(cloneActiveContentInfo))
 		clone.workbookViews.push(...this.workbookViews.map((view) => ({ ...view })))
 		clone.externalReferences.push(...this.externalReferences)
 		clone.externalReferenceDetails.push(

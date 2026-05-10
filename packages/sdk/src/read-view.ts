@@ -2,6 +2,7 @@ import {
 	type AutoFilter,
 	type CellStyle,
 	type ChartPartInfo,
+	cloneActiveContentInfo,
 	cloneStyle,
 	indexToColumn,
 	parseA1,
@@ -182,7 +183,7 @@ export class WorkbookReadView {
 			timelines: this.wb.timelines.map((entry) => ({ ...entry })),
 			connectionParts: this.wb.connectionParts.map((entry) => ({ ...entry })),
 			dataModelParts: this.wb.dataModelParts.map((entry) => ({ ...entry })),
-			activeContent: this.wb.activeContent.map((entry) => ({ ...entry })),
+			activeContent: this.wb.activeContent.map(cloneActiveContentInfo),
 			styleSummary: { ...this.wb.styleMetadata },
 			themeSummary: {
 				hasThemePart: this.wb.preservedTheme !== null,
@@ -659,7 +660,7 @@ export class WorkbookReadView {
 	}
 
 	activeContent(): readonly ActiveContentInfo[] {
-		return this.wb.activeContent.map((entry) => ({ ...entry }))
+		return this.wb.activeContent.map(cloneActiveContentInfo)
 	}
 
 	trace(cellRef: CellSelector, opts?: { maxDepth?: number }): TraceResult | undefined {

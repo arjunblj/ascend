@@ -1,4 +1,4 @@
-import type { Workbook } from '@ascend/core'
+import { cloneActiveContentInfo, type Workbook } from '@ascend/core'
 import type { AscendError, CellUpdate, Operation, Result } from '@ascend/schema'
 import { ascendError, err, ok } from '@ascend/schema'
 import {
@@ -287,7 +287,7 @@ function restoreWorkbookFromSnapshot(workbook: Workbook, snapshot: Workbook): vo
 		})),
 	)
 	workbook.activeContent.splice(0, workbook.activeContent.length)
-	workbook.activeContent.push(...snapshot.activeContent.map((entry) => ({ ...entry })))
+	workbook.activeContent.push(...snapshot.activeContent.map(cloneActiveContentInfo))
 	workbook.workbookViews.splice(0, workbook.workbookViews.length)
 	workbook.workbookViews.push(...snapshot.workbookViews.map((v) => ({ ...v })))
 	workbook.externalReferences.splice(0, workbook.externalReferences.length)

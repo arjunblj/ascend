@@ -66,6 +66,7 @@ import {
 import { parseStyles, parseStylesLite } from './styles.ts'
 import { parseTable } from './table.ts'
 import { parseThemeColorsXml, parseThemeXml } from './theme.ts'
+import { summarizeVbaProject } from './vba.ts'
 import { parseWorkbookXml } from './workbook.ts'
 import { extractZip, type ZipArchive } from './zip.ts'
 
@@ -818,6 +819,10 @@ function collectActiveContent(
 		const kind = classifyActiveContent(capsule)
 		if (!kind) continue
 		const entry = archive.get(capsule.partPath)
+		const vbaProject =
+			kind === 'vbaProject'
+				? summarizeVbaProject(archive.readBytes(capsule.partPath) ?? new Uint8Array())
+				: undefined
 		activeContent.push({
 			kind,
 			partPath: capsule.partPath,
@@ -828,6 +833,7 @@ function collectActiveContent(
 			relationshipCount: capsule.relationships.length,
 			...(kind === 'vbaProject' && entry ? { byteSize: entry.uncompressedSize } : {}),
 			...(kind === 'vbaProject' ? { opaque: true, executionPolicy: 'blocked' as const } : {}),
+			...(vbaProject ? { vbaProject } : {}),
 		})
 	}
 	return activeContent

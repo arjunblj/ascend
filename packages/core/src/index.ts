@@ -1,4 +1,11 @@
-export type { ActiveContentInfo, ActiveContentKind } from './active-content.ts'
+export {
+	type ActiveContentInfo,
+	type ActiveContentKind,
+	cloneActiveContentInfo,
+	type VbaModuleInfo,
+	type VbaModuleKind,
+	type VbaProjectInfo,
+} from './active-content.ts'
 export type { ChartPartInfo, ChartSeriesInfo, ChartSheetInfo } from './chart.ts'
 export type { WorkbookConnectionPartInfo, WorkbookConnectionPartKind } from './connection.ts'
 export type { WorkbookDataModelPartInfo, WorkbookDataModelPartKind } from './data-model.ts'

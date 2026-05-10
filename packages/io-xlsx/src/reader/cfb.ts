@@ -12,8 +12,23 @@ interface DirectoryEntry {
 	readonly size: number
 }
 
+export type CompoundFileDirectoryEntryType = 'storage' | 'stream' | 'root' | 'unknown'
+
+export interface CompoundFileDirectoryEntryInfo {
+	readonly name: string
+	readonly type: CompoundFileDirectoryEntryType
+	readonly size: number
+}
+
 export function isCompoundFile(bytes: Uint8Array): boolean {
 	return CFB_MAGIC.every((byte, index) => bytes[index] === byte)
+}
+
+export function readCompoundFileDirectory(
+	bytes: Uint8Array,
+): readonly CompoundFileDirectoryEntryInfo[] {
+	const container = parseCompoundFile(bytes)
+	return container.directory
 }
 
 export function readCompoundFileStream(
@@ -25,6 +40,7 @@ export function readCompoundFileStream(
 }
 
 function parseCompoundFile(bytes: Uint8Array): {
+	readonly directory: readonly CompoundFileDirectoryEntryInfo[]
 	readStream(streamName: string): Uint8Array | undefined
 } {
 	if (!isCompoundFile(bytes)) throw new Error('Not a compound file')
@@ -95,14 +111,31 @@ function parseCompoundFile(bytes: Uint8Array): {
 	}
 
 	return {
+		directory: directory.map((entry) => ({
+			name: entry.name,
+			type: directoryEntryType(entry.type),
+			size: entry.size,
+		})),
 		readStream(streamName: string): Uint8Array | undefined {
 			const normalized = streamName.replace(/^\//, '')
-			const entry = directory.find((item) => item.type === 2 && item.name === normalized)
+			const normalizedLower = normalized.toLowerCase()
+			const entry = directory.find(
+				(item) =>
+					item.type === 2 &&
+					(item.name === normalized || item.name.toLowerCase() === normalizedLower),
+			)
 			if (!entry) return undefined
 			if (entry.size < miniStreamCutoff) return readMiniChain(entry.startSector, entry.size)
 			return readRegularChain(entry.startSector, entry.size)
 		},
 	}
+}
+
+function directoryEntryType(type: number): CompoundFileDirectoryEntryType {
+	if (type === 1) return 'storage'
+	if (type === 2) return 'stream'
+	if (type === 5) return 'root'
+	return 'unknown'
 }
 
 function readDifat(

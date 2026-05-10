@@ -17,6 +17,13 @@ describe('upstream real workbook profiles', () => {
 		expect(UPSTREAM_REAL_WORKBOOK_PROFILES).toHaveLength(1)
 		const profile = UPSTREAM_REAL_WORKBOOK_PROFILES[0]
 		expect(profile.name).toBe('calamine-nyc311-1m')
+		expect(profile.sourceKind).toBe('pinned-artifact')
+		expect(profile.replayStatus).toBe('exact-artifact')
+		expect(profile.timingBoundary).toContain('Competitive real-workbook read lane')
+		expect(profile.timingBoundary).toContain('pinned locally materialized XLSX artifact')
+		expect(profile.timingBoundary).toContain(
+			'not dataset acquisition or CSV-to-XLSX materialization',
+		)
 		expect(profile.expectedRows).toBe(1_000_001)
 		expect(profile.expectedCols).toBe(41)
 		expect(profile.expectedRangeCells).toBe(41_000_041)
@@ -140,6 +147,9 @@ describe('upstream real workbook profiles', () => {
 			profile,
 		)
 		expect(cases[0]?.dimensions.workload).toBe('calamine-nyc311-1m')
+		expect(cases[0]?.dimensions.upstreamSourceKind).toBe('pinned-artifact')
+		expect(cases[0]?.dimensions.upstreamReplayStatus).toBe('exact-artifact')
+		expect(cases[0]?.dimensions.upstreamTimingBoundary).toBe(profile.timingBoundary)
 		expect(cases[0]?.dimensions.upstreamExpectedNonEmptyCells).toBe(28_056_975)
 		expect(cases[0]?.dimensions.upstreamExpectedXlsxSha256).toBe(
 			'74a9b50621cf9b0fe8cdb2d4072b5535a2c0e2d83247bb38a37a3b3d809202ea',

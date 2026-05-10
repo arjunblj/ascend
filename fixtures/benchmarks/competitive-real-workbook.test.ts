@@ -1,16 +1,24 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { strToU8, zipSync } from 'fflate'
-import { type CorpusManifestEntry, normalizeManifest } from '../corpus/manifest.ts'
+import {
+	type CorpusManifestEntry,
+	normalizeManifest,
+	validateManifestProvenance,
+} from '../corpus/manifest.ts'
 import {
 	benchmarkProvenanceDimensions,
 	coalesceRepeatCorrectnessStatus,
 	evaluateAssertions,
 	extractWorkbookFeatureSummary,
+	FULL_CORPUS_TARGETS,
+	loadCorpusManifestEntries,
 	normalizeAssertions,
 	normalizeExternalRunnerSpecs,
 	normalizeExternalSampleAssertions,
 	normalizeExternalSamples,
+	QUICK_TARGETS,
 	resolveExternalRunnerCommand,
 	selectCorpusTargets,
 	type WorkbookFeatureSummary,
@@ -730,6 +738,108 @@ describe('evaluateAssertions', () => {
 				},
 			},
 		])
+	})
+
+	test('default real-workbook sweeps include vendored OSS workbook coverage', () => {
+		expect(QUICK_TARGETS).toContain('fixtures/xlsx/calamine/shared_formula_reversed.xlsx')
+		expect(QUICK_TARGETS).toContain('fixtures/xlsx/poi/StructuredReferences.xlsx')
+		expect(QUICK_TARGETS).toContain('fixtures/xlsx/poi/shared_formulas.xlsx')
+		expect(QUICK_TARGETS).toContain('fixtures/xlsx/poi/WithChart.xlsx')
+		expect(QUICK_TARGETS).toContain('fixtures/xlsx/libreoffice/universal-content-strict.xlsx')
+		expect(QUICK_TARGETS).toContain(
+			'fixtures/xlsx/libreoffice/PivotTable_CachedDefinitionAndDataInSync.xlsx',
+		)
+		expect(FULL_CORPUS_TARGETS).toContain('fixtures/xlsx/poi/FormulaEvalTestData_Copy.xlsx')
+		expect(FULL_CORPUS_TARGETS).toContain('fixtures/xlsx/poi/NewStyleConditionalFormattings.xlsx')
+		expect(FULL_CORPUS_TARGETS).toContain('fixtures/xlsx/libreoffice/activex_checkbox.xlsx')
+		expect(FULL_CORPUS_TARGETS).toContain('fixtures/xlsx/libreoffice/textLengthDataValidity.xlsx')
+		expect(FULL_CORPUS_TARGETS).toContain('fixtures/xlsx/calamine/pivots.xlsx')
+		expect(FULL_CORPUS_TARGETS).toContain('fixtures/xlsx/calamine/picture.xlsx')
+		expect(FULL_CORPUS_TARGETS).toContain('fixtures/xlsx/calamine/table-multiple.xlsx')
+		expect(FULL_CORPUS_TARGETS).toContain(
+			'fixtures/xlsx/closedxml/Misc_FormulasWithEvaluation.xlsx',
+		)
+		expect(FULL_CORPUS_TARGETS).toContain(
+			'fixtures/xlsx/closedxml/Other_ExternalLinks_WorkbookWithExternalLink.xlsx',
+		)
+		expect(FULL_CORPUS_TARGETS).toContain('fixtures/xlsx/exceljs/formulas.xlsx')
+		expect(FULL_CORPUS_TARGETS).toContain('fixtures/xlsx/exceljs/chart-sheet.xlsx')
+	})
+
+	test('default real-workbook sweeps span vendored OSS corpuses and feature tags', async () => {
+		const corpusRoots = ['poi', 'calamine', 'closedxml', 'exceljs', 'libreoffice'] as const
+		for (const root of corpusRoots) {
+			expect(
+				FULL_CORPUS_TARGETS.some((target) => target.startsWith(`fixtures/xlsx/${root}/`)),
+			).toBe(true)
+		}
+		expect(
+			FULL_CORPUS_TARGETS.some((target) => target.startsWith('fixtures/xlsx/xlsxwriter/')),
+		).toBe(true)
+		expect(
+			QUICK_TARGETS.some((target) =>
+				/^fixtures\/xlsx\/(calamine|libreoffice|xlsxwriter)\//.test(target),
+			),
+		).toBe(true)
+
+		const targetSet = new Set(FULL_CORPUS_TARGETS)
+		const coveredTags = new Set<string>()
+		for (const root of corpusRoots) {
+			const entries = normalizeManifest(
+				await loadCorpusManifestEntries(resolve(import.meta.dir, `../xlsx/${root}/manifest.ts`)),
+			)
+			for (const entry of entries) {
+				if (!targetSet.has(`fixtures/xlsx/${root}/${entry.file}`)) continue
+				for (const tag of entry.featureTags) coveredTags.add(tag)
+			}
+		}
+
+		for (const tag of [
+			'formula-fidelity',
+			'pivot-table',
+			'chart',
+			'drawing',
+			'comment',
+			'conditional-formatting',
+			'data-validation',
+			'external-link',
+			'table',
+			'style',
+		]) {
+			expect(coveredTags.has(tag), `missing benchmark feature tag ${tag}`).toBe(true)
+		}
+	})
+
+	test('TypeScript corpus manifests can promote vendored POI fixtures into benchmark selection', async () => {
+		const entries = normalizeManifest(
+			await loadCorpusManifestEntries(resolve(import.meta.dir, '../xlsx/poi/manifest.ts')),
+		)
+		expect(entries.length).toBeGreaterThan(40)
+		expect(validateManifestProvenance(entries)).toEqual([])
+		const selected = selectCorpusTargets(
+			entries,
+			{ tags: ['apache-poi', 'formula-fidelity'], tiers: ['core'], vendorableOnly: true },
+			resolve(import.meta.dir, '../xlsx/poi'),
+		)
+		expect(selected.some((entry) => entry.path.endsWith('StructuredReferences.xlsx'))).toBe(true)
+	})
+
+	test('TypeScript corpus manifests can promote vendored LibreOffice fixtures into benchmark selection', async () => {
+		const entries = normalizeManifest(
+			await loadCorpusManifestEntries(resolve(import.meta.dir, '../xlsx/libreoffice/manifest.ts')),
+		)
+		expect(entries.length).toBe(22)
+		expect(validateManifestProvenance(entries)).toEqual([])
+		const selected = selectCorpusTargets(
+			entries,
+			{ tags: ['libreoffice', 'pivot-table'], tiers: ['core'], vendorableOnly: true },
+			resolve(import.meta.dir, '../xlsx/libreoffice'),
+		)
+		expect(
+			selected.some((entry) =>
+				entry.path.endsWith('PivotTable_CachedDefinitionAndDataInSync.xlsx'),
+			),
+		).toBe(true)
 	})
 
 	test('feature summary extracts package and worksheet feature inventory', () => {

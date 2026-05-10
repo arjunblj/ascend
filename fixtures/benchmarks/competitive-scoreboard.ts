@@ -57,6 +57,15 @@ const RANKING_METRICS = [
 ] as const satisfies readonly RankingMetric[]
 
 const EMPTY_HASH = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+const EXACT_UPSTREAM_EVIDENCE_DIMENSIONS = [
+	'upstreamSourceKind',
+	'upstreamSourceBenchmark',
+	'upstreamSourceUrl',
+	'upstreamTimingBoundary',
+	'timingModel',
+	'validationModel',
+	'executionScope',
+] as const
 
 export interface CompetitiveScoreboardEntry {
 	readonly caseName: string
@@ -1251,6 +1260,28 @@ function comparableCoverageFailure(
 		: `${profile.name} missing-comparable category=${requirement.category} operationProfile=${requirement.operationProfile} workload=${workload}${sourceLabel}${fileLabel} requiredCompetitors=${competitors.map((competitor) => competitor.label).join(',')}`
 }
 
+function exactUpstreamEvidenceFailure(matches: readonly BenchmarkCaseResult[]): string | null {
+	const missing = new Set<string>()
+	const invalid = new Set<string>()
+	for (const entry of matches) {
+		for (const key of EXACT_UPSTREAM_EVIDENCE_DIMENSIONS) {
+			if (!dimensionString(entry, key)) missing.add(key)
+		}
+		const sourceKind = dimensionString(entry, 'upstreamSourceKind')
+		if (sourceKind && sourceKind !== 'upstream-script' && sourceKind !== 'pinned-artifact') {
+			invalid.add(`upstreamSourceKind=${sourceKind}`)
+		}
+		const timingBoundary = dimensionString(entry, 'upstreamTimingBoundary')
+		if (timingBoundary?.includes('not the upstream project native timing harness')) {
+			invalid.add('upstreamTimingBoundary=shape-clone')
+		}
+	}
+	const details: string[] = []
+	if (missing.size > 0) details.push(`missing=${[...missing].sort().join(',')}`)
+	if (invalid.size > 0) details.push(`invalid=${[...invalid].sort().join(',')}`)
+	return details.length > 0 ? details.join(' ') : null
+}
+
 function exactUpstreamReplayFailure(
 	suite: BenchmarkSuiteResult,
 	profile: ClaimProfile,
@@ -1269,7 +1300,13 @@ function exactUpstreamReplayFailure(
 		...new Set(matches.map((entry) => dimensionString(entry, 'upstreamReplayStatus') ?? 'missing')),
 	]
 	const nonExact = statuses.filter((status) => !isExactUpstreamReplayStatus(status))
-	if (nonExact.length === 0) return null
+	if (nonExact.length === 0) {
+		const evidenceFailure = exactUpstreamEvidenceFailure(matches)
+		if (evidenceFailure) {
+			return `${profile.name} incomplete-upstream-evidence category=${requirement.category} operationProfile=${requirement.operationProfile} workload=${workload}${sourceLabel}${fileLabel} ${evidenceFailure}`
+		}
+		return null
+	}
 	return `${profile.name} non-exact-upstream-replay category=${requirement.category} operationProfile=${requirement.operationProfile} workload=${workload}${sourceLabel}${fileLabel} upstreamReplayStatus=${nonExact.join(',')}`
 }
 

@@ -38,9 +38,9 @@ import { Ascend } from '../../packages/sdk/src/index.ts'
 import {
 	type CorpusAssertionClass,
 	type CorpusBenchmarkTier,
-	type CorpusManifestEntry,
 	type CorpusRiskClass,
 	type CorpusSelection,
+	loadCorpusManifestEntries,
 	type NormalizedCorpusManifestEntry,
 	normalizeManifest,
 	selectManifestEntries,
@@ -53,14 +53,51 @@ import {
 	summarizeSamples,
 } from './results.ts'
 
-const QUICK_TARGETS = [
+export { loadCorpusManifestEntries } from '../corpus/manifest.ts'
+
+export const QUICK_TARGETS = [
 	'fixtures/xlsx/stress/multi-sheet-10.xlsx',
 	'fixtures/xlsx/xlsxwriter/styles_formulas.xlsx',
+	'fixtures/xlsx/calamine/shared_formula_reversed.xlsx',
+	'fixtures/xlsx/poi/StructuredReferences.xlsx',
+	'fixtures/xlsx/poi/shared_formulas.xlsx',
+	'fixtures/xlsx/poi/WithChart.xlsx',
+	'fixtures/xlsx/libreoffice/universal-content-strict.xlsx',
+	'fixtures/xlsx/libreoffice/PivotTable_CachedDefinitionAndDataInSync.xlsx',
 	'research/excel-corpus/conditional-formatting.xlsx',
 ]
 
-const FULL_CORPUS_TARGETS = [
+export const FULL_CORPUS_TARGETS = [
 	...QUICK_TARGETS,
+	'fixtures/xlsx/poi/ConditionalFormattingSamples.xlsx',
+	'fixtures/xlsx/poi/DataValidationEvaluations.xlsx',
+	'fixtures/xlsx/poi/FormulaEvalTestData_Copy.xlsx',
+	'fixtures/xlsx/poi/NewStyleConditionalFormattings.xlsx',
+	'fixtures/xlsx/poi/NumberFormatTests.xlsx',
+	'fixtures/xlsx/poi/SimpleStrict.xlsx',
+	'fixtures/xlsx/poi/SimpleWithComments.xlsx',
+	'fixtures/xlsx/poi/Tables.xlsx',
+	'fixtures/xlsx/poi/Themes.xlsx',
+	'fixtures/xlsx/libreoffice/MissingPathExternal.xlsx',
+	'fixtures/xlsx/libreoffice/TableStyleTest.xlsx',
+	'fixtures/xlsx/libreoffice/activex_checkbox.xlsx',
+	'fixtures/xlsx/libreoffice/textLengthDataValidity.xlsx',
+	'fixtures/xlsx/libreoffice/totalsRowFunction.xlsx',
+	'fixtures/xlsx/calamine/pivots.xlsx',
+	'fixtures/xlsx/calamine/picture.xlsx',
+	'fixtures/xlsx/calamine/richtext-namespaced.xlsx',
+	'fixtures/xlsx/calamine/table-multiple.xlsx',
+	'fixtures/xlsx/closedxml/Comments_AddingComments.xlsx',
+	'fixtures/xlsx/closedxml/ConditionalFormatting_CFDataBars.xlsx',
+	'fixtures/xlsx/closedxml/Misc_FormulasWithEvaluation.xlsx',
+	'fixtures/xlsx/closedxml/Other_ExternalLinks_WorkbookWithExternalLink.xlsx',
+	'fixtures/xlsx/closedxml/Other_PivotTableReferenceFiles_ChartsheetAndPivotTable.xlsx',
+	'fixtures/xlsx/exceljs/bogus-defined-name.xlsx',
+	'fixtures/xlsx/exceljs/chart-sheet.xlsx',
+	'fixtures/xlsx/exceljs/fibonacci.xlsx',
+	'fixtures/xlsx/exceljs/formulas.xlsx',
+	'fixtures/xlsx/exceljs/test-issue-1669.xlsx',
+	'fixtures/xlsx/exceljs/test-issue-1842.xlsx',
 	'research/excel-corpus/ms-excel-formulas-and-pivot-tables.xlsx',
 	'research/excel-corpus/bevreport-demo.xlsm',
 	'research/excel-corpus/excel-dashboard-v2.xlsx',
@@ -1670,8 +1707,7 @@ async function loadCorpusTargetSpecs(): Promise<
 > {
 	const manifestPath = resolve(readFlag('--corpus-manifest') ?? DEFAULT_CORPUS_MANIFEST)
 	const corpusRoot = resolve(readFlag('--corpus-root') ?? DEFAULT_CORPUS_ROOT)
-	const raw = await readFile(manifestPath, 'utf-8')
-	const manifest = normalizeManifest(JSON.parse(raw) as CorpusManifestEntry[])
+	const manifest = normalizeManifest(await loadCorpusManifestEntries(manifestPath))
 	const selected = selectCorpusTargets(manifest, readCorpusSelection(), corpusRoot)
 	if (selected.length === 0) {
 		throw new Error('No corpus entries matched the requested real-workbook benchmark filters')

@@ -1,0 +1,62 @@
+[
+	{
+		"name": "ascend-readxlsx-raw-values-operation-path",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_readxlsx_open_runner.ts",
+			"--mode",
+			"values",
+			"--source",
+			"path",
+			"--raw-values",
+			"--time-open-only"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-operation-file-path-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": true
+		}
+	},
+	{
+		"name": "sheetjs",
+		"command": ["bun", "fixtures/benchmarks/runners/js_read_runner.ts", "--library", "sheetjs"],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-operation-file-path-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "process-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	},
+	{
+		"name": "exceljs",
+		"command": ["bun", "fixtures/benchmarks/runners/js_read_runner.ts", "--library", "exceljs"],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-operation-file-path-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "process-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	}
+]

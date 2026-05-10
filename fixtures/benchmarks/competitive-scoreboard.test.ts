@@ -910,6 +910,38 @@ describe('buildCompetitiveScoreboard', () => {
 			'upstream-xlsx-sota non-exact-upstream-replay category=write operationProfile=write-values workload=dense-values file=pyexcelerate-write-values-1000x100 upstreamReplayStatus=shape-clone',
 		)
 	})
+
+	test('upstream SOTA profile rejects exact labels without reproducibility evidence', () => {
+		const libraries = [
+			'ascend',
+			'sheetjs',
+			'exceljs',
+			'xlsxwriter',
+			'pyexcelerate',
+			'pyexcelerate-range',
+			'pyexcelerate-cell',
+			'openpyxl',
+			'apache-poi',
+			'pyopenxlsx',
+		]
+		const suite = suiteWithCases(
+			libraries.map((library) =>
+				matrixCase({
+					library,
+					category: 'write',
+					workload: 'dense-values',
+					repeat: 5,
+					file: 'pyexcelerate-write-values-1000x100',
+					peakRssBytes: 1024,
+					upstreamReplayStatus: 'exact-script',
+				}),
+			),
+		)
+
+		expect(assertScoreboardCoverage(suite, 'upstream-xlsx-sota')).toContain(
+			'upstream-xlsx-sota incomplete-upstream-evidence category=write operationProfile=write-values workload=dense-values file=pyexcelerate-write-values-1000x100 missing=executionScope,timingModel,upstreamSourceBenchmark,upstreamSourceKind,upstreamSourceUrl,upstreamTimingBoundary,validationModel',
+		)
+	})
 })
 
 function suiteWithCases(cases: BenchmarkSuiteResult['cases']): BenchmarkSuiteResult {
@@ -1102,6 +1134,7 @@ function matrixCase(input: {
 	readonly peakRssBytes?: number
 	readonly featureAssertions?: Record<string, number>
 	readonly upstreamReplayStatus?: string
+	readonly upstreamEvidence?: boolean
 }): BenchmarkSuiteResult['cases'][number] {
 	const operationProfile =
 		input.operationProfile ?? (input.category === 'read' ? 'read-values' : 'write-values')
@@ -1125,6 +1158,17 @@ function matrixCase(input: {
 			timingLane,
 			...(input.file ? { file: input.file } : {}),
 			...(input.upstreamReplayStatus ? { upstreamReplayStatus: input.upstreamReplayStatus } : {}),
+			...(input.upstreamEvidence
+				? {
+						executionScope: 'external-process',
+						timingModel: 'external-process',
+						upstreamSourceBenchmark: 'upstream benchmark',
+						upstreamSourceKind: 'upstream-script',
+						upstreamSourceUrl: 'https://example.test/upstream',
+						upstreamTimingBoundary: 'External process benchmark over the upstream script workload.',
+						validationModel: 'external-post-operation-assertions',
+					}
+				: {}),
 			correctnessStatus: input.correctnessStatus ?? 'pass',
 			rankingEligible: (input.correctnessStatus ?? 'pass') === 'pass',
 		},

@@ -16,12 +16,17 @@ import type { BenchmarkCaseResult, BenchmarkSuiteResult } from './results.ts'
 import { createBenchmarkSuite, formatBytes, formatRate } from './results.ts'
 
 type UpstreamRealProfileName = 'calamine-nyc311-1m'
+type UpstreamSourceKind = 'published-shape' | 'upstream-script' | 'pinned-artifact'
+type UpstreamReplayStatus = 'shape-clone' | 'exact-script' | 'exact-artifact'
 
 export interface UpstreamRealWorkbookProfile {
 	readonly name: UpstreamRealProfileName
 	readonly sourceLibrary: string
 	readonly sourceBenchmark: string
 	readonly sourceUrl: string
+	readonly sourceKind: UpstreamSourceKind
+	readonly replayStatus: UpstreamReplayStatus
+	readonly timingBoundary: string
 	readonly datasetUrl: string
 	readonly archiveBytes: number
 	readonly archiveSha256: string
@@ -51,6 +56,10 @@ export const UPSTREAM_REAL_WORKBOOK_PROFILES = [
 		sourceLibrary: 'calamine',
 		sourceBenchmark: 'calamine README performance benchmark',
 		sourceUrl: 'https://docs.rs/crate/calamine/latest/source/README.md',
+		sourceKind: 'pinned-artifact',
+		replayStatus: 'exact-artifact',
+		timingBoundary:
+			"Competitive real-workbook read lane over the pinned locally materialized XLSX artifact; elapsed time follows each case's timingModel/timingLane dimensions and covers library workbook read/materialization with configured shape/value assertions, not dataset acquisition or CSV-to-XLSX materialization.",
 		datasetUrl:
 			'https://raw.githubusercontent.com/wiki/jqnatividad/qsv/files/NYC_311_SR_2010-2020-sample-1M.7z',
 		archiveBytes: 48_111_517,
@@ -290,6 +299,9 @@ export function annotateUpstreamRealCases(
 			upstreamSourceLibrary: profile.sourceLibrary,
 			upstreamSourceBenchmark: profile.sourceBenchmark,
 			upstreamSourceUrl: profile.sourceUrl,
+			upstreamSourceKind: profile.sourceKind,
+			upstreamReplayStatus: profile.replayStatus,
+			upstreamTimingBoundary: profile.timingBoundary,
 			upstreamDatasetUrl: profile.datasetUrl,
 			upstreamWorksheet: profile.worksheet,
 			upstreamExpectedRows: profile.expectedRows,

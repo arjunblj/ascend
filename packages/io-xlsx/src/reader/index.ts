@@ -172,6 +172,11 @@ export function readXlsx(
 			workbookPath,
 			...(wbRelsXml ? { workbookRelsPath: wbRelsPath } : {}),
 			...(workbookContentType ? { contentType: workbookContentType } : {}),
+			sheetEntries: wbInfo.sheets.map((entry) => ({
+				kind: relMap.get(entry.rId)?.type === REL_CHARTSHEET ? 'chartsheet' : 'worksheet',
+				sheetId: entry.sheetId,
+				name: entry.name,
+			})),
 		}
 		for (const relId of wbInfo.externalReferenceRelIds) {
 			const rel = relMap.get(relId)

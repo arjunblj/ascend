@@ -104,6 +104,7 @@ export type { Table, TableColumn, TableStyleInfo } from './table.ts'
 export type {
 	NamedStyleInfo,
 	WorkbookPreservedMetadata,
+	WorkbookPreservedSheetEntry,
 	WorkbookPreservedStyles,
 	WorkbookPreservedTheme,
 	WorkbookPreservedXml,

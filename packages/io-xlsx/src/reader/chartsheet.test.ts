@@ -36,8 +36,8 @@ describe('chartsheet inventory', () => {
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
   xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <sheets>
-    <sheet name="Data" sheetId="1" r:id="rIdData"/>
     <sheet name="Sales Chart" sheetId="2" r:id="rIdChartSheet" state="hidden"/>
+    <sheet name="Data" sheetId="1" r:id="rIdData"/>
   </sheets>
 </workbook>`,
 			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
@@ -101,6 +101,9 @@ describe('chartsheet inventory', () => {
 		expect(workbookXml).toContain('name="Sales Chart"')
 		expect(workbookXml).toContain('sheetId="2"')
 		expect(workbookXml).toContain('state="hidden"')
+		expect(workbookXml.indexOf('name="Sales Chart"')).toBeLessThan(
+			workbookXml.indexOf('name="Data"'),
+		)
 		expect(workbookRels).toContain(
 			'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chartsheet"',
 		)

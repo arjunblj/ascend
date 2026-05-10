@@ -446,6 +446,7 @@ const CLAIM_PROFILES: Record<ClaimProfileName, ClaimProfile> = {
 					'multisheet_names.xlsx',
 					'WithChart.xlsx',
 					'PivotTable_CachedDefinitionAndDataInSync.xlsx',
+					'chart-sheet.xlsx',
 				],
 				allowIneligibleCompetitors: ['SheetJS', 'ExcelJS', 'openpyxl', 'Excelize'],
 				requireSharedTimingLane: false,

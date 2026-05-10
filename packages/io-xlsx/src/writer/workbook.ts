@@ -1,4 +1,4 @@
-import type { Workbook } from '@ascend/core'
+import type { SheetState, Workbook, WorkbookPreservedSheetEntry } from '@ascend/core'
 import { toStoredFormulaText } from '../formula-storage.ts'
 import { escapeXml } from '../xml.ts'
 import { ChunkedStringBuilder } from './chunked-string-builder.ts'
@@ -55,27 +55,40 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 	}
 
 	out.push('<sheets>')
+	const sheetEntries: WorkbookSheetXmlEntry[] = []
 	for (let i = 0; i < workbook.sheets.length; i++) {
 		const sheet = workbook.sheets[i]
 		if (!sheet) continue
-		const attrs = [`name="${escapeXml(sheet.name)}"`, `sheetId="${i + 1}"`, `r:id="rId${i + 1}"`]
-		if (sheet.state !== 'visible') {
-			attrs.push(`state="${sheet.state}"`)
-		}
-		out.push(`<sheet ${attrs.join(' ')}/>`)
+		sheetEntries.push({
+			kind: 'worksheet',
+			name: sheet.name,
+			sheetId: storedWorksheetSheetId(i, sheet.id as string),
+			relId: `rId${i + 1}`,
+			state: sheet.state,
+		})
 	}
 	for (let i = 0; i < workbook.chartSheets.length; i++) {
 		const chartSheet = workbook.chartSheets[i]
 		const relId = options.chartSheetRelIds?.[i]
 		if (!chartSheet || !relId) continue
+		sheetEntries.push({
+			kind: 'chartsheet',
+			name: chartSheet.name,
+			sheetId: chartSheet.sheetId,
+			relId,
+			state: chartSheet.state,
+		})
+	}
+	for (const sheetEntry of orderWorkbookSheetEntries(
+		sheetEntries,
+		workbook.preservedXml?.sheetEntries,
+	)) {
 		const attrs = [
-			`name="${escapeXml(chartSheet.name)}"`,
-			`sheetId="${escapeXml(chartSheet.sheetId)}"`,
-			`r:id="${escapeXml(relId)}"`,
+			`name="${escapeXml(sheetEntry.name)}"`,
+			`sheetId="${escapeXml(sheetEntry.sheetId)}"`,
+			`r:id="${escapeXml(sheetEntry.relId)}"`,
 		]
-		if (chartSheet.state !== 'visible') {
-			attrs.push(`state="${chartSheet.state}"`)
-		}
+		if (sheetEntry.state !== 'visible') attrs.push(`state="${sheetEntry.state}"`)
 		out.push(`<sheet ${attrs.join(' ')}/>`)
 	}
 	out.push('</sheets>')
@@ -151,6 +164,47 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 
 	out.push('</workbook>')
 	return out.toString()
+}
+
+interface WorkbookSheetXmlEntry {
+	readonly kind: 'worksheet' | 'chartsheet'
+	readonly name: string
+	readonly sheetId: string
+	readonly relId: string
+	readonly state: SheetState
+}
+
+function storedWorksheetSheetId(index: number, sheetId: string): string {
+	return /^\d+$/.test(sheetId) ? sheetId : String(index + 1)
+}
+
+function orderWorkbookSheetEntries(
+	entries: readonly WorkbookSheetXmlEntry[],
+	preservedEntries: readonly WorkbookPreservedSheetEntry[] | undefined,
+): readonly WorkbookSheetXmlEntry[] {
+	if (!preservedEntries || preservedEntries.length === 0) return entries
+	const byKey = new Map(entries.map((entry) => [sheetOrderKey(entry), entry] as const))
+	const ordered: WorkbookSheetXmlEntry[] = []
+	const used = new Set<string>()
+	for (const preservedEntry of preservedEntries) {
+		const key = sheetOrderKey(preservedEntry)
+		const entry = byKey.get(key)
+		if (!entry || used.has(key)) continue
+		ordered.push(entry)
+		used.add(key)
+	}
+	for (const entry of entries) {
+		const key = sheetOrderKey(entry)
+		if (!used.has(key)) ordered.push(entry)
+	}
+	return ordered
+}
+
+function sheetOrderKey(entry: {
+	readonly kind: 'worksheet' | 'chartsheet'
+	readonly sheetId: string
+}): string {
+	return `${entry.kind}:${entry.sheetId}`
 }
 
 function collectWorkbookProtectionAttrs(

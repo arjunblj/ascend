@@ -325,8 +325,9 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'Auto filters and criteria',
 		'editable',
 		'P0',
-		'Represent criteria, dynamic filters, top10, color/icon filters, and state.',
-		'Filter ranges can be set/cleared; full criteria semantics are missing.',
+		'Add dynamic, top10, color/icon filter evaluation and richer filter-state edit operations.',
+		'Filter ranges plus explicit value and custom comparison criteria are parsed, preserved, and evaluated for formula-visible row semantics.',
+		['packages/engine/src/calc.test.ts'],
 	),
 	cap(
 		'tables.sorts',

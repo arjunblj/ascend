@@ -1,5 +1,7 @@
 import {
+	type CustomFilter,
 	DEFAULT_STYLE_ID,
+	type FilterColumn,
 	indexToColumn,
 	parseRange,
 	type Sheet,
@@ -1706,27 +1708,160 @@ function areasOf(arg: EvalArg): readonly EvalArea[] | null {
 	]
 }
 
-function activeFilterRanges(sheet: Sheet): readonly { startRow: number; endRow: number }[] {
-	const ranges: { startRow: number; endRow: number }[] = []
+interface ActiveFilterRange {
+	readonly startRow: number
+	readonly startCol: number
+	readonly endRow: number
+	readonly columns: readonly PreparedFilterColumn[]
+}
+
+interface PreparedFilterColumn {
+	readonly source: FilterColumn
+	readonly acceptedValues?: ReadonlySet<string>
+}
+
+function activeFilterRanges(sheet: Sheet): readonly ActiveFilterRange[] {
+	const ranges: ActiveFilterRange[] = []
 	if (sheet.autoFilter && sheet.autoFilter.columns.length > 0) {
 		const range = parseFilterRange(sheet.autoFilter.ref)
-		if (range) ranges.push(range)
+		if (range) ranges.push({ ...range, columns: prepareFilterColumns(sheet.autoFilter.columns) })
 	}
 	for (const table of sheet.tables) {
 		if (!table.autoFilter || table.autoFilter.columns.length === 0) continue
 		const range = parseFilterRange(table.autoFilter.ref)
-		if (range) ranges.push(range)
+		if (range) ranges.push({ ...range, columns: prepareFilterColumns(table.autoFilter.columns) })
 	}
 	return ranges
 }
 
-function parseFilterRange(ref: string): { startRow: number; endRow: number } | null {
+function prepareFilterColumns(columns: readonly FilterColumn[]): readonly PreparedFilterColumn[] {
+	return columns.map((source) => ({
+		source,
+		...(source.kind === 'filters'
+			? { acceptedValues: new Set((source.values ?? []).map((value) => value.toLowerCase())) }
+			: {}),
+	}))
+}
+
+function parseFilterRange(ref: string): Omit<ActiveFilterRange, 'columns'> | null {
 	try {
 		const range = parseRange(ref)
-		return { startRow: range.start.row, endRow: range.end.row }
+		return { startRow: range.start.row, startCol: range.start.col, endRow: range.end.row }
 	} catch {
 		return null
 	}
+}
+
+function rowFailsFilterCriteria(sheet: Sheet, row: number, range: ActiveFilterRange): boolean {
+	for (const column of range.columns) {
+		const cellValue = sheet.cells.readValue(row, range.startCol + column.source.colId)
+		const matches = cellMatchesFilterColumn(cellValue, column)
+		if (matches === false) return true
+	}
+	return false
+}
+
+function cellMatchesFilterColumn(value: CellValue, column: PreparedFilterColumn): boolean | null {
+	const source = column.source
+	if (source.kind === 'customFilters') return cellMatchesCustomFilters(value, source)
+	if (source.kind !== 'filters') return null
+	const acceptsBlank = source.blank === true
+	if ((column.acceptedValues?.size ?? 0) === 0 && !acceptsBlank) return null
+	if (isBlankFilterValue(value)) return acceptsBlank
+	const text = coerceCellValueToString(value).toLowerCase()
+	return column.acceptedValues?.has(text) === true
+}
+
+function cellMatchesCustomFilters(value: CellValue, column: FilterColumn): boolean | null {
+	const filters = column.customFilters ?? []
+	if (filters.length === 0) return null
+	return column.and === true
+		? filters.every((filter) => cellMatchesCustomFilter(value, filter))
+		: filters.some((filter) => cellMatchesCustomFilter(value, filter))
+}
+
+function cellMatchesCustomFilter(value: CellValue, filter: CustomFilter): boolean {
+	const operator = filter.operator ?? 'equal'
+	if (operator === 'equal' || operator === 'notEqual') {
+		const matches = hasWildcardFilterPattern(filter.val)
+			? wildcardFilterMatches(value, filter.val)
+			: compareFilterValues(value, filter.val) === 0
+		return operator === 'notEqual' ? !matches : matches
+	}
+	const comparison = compareFilterValues(value, filter.val)
+	if (comparison === null) return false
+	switch (operator) {
+		case 'greaterThan':
+			return comparison > 0
+		case 'greaterThanOrEqual':
+			return comparison >= 0
+		case 'lessThan':
+			return comparison < 0
+		case 'lessThanOrEqual':
+			return comparison <= 0
+		default:
+			return false
+	}
+}
+
+function compareFilterValues(value: CellValue, criterion: string): number | null {
+	const valueNumber = filterComparableNumber(value)
+	const criterionNumber = filterCriterionNumber(criterion)
+	if (valueNumber !== null && criterionNumber !== null)
+		return Math.sign(valueNumber - criterionNumber)
+	const left = coerceCellValueToString(value).toLowerCase()
+	const right = criterion.toLowerCase()
+	if (left === right) return 0
+	return left < right ? -1 : 1
+}
+
+function filterComparableNumber(value: CellValue): number | null {
+	if (value.kind === 'number') return value.value
+	if (value.kind === 'date') return value.serial
+	if (value.kind === 'boolean') return value.value ? 1 : 0
+	if (value.kind !== 'string') return null
+	return filterCriterionNumber(value.value)
+}
+
+function filterCriterionNumber(value: string): number | null {
+	const trimmed = value.trim()
+	if (trimmed === '') return null
+	const parsed = Number(trimmed)
+	return Number.isFinite(parsed) ? parsed : null
+}
+
+function hasWildcardFilterPattern(pattern: string): boolean {
+	return pattern.includes('*') || pattern.includes('?')
+}
+
+function wildcardFilterMatches(value: CellValue, pattern: string): boolean {
+	return wildcardFilterRegex(pattern).test(coerceCellValueToString(value))
+}
+
+function wildcardFilterRegex(pattern: string): RegExp {
+	let source = '^'
+	for (let index = 0; index < pattern.length; index++) {
+		const char = pattern[index] ?? ''
+		if (char === '*') {
+			source += '.*'
+		} else if (char === '?') {
+			source += '.'
+		} else if (char === '~' && index + 1 < pattern.length) {
+			index++
+			source += escapeRegexLiteral(pattern[index] ?? '')
+		} else {
+			source += escapeRegexLiteral(char)
+		}
+	}
+	return new RegExp(`${source}$`, 'i')
+}
+
+function escapeRegexLiteral(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function isBlankFilterValue(value: CellValue): boolean {
+	return value.kind === 'empty' || (value.kind === 'string' && value.value === '')
 }
 
 function makeRangeArea(
@@ -1768,9 +1903,12 @@ function makeRangeArea(
 			sheet?.rowDefs.get(materializedStartRow + rowOffset)?.hidden === true,
 		rowFilteredAtOffset: (rowOffset: number) => {
 			const row = materializedStartRow + rowOffset
-			return (
-				sheet?.rowDefs.get(row)?.hidden === true &&
-				filteredRanges.some((range) => row > range.startRow && row <= range.endRow)
+			return filteredRanges.some(
+				(range) =>
+					row > range.startRow &&
+					row <= range.endRow &&
+					(sheet?.rowDefs.get(row)?.hidden === true ||
+						(sheet ? rowFailsFilterCriteria(sheet, row, range) : false)),
 			)
 		},
 		get values() {

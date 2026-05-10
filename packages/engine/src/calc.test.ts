@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { StyleId } from '@ascend/core'
+import type { AutoFilter, Sheet, StyleId } from '@ascend/core'
 import { createTableId, createWorkbook } from '@ascend/core'
 import { dateToSerial } from '@ascend/formulas'
 import {
@@ -18,6 +18,33 @@ const sid = 0 as StyleId
 
 function makeCtx(overrides?: Partial<CalcContext>): CalcContext {
 	return { ...defaultCalcContext(), ...overrides }
+}
+
+function addSalesTable(sheet: Sheet, name: string, autoFilter?: AutoFilter): void {
+	sheet.tables.push({
+		id: createTableId(),
+		name,
+		sheetId: sheet.id,
+		ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 1 } },
+		columns: [
+			{ id: 1, name: 'Region' },
+			{ id: 2, name: 'Sales' },
+		],
+		hasHeaders: true,
+		hasTotals: false,
+		...(autoFilter ? { autoFilter } : {}),
+	})
+}
+
+function populateRegionSalesRows(sheet: Sheet): void {
+	sheet.cells.set(0, 0, { value: stringValue('Region'), formula: null, styleId: sid })
+	sheet.cells.set(0, 1, { value: stringValue('Sales'), formula: null, styleId: sid })
+	sheet.cells.set(1, 0, { value: stringValue('West'), formula: null, styleId: sid })
+	sheet.cells.set(1, 1, { value: numberValue(20), formula: null, styleId: sid })
+	sheet.cells.set(2, 0, { value: stringValue('East'), formula: null, styleId: sid })
+	sheet.cells.set(2, 1, { value: numberValue(30), formula: null, styleId: sid })
+	sheet.cells.set(3, 0, { value: stringValue('North'), formula: null, styleId: sid })
+	sheet.cells.set(3, 1, { value: numberValue(40), formula: null, styleId: sid })
 }
 
 describe('recalculate', () => {
@@ -2703,26 +2730,8 @@ describe('recalculate', () => {
 	test('SUBTOTAL table column references include manually hidden rows for 1-11 variants', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
-		sheet.tables.push({
-			id: createTableId(),
-			name: 'SalesTable',
-			sheetId: sheet.id,
-			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 1 } },
-			columns: [
-				{ id: 1, name: 'Region' },
-				{ id: 2, name: 'Sales' },
-			],
-			hasHeaders: true,
-			hasTotals: false,
-		})
-		sheet.cells.set(0, 0, { value: stringValue('Region'), formula: null, styleId: sid })
-		sheet.cells.set(0, 1, { value: stringValue('Sales'), formula: null, styleId: sid })
-		sheet.cells.set(1, 0, { value: stringValue('West'), formula: null, styleId: sid })
-		sheet.cells.set(1, 1, { value: numberValue(20), formula: null, styleId: sid })
-		sheet.cells.set(2, 0, { value: stringValue('East'), formula: null, styleId: sid })
-		sheet.cells.set(2, 1, { value: numberValue(30), formula: null, styleId: sid })
-		sheet.cells.set(3, 0, { value: stringValue('North'), formula: null, styleId: sid })
-		sheet.cells.set(3, 1, { value: numberValue(40), formula: null, styleId: sid })
+		addSalesTable(sheet, 'SalesTable')
+		populateRegionSalesRows(sheet)
 		sheet.rowDefs.set(2, { hidden: true })
 		sheet.cells.set(4, 0, {
 			value: EMPTY,
@@ -2745,31 +2754,38 @@ describe('recalculate', () => {
 	test('SUBTOTAL table column references exclude filtered rows for all variants', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
-		sheet.tables.push({
-			id: createTableId(),
-			name: 'FilteredSales',
-			sheetId: sheet.id,
-			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 1 } },
-			columns: [
-				{ id: 1, name: 'Region' },
-				{ id: 2, name: 'Sales' },
-			],
-			hasHeaders: true,
-			hasTotals: false,
-			autoFilter: {
-				ref: 'A1:B4',
-				columns: [{ colId: 1, kind: 'filters', values: ['20', '40'] }],
-			},
+		addSalesTable(sheet, 'FilteredSales', {
+			ref: 'A1:B4',
+			columns: [{ colId: 1, kind: 'filters', values: ['20', '40'] }],
 		})
-		sheet.cells.set(0, 0, { value: stringValue('Region'), formula: null, styleId: sid })
-		sheet.cells.set(0, 1, { value: stringValue('Sales'), formula: null, styleId: sid })
-		sheet.cells.set(1, 0, { value: stringValue('West'), formula: null, styleId: sid })
-		sheet.cells.set(1, 1, { value: numberValue(20), formula: null, styleId: sid })
-		sheet.cells.set(2, 0, { value: stringValue('East'), formula: null, styleId: sid })
-		sheet.cells.set(2, 1, { value: numberValue(30), formula: null, styleId: sid })
-		sheet.cells.set(3, 0, { value: stringValue('North'), formula: null, styleId: sid })
-		sheet.cells.set(3, 1, { value: numberValue(40), formula: null, styleId: sid })
+		populateRegionSalesRows(sheet)
 		sheet.rowDefs.set(2, { hidden: true })
+		sheet.cells.set(4, 0, {
+			value: EMPTY,
+			formula: 'SUBTOTAL(9,FilteredSales[Sales])',
+			styleId: sid,
+		})
+		sheet.cells.set(4, 1, {
+			value: EMPTY,
+			formula: 'SUBTOTAL(109,FilteredSales[Sales])',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(4, 0)?.value).toEqual(numberValue(60))
+		expect(sheet.cells.get(4, 1)?.value).toEqual(numberValue(60))
+	})
+
+	test('SUBTOTAL table column references evaluate explicit filter criteria', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		addSalesTable(sheet, 'FilteredSales', {
+			ref: 'A1:B4',
+			columns: [{ colId: 1, kind: 'filters', values: ['20', '40'] }],
+		})
+		populateRegionSalesRows(sheet)
 		sheet.cells.set(4, 0, {
 			value: EMPTY,
 			formula: 'SUBTOTAL(9,FilteredSales[Sales])',
@@ -2846,30 +2862,11 @@ describe('recalculate', () => {
 	test('AGGREGATE table column references exclude filtered rows for all options', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
-		sheet.tables.push({
-			id: createTableId(),
-			name: 'FilteredSales',
-			sheetId: sheet.id,
-			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 1 } },
-			columns: [
-				{ id: 1, name: 'Region' },
-				{ id: 2, name: 'Sales' },
-			],
-			hasHeaders: true,
-			hasTotals: false,
-			autoFilter: {
-				ref: 'A1:B4',
-				columns: [{ colId: 1, kind: 'filters', values: ['20', '40'] }],
-			},
+		addSalesTable(sheet, 'FilteredSales', {
+			ref: 'A1:B4',
+			columns: [{ colId: 1, kind: 'filters', values: ['20', '40'] }],
 		})
-		sheet.cells.set(0, 0, { value: stringValue('Region'), formula: null, styleId: sid })
-		sheet.cells.set(0, 1, { value: stringValue('Sales'), formula: null, styleId: sid })
-		sheet.cells.set(1, 0, { value: stringValue('West'), formula: null, styleId: sid })
-		sheet.cells.set(1, 1, { value: numberValue(20), formula: null, styleId: sid })
-		sheet.cells.set(2, 0, { value: stringValue('East'), formula: null, styleId: sid })
-		sheet.cells.set(2, 1, { value: numberValue(30), formula: null, styleId: sid })
-		sheet.cells.set(3, 0, { value: stringValue('North'), formula: null, styleId: sid })
-		sheet.cells.set(3, 1, { value: numberValue(40), formula: null, styleId: sid })
+		populateRegionSalesRows(sheet)
 		sheet.rowDefs.set(2, { hidden: true })
 		sheet.cells.set(4, 0, {
 			value: EMPTY,
@@ -2887,6 +2884,48 @@ describe('recalculate', () => {
 		expect(result.errors).toEqual([])
 		expect(sheet.cells.get(4, 0)?.value).toEqual(numberValue(60))
 		expect(sheet.cells.get(4, 1)?.value).toEqual(numberValue(60))
+	})
+
+	test('AGGREGATE and sheet autoFilter ranges evaluate explicit filter criteria', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.autoFilter = {
+			ref: 'A1:B4',
+			columns: [{ colId: 0, kind: 'filters', values: ['West', 'North'] }],
+		}
+		populateRegionSalesRows(sheet)
+		sheet.cells.set(4, 0, { value: EMPTY, formula: 'SUBTOTAL(9,B2:B4)', styleId: sid })
+		sheet.cells.set(4, 1, { value: EMPTY, formula: 'AGGREGATE(9,4,B2:B4)', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(4, 0)?.value).toEqual(numberValue(60))
+		expect(sheet.cells.get(4, 1)?.value).toEqual(numberValue(60))
+	})
+
+	test('SUBTOTAL and AGGREGATE evaluate custom filter comparisons', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.autoFilter = {
+			ref: 'A1:B4',
+			columns: [
+				{
+					colId: 1,
+					kind: 'customFilters',
+					customFilters: [{ operator: 'greaterThan', val: '25' }],
+				},
+			],
+		}
+		populateRegionSalesRows(sheet)
+		sheet.cells.set(4, 0, { value: EMPTY, formula: 'SUBTOTAL(9,B2:B4)', styleId: sid })
+		sheet.cells.set(4, 1, { value: EMPTY, formula: 'AGGREGATE(9,4,B2:B4)', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(4, 0)?.value).toEqual(numberValue(70))
+		expect(sheet.cells.get(4, 1)?.value).toEqual(numberValue(70))
 	})
 
 	test('string concatenation formula', () => {

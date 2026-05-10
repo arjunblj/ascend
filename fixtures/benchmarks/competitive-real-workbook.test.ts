@@ -751,6 +751,10 @@ describe('evaluateAssertions', () => {
 		)
 		expect(FULL_CORPUS_TARGETS).toContain('fixtures/xlsx/poi/FormulaEvalTestData_Copy.xlsx')
 		expect(FULL_CORPUS_TARGETS).toContain('fixtures/xlsx/poi/NewStyleConditionalFormattings.xlsx')
+		expect(FULL_CORPUS_TARGETS).toContain('fixtures/xlsx/poi/AutoFilter.xlsx')
+		expect(FULL_CORPUS_TARGETS).toContain('fixtures/xlsx/poi/formula_stress_test.xlsx')
+		expect(FULL_CORPUS_TARGETS).toContain('fixtures/xlsx/poi/merge_cells.xlsx')
+		expect(FULL_CORPUS_TARGETS).toContain('fixtures/xlsx/poi/named_ranges_2011.xlsx')
 		expect(FULL_CORPUS_TARGETS).toContain('fixtures/xlsx/libreoffice/activex_checkbox.xlsx')
 		expect(FULL_CORPUS_TARGETS).toContain('fixtures/xlsx/libreoffice/textLengthDataValidity.xlsx')
 		expect(FULL_CORPUS_TARGETS).toContain('fixtures/xlsx/calamine/pivots.xlsx')
@@ -767,12 +771,13 @@ describe('evaluateAssertions', () => {
 	})
 
 	test('default real-workbook sweeps span vendored OSS corpuses and feature tags', async () => {
-		const corpusRoots = ['poi', 'calamine', 'closedxml', 'exceljs', 'libreoffice'] as const
-		for (const root of corpusRoots) {
+		const physicalRoots = ['poi', 'calamine', 'closedxml', 'exceljs', 'libreoffice'] as const
+		for (const root of physicalRoots) {
 			expect(
 				FULL_CORPUS_TARGETS.some((target) => target.startsWith(`fixtures/xlsx/${root}/`)),
 			).toBe(true)
 		}
+		expect(FULL_CORPUS_TARGETS).toContain('fixtures/xlsx/poi/formula_stress_test.xlsx')
 		expect(
 			FULL_CORPUS_TARGETS.some((target) => target.startsWith('fixtures/xlsx/xlsxwriter/')),
 		).toBe(true)
@@ -783,13 +788,18 @@ describe('evaluateAssertions', () => {
 		).toBe(true)
 
 		const targetSet = new Set(FULL_CORPUS_TARGETS)
+		const targetAbsSet = new Set(FULL_CORPUS_TARGETS.map((target) => resolve(target)))
 		const coveredTags = new Set<string>()
-		for (const root of corpusRoots) {
+		for (const root of [...physicalRoots, 'sheetjs'] as const) {
 			const entries = normalizeManifest(
 				await loadCorpusManifestEntries(resolve(import.meta.dir, `../xlsx/${root}/manifest.ts`)),
 			)
 			for (const entry of entries) {
-				if (!targetSet.has(`fixtures/xlsx/${root}/${entry.file}`)) continue
+				const covered =
+					root === 'sheetjs'
+						? targetAbsSet.has(resolve(import.meta.dir, `../xlsx/${root}`, entry.file))
+						: targetSet.has(`fixtures/xlsx/${root}/${entry.file}`)
+				if (!covered) continue
 				for (const tag of entry.featureTags) coveredTags.add(tag)
 			}
 		}
@@ -826,12 +836,37 @@ describe('evaluateAssertions', () => {
 		}
 		expect(entries.length).toBeGreaterThan(40)
 		expect(validateManifestProvenance(entries)).toEqual([])
+		expect(entries.some((entry) => entry.featureTags.includes('sheetjs'))).toBe(false)
 		const selected = selectCorpusTargets(
 			entries,
 			{ tags: ['apache-poi', 'formula-fidelity'], tiers: ['core'], vendorableOnly: true },
 			resolve(import.meta.dir, '../xlsx/poi'),
 		)
 		expect(selected.some((entry) => entry.path.endsWith('StructuredReferences.xlsx'))).toBe(true)
+	})
+
+	test('TypeScript corpus manifests promote SheetJS fixtures separately from POI', async () => {
+		const entries = normalizeManifest(
+			await loadCorpusManifestEntries(resolve(import.meta.dir, '../xlsx/sheetjs/manifest.ts')),
+		)
+		expect(entries.map((entry) => entry.file).sort()).toEqual([
+			'../poi/AutoFilter.xlsx',
+			'../poi/formula_stress_test.xlsx',
+			'../poi/merge_cells.xlsx',
+			'../poi/named_ranges_2011.xlsx',
+		])
+		expect(validateManifestProvenance(entries)).toEqual([])
+		expect(entries.every((entry) => entry.featureTags.includes('sheetjs'))).toBe(true)
+		expect(entries.every((entry) => !entry.featureTags.includes('apache-poi'))).toBe(true)
+		for (const entry of entries) {
+			expect(FULL_CORPUS_TARGETS).toContain(`fixtures/xlsx/poi/${entry.file.split('/').at(-1)}`)
+		}
+		const selected = selectCorpusTargets(
+			entries,
+			{ tags: ['sheetjs', 'formula-fidelity'], tiers: ['core'], vendorableOnly: true },
+			resolve(import.meta.dir, '../xlsx/sheetjs'),
+		)
+		expect(selected.some((entry) => entry.path.endsWith('poi/formula_stress_test.xlsx'))).toBe(true)
 	})
 
 	test('TypeScript corpus manifests can promote vendored LibreOffice fixtures into benchmark selection', async () => {

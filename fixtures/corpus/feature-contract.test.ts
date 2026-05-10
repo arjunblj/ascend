@@ -151,6 +151,17 @@ const VENDORED_CONTRACT_FIXTURES: readonly {
 			'WithDrawing.xlsx',
 		],
 	},
+	{
+		corpusName: 'sheetjs',
+		rootDir: resolve(import.meta.dir, '../xlsx/sheetjs'),
+		manifestPath: resolve(import.meta.dir, '../xlsx/sheetjs/manifest.ts'),
+		files: [
+			'../poi/AutoFilter.xlsx',
+			'../poi/formula_stress_test.xlsx',
+			'../poi/merge_cells.xlsx',
+			'../poi/named_ranges_2011.xlsx',
+		],
+	},
 ]
 
 const CONTRACT_CASES = await loadContractCases()

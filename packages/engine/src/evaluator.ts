@@ -1755,6 +1755,7 @@ interface ActiveFilterRange {
 interface PreparedFilterColumn {
 	readonly source: FilterColumn
 	readonly acceptedValues?: ReadonlySet<string>
+	readonly top10Threshold?: number
 }
 
 function activeFilterRanges(
@@ -1768,7 +1769,7 @@ function activeFilterRanges(
 			ranges.push({
 				...range,
 				dateSystem,
-				columns: prepareFilterColumns(sheet.autoFilter.columns),
+				columns: prepareFilterColumns(sheet, range, sheet.autoFilter.columns),
 			})
 	}
 	for (const table of sheet.tables) {
@@ -1778,19 +1779,32 @@ function activeFilterRanges(
 			ranges.push({
 				...range,
 				dateSystem,
-				columns: prepareFilterColumns(table.autoFilter.columns),
+				columns: prepareFilterColumns(sheet, range, table.autoFilter.columns),
 			})
 	}
 	return ranges
 }
 
-function prepareFilterColumns(columns: readonly FilterColumn[]): readonly PreparedFilterColumn[] {
-	return columns.map((source) => ({
-		source,
-		...(source.kind === 'filters'
-			? { acceptedValues: new Set((source.values ?? []).map((value) => value.toLowerCase())) }
-			: {}),
-	}))
+function prepareFilterColumns(
+	sheet: Sheet,
+	range: Omit<ActiveFilterRange, 'columns' | 'dateSystem'>,
+	columns: readonly FilterColumn[],
+): readonly PreparedFilterColumn[] {
+	return columns.map((source) => {
+		const prepared: {
+			source: FilterColumn
+			acceptedValues?: ReadonlySet<string>
+			top10Threshold?: number
+		} = { source }
+		if (source.kind === 'filters') {
+			prepared.acceptedValues = new Set((source.values ?? []).map((value) => value.toLowerCase()))
+		}
+		if (source.kind === 'top10') {
+			const threshold = computeTop10FilterThreshold(sheet, range, source)
+			if (threshold !== undefined) prepared.top10Threshold = threshold
+		}
+		return prepared
+	})
 }
 
 function parseFilterRange(ref: string): Omit<ActiveFilterRange, 'columns' | 'dateSystem'> | null {
@@ -1818,6 +1832,7 @@ function cellMatchesFilterColumn(
 ): boolean | null {
 	const source = column.source
 	if (source.kind === 'customFilters') return cellMatchesCustomFilters(value, source)
+	if (source.kind === 'top10') return cellMatchesTop10Filter(value, source, column.top10Threshold)
 	if (source.kind !== 'filters') return null
 	const acceptsBlank = source.blank === true
 	const dateGroupItems = source.dateGroupItems ?? []
@@ -1830,6 +1845,41 @@ function cellMatchesFilterColumn(
 		column.acceptedValues?.has(text) === true ||
 		cellMatchesDateGroupItems(value, dateGroupItems, dateSystem)
 	)
+}
+
+function computeTop10FilterThreshold(
+	sheet: Sheet,
+	range: Omit<ActiveFilterRange, 'columns' | 'dateSystem'>,
+	column: FilterColumn,
+): number | undefined {
+	if (column.filterVal !== undefined && Number.isFinite(column.filterVal)) {
+		return column.filterVal
+	}
+	const values: number[] = []
+	const col = range.startCol + column.colId
+	for (let row = range.startRow + 1; row <= range.endRow; row++) {
+		const value = filterTop10ComparableNumber(sheet.cells.readValue(row, col))
+		if (value !== null) values.push(value)
+	}
+	if (values.length === 0) return undefined
+	const rawCount = column.val ?? 10
+	const count =
+		column.percent === true ? Math.ceil((values.length * rawCount) / 100) : Math.floor(rawCount)
+	if (!Number.isFinite(count) || count <= 0) return undefined
+	const selectedCount = Math.min(values.length, Math.max(1, count))
+	values.sort((a, b) => a - b)
+	return column.top === false ? values[selectedCount - 1] : values[values.length - selectedCount]
+}
+
+function cellMatchesTop10Filter(
+	value: CellValue,
+	column: FilterColumn,
+	threshold: number | undefined,
+): boolean | null {
+	if (threshold === undefined) return null
+	const comparable = filterTop10ComparableNumber(value)
+	if (comparable === null) return false
+	return column.top === false ? comparable <= threshold : comparable >= threshold
 }
 
 function cellMatchesDateGroupItems(
@@ -1942,6 +1992,12 @@ function filterComparableNumber(value: CellValue): number | null {
 	if (value.kind === 'boolean') return value.value ? 1 : 0
 	if (value.kind !== 'string') return null
 	return filterCriterionNumber(value.value)
+}
+
+function filterTop10ComparableNumber(value: CellValue): number | null {
+	if (value.kind === 'number') return Number.isFinite(value.value) ? value.value : null
+	if (value.kind === 'date') return Number.isFinite(value.serial) ? value.serial : null
+	return null
 }
 
 function filterCriterionNumber(value: string): number | null {

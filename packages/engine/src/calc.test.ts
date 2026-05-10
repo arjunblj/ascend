@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { AutoFilter, Sheet, StyleId } from '@ascend/core'
-import { createTableId, createWorkbook } from '@ascend/core'
+import { createTableId, createWorkbook, parseRange } from '@ascend/core'
 import { dateToSerial } from '@ascend/formulas'
 import {
 	booleanValue,
@@ -21,11 +21,12 @@ function makeCtx(overrides?: Partial<CalcContext>): CalcContext {
 }
 
 function addSalesTable(sheet: Sheet, name: string, autoFilter?: AutoFilter): void {
+	const tableRef = autoFilter ? parseRange(autoFilter.ref) : parseRange('A1:B4')
 	sheet.tables.push({
 		id: createTableId(),
 		name,
 		sheetId: sheet.id,
-		ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 1 } },
+		ref: tableRef,
 		columns: [
 			{ id: 1, name: 'Region' },
 			{ id: 2, name: 'Sales' },
@@ -2926,6 +2927,93 @@ describe('recalculate', () => {
 		expect(result.errors).toEqual([])
 		expect(sheet.cells.get(4, 0)?.value).toEqual(numberValue(70))
 		expect(sheet.cells.get(4, 1)?.value).toEqual(numberValue(70))
+	})
+
+	test('SUBTOTAL and AGGREGATE evaluate top10 filter criteria with ties', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.autoFilter = {
+			ref: 'A1:B6',
+			columns: [{ colId: 1, kind: 'top10', top: true, val: 2 }],
+		}
+		sheet.cells.set(0, 0, { value: stringValue('Region'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Sales'), formula: null, styleId: sid })
+		for (const [index, value] of [10, 30, 30, 20, 5].entries()) {
+			sheet.cells.set(index + 1, 0, {
+				value: stringValue(`R${index + 1}`),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(index + 1, 1, { value: numberValue(value), formula: null, styleId: sid })
+		}
+		sheet.cells.set(6, 0, { value: EMPTY, formula: 'SUBTOTAL(9,B2:B6)', styleId: sid })
+		sheet.cells.set(6, 1, { value: EMPTY, formula: 'AGGREGATE(9,4,B2:B6)', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(6, 0)?.value).toEqual(numberValue(60))
+		expect(sheet.cells.get(6, 1)?.value).toEqual(numberValue(60))
+	})
+
+	test('table references evaluate bottom percent top10 filter criteria', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		addSalesTable(sheet, 'FilteredSales', {
+			ref: 'A1:B6',
+			columns: [{ colId: 1, kind: 'top10', top: false, percent: true, val: 40 }],
+		})
+		sheet.cells.set(0, 0, { value: stringValue('Region'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Sales'), formula: null, styleId: sid })
+		for (const [index, value] of [10, 30, 30, 20, 5].entries()) {
+			sheet.cells.set(index + 1, 0, {
+				value: stringValue(`R${index + 1}`),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(index + 1, 1, { value: numberValue(value), formula: null, styleId: sid })
+		}
+		sheet.cells.set(6, 0, {
+			value: EMPTY,
+			formula: 'SUBTOTAL(9,FilteredSales[Sales])',
+			styleId: sid,
+		})
+		sheet.cells.set(6, 1, {
+			value: EMPTY,
+			formula: 'AGGREGATE(9,4,FilteredSales[Sales])',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(6, 0)?.value).toEqual(numberValue(15))
+		expect(sheet.cells.get(6, 1)?.value).toEqual(numberValue(15))
+	})
+
+	test('top10 filter criteria honor saved filterVal thresholds', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.autoFilter = {
+			ref: 'A1:B4',
+			columns: [{ colId: 1, kind: 'top10', top: true, val: 1, filterVal: 25 }],
+		}
+		sheet.cells.set(0, 0, { value: stringValue('Region'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Sales'), formula: null, styleId: sid })
+		for (const [index, value] of [10, 30, 40].entries()) {
+			sheet.cells.set(index + 1, 0, {
+				value: stringValue(`R${index + 1}`),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(index + 1, 1, { value: numberValue(value), formula: null, styleId: sid })
+		}
+		sheet.cells.set(4, 0, { value: EMPTY, formula: 'SUBTOTAL(9,B2:B4)', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(4, 0)?.value).toEqual(numberValue(70))
 	})
 
 	test('SUBTOTAL and AGGREGATE evaluate date group filter criteria', () => {

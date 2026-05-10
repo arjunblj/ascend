@@ -37,6 +37,8 @@ export type {
 	SlicerInfo,
 	TimelineCacheInfo,
 	TimelineInfo,
+	TimelineRangeInfo,
+	TimelineStateInfo,
 } from './pivot.ts'
 export type { CellRef, RangeRef } from './refs.ts'
 export {

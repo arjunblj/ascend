@@ -183,6 +183,30 @@ describe('operation schema agent DX', () => {
 		expect(parsed.ok).toBe(true)
 	})
 
+	test('setTimelineRange is exposed with timeline refresh guidance', () => {
+		const schema = getOperationsSchema().find((entry) => entry.op === 'setTimelineRange')
+		expect(schema?.schema.required).toEqual(['op', 'startDate', 'endDate'])
+		expect(schema?.schema.properties.timelineCache?.description).toContain('Timeline cache')
+		expect(schema?.schema.properties.startDate?.description).toContain('start date-time')
+		expect(schema?.examples[0]).toMatchObject({
+			op: 'setTimelineRange',
+			timelineCache: 'Timeline_Order_Date',
+			startDate: '2024-01-01T00:00:00',
+			endDate: '2024-03-31T00:00:00',
+		})
+		expect(schema?.recoveryActions.join('\n')).toContain('pivot output')
+
+		const parsed = parseOperations([
+			{
+				op: 'setTimelineRange',
+				timelineCache: 'Timeline_Order_Date',
+				startDate: '2024-01-01T00:00:00',
+				endDate: '2024-03-31T00:00:00',
+			},
+		])
+		expect(parsed.ok).toBe(true)
+	})
+
 	test('setSparklineGroup is exposed with sparkline range guidance', () => {
 		const schema = getOperationsSchema().find((entry) => entry.op === 'setSparklineGroup')
 		expect(schema?.schema.required).toEqual(['op', 'sheet', 'groupIndex'])

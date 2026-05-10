@@ -15,6 +15,7 @@ import {
 	parsePivotCacheDefinitionXml,
 	parsePivotTableXml,
 	parseSlicerCacheXml,
+	parseTimelineCacheXml,
 } from '../reader/pivots.ts'
 import {
 	getRelsPath,
@@ -68,6 +69,7 @@ import {
 	type ThreadedCommentTextRef,
 	updateThreadedCommentsXml,
 } from './threaded-comments.ts'
+import { updateTimelineCacheDefinitionXml } from './timeline-cache.ts'
 import { buildWorkbookXml } from './workbook.ts'
 import { createZip, encode, StreamingZipBuilder } from './zip.ts'
 
@@ -1408,6 +1410,38 @@ export function planWriteXlsx(
 					}
 					continue
 				}
+				const timelineCache = workbook.timelineCaches.find(
+					(cache) => cache.partPath === capsule.partPath,
+				)
+				if (timelineCache && isTimelineCacheDefinitionCapsule(capsule)) {
+					const sourceXml = new TextDecoder().decode(content)
+					if (!shouldUpdateTimelineCacheDefinitionXml(sourceXml, timelineCache)) {
+						recordUnchangedCapsule(capsule, owner, content)
+						continue
+					}
+					recordXml(
+						capsule.partPath,
+						{
+							owner,
+							origin: 'generated',
+							contentType: capsule.contentType,
+						},
+						() => updateTimelineCacheDefinitionXml(sourceXml, timelineCache),
+					)
+					plan.addOverride(capsule.partPath, capsule.contentType)
+					if (capsule.relationships.length > 0) {
+						const capsuleRelsPath = getRelsPath(capsule.partPath)
+						recordXml(
+							capsuleRelsPath,
+							{
+								owner,
+								origin: 'capsule',
+							},
+							() => buildRelsXml(capsule.relationships),
+						)
+					}
+					continue
+				}
 				const connectionParts = workbook.connectionParts.filter(
 					(part) => part.partPath === capsule.partPath,
 				)
@@ -1971,6 +2005,7 @@ function preservedRelationshipTarget(
 type PivotTableInfo = Workbook['pivotTables'][number]
 type PivotCacheInfo = Workbook['pivotCaches'][number]
 type SlicerCacheInfo = Workbook['slicerCaches'][number]
+type TimelineCacheInfo = Workbook['timelineCaches'][number]
 type ConnectionPartInfo = Workbook['connectionParts'][number]
 
 function shouldUpdatePivotTableDefinitionXml(xml: string, pivot: PivotTableInfo): boolean {
@@ -2040,6 +2075,14 @@ function shouldUpdateSlicerCacheDefinitionXml(xml: string, cache: SlicerCacheInf
 	)
 }
 
+function shouldUpdateTimelineCacheDefinitionXml(xml: string, cache: TimelineCacheInfo): boolean {
+	const parsed = parseTimelineCacheXml(xml, cache.partPath)
+	if (!parsed) return true
+	return (
+		stableJson(timelineCacheWritableState(parsed)) !== stableJson(timelineCacheWritableState(cache))
+	)
+}
+
 function shouldUpdateConnectionPartXml(
 	capsule: PreservationCapsule,
 	xml: string,
@@ -2059,6 +2102,18 @@ function slicerCacheWritableState(cache: SlicerCacheInfo): unknown {
 			selected: item.selected ?? null,
 			noData: item.noData ?? null,
 		})),
+	}
+}
+
+function timelineCacheWritableState(cache: TimelineCacheInfo): unknown {
+	return {
+		selection: cache.state?.selection
+			? {
+					startDate: cache.state.selection.startDate,
+					endDate: cache.state.selection.endDate,
+				}
+			: null,
+		singleRangeFilterState: cache.state?.singleRangeFilterState ?? null,
 	}
 }
 
@@ -2095,6 +2150,13 @@ function isSlicerCacheDefinitionCapsule(capsule: PreservationCapsule): boolean {
 	return (
 		capsule.contentType.includes('slicerCache+xml') ||
 		capsule.partPath.includes('/slicerCaches/slicerCache')
+	)
+}
+
+function isTimelineCacheDefinitionCapsule(capsule: PreservationCapsule): boolean {
+	return (
+		capsule.contentType.includes('timelineCache+xml') ||
+		capsule.partPath.includes('/timelineCaches/timelineCache')
 	)
 }
 

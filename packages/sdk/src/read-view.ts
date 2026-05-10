@@ -184,6 +184,15 @@ export class WorkbookReadView {
 			timelineCaches: this.wb.timelineCaches.map((entry) => ({
 				...entry,
 				pivotTableNames: [...entry.pivotTableNames],
+				...(entry.state
+					? {
+							state: {
+								...entry.state,
+								...(entry.state.selection ? { selection: { ...entry.state.selection } } : {}),
+								...(entry.state.bounds ? { bounds: { ...entry.state.bounds } } : {}),
+							},
+						}
+					: {}),
 			})),
 			timelines: this.wb.timelines.map((entry) => ({ ...entry })),
 			connectionParts: this.wb.connectionParts.map((entry) => ({ ...entry })),
@@ -653,6 +662,15 @@ export class WorkbookReadView {
 		return this.wb.timelineCaches.map((entry) => ({
 			...entry,
 			pivotTableNames: [...entry.pivotTableNames],
+			...(entry.state
+				? {
+						state: {
+							...entry.state,
+							...(entry.state.selection ? { selection: { ...entry.state.selection } } : {}),
+							...(entry.state.bounds ? { bounds: { ...entry.state.bounds } } : {}),
+						},
+					}
+				: {}),
 		}))
 	}
 

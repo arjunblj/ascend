@@ -2146,6 +2146,81 @@ describe('applyOperation', () => {
 		expect(missingUpdate.error.message).toContain('requires selected or noData')
 	})
 
+	test('setTimelineRange updates selected date range with refresh warning', () => {
+		const wb = setup()
+		wb.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'Sheet1',
+			name: 'PivotTable1',
+			cacheId: 34,
+			fields: [],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [],
+			dataFields: [],
+		})
+		wb.timelineCaches.push({
+			partPath: 'xl/timelineCaches/timelineCache1.xml',
+			name: 'Timeline_Order_Date',
+			sourceName: 'Order Date',
+			pivotCacheId: 34,
+			pivotTableNames: ['PivotTable1'],
+			state: {
+				singleRangeFilterState: true,
+				selection: {
+					startDate: '2024-01-01T00:00:00',
+					endDate: '2024-03-31T00:00:00',
+				},
+			},
+		})
+
+		const result = applyOperation(wb, {
+			op: 'setTimelineRange',
+			timelineCache: 'Timeline_Order_Date',
+			startDate: '2024-04-01T00:00:00',
+			endDate: '2024-06-30T00:00:00',
+		})
+		expectOk(result)
+
+		expect(result.value.sheetsModified).toEqual(['Sheet1'])
+		expect(result.value.recalcRequired).toBe(false)
+		expect(result.value.warnings?.[0]?.message).toContain('Timeline range changed')
+		expect(result.value.warnings?.[0]?.details).toMatchObject({
+			timelineCache: 'Timeline_Order_Date',
+			pivotTables: ['PivotTable1'],
+		})
+		expect(wb.timelineCaches[0]?.state?.selection).toEqual({
+			startDate: '2024-04-01T00:00:00',
+			endDate: '2024-06-30T00:00:00',
+		})
+	})
+
+	test('setTimelineRange validates selectors and date range order', () => {
+		const wb = setup()
+		wb.timelineCaches.push({
+			partPath: 'xl/timelineCaches/timelineCache1.xml',
+			name: 'Timeline_Order_Date',
+			pivotTableNames: [],
+		})
+
+		const missingSelector = applyOperation(wb, {
+			op: 'setTimelineRange',
+			startDate: '2024-01-01T00:00:00',
+			endDate: '2024-03-31T00:00:00',
+		})
+		expectErr(missingSelector)
+		expect(missingSelector.error.message).toContain('requires timelineCache or partPath')
+
+		const reversedRange = applyOperation(wb, {
+			op: 'setTimelineRange',
+			timelineCache: 'Timeline_Order_Date',
+			startDate: '2024-04-01T00:00:00',
+			endDate: '2024-03-31T00:00:00',
+		})
+		expectErr(reversedRange)
+		expect(reversedRange.error.message).toContain('startDate must be <= endDate')
+	})
+
 	test('rewriteExternalLink updates selected external workbook target metadata', () => {
 		const wb = setup()
 		wb.externalReferences.push('xl/externalLinks/externalLink1.xml')

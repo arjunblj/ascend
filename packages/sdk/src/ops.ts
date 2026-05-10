@@ -252,6 +252,9 @@ const FIELD_SCHEMAS: Record<
 		description: 'Selected page-field item index; use null to clear',
 	},
 	slicerCache: { type: 'string', description: 'Slicer cache name or package part path' },
+	timelineCache: { type: 'string', description: 'Timeline cache name or package part path' },
+	startDate: { type: 'string', description: 'Timeline selection start date-time string' },
+	endDate: { type: 'string', description: 'Timeline selection end date-time string' },
 	item: { type: 'integer', description: 'Zero-based slicer cache item x index' },
 	selected: { type: 'boolean', description: 'Slicer item selected state; use null to clear' },
 	noData: { type: 'boolean', description: 'Slicer item no-data state; use null to clear' },
@@ -600,6 +603,12 @@ export function listOperations(): readonly OperationSchema[] {
 			optionalFields: ['slicerCache', 'partPath', 'selected', 'noData'],
 		},
 		{
+			op: 'setTimelineRange',
+			description: 'Edit a timeline cache selected date range without recalculating pivot output',
+			requiredFields: ['startDate', 'endDate'],
+			optionalFields: ['timelineCache', 'partPath'],
+		},
+		{
 			op: 'setSparklineGroup',
 			description: 'Edit a preserved sparkline group source range and display flags',
 			requiredFields: ['sheet', 'groupIndex'],
@@ -788,6 +797,9 @@ function validateOperationField(
 		case 'sourceSheet':
 		case 'sourceRef':
 		case 'slicerCache':
+		case 'timelineCache':
+		case 'startDate':
+		case 'endDate':
 		case 'sortRef':
 		case 'sortBy':
 			return typeof value === 'string' ? null : `${path} must be a string`
@@ -1162,6 +1174,12 @@ function operationRecoveryActions(op: string): readonly string[] {
 				'Expect pivot output to be stale until Excel or another pivot-aware engine refreshes the slicer-linked pivot tables.',
 				...common,
 			]
+		case 'setTimelineRange':
+			return [
+				'Use inspect --detail timelines to choose timelineCache or partPath plus ISO-like startDate/endDate strings.',
+				'Expect pivot output to be stale until Excel or another pivot-aware engine refreshes the timeline-linked pivot tables.',
+				...common,
+			]
 		case 'setSparklineGroup':
 			return [
 				'Use inspectSheet().sparklineGroups to choose sheet and groupIndex.',
@@ -1422,6 +1440,13 @@ function operationExample(op: string): Record<string, unknown> {
 				item: 0,
 				selected: true,
 				noData: false,
+			}
+		case 'setTimelineRange':
+			return {
+				op,
+				timelineCache: 'Timeline_Order_Date',
+				startDate: '2024-01-01T00:00:00',
+				endDate: '2024-03-31T00:00:00',
 			}
 		case 'setSparklineGroup':
 			return {

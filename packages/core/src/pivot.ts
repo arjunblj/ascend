@@ -118,6 +118,7 @@ export interface TimelineCacheInfo {
 	readonly sourceName?: string
 	readonly pivotCacheId?: number
 	readonly pivotTableNames: readonly string[]
+	readonly state?: TimelineStateInfo
 }
 
 export interface TimelineInfo {
@@ -125,4 +126,22 @@ export interface TimelineInfo {
 	readonly name?: string
 	readonly cacheName?: string
 	readonly caption?: string
+}
+
+export interface TimelineRangeInfo {
+	readonly startDate: string
+	readonly endDate: string
+}
+
+export interface TimelineStateInfo {
+	readonly filterType?: string
+	readonly filterId?: number
+	readonly filterPivotName?: string
+	readonly filterTabId?: number
+	readonly lastRefreshVersion?: number
+	readonly minimalRefreshVersion?: number
+	readonly pivotCacheId?: number
+	readonly singleRangeFilterState?: boolean
+	readonly selection?: TimelineRangeInfo
+	readonly bounds?: TimelineRangeInfo
 }

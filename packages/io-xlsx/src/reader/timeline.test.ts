@@ -39,6 +39,10 @@ describe('timeline inventory', () => {
 <timelineCacheDefinition xmlns="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main" name="Timeline_Order_Date" sourceName="Order Date">
   <data><tabular pivotCacheId="3"/></data>
   <pivotTables><pivotTable name="PivotTable1"/></pivotTables>
+  <state filterId="7" filterPivotName="PivotTable1" filterType="dateRange" filterTabId="2" lastRefreshVersion="6" minimalRefreshVersion="4" pivotCacheId="3" singleRangeFilterState="1">
+    <selection startDate="2024-01-01T00:00:00" endDate="2024-03-31T00:00:00"/>
+    <bounds startDate="2023-01-01T00:00:00" endDate="2024-12-31T00:00:00"/>
+  </state>
 </timelineCacheDefinition>`,
 			'xl/timelines/timeline1.xml': `<?xml version="1.0"?>
 <timelines xmlns="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main">
@@ -56,6 +60,24 @@ describe('timeline inventory', () => {
 				sourceName: 'Order Date',
 				pivotCacheId: 3,
 				pivotTableNames: ['PivotTable1'],
+				state: {
+					filterId: 7,
+					filterPivotName: 'PivotTable1',
+					filterType: 'dateRange',
+					filterTabId: 2,
+					lastRefreshVersion: 6,
+					minimalRefreshVersion: 4,
+					pivotCacheId: 3,
+					singleRangeFilterState: true,
+					selection: {
+						startDate: '2024-01-01T00:00:00',
+						endDate: '2024-03-31T00:00:00',
+					},
+					bounds: {
+						startDate: '2023-01-01T00:00:00',
+						endDate: '2024-12-31T00:00:00',
+					},
+				},
 			},
 		])
 		expect(result.value.workbook.timelines).toEqual([

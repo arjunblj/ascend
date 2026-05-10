@@ -159,6 +159,86 @@ describe('writeXlsx', () => {
 		])
 	})
 
+	it('writes edited timeline selection range back into preserved cache XML', () => {
+		const timelineCacheXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<timelineCacheDefinition xmlns="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main" name="Timeline_Order_Date" sourceName="Order Date">
+  <pivotTables><pivotTable tabId="1" name="PivotTable1"/></pivotTables>
+  <state singleRangeFilterState="1" filterType="dateRange">
+    <selection startDate="2024-01-01T00:00:00" endDate="2024-03-31T00:00:00"/>
+    <bounds startDate="2023-01-01T00:00:00" endDate="2024-12-31T00:00:00"/>
+  </state>
+</timelineCacheDefinition>`
+		const wb = new Workbook()
+		wb.addSheet('Sheet1')
+		wb.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'Sheet1',
+			name: 'PivotTable1',
+			cacheId: 5,
+			fields: [],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [],
+			dataFields: [],
+		})
+		wb.timelineCaches.push({
+			partPath: 'xl/timelineCaches/timelineCache1.xml',
+			name: 'Timeline_Order_Date',
+			sourceName: 'Order Date',
+			pivotCacheId: 5,
+			pivotTableNames: ['PivotTable1'],
+			state: {
+				filterType: 'dateRange',
+				singleRangeFilterState: true,
+				selection: {
+					startDate: '2024-01-01T00:00:00',
+					endDate: '2024-03-31T00:00:00',
+				},
+				bounds: {
+					startDate: '2023-01-01T00:00:00',
+					endDate: '2024-12-31T00:00:00',
+				},
+			},
+		})
+		const applied = applyOperations(wb, [
+			{
+				op: 'setTimelineRange',
+				timelineCache: 'Timeline_Order_Date',
+				startDate: '2024-04-01T00:00:00',
+				endDate: '2024-06-30T00:00:00',
+			},
+		])
+		expectOk(applied)
+		const capsules: PreservationCapsule[] = [
+			{
+				partPath: 'xl/timelineCaches/timelineCache1.xml',
+				contentType: 'application/vnd.ms-excel.timelineCache+xml',
+				relationships: [],
+				content: new TextEncoder().encode(timelineCacheXml),
+				anchor: { kind: 'workbook' },
+				relType: 'http://schemas.microsoft.com/office/2011/relationships/timelineCache',
+			},
+		]
+
+		const written = writeXlsx(wb, capsules)
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		const xml = new TextDecoder().decode(
+			zip['xl/timelineCaches/timelineCache1.xml'] ?? new Uint8Array(),
+		)
+
+		expect(xml).toContain(
+			'<selection startDate="2024-04-01T00:00:00" endDate="2024-06-30T00:00:00"/>',
+		)
+		expect(xml).toContain('<bounds startDate="2023-01-01T00:00:00" endDate="2024-12-31T00:00:00"/>')
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.timelineCaches[0]?.state?.selection).toEqual({
+			startDate: '2024-04-01T00:00:00',
+			endDate: '2024-06-30T00:00:00',
+		})
+	})
+
 	it('writes edited pivot field item state back into preserved pivot XML', () => {
 		const pivotTableXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <pivotTableDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="PivotTable1" cacheId="34">

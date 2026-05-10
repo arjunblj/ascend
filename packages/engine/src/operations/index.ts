@@ -21,6 +21,7 @@ import * as sheetOps from './sheet-ops.ts'
 import * as slicerOps from './slicer-ops.ts'
 import * as structuralOps from './structural-ops.ts'
 import * as tableOps from './table-ops.ts'
+import * as timelineOps from './timeline-ops.ts'
 import * as visualOps from './visual-ops.ts'
 import * as workbookOps from './workbook-ops.ts'
 
@@ -103,6 +104,7 @@ const handlers: Record<string, OperationHandler> = {
 	setPivotCache: pivotOps.handleSetPivotCache as OperationHandler,
 	setPivotFieldItem: pivotOps.handleSetPivotFieldItem as OperationHandler,
 	setSlicerCacheItem: slicerOps.handleSetSlicerCacheItem as OperationHandler,
+	setTimelineRange: timelineOps.handleSetTimelineRange as OperationHandler,
 	setConnectionRefresh: connectionOps.handleSetConnectionRefresh as OperationHandler,
 	rewriteExternalLink: workbookOps.handleRewriteExternalLink as OperationHandler,
 	insertImage: visualOps.handleInsertImage as OperationHandler,
@@ -290,7 +292,19 @@ function restoreWorkbookFromSnapshot(workbook: Workbook, snapshot: Workbook): vo
 	workbook.slicers.push(...snapshot.slicers.map((e) => ({ ...e })))
 	workbook.timelineCaches.splice(0, workbook.timelineCaches.length)
 	workbook.timelineCaches.push(
-		...snapshot.timelineCaches.map((e) => ({ ...e, pivotTableNames: [...e.pivotTableNames] })),
+		...snapshot.timelineCaches.map((e) => ({
+			...e,
+			pivotTableNames: [...e.pivotTableNames],
+			...(e.state
+				? {
+						state: {
+							...e.state,
+							...(e.state.selection ? { selection: { ...e.state.selection } } : {}),
+							...(e.state.bounds ? { bounds: { ...e.state.bounds } } : {}),
+						},
+					}
+				: {}),
+		})),
 	)
 	workbook.timelines.splice(0, workbook.timelines.length)
 	workbook.timelines.push(...snapshot.timelines.map((e) => ({ ...e })))

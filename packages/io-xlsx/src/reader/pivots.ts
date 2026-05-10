@@ -11,6 +11,8 @@ import type {
 	SlicerInfo,
 	TimelineCacheInfo,
 	TimelineInfo,
+	TimelineRangeInfo,
+	TimelineStateInfo,
 } from '@ascend/core'
 import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
 import type { Relationship } from './relationships.ts'
@@ -428,12 +430,14 @@ export function parseTimelineCacheXml(xml: string, partPath: string): TimelineCa
 		: []
 	const dataNode = root.data as XmlNode | undefined
 	const tabular = dataNode ? ((dataNode.tabular as XmlNode | undefined) ?? undefined) : undefined
+	const stateNode = childNode(root, 'state')
 	const parsed: {
 		partPath: string
 		name?: string
 		sourceName?: string
 		pivotCacheId?: number
 		pivotTableNames: readonly string[]
+		state?: TimelineStateInfo
 	} = {
 		partPath,
 		pivotTableNames: (Array.isArray(pivotTableNodes) ? pivotTableNodes : [pivotTableNodes])
@@ -447,7 +451,44 @@ export function parseTimelineCacheXml(xml: string, partPath: string): TimelineCa
 	if (sourceName) parsed.sourceName = sourceName
 	const pivotCacheId = tabular ? numAttr(tabular, 'pivotCacheId') : undefined
 	if (pivotCacheId !== undefined) parsed.pivotCacheId = pivotCacheId
+	const state = stateNode ? parseTimelineState(stateNode) : undefined
+	if (state) parsed.state = state
 	return parsed as TimelineCacheInfo
+}
+
+function parseTimelineState(state: XmlNode): TimelineStateInfo | undefined {
+	const parsed: {
+		filterType?: string
+		filterId?: number
+		filterPivotName?: string
+		filterTabId?: number
+		lastRefreshVersion?: number
+		minimalRefreshVersion?: number
+		pivotCacheId?: number
+		singleRangeFilterState?: boolean
+		selection?: TimelineRangeInfo
+		bounds?: TimelineRangeInfo
+	} = {}
+	setStringIfDefined(parsed, 'filterType', attr(state, 'filterType'))
+	setStringIfDefined(parsed, 'filterPivotName', attr(state, 'filterPivotName'))
+	setNumberIfDefined(parsed, 'filterId', numAttr(state, 'filterId'))
+	setNumberIfDefined(parsed, 'filterTabId', numAttr(state, 'filterTabId'))
+	setNumberIfDefined(parsed, 'lastRefreshVersion', numAttr(state, 'lastRefreshVersion'))
+	setNumberIfDefined(parsed, 'minimalRefreshVersion', numAttr(state, 'minimalRefreshVersion'))
+	setNumberIfDefined(parsed, 'pivotCacheId', numAttr(state, 'pivotCacheId'))
+	setBoolIfDefined(parsed, 'singleRangeFilterState', boolAttr(state, 'singleRangeFilterState'))
+	const selection = parseTimelineRange(childNode(state, 'selection'))
+	if (selection) parsed.selection = selection
+	const bounds = parseTimelineRange(childNode(state, 'bounds'))
+	if (bounds) parsed.bounds = bounds
+	return Object.keys(parsed).length > 0 ? (parsed as TimelineStateInfo) : undefined
+}
+
+function parseTimelineRange(node: XmlNode | undefined): TimelineRangeInfo | undefined {
+	if (!node) return undefined
+	const startDate = attr(node, 'startDate')
+	const endDate = attr(node, 'endDate')
+	return startDate && endDate ? { startDate, endDate } : undefined
 }
 
 export function parseTimelineXml(xml: string, partPath: string): readonly TimelineInfo[] {

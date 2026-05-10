@@ -541,6 +541,13 @@ export type Operation =
 			readonly noData?: boolean | null
 	  }
 	| {
+			readonly op: 'setTimelineRange'
+			readonly timelineCache?: string
+			readonly partPath?: string
+			readonly startDate: string
+			readonly endDate: string
+	  }
+	| {
 			readonly op: 'setSparklineGroup'
 			readonly sheet: string
 			readonly groupIndex: number

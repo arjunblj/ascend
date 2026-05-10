@@ -283,6 +283,15 @@ export class Workbook {
 			...this.timelineCaches.map((entry) => ({
 				...entry,
 				pivotTableNames: [...entry.pivotTableNames],
+				...(entry.state
+					? {
+							state: {
+								...entry.state,
+								...(entry.state.selection ? { selection: { ...entry.state.selection } } : {}),
+								...(entry.state.bounds ? { bounds: { ...entry.state.bounds } } : {}),
+							},
+						}
+					: {}),
 			})),
 		)
 		clone.timelines.push(...this.timelines.map((entry) => ({ ...entry })))

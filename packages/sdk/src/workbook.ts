@@ -830,6 +830,7 @@ export class AscendWorkbook extends WorkbookReadView {
 				case 'setPivotCache':
 				case 'setPivotFieldItem':
 				case 'setConnectionRefresh':
+				case 'setTimelineRange':
 				case 'rewriteExternalLink':
 					workbookMetaDirty = true
 					calcChainDirty = true

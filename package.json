@@ -44,6 +44,7 @@
 		"bench:formula:sota:index-match": "bun run fixtures/benchmarks/formula-sota.ts --profile hf-indexed-index-match --repeat 5 --warmup 1 --json",
 		"bench:formula:sota:index-match-dirty-key": "bun run fixtures/benchmarks/formula-sota.ts --profile hf-indexed-index-match-dirty-key --repeat 7 --warmup 3 --json",
 		"bench:formula:sota:index-match-dirty-value": "bun run fixtures/benchmarks/formula-sota.ts --profile hf-indexed-index-match-dirty-value --repeat 5 --warmup 2 --json",
+		"bench:formula:corpus:research": "bun run fixtures/benchmarks/formula-corpus-correctness.ts --corpus-root research/excel-corpus --manifest research/excel-corpus/manifest.json --tag formula-fidelity --max-mismatches 0 --max-accepted-mismatches 0 --max-unaccepted-mismatches 0 --max-semantic-mismatches 0 --max-volatile-oracle-skips 1 --max-errors 0 --min-workbooks 3 --min-formulas 17733 --min-compared-formulas 17733 --min-perfect-workbooks 3 --min-semantic-perfect-workbooks 3 --json",
 		"bench:profile:bun": "bun run fixtures/benchmarks/profile-bun.ts",
 		"bench:profile:reader:fastexcel": "bun run fixtures/benchmarks/profile-bun.ts --mode cpu-md --label reader-fastexcel-read -- run fixtures/benchmarks/xlsx-read-phase.ts --profile fastexcel-reader-65536 --phase read --repeat 5 --warmup 1 --gc-between-samples --json",
 		"bench:profile:writer:excelize": "bun run fixtures/benchmarks/profile-bun.ts --mode cpu-md --label writer-excelize-stream -- run fixtures/benchmarks/xlsx-write-phase.ts --profile excelize-generation-102400x50-plain-text --streaming --repeat 3 --warmup 1 --json",

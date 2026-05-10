@@ -30,9 +30,13 @@ interface Args {
 	readonly oracle: OracleMode
 	readonly json: boolean
 	readonly maxMismatches?: number
+	readonly maxAcceptedMismatches?: number
 	readonly maxUnacceptedMismatches?: number
 	readonly maxSemanticMismatches?: number
+	readonly maxVolatileOracleSkips?: number
 	readonly maxErrors?: number
+	readonly minWorkbooks?: number
+	readonly minFormulas?: number
 	readonly minComparedFormulas?: number
 	readonly minPerfectWorkbooks?: number
 	readonly minSemanticPerfectWorkbooks?: number
@@ -183,9 +187,13 @@ function readArgs(): Args {
 		oracle: 'cached-values',
 		json: hasFlag('--json'),
 		maxMismatches: nonNegativeIntOptional(readFlag('--max-mismatches')),
+		maxAcceptedMismatches: nonNegativeIntOptional(readFlag('--max-accepted-mismatches')),
 		maxUnacceptedMismatches: nonNegativeIntOptional(readFlag('--max-unaccepted-mismatches')),
 		maxSemanticMismatches: nonNegativeIntOptional(readFlag('--max-semantic-mismatches')),
+		maxVolatileOracleSkips: nonNegativeIntOptional(readFlag('--max-volatile-oracle-skips')),
 		maxErrors: nonNegativeIntOptional(readFlag('--max-errors')),
+		minWorkbooks: positiveInt(readFlag('--min-workbooks')),
+		minFormulas: positiveInt(readFlag('--min-formulas')),
 		minComparedFormulas: positiveInt(readFlag('--min-compared-formulas')),
 		minPerfectWorkbooks: positiveInt(readFlag('--min-perfect-workbooks')),
 		minSemanticPerfectWorkbooks: positiveInt(readFlag('--min-semantic-perfect-workbooks')),
@@ -628,8 +636,12 @@ export function formulaCorpusCorrectnessAssertionFailures(
 		Args,
 		| 'maxErrors'
 		| 'maxMismatches'
+		| 'maxAcceptedMismatches'
 		| 'maxUnacceptedMismatches'
 		| 'maxSemanticMismatches'
+		| 'maxVolatileOracleSkips'
+		| 'minWorkbooks'
+		| 'minFormulas'
 		| 'minComparedFormulas'
 		| 'minPerfectWorkbooks'
 		| 'minSemanticPerfectWorkbooks'
@@ -638,6 +650,14 @@ export function formulaCorpusCorrectnessAssertionFailures(
 	const failures: string[] = []
 	if (args.maxMismatches !== undefined && payload.summary.mismatchCount > args.maxMismatches) {
 		failures.push(`mismatches ${payload.summary.mismatchCount} exceeded ${args.maxMismatches}`)
+	}
+	if (
+		args.maxAcceptedMismatches !== undefined &&
+		payload.summary.acceptedMismatchCount > args.maxAcceptedMismatches
+	) {
+		failures.push(
+			`accepted mismatches ${payload.summary.acceptedMismatchCount} exceeded ${args.maxAcceptedMismatches}`,
+		)
 	}
 	if (
 		args.maxUnacceptedMismatches !== undefined &&
@@ -655,8 +675,22 @@ export function formulaCorpusCorrectnessAssertionFailures(
 			`semantic mismatches ${payload.summary.semanticMismatchCount} exceeded ${args.maxSemanticMismatches}`,
 		)
 	}
+	if (
+		args.maxVolatileOracleSkips !== undefined &&
+		payload.summary.volatileOracleSkipCount > args.maxVolatileOracleSkips
+	) {
+		failures.push(
+			`volatile oracle skips ${payload.summary.volatileOracleSkipCount} exceeded ${args.maxVolatileOracleSkips}`,
+		)
+	}
 	if (args.maxErrors !== undefined && payload.summary.errorCount > args.maxErrors) {
 		failures.push(`errors ${payload.summary.errorCount} exceeded ${args.maxErrors}`)
+	}
+	if (args.minWorkbooks !== undefined && payload.summary.workbookCount < args.minWorkbooks) {
+		failures.push(`workbooks ${payload.summary.workbookCount} below ${args.minWorkbooks}`)
+	}
+	if (args.minFormulas !== undefined && payload.summary.formulaCount < args.minFormulas) {
+		failures.push(`formulas ${payload.summary.formulaCount} below ${args.minFormulas}`)
 	}
 	if (
 		args.minComparedFormulas !== undefined &&

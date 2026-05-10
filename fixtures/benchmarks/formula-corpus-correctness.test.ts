@@ -444,8 +444,12 @@ describe('formula corpus correctness runner', () => {
 			formulaCorpusCorrectnessAssertionFailures(payload, {
 				maxErrors: 0,
 				maxMismatches: 0,
+				maxAcceptedMismatches: 0,
 				maxUnacceptedMismatches: 0,
 				maxSemanticMismatches: 0,
+				maxVolatileOracleSkips: 0,
+				minWorkbooks: 1,
+				minFormulas: 2,
 				minComparedFormulas: 2,
 				minPerfectWorkbooks: 1,
 				minSemanticPerfectWorkbooks: 1,
@@ -453,11 +457,15 @@ describe('formula corpus correctness runner', () => {
 		).toEqual([])
 		expect(
 			formulaCorpusCorrectnessAssertionFailures(payload, {
+				minWorkbooks: 2,
+				minFormulas: 3,
 				minComparedFormulas: 3,
 				minPerfectWorkbooks: 2,
 				minSemanticPerfectWorkbooks: 2,
 			}),
 		).toEqual([
+			'workbooks 1 below 2',
+			'formulas 2 below 3',
 			'compared formulas 2 below 3',
 			'perfect workbooks 1 below 2',
 			'semantic-perfect workbooks 1 below 2',
@@ -493,16 +501,56 @@ describe('formula corpus correctness runner', () => {
 		})
 		expect(
 			formulaCorpusCorrectnessAssertionFailures(payload, {
+				maxAcceptedMismatches: 0,
 				maxUnacceptedMismatches: 0,
 				maxSemanticMismatches: 0,
 				minSemanticPerfectWorkbooks: 1,
 			}),
-		).toEqual([])
+		).toEqual(['accepted mismatches 1 exceeded 0'])
 		expect(
 			formulaCorpusCorrectnessAssertionFailures(payload, {
 				maxMismatches: 0,
 			}),
 		).toEqual(['mismatches 1 exceeded 0'])
+	})
+
+	test('assertion gates bound volatile oracle skips independently from mismatches', async () => {
+		const root = await mkdtemp(join(tmpdir(), 'ascend-formula-corpus-'))
+		await mkdir(root, { recursive: true })
+		const workbook = createWorkbook()
+		const sheet = workbook.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(0.25), formula: 'RAND()', styleId: SID })
+		const written = writeXlsx(workbook)
+		if (!written.ok) throw new Error(written.error.message)
+		await writeFile(join(root, 'volatile.xlsx'), written.value)
+		const manifest = await writeManifest(root, [manifestEntry('volatile.xlsx')])
+
+		const payload = await runFormulaCorpusCorrectness({
+			corpusRoot: root,
+			manifest,
+			tags: [],
+			tiers: [],
+			sampleSeed: 1,
+			oracle: 'cached-values',
+			json: true,
+		})
+
+		expect(payload.summary).toMatchObject({
+			volatileOracleSkipCount: 1,
+			mismatchCount: 0,
+			semanticPerfectWorkbookCount: 1,
+		})
+		expect(
+			formulaCorpusCorrectnessAssertionFailures(payload, {
+				maxMismatches: 0,
+				maxVolatileOracleSkips: 1,
+			}),
+		).toEqual([])
+		expect(
+			formulaCorpusCorrectnessAssertionFailures(payload, {
+				maxVolatileOracleSkips: 0,
+			}),
+		).toEqual(['volatile oracle skips 1 exceeded 0'])
 	})
 
 	test('CLI assertion gates accept strict zero mismatch and error thresholds', async () => {
@@ -521,10 +569,18 @@ describe('formula corpus correctness runner', () => {
 				manifest,
 				'--max-mismatches',
 				'0',
+				'--max-accepted-mismatches',
+				'0',
+				'--max-volatile-oracle-skips',
+				'0',
 				'--max-errors',
 				'0',
 				'--max-unaccepted-mismatches',
 				'0',
+				'--min-workbooks',
+				'1',
+				'--min-formulas',
+				'2',
 				'--min-compared-formulas',
 				'2',
 				'--min-perfect-workbooks',

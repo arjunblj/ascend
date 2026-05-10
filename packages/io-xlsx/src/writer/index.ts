@@ -11,6 +11,11 @@ import type { PreservationCapsule } from '../preserve.ts'
 import { parseCommentsXml } from '../reader/comments.ts'
 import { parseDrawingObjectRefs } from '../reader/drawing.ts'
 import {
+	parsePivotCacheDefinitionXml,
+	parsePivotTableXml,
+	parseSlicerCacheXml,
+} from '../reader/pivots.ts'
+import {
 	getRelsPath,
 	parseRelationships,
 	REL_CALC_CHAIN,
@@ -289,6 +294,43 @@ export function planWriteXlsx(
 				return
 			}
 			plan.putBytes(path, buildBytes(), descriptor)
+		}
+		const recordUnchangedCapsule = (
+			capsule: PreservationCapsule,
+			owner: WritePartOwner,
+			content: Uint8Array,
+		): void => {
+			recordBytes(
+				capsule.partPath,
+				{
+					owner,
+					origin: 'capsule',
+					contentType: capsule.contentType,
+				},
+				() => content,
+			)
+			if (capsule.relationships.length === 0) return
+			const capsuleRelsPath = getRelsPath(capsule.partPath)
+			const relsBytes = sourceArchive?.readBytes(capsuleRelsPath)
+			if (relsBytes) {
+				recordBytes(
+					capsuleRelsPath,
+					{
+						owner,
+						origin: 'capsule',
+					},
+					() => relsBytes,
+				)
+				return
+			}
+			recordXml(
+				capsuleRelsPath,
+				{
+					owner,
+					origin: 'capsule',
+				},
+				() => buildRelsXml(resolveCapsuleRelationships(workbook, capsule)),
+			)
 		}
 		const sourceArchive =
 			options.sourceArchive ??
@@ -1254,6 +1296,11 @@ export function planWriteXlsx(
 				if (!owner) continue
 				const pivotTable = workbook.pivotTables.find((pivot) => pivot.partPath === capsule.partPath)
 				if (pivotTable && isPivotTableDefinitionCapsule(capsule)) {
+					const sourceXml = new TextDecoder().decode(content)
+					if (!shouldUpdatePivotTableDefinitionXml(sourceXml, pivotTable)) {
+						recordUnchangedCapsule(capsule, owner, content)
+						continue
+					}
 					recordXml(
 						capsule.partPath,
 						{
@@ -1261,7 +1308,7 @@ export function planWriteXlsx(
 							origin: 'generated',
 							contentType: capsule.contentType,
 						},
-						() => updatePivotTableDefinitionXml(new TextDecoder().decode(content), pivotTable),
+						() => updatePivotTableDefinitionXml(sourceXml, pivotTable),
 					)
 					plan.addOverride(capsule.partPath, capsule.contentType)
 					if (capsule.relationships.length > 0) {
@@ -1279,6 +1326,11 @@ export function planWriteXlsx(
 				}
 				const pivotCache = workbook.pivotCaches.find((cache) => cache.partPath === capsule.partPath)
 				if (pivotCache && isPivotCacheDefinitionCapsule(capsule)) {
+					const sourceXml = new TextDecoder().decode(content)
+					if (!shouldUpdatePivotCacheDefinitionXml(sourceXml, pivotCache, capsule.relationships)) {
+						recordUnchangedCapsule(capsule, owner, content)
+						continue
+					}
 					recordXml(
 						capsule.partPath,
 						{
@@ -1286,7 +1338,7 @@ export function planWriteXlsx(
 							origin: 'generated',
 							contentType: capsule.contentType,
 						},
-						() => updatePivotCacheDefinitionXml(new TextDecoder().decode(content), pivotCache),
+						() => updatePivotCacheDefinitionXml(sourceXml, pivotCache),
 					)
 					plan.addOverride(capsule.partPath, capsule.contentType)
 					if (capsule.relationships.length > 0) {
@@ -1306,6 +1358,11 @@ export function planWriteXlsx(
 					(cache) => cache.partPath === capsule.partPath,
 				)
 				if (slicerCache && isSlicerCacheDefinitionCapsule(capsule)) {
+					const sourceXml = new TextDecoder().decode(content)
+					if (!shouldUpdateSlicerCacheDefinitionXml(sourceXml, slicerCache)) {
+						recordUnchangedCapsule(capsule, owner, content)
+						continue
+					}
 					recordXml(
 						capsule.partPath,
 						{
@@ -1313,7 +1370,7 @@ export function planWriteXlsx(
 							origin: 'generated',
 							contentType: capsule.contentType,
 						},
-						() => updateSlicerCacheDefinitionXml(new TextDecoder().decode(content), slicerCache),
+						() => updateSlicerCacheDefinitionXml(sourceXml, slicerCache),
 					)
 					plan.addOverride(capsule.partPath, capsule.contentType)
 					if (capsule.relationships.length > 0) {
@@ -1821,6 +1878,87 @@ function preservedRelationshipTarget(
 		if (resolvePath(sourcePart, rel.target) === resolvedPartPath) return rel.target
 	}
 	return undefined
+}
+
+type PivotTableInfo = Workbook['pivotTables'][number]
+type PivotCacheInfo = Workbook['pivotCaches'][number]
+type SlicerCacheInfo = Workbook['slicerCaches'][number]
+
+function shouldUpdatePivotTableDefinitionXml(xml: string, pivot: PivotTableInfo): boolean {
+	const parsed = parsePivotTableXml(xml, pivot.partPath, pivot.sheetName)
+	if (!parsed) return true
+	return stableJson(pivotTableWritableState(parsed)) !== stableJson(pivotTableWritableState(pivot))
+}
+
+function pivotTableWritableState(pivot: PivotTableInfo): unknown {
+	return {
+		fields: pivot.fields.map((field) => ({
+			index: field.index,
+			items: (field.items ?? []).map((item) => ({
+				index: item.index,
+				cacheIndex: item.cacheIndex ?? null,
+				itemType: item.itemType ?? null,
+				caption: item.caption ?? null,
+				hidden: item.hidden ?? null,
+				manualFilter: item.manualFilter ?? null,
+				showDetails: item.showDetails ?? null,
+				calculated: item.calculated ?? null,
+				missing: item.missing ?? null,
+				childItems: item.childItems ?? null,
+				expanded: item.expanded ?? null,
+				drillAcrossAttributes: item.drillAcrossAttributes ?? null,
+			})),
+		})),
+		pageFields: pivot.pageFields.map((field) => ({
+			index: field.index,
+			item: field.item ?? null,
+		})),
+	}
+}
+
+function shouldUpdatePivotCacheDefinitionXml(
+	xml: string,
+	cache: PivotCacheInfo,
+	relationships: readonly RelEntry[],
+): boolean {
+	const parsed = parsePivotCacheDefinitionXml(
+		xml,
+		cache.partPath,
+		cache.cacheId,
+		cache.relId,
+		relationships,
+	)
+	if (!parsed) return true
+	return stableJson(pivotCacheWritableState(parsed)) !== stableJson(pivotCacheWritableState(cache))
+}
+
+function pivotCacheWritableState(cache: PivotCacheInfo): unknown {
+	return {
+		sourceSheet: cache.sourceSheet ?? null,
+		sourceRef: cache.sourceRef ?? null,
+		refreshOnLoad: cache.refreshOnLoad ?? null,
+		enableRefresh: cache.enableRefresh ?? null,
+		invalid: cache.invalid ?? null,
+		saveData: cache.saveData ?? null,
+	}
+}
+
+function shouldUpdateSlicerCacheDefinitionXml(xml: string, cache: SlicerCacheInfo): boolean {
+	const parsed = parseSlicerCacheXml(xml, cache.partPath)
+	if (!parsed) return true
+	return (
+		stableJson(slicerCacheWritableState(parsed)) !== stableJson(slicerCacheWritableState(cache))
+	)
+}
+
+function slicerCacheWritableState(cache: SlicerCacheInfo): unknown {
+	return {
+		items: (cache.items ?? []).map((item) => ({
+			index: item.index,
+			selected: item.selected ?? null,
+			noData: item.noData ?? null,
+		})),
+	}
 }
 
 function isPivotCacheDefinitionCapsule(capsule: PreservationCapsule): boolean {

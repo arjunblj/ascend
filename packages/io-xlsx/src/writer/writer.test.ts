@@ -10,6 +10,7 @@ import type { PreservationCapsule } from '../preserve.ts'
 import { readXlsx } from '../reader/index.ts'
 import { writeDenseRowsXlsx, writeDenseRowsXlsxStreaming } from './dense-rows.ts'
 import { planWriteXlsx, writeXlsx, writeXlsxStreaming } from './index.ts'
+import { updatePivotTableDefinitionXml } from './pivot-table.ts'
 
 const S0 = 0 as StyleId
 
@@ -262,6 +263,135 @@ describe('writeXlsx', () => {
 			{ index: 2, itemType: 'default' },
 		])
 		expect(reopened.value.workbook.pivotTables[0]?.pageFields).toEqual([{ index: 0, item: 1 }])
+	})
+
+	it('scopes pivot item rewrites to direct main pivot fields', () => {
+		const pivotTableXml = `<pivotTableDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" name="PivotTable1" cacheId="34">
+  <pivotFields count="3">
+    <pivotField><items count="1"><item x="0"/></items><extLst><ext><x14:pivotField><x14:items><x14:item x="99" h="1"/></x14:items></x14:pivotField></ext></extLst></pivotField>
+    <pivotField><items count="1"><item x="1"/></items></pivotField>
+    <pivotField><items count="1"><item x="2"/></items></pivotField>
+  </pivotFields>
+</pivotTableDefinition>`
+		const updated = updatePivotTableDefinitionXml(pivotTableXml, {
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'Sheet1',
+			name: 'PivotTable1',
+			cacheId: 34,
+			fields: [
+				{ index: 0 },
+				{ index: 1 },
+				{ index: 2, items: [{ index: 0, cacheIndex: 2, manualFilter: true }] },
+			],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [],
+			dataFields: [],
+		})
+
+		expect(updated).toContain('<x14:item x="99" h="1"/>')
+		expect(updated).toContain('<pivotField><items count="1"><item x="1"/></items></pivotField>')
+		expect(updated).toContain(
+			'<pivotField><items count="1"><item x="2" s="1"/></items></pivotField>',
+		)
+	})
+
+	it('preserves unchanged pivot and slicer capsules byte-for-byte', () => {
+		const pivotTableXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<pivotTableDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="PivotTable1" cacheId="34">
+  <pivotFields count="1"><pivotField axis="axisPage" showAll="false"><items count="2"><item h="true" x="0"></item><item t="default"/></items></pivotField></pivotFields>
+  <pageFields count="1"><pageField fld="0"></pageField></pageFields>
+</pivotTableDefinition>`
+		const pivotCacheXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<pivotCacheDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" refreshOnLoad="true" invalid="false" saveData="true">
+  <cacheSource type="worksheet"><worksheetSource sheet="Data" ref="A1:B2"/></cacheSource>
+</pivotCacheDefinition>`
+		const slicerCacheXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<slicerCacheDefinition xmlns="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" name="Slicer_State" sourceName="State">
+  <pivotTables><pivotTable tabId="1" name="PivotTable1"/></pivotTables>
+  <data><tabular pivotCacheId="34"><items count="2"><i s="true" x="0"></i><i x="1" nd="false"/></items></tabular></data>
+</slicerCacheDefinition>`
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Sheet1')
+		wb.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'Sheet1',
+			name: 'PivotTable1',
+			cacheId: 34,
+			fields: [
+				{
+					index: 0,
+					axis: 'axisPage',
+					showAll: false,
+					items: [
+						{ index: 0, cacheIndex: 0, hidden: true },
+						{ index: 1, itemType: 'default' },
+					],
+				},
+			],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [{ index: 0 }],
+			dataFields: [],
+		})
+		wb.pivotCaches.push({
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			cacheId: 34,
+			refreshOnLoad: true,
+			invalid: false,
+			saveData: true,
+			sourceSheet: 'Data',
+			sourceRef: 'A1:B2',
+			fields: [],
+		})
+		wb.slicerCaches.push({
+			partPath: 'xl/slicerCaches/slicerCache1.xml',
+			name: 'Slicer_State',
+			sourceName: 'State',
+			pivotCacheId: 34,
+			pivotTableNames: ['PivotTable1'],
+			items: [
+				{ index: 0, selected: true },
+				{ index: 1, noData: false },
+			],
+		})
+		const capsules: PreservationCapsule[] = [
+			{
+				partPath: 'xl/pivotTables/pivotTable1.xml',
+				contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.pivotTable+xml',
+				relationships: [],
+				content: new TextEncoder().encode(pivotTableXml),
+				anchor: { kind: 'sheet', sheetId: sheet.id, sheetName: 'Sheet1' },
+				relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable',
+			},
+			{
+				partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+				contentType:
+					'application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheDefinition+xml',
+				relationships: [],
+				content: new TextEncoder().encode(pivotCacheXml),
+				anchor: { kind: 'workbook' },
+				relType:
+					'http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheDefinition',
+			},
+			{
+				partPath: 'xl/slicerCaches/slicerCache1.xml',
+				contentType: 'application/vnd.ms-excel.slicerCache+xml',
+				relationships: [],
+				content: new TextEncoder().encode(slicerCacheXml),
+				anchor: { kind: 'workbook' },
+				relType: 'http://schemas.microsoft.com/office/2007/relationships/slicerCache',
+			},
+		]
+
+		const written = writeXlsx(wb, capsules)
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		const decodePart = (path: string) => new TextDecoder().decode(zip[path] ?? new Uint8Array())
+
+		expect(decodePart('xl/pivotTables/pivotTable1.xml')).toBe(pivotTableXml)
+		expect(decodePart('xl/pivotCache/pivotCacheDefinition1.xml')).toBe(pivotCacheXml)
+		expect(decodePart('xl/slicerCaches/slicerCache1.xml')).toBe(slicerCacheXml)
 	})
 
 	it('writes edited drawing text back into preserved drawing XML', () => {

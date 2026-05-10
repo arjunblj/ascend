@@ -113,6 +113,22 @@ interface TextPrefixAggregateBlock {
 	readonly aggregate: RangeAggregateOptimization
 }
 
+interface ScalarIfAggregateFallbackFormula {
+	readonly conditionRef: { row: number; col: number }
+	readonly comparison: '>' | '>=' | '<' | '<=' | '=' | '<>'
+	readonly threshold: number
+	readonly trueRef: { row: number; col: number }
+	readonly fallbackAggregate: RangeAggregateOptimization
+}
+
+interface ScalarIfAggregateFallbackBlock {
+	readonly sheetIndex: number
+	readonly row: number
+	readonly col: number
+	readonly formula: string
+	readonly parsed: ScalarIfAggregateFallbackFormula
+}
+
 interface TailPrefixAggregateResult {
 	readonly value: CellValue
 	readonly state?: RangeAggregateState
@@ -1317,6 +1333,12 @@ export function recalculate(
 		scratch.growingAggregateStateCache.clear()
 		scratch.indexMatchReturnBySource.clear()
 		scratch.indexMatchReturnFormulaCount = 0
+		const scalarIfFast = tryFastFullScalarIfAggregateFallbackTextRecalc(workbook, changed, start)
+		if (scalarIfFast) {
+			clearRangeValueCache()
+			clearCriteriaMatchCache()
+			return scalarIfFast
+		}
 		const fast = tryFastFullPrefixAggregateTextRecalc(workbook, changed, start, scratch)
 		if (fast) {
 			clearRangeValueCache()
@@ -1891,6 +1913,219 @@ function canFastRecalculatePrefixAggregate(
 		source.row >= aggregate.startRow &&
 		source.row <= aggregate.endRow
 	)
+}
+
+function tryFastFullScalarIfAggregateFallbackTextRecalc(
+	workbook: Workbook,
+	changed: string[],
+	start: number,
+): RecalcResult | null {
+	const blocks: ScalarIfAggregateFallbackBlock[] = []
+	const formulaKeys = new Set<CellKey>()
+	for (let sheetIndex = 0; sheetIndex < workbook.sheets.length; sheetIndex++) {
+		const sheet = workbook.sheets[sheetIndex]
+		if (!sheet) continue
+		for (const [row, entries] of sheet.cells.iterateRows()) {
+			for (const [col, cell] of entries) {
+				if (cell.formula === null) {
+					if (cell.formulaInfo !== undefined) return null
+					continue
+				}
+				if (cell.formulaInfo !== undefined) return null
+				const parsed = parseScalarIfAggregateFallbackFormula(cell.formula, sheetIndex)
+				if (!parsed) return null
+				formulaKeys.add(cellKey(sheetIndex, row, col))
+				blocks.push({ sheetIndex, row, col, formula: cell.formula, parsed })
+			}
+		}
+	}
+	if (blocks.length === 0) return null
+	const aggregateCache = new Map<string, CellValue>()
+	const aggregateReadyCache = new Map<string, boolean>()
+	for (const block of blocks) {
+		if (
+			!scalarIfAggregateFallbackSourcesAreReady(workbook, block, formulaKeys, aggregateReadyCache)
+		) {
+			return null
+		}
+	}
+	for (const block of blocks) {
+		const sheet = workbook.sheets[block.sheetIndex]
+		if (!sheet) return null
+		const newValue = evaluateScalarIfAggregateFallback(workbook, block, aggregateCache)
+		if (!newValue) return null
+		const oldValue = sheet.cells.readValue(block.row, block.col)
+		if (valuesEqual(oldValue, newValue)) continue
+		const oldStyleId = sheet.cells.readStyleId(block.row, block.col) ?? DEFAULT_STYLE_ID
+		if (newValue.kind === 'number') {
+			sheet.cells.setNumberResolved(block.row, block.col, newValue.value, block.formula, oldStyleId)
+		} else {
+			sheet.cells.setResolved(block.row, block.col, newValue, block.formula, oldStyleId)
+		}
+		changed.push(cellRefString(workbook, block.sheetIndex, block.row, block.col))
+	}
+	return { changed, errors: [], duration: performance.now() - start }
+}
+
+function parseScalarIfAggregateFallbackFormula(
+	formula: string,
+	sheetIndex: number,
+): ScalarIfAggregateFallbackFormula | null {
+	const text = formula.trim().replace(/^=/, '')
+	const match =
+		/^IF\s*\(\s*([$]?[A-Z]+[$]?\d+)\s*(>=|<=|<>|>|<|=)\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][+-]?\d+)?)\s*,\s*([$]?[A-Z]+[$]?\d+)\s*,\s*([A-Z]+)\s*\(\s*([$]?[A-Z]+[$]?\d+)\s*:\s*([$]?[A-Z]+[$]?\d+)\s*\)\s*\)$/i.exec(
+			text,
+		)
+	if (!match) return null
+	const [, conditionText, comparison, thresholdText, trueText, functionText, startText, endText] =
+		match
+	if (
+		!conditionText ||
+		!comparison ||
+		!thresholdText ||
+		!trueText ||
+		!functionText ||
+		!startText ||
+		!endText
+	) {
+		return null
+	}
+	const conditionRef = parseSimpleCellRef(conditionText, 0, conditionText.length)
+	const trueRef = parseSimpleCellRef(trueText, 0, trueText.length)
+	const startRef = parseSimpleCellRef(startText, 0, startText.length)
+	const endRef = parseSimpleCellRef(endText, 0, endText.length)
+	if (!conditionRef || !trueRef || !startRef || !endRef) return null
+	if (endRef.row < startRef.row || endRef.col < startRef.col) return null
+	const functionName = parseGrowingAggregateFunction(functionText)
+	if (functionName !== 'SUM') return null
+	const threshold = Number(thresholdText)
+	if (!Number.isFinite(threshold)) return null
+	return {
+		conditionRef,
+		comparison: comparison as ScalarIfAggregateFallbackFormula['comparison'],
+		threshold,
+		trueRef,
+		fallbackAggregate: {
+			functionName,
+			sheetIndex,
+			startRow: startRef.row,
+			startCol: startRef.col,
+			endRow: endRef.row,
+			endCol: endRef.col,
+		},
+	}
+}
+
+function scalarIfAggregateFallbackSourcesAreReady(
+	workbook: Workbook,
+	block: ScalarIfAggregateFallbackBlock,
+	formulaKeys: ReadonlySet<CellKey>,
+	aggregateReadyCache: Map<string, boolean>,
+): boolean {
+	const sheet = workbook.sheets[block.sheetIndex]
+	if (!sheet) return false
+	const conditionRef = block.parsed.conditionRef
+	const trueRef = block.parsed.trueRef
+	if (formulaKeys.has(cellKey(block.sheetIndex, conditionRef.row, conditionRef.col))) return false
+	if (formulaKeys.has(cellKey(block.sheetIndex, trueRef.row, trueRef.col))) return false
+	const conditionValue = readRangeAggregateNumericCell(sheet, conditionRef.row, conditionRef.col)
+	if (typeof conditionValue !== 'number') return false
+	const aggregate = block.parsed.fallbackAggregate
+	const aggregateKey = scalarIfAggregateFallbackKey(aggregate)
+	const cached = aggregateReadyCache.get(aggregateKey)
+	if (cached !== undefined) return cached
+	const aggregateSheet = workbook.sheets[aggregate.sheetIndex]
+	if (!aggregateSheet) return false
+	for (let row = aggregate.startRow; row <= aggregate.endRow; row++) {
+		for (let col = aggregate.startCol; col <= aggregate.endCol; col++) {
+			if (formulaKeys.has(cellKey(aggregate.sheetIndex, row, col))) {
+				aggregateReadyCache.set(aggregateKey, false)
+				return false
+			}
+		}
+	}
+	aggregateReadyCache.set(aggregateKey, true)
+	return true
+}
+
+function evaluateScalarIfAggregateFallback(
+	workbook: Workbook,
+	block: ScalarIfAggregateFallbackBlock,
+	aggregateCache: Map<string, CellValue>,
+): CellValue | null {
+	const sheet = workbook.sheets[block.sheetIndex]
+	if (!sheet) return null
+	const conditionValue = readRangeAggregateNumericCell(
+		sheet,
+		block.parsed.conditionRef.row,
+		block.parsed.conditionRef.col,
+	)
+	if (typeof conditionValue !== 'number') return null
+	if (compareScalarIfCondition(conditionValue, block.parsed.comparison, block.parsed.threshold)) {
+		return readScalarFormulaReferenceValue(
+			sheet,
+			block.parsed.trueRef.row,
+			block.parsed.trueRef.col,
+		)
+	}
+	const aggregate = block.parsed.fallbackAggregate
+	const aggregateKey = scalarIfAggregateFallbackKey(aggregate)
+	const cached = aggregateCache.get(aggregateKey)
+	if (cached) return cached
+	const state = scanRangeAggregateState(
+		workbook,
+		aggregate.functionName,
+		aggregate.sheetIndex,
+		aggregate.startRow,
+		aggregate.startCol,
+		aggregate.endRow,
+		aggregate.endCol,
+	)
+	if (!state) return null
+	const value = rangeAggregateStateToValue(aggregate.functionName, state)
+	aggregateCache.set(aggregateKey, value)
+	return value
+}
+
+function readScalarFormulaReferenceValue(
+	sheet: Workbook['sheets'][number],
+	row: number,
+	col: number,
+): CellValue {
+	const value = topLeftScalar(sheet.cells.readValue(row, col))
+	return value.kind === 'empty' ? numberValue(0) : value
+}
+
+function scalarIfAggregateFallbackKey(aggregate: RangeAggregateOptimization): string {
+	return [
+		aggregate.functionName,
+		aggregate.sheetIndex,
+		aggregate.startRow,
+		aggregate.startCol,
+		aggregate.endRow,
+		aggregate.endCol,
+	].join(':')
+}
+
+function compareScalarIfCondition(
+	left: number,
+	comparison: ScalarIfAggregateFallbackFormula['comparison'],
+	right: number,
+): boolean {
+	switch (comparison) {
+		case '>':
+			return left > right
+		case '>=':
+			return left >= right
+		case '<':
+			return left < right
+		case '<=':
+			return left <= right
+		case '=':
+			return left === right
+		case '<>':
+			return left !== right
+	}
 }
 
 function tryFastFullPrefixAggregateTextRecalc(

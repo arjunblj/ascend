@@ -3330,6 +3330,33 @@ describe('large range correctness', () => {
 		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(60))
 	})
 
+	test('full recalc fast path handles scalar IF with SUM fallback', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const aValues = [1, 0, 2, 1]
+		const bValues = [10, 20, 30]
+		for (let row = 0; row < aValues.length; row++) {
+			sheet.cells.set(row, 0, { value: numberValue(aValues[row]), formula: null, styleId: sid })
+			if (row < bValues.length) {
+				sheet.cells.set(row, 1, { value: numberValue(bValues[row]), formula: null, styleId: sid })
+			}
+			sheet.cells.set(row, 2, {
+				value: EMPTY,
+				formula: `IF(A${row + 1}>0,B${row + 1},SUM(B1:B3))`,
+				styleId: sid,
+			})
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(result.changed).toEqual(['Sheet1!C1', 'Sheet1!C2', 'Sheet1!C3', 'Sheet1!C4'])
+		expect(sheet.cells.get(0, 2)?.value).toEqual(numberValue(10))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(numberValue(60))
+		expect(sheet.cells.get(2, 2)?.value).toEqual(numberValue(30))
+		expect(sheet.cells.get(3, 2)?.value).toEqual(numberValue(0))
+	})
+
 	test('compiled IF opcode: missing false branch defaults to FALSE', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

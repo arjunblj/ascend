@@ -1,7 +1,9 @@
 export {
 	type ActiveContentInfo,
 	type ActiveContentKind,
+	type ActiveXControlInfo,
 	cloneActiveContentInfo,
+	type FormControlInfo,
 	type VbaModuleInfo,
 	type VbaModuleKind,
 	type VbaProjectInfo,

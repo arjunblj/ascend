@@ -48,8 +48,12 @@ describe('active content inventory', () => {
   <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/ctrlProp" Target="../ctrlProps/ctrlProp1.xml"/>
 </Relationships>`,
 			'xl/vbaProject.bin': 'macro-bytes',
-			'xl/activeX/activeX1.xml': `<?xml version="1.0"?><ax:ocx xmlns:ax="http://schemas.microsoft.com/office/2006/activeX"/>`,
-			'xl/ctrlProps/ctrlProp1.xml': `<?xml version="1.0"?><formControlPr macro="Module1.Run"/>`,
+			'xl/activeX/activeX1.xml': `<?xml version="1.0"?><ax:ocx ax:classid="{8BD21D40-EC42-11CE-9E0D-00AA006002F3}" ax:persistence="persistStreamInit" r:id="rId1" xmlns:ax="http://schemas.microsoft.com/office/2006/activeX" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/>`,
+			'xl/activeX/_rels/activeX1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.microsoft.com/office/2006/relationships/activeXControlBinary" Target="activeX1.bin"/>
+</Relationships>`,
+			'xl/ctrlProps/ctrlProp1.xml': `<?xml version="1.0"?><formControlPr macro="Module1.Run" fmlaLink="$A$1" fmlaRange="$A$2:$A$4" checked="Checked" dropLines="8"/>`,
 		})
 
 		const result = readXlsx(bytes)
@@ -74,7 +78,15 @@ describe('active content inventory', () => {
 				anchor: 'sheet',
 				sheetName: 'Data',
 				relType: 'http://schemas.microsoft.com/office/2006/relationships/activeXControl',
-				relationshipCount: 0,
+				sourceRelationshipId: 'rId1',
+				relationshipCount: 1,
+				activeX: {
+					classId: '{8BD21D40-EC42-11CE-9E0D-00AA006002F3}',
+					persistence: 'persistStreamInit',
+					relationshipId: 'rId1',
+					binaryRelationshipId: 'rId1',
+					binaryTarget: 'activeX1.bin',
+				},
 			},
 			{
 				kind: 'formControl',
@@ -83,7 +95,15 @@ describe('active content inventory', () => {
 				anchor: 'sheet',
 				sheetName: 'Data',
 				relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/ctrlProp',
+				sourceRelationshipId: 'rId2',
 				relationshipCount: 0,
+				formControl: {
+					macro: 'Module1.Run',
+					linkedCell: '$A$1',
+					listFillRange: '$A$2:$A$4',
+					checked: 'Checked',
+					dropLines: 8,
+				},
 			},
 		])
 		expect(result.value.report.status).toBe('has-preserved')
@@ -135,5 +155,31 @@ describe('active content inventory', () => {
 			{ name: 'testVBA', kind: 'standard' },
 		])
 		expect(JSON.stringify(vbaProject?.vbaProject)).not.toContain('Attribute VB_Name')
+	})
+
+	test('summarizes real LibreOffice ActiveX relationship metadata', () => {
+		const bytes = readFileSync(
+			new URL('../../../../fixtures/xlsx/libreoffice/activex_checkbox.xlsx', import.meta.url),
+		)
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		const activeX = result.value.workbook.activeContent.find(
+			(content) => content.kind === 'activeX',
+		)
+		expect(activeX).toMatchObject({
+			kind: 'activeX',
+			partPath: 'xl/activeX/activeX1.xml',
+			sheetName: 'Sheet1',
+			sourceRelationshipId: 'rId3',
+			activeX: {
+				classId: '{8BD21D40-EC42-11CE-9E0D-00AA006002F3}',
+				persistence: 'persistStreamInit',
+				relationshipId: 'rId1',
+				binaryRelationshipId: 'rId1',
+				binaryTarget: 'activeX1.bin',
+			},
+		})
 	})
 })

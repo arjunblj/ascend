@@ -17,6 +17,7 @@ import type {
 import { ascendError, emptyReport, err, ok } from '@ascend/schema'
 import { normalizeStoredFormulaText } from '../formula-storage.ts'
 import type { PreservationCapsule } from '../preserve.ts'
+import { parseActiveXControlInfo, parseFormControlInfo } from './active-content.ts'
 import { parseChartXml } from './charts.ts'
 import {
 	parseCommentsXml,
@@ -728,6 +729,7 @@ function collectCapsules(
 
 		let anchor: PreservationCapsule['anchor'] = { kind: 'workbook' }
 		let relType: string | undefined
+		let relId: string | undefined
 		const directSheetAnchor = sheetPathToAnchor.get(partPath)
 		if (directSheetAnchor) {
 			anchor = {
@@ -738,14 +740,21 @@ function collectCapsules(
 		}
 
 		const wbRef = wbRelByTarget.get(partPath)
-		if (wbRef) relType = wbRef.type
+		if (wbRef) {
+			relType = wbRef.type
+			relId = wbRef.id
+		}
 		const rootRef = rootRelByTarget.get(partPath)
-		if (rootRef) relType = rootRef.type
+		if (rootRef) {
+			relType = rootRef.type
+			relId = rootRef.id
+		}
 
 		const sheetRef = sheetRelByTarget.get(partPath)
 		if (sheetRef) {
 			anchor = { kind: 'sheet', sheetId: sheetRef.sheetId, sheetName: sheetRef.sheetName }
 			relType = sheetRef.rel.type
+			relId = sheetRef.rel.id
 		}
 
 		const capsuleRelsXml = readPart(archive, getRelsPath(partPath))
@@ -766,6 +775,7 @@ function collectCapsules(
 			anchor,
 		}
 		if (relType) capsule.relType = relType
+		if (relId) capsule.relId = relId
 		capsules.push(capsule)
 	}
 
@@ -891,6 +901,17 @@ function collectActiveContent(
 			kind === 'vbaProject'
 				? summarizeVbaProject(archive.readBytes(capsule.partPath) ?? new Uint8Array())
 				: undefined
+		const activeX =
+			kind === 'activeX'
+				? parseActiveXControlInfo(
+						readXmlMetadataPart(archive, capsule.partPath, capsule.contentType),
+						capsule.relationships,
+					)
+				: undefined
+		const formControl =
+			kind === 'formControl'
+				? parseFormControlInfo(readXmlMetadataPart(archive, capsule.partPath, capsule.contentType))
+				: undefined
 		activeContent.push({
 			kind,
 			partPath: capsule.partPath,
@@ -898,6 +919,9 @@ function collectActiveContent(
 			anchor: capsule.anchor.kind,
 			...(capsule.anchor.kind === 'sheet' ? { sheetName: capsule.anchor.sheetName } : {}),
 			...(capsule.relType ? { relType: capsule.relType } : {}),
+			...(capsule.relId && (kind === 'activeX' || kind === 'formControl')
+				? { sourceRelationshipId: capsule.relId }
+				: {}),
 			relationshipCount: capsule.relationships.length,
 			...(kind === 'vbaProject' && entry ? { byteSize: entry.uncompressedSize } : {}),
 			...(kind === 'vbaProject' ? { opaque: true, executionPolicy: 'blocked' as const } : {}),
@@ -909,9 +933,22 @@ function collectActiveContent(
 					}
 				: {}),
 			...(vbaProject ? { vbaProject } : {}),
+			...(activeX ? { activeX } : {}),
+			...(formControl ? { formControl } : {}),
 		})
 	}
 	return activeContent
+}
+
+function readXmlMetadataPart(
+	archive: ZipArchive,
+	partPath: string,
+	contentType: string,
+): string | undefined {
+	const lowerPath = partPath.toLowerCase()
+	const lowerContentType = contentType.toLowerCase()
+	if (!lowerPath.endsWith('.xml') && !lowerContentType.includes('xml')) return undefined
+	return readPart(archive, partPath)
 }
 
 function collectConnectionParts(

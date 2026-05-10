@@ -651,9 +651,12 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'ActiveX controls',
 		'inspectable',
 		'P1',
-		'Expose control relationship metadata and linked worksheet anchors.',
-		'ActiveX parts are inventoried, preserved, and blocked by the loss audit before writes.',
-		['packages/io-xlsx/src/reader/active-content.test.ts'],
+		'Map VML/object anchors and safe linked-cell behavior while keeping executable control bytes blocked.',
+		'ActiveX parts are inventoried with source relationship IDs, class IDs, persistence mode, control relationship IDs, binary relationship targets, preservation, and loss-audit blocking before writes.',
+		[
+			'packages/io-xlsx/src/reader/active-content.test.ts',
+			'packages/sdk/src/active-content-inventory.test.ts',
+		],
 	),
 	cap(
 		'active.form-controls',
@@ -661,9 +664,12 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'Form controls',
 		'inspectable',
 		'P1',
-		'Expose form control metadata, linked cells, and macro bindings.',
-		'Control property parts are inventoried and preserved; linked behavior is not semantically editable.',
-		['packages/io-xlsx/src/reader/active-content.test.ts'],
+		'Add safe generated control edits and formula-aware linked-cell behavior after broader real fixture coverage.',
+		'Control property parts are inventoried with source relationship IDs, macro bindings, linked-cell formulas, list-fill ranges, checked state, and dropdown line metadata; linked behavior is not semantically editable.',
+		[
+			'packages/io-xlsx/src/reader/active-content.test.ts',
+			'packages/sdk/src/active-content-inventory.test.ts',
+		],
 	),
 	cap(
 		'active.signatures',

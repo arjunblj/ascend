@@ -6,4 +6,5 @@ export interface PreservationCapsule {
 	content?: Uint8Array
 	anchor: { kind: 'workbook' } | { kind: 'sheet'; sheetId: string; sheetName?: string }
 	relType?: string
+	relId?: string
 }

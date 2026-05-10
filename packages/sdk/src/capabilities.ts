@@ -690,13 +690,14 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'connections.query-tables',
 		'connections',
 		'Query tables',
-		'inspectable',
+		'editable',
 		'P1',
-		'Add safe refresh metadata edits and table-output impact planning.',
-		'Query table parts are inventoried with sheet anchors, connection IDs, refresh flags, and preservation/loss-audit features; query execution remains preserve-first.',
+		'Add query execution adapters and table-output impact planning.',
+		'Query table parts are inventoried with sheet anchors, connection IDs, refresh flags, and preservation/loss-audit features; setConnectionRefresh edits refreshOnLoad, saved-data policy, and refreshedVersion without executing the external query.',
 		[
 			'packages/io-xlsx/src/reader/connections.test.ts',
 			'packages/sdk/src/connection-inventory.test.ts',
+			'packages/engine/src/operations.test.ts',
 		],
 	),
 	cap(

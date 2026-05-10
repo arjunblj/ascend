@@ -2912,6 +2912,11 @@ describe('capabilities registry', () => {
 		)
 		expect(refreshMetadata?.status).toBe('editable')
 		expect(refreshMetadata?.tests).toContain('packages/sdk/src/connection-inventory.test.ts')
+		const queryTables = capabilities.find(
+			(capability) => capability.id === 'connections.query-tables',
+		)
+		expect(queryTables?.status).toBe('editable')
+		expect(queryTables?.tests).toContain('packages/sdk/src/connection-inventory.test.ts')
 		const textBoxes = capabilities.find((capability) => capability.id === 'visuals.text-boxes')
 		expect(textBoxes?.status).toBe('editable')
 		expect(textBoxes?.tests).toContain('packages/sdk/src/visual-inventory.test.ts')

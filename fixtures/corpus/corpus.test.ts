@@ -195,3 +195,60 @@ for (const entry of CORPUS) {
 		})
 	})
 }
+
+describe('corpus: pivot formatting metadata', () => {
+	const formulasAndPivots = loadCorpusFile('ms-excel-formulas-and-pivot-tables.xlsx')
+	const dashboard = loadCorpusFile('excel-dashboard-v2.xlsx')
+
+	it.skipIf(!formulasAndPivots)(
+		'exposes pivot format areas from ms-excel-formulas-and-pivot-tables.xlsx',
+		() => {
+			const result = readXlsx(requireBytes(formulasAndPivots))
+			if (!result.ok) throw new Error(result.error.message)
+			const pivot = result.value.workbook.pivotTables.find((entry) => entry.name === 'PivotTable8')
+			expect(pivot?.options).toMatchObject({ dataPosition: 0, chartFormat: 1 })
+			expect(pivot?.formats).toEqual([
+				{
+					index: 0,
+					dxfId: 0,
+					area: {
+						outline: false,
+						collapsedLevelsAreSubtotals: true,
+						fieldPosition: 0,
+						references: [
+							{
+								index: 0,
+								field: 4294967294,
+								itemCount: 1,
+								selected: false,
+								items: [{ index: 0, item: 1 }],
+							},
+							{ index: 1, field: 5, itemCount: 0, selected: false, items: [] },
+						],
+					},
+				},
+			])
+		},
+	)
+
+	it.skipIf(!dashboard)('exposes pivot formats without explicit references', () => {
+		const result = readXlsx(requireBytes(dashboard))
+		if (!result.ok) throw new Error(result.error.message)
+		const pivot = result.value.workbook.pivotTables.find((entry) => entry.name === 'PivotTable13')
+		expect(pivot?.options).toMatchObject({
+			fillDownLabelsDefault: true,
+			enabledSubtotalsDefault: false,
+			subtotalsOnTopDefault: false,
+		})
+		expect(pivot?.fields[0]?.fillDownLabels).toBe(true)
+		expect(pivot?.formats?.[0]).toEqual({
+			index: 0,
+			dxfId: 62,
+			area: {
+				outline: false,
+				collapsedLevelsAreSubtotals: true,
+				fieldPosition: 0,
+			},
+		})
+	})
+})

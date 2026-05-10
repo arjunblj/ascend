@@ -15,7 +15,7 @@ describe('pivot inventory', () => {
 	test('parses page-field selections and pivot-field item flags', () => {
 		const parsed = parsePivotTableXml(
 			`<?xml version="1.0"?>
-<pivotTableDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="FilteredPivot" cacheId="4">
+<pivotTableDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="FilteredPivot" cacheId="4" dataPosition="0" chartFormat="1">
   <pivotFields count="1">
     <pivotField axis="axisPage" numFmtId="14" multipleItemSelectionAllowed="1" showAll="0">
       <items count="3">
@@ -23,9 +23,21 @@ describe('pivot inventory', () => {
         <item s="1" sd="0" f="1" m="1" c="1" d="1" e="0" n="Manual" x="5"/>
         <item t="default"/>
       </items>
+      <extLst><ext uri="{2946ED86-A175-432a-8AC1-64E0C546D7DE}"><x14:pivotField xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" fillDownLabels="1"/></ext></extLst>
     </pivotField>
   </pivotFields>
   <pageFields count="1"><pageField fld="0" item="5" hier="-1" name="[Date]" cap="Date"/></pageFields>
+  <formats count="1">
+    <format dxfId="7" action="format">
+      <pivotArea type="button" axis="axisRow" field="0" fieldPosition="2" dataOnly="0" labelOnly="1" grandRow="0" grandCol="1" cacheIndex="0" outline="0" collapsedLevelsAreSubtotals="1">
+        <references count="1"><reference field="0" count="1" selected="0"><x v="5"/></reference></references>
+      </pivotArea>
+    </format>
+  </formats>
+  <extLst>
+    <ext uri="{962EF5D1-5CA2-4c93-8EF4-DBF5C05439D2}"><x14:pivotTableDefinition xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" fillDownLabelsDefault="1" hideValuesRow="1"/></ext>
+    <ext uri="{747A6164-185A-40DC-8AA5-F01512510D54}"><xpdl:pivotTableDefinition16 xmlns:xpdl="http://schemas.microsoft.com/office/spreadsheetml/2016/pivotdefaultlayout" EnabledSubtotalsDefault="0" SubtotalsOnTopDefault="1"/></ext>
+  </extLst>
 </pivotTableDefinition>`,
 			'xl/pivotTables/pivotTable1.xml',
 			'PivotSheet',
@@ -36,6 +48,14 @@ describe('pivot inventory', () => {
 			sheetName: 'PivotSheet',
 			name: 'FilteredPivot',
 			cacheId: 4,
+			options: {
+				dataPosition: 0,
+				chartFormat: 1,
+				hideValuesRow: true,
+				fillDownLabelsDefault: true,
+				enabledSubtotalsDefault: false,
+				subtotalsOnTopDefault: true,
+			},
 			fields: [
 				{
 					index: 0,
@@ -43,6 +63,7 @@ describe('pivot inventory', () => {
 					numFmtId: 14,
 					multipleItemSelectionAllowed: true,
 					showAll: false,
+					fillDownLabels: true,
 					items: [
 						{ index: 0, cacheIndex: 2, hidden: true },
 						{
@@ -65,6 +86,35 @@ describe('pivot inventory', () => {
 			columnFields: [],
 			pageFields: [{ index: 0, item: 5, hierarchy: -1, name: '[Date]', caption: 'Date' }],
 			dataFields: [],
+			formats: [
+				{
+					index: 0,
+					dxfId: 7,
+					action: 'format',
+					area: {
+						type: 'button',
+						axis: 'axisRow',
+						field: 0,
+						fieldPosition: 2,
+						dataOnly: false,
+						labelOnly: true,
+						grandRow: false,
+						grandCol: true,
+						cacheIndex: false,
+						outline: false,
+						collapsedLevelsAreSubtotals: true,
+						references: [
+							{
+								index: 0,
+								field: 0,
+								itemCount: 1,
+								selected: false,
+								items: [{ index: 0, item: 5 }],
+							},
+						],
+					},
+				},
+			],
 		})
 	})
 

@@ -147,6 +147,16 @@ describe('Workbook.clone', () => {
 			dataFields: [{ fieldIndex: 1, showDataAs: 'percent', baseField: 0, baseItem: 2 }],
 			rowItems: [{ index: 0, fieldItems: [{ index: 0, item: 1 }] }],
 			columnItems: [{ index: 0, dataFieldIndex: 1, fieldItems: [{ index: 0, item: 2 }] }],
+			formats: [
+				{
+					index: 0,
+					dxfId: 3,
+					area: {
+						fieldPosition: 0,
+						references: [{ index: 0, field: 1, itemCount: 1, items: [{ index: 0, item: 2 }] }],
+					},
+				},
+			],
 		})
 
 		const clone = wb.clone()
@@ -160,6 +170,9 @@ describe('Workbook.clone', () => {
 		const item = clone.pivotTables[0]?.fields[0]?.items?.[0]
 		const rowItem = clone.pivotTables[0]?.rowItems?.[0]?.fieldItems[0]
 		const columnItem = clone.pivotTables[0]?.columnItems?.[0]?.fieldItems[0]
+		const format = clone.pivotTables[0]?.formats?.[0]
+		const formatReference = format?.area?.references?.[0]
+		const formatReferenceItem = formatReference?.items[0]
 		expect(pivotLocation).toBeDefined()
 		expect(pivotOptions).toBeDefined()
 		expect(pivotStyle).toBeDefined()
@@ -170,6 +183,9 @@ describe('Workbook.clone', () => {
 		expect(item).toBeDefined()
 		expect(rowItem).toBeDefined()
 		expect(columnItem).toBeDefined()
+		expect(format).toBeDefined()
+		expect(formatReference).toBeDefined()
+		expect(formatReferenceItem).toBeDefined()
 		if (
 			!pivotLocation ||
 			!pivotOptions ||
@@ -180,7 +196,10 @@ describe('Workbook.clone', () => {
 			!groupItem ||
 			!item ||
 			!rowItem ||
-			!columnItem
+			!columnItem ||
+			!format ||
+			!formatReference ||
+			!formatReferenceItem
 		) {
 			return
 		}
@@ -195,12 +214,18 @@ describe('Workbook.clone', () => {
 		;(item as { hidden: boolean }).hidden = false
 		;(rowItem as { item: number }).item = 4
 		;(columnItem as { item: number }).item = 5
+		;(format as { dxfId: number }).dxfId = 4
+		;(formatReference as { itemCount: number }).itemCount = 2
+		;(formatReferenceItem as { item: number }).item = 6
 
 		expect(wb.pivotTables[0]?.location?.ref).toBe('A3:D20')
 		expect(wb.pivotTables[0]?.options?.updatedVersion).toBe(7)
 		expect(wb.pivotTables[0]?.style?.name).toBe('PivotStyleLight16')
 		expect(wb.pivotTables[0]?.rowItems?.[0]?.fieldItems[0]?.item).toBe(1)
 		expect(wb.pivotTables[0]?.columnItems?.[0]?.fieldItems[0]?.item).toBe(2)
+		expect(wb.pivotTables[0]?.formats?.[0]?.dxfId).toBe(3)
+		expect(wb.pivotTables[0]?.formats?.[0]?.area?.references?.[0]?.itemCount).toBe(1)
+		expect(wb.pivotTables[0]?.formats?.[0]?.area?.references?.[0]?.items[0]?.item).toBe(2)
 		expect(wb.pivotCaches[0]?.fields[0]?.sharedItemsInfo?.count).toBe(1)
 		expect(wb.pivotCaches[0]?.fields[0]?.sharedItems?.[0]?.value).toBe('West')
 		expect(wb.pivotCaches[0]?.fields[0]?.fieldGroup?.discreteItems?.[0]?.value).toBe(1)

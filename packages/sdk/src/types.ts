@@ -161,6 +161,7 @@ export interface PivotTableInfo {
 	readonly dataFields: readonly PivotDataFieldInfo[]
 	readonly rowItems?: readonly PivotAxisItemInfo[]
 	readonly columnItems?: readonly PivotAxisItemInfo[]
+	readonly formats?: readonly PivotFormatInfo[]
 }
 
 export interface PivotTableLocationInfo {
@@ -200,9 +201,14 @@ export interface PivotTableOptionsInfo {
 	readonly createdVersion?: number
 	readonly updatedVersion?: number
 	readonly minRefreshableVersion?: number
+	readonly dataPosition?: number
+	readonly chartFormat?: number
 	readonly dataCaption?: string
 	readonly rowHeaderCaption?: string
 	readonly colHeaderCaption?: string
+	readonly fillDownLabelsDefault?: boolean
+	readonly enabledSubtotalsDefault?: boolean
+	readonly subtotalsOnTopDefault?: boolean
 }
 
 export interface PivotTableStyleInfo {
@@ -418,6 +424,7 @@ export interface PivotFieldInfo {
 	readonly dragToCol?: boolean
 	readonly dragToPage?: boolean
 	readonly includeNewItemsInFilter?: boolean
+	readonly fillDownLabels?: boolean
 	readonly itemPageCount?: number
 	readonly sortType?: string
 	readonly items?: readonly PivotFieldItemInfo[]
@@ -467,6 +474,36 @@ export interface PivotAxisItemInfo {
 export interface PivotAxisFieldItemInfo {
 	readonly index: number
 	readonly item?: number
+}
+
+export interface PivotFormatInfo {
+	readonly index: number
+	readonly dxfId?: number
+	readonly action?: string
+	readonly area?: PivotAreaInfo
+}
+
+export interface PivotAreaInfo {
+	readonly type?: string
+	readonly axis?: string
+	readonly field?: number
+	readonly fieldPosition?: number
+	readonly dataOnly?: boolean
+	readonly labelOnly?: boolean
+	readonly grandRow?: boolean
+	readonly grandCol?: boolean
+	readonly cacheIndex?: boolean
+	readonly outline?: boolean
+	readonly collapsedLevelsAreSubtotals?: boolean
+	readonly references?: readonly PivotAreaReferenceInfo[]
+}
+
+export interface PivotAreaReferenceInfo {
+	readonly index: number
+	readonly field?: number
+	readonly itemCount?: number
+	readonly selected?: boolean
+	readonly items: readonly PivotAxisFieldItemInfo[]
 }
 
 export interface SlicerCacheInfo {

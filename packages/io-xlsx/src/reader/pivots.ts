@@ -1,4 +1,6 @@
 import type {
+	PivotAreaInfo,
+	PivotAreaReferenceInfo,
 	PivotAxisItemInfo,
 	PivotCacheFieldGroupInfo,
 	PivotCacheFieldInfo,
@@ -9,6 +11,7 @@ import type {
 	PivotFieldInfo,
 	PivotFieldItemInfo,
 	PivotFieldReference,
+	PivotFormatInfo,
 	PivotTableInfo,
 	PivotTableLocationInfo,
 	PivotTableOptionsInfo,
@@ -136,6 +139,7 @@ export function parsePivotTableXml(
 		dataFields: readonly PivotDataFieldInfo[]
 		rowItems?: readonly PivotAxisItemInfo[]
 		columnItems?: readonly PivotAxisItemInfo[]
+		formats?: readonly PivotFormatInfo[]
 	} = {
 		partPath,
 		sheetName,
@@ -149,6 +153,8 @@ export function parsePivotTableXml(
 	if (rowItems.length > 0) parsed.rowItems = rowItems
 	const columnItems = parseAxisItems(childNode(root, 'colItems'))
 	if (columnItems.length > 0) parsed.columnItems = columnItems
+	const formats = parsePivotFormats(childNode(root, 'formats'))
+	if (formats.length > 0) parsed.formats = formats
 	const name = attr(root, 'name')
 	if (name) parsed.name = name
 	const cacheId = numAttr(root, 'cacheId')
@@ -214,9 +220,14 @@ function parsePivotTableOptions(root: XmlNode): PivotTableOptionsInfo | undefine
 		createdVersion?: number
 		updatedVersion?: number
 		minRefreshableVersion?: number
+		dataPosition?: number
+		chartFormat?: number
 		dataCaption?: string
 		rowHeaderCaption?: string
 		colHeaderCaption?: string
+		fillDownLabelsDefault?: boolean
+		enabledSubtotalsDefault?: boolean
+		subtotalsOnTopDefault?: boolean
 	} = {}
 	setBoolIfDefined(parsed, 'applyAlignmentFormats', boolAttr(root, 'applyAlignmentFormats'))
 	setBoolIfDefined(parsed, 'applyBorderFormats', boolAttr(root, 'applyBorderFormats'))
@@ -245,12 +256,31 @@ function parsePivotTableOptions(root: XmlNode): PivotTableOptionsInfo | undefine
 	setNumberIfDefined(parsed, 'createdVersion', numAttr(root, 'createdVersion'))
 	setNumberIfDefined(parsed, 'updatedVersion', numAttr(root, 'updatedVersion'))
 	setNumberIfDefined(parsed, 'minRefreshableVersion', numAttr(root, 'minRefreshableVersion'))
+	setNumberIfDefined(parsed, 'dataPosition', numAttr(root, 'dataPosition'))
+	setNumberIfDefined(parsed, 'chartFormat', numAttr(root, 'chartFormat'))
 	setStringIfDefined(parsed, 'dataCaption', attr(root, 'dataCaption'))
 	setStringIfDefined(parsed, 'rowHeaderCaption', attr(root, 'rowHeaderCaption'))
 	setStringIfDefined(parsed, 'colHeaderCaption', attr(root, 'colHeaderCaption'))
 	for (const ext of childNodes(childNode(root, 'extLst'), 'ext')) {
 		for (const extPivotDefinition of childNodes(ext, 'pivotTableDefinition')) {
 			setBoolIfDefined(parsed, 'hideValuesRow', boolAttr(extPivotDefinition, 'hideValuesRow'))
+			setBoolIfDefined(
+				parsed,
+				'fillDownLabelsDefault',
+				boolAttr(extPivotDefinition, 'fillDownLabelsDefault'),
+			)
+		}
+		for (const extPivotDefinition of childNodes(ext, 'pivotTableDefinition16')) {
+			setBoolIfDefined(
+				parsed,
+				'enabledSubtotalsDefault',
+				boolAttr(extPivotDefinition, 'EnabledSubtotalsDefault'),
+			)
+			setBoolIfDefined(
+				parsed,
+				'subtotalsOnTopDefault',
+				boolAttr(extPivotDefinition, 'SubtotalsOnTopDefault'),
+			)
 		}
 	}
 	return Object.keys(parsed).length > 0 ? (parsed as PivotTableOptionsInfo) : undefined
@@ -430,6 +460,7 @@ function parsePivotFields(root: XmlNode): PivotFieldInfo[] {
 			dragToCol?: boolean
 			dragToPage?: boolean
 			includeNewItemsInFilter?: boolean
+			fillDownLabels?: boolean
 			itemPageCount?: number
 			sortType?: string
 			items?: readonly PivotFieldItemInfo[]
@@ -453,6 +484,11 @@ function parsePivotFields(root: XmlNode): PivotFieldInfo[] {
 		setBoolIfDefined(parsed, 'dragToCol', boolAttr(node, 'dragToCol'))
 		setBoolIfDefined(parsed, 'dragToPage', boolAttr(node, 'dragToPage'))
 		setBoolIfDefined(parsed, 'includeNewItemsInFilter', boolAttr(node, 'includeNewItemsInFilter'))
+		for (const ext of childNodes(childNode(node, 'extLst'), 'ext')) {
+			for (const extPivotField of childNodes(ext, 'pivotField')) {
+				setBoolIfDefined(parsed, 'fillDownLabels', boolAttr(extPivotField, 'fillDownLabels'))
+			}
+		}
 		setNumberIfDefined(parsed, 'itemPageCount', numAttr(node, 'itemPageCount'))
 		setStringIfDefined(parsed, 'sortType', attr(node, 'sortType'))
 		const items = parsePivotFieldItems(node)
@@ -564,6 +600,81 @@ function parseAxisItems(parent: XmlNode | undefined): PivotAxisItemInfo[] {
 		setStringIfDefined(parsed, 'itemType', attr(node, 't'))
 		setNumberIfDefined(parsed, 'repeatedItemCount', numAttr(node, 'r'))
 		setNumberIfDefined(parsed, 'dataFieldIndex', numAttr(node, 'i'))
+		return parsed
+	})
+}
+
+function parsePivotFormats(parent: XmlNode | undefined): PivotFormatInfo[] {
+	return childNodes(parent, 'format').map((node, index) => {
+		const parsed: {
+			index: number
+			dxfId?: number
+			action?: string
+			area?: PivotAreaInfo
+		} = { index }
+		setNumberIfDefined(parsed, 'dxfId', numAttr(node, 'dxfId'))
+		setStringIfDefined(parsed, 'action', attr(node, 'action'))
+		const area = parsePivotArea(childNode(node, 'pivotArea'))
+		if (area) parsed.area = area
+		return parsed
+	})
+}
+
+function parsePivotArea(area: XmlNode | undefined): PivotAreaInfo | undefined {
+	if (!area) return undefined
+	const parsed: {
+		type?: string
+		axis?: string
+		field?: number
+		fieldPosition?: number
+		dataOnly?: boolean
+		labelOnly?: boolean
+		grandRow?: boolean
+		grandCol?: boolean
+		cacheIndex?: boolean
+		outline?: boolean
+		collapsedLevelsAreSubtotals?: boolean
+		references?: readonly PivotAreaReferenceInfo[]
+	} = {}
+	setStringIfDefined(parsed, 'type', attr(area, 'type'))
+	setStringIfDefined(parsed, 'axis', attr(area, 'axis'))
+	setNumberIfDefined(parsed, 'field', numAttr(area, 'field'))
+	setNumberIfDefined(parsed, 'fieldPosition', numAttr(area, 'fieldPosition'))
+	setBoolIfDefined(parsed, 'dataOnly', boolAttr(area, 'dataOnly'))
+	setBoolIfDefined(parsed, 'labelOnly', boolAttr(area, 'labelOnly'))
+	setBoolIfDefined(parsed, 'grandRow', boolAttr(area, 'grandRow'))
+	setBoolIfDefined(parsed, 'grandCol', boolAttr(area, 'grandCol'))
+	setBoolIfDefined(parsed, 'cacheIndex', boolAttr(area, 'cacheIndex'))
+	setBoolIfDefined(parsed, 'outline', boolAttr(area, 'outline'))
+	setBoolIfDefined(
+		parsed,
+		'collapsedLevelsAreSubtotals',
+		boolAttr(area, 'collapsedLevelsAreSubtotals'),
+	)
+	const references = parsePivotAreaReferences(childNode(area, 'references'))
+	if (references.length > 0) parsed.references = references
+	return Object.keys(parsed).length > 0 ? parsed : undefined
+}
+
+function parsePivotAreaReferences(parent: XmlNode | undefined): PivotAreaReferenceInfo[] {
+	return childNodes(parent, 'reference').map((node, index) => {
+		const parsed: {
+			index: number
+			field?: number
+			itemCount?: number
+			selected?: boolean
+			items: readonly { readonly index: number; readonly item?: number }[]
+		} = {
+			index,
+			items: childNodes(node, 'x').map((itemNode, itemIndex) => {
+				const item: { index: number; item?: number } = { index: itemIndex }
+				setNumberIfDefined(item, 'item', numAttr(itemNode, 'v'))
+				return item
+			}),
+		}
+		setNumberIfDefined(parsed, 'field', numAttr(node, 'field'))
+		setNumberIfDefined(parsed, 'itemCount', numAttr(node, 'count'))
+		setBoolIfDefined(parsed, 'selected', boolAttr(node, 'selected'))
 		return parsed
 	})
 }

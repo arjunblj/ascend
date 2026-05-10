@@ -504,7 +504,15 @@ describe('roundtrip fidelity', () => {
 
 	test('comments', () => {
 		const s = sheetAt(0)
-		expect(s.comments.get('A1')).toEqual({ text: 'Student name', author: 'Teacher' })
+		expect(s.comments.get('A1')).toMatchObject({
+			text: 'Student name',
+			author: 'Teacher',
+			legacyDrawing: {
+				row: 0,
+				column: 0,
+				visible: false,
+			},
+		})
 		expect(s.comments.get('B1')?.text).toBe('Exam score out of 100')
 	})
 

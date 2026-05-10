@@ -28,6 +28,7 @@ import {
 	REL_MACROSHEET,
 	REL_PIVOT_CACHE_DEFINITION,
 	REL_PIVOT_TABLE,
+	REL_QUERY_TABLE,
 	REL_SHARED_STRINGS,
 	REL_SHEET_METADATA,
 	REL_STYLES,
@@ -1028,7 +1029,13 @@ export function planWriteXlsx(
 						: undefined
 					if (
 						tableCapsuleContent &&
-						canPreserveTableCapsule(table, tableCapsuleContent, sheet.id)
+						canPreserveTableCapsule(
+							table,
+							tableCapsuleContent,
+							sheet.id,
+							tablePartPath,
+							tableCapsule?.relationships,
+						)
 					) {
 						recordBytes(
 							tablePartPath,
@@ -1048,6 +1055,21 @@ export function planWriteXlsx(
 								contentType: tableContentType,
 							},
 							() => buildTableXml(table, nextGeneratedTableNumber),
+						)
+					}
+					const tablePartRelationships = buildTablePartRelationships(
+						table,
+						tableCapsule,
+						tablePartPath,
+					)
+					if (tablePartRelationships.length > 0) {
+						recordXml(
+							getRelsPath(tablePartPath),
+							{
+								owner: { kind: 'sheet', sheetName: sheet.name },
+								origin: tableCapsule ? 'capsule' : 'generated',
+							},
+							() => buildRelsXml(tablePartRelationships),
 						)
 					}
 					plan.addOverride(tablePartPath, tableContentType)
@@ -1749,8 +1771,17 @@ function resolveCapsuleOwner(
 	return sheetName ? { kind: 'sheet', sheetName } : null
 }
 
-function canPreserveTableCapsule(table: Table, content: Uint8Array, sheetId: SheetId): boolean {
-	const parsed = parseTable(new TextDecoder().decode(content), sheetId)
+function canPreserveTableCapsule(
+	table: Table,
+	content: Uint8Array,
+	sheetId: SheetId,
+	tablePath?: string,
+	relationships: readonly RelEntry[] = [],
+): boolean {
+	const parsed = parseTable(new TextDecoder().decode(content), sheetId, {
+		...(tablePath ? { tablePath } : {}),
+		relationships,
+	})
 	return parsed ? tablesHaveSameWritableModel(table, parsed) : false
 }
 
@@ -1760,6 +1791,9 @@ function tablesHaveSameWritableModel(left: Table, right: Table): boolean {
 		left.sheetId === right.sheetId &&
 		left.hasHeaders === right.hasHeaders &&
 		left.hasTotals === right.hasTotals &&
+		(left.tableType ?? null) === (right.tableType ?? null) &&
+		(left.insertRow ?? null) === (right.insertRow ?? null) &&
+		(left.insertRowShift ?? null) === (right.insertRowShift ?? null) &&
 		(left.dxfId ?? null) === (right.dxfId ?? null) &&
 		(left.headerRowDxfId ?? null) === (right.headerRowDxfId ?? null) &&
 		(left.dataDxfId ?? null) === (right.dataDxfId ?? null) &&
@@ -1769,7 +1803,8 @@ function tablesHaveSameWritableModel(left: Table, right: Table): boolean {
 		tableColumnsEqual(left.columns, right.columns) &&
 		stableJson(left.autoFilter) === stableJson(right.autoFilter) &&
 		stableJson(left.sortState) === stableJson(right.sortState) &&
-		stableJson(left.tableStyleInfo) === stableJson(right.tableStyleInfo)
+		stableJson(left.tableStyleInfo) === stableJson(right.tableStyleInfo) &&
+		stableJson(left.queryTable) === stableJson(right.queryTable)
 	)
 }
 
@@ -1793,11 +1828,14 @@ function tableColumnsEqual(
 		if (!leftColumn || !rightColumn) return false
 		if (
 			(leftColumn.id ?? null) !== (rightColumn.id ?? null) ||
+			(leftColumn.uniqueName ?? null) !== (rightColumn.uniqueName ?? null) ||
 			leftColumn.name !== rightColumn.name ||
 			(leftColumn.formula ?? null) !== (rightColumn.formula ?? null) ||
 			(leftColumn.totalsRowFunction ?? null) !== (rightColumn.totalsRowFunction ?? null) ||
 			(leftColumn.totalsRowFormula ?? null) !== (rightColumn.totalsRowFormula ?? null) ||
 			(leftColumn.totalsRowLabel ?? null) !== (rightColumn.totalsRowLabel ?? null) ||
+			(leftColumn.queryTableFieldId ?? null) !== (rightColumn.queryTableFieldId ?? null) ||
+			(leftColumn.dataCellStyle ?? null) !== (rightColumn.dataCellStyle ?? null) ||
 			(leftColumn.dataDxfId ?? null) !== (rightColumn.dataDxfId ?? null) ||
 			(leftColumn.headerRowDxfId ?? null) !== (rightColumn.headerRowDxfId ?? null) ||
 			(leftColumn.totalsRowDxfId ?? null) !== (rightColumn.totalsRowDxfId ?? null)
@@ -1806,6 +1844,33 @@ function tableColumnsEqual(
 		}
 	}
 	return true
+}
+
+function buildTablePartRelationships(
+	table: Table,
+	capsule: PreservationCapsule | undefined,
+	tablePartPath: string,
+): readonly RelEntry[] {
+	const relationships = [...(capsule?.relationships ?? [])]
+	if (!table.queryTable) return relationships
+
+	const queryTableRel: RelEntry = {
+		id: table.queryTable.relationshipId,
+		type: table.queryTable.relationshipType || REL_QUERY_TABLE,
+		target: table.queryTable.targetMode
+			? table.queryTable.target
+			: computeRelativePath(partDir(tablePartPath), table.queryTable.partPath),
+		...(table.queryTable.targetMode ? { targetMode: table.queryTable.targetMode } : {}),
+	}
+	const index = relationships.findIndex(
+		(rel) => rel.id === queryTableRel.id || rel.type === REL_QUERY_TABLE,
+	)
+	if (index >= 0) {
+		relationships[index] = queryTableRel
+	} else {
+		relationships.push(queryTableRel)
+	}
+	return relationships
 }
 
 function stableJson(value: unknown): string {
@@ -2363,4 +2428,9 @@ function computeRelativePath(fromDir: string, toPath: string): string {
 	const ups = from.length - common
 	const rest = to.slice(common)
 	return '../'.repeat(ups) + rest.join('/')
+}
+
+function partDir(partPath: string): string {
+	const index = partPath.lastIndexOf('/')
+	return index >= 0 ? partPath.slice(0, index + 1) : ''
 }

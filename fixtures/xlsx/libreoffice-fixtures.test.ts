@@ -157,6 +157,90 @@ describe('LibreOffice XLSX fixture corpus', () => {
 		})
 	})
 
+	test('surfaces and round-trips LibreOffice query table relationships', () => {
+		const initial = readXlsx(loadFixture('TableEmptyHeaders.xlsx'))
+		expectOk(initial)
+
+		const sheet = initial.value.workbook.sheets.find((entry) => entry.name === 'BTC')
+		const table = sheet?.tables.find((entry) => entry.name === 'Bitcoin')
+		expect(table).toMatchObject({
+			name: 'Bitcoin',
+			tableType: 'queryTable',
+			ref: { start: { row: 0, col: 0 }, end: { row: 15, col: 1 } },
+			autoFilter: { ref: 'A1:B16' },
+			tableStyleInfo: { name: 'TableStyleMedium7' },
+			queryTable: {
+				relationshipId: 'rId1',
+				partPath: 'xl/queryTables/queryTable1.xml',
+				relationshipType:
+					'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
+				target: '../queryTables/queryTable1.xml',
+			},
+		})
+		expect(table?.columns).toEqual([
+			expect.objectContaining({
+				id: 3,
+				uniqueName: '3',
+				name: 'Column1',
+				queryTableFieldId: 1,
+				dataDxfId: 1,
+			}),
+			expect.objectContaining({
+				id: 2,
+				uniqueName: '2',
+				name: 'Column2',
+				queryTableFieldId: 2,
+				dataDxfId: 0,
+			}),
+		])
+
+		const written = writeXlsx(initial.value.workbook, initial.value.capsules, {
+			dirtySheetNames: ['BTC'],
+		})
+		expectOk(written)
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		const reopenedTable = reopened.value.workbook.sheets
+			.find((entry) => entry.name === 'BTC')
+			?.tables.find((entry) => entry.name === 'Bitcoin')
+		expect(reopenedTable?.queryTable).toMatchObject({
+			relationshipId: 'rId1',
+			partPath: 'xl/queryTables/queryTable1.xml',
+		})
+		expect(reopenedTable?.columns[0]).toMatchObject({
+			uniqueName: '3',
+			queryTableFieldId: 1,
+		})
+	})
+
+	test('captures LibreOffice table total-row style metadata', () => {
+		const initial = readXlsx(loadFixture('totalsRowFunction.xlsx'))
+		expectOk(initial)
+
+		const table = initial.value.workbook.sheets[0]?.tables.find(
+			(entry) => entry.name === 'PresentPlanner',
+		)
+		expect(table).toMatchObject({
+			hasTotals: true,
+			ref: { start: { row: 1, col: 1 }, end: { row: 6, col: 6 } },
+			tableStyleInfo: { name: 'Present planner table' },
+		})
+		expect(table?.columns.map((column) => column.dataCellStyle)).toEqual([
+			'Date',
+			'Normal',
+			'Normal',
+			'Normal',
+			'Amount',
+			'Notes',
+		])
+		expect(table?.columns[4]).toMatchObject({
+			name: 'HOW MUCH',
+			totalsRowFunction: 'sum',
+			dataDxfId: 1,
+			totalsRowDxfId: 2,
+		})
+	})
+
 	test('preserves LibreOffice pivot caches that intentionally omit cache records', () => {
 		const initial = readXlsx(
 			loadFixture(

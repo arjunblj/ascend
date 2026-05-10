@@ -27,6 +27,11 @@ export function buildTableXml(table: Table, tableNumber: number): string {
 		`headerRowCount="${table.hasHeaders ? 1 : 0}"`,
 		`totalsRowCount="${table.hasTotals ? 1 : 0}"`,
 	]
+	if (table.tableType) attrs.push(`tableType="${escapeXml(table.tableType)}"`)
+	if (table.insertRow !== undefined) attrs.push(`insertRow="${table.insertRow ? '1' : '0'}"`)
+	if (table.insertRowShift !== undefined) {
+		attrs.push(`insertRowShift="${table.insertRowShift ? '1' : '0'}"`)
+	}
 	if (table.dxfId !== undefined) attrs.push(`dxfId="${table.dxfId}"`)
 	if (table.headerRowDxfId !== undefined) attrs.push(`headerRowDxfId="${table.headerRowDxfId}"`)
 	if (table.dataDxfId !== undefined) attrs.push(`dataDxfId="${table.dataDxfId}"`)
@@ -51,11 +56,18 @@ export function buildTableXml(table: Table, tableNumber: number): string {
 		const column = table.columns[index]
 		if (!column) continue
 		const columnAttrs = [`id="${column.id ?? index + 1}"`, `name="${escapeXml(column.name)}"`]
+		if (column.uniqueName) columnAttrs.push(`uniqueName="${escapeXml(column.uniqueName)}"`)
 		if (column.totalsRowFunction) {
 			columnAttrs.push(`totalsRowFunction="${escapeXml(column.totalsRowFunction)}"`)
 		}
 		if (column.totalsRowLabel) {
 			columnAttrs.push(`totalsRowLabel="${escapeXml(column.totalsRowLabel)}"`)
+		}
+		if (column.queryTableFieldId !== undefined) {
+			columnAttrs.push(`queryTableFieldId="${column.queryTableFieldId}"`)
+		}
+		if (column.dataCellStyle) {
+			columnAttrs.push(`dataCellStyle="${escapeXml(column.dataCellStyle)}"`)
 		}
 		if (column.dataDxfId !== undefined) columnAttrs.push(`dataDxfId="${column.dataDxfId}"`)
 		if (column.headerRowDxfId !== undefined) {

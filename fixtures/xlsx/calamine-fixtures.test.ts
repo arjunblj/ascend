@@ -140,6 +140,50 @@ describe('Calamine XLSX/XLSM fixture corpus', () => {
 		])
 	})
 
+	test('resolves absolute table relationship targets from Calamine fixtures', () => {
+		const result = readXlsx(loadFixture('table_with_absolute_paths.xlsx'))
+		expectOk(result)
+
+		const sheet = result.value.workbook.sheets.find((entry) => entry.name === 'table')
+		expect(sheet?.tables).toHaveLength(1)
+		expect(sheet?.tables[0]).toMatchObject({
+			name: 'Table1',
+			ref: { start: { row: 0, col: 0 }, end: { row: 4, col: 1 } },
+			tableStyleInfo: { name: 'TableStyleLight1' },
+			columns: [
+				expect.objectContaining({ id: 1, name: 'Item' }),
+				expect.objectContaining({ id: 2, name: 'Name' }),
+			],
+		})
+	})
+
+	test('captures Calamine insert-row tables and calculated columns', () => {
+		const result = readXlsx(loadFixture('table_with_insertrow_attribute.xlsx'))
+		expectOk(result)
+
+		const sheet = result.value.workbook.sheets.find((entry) => entry.name === 'Sheet1')
+		const tables = new Map((sheet?.tables ?? []).map((table) => [table.name, table]))
+		expect([...tables.keys()].sort()).toEqual(['Table1', 'Table2', 'Table3', 'Table4'])
+		expect(tables.get('Table1')?.columns[1]).toMatchObject({
+			name: 'Price',
+			formula: 'RAND()*100',
+		})
+		expect(tables.get('Table2')?.columns[1]).toMatchObject({
+			name: 'Price',
+			formula: 'RAND()*100',
+		})
+		expect(tables.get('Table3')).toMatchObject({
+			name: 'Table3',
+			insertRow: true,
+			ref: { start: { row: 7, col: 12 }, end: { row: 8, col: 12 } },
+		})
+		expect(tables.get('Table4')).toMatchObject({
+			name: 'Table4',
+			insertRow: true,
+			ref: { start: { row: 7, col: 14 }, end: { row: 8, col: 14 } },
+		})
+	})
+
 	test('surfaces real pivot cache shared item bounds and grouped fields', () => {
 		const result = readXlsx(loadFixture('pivots.xlsx'))
 		expectOk(result)

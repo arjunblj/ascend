@@ -1365,7 +1365,16 @@ describe('AscendWorkbook', () => {
 		expect(reopened.inspect().dataValidationCount).toBe(1)
 		expect(reopened.inspect().conditionalFormatCount).toBe(1)
 		const detail = reopened.inspectSheet('Sheet1')
-		expect(detail?.comments?.[0]).toEqual({ ref: 'B2', author: 'Ada', text: 'Review' })
+		expect(detail?.comments?.[0]).toMatchObject({
+			ref: 'B2',
+			author: 'Ada',
+			text: 'Review',
+			legacyDrawing: {
+				row: 1,
+				column: 1,
+				visible: false,
+			},
+		})
 		expect(detail?.hyperlinks?.[0]?.target).toBe('https://example.com/ascend')
 		expect(detail?.dataValidations).toHaveLength(1)
 		expect(detail?.conditionalFormats).toHaveLength(1)

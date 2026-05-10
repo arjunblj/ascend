@@ -60,6 +60,7 @@ import {
 	REL_MACROSHEET,
 	REL_OFFICE_DOC,
 	REL_PIVOT_TABLE,
+	REL_QUERY_TABLE,
 	REL_SHARED_STRINGS,
 	REL_SHEET_METADATA,
 	REL_SLICER_CACHE,
@@ -1506,7 +1507,11 @@ function attachTables(
 		const tablePath = resolvePath(sheetPath, rel.target)
 		const tableXml = readPart(archive, tablePath)
 		if (!tableXml) continue
-		const table = parseTable(tableXml, sheet.id)
+		const tableRelsXml = readPart(archive, getRelsPath(tablePath))
+		const tableRelationships = tableRelsXml
+			? parseRelationships(tableRelsXml).filter((entry) => entry.type === REL_QUERY_TABLE)
+			: []
+		const table = parseTable(tableXml, sheet.id, { tablePath, relationships: tableRelationships })
 		if (!table) continue
 		sheet.tables.push(table)
 	}

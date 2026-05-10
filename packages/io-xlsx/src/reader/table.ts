@@ -6,13 +6,25 @@ import {
 	type SortState,
 	type Table,
 	type TableColumn,
+	type TableQueryTableRef,
 	type TableStyleInfo,
 } from '@ascend/core'
 import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
 import { parseAutoFilterNode, parseSortStateNode } from './filtering.ts'
+import type { Relationship } from './relationships.ts'
+import { REL_QUERY_TABLE, resolvePath } from './relationships.ts'
 import { normalizeMainSpreadsheetNamespacePrefix } from './xml-utils.ts'
 
-export function parseTable(xml: string, sheetId: SheetId): Table | null {
+export interface ParseTableOptions {
+	readonly tablePath?: string
+	readonly relationships?: readonly Relationship[]
+}
+
+export function parseTable(
+	xml: string,
+	sheetId: SheetId,
+	options: ParseTableOptions = {},
+): Table | null {
 	const doc = parseXml(normalizeMainSpreadsheetNamespacePrefix(xml))
 	const table = doc.table as XmlNode | undefined
 	if (!table) return null
@@ -36,17 +48,24 @@ export function parseTable(xml: string, sheetId: SheetId): Table | null {
 	const autoFilter = parseAutoFilterNode(table.autoFilter as XmlNode | undefined)
 	const sortState = parseSortStateNode(table.sortState as XmlNode | undefined)
 	const tableStyleInfo = parseTableStyleInfo(table.tableStyleInfo as XmlNode | undefined)
+	const tableType = attr(table, 'tableType')
+	const insertRow = boolAttr(table, 'insertRow')
+	const insertRowShift = boolAttr(table, 'insertRowShift')
 	const dxfId = numAttr(table, 'dxfId')
 	const headerRowDxfId = numAttr(table, 'headerRowDxfId')
 	const dataDxfId = numAttr(table, 'dataDxfId')
 	const totalsRowDxfId = numAttr(table, 'totalsRowDxfId')
 	const headerRowBorderDxfId = numAttr(table, 'headerRowBorderDxfId')
+	const queryTable = parseQueryTableRef(options.tablePath, options.relationships)
 
 	const parsed: {
 		id: Table['id']
 		name: string
 		sheetId: SheetId
 		ref: RangeRef
+		tableType?: string
+		insertRow?: boolean
+		insertRowShift?: boolean
 		columns: readonly TableColumn[]
 		hasHeaders: boolean
 		hasTotals: boolean
@@ -58,6 +77,7 @@ export function parseTable(xml: string, sheetId: SheetId): Table | null {
 		totalsRowDxfId?: number
 		headerRowBorderDxfId?: number
 		tableStyleInfo?: TableStyleInfo
+		queryTable?: TableQueryTableRef
 	} = {
 		id: createTableId(),
 		name,
@@ -67,6 +87,9 @@ export function parseTable(xml: string, sheetId: SheetId): Table | null {
 		hasHeaders: (headerRowCount ?? 1) !== 0,
 		hasTotals: totalsRowCount > 0,
 	}
+	if (tableType) parsed.tableType = tableType
+	if (insertRow !== undefined) parsed.insertRow = insertRow
+	if (insertRowShift !== undefined) parsed.insertRowShift = insertRowShift
 	if (autoFilter) parsed.autoFilter = autoFilter
 	if (sortState) parsed.sortState = sortState
 	if (dxfId !== undefined) parsed.dxfId = dxfId
@@ -75,6 +98,7 @@ export function parseTable(xml: string, sheetId: SheetId): Table | null {
 	if (totalsRowDxfId !== undefined) parsed.totalsRowDxfId = totalsRowDxfId
 	if (headerRowBorderDxfId !== undefined) parsed.headerRowBorderDxfId = headerRowBorderDxfId
 	if (tableStyleInfo) parsed.tableStyleInfo = tableStyleInfo
+	if (queryTable) parsed.queryTable = queryTable
 	return parsed as Table
 }
 
@@ -97,23 +121,32 @@ function parseTableColumns(table: XmlNode): readonly TableColumn[] {
 				: undefined
 		const parsed: {
 			id?: number
+			uniqueName?: string
 			name: string
 			formula?: string
 			totalsRowFunction?: string
 			totalsRowFormula?: string
 			totalsRowLabel?: string
+			queryTableFieldId?: number
+			dataCellStyle?: string
 			dataDxfId?: number
 			headerRowDxfId?: number
 			totalsRowDxfId?: number
 		} = { name }
 		const id = numAttr(column, 'id')
 		if (id !== undefined) parsed.id = id
+		const uniqueName = attr(column, 'uniqueName')
+		if (uniqueName) parsed.uniqueName = uniqueName
 		if (formula) parsed.formula = formula
 		const totalsRowFunction = attr(column, 'totalsRowFunction')
 		if (totalsRowFunction) parsed.totalsRowFunction = totalsRowFunction
 		if (totalsRowFormula) parsed.totalsRowFormula = totalsRowFormula
 		const totalsRowLabel = attr(column, 'totalsRowLabel')
 		if (totalsRowLabel) parsed.totalsRowLabel = totalsRowLabel
+		const queryTableFieldId = numAttr(column, 'queryTableFieldId')
+		if (queryTableFieldId !== undefined) parsed.queryTableFieldId = queryTableFieldId
+		const dataCellStyle = attr(column, 'dataCellStyle')
+		if (dataCellStyle) parsed.dataCellStyle = dataCellStyle
 		const dataDxfId = numAttr(column, 'dataDxfId')
 		if (dataDxfId !== undefined) parsed.dataDxfId = dataDxfId
 		const headerRowDxfId = numAttr(column, 'headerRowDxfId')
@@ -123,6 +156,22 @@ function parseTableColumns(table: XmlNode): readonly TableColumn[] {
 		columns.push(parsed)
 	}
 	return columns
+}
+
+function parseQueryTableRef(
+	tablePath: string | undefined,
+	relationships: readonly Relationship[] | undefined,
+): TableQueryTableRef | undefined {
+	if (!tablePath || !relationships) return undefined
+	const rel = relationships.find((entry) => entry.type === REL_QUERY_TABLE)
+	if (!rel) return undefined
+	return {
+		relationshipId: rel.id,
+		partPath: resolvePath(tablePath, rel.target),
+		relationshipType: rel.type,
+		target: rel.target,
+		...(rel.targetMode ? { targetMode: rel.targetMode } : {}),
+	}
 }
 
 function parseTableStyleInfo(node: XmlNode | undefined): TableStyleInfo | undefined {

@@ -4,11 +4,14 @@ import type { RangeRef } from './refs.ts'
 
 export interface TableColumn {
 	readonly id?: number
+	readonly uniqueName?: string
 	readonly name: string
 	readonly formula?: string
 	readonly totalsRowFunction?: string
 	readonly totalsRowFormula?: string
 	readonly totalsRowLabel?: string
+	readonly queryTableFieldId?: number
+	readonly dataCellStyle?: string
 	readonly dataDxfId?: number
 	readonly headerRowDxfId?: number
 	readonly totalsRowDxfId?: number
@@ -27,6 +30,9 @@ export interface Table {
 	readonly name: string
 	readonly sheetId: SheetId
 	readonly ref: RangeRef
+	readonly tableType?: string
+	readonly insertRow?: boolean
+	readonly insertRowShift?: boolean
 	readonly columns: readonly TableColumn[]
 	readonly hasHeaders: boolean
 	readonly hasTotals: boolean
@@ -38,4 +44,13 @@ export interface Table {
 	readonly totalsRowDxfId?: number
 	readonly headerRowBorderDxfId?: number
 	readonly tableStyleInfo?: TableStyleInfo
+	readonly queryTable?: TableQueryTableRef
+}
+
+export interface TableQueryTableRef {
+	readonly relationshipId: string
+	readonly partPath: string
+	readonly relationshipType: string
+	readonly target: string
+	readonly targetMode?: string
 }

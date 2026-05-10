@@ -867,9 +867,9 @@ describe('buildCompetitiveScoreboard', () => {
 		'DataValidationEvaluations.xlsx',
 		'MissingPathExternal.xlsx',
 		'ms-excel-formulas-and-pivot-tables.xlsx',
-		'bevreport-demo.xlsm',
 		'excel-dashboard-v2.xlsx',
 	]
+	const xlsxRoundtripSotaMacroFiles = ['bevreport-demo.xlsm']
 
 	test('xlsx roundtrip SOTA profile accepts evaluated correctness losers and requires Ascend leader', () => {
 		const suite = suiteWithCases([
@@ -880,13 +880,22 @@ describe('buildCompetitiveScoreboard', () => {
 				editRoundtripCase('openpyxl', 'package-roundtrip-mismatch', 7, 7, file),
 				editRoundtripCase('excelize', 'feature-roundtrip-mismatch', 2, 2, file),
 			]),
+			...xlsxRoundtripSotaMacroFiles.flatMap((file) => [
+				editRoundtripCase('ascend', 'semantic-roundtrip-pass', 3, 3, file),
+				editRoundtripCase('sheetjs', 'package-roundtrip-mismatch', 5, 5, file),
+				editRoundtripCase('openpyxl', 'package-roundtrip-mismatch', 7, 7, file),
+			]),
 		])
 		const scoreboard = buildCompetitiveScoreboard(suite)
 
 		expect(assertScoreboardCoverage(suite, 'xlsx-roundtrip-sota')).toEqual([])
+		expect(inspectScoreboardCoverage(suite, 'xlsx-roundtrip-sota').gaps).toEqual([
+			'xlsx-roundtrip-sota coverage-gap competitor=ExcelJS category=edit-roundtrip operationProfile=edit-roundtrip workload=real-workbook file=bevreport-demo.xlsm reason=unsupported-operation',
+			'xlsx-roundtrip-sota coverage-gap competitor=Excelize category=edit-roundtrip operationProfile=edit-roundtrip workload=real-workbook file=bevreport-demo.xlsm reason=unsupported-operation',
+		])
 		expect(assertScoreboardProfileLeader(scoreboard, 'xlsx-roundtrip-sota', 'ascend')).toEqual([])
 		expect(scoreboard.groups.map((group) => group.winner)).toEqual(
-			xlsxRoundtripSotaFiles.map(() => 'ascend'),
+			[...xlsxRoundtripSotaFiles, ...xlsxRoundtripSotaMacroFiles].map(() => 'ascend'),
 		)
 	})
 
@@ -902,6 +911,12 @@ describe('buildCompetitiveScoreboard', () => {
 		)
 		expect(assertScoreboardCoverage(suite, 'xlsx-roundtrip-sota')).toContain(
 			'xlsx-roundtrip-sota missing competitor=Excelize category=edit-roundtrip operationProfile=edit-roundtrip workload=real-workbook file=styles_formulas.xlsx',
+		)
+		expect(assertScoreboardCoverage(suite, 'xlsx-roundtrip-sota')).toContain(
+			'xlsx-roundtrip-sota missing competitor=openpyxl category=edit-roundtrip operationProfile=edit-roundtrip workload=real-workbook file=bevreport-demo.xlsm',
+		)
+		expect(assertScoreboardCoverage(suite, 'xlsx-roundtrip-sota')).not.toContain(
+			'xlsx-roundtrip-sota missing competitor=Excelize category=edit-roundtrip operationProfile=edit-roundtrip workload=real-workbook file=bevreport-demo.xlsm',
 		)
 	})
 

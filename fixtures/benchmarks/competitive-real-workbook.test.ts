@@ -807,6 +807,11 @@ describe('evaluateAssertions', () => {
 		)
 		expect(FULL_CORPUS_TARGETS).toContain('fixtures/xlsx/exceljs/formulas.xlsx')
 		expect(FULL_CORPUS_TARGETS).toContain('fixtures/xlsx/exceljs/chart-sheet.xlsx')
+		expect(FULL_CORPUS_TARGETS).toContain(
+			'research/excel-corpus/ms-excel-formulas-and-pivot-tables.xlsx',
+		)
+		expect(FULL_CORPUS_TARGETS).toContain('research/excel-corpus/bevreport-demo.xlsm')
+		expect(FULL_CORPUS_TARGETS).toContain('research/excel-corpus/excel-dashboard-v2.xlsx')
 	})
 
 	test('edit-roundtrip falls back to string cells when a workbook has no numeric edit target', () => {

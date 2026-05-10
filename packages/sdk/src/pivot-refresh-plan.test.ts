@@ -81,6 +81,8 @@ describe('pivot refresh plans', () => {
 				declaredCount: 10,
 				parsedCount: 10,
 				preview: [],
+				materializedCount: 10,
+				materializedComplete: true,
 				valueKindCounts: [
 					{ kind: 'sharedItem', count: 12 },
 					{ kind: 'number', count: 8 },
@@ -95,6 +97,8 @@ describe('pivot refresh plans', () => {
 				partPath: 'xl/pivotCache/pivotCacheRecords1.xml',
 				declaredCount: 10,
 				parsedCount: 10,
+				materializedCount: 10,
+				materializedComplete: true,
 				valueKindCounts: [
 					{ kind: 'sharedItem', count: 12 },
 					{ kind: 'number', count: 8 },

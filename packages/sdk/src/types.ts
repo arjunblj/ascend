@@ -288,6 +288,9 @@ export interface PivotCacheRecordsInfo {
 	readonly declaredCount?: number
 	readonly parsedCount: number
 	readonly preview: readonly PivotCacheRecordInfo[]
+	readonly materializedRecords?: readonly PivotCacheRecordInfo[]
+	readonly materializedCount?: number
+	readonly materializedComplete?: boolean
 	readonly valueKindCounts: readonly PivotCacheRecordValueKindCount[]
 }
 
@@ -343,6 +346,8 @@ export interface PivotRefreshCacheRecordsInfo {
 	readonly partPath: string
 	readonly declaredCount?: number
 	readonly parsedCount: number
+	readonly materializedCount?: number
+	readonly materializedComplete?: boolean
 	readonly valueKindCounts: readonly PivotCacheRecordValueKindCount[]
 }
 

@@ -375,6 +375,11 @@ describe('LibreOffice XLSX fixture corpus', () => {
 			sourceSheet: 'Лист1',
 			sourceRef: 'A1:C13',
 		})
+		expect(cache?.records).toMatchObject({
+			parsedCount: 12,
+			materializedCount: 12,
+			materializedComplete: true,
+		})
 		expect(cache?.fields[3]).toMatchObject({
 			name: 'Стоимость',
 			databaseField: false,
@@ -398,6 +403,11 @@ describe('LibreOffice XLSX fixture corpus', () => {
 			name: 'Field1',
 			databaseField: false,
 			formula: 'Spend*2',
+		})
+		expect(cache?.records).toMatchObject({
+			parsedCount: 6,
+			materializedCount: 6,
+			materializedComplete: true,
 		})
 		expect(sumPivot).toMatchObject({
 			name: 'DataPilot1',

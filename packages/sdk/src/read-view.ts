@@ -1464,6 +1464,12 @@ function buildPivotRefreshPlans(
 								? { declaredCount: cache.records.declaredCount }
 								: {}),
 							parsedCount: cache.records.parsedCount,
+							...(cache.records.materializedCount !== undefined
+								? { materializedCount: cache.records.materializedCount }
+								: {}),
+							...(cache.records.materializedComplete !== undefined
+								? { materializedComplete: cache.records.materializedComplete }
+								: {}),
 							valueKindCounts: cache.records.valueKindCounts.map((count) => ({ ...count })),
 						},
 					}

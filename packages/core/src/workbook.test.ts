@@ -123,6 +123,14 @@ describe('Workbook.clone', () => {
 						values: [{ index: 0, kind: 'sharedItem', sharedItemIndex: 0 }],
 					},
 				],
+				materializedRecords: [
+					{
+						index: 0,
+						values: [{ index: 0, kind: 'sharedItem', sharedItemIndex: 0 }],
+					},
+				],
+				materializedCount: 1,
+				materializedComplete: true,
 				valueKindCounts: [{ kind: 'sharedItem', count: 1 }],
 			},
 			fields: [
@@ -192,6 +200,8 @@ describe('Workbook.clone', () => {
 		const sharedItem = clone.pivotCaches[0]?.fields[0]?.sharedItems?.[0]
 		const cacheRecord = clone.pivotCaches[0]?.records?.preview[0]
 		const cacheRecordValue = cacheRecord?.values[0]
+		const materializedRecord = clone.pivotCaches[0]?.records?.materializedRecords?.[0]
+		const materializedRecordValue = materializedRecord?.values[0]
 		const cacheRecordKindCount = clone.pivotCaches[0]?.records?.valueKindCounts[0]
 		const groupRange = clone.pivotCaches[0]?.fields[0]?.fieldGroup?.range
 		const discreteItem = clone.pivotCaches[0]?.fields[0]?.fieldGroup?.discreteItems?.[0]
@@ -212,6 +222,8 @@ describe('Workbook.clone', () => {
 		expect(sharedItem).toBeDefined()
 		expect(cacheRecord).toBeDefined()
 		expect(cacheRecordValue).toBeDefined()
+		expect(materializedRecord).toBeDefined()
+		expect(materializedRecordValue).toBeDefined()
 		expect(cacheRecordKindCount).toBeDefined()
 		expect(groupRange).toBeDefined()
 		expect(discreteItem).toBeDefined()
@@ -233,6 +245,8 @@ describe('Workbook.clone', () => {
 			!sharedItem ||
 			!cacheRecord ||
 			!cacheRecordValue ||
+			!materializedRecord ||
+			!materializedRecordValue ||
 			!cacheRecordKindCount ||
 			!groupRange ||
 			!discreteItem ||
@@ -257,6 +271,8 @@ describe('Workbook.clone', () => {
 		;(sharedItem as { value: string }).value = 'East'
 		;(cacheRecord as { index: number }).index = 1
 		;(cacheRecordValue as { sharedItemIndex: number }).sharedItemIndex = 2
+		;(materializedRecord as { index: number }).index = 1
+		;(materializedRecordValue as { sharedItemIndex: number }).sharedItemIndex = 2
 		;(cacheRecordKindCount as { count: number }).count = 2
 		;(groupRange as { groupBy: string }).groupBy = 'quarters'
 		;(discreteItem as { value: number }).value = 0
@@ -286,6 +302,8 @@ describe('Workbook.clone', () => {
 		expect(wb.pivotCaches[0]?.fields[0]?.sharedItems?.[0]?.value).toBe('West')
 		expect(wb.pivotCaches[0]?.records?.preview[0]?.index).toBe(0)
 		expect(wb.pivotCaches[0]?.records?.preview[0]?.values[0]?.sharedItemIndex).toBe(0)
+		expect(wb.pivotCaches[0]?.records?.materializedRecords?.[0]?.index).toBe(0)
+		expect(wb.pivotCaches[0]?.records?.materializedRecords?.[0]?.values[0]?.sharedItemIndex).toBe(0)
 		expect(wb.pivotCaches[0]?.records?.valueKindCounts[0]?.count).toBe(1)
 		expect(wb.pivotCaches[0]?.fields[0]?.fieldGroup?.range?.groupBy).toBe('months')
 		expect(wb.pivotCaches[0]?.fields[0]?.fieldGroup?.discreteItems?.[0]?.value).toBe(1)

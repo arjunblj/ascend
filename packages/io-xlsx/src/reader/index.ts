@@ -42,8 +42,8 @@ import { maybeDecryptOoxmlPackage } from './encryption.ts'
 import { parseMacroSheetInfo } from './macro-sheet.ts'
 import { parseMetadataXml } from './metadata.ts'
 import {
+	parseMaterializedPivotCacheRecordsXml,
 	parsePivotCacheDefinitionXml,
-	parsePivotCacheRecordsXml,
 	parsePivotTableXml,
 	parseSlicerCacheXml,
 	parseSlicerXml,
@@ -260,7 +260,7 @@ export function readXlsx(
 						: null
 					const records =
 						recordsXml && parsed.recordsPartPath
-							? parsePivotCacheRecordsXml(recordsXml, parsed.recordsPartPath)
+							? parseMaterializedPivotCacheRecordsXml(recordsXml, parsed.recordsPartPath)
 							: null
 					workbook.pivotCaches.push(records ? { ...parsed, records } : parsed)
 				}

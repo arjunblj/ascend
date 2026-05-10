@@ -105,6 +105,9 @@ export interface PivotCacheRecordsInfo {
 	readonly declaredCount?: number
 	readonly parsedCount: number
 	readonly preview: readonly PivotCacheRecordInfo[]
+	readonly materializedRecords?: readonly PivotCacheRecordInfo[]
+	readonly materializedCount?: number
+	readonly materializedComplete?: boolean
 	readonly valueKindCounts: readonly PivotCacheRecordValueKindCount[]
 }
 
@@ -310,6 +313,14 @@ export function clonePivotCacheInfo(entry: PivotCacheInfo): PivotCacheInfo {
 							...record,
 							values: record.values.map((value) => ({ ...value })),
 						})),
+						...(entry.records.materializedRecords
+							? {
+									materializedRecords: entry.records.materializedRecords.map((record) => ({
+										...record,
+										values: record.values.map((value) => ({ ...value })),
+									})),
+								}
+							: {}),
 						valueKindCounts: entry.records.valueKindCounts.map((count) => ({ ...count })),
 					},
 				}

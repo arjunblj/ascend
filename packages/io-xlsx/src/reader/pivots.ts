@@ -34,6 +34,7 @@ import { resolvePath } from './relationships.ts'
 import { decodeXmlText, normalizeMainSpreadsheetNamespacePrefix } from './xml-utils.ts'
 
 const PIVOT_CACHE_RECORD_PREVIEW_LIMIT = 5
+const PIVOT_CACHE_RECORD_MATERIALIZE_LIMIT = 2048
 const PIVOT_CACHE_RECORDS_ROOT_RE = /<(?:[A-Za-z_][\w.-]*:)?pivotCacheRecords\b([^>]*)>/u
 const PIVOT_CACHE_RECORD_RE =
 	/<(?:[A-Za-z_][\w.-]*:)?r\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?r>/gu
@@ -49,28 +50,53 @@ export function parsePivotCacheRecordsXml(
 	xml: string,
 	partPath: string,
 	previewLimit = PIVOT_CACHE_RECORD_PREVIEW_LIMIT,
+	materializeLimit = 0,
 ): PivotCacheRecordsInfo | null {
 	const normalizedXml = normalizeMainSpreadsheetNamespacePrefix(xml)
 	const root = PIVOT_CACHE_RECORDS_ROOT_RE.exec(normalizedXml)
 	if (!root) return null
 	const kindCounts = new Map<PivotCacheRecordValueKind, number>()
 	const preview: { index: number; values: PivotCacheRecordValueInfo[] }[] = []
+	const materializedRecords: { index: number; values: PivotCacheRecordValueInfo[] }[] = []
 	let parsedCount = 0
 	PIVOT_CACHE_RECORD_RE.lastIndex = 0
 	for (const match of normalizedXml.matchAll(PIVOT_CACHE_RECORD_RE)) {
 		const values = parsePivotCacheRecordValues(match[1] ?? '', kindCounts)
-		if (parsedCount < previewLimit) preview.push({ index: parsedCount, values })
+		const record = { index: parsedCount, values }
+		if (parsedCount < previewLimit) preview.push(record)
+		if (parsedCount < materializeLimit) materializedRecords.push(record)
 		parsedCount++
 	}
 	const rootAttrs = parseXmlAttributes(root[1] ?? '')
 	const declaredCount = xmlNumberAttr(rootAttrs, 'count')
+	const materialized =
+		materializeLimit > 0 && materializedRecords.length > 0
+			? {
+					materializedRecords,
+					materializedCount: materializedRecords.length,
+					materializedComplete: materializedRecords.length === parsedCount,
+				}
+			: {}
 	return {
 		partPath,
 		...(declaredCount !== undefined ? { declaredCount } : {}),
 		parsedCount,
 		preview,
+		...materialized,
 		valueKindCounts: Array.from(kindCounts, ([kind, count]) => ({ kind, count })),
 	}
+}
+
+export function parseMaterializedPivotCacheRecordsXml(
+	xml: string,
+	partPath: string,
+): PivotCacheRecordsInfo | null {
+	return parsePivotCacheRecordsXml(
+		xml,
+		partPath,
+		PIVOT_CACHE_RECORD_PREVIEW_LIMIT,
+		PIVOT_CACHE_RECORD_MATERIALIZE_LIMIT,
+	)
 }
 
 function parsePivotCacheRecordValues(

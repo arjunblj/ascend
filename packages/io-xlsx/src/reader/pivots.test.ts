@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import type { Workbook } from '@ascend/core'
 import { readXlsx } from './index.ts'
 import {
+	parseMaterializedPivotCacheRecordsXml,
 	parsePivotCacheDefinitionXml,
 	parsePivotCacheRecordsXml,
 	parsePivotTableXml,
@@ -58,6 +59,39 @@ describe('pivot inventory', () => {
 				{ kind: 'error', count: 1 },
 				{ kind: 'date', count: 1 },
 				{ kind: 'unknown', count: 1 },
+			],
+		})
+	})
+
+	test('materializes bounded pivot cache records for headless audit planning', () => {
+		const parsed = parseMaterializedPivotCacheRecordsXml(
+			`<?xml version="1.0"?>
+<pivotCacheRecords xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2">
+  <r><x v="0"/><n v="10"/></r>
+  <r><x v="1"/><n v="20"/></r>
+</pivotCacheRecords>`,
+			'xl/pivotCache/pivotCacheRecords1.xml',
+		)
+
+		expect(parsed).toMatchObject({
+			parsedCount: 2,
+			materializedCount: 2,
+			materializedComplete: true,
+			materializedRecords: [
+				{
+					index: 0,
+					values: [
+						{ index: 0, kind: 'sharedItem', sharedItemIndex: 0 },
+						{ index: 1, kind: 'number', value: '10' },
+					],
+				},
+				{
+					index: 1,
+					values: [
+						{ index: 0, kind: 'sharedItem', sharedItemIndex: 1 },
+						{ index: 1, kind: 'number', value: '20' },
+					],
+				},
 			],
 		})
 	})

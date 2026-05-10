@@ -1038,7 +1038,7 @@ describe('evaluateAssertions', () => {
 		const entries = normalizeManifest(
 			await loadCorpusManifestEntries(resolve(import.meta.dir, '../xlsx/libreoffice/manifest.ts')),
 		)
-		expect(entries.length).toBe(36)
+		expect(entries.length).toBe(38)
 		expect(validateManifestProvenance(entries)).toEqual([])
 		const selected = selectCorpusTargets(
 			entries,
@@ -1050,6 +1050,7 @@ describe('evaluateAssertions', () => {
 				entry.path.endsWith('PivotTable_CachedDefinitionAndDataInSync.xlsx'),
 			),
 		).toBe(true)
+		expect(selected.some((entry) => entry.path.endsWith('pivot-table/tdf126858-1.xlsx'))).toBe(true)
 	})
 
 	test('feature summary extracts package and worksheet feature inventory', () => {

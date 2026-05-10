@@ -51,11 +51,7 @@ describe('upstream competitive profiles', () => {
 			true,
 		)
 		expect(
-			UPSTREAM_PROFILES.filter(
-				(profile) =>
-					profile.name !== 'excelize-generation-102400x50-plain-text' &&
-					profile.name !== 'fastxlsx-read-5000x10-matrix',
-			).every(
+			UPSTREAM_PROFILES.every(
 				(profile) =>
 					profile.sourceKind === 'published-shape' &&
 					profile.replayStatus === 'shape-clone' &&
@@ -65,7 +61,7 @@ describe('upstream competitive profiles', () => {
 		).toBe(true)
 	})
 
-	test('marks top SOTA target lanes with exact upstream replay provenance', () => {
+	test('keeps top SOTA target lanes non-exact until upstream scripts are replayed', () => {
 		const excelize = selectUpstreamProfiles('excelize-generation-102400x50-plain-text')[0]
 		const fastxlsx = selectUpstreamProfiles('fastxlsx-read-5000x10-matrix')[0]
 		expect(excelize).toBeTruthy()
@@ -73,14 +69,13 @@ describe('upstream competitive profiles', () => {
 		if (!excelize || !fastxlsx) return
 
 		for (const profile of [excelize, fastxlsx]) {
-			expect(profile.sourceKind).toBe('upstream-script')
-			expect(profile.replayStatus).toBe('exact-script')
-			expect(isExactUpstreamReplayStatus(profile.replayStatus)).toBe(true)
-			expect(profile.upstreamRepo).toMatch(/^https:\/\/github\.com\//)
-			expect(profile.upstreamCommand).toBeTruthy()
+			expect(profile.sourceKind).toBe('published-shape')
+			expect(profile.replayStatus).toBe('shape-clone')
+			expect(isExactUpstreamReplayStatus(profile.replayStatus)).toBe(false)
+			expect(profile.upstreamRepo).toBeUndefined()
+			expect(profile.upstreamCommand).toBeUndefined()
+			expect(profile.timingBoundary).toContain('not the upstream project native timing harness')
 		}
-		expect(excelize.timingBoundary).toContain('102400 x 50')
-		expect(fastxlsx.timingBoundary).toContain('5000 x 10')
 	})
 
 	test('selects one or more named profiles', () => {
@@ -142,13 +137,13 @@ describe('upstream competitive profiles', () => {
 		const coverage = summarizeUpstreamReplayCoverage(UPSTREAM_PROFILES)
 
 		expect(coverage.total).toBe(UPSTREAM_PROFILES.length)
-		expect(coverage.exact).toBe(2)
-		expect(coverage.nonExact).toBe(UPSTREAM_PROFILES.length - 2)
-		expect(coverage.byStatus['shape-clone']).toBe(UPSTREAM_PROFILES.length - 2)
-		expect(coverage.byStatus['exact-script']).toBe(2)
+		expect(coverage.exact).toBe(0)
+		expect(coverage.nonExact).toBe(UPSTREAM_PROFILES.length)
+		expect(coverage.byStatus['shape-clone']).toBe(UPSTREAM_PROFILES.length)
+		expect(coverage.byStatus['exact-script']).toBe(0)
 		expect(coverage.nonExactProfiles).toContain('pyexcelerate-write-values-1000x100')
-		expect(coverage.nonExactProfiles).not.toContain('excelize-generation-102400x50-plain-text')
-		expect(coverage.nonExactProfiles).not.toContain('fastxlsx-read-5000x10-matrix')
+		expect(coverage.nonExactProfiles).toContain('excelize-generation-102400x50-plain-text')
+		expect(coverage.nonExactProfiles).toContain('fastxlsx-read-5000x10-matrix')
 	})
 
 	test('splits library lists for isolated heavy profile runs', () => {

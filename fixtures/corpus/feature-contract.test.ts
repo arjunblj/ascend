@@ -2,6 +2,7 @@ import { describe, expect, it, setDefaultTimeout } from 'bun:test'
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { readXlsx } from '@ascend/io-xlsx'
+import type { CompatibilityTier, FeatureReport } from '@ascend/schema'
 import {
 	type ActiveContentInfo,
 	AscendWorkbook,
@@ -87,7 +88,19 @@ interface ContractSubject {
 	readonly packageCounts: OoxmlPackageProbe['counts']
 	readonly analytics: OoxmlAnalyticsProbe
 	readonly semanticSummary: SemanticSummary
-	readonly compatibilityFeatures: ReadonlySet<string>
+	readonly compatibilityFeatures: ReadonlyMap<string, CompatibilityFeatureSummary>
+}
+
+interface CompatibilityFeatureSummary {
+	readonly tier: CompatibilityTier
+	readonly count: number
+}
+
+const COMPATIBILITY_TIER_RANK: Record<CompatibilityTier, number> = {
+	exact: 3,
+	normalized: 2,
+	preserved: 1,
+	unsupported: 0,
 }
 
 const VENDORED_CONTRACT_FIXTURES: readonly {
@@ -248,6 +261,25 @@ function normalizeActiveContent(entries: readonly ActiveContentInfo[]): ActiveCo
 		)
 }
 
+function summarizeCompatibilityFeatures(
+	features: readonly FeatureReport[],
+): ReadonlyMap<string, CompatibilityFeatureSummary> {
+	const summaries = new Map<string, CompatibilityFeatureSummary>()
+	for (const feature of features) {
+		const existing = summaries.get(feature.feature)
+		if (!existing) {
+			summaries.set(feature.feature, { tier: feature.tier, count: feature.count })
+			continue
+		}
+		const tier =
+			COMPATIBILITY_TIER_RANK[feature.tier] > COMPATIBILITY_TIER_RANK[existing.tier]
+				? feature.tier
+				: existing.tier
+		summaries.set(feature.feature, { tier, count: existing.count + feature.count })
+	}
+	return summaries
+}
+
 async function loadContractSubject(bytes: Uint8Array): Promise<ContractSubject> {
 	const raw = readXlsx(bytes)
 	expectOk(raw)
@@ -290,7 +322,7 @@ async function loadContractSubject(bytes: Uint8Array): Promise<ContractSubject> 
 			timelineCaches: info.timelineCaches,
 			timelines: info.timelines,
 		},
-		compatibilityFeatures: new Set(raw.value.report.features.map((feature) => feature.feature)),
+		compatibilityFeatures: summarizeCompatibilityFeatures(raw.value.report.features),
 	}
 }
 
@@ -553,14 +585,31 @@ function assertManifestEditCoverage(
 	expect(after.semanticSummary.activeContent).toEqual(before.semanticSummary.activeContent)
 	expect(after.semanticSummary.hasDrawingRefs).toBe(before.semanticSummary.hasDrawingRefs)
 
-	for (const feature of before.compatibilityFeatures) {
+	for (const [feature, beforeFeature] of before.compatibilityFeatures) {
 		if (feature === 'calcChain') continue
 		if (feature === 'preservedOther') continue
+		if (feature === 'preservedSignature') continue
+		const afterFeature = after.compatibilityFeatures.get(feature)
 		assertFeature(
 			entry,
 			feature,
-			after.compatibilityFeatures.has(feature),
+			afterFeature !== undefined,
 			`lost compatibility feature "${feature}" after safe edit`,
+		)
+		if (!afterFeature) continue
+		if (beforeFeature.tier !== 'unsupported') {
+			assertFeature(
+				entry,
+				feature,
+				afterFeature.count >= beforeFeature.count,
+				`compatibility feature "${feature}" count regressed after safe edit (${beforeFeature.count} -> ${afterFeature.count})`,
+			)
+		}
+		assertFeature(
+			entry,
+			feature,
+			COMPATIBILITY_TIER_RANK[afterFeature.tier] >= COMPATIBILITY_TIER_RANK[beforeFeature.tier],
+			`compatibility feature "${feature}" tier regressed after safe edit (${beforeFeature.tier} -> ${afterFeature.tier})`,
 		)
 	}
 	if (entry.features.calc_chain) {

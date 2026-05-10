@@ -105,44 +105,12 @@ const SHAPE_CLONE_TIMING_BOUNDARIES = {
 		'Ascend competitive-io write-values operation over generated inputs matching the published shape; not the upstream project native timing harness.',
 } as const satisfies Record<Category, string>
 
-const EXACT_UPSTREAM_REPLAYS = {
-	'excelize-generation-102400x50-plain-text': {
-		sourceKind: 'upstream-script',
-		replayStatus: 'exact-script',
-		timingBoundary:
-			'External-process competitive-io write lane over the exact 102400 x 50 plain-text matrix dimensions from the Excelize benchmark script; elapsed time covers workbook generation, serialization, and configured post-write validation.',
-		upstreamRepo: 'https://github.com/xuri/excelize-benchmark',
-		upstreamCommand:
-			'Run the benchmark script linked from the Excelize performance page for the 102400 x 50 generation comparison.',
-	},
-	'fastxlsx-read-5000x10-matrix': {
-		sourceKind: 'upstream-script',
-		replayStatus: 'exact-script',
-		timingBoundary:
-			'External-process competitive-io read lane over the exact 5000 x 10 matrix dimensions from the FastXLSX pytest-benchmark table; elapsed time covers library read/materialization and configured assertions.',
-		upstreamRepo: 'https://github.com/shuangluoxss/fastxlsx',
-		upstreamCommand:
-			'Run the FastXLSX benchmark suite for the 5000 x 10 matrix read case reported in the PyPI benchmark table.',
-	},
-} as const satisfies Partial<
-	Record<
-		UpstreamProfileName,
-		Pick<
-			UpstreamProfile,
-			'sourceKind' | 'replayStatus' | 'timingBoundary' | 'upstreamRepo' | 'upstreamCommand'
-		>
-	>
->
-
 function publishedShapeProfile(profile: UpstreamShapeProfileInput): UpstreamProfile {
-	const exactReplay = EXACT_UPSTREAM_REPLAYS[profile.name]
 	return {
 		...profile,
-		...(exactReplay ?? {
-			sourceKind: 'published-shape',
-			replayStatus: 'shape-clone',
-			timingBoundary: SHAPE_CLONE_TIMING_BOUNDARIES[profile.category],
-		}),
+		sourceKind: 'published-shape',
+		replayStatus: 'shape-clone',
+		timingBoundary: SHAPE_CLONE_TIMING_BOUNDARIES[profile.category],
 	}
 }
 

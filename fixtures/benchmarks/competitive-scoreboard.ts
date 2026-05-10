@@ -303,7 +303,29 @@ const CLAIM_PROFILES: Record<ClaimProfileName, ClaimProfile> = {
 			{
 				category: 'write',
 				operationProfile: 'write-values',
-				workloads: ['dense-values', 'plain-text', 'sparse-wide', 'string-heavy', 'styles-heavy'],
+				workloads: ['dense-values', 'plain-text', 'sparse-wide', 'string-heavy'],
+				competitors: [
+					{ label: 'Ascend', libraries: ASCEND_WRITE_LIBRARIES },
+					{ label: 'SheetJS', libraries: ['sheetjs'] },
+					{ label: 'ExcelJS', libraries: ['exceljs'] },
+					{ label: 'XlsxWriter', libraries: ['xlsxwriter', 'xlsxwriter-constant-memory'] },
+					{
+						label: 'pyexcelerate',
+						libraries: ['pyexcelerate', 'pyexcelerate-range', 'pyexcelerate-cell'],
+					},
+					{ label: 'fastexcel Java', libraries: ['fastexcel-java'] },
+					{ label: 'openpyxl', libraries: ['openpyxl', 'openpyxl-write-only'] },
+					{ label: 'Apache POI', libraries: ['apache-poi', 'poi'] },
+					{ label: 'ClosedXML', libraries: ['closedxml'] },
+					{ label: 'rust_xlsxwriter', libraries: ['rust-xlsxwriter', 'rust_xlsxwriter'] },
+					{ label: 'Excelize', libraries: ['excelize'] },
+				],
+				capabilityGaps: [{ label: 'NPOI', libraries: ['npoi'] }],
+			},
+			{
+				category: 'write',
+				operationProfile: 'write-values',
+				workloads: ['styles-heavy'],
 				competitors: [
 					{ label: 'Ascend', libraries: ASCEND_WRITE_LIBRARIES },
 					{ label: 'XlsxWriter', libraries: ['xlsxwriter', 'xlsxwriter-constant-memory'] },

@@ -815,6 +815,32 @@ describe('buildCompetitiveScoreboard', () => {
 		expect(assertScoreboardCoverage(suite, 'xlsx-write-sota')).toEqual([])
 	})
 
+	test('xlsx write SOTA profile treats JS writers as basic value competitors', () => {
+		const suite = suiteWithCases([])
+		const inspection = inspectScoreboardCoverage(suite, 'xlsx-write-sota')
+
+		for (const workload of ['dense-values', 'plain-text', 'sparse-wide', 'string-heavy']) {
+			expect(inspection.gaps).not.toContain(
+				`xlsx-write-sota coverage-gap competitor=SheetJS category=write operationProfile=write-values workload=${workload} reason=unsupported-operation`,
+			)
+			expect(inspection.gaps).not.toContain(
+				`xlsx-write-sota coverage-gap competitor=ExcelJS category=write operationProfile=write-values workload=${workload} reason=unsupported-operation`,
+			)
+		}
+		expect(inspection.failures).toContain(
+			'xlsx-write-sota missing competitor=SheetJS category=write operationProfile=write-values workload=dense-values',
+		)
+		expect(inspection.failures).toContain(
+			'xlsx-write-sota missing competitor=ExcelJS category=write operationProfile=write-values workload=dense-values',
+		)
+		expect(inspection.gaps).toContain(
+			'xlsx-write-sota coverage-gap competitor=SheetJS category=write operationProfile=write-values workload=styles-heavy reason=unsupported-operation',
+		)
+		expect(inspection.gaps).toContain(
+			'xlsx-write-sota coverage-gap competitor=ExcelJS category=write operationProfile=write-values workload=styles-heavy reason=unsupported-operation',
+		)
+	})
+
 	test('xlsx write SOTA profile reports missing non-JS writers', () => {
 		const suite = suiteWithCases([
 			matrixCase({

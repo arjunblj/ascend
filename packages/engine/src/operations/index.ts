@@ -92,6 +92,7 @@ const handlers: Record<string, OperationHandler> = {
 	setWorkbookProperties: workbookOps.handleSetWorkbookProperties as OperationHandler,
 	setWorkbookView: workbookOps.handleSetWorkbookView as OperationHandler,
 	setCalcSettings: workbookOps.handleSetCalcSettings as OperationHandler,
+	setTheme: workbookOps.handleSetTheme as OperationHandler,
 	deleteTable: tableOps.handleDeleteTable as OperationHandler,
 	renameTable: tableOps.handleRenameTable as OperationHandler,
 	resizeTable: tableOps.handleResizeTable as OperationHandler,
@@ -318,6 +319,8 @@ function restoreWorkbookFromSnapshot(workbook: Workbook, snapshot: Workbook): vo
 		: null
 	workbook.styleMetadata = { ...snapshot.styleMetadata }
 	workbook.themeMetadata = { ...snapshot.themeMetadata }
+	workbook.themeColors.splice(0, workbook.themeColors.length)
+	workbook.themeColors.push(...snapshot.themeColors.map((color) => ({ ...color })))
 	workbook.preservedStyles = snapshot.preservedStyles
 		? {
 				...snapshot.preservedStyles,

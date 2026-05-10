@@ -154,6 +154,24 @@ const FIELD_SCHEMAS: Record<
 		description:
 			'Calculation settings: calcMode?, fullCalcOnLoad?, calcCompleted?, calcOnSave?, forceFullCalc?, calcId?, dateSystem?, iterativeCalc?.',
 	},
+	themeName: { type: 'string', description: 'Workbook theme name' },
+	colorSchemeName: {
+		type: 'string',
+		description: 'Theme color scheme name',
+	},
+	majorFontLatin: {
+		type: 'string',
+		description: 'Theme major Latin font typeface',
+	},
+	minorFontLatin: {
+		type: 'string',
+		description: 'Theme minor Latin font typeface',
+	},
+	themeColors: {
+		type: 'array',
+		description:
+			'Theme color updates: [{ slot, rgb? }] or [{ slot, systemColor, lastColor? }]. Slots: dk1, lt1, dk2, lt2, accent1-6, hlink, folHlink.',
+	},
 	color: { type: 'string', description: 'Color (hex or theme)' },
 	hidden: { type: 'boolean', description: 'Whether to hide' },
 	rule: {
@@ -458,6 +476,18 @@ export function listOperations(): readonly OperationSchema[] {
 			requiredFields: ['settings'],
 		},
 		{
+			op: 'setTheme',
+			description: 'Edit workbook theme names, fonts, and color slots',
+			requiredFields: [],
+			optionalFields: [
+				'themeName',
+				'colorSchemeName',
+				'majorFontLatin',
+				'minorFontLatin',
+				'themeColors',
+			],
+		},
+		{
 			op: 'setWorkbookProtection',
 			description: 'Set workbook-level protection metadata',
 			requiredFields: ['protection'],
@@ -717,6 +747,11 @@ function validateOperationField(
 		case 'sourceRef':
 		case 'slicerCache':
 			return typeof value === 'string' ? null : `${path} must be a string`
+		case 'themeName':
+		case 'colorSchemeName':
+		case 'majorFontLatin':
+		case 'minorFontLatin':
+			return typeof value === 'string' ? null : `${path} must be a string`
 		case 'what':
 			return value === 'values' || value === 'formulas' || value === 'styles' || value === 'all'
 				? null
@@ -794,6 +829,8 @@ function validateOperationField(
 			return validateUpdates(value, path)
 		case 'rows':
 			return validateRows(value, path)
+		case 'themeColors':
+			return validateThemeColors(value, path)
 		case 'by':
 			return validateSortSpecs(value, path)
 		case 'runs':
@@ -852,6 +889,23 @@ function validateRows(value: unknown, path: string): string | null {
 			if (!isInputValue(row[colIndex])) {
 				return `${path}[${rowIndex}][${colIndex}] must be a scalar value or null`
 			}
+		}
+	}
+	return null
+}
+
+function validateThemeColors(value: unknown, path: string): string | null {
+	if (!Array.isArray(value)) return `${path} must be an array`
+	for (let i = 0; i < value.length; i++) {
+		const color = value[i]
+		if (!isPlainObject(color)) return `${path}[${i}] must be an object`
+		if (typeof color.slot !== 'string') return `${path}[${i}].slot must be a string`
+		if ('rgb' in color && typeof color.rgb !== 'string') return `${path}[${i}].rgb must be a string`
+		if ('systemColor' in color && typeof color.systemColor !== 'string') {
+			return `${path}[${i}].systemColor must be a string`
+		}
+		if ('lastColor' in color && typeof color.lastColor !== 'string') {
+			return `${path}[${i}].lastColor must be a string`
 		}
 	}
 	return null
@@ -1075,6 +1129,12 @@ function operationRecoveryActions(op: string): readonly string[] {
 				'Use iterativeCalc=null to disable iterative calculation and reset convergence defaults.',
 				...common,
 			]
+		case 'setTheme':
+			return [
+				'Use inspect().themeSummary to preview existing theme names, fonts, and color slots.',
+				'Theme color edits affect any style, chart, or drawing that references the edited theme slot.',
+				...common,
+			]
 		default:
 			return common
 	}
@@ -1195,6 +1255,15 @@ function operationExample(op: string): Record<string, unknown> {
 			return { op, index: 0, view: { activeTab: 0, firstSheet: 0 }, mode: 'merge' }
 		case 'setCalcSettings':
 			return { op, settings: { calcMode: 'manual', fullCalcOnLoad: true } }
+		case 'setTheme':
+			return {
+				op,
+				themeName: 'Brand Theme',
+				colorSchemeName: 'Brand Colors',
+				majorFontLatin: 'Aptos Display',
+				minorFontLatin: 'Aptos',
+				themeColors: [{ slot: 'accent1', rgb: '0F6CBD' }],
+			}
 		case 'setWorkbookProtection':
 			return { op, protection: { lockStructure: true } }
 		case 'deleteTable':

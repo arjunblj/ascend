@@ -39,6 +39,13 @@ export interface CalcSettingsInput {
 	} | null
 }
 
+export interface ThemeColorInput {
+	readonly slot: string
+	readonly rgb?: string
+	readonly systemColor?: string
+	readonly lastColor?: string
+}
+
 export type StyleColorInput =
 	| { readonly kind: 'theme'; readonly theme: number; readonly tint?: number }
 	| { readonly kind: 'rgb'; readonly rgb: string }
@@ -421,6 +428,14 @@ export type Operation =
 	| {
 			readonly op: 'setCalcSettings'
 			readonly settings: CalcSettingsInput
+	  }
+	| {
+			readonly op: 'setTheme'
+			readonly themeName?: string
+			readonly colorSchemeName?: string
+			readonly majorFontLatin?: string
+			readonly minorFontLatin?: string
+			readonly themeColors?: readonly ThemeColorInput[]
 	  }
 	| { readonly op: 'setWorkbookProtection'; readonly protection: WorkbookProtectionInput }
 	| { readonly op: 'deleteTable'; readonly table: string }

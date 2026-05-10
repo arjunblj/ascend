@@ -2915,6 +2915,9 @@ describe('capabilities registry', () => {
 		const textBoxes = capabilities.find((capability) => capability.id === 'visuals.text-boxes')
 		expect(textBoxes?.status).toBe('editable')
 		expect(textBoxes?.tests).toContain('packages/sdk/src/visual-inventory.test.ts')
+		const themes = capabilities.find((capability) => capability.id === 'workbook.themes')
+		expect(themes?.status).toBe('editable')
+		expect(themes?.tests).toContain('packages/sdk/src/theme-inventory.test.ts')
 	})
 })
 

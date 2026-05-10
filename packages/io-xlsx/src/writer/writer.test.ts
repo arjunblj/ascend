@@ -2827,6 +2827,82 @@ describe('writeXlsx', () => {
 		})
 	})
 
+	it('updates preserved theme metadata and colors without dropping format scheme XML', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Theme')
+		sheet.cells.set(0, 0, { value: stringValue('Brand'), formula: null, styleId: S0 })
+		wb.preservedTheme = {
+			path: 'xl/theme/theme1.xml',
+			contentType: 'application/vnd.openxmlformats-officedocument.theme+xml',
+			xml: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<theme xmlns="http://schemas.openxmlformats.org/drawingml/2006/main" name="Office Twist">
+  <themeElements>
+    <clrScheme name="Office">
+      <dk1><sysClr val="windowText" lastClr="000000"/></dk1>
+      <lt1><sysClr val="window" lastClr="FFFFFF"/></lt1>
+      <accent1><srgbClr val="4F81BD"/></accent1>
+      <hlink><srgbClr val="0000FF"/></hlink>
+    </clrScheme>
+    <fontScheme name="Office">
+      <majorFont><latin typeface="Aptos Display"/></majorFont>
+      <minorFont><latin typeface="Aptos"/></minorFont>
+    </fontScheme>
+    <fmtScheme name="Keep Me"><fillStyleLst/></fmtScheme>
+  </themeElements>
+</theme>`,
+		}
+		wb.themeMetadata = {
+			name: 'Office Twist',
+			colorSchemeName: 'Office',
+			colorCount: 4,
+			majorFontLatin: 'Aptos Display',
+			minorFontLatin: 'Aptos',
+		}
+		wb.themeColors.push(
+			{ slot: 'dk1', systemColor: 'windowText', lastColor: '000000' },
+			{ slot: 'lt1', systemColor: 'window', lastColor: 'FFFFFF' },
+			{ slot: 'accent1', rgb: '4F81BD' },
+			{ slot: 'hlink', rgb: '0000FF' },
+		)
+
+		const applied = applyOperations(wb, [
+			{
+				op: 'setTheme',
+				themeName: 'Brand Theme',
+				colorSchemeName: 'Brand Colors',
+				majorFontLatin: 'Inter Display',
+				minorFontLatin: 'Inter',
+				themeColors: [{ slot: 'accent1', rgb: '0F6CBD' }],
+			},
+		])
+		expectOk(applied)
+
+		const written = writeXlsx(wb)
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		const themeXml = new TextDecoder().decode(zip['xl/theme/theme1.xml'] ?? new Uint8Array())
+		expect(themeXml).toContain('name="Brand Theme"')
+		expect(themeXml).toContain('<clrScheme name="Brand Colors">')
+		expect(themeXml).toContain('<majorFont><latin typeface="Inter Display"/></majorFont>')
+		expect(themeXml).toContain('<minorFont><latin typeface="Inter"/></minorFont>')
+		expect(themeXml).toContain('<accent1><srgbClr val="0F6CBD"/></accent1>')
+		expect(themeXml).toContain('<fmtScheme name="Keep Me"><fillStyleLst/></fmtScheme>')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.themeMetadata).toEqual({
+			name: 'Brand Theme',
+			colorSchemeName: 'Brand Colors',
+			colorCount: 4,
+			majorFontLatin: 'Inter Display',
+			minorFontLatin: 'Inter',
+		})
+		expect(reopened.value.workbook.themeColors.find((color) => color.slot === 'accent1')).toEqual({
+			slot: 'accent1',
+			rgb: '0F6CBD',
+		})
+	})
+
 	it('preserves table-part sheet wiring when table capsules are present', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Balance')

@@ -123,4 +123,68 @@ describe('workbook metadata operations', () => {
 		expect(wb.workbookProperties.date1904).toBe(true)
 		expect(result.value.recalcRequired).toBe(true)
 	})
+
+	test('setTheme updates names, fonts, and color slots without recalculation', () => {
+		const wb = createWorkbook()
+		wb.themeMetadata = {
+			name: 'Office',
+			colorSchemeName: 'Office',
+			colorCount: 2,
+			majorFontLatin: 'Aptos Display',
+			minorFontLatin: 'Aptos',
+		}
+		wb.themeColors.push(
+			{ slot: 'dk1', systemColor: 'windowText', lastColor: '000000' },
+			{ slot: 'accent1', rgb: '4F81BD' },
+		)
+
+		const result = applyOperation(wb, {
+			op: 'setTheme',
+			themeName: 'Brand Theme',
+			colorSchemeName: 'Brand Colors',
+			majorFontLatin: 'Inter Display',
+			minorFontLatin: 'Inter',
+			themeColors: [
+				{ slot: 'accent1', rgb: '0f6cbd' },
+				{ slot: 'lt1', systemColor: 'window', lastColor: 'ffffff' },
+			],
+		})
+		expectOk(result)
+
+		expect(result.value.recalcRequired).toBe(false)
+		expect(wb.themeMetadata).toEqual({
+			name: 'Brand Theme',
+			colorSchemeName: 'Brand Colors',
+			colorCount: 3,
+			majorFontLatin: 'Inter Display',
+			minorFontLatin: 'Inter',
+		})
+		expect(wb.themeColors).toEqual([
+			{ slot: 'dk1', systemColor: 'windowText', lastColor: '000000' },
+			{ slot: 'accent1', rgb: '0F6CBD' },
+			{ slot: 'lt1', systemColor: 'window', lastColor: 'FFFFFF' },
+		])
+	})
+
+	test('setTheme validates color slots and values', () => {
+		const wb = createWorkbook()
+
+		const missing = applyOperation(wb, { op: 'setTheme' })
+		expectErr(missing)
+		expect(missing.error.message).toContain('requires theme metadata')
+
+		const badSlot = applyOperation(wb, {
+			op: 'setTheme',
+			themeColors: [{ slot: 'brand', rgb: '123456' }],
+		})
+		expectErr(badSlot)
+		expect(badSlot.error.message).toContain('Unsupported theme color slot')
+
+		const badRgb = applyOperation(wb, {
+			op: 'setTheme',
+			themeColors: [{ slot: 'accent1', rgb: '#123456' }],
+		})
+		expectErr(badRgb)
+		expect(badRgb.error.message).toContain('6 hex digits')
+	})
 })

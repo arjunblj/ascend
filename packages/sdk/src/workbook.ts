@@ -834,6 +834,9 @@ export class AscendWorkbook extends WorkbookReadView {
 					workbookMetaDirty = true
 					calcChainDirty = true
 					break
+				case 'setTheme':
+					workbookMetaDirty = true
+					break
 				case 'setFormula':
 				case 'fillFormula':
 				case 'insertRows':

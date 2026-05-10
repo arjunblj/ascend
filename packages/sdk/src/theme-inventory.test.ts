@@ -22,6 +22,34 @@ describe('theme SDK inventory', () => {
 			{ slot: 'hlink', rgb: '0000FF' },
 		])
 	})
+
+	test('setTheme edits theme metadata and colors through SDK save and reopen', async () => {
+		const wb = await AscendWorkbook.open(themeWorkbook())
+		const result = wb.apply([
+			{
+				op: 'setTheme',
+				themeName: 'Brand Theme',
+				colorSchemeName: 'Brand Colors',
+				majorFontLatin: 'Inter Display',
+				minorFontLatin: 'Inter',
+				themeColors: [{ slot: 'accent1', rgb: '0F6CBD' }],
+			},
+		])
+		expect(result.errors).toEqual([])
+
+		const reopened = await AscendWorkbook.open(wb.toBytes())
+		expect(reopened.inspect().themeSummary).toMatchObject({
+			hasThemePart: true,
+			name: 'Brand Theme',
+			colorSchemeName: 'Brand Colors',
+			colorCount: 4,
+			majorFontLatin: 'Inter Display',
+			minorFontLatin: 'Inter',
+		})
+		expect(
+			reopened.inspect().themeSummary.colors.find((color) => color.slot === 'accent1'),
+		).toEqual({ slot: 'accent1', rgb: '0F6CBD' })
+	})
 })
 
 function themeWorkbook(): Uint8Array {

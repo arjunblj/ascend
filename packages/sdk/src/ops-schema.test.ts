@@ -235,6 +235,19 @@ describe('operation schema agent DX', () => {
 		expect(schema?.recoveryActions.join('\n')).toContain('null property values')
 	})
 
+	test('setTheme is exposed with theme color guidance', () => {
+		const schema = getOperationsSchema().find((entry) => entry.op === 'setTheme')
+		expect(schema?.schema.required).toEqual(['op'])
+		expect(schema?.schema.properties.themeColors?.description).toContain('accent1-6')
+		expect(schema?.examples[0]).toMatchObject({
+			op: 'setTheme',
+			themeName: 'Brand Theme',
+			colorSchemeName: 'Brand Colors',
+			themeColors: [{ slot: 'accent1', rgb: '0F6CBD' }],
+		})
+		expect(schema?.recoveryActions.join('\n')).toContain('themeSummary')
+	})
+
 	test('setWorkbookView and setCalcSettings expose workbook metadata guidance', () => {
 		const view = getOperationsSchema().find((entry) => entry.op === 'setWorkbookView')
 		expect(view?.schema.required).toEqual(['op', 'view'])

@@ -1,4 +1,4 @@
-import type { Workbook, WorkbookProperties, WorkbookView } from '@ascend/core'
+import type { Workbook, WorkbookProperties, WorkbookThemeColor, WorkbookView } from '@ascend/core'
 import type { Operation, Result } from '@ascend/schema'
 import { ascendError, err, ok } from '@ascend/schema'
 import { type PatchResult, patch } from './helpers.ts'
@@ -7,6 +7,14 @@ type RewriteExternalLinkOp = Extract<Operation, { op: 'rewriteExternalLink' }>
 type SetWorkbookPropertiesOp = Extract<Operation, { op: 'setWorkbookProperties' }>
 type SetWorkbookViewOp = Extract<Operation, { op: 'setWorkbookView' }>
 type SetCalcSettingsOp = Extract<Operation, { op: 'setCalcSettings' }>
+type SetThemeOp = Extract<Operation, { op: 'setTheme' }>
+type MutableThemeMetadata = {
+	colorCount: number
+	name?: string
+	colorSchemeName?: string
+	majorFontLatin?: string
+	minorFontLatin?: string
+}
 
 const WORKBOOK_PROPERTY_KEYS = [
 	'codeName',
@@ -14,6 +22,20 @@ const WORKBOOK_PROPERTY_KEYS = [
 	'filterPrivacy',
 	'date1904',
 ] as const
+const THEME_COLOR_SLOTS = new Set([
+	'dk1',
+	'lt1',
+	'dk2',
+	'lt2',
+	'accent1',
+	'accent2',
+	'accent3',
+	'accent4',
+	'accent5',
+	'accent6',
+	'hlink',
+	'folHlink',
+])
 
 export function handleSetWorkbookProperties(
 	workbook: Workbook,
@@ -153,6 +175,65 @@ export function handleSetCalcSettings(
 		old.iterativeCalc.maxIterations !== workbook.calcSettings.iterativeCalc.maxIterations ||
 		old.iterativeCalc.maxChange !== workbook.calcSettings.iterativeCalc.maxChange
 	return ok(patch([], [], recalcRequired))
+}
+
+export function handleSetTheme(workbook: Workbook, op: SetThemeOp): Result<PatchResult> {
+	if (
+		op.themeName === undefined &&
+		op.colorSchemeName === undefined &&
+		op.majorFontLatin === undefined &&
+		op.minorFontLatin === undefined &&
+		op.themeColors === undefined
+	) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'setTheme requires theme metadata or themeColors', {
+				suggestedFix:
+					'Provide themeName, colorSchemeName, majorFontLatin, minorFontLatin, or themeColors.',
+			}),
+		)
+	}
+
+	const validated = validateThemeOperation(op)
+	if (!validated.ok) return validated
+
+	const metadata: MutableThemeMetadata = { ...workbook.themeMetadata }
+	assignThemeField(metadata, 'name', op.themeName)
+	assignThemeField(metadata, 'colorSchemeName', op.colorSchemeName)
+	assignThemeField(metadata, 'majorFontLatin', op.majorFontLatin)
+	assignThemeField(metadata, 'minorFontLatin', op.minorFontLatin)
+	workbook.themeMetadata = metadata
+	if (op.themeColors !== undefined) {
+		const merged = mergeThemeColors(workbook.themeColors, op.themeColors)
+		workbook.themeColors.splice(0, workbook.themeColors.length, ...merged)
+		workbook.themeMetadata = { ...workbook.themeMetadata, colorCount: merged.length }
+	}
+
+	return ok(patch([], [], false))
+}
+
+function assignThemeField(
+	target: MutableThemeMetadata,
+	key: 'name' | 'colorSchemeName' | 'majorFontLatin' | 'minorFontLatin',
+	value: string | undefined,
+): void {
+	if (value === undefined) return
+	target[key] = value
+}
+
+function mergeThemeColors(
+	existing: readonly WorkbookThemeColor[],
+	updates: NonNullable<SetThemeOp['themeColors']>,
+): WorkbookThemeColor[] {
+	const bySlot = new Map(existing.map((color) => [color.slot, { ...color }]))
+	for (const update of updates) {
+		bySlot.set(update.slot, {
+			slot: update.slot,
+			...(update.rgb !== undefined ? { rgb: update.rgb.toUpperCase() } : {}),
+			...(update.systemColor !== undefined ? { systemColor: update.systemColor } : {}),
+			...(update.lastColor !== undefined ? { lastColor: update.lastColor.toUpperCase() } : {}),
+		})
+	}
+	return [...bySlot.values()]
 }
 
 function assignOptionalCalcSetting<
@@ -327,6 +408,72 @@ function validateCalcSettings(settings: SetCalcSettingsOp['settings']): Result<u
 				suggestedFix: 'Use a non-negative maxChange convergence threshold.',
 			}),
 		)
+	}
+	return ok(undefined)
+}
+
+function validateThemeOperation(op: SetThemeOp): Result<undefined> {
+	for (const [field, value] of [
+		['themeName', op.themeName],
+		['colorSchemeName', op.colorSchemeName],
+		['majorFontLatin', op.majorFontLatin],
+		['minorFontLatin', op.minorFontLatin],
+	] as const) {
+		if (value === undefined || value === null) continue
+		if (value.trim() === '') {
+			return err(
+				ascendError('VALIDATION_ERROR', `${field} must be non-empty when provided`, {
+					suggestedFix: `Omit ${field} to leave it unchanged, or provide a non-empty string.`,
+				}),
+			)
+		}
+	}
+	if (op.themeColors === undefined) return ok(undefined)
+	if (op.themeColors.length === 0) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'themeColors must contain at least one color update', {
+				suggestedFix: 'Provide one or more theme color entries with slot and rgb or systemColor.',
+			}),
+		)
+	}
+	const seen = new Set<string>()
+	for (const color of op.themeColors) {
+		if (!THEME_COLOR_SLOTS.has(color.slot)) {
+			return err(
+				ascendError('VALIDATION_ERROR', `Unsupported theme color slot "${color.slot}"`, {
+					suggestedFix: `Use one of ${[...THEME_COLOR_SLOTS].join(', ')}.`,
+				}),
+			)
+		}
+		if (seen.has(color.slot)) {
+			return err(
+				ascendError('VALIDATION_ERROR', `Duplicate theme color slot "${color.slot}"`, {
+					suggestedFix: 'Provide each theme color slot at most once.',
+				}),
+			)
+		}
+		seen.add(color.slot)
+		if (color.rgb === undefined && color.systemColor === undefined) {
+			return err(
+				ascendError('VALIDATION_ERROR', 'Theme color requires rgb or systemColor', {
+					suggestedFix: 'Use rgb for fixed colors or systemColor plus optional lastColor.',
+				}),
+			)
+		}
+		if (color.rgb !== undefined && !/^[0-9A-Fa-f]{6}$/.test(color.rgb)) {
+			return err(
+				ascendError('VALIDATION_ERROR', 'Theme color rgb must be 6 hex digits', {
+					suggestedFix: 'Use values such as 4F81BD without a leading #.',
+				}),
+			)
+		}
+		if (color.lastColor !== undefined && !/^[0-9A-Fa-f]{6}$/.test(color.lastColor)) {
+			return err(
+				ascendError('VALIDATION_ERROR', 'Theme color lastColor must be 6 hex digits', {
+					suggestedFix: 'Use values such as FFFFFF without a leading #.',
+				}),
+			)
+		}
 	}
 	return ok(undefined)
 }

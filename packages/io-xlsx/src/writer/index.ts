@@ -62,7 +62,7 @@ import { buildSheetXml, buildSheetXmlStreaming } from './sheet.ts'
 import { updateSlicerCacheDefinitionXml } from './slicer-cache.ts'
 import { buildPreservedStylesXml, buildStylesXml } from './styles.ts'
 import { buildTableXml } from './table.ts'
-import { buildThemeXml } from './theme.ts'
+import { buildThemeXml, themeXmlMatches, updateThemeXml } from './theme.ts'
 import {
 	readThreadedCommentTextRefs,
 	type ThreadedCommentTextRef,
@@ -566,7 +566,7 @@ export function planWriteXlsx(
 		const hasPreservedTheme = workbook.preservedTheme
 			? hasPreservedPart(sourceArchive, workbook.preservedTheme.xml, workbook.preservedTheme.path)
 			: false
-		const shouldGenerateTheme = !workbook.preservedTheme && hasThemeMetadata(workbook.themeMetadata)
+		const shouldGenerateTheme = !workbook.preservedTheme && hasThemeContent(workbook)
 		const generatedThemePath = workbook.preservedTheme?.path ?? 'xl/theme/theme1.xml'
 		const generatedThemeTarget = generatedThemePath.replace(/^xl\//, '')
 		const generatedThemeContentType = workbook.preservedTheme?.contentType ?? CT_THEME
@@ -792,7 +792,22 @@ export function planWriteXlsx(
 			? resolvePreservedBytes(sourceArchive, workbook.preservedTheme.path)
 			: undefined
 		if (workbook.preservedTheme && preservedThemeXml) {
-			if (preservedThemeBytes && !options.summaryOnly) {
+			const updatePreservedTheme = !themeXmlMatches(
+				preservedThemeXml,
+				workbook.themeMetadata,
+				workbook.themeColors,
+			)
+			if (updatePreservedTheme) {
+				recordXml(
+					workbook.preservedTheme.path,
+					{
+						owner: { kind: 'workbook' },
+						origin: 'generated',
+						contentType: workbook.preservedTheme.contentType,
+					},
+					() => updateThemeXml(preservedThemeXml, workbook.themeMetadata, workbook.themeColors),
+				)
+			} else if (preservedThemeBytes && !options.summaryOnly) {
 				recordBytes(
 					workbook.preservedTheme.path,
 					{
@@ -822,7 +837,7 @@ export function planWriteXlsx(
 					origin: 'generated',
 					contentType: generatedThemeContentType,
 				},
-				() => buildThemeXml(workbook.themeMetadata),
+				() => buildThemeXml(workbook.themeMetadata, workbook.themeColors),
 			)
 			plan.addOverride(generatedThemePath, generatedThemeContentType)
 		}
@@ -1808,8 +1823,10 @@ function hasPreservedPart(
 	return inlineText !== undefined || (!!archive && !!partPath && archive.has(partPath))
 }
 
-function hasThemeMetadata(metadata: Workbook['themeMetadata']): boolean {
+function hasThemeContent(workbook: Workbook): boolean {
+	const metadata = workbook.themeMetadata
 	return (
+		workbook.themeColors.length > 0 ||
 		metadata.colorCount > 0 ||
 		(metadata.name?.trim().length ?? 0) > 0 ||
 		(metadata.colorSchemeName?.trim().length ?? 0) > 0 ||

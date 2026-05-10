@@ -6,6 +6,7 @@ dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 
 download() {
 	file="$1"
+	mkdir -p "$dir/$(dirname "$file")"
 	curl -fsSL "$base_url/$file" -o "$dir/$file"
 }
 
@@ -31,6 +32,8 @@ download "functions-excel-2010.xlsx"
 download "matrix-multiplication.xlsx"
 download "pivot_table_first_header_row.xlsx"
 download "pivottable_date_field_filter.xlsx"
+download "pivot-table/tdf126858-1.xlsx"
+download "pivot-table/test_diff_aggregation.xlsx"
 download "sortconditionref2.xlsx"
 download "tdf143068_top10filter.xlsx"
 download "tdf165180_date1904.xlsx"

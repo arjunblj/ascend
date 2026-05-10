@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import { basename, dirname, join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { CorpusManifestEntry } from '../../corpus/manifest.ts'
 import { inspectOoxmlPackageFeatures } from '../../corpus/ooxml-feature-probe.ts'
@@ -71,6 +71,18 @@ const FIXTURES: readonly LibreOfficeFixture[] = [
 		file: 'pivottable_date_field_filter.xlsx',
 		sourcePath: 'sc/qa/unit/data/xlsx/pivottable_date_field_filter.xlsx',
 	},
+	{
+		file: 'pivot-table/tdf126858-1.xlsx',
+		sourcePath: 'sc/qa/unit/data/xlsx/pivot-table/tdf126858-1.xlsx',
+		notes:
+			'Calculated pivot field regression: the calculated data field is the only visible data dimension.',
+	},
+	{
+		file: 'pivot-table/test_diff_aggregation.xlsx',
+		sourcePath: 'sc/qa/unit/data/xlsx/pivot-table/test_diff_aggregation.xlsx',
+		notes:
+			'Calculated pivot field regression: calculated fields use SUM aggregation even beside visible COUNT data fields.',
+	},
 	{ file: 'sortconditionref2.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/sortconditionref2.xlsx' },
 	{
 		file: 'tdf143068_top10filter.xlsx',
@@ -137,7 +149,7 @@ async function buildEntry(root: string, fixture: LibreOfficeFixture): Promise<Co
 		strict_ooxml: /strict/i.test(fixture.file),
 	}
 	return {
-		file: basename(fixture.file),
+		file: fixture.file,
 		size_bytes: bytes.byteLength,
 		features,
 		counts,

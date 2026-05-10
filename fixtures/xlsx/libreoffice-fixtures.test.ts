@@ -29,11 +29,11 @@ describe('LibreOffice XLSX fixture corpus', () => {
 	test('manifest has pinned provenance for the vendored Calc QA fixture subset', async () => {
 		expect(existsSync(new URL('./libreoffice/LICENSE', import.meta.url))).toBe(true)
 		const entries = normalizeManifest(await loadManifest())
-		expect(entries.length).toBe(36)
+		expect(entries.length).toBe(38)
 		expect(validateManifestProvenance(entries)).toEqual([])
 		expect(selectManifestEntries(entries, { tags: ['libreoffice'] })).toHaveLength(entries.length)
-		expect(selectManifestEntries(entries, { tags: ['formula-fidelity'] })).toHaveLength(15)
-		expect(selectManifestEntries(entries, { tags: ['pivot-table'] })).toHaveLength(5)
+		expect(selectManifestEntries(entries, { tags: ['formula-fidelity'] })).toHaveLength(16)
+		expect(selectManifestEntries(entries, { tags: ['pivot-table'] })).toHaveLength(7)
 		expect(selectManifestEntries(entries, { tags: ['table'] })).toHaveLength(6)
 		expect(selectManifestEntries(entries, { tags: ['conditional-formatting'] })).toHaveLength(4)
 		expect(selectManifestEntries(entries, { tags: ['date'] })).toHaveLength(2)
@@ -355,6 +355,81 @@ describe('LibreOffice XLSX fixture corpus', () => {
 		])
 	})
 
+	test('surfaces LibreOffice calculated pivot field metadata', () => {
+		const initial = readXlsx(loadFixture('pivot-table/tdf126858-1.xlsx'))
+		expectOk(initial)
+
+		const pivot = initial.value.workbook.pivotTables[0]
+		const cache = initial.value.workbook.pivotCaches[0]
+
+		expect(pivot).toMatchObject({
+			name: 'СводнаяТаблица3',
+			cacheId: 32,
+			locationRef: 'A3:B7',
+			rowFields: [{ index: 0 }],
+			dataFields: [{ fieldIndex: 3, name: 'Сумма по полю Стоимость' }],
+		})
+		expect(cache).toMatchObject({
+			cacheId: 32,
+			recordCount: 12,
+			sourceSheet: 'Лист1',
+			sourceRef: 'A1:C13',
+		})
+		expect(cache?.fields[3]).toMatchObject({
+			name: 'Стоимость',
+			databaseField: false,
+			formula: "'кол-во' *'цена за ед'",
+		})
+		expect(cache?.records?.valueKindCounts).toEqual([
+			{ kind: 'sharedItem', count: 12 },
+			{ kind: 'number', count: 24 },
+		])
+	})
+
+	test('surfaces LibreOffice calculated pivot field aggregation metadata', () => {
+		const initial = readXlsx(loadFixture('pivot-table/test_diff_aggregation.xlsx'))
+		expectOk(initial)
+
+		const [sumPivot, countPivot] = initial.value.workbook.pivotTables
+		const cache = initial.value.workbook.pivotCaches[0]
+
+		expect(initial.value.workbook.pivotTables).toHaveLength(2)
+		expect(cache?.fields[2]).toMatchObject({
+			name: 'Field1',
+			databaseField: false,
+			formula: 'Spend*2',
+		})
+		expect(sumPivot).toMatchObject({
+			name: 'DataPilot1',
+			cacheId: 4,
+			locationRef: 'A1:C5',
+			columnFields: [{ index: -2 }],
+			dataFields: [
+				{ fieldIndex: 1, name: 'Sum - Spend' },
+				{ fieldIndex: 2, name: 'Sum - Field1' },
+			],
+		})
+		expect(countPivot).toMatchObject({
+			name: 'DataPilot2',
+			cacheId: 4,
+			locationRef: 'A1:C5',
+			columnFields: [{ index: -2 }],
+			dataFields: [
+				{ fieldIndex: 1, name: 'Count - Spend', subtotal: 'count' },
+				{ fieldIndex: 2, name: 'Sum - Field1' },
+			],
+		})
+		expect(countPivot?.columnItems?.[1]).toEqual({
+			index: 1,
+			dataFieldIndex: 1,
+			fieldItems: [{ index: 0, item: 1 }],
+		})
+		expect(cache?.records?.valueKindCounts).toEqual([
+			{ kind: 'sharedItem', count: 6 },
+			{ kind: 'number', count: 6 },
+		])
+	})
+
 	test('cached formulas in the LibreOffice subset recalculate without mismatches', async () => {
 		const payload = await runFormulaCorpusCorrectness({
 			corpusRoot: libreOfficeDir,
@@ -369,19 +444,19 @@ describe('LibreOffice XLSX fixture corpus', () => {
 			maxUnacceptedMismatches: 0,
 			maxSemanticMismatches: 0,
 			maxErrors: 0,
-			minComparedFormulas: 286,
-			minSemanticPerfectWorkbooks: 15,
+			minComparedFormulas: 288,
+			minSemanticPerfectWorkbooks: 16,
 		})
 		expect(payload.summary).toMatchObject({
-			workbookCount: 15,
-			formulaCount: 286,
-			comparedCount: 286,
+			workbookCount: 16,
+			formulaCount: 288,
+			comparedCount: 288,
 			mismatchCount: 22,
 			acceptedMismatchCount: 22,
 			unacceptedMismatchCount: 0,
 			errorCount: 0,
-			perfectWorkbookCount: 14,
-			semanticPerfectWorkbookCount: 15,
+			perfectWorkbookCount: 15,
+			semanticPerfectWorkbookCount: 16,
 		})
 	})
 })

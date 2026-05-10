@@ -152,6 +152,7 @@ export interface PivotTableInfo {
 export interface ExternalReferenceInfo {
 	readonly partPath: string
 	readonly relId?: string
+	readonly linkRelId?: string
 	readonly target?: string
 	readonly targetMode?: string
 }
@@ -164,6 +165,7 @@ export interface ExternalReferenceUsageInfo {
 	readonly name?: string
 	readonly formula: string
 	readonly references: readonly string[]
+	readonly externalReference?: ExternalReferenceInfo
 }
 
 export interface PivotCacheInfo {

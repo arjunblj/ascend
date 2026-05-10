@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { writeXlsx } from '../../packages/io-xlsx/src/index.ts'
 import { readXlsx } from '../../packages/io-xlsx/src/reader/index.ts'
+import { AscendWorkbook } from '../../packages/sdk/src/index.ts'
 import { runFormulaCorpusCorrectness } from '../benchmarks/formula-corpus-correctness.ts'
 import {
 	normalizeManifest,
@@ -79,6 +80,29 @@ describe('ClosedXML XLSX fixture corpus', () => {
 		expect(
 			entries.find((entry) => entry.file === 'Ranges_DefinedNames.xlsx')?.features.defined_names,
 		).toBe(true)
+	})
+
+	test('resolves ClosedXML external-link formula usages to package targets', async () => {
+		const wb = await AscendWorkbook.open(
+			loadFixture('Other_ExternalLinks_WorkbookWithExternalLink.xlsx'),
+		)
+		expect(wb.externalReferenceUsages()).toEqual([
+			{
+				workbook: '1',
+				sheet: 'Sheet1',
+				sourceKind: 'cellFormula',
+				sourceRef: 'Sheet1!B2',
+				formula: '[1]Sheet1!$A$1',
+				references: ['[1]Sheet1!$A$1'],
+				externalReference: {
+					partPath: 'xl/externalLinks/externalLink1.xml',
+					relId: 'rId2',
+					linkRelId: 'rId1',
+					target: 'book1.xlsx',
+					targetMode: 'External',
+				},
+			},
+		])
 	})
 
 	test('cached formulas in the ClosedXML subset recalculate without mismatches', async () => {

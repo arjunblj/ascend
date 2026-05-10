@@ -47,6 +47,7 @@ import type {
 	CompactRangeInfo,
 	CompactRangeWindowInfo,
 	DefinedNameInfo,
+	ExternalReferenceInfo,
 	ExternalReferenceUsageInfo,
 	FlatCellValue,
 	FormulaInfo,
@@ -1131,6 +1132,10 @@ function buildExternalReferenceUsages(
 	for (const formula of analysis.formulas.values()) {
 		if (!formula.ast) continue
 		for (const group of externalReferenceGroups(collectFormulaReferences(formula.ast))) {
+			const externalReference = resolveExternalReference(
+				workbook.externalReferenceDetails,
+				group.workbook,
+			)
 			usages.push({
 				workbook: group.workbook,
 				...(group.sheet ? { sheet: group.sheet } : {}),
@@ -1138,6 +1143,7 @@ function buildExternalReferenceUsages(
 				sourceRef: `${formula.sheetName}!${indexToColumn(formula.col)}${formula.row + 1}`,
 				formula: formula.formula,
 				references: group.references,
+				...(externalReference ? { externalReference } : {}),
 			})
 		}
 	}
@@ -1146,6 +1152,10 @@ function buildExternalReferenceUsages(
 		const parsed = parseFormula(normalizeFormulaInput(name.formula))
 		if (!parsed.ok) continue
 		for (const group of externalReferenceGroups(collectFormulaReferences(parsed.value))) {
+			const externalReference = resolveExternalReference(
+				workbook.externalReferenceDetails,
+				group.workbook,
+			)
 			usages.push({
 				workbook: group.workbook,
 				...(group.sheet ? { sheet: group.sheet } : {}),
@@ -1153,10 +1163,43 @@ function buildExternalReferenceUsages(
 				name: name.name,
 				formula: name.formula,
 				references: group.references,
+				...(externalReference ? { externalReference } : {}),
 			})
 		}
 	}
 	return usages
+}
+
+function resolveExternalReference(
+	details: readonly ExternalReferenceInfo[],
+	workbookToken: string,
+): ExternalReferenceInfo | undefined {
+	const numericIndex = parseExternalReferenceIndex(workbookToken)
+	if (numericIndex !== undefined) return copyExternalReferenceInfo(details[numericIndex])
+
+	const tokenName = externalReferenceBasename(workbookToken)
+	const matches = details.filter((entry) => {
+		if (entry.target === workbookToken || entry.partPath === workbookToken) return true
+		return entry.target !== undefined && externalReferenceBasename(entry.target) === tokenName
+	})
+	return matches.length === 1 ? copyExternalReferenceInfo(matches[0]) : undefined
+}
+
+function parseExternalReferenceIndex(workbookToken: string): number | undefined {
+	if (!/^\d+$/.test(workbookToken)) return undefined
+	const index = Number(workbookToken)
+	return Number.isSafeInteger(index) && index > 0 ? index - 1 : undefined
+}
+
+function externalReferenceBasename(path: string): string {
+	const normalized = path.replace(/\\/g, '/')
+	return normalized.slice(normalized.lastIndexOf('/') + 1)
+}
+
+function copyExternalReferenceInfo(
+	reference: ExternalReferenceInfo | undefined,
+): ExternalReferenceInfo | undefined {
+	return reference ? { ...reference } : undefined
 }
 
 function externalReferenceGroups(

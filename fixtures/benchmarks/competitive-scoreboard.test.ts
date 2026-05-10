@@ -700,7 +700,7 @@ describe('buildCompetitiveScoreboard', () => {
 				peakRssBytes: 1_000,
 			}),
 			matrixCase({
-				library: 'sheetjs',
+				library: 'sheetjs-metadata-only',
 				category: 'read',
 				workload: 'metadata-only',
 				repeat: 5,

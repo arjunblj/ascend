@@ -254,7 +254,7 @@ const CLAIM_PROFILES: Record<ClaimProfileName, ClaimProfile> = {
 				workloads: ['metadata-only'],
 				competitors: [
 					{ label: 'Ascend', libraries: ASCEND_READ_LIBRARIES },
-					{ label: 'SheetJS', libraries: ['sheetjs'] },
+					{ label: 'SheetJS', libraries: ['sheetjs', 'sheetjs-metadata-only'] },
 					{ label: 'openpyxl', libraries: ['openpyxl-metadata-only'] },
 				],
 				capabilityGaps: [

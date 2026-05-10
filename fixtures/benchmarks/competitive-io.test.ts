@@ -439,6 +439,49 @@ describe('competitive IO helpers', () => {
 		expect(evaluated.assertions.cellsNotHydrated).toBe(true)
 	})
 
+	test('external SheetJS runner supports metadata-only reads without hydrated cells', async () => {
+		const input = await buildWorkloadDataSet('metadata-only', 5, 4, 'raw-ooxml')
+		const proc = Bun.spawn(
+			[
+				'bun',
+				'fixtures/benchmarks/runners/js_read_runner.ts',
+				'--library',
+				'sheetjs',
+				'--metadata-only',
+				'--operation',
+				'read',
+				'--file',
+				input.xlsxPath,
+				'--repeat',
+				'1',
+				'--warmup',
+				'0',
+				'--json',
+			],
+			{ stdout: 'pipe', stderr: 'pipe' },
+		)
+		const [stdout, stderr, exitCode] = await Promise.all([
+			new Response(proc.stdout).text(),
+			new Response(proc.stderr).text(),
+			proc.exited,
+		])
+		expect(stderr).toBe('')
+		expect(exitCode).toBe(0)
+		const payload = JSON.parse(stdout) as {
+			readonly assertions: Record<string, unknown>
+		}
+		expect(payload.assertions.metadataOnlyRead).toBe(true)
+		expect(payload.assertions.sourceSheetCount).toBe(3)
+		expect(payload.assertions.loadedSheetCount).toBe(3)
+		expect(payload.assertions.hasAllSheets).toBe(true)
+		expect(payload.assertions.cellsHydrated).toBe(false)
+		expect(payload.assertions.runnerLoadMode).toBe('metadata-only')
+
+		const evaluated = evaluateAssertions('read', input, payload.assertions)
+		expect(evaluated.status).toBe('pass')
+		expect(evaluated.assertions.cellsNotHydrated).toBe(true)
+	})
+
 	test('raw OOXML generated data set is independent and semantically equivalent', async () => {
 		const input = await buildWorkloadDataSet('sparse-wide', 4, 16, 'raw-ooxml')
 		const read = readXlsx(input.xlsxBytes, { mode: 'values' })

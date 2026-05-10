@@ -301,6 +301,7 @@ export function competitorMatches(library: string, selection: CompetitorSelectio
 		library === 'ascend-readxlsx-values-rich-metadata-bytes' ||
 		library === 'ascend-external-metadata-only-bytes' ||
 		library === 'ascend-external-writer' ||
+		library === 'sheetjs-metadata-only' ||
 		library === 'openpyxl' ||
 		library === 'openpyxl-write-only' ||
 		library === 'openpyxl-metadata-only' ||

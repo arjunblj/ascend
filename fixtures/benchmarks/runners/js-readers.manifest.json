@@ -43,6 +43,29 @@
 		}
 	},
 	{
+		"name": "sheetjs-metadata-only",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/js_read_runner.ts",
+			"--library",
+			"sheetjs",
+			"--metadata-only"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-metadata-only-load-timing",
+		"validationModel": "external-post-metadata-assertions",
+		"memoryModel": "process-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"metadataOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	},
+	{
 		"name": "exceljs",
 		"command": ["bun", "fixtures/benchmarks/runners/js_read_runner.ts", "--library", "exceljs"],
 		"categories": ["read"],

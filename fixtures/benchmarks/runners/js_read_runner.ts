@@ -11,6 +11,7 @@ interface Args {
 	readonly repeat: number
 	readonly warmup: number
 	readonly json: boolean
+	readonly metadataOnly: boolean
 }
 
 type PrimitiveAssertion = string | number | boolean | null
@@ -51,6 +52,7 @@ function parseArgs(): Args {
 		repeat: positiveInt(readOption(argv, '--repeat'), 1),
 		warmup: nonNegativeInt(readOption(argv, '--warmup'), 0),
 		json: hasFlag(argv, '--json'),
+		metadataOnly: hasFlag(argv, '--metadata-only'),
 	}
 }
 
@@ -133,12 +135,14 @@ function valueAssertions(
 }
 
 async function readWorkbook(args: Args): Promise<unknown> {
-	if (args.library === 'sheetjs') return readSheetJs(args.file)
+	if (args.library === 'sheetjs') return readSheetJs(args.file, args.metadataOnly)
+	if (args.metadataOnly) throw new Error('--metadata-only is only supported for sheetjs')
 	return readExcelJs(args.file)
 }
 
-async function readSheetJs(file: string): Promise<import('xlsx').WorkBook> {
+async function readSheetJs(file: string, metadataOnly: boolean): Promise<import('xlsx').WorkBook> {
 	const sheetJs = await import('xlsx')
+	if (metadataOnly) return sheetJs.readFile(file, { bookSheets: true })
 	return sheetJs.readFile(file, { cellFormula: true, cellHTML: false, cellStyles: false })
 }
 
@@ -154,6 +158,9 @@ async function assertions(
 	workbook: unknown,
 ): Promise<Record<string, PrimitiveAssertion>> {
 	if (args.library === 'sheetjs') {
+		if (args.metadataOnly) {
+			return sheetJsMetadataOnlyAssertions(workbook as import('xlsx').WorkBook)
+		}
 		return sheetJsAssertions(workbook as import('xlsx').WorkBook)
 	}
 	return excelJsAssertions(workbook as import('exceljs').Workbook)
@@ -253,6 +260,19 @@ function excelJsFeatureAssertions(
 	}
 }
 
+function sheetJsMetadataOnlyAssertions(
+	workbook: import('xlsx').WorkBook,
+): Record<string, PrimitiveAssertion> {
+	return {
+		metadataOnlyRead: true,
+		sourceSheetCount: workbook.SheetNames.length,
+		loadedSheetCount: workbook.SheetNames.length,
+		loadedSheetNames: workbook.SheetNames.join(','),
+		hasAllSheets: true,
+		cellsHydrated: false,
+	}
+}
+
 async function libraryVersion(args: Args): Promise<string> {
 	if (args.library === 'sheetjs') return (await import('xlsx')).version
 	try {
@@ -282,7 +302,7 @@ async function main(): Promise<void> {
 			runnerVersion: await libraryVersion(args),
 			runnerApi: args.library === 'sheetjs' ? 'xlsx.readFile' : 'exceljs.xlsx.readFile',
 			runnerSource: 'path',
-			runnerLoadMode: 'values',
+			runnerLoadMode: args.metadataOnly ? 'metadata-only' : 'values',
 		},
 		samples,
 	}

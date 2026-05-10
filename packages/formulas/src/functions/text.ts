@@ -11,14 +11,14 @@ import {
 	topLeftScalar,
 } from '@ascend/schema'
 import { serialToDate } from './date.ts'
-import type { EvalArg, FunctionDef } from './index.ts'
+import type { EvalArg, FunctionDef, FunctionEvalContext } from './index.ts'
 import { numArg, toNum } from './math/helpers.ts'
 
 function fn(
 	name: string,
 	minArgs: number,
 	maxArgs: number,
-	evaluate: (args: EvalArg[]) => CellValue,
+	evaluate: (args: EvalArg[], ctx?: FunctionEvalContext) => CellValue,
 ): FunctionDef {
 	return { name, minArgs, maxArgs, volatile: false, evaluate }
 }
@@ -47,6 +47,27 @@ function strArg(arg: EvalArg | undefined): string | CellValue {
 	const v = arg?.value ?? EMPTY
 	if (isError(v)) return v
 	return cvStr(v)
+}
+
+function dollarNumArg(arg: EvalArg | undefined): number | CellValue {
+	const v = topLeftScalar(arg?.value ?? EMPTY)
+	if (isError(v)) return v
+	if (v.kind !== 'string' && v.kind !== 'richText') return numArg(arg)
+	const text = v.kind === 'richText' ? v.runs.map((run) => run.text).join('') : v.value
+	let trimmed = text.trim()
+	if (trimmed === '') return errorValue('#VALUE!')
+	let negative = false
+	if (trimmed.startsWith('(') && trimmed.endsWith(')')) {
+		negative = true
+		trimmed = trimmed.slice(1, -1).trim()
+	}
+	if (trimmed.startsWith('-')) {
+		negative = !negative
+		trimmed = trimmed.slice(1).trim()
+	}
+	const n = Number(trimmed.replace(/[$€£¥,]/g, ''))
+	if (Number.isNaN(n)) return errorValue('#VALUE!')
+	return negative ? -n : n
 }
 
 function proper(s: string): string {
@@ -126,7 +147,6 @@ function splitByDelimiter(text: string, delimiter: string, matchMode: number): s
 	return parts
 }
 
-const DATE_TOKEN_RE = /yyyy|yy|mmmm|mmm|mm|m|dddd|ddd|dd|d|hh|h|ss|s|AM\/PM|am\/pm|A\/P|a\/p/
 const MONTH_NAMES = [
 	'January',
 	'February',
@@ -145,8 +165,13 @@ const MONTH_NAMES = [
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 function isDateFormat(fmt: string): boolean {
+	if (/\[(h+|m+|s+)\]/i.test(fmt)) return true
 	const stripped = fmt.replace(/"[^"]*"/g, '').replace(/\[[^\]]*\]/g, '')
-	return DATE_TOKEN_RE.test(stripped)
+	for (const run of stripped.match(/[A-Za-z]+(?:\/[A-Za-z]+)?/g) ?? []) {
+		if (/^(AM\/PM|A\/P)$/i.test(run)) return true
+		if (/^(y{1,4}|m{1,4}|d{1,4}|h{1,2}|s{1,2})$/i.test(run)) return true
+	}
+	return false
 }
 
 function serialToTime(serial: number): { hours: number; minutes: number; seconds: number } {
@@ -158,14 +183,30 @@ function serialToTime(serial: number): { hours: number; minutes: number; seconds
 	return { hours, minutes, seconds }
 }
 
-function dayOfWeek(serial: number): number {
-	return (Math.floor(serial) + 6) % 7
+function secondsWithFraction(serial: number): number {
+	const frac = serial - Math.floor(serial)
+	const totalSeconds = frac * 86400
+	return totalSeconds - Math.floor(totalSeconds / 60) * 60
 }
 
-function formatDate(serial: number, fmt: string): string {
-	const parts = serialToDate(serial)
+function elapsedSecondsWithFraction(serial: number): number {
+	return serial * 86400
+}
+
+function dayOfWeek(serial: number, dateSystem: '1900' | '1904'): number {
+	const parts = serialToDate(Math.floor(serial), dateSystem)
+	if (!parts) return 0
+	const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day))
+	if (parts.year >= 0 && parts.year < 100) date.setUTCFullYear(parts.year)
+	return date.getUTCDay()
+}
+
+function formatDate(serial: number, fmt: string, dateSystem: '1900' | '1904' = '1900'): string {
+	const parts = serialToDate(Math.floor(serial), dateSystem)
 	if (!parts) return ''
 	const { hours, minutes, seconds } = serialToTime(serial)
+	const secondFraction = secondsWithFraction(serial)
+	const elapsedSecondFraction = elapsedSecondsWithFraction(serial)
 	const totalSeconds = Math.round(serial * 86400)
 	const totalMinutes = Math.floor(totalSeconds / 60)
 	const totalHours = Math.floor(totalSeconds / 3600)
@@ -177,6 +218,7 @@ function formatDate(serial: number, fmt: string): string {
 	let result = ''
 	let i = 0
 	let prevTokenIsTime = false
+	let elapsedSecondsContext = false
 	while (i < fmt.length) {
 		if (fmt[i] === '"') {
 			const end = fmt.indexOf('"', i + 1)
@@ -200,9 +242,20 @@ function formatDate(serial: number, fmt: string): string {
 				prevTokenIsTime = true
 			} else {
 				result += String(totalSeconds)
-				prevTokenIsTime = false
+				prevTokenIsTime = true
+				elapsedSecondsContext = true
 			}
 			i += elapsedToken[0].length
+			if (token.startsWith('s')) {
+				const fractionMatch = fmt.slice(i).match(/^\.([0]+)/)
+				if (fractionMatch) {
+					const digits = fractionMatch[1]?.length ?? 0
+					const rounded = elapsedSecondFraction.toFixed(digits)
+					const fraction = rounded.split('.')[1] ?? ''.padEnd(digits, '0')
+					result += `.${fraction}`
+					i += fractionMatch[0].length
+				}
+			}
 			continue
 		}
 
@@ -228,17 +281,26 @@ function formatDate(serial: number, fmt: string): string {
 		if (matched) continue
 
 		const remaining = fmt.slice(i)
-		const tokenMatch = remaining.match(/^(yyyy|yy|mmmm|mmm|mm|m|dddd|ddd|dd|d|hh|h|ss|s)/i)
+		const tokenMatch = remaining.match(
+			/^(yyyy|yyy|yy|y|ee|e|mmmm|mmm|mm|m|dddd|ddd|dd|d|hh|h|ss|s)/i,
+		)
 		if (tokenMatch) {
 			const tok = tokenMatch[0] as string
 			const tokLower = tok.toLowerCase()
 			switch (tokLower) {
 				case 'yyyy':
+				case 'yyy':
 					result += String(parts.year)
 					prevTokenIsTime = false
 					break
 				case 'yy':
+				case 'y':
 					result += String(parts.year % 100).padStart(2, '0')
+					prevTokenIsTime = false
+					break
+				case 'ee':
+				case 'e':
+					result += String(parts.year)
 					prevTokenIsTime = false
 					break
 				case 'mmmm':
@@ -264,11 +326,11 @@ function formatDate(serial: number, fmt: string): string {
 					}
 					break
 				case 'dddd':
-					result += DAY_NAMES[dayOfWeek(serial)] ?? ''
+					result += DAY_NAMES[dayOfWeek(serial, dateSystem)] ?? ''
 					prevTokenIsTime = false
 					break
 				case 'ddd':
-					result += (DAY_NAMES[dayOfWeek(serial)] ?? '').slice(0, 3)
+					result += (DAY_NAMES[dayOfWeek(serial, dateSystem)] ?? '').slice(0, 3)
 					prevTokenIsTime = false
 					break
 				case 'dd':
@@ -288,15 +350,27 @@ function formatDate(serial: number, fmt: string): string {
 					prevTokenIsTime = true
 					break
 				case 'ss':
-					result += String(seconds).padStart(2, '0')
-					prevTokenIsTime = false
+					result += elapsedSecondsContext
+						? String(totalSeconds).padStart(2, '0')
+						: String(seconds).padStart(2, '0')
+					prevTokenIsTime = true
 					break
 				case 's':
-					result += String(seconds)
-					prevTokenIsTime = false
+					result += elapsedSecondsContext ? String(totalSeconds) : String(seconds)
+					prevTokenIsTime = true
 					break
 			}
 			i += tok.length
+			if (tokLower === 's' || tokLower === 'ss') {
+				const fractionMatch = fmt.slice(i).match(/^\.([0]+)/)
+				if (fractionMatch) {
+					const digits = fractionMatch[1]?.length ?? 0
+					const rounded = secondFraction.toFixed(digits)
+					const fraction = rounded.split('.')[1] ?? ''.padEnd(digits, '0')
+					result += `.${fraction}`
+					i += fractionMatch[0].length
+				}
+			}
 			continue
 		}
 
@@ -307,6 +381,10 @@ function formatDate(serial: number, fmt: string): string {
 }
 
 const NUM_FMT_CHARS = new Set(['0', '#', '?', '.', ',', '%'])
+
+type NumberFormatToken =
+	| { kind: 'placeholder'; char: '0' | '#' | '?' }
+	| { kind: 'literal'; text: string; source?: 'raw' | 'escaped' | 'underscore' }
 
 interface FormatSection {
 	raw: string
@@ -520,15 +598,394 @@ function parseFormatSegments(fmt: string): { before: string; numFmt: string; aft
 	return { before, numFmt, after }
 }
 
-export function formatNumber(value: number, code: string): string {
+function tokenizeNumberFormat(fmt: string): NumberFormatToken[] {
+	const tokens: NumberFormatToken[] = []
+	for (let i = 0; i < fmt.length; i++) {
+		const ch = fmt[i] ?? ''
+		if (ch === '"') {
+			const end = fmt.indexOf('"', i + 1)
+			tokens.push({ kind: 'literal', text: end === -1 ? fmt.slice(i + 1) : fmt.slice(i + 1, end) })
+			i = end === -1 ? fmt.length : end
+			continue
+		}
+		if (ch === '\\' && i + 1 < fmt.length) {
+			tokens.push({ kind: 'literal', text: fmt[i + 1] ?? '', source: 'escaped' })
+			i++
+			continue
+		}
+		if (ch === '_' && i + 1 < fmt.length) {
+			tokens.push({ kind: 'literal', text: ' ', source: 'underscore' })
+			i++
+			continue
+		}
+		if (ch === '*' && i + 1 < fmt.length) {
+			i++
+			continue
+		}
+		if (ch === '0' || ch === '#' || ch === '?') {
+			tokens.push({ kind: 'placeholder', char: ch })
+		} else {
+			tokens.push({ kind: 'literal', text: ch, source: 'raw' })
+		}
+	}
+	return tokens
+}
+
+function tokenHasPlaceholder(
+	token: NumberFormatToken,
+): token is Extract<NumberFormatToken, { kind: 'placeholder' }> {
+	return token.kind === 'placeholder'
+}
+
+function hasPlaceholder(tokens: readonly NumberFormatToken[]): boolean {
+	return tokens.some(tokenHasPlaceholder)
+}
+
+function renderPlaceholderTokens(
+	tokens: readonly NumberFormatToken[],
+	digits: string,
+	options: { showZero?: boolean; trimTrailingLiteralsWhenBlank?: boolean } = {},
+): string {
+	const placeholderIndexes: number[] = []
+	for (let i = 0; i < tokens.length; i++) {
+		if (tokens[i]?.kind === 'placeholder') placeholderIndexes.push(i)
+	}
+	if (placeholderIndexes.length === 0) {
+		return tokens.map((token) => (token.kind === 'literal' ? token.text : '')).join('')
+	}
+
+	let renderDigits = digits.replace(/^0+(?=\d)/, '')
+	if (renderDigits === '0' && !options.showZero) renderDigits = ''
+	if (renderDigits === '' && options.showZero) renderDigits = '0'
+
+	const assigned = new Map<number, string>()
+	let digitIndex = renderDigits.length - 1
+	for (let i = placeholderIndexes.length - 1; i >= 0; i--) {
+		const tokenIndex = placeholderIndexes[i] as number
+		const token = tokens[tokenIndex]
+		if (digitIndex >= 0) {
+			assigned.set(tokenIndex, renderDigits[digitIndex] ?? '')
+			digitIndex--
+		} else if (token?.kind === 'placeholder') {
+			if (token.char === '0') assigned.set(tokenIndex, '0')
+			else if (token.char === '?') assigned.set(tokenIndex, ' ')
+			else assigned.set(tokenIndex, '')
+		}
+	}
+
+	let prefix = ''
+	if (digitIndex >= 0) prefix = renderDigits.slice(0, digitIndex + 1)
+
+	let renderedAnyDigit = false
+	let out = ''
+	for (let i = 0; i < tokens.length; i++) {
+		const token = tokens[i]
+		if (!token) continue
+		if (token.kind === 'placeholder') {
+			const text = assigned.get(i) ?? ''
+			if (/\d/.test(text)) renderedAnyDigit = true
+			out += text
+		} else {
+			out += token.text
+		}
+	}
+
+	if (prefix !== '') {
+		const firstPlaceholder = placeholderIndexes[0] ?? 0
+		let charOffset = 0
+		for (let i = 0; i < firstPlaceholder; i++) {
+			const token = tokens[i]
+			if (token?.kind === 'literal') charOffset += token.text.length
+		}
+		out = out.slice(0, charOffset) + prefix + out.slice(charOffset)
+		renderedAnyDigit = true
+	}
+
+	if (options.trimTrailingLiteralsWhenBlank && !renderedAnyDigit) {
+		const lastPlaceholder = placeholderIndexes.at(-1) ?? -1
+		let trimStart = out.length
+		let offset = 0
+		for (let i = 0; i < tokens.length; i++) {
+			const token = tokens[i]
+			if (!token) continue
+			const nextOffset =
+				offset + (token.kind === 'literal' ? token.text.length : (assigned.get(i) ?? '').length)
+			if (i > lastPlaceholder && token.kind === 'literal') trimStart = Math.min(trimStart, offset)
+			offset = nextOffset
+		}
+		return out.slice(0, trimStart)
+	}
+
+	return out
+}
+
+function literalText(tokens: readonly NumberFormatToken[]): string {
+	return tokens.map((token) => (token.kind === 'literal' ? token.text : '')).join('')
+}
+
+function blankDisplayWidth(text: string): string {
+	return text.replace(/\S/g, ' ')
+}
+
+function blankPlaceholderText(tokens: readonly NumberFormatToken[]): string {
+	return tokens.map((token) => (token.kind === 'placeholder' ? ' ' : token.text)).join('')
+}
+
+function stripTrailingWholeSeparator(text: string): { text: string; padding: string } {
+	return text.endsWith(':') ? { text: text.slice(0, -1), padding: ' ' } : { text, padding: '' }
+}
+
+function bestFraction(
+	value: number,
+	maxDenominator: number,
+): { numerator: number; denominator: number } {
+	if (value === 0) return { numerator: 0, denominator: 1 }
+	let bestNumerator = 0
+	let bestDenominator = 1
+	let bestError = Number.POSITIVE_INFINITY
+	for (let denominator = 1; denominator <= maxDenominator; denominator++) {
+		const numerator = Math.round(value * denominator)
+		const error = Math.abs(value - numerator / denominator)
+		if (error < bestError - Number.EPSILON) {
+			bestNumerator = numerator
+			bestDenominator = denominator
+			bestError = error
+			if (error === 0) break
+		}
+	}
+	return { numerator: bestNumerator, denominator: bestDenominator }
+}
+
+function splitMixedFractionLeft(tokens: readonly NumberFormatToken[]): {
+	whole: readonly NumberFormatToken[]
+	numerator: readonly NumberFormatToken[]
+	preSlash: readonly NumberFormatToken[]
+} | null {
+	let end = tokens.length - 1
+	while (end >= 0 && tokens[end]?.kind !== 'placeholder') end--
+	if (end < 0) return null
+	let start = end
+	while (start > 0 && tokens[start - 1]?.kind === 'placeholder') start--
+	return {
+		whole: tokens.slice(0, start),
+		numerator: tokens.slice(start, end + 1),
+		preSlash: tokens.slice(end + 1),
+	}
+}
+
+function splitDenominatorRight(tokens: readonly NumberFormatToken[]): {
+	postSlash: readonly NumberFormatToken[]
+	denominator: readonly NumberFormatToken[]
+	after: readonly NumberFormatToken[]
+} | null {
+	let start = 0
+	while (start < tokens.length && tokens[start]?.kind !== 'placeholder') start++
+	if (start >= tokens.length) return null
+	let end = start
+	while (end + 1 < tokens.length && tokens[end + 1]?.kind === 'placeholder') end++
+	return {
+		postSlash: tokens.slice(0, start),
+		denominator: tokens.slice(start, end + 1),
+		after: tokens.slice(end + 1),
+	}
+}
+
+function tryFormatFractionNumber(
+	value: number,
+	fmt: string,
+	showSign: boolean,
+): string | undefined {
+	if (fmt.includes('.') || /[Ee]/.test(fmt)) return undefined
+	const tokens = tokenizeNumberFormat(fmt)
+	const slashIndex = tokens.findIndex(
+		(token, index) =>
+			token.kind === 'literal' &&
+			token.text === '/' &&
+			token.source === 'raw' &&
+			hasPlaceholder(tokens.slice(0, index)) &&
+			hasPlaceholder(tokens.slice(index + 1)),
+	)
+	if (slashIndex < 0) return undefined
+
+	const left = tokens.slice(0, slashIndex)
+	const right = tokens.slice(slashIndex + 1)
+	const denominatorSplit = splitDenominatorRight(right)
+	if (!denominatorSplit) return undefined
+
+	const mixedSplit = splitMixedFractionLeft(left)
+	const hasExplicitWholeSeparator =
+		mixedSplit?.whole.some(
+			(token) =>
+				token.kind === 'literal' &&
+				token.source !== 'underscore' &&
+				token.text !== '' &&
+				token.text !== '|',
+		) ?? false
+	const numeratorTokens = hasExplicitWholeSeparator && mixedSplit ? mixedSplit.numerator : left
+	const wholeTokens = hasExplicitWholeSeparator && mixedSplit ? mixedSplit.whole : []
+	const preSlashTokens = hasExplicitWholeSeparator && mixedSplit ? mixedSplit.preSlash : []
+	const denominatorPlaceholders = denominatorSplit.denominator.filter(tokenHasPlaceholder).length
+	const maxDenominator = 10 ** Math.max(1, denominatorPlaceholders) - 1
+	const abs = Math.abs(value)
+	const whole = hasExplicitWholeSeparator ? Math.floor(abs) : 0
+	const fractionValue = hasExplicitWholeSeparator ? abs - whole : abs
+	let { numerator, denominator } = bestFraction(fractionValue, maxDenominator)
+	let renderedWhole = ''
+	if (hasExplicitWholeSeparator) {
+		if (numerator >= denominator) {
+			numerator -= denominator
+			renderedWhole = renderPlaceholderTokens(wholeTokens, String(whole + 1), {
+				showZero: true,
+				trimTrailingLiteralsWhenBlank: false,
+			})
+		} else {
+			renderedWhole = renderPlaceholderTokens(wholeTokens, String(whole), {
+				showZero: whole !== 0 || numerator === 0,
+				trimTrailingLiteralsWhenBlank: numerator !== 0,
+			})
+		}
+	}
+
+	const sign = showSign ? '-' : ''
+	if (numerator === 0) {
+		if (hasExplicitWholeSeparator) {
+			const numeratorHasRequiredZero = numeratorTokens.some(
+				(token) => token.kind === 'placeholder' && token.char === '0',
+			)
+			if (numeratorHasRequiredZero) {
+				return (
+					sign +
+					renderedWhole +
+					renderPlaceholderTokens(numeratorTokens, '0', { showZero: true }) +
+					literalText(preSlashTokens) +
+					'/' +
+					literalText(denominatorSplit.postSlash) +
+					renderPlaceholderTokens(denominatorSplit.denominator, '1', { showZero: true }) +
+					literalText(denominatorSplit.after)
+				)
+			}
+			const hasQuestionPadding = [
+				...wholeTokens,
+				...numeratorTokens,
+				...denominatorSplit.denominator,
+			].some((token) => token.kind === 'placeholder' && token.char === '?')
+			const strippedWhole = stripTrailingWholeSeparator(renderedWhole)
+			if (hasQuestionPadding) {
+				const zeroPadding = [
+					blankPlaceholderText(numeratorTokens),
+					literalText(preSlashTokens),
+					'/',
+					literalText(denominatorSplit.postSlash),
+					blankPlaceholderText(denominatorSplit.denominator),
+				].join('')
+				return (
+					sign +
+					strippedWhole.text +
+					strippedWhole.padding +
+					blankDisplayWidth(zeroPadding) +
+					literalText(denominatorSplit.after)
+				)
+			}
+			return sign + strippedWhole.text + literalText(denominatorSplit.after)
+		}
+		return (
+			sign +
+			renderPlaceholderTokens(numeratorTokens, '0', { showZero: true }) +
+			'/' +
+			literalText(denominatorSplit.postSlash) +
+			renderPlaceholderTokens(denominatorSplit.denominator, '1', { showZero: true }) +
+			literalText(denominatorSplit.after)
+		)
+	}
+
+	const renderedNumerator = renderPlaceholderTokens(numeratorTokens, String(numerator), {
+		showZero: true,
+	})
+	const renderedDenominator = renderPlaceholderTokens(
+		denominatorSplit.denominator,
+		String(denominator),
+		{
+			showZero: true,
+		},
+	)
+	return (
+		sign +
+		renderedWhole +
+		renderedNumerator +
+		literalText(preSlashTokens) +
+		'/' +
+		literalText(denominatorSplit.postSlash) +
+		renderedDenominator +
+		literalText(denominatorSplit.after)
+	)
+}
+
+function renderTextFormat(value: string, code: string): string | undefined {
+	const rawSections = splitFormatSections(code.trim())
+	const rawSection = rawSections.length >= 4 ? rawSections[3] : (rawSections[0] ?? code)
+	const section = parseFormatSection(rawSection ?? '').format
+	const { numFmt } = parseFormatSegments(section)
+	if (!section.includes('@') && numFmt !== '') return undefined
+
+	let result = ''
+	for (let i = 0; i < section.length; i++) {
+		const ch = section[i] ?? ''
+		if (ch === '"') {
+			const end = section.indexOf('"', i + 1)
+			if (end === -1) {
+				result += section.slice(i + 1)
+				break
+			}
+			result += section.slice(i + 1, end)
+			i = end
+			continue
+		}
+		if (ch === '\\' && i + 1 < section.length) {
+			result += section[i + 1] ?? ''
+			i++
+			continue
+		}
+		if ((ch === '_' || ch === '*') && i + 1 < section.length) {
+			i++
+			continue
+		}
+		result += ch === '@' ? value : ch
+	}
+	return result
+}
+
+function formatGeneralTextNumber(value: number): string {
+	if (!Number.isFinite(value)) return String(value)
+	if (Object.is(value, -0) || value === 0) return '0'
+	const abs = Math.abs(value)
+	if (abs >= 1e11 || abs < 1e-9) {
+		return value
+			.toExponential(14)
+			.replace(/(\.\d*?)0+e/i, '$1E')
+			.replace(/\.E/i, 'E')
+			.replace(/e/i, 'E')
+	}
+	return String(value)
+}
+
+export function formatNumber(
+	value: number,
+	code: string,
+	dateSystem: '1900' | '1904' = '1900',
+): string {
 	const { format: selectedFormat, autoSign, absValue } = selectNumericSection(value, code.trim())
 	const fmt = selectedFormat.trim()
 
 	if (fmt === '@') return String(value)
 
-	if (fmt === '' || fmt === 'General') return String(value)
+	if (fmt === '') return ''
 
-	if (isDateFormat(fmt)) return formatDate(value, fmt)
+	if (fmt === 'General') return formatGeneralTextNumber(value)
+
+	if (isDateFormat(fmt)) return formatDate(value, fmt, dateSystem)
+
+	const fraction = tryFormatFractionNumber(absValue, fmt, autoSign && value < 0)
+	if (fraction !== undefined) return fraction
 
 	const sciMatch = fmt.match(/([Ee])([+-])(0+)/)
 	if (sciMatch) {
@@ -565,7 +1022,8 @@ export function formatNumber(value: number, code: string): string {
 
 	const scaledValue = (absValue * 100 ** percentCount) / 1000 ** trailingCommas
 	const abs = Math.abs(scaledValue)
-	const fixed = abs.toFixed(decPlaces)
+	const roundedAbs = Math.round((abs + Number.EPSILON) * 10 ** decPlaces) / 10 ** decPlaces
+	const fixed = roundedAbs.toFixed(decPlaces)
 	const [rawInt = '', rawDec] = fixed.split('.')
 	const sign = autoSign && value < 0 ? '-' : ''
 
@@ -587,8 +1045,128 @@ export function formatNumber(value: number, code: string): string {
 	if (hasComma) {
 		intStr = intStr.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 	}
+	if (hasComma && intFmt.includes('?')) {
+		const groupingCommas = (intStr.match(/,/g) || []).length
+		const minDisplayWidth = intFmt.length + groupingCommas
+		if (groupingCommas > 0 && intStr.length < minDisplayWidth) {
+			intStr = intStr.padStart(minDisplayWidth, ' ')
+		}
+	}
 
 	return before + sign + intStr + (decStr ? `.${decStr}` : '') + after + '%'.repeat(percentCount)
+}
+
+export function formatTextValue(
+	value: CellValue,
+	code: string,
+	dateSystem: '1900' | '1904' = '1900',
+): CellValue {
+	if (isError(value)) return value
+	if (code.trim() === '') return stringValue('')
+	const scalar = topLeftScalar(value)
+	if (
+		code.trim().toLowerCase() === 'general' &&
+		scalar.kind !== 'number' &&
+		scalar.kind !== 'date'
+	) {
+		return stringValue(cvStr(scalar))
+	}
+	if (scalar.kind === 'string' || scalar.kind === 'boolean' || scalar.kind === 'richText') {
+		const formatted = renderTextFormat(cvStr(scalar), code)
+		if (formatted !== undefined) return stringValue(formatted)
+	}
+	const n = toNum(value)
+	if (typeof n !== 'number') return errorValue('#VALUE!')
+	return stringValue(formatNumber(n, code, dateSystem))
+}
+
+const MAC_ROMAN_CHAR_OVERRIDES = new Map<number, string>([[240, '\uf8ff']])
+const MAC_ROMAN_CODE_OVERRIDES = new Map<string, number>([['\uf8ff', 240]])
+
+function leftText(args: EvalArg[]): CellValue {
+	const s = strArg(args[0])
+	if (typeof s !== 'string') return s
+	const n = args.length >= 2 ? numArg(args[1]) : 1
+	if (typeof n !== 'number') return n
+	if (n < 0) return errorValue('#VALUE!')
+	return stringValue(s.slice(0, Math.trunc(n)))
+}
+
+function rightText(args: EvalArg[]): CellValue {
+	const s = strArg(args[0])
+	if (typeof s !== 'string') return s
+	const n = args.length >= 2 ? numArg(args[1]) : 1
+	if (typeof n !== 'number') return n
+	if (n < 0) return errorValue('#VALUE!')
+	const count = Math.trunc(n)
+	if (count === 0) return stringValue('')
+	return stringValue(count >= s.length ? s : s.slice(-count))
+}
+
+function midText(args: EvalArg[]): CellValue {
+	const s = strArg(args[0])
+	if (typeof s !== 'string') return s
+	const start = numArg(args[1])
+	if (typeof start !== 'number') return start
+	const len = numArg(args[2])
+	if (typeof len !== 'number') return len
+	if (start < 1 || len < 0) return errorValue('#VALUE!')
+	const st = Math.trunc(start) - 1
+	return stringValue(s.slice(st, st + Math.trunc(len)))
+}
+
+function lenText(args: EvalArg[]): CellValue {
+	const s = strArg(args[0])
+	if (typeof s !== 'string') return s
+	return numberValue(s.length)
+}
+
+function findText(args: EvalArg[], caseSensitive: boolean): CellValue {
+	const findText = strArg(args[0])
+	if (typeof findText !== 'string') return findText
+	const within = strArg(args[1])
+	if (typeof within !== 'string') return within
+	const startNum = args.length >= 3 ? numArg(args[2]) : 1
+	if (typeof startNum !== 'number') return startNum
+	if (startNum < 1) return errorValue('#VALUE!')
+	const start = Math.trunc(startNum) - 1
+	const haystack = caseSensitive ? within : within.toLowerCase()
+	const needle = caseSensitive ? findText : findText.toLowerCase()
+	const idx = haystack.indexOf(needle, start)
+	return idx === -1 ? errorValue('#VALUE!') : numberValue(idx + 1)
+}
+
+function replaceText(args: EvalArg[]): CellValue {
+	const text = strArg(args[0])
+	if (typeof text !== 'string') return text
+	const startN = numArg(args[1])
+	if (typeof startN !== 'number') return startN
+	const numChars = numArg(args[2])
+	if (typeof numChars !== 'number') return numChars
+	const newT = strArg(args[3])
+	if (typeof newT !== 'string') return newT
+	const start = Math.trunc(startN)
+	const count = Math.trunc(numChars)
+	if (start < 1 || count < 0) return errorValue('#VALUE!')
+	const s = start - 1
+	return stringValue(text.slice(0, s) + newT + text.slice(s + count))
+}
+
+function ascText(args: EvalArg[]): CellValue {
+	const text = strArg(args[0])
+	if (typeof text !== 'string') return text
+	let result = ''
+	for (const char of text) {
+		const code = char.codePointAt(0) ?? 0
+		if (code === 0x3000) {
+			result += ' '
+		} else if (code >= 0xff01 && code <= 0xff5e) {
+			result += String.fromCharCode(code - 0xfee0)
+		} else {
+			result += char
+		}
+	}
+	return stringValue(result)
 }
 
 export const textFunctions: FunctionDef[] = [
@@ -653,42 +1231,17 @@ export const textFunctions: FunctionDef[] = [
 		return stringValue(parts.join(delim))
 	}),
 
-	fn('LEFT', 1, 2, (args) => {
-		const s = strArg(args[0])
-		if (typeof s !== 'string') return s
-		const n = args.length >= 2 ? numArg(args[1]) : 1
-		if (typeof n !== 'number') return n
-		if (n < 0) return errorValue('#VALUE!')
-		return stringValue(s.slice(0, Math.trunc(n)))
-	}),
+	fn('LEFT', 1, 2, leftText),
+	fn('LEFTB', 1, 2, leftText),
 
-	fn('RIGHT', 1, 2, (args) => {
-		const s = strArg(args[0])
-		if (typeof s !== 'string') return s
-		const n = args.length >= 2 ? numArg(args[1]) : 1
-		if (typeof n !== 'number') return n
-		if (n < 0) return errorValue('#VALUE!')
-		const count = Math.trunc(n)
-		return stringValue(count >= s.length ? s : s.slice(-count))
-	}),
+	fn('RIGHT', 1, 2, rightText),
+	fn('RIGHTB', 1, 2, rightText),
 
-	fn('MID', 3, 3, (args) => {
-		const s = strArg(args[0])
-		if (typeof s !== 'string') return s
-		const start = numArg(args[1])
-		if (typeof start !== 'number') return start
-		const len = numArg(args[2])
-		if (typeof len !== 'number') return len
-		if (start < 1 || len < 0) return errorValue('#VALUE!')
-		const st = Math.trunc(start) - 1
-		return stringValue(s.slice(st, st + Math.trunc(len)))
-	}),
+	fn('MID', 3, 3, midText),
+	fn('MIDB', 3, 3, midText),
 
-	fn('LEN', 1, 1, (args) => {
-		const s = strArg(args[0])
-		if (typeof s !== 'string') return s
-		return numberValue(s.length)
-	}),
+	fn('LEN', 1, 1, lenText),
+	fn('LENB', 1, 1, lenText),
 
 	fn('TRIM', 1, 1, (args) => {
 		const s = strArg(args[0])
@@ -722,29 +1275,11 @@ export const textFunctions: FunctionDef[] = [
 		return stringValue(proper(s))
 	}),
 
-	fn('FIND', 2, 3, (args) => {
-		const findText = strArg(args[0])
-		if (typeof findText !== 'string') return findText
-		const within = strArg(args[1])
-		if (typeof within !== 'string') return within
-		const startNum = args.length >= 3 ? numArg(args[2]) : 1
-		if (typeof startNum !== 'number') return startNum
-		if (startNum < 1) return errorValue('#VALUE!')
-		const idx = within.indexOf(findText, Math.trunc(startNum) - 1)
-		return idx === -1 ? errorValue('#VALUE!') : numberValue(idx + 1)
-	}),
+	fn('FIND', 2, 3, (args) => findText(args, true)),
+	fn('FINDB', 2, 3, (args) => findText(args, true)),
 
-	fn('SEARCH', 2, 3, (args) => {
-		const findText = strArg(args[0])
-		if (typeof findText !== 'string') return findText
-		const within = strArg(args[1])
-		if (typeof within !== 'string') return within
-		const startNum = args.length >= 3 ? numArg(args[2]) : 1
-		if (typeof startNum !== 'number') return startNum
-		if (startNum < 1) return errorValue('#VALUE!')
-		const idx = within.toLowerCase().indexOf(findText.toLowerCase(), Math.trunc(startNum) - 1)
-		return idx === -1 ? errorValue('#VALUE!') : numberValue(idx + 1)
-	}),
+	fn('SEARCH', 2, 3, (args) => findText(args, false)),
+	fn('SEARCHB', 2, 3, (args) => findText(args, false)),
 
 	fn('TEXTBEFORE', 2, 6, (args) => {
 		const parsed = textSplitPoint(args)
@@ -818,6 +1353,7 @@ export const textFunctions: FunctionDef[] = [
 		if (typeof oldT !== 'string') return oldT
 		const newT = strArg(args[2])
 		if (typeof newT !== 'string') return newT
+		if (oldT === '') return stringValue(text)
 
 		if (args.length >= 4) {
 			const inst = numArg(args[3])
@@ -847,27 +1383,14 @@ export const textFunctions: FunctionDef[] = [
 		return stringValue(oldT === '' ? text : text.split(oldT).join(newT))
 	}),
 
-	fn('REPLACE', 4, 4, (args) => {
-		const text = strArg(args[0])
-		if (typeof text !== 'string') return text
-		const startN = numArg(args[1])
-		if (typeof startN !== 'number') return startN
-		const numChars = numArg(args[2])
-		if (typeof numChars !== 'number') return numChars
-		const newT = strArg(args[3])
-		if (typeof newT !== 'string') return newT
-		const s = Math.trunc(startN) - 1
-		return stringValue(text.slice(0, s) + newT + text.slice(s + Math.trunc(numChars)))
-	}),
+	fn('REPLACE', 4, 4, replaceText),
+	fn('REPLACEB', 4, 4, replaceText),
 
-	fn('TEXT', 2, 2, (args) => {
+	fn('TEXT', 2, 2, (args, ctx) => {
 		const v = args[0]?.value ?? EMPTY
-		if (isError(v)) return v
 		const fmt = strArg(args[1])
 		if (typeof fmt !== 'string') return fmt
-		const n = toNum(v)
-		if (typeof n !== 'number') return errorValue('#VALUE!')
-		return stringValue(formatNumber(n, fmt))
+		return formatTextValue(v, fmt, ctx?.dateSystem ?? '1900')
 	}),
 
 	fn('VALUE', 1, 1, (args) => {
@@ -889,6 +1412,8 @@ export const textFunctions: FunctionDef[] = [
 		if (typeof n !== 'number') return n
 		const code = Math.trunc(n)
 		if (code < 1 || code > 65535) return errorValue('#VALUE!')
+		const override = MAC_ROMAN_CHAR_OVERRIDES.get(code)
+		if (override) return stringValue(override)
 		return stringValue(String.fromCharCode(code))
 	}),
 
@@ -896,8 +1421,13 @@ export const textFunctions: FunctionDef[] = [
 		const s = strArg(args[0])
 		if (typeof s !== 'string') return s
 		if (s.length === 0) return errorValue('#VALUE!')
+		const override = MAC_ROMAN_CODE_OVERRIDES.get(s[0] ?? '')
+		if (override !== undefined) return numberValue(override)
 		return numberValue(s.charCodeAt(0))
 	}),
+
+	fn('ASC', 1, 1, ascText),
+	fn('PHONETIC', 1, 1, () => errorValue('#N/A')),
 
 	fn('REPT', 2, 2, (args) => {
 		const s = strArg(args[0])
@@ -966,7 +1496,7 @@ export const textFunctions: FunctionDef[] = [
 	}),
 
 	fn('DOLLAR', 1, 2, (args) => {
-		const n = numArg(args[0])
+		const n = dollarNumArg(args[0])
 		if (typeof n !== 'number') return n
 		const decimals = args.length >= 2 ? numArg(args[1]) : 2
 		if (typeof decimals !== 'number') return decimals
@@ -982,7 +1512,8 @@ export const textFunctions: FunctionDef[] = [
 		const raw = neg ? text.slice(1) : text
 		const [intPart = '', decPart] = raw.split('.')
 		const withCommas = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-		text = `${neg ? '-' : ''}$${withCommas}${decPart !== undefined ? `.${decPart}` : ''}`
+		const formatted = `$${withCommas}${decPart !== undefined ? `.${decPart}` : ''}`
+		text = neg ? `(${formatted})` : formatted
 		return stringValue(text)
 	}),
 

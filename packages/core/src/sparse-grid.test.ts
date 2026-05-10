@@ -36,6 +36,27 @@ describe('SparseGrid', () => {
 		expect(grid.readString(0, 0)).toBe('hello')
 	})
 
+	test('plain setters store values while preserving grid bookkeeping', () => {
+		const grid = new SparseGrid()
+		grid.set(0, 0, { ...makeCell(numberValue(1), 'A1+1'), formulaInfo: { kind: 'array' } })
+		expect(grid.cellCount()).toBe(1)
+		expect(grid.formulaCellCount()).toBe(1)
+		expect(grid.formulaInfoCellCount()).toBe(1)
+
+		grid.setPlainNumber(0, 0, 2)
+		grid.setPlainString(1, 1, 'hello')
+
+		expect(grid.cellCount()).toBe(2)
+		expect(grid.formulaCellCount()).toBe(0)
+		expect(grid.formulaInfoCellCount()).toBe(0)
+		expect(grid.readNumber(0, 0)).toBe(2)
+		expect(grid.readString(1, 1)).toBe('hello')
+		expect(grid.usedRange()).toEqual({
+			start: { row: 0, col: 0 },
+			end: { row: 1, col: 1 },
+		})
+	})
+
 	test('overwrite existing cell', () => {
 		const grid = new SparseGrid()
 		grid.set(0, 0, makeCell(numberValue(1)))

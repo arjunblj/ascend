@@ -922,6 +922,43 @@ export class SparseGrid {
 		this._trackBounds(row, col)
 	}
 
+	setPlainString(row: number, col: number, value: string): void {
+		this.ensureWritable()
+		const chunkRow = row >> CHUNK_BITS
+		const chunkCol = col >> CHUNK_BITS
+		const localIndex = ((row & CHUNK_MASK) << CHUNK_BITS) | (col & CHUNK_MASK)
+		const writable = this._writableChunk(chunkRow, chunkCol)
+		const cols = writable.cols
+		let chunk = writable.chunk
+		chunk = this.ensureChunkWritable(chunkRow, chunkCol, cols, chunk)
+		const existed = chunk.has(localIndex)
+		let hadFormula = false
+		let hadFormulaInfo = false
+		if (existed) {
+			const oldSlot = chunk.getSlot(localIndex)
+			hadFormula = slotHasFormula(oldSlot)
+			hadFormulaInfo = oldSlot?.formulaInfo !== undefined
+		}
+		const nextChunk = chunk.setStringResolved(
+			localIndex,
+			value,
+			null,
+			DEFAULT_STYLE_ID,
+			undefined,
+			this.stringTable,
+		)
+		if (nextChunk !== chunk) cols.set(chunkCol, nextChunk)
+		this._rememberWriteChunk(chunkRow, chunkCol, cols, nextChunk)
+		if (!existed) {
+			this._cellCount++
+			if (this._expectedDensity === 'auto') this._autoTotalCells++
+		} else {
+			if (hadFormula) this._formulaCellCount--
+			if (hadFormulaInfo) this._formulaInfoCellCount--
+		}
+		this._trackBounds(row, col)
+	}
+
 	setNumberResolved(
 		row: number,
 		col: number,
@@ -953,6 +990,36 @@ export class SparseGrid {
 		if (hadFormula !== hasFormula) this._formulaCellCount += hasFormula ? 1 : -1
 		if (hadFormulaInfo !== (formulaInfo !== undefined)) {
 			this._formulaInfoCellCount += formulaInfo !== undefined ? 1 : -1
+		}
+		this._trackBounds(row, col)
+	}
+
+	setPlainNumber(row: number, col: number, value: number): void {
+		this.ensureWritable()
+		const chunkRow = row >> CHUNK_BITS
+		const chunkCol = col >> CHUNK_BITS
+		const localIndex = ((row & CHUNK_MASK) << CHUNK_BITS) | (col & CHUNK_MASK)
+		const writable = this._writableChunk(chunkRow, chunkCol)
+		const cols = writable.cols
+		let chunk = writable.chunk
+		chunk = this.ensureChunkWritable(chunkRow, chunkCol, cols, chunk)
+		const existed = chunk.has(localIndex)
+		let hadFormula = false
+		let hadFormulaInfo = false
+		if (existed) {
+			const oldSlot = chunk.getSlot(localIndex)
+			hadFormula = slotHasFormula(oldSlot)
+			hadFormulaInfo = oldSlot?.formulaInfo !== undefined
+		}
+		const nextChunk = chunk.setNumberResolved(localIndex, value, null, DEFAULT_STYLE_ID, undefined)
+		if (nextChunk !== chunk) cols.set(chunkCol, nextChunk)
+		this._rememberWriteChunk(chunkRow, chunkCol, cols, nextChunk)
+		if (!existed) {
+			this._cellCount++
+			if (this._expectedDensity === 'auto') this._autoTotalCells++
+		} else {
+			if (hadFormula) this._formulaCellCount--
+			if (hadFormulaInfo) this._formulaInfoCellCount--
 		}
 		this._trackBounds(row, col)
 	}

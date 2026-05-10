@@ -11,6 +11,13 @@ import type { EvalArg, FunctionDef } from '../index.ts'
 import { collectNumbers, getRange } from '../registry.ts'
 import { fn, numArg } from './helpers.ts'
 
+function matrixNumber(v: CellValue): number | null {
+	if (v.kind === 'number') return v.value
+	if (v.kind === 'date') return v.serial
+	if (v.kind === 'boolean') return v.value ? 1 : 0
+	return null
+}
+
 export const basicFunctions: FunctionDef[] = [
 	fn('ABS', 1, 1, (args) => {
 		const n = numArg(args[0])
@@ -144,7 +151,8 @@ export const basicFunctions: FunctionDef[] = [
 					}
 				}
 			} else {
-				const n = numArg(arg)
+				const n = directMathNumber(arg)
+				if (n === null) continue
 				if (typeof n !== 'number') return n
 				sum += n * n
 			}
@@ -326,21 +334,14 @@ export const basicFunctions: FunctionDef[] = [
 		const bRows = b.length
 		const bCols = b[0]?.length ?? 0
 		if (aCols !== bRows) return errorValue('#VALUE!')
-		const toNum = (v: CellValue): number | null => {
-			if (v.kind === 'number') return v.value
-			if (v.kind === 'date') return v.serial
-			if (v.kind === 'boolean') return v.value ? 1 : 0
-			if (v.kind === 'empty') return 0
-			return null
-		}
 		const rows: CellValue[][] = []
 		for (let i = 0; i < aRows; i++) {
 			const row: CellValue[] = []
 			for (let j = 0; j < bCols; j++) {
 				let sum = 0
 				for (let k = 0; k < aCols; k++) {
-					const av = toNum(a[i]?.[k] ?? EMPTY)
-					const bv = toNum(b[k]?.[j] ?? EMPTY)
+					const av = matrixNumber(a[i]?.[k] ?? EMPTY)
+					const bv = matrixNumber(b[k]?.[j] ?? EMPTY)
 					if (av === null || bv === null) return errorValue('#VALUE!')
 					sum += av * bv
 				}
@@ -357,18 +358,11 @@ export const basicFunctions: FunctionDef[] = [
 		const n = m.length
 		const cols = m[0]?.length ?? 0
 		if (n !== cols || n === 0) return errorValue('#VALUE!')
-		const toNum = (v: CellValue): number | null => {
-			if (v.kind === 'number') return v.value
-			if (v.kind === 'date') return v.serial
-			if (v.kind === 'boolean') return v.value ? 1 : 0
-			if (v.kind === 'empty') return 0
-			return null
-		}
 		const mat: number[][] = []
 		for (let i = 0; i < n; i++) {
 			const row: number[] = []
 			for (let j = 0; j < n; j++) {
-				const v = toNum(m[i]?.[j] ?? EMPTY)
+				const v = matrixNumber(m[i]?.[j] ?? EMPTY)
 				if (v === null) return errorValue('#VALUE!')
 				row.push(v)
 			}
@@ -382,18 +376,11 @@ export const basicFunctions: FunctionDef[] = [
 		const n = m.length
 		const cols = m[0]?.length ?? 0
 		if (n !== cols || n === 0) return errorValue('#VALUE!')
-		const toNum = (v: CellValue): number | null => {
-			if (v.kind === 'number') return v.value
-			if (v.kind === 'date') return v.serial
-			if (v.kind === 'boolean') return v.value ? 1 : 0
-			if (v.kind === 'empty') return 0
-			return null
-		}
 		const aug: number[][] = []
 		for (let i = 0; i < n; i++) {
 			const row: number[] = []
 			for (let j = 0; j < n; j++) {
-				const v = toNum(m[i]?.[j] ?? EMPTY)
+				const v = matrixNumber(m[i]?.[j] ?? EMPTY)
 				if (v === null) return errorValue('#VALUE!')
 				row.push(v)
 			}
@@ -462,28 +449,40 @@ function collectPairedNumbers(
 	const range2 = getRange(arg2)
 	const xs: number[] = []
 	const ys: number[] = []
-	const rows1 = range1.length
-	const cols1 = range1[0]?.length ?? 0
-	const rows2 = range2.length
-	const cols2 = range2[0]?.length ?? 0
-	if (rows1 !== rows2 || cols1 !== cols2) return errorValue('#N/A')
-	for (let r = 0; r < rows1; r++) {
-		for (let c = 0; c < cols1; c++) {
-			const v1 = range1[r]?.[c]
-			const v2 = range2[r]?.[c]
-			if (!v1 || !v2) continue
-			if (v1.kind === 'error') return v1
-			if (v2.kind === 'error') return v2
-			const n1 = v1.kind === 'number' ? v1.value : v1.kind === 'date' ? v1.serial : null
-			const n2 = v2.kind === 'number' ? v2.value : v2.kind === 'date' ? v2.serial : null
-			if (n1 !== null && n2 !== null) {
-				xs.push(n1)
-				ys.push(n2)
-			}
+	const values1 = flattenRangeValues(range1)
+	const values2 = flattenRangeValues(range2)
+	if (values1.length !== values2.length) return errorValue('#N/A')
+	for (let i = 0; i < values1.length; i++) {
+		const v1 = values1[i] ?? EMPTY
+		const v2 = values2[i] ?? EMPTY
+		if (v1.kind === 'error') return v1
+		if (v2.kind === 'error') return v2
+		const n1 = v1.kind === 'number' ? v1.value : v1.kind === 'date' ? v1.serial : null
+		const n2 = v2.kind === 'number' ? v2.value : v2.kind === 'date' ? v2.serial : null
+		if (n1 !== null && n2 !== null) {
+			xs.push(n1)
+			ys.push(n2)
 		}
 	}
-	if (xs.length === 0) return errorValue('#N/A')
+	if (xs.length === 0) return errorValue('#DIV/0!')
 	return [xs, ys]
+}
+
+function directMathNumber(arg: EvalArg | undefined): number | null | CellValue {
+	if (arg?.ref) {
+		const value = arg.value ?? EMPTY
+		if (value.kind === 'error') return value
+		return value.kind === 'number' ? value.value : value.kind === 'date' ? value.serial : null
+	}
+	return numArg(arg)
+}
+
+function flattenRangeValues(range: readonly (readonly CellValue[])[]): CellValue[] {
+	const values: CellValue[] = []
+	for (const row of range) {
+		for (const cell of row) values.push(cell)
+	}
+	return values
 }
 
 function determinant(m: number[][], n: number): number {

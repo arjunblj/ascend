@@ -39,6 +39,7 @@ function isIntentionalNonPropagation(name: string, position: number, code: strin
 	if (name === 'IFS') return position % 2 === 1
 	if (name === 'IFERROR') return position === 0 || position === 1
 	if (name === 'IFNA') return (position === 0 && code === '#N/A') || position === 1
+	if (name === 'COUNT' || name === 'COUNTA') return true
 	if (name === 'INDIRECT' || name === 'OFFSET') return true
 	if (name === 'LET') return position < 2
 	if (name === 'MAP' || name === 'BYROW' || name === 'BYCOL') return position === 1

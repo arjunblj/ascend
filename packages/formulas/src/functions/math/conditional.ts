@@ -56,12 +56,16 @@ function rangeCacheKey(arg: EvalArg | undefined): string | null {
 	return `${ref.sheetIndex}:${ref.row}:${ref.col}:${ref.endRow ?? ref.row}:${ref.endCol ?? ref.col}`
 }
 
-function singleCriteriaCacheKey(name: string, args: EvalArg[]): string | null {
+function singleCriteriaCacheKey(
+	name: string,
+	args: EvalArg[],
+	ctx: FunctionEvalContext | undefined,
+): string | null {
 	const criteriaRange = rangeCacheKey(args[0])
 	if (!criteriaRange) return null
 	const sumRange = args.length >= 3 ? rangeCacheKey(args[2]) : criteriaRange
 	if (!sumRange) return null
-	return `COND:${name}:${criteriaRange}:${criteriaCacheKey(args[1]?.value ?? EMPTY)}:${sumRange}`
+	return `COND:${name}:${criteriaRange}:${criteriaCacheKey(scalarCriteriaValue(args[1], ctx))}:${sumRange}`
 }
 
 function ifsCacheKey(name: string, args: EvalArg[], firstCriteriaRangeIdx: number): string | null {
@@ -115,6 +119,10 @@ function parseCriteriaImpl(criteria: CellValue): (v: CellValue) => boolean {
 	if (criteria.kind === 'boolean') {
 		const t = criteria.value
 		return (v) => v.kind === 'boolean' && v.value === t
+	}
+	if (criteria.kind === 'error') {
+		const t = criteria.value
+		return (v) => v.kind === 'error' && v.value === t
 	}
 	if (criteria.kind !== 'string') return () => false
 
@@ -275,6 +283,123 @@ function criteriaAt(spec: CriteriaSpec, row: number, col: number): CellValue {
 	return sourceRow?.[sourceRow.length === 1 ? 0 : col] ?? EMPTY
 }
 
+function scalarCriteriaValue(
+	arg: EvalArg | undefined,
+	ctx: FunctionEvalContext | undefined,
+): CellValue {
+	if (!arg) return EMPTY
+	if (arg.value.kind === 'error') return arg.value
+	if (arg.value.kind === 'array' && !arg.ref && !arg.areas?.length) return topLeftScalar(arg.value)
+
+	const area = criteriaArea(arg)
+	if (!area) return topLeftScalar(arg.value)
+	if (area === 'multi') return errorValue('#VALUE!')
+
+	const startRow = area.ref.row
+	const startCol = area.ref.col
+	const endRow = area.ref.endRow ?? startRow
+	const endCol = area.ref.endCol ?? startCol
+	const height = endRow - startRow + 1
+	const width = endCol - startCol + 1
+
+	if (height === 1 && width === 1) return criteriaOffsetValue(area, 0, 0)
+
+	const row = ctx?.row
+	const col = ctx?.col
+	if (row === undefined || col === undefined) return topLeftScalar(arg.value)
+	if (height === 1) {
+		if (col < startCol || col > endCol) return errorValue('#VALUE!')
+		return criteriaOffsetValue(area, 0, col - startCol)
+	}
+	if (width === 1) {
+		if (row < startRow || row > endRow) return errorValue('#VALUE!')
+		return criteriaOffsetValue(area, row - startRow, 0)
+	}
+	if (row >= startRow && row <= endRow && col >= startCol && col <= endCol) {
+		return criteriaOffsetValue(area, row - startRow, col - startCol)
+	}
+	return errorValue('#VALUE!')
+}
+
+type CriteriaArea =
+	| {
+			ref: CriteriaRangeRef
+			values: readonly (readonly CellValue[])[]
+			valueAtOffset?: (rowOffset: number, colOffset: number) => CellValue
+	  }
+	| 'multi'
+
+interface CriteriaRangeRef {
+	readonly kind: 'range'
+	readonly sheetIndex: number
+	readonly row: number
+	readonly col: number
+	readonly endRow?: number
+	readonly endCol?: number
+}
+
+function criteriaArea(arg: EvalArg): CriteriaArea | null {
+	if (arg.areas?.length) {
+		if (arg.areas.length !== 1) return 'multi'
+		const area = arg.areas[0]
+		if (!area) return null
+		return {
+			ref: criteriaRangeRef(area.ref),
+			values: area.values,
+			...(area.valueAtOffset ? { valueAtOffset: area.valueAtOffset } : {}),
+		}
+	}
+	if (!arg.ref) return null
+	if (arg.ref.kind === 'cell') {
+		return {
+			ref: {
+				kind: 'range',
+				sheetIndex: arg.ref.sheetIndex,
+				row: arg.ref.row,
+				col: arg.ref.col,
+				endRow: arg.ref.row,
+				endCol: arg.ref.col,
+			},
+			values: [[arg.value]],
+			...(arg.valueAtOffset ? { valueAtOffset: arg.valueAtOffset } : {}),
+		}
+	}
+	return {
+		ref: criteriaRangeRef(arg.ref),
+		values: arg.values ?? [[arg.value]],
+		...(arg.valueAtOffset ? { valueAtOffset: arg.valueAtOffset } : {}),
+	}
+}
+
+function criteriaRangeRef(ref: Exclude<EvalArg['ref'], undefined>): CriteriaRangeRef {
+	if (ref.kind === 'cell') {
+		return {
+			kind: 'range',
+			sheetIndex: ref.sheetIndex,
+			row: ref.row,
+			col: ref.col,
+			endRow: ref.row,
+			endCol: ref.col,
+		}
+	}
+	return {
+		kind: 'range',
+		sheetIndex: ref.sheetIndex,
+		row: ref.row,
+		col: ref.col,
+		...(ref.endRow === undefined ? {} : { endRow: ref.endRow }),
+		...(ref.endCol === undefined ? {} : { endCol: ref.endCol }),
+	}
+}
+
+function criteriaOffsetValue(
+	area: Exclude<CriteriaArea, 'multi'>,
+	row: number,
+	col: number,
+): CellValue {
+	return area.valueAtOffset?.(row, col) ?? area.values[row]?.[col] ?? EMPTY
+}
+
 function buildPairsForCriteriaOffset(
 	specs: CriteriaSpec[],
 	row: number,
@@ -298,6 +423,14 @@ function firstScalarError(args: readonly (EvalArg | undefined)[]): CellValue | n
 	for (const arg of args) {
 		const value = arg?.value ?? EMPTY
 		if (value.kind === 'error') return value
+	}
+	return null
+}
+
+function firstDirectScalarError(args: readonly (EvalArg | undefined)[]): CellValue | null {
+	for (const arg of args) {
+		if (!arg || arg.ref || arg.areas?.length || arg.kind === 'range' || arg.values) continue
+		if (arg.value.kind === 'error') return arg.value
 	}
 	return null
 }
@@ -360,11 +493,11 @@ function conditionalMinMax(
 
 export const conditionalFunctions: FunctionDef[] = [
 	fn('SUMIF', 2, 3, (args, ctx) => {
-		const directError = firstScalarError(args)
+		const directError = firstDirectScalarError(args)
 		if (directError) return directError
-		return withCachedConditionalAggregate(singleCriteriaCacheKey('SUMIF', args), ctx, () => {
+		return withCachedConditionalAggregate(singleCriteriaCacheKey('SUMIF', args, ctx), ctx, () => {
 			const range = getRange(args[0])
-			const bitmap = getMatchBitmap(range, args[1]?.value ?? EMPTY)
+			const bitmap = getMatchBitmap(range, scalarCriteriaValue(args[1], ctx))
 			const cols = range[0]?.length ?? 1
 			const sumRange = args.length >= 3 ? getRange(args[2]) : range
 			let sum = 0
@@ -408,11 +541,11 @@ export const conditionalFunctions: FunctionDef[] = [
 	}),
 
 	fn('COUNTIF', 2, 2, (args, ctx) => {
-		const directError = firstScalarError(args)
+		const directError = firstDirectScalarError(args)
 		if (directError) return directError
-		return withCachedConditionalAggregate(ifsCacheKey('COUNTIF', args, 0), ctx, () => {
+		return withCachedConditionalAggregate(singleCriteriaCacheKey('COUNTIF', args, ctx), ctx, () => {
 			const range = getRange(args[0])
-			const bitmap = getMatchBitmap(range, args[1]?.value ?? EMPTY)
+			const bitmap = getMatchBitmap(range, scalarCriteriaValue(args[1], ctx))
 			const cols = range[0]?.length ?? 1
 			let count = 0
 			for (let r = 0; r < range.length; r++) {
@@ -453,28 +586,32 @@ export const conditionalFunctions: FunctionDef[] = [
 	}),
 
 	fn('AVERAGEIF', 2, 3, (args, ctx) => {
-		const directError = firstScalarError(args)
+		const directError = firstDirectScalarError(args)
 		if (directError) return directError
-		return withCachedConditionalAggregate(singleCriteriaCacheKey('AVERAGEIF', args), ctx, () => {
-			const range = getRange(args[0])
-			const bitmap = getMatchBitmap(range, args[1]?.value ?? EMPTY)
-			const cols = range[0]?.length ?? 1
-			const avgRange = args.length >= 3 ? getRange(args[2]) : range
-			let sum = 0
-			let count = 0
-			for (let r = 0; r < range.length; r++) {
-				for (let c = 0; c < (range[r]?.length ?? 0); c++) {
-					if (bitmap[r * cols + c]) {
-						const n = numericVal(targetValueAt(args[2], avgRange, r, c))
-						if (n !== null) {
-							sum += n
-							count++
+		return withCachedConditionalAggregate(
+			singleCriteriaCacheKey('AVERAGEIF', args, ctx),
+			ctx,
+			() => {
+				const range = getRange(args[0])
+				const bitmap = getMatchBitmap(range, scalarCriteriaValue(args[1], ctx))
+				const cols = range[0]?.length ?? 1
+				const avgRange = args.length >= 3 ? getRange(args[2]) : range
+				let sum = 0
+				let count = 0
+				for (let r = 0; r < range.length; r++) {
+					for (let c = 0; c < (range[r]?.length ?? 0); c++) {
+						if (bitmap[r * cols + c]) {
+							const n = numericVal(targetValueAt(args[2], avgRange, r, c))
+							if (n !== null) {
+								sum += n
+								count++
+							}
 						}
 					}
 				}
-			}
-			return count === 0 ? errorValue('#DIV/0!') : numberValue(sum / count)
-		})
+				return count === 0 ? errorValue('#DIV/0!') : numberValue(sum / count)
+			},
+		)
 	}),
 
 	fn('AVERAGEIFS', 3, 255, (args, ctx) => {

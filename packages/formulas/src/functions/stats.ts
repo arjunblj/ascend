@@ -1,5 +1,5 @@
 import type { CellValue } from '@ascend/schema'
-import { arrayValue, errorValue, numberValue, topLeftScalar } from '@ascend/schema'
+import { arrayValue, EMPTY, errorValue, numberValue, topLeftScalar } from '@ascend/schema'
 import type { FunctionDef, FunctionEvalContext } from './registry.ts'
 import { collectNumbers, type EvalArg, getRange, numArg } from './registry.ts'
 
@@ -98,26 +98,64 @@ function medianFn(args: EvalArg[]): CellValue {
 	return numberValue(numsOrErr[mid] ?? 0)
 }
 
-function stdevFn(args: EvalArg[], population = false): CellValue {
-	const numsOrErr = collectNumbers(args)
-	if (!Array.isArray(numsOrErr)) return numsOrErr
-	const divisor = population ? numsOrErr.length : numsOrErr.length - 1
-	if (divisor < 1) return errorValue('#DIV/0!')
+function collectStatNumbers(args: EvalArg[]): number[] | CellValue {
+	const nums: number[] = []
+	for (const arg of args) {
+		if (
+			arg.kind === 'range' ||
+			arg.value.kind === 'array' ||
+			arg.areas?.length ||
+			arg.forEachValue
+		) {
+			const collected = collectNumbers([arg])
+			if (!Array.isArray(collected)) return collected
+			nums.push(...collected)
+			continue
+		}
+		const n = directStatNumber(arg)
+		if (typeof n === 'number') nums.push(n)
+		else if (n !== null) return n
+	}
+	return nums
+}
 
-	const mean = numsOrErr.reduce((a, b) => a + b, 0) / numsOrErr.length
-	const sumSq = numsOrErr.reduce((acc, v) => acc + (v - mean) ** 2, 0)
-	return numberValue(Math.sqrt(sumSq / divisor))
+function directStatNumber(arg: EvalArg): number | null | CellValue {
+	if (arg.ref) {
+		const value = arg.value ?? EMPTY
+		if (value.kind === 'error') return value
+		return value.kind === 'number' ? value.value : value.kind === 'date' ? value.serial : null
+	}
+	return numArg(arg)
+}
+
+function stdevFn(args: EvalArg[], population = false): CellValue {
+	const numsOrErr = collectStatNumbers(args)
+	if (!Array.isArray(numsOrErr)) return numsOrErr
+	const variance = varianceValue(numsOrErr, population)
+	return typeof variance === 'number' ? numberValue(Math.sqrt(variance)) : variance
 }
 
 function varFn(args: EvalArg[], population = false): CellValue {
-	const numsOrErr = collectNumbers(args)
+	const numsOrErr = collectStatNumbers(args)
 	if (!Array.isArray(numsOrErr)) return numsOrErr
-	const divisor = population ? numsOrErr.length : numsOrErr.length - 1
+	const variance = varianceValue(numsOrErr, population)
+	return typeof variance === 'number' ? numberValue(variance) : variance
+}
+
+function varianceValue(nums: readonly number[], population: boolean): number | CellValue {
+	const divisor = population ? nums.length : nums.length - 1
 	if (divisor < 1) return errorValue('#DIV/0!')
 
-	const mean = numsOrErr.reduce((a, b) => a + b, 0) / numsOrErr.length
-	const sumSq = numsOrErr.reduce((acc, v) => acc + (v - mean) ** 2, 0)
-	return numberValue(sumSq / divisor)
+	let mean = 0
+	let m2 = 0
+	let count = 0
+	for (const value of nums) {
+		count++
+		const delta = value - mean
+		mean += delta / count
+		m2 += delta * (value - mean)
+	}
+	return m2 / divisor
 }
 
 function percentileExcFn(args: EvalArg[]): CellValue {
@@ -172,7 +210,7 @@ function quartileFn(args: EvalArg[], exclusive = false): CellValue {
 }
 
 function modeFn(args: EvalArg[]): CellValue {
-	const numsOrErr = collectNumbers(args)
+	const numsOrErr = collectModeNumbers(args)
 	if (!Array.isArray(numsOrErr)) return numsOrErr
 	if (numsOrErr.length === 0) return errorValue('#N/A')
 	const freq = new Map<number, number>()
@@ -190,6 +228,36 @@ function modeFn(args: EvalArg[]): CellValue {
 	return numberValue(modeVal)
 }
 
+function collectModeNumbers(args: EvalArg[]): number[] | CellValue {
+	const nums: number[] = []
+	for (const arg of args) {
+		if (arg.kind === 'range' || arg.areas?.length || arg.forEachValue) {
+			const collected = collectNumbers([arg])
+			if (!Array.isArray(collected)) return collected
+			nums.push(...collected)
+			continue
+		}
+		if (arg.value.kind === 'array') {
+			for (const row of arg.value.rows) {
+				for (const cell of row) {
+					const scalar = topLeftScalar(cell)
+					if (scalar.kind === 'error') return scalar
+					if (scalar.kind === 'number') nums.push(scalar.value)
+					else if (scalar.kind === 'date') nums.push(scalar.serial)
+				}
+			}
+			continue
+		}
+		const scalar = topLeftScalar(arg.value ?? EMPTY)
+		if (scalar.kind === 'error') return scalar
+		if (scalar.kind === 'number') nums.push(scalar.value)
+		else if (scalar.kind === 'date') nums.push(scalar.serial)
+		else if (scalar.kind === 'empty' && arg.ref?.kind === 'cell') return errorValue('#VALUE!')
+		else if (scalar.kind !== 'empty') return errorValue('#VALUE!')
+	}
+	return nums
+}
+
 function collectNumbersA(args: EvalArg[]): number[] | CellValue {
 	const nums: number[] = []
 	for (const arg of args) {
@@ -204,12 +272,31 @@ function collectNumbersA(args: EvalArg[]): number[] | CellValue {
 				}
 			}
 		} else {
-			const n = numArg(arg)
+			const value = arg.value ?? EMPTY
+			if (value.kind === 'error') return value
+			const n = arg.ref ? toReferencedANumber(value) : numArg(arg)
+			if (n === null) continue
 			if (typeof n !== 'number') return n
 			nums.push(n)
 		}
 	}
 	return nums
+}
+
+function toReferencedANumber(value: CellValue): number | null {
+	const scalar = topLeftScalar(value)
+	switch (scalar.kind) {
+		case 'number':
+			return scalar.value
+		case 'date':
+			return scalar.serial
+		case 'boolean':
+			return scalar.value ? 1 : 0
+		case 'string':
+			return 0
+		default:
+			return null
+	}
 }
 
 function averageaFn(args: EvalArg[]): CellValue {
@@ -354,6 +441,8 @@ function collectPaired(
 	arg1: EvalArg | undefined,
 	arg2: EvalArg | undefined,
 ): [number[], number[]] | CellValue {
+	if (arg1?.kind !== 'range' && arg1?.value.kind === 'error') return arg1.value
+	if (arg2?.kind !== 'range' && arg2?.value.kind === 'error') return arg2.value
 	const range1 = getRange(arg1)
 	const range2 = getRange(arg2)
 	const rows1 = range1.length
@@ -564,7 +653,7 @@ function frequencyFn(args: EvalArg[]): CellValue {
 }
 
 function modeMultFn(args: EvalArg[]): CellValue {
-	const numsOrErr = collectNumbers(args)
+	const numsOrErr = collectModeNumbers(args)
 	if (!Array.isArray(numsOrErr)) return numsOrErr
 	if (numsOrErr.length === 0) return errorValue('#N/A')
 	const freq = new Map<number, number>()
@@ -584,46 +673,114 @@ function modeMultFn(args: EvalArg[]): CellValue {
 }
 
 const SQRT_2PI = Math.sqrt(2 * Math.PI)
+const NORMAL_INV_LOW = 0.02425
+const NORMAL_INV_HIGH = 1 - NORMAL_INV_LOW
+const NORMAL_INV_A = [
+	-3.969683028665376e1, 2.209460984245205e2, -2.759285104469687e2, 1.38357751867269e2,
+	-3.066479806614716e1, 2.506628277459239,
+]
+const NORMAL_INV_B = [
+	-5.447609879822406e1, 1.615858368580409e2, -1.556989798598866e2, 6.680131188771972e1,
+	-1.328068155288572e1, 1,
+]
+const NORMAL_INV_C = [
+	-7.784894002430293e-3, -3.223964580411365e-1, -2.400758277161838, -2.549732539343734,
+	4.374664141464968, 2.938163982698783,
+]
+const NORMAL_INV_D = [
+	7.784695709041462e-3, 3.224671290700398e-1, 2.445134137142996, 3.754408661907416, 1,
+]
+const NORMAL_SQRT_HALF = Math.SQRT1_2
+const NORMAL_MAX_LOG = 7.097827128933839e2
+const NORMAL_ERFC_P = [
+	2.461969814735305e-10, 5.641895648310687e-1, 7.463210564422699, 4.863719709856814e1,
+	1.965208329560771e2, 5.264451949954774e2, 9.345285271719576e2, 1.027551886895157e3,
+	5.575353353693993e2,
+]
+const NORMAL_ERFC_Q = [
+	1.32281951154745e1, 8.670721408859897e1, 3.549377788878199e2, 9.757085017432055e2,
+	1.8239091668790975e3, 2.24633760818711e3, 1.6566630919416134e3, 5.575353408177277e2,
+]
+const NORMAL_ERFC_R = [
+	5.641895835477551e-1, 1.275366707599781, 5.019050422511805, 6.160210979930536, 7.409742699504489,
+	2.9788666537210022,
+]
+const NORMAL_ERFC_S = [
+	2.2605286322011726, 9.396035249380015, 1.2048953980809666e1, 1.708144507475659e1,
+	9.608968090632859, 3.369076451000815,
+]
+const NORMAL_ERF_T = [
+	9.604973739870516, 9.002601972038427e1, 2.232005345946843e3, 7.003325141128051e3,
+	5.55923013010395e4,
+]
+const NORMAL_ERF_U = [
+	3.356171416475031e1, 5.213579497801527e2, 4.594323829709801e3, 2.262900006138909e4,
+	4.926739426086359e4,
+]
 
 function normPdf(z: number): number {
 	return Math.exp(-0.5 * z * z) / SQRT_2PI
 }
 
+function evalPolynomial(coefficients: readonly number[], x: number): number {
+	let result = 0
+	for (const coefficient of coefficients) result = result * x + coefficient
+	return result
+}
+
+function evalMonicPolynomial(coefficients: readonly number[], x: number): number {
+	let result = x + (coefficients[0] ?? 0)
+	for (let i = 1; i < coefficients.length; i++) result = result * x + (coefficients[i] ?? 0)
+	return result
+}
+
+function erfApprox(x: number): number {
+	if (Math.abs(x) > 1) return 1 - erfcApprox(x)
+	const z = x * x
+	return (x * evalPolynomial(NORMAL_ERF_T, z)) / evalMonicPolynomial(NORMAL_ERF_U, z)
+}
+
+function erfcApprox(x: number): number {
+	const ax = Math.abs(x)
+	if (ax < 1) return 1 - erfApprox(x)
+	const z = -x * x
+	if (z < -NORMAL_MAX_LOG) return x < 0 ? 2 : 0
+	const exp = Math.exp(z)
+	const numerator = ax < 8 ? evalPolynomial(NORMAL_ERFC_P, ax) : evalPolynomial(NORMAL_ERFC_R, ax)
+	const denominator =
+		ax < 8 ? evalMonicPolynomial(NORMAL_ERFC_Q, ax) : evalMonicPolynomial(NORMAL_ERFC_S, ax)
+	const y = (exp * numerator) / denominator
+	return x < 0 ? 2 - y : y === 0 ? 0 : y
+}
+
 function normCdf(z: number): number {
-	if (z < 0) return 1 - normCdf(-z)
-	const t = 1 / (1 + 0.2316419 * z)
-	const poly =
-		t * (0.31938153 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))))
-	return 1 - normPdf(z) * poly
+	if (z === 0) return 0.5
+	const x = z * NORMAL_SQRT_HALF
+	const ax = Math.abs(x)
+	if (ax < 1) return 0.5 + 0.5 * erfApprox(x)
+	const tail = 0.5 * erfcApprox(ax)
+	return x > 0 ? 1 - tail : tail
 }
 
 function normSInvImpl(p: number): number {
-	const y = p - 0.5
-	if (Math.abs(y) < 0.42) {
-		const r = y * y
-		return (
-			(y * (((-25.44106049637 * r + 41.39119773534) * r + -18.61500062529) * r + 2.50662823884)) /
-			((((3.13082909833 * r + -21.06224101826) * r + 23.08336743743) * r + -8.4735109309) * r + 1)
-		)
+	let z: number
+	if (p < NORMAL_INV_LOW) {
+		const q = Math.sqrt(-2 * Math.log(p))
+		z = evalPolynomial(NORMAL_INV_C, q) / evalPolynomial(NORMAL_INV_D, q)
+	} else if (p <= NORMAL_INV_HIGH) {
+		const q = p - 0.5
+		const r = q * q
+		z = (evalPolynomial(NORMAL_INV_A, r) * q) / evalPolynomial(NORMAL_INV_B, r)
+	} else {
+		const q = Math.sqrt(-2 * Math.log(1 - p))
+		z = -evalPolynomial(NORMAL_INV_C, q) / evalPolynomial(NORMAL_INV_D, q)
 	}
-	let r = y > 0 ? 1 - p : p
-	r = Math.log(-Math.log(r))
-	let z =
-		0.3374754822726147 +
-		r *
-			(0.9761690190917186 +
-				r *
-					(0.1607979714918209 +
-						r *
-							(0.0276438810333863 +
-								r *
-									(0.0038405729373609 +
-										r *
-											(0.0003951896511919 +
-												r *
-													(0.0000321767881768 +
-														r * (0.0000002888167364 + r * 0.0000003960315187)))))))
-	if (y < 0) z = -z
+	for (let i = 0; i < 2; i++) {
+		const error = normCdf(z) - p
+		z -= error / normPdf(z)
+	}
+	const rounded = Math.round(z)
+	if (Math.abs(z - rounded) <= 1e-11 && Math.abs(normCdf(rounded) - p) <= 5e-15) return rounded
 	return z
 }
 
@@ -632,9 +789,21 @@ const LANCZOS_C = [
 	-176.61502916214059, 12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6,
 	1.5056327351493116e-7,
 ]
+const LOG_FACTORIALS = (() => {
+	const values = [0]
+	let sum = 0
+	for (let n = 1; n <= 170; n++) {
+		sum += Math.log(n)
+		values[n] = sum
+	}
+	return values
+})()
 
 function gammalnImpl(x: number): number {
 	if (x <= 0 && x === Math.floor(x)) return Number.POSITIVE_INFINITY
+	if (Number.isInteger(x) && x > 0 && x <= LOG_FACTORIALS.length) {
+		return LOG_FACTORIALS[x - 1] ?? 0
+	}
 	if (x < 0.5) return Math.log(Math.PI / Math.sin(Math.PI * x)) - gammalnImpl(1 - x)
 	const y = x - 1
 	let a = LANCZOS_C[0] as number
@@ -648,6 +817,7 @@ function betaln(a: number, b: number): number {
 }
 
 function betacf(x: number, a: number, b: number): number {
+	const EPS = 3e-14
 	const FPMIN = 1e-30
 	const qab = a + b
 	const qap = a + 1
@@ -674,7 +844,7 @@ function betacf(x: number, a: number, b: number): number {
 		d = 1 / d
 		const del = d * c
 		h *= del
-		if (Math.abs(del - 1) < 3e-7) break
+		if (Math.abs(del - 1) < EPS) break
 	}
 	return h
 }
@@ -687,6 +857,16 @@ function ibeta(x: number, a: number, b: number): number {
 	)
 	if (x < (a + 1) / (a + b + 2)) return (bt * betacf(x, a, b)) / a
 	return 1 - (bt * betacf(1 - x, b, a)) / b
+}
+
+function ibetaComplement(x: number, a: number, b: number): number {
+	if (x <= 0) return 1
+	if (x >= 1) return 0
+	const bt = Math.exp(
+		gammalnImpl(a + b) - gammalnImpl(a) - gammalnImpl(b) + a * Math.log(x) + b * Math.log(1 - x),
+	)
+	if (x < (a + 1) / (a + b + 2)) return 1 - (bt * betacf(x, a, b)) / a
+	return (bt * betacf(1 - x, b, a)) / b
 }
 
 function ibetainv(p: number, a: number, b: number): number {
@@ -711,22 +891,24 @@ function ibetainv(p: number, a: number, b: number): number {
 	return x
 }
 
-function lowRegGamma(a: number, x: number): number {
-	if (x <= 0) return 0
-	if (a <= 0) return 1
-	const aln = gammalnImpl(a)
-	const maxIter = Math.ceil(Math.log(a >= 1 ? a : 1 / a) * 8.5 + a * 0.4 + 17)
-	if (x < a + 1) {
-		let ap = a
-		let sum = 1 / a
-		let del = sum
-		for (let i = 1; i <= maxIter; i++) {
-			ap += 1
-			del *= x / ap
-			sum += del
-		}
-		return sum * Math.exp(-x + a * Math.log(x) - aln)
+function gammaIterationLimit(a: number): number {
+	return Math.ceil(Math.log(a >= 1 ? a : 1 / a) * 8.5 + a * 0.4 + 17)
+}
+
+function lowRegGammaSeries(a: number, x: number, aln: number): number {
+	let ap = a
+	let sum = 1 / a
+	let del = sum
+	for (let i = 1; i <= gammaIterationLimit(a); i++) {
+		ap += 1
+		del *= x / ap
+		sum += del
 	}
+	return sum * Math.exp(-x + a * Math.log(x) - aln)
+}
+
+function upperRegGammaFraction(a: number, x: number, aln: number): number {
+	const maxIter = gammaIterationLimit(a)
 	let b2 = x + 1 - a
 	let c = 1 / 1e-30
 	let d = 1 / b2
@@ -741,11 +923,47 @@ function lowRegGamma(a: number, x: number): number {
 		d = 1 / d
 		h *= d * c
 	}
-	return 1 - h * Math.exp(-x + a * Math.log(x) - aln)
+	return h * Math.exp(-x + a * Math.log(x) - aln)
+}
+
+function lowRegGamma(a: number, x: number): number {
+	if (x <= 0) return 0
+	if (a <= 0) return 1
+	const aln = gammalnImpl(a)
+	if (x < a + 1) return lowRegGammaSeries(a, x, aln)
+	return 1 - upperRegGammaFraction(a, x, aln)
+}
+
+function upperRegGamma(a: number, x: number): number {
+	if (x <= 0) return 1
+	if (a <= 0) return 0
+	const aln = gammalnImpl(a)
+	if (x < a + 1) return 1 - lowRegGammaSeries(a, x, aln)
+	return upperRegGammaFraction(a, x, aln)
 }
 
 function combiln(n: number, k: number): number {
 	return gammalnImpl(n + 1) - gammalnImpl(k + 1) - gammalnImpl(n - k + 1)
+}
+
+function combinationNumber(n: number, k: number): number {
+	if (k < 0 || k > n) return 0
+	const kk = Math.min(k, n - k)
+	let out = 1
+	for (let i = 1; i <= kk; i++) out = (out * (n - kk + i)) / i
+	return out
+}
+
+function sumKahan(values: Iterable<number>): number {
+	let sum = 0
+	let compensation = 0
+	for (const value of values) {
+		const y = value - compensation
+		const t = sum + y
+		compensation = t - sum - y
+		sum = t
+	}
+	return sum
 }
 
 function normDistFn(args: EvalArg[]): CellValue {
@@ -895,7 +1113,22 @@ function fDistRTFn(args: EvalArg[]): CellValue {
 	if (x < 0 || d1 < 1 || d2 < 1) return errorValue('#NUM!')
 	if (x === 0) return numberValue(1)
 	const w = (d1 * x) / (d1 * x + d2)
-	return numberValue(1 - ibeta(w, d1 / 2, d2 / 2))
+	return numberValue(ibetaComplement(w, d1 / 2, d2 / 2))
+}
+
+function snapFInvRoundTrip(
+	result: number,
+	p: number,
+	d1: number,
+	d2: number,
+	rightTail: boolean,
+): number {
+	const rounded = Math.round(result)
+	if (Math.abs(result - rounded) > 1e-12) return result
+	const w = (d1 * rounded) / (d1 * rounded + d2)
+	const roundTrip = ibeta(w, d1 / 2, d2 / 2)
+	const target = rightTail ? 1 - roundTrip : roundTrip
+	return Math.abs(target - p) <= 5e-15 ? rounded : result
 }
 
 function fInvFn(args: EvalArg[]): CellValue {
@@ -909,7 +1142,8 @@ function fInvFn(args: EvalArg[]): CellValue {
 	if (p === 0) return numberValue(0)
 	if (p === 1) return errorValue('#NUM!')
 	const x = ibetainv(p, d1 / 2, d2 / 2)
-	return numberValue((x * d2) / (d1 * (1 - x)))
+	const result = (x * d2) / (d1 * (1 - x))
+	return numberValue(snapFInvRoundTrip(result, p, d1, d2, false))
 }
 
 function fInvRTFn(args: EvalArg[]): CellValue {
@@ -923,7 +1157,8 @@ function fInvRTFn(args: EvalArg[]): CellValue {
 	if (p === 1) return numberValue(0)
 	if (p === 0) return errorValue('#NUM!')
 	const x = ibetainv(1 - p, d1 / 2, d2 / 2)
-	return numberValue((x * d2) / (d1 * (1 - x)))
+	const result = (x * d2) / (d1 * (1 - x))
+	return numberValue(snapFInvRoundTrip(result, p, d1, d2, true))
 }
 
 function chisqDistFn(args: EvalArg[]): CellValue {
@@ -945,7 +1180,7 @@ function chisqDistRTFn(args: EvalArg[]): CellValue {
 	const df = numArg(args[1])
 	if (typeof df !== 'number') return df
 	if (x < 0 || df < 1) return errorValue('#NUM!')
-	return numberValue(1 - lowRegGamma(df / 2, x / 2))
+	return numberValue(upperRegGamma(df / 2, x / 2))
 }
 
 function chisqInvFn(args: EvalArg[]): CellValue {
@@ -1032,11 +1267,15 @@ function binomDistFn(args: EvalArg[]): CellValue {
 	const pmf = (i: number) => {
 		if (p === 0) return i === 0 ? 1 : 0
 		if (p === 1) return i === ni ? 1 : 0
+		if (ni <= 170) return combinationNumber(ni, i) * p ** i * (1 - p) ** (ni - i)
 		return Math.exp(combiln(ni, i) + i * Math.log(p) + (ni - i) * Math.log(1 - p))
 	}
 	if (cum === 0) return numberValue(pmf(k))
-	let sum = 0
-	for (let i = 0; i <= k; i++) sum += pmf(i)
+	const sum = sumKahan(
+		(function* () {
+			for (let i = 0; i <= k; i++) yield pmf(i)
+		})(),
+	)
 	return numberValue(Math.min(1, sum))
 }
 
@@ -1075,10 +1314,14 @@ function binomDistRangeFn(args: EvalArg[]): CellValue {
 	const lo = Math.trunc(s1)
 	const hi = Math.trunc(s2)
 	if (n < 0 || p < 0 || p > 1 || lo < 0 || hi > n || lo > hi) return errorValue('#NUM!')
-	let sum = 0
-	for (let i = lo; i <= hi; i++) {
-		sum += Math.exp(combiln(n, i) + i * Math.log(p) + (n - i) * Math.log(1 - p))
-	}
+	const sum = sumKahan(
+		(function* () {
+			for (let i = lo; i <= hi; i++) {
+				if (n <= 170) yield combinationNumber(n, i) * p ** i * (1 - p) ** (n - i)
+				else yield Math.exp(combiln(n, i) + i * Math.log(p) + (n - i) * Math.log(1 - p))
+			}
+		})(),
+	)
 	return numberValue(sum)
 }
 
@@ -1091,12 +1334,21 @@ function poissonDistFn(args: EvalArg[]): CellValue {
 	if (typeof cum !== 'number') return cum
 	const k = Math.trunc(x)
 	if (k < 0 || mean < 0) return errorValue('#NUM!')
-	const pmf = (i: number) =>
-		mean === 0 ? (i === 0 ? 1 : 0) : Math.exp(-mean + i * Math.log(mean) - gammalnImpl(i + 1))
+	const pmf = (i: number) => {
+		if (mean === 0) return i === 0 ? 1 : 0
+		if (i <= 170) return (Math.exp(-mean) * mean ** i) / factorialNumber(i)
+		return Math.exp(-mean + i * Math.log(mean) - gammalnImpl(i + 1))
+	}
 	if (cum === 0) return numberValue(pmf(k))
 	let sum = 0
 	for (let i = 0; i <= k; i++) sum += pmf(i)
 	return numberValue(Math.min(1, sum))
+}
+
+function factorialNumber(n: number): number {
+	let out = 1
+	for (let i = 2; i <= n; i++) out *= i
+	return out
 }
 
 function exponDistFn(args: EvalArg[]): CellValue {
@@ -1228,11 +1480,20 @@ function hypgeomDistFn(args: EvalArg[]): CellValue {
 	const N = Math.trunc(nPop)
 	if (k < 0 || n < 0 || K < 0 || N < 0 || n > N || K > N || k > n || k > K)
 		return errorValue('#NUM!')
-	const pmf = (i: number) => Math.exp(combiln(K, i) + combiln(N - K, n - i) - combiln(N, n))
+	const useFiniteCombination = N <= 170 && cum === 0
+	const pmf = (i: number) => {
+		if (useFiniteCombination) {
+			return (combinationNumber(K, i) * combinationNumber(N - K, n - i)) / combinationNumber(N, n)
+		}
+		return Math.exp(combiln(K, i) + combiln(N - K, n - i) - combiln(N, n))
+	}
 	if (cum === 0) return numberValue(pmf(k))
-	let sum = 0
 	const lo = Math.max(0, n - (N - K))
-	for (let i = lo; i <= k; i++) sum += pmf(i)
+	const sum = sumKahan(
+		(function* () {
+			for (let i = lo; i <= k; i++) yield pmf(i)
+		})(),
+	)
 	return numberValue(Math.min(1, sum))
 }
 
@@ -1298,6 +1559,47 @@ function confidenceTFn(args: EvalArg[]): CellValue {
 	const x = ibetainv(alpha, df / 2, 0.5)
 	const t = Math.sqrt((df * (1 - x)) / x)
 	return numberValue((t * stdev) / Math.sqrt(n))
+}
+
+function probNumber(value: CellValue): number | CellValue {
+	const scalar = topLeftScalar(value)
+	if (scalar.kind === 'error') return scalar
+	if (scalar.kind === 'number') return scalar.value
+	if (scalar.kind === 'date') return scalar.serial
+	return errorValue('#VALUE!')
+}
+
+function probFn(args: EvalArg[]): CellValue {
+	const xs = getRange(args[0])
+	const probs = getRange(args[1])
+	const rows = xs.length
+	const cols = xs[0]?.length ?? 0
+	if (rows !== probs.length || cols !== (probs[0]?.length ?? 0)) return errorValue('#N/A')
+
+	const lower = numArg(args[2])
+	if (typeof lower !== 'number') return lower
+	const upper = args.length > 3 ? numArg(args[3]) : lower
+	if (typeof upper !== 'number') return upper
+	if (upper < lower) return errorValue('#NUM!')
+
+	let probabilitySum = 0
+	let result = 0
+	for (let r = 0; r < rows; r++) {
+		const xRow = xs[r]
+		const pRow = probs[r]
+		if ((xRow?.length ?? 0) !== cols || (pRow?.length ?? 0) !== cols) return errorValue('#N/A')
+		for (let c = 0; c < cols; c++) {
+			const x = probNumber(xRow?.[c] ?? errorValue('#VALUE!'))
+			if (typeof x !== 'number') return x
+			const probability = probNumber(pRow?.[c] ?? errorValue('#VALUE!'))
+			if (typeof probability !== 'number') return probability
+			if (probability <= 0 || probability > 1) return errorValue('#NUM!')
+			probabilitySum += probability
+			if (x >= lower && x <= upper) result += probability
+		}
+	}
+	if (Math.abs(probabilitySum - 1) > 1e-7) return errorValue('#NUM!')
+	return numberValue(result)
 }
 
 function skewPFn(args: EvalArg[]): CellValue {
@@ -1620,7 +1922,7 @@ function fTestFn(args: EvalArg[]): CellValue {
 	const d1 = s1.var >= s2.var ? df1 : df2
 	const d2 = s1.var >= s2.var ? df2 : df1
 	const w = (d1 * F) / (d1 * F + d2)
-	const pOneTail = 1 - ibeta(w, d1 / 2, d2 / 2)
+	const pOneTail = ibetaComplement(w, d1 / 2, d2 / 2)
 	return numberValue(Math.min(1, 2 * pOneTail))
 }
 
@@ -1639,7 +1941,7 @@ function chisqTestFn(args: EvalArg[]): CellValue {
 		chi2 += (a - e) ** 2 / e
 	}
 	const df = actual.length - 1
-	const p = 1 - lowRegGamma(df / 2, chi2 / 2)
+	const p = upperRegGamma(df / 2, chi2 / 2)
 	return numberValue(p)
 }
 
@@ -1756,6 +2058,7 @@ export const statsFunctions: FunctionDef[] = [
 	{ name: 'GAUSS', minArgs: 1, maxArgs: 1, evaluate: gaussFn },
 	{ name: 'CONFIDENCE.NORM', minArgs: 3, maxArgs: 3, evaluate: confidenceNormFn },
 	{ name: 'CONFIDENCE.T', minArgs: 3, maxArgs: 3, evaluate: confidenceTFn },
+	{ name: 'PROB', minArgs: 3, maxArgs: 4, evaluate: probFn },
 	{ name: 'SKEW.P', minArgs: 1, maxArgs: 255, evaluate: skewPFn },
 	{ name: 'STDEVA', minArgs: 1, maxArgs: 255, evaluate: (args) => stdevAFn(args, false) },
 	{ name: 'STDEVPA', minArgs: 1, maxArgs: 255, evaluate: (args) => stdevAFn(args, true) },
@@ -1766,7 +2069,11 @@ export const statsFunctions: FunctionDef[] = [
 	{ name: 'GROWTH', minArgs: 1, maxArgs: 4, evaluate: growthFn },
 	{ name: 'LOGEST', minArgs: 1, maxArgs: 4, evaluate: logestFn },
 	{ name: 'T.TEST', minArgs: 4, maxArgs: 4, evaluate: tTestFn },
+	{ name: 'TTEST', minArgs: 4, maxArgs: 4, evaluate: tTestFn },
 	{ name: 'F.TEST', minArgs: 2, maxArgs: 2, evaluate: fTestFn },
+	{ name: 'FTEST', minArgs: 2, maxArgs: 2, evaluate: fTestFn },
 	{ name: 'CHISQ.TEST', minArgs: 2, maxArgs: 2, evaluate: chisqTestFn },
+	{ name: 'CHITEST', minArgs: 2, maxArgs: 2, evaluate: chisqTestFn },
 	{ name: 'Z.TEST', minArgs: 2, maxArgs: 3, evaluate: zTestFn },
+	{ name: 'ZTEST', minArgs: 2, maxArgs: 3, evaluate: zTestFn },
 ]

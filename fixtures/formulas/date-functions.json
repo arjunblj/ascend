@@ -80,6 +80,38 @@
 			"expected": { "kind": "number", "value": 45310 }
 		},
 		{
+			"description": "ISOWEEKNUM returns ISO week 1 for the first Monday of 2024",
+			"setup": {},
+			"formula": "ISOWEEKNUM(DATE(2024,1,1))",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "NETWORKDAYS.INTL counts Monday-Friday workdays with weekend mask",
+			"setup": {},
+			"formula": "NETWORKDAYS.INTL(DATE(2024,1,1),DATE(2024,1,7),\"0000011\")",
+			"expected": { "kind": "number", "value": 5 }
+		},
+		{
+			"description": "WORKDAY.INTL advances across a standard weekend mask",
+			"setup": {},
+			"formula": "WORKDAY.INTL(DATE(2024,1,1),5,\"0000011\")",
+			"expected": { "kind": "number", "value": 45299 }
+		},
+		{
+			"description": "TODAY returns the calculation context date",
+			"setup": {},
+			"context": { "today": "2024-01-15T00:00:00.000Z" },
+			"formula": "TODAY()",
+			"expected": { "kind": "number", "value": 45306 }
+		},
+		{
+			"description": "NOW returns the calculation context timestamp",
+			"setup": {},
+			"context": { "now": "2024-01-15T12:00:00.000Z" },
+			"formula": "NOW()",
+			"expected": { "kind": "number", "value": 45306.5 }
+		},
+		{
 			"description": "HOUR extracts noon from a half-day serial fraction",
 			"setup": { "A1": 0.5 },
 			"formula": "HOUR(A1)",

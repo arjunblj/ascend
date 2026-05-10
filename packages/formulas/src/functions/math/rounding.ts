@@ -66,11 +66,22 @@ export const roundingFunctions: FunctionDef[] = [
 		return numberValue(Math.ceil(n / sig) * sig)
 	}),
 
+	fn('ECMA.CEILING', 2, 2, (args) => {
+		const n = numArg(args[0])
+		if (typeof n !== 'number') return n
+		const sig = numArg(args[1])
+		if (typeof sig !== 'number') return sig
+		if (sig === 0) return numberValue(0)
+		if (n > 0 && sig < 0) return errorValue('#NUM!')
+		return numberValue(Math.ceil(n / sig) * sig)
+	}),
+
 	fn('FLOOR', 2, 2, (args) => {
 		const n = numArg(args[0])
 		if (typeof n !== 'number') return n
 		const sig = numArg(args[1])
 		if (typeof sig !== 'number') return sig
+		if (n === 0 && sig === 0) return numberValue(0)
 		if (sig === 0) return errorValue('#DIV/0!')
 		if (n > 0 && sig < 0) return errorValue('#NUM!')
 		return numberValue(Math.floor(n / sig) * sig)

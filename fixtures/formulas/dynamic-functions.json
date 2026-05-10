@@ -66,6 +66,31 @@
 			"setup": { "A1": 42, "A2": 99 },
 			"formula": "TRANSPOSE(A1:A2)",
 			"expected": { "kind": "number", "value": 42 }
+		},
+		{
+			"description": "WRAPCOLS wraps a row vector into columns",
+			"setup": { "A1": 1, "B1": 2, "C1": 3, "D1": 4 },
+			"formula": "WRAPCOLS(A1:D1,2)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "WRAPROWS wraps a row vector into rows",
+			"setup": { "A1": 1, "B1": 2, "C1": 3, "D1": 4 },
+			"formula": "WRAPROWS(A1:D1,2)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "EXPAND keeps the source anchor while padding the spill",
+			"setup": { "A1": 1, "B1": 2 },
+			"formula": "EXPAND(A1:B1,2,3)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "RANDARRAY with seed returns a deterministic top-left value",
+			"setup": {},
+			"context": { "randomSeed": 42 },
+			"formula": "RANDARRAY(1,1,0,1,0,42)",
+			"expected": { "kind": "number", "approx": 0.9574274444021285, "tolerance": 1e-12 }
 		}
 	]
 }

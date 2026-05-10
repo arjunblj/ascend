@@ -256,6 +256,80 @@
 			"expected": { "kind": "number", "value": 300 }
 		},
 		{
+			"description": "AVERAGEIFS averages rows matching two criteria",
+			"setup": {
+				"A1": 10,
+				"A2": 20,
+				"A3": 30,
+				"A4": 40,
+				"B1": "West",
+				"B2": "West",
+				"B3": "East",
+				"B4": "West",
+				"C1": "Open",
+				"C2": "Closed",
+				"C3": "Open",
+				"C4": "Open"
+			},
+			"formula": "AVERAGEIFS(A1:A4, B1:B4, \"West\", C1:C4, \"Open\")",
+			"expected": { "kind": "number", "value": 25 }
+		},
+		{
+			"description": "CEILING.MATH rounds a positive decimal to the next multiple",
+			"setup": {},
+			"formula": "CEILING.MATH(6.3, 2)",
+			"expected": { "kind": "number", "value": 8 }
+		},
+		{
+			"description": "FLOOR.MATH rounds a positive decimal down to the prior multiple",
+			"setup": {},
+			"formula": "FLOOR.MATH(6.7, 2)",
+			"expected": { "kind": "number", "value": 6 }
+		},
+		{
+			"description": "PRODUCT multiplies numeric arguments",
+			"setup": { "A1": 2, "A2": 3, "A3": 5 },
+			"formula": "PRODUCT(A1:A3)",
+			"expected": { "kind": "number", "value": 30 }
+		},
+		{
+			"description": "EXP returns Euler exponential",
+			"setup": {},
+			"formula": "EXP(1)",
+			"expected": { "kind": "number", "approx": 2.718281828459045, "tolerance": 1e-12 }
+		},
+		{
+			"description": "LN returns natural logarithm",
+			"setup": {},
+			"formula": "LN(EXP(1))",
+			"expected": { "kind": "number", "approx": 1, "tolerance": 1e-12 }
+		},
+		{
+			"description": "LOG10 returns base-10 logarithm",
+			"setup": {},
+			"formula": "LOG10(1000)",
+			"expected": { "kind": "number", "value": 3 }
+		},
+		{
+			"description": "SIGN classifies negative numbers",
+			"setup": {},
+			"formula": "SIGN(-42)",
+			"expected": { "kind": "number", "value": -1 }
+		},
+		{
+			"description": "ROMAN converts Arabic numerals to Roman text",
+			"setup": {},
+			"formula": "ROMAN(499)",
+			"expected": { "kind": "string", "value": "CDXCIX" }
+		},
+		{
+			"description": "RAND returns a unit-interval numeric value",
+			"setup": {},
+			"context": { "randomSeed": 42 },
+			"formula": "AND(RAND()>=0,RAND()<1)",
+			"expected": { "kind": "boolean", "value": true }
+		},
+		{
 			"description": "SUBTOTAL sums a compact finance range",
 			"setup": { "A1": 100, "A2": 200, "A3": 300 },
 			"formula": "SUBTOTAL(9, A1:A3)",

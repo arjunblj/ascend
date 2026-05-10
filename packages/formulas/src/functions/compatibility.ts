@@ -25,6 +25,11 @@ function appendBooleanArg(value: boolean) {
 	return (args: EvalArg[]): EvalArg[] => [...args, { value: booleanValue(value) }]
 }
 
+function betadistCompatArgs(args: EvalArg[]): EvalArg[] {
+	if (args[3]?.value.kind === 'boolean') return args
+	return [...args.slice(0, 3), { value: booleanValue(true) }, ...args.slice(3)]
+}
+
 function tdistCompat(args: EvalArg[], ctx?: FunctionEvalContext) {
 	const tailsArg = args[2]?.value
 	if (!tailsArg || tailsArg.kind === 'error') return tailsArg ?? errorValue('#VALUE!')
@@ -41,7 +46,7 @@ function tdistCompat(args: EvalArg[], ctx?: FunctionEvalContext) {
 }
 
 export const compatibilityFunctions: FunctionDef[] = [
-	aliasFunction('BETADIST', 'BETA.DIST', 4, 6),
+	aliasFunction('BETADIST', 'BETA.DIST', 3, 5, betadistCompatArgs),
 	aliasFunction('BETAINV', 'BETA.INV', 3, 5),
 	aliasFunction('BINOMDIST', 'BINOM.DIST', 4, 4),
 	aliasFunction('CHIDIST', 'CHISQ.DIST.RT', 2, 2),

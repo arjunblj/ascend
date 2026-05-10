@@ -126,6 +126,30 @@
 			"setup": { "A1": "*", "A2": 4 },
 			"formula": "REPT(A1, A2)",
 			"expected": { "kind": "string", "value": "****" }
+		},
+		{
+			"description": "DOLLAR formats positive currency with two decimals",
+			"setup": {},
+			"formula": "DOLLAR(1234.56)",
+			"expected": { "kind": "string", "value": "$1,234.56" }
+		},
+		{
+			"description": "FIXED formats with decimals and comma separators",
+			"setup": {},
+			"formula": "FIXED(1234567.89,2)",
+			"expected": { "kind": "string", "value": "1,234,567.89" }
+		},
+		{
+			"description": "VALUETOTEXT returns scalar text representation",
+			"setup": { "A1": 42 },
+			"formula": "VALUETOTEXT(A1)",
+			"expected": { "kind": "string", "value": "42" }
+		},
+		{
+			"description": "HYPERLINK returns friendly display text",
+			"setup": {},
+			"formula": "HYPERLINK(\"https://example.com\",\"Example\")",
+			"expected": { "kind": "string", "value": "Example" }
 		}
 	]
 }

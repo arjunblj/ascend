@@ -723,6 +723,18 @@ describe('Excel conformance', () => {
 			expect(evalFormula('ADDRESS(3, 2, 4)')).toEqual(stringValue('B3'))
 		})
 
+		test('ADDRESS external workbook sheet text is not quoted when simple', () => {
+			expect(evalFormula('ADDRESS(2, 3, 3, TRUE, "[Book1]Sheet1")')).toEqual(
+				stringValue('[Book1]Sheet1!$C2'),
+			)
+		})
+
+		test('ADDRESS quotes and escapes sheet text when required', () => {
+			expect(evalFormula('ADDRESS(2, 3, 3, TRUE, "O\'Brien Sheet")')).toEqual(
+				stringValue("'O''Brien Sheet'!$C2"),
+			)
+		})
+
 		test('ROWS of range', () => {
 			expectNum(evalFormula('ROWS(A1:A10)'), 10)
 		})
@@ -857,6 +869,11 @@ describe('Excel conformance', () => {
 			expect(evalFormula('REPLACE("Hello World", 7, 5, "Earth")')).toEqual(
 				stringValue('Hello Earth'),
 			)
+		})
+
+		test('REPLACE rejects invalid positions and lengths', () => {
+			expect(evalFormula('REPLACE("ABCDEF", -3, 4, "xx")')).toEqual(errorValue('#VALUE!'))
+			expect(evalFormula('REPLACE("ABCDEF", 1, -1, "xx")')).toEqual(errorValue('#VALUE!'))
 		})
 
 		test('EXACT case sensitive comparison', () => {
@@ -1476,6 +1493,10 @@ describe('Excel conformance', () => {
 
 		test('"" + 0 equals 0 (empty string to number)', () => {
 			expectNum(evalFormula('""+0'), 0)
+		})
+
+		test('"" * "1" returns #VALUE! (empty text remains text against text)', () => {
+			expect(evalFormula('""*"1"')).toEqual(errorValue('#VALUE!'))
 		})
 	})
 

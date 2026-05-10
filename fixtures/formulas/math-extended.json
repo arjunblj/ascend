@@ -299,6 +299,54 @@
 			"expected": { "kind": "number", "approx": 0.7615942, "tolerance": 0.0001 }
 		},
 		{
+			"description": "COT one",
+			"setup": {},
+			"formula": "=COT(1)",
+			"expected": { "kind": "number", "approx": 0.6420926159343306, "tolerance": 1e-10 }
+		},
+		{
+			"description": "CSC pi over two",
+			"setup": {},
+			"formula": "=CSC(PI()/2)",
+			"expected": { "kind": "number", "approx": 1, "tolerance": 1e-10 }
+		},
+		{
+			"description": "SEC zero",
+			"setup": {},
+			"formula": "=SEC(0)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "COTH one",
+			"setup": {},
+			"formula": "=COTH(1)",
+			"expected": { "kind": "number", "approx": 1.3130352854993312, "tolerance": 1e-10 }
+		},
+		{
+			"description": "CSCH one",
+			"setup": {},
+			"formula": "=CSCH(1)",
+			"expected": { "kind": "number", "approx": 0.8509181282393216, "tolerance": 1e-10 }
+		},
+		{
+			"description": "SECH zero",
+			"setup": {},
+			"formula": "=SECH(0)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "ACOT one",
+			"setup": {},
+			"formula": "=ACOT(1)",
+			"expected": { "kind": "number", "approx": 0.7853981633974483, "tolerance": 1e-10 }
+		},
+		{
+			"description": "ACOTH two",
+			"setup": {},
+			"formula": "=ACOTH(2)",
+			"expected": { "kind": "number", "approx": 0.5493061443340548, "tolerance": 1e-10 }
+		},
+		{
 			"description": "ASINH zero",
 			"setup": {},
 			"formula": "=ASINH(0)",
@@ -333,6 +381,96 @@
 			"setup": {},
 			"formula": "=ATANH(1)",
 			"expected": { "kind": "error", "value": "#NUM!" }
+		},
+		{
+			"description": "CEILING.PRECISE negative rounds toward positive infinity",
+			"setup": {},
+			"formula": "=CEILING.PRECISE(-4.1, 2)",
+			"expected": { "kind": "number", "value": -4 }
+		},
+		{
+			"description": "FLOOR.PRECISE negative rounds toward negative infinity",
+			"setup": {},
+			"formula": "=FLOOR.PRECISE(-4.1, 2)",
+			"expected": { "kind": "number", "value": -6 }
+		},
+		{
+			"description": "SQRTPI one",
+			"setup": {},
+			"formula": "=SQRTPI(1)",
+			"expected": { "kind": "number", "approx": 1.772453850905516, "tolerance": 1e-10 }
+		},
+		{
+			"description": "COMBINA four choose three with repetitions",
+			"setup": {},
+			"formula": "=COMBINA(4, 3)",
+			"expected": { "kind": "number", "value": 20 }
+		},
+		{
+			"description": "PERMUTATIONA three options length two",
+			"setup": {},
+			"formula": "=PERMUTATIONA(3, 2)",
+			"expected": { "kind": "number", "value": 9 }
+		},
+		{
+			"description": "MULTINOMIAL simple groups",
+			"setup": {},
+			"formula": "=MULTINOMIAL(2, 3, 4)",
+			"expected": { "kind": "number", "value": 1260 }
+		},
+		{
+			"description": "SERIESSUM power series",
+			"setup": { "A1": 1, "A2": -0.16666666666666666 },
+			"formula": "=SERIESSUM(PI()/4, 1, 2, A1:A2)",
+			"expected": { "kind": "number", "approx": 0.7046526512091675, "tolerance": 1e-10 }
+		},
+		{
+			"description": "SUMSQ sums squares",
+			"setup": { "A1": 2, "A2": 3 },
+			"formula": "=SUMSQ(A1:A2)",
+			"expected": { "kind": "number", "value": 13 }
+		},
+		{
+			"description": "SUMX2MY2 paired vectors",
+			"setup": { "A1": 2, "A2": 3, "B1": 1, "B2": 2 },
+			"formula": "=SUMX2MY2(A1:A2, B1:B2)",
+			"expected": { "kind": "number", "value": 8 }
+		},
+		{
+			"description": "SUMX2PY2 paired vectors",
+			"setup": { "A1": 2, "A2": 3, "B1": 1, "B2": 2 },
+			"formula": "=SUMX2PY2(A1:A2, B1:B2)",
+			"expected": { "kind": "number", "value": 18 }
+		},
+		{
+			"description": "SUMXMY2 paired vectors",
+			"setup": { "A1": 2, "A2": 3, "B1": 1, "B2": 2 },
+			"formula": "=SUMXMY2(A1:A2, B1:B2)",
+			"expected": { "kind": "number", "value": 2 }
+		},
+		{
+			"description": "MMULT multiplies 2x2 matrices",
+			"setup": { "A1": 1, "A2": 3, "B1": 2, "B2": 4, "C1": 5, "C2": 7, "D1": 6, "D2": 8 },
+			"formula": "MMULT(A1:B2,C1:D2)",
+			"expected": { "kind": "number", "value": 19 }
+		},
+		{
+			"description": "MDETERM returns determinant of a 2x2 matrix",
+			"setup": { "A1": 1, "A2": 3, "B1": 2, "B2": 4 },
+			"formula": "MDETERM(A1:B2)",
+			"expected": { "kind": "number", "value": -2 }
+		},
+		{
+			"description": "MINVERSE returns inverse matrix top-left value",
+			"setup": { "A1": 1, "A2": 3, "B1": 2, "B2": 4 },
+			"formula": "MINVERSE(A1:B2)",
+			"expected": { "kind": "number", "value": -2 }
+		},
+		{
+			"description": "MUNIT returns identity matrix top-left value",
+			"setup": {},
+			"formula": "MUNIT(3)",
+			"expected": { "kind": "number", "value": 1 }
 		}
 	]
 }

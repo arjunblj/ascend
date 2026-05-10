@@ -325,6 +325,11 @@ class FormulaParser {
 					this.expect(TokenType.Bang)
 					return this.parseSheetQualifiedReference(`${workbookToken}${sheetToken}`)
 				}
+				if (this.lookahead(1, true).type === TokenType.Bang) {
+					const workbookToken = this.advance(true).value
+					this.expect(TokenType.Bang)
+					return this.parseSheetQualifiedReference(workbookToken)
+				}
 				this.advance(true)
 				return this.buildStructuredRef('', token.value)
 			}

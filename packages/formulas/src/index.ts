@@ -35,6 +35,7 @@ export {
 	type FunctionDef,
 	type FunctionEvalContext,
 	formatNumber,
+	formatTextValue,
 	functionRegistry,
 	getRange,
 	hasWildcardPatternSyntax,
@@ -43,6 +44,8 @@ export {
 	type NumericVectorCache,
 	rangeShape,
 	serialToDate,
+	serialToDatePart,
+	tanExcel,
 	toNumber,
 	wildcardMatch,
 } from './functions/index.ts'

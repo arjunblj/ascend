@@ -105,11 +105,45 @@ export function serialToDate(
 	return daysSince1900ToYMD(days)
 }
 
+export function serialToDatePart(
+	serial: number,
+	dateSystem: '1900' | '1904' = '1900',
+): DateParts | null {
+	if (dateSystem === '1900' && serial === 0) return { year: 1900, month: 1, day: 0 }
+	return serialToDate(serial, dateSystem)
+}
+
 function isLeapYear(y: number): boolean {
 	return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0
 }
 
 const MONTH_DAYS = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31] as const
+const MONTH_NAMES: Record<string, number> = {
+	jan: 1,
+	january: 1,
+	feb: 2,
+	february: 2,
+	mar: 3,
+	march: 3,
+	apr: 4,
+	april: 4,
+	may: 5,
+	jun: 6,
+	june: 6,
+	jul: 7,
+	july: 7,
+	aug: 8,
+	august: 8,
+	sep: 9,
+	sept: 9,
+	september: 9,
+	oct: 10,
+	october: 10,
+	nov: 11,
+	november: 11,
+	dec: 12,
+	december: 12,
+}
 
 function daysInMonth(y: number, m: number): number {
 	return m === 2 && isLeapYear(y) ? 29 : (MONTH_DAYS[m] ?? 30)
@@ -231,21 +265,21 @@ function nowFn(_args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 function yearFn(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const s = numArg(args[0])
 	if (typeof s !== 'number') return s
-	const parts = serialToDate(Math.floor(s), currentDateSystem(ctx))
+	const parts = serialToDatePart(Math.floor(s), currentDateSystem(ctx))
 	return parts ? numberValue(parts.year) : errorValue('#NUM!')
 }
 
 function monthFn(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const s = numArg(args[0])
 	if (typeof s !== 'number') return s
-	const parts = serialToDate(Math.floor(s), currentDateSystem(ctx))
+	const parts = serialToDatePart(Math.floor(s), currentDateSystem(ctx))
 	return parts ? numberValue(parts.month) : errorValue('#NUM!')
 }
 
 function dayFn(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const s = numArg(args[0])
 	if (typeof s !== 'number') return s
-	const parts = serialToDate(Math.floor(s), currentDateSystem(ctx))
+	const parts = serialToDatePart(Math.floor(s), currentDateSystem(ctx))
 	return parts ? numberValue(parts.day) : errorValue('#NUM!')
 }
 
@@ -323,6 +357,15 @@ function parseDateText(value: string): DateParts | null {
 		const yearRaw = Number(us[3])
 		const year = yearRaw < 100 ? (yearRaw <= 29 ? 2000 + yearRaw : 1900 + yearRaw) : yearRaw
 		return validateDateParts(year, Number(us[1]), Number(us[2]))
+	}
+
+	const named = /^([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{2,4})$/.exec(text)
+	if (named) {
+		const month = MONTH_NAMES[named[1]?.toLowerCase() ?? '']
+		if (!month) return null
+		const yearRaw = Number(named[3])
+		const year = yearRaw < 100 ? (yearRaw <= 29 ? 2000 + yearRaw : 1900 + yearRaw) : yearRaw
+		return validateDateParts(year, month, Number(named[2]))
 	}
 
 	return null

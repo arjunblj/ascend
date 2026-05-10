@@ -376,6 +376,11 @@ describe('parse', () => {
 		})
 	})
 
+	it('parses workbook-index-qualified defined names', () => {
+		const node = p('[0]!col1_')
+		expect(node).toEqual({ type: 'name', name: 'col1_', sheet: '[0]' })
+	})
+
 	it('parses 3D sheet-span references', () => {
 		expect(p('Sheet1:Sheet3!A1')).toEqual({
 			type: 'sheetSpanRef',
@@ -522,6 +527,21 @@ describe('printFormula', () => {
 			table: 'BillingData',
 			column: 'Check#',
 		})
+	})
+
+	it('parses escaped table names with dotted numeric suffixes', () => {
+		expect(p('\\_Prime.1[Name]')).toMatchObject({
+			type: 'structuredRef',
+			table: '\\_Prime.1',
+			column: 'Name',
+		})
+		expect(p('\\_Prime.1[[#This Row],[Number]]')).toMatchObject({
+			type: 'structuredRef',
+			table: '\\_Prime.1',
+			specifiers: ['#This Row'],
+			column: 'Number',
+		})
+		expect(printFormula(p('\\_Prime.1[Name]'))).toBe('\\_Prime.1[Name]')
 	})
 })
 

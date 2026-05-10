@@ -360,122 +360,247 @@ function erfcPrecise(args: EvalArg[]): CellValue {
 	return numberValue(erfcFn(x))
 }
 
-const EULER_GAMMA = 0.5772156649015329
+const TWO_OVER_PI_APPROX = 0.636619772
 
-function harmonicNumber(k: number): number {
-	let h = 0
-	for (let i = 1; i <= k; i++) h += 1 / i
-	return h
+function horner(coefficients: readonly number[], value: number): number {
+	let result = 0
+	for (let index = coefficients.length - 1; index >= 0; index--) {
+		result = value * result + (coefficients[index] ?? 0)
+	}
+	return result
+}
+
+function besselIter(x: number, n: number, f0: number, f1: number, sign: 1 | -1): number {
+	if (n === 0) return f0
+	if (n === 1) return f1
+	const tdx = 2 / x
+	let previous = f0
+	let current = f1
+	for (let order = 1; order < n; order++) {
+		const next = current * order * tdx + sign * previous
+		previous = current
+		current = next
+	}
+	return current
 }
 
 function besselJ0(x: number): number {
 	if (x === 0) return 1
-	let sum = 1
-	let term = 1
-	const x2 = (x / 2) ** 2
-	for (let k = 1; k < 200; k++) {
-		term *= -x2 / (k * k)
-		sum += term
-		if (Math.abs(term) < Math.abs(sum) * 1e-15) break
+	const ax = Math.abs(x)
+	const y = ax * ax
+	if (ax < 8) {
+		return (
+			horner(
+				[
+					57_568_490_574, -13_362_590_354, 651_619_640.7, -11_214_424.18, 77_392.33017,
+					-184.9052456,
+				],
+				y,
+			) / horner([57_568_490_411, 1_029_532_985, 9_494_680.718, 59_272.64853, 267.8532712, 1], y)
+		)
 	}
-	return sum
+	const z = 8 / ax
+	const yAsymptotic = z * z
+	const xx = ax - 0.785398164
+	const p = horner(
+		[1, -0.001098628627, 0.00002734510407, -0.000002073370639, 0.0000002093887211],
+		yAsymptotic,
+	)
+	const q = horner(
+		[-0.01562499995, 0.0001430488765, -0.000006911147651, 0.0000007621095161, -0.0000000934935152],
+		yAsymptotic,
+	)
+	return Math.sqrt(TWO_OVER_PI_APPROX / ax) * (Math.cos(xx) * p - z * Math.sin(xx) * q)
 }
 
 function besselJ1(x: number): number {
-	if (x === 0) return 0
-	let sum = x / 2
-	let term = sum
-	const x2 = (x / 2) ** 2
-	for (let k = 1; k < 200; k++) {
-		term *= -x2 / (k * (k + 1))
-		sum += term
-		if (Math.abs(term) < Math.abs(sum) * 1e-15) break
+	const ax = Math.abs(x)
+	const y = x * x
+	let result: number
+	if (ax < 8) {
+		result =
+			(x *
+				horner(
+					[
+						72_362_614_232, -7_895_059_235, 242_396_853.1, -2_972_611.439, 15_704.4826,
+						-30.16036606,
+					],
+					y,
+				)) /
+			horner([144_725_228_442, 2_300_535_178, 18_583_304.74, 99_447.43394, 376.9991397, 1], y)
+	} else {
+		const z = 8 / ax
+		const yAsymptotic = z * z
+		const xx = ax - 2.356194491
+		const p = horner(
+			[1, 0.00183105, -0.00003516396496, 0.000002457520174, -0.000000240337019],
+			yAsymptotic,
+		)
+		const q = horner(
+			[0.04687499995, -0.0002002690873, 0.000008449199096, -0.00000088228987, 0.000000105787412],
+			yAsymptotic,
+		)
+		result = Math.sqrt(TWO_OVER_PI_APPROX / ax) * (Math.cos(xx) * p - z * Math.sin(xx) * q)
+		if (x < 0) result = -result
 	}
-	return sum
+	return result
 }
 
 function besselJ(x: number, n: number): number {
-	if (x === 0) return n === 0 ? 1 : 0
+	if (!Number.isFinite(x)) return Number.isNaN(x) ? Number.NaN : 0
+	if (n === 0) return besselJ0(x)
+	if (n === 1) return besselJ1(x)
+	if (x < 0) return n % 2 === 0 ? besselJ(-x, n) : -besselJ(-x, n)
+	if (x === 0) return 0
+	if (x > n) return besselIter(x, n, besselJ0(x), besselJ1(x), -1)
+
+	let result = 0
 	let sum = 0
-	let term = (x / 2) ** n / factorial(n)
-	for (let k = 0; k < 200; k++) {
-		if (k > 0) term *= -((x / 2) ** 2) / (k * (n + k))
-		sum += term
-		if (Math.abs(term) < Math.abs(sum || 1) * 1e-15) break
+	let bjp = 0
+	let bj = 1
+	let jsum = false
+	const tox = 2 / x
+	const m = 2 * Math.floor((n + Math.floor(Math.sqrt(40 * n))) / 2)
+	for (let order = m; order > 0; order--) {
+		const bjm = order * tox * bj - bjp
+		bjp = bj
+		bj = bjm
+		if (Math.abs(bj) > 1e10) {
+			bj *= 1e-10
+			bjp *= 1e-10
+			result *= 1e-10
+			sum *= 1e-10
+		}
+		if (jsum) sum += bj
+		jsum = !jsum
+		if (order === n) result = bjp
 	}
-	return sum
+	return result / (2 * sum - bj)
 }
 
 function besselI0(x: number): number {
-	let sum = 1
-	let term = 1
-	const x2 = (x / 2) ** 2
-	for (let k = 1; k < 200; k++) {
-		term *= x2 / (k * k)
-		sum += term
-		if (Math.abs(term) < Math.abs(sum) * 1e-15) break
+	const ax = Math.abs(x)
+	if (ax <= 3.75) {
+		const y = (x / 3.75) ** 2
+		return horner([1, 3.5156229, 3.0899424, 1.2067492, 0.2659732, 0.0360768, 0.0045813], y)
 	}
-	return sum
+	return (
+		(Math.exp(ax) / Math.sqrt(ax)) *
+		horner(
+			[
+				0.39894228, 0.01328592, 0.00225319, -0.00157565, 0.00916281, -0.02057706, 0.02635537,
+				-0.01647633, 0.00392377,
+			],
+			3.75 / ax,
+		)
+	)
 }
 
 function besselI1(x: number): number {
-	if (x === 0) return 0
-	let sum = x / 2
-	let term = sum
-	const x2 = (x / 2) ** 2
-	for (let k = 1; k < 200; k++) {
-		term *= x2 / (k * (k + 1))
-		sum += term
-		if (Math.abs(term) < Math.abs(sum) * 1e-15) break
+	const ax = Math.abs(x)
+	let result: number
+	if (ax < 3.75) {
+		const y = (x / 3.75) ** 2
+		result =
+			x * horner([0.5, 0.87890594, 0.51498869, 0.15084934, 0.02658733, 0.00301532, 0.00032411], y)
+	} else {
+		result =
+			(Math.exp(ax) / Math.sqrt(ax)) *
+			horner(
+				[
+					0.39894228, -0.03988024, -0.00362018, 0.00163801, -0.01031555, 0.02282967, -0.02895312,
+					0.01787654, -0.00420059,
+				],
+				3.75 / ax,
+			)
+		if (x < 0) result = -result
 	}
-	return sum
+	return result
 }
 
 function besselI(x: number, n: number): number {
-	if (x === 0) return n === 0 ? 1 : 0
-	let sum = 0
-	let term = (x / 2) ** n / factorial(n)
-	for (let k = 0; k < 200; k++) {
-		if (k > 0) term *= (x / 2) ** 2 / (k * (n + k))
-		sum += term
-		if (Math.abs(term) < Math.abs(sum || 1) * 1e-15) break
-	}
-	return sum
-}
+	if (n === 0) return besselI0(x)
+	if (n === 1) return besselI1(x)
+	if (x === 0) return 0
+	if (x === Infinity) return Infinity
 
-function factorial(n: number): number {
-	let out = 1
-	for (let i = 2; i <= n; i++) out *= i
-	return out
+	let result = 0
+	let bip = 0
+	let bi = 1
+	const tox = 2 / Math.abs(x)
+	const m = 2 * Math.round((n + Math.round(Math.sqrt(40 * n))) / 2)
+	for (let order = m; order > 0; order--) {
+		const bim = order * tox * bi + bip
+		bip = bi
+		bi = bim
+		if (Math.abs(bi) > 1e10) {
+			bi *= 1e-10
+			bip *= 1e-10
+			result *= 1e-10
+		}
+		if (order === n) result = bip
+	}
+	result *= besselI0(x) / bi
+	return x < 0 && n % 2 === 1 ? -result : result
 }
 
 function besselY0(x: number): number {
-	const j0 = besselJ0(x)
-	let sum = 0
-	let term = 1
-	const x2 = (x / 2) ** 2
-	for (let k = 1; k < 200; k++) {
-		term *= -x2 / (k * k)
-		sum += harmonicNumber(k) * term
-		if (Math.abs(term) < Math.abs(sum) * 1e-15) break
+	if (x < 8) {
+		const y = x * x
+		return (
+			horner(
+				[-2_957_821_389, 7_062_834_065, -512_359_803.6, 10_879_881.29, -86_327.92757, 228.4622733],
+				y,
+			) /
+				horner([40_076_544_269, 745_249_964.8, 7_189_466.438, 47_447.2647, 226.1030244, 1], y) +
+			TWO_OVER_PI_APPROX * besselJ0(x) * Math.log(x)
+		)
 	}
-	return (2 / Math.PI) * (Math.log(x / 2) + EULER_GAMMA) * j0 + (2 / Math.PI) * sum
+	const z = 8 / x
+	const y = z * z
+	const xx = x - 0.785398164
+	const p = horner(
+		[1, -0.001098628627, 0.00002734510407, -0.000002073370639, 0.0000002093887211],
+		y,
+	)
+	const q = horner(
+		[-0.01562499995, 0.0001430488765, -0.000006911147651, 0.0000007621095161, -0.0000000934945152],
+		y,
+	)
+	return Math.sqrt(TWO_OVER_PI_APPROX / x) * (Math.sin(xx) * p + z * Math.cos(xx) * q)
 }
 
 function besselY1(x: number): number {
-	const j1 = besselJ1(x)
-	let sum = 0
-	let term = x / 2
-	const x2 = (x / 2) ** 2
-	for (let k = 0; k < 200; k++) {
-		const h = k === 0 ? 1 : harmonicNumber(k) + harmonicNumber(k + 1)
-		sum += h * term
-		term *= -x2 / ((k + 1) * (k + 2))
-		if (Math.abs(term) < Math.abs(sum) * 1e-15) break
+	if (x < 8) {
+		const y = x * x
+		return (
+			(x *
+				horner(
+					[
+						-4_900_604_943_000, 1_275_274_390_000, -51_534_381_390, 734_926_455.1, -4_237_922.726,
+						8_511.937935,
+					],
+					y,
+				)) /
+				horner(
+					[
+						24_995_805_700_000, 424_441_966_400, 3_733_650_367, 22_459_040.02, 102_042.605,
+						354.9632885, 1,
+					],
+					y,
+				) +
+			TWO_OVER_PI_APPROX * (besselJ1(x) * Math.log(x) - 1 / x)
+		)
 	}
-	return (
-		(2 / Math.PI) * (Math.log(x / 2) + EULER_GAMMA) * j1 - 2 / (Math.PI * x) - (1 / Math.PI) * sum
+	const z = 8 / x
+	const y = z * z
+	const xx = x - 2.356194491
+	const p = horner([1, 0.00183105, -0.00003516396496, 0.000002457520174, -0.000000240337019], y)
+	const q = horner(
+		[0.04687499995, -0.0002002690873, 0.000008449199096, -0.00000088228987, 0.000000105787412],
+		y,
 	)
+	return Math.sqrt(TWO_OVER_PI_APPROX / x) * (Math.sin(xx) * p + z * Math.cos(xx) * q)
 }
 
 function besselY(x: number, n: number): number {
@@ -492,31 +617,38 @@ function besselY(x: number, n: number): number {
 }
 
 function besselK0(x: number): number {
-	const i0 = besselI0(x)
-	let sum = 0
-	let term = 1
-	const x2 = (x / 2) ** 2
-	for (let k = 1; k < 200; k++) {
-		term *= x2 / (k * k)
-		sum += harmonicNumber(k) * term
-		if (Math.abs(term) < Math.abs(sum) * 1e-15) break
+	if (x <= 2) {
+		const y = (x * x) / 4
+		return (
+			-Math.log(x / 2) * besselI0(x) +
+			horner([-0.57721566, 0.4227842, 0.23069756, 0.0348859, 0.00262698, 0.0001075, 0.0000074], y)
+		)
 	}
-	return -(Math.log(x / 2) + EULER_GAMMA) * i0 + sum
+	return (
+		(Math.exp(-x) / Math.sqrt(x)) *
+		horner(
+			[1.25331414, -0.07832358, 0.02189568, -0.01062446, 0.00587872, -0.0025154, 0.00053208],
+			2 / x,
+		)
+	)
 }
 
 function besselK1(x: number): number {
-	const i1 = besselI1(x)
-	let sum = 0
-	let term = x / 2
-	const x2 = (x / 2) ** 2
-	for (let k = 0; k < 200; k++) {
-		const psi =
-			k === 0 ? 1 - 2 * EULER_GAMMA : harmonicNumber(k) + harmonicNumber(k + 1) - 2 * EULER_GAMMA
-		sum += psi * term
-		term *= x2 / ((k + 1) * (k + 2))
-		if (Math.abs(term) < Math.abs(sum) * 1e-15) break
+	if (x <= 2) {
+		const y = (x * x) / 4
+		return (
+			Math.log(x / 2) * besselI1(x) +
+			(1 / x) *
+				horner([1, 0.15443144, -0.67278579, -0.18156897, -0.01919402, -0.00110404, -0.00004686], y)
+		)
 	}
-	return 1 / x + Math.log(x / 2) * i1 - sum / 2
+	return (
+		(Math.exp(-x) / Math.sqrt(x)) *
+		horner(
+			[1.25331414, 0.23498619, -0.0365562, 0.01504268, -0.00780353, 0.00325614, -0.00068245],
+			2 / x,
+		)
+	)
 }
 
 function besselK(x: number, n: number): number {
@@ -617,10 +749,19 @@ function parseComplex(s: string): Complex | null {
 }
 
 function cleanFloat(n: number): number {
-	if (Math.abs(n) < 1e-12) return 0
+	if (Math.abs(n) < 5e-15) return 0
 	const r = Math.round(n)
 	if (r !== 0 && Math.abs(n - r) / Math.abs(r) < 1e-12) return r
 	return n
+}
+
+function formatComplexNumber(n: number): string {
+	if (Number.isInteger(n)) return String(n)
+	return n
+		.toPrecision(15)
+		.replace(/(\.\d*?)0+(E|$)/, '$1$2')
+		.replace(/\.E/, 'E')
+		.replace(/e/g, 'E')
 }
 
 function formatComplex(re: number, im: number, sfx = 'i'): string {
@@ -628,14 +769,14 @@ function formatComplex(re: number, im: number, sfx = 'i'): string {
 	const cRe = cleanFloat(re)
 	const cIm = cleanFloat(im)
 	if (cIm === 0 && cRe === 0) return '0'
-	if (cIm === 0) return String(cRe)
+	if (cIm === 0) return formatComplexNumber(cRe)
 	let imStr: string
 	if (cIm === 1) imStr = suffix
 	else if (cIm === -1) imStr = `-${suffix}`
-	else imStr = `${cIm}${suffix}`
-	if (cRe === 0) return imStr
-	if (cIm > 0) return `${cRe}+${imStr}`
-	return `${cRe}${imStr}`
+	else imStr = `${formatComplexNumber(Math.abs(cIm))}${suffix}`
+	if (cRe === 0) return cIm < 0 && !imStr.startsWith('-') ? `-${imStr}` : imStr
+	if (cIm > 0) return `${formatComplexNumber(cRe)}+${imStr}`
+	return `${formatComplexNumber(cRe)}-${imStr}`
 }
 
 function complexArg(arg: EvalArg | undefined): Complex | CellValue {
@@ -777,10 +918,18 @@ function imdiv(args: EvalArg[]): CellValue {
 	if (!isComplex(b)) return b
 	const sfx = resolveSuffix(a.suffix, b.suffix)
 	if (sfx === null) return errorValue('#VALUE!')
-	const denom = b.re * b.re + b.im * b.im
-	if (denom === 0) return errorValue('#NUM!')
+	if (b.re === 0 && b.im === 0) return errorValue('#NUM!')
+	if (Math.abs(b.re) >= Math.abs(b.im)) {
+		const ratio = b.im / b.re
+		const denom = b.re + b.im * ratio
+		return stringValue(
+			formatComplex((a.re + a.im * ratio) / denom, (a.im - a.re * ratio) / denom, sfx),
+		)
+	}
+	const ratio = b.re / b.im
+	const denom = b.im + b.re * ratio
 	return stringValue(
-		formatComplex((a.re * b.re + a.im * b.im) / denom, (a.im * b.re - a.re * b.im) / denom, sfx),
+		formatComplex((a.re * ratio + a.im) / denom, (a.im * ratio - a.re) / denom, sfx),
 	)
 }
 

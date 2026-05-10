@@ -2,6 +2,8 @@
  * Audit: list commonly-used Excel functions NOT in Ascend's registry.
  * Run: bun run fixtures/formulas/missing-formula-audit.ts
  */
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { functionRegistry } from '../../packages/formulas/src/index.ts'
 
 export const COMMON_EXCEL_FUNCTIONS = [
@@ -420,12 +422,91 @@ export const COMMON_EXCEL_FUNCTIONS = [
 	'YIELDMAT',
 ]
 
-export function runMissingFormulaAudit(): {
-	total: number
-	present: string[]
-	missing: string[]
-	coverage: number
-} {
+export interface FormulaCorpusCoverage {
+	readonly fixtureFiles: number
+	readonly totalCases: number
+	readonly coveredFunctions: string[]
+	readonly trackedCovered: string[]
+	readonly presentButNotCorpusCovered: string[]
+	readonly trackedCoverage: number
+}
+
+export interface MissingFormulaAudit {
+	readonly total: number
+	readonly present: string[]
+	readonly missing: string[]
+	readonly coverage: number
+	readonly semanticCorpus: FormulaCorpusCoverage
+}
+
+interface FormulaConformanceCase {
+	readonly formula?: string
+	readonly setupFormulas?: Readonly<Record<string, string>>
+}
+
+interface FormulaConformanceFixture {
+	readonly cases?: readonly FormulaConformanceCase[]
+}
+
+const FORMULA_CALL_RE = /(?<![A-Z0-9_.])([A-Z_][A-Z0-9_.]*)\s*\(/gi
+
+function normalizeFunctionName(name: string): string {
+	return name
+		.toUpperCase()
+		.replace(/^_XLFN\./, '')
+		.replace(/^_XLWS\./, '')
+}
+
+function stripQuotedStrings(formula: string): string {
+	return formula.replace(/"(?:""|[^"])*"/g, '""')
+}
+
+function collectFormulaCalls(formula: string, out: Set<string>): void {
+	const searchable = stripQuotedStrings(formula)
+	for (const match of searchable.matchAll(FORMULA_CALL_RE)) {
+		const name = match[1]
+		if (name) out.add(normalizeFunctionName(name))
+	}
+}
+
+export function collectFormulaCorpusCoverage(
+	fixturesDir = import.meta.dir,
+	trackedFunctions: readonly string[] = COMMON_EXCEL_FUNCTIONS,
+): FormulaCorpusCoverage {
+	const jsonFiles = readdirSync(fixturesDir)
+		.filter((file) => file.endsWith('.json') && file !== 'package.json')
+		.sort()
+	const covered = new Set<string>()
+	let totalCases = 0
+
+	for (const file of jsonFiles) {
+		const fixture = JSON.parse(
+			readFileSync(join(fixturesDir, file), 'utf-8'),
+		) as FormulaConformanceFixture
+		for (const testCase of fixture.cases ?? []) {
+			totalCases++
+			if (testCase.formula) collectFormulaCalls(testCase.formula, covered)
+			for (const formula of Object.values(testCase.setupFormulas ?? {})) {
+				collectFormulaCalls(formula, covered)
+			}
+		}
+	}
+
+	const tracked = trackedFunctions.map(normalizeFunctionName).sort()
+	const trackedCovered = tracked.filter((name) => covered.has(name))
+	const presentButNotCorpusCovered = tracked.filter((name) => !covered.has(name))
+
+	return {
+		fixtureFiles: jsonFiles.length,
+		totalCases,
+		coveredFunctions: [...covered].sort(),
+		trackedCovered,
+		presentButNotCorpusCovered,
+		trackedCoverage: trackedCovered.length / tracked.length,
+	}
+}
+
+export function runMissingFormulaAudit(): MissingFormulaAudit {
 	const registered = new Set<string>()
 	for (const fn of functionRegistry.values()) {
 		registered.add(fn.name.toUpperCase())
@@ -443,23 +524,40 @@ export function runMissingFormulaAudit(): {
 		present,
 		missing,
 		coverage: present.length / COMMON_EXCEL_FUNCTIONS.length,
+		semanticCorpus: collectFormulaCorpusCoverage(),
 	}
 }
 
 function main(): void {
-	const { total, present, missing, coverage } = runMissingFormulaAudit()
+	const { total, present, missing, coverage, semanticCorpus } = runMissingFormulaAudit()
 	console.log('Missing Formula Functions Audit')
 	console.log('='.repeat(60))
 	console.log(`Total common functions checked: ${String(total)}`)
 	console.log(`Present in Ascend: ${String(present.length)}`)
 	console.log(`Missing from Ascend: ${String(missing.length)}`)
+	console.log(`JSON conformance fixture files: ${String(semanticCorpus.fixtureFiles)}`)
+	console.log(`JSON conformance cases: ${String(semanticCorpus.totalCases)}`)
+	console.log(
+		`Common functions covered by JSON conformance: ${String(semanticCorpus.trackedCovered.length)}`,
+	)
+	console.log(
+		`Common functions present but not JSON-corpus covered: ${String(
+			semanticCorpus.presentButNotCorpusCovered.length,
+		)}`,
+	)
 	console.log()
 	if (missing.length > 0) {
 		console.log('Missing functions:')
 		for (const name of missing) console.log(`  ${name}`)
 	}
+	if (semanticCorpus.presentButNotCorpusCovered.length > 0) {
+		console.log('Present common functions without JSON conformance cases:')
+		for (const name of semanticCorpus.presentButNotCorpusCovered) console.log(`  ${name}`)
+		console.log()
+	}
 	console.log()
 	console.log(`Coverage: ${(coverage * 100).toFixed(1)}%`)
+	console.log(`JSON semantic coverage: ${(semanticCorpus.trackedCoverage * 100).toFixed(1)}%`)
 	if (missing.length > 0) process.exit(1)
 }
 

@@ -72,6 +72,20 @@ export interface CompiledFormula {
 
 const coerceStr = coerceCellValueToString
 
+function powerNumber(base: number, exponent: number): number | CellValue {
+	const result = base ** exponent
+	if (Number.isNaN(result)) return errorValue('#NUM!')
+	if (!Number.isFinite(result)) {
+		return base === 0 && exponent < 0 ? errorValue('#DIV/0!') : errorValue('#NUM!')
+	}
+	return result
+}
+
+function powerNumberValue(base: number, exponent: number): CellValue {
+	const result = powerNumber(base, exponent)
+	return typeof result === 'number' ? numberValue(result) : result
+}
+
 function comparePrimitive<T extends number | string>(op: number, a: T, b: T): boolean {
 	switch (op) {
 		case Op.EQ:
@@ -92,22 +106,63 @@ function comparePrimitive<T extends number | string>(op: number, a: T, b: T): bo
 }
 
 function evalCmp(op: number, left: CellValue, right: CellValue): boolean {
-	const ln = toNumber(left)
-	const rn = toNumber(right)
+	const emptyComparison = compareEmptyOperand(op, left, right)
+	if (emptyComparison !== undefined) return emptyComparison
 
-	if (ln !== null && rn !== null) {
+	const leftRank = comparisonRank(left)
+	const rightRank = comparisonRank(right)
+
+	if (leftRank !== rightRank) return comparePrimitive(op, leftRank, rightRank)
+
+	if (leftRank === 0) {
+		const ln = toNumber(left)
+		const rn = toNumber(right)
+		if (ln === null || rn === null) return false
 		return comparePrimitive(op, ln, rn)
 	}
 
-	if (left.kind === 'string' || right.kind === 'string') {
+	if (leftRank === 1) {
 		return comparePrimitive(op, coerceStr(left).toLowerCase(), coerceStr(right).toLowerCase())
 	}
 
-	if (left.kind === 'boolean' && right.kind === 'boolean') {
-		return comparePrimitive(op, left.value ? 1 : 0, right.value ? 1 : 0)
-	}
+	return comparePrimitive(
+		op,
+		left.kind === 'boolean' && left.value ? 1 : 0,
+		right.kind === 'boolean' && right.value ? 1 : 0,
+	)
+}
 
-	return comparePrimitive(op, coerceStr(left), coerceStr(right))
+function comparisonRank(value: CellValue): 0 | 1 | 2 {
+	value = topLeftScalar(value)
+	if (value.kind === 'boolean') return 2
+	if (value.kind === 'string' || value.kind === 'richText') return 1
+	return 0
+}
+
+function compareEmptyOperand(op: number, left: CellValue, right: CellValue): boolean | undefined {
+	left = topLeftScalar(left)
+	right = topLeftScalar(right)
+	if (left.kind !== 'empty' && right.kind !== 'empty') return undefined
+	if (left.kind === 'error' || right.kind === 'error') return undefined
+	if (
+		left.kind === 'string' ||
+		right.kind === 'string' ||
+		left.kind === 'richText' ||
+		right.kind === 'richText'
+	) {
+		return comparePrimitive(op, coerceStr(left).toLowerCase(), coerceStr(right).toLowerCase())
+	}
+	if (left.kind === 'boolean' || right.kind === 'boolean') {
+		return comparePrimitive(
+			op,
+			left.kind === 'boolean' && left.value ? 1 : 0,
+			right.kind === 'boolean' && right.value ? 1 : 0,
+		)
+	}
+	const ln = toNumber(left)
+	const rn = toNumber(right)
+	if (ln === null || rn === null) return undefined
+	return comparePrimitive(op, ln, rn)
 }
 
 function coerceToBoolForIf(v: CellValue): boolean | CellValue {
@@ -154,8 +209,19 @@ const COMPILABLE_FUNCTIONS = new Set([
 	'MAX',
 ])
 
+const SCALAR_RANGE_COMPILATION_EXCLUDED_FUNCTIONS = new Set([
+	'ABS',
+	'INT',
+	'ROUND',
+	'ROUNDDOWN',
+	'ROUNDUP',
+	'TRUNC',
+])
+
 function shouldCompile(node: FormulaNode): boolean {
 	if (containsWholeDimensionRef(node)) return false
+	if (containsExcludedScalarRangeFunction(node)) return false
+	if (containsEmptyStringLiteralNumericBinary(node)) return false
 	if (node.type === 'function' && node.args.length === 1 && node.args[0]?.type === 'rangeRef') {
 		const upper = node.name.toUpperCase()
 		if (
@@ -207,6 +273,64 @@ function shouldCompile(node: FormulaNode): boolean {
 	}
 	scan(node)
 	return compilableNodes >= 3
+}
+
+function containsEmptyStringLiteralNumericBinary(node: FormulaNode): boolean {
+	let found = false
+	function scan(n: FormulaNode): void {
+		if (found) return
+		if (n.type === 'binary') {
+			if (
+				n.op !== '&' &&
+				n.op !== ',' &&
+				n.op !== ' ' &&
+				(isEmptyStringLiteral(n.left) || isEmptyStringLiteral(n.right))
+			) {
+				found = true
+				return
+			}
+			scan(n.left)
+			scan(n.right)
+			return
+		}
+		if (n.type === 'unary') scan(n.operand)
+		else if (n.type === 'function') {
+			for (const arg of n.args) scan(arg)
+		}
+	}
+	scan(node)
+	return found
+}
+
+function isEmptyStringLiteral(node: FormulaNode): boolean {
+	return node.type === 'string' && node.value === ''
+}
+
+function containsExcludedScalarRangeFunction(node: FormulaNode): boolean {
+	let found = false
+	function scan(n: FormulaNode): void {
+		if (found) return
+		if (n.type === 'function') {
+			const upper = n.name.toUpperCase()
+			if (
+				SCALAR_RANGE_COMPILATION_EXCLUDED_FUNCTIONS.has(upper) &&
+				n.args.some((arg) => arg.type === 'rangeRef')
+			) {
+				found = true
+				return
+			}
+			for (const arg of n.args) scan(arg)
+			return
+		}
+		if (n.type === 'binary') {
+			scan(n.left)
+			scan(n.right)
+			return
+		}
+		if (n.type === 'unary') scan(n.operand)
+	}
+	scan(node)
+	return found
 }
 
 function containsWholeDimensionRef(node: FormulaNode): boolean {
@@ -322,8 +446,8 @@ function canEvaluateNumericValue(node: FormulaNode, atRoot = true): boolean {
 			if (upper === 'IF' && node.args.length === 3) {
 				return (
 					canEvaluateNumericCondition(node.args[0] as FormulaNode) &&
-					canEvaluateNumericValue(node.args[1] as FormulaNode, false) &&
-					canEvaluateNumericValue(node.args[2] as FormulaNode, false)
+					canEvaluateNumericIfBranch(node.args[1] as FormulaNode) &&
+					canEvaluateNumericIfBranch(node.args[2] as FormulaNode)
 				)
 			}
 			if (
@@ -354,6 +478,11 @@ function canEvaluateNumericValue(node: FormulaNode, atRoot = true): boolean {
 		default:
 			return false
 	}
+}
+
+function canEvaluateNumericIfBranch(node: FormulaNode): boolean {
+	if (node.type === 'cellRef') return false
+	return canEvaluateNumericValue(node, false)
 }
 
 export function compileFormula(node: FormulaNode): CompiledFormula | null {
@@ -392,8 +521,10 @@ export function compileFormula(node: FormulaNode): CompiledFormula | null {
 						return left * right
 					case '/':
 						return right !== 0 ? left / right : null
-					case '^':
-						return left ** right
+					case '^': {
+						const result = powerNumber(left, right)
+						return typeof result === 'number' ? result : null
+					}
 				}
 			}
 		}
@@ -939,7 +1070,9 @@ function evaluateCompiledNumeric(compiled: CompiledFormula, ctx: EvalContext): C
 			}
 			case Op.POW: {
 				const b = numericStack[--sp] as number
-				numericStack[sp - 1] = (numericStack[sp - 1] as number) ** b
+				const result = powerNumber(numericStack[sp - 1] as number, b)
+				if (typeof result !== 'number') return result
+				numericStack[sp - 1] = result
 				break
 			}
 			case Op.NEG:
@@ -1227,7 +1360,7 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 						stack[stackDepth++] = rn === 0 ? errorValue('#DIV/0!') : numberValue(ln / rn)
 						break
 					case Op.POW:
-						stack[stackDepth++] = numberValue(ln ** rn)
+						stack[stackDepth++] = powerNumberValue(ln, rn)
 						break
 				}
 				break
@@ -1253,7 +1386,7 @@ export function evaluateCompiled(compiled: CompiledFormula, ctx: EvalContext): C
 					else if (op === Op.CELL_SUB) stack[stackDepth - 1] = numberValue(ln - cn)
 					else if (op === Op.CELL_MUL) stack[stackDepth - 1] = numberValue(ln * cn)
 					else if (op === Op.CELL_DIV) stack[stackDepth - 1] = numberValue(ln / cn)
-					else stack[stackDepth - 1] = numberValue(ln ** cn)
+					else stack[stackDepth - 1] = powerNumberValue(ln, cn)
 				} else {
 					const sv = topLeftScalar(left)
 					const cv = topLeftScalar(cellVal)

@@ -47,6 +47,7 @@ import {
 	clearRangeValueCache,
 	type EvalContext,
 	evaluate,
+	evaluateLegacyTopLevelFormula,
 	MutableEvalContext,
 	setRangeValueCache,
 } from './evaluator.ts'
@@ -659,6 +660,19 @@ const ARRAY_RETURNING_FUNCTIONS = new Set([
 	'WRAPROWS',
 ])
 
+const LEGACY_SINGLE_CELL_ARRAY_FUNCTIONS = new Set([
+	'FREQUENCY',
+	'GROWTH',
+	'INDEX',
+	'LINEST',
+	'LOGEST',
+	'MINVERSE',
+	'MMULT',
+	'TREND',
+])
+
+const REFERENCE_RETURNING_FUNCTIONS = new Set(['INDEX', 'INDIRECT', 'OFFSET'])
+
 const ARRAY_MAPPING_FUNCTIONS = new Set(['COLUMN', 'IF', 'ISNUMBER', 'N', 'ROW'])
 
 function needsInterpreterArraySemantics(ast: FormulaNode): boolean {
@@ -777,8 +791,15 @@ function evalFormula(
 	ast: FormulaNode,
 	ctx: EvalContext,
 ): CellValue {
+	if (!usesArrayFormulaSemantics(ctx)) {
+		const legacyValue = evaluateLegacyTopLevelFormula(ast, ctx)
+		if (legacyValue) return normalizeTopLevelFormulaValue(ast, legacyValue, ctx)
+	}
 	if (needsInterpreterArraySemantics(ast))
-		return normalizeTopLevelFormulaValue(ast, evaluate(ast, ctx))
+		return normalizeTopLevelFormulaValue(ast, evaluate(ast, ctx), ctx)
+	if (containsEmptyStringLiteralNumericBinary(ast)) {
+		return normalizeTopLevelFormulaValue(ast, evaluate(ast, ctx), ctx)
+	}
 	if (shouldPreferCompiled(ast)) {
 		let compiled = compiledCache.get(ast)
 		if (compiled === undefined) {
@@ -787,11 +808,11 @@ function evalFormula(
 			compiledCache.set(ast, compiled)
 		}
 		if (compiled !== false) {
-			return normalizeTopLevelFormulaValue(ast, evaluateCompiled(compiled, ctx))
+			return normalizeTopLevelFormulaValue(ast, evaluateCompiled(compiled, ctx), ctx)
 		}
 	}
 	const generated = codegenFormula(formulaText, ast)
-	if (generated) return normalizeTopLevelFormulaValue(ast, generated(ctx))
+	if (generated) return normalizeTopLevelFormulaValue(ast, generated(ctx), ctx)
 	let compiled = compiledCache.get(ast)
 	if (compiled === undefined) {
 		const result = compileFormula(ast)
@@ -799,14 +820,81 @@ function evalFormula(
 		compiledCache.set(ast, compiled)
 	}
 	if (compiled !== false) {
-		return normalizeTopLevelFormulaValue(ast, evaluateCompiled(compiled, ctx))
+		return normalizeTopLevelFormulaValue(ast, evaluateCompiled(compiled, ctx), ctx)
 	}
-	return normalizeTopLevelFormulaValue(ast, evaluate(ast, ctx))
+	return normalizeTopLevelFormulaValue(ast, evaluate(ast, ctx), ctx)
 }
 
-function normalizeTopLevelFormulaValue(ast: FormulaNode, value: CellValue): CellValue {
+function containsEmptyStringLiteralNumericBinary(node: FormulaNode): boolean {
+	let found = false
+	function scan(n: FormulaNode): void {
+		if (found) return
+		if (n.type === 'binary') {
+			if (
+				isNumericBinaryOp(n.op) &&
+				(isEmptyStringLiteral(n.left) || isEmptyStringLiteral(n.right))
+			) {
+				found = true
+				return
+			}
+			scan(n.left)
+			scan(n.right)
+			return
+		}
+		if (n.type === 'unary') scan(n.operand)
+		else if (n.type === 'function') {
+			for (const arg of n.args) scan(arg)
+		}
+	}
+	scan(node)
+	return found
+}
+
+function isNumericBinaryOp(op: string): boolean {
+	return op === '+' || op === '-' || op === '*' || op === '/' || op === '^'
+}
+
+function isEmptyStringLiteral(node: FormulaNode): boolean {
+	return node.type === 'string' && node.value === ''
+}
+
+function normalizeTopLevelFormulaValue(
+	ast: FormulaNode,
+	value: CellValue,
+	ctx: EvalContext,
+): CellValue {
 	if (value.kind === 'empty' && ast.type === 'cellRef') return numberValue(0)
+	if (
+		value.kind === 'empty' &&
+		ast.type === 'function' &&
+		REFERENCE_RETURNING_FUNCTIONS.has(ast.name.toUpperCase())
+	) {
+		return numberValue(0)
+	}
+	if (
+		value.kind === 'array' &&
+		ast.type === 'function' &&
+		LEGACY_SINGLE_CELL_ARRAY_FUNCTIONS.has(ast.name.toUpperCase()) &&
+		ctx.workbook.sourceArchiveBytes !== null &&
+		!usesArrayFormulaSemantics(ctx)
+	) {
+		if (ast.name.toUpperCase() === 'INDEX') return errorValue('#VALUE!')
+		return topLeftValue(value)
+	}
+	if (
+		value.kind === 'array' &&
+		ast.type === 'function' &&
+		(ast.name.toUpperCase() === 'ROW' || ast.name.toUpperCase() === 'COLUMN') &&
+		!usesArrayFormulaSemantics(ctx)
+	) {
+		return topLeftValue(value)
+	}
 	return value
+}
+
+function usesArrayFormulaSemantics(ctx: EvalContext): boolean {
+	const binding = ctx.workbook.sheets[ctx.sheetIndex]?.cells.get(ctx.row, ctx.col)?.formulaInfo
+	return binding?.kind === 'array' || binding?.kind === 'dynamicArray' || binding?.kind === 'spill'
 }
 
 function isSpillBinding(
@@ -976,6 +1064,112 @@ function applyArrayResult(
 		}
 	}
 	return anchorValue
+}
+
+function applyLegacyArrayResult(
+	workbook: Workbook,
+	sheetIndex: number,
+	row: number,
+	col: number,
+	oldFormula: string | null,
+	oldStyleId: StyleId,
+	formulaInfo: CellFormulaBinding & { kind: 'array'; ref: string },
+	matrix: readonly (readonly CellValue[])[],
+	changed: string[],
+): CellValue {
+	const range = parseRange(formulaInfo.ref)
+	const targetSheetIndex =
+		range.sheet === undefined
+			? sheetIndex
+			: workbook.sheets.findIndex(
+					(sheet) => sheet?.name.toLowerCase() === range.sheet?.toLowerCase(),
+				)
+	if (targetSheetIndex < 0) return errorValue('#REF!')
+	const sheet = workbook.sheets[targetSheetIndex]
+	if (!sheet) return errorValue('#REF!')
+	const anchorValue = topLeftValue(matrix[0]?.[0] ?? EMPTY)
+	const binding = { kind: 'array' as const, ref: formulaInfo.ref }
+
+	for (let targetRow = range.start.row; targetRow <= range.end.row; targetRow++) {
+		for (let targetCol = range.start.col; targetCol <= range.end.col; targetCol++) {
+			const rowOffset = targetRow - range.start.row
+			const colOffset = targetCol - range.start.col
+			const nextValue = topLeftValue(matrix[rowOffset]?.[colOffset] ?? EMPTY)
+			const targetFormula = targetRow === row && targetCol === col ? oldFormula : null
+			const targetStyleId = sheet.cells.readStyleId(targetRow, targetCol) ?? oldStyleId
+			const currentValue = sheet.cells.readValue(targetRow, targetCol)
+			const currentFormula = sheet.cells.readFormula(targetRow, targetCol)
+			const currentInfo = sheet.cells.readFormulaInfo(targetRow, targetCol)
+			const isSameArrayInfo =
+				currentInfo?.kind === 'array' && (currentInfo.ref ?? formulaInfo.ref) === formulaInfo.ref
+			if (
+				valuesEqual(currentValue, nextValue) &&
+				currentFormula === targetFormula &&
+				isSameArrayInfo
+			) {
+				continue
+			}
+			if (nextValue.kind === 'number') {
+				sheet.cells.setNumberResolved(
+					targetRow,
+					targetCol,
+					nextValue.value,
+					targetFormula,
+					targetStyleId,
+					binding,
+				)
+			} else {
+				sheet.cells.setResolved(
+					targetRow,
+					targetCol,
+					nextValue,
+					targetFormula,
+					targetStyleId,
+					binding,
+				)
+			}
+			changed.push(cellRefString(workbook, targetSheetIndex, targetRow, targetCol))
+		}
+	}
+	return anchorValue
+}
+
+function applyArrayOrLegacyResult(
+	workbook: Workbook,
+	sheetIndex: number,
+	row: number,
+	col: number,
+	oldFormula: string | null,
+	oldStyleId: StyleId,
+	oldFormulaInfo: CellFormulaBinding | undefined,
+	matrix: readonly (readonly CellValue[])[],
+	changed: string[],
+	spillIndex: SpillIndexState,
+): CellValue {
+	if (oldFormulaInfo?.kind === 'array' && oldFormulaInfo.ref) {
+		return applyLegacyArrayResult(
+			workbook,
+			sheetIndex,
+			row,
+			col,
+			oldFormula,
+			oldStyleId,
+			oldFormulaInfo as CellFormulaBinding & { kind: 'array'; ref: string },
+			matrix,
+			changed,
+		)
+	}
+	return applyArrayResult(
+		workbook,
+		sheetIndex,
+		row,
+		col,
+		oldFormula,
+		oldStyleId,
+		matrix,
+		changed,
+		spillIndex,
+	)
 }
 
 function spillMatchesMatrix(
@@ -1490,7 +1684,7 @@ export function recalculate(
 					mutableCtx.row = row
 					mutableCtx.col = col
 					newValue = groupEvaluator
-						? groupEvaluator(mutableCtx)
+						? normalizeTopLevelFormulaValue(ast, groupEvaluator(mutableCtx), mutableCtx)
 						: evalFormula(key, formulaText, ast, mutableCtx)
 				}
 				const rangeAggregate = rangeAggregateStates ? rangeAggregates.get(key) : undefined
@@ -1511,13 +1705,14 @@ export function recalculate(
 			const spillMatrix = toScalarMatrix(newValue)
 			if (spillMatrix) {
 				const changedBefore = changed.length
-				applyArrayResult(
+				applyArrayOrLegacyResult(
 					workbook,
 					si,
 					row,
 					col,
 					oldFormula,
 					oldStyleId,
+					oldFormulaInfo,
 					spillMatrix,
 					changed,
 					spillIndex,
@@ -3130,13 +3325,14 @@ function evalIterative(
 			const spillMatrix = toScalarMatrix(newValue)
 			if (spillMatrix) {
 				const changedBefore = changed.length
-				applyArrayResult(
+				applyArrayOrLegacyResult(
 					workbook,
 					si,
 					row,
 					col,
 					oldFormula,
 					oldStyleId,
+					oldFormulaInfo,
 					spillMatrix,
 					changed,
 					spillIndex,
@@ -3192,13 +3388,14 @@ function evalIterative(
 		const oldFormulaInfo = sheet.cells.readFormulaInfo(row, col)
 		const spillMatrix = toScalarMatrix(newValue)
 		if (spillMatrix) {
-			applyArrayResult(
+			applyArrayOrLegacyResult(
 				workbook,
 				si,
 				row,
 				col,
 				oldFormula,
 				oldStyleId,
+				oldFormulaInfo,
 				spillMatrix,
 				changed,
 				spillIndex,

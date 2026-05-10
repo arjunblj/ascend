@@ -156,6 +156,37 @@
 			"setup": { "A1": "hello" },
 			"formula": "CELL(\"prefix\", A1)",
 			"expected": { "kind": "string", "value": "" }
+		},
+		{
+			"description": "SHEET returns the current worksheet index",
+			"setup": {},
+			"formula": "SHEET()",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "SHEETS returns workbook sheet count",
+			"setup": {},
+			"formula": "SHEETS()",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "TRUE returns a logical TRUE value",
+			"setup": {},
+			"formula": "TRUE()",
+			"expected": { "kind": "boolean", "value": true }
+		},
+		{
+			"description": "FALSE returns a logical FALSE value",
+			"setup": {},
+			"formula": "FALSE()",
+			"expected": { "kind": "boolean", "value": false }
+		},
+		{
+			"description": "ISFORMULA detects formula cells",
+			"setup": {},
+			"setupFormulas": { "A1": "1+1" },
+			"formula": "ISFORMULA(A1)",
+			"expected": { "kind": "boolean", "value": true }
 		}
 	]
 }

@@ -148,6 +148,72 @@
 			},
 			"formula": "XNPV(0.1,A1:A3,B1:B3)",
 			"expected": { "kind": "number", "approx": 73.44, "tolerance": 1 }
+		},
+		{
+			"description": "FVSCHEDULE compounds principal through variable rates",
+			"setup": { "A1": 0.09, "A2": 0.11, "A3": 0.1 },
+			"formula": "FVSCHEDULE(100,A1:A3)",
+			"expected": { "kind": "number", "approx": 133.089, "tolerance": 1e-12 }
+		},
+		{
+			"description": "EFFECT computes annual effective rate from nominal quarterly rate",
+			"setup": {},
+			"formula": "EFFECT(0.10,4)",
+			"expected": { "kind": "number", "approx": 0.103812890625, "tolerance": 1e-12 }
+		},
+		{
+			"description": "NOMINAL inverts EFFECT for quarterly compounding",
+			"setup": {},
+			"formula": "NOMINAL(EFFECT(0.10,4),4)",
+			"expected": { "kind": "number", "approx": 0.1, "tolerance": 1e-10 }
+		},
+		{
+			"description": "MIRR returns modified internal return for mixed cash flows",
+			"setup": { "A1": -120000, "A2": 39000, "A3": 30000, "A4": 21000, "A5": 37000 },
+			"formula": "MIRR(A1:A5,0.10,0.12)",
+			"expected": { "kind": "number", "approx": 0.0625220116777323, "tolerance": 1e-10 }
+		},
+		{
+			"description": "DISC computes discount rate for a short-dated security",
+			"setup": {},
+			"formula": "DISC(DATE(2024,1,1),DATE(2024,7,1),97,100,2)",
+			"expected": { "kind": "number", "approx": 0.05934, "tolerance": 0.00001 }
+		},
+		{
+			"description": "PRICEDISC and YIELDDISC roundtrip a discount yield",
+			"setup": {},
+			"formula": "YIELDDISC(DATE(2024,1,1),DATE(2024,7,1),PRICEDISC(DATE(2024,1,1),DATE(2024,7,1),0.06,100,2),100,2)",
+			"expected": { "kind": "number", "approx": 0.06188, "tolerance": 0.0001 }
+		},
+		{
+			"description": "PRICEMAT and YIELDMAT roundtrip a maturity yield",
+			"setup": {},
+			"formula": "YIELDMAT(DATE(2024,1,1),DATE(2024,7,1),DATE(2023,7,1),0.05,PRICEMAT(DATE(2024,1,1),DATE(2024,7,1),DATE(2023,7,1),0.05,0.06,2),2)",
+			"expected": { "kind": "number", "approx": 0.06, "tolerance": 0.0001 }
+		},
+		{
+			"description": "TBILLPRICE and TBILLYIELD roundtrip a treasury bill discount",
+			"setup": {},
+			"formula": "TBILLYIELD(DATE(2024,1,1),DATE(2024,6,29),TBILLPRICE(DATE(2024,1,1),DATE(2024,6,29),0.05))",
+			"expected": { "kind": "number", "approx": 0.05128, "tolerance": 0.0001 }
+		},
+		{
+			"description": "ISPMT computes interest for a specific period",
+			"setup": {},
+			"formula": "ISPMT(0.1,1,3,8000000)",
+			"expected": { "kind": "number", "approx": -533333.3333333334, "tolerance": 1e-6 }
+		},
+		{
+			"description": "PDURATION computes periods needed to reach a target value",
+			"setup": {},
+			"formula": "PDURATION(0.10,1000,2000)",
+			"expected": { "kind": "number", "approx": 7.272540897341713, "tolerance": 1e-12 }
+		},
+		{
+			"description": "VDB first period matches double-declining depreciation",
+			"setup": {},
+			"formula": "VDB(2400,300,10,0,1)",
+			"expected": { "kind": "number", "value": 480 }
 		}
 	]
 }

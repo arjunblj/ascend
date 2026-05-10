@@ -1,4 +1,10 @@
-import { DEFAULT_STYLE_ID, indexToColumn, parseRange, type Workbook } from '@ascend/core'
+import {
+	DEFAULT_STYLE_ID,
+	indexToColumn,
+	parseRange,
+	type Sheet,
+	type Workbook,
+} from '@ascend/core'
 import type { FormulaNode } from '@ascend/formulas'
 import {
 	type AggregateRangeCache,
@@ -96,33 +102,99 @@ export { clearGlobalParseCache as clearFormulaParseCache } from '@ascend/formula
 export { invalidateSheetIndexCache } from './sheet-index.ts'
 
 const SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS = new Set([
+	'ABS',
+	'ACOS',
+	'ACOSH',
+	'ACOT',
+	'ACOTH',
+	'ASIN',
+	'ASINH',
+	'ATAN',
+	'ATAN2',
+	'ATANH',
+	'CEILING',
 	'CHAR',
 	'CLEAN',
 	'CODE',
+	'COMBIN',
+	'COMBINA',
+	'COS',
+	'COSH',
+	'COT',
+	'COTH',
+	'CSC',
+	'CSCH',
+	'DEGREES',
 	'DOLLAR',
+	'EVEN',
 	'EXACT',
+	'EXP',
+	'FACT',
+	'FACTDOUBLE',
 	'FIND',
 	'FIXED',
+	'FLOOR',
+	'FLOOR.MATH',
+	'FLOOR.PRECISE',
+	'INT',
 	'LEFT',
 	'LEN',
+	'LN',
+	'LOG',
+	'LOG10',
 	'LOWER',
 	'MID',
+	'MOD',
+	'ODD',
 	'PROPER',
+	'POWER',
+	'RADIANS',
 	'REPLACE',
 	'REPT',
 	'RIGHT',
+	'ROUND',
+	'ROUNDDOWN',
+	'ROUNDUP',
 	'SEARCH',
+	'SEC',
+	'SECH',
+	'SIGN',
+	'SIN',
+	'SINH',
+	'SQRT',
 	'SUBSTITUTE',
 	'T',
+	'TAN',
+	'TANH',
 	'TEXT',
 	'TEXTAFTER',
 	'TEXTBEFORE',
 	'TEXTSPLIT',
 	'TRIM',
+	'TRUNC',
 	'UNICHAR',
 	'UNICODE',
 	'UPPER',
 	'VALUE',
+])
+SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS.delete('T')
+
+const LEGACY_TOP_LEVEL_SCALAR_FUNCTIONS = new Set([
+	...SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS,
+	'AND',
+	'CONCATENATE',
+	'ISBLANK',
+	'ISERR',
+	'ISERROR',
+	'ISEVEN',
+	'ISLOGICAL',
+	'ISNA',
+	'ISNONTEXT',
+	'ISNUMBER',
+	'ISODD',
+	'ISREF',
+	'ISTEXT',
+	'OR',
 ])
 
 const EXCEL_MAX_ROWS = 1_048_576
@@ -254,6 +326,19 @@ function isReferenceBinaryOp(op: string): op is ',' | ' ' {
 	return op === ',' || op === ' '
 }
 
+function isNumericBinaryOp(op: string): boolean {
+	return op === '+' || op === '-' || op === '*' || op === '/' || op === '^'
+}
+
+function isEmptyStringLiteral(node: FormulaNode): boolean {
+	return node.type === 'string' && node.value === ''
+}
+
+function isTextLikeValue(value: CellValue): boolean {
+	const scalar = topLeftScalar(value)
+	return scalar.kind === 'string' || scalar.kind === 'richText'
+}
+
 function evalBinary(op: string, left: CellValue, right: CellValue): CellValue {
 	if (left.kind === 'array' || right.kind === 'array') {
 		return evalArrayBinary(op, left, right)
@@ -332,33 +417,83 @@ function evalScalarBinary(op: string, left: CellValue, right: CellValue): CellVa
 		case '/':
 			return rn === 0 ? errorValue('#DIV/0!') : numberValue(ln / rn)
 		case '^':
-			return numberValue(ln ** rn)
+			return powerValue(ln, rn)
 		default:
 			return errorValue('#VALUE!')
 	}
 }
 
-function evalComparison(op: string, left: CellValue, right: CellValue): CellValue {
-	const ln = coerceToNumber(left)
-	const rn = coerceToNumber(right)
+function powerValue(base: number, exponent: number): CellValue {
+	const result = base ** exponent
+	if (Number.isNaN(result)) return errorValue('#NUM!')
+	if (!Number.isFinite(result)) {
+		return base === 0 && exponent < 0 ? errorValue('#DIV/0!') : errorValue('#NUM!')
+	}
+	return numberValue(result)
+}
 
-	if (ln !== null && rn !== null) {
+function evalComparison(op: string, left: CellValue, right: CellValue): CellValue {
+	const emptyComparison = compareEmptyOperand(op, left, right)
+	if (emptyComparison !== undefined) return booleanValue(emptyComparison)
+
+	const leftRank = comparisonRank(left)
+	const rightRank = comparisonRank(right)
+
+	if (leftRank !== rightRank) {
+		return booleanValue(comparePrimitive(op, leftRank, rightRank))
+	}
+
+	if (leftRank === 0) {
+		const ln = coerceToNumber(left)
+		const rn = coerceToNumber(right)
+		if (ln === null || rn === null) return errorValue('#VALUE!')
 		return booleanValue(comparePrimitive(op, ln, rn))
 	}
 
-	if (left.kind === 'string' || right.kind === 'string') {
+	if (leftRank === 1) {
 		const ls = coerceToString(left).toLowerCase()
 		const rs = coerceToString(right).toLowerCase()
 		return booleanValue(comparePrimitive(op, ls, rs))
 	}
 
-	if (left.kind === 'boolean' && right.kind === 'boolean') {
-		const lb = left.value ? 1 : 0
-		const rb = right.value ? 1 : 0
-		return booleanValue(comparePrimitive(op, lb, rb))
-	}
+	const lb = left.kind === 'boolean' && left.value ? 1 : 0
+	const rb = right.kind === 'boolean' && right.value ? 1 : 0
+	return booleanValue(comparePrimitive(op, lb, rb))
+}
 
-	return booleanValue(comparePrimitive(op, coerceToString(left), coerceToString(right)))
+function comparisonRank(value: CellValue): 0 | 1 | 2 {
+	const scalar = topLeftScalar(value)
+	if (scalar.kind === 'boolean') return 2
+	if (scalar.kind === 'string' || scalar.kind === 'richText') return 1
+	return 0
+}
+
+function compareEmptyOperand(op: string, left: CellValue, right: CellValue): boolean | undefined {
+	left = topLeftScalar(left)
+	right = topLeftScalar(right)
+	if (left.kind !== 'empty' && right.kind !== 'empty') return undefined
+	if (left.kind === 'error' || right.kind === 'error') return undefined
+	if (
+		left.kind === 'string' ||
+		right.kind === 'string' ||
+		left.kind === 'richText' ||
+		right.kind === 'richText'
+	) {
+		return comparePrimitive(
+			op,
+			coerceToString(left).toLowerCase(),
+			coerceToString(right).toLowerCase(),
+		)
+	}
+	if (left.kind === 'boolean' || right.kind === 'boolean') {
+		const l = left.kind === 'boolean' && left.value ? 1 : 0
+		const r = right.kind === 'boolean' && right.value ? 1 : 0
+		return comparePrimitive(op, l, r)
+	}
+	const ln = coerceToNumber(left)
+	const rn = coerceToNumber(right)
+	if (ln === null || rn === null) return undefined
+	return comparePrimitive(op, ln, rn)
 }
 
 function comparePrimitive<T extends number | string>(op: string, a: T, b: T): boolean {
@@ -396,7 +531,9 @@ export function evaluate(node: FormulaNode, ctx: EvalContext): CellValue {
 		case 'cellRef': {
 			const si = resolveSheetIndex(ctx.workbook, node.sheet, ctx.sheetIndex)
 			if (si < 0) return errorValue('#REF!')
-			return getCellValue(ctx.workbook, si, node.ref.row, node.ref.col)
+			return blankAsTopLevelReferenceValue(
+				getCellValue(ctx.workbook, si, node.ref.row, node.ref.col),
+			)
 		}
 
 		case 'rangeRef': {
@@ -421,8 +558,12 @@ export function evaluate(node: FormulaNode, ctx: EvalContext): CellValue {
 
 		case 'binary': {
 			if (isReferenceBinaryOp(node.op)) return evaluateReferenceNode(node, ctx)
-			const left = evaluateBinaryOperand(node.left, ctx)
-			const right = evaluateBinaryOperand(node.right, ctx)
+			let left = evaluateBinaryOperand(node.left, ctx)
+			let right = evaluateBinaryOperand(node.right, ctx)
+			if (isNumericBinaryOp(node.op)) {
+				if (isEmptyStringLiteral(node.left) && !isTextLikeValue(right)) left = numberValue(0)
+				if (isEmptyStringLiteral(node.right) && !isTextLikeValue(left)) right = numberValue(0)
+			}
 			return evalBinary(node.op, left, right)
 		}
 
@@ -464,6 +605,8 @@ export function evaluate(node: FormulaNode, ctx: EvalContext): CellValue {
 		}
 
 		case 'structuredRef': {
+			const ref = resolveReferenceNode(node, ctx)
+			if (ref) return implicitIntersect(ref, ctx)
 			return evaluateReferenceNode(node, ctx)
 		}
 		case 'spillRef': {
@@ -475,6 +618,92 @@ export function evaluate(node: FormulaNode, ctx: EvalContext): CellValue {
 		default:
 			return assertUnreachable(node)
 	}
+}
+
+export function evaluateLegacyTopLevelFormula(
+	node: FormulaNode,
+	ctx: EvalContext,
+): CellValue | null {
+	switch (node.type) {
+		case 'unary': {
+			if (node.op === '@') return null
+			const ref = resolveReferenceNode(node.operand, ctx)
+			if (!ref) return null
+			const operand = implicitIntersect(ref, ctx)
+			if (operand.kind === 'error') return operand
+			if (node.op === '+') {
+				if (operand.kind === 'string' || operand.kind === 'richText') return operand
+			}
+			const n = coerceToNumber(operand)
+			if (n === null) return errorValue('#VALUE!')
+			switch (node.op) {
+				case '+':
+					return numberValue(n)
+				case '-':
+					return numberValue(-n)
+				case '%':
+					return numberValue(n / 100)
+				default:
+					return null
+			}
+		}
+		case 'binary': {
+			if (isReferenceBinaryOp(node.op)) return null
+			const leftOperand = evalLegacyScalarOperand(node.left, ctx)
+			const rightOperand = evalLegacyScalarOperand(node.right, ctx)
+			if (!leftOperand.handled && !rightOperand.handled) return null
+			const left = leftOperand.handled ? leftOperand.value : evaluate(node.left, ctx)
+			const right = rightOperand.handled ? rightOperand.value : evaluate(node.right, ctx)
+			return evalBinary(node.op, left, right)
+		}
+		case 'function':
+			return evalLegacyTopLevelFunction(node.name, node.args, ctx)
+		default:
+			return null
+	}
+}
+
+function evalLegacyScalarOperand(
+	node: FormulaNode,
+	ctx: EvalContext,
+): { value: CellValue; handled: true } | { handled: false } {
+	const ref = resolveReferenceNode(node, ctx)
+	if (ref) return { value: implicitIntersect(ref, ctx), handled: true }
+	if (node.type === 'unary') {
+		const value = evaluateLegacyTopLevelFormula(node, ctx)
+		if (value) return { value, handled: true }
+	}
+	if (node.type === 'binary' && !isReferenceBinaryOp(node.op)) {
+		const left = evalLegacyScalarOperand(node.left, ctx)
+		const right = evalLegacyScalarOperand(node.right, ctx)
+		if (!left.handled && !right.handled) return { handled: false }
+		const leftValue = left.handled ? left.value : evaluate(node.left, ctx)
+		const rightValue = right.handled ? right.value : evaluate(node.right, ctx)
+		return { value: evalBinary(node.op, leftValue, rightValue), handled: true }
+	}
+	return { handled: false }
+}
+
+function evalLegacyTopLevelFunction(
+	name: string,
+	argNodes: readonly FormulaNode[],
+	ctx: EvalContext,
+): CellValue | null {
+	const upperName = name.toUpperCase()
+	if (!LEGACY_TOP_LEVEL_SCALAR_FUNCTIONS.has(upperName)) return null
+	const def = functionRegistry.get(upperName)
+	if (!def) return null
+	if (argNodes.length < def.minArgs || argNodes.length > def.maxArgs) return errorValue('#VALUE!')
+	const args: EvalArg[] = new Array(argNodes.length)
+	for (let i = 0; i < argNodes.length; i++) {
+		const node = argNodes[i] as FormulaNode
+		const ref = resolveReferenceNode(node, ctx)
+		args[i] =
+			ref && upperName !== 'ISREF' && upperName !== 'AND' && upperName !== 'OR'
+				? { value: implicitIntersect(ref, ctx) }
+				: resolveArg(node, ctx)
+	}
+	return def.evaluate(args, sharedFnCtx.update(ctx))
 }
 
 function evalArrayUnary(op: string, operand: Extract<CellValue, { kind: 'array' }>): CellValue {
@@ -510,11 +739,20 @@ function evalArrayUnary(op: string, operand: Extract<CellValue, { kind: 'array' 
 	return arrayValue(result)
 }
 
+function blankAsTopLevelReferenceValue(value: CellValue): CellValue {
+	return value.kind === 'empty' ? numberValue(0) : value
+}
+
 function evaluateBinaryOperand(node: FormulaNode, ctx: EvalContext): CellValue {
 	if (node.type === 'wholeColumnRange' || node.type === 'wholeRowRange') {
 		const ref = resolveReferenceNode(node, ctx)
 		if (ref) return implicitIntersect(ref, ctx)
 	}
+	if (node.type === 'name' && !node.sheet && ctx.letBindings?.has(node.name.toLowerCase())) {
+		return evaluate(node, ctx)
+	}
+	const ref = resolveReferenceNode(node, ctx)
+	if (ref) return referenceArgToValue(ref)
 	return evaluate(node, ctx)
 }
 
@@ -654,10 +892,10 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 }
 
 function resolveFunctionArg(node: FormulaNode, ctx: EvalContext, functionName: string): EvalArg {
-	if (
-		SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS.has(functionName) &&
-		(node.type === 'wholeColumnRange' || node.type === 'wholeRowRange')
-	) {
+	if (SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS.has(functionName)) {
+		if (node.type === 'name' && !node.sheet && ctx.letBindings?.has(node.name.toLowerCase())) {
+			return resolveArg(node, ctx)
+		}
 		const ref = resolveReferenceNode(node, ctx)
 		if (ref) return { value: implicitIntersect(ref, ctx) }
 	}
@@ -883,7 +1121,26 @@ function lookupVisiblePivotValue(
 				}
 			}
 		}
-		if (matches) return getCellValue(ctx.workbook, sheetIndex, row, header.col)
+		if (matches) {
+			if (fieldColumns.length === 0 && header.col === bounds.startCol) {
+				const rowTotal = rightmostVisiblePivotRowValue(ctx, sheetIndex, bounds, row)
+				if (rowTotal) return rowTotal
+			}
+			return getCellValue(ctx.workbook, sheetIndex, row, header.col)
+		}
+	}
+	return null
+}
+
+function rightmostVisiblePivotRowValue(
+	ctx: EvalContext,
+	sheetIndex: number,
+	bounds: { startRow: number; startCol: number; endRow: number; endCol: number },
+	row: number,
+): CellValue | null {
+	for (let col = bounds.endCol; col > bounds.startCol; col--) {
+		const value = getCellValue(ctx.workbook, sheetIndex, row, col)
+		if (value.kind !== 'empty') return value
 	}
 	return null
 }
@@ -1020,9 +1277,9 @@ function resolveOffsetReference(argNodes: readonly FormulaNode[], ctx: EvalConte
 	if (base.value.kind === 'error') return base
 	if (!base.ref) return { value: errorValue('#VALUE!') }
 
-	const rowOffset = offsetNumberArg(argNodes[1], ctx)
+	const rowOffset = offsetScalarNumberArg(argNodes[1], ctx)
 	if (typeof rowOffset !== 'number') return { value: rowOffset }
-	const colOffset = offsetNumberArg(argNodes[2], ctx)
+	const colOffset = offsetScalarNumberArg(argNodes[2], ctx)
 	if (typeof colOffset !== 'number') return { value: colOffset }
 
 	const baseHeight =
@@ -1030,9 +1287,15 @@ function resolveOffsetReference(argNodes: readonly FormulaNode[], ctx: EvalConte
 	const baseWidth =
 		base.ref.kind === 'range' ? (base.ref.endCol ?? base.ref.col) - base.ref.col + 1 : 1
 
-	const height = argNodes.length > 3 ? offsetNumberArg(argNodes[3], ctx) : baseHeight
+	const height =
+		argNodes.length > 3 && argNodes[3]?.type !== 'missing'
+			? offsetScalarNumberArg(argNodes[3], ctx)
+			: baseHeight
 	if (typeof height !== 'number') return { value: height }
-	const width = argNodes.length > 4 ? offsetNumberArg(argNodes[4], ctx) : baseWidth
+	const width =
+		argNodes.length > 4 && argNodes[4]?.type !== 'missing'
+			? offsetScalarNumberArg(argNodes[4], ctx)
+			: baseWidth
 	if (typeof width !== 'number') return { value: width }
 
 	const targetHeight = Math.trunc(height)
@@ -1052,6 +1315,18 @@ function resolveOffsetReference(argNodes: readonly FormulaNode[], ctx: EvalConte
 
 function offsetNumberArg(node: FormulaNode | undefined, ctx: EvalContext): number | CellValue {
 	const value = evaluate(node ?? { type: 'missing' }, ctx)
+	if (value.kind === 'error') return value
+	const number = coerceToNumber(value)
+	return number === null ? errorValue('#VALUE!') : number
+}
+
+function offsetScalarNumberArg(
+	node: FormulaNode | undefined,
+	ctx: EvalContext,
+): number | CellValue {
+	const scalarNode = node ?? { type: 'missing' }
+	const ref = resolveReferenceNode(scalarNode, ctx)
+	const value = ref ? implicitIntersect(ref, ctx) : evaluate(scalarNode, ctx)
 	if (value.kind === 'error') return value
 	const number = coerceToNumber(value)
 	return number === null ? errorValue('#VALUE!') : number
@@ -1358,9 +1633,9 @@ function referenceArgToValue(arg: EvalArg): CellValue {
 }
 
 function implicitIntersect(arg: EvalArg, ctx: EvalContext): CellValue {
-	if (arg.value.kind === 'error') return arg.value
-	if (arg.value.kind === 'array') return topLeftScalar(arg.value)
 	const areas = areasOf(arg)
+	if (arg.value.kind === 'error' && !areas?.length) return arg.value
+	if (arg.value.kind === 'array') return topLeftScalar(arg.value)
 	if (!areas?.length) return topLeftScalar(arg.value)
 	if (areas.length !== 1) return errorValue('#VALUE!')
 	const area = areas[0]
@@ -1425,9 +1700,33 @@ function areasOf(arg: EvalArg): readonly EvalArea[] | null {
 			topLeft: arg.value,
 			values: arg.values ?? [[arg.value]],
 			...(arg.rowHiddenAtOffset ? { rowHiddenAtOffset: arg.rowHiddenAtOffset } : {}),
+			...(arg.rowFilteredAtOffset ? { rowFilteredAtOffset: arg.rowFilteredAtOffset } : {}),
 			...(arg.forEachValue ? { forEachValue: arg.forEachValue } : {}),
 		},
 	]
+}
+
+function activeFilterRanges(sheet: Sheet): readonly { startRow: number; endRow: number }[] {
+	const ranges: { startRow: number; endRow: number }[] = []
+	if (sheet.autoFilter && sheet.autoFilter.columns.length > 0) {
+		const range = parseFilterRange(sheet.autoFilter.ref)
+		if (range) ranges.push(range)
+	}
+	for (const table of sheet.tables) {
+		if (!table.autoFilter || table.autoFilter.columns.length === 0) continue
+		const range = parseFilterRange(table.autoFilter.ref)
+		if (range) ranges.push(range)
+	}
+	return ranges
+}
+
+function parseFilterRange(ref: string): { startRow: number; endRow: number } | null {
+	try {
+		const range = parseRange(ref)
+		return { startRow: range.start.row, endRow: range.end.row }
+	} catch {
+		return null
+	}
 }
 
 function makeRangeArea(
@@ -1450,6 +1749,7 @@ function makeRangeArea(
 	const materializedStartCol = options.materializedStartCol ?? startCol
 	const materializedEndRow = options.materializedEndRow ?? endRow
 	const materializedEndCol = options.materializedEndCol ?? endCol
+	const filteredRanges = sheet ? activeFilterRanges(sheet) : []
 	return {
 		ref: {
 			kind: 'range',
@@ -1466,6 +1766,13 @@ function makeRangeArea(
 			getCellValue(workbook, sheetIndex, startRow + rowOffset, startCol + colOffset),
 		rowHiddenAtOffset: (rowOffset: number) =>
 			sheet?.rowDefs.get(materializedStartRow + rowOffset)?.hidden === true,
+		rowFilteredAtOffset: (rowOffset: number) => {
+			const row = materializedStartRow + rowOffset
+			return (
+				sheet?.rowDefs.get(row)?.hidden === true &&
+				filteredRanges.some((range) => row > range.startRow && row <= range.endRow)
+			)
+		},
 		get values() {
 			if (!cachedValues) {
 				cachedValues = getRangeValues(
@@ -1522,6 +1829,9 @@ function makeMultiAreaArg(areas: readonly EvalArea[]): EvalArg {
 					...(firstArea.valueAtOffset ? { valueAtOffset: firstArea.valueAtOffset } : {}),
 					...(firstArea.rowHiddenAtOffset
 						? { rowHiddenAtOffset: firstArea.rowHiddenAtOffset }
+						: {}),
+					...(firstArea.rowFilteredAtOffset
+						? { rowFilteredAtOffset: firstArea.rowFilteredAtOffset }
 						: {}),
 				}
 			: {}),

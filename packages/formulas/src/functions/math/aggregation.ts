@@ -26,12 +26,23 @@ function withCachedSingleRangeAggregate(
 }
 
 function countDirectValue(value: CellValue): 0 | 1 | CellValue {
-	if (value.kind === 'error') return value
+	if (value.kind === 'error') return 0
 	if (value.kind === 'number' || value.kind === 'date' || value.kind === 'boolean') return 1
 	if (value.kind !== 'string') return 0
 	const trimmed = value.value.trim()
 	if (trimmed === '') return 0
 	return Number.isNaN(Number(trimmed)) ? 0 : 1
+}
+
+function aggregateDirectNumber(arg: EvalArg): number | null | CellValue {
+	const value = arg.value ?? EMPTY
+	if (arg.ref) {
+		if (isError(value)) return value
+		return numericVal(value)
+	}
+	if (value.kind === 'string' && value.value.trim() === '') return 0
+	const n = toNum(value)
+	return typeof n === 'number' ? n : n
 }
 
 export const aggregationFunctions: FunctionDef[] = [
@@ -60,7 +71,8 @@ export const aggregationFunctions: FunctionDef[] = [
 						}
 					}
 				} else {
-					const n = toNum(arg.value ?? EMPTY)
+					const n = aggregateDirectNumber(arg)
+					if (n === null) continue
 					if (typeof n !== 'number') return n
 					sum += n
 				}
@@ -107,6 +119,7 @@ export const aggregationFunctions: FunctionDef[] = [
 				for (const range of ranges) {
 					const cell = range[r]?.[c] ?? EMPTY
 					if (isError(cell)) return cell
+					if (cell.kind === 'string' || cell.kind === 'richText') return errorValue('#VALUE!')
 					const n = numericVal(cell)
 					product *= n ?? (cell.kind === 'boolean' ? (cell.value ? 1 : 0) : 0)
 				}
@@ -148,7 +161,8 @@ export const aggregationFunctions: FunctionDef[] = [
 						}
 					}
 				} else {
-					const n = toNum(arg.value ?? EMPTY)
+					const n = aggregateDirectNumber(arg)
+					if (n === null) continue
 					if (typeof n !== 'number') return n
 					sum += n
 					count++
@@ -174,6 +188,7 @@ export const aggregationFunctions: FunctionDef[] = [
 					}
 				} else {
 					const v = arg.value ?? EMPTY
+					if (arg.ref && v.kind === 'error') continue
 					const increment = countDirectValue(v)
 					if (typeof increment !== 'number') return increment
 					count += increment
@@ -198,7 +213,6 @@ export const aggregationFunctions: FunctionDef[] = [
 				}
 			} else {
 				const value = arg.value ?? EMPTY
-				if (value.kind === 'error') return value
 				if (!isEmpty(value)) count++
 			}
 		}
@@ -264,7 +278,8 @@ export const aggregationFunctions: FunctionDef[] = [
 						}
 					}
 				} else {
-					const n = toNum(arg.value ?? EMPTY)
+					const n = aggregateDirectNumber(arg)
+					if (n === null) continue
 					if (typeof n !== 'number') return n
 					min = Math.min(min, n)
 					found = true
@@ -306,7 +321,8 @@ export const aggregationFunctions: FunctionDef[] = [
 						}
 					}
 				} else {
-					const n = toNum(arg.value ?? EMPTY)
+					const n = aggregateDirectNumber(arg)
+					if (n === null) continue
 					if (typeof n !== 'number') return n
 					max = Math.max(max, n)
 					found = true
@@ -347,7 +363,8 @@ export const aggregationFunctions: FunctionDef[] = [
 					}
 				}
 			} else {
-				const n = toNum(arg.value ?? EMPTY)
+				const n = aggregateDirectNumber(arg)
+				if (n === null) continue
 				if (typeof n !== 'number') return n
 				product *= n
 				found = true

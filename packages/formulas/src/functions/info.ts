@@ -1,5 +1,12 @@
 import type { CellValue, ScalarCellValue } from '@ascend/schema'
-import { arrayValue, booleanValue, errorValue, numberValue, topLeftScalar } from '@ascend/schema'
+import {
+	arrayValue,
+	booleanValue,
+	errorValue,
+	numberValue,
+	stringValue,
+	topLeftScalar,
+} from '@ascend/schema'
 import type { FunctionDef } from './registry.ts'
 import { cellOf, type EvalArg, getRange, numArg } from './registry.ts'
 
@@ -127,6 +134,30 @@ function errorType(args: EvalArg[]): CellValue {
 	return code !== undefined ? numberValue(code) : errorValue('#N/A')
 }
 
+function infoFn(args: EvalArg[]): CellValue {
+	const v = cellOf(args[0])
+	if (v.kind === 'error') return v
+	if (v.kind !== 'string') return errorValue('#VALUE!')
+	switch (v.value.trim().toLowerCase()) {
+		case 'directory':
+			return stringValue('')
+		case 'numfile':
+			return numberValue(1)
+		case 'origin':
+			return stringValue('$A:')
+		case 'osversion':
+			return stringValue('Mac OS')
+		case 'recalc':
+			return stringValue('Automatic')
+		case 'release':
+			return stringValue('14.3')
+		case 'system':
+			return stringValue('mac')
+		default:
+			return errorValue('#VALUE!')
+	}
+}
+
 export const infoFunctions: FunctionDef[] = [
 	{ name: 'ISBLANK', minArgs: 1, maxArgs: 1, evaluate: isblank },
 	{ name: 'ISERROR', minArgs: 1, maxArgs: 1, evaluate: iserror },
@@ -149,4 +180,5 @@ export const infoFunctions: FunctionDef[] = [
 	{ name: 'ISODD', minArgs: 1, maxArgs: 1, evaluate: isodd },
 	{ name: 'ISNONTEXT', minArgs: 1, maxArgs: 1, evaluate: isnontext },
 	{ name: 'ERROR.TYPE', minArgs: 1, maxArgs: 1, evaluate: errorType },
+	{ name: 'INFO', minArgs: 1, maxArgs: 1, evaluate: infoFn },
 ]

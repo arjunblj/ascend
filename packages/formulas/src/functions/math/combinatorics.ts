@@ -10,6 +10,7 @@ export const combinatoricsFunctions: FunctionDef[] = [
 		if (k < 0) return errorValue('#NUM!')
 		let f = 1
 		for (let i = 2; i <= k; i++) f *= i
+		if (!Number.isFinite(f)) return errorValue('#NUM!')
 		return numberValue(f)
 	}),
 
@@ -20,6 +21,7 @@ export const combinatoricsFunctions: FunctionDef[] = [
 		if (k < 0) return errorValue('#NUM!')
 		let f = 1
 		for (let i = k; i > 0; i -= 2) f *= i
+		if (!Number.isFinite(f)) return errorValue('#NUM!')
 		return numberValue(f)
 	}),
 

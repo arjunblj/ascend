@@ -3,10 +3,26 @@ import { EMPTY, errorValue, isEmpty, isError, numberValue } from '@ascend/schema
 import type { EvalArg, FunctionDef } from '../index.ts'
 import { fn, numArg, numericVal, toNum } from './helpers.ts'
 
-function aggregateCollectNumbers(args: EvalArg[], ignoreErrors: boolean): number[] | CellValue {
+function aggregateCollectNumbers(
+	args: EvalArg[],
+	ignoreErrors: boolean,
+	skipHiddenRows: boolean,
+): number[] | CellValue {
 	const nums: number[] = []
 	for (const arg of args) {
-		if (arg.forEachValue) {
+		if (arg.kind === 'range' && arg.values) {
+			for (let rowIndex = 0; rowIndex < arg.values.length; rowIndex++) {
+				if (shouldSkipSubtotalRow(arg, rowIndex, skipHiddenRows)) continue
+				for (const cell of arg.values[rowIndex] ?? []) {
+					if (cell.kind === 'error') {
+						if (!ignoreErrors) return cell
+						continue
+					}
+					const n = numericVal(cell)
+					if (n !== null) nums.push(n)
+				}
+			}
+		} else if (arg.forEachValue) {
 			let err: CellValue | undefined
 			arg.forEachValue((cell) => {
 				if (err && !ignoreErrors) return
@@ -18,17 +34,6 @@ function aggregateCollectNumbers(args: EvalArg[], ignoreErrors: boolean): number
 				if (n !== null) nums.push(n)
 			})
 			if (err) return err
-		} else if (arg.kind === 'range' && arg.values) {
-			for (const row of arg.values) {
-				for (const cell of row) {
-					if (cell.kind === 'error') {
-						if (!ignoreErrors) return cell
-						continue
-					}
-					const n = numericVal(cell)
-					if (n !== null) nums.push(n)
-				}
-			}
 		} else {
 			const v = arg.value ?? EMPTY
 			if (v.kind === 'error') {
@@ -50,10 +55,11 @@ function aggregateFn(args: EvalArg[]): CellValue {
 	if (typeof opt !== 'number') return opt
 	const options = Math.trunc(opt)
 	const ignoreErrors = options === 2 || options === 3 || options === 6 || options === 7
+	const skipHiddenRows = options === 1 || options === 3 || options === 5 || options === 7
 
 	if (code >= 1 && code <= 11) {
 		const data = args.slice(2)
-		const numsOrErr = aggregateCollectNumbers(data, ignoreErrors)
+		const numsOrErr = aggregateCollectNumbers(data, ignoreErrors, skipHiddenRows)
 		if (!Array.isArray(numsOrErr)) return numsOrErr
 		switch (code) {
 			case 1: {
@@ -68,7 +74,18 @@ function aggregateFn(args: EvalArg[]): CellValue {
 				const dataAll = args.slice(2)
 				let count = 0
 				for (const arg of dataAll) {
-					if (arg.forEachValue) {
+					if (arg.kind === 'range' && arg.values) {
+						for (let rowIndex = 0; rowIndex < arg.values.length; rowIndex++) {
+							if (shouldSkipSubtotalRow(arg, rowIndex, skipHiddenRows)) continue
+							for (const cell of arg.values[rowIndex] ?? []) {
+								if (cell.kind === 'error') {
+									if (!ignoreErrors) return cell
+									continue
+								}
+								if (!isEmpty(cell)) count++
+							}
+						}
+					} else if (arg.forEachValue) {
 						let err: CellValue | undefined
 						arg.forEachValue((cell) => {
 							if (cell.kind === 'error') {
@@ -78,17 +95,14 @@ function aggregateFn(args: EvalArg[]): CellValue {
 							if (!isEmpty(cell)) count++
 						})
 						if (err) return err
-					} else if (arg.kind === 'range' && arg.values) {
-						for (const row of arg.values) {
-							for (const cell of row) {
-								if (cell.kind === 'error') {
-									if (!ignoreErrors) return cell
-									continue
-								}
-								if (!isEmpty(cell)) count++
-							}
+					} else {
+						const v = arg.value ?? EMPTY
+						if (v.kind === 'error') {
+							if (!ignoreErrors) return v
+							continue
 						}
-					} else if (!isEmpty(arg.value ?? EMPTY)) count++
+						if (!isEmpty(v)) count++
+					}
 				}
 				return numberValue(count)
 			}
@@ -133,7 +147,7 @@ function aggregateFn(args: EvalArg[]): CellValue {
 
 	if (code >= 12 && code <= 13) {
 		const data = args.slice(2)
-		const numsOrErr = aggregateCollectNumbers(data, ignoreErrors)
+		const numsOrErr = aggregateCollectNumbers(data, ignoreErrors, skipHiddenRows)
 		if (!Array.isArray(numsOrErr)) return numsOrErr
 		if (numsOrErr.length === 0) return errorValue('#NUM!')
 		if (code === 12) {
@@ -165,7 +179,7 @@ function aggregateFn(args: EvalArg[]): CellValue {
 		if (typeof kArg !== 'number') return kArg
 		const k = Math.trunc(kArg)
 		const data = args.slice(3)
-		const numsOrErr = aggregateCollectNumbers(data, ignoreErrors)
+		const numsOrErr = aggregateCollectNumbers(data, ignoreErrors, skipHiddenRows)
 		if (!Array.isArray(numsOrErr)) return numsOrErr
 		if (numsOrErr.length === 0) return errorValue('#NUM!')
 
@@ -235,12 +249,19 @@ function aggregateFn(args: EvalArg[]): CellValue {
 	return errorValue('#VALUE!')
 }
 
-function subtotalNums(data: EvalArg[]): number[] | CellValue {
+function shouldSkipSubtotalRow(arg: EvalArg, rowIndex: number, skipHiddenRows: boolean): boolean {
+	return (
+		arg.rowFilteredAtOffset?.(rowIndex) === true ||
+		(skipHiddenRows && arg.rowHiddenAtOffset?.(rowIndex) === true)
+	)
+}
+
+function subtotalNums(data: EvalArg[], skipHiddenRows: boolean): number[] | CellValue {
 	const nums: number[] = []
 	for (const arg of data) {
 		if (arg.kind === 'range' && arg.values) {
 			for (let rowIndex = 0; rowIndex < arg.values.length; rowIndex++) {
-				if (arg.rowHiddenAtOffset?.(rowIndex)) continue
+				if (shouldSkipSubtotalRow(arg, rowIndex, skipHiddenRows)) continue
 				for (const cell of arg.values[rowIndex] ?? []) {
 					if (isError(cell)) return cell
 					const n = numericVal(cell)
@@ -268,14 +289,12 @@ function subtotalNums(data: EvalArg[]): number[] | CellValue {
 	return nums
 }
 
-function subtotalDelegated(code: number, data: EvalArg[]): CellValue {
-	return subtotalFn([{ value: numberValue(code) }, ...data])
-}
-
 function subtotalFn(args: EvalArg[]): CellValue {
 	const fnNum = numArg(args[0])
 	if (typeof fnNum !== 'number') return fnNum
-	const code = Math.trunc(fnNum)
+	const rawCode = Math.trunc(fnNum)
+	const skipHiddenRows = rawCode >= 101 && rawCode <= 111
+	const code = skipHiddenRows ? rawCode - 100 : rawCode
 	const data = args.slice(1)
 	switch (code) {
 		case 1: {
@@ -284,7 +303,7 @@ function subtotalFn(args: EvalArg[]): CellValue {
 			for (const arg of data) {
 				if (arg.kind === 'range' && arg.values) {
 					for (let rowIndex = 0; rowIndex < arg.values.length; rowIndex++) {
-						if (arg.rowHiddenAtOffset?.(rowIndex)) continue
+						if (shouldSkipSubtotalRow(arg, rowIndex, skipHiddenRows)) continue
 						for (const cell of arg.values[rowIndex] ?? []) {
 							if (isError(cell)) return cell
 							const n = numericVal(cell)
@@ -308,7 +327,7 @@ function subtotalFn(args: EvalArg[]): CellValue {
 			for (const arg of data) {
 				if (arg.kind === 'range' && arg.values) {
 					for (let rowIndex = 0; rowIndex < arg.values.length; rowIndex++) {
-						if (arg.rowHiddenAtOffset?.(rowIndex)) continue
+						if (shouldSkipSubtotalRow(arg, rowIndex, skipHiddenRows)) continue
 						for (const cell of arg.values[rowIndex] ?? []) {
 							if (cell.kind === 'number' || cell.kind === 'date') count++
 						}
@@ -325,7 +344,7 @@ function subtotalFn(args: EvalArg[]): CellValue {
 			for (const arg of data) {
 				if (arg.kind === 'range' && arg.values) {
 					for (let rowIndex = 0; rowIndex < arg.values.length; rowIndex++) {
-						if (arg.rowHiddenAtOffset?.(rowIndex)) continue
+						if (shouldSkipSubtotalRow(arg, rowIndex, skipHiddenRows)) continue
 						for (const cell of arg.values[rowIndex] ?? []) {
 							if (!isEmpty(cell)) count++
 						}
@@ -342,7 +361,7 @@ function subtotalFn(args: EvalArg[]): CellValue {
 			for (const arg of data) {
 				if (arg.kind === 'range' && arg.values) {
 					for (let rowIndex = 0; rowIndex < arg.values.length; rowIndex++) {
-						if (arg.rowHiddenAtOffset?.(rowIndex)) continue
+						if (shouldSkipSubtotalRow(arg, rowIndex, skipHiddenRows)) continue
 						for (const cell of arg.values[rowIndex] ?? []) {
 							if (isError(cell)) return cell
 							const n = numericVal(cell)
@@ -367,7 +386,7 @@ function subtotalFn(args: EvalArg[]): CellValue {
 			for (const arg of data) {
 				if (arg.kind === 'range' && arg.values) {
 					for (let rowIndex = 0; rowIndex < arg.values.length; rowIndex++) {
-						if (arg.rowHiddenAtOffset?.(rowIndex)) continue
+						if (shouldSkipSubtotalRow(arg, rowIndex, skipHiddenRows)) continue
 						for (const cell of arg.values[rowIndex] ?? []) {
 							if (isError(cell)) return cell
 							const n = numericVal(cell)
@@ -386,13 +405,12 @@ function subtotalFn(args: EvalArg[]): CellValue {
 			}
 			return numberValue(found ? min : 0)
 		}
-		case 6:
-		case 106: {
+		case 6: {
 			let product = 1
 			for (const arg of data) {
 				if (arg.kind === 'range' && arg.values) {
 					for (let rowIndex = 0; rowIndex < arg.values.length; rowIndex++) {
-						if (arg.rowHiddenAtOffset?.(rowIndex)) continue
+						if (shouldSkipSubtotalRow(arg, rowIndex, skipHiddenRows)) continue
 						for (const cell of arg.values[rowIndex] ?? []) {
 							if (isError(cell)) return cell
 							const n = numericVal(cell)
@@ -407,31 +425,28 @@ function subtotalFn(args: EvalArg[]): CellValue {
 			}
 			return numberValue(product)
 		}
-		case 7:
-		case 107: {
-			const nums = subtotalNums(data)
+		case 7: {
+			const nums = subtotalNums(data, skipHiddenRows)
 			if (!Array.isArray(nums)) return nums
 			if (nums.length < 2) return errorValue('#DIV/0!')
 			const mean = nums.reduce((a, b) => a + b, 0) / nums.length
 			const sumSq = nums.reduce((acc, v) => acc + (v - mean) ** 2, 0)
 			return numberValue(Math.sqrt(sumSq / (nums.length - 1)))
 		}
-		case 8:
-		case 108: {
-			const nums = subtotalNums(data)
+		case 8: {
+			const nums = subtotalNums(data, skipHiddenRows)
 			if (!Array.isArray(nums)) return nums
 			if (nums.length < 2) return errorValue('#DIV/0!')
 			const mean = nums.reduce((a, b) => a + b, 0) / nums.length
 			const sumSq = nums.reduce((acc, v) => acc + (v - mean) ** 2, 0)
 			return numberValue(sumSq / (nums.length - 1))
 		}
-		case 9:
-		case 109: {
+		case 9: {
 			let sum = 0
 			for (const arg of data) {
 				if (arg.kind === 'range' && arg.values) {
 					for (let rowIndex = 0; rowIndex < arg.values.length; rowIndex++) {
-						if (arg.rowHiddenAtOffset?.(rowIndex)) continue
+						if (shouldSkipSubtotalRow(arg, rowIndex, skipHiddenRows)) continue
 						for (const cell of arg.values[rowIndex] ?? []) {
 							if (isError(cell)) return cell
 							const n = numericVal(cell)
@@ -446,28 +461,16 @@ function subtotalFn(args: EvalArg[]): CellValue {
 			}
 			return numberValue(sum)
 		}
-		case 101:
-			return subtotalDelegated(1, data)
-		case 102:
-			return subtotalDelegated(2, data)
-		case 103:
-			return subtotalDelegated(3, data)
-		case 104:
-			return subtotalDelegated(4, data)
-		case 105:
-			return subtotalDelegated(5, data)
-		case 10:
-		case 110: {
-			const nums = subtotalNums(data)
+		case 10: {
+			const nums = subtotalNums(data, skipHiddenRows)
 			if (!Array.isArray(nums)) return nums
 			const divisor = nums.length - 1
 			if (divisor < 1) return errorValue('#DIV/0!')
 			const mean = nums.reduce((a, b) => a + b, 0) / nums.length
 			return numberValue(nums.reduce((acc, v) => acc + (v - mean) ** 2, 0) / divisor)
 		}
-		case 11:
-		case 111: {
-			const nums = subtotalNums(data)
+		case 11: {
+			const nums = subtotalNums(data, skipHiddenRows)
 			if (!Array.isArray(nums)) return nums
 			if (nums.length === 0) return errorValue('#DIV/0!')
 			const mean = nums.reduce((a, b) => a + b, 0) / nums.length

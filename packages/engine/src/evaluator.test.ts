@@ -39,6 +39,15 @@ function evalFormula(
 }
 
 describe('evaluator', () => {
+	test('top-level blank cell reference displays as zero', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'A1', styleId: sid })
+
+		recalculate(wb, defaultCalcContext())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(0))
+	})
+
 	describe('binary operations', () => {
 		test('Number + Number', () => {
 			const wb = createWorkbook()
@@ -167,7 +176,7 @@ describe('evaluator', () => {
 			expect(sheet.cells.get(2, 0)?.value).toEqual(booleanValue(false))
 		})
 
-		test('Boolean vs number comparison', () => {
+		test('Boolean vs number comparison uses Excel type ordering', () => {
 			const wb = createWorkbook()
 			const sheet = wb.addSheet('Sheet1')
 			sheet.cells.set(0, 0, { value: booleanValue(true), formula: null, styleId: sid })
@@ -175,7 +184,7 @@ describe('evaluator', () => {
 			sheet.cells.set(1, 0, { value: EMPTY, formula: 'A1=B1', styleId: sid })
 
 			recalculate(wb, defaultCalcContext())
-			expect(sheet.cells.get(1, 0)?.value).toEqual(booleanValue(true))
+			expect(sheet.cells.get(1, 0)?.value).toEqual(booleanValue(false))
 		})
 
 		test('Empty vs number comparison', () => {

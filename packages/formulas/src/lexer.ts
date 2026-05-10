@@ -13,11 +13,18 @@ function isAlpha(ch: string | undefined): ch is string {
 }
 
 function isIdStart(ch: string | undefined): ch is string {
-	return isAlpha(ch) || ch === '_'
+	return isAlpha(ch) || ch === '_' || ch === '\\'
 }
 
 function isIdPart(ch: string | undefined): ch is string {
-	return isAlpha(ch) || isDigit(ch) || ch === '_' || ch === '$'
+	return isAlpha(ch) || isDigit(ch) || ch === '_' || ch === '$' || ch === '\\'
+}
+
+function isValidCellRefToken(raw: string): boolean {
+	if (!CELL_REF_RE.test(raw)) return false
+	const rowMatch = /\$?(\d+)$/.exec(raw)
+	const row = Number(rowMatch?.[1] ?? 0)
+	return row >= 1
 }
 
 export function tokenize(formula: string): Token[] {
@@ -129,7 +136,7 @@ export function tokenize(formula: string): Token[] {
 		if (isIdStart(ch) || ch === '$') {
 			const start = pos
 			while (pos < len && isIdPart(formula[pos])) pos++
-			while (formula[pos] === '.' && pos + 1 < len && isAlpha(formula[pos + 1])) {
+			while (formula[pos] === '.' && pos + 1 < len && isIdPart(formula[pos + 1])) {
 				pos++
 				while (pos < len && isIdPart(formula[pos])) pos++
 			}
@@ -151,7 +158,7 @@ export function tokenize(formula: string): Token[] {
 				continue
 			}
 
-			if (CELL_REF_RE.test(raw)) {
+			if (isValidCellRefToken(raw)) {
 				tokens.push({ type: TokenType.CellRef, value: raw, position: start })
 				continue
 			}

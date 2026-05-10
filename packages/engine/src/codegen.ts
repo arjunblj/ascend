@@ -2,8 +2,11 @@ import type { FormulaNode } from '@ascend/formulas'
 import {
 	dateToSerial,
 	formatNumber,
+	formatTextValue,
 	hasWildcardPatternSyntax,
 	serialToDate,
+	serialToDatePart,
+	tanExcel,
 	toNumber,
 	wildcardMatch,
 } from '@ascend/formulas'
@@ -105,6 +108,12 @@ const SIMPLE_TEXT_FUNCTIONS = new Set(['LEN', 'UPPER', 'LOWER', 'TRIM', 'PROPER'
 
 const TEXT_WITH_ARGS_FUNCTIONS = new Set(['LEFT', 'RIGHT', 'MID', 'CONCATENATE', 'CONCAT', 'REPT'])
 
+function isRangeLikeNode(node: FormulaNode): boolean {
+	return (
+		node.type === 'rangeRef' || node.type === 'wholeColumnRange' || node.type === 'wholeRowRange'
+	)
+}
+
 function isConstantNode(node: FormulaNode): boolean {
 	switch (node.type) {
 		case 'number':
@@ -202,7 +211,8 @@ function canCodegen(node: FormulaNode): boolean {
 			if (
 				(upper === 'SUMIF' || upper === 'COUNTIF') &&
 				node.args.length === 2 &&
-				(node.args[0] as FormulaNode).type === 'rangeRef'
+				(node.args[0] as FormulaNode).type === 'rangeRef' &&
+				!isRangeLikeNode(node.args[1] as FormulaNode)
 			) {
 				return canCodegen(node.args[1] as FormulaNode)
 			}
@@ -360,7 +370,7 @@ function tryFoldConstant(node: FormulaNode): number | null {
 					case 'COS':
 						return Math.cos(a)
 					case 'TAN':
-						return Math.tan(a)
+						return tanExcel(a)
 					case 'ASIN':
 						return a < -1 || a > 1 ? null : Math.asin(a)
 					case 'ACOS':
@@ -522,7 +532,9 @@ function emitBinary(state: CodegenState, node: FormulaNode & { type: 'binary' })
 			)
 			break
 		case '^':
-			state.lines.push(`var ${result} = _numberValue(${ln} ** ${rn});`)
+			state.lines.push(
+				`var ${result}p = ${ln} ** ${rn}; if (Number.isNaN(${result}p)) return _errorValue('#NUM!'); if (!Number.isFinite(${result}p)) return ${ln} === 0 && ${rn} < 0 ? _errorValue('#DIV/0!') : _errorValue('#NUM!'); var ${result} = _numberValue(${result}p);`,
+			)
 			break
 		default:
 			state.lines.push(`var ${result} = _EMPTY;`)
@@ -726,7 +738,7 @@ function emitSimpleMath(state: CodegenState, node: FormulaNode & { type: 'functi
 				state.lines.push(`var ${result} = _numberValue(Math.cos(${nv}));`)
 				break
 			case 'TAN':
-				state.lines.push(`var ${result} = _numberValue(Math.tan(${nv}));`)
+				state.lines.push(`var ${result} = _numberValue(_tanExcel(${nv}));`)
 				break
 			case 'ASIN':
 				state.lines.push(
@@ -967,7 +979,9 @@ function emitDateExtract(
 	state.lines.push(`if (${sv}.kind === 'error') return ${sv};`)
 	const nv = emitCoerceNumber(state, sv)
 	const parts = freshVar(state, 'dp')
-	state.lines.push(`var ${parts} = _serialToDate(Math.floor(${nv}), ctx.calcContext.dateSystem);`)
+	state.lines.push(
+		`var ${parts} = _serialToDatePart(Math.floor(${nv}), ctx.calcContext.dateSystem);`,
+	)
 	state.lines.push(`if (!${parts}) return _errorValue('#NUM!');`)
 	const result = freshVar(state)
 	const prop = field === 'YEAR' ? 'year' : field === 'MONTH' ? 'month' : 'day'
@@ -1016,7 +1030,7 @@ function emitSumif(state: CodegenState, node: FormulaNode & { type: 'function' }
 
 function emitCountif(state: CodegenState, node: FormulaNode & { type: 'function' }): string {
 	const rangeArg = node.args[0] as FormulaNode & { type: 'rangeRef' }
-	const criteriaVar = emitNode(state, node.args[1] as FormulaNode)
+	const criteriaVar = emitTreeFallback(state, node.args[1] as FormulaNode)
 	const result = freshVar(state)
 	const sheetExpr = rangeArg.sheet === undefined ? 'null' : JSON.stringify(rangeArg.sheet)
 	const anchorRow = state.sharedAnchor?.row ?? -1
@@ -1033,14 +1047,15 @@ function emitTextFormat(state: CodegenState, node: FormulaNode & { type: 'functi
 	const vs = freshVar(state, 'tv')
 	state.lines.push(`var ${vs} = _topLeft(${valVar});`)
 	state.lines.push(`if (${vs}.kind === 'error') return ${vs};`)
-	const nv = emitCoerceNumber(state, vs)
 	const fs = freshVar(state, 'tf')
 	state.lines.push(`var ${fs} = _topLeft(${fmtVar});`)
 	state.lines.push(`if (${fs}.kind === 'error') return ${fs};`)
 	const fmtStr = freshVar(state, 'tfs')
 	state.lines.push(`var ${fmtStr} = _coerceStr(${fs});`)
 	const result = freshVar(state)
-	state.lines.push(`var ${result} = _stringValue(_formatNumber(${nv}, ${fmtStr}));`)
+	state.lines.push(
+		`var ${result} = _formatTextValue(${vs}, ${fmtStr}, ctx.calcContext.dateSystem);`,
+	)
 	return result
 }
 
@@ -1249,20 +1264,67 @@ function emitTreeFallback(state: CodegenState, node: FormulaNode): string {
 }
 
 function evalCmp(op: string, left: CellValue, right: CellValue): boolean {
-	const ln = toNumber(left)
-	const rn = toNumber(right)
-	if (ln !== null && rn !== null) return cmpPrimitive(op, ln, rn)
-	if (left.kind === 'string' || right.kind === 'string') {
+	const emptyComparison = compareEmptyOperand(op, left, right)
+	if (emptyComparison !== undefined) return emptyComparison
+
+	const leftRank = comparisonRank(left)
+	const rightRank = comparisonRank(right)
+	if (leftRank !== rightRank) return cmpPrimitive(op, leftRank, rightRank)
+	if (leftRank === 0) {
+		const ln = toNumber(left)
+		const rn = toNumber(right)
+		if (ln === null || rn === null) return false
+		return cmpPrimitive(op, ln, rn)
+	}
+	if (leftRank === 1) {
 		return cmpPrimitive(
 			op,
 			coerceCellValueToString(left).toLowerCase(),
 			coerceCellValueToString(right).toLowerCase(),
 		)
 	}
-	if (left.kind === 'boolean' && right.kind === 'boolean') {
-		return cmpPrimitive(op, left.value ? 1 : 0, right.value ? 1 : 0)
+	return cmpPrimitive(
+		op,
+		left.kind === 'boolean' && left.value ? 1 : 0,
+		right.kind === 'boolean' && right.value ? 1 : 0,
+	)
+}
+
+function comparisonRank(value: CellValue): 0 | 1 | 2 {
+	value = topLeftScalar(value)
+	if (value.kind === 'boolean') return 2
+	if (value.kind === 'string' || value.kind === 'richText') return 1
+	return 0
+}
+
+function compareEmptyOperand(op: string, left: CellValue, right: CellValue): boolean | undefined {
+	left = topLeftScalar(left)
+	right = topLeftScalar(right)
+	if (left.kind !== 'empty' && right.kind !== 'empty') return undefined
+	if (left.kind === 'error' || right.kind === 'error') return undefined
+	if (
+		left.kind === 'string' ||
+		right.kind === 'string' ||
+		left.kind === 'richText' ||
+		right.kind === 'richText'
+	) {
+		return cmpPrimitive(
+			op,
+			coerceCellValueToString(left).toLowerCase(),
+			coerceCellValueToString(right).toLowerCase(),
+		)
 	}
-	return cmpPrimitive(op, coerceCellValueToString(left), coerceCellValueToString(right))
+	if (left.kind === 'boolean' || right.kind === 'boolean') {
+		return cmpPrimitive(
+			op,
+			left.kind === 'boolean' && left.value ? 1 : 0,
+			right.kind === 'boolean' && right.value ? 1 : 0,
+		)
+	}
+	const ln = toNumber(left)
+	const rn = toNumber(right)
+	if (ln === null || rn === null) return undefined
+	return cmpPrimitive(op, ln, rn)
 }
 
 function cmpPrimitive<T extends number | string>(op: string, a: T, b: T): boolean {
@@ -1711,6 +1773,10 @@ function buildCriteriaMatcher(criteria: CellValue): (v: CellValue) => boolean {
 		const t = criteria.value
 		return (v) => v.kind === 'boolean' && v.value === t
 	}
+	if (criteria.kind === 'error') {
+		const t = criteria.value
+		return (v) => v.kind === 'error' && v.value === t
+	}
 	if (criteria.kind !== 'string') return () => false
 
 	const s = criteria.value
@@ -1910,11 +1976,14 @@ function buildCodegenFn(node: FormulaNode, sharedAnchor?: SharedAnchor): Codegen
 		'_matchExact',
 		'_vlookupExact',
 		'_serialToDate',
+		'_serialToDatePart',
 		'_dateToSerial',
 		'_formatNumber',
+		'_formatTextValue',
 		'_sumifRange',
 		'_countifRange',
 		'_isCellInBounds',
+		'_tanExcel',
 	]
 	const closureValues: unknown[] = [
 		numberValue,
@@ -1935,11 +2004,14 @@ function buildCodegenFn(node: FormulaNode, sharedAnchor?: SharedAnchor): Codegen
 		matchExact,
 		vlookupExact,
 		serialToDate,
+		serialToDatePart,
 		dateToSerial,
 		formatNumber,
+		formatTextValue,
 		sumifRange,
 		countifRange,
 		isCellInBounds,
+		tanExcel,
 	]
 
 	for (const [key, node] of state.treeNodes) {

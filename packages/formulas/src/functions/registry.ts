@@ -16,6 +16,7 @@ export interface EvalArea {
 	readonly topLeft?: CellValue
 	readonly valueAtOffset?: (rowOffset: number, colOffset: number) => CellValue
 	readonly rowHiddenAtOffset?: (rowOffset: number) => boolean
+	readonly rowFilteredAtOffset?: (rowOffset: number) => boolean
 	/** Iterate only occupied cells (sparse). Use for SUM, AVERAGE, etc. */
 	readonly forEachValue?: (fn: (value: CellValue) => void) => void
 	/** Iterate all cells in range including empty. Use for COUNTBLANK. */
@@ -32,6 +33,7 @@ export interface EvalArg {
 	readonly shapeCols?: number
 	readonly valueAtOffset?: (rowOffset: number, colOffset: number) => CellValue
 	readonly rowHiddenAtOffset?: (rowOffset: number) => boolean
+	readonly rowFilteredAtOffset?: (rowOffset: number) => boolean
 	/** Iterate only occupied cells (sparse). Use for SUM, AVERAGE, etc. */
 	readonly forEachValue?: (fn: (value: CellValue) => void) => void
 	/** Iterate all cells in range including empty. Use for COUNTBLANK. */
@@ -128,7 +130,7 @@ export function toNumber(v: CellValue): number | null {
 			return 0
 		case 'string': {
 			const s = v.value.trim()
-			if (s === '') return 0
+			if (s === '') return null
 			const n = Number(s)
 			return Number.isNaN(n) ? null : n
 		}

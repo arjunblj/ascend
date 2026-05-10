@@ -44,6 +44,12 @@ describe('tokenize', () => {
 		expect(tokens[0]?.value).toBe('A1')
 	})
 
+	it('tokenizes row-zero references as names', () => {
+		const tokens = tokenize('A0')
+		expect(tokens[0]?.type).toBe(TokenType.Name)
+		expect(tokens[0]?.value).toBe('A0')
+	})
+
 	it('tokenizes absolute cell references', () => {
 		for (const ref of ['$A$1', '$A1', 'A$1', '$AB$100']) {
 			expect(tokenize(ref)[0]?.type).toBe(TokenType.CellRef)

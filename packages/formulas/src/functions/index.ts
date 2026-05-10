@@ -1,4 +1,4 @@
-export { dateToSerial, serialToDate } from './date.ts'
+export { dateToSerial, serialToDate, serialToDatePart } from './date.ts'
 export {
 	type AggregateRangeCache,
 	cellOf,
@@ -25,7 +25,7 @@ export {
 	valuesEqual,
 	wildcardMatch,
 } from './registry.ts'
-export { formatNumber } from './text.ts'
+export { formatNumber, formatTextValue } from './text.ts'
 
 import { compatibilityFunctions } from './compatibility.ts'
 import { databaseFunctions } from './database.ts'
@@ -37,7 +37,7 @@ import { infoFunctions } from './info.ts'
 import { logicalFunctions } from './logical.ts'
 import { lookupFunctions } from './lookup.ts'
 
-export { clearCriteriaMatchCache } from './math/index.ts'
+export { clearCriteriaMatchCache, tanExcel } from './math/index.ts'
 
 import { convertFunction } from './convert.ts'
 import { etsFunctions } from './forecast-ets.ts'

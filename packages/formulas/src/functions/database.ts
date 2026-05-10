@@ -161,6 +161,7 @@ export function databaseFilter(args: EvalArg[]): DatabaseFilterResult {
 				const dbCol = criteriaColToDbCol[c] ?? -1
 				if (dbCol < 0) continue
 				const criterion = criteriaRow[c] ?? EMPTY
+				if (isBlankLike(criterion)) continue
 				const dataCell = dataRow[dbCol] ?? EMPTY
 				const match = parseCriteria(criterion)
 				if (!match(dataCell)) {

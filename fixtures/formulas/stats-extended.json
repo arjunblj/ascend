@@ -179,6 +179,555 @@
 			"setup": { "A1": 2, "A2": 8, "A3": 5 },
 			"formula": "AGGREGATE(4, 0, A1:A3)",
 			"expected": { "kind": "number", "value": 8 }
+		},
+		{
+			"description": "BETA.DIST returns beta PDF for alpha=2 beta=3",
+			"setup": {},
+			"formula": "BETA.DIST(0.5, 2, 3, FALSE)",
+			"expected": { "kind": "number", "approx": 1.5, "tolerance": 1e-12 }
+		},
+		{
+			"description": "BETA.INV inverts beta CDF for alpha=2 beta=3",
+			"setup": {},
+			"formula": "BETA.INV(0.6875, 2, 3)",
+			"expected": { "kind": "number", "approx": 0.5, "tolerance": 1e-10 }
+		},
+		{
+			"description": "BINOM.DIST returns exact probability mass",
+			"setup": {},
+			"formula": "BINOM.DIST(2, 4, 0.5, FALSE)",
+			"expected": { "kind": "number", "value": 0.375 }
+		},
+		{
+			"description": "BINOM.INV returns smallest success count meeting alpha",
+			"setup": {},
+			"formula": "BINOM.INV(10, 0.5, 0.6)",
+			"expected": { "kind": "number", "value": 5 }
+		},
+		{
+			"description": "CHISQ.DIST returns right-skewed chi-square CDF",
+			"setup": {},
+			"formula": "CHISQ.DIST(2, 2, TRUE)",
+			"expected": { "kind": "number", "approx": 0.6321205588285577, "tolerance": 1e-12 }
+		},
+		{
+			"description": "CHISQ.DIST.RT returns chi-square upper tail",
+			"setup": {},
+			"formula": "CHISQ.DIST.RT(2, 2)",
+			"expected": { "kind": "number", "approx": 0.36787944117144233, "tolerance": 1e-12 }
+		},
+		{
+			"description": "CHISQ.INV inverts chi-square lower-tail probability",
+			"setup": {},
+			"formula": "CHISQ.INV(0.6321205588285577, 2)",
+			"expected": { "kind": "number", "approx": 2, "tolerance": 1e-8 }
+		},
+		{
+			"description": "CHISQ.INV.RT inverts chi-square upper-tail probability",
+			"setup": {},
+			"formula": "CHISQ.INV.RT(0.36787944117144233, 2)",
+			"expected": { "kind": "number", "approx": 2, "tolerance": 1e-8 }
+		},
+		{
+			"description": "LINEST returns the slope as its top-left result",
+			"setup": { "A1": 3, "A2": 5, "A3": 7, "B1": 1, "B2": 2, "B3": 3 },
+			"formula": "LINEST(A1:A3, B1:B3)",
+			"expected": { "kind": "number", "approx": 2, "tolerance": 1e-12 }
+		},
+		{
+			"description": "GROWTH predicts existing exponential series values",
+			"setup": { "A1": 2, "A2": 6, "A3": 18, "B1": 1, "B2": 2, "B3": 3 },
+			"formula": "INDEX(GROWTH(A1:A3, B1:B3), 1)",
+			"expected": { "kind": "number", "approx": 2, "tolerance": 1e-8 }
+		},
+		{
+			"description": "LOGEST returns exponential multiplier as top-left result",
+			"setup": { "A1": 2, "A2": 4, "A3": 8, "B1": 1, "B2": 2, "B3": 3 },
+			"formula": "LOGEST(A1:A3, B1:B3)",
+			"expected": { "kind": "number", "approx": 2, "tolerance": 1e-12 }
+		},
+		{
+			"description": "AVEDEV computes average absolute deviation",
+			"setup": { "A1": 2, "A2": 4, "A3": 6, "A4": 8 },
+			"formula": "AVEDEV(A1:A4)",
+			"expected": { "kind": "number", "value": 2 }
+		},
+		{
+			"description": "AVERAGEA includes text as 0 and booleans as 0/1",
+			"setup": { "A1": 10, "A2": "text", "A3": true, "A4": 5 },
+			"formula": "AVERAGEA(A1:A4)",
+			"expected": { "kind": "number", "value": 4 }
+		},
+		{
+			"description": "BINOM.DIST.RANGE sums probability over inclusive successes",
+			"setup": {},
+			"formula": "BINOM.DIST.RANGE(10, 0.5, 2, 4)",
+			"expected": { "kind": "number", "value": 0.3662109375 }
+		},
+		{
+			"description": "CHISQ.TEST returns goodness-of-fit probability",
+			"setup": { "A1": 18, "A2": 22, "A3": 20, "B1": 20, "B2": 20, "B3": 20 },
+			"formula": "CHISQ.TEST(A1:A3, B1:B3)",
+			"expected": { "kind": "number", "approx": 0.8187307530779818, "tolerance": 1e-12 }
+		},
+		{
+			"description": "CONFIDENCE.NORM returns normal confidence interval width",
+			"setup": {},
+			"formula": "CONFIDENCE.NORM(0.05, 1, 100)",
+			"expected": { "kind": "number", "approx": 0.1959963984540054, "tolerance": 1e-12 }
+		},
+		{
+			"description": "CONFIDENCE.T returns t confidence interval width",
+			"setup": {},
+			"formula": "CONFIDENCE.T(0.05, 1, 100)",
+			"expected": { "kind": "number", "approx": 0.1984216951586418, "tolerance": 1e-12 }
+		},
+		{
+			"description": "COVARIANCE.P computes population covariance",
+			"setup": { "A1": 1, "A2": 2, "A3": 3, "B1": 3, "B2": 5, "B3": 7 },
+			"formula": "COVARIANCE.P(A1:A3, B1:B3)",
+			"expected": { "kind": "number", "approx": 1.3333333333333333, "tolerance": 1e-12 }
+		},
+		{
+			"description": "COVARIANCE.S computes sample covariance",
+			"setup": { "A1": 1, "A2": 2, "A3": 3, "B1": 3, "B2": 5, "B3": 7 },
+			"formula": "COVARIANCE.S(A1:A3, B1:B3)",
+			"expected": { "kind": "number", "value": 2 }
+		},
+		{
+			"description": "DEVSQ computes sum of squared deviations",
+			"setup": { "A1": 2, "A2": 4, "A3": 6 },
+			"formula": "DEVSQ(A1:A3)",
+			"expected": { "kind": "number", "value": 8 }
+		},
+		{
+			"description": "EXPON.DIST returns exponential CDF",
+			"setup": {},
+			"formula": "EXPON.DIST(1, 2, TRUE)",
+			"expected": { "kind": "number", "approx": 0.8646647167633873, "tolerance": 1e-12 }
+		},
+		{
+			"description": "F.DIST returns lower-tail F distribution",
+			"setup": {},
+			"formula": "F.DIST(1, 2, 3, TRUE)",
+			"expected": { "kind": "number", "approx": 0.5352419984551121, "tolerance": 1e-12 }
+		},
+		{
+			"description": "F.DIST.RT returns right-tail F distribution",
+			"setup": {},
+			"formula": "F.DIST.RT(1, 2, 3)",
+			"expected": { "kind": "number", "approx": 0.4647580015448879, "tolerance": 1e-12 }
+		},
+		{
+			"description": "F.INV inverts lower-tail F probability",
+			"setup": {},
+			"formula": "F.INV(F.DIST(1, 2, 3, TRUE), 2, 3)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "F.INV.RT inverts right-tail F probability",
+			"setup": {},
+			"formula": "F.INV.RT(F.DIST.RT(1, 2, 3), 2, 3)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "F.TEST returns two-tailed F-test probability",
+			"setup": {
+				"A2": 6,
+				"A3": 7,
+				"A4": 9,
+				"A5": 15,
+				"A6": 21,
+				"B2": 20,
+				"B3": 28,
+				"B4": 31,
+				"B5": 38,
+				"B6": 40
+			},
+			"formula": "F.TEST(A2:A6, B2:B6)",
+			"expected": { "kind": "number", "approx": 0.6483178467861748, "tolerance": 1e-12 }
+		},
+		{
+			"description": "FISHER transforms a correlation coefficient",
+			"setup": {},
+			"formula": "FISHER(0.5)",
+			"expected": { "kind": "number", "approx": 0.5493061443340548, "tolerance": 1e-12 }
+		},
+		{
+			"description": "FISHERINV inverts FISHER",
+			"setup": {},
+			"formula": "FISHERINV(FISHER(0.5))",
+			"expected": { "kind": "number", "approx": 0.5, "tolerance": 1e-12 }
+		},
+		{
+			"description": "FORECAST predicts from a linear series",
+			"setup": { "A1": 1, "A2": 2, "A3": 3, "B1": 2, "B2": 4, "B3": 6 },
+			"formula": "FORECAST(4, B1:B3, A1:A3)",
+			"expected": { "kind": "number", "value": 8 }
+		},
+		{
+			"description": "FORECAST.LINEAR predicts from a linear series",
+			"setup": { "A1": 1, "A2": 2, "A3": 3, "B1": 2, "B2": 4, "B3": 6 },
+			"formula": "FORECAST.LINEAR(4, B1:B3, A1:A3)",
+			"expected": { "kind": "number", "value": 8 }
+		},
+		{
+			"description": "FORECAST.ETS predicts next point from a linear timeline",
+			"setup": {
+				"A1": 1,
+				"A2": 2,
+				"A3": 3,
+				"A4": 4,
+				"A5": 5,
+				"A6": 6,
+				"A7": 7,
+				"A8": 8,
+				"A9": 9,
+				"A10": 10,
+				"B1": 2,
+				"B2": 4,
+				"B3": 6,
+				"B4": 8,
+				"B5": 10,
+				"B6": 12,
+				"B7": 14,
+				"B8": 16,
+				"B9": 18,
+				"B10": 20
+			},
+			"formula": "FORECAST.ETS(11, B1:B10, A1:A10)",
+			"expected": { "kind": "number", "approx": 21.97963285890677, "tolerance": 1e-9 }
+		},
+		{
+			"description": "FORECAST.ETS.CONFINT returns confidence width",
+			"setup": {
+				"A1": 1,
+				"A2": 2,
+				"A3": 3,
+				"A4": 4,
+				"A5": 5,
+				"A6": 6,
+				"A7": 7,
+				"A8": 8,
+				"A9": 9,
+				"A10": 10,
+				"B1": 2.5,
+				"B2": 3.5,
+				"B3": 6.5,
+				"B4": 7.5,
+				"B5": 10.5,
+				"B6": 11.5,
+				"B7": 14.5,
+				"B8": 15.5,
+				"B9": 18.5,
+				"B10": 19.5
+			},
+			"formula": "FORECAST.ETS.CONFINT(11, B1:B10, A1:A10, 0.95)",
+			"expected": { "kind": "number", "approx": 2.2086338381690918, "tolerance": 1e-9 }
+		},
+		{
+			"description": "FORECAST.ETS.SEASONALITY returns 1 for non-seasonal data",
+			"setup": {
+				"A1": 3,
+				"A2": 5,
+				"A3": 7,
+				"A4": 9,
+				"A5": 11,
+				"A6": 13,
+				"A7": 15,
+				"A8": 17,
+				"A9": 19,
+				"A10": 21,
+				"B1": 1,
+				"B2": 2,
+				"B3": 3,
+				"B4": 4,
+				"B5": 5,
+				"B6": 6,
+				"B7": 7,
+				"B8": 8,
+				"B9": 9,
+				"B10": 10
+			},
+			"formula": "FORECAST.ETS.SEASONALITY(A1:A10, B1:B10)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "FORECAST.ETS.STAT returns timeline step size",
+			"setup": {
+				"A1": 10,
+				"A2": 13,
+				"A3": 16,
+				"A4": 19,
+				"A5": 22,
+				"A6": 25,
+				"B1": 5,
+				"B2": 10,
+				"B3": 15,
+				"B4": 20,
+				"B5": 25,
+				"B6": 30
+			},
+			"formula": "FORECAST.ETS.STAT(A1:A6, B1:B6, 8)",
+			"expected": { "kind": "number", "value": 5 }
+		},
+		{
+			"description": "GAMMA returns factorial relation for positive integers",
+			"setup": {},
+			"formula": "GAMMA(5)",
+			"expected": { "kind": "number", "value": 24 }
+		},
+		{
+			"description": "GAMMA.DIST returns gamma CDF",
+			"setup": {},
+			"formula": "GAMMA.DIST(2, 3, 2, TRUE)",
+			"expected": { "kind": "number", "approx": 0.08030139707139418, "tolerance": 1e-12 }
+		},
+		{
+			"description": "GAMMA.INV inverts gamma CDF",
+			"setup": {},
+			"formula": "GAMMA.INV(GAMMA.DIST(2, 3, 2, TRUE), 3, 2)",
+			"expected": { "kind": "number", "value": 2 }
+		},
+		{
+			"description": "GAMMALN returns ln gamma",
+			"setup": {},
+			"formula": "GAMMALN(5)",
+			"expected": { "kind": "number", "approx": 3.17805383034795, "tolerance": 1e-12 }
+		},
+		{
+			"description": "GAMMALN.PRECISE returns ln gamma",
+			"setup": {},
+			"formula": "GAMMALN.PRECISE(5)",
+			"expected": { "kind": "number", "approx": 3.17805383034795, "tolerance": 1e-12 }
+		},
+		{
+			"description": "INTERCEPT returns y-intercept for linear data",
+			"setup": { "A1": 1, "A2": 2, "A3": 3, "B1": 3, "B2": 5, "B3": 7 },
+			"formula": "INTERCEPT(B1:B3, A1:A3)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "KURT returns excess kurtosis for uniform-spaced data",
+			"setup": { "A1": 1, "A2": 2, "A3": 3, "A4": 4, "A5": 5 },
+			"formula": "KURT(A1:A5)",
+			"expected": { "kind": "number", "approx": -1.2, "tolerance": 1e-12 }
+		},
+		{
+			"description": "LOGNORM.DIST returns cached cumulative precision point",
+			"setup": {},
+			"formula": "LOGNORM.DIST(1, 2, 5, TRUE)",
+			"expected": { "kind": "number", "approx": 0.34457825838967576, "tolerance": 1e-12 }
+		},
+		{
+			"description": "LOGNORM.INV inverts cached cumulative precision point",
+			"setup": {},
+			"formula": "LOGNORM.INV(0.34457825838967576, 2, 5)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "NORM.INV returns mean at p=0.5",
+			"setup": {},
+			"formula": "NORM.INV(0.5, 10, 2)",
+			"expected": { "kind": "number", "value": 10 }
+		},
+		{
+			"description": "PEARSON returns correlation coefficient",
+			"setup": { "A1": 1, "A2": 2, "A3": 3, "B1": 2, "B2": 4, "B3": 6 },
+			"formula": "PEARSON(A1:A3, B1:B3)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "POISSON.DIST returns Poisson PMF",
+			"setup": {},
+			"formula": "POISSON.DIST(3, 5, FALSE)",
+			"expected": { "kind": "number", "approx": 0.14037389581428056, "tolerance": 1e-12 }
+		},
+		{
+			"description": "RANK.AVG averages tied ranks",
+			"setup": { "A1": 3, "A2": 3, "A3": 5, "A4": 1 },
+			"formula": "RANK.AVG(3, A1:A4)",
+			"expected": { "kind": "number", "value": 2.5 }
+		},
+		{
+			"description": "RANK.EQ returns rank for descending order",
+			"setup": { "A1": 3, "A2": 1, "A3": 5 },
+			"formula": "RANK.EQ(3, A1:A3)",
+			"expected": { "kind": "number", "value": 2 }
+		},
+		{
+			"description": "RSQ returns coefficient of determination",
+			"setup": { "A1": 1, "A2": 2, "A3": 3, "B1": 2, "B2": 4, "B3": 6 },
+			"formula": "RSQ(B1:B3, A1:A3)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "SKEW returns zero for symmetric data",
+			"setup": { "A1": 1, "A2": 2, "A3": 3, "A4": 4, "A5": 5 },
+			"formula": "SKEW(A1:A5)",
+			"expected": { "kind": "number", "approx": 0, "tolerance": 1e-12 }
+		},
+		{
+			"description": "SKEW.P returns zero for symmetric population data",
+			"setup": { "A1": 1, "A2": 2, "A3": 3, "A4": 4, "A5": 5 },
+			"formula": "SKEW.P(A1:A5)",
+			"expected": { "kind": "number", "approx": 0, "tolerance": 1e-12 }
+		},
+		{
+			"description": "SLOPE returns slope for linear data",
+			"setup": { "A1": 1, "A2": 2, "A3": 3, "B1": 2, "B2": 4, "B3": 6 },
+			"formula": "SLOPE(B1:B3, A1:A3)",
+			"expected": { "kind": "number", "value": 2 }
+		},
+		{
+			"description": "STANDARDIZE returns z-score",
+			"setup": {},
+			"formula": "STANDARDIZE(42, 40, 1.5)",
+			"expected": { "kind": "number", "approx": 1.3333333333333333, "tolerance": 1e-12 }
+		},
+		{
+			"description": "T.DIST.2T returns two-tailed t probability",
+			"setup": {},
+			"formula": "T.DIST.2T(1, 10)",
+			"expected": { "kind": "number", "approx": 0.34089313230205864, "tolerance": 1e-12 }
+		},
+		{
+			"description": "T.DIST.RT returns right-tailed t probability",
+			"setup": {},
+			"formula": "T.DIST.RT(1, 10)",
+			"expected": { "kind": "number", "approx": 0.17044656615102932, "tolerance": 1e-12 }
+		},
+		{
+			"description": "T.INV returns median quantile at p=0.5",
+			"setup": {},
+			"formula": "T.INV(0.5, 10)",
+			"expected": { "kind": "number", "value": 0 }
+		},
+		{
+			"description": "T.INV.2T returns two-tailed inverse",
+			"setup": {},
+			"formula": "T.INV.2T(0.2, 10)",
+			"expected": { "kind": "number", "approx": 1.3721836411103325, "tolerance": 1e-12 }
+		},
+		{
+			"description": "T.TEST returns paired two-tailed probability",
+			"setup": {
+				"A2": 3,
+				"A3": 4,
+				"A4": 5,
+				"A5": 8,
+				"A6": 9,
+				"A7": 14,
+				"A8": 1,
+				"A9": 4,
+				"A10": 2,
+				"B2": 6,
+				"B3": 19,
+				"B4": 3,
+				"B5": 2,
+				"B6": 14,
+				"B7": 5,
+				"B8": 4,
+				"B9": 17,
+				"B10": 5
+			},
+			"formula": "T.TEST(A2:A10, B2:B10, 2, 1)",
+			"expected": { "kind": "number", "approx": 0.3215202496471794, "tolerance": 1e-12 }
+		},
+		{
+			"description": "TREND returns fitted linear value at top-left",
+			"setup": { "A1": 3, "A2": 5, "A3": 7, "B1": 1, "B2": 2, "B3": 3 },
+			"formula": "TREND(A1:A3, B1:B3)",
+			"expected": { "kind": "number", "value": 3 }
+		},
+		{
+			"description": "WEIBULL.DIST returns Weibull CDF",
+			"setup": {},
+			"formula": "WEIBULL.DIST(1, 2, 3, TRUE)",
+			"expected": { "kind": "number", "approx": 0.10516068318563021, "tolerance": 1e-12 }
+		},
+		{
+			"description": "FREQUENCY counts values in the first bin",
+			"setup": { "A1": 1, "A2": 3, "A3": 5, "A4": 7, "A5": 9, "B1": 3, "B2": 6 },
+			"formula": "FREQUENCY(A1:A5,B1:B2)",
+			"expected": { "kind": "number", "value": 2 }
+		},
+		{
+			"description": "MODE.MULT returns first repeated mode as top-left value",
+			"setup": { "A1": 1, "A2": 2, "A3": 2, "A4": 3, "A5": 3, "A6": 4 },
+			"formula": "MODE.MULT(A1:A6)",
+			"expected": { "kind": "number", "value": 2 }
+		},
+		{
+			"description": "PERCENTRANK aliases inclusive percentile rank",
+			"setup": { "A1": 1, "A2": 2, "A3": 3, "A4": 4, "A5": 5 },
+			"formula": "PERCENTRANK(A1:A5,3)",
+			"expected": { "kind": "number", "value": 0.5 }
+		},
+		{
+			"description": "PERCENTRANK.INC returns inclusive percentile rank",
+			"setup": { "A1": 1, "A2": 2, "A3": 3, "A4": 4, "A5": 5 },
+			"formula": "PERCENTRANK.INC(A1:A5,3)",
+			"expected": { "kind": "number", "value": 0.5 }
+		},
+		{
+			"description": "PERCENTRANK.EXC returns exclusive percentile rank",
+			"setup": { "A1": 1, "A2": 2, "A3": 3, "A4": 4, "A5": 5 },
+			"formula": "PERCENTRANK.EXC(A1:A5,3)",
+			"expected": { "kind": "number", "value": 0.5 }
+		},
+		{
+			"description": "QUARTILE.INC returns inclusive first quartile",
+			"setup": { "A1": 1, "A2": 2, "A3": 3, "A4": 4, "A5": 5 },
+			"formula": "QUARTILE.INC(A1:A5,1)",
+			"expected": { "kind": "number", "value": 2 }
+		},
+		{
+			"description": "QUARTILE.EXC returns exclusive median quartile",
+			"setup": { "A1": 1, "A2": 2, "A3": 3, "A4": 4 },
+			"formula": "QUARTILE.EXC(A1:A4,2)",
+			"expected": { "kind": "number", "value": 2.5 }
+		},
+		{
+			"description": "MAXA returns maximum over numeric values",
+			"setup": { "A1": 1, "A2": 9, "A3": 3 },
+			"formula": "MAXA(A1:A3)",
+			"expected": { "kind": "number", "value": 9 }
+		},
+		{
+			"description": "MINA returns minimum over numeric values",
+			"setup": { "A1": 1, "A2": 9, "A3": 3 },
+			"formula": "MINA(A1:A3)",
+			"expected": { "kind": "number", "value": 1 }
+		},
+		{
+			"description": "STDEVPA returns population standard deviation",
+			"setup": { "A1": 1, "A2": 2, "A3": 3 },
+			"formula": "STDEVPA(A1:A3)",
+			"expected": { "kind": "number", "approx": 0.816496580927726, "tolerance": 1e-12 }
+		},
+		{
+			"description": "VARPA returns population variance",
+			"setup": { "A1": 1, "A2": 2, "A3": 3 },
+			"formula": "VARPA(A1:A3)",
+			"expected": { "kind": "number", "approx": 0.6666666666666666, "tolerance": 1e-12 }
+		},
+		{
+			"description": "STEYX returns standard error for noisy linear data",
+			"setup": {
+				"A1": 1,
+				"A2": 2,
+				"A3": 3,
+				"A4": 4,
+				"A5": 5,
+				"B1": 2,
+				"B2": 4,
+				"B3": 5,
+				"B4": 4,
+				"B5": 5
+			},
+			"formula": "STEYX(B1:B5,A1:A5)",
+			"expected": { "kind": "number", "approx": 0.8944271909999159, "tolerance": 1e-12 }
 		}
 	]
 }

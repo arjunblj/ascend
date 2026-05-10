@@ -8,17 +8,31 @@ function num(arg: EvalArg | undefined): number | CellValue {
 	return numArg(arg)
 }
 
+function annuityTerms(rate: number, nper: number): { factor: number; pow: number } {
+	const q = 1 + rate
+	if (Number.isInteger(nper) && nper >= 0 && nper <= 10000) {
+		let factor = 0
+		let term = 1
+		for (let period = 0; period < nper; period++) {
+			factor += term
+			term *= q
+		}
+		return { factor, pow: term }
+	}
+	const pow = q ** nper
+	return { factor: (pow - 1) / rate, pow }
+}
+
 function pmt(rate: number, nper: number, pv: number, fv: number, type: number): number {
 	if (rate === 0) return -(pv + fv) / nper
-	const temp = (1 + rate) ** nper
-	const fact = ((1 + rate * type) * (temp - 1)) / rate
-	return -(fv + pv * temp) / fact
+	const { factor, pow } = annuityTerms(rate, nper)
+	return -(fv + pv * pow) / ((1 + rate * type) * factor)
 }
 
 function fvCalc(rate: number, nper: number, pmtVal: number, pv: number, type: number): number {
 	if (rate === 0) return -(pv + pmtVal * nper)
 	const temp = (1 + rate) ** nper
-	return -(pv * temp + (pmtVal * (1 + rate * type) * (temp - 1)) / rate)
+	return -(pv * temp + ((pmtVal * (1 + rate * type)) / rate) * (temp - 1))
 }
 
 function pvCalc(rate: number, nper: number, pmtVal: number, fv: number, type: number): number {
@@ -78,10 +92,49 @@ function rateNewton(
 	return Number.NaN
 }
 
-function yearFracBasis(dsm: number, basis: number): number {
-	const b = Math.trunc(basis)
-	if (b === 2 || b === 0 || b === 4) return dsm / 360
-	return dsm / 365
+interface DatedCashFlows {
+	readonly values: readonly number[]
+	readonly dates: readonly number[]
+}
+
+function datedCashFlows(
+	valuesArg: EvalArg | undefined,
+	datesArg: EvalArg | undefined,
+): DatedCashFlows | CellValue {
+	const valueCells = getRange(valuesArg).flat()
+	const dateCells = getRange(datesArg).flat()
+	if (valueCells.length !== dateCells.length || valueCells.length === 0) return errorValue('#NUM!')
+	const firstDateCell = dateCells[0]
+	if (!firstDateCell) return errorValue('#VALUE!')
+	const firstDate = serialDateArg(firstDateCell)
+	if (typeof firstDate !== 'number') return firstDate
+
+	const values: number[] = []
+	const dates: number[] = []
+	let hasPositive = false
+	let hasNegative = false
+	for (let index = 0; index < valueCells.length; index++) {
+		const valueCell = valueCells[index]
+		const dateCell = dateCells[index]
+		if (!valueCell || !dateCell) return errorValue('#VALUE!')
+		const value = toNumber(valueCell)
+		if (value === null || !Number.isFinite(value)) return errorValue('#VALUE!')
+		const date = serialDateArg(dateCell)
+		if (typeof date !== 'number') return date
+		if (date < firstDate) return errorValue('#NUM!')
+		if (value > 0) hasPositive = true
+		if (value < 0) hasNegative = true
+		values.push(value)
+		dates.push(date)
+	}
+	if (!hasPositive || !hasNegative) return errorValue('#NUM!')
+	return { values, dates }
+}
+
+function serialDateArg(value: CellValue): number | CellValue {
+	const date = toNumber(value)
+	if (date === null || !Number.isFinite(date)) return errorValue('#VALUE!')
+	return Math.trunc(date)
 }
 
 function vdbCalc(
@@ -141,12 +194,20 @@ function parseDateArg(serial: number, dateSystem: '1900' | '1904') {
 	return serialToDate(Math.floor(serial), dateSystem)
 }
 
+function isLastDayOfFebruary(parts: { year: number; month: number; day: number }): boolean {
+	return parts.month === 2 && parts.day === daysInMonth(parts.year, parts.month)
+}
+
 function dayCount30Us(
 	start: { year: number; month: number; day: number },
 	end: { year: number; month: number; day: number },
 ): number {
 	let d1 = start.day
 	let d2 = end.day
+	const startWasLastDayOfFebruary = isLastDayOfFebruary(start)
+	const endWasLastDayOfFebruary = isLastDayOfFebruary(end)
+	if (startWasLastDayOfFebruary) d1 = 30
+	if (endWasLastDayOfFebruary && startWasLastDayOfFebruary) d2 = 30
 	if (d1 === 31) d1 = 30
 	if (d2 === 31 && d1 >= 30) d2 = 30
 	return (end.year - start.year) * 360 + (end.month - start.month) * 30 + (d2 - d1)
@@ -255,16 +316,12 @@ function couponPeriodDays(
 	prev: number,
 	next: number,
 	basis: number,
-	frequency: number,
 	dateSystem: '1900' | '1904',
 ): number {
 	switch (basis) {
-		case 0:
 		case 2:
-		case 4:
-			return 360 / frequency
 		case 3:
-			return 365 / frequency
+			return Math.floor(next) - Math.floor(prev)
 		default:
 			return dayCountBasis(prev, next, basis, dateSystem)
 	}
@@ -306,13 +363,13 @@ function regularBondPrice(
 	const window = resolveCouponWindow(settlement, maturity, frequency, dateSystem)
 	if (!window) return Number.NaN
 	const a = dayCountBasis(window.prev, settlement, basis, dateSystem)
-	const e = couponPeriodDays(window.prev, window.next, basis, frequency, dateSystem)
+	const e = couponPeriodDays(window.prev, window.next, basis, dateSystem)
 	const dsc = dayCountBasis(settlement, window.next, basis, dateSystem)
 	const n = couponCountRemaining(settlement, maturity, frequency, dateSystem)
 	const q = 1 + yld / frequency
 	if (n <= 1) {
 		const dsr = e - a
-		return (coupon + redemption) / (1 + (yld / frequency) * (dsr / e)) - (coupon * a) / e
+		return (coupon + redemption) / q ** (dsr / e) - (coupon * a) / e
 	}
 	let price = redemption / q ** (n - 1 + dsc / e)
 	for (let k = 1; k <= n; k++) price += coupon / q ** (k - 1 + dsc / e)
@@ -339,6 +396,70 @@ function oddFirstAccrued(
 	return 100 * rate * yearFracFromBasis(issue, settlement, basis, dateSystem)
 }
 
+function previousCouponDate(
+	couponDate: number,
+	maturity: number,
+	frequency: number,
+	dateSystem: '1900' | '1904',
+): number | null {
+	const couponParts = parseDateArg(couponDate, dateSystem)
+	const maturityParts = parseDateArg(maturity, dateSystem)
+	if (!couponParts || !maturityParts) return null
+	const preserveEom = maturityParts.day === daysInMonth(maturityParts.year, maturityParts.month)
+	const previous = addMonthsPreserveEom(couponParts, -(12 / frequency), preserveEom)
+	return dateToSerial(previous.year, previous.month, previous.day, dateSystem)
+}
+
+function couponScheduleFromFirst(
+	firstCoupon: number,
+	maturity: number,
+	frequency: number,
+	dateSystem: '1900' | '1904',
+): number[] | null {
+	const maturityParts = parseDateArg(maturity, dateSystem)
+	if (!maturityParts) return null
+	const preserveEom = maturityParts.day === daysInMonth(maturityParts.year, maturityParts.month)
+	const monthsPerCoupon = 12 / frequency
+	const schedule: number[] = [firstCoupon]
+	let current = firstCoupon
+	while (current < maturity) {
+		const currentParts = parseDateArg(current, dateSystem)
+		if (!currentParts) return null
+		const nextParts = addMonthsPreserveEom(currentParts, monthsPerCoupon, preserveEom)
+		current = dateToSerial(nextParts.year, nextParts.month, nextParts.day, dateSystem)
+		if (current <= maturity) schedule.push(current)
+	}
+	return schedule
+}
+
+function oddShortFirstBondPrice(
+	settlement: number,
+	maturity: number,
+	issue: number,
+	firstCoupon: number,
+	rate: number,
+	yld: number,
+	redemption: number,
+	frequency: number,
+	basis: number,
+	dateSystem: '1900' | '1904',
+): number {
+	const previous = previousCouponDate(firstCoupon, maturity, frequency, dateSystem)
+	const schedule = couponScheduleFromFirst(firstCoupon, maturity, frequency, dateSystem)
+	if (previous === null || !schedule || schedule.length === 0) return Number.NaN
+	const coupon = (100 * rate) / frequency
+	const a = dayCountBasis(issue, settlement, basis, dateSystem)
+	const dsc = dayCountBasis(settlement, firstCoupon, basis, dateSystem)
+	const dfc = dayCountBasis(issue, firstCoupon, basis, dateSystem)
+	const e = couponPeriodDays(previous, firstCoupon, basis, dateSystem)
+	if (e <= 0) return Number.NaN
+	const q = 1 + yld / frequency
+	const n = schedule.length
+	let price = redemption / q ** (n - 1 + dsc / e) + (coupon * (dfc / e)) / q ** (dsc / e)
+	for (let k = 2; k <= n; k++) price += coupon / q ** (k - 1 + dsc / e)
+	return price - (coupon * a) / e
+}
+
 function oddFirstBondPrice(
 	settlement: number,
 	maturity: number,
@@ -351,21 +472,24 @@ function oddFirstBondPrice(
 	basis: number,
 	dateSystem: '1900' | '1904',
 ): number {
-	const window = resolveCouponWindow(firstCoupon - 1, maturity, frequency, dateSystem)
-	if (!window) return Number.NaN
-	const schedule: number[] = [firstCoupon]
-	let current = firstCoupon
-	const maturityParts = parseDateArg(maturity, dateSystem)
-	if (!maturityParts) return Number.NaN
-	const preserveEom = maturityParts.day === daysInMonth(maturityParts.year, maturityParts.month)
-	const monthsPerCoupon = 12 / frequency
-	while (current < maturity) {
-		const currentParts = parseDateArg(current, dateSystem)
-		if (!currentParts) return Number.NaN
-		const nextParts = addMonthsPreserveEom(currentParts, monthsPerCoupon, preserveEom)
-		current = dateToSerial(nextParts.year, nextParts.month, nextParts.day, dateSystem)
-		if (current <= maturity) schedule.push(current)
+	const previous = previousCouponDate(firstCoupon, maturity, frequency, dateSystem)
+	if (previous === null) return Number.NaN
+	if (issue >= previous) {
+		return oddShortFirstBondPrice(
+			settlement,
+			maturity,
+			issue,
+			firstCoupon,
+			rate,
+			yld,
+			redemption,
+			frequency,
+			basis,
+			dateSystem,
+		)
 	}
+	const schedule = couponScheduleFromFirst(firstCoupon, maturity, frequency, dateSystem)
+	if (!schedule) return Number.NaN
 	const q = 1 + yld / frequency
 	const regularCoupon = (100 * rate) / frequency
 	const firstAmount = oddFirstCouponAmount(issue, firstCoupon, rate, basis, dateSystem)
@@ -708,22 +832,13 @@ export const financialFunctions: FunctionDef[] = [
 		evaluate(args) {
 			const rate = num(args[0])
 			if (typeof rate !== 'number') return rate
-			const values = getRange(args[1]).flat()
-			const dates = getRange(args[2]).flat()
-			if (values.length !== dates.length || values.length === 0) return errorValue('#NUM!')
-			const first = dates[0]
-			if (!first) return errorValue('#VALUE!')
-			const d0 = toNumber(first)
-			if (d0 === null) return errorValue('#VALUE!')
+			if (!Number.isFinite(rate) || rate <= -1) return errorValue('#NUM!')
+			const cashFlows = datedCashFlows(args[1], args[2])
+			if ('kind' in cashFlows) return cashFlows
+			const d0 = cashFlows.dates[0] ?? 0
 			let npv = 0
-			for (let i = 0; i < values.length; i++) {
-				const vi = values[i]
-				const di = dates[i]
-				if (!vi || !di) return errorValue('#VALUE!')
-				const v = toNumber(vi)
-				const d = toNumber(di)
-				if (v === null || d === null) return errorValue('#VALUE!')
-				npv += v / (1 + rate) ** ((d - d0) / 365)
+			for (let i = 0; i < cashFlows.values.length; i++) {
+				npv += (cashFlows.values[i] ?? 0) / (1 + rate) ** (((cashFlows.dates[i] ?? d0) - d0) / 365)
 			}
 			return numberValue(npv)
 		},
@@ -733,31 +848,20 @@ export const financialFunctions: FunctionDef[] = [
 		minArgs: 2,
 		maxArgs: 3,
 		evaluate(args) {
-			const values = getRange(args[0]).flat()
-			const dates = getRange(args[1]).flat()
-			if (values.length !== dates.length || values.length < 2) return errorValue('#NUM!')
+			const cashFlows = datedCashFlows(args[0], args[1])
+			if ('kind' in cashFlows) return cashFlows
+			if (cashFlows.values.length < 2) return errorValue('#NUM!')
 			const guess = args[2] ? num(args[2]) : 0.1
 			if (typeof guess !== 'number') return guess
-			const firstDate = dates[0]
-			if (!firstDate) return errorValue('#VALUE!')
-			const d0 = toNumber(firstDate)
-			if (d0 === null) return errorValue('#VALUE!')
-			const v: number[] = []
-			const t: number[] = []
-			for (let i = 0; i < values.length; i++) {
-				const vi = values[i]
-				const di = dates[i]
-				if (!vi || !di) return errorValue('#VALUE!')
-				const vn = toNumber(vi)
-				const dn = toNumber(di)
-				if (vn === null || dn === null) return errorValue('#VALUE!')
-				v.push(vn)
-				t.push((dn - d0) / 365)
-			}
+			if (!Number.isFinite(guess) || guess <= -1) return errorValue('#NUM!')
+			const d0 = cashFlows.dates[0] ?? 0
+			const v = cashFlows.values
+			const t = cashFlows.dates.map((date) => (date - d0) / 365)
 			let rate = guess
 			const maxIter = 100
 			const tol = 1e-10
 			for (let iter = 0; iter < maxIter; iter++) {
+				if (rate <= -1) return errorValue('#NUM!')
 				let f = 0
 				let df = 0
 				for (let i = 0; i < v.length; i++) {
@@ -1082,7 +1186,7 @@ export const financialFunctions: FunctionDef[] = [
 				const window = resolveCouponWindow(settlement, firstInterest, f, ds)
 				if (!window) return errorValue('#VALUE!')
 				const a = dayCountBasis(window.prev, settlement, b, ds)
-				const e = couponPeriodDays(window.prev, window.next, b, f, ds)
+				const e = couponPeriodDays(window.prev, window.next, b, ds)
 				return numberValue(((par * rate) / f) * (a / e))
 			}
 			return numberValue(par * rate * yearFracFromBasis(issue, settlement, b, ds))
@@ -1170,7 +1274,7 @@ export const financialFunctions: FunctionDef[] = [
 			const ds = currentDateSystem(ctx)
 			const window = resolveCouponWindow(settlement, maturity, f, ds)
 			return window
-				? numberValue(couponPeriodDays(window.prev, window.next, b, f, ds))
+				? numberValue(couponPeriodDays(window.prev, window.next, b, ds))
 				: errorValue('#VALUE!')
 		},
 	},
@@ -1308,7 +1412,7 @@ export const financialFunctions: FunctionDef[] = [
 			if (!window) return errorValue('#VALUE!')
 			const coupon = (100 * rate) / f
 			const a = dayCountBasis(window.prev, settlement, b, ds)
-			const e = couponPeriodDays(window.prev, window.next, b, f, ds)
+			const e = couponPeriodDays(window.prev, window.next, b, ds)
 			const dsr = e - a
 			const n = couponCountRemaining(settlement, maturity, f, ds)
 			if (n <= 1) {
@@ -1367,7 +1471,7 @@ export const financialFunctions: FunctionDef[] = [
 			if (!window) return errorValue('#VALUE!')
 			const n = couponCountRemaining(settlement, maturity, f, ds)
 			const coupon = (100 * couponRate) / f
-			const e = couponPeriodDays(window.prev, window.next, b, f, ds)
+			const e = couponPeriodDays(window.prev, window.next, b, ds)
 			const dsc = dayCountBasis(settlement, window.next, b, ds)
 			const q = 1 + yld / f
 			let pvTotal = 0
@@ -1873,7 +1977,7 @@ export const financialFunctions: FunctionDef[] = [
 		name: 'DISC',
 		minArgs: 4,
 		maxArgs: 5,
-		evaluate(args) {
+		evaluate(args, ctx) {
 			const settlement = num(args[0])
 			if (typeof settlement !== 'number') return settlement
 			const maturity = num(args[1])
@@ -1884,11 +1988,12 @@ export const financialFunctions: FunctionDef[] = [
 			if (typeof redemption !== 'number') return redemption
 			const basis = args[4] ? num(args[4]) : 0
 			if (typeof basis !== 'number') return basis
-			const iBasis = Math.trunc(basis)
-			if (iBasis < 0 || iBasis > 4) return errorValue('#NUM!')
-			const dsm = Math.floor(maturity) - Math.floor(settlement)
-			if (dsm <= 0 || pr <= 0 || redemption <= 0) return errorValue('#NUM!')
-			const yf = yearFracBasis(dsm, iBasis)
+			const b = validateBasis(basis)
+			if (b === null || settlement >= maturity || pr <= 0 || redemption <= 0) {
+				return errorValue('#NUM!')
+			}
+			const yf = yearFracFromBasis(settlement, maturity, b, currentDateSystem(ctx))
+			if (yf <= 0 || !Number.isFinite(yf)) return errorValue('#NUM!')
 			return numberValue((redemption - pr) / redemption / yf)
 		},
 	},
@@ -1896,7 +2001,7 @@ export const financialFunctions: FunctionDef[] = [
 		name: 'INTRATE',
 		minArgs: 4,
 		maxArgs: 5,
-		evaluate(args) {
+		evaluate(args, ctx) {
 			const settlement = num(args[0])
 			if (typeof settlement !== 'number') return settlement
 			const maturity = num(args[1])
@@ -1907,11 +2012,12 @@ export const financialFunctions: FunctionDef[] = [
 			if (typeof redemption !== 'number') return redemption
 			const basis = args[4] ? num(args[4]) : 0
 			if (typeof basis !== 'number') return basis
-			const iBasis = Math.trunc(basis)
-			if (iBasis < 0 || iBasis > 4) return errorValue('#NUM!')
-			const dsm = Math.floor(maturity) - Math.floor(settlement)
-			if (dsm <= 0 || investment <= 0 || redemption <= 0) return errorValue('#NUM!')
-			const yf = yearFracBasis(dsm, iBasis)
+			const b = validateBasis(basis)
+			if (b === null || settlement >= maturity || investment <= 0 || redemption <= 0) {
+				return errorValue('#NUM!')
+			}
+			const yf = yearFracFromBasis(settlement, maturity, b, currentDateSystem(ctx))
+			if (yf <= 0 || !Number.isFinite(yf)) return errorValue('#NUM!')
 			return numberValue((redemption - investment) / investment / yf)
 		},
 	},

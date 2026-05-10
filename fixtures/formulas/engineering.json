@@ -158,6 +158,48 @@
 			"expected": { "kind": "number", "value": 1 }
 		},
 		{
+			"description": "ERF.PRECISE one",
+			"setup": {},
+			"formula": "ERF.PRECISE(1)",
+			"expected": { "kind": "number", "approx": 0.8427, "tolerance": 0.001 }
+		},
+		{
+			"description": "ERFC zero",
+			"setup": {},
+			"formula": "ERFC(0)",
+			"expected": { "kind": "number", "approx": 1, "tolerance": 0.00001 }
+		},
+		{
+			"description": "ERFC.PRECISE one",
+			"setup": {},
+			"formula": "ERFC.PRECISE(1)",
+			"expected": { "kind": "number", "approx": 0.1573, "tolerance": 0.001 }
+		},
+		{
+			"description": "BESSELI fractional input order one",
+			"setup": {},
+			"formula": "BESSELI(1.5, 1)",
+			"expected": { "kind": "number", "approx": 0.9816664289, "tolerance": 0.00001 }
+		},
+		{
+			"description": "BESSELJ fractional input order one",
+			"setup": {},
+			"formula": "BESSELJ(1.5, 1)",
+			"expected": { "kind": "number", "approx": 0.5579365079, "tolerance": 0.00001 }
+		},
+		{
+			"description": "BESSELK fractional input order one",
+			"setup": {},
+			"formula": "BESSELK(2.5, 1)",
+			"expected": { "kind": "number", "approx": 0.0738908163, "tolerance": 0.0001 }
+		},
+		{
+			"description": "BESSELY fractional input order one",
+			"setup": {},
+			"formula": "BESSELY(2.5, 1)",
+			"expected": { "kind": "number", "approx": 0.1459181379, "tolerance": 0.0001 }
+		},
+		{
 			"description": "BITAND of 13 and 25",
 			"setup": {},
 			"formula": "BITAND(13,25)",
@@ -248,10 +290,64 @@
 			"expected": { "kind": "string", "value": "4+6i" }
 		},
 		{
+			"description": "IMSUB subtracts complex numbers",
+			"setup": {},
+			"formula": "IMSUB(\"3+4i\",\"1+2i\")",
+			"expected": { "kind": "string", "value": "2+2i" }
+		},
+		{
+			"description": "IMPRODUCT multiplies complex numbers",
+			"setup": {},
+			"formula": "IMPRODUCT(\"1+2i\",\"3+4i\")",
+			"expected": { "kind": "string", "value": "-5+10i" }
+		},
+		{
 			"description": "IMDIV divides complex numbers",
 			"setup": {},
 			"formula": "IMDIV(\"-5+10i\",\"1+2i\")",
 			"expected": { "kind": "string", "value": "3+4i" }
+		},
+		{
+			"description": "IMSQRT of negative one",
+			"setup": {},
+			"formula": "IMSQRT(\"-1\")",
+			"expected": { "kind": "string", "value": "i" }
+		},
+		{
+			"description": "IMEXP zero",
+			"setup": {},
+			"formula": "IMEXP(\"0\")",
+			"expected": { "kind": "string", "value": "1" }
+		},
+		{
+			"description": "IMLN one",
+			"setup": {},
+			"formula": "IMLN(\"1\")",
+			"expected": { "kind": "string", "value": "0" }
+		},
+		{
+			"description": "IMLOG10 one hundred",
+			"setup": {},
+			"formula": "IMLOG10(\"100\")",
+			"expected": { "kind": "string", "value": "2" }
+		},
+		{
+			"description": "IMLOG2 eight",
+			"setup": {},
+			"formula": "IMLOG2(\"8\")",
+			"expected": { "kind": "string", "value": "3" }
+		},
+		{
+			"description": "IMSIN zero",
+			"setup": {},
+			"formula": "IMSIN(\"0\")",
+			"expected": { "kind": "string", "value": "0" }
+		},
+		{
+			"description": "IMCOS zero",
+			"setup": {},
+			"formula": "IMCOS(\"0\")",
+			"expected": { "kind": "string", "value": "1" }
 		},
 		{
 			"description": "IMARGUMENT of 1+i returns pi/4",

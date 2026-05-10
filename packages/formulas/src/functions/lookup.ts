@@ -392,20 +392,20 @@ function vlookup(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const col = numArg(args[2])
 	if (typeof col !== 'number') return col
 	const colInt = Math.floor(col)
-	if (colInt < 1 || table.length === 0 || colInt > (table[0]?.length ?? 0))
-		return errorValue('#REF!')
+	if (table.length === 0) return errorValue('#REF!')
 
 	const firstCol = getLookupVector(args[1], table, 'column', ctx)
 	const approx = resolveApproximate(args.length > 3 ? cellOf(args[3]) : EMPTY)
-	const exactIndex = !approx ? getExactLookupIndex(args[1], firstCol, 'column', ctx) : null
+	if (!approx && (colInt < 1 || colInt > (table[0]?.length ?? 0))) return errorValue('#REF!')
+	const exactIndex = getExactLookupIndex(args[1], firstCol, 'column', ctx)
 	return scalarOrLookupArray(args[0], (lookup) => {
 		if (lookup.kind === 'error') return lookup
-		const idx = approx
-			? approximateMatch(lookup, firstCol)
-			: exactIndex
-				? indexedExactMatch(lookup, exactIndex)
-				: exactMatch(lookup, firstCol)
-		return idx < 0 ? errorValue('#N/A') : (table[idx]?.[colInt - 1] ?? EMPTY)
+		const exactIdx =
+			approx && isBlankLookupValue(lookup) ? -1 : indexedExactMatch(lookup, exactIndex)
+		const idx = exactIdx >= 0 ? exactIdx : approx ? approximateMatch(lookup, firstCol) : -1
+		if (idx < 0) return errorValue('#N/A')
+		if (colInt < 1 || colInt > (table[0]?.length ?? 0)) return errorValue('#REF!')
+		return table[idx]?.[colInt - 1] ?? EMPTY
 	})
 }
 
@@ -420,18 +420,19 @@ function hlookup(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const rowInt = Math.floor(row)
 
 	const firstRow = getLookupVector(args[1], table, 'row', ctx)
-	if (rowInt < 1 || rowInt > table.length || firstRow.length === 0) return errorValue('#REF!')
+	if (firstRow.length === 0) return errorValue('#REF!')
 
 	const approx = resolveApproximate(args.length > 3 ? cellOf(args[3]) : EMPTY)
-	const exactIndex = !approx ? getExactLookupIndex(args[1], firstRow, 'row', ctx) : null
+	if (!approx && (rowInt < 1 || rowInt > table.length)) return errorValue('#REF!')
+	const exactIndex = getExactLookupIndex(args[1], firstRow, 'row', ctx)
 	return scalarOrLookupArray(args[0], (lookup) => {
 		if (lookup.kind === 'error') return lookup
-		const idx = approx
-			? approximateMatch(lookup, firstRow)
-			: exactIndex
-				? indexedExactMatch(lookup, exactIndex)
-				: exactMatch(lookup, firstRow)
-		return idx < 0 ? errorValue('#N/A') : (table[rowInt - 1]?.[idx] ?? EMPTY)
+		const exactIdx =
+			approx && isBlankLookupValue(lookup) ? -1 : indexedExactMatch(lookup, exactIndex)
+		const idx = exactIdx >= 0 ? exactIdx : approx ? approximateMatch(lookup, firstRow) : -1
+		if (idx < 0) return errorValue('#N/A')
+		if (rowInt < 1 || rowInt > table.length) return errorValue('#REF!')
+		return table[rowInt - 1]?.[idx] ?? EMPTY
 	})
 }
 
@@ -691,7 +692,8 @@ function lookupFn(args: EvalArg[]): CellValue {
 		resultArray.length === 1 ? [...(resultArray[0] ?? [])] : extractColumn(resultArray, 0)
 	return scalarOrLookupArray(args[0], (lookup) => {
 		if (lookup.kind === 'error') return lookup
-		const idx = approximateMatch(lookup, lookupFlat)
+		const exactIdx = exactMatch(lookup, lookupFlat)
+		const idx = exactIdx >= 0 ? exactIdx : approximateMatch(lookup, lookupFlat)
 		return idx < 0 ? errorValue('#N/A') : (resultFlat[idx] ?? EMPTY)
 	})
 }
@@ -725,9 +727,18 @@ function address(args: EvalArg[]): CellValue {
 	}
 
 	if (sheetText && sheetText.kind === 'string' && sheetText.value.length > 0) {
-		return { kind: 'string', value: `'${sheetText.value}'!${ref}` }
+		return { kind: 'string', value: `${formatSheetPrefix(sheetText.value)}!${ref}` }
 	}
 	return { kind: 'string', value: ref }
+}
+
+function formatSheetPrefix(sheetName: string): string {
+	if (sheetName.startsWith('[') && /^(?:\[[^\]]+\])?(?:[A-Za-z_][A-Za-z0-9_.]*)$/.test(sheetName)) {
+		return sheetName
+	}
+	if (/^[A-Za-z_][A-Za-z0-9_.]*$/.test(sheetName)) return `'${sheetName}'`
+	if (/^(?:[A-Za-z_]|\[|\])(?:[A-Za-z0-9_.]|\[|\])*$/.test(sheetName)) return sheetName
+	return `'${sheetName.replaceAll("'", "''")}'`
 }
 
 function toColumnLabel(colIndex: number): string {

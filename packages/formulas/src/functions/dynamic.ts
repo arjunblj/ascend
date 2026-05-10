@@ -449,7 +449,11 @@ export const dynamicFunctions: FunctionDef[] = [
 		evaluate(args) {
 			const data = getRange(args[0])
 			if (data.length === 0) return EMPTY
-			return scalarOrArray(transposeRows(data))
+			return scalarOrArray(
+				transposeRows(data).map((row) =>
+					row.map((cell) => (cell.kind === 'empty' ? numberValue(0) : cell)),
+				),
+			)
 		},
 	},
 	{

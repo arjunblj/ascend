@@ -86,12 +86,29 @@ describe('codegen', () => {
 		expect(codegenEval('A1^2', wb)).toEqual(numberValue(9))
 	})
 
+	test('invalid real exponentiation returns spreadsheet errors', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+
+		expect(codegenEval('(-1)^0.5', wb)).toEqual(errorValue('#NUM!'))
+		expect(codegenEval('0^-1', wb)).toEqual(errorValue('#DIV/0!'))
+	})
+
 	test('ROUND halves away from zero', () => {
 		const wb = createWorkbook()
 		wb.addSheet('Sheet1')
 
 		expect(codegenEval('ROUND(-0.5,0)', wb)).toEqual(numberValue(-1))
 		expect(codegenEval('ROUND(0.5,0)', wb)).toEqual(numberValue(1))
+	})
+
+	test('TAN uses Excel-compatible precision in codegen', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+
+		expect(codegenEval('TAN(A1)', wb)).toEqual(numberValue(1.5574077246549023))
+		expect(codegenEval('TAN(1)', wb)).toEqual(numberValue(1.5574077246549023))
 	})
 
 	test('unary negation: -A1', () => {
@@ -360,10 +377,20 @@ describe('codegen', () => {
 		expect(codegenEval('DAY(A1)', wb)).toEqual(numberValue(25))
 	})
 
-	test('YEAR/MONTH/DAY with invalid serial returns #NUM!', () => {
+	test('YEAR/MONTH/DAY with serial zero follows Excel date-part behavior', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
 		sheet.cells.set(0, 0, { value: numberValue(0), formula: null, styleId: sid })
+
+		expect(codegenEval('YEAR(A1)', wb)).toEqual(numberValue(1900))
+		expect(codegenEval('MONTH(A1)', wb)).toEqual(numberValue(1))
+		expect(codegenEval('DAY(A1)', wb)).toEqual(numberValue(0))
+	})
+
+	test('YEAR/MONTH/DAY with invalid negative serial returns #NUM!', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(-1), formula: null, styleId: sid })
 
 		expect(codegenEval('YEAR(A1)', wb)).toEqual(errorValue('#NUM!'))
 	})

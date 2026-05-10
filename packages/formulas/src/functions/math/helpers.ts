@@ -36,7 +36,7 @@ export function toNum(v: CellValue): number | CellValue {
 		case 'number':
 			return v.value
 		case 'string': {
-			if (v.value.trim() === '') return 0
+			if (v.value.trim() === '') return errorValue('#VALUE!')
 			const n = Number(v.value)
 			return Number.isNaN(n) ? errorValue('#VALUE!') : n
 		}

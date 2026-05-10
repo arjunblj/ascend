@@ -39,8 +39,11 @@ function getResult(wb: ReturnType<typeof createWorkbook>, row: number, col: numb
 	return wb.sheets[0]?.cells.get(row, col)?.value
 }
 
-function recalc(wb: ReturnType<typeof createWorkbook>) {
-	return recalculate(wb, defaultCalcContext())
+function recalc(
+	wb: ReturnType<typeof createWorkbook>,
+	overrides?: Parameters<typeof defaultCalcContext>[0],
+) {
+	return recalculate(wb, defaultCalcContext(overrides))
 }
 
 describe('formula functions', () => {
@@ -80,6 +83,34 @@ describe('formula functions', () => {
 			expect(getResult(wb, 3, 0)).toEqual(numberValue(6))
 		})
 
+		test('aggregates ignore nonnumeric referenced scalar cells but coerce typed literals', () => {
+			const wb = makeWorkbook()
+			setStr(wb, 0, 0, '5')
+			setBool(wb, 1, 0, true)
+			setNum(wb, 2, 0, 3)
+			setFormula(wb, 0, 1, 'SUM(A1:A3)')
+			setFormula(wb, 1, 1, 'SUM(A1,A2,A3)')
+			setFormula(wb, 2, 1, 'SUM("5",TRUE,A3)')
+			setFormula(wb, 3, 1, 'MAX(A1,A2,A3)')
+			setFormula(wb, 4, 1, 'PRODUCT(A1,A2,A3)')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(numberValue(3))
+			expect(getResult(wb, 1, 1)).toEqual(numberValue(3))
+			expect(getResult(wb, 2, 1)).toEqual(numberValue(9))
+			expect(getResult(wb, 3, 1)).toEqual(numberValue(3))
+			expect(getResult(wb, 4, 1)).toEqual(numberValue(3))
+		})
+
+		test('aggregates still propagate referenced errors', () => {
+			const wb = makeWorkbook()
+			wb.sheets[0]?.cells.set(0, 0, { value: errorValue('#DIV/0!'), formula: null, styleId: S0 })
+			setFormula(wb, 1, 0, 'SUM(A1)')
+			setFormula(wb, 2, 0, 'MAX(A1)')
+			recalc(wb)
+			expect(getResult(wb, 1, 0)).toEqual(errorValue('#DIV/0!'))
+			expect(getResult(wb, 2, 0)).toEqual(errorValue('#DIV/0!'))
+		})
+
 		test('AVERAGE with empty range returns #DIV/0!', () => {
 			const wb = makeWorkbook()
 			setFormula(wb, 0, 0, 'AVERAGE(A2:A5)')
@@ -111,6 +142,37 @@ describe('formula functions', () => {
 			setFormula(wb, 3, 0, 'COUNT(A1:A2)')
 			recalc(wb)
 			expect(getResult(wb, 2, 0)).toEqual(numberValue(2))
+			expect(getResult(wb, 3, 0)).toEqual(numberValue(0))
+		})
+
+		test('COUNT and COUNTA handle direct error values like Excel', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'COUNT(2, "A", "", #REF!, #DIV/0!)')
+			setFormula(wb, 1, 0, 'COUNTA(2, "A", "", #REF!, #DIV/0!)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(1))
+			expect(getResult(wb, 1, 0)).toEqual(numberValue(5))
+		})
+
+		test('COUNT and COUNTA handle referenced error cells like Excel', () => {
+			const wb = makeWorkbook()
+			wb.sheets[0]?.cells.set(0, 0, { value: errorValue('#DIV/0!'), formula: null, styleId: S0 })
+			setFormula(wb, 1, 0, 'COUNT(A1)')
+			setFormula(wb, 2, 0, 'COUNTA(A1)')
+			recalc(wb)
+			expect(getResult(wb, 1, 0)).toEqual(numberValue(0))
+			expect(getResult(wb, 2, 0)).toEqual(numberValue(1))
+		})
+
+		test('scalar numeric contexts reject empty text while aggregates keep direct empty text as zero', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, '""')
+			setFormula(wb, 1, 0, 'COS(A1)')
+			setFormula(wb, 2, 0, 'A1+1')
+			setFormula(wb, 3, 0, 'SUM("")')
+			recalc(wb)
+			expect(getResult(wb, 1, 0)).toEqual(errorValue('#VALUE!'))
+			expect(getResult(wb, 2, 0)).toEqual(errorValue('#VALUE!'))
 			expect(getResult(wb, 3, 0)).toEqual(numberValue(0))
 		})
 
@@ -180,6 +242,43 @@ describe('formula functions', () => {
 			expect(getResult(wb, 6, 0)).toEqual(numberValue(1))
 		})
 
+		test('COUNTIF uses error criteria as match values', () => {
+			const wb = makeWorkbook()
+			wb.sheets[0]?.cells.set(0, 0, { value: errorValue('#DIV/0!'), formula: null, styleId: S0 })
+			setNum(wb, 1, 0, 1)
+			setFormula(wb, 2, 0, 'COUNTIF(A1:A2,1/0)')
+			recalc(wb)
+			expect(getResult(wb, 2, 0)).toEqual(numberValue(1))
+		})
+
+		test('COUNTIF implicitly intersects range criteria by formula column', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 1, 1)
+			setNum(wb, 0, 2, 2)
+			setNum(wb, 0, 3, 3)
+			setNum(wb, 0, 5, 2)
+			setNum(wb, 0, 6, 2)
+			setNum(wb, 0, 7, 3)
+			setFormula(wb, 2, 2, 'COUNTIF(F1:H1,B1:D1)')
+			recalc(wb)
+			expect(getResult(wb, 2, 2)).toEqual(numberValue(2))
+		})
+
+		test('COUNTIF and SUMIF use #VALUE! criteria when range criteria cannot intersect', () => {
+			const wb = makeWorkbook()
+			wb.sheets[0]?.cells.set(0, 0, { value: errorValue('#VALUE!'), formula: null, styleId: S0 })
+			setNum(wb, 1, 0, 2)
+			wb.sheets[0]?.cells.set(2, 0, { value: errorValue('#VALUE!'), formula: null, styleId: S0 })
+			setNum(wb, 0, 3, 5)
+			setNum(wb, 1, 3, 6)
+			setNum(wb, 2, 3, 7)
+			setFormula(wb, 4, 4, 'COUNTIF(A1:A3,B1:C1)')
+			setFormula(wb, 5, 4, 'SUMIF(A1:A3,B1:C1,D1)')
+			recalc(wb)
+			expect(getResult(wb, 4, 4)).toEqual(numberValue(2))
+			expect(getResult(wb, 5, 4)).toEqual(numberValue(12))
+		})
+
 		test('SUMPRODUCT with mismatched dimensions returns #VALUE!', () => {
 			const wb = makeWorkbook()
 			setNum(wb, 0, 0, 1)
@@ -190,6 +289,15 @@ describe('formula functions', () => {
 			setFormula(wb, 2, 0, 'SUMPRODUCT(A1:B2,C1:C2)')
 			recalc(wb)
 			expect(getResult(wb, 2, 0)).toEqual(errorValue('#VALUE!'))
+		})
+
+		test('SUMPRODUCT returns #VALUE! for text in range operands', () => {
+			const wb = makeWorkbook()
+			setStr(wb, 0, 0, '4')
+			setNum(wb, 0, 1, 2)
+			setFormula(wb, 1, 0, 'SUMPRODUCT(A1:A1,B1:B1)')
+			recalc(wb)
+			expect(getResult(wb, 1, 0)).toEqual(errorValue('#VALUE!'))
 		})
 
 		test('MOD with negative divisor', () => {
@@ -293,11 +401,52 @@ describe('formula functions', () => {
 			expect(getResult(wb, 0, 2)).toEqual(numberValue(2))
 		})
 
+		test('byte-oriented text compatibility functions mirror text semantics for ASCII', () => {
+			const wb = makeWorkbook()
+			setStr(wb, 0, 0, 'foo bar baz')
+			setFormula(wb, 0, 1, 'LENB(A1)')
+			setFormula(wb, 1, 1, 'LEFTB(A1,3)')
+			setFormula(wb, 2, 1, 'RIGHTB(A1,3)')
+			setFormula(wb, 3, 1, 'MIDB(A1,9,3)')
+			setFormula(wb, 4, 1, 'FINDB("bar",A1)')
+			setFormula(wb, 5, 1, 'SEARCHB("BAR",A1)')
+			setFormula(wb, 6, 1, 'REPLACEB(A1,5,3,"FOO")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(numberValue(11))
+			expect(getResult(wb, 1, 1)).toEqual(stringValue('foo'))
+			expect(getResult(wb, 2, 1)).toEqual(stringValue('baz'))
+			expect(getResult(wb, 3, 1)).toEqual(stringValue('baz'))
+			expect(getResult(wb, 4, 1)).toEqual(numberValue(5))
+			expect(getResult(wb, 5, 1)).toEqual(numberValue(5))
+			expect(getResult(wb, 6, 1)).toEqual(stringValue('foo FOO baz'))
+		})
+
+		test('ASC, PHONETIC, and legacy CHAR/CODE match Excel compatibility edges', () => {
+			const wb = makeWorkbook()
+			setStr(wb, 0, 0, 'ＡＢＣ　123')
+			setFormula(wb, 0, 1, 'ASC(A1)')
+			setFormula(wb, 1, 1, 'PHONETIC(A1)')
+			setFormula(wb, 2, 1, 'CHAR(240)')
+			setFormula(wb, 3, 1, 'CODE(CHAR(240))')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('ABC 123'))
+			expect(getResult(wb, 1, 1)).toEqual(errorValue('#N/A'))
+			expect(getResult(wb, 2, 1)).toEqual(stringValue('\uf8ff'))
+			expect(getResult(wb, 3, 1)).toEqual(numberValue(240))
+		})
+
 		test('SUBSTITUTE with instance_num replaces only Nth occurrence', () => {
 			const wb = makeWorkbook()
 			setFormula(wb, 0, 0, 'SUBSTITUTE("2026-Q1-Q1","Q1","Q2",2)')
 			recalc(wb)
 			expect(getResult(wb, 0, 0)).toEqual(stringValue('2026-Q1-Q2'))
+		})
+
+		test('SUBSTITUTE with empty old text returns original text', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'SUBSTITUTE("testblankmatch","","!",1)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('testblankmatch'))
 		})
 
 		test('TEXT formatting', () => {
@@ -373,6 +522,14 @@ describe('formula functions', () => {
 			expect(getResult(wb, 0, 1)).toEqual(stringValue('2025-01-01'))
 		})
 
+		test('TEXT supports locale year token e in date formats', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 28313)
+			setFormula(wb, 0, 1, 'TEXT(A1,"ee-mm-dd")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('1977-07-07'))
+		})
+
 		test('TEXT repeatedly recognizes long month date formats', () => {
 			const wb = makeWorkbook()
 			setNum(wb, 0, 0, 44623)
@@ -407,6 +564,22 @@ describe('formula functions', () => {
 			expect(getResult(wb, 0, 1)).toEqual(stringValue('99'))
 		})
 
+		test('TEXT preserves text and booleans with text sections', () => {
+			const wb = makeWorkbook()
+			setStr(wb, 0, 0, 'jello')
+			setBool(wb, 1, 0, true)
+			setBool(wb, 2, 0, false)
+			setFormula(wb, 0, 1, 'TEXT(A1,";;;@")')
+			setFormula(wb, 1, 1, 'TEXT(A2,";;;@")')
+			setFormula(wb, 2, 1, 'TEXT(A3,";;;@")')
+			setFormula(wb, 0, 2, 'TEXT(A1,";;;""hi""")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('jello'))
+			expect(getResult(wb, 1, 1)).toEqual(stringValue('TRUE'))
+			expect(getResult(wb, 2, 1)).toEqual(stringValue('FALSE'))
+			expect(getResult(wb, 0, 2)).toEqual(stringValue('hi'))
+		})
+
 		test('TEXT # placeholder gives empty for zero', () => {
 			const wb = makeWorkbook()
 			setNum(wb, 0, 0, 0)
@@ -421,6 +594,27 @@ describe('formula functions', () => {
 			setFormula(wb, 0, 1, 'TEXT(A1,"hh:mm:ss")')
 			recalc(wb)
 			expect(getResult(wb, 0, 1)).toEqual(stringValue('18:00:00'))
+		})
+
+		test('TEXT supports one-year date tokens, uppercase tokens, and fractional seconds', () => {
+			const wb = makeWorkbook()
+			wb.sheets[0]?.cells.set(0, 0, {
+				value: dateValue(17816.607951388887),
+				formula: null,
+				styleId: S0,
+			})
+			wb.sheets[0]?.cells.set(1, 0, {
+				value: dateValue(36191.1702084375),
+				formula: null,
+				styleId: S0,
+			})
+			setFormula(wb, 0, 1, 'TEXT(A1,"d-m-y")')
+			setFormula(wb, 0, 2, 'TEXT(A1,"DDD-MMM-YYY")')
+			setFormula(wb, 1, 1, 'TEXT(A2,"h:m:s.00")')
+			recalc(wb, { dateSystem: '1904' })
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('11-10-52'))
+			expect(getResult(wb, 0, 2)).toEqual(stringValue('Sat-Oct-1952'))
+			expect(getResult(wb, 1, 1)).toEqual(stringValue('4:5:6.01'))
 		})
 
 		test('TEXT with AM/PM time format', () => {
@@ -477,6 +671,23 @@ describe('formula functions', () => {
 			expect(getResult(wb, 0, 1)).toEqual(stringValue('123.0%%'))
 		})
 
+		test('TEXT General matches Excel cached-value formatting edges', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 110000000000)
+			setNum(wb, 1, 0, 1.123e-10)
+			setBool(wb, 2, 0, true)
+			setNum(wb, 3, 0, 0)
+			setFormula(wb, 0, 1, 'TEXT(A1,"General")')
+			setFormula(wb, 1, 1, 'TEXT(A2,"General")')
+			setFormula(wb, 2, 1, 'TEXT(A3,"General")')
+			setFormula(wb, 3, 1, 'TEXT(A4,"")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('1.1E+11'))
+			expect(getResult(wb, 1, 1)).toEqual(stringValue('1.123E-10'))
+			expect(getResult(wb, 2, 1)).toEqual(stringValue('TRUE'))
+			expect(getResult(wb, 3, 1)).toEqual(stringValue(''))
+		})
+
 		test('TEXT supports currency locale markers', () => {
 			const wb = makeWorkbook()
 			setNum(wb, 0, 0, 42)
@@ -499,6 +710,18 @@ describe('formula functions', () => {
 			setFormula(wb, 0, 1, 'TEXT(A1,"[h]:mm")')
 			recalc(wb)
 			expect(getResult(wb, 0, 1)).toEqual(stringValue('36:00'))
+		})
+
+		test('TEXT supports elapsed seconds and mixed time tokens', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 314159 / 100000)
+			setFormula(wb, 0, 1, 'TEXT(A1,"[ss].000")')
+			setFormula(wb, 0, 2, 'TEXT(A1,"s:m"" @ hour ""[hh]")')
+			setFormula(wb, 0, 3, 'TEXT(A1,"[s]"" [yes, ""ss""] seconds""")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('271433.376'))
+			expect(getResult(wb, 0, 2)).toEqual(stringValue('53:23 @ hour 75'))
+			expect(getResult(wb, 0, 3)).toEqual(stringValue('271433 [yes, 271433] seconds'))
 		})
 
 		test('TEXT(1234.5, "#,##0.00") = "1,234.50"', () => {
@@ -525,12 +748,12 @@ describe('formula functions', () => {
 			expect(getResult(wb, 0, 1)).toEqual(stringValue('$1,234'))
 		})
 
-		test('TEXT(0.5, "# ?/?") fraction format - currently rounds to integer', () => {
+		test('TEXT formats common fraction placeholders', () => {
 			const wb = makeWorkbook()
 			setNum(wb, 0, 0, 0.5)
 			setFormula(wb, 0, 1, 'TEXT(A1,"# ?/?")')
 			recalc(wb)
-			expect(getResult(wb, 0, 1)).toEqual(stringValue('1'))
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('1/2'))
 		})
 
 		test('TEXT(44941, "yyyy-mm-dd") date format', () => {
@@ -636,6 +859,59 @@ describe('formula functions', () => {
 			setFormula(wb, 3, 0, 'VLOOKUP(25,A1:B3,2,TRUE)')
 			recalc(wb)
 			expect(getResult(wb, 3, 0)).toEqual(stringValue('medium'))
+		})
+
+		test('VLOOKUP and HLOOKUP approximate mode prefer exact hits before approximate fallback', () => {
+			const wb = makeWorkbook()
+			setStr(wb, 0, 0, 'zeta')
+			setStr(wb, 1, 0, 'target')
+			setStr(wb, 2, 0, 'alpha')
+			setStr(wb, 0, 1, 'wrong')
+			setStr(wb, 1, 1, 'exact')
+			setStr(wb, 2, 1, 'fallback')
+			setFormula(wb, 3, 0, 'VLOOKUP("target",A1:B3,2,TRUE)')
+
+			setStr(wb, 5, 0, 'zeta')
+			setStr(wb, 5, 1, 'target')
+			setStr(wb, 5, 2, 'alpha')
+			setStr(wb, 6, 0, 'wrong')
+			setStr(wb, 6, 1, 'exact')
+			setStr(wb, 6, 2, 'fallback')
+			setFormula(wb, 7, 0, 'HLOOKUP("target",A6:C7,2,TRUE)')
+
+			recalc(wb)
+			expect(getResult(wb, 3, 0)).toEqual(stringValue('exact'))
+			expect(getResult(wb, 7, 0)).toEqual(stringValue('exact'))
+		})
+
+		test('VLOOKUP and HLOOKUP approximate blank lookup miss before return-index errors', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'VLOOKUP(B1,B1,B1,3)')
+			setFormula(wb, 1, 0, 'HLOOKUP(B1,B1,B1,3)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(errorValue('#N/A'))
+			expect(getResult(wb, 1, 0)).toEqual(errorValue('#N/A'))
+		})
+
+		test('LOOKUP prefers exact matches before approximate fallback', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 1)
+			setNum(wb, 1, 0, 534)
+			setNum(wb, 2, 0, 2)
+			setStr(wb, 0, 1, 'low')
+			setStr(wb, 1, 1, 'exact')
+			setStr(wb, 2, 1, 'fallback')
+			setFormula(wb, 3, 0, 'LOOKUP(534,A1:A3,B1:B3)')
+			setNum(wb, 5, 0, 10)
+			setNum(wb, 6, 0, 20)
+			setNum(wb, 7, 0, 30)
+			setStr(wb, 5, 1, 'small')
+			setStr(wb, 6, 1, 'medium')
+			setStr(wb, 7, 1, 'large')
+			setFormula(wb, 4, 0, 'LOOKUP(25,A6:A8,B6:B8)')
+			recalc(wb)
+			expect(getResult(wb, 3, 0)).toEqual(stringValue('exact'))
+			expect(getResult(wb, 4, 0)).toEqual(stringValue('medium'))
 		})
 
 		test('INDEX with row 0 returns entire column (spills, anchor has first value)', () => {
@@ -800,6 +1076,22 @@ describe('formula functions', () => {
 			expect(getResult(wb, 4, 0)).toEqual(numberValue(4))
 		})
 
+		test('AVERAGEA includes referenced scalar text and booleans', () => {
+			const wb = makeWorkbook()
+			setStr(wb, 0, 0, 'TRUE')
+			setBool(wb, 1, 0, true)
+			setNum(wb, 2, 0, 2)
+			setFormula(wb, 0, 1, 'AVERAGEA(A1,2)')
+			setFormula(wb, 1, 1, 'AVERAGEA(A2,2)')
+			setFormula(wb, 2, 1, 'STDEVA(A1,A2,A3)')
+			setFormula(wb, 3, 1, 'VARA(A1,A2,A3)')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(numberValue(1))
+			expect(getResult(wb, 1, 1)).toEqual(numberValue(1.5))
+			expect(getResult(wb, 2, 1)).toEqual(numberValue(1))
+			expect(getResult(wb, 3, 1)).toEqual(numberValue(1))
+		})
+
 		test('MAXA treats TRUE as 1 and text as 0', () => {
 			const wb = makeWorkbook()
 			setNum(wb, 0, 0, -5)
@@ -818,6 +1110,72 @@ describe('formula functions', () => {
 			setFormula(wb, 3, 0, 'MINA(A1:A3)')
 			recalc(wb)
 			expect(getResult(wb, 3, 0)).toEqual(numberValue(0))
+		})
+
+		test('STDEV and VAR ignore nonnumeric referenced scalars but coerce typed literals', () => {
+			const wb = makeWorkbook()
+			setStr(wb, 0, 0, '10')
+			setBool(wb, 1, 0, true)
+			setNum(wb, 2, 0, 1)
+			setNum(wb, 3, 0, 2)
+			setNum(wb, 4, 0, 3)
+			setFormula(wb, 0, 1, 'STDEV(A1,A2,A3:A5)')
+			setFormula(wb, 1, 1, 'VAR(A1,A2,A3:A5)')
+			setFormula(wb, 2, 1, 'VARP(A1,A2,A3:A5)')
+			setFormula(wb, 3, 1, 'STDEV("10",TRUE,A3:A5)')
+			setFormula(wb, 4, 1, 'VAR("10",TRUE,A3:A5)')
+			setFormula(wb, 5, 1, 'VAR("nope",1,2)')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(numberValue(1))
+			expect(getResult(wb, 1, 1)).toEqual(numberValue(1))
+			const varp = getResult(wb, 2, 1)
+			expect(varp?.kind).toBe('number')
+			if (varp?.kind === 'number') expect(varp.value).toBeCloseTo(2 / 3)
+			const directStdev = getResult(wb, 3, 1)
+			expect(directStdev?.kind).toBe('number')
+			if (directStdev?.kind === 'number') expect(directStdev.value).toBeCloseTo(Math.sqrt(14.3))
+			const directVar = getResult(wb, 4, 1)
+			expect(directVar?.kind).toBe('number')
+			if (directVar?.kind === 'number') expect(directVar.value).toBeCloseTo(14.3)
+			expect(getResult(wb, 5, 1)).toEqual(errorValue('#VALUE!'))
+		})
+
+		test('VAR and VARP stay stable for large-magnitude mixed ranges', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 1)
+			setNum(wb, 0, 1, 1.001)
+			setNum(wb, 1, 0, 9_999_999_999)
+			setNum(wb, 1, 1, 2.3456)
+			setNum(wb, 2, 0, 0.00001)
+			setStr(wb, 2, 1, 'alphanum')
+			setFormula(wb, 3, 0, 'VAR(A1:B3)')
+			setFormula(wb, 3, 1, 'VARP(A1:B3)')
+			recalc(wb)
+			expect(getResult(wb, 3, 0)).toEqual(numberValue(19_999_999_991_653_392_000))
+			expect(getResult(wb, 3, 1)).toEqual(numberValue(15_999_999_993_322_713_000))
+		})
+
+		test('MODE errors on direct text but ignores text in references', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 1)
+			setStr(wb, 1, 0, '1')
+			setNum(wb, 2, 0, 2)
+			setNum(wb, 3, 0, 2)
+			setFormula(wb, 0, 1, 'MODE(A1:A4)')
+			setFormula(wb, 1, 1, 'MODE(A1,"1",2,3)')
+			setFormula(wb, 2, 1, 'MODE.MULT(A1,"1",2,3)')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(numberValue(2))
+			expect(getResult(wb, 1, 1)).toEqual(errorValue('#VALUE!'))
+			expect(getResult(wb, 2, 1)).toEqual(errorValue('#VALUE!'))
+		})
+
+		test('MODE errors on direct blank cell arguments', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 2)
+			setFormula(wb, 1, 0, 'MODE(A1,2,B1)')
+			recalc(wb)
+			expect(getResult(wb, 1, 0)).toEqual(errorValue('#VALUE!'))
 		})
 
 		test('RANK.EQ returns same as RANK', () => {
@@ -918,6 +1276,17 @@ describe('formula functions', () => {
 			expect(getResult(wb, 2, 0)).toEqual(numberValue(25))
 		})
 
+		test('SUMSQ ignores nonnumeric referenced scalar cells but coerces typed literals', () => {
+			const wb = makeWorkbook()
+			setStr(wb, 0, 0, '3')
+			setNum(wb, 1, 0, 4)
+			setFormula(wb, 2, 0, 'SUMSQ(A1,A2)')
+			setFormula(wb, 3, 0, 'SUMSQ("3",A2)')
+			recalc(wb)
+			expect(getResult(wb, 2, 0)).toEqual(numberValue(16))
+			expect(getResult(wb, 3, 0)).toEqual(numberValue(25))
+		})
+
 		test('ROMAN converts Arabic to Roman numeral', () => {
 			const wb = makeWorkbook()
 			setFormula(wb, 0, 0, 'ROMAN(499)')
@@ -955,6 +1324,13 @@ describe('formula functions', () => {
 			expect(getResult(wb, 0, 0)).toEqual(numberValue(8))
 		})
 
+		test('ECMA.CEILING aliases legacy CEILING behavior', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'ECMA.CEILING(1.2,2)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(2))
+		})
+
 		test('CEILING.MATH with negative and mode rounds away from zero', () => {
 			const wb = makeWorkbook()
 			setFormula(wb, 0, 0, 'CEILING.MATH(-4.1,2,1)')
@@ -974,6 +1350,20 @@ describe('formula functions', () => {
 			setFormula(wb, 0, 0, 'FLOOR.MATH(6.7,2)')
 			recalc(wb)
 			expect(getResult(wb, 0, 0)).toEqual(numberValue(6))
+		})
+
+		test('FLOOR returns zero for zero number and zero significance', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'FLOOR(0,0)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(0))
+		})
+
+		test('FACT returns #NUM! when the factorial overflows', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'FACT(171)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(errorValue('#NUM!'))
 		})
 
 		test('FLOOR.PRECISE rounds toward negative infinity', () => {
@@ -1029,6 +1419,21 @@ describe('formula functions', () => {
 			expect(getResult(wb, 0, 0)).toEqual(stringValue('$1,234.56'))
 		})
 
+		test('DOLLAR formats negative currency with parentheses', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'DOLLAR(-1)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('($1.00)'))
+		})
+
+		test('DOLLAR accepts currency-formatted text', () => {
+			const wb = makeWorkbook()
+			setStr(wb, 0, 0, '$1.00')
+			setFormula(wb, 0, 1, 'DOLLAR(A1)')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('$1.00'))
+		})
+
 		test('VALUETOTEXT returns string representation', () => {
 			const wb = makeWorkbook()
 			setNum(wb, 0, 0, 42)
@@ -1082,6 +1487,15 @@ describe('formula functions', () => {
 			expect(getResult(wb, 0, 2)).toEqual(numberValue(35981))
 		})
 
+		test('DATEVALUE parses English month-name dates', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'DATEVALUE("June 9, 1969")')
+			setFormula(wb, 0, 1, 'DATEVALUE("Jun 9 1969")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(25363))
+			expect(getResult(wb, 0, 1)).toEqual(numberValue(25363))
+		})
+
 		test('DATE(1900,1,1) → serial 1', () => {
 			const wb = makeWorkbook()
 			setFormula(wb, 0, 0, 'DATE(1900,1,1)')
@@ -1131,6 +1545,18 @@ describe('formula functions', () => {
 			expect(getResult(wb, 0, 1)).toEqual(numberValue(1900))
 			expect(getResult(wb, 0, 2)).toEqual(numberValue(3))
 			expect(getResult(wb, 0, 3)).toEqual(numberValue(1))
+		})
+
+		test('YEAR/MONTH/DAY for 1900-system serial zero follows Excel date-part behavior', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 0)
+			setFormula(wb, 0, 1, 'YEAR(A1)')
+			setFormula(wb, 0, 2, 'MONTH(A1)')
+			setFormula(wb, 0, 3, 'DAY(A1)')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(numberValue(1900))
+			expect(getResult(wb, 0, 2)).toEqual(numberValue(1))
+			expect(getResult(wb, 0, 3)).toEqual(numberValue(0))
 		})
 
 		test('WEEKDAY for dates before March 1, 1900', () => {
@@ -1197,6 +1623,24 @@ describe('formula functions', () => {
 			const r = getResult(wb, 7, 0)
 			expect(r?.kind).toBe('number')
 			if (r?.kind === 'number') expect(r.value).toBeCloseTo(200 / 3)
+		})
+
+		test('database criteria rows ignore blank criteria cells', () => {
+			const wb = makeWorkbook()
+			setStr(wb, 0, 0, 'Team')
+			setStr(wb, 0, 1, 'Score')
+			setStr(wb, 1, 0, 'A')
+			setNum(wb, 1, 1, 10)
+			setStr(wb, 2, 0, 'B')
+			setNum(wb, 2, 1, 20)
+			setStr(wb, 3, 0, 'B')
+			setNum(wb, 3, 1, 30)
+			setStr(wb, 5, 0, 'Team')
+			setStr(wb, 5, 1, 'Score')
+			setStr(wb, 6, 0, 'B')
+			setFormula(wb, 7, 0, 'DSUM(A1:B4,2,A6:B7)')
+			recalc(wb)
+			expect(getResult(wb, 7, 0)).toEqual(numberValue(50))
 		})
 	})
 
@@ -1900,6 +2344,15 @@ describe('formula functions', () => {
 			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.6)
 		})
 
+		test('SLOPE propagates scalar name errors before paired range shape checks', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 1)
+			setNum(wb, 1, 0, 2)
+			setFormula(wb, 2, 0, 'SLOPE(A1:A2,missing_name)')
+			recalc(wb)
+			expect(getResult(wb, 2, 0)).toEqual(errorValue('#NAME?'))
+		})
+
 		test('INTERCEPT of y=2x+1', () => {
 			const wb = makeWorkbook()
 			setNum(wb, 0, 0, 1)
@@ -2247,6 +2700,32 @@ describe('formula functions', () => {
 			expect(getResult(wb, 0, 1)).toEqual(errorValue('#NUM!'))
 		})
 
+		test('normal and lognormal functions match Excel cached-value precision points', () => {
+			const wb = makeWorkbook()
+			const sample = [1, 2, 3, 4, 5, 4]
+			for (let i = 0; i < sample.length; i++) setNum(wb, i, 0, sample[i] as number)
+			setFormula(wb, 0, 1, 'NORM.DIST(0,-1,3,TRUE)')
+			setFormula(wb, 1, 1, 'NORM.S.DIST(3,TRUE)')
+			setFormula(wb, 2, 1, 'NORM.S.INV(0.9986501019683699)')
+			setFormula(wb, 3, 1, 'NORMSDIST(2)')
+			setFormula(wb, 4, 1, 'LOGNORM.DIST(1,2,5,TRUE)')
+			setFormula(wb, 5, 1, 'LOGNORM.INV(0.34457825838967576,2,5)')
+			setFormula(wb, 6, 1, 'Z.TEST(A1:A6,3)')
+			setFormula(wb, 7, 1, 'ZTEST(A1:A6,3,5)')
+			recalc(wb)
+			const expected = [
+				0.6305586598182364, 0.9986501019683699, 3, 0.9772498680518208, 0.34457825838967576, 1,
+				0.39075564749935676, 0.46746265582105867,
+			]
+			for (let row = 0; row < expected.length; row++) {
+				const r = getResult(wb, row, 1)
+				expect(r?.kind).toBe('number')
+				if (r?.kind === 'number')
+					expect(Math.abs(r.value - (expected[row] as number))).toBeLessThan(1e-12)
+			}
+			expect(getResult(wb, 2, 1)).toEqual(numberValue(3))
+		})
+
 		test('NORM.DIST CDF at mean equals 0.5', () => {
 			const wb = makeWorkbook()
 			setFormula(wb, 0, 0, 'NORM.DIST(10,10,2,TRUE)')
@@ -2365,6 +2844,66 @@ describe('formula functions', () => {
 			setFormula(wb, 2, 0, 'MIRR(A1:A2,0.10,0.12)')
 			recalc(wb)
 			expect(getResult(wb, 2, 0)).toEqual(errorValue('#DIV/0!'))
+		})
+
+		test('XNPV and XIRR validate Excel date and sign requirements', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, -100)
+			setNum(wb, 1, 0, 110)
+			setNum(wb, 0, 1, 44927.9)
+			setNum(wb, 1, 1, 45292.2)
+			setFormula(wb, 0, 2, 'XIRR(A1:A2,B1:B2)')
+			setFormula(wb, 1, 2, 'XNPV(0.1,A1:A2,B1:B2)')
+
+			setNum(wb, 3, 0, 100)
+			setNum(wb, 4, 0, 110)
+			setNum(wb, 3, 1, 44927)
+			setNum(wb, 4, 1, 45292)
+			setFormula(wb, 3, 2, 'XIRR(A4:A5,B4:B5)')
+			setFormula(wb, 4, 2, 'XNPV(0.1,A4:A5,B4:B5)')
+
+			setNum(wb, 6, 0, -100)
+			setNum(wb, 7, 0, 110)
+			setNum(wb, 6, 1, 44927)
+			setNum(wb, 7, 1, 44926)
+			setFormula(wb, 6, 2, 'XIRR(A7:A8,B7:B8)')
+			setFormula(wb, 7, 2, 'XNPV(0.1,A7:A8,B7:B8)')
+
+			recalc(wb)
+			const xirr = getResult(wb, 0, 2)
+			const xnpv = getResult(wb, 1, 2)
+			expect(xirr?.kind).toBe('number')
+			expect(xnpv?.kind).toBe('number')
+			if (xirr?.kind === 'number') expect(xirr.value).toBeCloseTo(0.1, 12)
+			if (xnpv?.kind === 'number') expect(xnpv.value).toBeCloseTo(0, 12)
+			expect(getResult(wb, 3, 2)).toEqual(errorValue('#NUM!'))
+			expect(getResult(wb, 4, 2)).toEqual(errorValue('#NUM!'))
+			expect(getResult(wb, 6, 2)).toEqual(errorValue('#NUM!'))
+			expect(getResult(wb, 7, 2)).toEqual(errorValue('#NUM!'))
+		})
+
+		test('FV preserves Excel-compatible precision under cancellation', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'FV(2.95,13,13000,-17406.78521481564,1)')
+			setFormula(wb, 1, 0, 'FV(2.95,13,13000,-4406.785442944962,0)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(333891.23010253906))
+			expect(getResult(wb, 1, 0)).toEqual(numberValue(333891.2300109863))
+		})
+
+		test('PMT and PPMT use stable finite annuity factors for short integer terms', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'PMT(0.1/12,3,8000)')
+			setFormula(wb, 1, 0, 'PPMT(0.1/12,3,3,8000)')
+			recalc(wb)
+			const pmtResult = getResult(wb, 0, 0)
+			const ppmtResult = getResult(wb, 1, 0)
+			expect(pmtResult?.kind).toBe('number')
+			expect(ppmtResult?.kind).toBe('number')
+			if (pmtResult?.kind === 'number')
+				expect(pmtResult.value.toPrecision(15)).toBe('-2711.23405492681')
+			if (ppmtResult?.kind === 'number')
+				expect(ppmtResult.value.toPrecision(15)).toBe('-2688.82716191088')
 		})
 
 		test('ISPMT computes interest for specific period', () => {
@@ -2533,6 +3072,28 @@ describe('formula functions', () => {
 			expect(getResult(wb, 0, 0)).toEqual(errorValue('#NUM!'))
 		})
 
+		test('DISC and INTRATE use basis-aware US 30/360 February end-of-month days', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'DISC(DATE(2024,2,29),DATE(2024,3,31),97,100,0)')
+			setFormula(wb, 0, 1, 'INTRATE(DATE(2024,2,29),DATE(2024,3,31),97,100,0)')
+			recalc(wb)
+			const disc = getResult(wb, 0, 0)
+			const intrate = getResult(wb, 0, 1)
+			expect(disc?.kind).toBe('number')
+			expect(intrate?.kind).toBe('number')
+			if (disc?.kind === 'number') expect(disc.value).toBeCloseTo(0.36, 12)
+			if (intrate?.kind === 'number') expect(intrate.value).toBeCloseTo(0.3711340206185567, 12)
+		})
+
+		test('DISC uses split-year Actual/Actual basis over leap years', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'DISC(DATE(2023,7,1),DATE(2025,7,1),97,100,1)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.015, 12)
+		})
+
 		test('coupon date helpers match expected semiannual schedule', () => {
 			const wb = makeWorkbook()
 			setFormula(wb, 0, 0, 'COUPPCD(DATE(2024,3,15),DATE(2024,12,31),2,0)')
@@ -2552,6 +3113,20 @@ describe('formula functions', () => {
 			expect(getResult(wb, 0, 5)).toEqual(numberValue(2))
 		})
 
+		test('US 30/360 coupon day count handles February end-of-month', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'COUPPCD(DATE(2024,3,31),DATE(2024,8,31),2,0)')
+			setFormula(wb, 0, 1, 'COUPDAYBS(DATE(2024,3,31),DATE(2024,8,31),2,0)')
+			setFormula(wb, 0, 2, 'COUPDAYS(DATE(2024,3,31),DATE(2024,8,31),2,0)')
+			setFormula(wb, 0, 3, 'COUPDAYSNC(DATE(2024,3,31),DATE(2024,8,31),2,0)')
+			setFormula(wb, 1, 0, 'COUPPCD(DATE(2024,3,31),DATE(2024,8,31),2,0)=DATE(2024,2,29)')
+			recalc(wb)
+			expect(getResult(wb, 1, 0)).toEqual(booleanValue(true))
+			expect(getResult(wb, 0, 1)).toEqual(numberValue(30))
+			expect(getResult(wb, 0, 2)).toEqual(numberValue(180))
+			expect(getResult(wb, 0, 3)).toEqual(numberValue(150))
+		})
+
 		test('PRICE and YIELD are approximately inverse', () => {
 			const wb = makeWorkbook()
 			setFormula(wb, 0, 0, 'PRICE(DATE(2024,3,15),DATE(2029,12,31),0.08,0.06,100,2,0)')
@@ -2560,6 +3135,15 @@ describe('formula functions', () => {
 			const y = getResult(wb, 0, 1)
 			expect(y?.kind).toBe('number')
 			if (y?.kind === 'number') expect(y.value).toBeCloseTo(0.06, 4)
+		})
+
+		test('PRICE uses compound fractional discounting for single-coupon bonds', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'PRICE(DATE(2024,3,31),DATE(2024,8,31),0.06,0.05,100,2,0)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(r.value).toBeCloseTo(100.4022080906, 9)
 		})
 
 		test('PRICEDISC and YIELDDISC are approximately inverse', () => {
@@ -2663,6 +3247,20 @@ describe('formula functions', () => {
 			const y = getResult(wb, 0, 1)
 			expect(y?.kind).toBe('number')
 			if (y?.kind === 'number') expect(y.value).toBeCloseTo(0.06, 4)
+		})
+
+		test('ODDFPRICE matches Excel short odd-first coupon example', () => {
+			const wb = makeWorkbook()
+			setFormula(
+				wb,
+				0,
+				0,
+				'ODDFPRICE(DATE(2008,11,11),DATE(2021,3,1),DATE(2008,10,15),DATE(2009,3,1),0.0785,0.0625,100,2,1)',
+			)
+			recalc(wb)
+			const result = getResult(wb, 0, 0)
+			expect(result?.kind).toBe('number')
+			if (result?.kind === 'number') expect(result.value).toBeCloseTo(113.597717474079, 12)
 		})
 
 		test('ODDLPRICE and ODDLYIELD are approximately inverse', () => {
@@ -2925,6 +3523,15 @@ describe('formula functions', () => {
 			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.1459181379, 4)
 		})
 
+		test('BESSELY integer-order recurrence matches Excel cached oracle', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'BESSELY(2, 3)')
+			recalc(wb)
+			const r = getResult(wb, 0, 0)
+			expect(r?.kind).toBe('number')
+			if (r?.kind === 'number') expect(Math.abs(r.value - -1.12778376512206)).toBeLessThan(2e-8)
+		})
+
 		test('BESSELK(2.5, 1) is approximately 0.0739', () => {
 			const wb = makeWorkbook()
 			setFormula(wb, 0, 0, 'BESSELK(2.5, 1)')
@@ -2932,6 +3539,22 @@ describe('formula functions', () => {
 			const r = getResult(wb, 0, 0)
 			expect(r?.kind).toBe('number')
 			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.0738908163, 4)
+		})
+
+		test('integer-order Bessel functions match Excel cached oracle for stress inputs', () => {
+			const wb = makeWorkbook()
+			const formulas = ['BESSELI(2,3)', 'BESSELJ(2,3)', 'BESSELK(2,3)', 'BESSELY(2,3)']
+			const expected = [0.21273995970273565, 0.12894324997562717, 0.6473854, -1.1277837651220644]
+			for (let row = 0; row < formulas.length; row++) {
+				setFormula(wb, row, 0, formulas[row] as string)
+			}
+			recalc(wb)
+			for (let row = 0; row < expected.length; row++) {
+				const r = getResult(wb, row, 0)
+				expect(r?.kind).toBe('number')
+				if (r?.kind === 'number')
+					expect(Math.abs(r.value - (expected[row] as number))).toBeLessThan(1e-15)
+			}
 		})
 
 		test('BESSELY(0, 0) returns #NUM!', () => {
@@ -3123,6 +3746,18 @@ describe('formula functions', () => {
 			expect(getResult(wb, 0, 0)).toEqual(stringValue('3+4i'))
 		})
 
+		test('IMDIV uses Excel-compatible stable complex division', () => {
+			const wb = makeWorkbook()
+			setFormula(
+				wb,
+				0,
+				0,
+				'IMDIV("1.85021985907055+1.41787163074572j","0.556971676153418+0.426821890855467j")',
+			)
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('3.32192809488737-8.28846662730513E-15j'))
+		})
+
 		test('IMDIV by zero returns #NUM!', () => {
 			const wb = makeWorkbook()
 			setFormula(wb, 0, 0, 'IMDIV("3+4i","0")')
@@ -3170,6 +3805,15 @@ describe('formula functions', () => {
 			setFormula(wb, 0, 0, 'IMEXP(COMPLEX(0,PI()))')
 			recalc(wb)
 			expect(getResult(wb, 0, 0)).toEqual(stringValue('-1'))
+		})
+
+		test('complex functions use Excel-style 15 significant digit strings', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'IMLN("2+4i")')
+			setFormula(wb, 1, 0, 'IMEXP("2+4i")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('1.497866136777+1.10714871779409i'))
+			expect(getResult(wb, 1, 0)).toEqual(stringValue('-4.82980938326939-5.59205609364098i'))
 		})
 
 		test('IMLN of 1 is 0', () => {
@@ -3226,6 +3870,29 @@ describe('formula functions', () => {
 	})
 
 	describe('extended trig functions', () => {
+		test('TAN matches Excel cached precision for POI stress cases', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 1)
+			setNum(wb, 1, 0, 5)
+			setFormula(wb, 0, 1, 'TAN(A1)')
+			setFormula(wb, 1, 1, 'TAN(A2)')
+			setFormula(wb, 2, 1, 'TAN(B1)')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(numberValue(1.5574077246549023))
+			expect(getResult(wb, 1, 1)).toEqual(numberValue(-3.380515006246586))
+			expect(getResult(wb, 2, 1)).toEqual(numberValue(74.68593339876537))
+		})
+
+		test('TANH matches Excel cached precision for nested POI cases', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 2)
+			setFormula(wb, 1, 0, 'TANH(A1)')
+			setFormula(wb, 2, 0, 'TANH(A2)')
+			recalc(wb)
+			expect(getResult(wb, 1, 0)).toEqual(numberValue(0.964027580075817))
+			expect(getResult(wb, 2, 0)).toEqual(numberValue(0.7460679984455995))
+		})
+
 		test('COT(1) = cos(1)/sin(1)', () => {
 			const wb = makeWorkbook()
 			setFormula(wb, 0, 0, 'COT(1)')
@@ -3405,6 +4072,18 @@ describe('formula functions', () => {
 			expect(getResult(wb, 2, 0)).toEqual(numberValue(4 + 1 + (9 + 4)))
 		})
 
+		test('SUMX2PY2 pairs flattened vectors and ignores nonnumeric pairs', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 0.00001)
+			setNum(wb, 1, 0, 1.1)
+			setNum(wb, 2, 0, 1.00001)
+			setNum(wb, 0, 1, -1)
+			setNum(wb, 0, 2, -1.00001)
+			setFormula(wb, 3, 0, 'SUMX2PY2(A1:A3,B1:D1)')
+			recalc(wb)
+			expect(getResult(wb, 3, 0)).toEqual(numberValue(3.2100200002))
+		})
+
 		test('SUMXMY2 computes sum of (x-y)²', () => {
 			const wb = makeWorkbook()
 			setNum(wb, 0, 0, 2)
@@ -3414,6 +4093,25 @@ describe('formula functions', () => {
 			setFormula(wb, 2, 0, 'SUMXMY2(A1:A2,B1:B2)')
 			recalc(wb)
 			expect(getResult(wb, 2, 0)).toEqual(numberValue(1 + 1))
+		})
+
+		test('SUMX pair functions return #DIV/0! when no numeric pairs remain', () => {
+			const wb = makeWorkbook()
+			setStr(wb, 0, 0, 'x')
+			setStr(wb, 0, 1, 'y')
+			setFormula(wb, 1, 0, 'SUMX2MY2(A1,B1)')
+			recalc(wb)
+			expect(getResult(wb, 1, 0)).toEqual(errorValue('#DIV/0!'))
+		})
+
+		test('SUMX pair functions return #N/A for different flattened lengths', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 1)
+			setNum(wb, 1, 0, 2)
+			setNum(wb, 0, 1, 3)
+			setFormula(wb, 2, 0, 'SUMXMY2(A1:A2,B1)')
+			recalc(wb)
+			expect(getResult(wb, 2, 0)).toEqual(errorValue('#N/A'))
 		})
 	})
 
@@ -3448,6 +4146,17 @@ describe('formula functions', () => {
 			expect(getResult(wb, 3, 0)).toEqual(errorValue('#VALUE!'))
 		})
 
+		test('matrix functions reject blank matrix entries', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 3, 'MDETERM(A1:B2)')
+			setFormula(wb, 1, 3, 'MINVERSE(A1:B2)')
+			setFormula(wb, 2, 3, 'MMULT(A1:B2,A1:B2)')
+			recalc(wb)
+			expect(getResult(wb, 0, 3)).toEqual(errorValue('#VALUE!'))
+			expect(getResult(wb, 1, 3)).toEqual(errorValue('#VALUE!'))
+			expect(getResult(wb, 2, 3)).toEqual(errorValue('#VALUE!'))
+		})
+
 		test('MDETERM of 2x2 matrix', () => {
 			const wb = makeWorkbook()
 			setNum(wb, 0, 0, 1)
@@ -3474,6 +4183,16 @@ describe('formula functions', () => {
 			expect(v00?.kind).toBe('number')
 			if (v00?.kind === 'number') expect(v00.value).toBeCloseTo(0.6, 10)
 			if (v01?.kind === 'number') expect(v01.value).toBeCloseTo(-0.7, 10)
+		})
+
+		test('TRANSPOSE materializes blank source cells as zero', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 2, 0, 'TRANSPOSE(A1:B2)')
+			recalc(wb)
+			expect(getResult(wb, 2, 0)).toEqual(numberValue(0))
+			expect(getResult(wb, 2, 1)).toEqual(numberValue(0))
+			expect(getResult(wb, 3, 0)).toEqual(numberValue(0))
+			expect(getResult(wb, 3, 1)).toEqual(numberValue(0))
 		})
 
 		test('MUNIT(3) returns 3x3 identity via spill', () => {
@@ -3554,10 +4273,13 @@ describe('formula functions', () => {
 		test('GAMMALN(5) = ln(4!) = ln(24)', () => {
 			const wb = makeWorkbook()
 			setFormula(wb, 0, 0, 'GAMMALN(5)')
+			setFormula(wb, 1, 0, 'GAMMALN.PRECISE(5)')
 			recalc(wb)
-			const r = getResult(wb, 0, 0)
-			expect(r?.kind).toBe('number')
-			if (r?.kind === 'number') expect(r.value).toBeCloseTo(Math.log(24), 8)
+			for (let row = 0; row < 2; row++) {
+				const r = getResult(wb, row, 0)
+				expect(r?.kind).toBe('number')
+				if (r?.kind === 'number') expect(r.value.toPrecision(15)).toBe('3.17805383034795')
+			}
 		})
 
 		test('GAMMA(5) = 4! = 24', () => {
@@ -3587,6 +4309,34 @@ describe('formula functions', () => {
 			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0, 5)
 		})
 
+		test('F inverse functions preserve Excel cached distribution round-trips', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'F.INV(F.DIST(1,2,3,TRUE),2,3)')
+			setFormula(wb, 1, 0, 'F.INV.RT(F.DIST.RT(1,2,3),2,3)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(1))
+			expect(getResult(wb, 1, 0)).toEqual(numberValue(1))
+		})
+
+		test('right-tail distributions preserve tiny nonzero probabilities', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'F.DIST.RT(1E6,5,10)')
+			setFormula(wb, 1, 0, 'CHISQ.DIST.RT(100,5)')
+			setFormula(wb, 2, 0, 'CHISQ.DIST.RT(1000,5)')
+			recalc(wb)
+			const fTail = getResult(wb, 0, 0)
+			const chiTail = getResult(wb, 1, 0)
+			const farChiTail = getResult(wb, 2, 0)
+			expect(fTail?.kind).toBe('number')
+			expect(chiTail?.kind).toBe('number')
+			expect(farChiTail?.kind).toBe('number')
+			if (fTail?.kind === 'number') expect(fTail.value.toPrecision(15)).toBe('3.75370307872001e-28')
+			if (chiTail?.kind === 'number')
+				expect(chiTail.value.toPrecision(15)).toBe('5.28514836094322e-20')
+			if (farChiTail?.kind === 'number')
+				expect(farChiTail.value.toPrecision(15)).toBe('6.01007768792085e-214')
+		})
+
 		test('CHISQ.DIST(3, 5, TRUE) CDF', () => {
 			const wb = makeWorkbook()
 			setFormula(wb, 0, 0, 'CHISQ.DIST(3, 5, TRUE)')
@@ -3605,6 +4355,25 @@ describe('formula functions', () => {
 			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.11719, 4)
 		})
 
+		test('finite discrete distributions match Excel cached precision', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'BINOM.DIST(5,10,0.3,TRUE)')
+			setFormula(wb, 1, 0, 'HYPGEOMDIST(2,3,6,8)')
+			setFormula(wb, 2, 0, 'HYPGEOM.DIST(1,2,7,9,TRUE)')
+			recalc(wb)
+			const binom = getResult(wb, 0, 0)
+			const hypgeom = getResult(wb, 1, 0)
+			const cumulativeHypgeom = getResult(wb, 2, 0)
+			expect(binom?.kind).toBe('number')
+			expect(hypgeom?.kind).toBe('number')
+			expect(cumulativeHypgeom?.kind).toBe('number')
+			if (binom?.kind === 'number') expect(binom.value.toPrecision(15)).toBe('0.952651012600000')
+			if (hypgeom?.kind === 'number')
+				expect(hypgeom.value.toPrecision(15)).toBe('0.535714285714286')
+			if (cumulativeHypgeom?.kind === 'number')
+				expect(cumulativeHypgeom.value.toPrecision(15)).toBe('0.416666666666666')
+		})
+
 		test('POISSON.DIST(3, 5, FALSE) PMF', () => {
 			const wb = makeWorkbook()
 			setFormula(wb, 0, 0, 'POISSON.DIST(3, 5, FALSE)')
@@ -3612,6 +4381,13 @@ describe('formula functions', () => {
 			const r = getResult(wb, 0, 0)
 			expect(r?.kind).toBe('number')
 			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.14037, 4)
+		})
+
+		test('POISSON.DIST small PMF matches Excel cached precision', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'POISSON.DIST(2, 5, FALSE)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(0.08422433748856833))
 		})
 
 		test('EXPON.DIST(1, 2, TRUE) CDF', () => {
@@ -3639,6 +4415,19 @@ describe('formula functions', () => {
 			const r = getResult(wb, 0, 0)
 			expect(r?.kind).toBe('number')
 			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.6875, 4)
+		})
+
+		test('BETADIST legacy alias is cumulative without a cumulative flag', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'BETADIST(0.5, 2, 2)')
+			setFormula(wb, 0, 1, 'BETADIST(0.5, 2, 2, 0, 1)')
+			recalc(wb)
+			const first = getResult(wb, 0, 0)
+			const second = getResult(wb, 0, 1)
+			expect(first?.kind).toBe('number')
+			expect(second?.kind).toBe('number')
+			if (first?.kind === 'number') expect(first.value).toBeCloseTo(0.5, 12)
+			if (second?.kind === 'number') expect(second.value).toBeCloseTo(0.5, 12)
 		})
 
 		test('LOGNORM.DIST CDF', () => {
@@ -3689,6 +4478,32 @@ describe('formula functions', () => {
 			if (r?.kind === 'number') expect(r.value).toBeCloseTo(0.196, 2)
 		})
 
+		test('PROB sums probabilities over an inclusive numeric interval', () => {
+			const wb = makeWorkbook()
+			for (const [index, value] of [1, 2, 3, 4].entries()) {
+				setNum(wb, index, 0, value)
+			}
+			for (const [index, value] of [0.1, 0.2, 0.3, 0.4].entries()) {
+				setNum(wb, index, 1, value)
+			}
+			setFormula(wb, 0, 2, 'PROB(A1:A4,B1:B4,2,3)')
+			recalc(wb)
+			expect(getResult(wb, 0, 2)).toEqual(numberValue(0.5))
+		})
+
+		test('PROB validates range shape and total probability', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 1)
+			setNum(wb, 1, 0, 2)
+			setNum(wb, 0, 1, 0.2)
+			setNum(wb, 1, 1, 0.2)
+			setFormula(wb, 0, 2, 'PROB(A1:A2,B1:B2,1)')
+			setFormula(wb, 1, 2, 'PROB(A1:A2,B1:C2,1)')
+			recalc(wb)
+			expect(getResult(wb, 0, 2)).toEqual(errorValue('#NUM!'))
+			expect(getResult(wb, 1, 2)).toEqual(errorValue('#N/A'))
+		})
+
 		test('LINEST returns slope and intercept', () => {
 			const wb = makeWorkbook()
 			setNum(wb, 0, 0, 1)
@@ -3701,6 +4516,29 @@ describe('formula functions', () => {
 			recalc(wb)
 			expect(getResult(wb, 4, 0)).toEqual(numberValue(2))
 			expect(getResult(wb, 4, 1)).toEqual(numberValue(0))
+		})
+
+		test('legacy statistical test aliases match dotted function names', () => {
+			const wb = makeWorkbook()
+			const left = [10, 12, 9, 11, 13, 8]
+			const right = [9, 11, 10, 10, 12, 7]
+			for (let i = 0; i < left.length; i++) {
+				setNum(wb, i, 0, left[i] as number)
+				setNum(wb, i, 1, right[i] as number)
+			}
+			setFormula(wb, 7, 0, 'T.TEST(A1:A6,B1:B6,2,1)')
+			setFormula(wb, 7, 1, 'TTEST(A1:A6,B1:B6,2,1)')
+			setFormula(wb, 8, 0, 'F.TEST(A1:A6,B1:B6)')
+			setFormula(wb, 8, 1, 'FTEST(A1:A6,B1:B6)')
+			setFormula(wb, 9, 0, 'CHISQ.TEST(A1:B2,A3:B4)')
+			setFormula(wb, 9, 1, 'CHITEST(A1:B2,A3:B4)')
+			setFormula(wb, 10, 0, 'Z.TEST(A1:A6,10,2)')
+			setFormula(wb, 10, 1, 'ZTEST(A1:A6,10,2)')
+			recalc(wb)
+			expect(getResult(wb, 7, 1)).toEqual(getResult(wb, 7, 0))
+			expect(getResult(wb, 8, 1)).toEqual(getResult(wb, 8, 0))
+			expect(getResult(wb, 9, 1)).toEqual(getResult(wb, 9, 0))
+			expect(getResult(wb, 10, 1)).toEqual(getResult(wb, 10, 0))
 		})
 	})
 
@@ -3785,6 +4623,17 @@ describe('formula functions', () => {
 			expect(getResult(wb, 2, 0)).toEqual(stringValue('b'))
 			expect(getResult(wb, 2, 1)).toEqual(stringValue('l'))
 			expect(getResult(wb, 2, 2)).toEqual(stringValue('v'))
+		})
+
+		test('INFO returns deterministic workbook-environment metadata', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'INFO("release")')
+			setFormula(wb, 0, 1, 'INFO("system")')
+			setFormula(wb, 0, 2, 'INFO("missing")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(stringValue('14.3'))
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('mac'))
+			expect(getResult(wb, 0, 2)).toEqual(errorValue('#VALUE!'))
 		})
 	})
 

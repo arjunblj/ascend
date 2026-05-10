@@ -48,6 +48,7 @@ import {
 const SMALL_NUMBER_RANGE_START = -128
 const SMALL_NUMBER_RANGE_END = 512
 const ATTR_RE = /([A-Za-z_][\w:.-]*)="([^"]*)"/g
+const BYTE_XML_DECODER = new TextDecoder('utf-8')
 const TEXT_NODE_RE =
 	/<([A-Za-z_][\w:.-]*)\b([^>]*)>([\s\S]*?)<\/\1>|<([A-Za-z_][\w:.-]*)\b([^>]*)\/>/g
 const X14_DATA_VALIDATION_RE =
@@ -253,6 +254,23 @@ export function parseSheet(
 	return sheet
 }
 
+export function parseSheetValuesOnlyBytes(
+	name: string,
+	bytes: Uint8Array,
+	ctx: SheetParseContext,
+	sheetId?: Sheet['id'],
+): Sheet | null {
+	if (!ctx.valuesOnly || ctx.richMetadata || ctx.formulaOnly) return null
+	const sheetDataLoc = locateSheetDataBytes(bytes)
+	if (!sheetDataLoc) return null
+	if (hasPrefixedElementNameBytes(bytes)) return null
+	if (hasUnsupportedValuesOnlyOuterTagsBytes(bytes, sheetDataLoc)) return null
+
+	const sheet = new Sheet(name, sheetId)
+	applyDensityHintFromDimensionBytes(sheet, bytes)
+	return parseSheetDataBytes(bytes, sheetDataLoc, sheet, ctx) ? sheet : null
+}
+
 function hasValuesModeSheetMetadata(xml: string, sheetDataLoc: SheetDataLocation | null): boolean {
 	const beforeEnd = sheetDataLoc?.tagStart ?? xml.length
 	const afterStart = sheetDataLoc?.closeEnd ?? xml.length
@@ -328,6 +346,241 @@ function hasRowPresentationMetadataInRange(xml: string, start: number, end: numb
 		rawAttrValueStartInRange(xml, start, end, 'collapsed') !== -1 ||
 		rawAttrValueStartInRange(xml, start, end, 'outlineLevel') !== -1
 	)
+}
+
+const BYTE_LT = 60
+const BYTE_SLASH = 47
+const BYTE_COLON = 58
+const BYTE_QUESTION = 63
+const BYTE_BANG = 33
+const BYTE_QUOTE = 34
+const BYTE_AMP = 38
+const BYTE_SPACE = 32
+const BYTE_TAB = 9
+const BYTE_LF = 10
+const BYTE_CR = 13
+const BYTES_WORKSHEET_OPEN = bytesLiteral('<worksheet')
+const BYTES_DIMENSION_OPEN = bytesLiteral('<dimension')
+const BYTES_SHEET_DATA_OPEN = bytesLiteral('<sheetData')
+const BYTES_SHEET_DATA_CLOSE = bytesLiteral('</sheetData>')
+const BYTES_ROW_OPEN = bytesLiteral('<row')
+const BYTES_ROW_CLOSE = bytesLiteral('</row>')
+const BYTES_CELL_OPEN = bytesLiteral('<c')
+const BYTES_CELL_CLOSE = bytesLiteral('</c>')
+const BYTES_V_OPEN = bytesLiteral('<v')
+const BYTES_V_CLOSE = bytesLiteral('</v>')
+const BYTES_F_OPEN = bytesLiteral('<f')
+const BYTES_IS_OPEN = bytesLiteral('<is')
+const BYTES_T_OPEN = bytesLiteral('<t')
+const BYTES_T_CLOSE = bytesLiteral('</t>')
+const BYTES_IS_CLOSE = bytesLiteral('</is>')
+
+const VALUES_MODE_ALLOWED_OUTER_TAGS = new Set(['worksheet', 'dimension', 'sheetData'])
+
+function bytesLiteral(value: string): Uint8Array {
+	const out = new Uint8Array(value.length)
+	for (let index = 0; index < value.length; index++) out[index] = value.charCodeAt(index)
+	return out
+}
+
+function parseSheetDataBytes(
+	bytes: Uint8Array,
+	sheetData: SheetDataLocation,
+	sheet: Sheet,
+	ctx: SheetParseContext,
+): boolean {
+	let rowCursor = sheetData.contentStart
+	let currentRow = -1
+	const cellOut = { row: 0, col: 0 }
+
+	while (true) {
+		const rowOpen = indexOfElementOpenBytes(bytes, BYTES_ROW_OPEN, rowCursor, sheetData.contentEnd)
+		if (rowOpen === -1) return true
+		const rowTagEnd = findTagEndBytes(bytes, rowOpen)
+		if (rowTagEnd === -1 || rowTagEnd >= sheetData.contentEnd) return false
+		const rowAttrStart = rowOpen + BYTES_ROW_OPEN.length
+		const explicitRowIndex = rawPositiveIntAttrInBytes(bytes, rowAttrStart, rowTagEnd, 'r')
+		const row = explicitRowIndex !== undefined ? explicitRowIndex - 1 : currentRow + 1
+		currentRow = row
+		if (ctx.maxRows !== undefined && row >= ctx.maxRows) return true
+		parseRowPresentationMetadataBytes(bytes, rowAttrStart, rowTagEnd, row, sheet)
+		if (isSelfClosingTagBytes(bytes, rowOpen, rowTagEnd)) {
+			rowCursor = rowTagEnd + 1
+			continue
+		}
+
+		const rowClose = indexOfBytes(bytes, BYTES_ROW_CLOSE, rowTagEnd + 1, sheetData.contentEnd)
+		if (rowClose === -1) return false
+		let cellCursor = rowTagEnd + 1
+		let nextCol = 0
+		while (true) {
+			const cellOpen = indexOfElementOpenBytes(bytes, BYTES_CELL_OPEN, cellCursor, rowClose)
+			if (cellOpen === -1) break
+			const cellTagEnd = findTagEndBytes(bytes, cellOpen)
+			if (cellTagEnd === -1 || cellTagEnd > rowClose) return false
+			const selfClosing = isSelfClosingTagBytes(bytes, cellOpen, cellTagEnd)
+			let cellClose = -1
+			if (!selfClosing) {
+				cellClose = indexOfBytes(bytes, BYTES_CELL_CLOSE, cellTagEnd + 1, rowClose)
+				if (cellClose === -1) return false
+			}
+			const parsedCell = parseValuesOnlyCellBytes(
+				bytes,
+				cellOpen + BYTES_CELL_OPEN.length,
+				cellTagEnd,
+				cellTagEnd + 1,
+				selfClosing ? cellTagEnd + 1 : cellClose,
+				selfClosing,
+				row,
+				nextCol,
+				ctx,
+				sheet,
+				cellOut,
+			)
+			if (parsedCell === false) {
+				return false
+			}
+			if (parsedCell === 'set') nextCol = cellOut.col + 1
+			cellCursor = selfClosing ? cellTagEnd + 1 : cellClose + BYTES_CELL_CLOSE.length
+		}
+		rowCursor = rowClose + BYTES_ROW_CLOSE.length
+	}
+}
+
+function parseValuesOnlyCellBytes(
+	bytes: Uint8Array,
+	attrStart: number,
+	attrEnd: number,
+	bodyStart: number,
+	bodyEnd: number,
+	selfClosing: boolean,
+	fallbackRow: number,
+	fallbackCol: number,
+	ctx: SheetParseContext,
+	sheet: Sheet,
+	out: { row: number; col: number },
+): 'set' | 'skip' | false {
+	if (!resolveCellPositionBytes(bytes, attrStart, attrEnd, fallbackRow, fallbackCol, out)) {
+		return false
+	}
+	const type = rawAttrAsciiBytes(bytes, attrStart, attrEnd, 't')
+	const styleIdx =
+		ctx.hasDateStyles && type !== 's' ? (rawNumAttrInBytes(bytes, attrStart, attrEnd, 's') ?? 0) : 0
+	if (selfClosing) {
+		if (type !== 'n') return 'skip'
+		sheet.cells.setPlainNumber(out.row, out.col, 0)
+		return 'set'
+	}
+
+	if (type === 'inlineStr' || startsWithInlineStringBytes(bytes, bodyStart, bodyEnd)) {
+		const text = parseInlineStringTextBytes(bytes, bodyStart, bodyEnd)
+		if (text === undefined) return false
+		sheet.cells.setStringResolved(out.row, out.col, text, null, DEFAULT_STYLE_ID)
+		return 'set'
+	}
+
+	const rawValue = extractVTagTextBytes(bytes, bodyStart, bodyEnd)
+	if (type === 's') {
+		const idx = rawValue !== undefined ? fastParseNonNegInt(rawValue) : -1
+		if (idx < 0) {
+			sheet.cells.setStringResolved(out.row, out.col, '', null, DEFAULT_STYLE_ID)
+			return 'set'
+		}
+		const text = ctx.sharedStrings.getString?.(idx)
+		if (text !== undefined) {
+			sheet.cells.setStringResolved(out.row, out.col, text, null, DEFAULT_STYLE_ID)
+			return 'set'
+		}
+		const entry = ctx.sharedStrings.get(idx)
+		sheet.cells.setResolved(out.row, out.col, entry ?? stringValue(''), null, DEFAULT_STYLE_ID)
+		return 'set'
+	}
+	if (type === 'b') {
+		sheet.cells.setResolved(
+			out.row,
+			out.col,
+			internValue(ctx, booleanValue(rawValue === '1')),
+			null,
+			DEFAULT_STYLE_ID,
+		)
+		return 'set'
+	}
+	if (type === 'e') {
+		sheet.cells.setResolved(
+			out.row,
+			out.col,
+			internValue(ctx, errorValue((rawValue ?? '#VALUE!') as ExcelError)),
+			null,
+			DEFAULT_STYLE_ID,
+		)
+		return 'set'
+	}
+	if (type === 'str') {
+		sheet.cells.setStringResolved(out.row, out.col, rawValue ?? '', null, DEFAULT_STYLE_ID)
+		return 'set'
+	}
+	if (rawValue !== undefined && rawValue !== '') {
+		const num = Number(rawValue)
+		if (Number.isNaN(num)) {
+			sheet.cells.setStringResolved(out.row, out.col, rawValue, null, DEFAULT_STYLE_ID)
+		} else if (ctx.isDateFormat[styleIdx]) {
+			sheet.cells.setResolved(
+				out.row,
+				out.col,
+				internValue(ctx, dateValue(num)),
+				null,
+				DEFAULT_STYLE_ID,
+			)
+		} else {
+			sheet.cells.setPlainNumber(out.row, out.col, num)
+		}
+		return 'set'
+	}
+	if (hasElementOpenBytes(bytes, BYTES_F_OPEN, bodyStart, bodyEnd)) {
+		sheet.cells.setResolved(out.row, out.col, EMPTY, null, DEFAULT_STYLE_ID)
+		return 'set'
+	}
+	if (type) {
+		return setValuesOnlyTypedEmptyCell(sheet, out.row, out.col, type) ? 'set' : 'skip'
+	}
+	return 'skip'
+}
+
+function setValuesOnlyTypedEmptyCell(
+	sheet: Sheet,
+	row: number,
+	col: number,
+	type: string | undefined,
+): boolean {
+	if (type === undefined) return false
+	if (type === 'n') {
+		sheet.cells.setPlainNumber(row, col, 0)
+	} else {
+		sheet.cells.setResolved(row, col, EMPTY, null, DEFAULT_STYLE_ID)
+	}
+	return true
+}
+
+function parseRowPresentationMetadataBytes(
+	bytes: Uint8Array,
+	start: number,
+	end: number,
+	row: number,
+	sheet: Sheet,
+): void {
+	const rowHeight = rawNumAttrInBytes(bytes, start, end, 'ht')
+	if (rowHeight !== undefined && rawAttrAsciiBytes(bytes, start, end, 'customHeight') === '1') {
+		sheet.rowHeights.set(row, rowHeight)
+	}
+	const hidden = rawBoolAttrInBytes(bytes, start, end, 'hidden')
+	const collapsed = rawBoolAttrInBytes(bytes, start, end, 'collapsed')
+	const outlineLevel = rawNumAttrInBytes(bytes, start, end, 'outlineLevel')
+	if (hidden === undefined && collapsed === undefined && outlineLevel === undefined) return
+	const rowDef: Record<string, boolean | number> = {}
+	if (hidden !== undefined) rowDef.hidden = hidden
+	if (collapsed !== undefined) rowDef.collapsed = collapsed
+	if (outlineLevel !== undefined) rowDef.outlineLevel = outlineLevel
+	sheet.rowDefs.set(row, rowDef as import('@ascend/core').SheetRowDef)
 }
 
 function parseSheetDataFromLoc(
@@ -1674,6 +1927,118 @@ function locateSheetData(xml: string): SheetDataLocation | null {
 	return { contentStart: tagEnd + 1, contentEnd: close, tagStart: open, closeEnd: close + 12 }
 }
 
+function locateSheetDataBytes(bytes: Uint8Array): SheetDataLocation | null {
+	if (indexOfElementOpenBytes(bytes, BYTES_WORKSHEET_OPEN, 0, bytes.length) === -1) return null
+	const open = indexOfElementOpenBytes(bytes, BYTES_SHEET_DATA_OPEN, 0, bytes.length)
+	if (open === -1) return null
+	const tagEnd = findTagEndBytes(bytes, open)
+	if (tagEnd === -1) return null
+	if (isSelfClosingTagBytes(bytes, open, tagEnd)) {
+		return {
+			contentStart: tagEnd + 1,
+			contentEnd: tagEnd + 1,
+			tagStart: open,
+			closeEnd: tagEnd + 1,
+		}
+	}
+	const close = indexOfBytes(bytes, BYTES_SHEET_DATA_CLOSE, tagEnd + 1, bytes.length)
+	if (close === -1) return null
+	return {
+		contentStart: tagEnd + 1,
+		contentEnd: close,
+		tagStart: open,
+		closeEnd: close + BYTES_SHEET_DATA_CLOSE.length,
+	}
+}
+
+function applyDensityHintFromDimensionBytes(sheet: Sheet, bytes: Uint8Array): void {
+	const open = indexOfElementOpenBytes(bytes, BYTES_DIMENSION_OPEN, 0, bytes.length)
+	if (open === -1) return
+	const tagEnd = findTagEndBytes(bytes, open)
+	if (tagEnd === -1) return
+	const ref = rawAttrDecodedBytes(bytes, open + BYTES_DIMENSION_OPEN.length, tagEnd, 'ref')
+	if (!ref) return
+	try {
+		const range = parseRange(ref)
+		const rows = range.end.row - range.start.row + 1
+		const cols = range.end.col - range.start.col + 1
+		if (rows <= 0 || cols <= 0) return
+		if (rows >= 1_048_576 && cols >= 16_384) return
+		const numChunks = Math.ceil(rows / CHUNK_SIZE) * Math.ceil(cols / CHUNK_SIZE)
+		const cellsPerChunk = (rows * cols) / numChunks
+		if (cellsPerChunk >= SPARSE_TO_DENSE_THRESHOLD) {
+			sheet.cells.setExpectedDensity('dense')
+		}
+	} catch {
+		// Match the string parser: invalid dimension refs are only a skipped density hint.
+	}
+}
+
+function hasPrefixedElementNameBytes(bytes: Uint8Array): boolean {
+	let cursor = 0
+	while (cursor < bytes.length) {
+		if (bytes[cursor] !== BYTE_LT) {
+			cursor += 1
+			continue
+		}
+		cursor += 1
+		const first = bytes[cursor]
+		if (first === BYTE_QUESTION || first === BYTE_BANG) {
+			const tagEnd = findTagEndBytes(bytes, cursor - 1)
+			if (tagEnd === -1) return true
+			cursor = tagEnd + 1
+			continue
+		}
+		if (first === BYTE_SLASH) cursor += 1
+		while (cursor < bytes.length) {
+			const code = bytes[cursor]
+			if (code === BYTE_COLON) return true
+			if (isXmlNameDelimiterByte(code)) break
+			cursor += 1
+		}
+	}
+	return false
+}
+
+function hasUnsupportedValuesOnlyOuterTagsBytes(
+	bytes: Uint8Array,
+	sheetData: SheetDataLocation,
+): boolean {
+	return (
+		hasUnsupportedValuesOnlyOuterTagsInRangeBytes(bytes, 0, sheetData.tagStart) ||
+		hasUnsupportedValuesOnlyOuterTagsInRangeBytes(bytes, sheetData.closeEnd, bytes.length)
+	)
+}
+
+function hasUnsupportedValuesOnlyOuterTagsInRangeBytes(
+	bytes: Uint8Array,
+	start: number,
+	end: number,
+): boolean {
+	let cursor = start
+	while (cursor < end) {
+		if (bytes[cursor] !== BYTE_LT) {
+			cursor += 1
+			continue
+		}
+		const marker = bytes[cursor + 1]
+		if (marker === BYTE_QUESTION || marker === BYTE_BANG) {
+			const tagEnd = findTagEndBytes(bytes, cursor)
+			if (tagEnd === -1 || tagEnd > end) return true
+			cursor = tagEnd + 1
+			continue
+		}
+		const closing = marker === BYTE_SLASH
+		const nameStart = cursor + (closing ? 2 : 1)
+		const nameEnd = elementNameEndBytes(bytes, nameStart, end)
+		if (nameEnd === -1) return true
+		const name = asciiSlice(bytes, nameStart, nameEnd)
+		if (!VALUES_MODE_ALLOWED_OUTER_TAGS.has(name)) return true
+		cursor = nameEnd + 1
+	}
+	return false
+}
+
 function sheetDataHasFormula(xml: string, sheetData: SheetDataLocation): boolean {
 	const formulaOpen = xml.indexOf('<f', sheetData.contentStart)
 	return formulaOpen !== -1 && formulaOpen < sheetData.contentEnd
@@ -1807,6 +2172,341 @@ function rawPositiveIntAttrInRange(
 		cursor += 1
 	}
 	return undefined
+}
+
+function findTagEndBytes(bytes: Uint8Array, start: number): number {
+	for (let index = start + 1; index < bytes.length; index++) {
+		if (bytes[index] === 62) return index
+	}
+	return -1
+}
+
+function isSelfClosingTagBytes(bytes: Uint8Array, tagStart: number, tagEnd: number): boolean {
+	for (let index = tagEnd - 1; index > tagStart; index--) {
+		const code = bytes[index]
+		if (code === BYTE_SLASH) return true
+		if (!isXmlWhitespaceByte(code)) return false
+	}
+	return false
+}
+
+function indexOfBytes(bytes: Uint8Array, needle: Uint8Array, start: number, end: number): number {
+	if (needle.length === 0) return start
+	const last = end - needle.length
+	const first = needle[0]
+	for (let index = start; index <= last; index++) {
+		if (bytes[index] !== first) continue
+		let matched = true
+		for (let offset = 1; offset < needle.length; offset++) {
+			if (bytes[index + offset] !== needle[offset]) {
+				matched = false
+				break
+			}
+		}
+		if (matched) return index
+	}
+	return -1
+}
+
+function indexOfElementOpenBytes(
+	bytes: Uint8Array,
+	needle: Uint8Array,
+	start: number,
+	end: number,
+): number {
+	let cursor = start
+	while (cursor < end) {
+		const found = indexOfBytes(bytes, needle, cursor, end)
+		if (found === -1) return -1
+		const next = bytes[found + needle.length]
+		if (isXmlNameDelimiterByte(next)) return found
+		cursor = found + needle.length
+	}
+	return -1
+}
+
+function hasElementOpenBytes(
+	bytes: Uint8Array,
+	needle: Uint8Array,
+	start: number,
+	end: number,
+): boolean {
+	return indexOfElementOpenBytes(bytes, needle, start, end) !== -1
+}
+
+function elementNameEndBytes(bytes: Uint8Array, start: number, end: number): number {
+	let cursor = start
+	while (cursor < end) {
+		const code = bytes[cursor]
+		if (isXmlNameDelimiterByte(code)) return cursor
+		cursor += 1
+	}
+	return -1
+}
+
+function isXmlNameDelimiterByte(code: number | undefined): boolean {
+	return (
+		code === undefined ||
+		code === BYTE_SPACE ||
+		code === BYTE_TAB ||
+		code === BYTE_LF ||
+		code === BYTE_CR ||
+		code === BYTE_SLASH ||
+		code === 62
+	)
+}
+
+function isXmlWhitespaceByte(code: number | undefined): boolean {
+	return code === BYTE_SPACE || code === BYTE_TAB || code === BYTE_LF || code === BYTE_CR
+}
+
+function skipXmlWhitespaceBytes(bytes: Uint8Array, cursor: number, end: number): number {
+	while (cursor < end && isXmlWhitespaceByte(bytes[cursor])) cursor += 1
+	return cursor
+}
+
+function rawAttrRangeBytes(
+	bytes: Uint8Array,
+	start: number,
+	end: number,
+	name: string,
+): { start: number; end: number } | undefined {
+	let cursor = start
+	while (cursor < end) {
+		cursor = skipXmlWhitespaceBytes(bytes, cursor, end)
+		if (cursor >= end || bytes[cursor] === BYTE_SLASH) break
+		const nameStart = cursor
+		while (cursor < end) {
+			const code = bytes[cursor]
+			if (code === 61 || isXmlWhitespaceByte(code)) break
+			cursor += 1
+		}
+		const nameEnd = cursor
+		cursor = skipXmlWhitespaceBytes(bytes, cursor, end)
+		if (bytes[cursor] !== 61) return undefined
+		cursor = skipXmlWhitespaceBytes(bytes, cursor + 1, end)
+		if (bytes[cursor] !== BYTE_QUOTE) return undefined
+		const valueStart = cursor + 1
+		cursor = valueStart
+		while (cursor < end && bytes[cursor] !== BYTE_QUOTE) cursor += 1
+		if (cursor >= end) return undefined
+		if (asciiEquals(bytes, nameStart, nameEnd, name)) return { start: valueStart, end: cursor }
+		cursor += 1
+	}
+	return undefined
+}
+
+function rawAttrAsciiBytes(
+	bytes: Uint8Array,
+	start: number,
+	end: number,
+	name: string,
+): string | undefined {
+	const range = rawAttrRangeBytes(bytes, start, end, name)
+	return range ? asciiSlice(bytes, range.start, range.end) : undefined
+}
+
+function rawAttrDecodedBytes(
+	bytes: Uint8Array,
+	start: number,
+	end: number,
+	name: string,
+): string | undefined {
+	const range = rawAttrRangeBytes(bytes, start, end, name)
+	return range ? decodeXmlBytesText(bytes, range.start, range.end) : undefined
+}
+
+function rawNumAttrInBytes(
+	bytes: Uint8Array,
+	start: number,
+	end: number,
+	name: string,
+): number | undefined {
+	const range = rawAttrRangeBytes(bytes, start, end, name)
+	if (!range) return undefined
+	const parsed = Number(asciiSlice(bytes, range.start, range.end))
+	return Number.isNaN(parsed) ? undefined : parsed
+}
+
+function rawPositiveIntAttrInBytes(
+	bytes: Uint8Array,
+	start: number,
+	end: number,
+	name: string,
+): number | undefined {
+	const range = rawAttrRangeBytes(bytes, start, end, name)
+	if (!range) return undefined
+	let value = 0
+	for (let cursor = range.start; cursor < range.end; cursor++) {
+		const code = bytes[cursor] ?? -1
+		if (code < 48 || code > 57) return undefined
+		value = value * 10 + (code - 48)
+	}
+	return range.end > range.start ? value : undefined
+}
+
+function rawBoolAttrInBytes(
+	bytes: Uint8Array,
+	start: number,
+	end: number,
+	name: string,
+): boolean | undefined {
+	const value = rawAttrAsciiBytes(bytes, start, end, name)
+	if (value === undefined) return undefined
+	if (value === '1' || value.toLowerCase() === 'true') return true
+	if (value === '0' || value.toLowerCase() === 'false') return false
+	return undefined
+}
+
+function resolveCellPositionBytes(
+	bytes: Uint8Array,
+	attrStart: number,
+	attrEnd: number,
+	fallbackRow: number,
+	fallbackCol: number,
+	out: { row: number; col: number },
+): boolean {
+	const range = rawAttrRangeBytes(bytes, attrStart, attrEnd, 'r')
+	if (!range) {
+		out.row = fallbackRow
+		out.col = fallbackCol
+		return true
+	}
+	let cursor = range.start
+	let col = 0
+	while (cursor < range.end) {
+		const code = bytes[cursor] ?? -1
+		if (code >= 48 && code <= 57) break
+		if (code >= 65 && code <= 90) {
+			col = col * 26 + (code - 64)
+		} else if (code >= 97 && code <= 122) {
+			col = col * 26 + (code - 96)
+		} else {
+			return false
+		}
+		cursor += 1
+	}
+	if (cursor === range.start || cursor >= range.end) return false
+	let row = 0
+	while (cursor < range.end) {
+		const code = bytes[cursor] ?? -1
+		if (code < 48 || code > 57) return false
+		row = row * 10 + (code - 48)
+		cursor += 1
+	}
+	if (row <= 0 || col <= 0) return false
+	out.row = row - 1
+	out.col = col - 1
+	return true
+}
+
+function extractVTagTextBytes(bytes: Uint8Array, start: number, end: number): string | undefined {
+	const open = indexOfElementOpenBytes(bytes, BYTES_V_OPEN, start, end)
+	if (open === -1) return undefined
+	const contentStart = findTagEndBytes(bytes, open)
+	if (contentStart === -1 || contentStart >= end) return undefined
+	const close = indexOfBytes(bytes, BYTES_V_CLOSE, contentStart + 1, end)
+	if (close === -1) return undefined
+	return decodeXmlBytesText(bytes, contentStart + 1, close)
+}
+
+function startsWithInlineStringBytes(bytes: Uint8Array, start: number, end: number): boolean {
+	let cursor = skipXmlWhitespaceBytes(bytes, start, end)
+	if (startsWithElementOpenAtBytes(bytes, BYTES_F_OPEN, cursor, end)) {
+		cursor = skipSimpleElementBytes(bytes, cursor, end, 'f')
+		if (cursor === -1) return false
+		cursor = skipXmlWhitespaceBytes(bytes, cursor, end)
+	}
+	return startsWithElementOpenAtBytes(bytes, BYTES_IS_OPEN, cursor, end)
+}
+
+function parseInlineStringTextBytes(
+	bytes: Uint8Array,
+	start: number,
+	end: number,
+): string | undefined {
+	let cursor = skipXmlWhitespaceBytes(bytes, start, end)
+	if (startsWithElementOpenAtBytes(bytes, BYTES_F_OPEN, cursor, end)) {
+		cursor = skipSimpleElementBytes(bytes, cursor, end, 'f')
+		if (cursor === -1) return undefined
+		cursor = skipXmlWhitespaceBytes(bytes, cursor, end)
+	}
+	if (!startsWithElementOpenAtBytes(bytes, BYTES_IS_OPEN, cursor, end)) return undefined
+	const isTagEnd = findTagEndBytes(bytes, cursor)
+	if (isTagEnd === -1 || isTagEnd >= end || isSelfClosingTagBytes(bytes, cursor, isTagEnd)) {
+		return undefined
+	}
+	cursor = skipXmlWhitespaceBytes(bytes, isTagEnd + 1, end)
+	if (!startsWithElementOpenAtBytes(bytes, BYTES_T_OPEN, cursor, end)) return undefined
+	const textTagEnd = findTagEndBytes(bytes, cursor)
+	if (textTagEnd === -1 || textTagEnd >= end || isSelfClosingTagBytes(bytes, cursor, textTagEnd)) {
+		return undefined
+	}
+	const textClose = indexOfBytes(bytes, BYTES_T_CLOSE, textTagEnd + 1, end)
+	if (textClose === -1) return undefined
+	for (let index = textTagEnd + 1; index < textClose; index++) {
+		if (bytes[index] === BYTE_LT) return undefined
+	}
+	cursor = skipXmlWhitespaceBytes(bytes, textClose + BYTES_T_CLOSE.length, end)
+	if (indexOfBytes(bytes, BYTES_IS_CLOSE, cursor, cursor + BYTES_IS_CLOSE.length) !== cursor) {
+		return undefined
+	}
+	cursor = skipXmlWhitespaceBytes(bytes, cursor + BYTES_IS_CLOSE.length, end)
+	if (cursor !== end) return undefined
+	return decodeXmlBytesText(bytes, textTagEnd + 1, textClose)
+}
+
+function skipSimpleElementBytes(
+	bytes: Uint8Array,
+	start: number,
+	end: number,
+	tagName: string,
+): number {
+	const tagEnd = findTagEndBytes(bytes, start)
+	if (tagEnd === -1 || tagEnd > end) return -1
+	if (isSelfClosingTagBytes(bytes, start, tagEnd)) return tagEnd + 1
+	const close = bytesLiteral(`</${tagName}>`)
+	const closeStart = indexOfBytes(bytes, close, tagEnd + 1, end)
+	return closeStart === -1 ? -1 : closeStart + close.length
+}
+
+function startsWithElementOpenAtBytes(
+	bytes: Uint8Array,
+	needle: Uint8Array,
+	start: number,
+	end: number,
+): boolean {
+	if (start + needle.length > end) return false
+	for (let offset = 0; offset < needle.length; offset++) {
+		if (bytes[start + offset] !== needle[offset]) return false
+	}
+	return isXmlNameDelimiterByte(bytes[start + needle.length])
+}
+
+function asciiEquals(bytes: Uint8Array, start: number, end: number, expected: string): boolean {
+	if (end - start !== expected.length) return false
+	for (let index = 0; index < expected.length; index++) {
+		if (bytes[start + index] !== expected.charCodeAt(index)) return false
+	}
+	return true
+}
+
+function asciiSlice(bytes: Uint8Array, start: number, end: number): string {
+	let out = ''
+	for (let index = start; index < end; index++) out += String.fromCharCode(bytes[index] ?? 0)
+	return out
+}
+
+function decodeXmlBytesText(bytes: Uint8Array, start: number, end: number): string {
+	let hasEntity = false
+	for (let index = start; index < end; index++) {
+		if (bytes[index] === BYTE_AMP) {
+			hasEntity = true
+			break
+		}
+	}
+	const text = BYTE_XML_DECODER.decode(bytes.subarray(start, end))
+	return hasEntity ? decodeXmlText(text) : text
 }
 
 function rawBoolAttr(rawAttrs: string, name: string): boolean | undefined {

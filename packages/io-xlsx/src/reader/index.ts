@@ -57,12 +57,20 @@ import {
 	resolvePath,
 } from './relationships.ts'
 import { emptySharedStrings, parseSharedStrings } from './shared-strings.ts'
-import { parseSheet, type SheetFormulaFeatures, ValueInternPool } from './sheet.ts'
+import {
+	parseSheet,
+	parseSheetValuesOnlyBytes,
+	type SheetFormulaFeatures,
+	ValueInternPool,
+} from './sheet.ts'
 import { parseStyles, parseStylesLite } from './styles.ts'
 import { parseTable } from './table.ts'
 import { parseThemeColorsXml, parseThemeXml } from './theme.ts'
 import { parseWorkbookXml } from './workbook.ts'
 import { extractZip, type ZipArchive } from './zip.ts'
+
+const XML_DECODER = new TextDecoder('utf-8')
+const VALUES_ONLY_BYTE_PARSE_MIN_BYTES = 10_000_000
 
 export interface ReadXlsxResult {
 	readonly workbook: Workbook
@@ -426,8 +434,19 @@ export function readXlsx(
 			const hasDateStyles = isDateFormat.some(Boolean)
 
 			for (const entry of sheetsToParse) {
-				const sheetXml = readPart(archive, entry.path)
-				if (!sheetXml) continue
+				const canUseValuesOnlyByteParser =
+					valuesOnly &&
+					!hydrateRichSheetMetadata &&
+					(archive.get(entry.path)?.uncompressedSize ?? 0) >= VALUES_ONLY_BYTE_PARSE_MIN_BYTES &&
+					options.maxRows === undefined
+				const sheetBytes = canUseValuesOnlyByteParser
+					? readPartBytes(archive, entry.path)
+					: undefined
+				let sheetXml =
+					sheetBytes === undefined || hydrateRichSheetMetadata
+						? readPart(archive, entry.path)
+						: undefined
+				if (sheetBytes === undefined && !sheetXml) continue
 				const sheetRelsXml = hydrateRichSheetMetadata
 					? readPart(archive, getRelsPath(entry.path))
 					: undefined
@@ -438,26 +457,31 @@ export function readXlsx(
 					hasArrayFormula: false,
 					hasDynamicArrayFormula: false,
 				}
-				const sheet = parseSheet(
-					entry.name,
-					sheetXml,
-					{
-						sharedStrings,
-						styleIds,
-						isDateFormat,
-						hasDateStyles,
-						differentialStyles,
-						relationships: sheetRelationships,
-						valuesOnly,
-						formulaOnly,
-						richMetadata: hydrateRichSheetMetadata,
-						formulaFeatures: sheetFormulaFeatures,
-						...(valuePool ? { valuePool } : {}),
-						...(metadata ? { metadata } : {}),
-						...(options.maxRows !== undefined ? { maxRows: options.maxRows } : {}),
-					},
-					(sheetPathToAnchor.get(entry.path)?.sheetId ?? entry.name) as SheetId,
-				)
+				const sheetCtx = {
+					sharedStrings,
+					styleIds,
+					isDateFormat,
+					hasDateStyles,
+					differentialStyles,
+					relationships: sheetRelationships,
+					valuesOnly,
+					formulaOnly,
+					richMetadata: hydrateRichSheetMetadata,
+					formulaFeatures: sheetFormulaFeatures,
+					...(valuePool ? { valuePool } : {}),
+					...(metadata ? { metadata } : {}),
+					...(options.maxRows !== undefined ? { maxRows: options.maxRows } : {}),
+				}
+				const resolvedSheetId = (sheetPathToAnchor.get(entry.path)?.sheetId ??
+					entry.name) as SheetId
+				let sheet = sheetBytes
+					? parseSheetValuesOnlyBytes(entry.name, sheetBytes, sheetCtx, resolvedSheetId)
+					: null
+				if (!sheet) {
+					sheetXml ??= sheetBytes ? XML_DECODER.decode(sheetBytes) : readPart(archive, entry.path)
+					if (!sheetXml) continue
+					sheet = parseSheet(entry.name, sheetXml, sheetCtx, resolvedSheetId)
+				}
 				if (sheetFormulaFeatures.hasSharedFormula) {
 					formulaFeatures.sharedFormulaSheets.push(entry.name)
 				}
@@ -558,6 +582,10 @@ export function readXlsx(
 
 function readPart(archive: ZipArchive, path: string): string | undefined {
 	return archive.readText(path)
+}
+
+function readPartBytes(archive: ZipArchive, path: string): Uint8Array | undefined {
+	return archive.readBytes(path)
 }
 
 function attachChartParts(

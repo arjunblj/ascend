@@ -6,9 +6,9 @@ import { defaultCalcContext, recalculate } from '../../../engine/src/index.ts'
 import { makeXlsx } from '../../test/helpers.ts'
 import { writeXlsx } from '../writer/index.ts'
 import { readXlsx } from './index.ts'
-import { emptySharedStrings } from './shared-strings.ts'
+import { emptySharedStrings, parseSharedStrings } from './shared-strings.ts'
 import type { StreamedSheetRow } from './sheet.ts'
-import { streamSheetRowsTextChunks } from './sheet.ts'
+import { parseSheetValuesOnlyBytes, streamSheetRowsTextChunks } from './sheet.ts'
 import { readXlsxRowsStream } from './stream.ts'
 
 const S0 = 0 as StyleId
@@ -2272,6 +2272,169 @@ describe('readXlsx', () => {
 		})
 		expect(sheet?.cells.get(0, 1)?.value).toEqual({ kind: 'string', value: 'cached' })
 		expect(sheet?.cells.get(0, 1)?.formula).toBeNull()
+	})
+
+	it('values-only byte parser preserves supported direct cell semantics', () => {
+		const sharedStrings = parseSharedStrings(
+			`<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <si><t>Shared &amp; decoded</t></si>
+</sst>`,
+		)
+		const xml = `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="A1:I2"/>
+  <sheetData>
+    <row r="1" ht="27" customHeight="1" hidden="1" collapsed="1" outlineLevel="2">
+      <c r="A1"><v>42.5</v></c>
+      <c r="B1" t="s"><v>0</v></c>
+      <c r="C1" t="inlineStr"><is><t>inline &amp; entity</t></is></c>
+      <c r="D1" t="b"><v>0</v></c>
+      <c r="E1" t="e"><v>#N/A</v></c>
+      <c r="F1" t="str"><v>plain &lt;text&gt;</v></c>
+      <c r="G1"><f>SUM(A1:A1)</f><v>43</v></c>
+      <c r="H1"><f>SUM(A1:A1)</f></c>
+      <c r="I1" s="1"><v>45292</v></c>
+    </row>
+    <row r="2"><c r="A2"><v>99</v></c></row>
+  </sheetData>
+</worksheet>`
+		const bytes = new TextEncoder().encode(xml)
+
+		const sheet = parseSheetValuesOnlyBytes('Sheet1', bytes, {
+			sharedStrings,
+			styleIds: [S0],
+			isDateFormat: [false, true],
+			hasDateStyles: true,
+			valuesOnly: true,
+		})
+
+		expect(sheet).not.toBeNull()
+		expect(sheet?.cells.get(0, 0)?.value).toEqual(numberValue(42.5))
+		expect(sheet?.cells.get(0, 1)?.value).toEqual(stringValue('Shared & decoded'))
+		expect(sheet?.cells.get(0, 2)?.value).toEqual(stringValue('inline & entity'))
+		expect(sheet?.cells.get(0, 3)?.value).toEqual(booleanValue(false))
+		expect(sheet?.cells.get(0, 4)?.value).toEqual({ kind: 'error', value: '#N/A' })
+		expect(sheet?.cells.get(0, 5)?.value).toEqual(stringValue('plain <text>'))
+		expect(sheet?.cells.get(0, 6)?.value).toEqual(numberValue(43))
+		expect(sheet?.cells.get(0, 6)?.formula).toBeNull()
+		expect(sheet?.cells.get(0, 7)?.value).toEqual(EMPTY)
+		expect(sheet?.cells.get(0, 7)?.formula).toBeNull()
+		expect(sheet?.cells.get(0, 8)?.value).toEqual(dateValue(45292))
+		expect(sheet?.cells.get(1, 0)?.value).toEqual(numberValue(99))
+		expect(sheet?.rowHeights.get(0)).toBe(27)
+		expect(sheet?.rowDefs.get(0)).toEqual({ hidden: true, collapsed: true, outlineLevel: 2 })
+
+		const cappedSheet = parseSheetValuesOnlyBytes('Sheet1', bytes, {
+			sharedStrings,
+			styleIds: [S0],
+			isDateFormat: [false, true],
+			hasDateStyles: true,
+			valuesOnly: true,
+			maxRows: 1,
+		})
+		expect(cappedSheet?.cells.get(0, 8)?.value).toEqual(dateValue(45292))
+		expect(cappedSheet?.cells.get(1, 0)).toBeUndefined()
+	})
+
+	it('values mode preserves mixed direct values, dates, row metadata, maxRows, and sheet metadata', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>`,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">
+  <si><t>Shared &amp; decoded</t></si>
+</sst>`,
+			'xl/styles.xml': `<?xml version="1.0"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <cellXfs count="2">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
+    <xf numFmtId="14" fontId="0" fillId="0" borderId="0" applyNumberFormat="1"/>
+  </cellXfs>
+</styleSheet>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheetViews><sheetView workbookViewId="0"><pane ySplit="1" state="frozen"/></sheetView></sheetViews>
+  <sheetData>
+    <row r="1" ht="27" customHeight="1" hidden="1" collapsed="1" outlineLevel="2">
+      <c r="A1"><v>42.5</v></c>
+      <c r="B1" t="s"><v>0</v></c>
+      <c r="C1" t="inlineStr"><is><t>inline &amp; entity</t></is></c>
+      <c r="D1" t="b"><v>0</v></c>
+      <c r="E1" t="e"><v>#N/A</v></c>
+      <c r="F1" t="str"><v>plain &lt;text&gt;</v></c>
+      <c r="G1"><f>SUM(A1:A1)</f><v>43</v></c>
+      <c r="H1"><f>SUM(A1:A1)</f></c>
+      <c r="I1" s="1"><v>45292</v></c>
+    </row>
+    <row r="2"><c r="A2"><v>99</v></c></row>
+  </sheetData>
+  <mergeCells count="1"><mergeCell ref="A1:B1"/></mergeCells>
+  <autoFilter ref="A1:I2"/>
+  <pageMargins left="0.7" right="0.8" top="0.9" bottom="1"/>
+  <pageSetup orientation="portrait" fitToWidth="1" fitToHeight="0"/>
+  <rowBreaks count="1" manualBreakCount="1"><brk id="1" min="0" max="16383" man="1"/></rowBreaks>
+  <ignoredErrors><ignoredError sqref="F1" numberStoredAsText="1"/></ignoredErrors>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes, { mode: 'values' })
+		expectOk(result)
+		expect(result.value.loadInfo.richSheetMetadataHydrated).toBe(false)
+
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet?.cells.get(0, 0)?.value).toEqual({ kind: 'number', value: 42.5 })
+		expect(sheet?.cells.get(0, 1)?.value).toEqual({
+			kind: 'string',
+			value: 'Shared & decoded',
+		})
+		expect(sheet?.cells.get(0, 2)?.value).toEqual({
+			kind: 'string',
+			value: 'inline & entity',
+		})
+		expect(sheet?.cells.get(0, 3)?.value).toEqual({ kind: 'boolean', value: false })
+		expect(sheet?.cells.get(0, 4)?.value).toEqual({ kind: 'error', value: '#N/A' })
+		expect(sheet?.cells.get(0, 5)?.value).toEqual({ kind: 'string', value: 'plain <text>' })
+		expect(sheet?.cells.get(0, 6)?.value).toEqual({ kind: 'number', value: 43 })
+		expect(sheet?.cells.get(0, 6)?.formula).toBeNull()
+		expect(sheet?.cells.get(0, 7)?.value).toEqual(EMPTY)
+		expect(sheet?.cells.get(0, 7)?.formula).toBeNull()
+		expect(sheet?.cells.get(0, 8)?.value).toEqual({ kind: 'date', serial: 45292 })
+		expect(sheet?.cells.get(1, 0)?.value).toEqual({ kind: 'number', value: 99 })
+
+		expect(sheet?.rowHeights.get(0)).toBe(27)
+		expect(sheet?.rowDefs.get(0)).toEqual({ hidden: true, collapsed: true, outlineLevel: 2 })
+		expect(sheet?.frozenRows).toBe(1)
+		expect(sheet?.merges).toEqual([{ start: { row: 0, col: 0 }, end: { row: 0, col: 1 } }])
+		expect(sheet?.autoFilter?.ref).toBe('A1:I2')
+		expect(sheet?.pageMargins).toEqual({ left: 0.7, right: 0.8, top: 0.9, bottom: 1 })
+		expect(sheet?.pageSetup).toEqual({ orientation: 'portrait', fitToWidth: 1, fitToHeight: 0 })
+		expect(sheet?.rowBreaks).toEqual([{ id: 1, min: 0, max: 16383, man: true }])
+		expect(sheet?.ignoredErrors).toEqual([{ sqref: 'F1', numberStoredAsText: true }])
+
+		const capped = readXlsx(bytes, { mode: 'values', maxRows: 1 })
+		expectOk(capped)
+		expect(capped.value.loadInfo.isPartial).toBe(true)
+		const cappedSheet = capped.value.workbook.sheets[0]
+		expect(cappedSheet?.cells.get(0, 8)?.value).toEqual({ kind: 'date', serial: 45292 })
+		expect(cappedSheet?.cells.get(1, 0)).toBeUndefined()
+		expect(cappedSheet?.rowHeights.get(0)).toBe(27)
+		expect(cappedSheet?.autoFilter?.ref).toBe('A1:I2')
 	})
 
 	it('values mode reads dense workbooks successfully across repeated runs', () => {

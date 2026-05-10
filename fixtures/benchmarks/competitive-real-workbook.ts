@@ -286,21 +286,22 @@ export function roundtripAssertions(
 interface EditTarget {
 	readonly sheetName: string
 	readonly ref: string
-	readonly oldValue: number
-	readonly newValue: number
+	readonly valueType: 'number' | 'string' | 'boolean'
+	readonly oldValue: string | number | boolean
+	readonly newValue: string | number | boolean
 }
 
 function selectEditTarget(target: WorkbookTarget): EditTarget {
-	const selected = findFirstNumericNonFormulaCell(target.bytes)
+	const selected = findFirstEditableScalarCell(target.bytes)
 	if (!selected) {
-		throw new Error(`${target.name} has no non-formula numeric cell for edit-roundtrip`)
+		throw new Error(`${target.name} has no non-formula scalar cell for edit-roundtrip`)
 	}
-	const newValue = selected.value === 424242 ? 424243 : 424242
 	return {
 		sheetName: selected.sheetName,
 		ref: selected.ref,
+		valueType: selected.valueType,
 		oldValue: selected.value,
-		newValue,
+		newValue: editReplacementValue(selected.value),
 	}
 }
 
@@ -310,11 +311,12 @@ function editRoundtripAssertions(
 	edit: EditTarget,
 ): Record<string, string | number | boolean | null> {
 	const assertions = roundtripAssertions(bytes, target)
-	const observed = readCellNumber(bytes, edit.sheetName, edit.ref)
+	const observed = readCellScalar(bytes, edit.sheetName, edit.ref)
 	return {
 		...assertions,
 		editSheetName: edit.sheetName,
 		editRef: edit.ref,
+		editValueType: edit.valueType,
 		editOldValue: edit.oldValue,
 		editExpectedValue: edit.newValue,
 		editObservedValue: observed,
@@ -1485,20 +1487,32 @@ function extractExpectedWorkbookShape(bytes: Uint8Array): WorkbookShapeSummary {
 	}
 }
 
-function findFirstNumericNonFormulaCell(
-	bytes: Uint8Array,
-): { sheetName: string; ref: string; value: number } | null {
+function findFirstEditableScalarCell(bytes: Uint8Array): {
+	sheetName: string
+	ref: string
+	valueType: EditTarget['valueType']
+	value: string | number | boolean
+} | null {
 	const archive = extractZip(bytes)
 	const workbookXml = archive.readText('xl/workbook.xml')
 	const workbookRelsXml = archive.readText('xl/_rels/workbook.xml.rels')
 	if (!workbookXml || !workbookRelsXml) return null
 	const workbookInfo = parseWorkbookXml(workbookXml)
 	const workbookRels = parseRelationships(workbookRelsXml)
+	const sharedStringsRel = workbookRels.find((rel) => rel.type === REL_SHARED_STRINGS)
+	const sharedStringsXml = sharedStringsRel
+		? archive.readText(resolvePath('xl/workbook.xml', sharedStringsRel.target))
+		: undefined
+	const sharedStrings = sharedStringsXml
+		? parseSharedStrings(sharedStringsXml, { lazy: true })
+		: emptySharedStrings()
 	const worksheetRels = new Map(
 		workbookRels
 			.filter((rel) => rel.type === REL_WORKSHEET)
 			.map((rel) => [rel.id, resolvePath('xl/workbook.xml', rel.target)]),
 	)
+	let firstBoolean: ReturnType<typeof editableCellCandidate> = null
+	let firstString: ReturnType<typeof editableCellCandidate> = null
 	for (const sheet of workbookInfo.sheets) {
 		const partPath = worksheetRels.get(sheet.rId)
 		const xml = partPath ? archive.readText(partPath) : undefined
@@ -1510,29 +1524,62 @@ function findFirstNumericNonFormulaCell(
 			if (bodyEnd < bodyStart) continue
 			const body = xml.slice(bodyStart, bodyEnd)
 			if (/<f\b/.test(body)) continue
-			const type = /(?:^|\s)t="([^"]+)"/.exec(attrs)?.[1]
-			if (type && type !== 'n') continue
 			const ref = /(?:^|\s)r="([^"]+)"/.exec(attrs)?.[1]
 			if (!parseA1Safe(ref)) continue
-			const raw = extractCellValueText(body)
-			if (raw === null || raw === '') continue
-			const value = Number(raw)
-			if (!Number.isFinite(value)) continue
-			return { sheetName: sheet.name, ref: ref as string, value }
+			const candidate = editableCellCandidate(sheet.name, ref, attrs, body, sharedStrings)
+			if (!candidate) continue
+			if (candidate.valueType === 'number') return candidate
+			if (candidate.valueType === 'boolean') firstBoolean ??= candidate
+			if (candidate.valueType === 'string') firstString ??= candidate
 		}
 	}
-	return null
+	return firstBoolean ?? firstString
 }
 
-function readCellNumber(bytes: Uint8Array, sheetName: string, ref: string): number | null {
+function editableCellCandidate(
+	sheetName: string,
+	ref: string,
+	attrs: string,
+	body: string,
+	sharedStrings: SharedStringResolver,
+): {
+	sheetName: string
+	ref: string
+	valueType: EditTarget['valueType']
+	value: string | number | boolean
+} | null {
+	const value = readCellScalarValue(attrs, body, sharedStrings)
+	if (value === null || value === '') return null
+	return { sheetName, ref, valueType: typeof value, value }
+}
+
+function editReplacementValue(value: string | number | boolean): string | number | boolean {
+	if (typeof value === 'number') return value === 424242 ? 424243 : 424242
+	if (typeof value === 'boolean') return !value
+	return value === 'Ascend edit probe' ? 'Ascend edit probe 2' : 'Ascend edit probe'
+}
+
+function readCellScalar(
+	bytes: Uint8Array,
+	sheetName: string,
+	ref: string,
+): string | number | boolean | null {
 	const archive = extractZip(bytes)
 	const workbookXml = archive.readText('xl/workbook.xml')
 	const workbookRelsXml = archive.readText('xl/_rels/workbook.xml.rels')
 	if (!workbookXml || !workbookRelsXml) return null
+	const workbookRels = parseRelationships(workbookRelsXml)
+	const sharedStringsRel = workbookRels.find((rel) => rel.type === REL_SHARED_STRINGS)
+	const sharedStringsXml = sharedStringsRel
+		? archive.readText(resolvePath('xl/workbook.xml', sharedStringsRel.target))
+		: undefined
+	const sharedStrings = sharedStringsXml
+		? parseSharedStrings(sharedStringsXml, { lazy: true })
+		: emptySharedStrings()
 	const workbookInfo = parseWorkbookXml(workbookXml)
 	const sheet = workbookInfo.sheets.find((entry) => entry.name === sheetName)
 	if (!sheet) return null
-	const relationship = parseRelationships(workbookRelsXml).find(
+	const relationship = workbookRels.find(
 		(rel) => rel.type === REL_WORKSHEET && rel.id === sheet.rId,
 	)
 	if (!relationship) return null
@@ -1540,7 +1587,31 @@ function readCellNumber(bytes: Uint8Array, sheetName: string, ref: string): numb
 	if (!xml) return null
 	const cell = findCellXml(xml, ref)
 	if (!cell) return null
-	const raw = extractCellValueText(cell.body)
+	return readCellScalarValue(cell.attrs, cell.body, sharedStrings)
+}
+
+function readCellScalarValue(
+	attrs: string,
+	body: string,
+	sharedStrings: SharedStringResolver,
+): string | number | boolean | null {
+	const type = /(?:^|\s)t="([^"]+)"/.exec(attrs)?.[1]
+	const raw = extractCellValueText(body)
+	if (type === 's') {
+		const index = raw !== null ? Number.parseInt(raw, 10) : -1
+		if (index < 0) return ''
+		const text = sharedStrings.getString?.(index)
+		if (text !== undefined) return text
+		const value = sharedStrings.get(index)
+		const scalar = value ? topLeftScalar(value) : null
+		return scalar?.kind === 'string' || scalar?.kind === 'richText'
+			? serializeCellValue(value).slice(2)
+			: ''
+	}
+	if (type === 'inlineStr') return extractInlineStringText(body)
+	if (type === 'str') return raw ?? ''
+	if (type === 'b') return raw === '1' || raw === 'true'
+	if (type === 'e') return null
 	if (raw === null || raw === '') return null
 	const value = Number(raw)
 	return Number.isFinite(value) ? value : null
@@ -2158,6 +2229,15 @@ function isExcelJsSemanticCell(value: unknown): boolean {
 	return value !== undefined && value !== null && value !== ''
 }
 
+function sheetJsEditCell(value: string | number | boolean): {
+	t: 'b' | 'n' | 's'
+	v: string | number | boolean
+} {
+	if (typeof value === 'number') return { t: 'n', v: value }
+	if (typeof value === 'boolean') return { t: 'b', v: value }
+	return { t: 's', v: value }
+}
+
 function formulaTextOf(value: unknown): string | null {
 	if (typeof value !== 'object' || value === null) return null
 	const record = value as Record<string, unknown>
@@ -2385,7 +2465,7 @@ async function loadCases(): Promise<{
 					})
 					const worksheet = workbook.Sheets[edit.sheetName]
 					if (!worksheet) throw new Error(`SheetJS missing sheet ${edit.sheetName}`)
-					worksheet[edit.ref] = { t: 'n', v: edit.newValue }
+					worksheet[edit.ref] = sheetJsEditCell(edit.newValue)
 					const bookType = target.extension === '.xlsm' ? 'xlsm' : 'xlsx'
 					const bytes = sheetJs.write(workbook, { type: 'buffer', bookType }) as Uint8Array
 					const durationMs = performance.now() - start
@@ -2403,7 +2483,7 @@ async function loadCases(): Promise<{
 					})
 					const worksheet = workbook.Sheets[edit.sheetName]
 					if (!worksheet) throw new Error(`SheetJS missing sheet ${edit.sheetName}`)
-					worksheet[edit.ref] = { t: 'n', v: edit.newValue }
+					worksheet[edit.ref] = sheetJsEditCell(edit.newValue)
 					const bookType = target.extension === '.xlsm' ? 'xlsm' : 'xlsx'
 					const bytes = sheetJs.write(workbook, { type: 'buffer', bookType }) as Uint8Array
 					return {
@@ -2621,6 +2701,8 @@ function externalRunnerCommand(
 			edit.sheetName,
 			'--edit-ref',
 			edit.ref,
+			'--edit-value-type',
+			edit.valueType,
 			'--edit-value',
 			String(edit.newValue),
 			'--edit-old-value',
@@ -3167,7 +3249,7 @@ async function main(): Promise<void> {
 					},
 				],
 				invocation:
-					'<command...> --operation <read|roundtrip|edit-roundtrip> --file <path> [--edit-sheet NAME --edit-ref A1 --edit-value N] [--repeat N --warmup N] --json',
+					'<command...> --operation <read|roundtrip|edit-roundtrip> --file <path> [--edit-sheet NAME --edit-ref A1 --edit-value-type number|string|boolean --edit-value VALUE] [--repeat N --warmup N] --json',
 				output:
 					'JSON object or { "assertions": object, "samples": [{"durationMs": number}] } with primitive assertion values',
 				timingModel:

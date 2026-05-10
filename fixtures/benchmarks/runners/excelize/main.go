@@ -28,20 +28,22 @@ import (
 const runnerVersion = "1"
 
 type args struct {
-	operation      string
-	file           string
-	rows           int
-	cols           int
-	workload       string
-	repeat         int
-	warmup         int
-	validationMode string
-	editSheet      string
-	editRef        string
-	editValue      float64
-	editValueSet   bool
-	editOldValue   *float64
-	pretty         bool
+	operation       string
+	file            string
+	rows            int
+	cols            int
+	workload        string
+	repeat          int
+	warmup          int
+	validationMode  string
+	editSheet       string
+	editRef         string
+	editValueType   string
+	editValue       any
+	editValueSet    bool
+	editOldValue    any
+	editOldValueSet bool
+	pretty          bool
 }
 
 type sample struct {
@@ -85,7 +87,7 @@ func run() error {
 			if err != nil {
 				return err
 			}
-			if _, err := editRoundtripAssertions(parsed.file, data, parsed.editSheet, parsed.editRef, parsed.editValue, parsed.editOldValue); err != nil {
+			if _, err := editRoundtripAssertions(parsed.file, data, parsed.editSheet, parsed.editRef, parsed.editValue, parsed.editOldValue, parsed.editOldValueSet, parsed.editValueType); err != nil {
 				return err
 			}
 		} else if _, err := writeWorkbook(parsed.workload, parsed.rows, parsed.cols); err != nil {
@@ -121,7 +123,7 @@ func run() error {
 				return err
 			}
 		} else if parsed.operation == "edit-roundtrip" {
-			assertions, err = editRoundtripAssertions(parsed.file, lastData, parsed.editSheet, parsed.editRef, parsed.editValue, parsed.editOldValue)
+			assertions, err = editRoundtripAssertions(parsed.file, lastData, parsed.editSheet, parsed.editRef, parsed.editValue, parsed.editOldValue, parsed.editOldValueSet, parsed.editValueType)
 			if err != nil {
 				return err
 			}
@@ -161,7 +163,7 @@ func run() error {
 }
 
 func parseArgs(values []string) (args, error) {
-	parsed := args{workload: "dense-values", repeat: 1, validationMode: "each", pretty: true}
+	parsed := args{workload: "dense-values", repeat: 1, validationMode: "each", editValueType: "number", pretty: true}
 	for i := 0; i < len(values); i++ {
 		switch values[i] {
 		case "--operation":
@@ -231,14 +233,23 @@ func parseArgs(values []string) (args, error) {
 				return parsed, errors.New("missing value for --edit-ref")
 			}
 			parsed.editRef = values[i]
+		case "--edit-value-type":
+			i++
+			if i >= len(values) {
+				return parsed, errors.New("missing value for --edit-value-type")
+			}
+			if values[i] != "number" && values[i] != "string" && values[i] != "boolean" {
+				return parsed, fmt.Errorf("unsupported --edit-value-type %q: expected number, string, or boolean", values[i])
+			}
+			parsed.editValueType = values[i]
 		case "--edit-value":
 			i++
 			if i >= len(values) {
 				return parsed, errors.New("missing value for --edit-value")
 			}
-			value, err := strconv.ParseFloat(values[i], 64)
+			value, err := parseEditValue(values[i], parsed.editValueType)
 			if err != nil {
-				return parsed, fmt.Errorf("--edit-value must be numeric")
+				return parsed, fmt.Errorf("--edit-value %w", err)
 			}
 			parsed.editValue = value
 			parsed.editValueSet = true
@@ -247,11 +258,12 @@ func parseArgs(values []string) (args, error) {
 			if i >= len(values) {
 				return parsed, errors.New("missing value for --edit-old-value")
 			}
-			value, err := strconv.ParseFloat(values[i], 64)
+			value, err := parseEditValue(values[i], parsed.editValueType)
 			if err != nil {
-				return parsed, fmt.Errorf("--edit-old-value must be numeric")
+				return parsed, fmt.Errorf("--edit-old-value %w", err)
 			}
-			parsed.editOldValue = &value
+			parsed.editOldValue = value
+			parsed.editOldValueSet = true
 		case "--json":
 			parsed.pretty = false
 		default:
@@ -271,6 +283,30 @@ func parseArgs(values []string) (args, error) {
 		return parsed, errors.New("edit-roundtrip requires --edit-sheet, --edit-ref, and --edit-value")
 	}
 	return parsed, nil
+}
+
+func parseEditValue(raw string, valueType string) (any, error) {
+	switch valueType {
+	case "number":
+		value, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			return nil, errors.New("must be numeric")
+		}
+		return value, nil
+	case "boolean":
+		normalized := strings.ToLower(raw)
+		if normalized == "1" || normalized == "true" {
+			return true, nil
+		}
+		if normalized == "0" || normalized == "false" {
+			return false, nil
+		}
+		return nil, errors.New("must be boolean")
+	case "string":
+		return raw, nil
+	default:
+		return nil, fmt.Errorf("has unsupported type %q", valueType)
+	}
 }
 
 func parseCount(name string, values []string, index int) (int, error) {
@@ -293,7 +329,7 @@ func readAssertions(path string) (map[string]any, error) {
 	return workbookAssertions(workbook)
 }
 
-func editRoundtripBytes(path string, sheetName string, ref string, value float64) ([]byte, error) {
+func editRoundtripBytes(path string, sheetName string, ref string, value any) ([]byte, error) {
 	workbook, err := excelize.OpenFile(path)
 	if err != nil {
 		return nil, err
@@ -309,7 +345,7 @@ func editRoundtripBytes(path string, sheetName string, ref string, value float64
 	return output.Bytes(), nil
 }
 
-func editRoundtripAssertions(path string, data []byte, sheetName string, ref string, expectedValue float64, oldValue *float64) (map[string]any, error) {
+func editRoundtripAssertions(path string, data []byte, sheetName string, ref string, expectedValue any, oldValue any, oldValueSet bool, valueType string) (map[string]any, error) {
 	original, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -318,21 +354,22 @@ func editRoundtripAssertions(path string, data []byte, sheetName string, ref str
 	if err != nil {
 		return nil, err
 	}
-	observed := readZipCellNumber(data, sheetName, ref)
+	observed := readZipCellValue(data, sheetName, ref)
 	assertions["runnerVersion"] = runnerVersion
 	assertions["excelizeVersion"] = moduleVersion("github.com/xuri/excelize/v2")
 	assertions["bytes"] = len(data)
 	assertions["byteIdentical"] = sha256.Sum256(data) == sha256.Sum256(original)
 	assertions["editSheetName"] = sheetName
 	assertions["editRef"] = ref
-	if oldValue == nil {
+	assertions["editValueType"] = valueType
+	if !oldValueSet {
 		assertions["editOldValue"] = nil
 	} else {
-		assertions["editOldValue"] = *oldValue
+		assertions["editOldValue"] = oldValue
 	}
 	assertions["editExpectedValue"] = expectedValue
 	assertions["editObservedValue"] = observed
-	assertions["editCellValueMatches"] = observed != nil && *observed == expectedValue
+	assertions["editCellValueMatches"] = editValuesEqual(observed, expectedValue)
 	return assertions, nil
 }
 
@@ -1003,12 +1040,16 @@ func zipCellPayload(cellType string, raw string, inline string, sharedStrings []
 	return generatedCellPayload(cellType, raw, inline, sharedStrings)
 }
 
-func readZipCellNumber(data []byte, sheetName string, ref string) *float64 {
+func readZipCellValue(data []byte, sheetName string, ref string) any {
 	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return nil
 	}
 	sheets, err := workbookSheets(reader)
+	if err != nil {
+		return nil
+	}
+	sharedStrings, err := workbookSharedStrings(reader)
 	if err != nil {
 		return nil
 	}
@@ -1028,7 +1069,10 @@ func readZipCellNumber(data []byte, sheetName string, ref string) *float64 {
 		decoder := xml.NewDecoder(stream)
 		inTarget := false
 		inValue := false
+		inInlineText := false
+		cellType := ""
 		var value strings.Builder
+		var inline strings.Builder
 		for {
 			token, err := decoder.Token()
 			if err == io.EOF {
@@ -1041,28 +1085,69 @@ func readZipCellNumber(data []byte, sheetName string, ref string) *float64 {
 			case xml.StartElement:
 				if typed.Name.Local == "c" {
 					inTarget = xmlAttr(typed.Attr, "r") == ref
+					cellType = xmlAttr(typed.Attr, "t")
 					value.Reset()
+					inline.Reset()
 				} else if inTarget && typed.Name.Local == "v" {
 					inValue = true
+				} else if inTarget && typed.Name.Local == "t" {
+					inInlineText = true
 				}
 			case xml.CharData:
 				if inValue {
 					value.Write([]byte(typed))
 				}
+				if inInlineText {
+					inline.Write([]byte(typed))
+				}
 			case xml.EndElement:
 				if typed.Name.Local == "v" {
 					inValue = false
+				} else if typed.Name.Local == "t" {
+					inInlineText = false
 				} else if typed.Name.Local == "c" && inTarget {
-					observed, err := strconv.ParseFloat(value.String(), 64)
-					if err != nil {
-						return nil
-					}
-					return &observed
+					return zipCellScalarValue(cellType, value.String(), inline.String(), sharedStrings)
 				}
 			}
 		}
 	}
 	return nil
+}
+
+func zipCellScalarValue(cellType string, raw string, inline string, sharedStrings []string) any {
+	switch cellType {
+	case "b":
+		normalized := strings.ToLower(raw)
+		return normalized == "1" || normalized == "true"
+	case "inlineStr":
+		return inline
+	case "s":
+		index, err := strconv.Atoi(raw)
+		if err != nil || index < 0 || index >= len(sharedStrings) {
+			return ""
+		}
+		return sharedStrings[index]
+	case "str":
+		return raw
+	default:
+		if raw == "" {
+			return nil
+		}
+		value, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			return raw
+		}
+		return value
+	}
+}
+
+func editValuesEqual(observed any, expected any) bool {
+	observedNumber, observedIsNumber := observed.(float64)
+	expectedNumber, expectedIsNumber := expected.(float64)
+	if observedIsNumber && expectedIsNumber {
+		return observedNumber == expectedNumber
+	}
+	return observed == expected
 }
 
 func writeAssertions(workload string, rows int, cols int) (map[string]any, error) {

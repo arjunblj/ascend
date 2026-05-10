@@ -7,19 +7,13 @@ import argparse
 import hashlib
 import io
 import json
-import re
 import time
-import zipfile
 from pathlib import Path
 from typing import Any
-from xml.etree import ElementTree
 
 import openpyxl
 from memory_metrics import memory_baseline, sample_with_memory
 from package_fingerprint import (
-    parse_relationships,
-    read_text,
-    resolve_path,
     roundtrip_feature_assertions,
     roundtrip_package_assertions,
 )
@@ -279,7 +273,7 @@ def roundtrip_operation(path: Path) -> bytes:
         workbook.close()
 
 
-def edit_roundtrip_operation(path: Path, sheet_name: str, ref: str, value: float) -> bytes:
+def edit_roundtrip_operation(path: Path, sheet_name: str, ref: str, value: str | float | bool) -> bytes:
     workbook = load_workbook_for_read(path)
     try:
         workbook[sheet_name][ref].value = value
@@ -312,61 +306,27 @@ def roundtrip_assertions(path: Path, data: bytes) -> dict[str, str | int | bool 
     }
 
 
-def read_roundtrip_cell_number(data: bytes, sheet_name: str, ref: str) -> float | int | None:
-    with zipfile.ZipFile(io.BytesIO(data)) as archive:
-        workbook_xml = read_text(archive, "xl/workbook.xml")
-        workbook_rels_xml = read_text(archive, "xl/_rels/workbook.xml.rels")
-        if workbook_xml is None or workbook_rels_xml is None:
+def read_roundtrip_cell_value(
+    path: Path, data: bytes, sheet_name: str, ref: str
+) -> str | float | int | bool | None:
+    workbook = openpyxl.load_workbook(
+        io.BytesIO(data),
+        read_only=False,
+        data_only=False,
+        keep_vba=path.suffix == ".xlsm",
+    )
+    try:
+        if sheet_name not in workbook.sheetnames:
             return None
-        workbook = ElementTree.fromstring(workbook_xml)
-        sheet_rid = None
-        for sheet in workbook.iter():
-            if not sheet.tag.endswith("sheet") or sheet.attrib.get("name") != sheet_name:
-                continue
-            sheet_rid = next(
-                (
-                    value
-                    for key, value in sheet.attrib.items()
-                    if key.endswith("}id") or key == "r:id"
-                ),
-                None,
-            )
-            break
-        if sheet_rid is None:
-            return None
-        relationship = next(
-            (
-                rel
-                for rel in parse_relationships(workbook_rels_xml)
-                if rel["id"] == sheet_rid and rel["type"].endswith("/worksheet")
-            ),
-            None,
-        )
-        if relationship is None:
-            return None
-        sheet_xml = read_text(archive, resolve_path("xl/workbook.xml", relationship["target"]))
-        if sheet_xml is None:
-            return None
-        for match in re.finditer(r"<c\b([^>]*)>", sheet_xml):
-            attrs = match.group(1) or ""
-            ref_match = re.search(r'(?:^|\s)r="([^"]+)"', attrs)
-            if ref_match is None or ref_match.group(1) != ref:
-                continue
-            body_start = match.end()
-            body_end = (
-                body_start if attrs.rstrip().endswith("/") else sheet_xml.find("</c>", body_start)
-            )
-            if body_end < body_start:
-                return None
-            value_match = re.search(r"<v[^>]*>(.*?)</v>", sheet_xml[body_start:body_end], re.S)
-            if value_match is None:
-                return None
-            try:
-                observed = float(value_match.group(1))
-            except ValueError:
-                return None
+        value = workbook[sheet_name][ref].value
+        if isinstance(value, bool) or isinstance(value, str) or value is None:
+            return value
+        if isinstance(value, (int, float)):
+            observed = float(value)
             return int(observed) if observed.is_integer() else observed
-    return None
+        return str(value)
+    finally:
+        workbook.close()
 
 
 def edit_roundtrip_assertions(
@@ -374,19 +334,37 @@ def edit_roundtrip_assertions(
     data: bytes,
     sheet_name: str,
     ref: str,
-    expected_value: float,
-    old_value: float | None,
+    expected_value: str | float | bool,
+    old_value: str | float | bool | None,
+    value_type: str,
 ) -> dict[str, str | int | bool | None]:
-    observed = read_roundtrip_cell_number(data, sheet_name, ref)
+    observed = read_roundtrip_cell_value(path, data, sheet_name, ref)
     return {
         **roundtrip_assertions(path, data),
         "editSheetName": sheet_name,
         "editRef": ref,
+        "editValueType": value_type,
         "editOldValue": old_value,
         "editExpectedValue": expected_value,
         "editObservedValue": observed,
         "editCellValueMatches": observed == expected_value,
     }
+
+
+def parse_edit_value(raw: str | None, value_type: str) -> str | float | bool | None:
+    if raw is None:
+        return None
+    if value_type == "string":
+        return raw
+    if value_type == "boolean":
+        normalized = raw.lower()
+        if normalized in ("1", "true"):
+            return True
+        if normalized in ("0", "false"):
+            return False
+        raise ValueError(f"unsupported boolean edit value: {raw!r}")
+    value = float(raw)
+    return int(value) if value.is_integer() else value
 
 
 def run_operation(
@@ -396,7 +374,7 @@ def run_operation(
     data_only: bool,
     edit_sheet: str | None,
     edit_ref: str | None,
-    edit_value: float | None,
+    edit_value: str | float | bool | None,
 ) -> Any:
     if operation == "read":
         workbook = load_workbook_for_read(path, read_only=read_only, data_only=data_only)
@@ -421,8 +399,9 @@ def assertions_for_result(
     data_only: bool,
     edit_sheet: str | None,
     edit_ref: str | None,
-    edit_value: float | None,
-    edit_old_value: float | None,
+    edit_value: str | float | bool | None,
+    edit_old_value: str | float | bool | None,
+    edit_value_type: str,
 ) -> dict[str, str | int | bool | None]:
     if operation == "read":
         if isinstance(result, dict) and result.get("__streamingShapeData") is True:
@@ -439,7 +418,7 @@ def assertions_for_result(
         if edit_sheet is None or edit_ref is None or edit_value is None:
             raise ValueError("edit-roundtrip requires --edit-sheet, --edit-ref, and --edit-value")
         return edit_roundtrip_assertions(
-            path, result, edit_sheet, edit_ref, edit_value, edit_old_value
+            path, result, edit_sheet, edit_ref, edit_value, edit_old_value, edit_value_type
         )
     return roundtrip_assertions(path, result)
 
@@ -455,8 +434,9 @@ def main() -> None:
     parser.add_argument("--metadata-only", action="store_true")
     parser.add_argument("--edit-sheet")
     parser.add_argument("--edit-ref")
-    parser.add_argument("--edit-value", type=float)
-    parser.add_argument("--edit-old-value", type=float)
+    parser.add_argument("--edit-value")
+    parser.add_argument("--edit-old-value")
+    parser.add_argument("--edit-value-type", choices=["number", "string", "boolean"], default="number")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     if args.operation != "read" and (args.read_only or args.data_only):
@@ -467,6 +447,8 @@ def main() -> None:
         args.edit_sheet is None or args.edit_ref is None or args.edit_value is None
     ):
         parser.error("edit-roundtrip requires --edit-sheet, --edit-ref, and --edit-value")
+    edit_value = parse_edit_value(args.edit_value, args.edit_value_type)
+    edit_old_value = parse_edit_value(args.edit_old_value, args.edit_value_type)
 
     path = Path(args.file)
     for _ in range(max(0, args.warmup)):
@@ -480,7 +462,7 @@ def main() -> None:
                 args.data_only,
                 args.edit_sheet,
                 args.edit_ref,
-                args.edit_value,
+                edit_value,
             )
             assertions_for_result(
                 path,
@@ -490,8 +472,9 @@ def main() -> None:
                 args.data_only,
                 args.edit_sheet,
                 args.edit_ref,
-                args.edit_value,
-                args.edit_old_value,
+                edit_value,
+                edit_old_value,
+                args.edit_value_type,
             )
     samples: list[dict[str, float]] = []
     assertions: dict[str, str | int | bool | None] | None = None
@@ -512,7 +495,7 @@ def main() -> None:
             args.data_only,
             args.edit_sheet,
             args.edit_ref,
-            args.edit_value,
+            edit_value,
         )
         duration_ms = (time.perf_counter() - start) * 1000
         assertions = assertions_for_result(
@@ -523,8 +506,9 @@ def main() -> None:
             args.data_only,
             args.edit_sheet,
             args.edit_ref,
-            args.edit_value,
-            args.edit_old_value,
+            edit_value,
+            edit_old_value,
+            args.edit_value_type,
         )
         samples.append(sample_with_memory(duration_ms, before))
     payload = {"assertions": assertions or {}, "samples": samples}

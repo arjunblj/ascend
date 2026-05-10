@@ -793,6 +793,40 @@ describe('evaluateAssertions', () => {
 		expect(FULL_CORPUS_TARGETS).toContain('fixtures/xlsx/exceljs/chart-sheet.xlsx')
 	})
 
+	test('edit-roundtrip falls back to string cells when a workbook has no numeric edit target', () => {
+		const proc = Bun.spawnSync({
+			cmd: [
+				'bun',
+				'run',
+				'fixtures/benchmarks/competitive-real-workbook.ts',
+				'--category',
+				'edit-roundtrip',
+				'--repeat',
+				'1',
+				'--warmup',
+				'0',
+				'--libraries',
+				'ascend',
+				'--json',
+				'fixtures/xlsx/poi/Themes.xlsx',
+			],
+			stdout: 'pipe',
+			stderr: 'pipe',
+		})
+		expect(proc.exitCode).toBe(0)
+		const payload = JSON.parse(new TextDecoder().decode(proc.stdout)) as {
+			cases: Array<{
+				dimensions: { correctnessStatus: string }
+				assertions: { editValueType?: string; editCellValueMatches?: boolean }
+			}>
+			failed?: unknown[]
+		}
+		expect(payload.failed ?? []).toEqual([])
+		expect(payload.cases[0]?.dimensions.correctnessStatus).toBe('semantic-roundtrip-pass')
+		expect(payload.cases[0]?.assertions.editValueType).toBe('string')
+		expect(payload.cases[0]?.assertions.editCellValueMatches).toBe(true)
+	})
+
 	test('default real-workbook sweeps span vendored OSS corpuses and feature tags', async () => {
 		const physicalRoots = ['poi', 'calamine', 'closedxml', 'exceljs', 'libreoffice'] as const
 		for (const root of physicalRoots) {

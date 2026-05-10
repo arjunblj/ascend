@@ -2805,6 +2805,33 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(4, 1)?.value).toEqual(numberValue(60))
 	})
 
+	test('SUBTOTAL table column references prefer saved filter visibility over stale criteria', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		addSalesTable(sheet, 'FilteredSales', {
+			ref: 'A1:B4',
+			columns: [{ colId: 0, kind: 'filters', values: ['West'] }],
+		})
+		populateRegionSalesRows(sheet)
+		sheet.rowDefs.set(2, { hidden: true })
+		sheet.cells.set(4, 0, {
+			value: EMPTY,
+			formula: 'SUBTOTAL(9,FilteredSales[Sales])',
+			styleId: sid,
+		})
+		sheet.cells.set(4, 1, {
+			value: EMPTY,
+			formula: 'SUBTOTAL(109,FilteredSales[Sales])',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(4, 0)?.value).toEqual(numberValue(60))
+		expect(sheet.cells.get(4, 1)?.value).toEqual(numberValue(60))
+	})
+
 	test('SUBTOTAL skips hidden rows in referenced ranges', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

@@ -1773,6 +1773,7 @@ interface ActiveFilterRange {
 	readonly dateSystem: '1900' | '1904'
 	readonly today: Date
 	readonly columns: readonly PreparedFilterColumn[]
+	readonly savedHiddenRows?: ReadonlySet<number>
 }
 
 type FilterRangeBounds = Pick<ActiveFilterRange, 'startRow' | 'startCol' | 'endRow'>
@@ -1818,6 +1819,7 @@ function activeFilterRanges(
 					sheet.autoFilter.columns,
 					conditionalFormats,
 				),
+				...savedHiddenRowsForFilterRange(sheet, range),
 			})
 	}
 	for (const table of sheet.tables) {
@@ -1835,9 +1837,21 @@ function activeFilterRanges(
 					table.autoFilter.columns,
 					conditionalFormats,
 				),
+				...savedHiddenRowsForFilterRange(sheet, range),
 			})
 	}
 	return ranges
+}
+
+function savedHiddenRowsForFilterRange(
+	sheet: Sheet,
+	range: FilterRangeBounds,
+): { readonly savedHiddenRows?: ReadonlySet<number> } {
+	const rows = new Set<number>()
+	for (let row = range.startRow + 1; row <= range.endRow; row++) {
+		if (sheet.rowDefs.get(row)?.hidden === true) rows.add(row)
+	}
+	return rows.size > 0 ? { savedHiddenRows: rows } : {}
 }
 
 function prepareFilterColumns(
@@ -2487,8 +2501,10 @@ function makeRangeArea(
 				(range) =>
 					row > range.startRow &&
 					row <= range.endRow &&
-					(sheet?.rowDefs.get(row)?.hidden === true ||
-						(sheet ? rowFailsFilterCriteria(sheet, row, range) : false)),
+					(range.savedHiddenRows
+						? range.savedHiddenRows.has(row)
+						: sheet?.rowDefs.get(row)?.hidden === true ||
+							(sheet ? rowFailsFilterCriteria(sheet, row, range) : false)),
 			)
 		},
 		get values() {

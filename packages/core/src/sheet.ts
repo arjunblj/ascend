@@ -213,6 +213,10 @@ export interface SheetDrawingObjectRef {
 export interface SheetSparklineGroupInfo {
 	readonly groupIndex: number
 	readonly type?: string
+	readonly manualMax?: number
+	readonly manualMin?: number
+	readonly lineWeight?: number
+	readonly uid?: string
 	readonly displayEmptyCellsAs?: string
 	readonly dateAxis?: boolean
 	readonly markers?: boolean
@@ -222,10 +226,28 @@ export interface SheetSparklineGroupInfo {
 	readonly lastPoint?: boolean
 	readonly negative?: boolean
 	readonly displayXAxis?: boolean
+	readonly displayHidden?: boolean
+	readonly rightToLeft?: boolean
+	readonly minAxisType?: string
+	readonly maxAxisType?: string
 	readonly colorSeries?: string
+	readonly colorNegative?: string
+	readonly colorAxis?: string
+	readonly colorMarkers?: string
+	readonly colorFirst?: string
+	readonly colorLast?: string
+	readonly colorHigh?: string
+	readonly colorLow?: string
+	readonly dateAxisRange?: string
 	readonly range?: string
 	readonly locationRange?: string
+	readonly sparklines?: readonly SheetSparklineInfo[]
 	readonly count: number
+}
+
+export interface SheetSparklineInfo {
+	readonly range?: string
+	readonly locationRange?: string
 }
 
 export interface SheetX14ConditionalFormatInfo {
@@ -530,7 +552,10 @@ export class Sheet {
 		}))
 		this.imageRefs = this.imageRefs.map(cloneImageRef)
 		this.drawingObjectRefs = this.drawingObjectRefs.map(cloneDrawingObjectRef)
-		this.sparklineGroups = this.sparklineGroups.map((group) => ({ ...group }))
+		this.sparklineGroups = this.sparklineGroups.map((group) => ({
+			...group,
+			...(group.sparklines ? { sparklines: group.sparklines.map((entry) => ({ ...entry })) } : {}),
+		}))
 		this.x14ConditionalFormats = this.x14ConditionalFormats.map((format) => ({
 			...format,
 			formulas: [...format.formulas],

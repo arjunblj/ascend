@@ -92,6 +92,65 @@ describe('LibreOffice XLSX fixture corpus', () => {
 		).toBe(true)
 	})
 
+	test('captures LibreOffice sparkline styling and multi-sparkline groups', () => {
+		const initial = readXlsx(loadFixture('Sparklines.xlsx'))
+		expectOk(initial)
+
+		const sheet1 = initial.value.workbook.sheets.find((sheet) => sheet.name === 'Sheet1')
+		expect(sheet1?.sparklineGroups).toHaveLength(2)
+		expect(sheet1?.sparklineGroups[0]).toMatchObject({
+			groupIndex: 0,
+			count: 1,
+			lineWeight: 1,
+			displayEmptyCellsAs: 'gap',
+			markers: true,
+			highPoint: true,
+			lowPoint: true,
+			firstPoint: true,
+			lastPoint: true,
+			negative: true,
+			displayXAxis: true,
+			colorSeries: 'FF376092',
+			colorNegative: 'FF00B050',
+			colorHigh: 'FF92D050',
+			range: 'Sheet1!B1:M1',
+			locationRange: 'A2',
+		})
+		expect(sheet1?.sparklineGroups[1]).toMatchObject({
+			type: 'column',
+			highPoint: true,
+			lowPoint: true,
+			firstPoint: true,
+			lastPoint: true,
+			negative: true,
+			range: 'Sheet1!B1:M1',
+			locationRange: 'A3',
+		})
+
+		const sheet3 = initial.value.workbook.sheets.find((sheet) => sheet.name === 'Sheet3')
+		expect(sheet3?.sparklineGroups.map((group) => [group.type, group.count])).toEqual([
+			['stacked', 10],
+			['column', 10],
+			[undefined, 10],
+		])
+		expect(sheet3?.sparklineGroups[0]?.sparklines?.[0]).toEqual({
+			range: 'Sheet3!A1:J1',
+			locationRange: 'N1',
+		})
+		expect(sheet3?.sparklineGroups[0]?.sparklines?.[9]).toEqual({
+			range: 'Sheet3!A10:J10',
+			locationRange: 'N10',
+		})
+		expect(sheet3?.sparklineGroups[1]?.sparklines?.[9]).toEqual({
+			range: 'Sheet3!A10:J10',
+			locationRange: 'M10',
+		})
+		expect(sheet3?.sparklineGroups[2]?.sparklines?.[9]).toEqual({
+			range: 'Sheet3!A10:J10',
+			locationRange: 'L10',
+		})
+	})
+
 	test('inventories real LibreOffice textbox drawing text and relationship ids', () => {
 		const initial = readXlsx(loadFixture('textbox-hyperlink.xlsx'))
 		expectOk(initial)

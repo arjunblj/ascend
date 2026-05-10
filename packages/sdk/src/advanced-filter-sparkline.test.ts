@@ -24,6 +24,7 @@ describe('advanced filter and sparkline SDK inventory', () => {
 			locationRange: 'D2:D4',
 			count: 1,
 			markers: true,
+			sparklines: [{ range: 'Data!B2:B4', locationRange: 'D2:D4' }],
 		})
 	})
 

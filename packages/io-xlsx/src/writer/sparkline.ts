@@ -1,5 +1,6 @@
 import type {
 	SheetSparklineGroupInfo,
+	SheetSparklineInfo,
 	SheetX14ConditionalFormatInfo,
 	SheetX14DataValidationInfo,
 } from '@ascend/core'
@@ -45,7 +46,13 @@ export function updateSparklineExtLstXml(
 		if (!group) return match
 		let updatedAttrs = attrs
 		updatedAttrs = setOptionalAttr(updatedAttrs, 'type', group.type)
+		updatedAttrs = setOptionalNumberAttr(updatedAttrs, 'manualMax', group.manualMax)
+		updatedAttrs = setOptionalNumberAttr(updatedAttrs, 'manualMin', group.manualMin)
+		updatedAttrs = setOptionalNumberAttr(updatedAttrs, 'lineWeight', group.lineWeight)
+		updatedAttrs = setOptionalAttr(updatedAttrs, 'xr2:uid', group.uid)
 		updatedAttrs = setOptionalAttr(updatedAttrs, 'displayEmptyCellsAs', group.displayEmptyCellsAs)
+		updatedAttrs = setOptionalAttr(updatedAttrs, 'minAxisType', group.minAxisType)
+		updatedAttrs = setOptionalAttr(updatedAttrs, 'maxAxisType', group.maxAxisType)
 		updatedAttrs = setOptionalBoolAttr(updatedAttrs, 'dateAxis', group.dateAxis)
 		updatedAttrs = setOptionalBoolAttr(updatedAttrs, 'markers', group.markers)
 		updatedAttrs = setOptionalBoolAttr(updatedAttrs, 'high', group.highPoint)
@@ -54,11 +61,69 @@ export function updateSparklineExtLstXml(
 		updatedAttrs = setOptionalBoolAttr(updatedAttrs, 'last', group.lastPoint)
 		updatedAttrs = setOptionalBoolAttr(updatedAttrs, 'negative', group.negative)
 		updatedAttrs = setOptionalBoolAttr(updatedAttrs, 'displayXAxis', group.displayXAxis)
+		updatedAttrs = setOptionalBoolAttr(updatedAttrs, 'displayHidden', group.displayHidden)
+		updatedAttrs = setOptionalBoolAttr(updatedAttrs, 'rightToLeft', group.rightToLeft)
 		let updatedBody = body
-		updatedBody = setFirstSparklineText(updatedBody, 'f', group.range)
-		updatedBody = setFirstSparklineText(updatedBody, 'sqref', group.locationRange)
+		updatedBody = setDirectChildTextBefore(updatedBody, 'sparklines', 'f', group.dateAxisRange)
+		updatedBody = setSparklineRefs(updatedBody, group)
 		return `<${tag}${updatedAttrs}>${updatedBody}</${tag}>`
 	})
+}
+
+function setSparklineRefs(xml: string, group: SheetSparklineGroupInfo): string {
+	const refs = sparklineRefsForGroup(group)
+	if (refs.length === 0) return xml
+	let index = 0
+	const sparklineRe = new RegExp(
+		String.raw`<(${PREFIXED_TAG}sparkline)\b([^>]*)>([\s\S]*?)<\/\1>`,
+		'g',
+	)
+	return xml.replace(sparklineRe, (match, tag: string, attrs: string, body: string) => {
+		const ref = refs[index++]
+		if (!ref) return match
+		let updatedBody = body
+		updatedBody = setFirstSparklineText(updatedBody, 'f', ref.range)
+		updatedBody = setFirstSparklineText(updatedBody, 'sqref', ref.locationRange)
+		return `<${tag}${attrs}>${updatedBody}</${tag}>`
+	})
+}
+
+function sparklineRefsForGroup(group: SheetSparklineGroupInfo): readonly SheetSparklineInfo[] {
+	const refs: SheetSparklineInfo[] =
+		group.sparklines && group.sparklines.length > 0
+			? group.sparklines.map((ref) => ({ ...ref }))
+			: [sparklineRefFromGroup(group)].filter((ref) => Object.keys(ref).length > 0)
+	if (refs.length === 0) return refs
+	const first = refs[0]
+	if (!first) return refs
+	refs[0] = {
+		...first,
+		...(group.range !== undefined ? { range: group.range } : {}),
+		...(group.locationRange !== undefined ? { locationRange: group.locationRange } : {}),
+	}
+	return refs
+}
+
+function sparklineRefFromGroup(group: SheetSparklineGroupInfo): SheetSparklineInfo {
+	return {
+		...(group.range !== undefined ? { range: group.range } : {}),
+		...(group.locationRange !== undefined ? { locationRange: group.locationRange } : {}),
+	}
+}
+
+function setDirectChildTextBefore(
+	xml: string,
+	stopLocalName: string,
+	localName: string,
+	value: string | undefined,
+): string {
+	if (value === undefined) return xml
+	const stopRe = new RegExp(String.raw`<${PREFIXED_TAG}${stopLocalName}\b`)
+	const stop = stopRe.exec(xml)
+	const prefix = stop ? xml.slice(0, stop.index) : xml
+	const suffix = stop ? xml.slice(stop.index) : ''
+	const updatedPrefix = setFirstSparklineText(prefix, localName, value)
+	return `${updatedPrefix}${suffix}`
 }
 
 function setFirstSparklineText(xml: string, localName: string, value: string | undefined): string {
@@ -144,6 +209,11 @@ function setOrderedElementTexts(xml: string, localName: string, values: readonly
 function setOptionalAttr(attrs: string, name: string, value: string | undefined): string {
 	if (value === undefined) return attrs
 	return setXmlAttr(attrs, name, value)
+}
+
+function setOptionalNumberAttr(attrs: string, name: string, value: number | undefined): string {
+	if (value === undefined) return attrs
+	return setXmlAttr(attrs, name, String(value))
 }
 
 function setOptionalBoolAttr(attrs: string, name: string, value: boolean | undefined): string {

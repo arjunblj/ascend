@@ -3175,12 +3175,27 @@ function parseSparklineGroups(ws: XmlNode, sheet: Sheet): void {
 	const groups = findDescendantNodes(ws, 'sparklineGroup')
 	for (const [groupIndex, group] of groups.entries()) {
 		const sparklines = findDescendantNodes(group, 'sparkline')
-		const firstSparkline = sparklines[0]
-		const range = firstSparkline ? childText(firstSparkline, 'f') : undefined
-		const locationRange = firstSparkline ? childText(firstSparkline, 'sqref') : undefined
-		const colorSeries = readSparklineColor(group)
+		const sparklineRefs = sparklines.map(parseSparklineRef)
+		const firstSparkline = sparklineRefs[0]
+		const range = firstSparkline?.range
+		const locationRange = firstSparkline?.locationRange
+		const colorSeries = readSparklineColor(group, 'colorSeries')
+		const colorNegative = readSparklineColor(group, 'colorNegative')
+		const colorAxis = readSparklineColor(group, 'colorAxis')
+		const colorMarkers = readSparklineColor(group, 'colorMarkers')
+		const colorFirst = readSparklineColor(group, 'colorFirst')
+		const colorLast = readSparklineColor(group, 'colorLast')
+		const colorHigh = readSparklineColor(group, 'colorHigh')
+		const colorLow = readSparklineColor(group, 'colorLow')
 		const type = attr(group, 'type')
+		const manualMax = numAttr(group, 'manualMax')
+		const manualMin = numAttr(group, 'manualMin')
+		const lineWeight = numAttr(group, 'lineWeight')
 		const displayEmptyCellsAs = attr(group, 'displayEmptyCellsAs')
+		const minAxisType = attr(group, 'minAxisType')
+		const maxAxisType = attr(group, 'maxAxisType')
+		const uid = attr(group, 'xr2:uid')
+		const dateAxisRange = childText(group, 'f')
 		const dateAxis = readBoolAttribute(group, 'dateAxis')
 		const markers = readBoolAttribute(group, 'markers')
 		const highPoint = readBoolAttribute(group, 'high')
@@ -3189,12 +3204,20 @@ function parseSparklineGroups(ws: XmlNode, sheet: Sheet): void {
 		const lastPoint = readBoolAttribute(group, 'last')
 		const negative = readBoolAttribute(group, 'negative')
 		const displayXAxis = readBoolAttribute(group, 'displayXAxis')
+		const displayHidden = readBoolAttribute(group, 'displayHidden')
+		const rightToLeft = readBoolAttribute(group, 'rightToLeft')
 		const parsed: SheetSparklineGroupInfo = {
 			groupIndex,
 			count: sparklines.length,
 		}
 		if (type) Object.assign(parsed, { type })
+		if (manualMax !== undefined) Object.assign(parsed, { manualMax })
+		if (manualMin !== undefined) Object.assign(parsed, { manualMin })
+		if (lineWeight !== undefined) Object.assign(parsed, { lineWeight })
 		if (displayEmptyCellsAs) Object.assign(parsed, { displayEmptyCellsAs })
+		if (minAxisType) Object.assign(parsed, { minAxisType })
+		if (maxAxisType) Object.assign(parsed, { maxAxisType })
+		if (uid) Object.assign(parsed, { uid })
 		if (dateAxis !== undefined) Object.assign(parsed, { dateAxis })
 		if (markers !== undefined) Object.assign(parsed, { markers })
 		if (highPoint !== undefined) Object.assign(parsed, { highPoint })
@@ -3203,9 +3226,20 @@ function parseSparklineGroups(ws: XmlNode, sheet: Sheet): void {
 		if (lastPoint !== undefined) Object.assign(parsed, { lastPoint })
 		if (negative !== undefined) Object.assign(parsed, { negative })
 		if (displayXAxis !== undefined) Object.assign(parsed, { displayXAxis })
+		if (displayHidden !== undefined) Object.assign(parsed, { displayHidden })
+		if (rightToLeft !== undefined) Object.assign(parsed, { rightToLeft })
 		if (colorSeries) Object.assign(parsed, { colorSeries })
+		if (colorNegative) Object.assign(parsed, { colorNegative })
+		if (colorAxis) Object.assign(parsed, { colorAxis })
+		if (colorMarkers) Object.assign(parsed, { colorMarkers })
+		if (colorFirst) Object.assign(parsed, { colorFirst })
+		if (colorLast) Object.assign(parsed, { colorLast })
+		if (colorHigh) Object.assign(parsed, { colorHigh })
+		if (colorLow) Object.assign(parsed, { colorLow })
+		if (dateAxisRange) Object.assign(parsed, { dateAxisRange })
 		if (range) Object.assign(parsed, { range })
 		if (locationRange) Object.assign(parsed, { locationRange })
+		if (sparklineRefs.length > 0) Object.assign(parsed, { sparklines: sparklineRefs })
 		sheet.sparklineGroups.push(parsed)
 	}
 }
@@ -3254,8 +3288,20 @@ function findDescendantNodes(node: XmlNode | undefined, localName: string): XmlN
 	return matches
 }
 
-function readSparklineColor(group: XmlNode): string | undefined {
-	const color = childNode(group, 'colorSeries')
+function parseSparklineRef(node: XmlNode): {
+	readonly range?: string
+	readonly locationRange?: string
+} {
+	const range = childText(node, 'f')
+	const locationRange = childText(node, 'sqref')
+	return {
+		...(range ? { range } : {}),
+		...(locationRange ? { locationRange } : {}),
+	}
+}
+
+function readSparklineColor(group: XmlNode, localName: string): string | undefined {
+	const color = childNode(group, localName)
 	if (!color) return undefined
 	return attr(color, 'rgb') ?? attr(color, 'theme') ?? attr(color, 'indexed')
 }

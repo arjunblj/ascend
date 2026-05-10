@@ -114,6 +114,120 @@ describe('ClosedXML XLSX fixture corpus', () => {
 		).toBe(true)
 	})
 
+	test('captures full ClosedXML sparkline group metadata and all member ranges', () => {
+		const initial = readXlsx(loadFixture('Sparklines_SampleSparklines.xlsx'))
+		expectOk(initial)
+
+		const sheets = new Map(initial.value.workbook.sheets.map((sheet) => [sheet.name, sheet]))
+		expect([...sheets.values()].map((sheet) => [sheet.name, sheet.sparklineGroups.length])).toEqual(
+			[
+				['Linear', 6],
+				['Column', 6],
+				['Stacked', 6],
+			],
+		)
+		expect(sheets.get('Linear')?.sparklineGroups.map((group) => group.type)).toEqual([
+			'line',
+			'line',
+			'line',
+			'line',
+			'line',
+			'line',
+		])
+		expect(sheets.get('Column')?.sparklineGroups.map((group) => group.type)).toEqual([
+			'column',
+			'column',
+			'column',
+			'column',
+			'column',
+			'column',
+		])
+		expect(sheets.get('Stacked')?.sparklineGroups.map((group) => group.type)).toEqual([
+			'stacked',
+			'stacked',
+			'stacked',
+			'stacked',
+			'stacked',
+			'stacked',
+		])
+
+		const linear = sheets.get('Linear')?.sparklineGroups ?? []
+		expect(linear[0]).toMatchObject({
+			groupIndex: 0,
+			count: 3,
+			lineWeight: 0.75,
+			markers: true,
+			highPoint: true,
+			lowPoint: true,
+			firstPoint: true,
+			lastPoint: true,
+			negative: true,
+			displayHidden: false,
+			rightToLeft: false,
+			minAxisType: 'group',
+			maxAxisType: 'group',
+			colorSeries: 'FF5F5F5F',
+			colorNegative: 'FFFFB620',
+			colorAxis: 'FF000000',
+			colorMarkers: 'FFD70077',
+			colorFirst: 'FF5687C2',
+			colorLast: 'FF359CEB',
+			colorHigh: 'FF56BE79',
+			colorLow: 'FFFF5055',
+		})
+		expect(linear[0]?.sparklines).toEqual([
+			{ range: 'Linear!C2:P2', locationRange: 'B2' },
+			{ range: 'Linear!C3:P3', locationRange: 'B3' },
+			{ range: 'Linear!C4:P4', locationRange: 'B4' },
+		])
+		expect(linear[2]).toMatchObject({
+			manualMax: 100,
+			manualMin: -80,
+			minAxisType: 'custom',
+			maxAxisType: 'custom',
+			negative: true,
+			colorSeries: 'FFC6EFCE',
+		})
+		expect(linear[2]?.sparklines?.[2]).toEqual({
+			range: 'Linear!C10:P10',
+			locationRange: 'B10',
+		})
+		expect(linear[3]).toMatchObject({
+			dateAxis: true,
+			dateAxisRange: 'Linear!C1:P1',
+			range: 'Linear!C11:P11',
+			locationRange: 'B11',
+		})
+		expect(linear[4]).toMatchObject({
+			lineWeight: 2,
+			displayXAxis: true,
+			rightToLeft: true,
+			colorSeries: 'FF00B050',
+			colorAxis: 'FFFF0000',
+		})
+		expect(linear[5]).toMatchObject({ firstPoint: true, lastPoint: true })
+		expect(linear[5]?.sparklines?.[2]).toEqual({
+			range: 'Linear!C19:E19',
+			locationRange: 'B19',
+		})
+
+		const written = writeXlsx(initial.value.workbook, initial.value.capsules, {
+			dirtySheetNames: ['Linear'],
+		})
+		expectOk(written)
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		const reopenedLinear = reopened.value.workbook.sheets.find((sheet) => sheet.name === 'Linear')
+		expect(reopenedLinear?.sparklineGroups[0]?.sparklines?.[2]).toEqual({
+			range: 'Linear!C4:P4',
+			locationRange: 'B4',
+		})
+		expect(reopenedLinear?.sparklineGroups[3]).toMatchObject({
+			dateAxisRange: 'Linear!C1:P1',
+			range: 'Linear!C11:P11',
+		})
+	})
+
 	test('captures ClosedXML sheet protection flags and password hash', () => {
 		const result = readXlsx(loadFixture('Misc_SheetProtection.xlsx'))
 		expectOk(result)

@@ -43,6 +43,7 @@ describe('advanced filter and sparkline inventory', () => {
 				colorSeries: 'FF4472C4',
 				range: 'Data!B2:B4',
 				locationRange: 'D2:D4',
+				sparklines: [{ range: 'Data!B2:B4', locationRange: 'D2:D4' }],
 				count: 1,
 			},
 		])

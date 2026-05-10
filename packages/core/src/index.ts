@@ -104,6 +104,7 @@ export type {
 	SheetProtection,
 	SheetRowDef,
 	SheetSparklineGroupInfo,
+	SheetSparklineInfo,
 	SheetState,
 	SheetTabColor,
 	SheetThreadedComment,

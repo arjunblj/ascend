@@ -334,7 +334,12 @@ export class WorkbookReadView {
 				? sheet.drawingObjectRefs.map(cloneSheetDrawingObjectRef)
 				: null,
 			sparklineGroups: richSheetMetadataHydrated
-				? sheet.sparklineGroups.map((group) => ({ ...group }))
+				? sheet.sparklineGroups.map((group) => ({
+						...group,
+						...(group.sparklines
+							? { sparklines: group.sparklines.map((sparkline) => ({ ...sparkline })) }
+							: {}),
+					}))
 				: null,
 			advancedFilters: richSheetMetadataHydrated
 				? sheet.advancedFilters.map((filter) => ({

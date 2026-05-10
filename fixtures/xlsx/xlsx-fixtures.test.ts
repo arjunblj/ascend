@@ -770,6 +770,30 @@ if (poiFixtures.length > 0) {
 			expect(chartCapsules.length).toBeGreaterThan(0)
 		})
 
+		it('inventories VML button drawings from BrNotClosed.xlsx', () => {
+			const result = readXlsx(loadFixture('BrNotClosed.xlsx'))
+			expectOk(result)
+			const sheet = result.value.workbook.sheets[0]
+
+			expect(sheet?.drawingObjectRefs).toEqual([
+				expect.objectContaining({
+					drawingPartPath: 'xl/drawings/vmlDrawing1.vml',
+					source: 'vml',
+					kind: 'textBox',
+					id: 1025,
+					name: '_x0000_s1025',
+					text: 'Multi Line Text',
+					vmlShapeId: '_x0000_s1025',
+					vmlObjectType: 'Button',
+					anchor: {
+						kind: 'twoCell',
+						from: { col: 2, colOff: 14, row: 3, rowOff: 6 },
+						to: { col: 4, colOff: 3, row: 8, rowOff: 0 },
+					},
+				}),
+			])
+		})
+
 		it('preserves drawing-backed images when renaming sheets in WithDrawing.xlsx', async () => {
 			const wb = await AscendWorkbook.open(loadFixture('WithDrawing.xlsx'))
 			const originalSheetName = wb.sheets[0]

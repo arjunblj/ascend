@@ -196,11 +196,16 @@ export interface SheetDrawingObjectRelationshipRef {
 export interface SheetDrawingObjectRef {
 	readonly drawingPartPath: string
 	readonly kind: SheetDrawingObjectKind
+	readonly source?: 'drawingml' | 'vml'
 	readonly anchor?: SheetImageAnchor
 	readonly id?: number
 	readonly name?: string
 	readonly description?: string
 	readonly text?: string
+	readonly style?: string
+	readonly vmlShapeId?: string
+	readonly vmlObjectType?: string
+	readonly visible?: boolean
 	readonly relIds?: readonly string[]
 	readonly relationshipRefs?: readonly SheetDrawingObjectRelationshipRef[]
 }

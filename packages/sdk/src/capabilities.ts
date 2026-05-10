@@ -235,8 +235,8 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'Cell comments',
 		'editable',
 		'P1',
-		'Add legacy comment author/VML layout fixtures.',
-		'Legacy comments are editable; threaded comment text edits are covered separately.',
+		'Broaden generated-comment VML layout edits and threaded comment creation coverage.',
+		'Legacy comments are editable; real POI and ClosedXML fixtures now assert authors plus VML shape, anchor, visibility, and row/column layout metadata.',
 	),
 	cap(
 		'sheets.threaded-comments',
@@ -521,8 +521,8 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'Drawings and shapes',
 		'editable',
 		'P0',
-		'Broaden drawing edits beyond existing text runs and add VML drawing-object inventory.',
-		'Drawing object inventory exposes shape, connector, group shape, graphic frame, text box anchors, names, text, and resolved relationship refs; existing DrawingML shape/text-box text runs are editable while preserving anchors, geometry, and relationships.',
+		'Broaden drawing edits beyond existing text runs and add deeper VML form-control semantics.',
+		'Drawing object inventory exposes DrawingML and VML shape, connector, group shape, graphic frame, text box anchors, names, text, and resolved relationship refs; existing DrawingML shape/text-box text runs are editable while preserving anchors, geometry, and relationships.',
 		[
 			'packages/io-xlsx/src/reader/drawing.test.ts',
 			'packages/io-xlsx/src/writer/writer.test.ts',
@@ -538,8 +538,8 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'Text boxes',
 		'editable',
 		'P1',
-		'Broaden rich-text planning for multi-run styling and unsupported VML text boxes.',
-		'DrawingML text box inventory exposes anchor, name, description, and plain text content; setDrawingText edits existing text bodies through SDK operations while preserving anchors, geometry, and drawing relationships.',
+		'Broaden rich-text planning for multi-run styling and VML text-box editing.',
+		'DrawingML and VML text box inventory exposes anchor, name, description where present, plain text content, and source relationships; setDrawingText edits existing DrawingML text bodies through SDK operations while preserving anchors, geometry, and drawing relationships.',
 		[
 			'packages/io-xlsx/src/reader/drawing.test.ts',
 			'packages/io-xlsx/src/writer/writer.test.ts',

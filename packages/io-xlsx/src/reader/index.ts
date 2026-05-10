@@ -33,7 +33,11 @@ import {
 import { parseConnectionPartInfos } from './connections.ts'
 import { type ContentTypes, parseContentTypes } from './content-types.ts'
 import { parseDataModelPartInfo } from './data-model.ts'
-import { parseDrawingImageRefs, parseDrawingObjectRefs } from './drawing.ts'
+import {
+	parseDrawingImageRefs,
+	parseDrawingObjectRefs,
+	parseVmlDrawingObjectRefs,
+} from './drawing.ts'
 import { maybeDecryptOoxmlPackage } from './encryption.ts'
 import { parseMacroSheetInfo } from './macro-sheet.ts'
 import { parseMetadataXml } from './metadata.ts'
@@ -1564,6 +1568,14 @@ function attachDrawingImages(
 		const relationships = drawingRelsXml ? parseRelationships(drawingRelsXml) : []
 		sheet.imageRefs.push(...parseDrawingImageRefs(drawingXml, drawingPath, relationships))
 		sheet.drawingObjectRefs.push(...parseDrawingObjectRefs(drawingXml, drawingPath, relationships))
+	}
+	for (const vmlRel of sheetRelationships.filter((rel) => rel.type === REL_VML_DRAWING)) {
+		const vmlPath = resolvePath(sheetPath, vmlRel.target)
+		const vmlXml = readPart(archive, vmlPath)
+		if (!vmlXml) continue
+		const vmlRelsXml = readPart(archive, getRelsPath(vmlPath))
+		const relationships = vmlRelsXml ? parseRelationships(vmlRelsXml) : []
+		sheet.drawingObjectRefs.push(...parseVmlDrawingObjectRefs(vmlXml, vmlPath, relationships))
 	}
 }
 

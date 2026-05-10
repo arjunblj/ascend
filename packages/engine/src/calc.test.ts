@@ -1878,6 +1878,12 @@ describe('recalculate', () => {
 
 		recalculate(wb, makeCtx())
 		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#SPILL!'))
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toEqual({
+			kind: 'blockedSpill',
+			anchorRef: 'Sheet1!A1',
+			ref: 'A1:A3',
+			blockingRefs: ['A2'],
+		})
 		expect(sheet.cells.get(1, 0)?.value).toEqual(stringValue('blocker'))
 	})
 
@@ -1966,6 +1972,12 @@ describe('recalculate', () => {
 
 		recalculate(wb, makeCtx())
 		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#SPILL!'))
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toEqual({
+			kind: 'blockedSpill',
+			anchorRef: 'Sheet1!A1',
+			ref: 'A1:A4',
+			blockingRefs: ['A4'],
+		})
 		expect(sheet.cells.get(3, 0)?.value).toEqual(numberValue(99))
 	})
 
@@ -1982,6 +1994,12 @@ describe('recalculate', () => {
 		recalculate(wb, makeCtx(), { dirtyOnly: true, dirtyRefs: ['Sheet1!A2'] })
 
 		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toEqual({
+			kind: 'spill',
+			anchorRef: 'Sheet1!A1',
+			ref: 'A1:A3',
+			isAnchor: true,
+		})
 		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(2))
 		expect(sheet.cells.get(2, 0)?.value).toEqual(numberValue(3))
 	})

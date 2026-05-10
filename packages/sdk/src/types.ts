@@ -437,6 +437,12 @@ export type FormulaBindingSummary =
 	| { readonly kind: 'array'; readonly formula: string; readonly range?: string }
 	| { readonly kind: 'dynamic-array'; readonly formula: string }
 	| { readonly kind: 'spill'; readonly anchorRef: string }
+	| {
+			readonly kind: 'blocked-spill'
+			readonly formula: string
+			readonly range: string
+			readonly blockingRefs: readonly string[]
+	  }
 
 /** Formula cell entry with ref and binding for getFormulaCells. */
 export interface FormulaCellEntry {
@@ -765,6 +771,7 @@ export interface CheckIssue {
 	readonly ref?: string
 	readonly refs?: readonly string[]
 	readonly suggestedFix?: string
+	readonly details?: Readonly<Record<string, unknown>>
 }
 
 export interface LintResult {

@@ -1,10 +1,12 @@
-import type { RangeRef, Workbook } from '@ascend/core'
+import type { CellFormulaBinding, RangeRef, Workbook } from '@ascend/core'
 import { indexToColumn, toA1 } from '@ascend/core'
 import {
 	analyzeWorkbookDependencies,
 	analyzeWorkbookFormulas,
 	cellHasFormula,
+	defaultCalcContext,
 	parseCellKey,
+	recalculate,
 	type WorkbookDependencyAnalysis,
 	type WorkbookFormulaAnalysis,
 } from '@ascend/engine'
@@ -21,6 +23,7 @@ export interface CheckIssue {
 	readonly message: string
 	readonly refs?: readonly string[]
 	readonly suggestedFix?: string
+	readonly details?: Readonly<Record<string, unknown>>
 }
 
 function findClosestSheetName(target: string, sheetNames: readonly string[]): string | null {
@@ -180,6 +183,80 @@ function checkFormulaErrors(wb: Workbook, analysis: WorkbookFormulaAnalysis): Ch
 	return issues
 }
 
+function blockedSpillIssue(
+	sheetName: string,
+	row: number,
+	col: number,
+	binding: Extract<CellFormulaBinding, { kind: 'blockedSpill' }>,
+): CheckIssue {
+	const anchorRef = `${sheetName}!${toA1({ row, col })}`
+	const blockingRefs = binding.blockingRefs.map((ref) => `${sheetName}!${ref}`)
+	return {
+		rule: 'spill-diagnostics',
+		severity: 'warning',
+		message: `Formula spill is blocked by ${blockingRefs.length} occupied cell(s)`,
+		refs: [anchorRef, ...blockingRefs],
+		suggestedFix: `Clear or move the blocking cell(s): ${blockingRefs.join(', ')}`,
+		details: {
+			error: '#SPILL!',
+			cause: 'occupied-cell',
+			spillRange: `${sheetName}!${binding.ref}`,
+			blockingRefs,
+		},
+	}
+}
+
+function unknownSpillIssue(sheetName: string, row: number, col: number): CheckIssue {
+	return {
+		rule: 'spill-diagnostics',
+		severity: 'warning',
+		message: 'Formula spill is blocked, but the blocking range was not captured',
+		refs: [`${sheetName}!${toA1({ row, col })}`],
+		suggestedFix: 'Recalculate the workbook to refresh spill-block diagnostics.',
+		details: { error: '#SPILL!', cause: 'unknown' },
+	}
+}
+
+function checkBlockedSpills(wb: Workbook): CheckIssue[] {
+	const issues: CheckIssue[] = []
+	const unknownSpills: Array<{ sheetIndex: number; row: number; col: number }> = []
+	for (let sheetIndex = 0; sheetIndex < wb.sheets.length; sheetIndex++) {
+		const sheet = wb.sheets[sheetIndex]
+		if (!sheet) continue
+		for (const [row, col, cell] of sheet.cells.iterate()) {
+			if (!cellHasFormula(cell) || !isError(cell.value) || cell.value.value !== '#SPILL!') continue
+			const binding = cell.formulaInfo
+			if (binding?.kind === 'blockedSpill') {
+				issues.push(blockedSpillIssue(sheet.name, row, col, binding))
+				continue
+			}
+			unknownSpills.push({ sheetIndex, row, col })
+		}
+	}
+	if (unknownSpills.length > 0) {
+		const recalculated = wb.clone()
+		recalculate(
+			recalculated,
+			defaultCalcContext({
+				dateSystem: recalculated.calcSettings.dateSystem,
+				iterativeCalc: recalculated.calcSettings.iterativeCalc,
+			}),
+		)
+		for (const spill of unknownSpills) {
+			const sheet = wb.sheets[spill.sheetIndex]
+			const refreshedSheet = recalculated.sheets[spill.sheetIndex]
+			if (!sheet || !refreshedSheet) continue
+			const refreshed = refreshedSheet.cells.readFormulaInfo(spill.row, spill.col)
+			if (refreshed?.kind === 'blockedSpill') {
+				issues.push(blockedSpillIssue(sheet.name, spill.row, spill.col, refreshed))
+				continue
+			}
+			issues.push(unknownSpillIssue(sheet.name, spill.row, spill.col))
+		}
+	}
+	return issues
+}
+
 function checkOrphanedNames(wb: Workbook): CheckIssue[] {
 	const issues: CheckIssue[] = []
 	const sheetNames = new Set(wb.sheets.map((s) => s.name.toLowerCase()))
@@ -282,6 +359,7 @@ export function check(
 		...checkExternalRefs(formulas),
 		...checkCircularRefs(workbook, dependencies),
 		...checkFormulaErrors(workbook, formulas),
+		...checkBlockedSpills(workbook),
 		...checkOrphanedNames(workbook),
 		...checkMergeOverlaps(workbook),
 		...checkTableIntegrity(workbook),

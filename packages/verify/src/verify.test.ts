@@ -35,6 +35,55 @@ describe('checker', () => {
 		expect(errorIssues[0]?.message).toContain('#DIV/0!')
 	})
 
+	test('reports machine-readable blocked spill diagnostics', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, {
+			value: errorValue('#SPILL!'),
+			formula: 'SEQUENCE(3)',
+			styleId: SID,
+			formulaInfo: {
+				kind: 'blockedSpill',
+				anchorRef: 'Sheet1!A1',
+				ref: 'A1:A3',
+				blockingRefs: ['A2'],
+			},
+		})
+		s.cells.set(1, 0, { value: stringValue('blocker'), formula: null, styleId: SID })
+
+		const result = check(wb)
+		const spillIssue = result.issues.find((issue) => issue.rule === 'spill-diagnostics')
+		expect(result.passed).toBe(false)
+		expect(spillIssue?.refs).toEqual(['Sheet1!A1', 'Sheet1!A2'])
+		expect(spillIssue?.details).toEqual({
+			error: '#SPILL!',
+			cause: 'occupied-cell',
+			spillRange: 'Sheet1!A1:A3',
+			blockingRefs: ['Sheet1!A2'],
+		})
+	})
+
+	test('refreshes blocked spill diagnostics for stale imported caches', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, {
+			value: errorValue('#SPILL!'),
+			formula: 'SEQUENCE(3)',
+			styleId: SID,
+		})
+		s.cells.set(1, 0, { value: stringValue('blocker'), formula: null, styleId: SID })
+
+		const result = check(wb)
+		const spillIssue = result.issues.find((issue) => issue.rule === 'spill-diagnostics')
+		expect(spillIssue?.details).toEqual({
+			error: '#SPILL!',
+			cause: 'occupied-cell',
+			spillRange: 'Sheet1!A1:A3',
+			blockingRefs: ['Sheet1!A2'],
+		})
+		expect(s.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+	})
+
 	test('detects circular refs', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

@@ -1745,6 +1745,33 @@ describe('AscendWorkbook', () => {
 		expect(issue?.suggestedFix).toContain('SummaryData')
 	})
 
+	test('check exposes blocked spill causes for agent repair', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=SEQUENCE(3)' },
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A2', value: 'blocker' }] },
+		])
+		wb.recalc()
+
+		const result = wb.check()
+		const issue = result.issues.find((entry) => entry.rule === 'spill-diagnostics')
+		expect(result.valid).toBe(false)
+		expect(issue?.ref).toBe('Sheet1!A1')
+		expect(issue?.refs).toEqual(['Sheet1!A1', 'Sheet1!A2'])
+		expect(issue?.details).toEqual({
+			error: '#SPILL!',
+			cause: 'occupied-cell',
+			spillRange: 'Sheet1!A1:A3',
+			blockingRefs: ['Sheet1!A2'],
+		})
+		expect(wb.sheet('Sheet1').getFormulaBinding('A1')).toEqual({
+			kind: 'blocked-spill',
+			formula: 'SEQUENCE(3)',
+			range: 'A1:A3',
+			blockingRefs: ['A2'],
+		})
+	})
+
 	test('lint detects formula parse errors', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=INVALID((' }])
@@ -2818,6 +2845,16 @@ describe('capabilities registry', () => {
 		expect(capabilities.find((capability) => capability.id === 'visuals.charts')?.status).toBe(
 			'editable',
 		)
+		const iterativeCalc = capabilities.find(
+			(capability) => capability.id === 'formulas.iterative-calc',
+		)
+		expect(iterativeCalc?.status).toBe('editable')
+		expect(iterativeCalc?.tests).toContain('packages/engine/src/calc.test.ts')
+		const spillDiagnostics = capabilities.find(
+			(capability) => capability.id === 'formulas.spill-diagnostics',
+		)
+		expect(spillDiagnostics?.status).toBe('editable')
+		expect(spillDiagnostics?.tests).toContain('packages/verify/src/verify.test.ts')
 	})
 })
 

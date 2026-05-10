@@ -540,6 +540,13 @@ function toFormulaBindingSummary(
 			}
 		case 'dynamicArray':
 			return { kind: 'dynamic-array', formula }
+		case 'blockedSpill':
+			return {
+				kind: 'blocked-spill',
+				formula,
+				range: info.ref,
+				blockingRefs: info.blockingRefs,
+			}
 		default:
 			return { kind: 'normal', formula }
 	}

@@ -43,11 +43,19 @@ export interface SpillFormulaInfo {
 	readonly isAnchor: boolean
 }
 
+export interface BlockedSpillFormulaInfo {
+	readonly kind: 'blockedSpill'
+	readonly anchorRef: string
+	readonly ref: string
+	readonly blockingRefs: readonly string[]
+}
+
 export type CellFormulaBinding =
 	| SharedFormulaInfo
 	| ArrayFormulaInfo
 	| DynamicArrayFormulaInfo
 	| SpillFormulaInfo
+	| BlockedSpillFormulaInfo
 
 const CHUNK_BITS = resolveChunkBits()
 const CHUNK_SIZE = 1 << CHUNK_BITS

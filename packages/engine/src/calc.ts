@@ -910,7 +910,12 @@ function normalizeTopLevelFormulaValue(
 
 function usesArrayFormulaSemantics(ctx: EvalContext): boolean {
 	const binding = ctx.workbook.sheets[ctx.sheetIndex]?.cells.get(ctx.row, ctx.col)?.formulaInfo
-	return binding?.kind === 'array' || binding?.kind === 'dynamicArray' || binding?.kind === 'spill'
+	return (
+		binding?.kind === 'array' ||
+		binding?.kind === 'dynamicArray' ||
+		binding?.kind === 'spill' ||
+		binding?.kind === 'blockedSpill'
+	)
 }
 
 function isSpillBinding(
@@ -979,14 +984,15 @@ function clearSpillFootprint(
 	return true
 }
 
-function isSpillBlocked(
+function findBlockedSpillRefs(
 	sheet: Workbook['sheets'][number],
 	anchorRow: number,
 	anchorCol: number,
 	anchorRef: string,
 	matrix: readonly (readonly CellValue[])[],
-): boolean {
-	if (!sheet) return true
+): string[] {
+	if (!sheet) return [anchorRef]
+	const blocked: string[] = []
 	for (let rowOffset = 0; rowOffset < matrix.length; rowOffset++) {
 		const sourceRow = matrix[rowOffset] ?? []
 		for (let colOffset = 0; colOffset < sourceRow.length; colOffset++) {
@@ -1002,10 +1008,18 @@ function isSpillBlocked(
 			) {
 				continue
 			}
-			return true
+			blocked.push(toA1Ref(targetRow, targetCol))
 		}
 	}
-	return false
+	return blocked
+}
+
+function stringArraysEqual(a: readonly string[], b: readonly string[]): boolean {
+	if (a.length !== b.length) return false
+	for (let i = 0; i < a.length; i++) {
+		if (a[i] !== b[i]) return false
+	}
+	return true
 }
 
 function applyArrayResult(
@@ -1035,13 +1049,24 @@ function applyArrayResult(
 		return anchorValue
 	}
 	clearSpillFootprint(sheet, sheetIndex, anchorRef, changed, spillIndex)
-	if (isSpillBlocked(sheet, row, col, anchorRef, matrix)) {
+	const blockingRefs = findBlockedSpillRefs(sheet, row, col, anchorRef, matrix)
+	if (blockingRefs.length > 0) {
 		const spillError = errorValue('#SPILL!')
 		const currentValue = sheet.cells.readValue(row, col)
 		const currentBinding = sheet.cells.readFormulaInfo(row, col)
-		const alreadyBlocked = currentBinding === undefined && valuesEqual(currentValue, spillError)
+		const blockedInfo = {
+			kind: 'blockedSpill' as const,
+			anchorRef,
+			ref: spillRef,
+			blockingRefs,
+		}
+		const alreadyBlocked =
+			currentBinding?.kind === 'blockedSpill' &&
+			currentBinding.ref === spillRef &&
+			stringArraysEqual(currentBinding.blockingRefs, blockingRefs) &&
+			valuesEqual(currentValue, spillError)
 		if (!alreadyBlocked) {
-			sheet.cells.setResolved(row, col, spillError, oldFormula, oldStyleId)
+			sheet.cells.setResolved(row, col, spillError, oldFormula, oldStyleId, blockedInfo)
 			changed.push(anchorRef)
 		}
 		return spillError

@@ -9,6 +9,7 @@ export function sdkCheckIssueFromVerify(issue: VerifyCheckIssue): CheckIssue {
 		...(issue.refs?.[0] ? { ref: issue.refs[0] } : {}),
 		...(issue.refs ? { refs: issue.refs } : {}),
 		...(issue.suggestedFix ? { suggestedFix: issue.suggestedFix } : {}),
+		...(issue.details ? { details: issue.details } : {}),
 	}
 }
 

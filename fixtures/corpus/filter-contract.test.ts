@@ -7,7 +7,7 @@ import {
 	type Table,
 	type Workbook,
 } from '../../packages/core/src/index.ts'
-import { defaultCalcContext, recalculate } from '../../packages/engine/src/index.ts'
+import { applyOperation, defaultCalcContext, recalculate } from '../../packages/engine/src/index.ts'
 import { type PreservationCapsule, readXlsx, writeXlsx } from '../../packages/io-xlsx/src/index.ts'
 import { EMPTY, numberValue } from '../../packages/schema/src/index.ts'
 
@@ -143,6 +143,22 @@ describe('filter feature contract', () => {
 					],
 				},
 			],
+		})
+	})
+
+	it('keeps real POI worksheet criteria when setAutoFilter only refreshes the range', () => {
+		const fixture = readFixture(FILTER_FIXTURE_ROOT, 'poi/AutoFilter.xlsx')
+		const result = applyOperation(fixture.workbook, {
+			op: 'setAutoFilter',
+			sheet: 'One Cond',
+			range: 'A1:E22',
+		})
+		expect(result.ok).toBe(true)
+
+		const workbook = roundTrip(fixture)
+		expect(sheetByName(workbook, 'One Cond').autoFilter).toEqual({
+			ref: 'A1:E22',
+			columns: [{ colId: 0, kind: 'filters', values: ['1'] }],
 		})
 	})
 

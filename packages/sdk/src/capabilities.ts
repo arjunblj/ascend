@@ -332,9 +332,13 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'Auto filters and criteria',
 		'editable',
 		'P0',
-		'Add richer filter-state edit operations and broaden visual filter fixtures.',
-		'Filter ranges plus explicit value, date group, custom comparison, top/bottom, dynamic, color, and numeric icon-set criteria are parsed, preserved, and evaluated for formula-visible row semantics.',
-		['packages/engine/src/calc.test.ts'],
+		'Add explicit edit operations for custom/date/top/color/icon filters and broaden visual filter fixtures.',
+		'Filter ranges plus explicit value, date group, custom comparison, top/bottom, dynamic, color, and numeric icon-set criteria are parsed, preserved, and evaluated; worksheet auto filters preserve existing criteria on range edits and can edit value-list and sort metadata.',
+		[
+			'packages/engine/src/calc.test.ts',
+			'packages/engine/src/operations.test.ts',
+			'fixtures/corpus/filter-contract.test.ts',
+		],
 	),
 	cap(
 		'tables.sorts',

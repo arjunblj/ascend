@@ -392,8 +392,9 @@ export function listOperations(): readonly OperationSchema[] {
 		},
 		{
 			op: 'setAutoFilter',
-			description: 'Enable auto-filter on a range',
+			description: 'Enable or edit a worksheet auto-filter while preserving existing criteria',
 			requiredFields: ['sheet', 'range'],
+			optionalFields: ['column', 'values', 'sortRef', 'sortBy', 'descending'],
 		},
 		{
 			op: 'clearAutoFilter',
@@ -1305,7 +1306,15 @@ function operationExample(op: string): Record<string, unknown> {
 		case 'setDataValidation':
 			return { op, sheet: 'Sheet1', range: 'A2:A20', rule: { type: 'list', formula1: '"Yes,No"' } }
 		case 'deleteDataValidation':
+			return { op, sheet: 'Sheet1', range: 'A2:A20' }
 		case 'setAutoFilter':
+			return {
+				op,
+				sheet: 'Sheet1',
+				range: 'A1:D20',
+				column: 0,
+				values: ['North'],
+			}
 		case 'setPrintArea':
 			return { op, sheet: 'Sheet1', range: 'A1:D20' }
 		case 'deleteConditionalFormat':

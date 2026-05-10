@@ -799,6 +799,60 @@ describe('applyOperation', () => {
 		])
 	})
 
+	test('setAutoFilter preserves existing criteria when updating the range', () => {
+		const wb = setup()
+		const sheet = wb.getSheet('Sheet1')
+		if (!sheet) return
+		sheet.autoFilter = {
+			ref: 'A1:E22',
+			columns: [{ colId: 0, kind: 'filters', values: ['1'] }],
+			sortState: {
+				ref: 'A1:E22',
+				conditions: [{ ref: 'A2:A22', descending: true }],
+			},
+		}
+
+		const result = applyOperation(wb, {
+			op: 'setAutoFilter',
+			sheet: 'Sheet1',
+			range: 'A1:E30',
+		})
+		expectOk(result)
+
+		expect(sheet.autoFilter).toEqual({
+			ref: 'A1:E30',
+			columns: [{ colId: 0, kind: 'filters', values: ['1'] }],
+			sortState: {
+				ref: 'A1:E22',
+				conditions: [{ ref: 'A2:A22', descending: true }],
+			},
+		})
+	})
+
+	test('setAutoFilter edits value-list criteria and sort metadata', () => {
+		const wb = setup()
+		const result = applyOperation(wb, {
+			op: 'setAutoFilter',
+			sheet: 'Sheet1',
+			range: 'A1:E22',
+			column: 4,
+			values: ['3'],
+			sortRef: 'A1:E22',
+			sortBy: 'E2:E22',
+			descending: true,
+		})
+		expectOk(result)
+
+		expect(wb.getSheet('Sheet1')?.autoFilter).toEqual({
+			ref: 'A1:E22',
+			columns: [{ colId: 4, kind: 'filters', values: ['3'] }],
+			sortState: {
+				ref: 'A1:E22',
+				conditions: [{ ref: 'E2:E22', descending: true }],
+			},
+		})
+	})
+
 	test('copyRange copies values and translates relative formulas', () => {
 		const wb = setup()
 		const sheet = wb.getSheet('Sheet1')

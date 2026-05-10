@@ -224,15 +224,14 @@ export function handleDeleteDataValidation(
 	return ok(patch([], [op.sheet]))
 }
 
-export function handleSetAutoFilter(
-	workbook: Workbook,
-	op: Extract<Operation, { op: 'setAutoFilter' }>,
-): Result<PatchResult> {
+export function handleSetAutoFilter(workbook: Workbook, op: SetAutoFilterOp): Result<PatchResult> {
 	const sheetResult = getSheet(workbook, op.sheet)
 	if (!sheetResult.ok) return sheetResult
+	const validation = validateFilterCriteriaUpdate('setAutoFilter', op)
+	if (validation) return err(validation)
 	const sheet = sheetResult.value
 	sheet.ensureWritable()
-	sheet.autoFilter = { ref: op.range, columns: [] }
+	sheet.autoFilter = applyAutoFilterUpdate(sheet.autoFilter ?? { ref: op.range, columns: [] }, op)
 	return ok(patch([], [op.sheet]))
 }
 
@@ -270,33 +269,8 @@ export function handleSetAdvancedFilter(
 			}),
 		)
 	}
-	if (op.values !== undefined && !Array.isArray(op.values)) {
-		return err(ascendError('VALIDATION_ERROR', 'setAdvancedFilter values must be an array'))
-	}
-	if (op.values?.some((value) => typeof value !== 'string')) {
-		return err(ascendError('VALIDATION_ERROR', 'setAdvancedFilter values must be strings'))
-	}
-	if (op.values !== undefined && op.column === undefined) {
-		return err(
-			ascendError('VALIDATION_ERROR', 'setAdvancedFilter values require column', {
-				suggestedFix: 'Set column to the zero-based autoFilter colId that should receive values.',
-			}),
-		)
-	}
-	if (op.column !== undefined && op.values === undefined) {
-		return err(
-			ascendError('VALIDATION_ERROR', 'setAdvancedFilter column requires values', {
-				suggestedFix: 'Provide values for the selected zero-based autoFilter colId.',
-			}),
-		)
-	}
-	if (op.column !== undefined && (!Number.isInteger(op.column) || op.column < 0)) {
-		return err(
-			ascendError('VALIDATION_ERROR', 'setAdvancedFilter column must be non-negative', {
-				suggestedFix: 'Use the zero-based colId from inspectSheet().advancedFilters[].autoFilter.',
-			}),
-		)
-	}
+	const validation = validateFilterCriteriaUpdate('setAdvancedFilter', op)
+	if (validation) return err(validation)
 
 	const current = sheet.advancedFilters[op.filterIndex]
 	if (!current?.autoFilter) {
@@ -343,6 +317,8 @@ export function handleSetPageSetup(
 }
 
 type SetAdvancedFilterOp = Extract<Operation, { op: 'setAdvancedFilter' }>
+type SetAutoFilterOp = Extract<Operation, { op: 'setAutoFilter' }>
+type FilterCriteriaUpdateOp = SetAutoFilterOp | SetAdvancedFilterOp
 
 function hasAdvancedFilterUpdate(op: SetAdvancedFilterOp): boolean {
 	return (
@@ -354,10 +330,35 @@ function hasAdvancedFilterUpdate(op: SetAdvancedFilterOp): boolean {
 	)
 }
 
-function applyAdvancedAutoFilterUpdate(
-	autoFilter: AutoFilter,
-	op: SetAdvancedFilterOp,
-): AutoFilter {
+function validateFilterCriteriaUpdate(
+	opName: 'setAutoFilter' | 'setAdvancedFilter',
+	op: FilterCriteriaUpdateOp,
+) {
+	if (op.values !== undefined && !Array.isArray(op.values)) {
+		return ascendError('VALIDATION_ERROR', `${opName} values must be an array`)
+	}
+	if (op.values?.some((value) => typeof value !== 'string')) {
+		return ascendError('VALIDATION_ERROR', `${opName} values must be strings`)
+	}
+	if (op.values !== undefined && op.column === undefined) {
+		return ascendError('VALIDATION_ERROR', `${opName} values require column`, {
+			suggestedFix: 'Set column to the zero-based autoFilter colId that should receive values.',
+		})
+	}
+	if (op.column !== undefined && op.values === undefined) {
+		return ascendError('VALIDATION_ERROR', `${opName} column requires values`, {
+			suggestedFix: 'Provide values for the selected zero-based autoFilter colId.',
+		})
+	}
+	if (op.column !== undefined && (!Number.isInteger(op.column) || op.column < 0)) {
+		return ascendError('VALIDATION_ERROR', `${opName} column must be non-negative`, {
+			suggestedFix: 'Use the zero-based colId from inspectSheet().autoFilter.columns.',
+		})
+	}
+	return null
+}
+
+function applyAutoFilterUpdate(autoFilter: AutoFilter, op: FilterCriteriaUpdateOp): AutoFilter {
 	const ref = op.range ?? autoFilter.ref
 	const columns =
 		op.column === undefined
@@ -369,6 +370,13 @@ function applyAdvancedAutoFilterUpdate(
 		columns,
 		...(sortState ? { sortState } : {}),
 	}
+}
+
+function applyAdvancedAutoFilterUpdate(
+	autoFilter: AutoFilter,
+	op: SetAdvancedFilterOp,
+): AutoFilter {
+	return applyAutoFilterUpdate(autoFilter, op)
 }
 
 function upsertValueFilterColumn(
@@ -392,7 +400,7 @@ function upsertValueFilterColumn(
 
 function applyAdvancedSortUpdate(
 	sortState: SortState | undefined,
-	op: SetAdvancedFilterOp,
+	op: FilterCriteriaUpdateOp,
 	filterRef: string,
 ): SortState | undefined {
 	if (op.sortRef === undefined && op.sortBy === undefined && op.descending === undefined) {

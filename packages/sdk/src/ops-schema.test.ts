@@ -135,6 +135,33 @@ describe('operation schema agent DX', () => {
 		expect(schema?.recoveryActions.join('\n')).toContain('invalid=true')
 	})
 
+	test('setAutoFilter is exposed with criteria-preserving edit guidance', () => {
+		const schema = getOperationsSchema().find((entry) => entry.op === 'setAutoFilter')
+		expect(schema?.schema.required).toEqual(['op', 'sheet', 'range'])
+		expect(schema?.schema.properties.values?.description).toContain('Filter value-list')
+		expect(schema?.schema.properties.sortBy?.description).toContain('sort condition')
+		expect(schema?.examples[0]).toMatchObject({
+			op: 'setAutoFilter',
+			sheet: 'Sheet1',
+			range: 'A1:D20',
+			column: 0,
+			values: ['North'],
+		})
+
+		const parsed = parseOperations([
+			{
+				op: 'setAutoFilter',
+				sheet: 'Sheet1',
+				range: 'A1:D20',
+				column: 0,
+				values: ['North'],
+				sortBy: 'A2:A20',
+				descending: true,
+			},
+		])
+		expect(parsed.ok).toBe(true)
+	})
+
 	test('setPivotFieldItem is exposed with filter item guidance', () => {
 		const schema = getOperationsSchema().find((entry) => entry.op === 'setPivotFieldItem')
 		expect(schema?.schema.required).toEqual(['op', 'fieldIndex', 'itemIndex'])

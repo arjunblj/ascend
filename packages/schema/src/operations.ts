@@ -308,6 +308,11 @@ export type Operation =
 			readonly op: 'setAutoFilter'
 			readonly sheet: string
 			readonly range: string
+			readonly column?: number
+			readonly values?: readonly string[]
+			readonly sortRef?: string
+			readonly sortBy?: string
+			readonly descending?: boolean
 	  }
 	| { readonly op: 'clearAutoFilter'; readonly sheet: string }
 	| {

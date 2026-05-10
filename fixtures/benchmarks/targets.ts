@@ -77,6 +77,7 @@ export interface TargetCheckResult {
 
 export interface ThroughputTargetOptions {
 	readonly minRatio?: number
+	readonly includeSmokeScenarioTargets?: boolean
 }
 
 export function checkThroughputTargets(
@@ -84,8 +85,9 @@ export function checkThroughputTargets(
 	options: ThroughputTargetOptions = {},
 ): readonly TargetCheckResult[] {
 	const minRatio = options.minRatio ?? 1
+	const includeSmokeScenarioTargets = options.includeSmokeScenarioTargets ?? true
 	const results = throughputTargets.map((target) => checkCategoryTarget(suite, target, minRatio))
-	if (suite.metadata?.set === 'smoke') {
+	if (includeSmokeScenarioTargets && suite.metadata?.set === 'smoke') {
 		for (const target of smokeScenarioThroughputTargets) {
 			results.push(checkScenarioTarget(suite, target, minRatio))
 		}

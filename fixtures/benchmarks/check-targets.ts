@@ -8,17 +8,24 @@ function main(): void {
 	)
 	if (!inputPath) {
 		console.error(
-			'Usage: bun fixtures/benchmarks/check-targets.ts <benchmark-json-path> [--min-ratio <0..1>]',
+			'Usage: bun fixtures/benchmarks/check-targets.ts <benchmark-json-path> [--min-ratio <0..1>] [--scope all|category]',
 		)
 		process.exit(2)
 	}
 	const minRatio = parseMinRatio(process.argv)
+	const scope = parseScope(process.argv)
 
 	const raw = readFileSync(inputPath, 'utf8')
 	const suite = JSON.parse(raw) as BenchmarkSuiteResult
-	const results = checkThroughputTargets(suite, { minRatio })
+	const results = checkThroughputTargets(suite, {
+		minRatio,
+		includeSmokeScenarioTargets: scope === 'all',
+	})
 	if (minRatio !== 1) {
 		console.log(`Applying throughput target ratio: ${(minRatio * 100).toFixed(0)}%`)
+	}
+	if (scope !== 'all') {
+		console.log('Checking category throughput targets only')
 	}
 	console.log(formatTargetResults(results))
 
@@ -34,6 +41,15 @@ function main(): void {
 		)
 	}
 	process.exit(1)
+}
+
+function parseScope(args: readonly string[]): 'all' | 'category' {
+	const index = args.indexOf('--scope')
+	if (index === -1) return 'all'
+	const raw = args[index + 1]
+	if (raw === 'all' || raw === 'category') return raw
+	console.error('--scope must be either all or category')
+	process.exit(2)
 }
 
 function parseMinRatio(args: readonly string[]): number {

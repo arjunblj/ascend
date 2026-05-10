@@ -84,6 +84,25 @@ describe('benchmark throughput targets', () => {
 		expect(missing?.actualCellsPerSec).toBeNull()
 	})
 
+	test('smoke scenario floors can be disabled for noisy shared-runner gates', () => {
+		const results = checkThroughputTargets(
+			suite(
+				[
+					benchmarkCase('read-values-dense', 'read', 3_500_000),
+					benchmarkCase('write-csv-large', 'write', 4_000_000),
+					benchmarkCase('recalc-incremental', 'calc', 2_000_000),
+					benchmarkCase('recalc-quickselect', 'calc', 100_000),
+				],
+				'smoke',
+			),
+			{ includeSmokeScenarioTargets: false },
+		)
+
+		expect(results).toHaveLength(3)
+		expect(results.every((result) => result.scope === 'category')).toBe(true)
+		expect(results.every((result) => result.passed)).toBe(true)
+	})
+
 	test('target ratio can relax CI smoke floors without changing strict defaults', () => {
 		const strict = checkThroughputTargets(
 			suite(

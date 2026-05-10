@@ -110,6 +110,9 @@ export type {
 	SheetThreadedComment,
 	SheetView,
 	SheetViewType,
+	SheetX14ConditionalFormatDataBarInfo,
+	SheetX14ConditionalFormatIconInfo,
+	SheetX14ConditionalFormatIconSetInfo,
 	SheetX14ConditionalFormatInfo,
 	SheetX14DataValidationInfo,
 } from './sheet.ts'

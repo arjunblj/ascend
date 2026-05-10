@@ -254,7 +254,39 @@ export interface SheetX14ConditionalFormatInfo {
 	readonly index: number
 	readonly sqref: string
 	readonly formulas: readonly string[]
+	readonly type?: string
+	readonly priority?: number
+	readonly id?: string
+	readonly dataBar?: SheetX14ConditionalFormatDataBarInfo
+	readonly iconSet?: SheetX14ConditionalFormatIconSetInfo
 	readonly deleted?: boolean
+}
+
+export interface SheetX14ConditionalFormatDataBarInfo {
+	readonly cfvo: readonly SheetConditionalFormatValueObject[]
+	readonly minLength?: number
+	readonly maxLength?: number
+	readonly border?: boolean
+	readonly negativeBarBorderColorSameAsPositive?: boolean
+	readonly borderColor?: SheetConditionalFormatColor
+	readonly negativeFillColor?: SheetConditionalFormatColor
+	readonly negativeBorderColor?: SheetConditionalFormatColor
+	readonly axisColor?: SheetConditionalFormatColor
+}
+
+export interface SheetX14ConditionalFormatIconSetInfo {
+	readonly cfvo: readonly SheetConditionalFormatValueObject[]
+	readonly iconSet?: string
+	readonly custom?: boolean
+	readonly showValue?: boolean
+	readonly percent?: boolean
+	readonly reverse?: boolean
+	readonly icons?: readonly SheetX14ConditionalFormatIconInfo[]
+}
+
+export interface SheetX14ConditionalFormatIconInfo {
+	readonly iconSet?: string
+	readonly iconId?: number
 }
 
 export interface SheetX14DataValidationInfo {
@@ -556,10 +588,7 @@ export class Sheet {
 			...group,
 			...(group.sparklines ? { sparklines: group.sparklines.map((entry) => ({ ...entry })) } : {}),
 		}))
-		this.x14ConditionalFormats = this.x14ConditionalFormats.map((format) => ({
-			...format,
-			formulas: [...format.formulas],
-		}))
+		this.x14ConditionalFormats = this.x14ConditionalFormats.map(cloneX14ConditionalFormatInfo)
 		this.x14DataValidations = this.x14DataValidations.map((validation) => ({ ...validation }))
 		this.advancedFilters = this.advancedFilters.map(cloneAdvancedFilterInfo)
 		this.autoFilter = this.autoFilter ? cloneAutoFilter(this.autoFilter) : null
@@ -613,6 +642,44 @@ export class Sheet {
 		this._shared = true
 		s._shared = true
 		return s
+	}
+}
+
+function cloneX14ConditionalFormatInfo(
+	format: SheetX14ConditionalFormatInfo,
+): SheetX14ConditionalFormatInfo {
+	return {
+		...format,
+		formulas: [...format.formulas],
+		...(format.dataBar
+			? {
+					dataBar: {
+						...format.dataBar,
+						cfvo: format.dataBar.cfvo.map((entry) => ({ ...entry })),
+						...(format.dataBar.borderColor
+							? { borderColor: { ...format.dataBar.borderColor } }
+							: {}),
+						...(format.dataBar.negativeFillColor
+							? { negativeFillColor: { ...format.dataBar.negativeFillColor } }
+							: {}),
+						...(format.dataBar.negativeBorderColor
+							? { negativeBorderColor: { ...format.dataBar.negativeBorderColor } }
+							: {}),
+						...(format.dataBar.axisColor ? { axisColor: { ...format.dataBar.axisColor } } : {}),
+					},
+				}
+			: {}),
+		...(format.iconSet
+			? {
+					iconSet: {
+						...format.iconSet,
+						cfvo: format.iconSet.cfvo.map((entry) => ({ ...entry })),
+						...(format.iconSet.icons
+							? { icons: format.iconSet.icons.map((entry) => ({ ...entry })) }
+							: {}),
+					},
+				}
+			: {}),
 	}
 }
 

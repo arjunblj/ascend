@@ -275,6 +275,56 @@ if (poiFixtures.length > 0) {
 				'Q2:Q17',
 				'U2:U17',
 			])
+			expect(sheet?.x14ConditionalFormats[0]).toMatchObject({
+				index: 0,
+				type: 'dataBar',
+				id: '{9B4F274F-F774-40EE-9C50-A8B810847010}',
+				dataBar: {
+					minLength: 0,
+					maxLength: 100,
+					border: true,
+					negativeBarBorderColorSameAsPositive: false,
+					cfvo: [{ type: 'autoMin' }, { type: 'autoMax' }],
+					borderColor: { rgb: 'FF63C384' },
+					negativeFillColor: { rgb: 'FFFF0000' },
+					negativeBorderColor: { rgb: 'FFFF0000' },
+					axisColor: { rgb: 'FF000000' },
+				},
+			})
+			expect(sheet?.x14ConditionalFormats[1]).toMatchObject({
+				index: 1,
+				type: 'iconSet',
+				priority: 6,
+				id: '{23404A22-2791-4FFE-B3BF-645D3DA783FE}',
+				formulas: ['0', '33', '67'],
+				iconSet: {
+					iconSet: '3Stars',
+					cfvo: [
+						{ type: 'percent', value: '0' },
+						{ type: 'percent', value: '33' },
+						{ type: 'percent', value: '67' },
+					],
+				},
+			})
+			expect(sheet?.x14ConditionalFormats[2]).toMatchObject({
+				index: 2,
+				type: 'iconSet',
+				priority: 1,
+				id: '{F6A45A70-DEA9-40B0-83E9-E53A5F349BE7}',
+				iconSet: {
+					custom: true,
+					cfvo: [
+						{ type: 'percent', value: '0' },
+						{ type: 'num', value: '0' },
+						{ type: 'num', value: '30' },
+					],
+					icons: [
+						{ iconSet: '3Signs', iconId: 0 },
+						{ iconSet: '3Flags', iconId: 1 },
+						{ iconSet: '3Symbols2', iconId: 2 },
+					],
+				},
+			})
 
 			const written = writeXlsx(initial.value.workbook, initial.value.capsules)
 			expectOk(written)

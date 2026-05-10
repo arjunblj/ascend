@@ -362,6 +362,26 @@ export function rewriteSheetMetadataFormulasForShift(
 				(formula) =>
 					rewriteFormulaTextForShift(formula, sheet.name, sheet.name, axis, at, delta) ?? formula,
 			),
+			...(format.dataBar
+				? {
+						dataBar: {
+							...format.dataBar,
+							cfvo: format.dataBar.cfvo.map((entry) =>
+								rewriteConditionalFormatValueObject(entry, sheet.name, axis, at, delta),
+							),
+						},
+					}
+				: {}),
+			...(format.iconSet
+				? {
+						iconSet: {
+							...format.iconSet,
+							cfvo: format.iconSet.cfvo.map((entry) =>
+								rewriteConditionalFormatValueObject(entry, sheet.name, axis, at, delta),
+							),
+						},
+					}
+				: {}),
 		}
 	}
 	for (let i = 0; i < sheet.tables.length; i++) {
@@ -391,6 +411,21 @@ export function rewriteSheetMetadataFormulasForShift(
 			}
 		})
 		sheet.tables[i] = { ...table, columns }
+	}
+}
+
+function rewriteConditionalFormatValueObject<T extends { readonly value?: string }>(
+	entry: T,
+	sheetName: string,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): T {
+	if (entry.value === undefined) return entry
+	return {
+		...entry,
+		value:
+			rewriteFormulaTextForShift(entry.value, sheetName, sheetName, axis, at, delta) ?? entry.value,
 	}
 }
 

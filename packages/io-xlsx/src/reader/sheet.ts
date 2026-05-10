@@ -8,9 +8,14 @@ import type {
 	SheetBreak,
 	SheetColDef,
 	SheetConditionalFormat,
+	SheetConditionalFormatColor,
 	SheetConditionalFormatRule,
+	SheetConditionalFormatValueObject,
 	SheetDataValidation,
 	SheetSparklineGroupInfo,
+	SheetX14ConditionalFormatDataBarInfo,
+	SheetX14ConditionalFormatIconInfo,
+	SheetX14ConditionalFormatIconSetInfo,
 	StyleId,
 } from '@ascend/core'
 import {
@@ -3692,12 +3697,161 @@ function parseX14ConditionalFormats(xml: string, sheet: Sheet, pool?: ValueInter
 			continue
 		}
 		const formulas = readXmlElementTexts(body, 'f')
+		const rule = readFirstXmlElement(body, 'cfRule')
+		const type = rule ? attr(rule.attrs, 'type') : undefined
+		const priority = rule ? numAttr(rule.attrs, 'priority') : undefined
+		const id = rule ? attr(rule.attrs, 'id') : undefined
+		const dataBar = rule ? parseX14DataBar(rule.body) : undefined
+		const iconSet = rule ? parseX14IconSet(rule.body) : undefined
 		sheet.x14ConditionalFormats.push({
 			index,
 			sqref: pool ? pool.internString(sqref) : sqref,
 			formulas: pool ? formulas.map((formula) => pool.internString(formula)) : formulas,
+			...(type ? { type: pool ? pool.internString(type) : type } : {}),
+			...(priority !== undefined ? { priority } : {}),
+			...(id ? { id: pool ? pool.internString(id) : id } : {}),
+			...(dataBar ? { dataBar: internX14DataBar(dataBar, pool) } : {}),
+			...(iconSet ? { iconSet: internX14IconSet(iconSet, pool) } : {}),
 		})
 		index += 1
+	}
+}
+
+function parseX14DataBar(xml: string): SheetX14ConditionalFormatDataBarInfo | undefined {
+	const dataBar = readFirstXmlElement(xml, 'dataBar')
+	if (!dataBar) return undefined
+	const parsed: SheetX14ConditionalFormatDataBarInfo = {
+		cfvo: readX14Cfvos(dataBar.body),
+	}
+	const minLength = numAttr(dataBar.attrs, 'minLength')
+	if (minLength !== undefined) Object.assign(parsed, { minLength })
+	const maxLength = numAttr(dataBar.attrs, 'maxLength')
+	if (maxLength !== undefined) Object.assign(parsed, { maxLength })
+	const border = readBoolAttribute(dataBar.attrs, 'border')
+	if (border !== undefined) Object.assign(parsed, { border })
+	const negativeBarBorderColorSameAsPositive = readBoolAttribute(
+		dataBar.attrs,
+		'negativeBarBorderColorSameAsPositive',
+	)
+	if (negativeBarBorderColorSameAsPositive !== undefined) {
+		Object.assign(parsed, { negativeBarBorderColorSameAsPositive })
+	}
+	const borderColor = readX14Color(dataBar.body, 'borderColor')
+	if (borderColor) Object.assign(parsed, { borderColor })
+	const negativeFillColor = readX14Color(dataBar.body, 'negativeFillColor')
+	if (negativeFillColor) Object.assign(parsed, { negativeFillColor })
+	const negativeBorderColor = readX14Color(dataBar.body, 'negativeBorderColor')
+	if (negativeBorderColor) Object.assign(parsed, { negativeBorderColor })
+	const axisColor = readX14Color(dataBar.body, 'axisColor')
+	if (axisColor) Object.assign(parsed, { axisColor })
+	return parsed
+}
+
+function parseX14IconSet(xml: string): SheetX14ConditionalFormatIconSetInfo | undefined {
+	const iconSet = readFirstXmlElement(xml, 'iconSet')
+	if (!iconSet) return undefined
+	const parsed: SheetX14ConditionalFormatIconSetInfo = {
+		cfvo: readX14Cfvos(iconSet.body),
+	}
+	const iconSetName = attr(iconSet.attrs, 'iconSet')
+	if (iconSetName) Object.assign(parsed, { iconSet: iconSetName })
+	const custom = readBoolAttribute(iconSet.attrs, 'custom')
+	if (custom !== undefined) Object.assign(parsed, { custom })
+	const showValue = readBoolAttribute(iconSet.attrs, 'showValue')
+	if (showValue !== undefined) Object.assign(parsed, { showValue })
+	const percent = readBoolAttribute(iconSet.attrs, 'percent')
+	if (percent !== undefined) Object.assign(parsed, { percent })
+	const reverse = readBoolAttribute(iconSet.attrs, 'reverse')
+	if (reverse !== undefined) Object.assign(parsed, { reverse })
+	const icons = readX14CfIcons(iconSet.body)
+	if (icons.length > 0) Object.assign(parsed, { icons })
+	return parsed
+}
+
+function readX14Cfvos(xml: string): SheetConditionalFormatValueObject[] {
+	const cfvos: SheetConditionalFormatValueObject[] = []
+	for (const entry of readXmlElements(xml, 'cfvo')) {
+		const parsed: SheetConditionalFormatValueObject = {}
+		const type = attr(entry.attrs, 'type')
+		if (type) Object.assign(parsed, { type })
+		const value = attr(entry.attrs, 'val') ?? readFirstXmlElementText(entry.body, 'f')
+		if (value !== undefined) Object.assign(parsed, { value })
+		const gte = readBoolAttribute(entry.attrs, 'gte')
+		if (gte !== undefined) Object.assign(parsed, { gte })
+		cfvos.push(parsed)
+	}
+	return cfvos
+}
+
+function readX14CfIcons(xml: string): SheetX14ConditionalFormatIconInfo[] {
+	const icons: SheetX14ConditionalFormatIconInfo[] = []
+	for (const entry of readXmlElements(xml, 'cfIcon')) {
+		const parsed: SheetX14ConditionalFormatIconInfo = {}
+		const iconSet = attr(entry.attrs, 'iconSet')
+		if (iconSet) Object.assign(parsed, { iconSet })
+		const iconId = numAttr(entry.attrs, 'iconId')
+		if (iconId !== undefined) Object.assign(parsed, { iconId })
+		if (Object.keys(parsed).length > 0) icons.push(parsed)
+	}
+	return icons
+}
+
+function readX14Color(xml: string, localName: string): SheetConditionalFormatColor | undefined {
+	const color = readFirstXmlElement(xml, localName)
+	if (!color) return undefined
+	const parsed: SheetConditionalFormatColor = {}
+	const rgb = attr(color.attrs, 'rgb')
+	if (rgb) Object.assign(parsed, { rgb })
+	const theme = numAttr(color.attrs, 'theme')
+	if (theme !== undefined) Object.assign(parsed, { theme })
+	const tint = numAttr(color.attrs, 'tint')
+	if (tint !== undefined) Object.assign(parsed, { tint })
+	const indexed = numAttr(color.attrs, 'indexed')
+	if (indexed !== undefined) Object.assign(parsed, { indexed })
+	const auto = readBoolAttribute(color.attrs, 'auto')
+	if (auto !== undefined) Object.assign(parsed, { auto })
+	return Object.keys(parsed).length > 0 ? parsed : undefined
+}
+
+function internX14DataBar(
+	dataBar: SheetX14ConditionalFormatDataBarInfo,
+	pool: ValueInternPool | undefined,
+): SheetX14ConditionalFormatDataBarInfo {
+	if (!pool) return dataBar
+	return {
+		...dataBar,
+		cfvo: dataBar.cfvo.map((entry) => internConditionalFormatValueObject(entry, pool)),
+	}
+}
+
+function internX14IconSet(
+	iconSet: SheetX14ConditionalFormatIconSetInfo,
+	pool: ValueInternPool | undefined,
+): SheetX14ConditionalFormatIconSetInfo {
+	if (!pool) return iconSet
+	return {
+		...iconSet,
+		...(iconSet.iconSet ? { iconSet: pool.internString(iconSet.iconSet) } : {}),
+		cfvo: iconSet.cfvo.map((entry) => internConditionalFormatValueObject(entry, pool)),
+		...(iconSet.icons
+			? {
+					icons: iconSet.icons.map((icon) => ({
+						...icon,
+						...(icon.iconSet ? { iconSet: pool.internString(icon.iconSet) } : {}),
+					})),
+				}
+			: {}),
+	}
+}
+
+function internConditionalFormatValueObject(
+	cfvo: SheetConditionalFormatValueObject,
+	pool: ValueInternPool,
+): SheetConditionalFormatValueObject {
+	return {
+		...cfvo,
+		...(cfvo.type ? { type: pool.internString(cfvo.type) } : {}),
+		...(cfvo.value ? { value: pool.internString(cfvo.value) } : {}),
 	}
 }
 
@@ -3874,13 +4028,34 @@ function readXmlElementTexts(xml: string, localName: string): string[] {
 	return values
 }
 
-function readFirstXmlElementBody(xml: string, localName: string): string | undefined {
+function readXmlElements(
+	xml: string,
+	localName: string,
+): { readonly attrs: XmlNode; readonly body: string }[] {
 	const escapedName = escapeRegExp(localName)
 	const pattern = new RegExp(
-		`<(?:[A-Za-z_][\\w.-]*:)?${escapedName}\\b[^>]*>([\\s\\S]*?)<\\/(?:[A-Za-z_][\\w.-]*:)?${escapedName}>`,
-		'i',
+		`<(?:[A-Za-z_][\\w.-]*:)?${escapedName}\\b([^>]*)>([\\s\\S]*?)<\\/(?:[A-Za-z_][\\w.-]*:)?${escapedName}>|<(?:[A-Za-z_][\\w.-]*:)?${escapedName}\\b([^>]*)/>`,
+		'gi',
 	)
-	return pattern.exec(xml)?.[1]
+	const elements: { attrs: XmlNode; body: string }[] = []
+	for (const match of xml.matchAll(pattern)) {
+		elements.push({
+			attrs: parseRawAttributes(match[1] ?? match[3] ?? ''),
+			body: match[2] ?? '',
+		})
+	}
+	return elements
+}
+
+function readFirstXmlElement(
+	xml: string,
+	localName: string,
+): { readonly attrs: XmlNode; readonly body: string } | undefined {
+	return readXmlElements(xml, localName)[0]
+}
+
+function readFirstXmlElementBody(xml: string, localName: string): string | undefined {
+	return readFirstXmlElement(xml, localName)?.body
 }
 
 function readXmlTextContent(xml: string): string | undefined {

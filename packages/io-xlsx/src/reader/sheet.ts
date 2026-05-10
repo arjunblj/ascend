@@ -652,81 +652,71 @@ function parseSheetDataFromLoc(
 			const cellClose = selfClosing ? -1 : xml.indexOf('</c>', cellTagEnd + 1)
 			fallbackPos.row = row
 			fallbackPos.col = nextCol
-			if (
-				!selfClosing &&
-				cellClose !== -1 &&
-				cellClose <= rowClose &&
-				parseSimpleValuesNumberCell(
-					rawAttrs,
-					xml,
-					cellTagEnd + 1,
-					cellClose,
-					cellCtx,
-					fallbackPos,
-					sheet,
-					cellOut,
-				)
-			) {
-				cellCursor = cellClose + 4
-				nextCol = cellOut.col + 1
-				continue
-			}
-			if (
-				!selfClosing &&
-				cellClose !== -1 &&
-				cellClose <= rowClose &&
-				parseSimpleValuesSharedStringCell(
-					rawAttrs,
-					xml,
-					cellTagEnd + 1,
-					cellClose,
-					cellCtx,
-					fallbackPos,
-					sheet,
-					cellOut,
-				)
-			) {
-				cellCursor = cellClose + 4
-				nextCol = cellOut.col + 1
-				continue
-			}
-			if (
-				!selfClosing &&
-				cellClose !== -1 &&
-				cellClose <= rowClose &&
-				parseSimpleValuesPlainStringCell(
-					rawAttrs,
-					xml,
-					cellTagEnd + 1,
-					cellClose,
-					cellCtx,
-					fallbackPos,
-					sheet,
-					cellOut,
-				)
-			) {
-				cellCursor = cellClose + 4
-				nextCol = cellOut.col + 1
-				continue
-			}
-			if (
-				!selfClosing &&
-				cellClose !== -1 &&
-				cellClose <= rowClose &&
-				parseSimpleValuesInlineStringCell(
-					rawAttrs,
-					xml,
-					cellTagEnd + 1,
-					cellClose,
-					cellCtx,
-					fallbackPos,
-					sheet,
-					cellOut,
-				)
-			) {
-				cellCursor = cellClose + 4
-				nextCol = cellOut.col + 1
-				continue
+			if (cellCtx.valuesOnly && !selfClosing && cellClose !== -1 && cellClose <= rowClose) {
+				if (
+					parseSimpleValuesNumberCell(
+						rawAttrs,
+						xml,
+						cellTagEnd + 1,
+						cellClose,
+						cellCtx,
+						fallbackPos,
+						sheet,
+						cellOut,
+					)
+				) {
+					cellCursor = cellClose + 4
+					nextCol = cellOut.col + 1
+					continue
+				}
+				if (
+					parseSimpleValuesSharedStringCell(
+						rawAttrs,
+						xml,
+						cellTagEnd + 1,
+						cellClose,
+						cellCtx,
+						fallbackPos,
+						sheet,
+						cellOut,
+					)
+				) {
+					cellCursor = cellClose + 4
+					nextCol = cellOut.col + 1
+					continue
+				}
+				if (
+					parseSimpleValuesPlainStringCell(
+						rawAttrs,
+						xml,
+						cellTagEnd + 1,
+						cellClose,
+						cellCtx,
+						fallbackPos,
+						sheet,
+						cellOut,
+					)
+				) {
+					cellCursor = cellClose + 4
+					nextCol = cellOut.col + 1
+					continue
+				}
+				if (
+					parseSimpleValuesInlineStringCell(
+						rawAttrs,
+						xml,
+						cellTagEnd + 1,
+						cellClose,
+						cellCtx,
+						fallbackPos,
+						sheet,
+						cellOut,
+					)
+				) {
+					cellCursor = cellClose + 4
+					nextCol = cellOut.col + 1
+					continue
+				}
 			}
 			const innerXml =
 				!selfClosing && cellClose !== -1 && cellClose <= rowClose
@@ -1131,81 +1121,71 @@ function parseStreamedSheetRowXml(
 		const cellClose = selfClosing ? -1 : rowXml.indexOf('</c>', cellTagEnd + 1)
 		fallbackPos.row = row
 		fallbackPos.col = nextCol
-		if (
-			!selfClosing &&
-			cellClose !== -1 &&
-			cellClose <= rowClose &&
-			parseSimpleValuesNumberCell(
-				rawAttrs,
-				rowXml,
-				cellTagEnd + 1,
-				cellClose,
-				ctx,
-				fallbackPos,
-				rowSheet,
-				cellOut,
-			)
-		) {
-			cellCursor = cellClose + 4
-			nextCol = cellOut.col + 1
-			continue
-		}
-		if (
-			!selfClosing &&
-			cellClose !== -1 &&
-			cellClose <= rowClose &&
-			parseSimpleValuesSharedStringCell(
-				rawAttrs,
-				rowXml,
-				cellTagEnd + 1,
-				cellClose,
-				ctx,
-				fallbackPos,
-				rowSheet,
-				cellOut,
-			)
-		) {
-			cellCursor = cellClose + 4
-			nextCol = cellOut.col + 1
-			continue
-		}
-		if (
-			!selfClosing &&
-			cellClose !== -1 &&
-			cellClose <= rowClose &&
-			parseSimpleValuesPlainStringCell(
-				rawAttrs,
-				rowXml,
-				cellTagEnd + 1,
-				cellClose,
-				ctx,
-				fallbackPos,
-				rowSheet,
-				cellOut,
-			)
-		) {
-			cellCursor = cellClose + 4
-			nextCol = cellOut.col + 1
-			continue
-		}
-		if (
-			!selfClosing &&
-			cellClose !== -1 &&
-			cellClose <= rowClose &&
-			parseSimpleValuesInlineStringCell(
-				rawAttrs,
-				rowXml,
-				cellTagEnd + 1,
-				cellClose,
-				ctx,
-				fallbackPos,
-				rowSheet,
-				cellOut,
-			)
-		) {
-			cellCursor = cellClose + 4
-			nextCol = cellOut.col + 1
-			continue
+		if (ctx.valuesOnly && !selfClosing && cellClose !== -1 && cellClose <= rowClose) {
+			if (
+				parseSimpleValuesNumberCell(
+					rawAttrs,
+					rowXml,
+					cellTagEnd + 1,
+					cellClose,
+					ctx,
+					fallbackPos,
+					rowSheet,
+					cellOut,
+				)
+			) {
+				cellCursor = cellClose + 4
+				nextCol = cellOut.col + 1
+				continue
+			}
+			if (
+				parseSimpleValuesSharedStringCell(
+					rawAttrs,
+					rowXml,
+					cellTagEnd + 1,
+					cellClose,
+					ctx,
+					fallbackPos,
+					rowSheet,
+					cellOut,
+				)
+			) {
+				cellCursor = cellClose + 4
+				nextCol = cellOut.col + 1
+				continue
+			}
+			if (
+				parseSimpleValuesPlainStringCell(
+					rawAttrs,
+					rowXml,
+					cellTagEnd + 1,
+					cellClose,
+					ctx,
+					fallbackPos,
+					rowSheet,
+					cellOut,
+				)
+			) {
+				cellCursor = cellClose + 4
+				nextCol = cellOut.col + 1
+				continue
+			}
+			if (
+				parseSimpleValuesInlineStringCell(
+					rawAttrs,
+					rowXml,
+					cellTagEnd + 1,
+					cellClose,
+					ctx,
+					fallbackPos,
+					rowSheet,
+					cellOut,
+				)
+			) {
+				cellCursor = cellClose + 4
+				nextCol = cellOut.col + 1
+				continue
+			}
 		}
 		const innerXml =
 			!selfClosing && cellClose !== -1 && cellClose <= rowClose
@@ -1256,11 +1236,20 @@ function parseFastCell(
 	sheet: Sheet,
 	out: { row: number; col: number },
 ): boolean {
-	const pos = resolveCellPosition(rawAttrs, fallbackPosition)
-	if (!pos) return false
+	if (fallbackPosition) {
+		if (!resolveCellPositionInto(rawAttrs, fallbackPosition, out)) return false
+	} else {
+		const ref = rawAttr(rawAttrs, 'r')
+		const pos = ref ? parseCellRef(ref) : undefined
+		if (!pos) return false
+		out.row = pos.row
+		out.col = pos.col
+	}
+	const row = out.row
+	const col = out.col
 	const type = rawAttr(rawAttrs, 't')
 	if (type === 'inlineStr' || innerXml.includes('<is')) {
-		return parseSlowCell(rawAttrs, innerXml, ctx, sharedFormulaMasters, pos, sheet, out)
+		return parseSlowCell(rawAttrs, innerXml, ctx, sharedFormulaMasters, { row, col }, sheet, out)
 	}
 
 	const pool = ctx.valuePool
@@ -1275,8 +1264,8 @@ function parseFastCell(
 		? NO_FORMULA
 		: parseFormulaText(
 				extractRawFormulaNode(innerXml),
-				pos.row,
-				pos.col,
+				row,
+				col,
 				sharedFormulaMasters,
 				pool,
 				ctx.formulaFeatures,
@@ -1296,9 +1285,7 @@ function parseFastCell(
 		const idx = rawValue !== undefined ? fastParseNonNegInt(rawValue) : -1
 		if (idx < 0) {
 			if (ctx.valuesOnly) {
-				out.row = pos.row
-				out.col = pos.col
-				sheet.cells.setStringResolved(pos.row, pos.col, '', null, DEFAULT_STYLE_ID)
+				sheet.cells.setStringResolved(row, col, '', null, DEFAULT_STYLE_ID)
 				return true
 			}
 			value = pool ? pool.internValue(stringValue('')) : stringValue('')
@@ -1306,9 +1293,7 @@ function parseFastCell(
 			if (ctx.valuesOnly) {
 				const text = ctx.sharedStrings.getString?.(idx)
 				if (text !== undefined) {
-					out.row = pos.row
-					out.col = pos.col
-					sheet.cells.setStringResolved(pos.row, pos.col, text, null, DEFAULT_STYLE_ID)
+					sheet.cells.setStringResolved(row, col, text, null, DEFAULT_STYLE_ID)
 					return true
 				}
 			}
@@ -1343,11 +1328,9 @@ function parseFastCell(
 		return false
 	}
 
-	out.row = pos.row
-	out.col = pos.col
-	sheet.cells.setResolved(pos.row, pos.col, value, formulaSpec.text, styleId, binding)
+	sheet.cells.setResolved(row, col, value, formulaSpec.text, styleId, binding)
 	if (!ctx.valuesOnly && formulaSpec.text && formulaSpec.storedText !== undefined) {
-		sheet.storedFormulaText.set(formulaStorageKey(pos.row, pos.col), formulaSpec.storedText)
+		sheet.storedFormulaText.set(formulaStorageKey(row, col), formulaSpec.storedText)
 	}
 	return true
 }
@@ -2530,15 +2513,6 @@ function fastParseNonNegInt(s: string): number {
 		result = result * 10 + d
 	}
 	return s.length > 0 ? result : -1
-}
-
-function resolveCellPosition(
-	rawAttrs: string,
-	fallbackPosition?: CellPosition,
-): CellPosition | undefined {
-	const ref = rawAttr(rawAttrs, 'r')
-	if (ref) return parseCellRef(ref)
-	return fallbackPosition
 }
 
 function extractTextNode(

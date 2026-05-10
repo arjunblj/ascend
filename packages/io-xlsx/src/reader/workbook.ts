@@ -15,6 +15,7 @@ export interface DefinedNameEntry {
 	readonly name: string
 	readonly formula: string
 	readonly localSheetId?: number
+	readonly hidden?: boolean
 }
 
 export interface WorkbookInfo {
@@ -197,9 +198,13 @@ function scanDefinedNames(xml: string): DefinedNameEntry[] {
 		if (!name || !formula) continue
 
 		const localId = numberAttr(attrs, 'localSheetId')
-		entries.push(
-			localId !== undefined ? { name, formula, localSheetId: localId } : { name, formula },
-		)
+		const hidden = booleanAttr(attrs, 'hidden')
+		entries.push({
+			name,
+			formula,
+			...(localId !== undefined ? { localSheetId: localId } : {}),
+			...(hidden !== undefined ? { hidden } : {}),
+		})
 	}
 	return entries
 }
@@ -423,9 +428,13 @@ function parseDefinedNames(wb: XmlNode): DefinedNameEntry[] {
 		if (!name || !formula) continue
 
 		const localId = numAttr(dn, 'localSheetId')
-		entries.push(
-			localId !== undefined ? { name, formula, localSheetId: localId } : { name, formula },
-		)
+		const hidden = boolAttr(dn, 'hidden')
+		entries.push({
+			name,
+			formula,
+			...(localId !== undefined ? { localSheetId: localId } : {}),
+			...(hidden !== undefined ? { hidden } : {}),
+		})
 	}
 	return entries
 }

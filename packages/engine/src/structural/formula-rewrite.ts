@@ -74,7 +74,7 @@ export function rewriteDefinedNameFormulasForShift(
 		if (rewritten === parsed.value) continue
 		const formula = printFormula(rewritten)
 		if (formula === entry.formula) continue
-		workbook.definedNames.set(entry.name, formula, entry.scope)
+		workbook.definedNames.set(entry.name, formula, entry.scope, definedNameOptions(entry))
 	}
 }
 
@@ -136,7 +136,7 @@ export function rewriteSheetNameInDefinedNames(
 		const rewritten = rewriteSheetName(parsed.value, oldName, newName)
 		const formula = printFormula(rewritten)
 		if (formula === entry.formula) continue
-		workbook.definedNames.set(entry.name, formula, entry.scope)
+		workbook.definedNames.set(entry.name, formula, entry.scope, definedNameOptions(entry))
 	}
 }
 
@@ -179,8 +179,12 @@ export function rewriteTableNameInDefinedNames(
 		const formula = rewriteFormulaTextForTableRename(entry.formula, oldName, newName)
 		if (formula === undefined) continue
 		if (formula === entry.formula) continue
-		workbook.definedNames.set(entry.name, formula, entry.scope)
+		workbook.definedNames.set(entry.name, formula, entry.scope, definedNameOptions(entry))
 	}
+}
+
+function definedNameOptions(entry: { readonly hidden?: boolean }): { readonly hidden?: boolean } {
+	return entry.hidden !== undefined ? { hidden: entry.hidden } : {}
 }
 
 export function rewriteFormulaTextForRename(

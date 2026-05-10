@@ -715,6 +715,36 @@ describe('readXlsx', () => {
 		expect(resolved?.formula).toBe('Summary!$A$1')
 	})
 
+	it('reads hidden defined-name metadata', () => {
+		const wbXml = `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
+  <definedNames>
+    <definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">Data!$A$1:$B$10</definedName>
+  </definedNames>
+</workbook>`
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': wbXml,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': SHEET_XML,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		const sheet = result.value.workbook.getSheet('Data')
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+
+		const entry = result.value.workbook.definedNames.resolve('_xlnm._FilterDatabase', sheet.id)
+		expect(entry?.hidden).toBe(true)
+		expect(entry?.formula).toBe('Data!$A$1:$B$10')
+	})
+
 	it('reads array formula text from structured formula nodes', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': CONTENT_TYPES,
@@ -1061,6 +1091,30 @@ describe('readXlsx', () => {
 				caseSensitive: true,
 				conditions: [{ ref: 'B2:B10', descending: true }],
 			},
+		})
+	})
+
+	it('parses top-level worksheet sort state', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData/>
+  <sortState ref="D1:I2707">
+    <sortCondition ref="D1"/>
+  </sortState>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+		expect(result.value.workbook.sheets[0]?.sortState).toEqual({
+			ref: 'D1:I2707',
+			conditions: [{ ref: 'D1' }],
 		})
 	})
 

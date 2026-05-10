@@ -1,4 +1,4 @@
-import type { AutoFilter } from './filter.ts'
+import type { AutoFilter, SortState } from './filter.ts'
 import { createSheetId, type SheetId } from './ids.ts'
 import type { RangeRef } from './refs.ts'
 import { SparseGrid } from './sparse-grid.ts'
@@ -401,6 +401,7 @@ export class Sheet {
 	advancedFilters: SheetAdvancedFilterInfo[]
 	drawingRefs: SheetDrawingRefs
 	autoFilter: AutoFilter | null
+	sortState: SortState | null
 	protection: SheetProtection | null
 	pageMargins: SheetPageMargins | null
 	pageSetup: SheetPageSetup | null
@@ -441,6 +442,7 @@ export class Sheet {
 		this.advancedFilters = []
 		this.drawingRefs = { hasDrawing: false, hasLegacyDrawing: false }
 		this.autoFilter = null
+		this.sortState = null
 		this.protection = null
 		this.pageMargins = null
 		this.pageSetup = null
@@ -476,6 +478,7 @@ export class Sheet {
 		this.sparklineGroups = this.sparklineGroups.map((group) => ({ ...group }))
 		this.advancedFilters = this.advancedFilters.map(cloneAdvancedFilterInfo)
 		this.autoFilter = this.autoFilter ? cloneAutoFilter(this.autoFilter) : null
+		this.sortState = this.sortState ? cloneSortState(this.sortState) : null
 		this._shared = false
 	}
 
@@ -507,6 +510,7 @@ export class Sheet {
 		s.advancedFilters = this.advancedFilters
 		s.drawingRefs = this.drawingRefs
 		s.autoFilter = this.autoFilter
+		s.sortState = this.sortState
 		s.protection = this.protection
 		s.pageMargins = this.pageMargins
 		s.pageSetup = this.pageSetup
@@ -546,14 +550,14 @@ function cloneAutoFilter(filter: AutoFilter): AutoFilter {
 				? { customFilters: column.customFilters.map((entry) => ({ ...entry })) }
 				: {}),
 		})),
-		...(filter.sortState
-			? {
-					sortState: {
-						...filter.sortState,
-						conditions: filter.sortState.conditions.map((condition) => ({ ...condition })),
-					},
-				}
-			: {}),
+		...(filter.sortState ? { sortState: cloneSortState(filter.sortState) } : {}),
+	}
+}
+
+function cloneSortState(sortState: SortState): SortState {
+	return {
+		...sortState,
+		conditions: sortState.conditions.map((condition) => ({ ...condition })),
 	}
 }
 
@@ -570,14 +574,7 @@ function cloneTable(table: Table): Table {
 		ref: cloneRangeRef(table.ref),
 		columns: table.columns.map((column) => ({ ...column })),
 		...(table.autoFilter ? { autoFilter: cloneAutoFilter(table.autoFilter) } : {}),
-		...(table.sortState
-			? {
-					sortState: {
-						...table.sortState,
-						conditions: table.sortState.conditions.map((condition) => ({ ...condition })),
-					},
-				}
-			: {}),
+		...(table.sortState ? { sortState: cloneSortState(table.sortState) } : {}),
 		...(table.tableStyleInfo ? { tableStyleInfo: { ...table.tableStyleInfo } } : {}),
 	}
 }

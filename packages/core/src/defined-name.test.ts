@@ -33,4 +33,20 @@ describe('DefinedNameCollection', () => {
 		expect(clone.resolve('Rate', 'sheet-1')?.formula).toBe('0.3')
 		expect(names.resolve('Rate', 'sheet-1')?.formula).toBe('0.2')
 	})
+
+	test('preserves optional hidden metadata', () => {
+		const names = new DefinedNameCollection()
+		names.set(
+			'_xlnm._FilterDatabase',
+			'Data!$A$1:$B$10',
+			{ kind: 'sheet', sheetId: 'sheet-1' },
+			{ hidden: true },
+		)
+
+		const entry = names.resolve('_xlnm._FilterDatabase', 'sheet-1')
+		expect(entry?.hidden).toBe(true)
+
+		names.set('VisibleName', 'Data!$A$1')
+		expect(names.resolve('VisibleName')?.hidden).toBeUndefined()
+	})
 })

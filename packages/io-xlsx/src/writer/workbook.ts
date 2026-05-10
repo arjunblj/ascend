@@ -102,6 +102,9 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 				const sheetIndex = workbook.sheets.findIndex((sheet) => sheet.id === scope.sheetId)
 				if (sheetIndex >= 0) attrs.push(`localSheetId="${sheetIndex}"`)
 			}
+			if (definedName.hidden !== undefined) {
+				attrs.push(`hidden="${definedName.hidden ? '1' : '0'}"`)
+			}
 			out.push(
 				`<definedName ${attrs.join(' ')}>${escapeXml(toStoredFormulaText(definedName.formula))}</definedName>`,
 			)

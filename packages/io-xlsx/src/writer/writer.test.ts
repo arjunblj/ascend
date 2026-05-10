@@ -1357,6 +1357,24 @@ describe('writeXlsx', () => {
 		})
 	})
 
+	it('preserves top-level worksheet sort state on round-trip', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Sorted')
+		sheet.cells.set(0, 3, { value: stringValue('Name'), formula: null, styleId: S0 })
+		sheet.sortState = {
+			ref: 'D1:I2707',
+			conditions: [{ ref: 'D1' }],
+		}
+
+		const { result, bytes } = roundTrip(wb)
+		expect(result.workbook.sheets[0]?.sortState).toEqual({
+			ref: 'D1:I2707',
+			conditions: [{ ref: 'D1' }],
+		})
+		const sheetXml = new TextDecoder().decode(unzipSync(bytes)['xl/worksheets/sheet1.xml'])
+		expect(sheetXml).toContain('<sortState ref="D1:I2707"><sortCondition ref="D1"/></sortState>')
+	})
+
 	it('preserves workbook and sheet protection on round-trip', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Protected')
@@ -2061,6 +2079,33 @@ describe('writeXlsx', () => {
 		)
 		expect(resolved?.scope.kind).toBe('sheet')
 		expect(resolved?.formula).toBe('Summary!$A$1')
+	})
+
+	it('preserves hidden defined names on round-trip', () => {
+		const wb = new Workbook()
+		const data = wb.addSheet('Data')
+		data.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: S0 })
+		wb.definedNames.set(
+			'_xlnm._FilterDatabase',
+			'Data!$A$1:$B$10',
+			{ kind: 'sheet', sheetId: data.id },
+			{ hidden: true },
+		)
+
+		const { bytes } = roundTrip(wb)
+		const workbookXml = new TextDecoder().decode(unzipSync(bytes)['xl/workbook.xml'])
+		expect(workbookXml).toContain(
+			'<definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">Data!$A$1:$B$10</definedName>',
+		)
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+		const resolved = result.value.workbook.definedNames.resolve(
+			'_xlnm._FilterDatabase',
+			result.value.workbook.getSheet('Data')?.id,
+		)
+		expect(resolved?.hidden).toBe(true)
+		expect(resolved?.formula).toBe('Data!$A$1:$B$10')
 	})
 
 	it('preserves workbook views and external reference wiring on round-trip', () => {

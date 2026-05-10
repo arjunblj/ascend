@@ -485,19 +485,25 @@ export function readXlsx(
 		}
 
 		for (const dn of wbInfo.definedNames) {
+			const options = dn.hidden !== undefined ? { hidden: dn.hidden } : {}
 			if (dn.localSheetId !== undefined) {
 				const sourceSheet = wbInfo.sheets[dn.localSheetId]
 				const sheet = sourceSheet ? workbook.getSheet(sourceSheet.name) : undefined
 				if (sheet) {
-					workbook.definedNames.set(dn.name, normalizeStoredFormulaText(dn.formula), {
-						kind: 'sheet',
-						sheetId: sheet.id,
-					})
+					workbook.definedNames.set(
+						dn.name,
+						normalizeStoredFormulaText(dn.formula),
+						{
+							kind: 'sheet',
+							sheetId: sheet.id,
+						},
+						options,
+					)
 					continue
 				}
 				continue
 			}
-			workbook.definedNames.set(dn.name, normalizeStoredFormulaText(dn.formula))
+			workbook.definedNames.set(dn.name, normalizeStoredFormulaText(dn.formula), undefined, options)
 		}
 
 		const sourceSheetNames = sourceWorksheetNames

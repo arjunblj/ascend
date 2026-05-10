@@ -34,7 +34,7 @@ import {
 } from '@ascend/schema'
 import { normalizeStoredFormulaText } from '../formula-storage.ts'
 import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
-import { parseAutoFilterNode } from './filtering.ts'
+import { parseAutoFilterNode, parseSortStateNode } from './filtering.ts'
 import type { ParsedMetadataPart } from './metadata.ts'
 import type { Relationship } from './relationships.ts'
 import type { SharedStringResolver } from './shared-strings.ts'
@@ -227,6 +227,7 @@ export function parseSheet(
 	parseMergeCells(ws, sheet)
 	parseDrawingRefs(ws, sheet)
 	parseAutoFilter(ws, sheet)
+	parseSortState(ws, sheet)
 	parseSheetProtection(ws, sheet)
 	parsePageMargins(ws, sheet)
 	parsePageSetup(ws, sheet)
@@ -264,6 +265,7 @@ const VALUES_MODE_SHEET_METADATA_TAGS = [
 	'drawing',
 	'legacyDrawing',
 	'autoFilter',
+	'sortState',
 	'sheetProtection',
 	'pageMargins',
 	'pageSetup',
@@ -2384,6 +2386,10 @@ function parseCols(ws: XmlNode, sheet: Sheet): void {
 function parseAutoFilter(ws: XmlNode, sheet: Sheet): void {
 	const autoFilter = parseAutoFilterNode(ws.autoFilter as XmlNode | undefined)
 	sheet.autoFilter = autoFilter as AutoFilter | null
+}
+
+function parseSortState(ws: XmlNode, sheet: Sheet): void {
+	sheet.sortState = parseSortStateNode(ws.sortState as XmlNode | undefined)
 }
 
 function parseAdvancedFilters(ws: XmlNode, sheet: Sheet): void {

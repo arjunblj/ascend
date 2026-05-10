@@ -7,7 +7,7 @@ import { toStoredFormulaText } from '../formula-storage.ts'
 import { escapeXml } from '../xml.ts'
 import { ChunkedStringBuilder } from './chunked-string-builder.ts'
 import { buildColorScaleXml, buildDataBarXml, buildIconSetXml } from './conditional-format.ts'
-import { pushAutoFilterXml } from './filtering.ts'
+import { pushAutoFilterXml, pushSortStateXml } from './filtering.ts'
 import type { SharedStringTable } from './shared-strings.ts'
 
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
@@ -252,6 +252,10 @@ function buildSheetXmlToSink(
 
 	if (sheet.autoFilter) {
 		pushAutoFilterXml(out, sheet.autoFilter)
+	}
+
+	if (sheet.sortState) {
+		pushSortStateXml(out, sheet.sortState)
 	}
 
 	if (sheet.conditionalFormats.length > 0) {

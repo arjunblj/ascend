@@ -8,6 +8,11 @@ export interface DefinedName {
 	readonly name: string
 	readonly formula: string
 	readonly scope: DefinedNameScope
+	readonly hidden?: boolean
+}
+
+export interface DefinedNameOptions {
+	readonly hidden?: boolean
 }
 
 const WORKBOOK_SCOPE: DefinedNameScope = { kind: 'workbook' }
@@ -21,9 +26,19 @@ export class DefinedNameCollection {
 		return this.items.length
 	}
 
-	set(name: string, formula: string, scope: DefinedNameScope = WORKBOOK_SCOPE): void {
+	set(
+		name: string,
+		formula: string,
+		scope: DefinedNameScope = WORKBOOK_SCOPE,
+		options: DefinedNameOptions = {},
+	): void {
 		const index = this.findIndex(name, scope)
-		const entry: DefinedName = { name, formula, scope }
+		const entry: DefinedName = {
+			name,
+			formula,
+			scope,
+			...(options.hidden !== undefined ? { hidden: options.hidden } : {}),
+		}
 		if (index >= 0) {
 			const previous = this.items[index]
 			if (previous) this.removeFromIndex(previous)

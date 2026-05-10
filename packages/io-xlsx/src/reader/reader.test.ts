@@ -2521,12 +2521,33 @@ ${rowEntries.join('\n')}
   <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
   <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
   <Override PartName="/xl/custom/custom1.xml" ContentType="application/custom+xml"/>
+  <Override PartName="/xl/calcChain.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.calcChain+xml"/>
+  <Override PartName="/xl/comments1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml"/>
+  <Override PartName="/xl/externalLinks/externalLink1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml"/>
+  <Override PartName="/xl/theme/theme.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
+  <Override PartName="/pivotCache/pivotCacheDefinition1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheDefinition+xml"/>
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
 </Types>`,
 			'_rels/.rels': ROOT_RELS,
-			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain" Target="calcChain.xml"/>
+</Relationships>`,
 			'xl/workbook.xml': WORKBOOK_XML,
 			'xl/worksheets/sheet1.xml': SHEET_XML,
 			'xl/custom/custom1.xml': '<custom>preserve me</custom>',
+			'xl/calcChain.xml': '<calcChain/>',
+			'xl/comments1.xml': '<comments/>',
+			'xl/externalLinks/externalLink1.xml': '<externalLink/>',
+			'xl/theme/theme.xml': '<a:theme/>',
+			'pivotCache/pivotCacheDefinition1.xml': '<pivotCacheDefinition/>',
+			'docProps/core.xml': '<cp:coreProperties/>',
+			'docProps/app.xml': '<Properties/>',
+			'xl/.DS_Store': 'junk',
+			'__MACOSX/._custom1.xml': 'junk',
 		})
 
 		const result = readXlsx(bytes)
@@ -2540,6 +2561,65 @@ ${rowEntries.join('\n')}
 				tier: 'preserved',
 				count: 1,
 				locations: ['xl/custom/custom1.xml'],
+			}),
+		)
+		expect(result.value.report.features.some((feature) => feature.feature === 'calcChain')).toBe(
+			true,
+		)
+		expect(
+			result.value.report.features.find((feature) => feature.feature === 'preservedCalcChain'),
+		).toEqual(
+			expect.objectContaining({
+				tier: 'preserved',
+				count: 1,
+				locations: ['xl/calcChain.xml'],
+			}),
+		)
+		expect(
+			result.value.report.features.find((feature) => feature.feature === 'preservedComments'),
+		).toEqual(
+			expect.objectContaining({
+				tier: 'preserved',
+				count: 1,
+				locations: ['xl/comments1.xml'],
+			}),
+		)
+		expect(
+			result.value.report.features.find((feature) => feature.feature === 'preservedExternalLink'),
+		).toEqual(
+			expect.objectContaining({
+				tier: 'preserved',
+				count: 1,
+				locations: ['xl/externalLinks/externalLink1.xml'],
+			}),
+		)
+		expect(
+			result.value.report.features.find((feature) => feature.feature === 'preservedTheme'),
+		).toEqual(
+			expect.objectContaining({
+				tier: 'preserved',
+				count: 1,
+				locations: ['xl/theme/theme.xml'],
+			}),
+		)
+		expect(
+			result.value.report.features.find((feature) => feature.feature === 'preservedPivot'),
+		).toEqual(
+			expect.objectContaining({
+				tier: 'preserved',
+				count: 1,
+				locations: ['pivotCache/pivotCacheDefinition1.xml'],
+			}),
+		)
+		expect(
+			result.value.report.features.find(
+				(feature) => feature.feature === 'preservedDocumentProperties',
+			),
+		).toEqual(
+			expect.objectContaining({
+				tier: 'preserved',
+				count: 2,
+				locations: ['docProps/core.xml', 'docProps/app.xml'],
 			}),
 		)
 	})

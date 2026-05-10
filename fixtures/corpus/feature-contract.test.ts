@@ -43,6 +43,8 @@ interface PackageSummary {
 	pivotCaches: number
 	slicers: number
 	slicerCaches: number
+	timelines: number
+	timelineCaches: number
 	macros: number
 	customXml: number
 	externalLinks: number
@@ -68,6 +70,7 @@ interface SemanticSummary {
 	timelineCacheCount: number
 	sparklineGroupCount: number
 	externalReferenceCount: number
+	connectionPartCount: number
 	activeContentCount: number
 	hasDrawingRefs: boolean
 	activeContent: readonly ActiveContentInfo[]
@@ -205,6 +208,8 @@ function summarizePackage(bytes: Uint8Array): PackageSummary {
 		pivotCaches: countPaths(paths, /^xl\/pivotCache/),
 		slicers: countPaths(paths, /^xl\/slicers\//),
 		slicerCaches: countPaths(paths, /^xl\/slicerCaches\//),
+		timelines: countPaths(paths, /^xl\/timelines\//),
+		timelineCaches: countPaths(paths, /^xl\/timelineCaches\//),
 		macros: countPaths(paths, /^xl\/vbaProject/i),
 		customXml: countPaths(paths, /^customXml\//),
 		externalLinks: countPaths(paths, /^xl\/externalLinks\//),
@@ -263,6 +268,7 @@ async function loadContractSubject(bytes: Uint8Array): Promise<ContractSubject> 
 			timelineCacheCount: info.timelineCacheCount,
 			sparklineGroupCount: info.sparklineGroupCount ?? 0,
 			externalReferenceCount: info.externalReferenceCount,
+			connectionPartCount: info.connectionPartCount,
 			activeContentCount: info.activeContentCount,
 			hasDrawingRefs: info.sheets.some((sheet) => sheet.hasDrawingRefs ?? false),
 			activeContent: normalizeActiveContent(info.activeContent),
@@ -402,6 +408,13 @@ function assertManifestReadCoverage(
 	)
 	assertFeature(
 		entry,
+		'timelines',
+		!entry.features.timelines ||
+			((packageCounts.timelines > 0 || packageCounts.timeline_caches > 0) &&
+				(semanticSummary.timelineCount > 0 || semanticSummary.timelineCacheCount > 0)),
+	)
+	assertFeature(
+		entry,
 		'drawings',
 		!entry.features.drawings ||
 			(packageSummary.drawings > 0 &&
@@ -472,7 +485,12 @@ function assertManifestReadCoverage(
 			packageSummary.externalLinks > 0 ||
 			semanticSummary.externalReferenceCount > 0,
 	)
-	assertFeature(entry, 'connections', !entry.features.connections || packageSummary.connections > 0)
+	assertFeature(
+		entry,
+		'connections',
+		!entry.features.connections ||
+			(packageCounts.connections > 0 && semanticSummary.connectionPartCount > 0),
+	)
 	assertAnalyticsReadIntegrity(entry, subject)
 }
 
@@ -492,6 +510,8 @@ function assertManifestEditCoverage(
 	expect(after.packageSummary.pivotCaches).toBe(before.packageSummary.pivotCaches)
 	expect(after.packageSummary.slicers).toBe(before.packageSummary.slicers)
 	expect(after.packageSummary.slicerCaches).toBe(before.packageSummary.slicerCaches)
+	expect(after.packageSummary.timelines).toBe(before.packageSummary.timelines)
+	expect(after.packageSummary.timelineCaches).toBe(before.packageSummary.timelineCaches)
 	expect(after.packageSummary.macros).toBe(before.packageSummary.macros)
 	expect(after.packageSummary.customXml).toBe(before.packageSummary.customXml)
 	expect(after.packageSummary.externalLinks).toBe(before.packageSummary.externalLinks)
@@ -511,10 +531,13 @@ function assertManifestEditCoverage(
 	expect(after.semanticSummary.pivotCacheCount).toBe(before.semanticSummary.pivotCacheCount)
 	expect(after.semanticSummary.slicerCount).toBe(before.semanticSummary.slicerCount)
 	expect(after.semanticSummary.slicerCacheCount).toBe(before.semanticSummary.slicerCacheCount)
+	expect(after.semanticSummary.timelineCount).toBe(before.semanticSummary.timelineCount)
+	expect(after.semanticSummary.timelineCacheCount).toBe(before.semanticSummary.timelineCacheCount)
 	expect(after.semanticSummary.sparklineGroupCount).toBe(before.semanticSummary.sparklineGroupCount)
 	expect(after.semanticSummary.externalReferenceCount).toBe(
 		before.semanticSummary.externalReferenceCount,
 	)
+	expect(after.semanticSummary.connectionPartCount).toBe(before.semanticSummary.connectionPartCount)
 	expect(after.semanticSummary.activeContentCount).toBe(before.semanticSummary.activeContentCount)
 	expect(after.semanticSummary.activeContent).toEqual(before.semanticSummary.activeContent)
 	expect(after.semanticSummary.hasDrawingRefs).toBe(before.semanticSummary.hasDrawingRefs)

@@ -15,7 +15,7 @@ describe('agent workflow loss audit', () => {
 	test('docProps-only package preservation does not require lossy-write approval', () => {
 		const cleanDocPropsAudit = auditLossPolicy([
 			{
-				feature: 'preservedOther',
+				feature: 'preservedDocumentProperties',
 				tier: 'preserved',
 				count: 3,
 				locations: ['docProps/core.xml', 'docProps/app.xml', 'docProps/custom.xml'],
@@ -23,6 +23,28 @@ describe('agent workflow loss audit', () => {
 		])
 		expect(cleanDocPropsAudit.ok).toBe(true)
 		expect(cleanDocPropsAudit.blockedFeatures).toHaveLength(0)
+
+		const legacyDocPropsAudit = auditLossPolicy([
+			{
+				feature: 'preservedOther',
+				tier: 'preserved',
+				count: 3,
+				locations: ['docProps/core.xml', 'docProps/app.xml', 'docProps/custom.xml'],
+			},
+		])
+		expect(legacyDocPropsAudit.ok).toBe(true)
+		expect(legacyDocPropsAudit.blockedFeatures).toHaveLength(0)
+
+		const calcChainAudit = auditLossPolicy([
+			{
+				feature: 'preservedCalcChain',
+				tier: 'preserved',
+				count: 1,
+				locations: ['xl/calcChain.xml'],
+			},
+		])
+		expect(calcChainAudit.ok).toBe(true)
+		expect(calcChainAudit.blockedFeatures).toHaveLength(0)
 
 		const unknownPackageAudit = auditLossPolicy([
 			{

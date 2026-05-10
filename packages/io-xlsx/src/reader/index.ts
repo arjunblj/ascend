@@ -635,6 +635,7 @@ function collectCapsules(
 
 	for (const entry of archive.entries()) {
 		const partPath = entry.path
+		if (isIgnorablePackageEntry(partPath)) continue
 		if (consumed.has(partPath)) continue
 		if (partPath.endsWith('.rels')) continue
 		if (partPath.startsWith('_rels/')) continue
@@ -678,6 +679,15 @@ function collectCapsules(
 	return capsules
 }
 
+function isIgnorablePackageEntry(partPath: string): boolean {
+	return (
+		partPath.endsWith('/') ||
+		partPath === '.DS_Store' ||
+		partPath.endsWith('/.DS_Store') ||
+		partPath.startsWith('__MACOSX/')
+	)
+}
+
 function isChartCapsule(capsule: PreservationCapsule): boolean {
 	return (
 		capsule.contentType.includes('chart+xml') ||
@@ -696,6 +706,7 @@ function resolveContentType(partPath: string, contentTypes: ContentTypes): strin
 }
 
 function capsuleFamily(path: string): string {
+	if (path.startsWith('docProps/')) return 'preservedDocumentProperties'
 	if (path.includes('/chartsheets/')) return 'preservedChartSheet'
 	if (path.includes('/charts/') || path.includes('/chartEx/')) return 'preservedChart'
 	if (path.includes('/queryTables/')) return 'preservedQueryTable'
@@ -705,13 +716,15 @@ function capsuleFamily(path: string): string {
 	if (path.includes('/drawings/') && path.endsWith('.vml')) return 'preservedVml'
 	if (path.includes('/drawings/')) return 'preservedDrawing'
 	if (path.includes('/media/')) return 'preservedMedia'
+	if (path.includes('/theme/')) return 'preservedTheme'
 	if (path.includes('/activeX/')) return 'preservedActiveX'
 	if (path.includes('/vbaProject')) return 'preservedMacro'
 	if (path.startsWith('_xmlsignatures/')) return 'preservedSignature'
 	if (path.includes('/printerSettings/')) return 'preservedPrinterSettings'
 	if (path.startsWith('customXml/')) return 'preservedCustomXml'
 	if (path.includes('/ctrlProps/')) return 'preservedControl'
-	if (path.includes('/pivotTables/') || path.includes('/pivotCache/')) return 'preservedPivot'
+	if (/(^|\/)externalLinks\//.test(path)) return 'preservedExternalLink'
+	if (/(^|\/)pivotTables\//.test(path) || /(^|\/)pivotCache\//.test(path)) return 'preservedPivot'
 	if (
 		path.includes('/slicers/') ||
 		path.includes('/slicerCaches/') ||
@@ -722,6 +735,8 @@ function capsuleFamily(path: string): string {
 	}
 	if (path.includes('/tables/')) return 'preservedTable'
 	if (path.includes('/metadata')) return 'preservedMetadata'
+	if (path.endsWith('/calcChain.xml')) return 'preservedCalcChain'
+	if (/\/comments\d+\.xml$/i.test(path)) return 'preservedComments'
 	if (path.includes('/threadedComments/')) return 'preservedThreadedComments'
 	return 'preservedOther'
 }
@@ -868,8 +883,23 @@ function preservedFeatureNote(feature: string): string | undefined {
 	if (feature === 'preservedThreadedComments') {
 		return 'Threaded comments are inventoried with thread/person metadata and preserved; semantic edits require explicit support.'
 	}
+	if (feature === 'preservedExternalLink') {
+		return 'External link package parts are inventoried and preserved; link target edits should use explicit external-link operations.'
+	}
+	if (feature === 'preservedTheme') {
+		return 'Theme parts are inventoried and preserved exactly where possible; full theme editing is not yet first-class.'
+	}
+	if (feature === 'preservedComments') {
+		return 'Classic comment parts are inventoried and preserved; comment text is inspectable when sheet metadata is hydrated.'
+	}
+	if (feature === 'preservedCalcChain') {
+		return 'Calc chain parts are preserved for compatible value edits but treated as rebuildable calculation hints.'
+	}
 	if (feature === 'preservedDataModel') {
 		return 'Workbook data model parts are inventoried and preserved; Power Pivot/data-model execution is not performed headlessly.'
+	}
+	if (feature === 'preservedDocumentProperties') {
+		return 'Document property parts are preserved exactly where possible; semantic property editing is not yet first-class.'
 	}
 	return undefined
 }

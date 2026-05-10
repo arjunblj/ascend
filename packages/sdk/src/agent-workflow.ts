@@ -918,6 +918,8 @@ function buildApprovalRequirements(
 }
 
 function isSafePackagePreservationFeature(feature: FeatureReport): boolean {
+	if (feature.feature === 'preservedDocumentProperties' && feature.tier === 'preserved') return true
+	if (feature.feature === 'preservedCalcChain' && feature.tier === 'preserved') return true
 	if (feature.feature !== 'preservedOther' || feature.tier !== 'preserved') return false
 	if (feature.locations.length === 0) return false
 	return feature.locations.every(isSafePackagePreservationLocation)

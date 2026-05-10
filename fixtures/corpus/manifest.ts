@@ -200,6 +200,7 @@ export function deriveFeatureTags(entry: CorpusManifestEntry): readonly string[]
 		external_links: 'external-link',
 		connections: 'connection',
 		slicers: 'slicer',
+		timelines: 'timeline',
 		sparklines: 'sparkline',
 		images_or_media: 'media',
 		custom_xml: 'custom-xml',
@@ -218,7 +219,12 @@ export function deriveFeatureTags(entry: CorpusManifestEntry): readonly string[]
 
 function deriveBenchmarkTier(entry: CorpusManifestEntry): CorpusBenchmarkTier {
 	if (entry.size_bytes >= 4_000_000) return 'extended'
-	if (entry.features.pivot_tables || entry.features.slicers || entry.features.macros)
+	if (
+		entry.features.pivot_tables ||
+		entry.features.slicers ||
+		entry.features.timelines ||
+		entry.features.macros
+	)
 		return 'extended'
 	if (
 		entry.features.charts ||
@@ -231,7 +237,12 @@ function deriveBenchmarkTier(entry: CorpusManifestEntry): CorpusBenchmarkTier {
 }
 
 function deriveAssertionClass(entry: CorpusManifestEntry): CorpusAssertionClass {
-	if (entry.features.pivot_tables || entry.features.slicers || entry.features.macros) {
+	if (
+		entry.features.pivot_tables ||
+		entry.features.slicers ||
+		entry.features.timelines ||
+		entry.features.macros
+	) {
 		return 'semantic-plus-package'
 	}
 	if (entry.features.charts || entry.features.drawings || entry.features.custom_xml) {
@@ -252,6 +263,7 @@ function deriveRiskClass(entry: CorpusManifestEntry): CorpusRiskClass {
 	if (
 		entry.features.pivot_tables ||
 		entry.features.slicers ||
+		entry.features.timelines ||
 		entry.features.macros ||
 		entry.features.external_links ||
 		entry.features.connections

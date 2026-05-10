@@ -50,6 +50,9 @@ const SMALL_NUMBER_RANGE_END = 512
 const ATTR_RE = /([A-Za-z_][\w:.-]*)="([^"]*)"/g
 const TEXT_NODE_RE =
 	/<([A-Za-z_][\w:.-]*)\b([^>]*)>([\s\S]*?)<\/\1>|<([A-Za-z_][\w:.-]*)\b([^>]*)\/>/g
+const X14_DATA_VALIDATION_RE =
+	/<([A-Za-z_][\w.-]*):dataValidation\b([^>]*)>([\s\S]*?)<\/\1:dataValidation>/gi
+const X14_SELF_CLOSING_DATA_VALIDATION_RE = /<([A-Za-z_][\w.-]*):dataValidation\b([^>]*)\/>/gi
 
 const NO_FORMULA: { text: null; info: undefined } = { text: null, info: undefined }
 const NULL_FORMULA_TEXT: { text: null } = { text: null }
@@ -235,6 +238,7 @@ export function parseSheet(
 		parseHyperlinks(ws, sheet, ctx.relationships ?? [], ctx.valuePool)
 		parseConditionalFormatting(ws, sheet, ctx.differentialStyles ?? [], ctx.valuePool)
 		parseDataValidations(ws, sheet, ctx.valuePool)
+		parseX14DataValidations(strippedXml, sheet, ctx.valuePool)
 		parseAdvancedFilters(ws, sheet)
 		parseSparklineGroups(ws, sheet)
 		extractExtLst(xml, sheet)
@@ -2838,66 +2842,157 @@ function parseDataValidations(ws: XmlNode, sheet: Sheet, pool?: ValueInternPool)
 	for (const validation of asArray<XmlNode>(container.dataValidation as XmlNode | XmlNode[])) {
 		const sqref = attr(validation, 'sqref')
 		if (!sqref) continue
-		const parsed: {
-			sqref: string
-			type?: string
-			operator?: string
-			allowBlank?: boolean
-			showInputMessage?: boolean
-			showErrorMessage?: boolean
-			showDropDown?: boolean
-			promptTitle?: string
-			prompt?: string
-			errorTitle?: string
-			error?: string
-			errorStyle?: string
-			imeMode?: string
-			formula1?: string
-			formula2?: string
-		} = { sqref }
-		const type = attr(validation, 'type')
-		if (type) parsed.type = type
-		const operator = attr(validation, 'operator')
-		if (operator) parsed.operator = operator
-		const errorStyle = attr(validation, 'errorStyle')
-		if (errorStyle) parsed.errorStyle = errorStyle
-		const imeMode = attr(validation, 'imeMode')
-		if (imeMode) parsed.imeMode = imeMode
-		const allowBlank = readBoolAttribute(validation, 'allowBlank')
-		if (allowBlank !== undefined) parsed.allowBlank = allowBlank
-		const showInputMessage = readBoolAttribute(validation, 'showInputMessage')
-		if (showInputMessage !== undefined) parsed.showInputMessage = showInputMessage
-		const showErrorMessage = readBoolAttribute(validation, 'showErrorMessage')
-		if (showErrorMessage !== undefined) parsed.showErrorMessage = showErrorMessage
-		const showDropDown = readBoolAttribute(validation, 'showDropDown')
-		if (showDropDown !== undefined) parsed.showDropDown = showDropDown
-		const promptTitle = attr(validation, 'promptTitle')
-		if (promptTitle) parsed.promptTitle = promptTitle
-		const prompt = attr(validation, 'prompt')
-		if (prompt) parsed.prompt = prompt
-		const errorTitle = attr(validation, 'errorTitle')
-		if (errorTitle) parsed.errorTitle = errorTitle
-		const error = attr(validation, 'error')
-		if (error) parsed.error = error
+		const parsed = parseDataValidationAttributes(validation, sqref)
 		const formula1 = readNodeText(validation.formula1)
 		if (formula1) parsed.formula1 = formula1
 		const formula2 = readNodeText(validation.formula2)
 		if (formula2) parsed.formula2 = formula2
-		if (pool) {
-			if (parsed.sqref) parsed.sqref = pool.internString(parsed.sqref)
-			if (parsed.type) parsed.type = pool.internString(parsed.type)
-			if (parsed.operator) parsed.operator = pool.internString(parsed.operator)
-			if (parsed.promptTitle) parsed.promptTitle = pool.internString(parsed.promptTitle)
-			if (parsed.prompt) parsed.prompt = pool.internString(parsed.prompt)
-			if (parsed.errorTitle) parsed.errorTitle = pool.internString(parsed.errorTitle)
-			if (parsed.error) parsed.error = pool.internString(parsed.error)
-			if (parsed.errorStyle) parsed.errorStyle = pool.internString(parsed.errorStyle)
-			if (parsed.imeMode) parsed.imeMode = pool.internString(parsed.imeMode)
-			if (parsed.formula1) parsed.formula1 = pool.internString(parsed.formula1)
-			if (parsed.formula2) parsed.formula2 = pool.internString(parsed.formula2)
-		}
-		sheet.dataValidations.push(parsed as SheetDataValidation)
+		pushDataValidation(sheet, parsed, pool)
 	}
+}
+
+type MutableDataValidation = {
+	sqref: string
+	type?: string
+	operator?: string
+	allowBlank?: boolean
+	showInputMessage?: boolean
+	showErrorMessage?: boolean
+	showDropDown?: boolean
+	promptTitle?: string
+	prompt?: string
+	errorTitle?: string
+	error?: string
+	errorStyle?: string
+	imeMode?: string
+	formula1?: string
+	formula2?: string
+}
+
+function parseX14DataValidations(xml: string, sheet: Sheet, pool?: ValueInternPool): void {
+	for (const match of xml.matchAll(X14_DATA_VALIDATION_RE)) {
+		const rawAttrs = match[2] ?? ''
+		const body = match[3] ?? ''
+		const attrs = parseRawAttributes(rawAttrs)
+		const sqref = attr(attrs, 'sqref') ?? readFirstXmlElementText(body, 'sqref')
+		if (!sqref) continue
+		const parsed = parseDataValidationAttributes(attrs, sqref)
+		const formula1 = readX14DataValidationFormula(body, 'formula1')
+		if (formula1) parsed.formula1 = formula1
+		const formula2 = readX14DataValidationFormula(body, 'formula2')
+		if (formula2) parsed.formula2 = formula2
+		pushDataValidation(sheet, parsed, pool)
+	}
+	for (const match of xml.matchAll(X14_SELF_CLOSING_DATA_VALIDATION_RE)) {
+		const attrs = parseRawAttributes(match[2] ?? '')
+		const sqref = attr(attrs, 'sqref')
+		if (!sqref) continue
+		pushDataValidation(sheet, parseDataValidationAttributes(attrs, sqref), pool)
+	}
+}
+
+function parseDataValidationAttributes(node: XmlNode, sqref: string): MutableDataValidation {
+	const parsed: MutableDataValidation = { sqref }
+	const type = attr(node, 'type')
+	if (type) parsed.type = type
+	const operator = attr(node, 'operator')
+	if (operator) parsed.operator = operator
+	const errorStyle = attr(node, 'errorStyle')
+	if (errorStyle) parsed.errorStyle = errorStyle
+	const imeMode = attr(node, 'imeMode')
+	if (imeMode) parsed.imeMode = imeMode
+	const allowBlank = readBoolAttribute(node, 'allowBlank')
+	if (allowBlank !== undefined) parsed.allowBlank = allowBlank
+	const showInputMessage = readBoolAttribute(node, 'showInputMessage')
+	if (showInputMessage !== undefined) parsed.showInputMessage = showInputMessage
+	const showErrorMessage = readBoolAttribute(node, 'showErrorMessage')
+	if (showErrorMessage !== undefined) parsed.showErrorMessage = showErrorMessage
+	const showDropDown = readBoolAttribute(node, 'showDropDown')
+	if (showDropDown !== undefined) parsed.showDropDown = showDropDown
+	const promptTitle = attr(node, 'promptTitle')
+	if (promptTitle) parsed.promptTitle = promptTitle
+	const prompt = attr(node, 'prompt')
+	if (prompt) parsed.prompt = prompt
+	const errorTitle = attr(node, 'errorTitle')
+	if (errorTitle) parsed.errorTitle = errorTitle
+	const error = attr(node, 'error')
+	if (error) parsed.error = error
+	return parsed
+}
+
+function pushDataValidation(
+	sheet: Sheet,
+	parsed: MutableDataValidation,
+	pool?: ValueInternPool,
+): void {
+	if (sheet.dataValidations.some((existing) => isSameDataValidation(existing, parsed))) return
+	if (pool) {
+		parsed.sqref = pool.internString(parsed.sqref)
+		if (parsed.type) parsed.type = pool.internString(parsed.type)
+		if (parsed.operator) parsed.operator = pool.internString(parsed.operator)
+		if (parsed.promptTitle) parsed.promptTitle = pool.internString(parsed.promptTitle)
+		if (parsed.prompt) parsed.prompt = pool.internString(parsed.prompt)
+		if (parsed.errorTitle) parsed.errorTitle = pool.internString(parsed.errorTitle)
+		if (parsed.error) parsed.error = pool.internString(parsed.error)
+		if (parsed.errorStyle) parsed.errorStyle = pool.internString(parsed.errorStyle)
+		if (parsed.imeMode) parsed.imeMode = pool.internString(parsed.imeMode)
+		if (parsed.formula1) parsed.formula1 = pool.internString(parsed.formula1)
+		if (parsed.formula2) parsed.formula2 = pool.internString(parsed.formula2)
+	}
+	sheet.dataValidations.push(parsed as SheetDataValidation)
+}
+
+function isSameDataValidation(left: SheetDataValidation, right: MutableDataValidation): boolean {
+	return (
+		left.sqref === right.sqref &&
+		left.type === right.type &&
+		left.operator === right.operator &&
+		left.allowBlank === right.allowBlank &&
+		left.showInputMessage === right.showInputMessage &&
+		left.showErrorMessage === right.showErrorMessage &&
+		left.showDropDown === right.showDropDown &&
+		left.promptTitle === right.promptTitle &&
+		left.prompt === right.prompt &&
+		left.errorTitle === right.errorTitle &&
+		left.error === right.error &&
+		left.errorStyle === right.errorStyle &&
+		left.imeMode === right.imeMode &&
+		left.formula1 === right.formula1 &&
+		left.formula2 === right.formula2
+	)
+}
+
+function readX14DataValidationFormula(
+	xml: string,
+	tagName: 'formula1' | 'formula2',
+): string | undefined {
+	const formulaBody = readFirstXmlElementBody(xml, tagName)
+	if (formulaBody === undefined) return undefined
+	return readFirstXmlElementText(formulaBody, 'f') ?? readXmlTextContent(formulaBody)
+}
+
+function readFirstXmlElementText(xml: string, localName: string): string | undefined {
+	const body = readFirstXmlElementBody(xml, localName)
+	if (body === undefined) return undefined
+	return readXmlTextContent(body)
+}
+
+function readFirstXmlElementBody(xml: string, localName: string): string | undefined {
+	const escapedName = escapeRegExp(localName)
+	const pattern = new RegExp(
+		`<(?:[A-Za-z_][\\w.-]*:)?${escapedName}\\b[^>]*>([\\s\\S]*?)<\\/(?:[A-Za-z_][\\w.-]*:)?${escapedName}>`,
+		'i',
+	)
+	return pattern.exec(xml)?.[1]
+}
+
+function readXmlTextContent(xml: string): string | undefined {
+	const text = decodeXmlText(xml.replace(/<[^>]*>/g, '').trim())
+	return text.length > 0 ? text : undefined
+}
+
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function readNodeText(node: unknown): string | undefined {

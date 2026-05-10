@@ -2010,6 +2010,94 @@ describe('readXlsx', () => {
 		])
 	})
 
+	it('parses extension-list data validations', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"
+  xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main">
+  <sheetData>
+    <row r="1"><c r="A1"><v>1</v></c></row>
+  </sheetData>
+  <extLst>
+    <ext uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}">
+      <x14:dataValidations count="1">
+        <x14:dataValidation type="list" showInputMessage="1" showErrorMessage="1">
+          <x14:formula1><xm:f>Lookup!$E$2:$E$123</xm:f></x14:formula1>
+          <xm:sqref>E8:E11</xm:sqref>
+        </x14:dataValidation>
+      </x14:dataValidations>
+    </ext>
+  </extLst>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet?.dataValidations).toEqual([
+			{
+				sqref: 'E8:E11',
+				type: 'list',
+				showInputMessage: true,
+				showErrorMessage: true,
+				formula1: 'Lookup!$E$2:$E$123',
+			},
+		])
+	})
+
+	it('collapses equivalent normal and extension-list data validations', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"
+  xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main">
+  <sheetData/>
+  <dataValidations count="1">
+    <dataValidation type="list" showInputMessage="1" showErrorMessage="1" sqref="E8:E11">
+      <formula1>Lookup!$E$2:$E$123</formula1>
+    </dataValidation>
+  </dataValidations>
+  <extLst>
+    <ext uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}">
+      <x14:dataValidations count="1">
+        <x14:dataValidation type="list" showInputMessage="1" showErrorMessage="1">
+          <x14:formula1><xm:f>Lookup!$E$2:$E$123</xm:f></x14:formula1>
+          <xm:sqref>E8:E11</xm:sqref>
+        </x14:dataValidation>
+      </x14:dataValidations>
+    </ext>
+  </extLst>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		expect(result.value.workbook.sheets[0]?.dataValidations).toHaveLength(1)
+	})
+
 	it('supports metadata-only reads without parsing sheet cells', () => {
 		const result = readXlsx(minimalXlsx(), { mode: 'metadata-only' })
 		expectOk(result)

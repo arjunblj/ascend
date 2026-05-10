@@ -5,12 +5,13 @@ import { readXlsx } from '@ascend/io-xlsx'
 import { AscendWorkbook, type PivotCacheInfo, type PivotTableInfo } from '@ascend/sdk'
 import { extractZip } from '../../packages/io-xlsx/src/reader/zip.ts'
 import type { CorpusManifestEntry, NormalizedCorpusManifestEntry } from './manifest.ts'
-import { normalizeManifest } from './manifest.ts'
+import { loadCorpusManifestEntries, normalizeManifest } from './manifest.ts'
 import {
 	inspectOoxmlPackageFeatures,
 	type OoxmlAnalyticsProbe,
 	type OoxmlLinkedCacheProbe,
 	type OoxmlLinkedUiProbe,
+	type OoxmlPackageProbe,
 	type OoxmlRelationshipProbe,
 } from './ooxml-feature-probe.ts'
 
@@ -19,6 +20,12 @@ setDefaultTimeout(90_000)
 const CORPUS_DIR = resolve(import.meta.dir, '../../research/excel-corpus')
 const MANIFEST_PATH = resolve(CORPUS_DIR, 'manifest.json')
 const SAFE_EDIT_VALUE = '__ascend_feature_contract__'
+
+interface ContractCase {
+	readonly corpusName: string
+	readonly rootDir: string
+	readonly entry: NormalizedCorpusManifestEntry
+}
 
 interface PackageSummary {
 	charts: number
@@ -66,18 +73,102 @@ interface SemanticSummary {
 
 interface ContractSubject {
 	readonly packageSummary: PackageSummary
+	readonly packageCounts: OoxmlPackageProbe['counts']
 	readonly analytics: OoxmlAnalyticsProbe
 	readonly semanticSummary: SemanticSummary
 	readonly compatibilityFeatures: ReadonlySet<string>
 }
 
-const HAS_MANIFEST = existsSync(MANIFEST_PATH)
-const MANIFEST = HAS_MANIFEST
-	? normalizeManifest(JSON.parse(readFileSync(MANIFEST_PATH, 'utf-8')) as CorpusManifestEntry[])
-	: []
+const VENDORED_CONTRACT_FIXTURES: readonly {
+	readonly corpusName: string
+	readonly rootDir: string
+	readonly manifestPath: string
+	readonly files: readonly string[]
+}[] = [
+	{
+		corpusName: 'calamine',
+		rootDir: resolve(import.meta.dir, '../xlsx/calamine'),
+		manifestPath: resolve(import.meta.dir, '../xlsx/calamine/manifest.ts'),
+		files: ['pivots.xlsx', 'picture.xlsx', 'vba.xlsm', 'table-multiple.xlsx'],
+	},
+	{
+		corpusName: 'closedxml',
+		rootDir: resolve(import.meta.dir, '../xlsx/closedxml'),
+		manifestPath: resolve(import.meta.dir, '../xlsx/closedxml/manifest.ts'),
+		files: [
+			'Comments_AddingComments.xlsx',
+			'ConditionalFormatting_CFDataBars.xlsx',
+			'ImageHandling_ImageAnchors.xlsx',
+			'Other_ExternalLinks_WorkbookWithExternalLink.xlsx',
+			'Other_PivotTableReferenceFiles_ChartsheetAndPivotTable.xlsx',
+			'Sparklines_SampleSparklines.xlsx',
+			'Tables_UsingTables.xlsx',
+		],
+	},
+	{
+		corpusName: 'exceljs',
+		rootDir: resolve(import.meta.dir, '../xlsx/exceljs'),
+		manifestPath: resolve(import.meta.dir, '../xlsx/exceljs/manifest.ts'),
+		files: ['chart-sheet.xlsx', 'formulas.xlsx', 'shared_string_with_escape.xlsx'],
+	},
+	{
+		corpusName: 'libreoffice',
+		rootDir: resolve(import.meta.dir, '../xlsx/libreoffice'),
+		manifestPath: resolve(import.meta.dir, '../xlsx/libreoffice/manifest.ts'),
+		files: [
+			'MissingPathExternal.xlsx',
+			'PivotTable_CachedDefinitionAndDataInSync.xlsx',
+			'Sparklines.xlsx',
+			'TableStyleTest.xlsx',
+			'activex_checkbox.xlsx',
+			'textLengthDataValidity.xlsx',
+			'universal-content-strict.xlsx',
+		],
+	},
+	{
+		corpusName: 'poi',
+		rootDir: resolve(import.meta.dir, '../xlsx/poi'),
+		manifestPath: resolve(import.meta.dir, '../xlsx/poi/manifest.ts'),
+		files: [
+			'DataValidationEvaluations.xlsx',
+			'FormulaEvalTestData_Copy.xlsx',
+			'NewStyleConditionalFormattings.xlsx',
+			'SimpleStrict.xlsx',
+			'SimpleWithComments.xlsx',
+			'StructuredReferences.xlsx',
+			'WithChart.xlsx',
+			'WithDrawing.xlsx',
+		],
+	},
+]
 
-function loadCorpusFile(filename: string): Uint8Array | null {
-	const path = resolve(CORPUS_DIR, filename)
+const CONTRACT_CASES = await loadContractCases()
+
+async function loadContractCases(): Promise<readonly ContractCase[]> {
+	const cases: ContractCase[] = []
+	if (existsSync(MANIFEST_PATH)) {
+		const entries = normalizeManifest(
+			JSON.parse(readFileSync(MANIFEST_PATH, 'utf-8')) as CorpusManifestEntry[],
+		)
+		for (const entry of entries) cases.push({ corpusName: 'external', rootDir: CORPUS_DIR, entry })
+	}
+
+	for (const corpus of VENDORED_CONTRACT_FIXTURES) {
+		if (!existsSync(corpus.manifestPath)) continue
+		const entries = normalizeManifest(await loadCorpusManifestEntries(corpus.manifestPath))
+		const byFile = new Map(entries.map((entry) => [entry.file, entry]))
+		for (const file of corpus.files) {
+			const entry = byFile.get(file)
+			if (!entry) throw new Error(`${corpus.corpusName}: missing contract fixture ${file}`)
+			cases.push({ corpusName: corpus.corpusName, rootDir: corpus.rootDir, entry })
+		}
+	}
+
+	return cases
+}
+
+function loadCorpusFile(rootDir: string, filename: string): Uint8Array | null {
+	const path = resolve(rootDir, filename)
 	if (!existsSync(path)) return null
 	return new Uint8Array(readFileSync(path))
 }
@@ -121,6 +212,7 @@ async function loadContractSubject(bytes: Uint8Array): Promise<ContractSubject> 
 	const packageProbe = inspectOoxmlPackageFeatures(bytes)
 	return {
 		packageSummary: summarizePackage(bytes),
+		packageCounts: packageProbe.counts,
 		analytics: packageProbe.analytics,
 		semanticSummary: {
 			sheetCount: info.sheetCount,
@@ -210,15 +302,21 @@ function assertManifestReadCoverage(
 	entry: NormalizedCorpusManifestEntry,
 	subject: ContractSubject,
 ): void {
-	const { packageSummary, semanticSummary, compatibilityFeatures } = subject
-	expect(semanticSummary.sheetCount).toBe(entry.counts.worksheets)
-	expect(packageSummary.charts).toBe(entry.counts.charts)
-	expect(packageSummary.tables).toBe(entry.counts.tables)
-	expect(packageSummary.drawings).toBe(entry.counts.drawings)
-	expect(packageSummary.comments).toBe(entry.counts.comments)
+	const { packageSummary, packageCounts, semanticSummary, compatibilityFeatures } = subject
+	expectManifestCount(entry, 'worksheets', [semanticSummary.sheetCount, packageCounts.worksheets])
+	expectManifestCount(entry, 'charts', [packageSummary.charts, packageCounts.charts])
+	expectManifestCount(entry, 'tables', [packageSummary.tables, packageCounts.tables])
+	expectManifestCount(entry, 'drawings', [packageSummary.drawings, packageCounts.drawings])
+	expectManifestCount(entry, 'comments', [packageSummary.comments, packageCounts.comments])
 	if (entry.features.pivot_tables) {
-		expect(packageSummary.pivotTables).toBe(entry.counts.pivot_tables)
-		expect(packageSummary.pivotCaches).toBe(entry.counts.pivot_caches)
+		expectManifestCount(entry, 'pivot_tables', [
+			packageSummary.pivotTables,
+			packageCounts.pivot_tables,
+		])
+		expectManifestCount(entry, 'pivot_caches', [
+			packageSummary.pivotCaches,
+			packageCounts.pivot_caches,
+		])
 	}
 
 	assertFeature(entry, 'tables', !entry.features.tables || semanticSummary.tableCount > 0)
@@ -384,6 +482,19 @@ function assertManifestEditCoverage(
 		)
 	}
 	assertAnalyticsEditIntegrity(entry, before, after)
+}
+
+function expectManifestCount(
+	entry: NormalizedCorpusManifestEntry,
+	countName: string,
+	actuals: readonly number[],
+): void {
+	const expected = entry.counts[countName]
+	if (expected === undefined) return
+	if (actuals.includes(expected)) return
+	throw new Error(
+		`${entry.file}: manifest count "${countName}" expected ${expected}, observed ${actuals.join(' or ')}`,
+	)
 }
 
 function assertAnalyticsReadIntegrity(
@@ -650,14 +761,14 @@ function expectOk<T, E extends { message: string }>(
 	if (!result.ok) throw new Error(result.error.message)
 }
 
-if (!HAS_MANIFEST) {
+if (CONTRACT_CASES.length === 0) {
 	describe.skip('corpus feature contract', () => {
-		it('skips when the external corpus manifest is unavailable', () => {})
+		it('skips when no corpus manifests are available', () => {})
 	})
 } else {
-	for (const entry of MANIFEST) {
-		describe(`corpus feature contract: ${entry.file}`, () => {
-			const bytes = loadCorpusFile(entry.file)
+	for (const { corpusName, rootDir, entry } of CONTRACT_CASES) {
+		describe(`corpus feature contract: ${corpusName}/${entry.file}`, () => {
+			const bytes = loadCorpusFile(rootDir, entry.file)
 
 			it.skipIf(!bytes)('surfaces every declared feature family on read', async () => {
 				const subject = await loadContractSubject(requireBytes(bytes))

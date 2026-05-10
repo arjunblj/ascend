@@ -82,12 +82,25 @@ describe('validateCellValue', () => {
 			formula1: '0',
 			formula2: '5',
 			operator: 'between',
+			allowBlank: true,
 		})
 
 		expect(validateCellValue(sheet, 0, 2, stringValue('hi'), wb)).toEqual({ valid: true })
 		expect(validateCellValue(sheet, 0, 2, stringValue('hello'), wb)).toEqual({ valid: true })
 		expect(validateCellValue(sheet, 0, 2, stringValue(''), wb).valid).toBe(true)
 		expect(validateCellValue(sheet, 0, 2, stringValue('hello!'), wb).valid).toBe(false)
+	})
+
+	test('blank values fail by default when allowBlank is omitted', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.dataValidations.push({
+			sqref: 'A1',
+			type: 'textLength',
+			formula1: '0',
+			operator: 'greaterThan',
+		})
+		expect(validateCellValue(sheet, 0, 0, EMPTY, wb).valid).toBe(false)
 	})
 
 	test('text length validation - returns custom error message when invalid', () => {

@@ -10,6 +10,14 @@ export interface ValidationResult {
 	readonly message?: string
 }
 
+const INVALID_NUMERIC_FORMULA = Symbol('invalid numeric validation formula')
+
+type NumericFormulaValue = number | null | typeof INVALID_NUMERIC_FORMULA
+
+type ListCandidate =
+	| { readonly kind: 'literal'; readonly value: string }
+	| { readonly kind: 'cell'; readonly value: CellValue }
+
 function cellInSqref(sqref: string, row: number, col: number): boolean {
 	const parts = sqref.split(/\s+/)
 	for (const part of parts) {
@@ -109,36 +117,83 @@ function formulaToNumber(
 	sheet: Sheet,
 	row: number,
 	col: number,
-): number | null {
+): NumericFormulaValue {
 	if (!formula) return null
 	const direct = parseNumericFormula(formula)
 	if (direct !== null) return direct
 	const value = evaluateFormulaScalar(formula, workbook, sheet, row, col)
-	return value ? scalarToNumber(value) : null
+	if (!value) return null
+	return scalarToNumberOrInvalid(value)
 }
 
-function formulaToList(
+function formulaToListCandidates(
 	formula: string | undefined,
 	workbook: Workbook | undefined,
 	sheet: Sheet,
 	row: number,
 	col: number,
-): string[] {
+): ListCandidate[] {
 	if (!formula) return []
 	const trimmed = formula.trim()
 	if (trimmed.startsWith('"') || !workbook || (trimmed.includes(',') && !/[=:!$]/.test(trimmed))) {
-		return parseListValues(formula)
+		return parseListValues(formula).map((value) => ({ kind: 'literal', value }))
+	}
+	const resolvedList = resolveListFormulaValues(trimmed, workbook, sheet)
+	if (resolvedList.length > 0) {
+		return resolvedList.map((value) => ({ kind: 'cell', value }))
 	}
 	const value = evaluateFormulaScalar(formula, workbook, sheet, row, col)
-	if (!value) return parseListValues(formula)
+	if (!value) return parseListValues(formula).map((entry) => ({ kind: 'literal', value: entry }))
 	if (value.kind === 'array') {
-		const out: string[] = []
+		const out: ListCandidate[] = []
 		for (const line of value.rows) {
-			for (const cell of line) out.push(scalarToString(cell).trim())
+			for (const cell of line) out.push({ kind: 'cell', value: cell })
 		}
 		return out
 	}
-	return [scalarToString(value).trim()]
+	return [{ kind: 'cell', value }]
+}
+
+function resolveListFormulaValues(
+	formula: string,
+	workbook: Workbook,
+	sheet: Sheet,
+	seenNames = new Set<string>(),
+): CellValue[] {
+	const normalized = formula.startsWith('=') ? formula.slice(1).trim() : formula
+	const definedName = /^[A-Za-z_\\][\w.\\]*$/.test(normalized)
+		? workbook.definedNames.resolve(normalized, sheet.id)
+		: undefined
+	if (definedName) {
+		const key = definedName.name.toLowerCase()
+		if (seenNames.has(key)) return []
+		seenNames.add(key)
+		return resolveListFormulaValues(definedName.formula, workbook, sheet, seenNames)
+	}
+	const structured = /^([^[]+)\[([^\]]+)\]$/.exec(normalized)
+	if (!structured) return []
+	const tableName = structured[1]?.trim()
+	const columnName = structured[2]?.trim()
+	if (!tableName || !columnName) return []
+	for (const candidateSheet of workbook.sheets) {
+		for (const table of candidateSheet.tables) {
+			if (table.name.toLowerCase() !== tableName.toLowerCase()) continue
+			const columnIndex = table.columns.findIndex(
+				(column) => column.name.toLowerCase() === columnName.toLowerCase(),
+			)
+			if (columnIndex < 0) return []
+			const col = table.ref.start.col + columnIndex
+			const startRow = table.ref.start.row + (table.hasHeaders ? 1 : 0)
+			const endRow = table.ref.end.row - (table.hasTotals ? 1 : 0)
+			const values: CellValue[] = []
+			for (let row = startRow; row <= endRow; row++) {
+				const value = candidateSheet.cells.get(row, col)?.value
+				if (value && !isEmpty(value)) values.push(value)
+			}
+			return values
+		}
+	}
+	return []
 }
 
 function compareWithOperator(
@@ -189,6 +244,26 @@ function scalarToNumber(v: CellValue): number | null {
 	}
 }
 
+function scalarToNumberOrInvalid(v: CellValue): NumericFormulaValue {
+	const s = topLeftScalar(v)
+	switch (s.kind) {
+		case 'number':
+			return s.value
+		case 'date':
+			return s.serial
+		case 'boolean':
+			return s.value ? 1 : 0
+		case 'empty':
+			return null
+		case 'string': {
+			const n = Number.parseFloat(s.value)
+			return Number.isFinite(n) ? n : INVALID_NUMERIC_FORMULA
+		}
+		default:
+			return INVALID_NUMERIC_FORMULA
+	}
+}
+
 function scalarToString(v: CellValue): string {
 	const s = topLeftScalar(v)
 	switch (s.kind) {
@@ -209,6 +284,40 @@ function scalarToString(v: CellValue): string {
 	}
 }
 
+function numericValidationPasses(
+	value: number,
+	min: NumericFormulaValue,
+	max: NumericFormulaValue,
+	operator: string,
+): boolean {
+	if (min === INVALID_NUMERIC_FORMULA || max === INVALID_NUMERIC_FORMULA) return false
+	if (min !== null && max !== null) return compareWithOperator(value, min, max, operator)
+	if (operator === 'between' || operator === 'notBetween') return true
+	if (min !== null) return compareWithOperator(value, min, min, operator)
+	return true
+}
+
+function listCandidateMatches(candidate: ListCandidate, value: CellValue): boolean {
+	const scalar = topLeftScalar(value)
+	if (candidate.kind === 'literal') return scalarToString(value).trim() === candidate.value
+	const allowed = topLeftScalar(candidate.value)
+	if (allowed.kind === 'string' && scalar.kind === 'string') {
+		return allowed.value.trim().toLowerCase() === scalar.value.trim().toLowerCase()
+	}
+	if (allowed.kind === 'number' && scalar.kind === 'number') return allowed.value === scalar.value
+	if (allowed.kind === 'date' && scalar.kind === 'date') return allowed.serial === scalar.serial
+	if (allowed.kind === 'boolean' && scalar.kind === 'boolean') return allowed.value === scalar.value
+	return false
+}
+
+function formatListCandidates(candidates: readonly ListCandidate[]): string {
+	return candidates
+		.map((candidate) =>
+			candidate.kind === 'literal' ? candidate.value : scalarToString(candidate.value).trim(),
+		)
+		.join(', ')
+}
+
 export function validateCellValue(
 	sheet: Sheet,
 	row: number,
@@ -219,7 +328,7 @@ export function validateCellValue(
 	const rule = findRuleForCell(sheet, row, col)
 	if (!rule) return { valid: true }
 
-	const allowBlank = rule.allowBlank !== false
+	const allowBlank = rule.allowBlank === true
 	if (isEmpty(value) || (value.kind === 'string' && value.value === '')) {
 		return allowBlank
 			? { valid: true }
@@ -242,18 +351,8 @@ export function validateCellValue(
 			}
 			const min = formulaToNumber(formula1, workbook, sheet, row, col)
 			const max = formulaToNumber(formula2, workbook, sheet, row, col)
-			if (min !== null && max !== null) {
-				if (!compareWithOperator(num, min, max, operator)) {
-					return {
-						valid: false,
-						rule,
-						message: rule.error ?? `Value must be between ${min} and ${max}`,
-					}
-				}
-			} else if (min !== null) {
-				if (!compareWithOperator(num, min, min, operator)) {
-					return { valid: false, rule, message: rule.error ?? `Value must satisfy condition` }
-				}
+			if (!numericValidationPasses(num, min, max, operator)) {
+				return { valid: false, rule, message: rule.error ?? `Value must satisfy condition` }
 			}
 			return { valid: true }
 		}
@@ -264,32 +363,20 @@ export function validateCellValue(
 			}
 			const min = formulaToNumber(formula1, workbook, sheet, row, col)
 			const max = formulaToNumber(formula2, workbook, sheet, row, col)
-			if (min !== null && max !== null) {
-				if (!compareWithOperator(num, min, max, operator)) {
-					return {
-						valid: false,
-						rule,
-						message: rule.error ?? `Value must be between ${min} and ${max}`,
-					}
-				}
-			} else if (min !== null) {
-				if (!compareWithOperator(num, min, min, operator)) {
-					return { valid: false, rule, message: rule.error ?? `Value must satisfy condition` }
-				}
+			if (!numericValidationPasses(num, min, max, operator)) {
+				return { valid: false, rule, message: rule.error ?? `Value must satisfy condition` }
 			}
 			return { valid: true }
 		}
 		case 'list': {
 			if (!formula1) return { valid: true }
-			const allowed = formulaToList(formula1, workbook, sheet, row, col)
-			const str = scalarToString(value)
-			const normalized = str.trim()
-			const match = allowed.some((a) => a === normalized || String(a) === normalized)
+			const allowed = formulaToListCandidates(formula1, workbook, sheet, row, col)
+			const match = allowed.some((candidate) => listCandidateMatches(candidate, value))
 			if (!match) {
 				return {
 					valid: false,
 					rule,
-					message: rule.error ?? `Value must be one of: ${allowed.join(', ')}`,
+					message: rule.error ?? `Value must be one of: ${formatListCandidates(allowed)}`,
 				}
 			}
 			return { valid: true }
@@ -299,30 +386,34 @@ export function validateCellValue(
 			const len = str.length
 			const min = formulaToNumber(formula1, workbook, sheet, row, col)
 			const max = formulaToNumber(formula2, workbook, sheet, row, col)
-			if (min !== null && max !== null) {
-				if (!compareWithOperator(len, min, max, operator)) {
-					return {
-						valid: false,
-						rule,
-						message: rule.error ?? `Text length must be between ${min} and ${max}`,
+			if (min !== INVALID_NUMERIC_FORMULA && max !== INVALID_NUMERIC_FORMULA) {
+				if (min !== null && max !== null) {
+					if (!compareWithOperator(len, min, max, operator)) {
+						return {
+							valid: false,
+							rule,
+							message: rule.error ?? `Text length must be between ${min} and ${max}`,
+						}
+					}
+				} else if (max !== null) {
+					if (len > max) {
+						return {
+							valid: false,
+							rule,
+							message: rule.error ?? `Text length must be at most ${max}`,
+						}
+					}
+				} else if (min !== null) {
+					if (!compareWithOperator(len, min, min, operator)) {
+						return {
+							valid: false,
+							rule,
+							message: rule.error ?? `Text length must satisfy condition`,
+						}
 					}
 				}
-			} else if (max !== null) {
-				if (len > max) {
-					return {
-						valid: false,
-						rule,
-						message: rule.error ?? `Text length must be at most ${max}`,
-					}
-				}
-			} else if (min !== null) {
-				if (len < min) {
-					return {
-						valid: false,
-						rule,
-						message: rule.error ?? `Text length must be at least ${min}`,
-					}
-				}
+			} else {
+				return { valid: false, rule, message: rule.error ?? `Text length must satisfy condition` }
 			}
 			return { valid: true }
 		}
@@ -333,18 +424,20 @@ export function validateCellValue(
 			}
 			const min = formulaToNumber(formula1, workbook, sheet, row, col)
 			const max = formulaToNumber(formula2, workbook, sheet, row, col)
-			if (min !== null && max !== null) {
-				if (!compareWithOperator(num, min, max, operator)) {
-					return {
-						valid: false,
-						rule,
-						message: rule.error ?? `Date must be between ${min} and ${max}`,
-					}
-				}
-			} else if (min !== null) {
-				if (!compareWithOperator(num, min, min, operator)) {
-					return { valid: false, rule, message: rule.error ?? `Date must satisfy condition` }
-				}
+			if (!numericValidationPasses(num, min, max, operator)) {
+				return { valid: false, rule, message: rule.error ?? `Date must satisfy condition` }
+			}
+			return { valid: true }
+		}
+		case 'time': {
+			const num = scalarToNumber(value)
+			if (num === null) {
+				return { valid: false, rule, message: rule.error ?? 'Value must be a time' }
+			}
+			const min = formulaToNumber(formula1, workbook, sheet, row, col)
+			const max = formulaToNumber(formula2, workbook, sheet, row, col)
+			if (!numericValidationPasses(num, min, max, operator)) {
+				return { valid: false, rule, message: rule.error ?? `Time must satisfy condition` }
 			}
 			return { valid: true }
 		}

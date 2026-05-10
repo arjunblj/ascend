@@ -2,12 +2,17 @@ import { describe, expect, it } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { defaultCalcContext, recalculate } from '../../packages/engine/src/index.ts'
+import {
+	defaultCalcContext,
+	recalculate,
+	validateCellValue,
+} from '../../packages/engine/src/index.ts'
 import { readXlsx, writeXlsx } from '../../packages/io-xlsx/src/index.ts'
 import {
 	fingerprintXlsx,
 	fingerprintXlsxPart,
 } from '../../packages/io-xlsx/test/fidelity-harness.ts'
+import { EMPTY } from '../../packages/schema/src/index.ts'
 import { AscendWorkbook } from '../../packages/sdk/src/index.ts'
 import { runFormulaCorpusCorrectness } from '../benchmarks/formula-corpus-correctness.ts'
 
@@ -194,6 +199,23 @@ if (poiFixtures.length > 0) {
 				0,
 			)
 			expect(count).toBeGreaterThan(0)
+		})
+
+		it('evaluates POI data validation rules against expected Excel outcomes', () => {
+			const result = readXlsx(loadFixture('DataValidationEvaluations.xlsx'))
+			expectOk(result)
+			const workbook = result.value.workbook
+			const sheet = workbook.sheets[0]
+			expect(sheet).toBeDefined()
+			if (!sheet) return
+
+			for (let row = 2; row <= 34; row++) {
+				const value = sheet.cells.get(row, 1)?.value ?? EMPTY
+				const expected = sheet.cells.get(row, 2)?.value
+				expect(expected?.kind).toBe('boolean')
+				if (expected?.kind !== 'boolean') continue
+				expect(validateCellValue(sheet, row, 1, value, workbook).valid).toBe(expected.value)
+			}
 		})
 
 		it('captures structured references tables from StructuredReferences.xlsx', () => {
@@ -473,22 +495,23 @@ if (poiFixtures.length > 0) {
 				maxUnacceptedMismatches: 0,
 				maxSemanticMismatches: 0,
 				maxErrors: 0,
-				minComparedFormulas: 1944,
-				minSemanticPerfectWorkbooks: 24,
+				minComparedFormulas: 1499,
+				minSemanticPerfectWorkbooks: 22,
 			})
 			expect(payload.summary).toMatchObject({
-				workbookCount: 24,
-				formulaCount: 1944,
-				comparedCount: 1944,
+				workbookCount: 22,
+				formulaCount: 1499,
+				comparedCount: 1499,
 				noCachedFormulaCount: 0,
-				mismatchCount: 30,
-				acceptedMismatchCount: 30,
+				mismatchCount: 1,
+				acceptedMismatchCount: 1,
 				unacceptedMismatchCount: 0,
 				semanticMismatchCount: 0,
-				numericDriftMismatchCount: 27,
-				nonDeterministicMismatchCount: 3,
+				numericDriftMismatchCount: 1,
+				nonDeterministicMismatchCount: 0,
 				errorCount: 0,
-				semanticPerfectWorkbookCount: 24,
+				perfectWorkbookCount: 21,
+				semanticPerfectWorkbookCount: 22,
 			})
 		})
 

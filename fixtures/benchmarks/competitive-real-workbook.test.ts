@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { strToU8, zipSync } from 'fflate'
 import {
@@ -794,6 +795,8 @@ describe('evaluateAssertions', () => {
 	})
 
 	test('edit-roundtrip falls back to string cells when a workbook has no numeric edit target', () => {
+		const workbookPath = resolve(mkdtempSync(`${tmpdir()}/ascend-string-edit-`), 'strings.xlsx')
+		writeFileSync(workbookPath, stringOnlyWorkbookBytes())
 		const proc = Bun.spawnSync({
 			cmd: [
 				'bun',
@@ -808,21 +811,28 @@ describe('evaluateAssertions', () => {
 				'--libraries',
 				'ascend',
 				'--json',
-				'fixtures/xlsx/poi/Themes.xlsx',
+				workbookPath,
 			],
 			stdout: 'pipe',
 			stderr: 'pipe',
 		})
-		expect(proc.exitCode).toBe(0)
+		if (proc.exitCode !== 0) {
+			throw new Error(new TextDecoder().decode(proc.stderr))
+		}
 		const payload = JSON.parse(new TextDecoder().decode(proc.stdout)) as {
 			cases: Array<{
 				dimensions: { correctnessStatus: string }
-				assertions: { editValueType?: string; editCellValueMatches?: boolean }
+				assertions: {
+					editValueType?: string
+					editCellValueMatches?: boolean
+					semanticRoundtripMatches?: boolean
+				}
 			}>
 			failed?: unknown[]
 		}
 		expect(payload.failed ?? []).toEqual([])
-		expect(payload.cases[0]?.dimensions.correctnessStatus).toBe('semantic-roundtrip-pass')
+		expect(payload.cases[0]?.dimensions.correctnessStatus).not.toBe('error')
+		expect(payload.cases[0]?.assertions.semanticRoundtripMatches).toBe(true)
 		expect(payload.cases[0]?.assertions.editValueType).toBe('string')
 		expect(payload.cases[0]?.assertions.editCellValueMatches).toBe(true)
 	})
@@ -1200,6 +1210,35 @@ function corpusEntry(
 
 function emptyHash(): string {
 	return 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+}
+
+function stringOnlyWorkbookBytes(): Uint8Array {
+	return zipSync({
+		'[Content_Types].xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`),
+		'_rels/.rels': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+		'xl/_rels/workbook.xml.rels': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`),
+		'xl/workbook.xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`),
+		'xl/worksheets/sheet1.xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>alpha</t></is></c></row></sheetData>
+</worksheet>`),
+	})
 }
 
 function featureWorkbookBytes(

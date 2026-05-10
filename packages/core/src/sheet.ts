@@ -363,11 +363,13 @@ export type SheetViewType = 'normal' | 'pageBreakPreview' | 'pageLayout'
 export interface SheetView {
 	readonly zoomScale?: number
 	readonly zoomScaleNormal?: number
+	readonly zoomScaleSheetLayoutView?: number
 	readonly showGridLines?: boolean
 	readonly showFormulas?: boolean
 	readonly rightToLeft?: boolean
 	readonly tabSelected?: boolean
 	readonly view?: SheetViewType
+	readonly topLeftCell?: string
 }
 
 export class Sheet {

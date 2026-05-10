@@ -1573,7 +1573,7 @@ describe('readXlsx', () => {
 		})
 	})
 
-	it('parses full sheetView attributes (zoomScale, zoomScaleNormal, showGridLines, showFormulas, rightToLeft, tabSelected, view)', () => {
+	it('parses full sheetView attributes (zoomScale, zoomScaleNormal, zoomScaleSheetLayoutView, showGridLines, showFormulas, rightToLeft, tabSelected, view, topLeftCell)', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': CONTENT_TYPES,
 			'_rels/.rels': ROOT_RELS,
@@ -1583,7 +1583,7 @@ describe('readXlsx', () => {
 			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <sheetViews>
-    <sheetView workbookViewId="0" zoomScale="75" zoomScaleNormal="100" showGridLines="0" showFormulas="1" rightToLeft="1" tabSelected="1" view="pageBreakPreview">
+    <sheetView workbookViewId="0" zoomScale="75" zoomScaleNormal="100" zoomScaleSheetLayoutView="214" showGridLines="0" showFormulas="1" rightToLeft="1" tabSelected="1" view="pageBreakPreview" topLeftCell="E1">
       <pane ySplit="2" xSplit="1" state="frozen"/>
     </sheetView>
   </sheetViews>
@@ -1600,11 +1600,13 @@ describe('readXlsx', () => {
 		expect(sheet?.sheetView).toEqual({
 			zoomScale: 75,
 			zoomScaleNormal: 100,
+			zoomScaleSheetLayoutView: 214,
 			showGridLines: false,
 			showFormulas: true,
 			rightToLeft: true,
 			tabSelected: true,
 			view: 'pageBreakPreview',
+			topLeftCell: 'E1',
 		})
 	})
 

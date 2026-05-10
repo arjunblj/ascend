@@ -2296,6 +2296,9 @@ function parseSheetViews(ws: XmlNode, sheet: Sheet): void {
 	if (zoomScale !== undefined) viewAttrs.zoomScale = zoomScale
 	const zoomScaleNormal = numAttr(firstView, 'zoomScaleNormal')
 	if (zoomScaleNormal !== undefined) viewAttrs.zoomScaleNormal = zoomScaleNormal
+	const zoomScaleSheetLayoutView = numAttr(firstView, 'zoomScaleSheetLayoutView')
+	if (zoomScaleSheetLayoutView !== undefined)
+		viewAttrs.zoomScaleSheetLayoutView = zoomScaleSheetLayoutView
 	const showGridLines = readBoolAttribute(firstView, 'showGridLines')
 	if (showGridLines !== undefined) viewAttrs.showGridLines = showGridLines
 	const showFormulas = readBoolAttribute(firstView, 'showFormulas')
@@ -2308,6 +2311,8 @@ function parseSheetViews(ws: XmlNode, sheet: Sheet): void {
 	if (viewVal === 'normal' || viewVal === 'pageBreakPreview' || viewVal === 'pageLayout') {
 		viewAttrs.view = viewVal
 	}
+	const topLeftCell = attr(firstView, 'topLeftCell')
+	if (topLeftCell !== undefined) viewAttrs.topLeftCell = topLeftCell
 	if (
 		Object.keys(viewAttrs).length > 0 ||
 		pane ||

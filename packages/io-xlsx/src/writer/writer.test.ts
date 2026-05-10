@@ -2844,18 +2844,20 @@ describe('writeXlsx', () => {
 		expect(workbookXml).toContain('calcId="191029"')
 	})
 
-	it('preserves sheetView attributes (zoomScale, zoomScaleNormal, showGridLines, showFormulas, rightToLeft, tabSelected, view) on round-trip', () => {
+	it('preserves sheetView attributes (zoomScale, zoomScaleNormal, zoomScaleSheetLayoutView, showGridLines, showFormulas, rightToLeft, tabSelected, view, topLeftCell) on round-trip', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('View')
 		sheet.cells.set(0, 0, { value: stringValue('hi'), formula: null, styleId: S0 })
 		sheet.sheetView = {
 			zoomScale: 125,
 			zoomScaleNormal: 100,
+			zoomScaleSheetLayoutView: 214,
 			showGridLines: false,
 			showFormulas: true,
 			rightToLeft: true,
 			tabSelected: true,
 			view: 'pageLayout',
+			topLeftCell: 'E1',
 		}
 
 		const { result } = roundTrip(wb)
@@ -2864,11 +2866,13 @@ describe('writeXlsx', () => {
 		expect(s.sheetView).toEqual({
 			zoomScale: 125,
 			zoomScaleNormal: 100,
+			zoomScaleSheetLayoutView: 214,
 			showGridLines: false,
 			showFormulas: true,
 			rightToLeft: true,
 			tabSelected: true,
 			view: 'pageLayout',
+			topLeftCell: 'E1',
 		})
 	})
 

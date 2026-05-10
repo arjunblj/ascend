@@ -2,7 +2,12 @@ import { describe, expect, it, setDefaultTimeout } from 'bun:test'
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { readXlsx } from '@ascend/io-xlsx'
-import { AscendWorkbook, type PivotCacheInfo, type PivotTableInfo } from '@ascend/sdk'
+import {
+	type ActiveContentInfo,
+	AscendWorkbook,
+	type PivotCacheInfo,
+	type PivotTableInfo,
+} from '@ascend/sdk'
 import { extractZip } from '../../packages/io-xlsx/src/reader/zip.ts'
 import type { CorpusManifestEntry, NormalizedCorpusManifestEntry } from './manifest.ts'
 import { loadCorpusManifestEntries, normalizeManifest } from './manifest.ts'
@@ -62,7 +67,9 @@ interface SemanticSummary {
 	timelineCount: number
 	timelineCacheCount: number
 	externalReferenceCount: number
+	activeContentCount: number
 	hasDrawingRefs: boolean
+	activeContent: readonly ActiveContentInfo[]
 	pivotTables: readonly PivotTableInfo[]
 	pivotCaches: readonly PivotCacheInfo[]
 	slicerCaches: readonly OoxmlLinkedCacheProbe[]
@@ -205,6 +212,25 @@ function summarizePackage(bytes: Uint8Array): PackageSummary {
 	}
 }
 
+function normalizeActiveContent(entries: readonly ActiveContentInfo[]): ActiveContentInfo[] {
+	return entries
+		.map((entry) => ({
+			kind: entry.kind,
+			partPath: entry.partPath,
+			contentType: entry.contentType,
+			anchor: entry.anchor,
+			relationshipCount: entry.relationshipCount,
+			...(entry.sheetName !== undefined ? { sheetName: entry.sheetName } : {}),
+			...(entry.relType !== undefined ? { relType: entry.relType } : {}),
+			...(entry.byteSize !== undefined ? { byteSize: entry.byteSize } : {}),
+			...(entry.opaque !== undefined ? { opaque: entry.opaque } : {}),
+			...(entry.executionPolicy !== undefined ? { executionPolicy: entry.executionPolicy } : {}),
+		}))
+		.sort((left, right) =>
+			`${left.kind}\u0000${left.partPath}`.localeCompare(`${right.kind}\u0000${right.partPath}`),
+		)
+}
+
 async function loadContractSubject(bytes: Uint8Array): Promise<ContractSubject> {
 	const raw = readXlsx(bytes)
 	expectOk(raw)
@@ -235,7 +261,9 @@ async function loadContractSubject(bytes: Uint8Array): Promise<ContractSubject> 
 			timelineCount: info.timelineCount,
 			timelineCacheCount: info.timelineCacheCount,
 			externalReferenceCount: info.externalReferenceCount,
+			activeContentCount: info.activeContentCount,
 			hasDrawingRefs: info.sheets.some((sheet) => sheet.hasDrawingRefs ?? false),
+			activeContent: normalizeActiveContent(info.activeContent),
 			pivotTables: info.pivotTables,
 			pivotCaches: info.pivotCaches,
 			slicerCaches: info.slicerCaches,
@@ -390,7 +418,24 @@ function assertManifestReadCoverage(
 		entry,
 		'macros',
 		!entry.features.macros ||
-			(packageSummary.macros > 0 && compatibilityFeatures.has('preservedMacro')),
+			(packageSummary.macros > 0 &&
+				semanticSummary.activeContentCount > 0 &&
+				semanticSummary.activeContent.some(
+					(content) =>
+						content.kind === 'vbaProject' &&
+						content.opaque === true &&
+						content.executionPolicy === 'blocked',
+				) &&
+				compatibilityFeatures.has('preservedMacro')),
+	)
+	assertFeature(
+		entry,
+		'active_content',
+		!entry.features.active_content ||
+			(packageCounts.active_content > 0 &&
+				semanticSummary.activeContentCount > 0 &&
+				(compatibilityFeatures.has('preservedActiveX') ||
+					compatibilityFeatures.has('preservedControl'))),
 	)
 	assertFeature(
 		entry,
@@ -461,6 +506,8 @@ function assertManifestEditCoverage(
 	expect(after.semanticSummary.externalReferenceCount).toBe(
 		before.semanticSummary.externalReferenceCount,
 	)
+	expect(after.semanticSummary.activeContentCount).toBe(before.semanticSummary.activeContentCount)
+	expect(after.semanticSummary.activeContent).toEqual(before.semanticSummary.activeContent)
 	expect(after.semanticSummary.hasDrawingRefs).toBe(before.semanticSummary.hasDrawingRefs)
 
 	for (const feature of before.compatibilityFeatures) {

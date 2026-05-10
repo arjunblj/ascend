@@ -823,6 +823,7 @@ export interface ExternalRunnerSpec {
 	readonly name: string
 	readonly command: readonly string[]
 	readonly categories?: readonly ExternalRunnerCategory[]
+	readonly workloads?: readonly string[]
 	readonly adapterVersion?: string
 	readonly libraryVersion?: string
 	readonly runtime?: string
@@ -2195,10 +2196,12 @@ export function normalizeExternalRunnerSpecs(parsed: unknown): ExternalRunnerSpe
 		}
 		const capabilities = normalizeRunnerCapabilities(spec.name, spec.capabilities)
 		const licenseGate = normalizeRunnerLicenseGate(spec.name, spec.licenseGate)
+		const workloads = normalizeRunnerWorkloads(spec.name, spec.workloads)
 		return {
 			name: spec.name,
 			command: spec.command,
 			...(spec.categories ? { categories: spec.categories } : {}),
+			...(workloads ? { workloads } : {}),
 			...(typeof spec.adapterVersion === 'string' ? { adapterVersion: spec.adapterVersion } : {}),
 			...(typeof spec.libraryVersion === 'string' ? { libraryVersion: spec.libraryVersion } : {}),
 			...(typeof spec.runtime === 'string' ? { runtime: spec.runtime } : {}),
@@ -2223,6 +2226,21 @@ export function normalizeExternalRunnerManifestSet(
 		entries.push(...parsed)
 	}
 	return normalizeExternalRunnerSpecs(entries)
+}
+
+function normalizeRunnerWorkloads(
+	name: string,
+	workloads: ExternalRunnerSpec['workloads'] | undefined,
+): readonly string[] | undefined {
+	if (workloads === undefined) return undefined
+	if (
+		!Array.isArray(workloads) ||
+		workloads.length === 0 ||
+		workloads.some((workload) => typeof workload !== 'string' || workload.length === 0)
+	) {
+		throw new Error(`External runner "${name}" workloads must be a non-empty string array`)
+	}
+	return workloads
 }
 
 function normalizeRunnerLicenseGate(

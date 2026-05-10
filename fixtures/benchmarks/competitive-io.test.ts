@@ -841,6 +841,7 @@ describe('competitive IO helpers', () => {
 		expect(competitorMatches('polars-openpyxl', 'external')).toBe(true)
 		expect(competitorMatches('apache-poi', 'external')).toBe(true)
 		expect(competitorMatches('excelize', 'external')).toBe(true)
+		expect(competitorMatches('duckdb-excel', 'external')).toBe(true)
 		expect(competitorMatches('npoi', 'external')).toBe(true)
 		expect(competitorMatches('closedxml', 'python')).toBe(true)
 		expect(competitorMatches('ascend-external-values', 'external')).toBe(true)
@@ -886,6 +887,7 @@ describe('competitive IO helpers', () => {
 			'openpyxl-write-only',
 			'rust-xlsxwriter',
 			'fastxlsx',
+			'duckdb-excel',
 			'pyopenxlsx',
 			'pyopenxlsx-bulk',
 			'pyfastexcel',
@@ -915,6 +917,14 @@ describe('competitive IO helpers', () => {
 			writeFormulas: true,
 			writeTables: true,
 		})
+		const duckdb = specs.find((spec) => spec.name === 'duckdb-excel')
+		expect(duckdb?.workloads).toEqual([
+			'dense-values',
+			'mixed-closedxml-10text-5number',
+			'sparse-wide',
+			'styles-heavy',
+		])
+		expect(duckdb?.capabilities?.finalValidation).toBe(true)
 	})
 
 	test('SOTA reader manifest includes Ascend materialized read lane for pyopenxlsx comparisons', () => {
@@ -947,6 +957,26 @@ describe('competitive IO helpers', () => {
 		expect(fastExcelJava?.timingModel).toBe('external-internal-streaming-values-timing')
 		expect(fastExcelJava?.capabilities?.valueOnlyRead).toBe(true)
 		expect(fastExcelJava?.capabilities?.finalValidation).toBe(true)
+	})
+
+	test('SOTA reader manifest includes workload-scoped DuckDB Excel baseline', () => {
+		const manifest = JSON.parse(
+			readFileSync('fixtures/benchmarks/runners/python-readers.manifest.json', 'utf-8'),
+		) as unknown
+		const specs = normalizeExternalRunnerSpecs(manifest)
+		const duckdb = specs.find((spec) => spec.name === 'duckdb-excel')
+
+		expect(duckdb?.command).toContain('fixtures/benchmarks/runners/duckdb_excel_runner.py')
+		expect(duckdb?.workloads).toEqual([
+			'dense-values',
+			'mixed-closedxml-10text-5number',
+			'plain-text',
+			'sparse-wide',
+			'string-heavy',
+			'styles-heavy',
+		])
+		expect(duckdb?.timingModel).toBe('external-internal-duckdb-excel-read-timing')
+		expect(duckdb?.capabilities?.valueOnlyRead).toBe(true)
 	})
 
 	test('external generated runner failures become non-ranking benchmark rows', () => {

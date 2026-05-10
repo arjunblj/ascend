@@ -85,6 +85,25 @@
 		}
 	},
 	{
+		"name": "duckdb-excel",
+		"command": ["python3", "fixtures/benchmarks/runners/duckdb_excel_runner.py"],
+		"categories": ["write"],
+		"workloads": ["dense-values", "mixed-closedxml-10text-5number", "sparse-wide", "styles-heavy"],
+		"runtime": "python3",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-duckdb-sql-generate-copy-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "python3 -m pip install duckdb==1.5.2 psutil && python3 -c \"import duckdb; duckdb.connect().execute('INSTALL excel')\"",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false,
+			"finalValidation": true
+		}
+	},
+	{
 		"name": "fastexcel-java",
 		"command": ["bash", "fixtures/benchmarks/runners/fastexcel_java_runner.sh"],
 		"categories": ["write"],

@@ -215,6 +215,31 @@
 		}
 	},
 	{
+		"name": "duckdb-excel",
+		"command": ["python3", "fixtures/benchmarks/runners/duckdb_excel_runner.py"],
+		"categories": ["read"],
+		"workloads": [
+			"dense-values",
+			"mixed-closedxml-10text-5number",
+			"plain-text",
+			"sparse-wide",
+			"string-heavy",
+			"styles-heavy"
+		],
+		"runtime": "python3",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-duckdb-excel-read-timing",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "python3 -m pip install duckdb==1.5.2 psutil && python3 -c \"import duckdb; duckdb.connect().execute('INSTALL excel')\"",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false
+		}
+	},
+	{
 		"name": "excelize",
 		"command": ["bash", "fixtures/benchmarks/runners/excelize_runner.sh"],
 		"categories": ["read", "edit-roundtrip"],

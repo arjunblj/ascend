@@ -199,6 +199,13 @@ function supportsGeneratedWriteWorkload(
 	return true
 }
 
+function supportsGeneratedRunnerWorkload(
+	spec: Pick<ExternalRunnerSpec, 'workloads'>,
+	workloadName: WorkloadName,
+): boolean {
+	return spec.workloads === undefined || spec.workloads.includes(workloadName)
+}
+
 export interface MetricSample {
 	readonly durationMs: number
 	readonly throughputPerSec?: number
@@ -372,6 +379,7 @@ export function competitorMatches(library: string, selection: CompetitorSelectio
 		library === 'closedxml' ||
 		library === 'npoi' ||
 		library === 'excelize' ||
+		library === 'duckdb-excel' ||
 		library === 'rust-xlsxwriter'
 	)
 }
@@ -1949,11 +1957,14 @@ async function loadCases(workloadName: WorkloadName): Promise<{
 	]
 	const skipped: Array<{ library: string; reason: string }> = []
 	const allExternalWriteRunnerSpecs = await loadExternalWriteRunnerSpecs()
+	const workloadExternalWriteRunnerSpecs = allExternalWriteRunnerSpecs.filter((spec) =>
+		supportsGeneratedRunnerWorkload(spec, workloadName),
+	)
 	const externalWriteRunnerSpecs = includeWriteCases
-		? allExternalWriteRunnerSpecs.filter((spec) =>
+		? workloadExternalWriteRunnerSpecs.filter((spec) =>
 				supportsGeneratedWriteWorkload(skipped, spec, workloadName),
 			)
-		: allExternalWriteRunnerSpecs
+		: workloadExternalWriteRunnerSpecs
 	const allExternalWriteRunnerNames = new Set(allExternalWriteRunnerSpecs.map((spec) => spec.name))
 
 	let sheetJs: typeof import('xlsx') | undefined
@@ -2334,7 +2345,9 @@ async function loadCases(workloadName: WorkloadName): Promise<{
 		}
 	}
 
-	const externalReadRunnerSpecs = await loadExternalReadRunnerSpecs()
+	const externalReadRunnerSpecs = (await loadExternalReadRunnerSpecs()).filter((spec) =>
+		supportsGeneratedRunnerWorkload(spec, workloadName),
+	)
 	if (workloadName !== 'selected-sheet') {
 		for (const spec of externalReadRunnerSpecs) {
 			if (spec.capabilities?.metadataOnlyRead === true && workloadName !== 'metadata-only') {

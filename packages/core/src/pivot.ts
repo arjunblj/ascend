@@ -67,6 +67,13 @@ export interface SlicerCacheInfo {
 	readonly sourceName?: string
 	readonly pivotCacheId?: number
 	readonly pivotTableNames: readonly string[]
+	readonly items?: readonly SlicerCacheItemInfo[]
+}
+
+export interface SlicerCacheItemInfo {
+	readonly index: number
+	readonly selected?: boolean
+	readonly noData?: boolean
 }
 
 export interface SlicerInfo {

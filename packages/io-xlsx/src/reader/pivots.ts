@@ -236,6 +236,11 @@ export function parseSlicerCacheXml(xml: string, partPath: string): SlicerCacheI
 		sourceName?: string
 		pivotCacheId?: number
 		pivotTableNames: readonly string[]
+		items?: readonly {
+			readonly index: number
+			readonly selected?: boolean
+			readonly noData?: boolean
+		}[]
 	} = {
 		partPath,
 		pivotTableNames: (Array.isArray(pivotTableNodes) ? pivotTableNodes : [pivotTableNodes])
@@ -249,7 +254,29 @@ export function parseSlicerCacheXml(xml: string, partPath: string): SlicerCacheI
 	if (sourceName) parsed.sourceName = sourceName
 	const pivotCacheId = tabular ? numAttr(tabular, 'pivotCacheId') : undefined
 	if (pivotCacheId !== undefined) parsed.pivotCacheId = pivotCacheId
+	const items = tabular ? parseSlicerCacheItems(tabular) : []
+	if (items.length > 0) parsed.items = items
 	return parsed as SlicerCacheInfo
+}
+
+function parseSlicerCacheItems(tabular: XmlNode): {
+	readonly index: number
+	readonly selected?: boolean
+	readonly noData?: boolean
+}[] {
+	const itemsNode = tabular.items as XmlNode | undefined
+	return asArray<XmlNode>(itemsNode?.i as XmlNode | XmlNode[] | undefined)
+		.map((node) => {
+			const index = numAttr(node, 'x')
+			if (index === undefined) return null
+			const parsed: { index: number; selected?: boolean; noData?: boolean } = { index }
+			setBoolIfDefined(parsed, 'selected', boolAttr(node, 's'))
+			setBoolIfDefined(parsed, 'noData', boolAttr(node, 'nd'))
+			return parsed
+		})
+		.filter(
+			(entry): entry is { index: number; selected?: boolean; noData?: boolean } => entry !== null,
+		)
 }
 
 export function parseSlicerXml(xml: string, partPath: string): readonly SlicerInfo[] {

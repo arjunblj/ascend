@@ -124,6 +124,10 @@ describe('AscendWorkbook', () => {
 			partPath: 'xl/slicerCaches/slicerCache1.xml',
 			name: 'Slicer_Product',
 			pivotTableNames: ['PivotTable1'],
+			items: [
+				{ index: 0, selected: true },
+				{ index: 1, noData: true },
+			],
 		})
 		internal.wb.slicers.push({
 			partPath: 'xl/slicers/slicer1.xml',
@@ -144,6 +148,10 @@ describe('AscendWorkbook', () => {
 		expect(info.pivotTables[0]?.name).toBe('PivotTable1')
 		expect(info.pivotCaches[0]?.sourceSheet).toBe('Raw')
 		expect(info.slicerCaches[0]?.name).toBe('Slicer_Product')
+		expect(info.slicerCaches[0]?.items).toEqual([
+			{ index: 0, selected: true },
+			{ index: 1, noData: true },
+		])
 		expect(info.slicers[0]?.name).toBe('Product')
 		expect(info.sheets[0]?.cellCount).toBe(1)
 		expect(info.sheets[0]?.commentCount).toBe(1)
@@ -188,6 +196,10 @@ describe('AscendWorkbook', () => {
 			partPath: 'xl/slicerCaches/slicerCache1.xml',
 			name: 'Slicer_Product',
 			pivotTableNames: ['PivotTable1'],
+			items: [
+				{ index: 0, selected: true },
+				{ index: 1, noData: true },
+			],
 		})
 		internal.wb.slicers.push({
 			partPath: 'xl/slicers/slicer1.xml',
@@ -199,6 +211,14 @@ describe('AscendWorkbook', () => {
 		expect(wb.pivotTables('Sheet1')[0]?.name).toBe('PivotTable1')
 		expect(wb.pivotCaches()[0]?.sourceSheet).toBe('Raw')
 		expect(wb.slicerCaches()[0]?.pivotTableNames).toEqual(['PivotTable1'])
+		expect(wb.slicerCaches()[0]?.items).toEqual([
+			{ index: 0, selected: true },
+			{ index: 1, noData: true },
+		])
+		expect(wb.inspect().slicerCaches[0]?.items).toEqual([
+			{ index: 0, selected: true },
+			{ index: 1, noData: true },
+		])
 		expect(wb.slicers()[0]?.cacheName).toBe('Slicer_Product')
 
 		const corpusPath = join(

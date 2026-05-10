@@ -243,10 +243,14 @@ export class Workbook {
 		clone.pivotCaches.push(...this.pivotCaches.map(clonePivotCacheInfo))
 		clone.pivotTables.push(...this.pivotTables.map(clonePivotTableInfo))
 		clone.slicerCaches.push(
-			...this.slicerCaches.map((entry) => ({
-				...entry,
-				pivotTableNames: [...entry.pivotTableNames],
-			})),
+			...this.slicerCaches.map((entry) => {
+				const clonedItems = entry.items?.map((item) => ({ ...item }))
+				return {
+					...entry,
+					pivotTableNames: [...entry.pivotTableNames],
+					...(clonedItems ? { items: clonedItems } : {}),
+				}
+			}),
 		)
 		clone.slicers.push(...this.slicers.map((entry) => ({ ...entry })))
 		clone.timelineCaches.push(

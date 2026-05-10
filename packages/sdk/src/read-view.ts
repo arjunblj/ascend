@@ -172,10 +172,7 @@ export class WorkbookReadView {
 			hasWorkbookProtection: this.wb.workbookProtection !== null,
 			pivotTables: this.wb.pivotTables.map(copyPivotTableInfo),
 			pivotCaches: this.wb.pivotCaches.map(copyPivotCacheInfo),
-			slicerCaches: this.wb.slicerCaches.map((entry) => ({
-				...entry,
-				pivotTableNames: [...entry.pivotTableNames],
-			})),
+			slicerCaches: this.wb.slicerCaches.map(copySlicerCacheInfo),
 			slicers: this.wb.slicers.map((entry) => ({ ...entry })),
 			timelineCaches: this.wb.timelineCaches.map((entry) => ({
 				...entry,
@@ -634,10 +631,7 @@ export class WorkbookReadView {
 	}
 
 	slicerCaches(): readonly SlicerCacheInfo[] {
-		return this.wb.slicerCaches.map((entry) => ({
-			...entry,
-			pivotTableNames: [...entry.pivotTableNames],
-		}))
+		return this.wb.slicerCaches.map(copySlicerCacheInfo)
 	}
 
 	slicers(): readonly SlicerInfo[] {
@@ -1053,6 +1047,15 @@ function copyPivotCacheInfo(cache: PivotCacheInfo): PivotCacheInfo {
 	return {
 		...cache,
 		fields: cache.fields.map((field) => ({ ...field })),
+	}
+}
+
+function copySlicerCacheInfo(cache: SlicerCacheInfo): SlicerCacheInfo {
+	const items = cache.items?.map((item) => ({ ...item }))
+	return {
+		...cache,
+		pivotTableNames: [...cache.pivotTableNames],
+		...(items ? { items } : {}),
 	}
 }
 

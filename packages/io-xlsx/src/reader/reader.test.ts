@@ -1292,7 +1292,7 @@ describe('readXlsx', () => {
 			'xl/slicerCaches/slicerCache1.xml': `<?xml version="1.0"?>
 <slicerCacheDefinition xmlns="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" name="Slicer_Product_Category" sourceName="Product_Category">
   <pivotTables><pivotTable name="PivotTable1"/></pivotTables>
-  <data><tabular pivotCacheId="1332190931"/></data>
+  <data><tabular pivotCacheId="1332190931"><items count="3"><i x="0" s="1"/><i x="1"/><i x="2" nd="1"/></items></tabular></data>
 </slicerCacheDefinition>`,
 			'xl/slicers/slicer1.xml': `<?xml version="1.0"?>
 <slicers xmlns="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">
@@ -1310,6 +1310,7 @@ describe('readXlsx', () => {
 				sourceName: 'Product_Category',
 				pivotCacheId: 1332190931,
 				pivotTableNames: ['PivotTable1'],
+				items: [{ index: 0, selected: true }, { index: 1 }, { index: 2, noData: true }],
 			},
 		])
 		expect(result.value.workbook.slicers).toEqual([

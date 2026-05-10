@@ -546,8 +546,8 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'Slicers',
 		'inspectable',
 		'P0',
-		'Expose slicer links and safely preserve/filter state.',
-		'Slicers are inventory-only today.',
+		'Add safe slicer filter-state edit operations with pivot refresh impact warnings.',
+		'Slicer UI parts, cache links, pivot table links, and tabular selected/no-data item states are inspectable while package bytes are preserved.',
 	),
 	cap(
 		'analytics.timelines',

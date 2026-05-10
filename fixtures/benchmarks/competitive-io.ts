@@ -668,6 +668,24 @@ function workloadSheetJsAssertions(
 	}
 }
 
+function sheetJsSelectedSheetAssertions(
+	sheetJs: typeof import('xlsx'),
+	workbook: import('xlsx').WorkBook,
+	input: CompetitiveDataSet,
+): Record<string, PrimitiveAssertion> {
+	const loadedSheetNames = Object.keys(workbook.Sheets)
+	return {
+		...workloadSheetJsAssertions(sheetJs, workbook, input),
+		sheetCount: loadedSheetNames.length,
+		selectedSheetRead: true,
+		sourceSheetCount: workbook.SheetNames.length,
+		loadedSheetCount: loadedSheetNames.length,
+		loadedSheetNames: loadedSheetNames.join(','),
+		hasAllSheets: loadedSheetNames.length === workbook.SheetNames.length,
+		cellsHydrated: loadedSheetNames.length > 0,
+	}
+}
+
 function workloadExcelJsAssertions(
 	workbook: import('exceljs').Workbook,
 	input: CompetitiveDataSet,
@@ -1879,42 +1897,43 @@ async function loadCases(workloadName: WorkloadName): Promise<{
 		})
 	}
 	if (sheetJs) {
-		if (workloadName === 'selected-sheet') {
-			skipped.push({
-				library: 'sheetjs',
-				reason:
-					'selected-sheet read is unsupported by this harness without full workbook hydration',
-			})
-		} else {
-			cases.push({
-				name: `sheetjs:xlsx-read-${suffix}`,
-				library: 'sheetjs',
-				category: 'read',
-				...(readOperationProfile ? { operationProfile: readOperationProfile } : {}),
-				async run(input) {
-					if (workloadName === 'metadata-only') {
-						const workbook = sheetJs.read(input.xlsxBytes, { type: 'buffer', bookSheets: true })
-						return { assertions: sheetJsMetadataOnlyAssertions(workbook, input) }
+		cases.push({
+			name: `sheetjs:xlsx-read-${suffix}`,
+			library: 'sheetjs',
+			category: 'read',
+			...(readOperationProfile ? { operationProfile: readOperationProfile } : {}),
+			async run(input) {
+				if (workloadName === 'selected-sheet') {
+					const workbook = sheetJs.read(input.xlsxBytes, { type: 'buffer', sheets: 'Data' })
+					return { assertions: sheetJsSelectedSheetAssertions(sheetJs, workbook, input) }
+				}
+				if (workloadName === 'metadata-only') {
+					const workbook = sheetJs.read(input.xlsxBytes, { type: 'buffer', bookSheets: true })
+					return { assertions: sheetJsMetadataOnlyAssertions(workbook, input) }
+				}
+				const workbook = sheetJs.read(input.xlsxBytes, { type: 'buffer' })
+				return { assertions: workloadSheetJsAssertions(sheetJs, workbook, input) }
+			},
+			async runBatched(input, repeat, warmup) {
+				const timed = await runTimedOperation(input, repeat, warmup, () => {
+					if (workloadName === 'selected-sheet') {
+						return sheetJs.read(input.xlsxBytes, { type: 'buffer', sheets: 'Data' })
 					}
-					const workbook = sheetJs.read(input.xlsxBytes, { type: 'buffer' })
-					return { assertions: workloadSheetJsAssertions(sheetJs, workbook, input) }
-				},
-				async runBatched(input, repeat, warmup) {
-					const timed = await runTimedOperation(input, repeat, warmup, () =>
-						workloadName === 'metadata-only'
-							? sheetJs.read(input.xlsxBytes, { type: 'buffer', bookSheets: true })
-							: sheetJs.read(input.xlsxBytes, { type: 'buffer' }),
-					)
-					return {
-						samples: timed.samples,
-						assertions:
-							workloadName === 'metadata-only'
+					return workloadName === 'metadata-only'
+						? sheetJs.read(input.xlsxBytes, { type: 'buffer', bookSheets: true })
+						: sheetJs.read(input.xlsxBytes, { type: 'buffer' })
+				})
+				return {
+					samples: timed.samples,
+					assertions:
+						workloadName === 'selected-sheet'
+							? sheetJsSelectedSheetAssertions(sheetJs, timed.last, input)
+							: workloadName === 'metadata-only'
 								? sheetJsMetadataOnlyAssertions(timed.last, input)
 								: workloadSheetJsAssertions(sheetJs, timed.last, input),
-					}
-				},
-			})
-		}
+				}
+			},
+		})
 		cases.push(
 			...(includeWriteCases
 				? [

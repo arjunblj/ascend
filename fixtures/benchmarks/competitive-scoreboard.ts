@@ -230,9 +230,11 @@ const CLAIM_PROFILES: Record<ClaimProfileName, ClaimProfile> = {
 				category: 'read',
 				operationProfile: 'read-selected-values',
 				workloads: ['selected-sheet'],
-				competitors: [{ label: 'Ascend', libraries: ASCEND_READ_LIBRARIES }],
-				capabilityGaps: [
+				competitors: [
+					{ label: 'Ascend', libraries: ASCEND_READ_LIBRARIES },
 					{ label: 'SheetJS', libraries: ['sheetjs'] },
+				],
+				capabilityGaps: [
 					{ label: 'ExcelJS', libraries: ['exceljs'] },
 					{
 						label: 'openpyxl',

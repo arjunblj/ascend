@@ -684,6 +684,14 @@ describe('buildCompetitiveScoreboard', () => {
 				peakRssBytes: 1_000,
 			}),
 			matrixCase({
+				library: 'sheetjs',
+				category: 'read',
+				workload: 'selected-sheet',
+				repeat: 5,
+				operationProfile: 'read-selected-values',
+				peakRssBytes: 2_000,
+			}),
+			matrixCase({
 				library: 'ascend',
 				category: 'read',
 				workload: 'metadata-only',
@@ -713,7 +721,7 @@ describe('buildCompetitiveScoreboard', () => {
 		expect(inspection.failures).not.toContain(
 			'xlsx-read-sota missing competitor=SheetJS category=read operationProfile=read-selected-values workload=selected-sheet',
 		)
-		expect(inspection.gaps).toContain(
+		expect(inspection.gaps).not.toContain(
 			'xlsx-read-sota coverage-gap competitor=SheetJS category=read operationProfile=read-selected-values workload=selected-sheet reason=unsupported-operation',
 		)
 		expect(inspection.failures).not.toContain(

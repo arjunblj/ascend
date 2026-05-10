@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { unzipSync } from 'fflate'
 import { makeXlsx } from '../../test/helpers.ts'
+import { writeXlsx } from '../writer/index.ts'
 import { readXlsx } from './index.ts'
 
 function expectOk<T, E extends { message: string }>(
@@ -23,6 +25,8 @@ describe('digital signature inventory', () => {
 				relationshipCount: 1,
 				relType:
 					'http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/origin',
+				invalidationPolicy: 'invalidatedByPackageEdit',
+				resigningPolicy: 'notSupported',
 			},
 			{
 				kind: 'digitalSignature',
@@ -30,6 +34,8 @@ describe('digital signature inventory', () => {
 				contentType: 'application/vnd.openxmlformats-package.digital-signature-xmlsignature+xml',
 				anchor: 'workbook',
 				relationshipCount: 0,
+				invalidationPolicy: 'invalidatedByPackageEdit',
+				resigningPolicy: 'notSupported',
 			},
 		])
 		expect(
@@ -43,6 +49,23 @@ describe('digital signature inventory', () => {
 			result.value.report.features.find((feature) => feature.feature === 'preservedSignature')
 				?.note,
 		).toContain('invalidate')
+
+		const written = writeXlsx(result.value.workbook, result.value.capsules, {
+			workbookMetaDirty: true,
+		})
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		expect(zip['_xmlsignatures/origin.sigs']).toBeDefined()
+		expect(zip['_xmlsignatures/sig1.xml']).toBeDefined()
+		const rootRels = new TextDecoder().decode(zip['_rels/.rels'] ?? new Uint8Array())
+		const workbookRels = new TextDecoder().decode(
+			zip['xl/_rels/workbook.xml.rels'] ?? new Uint8Array(),
+		)
+		expect(rootRels).toContain(
+			'Type="http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/origin"',
+		)
+		expect(rootRels).toContain('Target="_xmlsignatures/origin.sigs"')
+		expect(workbookRels).not.toContain('digital-signature/origin')
 	})
 })
 

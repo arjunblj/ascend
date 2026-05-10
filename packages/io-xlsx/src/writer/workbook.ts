@@ -11,6 +11,7 @@ export interface WorkbookXmlOptions {
 	readonly externalReferenceRelIds?: readonly string[]
 	readonly pivotCacheRelIds?: readonly string[]
 	readonly chartSheetRelIds?: readonly string[]
+	readonly macroSheetRelIds?: readonly string[]
 	readonly calcStateDirty?: boolean
 }
 
@@ -77,6 +78,18 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 			sheetId: chartSheet.sheetId,
 			relId,
 			state: chartSheet.state,
+		})
+	}
+	for (let i = 0; i < workbook.macroSheets.length; i++) {
+		const macroSheet = workbook.macroSheets[i]
+		const relId = options.macroSheetRelIds?.[i]
+		if (!macroSheet || !relId) continue
+		sheetEntries.push({
+			kind: 'macrosheet',
+			name: macroSheet.name,
+			sheetId: macroSheet.sheetId,
+			relId,
+			state: macroSheet.state,
 		})
 	}
 	for (const sheetEntry of orderWorkbookSheetEntries(
@@ -170,7 +183,7 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 }
 
 interface WorkbookSheetXmlEntry {
-	readonly kind: 'worksheet' | 'chartsheet'
+	readonly kind: 'worksheet' | 'chartsheet' | 'macrosheet'
 	readonly name: string
 	readonly sheetId: string
 	readonly relId: string
@@ -204,7 +217,7 @@ function orderWorkbookSheetEntries(
 }
 
 function sheetOrderKey(entry: {
-	readonly kind: 'worksheet' | 'chartsheet'
+	readonly kind: 'worksheet' | 'chartsheet' | 'macrosheet'
 	readonly sheetId: string
 }): string {
 	return `${entry.kind}:${entry.sheetId}`

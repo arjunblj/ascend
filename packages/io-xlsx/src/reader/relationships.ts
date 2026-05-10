@@ -11,6 +11,7 @@ export const REL_WORKSHEET =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet'
 export const REL_CHARTSHEET =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chartsheet'
+export const REL_MACROSHEET = 'http://schemas.microsoft.com/office/2006/relationships/xlMacrosheet'
 export const REL_CHART = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart'
 export const REL_STYLES =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles'

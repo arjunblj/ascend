@@ -28,6 +28,7 @@ import { type ContentTypes, parseContentTypes } from './content-types.ts'
 import { parseDataModelPartInfo } from './data-model.ts'
 import { parseDrawingImageRefs, parseDrawingObjectRefs } from './drawing.ts'
 import { maybeDecryptOoxmlPackage } from './encryption.ts'
+import { parseMacroSheetInfo } from './macro-sheet.ts'
 import { parseMetadataXml } from './metadata.ts'
 import {
 	parsePivotCacheDefinitionXml,
@@ -44,6 +45,7 @@ import {
 	REL_CHARTSHEET,
 	REL_COMMENTS,
 	REL_DRAWING,
+	REL_MACROSHEET,
 	REL_OFFICE_DOC,
 	REL_PIVOT_TABLE,
 	REL_SHARED_STRINGS,
@@ -186,7 +188,7 @@ export function readXlsx(
 				contentType,
 			})),
 			sheetEntries: wbInfo.sheets.map((entry) => ({
-				kind: relMap.get(entry.rId)?.type === REL_CHARTSHEET ? 'chartsheet' : 'worksheet',
+				kind: workbookSheetEntryKind(relMap.get(entry.rId)?.type),
 				sheetId: entry.sheetId,
 				name: entry.name,
 			})),
@@ -341,6 +343,27 @@ export function readXlsx(
 							.filter((relationship) => relationship.type === REL_CHART)
 							.map((relationship) => resolvePath(sheetPath, relationship.target)),
 					})
+				}
+				continue
+			}
+
+			if (rel.type === REL_MACROSHEET) {
+				const macroSheetRelsXml = readPart(archive, getRelsPath(sheetPath))
+				const macroSheetRelationships = macroSheetRelsXml
+					? parseRelationships(macroSheetRelsXml)
+					: []
+				sheetRelsByPath.set(sheetPath, macroSheetRelationships)
+				if (!selectedSheets || selectedSheets.has(entry.name.toLowerCase())) {
+					workbook.macroSheets.push(
+						parseMacroSheetInfo(readPart(archive, sheetPath), {
+							name: entry.name,
+							sheetId: entry.sheetId,
+							relId: entry.rId,
+							partPath: sheetPath,
+							state: entry.state,
+							relationships: macroSheetRelationships,
+						}),
+					)
 				}
 				continue
 			}
@@ -688,6 +711,14 @@ function collectCapsules(
 
 		let anchor: PreservationCapsule['anchor'] = { kind: 'workbook' }
 		let relType: string | undefined
+		const directSheetAnchor = sheetPathToAnchor.get(partPath)
+		if (directSheetAnchor) {
+			anchor = {
+				kind: 'sheet',
+				sheetId: directSheetAnchor.sheetId,
+				sheetName: directSheetAnchor.sheetName,
+			}
+		}
 
 		const wbRef = wbRelByTarget.get(partPath)
 		if (wbRef) relType = wbRef.type
@@ -763,6 +794,7 @@ function resolveContentTypeInfo(
 function capsuleFamily(path: string): string {
 	if (path.startsWith('docProps/')) return 'preservedDocumentProperties'
 	if (path.includes('/chartsheets/')) return 'preservedChartSheet'
+	if (path.includes('/macrosheets/')) return 'preservedMacroSheet'
 	if (path.includes('/charts/') || path.includes('/chartEx/')) return 'preservedChart'
 	if (path.includes('/queryTables/')) return 'preservedQueryTable'
 	if (path.endsWith('/connections.xml')) return 'preservedConnection'
@@ -794,6 +826,14 @@ function capsuleFamily(path: string): string {
 	if (/\/comments\d+\.xml$/i.test(path)) return 'preservedComments'
 	if (path.includes('/threadedComments/')) return 'preservedThreadedComments'
 	return 'preservedOther'
+}
+
+function workbookSheetEntryKind(
+	relType: string | undefined,
+): 'worksheet' | 'chartsheet' | 'macrosheet' {
+	if (relType === REL_CHARTSHEET) return 'chartsheet'
+	if (relType === REL_MACROSHEET) return 'macrosheet'
+	return 'worksheet'
 }
 
 function categorizeCapsules(capsules: readonly PreservationCapsule[]): Map<string, string[]> {
@@ -833,6 +873,13 @@ function collectActiveContent(
 			relationshipCount: capsule.relationships.length,
 			...(kind === 'vbaProject' && entry ? { byteSize: entry.uncompressedSize } : {}),
 			...(kind === 'vbaProject' ? { opaque: true, executionPolicy: 'blocked' as const } : {}),
+			...(kind === 'macroSheet' ? { opaque: true, executionPolicy: 'blocked' as const } : {}),
+			...(kind === 'digitalSignature' || kind === 'vbaSignature'
+				? {
+						invalidationPolicy: 'invalidatedByPackageEdit' as const,
+						resigningPolicy: 'notSupported' as const,
+					}
+				: {}),
 			...(vbaProject ? { vbaProject } : {}),
 		})
 	}
@@ -879,6 +926,13 @@ function classifyActiveContent(capsule: PreservationCapsule): ActiveContentInfo[
 	const contentType = capsule.contentType.toLowerCase()
 	const relType = capsule.relType?.toLowerCase() ?? ''
 	if (
+		path.includes('/macrosheets/') ||
+		contentType.includes('macrosheet') ||
+		relType.includes('xlmacrosheet')
+	) {
+		return 'macroSheet'
+	}
+	if (
 		path.includes('vbaprojectsignature') ||
 		(contentType.includes('vba') && path.includes('signature'))
 	) {
@@ -910,6 +964,9 @@ function preservedFeatureNote(feature: string): string | undefined {
 	if (feature === 'preservedChartSheet') {
 		return 'Chartsheets are inventoried and preserved exactly where possible; they are not modeled as worksheet grids.'
 	}
+	if (feature === 'preservedMacroSheet') {
+		return 'Excel 4 macro sheets are inventoried and preserved exactly where possible; macro formulas are not executed or semantically edited.'
+	}
 	if (feature === 'preservedChart') {
 		return 'Chart parts are inventoried and preserved exactly where possible; chart semantics are not yet editable.'
 	}
@@ -929,7 +986,7 @@ function preservedFeatureNote(feature: string): string | undefined {
 		return 'Form/control property parts are preserved exactly where possible; linked behavior is not semantically editable.'
 	}
 	if (feature === 'preservedSignature') {
-		return 'Digital signature parts are preserved, but any workbook edit can invalidate existing signatures unless the package is re-signed.'
+		return 'Digital signature parts are preserved for clean round-trips; generated workbook edits invalidate existing signatures unless the package is re-signed outside Ascend.'
 	}
 	if (feature === 'preservedQueryTable') {
 		return 'Query table parts are inventoried with connection IDs and refresh flags, then preserved exactly where possible.'

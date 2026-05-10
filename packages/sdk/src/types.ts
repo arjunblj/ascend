@@ -29,6 +29,7 @@ import type {
 	TableStyleInfo,
 	WorkbookConnectionPartInfo,
 	WorkbookDataModelPartInfo,
+	WorkbookMacroSheetInfo,
 	WorkbookThemeColor,
 	WorkbookView,
 } from '@ascend/core'
@@ -43,6 +44,7 @@ export type {
 	WorkbookConnectionPartKind,
 	WorkbookDataModelPartInfo,
 	WorkbookDataModelPartKind,
+	WorkbookMacroSheetInfo,
 } from '@ascend/core'
 
 import type { CellChange, SheetDiff, WorkbookDiff } from '@ascend/engine'
@@ -65,6 +67,7 @@ export interface WorkbookInfo {
 	readonly advancedFilterCount: number | null
 	readonly chartCount: number
 	readonly chartSheetCount: number
+	readonly macroSheetCount: number
 	readonly pivotTableCount: number
 	readonly pivotCacheCount: number
 	readonly pivotRefreshPlans: readonly PivotRefreshPlanInfo[]
@@ -84,6 +87,7 @@ export interface WorkbookInfo {
 	readonly externalReferenceUsages: readonly ExternalReferenceUsageInfo[]
 	readonly charts: readonly ChartPartInfo[]
 	readonly chartSheets: readonly ChartSheetInfo[]
+	readonly macroSheets: readonly WorkbookMacroSheetInfo[]
 	readonly hasWorkbookProtection: boolean
 	readonly pivotTables: readonly PivotTableInfo[]
 	readonly pivotCaches: readonly PivotCacheInfo[]

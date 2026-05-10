@@ -124,9 +124,21 @@ export interface WorkbookPreservedContentTypeDefault {
 }
 
 export interface WorkbookPreservedSheetEntry {
-	readonly kind: 'worksheet' | 'chartsheet'
+	readonly kind: 'worksheet' | 'chartsheet' | 'macrosheet'
 	readonly sheetId: string
 	readonly name: string
+}
+
+export interface WorkbookMacroSheetInfo {
+	readonly name: string
+	readonly sheetId: string
+	readonly relId: string
+	readonly partPath: string
+	readonly state: 'visible' | 'hidden' | 'veryHidden'
+	readonly relationshipCount: number
+	readonly dimensionRef?: string
+	readonly cellCount?: number
+	readonly formulaCount?: number
 }
 
 export interface ExternalReferenceInfo {
@@ -152,6 +164,7 @@ export class Workbook {
 	readonly timelines: TimelineInfo[] = []
 	readonly chartParts: ChartPartInfo[] = []
 	readonly chartSheets: ChartSheetInfo[] = []
+	readonly macroSheets: WorkbookMacroSheetInfo[] = []
 	readonly connectionParts: WorkbookConnectionPartInfo[] = []
 	readonly dataModelParts: WorkbookDataModelPartInfo[] = []
 	readonly activeContent: ActiveContentInfo[] = []
@@ -285,6 +298,7 @@ export class Workbook {
 				chartPartPaths: [...entry.chartPartPaths],
 			})),
 		)
+		clone.macroSheets.push(...this.macroSheets.map((entry) => ({ ...entry })))
 		clone.connectionParts.push(...this.connectionParts.map((entry) => ({ ...entry })))
 		clone.dataModelParts.push(...this.dataModelParts.map((entry) => ({ ...entry })))
 		clone.activeContent.push(...this.activeContent.map(cloneActiveContentInfo))

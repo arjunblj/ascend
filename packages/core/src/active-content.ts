@@ -2,6 +2,7 @@ export type ActiveContentKind =
 	| 'vbaProject'
 	| 'activeX'
 	| 'formControl'
+	| 'macroSheet'
 	| 'vbaSignature'
 	| 'digitalSignature'
 	| 'customUi'
@@ -32,6 +33,8 @@ export interface ActiveContentInfo {
 	readonly byteSize?: number
 	readonly opaque?: boolean
 	readonly executionPolicy?: 'blocked'
+	readonly invalidationPolicy?: 'invalidatedByPackageEdit'
+	readonly resigningPolicy?: 'notSupported'
 	readonly vbaProject?: VbaProjectInfo
 }
 

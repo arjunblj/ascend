@@ -84,4 +84,28 @@ describe('Workbook.clone', () => {
 
 		expect(wb.activeContent[0]?.vbaProject?.modules[0]?.name).toBe('Module1')
 	})
+
+	test('clones macro sheet inventory without aliasing', () => {
+		const wb = createWorkbook()
+		wb.macroSheets.push({
+			name: 'Macro1',
+			sheetId: '2',
+			relId: 'rIdMacro',
+			partPath: 'xl/macrosheets/sheet1.xml',
+			state: 'veryHidden',
+			relationshipCount: 0,
+			dimensionRef: 'A1',
+			cellCount: 1,
+			formulaCount: 1,
+		})
+
+		const clone = wb.clone()
+		const macroSheet = clone.macroSheets[0]
+		expect(macroSheet).toBeDefined()
+		if (!macroSheet) return
+
+		;(macroSheet as { name: string }).name = 'Changed'
+
+		expect(wb.macroSheets[0]?.name).toBe('Macro1')
+	})
 })

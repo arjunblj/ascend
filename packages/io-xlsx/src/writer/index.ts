@@ -18,6 +18,7 @@ import {
 	REL_COMMENTS,
 	REL_DRAWING,
 	REL_IMAGE,
+	REL_MACROSHEET,
 	REL_PIVOT_CACHE_DEFINITION,
 	REL_SHARED_STRINGS,
 	REL_SHEET_METADATA,
@@ -62,6 +63,8 @@ const REL_CORE_PROPS =
 	'http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties'
 const REL_EXT_PROPS =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties'
+const REL_DIGITAL_SIGNATURE_ORIGIN =
+	'http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/origin'
 const REL_HYPERLINK =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink'
 const REL_EXTERNAL_LINK_PATH =
@@ -314,6 +317,7 @@ export function planWriteXlsx(
 		const sheetNameById = new Map<string, string>([
 			...workbook.sheets.map((sheet) => [sheet.id as string, sheet.name] as const),
 			...workbook.chartSheets.map((sheet) => [sheet.sheetId, sheet.name] as const),
+			...workbook.macroSheets.map((sheet) => [sheet.sheetId, sheet.name] as const),
 		])
 		const sheetCapsuleMap = new Map<string, PreservationCapsule[]>()
 		const workbookCapsules: PreservationCapsule[] = []
@@ -574,10 +578,26 @@ export function planWriteXlsx(
 			rIdCounter++
 		}
 
+		const macroSheetPartPaths = new Set(workbook.macroSheets.map((sheet) => sheet.partPath))
+		const macroSheetRelIds: string[] = []
+		for (const macroSheet of workbook.macroSheets) {
+			const target = macroSheet.partPath.replace(/^xl\//, '')
+			const relId = `rId${rIdCounter}`
+			macroSheetRelIds.push(relId)
+			wbRels.push({
+				id: relId,
+				type: REL_MACROSHEET,
+				target: workbookRelTarget(REL_MACROSHEET, macroSheet.partPath, target),
+			})
+			rIdCounter++
+		}
+
 		for (const capsule of workbookCapsules) {
 			if (!capsule.relType) continue
 			if (isPackageDocPropsCapsule(capsule)) continue
+			if (isPackageSignatureOriginCapsule(capsule)) continue
 			if (chartSheetPartPaths.has(capsule.partPath)) continue
+			if (macroSheetPartPaths.has(capsule.partPath)) continue
 			if (pivotCachePartPaths.has(capsule.partPath)) continue
 			const target = computeRelativePath('xl/', capsule.partPath)
 			wbRels.push({
@@ -676,6 +696,7 @@ export function planWriteXlsx(
 								externalReferenceRelIds,
 								pivotCacheRelIds,
 								chartSheetRelIds,
+								macroSheetRelIds,
 								...(options.calcStateDirty !== undefined
 									? { calcStateDirty: options.calcStateDirty }
 									: {}),
@@ -1186,7 +1207,9 @@ export function planWriteXlsx(
 		let rootRIdCounter = 4
 		if (capsules) {
 			for (const capsule of capsules) {
-				if (!isPackageDocPropsCapsule(capsule)) continue
+				if (!isPackageDocPropsCapsule(capsule) && !isPackageSignatureOriginCapsule(capsule)) {
+					continue
+				}
 				if (!capsule.relType) continue
 				if (capsule.partPath === corePropsPath || capsule.partPath === appPropsPath) {
 					continue
@@ -1721,6 +1744,14 @@ function isPackageDocPropsCapsule(capsule: PreservationCapsule): boolean {
 		capsule.partPath.startsWith('docProps/') ||
 		capsule.relType === REL_CORE_PROPS ||
 		capsule.relType === REL_EXT_PROPS
+	)
+}
+
+function isPackageSignatureOriginCapsule(capsule: PreservationCapsule): boolean {
+	return (
+		capsule.relType === REL_DIGITAL_SIGNATURE_ORIGIN ||
+		capsule.contentType.includes('digital-signature-origin') ||
+		capsule.partPath === '_xmlsignatures/origin.sigs'
 	)
 }
 

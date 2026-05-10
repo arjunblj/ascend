@@ -1832,6 +1832,110 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(3, 2)?.formula).toBe('[@Qty]*[@Price]')
 	})
 
+	test('setTableColumn renames columns and rewrites structured references', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Qty'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Price'), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: stringValue('Total'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(5), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: numberValue(7), formula: null, styleId: sid })
+		applyOperation(wb, {
+			op: 'createTable',
+			sheet: 'Sheet1',
+			ref: 'A1:C3',
+			name: 'Sales',
+			hasHeaders: true,
+		})
+		applyOperation(wb, {
+			op: 'setTableColumn',
+			table: 'Sales',
+			column: 'Total',
+			formula: '=[@Qty]*[@Price]',
+			totalsRowFormula: '=SUM(Sales[Qty])',
+		})
+		sheet.cells.set(4, 0, { value: EMPTY, formula: 'SUM(Sales[[Qty]:[Price]])', styleId: sid })
+		wb.definedNames.set('SalesQty', 'SUM(Sales[Qty])')
+
+		const result = applyOperation(wb, {
+			op: 'setTableColumn',
+			table: 'Sales',
+			column: 'Qty',
+			newName: 'Units',
+		})
+		expectOk(result)
+		expect(result.value.affectedCells).toEqual(['A1'])
+		expect(result.value.recalcRequired).toBe(true)
+		expect(sheet.tables[0]?.columns.map((column) => column.name)).toEqual([
+			'Units',
+			'Price',
+			'Total',
+		])
+		expect(sheet.cells.get(0, 0)?.value).toEqual(stringValue('Units'))
+		expect(sheet.cells.get(1, 2)?.formula).toBe('[@Units]*[@Price]')
+		expect(sheet.tables[0]?.columns[2]?.formula).toBe('[@Units]*[@Price]')
+		expect(sheet.tables[0]?.columns[2]?.totalsRowFormula).toBe('SUM(Sales[Units])')
+		expect(sheet.cells.get(4, 0)?.formula).toBe('SUM(Sales[[Units]:[Price]])')
+		expect(wb.definedNames.get('SalesQty')).toBe('SUM(Sales[Units])')
+
+		const duplicate = applyOperation(wb, {
+			op: 'setTableColumn',
+			table: 'Sales',
+			column: 'Units',
+			newName: 'Price',
+		})
+		expectErr(duplicate)
+	})
+
+	test('setTableColumn materializes totals-row cells from metadata edits', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Amount'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('Cash'), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(10), formula: null, styleId: sid })
+		applyOperation(wb, {
+			op: 'createTable',
+			sheet: 'Sheet1',
+			ref: 'A1:B3',
+			name: 'Sales',
+			hasHeaders: true,
+		})
+		const table = sheet.tables[0]
+		if (!table) throw new Error('expected table')
+		sheet.tables[0] = { ...table, hasTotals: true }
+
+		const label = applyOperation(wb, {
+			op: 'setTableColumn',
+			table: 'Sales',
+			column: 'Name',
+			totalsRowLabel: 'Total',
+		})
+		const sum = applyOperation(wb, {
+			op: 'setTableColumn',
+			table: 'Sales',
+			column: 'Amount',
+			totalsRowFunction: 'sum',
+		})
+		expectOk(label)
+		expectOk(sum)
+		expect(sheet.cells.get(2, 0)?.value).toEqual(stringValue('Total'))
+		expect(sheet.cells.get(2, 1)?.formula).toBe('SUBTOTAL(109,Sales[Amount])')
+		expect(sum.value.recalcRequired).toBe(true)
+
+		const appended = applyOperation(wb, {
+			op: 'appendRows',
+			table: 'Sales',
+			rows: [['Debt', 20]],
+		})
+		expectOk(appended)
+		expect(sheet.cells.get(2, 0)?.value).toEqual(stringValue('Debt'))
+		expect(sheet.cells.get(3, 0)?.value).toEqual(stringValue('Total'))
+		expect(sheet.cells.get(3, 1)?.formula).toBe('SUBTOTAL(109,Sales[Amount])')
+	})
+
 	test('setTableStyle edits table style metadata', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

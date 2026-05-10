@@ -1,4 +1,4 @@
-import type { Cell, Sheet, Workbook } from '@ascend/core'
+import type { Cell, Sheet, Table, Workbook } from '@ascend/core'
 import type { FormulaCellRef, FormulaNode } from '@ascend/formulas'
 import { cachedParseFormula, printFormula } from '@ascend/formulas'
 import { shiftIndex } from './ref-shift.ts'
@@ -183,6 +183,65 @@ export function rewriteTableNameInDefinedNames(
 	}
 }
 
+export function rewriteTableColumnInFormulas(
+	workbook: Workbook,
+	targetTable: Table,
+	oldColumn: string,
+	newColumn: string,
+): void {
+	for (const sheet of workbook.sheets) {
+		const updates: [number, number, Cell][] = []
+		for (const [row, col, existing] of sheet.cells.iterate()) {
+			if (existing.formula === null) continue
+			const includeLocalRefs =
+				sheet.id === targetTable.sheetId && cellWithinTable(targetTable, row, col)
+			const rewrittenFormula = rewriteFormulaTextForTableColumnRename(
+				existing.formula,
+				targetTable.name,
+				oldColumn,
+				newColumn,
+				includeLocalRefs,
+			)
+			if (rewrittenFormula === undefined) continue
+			if (rewrittenFormula === existing.formula) continue
+			updates.push([
+				row,
+				col,
+				{
+					value: existing.value,
+					formula: rewrittenFormula,
+					styleId: existing.styleId,
+				},
+			])
+		}
+		for (const [row, col, updated] of updates) {
+			sheet.cells.set(row, col, updated)
+		}
+		rewriteSheetMetadataFormulasForTableColumnRename(sheet, targetTable.name, oldColumn, newColumn)
+	}
+}
+
+export function rewriteTableColumnInDefinedNames(
+	workbook: Workbook,
+	tableName: string,
+	oldColumn: string,
+	newColumn: string,
+): void {
+	const entries = [...workbook.definedNames.list()]
+	for (const entry of entries) {
+		const formula = rewriteFormulaTextForTableColumnRename(
+			entry.formula,
+			tableName,
+			oldColumn,
+			newColumn,
+			false,
+		)
+		if (formula === undefined) continue
+		if (formula === entry.formula) continue
+		workbook.definedNames.set(entry.name, formula, entry.scope, definedNameOptions(entry))
+	}
+}
+
 function definedNameOptions(entry: { readonly hidden?: boolean }): { readonly hidden?: boolean } {
 	return entry.hidden !== undefined ? { hidden: entry.hidden } : {}
 }
@@ -207,6 +266,21 @@ export function rewriteFormulaTextForTableRename(
 	const parsed = cachedParseFormula(formula)
 	if (!parsed.ok) return formula
 	return printFormula(rewriteTableName(parsed.value, oldName, newName))
+}
+
+export function rewriteFormulaTextForTableColumnRename(
+	formula: string | undefined,
+	tableName: string,
+	oldColumn: string,
+	newColumn: string,
+	includeLocalRefs = false,
+): string | undefined {
+	if (!formula) return formula
+	const parsed = cachedParseFormula(formula)
+	if (!parsed.ok) return formula
+	return printFormula(
+		rewriteTableColumn(parsed.value, tableName, oldColumn, newColumn, includeLocalRefs),
+	)
 }
 
 export function rewriteSheetMetadataFormulasForShift(
@@ -371,6 +445,77 @@ export function rewriteSheetMetadataFormulasForTableRename(
 				column.totalsRowFormula,
 				oldName,
 				newName,
+			)
+			return {
+				...column,
+				...(formula !== undefined ? { formula } : {}),
+				...(totalsRowFormula !== undefined ? { totalsRowFormula } : {}),
+			}
+		})
+		sheet.tables[i] = { ...table, columns }
+	}
+}
+
+export function rewriteSheetMetadataFormulasForTableColumnRename(
+	sheet: Sheet,
+	tableName: string,
+	oldColumn: string,
+	newColumn: string,
+): void {
+	for (let i = 0; i < sheet.dataValidations.length; i++) {
+		const validation = sheet.dataValidations[i]
+		if (!validation) continue
+		const formula1 = rewriteFormulaTextForTableColumnRename(
+			validation.formula1,
+			tableName,
+			oldColumn,
+			newColumn,
+		)
+		const formula2 = rewriteFormulaTextForTableColumnRename(
+			validation.formula2,
+			tableName,
+			oldColumn,
+			newColumn,
+		)
+		sheet.dataValidations[i] = {
+			...validation,
+			...(formula1 !== undefined ? { formula1 } : {}),
+			...(formula2 !== undefined ? { formula2 } : {}),
+		}
+	}
+	for (let i = 0; i < sheet.conditionalFormats.length; i++) {
+		const format = sheet.conditionalFormats[i]
+		if (!format) continue
+		sheet.conditionalFormats[i] = {
+			...format,
+			rules: format.rules.map((rule) => ({
+				...rule,
+				formulas: rule.formulas.map(
+					(formula) =>
+						rewriteFormulaTextForTableColumnRename(formula, tableName, oldColumn, newColumn) ??
+						formula,
+				),
+			})),
+		}
+	}
+	for (let i = 0; i < sheet.tables.length; i++) {
+		const table = sheet.tables[i]
+		if (!table) continue
+		const includeLocalRefs = table.name.toLowerCase() === tableName.toLowerCase()
+		const columns = table.columns.map((column) => {
+			const formula = rewriteFormulaTextForTableColumnRename(
+				column.formula,
+				tableName,
+				oldColumn,
+				newColumn,
+				includeLocalRefs,
+			)
+			const totalsRowFormula = rewriteFormulaTextForTableColumnRename(
+				column.totalsRowFormula,
+				tableName,
+				oldColumn,
+				newColumn,
+				includeLocalRefs,
 			)
 			return {
 				...column,
@@ -664,4 +809,92 @@ function rewriteTableName(node: FormulaNode, oldName: string, newName: string): 
 		default:
 			return node
 	}
+}
+
+function rewriteTableColumn(
+	node: FormulaNode,
+	tableName: string,
+	oldColumn: string,
+	newColumn: string,
+	includeLocalRefs: boolean,
+): FormulaNode {
+	switch (node.type) {
+		case 'structuredRef': {
+			const tableMatches = node.table.toLowerCase() === tableName.toLowerCase()
+			const localMatches = includeLocalRefs && node.table.length === 0
+			if (!tableMatches && !localMatches) return node
+			const oldColumnLower = oldColumn.toLowerCase()
+			const column = node.column?.toLowerCase() === oldColumnLower ? newColumn : node.column
+			const endColumn =
+				node.endColumn?.toLowerCase() === oldColumnLower ? newColumn : node.endColumn
+			return {
+				...node,
+				...(column !== undefined ? { column } : {}),
+				...(endColumn !== undefined ? { endColumn } : {}),
+			}
+		}
+		case 'binary':
+			return {
+				type: 'binary',
+				op: node.op,
+				left: rewriteTableColumn(node.left, tableName, oldColumn, newColumn, includeLocalRefs),
+				right: rewriteTableColumn(node.right, tableName, oldColumn, newColumn, includeLocalRefs),
+			}
+		case 'dynamicRangeRef':
+			return {
+				type: 'dynamicRangeRef',
+				start: rewriteTableColumn(node.start, tableName, oldColumn, newColumn, includeLocalRefs),
+				end: rewriteTableColumn(node.end, tableName, oldColumn, newColumn, includeLocalRefs),
+			}
+		case 'unary':
+			return {
+				type: 'unary',
+				op: node.op,
+				operand: rewriteTableColumn(
+					node.operand,
+					tableName,
+					oldColumn,
+					newColumn,
+					includeLocalRefs,
+				),
+			}
+		case 'function':
+			return {
+				type: 'function',
+				name: node.name,
+				args: node.args.map((arg) =>
+					rewriteTableColumn(arg, tableName, oldColumn, newColumn, includeLocalRefs),
+				),
+			}
+		case 'array':
+			return {
+				type: 'array',
+				rows: node.rows.map((row) =>
+					row.map((cell) =>
+						rewriteTableColumn(cell, tableName, oldColumn, newColumn, includeLocalRefs),
+					),
+				),
+			}
+		case 'sheetSpanRef':
+			return {
+				...node,
+				target: rewriteTableColumn(node.target, tableName, oldColumn, newColumn, includeLocalRefs),
+			}
+		case 'spillRef':
+			return {
+				type: 'spillRef',
+				target: rewriteTableColumn(node.target, tableName, oldColumn, newColumn, includeLocalRefs),
+			}
+		default:
+			return node
+	}
+}
+
+function cellWithinTable(table: Table, row: number, col: number): boolean {
+	return (
+		row >= table.ref.start.row &&
+		row <= table.ref.end.row &&
+		col >= table.ref.start.col &&
+		col <= table.ref.end.col
+	)
 }

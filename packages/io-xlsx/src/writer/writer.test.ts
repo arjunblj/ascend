@@ -3316,6 +3316,102 @@ describe('writeXlsx', () => {
 		)
 	})
 
+	it('writes table column renames through generated table XML', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Inventory')
+		sheet.cells.set(0, 0, { value: stringValue('Qty'), formula: null, styleId: S0 })
+		sheet.cells.set(0, 1, { value: stringValue('Price'), formula: null, styleId: S0 })
+		sheet.cells.set(0, 2, { value: stringValue('Total'), formula: null, styleId: S0 })
+		sheet.cells.set(1, 0, { value: numberValue(5), formula: null, styleId: S0 })
+		sheet.cells.set(1, 1, { value: numberValue(4), formula: null, styleId: S0 })
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'InventoryTable',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 1, col: 2 } },
+			columns: [
+				{ id: 1, name: 'Qty' },
+				{ id: 2, name: 'Price' },
+				{ id: 3, name: 'Total', formula: '[@Qty]*[@Price]' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+
+		const applied = applyOperations(wb, [
+			{
+				op: 'setTableColumn',
+				table: 'InventoryTable',
+				column: 'Qty',
+				newName: 'Units',
+			},
+		])
+		expectOk(applied)
+
+		const { result, bytes } = roundTrip(wb)
+		const roundTrippedSheet = result.workbook.sheets[0]
+		expect(roundTrippedSheet?.tables[0]?.columns.map((column) => column.name)).toEqual([
+			'Units',
+			'Price',
+			'Total',
+		])
+		expect(roundTrippedSheet?.cells.get(0, 0)?.value).toEqual(stringValue('Units'))
+		expect(roundTrippedSheet?.tables[0]?.columns[2]?.formula).toBe('[@Units]*[@Price]')
+
+		const tableEntry = unzipSync(bytes)['xl/tables/table1.xml']
+		expect(tableEntry).toBeDefined()
+		if (!tableEntry) return
+		const tableXml = new TextDecoder().decode(tableEntry)
+		expect(tableXml).toContain('<tableColumn id="1" name="Units">')
+		expect(tableXml).toContain(
+			'<calculatedColumnFormula>[@Units]*[@Price]</calculatedColumnFormula>',
+		)
+	})
+
+	it('writes materialized table totals rows from metadata edits', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Data')
+		sheet.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: S0 })
+		sheet.cells.set(0, 1, { value: stringValue('Amount'), formula: null, styleId: S0 })
+		sheet.cells.set(1, 0, { value: stringValue('Cash'), formula: null, styleId: S0 })
+		sheet.cells.set(1, 1, { value: numberValue(10), formula: null, styleId: S0 })
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } },
+			columns: [
+				{ id: 1, name: 'Name' },
+				{ id: 2, name: 'Amount' },
+			],
+			hasHeaders: true,
+			hasTotals: true,
+		})
+
+		const applied = applyOperations(wb, [
+			{ op: 'setTableColumn', table: 'Sales', column: 'Name', totalsRowLabel: 'Total' },
+			{ op: 'setTableColumn', table: 'Sales', column: 'Amount', totalsRowFunction: 'sum' },
+		])
+		expectOk(applied)
+
+		const { result, bytes } = roundTrip(wb)
+		const roundTrippedSheet = result.workbook.sheets[0]
+		expect(roundTrippedSheet?.tables[0]?.hasTotals).toBe(true)
+		expect(roundTrippedSheet?.cells.get(2, 0)?.value).toEqual(stringValue('Total'))
+		expect(roundTrippedSheet?.cells.get(2, 1)?.formula).toBe('SUBTOTAL(109,Sales[Amount])')
+
+		const entries = unzipSync(bytes)
+		const sheetXml = new TextDecoder().decode(
+			entries['xl/worksheets/sheet1.xml'] ?? new Uint8Array(),
+		)
+		expect(sheetXml).toContain('<dimension ref="A1:B3"/>')
+		expect(sheetXml).toContain('<f>SUBTOTAL(109,Sales[Amount])</f>')
+		const tableXml = new TextDecoder().decode(entries['xl/tables/table1.xml'] ?? new Uint8Array())
+		expect(tableXml).toContain('totalsRowCount="1"')
+		expect(tableXml).toContain('<autoFilter ref="A1:B2"/>')
+		expect(tableXml).toContain('totalsRowFunction="sum"')
+	})
+
 	it('round-trips table created via createTable op through XLSX', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Data')

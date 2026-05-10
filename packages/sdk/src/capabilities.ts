@@ -313,8 +313,8 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'Excel tables',
 		'editable',
 		'P0',
-		'Add column rename rewrites and totals-row materialization fixtures.',
-		'Create/delete/rename/resize plus calculated-column, totals metadata, and style edits exist; resize keeps table-owned filter/sort refs aligned with regenerated table XML.',
+		'Broaden totals-row materialization across writer-generated table models and additional real fixtures.',
+		'Create/delete/rename/resize plus table column rename, calculated-column, totals metadata, and style edits exist; column rename rewrites structured references, totals metadata edits materialize worksheet cells, and resize keeps table-owned filter/sort refs aligned with regenerated table XML.',
 		['packages/engine/src/operations.test.ts', 'packages/io-xlsx/src/writer/writer.test.ts'],
 	),
 	cap(

@@ -198,6 +198,31 @@ describe('operation schema agent DX', () => {
 		if (!invalid.ok) expect(invalid.issues[0]).toContain('showRowStripes must be a boolean')
 	})
 
+	test('setTableColumn is exposed with column rename guidance', () => {
+		const schema = getOperationsSchema().find((entry) => entry.op === 'setTableColumn')
+		expect(schema?.schema.required).toEqual(['op', 'table', 'column'])
+		expect(schema?.schema.properties.newName?.type).toBe('string')
+		expect(schema?.examples[0]).toMatchObject({
+			op: 'setTableColumn',
+			table: 'Sales',
+			column: 'Total',
+			newName: 'Line Total',
+		})
+		expect(schema?.recoveryActions.join('\n')).toContain('rewrite structured references')
+
+		const parsed = parseOperations([
+			{
+				op: 'setTableColumn',
+				table: 'Sales',
+				column: 'Qty',
+				newName: 'Units',
+				formula: null,
+				totalsRowFormula: null,
+			},
+		])
+		expect(parsed.ok).toBe(true)
+	})
+
 	test('setPivotFieldItem is exposed with filter item guidance', () => {
 		const schema = getOperationsSchema().find((entry) => entry.op === 'setPivotFieldItem')
 		expect(schema?.schema.required).toEqual(['op', 'fieldIndex', 'itemIndex'])

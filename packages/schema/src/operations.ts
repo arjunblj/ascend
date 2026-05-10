@@ -450,6 +450,7 @@ export type Operation =
 			readonly op: 'setTableColumn'
 			readonly table: string
 			readonly column: string | number
+			readonly newName?: string
 			readonly formula?: string | null
 			readonly totalsRowFunction?: string | null
 			readonly totalsRowFormula?: string | null

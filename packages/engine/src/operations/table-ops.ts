@@ -1,9 +1,12 @@
-import type { AutoFilter, TableColumn, TableStyleInfo, Workbook } from '@ascend/core'
+import type { AutoFilter, Sheet, Table, TableColumn, TableStyleInfo, Workbook } from '@ascend/core'
 import { createTableId, toA1 } from '@ascend/core'
 import { normalizeFormulaInput } from '@ascend/formulas'
 import type { Operation, Result } from '@ascend/schema'
-import { ascendError, EMPTY, err, ok } from '@ascend/schema'
+import { ascendError, EMPTY, err, ok, stringValue } from '@ascend/schema'
 import {
+	rewriteFormulaTextForTableColumnRename,
+	rewriteTableColumnInDefinedNames,
+	rewriteTableColumnInFormulas,
 	rewriteTableNameInDefinedNames,
 	rewriteTableNameInFormulas,
 } from '../structural/formula-rewrite.ts'
@@ -280,6 +283,17 @@ export function handleSetTableColumn(
 
 	const column = table.columns[columnIndex]
 	if (!column) return err(ascendError('NAME_NOT_FOUND', `Column "${String(op.column)}" not found`))
+	const newNameLower = op.newName?.toLowerCase()
+	if (
+		newNameLower !== undefined &&
+		table.columns.some(
+			(candidate, index) => index !== columnIndex && candidate.name.toLowerCase() === newNameLower,
+		)
+	) {
+		return err(
+			ascendError('NAME_CONFLICT', `Column "${op.newName}" already exists in table "${op.table}"`),
+		)
+	}
 	const nextColumn = updateTableColumn(column, op)
 	const tableIndex = sheet.tables.findIndex((candidate) => candidate.id === table.id)
 	if (tableIndex >= 0) {
@@ -292,8 +306,38 @@ export function handleSetTableColumn(
 	}
 
 	const affected: string[] = []
+	let recalcRequired = op.formula !== undefined || op.newName !== undefined
+	if (op.newName !== undefined) {
+		if (table.hasHeaders) {
+			const headerCell = sheet.cells.get(table.ref.start.row, table.ref.start.col + columnIndex)
+			sheet.cells.set(table.ref.start.row, table.ref.start.col + columnIndex, {
+				value: stringValue(op.newName),
+				formula: null,
+				styleId: headerCell?.styleId ?? DEFAULT_SID,
+			})
+			affected.push(toA1({ row: table.ref.start.row, col: table.ref.start.col + columnIndex }))
+		}
+		clearFormulaMetadata(workbook)
+		rewriteTableColumnInFormulas(workbook, table, column.name, op.newName)
+		rewriteTableColumnInDefinedNames(workbook, table.name, column.name, op.newName)
+	}
+	const totalsResult = materializeTotalsRowCell(workbook, sheet, table, columnIndex, nextColumn, op)
+	if (totalsResult) {
+		affected.push(totalsResult.ref)
+		recalcRequired ||= totalsResult.recalcRequired
+	}
 	if (op.formula !== undefined) {
-		const formula = op.formula === null ? null : normalizeFormulaInput(op.formula)
+		let formula = op.formula === null ? null : normalizeFormulaInput(op.formula)
+		if (formula !== null && op.newName !== undefined) {
+			formula =
+				rewriteFormulaTextForTableColumnRename(
+					formula,
+					table.name,
+					column.name,
+					op.newName,
+					true,
+				) ?? formula
+		}
 		const col = table.ref.start.col + columnIndex
 		const startRow = table.ref.start.row + (table.hasHeaders ? 1 : 0)
 		const endRow = table.ref.end.row - (table.hasTotals ? 1 : 0)
@@ -309,7 +353,7 @@ export function handleSetTableColumn(
 		clearFormulaMetadata(workbook)
 	}
 
-	return ok(patch(affected, [sheet.name], op.formula !== undefined))
+	return ok(patch(affected, [sheet.name], recalcRequired))
 }
 
 export function handleSetTableStyle(
@@ -359,6 +403,7 @@ function updateTableColumn(
 	op: Extract<Operation, { op: 'setTableColumn' }>,
 ): TableColumn {
 	let next: TableColumn = { ...column }
+	if (op.newName !== undefined) next = { ...next, name: op.newName }
 	if (op.formula !== undefined) {
 		const { formula: _formula, ...rest } = next
 		next = op.formula === null ? rest : { ...rest, formula: normalizeFormulaInput(op.formula) }
@@ -380,6 +425,81 @@ function updateTableColumn(
 		next = op.totalsRowLabel === null ? rest : { ...rest, totalsRowLabel: op.totalsRowLabel }
 	}
 	return next
+}
+
+function materializeTotalsRowCell(
+	workbook: Workbook,
+	sheet: Sheet,
+	table: Table,
+	columnIndex: number,
+	column: TableColumn,
+	op: Extract<Operation, { op: 'setTableColumn' }>,
+): { readonly ref: string; readonly recalcRequired: boolean } | null {
+	if (!table.hasTotals) return null
+	const touchedTotals =
+		op.totalsRowFunction !== undefined ||
+		op.totalsRowFormula !== undefined ||
+		op.totalsRowLabel !== undefined
+	if (!touchedTotals) return null
+
+	const row = table.ref.end.row
+	const col = table.ref.start.col + columnIndex
+	const ref = toA1({ row, col })
+	const existing = sheet.cells.get(row, col)
+	if (column.totalsRowFormula) {
+		sheet.cells.set(row, col, {
+			value: existing?.value ?? EMPTY,
+			formula: column.totalsRowFormula,
+			styleId: existing?.styleId ?? DEFAULT_SID,
+		})
+		clearFormulaMetadata(workbook)
+		return { ref, recalcRequired: true }
+	}
+	const subtotalFormula = subtotalFormulaFor(column.totalsRowFunction, table.name, column.name)
+	if (subtotalFormula) {
+		sheet.cells.set(row, col, {
+			value: existing?.value ?? EMPTY,
+			formula: subtotalFormula,
+			styleId: existing?.styleId ?? DEFAULT_SID,
+		})
+		clearFormulaMetadata(workbook)
+		return { ref, recalcRequired: true }
+	}
+	if (column.totalsRowLabel) {
+		sheet.cells.set(row, col, {
+			value: stringValue(column.totalsRowLabel),
+			formula: null,
+			styleId: existing?.styleId ?? DEFAULT_SID,
+		})
+		return { ref, recalcRequired: false }
+	}
+	sheet.cells.delete(row, col)
+	return { ref, recalcRequired: false }
+}
+
+function subtotalFormulaFor(
+	totalsRowFunction: string | undefined,
+	tableName: string,
+	columnName: string,
+): string | null {
+	const code = TOTALS_ROW_SUBTOTAL_CODES.get(totalsRowFunction?.toLowerCase() ?? '')
+	if (code === undefined) return null
+	return `SUBTOTAL(${code},${tableName}[${escapeStructuredRefColumn(columnName)}])`
+}
+
+const TOTALS_ROW_SUBTOTAL_CODES = new Map([
+	['average', 101],
+	['count', 103],
+	['countnums', 102],
+	['max', 104],
+	['min', 105],
+	['sum', 109],
+	['stddev', 107],
+	['var', 110],
+])
+
+function escapeStructuredRefColumn(name: string): string {
+	return name.replace(/([#@[\]'])/g, "'$1")
 }
 
 function updateTableStyle(

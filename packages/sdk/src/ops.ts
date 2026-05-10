@@ -543,9 +543,15 @@ export function listOperations(): readonly OperationSchema[] {
 		},
 		{
 			op: 'setTableColumn',
-			description: 'Set calculated-column formula and totals metadata for a table column',
+			description: 'Rename a table column or set calculated-column formula and totals metadata',
 			requiredFields: ['table', 'column'],
-			optionalFields: ['formula', 'totalsRowFunction', 'totalsRowFormula', 'totalsRowLabel'],
+			optionalFields: [
+				'newName',
+				'formula',
+				'totalsRowFunction',
+				'totalsRowFormula',
+				'totalsRowLabel',
+			],
 		},
 		{
 			op: 'setTableStyle',
@@ -792,7 +798,6 @@ function validateOperationField(
 	switch (field) {
 		case 'sheet':
 		case 'ref':
-		case 'formula':
 		case 'range':
 		case 'name':
 		case 'newName':
@@ -832,6 +837,13 @@ function validateOperationField(
 		case 'endDate':
 		case 'sortRef':
 		case 'sortBy':
+			return typeof value === 'string' ? null : `${path} must be a string`
+		case 'formula':
+			if (record.op === 'setTableColumn') {
+				return value === null || typeof value === 'string'
+					? null
+					: `${path} must be a string or null`
+			}
 			return typeof value === 'string' ? null : `${path} must be a string`
 		case 'themeName':
 		case 'colorSchemeName':
@@ -1152,7 +1164,8 @@ function operationRecoveryActions(op: string): readonly string[] {
 			return ['Confirm the table range includes the intended header and data rows.', ...common]
 		case 'setTableColumn':
 			return [
-				'Use a table column name or 0-based column index; set formula to null to clear calculated-column formulas.',
+				'Use a table column name or 0-based column index; set newName to rename the column and rewrite structured references.',
+				'Set formula to null to clear calculated-column formulas.',
 				'Use totalsRowFunction, totalsRowFormula, or totalsRowLabel to edit totals metadata.',
 				...common,
 			]
@@ -1419,6 +1432,7 @@ function operationExample(op: string): Record<string, unknown> {
 				op,
 				table: 'Sales',
 				column: 'Total',
+				newName: 'Line Total',
 				formula: '=[@Qty]*[@Price]',
 				totalsRowFunction: 'sum',
 			}

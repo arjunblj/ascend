@@ -11,6 +11,13 @@ export function buildTableXml(table: Table, tableNumber: number): string {
 		table.ref.end.row,
 		table.ref.end.col,
 	)}`
+	const filterEndRow = table.hasTotals
+		? Math.max(table.ref.start.row, table.ref.end.row - 1)
+		: table.ref.end.row
+	const generatedAutoFilterRef = `${toCellRef(table.ref.start.row, table.ref.start.col)}:${toCellRef(
+		filterEndRow,
+		table.ref.end.col,
+	)}`
 	const attrs = [
 		`xmlns="${NS}"`,
 		`id="${tableNumber}"`,
@@ -34,7 +41,7 @@ export function buildTableXml(table: Table, tableNumber: number): string {
 	if (table.autoFilter) {
 		pushAutoFilterXml(out, table.autoFilter)
 	} else if (table.hasHeaders) {
-		out.push(`<autoFilter ref="${ref}"/>`)
+		out.push(`<autoFilter ref="${generatedAutoFilterRef}"/>`)
 	}
 	if (table.sortState) {
 		pushSortStateXml(out, table.sortState)

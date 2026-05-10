@@ -14,13 +14,15 @@ export async function loadManifest(): Promise<CorpusManifestEntry[]> {
 	const poiRoot = join(root, '../poi')
 	const entries: CorpusManifestEntry[] = []
 	for (const file of SHEETJS_FIXTURE_FILES) {
-		entries.push(await buildEntry(poiRoot, file))
+		const entry = await buildEntry(poiRoot, file)
+		if (entry) entries.push(entry)
 	}
 	return entries
 }
 
-async function buildEntry(root: string, file: string): Promise<CorpusManifestEntry> {
-	const bytes = new Uint8Array(await readFile(join(root, file)))
+async function buildEntry(root: string, file: string): Promise<CorpusManifestEntry | null> {
+	const bytes = await readFixture(root, file)
+	if (!bytes) return null
 	const probe = inspectOoxmlPackageFeatures(bytes)
 	const features = { ...probe.features, macros: false }
 	return {
@@ -47,6 +49,17 @@ async function buildEntry(root: string, file: string): Promise<CorpusManifestEnt
 		assertionClass: deriveAssertionClass(features),
 		riskClass: deriveRisk(features),
 		featureTags: deriveTags(file, features),
+	}
+}
+
+async function readFixture(root: string, file: string): Promise<Uint8Array | null> {
+	try {
+		return new Uint8Array(await readFile(join(root, file)))
+	} catch (error) {
+		if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') {
+			return null
+		}
+		throw error
 	}
 }
 

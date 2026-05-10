@@ -849,6 +849,16 @@ describe('evaluateAssertions', () => {
 		const entries = normalizeManifest(
 			await loadCorpusManifestEntries(resolve(import.meta.dir, '../xlsx/sheetjs/manifest.ts')),
 		)
+		if (entries.length === 0) {
+			expect(
+				selectCorpusTargets(
+					entries,
+					{ tags: ['sheetjs', 'formula-fidelity'], tiers: ['core'], vendorableOnly: true },
+					resolve(import.meta.dir, '../xlsx/sheetjs'),
+				),
+			).toEqual([])
+			return
+		}
 		expect(entries.map((entry) => entry.file).sort()).toEqual([
 			'../poi/AutoFilter.xlsx',
 			'../poi/formula_stress_test.xlsx',

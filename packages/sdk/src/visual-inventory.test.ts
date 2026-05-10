@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { createWorkbook } from '@ascend/core'
 import type { CompatibilityReport } from '@ascend/schema'
-import { makeEmbeddedChartXlsx } from '../../io-xlsx/test/helpers.ts'
+import { makeEmbeddedChartXlsx, makeXlsx } from '../../io-xlsx/test/helpers.ts'
 import { AscendWorkbook } from './index.ts'
 import { WorkbookReadView } from './read-view.ts'
 import type { WorkbookLoadInfo } from './types.ts'
@@ -113,6 +113,35 @@ describe('visual inventory', () => {
 		expect(inventory.charts.map((chart) => chart.partPath)).not.toContain('xl/charts/colors1.xml')
 	})
 
+	test('setDrawingText edits existing text boxes through SDK save and reopen', async () => {
+		const wb = await AscendWorkbook.open(textBoxWorkbook())
+		expect(wb.visualInventory().sheets[0]?.drawingObjectRefs?.[0]).toMatchObject({
+			kind: 'textBox',
+			id: 10,
+			name: 'Callout',
+			text: 'Revenue up',
+		})
+
+		const result = wb.apply([
+			{
+				op: 'setDrawingText',
+				sheet: 'Sheet1',
+				drawingPartPath: 'xl/drawings/drawing1.xml',
+				id: 10,
+				text: 'Revenue flat',
+			},
+		])
+		expect(result.errors).toEqual([])
+
+		const reopened = await AscendWorkbook.open(wb.toBytes())
+		expect(reopened.visualInventory().sheets[0]?.drawingObjectRefs?.[0]).toMatchObject({
+			kind: 'textBox',
+			id: 10,
+			name: 'Callout',
+			text: 'Revenue flat',
+		})
+	})
+
 	test('marks visual sheet details as unknown when metadata is not hydrated', () => {
 		const workbook = createWorkbook()
 		const sheet = workbook.addSheet('Sheet1')
@@ -170,6 +199,56 @@ function visualCompatibilityReport(): CompatibilityReport {
 			},
 		],
 	}
+}
+
+function textBoxWorkbook(): Uint8Array {
+	return makeXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheetData/>
+  <drawing r:id="rIdDrawing"/>
+</worksheet>`,
+		'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdDrawing" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>
+</Relationships>`,
+		'xl/drawings/drawing1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"
+  xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <xdr:twoCellAnchor>
+    <xdr:from><xdr:col>1</xdr:col><xdr:row>2</xdr:row></xdr:from>
+    <xdr:to><xdr:col>3</xdr:col><xdr:row>4</xdr:row></xdr:to>
+    <xdr:sp>
+      <xdr:nvSpPr><xdr:cNvPr id="10" name="Callout" descr="Revenue note"/></xdr:nvSpPr>
+      <xdr:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr>
+      <xdr:txBody><a:bodyPr/><a:p><a:r><a:t>Revenue up</a:t></a:r></a:p></xdr:txBody>
+    </xdr:sp>
+    <xdr:clientData/>
+  </xdr:twoCellAnchor>
+</xdr:wsDr>`,
+	})
 }
 
 function fullLoadInfo(): WorkbookLoadInfo {

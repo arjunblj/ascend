@@ -441,7 +441,12 @@ const CLAIM_PROFILES: Record<ClaimProfileName, ClaimProfile> = {
 				category: 'edit-roundtrip',
 				operationProfile: 'edit-roundtrip',
 				workloads: ['real-workbook'],
-				files: ['styles_formulas.xlsx'],
+				files: [
+					'styles_formulas.xlsx',
+					'multisheet_names.xlsx',
+					'WithChart.xlsx',
+					'PivotTable_CachedDefinitionAndDataInSync.xlsx',
+				],
 				allowIneligibleCompetitors: ['SheetJS', 'ExcelJS', 'openpyxl', 'Excelize'],
 				requireSharedTimingLane: false,
 			},

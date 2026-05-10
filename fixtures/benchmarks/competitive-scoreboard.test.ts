@@ -857,29 +857,68 @@ describe('buildCompetitiveScoreboard', () => {
 		)
 	})
 
+	const xlsxRoundtripSotaFiles = [
+		'styles_formulas.xlsx',
+		'multisheet_names.xlsx',
+		'WithChart.xlsx',
+		'PivotTable_CachedDefinitionAndDataInSync.xlsx',
+	]
+
 	test('xlsx roundtrip SOTA profile accepts evaluated correctness losers and requires Ascend leader', () => {
 		const suite = suiteWithCases([
-			editRoundtripCase('ascend', 'semantic-roundtrip-pass', 3, 3),
-			editRoundtripCase('sheetjs', 'package-roundtrip-mismatch', 1, 1),
-			editRoundtripCase('exceljs', 'package-roundtrip-mismatch', 5, 5),
-			editRoundtripCase('openpyxl', 'package-roundtrip-mismatch', 7, 7),
-			editRoundtripCase('excelize', 'feature-roundtrip-mismatch', 2, 2),
+			...xlsxRoundtripSotaFiles.flatMap((file) => [
+				editRoundtripCase('ascend', 'semantic-roundtrip-pass', 3, 3, file),
+				editRoundtripCase('sheetjs', 'package-roundtrip-mismatch', 1, 1, file),
+				editRoundtripCase('exceljs', 'package-roundtrip-mismatch', 5, 5, file),
+				editRoundtripCase('openpyxl', 'package-roundtrip-mismatch', 7, 7, file),
+				editRoundtripCase('excelize', 'feature-roundtrip-mismatch', 2, 2, file),
+			]),
 		])
 		const scoreboard = buildCompetitiveScoreboard(suite)
 
 		expect(assertScoreboardCoverage(suite, 'xlsx-roundtrip-sota')).toEqual([])
 		expect(assertScoreboardProfileLeader(scoreboard, 'xlsx-roundtrip-sota', 'ascend')).toEqual([])
-		expect(scoreboard.groups[0]?.winner).toBe('ascend')
+		expect(scoreboard.groups.map((group) => group.winner)).toEqual(
+			xlsxRoundtripSotaFiles.map(() => 'ascend'),
+		)
 	})
 
 	test('xlsx roundtrip SOTA profile requires external edited-roundtrip competitors', () => {
-		const suite = suiteWithCases([editRoundtripCase('ascend', 'semantic-roundtrip-pass', 3, 3)])
+		const suite = suiteWithCases([
+			...xlsxRoundtripSotaFiles.map((file) =>
+				editRoundtripCase('ascend', 'semantic-roundtrip-pass', 3, 3, file),
+			),
+		])
 
 		expect(assertScoreboardCoverage(suite, 'xlsx-roundtrip-sota')).toContain(
 			'xlsx-roundtrip-sota missing competitor=openpyxl category=edit-roundtrip operationProfile=edit-roundtrip workload=real-workbook file=styles_formulas.xlsx',
 		)
 		expect(assertScoreboardCoverage(suite, 'xlsx-roundtrip-sota')).toContain(
 			'xlsx-roundtrip-sota missing competitor=Excelize category=edit-roundtrip operationProfile=edit-roundtrip workload=real-workbook file=styles_formulas.xlsx',
+		)
+	})
+
+	test('xlsx roundtrip SOTA profile requires every feature fixture', () => {
+		const suite = suiteWithCases([
+			...['ascend', 'sheetjs', 'exceljs', 'openpyxl', 'excelize'].map((library) =>
+				editRoundtripCase(
+					library,
+					library === 'ascend' ? 'semantic-roundtrip-pass' : 'package-roundtrip-mismatch',
+					3,
+					3,
+				),
+			),
+		])
+
+		const failures = assertScoreboardCoverage(suite, 'xlsx-roundtrip-sota')
+		expect(failures).toContain(
+			'xlsx-roundtrip-sota missing competitor=Ascend category=edit-roundtrip operationProfile=edit-roundtrip workload=real-workbook file=multisheet_names.xlsx',
+		)
+		expect(failures).toContain(
+			'xlsx-roundtrip-sota missing competitor=Ascend category=edit-roundtrip operationProfile=edit-roundtrip workload=real-workbook file=WithChart.xlsx',
+		)
+		expect(failures).toContain(
+			'xlsx-roundtrip-sota missing competitor=Ascend category=edit-roundtrip operationProfile=edit-roundtrip workload=real-workbook file=PivotTable_CachedDefinitionAndDataInSync.xlsx',
 		)
 	})
 
@@ -1120,16 +1159,17 @@ function editRoundtripCase(
 	correctnessStatus: string,
 	medianMs: number,
 	peakRssBytes: number,
+	file = 'styles_formulas.xlsx',
 ): BenchmarkSuiteResult['cases'][number] {
 	const repeat = 3
 	const durationSamples = [medianMs - 0.1, medianMs, medianMs + 0.1]
 	return {
-		name: `${library}:edit-roundtrip:styles_formulas.xlsx`,
+		name: `${library}:edit-roundtrip:${file}`,
 		category: 'edit-roundtrip',
 		dimensions: {
 			library,
 			workload: 'real-workbook',
-			file: 'styles_formulas.xlsx',
+			file,
 			repeat,
 			operationProfile: 'edit-roundtrip',
 			timingLane: 'external-internal-file-path-materialization-timing',

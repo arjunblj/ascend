@@ -805,6 +805,8 @@ interface MetricSample {
 	readonly heapAfterGcBytes?: number
 }
 
+type LibraryAllowlist = ReadonlySet<string> | undefined
+
 function readFlag(name: string): string | undefined {
 	const index = process.argv.indexOf(name)
 	return index >= 0 ? process.argv[index + 1] : undefined
@@ -829,6 +831,20 @@ function competitorFilter(): 'all' | 'in-process' | 'external' {
 	if (raw === undefined || raw === 'all') return 'all'
 	if (raw === 'in-process' || raw === 'external') return raw
 	throw new Error('--competitor must be one of: all, in-process, external')
+}
+
+export function parseLibraryAllowlist(raw: string | undefined): LibraryAllowlist {
+	if (raw === undefined || raw.trim() === '') return undefined
+	const libraries = raw
+		.split(',')
+		.map((library) => library.trim())
+		.filter(Boolean)
+	if (libraries.length === 0) return undefined
+	return new Set(libraries)
+}
+
+export function libraryAllowed(library: string, allowlist: LibraryAllowlist): boolean {
+	return allowlist === undefined || allowlist.has(library)
 }
 
 function readPositiveIntFlag(name: string, fallback: number): number {
@@ -859,6 +875,7 @@ function positionalArgs(): string[] {
 		'--risk',
 		'--assertion-class',
 		'--competitor',
+		'--libraries',
 		'--expected-shape-sidecar',
 	])
 	const args: string[] = []
@@ -1807,11 +1824,14 @@ async function loadTargets(options: {
 }
 
 async function loadExternalRunnerSpecs(): Promise<ExternalRunnerSpec[]> {
-	const manifestPath = readFlag('--runner-manifest')
-	if (!manifestPath) return []
-	const raw = await readFile(resolve(manifestPath), 'utf-8')
-	const parsed = JSON.parse(raw) as unknown
-	return normalizeExternalRunnerSpecs(parsed).filter(
+	const manifestPaths = readFlagValues('--runner-manifest')
+	if (manifestPaths.length === 0) return []
+	const parsedManifests: unknown[] = []
+	for (const manifestPath of manifestPaths) {
+		const raw = await readFile(resolve(manifestPath), 'utf-8')
+		parsedManifests.push(JSON.parse(raw) as unknown)
+	}
+	return normalizeExternalRunnerManifestSet(parsedManifests).filter(
 		(spec) =>
 			externalRunnerLicenseGateSatisfied(spec) &&
 			(spec.categories === undefined ||
@@ -1897,6 +1917,17 @@ export function normalizeExternalRunnerSpecs(parsed: unknown): ExternalRunnerSpe
 			...(capabilities ? { capabilities } : {}),
 		}
 	})
+}
+
+export function normalizeExternalRunnerManifestSet(
+	parsedManifests: readonly unknown[],
+): ExternalRunnerSpec[] {
+	const entries: unknown[] = []
+	for (const parsed of parsedManifests) {
+		if (!Array.isArray(parsed)) throw new Error('--runner-manifest must be a JSON array')
+		entries.push(...parsed)
+	}
+	return normalizeExternalRunnerSpecs(entries)
 }
 
 function normalizeRunnerLicenseGate(
@@ -3030,10 +3061,11 @@ async function main(): Promise<void> {
 	const json = hasFlag('--json')
 	const loadedCases = await loadCases()
 	const competitor = competitorFilter()
+	const libraryAllowlist = parseLibraryAllowlist(readFlag('--libraries'))
 	const categoryCases = categoryFilter
 		? loadedCases.cases.filter((entry) => entry.category === categoryFilter)
 		: loadedCases.cases
-	const cases =
+	const competitorCases =
 		competitor === 'all'
 			? categoryCases
 			: categoryCases.filter((entry) =>
@@ -3041,6 +3073,7 @@ async function main(): Promise<void> {
 						? entry.executionScope === 'external-process'
 						: entry.executionScope !== 'external-process',
 				)
+	const cases = competitorCases.filter((entry) => libraryAllowed(entry.library, libraryAllowlist))
 	const targets = await loadTargets({
 		needAscendObservation: cases.some((entry) => entry.library === 'ascend'),
 	})
@@ -3122,6 +3155,7 @@ async function main(): Promise<void> {
 			repeat,
 			warmup,
 			category: categoryFilter ?? 'all',
+			...(libraryAllowlist ? { libraries: [...libraryAllowlist] } : {}),
 			tempDir: tmpdir(),
 			externalRunnerProtocol: {
 				manifestFlag: '--runner-manifest',

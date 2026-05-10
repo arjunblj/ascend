@@ -13,11 +13,14 @@ import {
 	evaluateAssertions,
 	extractWorkbookFeatureSummary,
 	FULL_CORPUS_TARGETS,
+	libraryAllowed,
 	loadCorpusManifestEntries,
 	normalizeAssertions,
+	normalizeExternalRunnerManifestSet,
 	normalizeExternalRunnerSpecs,
 	normalizeExternalSampleAssertions,
 	normalizeExternalSamples,
+	parseLibraryAllowlist,
 	QUICK_TARGETS,
 	resolveExternalRunnerCommand,
 	selectCorpusTargets,
@@ -25,6 +28,16 @@ import {
 	type WorkbookPackageFingerprint,
 	type WorkbookShapeSummary,
 } from './competitive-real-workbook.ts'
+
+describe('real workbook library allowlist', () => {
+	test('parses exact runner names', () => {
+		const allowlist = parseLibraryAllowlist('ascend, sheetjs ,openpyxl')
+		expect(libraryAllowed('ascend', allowlist)).toBe(true)
+		expect(libraryAllowed('sheetjs', allowlist)).toBe(true)
+		expect(libraryAllowed('exceljs', allowlist)).toBe(false)
+		expect(parseLibraryAllowlist(' , ')).toBeUndefined()
+	})
+})
 
 describe('evaluateAssertions', () => {
 	test('read assertions require semantic cell reference hashes', () => {
@@ -400,6 +413,16 @@ describe('evaluateAssertions', () => {
 			command: ['python3', 'runner.py'],
 		}
 		expect(() => normalizeExternalRunnerSpecs([runner, runner])).toThrow(
+			'External runner "runner" is declared more than once',
+		)
+	})
+
+	test('external runner manifest sets reject duplicate names across files', () => {
+		const runner = {
+			name: 'runner',
+			command: ['python3', 'runner.py'],
+		}
+		expect(() => normalizeExternalRunnerManifestSet([[runner], [runner]])).toThrow(
 			'External runner "runner" is declared more than once',
 		)
 	})

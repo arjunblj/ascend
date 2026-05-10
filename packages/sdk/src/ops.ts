@@ -107,6 +107,23 @@ const FIELD_SCHEMAS: Record<
 	totalsRowFunction: { type: 'string', description: 'Excel table totalsRowFunction value' },
 	totalsRowFormula: { type: 'string', description: 'Formula for the table totals row cell' },
 	totalsRowLabel: { type: 'string', description: 'Label for the table totals row cell' },
+	styleName: {
+		type: ['string', 'null'],
+		description: 'Excel table style name; use null to clear the style name',
+	},
+	showFirstColumn: {
+		type: 'boolean',
+		description: 'Whether the table style highlights first column',
+	},
+	showLastColumn: {
+		type: 'boolean',
+		description: 'Whether the table style highlights last column',
+	},
+	showRowStripes: { type: 'boolean', description: 'Whether the table style shows row stripes' },
+	showColumnStripes: {
+		type: 'boolean',
+		description: 'Whether the table style shows column stripes',
+	},
 	by: { type: 'array', description: 'Sort specs: [{ column, descending? }]' },
 	col: { type: 'integer', description: 'Column index' },
 	width: { type: 'number', description: 'Column width' },
@@ -531,6 +548,18 @@ export function listOperations(): readonly OperationSchema[] {
 			optionalFields: ['formula', 'totalsRowFunction', 'totalsRowFormula', 'totalsRowLabel'],
 		},
 		{
+			op: 'setTableStyle',
+			description: 'Edit table style name and display flags',
+			requiredFields: ['table'],
+			optionalFields: [
+				'styleName',
+				'showFirstColumn',
+				'showLastColumn',
+				'showRowStripes',
+				'showColumnStripes',
+			],
+		},
+		{
 			op: 'replaceImage',
 			description: 'Replace image media bytes while preserving the existing drawing anchor',
 			requiredFields: ['sheet', 'contentBase64', 'contentType'],
@@ -819,6 +848,8 @@ function validateOperationField(
 		case 'totalsRowFormula':
 		case 'totalsRowLabel':
 			return value === null || typeof value === 'string' ? null : `${path} must be a string or null`
+		case 'styleName':
+			return value === null || typeof value === 'string' ? null : `${path} must be a string or null`
 		case 'at':
 		case 'position':
 		case 'col':
@@ -855,6 +886,10 @@ function validateOperationField(
 		case 'hasHeaders':
 		case 'descending':
 		case 'reassignPriorities':
+		case 'showFirstColumn':
+		case 'showLastColumn':
+		case 'showRowStripes':
+		case 'showColumnStripes':
 		case 'collapsed':
 		case 'summaryBelow':
 		case 'summaryRight':
@@ -1121,6 +1156,11 @@ function operationRecoveryActions(op: string): readonly string[] {
 				'Use totalsRowFunction, totalsRowFormula, or totalsRowLabel to edit totals metadata.',
 				...common,
 			]
+		case 'setTableStyle':
+			return [
+				'Use styleName to set or clear the table style name and booleans for first/last columns or row/column stripes.',
+				...common,
+			]
 		case 'replaceImage':
 			return [
 				'Use inspect --detail images or visualInventory to select targetPath, relId, name, or imageIndex.',
@@ -1381,6 +1421,13 @@ function operationExample(op: string): Record<string, unknown> {
 				column: 'Total',
 				formula: '=[@Qty]*[@Price]',
 				totalsRowFunction: 'sum',
+			}
+		case 'setTableStyle':
+			return {
+				op,
+				table: 'Sales',
+				styleName: 'TableStyleMedium2',
+				showRowStripes: true,
 			}
 		case 'replaceImage':
 			return {

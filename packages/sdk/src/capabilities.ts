@@ -313,9 +313,9 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'Excel tables',
 		'editable',
 		'P0',
-		'Add table style edit operations, column rename rewrites, and totals-row materialization fixtures.',
-		'Create/delete/rename/resize plus calculated-column formula and totals metadata edits exist.',
-		['packages/engine/src/operations.test.ts'],
+		'Add column rename rewrites and totals-row materialization fixtures.',
+		'Create/delete/rename/resize plus calculated-column, totals metadata, and style edits exist; resize keeps table-owned filter/sort refs aligned with regenerated table XML.',
+		['packages/engine/src/operations.test.ts', 'packages/io-xlsx/src/writer/writer.test.ts'],
 	),
 	cap(
 		'tables.structured-refs',

@@ -3148,14 +3148,23 @@ describe('writeXlsx', () => {
 			id: createTableId(),
 			name: 'BalanceTable',
 			sheetId: sheet.id,
-			ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } },
+			ref: { start: { row: 0, col: 0 }, end: { row: 1, col: 1 } },
 			columns: [
 				{ id: 1, name: 'Name' },
 				{ id: 2, name: 'Value' },
 			],
 			hasHeaders: true,
 			hasTotals: false,
+			autoFilter: {
+				ref: 'A1:B2',
+				columns: [{ colId: 1, kind: 'filters', values: ['10'] }],
+				sortState: { ref: 'A1:B2', conditions: [{ ref: 'B2:B2', descending: true }] },
+			},
 		})
+		const resized = applyOperations(wb, [
+			{ op: 'resizeTable', table: 'BalanceTable', ref: 'A1:B3' },
+		])
+		expectOk(resized)
 
 		const staleCapsuleContent = new TextEncoder().encode(`<?xml version="1.0"?>
 <table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="Table1" displayName="BalanceTable" ref="A1:B2" headerRowCount="1" totalsRowCount="0">
@@ -3179,7 +3188,10 @@ describe('writeXlsx', () => {
 		expect(tableEntry).toBeDefined()
 		if (!tableEntry) return
 		expect(tableEntry).not.toEqual(staleCapsuleContent)
-		expect(new TextDecoder().decode(tableEntry)).toContain('ref="A1:B3"')
+		const tableXml = new TextDecoder().decode(tableEntry)
+		expect(tableXml).toContain('ref="A1:B3"')
+		expect(tableXml).toContain('<autoFilter ref="A1:B3">')
+		expect(tableXml).toContain('<sortState ref="A1:B3">')
 	})
 
 	it('preserves richer table metadata on round-trip', () => {
@@ -3247,6 +3259,61 @@ describe('writeXlsx', () => {
 		expect(tableXml).toContain('dataDxfId="6"')
 		expect(tableXml).toContain('totalsRowFunction="sum"')
 		expect(tableXml).toContain('tableStyleInfo')
+	})
+
+	it('writes table style edits through generated table XML', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Inventory')
+		sheet.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: S0 })
+		sheet.cells.set(0, 1, { value: stringValue('Qty'), formula: null, styleId: S0 })
+		sheet.cells.set(1, 0, { value: stringValue('Bolts'), formula: null, styleId: S0 })
+		sheet.cells.set(1, 1, { value: numberValue(5), formula: null, styleId: S0 })
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'InventoryTable',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 1, col: 1 } },
+			columns: [
+				{ id: 1, name: 'Name' },
+				{ id: 2, name: 'Qty' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+			tableStyleInfo: {
+				name: 'TableStyleMedium4',
+				showRowStripes: false,
+			},
+		})
+
+		const applied = applyOperations(wb, [
+			{
+				op: 'setTableStyle',
+				table: 'InventoryTable',
+				styleName: 'TableStyleMedium2',
+				showFirstColumn: false,
+				showLastColumn: true,
+				showRowStripes: true,
+				showColumnStripes: false,
+			},
+		])
+		expectOk(applied)
+
+		const { result, bytes } = roundTrip(wb)
+		expect(result.workbook.sheets[0]?.tables[0]?.tableStyleInfo).toEqual({
+			name: 'TableStyleMedium2',
+			showFirstColumn: false,
+			showLastColumn: true,
+			showRowStripes: true,
+			showColumnStripes: false,
+		})
+
+		const tableEntry = unzipSync(bytes)['xl/tables/table1.xml']
+		expect(tableEntry).toBeDefined()
+		if (!tableEntry) return
+		const tableXml = new TextDecoder().decode(tableEntry)
+		expect(tableXml).toContain(
+			'<tableStyleInfo name="TableStyleMedium2" showFirstColumn="0" showLastColumn="1" showRowStripes="1" showColumnStripes="0"/>',
+		)
 	})
 
 	it('round-trips table created via createTable op through XLSX', () => {

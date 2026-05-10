@@ -162,6 +162,42 @@ describe('operation schema agent DX', () => {
 		expect(parsed.ok).toBe(true)
 	})
 
+	test('setTableStyle is exposed with style-name and flag validation', () => {
+		const schema = getOperationsSchema().find((entry) => entry.op === 'setTableStyle')
+		expect(schema?.schema.required).toEqual(['op', 'table'])
+		expect(schema?.schema.properties.styleName?.type).toEqual(['string', 'null'])
+		expect(schema?.schema.properties.showRowStripes?.type).toBe('boolean')
+		expect(schema?.examples[0]).toMatchObject({
+			op: 'setTableStyle',
+			table: 'Sales',
+			styleName: 'TableStyleMedium2',
+			showRowStripes: true,
+		})
+
+		const parsed = parseOperations([
+			{
+				op: 'setTableStyle',
+				table: 'Sales',
+				styleName: null,
+				showFirstColumn: false,
+				showLastColumn: true,
+				showRowStripes: true,
+				showColumnStripes: false,
+			},
+		])
+		expect(parsed.ok).toBe(true)
+
+		const invalid = parseOperations([
+			{
+				op: 'setTableStyle',
+				table: 'Sales',
+				showRowStripes: 'yes',
+			},
+		])
+		expect(invalid.ok).toBe(false)
+		if (!invalid.ok) expect(invalid.issues[0]).toContain('showRowStripes must be a boolean')
+	})
+
 	test('setPivotFieldItem is exposed with filter item guidance', () => {
 		const schema = getOperationsSchema().find((entry) => entry.op === 'setPivotFieldItem')
 		expect(schema?.schema.required).toEqual(['op', 'fieldIndex', 'itemIndex'])

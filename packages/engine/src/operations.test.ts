@@ -1832,6 +1832,55 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(3, 2)?.formula).toBe('[@Qty]*[@Price]')
 	})
 
+	test('setTableStyle edits table style metadata', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Value'), formula: null, styleId: sid })
+		applyOperation(wb, {
+			op: 'createTable',
+			sheet: 'Sheet1',
+			ref: 'A1:B1',
+			name: 'Sales',
+			hasHeaders: true,
+		})
+
+		const styled = applyOperation(wb, {
+			op: 'setTableStyle',
+			table: 'Sales',
+			styleName: 'TableStyleMedium2',
+			showFirstColumn: false,
+			showLastColumn: true,
+			showRowStripes: true,
+			showColumnStripes: false,
+		})
+		expectOk(styled)
+		expect(styled.value.recalcRequired).toBe(false)
+		expect(sheet.tables[0]?.tableStyleInfo).toEqual({
+			name: 'TableStyleMedium2',
+			showFirstColumn: false,
+			showLastColumn: true,
+			showRowStripes: true,
+			showColumnStripes: false,
+		})
+
+		const clearedName = applyOperation(wb, {
+			op: 'setTableStyle',
+			table: 'Sales',
+			styleName: null,
+		})
+		expectOk(clearedName)
+		expect(sheet.tables[0]?.tableStyleInfo).toEqual({
+			showFirstColumn: false,
+			showLastColumn: true,
+			showRowStripes: true,
+			showColumnStripes: false,
+		})
+
+		const missingField = applyOperation(wb, { op: 'setTableStyle', table: 'Sales' })
+		expectErr(missingField)
+	})
+
 	test('table management operations rename, resize, and delete table metadata', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -1862,6 +1911,18 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(3, 0)?.formula).toBe('SUM(Revenue[Value])')
 		expect(wb.definedNames.get('SalesValues')).toBe('SUM(Revenue[Value])')
 
+		const revenue = sheet.tables[0]
+		if (!revenue) throw new Error('expected renamed table')
+		sheet.tables[0] = {
+			...revenue,
+			autoFilter: {
+				ref: 'A1:B2',
+				columns: [{ colId: 1, kind: 'filters', values: ['10'] }],
+				sortState: { ref: 'A1:B2', conditions: [{ ref: 'B2:B2', descending: true }] },
+			},
+			sortState: { ref: 'A1:B2', conditions: [{ ref: 'A1:A2' }] },
+		}
+
 		const resized = applyOperation(wb, { op: 'resizeTable', table: 'Revenue', ref: 'A1:C2' })
 		expectOk(resized)
 		expect(resized.value.recalcRequired).toBe(true)
@@ -1871,6 +1932,15 @@ describe('applyOperation', () => {
 			'Value',
 			'Region',
 		])
+		expect(sheet.tables[0]?.autoFilter).toEqual({
+			ref: 'A1:C2',
+			columns: [{ colId: 1, kind: 'filters', values: ['10'] }],
+			sortState: { ref: 'A1:C2', conditions: [{ ref: 'B2:B2', descending: true }] },
+		})
+		expect(sheet.tables[0]?.sortState).toEqual({
+			ref: 'A1:C2',
+			conditions: [{ ref: 'A1:A2' }],
+		})
 
 		const deleted = applyOperation(wb, { op: 'deleteTable', table: 'Revenue' })
 		expectOk(deleted)

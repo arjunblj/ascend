@@ -456,6 +456,15 @@ export type Operation =
 			readonly totalsRowLabel?: string | null
 	  }
 	| {
+			readonly op: 'setTableStyle'
+			readonly table: string
+			readonly styleName?: string | null
+			readonly showFirstColumn?: boolean
+			readonly showLastColumn?: boolean
+			readonly showRowStripes?: boolean
+			readonly showColumnStripes?: boolean
+	  }
+	| {
 			readonly op: 'replaceImage'
 			readonly sheet: string
 			readonly contentBase64: string

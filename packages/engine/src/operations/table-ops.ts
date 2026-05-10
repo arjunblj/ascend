@@ -1,4 +1,4 @@
-import type { TableColumn, Workbook } from '@ascend/core'
+import type { AutoFilter, TableColumn, TableStyleInfo, Workbook } from '@ascend/core'
 import { createTableId, toA1 } from '@ascend/core'
 import { normalizeFormulaInput } from '@ascend/formulas'
 import type { Operation, Result } from '@ascend/schema'
@@ -244,7 +244,13 @@ export function handleResizeTable(
 			: buildTableColumns(sheet, ref, width, table.hasHeaders)
 	const idx = sheet.tables.findIndex((t) => t.id === table.id)
 	if (idx >= 0) {
-		sheet.tables[idx] = { ...table, ref, columns }
+		sheet.tables[idx] = {
+			...table,
+			ref,
+			columns,
+			...(table.autoFilter ? { autoFilter: resizeTableAutoFilter(table.autoFilter, op.ref) } : {}),
+			...(table.sortState ? { sortState: { ...table.sortState, ref: op.ref } } : {}),
+		}
 	}
 	clearFormulaMetadata(workbook)
 	return ok(patch([], [sheet.name], true))
@@ -306,6 +312,41 @@ export function handleSetTableColumn(
 	return ok(patch(affected, [sheet.name], op.formula !== undefined))
 }
 
+export function handleSetTableStyle(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setTableStyle' }>,
+): Result<PatchResult> {
+	const located = findTable(workbook, op.table)
+	if (!located) {
+		return err(ascendError('NAME_NOT_FOUND', `Table "${op.table}" not found`))
+	}
+	if (
+		op.styleName === undefined &&
+		op.showFirstColumn === undefined &&
+		op.showLastColumn === undefined &&
+		op.showRowStripes === undefined &&
+		op.showColumnStripes === undefined
+	) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'setTableStyle requires at least one style field', {
+				suggestedFix:
+					'Provide styleName, showFirstColumn, showLastColumn, showRowStripes, or showColumnStripes.',
+			}),
+		)
+	}
+
+	const { table, sheet } = located
+	const tableIndex = sheet.tables.findIndex((candidate) => candidate.id === table.id)
+	if (tableIndex >= 0) {
+		const nextStyle = updateTableStyle(table.tableStyleInfo, op)
+		const { tableStyleInfo: _tableStyleInfo, ...tableWithoutStyle } = table
+		sheet.tables[tableIndex] = nextStyle
+			? { ...tableWithoutStyle, tableStyleInfo: nextStyle }
+			: tableWithoutStyle
+	}
+	return ok(patch([], [sheet.name], false))
+}
+
 function resolveTableColumnIndex(columns: readonly TableColumn[], column: string | number): number {
 	if (typeof column === 'number') {
 		return Number.isInteger(column) && column >= 0 && column < columns.length ? column : -1
@@ -339,4 +380,31 @@ function updateTableColumn(
 		next = op.totalsRowLabel === null ? rest : { ...rest, totalsRowLabel: op.totalsRowLabel }
 	}
 	return next
+}
+
+function updateTableStyle(
+	style: TableStyleInfo | undefined,
+	op: Extract<Operation, { op: 'setTableStyle' }>,
+): TableStyleInfo | undefined {
+	const next: TableStyleInfo = {
+		...(style ?? {}),
+		...(op.styleName === undefined || op.styleName === null ? {} : { name: op.styleName }),
+		...(op.showFirstColumn === undefined ? {} : { showFirstColumn: op.showFirstColumn }),
+		...(op.showLastColumn === undefined ? {} : { showLastColumn: op.showLastColumn }),
+		...(op.showRowStripes === undefined ? {} : { showRowStripes: op.showRowStripes }),
+		...(op.showColumnStripes === undefined ? {} : { showColumnStripes: op.showColumnStripes }),
+	}
+	if (op.styleName === null) {
+		const { name: _name, ...withoutName } = next
+		return Object.keys(withoutName).length > 0 ? withoutName : undefined
+	}
+	return Object.keys(next).length > 0 ? next : undefined
+}
+
+function resizeTableAutoFilter(autoFilter: AutoFilter, ref: string): AutoFilter {
+	return {
+		...autoFilter,
+		ref,
+		...(autoFilter.sortState ? { sortState: { ...autoFilter.sortState, ref } } : {}),
+	}
 }

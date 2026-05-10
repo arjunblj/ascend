@@ -707,6 +707,68 @@ describe('writeXlsx', () => {
 		expect(decode('xl/_rels/workbook.xml.rels')).not.toContain('docProps/custom.xml')
 	})
 
+	it('preserves nonstandard root core-properties topology', () => {
+		const corePath = 'package/services/metadata/core-properties/source.psmdcp'
+		const coreXml = `<?xml version="1.0" encoding="utf-8"?>
+<coreProperties xmlns="http://schemas.openxmlformats.org/package/2006/metadata/core-properties">
+  <dc:creator xmlns:dc="http://purl.org/dc/elements/1.1/">ClosedXML</dc:creator>
+</coreProperties>`
+		const sourceBytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="utf-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Default Extension="psmdcp" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="utf-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="/xl/workbook.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="/docProps/app.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="/package/services/metadata/core-properties/source.psmdcp"/>
+</Relationships>`,
+			'docProps/app.xml': '<Properties/>',
+			[corePath]: coreXml,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="utf-8"?>
+<x:workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+  xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <x:sheets><x:sheet name="Data" sheetId="1" r:id="rId1"/></x:sheets>
+</x:workbook>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="utf-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="/xl/worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="utf-8"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>
+</worksheet>`,
+		})
+
+		const source = readXlsx(sourceBytes)
+		expectOk(source)
+		const sheet = source.value.workbook.sheets[0]
+		sheet?.cells.set(0, 0, { value: numberValue(424242), formula: null, styleId: S0 })
+
+		const written = writeXlsx(source.value.workbook, source.value.capsules)
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		const decode = (path: string) => new TextDecoder().decode(zip[path] ?? new Uint8Array())
+
+		expect(zip['docProps/core.xml']).toBeUndefined()
+		expect(decode(corePath)).toBe(coreXml)
+		expect(decode('[Content_Types].xml')).toContain(
+			'<Default Extension="psmdcp" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>',
+		)
+		expect(decode('[Content_Types].xml')).not.toContain('PartName="/xl/workbook.xml"')
+		expect(decode('[Content_Types].xml')).not.toContain('PartName="/docProps/core.xml"')
+		expect(decode('_rels/.rels')).toContain(
+			'Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="/package/services/metadata/core-properties/source.psmdcp"',
+		)
+		expect(decode('xl/_rels/workbook.xml.rels')).not.toContain('core-properties')
+	})
+
 	it('classifies generated and preserved parts in the write plan', () => {
 		const sourceBytes = makeXlsx({
 			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

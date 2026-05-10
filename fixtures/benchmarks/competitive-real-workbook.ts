@@ -1330,7 +1330,11 @@ function calcChainFeatureEntries(xml: string): readonly string[] {
 
 function definedNameEntries(workbookXml: string): readonly string[] {
 	const lines: string[] = []
-	for (const match of workbookXml.matchAll(/<definedName\b([^>]*)>([\s\S]*?)<\/definedName>/g)) {
+	const definedNameRe = new RegExp(
+		String.raw`<\s*${XML_NAME_PREFIX}definedName\b([^>]*)>([\s\S]*?)<\/\s*${XML_NAME_PREFIX}definedName\s*>`,
+		'g',
+	)
+	for (const match of workbookXml.matchAll(definedNameRe)) {
 		const attrs = parseXmlAttributes(match[1] ?? '')
 		const name = attrs.get('name') ?? ''
 		const localSheetId = attrs.get('localSheetId') ?? ''

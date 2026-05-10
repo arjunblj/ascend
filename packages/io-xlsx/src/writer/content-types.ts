@@ -26,6 +26,10 @@ export function buildContentTypesXml(
 	capsules?: PreservationCapsule[],
 	extraOverrides?: readonly { partPath: string; contentType: string }[],
 	preservedDefaults?: readonly ContentTypeDefault[],
+	docPropsPaths: { readonly corePropsPath: string; readonly appPropsPath: string } = {
+		corePropsPath: 'docProps/core.xml',
+		appPropsPath: 'docProps/app.xml',
+	},
 ): string {
 	const out = new ChunkedStringBuilder()
 	const defaults = new Map<string, string>()
@@ -48,14 +52,14 @@ export function buildContentTypesXml(
 	}
 	out.push(XML_HEADER)
 	out.push(`<Types xmlns="${NS}">`)
-	pushDefault('rels', CT_RELS)
-	pushDefault('xml', CT_XML)
 	if (preservedDefaults) {
 		for (const entry of preservedDefaults) {
 			pushDefault(entry.extension, entry.contentType)
 		}
 	}
-	pushOverride('xl/workbook.xml', workbookContentType)
+	pushDefault('rels', CT_RELS)
+	pushDefault('xml', CT_XML)
+	pushOverride('xl/workbook.xml', workbookContentType, true)
 
 	for (let i = 1; i <= sheetCount; i++) {
 		pushOverride(`xl/worksheets/sheet${i}.xml`, CT_WORKSHEET)
@@ -66,8 +70,8 @@ export function buildContentTypesXml(
 	}
 
 	pushOverride('xl/styles.xml', CT_STYLES)
-	pushOverride('docProps/core.xml', CT_CORE_PROPS)
-	pushOverride('docProps/app.xml', CT_APP_PROPS)
+	pushOverride(docPropsPaths.corePropsPath, CT_CORE_PROPS, true)
+	pushOverride(docPropsPaths.appPropsPath, CT_APP_PROPS, true)
 
 	if (capsules) {
 		for (const capsule of capsules) {

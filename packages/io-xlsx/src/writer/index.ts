@@ -5,6 +5,7 @@ import type { PreservationCapsule } from '../preserve.ts'
 import { parseCommentsXml } from '../reader/comments.ts'
 import {
 	getRelsPath,
+	parseRelationships,
 	REL_CALC_CHAIN,
 	REL_CHARTSHEET,
 	REL_COMMENTS,
@@ -18,6 +19,7 @@ import {
 	REL_THEME,
 	REL_VML_DRAWING,
 	REL_WORKSHEET,
+	resolvePath,
 } from '../reader/relationships.ts'
 import { parseSharedStrings } from '../reader/shared-strings.ts'
 import { parseTable } from '../reader/table.ts'
@@ -278,6 +280,24 @@ export function planWriteXlsx(
 		const sourceArchive =
 			options.sourceArchive ??
 			(workbook.sourceArchiveBytes ? extractZip(workbook.sourceArchiveBytes) : undefined)
+		const preservedRootRelsText = sourceArchive?.readText('_rels/.rels')
+		const preservedWorkbookRelsTextForTargets =
+			sourceArchive && workbook.preservedXml
+				? resolvePreservedText(
+						sourceArchive,
+						workbook.preservedXml.workbookRelsXml,
+						workbook.preservedXml.workbookRelsPath,
+					)
+				: undefined
+		const rootRelTarget = (type: string, partPath: string, fallback: string): string =>
+			preservedRelationshipTarget(preservedRootRelsText, '', type, partPath) ?? fallback
+		const workbookRelTarget = (type: string, partPath: string, fallback: string): string =>
+			preservedRelationshipTarget(
+				preservedWorkbookRelsTextForTargets,
+				'xl/workbook.xml',
+				type,
+				partPath,
+			) ?? fallback
 		const dirtyPatchMode = (options.dirtySheetNames?.length ?? 0) > 0 && sourceArchive !== undefined
 		const effectiveStylesDirty = options.stylesDirty ?? dirtyPatchMode
 		const effectiveSharedStringsDirty = options.sharedStringsDirty ?? dirtyPatchMode
@@ -454,15 +474,20 @@ export function planWriteXlsx(
 		const wbRels: RelEntry[] = []
 		for (let i = 0; i < workbook.sheets.length; i++) {
 			const sheet = workbook.sheets[i]
+			const partPath = worksheetPartPath(sheet, i)
 			wbRels.push({
 				id: `rId${rIdCounter}`,
 				type: REL_WORKSHEET,
-				target: worksheetPartPath(sheet, i).replace(/^xl\//, ''),
+				target: workbookRelTarget(REL_WORKSHEET, partPath, partPath.replace(/^xl\//, '')),
 			})
 			rIdCounter++
 		}
 
-		wbRels.push({ id: `rId${rIdCounter}`, type: REL_STYLES, target: 'styles.xml' })
+		wbRels.push({
+			id: `rId${rIdCounter}`,
+			type: REL_STYLES,
+			target: workbookRelTarget(REL_STYLES, 'xl/styles.xml', 'styles.xml'),
+		})
 		rIdCounter++
 
 		const hasPreservedTheme = workbook.preservedTheme
@@ -487,7 +512,7 @@ export function planWriteXlsx(
 			wbRels.push({
 				id: `rId${rIdCounter}`,
 				type: REL_THEME,
-				target: generatedThemeTarget,
+				target: workbookRelTarget(REL_THEME, generatedThemePath, generatedThemeTarget),
 			})
 			rIdCounter++
 		}
@@ -496,7 +521,7 @@ export function planWriteXlsx(
 			wbRels.push({
 				id: `rId${rIdCounter}`,
 				type: REL_SHARED_STRINGS,
-				target: 'sharedStrings.xml',
+				target: workbookRelTarget(REL_SHARED_STRINGS, 'xl/sharedStrings.xml', 'sharedStrings.xml'),
 			})
 			rIdCounter++
 		}
@@ -505,7 +530,11 @@ export function planWriteXlsx(
 			wbRels.push({
 				id: `rId${rIdCounter}`,
 				type: REL_SHEET_METADATA,
-				target: dynamicArrayMetadataTarget,
+				target: workbookRelTarget(
+					REL_SHEET_METADATA,
+					dynamicArrayMetadataPath,
+					dynamicArrayMetadataTarget,
+				),
 			})
 			rIdCounter++
 		}
@@ -518,7 +547,7 @@ export function planWriteXlsx(
 			wbRels.push({
 				id: `rId${rIdCounter}`,
 				type: REL_PIVOT_CACHE_DEFINITION,
-				target,
+				target: workbookRelTarget(REL_PIVOT_CACHE_DEFINITION, cache.partPath, target),
 			})
 			rIdCounter++
 		}
@@ -532,7 +561,7 @@ export function planWriteXlsx(
 			wbRels.push({
 				id: relId,
 				type: REL_CHARTSHEET,
-				target,
+				target: workbookRelTarget(REL_CHARTSHEET, chartSheet.partPath, target),
 			})
 			rIdCounter++
 		}
@@ -546,7 +575,7 @@ export function planWriteXlsx(
 			wbRels.push({
 				id: `rId${rIdCounter}`,
 				type: capsule.relType,
-				target,
+				target: workbookRelTarget(capsule.relType, capsule.partPath, target),
 			})
 			rIdCounter++
 		}
@@ -1109,11 +1138,14 @@ export function planWriteXlsx(
 			}
 		}
 
+		const corePropsPath = packageDocPropsPath(workbookCapsules, REL_CORE_PROPS, 'docProps/core.xml')
+		const appPropsPath = packageDocPropsPath(workbookCapsules, REL_EXT_PROPS, 'docProps/app.xml')
+
 		recordDocPropsPart(
 			plan,
 			sourceArchive,
 			capsules,
-			'docProps/core.xml',
+			corePropsPath,
 			'application/vnd.openxmlformats-package.core-properties+xml',
 			() => buildCorePropsXml(),
 		)
@@ -1121,22 +1153,34 @@ export function planWriteXlsx(
 			plan,
 			sourceArchive,
 			capsules,
-			'docProps/app.xml',
+			appPropsPath,
 			'application/vnd.openxmlformats-officedocument.extended-properties+xml',
 			() => buildAppPropsXml(),
 		)
 
 		const rootRels: RelEntry[] = [
-			{ id: 'rId1', type: REL_OFFICE_DOC, target: 'xl/workbook.xml' },
-			{ id: 'rId2', type: REL_CORE_PROPS, target: 'docProps/core.xml' },
-			{ id: 'rId3', type: REL_EXT_PROPS, target: 'docProps/app.xml' },
+			{
+				id: 'rId1',
+				type: REL_OFFICE_DOC,
+				target: rootRelTarget(REL_OFFICE_DOC, 'xl/workbook.xml', 'xl/workbook.xml'),
+			},
+			{
+				id: 'rId2',
+				type: REL_CORE_PROPS,
+				target: rootRelTarget(REL_CORE_PROPS, corePropsPath, corePropsPath),
+			},
+			{
+				id: 'rId3',
+				type: REL_EXT_PROPS,
+				target: rootRelTarget(REL_EXT_PROPS, appPropsPath, appPropsPath),
+			},
 		]
 		let rootRIdCounter = 4
 		if (capsules) {
 			for (const capsule of capsules) {
 				if (!isPackageDocPropsCapsule(capsule)) continue
 				if (!capsule.relType) continue
-				if (capsule.partPath === 'docProps/core.xml' || capsule.partPath === 'docProps/app.xml') {
+				if (capsule.partPath === corePropsPath || capsule.partPath === appPropsPath) {
 					continue
 				}
 				rootRels.push({
@@ -1339,6 +1383,7 @@ export function planWriteXlsx(
 					),
 					built.extraOverrides.length > 0 ? built.extraOverrides : undefined,
 					workbook.preservedXml?.contentTypeDefaults,
+					{ corePropsPath, appPropsPath },
 				)
 			},
 		)
@@ -1609,7 +1654,33 @@ function commentsEqual(
 }
 
 function isPackageDocPropsCapsule(capsule: PreservationCapsule): boolean {
-	return capsule.partPath.startsWith('docProps/')
+	return (
+		capsule.partPath.startsWith('docProps/') ||
+		capsule.relType === REL_CORE_PROPS ||
+		capsule.relType === REL_EXT_PROPS
+	)
+}
+
+function packageDocPropsPath(
+	capsules: readonly PreservationCapsule[],
+	relType: string,
+	fallback: string,
+): string {
+	return capsules.find((capsule) => capsule.relType === relType)?.partPath ?? fallback
+}
+
+function preservedRelationshipTarget(
+	relsXml: string | undefined,
+	sourcePart: string,
+	type: string,
+	resolvedPartPath: string,
+): string | undefined {
+	if (!relsXml) return undefined
+	for (const rel of parseRelationships(relsXml)) {
+		if (rel.type !== type) continue
+		if (resolvePath(sourcePart, rel.target) === resolvedPartPath) return rel.target
+	}
+	return undefined
 }
 
 function isPivotCacheDefinitionCapsule(capsule: PreservationCapsule): boolean {

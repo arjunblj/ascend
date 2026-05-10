@@ -273,7 +273,12 @@ def calc_chain_feature_entries(xml: str) -> list[str]:
 
 def defined_name_entries(workbook_xml: str) -> list[str]:
     lines: list[str] = []
-    for match in re.finditer(r"<definedName\b([^>]*)>([\s\S]*?)</definedName>", workbook_xml):
+    defined_name_re = re.compile(
+        r"<\s*(?:[A-Za-z_][\w.-]*:)?definedName\b([^>]*)>"
+        r"([\s\S]*?)"
+        r"</\s*(?:[A-Za-z_][\w.-]*:)?definedName\s*>"
+    )
+    for match in defined_name_re.finditer(workbook_xml):
         attrs = parse_xml_attributes(match.group(1) or "")
         lines.append(
             "\t".join(

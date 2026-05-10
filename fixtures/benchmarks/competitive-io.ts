@@ -1129,9 +1129,10 @@ function operationProfile(
 		CompetitiveCase,
 		'category' | 'executionScope' | 'capabilities' | 'operationProfile'
 	>,
+	input?: Pick<CompetitiveDataSet, 'workloadName'>,
 ): string {
 	if (benchmarkCase.operationProfile) return benchmarkCase.operationProfile
-	if (benchmarkCase.category === 'write') return 'write-values'
+	if (benchmarkCase.category === 'write') return writeOperationProfile(input?.workloadName)
 	if (
 		benchmarkCase.executionScope === 'external-process' &&
 		benchmarkCase.capabilities?.valueOnlyRead !== true
@@ -1139,6 +1140,14 @@ function operationProfile(
 		return 'read-formula-preserving'
 	}
 	return 'read-values'
+}
+
+export function writeOperationProfile(workloadName: WorkloadName | undefined): string {
+	if (workloadName === 'styles-heavy') return 'write-styles'
+	if (workloadName === 'formula-heavy') return 'write-formulas'
+	if (workloadName === 'table-heavy') return 'write-tables'
+	if (workloadName === 'feature-rich') return 'write-rich-metadata'
+	return 'write-values'
 }
 
 function timingLane(
@@ -2704,7 +2713,7 @@ function buildResult(
 			...(input.sourceMode ? { sourceMode: input.sourceMode } : {}),
 			repeat,
 			executionScope: benchmarkCase.executionScope ?? 'in-process',
-			operationProfile: operationProfile(benchmarkCase),
+			operationProfile: operationProfile(benchmarkCase, input),
 			timingLane: timingLane(benchmarkCase, input),
 			timingModel: timingModel(benchmarkCase),
 			validationModel: validationModel(benchmarkCase),
@@ -2761,7 +2770,7 @@ export function buildNonRankingResult(input: {
 			...(input.dataSet.sourceMode ? { sourceMode: input.dataSet.sourceMode } : {}),
 			repeat: input.repeat,
 			executionScope: input.executionScope ?? 'in-process',
-			operationProfile: operationProfile(input),
+			operationProfile: operationProfile(input, input.dataSet),
 			timingLane: timingLane(input, input.dataSet),
 			timingModel: timingModel(input),
 			validationModel: validationModel(input),

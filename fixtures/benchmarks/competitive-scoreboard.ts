@@ -324,7 +324,7 @@ const CLAIM_PROFILES: Record<ClaimProfileName, ClaimProfile> = {
 			},
 			{
 				category: 'write',
-				operationProfile: 'write-values',
+				operationProfile: 'write-styles',
 				workloads: ['styles-heavy'],
 				competitors: [
 					{ label: 'Ascend', libraries: ASCEND_WRITE_LIBRARIES },
@@ -348,7 +348,7 @@ const CLAIM_PROFILES: Record<ClaimProfileName, ClaimProfile> = {
 			},
 			{
 				category: 'write',
-				operationProfile: 'write-values',
+				operationProfile: 'write-formulas',
 				workloads: ['formula-heavy'],
 				competitors: [
 					{ label: 'Ascend', libraries: ASCEND_WRITE_LIBRARIES },
@@ -372,7 +372,7 @@ const CLAIM_PROFILES: Record<ClaimProfileName, ClaimProfile> = {
 			},
 			{
 				category: 'write',
-				operationProfile: 'write-values',
+				operationProfile: 'write-tables',
 				workloads: ['table-heavy'],
 				competitors: [
 					{ label: 'Ascend', libraries: ASCEND_WRITE_LIBRARIES },
@@ -398,7 +398,7 @@ const CLAIM_PROFILES: Record<ClaimProfileName, ClaimProfile> = {
 			},
 			{
 				category: 'write',
-				operationProfile: 'write-values',
+				operationProfile: 'write-rich-metadata',
 				workloads: ['feature-rich'],
 				competitors: [
 					{ label: 'Ascend', libraries: ASCEND_WRITE_LIBRARIES },
@@ -603,7 +603,7 @@ const CLAIM_PROFILES: Record<ClaimProfileName, ClaimProfile> = {
 			},
 			{
 				category: 'write',
-				operationProfile: 'write-values',
+				operationProfile: 'write-styles',
 				workloads: ['styles-heavy'],
 				files: ['pyexcelerate-write-styles-1000x100'],
 				competitors: [

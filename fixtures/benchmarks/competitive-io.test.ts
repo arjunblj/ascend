@@ -22,6 +22,7 @@ import {
 	normalizeExternalSamples,
 	parseLibraryAllowlist,
 	type WorkloadName,
+	writeOperationProfile,
 } from './competitive-io.ts'
 import {
 	extractWorkbookFeatureSummary,
@@ -195,6 +196,14 @@ describe('competitive IO helpers', () => {
 		)
 		expect(hashes.size).toBe(4)
 		expect(hashes.has(expectedDenseValuesHash(6, 5))).toBe(false)
+	})
+
+	test('advanced write workloads report feature-specific operation profiles', () => {
+		expect(writeOperationProfile('styles-heavy')).toBe('write-styles')
+		expect(writeOperationProfile('formula-heavy')).toBe('write-formulas')
+		expect(writeOperationProfile('table-heavy')).toBe('write-tables')
+		expect(writeOperationProfile('feature-rich')).toBe('write-rich-metadata')
+		expect(writeOperationProfile('dense-values')).toBe('write-values')
 	})
 
 	test('formula-heavy workload round-trips cached formula values', async () => {

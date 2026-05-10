@@ -834,10 +834,10 @@ describe('buildCompetitiveScoreboard', () => {
 			'xlsx-write-sota missing competitor=ExcelJS category=write operationProfile=write-values workload=dense-values',
 		)
 		expect(inspection.gaps).toContain(
-			'xlsx-write-sota coverage-gap competitor=SheetJS category=write operationProfile=write-values workload=styles-heavy reason=unsupported-operation',
+			'xlsx-write-sota coverage-gap competitor=SheetJS category=write operationProfile=write-styles workload=styles-heavy reason=unsupported-operation',
 		)
 		expect(inspection.gaps).toContain(
-			'xlsx-write-sota coverage-gap competitor=ExcelJS category=write operationProfile=write-values workload=styles-heavy reason=unsupported-operation',
+			'xlsx-write-sota coverage-gap competitor=ExcelJS category=write operationProfile=write-styles workload=styles-heavy reason=unsupported-operation',
 		)
 	})
 
@@ -891,7 +891,7 @@ describe('buildCompetitiveScoreboard', () => {
 			'upstream-xlsx-sota missing competitor=pyexcelerate range category=write operationProfile=write-values workload=dense-values file=pyexcelerate-write-values-1000x100',
 		)
 		expect(failures).toContain(
-			'upstream-xlsx-sota missing competitor=pyexcelerate cell category=write operationProfile=write-values workload=styles-heavy file=pyexcelerate-write-styles-1000x100',
+			'upstream-xlsx-sota missing competitor=pyexcelerate cell category=write operationProfile=write-styles workload=styles-heavy file=pyexcelerate-write-styles-1000x100',
 		)
 		expect(failures).toContain(
 			'upstream-xlsx-sota missing competitor=fastexcel Java category=write operationProfile=write-values workload=mixed-50pct-text file=fastexcel-writer-100000x4',
@@ -1171,7 +1171,8 @@ function matrixCase(input: {
 	readonly upstreamEvidence?: boolean
 }): BenchmarkSuiteResult['cases'][number] {
 	const operationProfile =
-		input.operationProfile ?? (input.category === 'read' ? 'read-values' : 'write-values')
+		input.operationProfile ??
+		(input.category === 'read' ? 'read-values' : testWriteOperationProfile(input.workload))
 	const timingLane = input.timingLane ?? `in-process-generated-${input.workload}`
 	const medianMs = input.medianMs ?? 2
 	const peakRssBytes = input.peakRssBytes
@@ -1223,4 +1224,12 @@ function matrixCase(input: {
 		})),
 		...(input.featureAssertions ? { assertions: input.featureAssertions } : {}),
 	}
+}
+
+function testWriteOperationProfile(workload: string): string {
+	if (workload === 'styles-heavy') return 'write-styles'
+	if (workload === 'formula-heavy') return 'write-formulas'
+	if (workload === 'table-heavy') return 'write-tables'
+	if (workload === 'feature-rich') return 'write-rich-metadata'
+	return 'write-values'
 }

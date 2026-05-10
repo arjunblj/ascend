@@ -3,7 +3,7 @@ import { indexToColumn } from '@ascend/core'
 import { type FormulaNode, parseFormula, printFormulaWithOffset } from '@ascend/formulas'
 import type { CellValue, RichTextRun } from '@ascend/schema'
 import { topLeftScalar } from '@ascend/schema'
-import { toStoredFormulaText } from '../formula-storage.ts'
+import { normalizeStoredFormulaText, toStoredFormulaText } from '../formula-storage.ts'
 import { escapeXml } from '../xml.ts'
 import { ChunkedStringBuilder } from './chunked-string-builder.ts'
 import { buildColorScaleXml, buildDataBarXml, buildIconSetXml } from './conditional-format.ts'
@@ -218,6 +218,7 @@ function buildSheetXmlToSink(
 				ssTable,
 				xfMap,
 				sharedFormulaExpansions,
+				sheet.storedFormulaText.get(formulaStorageKey(row, col)),
 				options.useInlineStrings,
 				options.usePlainStrings,
 			)
@@ -638,6 +639,7 @@ function pushCellXml(
 	ssTable: SharedStringTable,
 	xfMap: Map<number, number>,
 	sharedFormulaExpansions: ReadonlyMap<string, SharedFormulaExpansion>,
+	storedFormulaText?: string,
 	useInlineStrings?: boolean,
 	usePlainStrings?: boolean,
 ): void {
@@ -645,7 +647,7 @@ function pushCellXml(
 	const xfIdx = styleId === 0 ? 0 : (xfMap.get(styleId) ?? 0)
 
 	if (cell.formula || cell.formulaInfo?.kind === 'shared' || cell.formulaInfo?.kind === 'array') {
-		out.push(formulaCellXml(ref, cell, xfIdx, sharedFormulaExpansions))
+		out.push(formulaCellXml(ref, cell, xfIdx, sharedFormulaExpansions, storedFormulaText))
 		return
 	}
 
@@ -702,8 +704,11 @@ function formulaCellXml(
 	cell: Cell,
 	xfIdx: number,
 	sharedFormulaExpansions: ReadonlyMap<string, SharedFormulaExpansion>,
+	storedFormulaText?: string,
 ): string {
-	const formulaText = cell.formula ? toStoredFormulaText(cell.formula) : ''
+	const formulaText = cell.formula
+		? effectiveStoredFormulaText(cell.formula, storedFormulaText)
+		: ''
 	const sAttr = xfIdx !== 0 ? ` s="${xfIdx}"` : ''
 	const dynamicArrayMetadataIndex = dynamicArrayCellMetadataIndex(cell.formulaInfo)
 	const cmAttr = dynamicArrayMetadataIndex !== undefined ? ` cm="${dynamicArrayMetadataIndex}"` : ''
@@ -730,6 +735,23 @@ function formulaCellXml(
 		return `<c r="${ref}"${cmAttr}${sAttr}${tAttr}><f ${fAttrs}>${escapeXml(formulaText)}</f>${vPart}</c>`
 	}
 	return `<c r="${ref}"${cmAttr}${sAttr}${tAttr}><f>${escapeXml(formulaText)}</f>${vPart}</c>`
+}
+
+function effectiveStoredFormulaText(
+	formula: string,
+	storedFormulaText: string | undefined,
+): string {
+	if (
+		storedFormulaText !== undefined &&
+		normalizeStoredFormulaText(storedFormulaText) === formula
+	) {
+		return storedFormulaText
+	}
+	return toStoredFormulaText(formula)
+}
+
+function formulaStorageKey(row: number, col: number): string {
+	return `${row}:${col}`
 }
 
 function dynamicArrayCellMetadataIndex(

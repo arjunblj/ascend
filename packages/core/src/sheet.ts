@@ -409,6 +409,8 @@ export class Sheet {
 	headerFooter: SheetHeaderFooter | null
 	rowBreaks: SheetBreak[]
 	colBreaks: SheetBreak[]
+	/** Exact persisted formula payloads keyed as row:col; writers validate before reuse. */
+	storedFormulaText: Map<string, string>
 	preservedXml: SheetPreservedXml | null
 	preservedExtLst: string | null
 	private _shared = false
@@ -450,6 +452,7 @@ export class Sheet {
 		this.headerFooter = null
 		this.rowBreaks = []
 		this.colBreaks = []
+		this.storedFormulaText = new Map()
 		this.preservedXml = null
 		this.preservedExtLst = null
 	}
@@ -469,6 +472,7 @@ export class Sheet {
 		this.dataValidations = this.dataValidations.map((d) => ({ ...d }))
 		this.rowBreaks = this.rowBreaks.map((b) => ({ ...b }))
 		this.colBreaks = this.colBreaks.map((b) => ({ ...b }))
+		this.storedFormulaText = new Map(this.storedFormulaText)
 		this.conditionalFormats = this.conditionalFormats.map((cf) => ({
 			...cf,
 			rules: cf.rules.map(cloneConditionalFormatRule),
@@ -518,6 +522,7 @@ export class Sheet {
 		s.headerFooter = this.headerFooter
 		s.rowBreaks = this.rowBreaks
 		s.colBreaks = this.colBreaks
+		s.storedFormulaText = this.storedFormulaText
 		s.preservedXml = this.preservedXml
 		s.preservedExtLst = this.preservedExtLst
 		this._shared = true

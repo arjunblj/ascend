@@ -99,6 +99,63 @@ describe('writeXlsx', () => {
 		expect(s?.cells.get(1, 0)?.formula).toBe('SUM(A1,B1)')
 	})
 
+	it('preserves original stored formula text when unrelated edits dirty the sheet', () => {
+		const storedFormula = `_xlfn.LET(
+  _xlpm.value, A1,
+  SUM(--(_xlfn.VSTACK(_xlpm.value, 2)))
+)`
+		const source = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Data" sheetId="1" r:id="rId1"/>
+  </sheets>
+</workbook>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1"><v>1</v></c>
+      <c r="B1"><f>${storedFormula}</f><v>3</v></c>
+      <c r="C1"><v>4</v></c>
+    </row>
+  </sheetData>
+</worksheet>`,
+		})
+		const read = readXlsx(source)
+		expectOk(read)
+		const sheet = read.value.workbook.sheets[0]
+		expect(sheet?.cells.get(0, 1)?.formula).not.toContain('_xlfn.')
+		expect(sheet?.storedFormulaText.get('0:1')).toBe(storedFormula)
+		sheet?.cells.set(0, 2, { value: numberValue(5), formula: null, styleId: S0 })
+
+		const written = writeXlsx(read.value.workbook, read.value.capsules, {
+			dirtySheetNames: ['Data'],
+		})
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		const xml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+
+		expect(xml).toContain(`<f>${storedFormula}</f>`)
+		expect(xml).toContain('<c r="C1"><v>5</v></c>')
+	})
+
 	it('round-trips shared formula bindings', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Shared')

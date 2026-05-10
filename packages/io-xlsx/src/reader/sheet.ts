@@ -54,8 +54,14 @@ const X14_DATA_VALIDATION_RE =
 	/<([A-Za-z_][\w.-]*):dataValidation\b([^>]*)>([\s\S]*?)<\/\1:dataValidation>/gi
 const X14_SELF_CLOSING_DATA_VALIDATION_RE = /<([A-Za-z_][\w.-]*):dataValidation\b([^>]*)\/>/gi
 
-const NO_FORMULA: { text: null; info: undefined } = { text: null, info: undefined }
-const NULL_FORMULA_TEXT: { text: null } = { text: null }
+interface ParsedFormulaText {
+	readonly text: string | null
+	readonly storedText?: string
+	readonly info?: Cell['formulaInfo']
+}
+
+const NO_FORMULA: ParsedFormulaText = { text: null, info: undefined }
+const NULL_FORMULA_TEXT: ParsedFormulaText = { text: null }
 
 interface CellPosition {
 	readonly row: number
@@ -1082,6 +1088,9 @@ function parseFastCell(
 	out.row = pos.row
 	out.col = pos.col
 	sheet.cells.setResolved(pos.row, pos.col, value, formulaSpec.text, styleId, binding)
+	if (!ctx.valuesOnly && formulaSpec.text && formulaSpec.storedText !== undefined) {
+		sheet.storedFormulaText.set(formulaStorageKey(pos.row, pos.col), formulaSpec.storedText)
+	}
 	return true
 }
 
@@ -1973,6 +1982,9 @@ function resolveCellToSheet(
 	}
 
 	sheet.cells.setResolved(row, col, value, ctx.valuesOnly ? null : formula, styleId, binding)
+	if (!ctx.valuesOnly && formula && formulaSpec.storedText !== undefined) {
+		sheet.storedFormulaText.set(formulaStorageKey(row, col), formulaSpec.storedText)
+	}
 	return true
 }
 
@@ -1983,7 +1995,7 @@ function parseFormulaText(
 	sharedFormulaMasters: SharedFormulaMasterMap,
 	pool?: ValueInternPool,
 	formulaFeatures?: SheetFormulaFeatures,
-): { text: string | null; info?: Cell['formulaInfo'] } {
+): ParsedFormulaText {
 	if (formulaNode === undefined || formulaNode === null) return NULL_FORMULA_TEXT
 	if (
 		typeof formulaNode === 'string' ||
@@ -1992,7 +2004,17 @@ function parseFormulaText(
 	) {
 		const text = String(formulaNode)
 		if (text === '') return NULL_FORMULA_TEXT
-		return { text: pool ? pool.internString(text) : text }
+		return parseResolvedFormulaText(
+			undefined,
+			undefined,
+			undefined,
+			text,
+			row,
+			col,
+			sharedFormulaMasters,
+			pool,
+			formulaFeatures,
+		)
 	}
 	if (isRawFormulaNode(formulaNode)) {
 		const sharedIndex = rawAttr(formulaNode.rawAttrs, 'si')
@@ -2040,11 +2062,12 @@ function parseResolvedFormulaText(
 	sharedFormulaMasters: SharedFormulaMasterMap,
 	pool?: ValueInternPool,
 	formulaFeatures?: SheetFormulaFeatures,
-): { text: string | null; info?: Cell['formulaInfo'] } {
+): ParsedFormulaText {
 	if (formulaType === 'shared' && sharedIndex) {
 		if (formulaFeatures) formulaFeatures.hasSharedFormula = true
 		if (text !== undefined && text !== null && text !== '') {
-			const normalized = normalizeStoredFormulaText(String(text))
+			const storedText = String(text)
+			const normalized = normalizeStoredFormulaText(storedText)
 			const formula = pool ? pool.internString(normalized) : normalized
 			const parsed = parseFormula(formula)
 			sharedFormulaMasters.set(sharedIndex, {
@@ -2057,6 +2080,7 @@ function parseResolvedFormulaText(
 			})
 			return {
 				text: formula,
+				storedText,
 				info: {
 					kind: 'shared',
 					sharedIndex,
@@ -2086,16 +2110,23 @@ function parseResolvedFormulaText(
 				info: { kind: 'array', ...(ref ? { ref } : {}) },
 			}
 		}
-		const formula = normalizeStoredFormulaText(String(text))
+		const storedText = String(text)
+		const formula = normalizeStoredFormulaText(storedText)
 		return {
 			text: pool ? pool.internString(formula) : formula,
+			storedText,
 			info: { kind: 'array', ...(ref ? { ref } : {}) },
 		}
 	}
 	if (text === undefined || text === null) return NULL_FORMULA_TEXT
-	const formula = normalizeStoredFormulaText(String(text))
+	const storedText = String(text)
+	const formula = normalizeStoredFormulaText(storedText)
 	if (formula === '') return NULL_FORMULA_TEXT
-	return { text: pool ? pool.internString(formula) : formula }
+	return { text: pool ? pool.internString(formula) : formula, storedText }
+}
+
+function formulaStorageKey(row: number, col: number): string {
+	return `${row}:${col}`
 }
 
 function attachDynamicArrayBinding(

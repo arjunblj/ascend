@@ -1307,6 +1307,13 @@ describe('applyOperation', () => {
 			formulas: ['A2>0'],
 			iconSet: { cfvo: [{ type: 'formula', value: 'A2' }] },
 		})
+		s.x14DataValidations.push({
+			index: 0,
+			sqref: 'D2',
+			type: 'list',
+			allowBlank: true,
+			formula1: 'A2',
+		})
 		s.ignoredErrors.push({ sqref: 'A2', formula: true })
 		s.rowHeights.set(1, 24)
 
@@ -1324,6 +1331,12 @@ describe('applyOperation', () => {
 		expect(s.x14ConditionalFormats[0]?.sqref).toBe('C4')
 		expect(s.x14ConditionalFormats[0]?.formulas[0]).toBe('A4>0')
 		expect(s.x14ConditionalFormats[0]?.iconSet?.cfvo[0]?.value).toBe('A4')
+		expect(s.x14DataValidations[0]).toMatchObject({
+			sqref: 'D4',
+			type: 'list',
+			allowBlank: true,
+			formula1: 'A4',
+		})
 		expect(s.ignoredErrors[0]?.sqref).toBe('A4')
 		expect(s.rowHeights.get(3)).toBe(24)
 	})

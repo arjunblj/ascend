@@ -292,6 +292,18 @@ export interface SheetX14ConditionalFormatIconInfo {
 export interface SheetX14DataValidationInfo {
 	readonly index: number
 	readonly sqref: string
+	readonly type?: string
+	readonly operator?: string
+	readonly allowBlank?: boolean
+	readonly showInputMessage?: boolean
+	readonly showErrorMessage?: boolean
+	readonly showDropDown?: boolean
+	readonly promptTitle?: string
+	readonly prompt?: string
+	readonly errorTitle?: string
+	readonly error?: string
+	readonly errorStyle?: string
+	readonly imeMode?: string
 	readonly formula1?: string
 	readonly formula2?: string
 	readonly deleted?: boolean

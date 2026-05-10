@@ -2228,6 +2228,9 @@ describe('readXlsx', () => {
 			{
 				index: 0,
 				sqref: 'E8:E11',
+				type: 'list',
+				showInputMessage: true,
+				showErrorMessage: true,
 				formula1: 'Lookup!$E$2:$E$123',
 			},
 		])

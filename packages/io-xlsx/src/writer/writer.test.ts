@@ -3674,6 +3674,13 @@ describe('writeXlsx', () => {
 			{
 				index: 0,
 				sqref: 'A5:A5',
+				type: 'list',
+				operator: 'between',
+				allowBlank: true,
+				showInputMessage: true,
+				showErrorMessage: true,
+				showDropDown: false,
+				errorStyle: 'stop',
 				formula1: "'Data Validation'!$C$1:$C$2",
 			},
 		])

@@ -3919,6 +3919,28 @@ function pushX14DataValidationInfo(
 	sheet.x14DataValidations.push({
 		index,
 		sqref: pool ? pool.internString(parsed.sqref) : parsed.sqref,
+		...(parsed.type ? { type: pool ? pool.internString(parsed.type) : parsed.type } : {}),
+		...(parsed.operator
+			? { operator: pool ? pool.internString(parsed.operator) : parsed.operator }
+			: {}),
+		...(parsed.allowBlank !== undefined ? { allowBlank: parsed.allowBlank } : {}),
+		...(parsed.showInputMessage !== undefined ? { showInputMessage: parsed.showInputMessage } : {}),
+		...(parsed.showErrorMessage !== undefined ? { showErrorMessage: parsed.showErrorMessage } : {}),
+		...(parsed.showDropDown !== undefined ? { showDropDown: parsed.showDropDown } : {}),
+		...(parsed.promptTitle
+			? { promptTitle: pool ? pool.internString(parsed.promptTitle) : parsed.promptTitle }
+			: {}),
+		...(parsed.prompt ? { prompt: pool ? pool.internString(parsed.prompt) : parsed.prompt } : {}),
+		...(parsed.errorTitle
+			? { errorTitle: pool ? pool.internString(parsed.errorTitle) : parsed.errorTitle }
+			: {}),
+		...(parsed.error ? { error: pool ? pool.internString(parsed.error) : parsed.error } : {}),
+		...(parsed.errorStyle
+			? { errorStyle: pool ? pool.internString(parsed.errorStyle) : parsed.errorStyle }
+			: {}),
+		...(parsed.imeMode
+			? { imeMode: pool ? pool.internString(parsed.imeMode) : parsed.imeMode }
+			: {}),
 		...(parsed.formula1
 			? { formula1: pool ? pool.internString(parsed.formula1) : parsed.formula1 }
 			: {}),

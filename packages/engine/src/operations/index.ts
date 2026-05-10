@@ -249,14 +249,22 @@ function restoreWorkbookFromSnapshot(workbook: Workbook, snapshot: Workbook): vo
 	workbook.pivotCaches.push(
 		...snapshot.pivotCaches.map((e) => ({
 			...e,
-			fields: e.fields.map((field) => ({ ...field })),
+			fields: e.fields.map((field) => ({
+				...field,
+				...(field.sharedItems
+					? { sharedItems: field.sharedItems.map((item) => ({ ...item })) }
+					: {}),
+			})),
 		})),
 	)
 	workbook.pivotTables.splice(0, workbook.pivotTables.length)
 	workbook.pivotTables.push(
 		...snapshot.pivotTables.map((e) => ({
 			...e,
-			fields: e.fields.map((field) => ({ ...field })),
+			fields: e.fields.map((field) => ({
+				...field,
+				...(field.items ? { items: field.items.map((item) => ({ ...item })) } : {}),
+			})),
 			rowFields: e.rowFields.map((field) => ({ ...field })),
 			columnFields: e.columnFields.map((field) => ({ ...field })),
 			pageFields: e.pageFields.map((field) => ({ ...field })),

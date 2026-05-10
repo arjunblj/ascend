@@ -1,8 +1,10 @@
 import type {
 	PivotCacheFieldInfo,
 	PivotCacheInfo,
+	PivotCacheSharedItemInfo,
 	PivotDataFieldInfo,
 	PivotFieldInfo,
+	PivotFieldItemInfo,
 	PivotFieldReference,
 	PivotTableInfo,
 	SlicerCacheInfo,
@@ -13,6 +15,7 @@ import type {
 import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
 import type { Relationship } from './relationships.ts'
 import { resolvePath } from './relationships.ts'
+import { normalizeMainSpreadsheetNamespacePrefix } from './xml-utils.ts'
 
 export interface PivotCacheEntry {
 	readonly cacheId: number
@@ -26,11 +29,10 @@ export function parsePivotCacheDefinitionXml(
 	relId: string | undefined,
 	relationships: readonly Relationship[],
 ): PivotCacheInfo | null {
-	const doc = parseXml(xml)
-	const root = doc.pivotCacheDefinition as XmlNode | undefined
+	const doc = parseXml(normalizeMainSpreadsheetNamespacePrefix(xml))
+	const root = childNode(doc, 'pivotCacheDefinition')
 	if (!root) return null
-	const worksheetSource = ((root.cacheSource as XmlNode | undefined)?.worksheetSource ??
-		undefined) as XmlNode | undefined
+	const worksheetSource = childNode(childNode(root, 'cacheSource'), 'worksheetSource')
 	const recordCount = numAttr(root, 'recordCount')
 	const recordsRelId = attr(root, 'r:id') ?? attr(root, 'id')
 	const recordsRel = recordsRelId
@@ -106,10 +108,10 @@ export function parsePivotTableXml(
 	partPath: string,
 	sheetName: string,
 ): PivotTableInfo | null {
-	const doc = parseXml(xml)
-	const root = doc.pivotTableDefinition as XmlNode | undefined
+	const doc = parseXml(normalizeMainSpreadsheetNamespacePrefix(xml))
+	const root = childNode(doc, 'pivotTableDefinition')
 	if (!root) return null
-	const location = root.location as XmlNode | undefined
+	const location = childNode(root, 'location')
 	const parsed: {
 		partPath: string
 		sheetName: string
@@ -125,9 +127,9 @@ export function parsePivotTableXml(
 		partPath,
 		sheetName,
 		fields: parsePivotFields(root),
-		rowFields: parseFieldReferences(root.rowFields as XmlNode | undefined, 'field', 'x'),
-		columnFields: parseFieldReferences(root.colFields as XmlNode | undefined, 'field', 'x'),
-		pageFields: parseFieldReferences(root.pageFields as XmlNode | undefined, 'pageField', 'fld'),
+		rowFields: parseFieldReferences(childNode(root, 'rowFields'), 'field', 'x'),
+		columnFields: parseFieldReferences(childNode(root, 'colFields'), 'field', 'x'),
+		pageFields: parseFieldReferences(childNode(root, 'pageFields'), 'pageField', 'fld'),
 		dataFields: parseDataFields(root),
 	}
 	const name = attr(root, 'name')
@@ -140,45 +142,129 @@ export function parsePivotTableXml(
 }
 
 function parseCacheFields(root: XmlNode): PivotCacheFieldInfo[] {
-	const cacheFields = root.cacheFields as XmlNode | undefined
-	return asArray<XmlNode>(cacheFields?.cacheField as XmlNode | XmlNode[] | undefined).map(
-		(node, index) => {
+	const cacheFields = childNode(root, 'cacheFields')
+	return childNodes(cacheFields, 'cacheField').map((node, index) => {
+		const parsed: {
+			index: number
+			name?: string
+			databaseField?: boolean
+			numFmtId?: number
+			formula?: string
+			sharedItems?: readonly PivotCacheSharedItemInfo[]
+		} = { index }
+		setStringIfDefined(parsed, 'name', attr(node, 'name'))
+		setBoolIfDefined(parsed, 'databaseField', boolAttr(node, 'databaseField'))
+		setNumberIfDefined(parsed, 'numFmtId', numAttr(node, 'numFmtId'))
+		setStringIfDefined(parsed, 'formula', attr(node, 'formula'))
+		const sharedItems = parseCacheSharedItems(node)
+		if (sharedItems.length > 0) parsed.sharedItems = sharedItems
+		return parsed
+	})
+}
+
+function parseCacheSharedItems(cacheField: XmlNode): PivotCacheSharedItemInfo[] {
+	const sharedItems = childNode(cacheField, 'sharedItems')
+	if (!sharedItems) return []
+	const items: PivotCacheSharedItemInfo[] = []
+	for (const [key, value] of Object.entries(sharedItems)) {
+		if (key.startsWith('@_')) continue
+		const kind = sharedItemKind(localPart(key))
+		if (!kind) continue
+		for (const node of asArray(value as XmlNode | XmlNode[])) {
 			const parsed: {
 				index: number
-				name?: string
-				databaseField?: boolean
-				numFmtId?: number
-			} = { index }
-			setStringIfDefined(parsed, 'name', attr(node, 'name'))
-			setBoolIfDefined(parsed, 'databaseField', boolAttr(node, 'databaseField'))
-			setNumberIfDefined(parsed, 'numFmtId', numAttr(node, 'numFmtId'))
-			return parsed
-		},
-	)
+				kind: PivotCacheSharedItemInfo['kind']
+				value?: string
+			} = { index: items.length, kind }
+			setStringIfDefined(parsed, 'value', attr(node, 'v'))
+			items.push(parsed)
+		}
+	}
+	return items
+}
+
+function sharedItemKind(localName: string): PivotCacheSharedItemInfo['kind'] | null {
+	switch (localName) {
+		case 's':
+			return 'string'
+		case 'n':
+			return 'number'
+		case 'd':
+			return 'date'
+		case 'b':
+			return 'boolean'
+		case 'e':
+			return 'error'
+		case 'm':
+			return 'missing'
+		default:
+			return null
+	}
 }
 
 function parsePivotFields(root: XmlNode): PivotFieldInfo[] {
-	const pivotFields = root.pivotFields as XmlNode | undefined
-	return asArray<XmlNode>(pivotFields?.pivotField as XmlNode | XmlNode[] | undefined).map(
-		(node, index) => {
-			const parsed: {
-				index: number
-				axis?: string
-				name?: string
-				hidden?: boolean
-				dataField?: boolean
-				defaultSubtotal?: boolean
-				showAll?: boolean
-			} = { index }
-			setStringIfDefined(parsed, 'axis', attr(node, 'axis'))
-			setStringIfDefined(parsed, 'name', attr(node, 'name'))
-			setBoolIfDefined(parsed, 'hidden', boolAttr(node, 'hidden'))
-			setBoolIfDefined(parsed, 'dataField', boolAttr(node, 'dataField'))
-			setBoolIfDefined(parsed, 'defaultSubtotal', boolAttr(node, 'defaultSubtotal'))
-			setBoolIfDefined(parsed, 'showAll', boolAttr(node, 'showAll'))
-			return parsed
-		},
-	)
+	const pivotFields = childNode(root, 'pivotFields')
+	return childNodes(pivotFields, 'pivotField').map((node, index) => {
+		const parsed: {
+			index: number
+			axis?: string
+			name?: string
+			numFmtId?: number
+			hidden?: boolean
+			dataField?: boolean
+			defaultSubtotal?: boolean
+			showAll?: boolean
+			multipleItemSelectionAllowed?: boolean
+			items?: readonly PivotFieldItemInfo[]
+		} = { index }
+		setStringIfDefined(parsed, 'axis', attr(node, 'axis'))
+		setStringIfDefined(parsed, 'name', attr(node, 'name'))
+		setNumberIfDefined(parsed, 'numFmtId', numAttr(node, 'numFmtId'))
+		setBoolIfDefined(parsed, 'hidden', boolAttr(node, 'hidden'))
+		setBoolIfDefined(parsed, 'dataField', boolAttr(node, 'dataField'))
+		setBoolIfDefined(parsed, 'defaultSubtotal', boolAttr(node, 'defaultSubtotal'))
+		setBoolIfDefined(parsed, 'showAll', boolAttr(node, 'showAll'))
+		setBoolIfDefined(
+			parsed,
+			'multipleItemSelectionAllowed',
+			boolAttr(node, 'multipleItemSelectionAllowed'),
+		)
+		const items = parsePivotFieldItems(node)
+		if (items.length > 0) parsed.items = items
+		return parsed
+	})
+}
+
+function parsePivotFieldItems(pivotField: XmlNode): PivotFieldItemInfo[] {
+	const items = childNode(pivotField, 'items')
+	return childNodes(items, 'item').map((node, index) => {
+		const parsed: {
+			index: number
+			cacheIndex?: number
+			itemType?: string
+			caption?: string
+			hidden?: boolean
+			manualFilter?: boolean
+			showDetails?: boolean
+			calculated?: boolean
+			missing?: boolean
+			childItems?: boolean
+			expanded?: boolean
+			drillAcrossAttributes?: boolean
+		} = { index }
+		setNumberIfDefined(parsed, 'cacheIndex', numAttr(node, 'x'))
+		setStringIfDefined(parsed, 'itemType', attr(node, 't'))
+		setStringIfDefined(parsed, 'caption', attr(node, 'n'))
+		setBoolIfDefined(parsed, 'hidden', boolAttr(node, 'h'))
+		setBoolIfDefined(parsed, 'manualFilter', boolAttr(node, 's'))
+		setBoolIfDefined(parsed, 'showDetails', boolAttr(node, 'sd'))
+		setBoolIfDefined(parsed, 'calculated', boolAttr(node, 'f'))
+		setBoolIfDefined(parsed, 'missing', boolAttr(node, 'm'))
+		setBoolIfDefined(parsed, 'childItems', boolAttr(node, 'c'))
+		setBoolIfDefined(parsed, 'expanded', boolAttr(node, 'd'))
+		setBoolIfDefined(parsed, 'drillAcrossAttributes', boolAttr(node, 'e'))
+		return parsed
+	})
 }
 
 function parseFieldReferences(
@@ -187,20 +273,29 @@ function parseFieldReferences(
 	attrName: string,
 ): PivotFieldReference[] {
 	if (!parent) return []
-	return asArray<XmlNode>(parent[childName] as XmlNode | XmlNode[] | undefined)
+	return childNodes(parent, childName)
 		.map((node) => {
 			const index = numAttr(node, attrName)
 			if (index === undefined) return null
-			const parsed: { index: number; name?: string } = { index }
+			const parsed: {
+				index: number
+				name?: string
+				item?: number
+				hierarchy?: number
+				caption?: string
+			} = { index }
 			setStringIfDefined(parsed, 'name', attr(node, 'name'))
+			setNumberIfDefined(parsed, 'item', numAttr(node, 'item'))
+			setNumberIfDefined(parsed, 'hierarchy', numAttr(node, 'hier'))
+			setStringIfDefined(parsed, 'caption', attr(node, 'cap'))
 			return parsed
 		})
 		.filter((entry): entry is PivotFieldReference => entry !== null)
 }
 
 function parseDataFields(root: XmlNode): PivotDataFieldInfo[] {
-	const dataFields = root.dataFields as XmlNode | undefined
-	return asArray<XmlNode>(dataFields?.dataField as XmlNode | XmlNode[] | undefined)
+	const dataFields = childNode(root, 'dataFields')
+	return childNodes(dataFields, 'dataField')
 		.map((node) => {
 			const fieldIndex = numAttr(node, 'fld')
 			if (fieldIndex === undefined) return null
@@ -216,6 +311,25 @@ function parseDataFields(root: XmlNode): PivotDataFieldInfo[] {
 			return parsed
 		})
 		.filter((entry): entry is PivotDataFieldInfo => entry !== null)
+}
+
+function childNode(node: XmlNode | undefined, localName: string): XmlNode | undefined {
+	return childNodes(node, localName)[0]
+}
+
+function childNodes(node: XmlNode | undefined, localName: string): XmlNode[] {
+	if (!node) return []
+	const matches: XmlNode[] = []
+	for (const [key, value] of Object.entries(node)) {
+		if (key.startsWith('@_') || localPart(key) !== localName) continue
+		matches.push(...asArray(value as XmlNode | XmlNode[]))
+	}
+	return matches
+}
+
+function localPart(name: string): string {
+	const colon = name.indexOf(':')
+	return colon === -1 ? name : name.slice(colon + 1)
 }
 
 export function parseSlicerCacheXml(xml: string, partPath: string): SlicerCacheInfo | null {

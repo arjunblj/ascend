@@ -108,4 +108,47 @@ describe('Workbook.clone', () => {
 
 		expect(wb.macroSheets[0]?.name).toBe('Macro1')
 	})
+
+	test('clones pivot field item inventory without aliasing', () => {
+		const wb = createWorkbook()
+		wb.pivotCaches.push({
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			fields: [
+				{
+					index: 0,
+					name: 'Region',
+					sharedItems: [{ index: 0, kind: 'string', value: 'West' }],
+				},
+			],
+		})
+		wb.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'PivotSheet',
+			name: 'PivotTable1',
+			fields: [
+				{
+					index: 0,
+					axis: 'axisPage',
+					items: [{ index: 0, cacheIndex: 1, hidden: true }],
+				},
+			],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [{ index: 0, item: 1 }],
+			dataFields: [],
+		})
+
+		const clone = wb.clone()
+		const sharedItem = clone.pivotCaches[0]?.fields[0]?.sharedItems?.[0]
+		const item = clone.pivotTables[0]?.fields[0]?.items?.[0]
+		expect(sharedItem).toBeDefined()
+		expect(item).toBeDefined()
+		if (!sharedItem || !item) return
+
+		;(sharedItem as { value: string }).value = 'East'
+		;(item as { hidden: boolean }).hidden = false
+
+		expect(wb.pivotCaches[0]?.fields[0]?.sharedItems?.[0]?.value).toBe('West')
+		expect(wb.pivotTables[0]?.fields[0]?.items?.[0]?.hidden).toBe(true)
+	})
 })

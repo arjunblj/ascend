@@ -24,8 +24,10 @@ export { createSheetId, createTableId, createWorkbookId, DEFAULT_STYLE_ID } from
 export type {
 	PivotCacheFieldInfo,
 	PivotCacheInfo,
+	PivotCacheSharedItemInfo,
 	PivotDataFieldInfo,
 	PivotFieldInfo,
+	PivotFieldItemInfo,
 	PivotFieldReference,
 	PivotTableInfo,
 	SlicerCacheInfo,

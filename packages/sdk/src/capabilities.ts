@@ -535,9 +535,13 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'Pivot tables',
 		'inspectable',
 		'P0',
-		'Add filter state edits and calculated output refresh after field-level inventory.',
-		'Pivot layout is inspectable and inspect payloads expose refresh/stale-output plans; full management and recalculation are not complete.',
-		['packages/io-xlsx/src/reader/reader.test.ts', 'packages/sdk/src/pivot-refresh-plan.test.ts'],
+		'Add safe filter state edits and calculated output refresh after item-level inventory.',
+		'Pivot layout, page-filter selections, field item visibility/detail flags, and refresh/stale-output plans are inspectable; full management and recalculation are not complete.',
+		[
+			'packages/io-xlsx/src/reader/reader.test.ts',
+			'packages/io-xlsx/src/reader/pivots.test.ts',
+			'packages/sdk/src/pivot-refresh-plan.test.ts',
+		],
 	),
 	cap(
 		'analytics.pivot-caches',

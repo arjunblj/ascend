@@ -262,21 +262,50 @@ export interface PivotCacheFieldInfo {
 	readonly name?: string
 	readonly databaseField?: boolean
 	readonly numFmtId?: number
+	readonly formula?: string
+	readonly sharedItems?: readonly PivotCacheSharedItemInfo[]
+}
+
+export interface PivotCacheSharedItemInfo {
+	readonly index: number
+	readonly kind: 'string' | 'number' | 'date' | 'boolean' | 'error' | 'missing'
+	readonly value?: string
 }
 
 export interface PivotFieldInfo {
 	readonly index: number
 	readonly axis?: string
 	readonly name?: string
+	readonly numFmtId?: number
 	readonly hidden?: boolean
 	readonly dataField?: boolean
 	readonly defaultSubtotal?: boolean
 	readonly showAll?: boolean
+	readonly multipleItemSelectionAllowed?: boolean
+	readonly items?: readonly PivotFieldItemInfo[]
+}
+
+export interface PivotFieldItemInfo {
+	readonly index: number
+	readonly cacheIndex?: number
+	readonly itemType?: string
+	readonly caption?: string
+	readonly hidden?: boolean
+	readonly manualFilter?: boolean
+	readonly showDetails?: boolean
+	readonly calculated?: boolean
+	readonly missing?: boolean
+	readonly childItems?: boolean
+	readonly expanded?: boolean
+	readonly drillAcrossAttributes?: boolean
 }
 
 export interface PivotFieldReference {
 	readonly index: number
 	readonly name?: string
+	readonly item?: number
+	readonly hierarchy?: number
+	readonly caption?: string
 }
 
 export interface PivotDataFieldInfo {

@@ -1050,7 +1050,10 @@ function copyChartSheetInfo(
 function copyPivotCacheInfo(cache: PivotCacheInfo): PivotCacheInfo {
 	return {
 		...cache,
-		fields: cache.fields.map((field) => ({ ...field })),
+		fields: cache.fields.map((field) => ({
+			...field,
+			...(field.sharedItems ? { sharedItems: field.sharedItems.map((item) => ({ ...item })) } : {}),
+		})),
 	}
 }
 
@@ -1066,7 +1069,10 @@ function copySlicerCacheInfo(cache: SlicerCacheInfo): SlicerCacheInfo {
 function copyPivotTableInfo(pivot: PivotTableInfo): PivotTableInfo {
 	return {
 		...pivot,
-		fields: pivot.fields.map((field) => ({ ...field })),
+		fields: pivot.fields.map((field) => ({
+			...field,
+			...(field.items ? { items: field.items.map((item) => ({ ...item })) } : {}),
+		})),
 		rowFields: pivot.rowFields.map((field) => ({ ...field })),
 		columnFields: pivot.columnFields.map((field) => ({ ...field })),
 		pageFields: pivot.pageFields.map((field) => ({ ...field })),

@@ -10,6 +10,7 @@ import {
 	cloneX14DataValidationInfo,
 	indexToColumn,
 	parseA1,
+	parseRange,
 	type RangeRef,
 	type SheetDrawingObjectRef,
 	type SheetImageAnchor,
@@ -29,8 +30,13 @@ import {
 	type WorkbookFormulaAnalysis,
 	type WorkbookSnapshot,
 } from '@ascend/engine'
-import { normalizeFormulaInput, parseFormula, printFormula } from '@ascend/formulas'
-import type { CompatibilityReport } from '@ascend/schema'
+import {
+	type FormulaNode,
+	normalizeFormulaInput,
+	parseFormula,
+	printFormula,
+} from '@ascend/formulas'
+import type { CellValue, CompatibilityReport } from '@ascend/schema'
 import { EMPTY } from '@ascend/schema'
 import { trace as verifyTrace } from '@ascend/verify'
 import { getCapability, isCapabilityGap } from './capabilities.ts'
@@ -69,6 +75,8 @@ import type {
 	PivotCacheMaterializedRowInfo,
 	PivotCacheRecordValueInfo,
 	PivotCacheRowsOptions,
+	PivotOutputAuditInfo,
+	PivotOutputAuditMismatchInfo,
 	PivotRefreshPlanInfo,
 	PivotRefreshRecommendedOp,
 	PivotTableInfo,
@@ -677,6 +685,10 @@ export class WorkbookReadView {
 
 	pivotCacheRows(options: PivotCacheRowsOptions = {}): readonly PivotCacheMaterializedRowInfo[] {
 		return buildPivotCacheRows(this.wb.pivotCaches, options)
+	}
+
+	pivotOutputAudits(): readonly PivotOutputAuditInfo[] {
+		return buildPivotOutputAudits(this.wb, this.loadInfo.cellsHydrated)
 	}
 
 	pivotRefreshPlans(): readonly PivotRefreshPlanInfo[] {
@@ -1296,6 +1308,368 @@ function decodePivotCacheValue(
 		...(value.sharedItemIndex !== undefined ? { sharedItemIndex: value.sharedItemIndex } : {}),
 		...(sharedItem?.kind !== undefined ? { sharedItemKind: sharedItem.kind } : {}),
 	}
+}
+
+function buildPivotOutputAudits(
+	workbook: Workbook,
+	cellsHydrated: boolean,
+): PivotOutputAuditInfo[] {
+	return workbook.pivotTables.map((pivot) => {
+		const base = {
+			...(pivot.name !== undefined ? { pivotTable: pivot.name } : {}),
+			partPath: pivot.partPath,
+			sheetName: pivot.sheetName,
+			...(pivot.cacheId !== undefined ? { cacheId: pivot.cacheId } : {}),
+		}
+		if (!cellsHydrated) {
+			return unsupportedPivotAudit(base, 'Pivot output cells are not hydrated in this load mode.')
+		}
+		const sheet = workbook.getSheet(pivot.sheetName)
+		if (!sheet) return unsupportedPivotAudit(base, 'Pivot output sheet was not loaded.')
+		if (!pivot.locationRef)
+			return unsupportedPivotAudit(base, 'Pivot table has no output location.')
+		const cache = workbook.pivotCaches.find((entry) => entry.cacheId === pivot.cacheId)
+		if (!cache) return unsupportedPivotAudit(base, 'Pivot cache metadata was not found.')
+		if (!cache.records?.materializedComplete || !cache.records.materializedRecords) {
+			return unsupportedPivotAudit(base, 'Pivot cache records are not fully materialized.')
+		}
+		if (pivot.rowFields.length !== 1 || pivot.pageFields.length > 0) {
+			return unsupportedPivotAudit(
+				base,
+				'Only one-row-field pivots without page filters are audited.',
+			)
+		}
+		if (pivot.columnFields.length > 0 && !pivot.columnFields.every((field) => field.index === -2)) {
+			return unsupportedPivotAudit(
+				base,
+				'Column-field pivots beyond the data-field axis are not audited.',
+			)
+		}
+		const rowFieldIndex = pivot.rowFields[0]?.index
+		const rowField = rowFieldIndex === undefined ? undefined : cache.fields[rowFieldIndex]
+		if (!rowField) return unsupportedPivotAudit(base, 'Pivot row field metadata was not found.')
+		const expected = aggregateSimplePivotOutput(cache, pivot, rowField.index)
+		if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
+		const actual = readSimplePivotOutput(workbook, sheet.id, pivot, expected.value.dataFieldNames)
+		if (!actual.ok) return unsupportedPivotAudit(base, actual.warning)
+		const mismatches = comparePivotOutput(expected.value.values, actual.value)
+		return {
+			...base,
+			status: mismatches.length > 0 ? 'mismatch' : 'passed',
+			checkedValueCount: expected.value.checkedValueCount,
+			mismatches,
+			warnings: [],
+		}
+	})
+}
+
+function unsupportedPivotAudit(
+	base: Pick<PivotOutputAuditInfo, 'partPath' | 'sheetName' | 'pivotTable' | 'cacheId'>,
+	warning: string,
+): PivotOutputAuditInfo {
+	return {
+		...base,
+		status: 'unsupported',
+		checkedValueCount: 0,
+		mismatches: [],
+		warnings: [warning],
+	}
+}
+
+function aggregateSimplePivotOutput(
+	cache: PivotCacheInfo,
+	pivot: PivotTableInfo,
+	rowFieldIndex: number,
+):
+	| {
+			ok: true
+			value: {
+				dataFieldNames: readonly string[]
+				checkedValueCount: number
+				values: ReadonlyMap<string, ReadonlyMap<string, number>>
+			}
+	  }
+	| { ok: false; warning: string } {
+	const dataFieldNames = pivot.dataFields.map(
+		(field, index) => field.name ?? `DataField${index + 1}`,
+	)
+	const output = new Map<string, Map<string, number>>()
+	const baseTotals = new Map<string, Map<string, number>>()
+	for (const row of buildPivotCacheRows([cache], {})) {
+		const rowLabel = row.values.find((value) => value.fieldIndex === rowFieldIndex)?.value
+		if (rowLabel === undefined) continue
+		addPivotBaseTotals(cache, row, baseTotals, rowLabel)
+		addPivotBaseTotals(cache, row, baseTotals, 'Grand Total')
+		for (let i = 0; i < pivot.dataFields.length; i++) {
+			const dataField = pivot.dataFields[i]
+			const dataFieldName = dataFieldNames[i] ?? `DataField${i + 1}`
+			if (!dataField) continue
+			const field = cache.fields[dataField.fieldIndex]
+			if (field?.formula) continue
+			const measured = measurePivotDataField(cache, row, dataField)
+			if (!measured.ok) return measured
+			addPivotOutput(output, rowLabel, dataFieldName, measured.value)
+			addPivotOutput(output, 'Grand Total', dataFieldName, measured.value)
+		}
+	}
+	for (let i = 0; i < pivot.dataFields.length; i++) {
+		const dataField = pivot.dataFields[i]
+		const dataFieldName = dataFieldNames[i] ?? `DataField${i + 1}`
+		if (!dataField) continue
+		const field = cache.fields[dataField.fieldIndex]
+		if (!field?.formula) continue
+		if (dataField.subtotal !== undefined && dataField.subtotal !== 'sum') {
+			return {
+				ok: false,
+				warning: `Calculated pivot subtotal "${dataField.subtotal}" is not audited.`,
+			}
+		}
+		for (const [rowLabel, valuesByName] of baseTotals) {
+			const measured = measureCalculatedPivotField(valuesByName, field.formula)
+			if (!measured.ok) return measured
+			setPivotOutput(output, rowLabel, dataFieldName, measured.value)
+		}
+	}
+	return {
+		ok: true,
+		value: {
+			dataFieldNames,
+			checkedValueCount: output.size * dataFieldNames.length,
+			values: output,
+		},
+	}
+}
+
+function measurePivotDataField(
+	cache: PivotCacheInfo,
+	row: PivotCacheMaterializedRowInfo,
+	dataField: PivotTableInfo['dataFields'][number],
+): { ok: true; value: number } | { ok: false; warning: string } {
+	const field = cache.fields[dataField.fieldIndex]
+	if (!field)
+		return { ok: false, warning: `Pivot data field ${dataField.fieldIndex} was not found.` }
+	if (dataField.subtotal === 'count') {
+		return { ok: true, value: row.values.some((value) => value.fieldIndex === field.index) ? 1 : 0 }
+	}
+	if (dataField.subtotal !== undefined && dataField.subtotal !== 'sum') {
+		return { ok: false, warning: `Pivot subtotal "${dataField.subtotal}" is not audited.` }
+	}
+	if (field.formula)
+		return { ok: false, warning: 'Calculated pivot fields require aggregate audit.' }
+	const value = numericPivotRowValue(row, field.index)
+	if (value === null) return { ok: true, value: 0 }
+	return { ok: true, value }
+}
+
+function measureCalculatedPivotField(
+	valuesByName: ReadonlyMap<string, number>,
+	formula: string,
+): { ok: true; value: number } | { ok: false; warning: string } {
+	const parsed = parseFormula(formula)
+	if (!parsed.ok)
+		return { ok: false, warning: `Pivot calculated field formula did not parse: ${formula}` }
+	const measured = evalSimplePivotFormula(parsed.value, valuesByName)
+	if (measured === null) {
+		return {
+			ok: false,
+			warning: `Pivot calculated field formula is not audit-supported: ${formula}`,
+		}
+	}
+	return { ok: true, value: measured }
+}
+
+function addPivotBaseTotals(
+	cache: PivotCacheInfo,
+	row: PivotCacheMaterializedRowInfo,
+	output: Map<string, Map<string, number>>,
+	rowLabel: string,
+): void {
+	let byField = output.get(rowLabel)
+	if (!byField) {
+		byField = new Map()
+		output.set(rowLabel, byField)
+	}
+	for (const value of row.values) {
+		const field = cache.fields[value.fieldIndex]
+		if (!field?.name) continue
+		const numeric = numericPivotRowValue(row, value.fieldIndex)
+		if (numeric !== null) {
+			const key = normalizePivotAuditText(field.name)
+			byField.set(key, (byField.get(key) ?? 0) + numeric)
+		}
+	}
+}
+
+function numericPivotRowValue(
+	row: PivotCacheMaterializedRowInfo,
+	fieldIndex: number,
+): number | null {
+	const value = row.values.find((entry) => entry.fieldIndex === fieldIndex)
+	if (!value?.value || value.kind !== 'number') return null
+	const numeric = Number(value.value)
+	return Number.isFinite(numeric) ? numeric : null
+}
+
+function evalSimplePivotFormula(
+	node: FormulaNode,
+	valuesByName: ReadonlyMap<string, number>,
+): number | null {
+	switch (node.type) {
+		case 'number':
+			return node.value
+		case 'name':
+			return valuesByName.get(normalizePivotAuditText(node.name)) ?? null
+		case 'binary': {
+			const left = evalSimplePivotFormula(node.left, valuesByName)
+			const right = evalSimplePivotFormula(node.right, valuesByName)
+			if (left === null || right === null) return null
+			switch (node.op) {
+				case '+':
+					return left + right
+				case '-':
+					return left - right
+				case '*':
+					return left * right
+				case '/':
+					return right === 0 ? null : left / right
+				default:
+					return null
+			}
+		}
+		default:
+			return null
+	}
+}
+
+function addPivotOutput(
+	output: Map<string, Map<string, number>>,
+	rowLabel: string,
+	dataField: string,
+	value: number,
+): void {
+	let byField = output.get(rowLabel)
+	if (!byField) {
+		byField = new Map()
+		output.set(rowLabel, byField)
+	}
+	byField.set(dataField, (byField.get(dataField) ?? 0) + value)
+}
+
+function setPivotOutput(
+	output: Map<string, Map<string, number>>,
+	rowLabel: string,
+	dataField: string,
+	value: number,
+): void {
+	let byField = output.get(rowLabel)
+	if (!byField) {
+		byField = new Map()
+		output.set(rowLabel, byField)
+	}
+	byField.set(dataField, value)
+}
+
+function readSimplePivotOutput(
+	workbook: Workbook,
+	sheetId: string,
+	pivot: PivotTableInfo,
+	dataFieldNames: readonly string[],
+):
+	| { ok: true; value: ReadonlyMap<string, ReadonlyMap<string, { ref: string; value: CellValue }>> }
+	| { ok: false; warning: string } {
+	if (!pivot.locationRef) return { ok: false, warning: 'Pivot table has no output location.' }
+	let bounds: RangeRef
+	try {
+		bounds = parseRange(pivot.locationRef)
+	} catch {
+		return { ok: false, warning: `Pivot output range is invalid: ${pivot.locationRef}` }
+	}
+	const sheet = workbook.sheets.find((entry) => entry.id === sheetId)
+	if (!sheet) return { ok: false, warning: 'Pivot output sheet was not loaded.' }
+	const headers = new Map<string, { row: number; col: number }>()
+	for (let row = bounds.start.row; row <= bounds.end.row; row++) {
+		for (let col = bounds.start.col; col <= bounds.end.col; col++) {
+			const text = cellText(sheet.cells.get(row, col)?.value ?? EMPTY)
+			for (const fieldName of dataFieldNames) {
+				if (normalizePivotAuditText(text) === normalizePivotAuditText(fieldName)) {
+					headers.set(fieldName, { row, col })
+				}
+			}
+		}
+	}
+	if (headers.size !== dataFieldNames.length) {
+		return { ok: false, warning: 'Pivot output data-field headers were not found.' }
+	}
+	const headerRow = Math.min(...Array.from(headers.values(), (entry) => entry.row))
+	const output = new Map<string, Map<string, { ref: string; value: CellValue }>>()
+	for (let row = headerRow + 1; row <= bounds.end.row; row++) {
+		const labelValue = sheet.cells.get(row, bounds.start.col)?.value ?? EMPTY
+		const rawLabel = cellText(labelValue)
+		if (!rawLabel) continue
+		const label = normalizeGrandTotalLabel(rawLabel)
+		const byField = new Map<string, { ref: string; value: CellValue }>()
+		for (const fieldName of dataFieldNames) {
+			const header = headers.get(fieldName)
+			if (!header) continue
+			const value = sheet.cells.get(row, header.col)?.value ?? EMPTY
+			byField.set(fieldName, {
+				ref: `${indexToColumn(header.col)}${row + 1}`,
+				value,
+			})
+		}
+		output.set(label, byField)
+	}
+	return { ok: true, value: output }
+}
+
+function comparePivotOutput(
+	expected: ReadonlyMap<string, ReadonlyMap<string, number>>,
+	actual: ReadonlyMap<string, ReadonlyMap<string, { ref: string; value: CellValue }>>,
+): PivotOutputAuditMismatchInfo[] {
+	const mismatches: PivotOutputAuditMismatchInfo[] = []
+	for (const [rowLabel, expectedFields] of expected) {
+		const actualFields = actual.get(rowLabel)
+		for (const [dataField, expectedValue] of expectedFields) {
+			const actualCell = actualFields?.get(dataField)
+			if (!actualCell || !numericCellMatches(actualCell.value, expectedValue)) {
+				mismatches.push({
+					...(actualCell ? { ref: actualCell.ref, actual: actualCell.value } : {}),
+					rowLabel,
+					dataField,
+					expected: expectedValue,
+				})
+			}
+		}
+	}
+	return mismatches
+}
+
+function numericCellMatches(value: CellValue, expected: number): boolean {
+	return value.kind === 'number' && Math.abs(value.value - expected) < 1e-9
+}
+
+function cellText(value: CellValue): string {
+	switch (value.kind) {
+		case 'string':
+			return value.value
+		case 'number':
+			return String(value.value)
+		case 'boolean':
+			return value.value ? 'TRUE' : 'FALSE'
+		case 'error':
+			return value.value
+		default:
+			return ''
+	}
+}
+
+function normalizeGrandTotalLabel(label: string): string {
+	const normalized = normalizePivotAuditText(label)
+	return normalized === 'grand total' || normalized === 'общий итог' ? 'Grand Total' : label
+}
+
+function normalizePivotAuditText(value: string): string {
+	return value.trim().replace(/\s+/g, ' ').toLowerCase()
 }
 
 function copySlicerCacheInfo(cache: SlicerCacheInfo): SlicerCacheInfo {

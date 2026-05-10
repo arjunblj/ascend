@@ -317,6 +317,27 @@ export interface PivotCacheDecodedValueInfo {
 	readonly sharedItemKind?: PivotCacheSharedItemInfo['kind']
 }
 
+export type PivotOutputAuditStatus = 'passed' | 'mismatch' | 'unsupported'
+
+export interface PivotOutputAuditInfo {
+	readonly pivotTable?: string
+	readonly partPath: string
+	readonly sheetName: string
+	readonly cacheId?: number
+	readonly status: PivotOutputAuditStatus
+	readonly checkedValueCount: number
+	readonly mismatches: readonly PivotOutputAuditMismatchInfo[]
+	readonly warnings: readonly string[]
+}
+
+export interface PivotOutputAuditMismatchInfo {
+	readonly ref?: string
+	readonly rowLabel: string
+	readonly dataField: string
+	readonly expected: number
+	readonly actual?: CellValue
+}
+
 export interface PivotCacheRecordInfo {
 	readonly index: number
 	readonly values: readonly PivotCacheRecordValueInfo[]

@@ -55,7 +55,7 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 					...(sheetArg ? { sheets: [sheetArg] } : {}),
 				}
 			: workbookDetail
-				? { mode: 'metadata-only' as const }
+				? { mode: 'full' as const }
 				: workbookStructureDetail
 					? { mode: 'full' as const }
 					: detail && sheetArg

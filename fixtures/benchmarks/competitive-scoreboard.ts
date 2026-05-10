@@ -1304,6 +1304,17 @@ function exactUpstreamEvidenceFailure(matches: readonly BenchmarkCaseResult[]): 
 		if (sourceKind && sourceKind !== 'upstream-script' && sourceKind !== 'pinned-artifact') {
 			invalid.add(`upstreamSourceKind=${sourceKind}`)
 		}
+		if (sourceKind === 'upstream-script') {
+			if (!dimensionString(entry, 'upstreamRepo')) missing.add('upstreamRepo')
+			if (!dimensionString(entry, 'upstreamCommit')) missing.add('upstreamCommit')
+			if (!dimensionString(entry, 'upstreamCommand')) missing.add('upstreamCommand')
+		}
+		if (sourceKind === 'pinned-artifact') {
+			const hasArtifactHash =
+				dimensionString(entry, 'upstreamArtifactSha256') ||
+				dimensionString(entry, 'upstreamExpectedXlsxSha256')
+			if (!hasArtifactHash) missing.add('upstreamArtifactSha256')
+		}
 		const timingBoundary = dimensionString(entry, 'upstreamTimingBoundary')
 		if (timingBoundary?.includes('not the upstream project native timing harness')) {
 			invalid.add('upstreamTimingBoundary=shape-clone')

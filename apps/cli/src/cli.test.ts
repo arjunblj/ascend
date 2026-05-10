@@ -396,6 +396,26 @@ describe('ascend cli', () => {
 		},
 	)
 
+	test.skipIf(!HAS_SLICER_CORPUS_FILE)(
+		'inspect --detail compatibility --json reports preserved package features',
+		{ timeout: 10000 },
+		async () => {
+			const { exitCode, stdout } = await run(
+				'inspect',
+				SLICER_CORPUS_FILE,
+				'--detail',
+				'compatibility',
+				'--json',
+			)
+			expect(exitCode).toBe(0)
+			const parsed = JSON.parse(stdout)
+			const features = parsed.data.features.map((feature: { feature: string }) => feature.feature)
+			expect(parsed.data.status).toBe('has-preserved')
+			expect(features).toContain('preservedPivot')
+			expect(features).toContain('preservedSlicer')
+		},
+	)
+
 	test.skipIf(!HAS_PIVOT_CORPUS_FILE)(
 		'inspect --detail drawings --json returns drawing flags',
 		async () => {

@@ -1031,6 +1031,57 @@ describe('buildCompetitiveScoreboard', () => {
 			'upstream-xlsx-sota incomplete-upstream-evidence category=write operationProfile=write-values workload=dense-values file=pyexcelerate-write-values-1000x100 missing=executionScope,timingModel,upstreamSourceBenchmark,upstreamSourceKind,upstreamSourceUrl,upstreamTimingBoundary,validationModel',
 		)
 	})
+
+	test('upstream SOTA profile requires source-kind-specific exact replay evidence', () => {
+		const libraries = [
+			'ascend',
+			'sheetjs',
+			'exceljs',
+			'xlsxwriter',
+			'pyexcelerate',
+			'pyexcelerate-range',
+			'pyexcelerate-cell',
+			'openpyxl',
+			'apache-poi',
+			'pyopenxlsx',
+		]
+		const exactScriptSuite = suiteWithCases(
+			libraries.map((library) =>
+				matrixCase({
+					library,
+					category: 'write',
+					workload: 'dense-values',
+					repeat: 5,
+					file: 'pyexcelerate-write-values-1000x100',
+					peakRssBytes: 1024,
+					upstreamReplayStatus: 'exact-script',
+					upstreamEvidence: true,
+				}),
+			),
+		)
+		const exactArtifactSuite = suiteWithCases(
+			libraries.map((library) =>
+				matrixCase({
+					library,
+					category: 'write',
+					workload: 'dense-values',
+					repeat: 5,
+					file: 'pyexcelerate-write-values-1000x100',
+					peakRssBytes: 1024,
+					upstreamReplayStatus: 'exact-artifact',
+					upstreamEvidence: true,
+					upstreamSourceKind: 'pinned-artifact',
+				}),
+			),
+		)
+
+		expect(assertScoreboardCoverage(exactScriptSuite, 'upstream-xlsx-sota')).toContain(
+			'upstream-xlsx-sota incomplete-upstream-evidence category=write operationProfile=write-values workload=dense-values file=pyexcelerate-write-values-1000x100 missing=upstreamCommand,upstreamCommit,upstreamRepo',
+		)
+		expect(assertScoreboardCoverage(exactArtifactSuite, 'upstream-xlsx-sota')).toContain(
+			'upstream-xlsx-sota incomplete-upstream-evidence category=write operationProfile=write-values workload=dense-values file=pyexcelerate-write-values-1000x100 missing=upstreamArtifactSha256',
+		)
+	})
 })
 
 function suiteWithCases(cases: BenchmarkSuiteResult['cases']): BenchmarkSuiteResult {
@@ -1225,6 +1276,7 @@ function matrixCase(input: {
 	readonly featureAssertions?: Record<string, number>
 	readonly upstreamReplayStatus?: string
 	readonly upstreamEvidence?: boolean
+	readonly upstreamSourceKind?: 'upstream-script' | 'pinned-artifact'
 }): BenchmarkSuiteResult['cases'][number] {
 	const operationProfile =
 		input.operationProfile ??
@@ -1254,7 +1306,7 @@ function matrixCase(input: {
 						executionScope: 'external-process',
 						timingModel: 'external-process',
 						upstreamSourceBenchmark: 'upstream benchmark',
-						upstreamSourceKind: 'upstream-script',
+						upstreamSourceKind: input.upstreamSourceKind ?? 'upstream-script',
 						upstreamSourceUrl: 'https://example.test/upstream',
 						upstreamTimingBoundary: 'External process benchmark over the upstream script workload.',
 						validationModel: 'external-post-operation-assertions',

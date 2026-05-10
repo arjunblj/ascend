@@ -128,6 +128,8 @@ export type {
 	MergeRangeSummary,
 	NameFormulaReferenceInfo,
 	PageMetadataSummary,
+	PivotAxisFieldItemInfo,
+	PivotAxisItemInfo,
 	PivotCacheFieldGroupDiscreteItemInfo,
 	PivotCacheFieldGroupInfo,
 	PivotCacheFieldInfo,

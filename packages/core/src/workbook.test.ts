@@ -145,6 +145,8 @@ describe('Workbook.clone', () => {
 			columnFields: [],
 			pageFields: [{ index: 0, item: 1 }],
 			dataFields: [{ fieldIndex: 1, showDataAs: 'percent', baseField: 0, baseItem: 2 }],
+			rowItems: [{ index: 0, fieldItems: [{ index: 0, item: 1 }] }],
+			columnItems: [{ index: 0, dataFieldIndex: 1, fieldItems: [{ index: 0, item: 2 }] }],
 		})
 
 		const clone = wb.clone()
@@ -156,6 +158,8 @@ describe('Workbook.clone', () => {
 		const discreteItem = clone.pivotCaches[0]?.fields[0]?.fieldGroup?.discreteItems?.[0]
 		const groupItem = clone.pivotCaches[0]?.fields[0]?.fieldGroup?.groupItems?.[0]
 		const item = clone.pivotTables[0]?.fields[0]?.items?.[0]
+		const rowItem = clone.pivotTables[0]?.rowItems?.[0]?.fieldItems[0]
+		const columnItem = clone.pivotTables[0]?.columnItems?.[0]?.fieldItems[0]
 		expect(pivotLocation).toBeDefined()
 		expect(pivotOptions).toBeDefined()
 		expect(pivotStyle).toBeDefined()
@@ -164,6 +168,8 @@ describe('Workbook.clone', () => {
 		expect(discreteItem).toBeDefined()
 		expect(groupItem).toBeDefined()
 		expect(item).toBeDefined()
+		expect(rowItem).toBeDefined()
+		expect(columnItem).toBeDefined()
 		if (
 			!pivotLocation ||
 			!pivotOptions ||
@@ -172,7 +178,9 @@ describe('Workbook.clone', () => {
 			!sharedItem ||
 			!discreteItem ||
 			!groupItem ||
-			!item
+			!item ||
+			!rowItem ||
+			!columnItem
 		) {
 			return
 		}
@@ -185,10 +193,14 @@ describe('Workbook.clone', () => {
 		;(discreteItem as { value: number }).value = 0
 		;(groupItem as { value: string }).value = 'Group2'
 		;(item as { hidden: boolean }).hidden = false
+		;(rowItem as { item: number }).item = 4
+		;(columnItem as { item: number }).item = 5
 
 		expect(wb.pivotTables[0]?.location?.ref).toBe('A3:D20')
 		expect(wb.pivotTables[0]?.options?.updatedVersion).toBe(7)
 		expect(wb.pivotTables[0]?.style?.name).toBe('PivotStyleLight16')
+		expect(wb.pivotTables[0]?.rowItems?.[0]?.fieldItems[0]?.item).toBe(1)
+		expect(wb.pivotTables[0]?.columnItems?.[0]?.fieldItems[0]?.item).toBe(2)
 		expect(wb.pivotCaches[0]?.fields[0]?.sharedItemsInfo?.count).toBe(1)
 		expect(wb.pivotCaches[0]?.fields[0]?.sharedItems?.[0]?.value).toBe('West')
 		expect(wb.pivotCaches[0]?.fields[0]?.fieldGroup?.discreteItems?.[0]?.value).toBe(1)

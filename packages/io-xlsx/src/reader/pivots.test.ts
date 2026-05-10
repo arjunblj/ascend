@@ -110,6 +110,16 @@ describe('pivot inventory', () => {
 			baseField: 0,
 			baseItem: 0,
 		})
+		expect(pivot?.rowItems).toEqual([
+			{ index: 0, fieldItems: [{ index: 0, item: 1 }] },
+			{ index: 1, itemType: 'grand', fieldItems: [{ index: 0 }] },
+		])
+		expect(pivot?.columnItems).toEqual([
+			{ index: 0, fieldItems: [{ index: 0 }] },
+			{ index: 1, dataFieldIndex: 1, fieldItems: [{ index: 0, item: 1 }] },
+			{ index: 2, dataFieldIndex: 2, fieldItems: [{ index: 0, item: 2 }] },
+			{ index: 3, dataFieldIndex: 3, fieldItems: [{ index: 0, item: 3 }] },
+		])
 
 		const dateField = pivot?.fields[5]
 		expect(dateField).toMatchObject({

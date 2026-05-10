@@ -1,4 +1,5 @@
 import type {
+	PivotAxisItemInfo,
 	PivotCacheFieldGroupInfo,
 	PivotCacheFieldInfo,
 	PivotCacheInfo,
@@ -133,6 +134,8 @@ export function parsePivotTableXml(
 		columnFields: readonly PivotFieldReference[]
 		pageFields: readonly PivotFieldReference[]
 		dataFields: readonly PivotDataFieldInfo[]
+		rowItems?: readonly PivotAxisItemInfo[]
+		columnItems?: readonly PivotAxisItemInfo[]
 	} = {
 		partPath,
 		sheetName,
@@ -142,6 +145,10 @@ export function parsePivotTableXml(
 		pageFields: parseFieldReferences(childNode(root, 'pageFields'), 'pageField', 'fld'),
 		dataFields: parseDataFields(root),
 	}
+	const rowItems = parseAxisItems(childNode(root, 'rowItems'))
+	if (rowItems.length > 0) parsed.rowItems = rowItems
+	const columnItems = parseAxisItems(childNode(root, 'colItems'))
+	if (columnItems.length > 0) parsed.columnItems = columnItems
 	const name = attr(root, 'name')
 	if (name) parsed.name = name
 	const cacheId = numAttr(root, 'cacheId')
@@ -536,6 +543,29 @@ function parseDataFields(root: XmlNode): PivotDataFieldInfo[] {
 			return parsed
 		})
 		.filter((entry): entry is PivotDataFieldInfo => entry !== null)
+}
+
+function parseAxisItems(parent: XmlNode | undefined): PivotAxisItemInfo[] {
+	return childNodes(parent, 'i').map((node, index) => {
+		const parsed: {
+			index: number
+			itemType?: string
+			repeatedItemCount?: number
+			dataFieldIndex?: number
+			fieldItems: readonly { readonly index: number; readonly item?: number }[]
+		} = {
+			index,
+			fieldItems: childNodes(node, 'x').map((fieldNode, fieldIndex) => {
+				const item: { index: number; item?: number } = { index: fieldIndex }
+				setNumberIfDefined(item, 'item', numAttr(fieldNode, 'v'))
+				return item
+			}),
+		}
+		setStringIfDefined(parsed, 'itemType', attr(node, 't'))
+		setNumberIfDefined(parsed, 'repeatedItemCount', numAttr(node, 'r'))
+		setNumberIfDefined(parsed, 'dataFieldIndex', numAttr(node, 'i'))
+		return parsed
+	})
 }
 
 function childNode(node: XmlNode | undefined, localName: string): XmlNode | undefined {

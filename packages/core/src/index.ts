@@ -24,6 +24,8 @@ export type {
 export type { SheetId, StyleId, TableId, WorkbookId } from './ids.ts'
 export { createSheetId, createTableId, createWorkbookId, DEFAULT_STYLE_ID } from './ids.ts'
 export type {
+	PivotAxisFieldItemInfo,
+	PivotAxisItemInfo,
 	PivotCacheFieldGroupDiscreteItemInfo,
 	PivotCacheFieldGroupInfo,
 	PivotCacheFieldInfo,

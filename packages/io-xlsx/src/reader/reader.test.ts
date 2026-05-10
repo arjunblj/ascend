@@ -1245,6 +1245,8 @@ describe('readXlsx', () => {
   </pivotFields>
   <rowFields count="1"><field x="0"/></rowFields>
   <colFields count="1"><field x="1"/></colFields>
+  <rowItems count="2"><i><x v="0"/></i><i t="grand"><x/></i></rowItems>
+  <colItems count="2"><i><x v="1"/></i><i r="1" i="0"><x v="2"/></i></colItems>
   <pageFields count="1"><pageField fld="2" name="Region filter"/></pageFields>
   <dataFields count="1"><dataField fld="3" name="Sum of Sales" subtotal="sum" numFmtId="4" showDataAs="percent" baseField="0" baseItem="2"/></dataFields>
   <pivotTableStyleInfo name="PivotStyleLight16" showRowHeaders="1" showColHeaders="1" showRowStripes="0" showColStripes="1" showLastColumn="0"/>
@@ -1335,6 +1337,19 @@ describe('readXlsx', () => {
 						showDataAs: 'percent',
 						baseField: 0,
 						baseItem: 2,
+					},
+				],
+				rowItems: [
+					{ index: 0, fieldItems: [{ index: 0, item: 0 }] },
+					{ index: 1, itemType: 'grand', fieldItems: [{ index: 0 }] },
+				],
+				columnItems: [
+					{ index: 0, fieldItems: [{ index: 0, item: 1 }] },
+					{
+						index: 1,
+						repeatedItemCount: 1,
+						dataFieldIndex: 0,
+						fieldItems: [{ index: 0, item: 2 }],
 					},
 				],
 			},

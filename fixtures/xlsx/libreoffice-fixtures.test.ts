@@ -147,6 +147,11 @@ describe('LibreOffice XLSX fixture corpus', () => {
 		expect(pivot?.dataFields).toEqual([
 			{ fieldIndex: 0, name: 'Sum of A', baseField: 0, baseItem: 0 },
 		])
+		expect(pivot?.rowItems).toEqual([
+			{ index: 0, fieldItems: [{ index: 0 }] },
+			{ index: 1, fieldItems: [{ index: 0, item: 1 }] },
+			{ index: 2, itemType: 'grand', fieldItems: [{ index: 0 }] },
+		])
 	})
 
 	test('cached formulas in the LibreOffice subset recalculate without mismatches', async () => {

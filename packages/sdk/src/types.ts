@@ -159,6 +159,8 @@ export interface PivotTableInfo {
 	readonly columnFields: readonly PivotFieldReference[]
 	readonly pageFields: readonly PivotFieldReference[]
 	readonly dataFields: readonly PivotDataFieldInfo[]
+	readonly rowItems?: readonly PivotAxisItemInfo[]
+	readonly columnItems?: readonly PivotAxisItemInfo[]
 }
 
 export interface PivotTableLocationInfo {
@@ -452,6 +454,19 @@ export interface PivotDataFieldInfo {
 	readonly showDataAs?: string
 	readonly baseField?: number
 	readonly baseItem?: number
+}
+
+export interface PivotAxisItemInfo {
+	readonly index: number
+	readonly itemType?: string
+	readonly repeatedItemCount?: number
+	readonly dataFieldIndex?: number
+	readonly fieldItems: readonly PivotAxisFieldItemInfo[]
+}
+
+export interface PivotAxisFieldItemInfo {
+	readonly index: number
+	readonly item?: number
 }
 
 export interface SlicerCacheInfo {

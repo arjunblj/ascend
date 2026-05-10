@@ -12,6 +12,8 @@ export interface PivotTableInfo {
 	readonly columnFields: readonly PivotFieldReference[]
 	readonly pageFields: readonly PivotFieldReference[]
 	readonly dataFields: readonly PivotDataFieldInfo[]
+	readonly rowItems?: readonly PivotAxisItemInfo[]
+	readonly columnItems?: readonly PivotAxisItemInfo[]
 }
 
 export interface PivotTableLocationInfo {
@@ -186,6 +188,19 @@ export interface PivotDataFieldInfo {
 	readonly baseItem?: number
 }
 
+export interface PivotAxisItemInfo {
+	readonly index: number
+	readonly itemType?: string
+	readonly repeatedItemCount?: number
+	readonly dataFieldIndex?: number
+	readonly fieldItems: readonly PivotAxisFieldItemInfo[]
+}
+
+export interface PivotAxisFieldItemInfo {
+	readonly index: number
+	readonly item?: number
+}
+
 export function clonePivotCacheInfo(entry: PivotCacheInfo): PivotCacheInfo {
 	return {
 		...entry,
@@ -224,6 +239,19 @@ export function clonePivotTableInfo(entry: PivotTableInfo): PivotTableInfo {
 		columnFields: entry.columnFields.map((field) => ({ ...field })),
 		pageFields: entry.pageFields.map((field) => ({ ...field })),
 		dataFields: entry.dataFields.map((field) => ({ ...field })),
+		...(entry.rowItems
+			? { rowItems: entry.rowItems.map((item) => clonePivotAxisItemInfo(item)) }
+			: {}),
+		...(entry.columnItems
+			? { columnItems: entry.columnItems.map((item) => clonePivotAxisItemInfo(item)) }
+			: {}),
+	}
+}
+
+function clonePivotAxisItemInfo(entry: PivotAxisItemInfo): PivotAxisItemInfo {
+	return {
+		...entry,
+		fieldItems: entry.fieldItems.map((item) => ({ ...item })),
 	}
 }
 

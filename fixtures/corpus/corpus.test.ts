@@ -330,4 +330,46 @@ describe('corpus: pivot formatting metadata', () => {
 			},
 		})
 	})
+
+	it.skipIf(!formulasAndPivots)(
+		'summarizes real pivot cache records and sentinel shared items for cache auditing',
+		() => {
+			const result = readXlsx(requireBytes(formulasAndPivots))
+			if (!result.ok) throw new Error(result.error.message)
+			const cache = result.value.workbook.pivotCaches.find((entry) => entry.cacheId === 0)
+			const cache2 = result.value.workbook.pivotCaches.find((entry) => entry.cacheId === 2)
+			expect(cache?.records).toMatchObject({
+				partPath: 'xl/pivotCache/pivotCacheRecords1.xml',
+				declaredCount: 4115,
+				parsedCount: 4115,
+			})
+			expect(cache?.records?.preview[0]?.values.slice(0, 6)).toEqual([
+				{ index: 0, kind: 'missing' },
+				{ index: 1, kind: 'string', value: 'Formulas' },
+				{ index: 2, kind: 'missing' },
+				{ index: 3, kind: 'missing' },
+				{ index: 4, kind: 'missing' },
+				{ index: 5, kind: 'sharedItem', sharedItemIndex: 0 },
+			])
+			expect(cache?.records?.valueKindCounts).toContainEqual({ kind: 'error', count: 413 })
+			expect(cache?.fields.find((field) => field.name === 'outcome')?.sharedItems?.[0]).toEqual({
+				index: 0,
+				kind: 'missing',
+			})
+			expect(
+				cache?.fields.find((field) => field.name === 'Parent Category')?.sharedItems?.[0],
+			).toEqual({
+				index: 0,
+				kind: 'error',
+				value: '#VALUE!',
+			})
+			expect(
+				cache2?.fields.find((field) => field.name === 'Sub-Category')?.sharedItems?.[0],
+			).toEqual({
+				index: 0,
+				kind: 'error',
+				value: '#VALUE!',
+			})
+		},
+	)
 })

@@ -96,8 +96,44 @@ export interface PivotCacheInfo {
 	readonly sourceRef?: string
 	readonly sourceName?: string
 	readonly recordsPartPath?: string
+	readonly records?: PivotCacheRecordsInfo
 	readonly fields: readonly PivotCacheFieldInfo[]
 }
+
+export interface PivotCacheRecordsInfo {
+	readonly partPath: string
+	readonly declaredCount?: number
+	readonly parsedCount: number
+	readonly preview: readonly PivotCacheRecordInfo[]
+	readonly valueKindCounts: readonly PivotCacheRecordValueKindCount[]
+}
+
+export interface PivotCacheRecordInfo {
+	readonly index: number
+	readonly values: readonly PivotCacheRecordValueInfo[]
+}
+
+export interface PivotCacheRecordValueInfo {
+	readonly index: number
+	readonly kind: PivotCacheRecordValueKind
+	readonly value?: string
+	readonly sharedItemIndex?: number
+}
+
+export interface PivotCacheRecordValueKindCount {
+	readonly kind: PivotCacheRecordValueKind
+	readonly count: number
+}
+
+export type PivotCacheRecordValueKind =
+	| 'string'
+	| 'number'
+	| 'date'
+	| 'boolean'
+	| 'error'
+	| 'missing'
+	| 'sharedItem'
+	| 'unknown'
 
 export interface PivotCacheFieldInfo {
 	readonly index: number
@@ -266,6 +302,18 @@ export interface PivotAreaReferenceInfo {
 export function clonePivotCacheInfo(entry: PivotCacheInfo): PivotCacheInfo {
 	return {
 		...entry,
+		...(entry.records
+			? {
+					records: {
+						...entry.records,
+						preview: entry.records.preview.map((record) => ({
+							...record,
+							values: record.values.map((value) => ({ ...value })),
+						})),
+						valueKindCounts: entry.records.valueKindCounts.map((count) => ({ ...count })),
+					},
+				}
+			: {}),
 		fields: entry.fields.map((field) => ({
 			...field,
 			...(field.sharedItemsInfo ? { sharedItemsInfo: { ...field.sharedItemsInfo } } : {}),

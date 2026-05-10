@@ -6,6 +6,9 @@ import type {
 	PivotCacheFieldGroupRangeInfo,
 	PivotCacheFieldInfo,
 	PivotCacheInfo,
+	PivotCacheRecordsInfo,
+	PivotCacheRecordValueInfo,
+	PivotCacheRecordValueKind,
 	PivotCacheSharedItemInfo,
 	PivotCacheSharedItemsInfo,
 	PivotChartFormatInfo,
@@ -28,11 +31,124 @@ import type {
 import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
 import type { Relationship } from './relationships.ts'
 import { resolvePath } from './relationships.ts'
-import { normalizeMainSpreadsheetNamespacePrefix } from './xml-utils.ts'
+import { decodeXmlText, normalizeMainSpreadsheetNamespacePrefix } from './xml-utils.ts'
+
+const PIVOT_CACHE_RECORD_PREVIEW_LIMIT = 5
+const PIVOT_CACHE_RECORDS_ROOT_RE = /<(?:[A-Za-z_][\w.-]*:)?pivotCacheRecords\b([^>]*)>/u
+const PIVOT_CACHE_RECORD_RE =
+	/<(?:[A-Za-z_][\w.-]*:)?r\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?r>/gu
+const PIVOT_CACHE_RECORD_VALUE_RE = /<((?:[A-Za-z_][\w.-]*:)?[A-Za-z_][\w.-]*)\b([^>]*)\/>/gu
+const XML_ATTR_RE = /([A-Za-z_][\w:.-]*)=(?:"([^"]*)"|'([^']*)')/gu
 
 export interface PivotCacheEntry {
 	readonly cacheId: number
 	readonly relId: string
+}
+
+export function parsePivotCacheRecordsXml(
+	xml: string,
+	partPath: string,
+	previewLimit = PIVOT_CACHE_RECORD_PREVIEW_LIMIT,
+): PivotCacheRecordsInfo | null {
+	const normalizedXml = normalizeMainSpreadsheetNamespacePrefix(xml)
+	const root = PIVOT_CACHE_RECORDS_ROOT_RE.exec(normalizedXml)
+	if (!root) return null
+	const kindCounts = new Map<PivotCacheRecordValueKind, number>()
+	const preview: { index: number; values: PivotCacheRecordValueInfo[] }[] = []
+	let parsedCount = 0
+	PIVOT_CACHE_RECORD_RE.lastIndex = 0
+	for (const match of normalizedXml.matchAll(PIVOT_CACHE_RECORD_RE)) {
+		const values = parsePivotCacheRecordValues(match[1] ?? '', kindCounts)
+		if (parsedCount < previewLimit) preview.push({ index: parsedCount, values })
+		parsedCount++
+	}
+	const rootAttrs = parseXmlAttributes(root[1] ?? '')
+	const declaredCount = xmlNumberAttr(rootAttrs, 'count')
+	return {
+		partPath,
+		...(declaredCount !== undefined ? { declaredCount } : {}),
+		parsedCount,
+		preview,
+		valueKindCounts: Array.from(kindCounts, ([kind, count]) => ({ kind, count })),
+	}
+}
+
+function parsePivotCacheRecordValues(
+	recordXml: string,
+	kindCounts: Map<PivotCacheRecordValueKind, number>,
+): PivotCacheRecordValueInfo[] {
+	const values: PivotCacheRecordValueInfo[] = []
+	PIVOT_CACHE_RECORD_VALUE_RE.lastIndex = 0
+	for (const match of recordXml.matchAll(PIVOT_CACHE_RECORD_VALUE_RE)) {
+		const key = match[1]
+		if (!key) continue
+		const kind = pivotCacheRecordValueKind(localPart(key))
+		incrementKindCount(kindCounts, kind)
+		const parsed: {
+			index: number
+			kind: PivotCacheRecordValueKind
+			value?: string
+			sharedItemIndex?: number
+		} = { index: values.length, kind }
+		const attrs = parseXmlAttributes(match[2] ?? '')
+		const rawValue = xmlStringAttr(attrs, 'v')
+		if (kind === 'sharedItem') {
+			setNumberIfDefined(parsed, 'sharedItemIndex', xmlNumberAttr(attrs, 'v'))
+		} else {
+			setStringIfDefined(parsed, 'value', rawValue)
+		}
+		values.push(parsed)
+	}
+	return values
+}
+
+function parseXmlAttributes(rawAttrs: string): Map<string, string> {
+	const attrs = new Map<string, string>()
+	for (const match of rawAttrs.matchAll(XML_ATTR_RE)) {
+		const name = localPart(match[1] ?? '')
+		if (!name) continue
+		attrs.set(name, decodeXmlText(match[2] ?? match[3] ?? ''))
+	}
+	return attrs
+}
+
+function xmlStringAttr(attrs: ReadonlyMap<string, string>, name: string): string | undefined {
+	return attrs.get(name)
+}
+
+function xmlNumberAttr(attrs: ReadonlyMap<string, string>, name: string): number | undefined {
+	const val = attrs.get(name)
+	if (val === undefined) return undefined
+	const n = Number(val)
+	return Number.isNaN(n) ? undefined : n
+}
+
+function pivotCacheRecordValueKind(localName: string): PivotCacheRecordValueKind {
+	switch (localName) {
+		case 's':
+			return 'string'
+		case 'n':
+			return 'number'
+		case 'd':
+			return 'date'
+		case 'b':
+			return 'boolean'
+		case 'e':
+			return 'error'
+		case 'm':
+			return 'missing'
+		case 'x':
+			return 'sharedItem'
+		default:
+			return 'unknown'
+	}
+}
+
+function incrementKindCount(
+	kindCounts: Map<PivotCacheRecordValueKind, number>,
+	kind: PivotCacheRecordValueKind,
+): void {
+	kindCounts.set(kind, (kindCounts.get(kind) ?? 0) + 1)
 }
 
 export function parsePivotCacheDefinitionXml(

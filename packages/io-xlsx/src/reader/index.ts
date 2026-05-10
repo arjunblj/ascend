@@ -33,6 +33,7 @@ import { parseMacroSheetInfo } from './macro-sheet.ts'
 import { parseMetadataXml } from './metadata.ts'
 import {
 	parsePivotCacheDefinitionXml,
+	parsePivotCacheRecordsXml,
 	parsePivotTableXml,
 	parseSlicerCacheXml,
 	parseSlicerXml,
@@ -227,7 +228,16 @@ export function readXlsx(
 				const parsed = xml
 					? parsePivotCacheDefinitionXml(xml, partPath, entry.cacheId, entry.relId, relationships)
 					: null
-				if (parsed) workbook.pivotCaches.push(parsed)
+				if (parsed) {
+					const recordsXml = parsed.recordsPartPath
+						? readPart(archive, parsed.recordsPartPath)
+						: null
+					const records =
+						recordsXml && parsed.recordsPartPath
+							? parsePivotCacheRecordsXml(recordsXml, parsed.recordsPartPath)
+							: null
+					workbook.pivotCaches.push(records ? { ...parsed, records } : parsed)
+				}
 				if (relsXml) consumed.add(getRelsPath(partPath))
 			}
 			for (const rel of wbRels.filter((relationship) => relationship.type === REL_SLICER_CACHE)) {

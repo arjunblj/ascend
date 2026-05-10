@@ -262,8 +262,44 @@ export interface PivotCacheInfo {
 	readonly sourceRef?: string
 	readonly sourceName?: string
 	readonly recordsPartPath?: string
+	readonly records?: PivotCacheRecordsInfo
 	readonly fields: readonly PivotCacheFieldInfo[]
 }
+
+export interface PivotCacheRecordsInfo {
+	readonly partPath: string
+	readonly declaredCount?: number
+	readonly parsedCount: number
+	readonly preview: readonly PivotCacheRecordInfo[]
+	readonly valueKindCounts: readonly PivotCacheRecordValueKindCount[]
+}
+
+export interface PivotCacheRecordInfo {
+	readonly index: number
+	readonly values: readonly PivotCacheRecordValueInfo[]
+}
+
+export interface PivotCacheRecordValueInfo {
+	readonly index: number
+	readonly kind: PivotCacheRecordValueKind
+	readonly value?: string
+	readonly sharedItemIndex?: number
+}
+
+export interface PivotCacheRecordValueKindCount {
+	readonly kind: PivotCacheRecordValueKind
+	readonly count: number
+}
+
+export type PivotCacheRecordValueKind =
+	| 'string'
+	| 'number'
+	| 'date'
+	| 'boolean'
+	| 'error'
+	| 'missing'
+	| 'sharedItem'
+	| 'unknown'
 
 export type PivotRefreshOutputState =
 	| 'cached'
@@ -277,12 +313,20 @@ export interface PivotRefreshPlanInfo {
 	readonly cacheId?: number
 	readonly sourceSheet?: string
 	readonly sourceRef?: string
+	readonly cacheRecords?: PivotRefreshCacheRecordsInfo
 	readonly pivotTables: readonly PivotRefreshTableInfo[]
 	readonly outputState: PivotRefreshOutputState
 	readonly canRefreshHeadlessly: false
 	readonly requiresExternalRefresh: boolean
 	readonly warnings: readonly string[]
 	readonly recommendedOps: readonly PivotRefreshRecommendedOp[]
+}
+
+export interface PivotRefreshCacheRecordsInfo {
+	readonly partPath: string
+	readonly declaredCount?: number
+	readonly parsedCount: number
+	readonly valueKindCounts: readonly PivotCacheRecordValueKindCount[]
 }
 
 export interface PivotRefreshTableInfo {

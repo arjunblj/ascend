@@ -1374,6 +1374,12 @@ describe('readXlsx', () => {
 				sourceSheet: 'raw data',
 				sourceRef: 'A1:D100',
 				recordsPartPath: 'xl/pivotCache/pivotCacheRecords1.xml',
+				records: {
+					partPath: 'xl/pivotCache/pivotCacheRecords1.xml',
+					parsedCount: 0,
+					preview: [],
+					valueKindCounts: [],
+				},
 				fields: [
 					{
 						index: 0,

@@ -1287,6 +1287,18 @@ function buildPivotRefreshPlans(
 			...(cache.cacheId !== undefined ? { cacheId: cache.cacheId } : {}),
 			...(cache.sourceSheet !== undefined ? { sourceSheet: cache.sourceSheet } : {}),
 			...(cache.sourceRef !== undefined ? { sourceRef: cache.sourceRef } : {}),
+			...(cache.records
+				? {
+						cacheRecords: {
+							partPath: cache.records.partPath,
+							...(cache.records.declaredCount !== undefined
+								? { declaredCount: cache.records.declaredCount }
+								: {}),
+							parsedCount: cache.records.parsedCount,
+							valueKindCounts: cache.records.valueKindCounts.map((count) => ({ ...count })),
+						},
+					}
+				: {}),
 			pivotTables,
 			outputState,
 			canRefreshHeadlessly: false,

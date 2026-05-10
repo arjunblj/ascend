@@ -373,6 +373,11 @@ describe('ascend cli', () => {
 			expect(parsed.data.pivotCaches.length).toBeGreaterThan(0)
 			expect(parsed.data.pivotRefreshPlans.length).toBe(parsed.data.pivotCaches.length)
 			expect(parsed.data.pivotRefreshPlans[0].canRefreshHeadlessly).toBe(false)
+			expect(parsed.data.pivotRefreshPlans[0].cacheRecords).toMatchObject({
+				partPath: 'xl/pivotCache/pivotCacheRecords1.xml',
+				declaredCount: 4115,
+				parsedCount: 4115,
+			})
 		},
 	)
 

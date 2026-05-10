@@ -2,7 +2,11 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import type { Workbook } from '@ascend/core'
 import { readXlsx } from './index.ts'
-import { parsePivotCacheDefinitionXml, parsePivotTableXml } from './pivots.ts'
+import {
+	parsePivotCacheDefinitionXml,
+	parsePivotCacheRecordsXml,
+	parsePivotTableXml,
+} from './pivots.ts'
 
 function expectWorkbook(bytes: Uint8Array): Workbook {
 	const result = readXlsx(bytes)
@@ -12,6 +16,52 @@ function expectWorkbook(bytes: Uint8Array): Workbook {
 }
 
 describe('pivot inventory', () => {
+	test('parses bounded pivot cache record previews and kind counts', () => {
+		const parsed = parsePivotCacheRecordsXml(
+			`<?xml version="1.0"?>
+<pivotCacheRecords xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="3">
+  <r><n v="1"/><x v="0"/><m/></r>
+  <r><s v="West"/><b v="1"/><e v="#DIV/0!"/></r>
+  <r><d v="2024-01-01T00:00:00"/><future v="raw"/></r>
+</pivotCacheRecords>`,
+			'xl/pivotCache/pivotCacheRecords1.xml',
+			2,
+		)
+		expect(parsed).toEqual({
+			partPath: 'xl/pivotCache/pivotCacheRecords1.xml',
+			declaredCount: 3,
+			parsedCount: 3,
+			preview: [
+				{
+					index: 0,
+					values: [
+						{ index: 0, kind: 'number', value: '1' },
+						{ index: 1, kind: 'sharedItem', sharedItemIndex: 0 },
+						{ index: 2, kind: 'missing' },
+					],
+				},
+				{
+					index: 1,
+					values: [
+						{ index: 0, kind: 'string', value: 'West' },
+						{ index: 1, kind: 'boolean', value: '1' },
+						{ index: 2, kind: 'error', value: '#DIV/0!' },
+					],
+				},
+			],
+			valueKindCounts: [
+				{ kind: 'number', count: 1 },
+				{ kind: 'sharedItem', count: 1 },
+				{ kind: 'missing', count: 1 },
+				{ kind: 'string', count: 1 },
+				{ kind: 'boolean', count: 1 },
+				{ kind: 'error', count: 1 },
+				{ kind: 'date', count: 1 },
+				{ kind: 'unknown', count: 1 },
+			],
+		})
+	})
+
 	test('parses pivot cache range grouping metadata', () => {
 		const parsed = parsePivotCacheDefinitionXml(
 			`<?xml version="1.0"?>

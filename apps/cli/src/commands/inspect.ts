@@ -579,6 +579,13 @@ function printPivotDetail(wb: WorkbookDocument, json: boolean): number {
 					[
 						plan.outputState,
 						plan.requiresExternalRefresh ? 'external refresh required' : undefined,
+						plan.cacheRecords
+							? `records=${plan.cacheRecords.parsedCount}${
+									plan.cacheRecords.declaredCount !== undefined
+										? `/${plan.cacheRecords.declaredCount}`
+										: ''
+								}`
+							: undefined,
 						plan.pivotTables.length > 0
 							? `pivots=${plan.pivotTables.map((pivot) => pivot.name ?? pivot.partPath).join(', ')}`
 							: undefined,

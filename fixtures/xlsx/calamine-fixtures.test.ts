@@ -90,7 +90,25 @@ describe('Calamine XLSX/XLSM fixture corpus', () => {
 			sourceType: 'worksheet',
 			sourceSheet: 'DataSheet',
 			sourceRef: 'A1:J11',
+			records: {
+				partPath: 'xl/pivotCache/pivotCacheRecords1.xml',
+				declaredCount: 10,
+				parsedCount: 10,
+			},
 		})
+		expect(cache?.records?.preview[0]?.values).toEqual([
+			{ index: 0, kind: 'number', value: '1' },
+			{ index: 1, kind: 'sharedItem', sharedItemIndex: 0 },
+			{ index: 2, kind: 'sharedItem', sharedItemIndex: 0 },
+			{ index: 3, kind: 'sharedItem', sharedItemIndex: 0 },
+			{ index: 4, kind: 'sharedItem', sharedItemIndex: 0 },
+			{ index: 5, kind: 'sharedItem', sharedItemIndex: 0 },
+			{ index: 6, kind: 'number', value: '5.6179775280898872' },
+			{ index: 7, kind: 'boolean', value: '1' },
+			{ index: 8, kind: 'missing' },
+			{ index: 9, kind: 'missing' },
+		])
+		expect(cache?.records?.valueKindCounts).toContainEqual({ kind: 'error', count: 2 })
 		const fields = cache?.fields ?? []
 
 		expect(fields.find((field) => field.name === 'Id')?.sharedItemsInfo).toMatchObject({

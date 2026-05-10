@@ -76,11 +76,30 @@ describe('pivot refresh plans', () => {
 			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
 			cacheId: 7,
 			recordCount: 10,
+			records: {
+				partPath: 'xl/pivotCache/pivotCacheRecords1.xml',
+				declaredCount: 10,
+				parsedCount: 10,
+				preview: [],
+				valueKindCounts: [
+					{ kind: 'sharedItem', count: 12 },
+					{ kind: 'number', count: 8 },
+				],
+			},
 			fields: [],
 		})
 
 		expect(wb.pivotRefreshPlans()[0]).toMatchObject({
 			outputState: 'cached',
+			cacheRecords: {
+				partPath: 'xl/pivotCache/pivotCacheRecords1.xml',
+				declaredCount: 10,
+				parsedCount: 10,
+				valueKindCounts: [
+					{ kind: 'sharedItem', count: 12 },
+					{ kind: 'number', count: 8 },
+				],
+			},
 			requiresExternalRefresh: false,
 			warnings: [],
 			recommendedOps: [],

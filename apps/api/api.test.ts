@@ -85,6 +85,26 @@ describe('API', () => {
 		expect(commitBody.data.outputSha256).toMatch(/^[a-f0-9]{64}$/)
 	})
 
+	test('plan endpoint rejects malformed operation field types', async () => {
+		const tempFile = join(tempDir, 'agent-validation.xlsx')
+		const wb = AscendWorkbook.create()
+		await wb.save(tempFile)
+
+		const plan = await api(`/plan`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				file: tempFile,
+				ops: [{ op: 'insertRows', sheet: 'Sheet1', at: 0, count: '2' }],
+			}),
+		})
+		expect(plan.status).toBe(400)
+		const body = await plan.json()
+		expect(body.ok).toBe(false)
+		expect(body.error.code).toBe('VALIDATION_ERROR')
+		expect(body.error.details.issues[0]).toContain('count must be a positive integer')
+	})
+
 	test('commit endpoint requires approval for destructive operations', async () => {
 		const tempFile = join(tempDir, 'agent-approval.xlsx')
 		const outputFile = join(tempDir, 'agent-approval-output.xlsx')

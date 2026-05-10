@@ -89,6 +89,7 @@ const FIELD_SCHEMAS: Record<
 		type: 'boolean',
 		description: 'Whether to rewrite conditional-format priorities to match stored rule order',
 	},
+	index: { type: 'integer', description: 'Workbook view index' },
 	at: { type: 'integer', description: 'Row or column index (0-based)' },
 	count: { type: 'integer', description: 'Number of rows/columns' },
 	name: { type: 'string', description: 'Sheet or table name' },
@@ -467,8 +468,7 @@ export function listOperations(): readonly OperationSchema[] {
 		},
 		{
 			op: 'setChartSeriesSource',
-			description:
-				'Edit a chart series source references while preserving unsupported chart styling',
+			description: 'Edit chart series source references while preserving opaque chart styling',
 			requiredFields: ['seriesIndex'],
 			optionalFields: ['partPath', 'sheet', 'chartIndex', 'nameRef', 'categoryRef', 'valueRef'],
 		},
@@ -560,13 +560,249 @@ export function parseOperations(input: unknown): ParseOperationsResult {
 			issues.push(`ops[${index}].op "${op}" is not supported`)
 			return
 		}
+		const allowedFields = new Set([
+			'op',
+			...schema.requiredFields,
+			...(schema.optionalFields ?? []),
+		])
+		for (const field of Object.keys(record)) {
+			if (!allowedFields.has(field)) issues.push(`ops[${index}].${field} is not valid for ${op}`)
+		}
 		for (const field of schema.requiredFields) {
 			if (!(field in record)) issues.push(`ops[${index}].${field} is required for ${op}`)
+		}
+		for (const field of allowedFields) {
+			if (field === 'op' || !(field in record)) continue
+			const issue = validateOperationField(record, field, `ops[${index}].${field}`)
+			if (issue) issues.push(issue)
 		}
 		ops.push(record as Operation)
 	})
 	if (issues.length > 0) return { ok: false, error: issues[0] ?? 'Invalid operations', issues }
 	return { ok: true, value: ops }
+}
+
+const PASTE_MODES = new Set([
+	'all',
+	'values',
+	'formulas',
+	'formats',
+	'styles',
+	'validations',
+	'comments',
+	'hyperlinks',
+])
+
+function validateOperationField(
+	record: Record<string, unknown>,
+	field: string,
+	path: string,
+): string | null {
+	const value = record[field]
+	switch (field) {
+		case 'sheet':
+		case 'ref':
+		case 'formula':
+		case 'range':
+		case 'name':
+		case 'newName':
+		case 'table':
+		case 'text':
+		case 'author':
+		case 'url':
+		case 'display':
+		case 'format':
+		case 'scope':
+		case 'password':
+		case 'color':
+		case 'source':
+		case 'target':
+		case 'newTarget':
+		case 'targetPath':
+		case 'relId':
+		case 'linkRelId':
+		case 'targetMode':
+		case 'contentBase64':
+		case 'contentType':
+		case 'drawingPartPath':
+		case 'description':
+		case 'nameRef':
+		case 'categoryRef':
+		case 'valueRef':
+		case 'partPath':
+		case 'pivotTable':
+		case 'sourceSheet':
+		case 'sourceRef':
+			return typeof value === 'string' ? null : `${path} must be a string`
+		case 'what':
+			return value === 'values' || value === 'formulas' || value === 'styles' || value === 'all'
+				? null
+				: `${path} must be one of values, formulas, styles, all`
+		case 'mode':
+			return validateMode(record.op, value, path)
+		case 'totalsRowFunction':
+		case 'totalsRowFormula':
+		case 'totalsRowLabel':
+			return value === null || typeof value === 'string' ? null : `${path} must be a string or null`
+		case 'at':
+		case 'position':
+		case 'col':
+		case 'row':
+		case 'ruleIndex':
+		case 'imageIndex':
+		case 'chartIndex':
+		case 'seriesIndex':
+		case 'cacheId':
+		case 'from':
+		case 'to':
+		case 'index':
+			return isNonNegativeInteger(value) ? null : `${path} must be a non-negative integer`
+		case 'priority':
+		case 'count':
+			return isPositiveInteger(value) ? null : `${path} must be a positive integer`
+		case 'width':
+		case 'height':
+			return isFiniteNumber(value) ? null : `${path} must be a finite number`
+		case 'hasHeaders':
+		case 'descending':
+		case 'hidden':
+		case 'reassignPriorities':
+		case 'collapsed':
+		case 'summaryBelow':
+		case 'summaryRight':
+		case 'refreshOnLoad':
+		case 'enableRefresh':
+		case 'invalid':
+		case 'saveData':
+			return typeof value === 'boolean' ? null : `${path} must be a boolean`
+		case 'column':
+			return typeof value === 'string' || isNonNegativeInteger(value)
+				? null
+				: `${path} must be a string or non-negative integer`
+		case 'updates':
+			return validateUpdates(value, path)
+		case 'rows':
+			return validateRows(value, path)
+		case 'by':
+			return validateSortSpecs(value, path)
+		case 'runs':
+			return validateRichTextRuns(value, path)
+		case 'style':
+		case 'rule':
+		case 'setup':
+		case 'options':
+		case 'protection':
+		case 'properties':
+		case 'settings':
+		case 'anchor':
+			return isPlainObject(value) ? null : `${path} must be an object`
+		case 'view':
+			return value === null || isPlainObject(value) ? null : `${path} must be an object or null`
+		default:
+			return null
+	}
+}
+
+function validateMode(op: unknown, value: unknown, path: string): string | null {
+	if (op === 'setConditionalFormat') {
+		return value === 'replace' || value === 'append'
+			? null
+			: `${path} must be one of replace, append`
+	}
+	if (op === 'setWorkbookProperties' || op === 'setWorkbookView') {
+		return value === 'merge' || value === 'replace' ? null : `${path} must be one of merge, replace`
+	}
+	if (op === 'copyRange' || op === 'moveRange') {
+		return typeof value === 'string' && PASTE_MODES.has(value)
+			? null
+			: `${path} must be one of ${[...PASTE_MODES].join(', ')}`
+	}
+	return typeof value === 'string' ? null : `${path} must be a string`
+}
+
+function validateUpdates(value: unknown, path: string): string | null {
+	if (!Array.isArray(value)) return `${path} must be an array`
+	for (let i = 0; i < value.length; i++) {
+		const update = value[i]
+		if (!isPlainObject(update)) return `${path}[${i}] must be an object`
+		if (typeof update.ref !== 'string') return `${path}[${i}].ref must be a string`
+		if (!('value' in update)) return `${path}[${i}].value is required`
+		if (!isInputValue(update.value)) return `${path}[${i}].value must be a scalar value or null`
+	}
+	return null
+}
+
+function validateRows(value: unknown, path: string): string | null {
+	if (!Array.isArray(value)) return `${path} must be an array`
+	for (let rowIndex = 0; rowIndex < value.length; rowIndex++) {
+		const row = value[rowIndex]
+		if (!Array.isArray(row)) return `${path}[${rowIndex}] must be an array`
+		for (let colIndex = 0; colIndex < row.length; colIndex++) {
+			if (!isInputValue(row[colIndex])) {
+				return `${path}[${rowIndex}][${colIndex}] must be a scalar value or null`
+			}
+		}
+	}
+	return null
+}
+
+function validateSortSpecs(value: unknown, path: string): string | null {
+	if (!Array.isArray(value)) return `${path} must be an array`
+	for (let i = 0; i < value.length; i++) {
+		const spec = value[i]
+		if (!isPlainObject(spec)) return `${path}[${i}] must be an object`
+		if (typeof spec.column !== 'string' && typeof spec.column !== 'number') {
+			return `${path}[${i}].column must be a string or number`
+		}
+		if ('descending' in spec && typeof spec.descending !== 'boolean') {
+			return `${path}[${i}].descending must be a boolean`
+		}
+	}
+	return null
+}
+
+function validateRichTextRuns(value: unknown, path: string): string | null {
+	if (!Array.isArray(value)) return `${path} must be an array`
+	for (let i = 0; i < value.length; i++) {
+		const run = value[i]
+		if (!isPlainObject(run)) return `${path}[${i}] must be an object`
+		if (typeof run.text !== 'string') return `${path}[${i}].text must be a string`
+		for (const field of ['bold', 'italic', 'underline'] as const) {
+			if (field in run && typeof run[field] !== 'boolean') {
+				return `${path}[${i}].${field} must be a boolean`
+			}
+		}
+		if ('color' in run && typeof run.color !== 'string')
+			return `${path}[${i}].color must be a string`
+		if ('size' in run && !isFiniteNumber(run.size)) return `${path}[${i}].size must be a number`
+	}
+	return null
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isFiniteNumber(value: unknown): value is number {
+	return typeof value === 'number' && Number.isFinite(value)
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+	return Number.isInteger(value) && typeof value === 'number' && value >= 0
+}
+
+function isPositiveInteger(value: unknown): value is number {
+	return Number.isInteger(value) && typeof value === 'number' && value > 0
+}
+
+function isInputValue(value: unknown): value is InputValue {
+	return (
+		value === null ||
+		typeof value === 'string' ||
+		typeof value === 'boolean' ||
+		isFiniteNumber(value) ||
+		value instanceof Date
+	)
 }
 
 function enrichOperationSchemas(

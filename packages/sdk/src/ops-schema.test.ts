@@ -31,6 +31,30 @@ describe('operation schema agent DX', () => {
 		}
 	})
 
+	test('parse failures reject wrong field types before operation execution', () => {
+		const parsed = parseOperations([
+			{ op: 'insertRows', sheet: 'Sheet1', at: 0, count: '2' },
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: { nested: true } }] },
+			{ op: 'copyRange', sheet: 'Sheet1', source: 'A1', target: 'B1', mode: 'everything' },
+		])
+		expect(parsed.ok).toBe(false)
+		if (!parsed.ok) {
+			expect(parsed.issues).toContain('ops[0].count must be a positive integer')
+			expect(parsed.issues).toContain('ops[1].updates[0].value must be a scalar value or null')
+			expect(parsed.issues[2]).toContain('ops[2].mode must be one of')
+		}
+	})
+
+	test('parse failures reject operation-specific unknown fields', () => {
+		const parsed = parseOperations([
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=1', count: 1 },
+		])
+		expect(parsed.ok).toBe(false)
+		if (!parsed.ok) {
+			expect(parsed.issues[0]).toContain('ops[0].count is not valid for setFormula')
+		}
+	})
+
 	test('replaceImage is exposed with selector guidance for visual edits', () => {
 		const schema = getOperationsSchema().find((entry) => entry.op === 'replaceImage')
 		expect(schema?.schema.required).toEqual(['op', 'sheet', 'contentBase64', 'contentType'])

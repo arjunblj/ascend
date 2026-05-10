@@ -2,9 +2,8 @@ import { afterAll, describe, expect, test } from 'bun:test'
 import { unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AscendWorkbook } from '@ascend/sdk'
+import { AscendWorkbook, parseOperations } from '@ascend/sdk'
 import { createServer } from './index.ts'
-import { parseOperations } from './operation-schema.ts'
 
 const TEMP_FILE = join(
 	tmpdir(),
@@ -623,6 +622,7 @@ describe('MCP server', () => {
 		const badOps = [
 			{ op: 'setCells', sheet: 'Sheet1' },
 			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1' },
+			{ op: 'insertRows', sheet: 'Sheet1', at: 0, count: '2' },
 			{ op: 'unknownOp', sheet: 'Sheet1' },
 		]
 		for (const ops of badOps) {

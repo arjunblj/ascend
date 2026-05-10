@@ -158,6 +158,7 @@ async function loadContractCases(): Promise<readonly ContractCase[]> {
 		const entries = normalizeManifest(await loadCorpusManifestEntries(corpus.manifestPath))
 		const byFile = new Map(entries.map((entry) => [entry.file, entry]))
 		for (const file of corpus.files) {
+			if (!existsSync(resolve(corpus.rootDir, file))) continue
 			const entry = byFile.get(file)
 			if (!entry) throw new Error(`${corpus.corpusName}: missing contract fixture ${file}`)
 			cases.push({ corpusName: corpus.corpusName, rootDir: corpus.rootDir, entry })

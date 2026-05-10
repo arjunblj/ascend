@@ -69,16 +69,25 @@ export const smokeScenarioThroughputTargets: readonly ScenarioThroughputTarget[]
 export interface TargetCheckResult {
 	readonly target: ThroughputTarget | ScenarioThroughputTarget
 	readonly actualCellsPerSec: number | null
+	readonly requiredCellsPerSec: number
 	readonly scenarioName: string | null
 	readonly passed: boolean
 	readonly scope: 'category' | 'scenario'
 }
 
-export function checkThroughputTargets(suite: BenchmarkSuiteResult): readonly TargetCheckResult[] {
-	const results = throughputTargets.map((target) => checkCategoryTarget(suite, target))
+export interface ThroughputTargetOptions {
+	readonly minRatio?: number
+}
+
+export function checkThroughputTargets(
+	suite: BenchmarkSuiteResult,
+	options: ThroughputTargetOptions = {},
+): readonly TargetCheckResult[] {
+	const minRatio = options.minRatio ?? 1
+	const results = throughputTargets.map((target) => checkCategoryTarget(suite, target, minRatio))
 	if (suite.metadata?.set === 'smoke') {
 		for (const target of smokeScenarioThroughputTargets) {
-			results.push(checkScenarioTarget(suite, target))
+			results.push(checkScenarioTarget(suite, target, minRatio))
 		}
 	}
 	return results
@@ -89,7 +98,7 @@ export function formatTargetResults(results: readonly TargetCheckResult[]): stri
 	for (const r of results) {
 		const status = r.passed ? 'PASS' : 'FAIL'
 		const actual = r.actualCellsPerSec !== null ? formatThroughput(r.actualCellsPerSec) : 'no data'
-		const required = formatThroughput(r.target.minCellsPerSec)
+		const required = formatThroughput(r.requiredCellsPerSec)
 		lines.push(
 			`  [${status}] ${r.target.metric.padEnd(44)} ${actual.padStart(10)} (target: ${required})${r.scenarioName ? `  [${r.scenarioName}]` : ''}`,
 		)
@@ -103,12 +112,15 @@ export function formatTargetResults(results: readonly TargetCheckResult[]): stri
 function checkCategoryTarget(
 	suite: BenchmarkSuiteResult,
 	target: ThroughputTarget,
+	minRatio: number,
 ): TargetCheckResult {
+	const requiredCellsPerSec = target.minCellsPerSec * minRatio
 	const matching = suite.cases.filter((c) => c.category === target.category)
 	if (matching.length === 0) {
 		return {
 			target,
 			actualCellsPerSec: null,
+			requiredCellsPerSec,
 			scenarioName: null,
 			passed: false,
 			scope: 'category',
@@ -121,8 +133,9 @@ function checkCategoryTarget(
 	return {
 		target,
 		actualCellsPerSec: actual,
+		requiredCellsPerSec,
 		scenarioName: best.name,
-		passed: actual >= target.minCellsPerSec,
+		passed: actual >= requiredCellsPerSec,
 		scope: 'category',
 	}
 }
@@ -130,12 +143,15 @@ function checkCategoryTarget(
 function checkScenarioTarget(
 	suite: BenchmarkSuiteResult,
 	target: ScenarioThroughputTarget,
+	minRatio: number,
 ): TargetCheckResult {
+	const requiredCellsPerSec = target.minCellsPerSec * minRatio
 	const result = suite.cases.find((c) => c.name === target.name)
 	if (!result) {
 		return {
 			target,
 			actualCellsPerSec: null,
+			requiredCellsPerSec,
 			scenarioName: target.name,
 			passed: false,
 			scope: 'scenario',
@@ -145,8 +161,9 @@ function checkScenarioTarget(
 	return {
 		target,
 		actualCellsPerSec: actual,
+		requiredCellsPerSec,
 		scenarioName: result.name,
-		passed: actual >= target.minCellsPerSec,
+		passed: actual >= requiredCellsPerSec,
 		scope: 'scenario',
 	}
 }

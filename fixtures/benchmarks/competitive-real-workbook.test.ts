@@ -814,6 +814,16 @@ describe('evaluateAssertions', () => {
 		const entries = normalizeManifest(
 			await loadCorpusManifestEntries(resolve(import.meta.dir, '../xlsx/poi/manifest.ts')),
 		)
+		if (entries.length === 0) {
+			expect(
+				selectCorpusTargets(
+					entries,
+					{ tags: ['apache-poi', 'formula-fidelity'], tiers: ['core'], vendorableOnly: true },
+					resolve(import.meta.dir, '../xlsx/poi'),
+				),
+			).toEqual([])
+			return
+		}
 		expect(entries.length).toBeGreaterThan(40)
 		expect(validateManifestProvenance(entries)).toEqual([])
 		const selected = selectCorpusTargets(

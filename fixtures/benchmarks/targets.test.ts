@@ -83,4 +83,41 @@ describe('benchmark throughput targets', () => {
 		expect(missing?.passed).toBe(false)
 		expect(missing?.actualCellsPerSec).toBeNull()
 	})
+
+	test('target ratio can relax CI smoke floors without changing strict defaults', () => {
+		const strict = checkThroughputTargets(
+			suite(
+				[
+					benchmarkCase('read-values-dense', 'read', 2_900_000),
+					benchmarkCase('write-csv-large', 'write', 4_000_000),
+					benchmarkCase('recalc-incremental', 'calc', 2_000_000),
+					benchmarkCase('recalc-if-short-circuit', 'calc', 120_000),
+				],
+				'smoke',
+			),
+		)
+		const relaxed = checkThroughputTargets(
+			suite(
+				[
+					benchmarkCase('read-values-dense', 'read', 2_900_000),
+					benchmarkCase('write-csv-large', 'write', 4_000_000),
+					benchmarkCase('recalc-incremental', 'calc', 2_000_000),
+					benchmarkCase('recalc-if-short-circuit', 'calc', 120_000),
+				],
+				'smoke',
+			),
+			{ minRatio: 0.75 },
+		)
+
+		expect(strict.find((result) => result.target.metric === 'read throughput')?.passed).toBe(false)
+		expect(relaxed.find((result) => result.target.metric === 'read throughput')?.passed).toBe(true)
+		expect(
+			strict.find((result) => result.target.metric === 'recalc-if-short-circuit throughput')
+				?.passed,
+		).toBe(false)
+		expect(
+			relaxed.find((result) => result.target.metric === 'recalc-if-short-circuit throughput')
+				?.requiredCellsPerSec,
+		).toBe(112_500)
+	})
 })

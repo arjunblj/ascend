@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import type { StyleId } from '@ascend/core'
 import { createTableId, Workbook } from '@ascend/core'
 import { booleanValue, errorValue, numberValue, stringValue } from '@ascend/schema'
@@ -376,6 +377,104 @@ describe('writeXlsx', () => {
 			'<pivotField><items count="1"><item x="2" s="1"/></items></pivotField>',
 		)
 	})
+
+	it('writes real Calamine pivot page-filter edits and dirties the linked cache', () => {
+		const source = readXlsx(
+			readFileSync(new URL('../../../../fixtures/xlsx/calamine/pivots.xlsx', import.meta.url)),
+		)
+		expectOk(source)
+		const applied = applyOperations(source.value.workbook, [
+			{
+				op: 'setPivotFieldItem',
+				partPath: 'xl/pivotTables/pivotTable1.xml',
+				fieldIndex: 5,
+				itemIndex: 2,
+				hidden: null,
+				manualFilter: true,
+				selectedPageItem: 1,
+			},
+		])
+		expectOk(applied)
+
+		const written = writeXlsx(source.value.workbook, source.value.capsules)
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		const pivotXml = new TextDecoder().decode(
+			zip['xl/pivotTables/pivotTable1.xml'] ?? new Uint8Array(),
+		)
+		const cacheXml = new TextDecoder().decode(
+			zip['xl/pivotCache/pivotCacheDefinition1.xml'] ?? new Uint8Array(),
+		)
+
+		expect(pivotXml).toContain('<pageField fld="5" hier="-1" item="1"/>')
+		expect(pivotXml).toContain('<item x="1" s="1"/>')
+		expect(cacheXml).toContain('refreshOnLoad="1"')
+		expect(cacheXml).toContain('invalid="1"')
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		const pivot = reopened.value.workbook.pivotTables.find(
+			(entry) => entry.partPath === 'xl/pivotTables/pivotTable1.xml',
+		)
+		expect(pivot?.pageFields).toEqual([{ index: 5, item: 1, hierarchy: -1 }])
+		expect(pivot?.fields[5]?.items?.[2]).toEqual({ index: 2, cacheIndex: 1, manualFilter: true })
+		expect(reopened.value.workbook.pivotCaches.find((cache) => cache.cacheId === 65)).toMatchObject(
+			{
+				refreshOnLoad: true,
+				invalid: true,
+			},
+		)
+	})
+
+	it('writes real dashboard slicer edits and refresh flags into linked pivot cache XML', () => {
+		const source = readXlsx(
+			readFileSync(
+				new URL('../../../../research/excel-corpus/excel-dashboard-v2.xlsx', import.meta.url),
+			),
+		)
+		expectOk(source)
+		const applied = applyOperations(source.value.workbook, [
+			{
+				op: 'setSlicerCacheItem',
+				slicerCache: 'Slicer_Product_Category',
+				item: 2,
+				selected: false,
+				noData: true,
+			},
+		])
+		expectOk(applied)
+		expect(applied.value.warnings?.[0]?.details).toMatchObject({
+			slicerCache: 'Slicer_Product_Category',
+			cacheIds: [34],
+			cachePartPaths: ['xl/pivotCache/pivotCacheDefinition1.xml'],
+		})
+
+		const written = writeXlsx(source.value.workbook, source.value.capsules)
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		const slicerXml = new TextDecoder().decode(
+			zip['xl/slicerCaches/slicerCache1.xml'] ?? new Uint8Array(),
+		)
+		const cacheXml = new TextDecoder().decode(
+			zip['xl/pivotCache/pivotCacheDefinition1.xml'] ?? new Uint8Array(),
+		)
+
+		expect(slicerXml).toContain('<i x="2" s="0" nd="1"/>')
+		expect(cacheXml).toContain('refreshOnLoad="1"')
+		expect(cacheXml).toContain('invalid="1"')
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(
+			reopened.value.workbook.slicerCaches
+				.find((cache) => cache.name === 'Slicer_Product_Category')
+				?.items?.find((item) => item.index === 2),
+		).toEqual({ index: 2, selected: false, noData: true })
+		expect(reopened.value.workbook.pivotCaches.find((cache) => cache.cacheId === 34)).toMatchObject(
+			{
+				refreshOnLoad: true,
+				invalid: true,
+			},
+		)
+	}, 20_000)
 
 	it('preserves unchanged pivot and slicer capsules byte-for-byte', () => {
 		const pivotTableXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

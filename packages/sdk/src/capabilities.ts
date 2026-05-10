@@ -599,8 +599,8 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'Slicers',
 		'editable',
 		'P0',
-		'Broaden slicer filter editing beyond tabular item flags and add pivot output refresh workflows.',
-		'Tabular slicer selected/no-data item states are editable with package-preserving slicer cache XML updates and pivot refresh impact warnings; richer slicer workflows still depend on external pivot refresh.',
+		'Broaden slicer filter editing beyond tabular item flags and add external pivot output refresh execution.',
+		'Tabular slicer selected/no-data item states are editable with package-preserving slicer cache XML updates; linked pivot caches are marked invalid/refreshOnLoad so Excel can refresh stale outputs.',
 		[
 			'packages/engine/src/operations.test.ts',
 			'packages/io-xlsx/src/writer/writer.test.ts',
@@ -613,8 +613,8 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'Timelines',
 		'editable',
 		'P1',
-		'Broaden timeline fixture coverage with real Excel workbooks and add external pivot output refresh workflows.',
-		'Timeline cache state, selection, and bounds are inspectable; selected date ranges are editable through preserved timeline cache XML with explicit stale pivot-output warnings.',
+		'Broaden timeline fixture coverage with real Excel workbooks and add external pivot output refresh execution.',
+		'Timeline cache state, selection, and bounds are inspectable; selected date ranges are editable through preserved timeline cache XML while linked pivot caches are marked invalid/refreshOnLoad.',
 		[
 			'packages/engine/src/operations.test.ts',
 			'packages/io-xlsx/src/reader/timeline.test.ts',

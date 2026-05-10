@@ -2,6 +2,7 @@ import type { TimelineCacheInfo, Workbook } from '@ascend/core'
 import type { Operation, Result } from '@ascend/schema'
 import { ascendError, err, ok } from '@ascend/schema'
 import { type PatchResult, patch } from './helpers.ts'
+import { markLinkedPivotCachesStale } from './linked-pivot-refresh.ts'
 
 type SetTimelineRangeOp = Extract<Operation, { op: 'setTimelineRange' }>
 
@@ -61,9 +62,7 @@ export function handleSetTimelineRange(
 		},
 	})
 
-	const sheetsModified = workbook.pivotTables
-		.filter((pivot) => pivot.name !== undefined && cache.pivotTableNames.includes(pivot.name))
-		.map((pivot) => pivot.sheetName)
+	const impact = markLinkedPivotCachesStale(workbook, cache.pivotTableNames, cache.pivotCacheId)
 	const warnings = [
 		ascendError(
 			'VALIDATION_ERROR',
@@ -74,15 +73,17 @@ export function handleSetTimelineRange(
 					partPath: cache.partPath,
 					startDate: op.startDate,
 					endDate: op.endDate,
-					pivotTables: [...cache.pivotTableNames],
-					pivotSheets: sheetsModified,
+					pivotTables: impact.pivotTables,
+					pivotSheets: impact.pivotSheets,
+					cacheIds: impact.cacheIds,
+					cachePartPaths: impact.cachePartPaths,
 				},
 				suggestedFix:
 					'Open the workbook in Excel or another pivot-aware engine to refresh timeline-linked pivot output cells.',
 			},
 		),
 	]
-	return ok(patch([], sheetsModified, false, warnings))
+	return ok(patch([], [...impact.pivotSheets], false, warnings))
 }
 
 function resolveTimelineCacheMatches(

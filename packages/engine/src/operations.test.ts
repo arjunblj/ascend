@@ -2100,6 +2100,11 @@ describe('applyOperation', () => {
 			pivotTableNames: ['PivotTable1'],
 			items: [{ index: 0, selected: true }, { index: 1 }],
 		})
+		wb.pivotCaches.push({
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			cacheId: 34,
+			fields: [],
+		})
 
 		const result = applyOperation(wb, {
 			op: 'setSlicerCacheItem',
@@ -2117,8 +2122,11 @@ describe('applyOperation', () => {
 			slicerCache: 'Slicer_State',
 			item: 0,
 			pivotTables: ['PivotTable1'],
+			cacheIds: [34],
+			cachePartPaths: ['xl/pivotCache/pivotCacheDefinition1.xml'],
 		})
 		expect(wb.slicerCaches[0]?.items).toEqual([{ index: 0, noData: true }, { index: 1 }])
+		expect(wb.pivotCaches[0]).toMatchObject({ refreshOnLoad: true, invalid: true })
 	})
 
 	test('setSlicerCacheItem validates selectors and editable flags', () => {
@@ -2173,6 +2181,11 @@ describe('applyOperation', () => {
 				},
 			},
 		})
+		wb.pivotCaches.push({
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			cacheId: 34,
+			fields: [],
+		})
 
 		const result = applyOperation(wb, {
 			op: 'setTimelineRange',
@@ -2188,11 +2201,14 @@ describe('applyOperation', () => {
 		expect(result.value.warnings?.[0]?.details).toMatchObject({
 			timelineCache: 'Timeline_Order_Date',
 			pivotTables: ['PivotTable1'],
+			cacheIds: [34],
+			cachePartPaths: ['xl/pivotCache/pivotCacheDefinition1.xml'],
 		})
 		expect(wb.timelineCaches[0]?.state?.selection).toEqual({
 			startDate: '2024-04-01T00:00:00',
 			endDate: '2024-06-30T00:00:00',
 		})
+		expect(wb.pivotCaches[0]).toMatchObject({ refreshOnLoad: true, invalid: true })
 	})
 
 	test('setTimelineRange validates selectors and date range order', () => {

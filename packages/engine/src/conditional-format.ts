@@ -165,6 +165,34 @@ function evaluateFormulaNumber(
 	return scalarToNumber(value)
 }
 
+function evaluateFormulaBoolean(
+	workbook: Workbook,
+	sheetIndex: number,
+	anchorRow: number,
+	anchorCol: number,
+	row: number,
+	col: number,
+	formula: string | undefined,
+): boolean | null {
+	if (!formula) return null
+	const value = evaluateRelativeFormulaText(
+		formula,
+		workbook,
+		sheetIndex,
+		anchorRow,
+		anchorCol,
+		row,
+		col,
+	)
+	const scalar = topLeftScalar(value)
+	switch (scalar.kind) {
+		case 'boolean':
+			return scalar.value
+		default:
+			return null
+	}
+}
+
 interface RangeContext {
 	readonly allValues: CellValue[]
 	readonly allNumerics: number[]
@@ -312,30 +340,70 @@ function ruleMatches(
 	}
 
 	if (type === 'containsText') {
-		const text = scalarToString(cellValue)
 		if (!formula1) return false
+		const formulaMatch = evaluateFormulaBoolean(
+			workbook,
+			sheetIndex,
+			anchorRow,
+			anchorCol,
+			row,
+			col,
+			formula1,
+		)
+		if (formulaMatch !== null) return formulaMatch
+		const text = scalarToString(cellValue)
 		const pattern = unquoteFormula(formula1)
 		const idx = text.indexOf(pattern)
 		return idx >= 0
 	}
 
 	if (type === 'notContainsText') {
-		const text = scalarToString(cellValue)
 		if (!formula1) return true
+		const formulaMatch = evaluateFormulaBoolean(
+			workbook,
+			sheetIndex,
+			anchorRow,
+			anchorCol,
+			row,
+			col,
+			formula1,
+		)
+		if (formulaMatch !== null) return formulaMatch
+		const text = scalarToString(cellValue)
 		const pattern = unquoteFormula(formula1)
 		return text.indexOf(pattern) < 0
 	}
 
 	if (type === 'beginsWith') {
-		const text = scalarToString(cellValue)
 		if (!formula1) return false
+		const formulaMatch = evaluateFormulaBoolean(
+			workbook,
+			sheetIndex,
+			anchorRow,
+			anchorCol,
+			row,
+			col,
+			formula1,
+		)
+		if (formulaMatch !== null) return formulaMatch
+		const text = scalarToString(cellValue)
 		const prefix = unquoteFormula(formula1)
 		return text.startsWith(prefix)
 	}
 
 	if (type === 'endsWith') {
-		const text = scalarToString(cellValue)
 		if (!formula1) return false
+		const formulaMatch = evaluateFormulaBoolean(
+			workbook,
+			sheetIndex,
+			anchorRow,
+			anchorCol,
+			row,
+			col,
+			formula1,
+		)
+		if (formulaMatch !== null) return formulaMatch
+		const text = scalarToString(cellValue)
 		const suffix = unquoteFormula(formula1)
 		return text.endsWith(suffix)
 	}

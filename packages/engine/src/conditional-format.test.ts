@@ -684,6 +684,41 @@ describe('evaluateConditionalFormats', () => {
 			const result = evaluateConditionalFormats(sheet, wb)
 			expect(result.get('A1')).toBeDefined()
 		})
+
+		test('keeps numeric-looking formulas as literal text patterns', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(10))
+			setCell(sheet, 1, 0, numberValue(23))
+
+			sheet.conditionalFormats.push(makeCf('A1:A2', makeRule('containsText', { formulas: ['0'] })))
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeDefined()
+			expect(result.get('A2')).toBeUndefined()
+		})
+
+		test('matches OOXML boolean search formula relative to each cell', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, stringValue('Dairy'))
+			setCell(sheet, 1, 0, stringValue('Grain'))
+			setCell(sheet, 2, 0, stringValue('Produce'))
+
+			sheet.conditionalFormats.push(
+				makeCf(
+					'A1:A3',
+					makeRule('containsText', {
+						formulas: ['NOT(ISERROR(SEARCH("Grain",A1)))'],
+					}),
+				),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeUndefined()
+			expect(result.get('A2')).toBeDefined()
+			expect(result.get('A3')).toBeUndefined()
+		})
 	})
 
 	// ── notContainsText ──────────────────────────────────────────────

@@ -2,8 +2,10 @@ import { describe, expect, it } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type { Sheet, Workbook } from '../../packages/core/src/index.ts'
 import {
 	defaultCalcContext,
+	evaluateConditionalFormats,
 	recalculate,
 	validateCellValue,
 } from '../../packages/engine/src/index.ts'
@@ -123,6 +125,19 @@ function countWorksheetTag(fingerprint: ReturnType<typeof fingerprintXlsx>, tag:
 	return fingerprint.sheets.reduce((sum, sheet) => sum + (sheet.xml.tagCounts[tag] ?? 0), 0)
 }
 
+function matchingConditionalFormatRefs(
+	workbook: Workbook,
+	sheet: Sheet,
+	type: string,
+	priority: number,
+): string[] {
+	const matches = evaluateConditionalFormats(sheet, workbook)
+	return [...matches.entries()]
+		.filter(([, rules]) => rules.some((rule) => rule.type === type && rule.priority === priority))
+		.map(([ref]) => ref)
+		.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+}
+
 if (poiFixtures.length > 0) {
 	describe('POI XLSX fixtures', () => {
 		it('opens all POI .xlsx files without crashing', () => {
@@ -168,14 +183,60 @@ if (poiFixtures.length > 0) {
 			})
 		}
 
-		it('captures conditional formatting from ConditionalFormattingSamples.xlsx', () => {
+		it('evaluates conditional formatting rules from ConditionalFormattingSamples.xlsx', () => {
 			const result = readXlsx(loadFixture('ConditionalFormattingSamples.xlsx'))
 			expectOk(result)
-			const count = result.value.workbook.sheets.reduce(
-				(sum, sheet) => sum + (sheet?.conditionalFormats.length ?? 0),
-				0,
-			)
-			expect(count).toBeGreaterThan(0)
+			const workbook = result.value.workbook
+
+			const products = workbook.sheets.find((sheet) => sheet.name === 'Products1')
+			expect(products).toBeDefined()
+			if (!products) return
+			expect(matchingConditionalFormatRefs(workbook, products, 'containsText', 4)).toEqual([
+				'B9',
+				'B13',
+				'B14',
+				'B15',
+				'B16',
+			])
+			expect(matchingConditionalFormatRefs(workbook, products, 'cellIs', 7)).toEqual([
+				'D7',
+				'D8',
+				'D11',
+				'D12',
+				'D14',
+				'D15',
+				'D17',
+				'D21',
+				'D23',
+			])
+
+			const grades = workbook.sheets.find((sheet) => sheet.name === 'Grades')
+			expect(grades).toBeDefined()
+			if (!grades) return
+			expect(matchingConditionalFormatRefs(workbook, grades, 'top10', 1)).toEqual(['F3', 'F10'])
+
+			const customers = workbook.sheets.find((sheet) => sheet.name === 'Customers1')
+			expect(customers).toBeDefined()
+			if (!customers) return
+			expect(matchingConditionalFormatRefs(workbook, customers, 'duplicateValues', 5)).toEqual([
+				'A7',
+				'A10',
+				'A11',
+				'A12',
+				'A15',
+				'A17',
+				'A19',
+				'A20',
+				'A21',
+			])
+
+			const bandedRows = workbook.sheets.find((sheet) => sheet.name === 'Banded rows')
+			expect(bandedRows).toBeDefined()
+			if (!bandedRows) return
+			expect(matchingConditionalFormatRefs(workbook, bandedRows, 'expression', 1)).toHaveLength(110)
+			expect(
+				matchingConditionalFormatRefs(workbook, bandedRows, 'expression', 1).slice(0, 10),
+			).toEqual(['A5', 'A7', 'A9', 'A11', 'A13', 'A15', 'A17', 'A19', 'A21', 'A23'])
 		})
 
 		it('preserves x14/extLst conditional formatting payloads on round-trip', () => {

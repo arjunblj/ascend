@@ -1,7 +1,7 @@
 import { describe, expect, it, setDefaultTimeout } from 'bun:test'
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import type { ChartPartInfo } from '@ascend/core'
+import type { ChartPartInfo, ChartSheetInfo } from '@ascend/core'
 import { readXlsx } from '@ascend/io-xlsx'
 import type { CompatibilityTier, FeatureReport } from '@ascend/schema'
 import {
@@ -75,9 +75,11 @@ interface SemanticSummary {
 	externalReferenceCount: number
 	connectionPartCount: number
 	activeContentCount: number
+	chartSheetCount: number
 	hasDrawingRefs: boolean
 	activeContent: readonly ActiveContentInfo[]
 	charts: readonly ChartPartInfo[]
+	chartSheets: readonly ChartSheetInfo[]
 	pivotTables: readonly PivotTableInfo[]
 	pivotCaches: readonly PivotCacheInfo[]
 	slicerCaches: readonly OoxmlLinkedCacheProbe[]
@@ -116,7 +118,15 @@ const VENDORED_CONTRACT_FIXTURES: readonly {
 		corpusName: 'calamine',
 		rootDir: resolve(import.meta.dir, '../xlsx/calamine'),
 		manifestPath: resolve(import.meta.dir, '../xlsx/calamine/manifest.ts'),
-		files: ['pivots.xlsx', 'picture.xlsx', 'vba.xlsm', 'table-multiple.xlsx'],
+		files: [
+			'any_sheets.xlsx',
+			'issue252.xlsx',
+			'issue438.xlsx',
+			'pivots.xlsx',
+			'picture.xlsx',
+			'vba.xlsm',
+			'table-multiple.xlsx',
+		],
 	},
 	{
 		corpusName: 'closedxml',
@@ -127,6 +137,7 @@ const VENDORED_CONTRACT_FIXTURES: readonly {
 			'ConditionalFormatting_CFDataBars.xlsx',
 			'ImageHandling_ImageAnchors.xlsx',
 			'Other_ExternalLinks_WorkbookWithExternalLink.xlsx',
+			'Other_Charts_PreserveCharts_inputfile.xlsx',
 			'Other_PivotTableReferenceFiles_ChartsheetAndPivotTable.xlsx',
 			'Sparklines_SampleSparklines.xlsx',
 			'Tables_UsingTables.xlsx',
@@ -219,6 +230,33 @@ function requireBytes(bytes: Uint8Array | null): Uint8Array {
 
 function isChartStyleOrColorPart(partPath: string): boolean {
 	return /(^|\/)charts\/(?:style|colors)\d+\.xml$/i.test(partPath)
+}
+
+function hasSemanticChartInventory(
+	packageSummary: PackageSummary,
+	semanticSummary: SemanticSummary,
+	compatibilityFeatures: ReadonlyMap<string, CompatibilityFeatureSummary>,
+): boolean {
+	if (packageSummary.structuredCharts === 0 || !compatibilityFeatures.has('preservedChart')) {
+		return false
+	}
+	if (semanticSummary.charts.length !== packageSummary.structuredCharts) return false
+	const chartSheetChartPaths = new Set(
+		semanticSummary.chartSheets.flatMap((chartSheet) => chartSheet.chartPartPaths),
+	)
+	return semanticSummary.charts.every(
+		(chart) =>
+			!isChartStyleOrColorPart(chart.partPath) &&
+			hasChartOwner(chart, chartSheetChartPaths) &&
+			chart.chartType !== undefined &&
+			chart.series.some(
+				(series) => series.categoryRef !== undefined || series.valueRef !== undefined,
+			),
+	)
+}
+
+function hasChartOwner(chart: ChartPartInfo, chartSheetChartPaths: ReadonlySet<string>): boolean {
+	return chart.sheetName !== undefined || chartSheetChartPaths.has(chart.partPath)
 }
 
 function summarizePackage(bytes: Uint8Array): PackageSummary {
@@ -316,9 +354,11 @@ async function loadContractSubject(bytes: Uint8Array): Promise<ContractSubject> 
 			externalReferenceCount: info.externalReferenceCount,
 			connectionPartCount: info.connectionPartCount,
 			activeContentCount: info.activeContentCount,
+			chartSheetCount: info.chartSheetCount,
 			hasDrawingRefs: info.sheets.some((sheet) => sheet.hasDrawingRefs ?? false),
 			activeContent: normalizeActiveContent(info.activeContent),
 			charts: info.charts,
+			chartSheets: info.chartSheets,
 			pivotTables: info.pivotTables,
 			pivotCaches: info.pivotCaches,
 			slicerCaches: info.slicerCaches,
@@ -474,11 +514,7 @@ function assertManifestReadCoverage(
 		entry,
 		'charts',
 		!entry.features.charts ||
-			(packageSummary.structuredCharts > 0 &&
-				semanticSummary.charts.length === packageSummary.structuredCharts &&
-				semanticSummary.charts.every((chart) => chart.sheetName !== undefined) &&
-				semanticSummary.charts.every((chart) => !isChartStyleOrColorPart(chart.partPath)) &&
-				compatibilityFeatures.has('preservedChart')),
+			hasSemanticChartInventory(packageSummary, semanticSummary, compatibilityFeatures),
 	)
 	assertFeature(
 		entry,
@@ -592,6 +628,8 @@ function assertManifestEditCoverage(
 	expect(after.semanticSummary.connectionPartCount).toBe(before.semanticSummary.connectionPartCount)
 	expect(after.semanticSummary.activeContentCount).toBe(before.semanticSummary.activeContentCount)
 	expect(after.semanticSummary.activeContent).toEqual(before.semanticSummary.activeContent)
+	expect(after.semanticSummary.chartSheetCount).toBe(before.semanticSummary.chartSheetCount)
+	expect(after.semanticSummary.chartSheets).toEqual(before.semanticSummary.chartSheets)
 	expect(after.semanticSummary.charts).toEqual(before.semanticSummary.charts)
 	expect(after.semanticSummary.hasDrawingRefs).toBe(before.semanticSummary.hasDrawingRefs)
 

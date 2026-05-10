@@ -57,6 +57,7 @@ import {
 	REL_TABLE,
 	REL_THEME,
 	REL_THREADED_COMMENT,
+	REL_WORKSHEET,
 	type Relationship,
 	resolvePath,
 } from './relationships.ts'
@@ -71,11 +72,17 @@ import { parseStyles, parseStylesLite } from './styles.ts'
 import { parseTable } from './table.ts'
 import { parseThemeColorsXml, parseThemeXml } from './theme.ts'
 import { summarizeVbaProject } from './vba.ts'
-import { parseWorkbookXml } from './workbook.ts'
+import { parseWorkbookXml, type SheetEntry } from './workbook.ts'
 import { extractZip, type ZipArchive } from './zip.ts'
 
 const XML_DECODER = new TextDecoder('utf-8')
 const VALUES_ONLY_BYTE_PARSE_MIN_BYTES = 10_000_000
+const CT_WORKSHEET = 'application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml'
+const CT_CHARTSHEET = 'application/vnd.openxmlformats-officedocument.spreadsheetml.chartsheet+xml'
+const CT_SHARED_STRINGS =
+	'application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml'
+const CT_STYLES = 'application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml'
+const CT_THEME = 'application/vnd.openxmlformats-officedocument.theme+xml'
 
 export interface ReadXlsxResult {
 	readonly workbook: Workbook
@@ -170,7 +177,14 @@ export function readXlsx(
 		const wbRelsPath = getRelsPath(workbookPath)
 		const wbRelsXml = readPart(archive, wbRelsPath)
 		const wbRels = wbRelsXml ? parseRelationships(wbRelsXml) : []
-		const relMap = new Map(wbRels.map((r) => [r.id, r]))
+		const effectiveWbRels = recoverWorkbookRelationships(
+			archive,
+			contentTypes,
+			workbookPath,
+			wbInfo.sheets,
+			wbRels,
+		)
+		const relMap = new Map(effectiveWbRels.map((r) => [r.id, r]))
 
 		const workbook = new Workbook()
 		workbook.sourceArchiveBytes = archiveBytes
@@ -271,18 +285,18 @@ export function readXlsx(
 			}
 		}
 
-		const ssPart = wbRels.find((r) => r.type === REL_SHARED_STRINGS)
+		const ssPart = effectiveWbRels.find((r) => r.type === REL_SHARED_STRINGS)
 		const ssPath = ssPart ? resolvePath(workbookPath, ssPart.target) : undefined
 		if (ssPath) {
 			consumed.add(ssPath)
 			workbook.preservedSharedStrings = { path: ssPath }
 		}
 
-		const stylesPart = wbRels.find((r) => r.type === REL_STYLES)
+		const stylesPart = effectiveWbRels.find((r) => r.type === REL_STYLES)
 		const stylesPath = stylesPart ? resolvePath(workbookPath, stylesPart.target) : undefined
 		if (stylesPath) consumed.add(stylesPath)
 
-		const themePart = wbRels.find((r) => r.type === REL_THEME)
+		const themePart = effectiveWbRels.find((r) => r.type === REL_THEME)
 		const themePath = themePart ? resolvePath(workbookPath, themePart.target) : undefined
 		if (themePath) consumed.add(themePath)
 		if (themePath && mode === 'full') {
@@ -350,9 +364,11 @@ export function readXlsx(
 						relId: entry.rId,
 						partPath: sheetPath,
 						state: entry.state,
-						chartPartPaths: chartsheetRelationships
-							.filter((relationship) => relationship.type === REL_CHART)
-							.map((relationship) => resolvePath(sheetPath, relationship.target)),
+						chartPartPaths: chartPartPathsForSheetRelationships(
+							archive,
+							sheetPath,
+							chartsheetRelationships,
+						),
 					})
 				}
 				continue
@@ -588,7 +604,7 @@ export function readXlsx(
 					consumed,
 					contentTypes,
 					rootRels,
-					wbRels,
+					effectiveWbRels,
 					sheetPathToAnchor,
 					workbookPath,
 					sheetRelsByPath,
@@ -623,6 +639,172 @@ function readPartBytes(archive: ZipArchive, path: string): Uint8Array | undefine
 	return archive.readBytes(path)
 }
 
+function recoverWorkbookRelationships(
+	archive: ZipArchive,
+	contentTypes: ContentTypes,
+	workbookPath: string,
+	sheets: readonly SheetEntry[],
+	relationships: readonly Relationship[],
+): Relationship[] {
+	const recovered = [...relationships]
+	const existingRelIds = new Set(recovered.map((rel) => rel.id))
+	const existingTargets = new Set(recovered.map((rel) => resolvePath(workbookPath, rel.target)))
+
+	const worksheetParts = availablePartsForContentType(archive, contentTypes, CT_WORKSHEET).filter(
+		(path) => !existingTargets.has(path),
+	)
+	const chartsheetParts = availablePartsForContentType(archive, contentTypes, CT_CHARTSHEET).filter(
+		(path) => !existingTargets.has(path),
+	)
+	const missingSheets = sheets.filter((sheet) => !existingRelIds.has(sheet.rId))
+	if (missingSheets.length > 0) {
+		for (const { sheet, partPath, type } of inferMissingWorkbookSheetRelationships(
+			missingSheets,
+			worksheetParts,
+			chartsheetParts,
+		)) {
+			recovered.push({
+				id: sheet.rId,
+				type,
+				target: relationshipTargetFromWorkbook(workbookPath, partPath),
+			})
+			existingRelIds.add(sheet.rId)
+			existingTargets.add(partPath)
+		}
+	}
+
+	if (relationships.length > 0 && missingSheets.length === 0) return recovered
+
+	recoverWorkbookPartRelationship(
+		recovered,
+		existingRelIds,
+		existingTargets,
+		workbookPath,
+		archive,
+		contentTypes,
+		REL_SHARED_STRINGS,
+		CT_SHARED_STRINGS,
+		'xl/sharedStrings.xml',
+	)
+	recoverWorkbookPartRelationship(
+		recovered,
+		existingRelIds,
+		existingTargets,
+		workbookPath,
+		archive,
+		contentTypes,
+		REL_STYLES,
+		CT_STYLES,
+		'xl/styles.xml',
+	)
+	recoverWorkbookPartRelationship(
+		recovered,
+		existingRelIds,
+		existingTargets,
+		workbookPath,
+		archive,
+		contentTypes,
+		REL_THEME,
+		CT_THEME,
+		'xl/theme/theme1.xml',
+	)
+
+	return recovered
+}
+
+function inferMissingWorkbookSheetRelationships(
+	sheets: readonly SheetEntry[],
+	worksheetParts: readonly string[],
+	chartsheetParts: readonly string[],
+): Array<{ sheet: SheetEntry; partPath: string; type: string }> {
+	if (sheets.length === 0) return []
+	const candidates = [
+		...worksheetParts.map((partPath) => ({ partPath, type: REL_WORKSHEET })),
+		...chartsheetParts.map((partPath) => ({ partPath, type: REL_CHARTSHEET })),
+	].sort((a, b) => comparePartPaths(a.partPath, b.partPath))
+	if (candidates.length < sheets.length) return []
+	const inferred: Array<{ sheet: SheetEntry; partPath: string; type: string }> = []
+	for (let index = 0; index < sheets.length; index++) {
+		const sheet = sheets[index]
+		const candidate = candidates[index]
+		if (!sheet || !candidate) continue
+		inferred.push({ sheet, partPath: candidate.partPath, type: candidate.type })
+	}
+	return inferred
+}
+
+function recoverWorkbookPartRelationship(
+	relationships: Relationship[],
+	existingRelIds: Set<string>,
+	existingTargets: Set<string>,
+	workbookPath: string,
+	archive: ZipArchive,
+	contentTypes: ContentTypes,
+	type: string,
+	contentType: string,
+	conventionalPath: string,
+): void {
+	if (relationships.some((rel) => rel.type === type)) return
+	const partPath = firstAvailablePartForContentType(
+		archive,
+		contentTypes,
+		contentType,
+		conventionalPath,
+	)
+	if (!partPath || existingTargets.has(partPath)) return
+	relationships.push({
+		id: nextRecoveredRelId(existingRelIds),
+		type,
+		target: relationshipTargetFromWorkbook(workbookPath, partPath),
+	})
+	existingTargets.add(partPath)
+}
+
+function firstAvailablePartForContentType(
+	archive: ZipArchive,
+	contentTypes: ContentTypes,
+	contentType: string,
+	conventionalPath: string,
+): string | undefined {
+	const contentTypePart = availablePartsForContentType(archive, contentTypes, contentType)[0]
+	if (contentTypePart) return contentTypePart
+	return archive.has(conventionalPath) ? conventionalPath : undefined
+}
+
+function availablePartsForContentType(
+	archive: ZipArchive,
+	contentTypes: ContentTypes,
+	contentType: string,
+): string[] {
+	return [...contentTypes.overrides]
+		.filter(
+			([path, overrideContentType]) => overrideContentType === contentType && archive.has(path),
+		)
+		.map(([path]) => path)
+		.sort(comparePartPaths)
+}
+
+function relationshipTargetFromWorkbook(workbookPath: string, partPath: string): string {
+	const workbookDir = workbookPath.substring(0, workbookPath.lastIndexOf('/') + 1)
+	return partPath.startsWith(workbookDir) ? partPath.slice(workbookDir.length) : `/${partPath}`
+}
+
+function nextRecoveredRelId(existingRelIds: Set<string>): string {
+	let index = 1
+	for (;;) {
+		const relId = `ascendRecoveredRel${index}`
+		if (!existingRelIds.has(relId)) {
+			existingRelIds.add(relId)
+			return relId
+		}
+		index++
+	}
+}
+
+function comparePartPaths(a: string, b: string): number {
+	return a.localeCompare(b, 'en', { numeric: true })
+}
+
 function attachChartParts(
 	archive: ZipArchive,
 	workbook: Workbook,
@@ -639,6 +821,30 @@ function attachChartParts(
 				: sheetNameByChartPartPath.get(capsule.partPath)
 		workbook.chartParts.push(parseChartXml(xml, capsule.partPath, sheetName))
 	}
+}
+
+function chartPartPathsForSheetRelationships(
+	archive: ZipArchive,
+	sheetPath: string,
+	relationships: readonly Relationship[],
+): string[] {
+	const chartPartPaths: string[] = []
+	for (const rel of relationships) {
+		if (rel.targetMode === 'External') continue
+		if (rel.type === REL_CHART) {
+			chartPartPaths.push(resolvePath(sheetPath, rel.target))
+			continue
+		}
+		if (rel.type !== REL_DRAWING) continue
+		const drawingPath = resolvePath(sheetPath, rel.target)
+		const drawingRelsXml = readPart(archive, getRelsPath(drawingPath))
+		if (!drawingRelsXml) continue
+		for (const drawingRel of parseRelationships(drawingRelsXml)) {
+			if (drawingRel.type !== REL_CHART || drawingRel.targetMode === 'External') continue
+			chartPartPaths.push(resolvePath(drawingPath, drawingRel.target))
+		}
+	}
+	return [...new Set(chartPartPaths)]
 }
 
 function mapEmbeddedChartsToSheets(

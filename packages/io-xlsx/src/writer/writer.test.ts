@@ -3652,6 +3652,66 @@ describe('writeXlsx', () => {
 		expect(xml).toContain("<xm:f>'Data Validation'!$C$1:$C$2</xm:f>")
 	})
 
+	it('rewrites same-sheet x14 extension formulas after structural edits', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Data')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: S0 })
+		sheet.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'B2:B3',
+			formulas: ['A2>0'],
+		})
+		sheet.x14DataValidations.push({
+			index: 0,
+			sqref: 'C2:C3',
+			formula1: 'A2:A3',
+		})
+		sheet.preservedExtLst = `<extLst xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"><ext uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}"><x14:conditionalFormattings><x14:conditionalFormatting><x14:cfRule type="expression"><xm:f>A2>0</xm:f></x14:cfRule><xm:sqref>B2:B3</xm:sqref></x14:conditionalFormatting></x14:conditionalFormattings><x14:dataValidations count="1"><x14:dataValidation type="list"><x14:formula1><xm:f>A2:A3</xm:f></x14:formula1><xm:sqref>C2:C3</xm:sqref></x14:dataValidation></x14:dataValidations></ext></extLst>`
+
+		const applied = applyOperations(wb, [{ op: 'insertRows', sheet: 'Data', at: 1, count: 1 }])
+		expectOk(applied)
+		const written = writeXlsx(wb, [], { dirtySheetNames: applied.value.sheetsModified })
+		expectOk(written)
+		const entries = unzipSync(written.value)
+		const worksheet = entries['xl/worksheets/sheet1.xml']
+		expect(worksheet).toBeDefined()
+		if (!worksheet) return
+		const xml = new TextDecoder().decode(worksheet)
+
+		expect(xml).toContain('<xm:sqref>B3:B4</xm:sqref>')
+		expect(xml).toContain('<xm:f>A3&gt;0</xm:f>')
+		expect(xml).toContain('<xm:sqref>C3:C4</xm:sqref>')
+		expect(xml).toContain('<xm:f>A3:A4</xm:f>')
+		expect(xml).not.toContain('<xm:f>A2&gt;0</xm:f>')
+		expect(xml).not.toContain('<xm:f>A2:A3</xm:f>')
+	})
+
+	it('removes x14 data-validation extension entries deleted by structural edits', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Data')
+		sheet.x14DataValidations.push({
+			index: 0,
+			sqref: 'C2:C3',
+			formula1: 'A2:A3',
+		})
+		sheet.preservedExtLst = `<extLst xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"><ext uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}"><x14:dataValidations count="1"><x14:dataValidation type="list"><x14:formula1><xm:f>A2:A3</xm:f></x14:formula1><xm:sqref>C2:C3</xm:sqref></x14:dataValidation></x14:dataValidations></ext></extLst>`
+
+		const applied = applyOperations(wb, [{ op: 'deleteRows', sheet: 'Data', at: 1, count: 2 }])
+		expectOk(applied)
+		expect(sheet.x14DataValidations[0]?.deleted).toBe(true)
+		const written = writeXlsx(wb, [], { dirtySheetNames: applied.value.sheetsModified })
+		expectOk(written)
+		const entries = unzipSync(written.value)
+		const worksheet = entries['xl/worksheets/sheet1.xml']
+		expect(worksheet).toBeDefined()
+		if (!worksheet) return
+		const xml = new TextDecoder().decode(worksheet)
+
+		expect(xml).not.toContain('<x14:dataValidation ')
+		expect(xml).not.toContain('<xm:sqref>C2:C3</xm:sqref>')
+		expect(xml).not.toContain('<xm:f>A2:A3</xm:f>')
+	})
+
 	it('preserves threaded comments XML through read-write round-trip', () => {
 		const threadedCommentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <ThreadedComments xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">

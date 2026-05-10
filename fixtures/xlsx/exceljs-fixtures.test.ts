@@ -69,6 +69,28 @@ describe('ExcelJS XLSX fixture corpus', () => {
 		).toBe(true)
 	})
 
+	test('links drawing-mediated chartsheet charts from chart-sheet.xlsx', () => {
+		const result = readXlsx(loadFixture('chart-sheet.xlsx'))
+		expectOk(result)
+
+		expect(result.value.workbook.chartSheets).toEqual([
+			{
+				name: 'Chart1',
+				sheetId: '9',
+				relId: 'rId1',
+				partPath: 'xl/chartsheets/sheet1.xml',
+				state: 'visible',
+				chartPartPaths: ['xl/charts/chart1.xml'],
+			},
+		])
+		expect(result.value.workbook.chartParts[0]).toMatchObject({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Chart1',
+			chartType: 'barChart',
+			title: 'Wildlife Population',
+		})
+	})
+
 	test('cached formulas in the ExcelJS subset recalculate without mismatches', async () => {
 		const payload = await runFormulaCorpusCorrectness({
 			corpusRoot: excelJsDir,

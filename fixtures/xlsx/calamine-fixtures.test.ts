@@ -81,6 +81,24 @@ describe('Calamine XLSX/XLSM fixture corpus', () => {
 		)
 	})
 
+	test('recovers sheet, shared-string, style, and chart links from issue252.xlsx', () => {
+		const result = readXlsx(loadFixture('issue252.xlsx'))
+		expectOk(result)
+
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet?.name).toBe('Sheet1')
+		expect(sheet?.cells.get(0, 0)?.value).toEqual({ kind: 'string', value: 'data' })
+		expect(sheet?.cells.get(4, 4)?.formula).toBe('SUM(B1:D5)')
+		expect(result.value.workbook.chartParts).toEqual([
+			expect.objectContaining({
+				partPath: 'xl/charts/chart1.xml',
+				sheetName: 'Sheet1',
+				chartType: 'barChart',
+				series: [expect.objectContaining({ valueRef: 'Sheet1!$B$8' })],
+			}),
+		])
+	})
+
 	test('surfaces real pivot cache shared item bounds and grouped fields', () => {
 		const result = readXlsx(loadFixture('pivots.xlsx'))
 		expectOk(result)
@@ -154,13 +172,13 @@ describe('Calamine XLSX/XLSM fixture corpus', () => {
 			maxUnacceptedMismatches: 0,
 			maxSemanticMismatches: 0,
 			maxErrors: 0,
-			minComparedFormulas: 73,
+			minComparedFormulas: 74,
 			minSemanticPerfectWorkbooks: 15,
 		})
 		expect(payload.summary).toMatchObject({
 			workbookCount: 15,
-			formulaCount: 73,
-			comparedCount: 73,
+			formulaCount: 74,
+			comparedCount: 74,
 			volatileOracleSkipCount: 8,
 			mismatchCount: 0,
 			acceptedMismatchCount: 0,

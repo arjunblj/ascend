@@ -87,6 +87,7 @@ function normalizeRelationshipType(type: string): string {
 	if (!type.startsWith(STRICT_REL_PREFIX)) return type
 	const suffix = type.slice(STRICT_REL_PREFIX.length)
 	if (suffix === 'sheetMetadata') return type
+	if (suffix === 'extendedProperties') return `${TRANSITIONAL_REL_PREFIX}extended-properties`
 	return `${TRANSITIONAL_REL_PREFIX}${suffix}`
 }
 

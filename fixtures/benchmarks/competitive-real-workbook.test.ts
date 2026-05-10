@@ -13,6 +13,7 @@ import {
 	coalesceRepeatCorrectnessStatus,
 	evaluateAssertions,
 	extractWorkbookFeatureSummary,
+	extractWorkbookPackageFingerprint,
 	FULL_CORPUS_TARGETS,
 	libraryAllowed,
 	loadCorpusManifestEntries,
@@ -1075,6 +1076,21 @@ describe('evaluateAssertions', () => {
 		expect(withoutMerge.featurePartNamesHash).toBe(withFeature.featurePartNamesHash)
 		expect(withoutMerge.featureInventoryHash).not.toBe(withFeature.featureInventoryHash)
 	})
+
+	test('package fingerprint normalizes strict extended document property relationships', () => {
+		const transitional = extractWorkbookPackageFingerprint(
+			relationshipWorkbookBytes(
+				'http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties',
+			),
+		)
+		const strict = extractWorkbookPackageFingerprint(
+			relationshipWorkbookBytes(
+				'http://purl.oclc.org/ooxml/officeDocument/relationships/extendedProperties',
+			),
+		)
+		expect(strict.relationshipGraphHash).toBe(transitional.relationshipGraphHash)
+		expect(strict.relationshipCount).toBe(transitional.relationshipCount)
+	})
 })
 
 function shape(overrides: Partial<WorkbookShapeSummary> = {}): WorkbookShapeSummary {
@@ -1279,6 +1295,29 @@ function stringOnlyWorkbookBytes(): Uint8Array {
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>alpha</t></is></c></row></sheetData>
 </worksheet>`),
+	})
+}
+
+function relationshipWorkbookBytes(extendedPropertiesRelationshipType: string): Uint8Array {
+	return zipSync({
+		'[Content_Types].xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+</Types>`),
+		'_rels/.rels': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+  <Relationship Id="rId2" Type="${extendedPropertiesRelationshipType}" Target="docProps/app.xml"/>
+</Relationships>`),
+		'xl/workbook.xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheets/>
+</workbook>`),
+		'docProps/app.xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"/>`),
 	})
 }
 

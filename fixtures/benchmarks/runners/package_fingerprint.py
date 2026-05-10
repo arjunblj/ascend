@@ -362,6 +362,8 @@ def normalize_relationship_type(relationship_type: str) -> str:
     suffix = relationship_type[len(STRICT_REL_PREFIX) :]
     if suffix == "sheetMetadata":
         return relationship_type
+    if suffix == "extendedProperties":
+        return f"{TRANSITIONAL_REL_PREFIX}extended-properties"
     return f"{TRANSITIONAL_REL_PREFIX}{suffix}"
 
 

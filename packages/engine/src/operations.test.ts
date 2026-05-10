@@ -116,6 +116,33 @@ describe('applyOperation', () => {
 		expect(c?.formula).toBeNull()
 	})
 
+	test('cell edits reject partial legacy array formula ranges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const formulaInfo = { kind: 'array' as const, ref: 'A1:B2' }
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: 'A3:B4', styleId: sid, formulaInfo })
+		sheet.cells.set(0, 1, { value: numberValue(2), formula: null, styleId: sid, formulaInfo })
+		sheet.cells.set(1, 0, { value: numberValue(3), formula: null, styleId: sid, formulaInfo })
+		sheet.cells.set(1, 1, { value: numberValue(4), formula: null, styleId: sid, formulaInfo })
+
+		expectErr(
+			applyOperation(wb, {
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [{ ref: 'B2', value: 9 }],
+			}),
+		)
+		expectErr(applyOperation(wb, { op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '1+1' }))
+		expectErr(
+			applyOperation(wb, { op: 'fillFormula', sheet: 'Sheet1', range: 'B2:C2', formula: '1+1' }),
+		)
+		expectErr(
+			applyOperation(wb, { op: 'clearRange', sheet: 'Sheet1', range: 'A1:B1', what: 'values' }),
+		)
+		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(4))
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toEqual(formulaInfo)
+	})
+
 	test('fillFormula translates references across a range', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

@@ -194,8 +194,9 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'Formula text edit/preserve',
 		'editable',
 		'P0',
-		'Finish shared/array/dynamic formula rewrite guarantees.',
-		'Formula text can be edited, but advanced binding semantics still need full parity.',
+		'Finish shared/array/dynamic formula rewrite guarantees and explicit whole-array replacement.',
+		'Formula text can be edited; partial edits inside imported legacy array formula footprints are rejected to preserve Excel semantics, while advanced binding rewrites still need full parity.',
+		['packages/engine/src/operations.test.ts', 'fixtures/xlsx/xlsx-fixtures.test.ts'],
 	),
 	cap(
 		'sheets.styles',

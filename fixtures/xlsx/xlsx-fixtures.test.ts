@@ -4,7 +4,9 @@ import { basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { unzipSync } from 'fflate'
 import type { Sheet, Workbook } from '../../packages/core/src/index.ts'
+import { parseRange, toA1 } from '../../packages/core/src/index.ts'
 import {
+	applyOperation,
 	defaultCalcContext,
 	evaluateConditionalFormats,
 	recalculate,
@@ -491,6 +493,36 @@ if (poiFixtures.length > 0) {
 			expect(hasArrayMaster).toBe(true)
 			const recalc = recalculate(result.value.workbook, defaultCalcContext())
 			expect(recalc.errors).toEqual([])
+		})
+
+		it('rejects partial edits inside real POI legacy array formulas', () => {
+			const result = readXlsx(loadFixture('MatrixFormulaEvalTestData.xlsx'))
+			expectOk(result)
+			const sheet = result.value.workbook.sheets.find((candidate) =>
+				[...candidate.cells.iterate()].some(([, , cell]) => cell.formulaInfo?.kind === 'array'),
+			)
+			expect(sheet).toBeDefined()
+			if (!sheet) return
+			const arrayCell = [...sheet.cells.iterate()].find(
+				([, , cell]) => cell.formulaInfo?.kind === 'array' && cell.formulaInfo.ref,
+			)
+			expect(arrayCell).toBeDefined()
+			const arrayRef =
+				arrayCell?.[2]?.formulaInfo?.kind === 'array' ? arrayCell[2].formulaInfo.ref : undefined
+			expect(arrayRef).toBeDefined()
+			if (!arrayRef) return
+			const range = parseRange(arrayRef)
+			const targetRef = toA1(range.end)
+			const before = sheet.cells.get(range.end.row, range.end.col)
+
+			const edit = applyOperation(result.value.workbook, {
+				op: 'setCells',
+				sheet: sheet.name,
+				updates: [{ ref: targetRef, value: 999 }],
+			})
+			expect(edit.ok).toBe(false)
+			if (!edit.ok) expect(edit.error.message).toContain('legacy array formula')
+			expect(sheet.cells.get(range.end.row, range.end.col)).toEqual(before)
 		})
 
 		it('reads hidden sheets from TwoSheetsOneHidden.xlsx', () => {

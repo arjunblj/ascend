@@ -251,6 +251,19 @@ describe('formula functions', () => {
 			expect(getResult(wb, 2, 0)).toEqual(numberValue(1))
 		})
 
+		test('COUNTIF criteria cache keeps error and string criteria distinct', () => {
+			const wb = makeWorkbook()
+			wb.sheets[0]?.cells.set(0, 0, { value: errorValue('#DIV/0!'), formula: null, styleId: S0 })
+			setStr(wb, 1, 0, '#DIV/0!')
+			wb.sheets[0]?.cells.set(0, 1, { value: errorValue('#DIV/0!'), formula: null, styleId: S0 })
+			setStr(wb, 1, 1, '#DIV/0!')
+			setFormula(wb, 2, 0, 'COUNTIF(A1:A2,B1)')
+			setFormula(wb, 3, 0, 'COUNTIF(A1:A2,B2)')
+			recalc(wb)
+			expect(getResult(wb, 2, 0)).toEqual(numberValue(1))
+			expect(getResult(wb, 3, 0)).toEqual(numberValue(1))
+		})
+
 		test('COUNTIF implicitly intersects range criteria by formula column', () => {
 			const wb = makeWorkbook()
 			setNum(wb, 0, 1, 1)

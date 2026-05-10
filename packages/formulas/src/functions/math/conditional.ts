@@ -47,6 +47,22 @@ function getMatchBitmap(range: readonly (readonly CellValue[])[], criteria: Cell
 }
 
 function criteriaCacheKey(criteria: CellValue): string {
+	switch (criteria.kind) {
+		case 'empty':
+			return 'z'
+		case 'number':
+			return `n:${criteria.value}`
+		case 'date':
+			return `d:${criteria.serial}`
+		case 'boolean':
+			return criteria.value ? 'b:1' : 'b:0'
+		case 'error':
+			return `e:${criteria.value}`
+		case 'string':
+			return `s:${criteria.value.length}:${criteria.value}`
+		default:
+			break
+	}
 	return JSON.stringify(criteria)
 }
 
@@ -69,6 +85,15 @@ function singleCriteriaCacheKey(
 }
 
 function ifsCacheKey(name: string, args: EvalArg[], firstCriteriaRangeIdx: number): string | null {
+	if (args.length === firstCriteriaRangeIdx + 2) {
+		const criteriaRange = rangeCacheKey(args[firstCriteriaRangeIdx])
+		if (!criteriaRange) return null
+		const criteria = criteriaCacheKey(args[firstCriteriaRangeIdx + 1]?.value ?? EMPTY)
+		if (firstCriteriaRangeIdx === 0) return `COND:${name}:${criteriaRange}:${criteria}`
+		const targetRange = rangeCacheKey(args[0])
+		return targetRange ? `COND:${name}:${targetRange}:${criteriaRange}:${criteria}` : null
+	}
+
 	const parts = [`COND:${name}`]
 	if (firstCriteriaRangeIdx > 0) {
 		const targetRange = rangeCacheKey(args[0])
@@ -449,6 +474,23 @@ function conditionalSum(
 	pairs: CriteriaPair[],
 ): number {
 	let sum = 0
+	if (pairs.length === 1) {
+		const pair = pairs[0]
+		if (!pair) return 0
+		const bitmap = pair.bitmap
+		const cols = pair.cols
+		for (let r = 0; r < sumRange.length; r++) {
+			const row = sumRange[r]
+			if (!row) continue
+			for (let c = 0; c < row.length; c++) {
+				if (bitmap[r * cols + c]) {
+					const n = numericVal(row[c] ?? EMPTY)
+					if (n !== null) sum += n
+				}
+			}
+		}
+		return sum
+	}
 	for (let r = 0; r < sumRange.length; r++) {
 		for (let c = 0; c < (sumRange[r]?.length ?? 0); c++) {
 			if (allPairsMatch(pairs, r, c)) {
@@ -514,9 +556,18 @@ export const conditionalFunctions: FunctionDef[] = [
 	}),
 
 	fn('SUMIFS', 3, 255, (args, ctx) => {
+		const key = ifsCacheKey('SUMIFS', args, 1)
+		const cache = ctx?.aggregateRangeCache
+		const cached = key ? cache?.get(key) : undefined
+		if (cached) return cached
+
 		const directError = firstScalarError(args)
-		if (directError) return directError
-		return withCachedConditionalAggregate(ifsCacheKey('SUMIFS', args, 1), ctx, () => {
+		if (directError) {
+			if (key) cache?.set(key, directError)
+			return directError
+		}
+
+		const value = (() => {
 			const sumRange = getRange(args[0])
 			const specs = buildCriteriaSpecs(args, 1)
 			if (specs.some((spec) => !sameShape(sumRange, spec.range))) return errorValue('#VALUE!')
@@ -537,7 +588,9 @@ export const conditionalFunctions: FunctionDef[] = [
 				return arrayValue(rows)
 			}
 			return numberValue(conditionalSum(sumRange, buildPairs(args, 1)))
-		})
+		})()
+		if (key) cache?.set(key, value)
+		return value
 	}),
 
 	fn('COUNTIF', 2, 2, (args, ctx) => {

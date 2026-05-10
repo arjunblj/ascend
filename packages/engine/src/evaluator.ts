@@ -41,6 +41,7 @@ import {
 import type { CalcContext } from './calc-context.ts'
 import { aggregateNumericRange } from './compiled-eval.ts'
 import { evaluateConditionalFormats } from './conditional-format.ts'
+import { computeIconFilterRows } from './icon-filter.ts'
 import { resolveSheetIndexInWorkbook as resolveSheetIndex } from './sheet-index.ts'
 import { resolveStructuredRefRange } from './structured-refs.ts'
 
@@ -1781,6 +1782,7 @@ interface PreparedFilterColumn {
 	readonly acceptedValues?: ReadonlySet<string>
 	readonly colorMatchedRows?: ReadonlySet<number>
 	readonly dynamicAverage?: number
+	readonly iconMatchedRows?: ReadonlySet<number>
 	readonly top10Threshold?: number
 }
 
@@ -1851,6 +1853,7 @@ function prepareFilterColumns(
 			acceptedValues?: ReadonlySet<string>
 			colorMatchedRows?: ReadonlySet<number>
 			dynamicAverage?: number
+			iconMatchedRows?: ReadonlySet<number>
 			top10Threshold?: number
 		} = { source }
 		if (source.kind === 'filters') {
@@ -1859,6 +1862,10 @@ function prepareFilterColumns(
 		if (source.kind === 'colorFilter') {
 			const rows = computeColorFilterRows(workbook, sheet, range, source, conditionalFormats)
 			if (rows) prepared.colorMatchedRows = rows
+		}
+		if (source.kind === 'iconFilter') {
+			const rows = computeIconFilterRows(sheet, range, source)
+			if (rows) prepared.iconMatchedRows = rows
 		}
 		if (source.kind === 'top10') {
 			const threshold = computeTop10FilterThreshold(sheet, range, source)
@@ -1900,6 +1907,9 @@ function cellMatchesFilterColumn(
 	const source = column.source
 	if (source.kind === 'colorFilter') {
 		return column.colorMatchedRows ? column.colorMatchedRows.has(row) : null
+	}
+	if (source.kind === 'iconFilter') {
+		return column.iconMatchedRows ? column.iconMatchedRows.has(row) : null
 	}
 	if (source.kind === 'customFilters') return cellMatchesCustomFilters(value, source)
 	if (source.kind === 'dynamicFilter') {

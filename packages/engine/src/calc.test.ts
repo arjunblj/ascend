@@ -3026,6 +3026,140 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(5, 1)?.value).toEqual(numberValue(50))
 	})
 
+	test('SUBTOTAL and AGGREGATE evaluate icon filter criteria', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.autoFilter = {
+			ref: 'A1:B5',
+			columns: [{ colId: 1, kind: 'iconFilter', iconSet: '3TrafficLights1', iconId: 1 }],
+		}
+		sheet.conditionalFormats.push({
+			sqref: 'B2:B5',
+			rules: [
+				{
+					type: 'iconSet',
+					priority: 1,
+					formulas: [],
+					iconSet: {
+						iconSet: '3TrafficLights1',
+						cfvo: [
+							{ type: 'num', value: '0' },
+							{ type: 'num', value: '50' },
+							{ type: 'num', value: '80' },
+						],
+					},
+				},
+			],
+		})
+		sheet.cells.set(0, 0, { value: stringValue('Region'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Sales'), formula: null, styleId: sid })
+		for (const [index, value] of [10, 40, 70, 90].entries()) {
+			sheet.cells.set(index + 1, 0, {
+				value: stringValue(`R${index + 1}`),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(index + 1, 1, { value: numberValue(value), formula: null, styleId: sid })
+		}
+		sheet.cells.set(5, 0, { value: EMPTY, formula: 'SUBTOTAL(9,B2:B5)', styleId: sid })
+		sheet.cells.set(5, 1, { value: EMPTY, formula: 'AGGREGATE(9,4,B2:B5)', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(5, 0)?.value).toEqual(numberValue(70))
+		expect(sheet.cells.get(5, 1)?.value).toEqual(numberValue(70))
+	})
+
+	test('table icon filters respect percent thresholds and reversed icon sets', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		addSalesTable(sheet, 'Sales', {
+			ref: 'A1:B4',
+			columns: [{ colId: 1, kind: 'iconFilter', iconSet: '3Arrows', iconId: 0 }],
+		})
+		sheet.conditionalFormats.push({
+			sqref: 'B2:B4',
+			rules: [
+				{
+					type: 'iconSet',
+					priority: 1,
+					formulas: [],
+					iconSet: {
+						iconSet: '3Arrows',
+						reverse: true,
+						cfvo: [
+							{ type: 'percent', value: '0' },
+							{ type: 'percent', value: '50' },
+							{ type: 'percent', value: '75' },
+						],
+					},
+				},
+			],
+		})
+		sheet.cells.set(0, 0, { value: stringValue('Region'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Sales'), formula: null, styleId: sid })
+		for (const [index, value] of [10, 50, 90].entries()) {
+			sheet.cells.set(index + 1, 0, {
+				value: stringValue(`R${index + 1}`),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(index + 1, 1, { value: numberValue(value), formula: null, styleId: sid })
+		}
+		sheet.cells.set(4, 0, { value: EMPTY, formula: 'SUBTOTAL(9,B2:B4)', styleId: sid })
+		sheet.cells.set(4, 1, { value: EMPTY, formula: 'AGGREGATE(9,4,B2:B4)', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(4, 0)?.value).toEqual(numberValue(90))
+		expect(sheet.cells.get(4, 1)?.value).toEqual(numberValue(90))
+	})
+
+	test('icon filters honor percentile thresholds and exclusive boundaries', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.autoFilter = {
+			ref: 'A1:B4',
+			columns: [{ colId: 1, kind: 'iconFilter', iconSet: '3Symbols', iconId: 0 }],
+		}
+		sheet.conditionalFormats.push({
+			sqref: 'B2:B4',
+			rules: [
+				{
+					type: 'iconSet',
+					priority: 1,
+					formulas: [],
+					iconSet: {
+						iconSet: '3Symbols',
+						cfvo: [
+							{ type: 'percentile', value: '0' },
+							{ type: 'percentile', value: '50', gte: false },
+							{ type: 'percentile', value: '80' },
+						],
+					},
+				},
+			],
+		})
+		sheet.cells.set(0, 0, { value: stringValue('Region'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Sales'), formula: null, styleId: sid })
+		for (const [index, value] of [10, 55, 80].entries()) {
+			sheet.cells.set(index + 1, 0, {
+				value: stringValue(`R${index + 1}`),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(index + 1, 1, { value: numberValue(value), formula: null, styleId: sid })
+		}
+		sheet.cells.set(4, 0, { value: EMPTY, formula: 'SUBTOTAL(9,B2:B4)', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(4, 0)?.value).toEqual(numberValue(65))
+	})
+
 	test('SUBTOTAL and AGGREGATE evaluate top10 filter criteria with ties', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

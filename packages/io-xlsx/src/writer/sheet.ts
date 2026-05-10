@@ -102,15 +102,7 @@ function buildSheetXmlToSink(
 	}
 
 	const hasFrozenPanes = sheet.frozenRows > 0 || sheet.frozenCols > 0
-	const hasSheetViewAttrs =
-		sheet.sheetView &&
-		(sheet.sheetView.zoomScale !== undefined ||
-			sheet.sheetView.showGridLines !== undefined ||
-			sheet.sheetView.showFormulas !== undefined ||
-			sheet.sheetView.rightToLeft !== undefined ||
-			sheet.sheetView.tabSelected !== undefined ||
-			sheet.sheetView.view !== undefined)
-	if (hasFrozenPanes || hasSheetViewAttrs) {
+	if (hasFrozenPanes || sheet.sheetView) {
 		const viewAttrs: string[] = ['workbookViewId="0"']
 		if (sheet.sheetView) {
 			if (sheet.sheetView.zoomScale !== undefined)

@@ -72,11 +72,18 @@ describe('chartsheet inventory', () => {
 			title: 'Sales',
 		})
 		expect(result.value.report.features).toContainEqual({
-			feature: 'chartSheet',
-			tier: 'unsupported',
+			feature: 'preservedChartSheet',
+			tier: 'preserved',
 			count: 1,
 			locations: ['xl/chartsheets/sheet1.xml'],
-			note: 'Chartsheets are inventoried but not editable as worksheet grids; writes require explicit loss approval.',
+			note: 'Chartsheets are inventoried and preserved exactly where possible; they are not modeled as worksheet grids.',
+		})
+		expect(result.value.report.features).toContainEqual({
+			feature: 'preservedChart',
+			tier: 'preserved',
+			count: 1,
+			locations: ['xl/charts/chart1.xml'],
+			note: 'Chart parts are inventoried and preserved exactly where possible; chart semantics are not yet editable.',
 		})
 
 		const written = writeXlsx(result.value.workbook, result.value.capsules, {

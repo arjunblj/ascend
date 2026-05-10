@@ -2,7 +2,7 @@ import type { SheetState, WorkbookProperties, WorkbookProtection, WorkbookView }
 import type { CalcSettings } from '@ascend/schema'
 import { DEFAULT_CALC_SETTINGS } from '@ascend/schema'
 import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
-import { decodeXmlText } from './xml-utils.ts'
+import { decodeXmlText, normalizeMainSpreadsheetNamespacePrefix } from './xml-utils.ts'
 
 export interface SheetEntry {
 	readonly name: string
@@ -29,23 +29,29 @@ export interface WorkbookInfo {
 }
 
 const ATTR_RE = /([A-Za-z_][\w:.-]*)="([^"]*)"/g
-const SHEET_RE = /<sheet\b([^>]*)\/?>/g
-const DEFINED_NAME_RE = /<definedName\b([^>]*)>([\s\S]*?)<\/definedName>/g
-const WORKBOOK_PR_RE = /<workbookPr\b([^>]*)\/?>/
-const CALC_PR_RE = /<calcPr\b([^>]*)\/?>/
-const WORKBOOK_PROTECTION_RE = /<workbookProtection\b([^>]*)\/?>/
-const WORKBOOK_VIEW_RE = /<workbookView\b([^>]*)\/?>/g
-const EXTERNAL_REFERENCE_RE = /<externalReference\b([^>]*)\/?>/g
-const PIVOT_CACHE_RE = /<pivotCache\b([^>]*)\/?>/g
+const NS_PREFIX = String.raw`(?:[A-Za-z_][\w.-]*:)?`
+const WORKBOOK_RE = new RegExp(`<${NS_PREFIX}workbook[\\s>]`)
+const SHEET_RE = new RegExp(`<${NS_PREFIX}sheet\\b([^>]*)/?>`, 'g')
+const DEFINED_NAME_RE = new RegExp(
+	`<${NS_PREFIX}definedName\\b([^>]*)>([\\s\\S]*?)</${NS_PREFIX}definedName>`,
+	'g',
+)
+const WORKBOOK_PR_RE = new RegExp(`<${NS_PREFIX}workbookPr\\b([^>]*)/?>`)
+const CALC_PR_RE = new RegExp(`<${NS_PREFIX}calcPr\\b([^>]*)/?>`)
+const WORKBOOK_PROTECTION_RE = new RegExp(`<${NS_PREFIX}workbookProtection\\b([^>]*)/?>`)
+const WORKBOOK_VIEW_RE = new RegExp(`<${NS_PREFIX}workbookView\\b([^>]*)/?>`, 'g')
+const EXTERNAL_REFERENCE_RE = new RegExp(`<${NS_PREFIX}externalReference\\b([^>]*)/?>`, 'g')
+const PIVOT_CACHE_RE = new RegExp(`<${NS_PREFIX}pivotCache\\b([^>]*)/?>`, 'g')
 
 export function parseWorkbookXml(xml: string): WorkbookInfo {
-	const scanned = scanWorkbookXml(xml)
+	const normalizedXml = normalizeMainSpreadsheetNamespacePrefix(xml)
+	const scanned = scanWorkbookXml(normalizedXml)
 	if (scanned) return scanned
-	return parseWorkbookXmlWithDom(xml)
+	return parseWorkbookXmlWithDom(normalizedXml)
 }
 
 function scanWorkbookXml(xml: string): WorkbookInfo | null {
-	if (!xml.includes('<workbook') || xml.includes('<mc:AlternateContent')) return null
+	if (!WORKBOOK_RE.test(xml) || xml.includes('<mc:AlternateContent')) return null
 	return {
 		sheets: scanSheets(xml),
 		definedNames: scanDefinedNames(xml),

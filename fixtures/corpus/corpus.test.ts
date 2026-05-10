@@ -28,7 +28,7 @@ function requireBytes(bytes: Uint8Array | null): Uint8Array {
 interface CorpusEntry {
 	file: string
 	expectedSheets: number
-	hasUnsupported: boolean
+	hasOpaqueFeatures: boolean
 	expectedTables: number
 	expectedCharts: number
 	expectedPivotTables: number
@@ -52,7 +52,7 @@ const CORPUS: CorpusEntry[] = [
 	{
 		file: 'bevreport-demo.xlsm',
 		expectedSheets: 13,
-		hasUnsupported: true,
+		hasOpaqueFeatures: true,
 		expectedTables: 10,
 		expectedCharts: 11,
 		expectedPivotTables: 0,
@@ -61,7 +61,7 @@ const CORPUS: CorpusEntry[] = [
 	{
 		file: 'conditional-formatting.xlsx',
 		expectedSheets: 4,
-		hasUnsupported: false,
+		hasOpaqueFeatures: false,
 		expectedTables: 0,
 		expectedCharts: 0,
 		expectedPivotTables: 0,
@@ -70,7 +70,7 @@ const CORPUS: CorpusEntry[] = [
 	{
 		file: 'excel-dashboard-v2.xlsx',
 		expectedSheets: 3,
-		hasUnsupported: true,
+		hasOpaqueFeatures: true,
 		expectedTables: 0,
 		expectedCharts: 12,
 		expectedPivotTables: 5,
@@ -79,7 +79,7 @@ const CORPUS: CorpusEntry[] = [
 	{
 		file: 'large-macro-example.xlsm',
 		expectedSheets: 4,
-		hasUnsupported: true,
+		hasOpaqueFeatures: true,
 		expectedTables: 0,
 		expectedCharts: 0,
 		expectedPivotTables: 0,
@@ -88,7 +88,7 @@ const CORPUS: CorpusEntry[] = [
 	{
 		file: 'ms-excel-formulas-and-pivot-tables.xlsx',
 		expectedSheets: 7,
-		hasUnsupported: true,
+		hasOpaqueFeatures: true,
 		expectedTables: 0,
 		expectedCharts: 20,
 		expectedPivotTables: 5,
@@ -114,18 +114,21 @@ for (const entry of CORPUS) {
 		it.skipIf(!bytes)('has expected compatibility status', () => {
 			const result = readXlsx(requireBytes(bytes))
 			if (!result.ok) throw new Error(result.error.message)
-			if (entry.hasUnsupported) {
-				expect(['has-unsupported', 'has-preserved']).toContain(result.value.report.status)
+			if (entry.hasOpaqueFeatures) {
+				expect(result.value.report.status).toBe('has-preserved')
 			} else {
 				expect(['clean', 'has-preserved']).toContain(result.value.report.status)
 			}
 		})
 
-		it.skipIf(!bytes || !entry.hasUnsupported)('has capsules for unsupported features', () => {
-			const result = readXlsx(requireBytes(bytes))
-			if (!result.ok) throw new Error(result.error.message)
-			expect(result.value.capsules.length).toBeGreaterThan(0)
-		})
+		it.skipIf(!bytes || !entry.hasOpaqueFeatures)(
+			'has capsules for preserved opaque features',
+			() => {
+				const result = readXlsx(requireBytes(bytes))
+				if (!result.ok) throw new Error(result.error.message)
+				expect(result.value.capsules.length).toBeGreaterThan(0)
+			},
+		)
 
 		it.skipIf(!bytes)('no-op save produces byte-identical output', async () => {
 			const sourceBytes = requireBytes(bytes)

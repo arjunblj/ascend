@@ -130,6 +130,82 @@ describe('readXlsx', () => {
 		expect(report.status).toBe('clean')
 	})
 
+	it('normalizes backslash ZIP entry paths from non-standard producers', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels\\.rels': ROOT_RELS,
+			'xl\\_rels\\workbook.xml.rels': WORKBOOK_RELS,
+			'xl\\workbook.xml': WORKBOOK_XML,
+			'xl\\sharedStrings.xml': SHARED_STRINGS,
+			'xl\\worksheets\\sheet1.xml': SHEET_XML,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		expect(result.value.workbook.sheets[0]?.name).toBe('Data')
+		expect(result.value.workbook.sheets[0]?.cells.get(0, 0)?.value).toEqual({
+			kind: 'string',
+			value: 'Hello',
+		})
+	})
+
+	it('parses prefixed workbook namespace elements', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="utf-8"?>
+<x:workbook xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <x:workbookPr date1904="1" codeName="ThisWorkbook"/>
+  <x:bookViews><x:workbookView activeTab="0"/></x:bookViews>
+  <x:sheets><x:sheet name="Data" sheetId="1" r:id="rId1"/></x:sheets>
+  <x:definedNames><x:definedName name="Total">Data!$B$1</x:definedName></x:definedNames>
+  <x:calcPr calcMode="manual"/>
+</x:workbook>`,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': SHEET_XML,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		expect(result.value.workbook.sheets.map((sheet) => sheet.name)).toEqual(['Data'])
+		expect(result.value.workbook.calcSettings.dateSystem).toBe('1904')
+		expect(result.value.workbook.calcSettings.calcMode).toBe('manual')
+		expect(result.value.workbook.workbookProperties.codeName).toBe('ThisWorkbook')
+		expect(result.value.workbook.workbookViews).toEqual([{ activeTab: 0 }])
+		expect(result.value.workbook.definedNames.get('Total')).toBe('Data!$B$1')
+	})
+
+	it('parses prefixed shared-string namespace elements', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': `<?xml version="1.0" encoding="utf-8"?>
+<x:sst xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2" uniqueCount="2">
+  <x:si><x:t>A</x:t></x:si>
+  <x:si><x:r><x:rPr><x:b/></x:rPr><x:t>B</x:t></x:r></x:si>
+</x:sst>`,
+			'xl/worksheets/sheet1.xml': SHEET_XML,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		expect(result.value.workbook.sheets[0]?.cells.get(0, 0)?.value).toEqual({
+			kind: 'string',
+			value: 'A',
+		})
+		expect(result.value.workbook.sheets[0]?.cells.get(1, 0)?.value).toEqual({
+			kind: 'richText',
+			runs: [{ text: 'B', bold: true }],
+		})
+	})
+
 	it('values mode reads plain string cells without full cell XML parsing', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': CONTENT_TYPES,
@@ -2158,6 +2234,63 @@ describe('readXlsx', () => {
 			kind: 'date',
 			serial: 45292,
 		})
+	})
+
+	it('detects custom date formats with conditions and locale markers', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>`,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/styles.xml': `<?xml version="1.0"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <numFmts count="4">
+    <numFmt numFmtId="165" formatCode="[&lt;=60]d-mmm;d-mmm"/>
+    <numFmt numFmtId="166" formatCode="[$-409]d-mmm-yyyy"/>
+    <numFmt numFmtId="167" formatCode="[Red]0.00"/>
+    <numFmt numFmtId="168" formatCode="[&lt;=60]0;0"/>
+  </numFmts>
+  <cellXfs count="5">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
+    <xf numFmtId="165" fontId="0" fillId="0" borderId="0" applyNumberFormat="1"/>
+    <xf numFmtId="166" fontId="0" fillId="0" borderId="0" applyNumberFormat="1"/>
+    <xf numFmtId="167" fontId="0" fillId="0" borderId="0" applyNumberFormat="1"/>
+    <xf numFmtId="168" fontId="0" fillId="0" borderId="0" applyNumberFormat="1"/>
+  </cellXfs>
+</styleSheet>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1" s="1"><v>60</v></c>
+      <c r="B1" s="2"><v>45292</v></c>
+      <c r="C1" s="3"><v>12.5</v></c>
+      <c r="D1" s="4"><v>60</v></c>
+    </row>
+  </sheetData>
+</worksheet>`,
+		})
+
+		for (const mode of ['full', 'values'] as const) {
+			const result = mode === 'values' ? readXlsx(bytes, { mode: 'values' }) : readXlsx(bytes)
+			expectOk(result)
+			const sheet = result.value.workbook.sheets[0]
+			expect(sheet?.cells.get(0, 0)?.value).toEqual({ kind: 'date', serial: 60 })
+			expect(sheet?.cells.get(0, 1)?.value).toEqual({ kind: 'date', serial: 45292 })
+			expect(sheet?.cells.get(0, 2)?.value).toEqual({ kind: 'number', value: 12.5 })
+			expect(sheet?.cells.get(0, 3)?.value).toEqual({ kind: 'number', value: 60 })
+		}
 	})
 
 	it('supports selective sheet parsing', () => {

@@ -2,7 +2,12 @@ import type { CellValue, RichTextRun } from '@ascend/schema'
 import { stringValue } from '@ascend/schema'
 import { XMLParser } from 'fast-xml-parser'
 import { asArray, attr, numAttr, type XmlNode } from '../xml.ts'
-import { decodeXmlText, findTagEnd, isSelfClosingTag } from './xml-utils.ts'
+import {
+	decodeXmlText,
+	findTagEnd,
+	isSelfClosingTag,
+	normalizeMainSpreadsheetNamespacePrefix,
+} from './xml-utils.ts'
 
 type WritablePartial<T> = { -readonly [K in keyof T]?: T[K] }
 
@@ -27,6 +32,7 @@ export function parseSharedStrings(
 		readonly lazy?: boolean
 	} = {},
 ): SharedStringResolver {
+	xml = normalizeMainSpreadsheetNamespacePrefix(xml)
 	if (options.lazy) return createLazySharedStrings(xml, options.normalize)
 	return createEagerSharedStrings(xml, options.normalize)
 }

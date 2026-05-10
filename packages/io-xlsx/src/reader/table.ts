@@ -10,9 +10,10 @@ import {
 } from '@ascend/core'
 import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
 import { parseAutoFilterNode, parseSortStateNode } from './filtering.ts'
+import { normalizeMainSpreadsheetNamespacePrefix } from './xml-utils.ts'
 
 export function parseTable(xml: string, sheetId: SheetId): Table | null {
-	const doc = parseXml(xml)
+	const doc = parseXml(normalizeMainSpreadsheetNamespacePrefix(xml))
 	const table = doc.table as XmlNode | undefined
 	if (!table) return null
 

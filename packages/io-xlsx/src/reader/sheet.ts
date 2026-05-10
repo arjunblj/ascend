@@ -38,7 +38,12 @@ import { parseAutoFilterNode } from './filtering.ts'
 import type { ParsedMetadataPart } from './metadata.ts'
 import type { Relationship } from './relationships.ts'
 import type { SharedStringResolver } from './shared-strings.ts'
-import { decodeXmlText, findTagEnd, isSelfClosingTag } from './xml-utils.ts'
+import {
+	decodeXmlText,
+	findTagEnd,
+	isSelfClosingTag,
+	normalizeMainSpreadsheetNamespacePrefix,
+} from './xml-utils.ts'
 
 const SMALL_NUMBER_RANGE_START = -128
 const SMALL_NUMBER_RANGE_END = 512
@@ -195,6 +200,7 @@ export function parseSheet(
 	ctx: SheetParseContext,
 	sheetId?: Sheet['id'],
 ): Sheet {
+	xml = normalizeMainSpreadsheetNamespacePrefix(xml)
 	const sheet = new Sheet(name, sheetId)
 	applyDensityHintFromDimension(sheet, xml)
 	const sheetDataLoc = locateSheetData(xml)
@@ -1100,7 +1106,7 @@ function parseSimpleValuesNumberCell(
 	cursor = skipXmlWhitespace(xml, cursor + 4, bodyEnd)
 	if (cursor !== bodyEnd) return false
 	if (!resolveCellPositionInto(rawAttrs, fallbackPosition, out)) return false
-	sheet.cells.setNumberResolved(out.row, out.col, value, null, DEFAULT_STYLE_ID)
+	sheet.cells.setPlainNumber(out.row, out.col, value)
 	return true
 }
 
@@ -1133,9 +1139,9 @@ function parseSimpleValuesRow(
 		const canonicalNext = parseCanonicalValuesCell(xml, cursor, bodyEnd, rowText, row, nextCol, out)
 		if (canonicalNext !== -1) {
 			if (out.numberValue !== undefined) {
-				sheet.cells.setNumberResolved(out.row, out.col, out.numberValue, null, DEFAULT_STYLE_ID)
+				sheet.cells.setPlainNumber(out.row, out.col, out.numberValue)
 			} else if (out.stringValue !== undefined) {
-				sheet.cells.setStringResolved(out.row, out.col, out.stringValue, null, DEFAULT_STYLE_ID)
+				sheet.cells.setPlainString(out.row, out.col, out.stringValue)
 			} else return false
 			nextCol = out.col + 1
 			cursor = canonicalNext
@@ -1157,7 +1163,7 @@ function parseSimpleValuesRow(
 		if (value === undefined) return false
 		cursor = skipXmlWhitespace(xml, valueEnd + 4, bodyEnd)
 		if (!xml.startsWith('</c>', cursor)) return false
-		sheet.cells.setNumberResolved(out.row, out.col, value, null, DEFAULT_STYLE_ID)
+		sheet.cells.setPlainNumber(out.row, out.col, value)
 		nextCol = out.col + 1
 		cursor += 4
 	}
@@ -1979,6 +1985,7 @@ function parseFormulaText(
 		typeof formulaNode === 'boolean'
 	) {
 		const text = String(formulaNode)
+		if (text === '') return NULL_FORMULA_TEXT
 		return { text: pool ? pool.internString(text) : text }
 	}
 	if (isRawFormulaNode(formulaNode)) {
@@ -2030,7 +2037,7 @@ function parseResolvedFormulaText(
 ): { text: string | null; info?: Cell['formulaInfo'] } {
 	if (formulaType === 'shared' && sharedIndex) {
 		if (formulaFeatures) formulaFeatures.hasSharedFormula = true
-		if (text !== undefined && text !== null) {
+		if (text !== undefined && text !== null && text !== '') {
 			const normalized = normalizeStoredFormulaText(String(text))
 			const formula = pool ? pool.internString(normalized) : normalized
 			const parsed = parseFormula(formula)
@@ -2081,6 +2088,7 @@ function parseResolvedFormulaText(
 	}
 	if (text === undefined || text === null) return NULL_FORMULA_TEXT
 	const formula = normalizeStoredFormulaText(String(text))
+	if (formula === '') return NULL_FORMULA_TEXT
 	return { text: pool ? pool.internString(formula) : formula }
 }
 
@@ -2294,7 +2302,11 @@ function parseSheetViews(ws: XmlNode, sheet: Sheet): void {
 	if (viewVal === 'normal' || viewVal === 'pageBreakPreview' || viewVal === 'pageLayout') {
 		viewAttrs.view = viewVal
 	}
-	if (Object.keys(viewAttrs).length > 0) {
+	if (
+		Object.keys(viewAttrs).length > 0 ||
+		pane ||
+		attr(firstView, 'workbookViewId') !== undefined
+	) {
 		sheet.sheetView = viewAttrs as import('@ascend/core').SheetView
 	}
 }

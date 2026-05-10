@@ -85,19 +85,7 @@ describe('active content inventory', () => {
 				relationshipCount: 0,
 			},
 		])
-		expect(result.value.report.status).toBe('has-unsupported')
-		expect(
-			result.value.report.features.find((feature) => feature.feature === 'vbaProject'),
-		).toMatchObject({
-			tier: 'unsupported',
-			locations: ['xl/vbaProject.bin'],
-		})
-		expect(
-			result.value.report.features.find((feature) => feature.feature === 'activeX'),
-		).toMatchObject({
-			tier: 'unsupported',
-			locations: ['xl/activeX/activeX1.xml'],
-		})
+		expect(result.value.report.status).toBe('has-preserved')
 		expect(
 			result.value.report.features.find((feature) => feature.feature === 'preservedMacro'),
 		).toMatchObject({

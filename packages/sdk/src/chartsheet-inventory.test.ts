@@ -20,9 +20,9 @@ describe('chartsheet SDK inventory', () => {
 			},
 		])
 		expect(
-			info.compatibility.features.find((feature) => feature.feature === 'chartSheet'),
+			info.compatibility.features.find((feature) => feature.feature === 'preservedChartSheet'),
 		).toMatchObject({
-			tier: 'unsupported',
+			tier: 'preserved',
 			locations: ['xl/chartsheets/sheet1.xml'],
 		})
 

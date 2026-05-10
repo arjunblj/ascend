@@ -101,6 +101,7 @@ export class AscendWorkbook extends WorkbookReadView {
 	private _batchMode = false
 	private workbookMetaDirty = false
 	private calcStateDirty = false
+	private calcChainDirty = false
 	private sharedStringsDirty = false
 	private stylesDirty = false
 
@@ -281,6 +282,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		let cachedDirtyFlags:
 			| {
 					workbookMetaDirty: boolean
+					calcChainDirty: boolean
 					sharedStringsDirty: boolean
 					stylesDirty: boolean
 			  }
@@ -307,6 +309,7 @@ export class AscendWorkbook extends WorkbookReadView {
 						dirtySheetNames: result.value.sheetsModified,
 						workbookMetaDirty: cachedDirtyFlags.workbookMetaDirty,
 						calcStateDirty: cachedDirtyFlags.workbookMetaDirty || result.value.recalcRequired,
+						calcChainDirty: cachedDirtyFlags.calcChainDirty,
 						sharedStringsDirty: cachedDirtyFlags.sharedStringsDirty,
 						stylesDirty: cachedDirtyFlags.stylesDirty,
 						...(sourceArchive ? { sourceArchive } : {}),
@@ -357,6 +360,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		for (const sheetName of result.value.sheetsModified) this.dirtySheets.add(sheetName)
 		this.workbookMetaDirty ||= dirtyFlags.workbookMetaDirty
 		this.calcStateDirty ||= dirtyFlags.workbookMetaDirty || result.value.recalcRequired
+		this.calcChainDirty ||= dirtyFlags.calcChainDirty
 		this.sharedStringsDirty ||= dirtyFlags.sharedStringsDirty
 		this.stylesDirty ||= dirtyFlags.stylesDirty
 		if (result.value.recalcRequired) this.mergePendingRecalcTargets(ops)
@@ -433,6 +437,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		for (const sheetName of result.value.sheetsModified) this.dirtySheets.add(sheetName)
 		this.workbookMetaDirty ||= dirtyFlags.workbookMetaDirty
 		this.calcStateDirty ||= dirtyFlags.workbookMetaDirty || result.value.recalcRequired
+		this.calcChainDirty ||= dirtyFlags.calcChainDirty
 		this.sharedStringsDirty ||= dirtyFlags.sharedStringsDirty
 		this.stylesDirty ||= dirtyFlags.stylesDirty
 		if (result.value.recalcRequired) this.mergePendingRecalcTargets(opsOrFn)
@@ -735,6 +740,7 @@ export class AscendWorkbook extends WorkbookReadView {
 			dirtySheetNames: [...this.dirtySheets],
 			workbookMetaDirty: this.workbookMetaDirty,
 			calcStateDirty: this.calcStateDirty,
+			calcChainDirty: this.calcChainDirty,
 			sharedStringsDirty: this.sharedStringsDirty,
 			stylesDirty: this.stylesDirty,
 			...(sourceArchive ? { sourceArchive } : {}),
@@ -769,6 +775,7 @@ export class AscendWorkbook extends WorkbookReadView {
 			dirtySheetNames: [...this.dirtySheets],
 			workbookMetaDirty: this.workbookMetaDirty,
 			calcStateDirty: this.calcStateDirty,
+			calcChainDirty: this.calcChainDirty,
 			sharedStringsDirty: this.sharedStringsDirty,
 			stylesDirty: this.stylesDirty,
 			...(sourceArchive ? { sourceArchive } : {}),
@@ -794,10 +801,12 @@ export class AscendWorkbook extends WorkbookReadView {
 
 	private deriveDirtyFlags(ops: readonly Operation[]): {
 		workbookMetaDirty: boolean
+		calcChainDirty: boolean
 		sharedStringsDirty: boolean
 		stylesDirty: boolean
 	} {
 		let workbookMetaDirty = false
+		let calcChainDirty = false
 		let sharedStringsDirty = false
 		let stylesDirty = false
 		let sharedStringKeys: Set<string> | null = null
@@ -817,9 +826,40 @@ export class AscendWorkbook extends WorkbookReadView {
 				case 'setPivotCache':
 				case 'rewriteExternalLink':
 					workbookMetaDirty = true
+					calcChainDirty = true
 					break
 				case 'setFormula':
 				case 'fillFormula':
+				case 'insertRows':
+				case 'deleteRows':
+				case 'insertCols':
+				case 'deleteCols':
+				case 'createTable':
+				case 'appendRows':
+				case 'sortRange':
+				case 'copySheet':
+				case 'copyRange':
+				case 'moveRange':
+				case 'deleteTable':
+				case 'renameTable':
+				case 'resizeTable':
+				case 'setTableColumn':
+					calcChainDirty = true
+					if (op.op === 'setFormula' || op.op === 'fillFormula') sharedStringsDirty = true
+					if (op.op !== 'appendRows') break
+					if (
+						op.rows.some((row) =>
+							row.some(
+								(value) =>
+									typeof value === 'string' &&
+									!getSharedStringKeys().has(makePlainSharedStringKey(value)),
+							),
+						)
+					) {
+						sharedStringsDirty = true
+					}
+					break
+				case 'setRichText':
 					sharedStringsDirty = true
 					break
 				case 'setNumberFormat':
@@ -836,25 +876,13 @@ export class AscendWorkbook extends WorkbookReadView {
 						sharedStringsDirty = true
 					}
 					break
-				case 'appendRows':
-					if (
-						op.rows.some((row) =>
-							row.some(
-								(value) =>
-									typeof value === 'string' &&
-									!getSharedStringKeys().has(makePlainSharedStringKey(value)),
-							),
-						)
-					) {
-						sharedStringsDirty = true
-					}
-					break
 				case 'clearRange':
+					if (op.what === 'formulas' || op.what === 'all') calcChainDirty = true
 					if (op.what === 'styles' || op.what === 'all') stylesDirty = true
 					break
 			}
 		}
-		return { workbookMetaDirty, sharedStringsDirty, stylesDirty }
+		return { workbookMetaDirty, calcChainDirty, sharedStringsDirty, stylesDirty }
 	}
 
 	private markDirty(): void {
@@ -870,6 +898,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		this.dirtySheets.clear()
 		this.workbookMetaDirty = false
 		this.calcStateDirty = false
+		this.calcChainDirty = false
 		this.sharedStringsDirty = false
 		this.stylesDirty = false
 		this.pendingDirtyRefs = []

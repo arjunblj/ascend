@@ -64,6 +64,14 @@ const CT_VML = 'application/vnd.openxmlformats-officedocument.vmlDrawing'
 const CT_THEME = 'application/vnd.openxmlformats-officedocument.theme+xml'
 const STREAMING_XML_BATCH_CHARS = 524_288
 
+function worksheetPartPath(sheet: Workbook['sheets'][number] | undefined, index: number): string {
+	return sheet?.preservedXml?.partPath ?? `xl/worksheets/sheet${index + 1}.xml`
+}
+
+function worksheetRelsPath(sheet: Workbook['sheets'][number] | undefined, index: number): string {
+	return sheet?.preservedXml?.relsPath ?? getRelsPath(worksheetPartPath(sheet, index))
+}
+
 interface XmlStreamingBatchSink {
 	write(chunk: string): void
 	flush(): Uint8Array | undefined
@@ -82,6 +90,7 @@ export interface WriteXlsxOptions {
 	readonly dirtySheetNames?: readonly string[]
 	readonly workbookMetaDirty?: boolean
 	readonly calcStateDirty?: boolean
+	readonly calcChainDirty?: boolean
 	readonly sharedStringsDirty?: boolean
 	readonly stylesDirty?: boolean
 	readonly summaryOnly?: boolean
@@ -272,6 +281,7 @@ export function planWriteXlsx(
 		const effectiveStylesDirty = options.stylesDirty ?? dirtyPatchMode
 		const effectiveSharedStringsDirty = options.sharedStringsDirty ?? dirtyPatchMode
 		const effectiveWorkbookMetaDirty = options.workbookMetaDirty ?? dirtyPatchMode
+		const effectiveCalcChainDirty = options.calcChainDirty ?? options.calcStateDirty ?? false
 		const sheetNameById = new Map<string, string>([
 			...workbook.sheets.map((sheet) => [sheet.id as string, sheet.name] as const),
 			...workbook.chartSheets.map((sheet) => [sheet.sheetId, sheet.name] as const),
@@ -340,7 +350,11 @@ export function planWriteXlsx(
 			useSharedStrings && (preserveSharedStrings || workbookWriteFacts.hasStringCells)
 
 		const preservedStyles = workbook.preservedStyles ?? undefined
-		const preserveStyles = preservedStyles !== undefined && !effectiveStylesDirty
+		const hasNumberFormatOnlyStylePatches =
+			preservedStyles?.baseStyleIdByStyleId !== undefined &&
+			Object.keys(preservedStyles.baseStyleIdByStyleId).length > 0
+		const preserveStyles =
+			preservedStyles !== undefined && (!effectiveStylesDirty || hasNumberFormatOnlyStylePatches)
 		const canReusePreservedStyles =
 			preservedStyles !== undefined &&
 			!effectiveStylesDirty &&
@@ -361,7 +375,8 @@ export function planWriteXlsx(
 				? buildPreservedStylesXml(preservedStylesXml, preservedStyles, workbook.styles)
 				: undefined
 		const needsGeneratedStyles =
-			!options.summaryOnly && (!preservedStyles || canReusePreservedStyles || !preservedStylesXml)
+			!options.summaryOnly &&
+			(!preservedStyles || canReusePreservedStyles || !preservedStylesXml || !stylesResult)
 		const cfDxfIdOverridesBySheet = needsGeneratedStyles
 			? collectCfRuleDxfOverrides(workbook)
 			: new Map<string, Map<string, number>>()
@@ -394,7 +409,7 @@ export function planWriteXlsx(
 
 		if (capsules) {
 			for (const capsule of capsules) {
-				if (isCalcChainCapsule(capsule)) continue
+				if (isCalcChainCapsule(capsule) && effectiveCalcChainDirty) continue
 				if (capsule.anchor.kind === 'sheet') {
 					const sheetId: SheetId = capsule.anchor.sheetId as SheetId
 					if (!sheetNameById.has(sheetId)) continue
@@ -436,10 +451,11 @@ export function planWriteXlsx(
 		let rIdCounter = 1
 		const wbRels: RelEntry[] = []
 		for (let i = 0; i < workbook.sheets.length; i++) {
+			const sheet = workbook.sheets[i]
 			wbRels.push({
 				id: `rId${rIdCounter}`,
 				type: REL_WORKSHEET,
-				target: `worksheets/sheet${i + 1}.xml`,
+				target: worksheetPartPath(sheet, i).replace(/^xl\//, ''),
 			})
 			rIdCounter++
 		}
@@ -585,13 +601,12 @@ export function planWriteXlsx(
 		const preserveWorkbookXml = options.summaryOnly
 			? hasPreservedWorkbookXml && hasPreservedWorkbookRels
 			: !!(preservedWorkbookXmlText && preservedWorkbookRelsText)
-		const preservedRelsHasCalcChain = preservedWorkbookRelsText?.includes('calcChain') === true
-		const preserveWorkbookCalcState =
-			preserveWorkbookXml && !options.calcStateDirty && !preservedRelsHasCalcChain
+		const preserveWorkbookCalcState = preserveWorkbookXml && !options.calcStateDirty
 		const preserveWorkbookRels =
 			preserveWorkbookCalcState &&
 			(!shouldWriteDynamicArrayMetadata ||
 				preservedWorkbookRelsText?.includes(REL_SHEET_METADATA) === true)
+		const preserveCalcChainCapsules = !effectiveCalcChainDirty
 		const workbookContentType =
 			preservedWorkbookXml?.contentType ??
 			'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml'
@@ -694,6 +709,8 @@ export function planWriteXlsx(
 		for (let i = 0; i < workbook.sheets.length; i++) {
 			const sheet = workbook.sheets[i]
 			if (!sheet) continue
+			const sheetPartPath = worksheetPartPath(sheet, i)
+			const sheetRelsPath = worksheetRelsPath(sheet, i)
 			const sheetCapsules = sheetCapsuleMap.get(sheet.id) ?? []
 			const preservedSheetXml = sheet.preservedXml
 			const sheetRels: RelEntry[] = []
@@ -948,7 +965,7 @@ export function planWriteXlsx(
 			}
 			if (preserveSheetXml && preservedSheetXmlBytes && !options.summaryOnly) {
 				recordBytes(
-					`xl/worksheets/sheet${i + 1}.xml`,
+					sheetPartPath,
 					{
 						owner: { kind: 'sheet', sheetName: sheet.name },
 						origin: resolvePreservedOrigin(preservedSheetXml?.xml),
@@ -975,7 +992,7 @@ export function planWriteXlsx(
 					...(cfOverrides ? { cfDxfIdOverrides: cfOverrides } : {}),
 				}
 				recordStreamingSheet(
-					`xl/worksheets/sheet${i + 1}.xml`,
+					sheetPartPath,
 					{
 						owner: { kind: 'sheet', sheetName: sheet.name },
 						origin: 'generated',
@@ -986,7 +1003,7 @@ export function planWriteXlsx(
 				)
 			} else {
 				recordXml(
-					`xl/worksheets/sheet${i + 1}.xml`,
+					sheetPartPath,
 					{
 						owner: { kind: 'sheet', sheetName: sheet.name },
 						origin: preserveSheetXml ? resolvePreservedOrigin(preservedSheetXml?.xml) : 'generated',
@@ -1022,7 +1039,7 @@ export function planWriteXlsx(
 			) {
 				if (preservedSheetRelsBytes && !options.summaryOnly) {
 					recordBytes(
-						`xl/worksheets/_rels/sheet${i + 1}.xml.rels`,
+						sheetRelsPath,
 						{
 							owner: { kind: 'sheet', sheetName: sheet.name },
 							origin: resolvePreservedOrigin(preservedSheetXml?.relsXml),
@@ -1031,7 +1048,7 @@ export function planWriteXlsx(
 					)
 				} else {
 					recordXml(
-						`xl/worksheets/_rels/sheet${i + 1}.xml.rels`,
+						sheetRelsPath,
 						{
 							owner: { kind: 'sheet', sheetName: sheet.name },
 							origin: resolvePreservedOrigin(preservedSheetXml?.relsXml),
@@ -1041,7 +1058,7 @@ export function planWriteXlsx(
 				}
 			} else if (sheetRels.length > 0) {
 				recordXml(
-					`xl/worksheets/_rels/sheet${i + 1}.xml.rels`,
+					sheetRelsPath,
 					{
 						owner: { kind: 'sheet', sheetName: sheet.name },
 						origin: 'generated',
@@ -1135,7 +1152,7 @@ export function planWriteXlsx(
 
 		if (capsules) {
 			for (const capsule of capsules) {
-				if (isCalcChainCapsule(capsule)) continue
+				if (isCalcChainCapsule(capsule) && !preserveCalcChainCapsules) continue
 				if (plan.isCapsulePathSkipped(capsule.partPath)) continue
 				const content = capsule.content ?? sourceArchive?.readBytes(capsule.partPath)
 				if (!content) continue
@@ -1311,7 +1328,8 @@ export function planWriteXlsx(
 					workbookContentType,
 					capsules?.filter(
 						(capsule) =>
-							!isCalcChainCapsule(capsule) && !built.skippedCapsulePaths.has(capsule.partPath),
+							(!isCalcChainCapsule(capsule) || preserveCalcChainCapsules) &&
+							!built.skippedCapsulePaths.has(capsule.partPath),
 					),
 					built.extraOverrides.length > 0 ? built.extraOverrides : undefined,
 				)

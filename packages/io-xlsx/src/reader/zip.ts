@@ -306,7 +306,7 @@ function parseEntries(bytes: Uint8Array, decoder: TextDecoder): Map<string, ZipE
 		const fileNameEnd = fileNameStart + fileNameLength
 		const extraFieldStart = fileNameEnd
 		const extraFieldEnd = extraFieldStart + extraFieldLength
-		const path = decoder.decode(bytes.subarray(fileNameStart, fileNameEnd))
+		const path = decoder.decode(bytes.subarray(fileNameStart, fileNameEnd)).replaceAll('\\', '/')
 		if (
 			compressedSize === 0xffffffff ||
 			uncompressedSize === 0xffffffff ||

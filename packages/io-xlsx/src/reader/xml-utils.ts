@@ -20,6 +20,16 @@ export function decodeXmlText(text: string): string {
 	return text.replace(XML_ENTITY_RE, resolveXmlEntity)
 }
 
+export function normalizeMainSpreadsheetNamespacePrefix(xml: string): string {
+	const match =
+		/\sxmlns:([A-Za-z_][\w.-]*)="http:\/\/schemas\.openxmlformats\.org\/spreadsheetml\/2006\/main"/.exec(
+			xml,
+		)
+	const prefix = match?.[1]
+	if (!prefix) return xml
+	return xml.replace(new RegExp(`(<\\/?)${prefix}:`, 'g'), '$1')
+}
+
 export function findTagEnd(xml: string, start: number): number {
 	return xml.indexOf('>', start + 1)
 }

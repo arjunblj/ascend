@@ -35,6 +35,12 @@ export function fingerprintXlsx(bytes: Uint8Array): XlsxPackageFingerprint {
 	}
 }
 
+export function fingerprintXlsxPart(bytes: Uint8Array, path: string): PartFingerprint | undefined {
+	const parts = unzipSync(bytes)
+	const content = parts[path]
+	return content ? { path, xml: fingerprintXml(decode(content)) } : undefined
+}
+
 function collectFingerprints(
 	parts: Record<string, Uint8Array>,
 	pattern: RegExp,

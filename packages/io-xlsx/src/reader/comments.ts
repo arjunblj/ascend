@@ -1,8 +1,9 @@
 import type { SheetComment, SheetThreadedComment } from '@ascend/core'
 import { asArray, attr, boolAttr, parseXml, type XmlNode } from '../xml.ts'
+import { normalizeMainSpreadsheetNamespacePrefix } from './xml-utils.ts'
 
 export function parseCommentsXml(xml: string): Map<string, SheetComment> {
-	const doc = parseXml(xml)
+	const doc = parseXml(normalizeMainSpreadsheetNamespacePrefix(xml))
 	const comments = doc.comments as XmlNode | undefined
 	if (!comments) return new Map()
 

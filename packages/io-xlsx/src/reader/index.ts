@@ -11,7 +11,6 @@ import type {
 	AscendError,
 	CompatibilityReport,
 	CompatibilityStatus,
-	CompatibilityTier,
 	FeatureReport,
 	Result,
 } from '@ascend/schema'
@@ -28,6 +27,7 @@ import { parseConnectionPartInfos } from './connections.ts'
 import { type ContentTypes, parseContentTypes } from './content-types.ts'
 import { parseDataModelPartInfo } from './data-model.ts'
 import { parseDrawingImageRefs, parseDrawingObjectRefs } from './drawing.ts'
+import { maybeDecryptOoxmlPackage } from './encryption.ts'
 import { parseMetadataXml } from './metadata.ts'
 import {
 	parsePivotCacheDefinitionXml,
@@ -77,6 +77,7 @@ export interface ReadXlsxOptions {
 	readonly maxRows?: number
 	readonly richMetadata?: boolean
 	readonly parseDates?: boolean
+	readonly password?: string
 }
 
 export interface ReadXlsxLoadInfo {
@@ -100,14 +101,31 @@ export function readXlsx(
 	options: ReadXlsxOptions = {},
 ): Result<ReadXlsxResult, AscendError> {
 	const mode = options.mode ?? 'full'
+	let archiveBytes = bytes
 
 	let archive: ZipArchive
 	try {
-		archive = extractZip(bytes)
+		archive = extractZip(archiveBytes)
 	} catch (e) {
-		return err(
-			ascendError('CORRUPT_FILE', `Invalid ZIP: ${e instanceof Error ? e.message : 'unknown'}`),
-		)
+		const decrypted = maybeDecryptOoxmlPackage(bytes, options.password)
+		if (!decrypted.ok) return decrypted
+		if (decrypted.value) {
+			archiveBytes = decrypted.value
+			try {
+				archive = extractZip(archiveBytes)
+			} catch (decryptedError) {
+				return err(
+					ascendError(
+						'CORRUPT_FILE',
+						`Invalid decrypted ZIP: ${decryptedError instanceof Error ? decryptedError.message : 'unknown'}`,
+					),
+				)
+			}
+		} else {
+			return err(
+				ascendError('CORRUPT_FILE', `Invalid ZIP: ${e instanceof Error ? e.message : 'unknown'}`),
+			)
+		}
 	}
 
 	try {
@@ -142,7 +160,7 @@ export function readXlsx(
 		const relMap = new Map(wbRels.map((r) => [r.id, r]))
 
 		const workbook = new Workbook()
-		workbook.sourceArchiveBytes = bytes
+		workbook.sourceArchiveBytes = archiveBytes
 		workbook.calcSettings = wbInfo.calcSettings
 		workbook.workbookProperties = { ...wbInfo.workbookProperties }
 		workbook.workbookProtection = wbInfo.workbookProtection
@@ -622,7 +640,6 @@ function collectCapsules(
 		if (partPath.startsWith('_rels/')) continue
 
 		const ct = resolveContentType(partPath, contentTypes)
-		if (isCalcChainPart(partPath, ct)) continue
 
 		let anchor: PreservationCapsule['anchor'] = { kind: 'workbook' }
 		let relType: string | undefined
@@ -659,10 +676,6 @@ function collectCapsules(
 	}
 
 	return capsules
-}
-
-function isCalcChainPart(partPath: string, contentType: string): boolean {
-	return contentType.includes('calcChain+xml') || partPath.endsWith('/calcChain.xml')
 }
 
 function isChartCapsule(capsule: PreservationCapsule): boolean {
@@ -819,6 +832,18 @@ function classifyActiveContent(capsule: PreservationCapsule): ActiveContentInfo[
 }
 
 function preservedFeatureNote(feature: string): string | undefined {
+	if (feature === 'preservedChartSheet') {
+		return 'Chartsheets are inventoried and preserved exactly where possible; they are not modeled as worksheet grids.'
+	}
+	if (feature === 'preservedChart') {
+		return 'Chart parts are inventoried and preserved exactly where possible; chart semantics are not yet editable.'
+	}
+	if (feature === 'preservedPivot') {
+		return 'Pivot table and pivot cache parts are inventoried and preserved exactly where possible; pivot execution is not performed headlessly.'
+	}
+	if (feature === 'preservedDrawing') {
+		return 'Drawing parts are inventoried and preserved exactly where possible; drawing-object semantics are not yet editable.'
+	}
 	if (feature === 'preservedMacro') {
 		return 'Macro project bytes are preserved exactly where possible; writes require explicit loss approval because macro semantics are not editable.'
 	}
@@ -859,43 +884,6 @@ function buildReport(
 	loadInfo: ReadXlsxLoadInfo,
 ): CompatibilityReport {
 	const features: FeatureReport[] = []
-
-	const unsupportedTypes: { feature: string; pattern: string; note?: string }[] = [
-		{
-			feature: 'chartSheet',
-			pattern: 'chartsheet+xml',
-			note: 'Chartsheets are inventoried but not editable as worksheet grids; writes require explicit loss approval.',
-		},
-		{ feature: 'chart', pattern: 'chart+xml' },
-		{ feature: 'pivotTable', pattern: 'pivotTable+xml' },
-		{ feature: 'drawing', pattern: 'drawing+xml' },
-		{
-			feature: 'vbaProject',
-			pattern: 'vbaProject',
-			note: 'VBA project bytes are preserved, but macros are not executed or semantically edited.',
-		},
-		{
-			feature: 'activeX',
-			pattern: 'activeX',
-			note: 'ActiveX control parts are preserved, but active controls are not executed or semantically edited.',
-		},
-	]
-
-	for (const { feature, pattern, note } of unsupportedTypes) {
-		const locations: string[] = []
-		for (const [path, ct] of contentTypes.overrides) {
-			if (ct.includes(pattern)) locations.push(path)
-		}
-		if (locations.length > 0) {
-			features.push({
-				feature,
-				tier: 'unsupported' as CompatibilityTier,
-				count: locations.length,
-				locations,
-				...(note ? { note } : {}),
-			})
-		}
-	}
 
 	if (formulaFeatures.sharedFormulaSheets.length > 0) {
 		features.push({

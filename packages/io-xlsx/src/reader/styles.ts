@@ -537,8 +537,35 @@ function parseProtection(xf: XmlNode): { locked?: boolean; hidden?: boolean } | 
 function checkDateFormat(numFmtId: number, formatCode: string | undefined): boolean {
 	if (BUILTIN_DATE_FMT_IDS.has(numFmtId)) return true
 	if (!formatCode) return false
-	const clean = formatCode.replace(/"[^"]*"/g, '').replace(/\\./g, '')
-	return /[ymdhsYMDHS]/.test(clean) && !/[#0?]/.test(clean)
+	return hasDateTimeFormatToken(formatCode)
+}
+
+function hasDateTimeFormatToken(formatCode: string): boolean {
+	for (let i = 0; i < formatCode.length; i++) {
+		const ch = formatCode.charAt(i)
+		if (ch === '"') {
+			i = skipUntil(formatCode, i + 1, '"')
+			continue
+		}
+		if (ch === '\\' || ch === '_' || ch === '*') {
+			i++
+			continue
+		}
+		if (ch === '[') {
+			const end = skipUntil(formatCode, i + 1, ']')
+			const content = formatCode.slice(i + 1, end).trim()
+			if (/^[hmsHMS]+$/.test(content)) return true
+			i = end
+			continue
+		}
+		if (/[ymdhsYMDHS]/.test(ch)) return true
+	}
+	return false
+}
+
+function skipUntil(text: string, start: number, target: string): number {
+	const index = text.indexOf(target, start)
+	return index >= 0 ? index : text.length
 }
 
 function hasProps(obj: object): boolean {

@@ -2855,6 +2855,7 @@ function parseDataValidations(ws: XmlNode, sheet: Sheet, pool?: ValueInternPool)
 
 type MutableDataValidation = {
 	sqref: string
+	source?: 'x14'
 	type?: string
 	operator?: string
 	allowBlank?: boolean
@@ -2883,13 +2884,16 @@ function parseX14DataValidations(xml: string, sheet: Sheet, pool?: ValueInternPo
 		if (formula1) parsed.formula1 = formula1
 		const formula2 = readX14DataValidationFormula(body, 'formula2')
 		if (formula2) parsed.formula2 = formula2
+		parsed.source = 'x14'
 		pushDataValidation(sheet, parsed, pool)
 	}
 	for (const match of xml.matchAll(X14_SELF_CLOSING_DATA_VALIDATION_RE)) {
 		const attrs = parseRawAttributes(match[2] ?? '')
 		const sqref = attr(attrs, 'sqref')
 		if (!sqref) continue
-		pushDataValidation(sheet, parseDataValidationAttributes(attrs, sqref), pool)
+		const parsed = parseDataValidationAttributes(attrs, sqref)
+		parsed.source = 'x14'
+		pushDataValidation(sheet, parsed, pool)
 	}
 }
 

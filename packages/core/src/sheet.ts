@@ -213,6 +213,7 @@ export interface SheetAdvancedFilterInfo {
 
 export interface SheetDataValidation {
 	readonly sqref: string
+	readonly source?: 'x14'
 	readonly type?: string
 	readonly operator?: string
 	readonly allowBlank?: boolean

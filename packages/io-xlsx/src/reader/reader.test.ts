@@ -2051,6 +2051,7 @@ describe('readXlsx', () => {
 		expect(sheet?.dataValidations).toEqual([
 			{
 				sqref: 'E8:E11',
+				source: 'x14',
 				type: 'list',
 				showInputMessage: true,
 				showErrorMessage: true,

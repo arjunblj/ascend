@@ -287,9 +287,12 @@ function buildSheetXmlToSink(
 		}
 	}
 
-	if (sheet.dataValidations.length > 0) {
-		out.push(`<dataValidations count="${sheet.dataValidations.length}">`)
-		for (const validation of sheet.dataValidations) {
+	const legacyDataValidations = sheet.dataValidations.filter(
+		(validation) => validation.source !== 'x14' || !sheet.preservedExtLst,
+	)
+	if (legacyDataValidations.length > 0) {
+		out.push(`<dataValidations count="${legacyDataValidations.length}">`)
+		for (const validation of legacyDataValidations) {
 			const attrs = [`sqref="${escapeXml(validation.sqref)}"`]
 			if (validation.type) attrs.push(`type="${escapeXml(validation.type)}"`)
 			if (validation.operator) attrs.push(`operator="${escapeXml(validation.operator)}"`)

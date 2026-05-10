@@ -2,6 +2,7 @@ import { cloneCellStyle, type SheetId, type Table, type Workbook } from '@ascend
 import type { AscendError, CellValue, Result } from '@ascend/schema'
 import { ascendError, err, ok } from '@ascend/schema'
 import type { PreservationCapsule } from '../preserve.ts'
+import { parseCommentsXml } from '../reader/comments.ts'
 import {
 	getRelsPath,
 	REL_CALC_CHAIN,
@@ -718,7 +719,6 @@ export function planWriteXlsx(
 			let commentsRelId: string | undefined
 			let drawingRelId: string | undefined
 			let legacyDrawingRelId: string | undefined
-			let commentsCapsulePath: string | undefined
 			const tableRelIds: string[] = []
 			const commentsCapsule = sheetCapsules.find((capsule) => capsule.relType === REL_COMMENTS)
 			const tableCapsules = sheetCapsules.filter((capsule) => capsule.relType === REL_TABLE)
@@ -771,7 +771,6 @@ export function planWriteXlsx(
 				})
 				if (capsule.relType === REL_COMMENTS && !commentsRelId) {
 					commentsRelId = relId
-					commentsCapsulePath = capsule.partPath
 				}
 				if (capsule.relType === REL_DRAWING && !drawingRelId) drawingRelId = relId
 				if (capsule.relType === REL_VML_DRAWING && !legacyDrawingRelId) legacyDrawingRelId = relId
@@ -808,55 +807,61 @@ export function planWriteXlsx(
 				(options.summaryOnly ? hasPreservedSheetXml : !!preservedSheetXmlText)
 			if (!preserveSheetXml) {
 				if (sheet.comments.size > 0) {
-					const commentsPartPath =
-						commentsCapsule?.partPath ?? `xl/comments${nextGeneratedCommentsNumber}.xml`
-					const vmlPartPath =
-						commentsCapsulePath && legacyDrawingRelId
-							? sheetCapsules.find((capsule) => capsule.relType === REL_VML_DRAWING)?.partPath
-							: undefined
-					const resolvedVmlPartPath =
-						vmlPartPath ?? `xl/drawings/vmlDrawing${nextGeneratedVmlNumber}.vml`
-					recordXml(
-						commentsPartPath,
-						{
-							owner: { kind: 'sheet', sheetName: sheet.name },
-							origin: 'generated',
-							contentType: CT_COMMENTS,
-						},
-						() => buildCommentsXml(sheet),
-					)
-					recordXml(
-						resolvedVmlPartPath,
-						{
-							owner: { kind: 'sheet', sheetName: sheet.name },
-							origin: 'generated',
-							contentType: CT_VML,
-						},
-						() => buildCommentsVml(sheet),
-					)
-					plan.addOverride(commentsPartPath, CT_COMMENTS)
-					plan.addOverride(resolvedVmlPartPath, CT_VML)
-					if (commentsCapsule) plan.skipCapsulePath(commentsCapsule.partPath)
 					const existingVmlCapsule = sheetCapsules.find(
 						(capsule) => capsule.relType === REL_VML_DRAWING,
 					)
-					if (existingVmlCapsule) plan.skipCapsulePath(existingVmlCapsule.partPath)
-					commentsRelId = `rId${sheetRelId}`
-					sheetRels.push({
-						id: commentsRelId,
-						type: REL_COMMENTS,
-						target: computeRelativePath('xl/worksheets/', commentsPartPath),
-					})
-					sheetRelId++
-					legacyDrawingRelId = `rId${sheetRelId}`
-					sheetRels.push({
-						id: legacyDrawingRelId,
-						type: REL_VML_DRAWING,
-						target: computeRelativePath('xl/worksheets/', resolvedVmlPartPath),
-					})
-					sheetRelId++
-					nextGeneratedCommentsNumber++
-					nextGeneratedVmlNumber++
+					const commentsPartPath =
+						commentsCapsule?.partPath ?? `xl/comments${nextGeneratedCommentsNumber}.xml`
+					const vmlPartPath =
+						existingVmlCapsule?.partPath ?? `xl/drawings/vmlDrawing${nextGeneratedVmlNumber}.vml`
+					const canPreserveComments =
+						commentsCapsule &&
+						existingVmlCapsule &&
+						commentsMatchSource(sourceArchive, commentsCapsule, sheet.comments)
+					if (!canPreserveComments) {
+						recordXml(
+							commentsPartPath,
+							{
+								owner: { kind: 'sheet', sheetName: sheet.name },
+								origin: 'generated',
+								contentType: CT_COMMENTS,
+							},
+							() => buildCommentsXml(sheet),
+						)
+						recordXml(
+							vmlPartPath,
+							{
+								owner: { kind: 'sheet', sheetName: sheet.name },
+								origin: 'generated',
+								contentType: CT_VML,
+							},
+							() => buildCommentsVml(sheet),
+						)
+						plan.addOverride(commentsPartPath, CT_COMMENTS)
+						plan.addOverride(vmlPartPath, CT_VML)
+						if (commentsCapsule) plan.skipCapsulePath(commentsCapsule.partPath)
+						if (existingVmlCapsule) plan.skipCapsulePath(existingVmlCapsule.partPath)
+						if (!commentsRelId) {
+							commentsRelId = `rId${sheetRelId}`
+							sheetRels.push({
+								id: commentsRelId,
+								type: REL_COMMENTS,
+								target: computeRelativePath('xl/worksheets/', commentsPartPath),
+							})
+							sheetRelId++
+						}
+						if (!legacyDrawingRelId) {
+							legacyDrawingRelId = `rId${sheetRelId}`
+							sheetRels.push({
+								id: legacyDrawingRelId,
+								type: REL_VML_DRAWING,
+								target: computeRelativePath('xl/worksheets/', vmlPartPath),
+							})
+							sheetRelId++
+						}
+						if (!commentsCapsule) nextGeneratedCommentsNumber++
+						if (!existingVmlCapsule) nextGeneratedVmlNumber++
+					}
 				}
 				for (let tableIndex = 0; tableIndex < sheet.tables.length; tableIndex++) {
 					const table = sheet.tables[tableIndex]
@@ -1574,6 +1579,32 @@ function isCalcChainCapsule(capsule: PreservationCapsule): boolean {
 		capsule.contentType.includes('calcChain+xml') ||
 		capsule.partPath.endsWith('/calcChain.xml')
 	)
+}
+
+function commentsMatchSource(
+	sourceArchive: ZipArchive | undefined,
+	commentsCapsule: PreservationCapsule,
+	comments: ReadonlyMap<string, { readonly text: string; readonly author?: string }>,
+): boolean {
+	const xml = sourceArchive?.readText(commentsCapsule.partPath)
+	if (!xml) return false
+	try {
+		return commentsEqual(parseCommentsXml(xml), comments)
+	} catch {
+		return false
+	}
+}
+
+function commentsEqual(
+	left: ReadonlyMap<string, { readonly text: string; readonly author?: string }>,
+	right: ReadonlyMap<string, { readonly text: string; readonly author?: string }>,
+): boolean {
+	if (left.size !== right.size) return false
+	for (const [ref, comment] of left) {
+		const other = right.get(ref)
+		if (!other || other.text !== comment.text || other.author !== comment.author) return false
+	}
+	return true
 }
 
 function isPackageDocPropsCapsule(capsule: PreservationCapsule): boolean {

@@ -528,6 +528,25 @@ function oddLastBondPrice(
 	return (redemption + c * dc) / (1 + (yld / frequency) * dsc) - c * a
 }
 
+function solveYieldFromPrice(input: {
+	readonly targetPrice: number
+	readonly initialYield: number
+	readonly priceAtYield: (yld: number) => number
+}): number | null {
+	let guess = input.initialYield
+	for (let i = 0; i < 100; i++) {
+		const price = input.priceAtYield(guess)
+		const delta = 1e-6
+		const price2 = input.priceAtYield(guess + delta)
+		const deriv = (price2 - price) / delta
+		if (Math.abs(deriv) < 1e-12) break
+		const next = guess - (price - input.targetPrice) / deriv
+		if (Math.abs(next - guess) < 1e-10) return next
+		guess = next
+	}
+	return null
+}
+
 function amorCoeff(rate: number): number | null {
 	const life = 1 / rate
 	if (life > 0 && life < 3) return null
@@ -1422,27 +1441,13 @@ export const financialFunctions: FunctionDef[] = [
 					(e / dsr)
 				return numberValue(result)
 			}
-			let guess = rate || 0.05
-			for (let i = 0; i < 100; i++) {
-				const price = regularBondPrice(settlement, maturity, rate, guess, redemption, f, b, ds)
-				const delta = 1e-6
-				const price2 = regularBondPrice(
-					settlement,
-					maturity,
-					rate,
-					guess + delta,
-					redemption,
-					f,
-					b,
-					ds,
-				)
-				const deriv = (price2 - price) / delta
-				if (Math.abs(deriv) < 1e-12) break
-				const next = guess - (price - pr) / deriv
-				if (Math.abs(next - guess) < 1e-10) return numberValue(next)
-				guess = next
-			}
-			return errorValue('#NUM!')
+			const result = solveYieldFromPrice({
+				targetPrice: pr,
+				initialYield: rate || 0.05,
+				priceAtYield: (yld) =>
+					regularBondPrice(settlement, maturity, rate, yld, redemption, f, b, ds),
+			})
+			return result === null ? errorValue('#NUM!') : numberValue(result)
 		},
 	},
 	{
@@ -1709,40 +1714,24 @@ export const financialFunctions: FunctionDef[] = [
 				return errorValue('#NUM!')
 			}
 			const ds = currentDateSystem(ctx)
-			let guess = rate || 0.05
-			for (let i = 0; i < 100; i++) {
-				const price = oddFirstBondPrice(
-					settlement,
-					maturity,
-					issue,
-					firstCoupon,
-					rate,
-					guess,
-					redemption,
-					f,
-					b,
-					ds,
-				)
-				const delta = 1e-6
-				const price2 = oddFirstBondPrice(
-					settlement,
-					maturity,
-					issue,
-					firstCoupon,
-					rate,
-					guess + delta,
-					redemption,
-					f,
-					b,
-					ds,
-				)
-				const deriv = (price2 - price) / delta
-				if (Math.abs(deriv) < 1e-12) break
-				const next = guess - (price - pr) / deriv
-				if (Math.abs(next - guess) < 1e-10) return numberValue(next)
-				guess = next
-			}
-			return errorValue('#NUM!')
+			const result = solveYieldFromPrice({
+				targetPrice: pr,
+				initialYield: rate || 0.05,
+				priceAtYield: (yld) =>
+					oddFirstBondPrice(
+						settlement,
+						maturity,
+						issue,
+						firstCoupon,
+						rate,
+						yld,
+						redemption,
+						f,
+						b,
+						ds,
+					),
+			})
+			return result === null ? errorValue('#NUM!') : numberValue(result)
 		},
 	},
 	{

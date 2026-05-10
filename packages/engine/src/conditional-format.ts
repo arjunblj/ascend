@@ -194,8 +194,10 @@ function evaluateFormulaBoolean(
 }
 
 interface RangeContext {
-	readonly allValues: CellValue[]
 	readonly allNumerics: number[]
+	readonly valueCounts: ReadonlyMap<string, number>
+	readonly sortedNumerics: readonly number[]
+	readonly numericMean: number | null
 }
 
 const RANGE_CONTEXT_TYPES = new Set(['duplicateValues', 'uniqueValues', 'top10', 'aboveAverage'])
@@ -205,15 +207,18 @@ function needsRangeContext(type: string): boolean {
 }
 
 function buildRangeContext(sheet: Sheet, sqref: string): RangeContext {
-	const allValues: CellValue[] = []
 	const allNumerics: number[] = []
+	const valueCounts = new Map<string, number>()
 	const parts = sqref.split(/\s+/)
 	for (const part of parts) {
 		try {
 			const range = parseRange(part)
 			for (const ref of expandRange(range)) {
 				const value = sheet.cells.readValue(ref.row, ref.col)
-				allValues.push(value)
+				if (!isEmpty(value)) {
+					const key = scalarToString(value)
+					valueCounts.set(key, (valueCounts.get(key) ?? 0) + 1)
+				}
 				const n = scalarToNumber(value)
 				if (n !== null) allNumerics.push(n)
 			}
@@ -221,7 +226,12 @@ function buildRangeContext(sheet: Sheet, sqref: string): RangeContext {
 			// skip invalid range
 		}
 	}
-	return { allValues, allNumerics }
+	const sortedNumerics = [...allNumerics].sort((a, b) => a - b)
+	const numericMean =
+		allNumerics.length === 0
+			? null
+			: allNumerics.reduce((sum, value) => sum + value, 0) / allNumerics.length
+	return { allNumerics, valueCounts, sortedNumerics, numericMean }
 }
 
 const EXCEL_EPOCH_OFFSET = 25569
@@ -427,29 +437,21 @@ function ruleMatches(
 	if (type === 'duplicateValues') {
 		if (!rangeContext || isEmpty(cellValue)) return false
 		const key = scalarToString(cellValue)
-		let count = 0
-		for (const v of rangeContext.allValues) {
-			if (!isEmpty(v) && scalarToString(v) === key) count++
-		}
-		return count > 1
+		return (rangeContext.valueCounts.get(key) ?? 0) > 1
 	}
 
 	if (type === 'uniqueValues') {
 		if (!rangeContext || isEmpty(cellValue)) return false
 		const key = scalarToString(cellValue)
-		let count = 0
-		for (const v of rangeContext.allValues) {
-			if (!isEmpty(v) && scalarToString(v) === key) count++
-		}
-		return count === 1
+		return (rangeContext.valueCounts.get(key) ?? 0) === 1
 	}
 
 	if (type === 'top10') {
 		if (!rangeContext) return false
 		const cellNum = scalarToNumber(cellValue)
 		if (cellNum === null) return false
-		const sorted = [...rangeContext.allNumerics].sort((a, b) => a - b)
-		const total = sorted.length
+		const sortedNumerics = rangeContext.sortedNumerics
+		const total = sortedNumerics.length
 		if (total === 0) return false
 
 		const rank = rule.rank ?? 10
@@ -458,23 +460,21 @@ function ruleMatches(
 		const n = isPercent ? Math.max(1, Math.ceil((total * rank) / 100)) : Math.min(rank, total)
 
 		if (isBottom) {
-			return cellNum <= (sorted[n - 1] ?? 0)
+			return cellNum <= (sortedNumerics[n - 1] ?? 0)
 		}
-		return cellNum >= (sorted[total - n] ?? 0)
+		return cellNum >= (sortedNumerics[total - n] ?? 0)
 	}
 
 	if (type === 'aboveAverage') {
-		if (!rangeContext || rangeContext.allNumerics.length === 0) return false
+		if (!rangeContext || rangeContext.numericMean === null) return false
 		const cellNum = scalarToNumber(cellValue)
 		if (cellNum === null) return false
-		const sum = rangeContext.allNumerics.reduce((a, b) => a + b, 0)
-		const mean = sum / rangeContext.allNumerics.length
 		const above = rule.aboveAverage !== false
 		const equal = rule.equalAverage === true
-		if (above && equal) return cellNum >= mean
-		if (above) return cellNum > mean
-		if (equal) return cellNum <= mean
-		return cellNum < mean
+		if (above && equal) return cellNum >= rangeContext.numericMean
+		if (above) return cellNum > rangeContext.numericMean
+		if (equal) return cellNum <= rangeContext.numericMean
+		return cellNum < rangeContext.numericMean
 	}
 
 	if (type === 'timePeriod') {

@@ -13,6 +13,7 @@ import {
 	defaultCalcContext,
 	type EvalContext,
 	evaluateCompiled,
+	evaluateConditionalFormats,
 } from '../../packages/engine/src/index.ts'
 import { clearGlobalParseCache, parseFormula } from '../../packages/formulas/src/index.ts'
 import { numberValue, stringValue } from '../../packages/schema/src/index.ts'
@@ -189,6 +190,30 @@ const benchmarks: readonly MicroBenchmark[] = [
 				evaluateCompiled(compiled, ctx)
 			}
 			return count
+		},
+	},
+	{
+		name: 'Conditional formatting range context (5k cells)',
+		targetOpsPerSec: 250_000,
+		run() {
+			const workbook = createWorkbook()
+			const sheet = workbook.addSheet('Sheet1')
+			const rows = 5000
+			for (let row = 0; row < rows; row++) {
+				const value = row % 25 === 0 ? stringValue(`label-${row}`) : numberValue((row * 17) % 1000)
+				sheet.cells.set(row, 0, { value, formula: null, styleId: SID })
+			}
+			sheet.conditionalFormats.push({
+				sqref: 'A1:A5000',
+				rules: [
+					{ type: 'top10', rank: 10, percent: true, priority: 1 },
+					{ type: 'duplicateValues', priority: 2 },
+					{ type: 'aboveAverage', priority: 3 },
+				],
+			})
+			const result = evaluateConditionalFormats(sheet, workbook)
+			if (result.size === 0) throw new Error('conditional formatting benchmark matched no cells')
+			return rows
 		},
 	},
 	{

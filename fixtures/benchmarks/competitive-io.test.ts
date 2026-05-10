@@ -861,6 +861,14 @@ describe('competitive IO helpers', () => {
 		expect(parseLibraryAllowlist(' , ')).toBeUndefined()
 	})
 
+	test('library allowlist expands the natural Ascend alias across read and write runners', () => {
+		const allowlist = parseLibraryAllowlist('ascend')
+		expect(libraryAllowed('ascend-external-writer', allowlist)).toBe(true)
+		expect(libraryAllowed('ascend-readxlsx-row-stream-bytes', allowlist)).toBe(true)
+		expect(libraryAllowed('ascend', allowlist)).toBe(true)
+		expect(libraryAllowed('rust-xlsxwriter', allowlist)).toBe(false)
+	})
+
 	test('SOTA writer manifest includes Python writer baselines required by scoreboard coverage', () => {
 		const manifest = JSON.parse(
 			readFileSync('fixtures/benchmarks/runners/sota-writers.manifest.json', 'utf-8'),

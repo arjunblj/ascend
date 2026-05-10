@@ -74,6 +74,26 @@ type ValidationMode = 'each' | 'final'
 type ExecutionScopeSelection = 'in-process' | 'external-process' | 'all'
 type SourceMode = 'full' | 'generated-write'
 type LibraryAllowlist = ReadonlySet<string> | undefined
+const ASCEND_LIBRARY_ALIASES = [
+	'ascend',
+	'ascend-external',
+	'ascend-external-values',
+	'ascend-external-values-ordered',
+	'ascend-external-bytes',
+	'ascend-external-values-bytes',
+	'ascend-readxlsx-raw-values-bytes',
+	'ascend-readxlsx-raw-values-operation-bytes',
+	'ascend-readxlsx-raw-values-operation-path',
+	'ascend-readxlsx-row-stream-bytes',
+	'ascend-readxlsx-cell-materialization-bytes',
+	'ascend-readxlsx-values-bytes',
+	'ascend-readxlsx-values-rich-metadata-bytes',
+	'ascend-external-metadata-only-bytes',
+	'ascend-external-writer',
+] as const
+const LIBRARY_ALLOWLIST_ALIASES = new Map<string, readonly string[]>([
+	['ascend', ASCEND_LIBRARY_ALIASES],
+])
 const FAST_GENERATED_WRITE_HASH_NOT_COMPUTED = '__not-computed-for-fast-generated-write__'
 const ALL_WORKLOADS = [
 	'dense-values',
@@ -312,7 +332,9 @@ export function parseLibraryAllowlist(raw: string | undefined): LibraryAllowlist
 		.map((library) => library.trim())
 		.filter(Boolean)
 	if (libraries.length === 0) return undefined
-	return new Set(libraries)
+	return new Set(
+		libraries.flatMap((library) => LIBRARY_ALLOWLIST_ALIASES.get(library) ?? [library]),
+	)
 }
 
 export function libraryAllowed(library: string, allowlist: LibraryAllowlist): boolean {
@@ -324,20 +346,7 @@ export function competitorMatches(library: string, selection: CompetitorSelectio
 	if (selection === 'js')
 		return library === 'ascend' || library === 'sheetjs' || library === 'exceljs'
 	return (
-		library === 'ascend-external' ||
-		library === 'ascend-external-values' ||
-		library === 'ascend-external-values-ordered' ||
-		library === 'ascend-external-bytes' ||
-		library === 'ascend-external-values-bytes' ||
-		library === 'ascend-readxlsx-raw-values-bytes' ||
-		library === 'ascend-readxlsx-raw-values-operation-bytes' ||
-		library === 'ascend-readxlsx-raw-values-operation-path' ||
-		library === 'ascend-readxlsx-row-stream-bytes' ||
-		library === 'ascend-readxlsx-cell-materialization-bytes' ||
-		library === 'ascend-readxlsx-values-bytes' ||
-		library === 'ascend-readxlsx-values-rich-metadata-bytes' ||
-		library === 'ascend-external-metadata-only-bytes' ||
-		library === 'ascend-external-writer' ||
+		ASCEND_LIBRARY_ALIASES.includes(library as (typeof ASCEND_LIBRARY_ALIASES)[number]) ||
 		library === 'sheetjs-metadata-only' ||
 		library === 'openpyxl' ||
 		library === 'openpyxl-write-only' ||

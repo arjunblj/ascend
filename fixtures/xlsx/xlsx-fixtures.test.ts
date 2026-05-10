@@ -471,16 +471,39 @@ if (poiFixtures.length > 0) {
 			expect(result.value.workbook.themeMetadata).toBeDefined()
 		})
 
-		it('parses comment text and author from SimpleWithComments.xlsx', () => {
+		it('parses comment text, author, and VML layout from SimpleWithComments.xlsx', () => {
 			const result = readXlsx(loadFixture('SimpleWithComments.xlsx'))
 			expectOk(result)
 			const sheet = result.value.workbook.sheets[0]
 			expect(sheet).toBeDefined()
 			if (!sheet) return
-			const entries = [...sheet.comments.entries()]
-			expect(entries.length).toBeGreaterThan(0)
-			const [, comment] = entries[0] ?? ['', { text: '' }]
-			expect(comment.text.length).toBeGreaterThan(0)
+			expect([...sheet.comments.keys()]).toEqual(['B1', 'B2', 'B3'])
+			for (const ref of ['B1', 'B2', 'B3']) {
+				expect(sheet.comments.get(ref)?.author).toBe('Yegor Kozlov')
+				expect(sheet.comments.get(ref)?.text.length).toBeGreaterThan(0)
+			}
+			expect(sheet.comments.get('B1')?.legacyDrawing).toMatchObject({
+				shapeId: '_x0000_s1025',
+				anchor: [2, 15, 0, 2, 4, 15, 4, 8],
+				row: 0,
+				column: 1,
+				visible: false,
+				moveWithCells: true,
+				sizeWithCells: true,
+				autoFill: false,
+			})
+			expect(sheet.comments.get('B2')?.legacyDrawing).toMatchObject({
+				row: 1,
+				column: 1,
+				visible: false,
+			})
+			expect(sheet.comments.get('B3')?.legacyDrawing).toMatchObject({
+				shapeId: '_x0000_s1027',
+				anchor: [2, 15, 1, 7, 4, 15, 5, 13],
+				row: 2,
+				column: 1,
+				visible: true,
+			})
 		})
 
 		it('recalculates shared formulas from shared_formulas.xlsx', () => {

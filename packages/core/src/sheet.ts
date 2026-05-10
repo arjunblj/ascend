@@ -11,6 +11,19 @@ export type SheetState = 'visible' | 'hidden' | 'veryHidden'
 export interface SheetComment {
 	readonly text: string
 	readonly author?: string
+	readonly legacyDrawing?: SheetCommentLegacyDrawing
+}
+
+export interface SheetCommentLegacyDrawing {
+	readonly shapeId?: string
+	readonly style?: string
+	readonly anchor?: readonly [number, number, number, number, number, number, number, number]
+	readonly row?: number
+	readonly column?: number
+	readonly visible?: boolean
+	readonly moveWithCells?: boolean
+	readonly sizeWithCells?: boolean
+	readonly autoFill?: boolean
 }
 
 export interface SheetThreadedComment {
@@ -496,7 +509,9 @@ export class Sheet {
 		this.colDefs = this.colDefs.map((d) => ({ ...d }))
 		this.rowHeights = new Map(this.rowHeights)
 		this.rowDefs = new Map([...this.rowDefs.entries()].map(([row, def]) => [row, { ...def }]))
-		this.comments = new Map(this.comments)
+		this.comments = new Map(
+			[...this.comments.entries()].map(([ref, comment]) => [ref, cloneSheetComment(comment)]),
+		)
 		this.threadedComments = this.threadedComments.map((comment) => ({ ...comment }))
 		this.hyperlinks = new Map(this.hyperlinks)
 		this.ignoredErrors = this.ignoredErrors.map((e) => ({ ...e }))
@@ -579,6 +594,20 @@ function cloneRangeRef(range: RangeRef): RangeRef {
 	return {
 		start: { ...range.start },
 		end: { ...range.end },
+	}
+}
+
+function cloneSheetComment(comment: SheetComment): SheetComment {
+	return {
+		...comment,
+		...(comment.legacyDrawing
+			? {
+					legacyDrawing: {
+						...comment.legacyDrawing,
+						...(comment.legacyDrawing.anchor ? { anchor: [...comment.legacyDrawing.anchor] } : {}),
+					},
+				}
+			: {}),
 	}
 }
 

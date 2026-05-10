@@ -88,6 +88,29 @@ describe('writeXlsx', () => {
 		})
 	})
 
+	it('skips write fact scan for numeric workbooks without formula metadata', async () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Numeric')
+		sheet.cells.setExpectedDensity('dense')
+		for (let row = 0; row < 100; row++) {
+			for (let col = 0; col < 8; col++) {
+				sheet.cells.setPlainNumber(row, col, row * 8 + col)
+			}
+		}
+		const failUnexpectedScan = () => {
+			throw new Error('unexpected write fact scan')
+		}
+		sheet.cells.iterate = function* () {
+			failUnexpectedScan()
+			yield undefined as never
+		}
+
+		const written = await writeXlsxStreaming(wb)
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		expect(zip['xl/sharedStrings.xml']).toBeUndefined()
+	})
+
 	it('writes edited tabular slicer cache item state back into preserved package XML', () => {
 		const slicerCacheXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <slicerCacheDefinition xmlns="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" name="Slicer_State" sourceName="State">
@@ -2333,7 +2356,7 @@ describe('writeXlsx', () => {
 		sheet.comments.set('B2', { text: 'Hello', author: 'Ada' })
 
 		const { result, bytes } = roundTrip(wb)
-		expect(result.workbook.sheets[0]?.comments.get('B2')).toEqual({
+		expect(result.workbook.sheets[0]?.comments.get('B2')).toMatchObject({
 			text: 'Hello',
 			author: 'Ada',
 		})
@@ -2353,6 +2376,34 @@ describe('writeXlsx', () => {
 			Relationships: 1,
 			Relationship: 2,
 		})
+	})
+
+	it('preserves source comment VML layout for text-only comment edits', () => {
+		const source = readFileSync(
+			new URL('../../../../fixtures/xlsx/poi/SimpleWithComments.xlsx', import.meta.url),
+		)
+		const opened = readXlsx(source)
+		expectOk(opened)
+		const sheet = opened.value.workbook.sheets[0]
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+		const original = sheet.comments.get('B1')
+		expect(original).toBeDefined()
+		if (!original) return
+		sheet.comments.set('B1', { ...original, text: 'Updated comment text' })
+
+		const written = writeXlsx(opened.value.workbook, opened.value.capsules, {
+			dirtySheetNames: [sheet.name],
+		})
+		expectOk(written)
+		const sourceEntries = unzipSync(source)
+		const writtenEntries = unzipSync(written.value)
+		expect(new TextDecoder().decode(writtenEntries['xl/comments1.xml'])).toContain(
+			'Updated comment text',
+		)
+		expect(writtenEntries['xl/drawings/vmlDrawing1.vml']).toEqual(
+			sourceEntries['xl/drawings/vmlDrawing1.vml'],
+		)
 	})
 
 	it('preserves conditional formatting and data validations on round-trip', () => {

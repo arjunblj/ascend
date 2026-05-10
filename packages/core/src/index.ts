@@ -78,6 +78,7 @@ export type {
 	SheetBreak,
 	SheetColDef,
 	SheetComment,
+	SheetCommentLegacyDrawing,
 	SheetConditionalFormat,
 	SheetConditionalFormatColor,
 	SheetConditionalFormatColorScale,

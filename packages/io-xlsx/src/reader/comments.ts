@@ -1,6 +1,16 @@
-import type { SheetComment, SheetThreadedComment } from '@ascend/core'
+import {
+	type SheetComment,
+	type SheetCommentLegacyDrawing,
+	type SheetThreadedComment,
+	toA1,
+} from '@ascend/core'
 import { asArray, attr, boolAttr, parseXml, type XmlNode } from '../xml.ts'
 import { normalizeMainSpreadsheetNamespacePrefix } from './xml-utils.ts'
+
+const VML_SHAPE_RE = /<v:shape\b([^>]*)>([\s\S]*?)<\/v:shape>/gi
+const ATTR_RE = /([A-Za-z_][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g
+const NOTE_CLIENT_DATA_RE =
+	/<(?:[A-Za-z_][\w.-]*:)?ClientData\b([^>]*)ObjectType\s*=\s*(?:"Note"|'Note')([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?ClientData>/i
 
 export function parseCommentsXml(xml: string): Map<string, SheetComment> {
 	const doc = parseXml(normalizeMainSpreadsheetNamespacePrefix(xml))
@@ -25,6 +35,44 @@ export function parseCommentsXml(xml: string): Map<string, SheetComment> {
 		entries.set(ref, author ? { text, author } : { text })
 	}
 	return entries
+}
+
+export function parseCommentVmlXml(xml: string): Map<string, SheetCommentLegacyDrawing> {
+	const layouts = new Map<string, SheetCommentLegacyDrawing>()
+	for (const match of xml.matchAll(VML_SHAPE_RE)) {
+		const shapeAttrs = match[1] ?? ''
+		const shapeBody = match[2] ?? ''
+		const clientData = NOTE_CLIENT_DATA_RE.exec(shapeBody)
+		if (!clientData) continue
+		const clientBody = clientData[3] ?? ''
+		const row = readIntElement(clientBody, 'Row')
+		const column = readIntElement(clientBody, 'Column')
+		if (row === undefined || column === undefined) continue
+		const ref = toA1({ row, col: column })
+		const anchor = parseAnchor(readElementText(clientBody, 'Anchor'))
+		const visible = readBooleanElement(clientBody, 'Visible')
+		const moveWithCells = readBooleanElement(clientBody, 'MoveWithCells')
+		const sizeWithCells = readBooleanElement(clientBody, 'SizeWithCells')
+		const shapeId = readAttr(shapeAttrs, 'id')
+		const style = readAttr(shapeAttrs, 'style')
+		const autoFill = readBooleanElement(clientBody, 'AutoFill')
+		const layout: SheetCommentLegacyDrawing = {
+			...(shapeId !== undefined ? { shapeId } : {}),
+			...(style !== undefined ? { style } : {}),
+			...(anchor ? { anchor } : {}),
+			row,
+			column,
+			visible:
+				visible ??
+				(hasSelfClosingElement(clientBody, 'Visible') ||
+					/visibility\s*:\s*visible/i.test(style ?? '')),
+			moveWithCells: moveWithCells ?? hasSelfClosingElement(clientBody, 'MoveWithCells'),
+			sizeWithCells: sizeWithCells ?? hasSelfClosingElement(clientBody, 'SizeWithCells'),
+			...(autoFill !== undefined ? { autoFill } : {}),
+		}
+		layouts.set(ref, layout)
+	}
+	return layouts
 }
 
 export function parseThreadedCommentsXml(
@@ -100,4 +148,47 @@ function readNodeText(node: unknown): string | undefined {
 		return text !== undefined && text !== null ? String(text) : undefined
 	}
 	return undefined
+}
+
+function readAttr(rawAttrs: string, name: string): string | undefined {
+	ATTR_RE.lastIndex = 0
+	for (const match of rawAttrs.matchAll(ATTR_RE)) {
+		if (match[1] === name) return match[2] ?? match[3] ?? ''
+	}
+	return undefined
+}
+
+function readElementText(xml: string, localName: string): string | undefined {
+	const name = `(?:[A-Za-z_][\\w.-]*:)?${localName}`
+	const re = new RegExp(`<${name}\\b[^>]*>([\\s\\S]*?)<\\/${name}>`, 'i')
+	return re.exec(xml)?.[1]?.trim()
+}
+
+function readIntElement(xml: string, localName: string): number | undefined {
+	const text = readElementText(xml, localName)
+	if (text === undefined) return undefined
+	const value = Number(text)
+	return Number.isInteger(value) ? value : undefined
+}
+
+function readBooleanElement(xml: string, localName: string): boolean | undefined {
+	const text = readElementText(xml, localName)
+	if (text === undefined) return undefined
+	if (/^(true|1)$/i.test(text)) return true
+	if (/^(false|0)$/i.test(text)) return false
+	return undefined
+}
+
+function hasSelfClosingElement(xml: string, localName: string): boolean {
+	return new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${localName}\\b[^>]*/>`, 'i').test(xml)
+}
+
+function parseAnchor(text: string | undefined): SheetCommentLegacyDrawing['anchor'] | undefined {
+	if (!text) return undefined
+	const values = text
+		.split(',')
+		.map((part) => Number(part.trim()))
+		.filter((value) => Number.isInteger(value))
+	if (values.length !== 8) return undefined
+	return values as unknown as SheetCommentLegacyDrawing['anchor']
 }

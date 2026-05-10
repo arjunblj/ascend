@@ -110,6 +110,31 @@ describe('ClosedXML XLSX fixture corpus', () => {
 		).toBe(true)
 	})
 
+	test('captures ClosedXML comment VML visibility and position metadata', () => {
+		const result = readXlsx(loadFixture('Comments_AddingComments.xlsx'))
+		expectOk(result)
+		const visibility = result.value.workbook.sheets.find((sheet) => sheet.name === 'Visibility')
+		const position = result.value.workbook.sheets.find((sheet) => sheet.name === 'Position')
+		expect(visibility?.comments.get('A1')?.legacyDrawing).toMatchObject({
+			shapeId: '_x0000_s14',
+			anchor: [1, 15, 0, 0, 3, 33, 3, 14],
+			row: 0,
+			column: 0,
+			visible: false,
+		})
+		expect(visibility?.comments.get('A2')?.legacyDrawing).toMatchObject({
+			shapeId: '_x0000_s15',
+			visible: true,
+		})
+		expect(position?.comments.get('A1')?.legacyDrawing).toMatchObject({
+			shapeId: '_x0000_s18',
+			anchor: [2, 38, 4, 8, 4, 32, 8, 7],
+			row: 0,
+			column: 0,
+			visible: true,
+		})
+	})
+
 	test('resolves ClosedXML external-link formula usages to package targets', async () => {
 		const wb = await AscendWorkbook.open(
 			loadFixture('Other_ExternalLinks_WorkbookWithExternalLink.xlsx'),

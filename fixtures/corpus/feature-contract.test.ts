@@ -59,6 +59,7 @@ interface SemanticSummary {
 	sheetCount: number
 	tableCount: number
 	commentCount: number
+	commentLayouts: readonly CommentLayoutSummary[]
 	conditionalFormatCount: number
 	dataValidationCount: number
 	imageCount: number
@@ -92,6 +93,16 @@ interface SemanticSummary {
 	slicers: readonly OoxmlLinkedUiProbe[]
 	timelineCaches: readonly OoxmlLinkedCacheProbe[]
 	timelines: readonly OoxmlLinkedUiProbe[]
+}
+
+interface CommentLayoutSummary {
+	readonly sheetName: string
+	readonly ref: string
+	readonly shapeId?: string
+	readonly anchor?: readonly number[]
+	readonly row?: number
+	readonly column?: number
+	readonly visible?: boolean
 }
 
 interface ContractSubject {
@@ -358,6 +369,31 @@ function assertKnownVisualFixtureCoverage(
 	}
 }
 
+function assertKnownCommentFixtureCoverage(
+	entry: NormalizedCorpusManifestEntry,
+	semanticSummary: SemanticSummary,
+): void {
+	const expected = KNOWN_COMMENT_FIXTURE_EXPECTATIONS.get(entry.file)
+	if (!expected) return
+	for (const item of expected.layouts) {
+		const actual = semanticSummary.commentLayouts.find(
+			(layout) => layout.sheetName === item.sheetName && layout.ref === item.ref,
+		)
+		assertFeature(
+			entry,
+			'comment_vml_layout',
+			actual !== undefined &&
+				(item.shapeId === undefined || actual.shapeId === item.shapeId) &&
+				(item.visible === undefined || actual.visible === item.visible) &&
+				(item.row === undefined || actual.row === item.row) &&
+				(item.column === undefined || actual.column === item.column) &&
+				(item.anchor === undefined ||
+					JSON.stringify(actual.anchor) === JSON.stringify(item.anchor)),
+			`expected VML comment layout for ${item.sheetName}!${item.ref}`,
+		)
+	}
+}
+
 const KNOWN_VISUAL_FIXTURE_EXPECTATIONS = new Map<
 	string,
 	{ readonly sheetImageRefCount?: number; readonly sheetDrawingObjectRefCount?: number }
@@ -366,6 +402,37 @@ const KNOWN_VISUAL_FIXTURE_EXPECTATIONS = new Map<
 	['WithDrawing.xlsx', { sheetImageRefCount: 5, sheetDrawingObjectRefCount: 1 }],
 	['picture.xlsx', { sheetImageRefCount: 2 }],
 	['textbox-hyperlink.xlsx', { sheetDrawingObjectRefCount: 1 }],
+])
+
+const KNOWN_COMMENT_FIXTURE_EXPECTATIONS = new Map<
+	string,
+	{ readonly layouts: readonly CommentLayoutSummary[] }
+>([
+	[
+		'SimpleWithComments.xlsx',
+		{
+			layouts: [
+				{
+					sheetName: 'Sheet1',
+					ref: 'B1',
+					shapeId: '_x0000_s1025',
+					anchor: [2, 15, 0, 2, 4, 15, 4, 8],
+					row: 0,
+					column: 1,
+					visible: false,
+				},
+				{
+					sheetName: 'Sheet1',
+					ref: 'B3',
+					shapeId: '_x0000_s1027',
+					anchor: [2, 15, 1, 7, 4, 15, 5, 13],
+					row: 2,
+					column: 1,
+					visible: true,
+				},
+			],
+		},
+	],
 ])
 
 function summarizePackage(bytes: Uint8Array): PackageSummary {
@@ -443,6 +510,23 @@ async function loadContractSubject(bytes: Uint8Array): Promise<ContractSubject> 
 	const packageProbe = inspectOoxmlPackageFeatures(bytes)
 	const imageRefs = visuals.sheets.flatMap((sheet) => sheet.imageRefs ?? [])
 	const drawingObjectRefs = visuals.sheets.flatMap((sheet) => sheet.drawingObjectRefs ?? [])
+	const commentLayouts = raw.value.workbook.sheets.flatMap((sheet) =>
+		[...sheet.comments.entries()].flatMap(([ref, comment]) => {
+			const layout = comment.legacyDrawing
+			if (!layout) return []
+			return [
+				{
+					sheetName: sheet.name,
+					ref,
+					...(layout.shapeId !== undefined ? { shapeId: layout.shapeId } : {}),
+					...(layout.anchor !== undefined ? { anchor: layout.anchor } : {}),
+					...(layout.row !== undefined ? { row: layout.row } : {}),
+					...(layout.column !== undefined ? { column: layout.column } : {}),
+					...(layout.visible !== undefined ? { visible: layout.visible } : {}),
+				},
+			]
+		}),
+	)
 	return {
 		packageSummary: summarizePackage(bytes),
 		packageCounts: packageProbe.counts,
@@ -451,6 +535,7 @@ async function loadContractSubject(bytes: Uint8Array): Promise<ContractSubject> 
 			sheetCount: info.sheetCount,
 			tableCount: info.sheets.reduce((sum, sheet) => sum + (sheet.tableCount ?? 0), 0),
 			commentCount: info.commentCount ?? 0,
+			commentLayouts,
 			conditionalFormatCount: info.conditionalFormatCount ?? 0,
 			dataValidationCount: info.dataValidationCount ?? 0,
 			imageCount: info.imageCount ?? 0,
@@ -576,6 +661,7 @@ function assertManifestReadCoverage(
 
 	assertFeature(entry, 'tables', !entry.features.tables || semanticSummary.tableCount > 0)
 	assertFeature(entry, 'comments', !entry.features.comments || semanticSummary.commentCount > 0)
+	assertKnownCommentFixtureCoverage(entry, semanticSummary)
 	assertFeature(
 		entry,
 		'threaded_comments',

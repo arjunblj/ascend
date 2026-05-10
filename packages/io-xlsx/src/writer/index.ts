@@ -8,7 +8,7 @@ import {
 import type { AscendError, CellValue, Result } from '@ascend/schema'
 import { ascendError, err, ok } from '@ascend/schema'
 import type { PreservationCapsule } from '../preserve.ts'
-import { parseCommentsXml } from '../reader/comments.ts'
+import { parseCommentsXml, parseCommentVmlXml } from '../reader/comments.ts'
 import { parseConnectionPartInfos } from '../reader/connections.ts'
 import { parseDrawingObjectRefs } from '../reader/drawing.ts'
 import {
@@ -416,10 +416,11 @@ export function planWriteXlsx(
 			!options.summaryOnly && preservedSharedStringsXml
 				? materializeSharedStringEntries(preservedSharedStringsXml)
 				: []
-		const needsWriteFactScan = useSharedStrings || workbookHasFormulaCells(workbook)
+		const hasSharedStringEligibleCells = workbookHasSharedStringEligibleCells(workbook)
+		const needsWriteFactScan = workbookHasFormulaInfoCells(workbook)
 		const workbookWriteFacts = needsWriteFactScan
 			? scanWorkbookWriteFactsFast(workbook)
-			: { hasStringCells: false, dynamicArrayMetadataEntries: [] }
+			: { hasStringCells: hasSharedStringEligibleCells, dynamicArrayMetadataEntries: [] }
 		const ssTable =
 			options.summaryOnly || useInlineStrings || usePlainStrings
 				? {
@@ -965,6 +966,9 @@ export function planWriteXlsx(
 						commentsCapsule &&
 						existingVmlCapsule &&
 						commentsMatchSource(sourceArchive, commentsCapsule, sheet.comments)
+					const canPreserveCommentVml =
+						existingVmlCapsule &&
+						commentVmlRefsMatchSource(sourceArchive, existingVmlCapsule, sheet.comments)
 					if (!canPreserveComments) {
 						recordXml(
 							commentsPartPath,
@@ -975,6 +979,10 @@ export function planWriteXlsx(
 							},
 							() => buildCommentsXml(sheet),
 						)
+						plan.addOverride(commentsPartPath, CT_COMMENTS)
+						if (commentsCapsule) plan.skipCapsulePath(commentsCapsule.partPath)
+					}
+					if (!canPreserveCommentVml) {
 						recordXml(
 							vmlPartPath,
 							{
@@ -984,10 +992,10 @@ export function planWriteXlsx(
 							},
 							() => buildCommentsVml(sheet),
 						)
-						plan.addOverride(commentsPartPath, CT_COMMENTS)
 						plan.addOverride(vmlPartPath, CT_VML)
-						if (commentsCapsule) plan.skipCapsulePath(commentsCapsule.partPath)
 						if (existingVmlCapsule) plan.skipCapsulePath(existingVmlCapsule.partPath)
+					}
+					if (!canPreserveComments || !canPreserveCommentVml) {
 						if (!commentsRelId) {
 							commentsRelId = nextSheetRelId()
 							sheetRels.push({
@@ -1914,8 +1922,14 @@ function collectCfRuleDxfOverrides(workbook: Workbook): Map<string, Map<string, 
 	return bySheet
 }
 
-function workbookHasFormulaCells(workbook: Workbook): boolean {
-	return workbook.sheets.some((sheet) => sheet.cells.formulaCellCount() > 0)
+function workbookHasSharedStringEligibleCells(workbook: Workbook): boolean {
+	return workbook.sheets.some(
+		(sheet) => sheet.cells.stringCellCount() > 0 || sheet.cells.richTextCellCount() > 0,
+	)
+}
+
+function workbookHasFormulaInfoCells(workbook: Workbook): boolean {
+	return workbook.sheets.some((sheet) => sheet.cells.formulaInfoCellCount() > 0)
 }
 
 function hasCompletePreservedStyleMap(
@@ -1945,6 +1959,25 @@ function commentsMatchSource(
 	if (!xml) return false
 	try {
 		return commentsEqual(parseCommentsXml(xml), comments)
+	} catch {
+		return false
+	}
+}
+
+function commentVmlRefsMatchSource(
+	sourceArchive: ZipArchive | undefined,
+	vmlCapsule: PreservationCapsule,
+	comments: ReadonlyMap<string, { readonly text: string; readonly author?: string }>,
+): boolean {
+	const xml = sourceArchive?.readText(vmlCapsule.partPath)
+	if (!xml) return false
+	try {
+		const layouts = parseCommentVmlXml(xml)
+		if (layouts.size !== comments.size) return false
+		for (const ref of comments.keys()) {
+			if (!layouts.has(ref)) return false
+		}
+		return true
 	} catch {
 		return false
 	}

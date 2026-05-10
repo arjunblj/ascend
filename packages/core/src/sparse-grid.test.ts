@@ -3,6 +3,7 @@ import {
 	type CellValue,
 	EMPTY,
 	numberValue,
+	richTextValue,
 	type ScalarCellValue,
 	stringValue,
 } from '@ascend/schema'
@@ -55,6 +56,49 @@ describe('SparseGrid', () => {
 			start: { row: 0, col: 0 },
 			end: { row: 1, col: 1 },
 		})
+	})
+
+	test('tracks string and rich text cell counts across mutations', () => {
+		const grid = new SparseGrid()
+		const rich = richTextValue([{ text: 'rich', bold: true }])
+
+		expect(grid.stringCellCount()).toBe(0)
+		expect(grid.richTextCellCount()).toBe(0)
+
+		grid.setPlainNumber(0, 0, 1)
+		grid.setPlainString(0, 1, 'plain')
+		grid.set(0, 2, makeCell(rich))
+		expect(grid.stringCellCount()).toBe(1)
+		expect(grid.richTextCellCount()).toBe(1)
+
+		grid.set(0, 1, makeCell(richTextValue([{ text: 'replacement' }])))
+		grid.setNumberResolved(0, 2, 2, null, S0)
+		expect(grid.stringCellCount()).toBe(0)
+		expect(grid.richTextCellCount()).toBe(1)
+
+		const clone = grid.clone()
+		clone.setPlainString(1, 0, 'clone')
+		expect(grid.stringCellCount()).toBe(0)
+		expect(grid.richTextCellCount()).toBe(1)
+		expect(clone.stringCellCount()).toBe(1)
+		expect(clone.richTextCellCount()).toBe(1)
+
+		grid.delete(0, 1)
+		expect(grid.stringCellCount()).toBe(0)
+		expect(grid.richTextCellCount()).toBe(0)
+	})
+
+	test('tracks string and rich text counts through whole-chunk row deletion', () => {
+		const grid = new SparseGrid()
+		grid.setPlainString(0, 0, 'keep')
+		grid.set(64, 0, makeCell(richTextValue([{ text: 'remove' }])))
+
+		expect(grid.stringCellCount()).toBe(1)
+		expect(grid.richTextCellCount()).toBe(1)
+
+		grid.deleteRows(64, 64)
+		expect(grid.stringCellCount()).toBe(1)
+		expect(grid.richTextCellCount()).toBe(0)
 	})
 
 	test('overwrite existing cell', () => {

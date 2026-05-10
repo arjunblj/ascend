@@ -26,6 +26,7 @@ import {
 import { parseChartXml } from './charts.ts'
 import {
 	parseCommentsXml,
+	parseCommentVmlXml,
 	parseThreadedCommentPersonsXml,
 	parseThreadedCommentsXml,
 } from './comments.ts'
@@ -1522,6 +1523,17 @@ function attachComments(
 		if (commentsXml) {
 			for (const [ref, comment] of parseCommentsXml(commentsXml)) {
 				sheet.comments.set(ref, comment)
+			}
+		}
+	}
+	const vmlRel = sheetRelationships.find((rel) => rel.type === REL_VML_DRAWING)
+	if (vmlRel && sheet.comments.size > 0) {
+		const vmlPath = resolvePath(sheetPath, vmlRel.target)
+		const vmlXml = readPart(archive, vmlPath)
+		if (vmlXml) {
+			for (const [ref, legacyDrawing] of parseCommentVmlXml(vmlXml)) {
+				const comment = sheet.comments.get(ref)
+				if (comment) sheet.comments.set(ref, { ...comment, legacyDrawing })
 			}
 		}
 	}

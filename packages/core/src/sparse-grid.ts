@@ -83,6 +83,7 @@ enum SlotTag {
 }
 
 type CellValueKind = CellValue['kind']
+type SharedStringCellKind = 'string' | 'richText'
 
 interface StoredSlot {
 	readonly tag: SlotTag
@@ -110,6 +111,8 @@ interface GridChunk {
 	clearFormulaInfo(localIndex: number): void
 	countFormulaCells(): number
 	countFormulaInfoCells(): number
+	countStringCells(): number
+	countRichTextCells(): number
 	setStringResolved(
 		localIndex: number,
 		value: string,
@@ -284,6 +287,22 @@ class SparseChunk implements GridChunk {
 		let count = 0
 		for (const slot of this.slots.values()) {
 			if (slot.formulaInfo !== undefined) count++
+		}
+		return count
+	}
+
+	countStringCells(): number {
+		let count = 0
+		for (const slot of this.slots.values()) {
+			if (slot.tag === SlotTag.String) count++
+		}
+		return count
+	}
+
+	countRichTextCells(): number {
+		let count = 0
+		for (const slot of this.slots.values()) {
+			if (slot.heapValue?.kind === 'richText') count++
 		}
 		return count
 	}
@@ -504,6 +523,23 @@ class DenseChunk implements GridChunk {
 		let count = 0
 		for (let localIndex = 0; localIndex < CHUNK_AREA; localIndex++) {
 			if (this.has(localIndex) && this.formulaInfos[localIndex] !== undefined) count++
+		}
+		return count
+	}
+
+	countStringCells(): number {
+		let count = 0
+		for (let localIndex = 0; localIndex < CHUNK_AREA; localIndex++) {
+			if (this.has(localIndex) && this.readTag(localIndex) === SlotTag.String) count++
+		}
+		return count
+	}
+
+	countRichTextCells(): number {
+		if (this.heapValues === null) return 0
+		let count = 0
+		for (let localIndex = 0; localIndex < CHUNK_AREA; localIndex++) {
+			if (this.has(localIndex) && this.heapValues[localIndex]?.kind === 'richText') count++
 		}
 		return count
 	}
@@ -811,6 +847,8 @@ export class SparseGrid {
 	private _cellCount = 0
 	private _formulaCellCount = 0
 	private _formulaInfoCellCount = 0
+	private _stringCellCount = 0
+	private _richTextCellCount = 0
 	private _shared = false
 	private _minRow = Number.POSITIVE_INFINITY
 	private _maxRow = Number.NEGATIVE_INFINITY
@@ -867,6 +905,7 @@ export class SparseGrid {
 		const oldSlot = chunk.getSlot(localIndex)
 		const hadFormula = existed && slotHasFormula(oldSlot)
 		const hadFormulaInfo = oldSlot?.formulaInfo !== undefined
+		const previousSharedStringKind = sharedStringKindFromSlot(oldSlot)
 		const hasFormula = formula !== null || formulaInfo !== undefined
 		if (chunk instanceof DenseChunk) {
 			chunk.setResolved(localIndex, value, formula, styleId, formulaInfo, this.stringTable)
@@ -885,6 +924,7 @@ export class SparseGrid {
 		if (hadFormulaInfo !== (formulaInfo !== undefined)) {
 			this._formulaInfoCellCount += formulaInfo !== undefined ? 1 : -1
 		}
+		this.updateSharedStringCounts(previousSharedStringKind, sharedStringKindFromValue(value))
 		this._trackBounds(row, col)
 	}
 
@@ -908,6 +948,7 @@ export class SparseGrid {
 		const oldSlot = chunk.getSlot(localIndex)
 		const hadFormula = existed && slotHasFormula(oldSlot)
 		const hadFormulaInfo = oldSlot?.formulaInfo !== undefined
+		const previousSharedStringKind = sharedStringKindFromSlot(oldSlot)
 		const hasFormula = formula !== null || formulaInfo !== undefined
 		const nextChunk = chunk.setStringResolved(
 			localIndex,
@@ -927,6 +968,7 @@ export class SparseGrid {
 		if (hadFormulaInfo !== (formulaInfo !== undefined)) {
 			this._formulaInfoCellCount += formulaInfo !== undefined ? 1 : -1
 		}
+		this.updateSharedStringCounts(previousSharedStringKind, 'string')
 		this._trackBounds(row, col)
 	}
 
@@ -946,6 +988,9 @@ export class SparseGrid {
 			const oldSlot = chunk.getSlot(localIndex)
 			hadFormula = slotHasFormula(oldSlot)
 			hadFormulaInfo = oldSlot?.formulaInfo !== undefined
+			this.updateSharedStringCounts(sharedStringKindFromSlot(oldSlot), 'string')
+		} else {
+			this.updateSharedStringCounts(undefined, 'string')
 		}
 		const nextChunk = chunk.setStringResolved(
 			localIndex,
@@ -987,6 +1032,7 @@ export class SparseGrid {
 		const oldSlot = chunk.getSlot(localIndex)
 		const hadFormula = existed && slotHasFormula(oldSlot)
 		const hadFormulaInfo = oldSlot?.formulaInfo !== undefined
+		const previousSharedStringKind = sharedStringKindFromSlot(oldSlot)
 		const hasFormula = formula !== null || formulaInfo !== undefined
 		const nextChunk = chunk.setNumberResolved(localIndex, value, formula, styleId, formulaInfo)
 		if (nextChunk !== chunk) cols.set(chunkCol, nextChunk)
@@ -999,6 +1045,7 @@ export class SparseGrid {
 		if (hadFormulaInfo !== (formulaInfo !== undefined)) {
 			this._formulaInfoCellCount += formulaInfo !== undefined ? 1 : -1
 		}
+		this.updateSharedStringCounts(previousSharedStringKind, undefined)
 		this._trackBounds(row, col)
 	}
 
@@ -1018,6 +1065,7 @@ export class SparseGrid {
 			const oldSlot = chunk.getSlot(localIndex)
 			hadFormula = slotHasFormula(oldSlot)
 			hadFormulaInfo = oldSlot?.formulaInfo !== undefined
+			this.updateSharedStringCounts(sharedStringKindFromSlot(oldSlot), undefined)
 		}
 		const nextChunk = chunk.setNumberResolved(localIndex, value, null, DEFAULT_STYLE_ID, undefined)
 		if (nextChunk !== chunk) cols.set(chunkCol, nextChunk)
@@ -1042,13 +1090,16 @@ export class SparseGrid {
 		let chunk = cols?.get(chunkCol)
 		if (!chunk) return false
 		chunk = this.ensureChunkWritable(chunkRow, chunkCol, cols, chunk)
-		const hadFormula = slotHasFormula(chunk.getSlot(localIndex))
+		const oldSlot = chunk.getSlot(localIndex)
+		const hadFormula = slotHasFormula(oldSlot)
 		const hadFormulaInfo = chunk.readFormulaInfo(localIndex) !== undefined
+		const previousSharedStringKind = sharedStringKindFromSlot(oldSlot)
 		const deleted = chunk.delete(localIndex)
 		if (!deleted) return false
 		this._cellCount--
 		if (hadFormula) this._formulaCellCount--
 		if (hadFormulaInfo) this._formulaInfoCellCount--
+		this.updateSharedStringCounts(previousSharedStringKind, undefined)
 		if (chunk.count === 0) {
 			cols?.delete(chunkCol)
 			this.invalidateChunkOrder(chunkRow)
@@ -1311,6 +1362,14 @@ export class SparseGrid {
 		return this._formulaInfoCellCount
 	}
 
+	stringCellCount(): number {
+		return this._stringCellCount
+	}
+
+	richTextCellCount(): number {
+		return this._richTextCellCount
+	}
+
 	clear(): void {
 		this.chunkRows = new Map()
 		this._clearWriteCache()
@@ -1320,6 +1379,8 @@ export class SparseGrid {
 		this._cellCount = 0
 		this._formulaCellCount = 0
 		this._formulaInfoCellCount = 0
+		this._stringCellCount = 0
+		this._richTextCellCount = 0
 		this._shared = false
 		this._minRow = Number.POSITIVE_INFINITY
 		this._maxRow = Number.NEGATIVE_INFINITY
@@ -1419,6 +1480,8 @@ export class SparseGrid {
 			this._cellCount = next._cellCount
 			this._formulaCellCount = next._formulaCellCount
 			this._formulaInfoCellCount = next._formulaInfoCellCount
+			this._stringCellCount = next._stringCellCount
+			this._richTextCellCount = next._richTextCellCount
 			this._minRow = next._minRow
 			this._maxRow = next._maxRow
 			this._minCol = next._minCol
@@ -1436,6 +1499,8 @@ export class SparseGrid {
 		this._cellCount = other._cellCount
 		this._formulaCellCount = other._formulaCellCount
 		this._formulaInfoCellCount = other._formulaInfoCellCount
+		this._stringCellCount = other._stringCellCount
+		this._richTextCellCount = other._richTextCellCount
 		this._minRow = other._minRow
 		this._maxRow = other._maxRow
 		this._minCol = other._minCol
@@ -1581,6 +1646,8 @@ export class SparseGrid {
 		let removedCount = 0
 		let removedFormulaCount = 0
 		let removedFormulaInfoCount = 0
+		let removedStringCount = 0
+		let removedRichTextCount = 0
 		for (const [chunkRow, cols] of this.chunkRows) {
 			if (chunkRow < atChunkRow) {
 				next.set(chunkRow, cols)
@@ -1591,6 +1658,8 @@ export class SparseGrid {
 					removedCount += chunk.count
 					removedFormulaCount += chunk.countFormulaCells()
 					removedFormulaInfoCount += chunk.countFormulaInfoCells()
+					removedStringCount += chunk.countStringCells()
+					removedRichTextCount += chunk.countRichTextCells()
 				}
 			}
 		}
@@ -1601,6 +1670,8 @@ export class SparseGrid {
 		this._cellCount -= removedCount
 		this._formulaCellCount -= removedFormulaCount
 		this._formulaInfoCellCount -= removedFormulaInfoCount
+		this._stringCellCount -= removedStringCount
+		this._richTextCellCount -= removedRichTextCount
 		this._boundsDirty = true
 	}
 
@@ -1632,6 +1703,8 @@ export class SparseGrid {
 		let removedCount = 0
 		let removedFormulaCount = 0
 		let removedFormulaInfoCount = 0
+		let removedStringCount = 0
+		let removedRichTextCount = 0
 		for (const [chunkRow, cols] of this.chunkRows) {
 			const nextCols = new Map<number, GridChunk>()
 			for (const [chunkCol, chunk] of cols) {
@@ -1643,6 +1716,8 @@ export class SparseGrid {
 					removedCount += chunk.count
 					removedFormulaCount += chunk.countFormulaCells()
 					removedFormulaInfoCount += chunk.countFormulaInfoCells()
+					removedStringCount += chunk.countStringCells()
+					removedRichTextCount += chunk.countRichTextCells()
 				}
 			}
 			next.set(chunkRow, nextCols)
@@ -1654,6 +1729,8 @@ export class SparseGrid {
 		this._cellCount -= removedCount
 		this._formulaCellCount -= removedFormulaCount
 		this._formulaInfoCellCount -= removedFormulaInfoCount
+		this._stringCellCount -= removedStringCount
+		this._richTextCellCount -= removedRichTextCount
 		this._boundsDirty = true
 	}
 
@@ -1684,6 +1761,8 @@ export class SparseGrid {
 		this._cellCount = next._cellCount
 		this._formulaCellCount = next._formulaCellCount
 		this._formulaInfoCellCount = next._formulaInfoCellCount
+		this._stringCellCount = next._stringCellCount
+		this._richTextCellCount = next._richTextCellCount
 		this._minRow = next._minRow
 		this._maxRow = next._maxRow
 		this._minCol = next._minCol
@@ -1732,6 +1811,17 @@ export class SparseGrid {
 		cols.set(chunkCol, next)
 		this._sharedChunks.delete(key)
 		return next
+	}
+
+	private updateSharedStringCounts(
+		previous: SharedStringCellKind | undefined,
+		next: SharedStringCellKind | undefined,
+	): void {
+		if (previous === next) return
+		if (previous === 'string') this._stringCellCount--
+		if (previous === 'richText') this._richTextCellCount--
+		if (next === 'string') this._stringCellCount++
+		if (next === 'richText') this._richTextCellCount++
 	}
 
 	private _hasMutableValues(): boolean {
@@ -1895,6 +1985,19 @@ function materializeCell(slot: StoredSlot | undefined, stringTable: StringTable)
 
 function slotHasFormula(slot: StoredSlot | undefined): boolean {
 	return slot !== undefined && (slot.formula !== null || slot.formulaInfo !== undefined)
+}
+
+function sharedStringKindFromValue(value: CellValue): SharedStringCellKind | undefined {
+	if (value.kind === 'string') return 'string'
+	if (value.kind === 'richText') return 'richText'
+	return undefined
+}
+
+function sharedStringKindFromSlot(slot: StoredSlot | undefined): SharedStringCellKind | undefined {
+	if (!slot) return undefined
+	if (slot.tag === SlotTag.String) return 'string'
+	if (slot.heapValue?.kind === 'richText') return 'richText'
+	return undefined
 }
 
 function readSlotValue(

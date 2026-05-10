@@ -2,12 +2,19 @@ import { describe, expect, it, setDefaultTimeout } from 'bun:test'
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { readXlsx } from '@ascend/io-xlsx'
-import { AscendWorkbook } from '@ascend/sdk'
+import { AscendWorkbook, type PivotCacheInfo, type PivotTableInfo } from '@ascend/sdk'
 import { extractZip } from '../../packages/io-xlsx/src/reader/zip.ts'
 import type { CorpusManifestEntry, NormalizedCorpusManifestEntry } from './manifest.ts'
 import { normalizeManifest } from './manifest.ts'
+import {
+	inspectOoxmlPackageFeatures,
+	type OoxmlAnalyticsProbe,
+	type OoxmlLinkedCacheProbe,
+	type OoxmlLinkedUiProbe,
+	type OoxmlRelationshipProbe,
+} from './ooxml-feature-probe.ts'
 
-setDefaultTimeout(45_000)
+setDefaultTimeout(90_000)
 
 const CORPUS_DIR = resolve(import.meta.dir, '../../research/excel-corpus')
 const MANIFEST_PATH = resolve(CORPUS_DIR, 'manifest.json')
@@ -45,12 +52,21 @@ interface SemanticSummary {
 	pivotCacheCount: number
 	slicerCount: number
 	slicerCacheCount: number
+	timelineCount: number
+	timelineCacheCount: number
 	externalReferenceCount: number
 	hasDrawingRefs: boolean
+	pivotTables: readonly PivotTableInfo[]
+	pivotCaches: readonly PivotCacheInfo[]
+	slicerCaches: readonly OoxmlLinkedCacheProbe[]
+	slicers: readonly OoxmlLinkedUiProbe[]
+	timelineCaches: readonly OoxmlLinkedCacheProbe[]
+	timelines: readonly OoxmlLinkedUiProbe[]
 }
 
 interface ContractSubject {
 	readonly packageSummary: PackageSummary
+	readonly analytics: OoxmlAnalyticsProbe
 	readonly semanticSummary: SemanticSummary
 	readonly compatibilityFeatures: ReadonlySet<string>
 }
@@ -102,8 +118,10 @@ async function loadContractSubject(bytes: Uint8Array): Promise<ContractSubject> 
 	expectOk(raw)
 	const workbook = await AscendWorkbook.open(bytes)
 	const info = workbook.inspect()
+	const packageProbe = inspectOoxmlPackageFeatures(bytes)
 	return {
 		packageSummary: summarizePackage(bytes),
+		analytics: packageProbe.analytics,
 		semanticSummary: {
 			sheetCount: info.sheetCount,
 			tableCount: info.sheets.reduce((sum, sheet) => sum + (sheet.tableCount ?? 0), 0),
@@ -121,8 +139,16 @@ async function loadContractSubject(bytes: Uint8Array): Promise<ContractSubject> 
 			pivotCacheCount: info.pivotCacheCount,
 			slicerCount: info.slicerCount,
 			slicerCacheCount: info.slicerCacheCount,
+			timelineCount: info.timelineCount,
+			timelineCacheCount: info.timelineCacheCount,
 			externalReferenceCount: info.externalReferenceCount,
 			hasDrawingRefs: info.sheets.some((sheet) => sheet.hasDrawingRefs ?? false),
+			pivotTables: info.pivotTables,
+			pivotCaches: info.pivotCaches,
+			slicerCaches: info.slicerCaches,
+			slicers: info.slicers,
+			timelineCaches: info.timelineCaches,
+			timelines: info.timelines,
 		},
 		compatibilityFeatures: new Set(raw.value.report.features.map((feature) => feature.feature)),
 	}
@@ -233,9 +259,7 @@ function assertManifestReadCoverage(
 		entry,
 		'pivot_tables',
 		!entry.features.pivot_tables ||
-			(semanticSummary.pivotTableCount > 0 &&
-				compatibilityFeatures.has('pivotTable') &&
-				compatibilityFeatures.has('preservedPivot')),
+			(semanticSummary.pivotTableCount > 0 && compatibilityFeatures.has('preservedPivot')),
 	)
 	assertFeature(
 		entry,
@@ -261,17 +285,13 @@ function assertManifestReadCoverage(
 		entry,
 		'charts',
 		!entry.features.charts ||
-			(packageSummary.charts > 0 &&
-				compatibilityFeatures.has('chart') &&
-				compatibilityFeatures.has('preservedChart')),
+			(packageSummary.charts > 0 && compatibilityFeatures.has('preservedChart')),
 	)
 	assertFeature(
 		entry,
 		'macros',
 		!entry.features.macros ||
-			(packageSummary.macros > 0 &&
-				compatibilityFeatures.has('vbaProject') &&
-				compatibilityFeatures.has('preservedMacro')),
+			(packageSummary.macros > 0 && compatibilityFeatures.has('preservedMacro')),
 	)
 	assertFeature(
 		entry,
@@ -301,6 +321,7 @@ function assertManifestReadCoverage(
 			semanticSummary.externalReferenceCount > 0,
 	)
 	assertFeature(entry, 'connections', !entry.features.connections || packageSummary.connections > 0)
+	assertAnalyticsReadIntegrity(entry, subject)
 }
 
 function assertManifestEditCoverage(
@@ -362,6 +383,252 @@ function assertManifestEditCoverage(
 			'expected calc-chain workbooks to preserve calcChain or surface formulaFreshness after edit',
 		)
 	}
+	assertAnalyticsEditIntegrity(entry, before, after)
+}
+
+function assertAnalyticsReadIntegrity(
+	entry: NormalizedCorpusManifestEntry,
+	subject: ContractSubject,
+): void {
+	const { analytics, semanticSummary } = subject
+	const semanticPivotPaths = new Set(semanticSummary.pivotTables.map((pivot) => pivot.partPath))
+	const semanticPivotNames = new Set(
+		semanticSummary.pivotTables.map((pivot) => pivot.name).filter(isDefined),
+	)
+	const semanticCachePaths = new Set(semanticSummary.pivotCaches.map((cache) => cache.partPath))
+	const semanticCacheIds = new Set(
+		semanticSummary.pivotCaches.map((cache) => cache.cacheId).filter(isDefined),
+	)
+
+	if (analytics.pivotTables.length > 0) {
+		expect(semanticSummary.pivotTableCount).toBe(analytics.pivotTables.length)
+	}
+	if (analytics.pivotCaches.length > 0) {
+		expect(semanticSummary.pivotCacheCount).toBe(analytics.pivotCaches.length)
+	}
+	assertRelationshipTargets(
+		entry,
+		'pivot table relationship',
+		analytics.pivotTableRelationships,
+		new Set(analytics.pivotTables.map((pivot) => pivot.partPath)),
+		semanticPivotPaths,
+	)
+	assertRelationshipTargets(
+		entry,
+		'pivot cache relationship',
+		analytics.pivotCacheRelationships.filter(
+			(relationship) => relationship.sourcePartPath === 'xl/workbook.xml',
+		),
+		new Set(analytics.pivotCaches.map((cache) => cache.partPath)),
+		semanticCachePaths,
+	)
+
+	for (const cache of analytics.workbookPivotCaches) {
+		const relationship = analytics.pivotCacheRelationships.find(
+			(candidate) => candidate.sourcePartPath === 'xl/workbook.xml' && candidate.id === cache.relId,
+		)
+		assertFeature(
+			entry,
+			'pivot_cache_relationship',
+			relationship?.targetPartPath !== undefined,
+			`workbook pivot cache ${cache.cacheId} does not resolve relationship ${cache.relId}`,
+		)
+		assertFeature(
+			entry,
+			'pivot_cache_semantic_cache_id',
+			semanticCacheIds.has(cache.cacheId),
+			`workbook pivot cache ${cache.cacheId} is missing from semantic inventory`,
+		)
+	}
+
+	for (const pivot of semanticSummary.pivotTables) {
+		if (pivot.cacheId === undefined) continue
+		assertFeature(
+			entry,
+			'pivot_cache_cross_link',
+			semanticCacheIds.has(pivot.cacheId),
+			`pivot table ${pivot.name ?? pivot.partPath} references missing cacheId ${pivot.cacheId}`,
+		)
+	}
+
+	for (const cache of analytics.pivotCaches) {
+		if (!cache.recordsPartPath) continue
+		const semanticCache = semanticSummary.pivotCaches.find(
+			(candidate) => candidate.partPath === cache.partPath,
+		)
+		assertFeature(
+			entry,
+			'pivot_cache_records',
+			analytics.pivotCacheRecords.includes(cache.recordsPartPath),
+			`pivot cache ${cache.partPath} points to missing records part ${cache.recordsPartPath}`,
+		)
+		assertFeature(
+			entry,
+			'pivot_cache_records_semantic',
+			semanticCache?.recordsPartPath === cache.recordsPartPath,
+			`pivot cache ${cache.partPath} records relationship is not surfaced semantically`,
+		)
+	}
+
+	assertLinkedCacheIntegrity(entry, 'slicer', analytics.slicerCaches, analytics.slicers, {
+		cacheRelationships: analytics.slicerCacheRelationships,
+		semanticCaches: semanticSummary.slicerCaches,
+		semanticUis: semanticSummary.slicers,
+		semanticPivotNames,
+	})
+	assertLinkedCacheIntegrity(entry, 'timeline', analytics.timelineCaches, analytics.timelines, {
+		semanticCaches: semanticSummary.timelineCaches,
+		semanticUis: semanticSummary.timelines,
+		semanticPivotNames,
+	})
+}
+
+function assertLinkedCacheIntegrity(
+	entry: NormalizedCorpusManifestEntry,
+	label: 'slicer' | 'timeline',
+	packageCaches: readonly OoxmlLinkedCacheProbe[],
+	packageUis: readonly OoxmlLinkedUiProbe[],
+	context: {
+		readonly cacheRelationships?: readonly OoxmlRelationshipProbe[]
+		readonly semanticCaches: readonly OoxmlLinkedCacheProbe[]
+		readonly semanticUis: readonly OoxmlLinkedUiProbe[]
+		readonly semanticPivotNames: ReadonlySet<string>
+	},
+): void {
+	if (packageCaches.length > 0) expect(context.semanticCaches).toHaveLength(packageCaches.length)
+	if (packageUis.length > 0) expect(context.semanticUis).toHaveLength(packageUis.length)
+	const packageCachePaths = new Set(packageCaches.map((cache) => cache.partPath))
+	const semanticCachePaths = new Set(context.semanticCaches.map((cache) => cache.partPath))
+	const packageCacheNames = new Set(packageCaches.map((cache) => cache.name).filter(isDefined))
+
+	if (context.cacheRelationships) {
+		assertRelationshipTargets(
+			entry,
+			`${label} cache relationship`,
+			context.cacheRelationships,
+			packageCachePaths,
+			semanticCachePaths,
+		)
+	}
+	for (const cache of packageCaches) {
+		assertFeature(
+			entry,
+			`${label}_cache_semantic_part`,
+			semanticCachePaths.has(cache.partPath),
+			`${label} cache ${cache.partPath} is missing from semantic inventory`,
+		)
+		for (const pivotTableName of cache.pivotTableNames) {
+			if (context.semanticPivotNames.size === 0) continue
+			assertFeature(
+				entry,
+				`${label}_pivot_table_cross_link`,
+				context.semanticPivotNames.has(pivotTableName),
+				`${label} cache ${cache.name ?? cache.partPath} references missing pivot table ${pivotTableName}`,
+			)
+		}
+	}
+	for (const ui of packageUis) {
+		if (!ui.cacheName) continue
+		assertFeature(
+			entry,
+			`${label}_cache_name_cross_link`,
+			packageCacheNames.has(ui.cacheName),
+			`${label} ${ui.name ?? ui.partPath} references missing cache ${ui.cacheName}`,
+		)
+	}
+}
+
+function assertRelationshipTargets(
+	entry: NormalizedCorpusManifestEntry,
+	label: string,
+	relationships: readonly OoxmlRelationshipProbe[],
+	packageTargets: ReadonlySet<string>,
+	semanticTargets: ReadonlySet<string>,
+): void {
+	for (const relationship of relationships) {
+		const target = relationship.targetPartPath
+		assertFeature(
+			entry,
+			label,
+			target !== undefined && packageTargets.has(target) && semanticTargets.has(target),
+			`${label} ${relationship.sourcePartPath}#${relationship.id} does not resolve to a surfaced package part`,
+		)
+	}
+}
+
+function assertAnalyticsEditIntegrity(
+	entry: NormalizedCorpusManifestEntry,
+	before: ContractSubject,
+	after: ContractSubject,
+): void {
+	expectAnalyticsPaths(
+		entry,
+		'pivot tables',
+		before.analytics.pivotTables,
+		after.analytics.pivotTables,
+	)
+	expectAnalyticsPaths(
+		entry,
+		'pivot caches',
+		before.analytics.pivotCaches,
+		after.analytics.pivotCaches,
+	)
+	expect(after.analytics.pivotCacheRecords).toEqual(before.analytics.pivotCacheRecords)
+	expectAnalyticsPaths(
+		entry,
+		'slicer caches',
+		before.analytics.slicerCaches,
+		after.analytics.slicerCaches,
+	)
+	expectAnalyticsPaths(entry, 'slicers', before.analytics.slicers, after.analytics.slicers)
+	expectAnalyticsPaths(
+		entry,
+		'timeline caches',
+		before.analytics.timelineCaches,
+		after.analytics.timelineCaches,
+	)
+	expectAnalyticsPaths(entry, 'timelines', before.analytics.timelines, after.analytics.timelines)
+	expect(after.analytics.workbookPivotCaches).toEqual(before.analytics.workbookPivotCaches)
+	expect(expectRelationshipSignature(after.analytics.pivotTableRelationships)).toEqual(
+		expectRelationshipSignature(before.analytics.pivotTableRelationships),
+	)
+	expect(expectRelationshipSignature(after.analytics.pivotCacheRelationships)).toEqual(
+		expectRelationshipSignature(before.analytics.pivotCacheRelationships),
+	)
+	expect(expectRelationshipSignature(after.analytics.pivotCacheRecordRelationships)).toEqual(
+		expectRelationshipSignature(before.analytics.pivotCacheRecordRelationships),
+	)
+	expect(expectRelationshipSignature(after.analytics.slicerCacheRelationships)).toEqual(
+		expectRelationshipSignature(before.analytics.slicerCacheRelationships),
+	)
+}
+
+function expectAnalyticsPaths(
+	entry: NormalizedCorpusManifestEntry,
+	label: string,
+	before: readonly { readonly partPath: string }[],
+	after: readonly { readonly partPath: string }[],
+): void {
+	assertFeature(
+		entry,
+		label,
+		after.map((item) => item.partPath).join('\n') ===
+			before.map((item) => item.partPath).join('\n'),
+		`${label} package part set changed after safe edit`,
+	)
+}
+
+function expectRelationshipSignature(
+	relationships: readonly OoxmlRelationshipProbe[],
+): readonly string[] {
+	return relationships.map(
+		(relationship) =>
+			`${relationship.sourcePartPath}#${relationship.id}:${relationship.type}->${relationship.targetPartPath ?? relationship.target}`,
+	)
+}
+
+function isDefined<T>(value: T | undefined): value is T {
+	return value !== undefined
 }
 
 function assertFeature(

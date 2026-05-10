@@ -74,6 +74,9 @@ export interface ParsedStylesLite {
 }
 
 export function parseStyles(xml: string): ParsedStyles {
+	const fast = parseStylesFast(xml)
+	if (fast) return fast
+
 	const doc = parseXml(xml)
 	const ss = doc.styleSheet as XmlNode | undefined
 	if (!ss) {
@@ -118,6 +121,149 @@ export function parseStyles(xml: string): ParsedStyles {
 			...(namedStyles.length > 0 ? { namedStyles } : {}),
 		},
 	}
+}
+
+function parseStylesFast(xml: string): ParsedStyles | null {
+	if (!xml.includes('<styleSheet')) return null
+	if (
+		/<(?:dxfs|cellStyles|tableStyles|extLst)\b/i.test(xml) ||
+		/<(?:alignment|protection|gradientFill)\b/i.test(xml)
+	) {
+		return null
+	}
+	const numFmts = parseNumFmtsLite(xml)
+	const fonts = parseFontsFast(extractXmlSection(xml, 'fonts'))
+	const fills = parseFillsFast(extractXmlSection(xml, 'fills'))
+	const borders = parseBordersFast(extractXmlSection(xml, 'borders'))
+	if (!fonts || !fills || !borders) return null
+	const built = buildCellStylesFast(
+		extractXmlSection(xml, 'cellXfs'),
+		fonts,
+		fills,
+		borders,
+		numFmts,
+	)
+	if (!built) return null
+	return {
+		...built,
+		differentialStyles: [],
+		metadata: {
+			numFmtCount: Math.max(0, numFmts.size - BUILTIN_NUM_FMTS.size),
+			fontCount: fonts.length,
+			fillCount: fills.length,
+			borderCount: borders.length,
+			cellXfCount: built.cellStyles.length,
+			dxfCount: 0,
+			tableStyleCount: 0,
+		},
+	}
+}
+
+function parseFontsFast(section: string | null): FontStyle[] | null {
+	if (!section) return [{}]
+	const fonts: FontStyle[] = []
+	for (const fontXml of matchXmlChildren(section, 'font')) {
+		if (hasUnsupportedFastStyleXml(fontXml)) return null
+		const props: WritablePartial<FontStyle> = {}
+		const name = rawXmlAttr(firstChildAttrs(fontXml, 'name') ?? '', 'val')
+		if (name) props.name = decodeXmlAttribute(name)
+		const size = rawXmlNumberAttr(firstChildAttrs(fontXml, 'sz') ?? '', 'val')
+		if (size !== undefined) props.size = size
+		const bold = readFastBooleanElement(fontXml, 'b')
+		if (bold !== undefined) props.bold = bold
+		const italic = readFastBooleanElement(fontXml, 'i')
+		if (italic !== undefined) props.italic = italic
+		const strike = readFastBooleanElement(fontXml, 'strike')
+		if (strike !== undefined) props.strikethrough = strike
+		const underline = parseFastUnderline(fontXml)
+		if (underline !== undefined) props.underline = underline
+		const colorAttrs = firstChildAttrs(fontXml, 'color')
+		const color = colorAttrs ? parseColorAttrsFast(colorAttrs) : undefined
+		if (color) props.color = color
+		fonts.push(props as FontStyle)
+	}
+	return fonts.length > 0 ? fonts : [{}]
+}
+
+function parseFillsFast(section: string | null): FillStyle[] | null {
+	if (!section) return [{}]
+	const fills: FillStyle[] = []
+	for (const fillXml of matchXmlChildren(section, 'fill')) {
+		if (fillXml.includes('<gradientFill')) return null
+		const patternFillXml = firstChildXml(fillXml, 'patternFill')
+		if (!patternFillXml) {
+			fills.push({})
+			continue
+		}
+		const attrs = tagAttrs(patternFillXml) ?? ''
+		const props: WritablePartial<FillStyle> = {}
+		const pattern = rawXmlAttr(attrs, 'patternType')
+		if (pattern) props.pattern = pattern as FillPattern
+		const fgAttrs = firstChildAttrs(patternFillXml, 'fgColor')
+		const fg = fgAttrs ? parseColorAttrsFast(fgAttrs) : undefined
+		if (fg) props.fgColor = fg
+		const bgAttrs = firstChildAttrs(patternFillXml, 'bgColor')
+		const bg = bgAttrs ? parseColorAttrsFast(bgAttrs) : undefined
+		if (bg) props.bgColor = bg
+		fills.push(props as FillStyle)
+	}
+	return fills.length > 0 ? fills : [{}]
+}
+
+function parseBordersFast(section: string | null): BorderStyle[] | null {
+	if (!section) return [{}]
+	const borders: BorderStyle[] = []
+	for (const borderXml of matchXmlChildren(section, 'border')) {
+		if (hasUnsupportedFastStyleXml(borderXml)) return null
+		const attrs = tagAttrs(borderXml) ?? ''
+		const props: WritablePartial<BorderStyle> = {}
+		for (const edgeName of ['top', 'bottom', 'left', 'right', 'diagonal'] as const) {
+			const edge = parseBorderEdgeFast(firstChildXml(borderXml, edgeName))
+			if (edge) props[edgeName] = edge
+		}
+		const diagUp = rawXmlBoolAttr(attrs, 'diagonalUp')
+		if (diagUp !== undefined) props.diagonalUp = diagUp
+		const diagDown = rawXmlBoolAttr(attrs, 'diagonalDown')
+		if (diagDown !== undefined) props.diagonalDown = diagDown
+		borders.push(props as BorderStyle)
+	}
+	return borders.length > 0 ? borders : [{}]
+}
+
+function buildCellStylesFast(
+	cellXfsXml: string | null,
+	fonts: readonly FontStyle[],
+	fills: readonly FillStyle[],
+	borders: readonly BorderStyle[],
+	numFmts: Map<number, string>,
+): Pick<ParsedStyles, 'cellStyles' | 'isDateFormat'> | null {
+	if (!cellXfsXml) return { cellStyles: [{}], isDateFormat: [false] }
+	const cellStyles: CellStyle[] = []
+	const isDateFormat: boolean[] = []
+	for (const xfXml of matchXmlChildren(cellXfsXml, 'xf')) {
+		if (!isSelfClosingXml(xfXml)) return null
+		const attrs = tagAttrs(xfXml) ?? ''
+		const fontId = rawXmlNumberAttr(attrs, 'fontId') ?? 0
+		const fillId = rawXmlNumberAttr(attrs, 'fillId') ?? 0
+		const borderId = rawXmlNumberAttr(attrs, 'borderId') ?? 0
+		const numFmtId = rawXmlNumberAttr(attrs, 'numFmtId') ?? 0
+		const font = fonts[fontId]
+		const fill = fills[fillId]
+		const border = borders[borderId]
+		const formatCode = numFmts.get(numFmtId)
+		const style: WritablePartial<CellStyle> = {}
+		if (font && hasProps(font)) style.font = font
+		if (fill && hasProps(fill)) style.fill = fill
+		if (border && hasProps(border)) style.border = border
+		if (formatCode && formatCode !== 'General') style.numberFormat = formatCode
+		cellStyles.push(style as CellStyle)
+		isDateFormat.push(checkDateFormat(numFmtId, formatCode))
+	}
+	if (cellStyles.length === 0) {
+		cellStyles.push({})
+		isDateFormat.push(false)
+	}
+	return { cellStyles, isDateFormat }
 }
 
 export function parseStylesLite(xml: string): ParsedStylesLite {
@@ -181,8 +327,109 @@ function countXmlChildren(section: string | null, tag: string): number {
 	return count
 }
 
+function matchXmlChildren(section: string, tag: string): string[] {
+	const children: string[] = []
+	let index = 0
+	const closeTag = `</${tag}>`
+	while (index < section.length) {
+		const start = findTagStartFrom(section, tag, index)
+		if (start < 0) break
+		const openEnd = section.indexOf('>', start)
+		if (openEnd < 0) break
+		if (section.charCodeAt(openEnd - 1) === 47) {
+			children.push(section.slice(start, openEnd + 1))
+			index = openEnd + 1
+			continue
+		}
+		const closeStart = section.indexOf(closeTag, openEnd + 1)
+		if (closeStart < 0) break
+		const end = closeStart + closeTag.length
+		children.push(section.slice(start, end))
+		index = end
+	}
+	return children
+}
+
+function firstChildXml(xml: string, tag: string): string | undefined {
+	const start = findTagStart(xml, tag)
+	if (start < 0) return undefined
+	const openEnd = xml.indexOf('>', start)
+	if (openEnd < 0) return undefined
+	if (xml.charCodeAt(openEnd - 1) === 47) return xml.slice(start, openEnd + 1)
+	const closeTag = `</${tag}>`
+	const closeStart = xml.indexOf(closeTag, openEnd + 1)
+	if (closeStart < 0) return undefined
+	return xml.slice(start, closeStart + closeTag.length)
+}
+
+function firstChildAttrs(xml: string, tag: string): string | undefined {
+	const start = findTagStart(xml, tag)
+	if (start < 0) return undefined
+	return attrsFromOpenTag(xml, start, tag.length)
+}
+
+function tagAttrs(xml: string): string | undefined {
+	if (!xml.startsWith('<') || xml.startsWith('</')) return undefined
+	let nameEnd = 1
+	while (nameEnd < xml.length && !isXmlNameTerminator(xml.charCodeAt(nameEnd))) nameEnd++
+	return attrsFromOpenTag(xml, 0, nameEnd - 1)
+}
+
+function isSelfClosingXml(xml: string): boolean {
+	return /\/>\s*$/.test(xml)
+}
+
+function findTagStart(xml: string, tag: string): number {
+	return findTagStartFrom(xml, tag, 0)
+}
+
+function findTagStartFrom(xml: string, tag: string, startIndex: number): number {
+	let index = startIndex
+	const needle = `<${tag}`
+	while (index < xml.length) {
+		const found = xml.indexOf(needle, index)
+		if (found < 0) return -1
+		const next = xml.charCodeAt(found + needle.length)
+		if (isXmlNameTerminator(next)) return found
+		index = found + needle.length
+	}
+	return -1
+}
+
+function attrsFromOpenTag(
+	xml: string,
+	tagStart: number,
+	tagNameLength: number,
+): string | undefined {
+	const openEnd = xml.indexOf('>', tagStart)
+	if (openEnd < 0) return undefined
+	let attrEnd = openEnd
+	while (attrEnd > tagStart && /\s/.test(xml.charAt(attrEnd - 1))) attrEnd--
+	if (xml.charCodeAt(attrEnd - 1) === 47) attrEnd--
+	return xml.slice(tagStart + tagNameLength + 1, attrEnd)
+}
+
+function isXmlNameTerminator(code: number): boolean {
+	return code === 32 || code === 9 || code === 10 || code === 13 || code === 47 || code === 62
+}
+
 function rawXmlAttr(attrs: string, name: string): string | undefined {
-	return new RegExp(`(?:^|\\s)${name}="([^"]*)"`).exec(attrs)?.[1]
+	let index = 0
+	while (index < attrs.length) {
+		const found = attrs.indexOf(name, index)
+		if (found < 0) return undefined
+		const before = found === 0 ? 32 : attrs.charCodeAt(found - 1)
+		const eq = found + name.length
+		if (isXmlNameTerminator(before) && attrs.charCodeAt(eq) === 61) {
+			const quote = attrs.charCodeAt(eq + 1)
+			if (quote === 34 || quote === 39) {
+				const end = attrs.indexOf(String.fromCharCode(quote), eq + 2)
+				if (end >= 0) return attrs.slice(eq + 2, end)
+			}
+		}
+		index = found + name.length
+	}
+	return undefined
 }
 
 function rawXmlNumberAttr(attrs: string, name: string): number | undefined {
@@ -190,6 +437,65 @@ function rawXmlNumberAttr(attrs: string, name: string): number | undefined {
 	if (raw === undefined) return undefined
 	const value = Number.parseInt(raw, 10)
 	return Number.isFinite(value) ? value : undefined
+}
+
+function rawXmlBoolAttr(attrs: string, name: string): boolean | undefined {
+	const raw = rawXmlAttr(attrs, name)
+	if (raw === undefined) return undefined
+	if (raw === '1' || raw === 'true') return true
+	if (raw === '0' || raw === 'false') return false
+	return undefined
+}
+
+function readFastBooleanElement(xml: string, tag: string): boolean | undefined {
+	const attrs = firstChildAttrs(xml, tag)
+	if (attrs === undefined) return undefined
+	const value = rawXmlAttr(attrs, 'val')
+	if (value === '0' || value === 'false') return false
+	return true
+}
+
+function parseFastUnderline(xml: string): boolean | 'single' | 'double' | undefined {
+	const attrs = firstChildAttrs(xml, 'u')
+	if (attrs === undefined) return undefined
+	const value = rawXmlAttr(attrs, 'val')
+	if (value === 'none') return undefined
+	if (value === 'double') return 'double'
+	if (value === 'single') return 'single'
+	return true
+}
+
+function parseColorAttrsFast(attrs: string): Color | undefined {
+	const rgb = rawXmlAttr(attrs, 'rgb')
+	if (rgb) return { kind: 'rgb', rgb: decodeXmlAttribute(rgb) }
+	const theme = rawXmlNumberAttr(attrs, 'theme')
+	if (theme !== undefined) {
+		const tintRaw = rawXmlAttr(attrs, 'tint')
+		const tint = tintRaw !== undefined ? Number(tintRaw) : undefined
+		return tint !== undefined && Number.isFinite(tint)
+			? { kind: 'theme', theme, tint }
+			: { kind: 'theme', theme }
+	}
+	const indexed = rawXmlNumberAttr(attrs, 'indexed')
+	if (indexed !== undefined) return { kind: 'indexed', index: indexed }
+	if (rawXmlAttr(attrs, 'auto')) return { kind: 'auto' }
+	return undefined
+}
+
+function parseBorderEdgeFast(edgeXml: string | undefined): BorderEdge | undefined {
+	if (!edgeXml) return undefined
+	const attrs = tagAttrs(edgeXml) ?? ''
+	const style = rawXmlAttr(attrs, 'style')
+	if (!style || style === 'none') return undefined
+	const colorAttrs = firstChildAttrs(edgeXml, 'color')
+	const color = colorAttrs ? parseColorAttrsFast(colorAttrs) : undefined
+	return color ? { style: style as BorderLineStyle, color } : { style: style as BorderLineStyle }
+}
+
+function hasUnsupportedFastStyleXml(xml: string): boolean {
+	return /<(?:charset|family|scheme|vertAlign|outline|shadow|condense|extend|rFont|decorative|script|swiss|modern)\b/i.test(
+		xml,
+	)
 }
 
 function decodeXmlAttribute(value: string): string {

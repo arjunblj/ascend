@@ -9,6 +9,7 @@ import { ChunkedStringBuilder } from './chunked-string-builder.ts'
 import { buildColorScaleXml, buildDataBarXml, buildIconSetXml } from './conditional-format.ts'
 import { pushAutoFilterXml, pushSortStateXml } from './filtering.ts'
 import type { SharedStringTable } from './shared-strings.ts'
+import { updateSparklineExtLstXml } from './sparkline.ts'
 
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
@@ -420,7 +421,7 @@ function buildSheetXmlToSink(
 	}
 
 	if (sheet.preservedExtLst) {
-		out.push(sheet.preservedExtLst)
+		out.push(updateSparklineExtLstXml(sheet.preservedExtLst, sheet.sparklineGroups))
 	}
 
 	out.push('</worksheet>')

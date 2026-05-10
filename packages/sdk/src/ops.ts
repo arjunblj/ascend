@@ -63,7 +63,7 @@ const FIELD_SCHEMAS: Record<
 	},
 	ref: { type: 'string', description: 'Cell reference (e.g. A1)' },
 	formula: { type: 'string', description: 'Formula text' },
-	range: { type: 'string', description: 'Cell range (e.g. A1:B10)' },
+	range: { type: 'string', description: 'Cell or sparkline source range (e.g. A1:B10)' },
 	what: {
 		type: 'string',
 		enum: ['values', 'formulas', 'styles', 'all'],
@@ -99,6 +99,7 @@ const FIELD_SCHEMAS: Record<
 	name: { type: 'string', description: 'Sheet or table name' },
 	position: { type: 'integer', description: 'Position index' },
 	newName: { type: 'string', description: 'New name' },
+	type: { type: 'string', description: 'Sparkline type such as line, column, or stacked' },
 	hasHeaders: { type: 'boolean', description: 'Whether range has header row' },
 	table: { type: 'string', description: 'Table name' },
 	rows: { type: 'array', description: 'Array of row arrays' },
@@ -202,6 +203,15 @@ const FIELD_SCHEMAS: Record<
 		type: 'integer',
 		description: 'Zero-based drawing object index on the sheet',
 	},
+	groupIndex: { type: 'integer', description: 'Zero-based sparkline group index on the sheet' },
+	locationRange: { type: 'string', description: 'Sparkline destination sqref range' },
+	markers: { type: 'boolean', description: 'Whether sparkline markers are displayed' },
+	highPoint: { type: 'boolean', description: 'Whether sparkline high points are highlighted' },
+	lowPoint: { type: 'boolean', description: 'Whether sparkline low points are highlighted' },
+	firstPoint: { type: 'boolean', description: 'Whether sparkline first points are highlighted' },
+	lastPoint: { type: 'boolean', description: 'Whether sparkline last points are highlighted' },
+	negative: { type: 'boolean', description: 'Whether sparkline negative points are highlighted' },
+	displayXAxis: { type: 'boolean', description: 'Whether sparkline x-axis is displayed' },
 	id: { type: 'integer', description: 'Drawing object non-visual id' },
 	drawingPartPath: {
 		type: 'string',
@@ -583,6 +593,23 @@ export function listOperations(): readonly OperationSchema[] {
 			optionalFields: ['slicerCache', 'partPath', 'selected', 'noData'],
 		},
 		{
+			op: 'setSparklineGroup',
+			description: 'Edit a preserved sparkline group source range and display flags',
+			requiredFields: ['sheet', 'groupIndex'],
+			optionalFields: [
+				'range',
+				'locationRange',
+				'type',
+				'markers',
+				'highPoint',
+				'lowPoint',
+				'firstPoint',
+				'lastPoint',
+				'negative',
+				'displayXAxis',
+			],
+		},
+		{
 			op: 'setConnectionRefresh',
 			description: 'Edit workbook connection and query-table refresh metadata',
 			requiredFields: [],
@@ -741,6 +768,8 @@ function validateOperationField(
 		case 'categoryRef':
 		case 'valueRef':
 		case 'partPath':
+		case 'locationRange':
+		case 'type':
 		case 'threadedCommentId':
 		case 'pivotTable':
 		case 'sourceSheet':
@@ -769,6 +798,7 @@ function validateOperationField(
 		case 'ruleIndex':
 		case 'imageIndex':
 		case 'drawingObjectIndex':
+		case 'groupIndex':
 		case 'commentIndex':
 		case 'id':
 		case 'chartIndex':
@@ -803,6 +833,13 @@ function validateOperationField(
 		case 'enableRefresh':
 		case 'invalid':
 		case 'saveData':
+		case 'markers':
+		case 'highPoint':
+		case 'lowPoint':
+		case 'firstPoint':
+		case 'lastPoint':
+		case 'negative':
+		case 'displayXAxis':
 			return typeof value === 'boolean' ? null : `${path} must be a boolean`
 		case 'showDetails':
 		case 'manualFilter':
@@ -1099,6 +1136,12 @@ function operationRecoveryActions(op: string): readonly string[] {
 				'Expect pivot output to be stale until Excel or another pivot-aware engine refreshes the slicer-linked pivot tables.',
 				...common,
 			]
+		case 'setSparklineGroup':
+			return [
+				'Use inspectSheet().sparklineGroups to choose sheet and groupIndex.',
+				'This rewrites preserved sparkline extension XML; keep source and location ranges shape-compatible.',
+				...common,
+			]
 		case 'setConnectionRefresh':
 			return [
 				'Use inspect --detail connections or refreshMetadata to choose partPath, name, connectionId, or sheet.',
@@ -1347,6 +1390,16 @@ function operationExample(op: string): Record<string, unknown> {
 				item: 0,
 				selected: true,
 				noData: false,
+			}
+		case 'setSparklineGroup':
+			return {
+				op,
+				sheet: 'Data',
+				groupIndex: 0,
+				range: 'Data!C2:C4',
+				locationRange: 'E2:E4',
+				type: 'column',
+				markers: false,
 			}
 		case 'setConnectionRefresh':
 			return {

@@ -546,13 +546,15 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'visuals.sparklines',
 		'visuals',
 		'Sparklines',
-		'inspectable',
+		'editable',
 		'P2',
-		'Add safe sparkline source/style edit operations after preservation fixtures.',
-		'Sparkline groups are inventoried with type, source range, location range, count, marker flags, and series color while extension XML remains preserved.',
+		'Broaden sparkline edits to generated groups and richer color/style controls.',
+		'Sparkline groups are inventoried with type, source range, location range, count, marker flags, and series color; setSparklineGroup edits preserved source/location ranges and display flags while keeping extension XML intact.',
 		[
 			'packages/io-xlsx/src/reader/advanced-filter-sparkline.test.ts',
+			'packages/io-xlsx/src/writer/writer.test.ts',
 			'packages/sdk/src/advanced-filter-sparkline.test.ts',
+			'packages/engine/src/operations.test.ts',
 		],
 	),
 

@@ -26,4 +26,33 @@ describe('advanced filter and sparkline SDK inventory', () => {
 			markers: true,
 		})
 	})
+
+	test('setSparklineGroup edits source and display flags through SDK save and reopen', async () => {
+		const wb = await AscendWorkbook.open(advancedFilterSparklineWorkbook())
+		const applied = wb.apply([
+			{
+				op: 'setSparklineGroup',
+				sheet: 'Data',
+				groupIndex: 0,
+				range: 'Data!C2:C4',
+				locationRange: 'E2:E4',
+				type: 'column',
+				markers: false,
+				highPoint: false,
+				displayXAxis: false,
+			},
+		])
+		expect(applied.errors).toEqual([])
+
+		const reopened = await AscendWorkbook.open(wb.toBytes())
+		expect(reopened.inspectSheet('Data')?.sparklineGroups?.[0]).toMatchObject({
+			type: 'column',
+			range: 'Data!C2:C4',
+			locationRange: 'E2:E4',
+			count: 1,
+			markers: false,
+			highPoint: false,
+			displayXAxis: false,
+		})
+	})
 })

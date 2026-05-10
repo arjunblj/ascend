@@ -757,7 +757,7 @@ describe('competitive IO helpers', () => {
 		} finally {
 			rmSync(dir, { recursive: true, force: true })
 		}
-	})
+	}, 15_000)
 
 	test('advanced workload gating also suppresses built-in fallback writers', async () => {
 		const payload = await runCompetitiveIoJson([

@@ -3852,6 +3852,84 @@ ${sparklineExtLst}
 		expect(writtenSheetXml).toContain('Sheet1!A1:A5')
 	})
 
+	it('writes edited sparkline group source and display flags into preserved extension XML', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"
+  xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main">
+  <sheetData/>
+  <extLst><ext uri="{05C60535-1F16-4fd2-B633-F4F36F0B64E0}">
+    <x14:sparklineGroups>
+      <x14:sparklineGroup type="line" markers="1" high="1" displayXAxis="1">
+        <x14:sparklines><x14:sparkline><xm:f>Data!B2:B4</xm:f><xm:sqref>D2:D4</xm:sqref></x14:sparkline></x14:sparklines>
+      </x14:sparklineGroup>
+    </x14:sparklineGroups>
+  </ext></extLst>
+</worksheet>`,
+		})
+		const read = readXlsx(bytes)
+		expectOk(read)
+		const applied = applyOperations(read.value.workbook, [
+			{
+				op: 'setSparklineGroup',
+				sheet: 'Data',
+				groupIndex: 0,
+				range: 'Data!C2:C4',
+				locationRange: 'E2:E4',
+				type: 'column',
+				markers: false,
+				highPoint: false,
+				displayXAxis: false,
+			},
+		])
+		expectOk(applied)
+
+		const written = writeXlsx(read.value.workbook, read.value.capsules, {
+			dirtySheetNames: applied.value.sheetsModified,
+		})
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+		expect(sheetXml).toContain('type="column"')
+		expect(sheetXml).toContain('markers="0"')
+		expect(sheetXml).toContain('high="0"')
+		expect(sheetXml).toContain('displayXAxis="0"')
+		expect(sheetXml).toContain('<xm:f>Data!C2:C4</xm:f>')
+		expect(sheetXml).toContain('<xm:sqref>E2:E4</xm:sqref>')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.sheets[0]?.sparklineGroups[0]).toMatchObject({
+			type: 'column',
+			markers: false,
+			highPoint: false,
+			displayXAxis: false,
+			range: 'Data!C2:C4',
+			locationRange: 'E2:E4',
+		})
+	})
+
 	it('preserves worksheet-level extLst instead of nested rule extensions', () => {
 		const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main">

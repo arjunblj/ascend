@@ -107,6 +107,7 @@ const handlers: Record<string, OperationHandler> = {
 	insertImage: visualOps.handleInsertImage as OperationHandler,
 	deleteImage: visualOps.handleDeleteImage as OperationHandler,
 	setDrawingText: visualOps.handleSetDrawingText as OperationHandler,
+	setSparklineGroup: visualOps.handleSetSparklineGroup as OperationHandler,
 }
 
 export function applyOperation(

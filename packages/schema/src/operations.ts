@@ -541,6 +541,21 @@ export type Operation =
 			readonly noData?: boolean | null
 	  }
 	| {
+			readonly op: 'setSparklineGroup'
+			readonly sheet: string
+			readonly groupIndex: number
+			readonly range?: string
+			readonly locationRange?: string
+			readonly type?: string
+			readonly markers?: boolean
+			readonly highPoint?: boolean
+			readonly lowPoint?: boolean
+			readonly firstPoint?: boolean
+			readonly lastPoint?: boolean
+			readonly negative?: boolean
+			readonly displayXAxis?: boolean
+	  }
+	| {
 			readonly op: 'setConnectionRefresh'
 			readonly partPath?: string
 			readonly name?: string

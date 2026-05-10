@@ -183,6 +183,36 @@ describe('operation schema agent DX', () => {
 		expect(parsed.ok).toBe(true)
 	})
 
+	test('setSparklineGroup is exposed with sparkline range guidance', () => {
+		const schema = getOperationsSchema().find((entry) => entry.op === 'setSparklineGroup')
+		expect(schema?.schema.required).toEqual(['op', 'sheet', 'groupIndex'])
+		expect(schema?.schema.properties.groupIndex?.description).toContain('sparkline group')
+		expect(schema?.schema.properties.locationRange?.description).toContain('sqref')
+		expect(schema?.examples[0]).toMatchObject({
+			op: 'setSparklineGroup',
+			sheet: 'Data',
+			groupIndex: 0,
+			range: 'Data!C2:C4',
+			locationRange: 'E2:E4',
+			type: 'column',
+			markers: false,
+		})
+		expect(schema?.recoveryActions.join('\n')).toContain('sparklineGroups')
+
+		const parsed = parseOperations([
+			{
+				op: 'setSparklineGroup',
+				sheet: 'Data',
+				groupIndex: 0,
+				range: 'Data!C2:C4',
+				locationRange: 'E2:E4',
+				type: 'column',
+				markers: false,
+			},
+		])
+		expect(parsed.ok).toBe(true)
+	})
+
 	test('setConnectionRefresh is exposed with connection refresh guidance', () => {
 		const schema = getOperationsSchema().find((entry) => entry.op === 'setConnectionRefresh')
 		expect(schema?.schema.required).toEqual(['op'])

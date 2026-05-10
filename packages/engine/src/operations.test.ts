@@ -479,6 +479,72 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('setSparklineGroup updates source ranges and display flags', () => {
+		const wb = setup()
+		const sheet = wb.getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.sparklineGroups.push({
+			groupIndex: 0,
+			type: 'line',
+			markers: true,
+			highPoint: true,
+			displayXAxis: true,
+			range: 'Sheet1!B2:B4',
+			locationRange: 'D2:D4',
+			count: 1,
+		})
+
+		const result = applyOperation(wb, {
+			op: 'setSparklineGroup',
+			sheet: 'Sheet1',
+			groupIndex: 0,
+			range: 'Sheet1!C2:C4',
+			locationRange: 'E2:E4',
+			type: 'column',
+			markers: false,
+			highPoint: false,
+			displayXAxis: false,
+		})
+		expectOk(result)
+
+		expect(result.value.sheetsModified).toEqual(['Sheet1'])
+		expect(result.value.recalcRequired).toBe(false)
+		expect(sheet.sparklineGroups[0]).toMatchObject({
+			type: 'column',
+			markers: false,
+			highPoint: false,
+			displayXAxis: false,
+			range: 'Sheet1!C2:C4',
+			locationRange: 'E2:E4',
+		})
+	})
+
+	test('setSparklineGroup validates existing groups and editable fields', () => {
+		const wb = setup()
+		expect(
+			applyOperation(wb, {
+				op: 'setSparklineGroup',
+				sheet: 'Sheet1',
+				groupIndex: 0,
+				range: 'Sheet1!C2:C4',
+			}).ok,
+		).toBe(false)
+		const sheet = wb.getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.sparklineGroups.push({ groupIndex: 0, count: 1 })
+		expect(
+			applyOperation(wb, {
+				op: 'setSparklineGroup',
+				sheet: 'Sheet1',
+				groupIndex: -1,
+				range: 'Sheet1!C2:C4',
+			}).ok,
+		).toBe(false)
+		expect(applyOperation(wb, { op: 'setSparklineGroup', sheet: 'Sheet1', groupIndex: 0 }).ok).toBe(
+			false,
+		)
+	})
+
 	test('setConditionalFormat stores conditional formatting rules', () => {
 		const wb = setup()
 		const result = applyOperation(wb, {

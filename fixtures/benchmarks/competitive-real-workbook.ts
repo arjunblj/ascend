@@ -791,6 +791,9 @@ interface CompetitiveCase {
 		readonly internalTiming?: boolean
 		readonly valueOnlyRead?: boolean
 		readonly metadataOnlyRead?: boolean
+		readonly writeFormulas?: boolean
+		readonly writeTables?: boolean
+		readonly writeRichMetadata?: boolean
 	}
 	run(
 		target: WorkbookTarget,
@@ -837,6 +840,9 @@ export interface ExternalRunnerSpec {
 		readonly internalTiming?: boolean
 		readonly valueOnlyRead?: boolean
 		readonly metadataOnlyRead?: boolean
+		readonly writeFormulas?: boolean
+		readonly writeTables?: boolean
+		readonly writeRichMetadata?: boolean
 		readonly finalValidation?: boolean
 	}
 }
@@ -2257,6 +2263,9 @@ function normalizeRunnerCapabilities(
 		'internalTiming',
 		'valueOnlyRead',
 		'metadataOnlyRead',
+		'writeFormulas',
+		'writeTables',
+		'writeRichMetadata',
 		'finalValidation',
 	] as const) {
 		const flag = value[key]

@@ -126,6 +126,9 @@ interface CompetitiveCase {
 	readonly capabilities?: {
 		readonly valueOnlyRead?: boolean
 		readonly metadataOnlyRead?: boolean
+		readonly writeFormulas?: boolean
+		readonly writeTables?: boolean
+		readonly writeRichMetadata?: boolean
 	}
 	run(input: CompetitiveDataSet): Promise<{ assertions?: Record<string, PrimitiveAssertion> }>
 	runBatched?(
@@ -141,6 +144,40 @@ interface CompetitiveCase {
 
 export type ExternalReadRunnerSpec = ExternalRunnerSpec
 export type ExternalWriteRunnerSpec = ExternalRunnerSpec
+
+type WriteCapability = keyof Pick<
+	NonNullable<CompetitiveCase['capabilities']>,
+	'writeFormulas' | 'writeTables' | 'writeRichMetadata'
+>
+
+const REQUIRED_WRITE_CAPABILITY_BY_WORKLOAD: Partial<Record<WorkloadName, WriteCapability>> = {
+	'formula-heavy': 'writeFormulas',
+	'table-heavy': 'writeTables',
+	'feature-rich': 'writeRichMetadata',
+}
+
+export function unsupportedExternalWriteWorkloadReason(
+	spec: Pick<ExternalWriteRunnerSpec, 'name' | 'capabilities'>,
+	workloadName: WorkloadName,
+): string | undefined {
+	const requiredCapability = REQUIRED_WRITE_CAPABILITY_BY_WORKLOAD[workloadName]
+	if (requiredCapability && spec.capabilities?.[requiredCapability] !== true)
+		return `unsupported write workload "${workloadName}": runner does not declare capabilities.${requiredCapability}=true`
+	return undefined
+}
+
+function supportsGeneratedWriteWorkload(
+	skipped: Array<{ library: string; reason: string }>,
+	spec: Pick<ExternalWriteRunnerSpec, 'name' | 'capabilities'>,
+	workloadName: WorkloadName,
+): boolean {
+	const reason = unsupportedExternalWriteWorkloadReason(spec, workloadName)
+	if (reason) {
+		skipped.push({ library: spec.name, reason })
+		return false
+	}
+	return true
+}
 
 export interface MetricSample {
 	readonly durationMs: number
@@ -1682,14 +1719,17 @@ function applyExcelJsFeatureRich(
 		sheet.getCell('B2').note = 'Review'
 	}
 	if (input.rows > 1 && input.cols > 2) {
-		for (let row = 2; row <= input.rows; row++) {
-			sheet.getCell(`C${row}`).dataValidation = {
-				type: 'list',
-				allowBlank: true,
-				showInputMessage: true,
-				formulae: ['"Q1,Q2,Q3"'],
+		const dataValidations = (
+			sheet as unknown as {
+				readonly dataValidations?: { add(address: string, validation: unknown): unknown }
 			}
-		}
+		).dataValidations
+		dataValidations?.add(`C2:C${input.rows}`, {
+			type: 'list',
+			allowBlank: true,
+			showInputMessage: true,
+			formulae: ['"Q1,Q2,Q3"'],
+		})
 	}
 	sheet.addConditionalFormatting({
 		ref: `A1:A${Math.max(1, input.rows)}`,
@@ -1876,6 +1916,11 @@ async function loadCases(workloadName: WorkloadName): Promise<{
 						name: `ascend:xlsx-write-${suffix}`,
 						library: 'ascend',
 						category: 'write' as const,
+						capabilities: {
+							writeFormulas: true,
+							writeTables: true,
+							writeRichMetadata: true,
+						},
 						async run(input: CompetitiveDataSet) {
 							const bytes = writeAscendGeneratedBytes(input)
 							return { assertions: denseWriteAssertions(bytes, input) }
@@ -1894,8 +1939,13 @@ async function loadCases(workloadName: WorkloadName): Promise<{
 			: []),
 	]
 	const skipped: Array<{ library: string; reason: string }> = []
-	const externalWriteRunnerSpecs = await loadExternalWriteRunnerSpecs()
-	const externalWriteRunnerNames = new Set(externalWriteRunnerSpecs.map((spec) => spec.name))
+	const allExternalWriteRunnerSpecs = await loadExternalWriteRunnerSpecs()
+	const externalWriteRunnerSpecs = includeWriteCases
+		? allExternalWriteRunnerSpecs.filter((spec) =>
+				supportsGeneratedWriteWorkload(skipped, spec, workloadName),
+			)
+		: allExternalWriteRunnerSpecs
+	const allExternalWriteRunnerNames = new Set(allExternalWriteRunnerSpecs.map((spec) => spec.name))
 
 	let sheetJs: typeof import('xlsx') | undefined
 	try {
@@ -1944,30 +1994,29 @@ async function loadCases(workloadName: WorkloadName): Promise<{
 				}
 			},
 		})
-		cases.push(
-			...(includeWriteCases
-				? [
-						{
-							name: `sheetjs:xlsx-write-${suffix}`,
-							library: 'sheetjs',
-							category: 'write' as const,
-							async run(input: CompetitiveDataSet) {
-								const bytes = writeSheetJsGeneratedBytes(sheetJs, input)
-								return { assertions: denseWriteAssertions(bytes, input) }
-							},
-							async runBatched(input: CompetitiveDataSet, repeat: number, warmup: number) {
-								const timed = await runTimedOperation(input, repeat, warmup, () =>
-									writeSheetJsGeneratedBytes(sheetJs, input),
-								)
-								return {
-									samples: timed.samples,
-									assertions: denseWriteAssertions(timed.last, input),
-								}
-							},
-						},
-					]
-				: []),
-		)
+		if (
+			includeWriteCases &&
+			supportsGeneratedWriteWorkload(skipped, { name: 'sheetjs', capabilities: {} }, workloadName)
+		) {
+			cases.push({
+				name: `sheetjs:xlsx-write-${suffix}`,
+				library: 'sheetjs',
+				category: 'write' as const,
+				async run(input: CompetitiveDataSet) {
+					const bytes = writeSheetJsGeneratedBytes(sheetJs, input)
+					return { assertions: denseWriteAssertions(bytes, input) }
+				},
+				async runBatched(input: CompetitiveDataSet, repeat: number, warmup: number) {
+					const timed = await runTimedOperation(input, repeat, warmup, () =>
+						writeSheetJsGeneratedBytes(sheetJs, input),
+					)
+					return {
+						samples: timed.samples,
+						assertions: denseWriteAssertions(timed.last, input),
+					}
+				},
+			})
+		}
 	}
 
 	let ExcelJS: typeof import('exceljs') | undefined
@@ -2012,7 +2061,14 @@ async function loadCases(workloadName: WorkloadName): Promise<{
 				},
 			})
 		}
-		if (includeWriteCases) {
+		if (
+			includeWriteCases &&
+			supportsGeneratedWriteWorkload(
+				skipped,
+				{ name: 'exceljs', capabilities: { writeRichMetadata: true } },
+				workloadName,
+			)
+		) {
 			cases.push({
 				name: `exceljs:xlsx-write-${suffix}`,
 				library: 'exceljs',
@@ -2036,12 +2092,25 @@ async function loadCases(workloadName: WorkloadName): Promise<{
 
 	if (includeWriteCases) {
 		const manifestProvidesXlsxWriter =
-			externalWriteRunnerNames.has('xlsxwriter') ||
-			externalWriteRunnerNames.has('xlsxwriter-constant-memory')
+			allExternalWriteRunnerNames.has('xlsxwriter') ||
+			allExternalWriteRunnerNames.has('xlsxwriter-constant-memory')
 		if (!manifestProvidesXlsxWriter) {
 			if (await commandAvailable(['python3', '-c', 'import xlsxwriter, openpyxl'])) {
-				cases.push(
-					{
+				if (
+					supportsGeneratedWriteWorkload(
+						skipped,
+						{
+							name: 'xlsxwriter',
+							capabilities: {
+								writeFormulas: true,
+								writeTables: true,
+								writeRichMetadata: true,
+							},
+						},
+						workloadName,
+					)
+				) {
+					cases.push({
 						name: `xlsxwriter:xlsx-write-${suffix}`,
 						library: 'xlsxwriter',
 						category: 'write',
@@ -2054,8 +2123,19 @@ async function loadCases(workloadName: WorkloadName): Promise<{
 						async runBatched(input, repeat, warmup) {
 							return runXlsxWriter(input, repeat, warmup)
 						},
-					},
-					{
+					})
+				}
+				if (
+					supportsGeneratedWriteWorkload(
+						skipped,
+						{
+							name: 'xlsxwriter-constant-memory',
+							capabilities: { writeFormulas: true },
+						},
+						workloadName,
+					)
+				) {
+					cases.push({
 						name: `xlsxwriter-constant-memory:xlsx-write-${suffix}`,
 						library: 'xlsxwriter-constant-memory',
 						category: 'write',
@@ -2070,8 +2150,8 @@ async function loadCases(workloadName: WorkloadName): Promise<{
 						async runBatched(input, repeat, warmup) {
 							return runXlsxWriter(input, repeat, warmup, true)
 						},
-					},
-				)
+					})
+				}
 			} else {
 				skipped.push({
 					library: 'xlsxwriter',
@@ -2083,7 +2163,8 @@ async function loadCases(workloadName: WorkloadName): Promise<{
 
 	const openpyxlWriterRunner = 'fixtures/benchmarks/runners/openpyxl_writer_runner.py'
 	const manifestProvidesOpenPyxl =
-		externalWriteRunnerNames.has('openpyxl') || externalWriteRunnerNames.has('openpyxl-write-only')
+		allExternalWriteRunnerNames.has('openpyxl') ||
+		allExternalWriteRunnerNames.has('openpyxl-write-only')
 	if (!manifestProvidesOpenPyxl) {
 		if (!(await fileExists(openpyxlWriterRunner))) {
 			skipped.push({
@@ -2094,8 +2175,17 @@ async function loadCases(workloadName: WorkloadName): Promise<{
 			includeWriteCases &&
 			(await commandAvailable(['python3', '-c', 'import openpyxl']))
 		) {
-			cases.push(
-				{
+			if (
+				supportsGeneratedWriteWorkload(
+					skipped,
+					{
+						name: 'openpyxl',
+						capabilities: { writeTables: true, writeRichMetadata: true },
+					},
+					workloadName,
+				)
+			) {
+				cases.push({
 					name: `openpyxl:xlsx-write-${suffix}`,
 					library: 'openpyxl',
 					category: 'write',
@@ -2114,8 +2204,16 @@ async function loadCases(workloadName: WorkloadName): Promise<{
 					async runBatched(input, repeat, warmup) {
 						return runPythonWriteRunner('OpenPyXL', openpyxlWriterRunner, input, repeat, warmup)
 					},
-				},
-				{
+				})
+			}
+			if (
+				supportsGeneratedWriteWorkload(
+					skipped,
+					{ name: 'openpyxl-write-only', capabilities: {} },
+					workloadName,
+				)
+			) {
+				cases.push({
 					name: `openpyxl-write-only:xlsx-write-${suffix}`,
 					library: 'openpyxl-write-only',
 					category: 'write',
@@ -2142,8 +2240,8 @@ async function loadCases(workloadName: WorkloadName): Promise<{
 							['--write-only'],
 						)
 					},
-				},
-			)
+				})
+			}
 		} else if (includeWriteCases) {
 			skipped.push({
 				library: 'openpyxl',
@@ -2154,9 +2252,9 @@ async function loadCases(workloadName: WorkloadName): Promise<{
 
 	const pyexcelerateRunner = 'fixtures/benchmarks/runners/pyexcelerate_runner.py'
 	const manifestProvidesPyexcelerate =
-		externalWriteRunnerNames.has('pyexcelerate') ||
-		externalWriteRunnerNames.has('pyexcelerate-range') ||
-		externalWriteRunnerNames.has('pyexcelerate-cell')
+		allExternalWriteRunnerNames.has('pyexcelerate') ||
+		allExternalWriteRunnerNames.has('pyexcelerate-range') ||
+		allExternalWriteRunnerNames.has('pyexcelerate-cell')
 	if (!manifestProvidesPyexcelerate) {
 		if (!(await fileExists(pyexcelerateRunner))) {
 			skipped.push({
@@ -2181,6 +2279,15 @@ async function loadCases(workloadName: WorkloadName): Promise<{
 				},
 			] as const
 			for (const strategy of strategies) {
+				if (
+					!supportsGeneratedWriteWorkload(
+						skipped,
+						{ name: strategy.library, capabilities: {} },
+						workloadName,
+					)
+				) {
+					continue
+				}
 				cases.push({
 					name: `${strategy.library}:xlsx-write-${suffix}`,
 					library: strategy.library,

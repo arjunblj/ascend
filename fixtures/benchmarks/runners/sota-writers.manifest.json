@@ -12,7 +12,10 @@
 		"capabilities": {
 			"internalTiming": true,
 			"valueOnlyRead": true,
-			"xlsmRoundtrip": false
+			"xlsmRoundtrip": false,
+			"writeFormulas": true,
+			"writeTables": true,
+			"writeRichMetadata": true
 		}
 	},
 	{
@@ -148,7 +151,10 @@
 			"internalTiming": true,
 			"valueOnlyRead": true,
 			"xlsmRoundtrip": false,
-			"finalValidation": true
+			"finalValidation": true,
+			"writeFormulas": true,
+			"writeTables": true,
+			"writeRichMetadata": true
 		}
 	},
 	{
@@ -165,7 +171,8 @@
 			"internalTiming": true,
 			"valueOnlyRead": true,
 			"xlsmRoundtrip": false,
-			"finalValidation": true
+			"finalValidation": true,
+			"writeFormulas": true
 		}
 	},
 	{
@@ -243,7 +250,9 @@
 			"internalTiming": true,
 			"valueOnlyRead": true,
 			"xlsmRoundtrip": false,
-			"finalValidation": true
+			"finalValidation": true,
+			"writeTables": true,
+			"writeRichMetadata": true
 		}
 	},
 	{
@@ -284,7 +293,9 @@
 		"capabilities": {
 			"internalTiming": true,
 			"valueOnlyRead": true,
-			"xlsmRoundtrip": false
+			"xlsmRoundtrip": false,
+			"writeFormulas": true,
+			"writeTables": true
 		}
 	},
 	{

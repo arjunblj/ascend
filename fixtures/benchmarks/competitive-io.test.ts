@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { createWorkbook, type StyleId } from '../../packages/core/src/index.ts'
 import { readXlsx, writeDenseRowsXlsx, writeXlsx } from '../../packages/io-xlsx/src/index.ts'
 import {
@@ -21,6 +23,7 @@ import {
 	libraryAllowed,
 	normalizeExternalSamples,
 	parseLibraryAllowlist,
+	unsupportedExternalWriteWorkloadReason,
 	type WorkloadName,
 	writeOperationProfile,
 } from './competitive-io.ts'
@@ -30,6 +33,32 @@ import {
 } from './competitive-real-workbook.ts'
 
 const SID = 0 as StyleId
+
+type CompetitiveIoJsonPayload = {
+	readonly cases: readonly {
+		readonly dimensions: { readonly library: string; readonly correctnessStatus?: string }
+		readonly assertions?: Record<string, unknown>
+	}[]
+	readonly metadata: {
+		readonly skipped: readonly { readonly library: string; readonly reason?: string }[]
+		readonly externalWriteRunnersByWorkload?: Record<string, readonly { readonly name: string }[]>
+	}
+}
+
+async function runCompetitiveIoJson(args: readonly string[]): Promise<CompetitiveIoJsonPayload> {
+	const proc = Bun.spawn(['bun', 'run', 'fixtures/benchmarks/competitive-io.ts', ...args], {
+		stdout: 'pipe',
+		stderr: 'pipe',
+	})
+	const [stdout, stderr, exitCode] = await Promise.all([
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+		proc.exited,
+	])
+	expect(stderr).toBe('')
+	expect(exitCode).toBe(0)
+	return JSON.parse(stdout) as CompetitiveIoJsonPayload
+}
 
 describe('competitive IO helpers', () => {
 	test('semantic write hash validation catches corrupted XLSX output', () => {
@@ -603,6 +632,199 @@ describe('competitive IO helpers', () => {
 		expect(evaluated.assertions.semanticCellValuesHashMatches).toBe(true)
 	})
 
+	test('advanced external write workloads require declared runner capabilities', () => {
+		expect(
+			unsupportedExternalWriteWorkloadReason(
+				{ name: 'values-only', capabilities: {} },
+				'formula-heavy',
+			),
+		).toContain('writeFormulas=true')
+		expect(
+			unsupportedExternalWriteWorkloadReason(
+				{ name: 'formula-writer', capabilities: { writeFormulas: true } },
+				'formula-heavy',
+			),
+		).toBeUndefined()
+		expect(
+			unsupportedExternalWriteWorkloadReason(
+				{ name: 'formula-writer', capabilities: { writeFormulas: true } },
+				'table-heavy',
+			),
+		).toContain('writeTables=true')
+		expect(
+			unsupportedExternalWriteWorkloadReason(
+				{ name: 'rich-writer', capabilities: { writeRichMetadata: true } },
+				'feature-rich',
+			),
+		).toBeUndefined()
+		expect(
+			unsupportedExternalWriteWorkloadReason(
+				{ name: 'values-only', capabilities: {} },
+				'dense-values',
+			),
+		).toBeUndefined()
+	})
+
+	test('external write manifest skips unsupported advanced workloads before running', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'ascend-writer-capabilities-'))
+		try {
+			const manifestPath = join(dir, 'writers.json')
+			writeFileSync(
+				manifestPath,
+				JSON.stringify([
+					{
+						name: 'unsupported-writer',
+						command: [
+							'bun',
+							'fixtures/benchmarks/runners/js_writer_runner.ts',
+							'--library',
+							'sheetjs',
+						],
+						categories: ['write'],
+						capabilities: { internalTiming: true, valueOnlyRead: true },
+					},
+					{
+						name: 'formula-writer',
+						command: ['bun', 'fixtures/benchmarks/runners/ascend_writer_runner.ts'],
+						categories: ['write'],
+						capabilities: {
+							internalTiming: true,
+							valueOnlyRead: true,
+							finalValidation: true,
+							writeFormulas: true,
+						},
+					},
+				]),
+			)
+			const proc = Bun.spawn(
+				[
+					'bun',
+					'run',
+					'fixtures/benchmarks/competitive-io.ts',
+					'--category',
+					'write',
+					'--workload',
+					'formula-heavy',
+					'--rows',
+					'5',
+					'--cols',
+					'4',
+					'--repeat',
+					'1',
+					'--warmup',
+					'0',
+					'--libraries',
+					'unsupported-writer,formula-writer',
+					'--write-runner-manifest',
+					manifestPath,
+					'--validation-mode',
+					'final',
+					'--json',
+				],
+				{ stdout: 'pipe', stderr: 'pipe' },
+			)
+			const [stdout, stderr, exitCode] = await Promise.all([
+				new Response(proc.stdout).text(),
+				new Response(proc.stderr).text(),
+				proc.exited,
+			])
+			expect(stderr).toBe('')
+			expect(exitCode).toBe(0)
+			const payload = JSON.parse(stdout) as {
+				readonly cases: readonly { readonly dimensions: { readonly library: string } }[]
+				readonly metadata: {
+					readonly skipped: readonly { readonly library: string; readonly reason: string }[]
+					readonly externalWriteRunnersByWorkload: Record<
+						string,
+						readonly { readonly name: string }[]
+					>
+				}
+			}
+			expect(payload.cases.map((entry) => entry.dimensions.library)).toContain('formula-writer')
+			expect(payload.cases.map((entry) => entry.dimensions.library)).not.toContain(
+				'unsupported-writer',
+			)
+			expect(payload.metadata.skipped).toContainEqual({
+				library: 'unsupported-writer',
+				reason:
+					'unsupported write workload "formula-heavy": runner does not declare capabilities.writeFormulas=true',
+			})
+			expect(
+				payload.metadata.externalWriteRunnersByWorkload['formula-heavy']?.map(
+					(entry) => entry.name,
+				),
+			).toEqual(['formula-writer'])
+		} finally {
+			rmSync(dir, { recursive: true, force: true })
+		}
+	})
+
+	test('advanced workload gating also suppresses built-in fallback writers', async () => {
+		const payload = await runCompetitiveIoJson([
+			'--category',
+			'write',
+			'--workload',
+			'formula-heavy',
+			'--rows',
+			'20',
+			'--cols',
+			'6',
+			'--repeat',
+			'1',
+			'--warmup',
+			'0',
+			'--libraries',
+			'sheetjs,openpyxl,pyexcelerate,pyexcelerate-range,pyexcelerate-cell',
+			'--write-runner-manifest',
+			'fixtures/benchmarks/runners/sota-writers.manifest.json',
+			'--validation-mode',
+			'final',
+			'--json',
+		])
+		expect(payload.cases).toHaveLength(0)
+		for (const library of [
+			'sheetjs',
+			'openpyxl',
+			'pyexcelerate',
+			'pyexcelerate-range',
+			'pyexcelerate-cell',
+		]) {
+			expect(
+				payload.metadata.skipped.some(
+					(entry) =>
+						entry.library === library && entry.reason?.includes('capabilities.writeFormulas=true'),
+				),
+			).toBe(true)
+		}
+	})
+
+	test('capable in-process rich metadata writers still run when manifest adapters skip', async () => {
+		const payload = await runCompetitiveIoJson([
+			'--category',
+			'write',
+			'--workload',
+			'feature-rich',
+			'--rows',
+			'20',
+			'--cols',
+			'6',
+			'--repeat',
+			'1',
+			'--warmup',
+			'0',
+			'--libraries',
+			'exceljs',
+			'--write-runner-manifest',
+			'fixtures/benchmarks/runners/sota-writers.manifest.json',
+			'--validation-mode',
+			'final',
+			'--json',
+		])
+		expect(payload.cases.map((entry) => entry.dimensions.library)).toEqual(['exceljs'])
+		expect(payload.cases[0]?.dimensions.correctnessStatus).toBe('pass')
+		expect(payload.cases[0]?.assertions?.featureRichMatches).toBe(true)
+	})
+
 	test('external competitor selector includes non-JS SOTA runners', () => {
 		expect(competitorMatches('sheetjs', 'external')).toBe(false)
 		expect(competitorMatches('fastexcel', 'external')).toBe(true)
@@ -643,7 +865,8 @@ describe('competitive IO helpers', () => {
 		const manifest = JSON.parse(
 			readFileSync('fixtures/benchmarks/runners/sota-writers.manifest.json', 'utf-8'),
 		) as unknown
-		const names = new Set(normalizeExternalRunnerSpecs(manifest).map((spec) => spec.name))
+		const specs = normalizeExternalRunnerSpecs(manifest)
+		const names = new Set(specs.map((spec) => spec.name))
 		for (const name of [
 			'ascend-external-writer',
 			'xlsxwriter',
@@ -661,6 +884,29 @@ describe('competitive IO helpers', () => {
 		]) {
 			expect(names.has(name)).toBe(true)
 		}
+		expect(
+			specs.find((spec) => spec.name === 'ascend-external-writer')?.capabilities,
+		).toMatchObject({
+			writeFormulas: true,
+			writeTables: true,
+			writeRichMetadata: true,
+		})
+		expect(specs.find((spec) => spec.name === 'sheetjs')?.capabilities?.writeFormulas).toBe(
+			undefined,
+		)
+		expect(specs.find((spec) => spec.name === 'xlsxwriter')?.capabilities).toMatchObject({
+			writeFormulas: true,
+			writeTables: true,
+			writeRichMetadata: true,
+		})
+		expect(specs.find((spec) => spec.name === 'openpyxl')?.capabilities).toMatchObject({
+			writeTables: true,
+			writeRichMetadata: true,
+		})
+		expect(specs.find((spec) => spec.name === 'rust-xlsxwriter')?.capabilities).toMatchObject({
+			writeFormulas: true,
+			writeTables: true,
+		})
 	})
 
 	test('SOTA reader manifest includes Ascend materialized read lane for pyopenxlsx comparisons', () => {

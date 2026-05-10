@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import type { Workbook } from '@ascend/core'
-import { type PreservationCapsule, readXlsx, writeXlsx } from '@ascend/io-xlsx'
+import { DEFAULT_STYLE_ID, type Workbook } from '../../packages/core/src/index.ts'
+import { defaultCalcContext, recalculate } from '../../packages/engine/src/index.ts'
+import { type PreservationCapsule, readXlsx, writeXlsx } from '../../packages/io-xlsx/src/index.ts'
+import { EMPTY, numberValue } from '../../packages/schema/src/index.ts'
 
 const FILTER_FIXTURE_ROOT = resolve(import.meta.dir, '../xlsx/filter')
 const XLSX_FIXTURE_ROOT = resolve(import.meta.dir, '../xlsx')
@@ -76,5 +78,23 @@ describe('filter feature contract', () => {
 		expect(iconTable?.autoFilter?.columns).toEqual([
 			{ colId: 1, kind: 'iconFilter', iconSet: '3TrafficLights1', iconId: 1 },
 		])
+	})
+
+	it('evaluates real LibreOffice color filters from style criteria', () => {
+		const { workbook } = readFixture(XLSX_FIXTURE_ROOT, 'libreoffice/autofilter-colors.xlsx')
+		const sheet = workbook.sheets[0]
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+		sheet.rowDefs.clear()
+		sheet.cells.set(0, 3, {
+			value: EMPTY,
+			formula: 'SUBTOTAL(9,A2:A11)',
+			styleId: DEFAULT_STYLE_ID,
+		})
+
+		const result = recalculate(workbook, defaultCalcContext())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 3)?.value).toEqual(numberValue(5))
 	})
 })

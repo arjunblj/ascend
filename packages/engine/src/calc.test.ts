@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { AutoFilter, Sheet, StyleId } from '@ascend/core'
+import type { AutoFilter, CellStyle, Sheet, StyleId } from '@ascend/core'
 import { createTableId, createWorkbook, parseRange } from '@ascend/core'
 import { dateToSerial } from '@ascend/formulas'
 import {
@@ -2927,6 +2927,103 @@ describe('recalculate', () => {
 		expect(result.errors).toEqual([])
 		expect(sheet.cells.get(4, 0)?.value).toEqual(numberValue(70))
 		expect(sheet.cells.get(4, 1)?.value).toEqual(numberValue(70))
+	})
+
+	test('SUBTOTAL and AGGREGATE evaluate cell fill color filters', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const redFill: CellStyle = {
+			fill: { pattern: 'solid', fgColor: { kind: 'rgb', rgb: 'FFFFD7D7' } },
+		}
+		const blueFill = wb.styles.register({
+			fill: { pattern: 'solid', fgColor: { kind: 'rgb', rgb: 'FFB3CAC7' } },
+		})
+		const redFillId = wb.styles.register(redFill)
+		wb.differentialStyles.push(redFill)
+		sheet.autoFilter = {
+			ref: 'A1:B5',
+			columns: [{ colId: 1, kind: 'colorFilter', dxfId: 0 }],
+		}
+		sheet.cells.set(0, 0, { value: stringValue('Region'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Sales'), formula: null, styleId: sid })
+		for (const [index, [value, styleId]] of [
+			[10, redFillId],
+			[20, blueFill],
+			[30, redFillId],
+			[40, sid],
+		].entries()) {
+			sheet.cells.set(index + 1, 0, {
+				value: stringValue(`R${index + 1}`),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(index + 1, 1, { value: numberValue(value), formula: null, styleId })
+		}
+		sheet.cells.set(5, 0, { value: EMPTY, formula: 'SUBTOTAL(9,B2:B5)', styleId: sid })
+		sheet.cells.set(5, 1, { value: EMPTY, formula: 'AGGREGATE(9,4,B2:B5)', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(5, 0)?.value).toEqual(numberValue(40))
+		expect(sheet.cells.get(5, 1)?.value).toEqual(numberValue(40))
+	})
+
+	test('color filters can target font color and conditional-format colors', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const redFont: CellStyle = { font: { color: { kind: 'rgb', rgb: 'FFFF0000' } } }
+		const redFill: CellStyle = {
+			fill: { pattern: 'solid', fgColor: { kind: 'rgb', rgb: 'FFC6EFCE' } },
+		}
+		const redFontId = wb.styles.register(redFont)
+		const plainId = wb.styles.register({})
+		wb.differentialStyles.push(redFont, redFill)
+		sheet.autoFilter = {
+			ref: 'A1:C5',
+			columns: [
+				{ colId: 0, kind: 'colorFilter', dxfId: 0, cellColor: false },
+				{ colId: 1, kind: 'colorFilter', dxfId: 1, cellColor: true },
+			],
+		}
+		sheet.conditionalFormats.push({
+			sqref: 'B2:B5',
+			rules: [
+				{
+					type: 'cellIs',
+					operator: 'greaterThan',
+					dxfId: 1,
+					priority: 1,
+					formulas: ['25'],
+					style: redFill,
+				},
+			],
+		})
+		sheet.cells.set(0, 0, { value: stringValue('Flag'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Score'), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: stringValue('Amount'), formula: null, styleId: sid })
+		for (const [index, [score, amount, flagStyle]] of [
+			[10, 5, redFontId],
+			[30, 10, plainId],
+			[40, 20, redFontId],
+			[50, 30, redFontId],
+		].entries()) {
+			sheet.cells.set(index + 1, 0, {
+				value: stringValue(`R${index + 1}`),
+				formula: null,
+				styleId: flagStyle,
+			})
+			sheet.cells.set(index + 1, 1, { value: numberValue(score), formula: null, styleId: sid })
+			sheet.cells.set(index + 1, 2, { value: numberValue(amount), formula: null, styleId: sid })
+		}
+		sheet.cells.set(5, 0, { value: EMPTY, formula: 'SUBTOTAL(9,C2:C5)', styleId: sid })
+		sheet.cells.set(5, 1, { value: EMPTY, formula: 'AGGREGATE(9,4,C2:C5)', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(5, 0)?.value).toEqual(numberValue(50))
+		expect(sheet.cells.get(5, 1)?.value).toEqual(numberValue(50))
 	})
 
 	test('SUBTOTAL and AGGREGATE evaluate top10 filter criteria with ties', () => {

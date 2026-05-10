@@ -1,4 +1,6 @@
 import {
+	type CellStyle,
+	type Color,
 	type CustomFilter,
 	DEFAULT_STYLE_ID,
 	type FilterColumn,
@@ -38,6 +40,7 @@ import {
 } from '@ascend/schema'
 import type { CalcContext } from './calc-context.ts'
 import { aggregateNumericRange } from './compiled-eval.ts'
+import { evaluateConditionalFormats } from './conditional-format.ts'
 import { resolveSheetIndexInWorkbook as resolveSheetIndex } from './sheet-index.ts'
 import { resolveStructuredRefRange } from './structured-refs.ts'
 
@@ -1776,16 +1779,29 @@ type FilterRangeBounds = Pick<ActiveFilterRange, 'startRow' | 'startCol' | 'endR
 interface PreparedFilterColumn {
 	readonly source: FilterColumn
 	readonly acceptedValues?: ReadonlySet<string>
+	readonly colorMatchedRows?: ReadonlySet<number>
 	readonly dynamicAverage?: number
 	readonly top10Threshold?: number
 }
 
 function activeFilterRanges(
-	sheet: Sheet,
+	workbook: Workbook,
+	sheetIndex: number,
 	dateSystem: '1900' | '1904',
 	today: Date,
 ): readonly ActiveFilterRange[] {
+	const sheet = workbook.sheets[sheetIndex]
+	if (!sheet) return []
 	const ranges: ActiveFilterRange[] = []
+	const needsConditionalFormats =
+		sheet.autoFilter?.columns.some((column) => column.kind === 'colorFilter') === true ||
+		sheet.tables.some(
+			(table) => table.autoFilter?.columns.some((column) => column.kind === 'colorFilter') === true,
+		)
+	const conditionalFormats =
+		needsConditionalFormats && sheet.conditionalFormats.length > 0
+			? evaluateConditionalFormats(sheet, workbook)
+			: undefined
 	if (sheet.autoFilter && sheet.autoFilter.columns.length > 0) {
 		const range = parseFilterRange(sheet.autoFilter.ref)
 		if (range)
@@ -1793,7 +1809,13 @@ function activeFilterRanges(
 				...range,
 				dateSystem,
 				today,
-				columns: prepareFilterColumns(sheet, range, sheet.autoFilter.columns),
+				columns: prepareFilterColumns(
+					workbook,
+					sheet,
+					range,
+					sheet.autoFilter.columns,
+					conditionalFormats,
+				),
 			})
 	}
 	for (const table of sheet.tables) {
@@ -1804,26 +1826,39 @@ function activeFilterRanges(
 				...range,
 				dateSystem,
 				today,
-				columns: prepareFilterColumns(sheet, range, table.autoFilter.columns),
+				columns: prepareFilterColumns(
+					workbook,
+					sheet,
+					range,
+					table.autoFilter.columns,
+					conditionalFormats,
+				),
 			})
 	}
 	return ranges
 }
 
 function prepareFilterColumns(
+	workbook: Workbook,
 	sheet: Sheet,
 	range: FilterRangeBounds,
 	columns: readonly FilterColumn[],
+	conditionalFormats?: ReturnType<typeof evaluateConditionalFormats>,
 ): readonly PreparedFilterColumn[] {
 	return columns.map((source) => {
 		const prepared: {
 			source: FilterColumn
 			acceptedValues?: ReadonlySet<string>
+			colorMatchedRows?: ReadonlySet<number>
 			dynamicAverage?: number
 			top10Threshold?: number
 		} = { source }
 		if (source.kind === 'filters') {
 			prepared.acceptedValues = new Set((source.values ?? []).map((value) => value.toLowerCase()))
+		}
+		if (source.kind === 'colorFilter') {
+			const rows = computeColorFilterRows(workbook, sheet, range, source, conditionalFormats)
+			if (rows) prepared.colorMatchedRows = rows
 		}
 		if (source.kind === 'top10') {
 			const threshold = computeTop10FilterThreshold(sheet, range, source)
@@ -1849,7 +1884,7 @@ function parseFilterRange(ref: string): FilterRangeBounds | null {
 function rowFailsFilterCriteria(sheet: Sheet, row: number, range: ActiveFilterRange): boolean {
 	for (const column of range.columns) {
 		const cellValue = sheet.cells.readValue(row, range.startCol + column.source.colId)
-		const matches = cellMatchesFilterColumn(cellValue, column, range.dateSystem, range.today)
+		const matches = cellMatchesFilterColumn(cellValue, row, column, range.dateSystem, range.today)
 		if (matches === false) return true
 	}
 	return false
@@ -1857,11 +1892,15 @@ function rowFailsFilterCriteria(sheet: Sheet, row: number, range: ActiveFilterRa
 
 function cellMatchesFilterColumn(
 	value: CellValue,
+	row: number,
 	column: PreparedFilterColumn,
 	dateSystem: '1900' | '1904',
 	today: Date,
 ): boolean | null {
 	const source = column.source
+	if (source.kind === 'colorFilter') {
+		return column.colorMatchedRows ? column.colorMatchedRows.has(row) : null
+	}
 	if (source.kind === 'customFilters') return cellMatchesCustomFilters(value, source)
 	if (source.kind === 'dynamicFilter') {
 		return cellMatchesDynamicFilter(value, source, column.dynamicAverage, dateSystem, today)
@@ -1914,6 +1953,91 @@ function cellMatchesTop10Filter(
 	const comparable = filterTop10ComparableNumber(value)
 	if (comparable === null) return false
 	return column.top === false ? comparable <= threshold : comparable >= threshold
+}
+
+function computeColorFilterRows(
+	workbook: Workbook,
+	sheet: Sheet,
+	range: FilterRangeBounds,
+	column: FilterColumn,
+	conditionalFormats: ReturnType<typeof evaluateConditionalFormats> | undefined,
+): ReadonlySet<number> | undefined {
+	if (column.dxfId === undefined) return undefined
+	const target = workbook.differentialStyles[column.dxfId]
+	if (!target) return undefined
+	const cellColor = column.cellColor !== false
+	if (!filterColorStyleHasTarget(target, cellColor)) return undefined
+	const col = range.startCol + column.colId
+	const rows = new Set<number>()
+	for (let row = range.startRow + 1; row <= range.endRow; row++) {
+		const directStyle = workbook.styles.get(sheet.cells.readStyleId(row, col) ?? DEFAULT_STYLE_ID)
+		if (filterColorStyleMatches(directStyle, target, cellColor)) {
+			rows.add(row)
+			continue
+		}
+		const a1 = `${indexToColumn(col)}${row + 1}`
+		for (const result of conditionalFormats?.get(a1) ?? []) {
+			if (filterColorStyleMatches(result.format, target, cellColor)) {
+				rows.add(row)
+				break
+			}
+		}
+	}
+	return rows
+}
+
+function filterColorStyleHasTarget(style: CellStyle, cellColor: boolean): boolean {
+	return cellColor ? fillColors(style.fill).length > 0 : style.font?.color !== undefined
+}
+
+function filterColorStyleMatches(
+	candidate: CellStyle | undefined,
+	target: CellStyle,
+	cellColor: boolean,
+): boolean {
+	if (cellColor) return fillColorsOverlap(candidate?.fill, target.fill)
+	return colorsEqual(candidate?.font?.color, target.font?.color)
+}
+
+function fillColorsOverlap(
+	candidate: CellStyle['fill'] | undefined,
+	target: CellStyle['fill'] | undefined,
+): boolean {
+	const targetColors = fillColors(target)
+	if (targetColors.length === 0) return false
+	const candidateColors = fillColors(candidate)
+	return targetColors.some((targetColor) =>
+		candidateColors.some((candidateColor) => colorsEqual(candidateColor, targetColor)),
+	)
+}
+
+function fillColors(fill: CellStyle['fill'] | undefined): readonly Color[] {
+	const colors: Color[] = []
+	if (fill?.fgColor) colors.push(fill.fgColor)
+	if (fill?.bgColor) colors.push(fill.bgColor)
+	return colors
+}
+
+function colorsEqual(left: Color | undefined, right: Color | undefined): boolean {
+	return left !== undefined && right !== undefined && colorKey(left) === colorKey(right)
+}
+
+function colorKey(color: Color): string {
+	switch (color.kind) {
+		case 'rgb':
+			return `rgb:${normalizeRgb(color.rgb)}`
+		case 'theme':
+			return `theme:${color.theme}:${color.tint ?? 0}`
+		case 'indexed':
+			return `indexed:${color.index}`
+		case 'auto':
+			return 'auto'
+	}
+}
+
+function normalizeRgb(value: string): string {
+	const normalized = value.trim().toUpperCase()
+	return normalized.length === 6 ? `FF${normalized}` : normalized
 }
 
 function computeDynamicFilterAverage(
@@ -2330,7 +2454,7 @@ function makeRangeArea(
 	const materializedStartCol = options.materializedStartCol ?? startCol
 	const materializedEndRow = options.materializedEndRow ?? endRow
 	const materializedEndCol = options.materializedEndCol ?? endCol
-	const filteredRanges = sheet ? activeFilterRanges(sheet, dateSystem, today) : []
+	const filteredRanges = sheet ? activeFilterRanges(workbook, sheetIndex, dateSystem, today) : []
 	return {
 		ref: {
 			kind: 'range',

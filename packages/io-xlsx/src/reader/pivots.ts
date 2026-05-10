@@ -7,6 +7,7 @@ import type {
 	PivotCacheInfo,
 	PivotCacheSharedItemInfo,
 	PivotCacheSharedItemsInfo,
+	PivotChartFormatInfo,
 	PivotDataFieldInfo,
 	PivotFieldInfo,
 	PivotFieldItemInfo,
@@ -140,6 +141,7 @@ export function parsePivotTableXml(
 		rowItems?: readonly PivotAxisItemInfo[]
 		columnItems?: readonly PivotAxisItemInfo[]
 		formats?: readonly PivotFormatInfo[]
+		chartFormats?: readonly PivotChartFormatInfo[]
 	} = {
 		partPath,
 		sheetName,
@@ -155,6 +157,8 @@ export function parsePivotTableXml(
 	if (columnItems.length > 0) parsed.columnItems = columnItems
 	const formats = parsePivotFormats(childNode(root, 'formats'))
 	if (formats.length > 0) parsed.formats = formats
+	const chartFormats = parsePivotChartFormats(childNode(root, 'chartFormats'))
+	if (chartFormats.length > 0) parsed.chartFormats = chartFormats
 	const name = attr(root, 'name')
 	if (name) parsed.name = name
 	const cacheId = numAttr(root, 'cacheId')
@@ -614,6 +618,24 @@ function parsePivotFormats(parent: XmlNode | undefined): PivotFormatInfo[] {
 		} = { index }
 		setNumberIfDefined(parsed, 'dxfId', numAttr(node, 'dxfId'))
 		setStringIfDefined(parsed, 'action', attr(node, 'action'))
+		const area = parsePivotArea(childNode(node, 'pivotArea'))
+		if (area) parsed.area = area
+		return parsed
+	})
+}
+
+function parsePivotChartFormats(parent: XmlNode | undefined): PivotChartFormatInfo[] {
+	return childNodes(parent, 'chartFormat').map((node, index) => {
+		const parsed: {
+			index: number
+			chart?: number
+			formatId?: number
+			series?: boolean
+			area?: PivotAreaInfo
+		} = { index }
+		setNumberIfDefined(parsed, 'chart', numAttr(node, 'chart'))
+		setNumberIfDefined(parsed, 'formatId', numAttr(node, 'format'))
+		setBoolIfDefined(parsed, 'series', boolAttr(node, 'series'))
 		const area = parsePivotArea(childNode(node, 'pivotArea'))
 		if (area) parsed.area = area
 		return parsed

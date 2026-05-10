@@ -162,6 +162,7 @@ export interface PivotTableInfo {
 	readonly rowItems?: readonly PivotAxisItemInfo[]
 	readonly columnItems?: readonly PivotAxisItemInfo[]
 	readonly formats?: readonly PivotFormatInfo[]
+	readonly chartFormats?: readonly PivotChartFormatInfo[]
 }
 
 export interface PivotTableLocationInfo {
@@ -480,6 +481,14 @@ export interface PivotFormatInfo {
 	readonly index: number
 	readonly dxfId?: number
 	readonly action?: string
+	readonly area?: PivotAreaInfo
+}
+
+export interface PivotChartFormatInfo {
+	readonly index: number
+	readonly chart?: number
+	readonly formatId?: number
+	readonly series?: boolean
 	readonly area?: PivotAreaInfo
 }
 

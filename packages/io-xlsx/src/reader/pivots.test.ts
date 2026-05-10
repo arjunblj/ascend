@@ -34,6 +34,13 @@ describe('pivot inventory', () => {
       </pivotArea>
     </format>
   </formats>
+  <chartFormats count="1">
+    <chartFormat chart="2" format="3" series="0">
+      <pivotArea type="data" outline="0" fieldPosition="0">
+        <references count="1"><reference field="5" count="1" selected="0"><x v="2"/></reference></references>
+      </pivotArea>
+    </chartFormat>
+  </chartFormats>
   <extLst>
     <ext uri="{962EF5D1-5CA2-4c93-8EF4-DBF5C05439D2}"><x14:pivotTableDefinition xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" fillDownLabelsDefault="1" hideValuesRow="1"/></ext>
     <ext uri="{747A6164-185A-40DC-8AA5-F01512510D54}"><xpdl:pivotTableDefinition16 xmlns:xpdl="http://schemas.microsoft.com/office/spreadsheetml/2016/pivotdefaultlayout" EnabledSubtotalsDefault="0" SubtotalsOnTopDefault="1"/></ext>
@@ -110,6 +117,28 @@ describe('pivot inventory', () => {
 								itemCount: 1,
 								selected: false,
 								items: [{ index: 0, item: 5 }],
+							},
+						],
+					},
+				},
+			],
+			chartFormats: [
+				{
+					index: 0,
+					chart: 2,
+					formatId: 3,
+					series: false,
+					area: {
+						type: 'data',
+						outline: false,
+						fieldPosition: 0,
+						references: [
+							{
+								index: 0,
+								field: 5,
+								itemCount: 1,
+								selected: false,
+								items: [{ index: 0, item: 2 }],
 							},
 						],
 					},

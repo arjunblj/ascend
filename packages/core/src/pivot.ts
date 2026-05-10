@@ -15,6 +15,7 @@ export interface PivotTableInfo {
 	readonly rowItems?: readonly PivotAxisItemInfo[]
 	readonly columnItems?: readonly PivotAxisItemInfo[]
 	readonly formats?: readonly PivotFormatInfo[]
+	readonly chartFormats?: readonly PivotChartFormatInfo[]
 }
 
 export interface PivotTableLocationInfo {
@@ -215,6 +216,14 @@ export interface PivotFormatInfo {
 	readonly area?: PivotAreaInfo
 }
 
+export interface PivotChartFormatInfo {
+	readonly index: number
+	readonly chart?: number
+	readonly formatId?: number
+	readonly series?: boolean
+	readonly area?: PivotAreaInfo
+}
+
 export interface PivotAreaInfo {
 	readonly type?: string
 	readonly axis?: string
@@ -285,6 +294,9 @@ export function clonePivotTableInfo(entry: PivotTableInfo): PivotTableInfo {
 		...(entry.formats
 			? { formats: entry.formats.map((format) => clonePivotFormatInfo(format)) }
 			: {}),
+		...(entry.chartFormats
+			? { chartFormats: entry.chartFormats.map((format) => clonePivotChartFormatInfo(format)) }
+			: {}),
 	}
 }
 
@@ -298,19 +310,26 @@ function clonePivotAxisItemInfo(entry: PivotAxisItemInfo): PivotAxisItemInfo {
 function clonePivotFormatInfo(entry: PivotFormatInfo): PivotFormatInfo {
 	return {
 		...entry,
-		...(entry.area
+		...(entry.area ? { area: clonePivotAreaInfo(entry.area) } : {}),
+	}
+}
+
+function clonePivotChartFormatInfo(entry: PivotChartFormatInfo): PivotChartFormatInfo {
+	return {
+		...entry,
+		...(entry.area ? { area: clonePivotAreaInfo(entry.area) } : {}),
+	}
+}
+
+function clonePivotAreaInfo(entry: PivotAreaInfo): PivotAreaInfo {
+	return {
+		...entry,
+		...(entry.references
 			? {
-					area: {
-						...entry.area,
-						...(entry.area.references
-							? {
-									references: entry.area.references.map((reference) => ({
-										...reference,
-										items: reference.items.map((item) => ({ ...item })),
-									})),
-								}
-							: {}),
-					},
+					references: entry.references.map((reference) => ({
+						...reference,
+						items: reference.items.map((item) => ({ ...item })),
+					})),
 				}
 			: {}),
 	}

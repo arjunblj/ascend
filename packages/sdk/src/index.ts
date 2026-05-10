@@ -137,6 +137,7 @@ export type {
 	PivotCacheFieldInfo,
 	PivotCacheInfo,
 	PivotCacheSharedItemsInfo,
+	PivotChartFormatInfo,
 	PivotDataFieldInfo,
 	PivotFieldInfo,
 	PivotFieldReference,

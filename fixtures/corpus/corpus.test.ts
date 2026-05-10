@@ -251,4 +251,42 @@ describe('corpus: pivot formatting metadata', () => {
 			},
 		})
 	})
+
+	it.skipIf(!formulasAndPivots)('exposes PivotChart format bindings', () => {
+		const result = readXlsx(requireBytes(formulasAndPivots))
+		if (!result.ok) throw new Error(result.error.message)
+		const pivot = result.value.workbook.pivotTables.find((entry) => entry.name === 'PivotTable9')
+		const expectedChartFormat = (index: number, fieldItem: number) => ({
+			index,
+			chart: 2,
+			formatId: index,
+			series: true,
+			area: {
+				type: 'data',
+				outline: false,
+				fieldPosition: 0,
+				references: [
+					{
+						index: 0,
+						field: 4294967294,
+						itemCount: 1,
+						selected: false,
+						items: [{ index: 0, item: 0 }],
+					},
+					{
+						index: 1,
+						field: 5,
+						itemCount: 1,
+						selected: false,
+						items: [{ index: 0, item: fieldItem }],
+					},
+				],
+			},
+		})
+		expect(pivot?.chartFormats).toEqual([
+			expectedChartFormat(0, 0),
+			expectedChartFormat(1, 1),
+			expectedChartFormat(2, 2),
+		])
+	})
 })

@@ -34,6 +34,7 @@ export type {
 	PivotCacheInfo,
 	PivotCacheSharedItemInfo,
 	PivotCacheSharedItemsInfo,
+	PivotChartFormatInfo,
 	PivotDataFieldInfo,
 	PivotFieldInfo,
 	PivotFieldItemInfo,

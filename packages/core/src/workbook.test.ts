@@ -157,6 +157,18 @@ describe('Workbook.clone', () => {
 					},
 				},
 			],
+			chartFormats: [
+				{
+					index: 0,
+					chart: 2,
+					formatId: 3,
+					series: true,
+					area: {
+						fieldPosition: 0,
+						references: [{ index: 0, field: 1, itemCount: 1, items: [{ index: 0, item: 2 }] }],
+					},
+				},
+			],
 		})
 
 		const clone = wb.clone()
@@ -173,6 +185,9 @@ describe('Workbook.clone', () => {
 		const format = clone.pivotTables[0]?.formats?.[0]
 		const formatReference = format?.area?.references?.[0]
 		const formatReferenceItem = formatReference?.items[0]
+		const chartFormat = clone.pivotTables[0]?.chartFormats?.[0]
+		const chartFormatReference = chartFormat?.area?.references?.[0]
+		const chartFormatReferenceItem = chartFormatReference?.items[0]
 		expect(pivotLocation).toBeDefined()
 		expect(pivotOptions).toBeDefined()
 		expect(pivotStyle).toBeDefined()
@@ -186,6 +201,9 @@ describe('Workbook.clone', () => {
 		expect(format).toBeDefined()
 		expect(formatReference).toBeDefined()
 		expect(formatReferenceItem).toBeDefined()
+		expect(chartFormat).toBeDefined()
+		expect(chartFormatReference).toBeDefined()
+		expect(chartFormatReferenceItem).toBeDefined()
 		if (
 			!pivotLocation ||
 			!pivotOptions ||
@@ -199,7 +217,10 @@ describe('Workbook.clone', () => {
 			!columnItem ||
 			!format ||
 			!formatReference ||
-			!formatReferenceItem
+			!formatReferenceItem ||
+			!chartFormat ||
+			!chartFormatReference ||
+			!chartFormatReferenceItem
 		) {
 			return
 		}
@@ -217,6 +238,9 @@ describe('Workbook.clone', () => {
 		;(format as { dxfId: number }).dxfId = 4
 		;(formatReference as { itemCount: number }).itemCount = 2
 		;(formatReferenceItem as { item: number }).item = 6
+		;(chartFormat as { formatId: number }).formatId = 4
+		;(chartFormatReference as { itemCount: number }).itemCount = 2
+		;(chartFormatReferenceItem as { item: number }).item = 6
 
 		expect(wb.pivotTables[0]?.location?.ref).toBe('A3:D20')
 		expect(wb.pivotTables[0]?.options?.updatedVersion).toBe(7)
@@ -226,6 +250,9 @@ describe('Workbook.clone', () => {
 		expect(wb.pivotTables[0]?.formats?.[0]?.dxfId).toBe(3)
 		expect(wb.pivotTables[0]?.formats?.[0]?.area?.references?.[0]?.itemCount).toBe(1)
 		expect(wb.pivotTables[0]?.formats?.[0]?.area?.references?.[0]?.items[0]?.item).toBe(2)
+		expect(wb.pivotTables[0]?.chartFormats?.[0]?.formatId).toBe(3)
+		expect(wb.pivotTables[0]?.chartFormats?.[0]?.area?.references?.[0]?.itemCount).toBe(1)
+		expect(wb.pivotTables[0]?.chartFormats?.[0]?.area?.references?.[0]?.items[0]?.item).toBe(2)
 		expect(wb.pivotCaches[0]?.fields[0]?.sharedItemsInfo?.count).toBe(1)
 		expect(wb.pivotCaches[0]?.fields[0]?.sharedItems?.[0]?.value).toBe('West')
 		expect(wb.pivotCaches[0]?.fields[0]?.fieldGroup?.discreteItems?.[0]?.value).toBe(1)

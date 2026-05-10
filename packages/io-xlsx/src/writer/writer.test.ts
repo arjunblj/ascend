@@ -4011,10 +4011,28 @@ ${sparklineExtLst}
 		})
 	})
 
-	it('preserves and edits advanced filters in custom sheet views on dirty writes', () => {
+	it('preserves advanced filters in custom sheet views on clean and dirty writes', () => {
 		const read = readXlsx(advancedFilterSparklineWorkbook())
 		expectOk(read)
 		expect(read.value.workbook.sheets[0]?.preservedCustomSheetViews).toContain('<customSheetViews>')
+
+		const cleanWritten = writeXlsx(read.value.workbook, read.value.capsules)
+		expectOk(cleanWritten)
+		const cleanZip = unzipSync(cleanWritten.value)
+		const cleanSheetXml = new TextDecoder().decode(
+			cleanZip['xl/worksheets/sheet1.xml'] ?? new Uint8Array(),
+		)
+		expect(cleanSheetXml).toContain('<customSheetViews>')
+		expect(cleanSheetXml).toContain('name="WestOnly"')
+		const cleanReopened = readXlsx(cleanWritten.value)
+		expectOk(cleanReopened)
+		expect(cleanReopened.value.workbook.sheets[0]?.advancedFilters[0]).toMatchObject({
+			viewName: 'WestOnly',
+			guid: '{11111111-1111-1111-1111-111111111111}',
+			ref: 'A1:C20',
+			filterColumnCount: 1,
+			sortConditionCount: 1,
+		})
 
 		const applied = applyOperations(read.value.workbook, [
 			{

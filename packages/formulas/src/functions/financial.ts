@@ -131,6 +131,134 @@ function datedCashFlows(
 	return { values, dates }
 }
 
+function xnpvAtRate(cashFlows: DatedCashFlows, rate: number): number {
+	const d0 = cashFlows.dates[0] ?? 0
+	let npv = 0
+	for (let i = 0; i < cashFlows.values.length; i++) {
+		npv += (cashFlows.values[i] ?? 0) / (1 + rate) ** (((cashFlows.dates[i] ?? d0) - d0) / 365)
+	}
+	return npv
+}
+
+function solveXirr(cashFlows: DatedCashFlows, initialGuess: number): number | null {
+	const maxIter = 100
+	const residualTolerance =
+		1e-12 *
+		Math.max(
+			1,
+			cashFlows.values.reduce((sum, value) => sum + Math.abs(value), 0),
+		)
+	const d0 = cashFlows.dates[0] ?? 0
+	const times = cashFlows.dates.map((date) => (date - d0) / 365)
+	let rate = initialGuess
+	for (let iter = 0; iter < maxIter; iter++) {
+		if (rate <= -1 || !Number.isFinite(rate)) break
+		let residual = 0
+		let derivative = 0
+		for (let i = 0; i < cashFlows.values.length; i++) {
+			const time = times[i] ?? 0
+			const value = cashFlows.values[i] ?? 0
+			const discount = (1 + rate) ** time
+			residual += value / discount
+			derivative -= (time * value) / ((1 + rate) * discount)
+		}
+		if (Math.abs(derivative) < 1e-20) break
+		const next = rate - residual / derivative
+		if (!Number.isFinite(next) || next <= -1) break
+		if (Math.abs(next - rate) < 1e-10) return next
+		rate = next
+	}
+
+	return solveXirrByBracket(cashFlows, initialGuess, residualTolerance)
+}
+
+function solveXirrByBracket(
+	cashFlows: DatedCashFlows,
+	initialGuess: number,
+	residualTolerance: number,
+): number | null {
+	const anchors = [
+		-0.999999999,
+		-0.9999,
+		-0.99,
+		-0.9,
+		-0.75,
+		-0.5,
+		-0.25,
+		-0.1,
+		0,
+		initialGuess,
+		0.1,
+		0.25,
+		0.5,
+		1,
+		2,
+		5,
+		10,
+		25,
+		50,
+		100,
+		250,
+		500,
+		1000,
+	]
+		.filter((value, index, values) => value > -1 && values.indexOf(value) === index)
+		.sort((a, b) => a - b)
+	const intervals: Array<{ low: number; high: number; lowResidual: number; highResidual: number }> =
+		[]
+	let previousRate: number | null = null
+	let previousResidual: number | null = null
+	for (const currentRate of anchors) {
+		const currentResidual = xnpvAtRate(cashFlows, currentRate)
+		if (!Number.isFinite(currentResidual)) continue
+		if (Math.abs(currentResidual) <= residualTolerance) return currentRate
+		if (previousRate !== null && previousResidual !== null) {
+			if (Math.sign(previousResidual) !== Math.sign(currentResidual)) {
+				intervals.push({
+					low: previousRate,
+					high: currentRate,
+					lowResidual: previousResidual,
+					highResidual: currentResidual,
+				})
+			}
+		}
+		previousRate = currentRate
+		previousResidual = currentResidual
+	}
+	const interval = intervals
+		.map((candidate) => ({
+			candidate,
+			distance:
+				initialGuess >= candidate.low && initialGuess <= candidate.high
+					? 0
+					: Math.min(
+							Math.abs(initialGuess - candidate.low),
+							Math.abs(initialGuess - candidate.high),
+						),
+		}))
+		.sort((a, b) => a.distance - b.distance)[0]?.candidate
+	if (!interval) return null
+
+	let low = interval.low
+	let high = interval.high
+	let lowResidual = interval.lowResidual
+	let highResidual = interval.highResidual
+	for (let iter = 0; iter < 120; iter++) {
+		const mid = (low + high) / 2
+		const midResidual = xnpvAtRate(cashFlows, mid)
+		if (!Number.isFinite(midResidual)) return null
+		if (Math.abs(midResidual) <= residualTolerance || Math.abs(high - low) <= 1e-12) return mid
+		if (Math.sign(midResidual) === Math.sign(lowResidual)) {
+			low = mid
+			lowResidual = midResidual
+		} else {
+			high = mid
+			highResidual = midResidual
+		}
+	}
+	return Math.abs(lowResidual) < Math.abs(highResidual) ? low : high
+}
+
 function serialDateArg(value: CellValue): number | CellValue {
 	const date = toNumber(value)
 	if (date === null || !Number.isFinite(date)) return errorValue('#VALUE!')
@@ -854,12 +982,7 @@ export const financialFunctions: FunctionDef[] = [
 			if (!Number.isFinite(rate) || rate <= -1) return errorValue('#NUM!')
 			const cashFlows = datedCashFlows(args[1], args[2])
 			if ('kind' in cashFlows) return cashFlows
-			const d0 = cashFlows.dates[0] ?? 0
-			let npv = 0
-			for (let i = 0; i < cashFlows.values.length; i++) {
-				npv += (cashFlows.values[i] ?? 0) / (1 + rate) ** (((cashFlows.dates[i] ?? d0) - d0) / 365)
-			}
-			return numberValue(npv)
+			return numberValue(xnpvAtRate(cashFlows, rate))
 		},
 	},
 	{
@@ -873,29 +996,8 @@ export const financialFunctions: FunctionDef[] = [
 			const guess = args[2] ? num(args[2]) : 0.1
 			if (typeof guess !== 'number') return guess
 			if (!Number.isFinite(guess) || guess <= -1) return errorValue('#NUM!')
-			const d0 = cashFlows.dates[0] ?? 0
-			const v = cashFlows.values
-			const t = cashFlows.dates.map((date) => (date - d0) / 365)
-			let rate = guess
-			const maxIter = 100
-			const tol = 1e-10
-			for (let iter = 0; iter < maxIter; iter++) {
-				if (rate <= -1) return errorValue('#NUM!')
-				let f = 0
-				let df = 0
-				for (let i = 0; i < v.length; i++) {
-					const ti = t[i] ?? 0
-					const vi = v[i] ?? 0
-					const exp = (1 + rate) ** ti
-					f += vi / exp
-					df -= (ti * vi) / ((1 + rate) * exp)
-				}
-				if (Math.abs(df) < 1e-20) return errorValue('#NUM!')
-				const next = rate - f / df
-				if (Math.abs(next - rate) < tol) return numberValue(next)
-				rate = next
-			}
-			return errorValue('#NUM!')
+			const rate = solveXirr(cashFlows, guess)
+			return rate === null ? errorValue('#NUM!') : numberValue(rate)
 		},
 	},
 	{

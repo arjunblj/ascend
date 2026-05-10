@@ -2958,6 +2958,25 @@ describe('formula functions', () => {
 			expect(getResult(wb, 7, 2)).toEqual(errorValue('#NUM!'))
 		})
 
+		test('XIRR falls back to a bracketed solve when Newton misses a negative root', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, -6572.746741492301)
+			setNum(wb, 1, 0, 261.1244022846222)
+			setNum(wb, 2, 0, 817.0722676441073)
+			setNum(wb, 0, 1, 40000)
+			setNum(wb, 1, 1, 42179)
+			setNum(wb, 2, 1, 43257)
+			setFormula(wb, 0, 2, 'XIRR(A1:A3,B1:B3)')
+			setFormula(wb, 1, 2, 'XNPV(C1,A1:A3,B1:B3)')
+			recalc(wb)
+			const xirr = getResult(wb, 0, 2)
+			const residual = getResult(wb, 1, 2)
+			expect(xirr?.kind).toBe('number')
+			expect(residual?.kind).toBe('number')
+			if (xirr?.kind === 'number') expect(xirr.value).toBeCloseTo(-0.1944067716, 9)
+			if (residual?.kind === 'number') expect(residual.value).toBeCloseTo(0, 6)
+		})
+
 		test('FV preserves Excel-compatible precision under cancellation', () => {
 			const wb = makeWorkbook()
 			setFormula(wb, 0, 0, 'FV(2.95,13,13000,-17406.78521481564,1)')

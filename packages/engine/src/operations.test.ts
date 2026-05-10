@@ -203,6 +203,96 @@ describe('applyOperation', () => {
 		expect(Array.from(sheet.imageRefs[0]?.content ?? [])).toEqual([4, 5, 6])
 	})
 
+	test('setDrawingText updates a selected text-bearing drawing object', () => {
+		const wb = setup()
+		const sheet = wb.getSheet('Sheet1')
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+		sheet.drawingObjectRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			kind: 'textBox',
+			id: 2,
+			name: 'Callout',
+			text: 'Revenue up',
+			anchor: {
+				kind: 'twoCell',
+				from: { row: 4, col: 1 },
+				to: { row: 6, col: 4 },
+			},
+		})
+
+		const result = applyOperation(wb, {
+			op: 'setDrawingText',
+			sheet: 'Sheet1',
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			id: 2,
+			text: 'Revenue flat',
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual([])
+		expect(result.value.sheetsModified).toEqual(['Sheet1'])
+		expect(result.value.recalcRequired).toBe(false)
+		expect(sheet.drawingObjectRefs[0]).toMatchObject({
+			id: 2,
+			name: 'Callout',
+			text: 'Revenue flat',
+			anchor: {
+				kind: 'twoCell',
+				from: { row: 4, col: 1 },
+				to: { row: 6, col: 4 },
+			},
+		})
+	})
+
+	test('setDrawingText validates selectors and text-bearing objects', () => {
+		const wb = setup()
+		const sheet = wb.getSheet('Sheet1')
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+		sheet.drawingObjectRefs.push(
+			{
+				drawingPartPath: 'xl/drawings/drawing1.xml',
+				kind: 'textBox',
+				id: 2,
+				name: 'Duplicate',
+				text: 'First',
+			},
+			{
+				drawingPartPath: 'xl/drawings/drawing1.xml',
+				kind: 'shape',
+				id: 3,
+				name: 'Duplicate',
+			},
+		)
+
+		const missingSelector = applyOperation(wb, {
+			op: 'setDrawingText',
+			sheet: 'Sheet1',
+			text: 'Updated',
+		})
+		expectErr(missingSelector)
+		expect(missingSelector.error.message).toContain('requires drawingPartPath')
+
+		const ambiguous = applyOperation(wb, {
+			op: 'setDrawingText',
+			sheet: 'Sheet1',
+			name: 'Duplicate',
+			text: 'Updated',
+		})
+		expectErr(ambiguous)
+		expect(ambiguous.error.message).toContain('matched 2 drawing objects')
+
+		const noText = applyOperation(wb, {
+			op: 'setDrawingText',
+			sheet: 'Sheet1',
+			id: 3,
+			text: 'Updated',
+		})
+		expectErr(noText)
+		expect(noText.error.message).toContain('no editable text body')
+	})
+
 	test('insertImage allocates image identity and anchor metadata', () => {
 		const wb = setup()
 		const result = applyOperation(wb, {

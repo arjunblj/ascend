@@ -157,6 +157,81 @@ describe('writeXlsx', () => {
 		])
 	})
 
+	it('writes edited drawing text back into preserved drawing XML', () => {
+		const drawingXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"
+  xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <xdr:twoCellAnchor editAs="oneCell">
+    <xdr:from><xdr:col>1</xdr:col><xdr:row>2</xdr:row></xdr:from>
+    <xdr:to><xdr:col>3</xdr:col><xdr:row>4</xdr:row></xdr:to>
+    <xdr:sp>
+      <xdr:nvSpPr><xdr:cNvPr id="10" name="Callout" descr="Revenue note"/></xdr:nvSpPr>
+      <xdr:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr>
+      <xdr:txBody><a:bodyPr/><a:p><a:r><a:rPr b="1"/><a:t>Revenue </a:t></a:r><a:r><a:t>up</a:t></a:r></a:p></xdr:txBody>
+    </xdr:sp>
+    <xdr:clientData/>
+  </xdr:twoCellAnchor>
+</xdr:wsDr>`
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.drawingRefs = { hasDrawing: true, hasLegacyDrawing: false }
+		sheet.drawingObjectRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			kind: 'textBox',
+			id: 10,
+			name: 'Callout',
+			description: 'Revenue note',
+			text: 'Revenue up',
+			anchor: {
+				kind: 'twoCell',
+				editAs: 'oneCell',
+				from: { row: 2, col: 1 },
+				to: { row: 4, col: 3 },
+			},
+		})
+		const applied = applyOperations(wb, [
+			{
+				op: 'setDrawingText',
+				sheet: 'Sheet1',
+				drawingPartPath: 'xl/drawings/drawing1.xml',
+				id: 10,
+				text: 'Revenue flat',
+			},
+		])
+		expectOk(applied)
+		const capsules: PreservationCapsule[] = [
+			{
+				partPath: 'xl/drawings/drawing1.xml',
+				contentType: 'application/vnd.openxmlformats-officedocument.drawing+xml',
+				relationships: [],
+				content: new TextEncoder().encode(drawingXml),
+				anchor: { kind: 'sheet', sheetId: sheet.id, sheetName: 'Sheet1' },
+				relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing',
+			},
+		]
+
+		const written = writeXlsx(wb, capsules)
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		const xml = new TextDecoder().decode(zip['xl/drawings/drawing1.xml'] ?? new Uint8Array())
+
+		expect(xml).toContain('<xdr:twoCellAnchor editAs="oneCell">')
+		expect(xml).toContain('<xdr:cNvPr id="10" name="Callout" descr="Revenue note"/>')
+		expect(xml).toContain('<a:rPr b="1"/>')
+		expect(xml).toContain('<a:t>Revenue flat</a:t>')
+		expect(xml).toContain('<a:t></a:t>')
+		expect(xml).not.toContain('Revenue </a:t>')
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.sheets[0]?.drawingObjectRefs[0]).toMatchObject({
+			kind: 'textBox',
+			id: 10,
+			name: 'Callout',
+			text: 'Revenue flat',
+		})
+	})
+
 	it('preserves formula text on round-trip', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Formulas')

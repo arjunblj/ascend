@@ -81,6 +81,26 @@ describe('LibreOffice XLSX fixture corpus', () => {
 		).toBe(true)
 	})
 
+	test('inventories real LibreOffice textbox drawing text and relationship ids', () => {
+		const initial = readXlsx(loadFixture('textbox-hyperlink.xlsx'))
+		expectOk(initial)
+
+		const sheet = initial.value.workbook.sheets.find((entry) => entry.name === 'Sheet1')
+		expect(sheet?.drawingObjectRefs[0]).toMatchObject({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			kind: 'textBox',
+			id: 2,
+			name: 'TextBox 1',
+			text: 'text',
+			relIds: ['rId1'],
+			anchor: {
+				kind: 'twoCell',
+				from: { col: 2, row: 3, colOff: 133350, rowOff: 152400 },
+				to: { col: 10, row: 9, colOff: 28575, rowOff: 85725 },
+			},
+		})
+	})
+
 	test('cached formulas in the LibreOffice subset recalculate without mismatches', async () => {
 		const payload = await runFormulaCorpusCorrectness({
 			corpusRoot: libreOfficeDir,

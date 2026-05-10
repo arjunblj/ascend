@@ -1150,10 +1150,9 @@ function attachDrawingImages(
 		const drawingPath = resolvePath(sheetPath, drawingRel.target)
 		const drawingXml = readPart(archive, drawingPath)
 		const drawingRelsXml = readPart(archive, getRelsPath(drawingPath))
-		if (!drawingXml || !drawingRelsXml) continue
-		sheet.imageRefs.push(
-			...parseDrawingImageRefs(drawingXml, drawingPath, parseRelationships(drawingRelsXml)),
-		)
+		if (!drawingXml) continue
+		const relationships = drawingRelsXml ? parseRelationships(drawingRelsXml) : []
+		sheet.imageRefs.push(...parseDrawingImageRefs(drawingXml, drawingPath, relationships))
 		sheet.drawingObjectRefs.push(...parseDrawingObjectRefs(drawingXml, drawingPath))
 	}
 }

@@ -1,8 +1,15 @@
-import { cloneCellStyle, type SheetId, type Table, type Workbook } from '@ascend/core'
+import {
+	cloneCellStyle,
+	type SheetDrawingObjectRef,
+	type SheetId,
+	type Table,
+	type Workbook,
+} from '@ascend/core'
 import type { AscendError, CellValue, Result } from '@ascend/schema'
 import { ascendError, err, ok } from '@ascend/schema'
 import type { PreservationCapsule } from '../preserve.ts'
 import { parseCommentsXml } from '../reader/comments.ts'
+import { parseDrawingObjectRefs } from '../reader/drawing.ts'
 import {
 	getRelsPath,
 	parseRelationships,
@@ -28,7 +35,7 @@ import { updateChartXml } from './chart.ts'
 import { buildCommentsVml, buildCommentsXml } from './comments.ts'
 import { buildContentTypesXml } from './content-types.ts'
 import { buildAppPropsXml, buildCorePropsXml } from './doc-props.ts'
-import { buildDrawingXml } from './drawing.ts'
+import { buildDrawingXml, type DrawingTextUpdate, updateDrawingTextXml } from './drawing.ts'
 import { buildDynamicArrayMetadataXml, type DynamicArrayMetadataEntry } from './metadata.ts'
 import { updatePivotCacheDefinitionXml } from './pivot-cache.ts'
 import {
@@ -1286,6 +1293,34 @@ export function planWriteXlsx(
 					}
 					continue
 				}
+				if (isDrawingCapsule(capsule)) {
+					const xml = new TextDecoder().decode(content)
+					const drawingTextUpdates = collectDrawingTextUpdates(workbook, capsule.partPath, xml)
+					if (drawingTextUpdates.length > 0) {
+						recordXml(
+							capsule.partPath,
+							{
+								owner,
+								origin: 'generated',
+								contentType: capsule.contentType,
+							},
+							() => updateDrawingTextXml(xml, drawingTextUpdates),
+						)
+						plan.addOverride(capsule.partPath, capsule.contentType)
+						if (capsule.relationships.length > 0) {
+							const capsuleRelsPath = getRelsPath(capsule.partPath)
+							recordXml(
+								capsuleRelsPath,
+								{
+									owner,
+									origin: 'capsule',
+								},
+								() => buildRelsXml(resolveCapsuleRelationships(workbook, capsule)),
+							)
+						}
+						continue
+					}
+				}
 				recordBytes(
 					capsule.partPath,
 					{
@@ -1732,6 +1767,52 @@ function isChartCapsule(capsule: PreservationCapsule): boolean {
 		capsule.partPath.includes('/charts/') ||
 		capsule.partPath.includes('/chartEx/')
 	)
+}
+
+function isDrawingCapsule(capsule: PreservationCapsule): boolean {
+	return (
+		capsule.relType === REL_DRAWING ||
+		capsule.contentType.includes('drawing+xml') ||
+		capsule.partPath.includes('/drawings/drawing')
+	)
+}
+
+function collectDrawingTextUpdates(
+	workbook: Workbook,
+	partPath: string,
+	sourceXml: string,
+): readonly DrawingTextUpdate[] {
+	const sourceRefs = parseDrawingObjectRefs(sourceXml, partPath)
+	const updates: DrawingTextUpdate[] = []
+	const seen = new Set<string>()
+	for (const sheet of workbook.sheets) {
+		for (const ref of sheet.drawingObjectRefs) {
+			if (ref.drawingPartPath !== partPath || ref.text === undefined) continue
+			const source = findMatchingDrawingObject(sourceRefs, ref)
+			if (!source || source.text === ref.text) continue
+			const key = ref.id !== undefined ? `id:${ref.id}` : ref.name ? `name:${ref.name}` : null
+			if (!key || seen.has(key)) continue
+			updates.push({
+				...(ref.id !== undefined ? { id: ref.id } : {}),
+				...(ref.name ? { name: ref.name } : {}),
+				text: ref.text,
+			})
+			seen.add(key)
+		}
+	}
+	return updates
+}
+
+function findMatchingDrawingObject(
+	sourceRefs: readonly SheetDrawingObjectRef[],
+	ref: SheetDrawingObjectRef,
+): SheetDrawingObjectRef | undefined {
+	const matches = sourceRefs.filter((sourceRef) => {
+		if (ref.id !== undefined) return sourceRef.id === ref.id
+		if (ref.name !== undefined) return sourceRef.name === ref.name
+		return false
+	})
+	return matches.length === 1 ? matches[0] : undefined
 }
 
 function resolveCapsuleRelationships(

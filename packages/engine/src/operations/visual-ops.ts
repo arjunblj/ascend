@@ -7,6 +7,7 @@ import { getSheet, type PatchResult, patch } from './helpers.ts'
 type ReplaceImageOp = Extract<Operation, { op: 'replaceImage' }>
 type InsertImageOp = Extract<Operation, { op: 'insertImage' }>
 type DeleteImageOp = Extract<Operation, { op: 'deleteImage' }>
+type SetDrawingTextOp = Extract<Operation, { op: 'setDrawingText' }>
 type SetChartSeriesSourceOp = Extract<Operation, { op: 'setChartSeriesSource' }>
 
 export function handleReplaceImage(workbook: Workbook, op: ReplaceImageOp): Result<PatchResult> {
@@ -173,6 +174,87 @@ export function handleDeleteImage(workbook: Workbook, op: DeleteImageOp): Result
 	if (sheet.imageRefs.length === 0) {
 		sheet.drawingRefs = { ...sheet.drawingRefs, hasDrawing: false }
 	}
+
+	return ok(patch([], [sheet.name], false))
+}
+
+export function handleSetDrawingText(
+	workbook: Workbook,
+	op: SetDrawingTextOp,
+): Result<PatchResult> {
+	const sheetResult = getSheet(workbook, op.sheet)
+	if (!sheetResult.ok) return sheetResult
+	const sheet = sheetResult.value
+
+	if (
+		op.drawingPartPath === undefined &&
+		op.id === undefined &&
+		op.name === undefined &&
+		op.drawingObjectIndex === undefined
+	) {
+		return err(
+			ascendError(
+				'VALIDATION_ERROR',
+				'setDrawingText requires drawingPartPath, id, name, or drawingObjectIndex',
+				{
+					suggestedFix:
+						'Use inspect --detail visuals or visualInventory to select a drawing object.',
+				},
+			),
+		)
+	}
+	if (
+		op.drawingObjectIndex !== undefined &&
+		(op.drawingObjectIndex < 0 || !Number.isInteger(op.drawingObjectIndex))
+	) {
+		return err(ascendError('VALIDATION_ERROR', 'drawingObjectIndex must be a non-negative integer'))
+	}
+
+	const matches = sheet.drawingObjectRefs
+		.map((object, index) => ({ object, index }))
+		.filter(({ object, index }) => {
+			if (op.drawingObjectIndex !== undefined && index !== op.drawingObjectIndex) return false
+			if (op.drawingPartPath !== undefined && object.drawingPartPath !== op.drawingPartPath) {
+				return false
+			}
+			if (op.id !== undefined && object.id !== op.id) return false
+			if (op.name !== undefined && object.name !== op.name) return false
+			return true
+		})
+
+	if (matches.length === 0) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'No matching drawing object found for setDrawingText', {
+				suggestedFix:
+					'Inspect sheet drawingObjectRefs and provide a matching drawingPartPath, id, name, or drawingObjectIndex.',
+			}),
+		)
+	}
+	if (matches.length > 1) {
+		return err(
+			ascendError('VALIDATION_ERROR', `setDrawingText matched ${matches.length} drawing objects`, {
+				suggestedFix:
+					'Provide a more specific selector, such as drawingObjectIndex or id, before committing.',
+			}),
+		)
+	}
+
+	const match = matches[0]
+	if (!match) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'No matching drawing object found for setDrawingText'),
+		)
+	}
+	if (match.object.text === undefined) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'Selected drawing object has no editable text body', {
+				suggestedFix: 'Choose a textBox or text-bearing shape from visualInventory.',
+			}),
+		)
+	}
+
+	sheet.drawingObjectRefs[match.index] = { ...match.object, text: op.text }
+	sheet.drawingRefs = { ...sheet.drawingRefs, hasDrawing: true }
 
 	return ok(patch([], [sheet.name], false))
 }

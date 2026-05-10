@@ -176,6 +176,11 @@ const FIELD_SCHEMAS: Record<
 	contentBase64: { type: 'string', description: 'Base64-encoded binary content' },
 	contentType: { type: 'string', description: 'MIME content type, such as image/png' },
 	imageIndex: { type: 'integer', description: 'Zero-based image index on the sheet' },
+	drawingObjectIndex: {
+		type: 'integer',
+		description: 'Zero-based drawing object index on the sheet',
+	},
+	id: { type: 'integer', description: 'Drawing object non-visual id' },
 	drawingPartPath: {
 		type: 'string',
 		description: 'Drawing XML part path, such as xl/drawings/drawing1.xml',
@@ -471,6 +476,12 @@ export function listOperations(): readonly OperationSchema[] {
 			optionalFields: ['targetPath', 'relId', 'name', 'imageIndex'],
 		},
 		{
+			op: 'setDrawingText',
+			description: 'Edit an existing shape or text box text run while preserving drawing XML',
+			requiredFields: ['sheet', 'text'],
+			optionalFields: ['drawingPartPath', 'id', 'name', 'drawingObjectIndex'],
+		},
+		{
 			op: 'setChartSeriesSource',
 			description: 'Edit chart series source references while preserving opaque chart styling',
 			requiredFields: ['seriesIndex'],
@@ -662,6 +673,8 @@ function validateOperationField(
 		case 'row':
 		case 'ruleIndex':
 		case 'imageIndex':
+		case 'drawingObjectIndex':
+		case 'id':
 		case 'chartIndex':
 		case 'seriesIndex':
 		case 'cacheId':
@@ -916,6 +929,12 @@ function operationRecoveryActions(op: string): readonly string[] {
 				'Run plan before commit to confirm the selected image is the only match.',
 				...common,
 			]
+		case 'setDrawingText':
+			return [
+				'Use inspect --detail visuals or visualInventory to select drawingPartPath, id, name, or drawingObjectIndex.',
+				'This edits existing shape/text-box text and preserves anchors, geometry, and drawing relationships.',
+				...common,
+			]
 		case 'setChartSeriesSource':
 			return [
 				'Use inspect --detail visuals or visualInventory to select partPath, sheet, chartIndex, and seriesIndex.',
@@ -1113,6 +1132,14 @@ function operationExample(op: string): Record<string, unknown> {
 			}
 		case 'deleteImage':
 			return { op, sheet: 'Sheet1', imageIndex: 0 }
+		case 'setDrawingText':
+			return {
+				op,
+				sheet: 'Sheet1',
+				drawingPartPath: 'xl/drawings/drawing1.xml',
+				id: 2,
+				text: 'Updated callout',
+			}
 		case 'setChartSeriesSource':
 			return {
 				op,

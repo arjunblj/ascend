@@ -466,6 +466,15 @@ export type Operation =
 			readonly imageIndex?: number
 	  }
 	| {
+			readonly op: 'setDrawingText'
+			readonly sheet: string
+			readonly text: string
+			readonly drawingPartPath?: string
+			readonly id?: number
+			readonly name?: string
+			readonly drawingObjectIndex?: number
+	  }
+	| {
 			readonly op: 'setChartSeriesSource'
 			readonly seriesIndex: number
 			readonly partPath?: string

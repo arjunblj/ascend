@@ -84,6 +84,20 @@ describe('operation schema agent DX', () => {
 		expect(deleteImage?.recoveryActions.join('\n')).toContain('imageIndex')
 	})
 
+	test('setDrawingText is exposed with drawing-object selector guidance', () => {
+		const schema = getOperationsSchema().find((entry) => entry.op === 'setDrawingText')
+		expect(schema?.schema.required).toEqual(['op', 'sheet', 'text'])
+		expect(schema?.schema.properties.drawingObjectIndex?.description).toContain('drawing object')
+		expect(schema?.examples[0]).toMatchObject({
+			op: 'setDrawingText',
+			sheet: 'Sheet1',
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			id: 2,
+			text: 'Updated callout',
+		})
+		expect(schema?.recoveryActions.join('\n')).toContain('visualInventory')
+	})
+
 	test('setChartSeriesSource is exposed with chart selector guidance', () => {
 		const schema = getOperationsSchema().find((entry) => entry.op === 'setChartSeriesSource')
 		expect(schema?.schema.required).toEqual(['op', 'seriesIndex'])

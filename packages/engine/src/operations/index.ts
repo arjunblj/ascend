@@ -101,6 +101,7 @@ const handlers: Record<string, OperationHandler> = {
 	rewriteExternalLink: workbookOps.handleRewriteExternalLink as OperationHandler,
 	insertImage: visualOps.handleInsertImage as OperationHandler,
 	deleteImage: visualOps.handleDeleteImage as OperationHandler,
+	setDrawingText: visualOps.handleSetDrawingText as OperationHandler,
 }
 
 export function applyOperation(

@@ -125,6 +125,19 @@ describe('LibreOffice XLSX fixture corpus', () => {
 		expect(initial.value.workbook.pivotTables).toHaveLength(1)
 	})
 
+	test('surfaces LibreOffice pivot cache source and refresh upgrade metadata', () => {
+		const initial = readXlsx(loadFixture('pivottable_date_field_filter.xlsx'))
+		expectOk(initial)
+
+		expect(initial.value.workbook.pivotCaches[0]).toMatchObject({
+			cacheId: 1,
+			upgradeOnRefresh: true,
+			sourceType: 'worksheet',
+			sourceSheet: 'Sheet1',
+			sourceRef: 'C1:H4',
+		})
+	})
+
 	test('surfaces LibreOffice pivot layout style and data-field metadata', () => {
 		const initial = readXlsx(loadFixture('PivotTable_CachedDefinitionAndDataInSync.xlsx'))
 		expectOk(initial)

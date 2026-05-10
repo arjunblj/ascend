@@ -86,6 +86,11 @@ describe('Calamine XLSX/XLSM fixture corpus', () => {
 		expectOk(result)
 		const cache = result.value.workbook.pivotCaches.find((entry) => entry.cacheId === 65)
 		expect(cache).toBeDefined()
+		expect(cache).toMatchObject({
+			sourceType: 'worksheet',
+			sourceSheet: 'DataSheet',
+			sourceRef: 'A1:J11',
+		})
 		const fields = cache?.fields ?? []
 
 		expect(fields.find((field) => field.name === 'Id')?.sharedItemsInfo).toMatchObject({

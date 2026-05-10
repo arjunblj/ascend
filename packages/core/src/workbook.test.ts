@@ -121,6 +121,7 @@ describe('Workbook.clone', () => {
 					sharedItems: [{ index: 0, kind: 'string', value: 'West' }],
 					fieldGroup: {
 						base: 2,
+						range: { groupBy: 'months', startDate: '2024-01-01T00:00:00' },
 						discreteItems: [{ index: 0, value: 1 }],
 						groupItems: [{ index: 0, kind: 'string', value: 'Group1' }],
 					},
@@ -177,6 +178,7 @@ describe('Workbook.clone', () => {
 		const pivotStyle = clone.pivotTables[0]?.style
 		const sharedItemsInfo = clone.pivotCaches[0]?.fields[0]?.sharedItemsInfo
 		const sharedItem = clone.pivotCaches[0]?.fields[0]?.sharedItems?.[0]
+		const groupRange = clone.pivotCaches[0]?.fields[0]?.fieldGroup?.range
 		const discreteItem = clone.pivotCaches[0]?.fields[0]?.fieldGroup?.discreteItems?.[0]
 		const groupItem = clone.pivotCaches[0]?.fields[0]?.fieldGroup?.groupItems?.[0]
 		const item = clone.pivotTables[0]?.fields[0]?.items?.[0]
@@ -193,6 +195,7 @@ describe('Workbook.clone', () => {
 		expect(pivotStyle).toBeDefined()
 		expect(sharedItemsInfo).toBeDefined()
 		expect(sharedItem).toBeDefined()
+		expect(groupRange).toBeDefined()
 		expect(discreteItem).toBeDefined()
 		expect(groupItem).toBeDefined()
 		expect(item).toBeDefined()
@@ -210,6 +213,7 @@ describe('Workbook.clone', () => {
 			!pivotStyle ||
 			!sharedItemsInfo ||
 			!sharedItem ||
+			!groupRange ||
 			!discreteItem ||
 			!groupItem ||
 			!item ||
@@ -230,6 +234,7 @@ describe('Workbook.clone', () => {
 		;(pivotStyle as { name: string }).name = 'PivotStyleDark1'
 		;(sharedItemsInfo as { count: number }).count = 2
 		;(sharedItem as { value: string }).value = 'East'
+		;(groupRange as { groupBy: string }).groupBy = 'quarters'
 		;(discreteItem as { value: number }).value = 0
 		;(groupItem as { value: string }).value = 'Group2'
 		;(item as { hidden: boolean }).hidden = false
@@ -255,6 +260,7 @@ describe('Workbook.clone', () => {
 		expect(wb.pivotTables[0]?.chartFormats?.[0]?.area?.references?.[0]?.items[0]?.item).toBe(2)
 		expect(wb.pivotCaches[0]?.fields[0]?.sharedItemsInfo?.count).toBe(1)
 		expect(wb.pivotCaches[0]?.fields[0]?.sharedItems?.[0]?.value).toBe('West')
+		expect(wb.pivotCaches[0]?.fields[0]?.fieldGroup?.range?.groupBy).toBe('months')
 		expect(wb.pivotCaches[0]?.fields[0]?.fieldGroup?.discreteItems?.[0]?.value).toBe(1)
 		expect(wb.pivotCaches[0]?.fields[0]?.fieldGroup?.groupItems?.[0]?.value).toBe('Group1')
 		expect(wb.pivotTables[0]?.fields[0]?.items?.[0]?.hidden).toBe(true)

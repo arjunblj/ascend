@@ -3,6 +3,7 @@ import type {
 	PivotAreaReferenceInfo,
 	PivotAxisItemInfo,
 	PivotCacheFieldGroupInfo,
+	PivotCacheFieldGroupRangeInfo,
 	PivotCacheFieldInfo,
 	PivotCacheInfo,
 	PivotCacheSharedItemInfo,
@@ -44,7 +45,8 @@ export function parsePivotCacheDefinitionXml(
 	const doc = parseXml(normalizeMainSpreadsheetNamespacePrefix(xml))
 	const root = childNode(doc, 'pivotCacheDefinition')
 	if (!root) return null
-	const worksheetSource = childNode(childNode(root, 'cacheSource'), 'worksheetSource')
+	const cacheSource = childNode(root, 'cacheSource')
+	const worksheetSource = childNode(cacheSource, 'worksheetSource')
 	const recordCount = numAttr(root, 'recordCount')
 	const recordsRelId = attr(root, 'r:id') ?? attr(root, 'id')
 	const recordsRel = recordsRelId
@@ -65,8 +67,12 @@ export function parsePivotCacheDefinitionXml(
 		invalid?: boolean
 		saveData?: boolean
 		optimizeMemory?: boolean
+		upgradeOnRefresh?: boolean
+		extensionCacheId?: number
+		sourceType?: string
 		sourceSheet?: string
 		sourceRef?: string
+		sourceName?: string
 		recordsPartPath?: string
 		fields: readonly PivotCacheFieldInfo[]
 	} = { partPath, fields: parseCacheFields(root) }
@@ -83,10 +89,24 @@ export function parsePivotCacheDefinitionXml(
 	setBoolIfDefined(parsed, 'invalid', boolAttr(root, 'invalid'))
 	setBoolIfDefined(parsed, 'saveData', boolAttr(root, 'saveData'))
 	setBoolIfDefined(parsed, 'optimizeMemory', boolAttr(root, 'optimizeMemory'))
+	setBoolIfDefined(parsed, 'upgradeOnRefresh', boolAttr(root, 'upgradeOnRefresh'))
+	for (const ext of childNodes(childNode(root, 'extLst'), 'ext')) {
+		for (const extPivotCacheDefinition of childNodes(ext, 'pivotCacheDefinition')) {
+			setNumberIfDefined(
+				parsed,
+				'extensionCacheId',
+				numAttr(extPivotCacheDefinition, 'pivotCacheId'),
+			)
+		}
+	}
+	const sourceType = cacheSource ? attr(cacheSource, 'type') : undefined
+	if (sourceType) parsed.sourceType = sourceType
 	const sourceSheet = worksheetSource ? attr(worksheetSource, 'sheet') : undefined
 	if (sourceSheet) parsed.sourceSheet = sourceSheet
 	const sourceRef = worksheetSource ? attr(worksheetSource, 'ref') : undefined
 	if (sourceRef) parsed.sourceRef = sourceRef
+	const sourceName = worksheetSource ? attr(worksheetSource, 'name') : undefined
+	if (sourceName) parsed.sourceName = sourceName
 	if (recordsRel) parsed.recordsPartPath = resolvePath(partPath, recordsRel.target)
 	return parsed as PivotCacheInfo
 }
@@ -403,16 +423,44 @@ function parseCacheFieldGroup(
 	const parsed: {
 		base?: number
 		parent?: number
+		range?: PivotCacheFieldGroupRangeInfo
 		discreteItems?: readonly { readonly index: number; readonly value?: number }[]
 		groupItems?: readonly PivotCacheSharedItemInfo[]
 	} = {}
 	setNumberIfDefined(parsed, 'base', numAttr(fieldGroup, 'base'))
 	setNumberIfDefined(parsed, 'parent', numAttr(fieldGroup, 'par'))
+	const range = parseCacheFieldGroupRange(childNode(fieldGroup, 'rangePr'))
+	if (range) parsed.range = range
 	const discreteItems = parseDiscreteGroupItems(childNode(fieldGroup, 'discretePr'))
 	if (discreteItems.length > 0) parsed.discreteItems = discreteItems
 	const groupItems = parseCacheSharedItems(childNode(fieldGroup, 'groupItems'))
 	if (groupItems.length > 0) parsed.groupItems = groupItems
 	return Object.keys(parsed).length > 0 ? (parsed as PivotCacheFieldGroupInfo) : undefined
+}
+
+function parseCacheFieldGroupRange(
+	rangePr: XmlNode | undefined,
+): PivotCacheFieldGroupRangeInfo | undefined {
+	if (!rangePr) return undefined
+	const parsed: {
+		groupBy?: string
+		startDate?: string
+		endDate?: string
+		startNumber?: number
+		endNumber?: number
+		groupInterval?: number
+		autoStart?: boolean
+		autoEnd?: boolean
+	} = {}
+	setStringIfDefined(parsed, 'groupBy', attr(rangePr, 'groupBy'))
+	setStringIfDefined(parsed, 'startDate', attr(rangePr, 'startDate'))
+	setStringIfDefined(parsed, 'endDate', attr(rangePr, 'endDate'))
+	setNumberIfDefined(parsed, 'startNumber', numAttr(rangePr, 'startNum'))
+	setNumberIfDefined(parsed, 'endNumber', numAttr(rangePr, 'endNum'))
+	setNumberIfDefined(parsed, 'groupInterval', numAttr(rangePr, 'groupInterval'))
+	setBoolIfDefined(parsed, 'autoStart', boolAttr(rangePr, 'autoStart'))
+	setBoolIfDefined(parsed, 'autoEnd', boolAttr(rangePr, 'autoEnd'))
+	return Object.keys(parsed).length > 0 ? (parsed as PivotCacheFieldGroupRangeInfo) : undefined
 }
 
 function parseDiscreteGroupItems(

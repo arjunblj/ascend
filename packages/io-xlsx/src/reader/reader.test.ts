@@ -1370,6 +1370,7 @@ describe('readXlsx', () => {
 				invalid: true,
 				saveData: false,
 				optimizeMemory: true,
+				sourceType: 'worksheet',
 				sourceSheet: 'raw data',
 				sourceRef: 'A1:D100',
 				recordsPartPath: 'xl/pivotCache/pivotCacheRecords1.xml',

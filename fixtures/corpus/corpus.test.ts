@@ -234,6 +234,13 @@ describe('corpus: pivot formatting metadata', () => {
 	it.skipIf(!dashboard)('exposes pivot formats without explicit references', () => {
 		const result = readXlsx(requireBytes(dashboard))
 		if (!result.ok) throw new Error(result.error.message)
+		expect(result.value.workbook.pivotCaches[0]).toMatchObject({
+			cacheId: 34,
+			extensionCacheId: 1332190931,
+			sourceType: 'worksheet',
+			sourceSheet: 'raw data',
+			sourceRef: 'A1:AB1048576',
+		})
 		const pivot = result.value.workbook.pivotTables.find((entry) => entry.name === 'PivotTable13')
 		expect(pivot?.options).toMatchObject({
 			fillDownLabelsDefault: true,
@@ -288,5 +295,39 @@ describe('corpus: pivot formatting metadata', () => {
 			expectedChartFormat(1, 1),
 			expectedChartFormat(2, 2),
 		])
+	})
+
+	it.skipIf(!formulasAndPivots)('exposes pivot cache range grouping bounds', () => {
+		const result = readXlsx(requireBytes(formulasAndPivots))
+		if (!result.ok) throw new Error(result.error.message)
+		const cache = result.value.workbook.pivotCaches.find((entry) => entry.cacheId === 0)
+		const fields = cache?.fields ?? []
+		expect(
+			fields.find((field) => field.name === 'Date Created Conversion')?.fieldGroup,
+		).toMatchObject({
+			parent: 21,
+			base: 18,
+			range: {
+				groupBy: 'months',
+				startDate: '1970-01-01T00:00:00',
+				endDate: '2017-03-15T15:30:07',
+			},
+		})
+		expect(fields.find((field) => field.name === 'Quarters')?.fieldGroup).toMatchObject({
+			base: 18,
+			range: {
+				groupBy: 'quarters',
+				startDate: '1970-01-01T00:00:00',
+				endDate: '2017-03-15T15:30:07',
+			},
+		})
+		expect(fields.find((field) => field.name === 'Years')?.fieldGroup).toMatchObject({
+			base: 18,
+			range: {
+				groupBy: 'years',
+				startDate: '1970-01-01T00:00:00',
+				endDate: '2017-03-15T15:30:07',
+			},
+		})
 	})
 })

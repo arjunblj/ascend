@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import type { Workbook } from '@ascend/core'
 import { readXlsx } from './index.ts'
-import { parsePivotTableXml } from './pivots.ts'
+import { parsePivotCacheDefinitionXml, parsePivotTableXml } from './pivots.ts'
 
 function expectWorkbook(bytes: Uint8Array): Workbook {
 	const result = readXlsx(bytes)
@@ -12,6 +12,59 @@ function expectWorkbook(bytes: Uint8Array): Workbook {
 }
 
 describe('pivot inventory', () => {
+	test('parses pivot cache range grouping metadata', () => {
+		const parsed = parsePivotCacheDefinitionXml(
+			`<?xml version="1.0"?>
+<pivotCacheDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" upgradeOnRefresh="1">
+  <cacheSource type="worksheet"><worksheetSource ref="A1:D20" sheet="Data" name="SalesRange"/></cacheSource>
+  <cacheFields count="2">
+    <cacheField name="OrderDate">
+      <fieldGroup par="1" base="0">
+        <rangePr groupBy="months" startDate="2024-01-01T00:00:00" endDate="2024-12-31T00:00:00" autoStart="0" autoEnd="1"/>
+      </fieldGroup>
+    </cacheField>
+    <cacheField name="Amount">
+      <fieldGroup base="1">
+        <rangePr startNum="100" endNum="500" groupInterval="100"/>
+      </fieldGroup>
+    </cacheField>
+  </cacheFields>
+  <extLst><ext uri="{725AE2AE-9491-48be-B2B4-4EB974FC3084}"><x14:pivotCacheDefinition xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" pivotCacheId="123"/></ext></extLst>
+</pivotCacheDefinition>`,
+			'xl/pivotCache/pivotCacheDefinition1.xml',
+			1,
+			'rId1',
+			[],
+		)
+		expect(parsed).toMatchObject({
+			upgradeOnRefresh: true,
+			extensionCacheId: 123,
+			sourceType: 'worksheet',
+			sourceSheet: 'Data',
+			sourceRef: 'A1:D20',
+			sourceName: 'SalesRange',
+		})
+		expect(parsed?.fields[0]?.fieldGroup).toEqual({
+			parent: 1,
+			base: 0,
+			range: {
+				groupBy: 'months',
+				startDate: '2024-01-01T00:00:00',
+				endDate: '2024-12-31T00:00:00',
+				autoStart: false,
+				autoEnd: true,
+			},
+		})
+		expect(parsed?.fields[1]?.fieldGroup).toEqual({
+			base: 1,
+			range: {
+				startNumber: 100,
+				endNumber: 500,
+				groupInterval: 100,
+			},
+		})
+	})
+
 	test('parses page-field selections and pivot-field item flags', () => {
 		const parsed = parsePivotTableXml(
 			`<?xml version="1.0"?>

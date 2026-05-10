@@ -255,8 +255,12 @@ export interface PivotCacheInfo {
 	readonly invalid?: boolean
 	readonly saveData?: boolean
 	readonly optimizeMemory?: boolean
+	readonly upgradeOnRefresh?: boolean
+	readonly extensionCacheId?: number
+	readonly sourceType?: string
 	readonly sourceSheet?: string
 	readonly sourceRef?: string
+	readonly sourceName?: string
 	readonly recordsPartPath?: string
 	readonly fields: readonly PivotCacheFieldInfo[]
 }
@@ -399,8 +403,20 @@ export interface PivotCacheSharedItemsInfo {
 export interface PivotCacheFieldGroupInfo {
 	readonly base?: number
 	readonly parent?: number
+	readonly range?: PivotCacheFieldGroupRangeInfo
 	readonly discreteItems?: readonly PivotCacheFieldGroupDiscreteItemInfo[]
 	readonly groupItems?: readonly PivotCacheSharedItemInfo[]
+}
+
+export interface PivotCacheFieldGroupRangeInfo {
+	readonly groupBy?: string
+	readonly startDate?: string
+	readonly endDate?: string
+	readonly startNumber?: number
+	readonly endNumber?: number
+	readonly groupInterval?: number
+	readonly autoStart?: boolean
+	readonly autoEnd?: boolean
 }
 
 export interface PivotCacheFieldGroupDiscreteItemInfo {

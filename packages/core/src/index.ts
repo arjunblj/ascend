@@ -30,6 +30,7 @@ export type {
 	PivotAxisItemInfo,
 	PivotCacheFieldGroupDiscreteItemInfo,
 	PivotCacheFieldGroupInfo,
+	PivotCacheFieldGroupRangeInfo,
 	PivotCacheFieldInfo,
 	PivotCacheInfo,
 	PivotCacheSharedItemInfo,

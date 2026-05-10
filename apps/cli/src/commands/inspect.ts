@@ -484,6 +484,7 @@ function printVisualInventoryDetail(wb: WorkbookDocument, json: boolean): number
 	}
 	console.log(heading('Visual Inventory'))
 	console.log(bullet('Sheet images', formatCount(inventory.sheetImageCount)))
+	console.log(bullet('Sheet drawing objects', formatCount(inventory.sheetDrawingObjectCount)))
 	console.log(bullet('Package chart features', String(inventory.packageChartFeatureCount)))
 	console.log(bullet('Package drawing features', String(inventory.packageDrawingFeatureCount)))
 	console.log(bullet('Package media features', String(inventory.packageMediaFeatureCount)))
@@ -503,15 +504,35 @@ function printVisualInventoryDetail(wb: WorkbookDocument, json: boolean): number
 		console.log('')
 		console.log(
 			table(
-				['Sheet', 'Drawing', 'Legacy', 'Images'],
+				['Sheet', 'Drawing', 'Legacy', 'Images', 'Objects'],
 				inventory.sheets.map((sheet) => [
 					sheet.sheet,
 					formatLoadedBool(sheet.hasDrawing),
 					formatLoadedBool(sheet.hasLegacyDrawing),
 					formatCount(sheet.imageCount),
+					formatCount(sheet.drawingObjectCount),
 				]),
 			),
 		)
+	}
+	const drawingObjectLinks = inventory.sheets.flatMap((sheet) =>
+		(sheet.drawingObjectRefs ?? []).flatMap((object, index) =>
+			(object.relationshipRefs ?? []).map((rel) => ({
+				sheet: sheet.sheet,
+				object: object.name ?? object.kind ?? `#${index + 1}`,
+				rel,
+			})),
+		),
+	)
+	if (drawingObjectLinks.length > 0) {
+		console.log('')
+		console.log(heading('Drawing Object Links'))
+		for (const link of drawingObjectLinks) {
+			const mode = link.rel.targetMode ? ` (${link.rel.targetMode})` : ''
+			console.log(
+				bullet(`${link.sheet} / ${link.object} / ${link.rel.id}`, `${link.rel.target}${mode}`),
+			)
+		}
 	}
 	if (inventory.notes.length > 0) {
 		console.log('')

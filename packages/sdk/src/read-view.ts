@@ -9,6 +9,9 @@ import {
 	indexToColumn,
 	parseA1,
 	type RangeRef,
+	type SheetDrawingObjectRef,
+	type SheetImageAnchor,
+	type SheetImageRef,
 	type Workbook,
 } from '@ascend/core'
 import {
@@ -220,9 +223,11 @@ export class WorkbookReadView {
 		const chartSheets = this.wb.chartSheets.map(copyChartSheetInfo)
 		const sheets = this.wb.sheets.map((sheet) => {
 			const drawingRefs = this.loadInfo.cellsHydrated ? { ...sheet.drawingRefs } : null
-			const imageRefs = this.loadInfo.richSheetMetadataHydrated ? [...sheet.imageRefs] : null
+			const imageRefs = this.loadInfo.richSheetMetadataHydrated
+				? sheet.imageRefs.map(cloneSheetImageRef)
+				: null
 			const drawingObjectRefs = this.loadInfo.richSheetMetadataHydrated
-				? sheet.drawingObjectRefs.map((ref) => ({ ...ref }))
+				? sheet.drawingObjectRefs.map(cloneSheetDrawingObjectRef)
 				: null
 			if (imageRefs) totalImages += imageRefs.length
 			if (drawingObjectRefs) totalDrawingObjects += drawingObjectRefs.length
@@ -324,9 +329,9 @@ export class WorkbookReadView {
 			ignoredErrors: cellsHydrated ? [...sheet.ignoredErrors] : null,
 			conditionalFormats: richSheetMetadataHydrated ? [...sheet.conditionalFormats] : null,
 			dataValidations: richSheetMetadataHydrated ? [...sheet.dataValidations] : null,
-			imageRefs: richSheetMetadataHydrated ? [...sheet.imageRefs] : null,
+			imageRefs: richSheetMetadataHydrated ? sheet.imageRefs.map(cloneSheetImageRef) : null,
 			drawingObjectRefs: richSheetMetadataHydrated
-				? sheet.drawingObjectRefs.map((ref) => ({ ...ref }))
+				? sheet.drawingObjectRefs.map(cloneSheetDrawingObjectRef)
 				: null,
 			sparklineGroups: richSheetMetadataHydrated
 				? sheet.sparklineGroups.map((group) => ({ ...group }))
@@ -1071,6 +1076,36 @@ function copyChartSheetInfo(
 	return {
 		...chartSheet,
 		chartPartPaths: [...chartSheet.chartPartPaths],
+	}
+}
+
+function cloneSheetImageRef(ref: SheetImageRef): SheetImageRef {
+	return {
+		...ref,
+		...(ref.content ? { content: new Uint8Array(ref.content) } : {}),
+		...(ref.anchor ? { anchor: cloneSheetImageAnchor(ref.anchor) } : {}),
+	}
+}
+
+function cloneSheetDrawingObjectRef(ref: SheetDrawingObjectRef): SheetDrawingObjectRef {
+	return {
+		...ref,
+		...(ref.anchor ? { anchor: cloneSheetImageAnchor(ref.anchor) } : {}),
+		...(ref.relIds ? { relIds: [...ref.relIds] } : {}),
+		...(ref.relationshipRefs
+			? { relationshipRefs: ref.relationshipRefs.map((relationship) => ({ ...relationship })) }
+			: {}),
+	}
+}
+
+function cloneSheetImageAnchor(anchor: SheetImageAnchor): SheetImageAnchor {
+	switch (anchor.kind) {
+		case 'oneCell':
+			return { ...anchor, from: { ...anchor.from } }
+		case 'twoCell':
+			return { ...anchor, from: { ...anchor.from }, to: { ...anchor.to } }
+		case 'absolute':
+			return { ...anchor }
 	}
 }
 

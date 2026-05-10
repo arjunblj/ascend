@@ -43,6 +43,15 @@ describe('visual inventory', () => {
 			id: 2,
 			name: 'Callout',
 			text: 'Revenue up',
+			relIds: ['rId2'],
+			relationshipRefs: [
+				{
+					id: 'rId2',
+					type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink',
+					target: 'https://example.com/report',
+					targetMode: 'External',
+				},
+			],
 			anchor: {
 				kind: 'twoCell',
 				from: { row: 4, col: 1 },
@@ -74,7 +83,21 @@ describe('visual inventory', () => {
 			kind: 'textBox',
 			name: 'Callout',
 			text: 'Revenue up',
+			relationshipRefs: [
+				expect.objectContaining({
+					id: 'rId2',
+					target: 'https://example.com/report',
+					targetMode: 'External',
+				}),
+			],
 		})
+		const returnedObject = inventory.sheets[0]?.drawingObjectRefs?.[0]
+		if (returnedObject?.relationshipRefs) {
+			;(returnedObject.relationshipRefs as Array<{ target: string }>)[0].target = 'mutated'
+		}
+		expect(sheet.drawingObjectRefs[0]?.relationshipRefs?.[0]?.target).toBe(
+			'https://example.com/report',
+		)
 		expect(inventory.charts[0]).toMatchObject({
 			partPath: 'xl/charts/chart1.xml',
 			sheetName: 'Sheet1',

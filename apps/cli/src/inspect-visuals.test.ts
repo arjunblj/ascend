@@ -44,4 +44,18 @@ describe('inspect visuals detail', () => {
 			imageCount: 0,
 		})
 	})
+
+	test('inspect --detail visuals shows drawing object links in text output', async () => {
+		const fixture = new URL(
+			'../../../fixtures/xlsx/libreoffice/textbox-hyperlink.xlsx',
+			import.meta.url,
+		).pathname
+		const { exitCode, stdout } = await run('inspect', fixture, '--detail', 'visuals')
+
+		expect(exitCode).toBe(0)
+		expect(stdout).toContain('Drawing Object Links')
+		expect(stdout).toContain('TextBox 1')
+		expect(stdout).toContain('https://www.google.com/')
+		expect(stdout).toContain('Sheet drawing objects')
+	})
 })

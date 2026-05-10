@@ -522,7 +522,7 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'editable',
 		'P0',
 		'Broaden drawing edits beyond existing text runs and add VML drawing-object inventory.',
-		'Drawing object inventory exposes shape, connector, group shape, graphic frame, text box anchors, names, text, and relationship IDs; existing DrawingML shape/text-box text runs are editable while preserving anchors, geometry, and relationships.',
+		'Drawing object inventory exposes shape, connector, group shape, graphic frame, text box anchors, names, text, and resolved relationship refs; existing DrawingML shape/text-box text runs are editable while preserving anchors, geometry, and relationships.',
 		[
 			'packages/io-xlsx/src/reader/drawing.test.ts',
 			'packages/io-xlsx/src/writer/writer.test.ts',

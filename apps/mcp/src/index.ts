@@ -155,7 +155,7 @@ export function createServer(): McpServer {
 
 	server.tool(
 		'ascend.visuals',
-		'Inspect workbook visual inventory: charts, drawings, media, image anchors, and preserve-first visual gaps',
+		'Inspect workbook visual inventory: charts, drawings, media, image anchors, drawing object links, and preserve-first visual gaps',
 		{
 			file: z.string().describe('Path to workbook file'),
 		},

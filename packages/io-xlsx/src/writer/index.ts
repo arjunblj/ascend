@@ -339,6 +339,7 @@ export function planWriteXlsx(
 							return ''
 						},
 						count: preserveSharedStrings || workbookWriteFacts.hasStringCells ? 1 : 0,
+						entryCount: preservedSharedStringEntries.length,
 						facts: workbookWriteFacts,
 					}
 				: new IncrementalSharedStringTable(
@@ -1076,7 +1077,7 @@ export function planWriteXlsx(
 		if (hasSharedStrings) {
 			const canReuseSharedStringsXml =
 				preserveSharedStrings &&
-				(useInlineStrings || ssTable.count <= preservedSharedStringEntries.length)
+				(useInlineStrings || ssTable.entryCount <= preservedSharedStringEntries.length)
 			const preservedSharedStringBytes = canReuseSharedStringsXml
 				? resolvePreservedBytes(sourceArchive, workbook.preservedSharedStrings?.path)
 				: undefined

@@ -269,6 +269,13 @@ describe('evaluateAssertions', () => {
 		const result = evaluateAssertions('edit-roundtrip', expected, {
 			...passingRoundtripAssertions(expected),
 			roundtripSemanticCellValuesHash: 'changed-by-edit',
+			editMode: 'replace-cell',
+			editExpectedCellDelta: 0,
+			editObservedCellDelta: 0,
+			editExpectedPhysicalCellDelta: 0,
+			editObservedPhysicalCellDelta: 0,
+			editExpectedFormulaDelta: 0,
+			editObservedFormulaDelta: 0,
 			editCellValueMatches: true,
 		})
 		expect(result.status).toBe('semantic-roundtrip-pass')
@@ -281,6 +288,13 @@ describe('evaluateAssertions', () => {
 		const result = evaluateAssertions('edit-roundtrip', expected, {
 			...passingRoundtripAssertions(expected),
 			roundtripSemanticCellValuesHash: 'changed-by-edit',
+			editMode: 'replace-cell',
+			editExpectedCellDelta: 0,
+			editObservedCellDelta: 0,
+			editExpectedPhysicalCellDelta: 0,
+			editObservedPhysicalCellDelta: 0,
+			editExpectedFormulaDelta: 0,
+			editObservedFormulaDelta: 0,
 			editCellValueMatches: false,
 		})
 		expect(result.status).toBe('semantic-roundtrip-mismatch')
@@ -879,6 +893,33 @@ describe('evaluateAssertions', () => {
 		expect(payload.cases[0]?.assertions.editCellValueMatches).toBe(true)
 	})
 
+	test('edit-roundtrip adds a numeric probe when a workbook has only formulas', () => {
+		const payload = runAscendEditRoundtrip('fixtures/xlsx/exceljs/bogus-defined-name.xlsx')
+		expect(payload.failed ?? []).toEqual([])
+		expect(payload.cases[0]?.dimensions.correctnessStatus).toBe('semantic-roundtrip-pass')
+		expect(payload.cases[0]?.assertions.editMode).toBe('add-cell')
+		expect(payload.cases[0]?.assertions.editRef).toBe('B1')
+		expect(payload.cases[0]?.assertions.editValueType).toBe('number')
+		expect(payload.cases[0]?.assertions.editObservedValue).toBe(424242)
+		expect(payload.cases[0]?.assertions.editObservedCellDelta).toBe(1)
+		expect(payload.cases[0]?.assertions.editObservedPhysicalCellDelta).toBe(1)
+		expect(payload.cases[0]?.assertions.editObservedFormulaDelta).toBe(0)
+		expect(payload.cases[0]?.assertions.editFormulaTextUnchanged).toBe(true)
+		expect(payload.cases[0]?.assertions.editFeatureInventoryUnchanged).toBe(true)
+		expect(payload.cases[0]?.assertions.editPreservedPartContentUnchanged).toBe(true)
+	})
+
+	test('edit-roundtrip uses A1 for metadata-only empty sheets', () => {
+		const payload = runAscendEditRoundtrip('fixtures/xlsx/exceljs/test-issue-1842.xlsx')
+		expect(payload.failed ?? []).toEqual([])
+		expect(payload.cases[0]?.dimensions.correctnessStatus).toBe('semantic-roundtrip-pass')
+		expect(payload.cases[0]?.assertions.editMode).toBe('add-cell')
+		expect(payload.cases[0]?.assertions.editRef).toBe('A1')
+		expect(payload.cases[0]?.assertions.editObservedValue).toBe(424242)
+		expect(payload.cases[0]?.assertions.editObservedCellDelta).toBe(1)
+		expect(payload.cases[0]?.assertions.editFeatureInventoryUnchanged).toBe(true)
+	})
+
 	test('default real-workbook sweeps span vendored OSS corpuses and feature tags', async () => {
 		const physicalRoots = ['poi', 'calamine', 'closedxml', 'exceljs', 'libreoffice'] as const
 		for (const root of physicalRoots) {
@@ -1182,6 +1223,7 @@ function passingRoundtripAssertions(
 		roundtripSheetCount: expected.sheetCount,
 		roundtripSheetNamesHash: expected.sheetNamesHash,
 		roundtripCellCount: expected.cellCount,
+		roundtripPhysicalCellCount: expected.physicalCellCount,
 		roundtripFormulaCount: expected.formulaCount,
 		roundtripFirstUsedRange: expected.usedRanges[0] ?? null,
 		roundtripUsedRangesHash: expected.usedRangesHash,
@@ -1270,6 +1312,12 @@ function emptyHash(): string {
 }
 
 function stringOnlyWorkbookBytes(): Uint8Array {
+	return singleSheetWorkbookBytes(
+		`<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>alpha</t></is></c></row></sheetData>`,
+	)
+}
+
+function singleSheetWorkbookBytes(sheetXmlBody: string): Uint8Array {
 	return zipSync({
 		'[Content_Types].xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -1277,6 +1325,7 @@ function stringOnlyWorkbookBytes(): Uint8Array {
   <Default Extension="xml" ContentType="application/xml"/>
   <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
   <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
 </Types>`),
 		'_rels/.rels': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
@@ -1285,6 +1334,7 @@ function stringOnlyWorkbookBytes(): Uint8Array {
 		'xl/_rels/workbook.xml.rels': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>
 </Relationships>`),
 		'xl/workbook.xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -1293,9 +1343,55 @@ function stringOnlyWorkbookBytes(): Uint8Array {
 </workbook>`),
 		'xl/worksheets/sheet1.xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>alpha</t></is></c></row></sheetData>
+  ${sheetXmlBody}
 </worksheet>`),
+		'xl/theme/theme1.xml': strToU8(
+			'<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Office"/>',
+		),
 	})
+}
+
+function runAscendEditRoundtrip(workbookPath: string): {
+	cases: Array<{
+		dimensions: { correctnessStatus: string }
+		assertions: {
+			editMode?: string
+			editRef?: string
+			editValueType?: string
+			editObservedValue?: string | number | boolean | null
+			editObservedCellDelta?: number
+			editObservedPhysicalCellDelta?: number
+			editObservedFormulaDelta?: number
+			editFormulaTextUnchanged?: boolean
+			editFeatureInventoryUnchanged?: boolean
+			editPreservedPartContentUnchanged?: boolean
+		}
+	}>
+	failed?: unknown[]
+} {
+	const proc = Bun.spawnSync({
+		cmd: [
+			'bun',
+			'run',
+			'fixtures/benchmarks/competitive-real-workbook.ts',
+			'--category',
+			'edit-roundtrip',
+			'--repeat',
+			'1',
+			'--warmup',
+			'0',
+			'--libraries',
+			'ascend',
+			'--json',
+			workbookPath,
+		],
+		stdout: 'pipe',
+		stderr: 'pipe',
+	})
+	if (proc.exitCode !== 0) {
+		throw new Error(new TextDecoder().decode(proc.stderr))
+	}
+	return JSON.parse(new TextDecoder().decode(proc.stdout))
 }
 
 function relationshipWorkbookBytes(extendedPropertiesRelationshipType: string): Uint8Array {

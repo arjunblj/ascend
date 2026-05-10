@@ -227,6 +227,10 @@ function isRankingEligible(status: string): boolean {
 	)
 }
 
+function numericAssertion(value: string | number | boolean | null | undefined): number {
+	return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
 export function workbookShapeAssertions(
 	shape: WorkbookShapeSummary,
 ): Record<string, string | number | boolean | null> {
@@ -286,23 +290,35 @@ export function roundtripAssertions(
 interface EditTarget {
 	readonly sheetName: string
 	readonly ref: string
+	readonly mode: 'replace-cell' | 'add-cell'
 	readonly valueType: 'number' | 'string' | 'boolean'
-	readonly oldValue: string | number | boolean
+	readonly oldValue: string | number | boolean | null
 	readonly newValue: string | number | boolean
+	readonly expectedCellDelta: number
+	readonly expectedPhysicalCellDelta: number
+	readonly expectedFormulaDelta: number
 }
 
 function selectEditTarget(target: WorkbookTarget): EditTarget {
 	const selected = findFirstEditableScalarCell(target.bytes)
-	if (!selected) {
-		throw new Error(`${target.name} has no non-formula scalar cell for edit-roundtrip`)
+	if (selected) {
+		return {
+			sheetName: selected.sheetName,
+			ref: selected.ref,
+			mode: 'replace-cell',
+			valueType: selected.valueType,
+			oldValue: selected.value,
+			newValue: editReplacementValue(selected.value),
+			expectedCellDelta: 0,
+			expectedPhysicalCellDelta: 0,
+			expectedFormulaDelta: 0,
+		}
 	}
-	return {
-		sheetName: selected.sheetName,
-		ref: selected.ref,
-		valueType: selected.valueType,
-		oldValue: selected.value,
-		newValue: editReplacementValue(selected.value),
+	const addTarget = selectAddCellEditTarget(target.bytes)
+	if (!addTarget) {
+		throw new Error(`${target.name} has no worksheet for edit-roundtrip`)
 	}
+	return addTarget
 }
 
 function editRoundtripAssertions(
@@ -312,15 +328,39 @@ function editRoundtripAssertions(
 ): Record<string, string | number | boolean | null> {
 	const assertions = roundtripAssertions(bytes, target)
 	const observed = readCellScalar(bytes, edit.sheetName, edit.ref)
+	const roundtripCellCount = numericAssertion(assertions.roundtripCellCount)
+	const roundtripPhysicalCellCount = numericAssertion(assertions.roundtripPhysicalCellCount)
+	const expectedPhysicalCellCount = numericAssertion(target.expectedInfo.physicalCellCount)
+	const roundtripFormulaCount = numericAssertion(assertions.roundtripFormulaCount)
 	return {
 		...assertions,
 		editSheetName: edit.sheetName,
 		editRef: edit.ref,
+		editMode: edit.mode,
 		editValueType: edit.valueType,
 		editOldValue: edit.oldValue,
 		editExpectedValue: edit.newValue,
 		editObservedValue: observed,
+		editExpectedCellDelta: edit.expectedCellDelta,
+		editObservedCellDelta: roundtripCellCount - target.expectedInfo.cellCount,
+		editExpectedPhysicalCellDelta: edit.expectedPhysicalCellDelta,
+		editObservedPhysicalCellDelta: roundtripPhysicalCellCount - expectedPhysicalCellCount,
+		editExpectedFormulaDelta: edit.expectedFormulaDelta,
+		editObservedFormulaDelta: roundtripFormulaCount - target.expectedInfo.formulaCount,
 		editCellValueMatches: observed === edit.newValue,
+		editFormulaTextUnchanged:
+			assertions.roundtripFormulaTextHash === target.expectedInfo.formulaTextHash,
+		editSemanticRefsChanged:
+			assertions.roundtripSemanticCellRefsHash !== target.expectedInfo.semanticCellRefsHash,
+		editPreservedPartNamesUnchanged:
+			assertions.roundtripPreservedPartNamesHash ===
+			target.expectedInfo.packageFingerprint?.preservedPartNamesHash,
+		editPreservedPartContentUnchanged:
+			assertions.roundtripPreservedPartContentHash ===
+			target.expectedInfo.packageFingerprint?.preservedPartContentHash,
+		editFeatureInventoryUnchanged:
+			assertions.roundtripFeatureInventoryHash ===
+			target.expectedInfo.featureSummary?.featureInventoryHash,
 	}
 }
 
@@ -416,18 +456,35 @@ export function evaluateAssertions(
 		}
 	}
 	const isEditRoundtrip = category === 'edit-roundtrip'
+	const isAddCellEdit = isEditRoundtrip && observed.editMode === 'add-cell'
+	const expectedCellDelta = isEditRoundtrip ? numericAssertion(observed.editExpectedCellDelta) : 0
+	const expectedPhysicalCellDelta = isEditRoundtrip
+		? numericAssertion(observed.editExpectedPhysicalCellDelta)
+		: 0
+	const expectedFormulaDelta = isEditRoundtrip
+		? numericAssertion(observed.editExpectedFormulaDelta)
+		: 0
 	const byteIdentical = !isEditRoundtrip && observed.byteIdentical === true
 	const roundtripSheetCountMatches = observed.roundtripSheetCount === expected.sheetCount
 	const roundtripSheetNamesHashMatches =
 		observed.roundtripSheetNamesHash === expected.sheetNamesHash
-	const roundtripCellCountMatches = observed.roundtripCellCount === expected.cellCount
-	const roundtripFormulaCountMatches = observed.roundtripFormulaCount === expected.formulaCount
+	const roundtripCellCountMatches =
+		observed.roundtripCellCount === expected.cellCount + expectedCellDelta
+	const roundtripPhysicalCellCountMatches =
+		!isAddCellEdit ||
+		expected.physicalCellCount === null ||
+		observed.roundtripPhysicalCellCount === expected.physicalCellCount + expectedPhysicalCellDelta
+	const roundtripFormulaCountMatches =
+		observed.roundtripFormulaCount === expected.formulaCount + expectedFormulaDelta
 	const roundtripFirstUsedRangeMatches =
-		expected.usedRanges.length === 0 || observed.roundtripFirstUsedRange === expected.usedRanges[0]
+		isAddCellEdit ||
+		expected.usedRanges.length === 0 ||
+		observed.roundtripFirstUsedRange === expected.usedRanges[0]
 	const roundtripUsedRangesHashMatches =
-		observed.roundtripUsedRangesHash === expected.usedRangesHash
-	const roundtripSemanticCellRefsHashMatches =
-		observed.roundtripSemanticCellRefsHash === expected.semanticCellRefsHash
+		isAddCellEdit || observed.roundtripUsedRangesHash === expected.usedRangesHash
+	const roundtripSemanticCellRefsHashMatches = isAddCellEdit
+		? observed.editSemanticRefsChanged === true
+		: observed.roundtripSemanticCellRefsHash === expected.semanticCellRefsHash
 	const roundtripSemanticCellValuesHashMatches =
 		isEditRoundtrip || observed.roundtripSemanticCellValuesHash === expected.semanticCellValuesHash
 	const roundtripFormulaTextHashMatches =
@@ -493,15 +550,18 @@ export function evaluateAssertions(
 	const roundtripPreservedPartContentHashMatches =
 		!packageFingerprintRequired ||
 		observed.roundtripPreservedPartContentHash === expectedPackage?.preservedPartContentHash
-	const packageRoundtripMatches =
-		!packageFingerprintRequired ||
-		(hasRoundtripPackageFingerprint &&
-			roundtripPackagePartCountMatches &&
+	const packageTopologyMatches =
+		isEditRoundtrip ||
+		(roundtripPackagePartCountMatches &&
 			roundtripPackagePartNamesHashMatches &&
 			roundtripPackageContentTypeCountMatches &&
 			roundtripPackageContentTypesHashMatches &&
 			roundtripPackageRelationshipCountMatches &&
-			roundtripPackageRelationshipGraphHashMatches &&
+			roundtripPackageRelationshipGraphHashMatches)
+	const packageRoundtripMatches =
+		!packageFingerprintRequired ||
+		(hasRoundtripPackageFingerprint &&
+			packageTopologyMatches &&
 			roundtripPreservedPartCountMatches &&
 			roundtripPreservedPartNamesHashMatches &&
 			roundtripPreservedPartContentHashMatches)
@@ -539,6 +599,7 @@ export function evaluateAssertions(
 		roundtripSheetCountMatches &&
 		roundtripSheetNamesHashMatches &&
 		roundtripCellCountMatches &&
+		roundtripPhysicalCellCountMatches &&
 		roundtripFormulaCountMatches &&
 		roundtripFirstUsedRangeMatches &&
 		roundtripUsedRangesHashMatches &&
@@ -546,11 +607,17 @@ export function evaluateAssertions(
 		roundtripSemanticCellValuesHashMatches &&
 		roundtripFormulaTextHashMatches
 	const editCellValueMatches = !isEditRoundtrip || observed.editCellValueMatches === true
+	const editStructuralDeltaMatches =
+		!isEditRoundtrip ||
+		(observed.editObservedCellDelta === expectedCellDelta &&
+			(!isAddCellEdit || observed.editObservedPhysicalCellDelta === expectedPhysicalCellDelta) &&
+			observed.editObservedFormulaDelta === expectedFormulaDelta)
 	const semanticAndPackageRoundtripMatches =
 		semanticRoundtripMatches &&
 		packageRoundtripMatches &&
 		featureRoundtripMatches &&
-		editCellValueMatches
+		editCellValueMatches &&
+		editStructuralDeltaMatches
 	return {
 		status: byteIdentical
 			? 'exact-package-match'
@@ -618,6 +685,7 @@ export function evaluateAssertions(
 			roundtripSheetCountMatches,
 			roundtripSheetNamesHashMatches,
 			roundtripCellCountMatches,
+			roundtripPhysicalCellCountMatches,
 			roundtripFormulaCountMatches,
 			roundtripFirstUsedRangeMatches,
 			roundtripUsedRangesHashMatches,
@@ -625,6 +693,7 @@ export function evaluateAssertions(
 			roundtripSemanticCellValuesHashMatches,
 			roundtripFormulaTextHashMatches,
 			editCellValueMatches,
+			editStructuralDeltaMatches,
 			semanticRoundtripMatches,
 			packageFingerprintRequired,
 			hasRoundtripPackageFingerprint,
@@ -634,6 +703,7 @@ export function evaluateAssertions(
 			roundtripPackageContentTypesHashMatches,
 			roundtripPackageRelationshipCountMatches,
 			roundtripPackageRelationshipGraphHashMatches,
+			packageTopologyMatches,
 			roundtripPreservedPartCountMatches,
 			roundtripPreservedPartNamesHashMatches,
 			roundtripPreservedPartContentHashMatches,
@@ -1549,16 +1619,10 @@ function findFirstEditableScalarCell(bytes: Uint8Array): {
 		const partPath = worksheetRels.get(sheet.rId)
 		const xml = partPath ? archive.readText(partPath) : undefined
 		if (!xml) continue
-		for (const match of xml.matchAll(openTagRegex('c'))) {
-			const attrs = match[1] ?? ''
-			const bodyStart = match.index + match[0].length
-			const bodyEnd = isSelfClosingTag(match[0])
-				? bodyStart
-				: findCloseTagIndex(xml, 'c', bodyStart)
-			if (bodyEnd < bodyStart) continue
-			const body = xml.slice(bodyStart, bodyEnd)
+		for (const cell of scanSheetCells(xml)) {
+			const { attrs, body } = cell
 			if (hasOpenTag(body, 'f')) continue
-			const ref = /(?:^|\s)r="([^"]+)"/.exec(attrs)?.[1]
+			const ref = cell.ref
 			if (!parseA1Safe(ref)) continue
 			const candidate = editableCellCandidate(sheet.name, ref, attrs, body, sharedStrings)
 			if (!candidate) continue
@@ -1568,6 +1632,91 @@ function findFirstEditableScalarCell(bytes: Uint8Array): {
 		}
 	}
 	return firstBoolean ?? firstString
+}
+
+function selectAddCellEditTarget(bytes: Uint8Array): EditTarget | null {
+	const archive = extractZip(bytes)
+	const workbookXml = archive.readText('xl/workbook.xml')
+	const workbookRelsXml = archive.readText('xl/_rels/workbook.xml.rels')
+	if (!workbookXml || !workbookRelsXml) return null
+	const workbookInfo = parseWorkbookXml(workbookXml)
+	const workbookRels = parseRelationships(workbookRelsXml)
+	const worksheetRels = new Map(
+		workbookRels
+			.filter((rel) => rel.type === REL_WORKSHEET)
+			.map((rel) => [rel.id, resolvePath('xl/workbook.xml', rel.target)]),
+	)
+	for (const sheet of workbookInfo.sheets) {
+		const partPath = worksheetRels.get(sheet.rId)
+		const xml = partPath ? archive.readText(partPath) : undefined
+		const ref = firstEmptyEditRef(xml ?? '')
+		if (!ref) continue
+		return {
+			sheetName: sheet.name,
+			ref,
+			mode: 'add-cell',
+			valueType: 'number',
+			oldValue: null,
+			newValue: 424242,
+			expectedCellDelta: 1,
+			expectedPhysicalCellDelta: 1,
+			expectedFormulaDelta: 0,
+		}
+	}
+	return null
+}
+
+function firstEmptyEditRef(sheetXml: string): string | null {
+	const blockedCells = new Set<string>()
+	const blockedRanges: CellRange[] = []
+	for (const cell of scanSheetCells(sheetXml)) {
+		const parsed = parseA1Safe(normalizeA1Token(cell.ref))
+		if (parsed) blockedCells.add(cellKey(parsed.row, parsed.col))
+	}
+	for (const match of sheetXml.matchAll(openTagRegex('mergeCell'))) {
+		const range = parseCellRange(featureRef(match[1] ?? ''))
+		if (range) blockedRanges.push(range)
+	}
+	for (let row = 0; row < 1000; row++) {
+		for (let col = 0; col < 256; col++) {
+			if (blockedCells.has(cellKey(row, col))) continue
+			if (blockedRanges.some((range) => containsCell(range, row, col))) continue
+			return formatLocalCellRef(row, col)
+		}
+	}
+	return null
+}
+
+interface CellRange {
+	readonly minRow: number
+	readonly minCol: number
+	readonly maxRow: number
+	readonly maxCol: number
+}
+
+function parseCellRange(ref: string): CellRange | null {
+	const [startRef, endRef = startRef] = ref.split(':')
+	const start = parseA1Safe(normalizeA1Token(startRef))
+	const end = parseA1Safe(normalizeA1Token(endRef))
+	if (!start || !end) return null
+	return {
+		minRow: Math.min(start.row, end.row),
+		minCol: Math.min(start.col, end.col),
+		maxRow: Math.max(start.row, end.row),
+		maxCol: Math.max(start.col, end.col),
+	}
+}
+
+function normalizeA1Token(ref: string | undefined): string | undefined {
+	return ref?.replace(/\$/g, '')
+}
+
+function cellKey(row: number, col: number): string {
+	return `${row}:${col}`
+}
+
+function containsCell(range: CellRange, row: number, col: number): boolean {
+	return row >= range.minRow && row <= range.maxRow && col >= range.minCol && col <= range.maxCol
 }
 
 function editableCellCandidate(
@@ -1652,14 +1801,50 @@ function readCellScalarValue(
 }
 
 function findCellXml(xml: string, ref: string): { attrs: string; body: string } | null {
-	for (const match of xml.matchAll(openTagRegex('c'))) {
-		const attrs = match[1] ?? ''
-		if (/(?:^|\s)r="([^"]+)"/.exec(attrs)?.[1] !== ref) continue
-		const bodyStart = match.index + match[0].length
-		const bodyEnd = isSelfClosingTag(match[0]) ? bodyStart : findCloseTagIndex(xml, 'c', bodyStart)
-		return { attrs, body: bodyEnd >= bodyStart ? xml.slice(bodyStart, bodyEnd) : '' }
+	for (const cell of scanSheetCells(xml)) {
+		if (cell.ref === ref) return { attrs: cell.attrs, body: cell.body }
 	}
 	return null
+}
+
+function scanSheetCells(
+	xml: string,
+): Array<{ readonly ref: string; readonly attrs: string; readonly body: string }> {
+	const cells: Array<{ ref: string; attrs: string; body: string }> = []
+	let inferredRowIndex = 0
+	for (const rowMatch of xml.matchAll(openTagRegex('row'))) {
+		const rowAttrs = rowMatch[1] ?? ''
+		const rowStart = rowMatch.index + rowMatch[0].length
+		const rowEnd = isSelfClosingTag(rowMatch[0])
+			? rowStart
+			: findCloseTagIndex(xml, 'row', rowStart)
+		if (rowEnd < rowStart) continue
+		const rowIndexText = /(?:^|\s)r="([^"]+)"/.exec(rowAttrs)?.[1]
+		const rowIndex = rowIndexText ? Number.parseInt(rowIndexText, 10) - 1 : inferredRowIndex
+		if (!Number.isInteger(rowIndex) || rowIndex < 0) continue
+		inferredRowIndex = rowIndex + 1
+		const rowBody = xml.slice(rowStart, rowEnd)
+		let nextCol = 0
+		for (const cellMatch of rowBody.matchAll(openTagRegex('c'))) {
+			const attrs = cellMatch[1] ?? ''
+			const bodyStart = cellMatch.index + cellMatch[0].length
+			const bodyEnd = isSelfClosingTag(cellMatch[0])
+				? bodyStart
+				: findCloseTagIndex(rowBody, 'c', bodyStart)
+			if (bodyEnd < bodyStart) continue
+			const explicitRef = /(?:^|\s)r="([^"]+)"/.exec(attrs)?.[1]
+			const parsed = parseA1Safe(normalizeA1Token(explicitRef))
+			const col = parsed?.col ?? nextCol
+			const row = parsed?.row ?? rowIndex
+			nextCol = col + 1
+			cells.push({
+				ref: formatLocalCellRef(row, col),
+				attrs,
+				body: rowBody.slice(bodyStart, bodyEnd),
+			})
+		}
+	}
+	return cells
 }
 
 function scanSheetShapeXml(
@@ -1689,13 +1874,8 @@ function scanSheetShapeXml(
 	const semanticCellRefs: string[] = []
 	const semanticCellValues: string[] = []
 	const formulaTexts: string[] = []
-	for (const match of xml.matchAll(openTagRegex('c'))) {
-		const attrs = match[1] ?? ''
-		const selfClosing = isSelfClosingTag(match[0])
-		const bodyStart = match.index + match[0].length
-		const bodyEnd = selfClosing ? bodyStart : findCloseTagIndex(xml, 'c', bodyStart)
-		const body = bodyEnd >= bodyStart ? xml.slice(bodyStart, bodyEnd) : ''
-		const ref = /(?:^|\s)r="([^"]+)"/.exec(attrs)?.[1]
+	for (const cell of scanSheetCells(xml)) {
+		const { attrs, body, ref } = cell
 		const parsed = parseA1Safe(ref)
 		physicalCellCount++
 		if (parsed) {

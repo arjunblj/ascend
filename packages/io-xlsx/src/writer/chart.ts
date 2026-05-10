@@ -1,4 +1,5 @@
 import type { ChartPartInfo } from '@ascend/core'
+import { decodeXmlText } from '../reader/xml-utils.ts'
 import { escapeXml } from '../xml.ts'
 
 const SERIES_RE = /<(?:c:)?ser\b[\s\S]*?<\/(?:c:)?ser>/g
@@ -10,7 +11,7 @@ export function updateChartXml(xml: string, chart: ChartPartInfo): string {
 		index += 1
 		if (!series) return seriesXml
 		let next = seriesXml
-		if (series.nameRef !== undefined) next = replaceFormula(next, 'tx', series.nameRef)
+		if (series.nameRef !== undefined) next = replaceFormula(next, 'tx', series.nameRef).xml
 		if (series.categoryRef !== undefined) {
 			next = replaceFirstFormula(next, ['cat', 'xVal'], series.categoryRef)
 		}
@@ -23,17 +24,23 @@ export function updateChartXml(xml: string, chart: ChartPartInfo): string {
 
 function replaceFirstFormula(xml: string, tags: readonly string[], formula: string): string {
 	for (const tag of tags) {
-		const next = replaceFormula(xml, tag, formula)
-		if (next !== xml) return next
+		const result = replaceFormula(xml, tag, formula)
+		if (result.matched) return result.xml
 	}
 	return xml
 }
 
-function replaceFormula(xml: string, tag: string, formula: string): string {
+function replaceFormula(
+	xml: string,
+	tag: string,
+	formula: string,
+): { xml: string; matched: boolean } {
 	const pattern = new RegExp(`(<(?:c:)?${tag}\\b[\\s\\S]*?<(?:c:)?f>)([\\s\\S]*?)(</(?:c:)?f>)`)
-	return xml.replace(
-		pattern,
-		(_match, open: string, _oldFormula: string, close: string) =>
-			`${open}${escapeXml(formula)}${close}`,
-	)
+	let matched = false
+	const updated = xml.replace(pattern, (match, open: string, oldFormula: string, close: string) => {
+		matched = true
+		if (decodeXmlText(oldFormula) === formula) return match
+		return `${open}${escapeXml(formula)}${close}`
+	})
+	return { xml: updated, matched }
 }

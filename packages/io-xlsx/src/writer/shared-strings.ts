@@ -11,6 +11,7 @@ export interface SharedStringTable {
 	getIndex(value: CellValue): number | undefined
 	toXml(): string
 	readonly count: number
+	readonly entryCount: number
 	readonly facts: WorkbookWriteFacts
 }
 
@@ -32,9 +33,9 @@ export class IncrementalSharedStringTable {
 			if (!entry) continue
 			const key = makeKey(entry)
 			if (key !== undefined && !this.lookup.has(key)) {
-				this.lookup.set(key, this.entries.length)
-				this.entries.push(entry)
+				this.lookup.set(key, i)
 			}
+			this.entries.push(entry)
 		}
 	}
 
@@ -54,7 +55,7 @@ export class IncrementalSharedStringTable {
 	toXml(): string {
 		const builder = new ChunkedStringBuilder()
 		builder.push(XML_HEADER)
-		builder.push(`<sst xmlns="${NS}" count="${this._count}" uniqueCount="${this.entries.length}">`)
+		builder.push(`<sst xmlns="${NS}" count="${this._count}" uniqueCount="${this.uniqueCount}">`)
 		for (const entry of this.entries) {
 			builder.push(entryXml(entry))
 		}
@@ -67,6 +68,10 @@ export class IncrementalSharedStringTable {
 	}
 
 	get uniqueCount(): number {
+		return this.lookup.size
+	}
+
+	get entryCount(): number {
 		return this.entries.length
 	}
 }

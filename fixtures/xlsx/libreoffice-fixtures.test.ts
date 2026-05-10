@@ -125,6 +125,30 @@ describe('LibreOffice XLSX fixture corpus', () => {
 		expect(initial.value.workbook.pivotTables).toHaveLength(1)
 	})
 
+	test('surfaces LibreOffice pivot layout style and data-field metadata', () => {
+		const initial = readXlsx(loadFixture('PivotTable_CachedDefinitionAndDataInSync.xlsx'))
+		expectOk(initial)
+
+		const pivot = initial.value.workbook.pivotTables[0]
+		expect(pivot?.location).toMatchObject({
+			ref: 'A3:B6',
+			firstHeaderRow: 1,
+			firstDataRow: 1,
+			firstDataCol: 1,
+		})
+		expect(pivot?.style).toMatchObject({
+			name: 'PivotStyleLight15',
+			showRowHeaders: true,
+			showColHeaders: true,
+			showRowStripes: true,
+			showColStripes: false,
+			showLastColumn: true,
+		})
+		expect(pivot?.dataFields).toEqual([
+			{ fieldIndex: 0, name: 'Sum of A', baseField: 0, baseItem: 0 },
+		])
+	})
+
 	test('cached formulas in the LibreOffice subset recalculate without mismatches', async () => {
 		const payload = await runFormulaCorpusCorrectness({
 			corpusRoot: libreOfficeDir,

@@ -73,7 +73,43 @@ describe('pivot inventory', () => {
 			readFileSync(new URL('../../../../fixtures/xlsx/calamine/pivots.xlsx', import.meta.url)),
 		)
 		const pivot = wb.pivotTables.find((entry) => entry.name === 'PivotTable1')
+		expect(pivot?.location).toMatchObject({
+			ref: 'A3:E5',
+			firstHeaderRow: 0,
+			firstDataRow: 1,
+			firstDataCol: 1,
+			rowPageCount: 1,
+			colPageCount: 1,
+		})
+		expect(pivot?.options).toMatchObject({
+			applyNumberFormats: false,
+			applyWidthHeightFormats: true,
+			useAutoFormatting: true,
+			itemPrintTitles: true,
+			multipleFieldFilters: false,
+			hideValuesRow: true,
+			outline: true,
+			outlineData: true,
+			createdVersion: 8,
+			updatedVersion: 8,
+			minRefreshableVersion: 3,
+			indent: 0,
+			dataCaption: 'Values',
+		})
+		expect(pivot?.style).toMatchObject({
+			name: 'PivotStyleLight16',
+			showRowHeaders: true,
+			showColHeaders: true,
+			showLastColumn: true,
+		})
 		expect(pivot?.pageFields).toEqual([{ index: 5, hierarchy: -1 }])
+		expect(pivot?.dataFields[1]).toMatchObject({
+			fieldIndex: 3,
+			name: 'Average of Value',
+			subtotal: 'average',
+			baseField: 0,
+			baseItem: 0,
+		})
 
 		const dateField = pivot?.fields[5]
 		expect(dateField).toMatchObject({
@@ -128,6 +164,21 @@ describe('pivot inventory', () => {
 			index: 13,
 			kind: 'date',
 			value: '2017-05-03T00:00:00',
+		})
+
+		const percentPivot = wb.pivotTables[0]
+		expect(percentPivot?.dataFields[0]).toMatchObject({
+			fieldIndex: 2,
+			name: 'NumberOfOrdersPercentageOfBearclaw',
+			showDataAs: 'percent',
+			baseField: 0,
+			baseItem: 2,
+			numFmtId: 9,
+		})
+		expect(percentPivot?.style).toMatchObject({
+			name: 'PivotStyleLight16',
+			showRowHeaders: true,
+			showColHeaders: true,
 		})
 
 		const pivot = wb.pivotTables.find((entry) => entry.name === 'pvtFilter')

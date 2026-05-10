@@ -131,6 +131,9 @@ describe('Workbook.clone', () => {
 			partPath: 'xl/pivotTables/pivotTable1.xml',
 			sheetName: 'PivotSheet',
 			name: 'PivotTable1',
+			location: { ref: 'A3:D20', firstDataRow: 1 },
+			options: { dataOnRows: true, updatedVersion: 7 },
+			style: { name: 'PivotStyleLight16', showRowHeaders: true },
 			fields: [
 				{
 					index: 0,
@@ -141,28 +144,51 @@ describe('Workbook.clone', () => {
 			rowFields: [],
 			columnFields: [],
 			pageFields: [{ index: 0, item: 1 }],
-			dataFields: [],
+			dataFields: [{ fieldIndex: 1, showDataAs: 'percent', baseField: 0, baseItem: 2 }],
 		})
 
 		const clone = wb.clone()
+		const pivotLocation = clone.pivotTables[0]?.location
+		const pivotOptions = clone.pivotTables[0]?.options
+		const pivotStyle = clone.pivotTables[0]?.style
 		const sharedItemsInfo = clone.pivotCaches[0]?.fields[0]?.sharedItemsInfo
 		const sharedItem = clone.pivotCaches[0]?.fields[0]?.sharedItems?.[0]
 		const discreteItem = clone.pivotCaches[0]?.fields[0]?.fieldGroup?.discreteItems?.[0]
 		const groupItem = clone.pivotCaches[0]?.fields[0]?.fieldGroup?.groupItems?.[0]
 		const item = clone.pivotTables[0]?.fields[0]?.items?.[0]
+		expect(pivotLocation).toBeDefined()
+		expect(pivotOptions).toBeDefined()
+		expect(pivotStyle).toBeDefined()
 		expect(sharedItemsInfo).toBeDefined()
 		expect(sharedItem).toBeDefined()
 		expect(discreteItem).toBeDefined()
 		expect(groupItem).toBeDefined()
 		expect(item).toBeDefined()
-		if (!sharedItemsInfo || !sharedItem || !discreteItem || !groupItem || !item) return
+		if (
+			!pivotLocation ||
+			!pivotOptions ||
+			!pivotStyle ||
+			!sharedItemsInfo ||
+			!sharedItem ||
+			!discreteItem ||
+			!groupItem ||
+			!item
+		) {
+			return
+		}
 
+		;(pivotLocation as { ref: string }).ref = 'B4:E21'
+		;(pivotOptions as { updatedVersion: number }).updatedVersion = 8
+		;(pivotStyle as { name: string }).name = 'PivotStyleDark1'
 		;(sharedItemsInfo as { count: number }).count = 2
 		;(sharedItem as { value: string }).value = 'East'
 		;(discreteItem as { value: number }).value = 0
 		;(groupItem as { value: string }).value = 'Group2'
 		;(item as { hidden: boolean }).hidden = false
 
+		expect(wb.pivotTables[0]?.location?.ref).toBe('A3:D20')
+		expect(wb.pivotTables[0]?.options?.updatedVersion).toBe(7)
+		expect(wb.pivotTables[0]?.style?.name).toBe('PivotStyleLight16')
 		expect(wb.pivotCaches[0]?.fields[0]?.sharedItemsInfo?.count).toBe(1)
 		expect(wb.pivotCaches[0]?.fields[0]?.sharedItems?.[0]?.value).toBe('West')
 		expect(wb.pivotCaches[0]?.fields[0]?.fieldGroup?.discreteItems?.[0]?.value).toBe(1)

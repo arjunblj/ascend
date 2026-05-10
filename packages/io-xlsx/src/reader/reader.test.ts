@@ -1234,18 +1234,20 @@ describe('readXlsx', () => {
   <Relationship Id="rIdPivotTable" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable" Target="../pivotTables/pivotTable1.xml"/>
 </Relationships>`,
 			'xl/pivotTables/pivotTable1.xml': `<?xml version="1.0"?>
-<pivotTableDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="PivotTable11" cacheId="34">
-  <location ref="O17"/>
+<pivotTableDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="PivotTable11" cacheId="34"
+  dataOnRows="1" compact="0" rowGrandTotals="0" dataCaption="Values" updatedVersion="7">
+  <location ref="O17" firstHeaderRow="0" firstDataRow="1" firstDataCol="1" rowPageCount="1" colPageCount="1"/>
   <pivotFields count="4">
-    <pivotField axis="axisRow" showAll="0"/>
-    <pivotField axis="axisCol"/>
+    <pivotField axis="axisRow" showAll="0" sortType="ascending" compact="0" dragToPage="0"/>
+    <pivotField axis="axisCol" includeNewItemsInFilter="1" itemPageCount="10"/>
     <pivotField axis="axisPage" hidden="1"/>
     <pivotField dataField="1" defaultSubtotal="0"/>
   </pivotFields>
   <rowFields count="1"><field x="0"/></rowFields>
   <colFields count="1"><field x="1"/></colFields>
   <pageFields count="1"><pageField fld="2" name="Region filter"/></pageFields>
-  <dataFields count="1"><dataField fld="3" name="Sum of Sales" subtotal="sum" numFmtId="4"/></dataFields>
+  <dataFields count="1"><dataField fld="3" name="Sum of Sales" subtotal="sum" numFmtId="4" showDataAs="percent" baseField="0" baseItem="2"/></dataFields>
+  <pivotTableStyleInfo name="PivotStyleLight16" showRowHeaders="1" showColHeaders="1" showRowStripes="0" showColStripes="1" showLastColumn="0"/>
 </pivotTableDefinition>`,
 			'xl/pivotCache/pivotCacheDefinition1.xml': `<?xml version="1.0"?>
 <pivotCacheDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -1285,16 +1287,56 @@ describe('readXlsx', () => {
 				name: 'PivotTable11',
 				cacheId: 34,
 				locationRef: 'O17',
+				location: {
+					ref: 'O17',
+					firstHeaderRow: 0,
+					firstDataRow: 1,
+					firstDataCol: 1,
+					rowPageCount: 1,
+					colPageCount: 1,
+				},
+				options: {
+					dataOnRows: true,
+					compact: false,
+					rowGrandTotals: false,
+					updatedVersion: 7,
+					dataCaption: 'Values',
+				},
+				style: {
+					name: 'PivotStyleLight16',
+					showRowHeaders: true,
+					showColHeaders: true,
+					showRowStripes: false,
+					showColStripes: true,
+					showLastColumn: false,
+				},
 				fields: [
-					{ index: 0, axis: 'axisRow', showAll: false },
-					{ index: 1, axis: 'axisCol' },
+					{
+						index: 0,
+						axis: 'axisRow',
+						showAll: false,
+						compact: false,
+						dragToPage: false,
+						sortType: 'ascending',
+					},
+					{ index: 1, axis: 'axisCol', includeNewItemsInFilter: true, itemPageCount: 10 },
 					{ index: 2, axis: 'axisPage', hidden: true },
 					{ index: 3, dataField: true, defaultSubtotal: false },
 				],
 				rowFields: [{ index: 0 }],
 				columnFields: [{ index: 1 }],
 				pageFields: [{ index: 2, name: 'Region filter' }],
-				dataFields: [{ fieldIndex: 3, name: 'Sum of Sales', subtotal: 'sum', numFmtId: 4 }],
+				dataFields: [
+					{
+						fieldIndex: 3,
+						name: 'Sum of Sales',
+						subtotal: 'sum',
+						numFmtId: 4,
+						showDataAs: 'percent',
+						baseField: 0,
+						baseItem: 2,
+					},
+				],
 			},
 		])
 		expect(result.value.workbook.pivotCaches).toEqual([

@@ -151,11 +151,65 @@ export interface PivotTableInfo {
 	readonly name?: string
 	readonly cacheId?: number
 	readonly locationRef?: string
+	readonly location?: PivotTableLocationInfo
+	readonly options?: PivotTableOptionsInfo
+	readonly style?: PivotTableStyleInfo
 	readonly fields: readonly PivotFieldInfo[]
 	readonly rowFields: readonly PivotFieldReference[]
 	readonly columnFields: readonly PivotFieldReference[]
 	readonly pageFields: readonly PivotFieldReference[]
 	readonly dataFields: readonly PivotDataFieldInfo[]
+}
+
+export interface PivotTableLocationInfo {
+	readonly ref?: string
+	readonly firstHeaderRow?: number
+	readonly firstDataRow?: number
+	readonly firstDataCol?: number
+	readonly rowPageCount?: number
+	readonly colPageCount?: number
+}
+
+export interface PivotTableOptionsInfo {
+	readonly applyAlignmentFormats?: boolean
+	readonly applyBorderFormats?: boolean
+	readonly applyFontFormats?: boolean
+	readonly applyNumberFormats?: boolean
+	readonly applyPatternFormats?: boolean
+	readonly applyWidthHeightFormats?: boolean
+	readonly colGrandTotals?: boolean
+	readonly rowGrandTotals?: boolean
+	readonly compact?: boolean
+	readonly compactData?: boolean
+	readonly dataOnRows?: boolean
+	readonly enableDrill?: boolean
+	readonly enableEdit?: boolean
+	readonly gridDropZones?: boolean
+	readonly hideValuesRow?: boolean
+	readonly itemPrintTitles?: boolean
+	readonly multipleFieldFilters?: boolean
+	readonly outline?: boolean
+	readonly outlineData?: boolean
+	readonly showItems?: boolean
+	readonly showMemberPropertyTips?: boolean
+	readonly showMultipleLabel?: boolean
+	readonly useAutoFormatting?: boolean
+	readonly indent?: number
+	readonly createdVersion?: number
+	readonly updatedVersion?: number
+	readonly minRefreshableVersion?: number
+	readonly dataCaption?: string
+	readonly rowHeaderCaption?: string
+	readonly colHeaderCaption?: string
+}
+
+export interface PivotTableStyleInfo {
+	readonly name?: string
+	readonly showRowHeaders?: boolean
+	readonly showColHeaders?: boolean
+	readonly showRowStripes?: boolean
+	readonly showColStripes?: boolean
+	readonly showLastColumn?: boolean
 }
 
 export interface ExternalReferenceInfo {
@@ -355,6 +409,15 @@ export interface PivotFieldInfo {
 	readonly defaultSubtotal?: boolean
 	readonly showAll?: boolean
 	readonly multipleItemSelectionAllowed?: boolean
+	readonly compact?: boolean
+	readonly outline?: boolean
+	readonly subtotalTop?: boolean
+	readonly dragToRow?: boolean
+	readonly dragToCol?: boolean
+	readonly dragToPage?: boolean
+	readonly includeNewItemsInFilter?: boolean
+	readonly itemPageCount?: number
+	readonly sortType?: string
 	readonly items?: readonly PivotFieldItemInfo[]
 }
 
@@ -386,6 +449,9 @@ export interface PivotDataFieldInfo {
 	readonly name?: string
 	readonly subtotal?: string
 	readonly numFmtId?: number
+	readonly showDataAs?: string
+	readonly baseField?: number
+	readonly baseItem?: number
 }
 
 export interface SlicerCacheInfo {

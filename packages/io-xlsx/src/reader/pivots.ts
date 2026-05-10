@@ -9,6 +9,9 @@ import type {
 	PivotFieldItemInfo,
 	PivotFieldReference,
 	PivotTableInfo,
+	PivotTableLocationInfo,
+	PivotTableOptionsInfo,
+	PivotTableStyleInfo,
 	SlicerCacheInfo,
 	SlicerInfo,
 	TimelineCacheInfo,
@@ -122,6 +125,9 @@ export function parsePivotTableXml(
 		name?: string
 		cacheId?: number
 		locationRef?: string
+		location?: PivotTableLocationInfo
+		options?: PivotTableOptionsInfo
+		style?: PivotTableStyleInfo
 		fields: readonly PivotFieldInfo[]
 		rowFields: readonly PivotFieldReference[]
 		columnFields: readonly PivotFieldReference[]
@@ -142,7 +148,124 @@ export function parsePivotTableXml(
 	if (cacheId !== undefined) parsed.cacheId = cacheId
 	const locationRef = location ? attr(location, 'ref') : undefined
 	if (locationRef) parsed.locationRef = locationRef
+	const locationInfo = parsePivotTableLocation(location)
+	if (locationInfo) parsed.location = locationInfo
+	const options = parsePivotTableOptions(root)
+	if (options) parsed.options = options
+	const style = parsePivotTableStyle(childNode(root, 'pivotTableStyleInfo'))
+	if (style) parsed.style = style
 	return parsed as PivotTableInfo
+}
+
+function parsePivotTableLocation(
+	location: XmlNode | undefined,
+): PivotTableLocationInfo | undefined {
+	if (!location) return undefined
+	const parsed: {
+		ref?: string
+		firstHeaderRow?: number
+		firstDataRow?: number
+		firstDataCol?: number
+		rowPageCount?: number
+		colPageCount?: number
+	} = {}
+	setStringIfDefined(parsed, 'ref', attr(location, 'ref'))
+	setNumberIfDefined(parsed, 'firstHeaderRow', numAttr(location, 'firstHeaderRow'))
+	setNumberIfDefined(parsed, 'firstDataRow', numAttr(location, 'firstDataRow'))
+	setNumberIfDefined(parsed, 'firstDataCol', numAttr(location, 'firstDataCol'))
+	setNumberIfDefined(parsed, 'rowPageCount', numAttr(location, 'rowPageCount'))
+	setNumberIfDefined(parsed, 'colPageCount', numAttr(location, 'colPageCount'))
+	return Object.keys(parsed).length > 0 ? (parsed as PivotTableLocationInfo) : undefined
+}
+
+function parsePivotTableOptions(root: XmlNode): PivotTableOptionsInfo | undefined {
+	const parsed: {
+		applyAlignmentFormats?: boolean
+		applyBorderFormats?: boolean
+		applyFontFormats?: boolean
+		applyNumberFormats?: boolean
+		applyPatternFormats?: boolean
+		applyWidthHeightFormats?: boolean
+		colGrandTotals?: boolean
+		rowGrandTotals?: boolean
+		compact?: boolean
+		compactData?: boolean
+		dataOnRows?: boolean
+		enableDrill?: boolean
+		enableEdit?: boolean
+		gridDropZones?: boolean
+		hideValuesRow?: boolean
+		itemPrintTitles?: boolean
+		multipleFieldFilters?: boolean
+		outline?: boolean
+		outlineData?: boolean
+		showItems?: boolean
+		showMemberPropertyTips?: boolean
+		showMultipleLabel?: boolean
+		useAutoFormatting?: boolean
+		indent?: number
+		createdVersion?: number
+		updatedVersion?: number
+		minRefreshableVersion?: number
+		dataCaption?: string
+		rowHeaderCaption?: string
+		colHeaderCaption?: string
+	} = {}
+	setBoolIfDefined(parsed, 'applyAlignmentFormats', boolAttr(root, 'applyAlignmentFormats'))
+	setBoolIfDefined(parsed, 'applyBorderFormats', boolAttr(root, 'applyBorderFormats'))
+	setBoolIfDefined(parsed, 'applyFontFormats', boolAttr(root, 'applyFontFormats'))
+	setBoolIfDefined(parsed, 'applyNumberFormats', boolAttr(root, 'applyNumberFormats'))
+	setBoolIfDefined(parsed, 'applyPatternFormats', boolAttr(root, 'applyPatternFormats'))
+	setBoolIfDefined(parsed, 'applyWidthHeightFormats', boolAttr(root, 'applyWidthHeightFormats'))
+	setBoolIfDefined(parsed, 'colGrandTotals', boolAttr(root, 'colGrandTotals'))
+	setBoolIfDefined(parsed, 'rowGrandTotals', boolAttr(root, 'rowGrandTotals'))
+	setBoolIfDefined(parsed, 'compact', boolAttr(root, 'compact'))
+	setBoolIfDefined(parsed, 'compactData', boolAttr(root, 'compactData'))
+	setBoolIfDefined(parsed, 'dataOnRows', boolAttr(root, 'dataOnRows'))
+	setBoolIfDefined(parsed, 'enableDrill', boolAttr(root, 'enableDrill'))
+	setBoolIfDefined(parsed, 'enableEdit', boolAttr(root, 'enableEdit'))
+	setBoolIfDefined(parsed, 'gridDropZones', boolAttr(root, 'gridDropZones'))
+	setBoolIfDefined(parsed, 'hideValuesRow', boolAttr(root, 'hideValuesRow'))
+	setBoolIfDefined(parsed, 'itemPrintTitles', boolAttr(root, 'itemPrintTitles'))
+	setBoolIfDefined(parsed, 'multipleFieldFilters', boolAttr(root, 'multipleFieldFilters'))
+	setBoolIfDefined(parsed, 'outline', boolAttr(root, 'outline'))
+	setBoolIfDefined(parsed, 'outlineData', boolAttr(root, 'outlineData'))
+	setBoolIfDefined(parsed, 'showItems', boolAttr(root, 'showItems'))
+	setBoolIfDefined(parsed, 'showMemberPropertyTips', boolAttr(root, 'showMemberPropertyTips'))
+	setBoolIfDefined(parsed, 'showMultipleLabel', boolAttr(root, 'showMultipleLabel'))
+	setBoolIfDefined(parsed, 'useAutoFormatting', boolAttr(root, 'useAutoFormatting'))
+	setNumberIfDefined(parsed, 'indent', numAttr(root, 'indent'))
+	setNumberIfDefined(parsed, 'createdVersion', numAttr(root, 'createdVersion'))
+	setNumberIfDefined(parsed, 'updatedVersion', numAttr(root, 'updatedVersion'))
+	setNumberIfDefined(parsed, 'minRefreshableVersion', numAttr(root, 'minRefreshableVersion'))
+	setStringIfDefined(parsed, 'dataCaption', attr(root, 'dataCaption'))
+	setStringIfDefined(parsed, 'rowHeaderCaption', attr(root, 'rowHeaderCaption'))
+	setStringIfDefined(parsed, 'colHeaderCaption', attr(root, 'colHeaderCaption'))
+	for (const ext of childNodes(childNode(root, 'extLst'), 'ext')) {
+		for (const extPivotDefinition of childNodes(ext, 'pivotTableDefinition')) {
+			setBoolIfDefined(parsed, 'hideValuesRow', boolAttr(extPivotDefinition, 'hideValuesRow'))
+		}
+	}
+	return Object.keys(parsed).length > 0 ? (parsed as PivotTableOptionsInfo) : undefined
+}
+
+function parsePivotTableStyle(style: XmlNode | undefined): PivotTableStyleInfo | undefined {
+	if (!style) return undefined
+	const parsed: {
+		name?: string
+		showRowHeaders?: boolean
+		showColHeaders?: boolean
+		showRowStripes?: boolean
+		showColStripes?: boolean
+		showLastColumn?: boolean
+	} = {}
+	setStringIfDefined(parsed, 'name', attr(style, 'name'))
+	setBoolIfDefined(parsed, 'showRowHeaders', boolAttr(style, 'showRowHeaders'))
+	setBoolIfDefined(parsed, 'showColHeaders', boolAttr(style, 'showColHeaders'))
+	setBoolIfDefined(parsed, 'showRowStripes', boolAttr(style, 'showRowStripes'))
+	setBoolIfDefined(parsed, 'showColStripes', boolAttr(style, 'showColStripes'))
+	setBoolIfDefined(parsed, 'showLastColumn', boolAttr(style, 'showLastColumn'))
+	return Object.keys(parsed).length > 0 ? (parsed as PivotTableStyleInfo) : undefined
 }
 
 function parseCacheFields(root: XmlNode): PivotCacheFieldInfo[] {
@@ -293,6 +416,15 @@ function parsePivotFields(root: XmlNode): PivotFieldInfo[] {
 			defaultSubtotal?: boolean
 			showAll?: boolean
 			multipleItemSelectionAllowed?: boolean
+			compact?: boolean
+			outline?: boolean
+			subtotalTop?: boolean
+			dragToRow?: boolean
+			dragToCol?: boolean
+			dragToPage?: boolean
+			includeNewItemsInFilter?: boolean
+			itemPageCount?: number
+			sortType?: string
 			items?: readonly PivotFieldItemInfo[]
 		} = { index }
 		setStringIfDefined(parsed, 'axis', attr(node, 'axis'))
@@ -307,6 +439,15 @@ function parsePivotFields(root: XmlNode): PivotFieldInfo[] {
 			'multipleItemSelectionAllowed',
 			boolAttr(node, 'multipleItemSelectionAllowed'),
 		)
+		setBoolIfDefined(parsed, 'compact', boolAttr(node, 'compact'))
+		setBoolIfDefined(parsed, 'outline', boolAttr(node, 'outline'))
+		setBoolIfDefined(parsed, 'subtotalTop', boolAttr(node, 'subtotalTop'))
+		setBoolIfDefined(parsed, 'dragToRow', boolAttr(node, 'dragToRow'))
+		setBoolIfDefined(parsed, 'dragToCol', boolAttr(node, 'dragToCol'))
+		setBoolIfDefined(parsed, 'dragToPage', boolAttr(node, 'dragToPage'))
+		setBoolIfDefined(parsed, 'includeNewItemsInFilter', boolAttr(node, 'includeNewItemsInFilter'))
+		setNumberIfDefined(parsed, 'itemPageCount', numAttr(node, 'itemPageCount'))
+		setStringIfDefined(parsed, 'sortType', attr(node, 'sortType'))
 		const items = parsePivotFieldItems(node)
 		if (items.length > 0) parsed.items = items
 		return parsed
@@ -382,10 +523,16 @@ function parseDataFields(root: XmlNode): PivotDataFieldInfo[] {
 				name?: string
 				subtotal?: string
 				numFmtId?: number
+				showDataAs?: string
+				baseField?: number
+				baseItem?: number
 			} = { fieldIndex }
 			setStringIfDefined(parsed, 'name', attr(node, 'name'))
 			setStringIfDefined(parsed, 'subtotal', attr(node, 'subtotal'))
 			setNumberIfDefined(parsed, 'numFmtId', numAttr(node, 'numFmtId'))
+			setStringIfDefined(parsed, 'showDataAs', attr(node, 'showDataAs'))
+			setNumberIfDefined(parsed, 'baseField', numAttr(node, 'baseField'))
+			setNumberIfDefined(parsed, 'baseItem', numAttr(node, 'baseItem'))
 			return parsed
 		})
 		.filter((entry): entry is PivotDataFieldInfo => entry !== null)

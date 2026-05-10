@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import type { Workbook } from '@ascend/core'
+import { defaultCalcContext, recalculate } from '../../packages/engine/src/index.ts'
 import { writeXlsx } from '../../packages/io-xlsx/src/index.ts'
 import { readXlsx } from '../../packages/io-xlsx/src/reader/index.ts'
 import { AscendWorkbook } from '../../packages/sdk/src/index.ts'
@@ -24,6 +26,32 @@ function expectOk<T, E extends { message: string }>(
 ): asserts result is { ok: true; value: T } {
 	expect(result.ok).toBe(true)
 	if (!result.ok) throw new Error(result.error.message)
+}
+
+function expectNumberCell(
+	workbook: Workbook,
+	sheetName: string,
+	row: number,
+	col: number,
+	expected: number,
+): void {
+	const sheet = workbook.sheets.find((entry) => entry.name === sheetName)
+	expect(sheet).toBeDefined()
+	const value = sheet?.cells.get(row, col)?.value
+	expect(value?.kind).toBe('number')
+	if (value?.kind === 'number') expect(value.value).toBeCloseTo(expected, 10)
+}
+
+function expectStringCell(
+	workbook: Workbook,
+	sheetName: string,
+	row: number,
+	col: number,
+	expected: string,
+): void {
+	const sheet = workbook.sheets.find((entry) => entry.name === sheetName)
+	expect(sheet).toBeDefined()
+	expect(sheet?.cells.get(row, col)?.value).toEqual({ kind: 'string', value: expected })
 }
 
 describe('ClosedXML XLSX fixture corpus', () => {
@@ -134,5 +162,34 @@ describe('ClosedXML XLSX fixture corpus', () => {
 			perfectWorkbookCount: 4,
 			semanticPerfectWorkbookCount: 4,
 		})
+	})
+
+	test('formula workbooks without cached values recalculate deterministically', () => {
+		const formulas = readXlsx(loadFixture('Misc_Formulas.xlsx'))
+		expectOk(formulas)
+		recalculate(formulas.value.workbook, defaultCalcContext())
+		expectNumberCell(formulas.value.workbook, 'Formulas', 1, 2, 3)
+		expectStringCell(formulas.value.workbook, 'Formulas', 1, 6, 'Yes')
+		expectStringCell(formulas.value.workbook, 'Formulas', 3, 2, 'TestAR3C2')
+		expectNumberCell(formulas.value.workbook, 'Formulas', 5, 1, 2)
+		expectNumberCell(formulas.value.workbook, 'Formulas', 5, 2, 1)
+		expect(formulas.value.workbook.sheets[0]?.cells.get(5, 2)?.formulaInfo).toEqual({
+			kind: 'array',
+			ref: 'C6:D6',
+		})
+
+		const shifting = readXlsx(loadFixture('Misc_ShiftingFormulas.xlsx'))
+		expectOk(shifting)
+		recalculate(shifting.value.workbook, defaultCalcContext())
+		expectNumberCell(shifting.value.workbook, 'Shifting Formulas', 2, 4, 6)
+		expectNumberCell(shifting.value.workbook, 'Shifting Formulas', 2, 6, 3.5)
+		expectNumberCell(shifting.value.workbook, 'Shifting Formulas', 4, 2, 11)
+		expectNumberCell(shifting.value.workbook, 'WS2', 0, 0, 5)
+		expectNumberCell(shifting.value.workbook, 'WS2', 8, 0, 3.5)
+
+		const arrayFormula = readXlsx(loadFixture('Other_Formulas_ArrayFormula.xlsx'))
+		expectOk(arrayFormula)
+		recalculate(arrayFormula.value.workbook, defaultCalcContext())
+		expectNumberCell(arrayFormula.value.workbook, 'Sheet1', 0, 0, 3)
 	})
 })

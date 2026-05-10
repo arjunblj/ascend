@@ -2,6 +2,8 @@ import { describe, expect, it } from 'bun:test'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type { Workbook } from '@ascend/core'
+import { defaultCalcContext, recalculate } from '../../packages/engine/src/index.ts'
 import { readXlsx, writeXlsx } from '../../packages/io-xlsx/src/index.ts'
 
 const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), 'xlsxwriter')
@@ -22,6 +24,20 @@ function fixtureNames(): string[] {
 
 function loadFixture(name: string): Uint8Array {
 	return new Uint8Array(readFileSync(join(fixtureDir, name)))
+}
+
+function expectNumberCell(
+	workbook: Workbook,
+	sheetName: string,
+	row: number,
+	col: number,
+	expected: number,
+): void {
+	const sheet = workbook.sheets.find((entry) => entry.name === sheetName)
+	expect(sheet).toBeDefined()
+	const value = sheet?.cells.get(row, col)?.value
+	expect(value?.kind).toBe('number')
+	if (value?.kind === 'number') expect(value.value).toBeCloseTo(expected, 10)
 }
 
 if (fixtureNames().length > 0) {
@@ -52,6 +68,20 @@ if (fixtureNames().length > 0) {
 				'strings_links.xlsx',
 				'styles_formulas.xlsx',
 			])
+		})
+
+		it('recalculates stale cached formulas in styles_formulas.xlsx', () => {
+			const result = readXlsx(loadFixture('styles_formulas.xlsx'))
+			expectOk(result)
+			expectNumberCell(result.value.workbook, 'Data', 1, 4, 0)
+			expectNumberCell(result.value.workbook, 'Data', 2, 6, 0)
+			expectNumberCell(result.value.workbook, 'Data', 4, 6, 0)
+
+			recalculate(result.value.workbook, defaultCalcContext())
+
+			expectNumberCell(result.value.workbook, 'Data', 1, 4, 1296.54)
+			expectNumberCell(result.value.workbook, 'Data', 2, 6, 7462.5575)
+			expectNumberCell(result.value.workbook, 'Data', 4, 6, 3531)
 		})
 	})
 } else {

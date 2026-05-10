@@ -17,7 +17,13 @@ export {
 	type WorkbookFormulaAnalysis,
 } from './analysis.ts'
 export { clearCompiledFormulaCache, type RecalcResult, recalculate } from './calc.ts'
-export { type CalcContext, defaultCalcContext } from './calc-context.ts'
+export {
+	type CalcContext,
+	defaultCalcContext,
+	type ExternalCellReference,
+	type ExternalRangeReference,
+	type ExternalReferenceResolver,
+} from './calc-context.ts'
 export { type CompiledFormula, compileFormula, evaluateCompiled } from './compiled-eval.ts'
 export {
 	type ConditionalFormatResult,

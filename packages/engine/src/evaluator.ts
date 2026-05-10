@@ -254,6 +254,114 @@ function getCellValue(wb: Workbook, sheetIndex: number, row: number, col: number
 	return sheet.cells.readValue(row, col)
 }
 
+function externalReferenceTarget(
+	sheet: string | undefined,
+): { workbook: string; sheet: string } | null {
+	if (!sheet?.startsWith('[')) return null
+	const close = sheet.indexOf(']')
+	if (close <= 1) return null
+	const workbook = sheet.slice(1, close)
+	const sheetName = sheet.slice(close + 1)
+	if (sheetName.length === 0) return null
+	return { workbook, sheet: sheetName }
+}
+
+function resolveExternalCell(
+	ctx: EvalContext,
+	sheet: string | undefined,
+	row: number,
+	col: number,
+): CellValue | null {
+	const target = externalReferenceTarget(sheet)
+	if (!target) return null
+	return (
+		ctx.calcContext.externalReferences?.resolveCell?.({
+			workbook: target.workbook,
+			sheet: target.sheet,
+			row,
+			col,
+		}) ?? errorValue('#REF!')
+	)
+}
+
+function materializeExternalRange(
+	ctx: EvalContext,
+	workbook: string,
+	sheet: string,
+	startRow: number,
+	startCol: number,
+	endRow: number,
+	endCol: number,
+): readonly (readonly CellValue[])[] | null {
+	const resolver = ctx.calcContext.externalReferences
+	if (resolver?.resolveRange) {
+		const resolved = resolver.resolveRange({
+			workbook,
+			sheet,
+			row: startRow,
+			col: startCol,
+			endRow,
+			endCol,
+		})
+		if (resolved) return normalizeExternalRangeValues(resolved, startRow, startCol, endRow, endCol)
+	}
+	if (!resolver?.resolveCell) return null
+	const rows: CellValue[][] = []
+	for (let row = startRow; row <= endRow; row++) {
+		const values: CellValue[] = []
+		for (let col = startCol; col <= endCol; col++) {
+			values.push(resolver.resolveCell({ workbook, sheet, row, col }) ?? errorValue('#REF!'))
+		}
+		rows.push(values)
+	}
+	return rows
+}
+
+function normalizeExternalRangeValues(
+	values: readonly (readonly CellValue[])[],
+	startRow: number,
+	startCol: number,
+	endRow: number,
+	endCol: number,
+): readonly (readonly CellValue[])[] {
+	const rowCount = Math.max(0, endRow - startRow + 1)
+	const colCount = Math.max(0, endCol - startCol + 1)
+	const normalized: CellValue[][] = []
+	for (let rowOffset = 0; rowOffset < rowCount; rowOffset++) {
+		const sourceRow = values[rowOffset]
+		const row: CellValue[] = []
+		for (let colOffset = 0; colOffset < colCount; colOffset++) {
+			row.push(sourceRow?.[colOffset] ?? EMPTY)
+		}
+		normalized.push(row)
+	}
+	return normalized
+}
+
+function resolveExternalRange(
+	ctx: EvalContext,
+	sheet: string | undefined,
+	startRow: number,
+	startCol: number,
+	endRow: number,
+	endCol: number,
+): EvalArg | null {
+	const target = externalReferenceTarget(sheet)
+	if (!target) return null
+	if (!isRangeInBounds(startRow, startCol, endRow, endCol)) return { value: errorValue('#REF!') }
+	const values = materializeExternalRange(
+		ctx,
+		target.workbook,
+		target.sheet,
+		startRow,
+		startCol,
+		endRow,
+		endCol,
+	)
+	if (!values) return { value: errorValue('#REF!') }
+	return makeExternalRangeArg(ctx.sheetIndex, startRow, startCol, endRow, endCol, values)
+}
+
 function isCellInBounds(row: number, col: number): boolean {
 	return row >= 0 && row < EXCEL_MAX_ROWS && col >= 0 && col < EXCEL_MAX_COLS
 }
@@ -538,6 +646,8 @@ export function evaluate(node: FormulaNode, ctx: EvalContext): CellValue {
 			return EMPTY
 
 		case 'cellRef': {
+			const external = resolveExternalCell(ctx, node.sheet, node.ref.row, node.ref.col)
+			if (external) return blankAsTopLevelReferenceValue(external)
 			const si = resolveSheetIndex(ctx.workbook, node.sheet, ctx.sheetIndex)
 			if (si < 0) return errorValue('#REF!')
 			return blankAsTopLevelReferenceValue(
@@ -1442,6 +1552,25 @@ function resolveIndexReference(argNodes: readonly FormulaNode[], ctx: EvalContex
 function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | null {
 	switch (node.type) {
 		case 'cellRef': {
+			const external = resolveExternalCell(ctx, node.sheet, node.ref.row, node.ref.col)
+			if (external) {
+				return {
+					value: external,
+					ref: {
+						kind: 'cell',
+						sheetIndex: ctx.sheetIndex,
+						row: node.ref.row,
+						col: node.ref.col,
+					},
+					valueAtOffset: (rowOffset, colOffset) =>
+						resolveExternalCell(
+							ctx,
+							node.sheet,
+							node.ref.row + rowOffset,
+							node.ref.col + colOffset,
+						) ?? errorValue('#REF!'),
+				}
+			}
 			const si = resolveSheetIndex(ctx.workbook, node.sheet, ctx.sheetIndex)
 			if (si < 0) return { value: errorValue('#REF!') }
 			return {
@@ -1457,6 +1586,15 @@ function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | nu
 			}
 		}
 		case 'rangeRef': {
+			const external = resolveExternalRange(
+				ctx,
+				node.sheet,
+				node.start.row,
+				node.start.col,
+				node.end.row,
+				node.end.col,
+			)
+			if (external) return external
 			const si = resolveSheetIndex(ctx.workbook, node.sheet, ctx.sheetIndex)
 			if (si < 0) return { value: errorValue('#REF!') }
 			return makeRangeArg(
@@ -1670,6 +1808,42 @@ function makeRangeArg(
 			dateSystem,
 			...(today ? { today } : {}),
 		}),
+	])
+}
+
+function makeExternalRangeArg(
+	sheetIndex: number,
+	startRow: number,
+	startCol: number,
+	endRow: number,
+	endCol: number,
+	values: readonly (readonly CellValue[])[],
+): EvalArg {
+	const topLeft = values[0]?.[0] ?? EMPTY
+	return makeMultiAreaArg([
+		{
+			ref: {
+				kind: 'range',
+				sheetIndex,
+				row: startRow,
+				col: startCol,
+				endRow,
+				endCol,
+			},
+			values,
+			topLeft,
+			valueAtOffset: (rowOffset, colOffset) => values[rowOffset]?.[colOffset] ?? EMPTY,
+			forEachValue: (fn) => {
+				for (const row of values) {
+					for (const value of row) fn(value)
+				}
+			},
+			forEachCellInRange: (fn) => {
+				for (const row of values) {
+					for (const value of row) fn(value)
+				}
+			},
+		},
 	])
 }
 

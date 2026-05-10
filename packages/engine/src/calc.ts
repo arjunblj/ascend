@@ -807,6 +807,8 @@ function evalFormula(
 	ast: FormulaNode,
 	ctx: EvalContext,
 ): CellValue {
+	if (hasExternalWorkbookReference(ast))
+		return normalizeTopLevelFormulaValue(ast, evaluate(ast, ctx), ctx)
 	if (!usesArrayFormulaSemantics(ctx)) {
 		const legacyValue = evaluateLegacyTopLevelFormula(ast, ctx)
 		if (legacyValue) return normalizeTopLevelFormulaValue(ast, legacyValue, ctx)
@@ -1724,7 +1726,12 @@ export function recalculate(
 				if (!ast) return
 				const formulaText = formulaTexts.get(key)
 				if (!formulaText) return
-				if (hasExternalWorkbookReference(ast) && hadCell && oldValue.kind !== 'empty') {
+				if (
+					hasExternalWorkbookReference(ast) &&
+					!ctx.externalReferences &&
+					hadCell &&
+					oldValue.kind !== 'empty'
+				) {
 					newValue = oldValue
 				} else {
 					mutableCtx.sheetIndex = si

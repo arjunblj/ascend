@@ -47,7 +47,7 @@ export type {
 	WorkbookMacroSheetInfo,
 } from '@ascend/core'
 
-import type { CellChange, SheetDiff, WorkbookDiff } from '@ascend/engine'
+import type { CellChange, ExternalReferenceResolver, SheetDiff, WorkbookDiff } from '@ascend/engine'
 import type { FormulaNode, Token } from '@ascend/formulas'
 import type { AscendError, CellValue, CompatibilityReport, FeatureReport } from '@ascend/schema'
 
@@ -735,6 +735,21 @@ export interface ApplyAndRecalcResult {
 
 export interface BatchResult {
 	readonly errors: readonly AscendError[]
+}
+
+export type {
+	ExternalCellReference,
+	ExternalRangeReference,
+	ExternalReferenceResolver,
+} from '@ascend/engine'
+
+export interface RecalcOptions {
+	readonly range?: string
+	readonly externalReferences?: ExternalReferenceResolver
+}
+
+export interface EvalOptions {
+	readonly externalReferences?: ExternalReferenceResolver
 }
 
 export interface RecalcResult {

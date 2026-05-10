@@ -58,8 +58,10 @@ import type {
 	BatchResult,
 	CheckIssue,
 	CheckResult,
+	EvalOptions,
 	LintResult,
 	LintWarning,
+	RecalcOptions,
 	RecalcResult,
 	WritePlanInfo,
 } from './types.ts'
@@ -451,7 +453,7 @@ export class AscendWorkbook extends WorkbookReadView {
 	 * wb.recalc()
 	 * wb.recalc({ range: 'Sheet1!A1:C10' })
 	 */
-	recalc(opts?: { range?: string }): RecalcResult {
+	recalc(opts?: RecalcOptions): RecalcResult {
 		if (this.loadInfo.isPartial) {
 			return {
 				changed: [],
@@ -461,6 +463,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		}
 		const ctx: CalcContext = defaultCalcContext({
 			dateSystem: this.wb.calcSettings.dateSystem,
+			...(opts?.externalReferences ? { externalReferences: opts.externalReferences } : {}),
 			iterativeCalc: this.wb.calcSettings.iterativeCalc,
 		})
 		let rangeRef: RangeRef | undefined
@@ -510,7 +513,7 @@ export class AscendWorkbook extends WorkbookReadView {
 	 * @example
 	 * const result = wb.eval('SUM(A1:A10)')
 	 */
-	eval(formula: string): CellValue {
+	eval(formula: string, opts?: EvalOptions): CellValue {
 		const normalized = normalizeFormulaInput(formula)
 		const parsed = cachedParseFormula(normalized)
 		if (!parsed.ok) {
@@ -522,6 +525,7 @@ export class AscendWorkbook extends WorkbookReadView {
 			workbook: this.wb,
 			calcContext: defaultCalcContext({
 				dateSystem: this.wb.calcSettings.dateSystem,
+				...(opts?.externalReferences ? { externalReferences: opts.externalReferences } : {}),
 				iterativeCalc: this.wb.calcSettings.iterativeCalc,
 			}),
 			sheetIndex: 0,

@@ -450,6 +450,30 @@ describe('AscendWorkbook', () => {
 		expect(result).toEqual({ kind: 'number', value: 6 })
 	})
 
+	test('eval can resolve external workbook references with a caller hook', () => {
+		const wb = AscendWorkbook.create()
+		const result = wb.eval('=SUM([Budget.xlsx]Inputs!A1:A3)', {
+			externalReferences: {
+				resolveRange: ({ workbook, sheet, row, col, endRow, endCol }) => {
+					expect({ workbook, sheet, row, col, endRow, endCol }).toEqual({
+						workbook: 'Budget.xlsx',
+						sheet: 'Inputs',
+						row: 0,
+						col: 0,
+						endRow: 2,
+						endCol: 0,
+					})
+					return [
+						[{ kind: 'number', value: 1 }],
+						[{ kind: 'number', value: 2 }],
+						[{ kind: 'number', value: 3 }],
+					]
+				},
+			},
+		})
+		expect(result).toEqual({ kind: 'number', value: 6 })
+	})
+
 	test('agentView summarizes a range for LLM-friendly reads', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -817,6 +841,29 @@ describe('AscendWorkbook', () => {
 		const a3 = wb.sheet('Sheet1')?.cell('A3')
 		expect(a3).toBeDefined()
 		expect(a3?.value).toEqual({ kind: 'number', value: 30 })
+	})
+
+	test('recalc can resolve external workbook references with a caller hook', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=[Budget.xlsx]Inputs!B2' },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A2', formula: '=SUM([Budget.xlsx]Inputs!A1:A3)' },
+		])
+
+		const result = wb.recalc({
+			externalReferences: {
+				resolveCell: ({ workbook, sheet, row, col }) => {
+					if (workbook !== 'Budget.xlsx' || sheet !== 'Inputs') return undefined
+					if (row === 1 && col === 1) return { kind: 'number', value: 42 }
+					if (col === 0) return { kind: 'number', value: row + 1 }
+					return undefined
+				},
+			},
+		})
+
+		expect(result.errors).toEqual([])
+		expect(wb.sheet('Sheet1').cell('A1')?.value).toEqual({ kind: 'number', value: 42 })
+		expect(wb.sheet('Sheet1').cell('A2')?.value).toEqual({ kind: 'number', value: 6 })
 	})
 
 	test('applyAndRecalc applies operations and returns recalculation details', () => {
@@ -2855,6 +2902,11 @@ describe('capabilities registry', () => {
 		)
 		expect(spillDiagnostics?.status).toBe('editable')
 		expect(spillDiagnostics?.tests).toContain('packages/verify/src/verify.test.ts')
+		const externalRefs = capabilities.find(
+			(capability) => capability.id === 'formulas.external-refs',
+		)
+		expect(externalRefs?.status).toBe('editable')
+		expect(externalRefs?.tests).toContain('packages/sdk/src/external-reference-usages.test.ts')
 	})
 })
 

@@ -62,6 +62,42 @@ describe('recalculate', () => {
 		expect(cell?.value).toEqual(numberValue(3))
 	})
 
+	test('external workbook references resolve through calculation hook', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: '[Budget.xlsx]Inputs!B2', styleId: sid })
+		sheet.cells.set(1, 0, { value: EMPTY, formula: 'SUM([Budget.xlsx]Inputs!A1:A3)', styleId: sid })
+
+		const result = recalculate(
+			wb,
+			makeCtx({
+				externalReferences: {
+					resolveCell: ({ workbook, sheet: sheetName, row, col }) => {
+						if (workbook !== 'Budget.xlsx' || sheetName !== 'Inputs') return undefined
+						if (row === 1 && col === 1) return numberValue(42)
+						if (col === 0) return numberValue(row + 1)
+						return undefined
+					},
+				},
+			}),
+		)
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(42))
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(6))
+	})
+
+	test('external workbook references remain #REF! without a resolver', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: '[Budget.xlsx]Inputs!B2', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#REF!'))
+	})
+
 	test('SUM supports INDEX as a dynamic range endpoint', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

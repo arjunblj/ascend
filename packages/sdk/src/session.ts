@@ -21,6 +21,8 @@ import type {
 	FormulaInfo,
 	LintResult,
 	PivotCacheInfo,
+	PivotCacheMaterializedRowInfo,
+	PivotCacheRowsOptions,
 	PivotRefreshPlanInfo,
 	PivotTableInfo,
 	RangeInfo,
@@ -354,6 +356,10 @@ export class WorkbookDocument {
 		return this.view.pivotCaches()
 	}
 
+	pivotCacheRows(options?: PivotCacheRowsOptions): readonly PivotCacheMaterializedRowInfo[] {
+		return this.view.pivotCacheRows(options)
+	}
+
 	pivotRefreshPlans(): readonly PivotRefreshPlanInfo[] {
 		return this.view.pivotRefreshPlans()
 	}
@@ -470,6 +476,11 @@ export class WorkbookSession {
 	trace(ref: CellSelector, opts?: { maxDepth?: number }): TraceResult | undefined {
 		this.assertOpen()
 		return this.document.trace(ref, opts)
+	}
+
+	pivotCacheRows(options?: PivotCacheRowsOptions): readonly PivotCacheMaterializedRowInfo[] {
+		this.assertOpen()
+		return this.document.pivotCacheRows(options)
 	}
 
 	isStale(): boolean {

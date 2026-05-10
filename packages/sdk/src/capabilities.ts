@@ -596,7 +596,7 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'editable',
 		'P0',
 		'Add cache-record recalculation and broader Excel fixture coverage.',
-		'Pivot cache source and refresh metadata are editable; small saved cache records are materialized for headless audit planning; SDK refresh plans tell agents when Excel refresh is required because output recalculation is not implemented.',
+		'Pivot cache source and refresh metadata are editable; small saved cache records are materialized and decoded into field-name rows for headless audit planning; SDK refresh plans tell agents when Excel refresh is required because output recalculation is not implemented.',
 		[
 			'packages/io-xlsx/src/reader/reader.test.ts',
 			'packages/engine/src/operations.test.ts',

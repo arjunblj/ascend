@@ -294,6 +294,29 @@ export interface PivotCacheRecordsInfo {
 	readonly valueKindCounts: readonly PivotCacheRecordValueKindCount[]
 }
 
+export interface PivotCacheRowsOptions {
+	readonly cacheId?: number
+	readonly partPath?: string
+	readonly limit?: number
+}
+
+export interface PivotCacheMaterializedRowInfo {
+	readonly partPath: string
+	readonly cacheId?: number
+	readonly rowIndex: number
+	readonly values: readonly PivotCacheDecodedValueInfo[]
+}
+
+export interface PivotCacheDecodedValueInfo {
+	readonly fieldIndex: number
+	readonly fieldName?: string
+	readonly rawKind: PivotCacheRecordValueKind
+	readonly kind: PivotCacheRecordValueKind
+	readonly value?: string
+	readonly sharedItemIndex?: number
+	readonly sharedItemKind?: PivotCacheSharedItemInfo['kind']
+}
+
 export interface PivotCacheRecordInfo {
 	readonly index: number
 	readonly values: readonly PivotCacheRecordValueInfo[]

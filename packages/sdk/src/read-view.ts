@@ -64,7 +64,11 @@ import type {
 	FormulaReferenceInfo,
 	GetPivotDataQuery,
 	GetPivotDataResult,
+	PivotCacheDecodedValueInfo,
 	PivotCacheInfo,
+	PivotCacheMaterializedRowInfo,
+	PivotCacheRecordValueInfo,
+	PivotCacheRowsOptions,
 	PivotRefreshPlanInfo,
 	PivotRefreshRecommendedOp,
 	PivotTableInfo,
@@ -671,6 +675,10 @@ export class WorkbookReadView {
 		return this.wb.pivotCaches.map(copyPivotCacheInfo)
 	}
 
+	pivotCacheRows(options: PivotCacheRowsOptions = {}): readonly PivotCacheMaterializedRowInfo[] {
+		return buildPivotCacheRows(this.wb.pivotCaches, options)
+	}
+
 	pivotRefreshPlans(): readonly PivotRefreshPlanInfo[] {
 		return buildPivotRefreshPlans(this.wb.pivotCaches, this.wb.pivotTables)
 	}
@@ -1245,6 +1253,49 @@ function cloneSheetImageAnchor(anchor: SheetImageAnchor): SheetImageAnchor {
 
 function copyPivotCacheInfo(cache: PivotCacheInfo): PivotCacheInfo {
 	return clonePivotCacheInfo(cache)
+}
+
+function buildPivotCacheRows(
+	caches: readonly PivotCacheInfo[],
+	options: PivotCacheRowsOptions,
+): PivotCacheMaterializedRowInfo[] {
+	const limit = options.limit === undefined ? Number.POSITIVE_INFINITY : Math.max(0, options.limit)
+	const rows: PivotCacheMaterializedRowInfo[] = []
+	for (const cache of caches) {
+		if (options.cacheId !== undefined && cache.cacheId !== options.cacheId) continue
+		if (options.partPath !== undefined && cache.partPath !== options.partPath) continue
+		for (const record of cache.records?.materializedRecords ?? []) {
+			if (rows.length >= limit) return rows
+			rows.push({
+				partPath: cache.partPath,
+				...(cache.cacheId !== undefined ? { cacheId: cache.cacheId } : {}),
+				rowIndex: record.index,
+				values: record.values.map((value) => decodePivotCacheValue(cache, value)),
+			})
+		}
+	}
+	return rows
+}
+
+function decodePivotCacheValue(
+	cache: PivotCacheInfo,
+	value: PivotCacheRecordValueInfo,
+): PivotCacheDecodedValueInfo {
+	const field = cache.fields[value.index]
+	const sharedItem =
+		value.kind === 'sharedItem'
+			? field?.sharedItems?.find((item) => item.index === value.sharedItemIndex)
+			: undefined
+	const decodedValue = value.value ?? sharedItem?.value
+	return {
+		fieldIndex: value.index,
+		...(field?.name !== undefined ? { fieldName: field.name } : {}),
+		rawKind: value.kind,
+		kind: sharedItem?.kind ?? value.kind,
+		...(decodedValue !== undefined ? { value: decodedValue } : {}),
+		...(value.sharedItemIndex !== undefined ? { sharedItemIndex: value.sharedItemIndex } : {}),
+		...(sharedItem?.kind !== undefined ? { sharedItemKind: sharedItem.kind } : {}),
+	}
 }
 
 function copySlicerCacheInfo(cache: SlicerCacheInfo): SlicerCacheInfo {

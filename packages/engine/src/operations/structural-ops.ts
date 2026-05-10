@@ -2,7 +2,7 @@ import type { RangeRef, Sheet, SheetDataValidation, Workbook } from '@ascend/cor
 import { parseA1, parseRange, toA1 } from '@ascend/core'
 import { cachedParseFormula } from '@ascend/formulas'
 import type { Operation, PasteMode, Result } from '@ascend/schema'
-import { EMPTY, ok } from '@ascend/schema'
+import { EMPTY, err, ok } from '@ascend/schema'
 import {
 	rewriteDefinedNameFormulasForShift,
 	rewriteWorkbookFormulasForShift,
@@ -13,8 +13,10 @@ import {
 	cellWithExisting,
 	clearFormulaMetadata,
 	collectRangeCells,
+	createLegacyArrayFormulaIndex,
 	DEFAULT_SID,
 	getSheet,
+	legacyArrayFormulaEditError,
 	patch,
 	safeParseRange,
 	shiftMerges,
@@ -32,6 +34,17 @@ function applyAxisShift(
 	const result = getSheet(workbook, sheetName)
 	if (!result.ok) return result
 	const sheet = result.value
+	for (const candidate of workbook.sheets) {
+		const legacyArrayImpact = createLegacyArrayFormulaIndex(candidate).first()
+		if (legacyArrayImpact) {
+			return err(
+				legacyArrayFormulaEditError(
+					`${candidate.name}!${legacyArrayImpact.targetRef}`,
+					`${candidate.name}!${legacyArrayImpact.ref}`,
+				),
+			)
+		}
+	}
 
 	if (axis === 'row') {
 		delta > 0 ? sheet.cells.insertRows(at, count) : sheet.cells.deleteRows(at, count)
@@ -90,8 +103,24 @@ export function handleTransferRange(
 	const rowDelta = targetStart.row - source.start.row
 	const colDelta = targetStart.col - source.start.col
 	const mode = op.mode ?? 'all'
-	const snapshot = collectRangeCells(sheet, source)
 	const affected: string[] = []
+
+	if (pasteCells(mode)) {
+		const legacyArrayIndex = createLegacyArrayFormulaIndex(sheet)
+		const targetRange = shiftRange(source, rowDelta, colDelta)
+		const blockedTarget = legacyArrayIndex.findIntersection(targetRange)
+		if (blockedTarget) {
+			return err(legacyArrayFormulaEditError(blockedTarget.targetRef, blockedTarget.ref))
+		}
+		if (op.op === 'moveRange') {
+			const blockedSource = legacyArrayIndex.findIntersection(source)
+			if (blockedSource) {
+				return err(legacyArrayFormulaEditError(blockedSource.targetRef, blockedSource.ref))
+			}
+		}
+	}
+
+	const snapshot = collectRangeCells(sheet, source)
 
 	if (pasteCells(mode)) {
 		for (const entry of snapshot) {

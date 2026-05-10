@@ -1,4 +1,4 @@
-import type { Sheet, Workbook } from '@ascend/core'
+import type { Workbook } from '@ascend/core'
 import { parseA1, toA1 } from '@ascend/core'
 import { cachedParseFormula, normalizeFormulaInput } from '@ascend/formulas'
 import type { Operation, Result } from '@ascend/schema'
@@ -8,9 +8,11 @@ import type { PatchResult } from './helpers.ts'
 import {
 	cell,
 	cellWithExisting,
+	createLegacyArrayFormulaIndex,
 	DEFAULT_SID,
 	getSheet,
 	inputToCellValue,
+	legacyArrayFormulaEditError,
 	mergeStyleInput,
 	patch,
 	safeParseRange,
@@ -27,6 +29,7 @@ export function handleSetCells(
 
 	const affected: string[] = []
 	const warnings: ReturnType<typeof ascendError>[] = []
+	const legacyArrayIndex = createLegacyArrayFormulaIndex(sheet)
 	const prepared: Array<{
 		readonly ref: ReturnType<typeof parseA1>
 		readonly update: Extract<Operation, { op: 'setCells' }>['updates'][number]
@@ -34,8 +37,8 @@ export function handleSetCells(
 	}> = []
 	for (const update of op.updates) {
 		const ref = parseA1(update.ref)
-		const blocked = findArrayFormulaBlocker(sheet, ref.row, ref.col)
-		if (blocked) return err(arrayFormulaEditError(update.ref, blocked.ref))
+		const blocked = legacyArrayIndex.findCell(ref.row, ref.col)
+		if (blocked) return err(legacyArrayFormulaEditError(update.ref, blocked.ref))
 		const value = inputToCellValue(update.value, workbook.calcSettings.dateSystem)
 		const validation = validateCellValue(sheet, ref.row, ref.col, value, workbook)
 		if (!validation.valid && validation.message) {
@@ -65,8 +68,8 @@ export function handleSetFormula(
 	const sheet = result.value
 
 	const ref = parseA1(op.ref)
-	const blocked = findArrayFormulaBlocker(sheet, ref.row, ref.col)
-	if (blocked) return err(arrayFormulaEditError(op.ref, blocked.ref))
+	const blocked = createLegacyArrayFormulaIndex(sheet).findCell(ref.row, ref.col)
+	if (blocked) return err(legacyArrayFormulaEditError(op.ref, blocked.ref))
 	sheet.cells.set(
 		ref.row,
 		ref.col,
@@ -98,12 +101,8 @@ export function handleFillFormula(
 	const range = rangeResult.value
 	const anchor = range.start
 	const affected: string[] = []
-	for (let row = range.start.row; row <= range.end.row; row++) {
-		for (let col = range.start.col; col <= range.end.col; col++) {
-			const blocked = findArrayFormulaBlocker(sheet, row, col)
-			if (blocked) return err(arrayFormulaEditError(toA1({ row, col }), blocked.ref))
-		}
-	}
+	const blocked = createLegacyArrayFormulaIndex(sheet).findIntersection(range)
+	if (blocked) return err(legacyArrayFormulaEditError(blocked.targetRef, blocked.ref))
 
 	for (let row = range.start.row; row <= range.end.row; row++) {
 		for (let col = range.start.col; col <= range.end.col; col++) {
@@ -133,8 +132,10 @@ export function handleSetRichText(
 	const sheet = sheetResult.value
 	sheet.ensureWritable()
 	const pos = parseA1(op.ref)
+	const blocked = createLegacyArrayFormulaIndex(sheet).findCell(pos.row, pos.col)
+	if (blocked) return err(legacyArrayFormulaEditError(op.ref, blocked.ref))
 	sheet.cells.setResolved(pos.row, pos.col, richTextValue(op.runs), null, DEFAULT_SID)
-	return ok(patch([`${op.sheet}!${op.ref}`], [op.sheet]))
+	return ok(patch([`${op.sheet}!${op.ref}`], [op.sheet], true))
 }
 
 export function handleClearRange(
@@ -150,12 +151,8 @@ export function handleClearRange(
 	const range = rangeResult.value
 
 	const affected: string[] = []
-	for (let r = range.start.row; r <= range.end.row; r++) {
-		for (let c = range.start.col; c <= range.end.col; c++) {
-			const blocked = findArrayFormulaBlocker(sheet, r, c)
-			if (blocked) return err(arrayFormulaEditError(toA1({ row: r, col: c }), blocked.ref))
-		}
-	}
+	const blocked = createLegacyArrayFormulaIndex(sheet).findIntersection(range)
+	if (blocked) return err(legacyArrayFormulaEditError(blocked.targetRef, blocked.ref))
 	for (let r = range.start.row; r <= range.end.row; r++) {
 		for (let c = range.start.col; c <= range.end.col; c++) {
 			const existing = sheet.cells.get(r, c)
@@ -222,41 +219,4 @@ export function handleSetStyle(
 	}
 
 	return ok(patch(affected, [op.sheet]))
-}
-
-function findArrayFormulaBlocker(
-	sheet: Sheet,
-	row: number,
-	col: number,
-): { readonly ref: string } | null {
-	for (const [, , cell] of sheet.cells.iterate()) {
-		const binding = cell.formulaInfo
-		if (binding?.kind !== 'array' || !binding.ref) continue
-		const range = safeParseRange(binding.ref)
-		if (!range.ok) continue
-		if (
-			row >= range.value.start.row &&
-			row <= range.value.end.row &&
-			col >= range.value.start.col &&
-			col <= range.value.end.col
-		) {
-			return { ref: binding.ref }
-		}
-	}
-	return null
-}
-
-function arrayFormulaEditError(
-	targetRef: string,
-	arrayRef: string,
-): ReturnType<typeof ascendError> {
-	return ascendError(
-		'VALIDATION_ERROR',
-		`Cannot edit ${targetRef} because it is part of legacy array formula ${arrayRef}`,
-		{
-			refs: [targetRef, arrayRef],
-			suggestedFix:
-				'Replace the full array formula range with an explicit array-formula operation before editing individual cells.',
-		},
-	)
 }

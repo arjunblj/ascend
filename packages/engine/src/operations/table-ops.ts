@@ -18,10 +18,12 @@ import {
 	cellWithExisting,
 	clearFormulaMetadata,
 	clearFormulaMetadataForSheet,
+	createLegacyArrayFormulaIndex,
 	DEFAULT_SID,
 	findTable,
 	getSheet,
 	inputToCellValue,
+	legacyArrayFormulaEditError,
 	patch,
 	safeParseRange,
 } from './helpers.ts'
@@ -173,6 +175,10 @@ export function handleSortRange(
 	const rangeResult = safeParseRange(op.range)
 	if (!rangeResult.ok) return rangeResult
 	const range = rangeResult.value
+	const legacyArrayImpact = createLegacyArrayFormulaIndex(sheet).findIntersection(range)
+	if (legacyArrayImpact) {
+		return err(legacyArrayFormulaEditError(legacyArrayImpact.targetRef, legacyArrayImpact.ref))
+	}
 	clearFormulaMetadataForSheet(sheet)
 	const sorted = sortSheetRange(workbook, sheet, range, op.by)
 	if (!sorted.ok) return sorted

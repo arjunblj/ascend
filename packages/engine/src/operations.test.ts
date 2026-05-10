@@ -139,8 +139,35 @@ describe('applyOperation', () => {
 		expectErr(
 			applyOperation(wb, { op: 'clearRange', sheet: 'Sheet1', range: 'A1:B1', what: 'values' }),
 		)
+		expectErr(
+			applyOperation(wb, {
+				op: 'setRichText',
+				sheet: 'Sheet1',
+				ref: 'B2',
+				runs: [{ text: 'blocked' }],
+			}),
+		)
 		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(4))
 		expect(sheet.cells.get(0, 0)?.formulaInfo).toEqual(formulaInfo)
+	})
+
+	test('range transfers reject legacy array formula intersections', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const formulaInfo = { kind: 'array' as const, ref: 'A1:B2' }
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: 'A3:B4', styleId: sid, formulaInfo })
+		sheet.cells.set(0, 1, { value: numberValue(2), formula: null, styleId: sid, formulaInfo })
+		sheet.cells.set(1, 0, { value: numberValue(3), formula: null, styleId: sid, formulaInfo })
+		sheet.cells.set(1, 1, { value: numberValue(4), formula: null, styleId: sid, formulaInfo })
+		sheet.cells.set(4, 4, cell(numberValue(99)))
+
+		expectErr(applyOperation(wb, { op: 'copyRange', sheet: 'Sheet1', source: 'E5', target: 'B2' }))
+		expectErr(applyOperation(wb, { op: 'moveRange', sheet: 'Sheet1', source: 'A1', target: 'E6' }))
+
+		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(4))
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toEqual(formulaInfo)
+		expect(sheet.cells.get(4, 4)?.value).toEqual(numberValue(99))
+		expect(sheet.cells.get(5, 4)).toBeUndefined()
 	})
 
 	test('fillFormula translates references across a range', () => {
@@ -1340,6 +1367,29 @@ describe('applyOperation', () => {
 		expect(s.cells.get(2, 0)?.formula).toBe('SUM(A:B)')
 	})
 
+	test('row and column shifts reject legacy array formula impact', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		const formulaInfo = { kind: 'array' as const, ref: 'B2:C3' }
+		s.cells.set(1, 1, { value: numberValue(1), formula: 'B5:C6', styleId: sid, formulaInfo })
+		s.cells.set(1, 2, { value: numberValue(2), formula: null, styleId: sid, formulaInfo })
+		s.cells.set(2, 1, { value: numberValue(3), formula: null, styleId: sid, formulaInfo })
+		s.cells.set(2, 2, { value: numberValue(4), formula: null, styleId: sid, formulaInfo })
+
+		expectErr(applyOperation(wb, { op: 'insertRows', sheet: 'Sheet1', at: 1, count: 1 }))
+		expectErr(applyOperation(wb, { op: 'deleteRows', sheet: 'Sheet1', at: 0, count: 1 }))
+		expectErr(applyOperation(wb, { op: 'insertCols', sheet: 'Sheet1', at: 1, count: 1 }))
+		expectErr(applyOperation(wb, { op: 'deleteCols', sheet: 'Sheet1', at: 0, count: 1 }))
+
+		expect(s.cells.get(1, 1)?.formulaInfo).toEqual(formulaInfo)
+		expect(s.cells.get(2, 2)?.value).toEqual(numberValue(4))
+
+		const other = wb.addSheet('Other')
+		other.cells.set(9, 0, cell(numberValue(10)))
+		expectErr(applyOperation(wb, { op: 'insertRows', sheet: 'Other', at: 20, count: 1 }))
+		expect(other.cells.get(9, 0)?.value).toEqual(numberValue(10))
+	})
+
 	test('insertRows within formula range expands range end', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
@@ -1703,6 +1753,28 @@ describe('applyOperation', () => {
 		})
 		expect(result.ok).toBe(true)
 		expect(other.cells.get(0, 0)?.formulaInfo).toEqual({ kind: 'array', ref: 'A1:A2' })
+	})
+
+	test('sortRange rejects legacy array formula intersections', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const formulaInfo = { kind: 'array' as const, ref: 'A1:B2' }
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: 'A4:B5', styleId: sid, formulaInfo })
+		sheet.cells.set(0, 1, { value: numberValue(2), formula: null, styleId: sid, formulaInfo })
+		sheet.cells.set(1, 0, { value: numberValue(3), formula: null, styleId: sid, formulaInfo })
+		sheet.cells.set(1, 1, { value: numberValue(4), formula: null, styleId: sid, formulaInfo })
+
+		expectErr(
+			applyOperation(wb, {
+				op: 'sortRange',
+				sheet: 'Sheet1',
+				range: 'A1:B2',
+				by: [{ column: 'A' }],
+			}),
+		)
+
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toEqual(formulaInfo)
+		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(4))
 	})
 
 	test('createTable infers columns from the header row', () => {

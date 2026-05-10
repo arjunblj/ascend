@@ -1,5 +1,5 @@
 import type { Cell, CellStyle, RangeRef, Sheet, StyleId, Workbook } from '@ascend/core'
-import { DEFAULT_STYLE_ID, parseA1, parseA1Safe, parseRange } from '@ascend/core'
+import { DEFAULT_STYLE_ID, parseA1, parseA1Safe, parseRange, toA1 } from '@ascend/core'
 import type { FormulaNode } from '@ascend/formulas'
 import { dateToSerial, printFormulaWithOffset } from '@ascend/formulas'
 import type {
@@ -94,6 +94,95 @@ export function safeParseRange(range: string): Result<RangeRef> {
 			}),
 		)
 	}
+}
+
+export interface LegacyArrayFormulaBlocker {
+	readonly ref: string
+}
+
+export interface LegacyArrayFormulaIntersection {
+	readonly ref: string
+	readonly targetRef: string
+}
+
+export interface LegacyArrayFormulaIndex {
+	readonly isEmpty: () => boolean
+	readonly first: () => LegacyArrayFormulaIntersection | null
+	readonly findCell: (row: number, col: number) => LegacyArrayFormulaBlocker | null
+	readonly findIntersection: (range: RangeRef) => LegacyArrayFormulaIntersection | null
+}
+
+export function createLegacyArrayFormulaIndex(sheet: Sheet): LegacyArrayFormulaIndex {
+	if (sheet.cells.formulaInfoCellCount() === 0) return EMPTY_LEGACY_ARRAY_INDEX
+	const seen = new Set<string>()
+	const ranges: Array<{ readonly ref: string; readonly range: RangeRef }> = []
+	for (const [, , cell] of sheet.cells.iterate()) {
+		const binding = cell.formulaInfo
+		if (binding?.kind !== 'array' || !binding.ref || seen.has(binding.ref)) continue
+		try {
+			ranges.push({ ref: binding.ref, range: parseRange(binding.ref) })
+			seen.add(binding.ref)
+		} catch {
+			seen.add(binding.ref)
+		}
+	}
+	return {
+		isEmpty() {
+			return ranges.length === 0
+		},
+		first() {
+			const entry = ranges[0]
+			if (!entry) return null
+			return { ref: entry.ref, targetRef: toA1(entry.range.start) }
+		},
+		findCell(row, col) {
+			for (const entry of ranges) {
+				if (
+					row >= entry.range.start.row &&
+					row <= entry.range.end.row &&
+					col >= entry.range.start.col &&
+					col <= entry.range.end.col
+				) {
+					return { ref: entry.ref }
+				}
+			}
+			return null
+		},
+		findIntersection(range) {
+			for (const entry of ranges) {
+				const row = Math.max(entry.range.start.row, range.start.row)
+				const col = Math.max(entry.range.start.col, range.start.col)
+				if (row <= Math.min(entry.range.end.row, range.end.row)) {
+					if (col <= Math.min(entry.range.end.col, range.end.col)) {
+						return { ref: entry.ref, targetRef: toA1({ row, col }) }
+					}
+				}
+			}
+			return null
+		},
+	}
+}
+
+const EMPTY_LEGACY_ARRAY_INDEX: LegacyArrayFormulaIndex = {
+	isEmpty: () => true,
+	first: () => null,
+	findCell: () => null,
+	findIntersection: () => null,
+}
+
+export function legacyArrayFormulaEditError(
+	targetRef: string,
+	arrayRef: string,
+): ReturnType<typeof ascendError> {
+	return ascendError(
+		'VALIDATION_ERROR',
+		`Cannot edit ${targetRef} because it is part of legacy array formula ${arrayRef}`,
+		{
+			refs: [targetRef, arrayRef],
+			suggestedFix:
+				'Replace the full array formula range with an explicit array-formula operation before editing individual cells.',
+		},
+	)
 }
 
 export function translateFormula(node: FormulaNode, rowDelta: number, colDelta: number): string {

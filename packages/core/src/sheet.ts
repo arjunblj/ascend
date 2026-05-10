@@ -413,6 +413,7 @@ export class Sheet {
 	storedFormulaText: Map<string, string>
 	preservedXml: SheetPreservedXml | null
 	preservedExtLst: string | null
+	preservedCustomSheetViews: string | null
 	private _shared = false
 
 	constructor(name: string, id?: SheetId) {
@@ -455,6 +456,7 @@ export class Sheet {
 		this.storedFormulaText = new Map()
 		this.preservedXml = null
 		this.preservedExtLst = null
+		this.preservedCustomSheetViews = null
 	}
 
 	ensureWritable(): void {
@@ -525,6 +527,7 @@ export class Sheet {
 		s.storedFormulaText = this.storedFormulaText
 		s.preservedXml = this.preservedXml
 		s.preservedExtLst = this.preservedExtLst
+		s.preservedCustomSheetViews = this.preservedCustomSheetViews
 		this._shared = true
 		s._shared = true
 		return s

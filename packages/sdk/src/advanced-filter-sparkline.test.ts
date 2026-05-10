@@ -55,4 +55,39 @@ describe('advanced filter and sparkline SDK inventory', () => {
 			displayXAxis: false,
 		})
 	})
+
+	test('setAdvancedFilter edits custom sheet view filter criteria through SDK save and reopen', async () => {
+		const wb = await AscendWorkbook.open(advancedFilterSparklineWorkbook())
+		const applied = wb.apply([
+			{
+				op: 'setAdvancedFilter',
+				sheet: 'Data',
+				filterIndex: 0,
+				range: 'A1:D20',
+				column: 0,
+				values: ['East', 'North'],
+				sortRef: 'A2:D20',
+				sortBy: 'B2:B20',
+				descending: false,
+			},
+		])
+		expect(applied.errors).toEqual([])
+
+		const reopened = await AscendWorkbook.open(wb.toBytes())
+		expect(reopened.inspectSheet('Data')?.advancedFilters?.[0]).toMatchObject({
+			viewName: 'WestOnly',
+			guid: '{11111111-1111-1111-1111-111111111111}',
+			ref: 'A1:D20',
+			filterColumnCount: 1,
+			sortConditionCount: 1,
+			autoFilter: {
+				ref: 'A1:D20',
+				columns: [{ colId: 0, kind: 'filters', values: ['East', 'North'] }],
+				sortState: {
+					ref: 'A2:D20',
+					conditions: [{ ref: 'B2:B20', descending: false }],
+				},
+			},
+		})
+	})
 })

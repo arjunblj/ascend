@@ -77,6 +77,7 @@ const handlers: Record<string, OperationHandler> = {
 	deleteDataValidation: formatOps.handleDeleteDataValidation as OperationHandler,
 	setAutoFilter: formatOps.handleSetAutoFilter as OperationHandler,
 	clearAutoFilter: formatOps.handleClearAutoFilter as OperationHandler,
+	setAdvancedFilter: formatOps.handleSetAdvancedFilter as OperationHandler,
 	setPageSetup: formatOps.handleSetPageSetup as OperationHandler,
 	setPrintArea: formatOps.handleSetPrintArea as OperationHandler,
 	setComment: formatOps.handleSetComment as OperationHandler,

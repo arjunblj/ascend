@@ -213,6 +213,37 @@ describe('operation schema agent DX', () => {
 		expect(parsed.ok).toBe(true)
 	})
 
+	test('setAdvancedFilter is exposed with custom sheet view guidance', () => {
+		const schema = getOperationsSchema().find((entry) => entry.op === 'setAdvancedFilter')
+		expect(schema?.schema.required).toEqual(['op', 'sheet', 'filterIndex'])
+		expect(schema?.schema.properties.filterIndex?.description).toContain('advanced filter')
+		expect(schema?.schema.properties.values?.description).toContain('Filter value-list')
+		expect(schema?.examples[0]).toMatchObject({
+			op: 'setAdvancedFilter',
+			sheet: 'Data',
+			filterIndex: 0,
+			range: 'A1:D20',
+			column: 0,
+			values: ['East', 'North'],
+			sortRef: 'A2:D20',
+			sortBy: 'B2:B20',
+			descending: false,
+		})
+		expect(schema?.recoveryActions.join('\n')).toContain('advancedFilters')
+
+		const parsed = parseOperations([
+			{
+				op: 'setAdvancedFilter',
+				sheet: 'Data',
+				filterIndex: 0,
+				column: 0,
+				values: ['East', 'North'],
+				descending: false,
+			},
+		])
+		expect(parsed.ok).toBe(true)
+	})
+
 	test('setConnectionRefresh is exposed with connection refresh guidance', () => {
 		const schema = getOperationsSchema().find((entry) => entry.op === 'setConnectionRefresh')
 		expect(schema?.schema.required).toEqual(['op'])

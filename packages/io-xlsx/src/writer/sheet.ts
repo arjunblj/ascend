@@ -5,6 +5,7 @@ import type { CellValue, RichTextRun } from '@ascend/schema'
 import { topLeftScalar } from '@ascend/schema'
 import { normalizeStoredFormulaText, toStoredFormulaText } from '../formula-storage.ts'
 import { escapeXml } from '../xml.ts'
+import { buildCustomSheetViewsXml, updateCustomSheetViewsXml } from './advanced-filter.ts'
 import { ChunkedStringBuilder } from './chunked-string-builder.ts'
 import { buildColorScaleXml, buildDataBarXml, buildIconSetXml } from './conditional-format.ts'
 import { pushAutoFilterXml, pushSortStateXml } from './filtering.ts'
@@ -258,6 +259,12 @@ function buildSheetXmlToSink(
 
 	if (sheet.sortState) {
 		pushSortStateXml(out, sheet.sortState)
+	}
+
+	if (sheet.preservedCustomSheetViews) {
+		out.push(updateCustomSheetViewsXml(sheet.preservedCustomSheetViews, sheet.advancedFilters))
+	} else if (sheet.advancedFilters.length > 0) {
+		out.push(buildCustomSheetViewsXml(sheet.advancedFilters))
 	}
 
 	if (sheet.conditionalFormats.length > 0) {

@@ -7,6 +7,7 @@ import { applyOperations } from '../../../engine/src/index.ts'
 import { fingerprintXlsx } from '../../test/fidelity-harness.ts'
 import { makeXlsx } from '../../test/helpers.ts'
 import type { PreservationCapsule } from '../preserve.ts'
+import { advancedFilterSparklineWorkbook } from '../reader/advanced-filter-sparkline.test.ts'
 import { readXlsx } from '../reader/index.ts'
 import { writeDenseRowsXlsx, writeDenseRowsXlsxStreaming } from './dense-rows.ts'
 import { planWriteXlsx, writeXlsx, writeXlsxStreaming } from './index.ts'
@@ -3927,6 +3928,60 @@ ${sparklineExtLst}
 			displayXAxis: false,
 			range: 'Data!C2:C4',
 			locationRange: 'E2:E4',
+		})
+	})
+
+	it('preserves and edits advanced filters in custom sheet views on dirty writes', () => {
+		const read = readXlsx(advancedFilterSparklineWorkbook())
+		expectOk(read)
+		expect(read.value.workbook.sheets[0]?.preservedCustomSheetViews).toContain('<customSheetViews>')
+
+		const applied = applyOperations(read.value.workbook, [
+			{
+				op: 'setAdvancedFilter',
+				sheet: 'Data',
+				filterIndex: 0,
+				range: 'A1:D20',
+				column: 0,
+				values: ['East', 'North'],
+				sortRef: 'A2:D20',
+				sortBy: 'B2:B20',
+				descending: false,
+			},
+		])
+		expectOk(applied)
+
+		const written = writeXlsx(read.value.workbook, read.value.capsules, {
+			dirtySheetNames: applied.value.sheetsModified,
+		})
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+		expect(sheetXml).toContain('<customSheetViews>')
+		expect(sheetXml).toContain('name="WestOnly"')
+		expect(sheetXml).toContain('guid="{11111111-1111-1111-1111-111111111111}"')
+		expect(sheetXml).toContain('<autoFilter ref="A1:D20">')
+		expect(sheetXml).toContain('<filter val="East"/>')
+		expect(sheetXml).toContain('<filter val="North"/>')
+		expect(sheetXml).toContain('<sortState ref="A2:D20">')
+		expect(sheetXml).toContain('<sortCondition ref="B2:B20" descending="0"/>')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.sheets[0]?.advancedFilters[0]).toMatchObject({
+			viewName: 'WestOnly',
+			guid: '{11111111-1111-1111-1111-111111111111}',
+			ref: 'A1:D20',
+			filterColumnCount: 1,
+			sortConditionCount: 1,
+			autoFilter: {
+				ref: 'A1:D20',
+				columns: [{ colId: 0, kind: 'filters', values: ['East', 'North'] }],
+				sortState: {
+					ref: 'A2:D20',
+					conditions: [{ ref: 'B2:B20', descending: false }],
+				},
+			},
 		})
 	})
 

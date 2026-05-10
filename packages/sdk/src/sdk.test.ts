@@ -2923,6 +2923,11 @@ describe('capabilities registry', () => {
 		const sparklines = capabilities.find((capability) => capability.id === 'visuals.sparklines')
 		expect(sparklines?.status).toBe('editable')
 		expect(sparklines?.tests).toContain('packages/sdk/src/advanced-filter-sparkline.test.ts')
+		const advancedFilters = capabilities.find(
+			(capability) => capability.id === 'tables.advanced-filters',
+		)
+		expect(advancedFilters?.status).toBe('editable')
+		expect(advancedFilters?.tests).toContain('packages/sdk/src/advanced-filter-sparkline.test.ts')
 		const themes = capabilities.find((capability) => capability.id === 'workbook.themes')
 		expect(themes?.status).toBe('editable')
 		expect(themes?.tests).toContain('packages/sdk/src/theme-inventory.test.ts')

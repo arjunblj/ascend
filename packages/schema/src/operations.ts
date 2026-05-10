@@ -556,6 +556,17 @@ export type Operation =
 			readonly displayXAxis?: boolean
 	  }
 	| {
+			readonly op: 'setAdvancedFilter'
+			readonly sheet: string
+			readonly filterIndex: number
+			readonly range?: string
+			readonly column?: number
+			readonly values?: readonly string[]
+			readonly sortRef?: string
+			readonly sortBy?: string
+			readonly descending?: boolean
+	  }
+	| {
 			readonly op: 'setConnectionRefresh'
 			readonly partPath?: string
 			readonly name?: string

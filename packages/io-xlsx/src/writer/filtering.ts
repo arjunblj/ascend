@@ -11,16 +11,31 @@ interface XmlSink {
 	push(s: string): void
 }
 
-export function pushAutoFilterXml(out: XmlSink, autoFilter: AutoFilter): void {
-	out.push(`<autoFilter ref="${escapeXml(autoFilter.ref)}">`)
-	for (const column of autoFilter.columns) {
-		pushFilterColumnXml(out, column)
-	}
-	if (autoFilter.sortState) pushSortStateXml(out, autoFilter.sortState)
-	out.push('</autoFilter>')
+interface FilterXmlOptions {
+	readonly tagPrefix?: string
 }
 
-function pushFilterColumnXml(out: XmlSink, column: FilterColumn): void {
+export function buildAutoFilterXml(autoFilter: AutoFilter, options?: FilterXmlOptions): string {
+	const parts: string[] = []
+	pushAutoFilterXml({ push: (s) => parts.push(s) }, autoFilter, options)
+	return parts.join('')
+}
+
+export function pushAutoFilterXml(
+	out: XmlSink,
+	autoFilter: AutoFilter,
+	options?: FilterXmlOptions,
+): void {
+	const tag = tagBuilder(options?.tagPrefix)
+	out.push(`<${tag('autoFilter')} ref="${escapeXml(autoFilter.ref)}">`)
+	for (const column of autoFilter.columns) {
+		pushFilterColumnXml(out, column, tag)
+	}
+	if (autoFilter.sortState) pushSortStateXml(out, autoFilter.sortState, options)
+	out.push(`</${tag('autoFilter')}>`)
+}
+
+function pushFilterColumnXml(out: XmlSink, column: FilterColumn, tag: TagBuilder): void {
 	const attrs = [`colId="${column.colId}"`]
 	if (column.hiddenButton !== undefined)
 		attrs.push(`hiddenButton="${column.hiddenButton ? '1' : '0'}"`)
@@ -28,32 +43,32 @@ function pushFilterColumnXml(out: XmlSink, column: FilterColumn): void {
 
 	switch (column.kind) {
 		case 'filters': {
-			out.push(`<filterColumn ${attrs.join(' ')}>`)
+			out.push(`<${tag('filterColumn')} ${attrs.join(' ')}>`)
 			const filterAttrs: string[] = []
 			if (column.blank !== undefined) filterAttrs.push(`blank="${column.blank ? '1' : '0'}"`)
 			if (column.calendarType) filterAttrs.push(`calendarType="${escapeXml(column.calendarType)}"`)
-			out.push(`<filters${filterAttrs.length > 0 ? ` ${filterAttrs.join(' ')}` : ''}>`)
+			out.push(`<${tag('filters')}${filterAttrs.length > 0 ? ` ${filterAttrs.join(' ')}` : ''}>`)
 			for (const value of column.values ?? []) {
-				out.push(`<filter val="${escapeXml(value)}"/>`)
+				out.push(`<${tag('filter')} val="${escapeXml(value)}"/>`)
 			}
 			for (const item of column.dateGroupItems ?? []) {
-				pushDateGroupItemXml(out, item)
+				pushDateGroupItemXml(out, item, tag)
 			}
-			out.push('</filters></filterColumn>')
+			out.push(`</${tag('filters')}></${tag('filterColumn')}>`)
 			return
 		}
 		case 'customFilters': {
 			const innerAttrs: string[] = []
 			if (column.and !== undefined) innerAttrs.push(`and="${column.and ? '1' : '0'}"`)
 			out.push(
-				`<filterColumn ${attrs.join(' ')}><customFilters${innerAttrs.length > 0 ? ` ${innerAttrs.join(' ')}` : ''}>`,
+				`<${tag('filterColumn')} ${attrs.join(' ')}><${tag('customFilters')}${innerAttrs.length > 0 ? ` ${innerAttrs.join(' ')}` : ''}>`,
 			)
 			for (const filter of column.customFilters ?? []) {
 				const customAttrs = [`val="${escapeXml(filter.val)}"`]
 				if (filter.operator) customAttrs.push(`operator="${escapeXml(filter.operator)}"`)
-				out.push(`<customFilter ${customAttrs.join(' ')}/>`)
+				out.push(`<${tag('customFilter')} ${customAttrs.join(' ')}/>`)
 			}
-			out.push('</customFilters></filterColumn>')
+			out.push(`</${tag('customFilters')}></${tag('filterColumn')}>`)
 			return
 		}
 		case 'dynamicFilter': {
@@ -70,7 +85,7 @@ function pushFilterColumnXml(out: XmlSink, column: FilterColumn): void {
 				innerAttrs.push(`maxValIso="${escapeXml(column.dynamicFilterMaxValIso)}"`)
 			}
 			out.push(
-				`<filterColumn ${attrs.join(' ')}><dynamicFilter ${innerAttrs.join(' ')}/></filterColumn>`,
+				`<${tag('filterColumn')} ${attrs.join(' ')}><${tag('dynamicFilter')} ${innerAttrs.join(' ')}/></${tag('filterColumn')}>`,
 			)
 			return
 		}
@@ -80,7 +95,9 @@ function pushFilterColumnXml(out: XmlSink, column: FilterColumn): void {
 			if (column.percent !== undefined) innerAttrs.push(`percent="${column.percent ? '1' : '0'}"`)
 			if (column.val !== undefined) innerAttrs.push(`val="${column.val}"`)
 			if (column.filterVal !== undefined) innerAttrs.push(`filterVal="${column.filterVal}"`)
-			out.push(`<filterColumn ${attrs.join(' ')}><top10 ${innerAttrs.join(' ')}/></filterColumn>`)
+			out.push(
+				`<${tag('filterColumn')} ${attrs.join(' ')}><${tag('top10')} ${innerAttrs.join(' ')}/></${tag('filterColumn')}>`,
+			)
 			return
 		}
 		case 'colorFilter': {
@@ -89,7 +106,7 @@ function pushFilterColumnXml(out: XmlSink, column: FilterColumn): void {
 			if (column.cellColor !== undefined)
 				innerAttrs.push(`cellColor="${column.cellColor ? '1' : '0'}"`)
 			out.push(
-				`<filterColumn ${attrs.join(' ')}><colorFilter ${innerAttrs.join(' ')}/></filterColumn>`,
+				`<${tag('filterColumn')} ${attrs.join(' ')}><${tag('colorFilter')} ${innerAttrs.join(' ')}/></${tag('filterColumn')}>`,
 			)
 			return
 		}
@@ -98,14 +115,14 @@ function pushFilterColumnXml(out: XmlSink, column: FilterColumn): void {
 			if (column.iconSet) innerAttrs.push(`iconSet="${escapeXml(column.iconSet)}"`)
 			if (column.iconId !== undefined) innerAttrs.push(`iconId="${column.iconId}"`)
 			out.push(
-				`<filterColumn ${attrs.join(' ')}><iconFilter ${innerAttrs.join(' ')}/></filterColumn>`,
+				`<${tag('filterColumn')} ${attrs.join(' ')}><${tag('iconFilter')} ${innerAttrs.join(' ')}/></${tag('filterColumn')}>`,
 			)
 			return
 		}
 	}
 }
 
-function pushDateGroupItemXml(out: XmlSink, item: FilterDateGroupItem): void {
+function pushDateGroupItemXml(out: XmlSink, item: FilterDateGroupItem, tag: TagBuilder): void {
 	const attrs: string[] = []
 	if (item.year !== undefined) attrs.push(`year="${item.year}"`)
 	if (item.month !== undefined) attrs.push(`month="${item.month}"`)
@@ -114,10 +131,15 @@ function pushDateGroupItemXml(out: XmlSink, item: FilterDateGroupItem): void {
 	if (item.minute !== undefined) attrs.push(`minute="${item.minute}"`)
 	if (item.second !== undefined) attrs.push(`second="${item.second}"`)
 	if (item.dateTimeGrouping) attrs.push(`dateTimeGrouping="${escapeXml(item.dateTimeGrouping)}"`)
-	out.push(`<dateGroupItem ${attrs.join(' ')}/>`)
+	out.push(`<${tag('dateGroupItem')} ${attrs.join(' ')}/>`)
 }
 
-export function pushSortStateXml(out: XmlSink, sortState: SortState): void {
+export function pushSortStateXml(
+	out: XmlSink,
+	sortState: SortState,
+	options?: FilterXmlOptions,
+): void {
+	const tag = tagBuilder(options?.tagPrefix)
 	const attrs = [`ref="${escapeXml(sortState.ref)}"`]
 	if (sortState.caseSensitive !== undefined) {
 		attrs.push(`caseSensitive="${sortState.caseSensitive ? '1' : '0'}"`)
@@ -126,14 +148,14 @@ export function pushSortStateXml(out: XmlSink, sortState: SortState): void {
 		attrs.push(`columnSort="${sortState.columnSort ? '1' : '0'}"`)
 	}
 	if (sortState.sortMethod) attrs.push(`sortMethod="${escapeXml(sortState.sortMethod)}"`)
-	out.push(`<sortState ${attrs.join(' ')}>`)
+	out.push(`<${tag('sortState')} ${attrs.join(' ')}>`)
 	for (const condition of sortState.conditions) {
-		pushSortConditionXml(out, condition)
+		pushSortConditionXml(out, condition, tag)
 	}
-	out.push('</sortState>')
+	out.push(`</${tag('sortState')}>`)
 }
 
-function pushSortConditionXml(out: XmlSink, condition: SortCondition): void {
+function pushSortConditionXml(out: XmlSink, condition: SortCondition, tag: TagBuilder): void {
 	const attrs = [`ref="${escapeXml(condition.ref)}"`]
 	if (condition.descending !== undefined)
 		attrs.push(`descending="${condition.descending ? '1' : '0'}"`)
@@ -142,5 +164,11 @@ function pushSortConditionXml(out: XmlSink, condition: SortCondition): void {
 	if (condition.dxfId !== undefined) attrs.push(`dxfId="${condition.dxfId}"`)
 	if (condition.iconSet) attrs.push(`iconSet="${escapeXml(condition.iconSet)}"`)
 	if (condition.iconId !== undefined) attrs.push(`iconId="${condition.iconId}"`)
-	out.push(`<sortCondition ${attrs.join(' ')}/>`)
+	out.push(`<${tag('sortCondition')} ${attrs.join(' ')}/>`)
+}
+
+type TagBuilder = (name: string) => string
+
+function tagBuilder(prefix: string | undefined): TagBuilder {
+	return prefix ? (name) => `${prefix}:${name}` : (name) => name
 }

@@ -545,6 +545,111 @@ describe('applyOperation', () => {
 		)
 	})
 
+	test('setAdvancedFilter updates custom sheet view criteria and sort metadata', () => {
+		const wb = setup()
+		const sheet = wb.getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.advancedFilters.push({
+			viewName: 'WestOnly',
+			guid: '{11111111-1111-1111-1111-111111111111}',
+			ref: 'A1:C20',
+			filterColumnCount: 1,
+			sortConditionCount: 1,
+			autoFilter: {
+				ref: 'A1:C20',
+				columns: [{ colId: 0, kind: 'filters', values: ['West'] }],
+				sortState: {
+					ref: 'A2:C20',
+					conditions: [{ ref: 'C2:C20', descending: true }],
+				},
+			},
+		})
+
+		const result = applyOperation(wb, {
+			op: 'setAdvancedFilter',
+			sheet: 'Sheet1',
+			filterIndex: 0,
+			range: 'A1:D20',
+			column: 1,
+			values: ['East', 'North'],
+			sortRef: 'A2:D20',
+			sortBy: 'B2:B20',
+			descending: false,
+		})
+		expectOk(result)
+
+		expect(result.value.sheetsModified).toEqual(['Sheet1'])
+		expect(result.value.recalcRequired).toBe(false)
+		expect(sheet.advancedFilters[0]).toMatchObject({
+			viewName: 'WestOnly',
+			guid: '{11111111-1111-1111-1111-111111111111}',
+			ref: 'A1:D20',
+			filterColumnCount: 2,
+			sortConditionCount: 1,
+			autoFilter: {
+				ref: 'A1:D20',
+				columns: [
+					{ colId: 0, kind: 'filters', values: ['West'] },
+					{ colId: 1, kind: 'filters', values: ['East', 'North'] },
+				],
+				sortState: {
+					ref: 'A2:D20',
+					conditions: [{ ref: 'B2:B20', descending: false }],
+				},
+			},
+		})
+	})
+
+	test('setAdvancedFilter validates selectors and update fields', () => {
+		const wb = setup()
+		expect(
+			applyOperation(wb, {
+				op: 'setAdvancedFilter',
+				sheet: 'Sheet1',
+				filterIndex: 0,
+				column: 0,
+				values: ['East'],
+			}).ok,
+		).toBe(false)
+
+		const sheet = wb.getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.advancedFilters.push({
+			ref: 'A1:C20',
+			filterColumnCount: 0,
+			sortConditionCount: 0,
+			autoFilter: { ref: 'A1:C20', columns: [] },
+		})
+		expect(
+			applyOperation(wb, {
+				op: 'setAdvancedFilter',
+				sheet: 'Sheet1',
+				filterIndex: -1,
+				column: 0,
+				values: ['East'],
+			}).ok,
+		).toBe(false)
+		expect(
+			applyOperation(wb, {
+				op: 'setAdvancedFilter',
+				sheet: 'Sheet1',
+				filterIndex: 0,
+				values: ['East'],
+			}).ok,
+		).toBe(false)
+		expect(
+			applyOperation(wb, {
+				op: 'setAdvancedFilter',
+				sheet: 'Sheet1',
+				filterIndex: 0,
+				column: 0,
+			}).ok,
+		).toBe(false)
+		expect(
+			applyOperation(wb, { op: 'setAdvancedFilter', sheet: 'Sheet1', filterIndex: 0 }).ok,
+		).toBe(false)
+	})
+
 	test('setConditionalFormat stores conditional formatting rules', () => {
 		const wb = setup()
 		const result = applyOperation(wb, {

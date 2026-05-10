@@ -1,9 +1,13 @@
 import type {
+	AutoFilter,
 	CellStyle,
+	FilterColumn,
+	SheetAdvancedFilterInfo,
 	SheetConditionalFormat,
 	SheetConditionalFormatRule,
 	SheetDataValidation,
 	SheetPageSetup,
+	SortState,
 	Workbook,
 } from '@ascend/core'
 import { toA1 } from '@ascend/core'
@@ -244,6 +248,78 @@ export function handleClearAutoFilter(
 	return ok(patch([], [op.sheet]))
 }
 
+export function handleSetAdvancedFilter(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setAdvancedFilter' }>,
+): Result<PatchResult> {
+	const sheetResult = getSheet(workbook, op.sheet)
+	if (!sheetResult.ok) return sheetResult
+	const sheet = sheetResult.value
+	if (!Number.isInteger(op.filterIndex) || op.filterIndex < 0) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'setAdvancedFilter filterIndex must be non-negative', {
+				suggestedFix: 'Use the zero-based filterIndex from inspectSheet().advancedFilters.',
+			}),
+		)
+	}
+	if (!hasAdvancedFilterUpdate(op)) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'setAdvancedFilter requires filter or sort metadata', {
+				suggestedFix:
+					'Provide range, column+values, sortRef, sortBy, or descending for the custom sheet view filter.',
+			}),
+		)
+	}
+	if (op.values !== undefined && !Array.isArray(op.values)) {
+		return err(ascendError('VALIDATION_ERROR', 'setAdvancedFilter values must be an array'))
+	}
+	if (op.values?.some((value) => typeof value !== 'string')) {
+		return err(ascendError('VALIDATION_ERROR', 'setAdvancedFilter values must be strings'))
+	}
+	if (op.values !== undefined && op.column === undefined) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'setAdvancedFilter values require column', {
+				suggestedFix: 'Set column to the zero-based autoFilter colId that should receive values.',
+			}),
+		)
+	}
+	if (op.column !== undefined && op.values === undefined) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'setAdvancedFilter column requires values', {
+				suggestedFix: 'Provide values for the selected zero-based autoFilter colId.',
+			}),
+		)
+	}
+	if (op.column !== undefined && (!Number.isInteger(op.column) || op.column < 0)) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'setAdvancedFilter column must be non-negative', {
+				suggestedFix: 'Use the zero-based colId from inspectSheet().advancedFilters[].autoFilter.',
+			}),
+		)
+	}
+
+	const current = sheet.advancedFilters[op.filterIndex]
+	if (!current?.autoFilter) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'No matching advanced filter found', {
+				suggestedFix: 'Inspect sheet.advancedFilters and provide an existing filterIndex.',
+			}),
+		)
+	}
+
+	sheet.ensureWritable()
+	const autoFilter = applyAdvancedAutoFilterUpdate(current.autoFilter, op)
+	const updated: SheetAdvancedFilterInfo = {
+		...current,
+		ref: autoFilter.ref,
+		autoFilter,
+		filterColumnCount: autoFilter.columns.length,
+		sortConditionCount: autoFilter.sortState?.conditions.length ?? 0,
+	}
+	sheet.advancedFilters.splice(op.filterIndex, 1, updated)
+	return ok(patch([], [op.sheet], false))
+}
+
 export function handleSetPageSetup(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'setPageSetup' }>,
@@ -264,6 +340,101 @@ export function handleSetPageSetup(
 		sheet.pageMargins = { ...op.setup.margins }
 	}
 	return ok(patch([], [op.sheet]))
+}
+
+type SetAdvancedFilterOp = Extract<Operation, { op: 'setAdvancedFilter' }>
+
+function hasAdvancedFilterUpdate(op: SetAdvancedFilterOp): boolean {
+	return (
+		op.range !== undefined ||
+		op.values !== undefined ||
+		op.sortRef !== undefined ||
+		op.sortBy !== undefined ||
+		op.descending !== undefined
+	)
+}
+
+function applyAdvancedAutoFilterUpdate(
+	autoFilter: AutoFilter,
+	op: SetAdvancedFilterOp,
+): AutoFilter {
+	const ref = op.range ?? autoFilter.ref
+	const columns =
+		op.column === undefined
+			? autoFilter.columns.map(cloneFilterColumn)
+			: upsertValueFilterColumn(autoFilter.columns, op.column, op.values ?? [])
+	const sortState = applyAdvancedSortUpdate(autoFilter.sortState, op, ref)
+	return {
+		ref,
+		columns,
+		...(sortState ? { sortState } : {}),
+	}
+}
+
+function upsertValueFilterColumn(
+	columns: readonly FilterColumn[],
+	column: number,
+	values: readonly string[],
+): FilterColumn[] {
+	const updatedColumn: FilterColumn = { colId: column, kind: 'filters', values: [...values] }
+	const next = columns.map((entry) =>
+		entry.colId === column
+			? {
+					...updatedColumn,
+					...(entry.hiddenButton !== undefined ? { hiddenButton: entry.hiddenButton } : {}),
+					...(entry.showButton !== undefined ? { showButton: entry.showButton } : {}),
+				}
+			: cloneFilterColumn(entry),
+	)
+	if (!next.some((entry) => entry.colId === column)) next.push(updatedColumn)
+	return next.sort((a, b) => a.colId - b.colId)
+}
+
+function applyAdvancedSortUpdate(
+	sortState: SortState | undefined,
+	op: SetAdvancedFilterOp,
+	filterRef: string,
+): SortState | undefined {
+	if (op.sortRef === undefined && op.sortBy === undefined && op.descending === undefined) {
+		return sortState ? cloneSortState(sortState) : undefined
+	}
+	const ref = op.sortRef ?? sortState?.ref ?? filterRef
+	const existingConditions = sortState?.conditions ?? []
+	const first = existingConditions[0]
+	const firstRef = op.sortBy ?? first?.ref ?? ref
+	const firstCondition = {
+		...(first ?? { ref: firstRef }),
+		ref: firstRef,
+		...(op.descending !== undefined ? { descending: op.descending } : {}),
+	}
+	return {
+		...(sortState ? cloneSortState(sortState) : {}),
+		ref,
+		conditions:
+			existingConditions.length === 0
+				? [firstCondition]
+				: [firstCondition, ...existingConditions.slice(1).map((condition) => ({ ...condition }))],
+	}
+}
+
+function cloneFilterColumn(column: FilterColumn): FilterColumn {
+	return {
+		...column,
+		...(column.values ? { values: [...column.values] } : {}),
+		...(column.dateGroupItems
+			? { dateGroupItems: column.dateGroupItems.map((item) => ({ ...item })) }
+			: {}),
+		...(column.customFilters
+			? { customFilters: column.customFilters.map((filter) => ({ ...filter })) }
+			: {}),
+	}
+}
+
+function cloneSortState(sortState: SortState): SortState {
+	return {
+		...sortState,
+		conditions: sortState.conditions.map((condition) => ({ ...condition })),
+	}
 }
 
 export function handleSetPrintArea(

@@ -249,6 +249,7 @@ export function parseSheet(
 		parseX14DataValidations(strippedXml, sheet, ctx.valuePool)
 		parseAdvancedFilters(ws, sheet)
 		parseSparklineGroups(ws, sheet)
+		extractCustomSheetViews(xml, sheet)
 		extractExtLst(xml, sheet)
 	}
 	return sheet
@@ -2957,21 +2958,46 @@ function parseDrawingRefs(ws: XmlNode, sheet: Sheet): void {
 
 const WORKSHEET_EXTLST_RE =
 	/<(?:(?<prefix>[A-Za-z_][\w.-]*):)?extLst\b(?<attrs>[^>]*)>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?extLst>/g
+const CUSTOM_SHEET_VIEWS_RE =
+	/<(?:(?<prefix>[A-Za-z_][\w.-]*):)?customSheetViews\b(?<attrs>[^>]*)>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?customSheetViews>/g
 const SPREADSHEETML_NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
 
 function extractExtLst(xml: string, sheet: Sheet): void {
 	let preserved: string | undefined
 	for (const match of xml.matchAll(WORKSHEET_EXTLST_RE)) {
-		preserved = withExtLstNamespace(match[0], match.groups?.prefix, match.groups?.attrs ?? '')
+		preserved = withSpreadsheetmlNamespace(
+			match[0],
+			'extLst',
+			match.groups?.prefix,
+			match.groups?.attrs ?? '',
+		)
 	}
 	if (preserved) sheet.preservedExtLst = preserved
 }
 
-function withExtLstNamespace(xml: string, prefix: string | undefined, attrs: string): string {
+function extractCustomSheetViews(xml: string, sheet: Sheet): void {
+	let preserved: string | undefined
+	for (const match of xml.matchAll(CUSTOM_SHEET_VIEWS_RE)) {
+		preserved = withSpreadsheetmlNamespace(
+			match[0],
+			'customSheetViews',
+			match.groups?.prefix,
+			match.groups?.attrs ?? '',
+		)
+	}
+	if (preserved) sheet.preservedCustomSheetViews = preserved
+}
+
+function withSpreadsheetmlNamespace(
+	xml: string,
+	tag: string,
+	prefix: string | undefined,
+	attrs: string,
+): string {
 	if (!prefix || new RegExp(`\\sxmlns:${prefix}=`).test(attrs)) return xml
 	return xml.replace(
-		new RegExp(`^<${prefix}:extLst\\b`),
-		`<${prefix}:extLst xmlns:${prefix}="${SPREADSHEETML_NS}"`,
+		new RegExp(`^<${prefix}:${tag}\\b`),
+		`<${prefix}:${tag} xmlns:${prefix}="${SPREADSHEETML_NS}"`,
 	)
 }
 

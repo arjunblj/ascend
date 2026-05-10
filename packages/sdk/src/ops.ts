@@ -103,7 +103,7 @@ const FIELD_SCHEMAS: Record<
 	hasHeaders: { type: 'boolean', description: 'Whether range has header row' },
 	table: { type: 'string', description: 'Table name' },
 	rows: { type: 'array', description: 'Array of row arrays' },
-	column: { type: 'string', description: 'Table column name or 0-based column index' },
+	column: { type: ['string', 'integer'], description: 'Table column name or 0-based column index' },
 	totalsRowFunction: { type: 'string', description: 'Excel table totalsRowFunction value' },
 	totalsRowFormula: { type: 'string', description: 'Formula for the table totals row cell' },
 	totalsRowLabel: { type: 'string', description: 'Label for the table totals row cell' },
@@ -204,6 +204,13 @@ const FIELD_SCHEMAS: Record<
 		description: 'Zero-based drawing object index on the sheet',
 	},
 	groupIndex: { type: 'integer', description: 'Zero-based sparkline group index on the sheet' },
+	filterIndex: {
+		type: 'integer',
+		description: 'Zero-based custom sheet view advanced filter index on the sheet',
+	},
+	values: { type: 'array', description: 'Filter value-list strings for the selected column' },
+	sortRef: { type: 'string', description: 'Advanced filter sort range' },
+	sortBy: { type: 'string', description: 'Advanced filter sort condition range' },
 	locationRange: { type: 'string', description: 'Sparkline destination sqref range' },
 	markers: { type: 'boolean', description: 'Whether sparkline markers are displayed' },
 	highPoint: { type: 'boolean', description: 'Whether sparkline high points are highlighted' },
@@ -610,6 +617,12 @@ export function listOperations(): readonly OperationSchema[] {
 			],
 		},
 		{
+			op: 'setAdvancedFilter',
+			description: 'Edit a preserved custom sheet view advanced filter and sort criteria',
+			requiredFields: ['sheet', 'filterIndex'],
+			optionalFields: ['range', 'column', 'values', 'sortRef', 'sortBy', 'descending'],
+		},
+		{
 			op: 'setConnectionRefresh',
 			description: 'Edit workbook connection and query-table refresh metadata',
 			requiredFields: [],
@@ -775,6 +788,8 @@ function validateOperationField(
 		case 'sourceSheet':
 		case 'sourceRef':
 		case 'slicerCache':
+		case 'sortRef':
+		case 'sortBy':
 			return typeof value === 'string' ? null : `${path} must be a string`
 		case 'themeName':
 		case 'colorSchemeName':
@@ -799,6 +814,7 @@ function validateOperationField(
 		case 'imageIndex':
 		case 'drawingObjectIndex':
 		case 'groupIndex':
+		case 'filterIndex':
 		case 'commentIndex':
 		case 'id':
 		case 'chartIndex':
@@ -866,6 +882,8 @@ function validateOperationField(
 			return validateUpdates(value, path)
 		case 'rows':
 			return validateRows(value, path)
+		case 'values':
+			return validateStringArray(value, path)
 		case 'themeColors':
 			return validateThemeColors(value, path)
 		case 'by':
@@ -927,6 +945,14 @@ function validateRows(value: unknown, path: string): string | null {
 				return `${path}[${rowIndex}][${colIndex}] must be a scalar value or null`
 			}
 		}
+	}
+	return null
+}
+
+function validateStringArray(value: unknown, path: string): string | null {
+	if (!Array.isArray(value)) return `${path} must be an array`
+	for (let i = 0; i < value.length; i++) {
+		if (typeof value[i] !== 'string') return `${path}[${i}] must be a string`
 	}
 	return null
 }
@@ -1140,6 +1166,12 @@ function operationRecoveryActions(op: string): readonly string[] {
 			return [
 				'Use inspectSheet().sparklineGroups to choose sheet and groupIndex.',
 				'This rewrites preserved sparkline extension XML; keep source and location ranges shape-compatible.',
+				...common,
+			]
+		case 'setAdvancedFilter':
+			return [
+				'Use inspectSheet().advancedFilters to choose sheet and filterIndex.',
+				'This rewrites preserved custom sheet view autoFilter XML; use column+values for value-list filters.',
 				...common,
 			]
 		case 'setConnectionRefresh':
@@ -1400,6 +1432,18 @@ function operationExample(op: string): Record<string, unknown> {
 				locationRange: 'E2:E4',
 				type: 'column',
 				markers: false,
+			}
+		case 'setAdvancedFilter':
+			return {
+				op,
+				sheet: 'Data',
+				filterIndex: 0,
+				range: 'A1:D20',
+				column: 0,
+				values: ['East', 'North'],
+				sortRef: 'A2:D20',
+				sortBy: 'B2:B20',
+				descending: false,
 			}
 		case 'setConnectionRefresh':
 			return {

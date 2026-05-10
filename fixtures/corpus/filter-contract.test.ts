@@ -4,15 +4,16 @@ import { resolve } from 'node:path'
 import type { Workbook } from '@ascend/core'
 import { type PreservationCapsule, readXlsx, writeXlsx } from '@ascend/io-xlsx'
 
-const FIXTURE_ROOT = resolve(import.meta.dir, '../xlsx')
+const FILTER_FIXTURE_ROOT = resolve(import.meta.dir, '../xlsx/filter')
+const XLSX_FIXTURE_ROOT = resolve(import.meta.dir, '../xlsx')
 
 interface ReadFixtureResult {
 	readonly workbook: Workbook
 	readonly capsules: readonly PreservationCapsule[]
 }
 
-function readFixture(path: string): ReadFixtureResult {
-	const result = readXlsx(readFileSync(resolve(FIXTURE_ROOT, path)))
+function readFixture(root: string, path: string): ReadFixtureResult {
+	const result = readXlsx(readFileSync(resolve(root, path)))
 	expect(result.ok).toBe(true)
 	if (!result.ok) throw result.error
 	return result.value
@@ -30,7 +31,7 @@ function roundTrip(fixture: ReadFixtureResult): Workbook {
 
 describe('filter feature contract', () => {
 	it('captures POI worksheet top10 and dynamic filter criteria', () => {
-		const { workbook } = readFixture('poi/AutoFilter.xlsx')
+		const { workbook } = readFixture(FILTER_FIXTURE_ROOT, 'poi/AutoFilter.xlsx')
 		const top10 = workbook.sheets.find((sheet) => sheet.name === 'Top10')?.autoFilter
 		const bottom10 = workbook.sheets.find((sheet) => sheet.name === 'Bot10')?.autoFilter
 		const average = workbook.sheets.find((sheet) => sheet.name === 'Average')?.autoFilter
@@ -60,11 +61,15 @@ describe('filter feature contract', () => {
 	})
 
 	it('preserves real OSS color and icon filter columns on round-trip', () => {
-		const colorWorkbook = roundTrip(readFixture('libreoffice/autofilter-colors.xlsx'))
+		const colorWorkbook = roundTrip(
+			readFixture(XLSX_FIXTURE_ROOT, 'libreoffice/autofilter-colors.xlsx'),
+		)
 		const colorTable = colorWorkbook.sheets[0]?.tables[0]
 		expect(colorTable?.autoFilter?.columns).toEqual([{ colId: 0, kind: 'colorFilter', dxfId: 0 }])
 
-		const iconWorkbook = roundTrip(readFixture('poi/ConditionalFormattingSamples.xlsx'))
+		const iconWorkbook = roundTrip(
+			readFixture(FILTER_FIXTURE_ROOT, 'poi/ConditionalFormattingSamples.xlsx'),
+		)
 		const iconTable = iconWorkbook.sheets
 			.flatMap((sheet) => sheet.tables)
 			.find((table) => table.name === 'Table69')

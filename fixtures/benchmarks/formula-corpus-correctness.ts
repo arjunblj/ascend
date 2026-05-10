@@ -52,16 +52,17 @@ interface WorkbookFormulaResult {
 	readonly formulaCount: number
 	readonly comparedCount: number
 	readonly noCachedFormulaCount: number
+	readonly volatileOracleSkipCount: number
 	readonly mismatchCount: number
 	readonly acceptedMismatchCount: number
 	readonly unacceptedMismatchCount: number
 	readonly semanticMismatchCount: number
 	readonly numericDriftMismatchCount: number
-	readonly nonDeterministicMismatchCount: number
 	readonly errorCount: number
 	readonly beforeHash: string
 	readonly afterHash: string
 	readonly mismatches: readonly FormulaMismatch[]
+	readonly volatileOracleSkips: readonly FormulaOracleSkip[]
 	readonly readMs: number
 	readonly recalcMs: number
 }
@@ -75,7 +76,20 @@ interface FormulaMismatch {
 	readonly reason: string
 }
 
-type FormulaMismatchClassification = 'semantic' | 'numeric-drift' | 'non-deterministic'
+interface FormulaOracleSkip {
+	readonly ref: string
+	readonly formula: string
+	readonly cached: string
+	readonly calculated: string
+	readonly reason: string
+}
+
+interface FormulaComparison {
+	readonly mismatches: readonly FormulaMismatch[]
+	readonly volatileOracleSkips: readonly FormulaOracleSkip[]
+}
+
+type FormulaMismatchClassification = 'semantic' | 'numeric-drift'
 
 interface SuitePayload {
 	readonly formatVersion: 1
@@ -98,12 +112,12 @@ interface SuitePayload {
 		readonly formulaCount: number
 		readonly comparedCount: number
 		readonly noCachedFormulaCount: number
+		readonly volatileOracleSkipCount: number
 		readonly mismatchCount: number
 		readonly acceptedMismatchCount: number
 		readonly unacceptedMismatchCount: number
 		readonly semanticMismatchCount: number
 		readonly numericDriftMismatchCount: number
-		readonly nonDeterministicMismatchCount: number
 		readonly errorCount: number
 		readonly perfectWorkbookCount: number
 		readonly semanticPerfectWorkbookCount: number
@@ -259,9 +273,10 @@ function collectFormulaSnapshots(workbook: {
 function compareSnapshots(
 	before: readonly FormulaSnapshot[],
 	after: readonly FormulaSnapshot[],
-): readonly FormulaMismatch[] {
+): FormulaComparison {
 	const afterByRef = new Map(after.map((entry) => [entry.ref, entry]))
 	const mismatches: FormulaMismatch[] = []
+	const volatileOracleSkips: FormulaOracleSkip[] = []
 	for (const entry of before) {
 		if (entry.cached === 'empty') continue
 		const calculated = afterByRef.get(entry.ref)
@@ -275,6 +290,15 @@ function compareSnapshots(
 			continue
 		}
 		if (entry.cached !== calculated.cached) {
+			if (NON_DETERMINISTIC_FUNCTION_RE.test(entry.formula)) {
+				volatileOracleSkips.push({
+					...entry,
+					calculated: calculated.cached,
+					reason:
+						'formula uses time or random functions whose historical cached values are not reproducible',
+				})
+				continue
+			}
 			mismatches.push({
 				...entry,
 				calculated: calculated.cached,
@@ -282,21 +306,13 @@ function compareSnapshots(
 			})
 		}
 	}
-	return classifyDownstreamDrift(mismatches)
+	return classifyDownstreamComparisons(mismatches, volatileOracleSkips)
 }
 
 function classifyMismatch(
 	cached: FormulaSnapshot,
 	calculated: FormulaSnapshot,
 ): Pick<FormulaMismatch, 'classification' | 'reason'> {
-	if (NON_DETERMINISTIC_FUNCTION_RE.test(cached.formula)) {
-		return {
-			classification: 'non-deterministic',
-			reason:
-				'formula uses time or random functions whose historical cached values are not reproducible',
-		}
-	}
-
 	const cachedNumber = parseSerializedNumber(cached.cached)
 	const calculatedNumber = parseSerializedNumber(calculated.cached)
 	if (cachedNumber && calculatedNumber && cachedNumber.kind === calculatedNumber.kind) {
@@ -336,40 +352,56 @@ function classifyMismatch(
 	}
 }
 
-function classifyDownstreamDrift(
+function classifyDownstreamComparisons(
 	mismatches: readonly FormulaMismatch[],
-): readonly FormulaMismatch[] {
+	volatileOracleSkips: readonly FormulaOracleSkip[],
+): FormulaComparison {
 	let current = [...mismatches]
+	const volatile = [...volatileOracleSkips]
 	let changed = true
 	while (changed) {
 		changed = false
 		const byRef = new Map(current.map((mismatch) => [mismatch.ref, mismatch]))
-		current = current.map((mismatch) => {
-			if (mismatch.classification !== 'semantic') return mismatch
+		const volatileRefs = new Set(volatile.map((skip) => skip.ref))
+		const next: FormulaMismatch[] = []
+		for (const mismatch of current) {
+			if (mismatch.classification !== 'semantic') {
+				next.push(mismatch)
+				continue
+			}
+			let replacement: FormulaMismatch | null = null
+			let movedToVolatile = false
 			for (const ref of extractFormulaReferences(mismatch.formula, mismatch.ref)) {
+				if (volatileRefs.has(ref)) {
+					changed = true
+					volatile.push({
+						ref: mismatch.ref,
+						formula: mismatch.formula,
+						cached: mismatch.cached,
+						calculated: mismatch.calculated,
+						reason: `downstream of volatile oracle skip ${ref}`,
+					})
+					movedToVolatile = true
+					break
+				}
 				const precedent = byRef.get(ref)
 				if (!precedent) continue
 				if (precedent.classification === 'numeric-drift') {
 					changed = true
-					return {
+					replacement = {
 						...mismatch,
 						classification: 'numeric-drift',
 						reason: `downstream of numeric-drift precedent ${ref}`,
 					}
-				}
-				if (precedent.classification === 'non-deterministic') {
-					changed = true
-					return {
-						...mismatch,
-						classification: 'non-deterministic',
-						reason: `downstream of non-deterministic precedent ${ref}`,
-					}
+					break
 				}
 			}
-			return mismatch
-		})
+			if (movedToVolatile) continue
+			next.push(replacement ?? mismatch)
+		}
+		current = next
 	}
-	return current
+	return { mismatches: current, volatileOracleSkips: volatile }
 }
 
 function extractFormulaReferences(formula: string, currentRef: string): readonly string[] {
@@ -455,16 +487,17 @@ async function runWorkbook(
 			formulaCount: 0,
 			comparedCount: 0,
 			noCachedFormulaCount: 0,
+			volatileOracleSkipCount: 0,
 			mismatchCount: 0,
 			acceptedMismatchCount: 0,
 			unacceptedMismatchCount: 0,
 			semanticMismatchCount: 0,
 			numericDriftMismatchCount: 0,
-			nonDeterministicMismatchCount: 0,
 			errorCount: 1,
 			beforeHash: hashLines([]),
 			afterHash: hashLines([]),
 			mismatches: [],
+			volatileOracleSkips: [],
 			readMs,
 			recalcMs: 0,
 		}
@@ -483,11 +516,11 @@ async function runWorkbook(
 	const after = collectFormulaSnapshots(read.value.workbook)
 	const comparableRefs = new Set(comparableBefore.map((entry) => entry.ref))
 	const comparableAfter = after.filter((entry) => comparableRefs.has(entry.ref))
-	const mismatches = compareSnapshots(before, after)
+	const comparison = compareSnapshots(before, after)
+	const { mismatches, volatileOracleSkips } = comparison
 	const semanticMismatchCount = countMismatches(mismatches, 'semantic')
 	const numericDriftMismatchCount = countMismatches(mismatches, 'numeric-drift')
-	const nonDeterministicMismatchCount = countMismatches(mismatches, 'non-deterministic')
-	const acceptedMismatchCount = numericDriftMismatchCount + nonDeterministicMismatchCount
+	const acceptedMismatchCount = numericDriftMismatchCount
 	return {
 		file: entry.file,
 		...(entry.source ? { source: entry.source } : {}),
@@ -496,12 +529,12 @@ async function runWorkbook(
 		formulaCount: before.length,
 		comparedCount: comparableBefore.length,
 		noCachedFormulaCount: before.length - comparableBefore.length,
+		volatileOracleSkipCount: volatileOracleSkips.length,
 		mismatchCount: mismatches.length,
 		acceptedMismatchCount,
 		unacceptedMismatchCount: semanticMismatchCount,
 		semanticMismatchCount,
 		numericDriftMismatchCount,
-		nonDeterministicMismatchCount,
 		errorCount: recalc.errors.length,
 		beforeHash: hashLines(
 			comparableBefore.map((entry) => `${entry.ref}\t${entry.formula}\t${entry.cached}`),
@@ -510,6 +543,7 @@ async function runWorkbook(
 			comparableAfter.map((entry) => `${entry.ref}\t${entry.formula}\t${entry.cached}`),
 		),
 		mismatches: mismatches.slice(0, args.maxReportedMismatches ?? 50),
+		volatileOracleSkips: volatileOracleSkips.slice(0, args.maxReportedMismatches ?? 50),
 		readMs,
 		recalcMs,
 	}
@@ -528,6 +562,10 @@ function summarize(results: readonly WorkbookFormulaResult[]): SuitePayload['sum
 		formulaCount: results.reduce((sum, result) => sum + result.formulaCount, 0),
 		comparedCount: results.reduce((sum, result) => sum + result.comparedCount, 0),
 		noCachedFormulaCount: results.reduce((sum, result) => sum + result.noCachedFormulaCount, 0),
+		volatileOracleSkipCount: results.reduce(
+			(sum, result) => sum + result.volatileOracleSkipCount,
+			0,
+		),
 		mismatchCount: results.reduce((sum, result) => sum + result.mismatchCount, 0),
 		acceptedMismatchCount: results.reduce((sum, result) => sum + result.acceptedMismatchCount, 0),
 		unacceptedMismatchCount: results.reduce(
@@ -537,10 +575,6 @@ function summarize(results: readonly WorkbookFormulaResult[]): SuitePayload['sum
 		semanticMismatchCount: results.reduce((sum, result) => sum + result.semanticMismatchCount, 0),
 		numericDriftMismatchCount: results.reduce(
 			(sum, result) => sum + result.numericDriftMismatchCount,
-			0,
-		),
-		nonDeterministicMismatchCount: results.reduce(
-			(sum, result) => sum + result.nonDeterministicMismatchCount,
 			0,
 		),
 		errorCount: results.reduce((sum, result) => sum + result.errorCount, 0),
@@ -653,11 +687,11 @@ export function formulaCorpusCorrectnessAssertionFailures(
 
 function render(payload: SuitePayload): void {
 	console.log(
-		`formula corpus correctness: workbooks=${payload.summary.workbookCount} formulas=${payload.summary.formulaCount} compared=${payload.summary.comparedCount} noCached=${payload.summary.noCachedFormulaCount} mismatches=${payload.summary.mismatchCount} accepted=${payload.summary.acceptedMismatchCount} unaccepted=${payload.summary.unacceptedMismatchCount} semantic=${payload.summary.semanticMismatchCount} numericDrift=${payload.summary.numericDriftMismatchCount} nonDeterministic=${payload.summary.nonDeterministicMismatchCount} errors=${payload.summary.errorCount}`,
+		`formula corpus correctness: workbooks=${payload.summary.workbookCount} formulas=${payload.summary.formulaCount} compared=${payload.summary.comparedCount} noCached=${payload.summary.noCachedFormulaCount} volatileOracleSkips=${payload.summary.volatileOracleSkipCount} mismatches=${payload.summary.mismatchCount} accepted=${payload.summary.acceptedMismatchCount} unaccepted=${payload.summary.unacceptedMismatchCount} semantic=${payload.summary.semanticMismatchCount} numericDrift=${payload.summary.numericDriftMismatchCount} errors=${payload.summary.errorCount}`,
 	)
 	for (const result of payload.results) {
 		console.log(
-			`${result.file}: formulas=${result.formulaCount} compared=${result.comparedCount} noCached=${result.noCachedFormulaCount} mismatches=${result.mismatchCount} accepted=${result.acceptedMismatchCount} unaccepted=${result.unacceptedMismatchCount} semantic=${result.semanticMismatchCount} numericDrift=${result.numericDriftMismatchCount} nonDeterministic=${result.nonDeterministicMismatchCount} errors=${result.errorCount} read=${result.readMs.toFixed(2)}ms recalc=${result.recalcMs.toFixed(2)}ms`,
+			`${result.file}: formulas=${result.formulaCount} compared=${result.comparedCount} noCached=${result.noCachedFormulaCount} volatileOracleSkips=${result.volatileOracleSkipCount} mismatches=${result.mismatchCount} accepted=${result.acceptedMismatchCount} unaccepted=${result.unacceptedMismatchCount} semantic=${result.semanticMismatchCount} numericDrift=${result.numericDriftMismatchCount} errors=${result.errorCount} read=${result.readMs.toFixed(2)}ms recalc=${result.recalcMs.toFixed(2)}ms`,
 		)
 	}
 }

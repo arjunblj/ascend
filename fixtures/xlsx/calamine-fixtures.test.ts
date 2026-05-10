@@ -101,13 +101,13 @@ describe('Calamine XLSX/XLSM fixture corpus', () => {
 			workbookCount: 15,
 			formulaCount: 73,
 			comparedCount: 73,
-			mismatchCount: 8,
-			acceptedMismatchCount: 8,
+			volatileOracleSkipCount: 8,
+			mismatchCount: 0,
+			acceptedMismatchCount: 0,
 			unacceptedMismatchCount: 0,
 			semanticMismatchCount: 0,
-			nonDeterministicMismatchCount: 8,
 			errorCount: 0,
-			perfectWorkbookCount: 14,
+			perfectWorkbookCount: 15,
 			semanticPerfectWorkbookCount: 15,
 		})
 	})

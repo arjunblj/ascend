@@ -281,7 +281,7 @@ describe('formula corpus correctness runner', () => {
 		})
 	})
 
-	test('classifies semantic, numeric drift, and non-deterministic cached-value mismatches', async () => {
+	test('classifies semantic, numeric drift, and volatile cached-value oracle skips', async () => {
 		const root = await mkdtemp(join(tmpdir(), 'ascend-formula-corpus-'))
 		await mkdir(root, { recursive: true })
 		const workbook = createWorkbook()
@@ -310,19 +310,54 @@ describe('formula corpus correctness runner', () => {
 		})
 
 		expect(payload.summary).toMatchObject({
-			mismatchCount: 4,
-			acceptedMismatchCount: 3,
+			volatileOracleSkipCount: 1,
+			mismatchCount: 3,
+			acceptedMismatchCount: 2,
 			unacceptedMismatchCount: 1,
 			semanticMismatchCount: 1,
 			numericDriftMismatchCount: 2,
-			nonDeterministicMismatchCount: 1,
 			semanticPerfectWorkbookCount: 0,
 		})
 		expect(payload.results[0]?.mismatches.map((mismatch) => mismatch.classification)).toEqual([
 			'numeric-drift',
 			'semantic',
-			'non-deterministic',
 			'numeric-drift',
+		])
+		expect(payload.results[0]?.volatileOracleSkips.map((skip) => skip.ref)).toEqual(['Sheet1!A3'])
+	})
+
+	test('classifies formulas downstream of volatile precedents as oracle skips', async () => {
+		const root = await mkdtemp(join(tmpdir(), 'ascend-formula-corpus-'))
+		await mkdir(root, { recursive: true })
+		const workbook = createWorkbook()
+		const sheet = workbook.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(0.25), formula: 'RAND()', styleId: SID })
+		sheet.cells.set(1, 0, { value: numberValue(1.25), formula: 'A1+1', styleId: SID })
+		const written = writeXlsx(workbook)
+		if (!written.ok) throw new Error(written.error.message)
+		await writeFile(join(root, 'volatile-downstream.xlsx'), written.value)
+		const manifest = await writeManifest(root, [manifestEntry('volatile-downstream.xlsx')])
+
+		const payload = await runFormulaCorpusCorrectness({
+			corpusRoot: root,
+			manifest,
+			tags: [],
+			tiers: [],
+			sampleSeed: 1,
+			oracle: 'cached-values',
+			json: true,
+		})
+
+		expect(payload.summary).toMatchObject({
+			volatileOracleSkipCount: 2,
+			mismatchCount: 0,
+			unacceptedMismatchCount: 0,
+			semanticMismatchCount: 0,
+			perfectWorkbookCount: 1,
+		})
+		expect(payload.results[0]?.volatileOracleSkips.map((skip) => skip.ref).sort()).toEqual([
+			'Sheet1!A1',
+			'Sheet1!A2',
 		])
 	})
 

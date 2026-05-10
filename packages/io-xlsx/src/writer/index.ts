@@ -540,7 +540,7 @@ export function planWriteXlsx(
 			if (isPackageDocPropsCapsule(capsule)) continue
 			if (chartSheetPartPaths.has(capsule.partPath)) continue
 			if (pivotCachePartPaths.has(capsule.partPath)) continue
-			const target = capsule.partPath.replace(/^xl\//, '')
+			const target = computeRelativePath('xl/', capsule.partPath)
 			wbRels.push({
 				id: `rId${rIdCounter}`,
 				type: capsule.relType,
@@ -1332,6 +1332,7 @@ export function planWriteXlsx(
 							!built.skippedCapsulePaths.has(capsule.partPath),
 					),
 					built.extraOverrides.length > 0 ? built.extraOverrides : undefined,
+					workbook.preservedXml?.contentTypeDefaults,
 				)
 			},
 		)

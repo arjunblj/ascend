@@ -1169,6 +1169,47 @@ describe('writeXlsx', () => {
 		expect(zip['xl/vbaProject.bin']).toBeDefined()
 	})
 
+	it('preserves default-covered capsule content types and workbook-relative targets', () => {
+		const wb = new Workbook()
+		wb.preservedXml = {
+			contentTypeDefaults: [{ extension: 'png', contentType: 'image/png' }],
+		}
+		wb.addSheet('Sheet1')
+		const capsules: PreservationCapsule[] = [
+			{
+				partPath: 'customXml/item1.xml',
+				contentType: 'application/xml',
+				contentTypeSource: 'default',
+				relationships: [],
+				content: new TextEncoder().encode('<root/>'),
+				anchor: { kind: 'workbook' },
+				relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml',
+			},
+			{
+				partPath: 'xl/media/image1.png',
+				contentType: 'image/png',
+				contentTypeSource: 'default',
+				relationships: [],
+				content: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+				anchor: { kind: 'workbook' },
+			},
+		]
+
+		const written = writeXlsx(wb, capsules)
+		if (!written.ok) throw new Error(`write failed: ${written.error.message}`)
+
+		const zip = unzipSync(written.value)
+		const contentTypes = new TextDecoder().decode(zip['[Content_Types].xml'] ?? new Uint8Array())
+		const workbookRels = new TextDecoder().decode(
+			zip['xl/_rels/workbook.xml.rels'] ?? new Uint8Array(),
+		)
+
+		expect(contentTypes).toContain('<Default Extension="png" ContentType="image/png"/>')
+		expect(contentTypes).not.toContain('PartName="/customXml/item1.xml"')
+		expect(contentTypes).not.toContain('PartName="/xl/media/image1.png"')
+		expect(workbookRels).toContain('Target="../customXml/item1.xml"')
+	})
+
 	it('preserves worksheet autoFilter criteria and sort state on round-trip', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Filter')
@@ -2803,12 +2844,13 @@ describe('writeXlsx', () => {
 		expect(workbookXml).toContain('calcId="191029"')
 	})
 
-	it('preserves sheetView attributes (zoomScale, showGridLines, showFormulas, rightToLeft, tabSelected, view) on round-trip', () => {
+	it('preserves sheetView attributes (zoomScale, zoomScaleNormal, showGridLines, showFormulas, rightToLeft, tabSelected, view) on round-trip', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('View')
 		sheet.cells.set(0, 0, { value: stringValue('hi'), formula: null, styleId: S0 })
 		sheet.sheetView = {
 			zoomScale: 125,
+			zoomScaleNormal: 100,
 			showGridLines: false,
 			showFormulas: true,
 			rightToLeft: true,
@@ -2821,6 +2863,7 @@ describe('writeXlsx', () => {
 		if (!s) throw new Error('Expected round-tripped workbook to contain a sheet')
 		expect(s.sheetView).toEqual({
 			zoomScale: 125,
+			zoomScaleNormal: 100,
 			showGridLines: false,
 			showFormulas: true,
 			rightToLeft: true,

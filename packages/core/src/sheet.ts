@@ -361,6 +361,7 @@ export type SheetViewType = 'normal' | 'pageBreakPreview' | 'pageLayout'
 
 export interface SheetView {
 	readonly zoomScale?: number
+	readonly zoomScaleNormal?: number
 	readonly showGridLines?: boolean
 	readonly showFormulas?: boolean
 	readonly rightToLeft?: boolean

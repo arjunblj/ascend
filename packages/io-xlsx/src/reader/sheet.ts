@@ -2294,6 +2294,8 @@ function parseSheetViews(ws: XmlNode, sheet: Sheet): void {
 	const viewAttrs: Record<string, number | boolean | string> = {}
 	const zoomScale = numAttr(firstView, 'zoomScale')
 	if (zoomScale !== undefined) viewAttrs.zoomScale = zoomScale
+	const zoomScaleNormal = numAttr(firstView, 'zoomScaleNormal')
+	if (zoomScaleNormal !== undefined) viewAttrs.zoomScaleNormal = zoomScaleNormal
 	const showGridLines = readBoolAttribute(firstView, 'showGridLines')
 	if (showGridLines !== undefined) viewAttrs.showGridLines = showGridLines
 	const showFormulas = readBoolAttribute(firstView, 'showFormulas')

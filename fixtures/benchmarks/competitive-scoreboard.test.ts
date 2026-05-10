@@ -863,6 +863,7 @@ describe('buildCompetitiveScoreboard', () => {
 		'WithChart.xlsx',
 		'PivotTable_CachedDefinitionAndDataInSync.xlsx',
 		'chart-sheet.xlsx',
+		'ConditionalFormattingSamples.xlsx',
 	]
 
 	test('xlsx roundtrip SOTA profile accepts evaluated correctness losers and requires Ascend leader', () => {
@@ -923,6 +924,9 @@ describe('buildCompetitiveScoreboard', () => {
 		)
 		expect(failures).toContain(
 			'xlsx-roundtrip-sota missing competitor=Ascend category=edit-roundtrip operationProfile=edit-roundtrip workload=real-workbook file=chart-sheet.xlsx',
+		)
+		expect(failures).toContain(
+			'xlsx-roundtrip-sota missing competitor=Ascend category=edit-roundtrip operationProfile=edit-roundtrip workload=real-workbook file=ConditionalFormattingSamples.xlsx',
 		)
 	})
 

@@ -114,7 +114,13 @@ export interface WorkbookPreservedXml {
 	readonly workbookRelsPath?: string
 	readonly workbookRelsXml?: string
 	readonly contentType?: string
+	readonly contentTypeDefaults?: readonly WorkbookPreservedContentTypeDefault[]
 	readonly sheetEntries?: readonly WorkbookPreservedSheetEntry[]
+}
+
+export interface WorkbookPreservedContentTypeDefault {
+	readonly extension: string
+	readonly contentType: string
 }
 
 export interface WorkbookPreservedSheetEntry {

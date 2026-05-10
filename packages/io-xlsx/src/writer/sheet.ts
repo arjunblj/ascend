@@ -107,6 +107,8 @@ function buildSheetXmlToSink(
 		if (sheet.sheetView) {
 			if (sheet.sheetView.zoomScale !== undefined)
 				viewAttrs.push(`zoomScale="${sheet.sheetView.zoomScale}"`)
+			if (sheet.sheetView.zoomScaleNormal !== undefined)
+				viewAttrs.push(`zoomScaleNormal="${sheet.sheetView.zoomScaleNormal}"`)
 			if (sheet.sheetView.showGridLines === false) viewAttrs.push('showGridLines="0"')
 			if (sheet.sheetView.showFormulas) viewAttrs.push('showFormulas="1"')
 			if (sheet.sheetView.rightToLeft) viewAttrs.push('rightToLeft="1"')

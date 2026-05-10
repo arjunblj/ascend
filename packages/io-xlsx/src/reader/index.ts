@@ -172,6 +172,10 @@ export function readXlsx(
 			workbookPath,
 			...(wbRelsXml ? { workbookRelsPath: wbRelsPath } : {}),
 			...(workbookContentType ? { contentType: workbookContentType } : {}),
+			contentTypeDefaults: Array.from(contentTypes.defaults, ([extension, contentType]) => ({
+				extension,
+				contentType,
+			})),
 			sheetEntries: wbInfo.sheets.map((entry) => ({
 				kind: relMap.get(entry.rId)?.type === REL_CHARTSHEET ? 'chartsheet' : 'worksheet',
 				sheetId: entry.sheetId,
@@ -645,7 +649,7 @@ function collectCapsules(
 		if (partPath.endsWith('.rels')) continue
 		if (partPath.startsWith('_rels/')) continue
 
-		const ct = resolveContentType(partPath, contentTypes)
+		const contentType = resolveContentTypeInfo(partPath, contentTypes)
 
 		let anchor: PreservationCapsule['anchor'] = { kind: 'workbook' }
 		let relType: string | undefined
@@ -673,7 +677,8 @@ function collectCapsules(
 
 		const capsule: PreservationCapsule = {
 			partPath,
-			contentType: ct,
+			contentType: contentType.value,
+			contentTypeSource: contentType.source,
 			relationships,
 			anchor,
 		}
@@ -702,12 +707,22 @@ function isChartCapsule(capsule: PreservationCapsule): boolean {
 }
 
 function resolveContentType(partPath: string, contentTypes: ContentTypes): string {
+	return resolveContentTypeInfo(partPath, contentTypes).value
+}
+
+function resolveContentTypeInfo(
+	partPath: string,
+	contentTypes: ContentTypes,
+): { value: string; source: 'override' | 'default' | 'fallback' } {
 	const normalized = partPath.startsWith('/') ? partPath.substring(1) : partPath
 	const ct = contentTypes.overrides.get(normalized)
-	if (ct) return ct
+	if (ct) return { value: ct, source: 'override' }
 
 	const ext = partPath.split('.').pop() ?? ''
-	return contentTypes.defaults.get(ext) ?? 'application/octet-stream'
+	const defaultType = contentTypes.defaults.get(ext)
+	if (defaultType) return { value: defaultType, source: 'default' }
+
+	return { value: 'application/octet-stream', source: 'fallback' }
 }
 
 function capsuleFamily(path: string): string {

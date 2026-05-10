@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { unzipSync } from 'fflate'
 import type { Sheet, Workbook } from '../../packages/core/src/index.ts'
 import {
 	defaultCalcContext,
@@ -88,6 +89,12 @@ function noOpRoundTripFixture(name: string): { original: Uint8Array; written: Ui
 	expectOk(reopened)
 	expect(reopened.value.workbook.sheets.length).toBe(initial.value.workbook.sheets.length)
 	return { original, written: written.value }
+}
+
+function readZipText(bytes: Uint8Array, path: string): string {
+	const entry = unzipSync(bytes)[path]
+	expect(entry).toBeDefined()
+	return new TextDecoder().decode(entry)
 }
 
 function expectPreservedXmlParts(
@@ -237,6 +244,22 @@ if (poiFixtures.length > 0) {
 			expect(
 				matchingConditionalFormatRefs(workbook, bandedRows, 'expression', 1).slice(0, 10),
 			).toEqual(['A5', 'A7', 'A9', 'A11', 'A13', 'A15', 'A17', 'A19', 'A21', 'A23'])
+		})
+
+		it('preserves ConditionalFormattingSamples package defaults and customXml rel targets', () => {
+			const { written } = noOpRoundTripFixture('ConditionalFormattingSamples.xlsx')
+			const contentTypes = readZipText(written, '[Content_Types].xml')
+			const workbookRels = readZipText(written, 'xl/_rels/workbook.xml.rels')
+
+			expect(contentTypes).toContain('<Default Extension="png" ContentType="image/png"/>')
+			expect(contentTypes).toContain(
+				'<Default Extension="bin" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.printerSettings"/>',
+			)
+			expect(contentTypes).not.toContain('PartName="/xl/media/image1.png"')
+			expect(contentTypes).not.toContain('PartName="/xl/printerSettings/printerSettings1.bin"')
+			expect(contentTypes).not.toContain('PartName="/customXml/item1.xml"')
+			expect(workbookRels).toContain('Target="../customXml/item1.xml"')
+			expect(workbookRels).not.toContain('Target="customXml/item1.xml"')
 		})
 
 		it('preserves x14/extLst conditional formatting payloads on round-trip', () => {

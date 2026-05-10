@@ -14,16 +14,33 @@ const CT_STYLES = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
 const CT_CORE_PROPS = 'application/vnd.openxmlformats-package.core-properties+xml'
 const CT_APP_PROPS = 'application/vnd.openxmlformats-officedocument.extended-properties+xml'
 
+export interface ContentTypeDefault {
+	readonly extension: string
+	readonly contentType: string
+}
+
 export function buildContentTypesXml(
 	sheetCount: number,
 	hasSharedStrings: boolean,
 	workbookContentType = CT_WORKBOOK,
 	capsules?: PreservationCapsule[],
 	extraOverrides?: readonly { partPath: string; contentType: string }[],
+	preservedDefaults?: readonly ContentTypeDefault[],
 ): string {
 	const out = new ChunkedStringBuilder()
+	const defaults = new Map<string, string>()
 	const overrides = new Set<string>()
-	const pushOverride = (partPath: string, contentType: string) => {
+	const pushDefault = (extension: string, contentType: string) => {
+		if (defaults.has(extension)) return
+		defaults.set(extension, contentType)
+		out.push(`<Default Extension="${extension}" ContentType="${contentType}"/>`)
+	}
+	const isDefaultCovered = (partPath: string, contentType: string) => {
+		const ext = partPath.split('.').pop()
+		return ext !== undefined && defaults.get(ext) === contentType
+	}
+	const pushOverride = (partPath: string, contentType: string, skipDefaultCovered = false) => {
+		if (skipDefaultCovered && isDefaultCovered(partPath, contentType)) return
 		const pn = partPath.startsWith('/') ? partPath : `/${partPath}`
 		if (overrides.has(pn)) return
 		overrides.add(pn)
@@ -31,8 +48,13 @@ export function buildContentTypesXml(
 	}
 	out.push(XML_HEADER)
 	out.push(`<Types xmlns="${NS}">`)
-	out.push(`<Default Extension="rels" ContentType="${CT_RELS}"/>`)
-	out.push(`<Default Extension="xml" ContentType="${CT_XML}"/>`)
+	pushDefault('rels', CT_RELS)
+	pushDefault('xml', CT_XML)
+	if (preservedDefaults) {
+		for (const entry of preservedDefaults) {
+			pushDefault(entry.extension, entry.contentType)
+		}
+	}
 	pushOverride('xl/workbook.xml', workbookContentType)
 
 	for (let i = 1; i <= sheetCount; i++) {
@@ -50,14 +72,14 @@ export function buildContentTypesXml(
 	if (capsules) {
 		for (const capsule of capsules) {
 			if (capsule.contentType) {
-				pushOverride(capsule.partPath, capsule.contentType)
+				pushOverride(capsule.partPath, capsule.contentType, capsule.contentTypeSource === 'default')
 			}
 		}
 	}
 
 	if (extraOverrides) {
 		for (const override of extraOverrides) {
-			pushOverride(override.partPath, override.contentType)
+			pushOverride(override.partPath, override.contentType, true)
 		}
 	}
 

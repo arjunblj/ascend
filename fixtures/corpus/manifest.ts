@@ -1,3 +1,6 @@
+import { readFile } from 'node:fs/promises'
+import { pathToFileURL } from 'node:url'
+
 export type CorpusBenchmarkTier = 'smoke' | 'core' | 'extended' | 'stress'
 export type CorpusAssertionClass =
 	| 'exact-bytes'
@@ -61,6 +64,31 @@ export function normalizeManifest(
 	entries: readonly CorpusManifestEntry[],
 ): readonly NormalizedCorpusManifestEntry[] {
 	return entries.map(normalizeManifestEntry)
+}
+
+export async function loadCorpusManifestEntries(
+	manifestPath: string,
+): Promise<readonly CorpusManifestEntry[]> {
+	if (isModuleManifestPath(manifestPath)) {
+		const mod = (await import(pathToFileURL(manifestPath).href)) as {
+			readonly default?: readonly CorpusManifestEntry[]
+			readonly manifest?: readonly CorpusManifestEntry[]
+			readonly loadManifest?: () =>
+				| Promise<readonly CorpusManifestEntry[]>
+				| readonly CorpusManifestEntry[]
+		}
+		const manifest = mod.loadManifest ? await mod.loadManifest() : (mod.manifest ?? mod.default)
+		if (!manifest) {
+			throw new Error(`${manifestPath} must export loadManifest(), manifest, or default`)
+		}
+		return manifest
+	}
+	const raw = await readFile(manifestPath, 'utf-8')
+	return JSON.parse(raw) as CorpusManifestEntry[]
+}
+
+function isModuleManifestPath(path: string): boolean {
+	return path.endsWith('.ts') || path.endsWith('.js') || path.endsWith('.mjs')
 }
 
 export function normalizeManifestEntry(entry: CorpusManifestEntry): NormalizedCorpusManifestEntry {

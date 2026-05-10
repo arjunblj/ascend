@@ -10,7 +10,7 @@ import type { CellValue } from '../../packages/schema/src/index.ts'
 import { topLeftScalar } from '../../packages/schema/src/index.ts'
 import {
 	type CorpusBenchmarkTier,
-	type CorpusManifestEntry,
+	loadCorpusManifestEntries,
 	type NormalizedCorpusManifestEntry,
 	normalizeManifest,
 	selectManifestEntries,
@@ -25,13 +25,17 @@ interface Args {
 	readonly tags: readonly string[]
 	readonly tiers: readonly CorpusBenchmarkTier[]
 	readonly maxWorkbooks?: number
+	readonly maxReportedMismatches?: number
 	readonly sampleSeed: number
 	readonly oracle: OracleMode
 	readonly json: boolean
 	readonly maxMismatches?: number
+	readonly maxUnacceptedMismatches?: number
+	readonly maxSemanticMismatches?: number
 	readonly maxErrors?: number
 	readonly minComparedFormulas?: number
 	readonly minPerfectWorkbooks?: number
+	readonly minSemanticPerfectWorkbooks?: number
 }
 
 interface FormulaSnapshot {
@@ -47,7 +51,13 @@ interface WorkbookFormulaResult {
 	readonly oracle: OracleMode
 	readonly formulaCount: number
 	readonly comparedCount: number
+	readonly noCachedFormulaCount: number
 	readonly mismatchCount: number
+	readonly acceptedMismatchCount: number
+	readonly unacceptedMismatchCount: number
+	readonly semanticMismatchCount: number
+	readonly numericDriftMismatchCount: number
+	readonly nonDeterministicMismatchCount: number
 	readonly errorCount: number
 	readonly beforeHash: string
 	readonly afterHash: string
@@ -61,7 +71,11 @@ interface FormulaMismatch {
 	readonly formula: string
 	readonly cached: string
 	readonly calculated: string
+	readonly classification: FormulaMismatchClassification
+	readonly reason: string
 }
+
+type FormulaMismatchClassification = 'semantic' | 'numeric-drift' | 'non-deterministic'
 
 interface SuitePayload {
 	readonly formatVersion: 1
@@ -75,6 +89,7 @@ interface SuitePayload {
 		readonly tags: readonly string[]
 		readonly tiers: readonly CorpusBenchmarkTier[]
 		readonly maxWorkbooks?: number
+		readonly maxReportedMismatches?: number
 		readonly sampleSeed: number
 	}
 	readonly results: readonly WorkbookFormulaResult[]
@@ -82,11 +97,23 @@ interface SuitePayload {
 		readonly workbookCount: number
 		readonly formulaCount: number
 		readonly comparedCount: number
+		readonly noCachedFormulaCount: number
 		readonly mismatchCount: number
+		readonly acceptedMismatchCount: number
+		readonly unacceptedMismatchCount: number
+		readonly semanticMismatchCount: number
+		readonly numericDriftMismatchCount: number
+		readonly nonDeterministicMismatchCount: number
 		readonly errorCount: number
 		readonly perfectWorkbookCount: number
+		readonly semanticPerfectWorkbookCount: number
 	}
 }
+
+const NUMERIC_DRIFT_ABS_TOLERANCE = 1e-12
+const NUMERIC_DRIFT_REL_TOLERANCE = 2e-8
+const NON_DETERMINISTIC_FUNCTION_RE =
+	/(?:^|[^A-Z0-9_.])(?:NOW|TODAY|RAND|RANDBETWEEN|RANDARRAY)\s*\(/i
 
 function readFlag(name: string): string | undefined {
 	const index = process.argv.indexOf(name)
@@ -137,13 +164,17 @@ function readArgs(): Args {
 		tags: readRepeatedFlag('--tag'),
 		tiers: readRepeatedFlag('--tier') as CorpusBenchmarkTier[],
 		maxWorkbooks: positiveInt(readFlag('--max-workbooks')),
+		maxReportedMismatches: nonNegativeInt(readFlag('--max-reported-mismatches'), 50),
 		sampleSeed: nonNegativeInt(readFlag('--sample-seed'), 1),
 		oracle: 'cached-values',
 		json: hasFlag('--json'),
 		maxMismatches: nonNegativeIntOptional(readFlag('--max-mismatches')),
+		maxUnacceptedMismatches: nonNegativeIntOptional(readFlag('--max-unaccepted-mismatches')),
+		maxSemanticMismatches: nonNegativeIntOptional(readFlag('--max-semantic-mismatches')),
 		maxErrors: nonNegativeIntOptional(readFlag('--max-errors')),
 		minComparedFormulas: positiveInt(readFlag('--min-compared-formulas')),
 		minPerfectWorkbooks: positiveInt(readFlag('--min-perfect-workbooks')),
+		minSemanticPerfectWorkbooks: positiveInt(readFlag('--min-semantic-perfect-workbooks')),
 	}
 }
 
@@ -163,14 +194,28 @@ function serializeValue(value: CellValue): string {
 		case 'date':
 			return `d:${canonicalNumber(scalar.serial)}`
 		case 'string':
-			return `s:${scalar.value}`
+			return `s:${canonicalString(scalar.value)}`
 		case 'boolean':
 			return `b:${scalar.value ? 'true' : 'false'}`
 		case 'error':
 			return `e:${scalar.value}`
 		case 'richText':
-			return `s:${scalar.runs.map((run) => run.text).join('')}`
+			return `s:${canonicalString(scalar.runs.map((run) => run.text).join(''))}`
 	}
+}
+
+function canonicalString(value: string): string {
+	let result = ''
+	for (let index = 0; index < value.length; index++) {
+		const char = value[index] ?? ''
+		const code = char.charCodeAt(0)
+		if ((code >= 0 && code <= 8) || code === 11 || code === 12 || (code >= 14 && code <= 31)) {
+			result += `_x${code.toString(16).toUpperCase().padStart(4, '0')}_`
+		} else {
+			result += char
+		}
+	}
+	return result
 }
 
 function canonicalNumber(value: number): string {
@@ -218,21 +263,165 @@ function compareSnapshots(
 	const afterByRef = new Map(after.map((entry) => [entry.ref, entry]))
 	const mismatches: FormulaMismatch[] = []
 	for (const entry of before) {
+		if (entry.cached === 'empty') continue
 		const calculated = afterByRef.get(entry.ref)
 		if (!calculated) {
-			mismatches.push({ ...entry, calculated: 'missing' })
+			mismatches.push({
+				...entry,
+				calculated: 'missing',
+				classification: 'semantic',
+				reason: 'formula cell missing after recalculation',
+			})
 			continue
 		}
 		if (entry.cached !== calculated.cached) {
-			mismatches.push({ ...entry, calculated: calculated.cached })
+			mismatches.push({
+				...entry,
+				calculated: calculated.cached,
+				...classifyMismatch(entry, calculated),
+			})
 		}
 	}
-	return mismatches
+	return classifyDownstreamDrift(mismatches)
+}
+
+function classifyMismatch(
+	cached: FormulaSnapshot,
+	calculated: FormulaSnapshot,
+): Pick<FormulaMismatch, 'classification' | 'reason'> {
+	if (NON_DETERMINISTIC_FUNCTION_RE.test(cached.formula)) {
+		return {
+			classification: 'non-deterministic',
+			reason:
+				'formula uses time or random functions whose historical cached values are not reproducible',
+		}
+	}
+
+	const cachedNumber = parseSerializedNumber(cached.cached)
+	const calculatedNumber = parseSerializedNumber(calculated.cached)
+	if (cachedNumber && calculatedNumber && cachedNumber.kind === calculatedNumber.kind) {
+		const diff = Math.abs(cachedNumber.value - calculatedNumber.value)
+		const scale = Math.max(1, Math.abs(cachedNumber.value), Math.abs(calculatedNumber.value))
+		if (diff <= NUMERIC_DRIFT_ABS_TOLERANCE || diff <= scale * NUMERIC_DRIFT_REL_TOLERANCE) {
+			return {
+				classification: 'numeric-drift',
+				reason: `numeric difference ${diff} within abs=${NUMERIC_DRIFT_ABS_TOLERANCE} or rel=${NUMERIC_DRIFT_REL_TOLERANCE}`,
+			}
+		}
+	}
+
+	const cachedComplex = parseSerializedComplex(cached.cached)
+	const calculatedComplex = parseSerializedComplex(calculated.cached)
+	if (cachedComplex && calculatedComplex && cachedComplex.suffix === calculatedComplex.suffix) {
+		const realDiff = Math.abs(cachedComplex.real - calculatedComplex.real)
+		const imagDiff = Math.abs(cachedComplex.imag - calculatedComplex.imag)
+		const realScale = Math.max(1, Math.abs(cachedComplex.real), Math.abs(calculatedComplex.real))
+		const imagScale = Math.max(1, Math.abs(cachedComplex.imag), Math.abs(calculatedComplex.imag))
+		if (
+			(realDiff <= NUMERIC_DRIFT_ABS_TOLERANCE ||
+				realDiff <= realScale * NUMERIC_DRIFT_REL_TOLERANCE) &&
+			(imagDiff <= NUMERIC_DRIFT_ABS_TOLERANCE ||
+				imagDiff <= imagScale * NUMERIC_DRIFT_REL_TOLERANCE)
+		) {
+			return {
+				classification: 'numeric-drift',
+				reason: `complex numeric difference real=${realDiff} imag=${imagDiff} within abs=${NUMERIC_DRIFT_ABS_TOLERANCE} or rel=${NUMERIC_DRIFT_REL_TOLERANCE}`,
+			}
+		}
+	}
+
+	return {
+		classification: 'semantic',
+		reason: 'cached and calculated values differ beyond tolerance',
+	}
+}
+
+function classifyDownstreamDrift(
+	mismatches: readonly FormulaMismatch[],
+): readonly FormulaMismatch[] {
+	let current = [...mismatches]
+	let changed = true
+	while (changed) {
+		changed = false
+		const byRef = new Map(current.map((mismatch) => [mismatch.ref, mismatch]))
+		current = current.map((mismatch) => {
+			if (mismatch.classification !== 'semantic') return mismatch
+			for (const ref of extractFormulaReferences(mismatch.formula, mismatch.ref)) {
+				const precedent = byRef.get(ref)
+				if (!precedent) continue
+				if (precedent.classification === 'numeric-drift') {
+					changed = true
+					return {
+						...mismatch,
+						classification: 'numeric-drift',
+						reason: `downstream of numeric-drift precedent ${ref}`,
+					}
+				}
+				if (precedent.classification === 'non-deterministic') {
+					changed = true
+					return {
+						...mismatch,
+						classification: 'non-deterministic',
+						reason: `downstream of non-deterministic precedent ${ref}`,
+					}
+				}
+			}
+			return mismatch
+		})
+	}
+	return current
+}
+
+function extractFormulaReferences(formula: string, currentRef: string): readonly string[] {
+	const currentSheet = sheetNameFromRef(currentRef)
+	const refs = new Set<string>()
+	const refPattern =
+		/(?:(?:'((?:[^']|'')+)'|([A-Za-z_][A-Za-z0-9_ .]*))!)?(\$?[A-Za-z]{1,3}\$?\d+)(?::(\$?[A-Za-z]{1,3}\$?\d+))?/g
+	for (const match of formula.matchAll(refPattern)) {
+		const rawSheet = match[1]?.replace(/''/g, "'") ?? match[2] ?? currentSheet
+		const first = normalizeA1Ref(match[3] ?? '')
+		const second = normalizeA1Ref(match[4] ?? '')
+		if (rawSheet && first) refs.add(`${quoteSheet(rawSheet)}!${first}`)
+		if (rawSheet && second) refs.add(`${quoteSheet(rawSheet)}!${second}`)
+	}
+	return [...refs]
+}
+
+function sheetNameFromRef(ref: string): string {
+	const separator = ref.lastIndexOf('!')
+	const rawSheet = separator >= 0 ? ref.slice(0, separator) : ''
+	if (rawSheet.startsWith("'") && rawSheet.endsWith("'")) {
+		return rawSheet.slice(1, -1).replace(/''/g, "'")
+	}
+	return rawSheet
+}
+
+function normalizeA1Ref(ref: string): string {
+	return ref.replace(/\$/g, '').toUpperCase()
+}
+
+function parseSerializedNumber(serialized: string): { kind: 'n' | 'd'; value: number } | null {
+	const match = /^(n|d):(.+)$/.exec(serialized)
+	if (!match) return null
+	const value = Number(match[2])
+	if (!Number.isFinite(value)) return null
+	return { kind: match[1] as 'n' | 'd', value }
+}
+
+function parseSerializedComplex(
+	serialized: string,
+): { real: number; imag: number; suffix: 'i' | 'j' } | null {
+	const numberPattern = String.raw`[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][+-]?\d+)?`
+	const match = new RegExp(`^s:(${numberPattern})(${numberPattern})([ij])$`).exec(serialized)
+	if (!match) return null
+	const real = Number(match[1])
+	const imag = Number(match[2])
+	if (!Number.isFinite(real) || !Number.isFinite(imag)) return null
+	return { real, imag, suffix: match[3] as 'i' | 'j' }
 }
 
 async function loadManifest(path: string): Promise<readonly NormalizedCorpusManifestEntry[]> {
-	const raw = await readFile(path, 'utf-8')
-	return normalizeManifest(JSON.parse(raw) as CorpusManifestEntry[])
+	return normalizeManifest(await loadCorpusManifestEntries(path))
 }
 
 function seededShuffle<T>(items: readonly T[], seed: number): T[] {
@@ -250,7 +439,7 @@ function seededShuffle<T>(items: readonly T[], seed: number): T[] {
 
 async function runWorkbook(
 	entry: NormalizedCorpusManifestEntry,
-	args: Pick<Args, 'corpusRoot' | 'oracle'>,
+	args: Pick<Args, 'corpusRoot' | 'maxReportedMismatches' | 'oracle'>,
 ): Promise<WorkbookFormulaResult> {
 	const path = resolve(args.corpusRoot, entry.file)
 	const bytes = new Uint8Array(await readFile(path))
@@ -265,7 +454,13 @@ async function runWorkbook(
 			oracle: args.oracle,
 			formulaCount: 0,
 			comparedCount: 0,
+			noCachedFormulaCount: 0,
 			mismatchCount: 0,
+			acceptedMismatchCount: 0,
+			unacceptedMismatchCount: 0,
+			semanticMismatchCount: 0,
+			numericDriftMismatchCount: 0,
+			nonDeterministicMismatchCount: 0,
 			errorCount: 1,
 			beforeHash: hashLines([]),
 			afterHash: hashLines([]),
@@ -275,26 +470,56 @@ async function runWorkbook(
 		}
 	}
 	const before = collectFormulaSnapshots(read.value.workbook)
+	const comparableBefore = before.filter((entry) => entry.cached !== 'empty')
 	const recalcStart = performance.now()
-	const recalc = recalculate(read.value.workbook, defaultCalcContext())
+	const recalc = recalculate(
+		read.value.workbook,
+		defaultCalcContext({
+			dateSystem: read.value.workbook.calcSettings.dateSystem,
+			iterativeCalc: read.value.workbook.calcSettings.iterativeCalc,
+		}),
+	)
 	const recalcMs = performance.now() - recalcStart
 	const after = collectFormulaSnapshots(read.value.workbook)
+	const comparableRefs = new Set(comparableBefore.map((entry) => entry.ref))
+	const comparableAfter = after.filter((entry) => comparableRefs.has(entry.ref))
 	const mismatches = compareSnapshots(before, after)
+	const semanticMismatchCount = countMismatches(mismatches, 'semantic')
+	const numericDriftMismatchCount = countMismatches(mismatches, 'numeric-drift')
+	const nonDeterministicMismatchCount = countMismatches(mismatches, 'non-deterministic')
+	const acceptedMismatchCount = numericDriftMismatchCount + nonDeterministicMismatchCount
 	return {
 		file: entry.file,
 		...(entry.source ? { source: entry.source } : {}),
 		...(entry.sourceUrl ? { sourceUrl: entry.sourceUrl } : {}),
 		oracle: args.oracle,
 		formulaCount: before.length,
-		comparedCount: before.length,
+		comparedCount: comparableBefore.length,
+		noCachedFormulaCount: before.length - comparableBefore.length,
 		mismatchCount: mismatches.length,
+		acceptedMismatchCount,
+		unacceptedMismatchCount: semanticMismatchCount,
+		semanticMismatchCount,
+		numericDriftMismatchCount,
+		nonDeterministicMismatchCount,
 		errorCount: recalc.errors.length,
-		beforeHash: hashLines(before.map((entry) => `${entry.ref}\t${entry.formula}\t${entry.cached}`)),
-		afterHash: hashLines(after.map((entry) => `${entry.ref}\t${entry.formula}\t${entry.cached}`)),
-		mismatches: mismatches.slice(0, 50),
+		beforeHash: hashLines(
+			comparableBefore.map((entry) => `${entry.ref}\t${entry.formula}\t${entry.cached}`),
+		),
+		afterHash: hashLines(
+			comparableAfter.map((entry) => `${entry.ref}\t${entry.formula}\t${entry.cached}`),
+		),
+		mismatches: mismatches.slice(0, args.maxReportedMismatches ?? 50),
 		readMs,
 		recalcMs,
 	}
+}
+
+function countMismatches(
+	mismatches: readonly FormulaMismatch[],
+	classification: FormulaMismatchClassification,
+): number {
+	return mismatches.filter((mismatch) => mismatch.classification === classification).length
 }
 
 function summarize(results: readonly WorkbookFormulaResult[]): SuitePayload['summary'] {
@@ -302,10 +527,28 @@ function summarize(results: readonly WorkbookFormulaResult[]): SuitePayload['sum
 		workbookCount: results.length,
 		formulaCount: results.reduce((sum, result) => sum + result.formulaCount, 0),
 		comparedCount: results.reduce((sum, result) => sum + result.comparedCount, 0),
+		noCachedFormulaCount: results.reduce((sum, result) => sum + result.noCachedFormulaCount, 0),
 		mismatchCount: results.reduce((sum, result) => sum + result.mismatchCount, 0),
+		acceptedMismatchCount: results.reduce((sum, result) => sum + result.acceptedMismatchCount, 0),
+		unacceptedMismatchCount: results.reduce(
+			(sum, result) => sum + result.unacceptedMismatchCount,
+			0,
+		),
+		semanticMismatchCount: results.reduce((sum, result) => sum + result.semanticMismatchCount, 0),
+		numericDriftMismatchCount: results.reduce(
+			(sum, result) => sum + result.numericDriftMismatchCount,
+			0,
+		),
+		nonDeterministicMismatchCount: results.reduce(
+			(sum, result) => sum + result.nonDeterministicMismatchCount,
+			0,
+		),
 		errorCount: results.reduce((sum, result) => sum + result.errorCount, 0),
 		perfectWorkbookCount: results.filter(
 			(result) => result.mismatchCount === 0 && result.errorCount === 0,
+		).length,
+		semanticPerfectWorkbookCount: results.filter(
+			(result) => result.semanticMismatchCount === 0 && result.errorCount === 0,
 		).length,
 	}
 }
@@ -337,6 +580,7 @@ export async function runFormulaCorpusCorrectness(args: Args): Promise<SuitePayl
 			tags: args.tags,
 			tiers: args.tiers,
 			...(args.maxWorkbooks ? { maxWorkbooks: args.maxWorkbooks } : {}),
+			maxReportedMismatches: args.maxReportedMismatches,
 			sampleSeed: args.sampleSeed,
 		},
 		results,
@@ -346,11 +590,36 @@ export async function runFormulaCorpusCorrectness(args: Args): Promise<SuitePayl
 
 export function formulaCorpusCorrectnessAssertionFailures(
 	payload: SuitePayload,
-	args: Pick<Args, 'maxErrors' | 'maxMismatches' | 'minComparedFormulas' | 'minPerfectWorkbooks'>,
+	args: Pick<
+		Args,
+		| 'maxErrors'
+		| 'maxMismatches'
+		| 'maxUnacceptedMismatches'
+		| 'maxSemanticMismatches'
+		| 'minComparedFormulas'
+		| 'minPerfectWorkbooks'
+		| 'minSemanticPerfectWorkbooks'
+	>,
 ): readonly string[] {
 	const failures: string[] = []
 	if (args.maxMismatches !== undefined && payload.summary.mismatchCount > args.maxMismatches) {
 		failures.push(`mismatches ${payload.summary.mismatchCount} exceeded ${args.maxMismatches}`)
+	}
+	if (
+		args.maxUnacceptedMismatches !== undefined &&
+		payload.summary.unacceptedMismatchCount > args.maxUnacceptedMismatches
+	) {
+		failures.push(
+			`unaccepted mismatches ${payload.summary.unacceptedMismatchCount} exceeded ${args.maxUnacceptedMismatches}`,
+		)
+	}
+	if (
+		args.maxSemanticMismatches !== undefined &&
+		payload.summary.semanticMismatchCount > args.maxSemanticMismatches
+	) {
+		failures.push(
+			`semantic mismatches ${payload.summary.semanticMismatchCount} exceeded ${args.maxSemanticMismatches}`,
+		)
 	}
 	if (args.maxErrors !== undefined && payload.summary.errorCount > args.maxErrors) {
 		failures.push(`errors ${payload.summary.errorCount} exceeded ${args.maxErrors}`)
@@ -371,16 +640,24 @@ export function formulaCorpusCorrectnessAssertionFailures(
 			`perfect workbooks ${payload.summary.perfectWorkbookCount} below ${args.minPerfectWorkbooks}`,
 		)
 	}
+	if (
+		args.minSemanticPerfectWorkbooks !== undefined &&
+		payload.summary.semanticPerfectWorkbookCount < args.minSemanticPerfectWorkbooks
+	) {
+		failures.push(
+			`semantic-perfect workbooks ${payload.summary.semanticPerfectWorkbookCount} below ${args.minSemanticPerfectWorkbooks}`,
+		)
+	}
 	return failures
 }
 
 function render(payload: SuitePayload): void {
 	console.log(
-		`formula corpus correctness: workbooks=${payload.summary.workbookCount} formulas=${payload.summary.formulaCount} mismatches=${payload.summary.mismatchCount} errors=${payload.summary.errorCount}`,
+		`formula corpus correctness: workbooks=${payload.summary.workbookCount} formulas=${payload.summary.formulaCount} compared=${payload.summary.comparedCount} noCached=${payload.summary.noCachedFormulaCount} mismatches=${payload.summary.mismatchCount} accepted=${payload.summary.acceptedMismatchCount} unaccepted=${payload.summary.unacceptedMismatchCount} semantic=${payload.summary.semanticMismatchCount} numericDrift=${payload.summary.numericDriftMismatchCount} nonDeterministic=${payload.summary.nonDeterministicMismatchCount} errors=${payload.summary.errorCount}`,
 	)
 	for (const result of payload.results) {
 		console.log(
-			`${result.file}: formulas=${result.formulaCount} mismatches=${result.mismatchCount} errors=${result.errorCount} read=${result.readMs.toFixed(2)}ms recalc=${result.recalcMs.toFixed(2)}ms`,
+			`${result.file}: formulas=${result.formulaCount} compared=${result.comparedCount} noCached=${result.noCachedFormulaCount} mismatches=${result.mismatchCount} accepted=${result.acceptedMismatchCount} unaccepted=${result.unacceptedMismatchCount} semantic=${result.semanticMismatchCount} numericDrift=${result.numericDriftMismatchCount} nonDeterministic=${result.nonDeterministicMismatchCount} errors=${result.errorCount} read=${result.readMs.toFixed(2)}ms recalc=${result.recalcMs.toFixed(2)}ms`,
 		)
 	}
 }

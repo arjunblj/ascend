@@ -4,12 +4,61 @@ import { basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defaultCalcContext, recalculate } from '../../packages/engine/src/index.ts'
 import { readXlsx, writeXlsx } from '../../packages/io-xlsx/src/index.ts'
+import {
+	fingerprintXlsx,
+	fingerprintXlsxPart,
+} from '../../packages/io-xlsx/test/fidelity-harness.ts'
 import { AscendWorkbook } from '../../packages/sdk/src/index.ts'
+import { runFormulaCorpusCorrectness } from '../benchmarks/formula-corpus-correctness.ts'
 
 const poiDir = fileURLToPath(new URL('./poi/', import.meta.url))
+const poiManifest = fileURLToPath(new URL('./poi/manifest.ts', import.meta.url))
 const poiFixtures = readdirSync(poiDir)
 	.filter((name) => name.endsWith('.xlsx'))
 	.sort((a, b) => a.localeCompare(b))
+
+interface NoOpFidelityFixture {
+	readonly name: string
+	readonly preservedParts?: readonly string[]
+	readonly worksheetTags: Readonly<Record<string, number>>
+}
+
+const noOpFidelityFixtures: readonly NoOpFidelityFixture[] = [
+	{
+		name: 'WithChart.xlsx',
+		preservedParts: ['xl/charts/chart1.xml', 'xl/drawings/drawing1.xml'],
+		worksheetTags: { drawing: 1 },
+	},
+	{
+		name: 'WithDrawing.xlsx',
+		preservedParts: ['xl/drawings/drawing1.xml'],
+		worksheetTags: { drawing: 1 },
+	},
+	{
+		name: 'SimpleWithComments.xlsx',
+		preservedParts: ['xl/comments1.xml', 'xl/drawings/vmlDrawing1.vml'],
+		worksheetTags: { legacyDrawing: 1 },
+	},
+	{
+		name: 'DataValidationEvaluations.xlsx',
+		worksheetTags: { dataValidations: 1, dataValidation: 17 },
+	},
+	{
+		name: 'NewStyleConditionalFormattings.xlsx',
+		worksheetTags: {
+			conditionalFormatting: 18,
+			cfRule: 19,
+			extLst: 2,
+			'x14:conditionalFormatting': 3,
+			'x14:cfRule': 3,
+		},
+	},
+	{
+		name: 'StructuredReferences.xlsx',
+		preservedParts: ['xl/tables/table1.xml'],
+		worksheetTags: { tableParts: 1, tablePart: 1 },
+	},
+]
 
 function loadFixture(name: string): Uint8Array {
 	return readFileSync(new URL(`./poi/${name}`, import.meta.url))
@@ -20,6 +69,53 @@ function expectOk<T, E extends { message: string }>(
 ): asserts result is { ok: true; value: T } {
 	expect(result.ok).toBe(true)
 	if (!result.ok) throw new Error(result.error.message)
+}
+
+function noOpRoundTripFixture(name: string): { original: Uint8Array; written: Uint8Array } {
+	const original = loadFixture(name)
+	const initial = readXlsx(original)
+	expectOk(initial)
+	const written = writeXlsx(initial.value.workbook, initial.value.capsules)
+	expectOk(written)
+	const reopened = readXlsx(written.value)
+	expectOk(reopened)
+	expect(reopened.value.workbook.sheets.length).toBe(initial.value.workbook.sheets.length)
+	return { original, written: written.value }
+}
+
+function expectPreservedXmlParts(
+	original: Uint8Array,
+	written: Uint8Array,
+	paths: readonly string[],
+): void {
+	for (const path of paths) {
+		const before = fingerprintXlsxPart(original, path)
+		const after = fingerprintXlsxPart(written, path)
+		expect(before).toBeDefined()
+		expect(after).toBeDefined()
+		expect(after?.xml.normalized).toBe(before?.xml.normalized)
+		expect(after?.xml.tagCounts).toEqual(before?.xml.tagCounts)
+	}
+}
+
+function expectWorksheetTagCountsPreserved(
+	original: Uint8Array,
+	written: Uint8Array,
+	expectedCounts: Readonly<Record<string, number>>,
+): void {
+	const before = fingerprintXlsx(original)
+	const after = fingerprintXlsx(written)
+	expect(after.sheets.map((sheet) => sheet.path)).toEqual(before.sheets.map((sheet) => sheet.path))
+
+	for (const [tag, expectedCount] of Object.entries(expectedCounts)) {
+		const beforeCount = countWorksheetTag(before, tag)
+		expect(beforeCount).toBe(expectedCount)
+		expect(countWorksheetTag(after, tag)).toBe(beforeCount)
+	}
+}
+
+function countWorksheetTag(fingerprint: ReturnType<typeof fingerprintXlsx>, tag: string): number {
+	return fingerprint.sheets.reduce((sum, sheet) => sum + (sheet.xml.tagCounts[tag] ?? 0), 0)
 }
 
 if (poiFixtures.length > 0) {
@@ -120,10 +216,33 @@ if (poiFixtures.length > 0) {
 			expect(count).toBeGreaterThan(0)
 		})
 
+		for (const fixture of noOpFidelityFixtures) {
+			it(`preserves no-op package fidelity for ${fixture.name}`, () => {
+				const { original, written } = noOpRoundTripFixture(fixture.name)
+				if (fixture.preservedParts) {
+					expectPreservedXmlParts(original, written, fixture.preservedParts)
+				}
+				expectWorksheetTagCountsPreserved(original, written, fixture.worksheetTags)
+			})
+		}
+
 		it('loads multiple sheets from 55906-MultiSheetRefs.xlsx', () => {
 			const result = readXlsx(loadFixture('55906-MultiSheetRefs.xlsx'))
 			expectOk(result)
 			expect(result.value.workbook.sheets.length).toBeGreaterThan(1)
+		})
+
+		it('preserves calcChain package wiring on no-op round-trip', () => {
+			const { original, written } = noOpRoundTripFixture('55906-MultiSheetRefs.xlsx')
+			const beforeChain = fingerprintXlsxPart(original, 'xl/calcChain.xml')
+			const afterChain = fingerprintXlsxPart(written, 'xl/calcChain.xml')
+			const afterContentTypes = fingerprintXlsxPart(written, '[Content_Types].xml')
+			const afterWorkbookRels = fingerprintXlsxPart(written, 'xl/_rels/workbook.xml.rels')
+
+			expect(beforeChain).toBeDefined()
+			expect(afterChain?.xml.normalized).toBe(beforeChain?.xml.normalized)
+			expect(afterContentTypes?.xml.normalized).toContain('calcChain+xml')
+			expect(afterWorkbookRels?.xml.normalized).toContain('relationships/calcChain')
 		})
 
 		it('captures workbook or sheet protection from POI protection fixtures', () => {
@@ -339,6 +458,38 @@ if (poiFixtures.length > 0) {
 				}
 			}
 			expect(formulaCount).toBeGreaterThan(10)
+		})
+
+		it('keeps POI cached formula corpus semantically perfect', async () => {
+			const payload = await runFormulaCorpusCorrectness({
+				corpusRoot: poiDir,
+				manifest: poiManifest,
+				tags: ['formula-fidelity'],
+				tiers: [],
+				maxReportedMismatches: 20,
+				sampleSeed: 1,
+				oracle: 'cached-values',
+				json: true,
+				maxUnacceptedMismatches: 0,
+				maxSemanticMismatches: 0,
+				maxErrors: 0,
+				minComparedFormulas: 1944,
+				minSemanticPerfectWorkbooks: 24,
+			})
+			expect(payload.summary).toMatchObject({
+				workbookCount: 24,
+				formulaCount: 1944,
+				comparedCount: 1944,
+				noCachedFormulaCount: 0,
+				mismatchCount: 30,
+				acceptedMismatchCount: 30,
+				unacceptedMismatchCount: 0,
+				semanticMismatchCount: 0,
+				numericDriftMismatchCount: 27,
+				nonDeterministicMismatchCount: 3,
+				errorCount: 0,
+				semanticPerfectWorkbookCount: 24,
+			})
 		})
 
 		it('reads defined names from named_ranges_2011.xlsx', () => {

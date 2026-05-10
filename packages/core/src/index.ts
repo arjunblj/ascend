@@ -87,6 +87,7 @@ export type {
 	SheetDataValidation,
 	SheetDrawingObjectKind,
 	SheetDrawingObjectRef,
+	SheetDrawingObjectRelationshipRef,
 	SheetDrawingRefs,
 	SheetFormatPr,
 	SheetHeaderFooter,

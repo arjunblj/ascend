@@ -754,17 +754,46 @@ if (poiFixtures.length > 0) {
 			if (!originalSheetName) return
 
 			const before = wb.inspect().sheets[0]
+			const beforeVisuals = wb.visualInventory()
+			const beforeSheetVisuals = beforeVisuals.sheets.find(
+				(sheet) => sheet.sheet === originalSheetName,
+			)
 			expect(before?.hasDrawingRefs).toBe(true)
-			expect(before?.imageCount ?? 0).toBeGreaterThan(0)
+			expect(before?.imageCount).toBe(5)
+			expect(beforeSheetVisuals?.imageRefs?.map((image) => image.targetPath)).toEqual([
+				'xl/media/image1.jpeg',
+				'xl/media/image2.emf',
+				'xl/media/image3.png',
+				'xl/media/image4.emf',
+				'xl/media/image5.wmf',
+			])
+			expect(beforeSheetVisuals?.imageRefs?.map((image) => image.anchor?.kind)).toEqual([
+				'twoCell',
+				'twoCell',
+				'twoCell',
+				'twoCell',
+				'twoCell',
+			])
+			expect(beforeSheetVisuals?.drawingObjectRefs).toEqual([
+				expect.objectContaining({
+					drawingPartPath: 'xl/drawings/drawing1.xml',
+					kind: 'textBox',
+					id: 9,
+					name: 'TextBox 8',
+					anchor: expect.objectContaining({ kind: 'oneCell' }),
+				}),
+			])
 
 			const rename = wb.renameSheet(originalSheetName, `${originalSheetName} Renamed`)
 			expect(rename.errors).toHaveLength(0)
 
 			const reopened = await AscendWorkbook.open(wb.toBytes())
 			const after = reopened.inspect().sheets[0]
+			const afterVisuals = reopened.visualInventory().sheets[0]
 			expect(after?.name).toBe(`${originalSheetName} Renamed`)
 			expect(after?.hasDrawingRefs).toBe(true)
 			expect(after?.imageCount).toBe(before?.imageCount)
+			expect(afterVisuals?.drawingObjectCount).toBe(1)
 		})
 	})
 } else {

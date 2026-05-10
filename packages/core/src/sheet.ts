@@ -173,6 +173,13 @@ export type SheetDrawingObjectKind =
 	| 'graphicFrame'
 	| 'unknown'
 
+export interface SheetDrawingObjectRelationshipRef {
+	readonly id: string
+	readonly type: string
+	readonly target: string
+	readonly targetMode?: string
+}
+
 export interface SheetDrawingObjectRef {
 	readonly drawingPartPath: string
 	readonly kind: SheetDrawingObjectKind
@@ -182,6 +189,7 @@ export interface SheetDrawingObjectRef {
 	readonly description?: string
 	readonly text?: string
 	readonly relIds?: readonly string[]
+	readonly relationshipRefs?: readonly SheetDrawingObjectRelationshipRef[]
 }
 
 export interface SheetSparklineGroupInfo {
@@ -626,6 +634,9 @@ function cloneDrawingObjectRef(drawingObjectRef: SheetDrawingObjectRef): SheetDr
 		...drawingObjectRef,
 		...(drawingObjectRef.anchor ? { anchor: cloneImageAnchor(drawingObjectRef.anchor) } : {}),
 		...(drawingObjectRef.relIds ? { relIds: [...drawingObjectRef.relIds] } : {}),
+		...(drawingObjectRef.relationshipRefs
+			? { relationshipRefs: drawingObjectRef.relationshipRefs.map((rel) => ({ ...rel })) }
+			: {}),
 	}
 }
 

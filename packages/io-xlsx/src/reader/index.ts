@@ -1497,7 +1497,7 @@ function attachDrawingImages(
 		if (!drawingXml) continue
 		const relationships = drawingRelsXml ? parseRelationships(drawingRelsXml) : []
 		sheet.imageRefs.push(...parseDrawingImageRefs(drawingXml, drawingPath, relationships))
-		sheet.drawingObjectRefs.push(...parseDrawingObjectRefs(drawingXml, drawingPath))
+		sheet.drawingObjectRefs.push(...parseDrawingObjectRefs(drawingXml, drawingPath, relationships))
 	}
 }
 

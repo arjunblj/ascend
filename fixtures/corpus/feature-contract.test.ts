@@ -76,6 +76,12 @@ interface SemanticSummary {
 	connectionPartCount: number
 	activeContentCount: number
 	chartSheetCount: number
+	sheetImageRefCount: number | null
+	sheetDrawingObjectRefCount: number | null
+	imageRefsHaveAnchors: boolean
+	imageRefsHaveRelationships: boolean
+	drawingObjectsHaveAnchors: boolean
+	drawingObjectsHaveIdentity: boolean
 	hasDrawingRefs: boolean
 	activeContent: readonly ActiveContentInfo[]
 	charts: readonly ChartPartInfo[]
@@ -159,6 +165,7 @@ const VENDORED_CONTRACT_FIXTURES: readonly {
 			'Sparklines.xlsx',
 			'TableStyleTest.xlsx',
 			'activex_checkbox.xlsx',
+			'textbox-hyperlink.xlsx',
 			'textLengthDataValidity.xlsx',
 			'universal-content-strict.xlsx',
 		],
@@ -259,6 +266,89 @@ function hasChartOwner(chart: ChartPartInfo, chartSheetChartPaths: ReadonlySet<s
 	return chart.sheetName !== undefined || chartSheetChartPaths.has(chart.partPath)
 }
 
+function hasSemanticDrawingInventory(
+	packageSummary: PackageSummary,
+	semanticSummary: SemanticSummary,
+	compatibilityFeatures: ReadonlyMap<string, CompatibilityFeatureSummary>,
+): boolean {
+	if (packageSummary.drawings === 0) return false
+	if (
+		packageSummary.media > 0 &&
+		!hasSemanticImageInventory(packageSummary, semanticSummary, compatibilityFeatures)
+	) {
+		return false
+	}
+	if (
+		(semanticSummary.sheetDrawingObjectRefCount ?? 0) > 0 &&
+		(!semanticSummary.drawingObjectsHaveAnchors || !semanticSummary.drawingObjectsHaveIdentity)
+	) {
+		return false
+	}
+	return (
+		semanticSummary.hasDrawingRefs ||
+		(semanticSummary.sheetImageRefCount ?? 0) > 0 ||
+		(semanticSummary.sheetDrawingObjectRefCount ?? 0) > 0 ||
+		compatibilityFeatures.has('drawing') ||
+		compatibilityFeatures.has('preservedDrawing')
+	)
+}
+
+function hasSemanticImageInventory(
+	packageSummary: PackageSummary,
+	semanticSummary: SemanticSummary,
+	compatibilityFeatures: ReadonlyMap<string, CompatibilityFeatureSummary>,
+): boolean {
+	if (packageSummary.media === 0) {
+		return semanticSummary.imageCount > 0 || compatibilityFeatures.has('preservedMedia')
+	}
+	return (
+		compatibilityFeatures.has('preservedMedia') &&
+		((semanticSummary.sheetImageRefCount ?? 0) === 0 ||
+			(semanticSummary.sheetImageRefCount !== null &&
+				semanticSummary.sheetImageRefCount <= packageSummary.media &&
+				semanticSummary.imageRefsHaveAnchors &&
+				semanticSummary.imageRefsHaveRelationships))
+	)
+}
+
+function assertKnownVisualFixtureCoverage(
+	entry: NormalizedCorpusManifestEntry,
+	semanticSummary: SemanticSummary,
+): void {
+	const expected = KNOWN_VISUAL_FIXTURE_EXPECTATIONS.get(entry.file)
+	if (!expected) return
+	if (expected.sheetImageRefCount !== undefined) {
+		assertFeature(
+			entry,
+			'visual_image_inventory',
+			semanticSummary.sheetImageRefCount === expected.sheetImageRefCount &&
+				semanticSummary.imageRefsHaveAnchors &&
+				semanticSummary.imageRefsHaveRelationships,
+			`expected ${expected.sheetImageRefCount} parsed image refs with anchors and relationships`,
+		)
+	}
+	if (expected.sheetDrawingObjectRefCount !== undefined) {
+		assertFeature(
+			entry,
+			'visual_drawing_object_inventory',
+			semanticSummary.sheetDrawingObjectRefCount === expected.sheetDrawingObjectRefCount &&
+				semanticSummary.drawingObjectsHaveAnchors &&
+				semanticSummary.drawingObjectsHaveIdentity,
+			`expected ${expected.sheetDrawingObjectRefCount} parsed drawing objects with anchors and identity`,
+		)
+	}
+}
+
+const KNOWN_VISUAL_FIXTURE_EXPECTATIONS = new Map<
+	string,
+	{ readonly sheetImageRefCount?: number; readonly sheetDrawingObjectRefCount?: number }
+>([
+	['ImageHandling_ImageAnchors.xlsx', { sheetImageRefCount: 7 }],
+	['WithDrawing.xlsx', { sheetImageRefCount: 5, sheetDrawingObjectRefCount: 1 }],
+	['picture.xlsx', { sheetImageRefCount: 2 }],
+	['textbox-hyperlink.xlsx', { sheetDrawingObjectRefCount: 1 }],
+])
+
 function summarizePackage(bytes: Uint8Array): PackageSummary {
 	const summary = summarizeOoxmlPackage(bytes)
 	return {
@@ -326,7 +416,10 @@ async function loadContractSubject(bytes: Uint8Array): Promise<ContractSubject> 
 	expectOk(raw)
 	const workbook = await AscendWorkbook.open(bytes)
 	const info = workbook.inspect()
+	const visuals = workbook.visualInventory()
 	const packageProbe = inspectOoxmlPackageFeatures(bytes)
+	const imageRefs = visuals.sheets.flatMap((sheet) => sheet.imageRefs ?? [])
+	const drawingObjectRefs = visuals.sheets.flatMap((sheet) => sheet.drawingObjectRefs ?? [])
 	return {
 		packageSummary: summarizePackage(bytes),
 		packageCounts: packageProbe.counts,
@@ -355,6 +448,21 @@ async function loadContractSubject(bytes: Uint8Array): Promise<ContractSubject> 
 			connectionPartCount: info.connectionPartCount,
 			activeContentCount: info.activeContentCount,
 			chartSheetCount: info.chartSheetCount,
+			sheetImageRefCount: visuals.sheetImageCount,
+			sheetDrawingObjectRefCount: visuals.sheetDrawingObjectCount,
+			imageRefsHaveAnchors: imageRefs.every((image) => image.anchor !== undefined),
+			imageRefsHaveRelationships: imageRefs.every(
+				(image) =>
+					image.drawingPartPath.length > 0 && image.relId.length > 0 && image.targetPath.length > 0,
+			),
+			drawingObjectsHaveAnchors: drawingObjectRefs.every((object) => object.anchor !== undefined),
+			drawingObjectsHaveIdentity: drawingObjectRefs.every(
+				(object) =>
+					object.drawingPartPath.length > 0 &&
+					object.id !== undefined &&
+					object.kind.length > 0 &&
+					(object.name !== undefined || object.text !== undefined),
+			),
 			hasDrawingRefs: info.sheets.some((sheet) => sheet.hasDrawingRefs ?? false),
 			activeContent: normalizeActiveContent(info.activeContent),
 			charts: info.charts,
@@ -504,11 +612,7 @@ function assertManifestReadCoverage(
 		entry,
 		'drawings',
 		!entry.features.drawings ||
-			(packageSummary.drawings > 0 &&
-				(semanticSummary.hasDrawingRefs ||
-					semanticSummary.imageCount > 0 ||
-					compatibilityFeatures.has('drawing') ||
-					compatibilityFeatures.has('preservedDrawing'))),
+			hasSemanticDrawingInventory(packageSummary, semanticSummary, compatibilityFeatures),
 	)
 	assertFeature(
 		entry,
@@ -549,10 +653,9 @@ function assertManifestReadCoverage(
 		entry,
 		'images_or_media',
 		!entry.features.images_or_media ||
-			packageSummary.media > 0 ||
-			semanticSummary.imageCount > 0 ||
-			compatibilityFeatures.has('preservedMedia'),
+			hasSemanticImageInventory(packageSummary, semanticSummary, compatibilityFeatures),
 	)
+	assertKnownVisualFixtureCoverage(entry, semanticSummary)
 	assertFeature(
 		entry,
 		'custom_xml',
@@ -631,6 +734,22 @@ function assertManifestEditCoverage(
 	expect(after.semanticSummary.chartSheetCount).toBe(before.semanticSummary.chartSheetCount)
 	expect(after.semanticSummary.chartSheets).toEqual(before.semanticSummary.chartSheets)
 	expect(after.semanticSummary.charts).toEqual(before.semanticSummary.charts)
+	expect(after.semanticSummary.sheetImageRefCount).toBe(before.semanticSummary.sheetImageRefCount)
+	expect(after.semanticSummary.sheetDrawingObjectRefCount).toBe(
+		before.semanticSummary.sheetDrawingObjectRefCount,
+	)
+	expect(after.semanticSummary.imageRefsHaveAnchors).toBe(
+		before.semanticSummary.imageRefsHaveAnchors,
+	)
+	expect(after.semanticSummary.imageRefsHaveRelationships).toBe(
+		before.semanticSummary.imageRefsHaveRelationships,
+	)
+	expect(after.semanticSummary.drawingObjectsHaveAnchors).toBe(
+		before.semanticSummary.drawingObjectsHaveAnchors,
+	)
+	expect(after.semanticSummary.drawingObjectsHaveIdentity).toBe(
+		before.semanticSummary.drawingObjectsHaveIdentity,
+	)
 	expect(after.semanticSummary.hasDrawingRefs).toBe(before.semanticSummary.hasDrawingRefs)
 
 	for (const [feature, beforeFeature] of before.compatibilityFeatures) {

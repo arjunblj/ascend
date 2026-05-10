@@ -20,7 +20,7 @@ export function parseDrawingImageRefs(
 
 	const imageRels = new Map(
 		relationships.map(
-			(rel) => [rel.id, { ...rel, target: resolvePath(drawingPath, rel.target) }] as const,
+			(rel) => [rel.id, { ...rel, target: resolveRelationshipTarget(drawingPath, rel) }] as const,
 		),
 	)
 	const refs: SheetImageRef[] = []
@@ -50,14 +50,20 @@ export function parseDrawingImageRefs(
 export function parseDrawingObjectRefs(
 	drawingXml: string,
 	drawingPath: string,
+	relationships: readonly Relationship[] = [],
 ): readonly SheetDrawingObjectRef[] {
 	const doc = parseXml(drawingXml)
 	const wsDr = (doc['xdr:wsDr'] ?? doc.wsDr) as XmlNode | undefined
 	if (!wsDr) return []
 
+	const relsById = new Map(
+		relationships.map(
+			(rel) => [rel.id, { ...rel, target: resolveRelationshipTarget(drawingPath, rel) }] as const,
+		),
+	)
 	const refs: SheetDrawingObjectRef[] = []
 	for (const { node, kind } of iterAnchors(wsDr)) {
-		for (const parsed of parseAnchoredDrawingObjects(node, drawingPath, kind)) {
+		for (const parsed of parseAnchoredDrawingObjects(node, drawingPath, kind, relsById)) {
 			refs.push(parsed)
 		}
 	}
@@ -84,6 +90,7 @@ function parseAnchoredDrawingObjects(
 	anchorNode: XmlNode,
 	drawingPartPath: string,
 	anchorKind: 'oneCell' | 'twoCell' | 'absolute',
+	relationships: ReadonlyMap<string, Relationship & { target: string }>,
 ): SheetDrawingObjectRef[] {
 	const anchor =
 		anchorKind === 'oneCell'
@@ -93,7 +100,14 @@ function parseAnchoredDrawingObjects(
 				: parseAbsoluteAnchor(anchorNode)
 	const refs: SheetDrawingObjectRef[] = []
 	for (const { node, kind, nonVisualNames } of drawingObjectCandidates(anchorNode)) {
-		const ref = parseDrawingObject(node, drawingPartPath, kind, nonVisualNames, anchor)
+		const ref = parseDrawingObject(
+			node,
+			drawingPartPath,
+			kind,
+			nonVisualNames,
+			anchor,
+			relationships,
+		)
 		if (ref) refs.push(ref)
 	}
 	return refs
@@ -136,6 +150,7 @@ function parseDrawingObject(
 	kind: SheetDrawingObjectKind,
 	nonVisualNames: readonly string[],
 	anchor: SheetImageAnchor | null,
+	relationships: ReadonlyMap<string, Relationship & { target: string }>,
 ): SheetDrawingObjectRef | null {
 	const cNvPr = findNonVisualProps(node, nonVisualNames)
 	const id = cNvPr ? numAttr(cNvPr, 'id') : undefined
@@ -143,6 +158,19 @@ function parseDrawingObject(
 	const description = cNvPr ? attr(cNvPr, 'descr') : undefined
 	const text = kind === 'textBox' ? extractDrawingText(node) : undefined
 	const relIds = collectRelationshipIds(node)
+	const relationshipRefs = relIds.flatMap((relId) => {
+		const rel = relationships.get(relId)
+		return rel
+			? [
+					{
+						id: rel.id,
+						type: rel.type,
+						target: rel.target,
+						...(rel.targetMode ? { targetMode: rel.targetMode } : {}),
+					},
+				]
+			: []
+	})
 	return {
 		drawingPartPath,
 		kind,
@@ -152,6 +180,7 @@ function parseDrawingObject(
 		...(description ? { description } : {}),
 		...(text ? { text } : {}),
 		...(relIds.length > 0 ? { relIds } : {}),
+		...(relationshipRefs.length > 0 ? { relationshipRefs } : {}),
 	}
 }
 
@@ -265,6 +294,12 @@ function parseAnchoredImage(
 	if (parsedAnchor) imageRef.anchor = parsedAnchor
 
 	return imageRef as SheetImageRef
+}
+
+function resolveRelationshipTarget(drawingPath: string, relationship: Relationship): string {
+	return relationship.targetMode === 'External'
+		? relationship.target
+		: resolvePath(drawingPath, relationship.target)
 }
 
 function parseOneCellAnchor(node: XmlNode): SheetImageAnchor | null {

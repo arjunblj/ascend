@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { writeXlsx } from '../../packages/io-xlsx/src/index.ts'
 import { readXlsx } from '../../packages/io-xlsx/src/reader/index.ts'
+import { AscendWorkbook } from '../../packages/sdk/src/index.ts'
 import { runFormulaCorpusCorrectness } from '../benchmarks/formula-corpus-correctness.ts'
 import {
 	normalizeManifest,
@@ -96,6 +97,46 @@ describe('Calamine XLSX/XLSM fixture corpus', () => {
 				chartType: 'barChart',
 				series: [expect.objectContaining({ valueRef: 'Sheet1!$B$8' })],
 			}),
+		])
+	})
+
+	test('inventories real Calamine image anchors from picture.xlsx', async () => {
+		const wb = await AscendWorkbook.open(loadFixture('picture.xlsx'))
+		const visuals = wb.visualInventory()
+		expect(visuals.sheetImageCount).toBe(2)
+		expect(
+			visuals.sheets.map((sheet) => [
+				sheet.sheet,
+				sheet.imageRefs?.map((image) => ({
+					drawingPartPath: image.drawingPartPath,
+					relId: image.relId,
+					targetPath: image.targetPath,
+					anchorKind: image.anchor?.kind,
+				})),
+			]),
+		).toEqual([
+			[
+				'Sheet1',
+				[
+					{
+						drawingPartPath: 'xl/drawings/drawing1.xml',
+						relId: 'rId1',
+						targetPath: 'xl/media/image1.jpg',
+						anchorKind: 'twoCell',
+					},
+				],
+			],
+			[
+				'Sheet2',
+				[
+					{
+						drawingPartPath: 'xl/drawings/drawing2.xml',
+						relId: 'rId1',
+						targetPath: 'xl/media/image2.png',
+						anchorKind: 'twoCell',
+					},
+				],
+			],
 		])
 	})
 

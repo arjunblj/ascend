@@ -133,6 +133,34 @@ describe('ClosedXML XLSX fixture corpus', () => {
 		])
 	})
 
+	test('inventories real ClosedXML image anchors and media relationships', async () => {
+		const wb = await AscendWorkbook.open(loadFixture('ImageHandling_ImageAnchors.xlsx'))
+		const visuals = wb.visualInventory()
+		expect(visuals.sheetImageCount).toBe(7)
+
+		const sheets = new Map(
+			visuals.sheets.map((sheet) => [sheet.sheet, sheet.imageRefs ?? []] as const),
+		)
+		expect([...sheets].map(([sheet, refs]) => [sheet, refs.length])).toEqual([
+			['Images1', 2],
+			['Images2', 1],
+			['Images3', 3],
+			['Images4', 1],
+		])
+		expect(
+			visuals.sheets.flatMap((sheet) => sheet.imageRefs ?? []).map((image) => image.anchor?.kind),
+		).toEqual(['oneCell', 'absolute', 'twoCell', 'oneCell', 'twoCell', 'twoCell', 'absolute'])
+		expect(sheets.get('Images1')?.map((image) => [image.relId, image.targetPath])).toEqual([
+			['rId10', 'xl/media/image2.png'],
+			['rId9', 'xl/media/image.png'],
+		])
+		expect(sheets.get('Images3')?.map((image) => [image.relId, image.targetPath])).toEqual([
+			['rId16', 'xl/media/image3.jpg'],
+			['rId14', 'xl/media/image.jpg'],
+			['rId15', 'xl/media/image2.jpg'],
+		])
+	})
+
 	test('cached formulas in the ClosedXML subset recalculate without mismatches', async () => {
 		const payload = await runFormulaCorpusCorrectness({
 			corpusRoot: closedXmlDir,

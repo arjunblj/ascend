@@ -104,12 +104,21 @@ describe('LibreOffice XLSX fixture corpus', () => {
 			name: 'TextBox 1',
 			text: 'text',
 			relIds: ['rId1'],
+			relationshipRefs: [
+				{
+					id: 'rId1',
+					type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink',
+					target: 'https://www.google.com/',
+					targetMode: 'External',
+				},
+			],
 			anchor: {
 				kind: 'twoCell',
 				from: { col: 2, row: 3, colOff: 133350, rowOff: 152400 },
 				to: { col: 10, row: 9, colOff: 28575, rowOff: 85725 },
 			},
 		})
+		expect(sheet?.drawingObjectRefs).toHaveLength(1)
 	})
 
 	test('preserves LibreOffice pivot caches that intentionally omit cache records', () => {

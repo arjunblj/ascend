@@ -2512,6 +2512,45 @@ describe('formula functions', () => {
 			expect(getResult(wb, 2, 0)).toEqual(errorValue('#DIV/0!'))
 		})
 
+		test('regression functions stay stable with large offsets', () => {
+			const wb = makeWorkbook()
+			for (let i = 0; i < 5; i++) {
+				const x = 1_000_000_000_000 + i + 1
+				setNum(wb, i, 0, x)
+				setNum(wb, i, 1, 3 * x - 7)
+			}
+			setFormula(wb, 5, 0, 'SLOPE(B1:B5,A1:A5)')
+			setFormula(wb, 5, 1, 'INTERCEPT(B1:B5,A1:A5)')
+			setFormula(wb, 5, 2, 'FORECAST.LINEAR(1000000000006,B1:B5,A1:A5)')
+			setFormula(wb, 6, 0, 'CORREL(B1:B5,A1:A5)')
+			setFormula(wb, 6, 1, 'PEARSON(B1:B5,A1:A5)')
+			setFormula(wb, 6, 2, 'RSQ(B1:B5,A1:A5)')
+			setFormula(wb, 7, 0, 'STEYX(B1:B5,A1:A5)')
+			recalc(wb)
+
+			const slope = getResult(wb, 5, 0)
+			const intercept = getResult(wb, 5, 1)
+			const forecast = getResult(wb, 5, 2)
+			const correl = getResult(wb, 6, 0)
+			const pearson = getResult(wb, 6, 1)
+			const rsq = getResult(wb, 6, 2)
+			const steyx = getResult(wb, 7, 0)
+			expect(slope?.kind).toBe('number')
+			expect(intercept?.kind).toBe('number')
+			expect(forecast?.kind).toBe('number')
+			expect(correl?.kind).toBe('number')
+			expect(pearson?.kind).toBe('number')
+			expect(rsq?.kind).toBe('number')
+			expect(steyx?.kind).toBe('number')
+			if (slope?.kind === 'number') expect(slope.value).toBeCloseTo(3)
+			if (intercept?.kind === 'number') expect(intercept.value).toBeCloseTo(-7)
+			if (forecast?.kind === 'number') expect(forecast.value).toBe(3_000_000_000_011)
+			if (correl?.kind === 'number') expect(correl.value).toBeCloseTo(1)
+			if (pearson?.kind === 'number') expect(pearson.value).toBeCloseTo(1)
+			if (rsq?.kind === 'number') expect(rsq.value).toBeCloseTo(1)
+			if (steyx?.kind === 'number') expect(steyx.value).toBeCloseTo(0)
+		})
+
 		test('COVARIANCE.P computes population covariance', () => {
 			const wb = makeWorkbook()
 			setNum(wb, 0, 0, 1)

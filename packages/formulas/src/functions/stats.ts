@@ -471,25 +471,51 @@ function collectPaired(
 	return [a, b]
 }
 
+interface CompensatedSum {
+	sum: number
+	correction: number
+}
+
+function addCompensated(total: CompensatedSum, value: number): void {
+	const adjusted = value - total.correction
+	const next = total.sum + adjusted
+	total.correction = next - total.sum - adjusted
+	total.sum = next
+}
+
 function linregSums(ys: number[], xs: number[]) {
 	const n = xs.length
-	let sumX = 0
-	let sumY = 0
-	let sumXY = 0
-	let sumX2 = 0
-	let sumY2 = 0
+	const x = { sum: 0, correction: 0 }
+	const y = { sum: 0, correction: 0 }
+	const xy = { sum: 0, correction: 0 }
+	const x2 = { sum: 0, correction: 0 }
 	for (let i = 0; i < n; i++) {
-		const x = xs[i] as number
-		const y = ys[i] as number
-		sumX += x
-		sumY += y
-		sumXY += x * y
-		sumX2 += x * x
-		sumY2 += y * y
+		const xi = xs[i] as number
+		const yi = ys[i] as number
+		addCompensated(x, xi)
+		addCompensated(y, yi)
+		addCompensated(xy, xi * yi)
+		addCompensated(x2, xi * xi)
 	}
-	const ssxx = n * sumX2 - sumX * sumX
-	const ssyy = n * sumY2 - sumY * sumY
-	const ssxy = n * sumXY - sumX * sumY
+	const sumX = x.sum
+	const sumY = y.sum
+	const sumX2 = x2.sum
+	const sumXY = xy.sum
+	const meanX = sumX / n
+	const meanY = sumY / n
+	const centeredX2 = { sum: 0, correction: 0 }
+	const centeredY2 = { sum: 0, correction: 0 }
+	const centeredXY = { sum: 0, correction: 0 }
+	for (let i = 0; i < n; i++) {
+		const dx = (xs[i] as number) - meanX
+		const dy = (ys[i] as number) - meanY
+		addCompensated(centeredX2, dx * dx)
+		addCompensated(centeredY2, dy * dy)
+		addCompensated(centeredXY, dx * dy)
+	}
+	const ssxx = centeredX2.sum
+	const ssyy = centeredY2.sum
+	const ssxy = centeredXY.sum
 	return { n, sumX, sumY, sumX2, sumXY, ssxx, ssyy, ssxy }
 }
 

@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { readXlsx } from '@ascend/io-xlsx'
 import { AscendWorkbook } from '@ascend/sdk'
-import { extractZip } from '../../packages/io-xlsx/src/reader/zip.ts'
+import { summarizeOoxmlPackage } from './package-summary.ts'
 
 setDefaultTimeout(30_000)
 
@@ -33,19 +33,6 @@ interface CorpusEntry {
 	expectedCharts: number
 	expectedPivotTables: number
 	expectedDrawings: number
-}
-
-function summarizePackageFamilies(bytes: Uint8Array): { charts: number; drawings: number } {
-	const archive = extractZip(bytes)
-	const paths = [...archive.entries()].map((entry) => entry.path)
-	return {
-		charts: countPaths(paths, /^xl\/(charts|chartEx)\//),
-		drawings: countPaths(paths, /^xl\/drawings\//),
-	}
-}
-
-function countPaths(paths: readonly string[], pattern: RegExp): number {
-	return paths.filter((path) => pattern.test(path)).length
 }
 
 const CORPUS: CorpusEntry[] = [
@@ -165,14 +152,21 @@ for (const entry of CORPUS) {
 		}
 
 		it.skipIf(!bytes)(`has ${entry.expectedCharts} chart package parts`, () => {
-			const summary = summarizePackageFamilies(requireBytes(bytes))
-			expect(summary.charts).toBe(entry.expectedCharts)
+			const summary = summarizeOoxmlPackage(requireBytes(bytes))
+			expect(summary.families.charts).toBe(entry.expectedCharts)
 		})
 
 		it.skipIf(!bytes)(`has ${entry.expectedDrawings} drawing package parts`, () => {
-			const summary = summarizePackageFamilies(requireBytes(bytes))
-			expect(summary.drawings).toBe(entry.expectedDrawings)
+			const summary = summarizeOoxmlPackage(requireBytes(bytes))
+			expect(summary.families.drawings).toBe(entry.expectedDrawings)
 		})
+
+		if (entry.expectedPivotTables > 0) {
+			it.skipIf(!bytes)(`has ${entry.expectedPivotTables} pivot table package parts`, () => {
+				const summary = summarizeOoxmlPackage(requireBytes(bytes))
+				expect(summary.families.pivotTables).toBe(entry.expectedPivotTables)
+			})
+		}
 
 		describe.skipIf(!bytes)('SDK integration', () => {
 			it('AscendWorkbook.open works', async () => {

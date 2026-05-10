@@ -3,7 +3,6 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { AscendWorkbook } from '@ascend/sdk'
 import { readXlsx } from '../../packages/io-xlsx/src/reader/index.ts'
-import { extractZip } from '../../packages/io-xlsx/src/reader/zip.ts'
 import {
 	type CorpusAssertionClass,
 	type CorpusBenchmarkTier,
@@ -13,6 +12,7 @@ import {
 	normalizeManifest,
 	selectManifestEntries,
 } from './manifest.ts'
+import { summarizeOoxmlPackage } from './package-summary.ts'
 
 const CORPUS_DIR = resolve(import.meta.dir, '../../research/excel-corpus')
 const MANIFEST_PATH = resolve(CORPUS_DIR, 'manifest.json')
@@ -380,43 +380,29 @@ function columnLabel(col: number): string {
 }
 
 function summarizePackage(bytes: Uint8Array): PackageSummary {
-	const archive = extractZip(bytes)
-	const paths = [...archive.entries()].map((entry) => entry.path)
-	const contentTypes = archive.readText('[Content_Types].xml') ?? ''
-	const workbookContentType = readWorkbookContentType(contentTypes)
+	const summary = summarizeOoxmlPackage(bytes)
 	return {
-		workbookContentType,
-		partCount: paths.length,
+		workbookContentType: summary.workbookContentType,
+		partCount: summary.partCount,
 		families: {
-			charts: countPaths(paths, /^xl\/(charts|chartEx)\//),
-			drawings: countPaths(paths, /^xl\/drawings\/(?!.*\.vml$)/),
-			vml: countPaths(paths, /^xl\/drawings\/.*\.vml$/),
-			media: countPaths(paths, /^xl\/media\//),
-			tables: countPaths(paths, /^xl\/tables\//),
-			comments: countPaths(paths, /^xl\/comments\d+\.xml$/),
-			threadedComments: countPaths(paths, /^xl\/threadedComments\//),
-			pivotTables: countPaths(paths, /^xl\/pivotTables\//),
-			pivotCaches: countPaths(paths, /^xl\/pivotCache/),
-			slicers: countPaths(paths, /^xl\/slicers\//),
-			slicerCaches: countPaths(paths, /^xl\/slicerCaches\//),
-			macros: countPaths(paths, /^xl\/vbaProject/i),
-			customXml: countPaths(paths, /^customXml\//),
-			externalLinks: countPaths(paths, /^xl\/externalLinks\//),
-			connections: countPaths(paths, /^xl\/connections\.xml$/),
-			calcChain: countPaths(paths, /^xl\/calcChain\.xml$/),
+			charts: summary.families.charts,
+			drawings: summary.families.drawings - summary.families.vml,
+			vml: summary.families.vml,
+			media: summary.families.media,
+			tables: summary.families.tables,
+			comments: summary.families.comments,
+			threadedComments: summary.families.threadedComments,
+			pivotTables: summary.families.pivotTables,
+			pivotCaches: summary.families.pivotCaches,
+			slicers: summary.families.slicers,
+			slicerCaches: summary.families.slicerCaches,
+			macros: summary.families.macros,
+			customXml: summary.families.customXml,
+			externalLinks: summary.families.externalLinks,
+			connections: summary.families.connections,
+			calcChain: summary.families.calcChain,
 		},
 	}
-}
-
-function countPaths(paths: readonly string[], pattern: RegExp): number {
-	return paths.filter((path) => pattern.test(path)).length
-}
-
-function readWorkbookContentType(xml: string): string | undefined {
-	const match =
-		/<Override\s+PartName="\/xl\/workbook\.xml"\s+ContentType="([^"]+)"/.exec(xml) ??
-		/<Override\s+ContentType="([^"]+)"\s+PartName="\/xl\/workbook\.xml"/.exec(xml)
-	return match?.[1]
 }
 
 function diffPackageSummary(source: PackageSummary, dirty: PackageSummary): string[] {

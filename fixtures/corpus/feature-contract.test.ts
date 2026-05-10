@@ -10,7 +10,6 @@ import {
 	type PivotCacheInfo,
 	type PivotTableInfo,
 } from '@ascend/sdk'
-import { extractZip } from '../../packages/io-xlsx/src/reader/zip.ts'
 import type { CorpusManifestEntry, NormalizedCorpusManifestEntry } from './manifest.ts'
 import { loadCorpusManifestEntries, normalizeManifest } from './manifest.ts'
 import {
@@ -21,6 +20,7 @@ import {
 	type OoxmlPackageProbe,
 	type OoxmlRelationshipProbe,
 } from './ooxml-feature-probe.ts'
+import { summarizeOoxmlPackage } from './package-summary.ts'
 
 setDefaultTimeout(90_000)
 
@@ -217,36 +217,31 @@ function requireBytes(bytes: Uint8Array | null): Uint8Array {
 	return bytes
 }
 
-function countPaths(paths: readonly string[], pattern: RegExp): number {
-	return paths.filter((path) => pattern.test(path)).length
-}
-
 function isChartStyleOrColorPart(partPath: string): boolean {
 	return /(^|\/)charts\/(?:style|colors)\d+\.xml$/i.test(partPath)
 }
 
 function summarizePackage(bytes: Uint8Array): PackageSummary {
-	const archive = extractZip(bytes)
-	const paths = [...archive.entries()].map((entry) => entry.path)
+	const summary = summarizeOoxmlPackage(bytes)
 	return {
-		charts: countPaths(paths, /^xl\/(charts|chartEx)\//),
-		structuredCharts: countPaths(paths, /^xl\/charts\/chart\d+\.xml$/i),
-		drawings: countPaths(paths, /^xl\/drawings\//),
-		media: countPaths(paths, /^xl\/media\//),
-		tables: countPaths(paths, /^xl\/tables\//),
-		comments: countPaths(paths, /^xl\/comments\d+\.xml$/),
-		threadedComments: countPaths(paths, /^xl\/threadedComments\//),
-		pivotTables: countPaths(paths, /^xl\/pivotTables\//),
-		pivotCaches: countPaths(paths, /^xl\/pivotCache/),
-		slicers: countPaths(paths, /^xl\/slicers\//),
-		slicerCaches: countPaths(paths, /^xl\/slicerCaches\//),
-		timelines: countPaths(paths, /^xl\/timelines\//),
-		timelineCaches: countPaths(paths, /^xl\/timelineCaches\//),
-		macros: countPaths(paths, /^xl\/vbaProject/i),
-		customXml: countPaths(paths, /^customXml\//),
-		externalLinks: countPaths(paths, /^xl\/externalLinks\//),
-		connections: countPaths(paths, /^xl\/connections\.xml$/),
-		calcChain: countPaths(paths, /^xl\/calcChain\.xml$/),
+		charts: summary.families.charts,
+		structuredCharts: summary.families.structuredCharts,
+		drawings: summary.families.drawings,
+		media: summary.families.media,
+		tables: summary.families.tables,
+		comments: summary.families.comments,
+		threadedComments: summary.families.threadedComments,
+		pivotTables: summary.families.pivotTables,
+		pivotCaches: summary.families.pivotCaches,
+		slicers: summary.families.slicers,
+		slicerCaches: summary.families.slicerCaches,
+		timelines: summary.families.timelines,
+		timelineCaches: summary.families.timelineCaches,
+		macros: summary.families.macros,
+		customXml: summary.families.customXml,
+		externalLinks: summary.families.externalLinks,
+		connections: summary.families.connections,
+		calcChain: summary.families.calcChain,
 	}
 }
 

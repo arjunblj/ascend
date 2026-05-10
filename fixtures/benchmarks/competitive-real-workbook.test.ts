@@ -837,6 +837,47 @@ describe('evaluateAssertions', () => {
 		expect(payload.cases[0]?.assertions.editCellValueMatches).toBe(true)
 	})
 
+	test('edit-roundtrip recognizes namespace-prefixed worksheet cells', () => {
+		const proc = Bun.spawnSync({
+			cmd: [
+				'bun',
+				'run',
+				'fixtures/benchmarks/competitive-real-workbook.ts',
+				'--category',
+				'edit-roundtrip',
+				'--repeat',
+				'1',
+				'--warmup',
+				'0',
+				'--libraries',
+				'ascend',
+				'--json',
+				'fixtures/xlsx/calamine/richtext-namespaced.xlsx',
+			],
+			stdout: 'pipe',
+			stderr: 'pipe',
+		})
+		if (proc.exitCode !== 0) {
+			throw new Error(new TextDecoder().decode(proc.stderr))
+		}
+		const payload = JSON.parse(new TextDecoder().decode(proc.stdout)) as {
+			cases: Array<{
+				dimensions: { correctnessStatus: string }
+				assertions: {
+					editValueType?: string
+					editCellValueMatches?: boolean
+					semanticRoundtripMatches?: boolean
+				}
+			}>
+			failed?: unknown[]
+		}
+		expect(payload.failed ?? []).toEqual([])
+		expect(payload.cases[0]?.dimensions.correctnessStatus).toBe('semantic-roundtrip-pass')
+		expect(payload.cases[0]?.assertions.semanticRoundtripMatches).toBe(true)
+		expect(payload.cases[0]?.assertions.editValueType).toBe('string')
+		expect(payload.cases[0]?.assertions.editCellValueMatches).toBe(true)
+	})
+
 	test('default real-workbook sweeps span vendored OSS corpuses and feature tags', async () => {
 		const physicalRoots = ['poi', 'calamine', 'closedxml', 'exceljs', 'libreoffice'] as const
 		for (const root of physicalRoots) {

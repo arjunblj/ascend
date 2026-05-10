@@ -1178,30 +1178,61 @@ function classifyFeaturePart(path: string): string | null {
 	return null
 }
 
+const XML_NAME_PREFIX = String.raw`(?:[A-Za-z_][\w.-]*:)?`
+
+function openTagRegex(localName: string): RegExp {
+	return new RegExp(String.raw`<\s*${XML_NAME_PREFIX}${localName}\b([^>]*)>`, 'g')
+}
+
+function closeTagRegex(localName: string): RegExp {
+	return new RegExp(String.raw`<\/\s*${XML_NAME_PREFIX}${localName}\s*>`, 'g')
+}
+
+function elementBodyRegex(localName: string): RegExp {
+	return new RegExp(
+		String.raw`<\s*${XML_NAME_PREFIX}${localName}\b[^>]*>([\s\S]*?)<\/\s*${XML_NAME_PREFIX}${localName}\s*>`,
+		'g',
+	)
+}
+
+function hasOpenTag(xml: string, localName: string): boolean {
+	return openTagRegex(localName).test(xml)
+}
+
+function isSelfClosingTag(openTag: string): boolean {
+	return /\/\s*>$/.test(openTag)
+}
+
+function findCloseTagIndex(xml: string, localName: string, start: number): number {
+	const pattern = closeTagRegex(localName)
+	pattern.lastIndex = start
+	return pattern.exec(xml)?.index ?? -1
+}
+
 function worksheetFeatureEntries(path: string, xml: string): readonly string[] {
 	const lines: string[] = []
-	for (const match of xml.matchAll(/<mergeCell\b([^>]*)\/?>/g)) {
+	for (const match of xml.matchAll(openTagRegex('mergeCell'))) {
 		lines.push(`worksheet-merge-cell\t${path}\t${featureRef(match[1] ?? '')}`)
 	}
-	for (const match of xml.matchAll(/<autoFilter\b([^>]*?)(?:\/>|>)/g)) {
+	for (const match of xml.matchAll(openTagRegex('autoFilter'))) {
 		lines.push(`worksheet-auto-filter\t${path}\t${featureRef(match[1] ?? '')}`)
 	}
-	for (const match of xml.matchAll(/<sortState\b([^>]*?)(?:\/>|>)/g)) {
+	for (const match of xml.matchAll(openTagRegex('sortState'))) {
 		lines.push(`worksheet-sort-state\t${path}\t${canonicalAttributes(match[1] ?? '')}`)
 	}
-	for (const match of xml.matchAll(/<sheetProtection\b([^>]*)\/?>/g)) {
+	for (const match of xml.matchAll(openTagRegex('sheetProtection'))) {
 		lines.push(`worksheet-sheet-protection\t${path}\t${canonicalAttributes(match[1] ?? '')}`)
 	}
-	for (const match of xml.matchAll(/<sheetView\b([^>]*?)(?:\/>|>)/g)) {
+	for (const match of xml.matchAll(openTagRegex('sheetView'))) {
 		lines.push(`worksheet-sheet-view\t${path}\t${canonicalAttributes(match[1] ?? '')}`)
 	}
-	for (const match of xml.matchAll(/<hyperlink\b([^>]*)\/?>/g)) {
+	for (const match of xml.matchAll(openTagRegex('hyperlink'))) {
 		lines.push(`worksheet-hyperlink\t${path}\t${featureRef(match[1] ?? '')}`)
 	}
-	for (const match of xml.matchAll(/<dataValidation\b([^>]*)\/?>/g)) {
+	for (const match of xml.matchAll(openTagRegex('dataValidation'))) {
 		lines.push(`worksheet-data-validation\t${path}\t${featureSqref(match[1] ?? '')}`)
 	}
-	for (const match of xml.matchAll(/<conditionalFormatting\b([^>]*)>/g)) {
+	for (const match of xml.matchAll(openTagRegex('conditionalFormatting'))) {
 		lines.push(`worksheet-conditional-formatting\t${path}\t${featureSqref(match[1] ?? '')}`)
 	}
 	return lines
@@ -1210,9 +1241,10 @@ function worksheetFeatureEntries(path: string, xml: string): readonly string[] {
 function sharedStringFeatureEntries(xml: string): readonly string[] {
 	const lines: string[] = []
 	let index = 0
-	for (const match of xml.matchAll(/<si\b[^>]*>([\s\S]*?)<\/si>/g)) {
+	for (const match of xml.matchAll(elementBodyRegex('si'))) {
 		const inner = match[1] ?? ''
-		if (/<r\b/.test(inner)) lines.push(`shared-string-rich-text\t${index}\t${sha256Text(inner)}`)
+		if (hasOpenTag(inner, 'r'))
+			lines.push(`shared-string-rich-text\t${index}\t${sha256Text(inner)}`)
 		index += 1
 	}
 	return lines
@@ -1220,7 +1252,7 @@ function sharedStringFeatureEntries(xml: string): readonly string[] {
 
 function calcChainFeatureEntries(xml: string): readonly string[] {
 	const lines: string[] = []
-	for (const match of xml.matchAll(/<c\b([^>]*)\/?>/g)) {
+	for (const match of xml.matchAll(openTagRegex('c'))) {
 		lines.push(`calc-chain-cell\t${canonicalAttributes(match[1] ?? '')}`)
 	}
 	return lines
@@ -1517,13 +1549,15 @@ function findFirstEditableScalarCell(bytes: Uint8Array): {
 		const partPath = worksheetRels.get(sheet.rId)
 		const xml = partPath ? archive.readText(partPath) : undefined
 		if (!xml) continue
-		for (const match of xml.matchAll(/<c\b([^>]*)>/g)) {
+		for (const match of xml.matchAll(openTagRegex('c'))) {
 			const attrs = match[1] ?? ''
 			const bodyStart = match.index + match[0].length
-			const bodyEnd = attrs.trimEnd().endsWith('/') ? bodyStart : xml.indexOf('</c>', bodyStart)
+			const bodyEnd = isSelfClosingTag(match[0])
+				? bodyStart
+				: findCloseTagIndex(xml, 'c', bodyStart)
 			if (bodyEnd < bodyStart) continue
 			const body = xml.slice(bodyStart, bodyEnd)
-			if (/<f\b/.test(body)) continue
+			if (hasOpenTag(body, 'f')) continue
 			const ref = /(?:^|\s)r="([^"]+)"/.exec(attrs)?.[1]
 			if (!parseA1Safe(ref)) continue
 			const candidate = editableCellCandidate(sheet.name, ref, attrs, body, sharedStrings)
@@ -1618,11 +1652,11 @@ function readCellScalarValue(
 }
 
 function findCellXml(xml: string, ref: string): { attrs: string; body: string } | null {
-	for (const match of xml.matchAll(/<c\b([^>]*)>/g)) {
+	for (const match of xml.matchAll(openTagRegex('c'))) {
 		const attrs = match[1] ?? ''
 		if (/(?:^|\s)r="([^"]+)"/.exec(attrs)?.[1] !== ref) continue
 		const bodyStart = match.index + match[0].length
-		const bodyEnd = attrs.trimEnd().endsWith('/') ? bodyStart : xml.indexOf('</c>', bodyStart)
+		const bodyEnd = isSelfClosingTag(match[0]) ? bodyStart : findCloseTagIndex(xml, 'c', bodyStart)
 		return { attrs, body: bodyEnd >= bodyStart ? xml.slice(bodyStart, bodyEnd) : '' }
 	}
 	return null
@@ -1655,11 +1689,11 @@ function scanSheetShapeXml(
 	const semanticCellRefs: string[] = []
 	const semanticCellValues: string[] = []
 	const formulaTexts: string[] = []
-	for (const match of xml.matchAll(/<c\b([^>]*)>/g)) {
+	for (const match of xml.matchAll(openTagRegex('c'))) {
 		const attrs = match[1] ?? ''
-		const selfClosing = attrs.trimEnd().endsWith('/')
+		const selfClosing = isSelfClosingTag(match[0])
 		const bodyStart = match.index + match[0].length
-		const bodyEnd = selfClosing ? bodyStart : xml.indexOf('</c>', bodyStart)
+		const bodyEnd = selfClosing ? bodyStart : findCloseTagIndex(xml, 'c', bodyStart)
 		const body = bodyEnd >= bodyStart ? xml.slice(bodyStart, bodyEnd) : ''
 		const ref = /(?:^|\s)r="([^"]+)"/.exec(attrs)?.[1]
 		const parsed = parseA1Safe(ref)
@@ -1670,7 +1704,7 @@ function scanSheetShapeXml(
 			physicalMaxRow = Math.max(physicalMaxRow, parsed.row)
 			physicalMaxCol = Math.max(physicalMaxCol, parsed.col)
 		}
-		const semantic = /<(?:v|f|is)\b/.test(body)
+		const semantic = hasOpenTag(body, 'v') || hasOpenTag(body, 'f') || hasOpenTag(body, 'is')
 		if (semantic) {
 			cellCount++
 			if (parsed) {
@@ -1688,7 +1722,7 @@ function scanSheetShapeXml(
 			}
 		}
 	}
-	for (const _match of xml.matchAll(/<f\b/g)) formulaCount++
+	for (const _match of xml.matchAll(openTagRegex('f'))) formulaCount++
 	const usedRange =
 		maxRow >= 0
 			? `${indexToColumn(minCol)}${minRow + 1}:${indexToColumn(maxCol)}${maxRow + 1}`
@@ -1734,21 +1768,21 @@ function serializeExpectedCellValue(
 }
 
 function extractCellValueText(body: string): string | null {
-	const match = /<v\b[^>]*>([\s\S]*?)<\/v>/.exec(body)
+	const match = elementBodyRegex('v').exec(body)
 	if (!match) return null
 	return decodeXmlText(match[1] ?? '')
 }
 
 function extractInlineStringText(body: string): string {
 	let text = ''
-	for (const match of body.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)) {
+	for (const match of body.matchAll(elementBodyRegex('t'))) {
 		text += decodeXmlText(match[1] ?? '')
 	}
 	return text
 }
 
 function extractCellFormulaText(body: string): string | null {
-	const match = /<f\b[^>]*>([\s\S]*?)<\/f>/.exec(body)
+	const match = elementBodyRegex('f').exec(body)
 	if (!match) return null
 	const formula = decodeXmlText(match[1] ?? '')
 	return formula.length > 0 ? formula : null

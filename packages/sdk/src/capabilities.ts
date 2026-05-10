@@ -326,7 +326,7 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'editable',
 		'P0',
 		'Add dynamic, top10, color/icon filter evaluation and richer filter-state edit operations.',
-		'Filter ranges plus explicit value and custom comparison criteria are parsed, preserved, and evaluated for formula-visible row semantics.',
+		'Filter ranges plus explicit value, date group, and custom comparison criteria are parsed, preserved, and evaluated for formula-visible row semantics.',
 		['packages/engine/src/calc.test.ts'],
 	),
 	cap(

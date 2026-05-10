@@ -2,6 +2,7 @@ import {
 	type CustomFilter,
 	DEFAULT_STYLE_ID,
 	type FilterColumn,
+	type FilterDateGroupItem,
 	indexToColumn,
 	parseRange,
 	type Sheet,
@@ -18,6 +19,7 @@ import {
 	getRange,
 	type LookupVectorCache,
 	type NumericVectorCache,
+	serialToDate,
 	cachedParseFormula as sharedCachedParseFormula,
 	toNumber,
 } from '@ascend/formulas'
@@ -1312,7 +1314,15 @@ function resolveOffsetReference(argNodes: readonly FormulaNode[], ctx: EvalConte
 		return { value: errorValue('#REF!') }
 	}
 
-	return makeRangeArg(ctx.workbook, base.ref.sheetIndex, startRow, startCol, endRow, endCol)
+	return makeRangeArg(
+		ctx.workbook,
+		base.ref.sheetIndex,
+		startRow,
+		startCol,
+		endRow,
+		endCol,
+		ctx.calcContext.dateSystem,
+	)
 }
 
 function offsetNumberArg(node: FormulaNode | undefined, ctx: EvalContext): number | CellValue {
@@ -1364,6 +1374,7 @@ function resolveIndexReference(argNodes: readonly FormulaNode[], ctx: EvalContex
 				targetCol,
 				bounds.endRow,
 				targetCol,
+				ctx.calcContext.dateSystem,
 			)
 		}
 		if (col === 0) {
@@ -1376,6 +1387,7 @@ function resolveIndexReference(argNodes: readonly FormulaNode[], ctx: EvalContex
 				bounds.startCol,
 				targetRow,
 				bounds.endCol,
+				ctx.calcContext.dateSystem,
 			)
 		}
 		if (row < 1 || row > height || col < 1 || col > width) {
@@ -1388,6 +1400,7 @@ function resolveIndexReference(argNodes: readonly FormulaNode[], ctx: EvalContex
 			bounds.startCol + col - 1,
 			bounds.startRow + row - 1,
 			bounds.startCol + col - 1,
+			ctx.calcContext.dateSystem,
 		)
 	}
 
@@ -1400,6 +1413,7 @@ function resolveIndexReference(argNodes: readonly FormulaNode[], ctx: EvalContex
 			bounds.startCol + row - 1,
 			bounds.startRow,
 			bounds.startCol + row - 1,
+			ctx.calcContext.dateSystem,
 		)
 	}
 	if (row < 1 || row > height) return { value: errorValue('#REF!') }
@@ -1410,6 +1424,7 @@ function resolveIndexReference(argNodes: readonly FormulaNode[], ctx: EvalContex
 		bounds.startCol,
 		bounds.startRow + row - 1,
 		bounds.startCol,
+		ctx.calcContext.dateSystem,
 	)
 }
 
@@ -1440,6 +1455,7 @@ function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | nu
 				node.start.col,
 				node.end.row,
 				node.end.col,
+				ctx.calcContext.dateSystem,
 			)
 		}
 		case 'dynamicRangeRef':
@@ -1447,12 +1463,24 @@ function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | nu
 		case 'wholeRowRange': {
 			const si = resolveSheetIndex(ctx.workbook, node.sheet, ctx.sheetIndex)
 			if (si < 0) return { value: errorValue('#REF!') }
-			return makeWholeRowArg(ctx.workbook, si, node.startRow, node.endRow)
+			return makeWholeRowArg(
+				ctx.workbook,
+				si,
+				node.startRow,
+				node.endRow,
+				ctx.calcContext.dateSystem,
+			)
 		}
 		case 'wholeColumnRange': {
 			const si = resolveSheetIndex(ctx.workbook, node.sheet, ctx.sheetIndex)
 			if (si < 0) return { value: errorValue('#REF!') }
-			return makeWholeColumnArg(ctx.workbook, si, node.startCol, node.endCol)
+			return makeWholeColumnArg(
+				ctx.workbook,
+				si,
+				node.startCol,
+				node.endCol,
+				ctx.calcContext.dateSystem,
+			)
 		}
 		case 'name': {
 			const resolved = resolveDefinedName(node.name, node.sheet, ctx)
@@ -1477,6 +1505,7 @@ function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | nu
 				resolved.startCol,
 				resolved.endRow,
 				resolved.endCol,
+				ctx.calcContext.dateSystem,
 			)
 		}
 		case 'spillRef':
@@ -1520,7 +1549,9 @@ function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | nu
 					const endCol = Math.min(leftRef.endCol, rightRef.endCol)
 					if (startRow > endRow || startCol > endCol) continue
 					intersections.push(
-						makeRangeArea(ctx.workbook, leftRef.sheetIndex, startRow, startCol, endRow, endCol),
+						makeRangeArea(ctx.workbook, leftRef.sheetIndex, startRow, startCol, endRow, endCol, {
+							dateSystem: ctx.calcContext.dateSystem,
+						}),
 					)
 				}
 			}
@@ -1569,6 +1600,7 @@ function resolveDynamicRangeReference(
 		startBounds.startCol,
 		endBounds.endRow,
 		endBounds.endCol,
+		ctx.calcContext.dateSystem,
 	)
 }
 
@@ -1588,6 +1620,7 @@ function resolveSpillReference(target: FormulaNode, ctx: EvalContext): EvalArg |
 		parsed.value.start.col,
 		parsed.value.end.row,
 		parsed.value.end.col,
+		ctx.calcContext.dateSystem,
 	)
 }
 
@@ -1608,11 +1641,14 @@ function makeRangeArg(
 	startCol: number,
 	endRow: number,
 	endCol: number,
+	dateSystem: '1900' | '1904' = '1900',
 ): EvalArg {
 	if (!isRangeInBounds(startRow, startCol, endRow, endCol)) {
 		return { value: errorValue('#REF!') }
 	}
-	return makeMultiAreaArg([makeRangeArea(workbook, sheetIndex, startRow, startCol, endRow, endCol)])
+	return makeMultiAreaArg([
+		makeRangeArea(workbook, sheetIndex, startRow, startCol, endRow, endCol, { dateSystem }),
+	])
 }
 
 function evaluateReferenceNode(node: FormulaNode, ctx: EvalContext): CellValue {
@@ -1712,6 +1748,7 @@ interface ActiveFilterRange {
 	readonly startRow: number
 	readonly startCol: number
 	readonly endRow: number
+	readonly dateSystem: '1900' | '1904'
 	readonly columns: readonly PreparedFilterColumn[]
 }
 
@@ -1720,16 +1757,29 @@ interface PreparedFilterColumn {
 	readonly acceptedValues?: ReadonlySet<string>
 }
 
-function activeFilterRanges(sheet: Sheet): readonly ActiveFilterRange[] {
+function activeFilterRanges(
+	sheet: Sheet,
+	dateSystem: '1900' | '1904',
+): readonly ActiveFilterRange[] {
 	const ranges: ActiveFilterRange[] = []
 	if (sheet.autoFilter && sheet.autoFilter.columns.length > 0) {
 		const range = parseFilterRange(sheet.autoFilter.ref)
-		if (range) ranges.push({ ...range, columns: prepareFilterColumns(sheet.autoFilter.columns) })
+		if (range)
+			ranges.push({
+				...range,
+				dateSystem,
+				columns: prepareFilterColumns(sheet.autoFilter.columns),
+			})
 	}
 	for (const table of sheet.tables) {
 		if (!table.autoFilter || table.autoFilter.columns.length === 0) continue
 		const range = parseFilterRange(table.autoFilter.ref)
-		if (range) ranges.push({ ...range, columns: prepareFilterColumns(table.autoFilter.columns) })
+		if (range)
+			ranges.push({
+				...range,
+				dateSystem,
+				columns: prepareFilterColumns(table.autoFilter.columns),
+			})
 	}
 	return ranges
 }
@@ -1743,7 +1793,7 @@ function prepareFilterColumns(columns: readonly FilterColumn[]): readonly Prepar
 	}))
 }
 
-function parseFilterRange(ref: string): Omit<ActiveFilterRange, 'columns'> | null {
+function parseFilterRange(ref: string): Omit<ActiveFilterRange, 'columns' | 'dateSystem'> | null {
 	try {
 		const range = parseRange(ref)
 		return { startRow: range.start.row, startCol: range.start.col, endRow: range.end.row }
@@ -1755,21 +1805,92 @@ function parseFilterRange(ref: string): Omit<ActiveFilterRange, 'columns'> | nul
 function rowFailsFilterCriteria(sheet: Sheet, row: number, range: ActiveFilterRange): boolean {
 	for (const column of range.columns) {
 		const cellValue = sheet.cells.readValue(row, range.startCol + column.source.colId)
-		const matches = cellMatchesFilterColumn(cellValue, column)
+		const matches = cellMatchesFilterColumn(cellValue, column, range.dateSystem)
 		if (matches === false) return true
 	}
 	return false
 }
 
-function cellMatchesFilterColumn(value: CellValue, column: PreparedFilterColumn): boolean | null {
+function cellMatchesFilterColumn(
+	value: CellValue,
+	column: PreparedFilterColumn,
+	dateSystem: '1900' | '1904',
+): boolean | null {
 	const source = column.source
 	if (source.kind === 'customFilters') return cellMatchesCustomFilters(value, source)
 	if (source.kind !== 'filters') return null
 	const acceptsBlank = source.blank === true
-	if ((column.acceptedValues?.size ?? 0) === 0 && !acceptsBlank) return null
+	const dateGroupItems = source.dateGroupItems ?? []
+	if ((column.acceptedValues?.size ?? 0) === 0 && !acceptsBlank && dateGroupItems.length === 0) {
+		return null
+	}
 	if (isBlankFilterValue(value)) return acceptsBlank
 	const text = coerceCellValueToString(value).toLowerCase()
-	return column.acceptedValues?.has(text) === true
+	return (
+		column.acceptedValues?.has(text) === true ||
+		cellMatchesDateGroupItems(value, dateGroupItems, dateSystem)
+	)
+}
+
+function cellMatchesDateGroupItems(
+	value: CellValue,
+	items: readonly FilterDateGroupItem[],
+	dateSystem: '1900' | '1904',
+): boolean {
+	if (items.length === 0 || value.kind !== 'date') return false
+	const dateParts = serialToDateTimeParts(value.serial, dateSystem)
+	if (!dateParts) return false
+	for (const item of items) {
+		if (dateGroupItemMatches(dateParts, item)) return true
+	}
+	return false
+}
+
+const SECONDS_PER_DAY = 86_400
+
+function serialToDateTimeParts(
+	serial: number,
+	dateSystem: '1900' | '1904',
+): {
+	readonly year: number
+	readonly month: number
+	readonly day: number
+	readonly hour: number
+	readonly minute: number
+	readonly second: number
+} | null {
+	const wholeDays = Math.floor(serial)
+	const dateParts = serialToDate(wholeDays, dateSystem)
+	if (!dateParts) return null
+	const fractionalDay = Math.max(0, serial - wholeDays)
+	const wholeSeconds = Math.min(SECONDS_PER_DAY - 1, Math.round(fractionalDay * SECONDS_PER_DAY))
+	return {
+		...dateParts,
+		hour: Math.floor(wholeSeconds / 3600),
+		minute: Math.floor((wholeSeconds % 3600) / 60),
+		second: wholeSeconds % 60,
+	}
+}
+
+function dateGroupItemMatches(
+	dateParts: {
+		readonly year: number
+		readonly month: number
+		readonly day: number
+		readonly hour: number
+		readonly minute: number
+		readonly second: number
+	},
+	item: FilterDateGroupItem,
+): boolean {
+	return (
+		(item.year === undefined || item.year === dateParts.year) &&
+		(item.month === undefined || item.month === dateParts.month) &&
+		(item.day === undefined || item.day === dateParts.day) &&
+		(item.hour === undefined || item.hour === dateParts.hour) &&
+		(item.minute === undefined || item.minute === dateParts.minute) &&
+		(item.second === undefined || item.second === dateParts.second)
+	)
 }
 
 function cellMatchesCustomFilters(value: CellValue, column: FilterColumn): boolean | null {
@@ -1872,6 +1993,7 @@ function makeRangeArea(
 	endRow: number,
 	endCol: number,
 	options: {
+		dateSystem?: '1900' | '1904'
 		materializedStartRow?: number
 		materializedStartCol?: number
 		materializedEndRow?: number
@@ -1880,11 +2002,12 @@ function makeRangeArea(
 ): EvalArea {
 	const sheet = workbook.sheets[sheetIndex]
 	let cachedValues: readonly (readonly CellValue[])[] | undefined
+	const dateSystem = options.dateSystem ?? '1900'
 	const materializedStartRow = options.materializedStartRow ?? startRow
 	const materializedStartCol = options.materializedStartCol ?? startCol
 	const materializedEndRow = options.materializedEndRow ?? endRow
 	const materializedEndCol = options.materializedEndCol ?? endCol
-	const filteredRanges = sheet ? activeFilterRanges(sheet) : []
+	const filteredRanges = sheet ? activeFilterRanges(sheet, dateSystem) : []
 	return {
 		ref: {
 			kind: 'range',
@@ -2083,6 +2206,7 @@ function makeWholeRowArg(
 	sheetIndex: number,
 	startRow: number,
 	endRow: number,
+	dateSystem: '1900' | '1904' = '1900',
 ): EvalArg {
 	const sheet = workbook.sheets[sheetIndex]
 	if (!sheet) return { value: errorValue('#REF!') }
@@ -2091,6 +2215,7 @@ function makeWholeRowArg(
 	const materializedEndCol = used?.end.col ?? materializedStartCol
 	return makeMultiAreaArg([
 		makeRangeArea(workbook, sheetIndex, startRow, 0, endRow, EXCEL_MAX_COLS - 1, {
+			dateSystem,
 			materializedStartRow: startRow,
 			materializedStartCol,
 			materializedEndRow: endRow,
@@ -2104,6 +2229,7 @@ function makeWholeColumnArg(
 	sheetIndex: number,
 	startCol: number,
 	endCol: number,
+	dateSystem: '1900' | '1904' = '1900',
 ): EvalArg {
 	const sheet = workbook.sheets[sheetIndex]
 	if (!sheet) return { value: errorValue('#REF!') }
@@ -2112,6 +2238,7 @@ function makeWholeColumnArg(
 	const materializedEndRow = used?.end.row ?? materializedStartRow
 	return makeMultiAreaArg([
 		makeRangeArea(workbook, sheetIndex, 0, startCol, EXCEL_MAX_ROWS - 1, endCol, {
+			dateSystem,
 			materializedStartRow,
 			materializedStartCol: startCol,
 			materializedEndRow,
@@ -2478,7 +2605,15 @@ function resolveR1C1Reference(refText: string, ctx: EvalContext): EvalArg | null
 		return { value: errorValue('#REF!') }
 	}
 
-	return makeRangeArg(ctx.workbook, sheetIndex, start.row, start.col, end.row, end.col)
+	return makeRangeArg(
+		ctx.workbook,
+		sheetIndex,
+		start.row,
+		start.col,
+		end.row,
+		end.col,
+		ctx.calcContext.dateSystem,
+	)
 }
 
 function parseR1C1CellRef(

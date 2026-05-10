@@ -2928,6 +2928,137 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(4, 1)?.value).toEqual(numberValue(70))
 	})
 
+	test('SUBTOTAL and AGGREGATE evaluate date group filter criteria', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.autoFilter = {
+			ref: 'A1:B4',
+			columns: [
+				{
+					colId: 0,
+					kind: 'filters',
+					dateGroupItems: [{ year: 2026, month: 3, dateTimeGrouping: 'month' }],
+				},
+			],
+		}
+		sheet.cells.set(0, 0, { value: stringValue('Date'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Amount'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, {
+			value: dateValue(dateToSerial(2026, 3, 1)),
+			formula: null,
+			styleId: sid,
+		})
+		sheet.cells.set(1, 1, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, {
+			value: dateValue(dateToSerial(2026, 3, 31)),
+			formula: null,
+			styleId: sid,
+		})
+		sheet.cells.set(2, 1, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(3, 0, {
+			value: dateValue(dateToSerial(2026, 4, 1)),
+			formula: null,
+			styleId: sid,
+		})
+		sheet.cells.set(3, 1, { value: numberValue(30), formula: null, styleId: sid })
+		sheet.cells.set(4, 0, { value: EMPTY, formula: 'SUBTOTAL(9,B2:B4)', styleId: sid })
+		sheet.cells.set(4, 1, { value: EMPTY, formula: 'AGGREGATE(9,4,B2:B4)', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(4, 0)?.value).toEqual(numberValue(30))
+		expect(sheet.cells.get(4, 1)?.value).toEqual(numberValue(30))
+	})
+
+	test('date group filter criteria respect the calculation date system', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.autoFilter = {
+			ref: 'A1:B3',
+			columns: [
+				{
+					colId: 0,
+					kind: 'filters',
+					dateGroupItems: [{ year: 2026, month: 3, dateTimeGrouping: 'month' }],
+				},
+			],
+		}
+		sheet.cells.set(0, 0, { value: stringValue('Date'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Amount'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, {
+			value: dateValue(dateToSerial(2026, 3, 15, '1904')),
+			formula: null,
+			styleId: sid,
+		})
+		sheet.cells.set(1, 1, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, {
+			value: dateValue(dateToSerial(2026, 4, 15, '1904')),
+			formula: null,
+			styleId: sid,
+		})
+		sheet.cells.set(2, 1, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(3, 0, { value: EMPTY, formula: 'SUBTOTAL(9,B2:B3)', styleId: sid })
+
+		const result = recalculate(wb, makeCtx({ dateSystem: '1904' }))
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(3, 0)?.value).toEqual(numberValue(10))
+	})
+
+	test('date group filter criteria evaluate time components', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.autoFilter = {
+			ref: 'A1:B4',
+			columns: [
+				{
+					colId: 0,
+					kind: 'filters',
+					dateGroupItems: [
+						{
+							year: 2026,
+							month: 3,
+							day: 15,
+							hour: 13,
+							minute: 45,
+							second: 30,
+							dateTimeGrouping: 'second',
+						},
+					],
+				},
+			],
+		}
+		const matchingTime = (13 * 3600 + 45 * 60 + 30) / 86_400
+		const adjacentTime = (13 * 3600 + 45 * 60 + 31) / 86_400
+		sheet.cells.set(0, 0, { value: stringValue('Timestamp'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Amount'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, {
+			value: dateValue(dateToSerial(2026, 3, 15) + matchingTime),
+			formula: null,
+			styleId: sid,
+		})
+		sheet.cells.set(1, 1, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, {
+			value: dateValue(dateToSerial(2026, 3, 15) + adjacentTime),
+			formula: null,
+			styleId: sid,
+		})
+		sheet.cells.set(2, 1, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(3, 0, {
+			value: dateValue(dateToSerial(2026, 3, 16) + matchingTime),
+			formula: null,
+			styleId: sid,
+		})
+		sheet.cells.set(3, 1, { value: numberValue(30), formula: null, styleId: sid })
+		sheet.cells.set(4, 0, { value: EMPTY, formula: 'SUBTOTAL(9,B2:B4)', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(4, 0)?.value).toEqual(numberValue(10))
+	})
+
 	test('string concatenation formula', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

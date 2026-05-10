@@ -396,7 +396,9 @@ describe('writeXlsx', () => {
 		])
 		expectOk(applied)
 
-		const written = writeXlsx(source.value.workbook, source.value.capsules)
+		const written = writeXlsx(source.value.workbook, source.value.capsules, {
+			dirtySheetNames: applied.value.sheetsModified,
+		})
 		expectOk(written)
 		const zip = unzipSync(written.value)
 		const pivotXml = new TextDecoder().decode(
@@ -448,7 +450,9 @@ describe('writeXlsx', () => {
 			cachePartPaths: ['xl/pivotCache/pivotCacheDefinition1.xml'],
 		})
 
-		const written = writeXlsx(source.value.workbook, source.value.capsules)
+		const written = writeXlsx(source.value.workbook, source.value.capsules, {
+			dirtySheetNames: applied.value.sheetsModified,
+		})
 		expectOk(written)
 		const zip = unzipSync(written.value)
 		const slicerXml = new TextDecoder().decode(
@@ -3536,8 +3540,8 @@ describe('writeXlsx', () => {
 <c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
   <c:chart><c:plotArea><c:barChart><c:ser>
     <c:tx><c:strRef><c:f>Data!$B$1</c:f></c:strRef></c:tx>
-    <c:cat><c:strRef><c:f>Data!$A$2:$A$4</c:f></c:strRef></c:cat>
-    <c:val><c:numRef><c:f>Data!$B$2:$B$4</c:f></c:numRef></c:val>
+    <c:cat><c:strRef><c:f>Data!$A$2:$A$4</c:f><c:strCache><c:pt idx="0"><c:v>Jan</c:v></c:pt></c:strCache></c:strRef></c:cat>
+    <c:val><c:numRef><c:f>Data!$B$2:$B$4</c:f><c:numCache><c:pt idx="0"><c:v>3</c:v></c:pt></c:numCache></c:numRef></c:val>
   </c:ser></c:barChart></c:plotArea></c:chart>
 </c:chartSpace>`
 		const written = writeXlsx(wb, [
@@ -3561,6 +3565,91 @@ describe('writeXlsx', () => {
 		expect(xml).toContain('<c:f>Data!$A$2:$A$10</c:f>')
 		expect(xml).toContain('<c:f>Data!$C$2:$C$10</c:f>')
 		expect(xml).not.toContain('<c:f>Data!$B$2:$B$4</c:f>')
+		expect(xml).not.toContain('<c:strCache>')
+		expect(xml).not.toContain('<c:numCache>')
+	})
+
+	it('invalidates stale caches in real ClosedXML chart edits', () => {
+		const source = readXlsx(
+			readFileSync(
+				new URL(
+					'../../../../fixtures/xlsx/closedxml/Other_Charts_PreserveCharts_inputfile.xlsx',
+					import.meta.url,
+				),
+			),
+		)
+		expectOk(source)
+		const chart = source.value.workbook.chartParts[0]
+		expect(chart?.partPath).toBe('xl/charts/chart1.xml')
+
+		const applied = applyOperations(source.value.workbook, [
+			{
+				op: 'setChartSeriesSource',
+				partPath: 'xl/charts/chart1.xml',
+				seriesIndex: 0,
+				valueRef: 'Sheet1!$C$2:$C$8',
+			},
+		])
+		expectOk(applied)
+		const written = writeXlsx(source.value.workbook, source.value.capsules)
+		expectOk(written)
+
+		const entries = unzipSync(written.value)
+		const updated = entries['xl/charts/chart1.xml']
+		expect(updated).toBeDefined()
+		if (!updated) return
+		const xml = new TextDecoder().decode(updated)
+		const categoryXml = xml.match(/<c:cat>[\s\S]*?<\/c:cat>/)?.[0]
+		const valueXml = xml.match(/<c:val>[\s\S]*?<\/c:val>/)?.[0]
+
+		expect(categoryXml).toContain('<c:f>Sheet1!$A$2:$A$8</c:f>')
+		expect(categoryXml).toContain('<c:numCache>')
+		expect(valueXml).toContain('<c:f>Sheet1!$C$2:$C$8</c:f>')
+		expect(valueXml).not.toContain('<c:numCache>')
+		expect(valueXml).not.toContain('<c:v>3</c:v>')
+	})
+
+	it('rewrites x14 data-validation ranges in real ClosedXML structural edits', () => {
+		const source = readXlsx(
+			readFileSync(
+				new URL('../../../../fixtures/xlsx/closedxml/Misc_DataValidation.xlsx', import.meta.url),
+			),
+		)
+		expectOk(source)
+		const sheet = source.value.workbook.sheets.find(
+			(entry) => entry.name === 'Data Validation - Copy',
+		)
+		expect(sheet?.x14DataValidations).toEqual([
+			{
+				index: 0,
+				sqref: 'A5:A5',
+				formula1: "'Data Validation'!$C$1:$C$2",
+			},
+		])
+
+		const applied = applyOperations(source.value.workbook, [
+			{
+				op: 'insertRows',
+				sheet: 'Data Validation - Copy',
+				at: 4,
+				count: 1,
+			},
+		])
+		expectOk(applied)
+		expect(sheet?.x14DataValidations[0]?.sqref).toBe('A6')
+		const written = writeXlsx(source.value.workbook, source.value.capsules, {
+			dirtySheetNames: applied.value.sheetsModified,
+		})
+		expectOk(written)
+
+		const entries = unzipSync(written.value)
+		const worksheet = entries['xl/worksheets/sheet3.xml']
+		expect(worksheet).toBeDefined()
+		if (!worksheet) return
+		const xml = new TextDecoder().decode(worksheet)
+		expect(xml).toContain('<xm:sqref>A6</xm:sqref>')
+		expect(xml).not.toContain('<xm:sqref>A5:A5</xm:sqref>')
+		expect(xml).toContain("<xm:f>'Data Validation'!$C$1:$C$2</xm:f>")
 	})
 
 	it('preserves threaded comments XML through read-write round-trip', () => {

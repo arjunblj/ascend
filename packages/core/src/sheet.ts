@@ -202,6 +202,21 @@ export interface SheetSparklineGroupInfo {
 	readonly count: number
 }
 
+export interface SheetX14ConditionalFormatInfo {
+	readonly index: number
+	readonly sqref: string
+	readonly formulas: readonly string[]
+	readonly deleted?: boolean
+}
+
+export interface SheetX14DataValidationInfo {
+	readonly index: number
+	readonly sqref: string
+	readonly formula1?: string
+	readonly formula2?: string
+	readonly deleted?: boolean
+}
+
 export interface SheetAdvancedFilterInfo {
 	readonly viewName?: string
 	readonly guid?: string
@@ -398,6 +413,8 @@ export class Sheet {
 	imageRefs: SheetImageRef[]
 	drawingObjectRefs: SheetDrawingObjectRef[]
 	sparklineGroups: SheetSparklineGroupInfo[]
+	x14ConditionalFormats: SheetX14ConditionalFormatInfo[]
+	x14DataValidations: SheetX14DataValidationInfo[]
 	advancedFilters: SheetAdvancedFilterInfo[]
 	drawingRefs: SheetDrawingRefs
 	autoFilter: AutoFilter | null
@@ -442,6 +459,8 @@ export class Sheet {
 		this.imageRefs = []
 		this.drawingObjectRefs = []
 		this.sparklineGroups = []
+		this.x14ConditionalFormats = []
+		this.x14DataValidations = []
 		this.advancedFilters = []
 		this.drawingRefs = { hasDrawing: false, hasLegacyDrawing: false }
 		this.autoFilter = null
@@ -482,6 +501,11 @@ export class Sheet {
 		this.imageRefs = this.imageRefs.map(cloneImageRef)
 		this.drawingObjectRefs = this.drawingObjectRefs.map(cloneDrawingObjectRef)
 		this.sparklineGroups = this.sparklineGroups.map((group) => ({ ...group }))
+		this.x14ConditionalFormats = this.x14ConditionalFormats.map((format) => ({
+			...format,
+			formulas: [...format.formulas],
+		}))
+		this.x14DataValidations = this.x14DataValidations.map((validation) => ({ ...validation }))
 		this.advancedFilters = this.advancedFilters.map(cloneAdvancedFilterInfo)
 		this.autoFilter = this.autoFilter ? cloneAutoFilter(this.autoFilter) : null
 		this.sortState = this.sortState ? cloneSortState(this.sortState) : null
@@ -513,6 +537,8 @@ export class Sheet {
 		s.imageRefs = this.imageRefs
 		s.drawingObjectRefs = this.drawingObjectRefs
 		s.sparklineGroups = this.sparklineGroups
+		s.x14ConditionalFormats = this.x14ConditionalFormats
+		s.x14DataValidations = this.x14DataValidations
 		s.advancedFilters = this.advancedFilters
 		s.drawingRefs = this.drawingRefs
 		s.autoFilter = this.autoFilter

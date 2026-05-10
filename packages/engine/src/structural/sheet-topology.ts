@@ -24,6 +24,8 @@ export function shiftSheetCellMetadata(
 	shiftColDefs(sheet, axis, at, delta)
 	shiftSqrefEntries(sheet.dataValidations, axis, at, delta)
 	shiftConditionalFormats(sheet.conditionalFormats, axis, at, delta)
+	shiftX14SqrefEntries(sheet.x14DataValidations, axis, at, delta)
+	shiftX14SqrefEntries(sheet.x14ConditionalFormats, axis, at, delta)
 	shiftIgnoredErrors(sheet.ignoredErrors, axis, at, delta)
 	shiftSheetAutoFilter(sheet, axis, at, delta)
 	shiftSheetTables(sheet, axis, at, delta)
@@ -168,6 +170,20 @@ function shiftIgnoredErrors(
 	delta: number,
 ): void {
 	shiftSqrefEntries(ignoredErrors, axis, at, delta)
+}
+
+function shiftX14SqrefEntries(
+	entries: Array<{ sqref: string; deleted?: boolean }>,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): void {
+	for (let i = 0; i < entries.length; i++) {
+		const entry = entries[i]
+		if (!entry || entry.deleted) continue
+		const next = shiftSqref(entry.sqref, axis, at, delta)
+		entries[i] = next ? { ...entry, sqref: next } : { ...entry, sqref: '', deleted: true }
+	}
 }
 
 function shiftSheetAutoFilter(sheet: Sheet, axis: 'row' | 'col', at: number, delta: number): void {

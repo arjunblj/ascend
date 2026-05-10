@@ -106,6 +106,8 @@ export type {
 	SheetThreadedComment,
 	SheetView,
 	SheetViewType,
+	SheetX14ConditionalFormatInfo,
+	SheetX14DataValidationInfo,
 } from './sheet.ts'
 export { createSheet, Sheet } from './sheet.ts'
 

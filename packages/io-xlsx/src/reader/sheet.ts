@@ -54,6 +54,8 @@ const TEXT_NODE_RE =
 const X14_DATA_VALIDATION_RE =
 	/<([A-Za-z_][\w.-]*):dataValidation\b([^>]*)>([\s\S]*?)<\/\1:dataValidation>/gi
 const X14_SELF_CLOSING_DATA_VALIDATION_RE = /<([A-Za-z_][\w.-]*):dataValidation\b([^>]*)\/>/gi
+const X14_CONDITIONAL_FORMATTING_RE =
+	/<([A-Za-z_][\w.-]*):conditionalFormatting\b([^>]*)>([\s\S]*?)<\/\1:conditionalFormatting>/gi
 
 interface ParsedFormulaText {
 	readonly text: string | null
@@ -246,6 +248,7 @@ export function parseSheet(
 		parseHyperlinks(ws, sheet, ctx.relationships ?? [], ctx.valuePool)
 		parseConditionalFormatting(ws, sheet, ctx.differentialStyles ?? [], ctx.valuePool)
 		parseDataValidations(ws, sheet, ctx.valuePool)
+		parseX14ConditionalFormats(strippedXml, sheet, ctx.valuePool)
 		parseX14DataValidations(strippedXml, sheet, ctx.valuePool)
 		parseAdvancedFilters(ws, sheet)
 		parseSparklineGroups(ws, sheet)
@@ -3634,6 +3637,25 @@ function parseDataValidations(ws: XmlNode, sheet: Sheet, pool?: ValueInternPool)
 	}
 }
 
+function parseX14ConditionalFormats(xml: string, sheet: Sheet, pool?: ValueInternPool): void {
+	let index = 0
+	for (const match of xml.matchAll(X14_CONDITIONAL_FORMATTING_RE)) {
+		const body = match[3] ?? ''
+		const sqref = readFirstXmlElementText(body, 'sqref')
+		if (!sqref) {
+			index += 1
+			continue
+		}
+		const formulas = readXmlElementTexts(body, 'f')
+		sheet.x14ConditionalFormats.push({
+			index,
+			sqref: pool ? pool.internString(sqref) : sqref,
+			formulas: pool ? formulas.map((formula) => pool.internString(formula)) : formulas,
+		})
+		index += 1
+	}
+}
+
 type MutableDataValidation = {
 	sqref: string
 	source?: 'x14'
@@ -3654,28 +3676,57 @@ type MutableDataValidation = {
 }
 
 function parseX14DataValidations(xml: string, sheet: Sheet, pool?: ValueInternPool): void {
+	let index = 0
 	for (const match of xml.matchAll(X14_DATA_VALIDATION_RE)) {
 		const rawAttrs = match[2] ?? ''
 		const body = match[3] ?? ''
 		const attrs = parseRawAttributes(rawAttrs)
 		const sqref = attr(attrs, 'sqref') ?? readFirstXmlElementText(body, 'sqref')
-		if (!sqref) continue
+		if (!sqref) {
+			index += 1
+			continue
+		}
 		const parsed = parseDataValidationAttributes(attrs, sqref)
 		const formula1 = readX14DataValidationFormula(body, 'formula1')
 		if (formula1) parsed.formula1 = formula1
 		const formula2 = readX14DataValidationFormula(body, 'formula2')
 		if (formula2) parsed.formula2 = formula2
+		pushX14DataValidationInfo(sheet, index, parsed, pool)
 		parsed.source = 'x14'
 		pushDataValidation(sheet, parsed, pool)
+		index += 1
 	}
 	for (const match of xml.matchAll(X14_SELF_CLOSING_DATA_VALIDATION_RE)) {
 		const attrs = parseRawAttributes(match[2] ?? '')
 		const sqref = attr(attrs, 'sqref')
-		if (!sqref) continue
+		if (!sqref) {
+			index += 1
+			continue
+		}
 		const parsed = parseDataValidationAttributes(attrs, sqref)
+		pushX14DataValidationInfo(sheet, index, parsed, pool)
 		parsed.source = 'x14'
 		pushDataValidation(sheet, parsed, pool)
+		index += 1
 	}
+}
+
+function pushX14DataValidationInfo(
+	sheet: Sheet,
+	index: number,
+	parsed: MutableDataValidation,
+	pool?: ValueInternPool,
+): void {
+	sheet.x14DataValidations.push({
+		index,
+		sqref: pool ? pool.internString(parsed.sqref) : parsed.sqref,
+		...(parsed.formula1
+			? { formula1: pool ? pool.internString(parsed.formula1) : parsed.formula1 }
+			: {}),
+		...(parsed.formula2
+			? { formula2: pool ? pool.internString(parsed.formula2) : parsed.formula2 }
+			: {}),
+	})
 }
 
 function parseDataValidationAttributes(node: XmlNode, sqref: string): MutableDataValidation {
@@ -3762,6 +3813,20 @@ function readFirstXmlElementText(xml: string, localName: string): string | undef
 	const body = readFirstXmlElementBody(xml, localName)
 	if (body === undefined) return undefined
 	return readXmlTextContent(body)
+}
+
+function readXmlElementTexts(xml: string, localName: string): string[] {
+	const escapedName = escapeRegExp(localName)
+	const pattern = new RegExp(
+		`<(?:[A-Za-z_][\\w.-]*:)?${escapedName}\\b[^>]*>([\\s\\S]*?)<\\/(?:[A-Za-z_][\\w.-]*:)?${escapedName}>`,
+		'gi',
+	)
+	const values: string[] = []
+	for (const match of xml.matchAll(pattern)) {
+		const text = readXmlTextContent(match[1] ?? '')
+		if (text !== undefined) values.push(text)
+	}
+	return values
 }
 
 function readFirstXmlElementBody(xml: string, localName: string): string | undefined {

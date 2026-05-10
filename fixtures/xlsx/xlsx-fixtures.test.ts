@@ -12,6 +12,7 @@ import {
 	recalculate,
 	validateCellValue,
 } from '../../packages/engine/src/index.ts'
+import { shiftSheetCellMetadata } from '../../packages/engine/src/structural/sheet-topology.ts'
 import { readXlsx, writeXlsx } from '../../packages/io-xlsx/src/index.ts'
 import {
 	fingerprintXlsx,
@@ -269,12 +270,62 @@ if (poiFixtures.length > 0) {
 			expectOk(initial)
 			const sheet = initial.value.workbook.sheets[0]
 			expect(sheet?.preservedExtLst?.includes('<extLst')).toBe(true)
+			expect(sheet?.x14ConditionalFormats.map((format) => format.sqref)).toEqual([
+				'E2:E17',
+				'Q2:Q17',
+				'U2:U17',
+			])
 
 			const written = writeXlsx(initial.value.workbook, initial.value.capsules)
 			expectOk(written)
 			const reopened = readXlsx(written.value)
 			expectOk(reopened)
 			expect(reopened.value.workbook.sheets[0]?.preservedExtLst?.includes('<extLst')).toBe(true)
+		})
+
+		it('rewrites real x14/extLst conditional formatting ranges after metadata shifts', () => {
+			const initial = readXlsx(loadFixture('NewStyleConditionalFormattings.xlsx'))
+			expectOk(initial)
+			const workbook = initial.value.workbook
+			const sheet = workbook.sheets[0]
+			expect(sheet).toBeDefined()
+			if (!sheet) return
+			shiftSheetCellMetadata(sheet, 'row', 1, 1)
+			expect(sheet?.x14ConditionalFormats.map((format) => format.sqref)).toEqual([
+				'E3:E18',
+				'Q3:Q18',
+				'U3:U18',
+			])
+
+			const written = writeXlsx(workbook, initial.value.capsules, { dirtySheetNames: ['CF'] })
+			expectOk(written)
+			const worksheetXml = readZipText(written.value, 'xl/worksheets/sheet1.xml')
+			expect(worksheetXml).toContain('<xm:sqref>E3:E18</xm:sqref>')
+			expect(worksheetXml).toContain('<xm:sqref>Q3:Q18</xm:sqref>')
+			expect(worksheetXml).toContain('<xm:sqref>U3:U18</xm:sqref>')
+			expect(worksheetXml).not.toContain('<xm:sqref>E2:E17</xm:sqref>')
+			expect(worksheetXml).not.toContain('<xm:sqref>Q2:Q17</xm:sqref>')
+			expect(worksheetXml).not.toContain('<xm:sqref>U2:U17</xm:sqref>')
+		})
+
+		it('removes real x14/extLst conditional formatting entries deleted by metadata shifts', () => {
+			const initial = readXlsx(loadFixture('NewStyleConditionalFormattings.xlsx'))
+			expectOk(initial)
+			const workbook = initial.value.workbook
+			const sheet = workbook.sheets[0]
+			expect(sheet).toBeDefined()
+			if (!sheet) return
+			shiftSheetCellMetadata(sheet, 'row', 1, -16)
+			expect(sheet.x14ConditionalFormats.every((format) => format.deleted)).toBe(true)
+
+			const written = writeXlsx(workbook, initial.value.capsules, { dirtySheetNames: ['CF'] })
+			expectOk(written)
+			const worksheetXml = readZipText(written.value, 'xl/worksheets/sheet1.xml')
+			expect(worksheetXml).not.toContain('<xm:sqref>E2:E17</xm:sqref>')
+			expect(worksheetXml).not.toContain('<xm:sqref>Q2:Q17</xm:sqref>')
+			expect(worksheetXml).not.toContain('<xm:sqref>U2:U17</xm:sqref>')
+			expect(worksheetXml).not.toContain('<x14:conditionalFormatting ')
+			expect(worksheetXml).not.toContain('<x14:cfRule')
 		})
 
 		it('captures data validation rules from DataValidationEvaluations.xlsx', () => {

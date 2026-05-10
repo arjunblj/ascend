@@ -328,6 +328,42 @@ export function rewriteSheetMetadataFormulasForShift(
 			})),
 		}
 	}
+	for (let i = 0; i < sheet.x14DataValidations.length; i++) {
+		const validation = sheet.x14DataValidations[i]
+		if (!validation) continue
+		const formula1 = rewriteFormulaTextForShift(
+			validation.formula1,
+			sheet.name,
+			sheet.name,
+			axis,
+			at,
+			delta,
+		)
+		const formula2 = rewriteFormulaTextForShift(
+			validation.formula2,
+			sheet.name,
+			sheet.name,
+			axis,
+			at,
+			delta,
+		)
+		sheet.x14DataValidations[i] = {
+			...validation,
+			...(formula1 !== undefined ? { formula1 } : {}),
+			...(formula2 !== undefined ? { formula2 } : {}),
+		}
+	}
+	for (let i = 0; i < sheet.x14ConditionalFormats.length; i++) {
+		const format = sheet.x14ConditionalFormats[i]
+		if (!format) continue
+		sheet.x14ConditionalFormats[i] = {
+			...format,
+			formulas: format.formulas.map(
+				(formula) =>
+					rewriteFormulaTextForShift(formula, sheet.name, sheet.name, axis, at, delta) ?? formula,
+			),
+		}
+	}
 	for (let i = 0; i < sheet.tables.length; i++) {
 		const table = sheet.tables[i]
 		if (!table) continue

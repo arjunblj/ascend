@@ -2224,6 +2224,13 @@ describe('readXlsx', () => {
 				formula1: 'Lookup!$E$2:$E$123',
 			},
 		])
+		expect(sheet?.x14DataValidations).toEqual([
+			{
+				index: 0,
+				sqref: 'E8:E11',
+				formula1: 'Lookup!$E$2:$E$123',
+			},
+		])
 	})
 
 	it('collapses equivalent normal and extension-list data validations', () => {

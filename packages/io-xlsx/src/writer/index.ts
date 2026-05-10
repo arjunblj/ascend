@@ -20,6 +20,7 @@ import {
 	REL_IMAGE,
 	REL_MACROSHEET,
 	REL_PIVOT_CACHE_DEFINITION,
+	REL_PIVOT_TABLE,
 	REL_SHARED_STRINGS,
 	REL_SHEET_METADATA,
 	REL_STYLES,
@@ -39,6 +40,7 @@ import { buildAppPropsXml, buildCorePropsXml } from './doc-props.ts'
 import { buildDrawingXml, type DrawingTextUpdate, updateDrawingTextXml } from './drawing.ts'
 import { buildDynamicArrayMetadataXml, type DynamicArrayMetadataEntry } from './metadata.ts'
 import { updatePivotCacheDefinitionXml } from './pivot-cache.ts'
+import { updatePivotTableDefinitionXml } from './pivot-table.ts'
 import {
 	summarizeWritePlan,
 	type WritePartOwner,
@@ -1239,6 +1241,31 @@ export function planWriteXlsx(
 				if (!content) continue
 				const owner = resolveCapsuleOwner(capsule, sheetNameById)
 				if (!owner) continue
+				const pivotTable = workbook.pivotTables.find((pivot) => pivot.partPath === capsule.partPath)
+				if (pivotTable && isPivotTableDefinitionCapsule(capsule)) {
+					recordXml(
+						capsule.partPath,
+						{
+							owner,
+							origin: 'generated',
+							contentType: capsule.contentType,
+						},
+						() => updatePivotTableDefinitionXml(new TextDecoder().decode(content), pivotTable),
+					)
+					plan.addOverride(capsule.partPath, capsule.contentType)
+					if (capsule.relationships.length > 0) {
+						const capsuleRelsPath = getRelsPath(capsule.partPath)
+						recordXml(
+							capsuleRelsPath,
+							{
+								owner,
+								origin: 'capsule',
+							},
+							() => buildRelsXml(capsule.relationships),
+						)
+					}
+					continue
+				}
 				const pivotCache = workbook.pivotCaches.find((cache) => cache.partPath === capsule.partPath)
 				if (pivotCache && isPivotCacheDefinitionCapsule(capsule)) {
 					recordXml(
@@ -1782,6 +1809,14 @@ function isPivotCacheDefinitionCapsule(capsule: PreservationCapsule): boolean {
 		capsule.relType === REL_PIVOT_CACHE_DEFINITION ||
 		capsule.contentType.includes('pivotCacheDefinition+xml') ||
 		capsule.partPath.includes('/pivotCache/pivotCacheDefinition')
+	)
+}
+
+function isPivotTableDefinitionCapsule(capsule: PreservationCapsule): boolean {
+	return (
+		capsule.relType === REL_PIVOT_TABLE ||
+		capsule.contentType.includes('pivotTable+xml') ||
+		capsule.partPath.includes('/pivotTables/')
 	)
 }
 

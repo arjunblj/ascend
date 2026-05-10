@@ -23,7 +23,11 @@ export interface OperationJsonSchema {
 		readonly required: readonly string[]
 		readonly properties: Record<
 			string,
-			{ readonly type: string; readonly description?: string; readonly enum?: readonly string[] }
+			{
+				readonly type: string | readonly string[]
+				readonly description?: string
+				readonly enum?: readonly string[]
+			}
 		>
 	}
 	readonly examples: readonly Record<string, unknown>[]
@@ -50,7 +54,7 @@ export interface OperationInvalidExample {
 
 const FIELD_SCHEMAS: Record<
 	string,
-	{ type: string; description?: string; enum?: readonly string[] }
+	{ type: string | readonly string[]; description?: string; enum?: readonly string[] }
 > = {
 	sheet: { type: 'string', description: 'Sheet name' },
 	updates: {
@@ -195,6 +199,20 @@ const FIELD_SCHEMAS: Record<
 	cacheId: { type: 'integer', description: 'Pivot cache id' },
 	partPath: { type: 'string', description: 'XLSX package part path' },
 	pivotTable: { type: 'string', description: 'Pivot table name that uses the cache' },
+	fieldIndex: { type: 'integer', description: 'Zero-based pivot field index' },
+	itemIndex: { type: 'integer', description: 'Zero-based pivot field item index' },
+	showDetails: {
+		type: ['boolean', 'null'],
+		description: 'Pivot field item show-details state; use null to clear',
+	},
+	manualFilter: {
+		type: ['boolean', 'null'],
+		description: 'Pivot field item manual-filter state; use null to clear',
+	},
+	selectedPageItem: {
+		type: ['integer', 'null'],
+		description: 'Selected page-field item index; use null to clear',
+	},
 	slicerCache: { type: 'string', description: 'Slicer cache name or package part path' },
 	item: { type: 'integer', description: 'Zero-based slicer cache item x index' },
 	selected: { type: 'boolean', description: 'Slicer item selected state; use null to clear' },
@@ -504,6 +522,20 @@ export function listOperations(): readonly OperationSchema[] {
 			],
 		},
 		{
+			op: 'setPivotFieldItem',
+			description: 'Edit pivot field item filter flags while preserving pivot table XML',
+			requiredFields: ['fieldIndex', 'itemIndex'],
+			optionalFields: [
+				'pivotTable',
+				'partPath',
+				'sheet',
+				'hidden',
+				'showDetails',
+				'manualFilter',
+				'selectedPageItem',
+			],
+		},
+		{
 			op: 'setSlicerCacheItem',
 			description:
 				'Edit tabular slicer cache item selected/no-data flags without recalculating output',
@@ -525,7 +557,7 @@ export function getOperationsSchema(): readonly OperationJsonSchema[] {
 		const required = ['op', ...op.requiredFields] as const
 		const properties: Record<
 			string,
-			{ type: string; description?: string; enum?: readonly string[] }
+			{ type: string | readonly string[]; description?: string; enum?: readonly string[] }
 		> = {
 			op: {
 				type: 'string',
@@ -534,7 +566,10 @@ export function getOperationsSchema(): readonly OperationJsonSchema[] {
 			},
 		}
 		for (const field of [...op.requiredFields, ...(op.optionalFields ?? [])]) {
-			const schema = FIELD_SCHEMAS[field] ?? { type: 'string' }
+			const schema =
+				op.op === 'setPivotFieldItem' && field === 'hidden'
+					? { ...FIELD_SCHEMAS.hidden, type: ['boolean', 'null'] }
+					: (FIELD_SCHEMAS[field] ?? { type: 'string' })
 			properties[field] = schema
 		}
 		return {
@@ -679,10 +714,16 @@ function validateOperationField(
 		case 'seriesIndex':
 		case 'cacheId':
 		case 'item':
+		case 'fieldIndex':
+		case 'itemIndex':
 		case 'from':
 		case 'to':
 		case 'index':
 			return isNonNegativeInteger(value) ? null : `${path} must be a non-negative integer`
+		case 'selectedPageItem':
+			return value === null || isNonNegativeInteger(value)
+				? null
+				: `${path} must be a non-negative integer or null`
 		case 'priority':
 		case 'count':
 			return isPositiveInteger(value) ? null : `${path} must be a positive integer`
@@ -691,7 +732,6 @@ function validateOperationField(
 			return isFiniteNumber(value) ? null : `${path} must be a finite number`
 		case 'hasHeaders':
 		case 'descending':
-		case 'hidden':
 		case 'reassignPriorities':
 		case 'collapsed':
 		case 'summaryBelow':
@@ -700,6 +740,18 @@ function validateOperationField(
 		case 'enableRefresh':
 		case 'invalid':
 		case 'saveData':
+			return typeof value === 'boolean' ? null : `${path} must be a boolean`
+		case 'showDetails':
+		case 'manualFilter':
+			return value === null || typeof value === 'boolean'
+				? null
+				: `${path} must be a boolean or null`
+		case 'hidden':
+			if (record.op === 'setPivotFieldItem') {
+				return value === null || typeof value === 'boolean'
+					? null
+					: `${path} must be a boolean or null`
+			}
 			return typeof value === 'boolean' ? null : `${path} must be a boolean`
 		case 'selected':
 		case 'noData':
@@ -947,6 +999,12 @@ function operationRecoveryActions(op: string): readonly string[] {
 				'Set invalid=true and refreshOnLoad=true when changing source ranges without recalculating pivot output.',
 				...common,
 			]
+		case 'setPivotFieldItem':
+			return [
+				'Use inspect --detail pivots to choose pivotTable or partPath plus fieldIndex and itemIndex.',
+				'Expect pivot output to be stale until Excel or another pivot-aware engine refreshes the pivot table.',
+				...common,
+			]
 		case 'setSlicerCacheItem':
 			return [
 				'Use inspect --detail slicers to choose slicerCache or partPath and the zero-based item index.',
@@ -1156,6 +1214,15 @@ function operationExample(op: string): Record<string, unknown> {
 				sourceRef: 'A1:E200',
 				refreshOnLoad: true,
 				invalid: true,
+			}
+		case 'setPivotFieldItem':
+			return {
+				op,
+				pivotTable: 'PivotTable1',
+				fieldIndex: 0,
+				itemIndex: 2,
+				hidden: true,
+				selectedPageItem: 2,
 			}
 		case 'setSlicerCacheItem':
 			return {

@@ -97,6 +97,7 @@ const handlers: Record<string, OperationHandler> = {
 	replaceImage: visualOps.handleReplaceImage as OperationHandler,
 	setChartSeriesSource: visualOps.handleSetChartSeriesSource as OperationHandler,
 	setPivotCache: pivotOps.handleSetPivotCache as OperationHandler,
+	setPivotFieldItem: pivotOps.handleSetPivotFieldItem as OperationHandler,
 	setSlicerCacheItem: slicerOps.handleSetSlicerCacheItem as OperationHandler,
 	rewriteExternalLink: workbookOps.handleRewriteExternalLink as OperationHandler,
 	insertImage: visualOps.handleInsertImage as OperationHandler,

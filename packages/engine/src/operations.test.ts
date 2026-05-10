@@ -1622,6 +1622,128 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('setPivotFieldItem updates item and page filter state with refresh warning', () => {
+		const wb = setup()
+		wb.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'Sheet1',
+			name: 'PivotTable1',
+			cacheId: 34,
+			fields: [
+				{
+					index: 0,
+					axis: 'axisPage',
+					items: [
+						{ index: 0, cacheIndex: 0, hidden: true },
+						{ index: 1, cacheIndex: 1, showDetails: false },
+					],
+				},
+			],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [{ index: 0 }],
+			dataFields: [],
+		})
+		wb.pivotCaches.push({
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			cacheId: 34,
+			fields: [],
+		})
+
+		const result = applyOperation(wb, {
+			op: 'setPivotFieldItem',
+			pivotTable: 'PivotTable1',
+			fieldIndex: 0,
+			itemIndex: 0,
+			hidden: null,
+			manualFilter: true,
+			selectedPageItem: 1,
+		})
+		expectOk(result)
+
+		expect(result.value.sheetsModified).toEqual(['Sheet1'])
+		expect(result.value.recalcRequired).toBe(false)
+		expect(result.value.warnings?.[0]?.message).toContain('Pivot field item state changed')
+		expect(result.value.warnings?.[0]?.details).toMatchObject({
+			pivotTable: 'PivotTable1',
+			fieldIndex: 0,
+			itemIndex: 0,
+			refreshOnLoad: true,
+			invalid: true,
+		})
+		expect(wb.pivotTables[0]?.fields[0]?.items).toEqual([
+			{ index: 0, cacheIndex: 0, manualFilter: true },
+			{ index: 1, cacheIndex: 1, showDetails: false },
+		])
+		expect(wb.pivotTables[0]?.pageFields).toEqual([{ index: 0, item: 1 }])
+		expect(wb.pivotCaches[0]).toMatchObject({ refreshOnLoad: true, invalid: true })
+	})
+
+	test('setPivotFieldItem validates selectors and existing inventory indexes', () => {
+		const wb = setup()
+		wb.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'Sheet1',
+			name: 'PivotTable1',
+			fields: [{ index: 0, items: [{ index: 0, cacheIndex: 0 }] }],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [],
+			dataFields: [],
+		})
+
+		const missingSelector = applyOperation(wb, {
+			op: 'setPivotFieldItem',
+			fieldIndex: 0,
+			itemIndex: 0,
+			hidden: true,
+		})
+		expectErr(missingSelector)
+		expect(missingSelector.error.message).toContain('requires pivotTable, partPath, or sheet')
+
+		const missingUpdate = applyOperation(wb, {
+			op: 'setPivotFieldItem',
+			pivotTable: 'PivotTable1',
+			fieldIndex: 0,
+			itemIndex: 0,
+		})
+		expectErr(missingUpdate)
+		expect(missingUpdate.error.message).toContain('requires an item or page filter update')
+
+		const missingItem = applyOperation(wb, {
+			op: 'setPivotFieldItem',
+			pivotTable: 'PivotTable1',
+			fieldIndex: 0,
+			itemIndex: 2,
+			hidden: true,
+		})
+		expectErr(missingItem)
+		expect(missingItem.error.message).toContain('Pivot field item 2 was not found')
+
+		const missingPageField = applyOperation(wb, {
+			op: 'setPivotFieldItem',
+			pivotTable: 'PivotTable1',
+			fieldIndex: 0,
+			itemIndex: 0,
+			selectedPageItem: 0,
+		})
+		expectErr(missingPageField)
+		expect(missingPageField.error.message).toContain('Pivot field 0 is not a page field')
+
+		const pivot = wb.pivotTables[0]
+		if (!pivot) throw new Error('Expected pivot test fixture')
+		wb.pivotTables[0] = { ...pivot, pageFields: [{ index: 0 }] }
+		const missingPageItem = applyOperation(wb, {
+			op: 'setPivotFieldItem',
+			pivotTable: 'PivotTable1',
+			fieldIndex: 0,
+			itemIndex: 0,
+			selectedPageItem: 2,
+		})
+		expectErr(missingPageItem)
+		expect(missingPageItem.error.message).toContain('Pivot page-field item 2 was not found')
+	})
+
 	test('setSlicerCacheItem updates tabular item state with refresh warning', () => {
 		const wb = setup()
 		wb.pivotTables.push({

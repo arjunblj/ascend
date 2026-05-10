@@ -497,6 +497,18 @@ export type Operation =
 			readonly saveData?: boolean
 	  }
 	| {
+			readonly op: 'setPivotFieldItem'
+			readonly pivotTable?: string
+			readonly partPath?: string
+			readonly sheet?: string
+			readonly fieldIndex: number
+			readonly itemIndex: number
+			readonly hidden?: boolean | null
+			readonly showDetails?: boolean | null
+			readonly manualFilter?: boolean | null
+			readonly selectedPageItem?: number | null
+	  }
+	| {
 			readonly op: 'setSlicerCacheItem'
 			readonly slicerCache?: string
 			readonly partPath?: string

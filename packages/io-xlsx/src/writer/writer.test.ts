@@ -157,6 +157,113 @@ describe('writeXlsx', () => {
 		])
 	})
 
+	it('writes edited pivot field item state back into preserved pivot XML', () => {
+		const pivotTableXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<pivotTableDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="PivotTable1" cacheId="34">
+  <pivotFields count="1"><pivotField axis="axisPage" showAll="0"><items count="3"><item h="1" x="0"/><item x="1" sd="0"></item><item t="default"/></items></pivotField></pivotFields>
+  <pageFields count="1"><pageField fld="0"></pageField></pageFields>
+</pivotTableDefinition>`
+		const pivotCacheXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<pivotCacheDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" recordCount="2">
+  <cacheFields count="1"><cacheField name="Region"><sharedItems count="2"><s v="West"/><s v="East"/></sharedItems></cacheField></cacheFields>
+</pivotCacheDefinition>`
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Sheet1')
+		wb.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'Sheet1',
+			name: 'PivotTable1',
+			cacheId: 34,
+			fields: [
+				{
+					index: 0,
+					axis: 'axisPage',
+					showAll: false,
+					items: [
+						{ index: 0, cacheIndex: 0, hidden: true },
+						{ index: 1, cacheIndex: 1, showDetails: false },
+						{ index: 2, itemType: 'default' },
+					],
+				},
+			],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [{ index: 0 }],
+			dataFields: [],
+		})
+		wb.pivotCaches.push({
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			cacheId: 34,
+			fields: [
+				{
+					index: 0,
+					name: 'Region',
+					sharedItems: [
+						{ index: 0, kind: 'string', value: 'West' },
+						{ index: 1, kind: 'string', value: 'East' },
+					],
+				},
+			],
+		})
+		const applied = applyOperations(wb, [
+			{
+				op: 'setPivotFieldItem',
+				pivotTable: 'PivotTable1',
+				fieldIndex: 0,
+				itemIndex: 0,
+				hidden: null,
+				manualFilter: true,
+				selectedPageItem: 1,
+			},
+		])
+		expectOk(applied)
+		const capsules: PreservationCapsule[] = [
+			{
+				partPath: 'xl/pivotTables/pivotTable1.xml',
+				contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.pivotTable+xml',
+				relationships: [],
+				content: new TextEncoder().encode(pivotTableXml),
+				anchor: { kind: 'sheet', sheetId: sheet.id, sheetName: 'Sheet1' },
+				relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable',
+			},
+			{
+				partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+				contentType:
+					'application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheDefinition+xml',
+				relationships: [],
+				content: new TextEncoder().encode(pivotCacheXml),
+				anchor: { kind: 'workbook' },
+				relType:
+					'http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheDefinition',
+			},
+		]
+
+		const written = writeXlsx(wb, capsules)
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		const pivotXml = new TextDecoder().decode(
+			zip['xl/pivotTables/pivotTable1.xml'] ?? new Uint8Array(),
+		)
+		const cacheXml = new TextDecoder().decode(
+			zip['xl/pivotCache/pivotCacheDefinition1.xml'] ?? new Uint8Array(),
+		)
+
+		expect(pivotXml).toContain('<item x="0" s="1"/>')
+		expect(pivotXml).toContain('<item x="1" sd="0"></item>')
+		expect(pivotXml).toContain('<pageField fld="0" item="1"></pageField>')
+		expect(cacheXml).toContain('<pivotCacheDefinition')
+		expect(cacheXml).toContain('refreshOnLoad="1"')
+		expect(cacheXml).toContain('invalid="1"')
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.pivotTables[0]?.fields[0]?.items).toEqual([
+			{ index: 0, cacheIndex: 0, manualFilter: true },
+			{ index: 1, cacheIndex: 1, showDetails: false },
+			{ index: 2, itemType: 'default' },
+		])
+		expect(reopened.value.workbook.pivotTables[0]?.pageFields).toEqual([{ index: 0, item: 1 }])
+	})
+
 	it('writes edited drawing text back into preserved drawing XML', () => {
 		const drawingXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"

@@ -122,6 +122,36 @@ describe('operation schema agent DX', () => {
 		expect(schema?.recoveryActions.join('\n')).toContain('invalid=true')
 	})
 
+	test('setPivotFieldItem is exposed with filter item guidance', () => {
+		const schema = getOperationsSchema().find((entry) => entry.op === 'setPivotFieldItem')
+		expect(schema?.schema.required).toEqual(['op', 'fieldIndex', 'itemIndex'])
+		expect(schema?.schema.properties.selectedPageItem?.description).toContain('page-field')
+		expect(schema?.schema.properties.hidden?.type).toEqual(['boolean', 'null'])
+		expect(schema?.schema.properties.showDetails?.type).toEqual(['boolean', 'null'])
+		expect(schema?.schema.properties.manualFilter?.type).toEqual(['boolean', 'null'])
+		expect(schema?.schema.properties.selectedPageItem?.type).toEqual(['integer', 'null'])
+		expect(schema?.examples[0]).toMatchObject({
+			op: 'setPivotFieldItem',
+			pivotTable: 'PivotTable1',
+			fieldIndex: 0,
+			itemIndex: 2,
+			hidden: true,
+		})
+		expect(schema?.recoveryActions.join('\n')).toContain('fieldIndex')
+
+		const parsed = parseOperations([
+			{
+				op: 'setPivotFieldItem',
+				pivotTable: 'PivotTable1',
+				fieldIndex: 0,
+				itemIndex: 2,
+				hidden: null,
+				selectedPageItem: null,
+			},
+		])
+		expect(parsed.ok).toBe(true)
+	})
+
 	test('setSlicerCacheItem is exposed with slicer refresh guidance', () => {
 		const schema = getOperationsSchema().find((entry) => entry.op === 'setSlicerCacheItem')
 		expect(schema?.schema.required).toEqual(['op', 'item'])

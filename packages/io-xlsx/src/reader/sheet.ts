@@ -991,10 +991,6 @@ function parseDirectValuesCell(
 	if (type === 's') {
 		const idx = rawValue !== undefined ? fastParseNonNegInt(rawValue) : -1
 		if (idx < 0) return { value: internValue(ctx, stringValue('')), formula: null, styleId }
-		const text = ctx.sharedStrings.getString?.(idx)
-		if (text !== undefined) {
-			return { value: internValue(ctx, stringValue(text)), formula: null, styleId }
-		}
 		const entry = ctx.sharedStrings.get(idx)
 		if (entry) return { value: internValue(ctx, entry), formula: null, styleId }
 		return { value: internValue(ctx, stringValue('')), formula: null, styleId }

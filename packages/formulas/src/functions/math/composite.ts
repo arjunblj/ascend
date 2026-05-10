@@ -238,7 +238,16 @@ function aggregateFn(args: EvalArg[]): CellValue {
 function subtotalNums(data: EvalArg[]): number[] | CellValue {
 	const nums: number[] = []
 	for (const arg of data) {
-		if (arg.forEachValue) {
+		if (arg.kind === 'range' && arg.values) {
+			for (let rowIndex = 0; rowIndex < arg.values.length; rowIndex++) {
+				if (arg.rowHiddenAtOffset?.(rowIndex)) continue
+				for (const cell of arg.values[rowIndex] ?? []) {
+					if (isError(cell)) return cell
+					const n = numericVal(cell)
+					if (n !== null) nums.push(n)
+				}
+			}
+		} else if (arg.forEachValue) {
 			let err: CellValue | undefined
 			arg.forEachValue((cell) => {
 				if (err) return
@@ -250,14 +259,6 @@ function subtotalNums(data: EvalArg[]): number[] | CellValue {
 				if (n !== null) nums.push(n)
 			})
 			if (err) return err
-		} else if (arg.kind === 'range' && arg.values) {
-			for (const row of arg.values) {
-				for (const cell of row) {
-					if (isError(cell)) return cell
-					const n = numericVal(cell)
-					if (n !== null) nums.push(n)
-				}
-			}
 		} else {
 			const n = toNum(arg.value ?? EMPTY)
 			if (typeof n !== 'number') return n
@@ -282,8 +283,9 @@ function subtotalFn(args: EvalArg[]): CellValue {
 			let count = 0
 			for (const arg of data) {
 				if (arg.kind === 'range' && arg.values) {
-					for (const row of arg.values) {
-						for (const cell of row) {
+					for (let rowIndex = 0; rowIndex < arg.values.length; rowIndex++) {
+						if (arg.rowHiddenAtOffset?.(rowIndex)) continue
+						for (const cell of arg.values[rowIndex] ?? []) {
 							if (isError(cell)) return cell
 							const n = numericVal(cell)
 							if (n !== null) {
@@ -305,8 +307,9 @@ function subtotalFn(args: EvalArg[]): CellValue {
 			let count = 0
 			for (const arg of data) {
 				if (arg.kind === 'range' && arg.values) {
-					for (const row of arg.values) {
-						for (const cell of row) {
+					for (let rowIndex = 0; rowIndex < arg.values.length; rowIndex++) {
+						if (arg.rowHiddenAtOffset?.(rowIndex)) continue
+						for (const cell of arg.values[rowIndex] ?? []) {
 							if (cell.kind === 'number' || cell.kind === 'date') count++
 						}
 					}
@@ -321,8 +324,9 @@ function subtotalFn(args: EvalArg[]): CellValue {
 			let count = 0
 			for (const arg of data) {
 				if (arg.kind === 'range' && arg.values) {
-					for (const row of arg.values) {
-						for (const cell of row) {
+					for (let rowIndex = 0; rowIndex < arg.values.length; rowIndex++) {
+						if (arg.rowHiddenAtOffset?.(rowIndex)) continue
+						for (const cell of arg.values[rowIndex] ?? []) {
 							if (!isEmpty(cell)) count++
 						}
 					}
@@ -337,8 +341,9 @@ function subtotalFn(args: EvalArg[]): CellValue {
 			let found = false
 			for (const arg of data) {
 				if (arg.kind === 'range' && arg.values) {
-					for (const row of arg.values) {
-						for (const cell of row) {
+					for (let rowIndex = 0; rowIndex < arg.values.length; rowIndex++) {
+						if (arg.rowHiddenAtOffset?.(rowIndex)) continue
+						for (const cell of arg.values[rowIndex] ?? []) {
 							if (isError(cell)) return cell
 							const n = numericVal(cell)
 							if (n !== null) {
@@ -361,8 +366,9 @@ function subtotalFn(args: EvalArg[]): CellValue {
 			let found = false
 			for (const arg of data) {
 				if (arg.kind === 'range' && arg.values) {
-					for (const row of arg.values) {
-						for (const cell of row) {
+					for (let rowIndex = 0; rowIndex < arg.values.length; rowIndex++) {
+						if (arg.rowHiddenAtOffset?.(rowIndex)) continue
+						for (const cell of arg.values[rowIndex] ?? []) {
 							if (isError(cell)) return cell
 							const n = numericVal(cell)
 							if (n !== null) {
@@ -385,8 +391,9 @@ function subtotalFn(args: EvalArg[]): CellValue {
 			let product = 1
 			for (const arg of data) {
 				if (arg.kind === 'range' && arg.values) {
-					for (const row of arg.values) {
-						for (const cell of row) {
+					for (let rowIndex = 0; rowIndex < arg.values.length; rowIndex++) {
+						if (arg.rowHiddenAtOffset?.(rowIndex)) continue
+						for (const cell of arg.values[rowIndex] ?? []) {
 							if (isError(cell)) return cell
 							const n = numericVal(cell)
 							if (n !== null) product *= n
@@ -423,8 +430,9 @@ function subtotalFn(args: EvalArg[]): CellValue {
 			let sum = 0
 			for (const arg of data) {
 				if (arg.kind === 'range' && arg.values) {
-					for (const row of arg.values) {
-						for (const cell of row) {
+					for (let rowIndex = 0; rowIndex < arg.values.length; rowIndex++) {
+						if (arg.rowHiddenAtOffset?.(rowIndex)) continue
+						for (const cell of arg.values[rowIndex] ?? []) {
 							if (isError(cell)) return cell
 							const n = numericVal(cell)
 							if (n !== null) sum += n

@@ -434,6 +434,7 @@ export function evaluate(node: FormulaNode, ctx: EvalContext): CellValue {
 			}
 			const operand = evaluate(node.operand, ctx)
 			if (operand.kind === 'error') return operand
+			if (operand.kind === 'array') return evalArrayUnary(node.op, operand)
 			const n = coerceToNumber(operand)
 			if (n === null) return errorValue('#VALUE!')
 			switch (node.op) {
@@ -474,6 +475,39 @@ export function evaluate(node: FormulaNode, ctx: EvalContext): CellValue {
 		default:
 			return assertUnreachable(node)
 	}
+}
+
+function evalArrayUnary(op: string, operand: Extract<CellValue, { kind: 'array' }>): CellValue {
+	const result: ScalarCellValue[][] = []
+	for (const sourceRow of operand.rows) {
+		const resultRow: ScalarCellValue[] = []
+		for (const cell of sourceRow) {
+			if (cell.kind === 'error') {
+				resultRow.push(cell)
+				continue
+			}
+			const n = coerceToNumber(cell)
+			if (n === null) {
+				resultRow.push(topLeftScalar(errorValue('#VALUE!')))
+				continue
+			}
+			switch (op) {
+				case '+':
+					resultRow.push(topLeftScalar(numberValue(n)))
+					break
+				case '-':
+					resultRow.push(topLeftScalar(numberValue(-n)))
+					break
+				case '%':
+					resultRow.push(topLeftScalar(numberValue(n / 100)))
+					break
+				default:
+					resultRow.push(topLeftScalar(EMPTY))
+			}
+		}
+		result.push(resultRow)
+	}
+	return arrayValue(result)
 }
 
 function evaluateBinaryOperand(node: FormulaNode, ctx: EvalContext): CellValue {
@@ -635,10 +669,49 @@ function evalLazyArg(node: FormulaNode | undefined, ctx: EvalContext): CellValue
 }
 
 function evalIf(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
-	const condition = coerceToBoolean(resolveArg(argNodes[0] ?? { type: 'missing' }, ctx).value)
+	const conditionValue = evalLazyArg(argNodes[0], ctx)
+	if (conditionValue.kind === 'array') {
+		const trueValue = evalLazyArg(argNodes[1], ctx)
+		const falseValue = argNodes.length >= 3 ? evalLazyArg(argNodes[2], ctx) : booleanValue(false)
+		return evalIfArray(conditionValue, trueValue, falseValue)
+	}
+	const condition = coerceToBoolean(conditionValue)
 	if (typeof condition !== 'boolean') return condition
 	if (condition) return evalLazyArg(argNodes[1], ctx)
 	return argNodes.length >= 3 ? evalLazyArg(argNodes[2], ctx) : booleanValue(false)
+}
+
+function evalIfArray(
+	conditionValue: CellValue,
+	trueValue: CellValue,
+	falseValue: CellValue,
+): CellValue {
+	const condRows = conditionValue.kind === 'array' ? conditionValue.rows.length : 1
+	const trueRows = trueValue.kind === 'array' ? trueValue.rows.length : 1
+	const falseRows = falseValue.kind === 'array' ? falseValue.rows.length : 1
+	const condCols = conditionValue.kind === 'array' ? maxRowLength(conditionValue.rows) : 1
+	const trueCols = trueValue.kind === 'array' ? maxRowLength(trueValue.rows) : 1
+	const falseCols = falseValue.kind === 'array' ? maxRowLength(falseValue.rows) : 1
+	const conditionTrueRows = broadcastLength(condRows, trueRows)
+	const rows = conditionTrueRows === null ? null : broadcastLength(conditionTrueRows, falseRows)
+	const conditionTrueCols = broadcastLength(condCols, trueCols)
+	const cols = conditionTrueCols === null ? null : broadcastLength(conditionTrueCols, falseCols)
+	if (rows === null || cols === null) return errorValue('#VALUE!')
+
+	const result: ScalarCellValue[][] = []
+	for (let row = 0; row < rows; row++) {
+		const resultRow: ScalarCellValue[] = []
+		for (let col = 0; col < cols; col++) {
+			const condition = coerceToBoolean(arrayCellAt(conditionValue, row, col))
+			if (typeof condition !== 'boolean') {
+				resultRow.push(topLeftScalar(condition))
+			} else {
+				resultRow.push(topLeftScalar(arrayCellAt(condition ? trueValue : falseValue, row, col)))
+			}
+		}
+		result.push(resultRow)
+	}
+	return arrayValue(result)
 }
 
 function evalIfError(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
@@ -1351,6 +1424,7 @@ function areasOf(arg: EvalArg): readonly EvalArea[] | null {
 			ref: arg.ref,
 			topLeft: arg.value,
 			values: arg.values ?? [[arg.value]],
+			...(arg.rowHiddenAtOffset ? { rowHiddenAtOffset: arg.rowHiddenAtOffset } : {}),
 			...(arg.forEachValue ? { forEachValue: arg.forEachValue } : {}),
 		},
 	]
@@ -1390,6 +1464,8 @@ function makeRangeArea(
 		},
 		valueAtOffset: (rowOffset: number, colOffset: number) =>
 			getCellValue(workbook, sheetIndex, startRow + rowOffset, startCol + colOffset),
+		rowHiddenAtOffset: (rowOffset: number) =>
+			sheet?.rowDefs.get(materializedStartRow + rowOffset)?.hidden === true,
 		get values() {
 			if (!cachedValues) {
 				cachedValues = getRangeValues(
@@ -1444,6 +1520,9 @@ function makeMultiAreaArg(areas: readonly EvalArea[]): EvalArg {
 					shapeRows: (firstArea.ref.endRow ?? firstArea.ref.row) - firstArea.ref.row + 1,
 					shapeCols: (firstArea.ref.endCol ?? firstArea.ref.col) - firstArea.ref.col + 1,
 					...(firstArea.valueAtOffset ? { valueAtOffset: firstArea.valueAtOffset } : {}),
+					...(firstArea.rowHiddenAtOffset
+						? { rowHiddenAtOffset: firstArea.rowHiddenAtOffset }
+						: {}),
 				}
 			: {}),
 		areas,

@@ -27,7 +27,7 @@ export function resolveStructuredRefRange(
 
 	let startRow = bodyStartRow
 	let endRow = bodyEndRow
-	if (node.specifiers.includes('@')) {
+	if (node.specifiers.includes('@') || node.specifiers.includes('#This Row')) {
 		if (row < bodyStartRow || row > bodyEndRow) return null
 		startRow = row
 		endRow = row

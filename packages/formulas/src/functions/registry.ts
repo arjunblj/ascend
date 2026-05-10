@@ -15,6 +15,7 @@ export interface EvalArea {
 	readonly values: readonly (readonly CellValue[])[]
 	readonly topLeft?: CellValue
 	readonly valueAtOffset?: (rowOffset: number, colOffset: number) => CellValue
+	readonly rowHiddenAtOffset?: (rowOffset: number) => boolean
 	/** Iterate only occupied cells (sparse). Use for SUM, AVERAGE, etc. */
 	readonly forEachValue?: (fn: (value: CellValue) => void) => void
 	/** Iterate all cells in range including empty. Use for COUNTBLANK. */
@@ -30,6 +31,7 @@ export interface EvalArg {
 	readonly shapeRows?: number
 	readonly shapeCols?: number
 	readonly valueAtOffset?: (rowOffset: number, colOffset: number) => CellValue
+	readonly rowHiddenAtOffset?: (rowOffset: number) => boolean
 	/** Iterate only occupied cells (sparse). Use for SUM, AVERAGE, etc. */
 	readonly forEachValue?: (fn: (value: CellValue) => void) => void
 	/** Iterate all cells in range including empty. Use for COUNTBLANK. */
@@ -235,6 +237,16 @@ export function collectNumbers(args: EvalArg[]): number[] | CellValue {
 				}
 			}
 		} else {
+			if (arg.value.kind === 'array') {
+				for (const row of arg.value.rows) {
+					for (const cell of row) {
+						if (cell.kind === 'error') return cell
+						const n = toNumber(cell)
+						if (n !== null) nums.push(n)
+					}
+				}
+				continue
+			}
 			const scalar = topLeftScalar(arg.value)
 			if (scalar.kind === 'error') return scalar
 			const n = toNumber(scalar)

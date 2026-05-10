@@ -75,6 +75,10 @@ function splitStructuredRefParts(content: string): string[] {
 	return parts
 }
 
+function unescapeStructuredRefColumn(name: string): string {
+	return name.replace(/'([#@[\]'])/g, '$1')
+}
+
 class FormulaParser {
 	private readonly tokens: readonly Token[]
 	private pos = 0
@@ -523,11 +527,11 @@ class FormulaParser {
 		const setColumnSpec = (text: string): void => {
 			const range = /^\[([^\]]+)]\s*:\s*\[([^\]]+)]$/.exec(text)
 			if (range) {
-				column = range[1]
-				endColumn = range[2]
+				column = unescapeStructuredRefColumn(range[1] ?? '')
+				endColumn = unescapeStructuredRefColumn(range[2] ?? '')
 				return
 			}
-			column = text.replace(/^\[|]$/g, '')
+			column = unescapeStructuredRefColumn(text.replace(/^\[|]$/g, ''))
 		}
 
 		if (content.startsWith('@')) {
@@ -547,7 +551,7 @@ class FormulaParser {
 				}
 			}
 		} else {
-			column = content
+			column = unescapeStructuredRefColumn(content)
 		}
 
 		if (column !== undefined) {

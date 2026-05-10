@@ -126,7 +126,7 @@ function splitByDelimiter(text: string, delimiter: string, matchMode: number): s
 	return parts
 }
 
-const DATE_TOKEN_RE = /yyyy|yy|mmmm|mmm|mm|m|dddd|ddd|dd|d|hh|h|ss|s|AM\/PM|am\/pm|A\/P|a\/p/g
+const DATE_TOKEN_RE = /yyyy|yy|mmmm|mmm|mm|m|dddd|ddd|dd|d|hh|h|ss|s|AM\/PM|am\/pm|A\/P|a\/p/
 const MONTH_NAMES = [
 	'January',
 	'February',

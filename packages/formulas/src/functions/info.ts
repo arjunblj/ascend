@@ -1,7 +1,7 @@
-import type { CellValue } from '@ascend/schema'
-import { booleanValue, errorValue, numberValue } from '@ascend/schema'
+import type { CellValue, ScalarCellValue } from '@ascend/schema'
+import { arrayValue, booleanValue, errorValue, numberValue, topLeftScalar } from '@ascend/schema'
 import type { FunctionDef } from './registry.ts'
-import { cellOf, type EvalArg, numArg } from './registry.ts'
+import { cellOf, type EvalArg, getRange, numArg } from './registry.ts'
 
 function isblank(args: EvalArg[]): CellValue {
 	return booleanValue(cellOf(args[0]).kind === 'empty')
@@ -22,8 +22,22 @@ function isna(args: EvalArg[]): CellValue {
 }
 
 function isnumber(args: EvalArg[]): CellValue {
-	const v = cellOf(args[0])
-	return booleanValue(v.kind === 'number' || v.kind === 'date')
+	return mapInfoPredicate(args[0], (v) => v.kind === 'number' || v.kind === 'date')
+}
+
+function mapInfoPredicate(
+	arg: EvalArg | undefined,
+	predicate: (value: CellValue) => boolean,
+): CellValue {
+	if (arg?.kind === 'range' || arg?.value.kind === 'array') {
+		const rows = getRange(arg).map((row) =>
+			row.map(
+				(value): ScalarCellValue => topLeftScalar(booleanValue(predicate(topLeftScalar(value)))),
+			),
+		)
+		return arrayValue(rows)
+	}
+	return booleanValue(predicate(cellOf(arg)))
 }
 
 function istext(args: EvalArg[]): CellValue {
@@ -57,13 +71,20 @@ function typeFn(args: EvalArg[]): CellValue {
 	}
 }
 
-function nFn(args: EvalArg[]): CellValue {
-	const v = cellOf(args[0])
+function nScalar(v: CellValue): ScalarCellValue {
 	if (v.kind === 'error') return v
 	if (v.kind === 'number') return v
-	if (v.kind === 'date') return numberValue(v.serial)
-	if (v.kind === 'boolean') return numberValue(v.value ? 1 : 0)
-	return numberValue(0)
+	if (v.kind === 'date') return topLeftScalar(numberValue(v.serial))
+	if (v.kind === 'boolean') return topLeftScalar(numberValue(v.value ? 1 : 0))
+	return topLeftScalar(numberValue(0))
+}
+
+function nFn(args: EvalArg[]): CellValue {
+	const arg = args[0]
+	if (arg?.kind === 'range' || arg?.value.kind === 'array') {
+		return arrayValue(getRange(arg).map((row) => row.map((value) => nScalar(topLeftScalar(value)))))
+	}
+	return nScalar(cellOf(arg))
 }
 
 function na(_args: EvalArg[]): CellValue {

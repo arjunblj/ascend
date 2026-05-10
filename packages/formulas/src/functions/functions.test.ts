@@ -373,6 +373,16 @@ describe('formula functions', () => {
 			expect(getResult(wb, 0, 1)).toEqual(stringValue('2025-01-01'))
 		})
 
+		test('TEXT repeatedly recognizes long month date formats', () => {
+			const wb = makeWorkbook()
+			setNum(wb, 0, 0, 44623)
+			setFormula(wb, 0, 1, 'TEXT(A1,"mmmm dd, yyyy")')
+			setFormula(wb, 1, 1, 'TEXT(A1,"mmmm dd, yyyy")')
+			recalc(wb)
+			expect(getResult(wb, 0, 1)).toEqual(stringValue('March 03, 2022'))
+			expect(getResult(wb, 1, 1)).toEqual(stringValue('March 03, 2022'))
+		})
+
 		test('TEXT with 0.00% format', () => {
 			const wb = makeWorkbook()
 			setNum(wb, 0, 0, 0.7523)
@@ -670,6 +680,17 @@ describe('formula functions', () => {
 			setFormula(wb, 3, 0, 'MATCH(25,A1:A3,1)')
 			recalc(wb)
 			expect(getResult(wb, 3, 0)).toEqual(numberValue(2))
+		})
+
+		test('MATCH with ascending approximate skips interleaved blank header cells', () => {
+			const wb = makeWorkbook()
+			wb.sheets[0]?.cells.set(0, 0, { value: dateValue(44562), formula: null, styleId: S0 })
+			wb.sheets[0]?.cells.set(0, 1, { value: EMPTY, formula: null, styleId: S0 })
+			wb.sheets[0]?.cells.set(0, 2, { value: dateValue(44593), formula: null, styleId: S0 })
+			wb.sheets[0]?.cells.set(0, 3, { value: EMPTY, formula: null, styleId: S0 })
+			setFormula(wb, 1, 0, 'MATCH(44568,A1:D1,1)')
+			recalc(wb)
+			expect(getResult(wb, 1, 0)).toEqual(numberValue(1))
 		})
 
 		test('MATCH with -1 (descending approximate)', () => {

@@ -2,7 +2,14 @@ import { describe, expect, test } from 'bun:test'
 import type { StyleId } from '@ascend/core'
 import { createTableId, createWorkbook } from '@ascend/core'
 import { dateToSerial } from '@ascend/formulas'
-import { booleanValue, EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
+import {
+	booleanValue,
+	dateValue,
+	EMPTY,
+	errorValue,
+	numberValue,
+	stringValue,
+} from '@ascend/schema'
 import { recalculate } from './calc.ts'
 import type { CalcContext } from './calc-context.ts'
 import { defaultCalcContext } from './calc-context.ts'
@@ -558,6 +565,87 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 1)?.value).toEqual(booleanValue(true))
 	})
 
+	test('IF supports array conditions and array branch values', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('x'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, {
+			value: EMPTY,
+			formula: 'IF(ISNUMBER(A1:A2),A1:A2,0)',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(10))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(0))
+	})
+
+	test('FREQUENCY formulas can count unique filtered numeric ids from array expressions', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(11), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(0, 3, {
+			value: EMPTY,
+			formula:
+				'SUM(--(FREQUENCY((A1:A3=C1)*(IF(ISNUMBER(B1:B3),B1:B3,0)),(A1:A3=C1)*(IF(ISNUMBER(B1:B3),B1:B3,0)))>0))-1',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 3)?.value).toEqual(numberValue(2))
+	})
+
+	test('ROW and N preserve arrays for unique-id criteria expressions', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('EventID'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(3, 0, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, {
+			value: EMPTY,
+			formula: 'N(IF(MATCH(A2:A4,A2:A4,0)=ROW(A2:A4)-ROW(A1),A2:A4,0))',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(10))
+		expect(sheet.cells.get(2, 1)?.value).toEqual(numberValue(0))
+		expect(sheet.cells.get(3, 1)?.value).toEqual(numberValue(20))
+	})
+
+	test('conditional aggregates return arrays for array criteria', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('EventID'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(3, 0, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, {
+			value: EMPTY,
+			formula: 'SUM(--(COUNTIFS(A2:A4,N(IF(MATCH(A2:A4,A2:A4,0)=ROW(A2:A4)-ROW(A1),A2:A4,0)))>0))',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(2))
+	})
+
 	test('binary operators implicitly intersect direct whole-column operands', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -967,6 +1055,34 @@ describe('recalculate', () => {
 		expect(result.errors).toEqual([])
 		expect(sheet.cells.get(1, 2)?.value).toEqual(numberValue(6))
 		expect(sheet.cells.get(2, 2)?.value).toEqual(numberValue(20))
+	})
+
+	test('legacy #This Row structured references resolve within a table body', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Qty'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Price'), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: stringValue('Total'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(6), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(7), formula: null, styleId: sid })
+		sheet.cells.set(1, 2, {
+			value: EMPTY,
+			formula: 'Sales[[#This Row],[Qty]]*Sales[[#This Row],[Price]]',
+			styleId: sid,
+		})
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 1, col: 2 } },
+			columns: [{ name: 'Qty' }, { name: 'Price' }, { name: 'Total' }],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+
+		const result = recalculate(wb, makeCtx())
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(1, 2)?.value).toEqual(numberValue(42))
 	})
 
 	test('structured references support #Headers and #All specifiers', () => {
@@ -2050,6 +2166,19 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 0)?.value).toEqual(errorValue('#DIV/0!'))
 	})
 
+	test('top-level references to blank cells calculate as zero', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'A1', styleId: sid })
+		sheet.cells.set(1, 1, { value: EMPTY, formula: '"x"&A1', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(0))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(stringValue('x'))
+	})
+
 	test('circular reference produces error', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -2059,6 +2188,103 @@ describe('recalculate', () => {
 		const result = recalculate(wb, makeCtx())
 		const circErrors = result.errors.filter((e) => e.error.code === 'CIRCULAR_REF')
 		expect(circErrors.length).toBeGreaterThan(0)
+	})
+
+	test('circular references preserve imported cached values when present', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(10), formula: 'B1', styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(20), formula: 'A1', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(10))
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(20))
+	})
+
+	test('recalc preserves date-typed formula results for criteria boundary precision', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const serial = 44227.99998842592
+		sheet.cells.set(0, 0, { value: dateValue(serial), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: dateValue(serial), formula: 'A1+0', styleId: sid })
+		sheet.cells.set(0, 3, { value: numberValue(5), formula: null, styleId: sid })
+		sheet.cells.set(0, 4, { value: dateValue(serial), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, {
+			value: EMPTY,
+			formula: 'SUMIFS(D1:D1,E1:E1,"<="&B1)',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 1)?.value).toEqual(dateValue(serial))
+		expect(sheet.cells.get(0, 2)?.value).toEqual(numberValue(5))
+	})
+
+	test('conditional aggregates treat date criteria as date serial matches', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: dateValue(45000), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: dateValue(45000), formula: null, styleId: sid })
+		sheet.cells.set(0, 3, {
+			value: EMPTY,
+			formula: 'SUMIFS(A1:A1,B1:B1,C1)',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 3)?.value).toEqual(numberValue(10))
+	})
+
+	test('structured references resolve escaped special characters in column names', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'BillingData',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 0 } },
+			columns: [{ id: 1, name: 'Check#' }],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+		sheet.cells.set(0, 0, { value: stringValue('Check#'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(100), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(200), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, {
+			value: EMPTY,
+			formula: "SUBTOTAL(103,BillingData[Check'#])",
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(2))
+	})
+
+	test('SUBTOTAL skips hidden rows in referenced ranges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(30), formula: null, styleId: sid })
+		sheet.rowDefs.set(1, { hidden: true })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'SUBTOTAL(109,A1:A3)', styleId: sid })
+		sheet.cells.set(1, 1, { value: EMPTY, formula: 'SUBTOTAL(102,A1:A3)', styleId: sid })
+		sheet.cells.set(2, 1, { value: EMPTY, formula: 'SUBTOTAL(105,A1:A3)', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(40))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(2, 1)?.value).toEqual(numberValue(10))
 	})
 
 	test('string concatenation formula', () => {

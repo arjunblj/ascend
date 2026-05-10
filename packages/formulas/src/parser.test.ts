@@ -515,6 +515,14 @@ describe('printFormula', () => {
 		expect(printFormula(p('Table1[@[Sales]:[Cost]]'))).toBe('Table1[@[Sales]:[Cost]]')
 		expect(printFormula(p('Table1[[#Data],[Sales]:[Cost]]'))).toBe('Table1[[#Data],[Sales]:[Cost]]')
 	})
+
+	it('unescapes structured reference column special characters', () => {
+		expect(p("BillingData[Check'#]")).toMatchObject({
+			type: 'structuredRef',
+			table: 'BillingData',
+			column: 'Check#',
+		})
+	})
 })
 
 describe('extractRefs', () => {

@@ -1,5 +1,13 @@
 import type { CellValue } from '@ascend/schema'
-import { EMPTY, errorValue, isEmpty, numberValue } from '@ascend/schema'
+import {
+	arrayValue,
+	EMPTY,
+	errorValue,
+	isEmpty,
+	numberValue,
+	type ScalarCellValue,
+	topLeftScalar,
+} from '@ascend/schema'
 import type { EvalArg, FunctionDef, FunctionEvalContext } from '../index.ts'
 import { hasWildcardPatternSyntax, wildcardMatch } from '../registry.ts'
 import { fn, getRange, numericVal, sameShape } from './helpers.ts'
@@ -97,8 +105,8 @@ function parseCriteria(criteria: CellValue): (v: CellValue) => boolean {
 }
 
 function parseCriteriaImpl(criteria: CellValue): (v: CellValue) => boolean {
-	if (criteria.kind === 'number') {
-		const t = criteria.value
+	if (criteria.kind === 'number' || criteria.kind === 'date') {
+		const t = criteria.kind === 'date' ? criteria.serial : criteria.value
 		return (v) => {
 			const n = numericVal(v)
 			return n !== null && n === t
@@ -193,6 +201,12 @@ interface CriteriaPair {
 	cols: number
 }
 
+interface CriteriaSpec {
+	range: readonly (readonly CellValue[])[]
+	criteria: CellValue | readonly (readonly CellValue[])[]
+	cols: number
+}
+
 function buildPairs(args: EvalArg[], startIdx: number): CriteriaPair[] {
 	const pairs: CriteriaPair[] = []
 	for (let i = startIdx; i + 1 < args.length; i += 2) {
@@ -205,6 +219,72 @@ function buildPairs(args: EvalArg[], startIdx: number): CriteriaPair[] {
 		})
 	}
 	return pairs
+}
+
+function buildCriteriaSpecs(args: EvalArg[], startIdx: number): CriteriaSpec[] {
+	const specs: CriteriaSpec[] = []
+	for (let i = startIdx; i + 1 < args.length; i += 2) {
+		const range = getRange(args[i])
+		const criteria = criteriaMatrix(args[i + 1]) ?? args[i + 1]?.value ?? EMPTY
+		specs.push({ range, criteria, cols: range[0]?.length ?? 1 })
+	}
+	return specs
+}
+
+function criteriaMatrix(arg: EvalArg | undefined): readonly (readonly CellValue[])[] | null {
+	if (!arg) return null
+	if (arg.value.kind === 'array') return arg.value.rows
+	if (arg.kind === 'range' && !arg.ref && arg.values) return arg.values
+	return null
+}
+
+function criteriaArrayShape(specs: CriteriaSpec[]): { rows: number; cols: number } | null {
+	let rows = 1
+	let cols = 1
+	let found = false
+	for (const spec of specs) {
+		if (!isCriteriaMatrix(spec.criteria)) continue
+		found = true
+		const candidateRows = spec.criteria.length
+		const candidateCols = spec.criteria[0]?.length ?? 0
+		const nextRows = broadcastLength(rows, candidateRows)
+		const nextCols = broadcastLength(cols, candidateCols)
+		if (nextRows === null || nextCols === null) return null
+		rows = nextRows
+		cols = nextCols
+	}
+	return found ? { rows, cols } : null
+}
+
+function broadcastLength(left: number, right: number): number | null {
+	if (left === right) return left
+	if (left === 1) return right
+	if (right === 1) return left
+	return null
+}
+
+function isCriteriaMatrix(
+	criteria: CriteriaSpec['criteria'],
+): criteria is readonly (readonly CellValue[])[] {
+	return Array.isArray(criteria)
+}
+
+function criteriaAt(spec: CriteriaSpec, row: number, col: number): CellValue {
+	if (!isCriteriaMatrix(spec.criteria)) return spec.criteria
+	const sourceRow = spec.criteria[spec.criteria.length === 1 ? 0 : row]
+	return sourceRow?.[sourceRow.length === 1 ? 0 : col] ?? EMPTY
+}
+
+function buildPairsForCriteriaOffset(
+	specs: CriteriaSpec[],
+	row: number,
+	col: number,
+): CriteriaPair[] {
+	return specs.map((spec) => ({
+		range: spec.range,
+		bitmap: getMatchBitmap(spec.range, criteriaAt(spec, row, col)),
+		cols: spec.cols,
+	}))
 }
 
 function allPairsMatch(pairs: CriteriaPair[], r: number, c: number): boolean {
@@ -229,6 +309,53 @@ function targetValueAt(
 	col: number,
 ): CellValue {
 	return arg?.valueAtOffset ? arg.valueAtOffset(row, col) : (range[row]?.[col] ?? EMPTY)
+}
+
+function conditionalSum(
+	sumRange: readonly (readonly CellValue[])[],
+	pairs: CriteriaPair[],
+): number {
+	let sum = 0
+	for (let r = 0; r < sumRange.length; r++) {
+		for (let c = 0; c < (sumRange[r]?.length ?? 0); c++) {
+			if (allPairsMatch(pairs, r, c)) {
+				const n = numericVal(sumRange[r]?.[c] ?? EMPTY)
+				if (n !== null) sum += n
+			}
+		}
+	}
+	return sum
+}
+
+function conditionalCount(range: readonly (readonly CellValue[])[], pairs: CriteriaPair[]): number {
+	let count = 0
+	for (let r = 0; r < range.length; r++) {
+		for (let c = 0; c < (range[r]?.length ?? 0); c++) {
+			if (allPairsMatch(pairs, r, c)) count++
+		}
+	}
+	return count
+}
+
+function conditionalMinMax(
+	targetRange: readonly (readonly CellValue[])[],
+	pairs: CriteriaPair[],
+	mode: 'min' | 'max',
+): number {
+	let best = mode === 'min' ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY
+	let found = false
+	for (let r = 0; r < targetRange.length; r++) {
+		for (let c = 0; c < (targetRange[r]?.length ?? 0); c++) {
+			if (allPairsMatch(pairs, r, c)) {
+				const n = numericVal(targetRange[r]?.[c] ?? EMPTY)
+				if (n !== null) {
+					best = mode === 'min' ? Math.min(best, n) : Math.max(best, n)
+					found = true
+				}
+			}
+		}
+	}
+	return found ? best : 0
 }
 
 export const conditionalFunctions: FunctionDef[] = [
@@ -258,18 +385,25 @@ export const conditionalFunctions: FunctionDef[] = [
 		if (directError) return directError
 		return withCachedConditionalAggregate(ifsCacheKey('SUMIFS', args, 1), ctx, () => {
 			const sumRange = getRange(args[0])
-			const pairs = buildPairs(args, 1)
-			if (pairs.some((pair) => !sameShape(sumRange, pair.range))) return errorValue('#VALUE!')
-			let sum = 0
-			for (let r = 0; r < sumRange.length; r++) {
-				for (let c = 0; c < (sumRange[r]?.length ?? 0); c++) {
-					if (allPairsMatch(pairs, r, c)) {
-						const n = numericVal(sumRange[r]?.[c] ?? EMPTY)
-						if (n !== null) sum += n
+			const specs = buildCriteriaSpecs(args, 1)
+			if (specs.some((spec) => !sameShape(sumRange, spec.range))) return errorValue('#VALUE!')
+			const shape = criteriaArrayShape(specs)
+			if (shape) {
+				const rows: ScalarCellValue[][] = []
+				for (let r = 0; r < shape.rows; r++) {
+					const row: ScalarCellValue[] = []
+					for (let c = 0; c < shape.cols; c++) {
+						row.push(
+							topLeftScalar(
+								numberValue(conditionalSum(sumRange, buildPairsForCriteriaOffset(specs, r, c))),
+							),
+						)
 					}
+					rows.push(row)
 				}
+				return arrayValue(rows)
 			}
-			return numberValue(sum)
+			return numberValue(conditionalSum(sumRange, buildPairs(args, 1)))
 		})
 	}),
 
@@ -294,17 +428,27 @@ export const conditionalFunctions: FunctionDef[] = [
 		const directError = firstScalarError(args)
 		if (directError) return directError
 		return withCachedConditionalAggregate(ifsCacheKey('COUNTIFS', args, 0), ctx, () => {
-			const pairs = buildPairs(args, 0)
-			const first = pairs[0]?.range
+			const specs = buildCriteriaSpecs(args, 0)
+			const first = specs[0]?.range
 			if (!first) return numberValue(0)
-			if (pairs.some((pair) => !sameShape(first, pair.range))) return errorValue('#VALUE!')
-			let count = 0
-			for (let r = 0; r < first.length; r++) {
-				for (let c = 0; c < (first[r]?.length ?? 0); c++) {
-					if (allPairsMatch(pairs, r, c)) count++
+			if (specs.some((spec) => !sameShape(first, spec.range))) return errorValue('#VALUE!')
+			const shape = criteriaArrayShape(specs)
+			if (shape) {
+				const rows: ScalarCellValue[][] = []
+				for (let r = 0; r < shape.rows; r++) {
+					const row: ScalarCellValue[] = []
+					for (let c = 0; c < shape.cols; c++) {
+						row.push(
+							topLeftScalar(
+								numberValue(conditionalCount(first, buildPairsForCriteriaOffset(specs, r, c))),
+							),
+						)
+					}
+					rows.push(row)
 				}
+				return arrayValue(rows)
 			}
-			return numberValue(count)
+			return numberValue(conditionalCount(first, buildPairs(args, 0)))
 		})
 	}),
 
@@ -362,22 +506,27 @@ export const conditionalFunctions: FunctionDef[] = [
 		if (directError) return directError
 		return withCachedConditionalAggregate(ifsCacheKey('MINIFS', args, 1), ctx, () => {
 			const minRange = getRange(args[0])
-			const pairs = buildPairs(args, 1)
-			if (pairs.some((pair) => !sameShape(minRange, pair.range))) return errorValue('#VALUE!')
-			let min = Number.POSITIVE_INFINITY
-			let found = false
-			for (let r = 0; r < minRange.length; r++) {
-				for (let c = 0; c < (minRange[r]?.length ?? 0); c++) {
-					if (allPairsMatch(pairs, r, c)) {
-						const n = numericVal(minRange[r]?.[c] ?? EMPTY)
-						if (n !== null) {
-							min = Math.min(min, n)
-							found = true
-						}
+			const specs = buildCriteriaSpecs(args, 1)
+			if (specs.some((spec) => !sameShape(minRange, spec.range))) return errorValue('#VALUE!')
+			const shape = criteriaArrayShape(specs)
+			if (shape) {
+				const rows: ScalarCellValue[][] = []
+				for (let r = 0; r < shape.rows; r++) {
+					const row: ScalarCellValue[] = []
+					for (let c = 0; c < shape.cols; c++) {
+						row.push(
+							topLeftScalar(
+								numberValue(
+									conditionalMinMax(minRange, buildPairsForCriteriaOffset(specs, r, c), 'min'),
+								),
+							),
+						)
 					}
+					rows.push(row)
 				}
+				return arrayValue(rows)
 			}
-			return numberValue(found ? min : 0)
+			return numberValue(conditionalMinMax(minRange, buildPairs(args, 1), 'min'))
 		})
 	}),
 
@@ -386,22 +535,27 @@ export const conditionalFunctions: FunctionDef[] = [
 		if (directError) return directError
 		return withCachedConditionalAggregate(ifsCacheKey('MAXIFS', args, 1), ctx, () => {
 			const maxRange = getRange(args[0])
-			const pairs = buildPairs(args, 1)
-			if (pairs.some((pair) => !sameShape(maxRange, pair.range))) return errorValue('#VALUE!')
-			let max = Number.NEGATIVE_INFINITY
-			let found = false
-			for (let r = 0; r < maxRange.length; r++) {
-				for (let c = 0; c < (maxRange[r]?.length ?? 0); c++) {
-					if (allPairsMatch(pairs, r, c)) {
-						const n = numericVal(maxRange[r]?.[c] ?? EMPTY)
-						if (n !== null) {
-							max = Math.max(max, n)
-							found = true
-						}
+			const specs = buildCriteriaSpecs(args, 1)
+			if (specs.some((spec) => !sameShape(maxRange, spec.range))) return errorValue('#VALUE!')
+			const shape = criteriaArrayShape(specs)
+			if (shape) {
+				const rows: ScalarCellValue[][] = []
+				for (let r = 0; r < shape.rows; r++) {
+					const row: ScalarCellValue[] = []
+					for (let c = 0; c < shape.cols; c++) {
+						row.push(
+							topLeftScalar(
+								numberValue(
+									conditionalMinMax(maxRange, buildPairsForCriteriaOffset(specs, r, c), 'max'),
+								),
+							),
+						)
 					}
+					rows.push(row)
 				}
+				return arrayValue(rows)
 			}
-			return numberValue(found ? max : 0)
+			return numberValue(conditionalMinMax(maxRange, buildPairs(args, 1), 'max'))
 		})
 	}),
 ]

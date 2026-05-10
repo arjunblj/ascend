@@ -25,17 +25,40 @@ function v(data: readonly CellValue[], i: number): CellValue {
 	return data[i] ?? EMPTY
 }
 
+function isBlankLookupValue(value: CellValue): boolean {
+	const scalar = topLeftScalar(value)
+	return scalar.kind === 'empty' || (scalar.kind === 'string' && scalar.value === '')
+}
+
+function nearestNonBlankIndex(
+	data: readonly CellValue[],
+	lo: number,
+	hi: number,
+	mid: number,
+): number {
+	if (!isBlankLookupValue(v(data, mid))) return mid
+	for (let offset = 1; mid - offset >= lo || mid + offset <= hi; offset++) {
+		const left = mid - offset
+		if (left >= lo && !isBlankLookupValue(v(data, left))) return left
+		const right = mid + offset
+		if (right <= hi && !isBlankLookupValue(v(data, right))) return right
+	}
+	return -1
+}
+
 function approximateMatch(lookup: CellValue, data: readonly CellValue[]): number {
 	let lo = 0
 	let hi = data.length - 1
 	let result = -1
 	while (lo <= hi) {
 		const mid = (lo + hi) >>> 1
-		if (compareValues(lookup, v(data, mid)) >= 0) {
-			result = mid
-			lo = mid + 1
+		const probe = nearestNonBlankIndex(data, lo, hi, mid)
+		if (probe < 0) break
+		if (compareValues(lookup, v(data, probe)) >= 0) {
+			result = probe
+			lo = probe + 1
 		} else {
-			hi = mid - 1
+			hi = probe - 1
 		}
 	}
 	return result
@@ -47,11 +70,13 @@ function reverseApproximateMatch(lookup: CellValue, data: readonly CellValue[]):
 	let result = -1
 	while (lo <= hi) {
 		const mid = (lo + hi) >>> 1
-		if (compareValues(v(data, mid), lookup) >= 0) {
-			result = mid
-			lo = mid + 1
+		const probe = nearestNonBlankIndex(data, lo, hi, mid)
+		if (probe < 0) break
+		if (compareValues(v(data, probe), lookup) >= 0) {
+			result = probe
+			lo = probe + 1
 		} else {
-			hi = mid - 1
+			hi = probe - 1
 		}
 	}
 	return result
@@ -250,11 +275,13 @@ function nextLargerMatch(lookup: CellValue, data: readonly CellValue[]): number 
 	let result = -1
 	while (lo <= hi) {
 		const mid = (lo + hi) >>> 1
-		if (compareValues(v(data, mid), lookup) >= 0) {
-			result = mid
-			hi = mid - 1
+		const probe = nearestNonBlankIndex(data, lo, hi, mid)
+		if (probe < 0) break
+		if (compareValues(v(data, probe), lookup) >= 0) {
+			result = probe
+			hi = probe - 1
 		} else {
-			lo = mid + 1
+			lo = probe + 1
 		}
 	}
 	return result
@@ -727,6 +754,26 @@ function areasFn(args: EvalArg[]): CellValue {
 	return errorValue('#VALUE!')
 }
 
+function rowFn(args: EvalArg[]): CellValue {
+	const ref = args[0]?.ref
+	if (!ref) return errorValue('#VALUE!')
+	const endRow = ref.endRow ?? ref.row
+	if (endRow === ref.row) return numberValue(ref.row + 1)
+	const rows: ScalarCellValue[][] = []
+	for (let row = ref.row; row <= endRow; row++) rows.push([topLeftScalar(numberValue(row + 1))])
+	return arrayValue(rows)
+}
+
+function columnFn(args: EvalArg[]): CellValue {
+	const ref = args[0]?.ref
+	if (!ref) return errorValue('#VALUE!')
+	const endCol = ref.endCol ?? ref.col
+	if (endCol === ref.col) return numberValue(ref.col + 1)
+	const row: ScalarCellValue[] = []
+	for (let col = ref.col; col <= endCol; col++) row.push(topLeftScalar(numberValue(col + 1)))
+	return arrayValue([row])
+}
+
 export const lookupFunctions: FunctionDef[] = [
 	{ name: 'VLOOKUP', minArgs: 3, maxArgs: 4, evaluate: vlookup },
 	{ name: 'HLOOKUP', minArgs: 3, maxArgs: 4, evaluate: hlookup },
@@ -743,19 +790,13 @@ export const lookupFunctions: FunctionDef[] = [
 		name: 'ROW',
 		minArgs: 0,
 		maxArgs: 1,
-		evaluate: (args) => {
-			const ref = args[0]?.ref
-			return ref ? numberValue(ref.row + 1) : errorValue('#VALUE!')
-		},
+		evaluate: rowFn,
 	},
 	{
 		name: 'COLUMN',
 		minArgs: 0,
 		maxArgs: 1,
-		evaluate: (args) => {
-			const ref = args[0]?.ref
-			return ref ? numberValue(ref.col + 1) : errorValue('#VALUE!')
-		},
+		evaluate: columnFn,
 	},
 	// Stub: actual evaluation is bypassed by the engine evaluator (codegen)
 	{ name: 'FORMULATEXT', minArgs: 1, maxArgs: 1, volatile: false, evaluate: formulaText },

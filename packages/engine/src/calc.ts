@@ -18,7 +18,14 @@ import {
 	type NumericVectorCache,
 } from '@ascend/formulas'
 import type { AscendError, CellValue } from '@ascend/schema'
-import { EMPTY, errorValue, numberValue, topLeftScalar, valuesEqual } from '@ascend/schema'
+import {
+	dateValue,
+	EMPTY,
+	errorValue,
+	numberValue,
+	topLeftScalar,
+	valuesEqual,
+} from '@ascend/schema'
 import {
 	type AnalyzedFormula,
 	analyzeWorkbook,
@@ -250,6 +257,16 @@ function readRangeAggregateNumericCell(
 	if (scalar.kind === 'date') return scalar.serial
 	if (scalar.kind === 'error') return scalar
 	return null
+}
+
+function normalizeFormulaResultForExistingCell(
+	oldValue: CellValue,
+	newValue: CellValue,
+): CellValue {
+	if (oldValue.kind === 'date' && newValue.kind === 'number') {
+		return dateValue(newValue.value)
+	}
+	return newValue
 }
 
 function rangeAggregateStateToValue(
@@ -622,6 +639,7 @@ const ARRAY_RETURNING_FUNCTIONS = new Set([
 	'DROP',
 	'EXPAND',
 	'FILTER',
+	'FREQUENCY',
 	'HSTACK',
 	'MAKEARRAY',
 	'MAP',
@@ -641,13 +659,54 @@ const ARRAY_RETURNING_FUNCTIONS = new Set([
 	'WRAPROWS',
 ])
 
+const ARRAY_MAPPING_FUNCTIONS = new Set(['COLUMN', 'IF', 'ISNUMBER', 'N', 'ROW'])
+
 function needsInterpreterArraySemantics(ast: FormulaNode): boolean {
-	return (
-		ast.type === 'binary' &&
-		ast.op !== ',' &&
-		ast.op !== ' ' &&
-		(nodeCanReturnArray(ast.left) || nodeCanReturnArray(ast.right))
-	)
+	return expressionNeedsInterpreterArraySemantics(ast)
+}
+
+function expressionNeedsInterpreterArraySemantics(node: FormulaNode): boolean {
+	switch (node.type) {
+		case 'binary':
+			return (
+				(node.op !== ',' &&
+					node.op !== ' ' &&
+					(nodeCanReturnArray(node.left) || nodeCanReturnArray(node.right))) ||
+				expressionNeedsInterpreterArraySemantics(node.left) ||
+				expressionNeedsInterpreterArraySemantics(node.right)
+			)
+		case 'unary':
+			return (
+				nodeCanReturnArray(node.operand) || expressionNeedsInterpreterArraySemantics(node.operand)
+			)
+		case 'function':
+			return functionCanReturnArray(node) || node.args.some(nodeCanReturnComputedArray)
+		case 'array':
+			return true
+		default:
+			return false
+	}
+}
+
+function nodeCanReturnComputedArray(node: FormulaNode): boolean {
+	switch (node.type) {
+		case 'array':
+			return true
+		case 'binary':
+			return (
+				(node.op !== ',' &&
+					node.op !== ' ' &&
+					(nodeCanReturnArray(node.left) || nodeCanReturnArray(node.right))) ||
+				nodeCanReturnComputedArray(node.left) ||
+				nodeCanReturnComputedArray(node.right)
+			)
+		case 'unary':
+			return nodeCanReturnArray(node.operand) || nodeCanReturnComputedArray(node.operand)
+		case 'function':
+			return functionCanReturnArray(node) || node.args.some(nodeCanReturnComputedArray)
+		default:
+			return false
+	}
 }
 
 function nodeCanReturnArray(node: FormulaNode): boolean {
@@ -666,10 +725,18 @@ function nodeCanReturnArray(node: FormulaNode): boolean {
 		case 'unary':
 			return nodeCanReturnArray(node.operand)
 		case 'function':
-			return ARRAY_RETURNING_FUNCTIONS.has(node.name.toUpperCase())
+			return functionCanReturnArray(node)
 		default:
 			return false
 	}
+}
+
+function functionCanReturnArray(node: Extract<FormulaNode, { type: 'function' }>): boolean {
+	const name = node.name.toUpperCase()
+	return (
+		ARRAY_RETURNING_FUNCTIONS.has(name) ||
+		(ARRAY_MAPPING_FUNCTIONS.has(name) && node.args.some(nodeCanReturnArray))
+	)
 }
 
 function hasExternalWorkbookReference(node: FormulaNode): boolean {
@@ -710,7 +777,8 @@ function evalFormula(
 	ast: FormulaNode,
 	ctx: EvalContext,
 ): CellValue {
-	if (needsInterpreterArraySemantics(ast)) return evaluate(ast, ctx)
+	if (needsInterpreterArraySemantics(ast))
+		return normalizeTopLevelFormulaValue(ast, evaluate(ast, ctx))
 	if (shouldPreferCompiled(ast)) {
 		let compiled = compiledCache.get(ast)
 		if (compiled === undefined) {
@@ -719,11 +787,11 @@ function evalFormula(
 			compiledCache.set(ast, compiled)
 		}
 		if (compiled !== false) {
-			return evaluateCompiled(compiled, ctx)
+			return normalizeTopLevelFormulaValue(ast, evaluateCompiled(compiled, ctx))
 		}
 	}
 	const generated = codegenFormula(formulaText, ast)
-	if (generated) return generated(ctx)
+	if (generated) return normalizeTopLevelFormulaValue(ast, generated(ctx))
 	let compiled = compiledCache.get(ast)
 	if (compiled === undefined) {
 		const result = compileFormula(ast)
@@ -731,9 +799,14 @@ function evalFormula(
 		compiledCache.set(ast, compiled)
 	}
 	if (compiled !== false) {
-		return evaluateCompiled(compiled, ctx)
+		return normalizeTopLevelFormulaValue(ast, evaluateCompiled(compiled, ctx))
 	}
-	return evaluate(ast, ctx)
+	return normalizeTopLevelFormulaValue(ast, evaluate(ast, ctx))
+}
+
+function normalizeTopLevelFormulaValue(ast: FormulaNode, value: CellValue): CellValue {
+	if (value.kind === 'empty' && ast.type === 'cellRef') return numberValue(0)
+	return value
 }
 
 function isSpillBinding(
@@ -1335,6 +1408,9 @@ export function recalculate(
 						oldFormulaInfo && isSpillBinding(oldFormulaInfo) && oldFormulaInfo.isAnchor
 							? clearSpillFootprint(sheet, si, oldFormulaInfo.anchorRef, changed, spillIndex)
 							: false
+					if (hadCell && !clearedSpill && oldValue.kind !== 'empty') {
+						return
+					}
 					const newValue = errorValue('#REF!')
 					if (!hadCell || clearedSpill || !valuesEqual(oldValue, newValue)) {
 						sheet.cells.setResolved(row, col, newValue, oldFormula, oldStyleId)
@@ -1431,6 +1507,7 @@ export function recalculate(
 					if (state) rangeAggregateStates?.set(key, state)
 				}
 			}
+			newValue = normalizeFormulaResultForExistingCell(oldValue, newValue)
 			const spillMatrix = toScalarMatrix(newValue)
 			if (spillMatrix) {
 				const changedBefore = changed.length
@@ -3041,7 +3118,10 @@ function evalIterative(
 			mutableCtx.sheetIndex = si
 			mutableCtx.row = row
 			mutableCtx.col = col
-			const newValue = evalFormula(key, formulaText, ast, mutableCtx)
+			const newValue = normalizeFormulaResultForExistingCell(
+				sheet.cells.readValue(row, col),
+				evalFormula(key, formulaText, ast, mutableCtx),
+			)
 			const hadCell = sheet.cells.has(row, col)
 			const oldValue = sheet.cells.readValue(row, col)
 			const oldFormula = sheet.cells.readFormula(row, col) ?? null
@@ -3101,7 +3181,10 @@ function evalIterative(
 		mutableCtx.sheetIndex = si
 		mutableCtx.row = row
 		mutableCtx.col = col
-		const newValue = evalFormula(key, formulaText, ast, mutableCtx)
+		const newValue = normalizeFormulaResultForExistingCell(
+			sheet.cells.readValue(row, col),
+			evalFormula(key, formulaText, ast, mutableCtx),
+		)
 		const hadCell = sheet.cells.has(row, col)
 		const oldValue = sheet.cells.readValue(row, col)
 		const oldFormula = sheet.cells.readFormula(row, col) ?? null

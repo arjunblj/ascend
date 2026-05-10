@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { createWorkbook } from '@ascend/core'
 import type { CompatibilityReport } from '@ascend/schema'
+import { makeEmbeddedChartXlsx } from '../../io-xlsx/test/helpers.ts'
+import { AscendWorkbook } from './index.ts'
 import { WorkbookReadView } from './read-view.ts'
 import type { WorkbookLoadInfo } from './types.ts'
 
@@ -92,6 +94,23 @@ describe('visual inventory', () => {
 			'image',
 			'shape-or-control',
 		])
+	})
+
+	test('exposes sheet-owned embedded charts without chart style package parts', async () => {
+		const wb = await AscendWorkbook.open(makeEmbeddedChartXlsx({ chartType: 'lineChart' }))
+
+		const inventory = wb.visualInventory()
+
+		expect(inventory.structuredChartCount).toBe(1)
+		expect(inventory.charts).toEqual([
+			expect.objectContaining({
+				partPath: 'xl/charts/chart1.xml',
+				sheetName: 'Sheet1',
+				chartType: 'lineChart',
+			}),
+		])
+		expect(inventory.charts.map((chart) => chart.partPath)).not.toContain('xl/charts/style1.xml')
+		expect(inventory.charts.map((chart) => chart.partPath)).not.toContain('xl/charts/colors1.xml')
 	})
 
 	test('marks visual sheet details as unknown when metadata is not hydrated', () => {

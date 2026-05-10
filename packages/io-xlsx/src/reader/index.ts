@@ -617,18 +617,35 @@ function attachChartParts(
 	workbook: Workbook,
 	capsules: readonly PreservationCapsule[],
 ): void {
+	const sheetNameByChartPartPath = mapEmbeddedChartsToSheets(capsules)
 	for (const capsule of capsules) {
 		if (!isChartCapsule(capsule)) continue
 		const xml = readPart(archive, capsule.partPath)
 		if (!xml) continue
-		workbook.chartParts.push(
-			parseChartXml(
-				xml,
-				capsule.partPath,
-				capsule.anchor.kind === 'sheet' ? capsule.anchor.sheetName : undefined,
-			),
-		)
+		const sheetName =
+			capsule.anchor.kind === 'sheet'
+				? capsule.anchor.sheetName
+				: sheetNameByChartPartPath.get(capsule.partPath)
+		workbook.chartParts.push(parseChartXml(xml, capsule.partPath, sheetName))
 	}
+}
+
+function mapEmbeddedChartsToSheets(
+	capsules: readonly PreservationCapsule[],
+): ReadonlyMap<string, string> {
+	const sheetNameByChartPartPath = new Map<string, string>()
+	for (const capsule of capsules) {
+		if (capsule.anchor.kind !== 'sheet' || !capsule.anchor.sheetName) continue
+		if (!isDrawingCapsule(capsule)) continue
+		for (const rel of capsule.relationships) {
+			if (rel.type !== REL_CHART || rel.targetMode === 'External') continue
+			const chartPath = resolvePath(capsule.partPath, rel.target)
+			if (!sheetNameByChartPartPath.has(chartPath)) {
+				sheetNameByChartPartPath.set(chartPath, capsule.anchor.sheetName)
+			}
+		}
+	}
+	return sheetNameByChartPartPath
 }
 
 function resolveSheetFilter(
@@ -765,10 +782,21 @@ function isIgnorablePackageEntry(partPath: string): boolean {
 }
 
 function isChartCapsule(capsule: PreservationCapsule): boolean {
+	return isStructuredChartPartPath(capsule.partPath)
+}
+
+function isStructuredChartPartPath(partPath: string): boolean {
 	return (
-		capsule.contentType.includes('chart+xml') ||
-		capsule.partPath.includes('/charts/') ||
-		capsule.partPath.includes('/chartEx/')
+		/(^|\/)charts\/chart\d+\.xml$/i.test(partPath) ||
+		/(^|\/)chartEx\/chartEx\d+\.xml$/i.test(partPath)
+	)
+}
+
+function isDrawingCapsule(capsule: PreservationCapsule): boolean {
+	return (
+		capsule.relType === REL_DRAWING ||
+		capsule.contentType.includes('drawing+xml') ||
+		capsule.partPath.includes('/drawings/drawing')
 	)
 }
 

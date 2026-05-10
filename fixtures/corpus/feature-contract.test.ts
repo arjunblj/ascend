@@ -1,6 +1,7 @@
 import { describe, expect, it, setDefaultTimeout } from 'bun:test'
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import type { ChartPartInfo } from '@ascend/core'
 import { readXlsx } from '@ascend/io-xlsx'
 import type { CompatibilityTier, FeatureReport } from '@ascend/schema'
 import {
@@ -35,6 +36,7 @@ interface ContractCase {
 
 interface PackageSummary {
 	charts: number
+	structuredCharts: number
 	drawings: number
 	media: number
 	tables: number
@@ -75,6 +77,7 @@ interface SemanticSummary {
 	activeContentCount: number
 	hasDrawingRefs: boolean
 	activeContent: readonly ActiveContentInfo[]
+	charts: readonly ChartPartInfo[]
 	pivotTables: readonly PivotTableInfo[]
 	pivotCaches: readonly PivotCacheInfo[]
 	slicerCaches: readonly OoxmlLinkedCacheProbe[]
@@ -218,11 +221,16 @@ function countPaths(paths: readonly string[], pattern: RegExp): number {
 	return paths.filter((path) => pattern.test(path)).length
 }
 
+function isChartStyleOrColorPart(partPath: string): boolean {
+	return /(^|\/)charts\/(?:style|colors)\d+\.xml$/i.test(partPath)
+}
+
 function summarizePackage(bytes: Uint8Array): PackageSummary {
 	const archive = extractZip(bytes)
 	const paths = [...archive.entries()].map((entry) => entry.path)
 	return {
 		charts: countPaths(paths, /^xl\/(charts|chartEx)\//),
+		structuredCharts: countPaths(paths, /^xl\/charts\/chart\d+\.xml$/i),
 		drawings: countPaths(paths, /^xl\/drawings\//),
 		media: countPaths(paths, /^xl\/media\//),
 		tables: countPaths(paths, /^xl\/tables\//),
@@ -315,6 +323,7 @@ async function loadContractSubject(bytes: Uint8Array): Promise<ContractSubject> 
 			activeContentCount: info.activeContentCount,
 			hasDrawingRefs: info.sheets.some((sheet) => sheet.hasDrawingRefs ?? false),
 			activeContent: normalizeActiveContent(info.activeContent),
+			charts: info.charts,
 			pivotTables: info.pivotTables,
 			pivotCaches: info.pivotCaches,
 			slicerCaches: info.slicerCaches,
@@ -470,7 +479,11 @@ function assertManifestReadCoverage(
 		entry,
 		'charts',
 		!entry.features.charts ||
-			(packageSummary.charts > 0 && compatibilityFeatures.has('preservedChart')),
+			(packageSummary.structuredCharts > 0 &&
+				semanticSummary.charts.length === packageSummary.structuredCharts &&
+				semanticSummary.charts.every((chart) => chart.sheetName !== undefined) &&
+				semanticSummary.charts.every((chart) => !isChartStyleOrColorPart(chart.partPath)) &&
+				compatibilityFeatures.has('preservedChart')),
 	)
 	assertFeature(
 		entry,
@@ -544,6 +557,7 @@ function assertManifestEditCoverage(
 ): void {
 	expect(after.semanticSummary.sheetCount).toBe(before.semanticSummary.sheetCount)
 	expect(after.packageSummary.charts).toBe(before.packageSummary.charts)
+	expect(after.packageSummary.structuredCharts).toBe(before.packageSummary.structuredCharts)
 	expect(after.packageSummary.drawings).toBe(before.packageSummary.drawings)
 	expect(after.packageSummary.media).toBe(before.packageSummary.media)
 	expect(after.packageSummary.tables).toBe(before.packageSummary.tables)
@@ -583,6 +597,7 @@ function assertManifestEditCoverage(
 	expect(after.semanticSummary.connectionPartCount).toBe(before.semanticSummary.connectionPartCount)
 	expect(after.semanticSummary.activeContentCount).toBe(before.semanticSummary.activeContentCount)
 	expect(after.semanticSummary.activeContent).toEqual(before.semanticSummary.activeContent)
+	expect(after.semanticSummary.charts).toEqual(before.semanticSummary.charts)
 	expect(after.semanticSummary.hasDrawingRefs).toBe(before.semanticSummary.hasDrawingRefs)
 
 	for (const [feature, beforeFeature] of before.compatibilityFeatures) {

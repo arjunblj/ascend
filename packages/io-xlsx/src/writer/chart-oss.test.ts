@@ -29,6 +29,7 @@ describe('chart OSS compatibility', () => {
 			const chart = read.value.workbook.chartParts[0]
 			expect(chart).toMatchObject({
 				partPath: 'xl/charts/chart1.xml',
+				sheetName: 'Data',
 				chartType: 'barChart',
 			})
 			if (!chart) throw new Error('Expected OpenPyXL chart to be parsed')
@@ -36,7 +37,7 @@ describe('chart OSS compatibility', () => {
 
 			const applied = applyOperation(read.value.workbook, {
 				op: 'setChartSeriesSource',
-				partPath: chart.partPath,
+				sheet: 'Data',
 				seriesIndex: 0,
 				valueRef: 'Data!$C$2:$C$5',
 			})

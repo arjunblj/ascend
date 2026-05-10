@@ -357,8 +357,13 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'editable',
 		'P1',
 		'Add named-list validation fixtures and table-resize rewrite tests.',
-		'Validation operations and XLSX roundtrip cover formulas, prompts, errors, dropdown policy, and IME mode.',
-		['packages/io-xlsx/src/writer/data-validation.test.ts'],
+		'Validation operations and XLSX roundtrip cover formulas, prompts, errors, dropdown policy, IME mode, and inspectable x14 extension validation inventory.',
+		[
+			'packages/io-xlsx/src/writer/data-validation.test.ts',
+			'packages/io-xlsx/src/reader/reader.test.ts',
+			'packages/io-xlsx/src/writer/writer.test.ts',
+			'packages/sdk/src/sdk.test.ts',
+		],
 	),
 	cap(
 		'tables.advanced-filters',

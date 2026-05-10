@@ -24,6 +24,8 @@ import type {
 	SheetState,
 	SheetTabColor,
 	SheetThreadedComment,
+	SheetX14ConditionalFormatInfo,
+	SheetX14DataValidationInfo,
 	SortState,
 	TableColumn,
 	TableStyleInfo,
@@ -62,6 +64,8 @@ export interface WorkbookInfo {
 	readonly threadedCommentCount: number | null
 	readonly conditionalFormatCount: number | null
 	readonly dataValidationCount: number | null
+	readonly x14ConditionalFormatCount: number | null
+	readonly x14DataValidationCount: number | null
 	readonly imageCount: number | null
 	readonly sparklineGroupCount: number | null
 	readonly advancedFilterCount: number | null
@@ -641,6 +645,8 @@ export interface SheetInfo {
 	readonly threadedCommentCount: number | null
 	readonly conditionalFormatCount: number | null
 	readonly dataValidationCount: number | null
+	readonly x14ConditionalFormatCount: number | null
+	readonly x14DataValidationCount: number | null
 	readonly hasFrozenPanes: boolean | null
 	readonly colWidthCount: number | null
 	readonly imageCount: number | null
@@ -760,6 +766,8 @@ export interface SheetInspectInfo extends SheetInfo {
 	readonly ignoredErrors: readonly SheetIgnoredError[] | null
 	readonly conditionalFormats: readonly SheetConditionalFormat[] | null
 	readonly dataValidations: readonly SheetDataValidation[] | null
+	readonly x14ConditionalFormats: readonly SheetX14ConditionalFormatInfo[] | null
+	readonly x14DataValidations: readonly SheetX14DataValidationInfo[] | null
 	readonly imageRefs: readonly SheetImageRef[] | null
 	readonly drawingObjectRefs: readonly SheetDrawingObjectRef[] | null
 	readonly sparklineGroups: readonly SheetSparklineGroupInfo[] | null

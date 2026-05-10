@@ -6,6 +6,8 @@ import {
 	clonePivotCacheInfo,
 	clonePivotTableInfo,
 	cloneStyle,
+	cloneX14ConditionalFormatInfo,
+	cloneX14DataValidationInfo,
 	indexToColumn,
 	parseA1,
 	type RangeRef,
@@ -119,6 +121,8 @@ export class WorkbookReadView {
 		let totalThreadedComments = 0
 		let totalConditionalFormats = 0
 		let totalDataValidations = 0
+		let totalX14ConditionalFormats = 0
+		let totalX14DataValidations = 0
 		let totalImages = 0
 		let totalSparklineGroups = 0
 		let totalAdvancedFilters = 0
@@ -133,6 +137,8 @@ export class WorkbookReadView {
 				totalThreadedComments += sheet.threadedComments.length
 				totalConditionalFormats += sheet.conditionalFormats.length
 				totalDataValidations += sheet.dataValidations.length
+				totalX14ConditionalFormats += sheet.x14ConditionalFormats.length
+				totalX14DataValidations += sheet.x14DataValidations.length
 				totalImages += sheet.imageRefs.length
 				totalSparklineGroups += sheet.sparklineGroups.length
 				totalAdvancedFilters += sheet.advancedFilters.length
@@ -152,6 +158,12 @@ export class WorkbookReadView {
 				? totalConditionalFormats
 				: null,
 			dataValidationCount: this.loadInfo.richSheetMetadataHydrated ? totalDataValidations : null,
+			x14ConditionalFormatCount: this.loadInfo.richSheetMetadataHydrated
+				? totalX14ConditionalFormats
+				: null,
+			x14DataValidationCount: this.loadInfo.richSheetMetadataHydrated
+				? totalX14DataValidations
+				: null,
 			imageCount: this.loadInfo.richSheetMetadataHydrated ? totalImages : null,
 			sparklineGroupCount: this.loadInfo.richSheetMetadataHydrated ? totalSparklineGroups : null,
 			advancedFilterCount: this.loadInfo.richSheetMetadataHydrated ? totalAdvancedFilters : null,
@@ -329,6 +341,12 @@ export class WorkbookReadView {
 			ignoredErrors: cellsHydrated ? [...sheet.ignoredErrors] : null,
 			conditionalFormats: richSheetMetadataHydrated ? [...sheet.conditionalFormats] : null,
 			dataValidations: richSheetMetadataHydrated ? [...sheet.dataValidations] : null,
+			x14ConditionalFormats: richSheetMetadataHydrated
+				? sheet.x14ConditionalFormats.map(cloneX14ConditionalFormatInfo)
+				: null,
+			x14DataValidations: richSheetMetadataHydrated
+				? sheet.x14DataValidations.map(cloneX14DataValidationInfo)
+				: null,
 			imageRefs: richSheetMetadataHydrated ? sheet.imageRefs.map(cloneSheetImageRef) : null,
 			drawingObjectRefs: richSheetMetadataHydrated
 				? sheet.drawingObjectRefs.map(cloneSheetDrawingObjectRef)
@@ -940,6 +958,10 @@ function buildSheetInfo(
 		threadedCommentCount: richSheetMetadataHydrated ? sheet.threadedComments.length : null,
 		conditionalFormatCount: richSheetMetadataHydrated ? sheet.conditionalFormats.length : null,
 		dataValidationCount: richSheetMetadataHydrated ? sheet.dataValidations.length : null,
+		x14ConditionalFormatCount: richSheetMetadataHydrated
+			? sheet.x14ConditionalFormats.length
+			: null,
+		x14DataValidationCount: richSheetMetadataHydrated ? sheet.x14DataValidations.length : null,
 		hasFrozenPanes: cellsHydrated ? sheet.frozenRows > 0 || sheet.frozenCols > 0 : null,
 		colWidthCount: cellsHydrated ? sheet.colWidths.size : null,
 		imageCount: richSheetMetadataHydrated ? sheet.imageRefs.length : null,

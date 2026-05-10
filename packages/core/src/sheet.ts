@@ -601,7 +601,7 @@ export class Sheet {
 			...(group.sparklines ? { sparklines: group.sparklines.map((entry) => ({ ...entry })) } : {}),
 		}))
 		this.x14ConditionalFormats = this.x14ConditionalFormats.map(cloneX14ConditionalFormatInfo)
-		this.x14DataValidations = this.x14DataValidations.map((validation) => ({ ...validation }))
+		this.x14DataValidations = this.x14DataValidations.map(cloneX14DataValidationInfo)
 		this.advancedFilters = this.advancedFilters.map(cloneAdvancedFilterInfo)
 		this.autoFilter = this.autoFilter ? cloneAutoFilter(this.autoFilter) : null
 		this.sortState = this.sortState ? cloneSortState(this.sortState) : null
@@ -657,7 +657,7 @@ export class Sheet {
 	}
 }
 
-function cloneX14ConditionalFormatInfo(
+export function cloneX14ConditionalFormatInfo(
 	format: SheetX14ConditionalFormatInfo,
 ): SheetX14ConditionalFormatInfo {
 	return {
@@ -693,6 +693,12 @@ function cloneX14ConditionalFormatInfo(
 				}
 			: {}),
 	}
+}
+
+export function cloneX14DataValidationInfo(
+	validation: SheetX14DataValidationInfo,
+): SheetX14DataValidationInfo {
+	return { ...validation }
 }
 
 export function createSheet(name: string, id?: SheetId): Sheet {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -86,6 +86,8 @@ describe('AscendWorkbook', () => {
 					comments: Map<string, { text: string }>
 					dataValidations: Array<Record<string, unknown>>
 					conditionalFormats: Array<Record<string, unknown>>
+					x14ConditionalFormats: Array<Record<string, unknown>>
+					x14DataValidations: Array<Record<string, unknown>>
 					imageRefs: Array<Record<string, unknown>>
 			  }
 			| undefined
@@ -94,6 +96,18 @@ describe('AscendWorkbook', () => {
 		backingSheet?.conditionalFormats.push({
 			sqref: 'A1',
 			rules: [{ type: 'cellIs', formulas: ['1'] }],
+		})
+		backingSheet?.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'C1:C2',
+			formulas: ['C1>0'],
+			type: 'dataBar',
+		})
+		backingSheet?.x14DataValidations.push({
+			index: 0,
+			sqref: 'D1:D2',
+			type: 'list',
+			formula1: 'Lookup!$A$1:$A$2',
 		})
 		backingSheet?.imageRefs.push({
 			drawingPartPath: 'xl/drawings/drawing1.xml',
@@ -139,6 +153,8 @@ describe('AscendWorkbook', () => {
 		expect(info.commentCount).toBe(1)
 		expect(info.conditionalFormatCount).toBe(1)
 		expect(info.dataValidationCount).toBe(1)
+		expect(info.x14ConditionalFormatCount).toBe(1)
+		expect(info.x14DataValidationCount).toBe(1)
 		expect(info.imageCount).toBe(1)
 		expect(info.pivotTableCount).toBe(1)
 		expect(info.pivotCacheCount).toBe(1)
@@ -157,6 +173,8 @@ describe('AscendWorkbook', () => {
 		expect(info.sheets[0]?.commentCount).toBe(1)
 		expect(info.sheets[0]?.conditionalFormatCount).toBe(1)
 		expect(info.sheets[0]?.dataValidationCount).toBe(1)
+		expect(info.sheets[0]?.x14ConditionalFormatCount).toBe(1)
+		expect(info.sheets[0]?.x14DataValidationCount).toBe(1)
 		expect(info.sheets[0]?.imageCount).toBe(1)
 		expect(info.sheets[0]?.hasProtection).toBe(false)
 		expect(info.sheets[0]?.name).toBe('Sheet1')
@@ -250,6 +268,8 @@ describe('AscendWorkbook', () => {
 					ignoredErrors: Array<Record<string, unknown>>
 					conditionalFormats: Array<Record<string, unknown>>
 					dataValidations: Array<Record<string, unknown>>
+					x14ConditionalFormats: Array<Record<string, unknown>>
+					x14DataValidations: Array<Record<string, unknown>>
 					drawingRefs: { hasDrawing: boolean; hasLegacyDrawing: boolean }
 					pageMargins: Record<string, unknown> | null
 			  }
@@ -261,6 +281,20 @@ describe('AscendWorkbook', () => {
 			rules: [{ type: 'cellIs', formulas: ['1'] }],
 		})
 		backingSheet?.dataValidations.push({ sqref: 'A1', type: 'list', formula1: '"A,B"' })
+		backingSheet?.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'B1:B2',
+			formulas: ['B1>0'],
+			type: 'iconSet',
+			iconSet: { cfvo: [{ type: 'num', value: '0' }] },
+		})
+		backingSheet?.x14DataValidations.push({
+			index: 0,
+			sqref: 'C1:C2',
+			type: 'list',
+			allowBlank: true,
+			formula1: 'Lookup!$A$1:$A$2',
+		})
 		if (backingSheet) {
 			backingSheet.drawingRefs = { hasDrawing: true, hasLegacyDrawing: true }
 			backingSheet.pageMargins = { left: 0.5 }
@@ -277,8 +311,59 @@ describe('AscendWorkbook', () => {
 		expect(detail?.ignoredErrors).toHaveLength(1)
 		expect(detail?.conditionalFormats).toHaveLength(1)
 		expect(detail?.dataValidations).toHaveLength(1)
+		expect(detail?.x14ConditionalFormats?.[0]).toMatchObject({
+			sqref: 'B1:B2',
+			formulas: ['B1>0'],
+			iconSet: { cfvo: [{ type: 'num', value: '0' }] },
+		})
+		expect(detail?.x14DataValidations?.[0]).toMatchObject({
+			sqref: 'C1:C2',
+			type: 'list',
+			allowBlank: true,
+			formula1: 'Lookup!$A$1:$A$2',
+		})
 		expect(detail?.drawingRefs?.hasLegacyDrawing).toBe(true)
 		expect(detail?.pageMargins?.left).toBe(0.5)
+	})
+
+	test('inspect exposes x14 extension inventories from real corpus workbooks', async () => {
+		const conditionalWorkbook = await AscendWorkbook.open(
+			readFileSync(
+				new URL('../../../fixtures/xlsx/poi/NewStyleConditionalFormattings.xlsx', import.meta.url),
+			),
+		)
+		const conditionalInfo = conditionalWorkbook.inspect()
+		const conditionalSheetName = conditionalInfo.sheets.find(
+			(sheet) => sheet.x14ConditionalFormatCount === 3,
+		)?.name
+		expect(conditionalInfo.x14ConditionalFormatCount).toBe(3)
+		expect(conditionalSheetName).toBeDefined()
+		expect(
+			conditionalWorkbook.inspectSheet(conditionalSheetName ?? '')?.x14ConditionalFormats?.[0],
+		).toMatchObject({
+			sqref: 'E2:E17',
+			type: 'dataBar',
+			dataBar: {
+				cfvo: [{ type: 'autoMin' }, { type: 'autoMax' }],
+				borderColor: { rgb: 'FF63C384' },
+			},
+		})
+
+		const validationWorkbook = await AscendWorkbook.open(
+			readFileSync(
+				new URL('../../../fixtures/xlsx/closedxml/Misc_DataValidation.xlsx', import.meta.url),
+			),
+		)
+		expect(validationWorkbook.inspect().x14DataValidationCount).toBe(2)
+		expect(
+			validationWorkbook.inspectSheet('Data Validation - Copy')?.x14DataValidations?.[0],
+		).toMatchObject({
+			sqref: 'A5:A5',
+			type: 'list',
+			allowBlank: true,
+			errorStyle: 'stop',
+			formula1: "'Data Validation'!$C$1:$C$2",
+		})
 	})
 
 	test('find returns cells matching search criteria', () => {

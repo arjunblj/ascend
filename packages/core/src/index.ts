@@ -116,7 +116,12 @@ export type {
 	SheetX14ConditionalFormatInfo,
 	SheetX14DataValidationInfo,
 } from './sheet.ts'
-export { createSheet, Sheet } from './sheet.ts'
+export {
+	cloneX14ConditionalFormatInfo,
+	cloneX14DataValidationInfo,
+	createSheet,
+	Sheet,
+} from './sheet.ts'
 
 export type {
 	ArrayFormulaInfo,

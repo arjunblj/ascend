@@ -108,6 +108,40 @@ describe('ClosedXML XLSX fixture corpus', () => {
 		expect(
 			entries.find((entry) => entry.file === 'Ranges_DefinedNames.xlsx')?.features.defined_names,
 		).toBe(true)
+		expect(
+			entries.find((entry) => entry.file === 'Misc_SheetProtection.xlsx')?.features
+				.sheet_protection,
+		).toBe(true)
+	})
+
+	test('captures ClosedXML sheet protection flags and password hash', () => {
+		const result = readXlsx(loadFixture('Misc_SheetProtection.xlsx'))
+		expectOk(result)
+
+		expect(result.value.workbook.sheets.map((sheet) => [sheet.name, sheet.protection])).toEqual([
+			[
+				'Protected No-Password',
+				{
+					sheet: true,
+					objects: true,
+					scenarios: false,
+					formatCells: false,
+					insertColumns: false,
+					deleteColumns: false,
+					deleteRows: false,
+				},
+			],
+			[
+				'Protected Password = 123',
+				{
+					sheet: true,
+					objects: true,
+					insertColumns: false,
+					insertRows: false,
+					password: 'CF7A',
+				},
+			],
+		])
 	})
 
 	test('captures ClosedXML comment VML visibility and position metadata', () => {

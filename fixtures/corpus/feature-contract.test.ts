@@ -1,7 +1,12 @@
 import { describe, expect, it, setDefaultTimeout } from 'bun:test'
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import type { ChartPartInfo, ChartSheetInfo } from '@ascend/core'
+import type {
+	ChartPartInfo,
+	ChartSheetInfo,
+	SheetProtection,
+	WorkbookProtection,
+} from '@ascend/core'
 import { readXlsx } from '@ascend/io-xlsx'
 import type { CompatibilityTier, FeatureReport } from '@ascend/schema'
 import {
@@ -60,6 +65,10 @@ interface SemanticSummary {
 	tableCount: number
 	commentCount: number
 	commentLayouts: readonly CommentLayoutSummary[]
+	hasWorkbookProtection: boolean
+	workbookProtection: WorkbookProtection | null
+	sheetProtectionCount: number
+	sheetProtections: readonly SheetProtectionSummary[]
 	conditionalFormatCount: number
 	dataValidationCount: number
 	imageCount: number
@@ -103,6 +112,11 @@ interface CommentLayoutSummary {
 	readonly row?: number
 	readonly column?: number
 	readonly visible?: boolean
+}
+
+interface SheetProtectionSummary {
+	readonly sheetName: string
+	readonly protection: SheetProtection
 }
 
 interface ContractSubject {
@@ -153,6 +167,7 @@ const VENDORED_CONTRACT_FIXTURES: readonly {
 			'Comments_AddingComments.xlsx',
 			'ConditionalFormatting_CFDataBars.xlsx',
 			'ImageHandling_ImageAnchors.xlsx',
+			'Misc_SheetProtection.xlsx',
 			'Other_ExternalLinks_WorkbookWithExternalLink.xlsx',
 			'Other_Charts_PreserveCharts_inputfile.xlsx',
 			'Other_PivotTableReferenceFiles_ChartsheetAndPivotTable.xlsx',
@@ -189,11 +204,14 @@ const VENDORED_CONTRACT_FIXTURES: readonly {
 			'DataValidationEvaluations.xlsx',
 			'FormulaEvalTestData_Copy.xlsx',
 			'NewStyleConditionalFormattings.xlsx',
+			'sheetProtection_allLocked.xlsx',
+			'sheetProtection_not_protected.xlsx',
 			'SimpleStrict.xlsx',
 			'SimpleWithComments.xlsx',
 			'StructuredReferences.xlsx',
 			'WithChart.xlsx',
 			'WithDrawing.xlsx',
+			'workbookProtection_workbook_structure_protected.xlsx',
 		],
 	},
 	{
@@ -394,6 +412,32 @@ function assertKnownCommentFixtureCoverage(
 	}
 }
 
+function assertKnownProtectionFixtureCoverage(
+	entry: NormalizedCorpusManifestEntry,
+	semanticSummary: SemanticSummary,
+): void {
+	const expected = KNOWN_PROTECTION_FIXTURE_EXPECTATIONS.get(entry.file)
+	if (!expected) return
+	if (expected.workbookProtection !== undefined) {
+		assertFeature(
+			entry,
+			'workbook_protection',
+			JSON.stringify(semanticSummary.workbookProtection) ===
+				JSON.stringify(expected.workbookProtection),
+			'expected workbook protection metadata to match fixture contract',
+		)
+	}
+	if (expected.sheetProtections !== undefined) {
+		assertFeature(
+			entry,
+			'sheet_protection',
+			JSON.stringify(semanticSummary.sheetProtections) ===
+				JSON.stringify(expected.sheetProtections),
+			'expected sheet protection metadata to match fixture contract',
+		)
+	}
+}
+
 const KNOWN_VISUAL_FIXTURE_EXPECTATIONS = new Map<
 	string,
 	{ readonly sheetImageRefCount?: number; readonly sheetDrawingObjectRefCount?: number }
@@ -429,6 +473,68 @@ const KNOWN_COMMENT_FIXTURE_EXPECTATIONS = new Map<
 					row: 2,
 					column: 1,
 					visible: true,
+				},
+			],
+		},
+	],
+])
+
+const KNOWN_PROTECTION_FIXTURE_EXPECTATIONS = new Map<
+	string,
+	{
+		readonly workbookProtection?: WorkbookProtection | null
+		readonly sheetProtections?: readonly SheetProtectionSummary[]
+	}
+>([
+	[
+		'workbookProtection_workbook_structure_protected.xlsx',
+		{ workbookProtection: { lockStructure: true }, sheetProtections: [] },
+	],
+	['sheetProtection_not_protected.xlsx', { workbookProtection: null, sheetProtections: [] }],
+	[
+		'sheetProtection_allLocked.xlsx',
+		{
+			workbookProtection: null,
+			sheetProtections: [
+				{
+					sheetName: 'Foglio1',
+					protection: {
+						sheet: true,
+						objects: true,
+						scenarios: true,
+						selectLockedCells: true,
+						selectUnlockedCells: true,
+					},
+				},
+			],
+		},
+	],
+	[
+		'Misc_SheetProtection.xlsx',
+		{
+			workbookProtection: null,
+			sheetProtections: [
+				{
+					sheetName: 'Protected No-Password',
+					protection: {
+						sheet: true,
+						objects: true,
+						scenarios: false,
+						formatCells: false,
+						insertColumns: false,
+						deleteColumns: false,
+						deleteRows: false,
+					},
+				},
+				{
+					sheetName: 'Protected Password = 123',
+					protection: {
+						sheet: true,
+						objects: true,
+						insertColumns: false,
+						insertRows: false,
+						password: 'CF7A',
+					},
 				},
 			],
 		},
@@ -527,6 +633,9 @@ async function loadContractSubject(bytes: Uint8Array): Promise<ContractSubject> 
 			]
 		}),
 	)
+	const sheetProtections = raw.value.workbook.sheets.flatMap((sheet) =>
+		sheet.protection ? [{ sheetName: sheet.name, protection: sheet.protection }] : [],
+	)
 	return {
 		packageSummary: summarizePackage(bytes),
 		packageCounts: packageProbe.counts,
@@ -536,6 +645,12 @@ async function loadContractSubject(bytes: Uint8Array): Promise<ContractSubject> 
 			tableCount: info.sheets.reduce((sum, sheet) => sum + (sheet.tableCount ?? 0), 0),
 			commentCount: info.commentCount ?? 0,
 			commentLayouts,
+			hasWorkbookProtection: raw.value.workbook.workbookProtection !== null,
+			workbookProtection: raw.value.workbook.workbookProtection
+				? { ...raw.value.workbook.workbookProtection }
+				: null,
+			sheetProtectionCount: sheetProtections.length,
+			sheetProtections,
 			conditionalFormatCount: info.conditionalFormatCount ?? 0,
 			dataValidationCount: info.dataValidationCount ?? 0,
 			imageCount: info.imageCount ?? 0,
@@ -648,6 +763,8 @@ function assertManifestReadCoverage(
 	expectManifestCount(entry, 'tables', [packageSummary.tables, packageCounts.tables])
 	expectManifestCount(entry, 'drawings', [packageSummary.drawings, packageCounts.drawings])
 	expectManifestCount(entry, 'comments', [packageSummary.comments, packageCounts.comments])
+	expectManifestCount(entry, 'workbook_protection', [packageCounts.workbook_protection])
+	expectManifestCount(entry, 'sheet_protection', [packageCounts.sheet_protection])
 	if (entry.features.pivot_tables) {
 		expectManifestCount(entry, 'pivot_tables', [
 			packageSummary.pivotTables,
@@ -662,6 +779,24 @@ function assertManifestReadCoverage(
 	assertFeature(entry, 'tables', !entry.features.tables || semanticSummary.tableCount > 0)
 	assertFeature(entry, 'comments', !entry.features.comments || semanticSummary.commentCount > 0)
 	assertKnownCommentFixtureCoverage(entry, semanticSummary)
+	assertFeature(
+		entry,
+		'workbook_protection',
+		!entry.features.workbook_protection || semanticSummary.hasWorkbookProtection,
+	)
+	assertFeature(
+		entry,
+		'sheet_protection',
+		!entry.features.sheet_protection || semanticSummary.sheetProtectionCount > 0,
+	)
+	assertFeature(
+		entry,
+		'protection',
+		!entry.features.protection ||
+			semanticSummary.hasWorkbookProtection ||
+			semanticSummary.sheetProtectionCount > 0,
+	)
+	assertKnownProtectionFixtureCoverage(entry, semanticSummary)
 	assertFeature(
 		entry,
 		'threaded_comments',
@@ -821,6 +956,16 @@ function assertManifestEditCoverage(
 
 	expect(after.semanticSummary.tableCount).toBe(before.semanticSummary.tableCount)
 	expect(after.semanticSummary.commentCount).toBe(before.semanticSummary.commentCount)
+	expect(after.semanticSummary.hasWorkbookProtection).toBe(
+		before.semanticSummary.hasWorkbookProtection,
+	)
+	expect(after.semanticSummary.workbookProtection).toEqual(
+		before.semanticSummary.workbookProtection,
+	)
+	expect(after.semanticSummary.sheetProtectionCount).toBe(
+		before.semanticSummary.sheetProtectionCount,
+	)
+	expect(after.semanticSummary.sheetProtections).toEqual(before.semanticSummary.sheetProtections)
 	expect(after.semanticSummary.conditionalFormatCount).toBe(
 		before.semanticSummary.conditionalFormatCount,
 	)

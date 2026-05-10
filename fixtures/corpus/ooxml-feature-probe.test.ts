@@ -7,6 +7,7 @@ describe('OOXML feature probe', () => {
 		const bytes = makeXlsx({
 			'xl/workbook.xml': `<?xml version="1.0"?>
 <workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <workbookProtection lockStructure="1"/>
   <pivotCaches><pivotCache cacheId="34" r:id="rIdPivotCache"/></pivotCaches>
 </workbook>`,
 			'xl/_rels/workbook.xml.rels': `<?xml version="1.0"?>
@@ -15,6 +16,7 @@ describe('OOXML feature probe', () => {
   <Relationship Id="rIdSlicerCache" Type="http://schemas.microsoft.com/office/2007/relationships/slicerCache" Target="slicerCaches\\slicerCache1.xml"/>
 </Relationships>`,
 			'xl/worksheets/sheet1.xml': '<worksheet/>',
+			'xl/worksheets/sheet2.xml': '<worksheet><sheetProtection sheet="1"/></worksheet>',
 			'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rIdPivotTable" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable" Target="../pivotTables/pivotTable1.xml"/>
@@ -55,11 +57,16 @@ describe('OOXML feature probe', () => {
 			slicer_caches: 1,
 			timelines: 1,
 			timeline_caches: 1,
+			workbook_protection: 1,
+			sheet_protection: 1,
 		})
 		expect(probe.features).toMatchObject({
 			pivot_tables: true,
 			slicers: true,
 			timelines: true,
+			workbook_protection: true,
+			sheet_protection: true,
+			protection: true,
 		})
 		expect(probe.analytics.workbookPivotCaches).toEqual([{ cacheId: 34, relId: 'rIdPivotCache' }])
 		expect(probe.analytics.pivotCacheRelationships[0]?.targetPartPath).toBe(

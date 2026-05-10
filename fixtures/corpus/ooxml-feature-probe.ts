@@ -112,6 +112,8 @@ export function inspectOoxmlPackageFeatures(bytes: Uint8Array): OoxmlPackageProb
 		connections:
 			countPaths(paths, /^xl\/connections\.xml$/i) + countPaths(paths, /^xl\/queryTables\//i),
 		calc_chain: countPaths(paths, /^xl\/calcChain\.xml$/i),
+		workbook_protection: hasXmlTag(workbookXml, 'workbookProtection') ? 1 : 0,
+		sheet_protection: countXmlTags(worksheetXml, 'sheetProtection'),
 	}
 	const relationships = parseRelationships(files)
 	const pivotCacheRelationships = relationships.filter(
@@ -185,6 +187,9 @@ export function inspectOoxmlPackageFeatures(bytes: Uint8Array): OoxmlPackageProb
 		custom_xml: counts.custom_xml > 0,
 		calc_chain: counts.calc_chain > 0,
 		active_content: counts.active_content > 0,
+		workbook_protection: counts.workbook_protection > 0,
+		sheet_protection: counts.sheet_protection > 0,
+		protection: counts.workbook_protection > 0 || counts.sheet_protection > 0,
 	}
 	return { paths, counts, features, analytics }
 }

@@ -148,6 +148,8 @@ async function buildEntry(root: string, fixture: ClosedXmlFixture): Promise<Corp
 		pivot_caches: probe.counts.pivot_caches,
 		comments: probe.counts.comments,
 		sparklines: probe.counts.sparklines,
+		workbook_protection: probe.counts.workbook_protection,
+		sheet_protection: probe.counts.sheet_protection,
 	}
 	const features = { ...probe.features, macros: false }
 	return {
@@ -180,6 +182,7 @@ function deriveTier(
 		features.pivot_tables ||
 		features.conditional_formatting ||
 		features.data_validations ||
+		features.protection ||
 		features.calc_chain
 		? 'core'
 		: 'smoke'
@@ -191,7 +194,12 @@ function deriveAssertionClass(
 	if (features.charts || features.drawings || features.images_or_media || features.pivot_tables) {
 		return 'preservation-only'
 	}
-	if (features.conditional_formatting || features.data_validations || features.tables) {
+	if (
+		features.conditional_formatting ||
+		features.data_validations ||
+		features.tables ||
+		features.protection
+	) {
 		return 'semantic-plus-package'
 	}
 	return 'exact-bytes'
@@ -204,6 +212,7 @@ function deriveRisk(features: CorpusManifestEntry['features']): CorpusManifestEn
 		features.pivot_tables ||
 		features.conditional_formatting ||
 		features.data_validations ||
+		features.protection ||
 		features.calc_chain ||
 		features.tables ||
 		features.external_links
@@ -230,10 +239,10 @@ function deriveTags(
 	if (features.defined_names) tags.add('defined-names')
 	if (features.external_links) tags.add('external-link')
 	if (features.sparklines) tags.add('sparkline')
+	if (features.protection) tags.add('protection')
 	if (CACHED_FORMULA_FIXTURES.has(file)) tags.add('formula-fidelity')
 	if (/formula/i.test(file)) tags.add('formula')
 	if (/style|format|richtext/i.test(file)) tags.add('style')
-	if (/protect/i.test(file)) tags.add('protection')
 	if (/sort/i.test(file)) tags.add('sort')
 	return [...tags].sort((a, b) => a.localeCompare(b))
 }

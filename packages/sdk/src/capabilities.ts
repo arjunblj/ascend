@@ -150,8 +150,8 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'Workbook protection',
 		'editable',
 		'P1',
-		'Add cross-version hash fixtures and protected workbook roundtrips.',
-		'Workbook protection operations exist but need broader compatibility fixtures.',
+		'Add cross-version agile-hash fixtures and explicit edit operations for protected workbook policy changes.',
+		'Workbook and sheet protection metadata are parsed, written, and asserted against POI and ClosedXML corpus fixtures, including structure locks, sheet flags, and legacy password hashes.',
 	),
 	cap(
 		'workbook.calc-settings',

@@ -205,6 +205,9 @@ export function deriveFeatureTags(entry: CorpusManifestEntry): readonly string[]
 		images_or_media: 'media',
 		custom_xml: 'custom-xml',
 		calc_chain: 'calc-chain',
+		protection: 'protection',
+		workbook_protection: 'workbook-protection',
+		sheet_protection: 'sheet-protection',
 	}
 	for (const [feature, enabled] of Object.entries(entry.features)) {
 		if (!enabled) continue
@@ -230,7 +233,8 @@ function deriveBenchmarkTier(entry: CorpusManifestEntry): CorpusBenchmarkTier {
 		entry.features.charts ||
 		entry.features.tables ||
 		entry.features.drawings ||
-		entry.features.sparklines
+		entry.features.sparklines ||
+		entry.features.protection
 	)
 		return 'core'
 	return 'smoke'
@@ -252,7 +256,8 @@ function deriveAssertionClass(entry: CorpusManifestEntry): CorpusAssertionClass 
 		entry.features.conditional_formatting ||
 		entry.features.data_validations ||
 		entry.features.tables ||
-		entry.features.sparklines
+		entry.features.sparklines ||
+		entry.features.protection
 	) {
 		return 'semantic-plus-package'
 	}
@@ -266,7 +271,8 @@ function deriveRiskClass(entry: CorpusManifestEntry): CorpusRiskClass {
 		entry.features.timelines ||
 		entry.features.macros ||
 		entry.features.external_links ||
-		entry.features.connections
+		entry.features.connections ||
+		entry.features.protection
 	) {
 		return 'high'
 	}

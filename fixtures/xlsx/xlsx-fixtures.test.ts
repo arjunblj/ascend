@@ -409,13 +409,30 @@ if (poiFixtures.length > 0) {
 				loadFixture('workbookProtection_workbook_structure_protected.xlsx'),
 			)
 			expectOk(workbookProtected)
-			expect(workbookProtected.value.workbook.workbookProtection).toBeDefined()
+			expect(workbookProtected.value.workbook.workbookProtection).toEqual({
+				lockStructure: true,
+			})
 
 			const sheetProtected = readXlsx(loadFixture('sheetProtection_allLocked.xlsx'))
 			expectOk(sheetProtected)
+			expect(sheetProtected.value.workbook.sheets[0]?.name).toBe('Foglio1')
+			expect(sheetProtected.value.workbook.sheets[0]?.protection).toEqual({
+				sheet: true,
+				objects: true,
+				scenarios: true,
+				selectLockedCells: true,
+				selectUnlockedCells: true,
+			})
 			expect(
-				sheetProtected.value.workbook.sheets.some((sheet) => sheet?.protection !== undefined),
+				sheetProtected.value.workbook.sheets.slice(1).every((sheet) => sheet.protection === null),
 			).toBe(true)
+
+			const notProtected = readXlsx(loadFixture('sheetProtection_not_protected.xlsx'))
+			expectOk(notProtected)
+			expect(notProtected.value.workbook.workbookProtection).toBeNull()
+			expect(notProtected.value.workbook.sheets.every((sheet) => sheet.protection === null)).toBe(
+				true,
+			)
 		})
 
 		it('keeps fixture list stable and non-empty', () => {

@@ -41,6 +41,8 @@ export async function buildPoiEntry(root: string, file: string): Promise<CorpusM
 		pivot_tables: probe.counts.pivot_tables,
 		pivot_caches: probe.counts.pivot_caches,
 		comments: probe.counts.comments,
+		workbook_protection: probe.counts.workbook_protection,
+		sheet_protection: probe.counts.sheet_protection,
 	}
 	const features = { ...probe.features, macros: false }
 	return {
@@ -70,6 +72,7 @@ function deriveTier(
 		features.drawings ||
 		features.conditional_formatting ||
 		features.data_validations ||
+		features.protection ||
 		features.calc_chain
 		? 'core'
 		: 'smoke'
@@ -79,7 +82,12 @@ function deriveAssertionClass(
 	features: CorpusManifestEntry['features'],
 ): CorpusManifestEntry['assertionClass'] {
 	if (features.charts || features.drawings) return 'preservation-only'
-	if (features.conditional_formatting || features.data_validations || features.tables) {
+	if (
+		features.conditional_formatting ||
+		features.data_validations ||
+		features.tables ||
+		features.protection
+	) {
 		return 'semantic-plus-package'
 	}
 	return 'exact-bytes'
@@ -91,7 +99,8 @@ function deriveRisk(features: CorpusManifestEntry['features']): CorpusManifestEn
 		features.conditional_formatting ||
 		features.data_validations ||
 		features.calc_chain ||
-		features.tables
+		features.tables ||
+		features.protection
 		? 'medium'
 		: 'low'
 }
@@ -111,8 +120,8 @@ function deriveTags(
 	if (features.merged_cells) tags.add('merged-cells')
 	if (features.defined_names) tags.add('defined-names')
 	if (features.calc_chain || /formula/i.test(file)) tags.add('formula-fidelity')
+	if (features.protection) tags.add('protection')
 	if (/formula/i.test(file)) tags.add('formula')
 	if (/style|format|theme|colour|color/i.test(file)) tags.add('style')
-	if (/protect/i.test(file)) tags.add('protection')
 	return [...tags].sort((a, b) => a.localeCompare(b))
 }

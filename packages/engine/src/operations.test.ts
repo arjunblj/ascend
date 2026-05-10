@@ -1622,6 +1622,70 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('setConnectionRefresh updates query-table refresh metadata', () => {
+		const wb = setup()
+		wb.connectionParts.push({
+			kind: 'queryTable',
+			partPath: 'xl/queryTables/queryTable1.xml',
+			contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml',
+			relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
+			sheetName: 'Sheet1',
+			relationshipCount: 0,
+			name: 'SalesQuery',
+			connectionId: 1,
+			refreshOnLoad: false,
+			saveData: true,
+		})
+
+		const result = applyOperation(wb, {
+			op: 'setConnectionRefresh',
+			partPath: 'xl/queryTables/queryTable1.xml',
+			connectionId: 1,
+			refreshOnLoad: true,
+			saveData: false,
+			refreshedVersion: 8,
+		})
+		expectOk(result)
+
+		expect(result.value.sheetsModified).toEqual(['Sheet1'])
+		expect(result.value.recalcRequired).toBe(false)
+		expect(result.value.warnings?.map((warning) => warning.message)).toEqual([
+			'Connection is marked refresh-on-open; external data may change when Excel opens the workbook.',
+			'Connection cache data is not saved; refresh is required before cached external output can be trusted.',
+		])
+		expect(wb.connectionParts[0]).toMatchObject({
+			refreshOnLoad: true,
+			saveData: false,
+			refreshedVersion: 8,
+		})
+	})
+
+	test('setConnectionRefresh validates selectors and editable fields', () => {
+		const wb = setup()
+		wb.connectionParts.push({
+			kind: 'connection',
+			partPath: 'xl/connections.xml',
+			contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.connections+xml',
+			relationshipCount: 0,
+			name: 'SalesConnection',
+			connectionId: 1,
+		})
+
+		const missingSelector = applyOperation(wb, {
+			op: 'setConnectionRefresh',
+			refreshOnLoad: true,
+		})
+		expectErr(missingSelector)
+		expect(missingSelector.error.message).toContain('requires partPath')
+
+		const missingUpdate = applyOperation(wb, {
+			op: 'setConnectionRefresh',
+			partPath: 'xl/connections.xml',
+		})
+		expectErr(missingUpdate)
+		expect(missingUpdate.error.message).toContain('requires refreshOnLoad')
+	})
+
 	test('setPivotFieldItem updates item and page filter state with refresh warning', () => {
 		const wb = setup()
 		wb.pivotTables.push({

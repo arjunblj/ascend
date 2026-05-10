@@ -74,6 +74,8 @@ import type {
 	WorkbookDataModelPartInfo,
 	WorkbookInfo,
 	WorkbookLoadInfo,
+	WorkbookRefreshMetadataEntry,
+	WorkbookRefreshMetadataInfo,
 	WorkbookVisualInventoryInfo,
 } from './types.ts'
 
@@ -154,6 +156,7 @@ export class WorkbookReadView {
 			pivotTableCount: this.wb.pivotTables.length,
 			pivotCacheCount: this.wb.pivotCaches.length,
 			pivotRefreshPlans: buildPivotRefreshPlans(this.wb.pivotCaches, this.wb.pivotTables),
+			refreshMetadata: buildWorkbookRefreshMetadata(this.wb, this.compat),
 			slicerCount: this.wb.slicers.length,
 			slicerCacheCount: this.wb.slicerCaches.length,
 			timelineCount: this.wb.timelines.length,
@@ -628,6 +631,10 @@ export class WorkbookReadView {
 
 	pivotRefreshPlans(): readonly PivotRefreshPlanInfo[] {
 		return buildPivotRefreshPlans(this.wb.pivotCaches, this.wb.pivotTables)
+	}
+
+	refreshMetadata(): WorkbookRefreshMetadataInfo {
+		return buildWorkbookRefreshMetadata(this.wb, this.compat)
 	}
 
 	getPivotData(query: GetPivotDataQuery): GetPivotDataResult {
@@ -1334,6 +1341,136 @@ function pivotRefreshRecommendedOps(
 			...(cache.cacheId !== undefined ? { cacheId: cache.cacheId } : {}),
 			refreshOnLoad: true,
 			invalid: true,
+			saveData: false,
+		},
+	]
+}
+
+function buildWorkbookRefreshMetadata(
+	workbook: Workbook,
+	report: CompatibilityReport,
+): WorkbookRefreshMetadataInfo {
+	const entries: WorkbookRefreshMetadataEntry[] = []
+	const calcWarnings: string[] = []
+	const refreshOnOpen =
+		workbook.calcSettings.fullCalcOnLoad || workbook.calcSettings.forceFullCalc === true
+	if (refreshOnOpen) {
+		calcWarnings.push('Workbook requests full recalculation on open.')
+	}
+	if (workbook.calcSettings.calcMode === 'manual') {
+		calcWarnings.push('Workbook is in manual calculation mode.')
+	}
+	if (calcWarnings.length > 0) {
+		entries.push({
+			kind: 'calcSettings',
+			partPath: 'xl/workbook.xml',
+			state: refreshOnOpen ? 'refresh-on-open' : 'manual-calc',
+			refreshOnLoad: refreshOnOpen,
+			warnings: calcWarnings,
+			recommendedOps: [],
+		})
+	}
+
+	const calcChain = report.features.find((feature) => feature.feature === 'calcChain')
+	if (calcChain) {
+		for (const partPath of calcChain.locations) {
+			entries.push({
+				kind: 'calcChain',
+				partPath,
+				state: 'cached',
+				warnings: [
+					'Imported calc chain is preserved unless a formula-topology edit requires full recalculation on open.',
+				],
+				recommendedOps: [],
+			})
+		}
+	}
+
+	for (const plan of buildPivotRefreshPlans(workbook.pivotCaches, workbook.pivotTables)) {
+		entries.push({
+			kind: 'pivotCache',
+			partPath: plan.partPath,
+			state: plan.outputState,
+			...(plan.cacheId !== undefined ? { cacheId: plan.cacheId } : {}),
+			...(plan.sourceSheet !== undefined ? { sourceSheet: plan.sourceSheet } : {}),
+			...(plan.sourceRef !== undefined ? { sourceRef: plan.sourceRef } : {}),
+			refreshOnLoad: plan.outputState === 'refresh-on-open',
+			invalid: plan.outputState === 'stale',
+			warnings: plan.warnings,
+			recommendedOps: plan.recommendedOps,
+		})
+	}
+
+	for (const part of workbook.connectionParts) {
+		if (part.kind !== 'connection' && part.kind !== 'queryTable') continue
+		const state = connectionRefreshState(part)
+		entries.push({
+			kind: part.kind === 'queryTable' ? 'queryTable' : 'workbookConnection',
+			partPath: part.partPath,
+			state,
+			...(part.name !== undefined ? { name: part.name } : {}),
+			...(part.sheetName !== undefined ? { sheetName: part.sheetName } : {}),
+			...(part.connectionId !== undefined ? { connectionId: part.connectionId } : {}),
+			...(part.refreshOnLoad !== undefined ? { refreshOnLoad: part.refreshOnLoad } : {}),
+			...(part.saveData !== undefined ? { saveData: part.saveData } : {}),
+			...(part.refreshedVersion !== undefined ? { refreshedVersion: part.refreshedVersion } : {}),
+			warnings: connectionRefreshWarnings(part, state),
+			recommendedOps: connectionRefreshRecommendedOps(part, state),
+		})
+	}
+
+	return {
+		entries,
+		refreshOnOpenCount: entries.filter((entry) => entry.state === 'refresh-on-open').length,
+		staleCacheCount: entries.filter((entry) => entry.state === 'stale').length,
+		notSavedCount: entries.filter(
+			(entry) => entry.state === 'not-saved' || entry.saveData === false,
+		).length,
+		unknownCount: entries.filter((entry) => entry.state === 'unknown').length,
+	}
+}
+
+function connectionRefreshState(
+	part: WorkbookConnectionPartInfo,
+): WorkbookRefreshMetadataEntry['state'] {
+	if (part.refreshOnLoad) return 'refresh-on-open'
+	if (part.saveData === false) return 'not-saved'
+	if (part.refreshedVersion === undefined) return 'unknown'
+	return 'cached'
+}
+
+function connectionRefreshWarnings(
+	part: WorkbookConnectionPartInfo,
+	state: WorkbookRefreshMetadataEntry['state'],
+): string[] {
+	if (state === 'refresh-on-open') {
+		return ['Connection requests refresh on open; saved output may change after Excel opens it.']
+	}
+	if (state === 'not-saved') {
+		return ['Connection cache data is not saved; a connection-aware application must refresh it.']
+	}
+	if (state === 'unknown') {
+		return ['Connection freshness is unknown because refresh version metadata is absent.']
+	}
+	return part.kind === 'queryTable'
+		? ['Query table refresh metadata is inspectable and editable without executing the query.']
+		: [
+				'Workbook connection refresh metadata is inspectable and editable without executing the connection.',
+			]
+}
+
+function connectionRefreshRecommendedOps(
+	part: WorkbookConnectionPartInfo,
+	state: WorkbookRefreshMetadataEntry['state'],
+): readonly unknown[] {
+	if (state === 'cached') return []
+	return [
+		{
+			op: 'setConnectionRefresh',
+			partPath: part.partPath,
+			...(part.name !== undefined ? { name: part.name } : {}),
+			...(part.connectionId !== undefined ? { connectionId: part.connectionId } : {}),
+			refreshOnLoad: true,
 			saveData: false,
 		},
 	]

@@ -8,6 +8,7 @@ import {
 } from '../analysis.ts'
 import { invalidateSheetIndexCache } from '../evaluator.ts'
 import * as cellOps from './cell-ops.ts'
+import * as connectionOps from './connection-ops.ts'
 import * as formatOps from './format-ops.ts'
 import {
 	operationAffectsFormulas,
@@ -99,6 +100,7 @@ const handlers: Record<string, OperationHandler> = {
 	setPivotCache: pivotOps.handleSetPivotCache as OperationHandler,
 	setPivotFieldItem: pivotOps.handleSetPivotFieldItem as OperationHandler,
 	setSlicerCacheItem: slicerOps.handleSetSlicerCacheItem as OperationHandler,
+	setConnectionRefresh: connectionOps.handleSetConnectionRefresh as OperationHandler,
 	rewriteExternalLink: workbookOps.handleRewriteExternalLink as OperationHandler,
 	insertImage: visualOps.handleInsertImage as OperationHandler,
 	deleteImage: visualOps.handleDeleteImage as OperationHandler,
@@ -305,6 +307,10 @@ function restoreWorkbookFromSnapshot(workbook: Workbook, snapshot: Workbook): vo
 	workbook.externalReferenceDetails.push(
 		...snapshot.externalReferenceDetails.map((entry) => ({ ...entry })),
 	)
+	workbook.connectionParts.splice(0, workbook.connectionParts.length)
+	workbook.connectionParts.push(...snapshot.connectionParts.map((entry) => ({ ...entry })))
+	workbook.dataModelParts.splice(0, workbook.dataModelParts.length)
+	workbook.dataModelParts.push(...snapshot.dataModelParts.map((entry) => ({ ...entry })))
 	workbook.workbookProperties = { ...snapshot.workbookProperties }
 	workbook.workbookProtection = snapshot.workbookProtection
 		? { ...snapshot.workbookProtection }

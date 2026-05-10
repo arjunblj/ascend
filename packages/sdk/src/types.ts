@@ -71,6 +71,7 @@ export interface WorkbookInfo {
 	readonly pivotTableCount: number
 	readonly pivotCacheCount: number
 	readonly pivotRefreshPlans: readonly PivotRefreshPlanInfo[]
+	readonly refreshMetadata: WorkbookRefreshMetadataInfo
 	readonly slicerCount: number
 	readonly slicerCacheCount: number
 	readonly timelineCount: number
@@ -230,6 +231,47 @@ export interface PivotRefreshRecommendedOp {
 	readonly refreshOnLoad?: boolean
 	readonly invalid?: boolean
 	readonly saveData?: boolean
+}
+
+export type WorkbookRefreshMetadataKind =
+	| 'calcSettings'
+	| 'calcChain'
+	| 'pivotCache'
+	| 'workbookConnection'
+	| 'queryTable'
+
+export type WorkbookRefreshMetadataState =
+	| 'cached'
+	| 'stale'
+	| 'refresh-on-open'
+	| 'not-saved'
+	| 'manual-calc'
+	| 'unknown'
+
+export interface WorkbookRefreshMetadataInfo {
+	readonly entries: readonly WorkbookRefreshMetadataEntry[]
+	readonly refreshOnOpenCount: number
+	readonly staleCacheCount: number
+	readonly notSavedCount: number
+	readonly unknownCount: number
+}
+
+export interface WorkbookRefreshMetadataEntry {
+	readonly kind: WorkbookRefreshMetadataKind
+	readonly partPath: string
+	readonly state: WorkbookRefreshMetadataState
+	readonly name?: string
+	readonly sheetName?: string
+	readonly cacheId?: number
+	readonly connectionId?: number
+	readonly refreshOnLoad?: boolean
+	readonly saveData?: boolean
+	readonly invalid?: boolean
+	readonly refreshedVersion?: number
+	readonly sourceSheet?: string
+	readonly sourceRef?: string
+	readonly warnings: readonly string[]
+	readonly recommendedOps: readonly unknown[]
 }
 
 export interface GetPivotDataQuery {

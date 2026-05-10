@@ -170,6 +170,33 @@ describe('operation schema agent DX', () => {
 		expect(parsed.ok).toBe(true)
 	})
 
+	test('setConnectionRefresh is exposed with connection refresh guidance', () => {
+		const schema = getOperationsSchema().find((entry) => entry.op === 'setConnectionRefresh')
+		expect(schema?.schema.required).toEqual(['op'])
+		expect(schema?.schema.properties.connectionId?.description).toContain('connection id')
+		expect(schema?.schema.properties.refreshedVersion?.description).toContain('refresh engine')
+		expect(schema?.examples[0]).toMatchObject({
+			op: 'setConnectionRefresh',
+			partPath: 'xl/queryTables/queryTable1.xml',
+			connectionId: 1,
+			refreshOnLoad: true,
+			saveData: false,
+		})
+		expect(schema?.recoveryActions.join('\n')).toContain('refreshMetadata')
+
+		const parsed = parseOperations([
+			{
+				op: 'setConnectionRefresh',
+				partPath: 'xl/queryTables/queryTable1.xml',
+				connectionId: 1,
+				refreshOnLoad: true,
+				saveData: false,
+				refreshedVersion: 9,
+			},
+		])
+		expect(parsed.ok).toBe(true)
+	})
+
 	test('rewriteExternalLink is exposed with external reference selector guidance', () => {
 		const schema = getOperationsSchema().find((entry) => entry.op === 'rewriteExternalLink')
 		expect(schema?.schema.required).toEqual(['op', 'newTarget'])

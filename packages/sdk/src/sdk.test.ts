@@ -2907,6 +2907,11 @@ describe('capabilities registry', () => {
 		)
 		expect(externalRefs?.status).toBe('editable')
 		expect(externalRefs?.tests).toContain('packages/sdk/src/external-reference-usages.test.ts')
+		const refreshMetadata = capabilities.find(
+			(capability) => capability.id === 'connections.refresh-metadata',
+		)
+		expect(refreshMetadata?.status).toBe('editable')
+		expect(refreshMetadata?.tests).toContain('packages/sdk/src/connection-inventory.test.ts')
 	})
 })
 

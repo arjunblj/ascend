@@ -34,6 +34,7 @@ import type {
 	TimelineInfo,
 	TraceResult,
 	WorkbookInfo,
+	WorkbookRefreshMetadataInfo,
 	WorkbookVisualInventoryInfo,
 } from './types.ts'
 
@@ -355,6 +356,10 @@ export class WorkbookDocument {
 
 	pivotRefreshPlans(): readonly PivotRefreshPlanInfo[] {
 		return this.view.pivotRefreshPlans()
+	}
+
+	refreshMetadata(): WorkbookRefreshMetadataInfo {
+		return this.view.refreshMetadata()
 	}
 
 	slicerCaches(): readonly SlicerCacheInfo[] {

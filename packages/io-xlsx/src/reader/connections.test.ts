@@ -37,7 +37,7 @@ describe('connection part inventory', () => {
 				name: 'SalesQuery',
 				connectionId: 1,
 				refreshOnLoad: true,
-				saveData: true,
+				saveData: false,
 			},
 			{
 				kind: 'powerQueryMashup',
@@ -108,7 +108,7 @@ function connectionWorkbook(): Uint8Array {
   <connection id="1" name="SalesConnection" refreshOnLoad="1" saveData="0" refreshedVersion="8"/>
 </connections>`,
 		'xl/queryTables/queryTable1.xml': `<?xml version="1.0"?>
-<queryTable xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="SalesQuery" connectionId="1" refreshOnLoad="1" saveData="1"/>`,
+<queryTable xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="SalesQuery" connectionId="1" refreshOnLoad="1" removeDataOnSave="1"/>`,
 		'xl/customData/item1.data': 'mashup-bytes',
 	})
 }

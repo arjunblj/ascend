@@ -708,10 +708,16 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'connections.refresh-metadata',
 		'connections',
 		'Refresh metadata',
-		'inspectable',
+		'editable',
 		'P1',
-		'Expose refresh-on-open and stale cache indicators.',
-		'Refresh metadata is not fully editable.',
+		'Add refresh execution adapters for connection-aware engines.',
+		'Workbook calculation refresh flags, calc-chain preservation, pivot cache freshness, workbook connections, and query-table refresh metadata are surfaced with stale/not-saved indicators; connection/query-table refreshOnLoad, saveData, and refreshedVersion are safely editable and persisted into OOXML.',
+		[
+			'packages/sdk/src/connection-inventory.test.ts',
+			'packages/sdk/src/ops-schema.test.ts',
+			'packages/engine/src/operations.test.ts',
+			'packages/io-xlsx/src/reader/connections.test.ts',
+		],
 	),
 
 	cap(

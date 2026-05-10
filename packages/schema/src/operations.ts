@@ -517,6 +517,16 @@ export type Operation =
 			readonly noData?: boolean | null
 	  }
 	| {
+			readonly op: 'setConnectionRefresh'
+			readonly partPath?: string
+			readonly name?: string
+			readonly connectionId?: number
+			readonly sheet?: string
+			readonly refreshOnLoad?: boolean
+			readonly saveData?: boolean
+			readonly refreshedVersion?: number
+	  }
+	| {
 			readonly op: 'rewriteExternalLink'
 			readonly partPath?: string
 			readonly relId?: string

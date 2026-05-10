@@ -197,6 +197,7 @@ const FIELD_SCHEMAS: Record<
 	categoryRef: { type: 'string', description: 'A1 formula reference for category or x values' },
 	valueRef: { type: 'string', description: 'A1 formula reference for numeric values' },
 	cacheId: { type: 'integer', description: 'Pivot cache id' },
+	connectionId: { type: 'integer', description: 'Workbook connection id' },
 	partPath: { type: 'string', description: 'XLSX package part path' },
 	pivotTable: { type: 'string', description: 'Pivot table name that uses the cache' },
 	fieldIndex: { type: 'integer', description: 'Zero-based pivot field index' },
@@ -223,6 +224,7 @@ const FIELD_SCHEMAS: Record<
 	enableRefresh: { type: 'boolean', description: 'Whether refresh is enabled for the cache' },
 	invalid: { type: 'boolean', description: 'Whether the cache should be treated as stale' },
 	saveData: { type: 'boolean', description: 'Whether cache records are saved in the workbook' },
+	refreshedVersion: { type: 'integer', description: 'Excel refresh engine version metadata' },
 	from: { type: 'integer', description: 'Start row/col index' },
 	to: { type: 'integer', description: 'End row/col index' },
 	collapsed: { type: 'boolean', description: 'Whether group is collapsed' },
@@ -543,6 +545,20 @@ export function listOperations(): readonly OperationSchema[] {
 			optionalFields: ['slicerCache', 'partPath', 'selected', 'noData'],
 		},
 		{
+			op: 'setConnectionRefresh',
+			description: 'Edit workbook connection and query-table refresh metadata',
+			requiredFields: [],
+			optionalFields: [
+				'partPath',
+				'name',
+				'connectionId',
+				'sheet',
+				'refreshOnLoad',
+				'saveData',
+				'refreshedVersion',
+			],
+		},
+		{
 			op: 'rewriteExternalLink',
 			description: 'Rewrite an external workbook link target while preserving link package parts',
 			requiredFields: ['newTarget'],
@@ -713,12 +729,14 @@ function validateOperationField(
 		case 'chartIndex':
 		case 'seriesIndex':
 		case 'cacheId':
+		case 'connectionId':
 		case 'item':
 		case 'fieldIndex':
 		case 'itemIndex':
 		case 'from':
 		case 'to':
 		case 'index':
+		case 'refreshedVersion':
 			return isNonNegativeInteger(value) ? null : `${path} must be a non-negative integer`
 		case 'selectedPageItem':
 			return value === null || isNonNegativeInteger(value)
@@ -1011,6 +1029,12 @@ function operationRecoveryActions(op: string): readonly string[] {
 				'Expect pivot output to be stale until Excel or another pivot-aware engine refreshes the slicer-linked pivot tables.',
 				...common,
 			]
+		case 'setConnectionRefresh':
+			return [
+				'Use inspect --detail connections or refreshMetadata to choose partPath, name, connectionId, or sheet.',
+				'Set refreshOnLoad=true or saveData=false when external query output should be refreshed before use.',
+				...common,
+			]
 		case 'rewriteExternalLink':
 			return [
 				'Use inspect --detail external-refs to choose partPath, relId, linkRelId, or target.',
@@ -1231,6 +1255,14 @@ function operationExample(op: string): Record<string, unknown> {
 				item: 0,
 				selected: true,
 				noData: false,
+			}
+		case 'setConnectionRefresh':
+			return {
+				op,
+				partPath: 'xl/queryTables/queryTable1.xml',
+				connectionId: 1,
+				refreshOnLoad: true,
+				saveData: false,
 			}
 		case 'rewriteExternalLink':
 			return {

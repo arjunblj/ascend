@@ -29,13 +29,72 @@ describe('connection SDK inventory', () => {
 			name: 'SalesQuery',
 			connectionId: 1,
 			refreshOnLoad: true,
+			saveData: false,
 		})
+		expect(info.refreshMetadata).toMatchObject({
+			refreshOnOpenCount: 2,
+			notSavedCount: 2,
+		})
+		expect(wb.refreshMetadata()).toEqual(info.refreshMetadata)
+		expect(info.refreshMetadata.entries).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					kind: 'queryTable',
+					partPath: 'xl/queryTables/queryTable1.xml',
+					state: 'refresh-on-open',
+					saveData: false,
+					recommendedOps: [
+						expect.objectContaining({
+							op: 'setConnectionRefresh',
+							partPath: 'xl/queryTables/queryTable1.xml',
+						}),
+					],
+				}),
+			]),
+		)
 		expect(
 			info.compatibility.features.find((feature) => feature.feature === 'preservedPowerQuery'),
 		).toMatchObject({
 			tier: 'preserved',
 			locations: ['xl/customData/item1.data'],
 		})
+	})
+
+	test('setConnectionRefresh writes query-table refresh metadata back to XLSX', async () => {
+		const wb = await AscendWorkbook.open(connectionWorkbook())
+		const result = wb.apply([
+			{
+				op: 'setConnectionRefresh',
+				partPath: 'xl/queryTables/queryTable1.xml',
+				connectionId: 1,
+				refreshOnLoad: false,
+				saveData: true,
+				refreshedVersion: 9,
+			},
+		])
+		expect(result.errors).toEqual([])
+
+		const reopened = await AscendWorkbook.open(wb.toBytes())
+		expect(reopened.connectionParts()[1]).toMatchObject({
+			kind: 'queryTable',
+			partPath: 'xl/queryTables/queryTable1.xml',
+			connectionId: 1,
+			refreshOnLoad: false,
+			saveData: true,
+			refreshedVersion: 9,
+		})
+		expect(reopened.refreshMetadata().entries).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					kind: 'queryTable',
+					partPath: 'xl/queryTables/queryTable1.xml',
+					state: 'cached',
+					refreshOnLoad: false,
+					saveData: true,
+					refreshedVersion: 9,
+				}),
+			]),
+		)
 	})
 })
 
@@ -79,7 +138,7 @@ function connectionWorkbook(): Uint8Array {
   <connection id="1" name="SalesConnection" refreshOnLoad="1" saveData="0" refreshedVersion="8"/>
 </connections>`,
 		'xl/queryTables/queryTable1.xml': `<?xml version="1.0"?>
-<queryTable xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="SalesQuery" connectionId="1" refreshOnLoad="1" saveData="1"/>`,
+<queryTable xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="SalesQuery" connectionId="1" refreshOnLoad="1" removeDataOnSave="1"/>`,
 		'xl/customData/item1.data': 'mashup-bytes',
 	})
 }

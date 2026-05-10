@@ -9,6 +9,7 @@ import type { AscendError, CellValue, Result } from '@ascend/schema'
 import { ascendError, err, ok } from '@ascend/schema'
 import type { PreservationCapsule } from '../preserve.ts'
 import { parseCommentsXml } from '../reader/comments.ts'
+import { parseConnectionPartInfos } from '../reader/connections.ts'
 import { parseDrawingObjectRefs } from '../reader/drawing.ts'
 import {
 	parsePivotCacheDefinitionXml,
@@ -40,6 +41,7 @@ import { parseTable } from '../reader/table.ts'
 import { extractZip, type ZipArchive } from '../reader/zip.ts'
 import { updateChartXml } from './chart.ts'
 import { buildCommentsVml, buildCommentsXml } from './comments.ts'
+import { updateConnectionPartXml } from './connection.ts'
 import { buildContentTypesXml } from './content-types.ts'
 import { buildAppPropsXml, buildCorePropsXml } from './doc-props.ts'
 import { buildDrawingXml, type DrawingTextUpdate, updateDrawingTextXml } from './drawing.ts'
@@ -1386,6 +1388,38 @@ export function planWriteXlsx(
 					}
 					continue
 				}
+				const connectionParts = workbook.connectionParts.filter(
+					(part) => part.partPath === capsule.partPath,
+				)
+				if (connectionParts.length > 0 && isConnectionRefreshCapsule(capsule)) {
+					const sourceXml = new TextDecoder().decode(content)
+					if (!shouldUpdateConnectionPartXml(capsule, sourceXml, connectionParts)) {
+						recordUnchangedCapsule(capsule, owner, content)
+						continue
+					}
+					recordXml(
+						capsule.partPath,
+						{
+							owner,
+							origin: 'generated',
+							contentType: capsule.contentType,
+						},
+						() => updateConnectionPartXml(sourceXml, connectionParts),
+					)
+					plan.addOverride(capsule.partPath, capsule.contentType)
+					if (capsule.relationships.length > 0) {
+						const capsuleRelsPath = getRelsPath(capsule.partPath)
+						recordXml(
+							capsuleRelsPath,
+							{
+								owner,
+								origin: 'capsule',
+							},
+							() => buildRelsXml(capsule.relationships),
+						)
+					}
+					continue
+				}
 				const chart = workbook.chartParts.find((entry) => entry.partPath === capsule.partPath)
 				if (chart && isChartCapsule(capsule)) {
 					recordXml(
@@ -1883,6 +1917,7 @@ function preservedRelationshipTarget(
 type PivotTableInfo = Workbook['pivotTables'][number]
 type PivotCacheInfo = Workbook['pivotCaches'][number]
 type SlicerCacheInfo = Workbook['slicerCaches'][number]
+type ConnectionPartInfo = Workbook['connectionParts'][number]
 
 function shouldUpdatePivotTableDefinitionXml(xml: string, pivot: PivotTableInfo): boolean {
 	const parsed = parsePivotTableXml(xml, pivot.partPath, pivot.sheetName)
@@ -1951,6 +1986,18 @@ function shouldUpdateSlicerCacheDefinitionXml(xml: string, cache: SlicerCacheInf
 	)
 }
 
+function shouldUpdateConnectionPartXml(
+	capsule: PreservationCapsule,
+	xml: string,
+	parts: readonly ConnectionPartInfo[],
+): boolean {
+	const parsed = parseConnectionPartInfos(capsule, xml)
+	return (
+		stableJson(parts.map(connectionRefreshWritableState)) !==
+		stableJson(parsed.map(connectionRefreshWritableState))
+	)
+}
+
 function slicerCacheWritableState(cache: SlicerCacheInfo): unknown {
 	return {
 		items: (cache.items ?? []).map((item) => ({
@@ -1958,6 +2005,19 @@ function slicerCacheWritableState(cache: SlicerCacheInfo): unknown {
 			selected: item.selected ?? null,
 			noData: item.noData ?? null,
 		})),
+	}
+}
+
+function connectionRefreshWritableState(part: ConnectionPartInfo): unknown {
+	return {
+		kind: part.kind,
+		partPath: part.partPath,
+		name: part.name ?? null,
+		connectionId: part.connectionId ?? null,
+		sheetName: part.sheetName ?? null,
+		refreshOnLoad: part.refreshOnLoad ?? null,
+		saveData: part.saveData ?? null,
+		refreshedVersion: part.refreshedVersion ?? null,
 	}
 }
 
@@ -1981,6 +2041,15 @@ function isSlicerCacheDefinitionCapsule(capsule: PreservationCapsule): boolean {
 	return (
 		capsule.contentType.includes('slicerCache+xml') ||
 		capsule.partPath.includes('/slicerCaches/slicerCache')
+	)
+}
+
+function isConnectionRefreshCapsule(capsule: PreservationCapsule): boolean {
+	return (
+		capsule.contentType.includes('connections+xml') ||
+		capsule.contentType.includes('queryTable+xml') ||
+		capsule.partPath.endsWith('/connections.xml') ||
+		capsule.partPath.includes('/queryTables/')
 	)
 }
 

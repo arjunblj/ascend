@@ -86,6 +86,10 @@ function readConnectionAttrs(
 	if (refreshOnLoad !== undefined) parsed.refreshOnLoad = refreshOnLoad
 	const saveData = boolAttr(node, 'saveData')
 	if (saveData !== undefined) parsed.saveData = saveData
+	const removeDataOnSave = boolAttr(node, 'removeDataOnSave')
+	if (options.queryTable && saveData === undefined && removeDataOnSave !== undefined) {
+		parsed.saveData = !removeDataOnSave
+	}
 	const refreshedVersion = numAttr(node, 'refreshedVersion')
 	if (refreshedVersion !== undefined) parsed.refreshedVersion = refreshedVersion
 	return parsed

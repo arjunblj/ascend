@@ -2,7 +2,8 @@ import type { RangeRef, Sheet, SheetDataValidation, Workbook } from '@ascend/cor
 import { parseA1, parseRange, toA1 } from '@ascend/core'
 import { cachedParseFormula } from '@ascend/formulas'
 import type { Operation, PasteMode, Result } from '@ascend/schema'
-import { EMPTY, err, ok } from '@ascend/schema'
+import { ascendError, EMPTY, err, ok } from '@ascend/schema'
+import { resolveCellFormulaText } from '../analysis.ts'
 import {
 	rewriteDefinedNameFormulasForShift,
 	rewriteWorkbookFormulasForShift,
@@ -34,17 +35,8 @@ function applyAxisShift(
 	const result = getSheet(workbook, sheetName)
 	if (!result.ok) return result
 	const sheet = result.value
-	for (const candidate of workbook.sheets) {
-		const legacyArrayImpact = createLegacyArrayFormulaIndex(candidate).first()
-		if (legacyArrayImpact) {
-			return err(
-				legacyArrayFormulaEditError(
-					`${candidate.name}!${legacyArrayImpact.targetRef}`,
-					`${candidate.name}!${legacyArrayImpact.ref}`,
-				),
-			)
-		}
-	}
+	const formulaBindingBlocker = findWorkbookFormulaBinding(workbook)
+	if (formulaBindingBlocker) return err(formulaBindingStructuralEditError(formulaBindingBlocker))
 
 	if (axis === 'row') {
 		delta > 0 ? sheet.cells.insertRows(at, count) : sheet.cells.deleteRows(at, count)
@@ -96,6 +88,7 @@ export function handleTransferRange(
 	const sheetResult = getSheet(workbook, op.sheet)
 	if (!sheetResult.ok) return sheetResult
 	const sheet = sheetResult.value
+	const sheetIndex = workbook.sheets.indexOf(sheet)
 	const sourceResult = safeParseRange(op.source)
 	if (!sourceResult.ok) return sourceResult
 	const targetStart = parseA1(op.target)
@@ -135,7 +128,10 @@ export function handleTransferRange(
 				continue
 			}
 
-			const formula = translateCellFormula(entry.cell?.formula ?? null, rowDelta, colDelta)
+			const sourceFormula = entry.cell
+				? resolveCellFormulaText(workbook, sheetIndex, entry.row, entry.col, entry.cell)
+				: null
+			const formula = translateCellFormula(sourceFormula, rowDelta, colDelta)
 			const targetValue = existingTarget?.value ?? EMPTY
 			const targetFormula = existingTarget?.formula ?? null
 			const targetStyle = existingTarget?.styleId ?? DEFAULT_SID
@@ -210,6 +206,36 @@ function translateCellFormula(
 	if (!formula) return formula
 	const parsed = cachedParseFormula(formula)
 	return parsed.ok ? translateFormula(parsed.value, rowDelta, colDelta) : formula
+}
+
+function findWorkbookFormulaBinding(
+	workbook: Workbook,
+): { readonly kind: string; readonly sheetName: string; readonly ref: string } | null {
+	for (const sheet of workbook.sheets) {
+		if (sheet.cells.formulaInfoCellCount() === 0) continue
+		for (const [row, col, cell] of sheet.cells.iterate()) {
+			const binding = cell.formulaInfo
+			if (!binding) continue
+			return { kind: binding.kind, sheetName: sheet.name, ref: toA1({ row, col }) }
+		}
+	}
+	return null
+}
+
+function formulaBindingStructuralEditError(blocker: {
+	readonly kind: string
+	readonly sheetName: string
+	readonly ref: string
+}): ReturnType<typeof ascendError> {
+	return ascendError(
+		'VALIDATION_ERROR',
+		`Cannot structurally edit rows or columns because ${blocker.sheetName}!${blocker.ref} contains imported ${blocker.kind} formula metadata`,
+		{
+			refs: [`${blocker.sheetName}!${blocker.ref}`],
+			suggestedFix:
+				'Materialize or rewrite the imported formula binding before applying row or column structural edits.',
+		},
+	)
 }
 
 function copyTransferMetadata(

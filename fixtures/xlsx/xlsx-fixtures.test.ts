@@ -469,6 +469,56 @@ if (poiFixtures.length > 0) {
 			expect(masterCell?.[2]?.formula?.length ?? 0).toBeGreaterThan(0)
 		})
 
+		it('copies real POI shared formula members as effective formulas', () => {
+			const result = readXlsx(loadFixture('shared_formulas.xlsx'))
+			expectOk(result)
+			const sheet = result.value.workbook.sheets[0]
+			expect(sheet).toBeDefined()
+			if (!sheet) return
+			const member = [...sheet.cells.iterate()].find(
+				([, , cell]) => cell.formulaInfo?.kind === 'shared' && !cell.formulaInfo?.isMaster,
+			)
+			expect(member).toBeDefined()
+			if (!member) return
+			const [row, col, cell] = member
+			const sourceRef = toA1({ row, col })
+			const targetRef = toA1({ row, col: col + 10 })
+
+			const edit = applyOperation(result.value.workbook, {
+				op: 'copyRange',
+				sheet: sheet.name,
+				source: sourceRef,
+				target: targetRef,
+			})
+			expectOk(edit)
+			const target = sheet.cells.get(row, col + 10)
+			expect(cell.formula).toBeNull()
+			expect(target?.formula).toBeTruthy()
+			expect(target?.formulaInfo).toBeUndefined()
+		})
+
+		it('rejects structural edits that would drop real POI shared formula bindings', () => {
+			const result = readXlsx(loadFixture('shared_formulas.xlsx'))
+			expectOk(result)
+			const sheet = result.value.workbook.sheets[0]
+			expect(sheet).toBeDefined()
+			if (!sheet) return
+			const member = [...sheet.cells.iterate()].find(
+				([, , cell]) => cell.formulaInfo?.kind === 'shared' && !cell.formulaInfo?.isMaster,
+			)
+			expect(member).toBeDefined()
+			if (!member) return
+
+			const edit = applyOperation(result.value.workbook, {
+				op: 'insertRows',
+				sheet: sheet.name,
+				at: 100,
+				count: 1,
+			})
+			expect(edit.ok).toBe(false)
+			expect(member[2].formulaInfo).toEqual(sheet.cells.get(member[0], member[1])?.formulaInfo)
+		})
+
 		it('reads TestShiftRowSharedFormula.xlsx with shared formulas and correct values', () => {
 			const result = readXlsx(loadFixture('TestShiftRowSharedFormula.xlsx'))
 			expectOk(result)

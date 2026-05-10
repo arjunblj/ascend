@@ -1390,6 +1390,34 @@ describe('applyOperation', () => {
 		expect(other.cells.get(9, 0)?.value).toEqual(numberValue(10))
 	})
 
+	test('row and column shifts reject imported shared formula bindings', () => {
+		const wb = createWorkbook()
+		const source = wb.addSheet('Shared')
+		const other = wb.addSheet('Other')
+		source.cells.set(0, 0, {
+			value: numberValue(20),
+			formula: 'B1*2',
+			styleId: sid,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: true, masterRef: 'A1' },
+		})
+		source.cells.set(1, 0, {
+			value: numberValue(40),
+			formula: null,
+			styleId: sid,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'A1' },
+		})
+		other.cells.set(4, 4, cell(numberValue(5)))
+
+		expectErr(applyOperation(wb, { op: 'insertRows', sheet: 'Other', at: 10, count: 1 }))
+		expect(source.cells.get(1, 0)?.formulaInfo).toEqual({
+			kind: 'shared',
+			sharedIndex: '0',
+			isMaster: false,
+			masterRef: 'A1',
+		})
+		expect(other.cells.get(4, 4)?.value).toEqual(numberValue(5))
+	})
+
 	test('insertRows within formula range expands range end', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
@@ -1444,6 +1472,36 @@ describe('applyOperation', () => {
 		})
 
 		expect(s.cells.get(0, 3)?.formula).toBe('C1+C2')
+	})
+
+	test('copyRange materializes effective formulas from shared formula members', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, {
+			value: numberValue(20),
+			formula: 'B1*2',
+			styleId: sid,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: true, masterRef: 'A1' },
+		})
+		s.cells.set(1, 0, {
+			value: numberValue(40),
+			formula: null,
+			styleId: sid,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'A1' },
+		})
+		s.cells.set(0, 1, cell(numberValue(10)))
+		s.cells.set(1, 1, cell(numberValue(20)))
+
+		const result = applyOperation(wb, {
+			op: 'copyRange',
+			sheet: 'Sheet1',
+			source: 'A2',
+			target: 'C2',
+		})
+		expectOk(result)
+
+		expect(s.cells.get(1, 2)?.formula).toBe('D2*2')
+		expect(s.cells.get(1, 2)?.formulaInfo).toBeUndefined()
 	})
 
 	test('moveRange preserves absolute references', () => {

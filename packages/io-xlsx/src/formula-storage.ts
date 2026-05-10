@@ -154,7 +154,10 @@ export function toStoredFormulaText(formula: string): string {
 	if (!needsStoredFormulaDenormalization(formula)) return formula
 	const parsed = parseFormula(formula)
 	if (!parsed.ok) return formula
-	return printFormula(rewriteToStoredAst(parsed.value))
+	const rewritten = rewriteToStoredAst(parsed.value)
+	const originalPrinted = printFormula(parsed.value)
+	const rewrittenPrinted = printFormula(rewritten)
+	return rewrittenPrinted === originalPrinted ? formula : rewrittenPrinted
 }
 
 function rewriteFromStoredAst(node: FormulaNode): FormulaNode {

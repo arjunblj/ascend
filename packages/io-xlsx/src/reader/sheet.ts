@@ -2222,11 +2222,24 @@ function parseDrawingRefs(ws: XmlNode, sheet: Sheet): void {
 	}
 }
 
-const EXTLST_RE = /<extLst[\s>][\s\S]*?<\/extLst>/
+const WORKSHEET_EXTLST_RE =
+	/<(?:(?<prefix>[A-Za-z_][\w.-]*):)?extLst\b(?<attrs>[^>]*)>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?extLst>/g
+const SPREADSHEETML_NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
 
 function extractExtLst(xml: string, sheet: Sheet): void {
-	const m = EXTLST_RE.exec(xml)
-	if (m) sheet.preservedExtLst = m[0]
+	let preserved: string | undefined
+	for (const match of xml.matchAll(WORKSHEET_EXTLST_RE)) {
+		preserved = withExtLstNamespace(match[0], match.groups?.prefix, match.groups?.attrs ?? '')
+	}
+	if (preserved) sheet.preservedExtLst = preserved
+}
+
+function withExtLstNamespace(xml: string, prefix: string | undefined, attrs: string): string {
+	if (!prefix || new RegExp(`\\sxmlns:${prefix}=`).test(attrs)) return xml
+	return xml.replace(
+		new RegExp(`^<${prefix}:extLst\\b`),
+		`<${prefix}:extLst xmlns:${prefix}="${SPREADSHEETML_NS}"`,
+	)
 }
 
 function parseSheetPr(ws: XmlNode, sheet: Sheet): void {

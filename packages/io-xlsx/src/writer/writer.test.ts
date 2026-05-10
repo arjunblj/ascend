@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import type { StyleId } from '@ascend/core'
 import { createTableId, Workbook } from '@ascend/core'
-import { booleanValue, numberValue, stringValue } from '@ascend/schema'
+import { booleanValue, errorValue, numberValue, stringValue } from '@ascend/schema'
 import { unzipSync } from 'fflate'
 import { applyOperations } from '../../../engine/src/index.ts'
 import { fingerprintXlsx } from '../../test/fidelity-harness.ts'
@@ -296,6 +296,28 @@ describe('writeXlsx', () => {
 		expect(reopened.value.workbook.sheets[0]?.cells.get(0, 0)?.formula).toBe('SEQUENCE(3)')
 		expect(reopened.value.workbook.sheets[0]?.cells.get(0, 1)?.formula).toBe('SUM(A1#)')
 		expect(reopened.value.workbook.sheets[0]?.cells.get(0, 2)?.formula).toBe('@A1')
+	})
+
+	it('preserves formula spacing when storage rewriting is a no-op', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Formulas')
+		sheet.cells.set(0, 0, {
+			value: errorValue('#REF!'),
+			formula: 'CHOOSE(#REF!, 1)',
+			styleId: S0,
+		})
+		sheet.cells.set(0, 1, {
+			value: numberValue(1),
+			formula: 'COUNT(2, "A",  "",#REF!, #DIV/0!)',
+			styleId: S0,
+		})
+
+		const written = writeXlsx(wb)
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+		expect(sheetXml).toContain('<f>CHOOSE(#REF!, 1)</f>')
+		expect(sheetXml).toContain('<f>COUNT(2, &quot;A&quot;,  &quot;&quot;,#REF!, #DIV/0!)</f>')
 	})
 
 	it('writes all dynamic-array metadata records referenced by cells', () => {
@@ -3111,6 +3133,57 @@ ${sparklineExtLst}
 		expect(writtenSheetXml).toContain('<extLst>')
 		expect(writtenSheetXml).toContain('x14:sparklineGroups')
 		expect(writtenSheetXml).toContain('Sheet1!A1:A5')
+	})
+
+	it('preserves worksheet-level extLst instead of nested rule extensions', () => {
+		const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <x:sheetData><x:row r="1"><x:c r="A1"><x:v>1</x:v></x:c></x:row></x:sheetData>
+  <x:conditionalFormatting sqref="A1">
+    <x:cfRule type="dataBar" priority="1"><x:extLst><x:ext uri="{nested}"/></x:extLst></x:cfRule>
+  </x:conditionalFormatting>
+  <x:extLst><x:ext xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" uri="{worksheet}"><x14:conditionalFormattings/></x:ext></x:extLst>
+</x:worksheet>`
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+			'xl/worksheets/sheet1.xml': sheetXml,
+		})
+
+		const read = readXlsx(bytes)
+		expectOk(read)
+		const preserved = read.value.workbook.sheets[0]?.preservedExtLst
+		expect(preserved).toContain('uri="{worksheet}"')
+		expect(preserved).toContain('x14:conditionalFormattings')
+		expect(preserved).not.toContain('uri="{nested}"')
+
+		const written = writeXlsx(read.value.workbook, read.value.capsules, {
+			dirtySheetNames: ['Sheet1'],
+		})
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		const writtenSheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'])
+		expect(writtenSheetXml).toContain('<extLst>')
+		expect(writtenSheetXml).toContain('x14:conditionalFormattings')
+		expect(writtenSheetXml).not.toContain('uri="{nested}"')
 	})
 
 	it('emits dimension element for non-empty sheets', () => {

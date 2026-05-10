@@ -85,6 +85,78 @@ describe('writeXlsx', () => {
 		})
 	})
 
+	it('writes edited tabular slicer cache item state back into preserved package XML', () => {
+		const slicerCacheXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<slicerCacheDefinition xmlns="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" name="Slicer_State" sourceName="State">
+  <pivotTables><pivotTable tabId="1" name="PivotTable1"/></pivotTables>
+  <data><tabular pivotCacheId="5"><items count="2"><i x="1"/><i x="0" s="1"/></items></tabular></data>
+</slicerCacheDefinition>`
+		const wb = new Workbook()
+		wb.addSheet('Sheet1')
+		wb.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'Sheet1',
+			name: 'PivotTable1',
+			cacheId: 5,
+			fields: [],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [],
+			dataFields: [],
+		})
+		wb.slicerCaches.push({
+			partPath: 'xl/slicerCaches/slicerCache1.xml',
+			name: 'Slicer_State',
+			sourceName: 'State',
+			pivotCacheId: 5,
+			pivotTableNames: ['PivotTable1'],
+			items: [{ index: 1 }, { index: 0, selected: true }],
+		})
+		const applied = applyOperations(wb, [
+			{
+				op: 'setSlicerCacheItem',
+				slicerCache: 'Slicer_State',
+				item: 1,
+				selected: true,
+				noData: true,
+			},
+			{
+				op: 'setSlicerCacheItem',
+				slicerCache: 'Slicer_State',
+				item: 0,
+				selected: null,
+			},
+		])
+		expectOk(applied)
+		const capsules: PreservationCapsule[] = [
+			{
+				partPath: 'xl/slicerCaches/slicerCache1.xml',
+				contentType: 'application/vnd.ms-excel.slicerCache+xml',
+				relationships: [],
+				content: new TextEncoder().encode(slicerCacheXml),
+				anchor: { kind: 'workbook' },
+				relType: 'http://schemas.microsoft.com/office/2007/relationships/slicerCache',
+			},
+		]
+
+		const written = writeXlsx(wb, capsules)
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		const xml = new TextDecoder().decode(
+			zip['xl/slicerCaches/slicerCache1.xml'] ?? new Uint8Array(),
+		)
+
+		expect(xml).toContain('<i x="1" s="1" nd="1"/>')
+		expect(xml).toContain('<i x="0"/>')
+		expect(xml).toContain('<items count="2">')
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.slicerCaches[0]?.items).toEqual([
+			{ index: 1, selected: true, noData: true },
+			{ index: 0 },
+		])
+	})
+
 	it('preserves formula text on round-trip', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Formulas')

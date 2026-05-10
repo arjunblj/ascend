@@ -488,6 +488,14 @@ export type Operation =
 			readonly saveData?: boolean
 	  }
 	| {
+			readonly op: 'setSlicerCacheItem'
+			readonly slicerCache?: string
+			readonly partPath?: string
+			readonly item: number
+			readonly selected?: boolean | null
+			readonly noData?: boolean | null
+	  }
+	| {
 			readonly op: 'rewriteExternalLink'
 			readonly partPath?: string
 			readonly relId?: string

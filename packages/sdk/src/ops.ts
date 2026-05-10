@@ -190,6 +190,10 @@ const FIELD_SCHEMAS: Record<
 	cacheId: { type: 'integer', description: 'Pivot cache id' },
 	partPath: { type: 'string', description: 'XLSX package part path' },
 	pivotTable: { type: 'string', description: 'Pivot table name that uses the cache' },
+	slicerCache: { type: 'string', description: 'Slicer cache name or package part path' },
+	item: { type: 'integer', description: 'Zero-based slicer cache item x index' },
+	selected: { type: 'boolean', description: 'Slicer item selected state; use null to clear' },
+	noData: { type: 'boolean', description: 'Slicer item no-data state; use null to clear' },
 	sourceSheet: { type: 'string', description: 'Worksheet name for a pivot cache source' },
 	sourceRef: { type: 'string', description: 'A1 range for a pivot cache source' },
 	refreshOnLoad: { type: 'boolean', description: 'Whether Excel should refresh the cache on open' },
@@ -489,6 +493,13 @@ export function listOperations(): readonly OperationSchema[] {
 			],
 		},
 		{
+			op: 'setSlicerCacheItem',
+			description:
+				'Edit tabular slicer cache item selected/no-data flags without recalculating output',
+			requiredFields: ['item'],
+			optionalFields: ['slicerCache', 'partPath', 'selected', 'noData'],
+		},
+		{
 			op: 'rewriteExternalLink',
 			description: 'Rewrite an external workbook link target while preserving link package parts',
 			requiredFields: ['newTarget'],
@@ -633,6 +644,7 @@ function validateOperationField(
 		case 'pivotTable':
 		case 'sourceSheet':
 		case 'sourceRef':
+		case 'slicerCache':
 			return typeof value === 'string' ? null : `${path} must be a string`
 		case 'what':
 			return value === 'values' || value === 'formulas' || value === 'styles' || value === 'all'
@@ -653,6 +665,7 @@ function validateOperationField(
 		case 'chartIndex':
 		case 'seriesIndex':
 		case 'cacheId':
+		case 'item':
 		case 'from':
 		case 'to':
 		case 'index':
@@ -675,6 +688,11 @@ function validateOperationField(
 		case 'invalid':
 		case 'saveData':
 			return typeof value === 'boolean' ? null : `${path} must be a boolean`
+		case 'selected':
+		case 'noData':
+			return value === null || typeof value === 'boolean'
+				? null
+				: `${path} must be a boolean or null`
 		case 'column':
 			return typeof value === 'string' || isNonNegativeInteger(value)
 				? null
@@ -910,6 +928,12 @@ function operationRecoveryActions(op: string): readonly string[] {
 				'Set invalid=true and refreshOnLoad=true when changing source ranges without recalculating pivot output.',
 				...common,
 			]
+		case 'setSlicerCacheItem':
+			return [
+				'Use inspect --detail slicers to choose slicerCache or partPath and the zero-based item index.',
+				'Expect pivot output to be stale until Excel or another pivot-aware engine refreshes the slicer-linked pivot tables.',
+				...common,
+			]
 		case 'rewriteExternalLink':
 			return [
 				'Use inspect --detail external-refs to choose partPath, relId, linkRelId, or target.',
@@ -1105,6 +1129,14 @@ function operationExample(op: string): Record<string, unknown> {
 				sourceRef: 'A1:E200',
 				refreshOnLoad: true,
 				invalid: true,
+			}
+		case 'setSlicerCacheItem':
+			return {
+				op,
+				slicerCache: 'Slicer_State',
+				item: 0,
+				selected: true,
+				noData: false,
 			}
 		case 'rewriteExternalLink':
 			return {

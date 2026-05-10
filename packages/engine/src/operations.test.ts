@@ -1532,6 +1532,73 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('setSlicerCacheItem updates tabular item state with refresh warning', () => {
+		const wb = setup()
+		wb.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'Sheet1',
+			name: 'PivotTable1',
+			cacheId: 34,
+			fields: [],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [],
+			dataFields: [],
+		})
+		wb.slicerCaches.push({
+			partPath: 'xl/slicerCaches/slicerCache1.xml',
+			name: 'Slicer_State',
+			sourceName: 'State',
+			pivotCacheId: 34,
+			pivotTableNames: ['PivotTable1'],
+			items: [{ index: 0, selected: true }, { index: 1 }],
+		})
+
+		const result = applyOperation(wb, {
+			op: 'setSlicerCacheItem',
+			slicerCache: 'Slicer_State',
+			item: 0,
+			selected: null,
+			noData: true,
+		})
+		expectOk(result)
+
+		expect(result.value.sheetsModified).toEqual(['Sheet1'])
+		expect(result.value.recalcRequired).toBe(false)
+		expect(result.value.warnings?.[0]?.message).toContain('Slicer cache item state changed')
+		expect(result.value.warnings?.[0]?.details).toMatchObject({
+			slicerCache: 'Slicer_State',
+			item: 0,
+			pivotTables: ['PivotTable1'],
+		})
+		expect(wb.slicerCaches[0]?.items).toEqual([{ index: 0, noData: true }, { index: 1 }])
+	})
+
+	test('setSlicerCacheItem validates selectors and editable flags', () => {
+		const wb = setup()
+		wb.slicerCaches.push({
+			partPath: 'xl/slicerCaches/slicerCache1.xml',
+			name: 'Slicer_State',
+			pivotTableNames: [],
+		})
+
+		const missingSelector = applyOperation(wb, {
+			op: 'setSlicerCacheItem',
+			item: 0,
+			selected: true,
+		})
+		expectErr(missingSelector)
+		expect(missingSelector.error.message).toContain('requires slicerCache or partPath')
+
+		const missingUpdate = applyOperation(wb, {
+			op: 'setSlicerCacheItem',
+			slicerCache: 'Slicer_State',
+			item: 0,
+		})
+		expectErr(missingUpdate)
+		expect(missingUpdate.error.message).toContain('requires selected or noData')
+	})
+
 	test('rewriteExternalLink updates selected external workbook target metadata', () => {
 		const wb = setup()
 		wb.externalReferences.push('xl/externalLinks/externalLink1.xml')

@@ -108,6 +108,24 @@ describe('operation schema agent DX', () => {
 		expect(schema?.recoveryActions.join('\n')).toContain('invalid=true')
 	})
 
+	test('setSlicerCacheItem is exposed with slicer refresh guidance', () => {
+		const schema = getOperationsSchema().find((entry) => entry.op === 'setSlicerCacheItem')
+		expect(schema?.schema.required).toEqual(['op', 'item'])
+		expect(schema?.schema.properties.slicerCache?.description).toContain('Slicer cache')
+		expect(schema?.examples[0]).toMatchObject({
+			op: 'setSlicerCacheItem',
+			slicerCache: 'Slicer_State',
+			item: 0,
+			selected: true,
+		})
+		expect(schema?.recoveryActions.join('\n')).toContain('pivot output')
+
+		const parsed = parseOperations([
+			{ op: 'setSlicerCacheItem', slicerCache: 'Slicer_State', item: 0, selected: null },
+		])
+		expect(parsed.ok).toBe(true)
+	})
+
 	test('rewriteExternalLink is exposed with external reference selector guidance', () => {
 		const schema = getOperationsSchema().find((entry) => entry.op === 'rewriteExternalLink')
 		expect(schema?.schema.required).toEqual(['op', 'newTarget'])

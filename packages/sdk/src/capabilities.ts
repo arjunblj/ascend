@@ -545,10 +545,15 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'analytics.slicers',
 		'analytics',
 		'Slicers',
-		'inspectable',
+		'editable',
 		'P0',
-		'Add safe slicer filter-state edit operations with pivot refresh impact warnings.',
-		'Slicer UI parts, cache links, pivot table links, and tabular selected/no-data item states are inspectable while package bytes are preserved.',
+		'Broaden slicer filter editing beyond tabular item flags and add pivot output refresh workflows.',
+		'Tabular slicer selected/no-data item states are editable with package-preserving slicer cache XML updates and pivot refresh impact warnings; richer slicer workflows still depend on external pivot refresh.',
+		[
+			'packages/engine/src/operations.test.ts',
+			'packages/io-xlsx/src/writer/writer.test.ts',
+			'packages/sdk/src/ops-schema.test.ts',
+		],
 	),
 	cap(
 		'analytics.timelines',

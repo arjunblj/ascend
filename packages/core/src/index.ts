@@ -22,6 +22,7 @@ export type {
 	PivotFieldReference,
 	PivotTableInfo,
 	SlicerCacheInfo,
+	SlicerCacheItemInfo,
 	SlicerInfo,
 	TimelineCacheInfo,
 	TimelineInfo,

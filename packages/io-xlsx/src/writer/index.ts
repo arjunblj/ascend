@@ -42,6 +42,7 @@ import type { RelEntry } from './relationships.ts'
 import { buildRelsXml } from './relationships.ts'
 import { IncrementalSharedStringTable, scanWorkbookWriteFactsFast } from './shared-strings.ts'
 import { buildSheetXml, buildSheetXmlStreaming } from './sheet.ts'
+import { updateSlicerCacheDefinitionXml } from './slicer-cache.ts'
 import { buildPreservedStylesXml, buildStylesXml } from './styles.ts'
 import { buildTableXml } from './table.ts'
 import { buildThemeXml } from './theme.ts'
@@ -1233,6 +1234,33 @@ export function planWriteXlsx(
 					}
 					continue
 				}
+				const slicerCache = workbook.slicerCaches.find(
+					(cache) => cache.partPath === capsule.partPath,
+				)
+				if (slicerCache && isSlicerCacheDefinitionCapsule(capsule)) {
+					recordXml(
+						capsule.partPath,
+						{
+							owner,
+							origin: 'generated',
+							contentType: capsule.contentType,
+						},
+						() => updateSlicerCacheDefinitionXml(new TextDecoder().decode(content), slicerCache),
+					)
+					plan.addOverride(capsule.partPath, capsule.contentType)
+					if (capsule.relationships.length > 0) {
+						const capsuleRelsPath = getRelsPath(capsule.partPath)
+						recordXml(
+							capsuleRelsPath,
+							{
+								owner,
+								origin: 'capsule',
+							},
+							() => buildRelsXml(capsule.relationships),
+						)
+					}
+					continue
+				}
 				const chart = workbook.chartParts.find((entry) => entry.partPath === capsule.partPath)
 				if (chart && isChartCapsule(capsule)) {
 					recordXml(
@@ -1688,6 +1716,13 @@ function isPivotCacheDefinitionCapsule(capsule: PreservationCapsule): boolean {
 		capsule.relType === REL_PIVOT_CACHE_DEFINITION ||
 		capsule.contentType.includes('pivotCacheDefinition+xml') ||
 		capsule.partPath.includes('/pivotCache/pivotCacheDefinition')
+	)
+}
+
+function isSlicerCacheDefinitionCapsule(capsule: PreservationCapsule): boolean {
+	return (
+		capsule.contentType.includes('slicerCache+xml') ||
+		capsule.partPath.includes('/slicerCaches/slicerCache')
 	)
 }
 

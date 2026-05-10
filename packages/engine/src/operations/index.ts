@@ -17,6 +17,7 @@ import {
 } from './helpers.ts'
 import * as pivotOps from './pivot-ops.ts'
 import * as sheetOps from './sheet-ops.ts'
+import * as slicerOps from './slicer-ops.ts'
 import * as structuralOps from './structural-ops.ts'
 import * as tableOps from './table-ops.ts'
 import * as visualOps from './visual-ops.ts'
@@ -96,6 +97,7 @@ const handlers: Record<string, OperationHandler> = {
 	replaceImage: visualOps.handleReplaceImage as OperationHandler,
 	setChartSeriesSource: visualOps.handleSetChartSeriesSource as OperationHandler,
 	setPivotCache: pivotOps.handleSetPivotCache as OperationHandler,
+	setSlicerCacheItem: slicerOps.handleSetSlicerCacheItem as OperationHandler,
 	rewriteExternalLink: workbookOps.handleRewriteExternalLink as OperationHandler,
 	insertImage: visualOps.handleInsertImage as OperationHandler,
 	deleteImage: visualOps.handleDeleteImage as OperationHandler,
@@ -262,7 +264,11 @@ function restoreWorkbookFromSnapshot(workbook: Workbook, snapshot: Workbook): vo
 	)
 	workbook.slicerCaches.splice(0, workbook.slicerCaches.length)
 	workbook.slicerCaches.push(
-		...snapshot.slicerCaches.map((e) => ({ ...e, pivotTableNames: [...e.pivotTableNames] })),
+		...snapshot.slicerCaches.map((e) => ({
+			...e,
+			pivotTableNames: [...e.pivotTableNames],
+			...(e.items ? { items: e.items.map((item) => ({ ...item })) } : {}),
+		})),
 	)
 	workbook.slicers.splice(0, workbook.slicers.length)
 	workbook.slicers.push(...snapshot.slicers.map((e) => ({ ...e })))

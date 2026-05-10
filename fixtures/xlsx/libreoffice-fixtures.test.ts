@@ -29,12 +29,14 @@ describe('LibreOffice XLSX fixture corpus', () => {
 	test('manifest has pinned provenance for the vendored Calc QA fixture subset', async () => {
 		expect(existsSync(new URL('./libreoffice/LICENSE', import.meta.url))).toBe(true)
 		const entries = normalizeManifest(await loadManifest())
-		expect(entries.length).toBe(22)
+		expect(entries.length).toBe(36)
 		expect(validateManifestProvenance(entries)).toEqual([])
 		expect(selectManifestEntries(entries, { tags: ['libreoffice'] })).toHaveLength(entries.length)
-		expect(selectManifestEntries(entries, { tags: ['formula-fidelity'] })).toHaveLength(8)
-		expect(selectManifestEntries(entries, { tags: ['pivot-table'] })).toHaveLength(2)
-		expect(selectManifestEntries(entries, { tags: ['table'] })).toHaveLength(5)
+		expect(selectManifestEntries(entries, { tags: ['formula-fidelity'] })).toHaveLength(15)
+		expect(selectManifestEntries(entries, { tags: ['pivot-table'] })).toHaveLength(5)
+		expect(selectManifestEntries(entries, { tags: ['table'] })).toHaveLength(6)
+		expect(selectManifestEntries(entries, { tags: ['conditional-formatting'] })).toHaveLength(4)
+		expect(selectManifestEntries(entries, { tags: ['date'] })).toHaveLength(2)
 		expect(
 			selectManifestEntries(entries, { tags: ['active-content'] }).map((entry) => entry.file),
 		).toEqual(['activex_checkbox.xlsx'])
@@ -79,6 +81,15 @@ describe('LibreOffice XLSX fixture corpus', () => {
 			entries.find((entry) => entry.file === 'universal-content-strict.xlsx')?.features
 				.strict_ooxml,
 		).toBe(true)
+		expect(
+			entries.find((entry) => entry.file === 'colorscale.xlsx')?.features.conditional_formatting,
+		).toBe(true)
+		expect(
+			entries.find((entry) => entry.file === 'functions-excel-2010.xlsx')?.counts.formulas,
+		).toBe(517)
+		expect(
+			entries.find((entry) => entry.file === 'tdf167689_tableType.xlsx')?.features.tables,
+		).toBe(true)
 	})
 
 	test('inventories real LibreOffice textbox drawing text and relationship ids', () => {
@@ -101,6 +112,19 @@ describe('LibreOffice XLSX fixture corpus', () => {
 		})
 	})
 
+	test('preserves LibreOffice pivot caches that intentionally omit cache records', () => {
+		const initial = readXlsx(
+			loadFixture(
+				'PivotTable_CachedDefinitionAndDataNotInSync_SheetColumnsRemoved_WithoutCacheData.xlsx',
+			),
+		)
+		expectOk(initial)
+
+		expect(initial.value.workbook.pivotCaches).toHaveLength(1)
+		expect(initial.value.workbook.pivotCaches[0]?.recordsPartPath).toBeUndefined()
+		expect(initial.value.workbook.pivotTables).toHaveLength(1)
+	})
+
 	test('cached formulas in the LibreOffice subset recalculate without mismatches', async () => {
 		const payload = await runFormulaCorpusCorrectness({
 			corpusRoot: libreOfficeDir,
@@ -115,19 +139,19 @@ describe('LibreOffice XLSX fixture corpus', () => {
 			maxUnacceptedMismatches: 0,
 			maxSemanticMismatches: 0,
 			maxErrors: 0,
-			minComparedFormulas: 107,
-			minSemanticPerfectWorkbooks: 8,
+			minComparedFormulas: 286,
+			minSemanticPerfectWorkbooks: 15,
 		})
 		expect(payload.summary).toMatchObject({
-			workbookCount: 8,
-			formulaCount: 107,
-			comparedCount: 107,
-			mismatchCount: 0,
-			acceptedMismatchCount: 0,
+			workbookCount: 15,
+			formulaCount: 286,
+			comparedCount: 286,
+			mismatchCount: 22,
+			acceptedMismatchCount: 22,
 			unacceptedMismatchCount: 0,
 			errorCount: 0,
-			perfectWorkbookCount: 8,
-			semanticPerfectWorkbookCount: 8,
+			perfectWorkbookCount: 14,
+			semanticPerfectWorkbookCount: 15,
 		})
 	})
 })

@@ -33,6 +33,11 @@ const FIXTURES: readonly LibreOfficeFixture[] = [
 			'sc/qa/unit/data/xlsx/PivotTable_CachedDefinitionAndDataNotInSync_SheetColumnsRemoved_WithCacheData.xlsx',
 	},
 	{
+		file: 'PivotTable_CachedDefinitionAndDataNotInSync_SheetColumnsRemoved_WithoutCacheData.xlsx',
+		sourcePath:
+			'sc/qa/unit/data/xlsx/PivotTable_CachedDefinitionAndDataNotInSync_SheetColumnsRemoved_WithoutCacheData.xlsx',
+	},
+	{
 		file: 'ProtecteSheet1234Pass.xlsx',
 		sourcePath: 'sc/qa/unit/data/xlsx/ProtecteSheet1234Pass.xlsx',
 	},
@@ -46,6 +51,40 @@ const FIXTURES: readonly LibreOfficeFixture[] = [
 	{ file: 'activex_checkbox.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/activex_checkbox.xlsx' },
 	{ file: 'autofilter-colors.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/autofilter-colors.xlsx' },
 	{ file: 'autofilter.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/autofilter.xlsx' },
+	{ file: 'colorscale.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/colorscale.xlsx' },
+	{ file: 'complex_icon_set.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/complex_icon_set.xlsx' },
+	{ file: 'condFormat_cellis.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/condFormat_cellis.xlsx' },
+	{ file: 'databar.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/databar.xlsx' },
+	{
+		file: 'functions-excel-2010.xlsx',
+		sourcePath: 'sc/qa/unit/data/xlsx/functions-excel-2010.xlsx',
+	},
+	{
+		file: 'matrix-multiplication.xlsx',
+		sourcePath: 'sc/qa/unit/data/xlsx/matrix-multiplication.xlsx',
+	},
+	{
+		file: 'pivot_table_first_header_row.xlsx',
+		sourcePath: 'sc/qa/unit/data/xlsx/pivot_table_first_header_row.xlsx',
+	},
+	{
+		file: 'pivottable_date_field_filter.xlsx',
+		sourcePath: 'sc/qa/unit/data/xlsx/pivottable_date_field_filter.xlsx',
+	},
+	{ file: 'sortconditionref2.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/sortconditionref2.xlsx' },
+	{
+		file: 'tdf143068_top10filter.xlsx',
+		sourcePath: 'sc/qa/unit/data/xlsx/tdf143068_top10filter.xlsx',
+	},
+	{
+		file: 'tdf165180_date1904.xlsx',
+		sourcePath: 'sc/qa/unit/data/xlsx/tdf165180_date1904.xlsx',
+	},
+	{
+		file: 'tdf167689_tableType.xlsx',
+		sourcePath: 'sc/qa/unit/data/xlsx/tdf167689_tableType.xlsx',
+	},
+	{ file: 'tdf170201.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/tdf170201.xlsx' },
 	{
 		file: 'textLengthDataValidity.xlsx',
 		sourcePath: 'sc/qa/unit/data/xlsx/textLengthDataValidity.xlsx',

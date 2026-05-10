@@ -1038,7 +1038,7 @@ describe('evaluateAssertions', () => {
 		const entries = normalizeManifest(
 			await loadCorpusManifestEntries(resolve(import.meta.dir, '../xlsx/libreoffice/manifest.ts')),
 		)
-		expect(entries.length).toBe(22)
+		expect(entries.length).toBe(36)
 		expect(validateManifestProvenance(entries)).toEqual([])
 		const selected = selectCorpusTargets(
 			entries,

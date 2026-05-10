@@ -8,6 +8,12 @@ function collectFrom(arg: EvalArg | undefined): number[] | CellValue {
 	return collectNumbers([arg])
 }
 
+function optionalNumArg(args: EvalArg[], index: number, defaultValue: number): number | CellValue {
+	const arg = args[index]
+	if (!arg || topLeftScalar(arg.value).kind === 'empty') return defaultValue
+	return numArg(arg)
+}
+
 function numericRangeCacheKey(arg: EvalArg | undefined): string | null {
 	const ref = arg?.ref
 	if (!ref || ref.kind !== 'range') return null
@@ -215,17 +221,14 @@ function modeFn(args: EvalArg[]): CellValue {
 	if (numsOrErr.length === 0) return errorValue('#N/A')
 	const freq = new Map<number, number>()
 	let maxCount = 0
-	let modeVal = 0
 	for (const n of numsOrErr) {
 		const c = (freq.get(n) ?? 0) + 1
 		freq.set(n, c)
-		if (c > maxCount) {
-			maxCount = c
-			modeVal = n
-		}
+		if (c > maxCount) maxCount = c
 	}
 	if (maxCount < 2) return errorValue('#N/A')
-	return numberValue(modeVal)
+	const modeVal = numsOrErr.find((n) => freq.get(n) === maxCount)
+	return numberValue(modeVal ?? 0)
 }
 
 function collectModeNumbers(args: EvalArg[]): number[] | CellValue {
@@ -898,23 +901,16 @@ function ibetaComplement(x: number, a: number, b: number): number {
 function ibetainv(p: number, a: number, b: number): number {
 	if (p <= 0) return 0
 	if (p >= 1) return 1
-	let x = 0.5
-	for (let i = 0; i < 100; i++) {
+	let lo = 0
+	let hi = 1
+	for (let i = 0; i < 120; i++) {
+		const x = (lo + hi) / 2
 		const fx = ibeta(x, a, b) - p
-		const bt = Math.exp(
-			gammalnImpl(a + b) -
-				gammalnImpl(a) -
-				gammalnImpl(b) +
-				(a - 1) * Math.log(x) +
-				(b - 1) * Math.log(1 - x),
-		)
-		if (bt === 0) break
-		const dx = fx / bt
-		x -= dx
-		x = Math.max(1e-15, Math.min(1 - 1e-15, x))
-		if (Math.abs(dx) < 1e-12) break
+		if (fx < 0) lo = x
+		else hi = x
+		if (hi - lo < 1e-14) break
 	}
-	return x
+	return (lo + hi) / 2
 }
 
 function gammaIterationLimit(a: number): number {
@@ -1117,15 +1113,17 @@ function fDistFn(args: EvalArg[]): CellValue {
 	if (typeof d2 !== 'number') return d2
 	const cum = numArg(args[3])
 	if (typeof cum !== 'number') return cum
-	if (x < 0 || d1 < 1 || d2 < 1) return errorValue('#NUM!')
+	const df1 = Math.trunc(d1)
+	const df2 = Math.trunc(d2)
+	if (x < 0 || df1 < 1 || df2 < 1) return errorValue('#NUM!')
 	if (x === 0) return cum !== 0 ? numberValue(0) : errorValue('#NUM!')
 	if (cum !== 0) {
-		const w = (d1 * x) / (d1 * x + d2)
-		return numberValue(ibeta(w, d1 / 2, d2 / 2))
+		const w = (df1 * x) / (df1 * x + df2)
+		return numberValue(ibeta(w, df1 / 2, df2 / 2))
 	}
 	return numberValue(
-		Math.sqrt(((d1 * x) ** d1 * d2 ** d2) / (d1 * x + d2) ** (d1 + d2)) /
-			(x * Math.exp(betaln(d1 / 2, d2 / 2))),
+		Math.sqrt(((df1 * x) ** df1 * df2 ** df2) / (df1 * x + df2) ** (df1 + df2)) /
+			(x * Math.exp(betaln(df1 / 2, df2 / 2))),
 	)
 }
 
@@ -1136,10 +1134,12 @@ function fDistRTFn(args: EvalArg[]): CellValue {
 	if (typeof d1 !== 'number') return d1
 	const d2 = numArg(args[2])
 	if (typeof d2 !== 'number') return d2
-	if (x < 0 || d1 < 1 || d2 < 1) return errorValue('#NUM!')
+	const df1 = Math.trunc(d1)
+	const df2 = Math.trunc(d2)
+	if (x < 0 || df1 < 1 || df2 < 1) return errorValue('#NUM!')
 	if (x === 0) return numberValue(1)
-	const w = (d1 * x) / (d1 * x + d2)
-	return numberValue(ibetaComplement(w, d1 / 2, d2 / 2))
+	const w = (df1 * x) / (df1 * x + df2)
+	return numberValue(ibetaComplement(w, df1 / 2, df2 / 2))
 }
 
 function snapFInvRoundTrip(
@@ -1164,12 +1164,14 @@ function fInvFn(args: EvalArg[]): CellValue {
 	if (typeof d1 !== 'number') return d1
 	const d2 = numArg(args[2])
 	if (typeof d2 !== 'number') return d2
-	if (p < 0 || p > 1 || d1 < 1 || d2 < 1) return errorValue('#NUM!')
+	const df1 = Math.trunc(d1)
+	const df2 = Math.trunc(d2)
+	if (p < 0 || p > 1 || df1 < 1 || df2 < 1) return errorValue('#NUM!')
 	if (p === 0) return numberValue(0)
 	if (p === 1) return errorValue('#NUM!')
-	const x = ibetainv(p, d1 / 2, d2 / 2)
-	const result = (x * d2) / (d1 * (1 - x))
-	return numberValue(snapFInvRoundTrip(result, p, d1, d2, false))
+	const x = ibetainv(p, df1 / 2, df2 / 2)
+	const result = (x * df2) / (df1 * (1 - x))
+	return numberValue(snapFInvRoundTrip(result, p, df1, df2, false))
 }
 
 function fInvRTFn(args: EvalArg[]): CellValue {
@@ -1179,12 +1181,14 @@ function fInvRTFn(args: EvalArg[]): CellValue {
 	if (typeof d1 !== 'number') return d1
 	const d2 = numArg(args[2])
 	if (typeof d2 !== 'number') return d2
-	if (p < 0 || p > 1 || d1 < 1 || d2 < 1) return errorValue('#NUM!')
+	const df1 = Math.trunc(d1)
+	const df2 = Math.trunc(d2)
+	if (p < 0 || p > 1 || df1 < 1 || df2 < 1) return errorValue('#NUM!')
 	if (p === 1) return numberValue(0)
 	if (p === 0) return errorValue('#NUM!')
-	const x = ibetainv(1 - p, d1 / 2, d2 / 2)
-	const result = (x * d2) / (d1 * (1 - x))
-	return numberValue(snapFInvRoundTrip(result, p, d1, d2, true))
+	const x = ibetainv(1 - p, df1 / 2, df2 / 2)
+	const result = (x * df2) / (df1 * (1 - x))
+	return numberValue(snapFInvRoundTrip(result, p, df1, df2, true))
 }
 
 function chisqDistFn(args: EvalArg[]): CellValue {
@@ -1251,11 +1255,11 @@ function betaDistFn(args: EvalArg[]): CellValue {
 	if (typeof beta !== 'number') return beta
 	const cum = numArg(args[3])
 	if (typeof cum !== 'number') return cum
-	const A = args.length > 4 ? numArg(args[4]) : 0
+	const A = optionalNumArg(args, 4, 0)
 	if (typeof A !== 'number') return A
-	const B = args.length > 5 ? numArg(args[5]) : 1
+	const B = optionalNumArg(args, 5, 1)
 	if (typeof B !== 'number') return B
-	if (alpha <= 0 || beta <= 0 || x < A || x > B) return errorValue('#NUM!')
+	if (alpha <= 0 || beta <= 0 || B <= A || x < A || x > B) return errorValue('#NUM!')
 	const z = (x - A) / (B - A)
 	if (cum !== 0) return numberValue(ibeta(z, alpha, beta))
 	return numberValue(
@@ -1270,11 +1274,11 @@ function betaInvFn(args: EvalArg[]): CellValue {
 	if (typeof alpha !== 'number') return alpha
 	const beta = numArg(args[2])
 	if (typeof beta !== 'number') return beta
-	const A = args.length > 3 ? numArg(args[3]) : 0
+	const A = optionalNumArg(args, 3, 0)
 	if (typeof A !== 'number') return A
-	const B = args.length > 4 ? numArg(args[4]) : 1
+	const B = optionalNumArg(args, 4, 1)
 	if (typeof B !== 'number') return B
-	if (p < 0 || p > 1 || alpha <= 0 || beta <= 0) return errorValue('#NUM!')
+	if (p < 0 || p > 1 || alpha <= 0 || beta <= 0 || B <= A) return errorValue('#NUM!')
 	return numberValue(A + ibetainv(p, alpha, beta) * (B - A))
 }
 

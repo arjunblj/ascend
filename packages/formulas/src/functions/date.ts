@@ -1,5 +1,5 @@
 import type { CellValue } from '@ascend/schema'
-import { errorValue, numberValue } from '@ascend/schema'
+import { errorValue, isEmpty, numberValue } from '@ascend/schema'
 import type { FunctionDef } from './registry.ts'
 import {
 	cellOf,
@@ -193,6 +193,7 @@ function parseWeekendDays(arg: EvalArg | undefined): Set<number> | CellValue {
 	if (!arg) return new Set([0, 6])
 	const v = cellOf(arg)
 	if (v.kind === 'error') return v
+	if (isEmpty(v)) return new Set([0, 6])
 	if (v.kind === 'string' && v.value.length === 7) {
 		if (!/^[01]{7}$/.test(v.value)) return errorValue('#VALUE!')
 		const set = new Set<number>()

@@ -310,25 +310,61 @@ function bitrshift(args: EvalArg[]): CellValue {
 	return numberValue(result)
 }
 
-const ERF_P = 0.3275911
-const ERF_A1 = 0.254829592
-const ERF_A2 = -0.284496736
-const ERF_A3 = 1.421413741
-const ERF_A4 = -1.453152027
-const ERF_A5 = 1.061405429
+const ERF_MAX_LOG = 7.097827128933839e2
+const ERFC_P = [
+	2.461969814735305e-10, 5.641895648310687e-1, 7.463210564422699, 4.863719709856814e1,
+	1.965208329560771e2, 5.264451949954774e2, 9.345285271719576e2, 1.027551886895157e3,
+	5.575353353693993e2,
+]
+const ERFC_Q = [
+	1.32281951154745e1, 8.670721408859897e1, 3.549377788878199e2, 9.757085017432055e2,
+	1.8239091668790975e3, 2.24633760818711e3, 1.6566630919416134e3, 5.575353408177277e2,
+]
+const ERFC_R = [
+	5.641895835477551e-1, 1.275366707599781, 5.019050422511805, 6.160210979930536, 7.409742699504489,
+	2.9788666537210022,
+]
+const ERFC_S = [
+	2.2605286322011726, 9.396035249380015, 1.2048953980809666e1, 1.708144507475659e1,
+	9.608968090632859, 3.369076451000815,
+]
+const ERF_T = [
+	9.604973739870516, 9.002601972038427e1, 2.232005345946843e3, 7.003325141128051e3,
+	5.55923013010395e4,
+]
+const ERF_U = [
+	3.356171416475031e1, 5.213579497801527e2, 4.594323829709801e3, 2.262900006138909e4,
+	4.926739426086359e4,
+]
 
-function erfCore(x: number): number {
-	const t = 1 / (1 + ERF_P * x)
-	const poly = t * (ERF_A1 + t * (ERF_A2 + t * (ERF_A3 + t * (ERF_A4 + t * ERF_A5))))
-	return 1 - poly * Math.exp(-x * x)
+function evalErfPolynomial(coefficients: readonly number[], x: number): number {
+	let result = 0
+	for (const coefficient of coefficients) result = result * x + coefficient
+	return result
+}
+
+function evalErfMonicPolynomial(coefficients: readonly number[], x: number): number {
+	let result = x + (coefficients[0] ?? 0)
+	for (let i = 1; i < coefficients.length; i++) result = result * x + (coefficients[i] ?? 0)
+	return result
 }
 
 function erfFn(x: number): number {
-	return x >= 0 ? erfCore(x) : -erfCore(-x)
+	if (Math.abs(x) > 1) return 1 - erfcFn(x)
+	const z = x * x
+	return (x * evalErfPolynomial(ERF_T, z)) / evalErfMonicPolynomial(ERF_U, z)
 }
 
 function erfcFn(x: number): number {
-	return 1 - erfFn(x)
+	const ax = Math.abs(x)
+	if (ax < 1) return 1 - erfFn(x)
+	const z = -x * x
+	if (z < -ERF_MAX_LOG) return x < 0 ? 2 : 0
+	const numerator = ax < 8 ? evalErfPolynomial(ERFC_P, ax) : evalErfPolynomial(ERFC_R, ax)
+	const denominator =
+		ax < 8 ? evalErfMonicPolynomial(ERFC_Q, ax) : evalErfMonicPolynomial(ERFC_S, ax)
+	const value = (Math.exp(z) * numerator) / denominator
+	return x < 0 ? 2 - value : value === 0 ? 0 : value
 }
 
 function erf(args: EvalArg[]): CellValue {

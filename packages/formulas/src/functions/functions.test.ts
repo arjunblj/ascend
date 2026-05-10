@@ -1149,6 +1149,48 @@ describe('formula functions', () => {
 			expect(getResult(wb, 8, 1)).toEqual(numberValue(5))
 		})
 
+		test('AGGREGATE rank and percentile functions read array before k', () => {
+			const wb = makeWorkbook()
+			for (let i = 0; i < 10; i++) setNum(wb, i, 0, i + 1)
+			setFormula(wb, 10, 0, 'SUBTOTAL(9,A1:A9)')
+			setFormula(wb, 0, 1, 'AGGREGATE(14,0,A1:A10,2)')
+			setFormula(wb, 1, 1, 'AGGREGATE(15,0,A1:A10,2)')
+			setFormula(wb, 2, 1, 'AGGREGATE(16,0,A1:A10,0.4)')
+			setFormula(wb, 3, 1, 'AGGREGATE(18,0,A1:A10,0.4)')
+			setFormula(wb, 4, 1, 'AGGREGATE(1,0,A1:A11)')
+			recalc(wb)
+
+			expect(getResult(wb, 0, 1)).toEqual(numberValue(9))
+			expect(getResult(wb, 1, 1)).toEqual(numberValue(2))
+			expect(getResult(wb, 2, 1)).toEqual(numberValue(4.6))
+			expect(getResult(wb, 3, 1)).toEqual(numberValue(4.4))
+			expect(getResult(wb, 4, 1)).toEqual(numberValue(5.5))
+		})
+
+		test('MODE and AGGREGATE mode return the first value among tied modes', () => {
+			const wb = makeWorkbook()
+			for (const [row, value] of [77, 28, 28, 77].entries()) setNum(wb, row, 0, value)
+			setFormula(wb, 0, 1, 'MODE.SNGL(A1:A4)')
+			setFormula(wb, 1, 1, 'AGGREGATE(13,0,A1:A4)')
+			recalc(wb)
+
+			expect(getResult(wb, 0, 1)).toEqual(numberValue(77))
+			expect(getResult(wb, 1, 1)).toEqual(numberValue(77))
+		})
+
+		test('AGGREGATE maps function 8 to STDEV.P', () => {
+			const wb = makeWorkbook()
+			for (const [row, value] of [2, 4, 6].entries()) setNum(wb, row, 0, value)
+			setFormula(wb, 0, 1, 'AGGREGATE(8,0,A1:A3)')
+			recalc(wb)
+
+			const result = getResult(wb, 0, 1)
+			expect(result?.kind).toBe('number')
+			if (result?.kind === 'number') {
+				expect(result.value).toBeCloseTo(Math.sqrt(8 / 3), 12)
+			}
+		})
+
 		test('STDEV and VAR ignore nonnumeric referenced scalars but coerce typed literals', () => {
 			const wb = makeWorkbook()
 			setStr(wb, 0, 0, '10')
@@ -1488,6 +1530,13 @@ describe('formula functions', () => {
 			setFormula(wb, 0, 2, 'DAYS(B1,A1)')
 			recalc(wb)
 			expect(getResult(wb, 0, 2)).toEqual(numberValue(365))
+		})
+
+		test('WORKDAY.INTL treats omitted weekend argument as Saturday/Sunday', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'WORKDAY.INTL(DATE(2014,4,1),24,,)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(41764))
 		})
 	})
 
@@ -3562,6 +3611,23 @@ describe('formula functions', () => {
 			expect(getResult(wb, 0, 0)).toEqual(getResult(wb, 0, 1))
 		})
 
+		test('ERF.PRECISE and ERFC.PRECISE match Excel cached tails', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'ERF.PRECISE(2)')
+			setFormula(wb, 1, 0, 'ERFC.PRECISE(2)')
+			recalc(wb)
+			const erf = getResult(wb, 0, 0)
+			const erfc = getResult(wb, 1, 0)
+			expect(erf?.kind).toBe('number')
+			expect(erfc?.kind).toBe('number')
+			if (erf?.kind === 'number') {
+				expect(erf.value).toBeCloseTo(0.995322265018953, 14)
+			}
+			if (erfc?.kind === 'number') {
+				expect(erfc.value).toBeCloseTo(0.00467773498104726, 14)
+			}
+		})
+
 		test('ERF + ERFC = 1', () => {
 			const wb = makeWorkbook()
 			setFormula(wb, 0, 0, 'ERF(0.5)+ERFC(0.5)')
@@ -4411,6 +4477,46 @@ describe('formula functions', () => {
 			recalc(wb)
 			expect(getResult(wb, 0, 0)).toEqual(numberValue(1))
 			expect(getResult(wb, 1, 0)).toEqual(numberValue(1))
+		})
+
+		test('F distribution functions truncate degrees of freedom', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'F.DIST(2,6.6,8,TRUE)')
+			setFormula(wb, 1, 0, 'F.DIST(2,6.6,8,FALSE)')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(numberValue(0.8208))
+			const density = getResult(wb, 1, 0)
+			expect(density?.kind).toBe('number')
+			if (density?.kind === 'number') {
+				expect(density.value).toBeCloseTo(0.165888, 14)
+			}
+		})
+
+		test('BETA.INV resolves roots close to the lower bound', () => {
+			const wb = makeWorkbook()
+			setFormula(
+				wb,
+				0,
+				0,
+				'BETA.INV(0.13333333333333333,0.13333333333333333,1.3333333333333333,1,6)',
+			)
+			recalc(wb)
+			const result = getResult(wb, 0, 0)
+			expect(result?.kind).toBe('number')
+			if (result?.kind === 'number') {
+				expect(result.value).toBeCloseTo(1.00000090592338, 13)
+			}
+		})
+
+		test('BETA.INV defaults omitted bounds to zero and one', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'BETA.INV(0.6875,2,3)')
+			recalc(wb)
+			const result = getResult(wb, 0, 0)
+			expect(result?.kind).toBe('number')
+			if (result?.kind === 'number') {
+				expect(result.value).toBeCloseTo(0.5, 13)
+			}
 		})
 
 		test('right-tail distributions preserve tiny nonzero probabilities', () => {

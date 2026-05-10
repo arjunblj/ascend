@@ -1759,6 +1759,7 @@ function areasOf(arg: EvalArg): readonly EvalArea[] | null {
 			ref: arg.ref,
 			topLeft: arg.value,
 			values: arg.values ?? [[arg.value]],
+			...(arg.formulaAtOffset ? { formulaAtOffset: arg.formulaAtOffset } : {}),
 			...(arg.rowHiddenAtOffset ? { rowHiddenAtOffset: arg.rowHiddenAtOffset } : {}),
 			...(arg.rowFilteredAtOffset ? { rowFilteredAtOffset: arg.rowFilteredAtOffset } : {}),
 			...(arg.forEachValue ? { forEachValue: arg.forEachValue } : {}),
@@ -2493,6 +2494,8 @@ function makeRangeArea(
 		},
 		valueAtOffset: (rowOffset: number, colOffset: number) =>
 			getCellValue(workbook, sheetIndex, startRow + rowOffset, startCol + colOffset),
+		formulaAtOffset: (rowOffset: number, colOffset: number) =>
+			sheet?.cells.readFormula(materializedStartRow + rowOffset, materializedStartCol + colOffset),
 		rowHiddenAtOffset: (rowOffset: number) =>
 			sheet?.rowDefs.get(materializedStartRow + rowOffset)?.hidden === true,
 		rowFilteredAtOffset: (rowOffset: number) => {
@@ -2561,6 +2564,7 @@ function makeMultiAreaArg(areas: readonly EvalArea[]): EvalArg {
 					shapeRows: (firstArea.ref.endRow ?? firstArea.ref.row) - firstArea.ref.row + 1,
 					shapeCols: (firstArea.ref.endCol ?? firstArea.ref.col) - firstArea.ref.col + 1,
 					...(firstArea.valueAtOffset ? { valueAtOffset: firstArea.valueAtOffset } : {}),
+					...(firstArea.formulaAtOffset ? { formulaAtOffset: firstArea.formulaAtOffset } : {}),
 					...(firstArea.rowHiddenAtOffset
 						? { rowHiddenAtOffset: firstArea.rowHiddenAtOffset }
 						: {}),

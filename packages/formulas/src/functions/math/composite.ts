@@ -7,12 +7,15 @@ function aggregateCollectNumbers(
 	args: EvalArg[],
 	ignoreErrors: boolean,
 	skipHiddenRows: boolean,
+	ignoreNestedAggregates: boolean,
 ): number[] | CellValue {
 	const nums: number[] = []
 	for (const arg of args) {
 		if (arg.kind === 'range' && arg.values) {
 			for (let rowIndex = 0; rowIndex < arg.values.length; rowIndex++) {
-				if (shouldSkipSubtotalRow(arg, rowIndex, skipHiddenRows)) continue
+				if (shouldSkipSubtotalRow(arg, rowIndex, skipHiddenRows, ignoreNestedAggregates)) {
+					continue
+				}
 				for (const cell of arg.values[rowIndex] ?? []) {
 					if (cell.kind === 'error') {
 						if (!ignoreErrors) return cell
@@ -56,10 +59,16 @@ function aggregateFn(args: EvalArg[]): CellValue {
 	const options = Math.trunc(opt)
 	const ignoreErrors = options === 2 || options === 3 || options === 6 || options === 7
 	const skipHiddenRows = options === 1 || options === 3 || options === 5 || options === 7
+	const ignoreNestedAggregates = options >= 0 && options <= 3
 
 	if (code >= 1 && code <= 11) {
 		const data = args.slice(2)
-		const numsOrErr = aggregateCollectNumbers(data, ignoreErrors, skipHiddenRows)
+		const numsOrErr = aggregateCollectNumbers(
+			data,
+			ignoreErrors,
+			skipHiddenRows,
+			ignoreNestedAggregates,
+		)
 		if (!Array.isArray(numsOrErr)) return numsOrErr
 		switch (code) {
 			case 1: {
@@ -76,7 +85,9 @@ function aggregateFn(args: EvalArg[]): CellValue {
 				for (const arg of dataAll) {
 					if (arg.kind === 'range' && arg.values) {
 						for (let rowIndex = 0; rowIndex < arg.values.length; rowIndex++) {
-							if (shouldSkipSubtotalRow(arg, rowIndex, skipHiddenRows)) continue
+							if (shouldSkipSubtotalRow(arg, rowIndex, skipHiddenRows, ignoreNestedAggregates)) {
+								continue
+							}
 							for (const cell of arg.values[rowIndex] ?? []) {
 								if (cell.kind === 'error') {
 									if (!ignoreErrors) return cell
@@ -119,10 +130,10 @@ function aggregateFn(args: EvalArg[]): CellValue {
 				return numberValue(Math.sqrt(sumSq / (numsOrErr.length - 1)))
 			}
 			case 8: {
-				if (numsOrErr.length < 2) return errorValue('#DIV/0!')
+				if (numsOrErr.length === 0) return errorValue('#DIV/0!')
 				const mean = numsOrErr.reduce((a, b) => a + b, 0) / numsOrErr.length
 				const sumSq = numsOrErr.reduce((acc, v) => acc + (v - mean) ** 2, 0)
-				return numberValue(sumSq / (numsOrErr.length - 1))
+				return numberValue(Math.sqrt(sumSq / numsOrErr.length))
 			}
 			case 9:
 				return numberValue(numsOrErr.reduce((a, b) => a + b, 0))
@@ -147,7 +158,12 @@ function aggregateFn(args: EvalArg[]): CellValue {
 
 	if (code >= 12 && code <= 13) {
 		const data = args.slice(2)
-		const numsOrErr = aggregateCollectNumbers(data, ignoreErrors, skipHiddenRows)
+		const numsOrErr = aggregateCollectNumbers(
+			data,
+			ignoreErrors,
+			skipHiddenRows,
+			ignoreNestedAggregates,
+		)
 		if (!Array.isArray(numsOrErr)) return numsOrErr
 		if (numsOrErr.length === 0) return errorValue('#NUM!')
 		if (code === 12) {
@@ -161,39 +177,46 @@ function aggregateFn(args: EvalArg[]): CellValue {
 		}
 		const freq = new Map<number, number>()
 		let maxCount = 0
-		let modeVal = 0
 		for (const n of numsOrErr) {
 			const c = (freq.get(n) ?? 0) + 1
 			freq.set(n, c)
-			if (c > maxCount) {
-				maxCount = c
-				modeVal = n
-			}
+			if (c > maxCount) maxCount = c
 		}
-		return maxCount < 2 ? errorValue('#N/A') : numberValue(modeVal)
+		if (maxCount < 2) return errorValue('#N/A')
+		const modeVal = numsOrErr.find((n) => freq.get(n) === maxCount)
+		return numberValue(modeVal ?? 0)
 	}
 
 	if (code >= 14 && code <= 19) {
 		if (args.length < 4) return errorValue('#VALUE!')
-		const kArg = numArg(args[2])
+		const dataArg = args[2]
+		if (!dataArg) return errorValue('#VALUE!')
+		const kArg = numArg(args[3])
 		if (typeof kArg !== 'number') return kArg
-		const k = Math.trunc(kArg)
-		const data = args.slice(3)
-		const numsOrErr = aggregateCollectNumbers(data, ignoreErrors, skipHiddenRows)
+		const data = [dataArg]
+		const numsOrErr = aggregateCollectNumbers(
+			data,
+			ignoreErrors,
+			skipHiddenRows,
+			ignoreNestedAggregates,
+		)
 		if (!Array.isArray(numsOrErr)) return numsOrErr
 		if (numsOrErr.length === 0) return errorValue('#NUM!')
 
 		if (code === 14) {
+			const k = Math.trunc(kArg)
 			if (k < 1 || k > numsOrErr.length) return errorValue('#NUM!')
 			numsOrErr.sort((a, b) => b - a)
 			return numberValue(numsOrErr[k - 1] ?? 0)
 		}
 		if (code === 15) {
+			const k = Math.trunc(kArg)
 			if (k < 1 || k > numsOrErr.length) return errorValue('#NUM!')
 			numsOrErr.sort((a, b) => a - b)
 			return numberValue(numsOrErr[k - 1] ?? 0)
 		}
 		if (code === 16) {
+			const k = kArg
 			if (k < 0 || k > 1) return errorValue('#NUM!')
 			numsOrErr.sort((a, b) => a - b)
 			const n = numsOrErr.length
@@ -205,6 +228,7 @@ function aggregateFn(args: EvalArg[]): CellValue {
 			)
 		}
 		if (code === 17) {
+			const k = Math.trunc(kArg)
 			if (k < 0 || k > 4) return errorValue('#NUM!')
 			numsOrErr.sort((a, b) => a - b)
 			const n = numsOrErr.length
@@ -218,6 +242,7 @@ function aggregateFn(args: EvalArg[]): CellValue {
 			)
 		}
 		if (code === 18) {
+			const k = kArg
 			const n = numsOrErr.length
 			if (k <= 0 || k >= 1) return errorValue('#NUM!')
 			if (k < 1 / (n + 1) || k > n / (n + 1)) return errorValue('#NUM!')
@@ -232,6 +257,7 @@ function aggregateFn(args: EvalArg[]): CellValue {
 			)
 		}
 		if (code === 19) {
+			const k = Math.trunc(kArg)
 			if (k < 1 || k > 3) return errorValue('#NUM!')
 			numsOrErr.sort((a, b) => a - b)
 			const n = numsOrErr.length
@@ -249,11 +275,29 @@ function aggregateFn(args: EvalArg[]): CellValue {
 	return errorValue('#VALUE!')
 }
 
-function shouldSkipSubtotalRow(arg: EvalArg, rowIndex: number, skipHiddenRows: boolean): boolean {
+function shouldSkipSubtotalRow(
+	arg: EvalArg,
+	rowIndex: number,
+	skipHiddenRows: boolean,
+	ignoreNestedAggregates = false,
+): boolean {
 	return (
 		arg.rowFilteredAtOffset?.(rowIndex) === true ||
-		(skipHiddenRows && arg.rowHiddenAtOffset?.(rowIndex) === true)
+		(skipHiddenRows && arg.rowHiddenAtOffset?.(rowIndex) === true) ||
+		(ignoreNestedAggregates && rowHasNestedAggregate(arg, rowIndex))
 	)
+}
+
+function rowHasNestedAggregate(arg: EvalArg, rowIndex: number): boolean {
+	const row = arg.values?.[rowIndex]
+	if (!row || !arg.formulaAtOffset) return false
+	for (let colIndex = 0; colIndex < row.length; colIndex++) {
+		const formula = arg.formulaAtOffset(rowIndex, colIndex)
+		if (formula && /^(?:_xlfn\.)?(?:SUBTOTAL|AGGREGATE)\s*\(/i.test(formula.trim())) {
+			return true
+		}
+	}
+	return false
 }
 
 function subtotalNums(data: EvalArg[], skipHiddenRows: boolean): number[] | CellValue {

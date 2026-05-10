@@ -414,6 +414,17 @@ describe('parse', () => {
 		expect(node.rows[0]).toHaveLength(2)
 	})
 
+	it('parses omitted array literal elements as blanks', () => {
+		const node = p('{1,,3}')
+		expect(node.type).toBe('array')
+		if (node.type !== 'array') return
+		expect(node.rows[0]).toEqual([
+			{ type: 'number', value: 1 },
+			{ type: 'missing' },
+			{ type: 'number', value: 3 },
+		])
+	})
+
 	it('parses named ranges', () => {
 		const node = p('MyRange')
 		expect(node).toEqual({ type: 'name', name: 'MyRange' })
@@ -500,6 +511,7 @@ describe('printFormula', () => {
 
 	it('roundtrips array literals', () => {
 		expect(printFormula(p('{1,2;3,4}'))).toBe('{1,2;3,4}')
+		expect(printFormula(p('{1,,3}'))).toBe('{1,,3}')
 	})
 
 	it('roundtrips whole-row and whole-column ranges', () => {

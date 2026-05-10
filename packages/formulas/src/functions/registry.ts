@@ -17,6 +17,7 @@ export interface EvalArea {
 	readonly valueAtOffset?: (rowOffset: number, colOffset: number) => CellValue
 	readonly rowHiddenAtOffset?: (rowOffset: number) => boolean
 	readonly rowFilteredAtOffset?: (rowOffset: number) => boolean
+	readonly formulaAtOffset?: (rowOffset: number, colOffset: number) => string | null | undefined
 	/** Iterate only occupied cells (sparse). Use for SUM, AVERAGE, etc. */
 	readonly forEachValue?: (fn: (value: CellValue) => void) => void
 	/** Iterate all cells in range including empty. Use for COUNTBLANK. */
@@ -34,6 +35,7 @@ export interface EvalArg {
 	readonly valueAtOffset?: (rowOffset: number, colOffset: number) => CellValue
 	readonly rowHiddenAtOffset?: (rowOffset: number) => boolean
 	readonly rowFilteredAtOffset?: (rowOffset: number) => boolean
+	readonly formulaAtOffset?: (rowOffset: number, colOffset: number) => string | null | undefined
 	/** Iterate only occupied cells (sparse). Use for SUM, AVERAGE, etc. */
 	readonly forEachValue?: (fn: (value: CellValue) => void) => void
 	/** Iterate all cells in range including empty. Use for COUNTBLANK. */

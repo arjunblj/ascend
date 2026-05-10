@@ -574,21 +574,32 @@ class FormulaParser {
 	private parseArrayLiteral(): FormulaNode {
 		this.expect(TokenType.OpenBrace)
 		const rows: FormulaNode[][] = []
-		let currentRow: FormulaNode[] = [this.parseExpression(false)]
+		let currentRow: FormulaNode[] = []
+		let expectValue = true
 
 		while (this.peek(true).type !== TokenType.CloseBrace) {
 			if (this.peek(true).type === TokenType.Comma) {
+				if (expectValue) currentRow.push({ type: 'missing' })
 				this.advance(true)
-				currentRow.push(this.parseExpression(false))
+				expectValue = true
 			} else if (this.peek(true).type === TokenType.Semicolon) {
+				if (expectValue) currentRow.push({ type: 'missing' })
 				this.advance(true)
 				rows.push(currentRow)
-				currentRow = [this.parseExpression(false)]
+				currentRow = []
+				expectValue = true
 			} else {
-				throw new Error(`Expected , or ; in array literal at position ${this.peek(true).position}`)
+				if (!expectValue) {
+					throw new Error(
+						`Expected , or ; in array literal at position ${this.peek(true).position}`,
+					)
+				}
+				currentRow.push(this.parseExpression(false))
+				expectValue = false
 			}
 		}
 
+		if (expectValue && currentRow.length > 0) currentRow.push({ type: 'missing' })
 		rows.push(currentRow)
 		this.expect(TokenType.CloseBrace)
 		return { type: 'array', rows }

@@ -52,6 +52,7 @@ export type {
 import type { CellChange, ExternalReferenceResolver, SheetDiff, WorkbookDiff } from '@ascend/engine'
 import type { FormulaNode, Token } from '@ascend/formulas'
 import type { AscendError, CellValue, CompatibilityReport, FeatureReport } from '@ascend/schema'
+import type { CapabilityPriority, CapabilityStatus } from './capabilities.ts'
 
 export interface WorkbookInfo {
 	readonly sheetCount: number
@@ -145,8 +146,20 @@ export interface WorkbookInfo {
 		readonly majorFontLatin?: string
 		readonly minorFontLatin?: string
 	}
+	readonly capabilityWarnings: readonly CapabilityWarningInfo[]
 	readonly compatibility: CompatibilityReport
 	readonly load: WorkbookLoadInfo
+}
+
+export interface CapabilityWarningInfo {
+	readonly capabilityId: string
+	readonly label: string
+	readonly family: string
+	readonly status: CapabilityStatus
+	readonly priority: CapabilityPriority
+	readonly reason: string
+	readonly nextMilestone: string
+	readonly evidence: readonly string[]
 }
 
 export interface PivotTableInfo {

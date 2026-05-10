@@ -43,6 +43,7 @@ describe('AscendWorkbook', () => {
 		expect(info.cellCount).toBe(0)
 		expect(info.sourceFormat).toBe('ascend')
 		expect(info.load.isPartial).toBe(false)
+		expect(info.capabilityWarnings).toEqual([])
 	})
 
 	test('cellStyle exposes a cloned exact cell style', () => {
@@ -158,6 +159,14 @@ describe('AscendWorkbook', () => {
 		expect(info.imageCount).toBe(1)
 		expect(info.pivotTableCount).toBe(1)
 		expect(info.pivotCacheCount).toBe(1)
+		expect(info.capabilityWarnings).toContainEqual(
+			expect.objectContaining({
+				capabilityId: 'analytics.pivots',
+				status: 'inspectable',
+				priority: 'P0',
+				evidence: ['pivotTables=1'],
+			}),
+		)
 		expect(info.slicerCount).toBe(1)
 		expect(info.slicerCacheCount).toBe(1)
 		expect(info.hasWorkbookProtection).toBe(true)

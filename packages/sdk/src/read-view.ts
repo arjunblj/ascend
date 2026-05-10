@@ -33,6 +33,7 @@ import { normalizeFormulaInput, parseFormula, printFormula } from '@ascend/formu
 import type { CompatibilityReport } from '@ascend/schema'
 import { EMPTY } from '@ascend/schema'
 import { trace as verifyTrace } from '@ascend/verify'
+import { getCapability, isCapabilityGap } from './capabilities.ts'
 import {
 	buildFormulaInfo,
 	collectFormulaReferences,
@@ -51,6 +52,7 @@ import type {
 	AgentSampleRow,
 	AgentViewOptions,
 	AgentViewResult,
+	CapabilityWarningInfo,
 	CompactCellInfo,
 	CompactRangeInfo,
 	CompactRangeWindowInfo,
@@ -221,6 +223,7 @@ export class WorkbookReadView {
 				colors: this.wb.themeColors.map((color) => ({ ...color })),
 				...this.wb.themeMetadata,
 			},
+			capabilityWarnings: buildCapabilityWarnings(this.wb, this.formulaAnalysis()),
 			compatibility: this.compat,
 			load: this.loadInfo,
 		}
@@ -927,6 +930,110 @@ export class WorkbookReadView {
 		this.loadInfo = loadInfo
 		this.clearReadCaches()
 	}
+}
+
+function buildCapabilityWarnings(
+	workbook: Workbook,
+	analysis: WorkbookFormulaAnalysis,
+): CapabilityWarningInfo[] {
+	const warnings: CapabilityWarningInfo[] = []
+	const add = (capabilityId: string, evidence: readonly string[]): void => {
+		if (evidence.length === 0) return
+		const capability = getCapability(capabilityId)
+		if (!capability || !isCapabilityGap(capability.status)) return
+		warnings.push({
+			capabilityId: capability.id,
+			label: capability.label,
+			family: capability.family,
+			status: capability.status,
+			priority: capability.priority,
+			reason: capability.gapReason,
+			nextMilestone: capability.nextMilestone,
+			evidence,
+		})
+	}
+
+	add('workbook.xlsm-package', [
+		...(workbook.macroSheets.length > 0 ? [`macroSheets=${workbook.macroSheets.length}`] : []),
+		...countActiveKinds(workbook.activeContent, ['vbaProject', 'macroSheet']).map(
+			([kind, count]) => `${kind}=${count}`,
+		),
+	])
+	add('analytics.pivots', [
+		...(workbook.pivotTables.length > 0 ? [`pivotTables=${workbook.pivotTables.length}`] : []),
+	])
+	add('analytics.data-model', [
+		...(workbook.dataModelParts.length > 0
+			? [`dataModelParts=${workbook.dataModelParts.length}`]
+			: []),
+	])
+	add('analytics.getpivotdata', getPivotDataEvidence(analysis))
+	add(
+		'active.vba-macros',
+		countActiveKinds(workbook.activeContent, ['vbaProject']).map(
+			([kind, count]) => `${kind}=${count}`,
+		),
+	)
+	add(
+		'active.activex-controls',
+		countActiveKinds(workbook.activeContent, ['activeX']).map(
+			([kind, count]) => `${kind}=${count}`,
+		),
+	)
+	add(
+		'active.form-controls',
+		countActiveKinds(workbook.activeContent, ['formControl']).map(
+			([kind, count]) => `${kind}=${count}`,
+		),
+	)
+	add(
+		'active.signatures',
+		countActiveKinds(workbook.activeContent, ['vbaSignature', 'digitalSignature']).map(
+			([kind, count]) => `${kind}=${count}`,
+		),
+	)
+	add('connections.power-query', [
+		...countConnectionKinds(workbook.connectionParts, ['powerQueryMashup']).map(
+			([kind, count]) => `${kind}=${count}`,
+		),
+	])
+	add('visuals.chartsheets', [
+		...(workbook.chartSheets.length > 0 ? [`chartSheets=${workbook.chartSheets.length}`] : []),
+	])
+	return warnings
+}
+
+function countActiveKinds(
+	entries: readonly ActiveContentInfo[],
+	kinds: readonly ActiveContentInfo['kind'][],
+): Array<readonly [ActiveContentInfo['kind'], number]> {
+	const counts = new Map<ActiveContentInfo['kind'], number>()
+	for (const entry of entries) {
+		if (!kinds.includes(entry.kind)) continue
+		counts.set(entry.kind, (counts.get(entry.kind) ?? 0) + 1)
+	}
+	return [...counts.entries()]
+}
+
+function countConnectionKinds(
+	entries: readonly WorkbookConnectionPartInfo[],
+	kinds: readonly WorkbookConnectionPartInfo['kind'][],
+): Array<readonly [WorkbookConnectionPartInfo['kind'], number]> {
+	const counts = new Map<WorkbookConnectionPartInfo['kind'], number>()
+	for (const entry of entries) {
+		if (!kinds.includes(entry.kind)) continue
+		counts.set(entry.kind, (counts.get(entry.kind) ?? 0) + 1)
+	}
+	return [...counts.entries()]
+}
+
+function getPivotDataEvidence(analysis: WorkbookFormulaAnalysis): string[] {
+	let count = 0
+	for (const formula of analysis.formulas.values()) {
+		if (!formula.ast) continue
+		if (collectFunctionNames(formula.ast).has('GETPIVOTDATA')) count++
+	}
+	return count > 0 ? [`GETPIVOTDATA formulas=${count}`] : []
 }
 
 function classifyVisualFeature(

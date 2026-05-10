@@ -238,6 +238,9 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 		)
 	}
 	console.log(bullet('Compatibility', info.compatibility.status))
+	if (info.capabilityWarnings.length > 0) {
+		console.log(bullet('Capability warnings', `${info.capabilityWarnings.length} registry gap(s)`))
+	}
 	if (info.definedNames.length > 0) {
 		console.log(bullet('Defined names', info.definedNames.join(', ')))
 	}
@@ -269,6 +272,20 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 		for (const f of info.compatibility.features) {
 			console.log(bullet(`${f.feature} (${f.tier})`, `${f.count} location(s)`))
 			if (f.note) console.log(`    ${f.note}`)
+		}
+		if (info.capabilityWarnings.length > 0) {
+			console.log('')
+			console.log(heading('Capability Warnings'))
+			for (const warning of info.capabilityWarnings) {
+				console.log(
+					bullet(
+						`${warning.capabilityId} (${warning.status}, ${warning.priority})`,
+						warning.evidence.join(', '),
+					),
+				)
+				console.log(`    ${warning.reason}`)
+				console.log(`    Next: ${warning.nextMilestone}`)
+			}
 		}
 		console.log('')
 		console.log(heading('Timing'))

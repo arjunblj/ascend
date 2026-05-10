@@ -41,6 +41,14 @@ describe('GETPIVOTDATA metadata queries', () => {
 		expect(result.matches[0]?.matchedFilters).toEqual([{ field: 'Region', item: 'West' }])
 		expect(result.matches[0]?.unmatchedFilters).toEqual([{ field: 'Missing', item: 'Nope' }])
 		expect(result.warnings.join('\n')).toContain('not recalculated headlessly')
+
+		wb.setFormula('Sheet1!A1', '=GETPIVOTDATA("Sum of Sales",Summary!A3)')
+		expect(wb.inspect().capabilityWarnings).toContainEqual(
+			expect.objectContaining({
+				capabilityId: 'analytics.getpivotdata',
+				evidence: ['GETPIVOTDATA formulas=1'],
+			}),
+		)
 	})
 
 	test('returns a machine-readable miss when no pivot data field matches', () => {

@@ -327,6 +327,7 @@ describe('ascend cli', () => {
 		expect(parsed.data.pivotCacheCount).toBe(0)
 		expect(parsed.data.slicerCount).toBe(0)
 		expect(parsed.data.slicerCacheCount).toBe(0)
+		expect(parsed.data.capabilityWarnings).toEqual([])
 		expect(parsed.data.load.mode).toBe('metadata-only')
 		expect(parsed.data.sheets).toBeArray()
 		expect(parsed.data.sheets[0].name).toBe('Sheet1')
@@ -378,6 +379,27 @@ describe('ascend cli', () => {
 				declaredCount: 4115,
 				parsedCount: 4115,
 			})
+		},
+	)
+
+	test.skipIf(!HAS_PIVOT_CORPUS_FILE)(
+		'inspect --json reports registry-backed capability warnings',
+		async () => {
+			const { exitCode, stdout } = await run(
+				'inspect',
+				PIVOT_CORPUS_FILE,
+				'--mode',
+				'full',
+				'--json',
+			)
+			expect(exitCode).toBe(0)
+			const parsed = JSON.parse(stdout)
+			expect(parsed.data.capabilityWarnings).toContainEqual(
+				expect.objectContaining({
+					capabilityId: 'analytics.pivots',
+					status: 'inspectable',
+				}),
+			)
 		},
 	)
 

@@ -1,6 +1,13 @@
-import type { ActiveXControlInfo, FormControlInfo } from '@ascend/core'
+import type {
+	ActiveXControlInfo,
+	FormControlInfo,
+	SheetAnchorMarker,
+	SheetImageAnchor,
+	WorksheetControlInfo,
+} from '@ascend/core'
 import { attr, numAttr, parseXml, type XmlNode } from '../xml.ts'
 import type { Relationship } from './relationships.ts'
+import { resolvePath } from './relationships.ts'
 
 type ActiveXControlBuilder = {
 	-readonly [K in keyof ActiveXControlInfo]?: ActiveXControlInfo[K]
@@ -8,6 +15,25 @@ type ActiveXControlBuilder = {
 
 type FormControlBuilder = {
 	-readonly [K in keyof FormControlInfo]?: FormControlInfo[K]
+}
+
+type WorksheetControlBuilder = {
+	-readonly [K in keyof WorksheetControlInfo]?: WorksheetControlInfo[K]
+}
+
+export interface VmlControlInfo {
+	readonly shapeId?: number
+	readonly shapeName?: string
+	readonly shapeSpid?: string
+	readonly objectType?: string
+	readonly mapOcx?: boolean
+	readonly imageRelationshipId?: string
+	readonly imageRelationshipType?: string
+	readonly imageTarget?: string
+}
+
+type VmlControlBuilder = {
+	-readonly [K in keyof VmlControlInfo]?: VmlControlInfo[K]
 }
 
 export function parseActiveXControlInfo(
@@ -44,6 +70,97 @@ export function parseFormControlInfo(xml: string | undefined): FormControlInfo |
 	return nonEmpty(info)
 }
 
+export function parseWorksheetControlInfos(
+	xml: string | undefined,
+	sheetPath: string,
+	relationships: readonly Relationship[],
+	vmlControls: readonly VmlControlInfo[] = [],
+): readonly WorksheetControlInfo[] {
+	if (!xml || !xml.includes('<controls')) return []
+	const controls: WorksheetControlInfo[] = []
+	const relationshipsById = new Map(relationships.map((rel) => [rel.id, rel]))
+	const vmlByShapeId = new Map(
+		vmlControls.flatMap((info) => (info.shapeId !== undefined ? [[info.shapeId, info]] : [])),
+	)
+	const vmlByName = new Map(
+		vmlControls.flatMap((info) => (info.shapeName ? [[info.shapeName, info]] : [])),
+	)
+
+	for (const { attrs, body } of extractControlNodes(xml)) {
+		const relationshipId = attrs.get('r:id') ?? attrs.get('id')
+		const shapeId = parseOptionalNumber(attrs.get('shapeId'))
+		const name = attrs.get('name')
+		const controlPrAttrs = firstTagAttrs(body, 'controlPr')
+		const controlPrRelationshipId = controlPrAttrs.get('r:id') ?? controlPrAttrs.get('id')
+		const controlPrRelationship = controlPrRelationshipId
+			? relationshipsById.get(controlPrRelationshipId)
+			: undefined
+		const vml =
+			(shapeId !== undefined ? vmlByShapeId.get(shapeId) : undefined) ??
+			(name ? vmlByName.get(name) : undefined)
+		const info: WorksheetControlBuilder = {}
+		if (shapeId !== undefined) info.shapeId = shapeId
+		assignText(info, 'name', name)
+		assignText(info, 'relationshipId', relationshipId)
+		assignText(info, 'controlPrRelationshipId', controlPrRelationshipId)
+		assignText(info, 'controlPrRelationshipType', controlPrRelationship?.type)
+		if (controlPrRelationship) {
+			info.controlPrTarget =
+				controlPrRelationship.targetMode === 'External'
+					? controlPrRelationship.target
+					: resolvePath(sheetPath, controlPrRelationship.target)
+		}
+		const anchor = parseWorksheetControlAnchor(body)
+		if (anchor) info.anchor = anchor
+		if (vml) assignVmlControlInfo(info, vml)
+		const parsed = nonEmpty(info)
+		if (parsed) controls.push(parsed)
+	}
+
+	return controls
+}
+
+export function parseVmlControlInfos(
+	xml: string | undefined,
+	vmlPath: string,
+	relationships: readonly Relationship[],
+): readonly VmlControlInfo[] {
+	if (!xml || !xml.includes('<v:shape')) return []
+	const relationshipsById = new Map(relationships.map((rel) => [rel.id, rel]))
+	const controls: VmlControlInfo[] = []
+	for (const match of xml.matchAll(VML_SHAPE_RE)) {
+		const attrs = parseAttrs(match[1] ?? '')
+		const body = match[2] ?? ''
+		const shapeName = attrs.get('id')
+		const shapeSpid = attrs.get('o:spid')
+		const imageAttrs = firstTagAttrs(body, 'imagedata')
+		const imageRelationshipId = imageAttrs.get('o:relid') ?? imageAttrs.get('relid')
+		const imageRelationship = imageRelationshipId
+			? relationshipsById.get(imageRelationshipId)
+			: undefined
+		const control: VmlControlBuilder = {}
+		assignText(control, 'shapeName', shapeName)
+		if (shapeSpid) {
+			const shapeId = parseShapeSpid(shapeSpid)
+			control.shapeSpid = shapeSpid
+			if (shapeId !== undefined) control.shapeId = shapeId
+		}
+		const objectType = firstTagAttrs(body, 'ClientData').get('ObjectType')
+		assignText(control, 'objectType', objectType)
+		if (hasLocalTag(body, 'MapOCX')) control.mapOcx = true
+		assignText(control, 'imageRelationshipId', imageRelationshipId)
+		if (imageRelationship) {
+			control.imageRelationshipType = imageRelationship.type
+			control.imageTarget =
+				imageRelationship.targetMode === 'External'
+					? imageRelationship.target
+					: resolvePath(vmlPath, imageRelationship.target)
+		}
+		controls.push(control)
+	}
+	return controls
+}
+
 function assignActiveXBinaryInfo(
 	info: ActiveXControlBuilder,
 	relationships: readonly Relationship[],
@@ -54,6 +171,112 @@ function assignActiveXBinaryInfo(
 	if (!binary) return
 	info.binaryRelationshipId = binary.id
 	info.binaryTarget = binary.target
+}
+
+function assignVmlControlInfo(info: WorksheetControlBuilder, vml: VmlControlInfo): void {
+	assignText(info, 'vmlShapeId', vml.shapeName)
+	assignText(info, 'vmlShapeSpid', vml.shapeSpid)
+	assignText(info, 'vmlObjectType', vml.objectType)
+	if (vml.mapOcx !== undefined) info.vmlMapOcx = vml.mapOcx
+	assignText(info, 'vmlImageRelationshipId', vml.imageRelationshipId)
+	assignText(info, 'vmlImageRelationshipType', vml.imageRelationshipType)
+	assignText(info, 'vmlImageTarget', vml.imageTarget)
+}
+
+const CONTROL_RE =
+	/<(?:[A-Za-z_][\w.-]*:)?control\b([^/>]*?)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?control>|<(?:[A-Za-z_][\w.-]*:)?control\b([^/>]*?)\/>/g
+const VML_SHAPE_RE = /<v:shape\b([^>]*)>([\s\S]*?)<\/v:shape>/g
+const ATTR_RE = /([A-Za-z_][\w:.-]*)=(?:"([^"]*)"|'([^']*)')/g
+
+function extractControlNodes(
+	xml: string,
+): Array<{ attrs: ReadonlyMap<string, string>; body: string }> {
+	const controls: Array<{ attrs: ReadonlyMap<string, string>; body: string }> = []
+	const seen = new Set<string>()
+	for (const match of xml.matchAll(CONTROL_RE)) {
+		const attrs = parseAttrs(match[1] ?? match[3] ?? '')
+		const body = match[2] ?? ''
+		const key = `${attrs.get('r:id') ?? attrs.get('id') ?? ''}:${attrs.get('shapeId') ?? ''}`
+		const existing = controls.findIndex((control) => {
+			const existingKey = `${control.attrs.get('r:id') ?? control.attrs.get('id') ?? ''}:${control.attrs.get('shapeId') ?? ''}`
+			return existingKey === key
+		})
+		if (existing >= 0) {
+			if (body.includes('<controlPr')) controls[existing] = { attrs, body }
+			continue
+		}
+		if (seen.has(key)) continue
+		seen.add(key)
+		controls.push({ attrs, body })
+	}
+	return controls
+}
+
+function parseAttrs(raw: string): ReadonlyMap<string, string> {
+	const attrs = new Map<string, string>()
+	for (const match of raw.matchAll(ATTR_RE)) {
+		const name = match[1]
+		const value = match[2] ?? match[3]
+		if (name && value !== undefined) attrs.set(name, value)
+	}
+	return attrs
+}
+
+function firstTagAttrs(xml: string, localName: string): ReadonlyMap<string, string> {
+	const re = new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${localName}\\b([^>]*)>`, 'i')
+	return parseAttrs(xml.match(re)?.[1] ?? '')
+}
+
+function parseWorksheetControlAnchor(xml: string): SheetImageAnchor | undefined {
+	const body = localTagBody(xml, 'anchor')
+	if (!body) return undefined
+	const from = parseMarker(localTagBody(body, 'from'))
+	const to = parseMarker(localTagBody(body, 'to'))
+	if (!from || !to) return undefined
+	return { kind: 'twoCell', from, to }
+}
+
+function parseMarker(xml: string | undefined): SheetAnchorMarker | null {
+	if (!xml) return null
+	const col = readChildNumber(xml, 'col')
+	const row = readChildNumber(xml, 'row')
+	if (col === undefined || row === undefined) return null
+	const marker: { col: number; row: number; colOff?: number; rowOff?: number } = { col, row }
+	const colOff = readChildNumber(xml, 'colOff')
+	if (colOff !== undefined) marker.colOff = colOff
+	const rowOff = readChildNumber(xml, 'rowOff')
+	if (rowOff !== undefined) marker.rowOff = rowOff
+	return marker
+}
+
+function readChildNumber(xml: string, localName: string): number | undefined {
+	const text = localTagBody(xml, localName)?.trim()
+	if (!text) return undefined
+	const parsed = Number(text)
+	return Number.isNaN(parsed) ? undefined : parsed
+}
+
+function localTagBody(xml: string, localName: string): string | undefined {
+	const re = new RegExp(
+		`<(?:[A-Za-z_][\\w.-]*:)?${localName}\\b[^>]*>([\\s\\S]*?)<\\/(?:[A-Za-z_][\\w.-]*:)?${localName}>`,
+		'i',
+	)
+	return xml.match(re)?.[1]
+}
+
+function hasLocalTag(xml: string, localName: string): boolean {
+	return new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${localName}\\b`, 'i').test(xml)
+}
+
+function parseShapeSpid(value: string): number | undefined {
+	const match = value.match(/_s(\d+)$/)
+	return parseOptionalNumber(match?.[1])
+}
+
+function parseOptionalNumber(value: string | undefined): number | undefined {
+	if (value === undefined || value.length === 0) return undefined
+	const parsed = Number(value)
+	return Number.isNaN(parsed) ? undefined : parsed
 }
 
 function firstElement(doc: XmlNode, localName: string): XmlNode | undefined {
@@ -69,14 +292,19 @@ function localPart(qualifiedName: string): string {
 	return colon === -1 ? qualifiedName : qualifiedName.slice(colon + 1)
 }
 
-function assignText<T extends ActiveXControlBuilder | FormControlBuilder, K extends keyof T>(
-	info: T,
-	key: K,
-	value: string | undefined,
-): void {
+function assignText<
+	T extends
+		| ActiveXControlBuilder
+		| FormControlBuilder
+		| WorksheetControlBuilder
+		| VmlControlBuilder,
+	K extends keyof T,
+>(info: T, key: K, value: string | undefined): void {
 	if (value !== undefined && value.length > 0) info[key] = value as T[K]
 }
 
-function nonEmpty<T extends ActiveXControlBuilder | FormControlBuilder>(info: T): T | undefined {
+function nonEmpty<T extends ActiveXControlBuilder | FormControlBuilder | WorksheetControlBuilder>(
+	info: T,
+): T | undefined {
 	return Object.keys(info).length > 0 ? info : undefined
 }

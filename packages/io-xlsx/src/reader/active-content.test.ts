@@ -173,6 +173,28 @@ describe('active content inventory', () => {
 			partPath: 'xl/activeX/activeX1.xml',
 			sheetName: 'Sheet1',
 			sourceRelationshipId: 'rId3',
+			worksheetControl: {
+				shapeId: 1025,
+				name: 'CheckBox1343',
+				relationshipId: 'rId3',
+				controlPrRelationshipId: 'rId4',
+				controlPrRelationshipType:
+					'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',
+				controlPrTarget: 'xl/media/image1.emf',
+				anchor: {
+					kind: 'twoCell',
+					from: { col: 1, row: 3, colOff: 438150, rowOff: 38100 },
+					to: { col: 4, row: 6, colOff: 161925, rowOff: 114300 },
+				},
+				vmlShapeId: 'CheckBox1343',
+				vmlShapeSpid: '_x0000_s1025',
+				vmlObjectType: 'Pict',
+				vmlMapOcx: true,
+				vmlImageRelationshipId: 'rId1',
+				vmlImageRelationshipType:
+					'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',
+				vmlImageTarget: 'xl/media/image1.emf',
+			},
 			activeX: {
 				classId: '{8BD21D40-EC42-11CE-9E0D-00AA006002F3}',
 				persistence: 'persistStreamInit',

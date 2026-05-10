@@ -121,6 +121,42 @@ describe('LibreOffice XLSX fixture corpus', () => {
 		expect(sheet?.drawingObjectRefs).toHaveLength(1)
 	})
 
+	test('links LibreOffice ActiveX checkbox controls to worksheet and drawing metadata', () => {
+		const initial = readXlsx(loadFixture('activex_checkbox.xlsx'))
+		expectOk(initial)
+
+		const activeX = initial.value.workbook.activeContent.find(
+			(content) => content.kind === 'activeX' && content.partPath.endsWith('.xml'),
+		)
+		expect(activeX).toMatchObject({
+			sheetName: 'Sheet1',
+			sourceRelationshipId: 'rId3',
+			worksheetControl: {
+				shapeId: 1025,
+				name: 'CheckBox1343',
+				relationshipId: 'rId3',
+				controlPrRelationshipId: 'rId4',
+				controlPrTarget: 'xl/media/image1.emf',
+				anchor: {
+					kind: 'twoCell',
+					from: { col: 1, row: 3, colOff: 438150, rowOff: 38100 },
+					to: { col: 4, row: 6, colOff: 161925, rowOff: 114300 },
+				},
+				vmlMapOcx: true,
+				vmlImageTarget: 'xl/media/image1.emf',
+			},
+		})
+
+		const sheet = initial.value.workbook.sheets.find((entry) => entry.name === 'Sheet1')
+		expect(sheet?.drawingObjectRefs[0]).toMatchObject({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			kind: 'shape',
+			id: 1025,
+			name: 'CheckBox1343',
+			anchor: activeX?.worksheetControl?.anchor,
+		})
+	})
+
 	test('preserves LibreOffice pivot caches that intentionally omit cache records', () => {
 		const initial = readXlsx(
 			loadFixture(

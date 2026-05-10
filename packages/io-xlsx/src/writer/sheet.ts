@@ -58,7 +58,8 @@ function buildSheetXmlToSink(
 		tableRelIds.length > 0 ||
 		hyperlinks.some((link) => link.relId) ||
 		drawingRelId ||
-		legacyDrawingRelId
+		legacyDrawingRelId ||
+		sheet.preservedControlsXml
 	) {
 		worksheetAttrs.push(`xmlns:r="${NS_R}"`)
 	}
@@ -417,6 +418,10 @@ function buildSheetXmlToSink(
 
 	if (legacyDrawingRelId) {
 		out.push(`<legacyDrawing r:id="${legacyDrawingRelId}"/>`)
+	}
+
+	if (sheet.preservedControlsXml) {
+		out.push(sheet.preservedControlsXml)
 	}
 
 	if (tableRelIds.length > 0) {

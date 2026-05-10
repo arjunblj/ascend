@@ -857,6 +857,18 @@ export function planWriteXlsx(
 			let drawingRelId: string | undefined
 			let legacyDrawingRelId: string | undefined
 			const tableRelIds: string[] = []
+			const usedSheetRelIds = new Set<string>()
+			const nextSheetRelId = (preferred?: string): string => {
+				if (preferred && !usedSheetRelIds.has(preferred)) {
+					usedSheetRelIds.add(preferred)
+					return preferred
+				}
+				while (usedSheetRelIds.has(`rId${sheetRelId}`)) sheetRelId++
+				const relId = `rId${sheetRelId}`
+				usedSheetRelIds.add(relId)
+				sheetRelId++
+				return relId
+			}
 			const commentsCapsule = sheetCapsules.find((capsule) => capsule.relType === REL_COMMENTS)
 			const tableCapsules = sheetCapsules.filter((capsule) => capsule.relType === REL_TABLE)
 			const hasPreservedSheetXml = hasPreservedPart(
@@ -900,7 +912,7 @@ export function planWriteXlsx(
 			for (const capsule of sheetCapsules) {
 				if (!capsule.relType) continue
 				if (capsule.relType === REL_TABLE) continue
-				const relId = `rId${sheetRelId}`
+				const relId = nextSheetRelId(capsule.relId)
 				sheetRels.push({
 					id: relId,
 					type: capsule.relType,
@@ -911,11 +923,10 @@ export function planWriteXlsx(
 				}
 				if (capsule.relType === REL_DRAWING && !drawingRelId) drawingRelId = relId
 				if (capsule.relType === REL_VML_DRAWING && !legacyDrawingRelId) legacyDrawingRelId = relId
-				sheetRelId++
 			}
 			for (const [ref, hyperlink] of sheet.hyperlinks) {
 				if (hyperlink.target) {
-					const relId = `rId${sheetRelId}`
+					const relId = nextSheetRelId()
 					sheetRels.push({
 						id: relId,
 						type: REL_HYPERLINK,
@@ -929,7 +940,6 @@ export function planWriteXlsx(
 						...(hyperlink.display ? { display: hyperlink.display } : {}),
 						...(hyperlink.tooltip ? { tooltip: hyperlink.tooltip } : {}),
 					})
-					sheetRelId++
 					continue
 				}
 				hyperlinkEntries.push({
@@ -979,22 +989,20 @@ export function planWriteXlsx(
 						if (commentsCapsule) plan.skipCapsulePath(commentsCapsule.partPath)
 						if (existingVmlCapsule) plan.skipCapsulePath(existingVmlCapsule.partPath)
 						if (!commentsRelId) {
-							commentsRelId = `rId${sheetRelId}`
+							commentsRelId = nextSheetRelId()
 							sheetRels.push({
 								id: commentsRelId,
 								type: REL_COMMENTS,
 								target: computeRelativePath('xl/worksheets/', commentsPartPath),
 							})
-							sheetRelId++
 						}
 						if (!legacyDrawingRelId) {
-							legacyDrawingRelId = `rId${sheetRelId}`
+							legacyDrawingRelId = nextSheetRelId()
 							sheetRels.push({
 								id: legacyDrawingRelId,
 								type: REL_VML_DRAWING,
 								target: computeRelativePath('xl/worksheets/', vmlPartPath),
 							})
-							sheetRelId++
 						}
 						if (!commentsCapsule) nextGeneratedCommentsNumber++
 						if (!existingVmlCapsule) nextGeneratedVmlNumber++
@@ -1036,14 +1044,13 @@ export function planWriteXlsx(
 					}
 					plan.addOverride(tablePartPath, tableContentType)
 					if (tableCapsule) plan.skipCapsulePath(tableCapsule.partPath)
-					const relId = `rId${sheetRelId}`
+					const relId = nextSheetRelId(tableCapsule?.relId)
 					sheetRels.push({
 						id: relId,
 						type: REL_TABLE,
 						target: computeRelativePath('xl/worksheets/', tablePartPath),
 					})
 					tableRelIds.push(relId)
-					sheetRelId++
 					nextGeneratedTableNumber++
 				}
 				const generatedImages = sheet.imageRefs.filter(
@@ -1094,13 +1101,12 @@ export function planWriteXlsx(
 							),
 					)
 					plan.addOverride(drawingPartPath, CT_DRAWING)
-					drawingRelId = `rId${sheetRelId}`
+					drawingRelId = nextSheetRelId()
 					sheetRels.push({
 						id: drawingRelId,
 						type: REL_DRAWING,
 						target: computeRelativePath('xl/worksheets/', drawingPartPath),
 					})
-					sheetRelId++
 					nextGeneratedDrawingNumber++
 					hasGeneratedDrawing = true
 				}

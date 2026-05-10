@@ -311,6 +311,25 @@ function hasSemanticImageInventory(
 	)
 }
 
+function hasLibreOfficeActiveXControlLinkage(semanticSummary: SemanticSummary): boolean {
+	return semanticSummary.activeContent.some((content) => {
+		const control = content.worksheetControl
+		return (
+			content.kind === 'activeX' &&
+			content.sheetName === 'Sheet1' &&
+			content.sourceRelationshipId === 'rId3' &&
+			control?.shapeId === 1025 &&
+			control.name === 'CheckBox1343' &&
+			control.relationshipId === 'rId3' &&
+			control.controlPrRelationshipId === 'rId4' &&
+			control.controlPrTarget === 'xl/media/image1.emf' &&
+			control.anchor?.kind === 'twoCell' &&
+			control.vmlMapOcx === true &&
+			control.vmlImageTarget === 'xl/media/image1.emf'
+		)
+	})
+}
+
 function assertKnownVisualFixtureCoverage(
 	entry: NormalizedCorpusManifestEntry,
 	semanticSummary: SemanticSummary,
@@ -386,6 +405,10 @@ function normalizeActiveContent(entries: readonly ActiveContentInfo[]): ActiveCo
 			...(entry.byteSize !== undefined ? { byteSize: entry.byteSize } : {}),
 			...(entry.opaque !== undefined ? { opaque: entry.opaque } : {}),
 			...(entry.executionPolicy !== undefined ? { executionPolicy: entry.executionPolicy } : {}),
+			...(entry.sourceRelationshipId !== undefined
+				? { sourceRelationshipId: entry.sourceRelationshipId }
+				: {}),
+			...(entry.worksheetControl !== undefined ? { worksheetControl: entry.worksheetControl } : {}),
 		}))
 		.sort((left, right) =>
 			`${left.kind}\u0000${left.partPath}`.localeCompare(`${right.kind}\u0000${right.partPath}`),
@@ -641,7 +664,9 @@ function assertManifestReadCoverage(
 			(packageCounts.active_content > 0 &&
 				semanticSummary.activeContentCount > 0 &&
 				(compatibilityFeatures.has('preservedActiveX') ||
-					compatibilityFeatures.has('preservedControl'))),
+					compatibilityFeatures.has('preservedControl')) &&
+				(entry.file !== 'activex_checkbox.xlsx' ||
+					hasLibreOfficeActiveXControlLinkage(semanticSummary))),
 	)
 	assertFeature(
 		entry,

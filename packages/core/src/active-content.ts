@@ -1,3 +1,5 @@
+import type { SheetImageAnchor } from './sheet.ts'
+
 export type ActiveContentKind =
 	| 'vbaProject'
 	| 'activeX'
@@ -39,6 +41,23 @@ export interface FormControlInfo {
 	readonly dropLines?: number
 }
 
+export interface WorksheetControlInfo {
+	readonly shapeId?: number
+	readonly name?: string
+	readonly relationshipId?: string
+	readonly controlPrRelationshipId?: string
+	readonly controlPrRelationshipType?: string
+	readonly controlPrTarget?: string
+	readonly anchor?: SheetImageAnchor
+	readonly vmlShapeId?: string
+	readonly vmlShapeSpid?: string
+	readonly vmlObjectType?: string
+	readonly vmlMapOcx?: boolean
+	readonly vmlImageRelationshipId?: string
+	readonly vmlImageRelationshipType?: string
+	readonly vmlImageTarget?: string
+}
+
 export interface ActiveContentInfo {
 	readonly kind: ActiveContentKind
 	readonly partPath: string
@@ -56,6 +75,7 @@ export interface ActiveContentInfo {
 	readonly vbaProject?: VbaProjectInfo
 	readonly activeX?: ActiveXControlInfo
 	readonly formControl?: FormControlInfo
+	readonly worksheetControl?: WorksheetControlInfo
 }
 
 export function cloneActiveContentInfo(entry: ActiveContentInfo): ActiveContentInfo {
@@ -63,6 +83,16 @@ export function cloneActiveContentInfo(entry: ActiveContentInfo): ActiveContentI
 		...entry,
 		...(entry.activeX ? { activeX: { ...entry.activeX } } : {}),
 		...(entry.formControl ? { formControl: { ...entry.formControl } } : {}),
+		...(entry.worksheetControl
+			? {
+					worksheetControl: {
+						...entry.worksheetControl,
+						...(entry.worksheetControl.anchor
+							? { anchor: cloneControlAnchor(entry.worksheetControl.anchor) }
+							: {}),
+					},
+				}
+			: {}),
 		...(entry.vbaProject
 			? {
 					vbaProject: {
@@ -71,5 +101,16 @@ export function cloneActiveContentInfo(entry: ActiveContentInfo): ActiveContentI
 					},
 				}
 			: {}),
+	}
+}
+
+function cloneControlAnchor(anchor: SheetImageAnchor): SheetImageAnchor {
+	switch (anchor.kind) {
+		case 'oneCell':
+			return { ...anchor, from: { ...anchor.from } }
+		case 'twoCell':
+			return { ...anchor, from: { ...anchor.from }, to: { ...anchor.to } }
+		case 'absolute':
+			return { ...anchor }
 	}
 }

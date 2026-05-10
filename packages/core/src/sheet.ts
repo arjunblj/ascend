@@ -439,6 +439,7 @@ export class Sheet {
 	preservedXml: SheetPreservedXml | null
 	preservedExtLst: string | null
 	preservedCustomSheetViews: string | null
+	preservedControlsXml: string | null
 	private _shared = false
 
 	constructor(name: string, id?: SheetId) {
@@ -484,6 +485,7 @@ export class Sheet {
 		this.preservedXml = null
 		this.preservedExtLst = null
 		this.preservedCustomSheetViews = null
+		this.preservedControlsXml = null
 	}
 
 	ensureWritable(): void {
@@ -562,6 +564,7 @@ export class Sheet {
 		s.preservedXml = this.preservedXml
 		s.preservedExtLst = this.preservedExtLst
 		s.preservedCustomSheetViews = this.preservedCustomSheetViews
+		s.preservedControlsXml = this.preservedControlsXml
 		this._shared = true
 		s._shared = true
 		return s

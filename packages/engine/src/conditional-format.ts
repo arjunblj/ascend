@@ -1,5 +1,5 @@
 import type { CellStyle, Sheet, SheetConditionalFormatRule, Workbook } from '@ascend/core'
-import { expandRange, parseRange, toA1 } from '@ascend/core'
+import { parseRange, type RangeRef, toA1 } from '@ascend/core'
 import type { CellValue } from '@ascend/schema'
 import { isEmpty, topLeftScalar } from '@ascend/schema'
 import { evaluateRelativeFormulaText } from './relative-formula.ts'
@@ -19,24 +19,40 @@ interface RuleWithContext {
 	readonly sqref: string
 }
 
-function cellInSqref(sqref: string, row: number, col: number): boolean {
+interface ParsedSqrefPart {
+	readonly ref: string
+	readonly range: RangeRef
+}
+
+function parseSqrefParts(sqref: string): ParsedSqrefPart[] {
 	const parts = sqref.split(/\s+/)
+	const parsed: ParsedSqrefPart[] = []
 	for (const part of parts) {
+		if (part.length === 0) continue
 		try {
-			const range = parseRange(part)
-			if (
-				row >= range.start.row &&
-				row <= range.end.row &&
-				col >= range.start.col &&
-				col <= range.end.col
-			) {
-				return true
-			}
+			parsed.push({ ref: part, range: parseRange(part) })
 		} catch {
 			// invalid range part, skip
 		}
 	}
-	return false
+	return parsed
+}
+
+function rangeContainsCell(range: RangeRef, row: number, col: number): boolean {
+	return (
+		row >= range.start.row && row <= range.end.row && col >= range.start.col && col <= range.end.col
+	)
+}
+
+function findSqrefPart(
+	parts: readonly ParsedSqrefPart[],
+	row: number,
+	col: number,
+): ParsedSqrefPart | undefined {
+	for (const part of parts) {
+		if (rangeContainsCell(part.range, row, col)) return part
+	}
+	return undefined
 }
 
 function collectRulesInPriorityOrder(sheet: Sheet): RuleWithContext[] {
@@ -201,30 +217,31 @@ interface RangeContext {
 }
 
 const RANGE_CONTEXT_TYPES = new Set(['duplicateValues', 'uniqueValues', 'top10', 'aboveAverage'])
+const EXCEL_MAX_COLS = 16_384
 
 function needsRangeContext(type: string): boolean {
 	return RANGE_CONTEXT_TYPES.has(type)
 }
 
-function buildRangeContext(sheet: Sheet, sqref: string): RangeContext {
+function buildRangeContext(sheet: Sheet, parts: readonly ParsedSqrefPart[]): RangeContext {
 	const allNumerics: number[] = []
 	const valueCounts = new Map<string, number>()
-	const parts = sqref.split(/\s+/)
 	for (const part of parts) {
-		try {
-			const range = parseRange(part)
-			for (const ref of expandRange(range)) {
-				const value = sheet.cells.readValue(ref.row, ref.col)
+		const range = part.range
+		sheet.cells.forEachValueInRange(
+			range.start.row,
+			range.start.col,
+			range.end.row,
+			range.end.col,
+			(value) => {
 				if (!isEmpty(value)) {
 					const key = scalarToString(value)
 					valueCounts.set(key, (valueCounts.get(key) ?? 0) + 1)
 				}
 				const n = scalarToNumber(value)
 				if (n !== null) allNumerics.push(n)
-			}
-		} catch {
-			// skip invalid range
-		}
+			},
+		)
 	}
 	const sortedNumerics = [...allNumerics].sort((a, b) => a - b)
 	const numericMean =
@@ -496,20 +513,24 @@ export function evaluateConditionalFormats(
 	const result = new Map<string, ConditionalFormatResult[]>()
 	const rules = collectRulesInPriorityOrder(sheet)
 	const sheetIndex = workbook.sheets.indexOf(sheet)
+	const parsedSqrefs = new Map<string, readonly ParsedSqrefPart[]>()
+	const getParsedSqref = (sqref: string): readonly ParsedSqrefPart[] => {
+		const cached = parsedSqrefs.get(sqref)
+		if (cached) return cached
+		const parsed = parseSqrefParts(sqref)
+		parsedSqrefs.set(sqref, parsed)
+		return parsed
+	}
 
-	const cellsToCheck = new Set<string>()
-	const anchors = new Map<string, { row: number; col: number }>()
+	const cellsToCheck = new Set<number>()
 	for (const cf of sheet.conditionalFormats) {
-		const parts = cf.sqref.split(/\s+/)
+		const parts = getParsedSqref(cf.sqref)
 		for (const part of parts) {
-			try {
-				const range = parseRange(part)
-				anchors.set(part, { row: range.start.row, col: range.start.col })
-				for (const ref of expandRange(range)) {
-					cellsToCheck.add(toA1(ref))
+			const range = part.range
+			for (let row = range.start.row; row <= range.end.row; row++) {
+				for (let col = range.start.col; col <= range.end.col; col++) {
+					cellsToCheck.add(row * EXCEL_MAX_COLS + col)
 				}
-			} catch {
-				// skip invalid range
 			}
 		}
 	}
@@ -517,42 +538,29 @@ export function evaluateConditionalFormats(
 	const rangeContexts = new Map<string, RangeContext>()
 	for (const { rule, sqref } of rules) {
 		if (needsRangeContext(rule.type) && !rangeContexts.has(sqref)) {
-			rangeContexts.set(sqref, buildRangeContext(sheet, sqref))
+			rangeContexts.set(sqref, buildRangeContext(sheet, getParsedSqref(sqref)))
 		}
 	}
 
-	for (const a1 of cellsToCheck) {
-		const ref = parseRange(a1)
-		const row = ref.start.row
-		const col = ref.start.col
+	for (const cellKey of cellsToCheck) {
+		const row = Math.floor(cellKey / EXCEL_MAX_COLS)
+		const col = cellKey - row * EXCEL_MAX_COLS
 		const cellValue = sheet.cells.readValue(row, col)
 		const matched: ConditionalFormatResult[] = []
 		let stopIfTrue = false
 
 		for (const { rule, sqref, ruleIndex, priority } of rules) {
 			if (stopIfTrue) break
-			if (!cellInSqref(sqref, row, col)) continue
-			const part = sqref.split(/\s+/).find((candidate) => {
-				try {
-					const range = parseRange(candidate)
-					return (
-						row >= range.start.row &&
-						row <= range.end.row &&
-						col >= range.start.col &&
-						col <= range.end.col
-					)
-				} catch {
-					return false
-				}
-			})
-			const anchor = part ? anchors.get(part) : undefined
+			const part = findSqrefPart(getParsedSqref(sqref), row, col)
+			if (!part) continue
+			const anchor = part.range.start
 			if (
 				!ruleMatches(
 					rule,
 					workbook,
 					sheetIndex,
-					anchor?.row ?? row,
-					anchor?.col ?? col,
+					anchor.row,
+					anchor.col,
 					cellValue,
 					row,
 					col,
@@ -573,7 +581,7 @@ export function evaluateConditionalFormats(
 		}
 
 		if (matched.length > 0) {
-			result.set(a1, matched)
+			result.set(toA1({ row, col }), matched)
 		}
 	}
 

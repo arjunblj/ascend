@@ -7,6 +7,7 @@ export {
 	type VbaModuleInfo,
 	type VbaModuleKind,
 	type VbaProjectInfo,
+	type WorksheetControlInfo,
 } from './active-content.ts'
 export type { ChartPartInfo, ChartSeriesInfo, ChartSheetInfo } from './chart.ts'
 export type { WorkbookConnectionPartInfo, WorkbookConnectionPartKind } from './connection.ts'

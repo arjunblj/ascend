@@ -254,6 +254,7 @@ export function parseSheet(
 		parseSparklineGroups(ws, sheet)
 		extractCustomSheetViews(xml, sheet)
 		extractExtLst(xml, sheet)
+		extractControls(xml, sheet)
 	}
 	return sheet
 }
@@ -2963,7 +2964,10 @@ const WORKSHEET_EXTLST_RE =
 	/<(?:(?<prefix>[A-Za-z_][\w.-]*):)?extLst\b(?<attrs>[^>]*)>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?extLst>/g
 const CUSTOM_SHEET_VIEWS_RE =
 	/<(?:(?<prefix>[A-Za-z_][\w.-]*):)?customSheetViews\b(?<attrs>[^>]*)>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?customSheetViews>/g
+const WORKSHEET_CONTROLS_RE =
+	/<(?:(?<prefix>[A-Za-z_][\w.-]*):)?controls\b(?<attrs>[^>]*)>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?controls>/g
 const SPREADSHEETML_NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+const SPREADSHEET_DRAWING_NS = 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing'
 
 function extractExtLst(xml: string, sheet: Sheet): void {
 	let preserved: string | undefined
@@ -2989,6 +2993,27 @@ function extractCustomSheetViews(xml: string, sheet: Sheet): void {
 		)
 	}
 	if (preserved) sheet.preservedCustomSheetViews = preserved
+}
+
+function extractControls(xml: string, sheet: Sheet): void {
+	let preserved: string | undefined
+	for (const match of xml.matchAll(WORKSHEET_CONTROLS_RE)) {
+		preserved = withSpreadsheetmlNamespace(
+			withControlNamespaces(match[0], match.groups?.attrs ?? ''),
+			'controls',
+			match.groups?.prefix,
+			match.groups?.attrs ?? '',
+		)
+	}
+	if (preserved) sheet.preservedControlsXml = preserved
+}
+
+function withControlNamespaces(xml: string, attrs: string): string {
+	if (!xml.includes('xdr:') || /\sxmlns:xdr=/.test(attrs)) return xml
+	return xml.replace(
+		/^<(?:(?<prefix>[A-Za-z_][\w.-]*):)?controls\b/,
+		(match) => `${match} xmlns:xdr="${SPREADSHEET_DRAWING_NS}"`,
+	)
 }
 
 function withSpreadsheetmlNamespace(

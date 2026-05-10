@@ -17,7 +17,12 @@ import type {
 import { ascendError, emptyReport, err, ok } from '@ascend/schema'
 import { normalizeStoredFormulaText } from '../formula-storage.ts'
 import type { PreservationCapsule } from '../preserve.ts'
-import { parseActiveXControlInfo, parseFormControlInfo } from './active-content.ts'
+import {
+	parseActiveXControlInfo,
+	parseFormControlInfo,
+	parseVmlControlInfos,
+	parseWorksheetControlInfos,
+} from './active-content.ts'
 import { parseChartXml } from './charts.ts'
 import {
 	parseCommentsXml,
@@ -57,6 +62,7 @@ import {
 	REL_TABLE,
 	REL_THEME,
 	REL_THREADED_COMMENT,
+	REL_VML_DRAWING,
 	REL_WORKSHEET,
 	type Relationship,
 	resolvePath,
@@ -609,7 +615,11 @@ export function readXlsx(
 					workbookPath,
 					sheetRelsByPath,
 				)
-		if (!isPartial) workbook.activeContent.push(...collectActiveContent(archive, capsules))
+		if (!isPartial) {
+			workbook.activeContent.push(
+				...collectActiveContent(archive, capsules, sheetPathToAnchor, sheetRelsByPath),
+			)
+		}
 		if (!isPartial) workbook.connectionParts.push(...collectConnectionParts(archive, capsules))
 		if (!isPartial) workbook.dataModelParts.push(...collectDataModelParts(capsules))
 		if (!isPartial) attachChartParts(archive, workbook, capsules)
@@ -1107,11 +1117,18 @@ function categorizeCapsules(capsules: readonly PreservationCapsule[]): Map<strin
 function collectActiveContent(
 	archive: ZipArchive,
 	capsules: readonly PreservationCapsule[],
+	sheetPathToAnchor: ReadonlyMap<string, { sheetId: string; sheetName: string }>,
+	sheetRelsByPath: ReadonlyMap<string, readonly Relationship[]>,
 ): ActiveContentInfo[] {
 	const activeContent: ActiveContentInfo[] = []
+	const worksheetControls = collectWorksheetControls(archive, sheetPathToAnchor, sheetRelsByPath)
 	for (const capsule of capsules) {
 		const kind = classifyActiveContent(capsule)
 		if (!kind) continue
+		const worksheetControl =
+			capsule.anchor.kind === 'sheet' && capsule.anchor.sheetName && capsule.relId
+				? worksheetControls.get(controlKey(capsule.anchor.sheetName, capsule.relId))
+				: undefined
 		const entry = archive.get(capsule.partPath)
 		const vbaProject =
 			kind === 'vbaProject'
@@ -1151,9 +1168,46 @@ function collectActiveContent(
 			...(vbaProject ? { vbaProject } : {}),
 			...(activeX ? { activeX } : {}),
 			...(formControl ? { formControl } : {}),
+			...(worksheetControl ? { worksheetControl } : {}),
 		})
 	}
 	return activeContent
+}
+
+function collectWorksheetControls(
+	archive: ZipArchive,
+	sheetPathToAnchor: ReadonlyMap<string, { sheetId: string; sheetName: string }>,
+	sheetRelsByPath: ReadonlyMap<string, readonly Relationship[]>,
+): Map<string, NonNullable<ActiveContentInfo['worksheetControl']>> {
+	const controlsBySheetRel = new Map<string, NonNullable<ActiveContentInfo['worksheetControl']>>()
+	for (const [sheetPath, anchor] of sheetPathToAnchor) {
+		const sheetXml = readPart(archive, sheetPath)
+		if (!sheetXml || !sheetXml.includes('<controls')) continue
+		const relationships = sheetRelsByPath.get(sheetPath) ?? []
+		const vmlControls = relationships
+			.filter((rel) => rel.type === REL_VML_DRAWING)
+			.flatMap((rel) => {
+				const vmlPath = resolvePath(sheetPath, rel.target)
+				const vmlXml = readPart(archive, vmlPath)
+				const vmlRelsXml = readPart(archive, getRelsPath(vmlPath))
+				const vmlRelationships = vmlRelsXml ? parseRelationships(vmlRelsXml) : []
+				return parseVmlControlInfos(vmlXml, vmlPath, vmlRelationships)
+			})
+		for (const control of parseWorksheetControlInfos(
+			sheetXml,
+			sheetPath,
+			relationships,
+			vmlControls,
+		)) {
+			if (!control.relationshipId) continue
+			controlsBySheetRel.set(controlKey(anchor.sheetName, control.relationshipId), control)
+		}
+	}
+	return controlsBySheetRel
+}
+
+function controlKey(sheetName: string, relId: string): string {
+	return `${sheetName}\u0000${relId}`
 }
 
 function readXmlMetadataPart(

@@ -103,9 +103,10 @@ export function inspectOoxmlPackageFeatures(bytes: Uint8Array): OoxmlPackageProb
 		sparklines: countXmlTags(worksheetXml, 'sparklineGroup'),
 		macros: countPaths(paths, /^xl\/vbaProject\.bin$/i),
 		active_content:
-			countPaths(paths, /^xl\/activeX\//i) +
-			countPaths(paths, /^xl\/ctrlProps\//i) +
-			countPaths(paths, /^xl\/embeddings\//i),
+			countPaths(paths, /^xl\/activeX\/(?!_rels\/).+/i) +
+			countPaths(paths, /^xl\/ctrlProps\/(?!_rels\/).+/i) +
+			countPaths(paths, /^xl\/embeddings\/(?!_rels\/).+/i),
+		worksheet_controls: countXmlTags(worksheetXml, 'control'),
 		custom_xml: countPaths(paths, /^customXml\//i),
 		external_links: countPaths(paths, /^xl\/externalLinks\//i),
 		connections:

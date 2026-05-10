@@ -66,6 +66,7 @@ interface SemanticSummary {
 	slicerCacheCount: number
 	timelineCount: number
 	timelineCacheCount: number
+	sparklineGroupCount: number
 	externalReferenceCount: number
 	activeContentCount: number
 	hasDrawingRefs: boolean
@@ -260,6 +261,7 @@ async function loadContractSubject(bytes: Uint8Array): Promise<ContractSubject> 
 			slicerCacheCount: info.slicerCacheCount,
 			timelineCount: info.timelineCount,
 			timelineCacheCount: info.timelineCacheCount,
+			sparklineGroupCount: info.sparklineGroupCount ?? 0,
 			externalReferenceCount: info.externalReferenceCount,
 			activeContentCount: info.activeContentCount,
 			hasDrawingRefs: info.sheets.some((sheet) => sheet.hasDrawingRefs ?? false),
@@ -439,6 +441,12 @@ function assertManifestReadCoverage(
 	)
 	assertFeature(
 		entry,
+		'sparklines',
+		!entry.features.sparklines ||
+			(packageCounts.sparklines > 0 && semanticSummary.sparklineGroupCount > 0),
+	)
+	assertFeature(
+		entry,
 		'images_or_media',
 		!entry.features.images_or_media ||
 			packageSummary.media > 0 ||
@@ -503,6 +511,7 @@ function assertManifestEditCoverage(
 	expect(after.semanticSummary.pivotCacheCount).toBe(before.semanticSummary.pivotCacheCount)
 	expect(after.semanticSummary.slicerCount).toBe(before.semanticSummary.slicerCount)
 	expect(after.semanticSummary.slicerCacheCount).toBe(before.semanticSummary.slicerCacheCount)
+	expect(after.semanticSummary.sparklineGroupCount).toBe(before.semanticSummary.sparklineGroupCount)
 	expect(after.semanticSummary.externalReferenceCount).toBe(
 		before.semanticSummary.externalReferenceCount,
 	)

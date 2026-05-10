@@ -147,6 +147,7 @@ async function buildEntry(root: string, fixture: ClosedXmlFixture): Promise<Corp
 		pivot_tables: probe.counts.pivot_tables,
 		pivot_caches: probe.counts.pivot_caches,
 		comments: probe.counts.comments,
+		sparklines: probe.counts.sparklines,
 	}
 	const features = { ...probe.features, macros: false }
 	return {
@@ -228,11 +229,11 @@ function deriveTags(
 	if (features.hyperlinks) tags.add('hyperlink')
 	if (features.defined_names) tags.add('defined-names')
 	if (features.external_links) tags.add('external-link')
+	if (features.sparklines) tags.add('sparkline')
 	if (CACHED_FORMULA_FIXTURES.has(file)) tags.add('formula-fidelity')
 	if (/formula/i.test(file)) tags.add('formula')
 	if (/style|format|richtext/i.test(file)) tags.add('style')
 	if (/protect/i.test(file)) tags.add('protection')
-	if (/sparkline/i.test(file)) tags.add('sparkline')
 	if (/sort/i.test(file)) tags.add('sort')
 	return [...tags].sort((a, b) => a.localeCompare(b))
 }

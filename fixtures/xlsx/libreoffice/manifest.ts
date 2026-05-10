@@ -91,6 +91,7 @@ async function buildEntry(root: string, fixture: LibreOfficeFixture): Promise<Co
 		pivot_caches: probe.counts.pivot_caches,
 		comments: probe.counts.comments,
 		active_content: probe.counts.active_content,
+		sparklines: probe.counts.sparklines,
 	}
 	const features = {
 		...probe.features,
@@ -127,6 +128,7 @@ function deriveTier(
 		features.drawings ||
 		features.data_validations ||
 		features.active_content ||
+		features.sparklines ||
 		features.strict_ooxml
 		? 'core'
 		: 'smoke'
@@ -177,6 +179,7 @@ function deriveTags(
 	if (features.defined_names) tags.add('defined-names')
 	if (features.external_links) tags.add('external-link')
 	if (features.active_content) tags.add('active-content')
+	if (features.sparklines) tags.add('sparkline')
 	if (features.strict_ooxml) tags.add('strict-ooxml')
 	if (/theme|style|color|colour|writingmode/i.test(file)) tags.add('style')
 	if (/date|1904/i.test(file)) tags.add('date')

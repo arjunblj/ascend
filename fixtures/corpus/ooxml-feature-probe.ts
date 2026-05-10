@@ -100,6 +100,7 @@ export function inspectOoxmlPackageFeatures(bytes: Uint8Array): OoxmlPackageProb
 		slicer_caches: countPaths(paths, /^xl\/slicerCaches\//i),
 		timelines: countPaths(paths, /^xl\/timelines\//i),
 		timeline_caches: countPaths(paths, /^xl\/timelineCaches\//i),
+		sparklines: countXmlTags(worksheetXml, 'sparklineGroup'),
 		macros: countPaths(paths, /^xl\/vbaProject\.bin$/i),
 		active_content:
 			countPaths(paths, /^xl\/activeX\//i) +
@@ -178,6 +179,7 @@ export function inspectOoxmlPackageFeatures(bytes: Uint8Array): OoxmlPackageProb
 		connections: counts.connections > 0,
 		slicers: counts.slicers > 0 || counts.slicer_caches > 0,
 		timelines: counts.timelines > 0 || counts.timeline_caches > 0,
+		sparklines: counts.sparklines > 0,
 		images_or_media: counts.media > 0,
 		custom_xml: counts.custom_xml > 0,
 		calc_chain: counts.calc_chain > 0,

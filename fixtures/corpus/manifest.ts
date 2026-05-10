@@ -200,6 +200,7 @@ export function deriveFeatureTags(entry: CorpusManifestEntry): readonly string[]
 		external_links: 'external-link',
 		connections: 'connection',
 		slicers: 'slicer',
+		sparklines: 'sparkline',
 		images_or_media: 'media',
 		custom_xml: 'custom-xml',
 		calc_chain: 'calc-chain',
@@ -219,7 +220,13 @@ function deriveBenchmarkTier(entry: CorpusManifestEntry): CorpusBenchmarkTier {
 	if (entry.size_bytes >= 4_000_000) return 'extended'
 	if (entry.features.pivot_tables || entry.features.slicers || entry.features.macros)
 		return 'extended'
-	if (entry.features.charts || entry.features.tables || entry.features.drawings) return 'core'
+	if (
+		entry.features.charts ||
+		entry.features.tables ||
+		entry.features.drawings ||
+		entry.features.sparklines
+	)
+		return 'core'
 	return 'smoke'
 }
 
@@ -233,7 +240,8 @@ function deriveAssertionClass(entry: CorpusManifestEntry): CorpusAssertionClass 
 	if (
 		entry.features.conditional_formatting ||
 		entry.features.data_validations ||
-		entry.features.tables
+		entry.features.tables ||
+		entry.features.sparklines
 	) {
 		return 'semantic-plus-package'
 	}
@@ -256,7 +264,8 @@ function deriveRiskClass(entry: CorpusManifestEntry): CorpusRiskClass {
 		entry.features.conditional_formatting ||
 		entry.features.data_validations ||
 		entry.features.calc_chain ||
-		entry.features.tables
+		entry.features.tables ||
+		entry.features.sparklines
 	) {
 		return 'medium'
 	}

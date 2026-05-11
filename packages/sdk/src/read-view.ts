@@ -1339,171 +1339,58 @@ function buildPivotOutputAudits(
 	workbook: Workbook,
 	cellsHydrated: boolean,
 ): PivotOutputAuditInfo[] {
-	return workbook.pivotTables.map((pivot) => {
-		const base = {
-			...(pivot.name !== undefined ? { pivotTable: pivot.name } : {}),
-			partPath: pivot.partPath,
-			sheetName: pivot.sheetName,
-			...(pivot.cacheId !== undefined ? { cacheId: pivot.cacheId } : {}),
+	const audits: PivotOutputAuditInfo[] = []
+	for (const pivot of workbook.pivotTables) {
+		const audit = buildPivotOutputAudit(workbook, cellsHydrated, pivot)
+		if (audit) audits.push(audit)
+	}
+	return audits
+}
+
+function buildPivotOutputAudit(
+	workbook: Workbook,
+	cellsHydrated: boolean,
+	pivot: PivotTableInfo,
+): PivotOutputAuditInfo | undefined {
+	const base = {
+		...(pivot.name !== undefined ? { pivotTable: pivot.name } : {}),
+		partPath: pivot.partPath,
+		sheetName: pivot.sheetName,
+		...(pivot.cacheId !== undefined ? { cacheId: pivot.cacheId } : {}),
+	}
+	if (!cellsHydrated) {
+		return unsupportedPivotAudit(base, 'Pivot output cells are not hydrated in this load mode.')
+	}
+	const sheet = workbook.getSheet(pivot.sheetName)
+	if (!sheet) return unsupportedPivotAudit(base, 'Pivot output sheet was not loaded.')
+	if (!pivot.locationRef) return unsupportedPivotAudit(base, 'Pivot table has no output location.')
+	if (!isEmptyPivotOutput(pivot) && !hasSavedSheetCells(sheet)) return undefined
+	const cache = workbook.pivotCaches.find((entry) => entry.cacheId === pivot.cacheId)
+	if (!cache) return unsupportedPivotAudit(base, 'Pivot cache metadata was not found.')
+	if (isEmptyPivotOutput(pivot)) {
+		const emptyAudit = auditEmptyPivotOutput(workbook, sheet.id, pivot)
+		if (!emptyAudit.ok) return unsupportedPivotAudit(base, emptyAudit.warning)
+		return {
+			...base,
+			status: 'passed',
+			checkedValueCount: emptyAudit.checkedCellCount,
+			mismatches: [],
+			warnings: [],
 		}
-		if (!cellsHydrated) {
-			return unsupportedPivotAudit(base, 'Pivot output cells are not hydrated in this load mode.')
-		}
-		const sheet = workbook.getSheet(pivot.sheetName)
-		if (!sheet) return unsupportedPivotAudit(base, 'Pivot output sheet was not loaded.')
-		if (!pivot.locationRef)
-			return unsupportedPivotAudit(base, 'Pivot table has no output location.')
-		const cache = workbook.pivotCaches.find((entry) => entry.cacheId === pivot.cacheId)
-		if (!cache) return unsupportedPivotAudit(base, 'Pivot cache metadata was not found.')
-		if (isEmptyPivotOutput(pivot)) {
-			const emptyAudit = auditEmptyPivotOutput(workbook, sheet.id, pivot)
-			if (!emptyAudit.ok) return unsupportedPivotAudit(base, emptyAudit.warning)
-			return {
-				...base,
-				status: 'passed',
-				checkedValueCount: emptyAudit.checkedCellCount,
-				mismatches: [],
-				warnings: [],
-			}
-		}
-		if (!cache.records?.materializedComplete || !cache.records.materializedRecords) {
-			return unsupportedPivotAudit(base, 'Pivot cache records are not fully materialized.')
-		}
-		if (isDataFieldsNestedOnRowsPivot(pivot)) {
-			const expected = aggregateDataFieldsNestedOnRowsPivotOutput(cache, pivot)
-			if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
-			const actual = readMultiRowAxisPivotOutput(
-				workbook,
-				sheet.id,
-				pivot,
-				expected.value.rowKeys,
-				expected.value.columnKeys,
-			)
-			if (!actual.ok) return unsupportedPivotAudit(base, actual.warning)
-			const mismatches = comparePivotOutput(expected.value.values, actual.value)
-			return {
-				...base,
-				status: mismatches.length > 0 ? 'mismatch' : 'passed',
-				checkedValueCount: expected.value.checkedValueCount,
-				mismatches,
-				warnings: [],
-			}
-		}
-		if (isDataFieldsOnRowsPivot(pivot)) {
-			const expected = aggregateDataFieldsOnRowsPivotOutput(cache, pivot)
-			if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
-			const actual = readDataFieldsOnRowsPivotOutput(
-				workbook,
-				sheet.id,
-				pivot,
-				expected.value.dataFieldNames,
-				expected.value.columnKeys,
-			)
-			if (!actual.ok) return unsupportedPivotAudit(base, actual.warning)
-			const mismatches = comparePivotOutput(expected.value.values, actual.value)
-			return {
-				...base,
-				status: mismatches.length > 0 ? 'mismatch' : 'passed',
-				checkedValueCount: expected.value.checkedValueCount,
-				mismatches,
-				warnings: [],
-			}
-		}
-		if (isDataFieldsOnColumnsPivot(pivot)) {
-			const expected = aggregateDataFieldsOnColumnsPivotOutput(cache, pivot)
-			if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
-			const actual = readMultiRowAxisPivotOutput(
-				workbook,
-				sheet.id,
-				pivot,
-				expected.value.rowKeys,
-				expected.value.columnKeys,
-			)
-			if (!actual.ok) return unsupportedPivotAudit(base, actual.warning)
-			const mismatches = comparePivotOutput(expected.value.values, actual.value)
-			return {
-				...base,
-				status: mismatches.length > 0 ? 'mismatch' : 'passed',
-				checkedValueCount: expected.value.checkedValueCount,
-				mismatches,
-				warnings: [],
-			}
-		}
-		if (isDataFieldsOnlyColumnsPivot(pivot)) {
-			const expected = aggregateDataFieldsOnlyColumnsPivotOutput(cache, pivot)
-			if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
-			const actual = readMultiRowAxisPivotOutput(
-				workbook,
-				sheet.id,
-				pivot,
-				expected.value.rowKeys,
-				expected.value.columnKeys,
-			)
-			if (!actual.ok) return unsupportedPivotAudit(base, actual.warning)
-			const mismatches = comparePivotOutput(expected.value.values, actual.value)
-			return {
-				...base,
-				status: mismatches.length > 0 ? 'mismatch' : 'passed',
-				checkedValueCount: expected.value.checkedValueCount,
-				mismatches,
-				warnings: [],
-			}
-		}
-		if (isAxisItemMatrixPivot(pivot)) {
-			const expected = aggregateMultiRowAxisPivotOutput(cache, pivot)
-			if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
-			const actual = readMultiRowAxisPivotOutput(
-				workbook,
-				sheet.id,
-				pivot,
-				expected.value.rowKeys,
-				expected.value.columnKeys,
-			)
-			if (!actual.ok) return unsupportedPivotAudit(base, actual.warning)
-			const mismatches = comparePivotOutput(expected.value.values, actual.value)
-			return {
-				...base,
-				status: mismatches.length > 0 ? 'mismatch' : 'passed',
-				checkedValueCount: expected.value.checkedValueCount,
-				mismatches,
-				warnings: [],
-			}
-		}
-		if (isMultiRowAxisSingleDataPivot(pivot)) {
-			const expected = aggregateMultiRowAxisSingleDataPivotOutput(cache, pivot)
-			if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
-			const actual = readMultiRowAxisPivotOutput(
-				workbook,
-				sheet.id,
-				pivot,
-				expected.value.rowKeys,
-				expected.value.columnKeys,
-			)
-			if (!actual.ok) return unsupportedPivotAudit(base, actual.warning)
-			const mismatches = comparePivotOutput(expected.value.values, actual.value)
-			return {
-				...base,
-				status: mismatches.length > 0 ? 'mismatch' : 'passed',
-				checkedValueCount: expected.value.checkedValueCount,
-				mismatches,
-				warnings: [],
-			}
-		}
-		if (pivot.rowFields.length !== 1) {
-			return unsupportedPivotAudit(base, 'Only one-row-field pivots are audited.')
-		}
-		if (pivot.columnFields.length > 0 && !pivot.columnFields.every((field) => field.index === -2)) {
-			return unsupportedPivotAudit(
-				base,
-				'Column-field pivots beyond the data-field axis are not audited.',
-			)
-		}
-		const rowFieldIndex = pivot.rowFields[0]?.index
-		const rowField = rowFieldIndex === undefined ? undefined : cache.fields[rowFieldIndex]
-		if (!rowField) return unsupportedPivotAudit(base, 'Pivot row field metadata was not found.')
-		const expected = aggregateSimplePivotOutput(cache, pivot, rowField.index)
+	}
+	if (!cache.records?.materializedComplete || !cache.records.materializedRecords) {
+		return unsupportedPivotAudit(base, 'Pivot cache records are not fully materialized.')
+	}
+	if (isDataFieldsNestedOnRowsPivot(pivot)) {
+		const expected = aggregateDataFieldsNestedOnRowsPivotOutput(cache, pivot)
 		if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
-		const actual = readSimplePivotOutput(workbook, sheet.id, pivot, expected.value.dataFieldNames)
+		const actual = readMultiRowAxisPivotOutput(
+			workbook,
+			sheet.id,
+			pivot,
+			expected.value.rowKeys,
+			expected.value.columnKeys,
+		)
 		if (!actual.ok) return unsupportedPivotAudit(base, actual.warning)
 		const mismatches = comparePivotOutput(expected.value.values, actual.value)
 		return {
@@ -1513,7 +1400,131 @@ function buildPivotOutputAudits(
 			mismatches,
 			warnings: [],
 		}
-	})
+	}
+	if (isDataFieldsOnRowsPivot(pivot)) {
+		const expected = aggregateDataFieldsOnRowsPivotOutput(cache, pivot)
+		if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
+		const actual = readDataFieldsOnRowsPivotOutput(
+			workbook,
+			sheet.id,
+			pivot,
+			expected.value.dataFieldNames,
+			expected.value.columnKeys,
+		)
+		if (!actual.ok) return unsupportedPivotAudit(base, actual.warning)
+		const mismatches = comparePivotOutput(expected.value.values, actual.value)
+		return {
+			...base,
+			status: mismatches.length > 0 ? 'mismatch' : 'passed',
+			checkedValueCount: expected.value.checkedValueCount,
+			mismatches,
+			warnings: [],
+		}
+	}
+	if (isDataFieldsOnColumnsPivot(pivot)) {
+		const expected = aggregateDataFieldsOnColumnsPivotOutput(cache, pivot)
+		if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
+		const actual = readMultiRowAxisPivotOutput(
+			workbook,
+			sheet.id,
+			pivot,
+			expected.value.rowKeys,
+			expected.value.columnKeys,
+		)
+		if (!actual.ok) return unsupportedPivotAudit(base, actual.warning)
+		const mismatches = comparePivotOutput(expected.value.values, actual.value)
+		return {
+			...base,
+			status: mismatches.length > 0 ? 'mismatch' : 'passed',
+			checkedValueCount: expected.value.checkedValueCount,
+			mismatches,
+			warnings: [],
+		}
+	}
+	if (isDataFieldsOnlyColumnsPivot(pivot)) {
+		const expected = aggregateDataFieldsOnlyColumnsPivotOutput(cache, pivot)
+		if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
+		const actual = readMultiRowAxisPivotOutput(
+			workbook,
+			sheet.id,
+			pivot,
+			expected.value.rowKeys,
+			expected.value.columnKeys,
+		)
+		if (!actual.ok) return unsupportedPivotAudit(base, actual.warning)
+		const mismatches = comparePivotOutput(expected.value.values, actual.value)
+		return {
+			...base,
+			status: mismatches.length > 0 ? 'mismatch' : 'passed',
+			checkedValueCount: expected.value.checkedValueCount,
+			mismatches,
+			warnings: [],
+		}
+	}
+	if (isAxisItemMatrixPivot(pivot)) {
+		const expected = aggregateMultiRowAxisPivotOutput(cache, pivot)
+		if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
+		const actual = readMultiRowAxisPivotOutput(
+			workbook,
+			sheet.id,
+			pivot,
+			expected.value.rowKeys,
+			expected.value.columnKeys,
+		)
+		if (!actual.ok) return unsupportedPivotAudit(base, actual.warning)
+		const mismatches = comparePivotOutput(expected.value.values, actual.value)
+		return {
+			...base,
+			status: mismatches.length > 0 ? 'mismatch' : 'passed',
+			checkedValueCount: expected.value.checkedValueCount,
+			mismatches,
+			warnings: [],
+		}
+	}
+	if (isMultiRowAxisSingleDataPivot(pivot)) {
+		const expected = aggregateMultiRowAxisSingleDataPivotOutput(cache, pivot)
+		if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
+		const actual = readMultiRowAxisPivotOutput(
+			workbook,
+			sheet.id,
+			pivot,
+			expected.value.rowKeys,
+			expected.value.columnKeys,
+		)
+		if (!actual.ok) return unsupportedPivotAudit(base, actual.warning)
+		const mismatches = comparePivotOutput(expected.value.values, actual.value)
+		return {
+			...base,
+			status: mismatches.length > 0 ? 'mismatch' : 'passed',
+			checkedValueCount: expected.value.checkedValueCount,
+			mismatches,
+			warnings: [],
+		}
+	}
+	if (pivot.rowFields.length !== 1) {
+		return unsupportedPivotAudit(base, 'Only one-row-field pivots are audited.')
+	}
+	if (pivot.columnFields.length > 0 && !pivot.columnFields.every((field) => field.index === -2)) {
+		return unsupportedPivotAudit(
+			base,
+			'Column-field pivots beyond the data-field axis are not audited.',
+		)
+	}
+	const rowFieldIndex = pivot.rowFields[0]?.index
+	const rowField = rowFieldIndex === undefined ? undefined : cache.fields[rowFieldIndex]
+	if (!rowField) return unsupportedPivotAudit(base, 'Pivot row field metadata was not found.')
+	const expected = aggregateSimplePivotOutput(cache, pivot, rowField.index)
+	if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
+	const actual = readSimplePivotOutput(workbook, sheet.id, pivot, expected.value.dataFieldNames)
+	if (!actual.ok) return unsupportedPivotAudit(base, actual.warning)
+	const mismatches = comparePivotOutput(expected.value.values, actual.value)
+	return {
+		...base,
+		status: mismatches.length > 0 ? 'mismatch' : 'passed',
+		checkedValueCount: expected.value.checkedValueCount,
+		mismatches,
+		warnings: [],
+	}
 }
 
 function isAxisItemMatrixPivot(pivot: PivotTableInfo): boolean {
@@ -1544,6 +1555,10 @@ function isEmptyPivotOutput(pivot: PivotTableInfo): boolean {
 	return (
 		pivot.rowFields.length === 0 && pivot.columnFields.length === 0 && pivot.dataFields.length === 0
 	)
+}
+
+function hasSavedSheetCells(sheet: Workbook['sheets'][number]): boolean {
+	return sheet.cells.usedRange() !== null
 }
 
 function isDataFieldsOnRowsPivot(pivot: PivotTableInfo): boolean {

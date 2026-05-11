@@ -15,6 +15,10 @@ const POI_WITH_CHART_SHEET_FIXTURE = new URL(
 	'../../../fixtures/xlsx/poi/WithChartSheet.xlsx',
 	import.meta.url,
 )
+const CLOSEDXML_PIVOT_FIXTURE = new URL(
+	'../../../fixtures/xlsx/closedxml/PivotTables_PivotTables.xlsx',
+	import.meta.url,
+)
 
 describe('pivot output audits', () => {
 	test('audits LibreOffice calculated pivot output against materialized cache records', async () => {
@@ -275,6 +279,15 @@ describe('pivot output audits', () => {
 		}
 	})
 
+	test('skips pivot definitions that have no saved output cells to audit', async () => {
+		const wb = await AscendWorkbook.open(readFileSync(CLOSEDXML_PIVOT_FIXTURE), {
+			pivotCacheRecordMaterializeLimit: 'all',
+		})
+
+		expect(wb.pivotTables()).toHaveLength(10)
+		expect(wb.pivotOutputAudits()).toEqual([])
+	})
+
 	test('audits real LibreOffice duplicated-member page filters with field-only headers', async () => {
 		const wb = await AscendWorkbook.open(
 			loadLibreOfficeFixture('pivottable_duplicated_member_filter.xlsx'),
@@ -520,8 +533,17 @@ function workbookWithoutMaterializedPivot(): AscendWorkbook {
 		wb: {
 			pivotCaches: Array<Record<string, unknown>>
 			pivotTables: Array<Record<string, unknown>>
+			sheets: Array<{
+				cells: {
+					set(row: number, col: number, cell: { value: unknown; formula: null; styleId: 0 }): void
+				}
+			}>
 		}
 	}
+	const cells = internal.wb.sheets[0]?.cells
+	if (!cells) throw new Error('Expected default sheet')
+	cells.set(0, 0, { value: stringValue('Region'), formula: null, styleId: 0 })
+	cells.set(0, 1, { value: stringValue('Sum of Sales'), formula: null, styleId: 0 })
 	internal.wb.pivotCaches.push({
 		partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
 		cacheId: 1,

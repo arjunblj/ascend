@@ -17,6 +17,10 @@ coverage/
 .coverage/
 *.log
 profiles/
+benchmark-results.json
+bench-current.json
+bench-results.json
+comparison.json
 
 research/
 .autoopt/

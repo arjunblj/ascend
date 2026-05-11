@@ -148,7 +148,9 @@ function workbookShapeAssertions(
 			const ref = `${sheet.name}!${indexToColumn(col)}${row + 1}`
 			semanticCellRefs.push(ref)
 			semanticCellValues.push(`${ref}\t${serializeCellValue(cell.value)}`)
-			if (cell.formula) formulaTexts.push(`${ref}=${cell.formula}`)
+			if (cell.formula) {
+				formulaTexts.push(`${ref}=${storedFormulaText(sheet, row, col, cell.formula)}`)
+			}
 		}
 	}
 	return {
@@ -167,6 +169,15 @@ function workbookShapeAssertions(
 		formulaTextHash: hashLines(formulaTexts),
 		compatibility: reportStatus,
 	}
+}
+
+function storedFormulaText(
+	sheet: { readonly storedFormulaText?: ReadonlyMap<string, string> },
+	row: number,
+	col: number,
+	formula: string,
+): string {
+	return sheet.storedFormulaText?.get(`${row}:${col}`) ?? formula
 }
 
 function hashLines(lines: readonly string[]): string {

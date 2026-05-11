@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test'
+import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { strToU8, zipSync } from 'fflate'
-import { Workbook } from '../../packages/core/src/index.ts'
+import { DEFAULT_STYLE_ID, Workbook } from '../../packages/core/src/index.ts'
+import { EMPTY } from '../../packages/schema/src/index.ts'
 import {
 	type CorpusManifestEntry,
 	normalizeManifest,
@@ -27,6 +29,7 @@ import {
 	QUICK_TARGETS,
 	resolveExternalRunnerCommand,
 	selectCorpusTargets,
+	summarizeAscendWorkbook,
 	type WorkbookFeatureSummary,
 	type WorkbookPackageFingerprint,
 	type WorkbookShapeSummary,
@@ -76,6 +79,24 @@ describe('workbookReadFeatureAssertions', () => {
 			readConditionalFormatCount: 2,
 			readDefinedNameCount: 1,
 		})
+	})
+})
+
+describe('summarizeAscendWorkbook', () => {
+	test('hashes stored Excel formula text when normalized formula text differs', () => {
+		const workbook = new Workbook()
+		const sheet = workbook.addSheet('Sheet1')
+		sheet.cells.setResolved(0, 0, EMPTY, 'CONCAT("someone","@example.com")', DEFAULT_STYLE_ID)
+		sheet.storedFormulaText.set('0:0', '_xlfn.CONCAT("someone","@example.com")')
+
+		const summary = summarizeAscendWorkbook({
+			getWorkbookModel: () => workbook,
+			report: { status: 'clean' },
+		})
+
+		expect(summary.formulaTextHash).toBe(
+			hashLines(['Sheet1!A1=_xlfn.CONCAT("someone","@example.com")']),
+		)
 	})
 })
 
@@ -1322,6 +1343,16 @@ function passingReadAssertions(
 				}
 			: {}),
 	}
+}
+
+function hashLines(lines: readonly string[]): string {
+	const hash = createHash('sha256')
+	for (const line of [...lines].sort()) {
+		hash.update(`${line.length}:`)
+		hash.update(line)
+		hash.update('\n')
+	}
+	return hash.digest('hex')
 }
 
 function passingRoundtripAssertions(

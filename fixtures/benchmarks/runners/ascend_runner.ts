@@ -218,7 +218,9 @@ function orderedReadAssertions(
 				const ref = `${sheet.name}!${indexToColumn(col)}${row + 1}`
 				orderedRefs.update(ref)
 				orderedValues.update(`${ref}\t${serializeCellValue(cell.value)}`)
-				if (cell.formula) orderedFormulas.update(`${ref}=${cell.formula}`)
+				if (cell.formula) {
+					orderedFormulas.update(`${ref}=${storedFormulaText(sheet, row, col, cell.formula)}`)
+				}
 			}
 		}
 	}
@@ -242,6 +244,15 @@ function orderedReadAssertions(
 		runnerRichMetadata: args.richMetadata,
 		runnerAssertionMode: 'ordered-hashes',
 	}
+}
+
+function storedFormulaText(
+	sheet: { readonly storedFormulaText?: ReadonlyMap<string, string> },
+	row: number,
+	col: number,
+	formula: string,
+): string {
+	return sheet.storedFormulaText?.get(`${row}:${col}`) ?? formula
 }
 
 async function streamedOrderedReadAssertions(

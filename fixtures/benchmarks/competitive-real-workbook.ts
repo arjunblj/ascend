@@ -1628,7 +1628,9 @@ export function summarizeAscendWorkbook(workbook: AscendWorkbookLike): WorkbookS
 			const ref = formatCellRef(sheet.name, row, col)
 			semanticCellRefs.push(ref)
 			semanticCellValues.push(`${ref}\t${serializeCellValue(cell.value)}`)
-			if (cell.formula) formulaTexts.push(`${ref}=${cell.formula}`)
+			if (cell.formula) {
+				formulaTexts.push(`${ref}=${storedFormulaText(sheet, row, col, cell.formula)}`)
+			}
 		}
 	}
 	return {
@@ -1647,6 +1649,15 @@ export function summarizeAscendWorkbook(workbook: AscendWorkbookLike): WorkbookS
 		formulaTextHash: hashLines(formulaTexts),
 		compatibility: workbook.report.status,
 	}
+}
+
+function storedFormulaText(
+	sheet: { readonly storedFormulaText?: ReadonlyMap<string, string> },
+	row: number,
+	col: number,
+	formula: string,
+): string {
+	return sheet.storedFormulaText?.get(`${row}:${col}`) ?? formula
 }
 
 function extractExpectedWorkbookShape(bytes: Uint8Array): WorkbookShapeSummary {

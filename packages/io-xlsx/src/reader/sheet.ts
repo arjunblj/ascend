@@ -2645,7 +2645,13 @@ function resolveCellToSheet(
 		const text = rawValue != null ? String(rawValue) : ''
 		value = pool ? pool.internValue(stringValue(pool.internString(text))) : stringValue(text)
 	} else if (type === 'inlineStr') {
-		value = parseInlineString(c, pool)
+		if (c.is !== undefined && c.is !== null) {
+			value = parseInlineString(c, pool)
+		} else if (formula || (ctx.valuesOnly && c.f !== undefined && c.f !== null)) {
+			value = EMPTY
+		} else {
+			return false
+		}
 	} else if (rawValue !== undefined && rawValue !== null && rawValue !== '') {
 		const num = Number(rawValue)
 		if (Number.isNaN(num)) {
@@ -2705,6 +2711,7 @@ function parseFormulaText(
 	if (isRawFormulaNode(formulaNode)) {
 		const sharedIndex = rawAttr(formulaNode.rawAttrs, 'si')
 		const formulaType = rawAttr(formulaNode.rawAttrs, 't')
+		if (formulaType === 'dataTable') return parseDataTableFormulaInfoFromRaw(formulaNode.rawAttrs)
 		const text = formulaNode.text
 		return parseResolvedFormulaText(
 			formulaType,
@@ -2722,6 +2729,7 @@ function parseFormulaText(
 		const node = formulaNode as XmlNode
 		const sharedIndex = attr(node, 'si')
 		const formulaType = attr(node, 't')
+		if (formulaType === 'dataTable') return parseDataTableFormulaInfoFromNode(node)
 		const text = node['#text']
 		return parseResolvedFormulaText(
 			formulaType,
@@ -2736,6 +2744,52 @@ function parseFormulaText(
 		)
 	}
 	return NULL_FORMULA_TEXT
+}
+
+function parseDataTableFormulaInfoFromRaw(rawAttrs: string): ParsedFormulaText {
+	const ref = rawAttr(rawAttrs, 'ref')
+	const dt2D = rawBoolAttr(rawAttrs, 'dt2D')
+	const dtr = rawBoolAttr(rawAttrs, 'dtr')
+	const r1 = rawAttr(rawAttrs, 'r1')
+	const r2 = rawAttr(rawAttrs, 'r2')
+	const del1 = rawBoolAttr(rawAttrs, 'del1')
+	const del2 = rawBoolAttr(rawAttrs, 'del2')
+	return {
+		text: null,
+		info: {
+			kind: 'dataTable',
+			...(ref !== undefined ? { ref } : {}),
+			...(dt2D !== undefined ? { dt2D } : {}),
+			...(dtr !== undefined ? { dtr } : {}),
+			...(r1 !== undefined ? { r1 } : {}),
+			...(r2 !== undefined ? { r2 } : {}),
+			...(del1 !== undefined ? { del1 } : {}),
+			...(del2 !== undefined ? { del2 } : {}),
+		},
+	}
+}
+
+function parseDataTableFormulaInfoFromNode(node: XmlNode): ParsedFormulaText {
+	const ref = attr(node, 'ref')
+	const dt2D = boolAttr(node, 'dt2D')
+	const dtr = boolAttr(node, 'dtr')
+	const r1 = attr(node, 'r1')
+	const r2 = attr(node, 'r2')
+	const del1 = boolAttr(node, 'del1')
+	const del2 = boolAttr(node, 'del2')
+	return {
+		text: null,
+		info: {
+			kind: 'dataTable',
+			...(ref !== undefined ? { ref } : {}),
+			...(dt2D !== undefined ? { dt2D } : {}),
+			...(dtr !== undefined ? { dtr } : {}),
+			...(r1 !== undefined ? { r1 } : {}),
+			...(r2 !== undefined ? { r2 } : {}),
+			...(del1 !== undefined ? { del1 } : {}),
+			...(del2 !== undefined ? { del2 } : {}),
+		},
+	}
 }
 
 function parseResolvedFormulaText(

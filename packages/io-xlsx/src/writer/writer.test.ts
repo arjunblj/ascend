@@ -942,6 +942,44 @@ describe('writeXlsx', () => {
 		})
 	})
 
+	it('round-trips data-table formula bindings', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('DataTable')
+		sheet.cells.set(0, 0, { value: numberValue(0.5), formula: null, styleId: S0 })
+		sheet.cells.set(1, 1, {
+			value: numberValue(10),
+			formula: null,
+			styleId: S0,
+			formulaInfo: {
+				kind: 'dataTable',
+				ref: 'B2:B4',
+				dt2D: false,
+				dtr: true,
+				r1: 'A1',
+			},
+		})
+
+		const written = writeXlsx(wb)
+		expectOk(written)
+
+		const zip = unzipSync(written.value)
+		const xml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+		expect(xml).toContain('<f t="dataTable" ref="B2:B4" dt2D="0" dtr="1" r1="A1"/>')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		const cell = reopened.value.workbook.sheets[0]?.cells.get(1, 1)
+		expect(cell?.formula).toBeNull()
+		expect(cell?.formulaInfo).toEqual({
+			kind: 'dataTable',
+			ref: 'B2:B4',
+			dt2D: false,
+			dtr: true,
+			r1: 'A1',
+		})
+		expect(cell?.value).toEqual({ kind: 'number', value: 10 })
+	})
+
 	it('writes dynamic-array metadata and storage formula syntax', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Dynamic')

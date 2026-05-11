@@ -36,6 +36,17 @@ export interface DynamicArrayFormulaInfo {
 	readonly collapsed?: boolean
 }
 
+export interface DataTableFormulaInfo {
+	readonly kind: 'dataTable'
+	readonly ref?: string
+	readonly dt2D?: boolean
+	readonly dtr?: boolean
+	readonly r1?: string
+	readonly r2?: string
+	readonly del1?: boolean
+	readonly del2?: boolean
+}
+
 export interface SpillFormulaInfo {
 	readonly kind: 'spill'
 	readonly anchorRef: string
@@ -54,6 +65,7 @@ export type CellFormulaBinding =
 	| SharedFormulaInfo
 	| ArrayFormulaInfo
 	| DynamicArrayFormulaInfo
+	| DataTableFormulaInfo
 	| SpillFormulaInfo
 	| BlockedSpillFormulaInfo
 

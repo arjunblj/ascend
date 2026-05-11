@@ -607,7 +607,8 @@ function pushDefaultStyleScalarCellXml(
 		(cell.styleId as number) !== 0 ||
 		cell.formula ||
 		cell.formulaInfo?.kind === 'shared' ||
-		cell.formulaInfo?.kind === 'array'
+		cell.formulaInfo?.kind === 'array' ||
+		cell.formulaInfo?.kind === 'dataTable'
 	) {
 		return false
 	}
@@ -665,7 +666,12 @@ function pushCellXml(
 	const styleId = cell.styleId as number
 	const xfIdx = styleId === 0 ? 0 : (xfMap.get(styleId) ?? 0)
 
-	if (cell.formula || cell.formulaInfo?.kind === 'shared' || cell.formulaInfo?.kind === 'array') {
+	if (
+		cell.formula ||
+		cell.formulaInfo?.kind === 'shared' ||
+		cell.formulaInfo?.kind === 'array' ||
+		cell.formulaInfo?.kind === 'dataTable'
+	) {
 		out.push(formulaCellXml(ref, cell, xfIdx, sharedFormulaExpansions, storedFormulaText))
 		return
 	}
@@ -753,7 +759,23 @@ function formulaCellXml(
 		if (cell.formulaInfo.ref) fAttrs += ` ref="${escapeXml(cell.formulaInfo.ref)}"`
 		return `<c r="${ref}"${cmAttr}${sAttr}${tAttr}><f ${fAttrs}>${escapeXml(formulaText)}</f>${vPart}</c>`
 	}
+	if (cell.formulaInfo?.kind === 'dataTable') {
+		const fAttrs = dataTableFormulaAttrs(cell.formulaInfo)
+		return `<c r="${ref}"${cmAttr}${sAttr}${tAttr}><f ${fAttrs}/>${vPart}</c>`
+	}
 	return `<c r="${ref}"${cmAttr}${sAttr}${tAttr}><f>${escapeXml(formulaText)}</f>${vPart}</c>`
+}
+
+function dataTableFormulaAttrs(info: Extract<Cell['formulaInfo'], { kind: 'dataTable' }>): string {
+	const attrs = ['t="dataTable"']
+	if (info.ref) attrs.push(`ref="${escapeXml(info.ref)}"`)
+	if (info.dt2D !== undefined) attrs.push(`dt2D="${info.dt2D ? '1' : '0'}"`)
+	if (info.dtr !== undefined) attrs.push(`dtr="${info.dtr ? '1' : '0'}"`)
+	if (info.r1) attrs.push(`r1="${escapeXml(info.r1)}"`)
+	if (info.r2) attrs.push(`r2="${escapeXml(info.r2)}"`)
+	if (info.del1 !== undefined) attrs.push(`del1="${info.del1 ? '1' : '0'}"`)
+	if (info.del2 !== undefined) attrs.push(`del2="${info.del2 ? '1' : '0'}"`)
+	return attrs.join(' ')
 }
 
 function effectiveStoredFormulaText(

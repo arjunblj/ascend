@@ -277,6 +277,37 @@ describe('readXlsx', () => {
 		])
 	})
 
+	it('does not materialize blank inline-string placeholders', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1" t="inlineStr"/>
+      <c r="B1" t="inlineStr"></c>
+      <c r="C1" t="inlineStr"><is><t></t></is></c>
+      <c r="D1" t="inlineStr"><is><t>value</t></is></c>
+    </row>
+  </sheetData>
+</worksheet>`,
+		})
+
+		for (const mode of ['formula', 'values'] as const) {
+			const result = readXlsx(bytes, { mode })
+			expectOk(result)
+			const sheet = result.value.workbook.sheets[0]
+			expect(sheet?.cells.get(0, 0)).toBeUndefined()
+			expect(sheet?.cells.get(0, 1)).toBeUndefined()
+			expect(sheet?.cells.get(0, 2)?.value).toEqual({ kind: 'string', value: '' })
+			expect(sheet?.cells.get(0, 3)?.value).toEqual({ kind: 'string', value: 'value' })
+		}
+	})
+
 	it('streams worksheet rows through the async reader path', async () => {
 		const result = await readXlsxRowsStream(minimalXlsx(), { sheet: 'Data', mode: 'formula' })
 		expectOk(result)
@@ -841,6 +872,43 @@ describe('readXlsx', () => {
 			feature: 'arrayFormula',
 			tier: 'normalized',
 		})
+	})
+
+	it('reads data-table formula anchors as symbolic formula bindings', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1"><c r="A1"><v>0.5</v></c></row>
+    <row r="2"><c r="B2"><f>SUM(A1)</f><v>0.5</v></c></row>
+    <row r="3"><c r="C3"><f t="dataTable" ref="C3:C5" dt2D="0" dtr="1" r1="A1"/><v>10</v></c></row>
+    <row r="4"><c r="C4"><v>20</v></c></row>
+    <row r="5"><c r="C5"><v>30</v></c></row>
+  </sheetData>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		const sheet = result.value.workbook.sheets[0]
+		const dataTableCell = sheet?.cells.get(2, 2)
+		expect(sheet?.cells.formulaCellCount()).toBe(2)
+		expect(sheet?.cells.formulaInfoCellCount()).toBe(1)
+		expect(dataTableCell?.formula).toBeNull()
+		expect(dataTableCell?.formulaInfo).toEqual({
+			kind: 'dataTable',
+			ref: 'C3:C5',
+			dt2D: false,
+			dtr: true,
+			r1: 'A1',
+		})
+		expect(dataTableCell?.value).toEqual({ kind: 'number', value: 10 })
 	})
 
 	it('flags shared formulas in the compatibility report', () => {

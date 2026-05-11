@@ -13,6 +13,7 @@ interface XmlSink {
 
 interface FilterXmlOptions {
 	readonly tagPrefix?: string
+	readonly sortStateAttributes?: Readonly<Record<string, string>>
 }
 
 export function buildAutoFilterXml(autoFilter: AutoFilter, options?: FilterXmlOptions): string {
@@ -140,19 +141,30 @@ export function pushSortStateXml(
 	options?: FilterXmlOptions,
 ): void {
 	const tag = tagBuilder(options?.tagPrefix)
-	const attrs = [`ref="${escapeXml(sortState.ref)}"`]
+	const attrs = new Map<string, string>([['ref', sortState.ref]])
+	for (const [name, value] of Object.entries(options?.sortStateAttributes ?? {})) {
+		attrs.set(name, value)
+	}
 	if (sortState.caseSensitive !== undefined) {
-		attrs.push(`caseSensitive="${sortState.caseSensitive ? '1' : '0'}"`)
+		setAttrIfMissing(attrs, 'caseSensitive', sortState.caseSensitive ? '1' : '0')
 	}
 	if (sortState.columnSort !== undefined) {
-		attrs.push(`columnSort="${sortState.columnSort ? '1' : '0'}"`)
+		setAttrIfMissing(attrs, 'columnSort', sortState.columnSort ? '1' : '0')
 	}
-	if (sortState.sortMethod) attrs.push(`sortMethod="${escapeXml(sortState.sortMethod)}"`)
-	out.push(`<${tag('sortState')} ${attrs.join(' ')}>`)
+	if (sortState.sortMethod) setAttrIfMissing(attrs, 'sortMethod', sortState.sortMethod)
+	out.push(`<${tag('sortState')} ${attrsXml(attrs)}>`)
 	for (const condition of sortState.conditions) {
 		pushSortConditionXml(out, condition, tag)
 	}
 	out.push(`</${tag('sortState')}>`)
+}
+
+function setAttrIfMissing(attrs: Map<string, string>, name: string, value: string): void {
+	if (!attrs.has(name)) attrs.set(name, value)
+}
+
+function attrsXml(attrs: ReadonlyMap<string, string>): string {
+	return [...attrs].map(([name, value]) => `${name}="${escapeXml(value)}"`).join(' ')
 }
 
 function pushSortConditionXml(out: XmlSink, condition: SortCondition, tag: TagBuilder): void {

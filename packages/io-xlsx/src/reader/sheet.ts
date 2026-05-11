@@ -3718,12 +3718,27 @@ function parseCols(ws: XmlNode, sheet: Sheet): void {
 }
 
 function parseAutoFilter(ws: XmlNode, sheet: Sheet): void {
-	const autoFilter = parseAutoFilterNode(ws.autoFilter as XmlNode | undefined)
+	const autoFilterNode = ws.autoFilter as XmlNode | undefined
+	const autoFilter = parseAutoFilterNode(autoFilterNode)
 	sheet.autoFilter = autoFilter as AutoFilter | null
+	const sortStateNode = autoFilterNode?.sortState as XmlNode | undefined
+	if (sortStateNode) {
+		const preservedAttributes = xmlNodeAttributes(sortStateNode)
+		if (Object.keys(preservedAttributes).length > 0) {
+			sheet.preservedAutoFilterSortStateAttributes = preservedAttributes
+		}
+	}
 }
 
 function parseSortState(ws: XmlNode, sheet: Sheet): void {
-	sheet.sortState = parseSortStateNode(ws.sortState as XmlNode | undefined)
+	const sortStateNode = ws.sortState as XmlNode | undefined
+	sheet.sortState = parseSortStateNode(sortStateNode)
+	if (sortStateNode) {
+		const preservedAttributes = xmlNodeAttributes(sortStateNode)
+		if (Object.keys(preservedAttributes).length > 0) {
+			sheet.preservedSortStateAttributes = preservedAttributes
+		}
+	}
 }
 
 function parseAdvancedFilters(ws: XmlNode, sheet: Sheet): void {

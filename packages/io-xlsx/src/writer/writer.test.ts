@@ -2348,6 +2348,100 @@ describe('writeXlsx', () => {
 		expect(sheetXml).toContain('<sortState ref="D1:I2707"><sortCondition ref="D1"/></sortState>')
 	})
 
+	it('preserves raw sortState attributes on regenerated sheets', () => {
+		const sourceBytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sorted" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>
+  <sortState ref="A1:A10" xmlns:xlrd2="http://schemas.microsoft.com/office/spreadsheetml/2017/richdata2"><sortCondition ref="A1:A10"/></sortState>
+</worksheet>`,
+		})
+		const source = readXlsx(sourceBytes)
+		expectOk(source)
+		const sheet = source.value.workbook.sheets[0]
+		if (!sheet) throw new Error('Expected source workbook to contain a sheet')
+		sheet.cells.set(0, 0, { value: numberValue(2), formula: null, styleId: S0 })
+
+		const written = writeXlsx(source.value.workbook, source.value.capsules, {
+			dirtySheetNames: ['Sorted'],
+		})
+		expectOk(written)
+
+		const sheetXml = new TextDecoder().decode(
+			unzipSync(written.value)['xl/worksheets/sheet1.xml'] ?? new Uint8Array(),
+		)
+		expect(sheetXml).toContain(
+			'<sortState ref="A1:A10" xmlns:xlrd2="http://schemas.microsoft.com/office/spreadsheetml/2017/richdata2">',
+		)
+	})
+
+	it('preserves raw autoFilter sortState attributes on regenerated sheets', () => {
+		const sourceBytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Filter" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>
+  <autoFilter ref="A1:A10"><sortState ref="A1:A10" xmlns:xlrd2="http://schemas.microsoft.com/office/spreadsheetml/2017/richdata2"><sortCondition ref="A1:A10"/></sortState></autoFilter>
+</worksheet>`,
+		})
+		const source = readXlsx(sourceBytes)
+		expectOk(source)
+		const sheet = source.value.workbook.sheets[0]
+		if (!sheet) throw new Error('Expected source workbook to contain a sheet')
+		sheet.cells.set(0, 0, { value: numberValue(2), formula: null, styleId: S0 })
+
+		const written = writeXlsx(source.value.workbook, source.value.capsules, {
+			dirtySheetNames: ['Filter'],
+		})
+		expectOk(written)
+
+		const sheetXml = new TextDecoder().decode(
+			unzipSync(written.value)['xl/worksheets/sheet1.xml'] ?? new Uint8Array(),
+		)
+		expect(sheetXml).toContain(
+			'<sortState ref="A1:A10" xmlns:xlrd2="http://schemas.microsoft.com/office/spreadsheetml/2017/richdata2">',
+		)
+	})
+
 	it('preserves workbook and sheet protection on round-trip', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Protected')

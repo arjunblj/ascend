@@ -513,7 +513,9 @@ export class Sheet {
 	advancedFilters: SheetAdvancedFilterInfo[]
 	drawingRefs: SheetDrawingRefs
 	autoFilter: AutoFilter | null
+	preservedAutoFilterSortStateAttributes: Record<string, string> | null
 	sortState: SortState | null
+	preservedSortStateAttributes: Record<string, string> | null
 	protection: SheetProtection | null
 	pageMargins: SheetPageMargins | null
 	pageSetup: SheetPageSetup | null
@@ -563,7 +565,9 @@ export class Sheet {
 		this.advancedFilters = []
 		this.drawingRefs = { hasDrawing: false, hasLegacyDrawing: false }
 		this.autoFilter = null
+		this.preservedAutoFilterSortStateAttributes = null
 		this.sortState = null
+		this.preservedSortStateAttributes = null
 		this.protection = null
 		this.pageMargins = null
 		this.pageSetup = null
@@ -616,7 +620,13 @@ export class Sheet {
 		this.x14DataValidations = this.x14DataValidations.map(cloneX14DataValidationInfo)
 		this.advancedFilters = this.advancedFilters.map(cloneAdvancedFilterInfo)
 		this.autoFilter = this.autoFilter ? cloneAutoFilter(this.autoFilter) : null
+		this.preservedAutoFilterSortStateAttributes = this.preservedAutoFilterSortStateAttributes
+			? { ...this.preservedAutoFilterSortStateAttributes }
+			: null
 		this.sortState = this.sortState ? cloneSortState(this.sortState) : null
+		this.preservedSortStateAttributes = this.preservedSortStateAttributes
+			? { ...this.preservedSortStateAttributes }
+			: null
 		this._shared = false
 	}
 
@@ -653,7 +663,9 @@ export class Sheet {
 		s.advancedFilters = this.advancedFilters
 		s.drawingRefs = this.drawingRefs
 		s.autoFilter = this.autoFilter
+		s.preservedAutoFilterSortStateAttributes = this.preservedAutoFilterSortStateAttributes
 		s.sortState = this.sortState
+		s.preservedSortStateAttributes = this.preservedSortStateAttributes
 		s.protection = this.protection
 		s.pageMargins = this.pageMargins
 		s.pageSetup = this.pageSetup

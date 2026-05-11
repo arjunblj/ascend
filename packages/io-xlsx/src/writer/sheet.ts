@@ -289,11 +289,19 @@ function buildSheetXmlToSink(
 	}
 
 	if (sheet.autoFilter) {
-		pushAutoFilterXml(out, sheet.autoFilter)
+		pushAutoFilterXml(out, sheet.autoFilter, {
+			...(sheet.preservedAutoFilterSortStateAttributes
+				? { sortStateAttributes: sheet.preservedAutoFilterSortStateAttributes }
+				: {}),
+		})
 	}
 
 	if (sheet.sortState) {
-		pushSortStateXml(out, sheet.sortState)
+		pushSortStateXml(out, sheet.sortState, {
+			...(sheet.preservedSortStateAttributes
+				? { sortStateAttributes: sheet.preservedSortStateAttributes }
+				: {}),
+		})
 	}
 
 	if (sheet.preservedCustomSheetViews) {

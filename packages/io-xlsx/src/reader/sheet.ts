@@ -450,7 +450,7 @@ function parseSheetDataBytes(
 			if (parsedCell === false) {
 				return false
 			}
-			if (parsedCell === 'set') nextCol = cellOut.col + 1
+			nextCol = cellOut.col + 1
 			cellCursor = selfClosing ? cellTagEnd + 1 : cellClose + BYTES_CELL_CLOSE.length
 		}
 		rowCursor = rowClose + BYTES_ROW_CLOSE.length
@@ -738,7 +738,10 @@ function parseSheetDataFromLoc(
 			)
 			cellCursor =
 				selfClosing || cellClose === -1 || cellClose > rowClose ? cellTagEnd + 1 : cellClose + 4
-			if (!ok) continue
+			if (!ok) {
+				if (resolveCellPositionInto(rawAttrs, fallbackPos, cellOut)) nextCol = cellOut.col + 1
+				continue
+			}
 			nextCol = cellOut.col + 1
 		}
 		rowCursor = rowClose + 6
@@ -913,8 +916,8 @@ function parseStreamedValuesRowXml(
 		if (parsed === undefined) return null
 		if (parsed) {
 			cells.push([out.col, parsed])
-			nextCol = out.col + 1
 		}
+		nextCol = out.col + 1
 		cellCursor = selfClosing ? cellTagEnd + 1 : cellClose + 4
 	}
 	return { row, cells }
@@ -1203,7 +1206,10 @@ function parseStreamedSheetRowXml(
 		)
 		cellCursor =
 			selfClosing || cellClose === -1 || cellClose > rowClose ? cellTagEnd + 1 : cellClose + 4
-		if (!ok) continue
+		if (!ok) {
+			if (resolveCellPositionInto(rawAttrs, fallbackPos, cellOut)) nextCol = cellOut.col + 1
+			continue
+		}
 		nextCol = cellOut.col + 1
 	}
 	const first = rowSheet.cells.iterateRows().next()

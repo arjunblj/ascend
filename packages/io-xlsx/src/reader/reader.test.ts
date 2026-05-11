@@ -232,6 +232,51 @@ describe('readXlsx', () => {
 		expect(sheet?.cells.get(0, 1)?.formula).toBeNull()
 	})
 
+	it('advances omitted cell references across skipped empty cells', async () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c/>
+      <c t="str"><v>after empty</v></c>
+      <c s="1"/>
+      <c><v>42</v></c>
+    </row>
+  </sheetData>
+</worksheet>`,
+		})
+
+		for (const mode of ['formula', 'values'] as const) {
+			const result = readXlsx(bytes, { mode })
+			expectOk(result)
+			const sheet = result.value.workbook.sheets[0]
+			expect(sheet?.cells.get(0, 0)).toBeUndefined()
+			expect(sheet?.cells.get(0, 1)?.value).toEqual({ kind: 'string', value: 'after empty' })
+			expect(sheet?.cells.get(0, 2)).toBeUndefined()
+			expect(sheet?.cells.get(0, 3)?.value).toEqual({ kind: 'number', value: 42 })
+		}
+
+		const streamResult = await readXlsxRowsStream(bytes, { sheet: 'Data', mode: 'values' })
+		expectOk(streamResult)
+		const rows: StreamedSheetRow[] = []
+		for await (const row of streamResult.value) rows.push(row)
+		expect(rows).toEqual([
+			{
+				row: 0,
+				cells: [
+					[1, { value: { kind: 'string', value: 'after empty' }, formula: null, styleId: S0 }],
+					[3, { value: { kind: 'number', value: 42 }, formula: null, styleId: S0 }],
+				],
+			},
+		])
+	})
+
 	it('streams worksheet rows through the async reader path', async () => {
 		const result = await readXlsxRowsStream(minimalXlsx(), { sheet: 'Data', mode: 'formula' })
 		expectOk(result)

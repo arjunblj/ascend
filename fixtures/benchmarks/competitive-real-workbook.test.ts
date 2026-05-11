@@ -1267,6 +1267,7 @@ describe('evaluateAssertions', () => {
 		expect(summary.pivotTablePartCount).toBe(1)
 		expect(summary.pivotCachePartCount).toBe(1)
 		expect(summary.commentPartCount).toBe(1)
+		expect(summary.packageCommentEntryCount).toBe(0)
 		expect(summary.mediaPartCount).toBe(1)
 		expect(summary.externalLinkPartCount).toBe(1)
 		expect(summary.connectionPartCount).toBe(1)
@@ -1302,6 +1303,19 @@ describe('evaluateAssertions', () => {
 		expect(nestedComments.featurePartNamesHash).not.toBe(emptyHash())
 		expect(nestedComments.featurePartNamesHash).not.toBe(legacyComments.featurePartNamesHash)
 		expect(nestedComments.featureInventoryHash).not.toBe(legacyComments.featureInventoryHash)
+	})
+
+	test('feature summary counts only relationship-reachable comments as worksheet comments', () => {
+		const orphaned = extractWorkbookFeatureSummary(commentWorkbookBytes(false))
+		expect(orphaned.commentPartCount).toBe(1)
+		expect(orphaned.packageCommentEntryCount).toBe(2)
+		expect(orphaned.worksheetCommentCount).toBe(0)
+
+		const reachable = extractWorkbookFeatureSummary(commentWorkbookBytes(true))
+		expect(reachable.commentPartCount).toBe(1)
+		expect(reachable.packageCommentEntryCount).toBe(2)
+		expect(reachable.worksheetCommentCount).toBe(2)
+		expect(reachable.featureInventoryHash).not.toBe(orphaned.featureInventoryHash)
 	})
 
 	test('feature summary hash changes when embedded worksheet features are dropped', () => {
@@ -1392,6 +1406,7 @@ function featureSummary(overrides: Partial<WorkbookFeatureSummary> = {}): Workbo
 		pivotCachePartCount: 2,
 		slicerPartCount: 0,
 		commentPartCount: 1,
+		packageCommentEntryCount: 1,
 		threadedCommentPartCount: 0,
 		mediaPartCount: 1,
 		externalLinkPartCount: 0,
@@ -1481,6 +1496,7 @@ function passingRoundtripAssertions(
 					roundtripPivotCachePartCount: features.pivotCachePartCount,
 					roundtripSlicerPartCount: features.slicerPartCount,
 					roundtripCommentPartCount: features.commentPartCount,
+					roundtripPackageCommentEntryCount: features.packageCommentEntryCount,
 					roundtripThreadedCommentPartCount: features.threadedCommentPartCount,
 					roundtripMediaPartCount: features.mediaPartCount,
 					roundtripExternalLinkPartCount: features.externalLinkPartCount,
@@ -1580,6 +1596,51 @@ function singleSheetWorkbookBytes(sheetXmlBody: string): Uint8Array {
 		'xl/theme/theme1.xml': strToU8(
 			'<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Office"/>',
 		),
+	})
+}
+
+function commentWorkbookBytes(withWorksheetRelationship: boolean): Uint8Array {
+	return zipSync({
+		'[Content_Types].xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/comments1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml"/>
+</Types>`),
+		'_rels/.rels': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+		'xl/_rels/workbook.xml.rels': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`),
+		...(withWorksheetRelationship
+			? {
+					'xl/worksheets/_rels/sheet1.xml.rels': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="../comments1.xml"/>
+</Relationships>`),
+				}
+			: {}),
+		'xl/workbook.xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`),
+		'xl/worksheets/sheet1.xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>
+</worksheet>`),
+		'xl/comments1.xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<comments xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <commentList>
+    <comment ref="A1" authorId="0"><text><t>One</t></text></comment>
+    <comment ref="B1" authorId="0"><text><t>Two</t></text></comment>
+  </commentList>
+</comments>`),
 	})
 }
 

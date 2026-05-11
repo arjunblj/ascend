@@ -20,6 +20,7 @@ import {
 } from '../../packages/core/src/index.ts'
 import {
 	parseRelationships,
+	REL_COMMENTS,
 	REL_SHARED_STRINGS,
 	REL_WORKSHEET,
 	resolvePath,
@@ -199,6 +200,7 @@ export interface WorkbookFeatureSummary {
 	readonly pivotCachePartCount: number
 	readonly slicerPartCount: number
 	readonly commentPartCount: number
+	readonly packageCommentEntryCount: number
 	readonly threadedCommentPartCount: number
 	readonly mediaPartCount: number
 	readonly externalLinkPartCount: number
@@ -605,6 +607,7 @@ export function evaluateAssertions(
 		observed.roundtripPivotCachePartCount !== undefined &&
 		observed.roundtripSlicerPartCount !== undefined &&
 		observed.roundtripCommentPartCount !== undefined &&
+		observed.roundtripPackageCommentEntryCount !== undefined &&
 		observed.roundtripThreadedCommentPartCount !== undefined &&
 		observed.roundtripMediaPartCount !== undefined &&
 		observed.roundtripExternalLinkPartCount !== undefined &&
@@ -670,6 +673,7 @@ export function evaluateAssertions(
 			observed.roundtripPivotCachePartCount === expectedFeature?.pivotCachePartCount &&
 			observed.roundtripSlicerPartCount === expectedFeature?.slicerPartCount &&
 			observed.roundtripCommentPartCount === expectedFeature?.commentPartCount &&
+			observed.roundtripPackageCommentEntryCount === expectedFeature?.packageCommentEntryCount &&
 			observed.roundtripThreadedCommentPartCount === expectedFeature?.threadedCommentPartCount &&
 			observed.roundtripMediaPartCount === expectedFeature?.mediaPartCount &&
 			observed.roundtripExternalLinkPartCount === expectedFeature?.externalLinkPartCount &&
@@ -764,6 +768,7 @@ export function evaluateAssertions(
 			expectedPivotCachePartCount: expectedFeature?.pivotCachePartCount ?? null,
 			expectedSlicerPartCount: expectedFeature?.slicerPartCount ?? null,
 			expectedCommentPartCount: expectedFeature?.commentPartCount ?? null,
+			expectedPackageCommentEntryCount: expectedFeature?.packageCommentEntryCount ?? null,
 			expectedThreadedCommentPartCount: expectedFeature?.threadedCommentPartCount ?? null,
 			expectedMediaPartCount: expectedFeature?.mediaPartCount ?? null,
 			expectedExternalLinkPartCount: expectedFeature?.externalLinkPartCount ?? null,
@@ -832,6 +837,9 @@ export function evaluateAssertions(
 			roundtripCommentPartCountMatches:
 				!featureFingerprintRequired ||
 				observed.roundtripCommentPartCount === expectedFeature?.commentPartCount,
+			roundtripPackageCommentEntryCountMatches:
+				!featureFingerprintRequired ||
+				observed.roundtripPackageCommentEntryCount === expectedFeature?.packageCommentEntryCount,
 			roundtripThreadedCommentPartCountMatches:
 				!featureFingerprintRequired ||
 				observed.roundtripThreadedCommentPartCount === expectedFeature?.threadedCommentPartCount,
@@ -1177,6 +1185,7 @@ function featureAssertions(
 		[prefixedKey(prefix, 'pivotCachePartCount')]: summary.pivotCachePartCount,
 		[prefixedKey(prefix, 'slicerPartCount')]: summary.slicerPartCount,
 		[prefixedKey(prefix, 'commentPartCount')]: summary.commentPartCount,
+		[prefixedKey(prefix, 'packageCommentEntryCount')]: summary.packageCommentEntryCount,
 		[prefixedKey(prefix, 'threadedCommentPartCount')]: summary.threadedCommentPartCount,
 		[prefixedKey(prefix, 'mediaPartCount')]: summary.mediaPartCount,
 		[prefixedKey(prefix, 'externalLinkPartCount')]: summary.externalLinkPartCount,
@@ -1274,14 +1283,16 @@ export function extractWorkbookFeatureSummary(bytes: Uint8Array): WorkbookFeatur
 	const sharedStringFeatureLines = sharedStringFeatureEntries(
 		archive.readText('xl/sharedStrings.xml') ?? '',
 	)
-	const commentFeatureLines = commentFeatureEntries(archive, partPaths)
+	const packageCommentFeatureLines = packageCommentFeatureEntries(archive, partPaths)
+	const worksheetCommentFeatureLines = worksheetCommentFeatureEntries(archive, worksheetPaths)
 	const calcChainFeatureLines = calcChainFeatureEntries(archive.readText('xl/calcChain.xml') ?? '')
 	const inventoryLines = [
 		...featurePartLines,
 		...worksheetFeatureLines,
 		...definedNameLines,
 		...sharedStringFeatureLines,
-		...commentFeatureLines,
+		...packageCommentFeatureLines,
+		...worksheetCommentFeatureLines,
 		...calcChainFeatureLines,
 	]
 	return {
@@ -1302,6 +1313,7 @@ export function extractWorkbookFeatureSummary(bytes: Uint8Array): WorkbookFeatur
 		commentPartCount: countPartPaths(partPaths, (path) =>
 			/^xl\/(?:comments\d*|comments\/.+)\.xml$/.test(path),
 		),
+		packageCommentEntryCount: packageCommentFeatureLines.length,
 		threadedCommentPartCount: countPartPaths(partPaths, (path) =>
 			/^xl\/threadedComments\/.+\.xml$/.test(path),
 		),
@@ -1311,8 +1323,7 @@ export function extractWorkbookFeatureSummary(bytes: Uint8Array): WorkbookFeatur
 		),
 		connectionPartCount: countPartPaths(partPaths, (path) => path === 'xl/connections.xml'),
 		customXmlPartCount: countPartPaths(partPaths, (path) => /^customXml\/.+/.test(path)),
-		worksheetCommentCount: commentFeatureLines.filter((line) => line.startsWith('comment\t'))
-			.length,
+		worksheetCommentCount: worksheetCommentFeatureLines.length,
 		worksheetHyperlinkCount: worksheetFeatureLines.filter((line) =>
 			line.startsWith('worksheet-hyperlink\t'),
 		).length,
@@ -1438,7 +1449,7 @@ function calcChainFeatureEntries(xml: string): readonly string[] {
 	return lines
 }
 
-function commentFeatureEntries(
+function packageCommentFeatureEntries(
 	archive: ReturnType<typeof extractZip>,
 	partPaths: readonly string[],
 ): readonly string[] {
@@ -1451,10 +1462,40 @@ function commentFeatureEntries(
 		for (const match of xml.matchAll(openTagRegex('comment'))) {
 			const attrs = parseXmlAttributes(match[1] ?? '')
 			const ref = attrs.get('ref')
-			if (ref) lines.push(`comment\t${path}\t${ref}`)
+			if (ref) lines.push(`package-comment\t${path}\t${ref}`)
 		}
 	}
 	return lines
+}
+
+function worksheetCommentFeatureEntries(
+	archive: ReturnType<typeof extractZip>,
+	worksheetPaths: readonly string[],
+): readonly string[] {
+	const lines: string[] = []
+	for (const sheetPath of worksheetPaths) {
+		const relsXml = archive.readText(relationshipsPartPath(sheetPath))
+		if (!relsXml) continue
+		for (const relationship of parseRelationships(relsXml)) {
+			if (relationship.type !== REL_COMMENTS || relationship.targetMode === 'External') continue
+			const commentsPath = resolvePath(sheetPath, relationship.target)
+			const commentsXml = archive.readText(commentsPath)
+			if (!commentsXml) continue
+			for (const match of commentsXml.matchAll(openTagRegex('comment'))) {
+				const attrs = parseXmlAttributes(match[1] ?? '')
+				const ref = attrs.get('ref')
+				if (ref) lines.push(`worksheet-comment\t${sheetPath}\t${commentsPath}\t${ref}`)
+			}
+		}
+	}
+	return lines
+}
+
+function relationshipsPartPath(sourcePart: string): string {
+	const slash = sourcePart.lastIndexOf('/')
+	const directory = slash === -1 ? '' : sourcePart.slice(0, slash + 1)
+	const name = slash === -1 ? sourcePart : sourcePart.slice(slash + 1)
+	return `${directory}_rels/${name}.rels`
 }
 
 function definedNameEntries(workbookXml: string): readonly string[] {

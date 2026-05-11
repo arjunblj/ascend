@@ -116,6 +116,44 @@ describe('pivot output audits', () => {
 		)
 	})
 
+	test('audits real LibreOffice boolean row filters with Excel-visible labels', async () => {
+		const wb = await AscendWorkbook.open(
+			loadLibreOfficeFixture('pivottable_bool_field_filter.xlsx'),
+			{
+				pivotCacheRecordMaterializeLimit: 'all',
+			},
+		)
+
+		expect(wb.pivotOutputAudits()).toEqual([
+			expect.objectContaining({
+				pivotTable: 'PivotTable1',
+				status: 'passed',
+				checkedValueCount: 2,
+				mismatches: [],
+				warnings: [],
+			}),
+		])
+	})
+
+	test('audits real LibreOffice numeric row labels beside hidden error items', async () => {
+		const wb = await AscendWorkbook.open(
+			loadLibreOfficeFixture('pivottable_error_item_filter.xlsx'),
+			{
+				pivotCacheRecordMaterializeLimit: 'all',
+			},
+		)
+
+		expect(wb.pivotOutputAudits()).toEqual([
+			expect.objectContaining({
+				pivotTable: 'PivotTable1',
+				status: 'passed',
+				checkedValueCount: 4,
+				mismatches: [],
+				warnings: [],
+			}),
+		])
+	})
+
 	test.skipIf(!existsSync(MS_EXCEL_PIVOT_FIXTURE))(
 		'audits real Excel one-row pivots with column fields',
 		async () => {

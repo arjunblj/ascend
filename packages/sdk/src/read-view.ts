@@ -2117,7 +2117,8 @@ function resolvePivotAxisFieldItemFilter(
 	return {
 		ok: true,
 		value: {
-			label: pivotItem.caption ?? value,
+			label:
+				pivotItem.caption ?? pivotCacheSharedItemLabel(cache, fieldIndex, pivotItem.cacheIndex),
 			filters: new Map([[fieldIndex, new Set([value])]]),
 		},
 	}
@@ -2194,16 +2195,17 @@ function aggregateSimplePivotOutput(
 	const dataFieldNames = pivot.dataFields.map(
 		(field, index) => field.name ?? `DataField${index + 1}`,
 	)
+	const rows = buildPivotSimpleRowOutputItems(cache, pivot, rowFieldIndex)
+	if (!rows.ok) return rows
 	const output = new Map<string, Map<string, number>>()
 	const baseTotals = new Map<string, Map<string, number>>()
 	const averageTotals = new Map<string, Map<string, { sum: number; count: number }>>()
-	const includeGrandTotal = pivot.options?.rowGrandTotals !== false
+	const rowMatcher = buildPivotRowOutputMatcher(rows.value)
 	for (const row of buildPivotCacheRows([cache], {})) {
 		if (!pivotCacheRowMatchesFilters(row, pageFilters.value)) continue
-		const rowLabel = row.values.find((value) => value.fieldIndex === rowFieldIndex)?.value
-		if (rowLabel === undefined) continue
-		addPivotBaseTotals(cache, row, baseTotals, rowLabel)
-		if (includeGrandTotal) addPivotBaseTotals(cache, row, baseTotals, 'Grand Total')
+		const rowItems = matchingPivotRowOutputItems(row, rowMatcher)
+		if (rowItems.length === 0) continue
+		for (const rowItem of rowItems) addPivotBaseTotals(cache, row, baseTotals, rowItem.key)
 		for (let i = 0; i < pivot.dataFields.length; i++) {
 			const dataField = pivot.dataFields[i]
 			const dataFieldName = dataFieldNames[i] ?? `DataField${i + 1}`
@@ -2213,15 +2215,16 @@ function aggregateSimplePivotOutput(
 			if (dataField.subtotal === 'average') {
 				const value = numericPivotRowValue(row, dataField.fieldIndex)
 				if (value === null) continue
-				addPivotAverageSample(averageTotals, rowLabel, dataFieldName, value)
-				if (includeGrandTotal)
-					addPivotAverageSample(averageTotals, 'Grand Total', dataFieldName, value)
+				for (const rowItem of rowItems) {
+					addPivotAverageSample(averageTotals, rowItem.key, dataFieldName, value)
+				}
 				continue
 			}
 			const measured = measurePivotDataField(cache, row, dataField)
 			if (!measured.ok) return measured
-			addPivotOutput(output, rowLabel, dataFieldName, measured.value)
-			if (includeGrandTotal) addPivotOutput(output, 'Grand Total', dataFieldName, measured.value)
+			for (const rowItem of rowItems) {
+				addPivotOutput(output, rowItem.key, dataFieldName, measured.value)
+			}
 		}
 	}
 	finalizePivotAverageOutput(output, averageTotals)
@@ -2247,13 +2250,104 @@ function aggregateSimplePivotOutput(
 		ok: true,
 		value: {
 			dataFieldNames,
-			checkedValueCount: output.size * dataFieldNames.length,
+			checkedValueCount: rows.value.length * dataFieldNames.length,
 			values: output,
 		},
 	}
 }
 
 type PivotAuditFilters = ReadonlyMap<number, ReadonlySet<string>>
+
+type PivotRowOutputMatcher = {
+	readonly byFieldValue: ReadonlyMap<number, ReadonlyMap<string, readonly PivotAxisOutputItem[]>>
+	readonly fallback: readonly PivotAxisOutputItem[]
+}
+
+function buildPivotRowOutputMatcher(items: readonly PivotAxisOutputItem[]): PivotRowOutputMatcher {
+	const byFieldValue = new Map<number, Map<string, PivotAxisOutputItem[]>>()
+	const fallback: PivotAxisOutputItem[] = []
+	for (const item of items) {
+		if (item.filters.size !== 1) {
+			fallback.push(item)
+			continue
+		}
+		const [filter] = item.filters
+		if (!filter) {
+			fallback.push(item)
+			continue
+		}
+		const [fieldIndex, values] = filter
+		for (const value of values) {
+			let byValue = byFieldValue.get(fieldIndex)
+			if (!byValue) {
+				byValue = new Map()
+				byFieldValue.set(fieldIndex, byValue)
+			}
+			const outputItems = byValue.get(value)
+			if (outputItems) {
+				outputItems.push(item)
+				continue
+			}
+			byValue.set(value, [item])
+		}
+	}
+	return { byFieldValue, fallback }
+}
+
+function matchingPivotRowOutputItems(
+	row: PivotCacheMaterializedRowInfo,
+	matcher: PivotRowOutputMatcher,
+): readonly PivotAxisOutputItem[] {
+	const output: PivotAxisOutputItem[] = []
+	for (const [fieldIndex, byValue] of matcher.byFieldValue) {
+		const actual = row.values.find((value) => value.fieldIndex === fieldIndex)?.value
+		if (actual === undefined) continue
+		const matched = byValue.get(actual)
+		if (matched) output.push(...matched)
+	}
+	for (const item of matcher.fallback) {
+		if (pivotCacheRowMatchesFilters(row, item.filters)) output.push(item)
+	}
+	return output
+}
+
+function buildPivotSimpleRowOutputItems(
+	cache: PivotCacheInfo,
+	pivot: PivotTableInfo,
+	rowFieldIndex: number,
+): { ok: true; value: readonly PivotAxisOutputItem[] } | { ok: false; warning: string } {
+	const rows = buildPivotAxisOutputItems(cache, pivot, 'row')
+	if (rows.ok || rows.warning !== 'Pivot row output items were not found.') return rows
+	const visibleValues = visiblePivotAxisFieldValues(cache, pivot, rowFieldIndex)
+	if (!visibleValues.ok) return visibleValues
+	const values =
+		visibleValues.value.values.size > 0
+			? visibleValues.value.values
+			: new Set(
+					(cache.fields[rowFieldIndex]?.sharedItems ?? [])
+						.map((item) => item.value)
+						.filter((value): value is string => value !== undefined),
+				)
+	const output: PivotAxisOutputItem[] = []
+	for (const value of values) {
+		output.push({
+			key: value,
+			filters: new Map([[visibleValues.value.fieldIndex ?? rowFieldIndex, new Set([value])]]),
+		})
+	}
+	if (pivot.options?.rowGrandTotals !== false) {
+		output.push({
+			key: 'Grand Total',
+			filters:
+				values.size > 0
+					? new Map([[visibleValues.value.fieldIndex ?? rowFieldIndex, new Set(values)]])
+					: new Map(),
+		})
+	}
+	return output.length > 0
+		? { ok: true, value: output }
+		: { ok: false, warning: 'Pivot row output items were not found.' }
+}
 
 function buildSimplePivotPageFilters(
 	cache: PivotCacheInfo,
@@ -2338,6 +2432,22 @@ function pivotCacheSharedItemValue(
 ): string | undefined {
 	return cache.fields[fieldIndex]?.sharedItems?.find((entry) => entry.index === sharedItemIndex)
 		?.value
+}
+
+function pivotCacheSharedItemLabel(
+	cache: PivotCacheInfo,
+	fieldIndex: number,
+	sharedItemIndex: number,
+): string {
+	const sharedItem = cache.fields[fieldIndex]?.sharedItems?.find(
+		(entry) => entry.index === sharedItemIndex,
+	)
+	if (sharedItem?.kind === 'boolean') return sharedItem.value === '0' ? 'FALSE' : 'TRUE'
+	if (sharedItem?.kind === 'number' && sharedItem.value !== undefined) {
+		const numeric = Number(sharedItem.value)
+		if (Number.isFinite(numeric)) return String(numeric)
+	}
+	return sharedItem?.value ?? ''
 }
 
 function pivotCacheRowMatchesFilters(
@@ -2554,6 +2664,7 @@ function readSimplePivotOutput(
 		return { ok: false, warning: 'Pivot output data-field headers were not found.' }
 	}
 	const headerRow = Math.min(...Array.from(headers.values(), (entry) => entry.row))
+	const dataStartCol = bounds.start.col + (pivot.location?.firstDataCol ?? 1)
 	const output = new Map<string, Map<string, { ref: string; value: CellValue }>>()
 	for (let row = headerRow + 1; row <= bounds.end.row; row++) {
 		const labelValue = sheet.cells.get(row, bounds.start.col)?.value ?? EMPTY
@@ -2564,9 +2675,10 @@ function readSimplePivotOutput(
 		for (const fieldName of dataFieldNames) {
 			const header = headers.get(fieldName)
 			if (!header) continue
-			const value = sheet.cells.get(row, header.col)?.value ?? EMPTY
+			const valueCol = Math.max(header.col, dataStartCol)
+			const value = sheet.cells.get(row, valueCol)?.value ?? EMPTY
 			byField.set(fieldName, {
-				ref: `${indexToColumn(header.col)}${row + 1}`,
+				ref: `${indexToColumn(valueCol)}${row + 1}`,
 				value,
 			})
 		}

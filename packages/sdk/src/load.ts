@@ -26,6 +26,7 @@ export async function openWorkbookSource(
 		mode?: 'full' | 'metadata-only' | 'values' | 'formula'
 		sheets?: readonly string[]
 		richMetadata?: boolean
+		pivotCacheRecordMaterializeLimit?: number | 'all'
 	},
 ): Promise<LoadedWorkbookSource> {
 	let bytes: Uint8Array

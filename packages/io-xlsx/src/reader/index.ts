@@ -110,6 +110,7 @@ export interface ReadXlsxOptions {
 	readonly richMetadata?: boolean
 	readonly parseDates?: boolean
 	readonly password?: string
+	readonly pivotCacheRecordMaterializeLimit?: number | 'all'
 }
 
 export interface ReadXlsxLoadInfo {
@@ -260,7 +261,11 @@ export function readXlsx(
 						: null
 					const records =
 						recordsXml && parsed.recordsPartPath
-							? parseMaterializedPivotCacheRecordsXml(recordsXml, parsed.recordsPartPath)
+							? parseMaterializedPivotCacheRecordsXml(
+									recordsXml,
+									parsed.recordsPartPath,
+									pivotCacheRecordMaterializeLimit(options),
+								)
 							: null
 					workbook.pivotCaches.push(records ? { ...parsed, records } : parsed)
 				}
@@ -653,6 +658,14 @@ function readPart(archive: ZipArchive, path: string): string | undefined {
 
 function readPartBytes(archive: ZipArchive, path: string): Uint8Array | undefined {
 	return archive.readBytes(path)
+}
+
+function pivotCacheRecordMaterializeLimit(options: ReadXlsxOptions): number {
+	if (options.pivotCacheRecordMaterializeLimit === 'all') return Number.POSITIVE_INFINITY
+	if (typeof options.pivotCacheRecordMaterializeLimit === 'number') {
+		return Math.max(0, Math.floor(options.pivotCacheRecordMaterializeLimit))
+	}
+	return 2048
 }
 
 function recoverWorkbookRelationships(

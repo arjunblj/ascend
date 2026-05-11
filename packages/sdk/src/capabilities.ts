@@ -575,8 +575,8 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'Pivot tables',
 		'inspectable',
 		'P0',
-		'Add calculated pivot output refresh after broadening filter-edit fixture coverage.',
-		'Pivot layout/style/options, extension layout defaults, output row/column item coordinates, output format areas, PivotChart format bindings, data-field display calculations, cache source identity, bounded cache-record materialization, simple saved-output audits, shared-item type/bounds/date-range group metadata, page-filter selections, and field item visibility/detail flags are inspectable; cache source and filter item edits are safely editable with refresh-on-open markers while full pivot management and output recalculation remain incomplete.',
+		'Add calculated pivot output refresh after broadening multi-axis and multi-select filter fixture coverage.',
+		'Pivot layout/style/options, extension layout defaults, output row/column item coordinates, output format areas, PivotChart format bindings, data-field display calculations, cache source identity, bounded or explicit full cache-record materialization, simple page-filtered saved-output audits, shared-item type/bounds/date-range group metadata, page-filter selections, and field item visibility/detail flags are inspectable; cache source and filter item edits are safely editable with refresh-on-open markers while full pivot management and output recalculation remain incomplete.',
 		[
 			'fixtures/corpus/corpus.test.ts',
 			'fixtures/xlsx/calamine-fixtures.test.ts',
@@ -597,7 +597,7 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'editable',
 		'P0',
 		'Add cache-record recalculation and broader Excel fixture coverage.',
-		'Pivot cache source and refresh metadata are editable; small saved cache records are materialized and decoded into field-name rows for headless audit planning; SDK refresh plans and simple output audits tell agents when Excel refresh is required because output recalculation is not implemented.',
+		'Pivot cache source and refresh metadata are editable; saved cache records can be bounded or fully materialized and decoded into field-name rows for headless audit planning; SDK refresh plans and simple output audits tell agents when Excel refresh is required because output recalculation is not implemented.',
 		[
 			'packages/io-xlsx/src/reader/reader.test.ts',
 			'packages/engine/src/operations.test.ts',

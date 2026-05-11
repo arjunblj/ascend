@@ -349,6 +349,43 @@ describe('corpus: semantic dashboard chart and drawing inventory', () => {
 		})
 	})
 
+	it.skipIf(!dashboard)(
+		'audits saved dashboard pivot outputs from full cache records',
+		async () => {
+			const workbook = await AscendWorkbook.open(requireBytes(dashboard), {
+				pivotCacheRecordMaterializeLimit: 'all',
+			})
+
+			expect(workbook.pivotOutputAudits()).toEqual([
+				expect.objectContaining({
+					pivotTable: 'PivotTable11',
+					status: 'unsupported',
+					warnings: ['Only one-row-field pivots are audited.'],
+				}),
+				expect.objectContaining({
+					pivotTable: 'PivotTable12',
+					status: 'passed',
+					checkedValueCount: 56,
+				}),
+				expect.objectContaining({
+					pivotTable: 'PivotTable13',
+					status: 'passed',
+					checkedValueCount: 28,
+				}),
+				expect.objectContaining({
+					pivotTable: 'PivotTable14',
+					status: 'passed',
+					checkedValueCount: 32988,
+				}),
+				expect.objectContaining({
+					pivotTable: 'PivotTable1',
+					status: 'unsupported',
+					warnings: ['Column-field pivots beyond the data-field axis are not audited.'],
+				}),
+			])
+		},
+	)
+
 	it.skipIf(!bevReport)(
 		'exposes beverage report chart semantics and graphicFrame chart relationships',
 		() => {

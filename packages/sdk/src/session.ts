@@ -45,6 +45,7 @@ export interface WorkbookLoadOptions {
 	readonly mode?: 'full' | 'metadata-only' | 'values' | 'formula'
 	readonly sheets?: readonly string[]
 	readonly richMetadata?: boolean
+	readonly pivotCacheRecordMaterializeLimit?: number | 'all'
 }
 
 interface SessionFileIdentity {
@@ -545,6 +546,9 @@ function normalizeOptions(options: WorkbookLoadOptions): WorkbookLoadOptions {
 		...(options.mode ? { mode: options.mode } : {}),
 		...(options.sheets ? { sheets: [...options.sheets].sort((a, b) => a.localeCompare(b)) } : {}),
 		...(options.richMetadata ? { richMetadata: true } : {}),
+		...(options.pivotCacheRecordMaterializeLimit !== undefined
+			? { pivotCacheRecordMaterializeLimit: options.pivotCacheRecordMaterializeLimit }
+			: {}),
 	}
 }
 
@@ -559,10 +563,15 @@ function mergeOpenOptions(
 		currentSheets.length === 0 && nextSheets.length === 0
 			? undefined
 			: [...new Set([...currentSheets, ...nextSheets])].sort((a, b) => a.localeCompare(b))
+	const pivotCacheRecordMaterializeLimit = strongerPivotCacheRecordMaterializeLimit(
+		current.pivotCacheRecordMaterializeLimit,
+		next.pivotCacheRecordMaterializeLimit,
+	)
 	return normalizeOptions({
 		...(mode ? { mode } : {}),
 		...(mergedSheets ? { sheets: mergedSheets } : {}),
 		...(current.richMetadata || next.richMetadata ? { richMetadata: true } : {}),
+		...(pivotCacheRecordMaterializeLimit !== undefined ? { pivotCacheRecordMaterializeLimit } : {}),
 	})
 }
 
@@ -570,6 +579,12 @@ function sameOpenOptions(left: WorkbookLoadOptions, right: WorkbookLoadOptions):
 	const normalizedLeft = normalizeOptions(left)
 	const normalizedRight = normalizeOptions(right)
 	if ((normalizedLeft.mode ?? 'full') !== (normalizedRight.mode ?? 'full')) return false
+	if (
+		normalizedLeft.pivotCacheRecordMaterializeLimit !==
+		normalizedRight.pivotCacheRecordMaterializeLimit
+	) {
+		return false
+	}
 	const leftSheets = normalizedLeft.sheets ?? []
 	const rightSheets = normalizedRight.sheets ?? []
 	if (leftSheets.length !== rightSheets.length) return false
@@ -592,6 +607,17 @@ function strongerMode(
 	if (!current) return next
 	if (!next) return current
 	return (rank[next] ?? 0) > (rank[current] ?? 0) ? next : current
+}
+
+function strongerPivotCacheRecordMaterializeLimit(
+	current: WorkbookLoadOptions['pivotCacheRecordMaterializeLimit'],
+	next: WorkbookLoadOptions['pivotCacheRecordMaterializeLimit'],
+): WorkbookLoadOptions['pivotCacheRecordMaterializeLimit'] {
+	if (next === undefined) return current
+	const currentValue = current === undefined ? 2048 : current === 'all' ? Infinity : current
+	const nextValue = next === 'all' ? Infinity : next
+	if (nextValue <= currentValue) return current
+	return next
 }
 
 async function readIdentity(file: string): Promise<SessionFileIdentity> {
@@ -641,6 +667,7 @@ function makeSessionKey(identity: SessionIdentity, options: WorkbookLoadOptions)
 		mode: normalized.mode ?? 'full',
 		sheets: normalized.sheets ?? [],
 		richMetadata: normalized.richMetadata ?? false,
+		pivotCacheRecordMaterializeLimit: normalized.pivotCacheRecordMaterializeLimit ?? null,
 	})
 }
 

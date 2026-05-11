@@ -1333,11 +1333,8 @@ function buildPivotOutputAudits(
 		if (!cache.records?.materializedComplete || !cache.records.materializedRecords) {
 			return unsupportedPivotAudit(base, 'Pivot cache records are not fully materialized.')
 		}
-		if (pivot.rowFields.length !== 1 || pivot.pageFields.length > 0) {
-			return unsupportedPivotAudit(
-				base,
-				'Only one-row-field pivots without page filters are audited.',
-			)
+		if (pivot.rowFields.length !== 1) {
+			return unsupportedPivotAudit(base, 'Only one-row-field pivots are audited.')
 		}
 		if (pivot.columnFields.length > 0 && !pivot.columnFields.every((field) => field.index === -2)) {
 			return unsupportedPivotAudit(
@@ -1390,16 +1387,20 @@ function aggregateSimplePivotOutput(
 			}
 	  }
 	| { ok: false; warning: string } {
+	const pageFilters = buildSimplePivotPageFilters(cache, pivot)
+	if (!pageFilters.ok) return pageFilters
 	const dataFieldNames = pivot.dataFields.map(
 		(field, index) => field.name ?? `DataField${index + 1}`,
 	)
 	const output = new Map<string, Map<string, number>>()
 	const baseTotals = new Map<string, Map<string, number>>()
+	const includeGrandTotal = pivot.options?.rowGrandTotals !== false
 	for (const row of buildPivotCacheRows([cache], {})) {
+		if (!pivotCacheRowMatchesPageFilters(row, pageFilters.value)) continue
 		const rowLabel = row.values.find((value) => value.fieldIndex === rowFieldIndex)?.value
 		if (rowLabel === undefined) continue
 		addPivotBaseTotals(cache, row, baseTotals, rowLabel)
-		addPivotBaseTotals(cache, row, baseTotals, 'Grand Total')
+		if (includeGrandTotal) addPivotBaseTotals(cache, row, baseTotals, 'Grand Total')
 		for (let i = 0; i < pivot.dataFields.length; i++) {
 			const dataField = pivot.dataFields[i]
 			const dataFieldName = dataFieldNames[i] ?? `DataField${i + 1}`
@@ -1409,7 +1410,7 @@ function aggregateSimplePivotOutput(
 			const measured = measurePivotDataField(cache, row, dataField)
 			if (!measured.ok) return measured
 			addPivotOutput(output, rowLabel, dataFieldName, measured.value)
-			addPivotOutput(output, 'Grand Total', dataFieldName, measured.value)
+			if (includeGrandTotal) addPivotOutput(output, 'Grand Total', dataFieldName, measured.value)
 		}
 	}
 	for (let i = 0; i < pivot.dataFields.length; i++) {
@@ -1438,6 +1439,46 @@ function aggregateSimplePivotOutput(
 			values: output,
 		},
 	}
+}
+
+function buildSimplePivotPageFilters(
+	cache: PivotCacheInfo,
+	pivot: PivotTableInfo,
+): { ok: true; value: ReadonlyMap<number, string> } | { ok: false; warning: string } {
+	const filters = new Map<number, string>()
+	for (const pageField of pivot.pageFields) {
+		if (pageField.index < 0) {
+			return { ok: false, warning: 'Data-field page filters are not audited.' }
+		}
+		if (pageField.item === undefined) {
+			return { ok: false, warning: 'Multi-select or unset page filters are not audited.' }
+		}
+		const field = pivot.fields[pageField.index]
+		const item = field?.items?.[pageField.item]
+		if (!item || item.hidden || item.missing || item.cacheIndex === undefined) {
+			return { ok: false, warning: 'Pivot page filter selected item was not resolved.' }
+		}
+		const sharedItem = cache.fields[pageField.index]?.sharedItems?.find(
+			(entry) => entry.index === item.cacheIndex,
+		)
+		const value = sharedItem?.value
+		if (value === undefined) {
+			return { ok: false, warning: 'Pivot page filter selected cache item was not resolved.' }
+		}
+		filters.set(pageField.index, value)
+	}
+	return { ok: true, value: filters }
+}
+
+function pivotCacheRowMatchesPageFilters(
+	row: PivotCacheMaterializedRowInfo,
+	filters: ReadonlyMap<number, string>,
+): boolean {
+	for (const [fieldIndex, expected] of filters) {
+		const actual = row.values.find((value) => value.fieldIndex === fieldIndex)?.value
+		if (actual !== expected) return false
+	}
+	return true
 }
 
 function measurePivotDataField(
@@ -1645,7 +1686,9 @@ function comparePivotOutput(
 }
 
 function numericCellMatches(value: CellValue, expected: number): boolean {
-	return value.kind === 'number' && Math.abs(value.value - expected) < 1e-9
+	if (value.kind !== 'number') return false
+	const tolerance = 1e-12 * Math.max(1, Math.abs(value.value), Math.abs(expected))
+	return Math.abs(value.value - expected) <= tolerance
 }
 
 function cellText(value: CellValue): string {

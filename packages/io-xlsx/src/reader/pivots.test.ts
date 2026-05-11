@@ -96,6 +96,39 @@ describe('pivot inventory', () => {
 		})
 	})
 
+	test('materializes all pivot cache records when an explicit limit is supplied', () => {
+		const recordsXml = `<?xml version="1.0"?>
+<pivotCacheRecords xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="3">
+  <r><x v="0"/><n v="10"/></r>
+  <r><x v="1"/><n v="20"/></r>
+  <r><x v="2"/><n v="30"/></r>
+</pivotCacheRecords>`
+
+		expect(
+			parseMaterializedPivotCacheRecordsXml(recordsXml, 'xl/pivotCache/pivotCacheRecords1.xml', 2),
+		).toMatchObject({
+			parsedCount: 3,
+			materializedCount: 2,
+			materializedComplete: false,
+		})
+		expect(
+			parseMaterializedPivotCacheRecordsXml(
+				recordsXml,
+				'xl/pivotCache/pivotCacheRecords1.xml',
+				Number.POSITIVE_INFINITY,
+			),
+		).toMatchObject({
+			parsedCount: 3,
+			materializedCount: 3,
+			materializedComplete: true,
+			materializedRecords: [
+				expect.objectContaining({ index: 0 }),
+				expect.objectContaining({ index: 1 }),
+				expect.objectContaining({ index: 2 }),
+			],
+		})
+	})
+
 	test('parses pivot cache range grouping metadata', () => {
 		const parsed = parsePivotCacheDefinitionXml(
 			`<?xml version="1.0"?>

@@ -90,12 +90,13 @@ export function parsePivotCacheRecordsXml(
 export function parseMaterializedPivotCacheRecordsXml(
 	xml: string,
 	partPath: string,
+	materializeLimit = PIVOT_CACHE_RECORD_MATERIALIZE_LIMIT,
 ): PivotCacheRecordsInfo | null {
 	return parsePivotCacheRecordsXml(
 		xml,
 		partPath,
 		PIVOT_CACHE_RECORD_PREVIEW_LIMIT,
-		PIVOT_CACHE_RECORD_MATERIALIZE_LIMIT,
+		materializeLimit,
 	)
 }
 

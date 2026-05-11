@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
+import { numberValue, stringValue } from '@ascend/schema'
 import { AscendWorkbook, WorkbookDocument, WorkbookSession } from './index.ts'
 
 describe('pivot output audits', () => {
@@ -73,6 +74,23 @@ describe('pivot output audits', () => {
 			}),
 		])
 	})
+
+	test('audits simple saved pivot outputs with page filters and hidden grand totals', () => {
+		const wb = workbookWithFilteredPivot()
+
+		expect(wb.pivotOutputAudits()).toEqual([
+			{
+				pivotTable: 'FilteredPivot',
+				partPath: 'xl/pivotTables/pivotTable1.xml',
+				sheetName: 'Sheet1',
+				cacheId: 7,
+				status: 'passed',
+				checkedValueCount: 2,
+				mismatches: [],
+				warnings: [],
+			},
+		])
+	})
 })
 
 function loadLibreOfficeFixture(file: string): Uint8Array {
@@ -105,6 +123,104 @@ function workbookWithoutMaterializedPivot(): AscendWorkbook {
 		rowFields: [{ index: 0 }],
 		columnFields: [],
 		pageFields: [],
+		dataFields: [{ fieldIndex: 1, name: 'Sum of Sales' }],
+	})
+	return wb
+}
+
+function workbookWithFilteredPivot(): AscendWorkbook {
+	const wb = AscendWorkbook.create()
+	const internal = wb as unknown as {
+		wb: {
+			pivotCaches: Array<Record<string, unknown>>
+			pivotTables: Array<Record<string, unknown>>
+			sheets: Array<{
+				cells: {
+					set(row: number, col: number, cell: { value: unknown; formula: null; styleId: 0 }): void
+				}
+			}>
+		}
+	}
+	const cells = internal.wb.sheets[0]?.cells
+	if (!cells) throw new Error('Expected default sheet')
+	cells.set(0, 0, { value: stringValue('Region'), formula: null, styleId: 0 })
+	cells.set(0, 1, { value: stringValue('Sum of Sales'), formula: null, styleId: 0 })
+	cells.set(1, 0, { value: stringValue('West'), formula: null, styleId: 0 })
+	cells.set(1, 1, { value: numberValue(100), formula: null, styleId: 0 })
+	cells.set(2, 0, { value: stringValue('East'), formula: null, styleId: 0 })
+	cells.set(2, 1, { value: numberValue(50), formula: null, styleId: 0 })
+	internal.wb.pivotCaches.push({
+		partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+		cacheId: 7,
+		fields: [
+			{
+				index: 0,
+				name: 'Region',
+				sharedItems: [
+					{ index: 0, kind: 'string', value: 'West' },
+					{ index: 1, kind: 'string', value: 'East' },
+				],
+			},
+			{ index: 1, name: 'Sales' },
+			{
+				index: 2,
+				name: 'Channel',
+				sharedItems: [
+					{ index: 0, kind: 'string', value: 'Retail' },
+					{ index: 1, kind: 'string', value: 'Online' },
+				],
+			},
+		],
+		records: {
+			partPath: 'xl/pivotCache/pivotCacheRecords1.xml',
+			parsedCount: 3,
+			materializedCount: 3,
+			materializedComplete: true,
+			preview: [],
+			valueKindCounts: [],
+			materializedRecords: [
+				{
+					index: 0,
+					values: [
+						{ index: 0, kind: 'sharedItem', sharedItemIndex: 0 },
+						{ index: 1, kind: 'number', value: '999' },
+						{ index: 2, kind: 'sharedItem', sharedItemIndex: 0 },
+					],
+				},
+				{
+					index: 1,
+					values: [
+						{ index: 0, kind: 'sharedItem', sharedItemIndex: 0 },
+						{ index: 1, kind: 'number', value: '100' },
+						{ index: 2, kind: 'sharedItem', sharedItemIndex: 1 },
+					],
+				},
+				{
+					index: 2,
+					values: [
+						{ index: 0, kind: 'sharedItem', sharedItemIndex: 1 },
+						{ index: 1, kind: 'number', value: '50' },
+						{ index: 2, kind: 'sharedItem', sharedItemIndex: 1 },
+					],
+				},
+			],
+		},
+	})
+	internal.wb.pivotTables.push({
+		partPath: 'xl/pivotTables/pivotTable1.xml',
+		sheetName: 'Sheet1',
+		name: 'FilteredPivot',
+		cacheId: 7,
+		locationRef: 'A1:B3',
+		options: { rowGrandTotals: false },
+		fields: [
+			{ index: 0, axis: 'axisRow' },
+			{ index: 1, dataField: true },
+			{ index: 2, axis: 'axisPage', items: [{ index: 0, cacheIndex: 1 }] },
+		],
+		rowFields: [{ index: 0 }],
+		columnFields: [],
+		pageFields: [{ index: 2, item: 0 }],
 		dataFields: [{ fieldIndex: 1, name: 'Sum of Sales' }],
 	})
 	return wb

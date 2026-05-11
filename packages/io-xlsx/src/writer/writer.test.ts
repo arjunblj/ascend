@@ -162,6 +162,78 @@ describe('writeXlsx', () => {
 		expect(workbookXml).toContain('workbookParameter="1"')
 	})
 
+	it('preserves workbook relationship ids and order when dirty sheets force workbook XML regeneration', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+	<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+	  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+	  <Default Extension="xml" ContentType="application/xml"/>
+	  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+	  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+	  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+	  <Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
+	  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+	  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+	</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+	<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+	  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+	  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officedocument/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+	  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+	</Relationships>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+	<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+	  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>
+	  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+	  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+	</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0"?>
+	<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+	  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+	  <sheets><sheet name="Data" sheetId="1" r:id="rId3"/></sheets>
+	</workbook>`,
+			'xl/styles.xml': `<?xml version="1.0"?>
+	<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+	  <cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellXfs>
+	</styleSheet>`,
+			'xl/theme/theme1.xml': `<?xml version="1.0"?><a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Office Theme"><a:themeElements/></a:theme>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData></worksheet>`,
+			'docProps/core.xml': `<?xml version="1.0"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"/>`,
+			'docProps/app.xml': `<?xml version="1.0"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"/>`,
+		})
+		const read = readXlsx(bytes)
+		expectOk(read)
+		read.value.workbook.sheets[0]?.cells.set(0, 0, {
+			value: numberValue(2),
+			formula: null,
+			styleId: S0,
+		})
+
+		const written = writeXlsx(read.value.workbook, read.value.capsules, {
+			dirtySheetNames: ['Data'],
+		})
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		const workbookXml = new TextDecoder().decode(zip['xl/workbook.xml'] ?? new Uint8Array())
+		const rootRels = new TextDecoder().decode(zip['_rels/.rels'] ?? new Uint8Array())
+		const workbookRels = new TextDecoder().decode(
+			zip['xl/_rels/workbook.xml.rels'] ?? new Uint8Array(),
+		)
+
+		expect(workbookXml).toContain('r:id="rId3"')
+		expect(rootRels).toContain(
+			'Type="http://schemas.openxmlformats.org/officedocument/2006/relationships/metadata/core-properties"',
+		)
+		expect(workbookRels.indexOf('Id="rId1"')).toBeLessThan(workbookRels.indexOf('Id="rId2"'))
+		expect(workbookRels.indexOf('Id="rId2"')).toBeLessThan(workbookRels.indexOf('Id="rId3"'))
+		expect(workbookRels).toContain('Id="rId1"')
+		expect(workbookRels).toContain('relationships/theme')
+		expect(workbookRels).toContain('Id="rId2"')
+		expect(workbookRels).toContain('relationships/styles')
+		expect(workbookRels).toContain('Id="rId3"')
+		expect(workbookRels).toContain('relationships/worksheet')
+	})
+
 	it('writes edited tabular slicer cache item state back into preserved package XML', () => {
 		const slicerCacheXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <slicerCacheDefinition xmlns="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" name="Slicer_State" sourceName="State">

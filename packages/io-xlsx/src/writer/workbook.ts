@@ -8,6 +8,7 @@ const NS_MAIN = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
 const NS_R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
 
 export interface WorkbookXmlOptions {
+	readonly worksheetRelIds?: readonly string[]
 	readonly externalReferenceRelIds?: readonly string[]
 	readonly pivotCacheRelIds?: readonly string[]
 	readonly chartSheetRelIds?: readonly string[]
@@ -64,7 +65,7 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 			kind: 'worksheet',
 			name: sheet.name,
 			sheetId: storedWorksheetSheetId(i, sheet.id as string),
-			relId: `rId${i + 1}`,
+			relId: options.worksheetRelIds?.[i] ?? `rId${i + 1}`,
 			state: sheet.state,
 		})
 	}

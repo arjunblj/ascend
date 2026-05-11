@@ -321,12 +321,14 @@ describe('readXlsx', () => {
       <c r="B1" t="str"></c>
       <c r="C1" t="n"/>
       <c r="D1" t="s"></c>
-      <c r="E1" t="str"><f>A2</f></c>
-      <c r="F1" t="n"><f>A3</f></c>
-      <c r="G1" t="str"><v></v></c>
-    </row>
-  </sheetData>
-</worksheet>`,
+	      <c r="E1" t="str"><f>A2</f></c>
+	      <c r="F1" t="n"><f>A3</f></c>
+	      <c r="G1" t="str"><v></v></c>
+	      <c r="H1" t="s"><v/></c>
+	      <c r="I1" t="str"><v /></c>
+	    </row>
+	  </sheetData>
+	</worksheet>`,
 		})
 
 		for (const mode of ['formula', 'values'] as const) {
@@ -342,6 +344,8 @@ describe('readXlsx', () => {
 			expect(sheet?.cells.get(0, 4)?.formula).toBe(mode === 'formula' ? 'A2' : null)
 			expect(sheet?.cells.get(0, 5)?.formula).toBe(mode === 'formula' ? 'A3' : null)
 			expect(sheet?.cells.get(0, 6)?.value).toEqual({ kind: 'string', value: '' })
+			expect(sheet?.cells.get(0, 7)?.value).toEqual({ kind: 'string', value: '' })
+			expect(sheet?.cells.get(0, 8)?.value).toEqual({ kind: 'string', value: '' })
 		}
 	})
 

@@ -36,6 +36,7 @@ import {
 	REL_THEME,
 	REL_VML_DRAWING,
 	REL_WORKSHEET,
+	type Relationship,
 	resolvePath,
 } from '../reader/relationships.ts'
 import { parseSharedStrings } from '../reader/shared-strings.ts'
@@ -376,6 +377,9 @@ export function planWriteXlsx(
 						workbook.preservedXml.workbookRelsPath,
 					)
 				: undefined
+		const preservedWorkbookRels = preservedWorkbookRelsTextForTargets
+			? parseRelationships(preservedWorkbookRelsTextForTargets)
+			: []
 		const rootRelTarget = (type: string, partPath: string, fallback: string): string =>
 			preservedRelationshipTarget(preservedRootRelsText, '', type, partPath) ?? fallback
 		const workbookRelTarget = (type: string, partPath: string, fallback: string): string =>
@@ -584,25 +588,35 @@ export function planWriteXlsx(
 				: undefined
 
 		let rIdCounter = 1
+		const reservedWorkbookRelIds = new Set(preservedWorkbookRels.map((rel) => rel.id))
+		const usedWorkbookRelIds = new Set<string>()
 		const wbRels: RelEntry[] = []
+		const addWorkbookRel = (type: string, partPath: string, fallback: string): string => {
+			const id = allocateWorkbookRelId(
+				preservedWorkbookRels,
+				reservedWorkbookRelIds,
+				usedWorkbookRelIds,
+				'xl/workbook.xml',
+				type,
+				partPath,
+				() => `rId${rIdCounter++}`,
+			)
+			wbRels.push({
+				id,
+				type,
+				target: workbookRelTarget(type, partPath, fallback),
+			})
+			return id
+		}
+		const worksheetRelIds: string[] = []
 		for (let i = 0; i < workbook.sheets.length; i++) {
 			const sheet = workbook.sheets[i]
 			const partPath = worksheetPartPath(sheet, i)
-			wbRels.push({
-				id: `rId${rIdCounter}`,
-				type: REL_WORKSHEET,
-				target: workbookRelTarget(REL_WORKSHEET, partPath, partPath.replace(/^xl\//, '')),
-			})
-			rIdCounter++
+			worksheetRelIds.push(addWorkbookRel(REL_WORKSHEET, partPath, partPath.replace(/^xl\//, '')))
 		}
 
 		if (shouldWriteStyles) {
-			wbRels.push({
-				id: `rId${rIdCounter}`,
-				type: REL_STYLES,
-				target: workbookRelTarget(REL_STYLES, 'xl/styles.xml', 'styles.xml'),
-			})
-			rIdCounter++
+			addWorkbookRel(REL_STYLES, 'xl/styles.xml', 'styles.xml')
 		}
 
 		const hasPreservedTheme = workbook.preservedTheme
@@ -624,75 +638,38 @@ export function planWriteXlsx(
 			(workbook.preservedTheme && (hasPreservedTheme || preservedThemeXml)) ||
 			shouldGenerateTheme
 		) {
-			wbRels.push({
-				id: `rId${rIdCounter}`,
-				type: REL_THEME,
-				target: workbookRelTarget(REL_THEME, generatedThemePath, generatedThemeTarget),
-			})
-			rIdCounter++
+			addWorkbookRel(REL_THEME, generatedThemePath, generatedThemeTarget)
 		}
 
 		if (hasSharedStrings) {
-			wbRels.push({
-				id: `rId${rIdCounter}`,
-				type: REL_SHARED_STRINGS,
-				target: workbookRelTarget(REL_SHARED_STRINGS, 'xl/sharedStrings.xml', 'sharedStrings.xml'),
-			})
-			rIdCounter++
+			addWorkbookRel(REL_SHARED_STRINGS, 'xl/sharedStrings.xml', 'sharedStrings.xml')
 		}
 
 		if (shouldWriteDynamicArrayMetadata) {
-			wbRels.push({
-				id: `rId${rIdCounter}`,
-				type: REL_SHEET_METADATA,
-				target: workbookRelTarget(
-					REL_SHEET_METADATA,
-					dynamicArrayMetadataPath,
-					dynamicArrayMetadataTarget,
-				),
-			})
-			rIdCounter++
+			addWorkbookRel(REL_SHEET_METADATA, dynamicArrayMetadataPath, dynamicArrayMetadataTarget)
 		}
 
 		const pivotCachePartPaths = new Set(workbook.pivotCaches.map((c) => c.partPath))
 		const pivotCacheRelIds: string[] = []
 		for (const cache of workbook.pivotCaches) {
 			const target = cache.partPath.replace(/^xl\//, '')
-			pivotCacheRelIds.push(`rId${rIdCounter}`)
-			wbRels.push({
-				id: `rId${rIdCounter}`,
-				type: REL_PIVOT_CACHE_DEFINITION,
-				target: workbookRelTarget(REL_PIVOT_CACHE_DEFINITION, cache.partPath, target),
-			})
-			rIdCounter++
+			pivotCacheRelIds.push(addWorkbookRel(REL_PIVOT_CACHE_DEFINITION, cache.partPath, target))
 		}
 
 		const chartSheetPartPaths = new Set(workbook.chartSheets.map((sheet) => sheet.partPath))
 		const chartSheetRelIds: string[] = []
 		for (const chartSheet of workbook.chartSheets) {
 			const target = chartSheet.partPath.replace(/^xl\//, '')
-			const relId = `rId${rIdCounter}`
+			const relId = addWorkbookRel(REL_CHARTSHEET, chartSheet.partPath, target)
 			chartSheetRelIds.push(relId)
-			wbRels.push({
-				id: relId,
-				type: REL_CHARTSHEET,
-				target: workbookRelTarget(REL_CHARTSHEET, chartSheet.partPath, target),
-			})
-			rIdCounter++
 		}
 
 		const macroSheetPartPaths = new Set(workbook.macroSheets.map((sheet) => sheet.partPath))
 		const macroSheetRelIds: string[] = []
 		for (const macroSheet of workbook.macroSheets) {
 			const target = macroSheet.partPath.replace(/^xl\//, '')
-			const relId = `rId${rIdCounter}`
+			const relId = addWorkbookRel(REL_MACROSHEET, macroSheet.partPath, target)
 			macroSheetRelIds.push(relId)
-			wbRels.push({
-				id: relId,
-				type: REL_MACROSHEET,
-				target: workbookRelTarget(REL_MACROSHEET, macroSheet.partPath, target),
-			})
-			rIdCounter++
 		}
 
 		for (const capsule of workbookCapsules) {
@@ -703,13 +680,9 @@ export function planWriteXlsx(
 			if (macroSheetPartPaths.has(capsule.partPath)) continue
 			if (pivotCachePartPaths.has(capsule.partPath)) continue
 			const target = computeRelativePath('xl/', capsule.partPath)
-			wbRels.push({
-				id: `rId${rIdCounter}`,
-				type: capsule.relType,
-				target: workbookRelTarget(capsule.relType, capsule.partPath, target),
-			})
-			rIdCounter++
+			addWorkbookRel(capsule.relType, capsule.partPath, target)
 		}
+		const orderedWbRels = orderWorkbookRels(wbRels, preservedWorkbookRels)
 
 		const externalReferenceRelIds = wbRels
 			.filter(
@@ -796,6 +769,7 @@ export function planWriteXlsx(
 					preserveWorkbookCalcState
 						? (preservedWorkbookXmlText ?? '')
 						: buildWorkbookXml(workbook, {
+								worksheetRelIds,
 								externalReferenceRelIds,
 								pivotCacheRelIds,
 								chartSheetRelIds,
@@ -1363,26 +1337,30 @@ export function planWriteXlsx(
 			)
 		}
 
-		const rootRels: RelEntry[] = [
-			{
-				id: 'rId1',
-				type: REL_OFFICE_DOC,
-				target: rootRelTarget(REL_OFFICE_DOC, 'xl/workbook.xml', 'xl/workbook.xml'),
-			},
-		]
-		let rootRIdCounter = 2
+		const rootRels: RelEntry[] = []
+		const preservedRootRels = preservedRootRelsText ? parseRelationships(preservedRootRelsText) : []
+		const reservedRootRelIds = new Set(preservedRootRels.map((rel) => rel.id))
+		const usedRootRelIds = new Set<string>()
+		let rootRIdCounter = 1
+		const addRootRel = (type: string, partPath: string, fallback: string): string => {
+			const preserved = preservedPackageRelationship(preservedRootRels, '', type, partPath)
+			const id = allocateRelationshipId(
+				preserved?.id,
+				reservedRootRelIds,
+				usedRootRelIds,
+				() => `rId${rootRIdCounter++}`,
+			)
+			rootRels.push({
+				id,
+				type: preserved?.type ?? type,
+				target: preserved?.target ?? rootRelTarget(type, partPath, fallback),
+			})
+			return id
+		}
+		addRootRel(REL_OFFICE_DOC, 'xl/workbook.xml', 'xl/workbook.xml')
 		if (shouldWriteDocProps) {
-			rootRels.push({
-				id: 'rId2',
-				type: REL_CORE_PROPS,
-				target: rootRelTarget(REL_CORE_PROPS, corePropsPath, corePropsPath),
-			})
-			rootRels.push({
-				id: 'rId3',
-				type: REL_EXT_PROPS,
-				target: rootRelTarget(REL_EXT_PROPS, appPropsPath, appPropsPath),
-			})
-			rootRIdCounter = 4
+			addRootRel(REL_CORE_PROPS, corePropsPath, corePropsPath)
+			addRootRel(REL_EXT_PROPS, appPropsPath, appPropsPath)
 		}
 		if (capsules) {
 			for (const capsule of capsules) {
@@ -1394,21 +1372,17 @@ export function planWriteXlsx(
 				if (capsule.partPath === corePropsPath || capsule.partPath === appPropsPath) {
 					continue
 				}
-				rootRels.push({
-					id: `rId${rootRIdCounter}`,
-					type: capsule.relType,
-					target: capsule.partPath,
-				})
-				rootRIdCounter++
+				addRootRel(capsule.relType, capsule.partPath, capsule.partPath)
 			}
 		}
+		const orderedRootRels = orderWorkbookRels(rootRels, preservedRootRels)
 		recordXml(
 			'_rels/.rels',
 			{
 				owner: { kind: 'package' },
 				origin: 'generated',
 			},
-			() => buildRelsXml(rootRels),
+			() => buildRelsXml(orderedRootRels),
 		)
 
 		if (capsules) {
@@ -1727,7 +1701,7 @@ export function planWriteXlsx(
 				() =>
 					preserveWorkbookRels && preservedWorkbookRelsText
 						? preservedWorkbookRelsText
-						: buildRelsXml(wbRels),
+						: buildRelsXml(orderedWbRels),
 			)
 		}
 
@@ -2210,6 +2184,86 @@ function packageDocPropsPath(
 	fallback: string,
 ): string {
 	return capsules.find((capsule) => capsule.relType === relType)?.partPath ?? fallback
+}
+
+function allocateWorkbookRelId(
+	preservedRels: readonly Relationship[],
+	reservedRelIds: ReadonlySet<string>,
+	usedRelIds: Set<string>,
+	sourcePart: string,
+	type: string,
+	resolvedPartPath: string,
+	nextGenerated: () => string,
+): string {
+	const preserved = preservedRelationshipId(preservedRels, sourcePart, type, resolvedPartPath)
+	return allocateRelationshipId(preserved, reservedRelIds, usedRelIds, nextGenerated)
+}
+
+function allocateRelationshipId(
+	preservedId: string | undefined,
+	reservedRelIds: ReadonlySet<string>,
+	usedRelIds: Set<string>,
+	nextGenerated: () => string,
+): string {
+	if (preservedId && !usedRelIds.has(preservedId)) {
+		usedRelIds.add(preservedId)
+		return preservedId
+	}
+	let generated = nextGenerated()
+	while (usedRelIds.has(generated) || reservedRelIds.has(generated)) generated = nextGenerated()
+	usedRelIds.add(generated)
+	return generated
+}
+
+function preservedRelationshipId(
+	rels: readonly Relationship[],
+	sourcePart: string,
+	type: string,
+	resolvedPartPath: string,
+): string | undefined {
+	for (const rel of rels) {
+		if (rel.type !== type) continue
+		if (resolvePath(sourcePart, rel.target) === resolvedPartPath) return rel.id
+	}
+	return undefined
+}
+
+function preservedPackageRelationship(
+	rels: readonly Relationship[],
+	sourcePart: string,
+	type: string,
+	resolvedPartPath: string,
+): Relationship | undefined {
+	for (const rel of rels) {
+		if (rel.type === type && resolvePath(sourcePart, rel.target) === resolvedPartPath) return rel
+	}
+	if (type === REL_CORE_PROPS) {
+		return rels.find(
+			(rel) =>
+				rel.type.endsWith('/metadata/core-properties') &&
+				resolvePath(sourcePart, rel.target) === resolvedPartPath,
+		)
+	}
+	return undefined
+}
+
+function orderWorkbookRels(
+	entries: readonly RelEntry[],
+	preservedRels: readonly Relationship[],
+): readonly RelEntry[] {
+	if (preservedRels.length === 0) return entries
+	const pending = new Map(entries.map((entry) => [entry.id, entry] as const))
+	const ordered: RelEntry[] = []
+	for (const rel of preservedRels) {
+		const entry = pending.get(rel.id)
+		if (!entry) continue
+		ordered.push(entry)
+		pending.delete(rel.id)
+	}
+	for (const entry of entries) {
+		if (pending.delete(entry.id)) ordered.push(entry)
+	}
+	return ordered
 }
 
 function preservedRelationshipTarget(

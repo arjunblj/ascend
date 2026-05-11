@@ -1218,6 +1218,7 @@ function extractVTagTextInRange(xml: string, start: number, end: number): string
 	if (open === -1 || open >= end) return undefined
 	const contentStart = xml.indexOf('>', open)
 	if (contentStart === -1 || contentStart >= end) return undefined
+	if (isSelfClosingTag(xml, open, contentStart)) return ''
 	const close = xml.indexOf('</v>', contentStart + 1)
 	if (close === -1 || close > end) return undefined
 	const slice = xml.slice(contentStart + 1, close)
@@ -2900,6 +2901,7 @@ function extractVTagTextBytes(bytes: Uint8Array, start: number, end: number): st
 	if (open === -1) return undefined
 	const contentStart = findTagEndBytes(bytes, open)
 	if (contentStart === -1 || contentStart >= end) return undefined
+	if (isSelfClosingTagBytes(bytes, open, contentStart)) return ''
 	const close = indexOfBytes(bytes, BYTES_V_CLOSE, contentStart + 1, end)
 	if (close === -1) return undefined
 	return decodeXmlBytesText(bytes, contentStart + 1, close)
@@ -3040,6 +3042,7 @@ function extractVTagText(xml: string): string | undefined {
 	if (open === -1) return undefined
 	const contentStart = xml.indexOf('>', open)
 	if (contentStart === -1) return undefined
+	if (isSelfClosingTag(xml, open, contentStart)) return ''
 	const close = xml.indexOf('</v>', contentStart + 1)
 	if (close === -1) return undefined
 	const slice = xml.slice(contentStart + 1, close)

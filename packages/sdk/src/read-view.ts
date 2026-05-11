@@ -1428,6 +1428,26 @@ function buildPivotOutputAudits(
 				warnings: [],
 			}
 		}
+		if (isMultiRowAxisSingleDataPivot(pivot)) {
+			const expected = aggregateMultiRowAxisSingleDataPivotOutput(cache, pivot)
+			if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
+			const actual = readMultiRowAxisPivotOutput(
+				workbook,
+				sheet.id,
+				pivot,
+				expected.value.rowKeys,
+				expected.value.columnKeys,
+			)
+			if (!actual.ok) return unsupportedPivotAudit(base, actual.warning)
+			const mismatches = comparePivotOutput(expected.value.values, actual.value)
+			return {
+				...base,
+				status: mismatches.length > 0 ? 'mismatch' : 'passed',
+				checkedValueCount: expected.value.checkedValueCount,
+				mismatches,
+				warnings: [],
+			}
+		}
 		if (pivot.rowFields.length !== 1) {
 			return unsupportedPivotAudit(base, 'Only one-row-field pivots are audited.')
 		}
@@ -1460,6 +1480,16 @@ function isAxisItemMatrixPivot(pivot: PivotTableInfo): boolean {
 		pivot.rowFields.length > 0 &&
 		pivot.columnFields.length > 0 &&
 		pivot.columnFields.every((field) => field.index >= 0)
+	)
+}
+
+function isMultiRowAxisSingleDataPivot(pivot: PivotTableInfo): boolean {
+	return (
+		pivot.rowFields.length > 1 &&
+		pivot.rowFields.every((field) => field.index >= 0) &&
+		pivot.columnFields.length === 0 &&
+		pivot.pageFields.length === 0 &&
+		pivot.dataFields.length === 1
 	)
 }
 
@@ -1957,6 +1987,54 @@ function aggregateMultiRowAxisPivotOutput(
 			rowKeys: rows.value.map((row) => row.key),
 			columnKeys: columns.value.map((column) => column.key),
 			checkedValueCount: rows.value.length * columns.value.length,
+			values: showDataAs.value,
+		},
+	}
+}
+
+function aggregateMultiRowAxisSingleDataPivotOutput(
+	cache: PivotCacheInfo,
+	pivot: PivotTableInfo,
+):
+	| {
+			ok: true
+			value: {
+				rowKeys: readonly string[]
+				columnKeys: readonly string[]
+				checkedValueCount: number
+				values: ReadonlyMap<string, ReadonlyMap<string, number>>
+			}
+	  }
+	| { ok: false; warning: string } {
+	const pageFilters = buildSimplePivotPageFilters(cache, pivot)
+	if (!pageFilters.ok) return pageFilters
+	const rows = buildPivotAxisOutputItems(cache, pivot, 'row')
+	if (!rows.ok) return rows
+	const dataField = pivot.dataFields[0]
+	if (!dataField) return { ok: false, warning: 'Pivot data field metadata was not found.' }
+	const columnKey = pivotDataFieldAuditName(cache, dataField, 0)
+	const columnKeys = [columnKey]
+	const output = new Map<string, Map<string, number>>()
+	for (const row of rows.value) {
+		output.set(row.key, new Map([[columnKey, 0]]))
+	}
+	for (const row of buildPivotCacheRows([cache], {})) {
+		if (!pivotCacheRowMatchesFilters(row, pageFilters.value)) continue
+		const measured = measurePivotDataField(cache, row, dataField)
+		if (!measured.ok) return measured
+		for (const rowItem of rows.value) {
+			if (!pivotCacheRowMatchesFilters(row, rowItem.filters)) continue
+			addPivotOutput(output, rowItem.key, columnKey, measured.value)
+		}
+	}
+	const showDataAs = applyPivotMatrixShowDataAs(output, dataField, columnKeys)
+	if (!showDataAs.ok) return showDataAs
+	return {
+		ok: true,
+		value: {
+			rowKeys: rows.value.map((row) => row.key),
+			columnKeys,
+			checkedValueCount: rows.value.length,
 			values: showDataAs.value,
 		},
 	}

@@ -116,6 +116,28 @@ describe('pivot output audits', () => {
 		)
 	})
 
+	test('audits real LibreOffice multi-row pivots without column fields', async () => {
+		for (const [file, checkedValueCount] of [
+			['pivottable_outline_mode.xlsx', 7],
+			['pivottable_string_field_filter.xlsx', 2],
+			['pivottable_date_field_filter.xlsx', 1],
+		] as const) {
+			const wb = await AscendWorkbook.open(loadLibreOfficeFixture(file), {
+				pivotCacheRecordMaterializeLimit: 'all',
+			})
+
+			expect(wb.pivotOutputAudits()).toEqual([
+				expect.objectContaining({
+					pivotTable: 'PivotTable1',
+					status: 'passed',
+					checkedValueCount,
+					mismatches: [],
+					warnings: [],
+				}),
+			])
+		}
+	})
+
 	test('audits real LibreOffice boolean row filters with Excel-visible labels', async () => {
 		const wb = await AscendWorkbook.open(
 			loadLibreOfficeFixture('pivottable_bool_field_filter.xlsx'),

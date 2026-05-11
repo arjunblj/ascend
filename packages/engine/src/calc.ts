@@ -689,7 +689,27 @@ const LEGACY_SINGLE_CELL_ARRAY_FUNCTIONS = new Set([
 
 const REFERENCE_RETURNING_FUNCTIONS = new Set(['INDEX', 'INDIRECT', 'OFFSET'])
 
-const ARRAY_MAPPING_FUNCTIONS = new Set(['COLUMN', 'IF', 'ISNUMBER', 'N', 'ROW'])
+const ARRAY_MAPPING_FUNCTIONS = new Set(['COLUMN', 'IF', 'ISNUMBER', 'N', 'ROW', 'SQRT'])
+
+const REFERENCE_SENSITIVE_SHARED_FUNCTIONS = new Set(['INDIRECT', 'OFFSET'])
+
+function formulaContainsFunction(node: FormulaNode, names: ReadonlySet<string>): boolean {
+	switch (node.type) {
+		case 'function':
+			return (
+				names.has(node.name.toUpperCase()) ||
+				node.args.some((arg) => formulaContainsFunction(arg, names))
+			)
+		case 'binary':
+			return formulaContainsFunction(node.left, names) || formulaContainsFunction(node.right, names)
+		case 'unary':
+			return formulaContainsFunction(node.operand, names)
+		case 'array':
+			return node.rows.some((row) => row.some((cell) => formulaContainsFunction(cell, names)))
+		default:
+			return false
+	}
+}
 
 function needsInterpreterArraySemantics(ast: FormulaNode): boolean {
 	return expressionNeedsInterpreterArraySemantics(ast)
@@ -928,6 +948,12 @@ function isSpillBinding(
 		binding !== null &&
 		(binding as { kind?: string }).kind === 'spill'
 	)
+}
+
+function persistentScalarFormulaBinding(
+	binding: CellFormulaBinding | undefined,
+): CellFormulaBinding | undefined {
+	return binding?.kind === 'spill' || binding?.kind === 'blockedSpill' ? undefined : binding
 }
 
 function getSheetSpillIndex(
@@ -1628,7 +1654,9 @@ export function recalculate(
 					const masterFormulaText = formulaTexts.get(memberKey)
 					if (!masterAst || !masterFormulaText) break
 					const anchor = parseSharedAnchorRef(binding.masterRef, coords.row, coords.col)
-					evaluator = codegenSharedFormula(masterFormulaText, masterAst, anchor)
+					evaluator = formulaContainsFunction(masterAst, REFERENCE_SENSITIVE_SHARED_FUNCTIONS)
+						? null
+						: codegenSharedFormula(masterFormulaText, masterAst, anchor)
 					break
 				}
 				const plan: SharedFormulaPlan = { members, evaluator }
@@ -1684,11 +1712,14 @@ export function recalculate(
 			const { sheetIndex: si, row, col } = coords
 			const sheet = workbook.sheets[si]
 			if (!sheet) return
+			const liveFormula = sheet.cells.readFormula(row, col)
+			const liveFormulaInfo = sheet.cells.readFormulaInfo(row, col)
+			if (liveFormula === null && liveFormulaInfo?.kind !== 'shared') return
 			const hadCell = sheet.cells.has(row, col)
 			const oldValue = sheet.cells.readValue(row, col)
-			const oldFormula = sheet.cells.readFormula(row, col) ?? null
+			const oldFormula = liveFormula ?? null
 			const oldStyleId = sheet.cells.readStyleId(row, col) ?? DEFAULT_STYLE_ID
-			const oldFormulaInfo = sheet.cells.readFormulaInfo(row, col)
+			const oldFormulaInfo = liveFormulaInfo
 
 			const growingRangeAggregate = hasGrowingRangeAggregates
 				? growingRangeAggregates.get(key)
@@ -1786,10 +1817,18 @@ export function recalculate(
 			// dependents to mustEval, so they are skipped in evalCell and not re-evaluated.
 			const valueChanged = !hadCell || clearedSpill || !valuesEqual(oldValue, newValue)
 			if (valueChanged) {
+				const formulaInfo = persistentScalarFormulaBinding(oldFormulaInfo)
 				if (newValue.kind === 'number') {
-					sheet.cells.setNumberResolved(row, col, newValue.value, oldFormula, oldStyleId)
+					sheet.cells.setNumberResolved(
+						row,
+						col,
+						newValue.value,
+						oldFormula,
+						oldStyleId,
+						formulaInfo,
+					)
 				} else {
-					sheet.cells.setResolved(row, col, newValue, oldFormula, oldStyleId)
+					sheet.cells.setResolved(row, col, newValue, oldFormula, oldStyleId, formulaInfo)
 				}
 				changed.push(cellRefString(workbook, si, row, col))
 				if (isDirtyRecalc) {

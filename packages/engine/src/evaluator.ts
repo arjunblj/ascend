@@ -17,6 +17,7 @@ import {
 	type EvalArea,
 	type EvalArg,
 	type ExactLookupCache,
+	type FunctionDef,
 	type FunctionEvalContext,
 	functionRegistry,
 	getRange,
@@ -187,6 +188,8 @@ const SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS = new Set([
 	'VALUE',
 ])
 SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS.delete('T')
+
+const ARRAY_CONTEXT_MAPPABLE_FUNCTIONS = new Set(['SQRT'])
 
 const LEGACY_TOP_LEVEL_SCALAR_FUNCTIONS = new Set([
 	...SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS,
@@ -884,7 +887,7 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 		return numberValue(ctx.col + 1)
 	}
 	if (upperName === 'INDIRECT' || upperName === 'OFFSET') {
-		return resolveReferenceFunction(upperName, argNodes, ctx).value
+		return implicitIntersect(resolveReferenceFunction(upperName, argNodes, ctx), ctx)
 	}
 	if (upperName === 'FORMULATEXT') {
 		return evalFormulaText(argNodes, ctx)
@@ -997,6 +1000,11 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 	if (argNodes.length < def.minArgs || argNodes.length > def.maxArgs) {
 		return errorValue('#VALUE!')
 	}
+	if (ARRAY_CONTEXT_MAPPABLE_FUNCTIONS.has(upperName) && usesFormulaArraySemantics(ctx)) {
+		const mappedArgs = argNodes.map((node) => resolveArg(node, ctx))
+		const mapped = evalMappedScalarFunction(def, mappedArgs, ctx)
+		if (mapped) return mapped
+	}
 
 	// EvalArg pooling: Not implemented. resolveArg returns many shapes (simple { value },
 	// range refs with ref/areas/forEachValue, multi-area with getters). Only the scalar path
@@ -1008,6 +1016,54 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 		args[i] = resolveFunctionArg(argNodes[i] as FormulaNode, ctx, upperName)
 	}
 	return def.evaluate(args, sharedFnCtx.update(ctx))
+}
+
+function usesFormulaArraySemantics(ctx: EvalContext): boolean {
+	const binding = ctx.workbook.sheets[ctx.sheetIndex]?.cells.get(ctx.row, ctx.col)?.formulaInfo
+	return (
+		binding?.kind === 'array' ||
+		binding?.kind === 'dynamicArray' ||
+		binding?.kind === 'spill' ||
+		binding?.kind === 'blockedSpill'
+	)
+}
+
+function evalMappedScalarFunction(
+	def: FunctionDef,
+	args: readonly EvalArg[],
+	ctx: EvalContext,
+): CellValue | null {
+	let rows = 1
+	let cols = 1
+	const ranges = args.map((arg) => {
+		const range = getRange(arg)
+		const rangeRows = range.length
+		let rangeCols = 0
+		for (const row of range) rangeCols = Math.max(rangeCols, row.length)
+		rows = Math.max(rows, rangeRows)
+		cols = Math.max(cols, rangeCols)
+		return { arg, range, rows: rangeRows, cols: rangeCols }
+	})
+	if (rows === 1 && cols === 1) return null
+	for (const range of ranges) {
+		if ((range.rows !== 1 && range.rows !== rows) || (range.cols !== 1 && range.cols !== cols)) {
+			return errorValue('#VALUE!')
+		}
+	}
+	const mappedRows: ScalarCellValue[][] = []
+	for (let row = 0; row < rows; row++) {
+		const mappedRow: ScalarCellValue[] = []
+		for (let col = 0; col < cols; col++) {
+			const cellArgs = ranges.map(({ range, rows: rangeRows, cols: rangeCols }) => {
+				const sourceRow = rangeRows === 1 ? 0 : row
+				const sourceCol = rangeCols === 1 ? 0 : col
+				return { value: topLeftScalar(range[sourceRow]?.[sourceCol] ?? EMPTY) }
+			})
+			mappedRow.push(topLeftScalar(def.evaluate(cellArgs, sharedFnCtx.update(ctx))))
+		}
+		mappedRows.push(mappedRow)
+	}
+	return arrayValue(mappedRows)
 }
 
 function resolveFunctionArg(node: FormulaNode, ctx: EvalContext, functionName: string): EvalArg {

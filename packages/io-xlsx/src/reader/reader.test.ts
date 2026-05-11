@@ -981,6 +981,70 @@ describe('readXlsx', () => {
 		})
 	})
 
+	it('infers imported legacy array blocks from cached relay formulas', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Data" sheetId="1" r:id="rId1"/>
+  </sheets>
+  <definedNames>
+    <definedName name="Global4">{1,2,3;4,5,6}</definedName>
+  </definedNames>
+</workbook>`,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="4">
+      <c r="A4"><f>Global4</f><v>1</v></c>
+      <c r="B4"><f>A4</f><v>2</v></c>
+      <c r="C4"><f>A4</f><v>3</v></c>
+    </row>
+    <row r="5">
+      <c r="A5"><f>A4</f><v>4</v></c>
+      <c r="B5"><f>A4</f><v>5</v></c>
+      <c r="C5"><f>A4</f><v>6</v></c>
+    </row>
+  </sheetData>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+
+		const binding = { kind: 'array' as const, ref: 'A4:C5' }
+		expect(sheet.cells.get(3, 0)?.formula).toBe('Global4')
+		expect(sheet.cells.get(3, 0)?.formulaInfo).toEqual(binding)
+		expect(sheet.cells.get(3, 1)?.formula).toBeNull()
+		expect(sheet.cells.get(4, 2)?.formula).toBeNull()
+		expect(sheet.cells.get(3, 1)?.formulaInfo).toEqual(binding)
+		expect(sheet.cells.get(4, 2)?.formulaInfo).toEqual(binding)
+		expect(
+			result.value.report.features.find((feature) => feature.feature === 'arrayFormula'),
+		).toMatchObject({
+			feature: 'arrayFormula',
+			tier: 'normalized',
+			count: 1,
+			locations: ['Data'],
+		})
+
+		recalculate(result.value.workbook, defaultCalcContext())
+		expect(sheet.cells.get(3, 0)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(3, 1)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(3, 2)?.value).toEqual(numberValue(3))
+		expect(sheet.cells.get(4, 0)?.value).toEqual(numberValue(4))
+		expect(sheet.cells.get(4, 1)?.value).toEqual(numberValue(5))
+		expect(sheet.cells.get(4, 2)?.value).toEqual(numberValue(6))
+	})
+
 	it('reads data-table formula anchors as symbolic formula bindings', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': CONTENT_TYPES,

@@ -40,6 +40,7 @@ import {
 	parseVmlDrawingObjectRefs,
 } from './drawing.ts'
 import { maybeDecryptOoxmlPackage } from './encryption.ts'
+import { inferLegacyArrayFormulaBlocks } from './legacy-array-inference.ts'
 import { parseMacroSheetInfo } from './macro-sheet.ts'
 import { parseMetadataXml } from './metadata.ts'
 import {
@@ -604,6 +605,13 @@ export function readXlsx(
 				continue
 			}
 			workbook.definedNames.add(dn.name, normalizeStoredFormulaText(dn.formula), undefined, options)
+		}
+		if (!valuesOnly) {
+			for (const sheetName of inferLegacyArrayFormulaBlocks(workbook)) {
+				if (!formulaFeatures.arrayFormulaSheets.includes(sheetName)) {
+					formulaFeatures.arrayFormulaSheets.push(sheetName)
+				}
+			}
 		}
 
 		const sourceSheetNames = sourceWorksheetNames

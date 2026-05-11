@@ -1827,6 +1827,23 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(300))
 	})
 
+	test('top-level INDIRECT intersects named ranges at the current row', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('aaa'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('bbb'), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: stringValue('ccc'), formula: null, styleId: sid })
+		wb.definedNames.set('Names', 'Sheet1!A1:A3')
+		for (let row = 0; row < 3; row++) {
+			sheet.cells.set(row, 1, { value: EMPTY, formula: 'INDIRECT("Names")', styleId: sid })
+		}
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(stringValue('aaa'))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(stringValue('bbb'))
+		expect(sheet.cells.get(2, 1)?.value).toEqual(stringValue('ccc'))
+	})
+
 	test('OFFSET with height and width returns a 2x2 range', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

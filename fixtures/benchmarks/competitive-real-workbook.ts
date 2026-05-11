@@ -1711,7 +1711,7 @@ function isPreservedNonCellPart(path: string): boolean {
 		path === 'xl/workbook.xml' ||
 		path === 'xl/sharedStrings.xml' ||
 		path === 'xl/calcChain.xml' ||
-		/^xl\/worksheets\/sheet\d+\.xml$/.test(path) ||
+		/^xl\/worksheets\/sheet\d+\.xml$/i.test(path) ||
 		/^docProps\/(?:app|core)\.xml$/.test(path)
 	) {
 		return false

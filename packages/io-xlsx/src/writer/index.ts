@@ -1753,7 +1753,7 @@ export function planWriteXlsx(
 			() => {
 				const built = plan.build()
 				return buildContentTypesXml(
-					workbook.sheets.length,
+					workbook.sheets.map((sheet, index) => worksheetPartPath(sheet, index)),
 					hasSharedStrings,
 					workbookContentType,
 					capsules?.filter(

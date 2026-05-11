@@ -25,13 +25,18 @@ export async function loadManifest(): Promise<CorpusManifestEntry[]> {
 		.sort((a, b) => a.localeCompare(b))
 	const entries: CorpusManifestEntry[] = []
 	for (const file of files) {
-		entries.push(await buildPoiEntry(root, file))
+		const entry = await buildPoiEntry(root, file)
+		if (entry) entries.push(entry)
 	}
 	return entries
 }
 
-export async function buildPoiEntry(root: string, file: string): Promise<CorpusManifestEntry> {
+export async function buildPoiEntry(
+	root: string,
+	file: string,
+): Promise<CorpusManifestEntry | null> {
 	const bytes = new Uint8Array(await readFile(join(root, file)))
+	if (!isZipPackage(bytes)) return null
 	const probe = inspectOoxmlPackageFeatures(bytes)
 	const counts = {
 		worksheets: probe.counts.worksheets,
@@ -62,6 +67,10 @@ export async function buildPoiEntry(root: string, file: string): Promise<CorpusM
 		riskClass: deriveRisk(features),
 		featureTags: deriveTags(file, 'apache-poi', features),
 	}
+}
+
+function isZipPackage(bytes: Uint8Array): boolean {
+	return bytes[0] === 0x50 && bytes[1] === 0x4b
 }
 
 function deriveTier(

@@ -370,7 +370,7 @@ export function readXlsx(
 			sheetPathToAnchor.set(sheetPath, { sheetId: entry.sheetId, sheetName: entry.name })
 
 			if (rel.type === REL_CHARTSHEET) {
-				const chartsheetRelsXml = readPart(archive, getRelsPath(sheetPath))
+				const chartsheetRelsXml = readPartWithPath(archive, getRelsPath(sheetPath))?.text
 				const chartsheetRelationships = chartsheetRelsXml
 					? parseRelationships(chartsheetRelsXml)
 					: []
@@ -393,7 +393,7 @@ export function readXlsx(
 			}
 
 			if (rel.type === REL_MACROSHEET) {
-				const macroSheetRelsXml = readPart(archive, getRelsPath(sheetPath))
+				const macroSheetRelsXml = readPartWithPath(archive, getRelsPath(sheetPath))?.text
 				const macroSheetRelationships = macroSheetRelsXml
 					? parseRelationships(macroSheetRelsXml)
 					: []
@@ -414,7 +414,9 @@ export function readXlsx(
 			}
 
 			consumed.add(sheetPath)
-			consumed.add(getRelsPath(sheetPath))
+			consumed.add(
+				resolvePartPathCaseInsensitive(archive, getRelsPath(sheetPath)) ?? getRelsPath(sheetPath),
+			)
 			sourceWorksheetNames.push(entry.name)
 			if (selectedSheets && !selectedSheets.has(entry.name.toLowerCase())) continue
 			sheetsToParse.push({
@@ -516,9 +518,10 @@ export function readXlsx(
 						? readPart(archive, entry.path)
 						: undefined
 				if (sheetBytes === undefined && !sheetXml) continue
-				const sheetRelsXml = hydrateRichSheetMetadata
-					? readPart(archive, getRelsPath(entry.path))
+				const sheetRelsPart = hydrateRichSheetMetadata
+					? readPartWithPath(archive, getRelsPath(entry.path))
 					: undefined
+				const sheetRelsXml = sheetRelsPart?.text
 				const sheetRelationships = sheetRelsXml ? parseRelationships(sheetRelsXml) : []
 				sheetRelsByPath.set(entry.path, sheetRelationships)
 				const sheetFormulaFeatures: SheetFormulaFeatures = {
@@ -570,7 +573,7 @@ export function readXlsx(
 				if (hydrateRichSheetMetadata) {
 					sheet.preservedXml = {
 						partPath: entry.path,
-						...(sheetRelsXml ? { relsPath: getRelsPath(entry.path) } : {}),
+						...(sheetRelsPart ? { relsPath: sheetRelsPart.path } : {}),
 					}
 				}
 				workbook.sheets.push(sheet)
@@ -664,6 +667,26 @@ function definedNameOptions(dn: DefinedNameEntry): DefinedNameOptions {
 
 function readPart(archive: ZipArchive, path: string): string | undefined {
 	return archive.readText(path)
+}
+
+function readPartWithPath(
+	archive: ZipArchive,
+	path: string,
+): { readonly path: string; readonly text: string } | undefined {
+	const text = archive.readText(path)
+	if (text !== undefined) return { path, text }
+	const resolvedPath = resolvePartPathCaseInsensitive(archive, path)
+	if (!resolvedPath || resolvedPath === path) return undefined
+	const resolvedText = archive.readText(resolvedPath)
+	return resolvedText === undefined ? undefined : { path: resolvedPath, text: resolvedText }
+}
+
+function resolvePartPathCaseInsensitive(archive: ZipArchive, path: string): string | undefined {
+	const expected = path.toLowerCase()
+	for (const entry of archive.entries()) {
+		if (entry.path.toLowerCase() === expected) return entry.path
+	}
+	return undefined
 }
 
 function readPartBytes(archive: ZipArchive, path: string): Uint8Array | undefined {

@@ -20,7 +20,7 @@ export interface ContentTypeDefault {
 }
 
 export function buildContentTypesXml(
-	sheetCount: number,
+	sheetPartPaths: readonly string[],
 	hasSharedStrings: boolean,
 	workbookContentType = CT_WORKBOOK,
 	capsules?: PreservationCapsule[],
@@ -62,8 +62,8 @@ export function buildContentTypesXml(
 	pushDefault('xml', CT_XML)
 	pushOverride('xl/workbook.xml', workbookContentType, true)
 
-	for (let i = 1; i <= sheetCount; i++) {
-		pushOverride(`xl/worksheets/sheet${i}.xml`, CT_WORKSHEET)
+	for (const sheetPartPath of sheetPartPaths) {
+		pushOverride(sheetPartPath, CT_WORKSHEET)
 	}
 
 	if (hasSharedStrings) {

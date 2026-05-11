@@ -1367,6 +1367,13 @@ describe('evaluateAssertions', () => {
 		expect(strict.relationshipGraphHash).toBe(transitional.relationshipGraphHash)
 		expect(strict.relationshipCount).toBe(transitional.relationshipCount)
 	})
+
+	test('package fingerprint excludes case-varied worksheet XML from preserved content', () => {
+		const before = extractWorkbookPackageFingerprint(uppercaseWorksheetWorkbookBytes('1'))
+		const after = extractWorkbookPackageFingerprint(uppercaseWorksheetWorkbookBytes('424242'))
+		expect(after.preservedPartContentHash).toBe(before.preservedPartContentHash)
+		expect(after.preservedPartNamesHash).toBe(before.preservedPartNamesHash)
+	})
 })
 
 function shape(overrides: Partial<WorkbookShapeSummary> = {}): WorkbookShapeSummary {
@@ -1717,6 +1724,38 @@ function relationshipWorkbookBytes(extendedPropertiesRelationshipType: string): 
 </workbook>`),
 		'docProps/app.xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
 <Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"/>`),
+	})
+}
+
+function uppercaseWorksheetWorkbookBytes(cellValue: string): Uint8Array {
+	return zipSync({
+		'[Content_Types].xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/Sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>
+</Types>`),
+		'_rels/.rels': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+		'xl/_rels/workbook.xml.rels': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/Sheet1.xml"/>
+</Relationships>`),
+		'xl/workbook.xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`),
+		'xl/worksheets/Sheet1.xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1"><v>${cellValue}</v></c></row></sheetData>
+</worksheet>`),
+		'xl/drawings/drawing1.xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"/>`),
 	})
 }
 

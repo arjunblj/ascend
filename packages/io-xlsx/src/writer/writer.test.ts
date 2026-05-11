@@ -1845,6 +1845,77 @@ describe('writeXlsx', () => {
 		})
 	})
 
+	it('dirty-part patching preserves worksheet relationship sidecar casing', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/Sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/Sheet1.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Page1_1" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+			'xl/worksheets/Sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>
+  <drawing r:id="rIdDrawing"/>
+</worksheet>`,
+			'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdDrawing" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>
+</Relationships>`,
+			'xl/drawings/drawing1.xml': `<?xml version="1.0"?>
+<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"/>`,
+		})
+		const source = readXlsx(bytes)
+		expectOk(source)
+		const sheet = source.value.workbook.sheets[0]
+		expect(sheet?.preservedXml?.relsPath).toBe('xl/worksheets/_rels/sheet1.xml.rels')
+		expect(sheet?.drawingRefs).toEqual({ hasDrawing: true, hasLegacyDrawing: false })
+
+		sheet?.cells.set(44, 0, { value: numberValue(424242), formula: null, styleId: S0 })
+		const written = writeXlsx(source.value.workbook, source.value.capsules, {
+			dirtySheetNames: ['Page1_1'],
+		})
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		expect(zip['xl/worksheets/_rels/sheet1.xml.rels']).toBeDefined()
+		expect(zip['xl/worksheets/_rels/Sheet1.xml.rels']).toBeUndefined()
+		expect(zip['xl/drawings/drawing1.xml']).toBeDefined()
+		const contentTypesXml = new TextDecoder().decode(zip['[Content_Types].xml'] ?? new Uint8Array())
+		expect(contentTypesXml).toContain('PartName="/xl/worksheets/Sheet1.xml"')
+		expect(contentTypesXml).not.toContain('PartName="/xl/worksheets/sheet1.xml"')
+		const sheetRelsXml = new TextDecoder().decode(
+			zip['xl/worksheets/_rels/sheet1.xml.rels'] ?? new Uint8Array(),
+		)
+		expect(sheetRelsXml).toContain('Target="../drawings/drawing1.xml"')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.sheets[0]?.drawingRefs).toEqual({
+			hasDrawing: true,
+			hasLegacyDrawing: false,
+		})
+		expect(reopened.value.workbook.sheets[0]?.cells.get(44, 0)?.value).toEqual({
+			kind: 'number',
+			value: 424242,
+		})
+	})
+
 	it('dirty-part patching preserves shared string indexes for untouched sheets', () => {
 		const wb = new Workbook()
 		const s1 = wb.addSheet('Sheet1')

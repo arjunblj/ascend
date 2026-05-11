@@ -151,6 +151,15 @@ describe('pivot output audits', () => {
 					warnings: [],
 				}),
 			)
+			expect(audits).toContainEqual(
+				expect.objectContaining({
+					pivotTable: 'PivotTable8',
+					status: 'passed',
+					checkedValueCount: 104,
+					mismatches: [],
+					warnings: [],
+				}),
+			)
 		},
 	)
 

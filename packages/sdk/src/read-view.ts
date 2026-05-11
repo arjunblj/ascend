@@ -1388,6 +1388,26 @@ function buildPivotOutputAudits(
 				warnings: [],
 			}
 		}
+		if (isDataFieldsOnColumnsPivot(pivot)) {
+			const expected = aggregateDataFieldsOnColumnsPivotOutput(cache, pivot)
+			if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
+			const actual = readMultiRowAxisPivotOutput(
+				workbook,
+				sheet.id,
+				pivot,
+				expected.value.rowKeys,
+				expected.value.columnKeys,
+			)
+			if (!actual.ok) return unsupportedPivotAudit(base, actual.warning)
+			const mismatches = comparePivotOutput(expected.value.values, actual.value)
+			return {
+				...base,
+				status: mismatches.length > 0 ? 'mismatch' : 'passed',
+				checkedValueCount: expected.value.checkedValueCount,
+				mismatches,
+				warnings: [],
+			}
+		}
 		if (isAxisItemMatrixPivot(pivot)) {
 			const expected = aggregateMultiRowAxisPivotOutput(cache, pivot)
 			if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
@@ -1460,6 +1480,15 @@ function isDataFieldsOnRowsPivot(pivot: PivotTableInfo): boolean {
 		pivot.rowFields[0]?.index === -2 &&
 		pivot.options?.dataOnRows === true &&
 		pivot.columnFields.length > 0
+	)
+}
+
+function isDataFieldsOnColumnsPivot(pivot: PivotTableInfo): boolean {
+	return (
+		pivot.rowFields.length > 0 &&
+		pivot.columnFields.some((field) => field.index === -2) &&
+		pivot.columnFields.some((field) => field.index >= 0) &&
+		pivot.dataFields.length > 1
 	)
 }
 
@@ -1618,6 +1647,219 @@ function buildPivotColumnOutputColumns(
 		})
 	}
 	return { ok: true, value: columns }
+}
+
+interface PivotDataFieldColumnOutputItem extends PivotAxisOutputItem {
+	readonly dataFieldIndex: number
+	readonly dataField: PivotTableInfo['dataFields'][number]
+	readonly isGrand: boolean
+}
+
+function aggregateDataFieldsOnColumnsPivotOutput(
+	cache: PivotCacheInfo,
+	pivot: PivotTableInfo,
+):
+	| {
+			ok: true
+			value: {
+				rowKeys: readonly string[]
+				columnKeys: readonly string[]
+				checkedValueCount: number
+				values: ReadonlyMap<string, ReadonlyMap<string, number>>
+			}
+	  }
+	| { ok: false; warning: string } {
+	if (!pivot.columnFields.every((field) => field.index === -2 || field.index >= 0)) {
+		return { ok: false, warning: 'Unsupported negative pivot column field axis.' }
+	}
+	const pageFilters = buildSimplePivotPageFilters(cache, pivot)
+	if (!pageFilters.ok) return pageFilters
+	const rows = buildPivotAxisOutputItems(cache, pivot, 'row')
+	if (!rows.ok) return rows
+	const columns = buildPivotDataFieldColumnOutputItems(cache, pivot)
+	if (!columns.ok) return columns
+	const output = new Map<string, Map<string, number>>()
+	for (const row of rows.value) {
+		const byColumn = new Map<string, number>()
+		for (const column of columns.value) byColumn.set(column.key, 0)
+		output.set(row.key, byColumn)
+	}
+	for (const row of buildPivotCacheRows([cache], {})) {
+		if (!pivotCacheRowMatchesFilters(row, pageFilters.value)) continue
+		for (const rowItem of rows.value) {
+			if (!pivotCacheRowMatchesFilters(row, rowItem.filters)) continue
+			for (const columnItem of columns.value) {
+				if (!pivotCacheRowMatchesFilters(row, columnItem.filters)) continue
+				const measured = measurePivotDataField(cache, row, columnItem.dataField)
+				if (!measured.ok) return measured
+				addPivotOutput(output, rowItem.key, columnItem.key, measured.value)
+			}
+		}
+	}
+	const showDataAs = applyPivotDataFieldColumnShowDataAs(output, columns.value)
+	if (!showDataAs.ok) return showDataAs
+	return {
+		ok: true,
+		value: {
+			rowKeys: rows.value.map((row) => row.key),
+			columnKeys: columns.value.map((column) => column.key),
+			checkedValueCount: rows.value.length * columns.value.length,
+			values: showDataAs.value,
+		},
+	}
+}
+
+function buildPivotDataFieldColumnOutputItems(
+	cache: PivotCacheInfo,
+	pivot: PivotTableInfo,
+): { ok: true; value: readonly PivotDataFieldColumnOutputItem[] } | { ok: false; warning: string } {
+	if (!pivot.columnItems || pivot.columnItems.length === 0) {
+		return { ok: false, warning: 'Pivot column output items were not found.' }
+	}
+	const columns: PivotDataFieldColumnOutputItem[] = []
+	const previousItems: Array<number | undefined> = []
+	const seenLabels = new Map<string, number>()
+	for (const item of pivot.columnItems) {
+		const filters = new Map<number, Set<string>>()
+		let dataFieldIndex = item.dataFieldIndex
+		let label: string | undefined
+		if (item.itemType === 'grand') {
+			const grandFilters = buildPivotColumnGrandFilters(cache, pivot)
+			if (!grandFilters.ok) return grandFilters
+			addPivotAxisFilters(filters, grandFilters.value)
+			dataFieldIndex ??= resolvePivotDataFieldAxisItem(pivot, item, previousItems)
+			const dataField = pivot.dataFields[dataFieldIndex]
+			if (!dataField) return { ok: false, warning: 'Pivot column data field was not resolved.' }
+			columns.push({
+				key: uniquePivotAxisKey(pivotDataFieldColumnKey(dataField, 'Grand Total'), seenLabels),
+				filters,
+				dataFieldIndex,
+				dataField,
+				isGrand: true,
+			})
+			continue
+		}
+		const repeated = item.repeatedItemCount ?? 0
+		for (
+			let position = 0;
+			position < repeated && position < pivot.columnFields.length;
+			position++
+		) {
+			const axisField = pivot.columnFields[position]
+			const previousItem = previousItems[position]
+			if (!axisField || previousItem === undefined) continue
+			if (axisField.index === -2) {
+				dataFieldIndex ??= previousItem
+				continue
+			}
+			const resolved = resolvePivotAxisFieldItemFilter(cache, pivot, axisField.index, previousItem)
+			if (!resolved.ok) return resolved
+			addPivotAxisFilters(filters, resolved.value.filters)
+			label = resolved.value.label
+		}
+		for (const fieldItem of item.fieldItems) {
+			const position = repeated + fieldItem.index
+			const axisField = pivot.columnFields[position]
+			if (!axisField)
+				return { ok: false, warning: 'Pivot column field item axis was not resolved.' }
+			const itemIndex = fieldItem.item ?? 0
+			previousItems[position] = itemIndex
+			if (axisField.index === -2) {
+				dataFieldIndex = itemIndex
+				continue
+			}
+			const resolved = resolvePivotAxisFieldItemFilter(cache, pivot, axisField.index, itemIndex)
+			if (!resolved.ok) return resolved
+			addPivotAxisFilters(filters, resolved.value.filters)
+			label = resolved.value.label
+		}
+		dataFieldIndex ??= 0
+		const dataField = pivot.dataFields[dataFieldIndex]
+		if (!dataField) return { ok: false, warning: 'Pivot column data field was not resolved.' }
+		if (!label) return { ok: false, warning: 'Pivot column output item label was not resolved.' }
+		columns.push({
+			key: uniquePivotAxisKey(pivotDataFieldColumnKey(dataField, label), seenLabels),
+			filters,
+			dataFieldIndex,
+			dataField,
+			isGrand: false,
+		})
+	}
+	return { ok: true, value: columns }
+}
+
+function resolvePivotDataFieldAxisItem(
+	pivot: PivotTableInfo,
+	item: NonNullable<PivotTableInfo['columnItems']>[number],
+	previousItems: readonly (number | undefined)[],
+): number {
+	for (const fieldItem of item.fieldItems) {
+		const axisField = pivot.columnFields[fieldItem.index]
+		if (axisField?.index === -2) return fieldItem.item ?? 0
+	}
+	const dataAxisPosition = pivot.columnFields.findIndex((field) => field.index === -2)
+	return dataAxisPosition >= 0 ? (previousItems[dataAxisPosition] ?? 0) : 0
+}
+
+function buildPivotColumnGrandFilters(
+	cache: PivotCacheInfo,
+	pivot: PivotTableInfo,
+): { ok: true; value: PivotAuditFilters } | { ok: false; warning: string } {
+	const filters = new Map<number, Set<string>>()
+	for (const axisField of pivot.columnFields) {
+		if (axisField.index === -2) continue
+		const values = visiblePivotAxisFieldValues(cache, pivot, axisField.index)
+		if (!values.ok) return values
+		if (values.value.fieldIndex !== undefined && values.value.values.size > 0) {
+			filters.set(values.value.fieldIndex, values.value.values)
+		}
+	}
+	return { ok: true, value: filters }
+}
+
+function pivotDataFieldColumnKey(
+	dataField: PivotTableInfo['dataFields'][number],
+	label: string,
+): string {
+	return `${dataField.name ?? `DataField${dataField.fieldIndex + 1}`} / ${label}`
+}
+
+function applyPivotDataFieldColumnShowDataAs(
+	output: ReadonlyMap<string, ReadonlyMap<string, number>>,
+	columns: readonly PivotDataFieldColumnOutputItem[],
+):
+	| { ok: true; value: ReadonlyMap<string, ReadonlyMap<string, number>> }
+	| { ok: false; warning: string } {
+	const transformed = new Map<string, Map<string, number>>()
+	for (const [rowKey, valuesByColumn] of output) {
+		transformed.set(rowKey, new Map(valuesByColumn))
+	}
+	const dataFieldIndexes = new Set(columns.map((column) => column.dataFieldIndex))
+	for (const dataFieldIndex of dataFieldIndexes) {
+		const dataField = columns.find((column) => column.dataFieldIndex === dataFieldIndex)?.dataField
+		if (!dataField?.showDataAs) continue
+		if (dataField.showDataAs !== 'percentOfRow') {
+			return { ok: false, warning: 'Pivot show-data-as calculations are not audited.' }
+		}
+		const fieldColumns = columns.filter((column) => column.dataFieldIndex === dataFieldIndex)
+		const grandColumn = fieldColumns.find((column) => column.isGrand)
+		for (const [rowKey, valuesByColumn] of output) {
+			const rowTotal =
+				(grandColumn ? valuesByColumn.get(grandColumn.key) : undefined) ??
+				fieldColumns.reduce(
+					(total, column) =>
+						column.isGrand ? total : total + (valuesByColumn.get(column.key) ?? 0),
+					0,
+				)
+			const transformedRow = transformed.get(rowKey)
+			if (!transformedRow) continue
+			for (const column of fieldColumns) {
+				const raw = valuesByColumn.get(column.key) ?? 0
+				transformedRow.set(column.key, rowTotal === 0 ? 0 : raw / rowTotal)
+			}
+		}
+	}
+	return { ok: true, value: transformed }
 }
 
 function aggregateMultiRowAxisPivotOutput(

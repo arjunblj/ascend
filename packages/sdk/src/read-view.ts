@@ -1468,6 +1468,8 @@ interface PivotAxisOutputItem {
 	readonly filters: PivotAuditFilters
 }
 
+const PIVOT_MISSING_ITEM_FILTER_VALUE = '__ASCEND_PIVOT_MISSING_ITEM__'
+
 function isEmptyPivotOutput(pivot: PivotTableInfo): boolean {
 	return (
 		pivot.rowFields.length === 0 && pivot.columnFields.length === 0 && pivot.dataFields.length === 0
@@ -2063,7 +2065,10 @@ function visiblePivotAxisFieldValues(
 			(entry) => entry.index === item.cacheIndex,
 		)
 		if (sharedItem?.value === undefined) {
-			if (sharedItem?.kind === 'missing') continue
+			if (sharedItem?.kind === 'missing') {
+				values.add(PIVOT_MISSING_ITEM_FILTER_VALUE)
+				continue
+			}
 			return { ok: false, warning: 'Pivot axis grand-total shared item value was not resolved.' }
 		}
 		values.add(sharedItem.value)
@@ -2300,7 +2305,8 @@ function matchingPivotRowOutputItems(
 ): readonly PivotAxisOutputItem[] {
 	const output: PivotAxisOutputItem[] = []
 	for (const [fieldIndex, byValue] of matcher.byFieldValue) {
-		const actual = row.values.find((value) => value.fieldIndex === fieldIndex)?.value
+		const actualValue = row.values.find((value) => value.fieldIndex === fieldIndex)
+		const actual = actualValue ? pivotCacheDecodedFilterValue(actualValue) : undefined
 		if (actual === undefined) continue
 		const matched = byValue.get(actual)
 		if (matched) output.push(...matched)
@@ -2430,8 +2436,12 @@ function pivotCacheSharedItemValue(
 	fieldIndex: number,
 	sharedItemIndex: number,
 ): string | undefined {
-	return cache.fields[fieldIndex]?.sharedItems?.find((entry) => entry.index === sharedItemIndex)
-		?.value
+	const sharedItem = cache.fields[fieldIndex]?.sharedItems?.find(
+		(entry) => entry.index === sharedItemIndex,
+	)
+	if (sharedItem?.value !== undefined) return sharedItem.value
+	if (sharedItem?.kind === 'missing') return PIVOT_MISSING_ITEM_FILTER_VALUE
+	return undefined
 }
 
 function pivotCacheSharedItemLabel(
@@ -2442,6 +2452,7 @@ function pivotCacheSharedItemLabel(
 	const sharedItem = cache.fields[fieldIndex]?.sharedItems?.find(
 		(entry) => entry.index === sharedItemIndex,
 	)
+	if (sharedItem?.kind === 'missing') return '(blank)'
 	if (sharedItem?.kind === 'boolean') return sharedItem.value === '0' ? 'FALSE' : 'TRUE'
 	if (sharedItem?.kind === 'number' && sharedItem.value !== undefined) {
 		const numeric = Number(sharedItem.value)
@@ -2455,10 +2466,18 @@ function pivotCacheRowMatchesFilters(
 	filters: PivotAuditFilters,
 ): boolean {
 	for (const [fieldIndex, expectedValues] of filters) {
-		const actual = row.values.find((value) => value.fieldIndex === fieldIndex)?.value
+		const actualValue = row.values.find((value) => value.fieldIndex === fieldIndex)
+		const actual = actualValue ? pivotCacheDecodedFilterValue(actualValue) : undefined
 		if (actual === undefined || !expectedValues.has(actual)) return false
 	}
 	return true
+}
+
+function pivotCacheDecodedFilterValue(value: PivotCacheDecodedValueInfo): string | undefined {
+	if (value.value !== undefined) return value.value
+	return value.kind === 'missing' || value.sharedItemKind === 'missing'
+		? PIVOT_MISSING_ITEM_FILTER_VALUE
+		: undefined
 }
 
 function measurePivotDataField(
@@ -2490,11 +2509,23 @@ function pivotCountFieldHasValue(
 	fieldIndex: number,
 	groupBaseFieldIndex: number | undefined,
 ): boolean {
-	if (row.values.some((value) => value.fieldIndex === fieldIndex)) return true
+	if (
+		row.values.some(
+			(value) => value.fieldIndex === fieldIndex && pivotCacheDecodedHasCountValue(value),
+		)
+	) {
+		return true
+	}
 	return (
 		groupBaseFieldIndex !== undefined &&
-		row.values.some((value) => value.fieldIndex === groupBaseFieldIndex)
+		row.values.some(
+			(value) => value.fieldIndex === groupBaseFieldIndex && pivotCacheDecodedHasCountValue(value),
+		)
 	)
+}
+
+function pivotCacheDecodedHasCountValue(value: PivotCacheDecodedValueInfo): boolean {
+	return value.value !== undefined
 }
 
 function measureCalculatedPivotField(

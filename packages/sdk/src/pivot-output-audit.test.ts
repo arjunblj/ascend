@@ -154,6 +154,38 @@ describe('pivot output audits', () => {
 		])
 	})
 
+	test('audits real LibreOffice blank pivot members from missing shared items', async () => {
+		const wb = await AscendWorkbook.open(loadLibreOfficeFixture('pivot_dark1.xlsx'), {
+			pivotCacheRecordMaterializeLimit: 'all',
+		})
+
+		expect(wb.pivotOutputAudits()).toEqual([
+			expect.objectContaining({
+				pivotTable: 'PivotTable1',
+				status: 'passed',
+				checkedValueCount: 16,
+				mismatches: [],
+				warnings: [],
+			}),
+		])
+	})
+
+	test('audits real LibreOffice blank row-label pivots without data fields', async () => {
+		const wb = await AscendWorkbook.open(loadLibreOfficeFixture('pivottable_long_text.xlsx'), {
+			pivotCacheRecordMaterializeLimit: 'all',
+		})
+
+		expect(wb.pivotOutputAudits()).toEqual([
+			expect.objectContaining({
+				pivotTable: 'PivotTable1',
+				status: 'passed',
+				checkedValueCount: 0,
+				mismatches: [],
+				warnings: [],
+			}),
+		])
+	})
+
 	test.skipIf(!existsSync(MS_EXCEL_PIVOT_FIXTURE))(
 		'audits real Excel one-row pivots with column fields',
 		async () => {

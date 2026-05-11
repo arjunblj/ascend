@@ -2,7 +2,14 @@ import { describe, expect, test } from 'bun:test'
 import type { CellStyle, SheetConditionalFormat } from '@ascend/core'
 import { createWorkbook } from '@ascend/core'
 import type { CellValue } from '@ascend/schema'
-import { booleanValue, EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
+import {
+	booleanValue,
+	dateValue,
+	EMPTY,
+	errorValue,
+	numberValue,
+	stringValue,
+} from '@ascend/schema'
 import { evaluateConditionalFormats } from './conditional-format.ts'
 
 const sid = 0
@@ -92,6 +99,54 @@ describe('evaluateConditionalFormats', () => {
 
 			sheet.conditionalFormats.push(
 				makeCf('A1:A2', makeRule('cellIs', { operator: 'notEqual', formulas: ['5'] })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeUndefined()
+			expect(result.get('A2')).toBeDefined()
+		})
+
+		test('text equality matches string cells', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, stringValue('Closed'))
+			setCell(sheet, 1, 0, stringValue('closed'))
+			setCell(sheet, 2, 0, stringValue('Open'))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A3', makeRule('cellIs', { operator: 'equal', formulas: ['"Closed"'] })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeDefined()
+			expect(result.get('A2')).toBeDefined()
+			expect(result.get('A3')).toBeUndefined()
+		})
+
+		test('text comparison can use a relative reference criterion', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, stringValue('North'))
+			setCell(sheet, 1, 0, stringValue('South'))
+			setCell(sheet, 0, 1, stringValue('north'))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A2', makeRule('cellIs', { operator: 'equal', formulas: ['$B$1'] })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeDefined()
+			expect(result.get('A2')).toBeUndefined()
+		})
+
+		test('text notEqual matches cells with different text', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, stringValue('Closed'))
+			setCell(sheet, 1, 0, stringValue('Open'))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A2', makeRule('cellIs', { operator: 'notEqual', formulas: ['"Closed"'] })),
 			)
 
 			const result = evaluateConditionalFormats(sheet, wb)
@@ -421,7 +476,7 @@ describe('evaluateConditionalFormats', () => {
 		})
 	})
 
-	// ── top10 (boolean — currently returns false / coverage gap) ──────
+	// ── top10 ────────────────────────────────────────────────────────
 
 	describe('top10', () => {
 		test('top 3 values match', () => {
@@ -493,6 +548,41 @@ describe('evaluateConditionalFormats', () => {
 			const result = evaluateConditionalFormats(sheet, wb)
 			expect(result.size).toBe(1)
 			expect(result.get('A3')).toBeDefined()
+		})
+
+		test('numeric-looking text and booleans are not ranked as numbers', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(100))
+			setCell(sheet, 1, 0, stringValue('200'))
+			setCell(sheet, 2, 0, booleanValue(true))
+			setCell(sheet, 3, 0, numberValue(50))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A4', makeRule('top10', { rank: 1, style: greenFill })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.size).toBe(1)
+			expect(result.get('A1')).toBeDefined()
+			expect(result.get('A2')).toBeUndefined()
+			expect(result.get('A3')).toBeUndefined()
+		})
+
+		test('date cells rank by serial value', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, dateValue(45000))
+			setCell(sheet, 1, 0, numberValue(100))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A2', makeRule('top10', { rank: 1, style: greenFill })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.size).toBe(1)
+			expect(result.get('A1')).toBeDefined()
+			expect(result.get('A2')).toBeUndefined()
 		})
 	})
 
@@ -604,6 +694,23 @@ describe('evaluateConditionalFormats', () => {
 			expect(result.size).toBe(1)
 			expect(result.get('A1')).toBeDefined()
 			expect(result.get('A2')).toBeUndefined()
+		})
+
+		test('numeric-looking text and booleans do not affect the average', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, numberValue(10))
+			setCell(sheet, 1, 0, numberValue(30))
+			setCell(sheet, 2, 0, stringValue('1000'))
+			setCell(sheet, 3, 0, booleanValue(true))
+
+			sheet.conditionalFormats.push(makeCf('A1:A4', makeRule('aboveAverage', { style: greenFill })))
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.size).toBe(1)
+			expect(result.get('A2')).toBeDefined()
+			expect(result.get('A3')).toBeUndefined()
+			expect(result.get('A4')).toBeUndefined()
 		})
 	})
 

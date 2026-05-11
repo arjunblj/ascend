@@ -97,6 +97,7 @@ const handlers: Record<string, OperationHandler> = {
 	groupCols: formatOps.handleGroupCols as OperationHandler,
 	setWorkbookProtection: sheetOps.handleSetWorkbookProtection as OperationHandler,
 	setWorkbookProperties: workbookOps.handleSetWorkbookProperties as OperationHandler,
+	setDocumentProperties: workbookOps.handleSetDocumentProperties as OperationHandler,
 	setWorkbookView: workbookOps.handleSetWorkbookView as OperationHandler,
 	setCalcSettings: workbookOps.handleSetCalcSettings as OperationHandler,
 	setTheme: workbookOps.handleSetTheme as OperationHandler,
@@ -127,8 +128,7 @@ export function applyOperation(
 	const useIncrementalPatch =
 		op.op === 'setFormula' ||
 		op.op === 'fillFormula' ||
-		op.op === 'copyRange' ||
-		op.op === 'moveRange' ||
+		(op.op === 'copyRange' && (op.targetSheet === undefined || op.targetSheet === op.sheet)) ||
 		op.op === 'insertRows' ||
 		op.op === 'deleteRows' ||
 		op.op === 'insertCols' ||
@@ -158,8 +158,7 @@ export function applyOperation(
 			case 'deleteCols':
 				shiftWorkbookAnalysisForAxis(workbook, op.sheet, 'col', op.at, -op.count)
 				break
-			case 'copyRange':
-			case 'moveRange': {
+			case 'copyRange': {
 				const changedKeys = resolvePatchResultCellKeys(
 					workbook,
 					op.sheet,
@@ -314,6 +313,22 @@ function restoreWorkbookFromSnapshot(workbook: Workbook, snapshot: Workbook): vo
 	workbook.dataModelParts.splice(0, workbook.dataModelParts.length)
 	workbook.dataModelParts.push(...snapshot.dataModelParts.map((entry) => ({ ...entry })))
 	workbook.workbookProperties = { ...snapshot.workbookProperties }
+	workbook.documentProperties = {
+		...(snapshot.documentProperties.core ? { core: { ...snapshot.documentProperties.core } } : {}),
+		...(snapshot.documentProperties.app
+			? {
+					app: Object.fromEntries(
+						Object.entries(snapshot.documentProperties.app).map(([key, value]) => [
+							key,
+							Array.isArray(value) ? [...value] : value,
+						]),
+					),
+				}
+			: {}),
+		...(snapshot.documentProperties.custom
+			? { custom: snapshot.documentProperties.custom.map((property) => ({ ...property })) }
+			: {}),
+	}
 	workbook.workbookProtection = snapshot.workbookProtection
 		? { ...snapshot.workbookProtection }
 		: null

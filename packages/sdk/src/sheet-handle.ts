@@ -411,14 +411,16 @@ export class SheetHandle {
 	}
 
 	/**
-	 * Return an array of hyperlink summaries (ref, target, display).
+	 * Return an array of hyperlink summaries.
 	 */
 	getHyperlinks(): readonly HyperlinkSummary[] {
 		const sheet = this.requireSheet()
 		return [...sheet.hyperlinks.entries()].map(([ref, h]) => ({
 			ref,
 			...(h.target !== undefined ? { target: h.target } : {}),
+			...(h.location !== undefined ? { location: h.location } : {}),
 			...(h.display !== undefined ? { display: h.display } : {}),
+			...(h.tooltip !== undefined ? { tooltip: h.tooltip } : {}),
 		}))
 	}
 

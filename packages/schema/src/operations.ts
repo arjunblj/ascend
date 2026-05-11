@@ -24,6 +24,39 @@ export interface WorkbookViewInput {
 	readonly tabRatio?: number | null
 }
 
+export interface WorkbookCoreDocumentPropertiesInput {
+	readonly title?: string | null
+	readonly subject?: string | null
+	readonly creator?: string | null
+	readonly keywords?: string | null
+	readonly description?: string | null
+	readonly lastModifiedBy?: string | null
+	readonly revision?: string | null
+	readonly created?: string | null
+	readonly modified?: string | null
+	readonly category?: string | null
+	readonly contentStatus?: string | null
+	readonly language?: string | null
+	readonly identifier?: string | null
+	readonly version?: string | null
+}
+
+export interface WorkbookCustomDocumentPropertyInput {
+	readonly name: string
+	readonly value: string | number | boolean
+	readonly type?: string
+	readonly pid?: number
+	readonly fmtid?: string
+}
+
+export interface WorkbookDocumentPropertiesInput {
+	readonly core?: WorkbookCoreDocumentPropertiesInput | null
+	readonly app?: Readonly<
+		Record<string, string | number | boolean | readonly (string | number | boolean)[] | null>
+	> | null
+	readonly custom?: readonly WorkbookCustomDocumentPropertyInput[] | null
+}
+
 export interface CalcSettingsInput {
 	readonly calcMode?: 'auto' | 'manual' | 'autoNoTable'
 	readonly fullCalcOnLoad?: boolean
@@ -255,8 +288,10 @@ export type Operation =
 			readonly op: 'setHyperlink'
 			readonly sheet: string
 			readonly ref: string
-			readonly url: string
+			readonly url?: string
+			readonly location?: string
 			readonly display?: string
+			readonly tooltip?: string
 	  }
 	| {
 			readonly op: 'setNumberFormat'
@@ -381,6 +416,7 @@ export type Operation =
 			readonly sheet: string
 			readonly source: string
 			readonly target: string
+			readonly targetSheet?: string
 			readonly mode?: PasteMode
 	  }
 	| {
@@ -388,6 +424,7 @@ export type Operation =
 			readonly sheet: string
 			readonly source: string
 			readonly target: string
+			readonly targetSheet?: string
 			readonly mode?: PasteMode
 	  }
 	| {
@@ -422,6 +459,11 @@ export type Operation =
 	| {
 			readonly op: 'setWorkbookProperties'
 			readonly properties: WorkbookPropertiesInput
+			readonly mode?: 'merge' | 'replace'
+	  }
+	| {
+			readonly op: 'setDocumentProperties'
+			readonly properties: WorkbookDocumentPropertiesInput
 			readonly mode?: 'merge' | 'replace'
 	  }
 	| {

@@ -556,11 +556,26 @@ export function handleSetHyperlink(
 ): Result<PatchResult> {
 	const result = getSheet(workbook, op.sheet)
 	if (!result.ok) return result
+	if (!hasLinkDestination(op.url) && !hasLinkDestination(op.location)) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'setHyperlink requires url or location', {
+				suggestedFix:
+					'Provide url for an external hyperlink or location for an internal workbook reference such as Sheet2!A1.',
+			}),
+		)
+	}
+	result.value.ensureWritable()
 	result.value.hyperlinks.set(op.ref, {
-		target: op.url,
-		...(op.display ? { display: op.display } : {}),
+		...(hasLinkDestination(op.url) ? { target: op.url } : {}),
+		...(hasLinkDestination(op.location) ? { location: op.location } : {}),
+		...(op.display !== undefined ? { display: op.display } : {}),
+		...(op.tooltip !== undefined ? { tooltip: op.tooltip } : {}),
 	})
 	return ok(patch([op.ref], [op.sheet]))
+}
+
+function hasLinkDestination(value: string | undefined): boolean {
+	return typeof value === 'string' && value.trim().length > 0
 }
 
 export function handleDeleteHyperlink(

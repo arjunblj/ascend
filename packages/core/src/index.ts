@@ -166,6 +166,11 @@ export type {
 } from './table.ts'
 export type {
 	NamedStyleInfo,
+	WorkbookCoreDocumentProperties,
+	WorkbookCustomDocumentProperty,
+	WorkbookDocumentProperties,
+	WorkbookDocumentPropertyAppValue,
+	WorkbookDocumentPropertyScalar,
 	WorkbookMacroSheetInfo,
 	WorkbookPreservedMetadata,
 	WorkbookPreservedSheetEntry,

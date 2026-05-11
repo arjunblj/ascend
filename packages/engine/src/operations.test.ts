@@ -957,6 +957,10 @@ describe('applyOperation', () => {
 		const sourceStyle = wb.styles.register({ numberFormat: '$#,##0.00' })
 		sheet.cells.set(0, 0, { value: numberValue(12), formula: null, styleId: sourceStyle })
 		sheet.cells.set(2, 2, { value: numberValue(99), formula: 'A1+1', styleId: sid })
+		sheet.conditionalFormats.push({
+			sqref: 'A1',
+			rules: [{ type: 'expression', formulas: ['A1>0'] }],
+		})
 
 		const result = applyOperation(wb, {
 			op: 'copyRange',
@@ -971,6 +975,10 @@ describe('applyOperation', () => {
 			value: numberValue(99),
 			formula: 'A1+1',
 			styleId: sourceStyle,
+		})
+		expect(sheet.conditionalFormats.at(-1)).toEqual({
+			sqref: 'C3',
+			rules: [{ type: 'expression', formulas: ['C3>0'] }],
 		})
 		expect(result.value.recalcRequired).toBe(false)
 	})
@@ -1042,6 +1050,417 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(1, 2)?.value).toEqual(numberValue(20))
 		expect(sheet.cells.get(0, 0)).toBeUndefined()
 		expect(sheet.cells.get(1, 0)).toBeUndefined()
+	})
+
+	test('moveRange rewrites formulas and names that reference the moved range', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, cell(numberValue(10)))
+		sheet.cells.set(1, 0, cell(numberValue(20)))
+		sheet.cells.set(0, 1, cell(EMPTY, 'A1*2'))
+		sheet.cells.set(1, 1, cell(EMPTY, 'SUM(A1:A2)'))
+		wb.definedNames.set('Input', 'Sheet1!A1')
+
+		const result = applyOperation(wb, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'A1:A2',
+			target: 'C1',
+		})
+		expectOk(result)
+
+		expect(sheet.cells.get(0, 1)?.formula).toBe('C1*2')
+		expect(sheet.cells.get(1, 1)?.formula).toBe('SUM(C1:C2)')
+		expect(wb.definedNames.get('Input')).toBe('Sheet1!C1')
+	})
+
+	test('moveRange rewrites cross-sheet formulas and names to the target sheet', () => {
+		const wb = createWorkbook()
+		const source = wb.addSheet('Sheet1')
+		const target = wb.addSheet('Sheet2')
+		const summary = wb.addSheet('Summary')
+		source.cells.set(0, 0, cell(numberValue(10)))
+		summary.cells.set(0, 0, cell(EMPTY, 'Sheet1!A1+1'))
+		target.cells.set(4, 4, cell(EMPTY, 'Sheet1!A1*2'))
+		wb.definedNames.set('Input', 'Sheet1!A1')
+
+		const result = applyOperation(wb, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'A1',
+			targetSheet: 'Sheet2',
+			target: 'B2',
+		})
+		expectOk(result)
+
+		expect(summary.cells.get(0, 0)?.formula).toBe('Sheet2!B2+1')
+		expect(target.cells.get(4, 4)?.formula).toBe('Sheet2!B2*2')
+		expect(wb.definedNames.get('Input')).toBe('Sheet2!B2')
+	})
+
+	test('moveRange rewrites worksheet metadata formulas that reference the moved range', () => {
+		const wb = createWorkbook()
+		const source = wb.addSheet('Sheet1')
+		wb.addSheet('Sheet2')
+		const summary = wb.addSheet('Summary')
+		source.cells.set(0, 0, cell(numberValue(10)))
+		summary.dataValidations.push({ sqref: 'A1', type: 'list', formula1: 'Sheet1!A1' })
+		summary.conditionalFormats.push({
+			sqref: 'B1',
+			rules: [
+				{
+					type: 'expression',
+					formulas: ['Sheet1!A1>0'],
+					colorScale: {
+						cfvo: [{ type: 'formula', value: 'Sheet1!A1' }],
+						colors: [{ rgb: 'FFFF0000' }],
+					},
+				},
+			],
+		})
+		summary.x14DataValidations.push({
+			index: 0,
+			sqref: 'C1',
+			type: 'list',
+			formula1: 'Sheet1!A1',
+		})
+		summary.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'D1',
+			formulas: ['Sheet1!A1>0'],
+			dataBar: { cfvo: [{ type: 'formula', value: 'Sheet1!A1' }] },
+		})
+		summary.tables.push({
+			id: createTableId(),
+			name: 'SummaryTable',
+			sheetId: summary.id,
+			ref: { start: { row: 0, col: 5 }, end: { row: 1, col: 6 } },
+			columns: [
+				{
+					name: 'Metric',
+					formula: 'Sheet1!A1',
+					totalsRowFormula: 'SUM(Sheet1!A1)',
+				},
+				{ name: 'Value' },
+			],
+			hasHeaders: true,
+			hasTotals: true,
+		})
+
+		const result = applyOperation(wb, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'A1',
+			targetSheet: 'Sheet2',
+			target: 'B2',
+		})
+		expectOk(result)
+
+		expect(summary.dataValidations[0]?.formula1).toBe('Sheet2!B2')
+		expect(summary.conditionalFormats[0]?.rules[0]?.formulas[0]).toBe('Sheet2!B2>0')
+		expect(summary.conditionalFormats[0]?.rules[0]?.colorScale?.cfvo[0]?.value).toBe('Sheet2!B2')
+		expect(summary.x14DataValidations[0]?.formula1).toBe('Sheet2!B2')
+		expect(summary.x14ConditionalFormats[0]?.formulas[0]).toBe('Sheet2!B2>0')
+		expect(summary.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('Sheet2!B2')
+		expect(summary.tables[0]?.columns[0]?.formula).toBe('Sheet2!B2')
+		expect(summary.tables[0]?.columns[0]?.totalsRowFormula).toBe('SUM(Sheet2!B2)')
+	})
+
+	test('copyRange copies merged-cell layout and replaces covered target merges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, cell(numberValue(1)))
+		sheet.cells.set(0, 1, cell(numberValue(2)))
+		sheet.merges.push({
+			start: { row: 0, col: 0 },
+			end: { row: 0, col: 1 },
+		})
+		sheet.merges.push({
+			start: { row: 2, col: 2 },
+			end: { row: 2, col: 3 },
+		})
+
+		const result = applyOperation(wb, {
+			op: 'copyRange',
+			sheet: 'Sheet1',
+			source: 'A1:B1',
+			target: 'C3',
+		})
+		expectOk(result)
+
+		expect(sheet.merges).toEqual([
+			{
+				start: { row: 0, col: 0 },
+				end: { row: 0, col: 1 },
+			},
+			{
+				start: { row: 2, col: 2 },
+				end: { row: 2, col: 3 },
+			},
+		])
+	})
+
+	test('moveRange relocates merged-cell layout and removes source merges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, cell(numberValue(1)))
+		sheet.cells.set(0, 1, cell(numberValue(2)))
+		sheet.merges.push({
+			start: { row: 0, col: 0 },
+			end: { row: 0, col: 1 },
+		})
+
+		const result = applyOperation(wb, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'A1:B1',
+			target: 'A3',
+		})
+		expectOk(result)
+
+		expect(sheet.merges).toEqual([
+			{
+				start: { row: 2, col: 0 },
+				end: { row: 2, col: 1 },
+			},
+		])
+	})
+
+	test('copyRange rejects partial merged-cell sources and target overlaps', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.merges.push({
+			start: { row: 0, col: 0 },
+			end: { row: 0, col: 1 },
+		})
+		sheet.merges.push({
+			start: { row: 2, col: 2 },
+			end: { row: 3, col: 3 },
+		})
+
+		const partialSource = applyOperation(wb, {
+			op: 'copyRange',
+			sheet: 'Sheet1',
+			source: 'A1',
+			target: 'E1',
+		})
+		expectErr(partialSource)
+		expect(partialSource.error.message).toContain('part of a merged range')
+
+		const partialTarget = applyOperation(wb, {
+			op: 'copyRange',
+			sheet: 'Sheet1',
+			source: 'A1:B1',
+			target: 'D4',
+		})
+		expectErr(partialTarget)
+		expect(partialTarget.error.message).toContain('partially overlaps')
+	})
+
+	test('copyRange can copy cells and layout metadata to another sheet', () => {
+		const wb = createWorkbook()
+		const source = wb.addSheet('Sheet1')
+		const target = wb.addSheet('Sheet2')
+		const sourceStyle = wb.styles.register({ numberFormat: '$#,##0.00' })
+		source.cells.set(0, 0, { value: numberValue(10), formula: null, styleId: sourceStyle })
+		source.cells.set(0, 1, { value: numberValue(20), formula: 'A1*2', styleId: sourceStyle })
+		source.comments.set('A1', { text: 'Review', author: 'Ascend' })
+		source.hyperlinks.set('B1', { target: 'https://example.com', display: 'Example' })
+		source.dataValidations.push({ sqref: 'A1:B1', type: 'whole', formula1: 'A1' })
+		source.conditionalFormats.push({
+			sqref: 'A1:B1',
+			rules: [
+				{
+					type: 'expression',
+					formulas: ['A1>0'],
+					colorScale: {
+						cfvo: [{ type: 'min' }, { type: 'formula', value: 'B1' }],
+						colors: [{ rgb: 'FFFF0000' }, { rgb: 'FF00FF00' }],
+					},
+				},
+			],
+		})
+		source.merges.push({
+			start: { row: 0, col: 0 },
+			end: { row: 0, col: 1 },
+		})
+		target.merges.push({
+			start: { row: 2, col: 2 },
+			end: { row: 2, col: 3 },
+		})
+
+		const result = applyOperation(wb, {
+			op: 'copyRange',
+			sheet: 'Sheet1',
+			source: 'A1:B1',
+			targetSheet: 'Sheet2',
+			target: 'C3',
+		})
+		expectOk(result)
+
+		expect(result.value.sheetsModified).toEqual(['Sheet1', 'Sheet2'])
+		expect(result.value.affectedCells).toContain('Sheet2!C3')
+		expect(target.cells.get(2, 2)?.value).toEqual(numberValue(10))
+		expect(target.cells.get(2, 3)?.formula).toBe('C3*2')
+		expect(target.cells.get(2, 3)?.styleId).toBe(sourceStyle)
+		expect(target.comments.get('C3')).toEqual({ text: 'Review', author: 'Ascend' })
+		expect(target.hyperlinks.get('D3')).toEqual({
+			target: 'https://example.com',
+			display: 'Example',
+		})
+		expect(target.dataValidations.at(-1)).toEqual({
+			sqref: 'C3:D3',
+			type: 'whole',
+			formula1: 'C3',
+		})
+		expect(target.conditionalFormats.at(-1)).toEqual({
+			sqref: 'C3:D3',
+			rules: [
+				{
+					type: 'expression',
+					formulas: ['C3>0'],
+					colorScale: {
+						cfvo: [{ type: 'min' }, { type: 'formula', value: 'D3' }],
+						colors: [{ rgb: 'FFFF0000' }, { rgb: 'FF00FF00' }],
+					},
+				},
+			],
+		})
+		expect(target.merges).toEqual([
+			{
+				start: { row: 2, col: 2 },
+				end: { row: 2, col: 3 },
+			},
+		])
+		expect(source.cells.get(0, 0)?.value).toEqual(numberValue(10))
+		expect(source.merges).toHaveLength(1)
+	})
+
+	test('moveRange can move cells and layout metadata to another sheet', () => {
+		const wb = createWorkbook()
+		const source = wb.addSheet('Sheet1')
+		const target = wb.addSheet('Sheet2')
+		source.cells.set(0, 0, cell(numberValue(10)))
+		source.cells.set(0, 1, cell(numberValue(20)))
+		source.comments.set('A1', { text: 'Review' })
+		source.hyperlinks.set('B1', { location: 'Sheet1!A1', display: 'Jump' })
+		source.dataValidations.push({ sqref: 'A1:B1', type: 'whole', formula1: 'A1' })
+		source.conditionalFormats.push({
+			sqref: 'A1:B1',
+			rules: [{ type: 'expression', formulas: ['A1>0'] }],
+		})
+		source.merges.push({
+			start: { row: 0, col: 0 },
+			end: { row: 0, col: 1 },
+		})
+
+		const result = applyOperation(wb, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'A1:B1',
+			targetSheet: 'Sheet2',
+			target: 'A2',
+		})
+		expectOk(result)
+
+		expect(source.cells.get(0, 0)).toBeUndefined()
+		expect(source.cells.get(0, 1)).toBeUndefined()
+		expect(source.comments.size).toBe(0)
+		expect(source.hyperlinks.size).toBe(0)
+		expect(source.dataValidations).toEqual([])
+		expect(source.conditionalFormats).toEqual([])
+		expect(source.merges).toEqual([])
+		expect(target.cells.get(1, 0)?.value).toEqual(numberValue(10))
+		expect(target.cells.get(1, 1)?.value).toEqual(numberValue(20))
+		expect(target.comments.get('A2')).toEqual({ text: 'Review' })
+		expect(target.hyperlinks.get('B2')).toEqual({ location: 'Sheet1!A1', display: 'Jump' })
+		expect(target.dataValidations).toEqual([{ sqref: 'A2:B2', type: 'whole', formula1: 'A2' }])
+		expect(target.conditionalFormats).toEqual([
+			{ sqref: 'A2:B2', rules: [{ type: 'expression', formulas: ['A2>0'] }] },
+		])
+		expect(target.merges).toEqual([
+			{
+				start: { row: 1, col: 0 },
+				end: { row: 1, col: 1 },
+			},
+		])
+		expect(result.value.affectedCells).toContain('Sheet1!A1')
+		expect(result.value.affectedCells).toContain('Sheet2!A2')
+	})
+
+	test('moveRange retargets explicit source-sheet metadata formulas moved to another sheet', () => {
+		const wb = createWorkbook()
+		const source = wb.addSheet('Sheet1')
+		const target = wb.addSheet('Sheet2')
+		source.cells.set(0, 0, cell(numberValue(10)))
+		source.cells.set(0, 1, cell(numberValue(20)))
+		source.dataValidations.push({
+			sqref: 'A1:B1',
+			type: 'whole',
+			formula1: 'Sheet1!A1',
+			formula2: 'Sheet1!B1',
+		})
+		source.conditionalFormats.push({
+			sqref: 'A1:B1',
+			rules: [
+				{
+					type: 'expression',
+					formulas: ['Sheet1!A1>0'],
+					colorScale: {
+						cfvo: [{ type: 'formula', value: 'Sheet1!A1' }],
+						colors: [{ rgb: 'FFFF0000' }],
+					},
+					dataBar: { cfvo: [{ type: 'formula', value: 'Sheet1!A1' }] },
+					iconSet: { cfvo: [{ type: 'formula', value: 'Sheet1!B1' }] },
+				},
+			],
+		})
+		source.x14DataValidations.push({
+			index: 0,
+			sqref: 'A1:B1',
+			type: 'whole',
+			formula1: 'Sheet1!A1',
+			formula2: 'Sheet1!B1',
+		})
+		source.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'A1:B1',
+			formulas: ['Sheet1!A1>0'],
+			dataBar: { cfvo: [{ type: 'formula', value: 'Sheet1!A1' }] },
+			iconSet: { cfvo: [{ type: 'formula', value: 'Sheet1!B1' }] },
+		})
+
+		const result = applyOperation(wb, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'A1:B1',
+			targetSheet: 'Sheet2',
+			target: 'A2',
+		})
+		expectOk(result)
+
+		expect(target.dataValidations[0]).toMatchObject({
+			sqref: 'A2:B2',
+			formula1: 'Sheet2!A2',
+			formula2: 'Sheet2!B2',
+		})
+		const rule = target.conditionalFormats[0]?.rules[0]
+		expect(target.conditionalFormats[0]?.sqref).toBe('A2:B2')
+		expect(rule?.formulas[0]).toBe('Sheet2!A2>0')
+		expect(rule?.colorScale?.cfvo[0]?.value).toBe('Sheet2!A2')
+		expect(rule?.dataBar?.cfvo[0]?.value).toBe('Sheet2!A2')
+		expect(rule?.iconSet?.cfvo[0]?.value).toBe('Sheet2!B2')
+		expect(source.x14DataValidations[0]?.deleted).toBe(true)
+		expect(source.x14ConditionalFormats[0]?.deleted).toBe(true)
+		expect(target.x14DataValidations[0]).toMatchObject({
+			sqref: 'A2:B2',
+			formula1: 'Sheet2!A2',
+			formula2: 'Sheet2!B2',
+		})
+		expect(target.x14ConditionalFormats[0]?.sqref).toBe('A2:B2')
+		expect(target.x14ConditionalFormats[0]?.formulas[0]).toBe('Sheet2!A2>0')
+		expect(target.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('Sheet2!A2')
+		expect(target.x14ConditionalFormats[0]?.iconSet?.cfvo[0]?.value).toBe('Sheet2!B2')
 	})
 
 	test('hideSheet and hideCols update sheet visibility metadata', () => {
@@ -1703,6 +2122,14 @@ describe('applyOperation', () => {
 		expect(s.merges[0]?.end).toEqual({ row: 1, col: 1 })
 	})
 
+	test('mergeCells rejects overlapping merge ranges', () => {
+		const wb = setup()
+		expectOk(applyOperation(wb, { op: 'mergeCells', sheet: 'Sheet1', range: 'A1:B2' }))
+		const result = applyOperation(wb, { op: 'mergeCells', sheet: 'Sheet1', range: 'B2:C3' })
+		expectErr(result)
+		expect(result.error.message).toContain('cannot overlap')
+	})
+
 	test('setDefinedName stores a named range', () => {
 		const wb = setup()
 		const result = applyOperation(wb, {
@@ -1744,19 +2171,61 @@ describe('applyOperation', () => {
 
 	test('setHyperlink stores hyperlink metadata on the sheet', () => {
 		const wb = setup()
-		const result = applyOperation(wb, {
+		const external = applyOperation(wb, {
 			op: 'setHyperlink',
 			sheet: 'Sheet1',
 			ref: 'B1',
 			url: 'https://example.com/report',
 			display: 'Report',
+			tooltip: 'Open report',
 		})
-		expectOk(result)
+		expectOk(external)
+		const internal = applyOperation(wb, {
+			op: 'setHyperlink',
+			sheet: 'Sheet1',
+			ref: 'C1',
+			location: 'Sheet1!A1',
+			display: 'Jump',
+		})
+		expectOk(internal)
 
 		expect(wb.getSheet('Sheet1')?.hyperlinks.get('B1')).toEqual({
 			target: 'https://example.com/report',
 			display: 'Report',
+			tooltip: 'Open report',
 		})
+		expect(wb.getSheet('Sheet1')?.hyperlinks.get('C1')).toEqual({
+			location: 'Sheet1!A1',
+			display: 'Jump',
+		})
+	})
+
+	test('setHyperlink ignores blank destination fields when another destination is valid', () => {
+		const wb = setup()
+		const result = applyOperation(wb, {
+			op: 'setHyperlink',
+			sheet: 'Sheet1',
+			ref: 'B1',
+			url: '   ',
+			location: 'Sheet1!A1',
+			display: 'Jump',
+		})
+		expectOk(result)
+		expect(wb.getSheet('Sheet1')?.hyperlinks.get('B1')).toEqual({
+			location: 'Sheet1!A1',
+			display: 'Jump',
+		})
+	})
+
+	test('setHyperlink rejects links without a url or location', () => {
+		const wb = setup()
+		const result = applyOperation(wb, {
+			op: 'setHyperlink',
+			sheet: 'Sheet1',
+			ref: 'B1',
+		})
+		expect(result.ok).toBe(false)
+		if (!result.ok) expect(result.error.code).toBe('VALIDATION_ERROR')
 	})
 
 	test('setNumberFormat applies styles across a range', () => {

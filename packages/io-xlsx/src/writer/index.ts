@@ -46,7 +46,7 @@ import { updateChartXml } from './chart.ts'
 import { buildCommentsVml, buildCommentsXml } from './comments.ts'
 import { updateConnectionPartXml } from './connection.ts'
 import { buildContentTypesXml } from './content-types.ts'
-import { buildAppPropsXml, buildCorePropsXml } from './doc-props.ts'
+import { buildAppPropsXml, buildCorePropsXml, buildCustomPropsXml } from './doc-props.ts'
 import { buildDrawingXml, type DrawingTextUpdate, updateDrawingTextXml } from './drawing.ts'
 import { buildDynamicArrayMetadataXml, type DynamicArrayMetadataEntry } from './metadata.ts'
 import { updatePivotCacheDefinitionXml } from './pivot-cache.ts'
@@ -81,6 +81,8 @@ const REL_CORE_PROPS =
 	'http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties'
 const REL_EXT_PROPS =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties'
+const REL_CUSTOM_PROPS =
+	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties'
 const REL_DIGITAL_SIGNATURE_ORIGIN =
 	'http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/origin'
 const REL_HYPERLINK =
@@ -143,6 +145,7 @@ type BunArrayBufferSinkConstructor = new () => BunArrayBufferSink
 export interface WriteXlsxOptions {
 	readonly dirtySheetNames?: readonly string[]
 	readonly workbookMetaDirty?: boolean
+	readonly documentPropertiesDirty?: boolean
 	readonly calcStateDirty?: boolean
 	readonly calcChainDirty?: boolean
 	readonly sharedStringsDirty?: boolean
@@ -1313,10 +1316,22 @@ export function planWriteXlsx(
 
 		const corePropsPath = packageDocPropsPath(workbookCapsules, REL_CORE_PROPS, 'docProps/core.xml')
 		const appPropsPath = packageDocPropsPath(workbookCapsules, REL_EXT_PROPS, 'docProps/app.xml')
+		const customPropsPath = packageDocPropsPath(
+			workbookCapsules,
+			REL_CUSTOM_PROPS,
+			'docProps/custom.xml',
+		)
 		const hasCoreOrAppDocProps =
 			workbookCapsules.some((capsule) => capsule.relType === REL_CORE_PROPS) ||
 			workbookCapsules.some((capsule) => capsule.relType === REL_EXT_PROPS)
-		const shouldWriteDocProps = !dirtyPatchMode || hasCoreOrAppDocProps
+		const documentPropertiesDirty = options.documentPropertiesDirty === true
+		const customDocumentProperties = workbook.documentProperties.custom ?? []
+		const shouldWriteDocProps = documentPropertiesDirty || !dirtyPatchMode || hasCoreOrAppDocProps
+		const shouldWriteCustomDocProps = documentPropertiesDirty
+			? customDocumentProperties.length > 0
+			: workbookCapsules.some(
+					(capsule) => capsule.partPath === customPropsPath || capsule.relType === REL_CUSTOM_PROPS,
+				)
 
 		if (shouldWriteDocProps) {
 			recordDocPropsPart(
@@ -1325,7 +1340,8 @@ export function planWriteXlsx(
 				capsules,
 				corePropsPath,
 				'application/vnd.openxmlformats-package.core-properties+xml',
-				() => buildCorePropsXml(),
+				() => buildCorePropsXml(workbook.documentProperties.core),
+				!documentPropertiesDirty,
 			)
 			recordDocPropsPart(
 				plan,
@@ -1333,8 +1349,26 @@ export function planWriteXlsx(
 				capsules,
 				appPropsPath,
 				'application/vnd.openxmlformats-officedocument.extended-properties+xml',
-				() => buildAppPropsXml(),
+				() => buildAppPropsXml(workbook.documentProperties.app),
+				!documentPropertiesDirty,
 			)
+			if (shouldWriteCustomDocProps) {
+				recordDocPropsPart(
+					plan,
+					sourceArchive,
+					capsules,
+					customPropsPath,
+					'application/vnd.openxmlformats-officedocument.custom-properties+xml',
+					() => buildCustomPropsXml(customDocumentProperties),
+					!documentPropertiesDirty,
+				)
+				plan.addOverride(
+					customPropsPath,
+					'application/vnd.openxmlformats-officedocument.custom-properties+xml',
+				)
+			} else if (documentPropertiesDirty) {
+				plan.skipCapsulePath(customPropsPath)
+			}
 		}
 
 		const rootRels: RelEntry[] = []
@@ -1361,6 +1395,7 @@ export function planWriteXlsx(
 		if (shouldWriteDocProps) {
 			addRootRel(REL_CORE_PROPS, corePropsPath, corePropsPath)
 			addRootRel(REL_EXT_PROPS, appPropsPath, appPropsPath)
+			if (shouldWriteCustomDocProps) addRootRel(REL_CUSTOM_PROPS, customPropsPath, customPropsPath)
 		}
 		if (capsules) {
 			for (const capsule of capsules) {
@@ -1369,7 +1404,11 @@ export function planWriteXlsx(
 					continue
 				}
 				if (!capsule.relType) continue
-				if (capsule.partPath === corePropsPath || capsule.partPath === appPropsPath) {
+				if (
+					capsule.partPath === corePropsPath ||
+					capsule.partPath === appPropsPath ||
+					capsule.partPath === customPropsPath
+				) {
 					continue
 				}
 				addRootRel(capsule.relType, capsule.partPath, capsule.partPath)
@@ -1995,10 +2034,11 @@ function recordDocPropsPart(
 	path: string,
 	contentType: string,
 	buildXml: () => string,
+	preserveExisting = true,
 ): void {
 	const capsule = capsules?.find((entry) => entry.partPath === path)
 	const content = capsule?.content ?? sourceArchive?.readBytes(path)
-	if (capsule && content) {
+	if (preserveExisting && capsule && content) {
 		plan.putBytes(path, content, {
 			owner: { kind: 'package' },
 			origin: 'capsule',
@@ -2007,6 +2047,7 @@ function recordDocPropsPart(
 		plan.skipCapsulePath(path)
 		return
 	}
+	if (capsule) plan.skipCapsulePath(path)
 	plan.putXml(path, buildXml(), {
 		owner: { kind: 'package' },
 		origin: 'generated',

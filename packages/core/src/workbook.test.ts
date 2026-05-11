@@ -67,6 +67,24 @@ describe('Workbook.clone', () => {
 		expect(wb.preservedStyles?.xfByStyleId[0]).toBe(1)
 	})
 
+	test('clones document properties without aliasing nested collections', () => {
+		const wb = createWorkbook()
+		wb.documentProperties = {
+			core: { creator: 'Analyst' },
+			app: { Application: 'Excel', TitlesOfParts: ['Sheet1'] },
+			custom: [{ name: 'Desk', value: 'Research', type: 'lpwstr', pid: 2 }],
+		}
+
+		const clone = wb.clone()
+		;(clone.documentProperties.core as { creator: string }).creator = 'Reviewer'
+		;(clone.documentProperties.app?.TitlesOfParts as string[])[0] = 'Changed'
+		;(clone.documentProperties.custom?.[0] as { name: string }).name = 'Changed'
+
+		expect(wb.documentProperties.core?.creator).toBe('Analyst')
+		expect(wb.documentProperties.app?.TitlesOfParts).toEqual(['Sheet1'])
+		expect(wb.documentProperties.custom?.[0]?.name).toBe('Desk')
+	})
+
 	test('clones active content VBA summaries without aliasing nested modules', () => {
 		const wb = createWorkbook()
 		wb.activeContent.push({

@@ -54,6 +54,116 @@ describe('AscendWorkbook', () => {
 		expect(info.capabilityWarnings).toEqual([])
 	})
 
+	test('inspect exposes package document properties in metadata-only mode', async () => {
+		const bytes = makeSyntheticXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+  <Override PartName="/docProps/custom.xml" ContentType="application/vnd.openxmlformats-officedocument.custom-properties+xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+  <Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties" Target="docProps/custom.xml"/>
+</Relationships>`,
+			'docProps/core.xml': `<?xml version="1.0" encoding="UTF-8"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
+  xmlns:dc="http://purl.org/dc/elements/1.1/"
+  xmlns:dcterms="http://purl.org/dc/terms/">
+  <dc:title>Forecast Pack</dc:title>
+  <dc:creator>Finance Ops</dc:creator>
+  <dcterms:created>2025-03-04T05:06:07Z</dcterms:created>
+</cp:coreProperties>`,
+			'docProps/app.xml': `<?xml version="1.0" encoding="UTF-8"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties">
+  <Application>Microsoft Excel</Application>
+  <Company>Ascend Fixtures</Company>
+</Properties>`,
+			'docProps/custom.xml': `<?xml version="1.0" encoding="UTF-8"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties"
+  xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
+  <property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="2" name="Reviewed">
+    <vt:bool>true</vt:bool>
+  </property>
+</Properties>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData/>
+</worksheet>`,
+		})
+
+		const wb = await AscendWorkbook.open(bytes, { mode: 'metadata-only' })
+
+		expect(wb.inspect().documentProperties).toEqual({
+			core: {
+				title: 'Forecast Pack',
+				creator: 'Finance Ops',
+				created: '2025-03-04T05:06:07Z',
+			},
+			app: {
+				Application: 'Microsoft Excel',
+				Company: 'Ascend Fixtures',
+			},
+			custom: [
+				{
+					name: 'Reviewed',
+					value: true,
+					type: 'bool',
+					pid: 2,
+					fmtid: '{D5CDD505-2E9C-101B-9397-08002B2CF9AE}',
+				},
+			],
+		})
+	})
+
+	test('setDocumentProperties saves edited core app and custom docProps', async () => {
+		const wb = AscendWorkbook.create()
+		const result = wb.apply([
+			{
+				op: 'setDocumentProperties',
+				properties: {
+					core: { title: 'Forecast Pack', creator: 'Finance Ops' },
+					app: {
+						Application: 'Ascend',
+						Company: 'Ascend Fixtures',
+						HeadingPairs: ['Worksheets', 1],
+						TitlesOfParts: ['Sheet1'],
+					},
+					custom: [{ name: 'Reviewed', value: true, type: 'bool' }],
+				},
+			},
+		])
+		expect(result.errors).toEqual([])
+
+		const reopened = await AscendWorkbook.open(wb.toBytes())
+		expect(reopened.inspect().documentProperties).toMatchObject({
+			core: { title: 'Forecast Pack', creator: 'Finance Ops' },
+			app: {
+				Application: 'Ascend',
+				Company: 'Ascend Fixtures',
+				HeadingPairs: ['Worksheets', 1],
+				TitlesOfParts: ['Sheet1'],
+			},
+			custom: [{ name: 'Reviewed', value: true, type: 'bool' }],
+		})
+	})
+
 	test('cellStyle exposes a cloned exact cell style', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -343,45 +453,49 @@ describe('AscendWorkbook', () => {
 		expect(detail?.pageMargins?.left).toBe(0.5)
 	})
 
-	test('inspect exposes x14 extension inventories from real corpus workbooks', async () => {
-		const conditionalWorkbook = await AscendWorkbook.open(
-			readFileSync(
-				new URL('../../../fixtures/xlsx/poi/NewStyleConditionalFormattings.xlsx', import.meta.url),
-			),
-		)
-		const conditionalInfo = conditionalWorkbook.inspect()
-		const conditionalSheetName = conditionalInfo.sheets.find(
-			(sheet) => sheet.x14ConditionalFormatCount === 3,
-		)?.name
-		expect(conditionalInfo.x14ConditionalFormatCount).toBe(3)
-		expect(conditionalSheetName).toBeDefined()
-		expect(
-			conditionalWorkbook.inspectSheet(conditionalSheetName ?? '')?.x14ConditionalFormats?.[0],
-		).toMatchObject({
-			sqref: 'E2:E17',
-			type: 'dataBar',
-			dataBar: {
-				cfvo: [{ type: 'autoMin' }, { type: 'autoMax' }],
-				borderColor: { rgb: 'FF63C384' },
-			},
-		})
+	const x14ConditionalFixture = new URL(
+		'../../../fixtures/xlsx/poi/NewStyleConditionalFormattings.xlsx',
+		import.meta.url,
+	)
+	const x14ValidationFixture = new URL(
+		'../../../fixtures/xlsx/closedxml/Misc_DataValidation.xlsx',
+		import.meta.url,
+	)
 
-		const validationWorkbook = await AscendWorkbook.open(
-			readFileSync(
-				new URL('../../../fixtures/xlsx/closedxml/Misc_DataValidation.xlsx', import.meta.url),
-			),
-		)
-		expect(validationWorkbook.inspect().x14DataValidationCount).toBe(2)
-		expect(
-			validationWorkbook.inspectSheet('Data Validation - Copy')?.x14DataValidations?.[0],
-		).toMatchObject({
-			sqref: 'A5:A5',
-			type: 'list',
-			allowBlank: true,
-			errorStyle: 'stop',
-			formula1: "'Data Validation'!$C$1:$C$2",
-		})
-	})
+	test.skipIf(!existsSync(x14ConditionalFixture) || !existsSync(x14ValidationFixture))(
+		'inspect exposes x14 extension inventories from real corpus workbooks',
+		async () => {
+			const conditionalWorkbook = await AscendWorkbook.open(readFileSync(x14ConditionalFixture))
+			const conditionalInfo = conditionalWorkbook.inspect()
+			const conditionalSheetName = conditionalInfo.sheets.find(
+				(sheet) => sheet.x14ConditionalFormatCount === 3,
+			)?.name
+			expect(conditionalInfo.x14ConditionalFormatCount).toBe(3)
+			expect(conditionalSheetName).toBeDefined()
+			expect(
+				conditionalWorkbook.inspectSheet(conditionalSheetName ?? '')?.x14ConditionalFormats?.[0],
+			).toMatchObject({
+				sqref: 'E2:E17',
+				type: 'dataBar',
+				dataBar: {
+					cfvo: [{ type: 'autoMin' }, { type: 'autoMax' }],
+					borderColor: { rgb: 'FF63C384' },
+				},
+			})
+
+			const validationWorkbook = await AscendWorkbook.open(readFileSync(x14ValidationFixture))
+			expect(validationWorkbook.inspect().x14DataValidationCount).toBe(2)
+			expect(
+				validationWorkbook.inspectSheet('Data Validation - Copy')?.x14DataValidations?.[0],
+			).toMatchObject({
+				sqref: 'A5:A5',
+				type: 'list',
+				allowBlank: true,
+				errorStyle: 'stop',
+				formula1: "'Data Validation'!$C$1:$C$2",
+			})
+		},
+	)
 
 	test('find returns cells matching search criteria', () => {
 		const wb = AscendWorkbook.create()
@@ -1073,6 +1187,100 @@ describe('AscendWorkbook', () => {
 		const b1 = reopened.sheet('Sheet1')?.cell('B1')
 		expect(b1).toBeDefined()
 		expect(b1?.value).toEqual({ kind: 'number', value: 42 })
+	})
+
+	test('setRichText saves to XLSX bytes and reopens with formatting runs', async () => {
+		const wb = AscendWorkbook.create()
+		const result = wb.apply([
+			{
+				op: 'setRichText',
+				sheet: 'Sheet1',
+				ref: 'A1',
+				runs: [
+					{ text: 'Bold', bold: true },
+					{ text: ' Italic', italic: true },
+					{ text: ' Blue', color: 'FF0000FF' },
+				],
+			},
+		])
+		expect(result.errors).toHaveLength(0)
+
+		const bytes = wb.toBytes()
+		const archive = extractZip(bytes)
+		const sheetXml = archive.readText('xl/worksheets/sheet1.xml') ?? ''
+		const sharedStringsXml = archive.readText('xl/sharedStrings.xml') ?? ''
+		expect(sheetXml).toContain('t="s"')
+		expect(sharedStringsXml).toContain('<b/>')
+		expect(sharedStringsXml).toContain('<i/>')
+		expect(sharedStringsXml).toContain('rgb="FF0000FF"')
+
+		const reopened = await AscendWorkbook.open(bytes)
+		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+			kind: 'richText',
+			runs: [
+				{ text: 'Bold', bold: true },
+				{ text: ' Italic', italic: true },
+				{ text: ' Blue', color: 'FF0000FF' },
+			],
+		})
+	})
+
+	test('setHyperlink saves external and internal links to XLSX bytes', async () => {
+		const wb = AscendWorkbook.create()
+		const result = wb.apply([
+			{ op: 'addSheet', name: 'Sheet2' },
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'External' }] },
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'B1', value: 'Internal' }] },
+			{
+				op: 'setHyperlink',
+				sheet: 'Sheet1',
+				ref: 'A1',
+				url: 'https://example.com/report',
+				display: 'Report',
+				tooltip: 'Open report',
+			},
+			{
+				op: 'setHyperlink',
+				sheet: 'Sheet1',
+				ref: 'B1',
+				location: 'Sheet2!A1',
+				display: 'Sheet2',
+				tooltip: 'Jump inside workbook',
+			},
+		])
+		expect(result.errors).toHaveLength(0)
+
+		const bytes = wb.toBytes()
+		const archive = extractZip(bytes)
+		const sheetXml = archive.readText('xl/worksheets/sheet1.xml') ?? ''
+		const sheetRelsXml = archive.readText('xl/worksheets/_rels/sheet1.xml.rels') ?? ''
+		expect(sheetXml).toContain('ref="A1"')
+		expect(sheetXml).toContain('display="Report"')
+		expect(sheetXml).toContain('tooltip="Open report"')
+		expect(sheetXml).toContain('ref="B1"')
+		expect(sheetXml).toContain('location="Sheet2!A1"')
+		expect(sheetXml).toContain('tooltip="Jump inside workbook"')
+		expect(sheetRelsXml).toContain('Target="https://example.com/report"')
+		expect(sheetRelsXml).toContain('TargetMode="External"')
+		expect(sheetRelsXml).not.toContain('Target="Sheet2!A1"')
+
+		const reopened = await AscendWorkbook.open(bytes)
+		expect(reopened.sheet('Sheet1')?.hyperlink('A1')).toEqual({
+			target: 'https://example.com/report',
+			display: 'Report',
+			tooltip: 'Open report',
+		})
+		expect(reopened.sheet('Sheet1')?.hyperlink('B1')).toEqual({
+			location: 'Sheet2!A1',
+			display: 'Sheet2',
+			tooltip: 'Jump inside workbook',
+		})
+		expect(reopened.sheet('Sheet1')?.getHyperlinks()).toContainEqual({
+			ref: 'B1',
+			location: 'Sheet2!A1',
+			display: 'Sheet2',
+			tooltip: 'Jump inside workbook',
+		})
 	})
 
 	test('dirty serialization rebases source bytes and clears dirty flags', () => {
@@ -3042,6 +3250,11 @@ describe('capabilities registry', () => {
 		const themes = capabilities.find((capability) => capability.id === 'workbook.themes')
 		expect(themes?.status).toBe('editable')
 		expect(themes?.tests).toContain('packages/sdk/src/theme-inventory.test.ts')
+		const workbookProperties = capabilities.find(
+			(capability) => capability.id === 'workbook.properties',
+		)
+		expect(workbookProperties?.tests).toContain('packages/sdk/src/sdk.test.ts')
+		expect(workbookProperties?.gapReason).toContain('setDocumentProperties')
 	})
 })
 

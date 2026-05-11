@@ -33,6 +33,42 @@ export interface WorkbookProperties {
 	readonly date1904?: boolean
 }
 
+export interface WorkbookCoreDocumentProperties {
+	readonly title?: string
+	readonly subject?: string
+	readonly creator?: string
+	readonly keywords?: string
+	readonly description?: string
+	readonly lastModifiedBy?: string
+	readonly revision?: string
+	readonly created?: string
+	readonly modified?: string
+	readonly category?: string
+	readonly contentStatus?: string
+	readonly language?: string
+	readonly identifier?: string
+	readonly version?: string
+}
+
+export interface WorkbookCustomDocumentProperty {
+	readonly name: string
+	readonly value: string | number | boolean
+	readonly type?: string
+	readonly pid?: number
+	readonly fmtid?: string
+}
+
+export type WorkbookDocumentPropertyScalar = string | number | boolean
+export type WorkbookDocumentPropertyAppValue =
+	| WorkbookDocumentPropertyScalar
+	| readonly WorkbookDocumentPropertyScalar[]
+
+export interface WorkbookDocumentProperties {
+	readonly core?: WorkbookCoreDocumentProperties
+	readonly app?: Readonly<Record<string, WorkbookDocumentPropertyAppValue>>
+	readonly custom?: readonly WorkbookCustomDocumentProperty[]
+}
+
 export interface NamedStyleInfo {
 	readonly name: string
 	readonly builtinId?: number
@@ -179,6 +215,7 @@ export class Workbook {
 	readonly externalReferences: string[] = []
 	readonly externalReferenceDetails: ExternalReferenceInfo[] = []
 	workbookProperties: WorkbookProperties = {}
+	documentProperties: WorkbookDocumentProperties = {}
 	workbookProtection: WorkbookProtection | null = null
 	styleMetadata: WorkbookStyleMetadata = {
 		numFmtCount: 0,
@@ -249,6 +286,7 @@ export class Workbook {
 			iterativeCalc: { ...this.calcSettings.iterativeCalc },
 		}
 		clone.workbookProperties = { ...this.workbookProperties }
+		clone.documentProperties = cloneDocumentProperties(this.documentProperties)
 		clone.workbookProtection = this.workbookProtection ? { ...this.workbookProtection } : null
 		clone.styleMetadata = { ...this.styleMetadata }
 		clone.themeMetadata = { ...this.themeMetadata }
@@ -324,6 +362,27 @@ export class Workbook {
 			...this.externalReferenceDetails.map((entry) => ({ ...entry })),
 		)
 		return clone
+	}
+}
+
+function cloneDocumentProperties(
+	properties: WorkbookDocumentProperties,
+): WorkbookDocumentProperties {
+	return {
+		...(properties.core ? { core: { ...properties.core } } : {}),
+		...(properties.app
+			? {
+					app: Object.fromEntries(
+						Object.entries(properties.app).map(([key, value]) => [
+							key,
+							Array.isArray(value) ? [...value] : value,
+						]),
+					),
+				}
+			: {}),
+		...(properties.custom
+			? { custom: properties.custom.map((property) => ({ ...property })) }
+			: {}),
 	}
 }
 

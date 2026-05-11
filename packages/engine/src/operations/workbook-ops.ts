@@ -1,10 +1,20 @@
-import type { Workbook, WorkbookProperties, WorkbookThemeColor, WorkbookView } from '@ascend/core'
+import type {
+	Workbook,
+	WorkbookCoreDocumentProperties,
+	WorkbookCustomDocumentProperty,
+	WorkbookDocumentProperties,
+	WorkbookDocumentPropertyAppValue,
+	WorkbookProperties,
+	WorkbookThemeColor,
+	WorkbookView,
+} from '@ascend/core'
 import type { Operation, Result } from '@ascend/schema'
 import { ascendError, err, ok } from '@ascend/schema'
 import { type PatchResult, patch } from './helpers.ts'
 
 type RewriteExternalLinkOp = Extract<Operation, { op: 'rewriteExternalLink' }>
 type SetWorkbookPropertiesOp = Extract<Operation, { op: 'setWorkbookProperties' }>
+type SetDocumentPropertiesOp = Extract<Operation, { op: 'setDocumentProperties' }>
 type SetWorkbookViewOp = Extract<Operation, { op: 'setWorkbookView' }>
 type SetCalcSettingsOp = Extract<Operation, { op: 'setCalcSettings' }>
 type SetThemeOp = Extract<Operation, { op: 'setTheme' }>
@@ -21,6 +31,22 @@ const WORKBOOK_PROPERTY_KEYS = [
 	'defaultThemeVersion',
 	'filterPrivacy',
 	'date1904',
+] as const
+const CORE_DOCUMENT_PROPERTY_KEYS = [
+	'title',
+	'subject',
+	'creator',
+	'keywords',
+	'description',
+	'lastModifiedBy',
+	'revision',
+	'created',
+	'modified',
+	'category',
+	'contentStatus',
+	'language',
+	'identifier',
+	'version',
 ] as const
 const THEME_COLOR_SLOTS = new Set([
 	'dk1',
@@ -81,6 +107,65 @@ export function handleSetWorkbookProperties(
 	workbook.workbookProperties = next as WorkbookProperties
 
 	return ok(patch([], [], oldDateSystem !== workbook.calcSettings.dateSystem))
+}
+
+export function handleSetDocumentProperties(
+	workbook: Workbook,
+	op: SetDocumentPropertiesOp,
+): Result<PatchResult> {
+	const mode = op.mode ?? 'merge'
+	if (mode !== 'merge' && mode !== 'replace') {
+		return err(
+			ascendError('VALIDATION_ERROR', 'setDocumentProperties mode must be merge or replace', {
+				suggestedFix: 'Use mode="merge" for targeted docProps edits or mode="replace".',
+			}),
+		)
+	}
+	const validated = validateDocumentProperties(op.properties)
+	if (!validated.ok) return validated
+
+	const next: {
+		core?: MutableCoreDocumentProperties
+		app?: Record<string, WorkbookDocumentPropertyAppValue>
+		custom?: WorkbookCustomDocumentProperty[]
+	} = mode === 'replace' ? {} : cloneMutableDocumentProperties(workbook.documentProperties)
+
+	if ('core' in op.properties) {
+		if (op.properties.core === null) {
+			delete next.core
+		} else if (op.properties.core) {
+			const core = mode === 'replace' || !next.core ? {} : { ...next.core }
+			for (const key of CORE_DOCUMENT_PROPERTY_KEYS) {
+				if (!(key in op.properties.core)) continue
+				const value = op.properties.core[key]
+				if (value === null || value === undefined) delete core[key]
+				else core[key] = value
+			}
+			if (Object.keys(core).length > 0) next.core = core
+			else delete next.core
+		}
+	}
+	if ('app' in op.properties) {
+		if (op.properties.app === null) {
+			delete next.app
+		} else if (op.properties.app) {
+			const app = mode === 'replace' || !next.app ? {} : { ...next.app }
+			for (const [key, value] of Object.entries(op.properties.app)) {
+				if (value === null || value === undefined) delete app[key]
+				else app[key] = Array.isArray(value) ? [...value] : value
+			}
+			if (Object.keys(app).length > 0) next.app = app
+			else delete next.app
+		}
+	}
+	if ('custom' in op.properties) {
+		if (op.properties.custom === null) delete next.custom
+		else if (op.properties.custom) {
+			next.custom = op.properties.custom.map((property) => ({ ...property }))
+		}
+	}
+	workbook.documentProperties = next as WorkbookDocumentProperties
+	return ok(patch([], [], false))
 }
 
 export function handleSetWorkbookView(
@@ -358,6 +443,87 @@ function validateWorkbookProperties(
 	return ok(undefined)
 }
 
+function validateDocumentProperties(
+	properties: SetDocumentPropertiesOp['properties'],
+): Result<undefined> {
+	if (!properties || typeof properties !== 'object' || Array.isArray(properties)) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'setDocumentProperties requires a properties object', {
+				suggestedFix: 'Provide properties such as { "core": { "title": "Forecast" } }.',
+			}),
+		)
+	}
+	if (properties.core !== undefined && properties.core !== null) {
+		if (typeof properties.core !== 'object' || Array.isArray(properties.core)) {
+			return err(
+				ascendError('VALIDATION_ERROR', 'document core properties must be an object or null'),
+			)
+		}
+		for (const [key, value] of Object.entries(properties.core)) {
+			if (value !== null && value !== undefined && typeof value !== 'string') {
+				return err(
+					ascendError('VALIDATION_ERROR', `document core property ${key} must be a string or null`),
+				)
+			}
+		}
+	}
+	if (properties.app !== undefined && properties.app !== null) {
+		if (typeof properties.app !== 'object' || Array.isArray(properties.app)) {
+			return err(
+				ascendError('VALIDATION_ERROR', 'document app properties must be an object or null'),
+			)
+		}
+		for (const [key, value] of Object.entries(properties.app)) {
+			if (
+				value !== null &&
+				typeof value !== 'string' &&
+				typeof value !== 'number' &&
+				typeof value !== 'boolean' &&
+				!isScalarArray(value)
+			) {
+				return err(
+					ascendError(
+						'VALIDATION_ERROR',
+						`document app property ${key} must be a scalar, scalar array, or null`,
+					),
+				)
+			}
+		}
+	}
+	if (properties.custom !== undefined && properties.custom !== null) {
+		if (!Array.isArray(properties.custom)) {
+			return err(
+				ascendError('VALIDATION_ERROR', 'document custom properties must be an array or null'),
+			)
+		}
+		for (const [index, property] of properties.custom.entries()) {
+			if (!property || typeof property !== 'object' || Array.isArray(property)) {
+				return err(
+					ascendError('VALIDATION_ERROR', `document custom property ${index} must be an object`),
+				)
+			}
+			if (typeof property.name !== 'string' || property.name.trim() === '') {
+				return err(
+					ascendError('VALIDATION_ERROR', `document custom property ${index} requires a name`),
+				)
+			}
+			if (
+				typeof property.value !== 'string' &&
+				typeof property.value !== 'number' &&
+				typeof property.value !== 'boolean'
+			) {
+				return err(
+					ascendError(
+						'VALIDATION_ERROR',
+						`document custom property ${property.name} value must be a scalar`,
+					),
+				)
+			}
+		}
+	}
+	return ok(undefined)
+}
+
 function validateWorkbookView(view: NonNullable<SetWorkbookViewOp['view']>): Result<undefined> {
 	for (const key of ['activeTab', 'firstSheet', 'tabRatio'] as const) {
 		const value = view[key]
@@ -371,6 +537,43 @@ function validateWorkbookView(view: NonNullable<SetWorkbookViewOp['view']>): Res
 		}
 	}
 	return ok(undefined)
+}
+
+function cloneMutableDocumentProperties(properties: WorkbookDocumentProperties): {
+	core?: MutableCoreDocumentProperties
+	app?: Record<string, WorkbookDocumentPropertyAppValue>
+	custom?: WorkbookCustomDocumentProperty[]
+} {
+	return {
+		...(properties.core ? { core: { ...properties.core } } : {}),
+		...(properties.app
+			? {
+					app: Object.fromEntries(
+						Object.entries(properties.app).map(([key, value]) => [
+							key,
+							Array.isArray(value) ? [...value] : value,
+						]),
+					),
+				}
+			: {}),
+		...(properties.custom
+			? { custom: properties.custom.map((property) => ({ ...property })) }
+			: {}),
+	}
+}
+
+function isScalarArray(value: unknown): value is readonly (string | number | boolean)[] {
+	return (
+		Array.isArray(value) &&
+		value.every(
+			(entry) =>
+				typeof entry === 'string' || typeof entry === 'number' || typeof entry === 'boolean',
+		)
+	)
+}
+
+type MutableCoreDocumentProperties = {
+	-readonly [K in keyof WorkbookCoreDocumentProperties]?: WorkbookCoreDocumentProperties[K]
 }
 
 function validateCalcSettings(settings: SetCalcSettingsOp['settings']): Result<undefined> {

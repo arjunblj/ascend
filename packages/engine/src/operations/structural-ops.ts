@@ -1,12 +1,23 @@
-import type { RangeRef, Sheet, SheetDataValidation, Workbook } from '@ascend/core'
+import type {
+	RangeRef,
+	Sheet,
+	SheetConditionalFormat,
+	SheetConditionalFormatValueObject,
+	SheetDataValidation,
+	Workbook,
+} from '@ascend/core'
 import { parseA1, parseRange, toA1 } from '@ascend/core'
 import { cachedParseFormula } from '@ascend/formulas'
 import type { Operation, PasteMode, Result } from '@ascend/schema'
 import { ascendError, EMPTY, err, ok } from '@ascend/schema'
 import { resolveCellFormulaText } from '../analysis.ts'
 import {
+	retargetExplicitFormulaSheetRefsInRange,
+	rewriteDefinedNameFormulasForMove,
 	rewriteDefinedNameFormulasForShift,
+	rewriteWorkbookFormulasForMove,
 	rewriteWorkbookFormulasForShift,
+	rewriteWorkbookMetadataFormulasForMove,
 } from '../structural/formula-rewrite.ts'
 import { shiftSheetCellMetadata } from '../structural/sheet-topology.ts'
 import type { PatchResult } from './helpers.ts'
@@ -87,8 +98,14 @@ export function handleTransferRange(
 ): Result<PatchResult> {
 	const sheetResult = getSheet(workbook, op.sheet)
 	if (!sheetResult.ok) return sheetResult
-	const sheet = sheetResult.value
-	const sheetIndex = workbook.sheets.indexOf(sheet)
+	const sourceSheet = sheetResult.value
+	const targetSheetName = op.targetSheet ?? op.sheet
+	const targetSheetResult =
+		targetSheetName === op.sheet ? sheetResult : getSheet(workbook, targetSheetName)
+	if (!targetSheetResult.ok) return targetSheetResult
+	const targetSheet = targetSheetResult.value
+	const crossSheet = sourceSheet !== targetSheet
+	const sheetIndex = workbook.sheets.indexOf(sourceSheet)
 	const sourceResult = safeParseRange(op.source)
 	if (!sourceResult.ok) return sourceResult
 	const targetStart = parseA1(op.target)
@@ -99,32 +116,45 @@ export function handleTransferRange(
 	const affected: string[] = []
 
 	if (pasteCells(mode)) {
-		const legacyArrayIndex = createLegacyArrayFormulaIndex(sheet)
+		const targetLegacyArrayIndex = createLegacyArrayFormulaIndex(targetSheet)
 		const targetRange = shiftRange(source, rowDelta, colDelta)
-		const blockedTarget = legacyArrayIndex.findIntersection(targetRange)
+		const blockedTarget = targetLegacyArrayIndex.findIntersection(targetRange)
 		if (blockedTarget) {
 			return err(legacyArrayFormulaEditError(blockedTarget.targetRef, blockedTarget.ref))
 		}
 		if (op.op === 'moveRange') {
-			const blockedSource = legacyArrayIndex.findIntersection(source)
+			const sourceLegacyArrayIndex = crossSheet
+				? createLegacyArrayFormulaIndex(sourceSheet)
+				: targetLegacyArrayIndex
+			const blockedSource = sourceLegacyArrayIndex.findIntersection(source)
 			if (blockedSource) {
 				return err(legacyArrayFormulaEditError(blockedSource.targetRef, blockedSource.ref))
 			}
 		}
 	}
+	const mergePlan = pasteMerges(mode)
+		? planMergeTransfer(sourceSheet, targetSheet, source, rowDelta, colDelta, op.op === 'moveRange')
+		: ok<MergeTransferPlan>({
+				targetRange: shiftRange(source, rowDelta, colDelta),
+				sourceMerges: [],
+				targetMerges: [],
+				targetReplacedMerges: [],
+				removeSourceMerges: false,
+			})
+	if (!mergePlan.ok) return mergePlan
 
-	const snapshot = collectRangeCells(sheet, source)
+	const snapshot = collectRangeCells(sourceSheet, source)
 
 	if (pasteCells(mode)) {
 		for (const entry of snapshot) {
 			const targetRow = entry.row + rowDelta
 			const targetCol = entry.col + colDelta
-			const existingTarget = sheet.cells.get(targetRow, targetCol)
+			const existingTarget = targetSheet.cells.get(targetRow, targetCol)
 			const ref = toA1({ row: targetRow, col: targetCol })
 
 			if (!entry.cell && mode === 'all') {
-				sheet.cells.delete(targetRow, targetCol)
-				affected.push(ref)
+				targetSheet.cells.delete(targetRow, targetCol)
+				affected.push(affectedRef(targetSheet, ref, crossSheet))
 				continue
 			}
 
@@ -137,19 +167,19 @@ export function handleTransferRange(
 			const targetStyle = existingTarget?.styleId ?? DEFAULT_SID
 
 			if (mode === 'values') {
-				sheet.cells.set(
+				targetSheet.cells.set(
 					targetRow,
 					targetCol,
 					cellWithExisting(entry.cell?.value ?? EMPTY, null, targetStyle),
 				)
 			} else if (mode === 'formulas') {
-				sheet.cells.set(
+				targetSheet.cells.set(
 					targetRow,
 					targetCol,
 					cellWithExisting(entry.cell?.value ?? EMPTY, formula, targetStyle),
 				)
 			} else if (mode === 'formats' || mode === 'styles') {
-				sheet.cells.set(
+				targetSheet.cells.set(
 					targetRow,
 					targetCol,
 					cellWithExisting(
@@ -160,28 +190,68 @@ export function handleTransferRange(
 					),
 				)
 			} else if (entry.cell) {
-				sheet.cells.set(
+				targetSheet.cells.set(
 					targetRow,
 					targetCol,
 					cellWithExisting(entry.cell.value, formula, entry.cell.styleId),
 				)
 			} else {
-				sheet.cells.delete(targetRow, targetCol)
+				targetSheet.cells.delete(targetRow, targetCol)
 			}
-			affected.push(ref)
+			affected.push(affectedRef(targetSheet, ref, crossSheet))
 		}
 	}
 
-	copyTransferMetadata(sheet, source, rowDelta, colDelta, mode, op.op === 'moveRange')
+	copyTransferMetadata(
+		sourceSheet,
+		targetSheet,
+		source,
+		rowDelta,
+		colDelta,
+		mode,
+		op.op === 'moveRange',
+	)
+	applyMergeTransfer(sourceSheet, targetSheet, mergePlan.value)
 
 	if (op.op === 'moveRange') {
 		for (const entry of snapshot) {
-			if (pasteCells(mode)) sheet.cells.delete(entry.row, entry.col)
-			if (pasteCells(mode)) affected.push(toA1({ row: entry.row, col: entry.col }))
+			if (pasteCells(mode)) sourceSheet.cells.delete(entry.row, entry.col)
+			if (pasteCells(mode)) {
+				affected.push(
+					affectedRef(sourceSheet, toA1({ row: entry.row, col: entry.col }), crossSheet),
+				)
+			}
+		}
+		if (pasteCells(mode)) {
+			rewriteWorkbookFormulasForMove(
+				workbook,
+				sourceSheet.name,
+				targetSheet.name,
+				source,
+				mergePlan.value.targetRange,
+			)
+			rewriteDefinedNameFormulasForMove(
+				workbook,
+				sourceSheet.name,
+				targetSheet.name,
+				source,
+				mergePlan.value.targetRange,
+			)
+			rewriteWorkbookMetadataFormulasForMove(
+				workbook,
+				sourceSheet.name,
+				targetSheet.name,
+				source,
+				mergePlan.value.targetRange,
+			)
 		}
 	}
 
-	return ok(patch(affected, [op.sheet], pasteRequiresRecalc(mode)))
+	return ok(patch(affected, [sourceSheet.name, targetSheet.name], pasteRequiresRecalc(mode)))
+}
+
+function affectedRef(sheet: Sheet, ref: string, qualify: boolean): string {
+	return qualify ? `${sheet.name}!${ref}` : ref
 }
 
 function pasteCells(mode: PasteMode): boolean {
@@ -192,6 +262,10 @@ function pasteCells(mode: PasteMode): boolean {
 		mode === 'formats' ||
 		mode === 'styles'
 	)
+}
+
+function pasteMerges(mode: PasteMode): boolean {
+	return mode === 'all' || mode === 'formats' || mode === 'styles'
 }
 
 function pasteRequiresRecalc(mode: PasteMode): boolean {
@@ -239,7 +313,8 @@ function formulaBindingStructuralEditError(blocker: {
 }
 
 function copyTransferMetadata(
-	sheet: Sheet,
+	sourceSheet: Sheet,
+	targetSheet: Sheet,
 	source: RangeRef,
 	rowDelta: number,
 	colDelta: number,
@@ -247,35 +322,157 @@ function copyTransferMetadata(
 	move: boolean,
 ): void {
 	if (mode === 'all' || mode === 'comments') {
-		copyCellMap(sheet.comments, source, rowDelta, colDelta, move)
+		copyCellMap(sourceSheet.comments, targetSheet.comments, source, rowDelta, colDelta, move)
 	}
 	if (mode === 'all' || mode === 'hyperlinks') {
-		copyCellMap(sheet.hyperlinks, source, rowDelta, colDelta, move)
+		copyCellMap(sourceSheet.hyperlinks, targetSheet.hyperlinks, source, rowDelta, colDelta, move)
 	}
 	if (mode === 'all' || mode === 'validations') {
-		copyDataValidations(sheet, source, rowDelta, colDelta, move)
+		copyDataValidations(sourceSheet, targetSheet, source, rowDelta, colDelta, move)
+		copyX14DataValidations(sourceSheet, targetSheet, source, rowDelta, colDelta, move)
+	}
+	if (mode === 'all' || mode === 'formats' || mode === 'styles') {
+		copyConditionalFormats(sourceSheet, targetSheet, source, rowDelta, colDelta, move)
+		copyX14ConditionalFormats(sourceSheet, targetSheet, source, rowDelta, colDelta, move)
 	}
 }
 
+interface MergeTransferPlan {
+	readonly targetRange: RangeRef
+	readonly sourceMerges: readonly RangeRef[]
+	readonly targetMerges: readonly RangeRef[]
+	readonly targetReplacedMerges: readonly RangeRef[]
+	readonly removeSourceMerges: boolean
+}
+
+function planMergeTransfer(
+	sourceSheet: Sheet,
+	targetSheet: Sheet,
+	source: RangeRef,
+	rowDelta: number,
+	colDelta: number,
+	move: boolean,
+): Result<MergeTransferPlan> {
+	const targetRange = shiftRange(source, rowDelta, colDelta)
+	const sourceMerges = sourceSheet.merges.filter((merge) => rangesOverlap(merge, source))
+	for (const merge of sourceMerges) {
+		if (!rangeContainsRange(source, merge)) {
+			return err(partialMergeTransferError(move ? 'move' : 'copy', source, merge))
+		}
+	}
+	if (
+		sourceMerges.length > 0 &&
+		sourceSheet === targetSheet &&
+		(rowDelta !== 0 || colDelta !== 0) &&
+		rangesOverlap(source, targetRange)
+	) {
+		return err(
+			ascendError(
+				'VALIDATION_ERROR',
+				`Cannot ${move ? 'move' : 'copy'} merged cells onto an overlapping target range`,
+				{
+					refs: [rangeToA1(source), rangeToA1(targetRange)],
+					suggestedFix:
+						'Choose a non-overlapping target when copying or moving ranges that contain merged cells.',
+				},
+			),
+		)
+	}
+
+	const targetReplacedMerges: RangeRef[] = []
+	for (const merge of targetSheet.merges) {
+		if (!rangesOverlap(merge, targetRange)) continue
+		if (!rangeContainsRange(targetRange, merge)) {
+			return err(partialTargetMergeError(targetRange, merge))
+		}
+		targetReplacedMerges.push(merge)
+	}
+
+	return ok({
+		targetRange,
+		sourceMerges,
+		targetMerges: sourceMerges.map((merge) => shiftRange(merge, rowDelta, colDelta)),
+		targetReplacedMerges,
+		removeSourceMerges: move,
+	})
+}
+
+function applyMergeTransfer(sourceSheet: Sheet, targetSheet: Sheet, plan: MergeTransferPlan): void {
+	if (plan.sourceMerges.length === 0 && plan.targetReplacedMerges.length === 0) return
+	const targetRemove = new Set(plan.targetReplacedMerges.map(rangeKey))
+	if (plan.removeSourceMerges) {
+		const sourceRemove = new Set(plan.sourceMerges.map(rangeKey))
+		if (sourceSheet === targetSheet) {
+			for (const key of sourceRemove) targetRemove.add(key)
+		} else {
+			sourceSheet.merges = sourceSheet.merges.filter((merge) => !sourceRemove.has(rangeKey(merge)))
+		}
+	}
+	targetSheet.merges = targetSheet.merges.filter((merge) => !targetRemove.has(rangeKey(merge)))
+	targetSheet.merges.push(...plan.targetMerges.map(cloneRange))
+}
+
+function partialMergeTransferError(
+	operation: 'copy' | 'move',
+	source: RangeRef,
+	merge: RangeRef,
+): ReturnType<typeof ascendError> {
+	return ascendError('VALIDATION_ERROR', `Cannot ${operation} part of a merged range`, {
+		refs: [rangeToA1(source), rangeToA1(merge)],
+		suggestedFix:
+			'Select the full merged range, unmerge it first, or use a paste mode that does not transfer merged-cell layout.',
+	})
+}
+
+function partialTargetMergeError(
+	target: RangeRef,
+	merge: RangeRef,
+): ReturnType<typeof ascendError> {
+	return ascendError(
+		'VALIDATION_ERROR',
+		'Target range partially overlaps an existing merged range',
+		{
+			refs: [rangeToA1(target), rangeToA1(merge)],
+			suggestedFix:
+				'Choose a target that fully covers the existing merged range, unmerge it first, or paste without formats.',
+		},
+	)
+}
+
+function cloneRange(range: RangeRef): RangeRef {
+	return {
+		start: { ...range.start },
+		end: { ...range.end },
+	}
+}
+
+function rangeKey(range: RangeRef): string {
+	return `${range.start.row}:${range.start.col}:${range.end.row}:${range.end.col}`
+}
+
 function copyCellMap<T extends object>(
-	map: Map<string, T>,
+	sourceMap: Map<string, T>,
+	targetMap: Map<string, T>,
 	source: RangeRef,
 	rowDelta: number,
 	colDelta: number,
 	move: boolean,
 ): void {
-	const entries = [...map.entries()].filter(([ref]) => rangeContainsCell(source, parseA1(ref)))
+	const entries = [...sourceMap.entries()].filter(([ref]) =>
+		rangeContainsCell(source, parseA1(ref)),
+	)
 	for (const [ref, value] of entries) {
 		const pos = parseA1(ref)
-		map.set(toA1({ row: pos.row + rowDelta, col: pos.col + colDelta }), { ...value })
+		targetMap.set(toA1({ row: pos.row + rowDelta, col: pos.col + colDelta }), { ...value })
 	}
 	if (move) {
-		for (const [ref] of entries) map.delete(ref)
+		for (const [ref] of entries) sourceMap.delete(ref)
 	}
 }
 
 function copyDataValidations(
-	sheet: Sheet,
+	sourceSheet: Sheet,
+	targetSheet: Sheet,
 	source: RangeRef,
 	rowDelta: number,
 	colDelta: number,
@@ -283,8 +480,9 @@ function copyDataValidations(
 ): void {
 	const copied: SheetDataValidation[] = []
 	const retained: SheetDataValidation[] = []
+	const targetRange = shiftRange(source, rowDelta, colDelta)
 
-	for (const validation of sheet.dataValidations) {
+	for (const validation of sourceSheet.dataValidations) {
 		const ranges = parseSqref(validation.sqref)
 		if (ranges.length === 0) {
 			retained.push(validation)
@@ -309,15 +507,474 @@ function copyDataValidations(
 			...validation,
 			sqref: rangesToSqref(copiedRanges.map((range) => shiftRange(range, rowDelta, colDelta))),
 			...(validation.formula1
-				? { formula1: translateMetadataFormula(validation.formula1, rowDelta, colDelta) }
+				? {
+						formula1: translateTransferMetadataFormula(
+							validation.formula1,
+							sourceSheet.name,
+							targetSheet.name,
+							targetRange,
+							rowDelta,
+							colDelta,
+							move,
+						),
+					}
 				: {}),
 			...(validation.formula2
-				? { formula2: translateMetadataFormula(validation.formula2, rowDelta, colDelta) }
+				? {
+						formula2: translateTransferMetadataFormula(
+							validation.formula2,
+							sourceSheet.name,
+							targetSheet.name,
+							targetRange,
+							rowDelta,
+							colDelta,
+							move,
+						),
+					}
 				: {}),
 		})
 	}
 
-	sheet.dataValidations = [...retained, ...copied]
+	if (sourceSheet === targetSheet) {
+		sourceSheet.dataValidations = [...retained, ...copied]
+		return
+	}
+	if (move) sourceSheet.dataValidations = retained
+	targetSheet.dataValidations = [...targetSheet.dataValidations, ...copied]
+}
+
+function copyConditionalFormats(
+	sourceSheet: Sheet,
+	targetSheet: Sheet,
+	source: RangeRef,
+	rowDelta: number,
+	colDelta: number,
+	move: boolean,
+): void {
+	const copied: SheetConditionalFormat[] = []
+	const retained: SheetConditionalFormat[] = []
+	const targetRange = shiftRange(source, rowDelta, colDelta)
+
+	for (const format of sourceSheet.conditionalFormats) {
+		const ranges = parseSqref(format.sqref)
+		if (ranges.length === 0) {
+			retained.push(format)
+			continue
+		}
+
+		const copiedRanges = ranges.filter((range) => rangeContainsRange(source, range))
+		if (copiedRanges.length === 0) {
+			retained.push(format)
+			continue
+		}
+
+		if (!move) retained.push(format)
+		else {
+			const keptRanges = ranges.filter((range) => !rangeContainsRange(source, range))
+			if (keptRanges.length > 0) {
+				retained.push({ ...format, sqref: rangesToSqref(keptRanges) })
+			}
+		}
+
+		copied.push({
+			...format,
+			sqref: rangesToSqref(copiedRanges.map((range) => shiftRange(range, rowDelta, colDelta))),
+			rules: format.rules.map((rule) => ({
+				...rule,
+				formulas: rule.formulas.map((formula) =>
+					translateTransferMetadataFormula(
+						formula,
+						sourceSheet.name,
+						targetSheet.name,
+						targetRange,
+						rowDelta,
+						colDelta,
+						move,
+					),
+				),
+				...(rule.colorScale
+					? {
+							colorScale: translateConditionalFormatColorScale(
+								rule.colorScale,
+								sourceSheet.name,
+								targetSheet.name,
+								targetRange,
+								rowDelta,
+								colDelta,
+								move,
+							),
+						}
+					: {}),
+				...(rule.dataBar
+					? {
+							dataBar: translateConditionalFormatDataBar(
+								rule.dataBar,
+								sourceSheet.name,
+								targetSheet.name,
+								targetRange,
+								rowDelta,
+								colDelta,
+								move,
+							),
+						}
+					: {}),
+				...(rule.iconSet
+					? {
+							iconSet: translateConditionalFormatIconSet(
+								rule.iconSet,
+								sourceSheet.name,
+								targetSheet.name,
+								targetRange,
+								rowDelta,
+								colDelta,
+								move,
+							),
+						}
+					: {}),
+			})),
+		})
+	}
+
+	if (sourceSheet === targetSheet) {
+		sourceSheet.conditionalFormats = [...retained, ...copied]
+		return
+	}
+	if (move) sourceSheet.conditionalFormats = retained
+	targetSheet.conditionalFormats = [...targetSheet.conditionalFormats, ...copied]
+}
+
+function copyX14DataValidations(
+	sourceSheet: Sheet,
+	targetSheet: Sheet,
+	source: RangeRef,
+	rowDelta: number,
+	colDelta: number,
+	move: boolean,
+): void {
+	const copied: Sheet['x14DataValidations'] = []
+	const retained: Sheet['x14DataValidations'] = []
+	const targetRange = shiftRange(source, rowDelta, colDelta)
+	let nextIndex = nextX14Index(targetSheet.x14DataValidations)
+
+	for (const validation of sourceSheet.x14DataValidations) {
+		if (validation.deleted) {
+			retained.push(validation)
+			continue
+		}
+		const ranges = parseSqref(validation.sqref)
+		if (ranges.length === 0) {
+			retained.push(validation)
+			continue
+		}
+
+		const copiedRanges = ranges.filter((range) => rangeContainsRange(source, range))
+		if (copiedRanges.length === 0) {
+			retained.push(validation)
+			continue
+		}
+
+		const keptRanges = ranges.filter((range) => !rangeContainsRange(source, range))
+		if (!move) retained.push(validation)
+		else if (keptRanges.length > 0) {
+			retained.push({ ...validation, sqref: rangesToSqref(keptRanges) })
+		} else if (sourceSheet !== targetSheet) {
+			retained.push({ ...validation, sqref: '', deleted: true })
+		}
+
+		copied.push({
+			...validation,
+			index:
+				move && sourceSheet === targetSheet && keptRanges.length === 0
+					? validation.index
+					: nextIndex++,
+			sqref: rangesToSqref(copiedRanges.map((range) => shiftRange(range, rowDelta, colDelta))),
+			...(validation.formula1
+				? {
+						formula1: translateTransferMetadataFormula(
+							validation.formula1,
+							sourceSheet.name,
+							targetSheet.name,
+							targetRange,
+							rowDelta,
+							colDelta,
+							move,
+						),
+					}
+				: {}),
+			...(validation.formula2
+				? {
+						formula2: translateTransferMetadataFormula(
+							validation.formula2,
+							sourceSheet.name,
+							targetSheet.name,
+							targetRange,
+							rowDelta,
+							colDelta,
+							move,
+						),
+					}
+				: {}),
+		})
+	}
+
+	if (sourceSheet === targetSheet) {
+		sourceSheet.x14DataValidations = [...retained, ...copied]
+		return
+	}
+	if (move) sourceSheet.x14DataValidations = retained
+	targetSheet.x14DataValidations = [...targetSheet.x14DataValidations, ...copied]
+}
+
+function copyX14ConditionalFormats(
+	sourceSheet: Sheet,
+	targetSheet: Sheet,
+	source: RangeRef,
+	rowDelta: number,
+	colDelta: number,
+	move: boolean,
+): void {
+	const copied: Sheet['x14ConditionalFormats'] = []
+	const retained: Sheet['x14ConditionalFormats'] = []
+	const targetRange = shiftRange(source, rowDelta, colDelta)
+	let nextIndex = nextX14Index(targetSheet.x14ConditionalFormats)
+
+	for (const format of sourceSheet.x14ConditionalFormats) {
+		if (format.deleted) {
+			retained.push(format)
+			continue
+		}
+		const ranges = parseSqref(format.sqref)
+		if (ranges.length === 0) {
+			retained.push(format)
+			continue
+		}
+
+		const copiedRanges = ranges.filter((range) => rangeContainsRange(source, range))
+		if (copiedRanges.length === 0) {
+			retained.push(format)
+			continue
+		}
+
+		const keptRanges = ranges.filter((range) => !rangeContainsRange(source, range))
+		if (!move) retained.push(format)
+		else if (keptRanges.length > 0) {
+			retained.push({ ...format, sqref: rangesToSqref(keptRanges) })
+		} else if (sourceSheet !== targetSheet) {
+			retained.push({ ...format, sqref: '', deleted: true })
+		}
+
+		copied.push({
+			...format,
+			index:
+				move && sourceSheet === targetSheet && keptRanges.length === 0 ? format.index : nextIndex++,
+			sqref: rangesToSqref(copiedRanges.map((range) => shiftRange(range, rowDelta, colDelta))),
+			formulas: format.formulas.map((formula) =>
+				translateTransferMetadataFormula(
+					formula,
+					sourceSheet.name,
+					targetSheet.name,
+					targetRange,
+					rowDelta,
+					colDelta,
+					move,
+				),
+			),
+			...(format.dataBar
+				? {
+						dataBar: translateX14ConditionalFormatDataBar(
+							format.dataBar,
+							sourceSheet.name,
+							targetSheet.name,
+							targetRange,
+							rowDelta,
+							colDelta,
+							move,
+						),
+					}
+				: {}),
+			...(format.iconSet
+				? {
+						iconSet: translateX14ConditionalFormatIconSet(
+							format.iconSet,
+							sourceSheet.name,
+							targetSheet.name,
+							targetRange,
+							rowDelta,
+							colDelta,
+							move,
+						),
+					}
+				: {}),
+		})
+	}
+
+	if (sourceSheet === targetSheet) {
+		sourceSheet.x14ConditionalFormats = [...retained, ...copied]
+		return
+	}
+	if (move) sourceSheet.x14ConditionalFormats = retained
+	targetSheet.x14ConditionalFormats = [...targetSheet.x14ConditionalFormats, ...copied]
+}
+
+function nextX14Index(entries: readonly { readonly index: number }[]): number {
+	return entries.reduce((max, entry) => Math.max(max, entry.index + 1), 0)
+}
+
+function translateConditionalFormatColorScale(
+	colorScale: NonNullable<SheetConditionalFormat['rules'][number]['colorScale']>,
+	sourceSheetName: string,
+	targetSheetName: string,
+	targetRange: RangeRef,
+	rowDelta: number,
+	colDelta: number,
+	move: boolean,
+): NonNullable<SheetConditionalFormat['rules'][number]['colorScale']> {
+	return {
+		cfvo: colorScale.cfvo.map((entry) =>
+			translateConditionalFormatValueObject(
+				entry,
+				sourceSheetName,
+				targetSheetName,
+				targetRange,
+				rowDelta,
+				colDelta,
+				move,
+			),
+		),
+		colors: colorScale.colors.map((color) => ({ ...color })),
+	}
+}
+
+function translateConditionalFormatDataBar(
+	dataBar: NonNullable<SheetConditionalFormat['rules'][number]['dataBar']>,
+	sourceSheetName: string,
+	targetSheetName: string,
+	targetRange: RangeRef,
+	rowDelta: number,
+	colDelta: number,
+	move: boolean,
+): NonNullable<SheetConditionalFormat['rules'][number]['dataBar']> {
+	return {
+		...dataBar,
+		cfvo: dataBar.cfvo.map((entry) =>
+			translateConditionalFormatValueObject(
+				entry,
+				sourceSheetName,
+				targetSheetName,
+				targetRange,
+				rowDelta,
+				colDelta,
+				move,
+			),
+		),
+		...(dataBar.color ? { color: { ...dataBar.color } } : {}),
+	}
+}
+
+function translateConditionalFormatIconSet(
+	iconSet: NonNullable<SheetConditionalFormat['rules'][number]['iconSet']>,
+	sourceSheetName: string,
+	targetSheetName: string,
+	targetRange: RangeRef,
+	rowDelta: number,
+	colDelta: number,
+	move: boolean,
+): NonNullable<SheetConditionalFormat['rules'][number]['iconSet']> {
+	return {
+		...iconSet,
+		cfvo: iconSet.cfvo.map((entry) =>
+			translateConditionalFormatValueObject(
+				entry,
+				sourceSheetName,
+				targetSheetName,
+				targetRange,
+				rowDelta,
+				colDelta,
+				move,
+			),
+		),
+	}
+}
+
+function translateX14ConditionalFormatDataBar(
+	dataBar: NonNullable<Sheet['x14ConditionalFormats'][number]['dataBar']>,
+	sourceSheetName: string,
+	targetSheetName: string,
+	targetRange: RangeRef,
+	rowDelta: number,
+	colDelta: number,
+	move: boolean,
+): NonNullable<Sheet['x14ConditionalFormats'][number]['dataBar']> {
+	return {
+		...dataBar,
+		cfvo: dataBar.cfvo.map((entry) =>
+			translateConditionalFormatValueObject(
+				entry,
+				sourceSheetName,
+				targetSheetName,
+				targetRange,
+				rowDelta,
+				colDelta,
+				move,
+			),
+		),
+		...(dataBar.borderColor ? { borderColor: { ...dataBar.borderColor } } : {}),
+		...(dataBar.negativeFillColor ? { negativeFillColor: { ...dataBar.negativeFillColor } } : {}),
+		...(dataBar.negativeBorderColor
+			? { negativeBorderColor: { ...dataBar.negativeBorderColor } }
+			: {}),
+		...(dataBar.axisColor ? { axisColor: { ...dataBar.axisColor } } : {}),
+	}
+}
+
+function translateX14ConditionalFormatIconSet(
+	iconSet: NonNullable<Sheet['x14ConditionalFormats'][number]['iconSet']>,
+	sourceSheetName: string,
+	targetSheetName: string,
+	targetRange: RangeRef,
+	rowDelta: number,
+	colDelta: number,
+	move: boolean,
+): NonNullable<Sheet['x14ConditionalFormats'][number]['iconSet']> {
+	return {
+		...iconSet,
+		cfvo: iconSet.cfvo.map((entry) =>
+			translateConditionalFormatValueObject(
+				entry,
+				sourceSheetName,
+				targetSheetName,
+				targetRange,
+				rowDelta,
+				colDelta,
+				move,
+			),
+		),
+		...(iconSet.icons ? { icons: iconSet.icons.map((icon) => ({ ...icon })) } : {}),
+	}
+}
+
+function translateConditionalFormatValueObject(
+	entry: SheetConditionalFormatValueObject,
+	sourceSheetName: string,
+	targetSheetName: string,
+	targetRange: RangeRef,
+	rowDelta: number,
+	colDelta: number,
+	move: boolean,
+): SheetConditionalFormatValueObject {
+	if (entry.type !== 'formula' || entry.value === undefined) return { ...entry }
+	return {
+		...entry,
+		value: translateTransferMetadataFormula(
+			entry.value,
+			sourceSheetName,
+			targetSheetName,
+			targetRange,
+			rowDelta,
+			colDelta,
+			move,
+		),
+	}
 }
 
 function parseSqref(sqref: string): RangeRef[] {
@@ -346,6 +1003,15 @@ function rangeContainsRange(outer: RangeRef, inner: RangeRef): boolean {
 	return rangeContainsCell(outer, inner.start) && rangeContainsCell(outer, inner.end)
 }
 
+function rangesOverlap(a: RangeRef, b: RangeRef): boolean {
+	return !(
+		a.end.row < b.start.row ||
+		a.start.row > b.end.row ||
+		a.end.col < b.start.col ||
+		a.start.col > b.end.col
+	)
+}
+
 function shiftRange(range: RangeRef, rowDelta: number, colDelta: number): RangeRef {
 	return {
 		start: { row: range.start.row + rowDelta, col: range.start.col + colDelta },
@@ -368,6 +1034,27 @@ function translateMetadataFormula(formula: string, rowDelta: number, colDelta: n
 	return parsed.ok ? translateFormula(parsed.value, rowDelta, colDelta) : formula
 }
 
+function translateTransferMetadataFormula(
+	formula: string,
+	sourceSheetName: string,
+	targetSheetName: string,
+	targetRange: RangeRef,
+	rowDelta: number,
+	colDelta: number,
+	move: boolean,
+): string {
+	const translated = translateMetadataFormula(formula, rowDelta, colDelta)
+	if (!move || sourceSheetName === targetSheetName) return translated
+	return (
+		retargetExplicitFormulaSheetRefsInRange(
+			translated,
+			sourceSheetName,
+			targetSheetName,
+			targetRange,
+		) ?? translated
+	)
+}
+
 export function handleMergeCells(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'mergeCells' }>,
@@ -378,7 +1065,18 @@ export function handleMergeCells(
 	const rangeResult = safeParseRange(op.range)
 	if (!rangeResult.ok) return rangeResult
 
-	sheetResult.value.merges.push(rangeResult.value)
+	const sheet = sheetResult.value
+	const overlapping = sheet.merges.find((merge) => rangesOverlap(merge, rangeResult.value))
+	if (overlapping) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'Merged ranges cannot overlap', {
+				refs: [op.range, rangeToA1(overlapping)],
+				suggestedFix: 'Unmerge the existing range first or choose a non-overlapping range.',
+			}),
+		)
+	}
+
+	sheet.merges.push(rangeResult.value)
 	return ok(patch([], [op.sheet]))
 }
 

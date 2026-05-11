@@ -10,6 +10,7 @@ import {
 	numberValue,
 	stringValue,
 } from '@ascend/schema'
+import { functionRegistry } from './index.ts'
 
 const S0 = 0 as StyleId
 
@@ -4774,6 +4775,44 @@ describe('formula functions', () => {
 	})
 
 	describe('info functions - SHEET/SHEETS', () => {
+		test('registry implementations use reference metadata when provided', () => {
+			const sheetFn = functionRegistry.get('SHEET')
+			const sheetsFn = functionRegistry.get('SHEETS')
+			expect(sheetFn).toBeDefined()
+			expect(sheetsFn).toBeDefined()
+			if (!sheetFn || !sheetsFn) return
+			const ref = { kind: 'cell' as const, sheetIndex: 1, row: 0, col: 0 }
+			expect(sheetFn.evaluate([{ value: numberValue(10), ref }])).toEqual(numberValue(2))
+			expect(
+				sheetFn.evaluate([], {
+					now: new Date('2025-01-01T00:00:00Z'),
+					today: new Date('2025-01-01T00:00:00Z'),
+					randomSeed: 1,
+					locale: 'en-US',
+					dateSystem: '1900',
+					sheetIndex: 2,
+					row: 0,
+					col: 0,
+					exactLookupCache: undefined,
+					lookupVectorCache: undefined,
+					aggregateRangeCache: undefined,
+					numericVectorCache: undefined,
+				}),
+			).toEqual(numberValue(3))
+			expect(
+				sheetsFn.evaluate([
+					{
+						value: numberValue(10),
+						areas: [
+							{ ref: { kind: 'cell', sheetIndex: 0, row: 0, col: 0 }, values: [[numberValue(1)]] },
+							{ ref: { kind: 'cell', sheetIndex: 2, row: 0, col: 0 }, values: [[numberValue(2)]] },
+							{ ref: { kind: 'cell', sheetIndex: 2, row: 1, col: 0 }, values: [[numberValue(3)]] },
+						],
+					},
+				]),
+			).toEqual(numberValue(2))
+		})
+
 		test('SHEETS() returns sheet count', () => {
 			const wb = makeWorkbook()
 			wb.addSheet('Sheet2')
@@ -4817,6 +4856,47 @@ describe('formula functions', () => {
 	})
 
 	describe('info functions - CELL', () => {
+		test('registry implementation returns common CELL metadata', () => {
+			const cell = functionRegistry.get('CELL')
+			expect(cell).toBeDefined()
+			if (!cell) return
+			const ref = { kind: 'cell' as const, sheetIndex: 0, row: 2, col: 1 }
+			expect(
+				cell.evaluate([{ value: stringValue('address') }, { value: numberValue(99), ref }]),
+			).toEqual(stringValue('$B$3'))
+			expect(
+				cell.evaluate([{ value: stringValue('row') }, { value: numberValue(99), ref }]),
+			).toEqual(numberValue(3))
+			expect(
+				cell.evaluate([{ value: stringValue('col') }, { value: numberValue(99), ref }]),
+			).toEqual(numberValue(2))
+			expect(
+				cell.evaluate([{ value: stringValue('contents') }, { value: stringValue('hello'), ref }]),
+			).toEqual(stringValue('hello'))
+			expect(
+				cell.evaluate([{ value: stringValue('type') }, { value: stringValue('hello'), ref }]),
+			).toEqual(stringValue('l'))
+			expect(cell.evaluate([{ value: stringValue('type') }, { value: EMPTY, ref }])).toEqual(
+				stringValue('b'),
+			)
+			expect(
+				cell.evaluate([{ value: stringValue('address') }], {
+					now: new Date('2025-01-01T00:00:00Z'),
+					today: new Date('2025-01-01T00:00:00Z'),
+					randomSeed: 1,
+					locale: 'en-US',
+					dateSystem: '1900',
+					sheetIndex: 0,
+					row: 10,
+					col: 0,
+					exactLookupCache: undefined,
+					lookupVectorCache: undefined,
+					aggregateRangeCache: undefined,
+					numericVectorCache: undefined,
+				}),
+			).toEqual(stringValue('$A$11'))
+		})
+
 		test('CELL("address", B3) returns absolute address', () => {
 			const wb = makeWorkbook()
 			setNum(wb, 2, 1, 99)
@@ -4868,7 +4948,58 @@ describe('formula functions', () => {
 		})
 	})
 
+	describe('FORMULATEXT', () => {
+		test('registry implementation returns formula metadata when provided', () => {
+			const formulaText = functionRegistry.get('FORMULATEXT')
+			expect(formulaText).toBeDefined()
+			if (!formulaText) return
+			expect(
+				formulaText.evaluate([
+					{
+						value: numberValue(2),
+						ref: { kind: 'cell', sheetIndex: 0, row: 0, col: 0 },
+						formulaAtOffset: () => '1+1',
+					},
+				]),
+			).toEqual(stringValue('=1+1'))
+			expect(
+				formulaText.evaluate([
+					{
+						value: numberValue(2),
+						ref: { kind: 'cell', sheetIndex: 0, row: 0, col: 0 },
+						formulaAtOffset: () => null,
+					},
+				]),
+			).toEqual(errorValue('#N/A'))
+			expect(formulaText.evaluate([{ value: errorValue('#REF!') }])).toEqual(errorValue('#REF!'))
+		})
+	})
+
 	describe('ISFORMULA', () => {
+		test('registry implementation uses formula metadata when provided', () => {
+			const isformula = functionRegistry.get('ISFORMULA')
+			expect(isformula).toBeDefined()
+			if (!isformula) return
+			expect(
+				isformula.evaluate([
+					{
+						value: numberValue(2),
+						ref: { kind: 'cell', sheetIndex: 0, row: 0, col: 0 },
+						formulaAtOffset: () => '1+1',
+					},
+				]),
+			).toEqual(booleanValue(true))
+			expect(
+				isformula.evaluate([
+					{
+						value: numberValue(2),
+						ref: { kind: 'cell', sheetIndex: 0, row: 0, col: 0 },
+						formulaAtOffset: () => null,
+					},
+				]),
+			).toEqual(booleanValue(false))
+		})
+
 		test('ISFORMULA returns TRUE for formula cells', () => {
 			const wb = makeWorkbook()
 			setFormula(wb, 0, 0, '1+1')

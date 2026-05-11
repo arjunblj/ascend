@@ -98,6 +98,18 @@ function scalarToNumber(v: CellValue): number | null {
 	}
 }
 
+function scalarToRankedNumber(v: CellValue): number | null {
+	const s = topLeftScalar(v)
+	switch (s.kind) {
+		case 'number':
+			return s.value
+		case 'date':
+			return s.serial
+		default:
+			return null
+	}
+}
+
 function scalarToString(v: CellValue): string {
 	const s = topLeftScalar(v)
 	switch (s.kind) {
@@ -126,10 +138,54 @@ function duplicateUniqueValue(v: CellValue): DuplicateUniqueValue {
 	}
 }
 
-function parseNumericFormula(formula: string): number | null {
-	const s = formula.trim()
-	const n = Number.parseFloat(s)
-	return Number.isFinite(n) ? n : null
+function compareText(a: string, b: string): number {
+	return a.toLowerCase().localeCompare(b.toLowerCase())
+}
+
+function compareCellIsScalars(
+	cellValue: CellValue,
+	operator: string | undefined,
+	v1: CellValue | null,
+	v2: CellValue | null,
+): boolean {
+	if (isEmpty(topLeftScalar(cellValue))) return false
+
+	const cellNum = scalarToNumber(cellValue)
+	const v1Num = v1 ? scalarToNumber(v1) : null
+	const v2Num = v2 ? scalarToNumber(v2) : null
+	if (cellNum !== null && (v1Num !== null || v2Num !== null)) {
+		return compareCellIs(cellNum, operator, v1Num, v2Num)
+	}
+
+	if (!v1) return false
+	const cellText = scalarToString(cellValue)
+	const v1Text = scalarToString(v1)
+	const v2Text = v2 ? scalarToString(v2) : v1Text
+	const cmp1 = compareText(cellText, v1Text)
+	const cmp2 = compareText(cellText, v2Text)
+	const minCmp = compareText(v1Text, v2Text) <= 0 ? cmp1 : cmp2
+	const maxCmp = compareText(v1Text, v2Text) <= 0 ? cmp2 : cmp1
+
+	switch (operator) {
+		case 'equal':
+			return cmp1 === 0
+		case 'notEqual':
+			return cmp1 !== 0
+		case 'greaterThan':
+			return cmp1 > 0
+		case 'lessThan':
+			return cmp1 < 0
+		case 'greaterThanOrEqual':
+			return cmp1 >= 0
+		case 'lessThanOrEqual':
+			return cmp1 <= 0
+		case 'between':
+			return minCmp >= 0 && maxCmp <= 0
+		case 'notBetween':
+			return minCmp < 0 || maxCmp > 0
+		default:
+			return minCmp >= 0 && maxCmp <= 0
+	}
 }
 
 function compareCellIs(
@@ -180,7 +236,7 @@ function textRulePattern(
 	return unquoteFormula(formula)
 }
 
-function evaluateFormulaNumber(
+function evaluateFormulaValue(
 	workbook: Workbook,
 	sheetIndex: number,
 	anchorRow: number,
@@ -188,20 +244,9 @@ function evaluateFormulaNumber(
 	row: number,
 	col: number,
 	formula: string | undefined,
-): number | null {
+): CellValue | null {
 	if (!formula) return null
-	const direct = parseNumericFormula(formula)
-	if (direct !== null) return direct
-	const value = evaluateRelativeFormulaText(
-		formula,
-		workbook,
-		sheetIndex,
-		anchorRow,
-		anchorCol,
-		row,
-		col,
-	)
-	return scalarToNumber(value)
+	return evaluateRelativeFormulaText(formula, workbook, sheetIndex, anchorRow, anchorCol, row, col)
 }
 
 function evaluateFormulaBoolean(
@@ -265,7 +310,7 @@ function buildRangeContext(sheet: Sheet, parts: readonly ParsedSqrefPart[]): Ran
 					values.push(comparable)
 					valueCounts.set(comparable.key, (valueCounts.get(comparable.key) ?? 0) + 1)
 				}
-				const n = scalarToNumber(value)
+				const n = scalarToRankedNumber(value)
 				if (n !== null) allNumerics.push(n)
 			},
 		)
@@ -403,12 +448,11 @@ function ruleMatches(
 	}
 
 	if (type === 'cellIs') {
-		const cellNum = scalarToNumber(cellValue)
-		return compareCellIs(
-			cellNum,
+		return compareCellIsScalars(
+			cellValue,
 			operator,
-			evaluateFormulaNumber(workbook, sheetIndex, anchorRow, anchorCol, row, col, formula1),
-			evaluateFormulaNumber(workbook, sheetIndex, anchorRow, anchorCol, row, col, formula2),
+			evaluateFormulaValue(workbook, sheetIndex, anchorRow, anchorCol, row, col, formula1),
+			evaluateFormulaValue(workbook, sheetIndex, anchorRow, anchorCol, row, col, formula2),
 		)
 	}
 
@@ -509,7 +553,7 @@ function ruleMatches(
 
 	if (type === 'top10') {
 		if (!rangeContext) return false
-		const cellNum = scalarToNumber(cellValue)
+		const cellNum = scalarToRankedNumber(cellValue)
 		if (cellNum === null) return false
 		const sortedNumerics = rangeContext.sortedNumerics
 		const total = sortedNumerics.length
@@ -528,7 +572,7 @@ function ruleMatches(
 
 	if (type === 'aboveAverage') {
 		if (!rangeContext || rangeContext.numericMean === null) return false
-		const cellNum = scalarToNumber(cellValue)
+		const cellNum = scalarToRankedNumber(cellValue)
 		if (cellNum === null) return false
 		const above = rule.aboveAverage !== false
 		const usesStdDev = rule.stdDev !== undefined && rangeContext.numericStdDev !== null

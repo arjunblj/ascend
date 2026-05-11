@@ -50,6 +50,49 @@ describe('pivot output audits', () => {
 		])
 	})
 
+	test('audits real LibreOffice multi-select page filters instead of overclaiming unsupported', async () => {
+		const wb = await AscendWorkbook.open(loadLibreOfficeFixture('tdf89139_pivot_table.xlsx'))
+
+		expect(wb.pivotOutputAudits()).toEqual([
+			expect.objectContaining({
+				pivotTable: 'PivotTable1',
+				status: 'mismatch',
+				checkedValueCount: 2,
+				warnings: [],
+			}),
+		])
+	})
+
+	test('audits real Calamine average subtotals after multi-select page filters', async () => {
+		const wb = await AscendWorkbook.open(loadCalamineFixture('pivots.xlsx'))
+
+		expect(wb.pivotOutputAudits()).toContainEqual(
+			expect.objectContaining({
+				pivotTable: 'PivotTable1',
+				sheetName: 'PivotSheet1',
+				status: 'passed',
+				checkedValueCount: 8,
+				mismatches: [],
+				warnings: [],
+			}),
+		)
+	})
+
+	test('audits real Calamine grouped count subtotals against base cache values', async () => {
+		const wb = await AscendWorkbook.open(loadCalamineFixture('pivots.xlsx'))
+
+		expect(wb.pivotOutputAudits()).toContainEqual(
+			expect.objectContaining({
+				pivotTable: 'PivotTable1',
+				sheetName: 'PivotSheet3',
+				status: 'passed',
+				checkedValueCount: 4,
+				mismatches: [],
+				warnings: [],
+			}),
+		)
+	})
+
 	test('exposes audits through read-only document and session APIs', async () => {
 		const bytes = loadLibreOfficeFixture('pivot-table/test_diff_aggregation.xlsx')
 		const document = await WorkbookDocument.open(bytes)
@@ -77,6 +120,23 @@ describe('pivot output audits', () => {
 
 	test('audits simple saved pivot outputs with page filters and hidden grand totals', () => {
 		const wb = workbookWithFilteredPivot()
+
+		expect(wb.pivotOutputAudits()).toEqual([
+			{
+				pivotTable: 'FilteredPivot',
+				partPath: 'xl/pivotTables/pivotTable1.xml',
+				sheetName: 'Sheet1',
+				cacheId: 7,
+				status: 'passed',
+				checkedValueCount: 2,
+				mismatches: [],
+				warnings: [],
+			},
+		])
+	})
+
+	test('audits simple saved pivot outputs with multi-select page filters', () => {
+		const wb = workbookWithFilteredPivot({ includeHiddenPageItem: true })
 
 		expect(wb.pivotOutputAudits()).toEqual([
 			{
@@ -131,6 +191,10 @@ function loadLibreOfficeFixture(file: string): Uint8Array {
 	return readFileSync(new URL(`../../../fixtures/xlsx/libreoffice/${file}`, import.meta.url))
 }
 
+function loadCalamineFixture(file: string): Uint8Array {
+	return readFileSync(new URL(`../../../fixtures/xlsx/calamine/${file}`, import.meta.url))
+}
+
 function workbookWithoutMaterializedPivot(): AscendWorkbook {
 	const wb = AscendWorkbook.create()
 	const internal = wb as unknown as {
@@ -162,7 +226,9 @@ function workbookWithoutMaterializedPivot(): AscendWorkbook {
 	return wb
 }
 
-function workbookWithFilteredPivot(): AscendWorkbook {
+function workbookWithFilteredPivot(
+	options: { includeHiddenPageItem?: boolean } = {},
+): AscendWorkbook {
 	const wb = AscendWorkbook.create()
 	const internal = wb as unknown as {
 		wb: {
@@ -250,11 +316,20 @@ function workbookWithFilteredPivot(): AscendWorkbook {
 		fields: [
 			{ index: 0, axis: 'axisRow' },
 			{ index: 1, dataField: true },
-			{ index: 2, axis: 'axisPage', items: [{ index: 0, cacheIndex: 1 }] },
+			{
+				index: 2,
+				axis: 'axisPage',
+				items: options.includeHiddenPageItem
+					? [
+							{ index: 0, cacheIndex: 0, hidden: true },
+							{ index: 1, cacheIndex: 1 },
+						]
+					: [{ index: 0, cacheIndex: 1 }],
+			},
 		],
 		rowFields: [{ index: 0 }],
 		columnFields: [],
-		pageFields: [{ index: 2, item: 0 }],
+		pageFields: [{ index: 2, ...(options.includeHiddenPageItem ? {} : { item: 0 }) }],
 		dataFields: [{ fieldIndex: 1, name: 'Sum of Sales' }],
 	})
 	return wb

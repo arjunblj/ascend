@@ -10,7 +10,7 @@ import { ChunkedStringBuilder } from './chunked-string-builder.ts'
 import { buildColorScaleXml, buildDataBarXml, buildIconSetXml } from './conditional-format.ts'
 import { pushAutoFilterXml, pushSortStateXml } from './filtering.ts'
 import type { SharedStringTable } from './shared-strings.ts'
-import { updateWorksheetExtLstXml } from './sparkline.ts'
+import { buildWorksheetExtLstXml, updateWorksheetExtLstXml } from './sparkline.ts'
 
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
@@ -589,6 +589,12 @@ function buildSheetXmlToSink(
 				x14DataValidations: sheet.x14DataValidations,
 			}),
 		)
+	} else {
+		const extLst = buildWorksheetExtLstXml({
+			x14ConditionalFormats: sheet.x14ConditionalFormats,
+			x14DataValidations: sheet.x14DataValidations,
+		})
+		if (extLst) out.push(extLst)
 	}
 
 	out.push('</worksheet>')

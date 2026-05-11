@@ -1641,6 +1641,11 @@ function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | nu
 				},
 				valueAtOffset: (rowOffset, colOffset) =>
 					getCellValue(ctx.workbook, si, node.ref.row + rowOffset, node.ref.col + colOffset),
+				formulaAtOffset: (rowOffset, colOffset) =>
+					ctx.workbook.sheets[si]?.cells.readFormula(
+						node.ref.row + rowOffset,
+						node.ref.col + colOffset,
+					),
 			}
 		}
 		case 'rangeRef': {
@@ -3169,9 +3174,7 @@ function evalIsFormula(argNodes: readonly FormulaNode[], ctx: EvalContext): Cell
 		if (arg.value.kind === 'error') return arg.value
 		return booleanValue(false)
 	}
-	const sheet = ctx.workbook.sheets[arg.ref.sheetIndex]
-	if (!sheet) return booleanValue(false)
-	return booleanValue(sheet.cells.readFormula(arg.ref.row, arg.ref.col) != null)
+	return booleanValue(arg.formulaAtOffset?.(0, 0) != null)
 }
 
 function evalSheet(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {

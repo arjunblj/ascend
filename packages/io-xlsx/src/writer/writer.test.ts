@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import type { StyleId } from '@ascend/core'
 import { createTableId, Workbook } from '@ascend/core'
 import { booleanValue, errorValue, numberValue, stringValue } from '@ascend/schema'
@@ -15,6 +15,14 @@ import { planWriteXlsx, writeXlsx, writeXlsxStreaming } from './index.ts'
 import { updatePivotTableDefinitionXml } from './pivot-table.ts'
 
 const S0 = 0 as StyleId
+const DASHBOARD_CORPUS_FIXTURE = new URL(
+	'../../../../research/excel-corpus/excel-dashboard-v2.xlsx',
+	import.meta.url,
+)
+const POI_COMMENTS_FIXTURE = new URL(
+	'../../../../fixtures/xlsx/poi/SimpleWithComments.xlsx',
+	import.meta.url,
+)
 
 function expectOk<T, E>(
 	result: { ok: true; value: T } | { ok: false; error: E },
@@ -573,58 +581,58 @@ describe('writeXlsx', () => {
 		)
 	})
 
-	it('writes real dashboard slicer edits and refresh flags into linked pivot cache XML', () => {
-		const source = readXlsx(
-			readFileSync(
-				new URL('../../../../research/excel-corpus/excel-dashboard-v2.xlsx', import.meta.url),
-			),
-		)
-		expectOk(source)
-		const applied = applyOperations(source.value.workbook, [
-			{
-				op: 'setSlicerCacheItem',
+	it.skipIf(!existsSync(DASHBOARD_CORPUS_FIXTURE))(
+		'writes real dashboard slicer edits and refresh flags into linked pivot cache XML',
+		() => {
+			const source = readXlsx(readFileSync(DASHBOARD_CORPUS_FIXTURE))
+			expectOk(source)
+			const applied = applyOperations(source.value.workbook, [
+				{
+					op: 'setSlicerCacheItem',
+					slicerCache: 'Slicer_Product_Category',
+					item: 2,
+					selected: false,
+					noData: true,
+				},
+			])
+			expectOk(applied)
+			expect(applied.value.warnings?.[0]?.details).toMatchObject({
 				slicerCache: 'Slicer_Product_Category',
-				item: 2,
-				selected: false,
-				noData: true,
-			},
-		])
-		expectOk(applied)
-		expect(applied.value.warnings?.[0]?.details).toMatchObject({
-			slicerCache: 'Slicer_Product_Category',
-			cacheIds: [34],
-			cachePartPaths: ['xl/pivotCache/pivotCacheDefinition1.xml'],
-		})
+				cacheIds: [34],
+				cachePartPaths: ['xl/pivotCache/pivotCacheDefinition1.xml'],
+			})
 
-		const written = writeXlsx(source.value.workbook, source.value.capsules, {
-			dirtySheetNames: applied.value.sheetsModified,
-		})
-		expectOk(written)
-		const zip = unzipSync(written.value)
-		const slicerXml = new TextDecoder().decode(
-			zip['xl/slicerCaches/slicerCache1.xml'] ?? new Uint8Array(),
-		)
-		const cacheXml = new TextDecoder().decode(
-			zip['xl/pivotCache/pivotCacheDefinition1.xml'] ?? new Uint8Array(),
-		)
+			const written = writeXlsx(source.value.workbook, source.value.capsules, {
+				dirtySheetNames: applied.value.sheetsModified,
+			})
+			expectOk(written)
+			const zip = unzipSync(written.value)
+			const slicerXml = new TextDecoder().decode(
+				zip['xl/slicerCaches/slicerCache1.xml'] ?? new Uint8Array(),
+			)
+			const cacheXml = new TextDecoder().decode(
+				zip['xl/pivotCache/pivotCacheDefinition1.xml'] ?? new Uint8Array(),
+			)
 
-		expect(slicerXml).toContain('<i x="2" s="0" nd="1"/>')
-		expect(cacheXml).toContain('refreshOnLoad="1"')
-		expect(cacheXml).toContain('invalid="1"')
-		const reopened = readXlsx(written.value)
-		expectOk(reopened)
-		expect(
-			reopened.value.workbook.slicerCaches
-				.find((cache) => cache.name === 'Slicer_Product_Category')
-				?.items?.find((item) => item.index === 2),
-		).toEqual({ index: 2, selected: false, noData: true })
-		expect(reopened.value.workbook.pivotCaches.find((cache) => cache.cacheId === 34)).toMatchObject(
-			{
+			expect(slicerXml).toContain('<i x="2" s="0" nd="1"/>')
+			expect(cacheXml).toContain('refreshOnLoad="1"')
+			expect(cacheXml).toContain('invalid="1"')
+			const reopened = readXlsx(written.value)
+			expectOk(reopened)
+			expect(
+				reopened.value.workbook.slicerCaches
+					.find((cache) => cache.name === 'Slicer_Product_Category')
+					?.items?.find((item) => item.index === 2),
+			).toEqual({ index: 2, selected: false, noData: true })
+			expect(
+				reopened.value.workbook.pivotCaches.find((cache) => cache.cacheId === 34),
+			).toMatchObject({
 				refreshOnLoad: true,
 				invalid: true,
-			},
-		)
-	}, 20_000)
+			})
+		},
+		20_000,
+	)
 
 	it('preserves unchanged pivot and slicer capsules byte-for-byte', () => {
 		const pivotTableXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -1724,9 +1732,21 @@ describe('writeXlsx', () => {
   <dcterms:created xsi:type="dcterms:W3CDTF">2024-01-02T03:04:05Z</dcterms:created>
 </cp:coreProperties>`
 		const appXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties">
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"
+  xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
   <Application>Excel</Application>
   <Company>Acme Analytics</Company>
+  <HeadingPairs>
+    <vt:vector size="2" baseType="variant">
+      <vt:variant><vt:lpstr>Worksheets</vt:lpstr></vt:variant>
+      <vt:variant><vt:i4>1</vt:i4></vt:variant>
+    </vt:vector>
+  </HeadingPairs>
+  <TitlesOfParts>
+    <vt:vector size="1" baseType="lpstr">
+      <vt:lpstr>Data</vt:lpstr>
+    </vt:vector>
+  </TitlesOfParts>
 </Properties>`
 		const customXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties"
@@ -1773,6 +1793,28 @@ describe('writeXlsx', () => {
 
 		const source = readXlsx(sourceBytes)
 		expectOk(source)
+		expect(source.value.workbook.documentProperties).toEqual({
+			core: {
+				creator: 'Original Author',
+				lastModifiedBy: 'Reviewer',
+				created: '2024-01-02T03:04:05Z',
+			},
+			app: {
+				Application: 'Excel',
+				Company: 'Acme Analytics',
+				HeadingPairs: ['Worksheets', 1],
+				TitlesOfParts: ['Data'],
+			},
+			custom: [
+				{
+					name: 'Desk',
+					value: 'Research',
+					type: 'lpwstr',
+					pid: 2,
+					fmtid: '{D5CDD505-2E9C-101B-9397-08002B2CF9AE}',
+				},
+			],
+		})
 		expect(source.value.capsules.map((capsule) => capsule.partPath).sort()).toContain(
 			'docProps/custom.xml',
 		)
@@ -1790,6 +1832,108 @@ describe('writeXlsx', () => {
 		)
 		expect(decode('_rels/.rels')).toContain('Target="docProps/custom.xml"')
 		expect(decode('xl/_rels/workbook.xml.rels')).not.toContain('docProps/custom.xml')
+	})
+
+	it('writes edited package document properties without preserving stale docProps XML', () => {
+		const sourceBytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+  <Override PartName="/docProps/custom.xml" ContentType="application/vnd.openxmlformats-officedocument.custom-properties+xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+  <Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties" Target="docProps/custom.xml"/>
+</Relationships>`,
+			'docProps/core.xml':
+				'<cp:coreProperties xmlns:cp="old"><dc:title>Old</dc:title></cp:coreProperties>',
+			'docProps/app.xml': '<Properties><Application>Old</Application></Properties>',
+			'docProps/custom.xml':
+				'<Properties><property name="Old"><vt:lpwstr>stale</vt:lpwstr></property></Properties>',
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+		})
+		const source = readXlsx(sourceBytes)
+		expectOk(source)
+		source.value.workbook.documentProperties = {
+			core: { title: 'Board Pack', creator: 'Finance' },
+			app: { Application: 'Ascend', Company: 'Ascend Fixtures' },
+			custom: [{ name: 'Reviewed', value: true, type: 'bool' }],
+		}
+
+		const written = writeXlsx(source.value.workbook, source.value.capsules, {
+			workbookMetaDirty: true,
+			documentPropertiesDirty: true,
+		})
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		const decode = (path: string) => new TextDecoder().decode(zip[path] ?? new Uint8Array())
+
+		expect(decode('docProps/core.xml')).toContain('<dc:title>Board Pack</dc:title>')
+		expect(decode('docProps/core.xml')).toContain('<dc:creator>Finance</dc:creator>')
+		expect(decode('docProps/app.xml')).toContain('<Application>Ascend</Application>')
+		expect(decode('docProps/custom.xml')).toContain('name="Reviewed"')
+		expect(decode('docProps/custom.xml')).toContain('<vt:bool>true</vt:bool>')
+		expect(decode('docProps/custom.xml')).not.toContain('stale')
+		expect(decode('_rels/.rels')).toContain(
+			'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties"',
+		)
+
+		source.value.workbook.documentProperties = {
+			core: { title: 'Board Pack' },
+			app: {
+				Application: 'Ascend',
+				HeadingPairs: ['Worksheets', 1],
+				TitlesOfParts: ['Data'],
+			},
+		}
+		const withVectors = writeXlsx(source.value.workbook, source.value.capsules, {
+			workbookMetaDirty: true,
+			documentPropertiesDirty: true,
+		})
+		expectOk(withVectors)
+		const zipWithVectors = unzipSync(withVectors.value)
+		const appWithVectors = new TextDecoder().decode(
+			zipWithVectors['docProps/app.xml'] ?? new Uint8Array(),
+		)
+		expect(appWithVectors).toContain('<HeadingPairs><vt:vector size="2" baseType="variant">')
+		expect(appWithVectors).toContain('<vt:variant><vt:lpstr>Worksheets</vt:lpstr></vt:variant>')
+		expect(appWithVectors).toContain('<vt:variant><vt:i4>1</vt:i4></vt:variant>')
+		expect(appWithVectors).toContain('<TitlesOfParts><vt:vector size="1" baseType="lpstr">')
+		expect(appWithVectors).toContain('<vt:lpstr>Data</vt:lpstr>')
+
+		source.value.workbook.documentProperties = {
+			core: { title: 'Board Pack' },
+			app: { Application: 'Ascend' },
+		}
+		const withoutCustom = writeXlsx(source.value.workbook, source.value.capsules, {
+			workbookMetaDirty: true,
+			documentPropertiesDirty: true,
+		})
+		expectOk(withoutCustom)
+		const zipWithoutCustom = unzipSync(withoutCustom.value)
+		const decodeWithoutCustom = (path: string) =>
+			new TextDecoder().decode(zipWithoutCustom[path] ?? new Uint8Array())
+		expect(zipWithoutCustom['docProps/custom.xml']).toBeUndefined()
+		expect(decodeWithoutCustom('_rels/.rels')).not.toContain('custom-properties')
+		expect(decodeWithoutCustom('[Content_Types].xml')).not.toContain('/docProps/custom.xml')
 	})
 
 	it('preserves nonstandard root core-properties topology', () => {
@@ -3121,33 +3265,34 @@ describe('writeXlsx', () => {
 		})
 	})
 
-	it('preserves source comment VML layout for text-only comment edits', () => {
-		const source = readFileSync(
-			new URL('../../../../fixtures/xlsx/poi/SimpleWithComments.xlsx', import.meta.url),
-		)
-		const opened = readXlsx(source)
-		expectOk(opened)
-		const sheet = opened.value.workbook.sheets[0]
-		expect(sheet).toBeDefined()
-		if (!sheet) return
-		const original = sheet.comments.get('B1')
-		expect(original).toBeDefined()
-		if (!original) return
-		sheet.comments.set('B1', { ...original, text: 'Updated comment text' })
+	it.skipIf(!existsSync(POI_COMMENTS_FIXTURE))(
+		'preserves source comment VML layout for text-only comment edits',
+		() => {
+			const source = readFileSync(POI_COMMENTS_FIXTURE)
+			const opened = readXlsx(source)
+			expectOk(opened)
+			const sheet = opened.value.workbook.sheets[0]
+			expect(sheet).toBeDefined()
+			if (!sheet) return
+			const original = sheet.comments.get('B1')
+			expect(original).toBeDefined()
+			if (!original) return
+			sheet.comments.set('B1', { ...original, text: 'Updated comment text' })
 
-		const written = writeXlsx(opened.value.workbook, opened.value.capsules, {
-			dirtySheetNames: [sheet.name],
-		})
-		expectOk(written)
-		const sourceEntries = unzipSync(source)
-		const writtenEntries = unzipSync(written.value)
-		expect(new TextDecoder().decode(writtenEntries['xl/comments1.xml'])).toContain(
-			'Updated comment text',
-		)
-		expect(writtenEntries['xl/drawings/vmlDrawing1.vml']).toEqual(
-			sourceEntries['xl/drawings/vmlDrawing1.vml'],
-		)
-	})
+			const written = writeXlsx(opened.value.workbook, opened.value.capsules, {
+				dirtySheetNames: [sheet.name],
+			})
+			expectOk(written)
+			const sourceEntries = unzipSync(source)
+			const writtenEntries = unzipSync(written.value)
+			expect(new TextDecoder().decode(writtenEntries['xl/comments1.xml'])).toContain(
+				'Updated comment text',
+			)
+			expect(writtenEntries['xl/drawings/vmlDrawing1.vml']).toEqual(
+				sourceEntries['xl/drawings/vmlDrawing1.vml'],
+			)
+		},
+	)
 
 	it('preserves conditional formatting and data validations on round-trip', () => {
 		const wb = new Workbook()
@@ -4693,6 +4838,54 @@ describe('writeXlsx', () => {
 		expect(xml).toContain('<xm:f>A3:A4</xm:f>')
 		expect(xml).not.toContain('<xm:f>A2&gt;0</xm:f>')
 		expect(xml).not.toContain('<xm:f>A2:A3</xm:f>')
+	})
+
+	it('writes generated x14 extension validation and conditional-format metadata', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Data')
+		sheet.x14DataValidations.push({
+			index: 0,
+			sqref: 'A2:B2',
+			type: 'whole',
+			formula1: 'Data!A2',
+			formula2: 'Data!B2',
+		})
+		sheet.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'C2:D2',
+			formulas: ['Data!A2>0'],
+			type: 'expression',
+			dataBar: { cfvo: [{ type: 'formula', value: 'Data!A2' }] },
+			iconSet: { cfvo: [{ type: 'formula', value: 'Data!B2' }] },
+		})
+
+		const written = writeXlsx(wb)
+		expectOk(written)
+		const entries = unzipSync(written.value)
+		const worksheet = entries['xl/worksheets/sheet1.xml']
+		expect(worksheet).toBeDefined()
+		if (!worksheet) return
+		const xml = new TextDecoder().decode(worksheet)
+
+		expect(xml).toContain('<extLst')
+		expect(xml).toContain('<x14:conditionalFormattings>')
+		expect(xml).toContain('<x14:dataValidations count="1">')
+		expect(xml).toContain('<xm:sqref>A2:B2</xm:sqref>')
+		expect(xml).toContain('<xm:sqref>C2:D2</xm:sqref>')
+		expect(xml).toContain('<xm:f>Data!A2&gt;0</xm:f>')
+		expect(xml).toContain('<x14:cfvo type="formula"><xm:f>Data!A2</xm:f></x14:cfvo>')
+		expect(xml).toContain('<x14:cfvo type="formula"><xm:f>Data!B2</xm:f></x14:cfvo>')
+
+		const read = readXlsx(written.value)
+		expectOk(read)
+		const roundTripped = read.value.workbook.sheets[0]
+		expect(roundTripped?.x14DataValidations[0]).toMatchObject({
+			sqref: 'A2:B2',
+			formula1: 'Data!A2',
+			formula2: 'Data!B2',
+		})
+		expect(roundTripped?.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('Data!A2')
+		expect(roundTripped?.x14ConditionalFormats[0]?.iconSet?.cfvo[0]?.value).toBe('Data!B2')
 	})
 
 	it('removes x14 data-validation extension entries deleted by structural edits', () => {

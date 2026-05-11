@@ -16,6 +16,7 @@ import {
 	type SheetImageAnchor,
 	type SheetImageRef,
 	type Workbook,
+	type WorkbookDocumentProperties,
 } from '@ascend/core'
 import {
 	analyzeWorkbook,
@@ -75,6 +76,7 @@ import type {
 	PivotCacheMaterializedRowInfo,
 	PivotCacheRecordValueInfo,
 	PivotCacheRowsOptions,
+	PivotFieldInfo,
 	PivotOutputAuditInfo,
 	PivotOutputAuditMismatchInfo,
 	PivotRefreshPlanInfo,
@@ -229,6 +231,7 @@ export class WorkbookReadView {
 			connectionParts: this.wb.connectionParts.map((entry) => ({ ...entry })),
 			dataModelParts: this.wb.dataModelParts.map((entry) => ({ ...entry })),
 			activeContent: this.wb.activeContent.map(cloneActiveContentInfo),
+			documentProperties: copyDocumentProperties(this.wb.documentProperties),
 			styleSummary: { ...this.wb.styleMetadata },
 			themeSummary: {
 				hasThemePart: this.wb.preservedTheme !== null,
@@ -1068,6 +1071,27 @@ function classifyVisualFeature(
 	return null
 }
 
+function copyDocumentProperties(
+	properties: WorkbookDocumentProperties,
+): WorkbookDocumentProperties {
+	return {
+		...(properties.core ? { core: { ...properties.core } } : {}),
+		...(properties.app
+			? {
+					app: Object.fromEntries(
+						Object.entries(properties.app).map(([key, value]) => [
+							key,
+							Array.isArray(value) ? [...value] : value,
+						]),
+					),
+				}
+			: {}),
+		...(properties.custom
+			? { custom: properties.custom.map((property) => ({ ...property })) }
+			: {}),
+	}
+}
+
 function buildSheetInfo(
 	sheet: import('@ascend/core').Sheet,
 	cellsHydrated: boolean,
@@ -1525,7 +1549,7 @@ function buildPivotColumnOutputColumns(
 			columns.push({ key, matches: () => true })
 			continue
 		}
-		const filters = new Map<number, string>()
+		const filters = new Map<number, Set<string>>()
 		for (const fieldItem of item.fieldItems) {
 			const axisField = pivot.columnFields[fieldItem.index]
 			if (!axisField || axisField.index < 0) {
@@ -1550,7 +1574,7 @@ function buildPivotColumnOutputColumns(
 			if (sharedItem?.value === undefined) {
 				return { ok: false, warning: 'Pivot column shared item value was not resolved.' }
 			}
-			filters.set(axisField.index, sharedItem.value)
+			filters.set(axisField.index, new Set([sharedItem.value]))
 		}
 		if (filters.size !== pivot.columnFields.length) {
 			return { ok: false, warning: 'Pivot column item does not cover every column field.' }
@@ -1584,6 +1608,7 @@ function aggregateSimplePivotOutput(
 	)
 	const output = new Map<string, Map<string, number>>()
 	const baseTotals = new Map<string, Map<string, number>>()
+	const averageTotals = new Map<string, Map<string, { sum: number; count: number }>>()
 	const includeGrandTotal = pivot.options?.rowGrandTotals !== false
 	for (const row of buildPivotCacheRows([cache], {})) {
 		if (!pivotCacheRowMatchesFilters(row, pageFilters.value)) continue
@@ -1597,12 +1622,21 @@ function aggregateSimplePivotOutput(
 			if (!dataField) continue
 			const field = cache.fields[dataField.fieldIndex]
 			if (field?.formula) continue
+			if (dataField.subtotal === 'average') {
+				const value = numericPivotRowValue(row, dataField.fieldIndex)
+				if (value === null) continue
+				addPivotAverageSample(averageTotals, rowLabel, dataFieldName, value)
+				if (includeGrandTotal)
+					addPivotAverageSample(averageTotals, 'Grand Total', dataFieldName, value)
+				continue
+			}
 			const measured = measurePivotDataField(cache, row, dataField)
 			if (!measured.ok) return measured
 			addPivotOutput(output, rowLabel, dataFieldName, measured.value)
 			if (includeGrandTotal) addPivotOutput(output, 'Grand Total', dataFieldName, measured.value)
 		}
 	}
+	finalizePivotAverageOutput(output, averageTotals)
 	for (let i = 0; i < pivot.dataFields.length; i++) {
 		const dataField = pivot.dataFields[i]
 		const dataFieldName = dataFieldNames[i] ?? `DataField${i + 1}`
@@ -1631,42 +1665,73 @@ function aggregateSimplePivotOutput(
 	}
 }
 
+type PivotAuditFilters = ReadonlyMap<number, ReadonlySet<string>>
+
 function buildSimplePivotPageFilters(
 	cache: PivotCacheInfo,
 	pivot: PivotTableInfo,
-): { ok: true; value: ReadonlyMap<number, string> } | { ok: false; warning: string } {
-	const filters = new Map<number, string>()
+): { ok: true; value: PivotAuditFilters } | { ok: false; warning: string } {
+	const filters = new Map<number, Set<string>>()
 	for (const pageField of pivot.pageFields) {
 		if (pageField.index < 0) {
 			return { ok: false, warning: 'Data-field page filters are not audited.' }
 		}
-		if (pageField.item === undefined) {
-			return { ok: false, warning: 'Multi-select or unset page filters are not audited.' }
-		}
 		const field = pivot.fields[pageField.index]
-		const item = field?.items?.[pageField.item]
-		if (!item || item.hidden || item.missing || item.cacheIndex === undefined) {
-			return { ok: false, warning: 'Pivot page filter selected item was not resolved.' }
-		}
-		const sharedItem = cache.fields[pageField.index]?.sharedItems?.find(
-			(entry) => entry.index === item.cacheIndex,
-		)
-		const value = sharedItem?.value
-		if (value === undefined) {
-			return { ok: false, warning: 'Pivot page filter selected cache item was not resolved.' }
-		}
-		filters.set(pageField.index, value)
+		const allowed = pivotPageFieldAllowedValues(cache, pageField.index, field, pageField.item)
+		if (!allowed.ok) return allowed
+		if (allowed.value.size > 0) filters.set(pageField.index, allowed.value)
 	}
 	return { ok: true, value: filters }
 }
 
+function pivotPageFieldAllowedValues(
+	cache: PivotCacheInfo,
+	fieldIndex: number,
+	field: PivotFieldInfo | undefined,
+	selectedItemIndex: number | undefined,
+): { ok: true; value: Set<string> } | { ok: false; warning: string } {
+	if (selectedItemIndex !== undefined) {
+		const selected = field?.items?.[selectedItemIndex]
+		if (!selected || selected.hidden || selected.missing || selected.cacheIndex === undefined) {
+			return { ok: false, warning: 'Pivot page filter selected item was not resolved.' }
+		}
+		const value = pivotCacheSharedItemValue(cache, fieldIndex, selected.cacheIndex)
+		if (value === undefined) {
+			return { ok: false, warning: 'Pivot page filter selected cache item was not resolved.' }
+		}
+		return { ok: true, value: new Set([value]) }
+	}
+	const items = field?.items?.filter((item) => item.cacheIndex !== undefined) ?? []
+	if (items.length === 0) return { ok: true, value: new Set() }
+	const visibleValues = new Set<string>()
+	for (const item of items) {
+		if (item.hidden || item.missing || item.cacheIndex === undefined) continue
+		const value = pivotCacheSharedItemValue(cache, fieldIndex, item.cacheIndex)
+		if (value === undefined) {
+			return { ok: false, warning: 'Pivot page filter visible cache item was not resolved.' }
+		}
+		visibleValues.add(value)
+	}
+	if (visibleValues.size === items.length) return { ok: true, value: new Set() }
+	return { ok: true, value: visibleValues }
+}
+
+function pivotCacheSharedItemValue(
+	cache: PivotCacheInfo,
+	fieldIndex: number,
+	sharedItemIndex: number,
+): string | undefined {
+	return cache.fields[fieldIndex]?.sharedItems?.find((entry) => entry.index === sharedItemIndex)
+		?.value
+}
+
 function pivotCacheRowMatchesFilters(
 	row: PivotCacheMaterializedRowInfo,
-	filters: ReadonlyMap<number, string>,
+	filters: PivotAuditFilters,
 ): boolean {
-	for (const [fieldIndex, expected] of filters) {
+	for (const [fieldIndex, expectedValues] of filters) {
 		const actual = row.values.find((value) => value.fieldIndex === fieldIndex)?.value
-		if (actual !== expected) return false
+		if (actual === undefined || !expectedValues.has(actual)) return false
 	}
 	return true
 }
@@ -1680,7 +1745,10 @@ function measurePivotDataField(
 	if (!field)
 		return { ok: false, warning: `Pivot data field ${dataField.fieldIndex} was not found.` }
 	if (dataField.subtotal === 'count') {
-		return { ok: true, value: row.values.some((value) => value.fieldIndex === field.index) ? 1 : 0 }
+		return {
+			ok: true,
+			value: pivotCountFieldHasValue(row, field.index, field.fieldGroup?.base) ? 1 : 0,
+		}
 	}
 	if (dataField.subtotal !== undefined && dataField.subtotal !== 'sum') {
 		return { ok: false, warning: `Pivot subtotal "${dataField.subtotal}" is not audited.` }
@@ -1690,6 +1758,18 @@ function measurePivotDataField(
 	const value = numericPivotRowValue(row, field.index)
 	if (value === null) return { ok: true, value: 0 }
 	return { ok: true, value }
+}
+
+function pivotCountFieldHasValue(
+	row: PivotCacheMaterializedRowInfo,
+	fieldIndex: number,
+	groupBaseFieldIndex: number | undefined,
+): boolean {
+	if (row.values.some((value) => value.fieldIndex === fieldIndex)) return true
+	return (
+		groupBaseFieldIndex !== undefined &&
+		row.values.some((value) => value.fieldIndex === groupBaseFieldIndex)
+	)
 }
 
 function measureCalculatedPivotField(
@@ -1784,6 +1864,33 @@ function addPivotOutput(
 		output.set(rowLabel, byField)
 	}
 	byField.set(dataField, (byField.get(dataField) ?? 0) + value)
+}
+
+function addPivotAverageSample(
+	output: Map<string, Map<string, { sum: number; count: number }>>,
+	rowLabel: string,
+	dataField: string,
+	value: number,
+): void {
+	let byField = output.get(rowLabel)
+	if (!byField) {
+		byField = new Map()
+		output.set(rowLabel, byField)
+	}
+	const existing = byField.get(dataField) ?? { sum: 0, count: 0 }
+	byField.set(dataField, { sum: existing.sum + value, count: existing.count + 1 })
+}
+
+function finalizePivotAverageOutput(
+	output: Map<string, Map<string, number>>,
+	averageTotals: ReadonlyMap<string, ReadonlyMap<string, { sum: number; count: number }>>,
+): void {
+	for (const [rowLabel, byField] of averageTotals) {
+		for (const [dataField, aggregate] of byField) {
+			if (aggregate.count > 0)
+				setPivotOutput(output, rowLabel, dataField, aggregate.sum / aggregate.count)
+		}
+	}
 }
 
 function setPivotOutput(
@@ -2030,43 +2137,207 @@ function buildExternalReferenceUsages(
 	const usages: ExternalReferenceUsageInfo[] = []
 	for (const formula of analysis.formulas.values()) {
 		if (!formula.ast) continue
-		for (const group of externalReferenceGroups(collectFormulaReferences(formula.ast))) {
-			const externalReference = resolveExternalReference(
-				workbook.externalReferenceDetails,
-				group.workbook,
-			)
-			usages.push({
-				workbook: group.workbook,
-				...(group.sheet ? { sheet: group.sheet } : {}),
-				sourceKind: 'cellFormula',
-				sourceRef: `${formula.sheetName}!${indexToColumn(formula.col)}${formula.row + 1}`,
-				formula: formula.formula,
-				references: group.references,
-				...(externalReference ? { externalReference } : {}),
-			})
-		}
+		pushExternalReferenceUsages(workbook, usages, formula.ast, {
+			sourceKind: 'cellFormula',
+			sourceRef: `${formula.sheetName}!${indexToColumn(formula.col)}${formula.row + 1}`,
+			formula: formula.formula,
+		})
 	}
 
 	for (const name of workbook.definedNames.list()) {
 		const parsed = parseFormula(normalizeFormulaInput(name.formula))
 		if (!parsed.ok) continue
-		for (const group of externalReferenceGroups(collectFormulaReferences(parsed.value))) {
-			const externalReference = resolveExternalReference(
-				workbook.externalReferenceDetails,
-				group.workbook,
-			)
-			usages.push({
-				workbook: group.workbook,
-				...(group.sheet ? { sheet: group.sheet } : {}),
-				sourceKind: 'definedName',
-				name: name.name,
-				formula: name.formula,
-				references: group.references,
-				...(externalReference ? { externalReference } : {}),
-			})
+		pushExternalReferenceUsages(workbook, usages, parsed.value, {
+			sourceKind: 'definedName',
+			name: name.name,
+			formula: name.formula,
+		})
+	}
+
+	for (const chart of workbook.chartParts) {
+		for (let seriesIndex = 0; seriesIndex < chart.series.length; seriesIndex++) {
+			const series = chart.series[seriesIndex]
+			if (!series) continue
+			const sourceRef = `${chart.partPath}#series${seriesIndex}`
+			if (series.nameRef) {
+				pushParsedExternalReferenceUsages(workbook, usages, series.nameRef, {
+					sourceKind: 'chartSeriesName',
+					sourceRef,
+					formula: series.nameRef,
+				})
+			}
+			if (series.categoryRef) {
+				pushParsedExternalReferenceUsages(workbook, usages, series.categoryRef, {
+					sourceKind: 'chartSeriesCategory',
+					sourceRef,
+					formula: series.categoryRef,
+				})
+			}
+			if (series.valueRef) {
+				pushParsedExternalReferenceUsages(workbook, usages, series.valueRef, {
+					sourceKind: 'chartSeriesValue',
+					sourceRef,
+					formula: series.valueRef,
+				})
+			}
+		}
+	}
+
+	for (const sheet of workbook.sheets) {
+		for (const table of sheet.tables) {
+			for (const column of table.columns) {
+				const sourceRef = `${sheet.name}!${table.name}[${column.name}]`
+				if (column.formula) {
+					pushParsedExternalReferenceUsages(workbook, usages, column.formula, {
+						sourceKind: 'tableColumnFormula',
+						sourceRef,
+						formula: column.formula,
+					})
+				}
+				if (column.totalsRowFormula) {
+					pushParsedExternalReferenceUsages(workbook, usages, column.totalsRowFormula, {
+						sourceKind: 'tableTotalsRowFormula',
+						sourceRef,
+						formula: column.totalsRowFormula,
+					})
+				}
+			}
+		}
+		for (const format of sheet.conditionalFormats) {
+			for (const rule of format.rules) {
+				for (const formulaText of conditionalFormatFormulaTexts(rule)) {
+					pushParsedExternalReferenceUsages(workbook, usages, formulaText, {
+						sourceKind: 'conditionalFormat',
+						sourceRef: `${sheet.name}!${format.sqref}`,
+						formula: formulaText,
+					})
+				}
+			}
+		}
+		for (const validation of sheet.dataValidations) {
+			for (const formulaText of [validation.formula1, validation.formula2]) {
+				if (!formulaText) continue
+				pushParsedExternalReferenceUsages(workbook, usages, formulaText, {
+					sourceKind: 'dataValidation',
+					sourceRef: `${sheet.name}!${validation.sqref}`,
+					formula: formulaText,
+				})
+			}
+		}
+		for (const format of sheet.x14ConditionalFormats) {
+			for (const formulaText of format.formulas) {
+				pushParsedExternalReferenceUsages(workbook, usages, formulaText, {
+					sourceKind: 'x14ConditionalFormat',
+					sourceRef: `${sheet.name}!${format.sqref}`,
+					formula: formulaText,
+				})
+			}
+			for (const formulaText of x14ConditionalFormatValueFormulas(format)) {
+				pushParsedExternalReferenceUsages(workbook, usages, formulaText, {
+					sourceKind: 'x14ConditionalFormat',
+					sourceRef: `${sheet.name}!${format.sqref}`,
+					formula: formulaText,
+				})
+			}
+		}
+		for (const validation of sheet.x14DataValidations) {
+			for (const formulaText of [validation.formula1, validation.formula2]) {
+				if (!formulaText) continue
+				pushParsedExternalReferenceUsages(workbook, usages, formulaText, {
+					sourceKind: 'x14DataValidation',
+					sourceRef: `${sheet.name}!${validation.sqref}`,
+					formula: formulaText,
+				})
+			}
+		}
+		for (const group of sheet.sparklineGroups) {
+			const groupRef = `${sheet.name}!sparklineGroup${group.groupIndex}`
+			if (group.range) {
+				pushParsedExternalReferenceUsages(workbook, usages, group.range, {
+					sourceKind: 'sparklineGroupRange',
+					sourceRef: groupRef,
+					formula: group.range,
+				})
+			}
+			if (group.dateAxisRange) {
+				pushParsedExternalReferenceUsages(workbook, usages, group.dateAxisRange, {
+					sourceKind: 'sparklineDateAxisRange',
+					sourceRef: groupRef,
+					formula: group.dateAxisRange,
+				})
+			}
+			for (let index = 0; index < (group.sparklines?.length ?? 0); index++) {
+				const sparkline = group.sparklines?.[index]
+				if (!sparkline?.range) continue
+				pushParsedExternalReferenceUsages(workbook, usages, sparkline.range, {
+					sourceKind: 'sparklineRange',
+					sourceRef: `${groupRef}#sparkline${index}`,
+					formula: sparkline.range,
+				})
+			}
 		}
 	}
 	return usages
+}
+
+function pushParsedExternalReferenceUsages(
+	workbook: Workbook,
+	usages: ExternalReferenceUsageInfo[],
+	formulaText: string,
+	source: Pick<ExternalReferenceUsageInfo, 'sourceKind' | 'sourceRef' | 'name' | 'formula'>,
+): void {
+	const parsed = parseFormula(normalizeFormulaInput(formulaText))
+	if (!parsed.ok) return
+	pushExternalReferenceUsages(workbook, usages, parsed.value, source)
+}
+
+function pushExternalReferenceUsages(
+	workbook: Workbook,
+	usages: ExternalReferenceUsageInfo[],
+	ast: FormulaNode,
+	source: Pick<ExternalReferenceUsageInfo, 'sourceKind' | 'sourceRef' | 'name' | 'formula'>,
+): void {
+	for (const group of externalReferenceGroups(collectFormulaReferences(ast))) {
+		const externalReference = resolveExternalReference(
+			workbook.externalReferenceDetails,
+			group.workbook,
+		)
+		usages.push({
+			workbook: group.workbook,
+			...(group.sheet ? { sheet: group.sheet } : {}),
+			...source,
+			references: group.references,
+			...(externalReference ? { externalReference } : {}),
+		})
+	}
+}
+
+function conditionalFormatFormulaTexts(
+	rule: Workbook['sheets'][number]['conditionalFormats'][number]['rules'][number],
+): string[] {
+	return [
+		...rule.formulas,
+		...conditionalFormatValueObjectFormulas(rule.colorScale?.cfvo),
+		...conditionalFormatValueObjectFormulas(rule.dataBar?.cfvo),
+		...conditionalFormatValueObjectFormulas(rule.iconSet?.cfvo),
+	]
+}
+
+function x14ConditionalFormatValueFormulas(
+	format: Workbook['sheets'][number]['x14ConditionalFormats'][number],
+): string[] {
+	return [
+		...conditionalFormatValueObjectFormulas(format.dataBar?.cfvo),
+		...conditionalFormatValueObjectFormulas(format.iconSet?.cfvo),
+	]
+}
+
+function conditionalFormatValueObjectFormulas(
+	values: readonly { readonly type?: string; readonly value?: string }[] | undefined,
+): string[] {
+	return (
+		values?.flatMap((value) => (value.type === 'formula' && value.value ? [value.value] : [])) ?? []
+	)
 }
 
 function resolveExternalReference(

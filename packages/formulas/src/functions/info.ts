@@ -55,6 +55,15 @@ function islogical(args: EvalArg[]): CellValue {
 	return booleanValue(cellOf(args[0]).kind === 'boolean')
 }
 
+function isformula(args: EvalArg[]): CellValue {
+	const arg = args[0]
+	if (!arg?.ref) {
+		const value = cellOf(arg)
+		return value.kind === 'error' ? value : booleanValue(false)
+	}
+	return booleanValue(arg.formulaAtOffset?.(0, 0) != null)
+}
+
 function typeFn(args: EvalArg[]): CellValue {
 	const arg = args[0]
 	if (arg?.kind === 'range') return numberValue(64)
@@ -172,7 +181,7 @@ export const infoFunctions: FunctionDef[] = [
 		maxArgs: 1,
 		evaluate: (args) => booleanValue(args[0]?.ref !== undefined),
 	},
-	{ name: 'ISFORMULA', minArgs: 1, maxArgs: 1, evaluate: () => booleanValue(false) },
+	{ name: 'ISFORMULA', minArgs: 1, maxArgs: 1, evaluate: isformula },
 	{ name: 'TYPE', minArgs: 1, maxArgs: 1, evaluate: typeFn },
 	{ name: 'N', minArgs: 1, maxArgs: 1, evaluate: nFn },
 	{ name: 'NA', minArgs: 0, maxArgs: 0, evaluate: na },

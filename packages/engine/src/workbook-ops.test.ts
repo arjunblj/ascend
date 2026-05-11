@@ -73,6 +73,50 @@ describe('workbook metadata operations', () => {
 		expect(result.error.message).toContain('defaultThemeVersion')
 	})
 
+	test('setDocumentProperties merges core, app, and custom docProps metadata', () => {
+		const wb = createWorkbook()
+		wb.documentProperties = {
+			core: { title: 'Old', creator: 'Analyst', subject: 'Forecast' },
+			app: { Application: 'Excel', Company: 'OldCo' },
+			custom: [{ name: 'Reviewed', value: false, type: 'bool', pid: 2 }],
+		}
+
+		const result = applyOperation(wb, {
+			op: 'setDocumentProperties',
+			properties: {
+				core: { title: 'Board Pack', subject: null },
+				app: { Company: 'Ascend', HeadingPairs: ['Worksheets', 1] },
+				custom: [{ name: 'Reviewed', value: true, type: 'bool' }],
+			},
+		})
+		expectOk(result)
+
+		expect(wb.documentProperties).toEqual({
+			core: { title: 'Board Pack', creator: 'Analyst' },
+			app: { Application: 'Excel', Company: 'Ascend', HeadingPairs: ['Worksheets', 1] },
+			custom: [{ name: 'Reviewed', value: true, type: 'bool' }],
+		})
+		expect(result.value.recalcRequired).toBe(false)
+	})
+
+	test('setDocumentProperties replaces or clears docProps families', () => {
+		const wb = createWorkbook()
+		wb.documentProperties = {
+			core: { title: 'Old' },
+			app: { Application: 'Excel' },
+			custom: [{ name: 'Reviewed', value: true }],
+		}
+
+		const result = applyOperation(wb, {
+			op: 'setDocumentProperties',
+			mode: 'replace',
+			properties: { core: { creator: 'Finance' }, app: null, custom: null },
+		})
+		expectOk(result)
+
+		expect(wb.documentProperties).toEqual({ core: { creator: 'Finance' } })
+	})
+
 	test('setWorkbookView merges, appends, and deletes view metadata', () => {
 		const wb = createWorkbook()
 		wb.workbookViews.push({ activeTab: 0, firstSheet: 0, visibility: 'visible' })

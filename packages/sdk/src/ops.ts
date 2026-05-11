@@ -131,8 +131,10 @@ const FIELD_SCHEMAS: Record<
 	height: { type: 'number', description: 'Row height' },
 	text: { type: 'string', description: 'Comment or cell text' },
 	author: { type: 'string', description: 'Comment author' },
-	url: { type: 'string', description: 'Hyperlink URL' },
+	url: { type: 'string', description: 'External hyperlink URL' },
+	location: { type: 'string', description: 'Internal workbook hyperlink location, e.g. Sheet2!A1' },
 	display: { type: 'string', description: 'Display text for hyperlink' },
+	tooltip: { type: 'string', description: 'Tooltip text for hyperlink' },
 	format: { type: 'string', description: 'Number format code' },
 	scope: { type: 'string', description: 'Scope (workbook or sheet name)' },
 	style: {
@@ -205,6 +207,10 @@ const FIELD_SCHEMAS: Record<
 	},
 	source: { type: 'string', description: 'Source range' },
 	target: { type: 'string', description: 'Target range' },
+	targetSheet: {
+		type: 'string',
+		description: 'Destination sheet for copyRange or moveRange; defaults to the source sheet',
+	},
 	newTarget: { type: 'string', description: 'Replacement external workbook path or URL' },
 	targetPath: {
 		type: 'string',
@@ -361,8 +367,8 @@ export function listOperations(): readonly OperationSchema[] {
 		{
 			op: 'setHyperlink',
 			description: 'Set a cell hyperlink',
-			requiredFields: ['sheet', 'ref', 'url'],
-			optionalFields: ['display'],
+			requiredFields: ['sheet', 'ref'],
+			optionalFields: ['url', 'location', 'display', 'tooltip'],
 		},
 		{
 			op: 'setNumberFormat',
@@ -471,13 +477,13 @@ export function listOperations(): readonly OperationSchema[] {
 			op: 'copyRange',
 			description: 'Copy a range to another location with optional Excel-like paste mode',
 			requiredFields: ['sheet', 'source', 'target'],
-			optionalFields: ['mode'],
+			optionalFields: ['targetSheet', 'mode'],
 		},
 		{
 			op: 'moveRange',
 			description: 'Move a range to another location with optional Excel-like paste mode',
 			requiredFields: ['sheet', 'source', 'target'],
-			optionalFields: ['mode'],
+			optionalFields: ['targetSheet', 'mode'],
 		},
 		{
 			op: 'groupRows',
@@ -499,6 +505,12 @@ export function listOperations(): readonly OperationSchema[] {
 		{
 			op: 'setWorkbookProperties',
 			description: 'Set workbook-level package properties such as codeName and date system',
+			requiredFields: ['properties'],
+			optionalFields: ['mode'],
+		},
+		{
+			op: 'setDocumentProperties',
+			description: 'Set core, app, and custom package document properties',
 			requiredFields: ['properties'],
 			optionalFields: ['mode'],
 		},
@@ -772,10 +784,21 @@ export function parseOperations(input: unknown): ParseOperationsResult {
 			const issue = validateOperationField(record, field, `ops[${index}].${field}`)
 			if (issue) issues.push(issue)
 		}
+		if (
+			op === 'setHyperlink' &&
+			!hasNonEmptyString(record.url) &&
+			!hasNonEmptyString(record.location)
+		) {
+			issues.push(`ops[${index}].url or ops[${index}].location is required for setHyperlink`)
+		}
 		ops.push(record as Operation)
 	})
 	if (issues.length > 0) return { ok: false, error: issues[0] ?? 'Invalid operations', issues }
 	return { ok: true, value: ops }
+}
+
+function hasNonEmptyString(value: unknown): boolean {
+	return typeof value === 'string' && value.trim().length > 0
 }
 
 const PASTE_MODES = new Set([
@@ -805,13 +828,16 @@ function validateOperationField(
 		case 'text':
 		case 'author':
 		case 'url':
+		case 'location':
 		case 'display':
+		case 'tooltip':
 		case 'format':
 		case 'scope':
 		case 'password':
 		case 'color':
 		case 'source':
 		case 'target':
+		case 'targetSheet':
 		case 'newTarget':
 		case 'targetPath':
 		case 'relId':
@@ -956,6 +982,7 @@ function validateOperationField(
 		case 'options':
 		case 'protection':
 		case 'properties':
+		case 'documentProperties':
 		case 'settings':
 		case 'anchor':
 			return isPlainObject(value) ? null : `${path} must be an object`
@@ -972,7 +999,11 @@ function validateMode(op: unknown, value: unknown, path: string): string | null 
 			? null
 			: `${path} must be one of replace, append`
 	}
-	if (op === 'setWorkbookProperties' || op === 'setWorkbookView') {
+	if (
+		op === 'setWorkbookProperties' ||
+		op === 'setDocumentProperties' ||
+		op === 'setWorkbookView'
+	) {
 		return value === 'merge' || value === 'replace' ? null : `${path} must be one of merge, replace`
 	}
 	if (op === 'copyRange' || op === 'moveRange') {
@@ -1264,6 +1295,12 @@ function operationRecoveryActions(op: string): readonly string[] {
 				'Use null property values to clear codeName, defaultThemeVersion, filterPrivacy, or date1904.',
 				...common,
 			]
+		case 'setDocumentProperties':
+			return [
+				'Use mode="merge" for targeted docProps edits or mode="replace" to rewrite core/app/custom document properties.',
+				'Use null core/app fields to clear values; custom properties are replaced as a collection when provided.',
+				...common,
+			]
 		case 'setWorkbookView':
 			return [
 				'Use index=0 for the primary workbook view; index equal to view count appends a new view.',
@@ -1393,7 +1430,14 @@ function operationExample(op: string): Record<string, unknown> {
 			return { op, sheet: 'Sheet1', setup: { orientation: 'landscape' } }
 		case 'copyRange':
 		case 'moveRange':
-			return { op, sheet: 'Sheet1', source: 'A1:B5', target: 'D1', mode: 'all' }
+			return {
+				op,
+				sheet: 'Sheet1',
+				source: 'A1:B5',
+				targetSheet: 'Summary',
+				target: 'D1',
+				mode: 'all',
+			}
 		case 'groupRows':
 			return { op, sheet: 'Sheet1', from: 2, to: 10, collapsed: false }
 		case 'groupCols':
@@ -1404,6 +1448,16 @@ function operationExample(op: string): Record<string, unknown> {
 			return {
 				op,
 				properties: { codeName: 'Model', filterPrivacy: true, date1904: false },
+				mode: 'merge',
+			}
+		case 'setDocumentProperties':
+			return {
+				op,
+				properties: {
+					core: { title: 'Forecast Pack', creator: 'Finance Ops' },
+					app: { HeadingPairs: ['Worksheets', 1], TitlesOfParts: ['Sheet1'] },
+					custom: [{ name: 'Reviewed', value: true }],
+				},
 				mode: 'merge',
 			}
 		case 'setWorkbookView':

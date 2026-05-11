@@ -1,6 +1,13 @@
 import type { CellValue, ScalarCellValue } from '@ascend/schema'
-import { arrayValue, EMPTY, errorValue, numberValue, topLeftScalar } from '@ascend/schema'
-import type { EvalArg, FunctionDef } from './registry.ts'
+import {
+	arrayValue,
+	EMPTY,
+	errorValue,
+	numberValue,
+	stringValue,
+	topLeftScalar,
+} from '@ascend/schema'
+import type { EvalArg, FunctionDef, FunctionEvalContext } from './registry.ts'
 import { compareValues, getRange, numArg, toNumber } from './registry.ts'
 
 function num(arg: EvalArg | undefined): number | CellValue {
@@ -60,6 +67,110 @@ function transposeRows(data: readonly (readonly CellValue[])[]): ScalarCellValue
 		rows.push(row)
 	}
 	return rows
+}
+
+function columnLabel(colIndex: number): string {
+	let n = colIndex + 1
+	let label = ''
+	while (n > 0) {
+		const rem = (n - 1) % 26
+		label = String.fromCharCode(65 + rem) + label
+		n = Math.floor((n - 1) / 26)
+	}
+	return label
+}
+
+function cellInfoText(value: CellValue): string {
+	const scalar = topLeftScalar(value)
+	switch (scalar.kind) {
+		case 'string':
+			return scalar.value
+		case 'number':
+			return String(scalar.value)
+		case 'boolean':
+			return scalar.value ? 'TRUE' : 'FALSE'
+		case 'date':
+			return String(scalar.serial)
+		case 'richText':
+			return scalar.runs.map((run) => run.text).join('')
+		case 'empty':
+			return ''
+		default:
+			return ''
+	}
+}
+
+function cellInfo(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
+	const infoTypeValue = args[0]?.value ?? EMPTY
+	if (infoTypeValue.kind === 'error') return infoTypeValue
+	const infoType = cellInfoText(infoTypeValue).toLowerCase()
+	const ref = args[1]?.ref
+	const row = ref?.row ?? ctx?.row
+	const col = ref?.col ?? ctx?.col
+	const sheetIndex = ref?.sheetIndex ?? ctx?.sheetIndex ?? 0
+	const value = args[1]?.value ?? EMPTY
+	if ((row === undefined || col === undefined) && ['address', 'col', 'row'].includes(infoType)) {
+		return errorValue('#VALUE!')
+	}
+
+	switch (infoType) {
+		case 'address':
+			return stringValue(`$${columnLabel(col ?? 0)}$${(row ?? 0) + 1}`)
+		case 'col':
+			return numberValue((col ?? 0) + 1)
+		case 'row':
+			return numberValue((row ?? 0) + 1)
+		case 'contents':
+			return topLeftScalar(value)
+		case 'type': {
+			const scalar = topLeftScalar(value)
+			if (scalar.kind === 'empty') return stringValue('b')
+			if (scalar.kind === 'string' || scalar.kind === 'richText') return stringValue('l')
+			return stringValue('v')
+		}
+		case 'width':
+			return numberValue(8)
+		case 'format':
+			return stringValue('G')
+		case 'prefix':
+			return stringValue('')
+		case 'color':
+		case 'parentheses':
+			return numberValue(0)
+		case 'protect':
+			return numberValue(1)
+		case 'filename':
+			return stringValue(`[Workbook]Sheet${sheetIndex + 1}`)
+		case 'sheet':
+			return stringValue(`Sheet${sheetIndex + 1}`)
+		default:
+			return errorValue('#VALUE!')
+	}
+}
+
+function firstSheetIndex(arg: EvalArg | undefined): number | null {
+	if (arg?.areas?.length) return arg.areas[0]?.ref.sheetIndex ?? null
+	if (arg?.ref) return arg.ref.sheetIndex
+	return null
+}
+
+function sheetInfo(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
+	if (args.length === 0) return numberValue((ctx?.sheetIndex ?? 0) + 1)
+	const sheetIndex = firstSheetIndex(args[0])
+	if (sheetIndex !== null) return numberValue(sheetIndex + 1)
+	return errorValue('#N/A')
+}
+
+function sheetsInfo(args: EvalArg[]): CellValue {
+	const arg = args[0]
+	if (!arg) return numberValue(1)
+	if (arg.areas?.length) {
+		const sheets = new Set<number>()
+		for (const area of arg.areas) sheets.add(area.ref.sheetIndex)
+		return numberValue(sheets.size)
+	}
+	if (arg.ref || arg.kind === 'range') return numberValue(1)
+	return errorValue('#N/A')
 }
 
 function chooseCols(
@@ -757,7 +868,7 @@ export const dynamicFunctions: FunctionDef[] = [
 			return errorValue('#VALUE!')
 		},
 	},
-	{ name: 'CELL', minArgs: 1, maxArgs: 2, evaluate: () => errorValue('#VALUE!') },
-	{ name: 'SHEET', minArgs: 0, maxArgs: 1, evaluate: () => numberValue(1) },
-	{ name: 'SHEETS', minArgs: 0, maxArgs: 1, evaluate: () => numberValue(1) },
+	{ name: 'CELL', minArgs: 1, maxArgs: 2, evaluate: cellInfo },
+	{ name: 'SHEET', minArgs: 0, maxArgs: 1, evaluate: sheetInfo },
+	{ name: 'SHEETS', minArgs: 0, maxArgs: 1, evaluate: sheetsInfo },
 ]

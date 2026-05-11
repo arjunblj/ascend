@@ -55,6 +55,53 @@ describe('operation schema agent DX', () => {
 		}
 	})
 
+	test('setHyperlink supports external urls, internal locations, and tooltip metadata', () => {
+		const schema = getOperationsSchema().find((entry) => entry.op === 'setHyperlink')
+		expect(schema?.schema.required).toEqual(['op', 'sheet', 'ref'])
+		expect(schema?.schema.properties.location?.description).toContain('Internal workbook')
+		expect(schema?.schema.properties.tooltip?.description).toContain('Tooltip')
+
+		const parsed = parseOperations([
+			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'A1', url: 'https://example.com' },
+			{
+				op: 'setHyperlink',
+				sheet: 'Sheet1',
+				ref: 'B1',
+				location: 'Sheet2!A1',
+				display: 'Jump',
+				tooltip: 'Open Sheet2',
+			},
+		])
+		expect(parsed.ok).toBe(true)
+
+		const missingDestination = parseOperations([
+			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'A1', display: 'No target' },
+		])
+		expect(missingDestination.ok).toBe(false)
+		if (!missingDestination.ok) {
+			expect(missingDestination.issues[0]).toContain('url or ops[0].location is required')
+		}
+	})
+
+	test('copyRange and moveRange expose optional cross-sheet destination', () => {
+		const copySchema = getOperationsSchema().find((entry) => entry.op === 'copyRange')
+		const moveSchema = getOperationsSchema().find((entry) => entry.op === 'moveRange')
+		expect(copySchema?.schema.properties.targetSheet?.description).toContain('Destination sheet')
+		expect(moveSchema?.schema.properties.targetSheet?.type).toBe('string')
+
+		const parsed = parseOperations([
+			{
+				op: 'copyRange',
+				sheet: 'Sheet1',
+				source: 'A1:B2',
+				targetSheet: 'Summary',
+				target: 'C3',
+				mode: 'all',
+			},
+		])
+		expect(parsed.ok).toBe(true)
+	})
+
 	test('replaceImage is exposed with selector guidance for visual edits', () => {
 		const schema = getOperationsSchema().find((entry) => entry.op === 'replaceImage')
 		expect(schema?.schema.required).toEqual(['op', 'sheet', 'contentBase64', 'contentType'])
@@ -406,6 +453,22 @@ describe('operation schema agent DX', () => {
 			mode: 'merge',
 		})
 		expect(schema?.recoveryActions.join('\n')).toContain('null property values')
+	})
+
+	test('setDocumentProperties is exposed with docProps merge guidance', () => {
+		const schema = getOperationsSchema().find((entry) => entry.op === 'setDocumentProperties')
+		expect(schema?.schema.required).toEqual(['op', 'properties'])
+		expect(schema?.schema.properties.mode?.enum).toContain('merge')
+		expect(schema?.examples[0]).toMatchObject({
+			op: 'setDocumentProperties',
+			properties: {
+				core: { title: 'Forecast Pack', creator: 'Finance Ops' },
+				app: { HeadingPairs: ['Worksheets', 1], TitlesOfParts: ['Sheet1'] },
+				custom: [{ name: 'Reviewed', value: true }],
+			},
+			mode: 'merge',
+		})
+		expect(schema?.recoveryActions.join('\n')).toContain('docProps edits')
 	})
 
 	test('setTheme is exposed with theme color guidance', () => {

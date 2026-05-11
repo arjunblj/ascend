@@ -752,8 +752,14 @@ function toColumnLabel(colIndex: number): string {
 	return label
 }
 
-function formulaText(_args: EvalArg[]): CellValue {
-	return errorValue('#N/A')
+function formulaText(args: EvalArg[]): CellValue {
+	const arg = args[0]
+	if (!arg?.ref) {
+		if (arg?.value.kind === 'error') return arg.value
+		return errorValue('#N/A')
+	}
+	const formula = arg.formulaAtOffset?.(0, 0)
+	return formula ? { kind: 'string', value: `=${formula}` } : errorValue('#N/A')
 }
 
 function areasFn(args: EvalArg[]): CellValue {
@@ -809,7 +815,6 @@ export const lookupFunctions: FunctionDef[] = [
 		maxArgs: 1,
 		evaluate: columnFn,
 	},
-	// Stub: actual evaluation is bypassed by the engine evaluator (codegen)
 	{ name: 'FORMULATEXT', minArgs: 1, maxArgs: 1, volatile: false, evaluate: formulaText },
 	{ name: 'AREAS', minArgs: 1, maxArgs: 1, evaluate: areasFn },
 	// Stub: actual evaluation is bypassed by the engine evaluator (codegen)

@@ -34,6 +34,7 @@ import {
 import { parseConnectionPartInfos } from './connections.ts'
 import { type ContentTypes, parseContentTypes } from './content-types.ts'
 import { parseDataModelPartInfo } from './data-model.ts'
+import { parseDocumentProperties } from './doc-props.ts'
 import {
 	parseDrawingImageRefs,
 	parseDrawingObjectRefs,
@@ -97,6 +98,12 @@ const CT_SHARED_STRINGS =
 	'application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml'
 const CT_STYLES = 'application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml'
 const CT_THEME = 'application/vnd.openxmlformats-officedocument.theme+xml'
+const REL_CORE_PROPS =
+	'http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties'
+const REL_EXT_PROPS =
+	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties'
+const REL_CUSTOM_PROPS =
+	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties'
 
 export interface ReadXlsxResult {
 	readonly workbook: Workbook
@@ -228,6 +235,11 @@ export function readXlsx(
 				name: entry.name,
 			})),
 		}
+		workbook.documentProperties = parseDocumentProperties({
+			coreXml: documentPropertyXml(archive, rootRels, REL_CORE_PROPS),
+			appXml: documentPropertyXml(archive, rootRels, REL_EXT_PROPS),
+			customXml: documentPropertyXml(archive, rootRels, REL_CUSTOM_PROPS),
+		})
 		for (const relId of wbInfo.externalReferenceRelIds) {
 			const rel = relMap.get(relId)
 			if (!rel) continue
@@ -675,6 +687,17 @@ function definedNameOptions(dn: DefinedNameEntry): DefinedNameOptions {
 			? { extraAttributes: dn.extraAttributes }
 			: {}),
 	}
+}
+
+function documentPropertyXml(
+	archive: ZipArchive,
+	relationships: readonly Relationship[],
+	type: string,
+): string | undefined {
+	const rel = relationships.find(
+		(relationship) => relationship.type === type && relationship.targetMode !== 'External',
+	)
+	return rel ? readPart(archive, resolvePath('', rel.target)) : undefined
 }
 
 function readPart(archive: ZipArchive, path: string): string | undefined {
@@ -1415,7 +1438,7 @@ function preservedFeatureNote(feature: string): string | undefined {
 		return 'Workbook data model parts are inventoried and preserved; Power Pivot/data-model execution is not performed headlessly.'
 	}
 	if (feature === 'preservedDocumentProperties') {
-		return 'Document property parts are preserved exactly where possible; semantic property editing is not yet first-class.'
+		return 'Document property parts are preserved exactly when untouched; core, app, and custom docProps are inspectable and editable through setDocumentProperties.'
 	}
 	return undefined
 }

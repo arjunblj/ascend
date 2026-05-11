@@ -31,6 +31,7 @@ import type {
 	TableStyleInfo,
 	WorkbookConnectionPartInfo,
 	WorkbookDataModelPartInfo,
+	WorkbookDocumentProperties,
 	WorkbookMacroSheetInfo,
 	WorkbookThemeColor,
 	WorkbookView,
@@ -44,8 +45,11 @@ export type {
 	VbaProjectInfo,
 	WorkbookConnectionPartInfo,
 	WorkbookConnectionPartKind,
+	WorkbookCoreDocumentProperties,
+	WorkbookCustomDocumentProperty,
 	WorkbookDataModelPartInfo,
 	WorkbookDataModelPartKind,
+	WorkbookDocumentProperties,
 	WorkbookMacroSheetInfo,
 } from '@ascend/core'
 
@@ -128,6 +132,7 @@ export interface WorkbookInfo {
 	readonly connectionParts: readonly WorkbookConnectionPartInfo[]
 	readonly dataModelParts: readonly WorkbookDataModelPartInfo[]
 	readonly activeContent: readonly ActiveContentInfo[]
+	readonly documentProperties: WorkbookDocumentProperties
 	readonly styleSummary: {
 		readonly numFmtCount: number
 		readonly fontCount: number
@@ -249,7 +254,21 @@ export interface ExternalReferenceInfo {
 export interface ExternalReferenceUsageInfo {
 	readonly workbook: string
 	readonly sheet?: string
-	readonly sourceKind: 'cellFormula' | 'definedName'
+	readonly sourceKind:
+		| 'cellFormula'
+		| 'definedName'
+		| 'chartSeriesName'
+		| 'chartSeriesCategory'
+		| 'chartSeriesValue'
+		| 'conditionalFormat'
+		| 'dataValidation'
+		| 'sparklineGroupRange'
+		| 'sparklineDateAxisRange'
+		| 'sparklineRange'
+		| 'tableColumnFormula'
+		| 'tableTotalsRowFormula'
+		| 'x14ConditionalFormat'
+		| 'x14DataValidation'
 	readonly sourceRef?: string
 	readonly name?: string
 	readonly formula: string
@@ -759,7 +778,9 @@ export interface CommentSummary {
 export interface HyperlinkSummary {
 	readonly ref: string
 	readonly target?: string
+	readonly location?: string
 	readonly display?: string
+	readonly tooltip?: string
 }
 
 /** Summary of a merge range for SDK inspection. */

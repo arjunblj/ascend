@@ -12,6 +12,7 @@ import type {
 	SheetConditionalFormatRule,
 	SheetConditionalFormatValueObject,
 	SheetDataValidation,
+	SheetProtectedRange,
 	SheetSparklineGroupInfo,
 	SheetX14ConditionalFormatDataBarInfo,
 	SheetX14ConditionalFormatIconInfo,
@@ -244,6 +245,7 @@ export function parseSheet(
 	parseAutoFilter(ws, sheet)
 	parseSortState(ws, sheet)
 	parseSheetProtection(ws, sheet)
+	parseProtectedRanges(ws, sheet)
 	parsePageMargins(ws, sheet)
 	parsePageSetup(ws, sheet)
 	parsePrintOptions(ws, sheet)
@@ -1466,13 +1468,9 @@ function parseFastCell(
 			)
 
 	let value: CellValue
-	if (type === 's') {
-		const idx = rawValue !== undefined ? fastParseNonNegInt(rawValue) : -1
+	if (type === 's' && rawValue !== undefined) {
+		const idx = fastParseNonNegInt(rawValue)
 		if (idx < 0) {
-			if (ctx.valuesOnly) {
-				sheet.cells.setStringResolved(row, col, '', null, DEFAULT_STYLE_ID)
-				return true
-			}
 			value = pool ? pool.internValue(stringValue('')) : stringValue('')
 		} else {
 			if (ctx.valuesOnly) {
@@ -1485,12 +1483,12 @@ function parseFastCell(
 			const entry = ctx.sharedStrings.get(idx)
 			value = entry ?? (pool ? pool.internValue(stringValue('')) : stringValue(''))
 		}
-	} else if (type === 'b') {
+	} else if (type === 'b' && rawValue !== undefined) {
 		value = booleanValue(rawValue === '1')
-	} else if (type === 'e') {
-		value = errorValue((rawValue ?? '#VALUE!') as ExcelError)
-	} else if (type === 'str') {
-		const text = rawValue ?? ''
+	} else if (type === 'e' && rawValue !== undefined) {
+		value = errorValue(rawValue as ExcelError)
+	} else if (type === 'str' && rawValue !== undefined) {
+		const text = rawValue
 		value = pool ? pool.internValue(stringValue(pool.internString(text))) : stringValue(text)
 	} else if (rawValue !== undefined && rawValue !== '') {
 		const num = Number(rawValue)
@@ -1508,7 +1506,7 @@ function parseFastCell(
 	} else if (ctx.valuesOnly && innerXml.includes('<f')) {
 		value = EMPTY
 	} else if (type) {
-		value = type === 'n' ? (pool ? pool.internValue(numberValue(0)) : numberValue(0)) : EMPTY
+		return false
 	} else {
 		return false
 	}
@@ -3135,16 +3133,16 @@ function resolveCellToSheet(
 
 	let value: CellValue
 
-	if (type === 's') {
+	if (type === 's' && rawValue !== undefined && rawValue !== null) {
 		const idx = typeof rawValue === 'number' ? rawValue : Number(rawValue)
 		const entry = ctx.sharedStrings.get(idx)
 		value = entry ?? stringValue('')
-	} else if (type === 'b') {
+	} else if (type === 'b' && rawValue !== undefined && rawValue !== null) {
 		value = booleanValue(rawValue === 1 || rawValue === true || rawValue === '1')
-	} else if (type === 'e') {
-		value = errorValue((rawValue != null ? String(rawValue) : '#VALUE!') as ExcelError)
-	} else if (type === 'str') {
-		const text = rawValue != null ? String(rawValue) : ''
+	} else if (type === 'e' && rawValue !== undefined && rawValue !== null) {
+		value = errorValue(String(rawValue) as ExcelError)
+	} else if (type === 'str' && rawValue !== undefined && rawValue !== null) {
+		const text = String(rawValue)
 		value = pool ? pool.internValue(stringValue(pool.internString(text))) : stringValue(text)
 	} else if (type === 'inlineStr') {
 		if (c.is !== undefined && c.is !== null) {
@@ -3170,7 +3168,7 @@ function resolveCellToSheet(
 	} else if (ctx.valuesOnly && c.f !== undefined && c.f !== null) {
 		value = EMPTY
 	} else if (type) {
-		value = type === 'n' ? (pool ? pool.internValue(numberValue(0)) : numberValue(0)) : EMPTY
+		return false
 	} else {
 		return false
 	}
@@ -3927,6 +3925,39 @@ function parseSheetProtection(ws: XmlNode, sheet: Sheet): void {
 	setIfDefined(parsed, 'saltValue', attr(protection, 'saltValue'))
 	setIfDefined(parsed, 'spinCount', numAttr(protection, 'spinCount'))
 	sheet.protection = parsed
+}
+
+function parseProtectedRanges(ws: XmlNode, sheet: Sheet): void {
+	const protectedRanges = ws.protectedRanges as XmlNode | undefined
+	if (!protectedRanges) return
+	const parsed = asArray(protectedRanges.protectedRange)
+		.map((node) => parseProtectedRange(node))
+		.filter((range): range is NonNullable<ReturnType<typeof parseProtectedRange>> => range !== null)
+	if (parsed.length > 0) sheet.protectedRanges = parsed
+}
+
+function parseProtectedRange(node: unknown): SheetProtectedRange | null {
+	if (!node || typeof node !== 'object') return null
+	const range = node as XmlNode
+	const sqref = attr(range, 'sqref')
+	if (!sqref) return null
+	const name = attr(range, 'name')
+	const password = attr(range, 'password')
+	const algorithmName = attr(range, 'algorithmName')
+	const hashValue = attr(range, 'hashValue')
+	const saltValue = attr(range, 'saltValue')
+	const spinCount = numAttr(range, 'spinCount')
+	const securityDescriptor = attr(range, 'securityDescriptor')
+	return {
+		sqref,
+		...(name !== undefined ? { name } : {}),
+		...(password !== undefined ? { password } : {}),
+		...(algorithmName !== undefined ? { algorithmName } : {}),
+		...(hashValue !== undefined ? { hashValue } : {}),
+		...(saltValue !== undefined ? { saltValue } : {}),
+		...(spinCount !== undefined ? { spinCount } : {}),
+		...(securityDescriptor !== undefined ? { securityDescriptor } : {}),
+	}
 }
 
 function parsePageMargins(ws: XmlNode, sheet: Sheet): void {

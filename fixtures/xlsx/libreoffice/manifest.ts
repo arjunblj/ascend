@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { CorpusManifestEntry } from '../../corpus/manifest.ts'
@@ -7,7 +7,6 @@ import { inspectOoxmlPackageFeatures } from '../../corpus/ooxml-feature-probe.ts
 
 interface LibreOfficeFixture {
 	readonly file: string
-	readonly sourcePath: string
 	readonly notes?: string
 }
 
@@ -15,117 +14,31 @@ const LIBREOFFICE_SOURCE = 'LibreOffice Calc QA XLSX regression data'
 const LIBREOFFICE_BASE_URL = 'https://raw.githubusercontent.com/LibreOffice/core/master'
 const LIBREOFFICE_LICENSE = 'MPL-2.0 OR LGPL-3.0-or-later OR GPL-3.0-or-later'
 
-const FIXTURES: readonly LibreOfficeFixture[] = [
-	{ file: '129969-min.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/129969-min.xlsx' },
-	{ file: 'CalcThemeTest.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/CalcThemeTest.xlsx' },
-	{
-		file: 'MissingPathExternal.xlsx',
-		sourcePath: 'sc/qa/unit/data/xlsx/MissingPathExternal.xlsx',
-		notes: 'External-link regression workbook; link targets are preserved but not fetched.',
-	},
-	{
-		file: 'PivotTable_CachedDefinitionAndDataInSync.xlsx',
-		sourcePath: 'sc/qa/unit/data/xlsx/PivotTable_CachedDefinitionAndDataInSync.xlsx',
-	},
-	{
-		file: 'PivotTable_CachedDefinitionAndDataNotInSync_SheetColumnsRemoved_WithCacheData.xlsx',
-		sourcePath:
-			'sc/qa/unit/data/xlsx/PivotTable_CachedDefinitionAndDataNotInSync_SheetColumnsRemoved_WithCacheData.xlsx',
-	},
-	{
-		file: 'PivotTable_CachedDefinitionAndDataNotInSync_SheetColumnsRemoved_WithoutCacheData.xlsx',
-		sourcePath:
-			'sc/qa/unit/data/xlsx/PivotTable_CachedDefinitionAndDataNotInSync_SheetColumnsRemoved_WithoutCacheData.xlsx',
-	},
-	{
-		file: 'ProtecteSheet1234Pass.xlsx',
-		sourcePath: 'sc/qa/unit/data/xlsx/ProtecteSheet1234Pass.xlsx',
-	},
-	{ file: 'Sparklines.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/Sparklines.xlsx' },
-	{ file: 'TableEmptyHeaders.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/TableEmptyHeaders.xlsx' },
-	{ file: 'TableStyleTest.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/TableStyleTest.xlsx' },
-	{
-		file: 'Test_ThemeColor_Text_Background_Border.xlsx',
-		sourcePath: 'sc/qa/unit/data/xlsx/Test_ThemeColor_Text_Background_Border.xlsx',
-	},
-	{ file: 'activex_checkbox.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/activex_checkbox.xlsx' },
-	{ file: 'autofilter-colors.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/autofilter-colors.xlsx' },
-	{ file: 'autofilter.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/autofilter.xlsx' },
-	{ file: 'colorscale.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/colorscale.xlsx' },
-	{ file: 'complex_icon_set.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/complex_icon_set.xlsx' },
-	{ file: 'condFormat_cellis.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/condFormat_cellis.xlsx' },
-	{ file: 'databar.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/databar.xlsx' },
-	{
-		file: 'functions-excel-2010.xlsx',
-		sourcePath: 'sc/qa/unit/data/xlsx/functions-excel-2010.xlsx',
-	},
-	{
-		file: 'matrix-multiplication.xlsx',
-		sourcePath: 'sc/qa/unit/data/xlsx/matrix-multiplication.xlsx',
-	},
-	{
-		file: 'pivot_table_first_header_row.xlsx',
-		sourcePath: 'sc/qa/unit/data/xlsx/pivot_table_first_header_row.xlsx',
-	},
-	{
-		file: 'pivottable_date_field_filter.xlsx',
-		sourcePath: 'sc/qa/unit/data/xlsx/pivottable_date_field_filter.xlsx',
-	},
-	{
-		file: 'pivot-table/tdf126858-1.xlsx',
-		sourcePath: 'sc/qa/unit/data/xlsx/pivot-table/tdf126858-1.xlsx',
-		notes:
-			'Calculated pivot field regression: the calculated data field is the only visible data dimension.',
-	},
-	{
-		file: 'pivot-table/test_diff_aggregation.xlsx',
-		sourcePath: 'sc/qa/unit/data/xlsx/pivot-table/test_diff_aggregation.xlsx',
-		notes:
-			'Calculated pivot field regression: calculated fields use SUM aggregation even beside visible COUNT data fields.',
-	},
-	{ file: 'sortconditionref2.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/sortconditionref2.xlsx' },
-	{
-		file: 'tdf143068_top10filter.xlsx',
-		sourcePath: 'sc/qa/unit/data/xlsx/tdf143068_top10filter.xlsx',
-	},
-	{
-		file: 'tdf165180_date1904.xlsx',
-		sourcePath: 'sc/qa/unit/data/xlsx/tdf165180_date1904.xlsx',
-	},
-	{
-		file: 'tdf167689_tableType.xlsx',
-		sourcePath: 'sc/qa/unit/data/xlsx/tdf167689_tableType.xlsx',
-	},
-	{ file: 'tdf170201.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/tdf170201.xlsx' },
-	{
-		file: 'textLengthDataValidity.xlsx',
-		sourcePath: 'sc/qa/unit/data/xlsx/textLengthDataValidity.xlsx',
-	},
-	{ file: 'textbox-hyperlink.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/textbox-hyperlink.xlsx' },
-	{ file: 'totalsRowFunction.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/totalsRowFunction.xlsx' },
-	{ file: 'totalsRowShown.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/totalsRowShown.xlsx' },
-	{
-		file: 'universal-content-strict.xlsx',
-		sourcePath: 'sc/qa/unit/data/xlsx/universal-content-strict.xlsx',
-	},
-	{ file: 'universal-content.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/universal-content.xlsx' },
-	{
-		file: 'user_defined_function.xlsx',
-		sourcePath: 'sc/qa/unit/data/xlsx/user_defined_function.xlsx',
-		notes:
-			'Contains an external/user-defined formula entry; useful for parser and preservation coverage.',
-	},
-	{
-		file: 'value-in-column-2000.xlsx',
-		sourcePath: 'sc/qa/unit/data/xlsx/value-in-column-2000.xlsx',
-	},
-	{ file: 'writingMode.xlsx', sourcePath: 'sc/qa/unit/data/xlsx/writingMode.xlsx' },
-]
+const FIXTURE_NOTES = new Map<string, string>([
+	[
+		'MissingPathExternal.xlsx',
+		'External-link regression workbook; link targets are preserved but not fetched.',
+	],
+	[
+		'pivot-table/tdf126858-1.xlsx',
+		'Calculated pivot field regression: the calculated data field is the only visible data dimension.',
+	],
+	[
+		'pivot-table/test_diff_aggregation.xlsx',
+		'Calculated pivot field regression: calculated fields use SUM aggregation even beside visible COUNT data fields.',
+	],
+	[
+		'user_defined_function.xlsx',
+		'Contains an external/user-defined formula entry; useful for parser and preservation coverage.',
+	],
+])
 
 export async function loadManifest(): Promise<CorpusManifestEntry[]> {
 	const root = dirname(fileURLToPath(import.meta.url))
 	const entries: CorpusManifestEntry[] = []
-	for (const fixture of FIXTURES) entries.push(await buildEntry(root, fixture))
+	for (const file of await listWorkbookFiles(root)) {
+		entries.push(await buildEntry(root, { file, notes: FIXTURE_NOTES.get(file) }))
+	}
 	return entries
 }
 
@@ -154,7 +67,7 @@ async function buildEntry(root: string, fixture: LibreOfficeFixture): Promise<Co
 		features,
 		counts,
 		source: LIBREOFFICE_SOURCE,
-		sourceUrl: `${LIBREOFFICE_BASE_URL}/${fixture.sourcePath}`,
+		sourceUrl: `${LIBREOFFICE_BASE_URL}/sc/qa/unit/data/xlsx/${fixture.file}`,
 		license: LIBREOFFICE_LICENSE,
 		sha256: createHash('sha256').update(bytes).digest('hex'),
 		redistributionAllowed: true,
@@ -166,6 +79,20 @@ async function buildEntry(root: string, fixture: LibreOfficeFixture): Promise<Co
 		featureTags: deriveTags(fixture.file, counts.formulas, features),
 		...(fixture.notes ? { notes: fixture.notes } : {}),
 	}
+}
+
+async function listWorkbookFiles(root: string, dir = ''): Promise<string[]> {
+	const entries = await readdir(join(root, dir), { withFileTypes: true })
+	const files: string[] = []
+	for (const entry of entries) {
+		const path = dir ? `${dir}/${entry.name}` : entry.name
+		if (entry.isDirectory()) {
+			files.push(...(await listWorkbookFiles(root, path)))
+		} else if (entry.isFile() && (entry.name.endsWith('.xlsx') || entry.name.endsWith('.xlsm'))) {
+			files.push(path)
+		}
+	}
+	return files.sort((a, b) => a.localeCompare(b))
 }
 
 function deriveTier(

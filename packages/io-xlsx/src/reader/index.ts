@@ -217,6 +217,10 @@ export function readXlsx(
 				extension,
 				contentType,
 			})),
+			contentTypeOverrides: Array.from(contentTypes.overrides, ([partPath, contentType]) => ({
+				partPath,
+				contentType,
+			})),
 			sheetEntries: wbInfo.sheets.map((entry) => ({
 				kind: workbookSheetEntryKind(relMap.get(entry.rId)?.type),
 				sheetId: entry.sheetId,

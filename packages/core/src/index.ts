@@ -106,6 +106,7 @@ export type {
 	SheetPageMargins,
 	SheetPageSetup,
 	SheetPrintOptions,
+	SheetProtectedRange,
 	SheetProtection,
 	SheetRowDef,
 	SheetSparklineGroupInfo,

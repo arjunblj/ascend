@@ -103,6 +103,28 @@ function worksheetRelsPath(sheet: Workbook['sheets'][number] | undefined, index:
 	return sheet?.preservedXml?.relsPath ?? getRelsPath(worksheetPartPath(sheet, index))
 }
 
+function filterPreservedContentTypeOverrides(
+	overrides: NonNullable<Workbook['preservedXml']>['contentTypeOverrides'] | undefined,
+	defaults: NonNullable<Workbook['preservedXml']>['contentTypeDefaults'] | undefined,
+	finalPartPaths: ReadonlySet<string>,
+): readonly { partPath: string; contentType: string }[] | undefined {
+	if (!overrides) return undefined
+	const defaultMap = new Map((defaults ?? []).map((entry) => [entry.extension, entry.contentType]))
+	const filtered = overrides.filter((override) => {
+		const partPath = stripLeadingSlash(override.partPath)
+		if (!finalPartPaths.has(partPath)) return false
+		const extension = partPath.split('.').pop()
+		const coveredByDefault =
+			extension !== undefined && defaultMap.get(extension) === override.contentType
+		return !coveredByDefault || extension === 'rels'
+	})
+	return filtered.length > 0 ? filtered : undefined
+}
+
+function stripLeadingSlash(path: string): string {
+	return path.startsWith('/') ? path.slice(1) : path
+}
+
 interface XmlStreamingBatchSink {
 	write(chunk: string): void
 	flush(): Uint8Array | undefined
@@ -1752,6 +1774,7 @@ export function planWriteXlsx(
 			},
 			() => {
 				const built = plan.build()
+				const finalPartPaths = new Set(built.descriptors.map((descriptor) => descriptor.path))
 				return buildContentTypesXml(
 					workbook.sheets.map((sheet, index) => worksheetPartPath(sheet, index)),
 					hasSharedStrings,
@@ -1763,6 +1786,11 @@ export function planWriteXlsx(
 					),
 					built.extraOverrides.length > 0 ? built.extraOverrides : undefined,
 					workbook.preservedXml?.contentTypeDefaults,
+					filterPreservedContentTypeOverrides(
+						workbook.preservedXml?.contentTypeOverrides,
+						workbook.preservedXml?.contentTypeDefaults,
+						finalPartPaths,
+					),
 					{ corePropsPath, appPropsPath },
 					{ includeStyles: shouldWriteStyles, includeDocProps: shouldWriteDocProps },
 				)

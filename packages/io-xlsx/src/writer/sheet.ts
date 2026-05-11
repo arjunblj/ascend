@@ -288,6 +288,14 @@ function buildSheetXmlToSink(
 		if (attrs.length > 0) out.push(`<sheetProtection ${attrs.join(' ')}/>`)
 	}
 
+	if (sheet.protectedRanges.length > 0) {
+		out.push(`<protectedRanges count="${sheet.protectedRanges.length}">`)
+		for (const range of sheet.protectedRanges) {
+			out.push(`<protectedRange ${collectProtectedRangeAttrs(range).join(' ')}/>`)
+		}
+		out.push('</protectedRanges>')
+	}
+
 	if (sheet.autoFilter) {
 		pushAutoFilterXml(out, sheet.autoFilter, {
 			...(sheet.preservedAutoFilterSortStateAttributes
@@ -695,6 +703,23 @@ function collectProtectionAttrs(protection: NonNullable<Sheet['protection']>): s
 			continue
 		}
 		attrs.push(`${key}="${escapeXml(String(value))}"`)
+	}
+	return attrs
+}
+
+function collectProtectedRangeAttrs(range: Sheet['protectedRanges'][number]): string[] {
+	const attrs: string[] = []
+	if (range.name !== undefined) attrs.push(`name="${escapeXml(range.name)}"`)
+	attrs.push(`sqref="${escapeXml(range.sqref)}"`)
+	if (range.password !== undefined) attrs.push(`password="${escapeXml(range.password)}"`)
+	if (range.algorithmName !== undefined) {
+		attrs.push(`algorithmName="${escapeXml(range.algorithmName)}"`)
+	}
+	if (range.hashValue !== undefined) attrs.push(`hashValue="${escapeXml(range.hashValue)}"`)
+	if (range.saltValue !== undefined) attrs.push(`saltValue="${escapeXml(range.saltValue)}"`)
+	if (range.spinCount !== undefined) attrs.push(`spinCount="${range.spinCount}"`)
+	if (range.securityDescriptor !== undefined) {
+		attrs.push(`securityDescriptor="${escapeXml(range.securityDescriptor)}"`)
 	}
 	return attrs
 }

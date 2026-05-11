@@ -93,6 +93,17 @@ export interface SheetProtection {
 	readonly spinCount?: number
 }
 
+export interface SheetProtectedRange {
+	readonly name?: string
+	readonly sqref: string
+	readonly password?: string
+	readonly algorithmName?: string
+	readonly hashValue?: string
+	readonly saltValue?: string
+	readonly spinCount?: number
+	readonly securityDescriptor?: string
+}
+
 export interface SheetHeaderFooter {
 	readonly oddHeader?: string
 	readonly oddFooter?: string
@@ -517,6 +528,7 @@ export class Sheet {
 	sortState: SortState | null
 	preservedSortStateAttributes: Record<string, string> | null
 	protection: SheetProtection | null
+	protectedRanges: SheetProtectedRange[]
 	pageMargins: SheetPageMargins | null
 	pageSetup: SheetPageSetup | null
 	printOptions: SheetPrintOptions | null
@@ -569,6 +581,7 @@ export class Sheet {
 		this.sortState = null
 		this.preservedSortStateAttributes = null
 		this.protection = null
+		this.protectedRanges = []
 		this.pageMargins = null
 		this.pageSetup = null
 		this.printOptions = null
@@ -627,6 +640,8 @@ export class Sheet {
 		this.preservedSortStateAttributes = this.preservedSortStateAttributes
 			? { ...this.preservedSortStateAttributes }
 			: null
+		this.protection = this.protection ? { ...this.protection } : null
+		this.protectedRanges = this.protectedRanges.map((range) => ({ ...range }))
 		this._shared = false
 	}
 
@@ -667,6 +682,7 @@ export class Sheet {
 		s.sortState = this.sortState
 		s.preservedSortStateAttributes = this.preservedSortStateAttributes
 		s.protection = this.protection
+		s.protectedRanges = this.protectedRanges
 		s.pageMargins = this.pageMargins
 		s.pageSetup = this.pageSetup
 		s.printOptions = this.printOptions

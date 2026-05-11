@@ -26,6 +26,7 @@ export function buildContentTypesXml(
 	capsules?: PreservationCapsule[],
 	extraOverrides?: readonly { partPath: string; contentType: string }[],
 	preservedDefaults?: readonly ContentTypeDefault[],
+	preservedOverrides?: readonly { partPath: string; contentType: string }[],
 	docPropsPaths: { readonly corePropsPath: string; readonly appPropsPath: string } = {
 		corePropsPath: 'docProps/core.xml',
 		appPropsPath: 'docProps/app.xml',
@@ -89,6 +90,12 @@ export function buildContentTypesXml(
 	if (extraOverrides) {
 		for (const override of extraOverrides) {
 			pushOverride(override.partPath, override.contentType, true)
+		}
+	}
+
+	if (preservedOverrides) {
+		for (const override of preservedOverrides) {
+			pushOverride(override.partPath, override.contentType)
 		}
 	}
 

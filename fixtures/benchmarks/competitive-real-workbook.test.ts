@@ -1253,7 +1253,7 @@ describe('evaluateAssertions', () => {
 		const entries = normalizeManifest(
 			await loadCorpusManifestEntries(resolve(import.meta.dir, '../xlsx/libreoffice/manifest.ts')),
 		)
-		expect(entries.length).toBe(38)
+		expect(entries.length).toBe(118)
 		expect(validateManifestProvenance(entries)).toEqual([])
 		const selected = selectCorpusTargets(
 			entries,
@@ -1351,6 +1351,16 @@ describe('evaluateAssertions', () => {
 		)
 		expect(withoutMerge.featurePartNamesHash).toBe(withFeature.featurePartNamesHash)
 		expect(withoutMerge.featureInventoryHash).not.toBe(withFeature.featureInventoryHash)
+	})
+
+	test('feature summary normalizes sheet-protection boolean spellings', () => {
+		const numeric = extractWorkbookFeatureSummary(
+			sheetProtectionFeatureWorkbookBytes('sheet="1" objects="1" autoFilter="0"'),
+		)
+		const textual = extractWorkbookFeatureSummary(
+			sheetProtectionFeatureWorkbookBytes('sheet="true" objects="true" autoFilter="false"'),
+		)
+		expect(textual.featureInventoryHash).toBe(numeric.featureInventoryHash)
 	})
 
 	test('package fingerprint normalizes strict extended document property relationships', () => {
@@ -1613,6 +1623,36 @@ function singleSheetWorkbookBytes(sheetXmlBody: string): Uint8Array {
 		'xl/theme/theme1.xml': strToU8(
 			'<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Office"/>',
 		),
+	})
+}
+
+function sheetProtectionFeatureWorkbookBytes(attrs: string): Uint8Array {
+	return zipSync({
+		'[Content_Types].xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`),
+		'_rels/.rels': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+		'xl/_rels/workbook.xml.rels': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`),
+		'xl/workbook.xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`),
+		'xl/worksheets/sheet1.xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>
+  <sheetProtection ${attrs}/>
+</worksheet>`),
 	})
 }
 

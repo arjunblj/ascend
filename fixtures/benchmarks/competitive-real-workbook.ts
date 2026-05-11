@@ -1562,7 +1562,12 @@ function worksheetFeatureEntries(path: string, xml: string): readonly string[] {
 		lines.push(`worksheet-sort-state\t${path}\t${canonicalAttributes(match[1] ?? '')}`)
 	}
 	for (const match of xml.matchAll(openTagRegex('sheetProtection'))) {
-		lines.push(`worksheet-sheet-protection\t${path}\t${canonicalAttributes(match[1] ?? '')}`)
+		lines.push(
+			`worksheet-sheet-protection\t${path}\t${canonicalSheetProtectionAttributes(match[1] ?? '')}`,
+		)
+	}
+	for (const match of xml.matchAll(openTagRegex('protectedRange'))) {
+		lines.push(`worksheet-protected-range\t${path}\t${canonicalAttributes(match[1] ?? '')}`)
 	}
 	for (const match of xml.matchAll(openTagRegex('sheetView'))) {
 		lines.push(`worksheet-sheet-view\t${path}\t${canonicalAttributes(match[1] ?? '')}`)
@@ -1675,6 +1680,38 @@ function canonicalAttributes(attrsText: string): string {
 	return [...parseXmlAttributes(attrsText).entries()]
 		.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
 		.map(([key, value]) => `${key}=${value}`)
+		.join(';')
+}
+
+const SHEET_PROTECTION_BOOLEAN_ATTRIBUTES = new Set([
+	'sheet',
+	'objects',
+	'scenarios',
+	'formatCells',
+	'formatColumns',
+	'formatRows',
+	'insertColumns',
+	'insertRows',
+	'insertHyperlinks',
+	'deleteColumns',
+	'deleteRows',
+	'selectLockedCells',
+	'sort',
+	'autoFilter',
+	'pivotTables',
+	'selectUnlockedCells',
+])
+
+function canonicalSheetProtectionAttributes(attrsText: string): string {
+	return [...parseXmlAttributes(attrsText).entries()]
+		.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+		.map(([key, value]) => {
+			if (SHEET_PROTECTION_BOOLEAN_ATTRIBUTES.has(key)) {
+				if (value === 'true') return `${key}=1`
+				if (value === 'false') return `${key}=0`
+			}
+			return `${key}=${value}`
+		})
 		.join(';')
 }
 
@@ -2302,8 +2339,9 @@ function serializeExpectedCellValue(
 ): string {
 	const type = /(?:^|\s)t="([^"]+)"/.exec(attrs)?.[1]
 	const rawValue = extractCellValueText(body)
+	if (rawValue === null) return 'empty'
 	if (type === 's') {
-		const index = rawValue !== null ? Number.parseInt(rawValue, 10) : -1
+		const index = Number.parseInt(rawValue, 10)
 		if (index < 0) return 's:'
 		const text = sharedStrings.getString?.(index)
 		if (text !== undefined) return `s:${text}`
@@ -2311,10 +2349,10 @@ function serializeExpectedCellValue(
 		return value ? serializeCellValue(value) : 's:'
 	}
 	if (type === 'inlineStr') return `s:${extractInlineStringText(body)}`
-	if (type === 'str') return `s:${rawValue ?? ''}`
+	if (type === 'str') return `s:${rawValue}`
 	if (type === 'b') return `b:${rawValue === '1' || rawValue === 'true' ? 'true' : 'false'}`
-	if (type === 'e') return `e:${rawValue ?? '#VALUE!'}`
-	if (rawValue === null || rawValue === '') return 'empty'
+	if (type === 'e') return `e:${rawValue}`
+	if (rawValue === '') return 'empty'
 	const parsed = Number(rawValue)
 	return Number.isNaN(parsed) ? `s:${rawValue}` : `n:${canonicalNumber(parsed)}`
 }

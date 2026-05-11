@@ -2401,6 +2401,53 @@ describe('writeXlsx', () => {
 		expect(workbookRels).toContain('Target="../customXml/item1.xml"')
 	})
 
+	it('preserves explicit overrides for final parts even when defaults cover them', () => {
+		const sourceBytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/_rels/.rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Override PartName="/xl/_rels/workbook.xml.rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>
+</worksheet>`,
+		})
+		const source = readXlsx(sourceBytes)
+		expectOk(source)
+		const sheet = source.value.workbook.sheets[0]
+		if (!sheet) throw new Error('Expected source workbook to contain a sheet')
+		sheet.cells.set(0, 0, { value: numberValue(2), formula: null, styleId: S0 })
+
+		const written = writeXlsx(source.value.workbook, source.value.capsules, {
+			dirtySheetNames: ['Data'],
+		})
+		expectOk(written)
+
+		const contentTypes = new TextDecoder().decode(
+			unzipSync(written.value)['[Content_Types].xml'] ?? new Uint8Array(),
+		)
+		expect(contentTypes).toContain('PartName="/_rels/.rels"')
+		expect(contentTypes).toContain('PartName="/xl/_rels/workbook.xml.rels"')
+	})
+
 	it('preserves worksheet autoFilter criteria and sort state on round-trip', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Filter')
@@ -2595,6 +2642,7 @@ describe('writeXlsx', () => {
 			autoFilter: false,
 			selectUnlockedCells: true,
 		}
+		sheet.protectedRanges = [{ name: 'Editable', sqref: 'C:C', password: '1234' }]
 
 		const { result, bytes } = roundTrip(wb)
 		expect(result.workbook.workbookProtection).toEqual({
@@ -2612,12 +2660,17 @@ describe('writeXlsx', () => {
 			autoFilter: false,
 			selectUnlockedCells: true,
 		})
+		expect(result.workbook.sheets[0]?.protectedRanges).toEqual([
+			{ name: 'Editable', sqref: 'C:C', password: '1234' },
+		])
 		const fingerprint = fingerprintXlsx(bytes)
 		expect(fingerprint.workbook?.tagCounts).toMatchObject({
 			workbookProtection: 1,
 		})
 		expect(fingerprint.sheets[0]?.xml.tagCounts).toMatchObject({
 			sheetProtection: 1,
+			protectedRanges: 1,
+			protectedRange: 1,
 		})
 	})
 

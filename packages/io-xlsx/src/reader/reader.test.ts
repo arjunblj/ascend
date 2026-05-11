@@ -306,6 +306,45 @@ describe('readXlsx', () => {
 		])
 	})
 
+	it('does not materialize typed blank placeholders without cached values', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1" t="str"/>
+      <c r="B1" t="str"></c>
+      <c r="C1" t="n"/>
+      <c r="D1" t="s"></c>
+      <c r="E1" t="str"><f>A2</f></c>
+      <c r="F1" t="n"><f>A3</f></c>
+      <c r="G1" t="str"><v></v></c>
+    </row>
+  </sheetData>
+</worksheet>`,
+		})
+
+		for (const mode of ['formula', 'values'] as const) {
+			const result = readXlsx(bytes, { mode })
+			expectOk(result)
+			const sheet = result.value.workbook.sheets[0]
+			expect(sheet?.cells.get(0, 0)).toBeUndefined()
+			expect(sheet?.cells.get(0, 1)).toBeUndefined()
+			expect(sheet?.cells.get(0, 2)).toBeUndefined()
+			expect(sheet?.cells.get(0, 3)).toBeUndefined()
+			expect(sheet?.cells.get(0, 4)?.value).toEqual(EMPTY)
+			expect(sheet?.cells.get(0, 5)?.value).toEqual(EMPTY)
+			expect(sheet?.cells.get(0, 4)?.formula).toBe(mode === 'formula' ? 'A2' : null)
+			expect(sheet?.cells.get(0, 5)?.formula).toBe(mode === 'formula' ? 'A3' : null)
+			expect(sheet?.cells.get(0, 6)?.value).toEqual({ kind: 'string', value: '' })
+		}
+	})
+
 	it('does not materialize blank inline-string placeholders', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': CONTENT_TYPES,
@@ -1764,6 +1803,9 @@ describe('readXlsx', () => {
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <sheetData/>
   <sheetProtection sheet="1" objects="1" scenarios="1" password="1234" sort="0" autoFilter="0" selectUnlockedCells="1"/>
+  <protectedRanges>
+    <protectedRange name="Editable" sqref="C:C" password="ABCD"/>
+  </protectedRanges>
 </worksheet>`,
 		})
 
@@ -1785,6 +1827,13 @@ describe('readXlsx', () => {
 			autoFilter: false,
 			selectUnlockedCells: true,
 		})
+		expect(result.value.workbook.sheets[0]?.protectedRanges).toEqual([
+			{
+				name: 'Editable',
+				sqref: 'C:C',
+				password: 'ABCD',
+			},
+		])
 	})
 
 	it('parses and preserves workbook theme metadata', () => {
@@ -3240,7 +3289,7 @@ ${rowEntries.join('\n')}
 })
 
 describe('stub cells', () => {
-	it('reads cells with type attribute but no value element', () => {
+	it('skips cells with type attributes but no cached value', () => {
 		const stubSheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <sheetData>
@@ -3268,11 +3317,7 @@ describe('stub cells', () => {
 
 		const sheet = result.value.workbook.sheets[0]
 		expect(sheet).toBeDefined()
-		expect(sheet?.cells.get(0, 0)?.value).toEqual({ kind: 'string', value: '' })
-		expect(sheet?.cells.get(0, 1)?.value).toEqual({ kind: 'number', value: 0 })
-		expect(sheet?.cells.get(0, 2)?.value).toEqual({ kind: 'boolean', value: false })
-		expect(sheet?.cells.get(0, 3)?.value).toEqual({ kind: 'error', value: '#VALUE!' })
-		expect(sheet?.cells.get(0, 4)?.value).toEqual({ kind: 'string', value: '' })
+		expect(sheet?.cells.cellCount()).toBe(0)
 	})
 })
 

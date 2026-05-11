@@ -116,11 +116,17 @@ export interface WorkbookPreservedXml {
 	readonly workbookRelsXml?: string
 	readonly contentType?: string
 	readonly contentTypeDefaults?: readonly WorkbookPreservedContentTypeDefault[]
+	readonly contentTypeOverrides?: readonly WorkbookPreservedContentTypeOverride[]
 	readonly sheetEntries?: readonly WorkbookPreservedSheetEntry[]
 }
 
 export interface WorkbookPreservedContentTypeDefault {
 	readonly extension: string
+	readonly contentType: string
+}
+
+export interface WorkbookPreservedContentTypeOverride {
+	readonly partPath: string
 	readonly contentType: string
 }
 

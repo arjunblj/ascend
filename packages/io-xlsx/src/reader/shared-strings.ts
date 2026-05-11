@@ -190,8 +190,9 @@ function createLazySharedStrings(
 function parseSimplePlainSharedStringEntry(xml: string, start: number): string | undefined {
 	if (!xml.startsWith('<si><t>', start)) return undefined
 	const valueStart = start + 7
-	const valueEnd = xml.indexOf('</t></si>', valueStart)
+	const valueEnd = xml.indexOf('</t>', valueStart)
 	if (valueEnd === -1) return undefined
+	if (!xml.startsWith('</si>', valueEnd + 4)) return undefined
 	const text = xml.slice(valueStart, valueEnd)
 	return text.includes('&') ? decodeXmlText(text) : text
 }

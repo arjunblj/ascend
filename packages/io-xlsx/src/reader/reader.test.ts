@@ -537,6 +537,21 @@ describe('readXlsx', () => {
 		})
 	})
 
+	it('keeps lazy plain shared strings bounded when phonetic metadata follows text', () => {
+		const sharedStrings = parseSharedStrings(
+			`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2" uniqueCount="2">
+  <si><t>First</t><phoneticPr fontId="2" type="noConversion"/></si>
+  <si><t>Second</t></si>
+</sst>`,
+			{ lazy: true },
+		)
+
+		expect(sharedStrings.getString?.(0)).toBe('First')
+		expect(sharedStrings.getString?.(1)).toBe('Second')
+		expect(sharedStrings.get(0)).toEqual({ kind: 'string', value: 'First' })
+	})
+
 	it('parses theme and indexed colors in shared string rich text runs', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': CONTENT_TYPES,

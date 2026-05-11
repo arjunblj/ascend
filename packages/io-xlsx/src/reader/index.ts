@@ -583,7 +583,7 @@ export function readXlsx(
 				const sourceSheet = wbInfo.sheets[dn.localSheetId]
 				const sheet = sourceSheet ? workbook.getSheet(sourceSheet.name) : undefined
 				if (sheet) {
-					workbook.definedNames.set(
+					workbook.definedNames.add(
 						dn.name,
 						normalizeStoredFormulaText(dn.formula),
 						{
@@ -596,7 +596,7 @@ export function readXlsx(
 				}
 				continue
 			}
-			workbook.definedNames.set(dn.name, normalizeStoredFormulaText(dn.formula), undefined, options)
+			workbook.definedNames.add(dn.name, normalizeStoredFormulaText(dn.formula), undefined, options)
 		}
 
 		const sourceSheetNames = sourceWorksheetNames

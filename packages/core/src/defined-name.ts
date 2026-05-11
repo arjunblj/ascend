@@ -40,15 +40,7 @@ export class DefinedNameCollection {
 		options: DefinedNameOptions = {},
 	): void {
 		const index = this.findIndex(name, scope)
-		const entry: DefinedName = {
-			name,
-			formula,
-			scope,
-			...(options.hidden !== undefined ? { hidden: options.hidden } : {}),
-			...(options.extraAttributes && options.extraAttributes.length > 0
-				? { extraAttributes: options.extraAttributes.map((attr) => ({ ...attr })) }
-				: {}),
-		}
+		const entry = createDefinedName(name, formula, scope, options)
 		if (index >= 0) {
 			const previous = this.items[index]
 			if (previous) this.removeFromIndex(previous)
@@ -58,6 +50,18 @@ export class DefinedNameCollection {
 		}
 		this.items.push(entry)
 		this.addToIndex(entry)
+	}
+
+	add(
+		name: string,
+		formula: string,
+		scope: DefinedNameScope = WORKBOOK_SCOPE,
+		options: DefinedNameOptions = {},
+	): void {
+		const entry = createDefinedName(name, formula, scope, options)
+		const shouldIndex = this.getFromIndex(name, scope) === undefined
+		this.items.push(entry)
+		if (shouldIndex) this.addToIndex(entry)
 	}
 
 	get(name: string, scope: DefinedNameScope = WORKBOOK_SCOPE): string | undefined {
@@ -154,12 +158,47 @@ export class DefinedNameCollection {
 	private removeFromIndex(entry: DefinedName): void {
 		const lower = entry.name.toLowerCase()
 		if (entry.scope.kind === 'workbook') {
-			this.workbookIndex.delete(lower)
+			if (this.workbookIndex.get(lower) === entry) {
+				const replacement = this.items.find(
+					(item) =>
+						item !== entry && item.name.toLowerCase() === lower && item.scope.kind === 'workbook',
+				)
+				if (replacement) this.workbookIndex.set(lower, replacement)
+				else this.workbookIndex.delete(lower)
+			}
 			return
 		}
-		const names = this.sheetIndex.get(entry.scope.sheetId)
+		const sheetId = entry.scope.sheetId
+		const names = this.sheetIndex.get(sheetId)
 		if (!names) return
-		names.delete(lower)
-		if (names.size === 0) this.sheetIndex.delete(entry.scope.sheetId)
+		if (names.get(lower) === entry) {
+			const replacement = this.items.find(
+				(item) =>
+					item !== entry &&
+					item.name.toLowerCase() === lower &&
+					item.scope.kind === 'sheet' &&
+					item.scope.sheetId === sheetId,
+			)
+			if (replacement) names.set(lower, replacement)
+			else names.delete(lower)
+		}
+		if (names.size === 0) this.sheetIndex.delete(sheetId)
+	}
+}
+
+function createDefinedName(
+	name: string,
+	formula: string,
+	scope: DefinedNameScope,
+	options: DefinedNameOptions,
+): DefinedName {
+	return {
+		name,
+		formula,
+		scope,
+		...(options.hidden !== undefined ? { hidden: options.hidden } : {}),
+		...(options.extraAttributes && options.extraAttributes.length > 0
+			? { extraAttributes: options.extraAttributes.map((attr) => ({ ...attr })) }
+			: {}),
 	}
 }

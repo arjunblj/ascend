@@ -34,6 +34,16 @@ describe('DefinedNameCollection', () => {
 		expect(names.resolve('Rate', 'sheet-1')?.formula).toBe('0.2')
 	})
 
+	test('add preserves duplicate names while keeping deterministic lookup', () => {
+		const names = new DefinedNameCollection()
+		names.add('_xlnm._FilterDatabase', 'Data!$A$1:$B$2', { kind: 'sheet', sheetId: 'sheet-1' })
+		names.add('_xlnm._FilterDatabase', 'Data!$A$1:$B$3', { kind: 'sheet', sheetId: 'sheet-1' })
+
+		expect(names.size).toBe(2)
+		expect(names.list().map((entry) => entry.formula)).toEqual(['Data!$A$1:$B$2', 'Data!$A$1:$B$3'])
+		expect(names.resolve('_xlnm._FilterDatabase', 'sheet-1')?.formula).toBe('Data!$A$1:$B$2')
+	})
+
 	test('preserves optional hidden metadata', () => {
 		const names = new DefinedNameCollection()
 		names.set(

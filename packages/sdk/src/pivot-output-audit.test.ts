@@ -61,8 +61,9 @@ describe('pivot output audits', () => {
 		expect(wb.pivotOutputAudits()).toEqual([
 			expect.objectContaining({
 				pivotTable: 'PivotTable1',
-				status: 'mismatch',
-				checkedValueCount: 2,
+				status: 'passed',
+				checkedValueCount: 3,
+				mismatches: [],
 				warnings: [],
 			}),
 		])

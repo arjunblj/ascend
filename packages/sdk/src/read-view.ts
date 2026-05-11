@@ -2267,7 +2267,9 @@ function buildSimplePivotPageFilters(
 		const field = pivot.fields[pageField.index]
 		const allowed = pivotPageFieldAllowedValues(cache, pageField.index, field, pageField.item)
 		if (!allowed.ok) return allowed
-		if (allowed.value.size > 0) filters.set(pageField.index, allowed.value)
+		if (allowed.value.values.size > 0) {
+			filters.set(allowed.value.fieldIndex ?? pageField.index, allowed.value.values)
+		}
 	}
 	return { ok: true, value: filters }
 }
@@ -2277,33 +2279,56 @@ function pivotPageFieldAllowedValues(
 	fieldIndex: number,
 	field: PivotFieldInfo | undefined,
 	selectedItemIndex: number | undefined,
-): { ok: true; value: Set<string> } | { ok: false; warning: string } {
+):
+	| {
+			ok: true
+			value: {
+				fieldIndex?: number
+				values: Set<string>
+			}
+	  }
+	| { ok: false; warning: string } {
+	const cacheField = cache.fields[fieldIndex]
+	const group = cacheField?.fieldGroup
 	if (selectedItemIndex !== undefined) {
 		const selected = field?.items?.[selectedItemIndex]
 		if (!selected || selected.hidden || selected.missing || selected.cacheIndex === undefined) {
 			return { ok: false, warning: 'Pivot page filter selected item was not resolved.' }
 		}
+		if (group?.base !== undefined) {
+			const values = pivotGroupedAxisBaseValues(cache, group, selected.cacheIndex)
+			if (!values.ok) return values
+			return { ok: true, value: { fieldIndex: group.base, values: values.value } }
+		}
 		const value = pivotCacheSharedItemValue(cache, fieldIndex, selected.cacheIndex)
 		if (value === undefined) {
 			return { ok: false, warning: 'Pivot page filter selected cache item was not resolved.' }
 		}
-		return { ok: true, value: new Set([value]) }
+		return { ok: true, value: { fieldIndex, values: new Set([value]) } }
 	}
 	const items = field?.items?.filter((item) => item.cacheIndex !== undefined) ?? []
 	if (items.length === 0 || items.every((item) => !item.hidden && !item.missing)) {
-		return { ok: true, value: new Set() }
+		return { ok: true, value: { values: new Set() } }
 	}
 	const visibleValues = new Set<string>()
 	for (const item of items) {
 		if (item.hidden || item.missing || item.cacheIndex === undefined) continue
+		if (group?.base !== undefined) {
+			const values = pivotGroupedAxisBaseValues(cache, group, item.cacheIndex)
+			if (!values.ok) return values
+			for (const value of values.value) visibleValues.add(value)
+			continue
+		}
 		const value = pivotCacheSharedItemValue(cache, fieldIndex, item.cacheIndex)
 		if (value === undefined) {
 			return { ok: false, warning: 'Pivot page filter visible cache item was not resolved.' }
 		}
 		visibleValues.add(value)
 	}
-	if (visibleValues.size === items.length) return { ok: true, value: new Set() }
-	return { ok: true, value: visibleValues }
+	if (visibleValues.size === items.length && group?.base === undefined) {
+		return { ok: true, value: { values: new Set() } }
+	}
+	return { ok: true, value: { fieldIndex: group?.base ?? fieldIndex, values: visibleValues } }
 }
 
 function pivotCacheSharedItemValue(

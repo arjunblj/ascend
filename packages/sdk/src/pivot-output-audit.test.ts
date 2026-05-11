@@ -186,6 +186,63 @@ describe('pivot output audits', () => {
 		])
 	})
 
+	test('audits real LibreOffice first-header-row pivots with inferred data captions', async () => {
+		const wb = await AscendWorkbook.open(
+			loadLibreOfficeFixture('pivot_table_first_header_row.xlsx'),
+			{
+				pivotCacheRecordMaterializeLimit: 'all',
+			},
+		)
+		const audits = wb.pivotOutputAudits()
+
+		for (const pivotTable of ['PivotTable1', 'Kimutatás1']) {
+			expect(audits).toContainEqual(
+				expect.objectContaining({
+					pivotTable,
+					status: 'passed',
+					checkedValueCount: 3,
+					mismatches: [],
+					warnings: [],
+				}),
+			)
+		}
+	})
+
+	test('audits real LibreOffice duplicated-member page filters with field-only headers', async () => {
+		const wb = await AscendWorkbook.open(
+			loadLibreOfficeFixture('pivottable_duplicated_member_filter.xlsx'),
+			{
+				pivotCacheRecordMaterializeLimit: 'all',
+			},
+		)
+
+		expect(wb.pivotOutputAudits()).toEqual([
+			expect.objectContaining({
+				pivotTable: 'Kimutatás1',
+				status: 'passed',
+				checkedValueCount: 3,
+				mismatches: [],
+				warnings: [],
+			}),
+		])
+	})
+
+	test('audits real POI pivots with localized German grand total labels', async () => {
+		const wb = await AscendWorkbook.open(loadPoiFixture('ExcelPivotTableSample.xlsx'))
+
+		expect(wb.pivotOutputAudits()).toContainEqual(
+			expect.objectContaining({
+				pivotTable: 'PivotTable1',
+				partPath: 'xl/pivotTables/pivotTable2.xml',
+				sheetName: 'Tabelle3',
+				status: 'passed',
+				checkedValueCount: 3,
+				mismatches: [],
+				warnings: [],
+			}),
+		)
+	})
+
 	test.skipIf(!existsSync(MS_EXCEL_PIVOT_FIXTURE))(
 		'audits real Excel one-row pivots with column fields',
 		async () => {
@@ -334,6 +391,10 @@ function loadLibreOfficeFixture(file: string): Uint8Array {
 
 function loadCalamineFixture(file: string): Uint8Array {
 	return readFileSync(new URL(`../../../fixtures/xlsx/calamine/${file}`, import.meta.url))
+}
+
+function loadPoiFixture(file: string): Uint8Array {
+	return readFileSync(new URL(`../../../fixtures/xlsx/poi/${file}`, import.meta.url))
 }
 
 function workbookWithoutMaterializedPivot(): AscendWorkbook {

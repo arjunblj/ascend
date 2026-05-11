@@ -1554,8 +1554,8 @@ function aggregateDataFieldsOnRowsPivotOutput(
 	if (!pageFilters.ok) return pageFilters
 	const columns = buildPivotColumnOutputColumns(cache, pivot)
 	if (!columns.ok) return columns
-	const dataFieldNames = pivot.dataFields.map(
-		(field, index) => field.name ?? `DataField${index + 1}`,
+	const dataFieldNames = pivot.dataFields.map((field, index) =>
+		pivotDataFieldAuditName(cache, field, index),
 	)
 	const output = new Map<string, Map<string, number>>()
 	for (const dataFieldName of dataFieldNames) {
@@ -1733,7 +1733,10 @@ function buildPivotDataFieldColumnOutputItems(
 			const dataField = pivot.dataFields[dataFieldIndex]
 			if (!dataField) return { ok: false, warning: 'Pivot column data field was not resolved.' }
 			columns.push({
-				key: uniquePivotAxisKey(pivotDataFieldColumnKey(dataField, 'Grand Total'), seenLabels),
+				key: uniquePivotAxisKey(
+					pivotDataFieldColumnKey(cache, dataField, dataFieldIndex, 'Grand Total'),
+					seenLabels,
+				),
 				filters,
 				dataFieldIndex,
 				dataField,
@@ -1780,7 +1783,10 @@ function buildPivotDataFieldColumnOutputItems(
 		if (!dataField) return { ok: false, warning: 'Pivot column data field was not resolved.' }
 		if (!label) return { ok: false, warning: 'Pivot column output item label was not resolved.' }
 		columns.push({
-			key: uniquePivotAxisKey(pivotDataFieldColumnKey(dataField, label), seenLabels),
+			key: uniquePivotAxisKey(
+				pivotDataFieldColumnKey(cache, dataField, dataFieldIndex, label),
+				seenLabels,
+			),
 			filters,
 			dataFieldIndex,
 			dataField,
@@ -1820,10 +1826,36 @@ function buildPivotColumnGrandFilters(
 }
 
 function pivotDataFieldColumnKey(
+	cache: PivotCacheInfo,
 	dataField: PivotTableInfo['dataFields'][number],
+	dataFieldIndex: number,
 	label: string,
 ): string {
-	return `${dataField.name ?? `DataField${dataField.fieldIndex + 1}`} / ${label}`
+	return `${pivotDataFieldAuditName(cache, dataField, dataFieldIndex)} / ${label}`
+}
+
+function pivotDataFieldAuditName(
+	cache: PivotCacheInfo,
+	dataField: PivotTableInfo['dataFields'][number],
+	dataFieldIndex: number,
+): string {
+	if (dataField.name) return dataField.name
+	const fieldName = cache.fields[dataField.fieldIndex]?.name
+	const subtotal = pivotDataFieldSubtotalLabel(dataField.subtotal)
+	return fieldName ? `${subtotal} - ${fieldName}` : `DataField${dataFieldIndex + 1}`
+}
+
+function pivotDataFieldSubtotalLabel(
+	subtotal: PivotTableInfo['dataFields'][number]['subtotal'],
+): string {
+	switch (subtotal) {
+		case 'count':
+			return 'Count'
+		case 'average':
+			return 'Average'
+		default:
+			return 'Sum'
+	}
 }
 
 function applyPivotDataFieldColumnShowDataAs(
@@ -2197,8 +2229,8 @@ function aggregateSimplePivotOutput(
 	| { ok: false; warning: string } {
 	const pageFilters = buildSimplePivotPageFilters(cache, pivot)
 	if (!pageFilters.ok) return pageFilters
-	const dataFieldNames = pivot.dataFields.map(
-		(field, index) => field.name ?? `DataField${index + 1}`,
+	const dataFieldNames = pivot.dataFields.map((field, index) =>
+		pivotDataFieldAuditName(cache, field, index),
 	)
 	const rows = buildPivotSimpleRowOutputItems(cache, pivot, rowFieldIndex)
 	if (!rows.ok) return rows
@@ -2426,6 +2458,13 @@ function pivotPageFieldAllowedValues(
 		visibleValues.add(value)
 	}
 	if (visibleValues.size === items.length && group?.base === undefined) {
+		return { ok: true, value: { values: new Set() } }
+	}
+	if (
+		visibleValues.size === 1 &&
+		visibleValues.has(PIVOT_MISSING_ITEM_FILTER_VALUE) &&
+		items.some((item) => item.hidden)
+	) {
 		return { ok: true, value: { values: new Set() } }
 	}
 	return { ok: true, value: { fieldIndex: group?.base ?? fieldIndex, values: visibleValues } }
@@ -2680,15 +2719,13 @@ function readSimplePivotOutput(
 	}
 	const sheet = workbook.sheets.find((entry) => entry.id === sheetId)
 	if (!sheet) return { ok: false, warning: 'Pivot output sheet was not loaded.' }
+	const headerNamesByNormalized = pivotDataFieldHeaderNamesByNormalized(dataFieldNames)
 	const headers = new Map<string, { row: number; col: number }>()
 	for (let row = bounds.start.row; row <= bounds.end.row; row++) {
 		for (let col = bounds.start.col; col <= bounds.end.col; col++) {
 			const text = cellText(sheet.cells.get(row, col)?.value ?? EMPTY)
-			for (const fieldName of dataFieldNames) {
-				if (normalizePivotAuditText(text) === normalizePivotAuditText(fieldName)) {
-					headers.set(fieldName, { row, col })
-				}
-			}
+			const fieldName = headerNamesByNormalized.get(normalizePivotAuditText(text))
+			if (fieldName) headers.set(fieldName, { row, col })
 		}
 	}
 	if (headers.size !== dataFieldNames.length) {
@@ -2816,6 +2853,35 @@ function readMultiRowAxisPivotOutput(
 	return { ok: true, value: output }
 }
 
+function pivotDataFieldHeaderNamesByNormalized(
+	dataFieldNames: readonly string[],
+): ReadonlyMap<string, string> {
+	const aliases = new Map<string, string>()
+	for (const fieldName of dataFieldNames) {
+		addUniquePivotHeaderAlias(aliases, normalizePivotAuditText(fieldName), fieldName)
+		const inferred = /^(?:sum|count|average) - (.+)$/iu.exec(fieldName)?.[1]
+		if (inferred) addUniquePivotHeaderAlias(aliases, normalizePivotAuditText(inferred), fieldName)
+	}
+	for (const [alias, fieldName] of Array.from(aliases)) {
+		if (fieldName === '') aliases.delete(alias)
+	}
+	return aliases
+}
+
+function addUniquePivotHeaderAlias(
+	aliases: Map<string, string>,
+	alias: string,
+	fieldName: string,
+): void {
+	if (!alias) return
+	const existing = aliases.get(alias)
+	if (existing === undefined) {
+		aliases.set(alias, fieldName)
+		return
+	}
+	if (existing !== fieldName) aliases.set(alias, '')
+}
+
 function comparePivotOutput(
 	expected: ReadonlyMap<string, ReadonlyMap<string, number>>,
 	actual: ReadonlyMap<string, ReadonlyMap<string, { ref: string; value: CellValue }>>,
@@ -2862,7 +2928,12 @@ function cellText(value: CellValue): string {
 
 function normalizeGrandTotalLabel(label: string): string {
 	const normalized = normalizePivotAuditText(label)
-	return normalized === 'grand total' || normalized === 'общий итог' ? 'Grand Total' : label
+	return normalized === 'grand total' ||
+		normalized === 'total result' ||
+		normalized === 'gesamtergebnis' ||
+		normalized === 'общий итог'
+		? 'Grand Total'
+		: label
 }
 
 function normalizePivotAuditText(value: string): string {

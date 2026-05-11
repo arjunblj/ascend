@@ -1,5 +1,5 @@
-import type { Cell, Sheet, SheetColDef } from '@ascend/core'
-import { indexToColumn } from '@ascend/core'
+import type { Cell, RangeRef, Sheet, SheetColDef } from '@ascend/core'
+import { indexToColumn, parseRange } from '@ascend/core'
 import { type FormulaNode, parseFormula, printFormulaWithOffset } from '@ascend/formulas'
 import type { CellValue, RichTextRun } from '@ascend/schema'
 import { topLeftScalar } from '@ascend/schema'
@@ -97,7 +97,7 @@ function buildSheetXmlToSink(
 		if (fmtAttrs.length > 0) out.push(`<sheetFormatPr ${fmtAttrs.join(' ')}/>`)
 	}
 
-	const usedRange = sheet.cells.usedRange()
+	const usedRange = combinedDimensionRange(sheet)
 	if (usedRange) {
 		const s = `${indexToColumn(usedRange.start.col)}${usedRange.start.row + 1}`
 		const e = `${indexToColumn(usedRange.end.col)}${usedRange.end.row + 1}`
@@ -164,32 +164,39 @@ function buildSheetXmlToSink(
 	out.push('<sheetData>')
 	const rowHeights = [...sheet.rowHeights.entries()].sort((a, b) => a[0] - b[0])
 	const rowDefs = [...sheet.rowDefs.entries()].sort((a, b) => a[0] - b[0])
+	const blankRows = [...sheet.preservedBlankCells.entries()]
+		.filter(([, cells]) => cells.size > 0)
+		.sort((a, b) => a[0] - b[0])
 	const rowIterator = sheet.cells.iterateRows()
 	const columnNameCache: string[] = []
 	let nextRow = rowIterator.next()
 	let rowHeightIndex = 0
 	let rowDefIndex = 0
-	while (!nextRow.done || rowHeightIndex < rowHeights.length || rowDefIndex < rowDefs.length) {
+	let blankRowIndex = 0
+	while (
+		!nextRow.done ||
+		rowHeightIndex < rowHeights.length ||
+		rowDefIndex < rowDefs.length ||
+		blankRowIndex < blankRows.length
+	) {
 		const populatedRow = nextRow.done ? undefined : nextRow.value
 		const heightEntry = rowHeights[rowHeightIndex]
 		const heightRow = heightEntry?.[0]
 		const rowDefEntry = rowDefs[rowDefIndex]
 		const rowDefRow = rowDefEntry?.[0]
-		const row =
-			populatedRow === undefined
-				? heightRow === undefined
-					? (rowDefRow as number)
-					: rowDefRow === undefined
-						? (heightRow as number)
-						: Math.min(heightRow, rowDefRow)
-				: heightRow === undefined
-					? rowDefRow === undefined
-						? populatedRow[0]
-						: Math.min(populatedRow[0], rowDefRow)
-					: rowDefRow === undefined
-						? Math.min(populatedRow[0], heightRow)
-						: Math.min(populatedRow[0], heightRow, rowDefRow)
+		const blankRowEntry = blankRows[blankRowIndex]
+		const blankRow = blankRowEntry?.[0]
+		const row = Math.min(
+			populatedRow?.[0] ?? Number.POSITIVE_INFINITY,
+			heightRow ?? Number.POSITIVE_INFINITY,
+			rowDefRow ?? Number.POSITIVE_INFINITY,
+			blankRow ?? Number.POSITIVE_INFINITY,
+		)
 		const cells = populatedRow && populatedRow[0] === row ? populatedRow[1] : []
+		const blankCells =
+			blankRowEntry && blankRowEntry[0] === row
+				? [...blankRowEntry[1].entries()].sort((a, b) => a[0] - b[0])
+				: []
 		const rowAttrs = [`r="${row + 1}"`]
 		const rowHeight = heightEntry && heightEntry[0] === row ? heightEntry[1] : undefined
 		const rowDef = rowDefEntry && rowDefEntry[0] === row ? rowDefEntry[1] : undefined
@@ -208,8 +215,23 @@ function buildSheetXmlToSink(
 		const rowNumber = row + 1
 		const omitCellRefs =
 			options.omitDenseCellRefs === true &&
+			blankCells.length === 0 &&
 			canOmitDenseCellRefs(cells, options.useInlineStrings, options.usePlainStrings)
-		for (const [col, cell] of cells) {
+		let cellIndex = 0
+		let blankIndex = 0
+		while (cellIndex < cells.length || blankIndex < blankCells.length) {
+			const cellEntry = cells[cellIndex]
+			const blankEntry = blankCells[blankIndex]
+			if (blankEntry && (!cellEntry || blankEntry[0] < cellEntry[0])) {
+				const col = blankEntry[0]
+				const ref = `${cachedColumnName(columnNameCache, col)}${rowNumber}`
+				rowOut.push(`<c ${blankCellAttrsXml(blankEntry[1], ref)}/>`)
+				blankIndex++
+				continue
+			}
+			if (!cellEntry) break
+			if (blankEntry && blankEntry[0] === cellEntry[0]) blankIndex++
+			const [col, cell] = cellEntry
 			const ref = omitCellRefs ? undefined : `${cachedColumnName(columnNameCache, col)}${rowNumber}`
 			if (
 				pushDefaultStyleScalarCellXml(
@@ -220,6 +242,7 @@ function buildSheetXmlToSink(
 					options.usePlainStrings,
 				)
 			) {
+				cellIndex++
 				continue
 			}
 			const resolvedRef = ref ?? `${cachedColumnName(columnNameCache, col)}${rowNumber}`
@@ -234,6 +257,7 @@ function buildSheetXmlToSink(
 				options.useInlineStrings,
 				options.usePlainStrings,
 			)
+			cellIndex++
 		}
 		if (rowParts === undefined) {
 			out.push('</row>')
@@ -244,6 +268,7 @@ function buildSheetXmlToSink(
 		if (populatedRow && populatedRow[0] === row) nextRow = rowIterator.next()
 		if (heightEntry && heightEntry[0] === row) rowHeightIndex++
 		if (rowDefEntry && rowDefEntry[0] === row) rowDefIndex++
+		if (blankRowEntry && blankRowEntry[0] === row) blankRowIndex++
 	}
 
 	out.push('</sheetData>')
@@ -460,6 +485,59 @@ function setSheetViewAttr(attrs: Map<string, string>, name: string, value: strin
 
 function sheetViewAttrsXml(attrs: ReadonlyMap<string, string>): string {
 	return [...attrs].map(([name, value]) => `${name}="${escapeXml(value)}"`).join(' ')
+}
+
+function combinedDimensionRange(sheet: Sheet): RangeRef | null {
+	let range = sheet.cells.usedRange()
+	const blankRange = blankCellsRange(sheet.preservedBlankCells)
+	range = mergeRanges(range, blankRange)
+	if (sheet.preservedBlankCells.size > 0 && sheet.preservedDimensionRef) {
+		try {
+			range = mergeRanges(range, parseRange(sheet.preservedDimensionRef))
+		} catch {
+			// Invalid source dimensions are ignored; concrete cells still define the emitted range.
+		}
+	}
+	return range
+}
+
+function blankCellsRange(rows: ReadonlyMap<number, ReadonlyMap<number, string>>): RangeRef | null {
+	let minRow = Number.POSITIVE_INFINITY
+	let minCol = Number.POSITIVE_INFINITY
+	let maxRow = -1
+	let maxCol = -1
+	for (const [row, cells] of rows) {
+		for (const col of cells.keys()) {
+			minRow = Math.min(minRow, row)
+			minCol = Math.min(minCol, col)
+			maxRow = Math.max(maxRow, row)
+			maxCol = Math.max(maxCol, col)
+		}
+	}
+	return maxRow >= 0
+		? { start: { row: minRow, col: minCol }, end: { row: maxRow, col: maxCol } }
+		: null
+}
+
+function mergeRanges(left: RangeRef | null, right: RangeRef | null): RangeRef | null {
+	if (!left) return right
+	if (!right) return left
+	return {
+		start: {
+			row: Math.min(left.start.row, right.start.row),
+			col: Math.min(left.start.col, right.start.col),
+		},
+		end: {
+			row: Math.max(left.end.row, right.end.row),
+			col: Math.max(left.end.col, right.end.col),
+		},
+	}
+}
+
+function blankCellAttrsXml(rawAttrs: string, ref: string): string {
+	const attrs = rawAttrs.trim()
+	if (/(?:^|\s)r\s*=/.test(attrs)) return attrs
+	return attrs ? `r="${ref}" ${attrs}` : `r="${ref}"`
 }
 
 function cachedColumnName(cache: string[], col: number): string {

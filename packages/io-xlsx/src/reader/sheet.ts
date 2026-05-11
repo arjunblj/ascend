@@ -219,6 +219,7 @@ export function parseSheet(
 ): Sheet {
 	xml = normalizeMainSpreadsheetNamespacePrefix(xml)
 	const sheet = new Sheet(name, sheetId)
+	sheet.preservedDimensionRef = parseDimensionRef(xml)
 	applyDensityHintFromDimension(sheet, xml)
 	const sheetDataLoc = locateSheetData(xml)
 	if (sheetDataLoc) parseSheetDataFromLoc(xml, sheetDataLoc, sheet, ctx)
@@ -904,13 +905,25 @@ function parseSheetDataFromLoc(
 			cellCursor =
 				selfClosing || cellClose === -1 || cellClose > rowClose ? cellTagEnd + 1 : cellClose + 4
 			if (!ok) {
-				if (resolveCellPositionInto(rawAttrs, fallbackPos, cellOut)) nextCol = cellOut.col + 1
+				if (resolveCellPositionInto(rawAttrs, fallbackPos, cellOut)) {
+					preserveBlankPhysicalCell(sheet, cellOut.row, cellOut.col, rawAttrs)
+					nextCol = cellOut.col + 1
+				}
 				continue
 			}
 			nextCol = cellOut.col + 1
 		}
 		rowCursor = rowClose + 6
 	}
+}
+
+function preserveBlankPhysicalCell(sheet: Sheet, row: number, col: number, rawAttrs: string): void {
+	let rowCells = sheet.preservedBlankCells.get(row)
+	if (!rowCells) {
+		rowCells = new Map()
+		sheet.preservedBlankCells.set(row, rowCells)
+	}
+	rowCells.set(col, rawAttrs.replace(/\/\s*$/, '').trim())
 }
 
 export function* streamSheetRowsXml(

@@ -1330,8 +1330,39 @@ function buildPivotOutputAudits(
 			return unsupportedPivotAudit(base, 'Pivot table has no output location.')
 		const cache = workbook.pivotCaches.find((entry) => entry.cacheId === pivot.cacheId)
 		if (!cache) return unsupportedPivotAudit(base, 'Pivot cache metadata was not found.')
+		if (isEmptyPivotOutput(pivot)) {
+			const emptyAudit = auditEmptyPivotOutput(workbook, sheet.id, pivot)
+			if (!emptyAudit.ok) return unsupportedPivotAudit(base, emptyAudit.warning)
+			return {
+				...base,
+				status: 'passed',
+				checkedValueCount: emptyAudit.checkedCellCount,
+				mismatches: [],
+				warnings: [],
+			}
+		}
 		if (!cache.records?.materializedComplete || !cache.records.materializedRecords) {
 			return unsupportedPivotAudit(base, 'Pivot cache records are not fully materialized.')
+		}
+		if (isDataFieldsOnRowsPivot(pivot)) {
+			const expected = aggregateDataFieldsOnRowsPivotOutput(cache, pivot)
+			if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
+			const actual = readDataFieldsOnRowsPivotOutput(
+				workbook,
+				sheet.id,
+				pivot,
+				expected.value.dataFieldNames,
+				expected.value.columnKeys,
+			)
+			if (!actual.ok) return unsupportedPivotAudit(base, actual.warning)
+			const mismatches = comparePivotOutput(expected.value.values, actual.value)
+			return {
+				...base,
+				status: mismatches.length > 0 ? 'mismatch' : 'passed',
+				checkedValueCount: expected.value.checkedValueCount,
+				mismatches,
+				warnings: [],
+			}
 		}
 		if (pivot.rowFields.length !== 1) {
 			return unsupportedPivotAudit(base, 'Only one-row-field pivots are audited.')
@@ -1360,6 +1391,21 @@ function buildPivotOutputAudits(
 	})
 }
 
+function isEmptyPivotOutput(pivot: PivotTableInfo): boolean {
+	return (
+		pivot.rowFields.length === 0 && pivot.columnFields.length === 0 && pivot.dataFields.length === 0
+	)
+}
+
+function isDataFieldsOnRowsPivot(pivot: PivotTableInfo): boolean {
+	return (
+		pivot.rowFields.length === 1 &&
+		pivot.rowFields[0]?.index === -2 &&
+		pivot.options?.dataOnRows === true &&
+		pivot.columnFields.length > 0
+	)
+}
+
 function unsupportedPivotAudit(
 	base: Pick<PivotOutputAuditInfo, 'partPath' | 'sheetName' | 'pivotTable' | 'cacheId'>,
 	warning: string,
@@ -1371,6 +1417,150 @@ function unsupportedPivotAudit(
 		mismatches: [],
 		warnings: [warning],
 	}
+}
+
+function auditEmptyPivotOutput(
+	workbook: Workbook,
+	sheetId: string,
+	pivot: PivotTableInfo,
+): { ok: true; checkedCellCount: number } | { ok: false; warning: string } {
+	if (!pivot.locationRef) return { ok: false, warning: 'Pivot table has no output location.' }
+	let bounds: RangeRef
+	try {
+		bounds = parseRange(pivot.locationRef)
+	} catch {
+		return { ok: false, warning: `Pivot output range is invalid: ${pivot.locationRef}` }
+	}
+	const sheet = workbook.sheets.find((entry) => entry.id === sheetId)
+	if (!sheet) return { ok: false, warning: 'Pivot output sheet was not loaded.' }
+	let checkedCellCount = 0
+	for (let row = bounds.start.row; row <= bounds.end.row; row++) {
+		for (let col = bounds.start.col; col <= bounds.end.col; col++) {
+			checkedCellCount++
+			if ((sheet.cells.get(row, col)?.value ?? EMPTY).kind !== 'empty') {
+				return { ok: false, warning: 'Empty pivot output range contains saved cell values.' }
+			}
+		}
+	}
+	return { ok: true, checkedCellCount }
+}
+
+function aggregateDataFieldsOnRowsPivotOutput(
+	cache: PivotCacheInfo,
+	pivot: PivotTableInfo,
+):
+	| {
+			ok: true
+			value: {
+				dataFieldNames: readonly string[]
+				columnKeys: readonly string[]
+				checkedValueCount: number
+				values: ReadonlyMap<string, ReadonlyMap<string, number>>
+			}
+	  }
+	| { ok: false; warning: string } {
+	if (!pivot.columnFields.every((field) => field.index >= 0)) {
+		return { ok: false, warning: 'Data-field axis columns are not audited in row-data pivots.' }
+	}
+	const pageFilters = buildSimplePivotPageFilters(cache, pivot)
+	if (!pageFilters.ok) return pageFilters
+	const columns = buildPivotColumnOutputColumns(cache, pivot)
+	if (!columns.ok) return columns
+	const dataFieldNames = pivot.dataFields.map(
+		(field, index) => field.name ?? `DataField${index + 1}`,
+	)
+	const output = new Map<string, Map<string, number>>()
+	for (const dataFieldName of dataFieldNames) {
+		const byColumn = new Map<string, number>()
+		for (const column of columns.value) byColumn.set(column.key, 0)
+		output.set(dataFieldName, byColumn)
+	}
+	for (const row of buildPivotCacheRows([cache], {})) {
+		if (!pivotCacheRowMatchesFilters(row, pageFilters.value)) continue
+		for (const column of columns.value) {
+			if (!column.matches(row)) continue
+			for (let i = 0; i < pivot.dataFields.length; i++) {
+				const dataField = pivot.dataFields[i]
+				const dataFieldName = dataFieldNames[i] ?? `DataField${i + 1}`
+				if (!dataField) continue
+				const measured = measurePivotDataField(cache, row, dataField)
+				if (!measured.ok) return measured
+				addPivotOutput(output, dataFieldName, column.key, measured.value)
+			}
+		}
+	}
+	return {
+		ok: true,
+		value: {
+			dataFieldNames,
+			columnKeys: columns.value.map((column) => column.key),
+			checkedValueCount: dataFieldNames.length * columns.value.length,
+			values: output,
+		},
+	}
+}
+
+function buildPivotColumnOutputColumns(
+	cache: PivotCacheInfo,
+	pivot: PivotTableInfo,
+):
+	| {
+			ok: true
+			value: readonly {
+				key: string
+				matches(row: PivotCacheMaterializedRowInfo): boolean
+			}[]
+	  }
+	| { ok: false; warning: string } {
+	if (!pivot.columnItems || pivot.columnItems.length === 0) {
+		return { ok: false, warning: 'Pivot column output items were not found.' }
+	}
+	const columns: {
+		key: string
+		matches(row: PivotCacheMaterializedRowInfo): boolean
+	}[] = []
+	for (const item of pivot.columnItems) {
+		const key = item.itemType === 'grand' ? 'Grand Total' : `Column ${item.index + 1}`
+		if (item.itemType === 'grand') {
+			columns.push({ key, matches: () => true })
+			continue
+		}
+		const filters = new Map<number, string>()
+		for (const fieldItem of item.fieldItems) {
+			const axisField = pivot.columnFields[fieldItem.index]
+			if (!axisField || axisField.index < 0) {
+				return { ok: false, warning: 'Pivot column field item axis was not resolved.' }
+			}
+			if (fieldItem.item === undefined) {
+				return { ok: false, warning: 'Repeated pivot column field items are not audited.' }
+			}
+			const pivotField = pivot.fields[axisField.index]
+			const pivotItem = pivotField?.items?.[fieldItem.item]
+			if (
+				!pivotItem ||
+				pivotItem.hidden ||
+				pivotItem.missing ||
+				pivotItem.cacheIndex === undefined
+			) {
+				return { ok: false, warning: 'Pivot column field item cache value was not resolved.' }
+			}
+			const sharedItem = cache.fields[axisField.index]?.sharedItems?.find(
+				(entry) => entry.index === pivotItem.cacheIndex,
+			)
+			if (sharedItem?.value === undefined) {
+				return { ok: false, warning: 'Pivot column shared item value was not resolved.' }
+			}
+			filters.set(axisField.index, sharedItem.value)
+		}
+		if (filters.size !== pivot.columnFields.length) {
+			return { ok: false, warning: 'Pivot column item does not cover every column field.' }
+		}
+		columns.push({
+			key,
+			matches: (row) => pivotCacheRowMatchesFilters(row, filters),
+		})
+	}
+	return { ok: true, value: columns }
 }
 
 function aggregateSimplePivotOutput(
@@ -1396,7 +1586,7 @@ function aggregateSimplePivotOutput(
 	const baseTotals = new Map<string, Map<string, number>>()
 	const includeGrandTotal = pivot.options?.rowGrandTotals !== false
 	for (const row of buildPivotCacheRows([cache], {})) {
-		if (!pivotCacheRowMatchesPageFilters(row, pageFilters.value)) continue
+		if (!pivotCacheRowMatchesFilters(row, pageFilters.value)) continue
 		const rowLabel = row.values.find((value) => value.fieldIndex === rowFieldIndex)?.value
 		if (rowLabel === undefined) continue
 		addPivotBaseTotals(cache, row, baseTotals, rowLabel)
@@ -1470,7 +1660,7 @@ function buildSimplePivotPageFilters(
 	return { ok: true, value: filters }
 }
 
-function pivotCacheRowMatchesPageFilters(
+function pivotCacheRowMatchesFilters(
 	row: PivotCacheMaterializedRowInfo,
 	filters: ReadonlyMap<number, string>,
 ): boolean {
@@ -1659,6 +1849,58 @@ function readSimplePivotOutput(
 			})
 		}
 		output.set(label, byField)
+	}
+	return { ok: true, value: output }
+}
+
+function readDataFieldsOnRowsPivotOutput(
+	workbook: Workbook,
+	sheetId: string,
+	pivot: PivotTableInfo,
+	dataFieldNames: readonly string[],
+	columnKeys: readonly string[],
+):
+	| { ok: true; value: ReadonlyMap<string, ReadonlyMap<string, { ref: string; value: CellValue }>> }
+	| { ok: false; warning: string } {
+	if (!pivot.locationRef) return { ok: false, warning: 'Pivot table has no output location.' }
+	let bounds: RangeRef
+	try {
+		bounds = parseRange(pivot.locationRef)
+	} catch {
+		return { ok: false, warning: `Pivot output range is invalid: ${pivot.locationRef}` }
+	}
+	const sheet = workbook.sheets.find((entry) => entry.id === sheetId)
+	if (!sheet) return { ok: false, warning: 'Pivot output sheet was not loaded.' }
+	const dataStartRow = bounds.start.row + (pivot.location?.firstDataRow ?? 1)
+	const dataStartCol = bounds.start.col + (pivot.location?.firstDataCol ?? 1)
+	if (
+		dataStartRow > bounds.end.row ||
+		dataStartCol > bounds.end.col ||
+		dataStartCol + columnKeys.length - 1 > bounds.end.col
+	) {
+		return { ok: false, warning: 'Pivot data-fields-on-rows output bounds were not resolved.' }
+	}
+	const namesByNormalized = new Map(
+		dataFieldNames.map((name) => [normalizePivotAuditText(name), name] as const),
+	)
+	const output = new Map<string, Map<string, { ref: string; value: CellValue }>>()
+	for (let row = dataStartRow; row <= bounds.end.row; row++) {
+		const rowLabel = cellText(sheet.cells.get(row, bounds.start.col)?.value ?? EMPTY)
+		const dataFieldName = namesByNormalized.get(normalizePivotAuditText(rowLabel))
+		if (!dataFieldName) continue
+		const byColumn = new Map<string, { ref: string; value: CellValue }>()
+		for (let i = 0; i < columnKeys.length; i++) {
+			const col = dataStartCol + i
+			const columnKey = columnKeys[i] ?? `Column ${i + 1}`
+			byColumn.set(columnKey, {
+				ref: `${indexToColumn(col)}${row + 1}`,
+				value: sheet.cells.get(row, col)?.value ?? EMPTY,
+			})
+		}
+		output.set(dataFieldName, byColumn)
+	}
+	if (output.size !== dataFieldNames.length) {
+		return { ok: false, warning: 'Pivot data-fields-on-rows labels were not found.' }
 	}
 	return { ok: true, value: output }
 }

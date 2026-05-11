@@ -359,8 +359,8 @@ describe('corpus: semantic dashboard chart and drawing inventory', () => {
 			expect(workbook.pivotOutputAudits()).toEqual([
 				expect.objectContaining({
 					pivotTable: 'PivotTable11',
-					status: 'unsupported',
-					warnings: ['Only one-row-field pivots are audited.'],
+					status: 'passed',
+					checkedValueCount: 1,
 				}),
 				expect.objectContaining({
 					pivotTable: 'PivotTable12',
@@ -379,8 +379,8 @@ describe('corpus: semantic dashboard chart and drawing inventory', () => {
 				}),
 				expect.objectContaining({
 					pivotTable: 'PivotTable1',
-					status: 'unsupported',
-					warnings: ['Column-field pivots beyond the data-field axis are not audited.'],
+					status: 'passed',
+					checkedValueCount: 91,
 				}),
 			])
 		},

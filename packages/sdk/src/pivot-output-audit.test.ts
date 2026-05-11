@@ -91,6 +91,40 @@ describe('pivot output audits', () => {
 			},
 		])
 	})
+
+	test('audits saved pivot outputs with data fields on rows and columns on axis', () => {
+		const wb = workbookWithDataFieldsOnRowsPivot()
+
+		expect(wb.pivotOutputAudits()).toEqual([
+			{
+				pivotTable: 'DataFieldsOnRowsPivot',
+				partPath: 'xl/pivotTables/pivotTable1.xml',
+				sheetName: 'Sheet1',
+				cacheId: 8,
+				status: 'passed',
+				checkedValueCount: 6,
+				mismatches: [],
+				warnings: [],
+			},
+		])
+	})
+
+	test('audits empty saved pivot outputs without overclaiming value checks', () => {
+		const wb = workbookWithEmptyPivotOutput()
+
+		expect(wb.pivotOutputAudits()).toEqual([
+			{
+				pivotTable: 'EmptyPivot',
+				partPath: 'xl/pivotTables/pivotTable1.xml',
+				sheetName: 'Sheet1',
+				cacheId: 9,
+				status: 'passed',
+				checkedValueCount: 1,
+				mismatches: [],
+				warnings: [],
+			},
+		])
+	})
 })
 
 function loadLibreOfficeFixture(file: string): Uint8Array {
@@ -222,6 +256,153 @@ function workbookWithFilteredPivot(): AscendWorkbook {
 		columnFields: [],
 		pageFields: [{ index: 2, item: 0 }],
 		dataFields: [{ fieldIndex: 1, name: 'Sum of Sales' }],
+	})
+	return wb
+}
+
+function workbookWithDataFieldsOnRowsPivot(): AscendWorkbook {
+	const wb = AscendWorkbook.create()
+	const internal = wb as unknown as {
+		wb: {
+			pivotCaches: Array<Record<string, unknown>>
+			pivotTables: Array<Record<string, unknown>>
+			sheets: Array<{
+				cells: {
+					set(row: number, col: number, cell: { value: unknown; formula: null; styleId: 0 }): void
+				}
+			}>
+		}
+	}
+	const cells = internal.wb.sheets[0]?.cells
+	if (!cells) throw new Error('Expected default sheet')
+	cells.set(0, 1, { value: stringValue('Month'), formula: null, styleId: 0 })
+	cells.set(1, 0, { value: stringValue('Values'), formula: null, styleId: 0 })
+	cells.set(1, 1, { value: stringValue('Jan'), formula: null, styleId: 0 })
+	cells.set(1, 2, { value: stringValue('Feb'), formula: null, styleId: 0 })
+	cells.set(1, 3, { value: stringValue('Grand Total'), formula: null, styleId: 0 })
+	cells.set(2, 0, { value: stringValue('Sum of Sales'), formula: null, styleId: 0 })
+	cells.set(2, 1, { value: numberValue(10), formula: null, styleId: 0 })
+	cells.set(2, 2, { value: numberValue(30), formula: null, styleId: 0 })
+	cells.set(2, 3, { value: numberValue(40), formula: null, styleId: 0 })
+	cells.set(3, 0, { value: stringValue('Count of Sales'), formula: null, styleId: 0 })
+	cells.set(3, 1, { value: numberValue(1), formula: null, styleId: 0 })
+	cells.set(3, 2, { value: numberValue(2), formula: null, styleId: 0 })
+	cells.set(3, 3, { value: numberValue(3), formula: null, styleId: 0 })
+	internal.wb.pivotCaches.push({
+		partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+		cacheId: 8,
+		fields: [
+			{
+				index: 0,
+				name: 'Month',
+				sharedItems: [
+					{ index: 0, kind: 'string', value: 'Jan' },
+					{ index: 1, kind: 'string', value: 'Feb' },
+				],
+			},
+			{ index: 1, name: 'Sales' },
+		],
+		records: {
+			partPath: 'xl/pivotCache/pivotCacheRecords1.xml',
+			parsedCount: 3,
+			materializedCount: 3,
+			materializedComplete: true,
+			preview: [],
+			valueKindCounts: [],
+			materializedRecords: [
+				{
+					index: 0,
+					values: [
+						{ index: 0, kind: 'sharedItem', sharedItemIndex: 0 },
+						{ index: 1, kind: 'number', value: '10' },
+					],
+				},
+				{
+					index: 1,
+					values: [
+						{ index: 0, kind: 'sharedItem', sharedItemIndex: 1 },
+						{ index: 1, kind: 'number', value: '20' },
+					],
+				},
+				{
+					index: 2,
+					values: [
+						{ index: 0, kind: 'sharedItem', sharedItemIndex: 1 },
+						{ index: 1, kind: 'number', value: '10' },
+					],
+				},
+			],
+		},
+	})
+	internal.wb.pivotTables.push({
+		partPath: 'xl/pivotTables/pivotTable1.xml',
+		sheetName: 'Sheet1',
+		name: 'DataFieldsOnRowsPivot',
+		cacheId: 8,
+		locationRef: 'A1:D4',
+		location: { ref: 'A1:D4', firstDataRow: 2, firstDataCol: 1 },
+		options: { dataOnRows: true },
+		fields: [
+			{
+				index: 0,
+				axis: 'axisCol',
+				items: [
+					{ index: 0, cacheIndex: 0 },
+					{ index: 1, cacheIndex: 1 },
+				],
+			},
+			{ index: 1, dataField: true },
+		],
+		rowFields: [{ index: -2 }],
+		columnFields: [{ index: 0 }],
+		columnItems: [
+			{ index: 0, fieldItems: [{ index: 0, item: 0 }] },
+			{ index: 1, fieldItems: [{ index: 0, item: 1 }] },
+			{ index: 2, itemType: 'grand', fieldItems: [{ index: 0 }] },
+		],
+		pageFields: [],
+		dataFields: [
+			{ fieldIndex: 1, name: 'Sum of Sales' },
+			{ fieldIndex: 1, name: 'Count of Sales', subtotal: 'count' },
+		],
+	})
+	return wb
+}
+
+function workbookWithEmptyPivotOutput(): AscendWorkbook {
+	const wb = AscendWorkbook.create()
+	const internal = wb as unknown as {
+		wb: {
+			pivotCaches: Array<Record<string, unknown>>
+			pivotTables: Array<Record<string, unknown>>
+		}
+	}
+	internal.wb.pivotCaches.push({
+		partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+		cacheId: 9,
+		fields: [{ index: 0, name: 'Segment' }],
+		records: {
+			partPath: 'xl/pivotCache/pivotCacheRecords1.xml',
+			parsedCount: 0,
+			materializedCount: 0,
+			materializedComplete: true,
+			preview: [],
+			valueKindCounts: [],
+			materializedRecords: [],
+		},
+	})
+	internal.wb.pivotTables.push({
+		partPath: 'xl/pivotTables/pivotTable1.xml',
+		sheetName: 'Sheet1',
+		name: 'EmptyPivot',
+		cacheId: 9,
+		locationRef: 'C3',
+		location: { ref: 'C3', firstDataRow: 0, firstDataCol: 0 },
+		fields: [{ index: 0, axis: 'axisPage' }],
+		rowFields: [],
+		columnFields: [],
+		pageFields: [{ index: 0 }],
+		dataFields: [],
 	})
 	return wb
 }

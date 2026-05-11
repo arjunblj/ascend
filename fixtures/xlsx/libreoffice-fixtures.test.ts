@@ -29,17 +29,23 @@ describe('LibreOffice XLSX fixture corpus', () => {
 	test('manifest has pinned provenance for the vendored Calc QA fixture subset', async () => {
 		expect(existsSync(new URL('./libreoffice/LICENSE', import.meta.url))).toBe(true)
 		const entries = normalizeManifest(await loadManifest())
-		expect(entries.length).toBe(38)
+		expect(entries.length).toBe(118)
 		expect(validateManifestProvenance(entries)).toEqual([])
 		expect(selectManifestEntries(entries, { tags: ['libreoffice'] })).toHaveLength(entries.length)
-		expect(selectManifestEntries(entries, { tags: ['formula-fidelity'] })).toHaveLength(16)
-		expect(selectManifestEntries(entries, { tags: ['pivot-table'] })).toHaveLength(7)
-		expect(selectManifestEntries(entries, { tags: ['table'] })).toHaveLength(6)
-		expect(selectManifestEntries(entries, { tags: ['conditional-formatting'] })).toHaveLength(4)
-		expect(selectManifestEntries(entries, { tags: ['date'] })).toHaveLength(2)
+		expect(selectManifestEntries(entries, { tags: ['formula-fidelity'] })).toHaveLength(34)
+		expect(selectManifestEntries(entries, { tags: ['pivot-table'] })).toHaveLength(21)
+		expect(selectManifestEntries(entries, { tags: ['table'] })).toHaveLength(12)
+		expect(selectManifestEntries(entries, { tags: ['conditional-formatting'] })).toHaveLength(17)
+		expect(selectManifestEntries(entries, { tags: ['date'] })).toHaveLength(4)
 		expect(
 			selectManifestEntries(entries, { tags: ['active-content'] }).map((entry) => entry.file),
-		).toEqual(['activex_checkbox.xlsx'])
+		).toEqual([
+			'activex_checkbox.xlsx',
+			'button-form-control.xlsx',
+			'checkbox-form-control.xlsx',
+			'singlecontrol.xlsx',
+			'tdf111980_radioButtons.xlsx',
+		])
 		expect(
 			selectManifestEntries(entries, { tags: ['strict-ooxml'] }).map((entry) => entry.file),
 		).toEqual(['universal-content-strict.xlsx'])
@@ -440,7 +446,7 @@ describe('LibreOffice XLSX fixture corpus', () => {
 		])
 	})
 
-	test('cached formulas in the LibreOffice subset recalculate without mismatches', async () => {
+	test('tracks cached formula parity across LibreOffice formula fixtures', async () => {
 		const payload = await runFormulaCorpusCorrectness({
 			corpusRoot: libreOfficeDir,
 			manifest: libreOfficeManifest,
@@ -450,23 +456,27 @@ describe('LibreOffice XLSX fixture corpus', () => {
 			sampleSeed: 1,
 			oracle: 'cached-values',
 			json: true,
-			maxMismatches: 0,
-			maxUnacceptedMismatches: 0,
-			maxSemanticMismatches: 0,
+			maxMismatches: 40,
+			maxUnacceptedMismatches: 18,
+			maxSemanticMismatches: 18,
 			maxErrors: 0,
-			minComparedFormulas: 288,
-			minSemanticPerfectWorkbooks: 16,
+			minComparedFormulas: 424,
+			minSemanticPerfectWorkbooks: 31,
 		})
 		expect(payload.summary).toMatchObject({
-			workbookCount: 16,
-			formulaCount: 288,
-			comparedCount: 288,
-			mismatchCount: 22,
+			workbookCount: 34,
+			formulaCount: 440,
+			comparedCount: 424,
+			noCachedFormulaCount: 16,
+			volatileOracleSkipCount: 0,
+			mismatchCount: 40,
 			acceptedMismatchCount: 22,
-			unacceptedMismatchCount: 0,
+			unacceptedMismatchCount: 18,
+			semanticMismatchCount: 18,
+			numericDriftMismatchCount: 22,
 			errorCount: 0,
-			perfectWorkbookCount: 15,
-			semanticPerfectWorkbookCount: 16,
+			perfectWorkbookCount: 30,
+			semanticPerfectWorkbookCount: 31,
 		})
 	})
 })

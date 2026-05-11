@@ -381,6 +381,22 @@ describe('parse', () => {
 		expect(node).toEqual({ type: 'name', name: 'col1_', sheet: '[0]' })
 	})
 
+	it('parses workbook-qualified function calls', () => {
+		const node = p('[1]!SplitsItems($A1,",",COLUMN()-1)')
+		expect(node.type).toBe('function')
+		if (node.type !== 'function') return
+		expect(node.name).toBe('[1]!SplitsItems')
+		expect(node.args).toHaveLength(3)
+		expect(node.args[0]).toEqual({
+			type: 'cellRef',
+			ref: { row: 0, col: 0, rowAbsolute: false, colAbsolute: true },
+		})
+		expect(printFormula(node)).toBe('[1]!SplitsItems($A1,",",COLUMN()-1)')
+		expect(printFormula(p('TRIM([1]!SplitsItems($A1,",",COLUMN()-1))'))).toBe(
+			'TRIM([1]!SplitsItems($A1,",",COLUMN()-1))',
+		)
+	})
+
 	it('parses 3D sheet-span references', () => {
 		expect(p('Sheet1:Sheet3!A1')).toEqual({
 			type: 'sheetSpanRef',

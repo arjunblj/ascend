@@ -465,6 +465,9 @@ class FormulaParser {
 
 	private parseSheetQualifiedReference(sheet: string): FormulaNode {
 		const target = this.parseQualifiedReferenceTarget()
+		if (target.type === 'name' && this.peek(true).type === TokenType.OpenParen) {
+			return { type: 'function', name: `${sheet}!${target.name}`, args: this.parseCallArgs() }
+		}
 		switch (target.type) {
 			case 'cellRef':
 				return { type: 'cellRef', ref: target.ref, sheet }
@@ -515,6 +518,10 @@ class FormulaParser {
 			return this.parseCellOrRange()
 		}
 		if (this.peek(true).type === TokenType.Name) {
+			const name = this.advance(true).value
+			return { type: 'name', name }
+		}
+		if (this.peek(true).type === TokenType.Function) {
 			const name = this.advance(true).value
 			return { type: 'name', name }
 		}

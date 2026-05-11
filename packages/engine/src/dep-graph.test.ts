@@ -176,6 +176,14 @@ describe('DependencyGraph', () => {
 		expect(cycles[0]).toEqual([a])
 	})
 
+	test('range dependencies alone do not imply self-referencing cycles', () => {
+		const g = new DependencyGraph()
+		const a = cellKey(0, 0, 0)
+		g.addFormula(a, [], false, [{ sheetIndex: 0, startRow: 0, startCol: 0, endRow: 0, endCol: 0 }])
+		const cycles = g.detectCycles()
+		expect(cycles.length).toBe(0)
+	})
+
 	test('detect complex multi-node cycle', () => {
 		const g = new DependencyGraph()
 		const a = cellKey(0, 0, 0)

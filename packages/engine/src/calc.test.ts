@@ -504,6 +504,19 @@ describe('recalculate', () => {
 		expect(calc.cells.get(0, 0)?.value).toEqual(numberValue(30))
 	})
 
+	test('qualified local defined name ranges on other sheets do not self-reference by coordinate', () => {
+		const wb = createWorkbook()
+		const sheet1 = wb.addSheet('Sheet1')
+		const sheet2 = wb.addSheet('Sheet2')
+		sheet1.cells.set(0, 0, { value: numberValue(7), formula: null, styleId: sid })
+		wb.definedNames.set('LocalCell', 'A1', { kind: 'sheet', sheetId: sheet1.id })
+		sheet2.cells.set(0, 0, { value: EMPTY, formula: 'Sheet1!LocalCell', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+		expect(result.errors).toEqual([])
+		expect(sheet2.cells.get(0, 0)?.value).toEqual(numberValue(7))
+	})
+
 	test('workbook-index-qualified defined names resolve workbook scope', () => {
 		const wb = createWorkbook()
 		const data = wb.addSheet('Data')
@@ -1186,6 +1199,19 @@ describe('recalculate', () => {
 
 		recalculate(wb, makeCtx())
 		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#NULL!'))
+	})
+
+	test('overlapping self-intersection produces circular reference error', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'SUM(A1:A2 A1:B1)', styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(3), formula: null, styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+		const circErrors = result.errors.filter((e) => e.error.code === 'CIRCULAR_REF')
+		expect(circErrors.length).toBeGreaterThan(0)
+		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#REF!'))
 	})
 
 	test('COUNTA, COUNTBLANK, and PRODUCT support union references', () => {
@@ -2719,6 +2745,29 @@ describe('recalculate', () => {
 		const result = recalculate(wb, makeCtx())
 		const circErrors = result.errors.filter((e) => e.error.code === 'CIRCULAR_REF')
 		expect(circErrors.length).toBeGreaterThan(0)
+	})
+
+	test('range self-reference produces circular reference error', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'SUM(A1:A1)', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+		const circErrors = result.errors.filter((e) => e.error.code === 'CIRCULAR_REF')
+		expect(circErrors.length).toBeGreaterThan(0)
+		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#REF!'))
+	})
+
+	test('defined name range self-reference produces circular reference error', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		wb.definedNames.set('TotalRange', 'Sheet1!A1:A1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'SUM(TotalRange)', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+		const circErrors = result.errors.filter((e) => e.error.code === 'CIRCULAR_REF')
+		expect(circErrors.length).toBeGreaterThan(0)
+		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#REF!'))
 	})
 
 	test('circular references preserve imported cached values when present', () => {

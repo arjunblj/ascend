@@ -44,7 +44,7 @@ import { aggregateNumericRange } from './compiled-eval.ts'
 import { evaluateConditionalFormats } from './conditional-format.ts'
 import { computeIconFilterRows } from './icon-filter.ts'
 import { resolveSheetIndexInWorkbook as resolveSheetIndex } from './sheet-index.ts'
-import { resolveStructuredRefRange } from './structured-refs.ts'
+import { createStructuredRefResolver, type StructuredRefResolver } from './structured-refs.ts'
 
 export interface EvalContext {
 	readonly workbook: Workbook
@@ -58,6 +58,7 @@ export interface EvalContext {
 	readonly lookupVectorCache?: LookupVectorCache
 	readonly aggregateRangeCache?: AggregateRangeCache
 	readonly numericVectorCache?: NumericVectorCache
+	readonly structuredRefResolver?: StructuredRefResolver
 }
 
 export class MutableEvalContext implements EvalContext {
@@ -70,6 +71,7 @@ export class MutableEvalContext implements EvalContext {
 	lookupVectorCache?: LookupVectorCache
 	aggregateRangeCache?: AggregateRangeCache
 	numericVectorCache?: NumericVectorCache
+	structuredRefResolver?: StructuredRefResolver
 }
 
 class FunctionEvalCtx implements FunctionEvalContext {
@@ -1698,13 +1700,9 @@ function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | nu
 			)
 		}
 		case 'structuredRef': {
-			const resolved = resolveStructuredRefRange(
-				ctx.workbook,
-				node,
-				ctx.sheetIndex,
-				ctx.row,
-				ctx.col,
-			)
+			const resolved = (
+				ctx.structuredRefResolver ?? createStructuredRefResolver(ctx.workbook)
+			).resolve(node, ctx.sheetIndex, ctx.row, ctx.col)
 			if (!resolved) return { value: errorValue('#REF!') }
 			return makeRangeArg(
 				ctx.workbook,

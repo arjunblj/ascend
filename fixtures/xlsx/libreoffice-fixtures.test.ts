@@ -457,11 +457,11 @@ describe('LibreOffice XLSX fixture corpus', () => {
 			oracle: 'cached-values',
 			json: true,
 			maxMismatches: 23,
-			maxUnacceptedMismatches: 1,
-			maxSemanticMismatches: 1,
+			maxUnacceptedMismatches: 0,
+			maxSemanticMismatches: 0,
 			maxErrors: 0,
 			minComparedFormulas: 402,
-			minSemanticPerfectWorkbooks: 33,
+			minSemanticPerfectWorkbooks: 34,
 		})
 		expect(payload.summary).toMatchObject({
 			workbookCount: 34,
@@ -470,13 +470,14 @@ describe('LibreOffice XLSX fixture corpus', () => {
 			noCachedFormulaCount: 16,
 			volatileOracleSkipCount: 0,
 			mismatchCount: 23,
-			acceptedMismatchCount: 22,
-			unacceptedMismatchCount: 1,
-			semanticMismatchCount: 1,
+			acceptedMismatchCount: 23,
+			unacceptedMismatchCount: 0,
+			semanticMismatchCount: 0,
 			numericDriftMismatchCount: 22,
+			staleOracleMismatchCount: 1,
 			errorCount: 0,
 			perfectWorkbookCount: 32,
-			semanticPerfectWorkbookCount: 33,
+			semanticPerfectWorkbookCount: 34,
 		})
 	})
 })

@@ -6,6 +6,9 @@ describe('Workbook.clone', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
 		sheet.autoFilter = { ref: 'A1:B3', columns: [], sortState: { ref: 'A2:B3', conditions: [] } }
+		sheet.preservedSheetViewSelections = [{ pane: 'bottomRight', activeCell: 'B2', sqref: 'B2' }]
+		sheet.preservedCellMetadata.set('0:0', { cm: 1 })
+		sheet.pageSetupPr = { fitToPage: true, autoPageBreaks: false }
 		sheet.tables.push({
 			id: createTableId(),
 			name: 'Data',
@@ -31,10 +34,16 @@ describe('Workbook.clone', () => {
 		;(cloneTable.ref.start as { row: number }).row = 10
 		;(cloneTable.columns[0] as { name: string }).name = 'Changed'
 		;(cloneSheet.autoFilter as { ref: string }).ref = 'C1:D3'
+		;(cloneSheet.preservedSheetViewSelections?.[0] as { activeCell: string }).activeCell = 'C3'
+		;(cloneSheet.preservedCellMetadata.get('0:0') as { cm: number }).cm = 2
+		;(cloneSheet.pageSetupPr as { fitToPage: boolean }).fitToPage = false
 
 		expect(sheet.tables[0]?.ref.start.row).toBe(0)
 		expect(sheet.tables[0]?.columns[0]?.name).toBe('Name')
 		expect(sheet.autoFilter?.ref).toBe('A1:B3')
+		expect(sheet.preservedSheetViewSelections?.[0]?.activeCell).toBe('B2')
+		expect(sheet.preservedCellMetadata.get('0:0')?.cm).toBe(1)
+		expect(sheet.pageSetupPr?.fitToPage).toBe(true)
 	})
 
 	test('clones workbook settings and preserved metadata without aliasing', () => {

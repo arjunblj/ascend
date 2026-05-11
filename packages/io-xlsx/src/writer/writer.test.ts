@@ -870,6 +870,60 @@ describe('writeXlsx', () => {
 		expect(xml).toContain('<c r="C1"><v>5</v></c>')
 	})
 
+	it('preserves formula cell metadata when unrelated edits dirty the sheet', () => {
+		const source = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Data" sheetId="1" r:id="rId1"/>
+  </sheets>
+</workbook>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1" cm="1" t="str"><f t="array" ref="A1">SUM(B1:B2)</f><v>7</v></c>
+      <c r="B1"><v>3</v></c>
+      <c r="B2"><v>4</v></c>
+    </row>
+  </sheetData>
+</worksheet>`,
+		})
+		const read = readXlsx(source)
+		expectOk(read)
+		const sheet = read.value.workbook.sheets[0]
+		expect(sheet?.preservedCellMetadata.get('0:0')).toEqual({ cm: 1 })
+		sheet?.cells.set(0, 1, { value: numberValue(5), formula: null, styleId: S0 })
+
+		const written = writeXlsx(read.value.workbook, read.value.capsules, {
+			dirtySheetNames: ['Data'],
+		})
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		const xml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+
+		expect(xml).toContain(
+			'<c r="A1" cm="1" t="str"><f t="array" ref="A1">SUM(B1:B2)</f><v>7</v></c>',
+		)
+		expect(xml).toContain('<c r="B1"><v>5</v></c>')
+	})
+
 	it('round-trips shared formula bindings', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Shared')
@@ -2334,6 +2388,15 @@ describe('writeXlsx', () => {
 		sheet.colWidths.set(0, 18.5)
 		sheet.colWidths.set(1, 18.5)
 		sheet.rowHeights.set(0, 24)
+		sheet.rowDefs.set(0, {
+			spans: '1:2',
+			style: 2,
+			customFormat: true,
+			customHeight: false,
+			thickTop: true,
+			thickBot: true,
+			dyDescent: 0.3,
+		})
 		sheet.autoFilter = {
 			ref: 'A1:B10',
 			columns: [],
@@ -2350,14 +2413,35 @@ describe('writeXlsx', () => {
 			orientation: 'landscape',
 			fitToWidth: 1,
 			fitToHeight: 2,
+			firstPageNumber: 2,
+			copies: 3,
+			horizontalDpi: 600,
+			verticalDpi: 600,
+			pageOrder: 'overThenDown',
+			cellComments: 'asDisplayed',
+			errors: 'dash',
+			blackAndWhite: true,
+			draft: true,
+			useFirstPageNumber: true,
+			usePrinterDefaults: false,
 		}
 		sheet.printOptions = {
 			gridLines: true,
+			gridLinesSet: true,
 			headings: true,
 		}
 		sheet.headerFooter = {
+			differentOddEven: true,
+			differentFirst: true,
+			scaleWithDoc: false,
+			alignWithMargins: true,
 			oddHeader: '&LTest',
 			oddFooter: '&R1',
+		}
+		sheet.phoneticPr = {
+			fontId: 1,
+			type: 'noConversion',
+			alignment: 'center',
 		}
 		sheet.rowBreaks = [{ id: 5, min: 0, max: 16383, man: true }]
 		sheet.colBreaks = [{ id: 2, min: 0, max: 1048575, man: true }]
@@ -2369,6 +2453,15 @@ describe('writeXlsx', () => {
 		expect(s?.colWidths.get(0)).toBe(18.5)
 		expect(s?.colWidths.get(1)).toBe(18.5)
 		expect(s?.rowHeights.get(0)).toBe(24)
+		expect(s?.rowDefs.get(0)).toEqual({
+			spans: '1:2',
+			style: 2,
+			customFormat: true,
+			customHeight: false,
+			thickTop: true,
+			thickBot: true,
+			dyDescent: 0.3,
+		})
 		expect(s?.autoFilter).toEqual({
 			ref: 'A1:B10',
 			columns: [],
@@ -2385,17 +2478,66 @@ describe('writeXlsx', () => {
 			orientation: 'landscape',
 			fitToWidth: 1,
 			fitToHeight: 2,
+			firstPageNumber: 2,
+			copies: 3,
+			horizontalDpi: 600,
+			verticalDpi: 600,
+			pageOrder: 'overThenDown',
+			cellComments: 'asDisplayed',
+			errors: 'dash',
+			blackAndWhite: true,
+			draft: true,
+			useFirstPageNumber: true,
+			usePrinterDefaults: false,
 		})
 		expect(s?.printOptions).toEqual({
 			gridLines: true,
+			gridLinesSet: true,
 			headings: true,
 		})
 		expect(s?.headerFooter).toEqual({
+			differentOddEven: true,
+			differentFirst: true,
+			scaleWithDoc: false,
+			alignWithMargins: true,
 			oddHeader: '&LTest',
 			oddFooter: '&R1',
 		})
+		expect(s?.phoneticPr).toEqual({
+			fontId: 1,
+			type: 'noConversion',
+			alignment: 'center',
+		})
 		expect(s?.rowBreaks).toEqual([{ id: 5, min: 0, max: 16383, man: true }])
 		expect(s?.colBreaks).toEqual([{ id: 2, min: 0, max: 1048575, man: true }])
+	})
+
+	it('preserves split pane metadata without converting it to frozen panes', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Split')
+		sheet.cells.set(0, 0, { value: stringValue('Header'), formula: null, styleId: S0 })
+		sheet.preservedPaneAttributes = {
+			xSplit: '12540',
+			ySplit: '3840',
+			topLeftCell: 'K23',
+			activePane: 'bottomRight',
+		}
+
+		const { result, bytes } = roundTrip(wb)
+		const s = result.workbook.sheets[0]
+		expect(s?.frozenRows).toBe(0)
+		expect(s?.frozenCols).toBe(0)
+		expect(s?.preservedPaneAttributes).toEqual({
+			xSplit: '12540',
+			ySplit: '3840',
+			topLeftCell: 'K23',
+			activePane: 'bottomRight',
+		})
+		const sheetXml = new TextDecoder().decode(unzipSync(bytes)['xl/worksheets/sheet1.xml'])
+		expect(sheetXml).toContain(
+			'<pane xSplit="12540" ySplit="3840" topLeftCell="K23" activePane="bottomRight"/>',
+		)
+		expect(sheetXml).not.toContain('state="frozen"')
 	})
 
 	it('preserves macro-enabled workbook content type when workbook capsules are present', () => {
@@ -3017,6 +3159,7 @@ describe('writeXlsx', () => {
 		})
 		sheet.conditionalFormats.push({
 			sqref: 'A1:A10',
+			pivot: true,
 			rules: [
 				{
 					type: 'cellIs',
@@ -3027,20 +3170,41 @@ describe('writeXlsx', () => {
 					formulas: ['3'],
 					style: wb.differentialStyles[0],
 				},
+				{
+					type: 'aboveAverage',
+					priority: 2,
+					formulas: [],
+					aboveAverage: false,
+					stdDev: 2,
+				},
+				{
+					type: 'containsText',
+					operator: 'containsText',
+					priority: 3,
+					formulas: [],
+					text: 'Grain',
+				},
 			],
 		})
 		sheet.dataValidations.push({
 			sqref: 'B2:B4',
+			uid: '{CAFD7DE3-F94F-4BD6-B5E6-7E794FD6EC31}',
 			type: 'list',
 			allowBlank: true,
 			showInputMessage: true,
 			formula1: '"Q1,Q2,Q3"',
 		})
+		sheet.dataValidationSettings = {
+			disablePrompts: true,
+			xWindow: 220,
+			yWindow: 120,
+		}
 
 		const { result, bytes } = roundTrip(wb)
 		expect(result.workbook.sheets[0]?.conditionalFormats).toEqual([
 			{
 				sqref: 'A1:A10',
+				pivot: true,
 				rules: [
 					{
 						type: 'cellIs',
@@ -3054,18 +3218,38 @@ describe('writeXlsx', () => {
 							fill: { pattern: 'solid', fgColor: { kind: 'rgb', rgb: 'FFC6EFCE' } },
 						},
 					},
+					{
+						type: 'aboveAverage',
+						priority: 2,
+						formulas: [],
+						aboveAverage: false,
+						stdDev: 2,
+					},
+					{
+						type: 'containsText',
+						operator: 'containsText',
+						priority: 3,
+						formulas: [],
+						text: 'Grain',
+					},
 				],
 			},
 		])
 		expect(result.workbook.sheets[0]?.dataValidations).toEqual([
 			{
 				sqref: 'B2:B4',
+				uid: '{CAFD7DE3-F94F-4BD6-B5E6-7E794FD6EC31}',
 				type: 'list',
 				allowBlank: true,
 				showInputMessage: true,
 				formula1: '"Q1,Q2,Q3"',
 			},
 		])
+		expect(result.workbook.sheets[0]?.dataValidationSettings).toEqual({
+			disablePrompts: true,
+			xWindow: 220,
+			yWindow: 120,
+		})
 		const fingerprint = fingerprintXlsx(bytes)
 		expect(fingerprint.styles?.tagCounts).toMatchObject({
 			dxfs: 1,
@@ -3073,12 +3257,25 @@ describe('writeXlsx', () => {
 		})
 		expect(fingerprint.sheets[0]?.xml.tagCounts).toMatchObject({
 			conditionalFormatting: 1,
-			cfRule: 1,
+			cfRule: 3,
 			dataValidations: 1,
 			dataValidation: 1,
 			formula: 1,
 			formula1: 1,
 		})
+		const sheetXml = new TextDecoder().decode(
+			unzipSync(bytes)['xl/worksheets/sheet1.xml'] ?? new Uint8Array(),
+		)
+		expect(sheetXml).toContain('stdDev="2"')
+		expect(sheetXml).toContain('text="Grain"')
+		expect(sheetXml).toContain('pivot="1"')
+		expect(sheetXml).toContain('disablePrompts="1"')
+		expect(sheetXml).toContain('xWindow="220"')
+		expect(sheetXml).toContain('yWindow="120"')
+		expect(sheetXml).toContain(
+			'xmlns:xr="http://schemas.microsoft.com/office/spreadsheetml/2014/revision"',
+		)
+		expect(sheetXml).toContain('xr:uid="{CAFD7DE3-F94F-4BD6-B5E6-7E794FD6EC31}"')
 	})
 
 	it('preserves rich text inline strings when useSharedStrings is false (xlsx-2)', () => {
@@ -3935,24 +4132,48 @@ describe('writeXlsx', () => {
 		sheet.tables.push({
 			id: createTableId(),
 			name: 'InventoryTable',
+			nameAttribute: null,
 			sheetId: sheet.id,
+			uid: '{TABLE-UID}',
 			ref: { start: { row: 0, col: 0 }, end: { row: 1, col: 1 } },
 			columns: [
-				{ id: 1, name: 'Name', totalsRowLabel: 'Total', dataDxfId: 7 },
-				{ id: 2, name: 'Qty', totalsRowFunction: 'sum', totalsRowDxfId: 8 },
+				{ id: 1, uid: '{COLUMN-1-UID}', name: 'Name', totalsRowLabel: 'Total', dataDxfId: 7 },
+				{
+					id: 2,
+					uid: '{COLUMN-2-UID}',
+					name: 'Qty',
+					formula: '[@Name]&"-"&[@Qty]',
+					formulaIsArray: true,
+					xmlColumnPr: {
+						mapId: 2,
+						xpath: '/ns1:Inventory/ns1:Qty',
+						xmlDataType: 'unsignedInt',
+					},
+					totalsRowFunction: 'sum',
+					totalsRowDxfId: 8,
+				},
 			],
 			hasHeaders: true,
 			hasTotals: false,
 			autoFilter: {
 				ref: 'A1:B2',
+				uid: '{FILTER-UID}',
 				columns: [],
 				sortState: {
 					ref: 'A2:B2',
+					preservedAttributes: {
+						'xmlns:xlrd2': 'http://schemas.microsoft.com/office/spreadsheetml/2017/richdata2',
+					},
 					conditions: [{ ref: 'B2:B2' }],
 				},
 			},
+			altText: 'Inventory',
+			altTextSummary: 'Inventory summary table',
+			dataCellStyle: 'InventoryData',
 			headerRowDxfId: 5,
+			headerRowCellStyle: 'InventoryHeader',
 			dataDxfId: 6,
+			tableBorderDxfId: 9,
 			tableStyleInfo: {
 				name: 'TableStyleMedium2',
 				showFirstColumn: false,
@@ -3966,8 +4187,15 @@ describe('writeXlsx', () => {
 		expect(result.workbook.sheets[0]?.tables[0]).toEqual(
 			expect.objectContaining({
 				name: 'InventoryTable',
+				nameAttribute: null,
+				uid: '{TABLE-UID}',
+				altText: 'Inventory',
+				altTextSummary: 'Inventory summary table',
+				dataCellStyle: 'InventoryData',
 				headerRowDxfId: 5,
+				headerRowCellStyle: 'InventoryHeader',
 				dataDxfId: 6,
+				tableBorderDxfId: 9,
 				tableStyleInfo: {
 					name: 'TableStyleMedium2',
 					showFirstColumn: false,
@@ -3976,8 +4204,27 @@ describe('writeXlsx', () => {
 					showColumnStripes: false,
 				},
 				columns: [
-					{ id: 1, name: 'Name', totalsRowLabel: 'Total', dataDxfId: 7 },
-					{ id: 2, name: 'Qty', totalsRowFunction: 'sum', totalsRowDxfId: 8 },
+					{
+						id: 1,
+						uid: '{COLUMN-1-UID}',
+						name: 'Name',
+						totalsRowLabel: 'Total',
+						dataDxfId: 7,
+					},
+					{
+						id: 2,
+						uid: '{COLUMN-2-UID}',
+						name: 'Qty',
+						formula: '[@Name]&"-"&[@Qty]',
+						formulaIsArray: true,
+						xmlColumnPr: {
+							mapId: 2,
+							xpath: '/ns1:Inventory/ns1:Qty',
+							xmlDataType: 'unsignedInt',
+						},
+						totalsRowFunction: 'sum',
+						totalsRowDxfId: 8,
+					},
 				],
 			}),
 		)
@@ -3986,8 +4233,36 @@ describe('writeXlsx', () => {
 		expect(tableEntry).toBeDefined()
 		if (!tableEntry) return
 		const tableXml = new TextDecoder().decode(tableEntry)
+		expect(tableXml).toContain('displayName="InventoryTable"')
+		expect(tableXml).not.toContain(' name="InventoryTable"')
+		expect(tableXml).toContain(
+			'<extLst><ext uri="{504A1905-F514-4f6f-8877-14C23A59335A}" xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"><x14:table altText="Inventory" altTextSummary="Inventory summary table"/></ext></extLst>',
+		)
+		expect(tableXml).toContain(
+			'xmlns:xr="http://schemas.microsoft.com/office/spreadsheetml/2014/revision"',
+		)
+		expect(tableXml).toContain(
+			'xmlns:xr3="http://schemas.microsoft.com/office/spreadsheetml/2016/revision3"',
+		)
+		expect(tableXml).toContain('mc:Ignorable="xr xr3"')
+		expect(tableXml).toContain('xr:uid="{TABLE-UID}"')
+		expect(tableXml).toContain('<autoFilter ref="A1:B2" xr:uid="{FILTER-UID}">')
+		expect(tableXml).toContain(
+			'<sortState ref="A2:B2" xmlns:xlrd2="http://schemas.microsoft.com/office/spreadsheetml/2017/richdata2">',
+		)
+		expect(tableXml).toContain('xr3:uid="{COLUMN-1-UID}"')
+		expect(tableXml).toContain('xr3:uid="{COLUMN-2-UID}"')
+		expect(tableXml).toContain(
+			'<calculatedColumnFormula array="1">[@Name]&amp;&quot;-&quot;&amp;[@Qty]</calculatedColumnFormula>',
+		)
+		expect(tableXml).toContain(
+			'<xmlColumnPr mapId="2" xpath="/ns1:Inventory/ns1:Qty" xmlDataType="unsignedInt"/>',
+		)
+		expect(tableXml).toContain('dataCellStyle="InventoryData"')
 		expect(tableXml).toContain('headerRowDxfId="5"')
+		expect(tableXml).toContain('headerRowCellStyle="InventoryHeader"')
 		expect(tableXml).toContain('dataDxfId="6"')
+		expect(tableXml).toContain('tableBorderDxfId="9"')
 		expect(tableXml).toContain('totalsRowFunction="sum"')
 		expect(tableXml).toContain('tableStyleInfo')
 	})
@@ -4960,6 +5235,45 @@ describe('writeXlsx', () => {
 		const zip = unzipSync(written.value)
 		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
 		expect(sheetXml).toContain('<sheetView workbookViewId="0">')
+		expect(sheetXml).toContain('<selection activeCell="A1" sqref="A1"/>')
+	})
+
+	it('preserves multiple sheetView selections on regenerated sheets', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('View')
+		sheet.cells.set(0, 0, { value: stringValue('hi'), formula: null, styleId: S0 })
+		sheet.frozenRows = 1
+		sheet.frozenCols = 1
+		sheet.preservedPaneAttributes = {
+			xSplit: '1',
+			ySplit: '1',
+			state: 'frozen',
+			topLeftCell: 'B2',
+			activePane: 'bottomRight',
+		}
+		sheet.preservedSheetViewSelections = [
+			{ pane: 'topRight', activeCell: 'B1', sqref: 'B1' },
+			{ pane: 'bottomLeft', activeCell: 'A2', sqref: 'A2' },
+			{ pane: 'bottomRight', activeCell: 'B2', activeCellId: '0', sqref: 'B2:C4' },
+		]
+
+		const { bytes, result } = roundTrip(wb)
+		const zip = unzipSync(bytes)
+		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+		expect(sheetXml).toContain(
+			'<pane xSplit="1" ySplit="1" state="frozen" topLeftCell="B2" activePane="bottomRight"/>',
+		)
+		expect(sheetXml).toContain('<selection pane="topRight" activeCell="B1" sqref="B1"/>')
+		expect(sheetXml).toContain('<selection pane="bottomLeft" activeCell="A2" sqref="A2"/>')
+		expect(sheetXml).toContain(
+			'<selection pane="bottomRight" activeCell="B2" activeCellId="0" sqref="B2:C4"/>',
+		)
+		const s = result.workbook.sheets[0]
+		expect(s?.preservedSheetViewSelections).toEqual([
+			{ pane: 'topRight', activeCell: 'B1', sqref: 'B1' },
+			{ pane: 'bottomLeft', activeCell: 'A2', sqref: 'A2' },
+			{ pane: 'bottomRight', activeCell: 'B2', activeCellId: '0', sqref: 'B2:C4' },
+		])
 	})
 
 	it('preserves blank physical cells on regenerated sheets without hydrating semantic values', () => {
@@ -5063,14 +5377,121 @@ describe('writeXlsx', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Colored')
 		sheet.cells.set(0, 0, { value: stringValue('hi'), formula: null, styleId: S0 })
+		sheet.codeName = 'SheetCode1'
+		sheet.filterMode = true
+		sheet.enableFormatConditionsCalculation = false
 		sheet.tabColor = { rgb: 'FF0000FF', theme: 4, tint: -0.25 }
-		sheet.sheetFormatPr = { defaultRowHeight: 14.5, defaultColWidth: 10.0 }
+		sheet.pageSetupPr = { fitToPage: true, autoPageBreaks: false }
+		sheet.sheetFormatPr = {
+			baseColWidth: 12,
+			defaultRowHeight: 14.5,
+			defaultColWidth: 10.0,
+			zeroHeight: true,
+			dyDescent: 0.25,
+		}
 
-		const { result } = roundTrip(wb)
+		const { result, bytes } = roundTrip(wb)
 		const s = result.workbook.sheets[0]
 		if (!s) throw new Error('Expected round-tripped workbook to contain a sheet')
+		expect(s.codeName).toBe('SheetCode1')
+		expect(s.filterMode).toBe(true)
+		expect(s.enableFormatConditionsCalculation).toBe(false)
 		expect(s.tabColor).toEqual({ rgb: 'FF0000FF', theme: 4, tint: -0.25 })
-		expect(s.sheetFormatPr).toEqual({ defaultRowHeight: 14.5, defaultColWidth: 10 })
+		expect(s.pageSetupPr).toEqual({ fitToPage: true, autoPageBreaks: false })
+		expect(s.sheetFormatPr).toEqual({
+			baseColWidth: 12,
+			defaultRowHeight: 14.5,
+			defaultColWidth: 10,
+			zeroHeight: true,
+			dyDescent: 0.25,
+		})
+		const sheetXml = new TextDecoder().decode(
+			unzipSync(bytes)['xl/worksheets/sheet1.xml'] ?? new Uint8Array(),
+		)
+		expect(sheetXml).toContain(
+			'xmlns:x14ac="http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac"',
+		)
+		expect(sheetXml).toContain(
+			'<sheetPr codeName="SheetCode1" filterMode="1" enableFormatConditionsCalculation="0">',
+		)
+		expect(sheetXml).toContain('<pageSetUpPr fitToPage="1" autoPageBreaks="0"/>')
+		expect(sheetXml).toContain(
+			'<sheetFormatPr baseColWidth="12" defaultRowHeight="14.5" defaultColWidth="10" zeroHeight="1" x14ac:dyDescent="0.25"/>',
+		)
+	})
+
+	it('preserves pageSetup printerSettings relationship on regenerated sheets', () => {
+		const printerSettings = 'printer-settings'
+		const sourceBytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="bin" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.printerSettings"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Print" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>
+  <pageSetup orientation="portrait" horizontalDpi="300" verticalDpi="300" r:id="rIdPrinter"/>
+</worksheet>`,
+			'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdPrinter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/printerSettings" Target="../printerSettings/printerSettings1.bin"/>
+</Relationships>`,
+			'xl/printerSettings/printerSettings1.bin': printerSettings,
+		})
+		const source = readXlsx(sourceBytes)
+		expectOk(source)
+		const sheet = source.value.workbook.sheets[0]
+		if (!sheet) throw new Error('Expected source workbook to contain a sheet')
+		expect(sheet.pageSetup).toEqual({
+			orientation: 'portrait',
+			horizontalDpi: 300,
+			verticalDpi: 300,
+			printerSettingsRelId: 'rIdPrinter',
+		})
+		sheet.cells.set(0, 0, { value: numberValue(2), formula: null, styleId: S0 })
+
+		const written = writeXlsx(source.value.workbook, source.value.capsules, {
+			dirtySheetNames: ['Print'],
+		})
+		expectOk(written)
+
+		const zip = unzipSync(written.value)
+		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+		const sheetRelsXml = new TextDecoder().decode(
+			zip['xl/worksheets/_rels/sheet1.xml.rels'] ?? new Uint8Array(),
+		)
+		expect(sheetXml).toContain(
+			'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"',
+		)
+		expect(sheetXml).toContain(
+			'<pageSetup orientation="portrait" horizontalDpi="300" verticalDpi="300" r:id="rIdPrinter"/>',
+		)
+		expect(sheetRelsXml).toContain('Id="rIdPrinter"')
+		expect(sheetRelsXml).toContain(
+			'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/printerSettings"',
+		)
+		expect(sheetRelsXml).toContain('Target="../printerSettings/printerSettings1.bin"')
+		expect(new TextDecoder().decode(zip['xl/printerSettings/printerSettings1.bin'])).toBe(
+			printerSettings,
+		)
 	})
 
 	it('preserves row and column outline metadata on round-trip', () => {

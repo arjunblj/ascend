@@ -1982,6 +1982,13 @@ describe('applyOperation', () => {
 			name: 'Sales',
 			hasHeaders: true,
 		})
+		const table = sheet.tables[0]
+		const totalColumn = table?.columns[2]
+		if (table && totalColumn) {
+			const columns = [...table.columns]
+			columns[2] = { ...totalColumn, formula: 'OLD()', formulaIsArray: true }
+			sheet.tables[0] = { ...table, columns }
+		}
 
 		const result = applyOperation(wb, {
 			op: 'setTableColumn',
@@ -1999,6 +2006,7 @@ describe('applyOperation', () => {
 			formula: '[@Qty]*[@Price]',
 			totalsRowFunction: 'sum',
 		})
+		expect(sheet.tables[0]?.columns[2]?.formulaIsArray).toBeUndefined()
 		expect(sheet.cells.get(1, 2)?.formula).toBe('[@Qty]*[@Price]')
 		expect(sheet.cells.get(2, 2)?.formula).toBe('[@Qty]*[@Price]')
 

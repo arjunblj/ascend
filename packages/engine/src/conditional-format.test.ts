@@ -36,6 +36,8 @@ function makeRule(
 		bottom?: boolean
 		aboveAverage?: boolean
 		equalAverage?: boolean
+		stdDev?: number
+		text?: string
 		timePeriod?: string
 	} = {},
 ) {
@@ -51,6 +53,8 @@ function makeRule(
 		...(opts.bottom !== undefined ? { bottom: opts.bottom } : {}),
 		...(opts.aboveAverage !== undefined ? { aboveAverage: opts.aboveAverage } : {}),
 		...(opts.equalAverage !== undefined ? { equalAverage: opts.equalAverage } : {}),
+		...(opts.stdDev !== undefined ? { stdDev: opts.stdDev } : {}),
+		...(opts.text !== undefined ? { text: opts.text } : {}),
 		...(opts.timePeriod !== undefined ? { timePeriod: opts.timePeriod } : {}),
 	}
 }
@@ -564,6 +568,43 @@ describe('evaluateConditionalFormats', () => {
 			const result = evaluateConditionalFormats(sheet, wb)
 			expect(result.size).toBe(2)
 		})
+
+		test('above one standard deviation', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			for (let row = 0; row < 5; row++) {
+				setCell(sheet, row, 0, numberValue((row + 1) * 10))
+			}
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A5', makeRule('aboveAverage', { stdDev: 1, style: greenFill })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.size).toBe(1)
+			expect(result.get('A5')).toBeDefined()
+			expect(result.get('A4')).toBeUndefined()
+		})
+
+		test('below one standard deviation', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			for (let row = 0; row < 5; row++) {
+				setCell(sheet, row, 0, numberValue((row + 1) * 10))
+			}
+
+			sheet.conditionalFormats.push(
+				makeCf(
+					'A1:A5',
+					makeRule('aboveAverage', { aboveAverage: false, stdDev: 1, style: redFill }),
+				),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.size).toBe(1)
+			expect(result.get('A1')).toBeDefined()
+			expect(result.get('A2')).toBeUndefined()
+		})
 	})
 
 	// ── duplicateValues ──────────────────────────────────────────────
@@ -603,6 +644,42 @@ describe('evaluateConditionalFormats', () => {
 			const result = evaluateConditionalFormats(sheet, wb)
 			expect(result.size).toBe(0)
 		})
+
+		test('text duplicates are matched case-insensitively', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, stringValue('Apple'))
+			setCell(sheet, 1, 0, stringValue('apple'))
+			setCell(sheet, 2, 0, stringValue('Pear'))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A3', makeRule('duplicateValues', { style: redFill })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.size).toBe(2)
+			expect(result.get('A1')).toBeDefined()
+			expect(result.get('A2')).toBeDefined()
+			expect(result.get('A3')).toBeUndefined()
+		})
+
+		test('text cells with wildcard criteria follow Excel duplicate matching', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, stringValue('AL*'))
+			setCell(sheet, 1, 0, stringValue('Alpha'))
+			setCell(sheet, 2, 0, stringValue('Beta'))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A3', makeRule('duplicateValues', { style: redFill })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.size).toBe(1)
+			expect(result.get('A1')).toBeDefined()
+			expect(result.get('A2')).toBeUndefined()
+			expect(result.get('A3')).toBeUndefined()
+		})
 	})
 
 	// ── uniqueValues ─────────────────────────────────────────────────
@@ -638,6 +715,38 @@ describe('evaluateConditionalFormats', () => {
 			expect(result.size).toBe(1)
 			expect(result.get('A2')).toBeDefined()
 			expect(result.get('A1')).toBeUndefined()
+		})
+
+		test('case-only text variants are not unique', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, stringValue('North'))
+			setCell(sheet, 1, 0, stringValue('north'))
+			setCell(sheet, 2, 0, stringValue('South'))
+
+			sheet.conditionalFormats.push(makeCf('A1:A3', makeRule('uniqueValues', { style: greenFill })))
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.size).toBe(1)
+			expect(result.get('A3')).toBeDefined()
+			expect(result.get('A1')).toBeUndefined()
+			expect(result.get('A2')).toBeUndefined()
+		})
+
+		test('text cells with wildcard criteria follow Excel unique matching', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, stringValue('AL*'))
+			setCell(sheet, 1, 0, stringValue('Alpha'))
+			setCell(sheet, 2, 0, stringValue('Beta'))
+
+			sheet.conditionalFormats.push(makeCf('A1:A3', makeRule('uniqueValues', { style: greenFill })))
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.size).toBe(2)
+			expect(result.get('A1')).toBeUndefined()
+			expect(result.get('A2')).toBeDefined()
+			expect(result.get('A3')).toBeDefined()
 		})
 	})
 
@@ -719,6 +828,21 @@ describe('evaluateConditionalFormats', () => {
 			expect(result.get('A2')).toBeDefined()
 			expect(result.get('A3')).toBeUndefined()
 		})
+
+		test('matches cfRule text attribute without formula payload case-insensitively', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, stringValue('North Grain'))
+			setCell(sheet, 1, 0, stringValue('produce'))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A2', makeRule('containsText', { formulas: [], text: 'grain' })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeDefined()
+			expect(result.get('A2')).toBeUndefined()
+		})
 	})
 
 	// ── notContainsText ──────────────────────────────────────────────
@@ -750,6 +874,21 @@ describe('evaluateConditionalFormats', () => {
 
 			const result = evaluateConditionalFormats(sheet, wb)
 			expect(result.get('A1')).toBeDefined()
+		})
+
+		test('uses cfRule text attribute as fallback pattern', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, stringValue('Apple'))
+			setCell(sheet, 1, 0, stringValue('pear'))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A2', makeRule('notContainsText', { formulas: [], text: 'apple' })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeUndefined()
+			expect(result.get('A2')).toBeDefined()
 		})
 	})
 
@@ -783,6 +922,21 @@ describe('evaluateConditionalFormats', () => {
 			const result = evaluateConditionalFormats(sheet, wb)
 			expect(result.get('A1')).toBeUndefined()
 		})
+
+		test('uses cfRule text attribute as case-insensitive prefix', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, stringValue('Hello'))
+			setCell(sheet, 1, 0, stringValue('world'))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A2', makeRule('beginsWith', { formulas: [], text: 'hel' })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeDefined()
+			expect(result.get('A2')).toBeUndefined()
+		})
 	})
 
 	// ── endsWith ─────────────────────────────────────────────────────
@@ -812,6 +966,21 @@ describe('evaluateConditionalFormats', () => {
 
 			const result = evaluateConditionalFormats(sheet, wb)
 			expect(result.get('A1')).toBeUndefined()
+		})
+
+		test('uses cfRule text attribute as case-insensitive suffix', () => {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setCell(sheet, 0, 0, stringValue('HELLO'))
+			setCell(sheet, 1, 0, stringValue('world'))
+
+			sheet.conditionalFormats.push(
+				makeCf('A1:A2', makeRule('endsWith', { formulas: [], text: 'lo' })),
+			)
+
+			const result = evaluateConditionalFormats(sheet, wb)
+			expect(result.get('A1')).toBeDefined()
+			expect(result.get('A2')).toBeUndefined()
 		})
 	})
 

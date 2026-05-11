@@ -551,6 +551,17 @@ describe('competitive IO helpers', () => {
 		expect(assertions.status).toBe('pass')
 	})
 
+	test('Ascend-writer read source is interoperable with ExcelJS', async () => {
+		const { default: ExcelJS } = await import('exceljs')
+		const input = await buildWorkloadDataSet('dense-values', 4, 4, 'ascend-writer')
+		const workbook = new ExcelJS.Workbook()
+
+		await workbook.xlsx.load(Buffer.from(input.xlsxBytes))
+
+		expect(workbook.worksheets).toHaveLength(1)
+		expect(workbook.getWorksheet('Data')?.getCell('D4').value).toBe(15)
+	})
+
 	test('sparse-wide workload assertions catch corrupted far-right edge cells', () => {
 		const input = workloadInput('sparse-wide', 3, 101)
 		const workbook = workbookFromInput(input)

@@ -51,6 +51,7 @@ import {
 	MutableEvalContext,
 	setRangeValueCache,
 } from './evaluator.ts'
+import { createStructuredRefResolver } from './structured-refs.ts'
 
 export interface RecalcResult {
 	readonly changed: string[]
@@ -1376,6 +1377,7 @@ export function recalculate(
 	mutableCtx.lookupVectorCache = lookupVectorCache
 	mutableCtx.aggregateRangeCache = aggregateRangeCache
 	mutableCtx.numericVectorCache = numericVectorCache
+	mutableCtx.structuredRefResolver = createStructuredRefResolver(workbook)
 	setRangeValueCache(scratch.rangeValueCache)
 	const isDirtyRecalc = opts?.dirtyOnly || (opts?.dirtyRefs?.length ?? 0) > 0
 

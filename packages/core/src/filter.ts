@@ -60,11 +60,13 @@ export interface SortState {
 	readonly caseSensitive?: boolean
 	readonly columnSort?: boolean
 	readonly sortMethod?: string
+	readonly preservedAttributes?: Readonly<Record<string, string>>
 	readonly conditions: readonly SortCondition[]
 }
 
 export interface AutoFilter {
 	readonly ref: string
+	readonly uid?: string
 	readonly columns: readonly FilterColumn[]
 	readonly sortState?: SortState
 }

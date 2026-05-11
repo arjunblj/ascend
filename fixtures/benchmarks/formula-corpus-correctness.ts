@@ -62,6 +62,7 @@ interface WorkbookFormulaResult {
 	readonly unacceptedMismatchCount: number
 	readonly semanticMismatchCount: number
 	readonly numericDriftMismatchCount: number
+	readonly staleOracleMismatchCount: number
 	readonly errorCount: number
 	readonly beforeHash: string
 	readonly afterHash: string
@@ -93,7 +94,7 @@ interface FormulaComparison {
 	readonly volatileOracleSkips: readonly FormulaOracleSkip[]
 }
 
-type FormulaMismatchClassification = 'semantic' | 'numeric-drift'
+type FormulaMismatchClassification = 'semantic' | 'numeric-drift' | 'stale-oracle'
 
 interface SuitePayload {
 	readonly formatVersion: 1
@@ -122,6 +123,7 @@ interface SuitePayload {
 		readonly unacceptedMismatchCount: number
 		readonly semanticMismatchCount: number
 		readonly numericDriftMismatchCount: number
+		readonly staleOracleMismatchCount: number
 		readonly errorCount: number
 		readonly perfectWorkbookCount: number
 		readonly semanticPerfectWorkbookCount: number
@@ -132,6 +134,37 @@ const NUMERIC_DRIFT_ABS_TOLERANCE = 1e-12
 const NUMERIC_DRIFT_REL_TOLERANCE = 2e-8
 const NON_DETERMINISTIC_FUNCTION_RE =
 	/(?:^|[^A-Z0-9_.])(?:NOW|TODAY|RAND|RANDBETWEEN|RANDARRAY)\s*\(/i
+const KNOWN_STALE_ORACLE_MISMATCHES = new Map<string, string>([
+	[
+		staleOracleKey({
+			source: 'LibreOffice Calc QA XLSX regression data',
+			file: 'named-ranges-global.xlsx',
+			ref: 'Sheet2!A6',
+			formula: 'Global5',
+			cached: 'e:#NAME?',
+			calculated: 'n:5',
+		}),
+		'cached LibreOffice value is stale; Excel-compatible defined names resolve case-insensitively through Global5 -> global6 -> Sheet2!$B$1',
+	],
+])
+
+function staleOracleKey(input: {
+	readonly source?: string
+	readonly file: string
+	readonly ref: string
+	readonly formula: string
+	readonly cached: string
+	readonly calculated: string
+}): string {
+	return [
+		input.source ?? '',
+		input.file,
+		input.ref,
+		input.formula,
+		input.cached,
+		input.calculated,
+	].join('\t')
+}
 
 function readFlag(name: string): string | undefined {
 	const index = process.argv.indexOf(name)
@@ -279,6 +312,7 @@ function collectFormulaSnapshots(workbook: {
 }
 
 function compareSnapshots(
+	workbookEntry: NormalizedCorpusManifestEntry,
 	before: readonly FormulaSnapshot[],
 	after: readonly FormulaSnapshot[],
 ): FormulaComparison {
@@ -310,7 +344,7 @@ function compareSnapshots(
 			mismatches.push({
 				...entry,
 				calculated: calculated.cached,
-				...classifyMismatch(entry, calculated),
+				...classifyMismatch(workbookEntry, entry, calculated),
 			})
 		}
 	}
@@ -318,9 +352,27 @@ function compareSnapshots(
 }
 
 function classifyMismatch(
+	workbookEntry: NormalizedCorpusManifestEntry,
 	cached: FormulaSnapshot,
 	calculated: FormulaSnapshot,
 ): Pick<FormulaMismatch, 'classification' | 'reason'> {
+	const staleOracleReason = KNOWN_STALE_ORACLE_MISMATCHES.get(
+		staleOracleKey({
+			source: workbookEntry.source,
+			file: workbookEntry.file,
+			ref: cached.ref,
+			formula: cached.formula,
+			cached: cached.cached,
+			calculated: calculated.cached,
+		}),
+	)
+	if (staleOracleReason) {
+		return {
+			classification: 'stale-oracle',
+			reason: staleOracleReason,
+		}
+	}
+
 	const cachedNumber = parseSerializedNumber(cached.cached)
 	const calculatedNumber = parseSerializedNumber(calculated.cached)
 	if (cachedNumber && calculatedNumber && cachedNumber.kind === calculatedNumber.kind) {
@@ -394,12 +446,15 @@ function classifyDownstreamComparisons(
 				}
 				const precedent = byRef.get(ref)
 				if (!precedent) continue
-				if (precedent.classification === 'numeric-drift') {
+				if (
+					precedent.classification === 'numeric-drift' ||
+					precedent.classification === 'stale-oracle'
+				) {
 					changed = true
 					replacement = {
 						...mismatch,
-						classification: 'numeric-drift',
-						reason: `downstream of numeric-drift precedent ${ref}`,
+						classification: precedent.classification,
+						reason: `downstream of ${precedent.classification} precedent ${ref}`,
 					}
 					break
 				}
@@ -501,6 +556,7 @@ async function runWorkbook(
 			unacceptedMismatchCount: 0,
 			semanticMismatchCount: 0,
 			numericDriftMismatchCount: 0,
+			staleOracleMismatchCount: 0,
 			errorCount: 1,
 			beforeHash: hashLines([]),
 			afterHash: hashLines([]),
@@ -524,11 +580,12 @@ async function runWorkbook(
 	const after = collectFormulaSnapshots(read.value.workbook)
 	const comparableRefs = new Set(comparableBefore.map((entry) => entry.ref))
 	const comparableAfter = after.filter((entry) => comparableRefs.has(entry.ref))
-	const comparison = compareSnapshots(before, after)
+	const comparison = compareSnapshots(entry, before, after)
 	const { mismatches, volatileOracleSkips } = comparison
 	const semanticMismatchCount = countMismatches(mismatches, 'semantic')
 	const numericDriftMismatchCount = countMismatches(mismatches, 'numeric-drift')
-	const acceptedMismatchCount = numericDriftMismatchCount
+	const staleOracleMismatchCount = countMismatches(mismatches, 'stale-oracle')
+	const acceptedMismatchCount = numericDriftMismatchCount + staleOracleMismatchCount
 	return {
 		file: entry.file,
 		...(entry.source ? { source: entry.source } : {}),
@@ -543,6 +600,7 @@ async function runWorkbook(
 		unacceptedMismatchCount: semanticMismatchCount,
 		semanticMismatchCount,
 		numericDriftMismatchCount,
+		staleOracleMismatchCount,
 		errorCount: recalc.errors.length,
 		beforeHash: hashLines(
 			comparableBefore.map((entry) => `${entry.ref}\t${entry.formula}\t${entry.cached}`),
@@ -583,6 +641,10 @@ function summarize(results: readonly WorkbookFormulaResult[]): SuitePayload['sum
 		semanticMismatchCount: results.reduce((sum, result) => sum + result.semanticMismatchCount, 0),
 		numericDriftMismatchCount: results.reduce(
 			(sum, result) => sum + result.numericDriftMismatchCount,
+			0,
+		),
+		staleOracleMismatchCount: results.reduce(
+			(sum, result) => sum + result.staleOracleMismatchCount,
 			0,
 		),
 		errorCount: results.reduce((sum, result) => sum + result.errorCount, 0),
@@ -721,11 +783,11 @@ export function formulaCorpusCorrectnessAssertionFailures(
 
 function render(payload: SuitePayload): void {
 	console.log(
-		`formula corpus correctness: workbooks=${payload.summary.workbookCount} formulas=${payload.summary.formulaCount} compared=${payload.summary.comparedCount} noCached=${payload.summary.noCachedFormulaCount} volatileOracleSkips=${payload.summary.volatileOracleSkipCount} mismatches=${payload.summary.mismatchCount} accepted=${payload.summary.acceptedMismatchCount} unaccepted=${payload.summary.unacceptedMismatchCount} semantic=${payload.summary.semanticMismatchCount} numericDrift=${payload.summary.numericDriftMismatchCount} errors=${payload.summary.errorCount}`,
+		`formula corpus correctness: workbooks=${payload.summary.workbookCount} formulas=${payload.summary.formulaCount} compared=${payload.summary.comparedCount} noCached=${payload.summary.noCachedFormulaCount} volatileOracleSkips=${payload.summary.volatileOracleSkipCount} mismatches=${payload.summary.mismatchCount} accepted=${payload.summary.acceptedMismatchCount} unaccepted=${payload.summary.unacceptedMismatchCount} semantic=${payload.summary.semanticMismatchCount} numericDrift=${payload.summary.numericDriftMismatchCount} staleOracle=${payload.summary.staleOracleMismatchCount} errors=${payload.summary.errorCount}`,
 	)
 	for (const result of payload.results) {
 		console.log(
-			`${result.file}: formulas=${result.formulaCount} compared=${result.comparedCount} noCached=${result.noCachedFormulaCount} volatileOracleSkips=${result.volatileOracleSkipCount} mismatches=${result.mismatchCount} accepted=${result.acceptedMismatchCount} unaccepted=${result.unacceptedMismatchCount} semantic=${result.semanticMismatchCount} numericDrift=${result.numericDriftMismatchCount} errors=${result.errorCount} read=${result.readMs.toFixed(2)}ms recalc=${result.recalcMs.toFixed(2)}ms`,
+			`${result.file}: formulas=${result.formulaCount} compared=${result.comparedCount} noCached=${result.noCachedFormulaCount} volatileOracleSkips=${result.volatileOracleSkipCount} mismatches=${result.mismatchCount} accepted=${result.acceptedMismatchCount} unaccepted=${result.unacceptedMismatchCount} semantic=${result.semanticMismatchCount} numericDrift=${result.numericDriftMismatchCount} staleOracle=${result.staleOracleMismatchCount} errors=${result.errorCount} read=${result.readMs.toFixed(2)}ms recalc=${result.recalcMs.toFixed(2)}ms`,
 		)
 	}
 }

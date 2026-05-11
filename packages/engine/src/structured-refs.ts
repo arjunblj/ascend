@@ -9,6 +9,99 @@ export interface StructuredRefRange {
 	readonly endCol: number
 }
 
+export interface StructuredRefResolver {
+	resolve(
+		node: Extract<FormulaNode, { type: 'structuredRef' }>,
+		sheetIndex: number,
+		row: number,
+		col: number,
+	): StructuredRefRange | null
+}
+
+interface ResolvedTableRef {
+	readonly sheetIndex: number
+	readonly table: Table
+}
+
+export function createStructuredRefResolver(workbook: Workbook): StructuredRefResolver {
+	const firstTableByName = new Map<string, ResolvedTableRef>()
+	const tableBySheetAndName = new Map<number, Map<string, ResolvedTableRef>>()
+	const tablesBySheet = new Map<number, ResolvedTableRef[]>()
+	const columnIndexByTable = new Map<Table, Map<string, number>>()
+
+	for (let sheetIndex = 0; sheetIndex < workbook.sheets.length; sheetIndex++) {
+		const sheet = workbook.sheets[sheetIndex]
+		if (!sheet || sheet.tables.length === 0) continue
+		const sheetTables: ResolvedTableRef[] = []
+		const sheetByName = new Map<string, ResolvedTableRef>()
+		for (const table of sheet.tables) {
+			const ref = { sheetIndex, table }
+			sheetTables.push(ref)
+			const name = table.name.toLowerCase()
+			if (!firstTableByName.has(name)) firstTableByName.set(name, ref)
+			sheetByName.set(name, ref)
+		}
+		tablesBySheet.set(sheetIndex, sheetTables)
+		tableBySheetAndName.set(sheetIndex, sheetByName)
+	}
+
+	const columnIndex = (table: Table, name: string): number => {
+		let indexByName = columnIndexByTable.get(table)
+		if (!indexByName) {
+			indexByName = new Map()
+			for (let index = 0; index < table.columns.length; index++) {
+				indexByName.set(table.columns[index]?.name.toLowerCase() ?? '', index)
+			}
+			columnIndexByTable.set(table, indexByName)
+		}
+		return indexByName.get(name.toLowerCase()) ?? -1
+	}
+
+	const resolveTable = (
+		tableName: string,
+		sheetIndex: number,
+		row: number,
+		col: number,
+	): ResolvedTableRef | null => {
+		const tableNameLower = tableName.toLowerCase()
+		if (tableName.length > 0) {
+			return (
+				tableBySheetAndName.get(sheetIndex)?.get(tableNameLower) ??
+				firstTableByName.get(tableNameLower) ??
+				null
+			)
+		}
+
+		const sheetTables = tablesBySheet.get(sheetIndex)
+		if (!sheetTables) return null
+		for (const ref of sheetTables) {
+			const { table } = ref
+			if (
+				row >= table.ref.start.row &&
+				row <= table.ref.end.row &&
+				col >= table.ref.start.col &&
+				col <= table.ref.end.col
+			) {
+				return ref
+			}
+		}
+		return null
+	}
+
+	return {
+		resolve(node, sheetIndex, row, col) {
+			return resolveStructuredRefRangeWithResolver(
+				node,
+				sheetIndex,
+				row,
+				col,
+				resolveTable,
+				columnIndex,
+			)
+		},
+	}
+}
+
 export function resolveStructuredRefRange(
 	workbook: Workbook,
 	node: Extract<FormulaNode, { type: 'structuredRef' }>,
@@ -16,7 +109,23 @@ export function resolveStructuredRefRange(
 	row: number,
 	col: number,
 ): StructuredRefRange | null {
-	const tableRef = resolveTableRef(workbook, node.table, sheetIndex, row, col)
+	return createStructuredRefResolver(workbook).resolve(node, sheetIndex, row, col)
+}
+
+function resolveStructuredRefRangeWithResolver(
+	node: Extract<FormulaNode, { type: 'structuredRef' }>,
+	sheetIndex: number,
+	row: number,
+	col: number,
+	resolveTable: (
+		tableName: string,
+		sheetIndex: number,
+		row: number,
+		col: number,
+	) => ResolvedTableRef | null,
+	columnIndex: (table: Table, name: string) => number,
+): StructuredRefRange | null {
+	const tableRef = resolveTable(node.table, sheetIndex, row, col)
 	if (!tableRef) return null
 
 	const { table } = tableRef
@@ -49,16 +158,12 @@ export function resolveStructuredRefRange(
 	let startCol = table.ref.start.col
 	let endCol = table.ref.end.col
 	if (node.column) {
-		const columnIndex = table.columns.findIndex(
-			(column) => column.name.toLowerCase() === node.column?.toLowerCase(),
-		)
-		if (columnIndex < 0) return null
-		startCol = table.ref.start.col + columnIndex
+		const startColumnIndex = columnIndex(table, node.column)
+		if (startColumnIndex < 0) return null
+		startCol = table.ref.start.col + startColumnIndex
 		if (node.endColumn) {
-			const endColumnIndex = table.columns.findIndex(
-				(column) => column.name.toLowerCase() === node.endColumn?.toLowerCase(),
-			)
-			if (endColumnIndex < columnIndex) return null
+			const endColumnIndex = columnIndex(table, node.endColumn)
+			if (endColumnIndex < startColumnIndex) return null
 			endCol = table.ref.start.col + endColumnIndex
 		} else {
 			endCol = startCol
@@ -72,44 +177,4 @@ export function resolveStructuredRefRange(
 		startCol,
 		endCol,
 	}
-}
-
-function resolveTableRef(
-	workbook: Workbook,
-	tableName: string,
-	sheetIndex: number,
-	row: number,
-	col: number,
-): { sheetIndex: number; table: Table } | null {
-	const tableNameLower = tableName.toLowerCase()
-	if (tableName.length > 0) {
-		const currentSheet = workbook.sheets[sheetIndex]
-		if (currentSheet) {
-			const table = currentSheet.tables.find(
-				(candidate) => candidate.name.toLowerCase() === tableNameLower,
-			)
-			if (table) return { sheetIndex, table }
-		}
-		for (let i = 0; i < workbook.sheets.length; i++) {
-			if (i === sheetIndex) continue
-			const sheet = workbook.sheets[i]
-			if (!sheet) continue
-			const table = sheet.tables.find(
-				(candidate) => candidate.name.toLowerCase() === tableNameLower,
-			)
-			if (table) return { sheetIndex: i, table }
-		}
-		return null
-	}
-
-	const sheet = workbook.sheets[sheetIndex]
-	if (!sheet) return null
-	const table = sheet.tables.find(
-		(candidate) =>
-			row >= candidate.ref.start.row &&
-			row <= candidate.ref.end.row &&
-			col >= candidate.ref.start.col &&
-			col <= candidate.ref.end.col,
-	)
-	return table ? { sheetIndex, table } : null
 }

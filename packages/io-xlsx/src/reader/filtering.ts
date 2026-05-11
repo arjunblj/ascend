@@ -8,6 +8,10 @@ import type {
 } from '@ascend/core'
 import { asArray, attr, boolAttr, numAttr, type XmlNode } from '../xml.ts'
 
+interface ParseSortStateOptions {
+	readonly preserveAttributes?: boolean
+}
+
 export function parseAutoFilterNode(node: XmlNode | undefined): AutoFilter | null {
 	if (!node) return null
 	const ref = attr(node, 'ref')
@@ -16,12 +20,15 @@ export function parseAutoFilterNode(node: XmlNode | undefined): AutoFilter | nul
 	const columns = asArray<XmlNode>(node.filterColumn as XmlNode | XmlNode[]).map(parseFilterColumn)
 	const parsed: {
 		ref: string
+		uid?: string
 		columns: readonly FilterColumn[]
 		sortState?: SortState
 	} = {
 		ref,
 		columns,
 	}
+	const uid = attr(node, 'xr:uid')
+	if (uid) parsed.uid = uid
 	const sortState = parseSortStateNode(node.sortState as XmlNode | undefined)
 	if (sortState) parsed.sortState = sortState
 	return parsed as AutoFilter
@@ -178,7 +185,10 @@ function parseDateGroupItem(node: XmlNode): FilterDateGroupItem {
 	return parsed as FilterDateGroupItem
 }
 
-export function parseSortStateNode(node: XmlNode | undefined): SortState | null {
+export function parseSortStateNode(
+	node: XmlNode | undefined,
+	options: ParseSortStateOptions = {},
+): SortState | null {
 	if (!node) return null
 	const ref = attr(node, 'ref')
 	if (!ref) return null
@@ -187,6 +197,7 @@ export function parseSortStateNode(node: XmlNode | undefined): SortState | null 
 		caseSensitive?: boolean
 		columnSort?: boolean
 		sortMethod?: string
+		preservedAttributes?: Readonly<Record<string, string>>
 		conditions: readonly SortCondition[]
 	} = {
 		ref,
@@ -223,5 +234,29 @@ export function parseSortStateNode(node: XmlNode | undefined): SortState | null 
 	if (columnSort !== undefined) parsed.columnSort = columnSort
 	const sortMethod = attr(node, 'sortMethod')
 	if (sortMethod) parsed.sortMethod = sortMethod
+	if (options.preserveAttributes) {
+		const preservedAttributes = sortStatePreservedAttributes(node)
+		if (Object.keys(preservedAttributes).length > 0) {
+			parsed.preservedAttributes = preservedAttributes
+		}
+	}
 	return parsed as SortState
+}
+
+function sortStatePreservedAttributes(node: XmlNode): Record<string, string> {
+	const attrs: Record<string, string> = {}
+	for (const [key, value] of Object.entries(node)) {
+		if (!key.startsWith('@_') || value === undefined || value === null) continue
+		const name = key.slice(2)
+		if (
+			name === 'ref' ||
+			name === 'caseSensitive' ||
+			name === 'columnSort' ||
+			name === 'sortMethod'
+		) {
+			continue
+		}
+		attrs[name] = String(value)
+	}
+	return attrs
 }

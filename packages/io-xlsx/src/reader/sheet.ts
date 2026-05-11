@@ -250,6 +250,7 @@ export function parseSheet(
 	parsePageSetup(ws, sheet)
 	parsePrintOptions(ws, sheet)
 	parseHeaderFooter(ws, sheet)
+	parsePhoneticPr(ws, sheet)
 	parsePageBreaks(ws, sheet)
 	parseIgnoredErrors(ws, sheet)
 	if (richMetadata) {
@@ -308,6 +309,7 @@ const VALUES_MODE_SHEET_METADATA_TAGS = [
 	'pageSetup',
 	'printOptions',
 	'headerFooter',
+	'phoneticPr',
 	'rowBreaks',
 	'colBreaks',
 	'ignoredErrors',
@@ -344,20 +346,32 @@ function hasWorksheetTagInRange(xml: string, start: number, end: number, tagName
 function hasRowPresentationMetadata(rawAttrs: string): boolean {
 	return (
 		rawAttrs.includes('ht="') ||
+		rawAttrs.includes('spans="') ||
 		rawAttrs.includes('customHeight="') ||
+		rawAttrs.includes('s="') ||
+		rawAttrs.includes('customFormat="') ||
 		rawAttrs.includes('hidden="') ||
 		rawAttrs.includes('collapsed="') ||
-		rawAttrs.includes('outlineLevel="')
+		rawAttrs.includes('outlineLevel="') ||
+		rawAttrs.includes('thickTop="') ||
+		rawAttrs.includes('thickBot="') ||
+		rawAttrs.includes('x14ac:dyDescent="')
 	)
 }
 
 function hasRowPresentationMetadataInRange(xml: string, start: number, end: number): boolean {
 	return (
 		rawAttrValueStartInRange(xml, start, end, 'ht') !== -1 ||
+		rawAttrValueStartInRange(xml, start, end, 'spans') !== -1 ||
 		rawAttrValueStartInRange(xml, start, end, 'customHeight') !== -1 ||
+		rawAttrValueStartInRange(xml, start, end, 's') !== -1 ||
+		rawAttrValueStartInRange(xml, start, end, 'customFormat') !== -1 ||
 		rawAttrValueStartInRange(xml, start, end, 'hidden') !== -1 ||
 		rawAttrValueStartInRange(xml, start, end, 'collapsed') !== -1 ||
-		rawAttrValueStartInRange(xml, start, end, 'outlineLevel') !== -1
+		rawAttrValueStartInRange(xml, start, end, 'outlineLevel') !== -1 ||
+		rawAttrValueStartInRange(xml, start, end, 'thickTop') !== -1 ||
+		rawAttrValueStartInRange(xml, start, end, 'thickBot') !== -1 ||
+		rawAttrValueStartInRange(xml, start, end, 'x14ac:dyDescent') !== -1
 	)
 }
 
@@ -739,6 +753,52 @@ function setValuesOnlyTypedEmptyCell(
 	return true
 }
 
+function rowDefFromRawAttrs(
+	rawAttrs: string,
+	initial: Record<string, boolean | number> = {},
+): Record<string, boolean | number | string> | null {
+	const rowDef: Record<string, boolean | number | string> = { ...initial }
+	const spans = rawAttr(rawAttrs, 'spans')
+	if (spans !== undefined) rowDef.spans = spans
+	const style = rawNumAttr(rawAttrs, 's')
+	if (style !== undefined) rowDef.style = style
+	const customFormat = rawBoolAttr(rawAttrs, 'customFormat')
+	if (customFormat !== undefined) rowDef.customFormat = customFormat
+	const customHeight = rawBoolAttr(rawAttrs, 'customHeight')
+	if (customHeight !== undefined) rowDef.customHeight = customHeight
+	const thickTop = rawBoolAttr(rawAttrs, 'thickTop')
+	if (thickTop !== undefined) rowDef.thickTop = thickTop
+	const thickBot = rawBoolAttr(rawAttrs, 'thickBot')
+	if (thickBot !== undefined) rowDef.thickBot = thickBot
+	const dyDescent = rawNumAttr(rawAttrs, 'x14ac:dyDescent')
+	if (dyDescent !== undefined) rowDef.dyDescent = dyDescent
+	return Object.keys(rowDef).length > 0 ? rowDef : null
+}
+
+function rowDefFromRawByteAttrs(
+	bytes: Uint8Array,
+	start: number,
+	end: number,
+	initial: Record<string, boolean | number> = {},
+): Record<string, boolean | number | string> | null {
+	const rowDef: Record<string, boolean | number | string> = { ...initial }
+	const spans = rawAttrDecodedBytes(bytes, start, end, 'spans')
+	if (spans !== undefined) rowDef.spans = spans
+	const style = rawNumAttrInBytes(bytes, start, end, 's')
+	if (style !== undefined) rowDef.style = style
+	const customFormat = rawBoolAttrInBytes(bytes, start, end, 'customFormat')
+	if (customFormat !== undefined) rowDef.customFormat = customFormat
+	const customHeight = rawBoolAttrInBytes(bytes, start, end, 'customHeight')
+	if (customHeight !== undefined) rowDef.customHeight = customHeight
+	const thickTop = rawBoolAttrInBytes(bytes, start, end, 'thickTop')
+	if (thickTop !== undefined) rowDef.thickTop = thickTop
+	const thickBot = rawBoolAttrInBytes(bytes, start, end, 'thickBot')
+	if (thickBot !== undefined) rowDef.thickBot = thickBot
+	const dyDescent = rawNumAttrInBytes(bytes, start, end, 'x14ac:dyDescent')
+	if (dyDescent !== undefined) rowDef.dyDescent = dyDescent
+	return Object.keys(rowDef).length > 0 ? rowDef : null
+}
+
 function parseRowPresentationMetadataBytes(
 	bytes: Uint8Array,
 	start: number,
@@ -747,17 +807,16 @@ function parseRowPresentationMetadataBytes(
 	sheet: Sheet,
 ): void {
 	const rowHeight = rawNumAttrInBytes(bytes, start, end, 'ht')
-	if (rowHeight !== undefined && rawAttrAsciiBytes(bytes, start, end, 'customHeight') === '1') {
-		sheet.rowHeights.set(row, rowHeight)
-	}
+	if (rowHeight !== undefined) sheet.rowHeights.set(row, rowHeight)
 	const hidden = rawBoolAttrInBytes(bytes, start, end, 'hidden')
 	const collapsed = rawBoolAttrInBytes(bytes, start, end, 'collapsed')
 	const outlineLevel = rawNumAttrInBytes(bytes, start, end, 'outlineLevel')
-	if (hidden === undefined && collapsed === undefined && outlineLevel === undefined) return
-	const rowDef: Record<string, boolean | number> = {}
-	if (hidden !== undefined) rowDef.hidden = hidden
-	if (collapsed !== undefined) rowDef.collapsed = collapsed
-	if (outlineLevel !== undefined) rowDef.outlineLevel = outlineLevel
+	const rowDef = rowDefFromRawByteAttrs(bytes, start, end, {
+		...(hidden !== undefined ? { hidden } : {}),
+		...(collapsed !== undefined ? { collapsed } : {}),
+		...(outlineLevel !== undefined ? { outlineLevel } : {}),
+	})
+	if (!rowDef) return
 	sheet.rowDefs.set(row, rowDef as import('@ascend/core').SheetRowDef)
 }
 
@@ -788,17 +847,16 @@ function parseSheetDataFromLoc(
 		if (hasRowPresentationMetadataInRange(xml, rowAttrStart, rowTagEnd)) {
 			const rowAttrsRaw = xml.slice(rowAttrStart, rowTagEnd)
 			const rowHeight = rawNumAttr(rowAttrsRaw, 'ht')
-			if (rowHeight !== undefined && rawAttr(rowAttrsRaw, 'customHeight') === '1') {
-				sheet.rowHeights.set(row, rowHeight)
-			}
+			if (rowHeight !== undefined) sheet.rowHeights.set(row, rowHeight)
 			const hidden = rawBoolAttr(rowAttrsRaw, 'hidden')
 			const collapsed = rawBoolAttr(rowAttrsRaw, 'collapsed')
 			const outlineLevel = rawNumAttr(rowAttrsRaw, 'outlineLevel')
-			if (hidden !== undefined || collapsed !== undefined || outlineLevel !== undefined) {
-				const rowDef: Record<string, boolean | number> = {}
-				if (hidden !== undefined) rowDef.hidden = hidden
-				if (collapsed !== undefined) rowDef.collapsed = collapsed
-				if (outlineLevel !== undefined) rowDef.outlineLevel = outlineLevel
+			const rowDef = rowDefFromRawAttrs(rowAttrsRaw, {
+				...(hidden !== undefined ? { hidden } : {}),
+				...(collapsed !== undefined ? { collapsed } : {}),
+				...(outlineLevel !== undefined ? { outlineLevel } : {}),
+			})
+			if (rowDef) {
 				sheet.rowDefs.set(row, rowDef as import('@ascend/core').SheetRowDef)
 			}
 		}
@@ -926,6 +984,18 @@ function preserveBlankPhysicalCell(sheet: Sheet, row: number, col: number, rawAt
 		sheet.preservedBlankCells.set(row, rowCells)
 	}
 	rowCells.set(col, rawAttrs.replace(/\/\s*$/, '').trim())
+}
+
+function preserveCellMetadataAttrs(sheet: Sheet, row: number, col: number, rawAttrs: string): void {
+	const attrs: { cm?: number; vm?: number; ph?: boolean } = {}
+	const cm = rawNumAttr(rawAttrs, 'cm')
+	const vm = rawNumAttr(rawAttrs, 'vm')
+	const ph = rawBoolAttr(rawAttrs, 'ph')
+	if (cm !== undefined) attrs.cm = cm
+	if (vm !== undefined) attrs.vm = vm
+	if (ph !== undefined) attrs.ph = ph
+	if (cm === undefined && vm === undefined && ph === undefined) return
+	sheet.preservedCellMetadata.set(formulaStorageKey(row, col), attrs)
 }
 
 export function* streamSheetRowsXml(
@@ -1282,11 +1352,12 @@ function parseStreamedSheetRowXml(
 		const hidden = rawBoolAttr(rowAttrsRaw, 'hidden')
 		const collapsed = rawBoolAttr(rowAttrsRaw, 'collapsed')
 		const outlineLevel = rawNumAttr(rowAttrsRaw, 'outlineLevel')
-		if (hidden !== undefined || collapsed !== undefined || outlineLevel !== undefined) {
-			const rowDef: Record<string, boolean | number> = {}
-			if (hidden !== undefined) rowDef.hidden = hidden
-			if (collapsed !== undefined) rowDef.collapsed = collapsed
-			if (outlineLevel !== undefined) rowDef.outlineLevel = outlineLevel
+		const rowDef = rowDefFromRawAttrs(rowAttrsRaw, {
+			...(hidden !== undefined ? { hidden } : {}),
+			...(collapsed !== undefined ? { collapsed } : {}),
+			...(outlineLevel !== undefined ? { outlineLevel } : {}),
+		})
+		if (rowDef) {
 			rowSheet.rowDefs.set(row, rowDef as import('@ascend/core').SheetRowDef)
 		}
 	}
@@ -1412,7 +1483,11 @@ function parseSlowCell(
 	if (!pos) return false
 	out.row = pos.row
 	out.col = pos.col
-	return resolveCellToSheet(cellNode, ctx, pos.row, pos.col, sharedFormulaMasters, sheet)
+	const ok = resolveCellToSheet(cellNode, ctx, pos.row, pos.col, sharedFormulaMasters, sheet)
+	if (ok && !ctx.valuesOnly && sheet.cells.get(pos.row, pos.col)?.formula) {
+		preserveCellMetadataAttrs(sheet, pos.row, pos.col, rawAttrs)
+	}
+	return ok
 }
 
 function parseFastCell(
@@ -1516,6 +1591,7 @@ function parseFastCell(
 	if (!ctx.valuesOnly && formulaSpec.text && formulaSpec.storedText !== undefined) {
 		sheet.storedFormulaText.set(formulaStorageKey(row, col), formulaSpec.storedText)
 	}
+	if (!ctx.valuesOnly && formulaSpec.text) preserveCellMetadataAttrs(sheet, row, col, rawAttrs)
 	return true
 }
 
@@ -2311,19 +2387,35 @@ function rawNumAttr(rawAttrs: string, name: string): number | undefined {
 
 function rawAttrValueStart(rawAttrs: string, name: string): number {
 	const needle = ATTR_NEEDLES[name] ?? `${name}="`
-	const start = rawAttrs.indexOf(needle)
-	return start === -1 ? -1 : start + needle.length
+	let cursor = 0
+	while (cursor < rawAttrs.length) {
+		const start = rawAttrs.indexOf(needle, cursor)
+		if (start === -1) return -1
+		if (start === 0 || isXmlAttrBoundaryCode(rawAttrs.charCodeAt(start - 1))) {
+			return start + needle.length
+		}
+		cursor = start + needle.length
+	}
+	return -1
 }
 
 function rawAttrValueStartInRange(xml: string, start: number, end: number, name: string): number {
 	const needle = ATTR_NEEDLES[name] ?? `${name}="`
 	const last = end - needle.length
 	for (let index = start; index <= last; index++) {
-		if (xml.charCodeAt(index) === needle.charCodeAt(0) && xml.startsWith(needle, index)) {
+		if (
+			xml.charCodeAt(index) === needle.charCodeAt(0) &&
+			(index === start || isXmlAttrBoundaryCode(xml.charCodeAt(index - 1))) &&
+			xml.startsWith(needle, index)
+		) {
 			return index + needle.length
 		}
 	}
 	return -1
+}
+
+function isXmlAttrBoundaryCode(code: number): boolean {
+	return code === 9 || code === 10 || code === 13 || code === 32 || code === 60
 }
 
 function rawPositiveIntAttrInRange(
@@ -3570,6 +3662,17 @@ function withSpreadsheetmlNamespace(
 function parseSheetPr(ws: XmlNode, sheet: Sheet): void {
 	const pr = ws.sheetPr as XmlNode | undefined
 	if (!pr) return
+	const codeName = attr(pr, 'codeName')
+	if (codeName) sheet.codeName = codeName
+	const filterMode = readBoolAttribute(pr, 'filterMode')
+	if (filterMode !== undefined) sheet.filterMode = filterMode
+	const enableFormatConditionsCalculation = readBoolAttribute(
+		pr,
+		'enableFormatConditionsCalculation',
+	)
+	if (enableFormatConditionsCalculation !== undefined) {
+		sheet.enableFormatConditionsCalculation = enableFormatConditionsCalculation
+	}
 	const tc = pr.tabColor as XmlNode | undefined
 	if (tc) {
 		const color: Record<string, string | number> = {}
@@ -3596,12 +3699,23 @@ function parseSheetPr(ws: XmlNode, sheet: Sheet): void {
 		if (showOutlineSymbols !== undefined) parsed.showOutlineSymbols = showOutlineSymbols
 		sheet.outlinePr = parsed as import('@ascend/core').SheetOutlinePr
 	}
+	const pageSetUpPr = pr.pageSetUpPr as XmlNode | undefined
+	if (pageSetUpPr) {
+		const parsed: Record<string, boolean> = {}
+		const fitToPage = readBoolAttribute(pageSetUpPr, 'fitToPage')
+		if (fitToPage !== undefined) parsed.fitToPage = fitToPage
+		const autoPageBreaks = readBoolAttribute(pageSetUpPr, 'autoPageBreaks')
+		if (autoPageBreaks !== undefined) parsed.autoPageBreaks = autoPageBreaks
+		sheet.pageSetupPr = parsed as import('@ascend/core').SheetPageSetupPr
+	}
 }
 
 function parseSheetFormatPr(ws: XmlNode, sheet: Sheet): void {
 	const fmt = ws.sheetFormatPr as XmlNode | undefined
 	if (!fmt) return
 	const fp: Record<string, number | boolean> = {}
+	const baseColWidth = numAttr(fmt, 'baseColWidth')
+	if (baseColWidth !== undefined) fp.baseColWidth = baseColWidth
 	const drh = numAttr(fmt, 'defaultRowHeight')
 	if (drh !== undefined) fp.defaultRowHeight = drh
 	const dcw = numAttr(fmt, 'defaultColWidth')
@@ -3612,6 +3726,10 @@ function parseSheetFormatPr(ws: XmlNode, sheet: Sheet): void {
 	if (olc !== undefined) fp.outlineLevelCol = olc
 	const ch = boolAttr(fmt, 'customHeight')
 	if (ch !== undefined) fp.customHeight = ch
+	const zh = boolAttr(fmt, 'zeroHeight')
+	if (zh !== undefined) fp.zeroHeight = zh
+	const dyDescent = numAttr(fmt, 'x14ac:dyDescent')
+	if (dyDescent !== undefined) fp.dyDescent = dyDescent
 	sheet.sheetFormatPr = fp as import('@ascend/core').SheetFormatPr
 }
 
@@ -3623,11 +3741,21 @@ function parseSheetViews(ws: XmlNode, sheet: Sheet): void {
 
 	const pane = firstView.pane as XmlNode | undefined
 	if (pane) {
-		const ySplit = numAttr(pane, 'ySplit')
-		if (ySplit !== undefined) sheet.frozenRows = Math.trunc(ySplit)
-		const xSplit = numAttr(pane, 'xSplit')
-		if (xSplit !== undefined) sheet.frozenCols = Math.trunc(xSplit)
+		const paneAttributes = xmlNodeAttributes(pane)
+		if (Object.keys(paneAttributes).length > 0) sheet.preservedPaneAttributes = paneAttributes
+		const paneState = attr(pane, 'state')
+		const isFrozenPane = paneState === 'frozen' || paneState === 'frozenSplit'
+		if (isFrozenPane) {
+			const ySplit = numAttr(pane, 'ySplit')
+			if (ySplit !== undefined) sheet.frozenRows = Math.trunc(ySplit)
+			const xSplit = numAttr(pane, 'xSplit')
+			if (xSplit !== undefined) sheet.frozenCols = Math.trunc(xSplit)
+		}
 	}
+	const selections = asArray<XmlNode>(firstView.selection as XmlNode | XmlNode[])
+		.map(xmlNodeAttributes)
+		.filter((selection) => Object.keys(selection).length > 0)
+	if (selections.length > 0) sheet.preservedSheetViewSelections = selections
 
 	const viewAttrs: Record<string, number | boolean | string> = {}
 	const preservedAttributes = xmlNodeAttributes(firstView)
@@ -3657,6 +3785,7 @@ function parseSheetViews(ws: XmlNode, sheet: Sheet): void {
 	if (
 		Object.keys(viewAttrs).length > 0 ||
 		pane ||
+		selections.length > 0 ||
 		attr(firstView, 'workbookViewId') !== undefined
 	) {
 		sheet.sheetView = viewAttrs as import('@ascend/core').SheetView
@@ -3992,6 +4121,18 @@ function parsePageSetup(ws: XmlNode, sheet: Sheet): void {
 	if (fitToWidth !== undefined) parsed.fitToWidth = fitToWidth
 	const fitToHeight = numAttr(pageSetup, 'fitToHeight')
 	if (fitToHeight !== undefined) parsed.fitToHeight = fitToHeight
+	setIfDefined(parsed, 'firstPageNumber', numAttr(pageSetup, 'firstPageNumber'))
+	setIfDefined(parsed, 'copies', numAttr(pageSetup, 'copies'))
+	setIfDefined(parsed, 'horizontalDpi', numAttr(pageSetup, 'horizontalDpi'))
+	setIfDefined(parsed, 'verticalDpi', numAttr(pageSetup, 'verticalDpi'))
+	setIfDefined(parsed, 'pageOrder', attr(pageSetup, 'pageOrder'))
+	setIfDefined(parsed, 'cellComments', attr(pageSetup, 'cellComments'))
+	setIfDefined(parsed, 'errors', attr(pageSetup, 'errors'))
+	setIfDefined(parsed, 'blackAndWhite', readBoolAttribute(pageSetup, 'blackAndWhite'))
+	setIfDefined(parsed, 'draft', readBoolAttribute(pageSetup, 'draft'))
+	setIfDefined(parsed, 'useFirstPageNumber', readBoolAttribute(pageSetup, 'useFirstPageNumber'))
+	setIfDefined(parsed, 'usePrinterDefaults', readBoolAttribute(pageSetup, 'usePrinterDefaults'))
+	setIfDefined(parsed, 'printerSettingsRelId', attr(pageSetup, 'r:id'))
 	sheet.pageSetup = parsed
 }
 
@@ -4001,6 +4142,7 @@ function parsePrintOptions(ws: XmlNode, sheet: Sheet): void {
 
 	const parsed: Record<string, boolean> = {}
 	setIfDefined(parsed, 'gridLines', readBoolAttribute(printOptions, 'gridLines'))
+	setIfDefined(parsed, 'gridLinesSet', readBoolAttribute(printOptions, 'gridLinesSet'))
 	setIfDefined(parsed, 'headings', readBoolAttribute(printOptions, 'headings'))
 	setIfDefined(parsed, 'horizontalCentered', readBoolAttribute(printOptions, 'horizontalCentered'))
 	setIfDefined(parsed, 'verticalCentered', readBoolAttribute(printOptions, 'verticalCentered'))
@@ -4011,7 +4153,11 @@ function parseHeaderFooter(ws: XmlNode, sheet: Sheet): void {
 	const headerFooter = ws.headerFooter as XmlNode | undefined
 	if (!headerFooter) return
 
-	const parsed: Record<string, string> = {}
+	const parsed: Record<string, string | boolean> = {}
+	setIfDefined(parsed, 'differentOddEven', readBoolAttribute(headerFooter, 'differentOddEven'))
+	setIfDefined(parsed, 'differentFirst', readBoolAttribute(headerFooter, 'differentFirst'))
+	setIfDefined(parsed, 'scaleWithDoc', readBoolAttribute(headerFooter, 'scaleWithDoc'))
+	setIfDefined(parsed, 'alignWithMargins', readBoolAttribute(headerFooter, 'alignWithMargins'))
 	setIfDefined(parsed, 'oddHeader', readNodeText(headerFooter.oddHeader))
 	setIfDefined(parsed, 'oddFooter', readNodeText(headerFooter.oddFooter))
 	setIfDefined(parsed, 'evenHeader', readNodeText(headerFooter.evenHeader))
@@ -4019,6 +4165,17 @@ function parseHeaderFooter(ws: XmlNode, sheet: Sheet): void {
 	setIfDefined(parsed, 'firstHeader', readNodeText(headerFooter.firstHeader))
 	setIfDefined(parsed, 'firstFooter', readNodeText(headerFooter.firstFooter))
 	sheet.headerFooter = parsed
+}
+
+function parsePhoneticPr(ws: XmlNode, sheet: Sheet): void {
+	const phoneticPr = ws.phoneticPr as XmlNode | undefined
+	if (!phoneticPr) return
+	const parsed: Record<string, number | string> = {}
+	setIfDefined(parsed, 'fontId', numAttr(phoneticPr, 'fontId'))
+	setIfDefined(parsed, 'type', attr(phoneticPr, 'type'))
+	setIfDefined(parsed, 'alignment', attr(phoneticPr, 'alignment'))
+	if (Object.keys(parsed).length > 0)
+		sheet.phoneticPr = parsed as import('@ascend/core').SheetPhoneticPr
 }
 
 function parsePageBreaks(ws: XmlNode, sheet: Sheet): void {
@@ -4131,6 +4288,7 @@ function parseConditionalFormatting(
 	)) {
 		const sqref = attr(conditionalFormatting, 'sqref')
 		if (!sqref) continue
+		const pivot = readBoolAttribute(conditionalFormatting, 'pivot')
 		const rules: SheetConditionalFormatRule[] = []
 		for (const rule of asArray<XmlNode>(conditionalFormatting.cfRule as XmlNode | XmlNode[])) {
 			const type = attr(rule, 'type')
@@ -4155,6 +4313,8 @@ function parseConditionalFormatting(
 				bottom?: boolean
 				aboveAverage?: boolean
 				equalAverage?: boolean
+				stdDev?: number
+				text?: string
 				timePeriod?: string
 				colorScale?: SheetConditionalFormatRule['colorScale']
 				dataBar?: SheetConditionalFormatRule['dataBar']
@@ -4179,6 +4339,10 @@ function parseConditionalFormatting(
 			if (cfAboveAverage !== undefined) parsedRule.aboveAverage = cfAboveAverage
 			const equalAverage = readBoolAttribute(rule, 'equalAverage')
 			if (equalAverage !== undefined) parsedRule.equalAverage = equalAverage
+			const stdDev = numAttr(rule, 'stdDev')
+			if (stdDev !== undefined) parsedRule.stdDev = stdDev
+			const text = attr(rule, 'text')
+			if (text !== undefined) parsedRule.text = text
 			const timePeriod = attr(rule, 'timePeriod')
 			if (timePeriod) parsedRule.timePeriod = timePeriod
 			const colorScale = parseConditionalColorScale(rule.colorScale as XmlNode | undefined)
@@ -4195,7 +4359,11 @@ function parseConditionalFormatting(
 			rules.push(parsedRule as SheetConditionalFormatRule)
 		}
 		if (rules.length > 0) {
-			sheet.conditionalFormats.push({ sqref, rules } satisfies SheetConditionalFormat)
+			sheet.conditionalFormats.push({
+				sqref,
+				...(pivot !== undefined ? { pivot } : {}),
+				rules,
+			} satisfies SheetConditionalFormat)
 		}
 	}
 }
@@ -4294,6 +4462,16 @@ function parseCfColor(
 function parseDataValidations(ws: XmlNode, sheet: Sheet, pool?: ValueInternPool): void {
 	const container = ws.dataValidations as XmlNode | undefined
 	if (!container) return
+	const disablePrompts = readBoolAttribute(container, 'disablePrompts')
+	const xWindow = numAttr(container, 'xWindow')
+	const yWindow = numAttr(container, 'yWindow')
+	if (disablePrompts !== undefined || xWindow !== undefined || yWindow !== undefined) {
+		sheet.dataValidationSettings = {
+			...(disablePrompts !== undefined ? { disablePrompts } : {}),
+			...(xWindow !== undefined ? { xWindow } : {}),
+			...(yWindow !== undefined ? { yWindow } : {}),
+		}
+	}
 	for (const validation of asArray<XmlNode>(container.dataValidation as XmlNode | XmlNode[])) {
 		const sqref = attr(validation, 'sqref')
 		if (!sqref) continue
@@ -4477,6 +4655,7 @@ function internConditionalFormatValueObject(
 type MutableDataValidation = {
 	sqref: string
 	source?: 'x14'
+	uid?: string
 	type?: string
 	operator?: string
 	allowBlank?: boolean
@@ -4571,6 +4750,8 @@ function pushX14DataValidationInfo(
 
 function parseDataValidationAttributes(node: XmlNode, sqref: string): MutableDataValidation {
 	const parsed: MutableDataValidation = { sqref }
+	const uid = attr(node, 'xr:uid')
+	if (uid) parsed.uid = uid
 	const type = attr(node, 'type')
 	if (type) parsed.type = type
 	const operator = attr(node, 'operator')
@@ -4606,6 +4787,7 @@ function pushDataValidation(
 	if (sheet.dataValidations.some((existing) => isSameDataValidation(existing, parsed))) return
 	if (pool) {
 		parsed.sqref = pool.internString(parsed.sqref)
+		if (parsed.uid) parsed.uid = pool.internString(parsed.uid)
 		if (parsed.type) parsed.type = pool.internString(parsed.type)
 		if (parsed.operator) parsed.operator = pool.internString(parsed.operator)
 		if (parsed.promptTitle) parsed.promptTitle = pool.internString(parsed.promptTitle)
@@ -4623,6 +4805,7 @@ function pushDataValidation(
 function isSameDataValidation(left: SheetDataValidation, right: MutableDataValidation): boolean {
 	return (
 		left.sqref === right.sqref &&
+		left.uid === right.uid &&
 		left.type === right.type &&
 		left.operator === right.operator &&
 		left.allowBlank === right.allowBlank &&

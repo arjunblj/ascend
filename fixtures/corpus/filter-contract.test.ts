@@ -283,6 +283,7 @@ describe('filter feature contract', () => {
 		)
 		expect(sheetByName(top10Workbook, 'Munka1').autoFilter).toEqual({
 			ref: 'A1:A11',
+			uid: '{C2E033BF-614A-415C-93F1-8081CA2B5AD4}',
 			columns: [{ colId: 0, kind: 'top10', val: 4, filterVal: 7 }],
 		})
 
@@ -291,6 +292,7 @@ describe('filter feature contract', () => {
 		)
 		expect(sheetByName(sortWorkbook, 'Tabelle1').autoFilter).toEqual({
 			ref: 'A10:B300',
+			uid: '{3B2D7616-CF9C-4636-AD22-270B8B426345}',
 			columns: [],
 			sortState: { ref: 'A11:B13', conditions: [{ ref: 'A10:A300' }] },
 		})
@@ -301,6 +303,7 @@ describe('filter feature contract', () => {
 
 		expect(tableByName(workbook, 'Table1').autoFilter).toEqual({
 			ref: 'A1:B6',
+			uid: '{736B4891-69F3-4D9B-8617-E59A12B7F13A}',
 			columns: [
 				{
 					colId: 0,
@@ -311,6 +314,7 @@ describe('filter feature contract', () => {
 		})
 		expect(tableByName(workbook, 'Table2').autoFilter).toEqual({
 			ref: 'A1:B6',
+			uid: '{5DF240FE-61A3-49AC-8B6E-73051C9D8F0C}',
 			columns: [
 				{
 					colId: 0,

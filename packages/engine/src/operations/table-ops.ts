@@ -411,7 +411,7 @@ function updateTableColumn(
 	let next: TableColumn = { ...column }
 	if (op.newName !== undefined) next = { ...next, name: op.newName }
 	if (op.formula !== undefined) {
-		const { formula: _formula, ...rest } = next
+		const { formula: _formula, formulaIsArray: _formulaIsArray, ...rest } = next
 		next = op.formula === null ? rest : { ...rest, formula: normalizeFormulaInput(op.formula) }
 	}
 	if (op.totalsRowFunction !== undefined) {

@@ -1,4 +1,4 @@
-import type { Cell, RangeRef, Sheet, SheetColDef } from '@ascend/core'
+import type { Cell, RangeRef, Sheet, SheetCellMetadataAttrs, SheetColDef } from '@ascend/core'
 import { indexToColumn, parseRange } from '@ascend/core'
 import { type FormulaNode, parseFormula, printFormulaWithOffset } from '@ascend/formulas'
 import type { CellValue, RichTextRun } from '@ascend/schema'
@@ -15,6 +15,8 @@ import { updateWorksheetExtLstXml } from './sparkline.ts'
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
 const NS_R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+const NS_XR = 'http://schemas.microsoft.com/office/spreadsheetml/2014/revision'
+const NS_X14AC = 'http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac'
 const MAX_SHARED_FORMULA_LENGTH = 8192
 
 export interface SheetXmlOptions {
@@ -59,15 +61,40 @@ function buildSheetXmlToSink(
 		hyperlinks.some((link) => link.relId) ||
 		drawingRelId ||
 		legacyDrawingRelId ||
+		sheet.pageSetup?.printerSettingsRelId ||
 		sheet.preservedControlsXml
 	) {
 		worksheetAttrs.push(`xmlns:r="${NS_R}"`)
 	}
+	if (sheet.dataValidations.some((validation) => validation.uid) || sheet.autoFilter?.uid) {
+		worksheetAttrs.push(`xmlns:xr="${NS_XR}"`)
+	}
+	if (
+		sheet.sheetFormatPr?.dyDescent !== undefined ||
+		[...sheet.rowDefs.values()].some((rowDef) => rowDef.dyDescent !== undefined)
+	) {
+		worksheetAttrs.push(`xmlns:x14ac="${NS_X14AC}"`)
+	}
 	out.push(XML_HEADER)
 	out.push(`<worksheet ${worksheetAttrs.join(' ')}>`)
 
-	if (sheet.tabColor || sheet.outlinePr) {
-		out.push('<sheetPr>')
+	if (
+		sheet.codeName ||
+		sheet.filterMode !== null ||
+		sheet.enableFormatConditionsCalculation !== null ||
+		sheet.tabColor ||
+		sheet.outlinePr ||
+		sheet.pageSetupPr
+	) {
+		const sheetPrAttrs: string[] = []
+		if (sheet.codeName) sheetPrAttrs.push(`codeName="${escapeXml(sheet.codeName)}"`)
+		if (sheet.filterMode !== null) sheetPrAttrs.push(`filterMode="${sheet.filterMode ? '1' : '0'}"`)
+		if (sheet.enableFormatConditionsCalculation !== null) {
+			sheetPrAttrs.push(
+				`enableFormatConditionsCalculation="${sheet.enableFormatConditionsCalculation ? '1' : '0'}"`,
+			)
+		}
+		out.push(`<sheetPr${sheetPrAttrs.length > 0 ? ` ${sheetPrAttrs.join(' ')}` : ''}>`)
 		if (sheet.tabColor) {
 			const tcAttrs: string[] = []
 			if (sheet.tabColor.rgb) tcAttrs.push(`rgb="${sheet.tabColor.rgb}"`)
@@ -80,11 +107,17 @@ function buildSheetXmlToSink(
 			const outlineAttrs = collectMixedAttrs(sheet.outlinePr)
 			if (outlineAttrs.length > 0) out.push(`<outlinePr ${outlineAttrs.join(' ')}/>`)
 		}
+		if (sheet.pageSetupPr) {
+			const pageSetupPrAttrs = collectMixedAttrs(sheet.pageSetupPr)
+			if (pageSetupPrAttrs.length > 0) out.push(`<pageSetUpPr ${pageSetupPrAttrs.join(' ')}/>`)
+		}
 		out.push('</sheetPr>')
 	}
 
 	if (sheet.sheetFormatPr) {
 		const fmtAttrs: string[] = []
+		if (sheet.sheetFormatPr.baseColWidth !== undefined)
+			fmtAttrs.push(`baseColWidth="${sheet.sheetFormatPr.baseColWidth}"`)
 		if (sheet.sheetFormatPr.defaultRowHeight !== undefined)
 			fmtAttrs.push(`defaultRowHeight="${sheet.sheetFormatPr.defaultRowHeight}"`)
 		if (sheet.sheetFormatPr.defaultColWidth !== undefined)
@@ -94,6 +127,10 @@ function buildSheetXmlToSink(
 		if (sheet.sheetFormatPr.outlineLevelCol !== undefined)
 			fmtAttrs.push(`outlineLevelCol="${sheet.sheetFormatPr.outlineLevelCol}"`)
 		if (sheet.sheetFormatPr.customHeight) fmtAttrs.push('customHeight="1"')
+		if (sheet.sheetFormatPr.zeroHeight !== undefined)
+			fmtAttrs.push(`zeroHeight="${sheet.sheetFormatPr.zeroHeight ? '1' : '0'}"`)
+		if (sheet.sheetFormatPr.dyDescent !== undefined)
+			fmtAttrs.push(`x14ac:dyDescent="${sheet.sheetFormatPr.dyDescent}"`)
 		if (fmtAttrs.length > 0) out.push(`<sheetFormatPr ${fmtAttrs.join(' ')}/>`)
 	}
 
@@ -105,9 +142,19 @@ function buildSheetXmlToSink(
 	}
 
 	const hasFrozenPanes = sheet.frozenRows > 0 || sheet.frozenCols > 0
+	const preservedPaneAttributes = sheet.preservedPaneAttributes ?? {}
+	const hasPreservedPaneAttributes = Object.keys(preservedPaneAttributes).length > 0
 	const preservedSheetViewAttributes = sheet.preservedSheetViewAttributes ?? {}
 	const hasPreservedSheetViewAttributes = Object.keys(preservedSheetViewAttributes).length > 0
-	if (hasFrozenPanes || sheet.sheetView || hasPreservedSheetViewAttributes) {
+	const preservedSheetViewSelections = sheet.preservedSheetViewSelections ?? []
+	const hasPreservedSheetViewSelections = preservedSheetViewSelections.length > 0
+	if (
+		hasFrozenPanes ||
+		hasPreservedPaneAttributes ||
+		hasPreservedSheetViewSelections ||
+		sheet.sheetView ||
+		hasPreservedSheetViewAttributes
+	) {
 		const viewAttrs = new Map<string, string>([['workbookViewId', '0']])
 		for (const [name, value] of Object.entries(preservedSheetViewAttributes)) {
 			viewAttrs.set(name, value)
@@ -133,11 +180,19 @@ function buildSheetXmlToSink(
 		}
 		out.push('<sheetViews>')
 		out.push(`<sheetView ${sheetViewAttrsXml(viewAttrs)}>`)
-		if (hasFrozenPanes) {
-			const paneAttrs: string[] = ['state="frozen"']
-			if (sheet.frozenCols > 0) paneAttrs.push(`xSplit="${sheet.frozenCols}"`)
-			if (sheet.frozenRows > 0) paneAttrs.push(`ySplit="${sheet.frozenRows}"`)
-			out.push(`<pane ${paneAttrs.join(' ')}/>`)
+		if (hasFrozenPanes || hasPreservedPaneAttributes) {
+			const paneAttrs = new Map<string, string>(Object.entries(preservedPaneAttributes))
+			if (hasFrozenPanes) {
+				paneAttrs.set('state', paneAttrs.get('state') === 'frozenSplit' ? 'frozenSplit' : 'frozen')
+				if (sheet.frozenCols > 0) paneAttrs.set('xSplit', String(sheet.frozenCols))
+				else paneAttrs.delete('xSplit')
+				if (sheet.frozenRows > 0) paneAttrs.set('ySplit', String(sheet.frozenRows))
+				else paneAttrs.delete('ySplit')
+			}
+			out.push(`<pane ${sheetViewAttrsXml(paneAttrs)}/>`)
+		}
+		for (const selection of preservedSheetViewSelections) {
+			out.push(`<selection ${sheetViewAttrsXml(new Map(Object.entries(selection)))}/>`)
 		}
 		out.push('</sheetView>')
 		out.push('</sheetViews>')
@@ -200,13 +255,22 @@ function buildSheetXmlToSink(
 		const rowAttrs = [`r="${row + 1}"`]
 		const rowHeight = heightEntry && heightEntry[0] === row ? heightEntry[1] : undefined
 		const rowDef = rowDefEntry && rowDefEntry[0] === row ? rowDefEntry[1] : undefined
+		if (rowDef?.spans !== undefined) rowAttrs.push(`spans="${escapeXml(rowDef.spans)}"`)
 		if (rowHeight !== undefined) {
 			rowAttrs.push(`ht="${rowHeight}"`)
-			rowAttrs.push('customHeight="1"')
+			rowAttrs.push(`customHeight="${rowDef?.customHeight === false ? '0' : '1'}"`)
+		} else if (rowDef?.customHeight !== undefined) {
+			rowAttrs.push(`customHeight="${rowDef.customHeight ? '1' : '0'}"`)
 		}
+		if (rowDef?.style !== undefined) rowAttrs.push(`s="${rowDef.style}"`)
+		if (rowDef?.customFormat !== undefined)
+			rowAttrs.push(`customFormat="${rowDef.customFormat ? '1' : '0'}"`)
 		if (rowDef?.hidden) rowAttrs.push('hidden="1"')
 		if (rowDef?.collapsed) rowAttrs.push('collapsed="1"')
 		if (rowDef?.outlineLevel !== undefined) rowAttrs.push(`outlineLevel="${rowDef.outlineLevel}"`)
+		if (rowDef?.thickTop !== undefined) rowAttrs.push(`thickTop="${rowDef.thickTop ? '1' : '0'}"`)
+		if (rowDef?.thickBot !== undefined) rowAttrs.push(`thickBot="${rowDef.thickBot ? '1' : '0'}"`)
+		if (rowDef?.dyDescent !== undefined) rowAttrs.push(`x14ac:dyDescent="${rowDef.dyDescent}"`)
 		const rowStart = `<row ${rowAttrs.join(' ')}>`
 		const rowParts = options.batchRows ? [rowStart] : undefined
 		const rowOut: SheetXmlSink =
@@ -254,6 +318,7 @@ function buildSheetXmlToSink(
 				xfMap,
 				sharedFormulaExpansions,
 				sheet.storedFormulaText.get(formulaStorageKey(row, col)),
+				sheet.preservedCellMetadata.get(formulaStorageKey(row, col)),
 				options.useInlineStrings,
 				options.usePlainStrings,
 			)
@@ -296,8 +361,14 @@ function buildSheetXmlToSink(
 		out.push('</protectedRanges>')
 	}
 
+	if (sheet.phoneticPr) {
+		const attrs = collectMixedAttrs(sheet.phoneticPr)
+		if (attrs.length > 0) out.push(`<phoneticPr ${attrs.join(' ')}/>`)
+	}
+
 	if (sheet.autoFilter) {
 		pushAutoFilterXml(out, sheet.autoFilter, {
+			includeUid: true,
 			...(sheet.preservedAutoFilterSortStateAttributes
 				? { sortStateAttributes: sheet.preservedAutoFilterSortStateAttributes }
 				: {}),
@@ -323,7 +394,11 @@ function buildSheetXmlToSink(
 		for (let cfIdx = 0; cfIdx < sheet.conditionalFormats.length; cfIdx++) {
 			const conditionalFormat = sheet.conditionalFormats[cfIdx]
 			if (!conditionalFormat) continue
-			out.push(`<conditionalFormatting sqref="${escapeXml(conditionalFormat.sqref)}">`)
+			const attrs = [`sqref="${escapeXml(conditionalFormat.sqref)}"`]
+			if (conditionalFormat.pivot !== undefined) {
+				attrs.push(`pivot="${conditionalFormat.pivot ? '1' : '0'}"`)
+			}
+			out.push(`<conditionalFormatting ${attrs.join(' ')}>`)
 			for (let ruleIdx = 0; ruleIdx < conditionalFormat.rules.length; ruleIdx++) {
 				const rule = conditionalFormat.rules[ruleIdx]
 				if (!rule) continue
@@ -340,6 +415,8 @@ function buildSheetXmlToSink(
 					attrs.push(`aboveAverage="${rule.aboveAverage ? '1' : '0'}"`)
 				if (rule.equalAverage !== undefined)
 					attrs.push(`equalAverage="${rule.equalAverage ? '1' : '0'}"`)
+				if (rule.stdDev !== undefined) attrs.push(`stdDev="${rule.stdDev}"`)
+				if (rule.text !== undefined) attrs.push(`text="${escapeXml(rule.text)}"`)
 				if (rule.timePeriod) attrs.push(`timePeriod="${escapeXml(rule.timePeriod)}"`)
 
 				out.push(`<cfRule ${attrs.join(' ')}>`)
@@ -359,9 +436,23 @@ function buildSheetXmlToSink(
 		(validation) => validation.source !== 'x14' || !sheet.preservedExtLst,
 	)
 	if (legacyDataValidations.length > 0) {
-		out.push(`<dataValidations count="${legacyDataValidations.length}">`)
+		const dataValidationAttrs = [`count="${legacyDataValidations.length}"`]
+		const dataValidationSettings = sheet.dataValidationSettings
+		if (dataValidationSettings?.disablePrompts !== undefined) {
+			dataValidationAttrs.push(
+				`disablePrompts="${dataValidationSettings.disablePrompts ? '1' : '0'}"`,
+			)
+		}
+		if (dataValidationSettings?.xWindow !== undefined) {
+			dataValidationAttrs.push(`xWindow="${dataValidationSettings.xWindow}"`)
+		}
+		if (dataValidationSettings?.yWindow !== undefined) {
+			dataValidationAttrs.push(`yWindow="${dataValidationSettings.yWindow}"`)
+		}
+		out.push(`<dataValidations ${dataValidationAttrs.join(' ')}>`)
 		for (const validation of legacyDataValidations) {
 			const attrs = [`sqref="${escapeXml(validation.sqref)}"`]
+			if (validation.uid) attrs.push(`xr:uid="${escapeXml(validation.uid)}"`)
 			if (validation.type) attrs.push(`type="${escapeXml(validation.type)}"`)
 			if (validation.operator) attrs.push(`operator="${escapeXml(validation.operator)}"`)
 			if (validation.errorStyle) attrs.push(`errorStyle="${escapeXml(validation.errorStyle)}"`)
@@ -414,12 +505,20 @@ function buildSheetXmlToSink(
 	}
 
 	if (sheet.pageSetup) {
-		const attrs = collectMixedAttrs(sheet.pageSetup)
+		const attrs = collectPageSetupAttrs(sheet.pageSetup)
 		if (attrs.length > 0) out.push(`<pageSetup ${attrs.join(' ')}/>`)
 	}
 
 	if (sheet.headerFooter) {
-		out.push('<headerFooter>')
+		const headerFooterAttrs = collectMixedAttrs({
+			differentOddEven: sheet.headerFooter.differentOddEven,
+			differentFirst: sheet.headerFooter.differentFirst,
+			scaleWithDoc: sheet.headerFooter.scaleWithDoc,
+			alignWithMargins: sheet.headerFooter.alignWithMargins,
+		})
+		out.push(
+			`<headerFooter${headerFooterAttrs.length > 0 ? ` ${headerFooterAttrs.join(' ')}` : ''}>`,
+		)
 		if (sheet.headerFooter.oddHeader) {
 			out.push(`<oddHeader>${escapeXml(sheet.headerFooter.oddHeader)}</oddHeader>`)
 		}
@@ -694,6 +793,31 @@ function collectMixedAttrs(values: object): string[] {
 	return attrs
 }
 
+function collectPageSetupAttrs(pageSetup: NonNullable<Sheet['pageSetup']>): string[] {
+	const attrs = collectMixedAttrs({
+		orientation: pageSetup.orientation,
+		paperSize: pageSetup.paperSize,
+		scale: pageSetup.scale,
+		fitToWidth: pageSetup.fitToWidth,
+		fitToHeight: pageSetup.fitToHeight,
+		firstPageNumber: pageSetup.firstPageNumber,
+		copies: pageSetup.copies,
+		horizontalDpi: pageSetup.horizontalDpi,
+		verticalDpi: pageSetup.verticalDpi,
+		pageOrder: pageSetup.pageOrder,
+		cellComments: pageSetup.cellComments,
+		errors: pageSetup.errors,
+		blackAndWhite: pageSetup.blackAndWhite,
+		draft: pageSetup.draft,
+		useFirstPageNumber: pageSetup.useFirstPageNumber,
+		usePrinterDefaults: pageSetup.usePrinterDefaults,
+	})
+	if (pageSetup.printerSettingsRelId) {
+		attrs.push(`r:id="${escapeXml(pageSetup.printerSettingsRelId)}"`)
+	}
+	return attrs
+}
+
 function collectProtectionAttrs(protection: NonNullable<Sheet['protection']>): string[] {
 	const attrs: string[] = []
 	for (const [key, value] of Object.entries(protection)) {
@@ -788,6 +912,7 @@ function pushCellXml(
 	xfMap: Map<number, number>,
 	sharedFormulaExpansions: ReadonlyMap<string, SharedFormulaExpansion>,
 	storedFormulaText?: string,
+	preservedCellMetadata?: SheetCellMetadataAttrs,
 	useInlineStrings?: boolean,
 	usePlainStrings?: boolean,
 ): void {
@@ -800,7 +925,16 @@ function pushCellXml(
 		cell.formulaInfo?.kind === 'array' ||
 		cell.formulaInfo?.kind === 'dataTable'
 	) {
-		out.push(formulaCellXml(ref, cell, xfIdx, sharedFormulaExpansions, storedFormulaText))
+		out.push(
+			formulaCellXml(
+				ref,
+				cell,
+				xfIdx,
+				sharedFormulaExpansions,
+				storedFormulaText,
+				preservedCellMetadata,
+			),
+		)
 		return
 	}
 
@@ -858,20 +992,21 @@ function formulaCellXml(
 	xfIdx: number,
 	sharedFormulaExpansions: ReadonlyMap<string, SharedFormulaExpansion>,
 	storedFormulaText?: string,
+	preservedCellMetadata?: SheetCellMetadataAttrs,
 ): string {
 	const formulaText = cell.formula
 		? effectiveStoredFormulaText(cell.formula, storedFormulaText)
 		: ''
 	const sAttr = xfIdx !== 0 ? ` s="${xfIdx}"` : ''
 	const dynamicArrayMetadataIndex = dynamicArrayCellMetadataIndex(cell.formulaInfo)
-	const cmAttr = dynamicArrayMetadataIndex !== undefined ? ` cm="${dynamicArrayMetadataIndex}"` : ''
+	const metadataAttrs = formulaCellMetadataAttrs(dynamicArrayMetadataIndex, preservedCellMetadata)
 	const { typeAttr, valueStr } = formulaValueAttrs(cell.value)
 	const tAttr = typeAttr ? ` t="${typeAttr}"` : ''
 	const vPart = valueStr !== undefined ? `<v>${valueStr}</v>` : ''
 	if (cell.formulaInfo?.kind === 'shared') {
 		const expanded = sharedFormulaExpansions.get(ref)
 		if (expanded) {
-			return `<c r="${ref}"${cmAttr}${sAttr}${tAttr}><f>${escapeXml(expanded.formulaText)}</f>${vPart}</c>`
+			return `<c r="${ref}"${metadataAttrs}${sAttr}${tAttr}><f>${escapeXml(expanded.formulaText)}</f>${vPart}</c>`
 		}
 		let fAttrs = `t="shared" si="${escapeXml(cell.formulaInfo.sharedIndex)}"`
 		if (cell.formulaInfo.isMaster && cell.formulaInfo.ref) {
@@ -880,18 +1015,33 @@ function formulaCellXml(
 		const formulaXml = cell.formulaInfo.isMaster
 			? `<f ${fAttrs}>${escapeXml(formulaText)}</f>`
 			: `<f ${fAttrs}/>`
-		return `<c r="${ref}"${cmAttr}${sAttr}${tAttr}>${formulaXml}${vPart}</c>`
+		return `<c r="${ref}"${metadataAttrs}${sAttr}${tAttr}>${formulaXml}${vPart}</c>`
 	}
 	if (cell.formulaInfo?.kind === 'array') {
 		let fAttrs = 't="array"'
 		if (cell.formulaInfo.ref) fAttrs += ` ref="${escapeXml(cell.formulaInfo.ref)}"`
-		return `<c r="${ref}"${cmAttr}${sAttr}${tAttr}><f ${fAttrs}>${escapeXml(formulaText)}</f>${vPart}</c>`
+		return `<c r="${ref}"${metadataAttrs}${sAttr}${tAttr}><f ${fAttrs}>${escapeXml(formulaText)}</f>${vPart}</c>`
 	}
 	if (cell.formulaInfo?.kind === 'dataTable') {
 		const fAttrs = dataTableFormulaAttrs(cell.formulaInfo)
-		return `<c r="${ref}"${cmAttr}${sAttr}${tAttr}><f ${fAttrs}/>${vPart}</c>`
+		return `<c r="${ref}"${metadataAttrs}${sAttr}${tAttr}><f ${fAttrs}/>${vPart}</c>`
 	}
-	return `<c r="${ref}"${cmAttr}${sAttr}${tAttr}><f>${escapeXml(formulaText)}</f>${vPart}</c>`
+	return `<c r="${ref}"${metadataAttrs}${sAttr}${tAttr}><f>${escapeXml(formulaText)}</f>${vPart}</c>`
+}
+
+function formulaCellMetadataAttrs(
+	generatedCm: number | undefined,
+	preserved: SheetCellMetadataAttrs | undefined,
+): string {
+	const attrs: string[] = []
+	if (generatedCm !== undefined) {
+		attrs.push(`cm="${generatedCm}"`)
+	} else if (preserved?.cm !== undefined) {
+		attrs.push(`cm="${preserved.cm}"`)
+	}
+	if (preserved?.vm !== undefined) attrs.push(`vm="${preserved.vm}"`)
+	if (preserved?.ph !== undefined) attrs.push(`ph="${preserved.ph ? '1' : '0'}"`)
+	return attrs.length > 0 ? ` ${attrs.join(' ')}` : ''
 }
 
 function dataTableFormulaAttrs(info: Extract<Cell['formulaInfo'], { kind: 'dataTable' }>): string {

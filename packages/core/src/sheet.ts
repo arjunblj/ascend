@@ -60,10 +60,28 @@ export interface SheetPageSetup {
 	readonly scale?: number
 	readonly fitToWidth?: number
 	readonly fitToHeight?: number
+	readonly firstPageNumber?: number
+	readonly copies?: number
+	readonly horizontalDpi?: number
+	readonly verticalDpi?: number
+	readonly pageOrder?: string
+	readonly cellComments?: string
+	readonly errors?: string
+	readonly blackAndWhite?: boolean
+	readonly draft?: boolean
+	readonly useFirstPageNumber?: boolean
+	readonly usePrinterDefaults?: boolean
+	readonly printerSettingsRelId?: string
+}
+
+export interface SheetPageSetupPr {
+	readonly fitToPage?: boolean
+	readonly autoPageBreaks?: boolean
 }
 
 export interface SheetPrintOptions {
 	readonly gridLines?: boolean
+	readonly gridLinesSet?: boolean
 	readonly headings?: boolean
 	readonly horizontalCentered?: boolean
 	readonly verticalCentered?: boolean
@@ -105,6 +123,10 @@ export interface SheetProtectedRange {
 }
 
 export interface SheetHeaderFooter {
+	readonly differentOddEven?: boolean
+	readonly differentFirst?: boolean
+	readonly scaleWithDoc?: boolean
+	readonly alignWithMargins?: boolean
 	readonly oddHeader?: string
 	readonly oddFooter?: string
 	readonly evenHeader?: string
@@ -126,9 +148,28 @@ export interface SheetColDef {
 }
 
 export interface SheetRowDef {
+	readonly spans?: string
+	readonly style?: number
+	readonly customFormat?: boolean
+	readonly customHeight?: boolean
 	readonly hidden?: boolean
 	readonly collapsed?: boolean
 	readonly outlineLevel?: number
+	readonly thickTop?: boolean
+	readonly thickBot?: boolean
+	readonly dyDescent?: number
+}
+
+export interface SheetPhoneticPr {
+	readonly fontId?: number
+	readonly type?: string
+	readonly alignment?: string
+}
+
+export interface SheetCellMetadataAttrs {
+	readonly cm?: number
+	readonly vm?: number
+	readonly ph?: boolean
 }
 
 export interface SheetOutlinePr {
@@ -332,6 +373,7 @@ export interface SheetAdvancedFilterInfo {
 export interface SheetDataValidation {
 	readonly sqref: string
 	readonly source?: 'x14'
+	readonly uid?: string
 	readonly type?: string
 	readonly operator?: string
 	readonly allowBlank?: boolean
@@ -348,6 +390,12 @@ export interface SheetDataValidation {
 	readonly formula2?: string
 }
 
+export interface SheetDataValidationSettings {
+	readonly disablePrompts?: boolean
+	readonly xWindow?: number
+	readonly yWindow?: number
+}
+
 export interface SheetConditionalFormatRule {
 	readonly type: string
 	readonly operator?: string
@@ -361,6 +409,8 @@ export interface SheetConditionalFormatRule {
 	readonly bottom?: boolean
 	readonly aboveAverage?: boolean
 	readonly equalAverage?: boolean
+	readonly stdDev?: number
+	readonly text?: string
 	readonly timePeriod?: string
 	readonly colorScale?: SheetConditionalFormatColorScale
 	readonly dataBar?: SheetConditionalFormatDataBar
@@ -404,6 +454,7 @@ export interface SheetConditionalFormatIconSet {
 
 export interface SheetConditionalFormat {
 	readonly sqref: string
+	readonly pivot?: boolean
 	readonly rules: readonly SheetConditionalFormatRule[]
 }
 
@@ -461,11 +512,14 @@ export interface SheetTabColor {
 }
 
 export interface SheetFormatPr {
+	readonly baseColWidth?: number
 	readonly defaultRowHeight?: number
 	readonly defaultColWidth?: number
 	readonly outlineLevelRow?: number
 	readonly outlineLevelCol?: number
 	readonly customHeight?: boolean
+	readonly zeroHeight?: boolean
+	readonly dyDescent?: number
 }
 
 export interface SheetBreak {
@@ -490,6 +544,8 @@ export interface SheetView {
 	readonly topLeftCell?: string
 }
 
+export type SheetViewSelection = Readonly<Record<string, string>>
+
 export class Sheet {
 	readonly id: SheetId
 	name: string
@@ -503,10 +559,16 @@ export class Sheet {
 	rowDefs: Map<number, SheetRowDef>
 	frozenRows: number
 	frozenCols: number
+	codeName: string | null
+	filterMode: boolean | null
+	enableFormatConditionsCalculation: boolean | null
 	sheetView: SheetView | null
 	preservedSheetViewAttributes: Record<string, string> | null
+	preservedPaneAttributes: Record<string, string> | null
+	preservedSheetViewSelections: SheetViewSelection[] | null
 	preservedDimensionRef: string | null
 	preservedBlankCells: Map<number, Map<number, string>>
+	preservedCellMetadata: Map<string, SheetCellMetadataAttrs>
 	comments: Map<string, SheetComment>
 	threadedComments: SheetThreadedComment[]
 	hyperlinks: Map<string, SheetHyperlink>
@@ -514,6 +576,7 @@ export class Sheet {
 	tabColor: SheetTabColor | null
 	outlinePr: SheetOutlinePr | null
 	sheetFormatPr: SheetFormatPr | null
+	dataValidationSettings: SheetDataValidationSettings | null
 	dataValidations: SheetDataValidation[]
 	conditionalFormats: SheetConditionalFormat[]
 	imageRefs: SheetImageRef[]
@@ -531,8 +594,10 @@ export class Sheet {
 	protectedRanges: SheetProtectedRange[]
 	pageMargins: SheetPageMargins | null
 	pageSetup: SheetPageSetup | null
+	pageSetupPr: SheetPageSetupPr | null
 	printOptions: SheetPrintOptions | null
 	headerFooter: SheetHeaderFooter | null
+	phoneticPr: SheetPhoneticPr | null
 	rowBreaks: SheetBreak[]
 	colBreaks: SheetBreak[]
 	/** Exact persisted formula payloads keyed as row:col; writers validate before reuse. */
@@ -556,10 +621,16 @@ export class Sheet {
 		this.rowDefs = new Map()
 		this.frozenRows = 0
 		this.frozenCols = 0
+		this.codeName = null
+		this.filterMode = null
+		this.enableFormatConditionsCalculation = null
 		this.sheetView = null
 		this.preservedSheetViewAttributes = null
+		this.preservedPaneAttributes = null
+		this.preservedSheetViewSelections = null
 		this.preservedDimensionRef = null
 		this.preservedBlankCells = new Map()
+		this.preservedCellMetadata = new Map()
 		this.comments = new Map()
 		this.threadedComments = []
 		this.hyperlinks = new Map()
@@ -567,6 +638,7 @@ export class Sheet {
 		this.tabColor = null
 		this.outlinePr = null
 		this.sheetFormatPr = null
+		this.dataValidationSettings = null
 		this.dataValidations = []
 		this.conditionalFormats = []
 		this.imageRefs = []
@@ -584,8 +656,10 @@ export class Sheet {
 		this.protectedRanges = []
 		this.pageMargins = null
 		this.pageSetup = null
+		this.pageSetupPr = null
 		this.printOptions = null
 		this.headerFooter = null
+		this.phoneticPr = null
 		this.rowBreaks = []
 		this.colBreaks = []
 		this.storedFormulaText = new Map()
@@ -606,8 +680,17 @@ export class Sheet {
 		this.preservedSheetViewAttributes = this.preservedSheetViewAttributes
 			? { ...this.preservedSheetViewAttributes }
 			: null
+		this.preservedPaneAttributes = this.preservedPaneAttributes
+			? { ...this.preservedPaneAttributes }
+			: null
+		this.preservedSheetViewSelections = this.preservedSheetViewSelections
+			? this.preservedSheetViewSelections.map((selection) => ({ ...selection }))
+			: null
 		this.preservedBlankCells = new Map(
 			[...this.preservedBlankCells.entries()].map(([row, cells]) => [row, new Map(cells)]),
+		)
+		this.preservedCellMetadata = new Map(
+			[...this.preservedCellMetadata.entries()].map(([key, attrs]) => [key, { ...attrs }]),
 		)
 		this.comments = new Map(
 			[...this.comments.entries()].map(([ref, comment]) => [ref, cloneSheetComment(comment)]),
@@ -615,6 +698,9 @@ export class Sheet {
 		this.threadedComments = this.threadedComments.map((comment) => ({ ...comment }))
 		this.hyperlinks = new Map(this.hyperlinks)
 		this.ignoredErrors = this.ignoredErrors.map((e) => ({ ...e }))
+		this.dataValidationSettings = this.dataValidationSettings
+			? { ...this.dataValidationSettings }
+			: null
 		this.dataValidations = this.dataValidations.map((d) => ({ ...d }))
 		this.rowBreaks = this.rowBreaks.map((b) => ({ ...b }))
 		this.colBreaks = this.colBreaks.map((b) => ({ ...b }))
@@ -642,6 +728,8 @@ export class Sheet {
 			: null
 		this.protection = this.protection ? { ...this.protection } : null
 		this.protectedRanges = this.protectedRanges.map((range) => ({ ...range }))
+		this.pageSetupPr = this.pageSetupPr ? { ...this.pageSetupPr } : null
+		this.phoneticPr = this.phoneticPr ? { ...this.phoneticPr } : null
 		this._shared = false
 	}
 
@@ -657,10 +745,16 @@ export class Sheet {
 		s.rowDefs = this.rowDefs
 		s.frozenRows = this.frozenRows
 		s.frozenCols = this.frozenCols
+		s.codeName = this.codeName
+		s.filterMode = this.filterMode
+		s.enableFormatConditionsCalculation = this.enableFormatConditionsCalculation
 		s.sheetView = this.sheetView
 		s.preservedSheetViewAttributes = this.preservedSheetViewAttributes
+		s.preservedPaneAttributes = this.preservedPaneAttributes
+		s.preservedSheetViewSelections = this.preservedSheetViewSelections
 		s.preservedDimensionRef = this.preservedDimensionRef
 		s.preservedBlankCells = this.preservedBlankCells
+		s.preservedCellMetadata = this.preservedCellMetadata
 		s.comments = this.comments
 		s.threadedComments = this.threadedComments
 		s.hyperlinks = this.hyperlinks
@@ -668,6 +762,7 @@ export class Sheet {
 		s.tabColor = this.tabColor
 		s.outlinePr = this.outlinePr
 		s.sheetFormatPr = this.sheetFormatPr
+		s.dataValidationSettings = this.dataValidationSettings
 		s.dataValidations = this.dataValidations
 		s.conditionalFormats = this.conditionalFormats
 		s.imageRefs = this.imageRefs
@@ -685,8 +780,10 @@ export class Sheet {
 		s.protectedRanges = this.protectedRanges
 		s.pageMargins = this.pageMargins
 		s.pageSetup = this.pageSetup
+		s.pageSetupPr = this.pageSetupPr
 		s.printOptions = this.printOptions
 		s.headerFooter = this.headerFooter
+		s.phoneticPr = this.phoneticPr
 		s.rowBreaks = this.rowBreaks
 		s.colBreaks = this.colBreaks
 		s.storedFormulaText = this.storedFormulaText

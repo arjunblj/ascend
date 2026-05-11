@@ -1,5 +1,6 @@
 import type { CellStyle, Sheet, SheetConditionalFormatRule, Workbook } from '@ascend/core'
 import { parseRange, type RangeRef, toA1 } from '@ascend/core'
+import { hasWildcardPatternSyntax, wildcardMatch } from '@ascend/formulas'
 import type { CellValue } from '@ascend/schema'
 import { isEmpty, topLeftScalar } from '@ascend/schema'
 import { evaluateRelativeFormulaText } from './relative-formula.ts'
@@ -22,6 +23,11 @@ interface RuleWithContext {
 interface ParsedSqrefPart {
 	readonly ref: string
 	readonly range: RangeRef
+}
+
+interface DuplicateUniqueValue {
+	readonly key: string
+	readonly textLike: boolean
 }
 
 function parseSqrefParts(sqref: string): ParsedSqrefPart[] {
@@ -112,6 +118,14 @@ function scalarToString(v: CellValue): string {
 	}
 }
 
+function duplicateUniqueValue(v: CellValue): DuplicateUniqueValue {
+	const s = topLeftScalar(v)
+	return {
+		key: scalarToString(s).toLowerCase(),
+		textLike: s.kind === 'string' || s.kind === 'richText',
+	}
+}
+
 function parseNumericFormula(formula: string): number | null {
 	const s = formula.trim()
 	const n = Number.parseFloat(s)
@@ -155,6 +169,15 @@ function unquoteFormula(formula: string): string {
 	const s = formula.trim()
 	if (s.startsWith('"') && s.endsWith('"')) return s.slice(1, -1).replace(/""/g, '"')
 	return s
+}
+
+function textRulePattern(
+	rule: SheetConditionalFormatRule,
+	formula: string | undefined,
+): string | null {
+	if (rule.text !== undefined) return rule.text
+	if (formula === undefined) return null
+	return unquoteFormula(formula)
 }
 
 function evaluateFormulaNumber(
@@ -212,8 +235,10 @@ function evaluateFormulaBoolean(
 interface RangeContext {
 	readonly allNumerics: number[]
 	readonly valueCounts: ReadonlyMap<string, number>
+	readonly values: readonly DuplicateUniqueValue[]
 	readonly sortedNumerics: readonly number[]
 	readonly numericMean: number | null
+	readonly numericStdDev: number | null
 }
 
 const RANGE_CONTEXT_TYPES = new Set(['duplicateValues', 'uniqueValues', 'top10', 'aboveAverage'])
@@ -226,6 +251,7 @@ function needsRangeContext(type: string): boolean {
 function buildRangeContext(sheet: Sheet, parts: readonly ParsedSqrefPart[]): RangeContext {
 	const allNumerics: number[] = []
 	const valueCounts = new Map<string, number>()
+	const values: DuplicateUniqueValue[] = []
 	for (const part of parts) {
 		const range = part.range
 		sheet.cells.forEachValueInRange(
@@ -235,8 +261,9 @@ function buildRangeContext(sheet: Sheet, parts: readonly ParsedSqrefPart[]): Ran
 			range.end.col,
 			(value) => {
 				if (!isEmpty(value)) {
-					const key = scalarToString(value)
-					valueCounts.set(key, (valueCounts.get(key) ?? 0) + 1)
+					const comparable = duplicateUniqueValue(value)
+					values.push(comparable)
+					valueCounts.set(comparable.key, (valueCounts.get(comparable.key) ?? 0) + 1)
 				}
 				const n = scalarToNumber(value)
 				if (n !== null) allNumerics.push(n)
@@ -248,7 +275,26 @@ function buildRangeContext(sheet: Sheet, parts: readonly ParsedSqrefPart[]): Ran
 		allNumerics.length === 0
 			? null
 			: allNumerics.reduce((sum, value) => sum + value, 0) / allNumerics.length
-	return { allNumerics, valueCounts, sortedNumerics, numericMean }
+	const numericStdDev =
+		numericMean === null
+			? null
+			: Math.sqrt(
+					allNumerics.reduce((sum, value) => sum + (value - numericMean) ** 2, 0) /
+						allNumerics.length,
+				)
+	return { allNumerics, valueCounts, values, sortedNumerics, numericMean, numericStdDev }
+}
+
+function duplicateUniqueCount(cellValue: CellValue, rangeContext: RangeContext): number {
+	const comparable = duplicateUniqueValue(cellValue)
+	if (!comparable.textLike || !hasWildcardPatternSyntax(comparable.key)) {
+		return rangeContext.valueCounts.get(comparable.key) ?? 0
+	}
+	let count = 0
+	for (const candidate of rangeContext.values) {
+		if (candidate.textLike && wildcardMatch(comparable.key, candidate.key)) count++
+	}
+	return count
 }
 
 const EXCEL_EPOCH_OFFSET = 25569
@@ -367,7 +413,8 @@ function ruleMatches(
 	}
 
 	if (type === 'containsText') {
-		if (!formula1) return false
+		const pattern = textRulePattern(rule, formula1)
+		if (pattern === null) return false
 		const formulaMatch = evaluateFormulaBoolean(
 			workbook,
 			sheetIndex,
@@ -379,13 +426,13 @@ function ruleMatches(
 		)
 		if (formulaMatch !== null) return formulaMatch
 		const text = scalarToString(cellValue)
-		const pattern = unquoteFormula(formula1)
-		const idx = text.indexOf(pattern)
+		const idx = text.toLowerCase().indexOf(pattern.toLowerCase())
 		return idx >= 0
 	}
 
 	if (type === 'notContainsText') {
-		if (!formula1) return true
+		const pattern = textRulePattern(rule, formula1)
+		if (pattern === null) return true
 		const formulaMatch = evaluateFormulaBoolean(
 			workbook,
 			sheetIndex,
@@ -397,12 +444,12 @@ function ruleMatches(
 		)
 		if (formulaMatch !== null) return formulaMatch
 		const text = scalarToString(cellValue)
-		const pattern = unquoteFormula(formula1)
-		return text.indexOf(pattern) < 0
+		return text.toLowerCase().indexOf(pattern.toLowerCase()) < 0
 	}
 
 	if (type === 'beginsWith') {
-		if (!formula1) return false
+		const pattern = textRulePattern(rule, formula1)
+		if (pattern === null) return false
 		const formulaMatch = evaluateFormulaBoolean(
 			workbook,
 			sheetIndex,
@@ -414,12 +461,12 @@ function ruleMatches(
 		)
 		if (formulaMatch !== null) return formulaMatch
 		const text = scalarToString(cellValue)
-		const prefix = unquoteFormula(formula1)
-		return text.startsWith(prefix)
+		return text.toLowerCase().startsWith(pattern.toLowerCase())
 	}
 
 	if (type === 'endsWith') {
-		if (!formula1) return false
+		const pattern = textRulePattern(rule, formula1)
+		if (pattern === null) return false
 		const formulaMatch = evaluateFormulaBoolean(
 			workbook,
 			sheetIndex,
@@ -431,8 +478,7 @@ function ruleMatches(
 		)
 		if (formulaMatch !== null) return formulaMatch
 		const text = scalarToString(cellValue)
-		const suffix = unquoteFormula(formula1)
-		return text.endsWith(suffix)
+		return text.toLowerCase().endsWith(pattern.toLowerCase())
 	}
 
 	if (type === 'containsBlanks') {
@@ -453,14 +499,12 @@ function ruleMatches(
 
 	if (type === 'duplicateValues') {
 		if (!rangeContext || isEmpty(cellValue)) return false
-		const key = scalarToString(cellValue)
-		return (rangeContext.valueCounts.get(key) ?? 0) > 1
+		return duplicateUniqueCount(cellValue, rangeContext) > 1
 	}
 
 	if (type === 'uniqueValues') {
 		if (!rangeContext || isEmpty(cellValue)) return false
-		const key = scalarToString(cellValue)
-		return (rangeContext.valueCounts.get(key) ?? 0) === 1
+		return duplicateUniqueCount(cellValue, rangeContext) === 1
 	}
 
 	if (type === 'top10') {
@@ -487,11 +531,15 @@ function ruleMatches(
 		const cellNum = scalarToNumber(cellValue)
 		if (cellNum === null) return false
 		const above = rule.aboveAverage !== false
-		const equal = rule.equalAverage === true
+		const usesStdDev = rule.stdDev !== undefined && rangeContext.numericStdDev !== null
+		const equal = !usesStdDev && rule.equalAverage === true
+		const threshold = usesStdDev
+			? rangeContext.numericMean + (above ? 1 : -1) * rule.stdDev * rangeContext.numericStdDev
+			: rangeContext.numericMean
 		if (above && equal) return cellNum >= rangeContext.numericMean
-		if (above) return cellNum > rangeContext.numericMean
+		if (above) return cellNum > threshold
 		if (equal) return cellNum <= rangeContext.numericMean
-		return cellNum < rangeContext.numericMean
+		return cellNum < threshold
 	}
 
 	if (type === 'timePeriod') {

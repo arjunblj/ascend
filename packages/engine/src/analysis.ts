@@ -21,7 +21,7 @@ import {
 	rewriteFormulaAstForShift,
 } from './structural/formula-rewrite.ts'
 import { shiftIndex } from './structural/ref-shift.ts'
-import { resolveStructuredRefRange } from './structured-refs.ts'
+import { createStructuredRefResolver, type StructuredRefResolver } from './structured-refs.ts'
 
 export interface AnalyzedFormula {
 	readonly key: CellKey
@@ -575,8 +575,14 @@ function analyzeWorkbookDependenciesFrom(
 ): WorkbookDependencyAnalysis {
 	const dependencyGraph = new DependencyGraph()
 	const resolvedFormulas = new Map<CellKey, AnalyzedFormula>()
+	const structuredRefResolver = createStructuredRefResolver(workbook)
 	for (const formula of indexed.formulas.values()) {
-		const resolved = resolveFormulaDependencies(workbook, indexed.sheetNameIndex, formula)
+		const resolved = resolveFormulaDependencies(
+			workbook,
+			indexed.sheetNameIndex,
+			formula,
+			structuredRefResolver,
+		)
 		resolvedFormulas.set(resolved.key, resolved)
 		if (resolved.parseError) continue
 		dependencyGraph.addFormula(resolved.key, resolved.deps, resolved.volatile, resolved.rangeDeps)
@@ -958,6 +964,7 @@ export function resolveFormulaDependencies(
 	workbook: Workbook,
 	sheetNameIndex: ReadonlyMap<string, number>,
 	formula: IndexedFormula,
+	structuredRefResolver = createStructuredRefResolver(workbook),
 ): AnalyzedFormula {
 	if (!formula.ast) {
 		return {
@@ -994,8 +1001,7 @@ export function resolveFormulaDependencies(
 		}
 	}
 	for (const structuredRef of collectStructuredRefs(formula.ast)) {
-		const resolved = resolveStructuredRefRange(
-			workbook,
+		const resolved = structuredRefResolver.resolve(
 			structuredRef,
 			formula.sheetIndex,
 			formula.row,
@@ -1010,6 +1016,24 @@ export function resolveFormulaDependencies(
 			endCol: resolved.endCol,
 		})
 	}
+	if (
+		!deps.includes(formula.key) &&
+		formulaHasValueDependentSelfRange(
+			{
+				workbook,
+				sheetNameIndex,
+				structuredRefResolver,
+				formulaSheetIndex: formula.sheetIndex,
+				formulaRow: formula.row,
+				formulaCol: formula.col,
+				seenNames: [],
+			},
+			formula.ast,
+			formula.sheetIndex,
+		)
+	) {
+		deps.push(formula.key)
+	}
 	return {
 		...formula,
 		deps,
@@ -1018,6 +1042,290 @@ export function resolveFormulaDependencies(
 			? { growingRangeAggregate: formula.growingRangeAggregate }
 			: {}),
 	}
+}
+
+const REFERENCE_SHAPE_FUNCTIONS = new Set(['AREAS', 'COLUMNS', 'FORMULATEXT', 'ISREF', 'ROWS'])
+
+interface SelfCycleContext {
+	readonly workbook: Workbook
+	readonly sheetNameIndex: ReadonlyMap<string, number>
+	readonly structuredRefResolver: StructuredRefResolver
+	readonly formulaSheetIndex: number
+	readonly formulaRow: number
+	readonly formulaCol: number
+	readonly seenNames: readonly string[]
+}
+
+interface SelfCycleRange {
+	readonly sheetIndex: number
+	readonly startRow: number
+	readonly startCol: number
+	readonly endRow: number
+	readonly endCol: number
+}
+
+function formulaHasValueDependentSelfRange(
+	ctx: SelfCycleContext,
+	node: FormulaNode,
+	currentSheetIndex: number,
+	inValueContext = true,
+): boolean {
+	switch (node.type) {
+		case 'rangeRef': {
+			if (!inValueContext) return false
+			const sheetIndex = resolveSheetIndex(ctx.sheetNameIndex, node.sheet, currentSheetIndex)
+			return rangeContainsFormulaCell(ctx, {
+				sheetIndex,
+				startRow: Math.min(node.start.row, node.end.row),
+				startCol: Math.min(node.start.col, node.end.col),
+				endRow: Math.max(node.start.row, node.end.row),
+				endCol: Math.max(node.start.col, node.end.col),
+			})
+		}
+		case 'wholeRowRange': {
+			if (!inValueContext) return false
+			const sheetIndex = resolveSheetIndex(ctx.sheetNameIndex, node.sheet, currentSheetIndex)
+			const sheet = ctx.workbook.sheets[sheetIndex]
+			const usedRange = sheet?.cells.usedRange()
+			if (!usedRange) return false
+			return rangeContainsFormulaCell(ctx, {
+				sheetIndex,
+				startRow: Math.min(node.startRow, node.endRow),
+				startCol: usedRange.start.col,
+				endRow: Math.max(node.startRow, node.endRow),
+				endCol: usedRange.end.col,
+			})
+		}
+		case 'wholeColumnRange': {
+			if (!inValueContext) return false
+			const sheetIndex = resolveSheetIndex(ctx.sheetNameIndex, node.sheet, currentSheetIndex)
+			const sheet = ctx.workbook.sheets[sheetIndex]
+			const usedRange = sheet?.cells.usedRange()
+			if (!usedRange) return false
+			return rangeContainsFormulaCell(ctx, {
+				sheetIndex,
+				startRow: usedRange.start.row,
+				startCol: Math.min(node.startCol, node.endCol),
+				endRow: usedRange.end.row,
+				endCol: Math.max(node.startCol, node.endCol),
+			})
+		}
+		case 'structuredRef': {
+			if (!inValueContext) return false
+			const range = resolveSelfCycleRange(ctx, node, currentSheetIndex)
+			return range ? rangeContainsFormulaCell(ctx, range) : false
+		}
+		case 'name':
+			if (!inValueContext) return false
+			return definedNameHasValueDependentSelfRange(ctx, node.name, node.sheet, currentSheetIndex)
+		case 'function': {
+			const valueContext = !REFERENCE_SHAPE_FUNCTIONS.has(node.name.toUpperCase())
+			return node.args.some((arg) =>
+				formulaHasValueDependentSelfRange(ctx, arg, currentSheetIndex, valueContext),
+			)
+		}
+		case 'binary':
+			if (node.op === ' ') {
+				if (!inValueContext) return false
+				const left = resolveSelfCycleRange(ctx, node.left, currentSheetIndex)
+				const right = resolveSelfCycleRange(ctx, node.right, currentSheetIndex)
+				const intersection = left && right ? intersectSelfCycleRanges(left, right) : null
+				return intersection ? rangeContainsFormulaCell(ctx, intersection) : false
+			}
+			return (
+				formulaHasValueDependentSelfRange(ctx, node.left, currentSheetIndex, inValueContext) ||
+				formulaHasValueDependentSelfRange(ctx, node.right, currentSheetIndex, inValueContext)
+			)
+		case 'dynamicRangeRef':
+			return (
+				formulaHasValueDependentSelfRange(ctx, node.start, currentSheetIndex, inValueContext) ||
+				formulaHasValueDependentSelfRange(ctx, node.end, currentSheetIndex, inValueContext)
+			)
+		case 'unary':
+			return formulaHasValueDependentSelfRange(ctx, node.operand, currentSheetIndex, inValueContext)
+		case 'array':
+			return node.rows.some((row) =>
+				row.some((cell) =>
+					formulaHasValueDependentSelfRange(ctx, cell, currentSheetIndex, inValueContext),
+				),
+			)
+		case 'spillRef':
+			return formulaHasValueDependentSelfRange(ctx, node.target, currentSheetIndex, inValueContext)
+		case 'sheetSpanRef':
+			return formulaHasValueDependentSelfRange(ctx, node.target, currentSheetIndex, inValueContext)
+		default:
+			return false
+	}
+}
+
+function definedNameHasValueDependentSelfRange(
+	ctx: SelfCycleContext,
+	name: string,
+	sheet: string | undefined,
+	currentSheetIndex: number,
+): boolean {
+	const parsed = resolveDefinedNameAstForSelfCycle(ctx, name, sheet, currentSheetIndex)
+	if (!parsed) return false
+	return formulaHasValueDependentSelfRange(
+		withSeenName(ctx, parsed.entryKey),
+		parsed.ast,
+		parsed.sheetIndex,
+		true,
+	)
+}
+
+function resolveSelfCycleRange(
+	ctx: SelfCycleContext,
+	node: FormulaNode,
+	currentSheetIndex: number,
+): SelfCycleRange | null {
+	switch (node.type) {
+		case 'cellRef': {
+			const sheetIndex = resolveSheetIndex(ctx.sheetNameIndex, node.sheet, currentSheetIndex)
+			return {
+				sheetIndex,
+				startRow: node.ref.row,
+				startCol: node.ref.col,
+				endRow: node.ref.row,
+				endCol: node.ref.col,
+			}
+		}
+		case 'rangeRef': {
+			const sheetIndex = resolveSheetIndex(ctx.sheetNameIndex, node.sheet, currentSheetIndex)
+			return {
+				sheetIndex,
+				startRow: Math.min(node.start.row, node.end.row),
+				startCol: Math.min(node.start.col, node.end.col),
+				endRow: Math.max(node.start.row, node.end.row),
+				endCol: Math.max(node.start.col, node.end.col),
+			}
+		}
+		case 'wholeRowRange': {
+			const sheetIndex = resolveSheetIndex(ctx.sheetNameIndex, node.sheet, currentSheetIndex)
+			const sheet = ctx.workbook.sheets[sheetIndex]
+			const usedRange = sheet?.cells.usedRange()
+			if (!usedRange) return null
+			return {
+				sheetIndex,
+				startRow: Math.min(node.startRow, node.endRow),
+				startCol: usedRange.start.col,
+				endRow: Math.max(node.startRow, node.endRow),
+				endCol: usedRange.end.col,
+			}
+		}
+		case 'wholeColumnRange': {
+			const sheetIndex = resolveSheetIndex(ctx.sheetNameIndex, node.sheet, currentSheetIndex)
+			const sheet = ctx.workbook.sheets[sheetIndex]
+			const usedRange = sheet?.cells.usedRange()
+			if (!usedRange) return null
+			return {
+				sheetIndex,
+				startRow: usedRange.start.row,
+				startCol: Math.min(node.startCol, node.endCol),
+				endRow: usedRange.end.row,
+				endCol: Math.max(node.startCol, node.endCol),
+			}
+		}
+		case 'structuredRef': {
+			const resolved = ctx.structuredRefResolver.resolve(
+				node,
+				currentSheetIndex,
+				ctx.formulaRow,
+				ctx.formulaCol,
+			)
+			return resolved
+				? {
+						sheetIndex: resolved.sheetIndex,
+						startRow: resolved.startRow,
+						startCol: resolved.startCol,
+						endRow: resolved.endRow,
+						endCol: resolved.endCol,
+					}
+				: null
+		}
+		case 'name': {
+			const parsed = resolveDefinedNameAstForSelfCycle(
+				ctx,
+				node.name,
+				node.sheet,
+				currentSheetIndex,
+			)
+			return parsed
+				? resolveSelfCycleRange(withSeenName(ctx, parsed.entryKey), parsed.ast, parsed.sheetIndex)
+				: null
+		}
+		case 'unary':
+			return node.op === '@' ? resolveSelfCycleRange(ctx, node.operand, currentSheetIndex) : null
+		case 'sheetSpanRef':
+			return resolveSelfCycleRange(ctx, node.target, currentSheetIndex)
+		default:
+			return null
+	}
+}
+
+function resolveDefinedNameAstForSelfCycle(
+	ctx: SelfCycleContext,
+	name: string,
+	sheet: string | undefined,
+	currentSheetIndex: number,
+): { readonly ast: FormulaNode; readonly sheetIndex: number; readonly entryKey: string } | null {
+	const currentSheet = ctx.workbook.sheets[currentSheetIndex]
+	const explicitSheet = sheet ? ctx.workbook.getSheet(sheet) : undefined
+	const entry = ctx.workbook.definedNames.resolve(name, currentSheet?.id, explicitSheet?.id)
+	if (!entry) return null
+
+	const entryKey =
+		entry.scope.kind === 'workbook'
+			? `workbook:${entry.name.toLowerCase()}`
+			: `sheet:${entry.scope.sheetId}:${entry.name.toLowerCase()}`
+	if (ctx.seenNames.includes(entryKey)) return null
+
+	const parsed = cachedParseFormula(entry.formula)
+	if (!parsed.ok) return null
+
+	let sheetIndex = currentSheetIndex
+	if (entry.scope.kind === 'sheet') {
+		const scope = entry.scope
+		const localSheetIndex = ctx.workbook.sheets.findIndex(
+			(workbookSheet) => workbookSheet.id === scope.sheetId,
+		)
+		if (localSheetIndex >= 0) sheetIndex = localSheetIndex
+	}
+
+	return { ast: parsed.value, sheetIndex, entryKey }
+}
+
+function withSeenName(ctx: SelfCycleContext, entryKey: string): SelfCycleContext {
+	return { ...ctx, seenNames: [...ctx.seenNames, entryKey] }
+}
+
+function intersectSelfCycleRanges(
+	left: SelfCycleRange,
+	right: SelfCycleRange,
+): SelfCycleRange | null {
+	if (left.sheetIndex !== right.sheetIndex) return null
+	const startRow = Math.max(left.startRow, right.startRow)
+	const startCol = Math.max(left.startCol, right.startCol)
+	const endRow = Math.min(left.endRow, right.endRow)
+	const endCol = Math.min(left.endCol, right.endCol)
+	if (startRow > endRow || startCol > endCol) return null
+	return {
+		sheetIndex: left.sheetIndex,
+		startRow,
+		startCol,
+		endRow,
+		endCol,
+	}
+}
+
+function rangeContainsFormulaCell(ctx: SelfCycleContext, range: SelfCycleRange): boolean {
+	return (
+		range.sheetIndex === ctx.formulaSheetIndex &&
+		ctx.formulaRow >= range.startRow &&
+		ctx.formulaRow <= range.endRow &&
+		ctx.formulaCol >= range.startCol &&
+		ctx.formulaCol <= range.endCol
+	)
 }
 
 function resolveSheetSpan(
@@ -1120,8 +1428,11 @@ function extractRefsWithNames(
 	sheetIndex: number,
 	seenNames: readonly string[],
 	nameResolveCache: Map<string, FormulaRef[]>,
+	qualifyImplicitRefsToSheet?: string,
 ): FormulaRef[] {
-	const refs = extractRefs(node)
+	const refs = qualifyImplicitRefsToSheet
+		? extractRefs(node).map((ref) => qualifyImplicitFormulaRef(ref, qualifyImplicitRefsToSheet))
+		: extractRefs(node)
 	const nameRefs = collectNameRefs(node)
 	for (const nameRef of nameRefs) {
 		const currentSheet = workbook.sheets[sheetIndex]
@@ -1156,12 +1467,19 @@ function extractRefsWithNames(
 				formulaSheetIndex,
 				[...seenNames, entryKey],
 				nameResolveCache,
+				workbook.sheets[formulaSheetIndex]?.name,
 			)
 			nameResolveCache.set(cacheKey, resolved)
 		}
 		refs.push(...resolved)
 	}
 	return refs
+}
+
+function qualifyImplicitFormulaRef(ref: FormulaRef, sheet: string): FormulaRef {
+	if (ref.kind === 'sheetSpan') return ref
+	if (ref.sheet !== undefined) return ref
+	return { ...ref, sheet }
 }
 
 function collectNameRefs(node: FormulaNode): Array<{ name: string; sheet?: string }> {

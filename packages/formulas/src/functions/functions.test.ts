@@ -4728,9 +4728,11 @@ describe('formula functions', () => {
 			setNum(wb, 1, 1, 0.2)
 			setFormula(wb, 0, 2, 'PROB(A1:A2,B1:B2,1)')
 			setFormula(wb, 1, 2, 'PROB(A1:A2,B1:C2,1)')
+			setFormula(wb, 2, 2, 'PROB(A1:A2,B1:C2,1)')
 			recalc(wb)
 			expect(getResult(wb, 0, 2)).toEqual(errorValue('#NUM!'))
-			expect(getResult(wb, 1, 2)).toEqual(errorValue('#N/A'))
+			expect(getResult(wb, 1, 2)).toEqual(errorValue('#REF!'))
+			expect(getResult(wb, 2, 2)).toEqual(errorValue('#N/A'))
 		})
 
 		test('LINEST returns slope and intercept', () => {

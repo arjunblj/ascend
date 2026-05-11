@@ -338,6 +338,30 @@ export class DependencyGraph {
 		const indices = new Map<CellKey, number>()
 		const lowlinks = new Map<CellKey, number>()
 		const sccs: CellKey[][] = []
+		const formulaKeySet = this._ensureDirectIndex().formulaKeySet
+		const formulaBySheetCol = this.getCachedDirtyFormulaIndex(formulaKeySet)
+
+		const visitFormulaPrecedents = (entry: FormulaEntry, visit: (key: CellKey) => void): void => {
+			for (const dep of entry.dependsOn) {
+				if (formulaKeySet.has(dep)) visit(dep)
+			}
+			for (const range of entry.rangeDeps) {
+				const sheetCols = formulaBySheetCol.get(range.sheetIndex)
+				if (!sheetCols) continue
+				for (let col = range.startCol; col <= range.endCol; col++) {
+					const rows = sheetCols.get(col)
+					if (!rows) continue
+					for (const row of rows) {
+						if (row > range.endRow) break
+						if (row >= range.startRow) visit(cellKey(range.sheetIndex, row, col))
+					}
+				}
+			}
+		}
+
+		const hasSelfDependency = (key: CellKey, entry: FormulaEntry): boolean => {
+			return entry.dependsOn.includes(key)
+		}
 
 		const strongconnect = (v: CellKey): void => {
 			indices.set(v, index)
@@ -346,14 +370,16 @@ export class DependencyGraph {
 			stack.push(v)
 			onStack.add(v)
 
-			for (const w of this.getDependents(v)) {
-				if (!this.formulas.has(w)) continue
-				if (!indices.has(w)) {
-					strongconnect(w)
-					lowlinks.set(v, Math.min(lowlinks.get(v) ?? 0, lowlinks.get(w) ?? 0))
-				} else if (onStack.has(w)) {
-					lowlinks.set(v, Math.min(lowlinks.get(v) ?? 0, indices.get(w) ?? 0))
-				}
+			const entry = this.formulas.get(v)
+			if (entry) {
+				visitFormulaPrecedents(entry, (w) => {
+					if (!indices.has(w)) {
+						strongconnect(w)
+						lowlinks.set(v, Math.min(lowlinks.get(v) ?? 0, lowlinks.get(w) ?? 0))
+					} else if (onStack.has(w)) {
+						lowlinks.set(v, Math.min(lowlinks.get(v) ?? 0, indices.get(w) ?? 0))
+					}
+				})
 			}
 
 			if (lowlinks.get(v) === indices.get(v)) {
@@ -370,7 +396,7 @@ export class DependencyGraph {
 				} else {
 					const solo = scc[0] as CellKey
 					const entry = this.formulas.get(solo)
-					if (entry?.dependsOn.includes(solo)) {
+					if (entry && hasSelfDependency(solo, entry)) {
 						sccs.push(scc)
 					}
 				}

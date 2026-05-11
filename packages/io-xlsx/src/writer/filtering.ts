@@ -13,6 +13,7 @@ interface XmlSink {
 
 interface FilterXmlOptions {
 	readonly tagPrefix?: string
+	readonly includeUid?: boolean
 	readonly sortStateAttributes?: Readonly<Record<string, string>>
 }
 
@@ -28,7 +29,9 @@ export function pushAutoFilterXml(
 	options?: FilterXmlOptions,
 ): void {
 	const tag = tagBuilder(options?.tagPrefix)
-	out.push(`<${tag('autoFilter')} ref="${escapeXml(autoFilter.ref)}">`)
+	const attrs = [`ref="${escapeXml(autoFilter.ref)}"`]
+	if (options?.includeUid && autoFilter.uid) attrs.push(`xr:uid="${escapeXml(autoFilter.uid)}"`)
+	out.push(`<${tag('autoFilter')} ${attrs.join(' ')}>`)
 	for (const column of autoFilter.columns) {
 		pushFilterColumnXml(out, column, tag)
 	}
@@ -142,6 +145,9 @@ export function pushSortStateXml(
 ): void {
 	const tag = tagBuilder(options?.tagPrefix)
 	const attrs = new Map<string, string>([['ref', sortState.ref]])
+	for (const [name, value] of Object.entries(sortState.preservedAttributes ?? {})) {
+		attrs.set(name, value)
+	}
 	for (const [name, value] of Object.entries(options?.sortStateAttributes ?? {})) {
 		attrs.set(name, value)
 	}

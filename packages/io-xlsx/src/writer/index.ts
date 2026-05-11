@@ -1882,17 +1882,24 @@ function readCapsuleBytes(
 function tablesHaveSameWritableModel(left: Table, right: Table): boolean {
 	return (
 		left.name === right.name &&
+		(left.nameAttribute === undefined || left.nameAttribute === right.nameAttribute) &&
 		left.sheetId === right.sheetId &&
+		(left.uid ?? null) === (right.uid ?? null) &&
 		left.hasHeaders === right.hasHeaders &&
 		left.hasTotals === right.hasTotals &&
 		(left.tableType ?? null) === (right.tableType ?? null) &&
 		(left.insertRow ?? null) === (right.insertRow ?? null) &&
 		(left.insertRowShift ?? null) === (right.insertRowShift ?? null) &&
+		(left.altText ?? null) === (right.altText ?? null) &&
+		(left.altTextSummary ?? null) === (right.altTextSummary ?? null) &&
 		(left.dxfId ?? null) === (right.dxfId ?? null) &&
+		(left.dataCellStyle ?? null) === (right.dataCellStyle ?? null) &&
 		(left.headerRowDxfId ?? null) === (right.headerRowDxfId ?? null) &&
+		(left.headerRowCellStyle ?? null) === (right.headerRowCellStyle ?? null) &&
 		(left.dataDxfId ?? null) === (right.dataDxfId ?? null) &&
 		(left.totalsRowDxfId ?? null) === (right.totalsRowDxfId ?? null) &&
 		(left.headerRowBorderDxfId ?? null) === (right.headerRowBorderDxfId ?? null) &&
+		(left.tableBorderDxfId ?? null) === (right.tableBorderDxfId ?? null) &&
 		rangesEqual(left.ref, right.ref) &&
 		tableColumnsEqual(left.columns, right.columns) &&
 		stableJson(left.autoFilter) === stableJson(right.autoFilter) &&
@@ -1922,9 +1929,12 @@ function tableColumnsEqual(
 		if (!leftColumn || !rightColumn) return false
 		if (
 			(leftColumn.id ?? null) !== (rightColumn.id ?? null) ||
+			(leftColumn.uid ?? null) !== (rightColumn.uid ?? null) ||
 			(leftColumn.uniqueName ?? null) !== (rightColumn.uniqueName ?? null) ||
 			leftColumn.name !== rightColumn.name ||
 			(leftColumn.formula ?? null) !== (rightColumn.formula ?? null) ||
+			(leftColumn.formulaIsArray ?? null) !== (rightColumn.formulaIsArray ?? null) ||
+			stableJson(leftColumn.xmlColumnPr) !== stableJson(rightColumn.xmlColumnPr) ||
 			(leftColumn.totalsRowFunction ?? null) !== (rightColumn.totalsRowFunction ?? null) ||
 			(leftColumn.totalsRowFormula ?? null) !== (rightColumn.totalsRowFormula ?? null) ||
 			(leftColumn.totalsRowLabel ?? null) !== (rightColumn.totalsRowLabel ?? null) ||

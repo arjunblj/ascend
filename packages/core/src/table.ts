@@ -4,9 +4,12 @@ import type { RangeRef } from './refs.ts'
 
 export interface TableColumn {
 	readonly id?: number
+	readonly uid?: string
 	readonly uniqueName?: string
 	readonly name: string
 	readonly formula?: string
+	readonly formulaIsArray?: boolean
+	readonly xmlColumnPr?: TableXmlColumnPr
 	readonly totalsRowFunction?: string
 	readonly totalsRowFormula?: string
 	readonly totalsRowLabel?: string
@@ -15,6 +18,12 @@ export interface TableColumn {
 	readonly dataDxfId?: number
 	readonly headerRowDxfId?: number
 	readonly totalsRowDxfId?: number
+}
+
+export interface TableXmlColumnPr {
+	readonly mapId?: number
+	readonly xpath?: string
+	readonly xmlDataType?: string
 }
 
 export interface TableStyleInfo {
@@ -28,7 +37,9 @@ export interface TableStyleInfo {
 export interface Table {
 	readonly id: TableId
 	readonly name: string
+	readonly nameAttribute?: string | null
 	readonly sheetId: SheetId
+	readonly uid?: string
 	readonly ref: RangeRef
 	readonly tableType?: string
 	readonly insertRow?: boolean
@@ -36,13 +47,18 @@ export interface Table {
 	readonly columns: readonly TableColumn[]
 	readonly hasHeaders: boolean
 	readonly hasTotals: boolean
+	readonly altText?: string
+	readonly altTextSummary?: string
 	readonly autoFilter?: AutoFilter
 	readonly sortState?: SortState
 	readonly dxfId?: number
+	readonly dataCellStyle?: string
 	readonly headerRowDxfId?: number
+	readonly headerRowCellStyle?: string
 	readonly dataDxfId?: number
 	readonly totalsRowDxfId?: number
 	readonly headerRowBorderDxfId?: number
+	readonly tableBorderDxfId?: number
 	readonly tableStyleInfo?: TableStyleInfo
 	readonly queryTable?: TableQueryTableRef
 }

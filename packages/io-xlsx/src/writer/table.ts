@@ -5,6 +5,11 @@ import { pushAutoFilterXml, pushSortStateXml } from './filtering.ts'
 
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+const NS_MC = 'http://schemas.openxmlformats.org/markup-compatibility/2006'
+const NS_XR = 'http://schemas.microsoft.com/office/spreadsheetml/2014/revision'
+const NS_XR3 = 'http://schemas.microsoft.com/office/spreadsheetml/2016/revision3'
+const X14_NS = 'http://schemas.microsoft.com/office/spreadsheetml/2009/9/main'
+const X14_TABLE_ALT_TEXT_EXT_URI = '{504A1905-F514-4f6f-8877-14C23A59335A}'
 
 export function buildTableXml(table: Table, tableNumber: number): string {
 	const ref = `${toCellRef(table.ref.start.row, table.ref.start.col)}:${toCellRef(
@@ -21,30 +26,50 @@ export function buildTableXml(table: Table, tableNumber: number): string {
 	const attrs = [
 		`xmlns="${NS}"`,
 		`id="${tableNumber}"`,
-		`name="${escapeXml(table.name)}"`,
 		`displayName="${escapeXml(table.name)}"`,
 		`ref="${ref}"`,
 		`headerRowCount="${table.hasHeaders ? 1 : 0}"`,
 		`totalsRowCount="${table.hasTotals ? 1 : 0}"`,
 	]
+	if (table.nameAttribute !== null) {
+		attrs.splice(2, 0, `name="${escapeXml(table.nameAttribute ?? table.name)}"`)
+	}
+	const usesXr = Boolean(table.uid || table.autoFilter?.uid)
+	const usesXr3 = table.columns.some((column) => column.uid)
+	if (usesXr || usesXr3) {
+		attrs.push(`xmlns:mc="${NS_MC}"`)
+		attrs.push(
+			`mc:Ignorable="${[usesXr ? 'xr' : '', usesXr3 ? 'xr3' : ''].filter(Boolean).join(' ')}"`,
+		)
+		if (usesXr) attrs.push(`xmlns:xr="${NS_XR}"`)
+		if (usesXr3) attrs.push(`xmlns:xr3="${NS_XR3}"`)
+	}
+	if (table.uid) attrs.push(`xr:uid="${escapeXml(table.uid)}"`)
 	if (table.tableType) attrs.push(`tableType="${escapeXml(table.tableType)}"`)
 	if (table.insertRow !== undefined) attrs.push(`insertRow="${table.insertRow ? '1' : '0'}"`)
 	if (table.insertRowShift !== undefined) {
 		attrs.push(`insertRowShift="${table.insertRowShift ? '1' : '0'}"`)
 	}
 	if (table.dxfId !== undefined) attrs.push(`dxfId="${table.dxfId}"`)
+	if (table.dataCellStyle) attrs.push(`dataCellStyle="${escapeXml(table.dataCellStyle)}"`)
 	if (table.headerRowDxfId !== undefined) attrs.push(`headerRowDxfId="${table.headerRowDxfId}"`)
+	if (table.headerRowCellStyle) {
+		attrs.push(`headerRowCellStyle="${escapeXml(table.headerRowCellStyle)}"`)
+	}
 	if (table.dataDxfId !== undefined) attrs.push(`dataDxfId="${table.dataDxfId}"`)
 	if (table.totalsRowDxfId !== undefined) attrs.push(`totalsRowDxfId="${table.totalsRowDxfId}"`)
 	if (table.headerRowBorderDxfId !== undefined) {
 		attrs.push(`headerRowBorderDxfId="${table.headerRowBorderDxfId}"`)
+	}
+	if (table.tableBorderDxfId !== undefined) {
+		attrs.push(`tableBorderDxfId="${table.tableBorderDxfId}"`)
 	}
 
 	const out = new ChunkedStringBuilder()
 	out.push(XML_HEADER)
 	out.push(`<table ${attrs.join(' ')}>`)
 	if (table.autoFilter) {
-		pushAutoFilterXml(out, table.autoFilter)
+		pushAutoFilterXml(out, table.autoFilter, { includeUid: true })
 	} else if (table.hasHeaders) {
 		out.push(`<autoFilter ref="${generatedAutoFilterRef}"/>`)
 	}
@@ -56,6 +81,7 @@ export function buildTableXml(table: Table, tableNumber: number): string {
 		const column = table.columns[index]
 		if (!column) continue
 		const columnAttrs = [`id="${column.id ?? index + 1}"`, `name="${escapeXml(column.name)}"`]
+		if (column.uid) columnAttrs.push(`xr3:uid="${escapeXml(column.uid)}"`)
 		if (column.uniqueName) columnAttrs.push(`uniqueName="${escapeXml(column.uniqueName)}"`)
 		if (column.totalsRowFunction) {
 			columnAttrs.push(`totalsRowFunction="${escapeXml(column.totalsRowFunction)}"`)
@@ -78,7 +104,24 @@ export function buildTableXml(table: Table, tableNumber: number): string {
 		}
 		out.push(`<tableColumn ${columnAttrs.join(' ')}>`)
 		if (column.formula) {
-			out.push(`<calculatedColumnFormula>${escapeXml(column.formula)}</calculatedColumnFormula>`)
+			const formulaAttrs =
+				column.formulaIsArray !== undefined ? ` array="${column.formulaIsArray ? '1' : '0'}"` : ''
+			out.push(
+				`<calculatedColumnFormula${formulaAttrs}>${escapeXml(column.formula)}</calculatedColumnFormula>`,
+			)
+		}
+		if (column.xmlColumnPr) {
+			const xmlColumnAttrs: string[] = []
+			if (column.xmlColumnPr.mapId !== undefined) {
+				xmlColumnAttrs.push(`mapId="${column.xmlColumnPr.mapId}"`)
+			}
+			if (column.xmlColumnPr.xpath) {
+				xmlColumnAttrs.push(`xpath="${escapeXml(column.xmlColumnPr.xpath)}"`)
+			}
+			if (column.xmlColumnPr.xmlDataType) {
+				xmlColumnAttrs.push(`xmlDataType="${escapeXml(column.xmlColumnPr.xmlDataType)}"`)
+			}
+			if (xmlColumnAttrs.length > 0) out.push(`<xmlColumnPr ${xmlColumnAttrs.join(' ')}/>`)
 		}
 		if (column.totalsRowFormula) {
 			out.push(`<totalsRowFormula>${escapeXml(column.totalsRowFormula)}</totalsRowFormula>`)
@@ -102,6 +145,16 @@ export function buildTableXml(table: Table, tableNumber: number): string {
 			styleAttrs.push(`showColumnStripes="${table.tableStyleInfo.showColumnStripes ? '1' : '0'}"`)
 		}
 		out.push(`<tableStyleInfo ${styleAttrs.join(' ')}/>`)
+	}
+	if (table.altText || table.altTextSummary) {
+		const altAttrs: string[] = []
+		if (table.altText) altAttrs.push(`altText="${escapeXml(table.altText)}"`)
+		if (table.altTextSummary) {
+			altAttrs.push(`altTextSummary="${escapeXml(table.altTextSummary)}"`)
+		}
+		out.push(
+			`<extLst><ext uri="${X14_TABLE_ALT_TEXT_EXT_URI}" xmlns:x14="${X14_NS}"><x14:table ${altAttrs.join(' ')}/></ext></extLst>`,
+		)
 	}
 	out.push('</table>')
 	return out.toString()

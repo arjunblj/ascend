@@ -65,7 +65,8 @@ const SHARED_STRINGS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </sst>`
 
 const SHEET_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:xr="http://schemas.microsoft.com/office/spreadsheetml/2014/revision">
   <sheetData>
     <row r="1">
       <c r="A1" t="s"><v>0</v></c>
@@ -1268,13 +1269,15 @@ describe('readXlsx', () => {
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"/>
 </Relationships>`,
 			'xl/tables/table1.xml': `<?xml version="1.0"?>
-<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="Table1" displayName="Scores" ref="A1:B3" headerRowCount="1" totalsRowCount="0" headerRowDxfId="5" dataDxfId="6">
-  <autoFilter ref="A1:B3"><sortState ref="A2:B3"><sortCondition ref="B2:B3"/></sortState></autoFilter>
+<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="xr xr3" xmlns:xr="http://schemas.microsoft.com/office/spreadsheetml/2014/revision" xmlns:xr3="http://schemas.microsoft.com/office/spreadsheetml/2016/revision3" id="1" xr:uid="{TABLE-UID}" name="Table1" displayName="Scores" ref="A1:B3" headerRowCount="1" totalsRowCount="0" dataCellStyle="TableData" headerRowDxfId="5" headerRowCellStyle="TableHeader" dataDxfId="6" tableBorderDxfId="9">
+  <autoFilter ref="A1:B3" xr:uid="{FILTER-UID}"><sortState ref="A2:B3"><sortCondition ref="B2:B3"/></sortState></autoFilter>
+  <sortState ref="A2:B3" xmlns:xlrd2="http://schemas.microsoft.com/office/spreadsheetml/2017/richdata2"><sortCondition ref="A2:A3"/></sortState>
   <tableColumns count="2">
-    <tableColumn id="1" name="Name " totalsRowLabel="Total" dataDxfId="7"/>
-    <tableColumn id="2" name="Score" totalsRowFunction="sum" totalsRowDxfId="8"/>
+    <tableColumn id="1" xr3:uid="{COLUMN-1-UID}" name="Name " totalsRowLabel="Total" dataDxfId="7"><calculatedColumnFormula array="1">[@Score]*2</calculatedColumnFormula></tableColumn>
+    <tableColumn id="2" xr3:uid="{COLUMN-2-UID}" name="Score" totalsRowFunction="sum" totalsRowDxfId="8"><xmlColumnPr mapId="2" xpath="/ns1:Scores/ns1:Score" xmlDataType="double"/></tableColumn>
   </tableColumns>
   <tableStyleInfo name="TableStyleMedium2" showFirstColumn="0" showLastColumn="0" showRowStripes="1" showColumnStripes="0"/>
+  <extLst><ext uri="{504A1905-F514-4f6f-8877-14C23A59335A}" xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"><x14:table altText="Scores" altTextSummary="Student score table"/></ext></extLst>
 </table>`,
 		})
 
@@ -1284,21 +1287,55 @@ describe('readXlsx', () => {
 		const sheet = result.value.workbook.sheets[0]
 		expect(sheet?.tables).toHaveLength(1)
 		expect(sheet?.tables[0]?.name).toBe('Scores')
+		expect(sheet?.tables[0]?.nameAttribute).toBe('Table1')
 		expect(sheet?.tables[0]?.hasHeaders).toBe(true)
 		expect(sheet?.tables[0]?.columns).toEqual([
-			{ id: 1, name: 'Name ', totalsRowLabel: 'Total', dataDxfId: 7 },
-			{ id: 2, name: 'Score', totalsRowFunction: 'sum', totalsRowDxfId: 8 },
+			{
+				id: 1,
+				uid: '{COLUMN-1-UID}',
+				name: 'Name ',
+				formula: '[@Score]*2',
+				formulaIsArray: true,
+				totalsRowLabel: 'Total',
+				dataDxfId: 7,
+			},
+			{
+				id: 2,
+				uid: '{COLUMN-2-UID}',
+				name: 'Score',
+				xmlColumnPr: {
+					mapId: 2,
+					xpath: '/ns1:Scores/ns1:Score',
+					xmlDataType: 'double',
+				},
+				totalsRowFunction: 'sum',
+				totalsRowDxfId: 8,
+			},
 		])
 		expect(sheet?.tables[0]?.autoFilter).toEqual({
 			ref: 'A1:B3',
+			uid: '{FILTER-UID}',
 			columns: [],
 			sortState: {
 				ref: 'A2:B3',
 				conditions: [{ ref: 'B2:B3' }],
 			},
 		})
+		expect(sheet?.tables[0]?.sortState).toEqual({
+			ref: 'A2:B3',
+			preservedAttributes: {
+				'xmlns:xlrd2': 'http://schemas.microsoft.com/office/spreadsheetml/2017/richdata2',
+			},
+			conditions: [{ ref: 'A2:A3' }],
+		})
+		expect(sheet?.tables[0]?.uid).toBe('{TABLE-UID}')
 		expect(sheet?.tables[0]?.headerRowDxfId).toBe(5)
+		expect(sheet?.tables[0]?.headerRowCellStyle).toBe('TableHeader')
+		expect(sheet?.tables[0]?.altText).toBe('Scores')
+		expect(sheet?.tables[0]?.altTextSummary).toBe('Student score table')
+		expect(sheet?.tables[0]?.dataCellStyle).toBe('TableData')
 		expect(sheet?.tables[0]?.dataDxfId).toBe(6)
+		expect(sheet?.tables[0]?.tableBorderDxfId).toBe(9)
 		expect(sheet?.tables[0]?.tableStyleInfo).toEqual({
 			name: 'TableStyleMedium2',
 			showFirstColumn: false,
@@ -1973,26 +2010,35 @@ describe('readXlsx', () => {
 			'xl/sharedStrings.xml': SHARED_STRINGS,
 			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
-  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+  xmlns:x14ac="http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac">
+  <sheetPr codeName="SheetCode1" filterMode="1" enableFormatConditionsCalculation="0">
+    <pageSetUpPr fitToPage="1" autoPageBreaks="0"/>
+  </sheetPr>
   <sheetViews>
     <sheetView workbookViewId="0">
-      <pane xSplit="2" ySplit="1" state="frozen"/>
+      <pane xSplit="2" ySplit="1" state="frozen" topLeftCell="C2" activePane="bottomRight"/>
+      <selection pane="topRight" activeCell="C1" sqref="C1"/>
+      <selection pane="bottomLeft" activeCell="A2" sqref="A2"/>
+      <selection pane="bottomRight" activeCell="C2" activeCellId="0" sqref="C2:D4"/>
     </sheetView>
   </sheetViews>
+  <sheetFormatPr baseColWidth="12" defaultRowHeight="14.5" zeroHeight="1" x14ac:dyDescent="0.25"/>
   <cols>
     <col min="1" max="2" width="18.5" customWidth="1"/>
   </cols>
   <sheetData>
-    <row r="1" ht="24" customHeight="1">
+    <row r="1" spans="1:2" ht="24" customHeight="0" s="2" customFormat="1" thickTop="1" thickBot="1" x14ac:dyDescent="0.3">
       <c r="A1" t="s"><v>0</v></c>
       <c r="B1" t="s"><v>1</v></c>
     </row>
   </sheetData>
   <autoFilter ref="A1:B10"/>
   <pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>
-  <pageSetup orientation="landscape" fitToWidth="1" fitToHeight="2"/>
-  <printOptions gridLines="1" headings="1"/>
-  <headerFooter><oddHeader>&amp;LTest</oddHeader><oddFooter>&amp;R1</oddFooter></headerFooter>
+  <pageSetup orientation="landscape" fitToWidth="1" fitToHeight="2" firstPageNumber="2" copies="3" horizontalDpi="600" verticalDpi="600" pageOrder="overThenDown" cellComments="asDisplayed" errors="dash" blackAndWhite="1" draft="1" useFirstPageNumber="1" usePrinterDefaults="0" r:id="rIdPrinter"/>
+  <printOptions gridLines="1" gridLinesSet="1" headings="1"/>
+  <headerFooter differentOddEven="1" differentFirst="1" scaleWithDoc="0" alignWithMargins="1"><oddHeader>&amp;LTest</oddHeader><oddFooter>&amp;R1</oddFooter></headerFooter>
+  <phoneticPr fontId="1" type="noConversion" alignment="center"/>
   <rowBreaks count="1" manualBreakCount="1"><brk id="5" min="0" max="16383" man="1"/></rowBreaks>
   <colBreaks count="1" manualBreakCount="1"><brk id="2" min="0" max="1048575" man="1"/></colBreaks>
   <ignoredErrors><ignoredError sqref="A1:B2" numberStoredAsText="1"/></ignoredErrors>
@@ -2008,11 +2054,42 @@ describe('readXlsx', () => {
 		expectOk(result)
 
 		const sheet = result.value.workbook.sheets[0]
+		expect(sheet?.codeName).toBe('SheetCode1')
+		expect(sheet?.filterMode).toBe(true)
+		expect(sheet?.enableFormatConditionsCalculation).toBe(false)
+		expect(sheet?.pageSetupPr).toEqual({ fitToPage: true, autoPageBreaks: false })
 		expect(sheet?.frozenRows).toBe(1)
 		expect(sheet?.frozenCols).toBe(2)
+		expect(sheet?.preservedPaneAttributes).toEqual({
+			xSplit: '2',
+			ySplit: '1',
+			state: 'frozen',
+			topLeftCell: 'C2',
+			activePane: 'bottomRight',
+		})
+		expect(sheet?.preservedSheetViewSelections).toEqual([
+			{ pane: 'topRight', activeCell: 'C1', sqref: 'C1' },
+			{ pane: 'bottomLeft', activeCell: 'A2', sqref: 'A2' },
+			{ pane: 'bottomRight', activeCell: 'C2', activeCellId: '0', sqref: 'C2:D4' },
+		])
+		expect(sheet?.sheetFormatPr).toEqual({
+			baseColWidth: 12,
+			defaultRowHeight: 14.5,
+			zeroHeight: true,
+			dyDescent: 0.25,
+		})
 		expect(sheet?.colWidths.get(0)).toBe(18.5)
 		expect(sheet?.colWidths.get(1)).toBe(18.5)
 		expect(sheet?.rowHeights.get(0)).toBe(24)
+		expect(sheet?.rowDefs.get(0)).toEqual({
+			spans: '1:2',
+			style: 2,
+			customFormat: true,
+			customHeight: false,
+			thickTop: true,
+			thickBot: true,
+			dyDescent: 0.3,
+		})
 		expect(sheet?.autoFilter).toEqual({
 			ref: 'A1:B10',
 			columns: [],
@@ -2029,20 +2106,42 @@ describe('readXlsx', () => {
 			orientation: 'landscape',
 			fitToWidth: 1,
 			fitToHeight: 2,
+			firstPageNumber: 2,
+			copies: 3,
+			horizontalDpi: 600,
+			verticalDpi: 600,
+			pageOrder: 'overThenDown',
+			cellComments: 'asDisplayed',
+			errors: 'dash',
+			blackAndWhite: true,
+			draft: true,
+			useFirstPageNumber: true,
+			usePrinterDefaults: false,
+			printerSettingsRelId: 'rIdPrinter',
 		})
 		expect(sheet?.printOptions).toEqual({
 			gridLines: true,
+			gridLinesSet: true,
 			headings: true,
 			horizontalCentered: undefined,
 			verticalCentered: undefined,
 		})
 		expect(sheet?.headerFooter).toEqual({
+			differentOddEven: true,
+			differentFirst: true,
+			scaleWithDoc: false,
+			alignWithMargins: true,
 			oddHeader: '&LTest',
 			oddFooter: '&R1',
 			evenHeader: undefined,
 			evenFooter: undefined,
 			firstHeader: undefined,
 			firstFooter: undefined,
+		})
+		expect(sheet?.phoneticPr).toEqual({
+			fontId: 1,
+			type: 'noConversion',
+			alignment: 'center',
 		})
 		expect(sheet?.rowBreaks).toEqual([{ id: 5, min: 0, max: 16383, man: true }])
 		expect(sheet?.colBreaks).toEqual([{ id: 2, min: 0, max: 1048575, man: true }])
@@ -2443,13 +2542,15 @@ describe('readXlsx', () => {
   <sheetData>
     <row r="1"><c r="A1"><v>4</v></c></row>
   </sheetData>
-  <conditionalFormatting sqref="A1:A10">
+  <conditionalFormatting sqref="A1:A10" pivot="1">
     <cfRule type="cellIs" operator="greaterThan" dxfId="0" priority="1" stopIfTrue="1">
       <formula>3</formula>
     </cfRule>
+    <cfRule type="aboveAverage" priority="2" aboveAverage="0" stdDev="2"/>
+    <cfRule type="containsText" priority="3" operator="containsText" text="Grain"/>
   </conditionalFormatting>
-  <dataValidations count="1">
-    <dataValidation type="list" allowBlank="1" showInputMessage="1" sqref="B2:B4">
+  <dataValidations count="1" disablePrompts="1" xWindow="220" yWindow="120">
+    <dataValidation type="list" allowBlank="1" showInputMessage="1" sqref="B2:B4" xr:uid="{CAFD7DE3-F94F-4BD6-B5E6-7E794FD6EC31}">
       <formula1>"Q1,Q2,Q3"</formula1>
     </dataValidation>
   </dataValidations>
@@ -2463,6 +2564,7 @@ describe('readXlsx', () => {
 		expect(sheet?.conditionalFormats).toEqual([
 			{
 				sqref: 'A1:A10',
+				pivot: true,
 				rules: [
 					{
 						type: 'cellIs',
@@ -2476,18 +2578,38 @@ describe('readXlsx', () => {
 							fill: { pattern: 'solid', fgColor: { kind: 'rgb', rgb: 'FFC6EFCE' } },
 						},
 					},
+					{
+						type: 'aboveAverage',
+						priority: 2,
+						formulas: [],
+						aboveAverage: false,
+						stdDev: 2,
+					},
+					{
+						type: 'containsText',
+						operator: 'containsText',
+						priority: 3,
+						formulas: [],
+						text: 'Grain',
+					},
 				],
 			},
 		])
 		expect(sheet?.dataValidations).toEqual([
 			{
 				sqref: 'B2:B4',
+				uid: '{CAFD7DE3-F94F-4BD6-B5E6-7E794FD6EC31}',
 				type: 'list',
 				allowBlank: true,
 				showInputMessage: true,
 				formula1: '"Q1,Q2,Q3"',
 			},
 		])
+		expect(sheet?.dataValidationSettings).toEqual({
+			disablePrompts: true,
+			xWindow: 220,
+			yWindow: 120,
+		})
 		expect(result.value.workbook.differentialStyles).toEqual([
 			{
 				font: { bold: true },
@@ -2760,7 +2882,12 @@ describe('readXlsx', () => {
 		expect(sheet?.cells.get(0, 8)?.value).toEqual(dateValue(45292))
 		expect(sheet?.cells.get(1, 0)?.value).toEqual(numberValue(99))
 		expect(sheet?.rowHeights.get(0)).toBe(27)
-		expect(sheet?.rowDefs.get(0)).toEqual({ hidden: true, collapsed: true, outlineLevel: 2 })
+		expect(sheet?.rowDefs.get(0)).toEqual({
+			customHeight: true,
+			hidden: true,
+			collapsed: true,
+			outlineLevel: 2,
+		})
 
 		const cappedSheet = parseSheetValuesOnlyBytes('Sheet1', bytes, {
 			sharedStrings,
@@ -2876,7 +3003,12 @@ describe('readXlsx', () => {
 		expect(sheet?.cells.get(1, 0)?.value).toEqual({ kind: 'number', value: 99 })
 
 		expect(sheet?.rowHeights.get(0)).toBe(27)
-		expect(sheet?.rowDefs.get(0)).toEqual({ hidden: true, collapsed: true, outlineLevel: 2 })
+		expect(sheet?.rowDefs.get(0)).toEqual({
+			customHeight: true,
+			hidden: true,
+			collapsed: true,
+			outlineLevel: 2,
+		})
 		expect(sheet?.frozenRows).toBe(1)
 		expect(sheet?.merges).toEqual([{ start: { row: 0, col: 0 }, end: { row: 0, col: 1 } }])
 		expect(sheet?.autoFilter?.ref).toBe('A1:I2')
@@ -2934,10 +3066,10 @@ describe('readXlsx', () => {
 			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
   xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <sheetViews><sheetView workbookViewId="0"><pane xSplit="1" ySplit="2"/></sheetView></sheetViews>
+  <sheetViews><sheetView workbookViewId="0"><pane xSplit="12540" ySplit="3840" topLeftCell="K23" activePane="bottomRight"/><selection pane="bottomRight" activeCell="K23" sqref="K23"/></sheetView></sheetViews>
   <cols><col min="1" max="1" width="24" customWidth="1"/></cols>
   <sheetData>
-    <row r="1"><c r="A1" t="s"><v>0</v></c></row>
+    <row r="1" spans="1:1" ht="12.8" customHeight="0" s="2" customFormat="1" thickBot="1"><c r="A1" t="s"><v>0</v></c></row>
   </sheetData>
   <mergeCells><mergeCell ref="A1:B2"/></mergeCells>
   <autoFilter ref="A1:B5"/>
@@ -2952,9 +3084,26 @@ describe('readXlsx', () => {
 		expectOk(result)
 
 		const sheet = result.value.workbook.sheets[0]
-		expect(sheet?.frozenRows).toBe(2)
-		expect(sheet?.frozenCols).toBe(1)
+		expect(sheet?.frozenRows).toBe(0)
+		expect(sheet?.frozenCols).toBe(0)
+		expect(sheet?.preservedPaneAttributes).toEqual({
+			xSplit: '12540',
+			ySplit: '3840',
+			topLeftCell: 'K23',
+			activePane: 'bottomRight',
+		})
+		expect(sheet?.preservedSheetViewSelections).toEqual([
+			{ pane: 'bottomRight', activeCell: 'K23', sqref: 'K23' },
+		])
 		expect(sheet?.colWidths.get(0)).toBe(24)
+		expect(sheet?.rowHeights.get(0)).toBe(12.8)
+		expect(sheet?.rowDefs.get(0)).toEqual({
+			spans: '1:1',
+			style: 2,
+			customFormat: true,
+			customHeight: false,
+			thickBot: true,
+		})
 		expect(sheet?.merges).toEqual([{ start: { row: 0, col: 0 }, end: { row: 1, col: 1 } }])
 		expect(sheet?.autoFilter?.ref).toBe('A1:B5')
 		expect(sheet?.pageMargins).toEqual({ left: 0.7, right: 0.8, top: 0.9, bottom: 1 })

@@ -1880,7 +1880,7 @@ export async function buildWorkloadDataSet(
 			: (() => {
 					const workbook = createWorkbook()
 					setCoreCell(workbook, values, rows, cols, workloadName)
-					const result = writeXlsx(workbook)
+					const result = writeXlsx(workbook, undefined, { omitDenseCellRefs: false })
 					if (!result.ok) throw new Error(result.error.message)
 					return result.value
 				})()

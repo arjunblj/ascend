@@ -136,8 +136,10 @@ describe('pivot output audits', () => {
 			expect(audits).toContainEqual(
 				expect.objectContaining({
 					pivotTable: 'PivotTable7',
-					status: 'unsupported',
-					warnings: ['Pivot grouped axis item base values were not resolved.'],
+					status: 'passed',
+					checkedValueCount: 52,
+					mismatches: [],
+					warnings: [],
 				}),
 			)
 			expect(audits).toContainEqual(

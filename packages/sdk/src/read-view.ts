@@ -1772,11 +1772,9 @@ function visiblePivotAxisFieldValues(
 		const values = new Set<string>()
 		for (const item of items) {
 			if (item.hidden || item.missing || item.cacheIndex === undefined) continue
-			for (const discreteItem of group.discreteItems ?? []) {
-				if (discreteItem.value !== item.cacheIndex) continue
-				const value = pivotCacheSharedItemValue(cache, group.base, discreteItem.index)
-				if (value !== undefined) values.add(value)
-			}
+			const groupedValues = pivotGroupedAxisBaseValues(cache, group, item.cacheIndex)
+			if (!groupedValues.ok) return groupedValues
+			for (const value of groupedValues.value) values.add(value)
 		}
 		if (values.size === 0) {
 			return { ok: false, warning: 'Pivot grouped axis grand-total values were not resolved.' }
@@ -1827,18 +1825,14 @@ function resolvePivotAxisFieldItemFilter(
 		if (label === undefined) {
 			return { ok: false, warning: 'Pivot grouped axis item label was not resolved.' }
 		}
-		const baseValues = new Set<string>()
-		for (const discreteItem of group.discreteItems ?? []) {
-			if (discreteItem.value !== pivotItem.cacheIndex) continue
-			const value = pivotCacheSharedItemValue(cache, group.base, discreteItem.index)
-			if (value !== undefined) baseValues.add(value)
-		}
-		if (baseValues.size === 0) {
+		const baseValues = pivotGroupedAxisBaseValues(cache, group, pivotItem.cacheIndex)
+		if (!baseValues.ok) return baseValues
+		if (baseValues.value.size === 0) {
 			return { ok: false, warning: 'Pivot grouped axis item base values were not resolved.' }
 		}
 		return {
 			ok: true,
-			value: { label, filters: new Map([[group.base, baseValues]]) },
+			value: { label, filters: new Map([[group.base, baseValues.value]]) },
 		}
 	}
 	const value = pivotCacheSharedItemValue(cache, fieldIndex, pivotItem.cacheIndex)
@@ -1852,6 +1846,39 @@ function resolvePivotAxisFieldItemFilter(
 			filters: new Map([[fieldIndex, new Set([value])]]),
 		},
 	}
+}
+
+function pivotGroupedAxisBaseValues(
+	cache: PivotCacheInfo,
+	group: NonNullable<PivotCacheInfo['fields'][number]['fieldGroup']>,
+	groupItemIndex: number,
+): { ok: true; value: Set<string> } | { ok: false; warning: string } {
+	if (group.base === undefined) {
+		return { ok: false, warning: 'Pivot grouped axis base field was not resolved.' }
+	}
+	const values = new Set<string>()
+	for (const discreteItem of group.discreteItems ?? []) {
+		if (discreteItem.value !== groupItemIndex) continue
+		const value = pivotCacheSharedItemValue(cache, group.base, discreteItem.index)
+		if (value !== undefined) values.add(value)
+	}
+	if (values.size > 0) return { ok: true, value: values }
+	if (group.range?.groupBy === 'months') {
+		for (const sharedItem of cache.fields[group.base]?.sharedItems ?? []) {
+			if (sharedItem.kind !== 'date' || sharedItem.value === undefined) continue
+			const month = pivotDateMonthIndex(sharedItem.value)
+			if (month === groupItemIndex) values.add(sharedItem.value)
+		}
+		return { ok: true, value: values }
+	}
+	return { ok: true, value: values }
+}
+
+function pivotDateMonthIndex(value: string): number | undefined {
+	const month = /^-?\d{4,}-(\d{2})-/u.exec(value)?.[1]
+	if (!month) return undefined
+	const parsed = Number(month)
+	return Number.isInteger(parsed) && parsed >= 1 && parsed <= 12 ? parsed : undefined
 }
 
 function addPivotAxisFilters(target: Map<number, Set<string>>, source: PivotAuditFilters): void {

@@ -2628,6 +2628,26 @@ describe('readXlsx', () => {
 		expect(cappedSheet?.cells.get(1, 0)).toBeUndefined()
 	})
 
+	it('values-only byte parser hydrates canonical rows without generic cell parsing', () => {
+		const xml = `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="A1:AA1"/>
+  <sheetData>
+    <row r="1"><c r="A1"><v>7</v></c><c r="B1" t="inlineStr"><is><t>fast &amp; safe</t></is></c><c r="AA1"><v>-3.5</v></c></row>
+  </sheetData>
+</worksheet>`
+		const sheet = parseSheetValuesOnlyBytes('Sheet1', new TextEncoder().encode(xml), {
+			sharedStrings: emptySharedStrings(),
+			styleIds: [S0],
+			isDateFormat: [false],
+			hasDateStyles: false,
+			valuesOnly: true,
+		})
+
+		expect(sheet?.cells.get(0, 0)?.value).toEqual(numberValue(7))
+		expect(sheet?.cells.get(0, 1)?.value).toEqual(stringValue('fast & safe'))
+		expect(sheet?.cells.get(0, 26)?.value).toEqual(numberValue(-3.5))
+	})
+
 	it('values mode preserves mixed direct values, dates, row metadata, maxRows, and sheet metadata', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

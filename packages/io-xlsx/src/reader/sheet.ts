@@ -379,11 +379,15 @@ const BYTES_CELL_OPEN = bytesLiteral('<c')
 const BYTES_CELL_CLOSE = bytesLiteral('</c>')
 const BYTES_V_OPEN = bytesLiteral('<v')
 const BYTES_V_CLOSE = bytesLiteral('</v>')
+const BYTES_VALUE_CELL_CLOSE = bytesLiteral('</v></c>')
 const BYTES_F_OPEN = bytesLiteral('<f')
+const BYTES_F_CLOSE = bytesLiteral('</f>')
 const BYTES_IS_OPEN = bytesLiteral('<is')
 const BYTES_T_OPEN = bytesLiteral('<t')
 const BYTES_T_CLOSE = bytesLiteral('</t>')
 const BYTES_IS_CLOSE = bytesLiteral('</is>')
+const BYTES_CANONICAL_INLINE_STRING_PREFIX = bytesLiteral('" t="inlineStr"><is><t>')
+const BYTES_CANONICAL_INLINE_STRING_SUFFIX = bytesLiteral('</t></is></c>')
 
 const VALUES_MODE_ALLOWED_OUTER_TAGS = new Set(['worksheet', 'dimension', 'sheetData'])
 
@@ -421,6 +425,10 @@ function parseSheetDataBytes(
 
 		const rowClose = indexOfBytes(bytes, BYTES_ROW_CLOSE, rowTagEnd + 1, sheetData.contentEnd)
 		if (rowClose === -1) return false
+		if (parseSimpleValuesRowBytes(bytes, rowTagEnd + 1, rowClose, row, ctx, sheet)) {
+			rowCursor = rowClose + BYTES_ROW_CLOSE.length
+			continue
+		}
 		let cellCursor = rowTagEnd + 1
 		let nextCol = 0
 		while (true) {
@@ -455,6 +463,163 @@ function parseSheetDataBytes(
 		}
 		rowCursor = rowClose + BYTES_ROW_CLOSE.length
 	}
+}
+
+function parseSimpleValuesRowBytes(
+	bytes: Uint8Array,
+	bodyStart: number,
+	bodyEnd: number,
+	row: number,
+	ctx: SheetParseContext,
+	sheet: Sheet,
+): boolean {
+	if (!ctx.valuesOnly || ctx.hasDateStyles) return false
+	let cursor = bodyStart
+	let nextCol = 0
+	const rowText = String(row + 1)
+	const out = {
+		row,
+		col: 0,
+		numberValue: undefined as number | undefined,
+		stringStart: -1,
+		stringEnd: -1,
+	}
+	while (true) {
+		cursor = skipXmlWhitespaceBytes(bytes, cursor, bodyEnd)
+		if (cursor >= bodyEnd) return true
+		const canonicalNext = parseCanonicalValuesCellBytes(
+			bytes,
+			cursor,
+			bodyEnd,
+			rowText,
+			row,
+			nextCol,
+			out,
+		)
+		if (canonicalNext !== -1) {
+			if (out.numberValue !== undefined) {
+				sheet.cells.setPlainNumber(out.row, out.col, out.numberValue)
+			} else if (out.stringStart >= 0) {
+				sheet.cells.setPlainString(
+					out.row,
+					out.col,
+					decodeXmlBytesText(bytes, out.stringStart, out.stringEnd),
+				)
+			} else return false
+			nextCol = out.col + 1
+			cursor = canonicalNext
+			continue
+		}
+		if (!startsWithElementOpenAtBytes(bytes, BYTES_CELL_OPEN, cursor, bodyEnd)) return false
+		const tagEnd = findTagEndBytes(bytes, cursor)
+		if (tagEnd === -1 || tagEnd >= bodyEnd) return false
+		if (
+			!resolveSimpleNumberCellOpenBytes(
+				bytes,
+				cursor + BYTES_CELL_OPEN.length,
+				tagEnd,
+				row,
+				nextCol,
+				out,
+			)
+		) {
+			return false
+		}
+		cursor = skipXmlWhitespaceBytes(bytes, tagEnd + 1, bodyEnd)
+		if (
+			cursor + 2 >= bodyEnd ||
+			bytes[cursor] !== BYTE_LT ||
+			bytes[cursor + 1] !== 118 ||
+			bytes[cursor + 2] !== 62
+		) {
+			return false
+		}
+		const valueStart = cursor + BYTES_V_OPEN.length + 1
+		const valueEnd = indexOfBytes(bytes, BYTES_V_CLOSE, valueStart, bodyEnd)
+		if (valueEnd === -1 || valueEnd === valueStart) return false
+		const value = parseSimpleXmlNumberBytes(bytes, valueStart, valueEnd)
+		if (value === undefined) return false
+		cursor = skipXmlWhitespaceBytes(bytes, valueEnd + BYTES_V_CLOSE.length, bodyEnd)
+		if (
+			indexOfBytes(bytes, BYTES_CELL_CLOSE, cursor, cursor + BYTES_CELL_CLOSE.length) !== cursor
+		) {
+			return false
+		}
+		sheet.cells.setPlainNumber(out.row, out.col, value)
+		nextCol = out.col + 1
+		cursor += BYTES_CELL_CLOSE.length
+	}
+}
+
+function parseCanonicalValuesCellBytes(
+	bytes: Uint8Array,
+	cursor: number,
+	bodyEnd: number,
+	fallbackRowText: string,
+	fallbackRow: number,
+	fallbackCol: number,
+	out: {
+		row: number
+		col: number
+		numberValue: number | undefined
+		stringStart: number
+		stringEnd: number
+	},
+): number {
+	if (!startsWithCellRefBytes(bytes, cursor, bodyEnd)) return -1
+	let index = cursor + 6
+	let row = fallbackRow
+	let col = fallbackCol
+	const expectedRefEnd = consumeExpectedCellRefBytes(
+		bytes,
+		index,
+		bodyEnd,
+		fallbackRowText,
+		fallbackCol,
+	)
+	if (expectedRefEnd === -1) {
+		const parsed = parseCellRefInBytes(bytes, index, bodyEnd)
+		if (!parsed) return -1
+		index = parsed.end
+		row = parsed.row
+		col = parsed.col
+	} else {
+		index = expectedRefEnd
+	}
+	out.row = row
+	out.col = col
+	out.numberValue = undefined
+	out.stringStart = -1
+	out.stringEnd = -1
+
+	const inlineValueStart = parseCanonicalInlineStringValueStartBytes(bytes, index, bodyEnd)
+	if (inlineValueStart !== -1) {
+		let valueEnd = inlineValueStart
+		while (valueEnd < bodyEnd) {
+			if (bytes[valueEnd] === BYTE_LT) break
+			valueEnd += 1
+		}
+		if (!endsCanonicalInlineStringBytes(bytes, valueEnd, bodyEnd)) return -1
+		out.stringStart = inlineValueStart
+		out.stringEnd = valueEnd
+		return valueEnd + 13
+	}
+
+	const contentStart = resolveCanonicalNumberContentStartBytes(bytes, index, bodyEnd)
+	if (contentStart === -1) return -1
+	const valueStart = resolveCanonicalValueStartBytes(bytes, contentStart, bodyEnd)
+	if (valueStart === -1) return -1
+	const parsedInt = parseCanonicalIntegerValueBytes(bytes, valueStart, bodyEnd)
+	if (parsedInt) {
+		out.numberValue = parsedInt.value
+		return parsedInt.next
+	}
+	const valueEnd = indexOfBytes(bytes, BYTES_VALUE_CELL_CLOSE, valueStart, bodyEnd)
+	if (valueEnd === -1) return -1
+	const value = parseSimpleXmlNumberBytes(bytes, valueStart, valueEnd)
+	if (value === undefined) return -1
+	out.numberValue = value
+	return valueEnd + BYTES_VALUE_CELL_CLOSE.length
 }
 
 function parseValuesOnlyCellBytes(
@@ -2351,6 +2516,330 @@ function rawBoolAttrInBytes(
 	if (value === '1' || value.toLowerCase() === 'true') return true
 	if (value === '0' || value.toLowerCase() === 'false') return false
 	return undefined
+}
+
+function startsWithCellRefBytes(bytes: Uint8Array, cursor: number, end: number): boolean {
+	return (
+		cursor + 6 <= end &&
+		bytes[cursor] === BYTE_LT &&
+		bytes[cursor + 1] === 99 &&
+		bytes[cursor + 2] === BYTE_SPACE &&
+		bytes[cursor + 3] === 114 &&
+		bytes[cursor + 4] === 61 &&
+		bytes[cursor + 5] === BYTE_QUOTE
+	)
+}
+
+function parseCanonicalInlineStringValueStartBytes(
+	bytes: Uint8Array,
+	refEnd: number,
+	end: number,
+): number {
+	if (refEnd + BYTES_CANONICAL_INLINE_STRING_PREFIX.length > end) return -1
+	for (let offset = 0; offset < BYTES_CANONICAL_INLINE_STRING_PREFIX.length; offset++) {
+		if (bytes[refEnd + offset] !== BYTES_CANONICAL_INLINE_STRING_PREFIX[offset]) return -1
+	}
+	return refEnd + BYTES_CANONICAL_INLINE_STRING_PREFIX.length
+}
+
+function endsCanonicalInlineStringBytes(bytes: Uint8Array, start: number, end: number): boolean {
+	if (start + BYTES_CANONICAL_INLINE_STRING_SUFFIX.length > end) return false
+	for (let offset = 0; offset < BYTES_CANONICAL_INLINE_STRING_SUFFIX.length; offset++) {
+		if (bytes[start + offset] !== BYTES_CANONICAL_INLINE_STRING_SUFFIX[offset]) return false
+	}
+	return true
+}
+
+function resolveCanonicalNumberContentStartBytes(
+	bytes: Uint8Array,
+	refEnd: number,
+	end: number,
+): number {
+	if (refEnd + 1 < end && bytes[refEnd] === BYTE_QUOTE && bytes[refEnd + 1] === 62) {
+		return refEnd + 2
+	}
+	if (
+		refEnd + 5 >= end ||
+		bytes[refEnd] !== BYTE_QUOTE ||
+		bytes[refEnd + 1] !== BYTE_SPACE ||
+		bytes[refEnd + 2] !== 115 ||
+		bytes[refEnd + 3] !== 61 ||
+		bytes[refEnd + 4] !== BYTE_QUOTE
+	) {
+		return -1
+	}
+	const singleDigitStyleEnd = refEnd + 7
+	if (
+		singleDigitStyleEnd < end &&
+		isAsciiDigit(bytes[refEnd + 5]) &&
+		bytes[refEnd + 6] === BYTE_QUOTE &&
+		bytes[singleDigitStyleEnd] === 62
+	) {
+		return singleDigitStyleEnd + 1
+	}
+	let styleEnd = refEnd + 5
+	while (styleEnd < end && bytes[styleEnd] !== BYTE_QUOTE) {
+		if (!isAsciiDigit(bytes[styleEnd])) return -1
+		styleEnd += 1
+	}
+	if (styleEnd >= end || bytes[styleEnd + 1] !== 62) return -1
+	return styleEnd + 2
+}
+
+function resolveCanonicalValueStartBytes(
+	bytes: Uint8Array,
+	contentStart: number,
+	end: number,
+): number {
+	if (
+		contentStart + 2 < end &&
+		bytes[contentStart] === BYTE_LT &&
+		bytes[contentStart + 1] === 118 &&
+		bytes[contentStart + 2] === 62
+	) {
+		return contentStart + 3
+	}
+	if (!startsWithElementOpenAtBytes(bytes, BYTES_F_OPEN, contentStart, end)) return -1
+	if (contentStart + 2 < end && bytes[contentStart + 2] === 62) {
+		const formulaClose = indexOfBytes(bytes, BYTES_F_CLOSE, contentStart + 3, end)
+		const valueOpen = formulaClose + 4
+		return formulaClose !== -1 &&
+			valueOpen + 2 < end &&
+			bytes[valueOpen] === BYTE_LT &&
+			bytes[valueOpen + 1] === 118 &&
+			bytes[valueOpen + 2] === 62
+			? valueOpen + 3
+			: -1
+	}
+	const formulaTagEnd = findTagEndBytes(bytes, contentStart)
+	if (formulaTagEnd === -1 || formulaTagEnd >= end) return -1
+	const formulaEnd = isSelfClosingTagBytes(bytes, contentStart, formulaTagEnd)
+		? formulaTagEnd + 1
+		: indexOfBytes(bytes, BYTES_F_CLOSE, formulaTagEnd + 1, end)
+	if (formulaEnd === -1 || formulaEnd >= end) return -1
+	const valueOpen = isSelfClosingTagBytes(bytes, contentStart, formulaTagEnd)
+		? formulaEnd
+		: formulaEnd + 4
+	return valueOpen + 2 < end &&
+		bytes[valueOpen] === BYTE_LT &&
+		bytes[valueOpen + 1] === 118 &&
+		bytes[valueOpen + 2] === 62
+		? valueOpen + 3
+		: -1
+}
+
+function parseCanonicalIntegerValueBytes(
+	bytes: Uint8Array,
+	start: number,
+	end: number,
+): { value: number; next: number } | undefined {
+	let cursor = start
+	let sign = 1
+	if (bytes[cursor] === 45) {
+		sign = -1
+		cursor += 1
+	}
+	let value = 0
+	const digitStart = cursor
+	while (cursor < end) {
+		const code = bytes[cursor]
+		if (!isAsciiDigit(code)) break
+		value = value * 10 + ((code ?? 48) - 48)
+		cursor += 1
+	}
+	if (cursor === digitStart || !startsWithValueCellCloseBytes(bytes, cursor, end)) return undefined
+	return { value: sign * value, next: cursor + BYTES_VALUE_CELL_CLOSE.length }
+}
+
+function startsWithValueCellCloseBytes(bytes: Uint8Array, start: number, end: number): boolean {
+	if (start + BYTES_VALUE_CELL_CLOSE.length > end) return false
+	for (let offset = 0; offset < BYTES_VALUE_CELL_CLOSE.length; offset++) {
+		if (bytes[start + offset] !== BYTES_VALUE_CELL_CLOSE[offset]) return false
+	}
+	return true
+}
+
+function consumeExpectedCellRefBytes(
+	bytes: Uint8Array,
+	start: number,
+	end: number,
+	rowText: string,
+	col: number,
+): number {
+	if (col < 0 || col > 25) return -1
+	if (start >= end || bytes[start] !== 65 + col) return -1
+	let cursor = start + 1
+	for (let index = 0; index < rowText.length; index++) {
+		if (cursor >= end || bytes[cursor] !== rowText.charCodeAt(index)) return -1
+		cursor += 1
+	}
+	return cursor < end && bytes[cursor] === BYTE_QUOTE ? cursor : -1
+}
+
+function parseCellRefInBytes(
+	bytes: Uint8Array,
+	start: number,
+	end: number,
+): { row: number; col: number; end: number } | undefined {
+	let index = start
+	let col = 0
+	while (index < end) {
+		const code = bytes[index]
+		if (isAsciiDigit(code)) break
+		if (code !== undefined && code >= 65 && code <= 90) {
+			col = col * 26 + (code - 64)
+		} else if (code !== undefined && code >= 97 && code <= 122) {
+			col = col * 26 + (code - 96)
+		} else {
+			return undefined
+		}
+		index += 1
+	}
+	if (index === start || index >= end) return undefined
+	let row = 0
+	while (index < end) {
+		const code = bytes[index]
+		if (!isAsciiDigit(code)) break
+		row = row * 10 + ((code ?? 48) - 48)
+		index += 1
+	}
+	if (row <= 0 || col <= 0 || index >= end || bytes[index] !== BYTE_QUOTE) return undefined
+	return { row: row - 1, col: col - 1, end: index }
+}
+
+function resolveSimpleNumberCellOpenBytes(
+	bytes: Uint8Array,
+	attrStart: number,
+	attrEnd: number,
+	fallbackRow: number,
+	fallbackCol: number,
+	out: { row: number; col: number },
+): boolean {
+	let cursor = attrStart
+	let refStart = -1
+	let refEnd = -1
+	while (cursor < attrEnd) {
+		cursor = skipXmlWhitespaceBytes(bytes, cursor, attrEnd)
+		if (cursor >= attrEnd) break
+		if (bytes[cursor] === BYTE_SLASH) return false
+		const nameStart = cursor
+		while (cursor < attrEnd) {
+			const code = bytes[cursor]
+			if (code === 61 || isXmlWhitespaceByte(code)) break
+			cursor += 1
+		}
+		const nameEnd = cursor
+		cursor = skipXmlWhitespaceBytes(bytes, cursor, attrEnd)
+		if (bytes[cursor] !== 61) return false
+		cursor = skipXmlWhitespaceBytes(bytes, cursor + 1, attrEnd)
+		if (bytes[cursor] !== BYTE_QUOTE) return false
+		const valueStart = cursor + 1
+		cursor = valueStart
+		while (cursor < attrEnd && bytes[cursor] !== BYTE_QUOTE) cursor += 1
+		if (cursor >= attrEnd) return false
+		const nameLength = nameEnd - nameStart
+		if (nameLength === 1) {
+			const name = bytes[nameStart]
+			if (name === 114) {
+				refStart = valueStart
+				refEnd = cursor
+			} else if (name === 116) {
+				if (cursor !== valueStart + 1 || bytes[valueStart] !== 110) return false
+			}
+		} else if (
+			nameLength === 2 &&
+			((bytes[nameStart] === 99 && bytes[nameStart + 1] === 109) ||
+				(bytes[nameStart] === 118 && bytes[nameStart + 1] === 109))
+		) {
+			return false
+		}
+		cursor += 1
+	}
+	if (refStart === -1) {
+		out.row = fallbackRow
+		out.col = fallbackCol
+		return true
+	}
+	return resolveCellPositionInBytes(bytes, refStart, refEnd, out)
+}
+
+function resolveCellPositionInBytes(
+	bytes: Uint8Array,
+	valueStart: number,
+	valueEnd: number,
+	out: { row: number; col: number },
+): boolean {
+	let index = valueStart
+	let col = 0
+	while (index < valueEnd) {
+		const code = bytes[index]
+		if (isAsciiDigit(code)) break
+		if (code !== undefined && code >= 65 && code <= 90) {
+			col = col * 26 + (code - 64)
+		} else if (code !== undefined && code >= 97 && code <= 122) {
+			col = col * 26 + (code - 96)
+		} else {
+			return false
+		}
+		index += 1
+	}
+	if (index === valueStart || index >= valueEnd) return false
+	let row = 0
+	while (index < valueEnd) {
+		const code = bytes[index]
+		if (!isAsciiDigit(code)) return false
+		row = row * 10 + ((code ?? 48) - 48)
+		index += 1
+	}
+	if (row <= 0 || col <= 0) return false
+	out.row = row - 1
+	out.col = col - 1
+	return true
+}
+
+function parseSimpleXmlNumberBytes(
+	bytes: Uint8Array,
+	start: number,
+	end: number,
+): number | undefined {
+	if (start >= end) return undefined
+	let cursor = start
+	if (bytes[cursor] === 45) {
+		cursor += 1
+		if (cursor >= end) return undefined
+	}
+	let sawDigit = false
+	let sawDecimal = false
+	let sawExponent = false
+	while (cursor < end) {
+		const code = bytes[cursor]
+		if (code === BYTE_AMP || code === BYTE_LT) return undefined
+		if (isAsciiDigit(code)) {
+			sawDigit = true
+			cursor += 1
+			continue
+		}
+		if (code === 46 && !sawDecimal && !sawExponent) {
+			sawDecimal = true
+			cursor += 1
+			continue
+		}
+		if ((code === 69 || code === 101) && sawDigit && !sawExponent) {
+			sawExponent = true
+			cursor += 1
+			if (bytes[cursor] === 43 || bytes[cursor] === 45) cursor += 1
+			continue
+		}
+		return undefined
+	}
+	if (!sawDigit) return undefined
+	const text = asciiSlice(bytes, start, end)
+	const value = Number(text)
+	return Number.isNaN(value) ? undefined : value
+}
+
+function isAsciiDigit(code: number | undefined): boolean {
+	return code !== undefined && code >= 48 && code <= 57
 }
 
 function resolveCellPositionBytes(

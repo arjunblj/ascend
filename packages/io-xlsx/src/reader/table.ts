@@ -25,7 +25,7 @@ export function parseTable(
 	sheetId: SheetId,
 	options: ParseTableOptions = {},
 ): Table | null {
-	const doc = parseXml(normalizeMainSpreadsheetNamespacePrefix(xml))
+	const doc = parseXml(normalizeMainSpreadsheetNamespacePrefix(xml), { preserveWhitespace: true })
 	const table = doc.table as XmlNode | undefined
 	if (!table) return null
 

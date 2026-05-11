@@ -1207,7 +1207,7 @@ describe('readXlsx', () => {
 <table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="Table1" displayName="Scores" ref="A1:B3" headerRowCount="1" totalsRowCount="0" headerRowDxfId="5" dataDxfId="6">
   <autoFilter ref="A1:B3"><sortState ref="A2:B3"><sortCondition ref="B2:B3"/></sortState></autoFilter>
   <tableColumns count="2">
-    <tableColumn id="1" name="Name" totalsRowLabel="Total" dataDxfId="7"/>
+    <tableColumn id="1" name="Name " totalsRowLabel="Total" dataDxfId="7"/>
     <tableColumn id="2" name="Score" totalsRowFunction="sum" totalsRowDxfId="8"/>
   </tableColumns>
   <tableStyleInfo name="TableStyleMedium2" showFirstColumn="0" showLastColumn="0" showRowStripes="1" showColumnStripes="0"/>
@@ -1222,7 +1222,7 @@ describe('readXlsx', () => {
 		expect(sheet?.tables[0]?.name).toBe('Scores')
 		expect(sheet?.tables[0]?.hasHeaders).toBe(true)
 		expect(sheet?.tables[0]?.columns).toEqual([
-			{ id: 1, name: 'Name', totalsRowLabel: 'Total', dataDxfId: 7 },
+			{ id: 1, name: 'Name ', totalsRowLabel: 'Total', dataDxfId: 7 },
 			{ id: 2, name: 'Score', totalsRowFunction: 'sum', totalsRowDxfId: 8 },
 		])
 		expect(sheet?.tables[0]?.autoFilter).toEqual({

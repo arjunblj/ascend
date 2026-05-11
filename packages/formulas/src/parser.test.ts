@@ -376,6 +376,11 @@ describe('parse', () => {
 		})
 	})
 
+	it('parses sheet-qualified invalid references as #REF!', () => {
+		expect(p("'1'!#REF!")).toEqual({ type: 'error', value: '#REF!' })
+		expect(printFormula(p("'1'!#REF!"))).toBe('#REF!')
+	})
+
 	it('parses workbook-index-qualified defined names', () => {
 		const node = p('[0]!col1_')
 		expect(node).toEqual({ type: 'name', name: 'col1_', sheet: '[0]' })
@@ -547,6 +552,21 @@ describe('printFormula', () => {
 		expect(printFormula(p('Table1[[Sales]:[Cost]]'))).toBe('Table1[[Sales]:[Cost]]')
 		expect(printFormula(p('Table1[@[Sales]:[Cost]]'))).toBe('Table1[@[Sales]:[Cost]]')
 		expect(printFormula(p('Table1[[#Data],[Sales]:[Cost]]'))).toBe('Table1[[#Data],[Sales]:[Cost]]')
+	})
+
+	it('preserves structured reference column whitespace', () => {
+		expect(p('Tabelle1[[#This Row],[Field 4 ]]')).toMatchObject({
+			type: 'structuredRef',
+			table: 'Tabelle1',
+			specifiers: ['#This Row'],
+			column: 'Field 4 ',
+		})
+		expect(p('Tabelle1[[#Totals],[Field 4 ]]')).toMatchObject({
+			type: 'structuredRef',
+			table: 'Tabelle1',
+			specifiers: ['#Totals'],
+			column: 'Field 4 ',
+		})
 	})
 
 	it('unescapes structured reference column special characters', () => {

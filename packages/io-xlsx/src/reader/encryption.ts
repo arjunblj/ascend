@@ -33,6 +33,26 @@ interface AgilePasswordKey extends AgileCipherParams {
 	readonly encryptedKeyValue: Uint8Array
 }
 
+interface StandardEncryptionInfo {
+	readonly header: StandardEncryptionHeader
+	readonly verifier: StandardEncryptionVerifier
+}
+
+interface StandardEncryptionHeader {
+	readonly flags: number
+	readonly algId: number
+	readonly algIdHash: number
+	readonly keySize: number
+	readonly providerType: number
+}
+
+interface StandardEncryptionVerifier {
+	readonly salt: Uint8Array
+	readonly encryptedVerifier: Uint8Array
+	readonly verifierHashSize: number
+	readonly encryptedVerifierHash: Uint8Array
+}
+
 export function maybeDecryptOoxmlPackage(
 	bytes: Uint8Array,
 	password: string | undefined,
@@ -48,7 +68,7 @@ export function maybeDecryptOoxmlPackage(
 		)
 	}
 	try {
-		return ok(decryptAgileOoxmlPackage(bytes, password))
+		return ok(decryptOoxmlPackage(bytes, password))
 	} catch (error) {
 		const message = error instanceof Error ? error.message : 'unknown encryption error'
 		if (message === 'invalid-password') {
@@ -74,6 +94,22 @@ export function maybeDecryptOoxmlPackage(
 	}
 }
 
+function decryptOoxmlPackage(bytes: Uint8Array, password: string): Uint8Array {
+	const encryptionInfo = readCompoundFileStream(bytes, 'EncryptionInfo')
+	if (!encryptionInfo) throw new Error('Compound file is missing EncryptionInfo')
+	const view = new DataView(
+		encryptionInfo.buffer,
+		encryptionInfo.byteOffset,
+		encryptionInfo.byteLength,
+	)
+	const versionMajor = view.getUint16(0, true)
+	const versionMinor = view.getUint16(2, true)
+	if (versionMajor === 4 && versionMinor === 4) return decryptAgileOoxmlPackage(bytes, password)
+	if (versionMajor === 4 && versionMinor === 2)
+		return decryptStandardOoxmlPackage(bytes, password, encryptionInfo)
+	throw new Error(`Unsupported EncryptionInfo version ${versionMajor}.${versionMinor}`)
+}
+
 function decryptAgileOoxmlPackage(bytes: Uint8Array, password: string): Uint8Array {
 	const encryptionInfo = readCompoundFileStream(bytes, 'EncryptionInfo')
 	const encryptedPackage = readCompoundFileStream(bytes, 'EncryptedPackage')
@@ -93,6 +129,20 @@ function decryptAgileOoxmlPackage(bytes: Uint8Array, password: string): Uint8Arr
 		throw new Error('EncryptedPackage integrity check failed')
 	}
 	return decryptPackagePayload(secretKey, info.keyData, encryptedPackage)
+}
+
+function decryptStandardOoxmlPackage(
+	bytes: Uint8Array,
+	password: string,
+	encryptionInfo: Uint8Array,
+): Uint8Array {
+	const encryptedPackage = readCompoundFileStream(bytes, 'EncryptedPackage')
+	if (!encryptedPackage) throw new Error('Compound file is missing EncryptedPackage')
+	const info = parseStandardEncryptionInfo(encryptionInfo)
+	validateStandardParams(info.header)
+	const key = makeStandardKey(password, info.header, info.verifier.salt)
+	if (!verifyStandardPassword(key, info.verifier)) throw new Error('invalid-password')
+	return decryptStandardPackagePayload(key, encryptedPackage)
 }
 
 function parseEncryptionInfo(bytes: Uint8Array): AgileEncryptionInfo {
@@ -125,6 +175,36 @@ function parseEncryptionInfo(bytes: Uint8Array): AgileEncryptionInfo {
 	}
 }
 
+function parseStandardEncryptionInfo(bytes: Uint8Array): StandardEncryptionInfo {
+	if (bytes.byteLength < 84) throw new Error('EncryptionInfo stream is truncated')
+	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+	const headerFlags = view.getUint32(4, true)
+	const headerSize = view.getUint32(8, true)
+	const headerOffset = 12
+	const verifierOffset = headerOffset + headerSize
+	if (headerSize < 32 || verifierOffset + 72 > bytes.byteLength) {
+		throw new Error('Standard EncryptionInfo stream is truncated')
+	}
+	const header: StandardEncryptionHeader = {
+		flags: view.getUint32(headerOffset, true),
+		algId: view.getUint32(headerOffset + 8, true),
+		algIdHash: view.getUint32(headerOffset + 12, true),
+		keySize: view.getUint32(headerOffset + 16, true),
+		providerType: view.getUint32(headerOffset + 20, true),
+	}
+	if (headerFlags !== header.flags) throw new Error('Standard EncryptionInfo flags mismatch')
+	const saltSize = view.getUint32(verifierOffset, true)
+	if (saltSize !== 16) throw new Error(`Unsupported standard encryption salt size ${saltSize}`)
+	const verifierHashSize = view.getUint32(verifierOffset + 36, true)
+	const verifier: StandardEncryptionVerifier = {
+		salt: bytes.subarray(verifierOffset + 4, verifierOffset + 20),
+		encryptedVerifier: bytes.subarray(verifierOffset + 20, verifierOffset + 36),
+		verifierHashSize,
+		encryptedVerifierHash: bytes.subarray(verifierOffset + 40, verifierOffset + 72),
+	}
+	return { header, verifier }
+}
+
 function parseCipherParams(attributes: Record<string, string>): AgileCipherParams {
 	return {
 		blockSize: requiredInt(attributes, 'blockSize'),
@@ -151,6 +231,25 @@ function validateAgileParams(params: AgileCipherParams): void {
 	hashName(params.hashAlgorithm)
 }
 
+function validateStandardParams(header: StandardEncryptionHeader): void {
+	if ((header.flags & 0x24) !== 0x24) {
+		throw new Error(`Unsupported standard encryption flags 0x${header.flags.toString(16)}`)
+	}
+	if (header.algIdHash !== 0 && header.algIdHash !== 0x8004) {
+		throw new Error(
+			`Unsupported standard encryption hash algorithm 0x${header.algIdHash.toString(16)}`,
+		)
+	}
+	if (header.providerType !== 0x18) {
+		throw new Error(`Unsupported standard encryption provider ${header.providerType}`)
+	}
+	if (standardAesAlgorithm(header.algId, header.keySize) === null) {
+		throw new Error(
+			`Unsupported standard encryption algorithm 0x${header.algId.toString(16)} with ${header.keySize}-bit key`,
+		)
+	}
+}
+
 function verifyPassword(password: string, key: AgilePasswordKey): boolean {
 	const hash = deriveIteratedHash(password, key)
 	const verifierKey = deriveEncryptionKey(hash, VERIFIER_HASH_INPUT_BLOCK_KEY, key)
@@ -161,10 +260,36 @@ function verifyPassword(password: string, key: AgilePasswordKey): boolean {
 	return safeEqual(actualHash, expectedHash.subarray(0, actualHash.byteLength))
 }
 
+function verifyStandardPassword(key: Uint8Array, verifier: StandardEncryptionVerifier): boolean {
+	const verifierInput = decryptAesEcb(verifier.encryptedVerifier, key)
+	const actualHash = digest('SHA1', verifierInput)
+	const expectedHash = decryptAesEcb(verifier.encryptedVerifierHash, key)
+	return safeEqual(actualHash, expectedHash.subarray(0, verifier.verifierHashSize))
+}
+
 function makeSecretKey(password: string, key: AgilePasswordKey): Uint8Array {
 	const hash = deriveIteratedHash(password, key)
 	const encryptionKey = deriveEncryptionKey(hash, ENCRYPTED_KEY_VALUE_BLOCK_KEY, key)
 	return decryptAesCbc(key.encryptedKeyValue, encryptionKey, key.saltValue)
+}
+
+function makeStandardKey(
+	password: string,
+	header: StandardEncryptionHeader,
+	salt: Uint8Array,
+): Uint8Array {
+	let hash = digest('SHA1', concat([salt, utf16le(password)]))
+	const iterator = new Uint8Array(4)
+	const iteratorView = new DataView(iterator.buffer)
+	for (let i = 0; i < 50_000; i++) {
+		iteratorView.setUint32(0, i, true)
+		hash = digest('SHA1', concat([iterator, hash]))
+	}
+	const block = new Uint8Array(4)
+	const finalHash = digest('SHA1', concat([hash, block]))
+	const x1 = digest('SHA1', xorHashIntoPad(finalHash, 0x36))
+	const x2 = digest('SHA1', xorHashIntoPad(finalHash, 0x5c))
+	return concat([x1, x2]).subarray(0, header.keySize / 8)
 }
 
 function verifyIntegrity(
@@ -181,6 +306,19 @@ function verifyIntegrity(
 		createHmac(hashName(info.keyData.hashAlgorithm), hmacKey).update(encryptedPackage).digest(),
 	)
 	return safeEqual(actual, hmacValue.subarray(0, actual.byteLength))
+}
+
+function decryptStandardPackagePayload(key: Uint8Array, encryptedPackage: Uint8Array): Uint8Array {
+	if (encryptedPackage.byteLength < 8) throw new Error('EncryptedPackage stream is truncated')
+	const view = new DataView(
+		encryptedPackage.buffer,
+		encryptedPackage.byteOffset,
+		encryptedPackage.byteLength,
+	)
+	const totalSize = view.getUint32(0, true)
+	const decrypted = decryptAesEcb(encryptedPackage.subarray(8), key)
+	if (totalSize > decrypted.byteLength) throw new Error('EncryptedPackage payload is truncated')
+	return decrypted.subarray(0, totalSize)
 }
 
 function decryptPackagePayload(
@@ -261,6 +399,23 @@ function decryptAesCbc(data: Uint8Array, key: Uint8Array, iv: Uint8Array): Uint8
 	return concat([Uint8Array.from(decipher.update(data)), Uint8Array.from(decipher.final())])
 }
 
+function decryptAesEcb(data: Uint8Array, key: Uint8Array): Uint8Array {
+	const algorithm = standardAesAlgorithm(0, key.byteLength * 8)
+	if (!algorithm) throw new Error(`Unsupported AES key size ${key.byteLength * 8}`)
+	const decipher = createDecipheriv(algorithm, key, null)
+	decipher.setAutoPadding(false)
+	return concat([Uint8Array.from(decipher.update(data)), Uint8Array.from(decipher.final())])
+}
+
+function standardAesAlgorithm(algId: number, keySize: number): string | null {
+	const normalizedKeySize = keySize === 0 ? 128 : keySize
+	if (algId !== 0 && algId !== 0x660e && algId !== 0x660f && algId !== 0x6610) return null
+	if (normalizedKeySize === 128) return 'aes-128-ecb'
+	if (normalizedKeySize === 192) return 'aes-192-ecb'
+	if (normalizedKeySize === 256) return 'aes-256-ecb'
+	return null
+}
+
 function digest(algorithm: string, data: Uint8Array): Uint8Array {
 	return Uint8Array.from(createHash(hashName(algorithm)).update(data).digest())
 }
@@ -326,6 +481,13 @@ function concat(chunks: readonly Uint8Array[]): Uint8Array {
 		out.set(chunk, offset)
 		offset += chunk.byteLength
 	}
+	return out
+}
+
+function xorHashIntoPad(hash: Uint8Array, padByte: number): Uint8Array {
+	const out = new Uint8Array(64)
+	out.fill(padByte)
+	for (let i = 0; i < hash.byteLength; i++) out[i] = (out[i] ?? 0) ^ (hash[i] ?? 0)
 	return out
 }
 

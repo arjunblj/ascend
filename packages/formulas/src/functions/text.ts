@@ -431,7 +431,9 @@ function splitFormatSections(fmt: string): string[] {
 }
 
 function parseConditionToken(token: string): FormatSection['condition'] {
-	const match = /^(<=|>=|<>|=|<|>)(-?\d+(?:\.\d+)?)$/.exec(token.trim())
+	const match = /^(<=|>=|<>|=|<|>)\s*(-?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][+-]?\d+)?)$/.exec(
+		token.trim(),
+	)
 	if (!match) return undefined
 	const value = Number(match[2])
 	if (Number.isNaN(value)) return undefined
@@ -486,6 +488,11 @@ function conditionMatches(
 	}
 }
 
+function hasNegativeAffix(format: string): boolean {
+	const { before, after } = parseFormatSegments(format)
+	return before.includes('-') || before.includes('(') || after.includes('-') || after.includes(')')
+}
+
 function selectNumericSection(
 	value: number,
 	fmt: string,
@@ -495,14 +502,19 @@ function selectNumericSection(
 	if (conditioned) {
 		for (const section of sections) {
 			if (section.condition && conditionMatches(value, section.condition)) {
-				return { format: section.format, autoSign: false, absValue: value }
+				const autoSign = value < 0 && !hasNegativeAffix(section.format)
+				return {
+					format: section.format,
+					autoSign,
+					absValue: autoSign ? Math.abs(value) : value,
+				}
 			}
 		}
 		const fallback = sections.find((section) => !section.condition)
 		return {
-			format: fallback?.format ?? sections[0]?.format ?? fmt,
-			autoSign: value < 0,
-			absValue: Math.abs(value),
+			format: fallback?.format ?? 'General',
+			autoSign: fallback !== undefined && value < 0,
+			absValue: fallback !== undefined ? Math.abs(value) : value,
 		}
 	}
 	if (sections.length === 1)
@@ -920,6 +932,111 @@ function tryFormatFractionNumber(
 	)
 }
 
+function tryFormatScientificNumber(
+	value: number,
+	fmt: string,
+	showSign: boolean,
+): string | undefined {
+	const tokens = tokenizeNumberFormat(fmt)
+	const markerIndex = tokens.findIndex((token, index) => {
+		const next = tokens[index + 1]
+		return (
+			token.kind === 'literal' &&
+			token.source === 'raw' &&
+			/^[Ee]$/.test(token.text) &&
+			next?.kind === 'literal' &&
+			next.source === 'raw' &&
+			(next.text === '+' || next.text === '-')
+		)
+	})
+	if (markerIndex < 0) return undefined
+	const signToken = tokens[markerIndex + 1]
+	if (signToken?.kind !== 'literal') return undefined
+	const mantissaTokens = tokens
+		.slice(0, markerIndex)
+		.filter((token) => !(token.kind === 'literal' && token.source === 'raw' && token.text === ','))
+	const exponentTokens = tokens
+		.slice(markerIndex + 2)
+		.filter((token) => !(token.kind === 'literal' && token.source === 'raw' && token.text === ','))
+	const mantissaPlaceholders = mantissaTokens.filter(tokenHasPlaceholder)
+	const exponentPlaceholders = exponentTokens.filter(tokenHasPlaceholder)
+	if (mantissaPlaceholders.length === 0 || exponentPlaceholders.length === 0) return undefined
+
+	const decimalIndex = mantissaTokens.findIndex(
+		(token) => token.kind === 'literal' && token.source === 'raw' && token.text === '.',
+	)
+	const integerTokens = decimalIndex >= 0 ? mantissaTokens.slice(0, decimalIndex) : mantissaTokens
+	const decimalTokens = decimalIndex >= 0 ? mantissaTokens.slice(decimalIndex + 1) : []
+	const integerPlaces = Math.max(1, integerTokens.filter(tokenHasPlaceholder).length)
+	const decimalPlaces = decimalTokens.filter(tokenHasPlaceholder).length
+
+	const abs = Math.abs(value)
+	let exponent = abs === 0 ? 0 : Math.floor(Math.log10(abs) / integerPlaces) * integerPlaces
+	let mantissa = abs === 0 ? 0 : abs / 10 ** exponent
+	const overflowThreshold = 10 ** integerPlaces
+	if (Number(mantissa.toFixed(decimalPlaces)) >= overflowThreshold) {
+		exponent += integerPlaces
+		mantissa = abs / 10 ** exponent
+	}
+
+	let [integerDigits = '0', decimalDigits = ''] = mantissa.toFixed(decimalPlaces).split('.')
+	for (let i = decimalDigits.length - 1; i >= 0; i--) {
+		const placeholder = decimalTokens.filter(tokenHasPlaceholder)[i]
+		if (decimalDigits[i] !== '0' || placeholder?.char !== '#') break
+		decimalDigits = decimalDigits.slice(0, -1)
+	}
+
+	const renderedInteger = renderPlaceholderTokens(integerTokens, integerDigits, { showZero: true })
+	let renderedDecimal = ''
+	let digitIndex = 0
+	for (const token of decimalTokens) {
+		if (token.kind === 'placeholder') {
+			const digit = decimalDigits[digitIndex]
+			digitIndex++
+			if (digit !== undefined) renderedDecimal += digit
+			else if (token.char === '0') renderedDecimal += '0'
+			else if (token.char === '?') renderedDecimal += ' '
+		} else {
+			renderedDecimal += token.text
+		}
+	}
+	if (!/[0-9]/.test(renderedDecimal)) renderedDecimal = ''
+
+	const exponentSign =
+		signToken.text === '+' ? (exponent >= 0 ? '+' : '-') : exponent < 0 ? '-' : ''
+	const minExponentDigits = exponentPlaceholders.filter((token) => token.char === '0').length
+	const exponentDigits = String(Math.abs(exponent)).padStart(minExponentDigits, '0')
+	let exponentOut = ''
+	let exponentDigitIndex = 0
+	let exponentPlaceholderIndex = 0
+	let signInserted = false
+	for (const token of exponentTokens) {
+		if (token.kind === 'placeholder') {
+			if (!signInserted) {
+				exponentOut += exponentSign
+				signInserted = true
+			}
+			const remainingPlaceholderCount = exponentPlaceholders.length - exponentPlaceholderIndex
+			const remainingDigits = exponentDigits.length - exponentDigitIndex
+			const take = Math.max(1, remainingDigits - remainingPlaceholderCount + 1)
+			const digit = exponentDigits.slice(exponentDigitIndex, exponentDigitIndex + take)
+			exponentDigitIndex += take
+			exponentPlaceholderIndex++
+			if (digit !== '') exponentOut += digit
+			else if (token.char === '0') exponentOut += '0'
+			else if (token.char === '?') exponentOut += ' '
+		} else {
+			exponentOut += token.text
+		}
+	}
+	if (!signInserted) exponentOut += exponentSign + exponentDigits
+
+	const valueSign = showSign && value < 0 ? '-' : ''
+	const decimalPoint = renderedDecimal === '' ? '' : '.'
+	const marker = tokens[markerIndex]?.kind === 'literal' ? tokens[markerIndex].text : 'E'
+	return valueSign + renderedInteger + decimalPoint + renderedDecimal + marker + exponentOut
+}
+
 function renderTextFormat(value: string, code: string): string | undefined {
 	const rawSections = splitFormatSections(code.trim())
 	const rawSection = rawSections.length >= 4 ? rawSections[3] : (rawSections[0] ?? code)
@@ -987,21 +1104,9 @@ export function formatNumber(
 	const fraction = tryFormatFractionNumber(absValue, fmt, autoSign && value < 0)
 	if (fraction !== undefined) return fraction
 
-	const sciMatch = fmt.match(/([Ee])([+-])(0+)/)
-	if (sciMatch) {
-		const beforeSci = fmt.slice(0, sciMatch.index ?? 0)
-		const expDigits = (sciMatch[3] ?? '').length
-		const decLen = beforeSci.includes('.')
-			? (beforeSci.split('.')[1] || '').replace(/[^0#]/g, '').length
-			: 0
-		const abs = Math.abs(absValue)
-		const sign = autoSign && value < 0 ? '-' : ''
-		const exp = abs === 0 ? 0 : Math.floor(Math.log10(abs))
-		const mantissa = abs === 0 ? 0 : abs / 10 ** exp
-		const expSign = sciMatch[2] === '+' ? (exp >= 0 ? '+' : '-') : exp < 0 ? '-' : ''
-		const expStr = String(Math.abs(exp)).padStart(expDigits, '0')
-		return sign + mantissa.toFixed(decLen) + sciMatch[1] + expSign + expStr
-	}
+	const scientificValue = autoSign && value < 0 ? -absValue : absValue
+	const scientific = tryFormatScientificNumber(scientificValue, fmt, autoSign && value < 0)
+	if (scientific !== undefined) return scientific
 
 	const { before, numFmt, after } = parseFormatSegments(fmt)
 	if (numFmt === '') return before + after

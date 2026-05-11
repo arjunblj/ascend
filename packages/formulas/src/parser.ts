@@ -469,6 +469,8 @@ class FormulaParser {
 			return { type: 'function', name: `${sheet}!${target.name}`, args: this.parseCallArgs() }
 		}
 		switch (target.type) {
+			case 'error':
+				return target
 			case 'cellRef':
 				return { type: 'cellRef', ref: target.ref, sheet }
 			case 'rangeRef':
@@ -516,6 +518,14 @@ class FormulaParser {
 		}
 		if (this.peek(true).type === TokenType.CellRef) {
 			return this.parseCellOrRange()
+		}
+		if (this.peek(true).type === TokenType.Error) {
+			const token = this.advance(true)
+			const error = token.value as ExcelError
+			if (error === '#REF!') return { type: 'error', value: error }
+			throw new Error(
+				`Unsupported sheet-qualified error reference "${error}" at position ${token.position}`,
+			)
 		}
 		if (this.peek(true).type === TokenType.Name) {
 			const name = this.advance(true).value

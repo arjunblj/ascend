@@ -18,11 +18,21 @@ const parser = new XMLParser({
 	processEntities: true,
 })
 
-export function parseXml(content: string): XmlNode {
+const whitespacePreservingParser = new XMLParser({
+	attributeNamePrefix: '@_',
+	ignoreAttributes: false,
+	parseTagValue: true,
+	trimValues: false,
+	processEntities: true,
+})
+
+export function parseXml(content: string, options: { preserveWhitespace?: boolean } = {}): XmlNode {
 	const normalized = content.includes('mc:AlternateContent')
 		? normalizeMarkupCompatibility(content)
 		: content
-	return parser.parse(normalized) as XmlNode
+	return (options.preserveWhitespace ? whitespacePreservingParser : parser).parse(
+		normalized,
+	) as XmlNode
 }
 
 export function asArray<T>(val: T | T[] | undefined | null): T[] {

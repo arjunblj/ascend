@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { readdir, readFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { readXlsx } from '../../../packages/io-xlsx/src/reader/index.ts'
 import type { CorpusManifestEntry } from '../../corpus/manifest.ts'
 import { inspectOoxmlPackageFeatures } from '../../corpus/ooxml-feature-probe.ts'
 
@@ -36,10 +37,13 @@ export async function buildPoiEntry(
 	file: string,
 ): Promise<CorpusManifestEntry | null> {
 	const bytes = new Uint8Array(await readFile(join(root, file)))
-	if (!isZipPackage(bytes)) return null
-	const probe = inspectOoxmlPackageFeatures(bytes)
+	const password = fixturePassword(file)
+	const packageBytes = password ? decryptFixture(bytes, password, file) : bytes
+	if (!isZipPackage(packageBytes)) return null
+	const probe = inspectOoxmlPackageFeatures(packageBytes)
 	const counts = {
 		worksheets: probe.counts.worksheets,
+		formulas: probe.counts.formulas,
 		charts: probe.counts.charts,
 		tables: probe.counts.tables,
 		drawings: probe.counts.drawings,
@@ -49,7 +53,7 @@ export async function buildPoiEntry(
 		workbook_protection: probe.counts.workbook_protection,
 		sheet_protection: probe.counts.sheet_protection,
 	}
-	const features = { ...probe.features, macros: false }
+	const features = { ...probe.features, macros: false, encrypted: isCompoundFile(bytes) }
 	return {
 		file: basename(file),
 		size_bytes: bytes.byteLength,
@@ -59,6 +63,7 @@ export async function buildPoiEntry(
 		sourceUrl: `${APACHE_BASE_URL}/${file}`,
 		license: 'Apache-2.0',
 		sha256: createHash('sha256').update(bytes).digest('hex'),
+		...(password !== undefined ? { password } : {}),
 		redistributionAllowed: true,
 		citation: 'Apache POI test-data/spreadsheet XLSX fixture subset, Apache-2.0.',
 		vendorable: true,
@@ -66,11 +71,27 @@ export async function buildPoiEntry(
 		assertionClass: deriveAssertionClass(features),
 		riskClass: deriveRisk(features),
 		featureTags: deriveTags(file, 'apache-poi', features),
+		...(password ? { notes: 'Encrypted OOXML package; POI fixture password is tika.' } : {}),
 	}
 }
 
 function isZipPackage(bytes: Uint8Array): boolean {
 	return bytes[0] === 0x50 && bytes[1] === 0x4b
+}
+
+function isCompoundFile(bytes: Uint8Array): boolean {
+	const magic = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]
+	return magic.every((byte, index) => bytes[index] === byte)
+}
+
+function fixturePassword(file: string): string | undefined {
+	return file === 'protected_passtika.xlsx' ? 'tika' : undefined
+}
+
+function decryptFixture(bytes: Uint8Array, password: string, file: string): Uint8Array {
+	const read = readXlsx(bytes, { password })
+	if (!read.ok) throw new Error(`${file}: ${read.error.message}`)
+	return read.value.workbook.sourceArchiveBytes ?? bytes
 }
 
 function deriveTier(
@@ -120,6 +141,7 @@ function deriveTags(
 	features: CorpusManifestEntry['features'],
 ): string[] {
 	const tags = new Set<string>([sourceTag, 'small'])
+	if (features.encrypted) tags.add('encrypted')
 	if (features.charts) tags.add('chart')
 	if (features.tables) tags.add('table')
 	if (features.drawings) tags.add('drawing')

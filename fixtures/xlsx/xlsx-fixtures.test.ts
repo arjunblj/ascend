@@ -13,7 +13,7 @@ import {
 	validateCellValue,
 } from '../../packages/engine/src/index.ts'
 import { shiftSheetCellMetadata } from '../../packages/engine/src/structural/sheet-topology.ts'
-import { readXlsx, writeXlsx } from '../../packages/io-xlsx/src/index.ts'
+import { type ReadXlsxOptions, readXlsx, writeXlsx } from '../../packages/io-xlsx/src/index.ts'
 import {
 	fingerprintXlsx,
 	fingerprintXlsxPart,
@@ -73,6 +73,10 @@ const noOpFidelityFixtures: readonly NoOpFidelityFixture[] = [
 
 function loadFixture(name: string): Uint8Array {
 	return readFileSync(new URL(`./poi/${name}`, import.meta.url))
+}
+
+function poiReadOptions(name: string, options: ReadXlsxOptions = {}): ReadXlsxOptions {
+	return name === 'protected_passtika.xlsx' ? { ...options, password: 'tika' } : options
 }
 
 function expectOk<T, E extends { message: string }>(
@@ -153,7 +157,7 @@ if (poiFixtures.length > 0) {
 		it('opens all POI .xlsx files without crashing', () => {
 			const results: { name: string; ok: boolean; error?: string }[] = []
 			for (const name of poiFixtures) {
-				const result = readXlsx(loadFixture(name), { mode: 'values' })
+				const result = readXlsx(loadFixture(name), poiReadOptions(name, { mode: 'values' }))
 				results.push({
 					name,
 					ok: result.ok,
@@ -177,13 +181,13 @@ if (poiFixtures.length > 0) {
 
 		for (const fixture of poiFixtures) {
 			it(`reads ${fixture}`, () => {
-				const result = readXlsx(loadFixture(fixture))
+				const result = readXlsx(loadFixture(fixture), poiReadOptions(fixture))
 				expectOk(result)
 				expect(result.value.workbook.sheets.length).toBeGreaterThan(0)
 			})
 
 			it(`round-trips ${fixture}`, () => {
-				const initial = readXlsx(loadFixture(fixture))
+				const initial = readXlsx(loadFixture(fixture), poiReadOptions(fixture))
 				expectOk(initial)
 				const written = writeXlsx(initial.value.workbook, initial.value.capsules)
 				expectOk(written)
@@ -192,6 +196,23 @@ if (poiFixtures.length > 0) {
 				expect(reopened.value.workbook.sheets.length).toBe(initial.value.workbook.sheets.length)
 			})
 		}
+
+		it('opens standard-encrypted protected_passtika.xlsx with its fixture password', () => {
+			const bytes = loadFixture('protected_passtika.xlsx')
+			const missing = readXlsx(bytes)
+			expect(missing.ok).toBe(false)
+			if (!missing.ok) expect(missing.error.message).toContain('requires a password')
+			const wrong = readXlsx(bytes, { password: 'wrong' })
+			expect(wrong.ok).toBe(false)
+			if (!wrong.ok) expect(wrong.error.message).toBe('Invalid XLSX password')
+			const result = readXlsx(bytes, { password: 'tika' })
+			expectOk(result)
+			expect(result.value.workbook.sheets.map((sheet) => sheet.name)).toEqual([
+				'Sheet1',
+				'Sheet2',
+				'Sheet3',
+			])
+		})
 
 		it('evaluates conditional formatting rules from ConditionalFormattingSamples.xlsx', () => {
 			const result = readXlsx(loadFixture('ConditionalFormattingSamples.xlsx'))
@@ -413,6 +434,22 @@ if (poiFixtures.length > 0) {
 				0,
 			)
 			expect(count).toBeGreaterThan(0)
+		})
+
+		it('resolves structured references to table columns with trailing spaces', () => {
+			const result = readXlsx(loadFixture('table-sample.xlsx'))
+			expectOk(result)
+			const sheet = result.value.workbook.sheets.find((s) => s.name === 'Tabelle1')
+			expect(sheet).toBeDefined()
+			if (!sheet) return
+			expect(sheet.tables[0]?.columns.map((column) => column.name)).toContain('Field 4 ')
+			const recalc = recalculate(result.value.workbook, defaultCalcContext())
+			expect(recalc.errors).toEqual([])
+			expect(sheet.cells.get(8, 5)?.value).toMatchObject({ kind: 'number', value: 36 })
+			expect(sheet.cells.get(4, 6)?.value).toMatchObject({ kind: 'number' })
+			const g5 = sheet.cells.get(4, 6)?.value
+			if (g5?.kind === 'number') expect(g5.value).toBeCloseTo(1 / 6, 14)
+			expect(sheet.cells.get(8, 6)?.value).toMatchObject({ kind: 'number', value: 1 })
 		})
 
 		it('captures comments from SimpleWithComments.xlsx', () => {
@@ -789,7 +826,7 @@ if (poiFixtures.length > 0) {
 			expect(formulaCount).toBeGreaterThan(10)
 		})
 
-		it('keeps POI cached formula corpus semantically perfect', async () => {
+		it('tracks POI cached formula corpus parity', async () => {
 			const payload = await runFormulaCorpusCorrectness({
 				corpusRoot: poiDir,
 				manifest: poiManifest,
@@ -802,13 +839,13 @@ if (poiFixtures.length > 0) {
 				maxUnacceptedMismatches: 0,
 				maxSemanticMismatches: 0,
 				maxErrors: 0,
-				minComparedFormulas: 1499,
-				minSemanticPerfectWorkbooks: 22,
+				minComparedFormulas: 1831,
+				minSemanticPerfectWorkbooks: 49,
 			})
 			expect(payload.summary).toMatchObject({
-				workbookCount: 22,
-				formulaCount: 1499,
-				comparedCount: 1499,
+				workbookCount: 49,
+				formulaCount: 1831,
+				comparedCount: 1831,
 				noCachedFormulaCount: 0,
 				volatileOracleSkipCount: 0,
 				mismatchCount: 1,
@@ -817,8 +854,8 @@ if (poiFixtures.length > 0) {
 				semanticMismatchCount: 0,
 				numericDriftMismatchCount: 1,
 				errorCount: 0,
-				perfectWorkbookCount: 21,
-				semanticPerfectWorkbookCount: 22,
+				perfectWorkbookCount: 48,
+				semanticPerfectWorkbookCount: 49,
 			})
 		})
 

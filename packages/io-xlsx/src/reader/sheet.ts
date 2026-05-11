@@ -3616,6 +3616,9 @@ function parseSheetViews(ws: XmlNode, sheet: Sheet): void {
 	}
 
 	const viewAttrs: Record<string, number | boolean | string> = {}
+	const preservedAttributes = xmlNodeAttributes(firstView)
+	if (Object.keys(preservedAttributes).length > 0)
+		sheet.preservedSheetViewAttributes = preservedAttributes
 	const zoomScale = numAttr(firstView, 'zoomScale')
 	if (zoomScale !== undefined) viewAttrs.zoomScale = zoomScale
 	const zoomScaleNormal = numAttr(firstView, 'zoomScaleNormal')
@@ -3644,6 +3647,15 @@ function parseSheetViews(ws: XmlNode, sheet: Sheet): void {
 	) {
 		sheet.sheetView = viewAttrs as import('@ascend/core').SheetView
 	}
+}
+
+function xmlNodeAttributes(node: XmlNode): Record<string, string> {
+	const attrs: Record<string, string> = {}
+	for (const [key, value] of Object.entries(node)) {
+		if (!key.startsWith('@_') || value === undefined || value === null) continue
+		attrs[key.slice(2)] = String(value)
+	}
+	return attrs
 }
 
 function parseCols(ws: XmlNode, sheet: Sheet): void {

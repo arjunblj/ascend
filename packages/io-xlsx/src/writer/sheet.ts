@@ -105,25 +105,34 @@ function buildSheetXmlToSink(
 	}
 
 	const hasFrozenPanes = sheet.frozenRows > 0 || sheet.frozenCols > 0
-	if (hasFrozenPanes || sheet.sheetView) {
-		const viewAttrs: string[] = ['workbookViewId="0"']
+	const preservedSheetViewAttributes = sheet.preservedSheetViewAttributes ?? {}
+	const hasPreservedSheetViewAttributes = Object.keys(preservedSheetViewAttributes).length > 0
+	if (hasFrozenPanes || sheet.sheetView || hasPreservedSheetViewAttributes) {
+		const viewAttrs = new Map<string, string>([['workbookViewId', '0']])
+		for (const [name, value] of Object.entries(preservedSheetViewAttributes)) {
+			viewAttrs.set(name, value)
+		}
 		if (sheet.sheetView) {
 			if (sheet.sheetView.zoomScale !== undefined)
-				viewAttrs.push(`zoomScale="${sheet.sheetView.zoomScale}"`)
+				setSheetViewAttr(viewAttrs, 'zoomScale', String(sheet.sheetView.zoomScale))
 			if (sheet.sheetView.zoomScaleNormal !== undefined)
-				viewAttrs.push(`zoomScaleNormal="${sheet.sheetView.zoomScaleNormal}"`)
+				setSheetViewAttr(viewAttrs, 'zoomScaleNormal', String(sheet.sheetView.zoomScaleNormal))
 			if (sheet.sheetView.zoomScaleSheetLayoutView !== undefined)
-				viewAttrs.push(`zoomScaleSheetLayoutView="${sheet.sheetView.zoomScaleSheetLayoutView}"`)
-			if (sheet.sheetView.showGridLines === false) viewAttrs.push('showGridLines="0"')
-			if (sheet.sheetView.showFormulas) viewAttrs.push('showFormulas="1"')
-			if (sheet.sheetView.rightToLeft) viewAttrs.push('rightToLeft="1"')
-			if (sheet.sheetView.tabSelected) viewAttrs.push('tabSelected="1"')
-			if (sheet.sheetView.view) viewAttrs.push(`view="${sheet.sheetView.view}"`)
+				setSheetViewAttr(
+					viewAttrs,
+					'zoomScaleSheetLayoutView',
+					String(sheet.sheetView.zoomScaleSheetLayoutView),
+				)
+			if (sheet.sheetView.showGridLines === false) setSheetViewAttr(viewAttrs, 'showGridLines', '0')
+			if (sheet.sheetView.showFormulas) setSheetViewAttr(viewAttrs, 'showFormulas', '1')
+			if (sheet.sheetView.rightToLeft) setSheetViewAttr(viewAttrs, 'rightToLeft', '1')
+			if (sheet.sheetView.tabSelected) setSheetViewAttr(viewAttrs, 'tabSelected', '1')
+			if (sheet.sheetView.view) setSheetViewAttr(viewAttrs, 'view', sheet.sheetView.view)
 			if (sheet.sheetView.topLeftCell)
-				viewAttrs.push(`topLeftCell="${escapeXml(sheet.sheetView.topLeftCell)}"`)
+				setSheetViewAttr(viewAttrs, 'topLeftCell', sheet.sheetView.topLeftCell)
 		}
 		out.push('<sheetViews>')
-		out.push(`<sheetView ${viewAttrs.join(' ')}>`)
+		out.push(`<sheetView ${sheetViewAttrsXml(viewAttrs)}>`)
 		if (hasFrozenPanes) {
 			const paneAttrs: string[] = ['state="frozen"']
 			if (sheet.frozenCols > 0) paneAttrs.push(`xSplit="${sheet.frozenCols}"`)
@@ -443,6 +452,14 @@ function buildSheetXmlToSink(
 	}
 
 	out.push('</worksheet>')
+}
+
+function setSheetViewAttr(attrs: Map<string, string>, name: string, value: string): void {
+	if (!attrs.has(name)) attrs.set(name, value)
+}
+
+function sheetViewAttrsXml(attrs: ReadonlyMap<string, string>): string {
+	return [...attrs].map(([name, value]) => `${name}="${escapeXml(value)}"`).join(' ')
 }
 
 function cachedColumnName(cache: string[], col: number): string {

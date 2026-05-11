@@ -493,6 +493,7 @@ export class Sheet {
 	frozenRows: number
 	frozenCols: number
 	sheetView: SheetView | null
+	preservedSheetViewAttributes: Record<string, string> | null
 	comments: Map<string, SheetComment>
 	threadedComments: SheetThreadedComment[]
 	hyperlinks: Map<string, SheetHyperlink>
@@ -540,6 +541,7 @@ export class Sheet {
 		this.frozenRows = 0
 		this.frozenCols = 0
 		this.sheetView = null
+		this.preservedSheetViewAttributes = null
 		this.comments = new Map()
 		this.threadedComments = []
 		this.hyperlinks = new Map()
@@ -580,6 +582,9 @@ export class Sheet {
 		this.colDefs = this.colDefs.map((d) => ({ ...d }))
 		this.rowHeights = new Map(this.rowHeights)
 		this.rowDefs = new Map([...this.rowDefs.entries()].map(([row, def]) => [row, { ...def }]))
+		this.preservedSheetViewAttributes = this.preservedSheetViewAttributes
+			? { ...this.preservedSheetViewAttributes }
+			: null
 		this.comments = new Map(
 			[...this.comments.entries()].map(([ref, comment]) => [ref, cloneSheetComment(comment)]),
 		)
@@ -621,6 +626,7 @@ export class Sheet {
 		s.frozenRows = this.frozenRows
 		s.frozenCols = this.frozenCols
 		s.sheetView = this.sheetView
+		s.preservedSheetViewAttributes = this.preservedSheetViewAttributes
 		s.comments = this.comments
 		s.threadedComments = this.threadedComments
 		s.hyperlinks = this.hyperlinks

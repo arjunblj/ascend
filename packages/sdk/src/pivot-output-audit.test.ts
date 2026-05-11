@@ -145,8 +145,10 @@ describe('pivot output audits', () => {
 			expect(audits).toContainEqual(
 				expect.objectContaining({
 					pivotTable: 'PivotTable9',
-					status: 'unsupported',
-					warnings: ['Pivot show-data-as calculations are not audited.'],
+					status: 'passed',
+					checkedValueCount: 52,
+					mismatches: [],
+					warnings: [],
 				}),
 			)
 		},

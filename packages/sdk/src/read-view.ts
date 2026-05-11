@@ -1637,9 +1637,6 @@ function aggregateMultiRowAxisPivotOutput(
 	if (pivot.dataFields.length !== 1) {
 		return { ok: false, warning: 'Multi-row pivot audits require exactly one data field.' }
 	}
-	if (pivot.dataFields.some((field) => field.showDataAs !== undefined)) {
-		return { ok: false, warning: 'Pivot show-data-as calculations are not audited.' }
-	}
 	if (pivot.columnFields.length === 0) {
 		return { ok: false, warning: 'Multi-row pivot audits require column output items.' }
 	}
@@ -1672,15 +1669,51 @@ function aggregateMultiRowAxisPivotOutput(
 			}
 		}
 	}
+	const showDataAs = applyPivotMatrixShowDataAs(
+		output,
+		dataField,
+		columns.value.map((column) => column.key),
+	)
+	if (!showDataAs.ok) return showDataAs
 	return {
 		ok: true,
 		value: {
 			rowKeys: rows.value.map((row) => row.key),
 			columnKeys: columns.value.map((column) => column.key),
 			checkedValueCount: rows.value.length * columns.value.length,
-			values: output,
+			values: showDataAs.value,
 		},
 	}
+}
+
+function applyPivotMatrixShowDataAs(
+	output: ReadonlyMap<string, ReadonlyMap<string, number>>,
+	dataField: PivotTableInfo['dataFields'][number],
+	columnKeys: readonly string[],
+):
+	| { ok: true; value: ReadonlyMap<string, ReadonlyMap<string, number>> }
+	| { ok: false; warning: string } {
+	if (dataField.showDataAs === undefined) return { ok: true, value: output }
+	if (dataField.showDataAs !== 'percentOfRow') {
+		return { ok: false, warning: 'Pivot show-data-as calculations are not audited.' }
+	}
+	const transformed = new Map<string, Map<string, number>>()
+	for (const [rowKey, valuesByColumn] of output) {
+		const rowTotal =
+			valuesByColumn.get('Grand Total') ??
+			columnKeys.reduce(
+				(total, columnKey) =>
+					columnKey === 'Grand Total' ? total : total + (valuesByColumn.get(columnKey) ?? 0),
+				0,
+			)
+		const transformedRow = new Map<string, number>()
+		for (const columnKey of columnKeys) {
+			const raw = valuesByColumn.get(columnKey) ?? 0
+			transformedRow.set(columnKey, rowTotal === 0 ? 0 : raw / rowTotal)
+		}
+		transformed.set(rowKey, transformedRow)
+	}
+	return { ok: true, value: transformed }
 }
 
 function buildPivotAxisOutputItems(

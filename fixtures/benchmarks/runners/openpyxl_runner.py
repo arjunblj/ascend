@@ -225,6 +225,38 @@ def streaming_shape_assertions_from_data(
         key("semanticCellRefsHash"): hash_lines(data["semanticCellRefs"]),
         key("semanticCellValuesHash"): hash_lines(data["semanticCellValues"]),
         key("formulaTextHash"): hash_lines(data["formulaTexts"]),
+        key("readCommentCount"): 0,
+        key("readHyperlinkCount"): 0,
+        key("readDataValidationCount"): 0,
+        key("readConditionalFormatCount"): 0,
+        key("readDefinedNameCount"): 0,
+    }
+
+
+def workbook_read_feature_assertions(
+    workbook: Any, prefix: str = ""
+) -> dict[str, str | int | bool | None]:
+    def key(name: str) -> str:
+        return f"{prefix}{name[0].upper()}{name[1:]}" if prefix else name
+
+    read_comment_count = 0
+    read_hyperlink_count = 0
+    read_data_validation_count = 0
+    read_conditional_format_count = 0
+    for sheet in workbook.worksheets:
+        for cell in sheet._cells.values():
+            if cell.comment is not None:
+                read_comment_count += 1
+            if cell.hyperlink is not None:
+                read_hyperlink_count += 1
+        read_data_validation_count += len(getattr(sheet.data_validations, "dataValidation", []) or [])
+        read_conditional_format_count += len(sheet.conditional_formatting)
+    return {
+        key("readCommentCount"): read_comment_count,
+        key("readHyperlinkCount"): read_hyperlink_count,
+        key("readDataValidationCount"): read_data_validation_count,
+        key("readConditionalFormatCount"): read_conditional_format_count,
+        key("readDefinedNameCount"): len(workbook.defined_names),
     }
 
 
@@ -258,7 +290,11 @@ def metadata_only_assertions(path: Path) -> dict[str, str | int | bool | None]:
 
 def shape_assertions(workbook: Any) -> dict[str, str | int | bool | None]:
     try:
-        return {"runnerVersion": openpyxl.__version__, **shape_assertions_from_workbook(workbook)}
+        return {
+            "runnerVersion": openpyxl.__version__,
+            **shape_assertions_from_workbook(workbook),
+            **workbook_read_feature_assertions(workbook),
+        }
     finally:
         workbook.close()
 

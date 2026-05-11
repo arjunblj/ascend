@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { strToU8, zipSync } from 'fflate'
+import { Workbook } from '../../packages/core/src/index.ts'
 import {
 	type CorpusManifestEntry,
 	normalizeManifest,
@@ -29,6 +30,7 @@ import {
 	type WorkbookFeatureSummary,
 	type WorkbookPackageFingerprint,
 	type WorkbookShapeSummary,
+	workbookReadFeatureAssertions,
 } from './competitive-real-workbook.ts'
 
 describe('real workbook library allowlist', () => {
@@ -38,6 +40,42 @@ describe('real workbook library allowlist', () => {
 		expect(libraryAllowed('sheetjs', allowlist)).toBe(true)
 		expect(libraryAllowed('exceljs', allowlist)).toBe(false)
 		expect(parseLibraryAllowlist(' , ')).toBeUndefined()
+	})
+})
+
+describe('workbookReadFeatureAssertions', () => {
+	test('counts legacy and x14 rich sheet metadata as hydrated read features', () => {
+		const workbook = new Workbook()
+		const sheet = workbook.addSheet('Data')
+		sheet.comments.set('A1', { text: 'note' })
+		sheet.hyperlinks.set('B1', { target: 'https://example.com' })
+		sheet.dataValidations.push({ sqref: 'C1', type: 'list', formula1: '"A,B"' })
+		sheet.dataValidations.push({
+			sqref: 'D1',
+			source: 'x14',
+			type: 'list',
+			formula1: 'Data!A1:A2',
+		})
+		sheet.x14DataValidations.push({ sqref: 'D1', type: 'list', formula1: 'Data!A1:A2' })
+		sheet.conditionalFormats.push({
+			sqref: 'E1',
+			rules: [{ type: 'expression', formulas: ['E1>0'] }],
+		})
+		sheet.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'F1',
+			type: 'dataBar',
+			formulas: [],
+		})
+		workbook.definedNames.set('FeatureRange', 'Data!$A$1:$F$1')
+
+		expect(workbookReadFeatureAssertions(workbook)).toEqual({
+			readCommentCount: 1,
+			readHyperlinkCount: 1,
+			readDataValidationCount: 2,
+			readConditionalFormatCount: 2,
+			readDefinedNameCount: 1,
+		})
 	})
 })
 

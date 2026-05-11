@@ -254,7 +254,8 @@ export function workbookReadFeatureAssertions(
 		readCommentCount += sheet.comments.size
 		readHyperlinkCount += sheet.hyperlinks.size
 		readDataValidationCount += sheet.dataValidations.length
-		readConditionalFormatCount += sheet.conditionalFormats.length
+		readConditionalFormatCount +=
+			sheet.conditionalFormats.length + sheet.x14ConditionalFormats.length
 	}
 	return {
 		readCommentCount,
@@ -2015,9 +2016,11 @@ function scanSheetShapeXml(
 			physicalMaxRow = Math.max(physicalMaxRow, parsed.row)
 			physicalMaxCol = Math.max(physicalMaxCol, parsed.col)
 		}
-		const semantic = hasOpenTag(body, 'v') || hasOpenTag(body, 'f') || hasOpenTag(body, 'is')
+		const hasCellFormula = hasOpenTag(body, 'f')
+		const semantic = hasOpenTag(body, 'v') || hasCellFormula || hasOpenTag(body, 'is')
 		if (semantic) {
 			cellCount++
+			if (hasCellFormula) formulaCount++
 			if (parsed) {
 				minRow = Math.min(minRow, parsed.row)
 				minCol = Math.min(minCol, parsed.col)
@@ -2033,7 +2036,6 @@ function scanSheetShapeXml(
 			}
 		}
 	}
-	for (const _match of xml.matchAll(openTagRegex('f'))) formulaCount++
 	const usedRange =
 		maxRow >= 0
 			? `${indexToColumn(minCol)}${minRow + 1}:${indexToColumn(maxCol)}${maxRow + 1}`

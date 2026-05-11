@@ -228,6 +228,259 @@ describe('ClosedXML XLSX fixture corpus', () => {
 		})
 	})
 
+	test('captures ClosedXML x14 data-bar semantics across all six regions', () => {
+		const initial = readXlsx(loadFixture('ConditionalFormatting_CFDataBars.xlsx'))
+		expectOk(initial)
+		const sheet = initial.value.workbook.sheets.find((entry) => entry.name === 'Sheet1')
+		expect(sheet).toBeDefined()
+
+		expect(
+			sheet?.conditionalFormats.map((format) => {
+				const rule = format.rules[0]
+				return {
+					sqref: format.sqref,
+					type: rule?.type,
+					priority: rule?.priority,
+					cfvo: rule?.dataBar?.cfvo,
+					color: rule?.dataBar?.color,
+					showValue: rule?.dataBar?.showValue,
+				}
+			}),
+		).toEqual([
+			{
+				sqref: 'A2:A6',
+				type: 'dataBar',
+				priority: 1,
+				cfvo: [{ type: 'min' }, { type: 'max' }],
+				color: { rgb: 'FFFFBF00' },
+				showValue: true,
+			},
+			{
+				sqref: 'B2:B6',
+				type: 'dataBar',
+				priority: 2,
+				cfvo: [
+					{ type: 'min', value: '0' },
+					{ type: 'max', value: '0' },
+				],
+				color: { rgb: 'FF21ABCD' },
+				showValue: true,
+			},
+			{
+				sqref: 'C2:C6',
+				type: 'dataBar',
+				priority: 3,
+				cfvo: [
+					{ type: 'num', value: '0' },
+					{ type: 'num', value: '10' },
+				],
+				color: { rgb: 'FF536872' },
+				showValue: true,
+			},
+			{
+				sqref: 'D2:D6',
+				type: 'dataBar',
+				priority: 4,
+				cfvo: [
+					{ type: 'percent', value: '50' },
+					{ type: 'percent', value: '100' },
+				],
+				color: { rgb: 'FFC19A6B' },
+				showValue: true,
+			},
+			{
+				sqref: 'E2:E6',
+				type: 'dataBar',
+				priority: 5,
+				cfvo: [
+					{ type: 'formula', value: '-SUM($A$2:$E$2)' },
+					{ type: 'formula', value: 'SUM($A$6:$E$6)' },
+				],
+				color: { rgb: 'FFC2B280' },
+				showValue: true,
+			},
+			{
+				sqref: 'F2:F6',
+				type: 'dataBar',
+				priority: 6,
+				cfvo: [
+					{ type: 'percentile', value: '30' },
+					{ type: 'percentile', value: '70' },
+				],
+				color: { rgb: 'FFB53389' },
+				showValue: true,
+			},
+		])
+
+		const expectedX14DataBars = [
+			{
+				index: 0,
+				sqref: 'A2:A6',
+				formulas: [],
+				type: 'dataBar',
+				id: '{38d9e5d3-73a7-4e18-b3b9-aa1b26e4cc06}',
+				dataBar: {
+					cfvo: [{ type: 'autoMin' }, { type: 'autoMax' }],
+					minLength: 0,
+					maxLength: 100,
+					negativeFillColor: { rgb: 'FFFFBF00' },
+					axisColor: { rgb: 'FF000000' },
+				},
+			},
+			{
+				index: 1,
+				sqref: 'B2:B6',
+				formulas: ['0', '0'],
+				type: 'dataBar',
+				id: '{0671ebad-2a52-43f6-a3a9-585018af6f01}',
+				dataBar: {
+					cfvo: [
+						{ type: 'num', value: '0' },
+						{ type: 'num', value: '0' },
+					],
+					minLength: 0,
+					maxLength: 100,
+					negativeFillColor: { rgb: 'FF21ABCD' },
+					axisColor: { rgb: 'FF000000' },
+				},
+			},
+			{
+				index: 2,
+				sqref: 'C2:C6',
+				formulas: ['0', '10'],
+				type: 'dataBar',
+				id: '{0b10551c-b4e0-4975-ac10-c045e09df4bf}',
+				dataBar: {
+					cfvo: [
+						{ type: 'num', value: '0' },
+						{ type: 'num', value: '10' },
+					],
+					minLength: 0,
+					maxLength: 100,
+					negativeFillColor: { rgb: 'FF536872' },
+					axisColor: { rgb: 'FF000000' },
+				},
+			},
+			{
+				index: 3,
+				sqref: 'D2:D6',
+				formulas: ['50', '100'],
+				type: 'dataBar',
+				id: '{49ad88bb-d5a9-4684-afcc-8033d8d051eb}',
+				dataBar: {
+					cfvo: [
+						{ type: 'num', value: '50' },
+						{ type: 'num', value: '100' },
+					],
+					minLength: 0,
+					maxLength: 100,
+					negativeFillColor: { rgb: 'FFC19A6B' },
+					axisColor: { rgb: 'FF000000' },
+				},
+			},
+			{
+				index: 4,
+				sqref: 'E2:E6',
+				formulas: ['-SUM($A$2:$E$2)', 'SUM($A$6:$E$6)'],
+				type: 'dataBar',
+				id: '{93055e58-8649-4a74-9a8e-1e4036062ece}',
+				dataBar: {
+					cfvo: [
+						{ type: 'num', value: '-SUM($A$2:$E$2)' },
+						{ type: 'num', value: 'SUM($A$6:$E$6)' },
+					],
+					minLength: 0,
+					maxLength: 100,
+					negativeFillColor: { rgb: 'FFC2B280' },
+					axisColor: { rgb: 'FF000000' },
+				},
+			},
+			{
+				index: 5,
+				sqref: 'F2:F6',
+				formulas: ['30', '70'],
+				type: 'dataBar',
+				id: '{01b3b3bb-243e-4add-ae5b-fd208d5e5960}',
+				dataBar: {
+					cfvo: [
+						{ type: 'num', value: '30' },
+						{ type: 'num', value: '70' },
+					],
+					minLength: 0,
+					maxLength: 100,
+					negativeFillColor: { rgb: 'FFB53389' },
+					axisColor: { rgb: 'FF000000' },
+				},
+			},
+		]
+		expect(sheet?.x14ConditionalFormats).toEqual(expectedX14DataBars)
+
+		const written = writeXlsx(initial.value.workbook, initial.value.capsules)
+		expectOk(written)
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		const reopenedSheet = reopened.value.workbook.sheets.find((entry) => entry.name === 'Sheet1')
+		expect(reopenedSheet?.x14ConditionalFormats).toEqual(expectedX14DataBars)
+	})
+
+	test('captures ClosedXML x14 data validation sheets, formulas, and flags', () => {
+		const initial = readXlsx(loadFixture('Misc_DataValidation.xlsx'))
+		expectOk(initial)
+		const expectedX14Validation = {
+			index: 0,
+			sqref: 'A5:A5',
+			type: 'list',
+			operator: 'between',
+			allowBlank: true,
+			showInputMessage: true,
+			showErrorMessage: true,
+			showDropDown: false,
+			errorStyle: 'stop',
+			formula1: "'Data Validation'!$C$1:$C$2",
+		}
+		const validationBySheet = new Map(
+			initial.value.workbook.sheets.map((sheet) => [sheet.name, sheet.x14DataValidations]),
+		)
+		expect([...validationBySheet].map(([name, validations]) => [name, validations.length])).toEqual(
+			[
+				['Data Validation', 0],
+				['Validate Ranges', 0],
+				['Data Validation - Copy', 1],
+				['Validate Ranges - Copy', 0],
+				['Copy From Range 1', 1],
+				['Copy From Range 2', 0],
+			],
+		)
+		expect(validationBySheet.get('Data Validation - Copy')).toEqual([expectedX14Validation])
+		expect(validationBySheet.get('Copy From Range 1')).toEqual([expectedX14Validation])
+
+		for (const sheetName of ['Data Validation - Copy', 'Copy From Range 1']) {
+			const sheet = initial.value.workbook.sheets.find((entry) => entry.name === sheetName)
+			expect(sheet?.dataValidations.find((validation) => validation.source === 'x14')).toEqual({
+				sqref: expectedX14Validation.sqref,
+				type: expectedX14Validation.type,
+				operator: expectedX14Validation.operator,
+				errorStyle: expectedX14Validation.errorStyle,
+				allowBlank: expectedX14Validation.allowBlank,
+				showInputMessage: expectedX14Validation.showInputMessage,
+				showErrorMessage: expectedX14Validation.showErrorMessage,
+				showDropDown: expectedX14Validation.showDropDown,
+				formula1: expectedX14Validation.formula1,
+				source: 'x14',
+			})
+		}
+
+		const written = writeXlsx(initial.value.workbook, initial.value.capsules)
+		expectOk(written)
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		const reopenedValidationBySheet = new Map(
+			reopened.value.workbook.sheets.map((sheet) => [sheet.name, sheet.x14DataValidations]),
+		)
+		expect(reopenedValidationBySheet.get('Data Validation - Copy')).toEqual([expectedX14Validation])
+		expect(reopenedValidationBySheet.get('Copy From Range 1')).toEqual([expectedX14Validation])
+	})
+
 	test('captures ClosedXML sheet protection flags and password hash', () => {
 		const result = readXlsx(loadFixture('Misc_SheetProtection.xlsx'))
 		expectOk(result)

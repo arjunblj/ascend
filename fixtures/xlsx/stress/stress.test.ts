@@ -13,31 +13,22 @@ function expectOk<T, E extends { message: string }>(
 	if (!result.ok) throw new Error(result.error.message)
 }
 
-function countCells(workbook: {
-	sheets: readonly { cells: { iterate: () => Iterable<unknown> } }[]
-}): number {
-	let n = 0
-	for (const sheet of workbook.sheets) {
-		for (const _ of sheet.cells.iterate()) n++
-	}
-	return n
-}
-
-function countRows(workbook: {
+function countSheetStats(workbook: {
 	sheets: readonly {
-		name?: string
 		cells: { iterate: () => Iterable<[number, number, unknown]> }
 	}[]
-}): number {
-	let totalRows = 0
+}): { readonly cells: number; readonly rows: number } {
+	let cells = 0
+	let rows = 0
 	for (const sheet of workbook.sheets) {
 		let maxRow = -1
 		for (const [row] of sheet.cells.iterate()) {
+			cells++
 			if (row > maxRow) maxRow = row
 		}
-		totalRows += maxRow + 1
+		rows += maxRow + 1
 	}
-	return totalRows
+	return { cells, rows }
 }
 
 const FIXTURES = [
@@ -68,23 +59,15 @@ describe('Stress XLSX fixtures', () => {
 	ensureFixtures()
 	for (const fixture of FIXTURES) {
 		const path = join(STRESS_DIR, fixture.name)
-		it(`reads ${fixture.name} without crashing`, () => {
-			const bytes = readFileSync(path)
-			const result = readXlsx(new Uint8Array(bytes))
-			expectOk(result)
-			expect(result.value.workbook.sheets.length).toBeGreaterThan(0)
-		})
-
-		it(`verifies basic counts for ${fixture.name}`, () => {
+		it(`reads and verifies basic counts for ${fixture.name}`, () => {
 			const bytes = readFileSync(path)
 			const result = readXlsx(new Uint8Array(bytes))
 			expectOk(result)
 			const wb = result.value.workbook
 			expect(wb.sheets.length).toBeGreaterThanOrEqual(fixture.minSheets)
-			const cellCount = countCells(wb)
-			expect(cellCount).toBeGreaterThanOrEqual(fixture.minCells)
-			const totalRows = countRows(wb)
-			expect(totalRows).toBeGreaterThanOrEqual(fixture.minRows)
+			const stats = countSheetStats(wb)
+			expect(stats.cells).toBeGreaterThanOrEqual(fixture.minCells)
+			expect(stats.rows).toBeGreaterThanOrEqual(fixture.minRows)
 		})
 	}
 })

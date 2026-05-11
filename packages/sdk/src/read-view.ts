@@ -74,7 +74,9 @@ import type {
 	PivotCacheDecodedValueInfo,
 	PivotCacheInfo,
 	PivotCacheMaterializedRowInfo,
+	PivotCacheRecordInfo,
 	PivotCacheRecordValueInfo,
+	PivotCacheRecordValueKindCount,
 	PivotCacheRowsOptions,
 	PivotFieldInfo,
 	PivotFieldItemInfo,
@@ -1365,7 +1367,7 @@ function buildPivotOutputAudit(
 	if (!sheet) return unsupportedPivotAudit(base, 'Pivot output sheet was not loaded.')
 	if (!pivot.locationRef) return unsupportedPivotAudit(base, 'Pivot table has no output location.')
 	if (!isEmptyPivotOutput(pivot) && !hasSavedSheetCells(sheet)) return undefined
-	const cache = workbook.pivotCaches.find((entry) => entry.cacheId === pivot.cacheId)
+	let cache = workbook.pivotCaches.find((entry) => entry.cacheId === pivot.cacheId)
 	if (!cache) return unsupportedPivotAudit(base, 'Pivot cache metadata was not found.')
 	if (isEmptyPivotOutput(pivot)) {
 		const emptyAudit = auditEmptyPivotOutput(workbook, sheet.id, pivot)
@@ -1378,9 +1380,9 @@ function buildPivotOutputAudit(
 			warnings: [],
 		}
 	}
-	if (!cache.records?.materializedComplete || !cache.records.materializedRecords) {
-		return unsupportedPivotAudit(base, 'Pivot cache records are not fully materialized.')
-	}
+	const auditCache = pivotCacheWithMaterializedAuditRows(workbook, cache)
+	if (!auditCache.ok) return unsupportedPivotAudit(base, auditCache.warning)
+	cache = auditCache.value
 	if (isDataFieldsNestedOnRowsPivot(pivot)) {
 		const expected = aggregateDataFieldsNestedOnRowsPivotOutput(cache, pivot)
 		if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
@@ -1525,6 +1527,122 @@ function buildPivotOutputAudit(
 		mismatches,
 		warnings: [],
 	}
+}
+
+function pivotCacheWithMaterializedAuditRows(
+	workbook: Workbook,
+	cache: PivotCacheInfo,
+): { ok: true; value: PivotCacheInfo } | { ok: false; warning: string } {
+	if (cache.records?.materializedComplete && cache.records.materializedRecords) {
+		return { ok: true, value: cache }
+	}
+	const sourceRecords = materializePivotCacheRecordsFromWorksheetSource(workbook, cache)
+	if (!sourceRecords.ok) return sourceRecords
+	return {
+		ok: true,
+		value: {
+			...cache,
+			records: {
+				partPath:
+					cache.records?.partPath ?? cache.recordsPartPath ?? `${cache.partPath}#worksheet-source`,
+				...(cache.recordCount !== undefined ? { declaredCount: cache.recordCount } : {}),
+				parsedCount: sourceRecords.value.length,
+				preview: sourceRecords.value.slice(0, 5),
+				materializedRecords: sourceRecords.value,
+				materializedCount: sourceRecords.value.length,
+				materializedComplete: true,
+				valueKindCounts: pivotCacheRecordValueKindCounts(sourceRecords.value),
+			},
+		},
+	}
+}
+
+function materializePivotCacheRecordsFromWorksheetSource(
+	workbook: Workbook,
+	cache: PivotCacheInfo,
+): { ok: true; value: readonly PivotCacheRecordInfo[] } | { ok: false; warning: string } {
+	if (cache.sourceType !== 'worksheet' || !cache.sourceSheet || !cache.sourceRef) {
+		return { ok: false, warning: 'Pivot cache records are not fully materialized.' }
+	}
+	let sourceRange: RangeRef
+	try {
+		sourceRange = parseRange(cache.sourceRef)
+	} catch {
+		return { ok: false, warning: `Pivot cache source range is invalid: ${cache.sourceRef}` }
+	}
+	const sourceSheet = workbook.getSheet(cache.sourceSheet)
+	if (!sourceSheet) return { ok: false, warning: 'Pivot cache source sheet was not loaded.' }
+	const sourceFieldCount = sourceRange.end.col - sourceRange.start.col + 1
+	if (sourceFieldCount !== cache.fields.length) {
+		return { ok: false, warning: 'Pivot cache source range does not match cache fields.' }
+	}
+	for (let offset = 0; offset < sourceFieldCount; offset++) {
+		const field = cache.fields[offset]
+		const header = sourceSheet.cells.get(sourceRange.start.row, sourceRange.start.col + offset)
+		if (field?.name !== pivotCacheSourceHeaderName(header?.value ?? EMPTY)) {
+			return { ok: false, warning: 'Pivot cache source headers do not match cache fields.' }
+		}
+	}
+	const records: PivotCacheRecordInfo[] = []
+	for (let row = sourceRange.start.row + 1; row <= sourceRange.end.row; row++) {
+		const values: PivotCacheRecordValueInfo[] = []
+		for (let offset = 0; offset < sourceFieldCount; offset++) {
+			const value = sourceSheet.cells.get(row, sourceRange.start.col + offset)?.value ?? EMPTY
+			values.push(pivotCacheRecordValueFromCell(offset, value))
+		}
+		records.push({ index: records.length, values })
+	}
+	return { ok: true, value: records }
+}
+
+function pivotCacheSourceHeaderName(value: CellValue): string | undefined {
+	switch (value.kind) {
+		case 'string':
+			return value.value
+		case 'richText':
+			return value.runs.map((run) => run.text).join('')
+		case 'number':
+			return String(value.value)
+		case 'date':
+			return String(value.serial)
+		case 'boolean':
+			return value.value ? 'TRUE' : 'FALSE'
+		case 'error':
+			return value.value
+		default:
+			return undefined
+	}
+}
+
+function pivotCacheRecordValueFromCell(index: number, value: CellValue): PivotCacheRecordValueInfo {
+	switch (value.kind) {
+		case 'string':
+			return { index, kind: 'string', value: value.value }
+		case 'richText':
+			return { index, kind: 'string', value: value.runs.map((run) => run.text).join('') }
+		case 'number':
+			return { index, kind: 'number', value: String(value.value) }
+		case 'date':
+			return { index, kind: 'date', value: String(value.serial) }
+		case 'boolean':
+			return { index, kind: 'boolean', value: value.value ? '1' : '0' }
+		case 'error':
+			return { index, kind: 'error', value: value.value }
+		default:
+			return { index, kind: 'missing' }
+	}
+}
+
+function pivotCacheRecordValueKindCounts(
+	records: readonly PivotCacheRecordInfo[],
+): readonly PivotCacheRecordValueKindCount[] {
+	const counts = new Map<PivotCacheRecordValueInfo['kind'], number>()
+	for (const record of records) {
+		for (const value of record.values) {
+			counts.set(value.kind, (counts.get(value.kind) ?? 0) + 1)
+		}
+	}
+	return [...counts.entries()].map(([kind, count]) => ({ kind, count }))
 }
 
 function isAxisItemMatrixPivot(pivot: PivotTableInfo): boolean {

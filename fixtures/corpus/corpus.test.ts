@@ -13,15 +13,20 @@ const SDK_INTEGRATION_TIMEOUT_MS = 120_000
 const LARGE_SDK_INTEGRATION_FILES = new Set(['excel-dashboard-v2.xlsx'])
 const CHART_RELATIONSHIP_TYPE =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart'
+const corpusFileCache = new Map<string, Uint8Array | null>()
+const readResultCache = new WeakMap<Uint8Array, ReturnType<typeof readXlsx>>()
+const packageSummaryCache = new WeakMap<Uint8Array, ReturnType<typeof summarizeOoxmlPackage>>()
 
 function sha256(bytes: Uint8Array): string {
 	return createHash('sha256').update(bytes).digest('hex')
 }
 
 function loadCorpusFile(filename: string): Uint8Array | null {
+	if (corpusFileCache.has(filename)) return corpusFileCache.get(filename) ?? null
 	const path = resolve(CORPUS_DIR, filename)
-	if (!existsSync(path)) return null
-	return new Uint8Array(readFileSync(path))
+	const bytes = existsSync(path) ? new Uint8Array(readFileSync(path)) : null
+	corpusFileCache.set(filename, bytes)
+	return bytes
 }
 
 function requireBytes(bytes: Uint8Array | null): Uint8Array {
@@ -29,10 +34,30 @@ function requireBytes(bytes: Uint8Array | null): Uint8Array {
 	return bytes
 }
 
+function readCorpusFile(bytes: Uint8Array | null): ReturnType<typeof readXlsx> {
+	const sourceBytes = requireBytes(bytes)
+	const cached = readResultCache.get(sourceBytes)
+	if (cached) return cached
+	const result = readXlsx(sourceBytes)
+	readResultCache.set(sourceBytes, result)
+	return result
+}
+
 function readCorpusWorkbook(bytes: Uint8Array | null) {
-	const result = readXlsx(requireBytes(bytes))
+	const result = readCorpusFile(bytes)
 	if (!result.ok) throw new Error(result.error.message)
 	return result.value.workbook
+}
+
+function summarizeCorpusPackage(
+	bytes: Uint8Array | null,
+): ReturnType<typeof summarizeOoxmlPackage> {
+	const sourceBytes = requireBytes(bytes)
+	const cached = packageSummaryCache.get(sourceBytes)
+	if (cached) return cached
+	const summary = summarizeOoxmlPackage(sourceBytes)
+	packageSummaryCache.set(sourceBytes, summary)
+	return summary
 }
 
 function expectChartRelationshipLinks(
@@ -136,18 +161,18 @@ for (const entry of CORPUS) {
 		const bytes = loadCorpusFile(entry.file)
 
 		it.skipIf(!bytes)('opens successfully with readXlsx', () => {
-			const result = readXlsx(requireBytes(bytes))
+			const result = readCorpusFile(bytes)
 			expect(result.ok).toBe(true)
 		})
 
 		it.skipIf(!bytes)(`has ${entry.expectedSheets} sheets`, () => {
-			const result = readXlsx(requireBytes(bytes))
+			const result = readCorpusFile(bytes)
 			if (!result.ok) throw new Error(result.error.message)
 			expect(result.value.workbook.sheets).toHaveLength(entry.expectedSheets)
 		})
 
 		it.skipIf(!bytes)('has expected compatibility status', () => {
-			const result = readXlsx(requireBytes(bytes))
+			const result = readCorpusFile(bytes)
 			if (!result.ok) throw new Error(result.error.message)
 			if (entry.hasOpaqueFeatures) {
 				expect(result.value.report.status).toBe('has-preserved')
@@ -159,7 +184,7 @@ for (const entry of CORPUS) {
 		it.skipIf(!bytes || !entry.hasOpaqueFeatures)(
 			'has capsules for preserved opaque features',
 			() => {
-				const result = readXlsx(requireBytes(bytes))
+				const result = readCorpusFile(bytes)
 				if (!result.ok) throw new Error(result.error.message)
 				expect(result.value.capsules.length).toBeGreaterThan(0)
 			},
@@ -181,7 +206,7 @@ for (const entry of CORPUS) {
 
 		if (entry.expectedTables > 0) {
 			it.skipIf(!bytes)(`has ${entry.expectedTables} tables`, () => {
-				const result = readXlsx(requireBytes(bytes))
+				const result = readCorpusFile(bytes)
 				if (!result.ok) throw new Error(result.error.message)
 				const totalTables = result.value.workbook.sheets.reduce(
 					(sum, s) => sum + s.tables.length,
@@ -193,25 +218,25 @@ for (const entry of CORPUS) {
 
 		if (entry.expectedPivotTables > 0) {
 			it.skipIf(!bytes)(`has ${entry.expectedPivotTables} pivot tables`, () => {
-				const result = readXlsx(requireBytes(bytes))
+				const result = readCorpusFile(bytes)
 				if (!result.ok) throw new Error(result.error.message)
 				expect(result.value.workbook.pivotTables).toHaveLength(entry.expectedPivotTables)
 			})
 		}
 
 		it.skipIf(!bytes)(`has ${entry.expectedCharts} chart package parts`, () => {
-			const summary = summarizeOoxmlPackage(requireBytes(bytes))
+			const summary = summarizeCorpusPackage(bytes)
 			expect(summary.families.charts).toBe(entry.expectedCharts)
 		})
 
 		it.skipIf(!bytes)(`has ${entry.expectedDrawings} drawing package parts`, () => {
-			const summary = summarizeOoxmlPackage(requireBytes(bytes))
+			const summary = summarizeCorpusPackage(bytes)
 			expect(summary.families.drawings).toBe(entry.expectedDrawings)
 		})
 
 		if (entry.expectedPivotTables > 0) {
 			it.skipIf(!bytes)(`has ${entry.expectedPivotTables} pivot table package parts`, () => {
-				const summary = summarizeOoxmlPackage(requireBytes(bytes))
+				const summary = summarizeCorpusPackage(bytes)
 				expect(summary.families.pivotTables).toBe(entry.expectedPivotTables)
 			})
 		}
@@ -569,7 +594,7 @@ describe('corpus: pivot formatting metadata', () => {
 	it.skipIf(!formulasAndPivots)(
 		'exposes pivot format areas from ms-excel-formulas-and-pivot-tables.xlsx',
 		() => {
-			const result = readXlsx(requireBytes(formulasAndPivots))
+			const result = readCorpusFile(formulasAndPivots)
 			if (!result.ok) throw new Error(result.error.message)
 			const pivot = result.value.workbook.pivotTables.find((entry) => entry.name === 'PivotTable8')
 			expect(pivot?.options).toMatchObject({ dataPosition: 0, chartFormat: 1 })
@@ -598,7 +623,7 @@ describe('corpus: pivot formatting metadata', () => {
 	)
 
 	it.skipIf(!dashboard)('exposes pivot formats without explicit references', () => {
-		const result = readXlsx(requireBytes(dashboard))
+		const result = readCorpusFile(dashboard)
 		if (!result.ok) throw new Error(result.error.message)
 		expect(result.value.workbook.pivotCaches[0]).toMatchObject({
 			cacheId: 34,
@@ -626,7 +651,7 @@ describe('corpus: pivot formatting metadata', () => {
 	})
 
 	it.skipIf(!formulasAndPivots)('exposes PivotChart format bindings', () => {
-		const result = readXlsx(requireBytes(formulasAndPivots))
+		const result = readCorpusFile(formulasAndPivots)
 		if (!result.ok) throw new Error(result.error.message)
 		const pivot = result.value.workbook.pivotTables.find((entry) => entry.name === 'PivotTable9')
 		const expectedChartFormat = (index: number, fieldItem: number) => ({
@@ -664,7 +689,7 @@ describe('corpus: pivot formatting metadata', () => {
 	})
 
 	it.skipIf(!formulasAndPivots)('exposes pivot cache range grouping bounds', () => {
-		const result = readXlsx(requireBytes(formulasAndPivots))
+		const result = readCorpusFile(formulasAndPivots)
 		if (!result.ok) throw new Error(result.error.message)
 		const cache = result.value.workbook.pivotCaches.find((entry) => entry.cacheId === 0)
 		const fields = cache?.fields ?? []
@@ -700,7 +725,7 @@ describe('corpus: pivot formatting metadata', () => {
 	it.skipIf(!formulasAndPivots)(
 		'summarizes real pivot cache records and sentinel shared items for cache auditing',
 		() => {
-			const result = readXlsx(requireBytes(formulasAndPivots))
+			const result = readCorpusFile(formulasAndPivots)
 			if (!result.ok) throw new Error(result.error.message)
 			const cache = result.value.workbook.pivotCaches.find((entry) => entry.cacheId === 0)
 			const cache2 = result.value.workbook.pivotCaches.find((entry) => entry.cacheId === 2)

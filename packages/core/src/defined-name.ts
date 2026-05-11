@@ -9,10 +9,17 @@ export interface DefinedName {
 	readonly formula: string
 	readonly scope: DefinedNameScope
 	readonly hidden?: boolean
+	readonly extraAttributes?: readonly DefinedNameAttribute[]
 }
 
 export interface DefinedNameOptions {
 	readonly hidden?: boolean
+	readonly extraAttributes?: readonly DefinedNameAttribute[]
+}
+
+export interface DefinedNameAttribute {
+	readonly name: string
+	readonly value: string
 }
 
 const WORKBOOK_SCOPE: DefinedNameScope = { kind: 'workbook' }
@@ -38,6 +45,9 @@ export class DefinedNameCollection {
 			formula,
 			scope,
 			...(options.hidden !== undefined ? { hidden: options.hidden } : {}),
+			...(options.extraAttributes && options.extraAttributes.length > 0
+				? { extraAttributes: options.extraAttributes.map((attr) => ({ ...attr })) }
+				: {}),
 		}
 		if (index >= 0) {
 			const previous = this.items[index]

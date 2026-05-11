@@ -1,6 +1,7 @@
 import type {
 	ActiveContentInfo,
 	CellStyle,
+	DefinedNameOptions,
 	SheetId,
 	StyleId,
 	WorkbookConnectionPartInfo,
@@ -84,7 +85,7 @@ import { parseStyles, parseStylesLite } from './styles.ts'
 import { parseTable } from './table.ts'
 import { parseThemeColorsXml, parseThemeXml } from './theme.ts'
 import { summarizeVbaProject } from './vba.ts'
-import { parseWorkbookXml, type SheetEntry } from './workbook.ts'
+import { type DefinedNameEntry, parseWorkbookXml, type SheetEntry } from './workbook.ts'
 import { extractZip, type ZipArchive } from './zip.ts'
 
 const XML_DECODER = new TextDecoder('utf-8')
@@ -577,7 +578,7 @@ export function readXlsx(
 		}
 
 		for (const dn of wbInfo.definedNames) {
-			const options = dn.hidden !== undefined ? { hidden: dn.hidden } : {}
+			const options = definedNameOptions(dn)
 			if (dn.localSheetId !== undefined) {
 				const sourceSheet = wbInfo.sheets[dn.localSheetId]
 				const sheet = sourceSheet ? workbook.getSheet(sourceSheet.name) : undefined
@@ -649,6 +650,15 @@ export function readXlsx(
 				`Invalid workbook payload: ${e instanceof Error ? e.message : 'unknown'}`,
 			),
 		)
+	}
+}
+
+function definedNameOptions(dn: DefinedNameEntry): DefinedNameOptions {
+	return {
+		...(dn.hidden !== undefined ? { hidden: dn.hidden } : {}),
+		...(dn.extraAttributes && dn.extraAttributes.length > 0
+			? { extraAttributes: dn.extraAttributes }
+			: {}),
 	}
 }
 

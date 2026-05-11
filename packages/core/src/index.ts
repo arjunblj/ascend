@@ -12,7 +12,12 @@ export {
 export type { ChartPartInfo, ChartSeriesInfo, ChartSheetInfo } from './chart.ts'
 export type { WorkbookConnectionPartInfo, WorkbookConnectionPartKind } from './connection.ts'
 export type { WorkbookDataModelPartInfo, WorkbookDataModelPartKind } from './data-model.ts'
-export type { DefinedName, DefinedNameScope } from './defined-name.ts'
+export type {
+	DefinedName,
+	DefinedNameAttribute,
+	DefinedNameOptions,
+	DefinedNameScope,
+} from './defined-name.ts'
 export { DefinedNameCollection } from './defined-name.ts'
 export type {
 	AutoFilter,

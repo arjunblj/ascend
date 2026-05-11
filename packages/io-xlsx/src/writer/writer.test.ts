@@ -111,6 +111,57 @@ describe('writeXlsx', () => {
 		expect(zip['xl/sharedStrings.xml']).toBeUndefined()
 	})
 
+	it('preserves defined-name metadata attributes when workbook XML is regenerated', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
+  <definedNames>
+    <definedName name="MacroName" hidden="1" comment="Menu entry" description="Macro &amp; helper" function="1" vbProcedure="1" xlm="1" functionGroupId="7" shortcutKey="K" publishToServer="1" workbookParameter="1">Data!$A$1</definedName>
+  </definedNames>
+</workbook>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+		})
+		const read = readXlsx(bytes)
+		expectOk(read)
+		expect(read.value.workbook.definedNames.getEntry('MacroName')?.extraAttributes).toContainEqual({
+			name: 'description',
+			value: 'Macro & helper',
+		})
+
+		const written = writeXlsx(read.value.workbook, read.value.capsules, { workbookMetaDirty: true })
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		const workbookXml = new TextDecoder().decode(zip['xl/workbook.xml'] ?? new Uint8Array())
+		expect(workbookXml).toContain('name="MacroName"')
+		expect(workbookXml).toContain('hidden="1"')
+		expect(workbookXml).toContain('comment="Menu entry"')
+		expect(workbookXml).toContain('description="Macro &amp; helper"')
+		expect(workbookXml).toContain('function="1"')
+		expect(workbookXml).toContain('vbProcedure="1"')
+		expect(workbookXml).toContain('xlm="1"')
+		expect(workbookXml).toContain('functionGroupId="7"')
+		expect(workbookXml).toContain('shortcutKey="K"')
+		expect(workbookXml).toContain('publishToServer="1"')
+		expect(workbookXml).toContain('workbookParameter="1"')
+	})
+
 	it('writes edited tabular slicer cache item state back into preserved package XML', () => {
 		const slicerCacheXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <slicerCacheDefinition xmlns="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" name="Slicer_State" sourceName="State">

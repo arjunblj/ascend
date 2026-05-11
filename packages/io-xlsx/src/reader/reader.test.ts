@@ -715,13 +715,13 @@ describe('readXlsx', () => {
 		expect(resolved?.formula).toBe('Summary!$A$1')
 	})
 
-	it('reads hidden defined-name metadata', () => {
+	it('reads hidden and extended defined-name metadata', () => {
 		const wbXml = `<?xml version="1.0"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
   xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
   <definedNames>
-    <definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">Data!$A$1:$B$10</definedName>
+    <definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1" comment="Filter menu" description="Visible &amp; hidden rows" function="1" vbProcedure="1" xlm="1" functionGroupId="7" shortcutKey="K">Data!$A$1:$B$10</definedName>
   </definedNames>
 </workbook>`
 		const bytes = makeXlsx({
@@ -743,6 +743,15 @@ describe('readXlsx', () => {
 		const entry = result.value.workbook.definedNames.resolve('_xlnm._FilterDatabase', sheet.id)
 		expect(entry?.hidden).toBe(true)
 		expect(entry?.formula).toBe('Data!$A$1:$B$10')
+		expect(entry?.extraAttributes).toEqual([
+			{ name: 'comment', value: 'Filter menu' },
+			{ name: 'description', value: 'Visible & hidden rows' },
+			{ name: 'function', value: '1' },
+			{ name: 'vbProcedure', value: '1' },
+			{ name: 'xlm', value: '1' },
+			{ name: 'functionGroupId', value: '7' },
+			{ name: 'shortcutKey', value: 'K' },
+		])
 	})
 
 	it('reads array formula text from structured formula nodes', () => {

@@ -242,8 +242,19 @@ export function rewriteTableColumnInDefinedNames(
 	}
 }
 
-function definedNameOptions(entry: { readonly hidden?: boolean }): { readonly hidden?: boolean } {
-	return entry.hidden !== undefined ? { hidden: entry.hidden } : {}
+function definedNameOptions(entry: {
+	readonly hidden?: boolean
+	readonly extraAttributes?: readonly { readonly name: string; readonly value: string }[]
+}): {
+	readonly hidden?: boolean
+	readonly extraAttributes?: readonly { readonly name: string; readonly value: string }[]
+} {
+	return {
+		...(entry.hidden !== undefined ? { hidden: entry.hidden } : {}),
+		...(entry.extraAttributes && entry.extraAttributes.length > 0
+			? { extraAttributes: entry.extraAttributes }
+			: {}),
+	}
 }
 
 export function rewriteFormulaTextForRename(

@@ -1,4 +1,10 @@
-import type { SheetState, WorkbookProperties, WorkbookProtection, WorkbookView } from '@ascend/core'
+import type {
+	DefinedNameAttribute,
+	SheetState,
+	WorkbookProperties,
+	WorkbookProtection,
+	WorkbookView,
+} from '@ascend/core'
 import type { CalcSettings } from '@ascend/schema'
 import { DEFAULT_CALC_SETTINGS } from '@ascend/schema'
 import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
@@ -16,6 +22,7 @@ export interface DefinedNameEntry {
 	readonly formula: string
 	readonly localSheetId?: number
 	readonly hidden?: boolean
+	readonly extraAttributes?: readonly DefinedNameAttribute[]
 }
 
 export interface WorkbookInfo {
@@ -204,6 +211,7 @@ function scanDefinedNames(xml: string): DefinedNameEntry[] {
 			formula,
 			...(localId !== undefined ? { localSheetId: localId } : {}),
 			...(hidden !== undefined ? { hidden } : {}),
+			...definedNameExtraAttributes(attrs),
 		})
 	}
 	return entries
@@ -434,9 +442,38 @@ function parseDefinedNames(wb: XmlNode): DefinedNameEntry[] {
 			formula,
 			...(localId !== undefined ? { localSheetId: localId } : {}),
 			...(hidden !== undefined ? { hidden } : {}),
+			...definedNameExtraAttributesFromNode(dn),
 		})
 	}
 	return entries
+}
+
+function definedNameExtraAttributes(attrs: Map<string, string>): {
+	readonly extraAttributes?: readonly DefinedNameAttribute[]
+} {
+	const extraAttributes: DefinedNameAttribute[] = []
+	for (const [name, value] of attrs) {
+		if (isCoreDefinedNameAttribute(name)) continue
+		extraAttributes.push({ name, value })
+	}
+	return extraAttributes.length > 0 ? { extraAttributes } : {}
+}
+
+function definedNameExtraAttributesFromNode(node: XmlNode): {
+	readonly extraAttributes?: readonly DefinedNameAttribute[]
+} {
+	const extraAttributes: DefinedNameAttribute[] = []
+	for (const [key, value] of Object.entries(node)) {
+		if (!key.startsWith('@_')) continue
+		const name = key.slice(2)
+		if (isCoreDefinedNameAttribute(name) || value === undefined || value === null) continue
+		extraAttributes.push({ name, value: String(value) })
+	}
+	return extraAttributes.length > 0 ? { extraAttributes } : {}
+}
+
+function isCoreDefinedNameAttribute(name: string): boolean {
+	return name === 'name' || name === 'localSheetId' || name === 'hidden'
 }
 
 function parseCalcSettings(wb: XmlNode): CalcSettings {

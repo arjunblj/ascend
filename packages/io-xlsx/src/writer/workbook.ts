@@ -110,6 +110,10 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 		out.push('<definedNames>')
 		for (const definedName of workbook.definedNames.list()) {
 			const attrs = [`name="${escapeXml(definedName.name)}"`]
+			for (const extra of definedName.extraAttributes ?? []) {
+				if (isCoreDefinedNameAttribute(extra.name) || !isXmlAttributeName(extra.name)) continue
+				attrs.push(`${extra.name}="${escapeXml(extra.value)}"`)
+			}
 			if (definedName.scope.kind === 'sheet') {
 				const scope = definedName.scope
 				const sheetIndex = workbook.sheets.findIndex((sheet) => sheet.id === scope.sheetId)
@@ -180,6 +184,14 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 
 	out.push('</workbook>')
 	return out.toString()
+}
+
+function isCoreDefinedNameAttribute(name: string): boolean {
+	return name === 'name' || name === 'localSheetId' || name === 'hidden'
+}
+
+function isXmlAttributeName(name: string): boolean {
+	return /^[A-Za-z_][\w:.-]*$/.test(name)
 }
 
 interface WorkbookSheetXmlEntry {

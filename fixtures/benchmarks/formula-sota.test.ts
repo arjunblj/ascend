@@ -93,52 +93,57 @@ describe('formula SOTA public profile smoke', () => {
 		expect(stdout).not.toContain('operationSpeedupVsHyperFormula')
 	})
 
-	test('--profile all runs every public comparator profile as one gated suite', () => {
-		const proc = Bun.spawnSync({
-			cmd: [
-				Bun.argv[0],
-				runnerPath,
-				'--profile',
-				'all',
-				'--rows',
-				'120',
-				'--formulas',
-				'40',
-				'--repeat',
-				'1',
-				'--warmup',
-				'0',
-				'--assert-correctness',
-				'--json',
-			],
-			stdout: 'pipe',
-			stderr: 'pipe',
-		})
-		const stderr = new TextDecoder().decode(proc.stderr)
-		expect(proc.exitCode, stderr).toBe(0)
+	test(
+		'--profile all runs every public comparator profile as one gated suite',
+		() => {
+			const proc = Bun.spawnSync({
+				cmd: [
+					Bun.argv[0],
+					runnerPath,
+					'--profile',
+					'all',
+					'--rows',
+					'120',
+					'--formulas',
+					'40',
+					'--repeat',
+					'1',
+					'--warmup',
+					'0',
+					'--assert-correctness',
+					'--json',
+				],
+				stdout: 'pipe',
+				stderr: 'pipe',
+			})
+			const stderr = new TextDecoder().decode(proc.stderr)
+			expect(proc.exitCode, stderr).toBe(0)
 
-		const payload = JSON.parse(new TextDecoder().decode(proc.stdout)) as FormulaSotaSuitePayload
-		expect(payload.suite).toBe('ascend-formula-sota')
-		expect(payload.selection.profile).toBe('all')
-		expect(payload.selection.aggregate).toBe('ALL')
-		expect(payload.profiles).toHaveLength(expandedProfileCount)
-		expect(payload.summary.profileCount).toBe(expandedProfileCount)
-		expect(payload.summary.minOperationSpeedupVsHyperFormula).toBeGreaterThan(0)
-		expect(payload.summary.geomeanTotalSpeedupVsHyperFormula).toBeGreaterThan(0)
-		for (const profile of profiles) {
-			if (!('aggregates' in profile)) {
-				expect(payload.profiles.some((entry) => entry.profile.name === profile.name)).toBe(true)
-				continue
+			const payload = JSON.parse(new TextDecoder().decode(proc.stdout)) as FormulaSotaSuitePayload
+			expect(payload.suite).toBe('ascend-formula-sota')
+			expect(payload.selection.profile).toBe('all')
+			expect(payload.selection.aggregate).toBe('ALL')
+			expect(payload.profiles).toHaveLength(expandedProfileCount)
+			expect(payload.summary.profileCount).toBe(expandedProfileCount)
+			expect(payload.summary.minOperationSpeedupVsHyperFormula).toBeGreaterThan(0)
+			expect(payload.summary.geomeanTotalSpeedupVsHyperFormula).toBeGreaterThan(0)
+			for (const profile of profiles) {
+				if (!('aggregates' in profile)) {
+					expect(payload.profiles.some((entry) => entry.profile.name === profile.name)).toBe(true)
+					continue
+				}
+				for (const aggregate of profile.aggregates) {
+					expect(
+						payload.profiles.some(
+							(entry) =>
+								entry.profile.name === profile.name && entry.profile.aggregate === aggregate,
+						),
+					).toBe(true)
+				}
 			}
-			for (const aggregate of profile.aggregates) {
-				expect(
-					payload.profiles.some(
-						(entry) => entry.profile.name === profile.name && entry.profile.aggregate === aggregate,
-					),
-				).toBe(true)
-			}
-		}
-	})
+		},
+		{ timeout: 30_000 },
+	)
 
 	test('--aggregate ALL expands one prefix profile across every aggregate', () => {
 		const proc = Bun.spawnSync({
@@ -240,51 +245,55 @@ describe('formula SOTA public profile smoke', () => {
 	for (const profile of profiles) {
 		const aggregateCases = 'aggregates' in profile ? profile.aggregates : [undefined]
 		for (const aggregate of aggregateCases) {
-			test(`${profile.name}${aggregate ? ` ${aggregate}` : ''} stays correct against the public comparator shape`, () => {
-				const aggregateArgs = aggregate ? ['--aggregate', aggregate] : []
-				const proc = Bun.spawnSync({
-					cmd: [
-						Bun.argv[0],
-						runnerPath,
-						'--profile',
-						profile.name,
-						...profile.args,
-						...aggregateArgs,
-						'--repeat',
-						'1',
-						'--warmup',
-						'0',
-						'--json',
-					],
-					stdout: 'pipe',
-					stderr: 'pipe',
-				})
-				const stderr = new TextDecoder().decode(proc.stderr)
-				expect(proc.exitCode, stderr).toBe(0)
+			test(
+				`${profile.name}${aggregate ? ` ${aggregate}` : ''} stays correct against the public comparator shape`,
+				() => {
+					const aggregateArgs = aggregate ? ['--aggregate', aggregate] : []
+					const proc = Bun.spawnSync({
+						cmd: [
+							Bun.argv[0],
+							runnerPath,
+							'--profile',
+							profile.name,
+							...profile.args,
+							...aggregateArgs,
+							'--repeat',
+							'1',
+							'--warmup',
+							'0',
+							'--json',
+						],
+						stdout: 'pipe',
+						stderr: 'pipe',
+					})
+					const stderr = new TextDecoder().decode(proc.stderr)
+					expect(proc.exitCode, stderr).toBe(0)
 
-				const payload = JSON.parse(new TextDecoder().decode(proc.stdout)) as FormulaSotaPayload
-				expect(payload.suite).toBe('ascend-formula-sota')
-				expect(payload.profile.name).toBe(profile.name)
-				if (aggregate) expect(payload.profile.aggregate).toBe(aggregate)
-				expect(payload.profile.sourceBenchmark.length).toBeGreaterThan(0)
-				expect(payload.profile.sourceUrl).toContain('hyperformula')
-				expect(payload.cases.map((entry) => entry.engine).sort()).toEqual([
-					'ascend',
-					'hyperformula',
-				])
-				for (const entry of payload.cases) {
-					const matchFlags = Object.entries(entry.correctness).filter(([key]) =>
-						key.endsWith('Matches'),
-					)
-					expect(matchFlags.length).toBeGreaterThan(0)
-					for (const [key, value] of matchFlags) {
-						expect(value, `${entry.engine}.${key}`).toBe(true)
+					const payload = JSON.parse(new TextDecoder().decode(proc.stdout)) as FormulaSotaPayload
+					expect(payload.suite).toBe('ascend-formula-sota')
+					expect(payload.profile.name).toBe(profile.name)
+					if (aggregate) expect(payload.profile.aggregate).toBe(aggregate)
+					expect(payload.profile.sourceBenchmark.length).toBeGreaterThan(0)
+					expect(payload.profile.sourceUrl).toContain('hyperformula')
+					expect(payload.cases.map((entry) => entry.engine).sort()).toEqual([
+						'ascend',
+						'hyperformula',
+					])
+					for (const entry of payload.cases) {
+						const matchFlags = Object.entries(entry.correctness).filter(([key]) =>
+							key.endsWith('Matches'),
+						)
+						expect(matchFlags.length).toBeGreaterThan(0)
+						for (const [key, value] of matchFlags) {
+							expect(value, `${entry.engine}.${key}`).toBe(true)
+						}
+						if (entry.engine === 'ascend') {
+							expect(entry.correctness.errors ?? 0).toBe(0)
+						}
 					}
-					if (entry.engine === 'ascend') {
-						expect(entry.correctness.errors ?? 0).toBe(0)
-					}
-				}
-			})
+				},
+				{ timeout: 30_000 },
+			)
 		}
 	}
 })

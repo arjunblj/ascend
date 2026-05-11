@@ -10,34 +10,45 @@ concurrency:
   group: bench-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   bench-smoke:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pull-requests: write
       actions: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.13
+          bun-version-file: package.json
 
-      - run: bun install --frozen-lockfile
+      - name: Cache Bun packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      - run: bun ci
 
       - name: Run smoke benchmarks
         run: bun fixtures/benchmarks/run.ts --set smoke --repeat 3 --json > bench-current.json
 
       - name: Upload current results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bench-smoke-${{ github.sha }}
           path: bench-current.json
 
       - name: Download baseline from main
         id: baseline
-        uses: dawidd6/action-download-artifact@v6
+        uses: dawidd6/action-download-artifact@v11
         with:
           workflow: bench.yml
           branch: main
@@ -70,7 +81,7 @@ jobs:
 
       - name: Post regression comment
         if: steps.compare.outputs.has_regression == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
@@ -106,19 +117,26 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.13
+          bun-version-file: package.json
 
-      - run: bun install --frozen-lockfile
+      - name: Cache Bun packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      - run: bun ci
 
       - name: Run full benchmark suite
         run: bun fixtures/benchmarks/run.ts --repeat 3 --json > bench-results.json
 
       - name: Upload full results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bench-full-${{ github.sha }}
           path: bench-results.json

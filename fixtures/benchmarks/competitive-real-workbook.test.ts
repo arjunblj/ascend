@@ -1019,176 +1019,198 @@ describe('evaluateAssertions', () => {
 		expect(FULL_CORPUS_TARGETS).toContain('research/excel-corpus/excel-dashboard-v2.xlsx')
 	})
 
-	test('edit-roundtrip falls back to string cells when a workbook has no numeric edit target', () => {
-		const workbookPath = resolve(mkdtempSync(`${tmpdir()}/ascend-string-edit-`), 'strings.xlsx')
-		writeFileSync(workbookPath, stringOnlyWorkbookBytes())
-		const proc = Bun.spawnSync({
-			cmd: [
-				'bun',
-				'run',
-				'fixtures/benchmarks/competitive-real-workbook.ts',
-				'--category',
-				'edit-roundtrip',
-				'--repeat',
-				'1',
-				'--warmup',
-				'0',
-				'--libraries',
-				'ascend',
-				'--json',
-				workbookPath,
-			],
-			stdout: 'pipe',
-			stderr: 'pipe',
-		})
-		if (proc.exitCode !== 0) {
-			throw new Error(new TextDecoder().decode(proc.stderr))
-		}
-		const payload = JSON.parse(new TextDecoder().decode(proc.stdout)) as {
-			cases: Array<{
-				dimensions: { correctnessStatus: string }
-				assertions: {
-					editValueType?: string
-					editCellValueMatches?: boolean
-					semanticRoundtripMatches?: boolean
-				}
-			}>
-			failed?: unknown[]
-		}
-		expect(payload.failed ?? []).toEqual([])
-		expect(payload.cases[0]?.dimensions.correctnessStatus).not.toBe('error')
-		expect(payload.cases[0]?.assertions.semanticRoundtripMatches).toBe(true)
-		expect(payload.cases[0]?.assertions.editValueType).toBe('string')
-		expect(payload.cases[0]?.assertions.editCellValueMatches).toBe(true)
-	})
-
-	test('edit-roundtrip recognizes namespace-prefixed worksheet cells', () => {
-		const proc = Bun.spawnSync({
-			cmd: [
-				'bun',
-				'run',
-				'fixtures/benchmarks/competitive-real-workbook.ts',
-				'--category',
-				'edit-roundtrip',
-				'--repeat',
-				'1',
-				'--warmup',
-				'0',
-				'--libraries',
-				'ascend',
-				'--json',
-				'fixtures/xlsx/calamine/richtext-namespaced.xlsx',
-			],
-			stdout: 'pipe',
-			stderr: 'pipe',
-		})
-		if (proc.exitCode !== 0) {
-			throw new Error(new TextDecoder().decode(proc.stderr))
-		}
-		const payload = JSON.parse(new TextDecoder().decode(proc.stdout)) as {
-			cases: Array<{
-				dimensions: { correctnessStatus: string }
-				assertions: {
-					editValueType?: string
-					editCellValueMatches?: boolean
-					semanticRoundtripMatches?: boolean
-				}
-			}>
-			failed?: unknown[]
-		}
-		expect(payload.failed ?? []).toEqual([])
-		expect(payload.cases[0]?.dimensions.correctnessStatus).toBe('semantic-roundtrip-pass')
-		expect(payload.cases[0]?.assertions.semanticRoundtripMatches).toBe(true)
-		expect(payload.cases[0]?.assertions.editValueType).toBe('string')
-		expect(payload.cases[0]?.assertions.editCellValueMatches).toBe(true)
-	})
-
-	test('edit-roundtrip adds a numeric probe when a workbook has only formulas', () => {
-		const payload = runAscendEditRoundtrip('fixtures/xlsx/exceljs/bogus-defined-name.xlsx')
-		expect(payload.failed ?? []).toEqual([])
-		expect(payload.cases[0]?.dimensions.correctnessStatus).toBe('semantic-roundtrip-pass')
-		expect(payload.cases[0]?.assertions.editMode).toBe('add-cell')
-		expect(payload.cases[0]?.assertions.editRef).toBe('B1')
-		expect(payload.cases[0]?.assertions.editValueType).toBe('number')
-		expect(payload.cases[0]?.assertions.editObservedValue).toBe(424242)
-		expect(payload.cases[0]?.assertions.editObservedCellDelta).toBe(1)
-		expect(payload.cases[0]?.assertions.editObservedPhysicalCellDelta).toBe(1)
-		expect(payload.cases[0]?.assertions.editObservedFormulaDelta).toBe(0)
-		expect(payload.cases[0]?.assertions.editFormulaTextUnchanged).toBe(true)
-		expect(payload.cases[0]?.assertions.editFeatureInventoryUnchanged).toBe(true)
-		expect(payload.cases[0]?.assertions.editPreservedPartContentUnchanged).toBe(true)
-	})
-
-	test('edit-roundtrip avoids editing inside array formula ranges', () => {
-		const payload = runAscendEditRoundtrip('fixtures/xlsx/libreoffice/tdf170201.xlsx')
-		expect(payload.failed ?? []).toEqual([])
-		expect(payload.cases[0]?.dimensions.correctnessStatus).toBe('semantic-roundtrip-pass')
-		expect(payload.cases[0]?.assertions.editMode).toBe('add-cell')
-		expect(payload.cases[0]?.assertions.editRef).toBe('D1')
-		expect(payload.cases[0]?.assertions.editObservedValue).toBe(424242)
-		expect(payload.cases[0]?.assertions.editFormulaTextUnchanged).toBe(true)
-	})
-
-	test('edit-roundtrip uses A1 for metadata-only empty sheets', () => {
-		const payload = runAscendEditRoundtrip('fixtures/xlsx/exceljs/test-issue-1842.xlsx')
-		expect(payload.failed ?? []).toEqual([])
-		expect(payload.cases[0]?.dimensions.correctnessStatus).toBe('semantic-roundtrip-pass')
-		expect(payload.cases[0]?.assertions.editMode).toBe('add-cell')
-		expect(payload.cases[0]?.assertions.editRef).toBe('A1')
-		expect(payload.cases[0]?.assertions.editObservedValue).toBe(424242)
-		expect(payload.cases[0]?.assertions.editObservedCellDelta).toBe(1)
-		expect(payload.cases[0]?.assertions.editFeatureInventoryUnchanged).toBe(true)
-	})
-
-	test('default real-workbook sweeps span vendored OSS corpuses and feature tags', async () => {
-		const physicalRoots = ['poi', 'calamine', 'closedxml', 'exceljs', 'libreoffice'] as const
-		for (const root of physicalRoots) {
-			expect(
-				FULL_CORPUS_TARGETS.some((target) => target.startsWith(`fixtures/xlsx/${root}/`)),
-			).toBe(true)
-		}
-		expect(FULL_CORPUS_TARGETS).toContain('fixtures/xlsx/poi/formula_stress_test.xlsx')
-		expect(
-			FULL_CORPUS_TARGETS.some((target) => target.startsWith('fixtures/xlsx/xlsxwriter/')),
-		).toBe(true)
-		expect(
-			QUICK_TARGETS.some((target) =>
-				/^fixtures\/xlsx\/(calamine|libreoffice|xlsxwriter)\//.test(target),
-			),
-		).toBe(true)
-
-		const targetSet = new Set(FULL_CORPUS_TARGETS)
-		const targetAbsSet = new Set(FULL_CORPUS_TARGETS.map((target) => resolve(target)))
-		const coveredTags = new Set<string>()
-		for (const root of [...physicalRoots, 'sheetjs'] as const) {
-			const entries = normalizeManifest(
-				await loadCorpusManifestEntries(resolve(import.meta.dir, `../xlsx/${root}/manifest.ts`)),
-			)
-			for (const entry of entries) {
-				const covered =
-					root === 'sheetjs'
-						? targetAbsSet.has(resolve(import.meta.dir, `../xlsx/${root}`, entry.file))
-						: targetSet.has(`fixtures/xlsx/${root}/${entry.file}`)
-				if (!covered) continue
-				for (const tag of entry.featureTags) coveredTags.add(tag)
+	test(
+		'edit-roundtrip falls back to string cells when a workbook has no numeric edit target',
+		() => {
+			const workbookPath = resolve(mkdtempSync(`${tmpdir()}/ascend-string-edit-`), 'strings.xlsx')
+			writeFileSync(workbookPath, stringOnlyWorkbookBytes())
+			const proc = Bun.spawnSync({
+				cmd: [
+					Bun.argv[0],
+					'fixtures/benchmarks/competitive-real-workbook.ts',
+					'--category',
+					'edit-roundtrip',
+					'--repeat',
+					'1',
+					'--warmup',
+					'0',
+					'--libraries',
+					'ascend',
+					'--json',
+					workbookPath,
+				],
+				stdout: 'pipe',
+				stderr: 'pipe',
+			})
+			if (proc.exitCode !== 0) {
+				throw new Error(new TextDecoder().decode(proc.stderr))
 			}
-		}
+			const payload = JSON.parse(new TextDecoder().decode(proc.stdout)) as {
+				cases: Array<{
+					dimensions: { correctnessStatus: string }
+					assertions: {
+						editValueType?: string
+						editCellValueMatches?: boolean
+						semanticRoundtripMatches?: boolean
+					}
+				}>
+				failed?: unknown[]
+			}
+			expect(payload.failed ?? []).toEqual([])
+			expect(payload.cases[0]?.dimensions.correctnessStatus).not.toBe('error')
+			expect(payload.cases[0]?.assertions.semanticRoundtripMatches).toBe(true)
+			expect(payload.cases[0]?.assertions.editValueType).toBe('string')
+			expect(payload.cases[0]?.assertions.editCellValueMatches).toBe(true)
+		},
+		{ timeout: 30_000 },
+	)
 
-		for (const tag of [
-			'formula-fidelity',
-			'pivot-table',
-			'chart',
-			'drawing',
-			'comment',
-			'conditional-formatting',
-			'data-validation',
-			'external-link',
-			'table',
-			'style',
-		]) {
-			expect(coveredTags.has(tag), `missing benchmark feature tag ${tag}`).toBe(true)
-		}
-	})
+	test(
+		'edit-roundtrip recognizes namespace-prefixed worksheet cells',
+		() => {
+			const proc = Bun.spawnSync({
+				cmd: [
+					Bun.argv[0],
+					'fixtures/benchmarks/competitive-real-workbook.ts',
+					'--category',
+					'edit-roundtrip',
+					'--repeat',
+					'1',
+					'--warmup',
+					'0',
+					'--libraries',
+					'ascend',
+					'--json',
+					'fixtures/xlsx/calamine/richtext-namespaced.xlsx',
+				],
+				stdout: 'pipe',
+				stderr: 'pipe',
+			})
+			if (proc.exitCode !== 0) {
+				throw new Error(new TextDecoder().decode(proc.stderr))
+			}
+			const payload = JSON.parse(new TextDecoder().decode(proc.stdout)) as {
+				cases: Array<{
+					dimensions: { correctnessStatus: string }
+					assertions: {
+						editValueType?: string
+						editCellValueMatches?: boolean
+						semanticRoundtripMatches?: boolean
+					}
+				}>
+				failed?: unknown[]
+			}
+			expect(payload.failed ?? []).toEqual([])
+			expect(payload.cases[0]?.dimensions.correctnessStatus).toBe('semantic-roundtrip-pass')
+			expect(payload.cases[0]?.assertions.semanticRoundtripMatches).toBe(true)
+			expect(payload.cases[0]?.assertions.editValueType).toBe('string')
+			expect(payload.cases[0]?.assertions.editCellValueMatches).toBe(true)
+		},
+		{ timeout: 30_000 },
+	)
+
+	test(
+		'edit-roundtrip adds a numeric probe when a workbook has only formulas',
+		() => {
+			const payload = runAscendEditRoundtrip('fixtures/xlsx/exceljs/bogus-defined-name.xlsx')
+			expect(payload.failed ?? []).toEqual([])
+			expect(payload.cases[0]?.dimensions.correctnessStatus).toBe('semantic-roundtrip-pass')
+			expect(payload.cases[0]?.assertions.editMode).toBe('add-cell')
+			expect(payload.cases[0]?.assertions.editRef).toBe('B1')
+			expect(payload.cases[0]?.assertions.editValueType).toBe('number')
+			expect(payload.cases[0]?.assertions.editObservedValue).toBe(424242)
+			expect(payload.cases[0]?.assertions.editObservedCellDelta).toBe(1)
+			expect(payload.cases[0]?.assertions.editObservedPhysicalCellDelta).toBe(1)
+			expect(payload.cases[0]?.assertions.editObservedFormulaDelta).toBe(0)
+			expect(payload.cases[0]?.assertions.editFormulaTextUnchanged).toBe(true)
+			expect(payload.cases[0]?.assertions.editFeatureInventoryUnchanged).toBe(true)
+			expect(payload.cases[0]?.assertions.editPreservedPartContentUnchanged).toBe(true)
+		},
+		{ timeout: 30_000 },
+	)
+
+	test(
+		'edit-roundtrip avoids editing inside array formula ranges',
+		() => {
+			const payload = runAscendEditRoundtrip('fixtures/xlsx/libreoffice/tdf170201.xlsx')
+			expect(payload.failed ?? []).toEqual([])
+			expect(payload.cases[0]?.dimensions.correctnessStatus).toBe('semantic-roundtrip-pass')
+			expect(payload.cases[0]?.assertions.editMode).toBe('add-cell')
+			expect(payload.cases[0]?.assertions.editRef).toBe('D1')
+			expect(payload.cases[0]?.assertions.editObservedValue).toBe(424242)
+			expect(payload.cases[0]?.assertions.editFormulaTextUnchanged).toBe(true)
+		},
+		{ timeout: 30_000 },
+	)
+
+	test(
+		'edit-roundtrip uses A1 for metadata-only empty sheets',
+		() => {
+			const payload = runAscendEditRoundtrip('fixtures/xlsx/exceljs/test-issue-1842.xlsx')
+			expect(payload.failed ?? []).toEqual([])
+			expect(payload.cases[0]?.dimensions.correctnessStatus).toBe('semantic-roundtrip-pass')
+			expect(payload.cases[0]?.assertions.editMode).toBe('add-cell')
+			expect(payload.cases[0]?.assertions.editRef).toBe('A1')
+			expect(payload.cases[0]?.assertions.editObservedValue).toBe(424242)
+			expect(payload.cases[0]?.assertions.editObservedCellDelta).toBe(1)
+			expect(payload.cases[0]?.assertions.editFeatureInventoryUnchanged).toBe(true)
+		},
+		{ timeout: 30_000 },
+	)
+
+	test(
+		'default real-workbook sweeps span vendored OSS corpuses and feature tags',
+		async () => {
+			const physicalRoots = ['poi', 'calamine', 'closedxml', 'exceljs', 'libreoffice'] as const
+			for (const root of physicalRoots) {
+				expect(
+					FULL_CORPUS_TARGETS.some((target) => target.startsWith(`fixtures/xlsx/${root}/`)),
+				).toBe(true)
+			}
+			expect(FULL_CORPUS_TARGETS).toContain('fixtures/xlsx/poi/formula_stress_test.xlsx')
+			expect(
+				FULL_CORPUS_TARGETS.some((target) => target.startsWith('fixtures/xlsx/xlsxwriter/')),
+			).toBe(true)
+			expect(
+				QUICK_TARGETS.some((target) =>
+					/^fixtures\/xlsx\/(calamine|libreoffice|xlsxwriter)\//.test(target),
+				),
+			).toBe(true)
+
+			const targetSet = new Set(FULL_CORPUS_TARGETS)
+			const targetAbsSet = new Set(FULL_CORPUS_TARGETS.map((target) => resolve(target)))
+			const coveredTags = new Set<string>()
+			for (const root of [...physicalRoots, 'sheetjs'] as const) {
+				const entries = normalizeManifest(
+					await loadCorpusManifestEntries(resolve(import.meta.dir, `../xlsx/${root}/manifest.ts`)),
+				)
+				for (const entry of entries) {
+					const covered =
+						root === 'sheetjs'
+							? targetAbsSet.has(resolve(import.meta.dir, `../xlsx/${root}`, entry.file))
+							: targetSet.has(`fixtures/xlsx/${root}/${entry.file}`)
+					if (!covered) continue
+					for (const tag of entry.featureTags) coveredTags.add(tag)
+				}
+			}
+
+			for (const tag of [
+				'formula-fidelity',
+				'pivot-table',
+				'chart',
+				'drawing',
+				'comment',
+				'conditional-formatting',
+				'data-validation',
+				'external-link',
+				'table',
+				'style',
+			]) {
+				expect(coveredTags.has(tag), `missing benchmark feature tag ${tag}`).toBe(true)
+			}
+		},
+		{ timeout: 30_000 },
+	)
 
 	test('TypeScript corpus manifests can promote vendored POI fixtures into benchmark selection', async () => {
 		const entries = normalizeManifest(
@@ -1721,8 +1743,7 @@ function runAscendEditRoundtrip(workbookPath: string): {
 } {
 	const proc = Bun.spawnSync({
 		cmd: [
-			'bun',
-			'run',
+			Bun.argv[0],
 			'fixtures/benchmarks/competitive-real-workbook.ts',
 			'--category',
 			'edit-roundtrip',

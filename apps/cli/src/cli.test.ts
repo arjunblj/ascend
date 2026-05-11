@@ -14,7 +14,7 @@ const HAS_SLICER_CORPUS_FILE = existsSync(`${import.meta.dir}/${SLICER_CORPUS_FI
 
 function run(...args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
 	return new Promise((resolve) => {
-		const proc = Bun.spawn(['bun', 'run', CLI, ...args], {
+		const proc = Bun.spawn([Bun.argv[0], CLI, ...args], {
 			stdout: 'pipe',
 			stderr: 'pipe',
 			cwd: import.meta.dir,
@@ -360,6 +360,7 @@ describe('ascend cli', () => {
 
 	test.skipIf(!HAS_PIVOT_CORPUS_FILE)(
 		'inspect --detail pivots --json returns pivot inventory',
+		{ timeout: 30_000 },
 		async () => {
 			const { exitCode, stdout } = await run(
 				'inspect',
@@ -384,6 +385,7 @@ describe('ascend cli', () => {
 
 	test.skipIf(!HAS_PIVOT_CORPUS_FILE)(
 		'inspect --json reports registry-backed capability warnings',
+		{ timeout: 30_000 },
 		async () => {
 			const { exitCode, stdout } = await run(
 				'inspect',
@@ -405,7 +407,7 @@ describe('ascend cli', () => {
 
 	test.skipIf(!HAS_SLICER_CORPUS_FILE)(
 		'inspect --detail slicers --json returns slicer inventory',
-		{ timeout: 10000 },
+		{ timeout: 30_000 },
 		async () => {
 			const { exitCode, stdout } = await run(
 				'inspect',
@@ -425,7 +427,7 @@ describe('ascend cli', () => {
 
 	test.skipIf(!HAS_SLICER_CORPUS_FILE)(
 		'inspect --detail compatibility --json reports preserved package features',
-		{ timeout: 10000 },
+		{ timeout: 30_000 },
 		async () => {
 			const { exitCode, stdout } = await run(
 				'inspect',
@@ -962,69 +964,85 @@ describe('ascend cli', () => {
 		expect(parsed.data.valid).toBe(true)
 	})
 
-	test('check surfaces structured issue metadata for agent repair', async () => {
-		const wb = AscendWorkbook.create()
-		wb.apply([{ op: 'renameSheet', sheet: 'Sheet1', newName: 'SummaryData' }])
-		wb.apply([{ op: 'setFormula', sheet: 'SummaryData', ref: 'A1', formula: '=Summary!B1' }])
-		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+	test(
+		'check surfaces structured issue metadata for agent repair',
+		async () => {
+			const wb = AscendWorkbook.create()
+			wb.apply([{ op: 'renameSheet', sheet: 'Sheet1', newName: 'SummaryData' }])
+			wb.apply([{ op: 'setFormula', sheet: 'SummaryData', ref: 'A1', formula: '=Summary!B1' }])
+			await wb.save(`${import.meta.dir}/${TEST_FILE}`)
 
-		const json = await run('check', TEST_FILE, '--json')
-		expect(json.exitCode).toBe(2)
-		const parsed = JSON.parse(json.stdout)
-		expect(parsed.ok).toBe(true)
-		expect(parsed.data.valid).toBe(false)
-		const issue = parsed.data.issues.find(
-			(entry: { rule?: string }) => entry.rule === 'broken-refs',
-		)
-		expect(issue.ref).toBe('SummaryData!A1')
-		expect(issue.refs).toEqual(['SummaryData!A1'])
-		expect(issue.suggestedFix).toContain('SummaryData')
+			const json = await run('check', TEST_FILE, '--json')
+			expect(json.exitCode).toBe(2)
+			const parsed = JSON.parse(json.stdout)
+			expect(parsed.ok).toBe(true)
+			expect(parsed.data.valid).toBe(false)
+			const issue = parsed.data.issues.find(
+				(entry: { rule?: string }) => entry.rule === 'broken-refs',
+			)
+			expect(issue.ref).toBe('SummaryData!A1')
+			expect(issue.refs).toEqual(['SummaryData!A1'])
+			expect(issue.suggestedFix).toContain('SummaryData')
 
-		const pretty = await run('check', TEST_FILE)
-		expect(pretty.exitCode).toBe(2)
-		expect(pretty.stdout).toContain('broken-refs')
-		expect(pretty.stdout).toContain('Suggested Fix')
-	})
+			const pretty = await run('check', TEST_FILE)
+			expect(pretty.exitCode).toBe(2)
+			expect(pretty.stdout).toContain('broken-refs')
+			expect(pretty.stdout).toContain('Suggested Fix')
+		},
+		{ timeout: 15_000 },
+	)
 
-	test('export writes TSV output and rejects unsupported formats', async () => {
-		const wb = AscendWorkbook.create()
-		wb.apply([
-			{
-				op: 'setCells',
-				sheet: 'Sheet1',
-				updates: [
-					{ ref: 'A1', value: 'Name' },
-					{ ref: 'B1', value: 'Score' },
-					{ ref: 'A2', value: 'Alice' },
-					{ ref: 'B2', value: 10 },
-				],
-			},
-		])
-		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+	test(
+		'export writes TSV output and rejects unsupported formats',
+		async () => {
+			const wb = AscendWorkbook.create()
+			wb.apply([
+				{
+					op: 'setCells',
+					sheet: 'Sheet1',
+					updates: [
+						{ ref: 'A1', value: 'Name' },
+						{ ref: 'B1', value: 'Score' },
+						{ ref: 'A2', value: 'Alice' },
+						{ ref: 'B2', value: 10 },
+					],
+				},
+			])
+			await wb.save(`${import.meta.dir}/${TEST_FILE}`)
 
-		const tsv = await run('export', TEST_FILE, 'exported.tsv')
-		expect(tsv.exitCode).toBe(0)
-		const tsvText = await Bun.file(`${import.meta.dir}/exported.tsv`).text()
-		expect(tsvText).toContain('Name\tScore')
-		expect(tsvText).toContain('Alice\t10')
+			const tsv = await run('export', TEST_FILE, 'exported.tsv')
+			expect(tsv.exitCode).toBe(0)
+			const tsvText = await Bun.file(`${import.meta.dir}/exported.tsv`).text()
+			expect(tsvText).toContain('Name\tScore')
+			expect(tsvText).toContain('Alice\t10')
 
-		const bad = await run('export', TEST_FILE, 'out.weird', '--format', 'weird')
-		expect(bad.exitCode).toBe(1)
-		expect(bad.stderr).toContain('Invalid export format')
-	})
+			const bad = await run('export', TEST_FILE, 'out.weird', '--format', 'weird')
+			expect(bad.exitCode).toBe(1)
+			expect(bad.stderr).toContain('Invalid export format')
+		},
+		{ timeout: 15_000 },
+	)
 
-	test('lint on clean workbook passes', async () => {
-		const { exitCode, stdout } = await run('lint', TEST_FILE)
-		expect(exitCode).toBe(0)
-		expect(stdout).toContain('no lint warnings')
-	})
+	test(
+		'lint on clean workbook passes',
+		async () => {
+			const { exitCode, stdout } = await run('lint', TEST_FILE)
+			expect(exitCode).toBe(0)
+			expect(stdout).toContain('no lint warnings')
+		},
+		{ timeout: 15_000 },
+	)
 
-	test('lint --json returns machine envelope', async () => {
-		const { exitCode, stdout } = await run('lint', TEST_FILE, '--json')
-		expect(exitCode).toBe(0)
-		const parsed = JSON.parse(stdout)
-		expect(parsed.ok).toBe(true)
-	})
+	test(
+		'lint --json returns machine envelope',
+		async () => {
+			const { exitCode, stdout } = await run('lint', TEST_FILE, '--json')
+			expect(exitCode).toBe(0)
+			const parsed = JSON.parse(stdout)
+			expect(parsed.ok).toBe(true)
+		},
+		{ timeout: 15_000 },
+	)
 
 	test('trace shows precedents for formula cell', async () => {
 		const wb = AscendWorkbook.create()

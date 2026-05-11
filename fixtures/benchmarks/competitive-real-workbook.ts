@@ -1924,11 +1924,16 @@ function findFirstEditableScalarCell(bytes: Uint8Array): {
 		const partPath = worksheetRels.get(sheet.rId)
 		const xml = partPath ? archive.readText(partPath) : undefined
 		if (!xml) continue
+		const blockedRanges = arrayFormulaRanges(xml)
 		for (const cell of scanSheetCells(xml)) {
 			const { attrs, body } = cell
 			if (hasOpenTag(body, 'f')) continue
 			const ref = cell.ref
-			if (!parseA1Safe(ref)) continue
+			const parsedRef = parseA1Safe(ref)
+			if (!parsedRef) continue
+			if (blockedRanges.some((range) => containsCell(range, parsedRef.row, parsedRef.col))) {
+				continue
+			}
 			const candidate = editableCellCandidate(sheet.name, ref, attrs, body, sharedStrings)
 			if (!candidate) continue
 			if (candidate.valueType === 'number') return candidate
@@ -1973,7 +1978,7 @@ function selectAddCellEditTarget(bytes: Uint8Array): EditTarget | null {
 
 function firstEmptyEditRef(sheetXml: string): string | null {
 	const blockedCells = new Set<string>()
-	const blockedRanges: CellRange[] = []
+	const blockedRanges: CellRange[] = [...arrayFormulaRanges(sheetXml)]
 	for (const cell of scanSheetCells(sheetXml)) {
 		const parsed = parseA1Safe(normalizeA1Token(cell.ref))
 		if (parsed) blockedCells.add(cellKey(parsed.row, parsed.col))
@@ -1990,6 +1995,19 @@ function firstEmptyEditRef(sheetXml: string): string | null {
 		}
 	}
 	return null
+}
+
+function arrayFormulaRanges(sheetXml: string): readonly CellRange[] {
+	const ranges: CellRange[] = []
+	for (const cell of scanSheetCells(sheetXml)) {
+		for (const match of cell.body.matchAll(openTagRegex('f'))) {
+			const attrs = parseXmlAttributes(match[1] ?? '')
+			if (attrs.get('t') !== 'array') continue
+			const range = parseCellRange(attrs.get('ref') ?? cell.ref)
+			if (range) ranges.push(range)
+		}
+	}
+	return ranges
 }
 
 interface CellRange {

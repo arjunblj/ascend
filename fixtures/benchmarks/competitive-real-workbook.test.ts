@@ -1119,6 +1119,16 @@ describe('evaluateAssertions', () => {
 		expect(payload.cases[0]?.assertions.editPreservedPartContentUnchanged).toBe(true)
 	})
 
+	test('edit-roundtrip avoids editing inside array formula ranges', () => {
+		const payload = runAscendEditRoundtrip('fixtures/xlsx/libreoffice/tdf170201.xlsx')
+		expect(payload.failed ?? []).toEqual([])
+		expect(payload.cases[0]?.dimensions.correctnessStatus).toBe('semantic-roundtrip-pass')
+		expect(payload.cases[0]?.assertions.editMode).toBe('add-cell')
+		expect(payload.cases[0]?.assertions.editRef).toBe('D1')
+		expect(payload.cases[0]?.assertions.editObservedValue).toBe(424242)
+		expect(payload.cases[0]?.assertions.editFormulaTextUnchanged).toBe(true)
+	})
+
 	test('edit-roundtrip uses A1 for metadata-only empty sheets', () => {
 		const payload = runAscendEditRoundtrip('fixtures/xlsx/exceljs/test-issue-1842.xlsx')
 		expect(payload.failed ?? []).toEqual([])

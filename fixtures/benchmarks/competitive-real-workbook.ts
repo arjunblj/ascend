@@ -2507,9 +2507,36 @@ function summarizeSheetJsWorkbook(
 	}
 }
 
+export function sheetJsReadFeatureAssertions(
+	workbook: import('xlsx').WorkBook,
+): Record<string, string | number | boolean | null> {
+	let readCommentCount = 0
+	let readHyperlinkCount = 0
+	for (const sheetName of workbook.SheetNames) {
+		const worksheet = workbook.Sheets[sheetName]
+		if (!worksheet) continue
+		for (const [key, cell] of Object.entries(worksheet)) {
+			if (key.startsWith('!') || typeof cell !== 'object' || cell === null) continue
+			const record = cell as Record<string, unknown>
+			if (Array.isArray(record.c)) readCommentCount += record.c.length
+			else if (record.c !== undefined) readCommentCount++
+			if (record.l !== undefined) readHyperlinkCount++
+		}
+	}
+	return {
+		readCommentCount,
+		readHyperlinkCount,
+		readDataValidationCount: 0,
+		readConditionalFormatCount: 0,
+		readDefinedNameCount: workbook.Workbook?.Names?.length ?? 0,
+	}
+}
+
 interface ExcelJsCellLike {
 	readonly value: unknown
 	readonly address?: string
+	readonly note?: unknown
+	readonly hyperlink?: unknown
 }
 
 interface ExcelJsRowLike {
@@ -2524,6 +2551,8 @@ interface ExcelJsWorksheetLike {
 	readonly actualRowCount: number
 	readonly actualColumnCount: number
 	readonly dimensions: { readonly range?: string }
+	readonly dataValidations?: { readonly model?: Record<string, unknown> }
+	readonly conditionalFormattings?: readonly unknown[]
 	eachRow(
 		options: { readonly includeEmpty: boolean },
 		callback: (row: ExcelJsRowLike) => void,
@@ -2532,6 +2561,7 @@ interface ExcelJsWorksheetLike {
 
 interface ExcelJsWorkbookLike {
 	readonly worksheets: readonly ExcelJsWorksheetLike[]
+	readonly definedNames?: { readonly model?: readonly unknown[] }
 }
 
 function summarizeExcelJsWorkbook(workbook: ExcelJsWorkbookLike): WorkbookShapeSummary {
@@ -2593,6 +2623,35 @@ function summarizeExcelJsWorkbook(workbook: ExcelJsWorkbookLike): WorkbookShapeS
 		semanticCellRefsHash: hashLines(semanticCellRefs),
 		semanticCellValuesHash: hashLines(semanticCellValues),
 		formulaTextHash: hashLines(formulaTexts),
+	}
+}
+
+export function excelJsReadFeatureAssertions(
+	workbook: ExcelJsWorkbookLike,
+): Record<string, string | number | boolean | null> {
+	let readCommentCount = 0
+	let readHyperlinkCount = 0
+	let readDataValidationCount = 0
+	let readConditionalFormatCount = 0
+	for (const worksheet of workbook.worksheets) {
+		readDataValidationCount += Object.keys(worksheet.dataValidations?.model ?? {}).length
+		readConditionalFormatCount += worksheet.conditionalFormattings?.length ?? 0
+		worksheet.eachRow({ includeEmpty: false }, (row) => {
+			row.eachCell({ includeEmpty: false }, (cell) => {
+				if (cell.note !== undefined) readCommentCount++
+				const value = cell.value
+				const valueHasHyperlink =
+					typeof value === 'object' && value !== null && 'hyperlink' in value
+				if (cell.hyperlink !== undefined || valueHasHyperlink) readHyperlinkCount++
+			})
+		})
+	}
+	return {
+		readCommentCount,
+		readHyperlinkCount,
+		readDataValidationCount,
+		readConditionalFormatCount,
+		readDefinedNameCount: workbook.definedNames?.model?.length ?? 0,
 	}
 }
 
@@ -2790,7 +2849,10 @@ async function loadCases(): Promise<{
 					const durationMs = performance.now() - start
 					return {
 						durationMs,
-						assertions: workbookShapeAssertions(summarizeSheetJsWorkbook(sheetJs, workbook)),
+						assertions: {
+							...workbookShapeAssertions(summarizeSheetJsWorkbook(sheetJs, workbook)),
+							...sheetJsReadFeatureAssertions(workbook),
+						},
 					}
 				},
 				async run(target) {
@@ -2800,7 +2862,10 @@ async function loadCases(): Promise<{
 						cellStyles: true,
 					})
 					return {
-						assertions: workbookShapeAssertions(summarizeSheetJsWorkbook(sheetJs, workbook)),
+						assertions: {
+							...workbookShapeAssertions(summarizeSheetJsWorkbook(sheetJs, workbook)),
+							...sheetJsReadFeatureAssertions(workbook),
+						},
 					}
 				},
 			},
@@ -2903,13 +2968,21 @@ async function loadCases(): Promise<{
 					const durationMs = performance.now() - start
 					return {
 						durationMs,
-						assertions: workbookShapeAssertions(summarizeExcelJsWorkbook(workbook)),
+						assertions: {
+							...workbookShapeAssertions(summarizeExcelJsWorkbook(workbook)),
+							...excelJsReadFeatureAssertions(workbook),
+						},
 					}
 				},
 				async run(target) {
 					const workbook = new ExcelJS.Workbook()
 					await workbook.xlsx.load(Buffer.from(target.bytes))
-					return { assertions: workbookShapeAssertions(summarizeExcelJsWorkbook(workbook)) }
+					return {
+						assertions: {
+							...workbookShapeAssertions(summarizeExcelJsWorkbook(workbook)),
+							...excelJsReadFeatureAssertions(workbook),
+						},
+					}
 				},
 			},
 			{

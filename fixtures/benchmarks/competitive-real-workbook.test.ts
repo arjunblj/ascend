@@ -15,6 +15,7 @@ import {
 	benchmarkProvenanceDimensions,
 	coalesceRepeatCorrectnessStatus,
 	evaluateAssertions,
+	excelJsReadFeatureAssertions,
 	extractWorkbookFeatureSummary,
 	extractWorkbookPackageFingerprint,
 	FULL_CORPUS_TARGETS,
@@ -29,6 +30,7 @@ import {
 	QUICK_TARGETS,
 	resolveExternalRunnerCommand,
 	selectCorpusTargets,
+	sheetJsReadFeatureAssertions,
 	summarizeAscendWorkbook,
 	type WorkbookFeatureSummary,
 	type WorkbookPackageFingerprint,
@@ -75,6 +77,63 @@ describe('workbookReadFeatureAssertions', () => {
 		expect(workbookReadFeatureAssertions(workbook)).toEqual({
 			readCommentCount: 1,
 			readHyperlinkCount: 1,
+			readDataValidationCount: 2,
+			readConditionalFormatCount: 2,
+			readDefinedNameCount: 1,
+		})
+	})
+})
+
+describe('competitor read feature assertions', () => {
+	test('counts SheetJS comments, hyperlinks, and defined names when exposed', () => {
+		const assertions = sheetJsReadFeatureAssertions({
+			SheetNames: ['Data'],
+			Sheets: {
+				Data: {
+					'!ref': 'A1:B1',
+					A1: { c: [{ t: 'first' }, { t: 'second' }] },
+					B1: { l: { Target: 'https://example.com' } },
+				},
+			},
+			Workbook: { Names: [{ Name: 'NamedRange', Ref: 'Data!$A$1' }] },
+		} as never)
+
+		expect(assertions).toMatchObject({
+			readCommentCount: 2,
+			readHyperlinkCount: 1,
+			readDataValidationCount: 0,
+			readConditionalFormatCount: 0,
+			readDefinedNameCount: 1,
+		})
+	})
+
+	test('counts ExcelJS comments, hyperlinks, validations, formatting, and names', () => {
+		const assertions = excelJsReadFeatureAssertions({
+			definedNames: { model: [{ name: 'NamedRange' }] },
+			worksheets: [
+				{
+					name: 'Data',
+					actualRowCount: 1,
+					actualColumnCount: 3,
+					dimensions: {},
+					dataValidations: { model: { A1: {}, B1: {} } },
+					conditionalFormattings: [{ ref: 'A1' }, { ref: 'B1' }],
+					eachRow(_options, callback) {
+						callback({
+							eachCell(_cellOptions, cellCallback) {
+								cellCallback({ value: 'note', note: 'comment' })
+								cellCallback({ value: { text: 'link', hyperlink: 'https://example.com' } })
+								cellCallback({ value: 'link2', hyperlink: 'https://example.org' })
+							},
+						})
+					},
+				},
+			],
+		})
+
+		expect(assertions).toMatchObject({
+			readCommentCount: 1,
+			readHyperlinkCount: 2,
 			readDataValidationCount: 2,
 			readConditionalFormatCount: 2,
 			readDefinedNameCount: 1,

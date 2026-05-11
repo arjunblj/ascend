@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { strToU8, zipSync } from 'fflate'
 import { DEFAULT_STYLE_ID, Workbook } from '../../packages/core/src/index.ts'
-import { EMPTY } from '../../packages/schema/src/index.ts'
+import { EMPTY, numberValue } from '../../packages/schema/src/index.ts'
 import {
 	type CorpusManifestEntry,
 	normalizeManifest,
@@ -97,6 +97,36 @@ describe('summarizeAscendWorkbook', () => {
 		expect(summary.formulaTextHash).toBe(
 			hashLines(['Sheet1!A1=_xlfn.CONCAT("someone","@example.com")']),
 		)
+	})
+
+	test('counts chart sheets as workbook sheets with empty used ranges', () => {
+		const workbook = new Workbook()
+		const sheet = workbook.addSheet('Sheet1')
+		sheet.cells.setResolved(0, 0, numberValue(42), undefined, DEFAULT_STYLE_ID)
+		workbook.chartSheets.push({
+			name: 'Chart1',
+			sheetId: '2',
+			relId: 'rId2',
+			partPath: 'xl/chartsheets/sheet1.xml',
+			state: 'visible',
+			chartPartPaths: [],
+		})
+		workbook.preservedXml = {
+			sheetEntries: [
+				{ kind: 'chartsheet', sheetId: '2', name: 'Chart1' },
+				{ kind: 'worksheet', sheetId: '1', name: 'Sheet1' },
+			],
+		}
+
+		const summary = summarizeAscendWorkbook({
+			getWorkbookModel: () => workbook,
+			report: { status: 'clean' },
+		})
+
+		expect(summary.sheetCount).toBe(2)
+		expect(summary.sheetNames).toEqual(['Chart1', 'Sheet1'])
+		expect(summary.usedRanges).toEqual(['Chart1!empty', 'Sheet1!A1:A1'])
+		expect(summary.cellCount).toBe(1)
 	})
 })
 

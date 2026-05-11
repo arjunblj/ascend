@@ -45,6 +45,7 @@ import {
 	normalizeManifest,
 	selectManifestEntries,
 } from '../corpus/manifest.ts'
+import { workbookSheetEntriesForSummary } from './ascend-workbook-shape.ts'
 import {
 	type BenchmarkCaseResult,
 	createBenchmarkSuite,
@@ -1612,14 +1613,20 @@ export function summarizeAscendWorkbook(workbook: AscendWorkbookLike): WorkbookS
 	readonly compatibility: string
 } {
 	const model = workbook.getWorkbookModel()
+	const sheetEntries = workbookSheetEntriesForSummary(model)
 	let cellCount = 0
 	let formulaCount = 0
-	const sheetNames = model.sheets.map((sheet) => sheet.name)
+	const sheetNames = sheetEntries.map((entry) => entry.name)
 	const usedRanges: string[] = []
 	const semanticCellRefs: string[] = []
 	const semanticCellValues: string[] = []
 	const formulaTexts: string[] = []
-	for (const sheet of model.sheets) {
+	for (const entry of sheetEntries) {
+		const sheet = entry.sheet
+		if (!sheet) {
+			usedRanges.push(`${entry.name}!empty`)
+			continue
+		}
 		cellCount += sheet.cells.cellCount()
 		formulaCount += sheet.cells.formulaCellCount()
 		const usedRange = sheet.cells.usedRange()
@@ -1635,7 +1642,7 @@ export function summarizeAscendWorkbook(workbook: AscendWorkbookLike): WorkbookS
 	}
 	return {
 		sheetNames,
-		sheetCount: model.sheets.length,
+		sheetCount: sheetEntries.length,
 		cellCount,
 		physicalCellCount: null,
 		formulaCount,

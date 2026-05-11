@@ -21,6 +21,7 @@ import {
 import { extractZip } from '../../../packages/io-xlsx/src/reader/zip.ts'
 import type { CellValue } from '../../../packages/schema/src/index.ts'
 import { Ascend } from '../../../packages/sdk/src/index.ts'
+import { workbookSheetEntriesForSummary } from '../ascend-workbook-shape.ts'
 import {
 	summarizeAscendWorkbook,
 	workbookReadFeatureAssertions,
@@ -194,7 +195,8 @@ function orderedReadAssertions(
 	args: Args,
 ): Record<string, string | number | boolean | null> {
 	const model = workbook.getWorkbookModel()
-	const sheetNames = model.sheets.map((sheet) => sheet.name)
+	const sheetEntries = workbookSheetEntriesForSummary(model)
+	const sheetNames = sheetEntries.map((entry) => entry.name)
 	let cellCount = 0
 	let formulaCount = 0
 	const usedRanges: string[] = []
@@ -202,7 +204,14 @@ function orderedReadAssertions(
 	const orderedRefs = new OrderedLineHasher()
 	const orderedValues = new OrderedLineHasher()
 	const orderedFormulas = new OrderedLineHasher()
-	for (const sheet of model.sheets) {
+	for (const entry of sheetEntries) {
+		const sheet = entry.sheet
+		if (!sheet) {
+			const usedRangeText = `${entry.name}!empty`
+			usedRanges.push(usedRangeText)
+			physicalUsedRanges.push(usedRangeText)
+			continue
+		}
 		formulaCount += sheet.cells.formulaCellCount()
 		const usedRange = sheet.cells.usedRange()
 		const usedRangeText = usedRange
@@ -225,7 +234,7 @@ function orderedReadAssertions(
 		}
 	}
 	return {
-		sheetCount: model.sheets.length,
+		sheetCount: sheetEntries.length,
 		sheetNamesHash: hashOrdered(sheetNames.map((name, index) => `${index}:${name}`).sort()),
 		cellCount,
 		physicalCellCount: cellCount,

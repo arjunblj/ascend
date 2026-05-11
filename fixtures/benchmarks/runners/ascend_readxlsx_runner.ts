@@ -2,6 +2,7 @@
 import { indexToColumn } from '../../../packages/core/src/index.ts'
 import { readXlsx } from '../../../packages/io-xlsx/src/index.ts'
 import type { CellValue } from '../../../packages/schema/src/index.ts'
+import { workbookSheetEntriesForSummary } from '../ascend-workbook-shape.ts'
 
 type Mode = 'formula' | 'values' | 'full' | 'metadata-only'
 type Source = 'path' | 'bytes'
@@ -126,14 +127,20 @@ function workbookShapeAssertions(
 	workbook: Awaited<ReturnType<typeof openWorkbook>>['workbook'],
 	reportStatus: string,
 ): Record<string, string | number | boolean | null> {
+	const sheetEntries = workbookSheetEntriesForSummary(workbook)
 	let cellCount = 0
 	let formulaCount = 0
-	const sheetNames = workbook.sheets.map((sheet) => sheet.name)
+	const sheetNames = sheetEntries.map((entry) => entry.name)
 	const usedRanges: string[] = []
 	const semanticCellRefs: string[] = []
 	const semanticCellValues: string[] = []
 	const formulaTexts: string[] = []
-	for (const sheet of workbook.sheets) {
+	for (const entry of sheetEntries) {
+		const sheet = entry.sheet
+		if (!sheet) {
+			usedRanges.push(`${entry.name}!empty`)
+			continue
+		}
 		cellCount += sheet.cells.cellCount()
 		formulaCount += sheet.cells.formulaCellCount()
 		const usedRange = sheet.cells.usedRange()
@@ -154,7 +161,7 @@ function workbookShapeAssertions(
 		}
 	}
 	return {
-		sheetCount: workbook.sheets.length,
+		sheetCount: sheetEntries.length,
 		sheetNamesHash: hashLines(sheetNames.map((name, index) => `${index}:${name}`)),
 		cellCount,
 		physicalCellCount: null,

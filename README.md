@@ -1,15 +1,15 @@
 # Ascend
 
-Agent-native spreadsheet automation for TypeScript.
+Open-source spreadsheet engine for TypeScript apps and agents.
 
-Read, edit, recalculate, verify, and export real `.xlsx` workbooks without collapsing them into raw cell dumps.
+Ascend loads Excel files into a workbook model you can inspect, patch with typed operations, recalculate, verify, and save with package-level preservation for unmodeled OOXML parts.
 
-Ascend focuses on four surfaces together:
+Features:
 
-- XLSX/XLSM read and write with package-level preservation for workbook features that are not fully modeled yet.
-- Deterministic formulas, dependency tracing, structural operations, and workbook verification.
-- SDK, CLI, HTTP, and MCP interfaces for automation and agent workflows.
-- Reproducible corpus tests and benchmarks that report correctness, throughput, and memory evidence.
+- `.xlsx` / `.xlsm` round trips with package-level preservation.
+- Formula execution, dependency tracing, structural edits, and workbook checks.
+- SDK, CLI, HTTP API, and MCP server for app and agent workflows.
+- Corpus tests and benchmark runs that report correctness, throughput, and memory.
 
 ## Install
 
@@ -59,6 +59,16 @@ await wb.save('output.xlsx')
 - `wb.sheet(name).range('A1:D10')` reads cells.
 - `wb.apply(ops)`, `wb.recalc()`, `wb.check()`, and `wb.save(path)` edit, calculate, verify, and write.
 
+## Excel Coverage
+
+| Layer | Current coverage |
+|-------|------------------|
+| Formula engine | 496 registered Excel function names across math, stats, financial, lookup/reference, text, date/time, logical, dynamic arrays, database, engineering, info, forecast, and compatibility aliases |
+| Calculation model | Dependency graph, incremental recalculation, structured references, defined names, array/spill values, and traceable formula lineage |
+| Editable workbook model | Sheets, cells, ranges, formulas, row/column operations, tables, filters, styles, merges, comments, hyperlinks, validations, and conditional formats |
+| XLSX/XLSM preservation | Charts, pivots, macros, drawings/images, slicers, external links, workbook relationships, and unknown OOXML parts are retained where they are not fully modeled |
+| Verification | Excel cached-value tests, fixture corpora, round-trip preservation checks, formula linting, structural checks, and correctness-gated benchmarks |
+
 ## CLI
 
 ```bash
@@ -71,23 +81,25 @@ ascend trace model.xlsx 'Revenue!E2'
 ascend export model.xlsx output.tsv --format tsv
 ```
 
-All commands support machine-readable output where it is useful for automation.
+Commands support machine-readable output where it helps automation.
 
 ## Agent Surfaces
 
 - HTTP API: start `apps/api/src/index.ts`; OpenAPI lives at [docs/openapi.yaml](docs/openapi.yaml).
 - MCP server: run `apps/mcp/src/index.ts` for `ascend.inspect`, `ascend.read`, `ascend.write`, `ascend.calc`, `ascend.check`, `ascend.trace`, and related tools.
-- Operation schemas: `ascend ops --json` exposes typed operations and recovery guidance.
+- Operation schemas: `ascend ops --json` exposes typed operations and recovery hints.
 
 ## Benchmarks
 
-```bash
-bun bench --repeat 5 --json
-bun run bench:competitive-io --workload all --repeat 5 --json
-bun run bench:formula:sota --profile all --repeat 5 --json
-```
+Benchmark snapshot: local median, 5 samples, external-process runners, correctness gates enabled. See [BENCHMARKS.md](BENCHMARKS.md) for methodology.
 
-Benchmarks emit machine-readable JSON and include correctness and memory checks where applicable. See [BENCHMARKS.md](BENCHMARKS.md) for methodology.
+| Lane | Profile | Size | Ascend | Baseline |
+|------|---------|------|--------|---------------|
+| XLSX read | Calamine NYC 311 real workbook | 1,000,001 rows, 28.1M non-empty cells | 13.91s, 2.02M cells/s | rust-calamine 26.90s |
+| XLSX write | Excelize plain text generation | 102,400 x 50, 5.12M cells | 1.88s, 2.72M cells/s | Excelize 2.47s |
+| XLSX write | pyopenxlsx bulk write | 50,000 x 20, 1.0M cells | 0.24s, 4.15M cells/s | pyopenxlsx 0.64s |
+| Formula recalc | HyperFormula indexed lookup | 5,000 INDEX/MATCH formulas | 20.3ms | HyperFormula 587.0ms |
+| Incremental recalc | Indexed lookup value edit | 5,000 INDEX/MATCH formulas | 0.051ms | HyperFormula 582.7ms |
 
 ## Development
 
@@ -107,4 +119,4 @@ Core packages are plain TypeScript: `schema`, `core`, `formulas`, `engine`, `io-
 
 ## License
 
-Apache-2.0
+MIT

@@ -99,6 +99,11 @@ def read_assertions(reader: Any, batches: list[tuple[str, Any]]) -> dict[str, st
         "semanticCellRefsHash": hash_lines(semantic_cell_refs),
         "semanticCellValuesHash": hash_lines(semantic_cell_values),
         "formulaTextHash": hash_lines([]),
+        "readCommentCount": 0,
+        "readHyperlinkCount": 0,
+        "readDataValidationCount": 0,
+        "readConditionalFormatCount": 0,
+        "readDefinedNameCount": 0,
     }
 
 

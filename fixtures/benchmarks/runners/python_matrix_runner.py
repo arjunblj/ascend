@@ -365,6 +365,11 @@ def read_assertions(
         "semanticCellValuesHash": semantic_hash,
         "expectedSemanticCellValuesHash": expected_hash,
         "semanticCellValuesHashMatches": expected_hash is None or semantic_hash == expected_hash,
+        "readCommentCount": 0,
+        "readHyperlinkCount": 0,
+        "readDataValidationCount": 0,
+        "readConditionalFormatCount": 0,
+        "readDefinedNameCount": 0,
     }
 
 

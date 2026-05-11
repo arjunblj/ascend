@@ -258,6 +258,11 @@ fn assertions_to_json(assertions: WorkbookAssertions) -> Value {
         "orderedFormulaTextHash".to_string(),
         json!(OrderedLineHasher::new().finish()),
     );
+    object.insert("readCommentCount".to_string(), json!(0));
+    object.insert("readHyperlinkCount".to_string(), json!(0));
+    object.insert("readDataValidationCount".to_string(), json!(0));
+    object.insert("readConditionalFormatCount".to_string(), json!(0));
+    object.insert("readDefinedNameCount".to_string(), json!(0));
     Value::Object(object)
 }
 

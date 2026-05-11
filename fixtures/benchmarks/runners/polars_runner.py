@@ -98,6 +98,11 @@ def read_assertions(sheets: dict[str, pl.DataFrame]) -> dict[str, str | int | bo
         "semanticCellRefsHash": hash_lines(semantic_cell_refs),
         "semanticCellValuesHash": hash_lines(semantic_cell_values),
         "formulaTextHash": hash_lines([]),
+        "readCommentCount": 0,
+        "readHyperlinkCount": 0,
+        "readDataValidationCount": 0,
+        "readConditionalFormatCount": 0,
+        "readDefinedNameCount": 0,
     }
 
 

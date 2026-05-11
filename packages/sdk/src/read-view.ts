@@ -2334,7 +2334,7 @@ function aggregateMultiRowAxisSingleDataPivotOutput(
 	| { ok: false; warning: string } {
 	const pageFilters = buildSimplePivotPageFilters(cache, pivot)
 	if (!pageFilters.ok) return pageFilters
-	const rows = buildPivotAxisOutputItems(cache, pivot, 'row')
+	const rows = buildPivotAxisOutputItemsWithCompactTwoFieldFallback(cache, pivot, 'row')
 	if (!rows.ok) return rows
 	const dataField = pivot.dataFields[0]
 	if (!dataField) return { ok: false, warning: 'Pivot data field metadata was not found.' }
@@ -2457,6 +2457,17 @@ function buildPivotAxisOutputItemsWithSingleFieldFallback(
 	return buildSingleFieldPivotAxisOutputItems(cache, pivot, axis, missingWarning)
 }
 
+function buildPivotAxisOutputItemsWithCompactTwoFieldFallback(
+	cache: PivotCacheInfo,
+	pivot: PivotTableInfo,
+	axis: 'row' | 'column',
+): { ok: true; value: readonly PivotAxisOutputItem[] } | { ok: false; warning: string } {
+	const items = buildPivotAxisOutputItems(cache, pivot, axis)
+	const missingWarning = `Pivot ${axis} output items were not found.`
+	if (items.ok || items.warning !== missingWarning || axis !== 'row') return items
+	return buildCompactTwoFieldRowAxisOutputItems(cache, pivot, missingWarning)
+}
+
 function buildSingleFieldPivotAxisOutputItems(
 	cache: PivotCacheInfo,
 	pivot: PivotTableInfo,
@@ -2496,6 +2507,68 @@ function buildSingleFieldPivotAxisOutputItems(
 		})
 	}
 	return output.length > 0 ? { ok: true, value: output } : { ok: false, warning: missingWarning }
+}
+
+function buildCompactTwoFieldRowAxisOutputItems(
+	cache: PivotCacheInfo,
+	pivot: PivotTableInfo,
+	missingWarning: string,
+): { ok: true; value: readonly PivotAxisOutputItem[] } | { ok: false; warning: string } {
+	if (
+		pivot.rowFields.length !== 2 ||
+		!pivot.rowFields.every((field) => field.index >= 0) ||
+		pivot.columnFields.length !== 0 ||
+		pivot.dataFields.length !== 1 ||
+		pivot.options?.compact !== true ||
+		pivot.options?.outline !== true
+	) {
+		return { ok: false, warning: missingWarning }
+	}
+	const parentField = pivot.rowFields[0]
+	const childField = pivot.rowFields[1]
+	if (!parentField || !childField) return { ok: false, warning: missingWarning }
+	const parentItemIndexes = visiblePivotFieldItemIndexes(pivot, parentField.index)
+	const childItemIndexes = visiblePivotFieldItemIndexes(pivot, childField.index)
+	if (parentItemIndexes.length === 0 || childItemIndexes.length === 0) {
+		return { ok: false, warning: missingWarning }
+	}
+	const rows = buildPivotCacheRows([cache], {})
+	const output: PivotAxisOutputItem[] = []
+	const seenLabels = new Map<string, number>()
+	for (const parentItemIndex of parentItemIndexes) {
+		const parent = resolvePivotAxisFieldItemFilter(cache, pivot, parentField.index, parentItemIndex)
+		if (!parent.ok) return parent
+		if (!rows.some((row) => pivotCacheRowMatchesFilters(row, parent.value.filters))) continue
+		output.push({
+			key: uniquePivotAxisKey(parent.value.label, seenLabels),
+			filters: parent.value.filters,
+		})
+		for (const childItemIndex of childItemIndexes) {
+			const child = resolvePivotAxisFieldItemFilter(cache, pivot, childField.index, childItemIndex)
+			if (!child.ok) return child
+			const filters = new Map(
+				Array.from(parent.value.filters, ([fieldIndex, values]) => [fieldIndex, new Set(values)]),
+			)
+			addPivotAxisFilters(filters, child.value.filters)
+			if (!rows.some((row) => pivotCacheRowMatchesFilters(row, filters))) continue
+			output.push({
+				key: uniquePivotAxisKey(child.value.label, seenLabels),
+				filters,
+			})
+		}
+	}
+	if (pivot.options?.rowGrandTotals !== false) {
+		const grand = buildPivotAxisGrandFilters(cache, pivot, pivot.rowFields)
+		if (!grand.ok) return grand
+		output.push({ key: uniquePivotAxisKey('Grand Total', seenLabels), filters: grand.value })
+	}
+	return output.length > 0 ? { ok: true, value: output } : { ok: false, warning: missingWarning }
+}
+
+function visiblePivotFieldItemIndexes(pivot: PivotTableInfo, fieldIndex: number): number[] {
+	return (pivot.fields[fieldIndex]?.items ?? [])
+		.filter((item) => !item.hidden && !item.missing && item.cacheIndex !== undefined)
+		.map((item) => item.index)
 }
 
 function buildPivotAxisGrandFilters(

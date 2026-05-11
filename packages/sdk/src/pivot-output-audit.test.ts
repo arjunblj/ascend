@@ -139,6 +139,16 @@ describe('pivot output audits', () => {
 				warnings: [],
 			}),
 		)
+		expect(wb.pivotOutputAudits()).toContainEqual(
+			expect.objectContaining({
+				pivotTable: 'Kimutatás3',
+				sheetName: 'pivotnotallowed',
+				status: 'passed',
+				checkedValueCount: 9,
+				mismatches: [],
+				warnings: [],
+			}),
+		)
 	})
 
 	test('audits real LibreOffice multi-row pivots without column fields', async () => {

@@ -1,6 +1,8 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { existsSync, unlinkSync } from 'node:fs'
+import { inspect as inspectValue } from 'node:util'
 import { AscendWorkbook } from '@ascend/sdk'
+import { runCli } from './index.ts'
 
 const CLI = new URL('./index.ts', import.meta.url).pathname
 const TEST_FILE = 'test-output.xlsx'
@@ -12,7 +14,13 @@ const SLICER_CORPUS_FILE = '../../../research/excel-corpus/excel-dashboard-v2.xl
 const HAS_PIVOT_CORPUS_FILE = existsSync(`${import.meta.dir}/${PIVOT_CORPUS_FILE}`)
 const HAS_SLICER_CORPUS_FILE = existsSync(`${import.meta.dir}/${SLICER_CORPUS_FILE}`)
 
-function run(...args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+interface CliRunResult {
+	stdout: string
+	stderr: string
+	exitCode: number
+}
+
+function runProcess(...args: string[]): Promise<CliRunResult> {
 	return new Promise((resolve) => {
 		const proc = Bun.spawn([Bun.argv[0], CLI, ...args], {
 			stdout: 'pipe',
@@ -26,6 +34,53 @@ function run(...args: string[]): Promise<{ stdout: string; stderr: string; exitC
 			resolve({ stdout: stdout.trim(), stderr: stderr.trim(), exitCode })
 		})
 	})
+}
+
+async function run(...args: string[]): Promise<CliRunResult> {
+	const cwd = process.cwd()
+	const originalLog = console.log
+	const originalError = console.error
+	const originalStderrWrite = process.stderr.write
+	const stdout: string[] = []
+	const stderr: string[] = []
+
+	console.log = (...values: unknown[]) => {
+		stdout.push(formatConsole(values))
+	}
+	console.error = (...values: unknown[]) => {
+		stderr.push(formatConsole(values))
+	}
+	process.stderr.write = ((
+		chunk: string | Uint8Array,
+		encodingOrCallback?: unknown,
+		callback?: unknown,
+	) => {
+		stderr.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString())
+		const done = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback
+		if (typeof done === 'function') done()
+		return true
+	}) as typeof process.stderr.write
+
+	try {
+		process.chdir(import.meta.dir)
+		const exitCode = await runCli(args)
+		return {
+			stdout: stdout.join('\n').trim(),
+			stderr: stderr.join('\n').trim(),
+			exitCode,
+		}
+	} finally {
+		process.chdir(cwd)
+		console.log = originalLog
+		console.error = originalError
+		process.stderr.write = originalStderrWrite
+	}
+}
+
+function formatConsole(values: readonly unknown[]): string {
+	return values
+		.map((value) => (typeof value === 'string' ? value : inspectValue(value, { colors: false })))
+		.join(' ')
 }
 
 afterAll(() => {
@@ -61,8 +116,8 @@ function parseTrailingTelemetry(text: string): unknown {
 }
 
 describe('ascend cli', () => {
-	test('--version prints version', async () => {
-		const { stdout, exitCode } = await run('--version')
+	test('--version prints version through the executable boundary', async () => {
+		const { stdout, exitCode } = await runProcess('--version')
 		expect(exitCode).toBe(0)
 		expect(stdout).toMatch(/^\d+\.\d+\.\d+$/)
 	})

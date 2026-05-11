@@ -210,24 +210,24 @@ function parseArgs(argv: string[]): {
 	}
 }
 
-async function main(): Promise<void> {
-	const { command, args, flags } = parseArgs(process.argv.slice(2))
+export async function runCli(argv: string[] = process.argv.slice(2)): Promise<number> {
+	const { command, args, flags } = parseArgs(argv)
 
 	if (flags.has('version') || flags.has('v')) {
 		console.log(VERSION)
-		process.exit(0)
+		return 0
 	}
 
 	if (!command) {
 		console.log(HELP)
-		process.exit(0)
+		return 0
 	}
 
 	const cmd = COMMANDS[command]
 	if (!cmd) {
 		if (flags.has('help') || flags.has('h')) {
 			console.log(HELP)
-			process.exit(0)
+			return 0
 		}
 		const suggestion = suggestClosest(command, Object.keys(COMMANDS))
 		if (flags.has('json')) {
@@ -241,17 +241,17 @@ async function main(): Promise<void> {
 					}),
 				),
 			)
-			process.exit(1)
+			return 1
 		}
 		console.error(`Unknown command: ${command}`)
 		if (suggestion) console.error(`Did you mean "${suggestion}"?`)
 		console.error('Run "ascend --help" for usage')
-		process.exit(1)
+		return 1
 	}
 
 	if (flags.has('help') || flags.has('h')) {
 		console.log(cmd.usage)
-		process.exit(0)
+		return 0
 	}
 
 	const invalidFlags = [...flags.keys()].filter(
@@ -269,17 +269,16 @@ async function main(): Promise<void> {
 					}),
 				),
 			)
-			process.exit(1)
+			return 1
 		}
 		console.error(`Unknown flag for "${command}": --${invalid}`)
 		if (suggestion) console.error(`Did you mean "--${suggestion}"?`)
 		console.error(cmd.usage)
-		process.exit(1)
+		return 1
 	}
 
 	try {
-		const code = await cmd.run(args, flags)
-		process.exit(code)
+		return await cmd.run(args, flags)
 	} catch (err) {
 		if (flags.has('json')) {
 			const error =
@@ -292,11 +291,14 @@ async function main(): Promise<void> {
 		} else {
 			console.error(`Error: ${err instanceof Error ? err.message : String(err)}`)
 		}
-		process.exit(1)
+		return 1
 	}
 }
 
-main()
+if (import.meta.main) {
+	const code = await runCli()
+	process.exit(code)
+}
 
 function suggestClosest(input: string, candidates: readonly string[]): string | undefined {
 	let best: { candidate: string; distance: number } | undefined

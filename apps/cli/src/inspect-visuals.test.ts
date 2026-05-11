@@ -7,7 +7,7 @@ const TEST_FILE = 'test-visuals.xlsx'
 
 function run(...args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
 	return new Promise((resolve) => {
-		const proc = Bun.spawn(['bun', 'run', CLI, ...args], {
+		const proc = Bun.spawn([Bun.argv[0], CLI, ...args], {
 			stdout: 'pipe',
 			stderr: 'pipe',
 			cwd: import.meta.dir,

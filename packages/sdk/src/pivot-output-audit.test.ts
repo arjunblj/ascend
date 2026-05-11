@@ -7,6 +7,14 @@ const MS_EXCEL_PIVOT_FIXTURE = new URL(
 	'../../../research/excel-corpus/ms-excel-formulas-and-pivot-tables.xlsx',
 	import.meta.url,
 )
+const POI_EXCEL_PIVOT_FIXTURE = new URL(
+	'../../../fixtures/xlsx/poi/ExcelPivotTableSample.xlsx',
+	import.meta.url,
+)
+const POI_WITH_CHART_SHEET_FIXTURE = new URL(
+	'../../../fixtures/xlsx/poi/WithChartSheet.xlsx',
+	import.meta.url,
+)
 
 describe('pivot output audits', () => {
 	test('audits LibreOffice calculated pivot output against materialized cache records', async () => {
@@ -249,21 +257,44 @@ describe('pivot output audits', () => {
 		])
 	})
 
-	test('audits real POI pivots with localized German grand total labels', async () => {
-		const wb = await AscendWorkbook.open(loadPoiFixture('ExcelPivotTableSample.xlsx'))
+	test.skipIf(!existsSync(POI_EXCEL_PIVOT_FIXTURE))(
+		'audits real POI pivots with localized German grand total labels',
+		async () => {
+			const wb = await AscendWorkbook.open(readFileSync(POI_EXCEL_PIVOT_FIXTURE))
 
-		expect(wb.pivotOutputAudits()).toContainEqual(
-			expect.objectContaining({
-				pivotTable: 'PivotTable1',
-				partPath: 'xl/pivotTables/pivotTable2.xml',
-				sheetName: 'Tabelle3',
-				status: 'passed',
-				checkedValueCount: 3,
-				mismatches: [],
-				warnings: [],
-			}),
-		)
-	})
+			expect(wb.pivotOutputAudits()).toContainEqual(
+				expect.objectContaining({
+					pivotTable: 'PivotTable1',
+					partPath: 'xl/pivotTables/pivotTable2.xml',
+					sheetName: 'Tabelle3',
+					status: 'passed',
+					checkedValueCount: 3,
+					mismatches: [],
+					warnings: [],
+				}),
+			)
+		},
+	)
+
+	test.skipIf(!existsSync(POI_WITH_CHART_SHEET_FIXTURE))(
+		'audits real POI multi-row pivots with data-field-only columns',
+		async () => {
+			const wb = await AscendWorkbook.open(readFileSync(POI_WITH_CHART_SHEET_FIXTURE), {
+				pivotCacheRecordMaterializeLimit: 'all',
+			})
+
+			expect(wb.pivotOutputAudits()).toContainEqual(
+				expect.objectContaining({
+					pivotTable: 'PivotTable1',
+					sheetName: 'Sheet4',
+					status: 'passed',
+					checkedValueCount: 34,
+					mismatches: [],
+					warnings: [],
+				}),
+			)
+		},
+	)
 
 	test.skipIf(!existsSync(MS_EXCEL_PIVOT_FIXTURE))(
 		'audits real Excel one-row pivots with column fields',
@@ -413,10 +444,6 @@ function loadLibreOfficeFixture(file: string): Uint8Array {
 
 function loadCalamineFixture(file: string): Uint8Array {
 	return readFileSync(new URL(`../../../fixtures/xlsx/calamine/${file}`, import.meta.url))
-}
-
-function loadPoiFixture(file: string): Uint8Array {
-	return readFileSync(new URL(`../../../fixtures/xlsx/poi/${file}`, import.meta.url))
 }
 
 function workbookWithoutMaterializedPivot(): AscendWorkbook {

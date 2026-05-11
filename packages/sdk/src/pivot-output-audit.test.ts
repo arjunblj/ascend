@@ -93,6 +93,23 @@ describe('pivot output audits', () => {
 		)
 	})
 
+	test('audits real Calamine grouped multi-row pivots with column fields', async () => {
+		const wb = await AscendWorkbook.open(loadCalamineFixture('pivots.xlsx'), {
+			pivotCacheRecordMaterializeLimit: 'all',
+		})
+
+		expect(wb.pivotOutputAudits()).toContainEqual(
+			expect.objectContaining({
+				pivotTable: 'PivotTable2',
+				sheetName: 'PivotSheet2',
+				status: 'passed',
+				checkedValueCount: 21,
+				mismatches: [],
+				warnings: [],
+			}),
+		)
+	})
+
 	test('exposes audits through read-only document and session APIs', async () => {
 		const bytes = loadLibreOfficeFixture('pivot-table/test_diff_aggregation.xlsx')
 		const document = await WorkbookDocument.open(bytes)

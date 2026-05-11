@@ -1388,6 +1388,26 @@ function buildPivotOutputAudits(
 				warnings: [],
 			}
 		}
+		if (pivot.rowFields.length > 1) {
+			const expected = aggregateMultiRowAxisPivotOutput(cache, pivot)
+			if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
+			const actual = readMultiRowAxisPivotOutput(
+				workbook,
+				sheet.id,
+				pivot,
+				expected.value.rowKeys,
+				expected.value.columnKeys,
+			)
+			if (!actual.ok) return unsupportedPivotAudit(base, actual.warning)
+			const mismatches = comparePivotOutput(expected.value.values, actual.value)
+			return {
+				...base,
+				status: mismatches.length > 0 ? 'mismatch' : 'passed',
+				checkedValueCount: expected.value.checkedValueCount,
+				mismatches,
+				warnings: [],
+			}
+		}
 		if (pivot.rowFields.length !== 1) {
 			return unsupportedPivotAudit(base, 'Only one-row-field pivots are audited.')
 		}
@@ -1413,6 +1433,11 @@ function buildPivotOutputAudits(
 			warnings: [],
 		}
 	})
+}
+
+interface PivotAxisOutputItem {
+	readonly key: string
+	readonly filters: PivotAuditFilters
 }
 
 function isEmptyPivotOutput(pivot: PivotTableInfo): boolean {
@@ -1585,6 +1610,189 @@ function buildPivotColumnOutputColumns(
 		})
 	}
 	return { ok: true, value: columns }
+}
+
+function aggregateMultiRowAxisPivotOutput(
+	cache: PivotCacheInfo,
+	pivot: PivotTableInfo,
+):
+	| {
+			ok: true
+			value: {
+				rowKeys: readonly string[]
+				columnKeys: readonly string[]
+				checkedValueCount: number
+				values: ReadonlyMap<string, ReadonlyMap<string, number>>
+			}
+	  }
+	| { ok: false; warning: string } {
+	if (pivot.dataFields.length !== 1) {
+		return { ok: false, warning: 'Multi-row pivot audits require exactly one data field.' }
+	}
+	if (pivot.columnFields.length === 0) {
+		return { ok: false, warning: 'Multi-row pivot audits require column output items.' }
+	}
+	if (!pivot.columnFields.every((field) => field.index >= 0)) {
+		return { ok: false, warning: 'Multi-row pivot data-field axis columns are not audited.' }
+	}
+	const pageFilters = buildSimplePivotPageFilters(cache, pivot)
+	if (!pageFilters.ok) return pageFilters
+	const rows = buildPivotAxisOutputItems(cache, pivot, 'row')
+	if (!rows.ok) return rows
+	const columns = buildPivotAxisOutputItems(cache, pivot, 'column')
+	if (!columns.ok) return columns
+	const dataField = pivot.dataFields[0]
+	if (!dataField) return { ok: false, warning: 'Pivot data field metadata was not found.' }
+	const output = new Map<string, Map<string, number>>()
+	for (const row of rows.value) {
+		const byColumn = new Map<string, number>()
+		for (const column of columns.value) byColumn.set(column.key, 0)
+		output.set(row.key, byColumn)
+	}
+	for (const row of buildPivotCacheRows([cache], {})) {
+		if (!pivotCacheRowMatchesFilters(row, pageFilters.value)) continue
+		const measured = measurePivotDataField(cache, row, dataField)
+		if (!measured.ok) return measured
+		for (const rowItem of rows.value) {
+			if (!pivotCacheRowMatchesFilters(row, rowItem.filters)) continue
+			for (const columnItem of columns.value) {
+				if (!pivotCacheRowMatchesFilters(row, columnItem.filters)) continue
+				addPivotOutput(output, rowItem.key, columnItem.key, measured.value)
+			}
+		}
+	}
+	return {
+		ok: true,
+		value: {
+			rowKeys: rows.value.map((row) => row.key),
+			columnKeys: columns.value.map((column) => column.key),
+			checkedValueCount: rows.value.length * columns.value.length,
+			values: output,
+		},
+	}
+}
+
+function buildPivotAxisOutputItems(
+	cache: PivotCacheInfo,
+	pivot: PivotTableInfo,
+	axis: 'row' | 'column',
+): { ok: true; value: readonly PivotAxisOutputItem[] } | { ok: false; warning: string } {
+	const fields = axis === 'row' ? pivot.rowFields : pivot.columnFields
+	const items = axis === 'row' ? pivot.rowItems : pivot.columnItems
+	if (!items || items.length === 0) {
+		return { ok: false, warning: `Pivot ${axis} output items were not found.` }
+	}
+	const output: PivotAxisOutputItem[] = []
+	const previousItems: Array<number | undefined> = []
+	const seenLabels = new Map<string, number>()
+	for (const item of items) {
+		if (item.itemType === 'grand') {
+			output.push({ key: uniquePivotAxisKey('Grand Total', seenLabels), filters: new Map() })
+			continue
+		}
+		const filters = new Map<number, Set<string>>()
+		const repeated = item.repeatedItemCount ?? 0
+		for (let position = 0; position < repeated && position < fields.length; position++) {
+			const previousItem = previousItems[position]
+			if (previousItem === undefined) continue
+			const axisField = fields[position]
+			if (!axisField) continue
+			const resolved = resolvePivotAxisFieldItemFilter(cache, pivot, axisField.index, previousItem)
+			if (!resolved.ok) return resolved
+			addPivotAxisFilters(filters, resolved.value.filters)
+		}
+		let label: string | undefined
+		for (const fieldItem of item.fieldItems) {
+			const position = repeated + fieldItem.index
+			const axisField = fields[position]
+			if (!axisField)
+				return { ok: false, warning: `Pivot ${axis} field item axis was not resolved.` }
+			const itemIndex = fieldItem.item ?? 0
+			previousItems[position] = itemIndex
+			const resolved = resolvePivotAxisFieldItemFilter(cache, pivot, axisField.index, itemIndex)
+			if (!resolved.ok) return resolved
+			addPivotAxisFilters(filters, resolved.value.filters)
+			label = resolved.value.label
+		}
+		if (!label) return { ok: false, warning: `Pivot ${axis} output item label was not resolved.` }
+		output.push({ key: uniquePivotAxisKey(label, seenLabels), filters })
+	}
+	return { ok: true, value: output }
+}
+
+function resolvePivotAxisFieldItemFilter(
+	cache: PivotCacheInfo,
+	pivot: PivotTableInfo,
+	fieldIndex: number,
+	itemIndex: number,
+):
+	| {
+			ok: true
+			value: {
+				label: string
+				filters: PivotAuditFilters
+			}
+	  }
+	| { ok: false; warning: string } {
+	if (fieldIndex < 0) return { ok: false, warning: 'Data-field axis items are not audited.' }
+	const pivotField = pivot.fields[fieldIndex]
+	const pivotItem = pivotField?.items?.[itemIndex]
+	if (!pivotItem || pivotItem.hidden || pivotItem.missing || pivotItem.cacheIndex === undefined) {
+		return { ok: false, warning: 'Pivot axis field item cache value was not resolved.' }
+	}
+	const cacheField = cache.fields[fieldIndex]
+	const group = cacheField?.fieldGroup
+	if (group?.base !== undefined) {
+		const label =
+			group.groupItems?.find((entry) => entry.index === pivotItem.cacheIndex)?.value ??
+			pivotItem.caption
+		if (label === undefined) {
+			return { ok: false, warning: 'Pivot grouped axis item label was not resolved.' }
+		}
+		const baseValues = new Set<string>()
+		for (const discreteItem of group.discreteItems ?? []) {
+			if (discreteItem.value !== pivotItem.cacheIndex) continue
+			const value = pivotCacheSharedItemValue(cache, group.base, discreteItem.index)
+			if (value !== undefined) baseValues.add(value)
+		}
+		if (baseValues.size === 0) {
+			return { ok: false, warning: 'Pivot grouped axis item base values were not resolved.' }
+		}
+		return {
+			ok: true,
+			value: { label, filters: new Map([[group.base, baseValues]]) },
+		}
+	}
+	const value = pivotCacheSharedItemValue(cache, fieldIndex, pivotItem.cacheIndex)
+	if (value === undefined) {
+		return { ok: false, warning: 'Pivot axis shared item value was not resolved.' }
+	}
+	return {
+		ok: true,
+		value: {
+			label: pivotItem.caption ?? value,
+			filters: new Map([[fieldIndex, new Set([value])]]),
+		},
+	}
+}
+
+function addPivotAxisFilters(target: Map<number, Set<string>>, source: PivotAuditFilters): void {
+	for (const [fieldIndex, values] of source) {
+		const existing = target.get(fieldIndex)
+		if (!existing) {
+			target.set(fieldIndex, new Set(values))
+			continue
+		}
+		for (const value of Array.from(existing)) {
+			if (!values.has(value)) existing.delete(value)
+		}
+	}
+}
+
+function uniquePivotAxisKey(label: string, seenLabels: Map<string, number>): string {
+	const count = (seenLabels.get(label) ?? 0) + 1
+	seenLabels.set(label, count)
+	return count === 1 ? label : `${label} (${count})`
 }
 
 function aggregateSimplePivotOutput(
@@ -2012,6 +2220,52 @@ function readDataFieldsOnRowsPivotOutput(
 	return { ok: true, value: output }
 }
 
+function readMultiRowAxisPivotOutput(
+	workbook: Workbook,
+	sheetId: string,
+	pivot: PivotTableInfo,
+	rowKeys: readonly string[],
+	columnKeys: readonly string[],
+):
+	| { ok: true; value: ReadonlyMap<string, ReadonlyMap<string, { ref: string; value: CellValue }>> }
+	| { ok: false; warning: string } {
+	if (!pivot.locationRef) return { ok: false, warning: 'Pivot table has no output location.' }
+	let bounds: RangeRef
+	try {
+		bounds = parseRange(pivot.locationRef)
+	} catch {
+		return { ok: false, warning: `Pivot output range is invalid: ${pivot.locationRef}` }
+	}
+	const sheet = workbook.sheets.find((entry) => entry.id === sheetId)
+	if (!sheet) return { ok: false, warning: 'Pivot output sheet was not loaded.' }
+	const dataStartRow = bounds.start.row + (pivot.location?.firstDataRow ?? 1)
+	const dataStartCol = bounds.start.col + (pivot.location?.firstDataCol ?? 1)
+	if (
+		dataStartRow > bounds.end.row ||
+		dataStartCol > bounds.end.col ||
+		dataStartRow + rowKeys.length - 1 > bounds.end.row ||
+		dataStartCol + columnKeys.length - 1 > bounds.end.col
+	) {
+		return { ok: false, warning: 'Multi-row pivot output bounds were not resolved.' }
+	}
+	const output = new Map<string, Map<string, { ref: string; value: CellValue }>>()
+	for (let rowIndex = 0; rowIndex < rowKeys.length; rowIndex++) {
+		const row = dataStartRow + rowIndex
+		const rowKey = rowKeys[rowIndex] ?? `Row ${rowIndex + 1}`
+		const byColumn = new Map<string, { ref: string; value: CellValue }>()
+		for (let columnIndex = 0; columnIndex < columnKeys.length; columnIndex++) {
+			const col = dataStartCol + columnIndex
+			const columnKey = columnKeys[columnIndex] ?? `Column ${columnIndex + 1}`
+			byColumn.set(columnKey, {
+				ref: `${indexToColumn(col)}${row + 1}`,
+				value: sheet.cells.get(row, col)?.value ?? EMPTY,
+			})
+		}
+		output.set(rowKey, byColumn)
+	}
+	return { ok: true, value: output }
+}
+
 function comparePivotOutput(
 	expected: ReadonlyMap<string, ReadonlyMap<string, number>>,
 	actual: ReadonlyMap<string, ReadonlyMap<string, { ref: string; value: CellValue }>>,
@@ -2035,6 +2289,7 @@ function comparePivotOutput(
 }
 
 function numericCellMatches(value: CellValue, expected: number): boolean {
+	if (value.kind === 'empty') return expected === 0
 	if (value.kind !== 'number') return false
 	const tolerance = 1e-12 * Math.max(1, Math.abs(value.value), Math.abs(expected))
 	return Math.abs(value.value - expected) <= tolerance

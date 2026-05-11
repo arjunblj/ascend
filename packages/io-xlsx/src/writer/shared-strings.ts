@@ -101,13 +101,18 @@ function appendSharedStringEntries(
 	const close = /<\/\s*(?:[A-Za-z_][\w.-]*:)?sst\s*>\s*$/u.exec(xml)
 	if (!close || close.index === undefined) return xml
 	const prefix = sharedStringPrefix(xml)
-	const rootEnd = xml.indexOf('>')
+	const rootEnd = sharedStringRootEnd(xml)
 	const head =
 		rootEnd === -1
 			? xml.slice(0, close.index)
-			: rewriteSharedStringRoot(xml, rootEnd, count, uniqueCount)
+			: rewriteSharedStringRoot(xml.slice(0, close.index), rootEnd, count, uniqueCount)
 	const appended = appendedEntries.map((entry) => entryXml(entry, prefix)).join('')
 	return `${head}${appended}${xml.slice(close.index)}`
+}
+
+function sharedStringRootEnd(xml: string): number {
+	const match = /<\s*(?:[A-Za-z_][\w.-]*:)?sst\b[^>]*>/u.exec(xml)
+	return match?.index === undefined ? -1 : match.index + match[0].length - 1
 }
 
 function sharedStringPrefix(xml: string): string {

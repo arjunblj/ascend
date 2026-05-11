@@ -1320,7 +1320,7 @@ export function extractWorkbookPackageFingerprint(bytes: Uint8Array): WorkbookPa
 	const archive = extractZip(bytes)
 	const partPaths = [...archive.entries()]
 		.map((entry) => entry.path)
-		.filter((path) => !path.endsWith('/'))
+		.filter((path) => !path.endsWith('/') && !isIgnorablePackageEntry(path))
 		.sort()
 	const contentTypeLines = contentTypeFingerprintLines(archive.readText('[Content_Types].xml'))
 	const relationshipLines: string[] = []
@@ -1368,7 +1368,7 @@ export function extractWorkbookFeatureSummary(bytes: Uint8Array): WorkbookFeatur
 	const archive = extractZip(bytes)
 	const partPaths = [...archive.entries()]
 		.map((entry) => entry.path)
-		.filter((path) => !path.endsWith('/'))
+		.filter((path) => !path.endsWith('/') && !isIgnorablePackageEntry(path))
 		.sort()
 	const workbookXml = archive.readText('xl/workbook.xml') ?? ''
 	const workbookRelsXml = archive.readText('xl/_rels/workbook.xml.rels') ?? ''
@@ -1689,6 +1689,10 @@ function sha256Text(text: string): string {
 
 function isRelationshipPart(path: string): boolean {
 	return path === '_rels/.rels' || path.endsWith('.rels')
+}
+
+function isIgnorablePackageEntry(path: string): boolean {
+	return path === '.DS_Store' || path.endsWith('/.DS_Store') || path.startsWith('__MACOSX/')
 }
 
 function sourcePartForRelationships(relsPath: string): string {

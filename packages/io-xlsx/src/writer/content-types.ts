@@ -30,6 +30,7 @@ export function buildContentTypesXml(
 		corePropsPath: 'docProps/core.xml',
 		appPropsPath: 'docProps/app.xml',
 	},
+	options: { readonly includeStyles?: boolean; readonly includeDocProps?: boolean } = {},
 ): string {
 	const out = new ChunkedStringBuilder()
 	const defaults = new Map<string, string>()
@@ -69,9 +70,13 @@ export function buildContentTypesXml(
 		pushOverride('xl/sharedStrings.xml', CT_SHARED_STRINGS)
 	}
 
-	pushOverride('xl/styles.xml', CT_STYLES)
-	pushOverride(docPropsPaths.corePropsPath, CT_CORE_PROPS, true)
-	pushOverride(docPropsPaths.appPropsPath, CT_APP_PROPS, true)
+	if (options.includeStyles ?? true) {
+		pushOverride('xl/styles.xml', CT_STYLES)
+	}
+	if (options.includeDocProps ?? true) {
+		pushOverride(docPropsPaths.corePropsPath, CT_CORE_PROPS, true)
+		pushOverride(docPropsPaths.appPropsPath, CT_APP_PROPS, true)
+	}
 
 	if (capsules) {
 		for (const capsule of capsules) {

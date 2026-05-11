@@ -453,6 +453,11 @@ export function planWriteXlsx(
 				(dirtyPatchMode && preservedSharedStringsXml !== undefined))
 
 		const preservedStyles = workbook.preservedStyles ?? undefined
+		const hasWorkbookStyleContent =
+			preservedStyles !== undefined ||
+			workbook.styles.size > 1 ||
+			workbook.differentialStyles.length > 0
+		const shouldWriteStyles = !dirtyPatchMode || hasWorkbookStyleContent
 		const hasNumberFormatOnlyStylePatches =
 			preservedStyles?.baseStyleIdByStyleId !== undefined &&
 			Object.keys(preservedStyles.baseStyleIdByStyleId).length > 0
@@ -478,6 +483,7 @@ export function planWriteXlsx(
 				? buildPreservedStylesXml(preservedStylesXml, preservedStyles, workbook.styles)
 				: undefined
 		const needsGeneratedStyles =
+			shouldWriteStyles &&
 			!options.summaryOnly &&
 			(!preservedStyles || canReusePreservedStyles || !preservedStylesXml || !stylesResult)
 		const cfDxfIdOverridesBySheet = needsGeneratedStyles
@@ -568,12 +574,14 @@ export function planWriteXlsx(
 			rIdCounter++
 		}
 
-		wbRels.push({
-			id: `rId${rIdCounter}`,
-			type: REL_STYLES,
-			target: workbookRelTarget(REL_STYLES, 'xl/styles.xml', 'styles.xml'),
-		})
-		rIdCounter++
+		if (shouldWriteStyles) {
+			wbRels.push({
+				id: `rId${rIdCounter}`,
+				type: REL_STYLES,
+				target: workbookRelTarget(REL_STYLES, 'xl/styles.xml', 'styles.xml'),
+			})
+			rIdCounter++
+		}
 
 		const hasPreservedTheme = workbook.preservedTheme
 			? hasPreservedPart(sourceArchive, workbook.preservedTheme.xml, workbook.preservedTheme.path)
@@ -776,29 +784,31 @@ export function planWriteXlsx(
 							}),
 			)
 		}
-		if (canReusePreservedStyles && preservedStyleBytes && !options.summaryOnly) {
-			recordBytes(
-				'xl/styles.xml',
-				{
-					owner: { kind: 'workbook' },
-					origin: resolvePreservedOrigin(workbook.preservedStyles?.xml),
-					contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml',
-				},
-				() => preservedStyleBytes,
-			)
-		} else {
-			recordXml(
-				'xl/styles.xml',
-				{
-					owner: { kind: 'workbook' },
-					origin:
-						workbook.preservedStyles && preserveStyles && preservedStylesXml
-							? resolvePreservedOrigin(workbook.preservedStyles.xml)
-							: 'generated',
-					contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml',
-				},
-				() => stylesXml,
-			)
+		if (shouldWriteStyles) {
+			if (canReusePreservedStyles && preservedStyleBytes && !options.summaryOnly) {
+				recordBytes(
+					'xl/styles.xml',
+					{
+						owner: { kind: 'workbook' },
+						origin: resolvePreservedOrigin(workbook.preservedStyles?.xml),
+						contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml',
+					},
+					() => preservedStyleBytes,
+				)
+			} else {
+				recordXml(
+					'xl/styles.xml',
+					{
+						owner: { kind: 'workbook' },
+						origin:
+							workbook.preservedStyles && preserveStyles && preservedStylesXml
+								? resolvePreservedOrigin(workbook.preservedStyles.xml)
+								: 'generated',
+						contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml',
+					},
+					() => stylesXml,
+				)
+			}
 		}
 		const preservedThemeBytes = workbook.preservedTheme
 			? resolvePreservedBytes(sourceArchive, workbook.preservedTheme.path)
@@ -881,6 +891,7 @@ export function planWriteXlsx(
 			}
 			const commentsCapsule = sheetCapsules.find((capsule) => capsule.relType === REL_COMMENTS)
 			const tableCapsules = sheetCapsules.filter((capsule) => capsule.relType === REL_TABLE)
+			const usedTableCapsules = new Set<PreservationCapsule>()
 			const hasPreservedSheetXml = hasPreservedPart(
 				sourceArchive,
 				preservedSheetXml?.xml,
@@ -1028,13 +1039,27 @@ export function planWriteXlsx(
 				for (let tableIndex = 0; tableIndex < sheet.tables.length; tableIndex++) {
 					const table = sheet.tables[tableIndex]
 					if (!table) continue
-					const tableCapsule = tableCapsules[tableIndex]
+					const tableCapsule =
+						findPreservableTableCapsule(
+							table,
+							tableCapsules,
+							usedTableCapsules,
+							sourceArchive,
+							sheet.id,
+						) ??
+						findTableCapsuleByIdentity(
+							table,
+							tableCapsules,
+							usedTableCapsules,
+							sourceArchive,
+							sheet.id,
+						) ??
+						tableCapsules.find((capsule) => !usedTableCapsules.has(capsule))
+					if (tableCapsule) usedTableCapsules.add(tableCapsule)
 					const tablePartPath =
 						tableCapsule?.partPath ?? `xl/tables/table${nextGeneratedTableNumber}.xml`
 					const tableContentType = tableCapsule?.contentType ?? CT_TABLE
-					const tableCapsuleContent = tableCapsule
-						? (tableCapsule.content ?? sourceArchive?.readBytes(tableCapsule.partPath))
-						: undefined
+					const tableCapsuleContent = readCapsuleBytes(tableCapsule, sourceArchive)
 					if (
 						tableCapsuleContent &&
 						canPreserveTableCapsule(
@@ -1292,23 +1317,29 @@ export function planWriteXlsx(
 
 		const corePropsPath = packageDocPropsPath(workbookCapsules, REL_CORE_PROPS, 'docProps/core.xml')
 		const appPropsPath = packageDocPropsPath(workbookCapsules, REL_EXT_PROPS, 'docProps/app.xml')
+		const hasCoreOrAppDocProps =
+			workbookCapsules.some((capsule) => capsule.relType === REL_CORE_PROPS) ||
+			workbookCapsules.some((capsule) => capsule.relType === REL_EXT_PROPS)
+		const shouldWriteDocProps = !dirtyPatchMode || hasCoreOrAppDocProps
 
-		recordDocPropsPart(
-			plan,
-			sourceArchive,
-			capsules,
-			corePropsPath,
-			'application/vnd.openxmlformats-package.core-properties+xml',
-			() => buildCorePropsXml(),
-		)
-		recordDocPropsPart(
-			plan,
-			sourceArchive,
-			capsules,
-			appPropsPath,
-			'application/vnd.openxmlformats-officedocument.extended-properties+xml',
-			() => buildAppPropsXml(),
-		)
+		if (shouldWriteDocProps) {
+			recordDocPropsPart(
+				plan,
+				sourceArchive,
+				capsules,
+				corePropsPath,
+				'application/vnd.openxmlformats-package.core-properties+xml',
+				() => buildCorePropsXml(),
+			)
+			recordDocPropsPart(
+				plan,
+				sourceArchive,
+				capsules,
+				appPropsPath,
+				'application/vnd.openxmlformats-officedocument.extended-properties+xml',
+				() => buildAppPropsXml(),
+			)
+		}
 
 		const rootRels: RelEntry[] = [
 			{
@@ -1316,18 +1347,21 @@ export function planWriteXlsx(
 				type: REL_OFFICE_DOC,
 				target: rootRelTarget(REL_OFFICE_DOC, 'xl/workbook.xml', 'xl/workbook.xml'),
 			},
-			{
+		]
+		let rootRIdCounter = 2
+		if (shouldWriteDocProps) {
+			rootRels.push({
 				id: 'rId2',
 				type: REL_CORE_PROPS,
 				target: rootRelTarget(REL_CORE_PROPS, corePropsPath, corePropsPath),
-			},
-			{
+			})
+			rootRels.push({
 				id: 'rId3',
 				type: REL_EXT_PROPS,
 				target: rootRelTarget(REL_EXT_PROPS, appPropsPath, appPropsPath),
-			},
-		]
-		let rootRIdCounter = 4
+			})
+			rootRIdCounter = 4
+		}
 		if (capsules) {
 			for (const capsule of capsules) {
 				if (plan.isCapsulePathSkipped(capsule.partPath)) continue
@@ -1730,6 +1764,7 @@ export function planWriteXlsx(
 					built.extraOverrides.length > 0 ? built.extraOverrides : undefined,
 					workbook.preservedXml?.contentTypeDefaults,
 					{ corePropsPath, appPropsPath },
+					{ includeStyles: shouldWriteStyles, includeDocProps: shouldWriteDocProps },
 				)
 			},
 		)
@@ -1792,6 +1827,54 @@ function canPreserveTableCapsule(
 		relationships,
 	})
 	return parsed ? tablesHaveSameWritableModel(table, parsed) : false
+}
+
+function findPreservableTableCapsule(
+	table: Table,
+	capsules: readonly PreservationCapsule[],
+	used: ReadonlySet<PreservationCapsule>,
+	sourceArchive: ZipArchive | undefined,
+	sheetId: SheetId,
+): PreservationCapsule | undefined {
+	for (const capsule of capsules) {
+		if (used.has(capsule)) continue
+		const content = readCapsuleBytes(capsule, sourceArchive)
+		if (
+			content &&
+			canPreserveTableCapsule(table, content, sheetId, capsule.partPath, capsule.relationships)
+		) {
+			return capsule
+		}
+	}
+	return undefined
+}
+
+function findTableCapsuleByIdentity(
+	table: Table,
+	capsules: readonly PreservationCapsule[],
+	used: ReadonlySet<PreservationCapsule>,
+	sourceArchive: ZipArchive | undefined,
+	sheetId: SheetId,
+): PreservationCapsule | undefined {
+	for (const capsule of capsules) {
+		if (used.has(capsule)) continue
+		const content = readCapsuleBytes(capsule, sourceArchive)
+		const parsed = content
+			? parseTable(new TextDecoder().decode(content), sheetId, {
+					tablePath: capsule.partPath,
+					relationships: capsule.relationships,
+				})
+			: null
+		if (parsed?.name === table.name) return capsule
+	}
+	return undefined
+}
+
+function readCapsuleBytes(
+	capsule: PreservationCapsule | undefined,
+	sourceArchive: ZipArchive | undefined,
+): Uint8Array | undefined {
+	return capsule ? (capsule.content ?? sourceArchive?.readBytes(capsule.partPath)) : undefined
 }
 
 function tablesHaveSameWritableModel(left: Table, right: Table): boolean {

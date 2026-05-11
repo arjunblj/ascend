@@ -1472,6 +1472,11 @@ describe('writeXlsx', () => {
 		expect(sharedStrings).toContain(
 			'<si><r><t>課きく</t></r><rPh sb="0" eb="1"><r><t>カ</t></r></rPh><phoneticPr fontId="1"/></si>',
 		)
+		expect(sharedStrings).toContain(
+			'<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2" uniqueCount="2">',
+		)
+		expect(sharedStrings).not.toContain('standalone="yes" count=')
+		expect(sharedStrings).not.toContain('</sst><si>')
 		expect(sharedStrings).toContain('<si><t>New</t></si>')
 		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
 		expect(sheetXml).toContain('<c r="B1" t="s"><v>1</v></c>')
@@ -1522,6 +1527,64 @@ describe('writeXlsx', () => {
 		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
 		expect(sheetXml).toContain('<c t="inlineStr"><is><t>Inline</t></is></c>')
 		expect(sheetXml).toContain('<c><v>2</v></c>')
+	})
+
+	it('does not add styles or docProps to dirty minimal packages that do not need them', () => {
+		const sourceBytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>
+</Relationships>`,
+			'xl/sharedStrings.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><t>Old</t></si></sst>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1" t="s"><v>0</v></c></row></sheetData>
+</worksheet>`,
+		})
+		const source = readXlsx(sourceBytes)
+		expectOk(source)
+		const sheet = source.value.workbook.sheets[0]
+		if (!sheet) throw new Error('Expected source workbook to contain a sheet')
+		sheet.cells.set(0, 0, { value: stringValue('New'), formula: null, styleId: S0 })
+
+		const written = writeXlsx(source.value.workbook, source.value.capsules, {
+			dirtySheetNames: ['Data'],
+		})
+		expectOk(written)
+
+		const zip = unzipSync(written.value)
+		const contentTypes = new TextDecoder().decode(zip['[Content_Types].xml'] ?? new Uint8Array())
+		const rootRels = new TextDecoder().decode(zip['_rels/.rels'] ?? new Uint8Array())
+		const workbookRels = new TextDecoder().decode(
+			zip['xl/_rels/workbook.xml.rels'] ?? new Uint8Array(),
+		)
+		expect(zip['xl/styles.xml']).toBeUndefined()
+		expect(zip['docProps/core.xml']).toBeUndefined()
+		expect(zip['docProps/app.xml']).toBeUndefined()
+		expect(contentTypes).not.toContain('styles+xml')
+		expect(contentTypes).not.toContain('/docProps/')
+		expect(rootRels).not.toContain('core-properties')
+		expect(rootRels).not.toContain('extended-properties')
+		expect(workbookRels).not.toContain('relationships/styles')
 	})
 
 	it('preserves package docProps parts and custom property relationships', () => {
@@ -3530,6 +3593,81 @@ describe('writeXlsx', () => {
 			Relationship: 1,
 		})
 		expect(unzipSync(bytes)['xl/tables/table1.xml']).toEqual(capsuleContent)
+	})
+
+	it('matches table capsules by model when sheet relationships are out of part-name order', () => {
+		const table1Xml = `<?xml version="1.0"?>
+<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="Table1" displayName="FirstTable" ref="A1:A2" headerRowCount="1" totalsRowCount="0">
+  <tableColumns count="1"><tableColumn id="1" name="First"/></tableColumns>
+</table>`
+		const table2Xml = `<?xml version="1.0"?>
+<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="2" name="Table2" displayName="SecondTable" ref="B1:B2" headerRowCount="1" totalsRowCount="0">
+  <tableColumns count="1"><tableColumn id="1" name="Second"/></tableColumns>
+</table>`
+		const sourceBytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/tables/table1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/>
+  <Override PartName="/xl/tables/table2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/tables/table1.xml': table1Xml,
+			'xl/tables/table2.xml': table2Xml,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheetData>
+    <row r="1"><c r="A1" t="inlineStr"><is><t>First</t></is></c><c r="B1" t="inlineStr"><is><t>Second</t></is></c></row>
+    <row r="2"><c r="A2"><v>1</v></c><c r="B2"><v>2</v></c></row>
+  </sheetData>
+  <tableParts count="2"><tablePart r:id="rId1"/><tablePart r:id="rId2"/></tableParts>
+</worksheet>`,
+			'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table2.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"/>
+</Relationships>`,
+		})
+		const source = readXlsx(sourceBytes)
+		expectOk(source)
+		const sheet = source.value.workbook.sheets[0]
+		if (!sheet) throw new Error('Expected source workbook to contain a sheet')
+		expect(sheet.tables.map((table) => table.name)).toEqual(['SecondTable', 'FirstTable'])
+		sheet.cells.set(1, 0, { value: numberValue(3), formula: null, styleId: S0 })
+
+		const written = writeXlsx(source.value.workbook, source.value.capsules, {
+			dirtySheetNames: ['Data'],
+		})
+		expectOk(written)
+
+		const zip = unzipSync(written.value)
+		const table1 = new TextDecoder().decode(zip['xl/tables/table1.xml'] ?? new Uint8Array())
+		const table2 = new TextDecoder().decode(zip['xl/tables/table2.xml'] ?? new Uint8Array())
+		const sheetRels = new TextDecoder().decode(
+			zip['xl/worksheets/_rels/sheet1.xml.rels'] ?? new Uint8Array(),
+		)
+		expect(table1).toContain('displayName="FirstTable"')
+		expect(table2).toContain('displayName="SecondTable"')
+		expect(sheetRels).toContain('Id="rId1"')
+		expect(sheetRels).toContain('Target="../tables/table2.xml"')
+		expect(sheetRels).toContain('Id="rId2"')
+		expect(sheetRels).toContain('Target="../tables/table1.xml"')
 	})
 
 	it('regenerates table parts when capsule-backed table metadata changes', () => {

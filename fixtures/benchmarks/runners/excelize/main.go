@@ -391,11 +391,30 @@ func workbookAssertions(workbook *excelize.File) (map[string]any, error) {
 	sheetNames := workbook.GetSheetList()
 	cellCount := 0
 	physicalCellCount := 0
+	readCommentCount := 0
+	readHyperlinkCount := 0
+	readDataValidationCount := 0
+	readConditionalFormatCount := 0
 	usedRanges := make([]string, 0, len(sheetNames))
 	semanticCellRefsHash := newOrderedLineHasher()
 	semanticCellValuesHash := newOrderedLineHasher()
 
 	for _, sheetName := range sheetNames {
+		comments, err := workbook.GetComments(sheetName)
+		if err != nil {
+			return nil, err
+		}
+		readCommentCount += len(comments)
+		dataValidations, err := workbook.GetDataValidations(sheetName)
+		if err != nil {
+			return nil, err
+		}
+		readDataValidationCount += len(dataValidations)
+		conditionalFormats, err := workbook.GetConditionalFormats(sheetName)
+		if err != nil {
+			return nil, err
+		}
+		readConditionalFormatCount += len(conditionalFormats)
 		rows, err := workbook.Rows(sheetName)
 		if err != nil {
 			return nil, err
@@ -420,6 +439,14 @@ func workbookAssertions(workbook *excelize.File) (map[string]any, error) {
 				if err != nil {
 					rows.Close()
 					return nil, err
+				}
+				hasHyperlink, _, err := workbook.GetCellHyperLink(sheetName, cellRef)
+				if err != nil {
+					rows.Close()
+					return nil, err
+				}
+				if hasHyperlink {
+					readHyperlinkCount++
 				}
 				cellType, err := workbook.GetCellType(sheetName, cellRef)
 				if err != nil {
@@ -473,6 +500,11 @@ func workbookAssertions(workbook *excelize.File) (map[string]any, error) {
 		"orderedSemanticCellValuesHash": semanticCellValuesHash.Digest(),
 		"formulaTextHash":               hashLines([]string{}),
 		"excelizeRawCellValueOption":    true,
+		"readCommentCount":              readCommentCount,
+		"readHyperlinkCount":            readHyperlinkCount,
+		"readDataValidationCount":       readDataValidationCount,
+		"readConditionalFormatCount":    readConditionalFormatCount,
+		"readDefinedNameCount":          len(workbook.GetDefinedName()),
 	}, nil
 }
 

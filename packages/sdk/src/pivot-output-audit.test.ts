@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { numberValue, stringValue } from '@ascend/schema'
 import { AscendWorkbook, WorkbookDocument, WorkbookSession } from './index.ts'
+
+const MS_EXCEL_PIVOT_FIXTURE = new URL(
+	'../../../research/excel-corpus/ms-excel-formulas-and-pivot-tables.xlsx',
+	import.meta.url,
+)
 
 describe('pivot output audits', () => {
 	test('audits LibreOffice calculated pivot output against materialized cache records', async () => {
@@ -109,6 +114,41 @@ describe('pivot output audits', () => {
 			}),
 		)
 	})
+
+	test.skipIf(!existsSync(MS_EXCEL_PIVOT_FIXTURE))(
+		'audits real Excel one-row pivots with column fields',
+		async () => {
+			const wb = await AscendWorkbook.open(readFileSync(MS_EXCEL_PIVOT_FIXTURE), {
+				pivotCacheRecordMaterializeLimit: 'all',
+			})
+			const audits = wb.pivotOutputAudits()
+
+			for (const pivotTable of ['PivotTable1', 'PivotTable2']) {
+				expect(audits).toContainEqual(
+					expect.objectContaining({
+						pivotTable,
+						status: 'passed',
+						mismatches: [],
+						warnings: [],
+					}),
+				)
+			}
+			expect(audits).toContainEqual(
+				expect.objectContaining({
+					pivotTable: 'PivotTable7',
+					status: 'unsupported',
+					warnings: ['Pivot grouped axis item base values were not resolved.'],
+				}),
+			)
+			expect(audits).toContainEqual(
+				expect.objectContaining({
+					pivotTable: 'PivotTable9',
+					status: 'unsupported',
+					warnings: ['Pivot show-data-as calculations are not audited.'],
+				}),
+			)
+		},
+	)
 
 	test('exposes audits through read-only document and session APIs', async () => {
 		const bytes = loadLibreOfficeFixture('pivot-table/test_diff_aggregation.xlsx')

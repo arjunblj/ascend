@@ -1388,7 +1388,7 @@ function buildPivotOutputAudits(
 				warnings: [],
 			}
 		}
-		if (pivot.rowFields.length > 1) {
+		if (isAxisItemMatrixPivot(pivot)) {
 			const expected = aggregateMultiRowAxisPivotOutput(cache, pivot)
 			if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
 			const actual = readMultiRowAxisPivotOutput(
@@ -1433,6 +1433,14 @@ function buildPivotOutputAudits(
 			warnings: [],
 		}
 	})
+}
+
+function isAxisItemMatrixPivot(pivot: PivotTableInfo): boolean {
+	return (
+		pivot.rowFields.length > 0 &&
+		pivot.columnFields.length > 0 &&
+		pivot.columnFields.every((field) => field.index >= 0)
+	)
 }
 
 interface PivotAxisOutputItem {
@@ -1629,6 +1637,9 @@ function aggregateMultiRowAxisPivotOutput(
 	if (pivot.dataFields.length !== 1) {
 		return { ok: false, warning: 'Multi-row pivot audits require exactly one data field.' }
 	}
+	if (pivot.dataFields.some((field) => field.showDataAs !== undefined)) {
+		return { ok: false, warning: 'Pivot show-data-as calculations are not audited.' }
+	}
 	if (pivot.columnFields.length === 0) {
 		return { ok: false, warning: 'Multi-row pivot audits require column output items.' }
 	}
@@ -1687,7 +1698,9 @@ function buildPivotAxisOutputItems(
 	const seenLabels = new Map<string, number>()
 	for (const item of items) {
 		if (item.itemType === 'grand') {
-			output.push({ key: uniquePivotAxisKey('Grand Total', seenLabels), filters: new Map() })
+			const filters = buildPivotAxisGrandFilters(cache, pivot, fields)
+			if (!filters.ok) return filters
+			output.push({ key: uniquePivotAxisKey('Grand Total', seenLabels), filters: filters.value })
 			continue
 		}
 		const filters = new Map<number, Set<string>>()
@@ -1718,6 +1731,71 @@ function buildPivotAxisOutputItems(
 		output.push({ key: uniquePivotAxisKey(label, seenLabels), filters })
 	}
 	return { ok: true, value: output }
+}
+
+function buildPivotAxisGrandFilters(
+	cache: PivotCacheInfo,
+	pivot: PivotTableInfo,
+	fields: readonly { readonly index: number }[],
+): { ok: true; value: PivotAuditFilters } | { ok: false; warning: string } {
+	const filters = new Map<number, Set<string>>()
+	for (const axisField of fields) {
+		if (axisField.index < 0) return { ok: false, warning: 'Data-field axis items are not audited.' }
+		const values = visiblePivotAxisFieldValues(cache, pivot, axisField.index)
+		if (!values.ok) return values
+		if (values.value.fieldIndex !== undefined && values.value.values.size > 0) {
+			filters.set(values.value.fieldIndex, values.value.values)
+		}
+	}
+	return { ok: true, value: filters }
+}
+
+function visiblePivotAxisFieldValues(
+	cache: PivotCacheInfo,
+	pivot: PivotTableInfo,
+	fieldIndex: number,
+):
+	| {
+			ok: true
+			value: {
+				fieldIndex?: number
+				values: Set<string>
+			}
+	  }
+	| { ok: false; warning: string } {
+	const pivotField = pivot.fields[fieldIndex]
+	const items = pivotField?.items?.filter((item) => item.cacheIndex !== undefined) ?? []
+	if (items.length === 0) return { ok: true, value: { values: new Set() } }
+	const cacheField = cache.fields[fieldIndex]
+	const group = cacheField?.fieldGroup
+	if (group?.base !== undefined) {
+		const values = new Set<string>()
+		for (const item of items) {
+			if (item.hidden || item.missing || item.cacheIndex === undefined) continue
+			for (const discreteItem of group.discreteItems ?? []) {
+				if (discreteItem.value !== item.cacheIndex) continue
+				const value = pivotCacheSharedItemValue(cache, group.base, discreteItem.index)
+				if (value !== undefined) values.add(value)
+			}
+		}
+		if (values.size === 0) {
+			return { ok: false, warning: 'Pivot grouped axis grand-total values were not resolved.' }
+		}
+		return { ok: true, value: { fieldIndex: group.base, values } }
+	}
+	const values = new Set<string>()
+	for (const item of items) {
+		if (item.hidden || item.missing || item.cacheIndex === undefined) continue
+		const sharedItem = cache.fields[fieldIndex]?.sharedItems?.find(
+			(entry) => entry.index === item.cacheIndex,
+		)
+		if (sharedItem?.value === undefined) {
+			if (sharedItem?.kind === 'missing') continue
+			return { ok: false, warning: 'Pivot axis grand-total shared item value was not resolved.' }
+		}
+		values.add(sharedItem.value)
+	}
+	return { ok: true, value: { fieldIndex, values } }
 }
 
 function resolvePivotAxisFieldItemFilter(
@@ -1910,7 +1988,9 @@ function pivotPageFieldAllowedValues(
 		return { ok: true, value: new Set([value]) }
 	}
 	const items = field?.items?.filter((item) => item.cacheIndex !== undefined) ?? []
-	if (items.length === 0) return { ok: true, value: new Set() }
+	if (items.length === 0 || items.every((item) => !item.hidden && !item.missing)) {
+		return { ok: true, value: new Set() }
+	}
 	const visibleValues = new Set<string>()
 	for (const item of items) {
 		if (item.hidden || item.missing || item.cacheIndex === undefined) continue

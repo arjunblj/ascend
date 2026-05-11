@@ -403,7 +403,9 @@ export function planWriteXlsx(
 		const usePlainStringsRequested = options.usePlainStrings ?? false
 		const usePlainStrings = usePlainStringsRequested && !hasPreservedSheetXmlInDirtyPatchMode
 		const useInlineStringsRequested =
-			options.useInlineStrings ?? !(options.useSharedStrings ?? true)
+			options.useInlineStrings ??
+			(!(options.useSharedStrings ?? true) ||
+				(dirtyPatchMode && workbook.preservedSharedStrings === null))
 		const useInlineStrings =
 			!usePlainStrings && useInlineStringsRequested && !hasPreservedSheetXmlInDirtyPatchMode
 		const useSharedStrings = !useInlineStrings && !usePlainStrings
@@ -436,13 +438,19 @@ export function planWriteXlsx(
 						facts: workbookWriteFacts,
 					}
 				: new IncrementalSharedStringTable(
-						preserveSharedStrings || hasPreservedSheetXmlInDirtyPatchMode
+						preserveSharedStrings ||
+							(dirtyPatchMode && preservedSharedStringsXml !== undefined) ||
+							hasPreservedSheetXmlInDirtyPatchMode
 							? preservedSharedStringEntries
 							: [],
 						workbookWriteFacts,
+						preservedSharedStringsXml,
 					)
 		const hasSharedStrings =
-			useSharedStrings && (preserveSharedStrings || workbookWriteFacts.hasStringCells)
+			useSharedStrings &&
+			(preserveSharedStrings ||
+				workbookWriteFacts.hasStringCells ||
+				(dirtyPatchMode && preservedSharedStringsXml !== undefined))
 
 		const preservedStyles = workbook.preservedStyles ?? undefined
 		const hasNumberFormatOnlyStylePatches =
@@ -1248,7 +1256,8 @@ export function planWriteXlsx(
 
 		if (hasSharedStrings) {
 			const canReuseSharedStringsXml =
-				preserveSharedStrings &&
+				preservedSharedStringsXml !== undefined &&
+				(preserveSharedStrings || dirtyPatchMode || hasPreservedSheetXmlInDirtyPatchMode) &&
 				(useInlineStrings || ssTable.entryCount <= preservedSharedStringEntries.length)
 			const preservedSharedStringBytes = canReuseSharedStringsXml
 				? resolvePreservedBytes(sourceArchive, workbook.preservedSharedStrings?.path)

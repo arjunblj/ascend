@@ -23,11 +23,19 @@ export interface WorkbookWriteFacts {
 export class IncrementalSharedStringTable {
 	private readonly entries: CellValue[] = []
 	private readonly lookup = new Map<string, number>()
+	private readonly preservedXml: string | undefined
+	private readonly preservedEntryCount: number
 	private _count = 0
 	readonly facts: WorkbookWriteFacts
 
-	constructor(existingEntries: readonly CellValue[], facts: WorkbookWriteFacts) {
+	constructor(
+		existingEntries: readonly CellValue[],
+		facts: WorkbookWriteFacts,
+		preservedXml?: string,
+	) {
 		this.facts = facts
+		this.preservedXml = preservedXml
+		this.preservedEntryCount = existingEntries.length
 		for (let i = 0; i < existingEntries.length; i++) {
 			const entry = existingEntries[i]
 			if (!entry) continue
@@ -53,6 +61,14 @@ export class IncrementalSharedStringTable {
 	}
 
 	toXml(): string {
+		if (this.preservedXml && this.entries.length >= this.preservedEntryCount) {
+			return appendSharedStringEntries(
+				this.preservedXml,
+				this.entries.slice(this.preservedEntryCount),
+				this._count,
+				this.uniqueCount,
+			)
+		}
 		const builder = new ChunkedStringBuilder()
 		builder.push(XML_HEADER)
 		builder.push(`<sst xmlns="${NS}" count="${this._count}" uniqueCount="${this.uniqueCount}">`)
@@ -74,6 +90,47 @@ export class IncrementalSharedStringTable {
 	get entryCount(): number {
 		return this.entries.length
 	}
+}
+
+function appendSharedStringEntries(
+	xml: string,
+	appendedEntries: readonly CellValue[],
+	count: number,
+	uniqueCount: number,
+): string {
+	const close = /<\/\s*(?:[A-Za-z_][\w.-]*:)?sst\s*>\s*$/u.exec(xml)
+	if (!close || close.index === undefined) return xml
+	const prefix = sharedStringPrefix(xml)
+	const rootEnd = xml.indexOf('>')
+	const head =
+		rootEnd === -1
+			? xml.slice(0, close.index)
+			: rewriteSharedStringRoot(xml, rootEnd, count, uniqueCount)
+	const appended = appendedEntries.map((entry) => entryXml(entry, prefix)).join('')
+	return `${head}${appended}${xml.slice(close.index)}`
+}
+
+function sharedStringPrefix(xml: string): string {
+	const match = /<\s*([A-Za-z_][\w.-]*:)?sst\b/u.exec(xml)
+	return match?.[1] ?? ''
+}
+
+function rewriteSharedStringRoot(
+	xml: string,
+	rootEnd: number,
+	count: number,
+	uniqueCount: number,
+): string {
+	let root = xml.slice(0, rootEnd)
+	root = setXmlAttribute(root, 'count', String(count))
+	root = setXmlAttribute(root, 'uniqueCount', String(uniqueCount))
+	return `${root}>${xml.slice(rootEnd + 1)}`
+}
+
+function setXmlAttribute(openTag: string, name: string, value: string): string {
+	const attr = new RegExp(String.raw`(\s${name}=")[^"]*(")`, 'u')
+	if (attr.test(openTag)) return openTag.replace(attr, `$1${value}$2`)
+	return `${openTag} ${name}="${value}"`
 }
 
 export function scanWorkbookWriteFactsFast(workbook: Workbook): WorkbookWriteFacts {
@@ -153,45 +210,55 @@ function richTextKey(runs: readonly import('@ascend/schema').RichTextRun[]): str
 	return key
 }
 
-function entryXml(value: CellValue): string {
+function tagName(name: string, prefix: string): string {
+	return `${prefix}${name}`
+}
+
+function entryXml(value: CellValue, prefix = ''): string {
+	const si = tagName('si', prefix)
+	const t = tagName('t', prefix)
 	if (value.kind === 'string') {
-		return `<si><t>${escapeXml(value.value)}</t></si>`
+		return `<${si}><${t}>${escapeXml(value.value)}</${t}></${si}>`
 	}
 	if (value.kind === 'richText') {
-		const runs = value.runs.map(runXml).join('')
-		return `<si>${runs}</si>`
+		const runs = value.runs.map((run) => runXml(run, prefix)).join('')
+		return `<${si}>${runs}</${si}>`
 	}
-	return '<si><t/></si>'
+	return `<${si}><${t}/></${si}>`
 }
 
-function runXml(run: RichTextRun): string {
-	const rPr = runPropsXml(run)
-	const rPrEl = rPr ? `<rPr>${rPr}</rPr>` : ''
-	return `<r>${rPrEl}<t>${escapeXml(run.text)}</t></r>`
+function runXml(run: RichTextRun, prefix = ''): string {
+	const r = tagName('r', prefix)
+	const rPrTag = tagName('rPr', prefix)
+	const t = tagName('t', prefix)
+	const rPr = runPropsXml(run, prefix)
+	const rPrEl = rPr ? `<${rPrTag}>${rPr}</${rPrTag}>` : ''
+	return `<${r}>${rPrEl}<${t}>${escapeXml(run.text)}</${t}></${r}>`
 }
 
-function runPropsXml(run: RichTextRun): string {
+function runPropsXml(run: RichTextRun, prefix = ''): string {
 	const parts: string[] = []
-	if (run.bold) parts.push('<b/>')
-	if (run.italic) parts.push('<i/>')
-	if (run.underline) parts.push('<u/>')
-	if (run.strikethrough) parts.push('<strike/>')
-	if (run.fontSize !== undefined) parts.push(`<sz val="${run.fontSize}"/>`)
+	if (run.bold) parts.push(`<${tagName('b', prefix)}/>`)
+	if (run.italic) parts.push(`<${tagName('i', prefix)}/>`)
+	if (run.underline) parts.push(`<${tagName('u', prefix)}/>`)
+	if (run.strikethrough) parts.push(`<${tagName('strike', prefix)}/>`)
+	if (run.fontSize !== undefined) parts.push(`<${tagName('sz', prefix)} val="${run.fontSize}"/>`)
 	if (run.color) {
+		const color = tagName('color', prefix)
 		if (typeof run.color === 'string') {
-			parts.push(`<color rgb="${escapeXml(run.color)}"/>`)
+			parts.push(`<${color} rgb="${escapeXml(run.color)}"/>`)
 		} else if (run.color.kind === 'rgb') {
-			parts.push(`<color rgb="${escapeXml(run.color.rgb)}"/>`)
+			parts.push(`<${color} rgb="${escapeXml(run.color.rgb)}"/>`)
 		} else if (run.color.kind === 'theme') {
 			parts.push(
 				run.color.tint !== undefined
-					? `<color theme="${run.color.theme}" tint="${run.color.tint}"/>`
-					: `<color theme="${run.color.theme}"/>`,
+					? `<${color} theme="${run.color.theme}" tint="${run.color.tint}"/>`
+					: `<${color} theme="${run.color.theme}"/>`,
 			)
 		} else if (run.color.kind === 'indexed') {
-			parts.push(`<color indexed="${run.color.index}"/>`)
+			parts.push(`<${color} indexed="${run.color.index}"/>`)
 		}
 	}
-	if (run.fontName) parts.push(`<rFont val="${escapeXml(run.fontName)}"/>`)
+	if (run.fontName) parts.push(`<${tagName('rFont', prefix)} val="${escapeXml(run.fontName)}"/>`)
 	return parts.join('')
 }

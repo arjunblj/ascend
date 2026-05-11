@@ -117,7 +117,7 @@ function scanPivotCacheEntries(xml: string): readonly { cacheId: number; relId: 
 	const caches: Array<{ cacheId: number; relId: string }> = []
 	collectAttributes(xml, PIVOT_CACHE_RE, (attrs) => {
 		const cacheId = numberAttr(attrs, 'cacheId')
-		const relId = attrs.get('r:id') ?? attrs.get('id')
+		const relId = relationshipIdFromAttributes(attrs)
 		if (cacheId === undefined || !relId) return
 		caches.push({ cacheId, relId })
 	})
@@ -180,7 +180,7 @@ function scanSheets(xml: string): SheetEntry[] {
 	collectAttributes(xml, SHEET_RE, (attrs) => {
 		const name = attrs.get('name')
 		const sheetId = attrs.get('sheetId')
-		const rId = attrs.get('r:id') ?? attrs.get('id')
+		const rId = relationshipIdFromAttributes(attrs)
 		if (!name || !sheetId || !rId) return
 
 		const stateStr = attrs.get('state')
@@ -292,10 +292,19 @@ function scanWorkbookViews(xml: string): readonly WorkbookView[] {
 function scanExternalReferenceRelIds(xml: string): readonly string[] {
 	const relIds: string[] = []
 	collectAttributes(xml, EXTERNAL_REFERENCE_RE, (attrs) => {
-		const relId = attrs.get('r:id') ?? attrs.get('id')
+		const relId = relationshipIdFromAttributes(attrs)
 		if (relId) relIds.push(relId)
 	})
 	return relIds
+}
+
+function relationshipIdFromAttributes(attrs: ReadonlyMap<string, string>): string | undefined {
+	const direct = attrs.get('r:id') ?? attrs.get('id')
+	if (direct !== undefined) return direct
+	for (const [name, value] of attrs) {
+		if (name.endsWith(':id')) return value
+	}
+	return undefined
 }
 
 function scanSingleTagAttributes(xml: string, pattern: RegExp): Map<string, string> | undefined {
@@ -346,7 +355,7 @@ function parsePivotCacheEntries(wb: XmlNode): readonly { cacheId: number; relId:
 	const caches: Array<{ cacheId: number; relId: string }> = []
 	for (const pivotCache of asArray<XmlNode>(pivotCachesNode.pivotCache as XmlNode | XmlNode[])) {
 		const cacheId = numAttr(pivotCache, 'cacheId')
-		const relId = attr(pivotCache, 'r:id') ?? attr(pivotCache, 'id')
+		const relId = relationshipIdFromNode(pivotCache)
 		if (cacheId === undefined || !relId) continue
 		caches.push({ cacheId, relId })
 	}
@@ -412,7 +421,7 @@ function parseSheets(wb: XmlNode): SheetEntry[] {
 	for (const s of asArray<XmlNode>(sheetsNode.sheet as XmlNode | XmlNode[])) {
 		const name = attr(s, 'name')
 		const sheetId = attr(s, 'sheetId')
-		const rId = attr(s, 'r:id') ?? attr(s, 'id')
+		const rId = relationshipIdFromNode(s)
 		if (!name || !sheetId || !rId) continue
 
 		const stateStr = attr(s, 'state')
@@ -555,8 +564,17 @@ function parseExternalReferenceRelIds(wb: XmlNode): readonly string[] {
 
 	const relIds: string[] = []
 	for (const ref of asArray<XmlNode>(refsNode.externalReference as XmlNode | XmlNode[])) {
-		const relId = attr(ref, 'r:id') ?? attr(ref, 'id')
+		const relId = relationshipIdFromNode(ref)
 		if (relId) relIds.push(relId)
 	}
 	return relIds
+}
+
+function relationshipIdFromNode(node: XmlNode): string | undefined {
+	const direct = attr(node, 'r:id') ?? attr(node, 'id')
+	if (direct !== undefined) return direct
+	for (const [name, value] of Object.entries(node)) {
+		if (name.startsWith('@_') && name.endsWith(':id')) return String(value)
+	}
+	return undefined
 }

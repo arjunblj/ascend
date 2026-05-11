@@ -179,6 +179,35 @@ describe('readXlsx', () => {
 		expect(result.value.workbook.definedNames.get('Total')).toBe('Data!$B$1')
 	})
 
+	it('parses sheet relationship ids with non-r namespace prefixes', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+  <mc:AlternateContent><mc:Fallback/></mc:AlternateContent>
+  <sheets>
+    <sheet name="Data" sheetId="1"
+      xmlns:relationships="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+      relationships:id="rId1"/>
+  </sheets>
+</workbook>`,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': SHEET_XML,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		expect(result.value.workbook.sheets[0]?.name).toBe('Data')
+		expect(result.value.workbook.sheets[0]?.cells.get(0, 0)?.value).toEqual({
+			kind: 'string',
+			value: 'Hello',
+		})
+	})
+
 	it('parses prefixed shared-string namespace elements', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': CONTENT_TYPES,

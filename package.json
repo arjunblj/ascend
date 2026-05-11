@@ -1,6 +1,7 @@
 {
 	"name": "ascend",
 	"private": true,
+	"license": "MIT",
 	"packageManager": "bun@1.3.13",
 	"workspaces": [
 		"packages/*",

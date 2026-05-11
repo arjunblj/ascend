@@ -11,6 +11,7 @@ import {
 import type { WorkbookLoadInfo } from './types.ts'
 
 const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04]
+const COMPOUND_FILE_MAGIC = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]
 
 export interface LoadedWorkbookSource {
 	readonly workbook: Workbook
@@ -26,6 +27,7 @@ export async function openWorkbookSource(
 		mode?: 'full' | 'metadata-only' | 'values' | 'formula'
 		sheets?: readonly string[]
 		richMetadata?: boolean
+		password?: string
 		pivotCacheRecordMaterializeLimit?: number | 'all'
 	},
 ): Promise<LoadedWorkbookSource> {
@@ -64,7 +66,7 @@ export async function openWorkbookSource(
 		}
 	}
 
-	if (ext === 'xlsx' || ext === 'xlsm' || isZip(bytes)) {
+	if (ext === 'xlsx' || ext === 'xlsm' || isZip(bytes) || isCompoundFile(bytes)) {
 		const result = readXlsx(bytes, options)
 		if (!result.ok) throw new AscendException(result.error)
 		const loadInfo = buildWorkbookLoadInfo(result.value.loadInfo)
@@ -76,7 +78,9 @@ export async function openWorkbookSource(
 			capsules: result.value.capsules,
 			report: result.value.report,
 			loadInfo,
-			originalBytes: loadInfo.isPartial ? null : bytes,
+			originalBytes: loadInfo.isPartial
+				? null
+				: (result.value.workbook.sourceArchiveBytes ?? bytes),
 		}
 	}
 
@@ -108,6 +112,11 @@ function isZip(bytes: Uint8Array): boolean {
 		bytes[2] === ZIP_MAGIC[2] &&
 		bytes[3] === ZIP_MAGIC[3]
 	)
+}
+
+function isCompoundFile(bytes: Uint8Array): boolean {
+	if (bytes.length < COMPOUND_FILE_MAGIC.length) return false
+	return COMPOUND_FILE_MAGIC.every((byte, index) => bytes[index] === byte)
 }
 
 export function buildWorkbookLoadInfo(info: ReadXlsxLoadInfo): WorkbookLoadInfo {

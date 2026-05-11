@@ -49,6 +49,7 @@ async function buildEntry(root: string, file: string): Promise<CorpusManifestEnt
 		sourceUrl: `${CALAMINE_BASE_URL}/${file}`,
 		license: 'MIT',
 		sha256: createHash('sha256').update(bytes).digest('hex'),
+		...(password !== undefined ? { password } : {}),
 		redistributionAllowed: true,
 		citation: 'Calamine tests XLSX/XLSM fixture subset, MIT.',
 		vendorable: true,

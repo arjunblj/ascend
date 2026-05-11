@@ -133,6 +133,7 @@ export class AscendWorkbook extends WorkbookReadView {
 			mode?: 'full' | 'metadata-only' | 'values' | 'formula'
 			sheets?: readonly string[]
 			richMetadata?: boolean
+			password?: string
 			pivotCacheRecordMaterializeLimit?: number | 'all'
 		},
 	): Promise<AscendWorkbook> {

@@ -34,6 +34,14 @@ describe('AscendWorkbook', () => {
 		expect(csv.sheet('Sheet1')?.cell('B2')?.value).toEqual({ kind: 'number', value: 2 })
 	})
 
+	test('opens encrypted XLSX fixtures with a password through the SDK', async () => {
+		const encrypted = readFileSync('fixtures/xlsx/calamine/pass_protected.xlsx')
+		const wb = await Ascend.open(new Uint8Array(encrypted), { password: '123' })
+		expect(wb.sheets).toContain('Sheet1')
+		expect(() => extractZip(wb.toBytes())).not.toThrow()
+		await expect(Ascend.open(new Uint8Array(encrypted))).rejects.toThrow('requires a password')
+	})
+
 	test('create returns an empty workbook with one sheet', () => {
 		const wb = AscendWorkbook.create()
 		expect(wb.sheets).toEqual(['Sheet1'])

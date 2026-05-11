@@ -18,6 +18,7 @@ import {
 	type RangeRef,
 	type Workbook,
 } from '../../packages/core/src/index.ts'
+import { readXlsx } from '../../packages/io-xlsx/src/reader/index.ts'
 import {
 	parseRelationships,
 	REL_COMMENTS,
@@ -243,8 +244,10 @@ interface WorkbookTarget {
 	readonly name: string
 	readonly extension: string
 	readonly bytes: Uint8Array
+	readonly packageBytes: Uint8Array
 	readonly sizeBytes: number
 	readonly sha256: string
+	readonly packageSha256: string
 	readonly expectedInfo: WorkbookShapeSummary
 	readonly ascendInfo?: {
 		readonly sheetCount: number
@@ -266,6 +269,7 @@ interface CorpusTargetMetadata {
 	readonly featureTags: readonly string[]
 	readonly vendorable: boolean
 	readonly knownUnsupported: readonly string[]
+	readonly password?: string
 }
 
 type CompetitiveCategory = 'read' | 'roundtrip' | 'edit-roundtrip'
@@ -412,7 +416,7 @@ export function roundtripAssertions(
 	const packageFingerprint = shape.packageFingerprint ?? extractWorkbookPackageFingerprint(bytes)
 	return {
 		bytes: bytes.byteLength,
-		byteIdentical: sha256(bytes) === target.sha256,
+		byteIdentical: sha256(bytes) === target.packageSha256,
 		roundtripSheetCount: shape.sheetCount,
 		roundtripSheetNamesHash: shape.sheetNamesHash,
 		roundtripCellCount: shape.cellCount,
@@ -452,7 +456,7 @@ interface EditTarget {
 }
 
 function selectEditTarget(target: WorkbookTarget): EditTarget {
-	const selected = findFirstEditableScalarCell(target.bytes)
+	const selected = findFirstEditableScalarCell(target.packageBytes)
 	if (selected) {
 		return {
 			sheetName: selected.sheetName,
@@ -466,7 +470,7 @@ function selectEditTarget(target: WorkbookTarget): EditTarget {
 			expectedFormulaDelta: 0,
 		}
 	}
-	const addTarget = selectAddCellEditTarget(target.bytes)
+	const addTarget = selectAddCellEditTarget(target.packageBytes)
 	if (!addTarget) {
 		throw new Error(`${target.name} has no worksheet for edit-roundtrip`)
 	}
@@ -1375,13 +1379,10 @@ export function extractWorkbookFeatureSummary(bytes: Uint8Array): WorkbookFeatur
 	const workbookInfo = workbookXml ? parseWorkbookXml(workbookXml) : { sheets: [] }
 	const workbookRels = workbookRelsXml ? parseRelationships(workbookRelsXml) : []
 	const worksheetPaths = workbookInfo.sheets
-		.map((sheet) => {
-			const rel = workbookRels.find(
-				(entry) => entry.id === sheet.rId && entry.type === REL_WORKSHEET,
-			)
-			return rel ? resolvePath('xl/workbook.xml', rel.target) : null
-		})
-		.filter((path): path is string => path !== null)
+		.map((sheet, index) =>
+			worksheetPathForWorkbookSheet(archive, 'xl/workbook.xml', workbookRels, sheet, index),
+		)
+		.filter((path): path is string => path !== undefined)
 	const featurePartLines: string[] = []
 	for (const path of partPaths) {
 		const kind = classifyFeaturePart(path)
@@ -1451,6 +1452,41 @@ export function extractWorkbookFeatureSummary(bytes: Uint8Array): WorkbookFeatur
 		featurePartNamesHash: hashLines(featurePartLines),
 		featureInventoryHash: hashLines(inventoryLines),
 	}
+}
+
+function worksheetPathForWorkbookSheet(
+	archive: ReturnType<typeof extractZip>,
+	workbookPath: string,
+	workbookRels: readonly { readonly id: string; readonly type: string; readonly target: string }[],
+	sheet: { readonly rId: string },
+	index: number,
+): string | undefined {
+	const rel = workbookRels.find((entry) => entry.id === sheet.rId)
+	if (rel && rel.type !== REL_WORKSHEET) return undefined
+	const relPath = rel ? resolvePath(workbookPath, rel.target) : undefined
+	if (relPath && archive.has(relPath)) return relPath
+	return firstExistingPart(archive, [
+		`xl/worksheets/sheet${index + 1}.xml`,
+		`xl/worksheets/Sheet${index + 1}.xml`,
+	])
+}
+
+function sharedStringsPathForWorkbook(
+	archive: ReturnType<typeof extractZip>,
+	workbookPath: string,
+	workbookRels: readonly { readonly type: string; readonly target: string }[],
+): string | undefined {
+	const rel = workbookRels.find((entry) => entry.type === REL_SHARED_STRINGS)
+	const relPath = rel ? resolvePath(workbookPath, rel.target) : undefined
+	if (relPath && archive.has(relPath)) return relPath
+	return archive.has('xl/sharedStrings.xml') ? 'xl/sharedStrings.xml' : undefined
+}
+
+function firstExistingPart(
+	archive: ReturnType<typeof extractZip>,
+	paths: readonly string[],
+): string | undefined {
+	return paths.find((path) => archive.has(path))
 }
 
 function countPartPaths(
@@ -1836,14 +1872,15 @@ function extractExpectedWorkbookShape(bytes: Uint8Array): WorkbookShapeSummary {
 	const workbookInfo = parseWorkbookXml(workbookXml)
 	const workbookRels = parseRelationships(workbookRelsXml)
 	const worksheetRels = new Map(
-		workbookRels
-			.filter((rel) => rel.type === REL_WORKSHEET)
-			.map((rel) => [rel.id, resolvePath('xl/workbook.xml', rel.target)]),
+		workbookInfo.sheets
+			.map((sheet, index) => [
+				sheet.rId,
+				worksheetPathForWorkbookSheet(archive, 'xl/workbook.xml', workbookRels, sheet, index),
+			])
+			.filter((entry): entry is [string, string] => entry[1] !== undefined),
 	)
-	const sharedStringsRel = workbookRels.find((rel) => rel.type === REL_SHARED_STRINGS)
-	const sharedStringsXml = sharedStringsRel
-		? archive.readText(resolvePath('xl/workbook.xml', sharedStringsRel.target))
-		: undefined
+	const sharedStringsPath = sharedStringsPathForWorkbook(archive, 'xl/workbook.xml', workbookRels)
+	const sharedStringsXml = sharedStringsPath ? archive.readText(sharedStringsPath) : undefined
 	const sharedStrings = sharedStringsXml
 		? parseSharedStrings(sharedStringsXml, { lazy: true })
 		: emptySharedStrings()
@@ -1910,17 +1947,18 @@ function findFirstEditableScalarCell(bytes: Uint8Array): {
 	if (!workbookXml || !workbookRelsXml) return null
 	const workbookInfo = parseWorkbookXml(workbookXml)
 	const workbookRels = parseRelationships(workbookRelsXml)
-	const sharedStringsRel = workbookRels.find((rel) => rel.type === REL_SHARED_STRINGS)
-	const sharedStringsXml = sharedStringsRel
-		? archive.readText(resolvePath('xl/workbook.xml', sharedStringsRel.target))
-		: undefined
+	const sharedStringsPath = sharedStringsPathForWorkbook(archive, 'xl/workbook.xml', workbookRels)
+	const sharedStringsXml = sharedStringsPath ? archive.readText(sharedStringsPath) : undefined
 	const sharedStrings = sharedStringsXml
 		? parseSharedStrings(sharedStringsXml, { lazy: true })
 		: emptySharedStrings()
 	const worksheetRels = new Map(
-		workbookRels
-			.filter((rel) => rel.type === REL_WORKSHEET)
-			.map((rel) => [rel.id, resolvePath('xl/workbook.xml', rel.target)]),
+		workbookInfo.sheets
+			.map((sheet, index) => [
+				sheet.rId,
+				worksheetPathForWorkbookSheet(archive, 'xl/workbook.xml', workbookRels, sheet, index),
+			])
+			.filter((entry): entry is [string, string] => entry[1] !== undefined),
 	)
 	let firstBoolean: ReturnType<typeof editableCellCandidate> = null
 	let firstString: ReturnType<typeof editableCellCandidate> = null
@@ -1956,9 +1994,12 @@ function selectAddCellEditTarget(bytes: Uint8Array): EditTarget | null {
 	const workbookInfo = parseWorkbookXml(workbookXml)
 	const workbookRels = parseRelationships(workbookRelsXml)
 	const worksheetRels = new Map(
-		workbookRels
-			.filter((rel) => rel.type === REL_WORKSHEET)
-			.map((rel) => [rel.id, resolvePath('xl/workbook.xml', rel.target)]),
+		workbookInfo.sheets
+			.map((sheet, index) => [
+				sheet.rId,
+				worksheetPathForWorkbookSheet(archive, 'xl/workbook.xml', workbookRels, sheet, index),
+			])
+			.filter((entry): entry is [string, string] => entry[1] !== undefined),
 	)
 	for (const sheet of workbookInfo.sheets) {
 		const partPath = worksheetRels.get(sheet.rId)
@@ -2079,21 +2120,24 @@ function readCellScalar(
 	const workbookRelsXml = archive.readText('xl/_rels/workbook.xml.rels')
 	if (!workbookXml || !workbookRelsXml) return null
 	const workbookRels = parseRelationships(workbookRelsXml)
-	const sharedStringsRel = workbookRels.find((rel) => rel.type === REL_SHARED_STRINGS)
-	const sharedStringsXml = sharedStringsRel
-		? archive.readText(resolvePath('xl/workbook.xml', sharedStringsRel.target))
-		: undefined
+	const sharedStringsPath = sharedStringsPathForWorkbook(archive, 'xl/workbook.xml', workbookRels)
+	const sharedStringsXml = sharedStringsPath ? archive.readText(sharedStringsPath) : undefined
 	const sharedStrings = sharedStringsXml
 		? parseSharedStrings(sharedStringsXml, { lazy: true })
 		: emptySharedStrings()
 	const workbookInfo = parseWorkbookXml(workbookXml)
 	const sheet = workbookInfo.sheets.find((entry) => entry.name === sheetName)
 	if (!sheet) return null
-	const relationship = workbookRels.find(
-		(rel) => rel.type === REL_WORKSHEET && rel.id === sheet.rId,
+	const sheetIndex = workbookInfo.sheets.indexOf(sheet)
+	const sheetPath = worksheetPathForWorkbookSheet(
+		archive,
+		'xl/workbook.xml',
+		workbookRels,
+		sheet,
+		sheetIndex,
 	)
-	if (!relationship) return null
-	const xml = archive.readText(resolvePath('xl/workbook.xml', relationship.target))
+	if (!sheetPath) return null
+	const xml = archive.readText(sheetPath)
 	if (!xml) return null
 	const cell = findCellXml(xml, ref)
 	if (!cell) return null
@@ -2333,6 +2377,7 @@ function corpusTargetMetadata(entry: NormalizedCorpusManifestEntry): CorpusTarge
 		featureTags: entry.featureTags,
 		vendorable: entry.vendorable,
 		knownUnsupported: entry.knownUnsupported,
+		...(entry.password !== undefined ? { password: entry.password } : {}),
 	}
 }
 
@@ -2396,7 +2441,9 @@ async function loadTargets(options: {
 	for (const spec of targetSpecs) {
 		const path = spec.path
 		const bytes = new Uint8Array(await readFile(path))
+		const packageBytes = decryptTargetPackageBytes(bytes, spec.corpus)
 		const targetSha256 = sha256(bytes)
+		const packageSha256 = sha256(packageBytes)
 		if (
 			expectedShapeSidecar?.xlsxSha256 !== undefined &&
 			expectedShapeSidecar.xlsxSha256 !== targetSha256
@@ -2405,17 +2452,21 @@ async function loadTargets(options: {
 				`Expected shape sidecar SHA-256 ${expectedShapeSidecar.xlsxSha256} does not match ${path} SHA-256 ${targetSha256}`,
 			)
 		}
-		const expectedInfo = expectedShapeSidecar ?? extractExpectedWorkbookShape(bytes)
+		const expectedInfo = expectedShapeSidecar ?? extractExpectedWorkbookShape(packageBytes)
 		const ascendSummary = options.needAscendObservation
-			? summarizeAscendWorkbook(await Ascend.open(path, { mode: 'formula' }))
+			? summarizeAscendWorkbook(
+					await Ascend.open(bytes, targetOpenOptions(spec.corpus, { mode: 'formula' })),
+				)
 			: undefined
 		targets.push({
 			path,
 			name: basename(path),
 			extension: extname(path).toLowerCase(),
 			bytes,
+			packageBytes,
 			sizeBytes: bytes.byteLength,
 			sha256: targetSha256,
+			packageSha256,
 			expectedInfo,
 			...(ascendSummary
 				? {
@@ -2434,6 +2485,23 @@ async function loadTargets(options: {
 		})
 	}
 	return targets
+}
+
+function decryptTargetPackageBytes(
+	bytes: Uint8Array,
+	corpus: CorpusTargetMetadata | undefined,
+): Uint8Array {
+	if (corpus?.password === undefined) return bytes
+	const result = readXlsx(bytes, { password: corpus.password })
+	if (!result.ok) throw new Error(`${corpus.file}: ${result.error.message}`)
+	return result.value.workbook.sourceArchiveBytes ?? bytes
+}
+
+function targetOpenOptions<T extends Record<string, unknown>>(
+	corpus: CorpusTargetMetadata | undefined,
+	options: T,
+): T & { readonly password?: string } {
+	return corpus?.password === undefined ? options : { ...options, password: corpus.password }
 }
 
 async function loadExternalRunnerSpecs(): Promise<ExternalRunnerSpec[]> {
@@ -2884,7 +2952,10 @@ async function loadCases(): Promise<{
 			category: 'read',
 			async runMeasured(target) {
 				const start = performance.now()
-				const workbook = await Ascend.open(target.bytes, { mode: 'formula', richMetadata: true })
+				const workbook = await Ascend.open(
+					target.bytes,
+					targetOpenOptions(target.corpus, { mode: 'formula', richMetadata: true }),
+				)
 				const durationMs = performance.now() - start
 				const summary = summarizeAscendWorkbook(workbook)
 				return {
@@ -2897,7 +2968,10 @@ async function loadCases(): Promise<{
 				}
 			},
 			async run(target) {
-				const workbook = await Ascend.open(target.bytes, { mode: 'formula', richMetadata: true })
+				const workbook = await Ascend.open(
+					target.bytes,
+					targetOpenOptions(target.corpus, { mode: 'formula', richMetadata: true }),
+				)
 				const summary = summarizeAscendWorkbook(workbook)
 				return {
 					assertions: {
@@ -2914,7 +2988,10 @@ async function loadCases(): Promise<{
 			category: 'read',
 			async runMeasured(target) {
 				const start = performance.now()
-				const workbook = await Ascend.open(target.bytes, { mode: 'values' })
+				const workbook = await Ascend.open(
+					target.bytes,
+					targetOpenOptions(target.corpus, { mode: 'values' }),
+				)
 				const durationMs = performance.now() - start
 				const summary = summarizeAscendWorkbook(workbook)
 				return {
@@ -2926,7 +3003,10 @@ async function loadCases(): Promise<{
 				}
 			},
 			async run(target) {
-				const workbook = await Ascend.open(target.bytes, { mode: 'values' })
+				const workbook = await Ascend.open(
+					target.bytes,
+					targetOpenOptions(target.corpus, { mode: 'values' }),
+				)
 				const summary = summarizeAscendWorkbook(workbook)
 				return {
 					assertions: {
@@ -2943,7 +3023,7 @@ async function loadCases(): Promise<{
 			capabilities: { xlsmRoundtrip: true },
 			async runMeasured(target) {
 				const start = performance.now()
-				const workbook = await Ascend.open(target.bytes)
+				const workbook = await Ascend.open(target.bytes, targetOpenOptions(target.corpus, {}))
 				const bytes = workbook.toBytes()
 				const durationMs = performance.now() - start
 				return {
@@ -2952,7 +3032,7 @@ async function loadCases(): Promise<{
 				}
 			},
 			async run(target) {
-				const workbook = await Ascend.open(target.bytes)
+				const workbook = await Ascend.open(target.bytes, targetOpenOptions(target.corpus, {}))
 				const bytes = workbook.toBytes()
 				return {
 					assertions: roundtripAssertions(bytes, target),
@@ -2967,7 +3047,7 @@ async function loadCases(): Promise<{
 			async runMeasured(target) {
 				const edit = selectEditTarget(target)
 				const start = performance.now()
-				const workbook = await Ascend.open(target.bytes)
+				const workbook = await Ascend.open(target.bytes, targetOpenOptions(target.corpus, {}))
 				workbook.apply([
 					{
 						op: 'setCells',
@@ -2984,7 +3064,7 @@ async function loadCases(): Promise<{
 			},
 			async run(target) {
 				const edit = selectEditTarget(target)
-				const workbook = await Ascend.open(target.bytes)
+				const workbook = await Ascend.open(target.bytes, targetOpenOptions(target.corpus, {}))
 				workbook.apply([
 					{
 						op: 'setCells',

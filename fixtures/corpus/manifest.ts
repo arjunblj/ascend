@@ -18,6 +18,7 @@ export interface CorpusManifestEntry {
 	readonly sourceUrl?: string
 	readonly license?: string
 	readonly sha256?: string
+	readonly password?: string
 	readonly downloadedAt?: string
 	readonly redistributionAllowed?: boolean
 	readonly citation?: string
@@ -39,6 +40,7 @@ export interface NormalizedCorpusManifestEntry {
 	readonly sourceUrl?: string
 	readonly license?: string
 	readonly sha256?: string
+	readonly password?: string
 	readonly downloadedAt?: string
 	readonly redistributionAllowed?: boolean
 	readonly citation?: string
@@ -102,6 +104,7 @@ export function normalizeManifestEntry(entry: CorpusManifestEntry): NormalizedCo
 		...(entry.sourceUrl ? { sourceUrl: entry.sourceUrl } : {}),
 		...(entry.license ? { license: entry.license } : {}),
 		...(entry.sha256 ? { sha256: entry.sha256 } : {}),
+		...(entry.password ? { password: entry.password } : {}),
 		...(entry.downloadedAt ? { downloadedAt: entry.downloadedAt } : {}),
 		...(entry.redistributionAllowed !== undefined
 			? { redistributionAllowed: entry.redistributionAllowed }

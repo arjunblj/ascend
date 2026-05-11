@@ -45,6 +45,7 @@ export interface WorkbookLoadOptions {
 	readonly mode?: 'full' | 'metadata-only' | 'values' | 'formula'
 	readonly sheets?: readonly string[]
 	readonly richMetadata?: boolean
+	readonly password?: string
 	readonly pivotCacheRecordMaterializeLimit?: number | 'all'
 }
 
@@ -546,6 +547,7 @@ function normalizeOptions(options: WorkbookLoadOptions): WorkbookLoadOptions {
 		...(options.mode ? { mode: options.mode } : {}),
 		...(options.sheets ? { sheets: [...options.sheets].sort((a, b) => a.localeCompare(b)) } : {}),
 		...(options.richMetadata ? { richMetadata: true } : {}),
+		...(options.password !== undefined ? { password: options.password } : {}),
 		...(options.pivotCacheRecordMaterializeLimit !== undefined
 			? { pivotCacheRecordMaterializeLimit: options.pivotCacheRecordMaterializeLimit }
 			: {}),
@@ -571,6 +573,9 @@ function mergeOpenOptions(
 		...(mode ? { mode } : {}),
 		...(mergedSheets ? { sheets: mergedSheets } : {}),
 		...(current.richMetadata || next.richMetadata ? { richMetadata: true } : {}),
+		...(next.password !== undefined || current.password !== undefined
+			? { password: next.password ?? current.password }
+			: {}),
 		...(pivotCacheRecordMaterializeLimit !== undefined ? { pivotCacheRecordMaterializeLimit } : {}),
 	})
 }
@@ -585,6 +590,7 @@ function sameOpenOptions(left: WorkbookLoadOptions, right: WorkbookLoadOptions):
 	) {
 		return false
 	}
+	if (normalizedLeft.password !== normalizedRight.password) return false
 	const leftSheets = normalizedLeft.sheets ?? []
 	const rightSheets = normalizedRight.sheets ?? []
 	if (leftSheets.length !== rightSheets.length) return false
@@ -667,6 +673,7 @@ function makeSessionKey(identity: SessionIdentity, options: WorkbookLoadOptions)
 		mode: normalized.mode ?? 'full',
 		sheets: normalized.sheets ?? [],
 		richMetadata: normalized.richMetadata ?? false,
+		password: normalized.password ?? null,
 		pivotCacheRecordMaterializeLimit: normalized.pivotCacheRecordMaterializeLimit ?? null,
 	})
 }

@@ -16,6 +16,7 @@ const CHART_RELATIONSHIP_TYPE =
 const corpusFileCache = new Map<string, Uint8Array | null>()
 const readResultCache = new WeakMap<Uint8Array, ReturnType<typeof readXlsx>>()
 const packageSummaryCache = new WeakMap<Uint8Array, ReturnType<typeof summarizeOoxmlPackage>>()
+const sdkWorkbookCache = new WeakMap<Uint8Array, Promise<AscendWorkbook>>()
 
 function sha256(bytes: Uint8Array): string {
 	return createHash('sha256').update(bytes).digest('hex')
@@ -58,6 +59,15 @@ function summarizeCorpusPackage(
 	const summary = summarizeOoxmlPackage(sourceBytes)
 	packageSummaryCache.set(sourceBytes, summary)
 	return summary
+}
+
+function openReadOnlySdkWorkbook(bytes: Uint8Array | null): Promise<AscendWorkbook> {
+	const sourceBytes = requireBytes(bytes)
+	const cached = sdkWorkbookCache.get(sourceBytes)
+	if (cached) return cached
+	const workbook = AscendWorkbook.open(sourceBytes)
+	sdkWorkbookCache.set(sourceBytes, workbook)
+	return workbook
 }
 
 function expectChartRelationshipLinks(
@@ -249,7 +259,7 @@ for (const entry of CORPUS) {
 			it(
 				'AscendWorkbook.open works',
 				async () => {
-					const wb = await AscendWorkbook.open(requireBytes(bytes))
+					const wb = await openReadOnlySdkWorkbook(bytes)
 					expect(wb.sheets.length).toBe(entry.expectedSheets)
 				},
 				testOptions,
@@ -258,7 +268,7 @@ for (const entry of CORPUS) {
 			it(
 				'inspect returns expected counts',
 				async () => {
-					const wb = await AscendWorkbook.open(requireBytes(bytes))
+					const wb = await openReadOnlySdkWorkbook(bytes)
 					const info = wb.inspect()
 					expect(info.sheetCount).toBe(entry.expectedSheets)
 					expect(info.loadedSheetCount).toBe(entry.expectedSheets)

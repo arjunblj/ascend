@@ -21,7 +21,11 @@ import {
 import { extractZip } from '../../../packages/io-xlsx/src/reader/zip.ts'
 import type { CellValue } from '../../../packages/schema/src/index.ts'
 import { Ascend } from '../../../packages/sdk/src/index.ts'
-import { summarizeAscendWorkbook, workbookShapeAssertions } from '../competitive-real-workbook.ts'
+import {
+	summarizeAscendWorkbook,
+	workbookReadFeatureAssertions,
+	workbookShapeAssertions,
+} from '../competitive-real-workbook.ts'
 
 type Operation = 'read' | 'roundtrip'
 type Mode = 'formula' | 'values' | 'full' | 'metadata-only'
@@ -124,7 +128,7 @@ function readAssertions(
 	if (args.orderedHashes) return orderedReadAssertions(workbook, args)
 	return {
 		...workbookShapeAssertions(summarizeAscendWorkbook(workbook)),
-		...readFeatureAssertions(workbook.getWorkbookModel()),
+		...workbookReadFeatureAssertions(workbook.getWorkbookModel()),
 		runnerVersion: 'workspace',
 		runnerSource: args.source,
 		runnerLoadMode: args.mode,
@@ -1366,34 +1370,6 @@ function hasByte(bytes: Uint8Array, value: number): boolean {
 		if (bytes[i] === value) return true
 	}
 	return false
-}
-
-function readFeatureAssertions(
-	workbook: ReturnType<Awaited<ReturnType<typeof Ascend.open>>['getWorkbookModel']>,
-): {
-	readonly readCommentCount: number
-	readonly readHyperlinkCount: number
-	readonly readDataValidationCount: number
-	readonly readConditionalFormatCount: number
-	readonly readDefinedNameCount: number
-} {
-	let readCommentCount = 0
-	let readHyperlinkCount = 0
-	let readDataValidationCount = 0
-	let readConditionalFormatCount = 0
-	for (const sheet of workbook.sheets) {
-		readCommentCount += sheet.comments.size
-		readHyperlinkCount += sheet.hyperlinks.size
-		readDataValidationCount += sheet.dataValidations.length
-		readConditionalFormatCount += sheet.conditionalFormats.length
-	}
-	return {
-		readCommentCount,
-		readHyperlinkCount,
-		readDataValidationCount,
-		readConditionalFormatCount,
-		readDefinedNameCount: workbook.definedNames.size,
-	}
 }
 
 function memorySample(durationMs: number): {

@@ -6,6 +6,7 @@
 			"fixtures/benchmarks/runners/ascend_runner.ts",
 			"--mode",
 			"formula",
+			"--rich-metadata",
 			"--source",
 			"path"
 		],
@@ -78,6 +79,7 @@
 			"fixtures/benchmarks/runners/ascend_runner.ts",
 			"--mode",
 			"formula",
+			"--rich-metadata",
 			"--source",
 			"bytes"
 		],

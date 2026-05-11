@@ -131,6 +131,63 @@ describe('evaluateAssertions', () => {
 		expect(result.assertions.formulaTextHashMatches).toBe(true)
 	})
 
+	test('read assertions require hydrated feature counts when real workbook features exist', () => {
+		const expected = shape({ featureSummary: featureSummary() })
+		const {
+			readCommentCount: _readCommentCount,
+			readHyperlinkCount: _readHyperlinkCount,
+			readDataValidationCount: _readDataValidationCount,
+			readConditionalFormatCount: _readConditionalFormatCount,
+			readDefinedNameCount: _readDefinedNameCount,
+			...assertions
+		} = passingReadAssertions(expected)
+		const result = evaluateAssertions('read', expected, assertions)
+		expect(result.status).toBe('feature-read-unverified')
+		expect(result.assertions.readFeatureVerificationRequired).toBe(true)
+		expect(result.assertions.hasReadFeatureAssertions).toBe(false)
+	})
+
+	test('read assertions reject feature-dropping readers on feature-rich workbooks', () => {
+		const expected = shape({ featureSummary: featureSummary() })
+		const result = evaluateAssertions('read', expected, {
+			...passingReadAssertions(expected),
+			readCommentCount: 0,
+			readHyperlinkCount: 0,
+			readDataValidationCount: 0,
+			readConditionalFormatCount: 0,
+			readDefinedNameCount: 0,
+		})
+		expect(result.status).toBe('feature-read-mismatch')
+		expect(result.assertions.readCommentCountMatches).toBe(false)
+		expect(result.assertions.readHyperlinkCountMatches).toBe(false)
+		expect(result.assertions.readDataValidationCountMatches).toBe(false)
+		expect(result.assertions.readConditionalFormatCountMatches).toBe(false)
+		expect(result.assertions.readDefinedNameCountMatches).toBe(false)
+	})
+
+	test('read assertions accept matching hydrated feature counts', () => {
+		const expected = shape({ featureSummary: featureSummary() })
+		const result = evaluateAssertions('read', expected, passingReadAssertions(expected))
+		expect(result.status).toBe('pass')
+		expect(result.assertions.hasReadFeatureAssertions).toBe(true)
+	})
+
+	test('read-values profile keeps rich feature hydration report-only', () => {
+		const expected = shape({ featureSummary: featureSummary() })
+		const result = evaluateAssertions(
+			'read',
+			expected,
+			{
+				...passingReadAssertions(shape({ ...expected, formulaCount: 0 })),
+				formulaCount: 0,
+				formulaTextHash: 'empty-formulas',
+			},
+			'read-values',
+		)
+		expect(result.status).toBe('pass')
+		expect(result.assertions.readFeatureVerificationRequired).toBe(false)
+	})
+
 	test('semantic roundtrip requires formula hashes when package bytes differ', () => {
 		const expected = shape({ formulaTextHash: 'formula-hash' })
 		const result = evaluateAssertions('roundtrip', expected, {
@@ -1192,6 +1249,7 @@ function featureSummary(overrides: Partial<WorkbookFeatureSummary> = {}): Workbo
 		externalLinkPartCount: 0,
 		connectionPartCount: 0,
 		customXmlPartCount: 0,
+		worksheetCommentCount: 1,
 		worksheetHyperlinkCount: 2,
 		worksheetDataValidationCount: 1,
 		worksheetConditionalFormattingCount: 1,
@@ -1216,6 +1274,15 @@ function passingReadAssertions(
 		semanticCellRefsHash: expected.semanticCellRefsHash,
 		semanticCellValuesHash: expected.semanticCellValuesHash,
 		formulaTextHash: expected.formulaTextHash,
+		...(expected.featureSummary
+			? {
+					readCommentCount: expected.featureSummary.worksheetCommentCount,
+					readHyperlinkCount: expected.featureSummary.worksheetHyperlinkCount,
+					readDataValidationCount: expected.featureSummary.worksheetDataValidationCount,
+					readConditionalFormatCount: expected.featureSummary.worksheetConditionalFormattingCount,
+					readDefinedNameCount: expected.featureSummary.definedNameCount,
+				}
+			: {}),
 	}
 }
 
@@ -1261,6 +1328,7 @@ function passingRoundtripAssertions(
 					roundtripExternalLinkPartCount: features.externalLinkPartCount,
 					roundtripConnectionPartCount: features.connectionPartCount,
 					roundtripCustomXmlPartCount: features.customXmlPartCount,
+					roundtripWorksheetCommentCount: features.worksheetCommentCount,
 					roundtripWorksheetHyperlinkCount: features.worksheetHyperlinkCount,
 					roundtripWorksheetDataValidationCount: features.worksheetDataValidationCount,
 					roundtripWorksheetConditionalFormattingCount:

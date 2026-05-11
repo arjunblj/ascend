@@ -203,6 +203,7 @@ export interface WorkbookFeatureSummary {
 	readonly externalLinkPartCount: number
 	readonly connectionPartCount: number
 	readonly customXmlPartCount: number
+	readonly worksheetCommentCount: number
 	readonly worksheetHyperlinkCount: number
 	readonly worksheetDataValidationCount: number
 	readonly worksheetConditionalFormattingCount: number
@@ -229,6 +230,39 @@ function isRankingEligible(status: string): boolean {
 
 function numericAssertion(value: string | number | boolean | null | undefined): number {
 	return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+function hasExpectedReadFeatures(summary: WorkbookFeatureSummary | undefined): boolean {
+	return (
+		summary !== undefined &&
+		(summary.worksheetCommentCount > 0 ||
+			summary.worksheetHyperlinkCount > 0 ||
+			summary.worksheetDataValidationCount > 0 ||
+			summary.worksheetConditionalFormattingCount > 0 ||
+			summary.definedNameCount > 0)
+	)
+}
+
+export function workbookReadFeatureAssertions(
+	workbook: Workbook,
+): Record<string, string | number | boolean | null> {
+	let readCommentCount = 0
+	let readHyperlinkCount = 0
+	let readDataValidationCount = 0
+	let readConditionalFormatCount = 0
+	for (const sheet of workbook.sheets) {
+		readCommentCount += sheet.comments.size
+		readHyperlinkCount += sheet.hyperlinks.size
+		readDataValidationCount += sheet.dataValidations.length
+		readConditionalFormatCount += sheet.conditionalFormats.length
+	}
+	return {
+		readCommentCount,
+		readHyperlinkCount,
+		readDataValidationCount,
+		readConditionalFormatCount,
+		readDefinedNameCount: workbook.definedNames.size,
+	}
 }
 
 export function workbookShapeAssertions(
@@ -372,6 +406,7 @@ export function evaluateAssertions(
 ): CaseEvaluation {
 	const observed = assertions ?? {}
 	if (category === 'read') {
+		const expectedFeature = expected.featureSummary
 		const sheetCountMatches = observed.sheetCount === expected.sheetCount
 		const sheetNamesHashMatches = observed.sheetNamesHash === expected.sheetNamesHash
 		const cellCountMatches = observed.cellCount === expected.cellCount
@@ -410,6 +445,41 @@ export function evaluateAssertions(
 			(orderedFormulaTextHashMatches !== null
 				? orderedFormulaTextHashMatches
 				: observed.formulaTextHash === expected.formulaTextHash)
+		const readFeatureVerificationRequired =
+			formulaPreservationRequired && hasExpectedReadFeatures(expectedFeature)
+		const hasReadFeatureAssertions =
+			observed.readCommentCount !== undefined &&
+			observed.readHyperlinkCount !== undefined &&
+			observed.readDataValidationCount !== undefined &&
+			observed.readConditionalFormatCount !== undefined &&
+			observed.readDefinedNameCount !== undefined
+		const readCommentCountMatches =
+			!readFeatureVerificationRequired ||
+			(hasReadFeatureAssertions &&
+				observed.readCommentCount === expectedFeature?.worksheetCommentCount)
+		const readHyperlinkCountMatches =
+			!readFeatureVerificationRequired ||
+			(hasReadFeatureAssertions &&
+				observed.readHyperlinkCount === expectedFeature?.worksheetHyperlinkCount)
+		const readDataValidationCountMatches =
+			!readFeatureVerificationRequired ||
+			(hasReadFeatureAssertions &&
+				observed.readDataValidationCount === expectedFeature?.worksheetDataValidationCount)
+		const readConditionalFormatCountMatches =
+			!readFeatureVerificationRequired ||
+			(hasReadFeatureAssertions &&
+				observed.readConditionalFormatCount ===
+					expectedFeature?.worksheetConditionalFormattingCount)
+		const readDefinedNameCountMatches =
+			!readFeatureVerificationRequired ||
+			(hasReadFeatureAssertions &&
+				observed.readDefinedNameCount === expectedFeature?.definedNameCount)
+		const readFeatureCountsMatch =
+			readCommentCountMatches &&
+			readHyperlinkCountMatches &&
+			readDataValidationCountMatches &&
+			readConditionalFormatCountMatches &&
+			readDefinedNameCountMatches
 		const matches =
 			sheetCountMatches &&
 			sheetNamesHashMatches &&
@@ -419,9 +489,16 @@ export function evaluateAssertions(
 			usedRangesHashMatches &&
 			semanticCellRefsHashMatches &&
 			semanticCellValuesHashMatches &&
-			formulaTextHashMatches
+			formulaTextHashMatches &&
+			readFeatureCountsMatch
 		return {
-			status: matches ? 'pass' : 'semantic-mismatch',
+			status: matches
+				? 'pass'
+				: readFeatureVerificationRequired && !hasReadFeatureAssertions
+					? 'feature-read-unverified'
+					: readFeatureVerificationRequired && !readFeatureCountsMatch
+						? 'feature-read-mismatch'
+						: 'semantic-mismatch',
 			assertions: {
 				...observed,
 				expectedSheetCount: expected.sheetCount,
@@ -438,8 +515,16 @@ export function evaluateAssertions(
 				expectedOrderedSemanticCellRefsHash: expected.orderedSemanticCellRefsHash ?? null,
 				expectedOrderedSemanticCellValuesHash: expected.orderedSemanticCellValuesHash ?? null,
 				expectedOrderedFormulaTextHash: expected.orderedFormulaTextHash ?? null,
+				expectedReadCommentCount: expectedFeature?.worksheetCommentCount ?? null,
+				expectedReadHyperlinkCount: expectedFeature?.worksheetHyperlinkCount ?? null,
+				expectedReadDataValidationCount: expectedFeature?.worksheetDataValidationCount ?? null,
+				expectedReadConditionalFormatCount:
+					expectedFeature?.worksheetConditionalFormattingCount ?? null,
+				expectedReadDefinedNameCount: expectedFeature?.definedNameCount ?? null,
 				formulaPreservationRequired,
 				formulaTextHashRequired,
+				readFeatureVerificationRequired,
+				hasReadFeatureAssertions,
 				sheetCountMatches,
 				sheetNamesHashMatches,
 				cellCountMatches,
@@ -452,6 +537,11 @@ export function evaluateAssertions(
 				orderedSemanticCellRefsHashMatches,
 				orderedSemanticCellValuesHashMatches,
 				orderedFormulaTextHashMatches,
+				readCommentCountMatches,
+				readHyperlinkCountMatches,
+				readDataValidationCountMatches,
+				readConditionalFormatCountMatches,
+				readDefinedNameCountMatches,
 			},
 		}
 	}
@@ -518,6 +608,7 @@ export function evaluateAssertions(
 		observed.roundtripExternalLinkPartCount !== undefined &&
 		observed.roundtripConnectionPartCount !== undefined &&
 		observed.roundtripCustomXmlPartCount !== undefined &&
+		observed.roundtripWorksheetCommentCount !== undefined &&
 		observed.roundtripWorksheetHyperlinkCount !== undefined &&
 		observed.roundtripWorksheetDataValidationCount !== undefined &&
 		observed.roundtripWorksheetConditionalFormattingCount !== undefined &&
@@ -582,6 +673,7 @@ export function evaluateAssertions(
 			observed.roundtripExternalLinkPartCount === expectedFeature?.externalLinkPartCount &&
 			observed.roundtripConnectionPartCount === expectedFeature?.connectionPartCount &&
 			observed.roundtripCustomXmlPartCount === expectedFeature?.customXmlPartCount &&
+			observed.roundtripWorksheetCommentCount === expectedFeature?.worksheetCommentCount &&
 			observed.roundtripWorksheetHyperlinkCount === expectedFeature?.worksheetHyperlinkCount &&
 			observed.roundtripWorksheetDataValidationCount ===
 				expectedFeature?.worksheetDataValidationCount &&
@@ -675,6 +767,7 @@ export function evaluateAssertions(
 			expectedExternalLinkPartCount: expectedFeature?.externalLinkPartCount ?? null,
 			expectedConnectionPartCount: expectedFeature?.connectionPartCount ?? null,
 			expectedCustomXmlPartCount: expectedFeature?.customXmlPartCount ?? null,
+			expectedWorksheetCommentCount: expectedFeature?.worksheetCommentCount ?? null,
 			expectedWorksheetHyperlinkCount: expectedFeature?.worksheetHyperlinkCount ?? null,
 			expectedWorksheetDataValidationCount: expectedFeature?.worksheetDataValidationCount ?? null,
 			expectedWorksheetConditionalFormattingCount:
@@ -752,6 +845,9 @@ export function evaluateAssertions(
 			roundtripCustomXmlPartCountMatches:
 				!featureFingerprintRequired ||
 				observed.roundtripCustomXmlPartCount === expectedFeature?.customXmlPartCount,
+			roundtripWorksheetCommentCountMatches:
+				!featureFingerprintRequired ||
+				observed.roundtripWorksheetCommentCount === expectedFeature?.worksheetCommentCount,
 			roundtripWorksheetHyperlinkCountMatches:
 				!featureFingerprintRequired ||
 				observed.roundtripWorksheetHyperlinkCount === expectedFeature?.worksheetHyperlinkCount,
@@ -1084,6 +1180,7 @@ function featureAssertions(
 		[prefixedKey(prefix, 'externalLinkPartCount')]: summary.externalLinkPartCount,
 		[prefixedKey(prefix, 'connectionPartCount')]: summary.connectionPartCount,
 		[prefixedKey(prefix, 'customXmlPartCount')]: summary.customXmlPartCount,
+		[prefixedKey(prefix, 'worksheetCommentCount')]: summary.worksheetCommentCount,
 		[prefixedKey(prefix, 'worksheetHyperlinkCount')]: summary.worksheetHyperlinkCount,
 		[prefixedKey(prefix, 'worksheetDataValidationCount')]: summary.worksheetDataValidationCount,
 		[prefixedKey(prefix, 'worksheetConditionalFormattingCount')]:
@@ -1175,12 +1272,14 @@ export function extractWorkbookFeatureSummary(bytes: Uint8Array): WorkbookFeatur
 	const sharedStringFeatureLines = sharedStringFeatureEntries(
 		archive.readText('xl/sharedStrings.xml') ?? '',
 	)
+	const commentFeatureLines = commentFeatureEntries(archive, partPaths)
 	const calcChainFeatureLines = calcChainFeatureEntries(archive.readText('xl/calcChain.xml') ?? '')
 	const inventoryLines = [
 		...featurePartLines,
 		...worksheetFeatureLines,
 		...definedNameLines,
 		...sharedStringFeatureLines,
+		...commentFeatureLines,
 		...calcChainFeatureLines,
 	]
 	return {
@@ -1210,6 +1309,8 @@ export function extractWorkbookFeatureSummary(bytes: Uint8Array): WorkbookFeatur
 		),
 		connectionPartCount: countPartPaths(partPaths, (path) => path === 'xl/connections.xml'),
 		customXmlPartCount: countPartPaths(partPaths, (path) => /^customXml\/.+/.test(path)),
+		worksheetCommentCount: commentFeatureLines.filter((line) => line.startsWith('comment\t'))
+			.length,
 		worksheetHyperlinkCount: worksheetFeatureLines.filter((line) =>
 			line.startsWith('worksheet-hyperlink\t'),
 		).length,
@@ -1331,6 +1432,25 @@ function calcChainFeatureEntries(xml: string): readonly string[] {
 	const lines: string[] = []
 	for (const match of xml.matchAll(openTagRegex('c'))) {
 		lines.push(`calc-chain-cell\t${canonicalAttributes(match[1] ?? '')}`)
+	}
+	return lines
+}
+
+function commentFeatureEntries(
+	archive: ReturnType<typeof extractZip>,
+	partPaths: readonly string[],
+): readonly string[] {
+	const lines: string[] = []
+	for (const path of partPaths.filter((entry) =>
+		/^xl\/(?:comments\d*|comments\/.+)\.xml$/.test(entry),
+	)) {
+		const xml = archive.readText(path)
+		if (!xml) continue
+		for (const match of xml.matchAll(openTagRegex('comment'))) {
+			const attrs = parseXmlAttributes(match[1] ?? '')
+			const ref = attrs.get('ref')
+			if (ref) lines.push(`comment\t${path}\t${ref}`)
+		}
 	}
 	return lines
 }
@@ -2508,23 +2628,25 @@ async function loadCases(): Promise<{
 			category: 'read',
 			async runMeasured(target) {
 				const start = performance.now()
-				const workbook = await Ascend.open(target.bytes, { mode: 'formula' })
+				const workbook = await Ascend.open(target.bytes, { mode: 'formula', richMetadata: true })
 				const durationMs = performance.now() - start
 				const summary = summarizeAscendWorkbook(workbook)
 				return {
 					durationMs,
 					assertions: {
 						...workbookShapeAssertions(summary),
+						...workbookReadFeatureAssertions(workbook.getWorkbookModel()),
 						compatibility: summary.compatibility,
 					},
 				}
 			},
 			async run(target) {
-				const workbook = await Ascend.open(target.bytes, { mode: 'formula' })
+				const workbook = await Ascend.open(target.bytes, { mode: 'formula', richMetadata: true })
 				const summary = summarizeAscendWorkbook(workbook)
 				return {
 					assertions: {
 						...workbookShapeAssertions(summary),
+						...workbookReadFeatureAssertions(workbook.getWorkbookModel()),
 						compatibility: summary.compatibility,
 					},
 				}

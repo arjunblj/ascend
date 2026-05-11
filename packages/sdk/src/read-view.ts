@@ -2026,9 +2026,9 @@ function aggregateMultiRowAxisPivotOutput(
 	}
 	const pageFilters = buildSimplePivotPageFilters(cache, pivot)
 	if (!pageFilters.ok) return pageFilters
-	const rows = buildPivotAxisOutputItems(cache, pivot, 'row')
+	const rows = buildPivotAxisOutputItemsWithSingleFieldFallback(cache, pivot, 'row')
 	if (!rows.ok) return rows
-	const columns = buildPivotAxisOutputItems(cache, pivot, 'column')
+	const columns = buildPivotAxisOutputItemsWithSingleFieldFallback(cache, pivot, 'column')
 	if (!columns.ok) return columns
 	const dataField = pivot.dataFields[0]
 	if (!dataField) return { ok: false, warning: 'Pivot data field metadata was not found.' }
@@ -2243,6 +2243,58 @@ function buildPivotAxisOutputItems(
 		output.push({ key: uniquePivotAxisKey(label, seenLabels), filters })
 	}
 	return { ok: true, value: output }
+}
+
+function buildPivotAxisOutputItemsWithSingleFieldFallback(
+	cache: PivotCacheInfo,
+	pivot: PivotTableInfo,
+	axis: 'row' | 'column',
+): { ok: true; value: readonly PivotAxisOutputItem[] } | { ok: false; warning: string } {
+	const items = buildPivotAxisOutputItems(cache, pivot, axis)
+	const missingWarning = `Pivot ${axis} output items were not found.`
+	if (items.ok || items.warning !== missingWarning) return items
+	return buildSingleFieldPivotAxisOutputItems(cache, pivot, axis, missingWarning)
+}
+
+function buildSingleFieldPivotAxisOutputItems(
+	cache: PivotCacheInfo,
+	pivot: PivotTableInfo,
+	axis: 'row' | 'column',
+	missingWarning: string,
+): { ok: true; value: readonly PivotAxisOutputItem[] } | { ok: false; warning: string } {
+	const fields = axis === 'row' ? pivot.rowFields : pivot.columnFields
+	const realFields = fields.filter((field) => field.index >= 0)
+	const axisFieldIndex = realFields.length === 1 ? realFields[0]?.index : undefined
+	if (axisFieldIndex === undefined) return { ok: false, warning: missingWarning }
+	const visibleValues = visiblePivotAxisFieldValues(cache, pivot, axisFieldIndex)
+	if (!visibleValues.ok) return visibleValues
+	const values =
+		visibleValues.value.values.size > 0
+			? visibleValues.value.values
+			: new Set(
+					(cache.fields[axisFieldIndex]?.sharedItems ?? [])
+						.map((item) => item.value)
+						.filter((value): value is string => value !== undefined),
+				)
+	const filterFieldIndex = visibleValues.value.fieldIndex ?? axisFieldIndex
+	const output: PivotAxisOutputItem[] = []
+	for (const value of values) {
+		output.push({
+			key: value,
+			filters: new Map([[filterFieldIndex, new Set([value])]]),
+		})
+	}
+	const hasGrandTotal =
+		axis === 'row'
+			? pivot.options?.rowGrandTotals !== false
+			: pivot.options?.colGrandTotals !== false
+	if (hasGrandTotal) {
+		output.push({
+			key: 'Grand Total',
+			filters: values.size > 0 ? new Map([[filterFieldIndex, new Set(values)]]) : new Map(),
+		})
+	}
+	return output.length > 0 ? { ok: true, value: output } : { ok: false, warning: missingWarning }
 }
 
 function buildPivotAxisGrandFilters(

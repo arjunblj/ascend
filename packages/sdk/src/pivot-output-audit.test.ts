@@ -124,6 +124,23 @@ describe('pivot output audits', () => {
 		)
 	})
 
+	test('audits real LibreOffice axis pivots without saved axis item lists', async () => {
+		const wb = await AscendWorkbook.open(loadLibreOfficeFixture('tdfSheetProts.xlsx'), {
+			pivotCacheRecordMaterializeLimit: 'all',
+		})
+
+		expect(wb.pivotOutputAudits()).toContainEqual(
+			expect.objectContaining({
+				pivotTable: 'DataPilot1',
+				sheetName: 'pivotallowed',
+				status: 'passed',
+				checkedValueCount: 25,
+				mismatches: [],
+				warnings: [],
+			}),
+		)
+	})
+
 	test('audits real LibreOffice multi-row pivots without column fields', async () => {
 		for (const [file, checkedValueCount] of [
 			['pivottable_outline_mode.xlsx', 7],

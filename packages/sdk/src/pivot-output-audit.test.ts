@@ -253,6 +253,15 @@ describe('pivot output audits', () => {
 		)
 		const audits = wb.pivotOutputAudits()
 
+		expect(audits).toContainEqual(
+			expect.objectContaining({
+				pivotTable: 'PivotTable2',
+				status: 'passed',
+				checkedValueCount: 63,
+				mismatches: [],
+				warnings: [],
+			}),
+		)
 		for (const pivotTable of ['PivotTable1', 'Kimutatás1']) {
 			expect(audits).toContainEqual(
 				expect.objectContaining({

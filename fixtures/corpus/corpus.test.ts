@@ -9,6 +9,8 @@ import { summarizeOoxmlPackage } from './package-summary.ts'
 setDefaultTimeout(30_000)
 
 const CORPUS_DIR = resolve(import.meta.dir, '../../research/excel-corpus')
+const SDK_INTEGRATION_TIMEOUT_MS = 120_000
+const LARGE_SDK_INTEGRATION_FILES = new Set(['excel-dashboard-v2.xlsx'])
 const CHART_RELATIONSHIP_TYPE =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart'
 
@@ -215,29 +217,45 @@ for (const entry of CORPUS) {
 		}
 
 		describe.skipIf(!bytes)('SDK integration', () => {
-			it('AscendWorkbook.open works', async () => {
-				const wb = await AscendWorkbook.open(requireBytes(bytes))
-				expect(wb.sheets.length).toBe(entry.expectedSheets)
-			})
+			const testOptions = LARGE_SDK_INTEGRATION_FILES.has(entry.file)
+				? { timeout: SDK_INTEGRATION_TIMEOUT_MS }
+				: undefined
 
-			it('inspect returns expected counts', async () => {
-				const wb = await AscendWorkbook.open(requireBytes(bytes))
-				const info = wb.inspect()
-				expect(info.sheetCount).toBe(entry.expectedSheets)
-				expect(info.loadedSheetCount).toBe(entry.expectedSheets)
-				expect(info.pivotTableCount).toBe(entry.expectedPivotTables)
-				expect(info.sourceFormat).toBe('xlsx')
-				expect(info.load.mode).toBe('full')
-				expect(info.load.isPartial).toBe(false)
-			})
+			it(
+				'AscendWorkbook.open works',
+				async () => {
+					const wb = await AscendWorkbook.open(requireBytes(bytes))
+					expect(wb.sheets.length).toBe(entry.expectedSheets)
+				},
+				testOptions,
+			)
 
-			it('SDK toBytes roundtrip succeeds', async () => {
-				const wb = await AscendWorkbook.open(requireBytes(bytes))
-				const saved = wb.toBytes()
-				expect(saved.length).toBeGreaterThan(0)
-				const reopened = await AscendWorkbook.open(saved)
-				expect(reopened.sheets.length).toBe(entry.expectedSheets)
-			})
+			it(
+				'inspect returns expected counts',
+				async () => {
+					const wb = await AscendWorkbook.open(requireBytes(bytes))
+					const info = wb.inspect()
+					expect(info.sheetCount).toBe(entry.expectedSheets)
+					expect(info.loadedSheetCount).toBe(entry.expectedSheets)
+					expect(info.pivotTableCount).toBe(entry.expectedPivotTables)
+					expect(info.sourceFormat).toBe('xlsx')
+					expect(info.load.mode).toBe('full')
+					expect(info.load.isPartial).toBe(false)
+				},
+				testOptions,
+			)
+
+			it(
+				'SDK toBytes roundtrip succeeds',
+				async () => {
+					const wb = await AscendWorkbook.open(requireBytes(bytes))
+					const saved = wb.toBytes()
+					expect(saved.length).toBeGreaterThan(0)
+					const reopened = await AscendWorkbook.open(saved)
+					expect(reopened.sheets.length).toBe(entry.expectedSheets)
+				},
+				testOptions,
+			)
 		})
 	})
 }

@@ -2229,7 +2229,12 @@ function aggregateMultiRowAxisPivotOutput(
 	if (!pageFilters.ok) return pageFilters
 	const rows = buildPivotAxisOutputItemsWithSingleFieldFallback(cache, pivot, 'row')
 	if (!rows.ok) return rows
-	const columns = buildPivotAxisOutputItemsWithSingleFieldFallback(cache, pivot, 'column')
+	const columns = buildPivotAxisOutputItemsWithTwoFieldSubtotalFallback(
+		cache,
+		pivot,
+		'column',
+		rows.value,
+	)
 	if (!columns.ok) return columns
 	const dataField = pivot.dataFields[0]
 	if (!dataField) return { ok: false, warning: 'Pivot data field metadata was not found.' }
@@ -2468,6 +2473,18 @@ function buildPivotAxisOutputItemsWithCompactTwoFieldFallback(
 	return buildCompactTwoFieldRowAxisOutputItems(cache, pivot, missingWarning)
 }
 
+function buildPivotAxisOutputItemsWithTwoFieldSubtotalFallback(
+	cache: PivotCacheInfo,
+	pivot: PivotTableInfo,
+	axis: 'row' | 'column',
+	crossAxisItems?: readonly PivotAxisOutputItem[],
+): { ok: true; value: readonly PivotAxisOutputItem[] } | { ok: false; warning: string } {
+	const items = buildPivotAxisOutputItemsWithSingleFieldFallback(cache, pivot, axis)
+	const missingWarning = `Pivot ${axis} output items were not found.`
+	if (items.ok || items.warning !== missingWarning || axis !== 'column') return items
+	return buildTwoFieldSubtotalAxisOutputItems(cache, pivot, axis, missingWarning, crossAxisItems)
+}
+
 function buildSingleFieldPivotAxisOutputItems(
 	cache: PivotCacheInfo,
 	pivot: PivotTableInfo,
@@ -2509,6 +2526,86 @@ function buildSingleFieldPivotAxisOutputItems(
 	return output.length > 0 ? { ok: true, value: output } : { ok: false, warning: missingWarning }
 }
 
+function buildTwoFieldSubtotalAxisOutputItems(
+	cache: PivotCacheInfo,
+	pivot: PivotTableInfo,
+	axis: 'row' | 'column',
+	missingWarning: string,
+	crossAxisItems: readonly PivotAxisOutputItem[] | undefined,
+): { ok: true; value: readonly PivotAxisOutputItem[] } | { ok: false; warning: string } {
+	const fields = axis === 'row' ? pivot.rowFields : pivot.columnFields
+	if (
+		fields.length !== 2 ||
+		!fields.every((field) => field.index >= 0) ||
+		pivot.dataFields.length !== 1
+	) {
+		return { ok: false, warning: missingWarning }
+	}
+	const parentField = fields[0]
+	const childField = fields[1]
+	if (!parentField || !childField) return { ok: false, warning: missingWarning }
+	const parentItemIndexes = visibleNonMissingPivotFieldItemIndexes(cache, pivot, parentField.index)
+	const childItemIndexes = visibleNonMissingPivotFieldItemIndexes(cache, pivot, childField.index)
+	if (parentItemIndexes.length === 0 || childItemIndexes.length === 0) {
+		return { ok: false, warning: missingWarning }
+	}
+	const cacheRows = buildPivotCacheRows([cache], {})
+	const output: PivotAxisOutputItem[] = []
+	const seenLabels = new Map<string, number>()
+	for (const parentItemIndex of parentItemIndexes) {
+		const parent = resolvePivotAxisFieldItemFilter(cache, pivot, parentField.index, parentItemIndex)
+		if (!parent.ok) return parent
+		if (
+			!cacheRows.some((row) =>
+				pivotCacheRowMatchesAxisAndCrossAxis(row, parent.value.filters, crossAxisItems),
+			)
+		)
+			continue
+		for (const childItemIndex of childItemIndexes) {
+			const child = resolvePivotAxisFieldItemFilter(cache, pivot, childField.index, childItemIndex)
+			if (!child.ok) return child
+			const filters = copyPivotAuditFilters(parent.value.filters)
+			addPivotAxisFilters(filters, child.value.filters)
+			if (
+				!cacheRows.some((row) => pivotCacheRowMatchesAxisAndCrossAxis(row, filters, crossAxisItems))
+			)
+				continue
+			output.push({
+				key: uniquePivotAxisKey(child.value.label, seenLabels),
+				filters,
+			})
+		}
+		if (pivot.fields[parentField.index]?.defaultSubtotal !== false) {
+			output.push({
+				key: uniquePivotAxisKey(`${parent.value.label} Total`, seenLabels),
+				filters: parent.value.filters,
+			})
+		}
+	}
+	const hasGrandTotal =
+		axis === 'row'
+			? pivot.options?.rowGrandTotals !== false
+			: pivot.options?.colGrandTotals !== false
+	if (hasGrandTotal) {
+		const grand = buildPivotAxisGrandFilters(cache, pivot, fields)
+		if (!grand.ok) return grand
+		output.push({ key: uniquePivotAxisKey('Grand Total', seenLabels), filters: grand.value })
+	}
+	return output.length > 0 ? { ok: true, value: output } : { ok: false, warning: missingWarning }
+}
+
+function pivotCacheRowMatchesAxisAndCrossAxis(
+	row: PivotCacheMaterializedRowInfo,
+	filters: PivotAuditFilters,
+	crossAxisItems: readonly PivotAxisOutputItem[] | undefined,
+): boolean {
+	if (!pivotCacheRowMatchesFilters(row, filters)) return false
+	return (
+		crossAxisItems === undefined ||
+		crossAxisItems.some((item) => pivotCacheRowMatchesFilters(row, item.filters))
+	)
+}
+
 function buildCompactTwoFieldRowAxisOutputItems(
 	cache: PivotCacheInfo,
 	pivot: PivotTableInfo,
@@ -2546,9 +2643,7 @@ function buildCompactTwoFieldRowAxisOutputItems(
 		for (const childItemIndex of childItemIndexes) {
 			const child = resolvePivotAxisFieldItemFilter(cache, pivot, childField.index, childItemIndex)
 			if (!child.ok) return child
-			const filters = new Map(
-				Array.from(parent.value.filters, ([fieldIndex, values]) => [fieldIndex, new Set(values)]),
-			)
+			const filters = copyPivotAuditFilters(parent.value.filters)
 			addPivotAxisFilters(filters, child.value.filters)
 			if (!rows.some((row) => pivotCacheRowMatchesFilters(row, filters))) continue
 			output.push({
@@ -2565,9 +2660,29 @@ function buildCompactTwoFieldRowAxisOutputItems(
 	return output.length > 0 ? { ok: true, value: output } : { ok: false, warning: missingWarning }
 }
 
+function copyPivotAuditFilters(filters: PivotAuditFilters): Map<number, Set<string>> {
+	return new Map(Array.from(filters, ([fieldIndex, values]) => [fieldIndex, new Set(values)]))
+}
+
 function visiblePivotFieldItemIndexes(pivot: PivotTableInfo, fieldIndex: number): number[] {
 	return (pivot.fields[fieldIndex]?.items ?? [])
 		.filter((item) => !item.hidden && !item.missing && item.cacheIndex !== undefined)
+		.map((item) => item.index)
+}
+
+function visibleNonMissingPivotFieldItemIndexes(
+	cache: PivotCacheInfo,
+	pivot: PivotTableInfo,
+	fieldIndex: number,
+): number[] {
+	return (pivot.fields[fieldIndex]?.items ?? [])
+		.filter((item) => {
+			if (item.hidden || item.missing || item.cacheIndex === undefined) return false
+			return (
+				pivotCacheSharedItemValue(cache, fieldIndex, item.cacheIndex) !==
+				PIVOT_MISSING_ITEM_FILTER_VALUE
+			)
+		})
 		.map((item) => item.index)
 }
 

@@ -77,6 +77,7 @@ import type {
 	PivotCacheRecordValueInfo,
 	PivotCacheRowsOptions,
 	PivotFieldInfo,
+	PivotFieldItemInfo,
 	PivotOutputAuditInfo,
 	PivotOutputAuditMismatchInfo,
 	PivotRefreshPlanInfo,
@@ -1528,7 +1529,6 @@ function isMultiRowAxisSingleDataPivot(pivot: PivotTableInfo): boolean {
 		pivot.rowFields.length > 1 &&
 		pivot.rowFields.every((field) => field.index >= 0) &&
 		pivot.columnFields.length === 0 &&
-		pivot.pageFields.length === 0 &&
 		pivot.dataFields.length === 1
 	)
 }
@@ -2992,11 +2992,28 @@ function pivotPageFieldAllowedValues(
 	if (
 		visibleValues.size === 1 &&
 		visibleValues.has(PIVOT_MISSING_ITEM_FILTER_VALUE) &&
-		items.some((item) => item.hidden)
+		pageFieldVisibleMissingItemIsTrailingPlaceholder(cacheField, items)
 	) {
 		return { ok: true, value: { values: new Set() } }
 	}
 	return { ok: true, value: { fieldIndex: group?.base ?? fieldIndex, values: visibleValues } }
+}
+
+function pageFieldVisibleMissingItemIsTrailingPlaceholder(
+	cacheField: PivotCacheInfo['fields'][number] | undefined,
+	items: readonly PivotFieldItemInfo[],
+): boolean {
+	const visibleItems = items.filter(
+		(item) => !item.hidden && !item.missing && item.cacheIndex !== undefined,
+	)
+	if (visibleItems.length !== 1) return false
+	const visibleItem = visibleItems[0]
+	if (!visibleItem || visibleItem.cacheIndex === undefined) return false
+	const sharedItems = cacheField?.sharedItems ?? []
+	const sharedItem = sharedItems.find((entry) => entry.index === visibleItem.cacheIndex)
+	if (sharedItem?.kind !== 'missing') return false
+	const maxSharedIndex = Math.max(...sharedItems.map((entry) => entry.index))
+	return Number.isFinite(maxSharedIndex) && visibleItem.cacheIndex === maxSharedIndex
 }
 
 function pivotCacheSharedItemValue(

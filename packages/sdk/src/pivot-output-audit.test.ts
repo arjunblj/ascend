@@ -152,10 +152,11 @@ describe('pivot output audits', () => {
 	})
 
 	test('audits real LibreOffice multi-row pivots without column fields', async () => {
-		for (const [file, checkedValueCount] of [
-			['pivottable_outline_mode.xlsx', 7],
-			['pivottable_string_field_filter.xlsx', 2],
-			['pivottable_date_field_filter.xlsx', 1],
+		for (const [file, checkedValueCount, pivotTable] of [
+			['pivottable_outline_mode.xlsx', 7, 'PivotTable1'],
+			['pivottable_string_field_filter.xlsx', 2, 'PivotTable1'],
+			['pivottable_date_field_filter.xlsx', 1, 'PivotTable1'],
+			['pivottable_tabular_mode.xlsx', 10, 'Kimutatás1'],
 		] as const) {
 			const wb = await AscendWorkbook.open(loadLibreOfficeFixture(file), {
 				pivotCacheRecordMaterializeLimit: 'all',
@@ -163,7 +164,7 @@ describe('pivot output audits', () => {
 
 			expect(wb.pivotOutputAudits()).toEqual([
 				expect.objectContaining({
-					pivotTable: 'PivotTable1',
+					pivotTable,
 					status: 'passed',
 					checkedValueCount,
 					mismatches: [],

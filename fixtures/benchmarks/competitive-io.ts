@@ -663,7 +663,9 @@ function workbookFeatureAssertions(
 			readConditionalFormatCount: sheet?.conditionalFormats.length ?? 0,
 			readDefinedNameCount: workbook.definedNames.size,
 		}
-		return Object.values(featureCounts).some((count) => count > 0) ? featureCounts : {}
+		return Object.values(featureCounts).some((count) => count > 0)
+			? { ...featureCounts, ...coreFeatureRichSemanticAssertions(workbook, input) }
+			: {}
 	}
 	return {}
 }
@@ -1030,6 +1032,92 @@ function decodeXmlText(text: string): string {
 		.replaceAll('&amp;', '&')
 }
 
+function parseXmlAttributes(attrsText: string): Map<string, string> {
+	const attrs = new Map<string, string>()
+	for (const match of attrsText.matchAll(/([A-Za-z_][\w:.-]*)="([^"]*)"/g)) {
+		const key = match[1]
+		const value = match[2]
+		if (key !== undefined && value !== undefined) attrs.set(key, decodeXmlText(value))
+	}
+	return attrs
+}
+
+function firstElementAttributes(
+	xml: string,
+	tagName: string,
+	attrName?: string,
+	attrValue?: string,
+): Map<string, string> {
+	for (const match of xml.matchAll(new RegExp(`<${tagName}\\b([^>]*)>`, 'g'))) {
+		const attrs = parseXmlAttributes(match[1] ?? '')
+		if (attrName === undefined || attrs.get(attrName) === attrValue) return attrs
+	}
+	return new Map()
+}
+
+function elementWithAttributesAndBody(
+	xml: string,
+	tagName: string,
+	expectedAttrs: Readonly<Record<string, string>>,
+): { readonly attrs: ReadonlyMap<string, string>; readonly body: string } | null {
+	const re = new RegExp(`<${tagName}\\b([^>]*)>([\\s\\S]*?)<\\/${tagName}>`, 'g')
+	for (const match of xml.matchAll(re)) {
+		const attrs = parseXmlAttributes(match[1] ?? '')
+		if (Object.entries(expectedAttrs).every(([key, value]) => attrs.get(key) === value)) {
+			return { attrs, body: match[2] ?? '' }
+		}
+	}
+	return null
+}
+
+function relationshipTarget(relsXml: string, relId: string): string {
+	if (!relId) return ''
+	for (const match of relsXml.matchAll(/<Relationship\b([^>]*)\/?>/g)) {
+		const attrs = parseXmlAttributes(match[1] ?? '')
+		if (attrs.get('Id') === relId) return attrs.get('Target') ?? ''
+	}
+	return ''
+}
+
+function definedNameValue(workbookXml: string, name: string): string {
+	const re = /<definedName\b([^>]*)>([\s\S]*?)<\/definedName>/g
+	for (const match of workbookXml.matchAll(re)) {
+		const attrs = parseXmlAttributes(match[1] ?? '')
+		if (attrs.get('name') === name) return decodeXmlText(match[2] ?? '')
+	}
+	return ''
+}
+
+function commentEntry(
+	commentsXml: string,
+	expectedRef: string,
+): { readonly ref: string; readonly author: string; readonly text: string } {
+	const authors = [...commentsXml.matchAll(/<author>([\s\S]*?)<\/author>/g)].map((match) =>
+		decodeXmlText(match[1] ?? ''),
+	)
+	const commentRe = /<comment\b([^>]*)>([\s\S]*?)<\/comment>/g
+	for (const match of commentsXml.matchAll(commentRe)) {
+		const attrs = parseXmlAttributes(match[1] ?? '')
+		const ref = attrs.get('ref') ?? ''
+		if (ref !== expectedRef) continue
+		const authorId = Number.parseInt(attrs.get('authorId') ?? '', 10)
+		const author = Number.isFinite(authorId) ? (authors[authorId] ?? '') : ''
+		const text = [...(match[2] ?? '').matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)]
+			.map((textMatch) => decodeXmlText(textMatch[1] ?? ''))
+			.join('')
+		return { ref, author, text }
+	}
+	return { ref: '', author: '', text: '' }
+}
+
+function normalizeFormulaRef(value: string): string {
+	return value.startsWith('=') ? value.slice(1) : value
+}
+
+function tagText(xml: string, tagName: string): string {
+	return decodeXmlText(firstTagText(xml, tagName) ?? '')
+}
+
 export function evaluateAssertions(
 	category: 'read' | 'write',
 	input: CompetitiveDataSet,
@@ -1085,7 +1173,8 @@ export function evaluateAssertions(
 			observed.worksheetHyperlinkCount === 1 &&
 			observed.worksheetDataValidationCount === 1 &&
 			observed.worksheetConditionalFormattingCount === 1 &&
-			observed.definedNameCount === 1)
+			observed.definedNameCount === 1 &&
+			observed.featureRichSemanticMatches === true)
 	const readFeatureRichMatches =
 		category !== 'read' ||
 		input.workloadName !== 'feature-rich' ||
@@ -1093,7 +1182,8 @@ export function evaluateAssertions(
 			Number(observed.readHyperlinkCount) > 0 &&
 			Number(observed.readDataValidationCount) > 0 &&
 			Number(observed.readConditionalFormatCount) > 0 &&
-			Number(observed.readDefinedNameCount) > 0)
+			Number(observed.readDefinedNameCount) > 0 &&
+			observed.readFeatureRichSemanticMatches !== false)
 	const matches =
 		reopenOk &&
 		sheetCountMatches &&
@@ -1156,6 +1246,53 @@ function xlsxWorksheetFormulaCount(bytes: Uint8Array): number {
 	}
 }
 
+function coreFeatureRichSemanticAssertions(
+	workbook: Workbook,
+	input: CompetitiveDataSet,
+): Record<string, PrimitiveAssertion> {
+	if (input.workloadName !== 'feature-rich') return {}
+	const sheet = workbook.getSheet('Data')
+	const expected = expectedFeatureRichContract(input)
+	const definedNameRef = workbook.definedNames.get('FeatureRange') ?? ''
+	const hyperlink = sheet?.hyperlinks.get('A1')
+	const comment = sheet?.comments.get('B2')
+	const validation = sheet?.dataValidations.find((entry) => entry.sqref === expected.validationRef)
+	const conditionalFormat = sheet?.conditionalFormats.find(
+		(entry) => entry.sqref === expected.conditionalFormatRef,
+	)
+	const conditionalRule = conditionalFormat?.rules[0]
+	const definedNameMatches = normalizeFormulaRef(definedNameRef) === expected.featureRange
+	const hyperlinkMatches =
+		hyperlink?.target === expected.hyperlinkTarget &&
+		hyperlink.display === expected.hyperlinkDisplay &&
+		hyperlink.tooltip === expected.hyperlinkTooltip
+	const commentMatches =
+		comment?.text === expected.commentText && comment.author === expected.commentAuthor
+	const dataValidationMatches =
+		validation?.type === 'list' &&
+		validation.allowBlank === true &&
+		validation.showInputMessage === true &&
+		validation.formula1 === expected.validationFormula
+	const conditionalFormattingMatches =
+		conditionalRule?.type === 'cellIs' &&
+		conditionalRule.operator === 'greaterThan' &&
+		conditionalRule.formulas[0] === expected.conditionalFormula
+	const semanticMatches =
+		definedNameMatches &&
+		hyperlinkMatches &&
+		commentMatches &&
+		dataValidationMatches &&
+		conditionalFormattingMatches
+	return {
+		readFeatureRichSemanticMatches: semanticMatches,
+		readFeatureRichDefinedNameMatches: definedNameMatches,
+		readFeatureRichHyperlinkMatches: hyperlinkMatches,
+		readFeatureRichCommentMatches: commentMatches,
+		readFeatureRichDataValidationMatches: dataValidationMatches,
+		readFeatureRichConditionalFormattingMatches: conditionalFormattingMatches,
+	}
+}
+
 function featureRichAssertions(
 	bytes: Uint8Array,
 	input: CompetitiveDataSet,
@@ -1169,6 +1306,114 @@ function featureRichAssertions(
 		worksheetDataValidationCount: summary.worksheetDataValidationCount,
 		worksheetConditionalFormattingCount: summary.worksheetConditionalFormattingCount,
 		definedNameCount: summary.definedNameCount,
+		...xlsxFeatureRichSemanticAssertions(bytes, input),
+	}
+}
+
+function xlsxFeatureRichSemanticAssertions(
+	bytes: Uint8Array,
+	input: CompetitiveDataSet,
+): Record<string, PrimitiveAssertion> {
+	const expected = expectedFeatureRichContract(input)
+	try {
+		const archive = extractZip(bytes)
+		const workbookXml = archive.readText('xl/workbook.xml') ?? ''
+		const sheetXml = archive.readText('xl/worksheets/sheet1.xml') ?? ''
+		const sheetRelsXml = archive.readText('xl/worksheets/_rels/sheet1.xml.rels') ?? ''
+		const commentsXml = archive.readText('xl/comments1.xml') ?? ''
+		const definedNameRef = definedNameValue(workbookXml, 'FeatureRange')
+		const hyperlink = firstElementAttributes(sheetXml, 'hyperlink', 'ref', 'A1')
+		const hyperlinkRelId = hyperlink.get('r:id') ?? hyperlink.get('id') ?? ''
+		const hyperlinkTarget = relationshipTarget(sheetRelsXml, hyperlinkRelId)
+		const dataValidation = elementWithAttributesAndBody(sheetXml, 'dataValidation', {
+			sqref: expected.validationRef,
+		})
+		const conditionalFormatting = elementWithAttributesAndBody(sheetXml, 'conditionalFormatting', {
+			sqref: expected.conditionalFormatRef,
+		})
+		const cfRule = conditionalFormatting
+			? firstElementAttributes(conditionalFormatting.body, 'cfRule')
+			: new Map<string, string>()
+		const comment = commentEntry(commentsXml, expected.commentRef)
+		const definedNameMatches = normalizeFormulaRef(definedNameRef) === expected.featureRange
+		const hyperlinkMatches =
+			hyperlink.get('ref') === expected.hyperlinkRef &&
+			(hyperlink.get('display') === undefined ||
+				hyperlink.get('display') === expected.hyperlinkDisplay) &&
+			hyperlink.get('tooltip') === expected.hyperlinkTooltip &&
+			hyperlinkTarget === expected.hyperlinkTarget
+		const commentMatches =
+			comment.ref === expected.commentRef &&
+			comment.author === expected.commentAuthor &&
+			comment.text === expected.commentText
+		const dataValidationMatches =
+			dataValidation?.attrs.get('type') === 'list' &&
+			dataValidation.attrs.get('allowBlank') === '1' &&
+			dataValidation.attrs.get('showInputMessage') === '1' &&
+			tagText(dataValidation.body, 'formula1') === expected.validationFormula
+		const conditionalFormattingMatches =
+			conditionalFormatting !== null &&
+			cfRule.get('type') === 'cellIs' &&
+			cfRule.get('operator') === 'greaterThan' &&
+			tagText(conditionalFormatting.body, 'formula') === expected.conditionalFormula
+		const semanticMatches =
+			definedNameMatches &&
+			hyperlinkMatches &&
+			commentMatches &&
+			dataValidationMatches &&
+			conditionalFormattingMatches
+		return {
+			featureRichSemanticMatches: semanticMatches,
+			featureRichDefinedNameMatches: definedNameMatches,
+			featureRichHyperlinkMatches: hyperlinkMatches,
+			featureRichCommentMatches: commentMatches,
+			featureRichDataValidationMatches: dataValidationMatches,
+			featureRichConditionalFormattingMatches: conditionalFormattingMatches,
+			featureRichDefinedNameRef: normalizeFormulaRef(definedNameRef),
+			featureRichHyperlinkTarget: hyperlinkTarget,
+			featureRichCommentText: comment.text,
+			featureRichDataValidationFormula: tagText(dataValidation?.body ?? '', 'formula1'),
+			featureRichConditionalFormula: tagText(conditionalFormatting?.body ?? '', 'formula'),
+		}
+	} catch {
+		return {
+			featureRichSemanticMatches: false,
+			featureRichDefinedNameMatches: false,
+			featureRichHyperlinkMatches: false,
+			featureRichCommentMatches: false,
+			featureRichDataValidationMatches: false,
+			featureRichConditionalFormattingMatches: false,
+		}
+	}
+}
+
+function expectedFeatureRichContract(input: CompetitiveDataSet): {
+	readonly featureRange: string
+	readonly hyperlinkRef: string
+	readonly hyperlinkDisplay: string
+	readonly hyperlinkTarget: string
+	readonly hyperlinkTooltip: string
+	readonly commentRef: string
+	readonly commentAuthor: string
+	readonly commentText: string
+	readonly validationRef: string
+	readonly validationFormula: string
+	readonly conditionalFormatRef: string
+	readonly conditionalFormula: string
+} {
+	return {
+		featureRange: featureRange(input),
+		hyperlinkRef: 'A1',
+		hyperlinkDisplay: 'Ascend',
+		hyperlinkTarget: 'https://example.com/ascend',
+		hyperlinkTooltip: 'Open Ascend',
+		commentRef: 'B2',
+		commentAuthor: 'Ascend',
+		commentText: 'Review',
+		validationRef: `C2:C${Math.max(2, input.rows)}`,
+		validationFormula: '"Q1,Q2,Q3"',
+		conditionalFormatRef: `A1:A${Math.max(1, input.rows)}`,
+		conditionalFormula: '0',
 	}
 }
 

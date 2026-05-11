@@ -342,12 +342,21 @@ describe('competitive IO helpers', () => {
 		expect(featureSummary.worksheetDataValidationCount).toBe(1)
 		expect(featureSummary.worksheetConditionalFormattingCount).toBe(1)
 		expect(featureSummary.definedNameCount).toBe(1)
+		expect(featureAssertions).toMatchObject({
+			featureRichSemanticMatches: true,
+			featureRichDefinedNameMatches: true,
+			featureRichHyperlinkMatches: true,
+			featureRichCommentMatches: true,
+			featureRichDataValidationMatches: true,
+			featureRichConditionalFormattingMatches: true,
+		})
 		expect(denseWorkbookAssertions(featureRead.value.workbook, input)).toMatchObject({
 			readCommentCount: 1,
 			readHyperlinkCount: 1,
 			readDataValidationCount: 1,
 			readConditionalFormatCount: 1,
 			readDefinedNameCount: 1,
+			readFeatureRichSemanticMatches: true,
 		})
 		expect(denseWorkbookAssertions(valuesRead.value.workbook, input)).toMatchObject({
 			readCommentCount: 0,
@@ -376,6 +385,12 @@ describe('competitive IO helpers', () => {
 			featureSummary.featureInventoryHash,
 		)
 		expect(evaluateAssertions('write', input, featureAssertions).status).toBe('pass')
+		expect(
+			evaluateAssertions('write', input, {
+				...featureAssertions,
+				featureRichSemanticMatches: false,
+			}).status,
+		).toBe('semantic-mismatch')
 		expect(evaluateAssertions('write', valuesOnlyInput, valuesOnlyAssertions).status).toBe(
 			'semantic-mismatch',
 		)
@@ -798,7 +813,7 @@ describe('competitive IO helpers', () => {
 		}
 	})
 
-	test('capable in-process rich metadata writers still run when manifest adapters skip', async () => {
+	test('capable in-process rich metadata writers still run with semantic validation', async () => {
 		const payload = await runCompetitiveIoJson([
 			'--category',
 			'write',
@@ -821,8 +836,9 @@ describe('competitive IO helpers', () => {
 			'--json',
 		])
 		expect(payload.cases.map((entry) => entry.dimensions.library)).toEqual(['exceljs'])
-		expect(payload.cases[0]?.dimensions.correctnessStatus).toBe('pass')
-		expect(payload.cases[0]?.assertions?.featureRichMatches).toBe(true)
+		expect(payload.cases[0]?.dimensions.correctnessStatus).toBe('semantic-mismatch')
+		expect(payload.cases[0]?.assertions?.featureRichMatches).toBe(false)
+		expect(payload.cases[0]?.assertions?.featureRichSemanticMatches).toBe(false)
 	})
 
 	test('external competitor selector includes non-JS SOTA runners', () => {

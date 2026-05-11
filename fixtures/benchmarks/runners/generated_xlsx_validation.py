@@ -195,6 +195,245 @@ def generated_write_assertions(
         }
 
 
+def feature_rich_assertions(data: bytes, *, rows: int, cols: int) -> dict[str, str | int | bool]:
+    expected = expected_feature_rich_contract(rows, cols)
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            names = archive.namelist()
+            workbook_xml = read_zip_text(archive, "xl/workbook.xml")
+            sheet_xml = read_zip_text(archive, "xl/worksheets/sheet1.xml")
+            sheet_rels_xml = read_zip_text(archive, "xl/worksheets/_rels/sheet1.xml.rels")
+            comments_xml = first_existing_text(
+                archive,
+                [name for name in names if re.match(r"^xl/(?:comments\d*|comments/.+)\.xml$", name)],
+            )
+            defined_name_ref = defined_name_value(workbook_xml, "FeatureRange")
+            hyperlink = first_element_attrs(sheet_xml, "hyperlink", "ref", "A1")
+            hyperlink_rel_id = hyperlink.get("r:id", hyperlink.get("id", ""))
+            hyperlink_target = relationship_target(sheet_rels_xml, hyperlink_rel_id)
+            data_validation = element_with_attrs_and_body(
+                sheet_xml, "dataValidation", {"sqref": expected["validationRef"]}
+            )
+            conditional_formatting = element_with_attrs_and_body(
+                sheet_xml, "conditionalFormatting", {"sqref": expected["conditionalFormatRef"]}
+            )
+            cf_rule = (
+                first_element_attrs(conditional_formatting[1], "cfRule")
+                if conditional_formatting is not None
+                else {}
+            )
+            comment = comment_entry(comments_xml, expected["commentRef"])
+            defined_name_matches = normalize_formula_ref(defined_name_ref) == expected["featureRange"]
+            hyperlink_matches = (
+                hyperlink.get("ref") == expected["hyperlinkRef"]
+                and (
+                    hyperlink.get("display") is None
+                    or hyperlink.get("display") == expected["hyperlinkDisplay"]
+                )
+                and hyperlink.get("tooltip") == expected["hyperlinkTooltip"]
+                and hyperlink_target == expected["hyperlinkTarget"]
+            )
+            comment_matches = (
+                comment["ref"] == expected["commentRef"]
+                and comment["author"] == expected["commentAuthor"]
+                and comment["text"] == expected["commentText"]
+            )
+            data_validation_matches = (
+                data_validation is not None
+                and data_validation[0].get("type") == "list"
+                and data_validation[0].get("allowBlank") == "1"
+                and data_validation[0].get("showInputMessage") == "1"
+                and first_tag_text(data_validation[1], "formula1") == expected["validationFormula"]
+            )
+            conditional_formatting_matches = (
+                conditional_formatting is not None
+                and cf_rule.get("type") == "cellIs"
+                and cf_rule.get("operator") == "greaterThan"
+                and first_tag_text(conditional_formatting[1], "formula")
+                == expected["conditionalFormula"]
+            )
+            semantic_matches = (
+                defined_name_matches
+                and hyperlink_matches
+                and comment_matches
+                and data_validation_matches
+                and conditional_formatting_matches
+            )
+            return {
+                "commentPartCount": sum(
+                    1
+                    for name in names
+                    if re.match(r"^xl/(?:comments\d*|comments/.+)\.xml$", name)
+                ),
+                "vmlDrawingPartCount": sum(
+                    1 for name in names if name.startswith("xl/drawings/") and name.endswith(".vml")
+                ),
+                "worksheetHyperlinkCount": sheet_xml.count("<hyperlink "),
+                "worksheetDataValidationCount": sheet_xml.count("<dataValidation "),
+                "worksheetConditionalFormattingCount": sheet_xml.count("<conditionalFormatting"),
+                "definedNameCount": workbook_xml.count("<definedName "),
+                "featureRichSemanticMatches": semantic_matches,
+                "featureRichDefinedNameMatches": defined_name_matches,
+                "featureRichHyperlinkMatches": hyperlink_matches,
+                "featureRichCommentMatches": comment_matches,
+                "featureRichDataValidationMatches": data_validation_matches,
+                "featureRichConditionalFormattingMatches": conditional_formatting_matches,
+                "featureRichDefinedNameRef": normalize_formula_ref(defined_name_ref),
+                "featureRichHyperlinkTarget": hyperlink_target,
+                "featureRichCommentText": comment["text"],
+                "featureRichDataValidationFormula": (
+                    first_tag_text(data_validation[1], "formula1") if data_validation else ""
+                ),
+                "featureRichConditionalFormula": (
+                    first_tag_text(conditional_formatting[1], "formula")
+                    if conditional_formatting
+                    else ""
+                ),
+            }
+    except zipfile.BadZipFile:
+        return empty_feature_rich_assertions()
+
+
+def empty_feature_rich_assertions() -> dict[str, str | int | bool]:
+    return {
+        "commentPartCount": 0,
+        "vmlDrawingPartCount": 0,
+        "worksheetHyperlinkCount": 0,
+        "worksheetDataValidationCount": 0,
+        "worksheetConditionalFormattingCount": 0,
+        "definedNameCount": 0,
+        "featureRichSemanticMatches": False,
+        "featureRichDefinedNameMatches": False,
+        "featureRichHyperlinkMatches": False,
+        "featureRichCommentMatches": False,
+        "featureRichDataValidationMatches": False,
+        "featureRichConditionalFormattingMatches": False,
+        "featureRichDefinedNameRef": "",
+        "featureRichHyperlinkTarget": "",
+        "featureRichCommentText": "",
+        "featureRichDataValidationFormula": "",
+        "featureRichConditionalFormula": "",
+    }
+
+
+def expected_feature_rich_contract(rows: int, cols: int) -> dict[str, str]:
+    return {
+        "featureRange": f"Data!$A$1:${column_name(cols)}${max(1, rows)}",
+        "hyperlinkRef": "A1",
+        "hyperlinkDisplay": "Ascend",
+        "hyperlinkTarget": "https://example.com/ascend",
+        "hyperlinkTooltip": "Open Ascend",
+        "commentRef": "B2",
+        "commentAuthor": "Ascend",
+        "commentText": "Review",
+        "validationRef": f"C2:C{max(2, rows)}",
+        "validationFormula": '"Q1,Q2,Q3"',
+        "conditionalFormatRef": f"A1:A{max(1, rows)}",
+        "conditionalFormula": "0",
+    }
+
+
+def read_zip_text(archive: zipfile.ZipFile, name: str) -> str:
+    try:
+        return archive.read(name).decode("utf-8")
+    except KeyError:
+        return ""
+
+
+def first_existing_text(archive: zipfile.ZipFile, names: list[str]) -> str:
+    for name in names:
+        text = read_zip_text(archive, name)
+        if text:
+            return text
+    return ""
+
+
+def parse_attrs(attrs_text: str) -> dict[str, str]:
+    return {
+        match.group(1): decode_xml_text(match.group(2))
+        for match in re.finditer(r'([A-Za-z_][\w:.-]*)="([^"]*)"', attrs_text)
+    }
+
+
+def first_element_attrs(
+    xml: str, tag_name: str, attr_name: str | None = None, attr_value: str | None = None
+) -> dict[str, str]:
+    for match in re.finditer(fr"<{tag_name}\b([^>]*)>", xml):
+        attrs = parse_attrs(match.group(1))
+        if attr_name is None or attrs.get(attr_name) == attr_value:
+            return attrs
+    return {}
+
+
+def element_with_attrs_and_body(
+    xml: str, tag_name: str, expected_attrs: dict[str, str]
+) -> tuple[dict[str, str], str] | None:
+    for match in re.finditer(fr"<{tag_name}\b([^>]*)>([\s\S]*?)</{tag_name}>", xml):
+        attrs = parse_attrs(match.group(1))
+        if all(attrs.get(key) == value for key, value in expected_attrs.items()):
+            return attrs, match.group(2)
+    return None
+
+
+def relationship_target(rels_xml: str, rel_id: str) -> str:
+    if not rel_id:
+        return ""
+    for match in re.finditer(r"<Relationship\b([^>]*)/?>", rels_xml):
+        attrs = parse_attrs(match.group(1))
+        if attrs.get("Id") == rel_id:
+            return attrs.get("Target", "")
+    return ""
+
+
+def defined_name_value(workbook_xml: str, name: str) -> str:
+    for match in re.finditer(r"<definedName\b([^>]*)>([\s\S]*?)</definedName>", workbook_xml):
+        attrs = parse_attrs(match.group(1))
+        if attrs.get("name") == name:
+            return decode_xml_text(match.group(2))
+    return ""
+
+
+def comment_entry(comments_xml: str, expected_ref: str) -> dict[str, str]:
+    authors = [
+        decode_xml_text(match.group(1))
+        for match in re.finditer(r"<author>([\s\S]*?)</author>", comments_xml)
+    ]
+    for match in re.finditer(r"<comment\b([^>]*)>([\s\S]*?)</comment>", comments_xml):
+        attrs = parse_attrs(match.group(1))
+        ref = attrs.get("ref", "")
+        if ref != expected_ref:
+            continue
+        try:
+            author = authors[int(attrs.get("authorId", ""))]
+        except (ValueError, IndexError):
+            author = ""
+        text = "".join(
+            decode_xml_text(text_match.group(1))
+            for text_match in re.finditer(r"<t(?:\s[^>]*)?>([\s\S]*?)</t>", match.group(2))
+        )
+        return {"ref": ref, "author": author, "text": text}
+    return {"ref": "", "author": "", "text": ""}
+
+
+def first_tag_text(xml: str, tag_name: str) -> str:
+    match = re.search(fr"<{tag_name}>([\s\S]*?)</{tag_name}>", xml)
+    return decode_xml_text(match.group(1)) if match else ""
+
+
+def decode_xml_text(text: str) -> str:
+    return (
+        text.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", '"')
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")
+    )
+
+
+def normalize_formula_ref(value: str) -> str:
+    return value[1:] if value.startswith("=") else value
+
+
 def workbook_sheet_names(archive: zipfile.ZipFile) -> list[str]:
     with archive.open("xl/workbook.xml") as handle:
         tree = ElementTree.iterparse(handle, events=("start",))

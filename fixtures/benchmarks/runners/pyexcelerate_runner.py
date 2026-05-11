@@ -18,6 +18,7 @@ import pyexcelerate
 from generated_xlsx_validation import (
     can_validate_generated_workload,
     expected_ordered_values_hash,
+    feature_rich_assertions,
     generated_cell_count,
     generated_write_assertions,
 )
@@ -192,7 +193,7 @@ def write_assertions(
             ),
             "formulaCount": formula_count(data),
             "tablePartCount": table_part_count(data),
-            **feature_counts(data),
+            **feature_counts(data, rows, cols),
         }
     workbook = openpyxl.load_workbook(io.BytesIO(data), read_only=False, data_only=False)
     try:
@@ -216,7 +217,7 @@ def write_assertions(
         "bytes": len(data),
         "formulaCount": formula_count(data),
         "tablePartCount": table_part_count(data),
-        **feature_counts(data),
+        **feature_counts(data, rows, cols),
         "sheetCount": sheet_count,
         "cellCount": cell_count,
         "expectedCellCount": expected_cell_count(workload, rows, cols),
@@ -251,35 +252,8 @@ def formula_count(data: bytes) -> int:
         return 0
 
 
-def feature_counts(data: bytes) -> dict[str, int]:
-    try:
-        with zipfile.ZipFile(io.BytesIO(data)) as archive:
-            names = archive.namelist()
-            workbook_xml = read_zip_text(archive, "xl/workbook.xml")
-            sheet_xml = read_zip_text(archive, "xl/worksheets/sheet1.xml")
-            return {
-                "commentPartCount": sum(
-                    1
-                    for name in names
-                    if re.match(r"^xl/(?:comments\d*|comments/.+)\.xml$", name)
-                ),
-                "vmlDrawingPartCount": sum(
-                    1 for name in names if name.startswith("xl/drawings/") and name.endswith(".vml")
-                ),
-                "worksheetHyperlinkCount": sheet_xml.count("<hyperlink "),
-                "worksheetDataValidationCount": sheet_xml.count("<dataValidation "),
-                "worksheetConditionalFormattingCount": sheet_xml.count("<conditionalFormatting"),
-                "definedNameCount": workbook_xml.count("<definedName "),
-            }
-    except zipfile.BadZipFile:
-        return {
-            "commentPartCount": 0,
-            "vmlDrawingPartCount": 0,
-            "worksheetHyperlinkCount": 0,
-            "worksheetDataValidationCount": 0,
-            "worksheetConditionalFormattingCount": 0,
-            "definedNameCount": 0,
-        }
+def feature_counts(data: bytes, rows: int, cols: int) -> dict[str, str | int | bool]:
+    return feature_rich_assertions(data, rows=rows, cols=cols)
 
 
 def read_zip_text(archive: zipfile.ZipFile, name: str) -> str:

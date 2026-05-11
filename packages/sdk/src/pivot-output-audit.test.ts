@@ -313,6 +313,37 @@ describe('pivot output audits', () => {
 		},
 	)
 
+	test.skipIf(!existsSync(POI_WITH_CHART_SHEET_FIXTURE))(
+		'audits real POI pivots with data fields nested on rows',
+		async () => {
+			const wb = await AscendWorkbook.open(readFileSync(POI_WITH_CHART_SHEET_FIXTURE), {
+				pivotCacheRecordMaterializeLimit: 'all',
+			})
+			const audits = wb.pivotOutputAudits()
+
+			expect(audits).toContainEqual(
+				expect.objectContaining({
+					pivotTable: 'PivotTable4',
+					sheetName: 'Sheet3',
+					status: 'passed',
+					checkedValueCount: 40,
+					mismatches: [],
+					warnings: [],
+				}),
+			)
+			expect(audits).toContainEqual(
+				expect.objectContaining({
+					pivotTable: 'PivotTable2',
+					sheetName: 'Sheet2',
+					status: 'passed',
+					checkedValueCount: 8,
+					mismatches: [],
+					warnings: [],
+				}),
+			)
+		},
+	)
+
 	test.skipIf(!existsSync(MS_EXCEL_PIVOT_FIXTURE))(
 		'audits real Excel one-row pivots with column fields',
 		async () => {

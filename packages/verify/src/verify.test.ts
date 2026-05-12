@@ -136,23 +136,32 @@ describe('checker', () => {
 	test('parses defined name formulas for missing local and external references', () => {
 		const wb = createWorkbook()
 		wb.addSheet('Sheet1')
+		wb.addSheet("O'Brien")
 		wb.definedNames.set('BrokenName', 'SUM(MissingSheet!A1,Sheet1!A1)')
+		wb.definedNames.set('QualifiedName', 'MissingSheet!SomeName')
+		wb.definedNames.set('TextOnly', '"MissingSheet!A1"')
+		wb.definedNames.set('QuotedLocal', "'O''Brien'!A1")
 		wb.definedNames.set('ExternalName', "'[Budget.xlsx]Data'!$A$1")
 
 		const result = check(wb)
-		const orphanIssue = result.issues.find(
-			(issue) => issue.rule === 'orphaned-names' && issue.details?.name === 'BrokenName',
-		)
+		const orphanIssues = result.issues.filter((issue) => issue.rule === 'orphaned-names')
+		const formulaIssue = orphanIssues.find((issue) => issue.details?.name === 'BrokenName')
+		const qualifiedNameIssue = orphanIssues.find((issue) => issue.details?.name === 'QualifiedName')
 		const externalIssue = result.issues.find(
 			(issue) =>
 				issue.rule === 'external-refs' && issue.details?.kind === 'defined-name-external-reference',
 		)
 
 		expect(result.passed).toBe(false)
-		expect(orphanIssue?.message).toContain('MissingSheet')
-		expect(orphanIssue?.details).toMatchObject({
+		expect(formulaIssue?.message).toContain('MissingSheet')
+		expect(formulaIssue?.details).toMatchObject({
 			kind: 'defined-name-missing-sheet-reference',
 			name: 'BrokenName',
+			missingSheet: 'MissingSheet',
+		})
+		expect(qualifiedNameIssue?.details).toMatchObject({
+			kind: 'defined-name-missing-sheet-reference',
+			name: 'QualifiedName',
 			missingSheet: 'MissingSheet',
 		})
 		expect(externalIssue?.severity).toBe('warning')
@@ -160,11 +169,9 @@ describe('checker', () => {
 			name: 'ExternalName',
 			externalTarget: '[Budget.xlsx]',
 		})
-		expect(
-			result.issues.some(
-				(issue) => issue.rule === 'orphaned-names' && issue.details?.name === 'ExternalName',
-			),
-		).toBe(false)
+		expect(orphanIssues.some((issue) => issue.details?.name === 'ExternalName')).toBe(false)
+		expect(orphanIssues.some((issue) => issue.details?.name === 'TextOnly')).toBe(false)
+		expect(orphanIssues.some((issue) => issue.details?.name === 'QuotedLocal')).toBe(false)
 	})
 
 	test('detects table integrity issues', () => {

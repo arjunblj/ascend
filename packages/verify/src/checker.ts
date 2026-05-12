@@ -11,7 +11,7 @@ import {
 	type WorkbookDependencyAnalysis,
 	type WorkbookFormulaAnalysis,
 } from '@ascend/engine'
-import { extractRefs, type FormulaRef, parseFormula } from '@ascend/formulas'
+import { extractRefs, type FormulaNode, type FormulaRef, parseFormula } from '@ascend/formulas'
 import { isError, levenshtein } from '@ascend/schema'
 
 export interface CheckResult {
@@ -2227,16 +2227,14 @@ function missingSheetReferencesInFormula(
 	const parsed = parseFormulaText(entry.formula)
 	if (!parsed.ok) return []
 	const missing: MissingSheetReference[] = []
-	for (const ref of extractRefs(parsed.value)) {
-		for (const sheetName of sheetNamesForFormulaRef(ref)) {
-			if (sheetName.startsWith('[')) continue
-			if (sheetNameSet.has(sheetName.toLowerCase())) continue
-			missing.push({
-				field: entry.field,
-				reference: entry.formula,
-				sheetName,
-			})
-		}
+	for (const sheetName of sheetNamesForFormula(parsed.value)) {
+		if (sheetName.startsWith('[')) continue
+		if (sheetNameSet.has(sheetName.toLowerCase())) continue
+		missing.push({
+			field: entry.field,
+			reference: entry.formula,
+			sheetName,
+		})
 	}
 	return missing
 }
@@ -2245,23 +2243,67 @@ function externalReferencesInFormula(entry: X14FormulaReferenceEntry): ExternalM
 	const parsed = parseFormulaText(entry.formula)
 	if (!parsed.ok) return []
 	const external: ExternalMetadataReference[] = []
-	for (const ref of extractRefs(parsed.value)) {
-		for (const sheetName of sheetNamesForFormulaRef(ref)) {
-			if (!sheetName.startsWith('[')) continue
-			external.push({
-				field: entry.field,
-				reference: entry.formula,
-				sheetName,
-				externalTarget: externalTargetFromSheetName(sheetName),
-			})
-		}
+	for (const sheetName of sheetNamesForFormula(parsed.value)) {
+		if (!sheetName.startsWith('[')) continue
+		external.push({
+			field: entry.field,
+			reference: entry.formula,
+			sheetName,
+			externalTarget: externalTargetFromSheetName(sheetName),
+		})
 	}
 	return external
+}
+
+function sheetNamesForFormula(node: FormulaNode): string[] {
+	const sheetNames = new Set<string>()
+	for (const ref of extractRefs(node)) {
+		for (const sheetName of sheetNamesForFormulaRef(ref)) sheetNames.add(sheetName)
+	}
+	collectSheetQualifiedNameReferences(node, sheetNames)
+	return [...sheetNames]
 }
 
 function sheetNamesForFormulaRef(ref: FormulaRef): string[] {
 	if (ref.kind === 'sheetSpan') return [ref.startSheet, ref.endSheet]
 	return ref.sheet ? [ref.sheet] : []
+}
+
+function collectSheetQualifiedNameReferences(node: FormulaNode, sheetNames: Set<string>): void {
+	switch (node.type) {
+		case 'name':
+			if (node.sheet) sheetNames.add(node.sheet)
+			break
+		case 'binary':
+			collectSheetQualifiedNameReferences(node.left, sheetNames)
+			collectSheetQualifiedNameReferences(node.right, sheetNames)
+			break
+		case 'dynamicRangeRef':
+			collectSheetQualifiedNameReferences(node.start, sheetNames)
+			collectSheetQualifiedNameReferences(node.end, sheetNames)
+			break
+		case 'unary':
+			collectSheetQualifiedNameReferences(node.operand, sheetNames)
+			break
+		case 'function':
+			for (const arg of node.args) collectSheetQualifiedNameReferences(arg, sheetNames)
+			break
+		case 'array':
+			for (const row of node.rows) {
+				for (const cell of row) collectSheetQualifiedNameReferences(cell, sheetNames)
+			}
+			break
+		case 'spillRef':
+			collectSheetQualifiedNameReferences(node.target, sheetNames)
+			break
+		case 'sheetSpanRef':
+			if (node.startSheet) sheetNames.add(node.startSheet)
+			if (node.endSheet) sheetNames.add(node.endSheet)
+			collectSheetQualifiedNameReferences(node.target, sheetNames)
+			break
+		default:
+			break
+	}
 }
 
 function formulaHasDetectableReferences(formula: string | undefined): boolean {

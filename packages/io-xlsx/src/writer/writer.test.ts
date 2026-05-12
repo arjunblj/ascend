@@ -4580,6 +4580,7 @@ describe('writeXlsx', () => {
 		expect(tableXml).toContain('ref="A1:B3"')
 		expect(tableXml).toContain('<autoFilter ref="A1:B3">')
 		expect(tableXml).toContain('<sortState ref="A1:B3">')
+		expect(tableXml).toContain('<sortCondition ref="B2:B3" descending="1"/>')
 	})
 
 	it('persists table resize filter remaps through generated table XML', () => {

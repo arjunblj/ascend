@@ -2,6 +2,7 @@ import type {
 	AutoFilter,
 	RangeRef,
 	Sheet,
+	SortCondition,
 	SortState,
 	Table,
 	TableColumn,
@@ -20,7 +21,6 @@ import {
 	rewriteTableNameInDefinedNames,
 	rewriteTableNameInFormulas,
 } from '../structural/formula-rewrite.ts'
-import { expandSqrefRows } from '../structural/ref-shift.ts'
 import { sortSheetRange } from '../structural/sort-range.ts'
 import {
 	collectDroppedTableColumnsForResize,
@@ -165,36 +165,18 @@ export function handleAppendRows(
 
 	const tableIndex = sheet.tables.findIndex((candidate) => candidate.id === table.id)
 	if (tableIndex >= 0) {
+		const autoFilter = table.autoFilter
+			? resizeTableAutoFilter(table.autoFilter, table.ref, nextTableRef)
+			: undefined
+		const sortState = resizeTableSortState(table.sortState, table.ref, nextTableRef)
 		sheet.tables.splice(tableIndex, 1, {
 			...table,
 			ref: {
 				start: table.ref.start,
 				end: { row: originalEndRow + rowDelta, col: table.ref.end.col },
 			},
-			...(table.autoFilter
-				? {
-						autoFilter: {
-							...table.autoFilter,
-							ref: expandSqrefRows(table.autoFilter.ref, rowDelta),
-							...(table.autoFilter.sortState
-								? {
-										sortState: {
-											...table.autoFilter.sortState,
-											ref: expandSqrefRows(table.autoFilter.sortState.ref, rowDelta),
-										},
-									}
-								: {}),
-						},
-					}
-				: {}),
-			...(table.sortState
-				? {
-						sortState: {
-							...table.sortState,
-							ref: expandSqrefRows(table.sortState.ref, rowDelta),
-						},
-					}
-				: {}),
+			...(autoFilter ? { autoFilter } : {}),
+			...(sortState ? { sortState } : {}),
 		})
 	}
 	return ok(patch(affected, [sheet.name], true))
@@ -304,7 +286,7 @@ export function handleResizeTable(
 	const autoFilter = table.autoFilter
 		? resizeTableAutoFilter(table.autoFilter, table.ref, ref)
 		: undefined
-	const sortState = resizeTableSortState(table.sortState, ref)
+	const sortState = resizeTableSortState(table.sortState, table.ref, ref)
 	const idx = sheet.tables.findIndex((t) => t.id === table.id)
 	if (idx >= 0) {
 		const { autoFilter: _autoFilter, sortState: _sortState, ...tableWithoutFilterState } = table
@@ -769,7 +751,7 @@ function resizeTableAutoFilter(
 	oldRef: RangeRef,
 	nextRef: RangeRef,
 ): AutoFilter {
-	const sortState = resizeTableSortState(autoFilter.sortState, nextRef)
+	const sortState = resizeTableSortState(autoFilter.sortState, oldRef, nextRef)
 	const { sortState: _sortState, ref: _ref, columns: _columns, ...rest } = autoFilter
 	return {
 		...rest,
@@ -796,21 +778,42 @@ function remapTableFilterColumns(
 
 function resizeTableSortState(
 	sortState: SortState | null | undefined,
+	oldRef: RangeRef,
 	nextRef: RangeRef,
 ): SortState | undefined {
 	if (!sortState) return undefined
-	const conditions = sortState.conditions.filter((condition) =>
-		sortConditionOverlapsTable(condition.ref, nextRef),
-	)
+	const conditions = sortState.conditions
+		.map((condition) => resizeTableSortCondition(condition, oldRef, nextRef))
+		.filter((condition): condition is SortCondition => condition !== null)
 	if (conditions.length === 0) return undefined
 	return { ...sortState, ref: rangeToA1(nextRef), conditions }
 }
 
-function sortConditionOverlapsTable(ref: string, tableRef: RangeRef): boolean {
+function resizeTableSortCondition(
+	condition: SortCondition,
+	oldRef: RangeRef,
+	nextRef: RangeRef,
+): SortCondition | null {
 	try {
-		const conditionRef = parseRange(ref)
-		return tableRangesOverlap(conditionRef, tableRef)
+		const conditionRef = parseRange(condition.ref)
+		if (!tableRangesOverlap(conditionRef, nextRef)) return null
+		const resizedRef = resizeTableSortConditionRef(conditionRef, oldRef, nextRef)
+		return { ...condition, ref: rangeToA1(resizedRef) }
 	} catch {
-		return true
+		return condition
+	}
+}
+
+function resizeTableSortConditionRef(
+	conditionRef: RangeRef,
+	oldRef: RangeRef,
+	nextRef: RangeRef,
+): RangeRef {
+	if (conditionRef.end.row !== oldRef.end.row) return conditionRef
+	const endRow = nextRef.end.row
+	if (endRow < conditionRef.start.row) return conditionRef
+	return {
+		start: conditionRef.start,
+		end: { ...conditionRef.end, row: endRow },
 	}
 }

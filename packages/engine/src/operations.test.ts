@@ -3632,6 +3632,41 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('resizeTable expands table sort condition row spans when the table grows', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 1, col: 1 } },
+			columns: [
+				{ id: 1, name: 'Region' },
+				{ id: 2, name: 'Amount' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+			autoFilter: {
+				ref: 'A1:B2',
+				columns: [{ colId: 1, kind: 'filters', values: ['10'] }],
+				sortState: { ref: 'A1:B2', conditions: [{ ref: 'B2:B2', descending: true }] },
+			},
+			sortState: { ref: 'A1:B2', conditions: [{ ref: 'A1:A2' }] },
+		})
+
+		expectOk(applyOperation(wb, { op: 'resizeTable', table: 'Sales', ref: 'A1:B4' }))
+
+		expect(sheet.tables[0]?.autoFilter).toEqual({
+			ref: 'A1:B4',
+			columns: [{ colId: 1, kind: 'filters', values: ['10'] }],
+			sortState: { ref: 'A1:B4', conditions: [{ ref: 'B2:B4', descending: true }] },
+		})
+		expect(sheet.tables[0]?.sortState).toEqual({
+			ref: 'A1:B4',
+			conditions: [{ ref: 'A1:A4' }],
+		})
+	})
+
 	test('resizeTable removes table sort states when all conditions target dropped columns', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -4540,7 +4575,9 @@ describe('applyOperation', () => {
 
 		expect(sheet.tables[0]?.autoFilter?.ref).toBe('A1:B3')
 		expect(sheet.tables[0]?.autoFilter?.sortState?.ref).toBe('A1:B3')
+		expect(sheet.tables[0]?.autoFilter?.sortState?.conditions).toEqual([{ ref: 'B2:B3' }])
 		expect(sheet.tables[0]?.sortState?.ref).toBe('A1:B3')
+		expect(sheet.tables[0]?.sortState?.conditions).toEqual([{ ref: 'A1:A3' }])
 	})
 })
 

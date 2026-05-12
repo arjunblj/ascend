@@ -7,7 +7,7 @@ import type {
 	TableStyleInfo,
 	Workbook,
 } from '@ascend/core'
-import { createTableId, toA1 } from '@ascend/core'
+import { createTableId, parseA1Safe, toA1 } from '@ascend/core'
 import { normalizeFormulaInput } from '@ascend/formulas'
 import type { Operation, Result } from '@ascend/schema'
 import { ascendError, EMPTY, err, ok, stringValue } from '@ascend/schema'
@@ -50,6 +50,8 @@ export function handleCreateTable(
 	const sheet = result.value
 	const rangeResult = safeParseRange(op.ref)
 	if (!rangeResult.ok) return rangeResult
+	const nameError = validateTableName(op.name)
+	if (nameError) return err(nameError)
 	if (findTableNameCollision(workbook, op.name)) {
 		return err(
 			ascendError('NAME_CONFLICT', `Table "${op.name}" already exists`, {
@@ -252,6 +254,8 @@ export function handleRenameTable(
 		return err(ascendError('NAME_NOT_FOUND', `Table "${op.table}" not found`))
 	}
 	const { table, sheet } = located
+	const nameError = validateTableName(op.newName)
+	if (nameError) return err(nameError)
 	if (findTableNameCollision(workbook, op.newName, table.id)) {
 		return err(
 			ascendError('NAME_CONFLICT', `Table "${op.newName}" already exists`, {
@@ -307,6 +311,39 @@ export function handleResizeTable(
 	}
 	clearFormulaMetadata(workbook)
 	return ok(patch([], [sheet.name], true))
+}
+
+function validateTableName(name: string): ReturnType<typeof ascendError> | null {
+	const suggestedFix =
+		'Use a table name that starts with a letter, underscore, or backslash; uses only letters, numbers, periods, and underscores after that; is not C, R, A1-style, or R1C1-style; and is 255 characters or fewer.'
+	if (name.length === 0) {
+		return ascendError('VALIDATION_ERROR', 'Table name cannot be empty', { suggestedFix })
+	}
+	if (name.length > 255) {
+		return ascendError('VALIDATION_ERROR', `Table name "${name}" exceeds 255 characters`, {
+			suggestedFix,
+		})
+	}
+	if (/^[cr]$/i.test(name)) {
+		return ascendError('VALIDATION_ERROR', `Table name "${name}" is reserved`, { suggestedFix })
+	}
+	if (isA1StyleReference(name) || /^R\d+C\d+$/i.test(name)) {
+		return ascendError('VALIDATION_ERROR', `Table name "${name}" cannot be a cell reference`, {
+			suggestedFix,
+		})
+	}
+	if (!/^[\p{L}_\\][\p{L}\p{N}._]*$/u.test(name)) {
+		return ascendError('VALIDATION_ERROR', `Table name "${name}" contains invalid characters`, {
+			suggestedFix,
+		})
+	}
+	return null
+}
+
+function isA1StyleReference(name: string): boolean {
+	const parsed = parseA1Safe(name)
+	if (!parsed) return false
+	return parsed.col >= 0 && parsed.col <= 16383 && parsed.row >= 0 && parsed.row <= 1048575
 }
 
 function findTableNameCollision(

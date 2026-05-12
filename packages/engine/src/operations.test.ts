@@ -2902,6 +2902,38 @@ describe('applyOperation', () => {
 		expect(sheet2.tables).toHaveLength(0)
 	})
 
+	test('createTable rejects Excel-invalid table names before mutating topology', () => {
+		const invalidNames = [
+			'',
+			'1Sales',
+			'Sales Data',
+			'A1',
+			'XFD1048576',
+			'R1C1',
+			'C',
+			'R',
+			`T${'x'.repeat(255)}`,
+		]
+		for (const name of invalidNames) {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+
+			const result = applyOperation(wb, {
+				op: 'createTable',
+				sheet: 'Sheet1',
+				ref: 'A1:B2',
+				name,
+				hasHeaders: true,
+			})
+
+			expectErr(result)
+			expect(result.error.code).toBe('VALIDATION_ERROR')
+			expect(result.error.suggestedFix).toContain('A1-style')
+			expect(sheet.tables).toHaveLength(0)
+			expect(sheet.autoFilter).toBeNull()
+		}
+	})
+
 	test('createTable rejects ranges that overlap existing tables', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -3676,6 +3708,38 @@ describe('applyOperation', () => {
 		})
 		expectOk(caseOnly)
 		expect(sheet.tables[0]?.name).toBe('SALES')
+	})
+
+	test('renameTable rejects Excel-invalid names before rewriting structured references', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } },
+			columns: [
+				{ id: 1, name: 'Region' },
+				{ id: 2, name: 'Amount' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+		sheet.cells.set(4, 0, { value: EMPTY, formula: 'SUM(Sales[Amount])', styleId: sid })
+		wb.definedNames.set('SalesAmount', 'SUM(Sales[Amount])')
+
+		const result = applyOperation(wb, {
+			op: 'renameTable',
+			table: 'Sales',
+			newName: 'R1C1',
+		})
+
+		expectErr(result)
+		expect(result.error.code).toBe('VALIDATION_ERROR')
+		expect(result.error.message).toContain('cell reference')
+		expect(sheet.tables[0]?.name).toBe('Sales')
+		expect(sheet.cells.get(4, 0)?.formula).toBe('SUM(Sales[Amount])')
+		expect(wb.definedNames.get('SalesAmount')).toBe('SUM(Sales[Amount])')
 	})
 
 	test('setWorkbookProtection updates workbook-level protection metadata', () => {

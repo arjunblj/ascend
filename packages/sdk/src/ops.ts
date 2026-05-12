@@ -1217,6 +1217,7 @@ function operationRecoveryActions(op: string): readonly string[] {
 		case 'renameTable':
 			return [
 				'Choose a workbook-unique table name; Excel treats table names case-insensitively in structured references.',
+				'Use a name that starts with a letter, underscore, or backslash and is not C, R, A1-style, or R1C1-style.',
 				'Run ascend check first on imported workbooks with duplicate table names or ids before renaming.',
 				...common,
 			]

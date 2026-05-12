@@ -222,6 +222,7 @@ describe('operation schema agent DX', () => {
 		expect(append?.recoveryActions.join('\n')).toContain('totals-row appends')
 		expect(rename?.description).toContain('workbook-unique')
 		expect(rename?.recoveryActions.join('\n')).toContain('case-insensitively')
+		expect(rename?.recoveryActions.join('\n')).toContain('R1C1-style')
 		expect(resize?.description).toContain('dropping referenced fields')
 		expect(resize?.schema.properties.table?.description).toContain('Workbook-unique table name')
 	})

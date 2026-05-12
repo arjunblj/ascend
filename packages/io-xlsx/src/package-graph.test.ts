@@ -131,4 +131,54 @@ describe('XLSX package graph', () => {
 			preservationPolicy: 'preserve-exact',
 		})
 	})
+
+	test('classifies vendor security and orphan worksheet sidecar parts without preservedOther fallback', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="xen" ContentType="application/octet-stream"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+  <Relationship Id="rDellEncryptedDoc" Type="http://schemas.dell.com/ddp/2016/relationships/xenFile" Target="ddp/ddpfile.xen"/>
+  <Relationship Id="rDellMetadataFile" Type="http://schemas.dell.com/ddp/2016/relationships/metadataFile" Target="docProps/metadata.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': '<workbook/>',
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/worksheets/sheet1.xml': '<worksheet/>',
+			'xl/worksheets/sheet1_formatted.xml': '<worksheet/>',
+			'ddp/ddpfile.xen': 'opaque-vendor-security',
+			'docProps/metadata.xml': '<items/>',
+		})
+
+		const graph = inspectXlsxPackageGraph(bytes)
+		expect(graph.parts.find((part) => part.path === 'ddp/ddpfile.xen')).toMatchObject({
+			ownerScope: 'security',
+			sourceRelationshipId: 'rDellEncryptedDoc',
+			featureFamily: 'preservedVendorSecurity',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.find((part) => part.path === 'docProps/metadata.xml')).toMatchObject({
+			ownerScope: 'security',
+			sourceRelationshipId: 'rDellMetadataFile',
+			featureFamily: 'preservedVendorSecurity',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(
+			graph.parts.find((part) => part.path === 'xl/worksheets/sheet1_formatted.xml'),
+		).toMatchObject({
+			ownerScope: 'unknown',
+			featureFamily: 'preservedWorksheetSidecar',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.some((part) => part.featureFamily === 'preservedOther')).toBe(false)
+	})
 })

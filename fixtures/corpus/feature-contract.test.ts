@@ -171,6 +171,7 @@ const VENDORED_CONTRACT_FIXTURES: readonly {
 			'picture.xlsx',
 			'vba.xlsm',
 			'table-multiple.xlsx',
+			'non_monotonic_si.xlsx',
 		],
 	},
 	{
@@ -205,6 +206,7 @@ const VENDORED_CONTRACT_FIXTURES: readonly {
 			'Sparklines.xlsx',
 			'TableStyleTest.xlsx',
 			'activex_checkbox.xlsx',
+			'customxml.xlsx',
 			'textbox-hyperlink.xlsx',
 			'textLengthDataValidity.xlsx',
 			'universal-content-strict.xlsx',

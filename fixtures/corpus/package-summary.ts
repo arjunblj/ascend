@@ -30,7 +30,9 @@ export interface OoxmlPackageSummary {
 
 export function summarizeOoxmlPackage(bytes: Uint8Array): OoxmlPackageSummary {
 	const archive = extractZip(bytes)
-	const paths = [...archive.entries()].map((entry) => entry.path)
+	const paths = [...archive.entries()]
+		.map((entry) => entry.path)
+		.filter((path) => !path.endsWith('/'))
 	const contentTypes = archive.readText('[Content_Types].xml') ?? ''
 	return {
 		workbookContentType: readWorkbookContentType(contentTypes),

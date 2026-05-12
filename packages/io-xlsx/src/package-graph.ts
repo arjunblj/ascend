@@ -37,6 +37,7 @@ export type XlsxPackageOwnerScope =
 	| 'external-link'
 	| 'custom-xml'
 	| 'active-content'
+	| 'security'
 	| 'document-properties'
 	| 'metadata'
 	| 'unknown'
@@ -167,10 +168,12 @@ export function classifyPackageFeatureFamily(
 	const lowerRelType = relType.toLowerCase()
 	if (path === '[Content_Types].xml') return 'packageContentTypes'
 	if (path === '_rels/.rels' || path.endsWith('.rels')) return 'packageRelationships'
+	if (isVendorSecurityPart(lowerPath, lowerRelType)) return 'preservedVendorSecurity'
 	if (path.startsWith('docProps/')) return 'preservedDocumentProperties'
 	if (path === 'xl/workbook.xml') return 'workbook'
 	if (/(^|\/)sharedStrings\.xml$/i.test(path)) return 'sharedStrings'
 	if (/(^|\/)worksheets\/sheet\d+\.xml$/i.test(path)) return 'worksheet'
+	if (/^xl\/worksheets\/sheet\d+_[^/]+\.xml$/i.test(path)) return 'preservedWorksheetSidecar'
 	if (path.includes('/chartsheets/')) return 'preservedChartSheet'
 	if (path.includes('/macrosheets/')) return 'preservedMacroSheet'
 	if (/(^|\/)charts\/style\d+\.xml$/i.test(path)) return 'preservedChartStyle'
@@ -342,8 +345,11 @@ function classifyOwnerScope(
 ): XlsxPackageOwnerScope {
 	if (partPath === '[Content_Types].xml' || partPath === '_rels/.rels') return 'package'
 	if (partPath.endsWith('.rels')) return 'relationship-part'
-	if (partPath.startsWith('docProps/')) return 'document-properties'
 	const primary = pickPrimaryRelationship(incomingRelationships)
+	if (isVendorSecurityPart(partPath.toLowerCase(), primary?.type.toLowerCase() ?? '')) {
+		return 'security'
+	}
+	if (partPath.startsWith('docProps/')) return 'document-properties'
 	if (primary?.type === REL_OFFICE_DOC || partPath === 'xl/workbook.xml') return 'workbook'
 	if (primary?.type === REL_WORKSHEET) return 'worksheet'
 	if (primary?.type === REL_CHARTSHEET) return 'chartsheet'
@@ -387,6 +393,10 @@ function classifyRelationshipFeatureFamily(
 	return resolvedTarget
 		? classifyPackageFeatureFamily(resolvedTarget, '', relationship.type)
 		: classifyPackageFeatureFamily(relationship.target, '', relationship.type)
+}
+
+function isVendorSecurityPart(lowerPath: string, lowerRelType: string): boolean {
+	return lowerPath.startsWith('ddp/') || lowerRelType.includes('schemas.dell.com/ddp/')
 }
 
 function packageFeatureLossPolicy(featureFamily: string): XlsxPackageLossPolicy {

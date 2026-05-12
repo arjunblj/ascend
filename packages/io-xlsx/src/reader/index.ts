@@ -1518,6 +1518,12 @@ function preservedFeatureNote(feature: string): string | undefined {
 	if (feature === 'preservedCustomUi') {
 		return 'Office RibbonX custom UI parts are inventoried with callback metadata and preserved; callback execution is blocked and semantic editing is not yet supported.'
 	}
+	if (feature === 'preservedVendorSecurity') {
+		return 'Vendor security policy and encrypted sidecar parts are inventoried and preserved exactly; Ascend does not execute or decrypt vendor protection payloads.'
+	}
+	if (feature === 'preservedWorksheetSidecar') {
+		return 'Worksheet-like sidecar parts without workbook relationships are preserved exactly but not modeled as active sheets.'
+	}
 	return undefined
 }
 

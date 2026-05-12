@@ -461,6 +461,30 @@ describe('SparseGrid', () => {
 		expect(clone.get(2, 0)).toBeUndefined()
 	})
 
+	test('copy-on-write: row insert on clone isolates shifted mutable values', () => {
+		const grid = new SparseGrid()
+		grid.set(
+			2,
+			0,
+			makeCell({
+				kind: 'array',
+				rows: [[numberValue(1) as ScalarCellValue]],
+			}),
+		)
+
+		const clone = grid.clone()
+		clone.insertRows(1, 1)
+		const shiftedValue = clone.get(3, 0)?.value
+		expect(shiftedValue?.kind).toBe('array')
+		if (!shiftedValue || shiftedValue.kind !== 'array') return
+
+		;(shiftedValue.rows[0] as ScalarCellValue[])[0] = numberValue(99) as ScalarCellValue
+		const originalValue = grid.get(2, 0)?.value
+		expect(originalValue?.kind).toBe('array')
+		if (!originalValue || originalValue.kind !== 'array') return
+		expect(originalValue.rows[0]?.[0]).toEqual(numberValue(1) as ScalarCellValue)
+	})
+
 	test('copy-on-write: mutating original after clone does not affect clone', () => {
 		const grid = new SparseGrid()
 		grid.set(0, 0, makeCell(numberValue(1)))

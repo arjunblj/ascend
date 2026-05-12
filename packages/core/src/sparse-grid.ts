@@ -1582,7 +1582,7 @@ export class SparseGrid {
 			this._shiftChunkRows(atChunkRow, countChunks)
 			return
 		}
-		this._rebuildAfterShift((row, col) => ({ row: row >= at ? row + count : row, col }), true)
+		this._rebuildAfterRowInsert(at, count)
 	}
 
 	deleteRows(at: number, count: number): void {
@@ -1596,10 +1596,7 @@ export class SparseGrid {
 			return
 		}
 		const deleteEnd = at + count
-		this._rebuildAfterShift((row, col) => {
-			if (row >= at && row < deleteEnd) return null
-			return { row: row >= deleteEnd ? row - count : row, col }
-		}, true)
+		this._rebuildAfterRowDelete(at, deleteEnd, count)
 	}
 
 	insertCols(at: number, count: number): void {
@@ -1612,7 +1609,7 @@ export class SparseGrid {
 			this._shiftChunkCols(atChunkCol, countChunks)
 			return
 		}
-		this._rebuildAfterShift((row, col) => ({ row, col: col >= at ? col + count : col }), true)
+		this._rebuildAfterColInsert(at, count)
 	}
 
 	deleteCols(at: number, count: number): void {
@@ -1626,10 +1623,7 @@ export class SparseGrid {
 			return
 		}
 		const deleteEnd = at + count
-		this._rebuildAfterShift((row, col) => {
-			if (col >= at && col < deleteEnd) return null
-			return { row, col: col >= deleteEnd ? col - count : col }
-		}, true)
+		this._rebuildAfterColDelete(at, deleteEnd, count)
 	}
 
 	clone(): SparseGrid {
@@ -1912,25 +1906,82 @@ export class SparseGrid {
 		this._boundsDirty = true
 	}
 
-	private _rebuildAfterShift(
-		mapCell: (row: number, col: number) => { row: number; col: number } | null,
-		active: boolean,
-	): void {
-		if (!active || this._cellCount === 0) return
+	private _rebuildAfterRowInsert(at: number, count: number): void {
 		const next = new SparseGrid()
 		next.stringTable = this.stringTable
-		for (const [row, col, cell] of this.iterate()) {
-			const mapped = mapCell(row, col)
-			if (!mapped) continue
-			next.setResolved(
-				mapped.row,
-				mapped.col,
-				cloneCellValue(cell.value),
-				cell.formula,
-				cell.styleId,
-				cell.formulaInfo,
-			)
+		next._expectedDensity = this._expectedDensity
+		this._forEachSlot((row, col, slot) => {
+			next._setShiftedSlot(row >= at ? row + count : row, col, slot)
+		})
+		this._replaceWithRebuilt(next)
+	}
+
+	private _rebuildAfterRowDelete(at: number, deleteEnd: number, count: number): void {
+		const next = new SparseGrid()
+		next.stringTable = this.stringTable
+		next._expectedDensity = this._expectedDensity
+		this._forEachSlot((row, col, slot) => {
+			if (row >= at && row < deleteEnd) return
+			next._setShiftedSlot(row >= deleteEnd ? row - count : row, col, slot)
+		})
+		this._replaceWithRebuilt(next)
+	}
+
+	private _rebuildAfterColInsert(at: number, count: number): void {
+		const next = new SparseGrid()
+		next.stringTable = this.stringTable
+		next._expectedDensity = this._expectedDensity
+		this._forEachSlot((row, col, slot) => {
+			next._setShiftedSlot(row, col >= at ? col + count : col, slot)
+		})
+		this._replaceWithRebuilt(next)
+	}
+
+	private _rebuildAfterColDelete(at: number, deleteEnd: number, count: number): void {
+		const next = new SparseGrid()
+		next.stringTable = this.stringTable
+		next._expectedDensity = this._expectedDensity
+		this._forEachSlot((row, col, slot) => {
+			if (col >= at && col < deleteEnd) return
+			next._setShiftedSlot(row, col >= deleteEnd ? col - count : col, slot)
+		})
+		this._replaceWithRebuilt(next)
+	}
+
+	private _forEachSlot(fn: (row: number, col: number, slot: StoredSlot) => void): void {
+		for (const [chunkRow, cols] of this.chunkRows) {
+			const baseRow = chunkRow << CHUNK_BITS
+			for (const [chunkCol, chunk] of cols) {
+				const baseCol = chunkCol << CHUNK_BITS
+				for (let localRow = 0; localRow < CHUNK_SIZE; localRow++) {
+					const row = baseRow + localRow
+					chunk.forEachRow(localRow, 0, CHUNK_MASK, (localCol, slot) => {
+						fn(row, baseCol + localCol, slot)
+					})
+				}
+			}
 		}
+	}
+
+	private _setShiftedSlot(row: number, col: number, slot: StoredSlot): void {
+		const chunkRow = row >> CHUNK_BITS
+		const chunkCol = col >> CHUNK_BITS
+		const localIndex = ((row & CHUNK_MASK) << CHUNK_BITS) | (col & CHUNK_MASK)
+		let chunk = this._writableChunkDirect(chunkRow, chunkCol)
+		const cols = this._lastWriteCols as Map<number, GridChunk>
+		const nextChunk = chunk.setSlot(localIndex, slotForShiftTarget(slot, chunk))
+		if (nextChunk !== chunk) cols.set(chunkCol, nextChunk)
+		chunk = nextChunk
+		this._rememberWriteChunk(chunkRow, chunkCol, cols, chunk)
+		this._cellCount++
+		if (this._expectedDensity === 'auto') this._autoTotalCells++
+		if (slotHasFormula(slot)) this._formulaCellCount++
+		if (slot.formulaInfo !== undefined) this._formulaInfoCellCount++
+		this.updateSharedStringCounts(undefined, sharedStringKindFromSlot(slot))
+		this._trackBounds(row, col)
+	}
+
+	private _replaceWithRebuilt(next: SparseGrid): void {
 		this.chunkRows = next.chunkRows
 		this._clearWriteCache()
 		this._sortedChunkRows = null
@@ -1947,6 +1998,9 @@ export class SparseGrid {
 		this._maxCol = next._maxCol
 		this._boundsDirty = next._boundsDirty
 		this._shared = false
+		this._expectedDensity = next._expectedDensity
+		this._autoChunkCount = next._autoChunkCount
+		this._autoTotalCells = next._autoTotalCells
 	}
 
 	private invalidateChunkOrder(chunkRow?: number): void {
@@ -2031,6 +2085,23 @@ function cloneCellValue(value: CellValue): CellValue {
 	if (value.kind === 'array') return structuredClone(value)
 	if (value.kind === 'richText') return { kind: 'richText', runs: [...value.runs] }
 	return value
+}
+
+function cloneStoredSlotForShift(slot: StoredSlot): StoredSlot {
+	return {
+		tag: slot.tag,
+		styleId: slot.styleId,
+		formula: slot.formula,
+		formulaInfo: slot.formulaInfo,
+		numberValue: slot.numberValue,
+		stringId: slot.stringId,
+		heapValue: slot.heapValue ? cloneCellValue(slot.heapValue) : undefined,
+	}
+}
+
+function slotForShiftTarget(slot: StoredSlot, target: GridChunk): StoredSlot {
+	if (target instanceof DenseChunk && slot.heapValue === undefined) return slot
+	return cloneStoredSlotForShift(slot)
 }
 
 function compactResolvedCell(

@@ -832,10 +832,7 @@ function parseCanonicalPlainValueCellBytes(
 		bytes[refEnd + 4] === 62
 	) {
 		const valueStart = refEnd + 5
-		const parsedInt = parseCanonicalIntegerValueBytes(bytes, valueStart, bodyEnd)
-		if (!parsedInt) return -1
-		out.numberValue = parsedInt.value
-		return parsedInt.next
+		return parseCanonicalIntegerValueIntoOutBytes(bytes, valueStart, bodyEnd, out)
 	}
 	const inlineValueStart = parseCanonicalInlineStringValueStartBytes(bytes, refEnd, bodyEnd)
 	if (inlineValueStart === -1) return -1
@@ -916,12 +913,21 @@ function parseCanonicalValuesCellBytes(
 
 	const typed = resolveCanonicalTypedValueStartBytes(bytes, index, bodyEnd)
 	if (typed) {
-		const parsedInt = parseCanonicalIntegerValueBytes(bytes, typed.valueStart, bodyEnd)
-		if (parsedInt) {
-			if (typed.kind === 'sharedString') out.sharedStringIndex = parsedInt.value
-			else if (typed.kind === 'boolean') out.booleanRaw = parsedInt.value === 1 ? 1 : 0
-			else out.numberValue = parsedInt.value
-			return parsedInt.next
+		const parsedIntNext = parseCanonicalIntegerValueIntoOutBytes(
+			bytes,
+			typed.valueStart,
+			bodyEnd,
+			out,
+		)
+		if (parsedIntNext !== -1) {
+			if (typed.kind === 'sharedString') {
+				out.sharedStringIndex = out.numberValue ?? -1
+				out.numberValue = undefined
+			} else if (typed.kind === 'boolean') {
+				out.booleanRaw = out.numberValue === 1 ? 1 : 0
+				out.numberValue = undefined
+			}
+			return parsedIntNext
 		}
 		if (typed.kind !== 'number') return -1
 		const valueEnd = indexOfBytes(bytes, BYTES_VALUE_CELL_CLOSE, typed.valueStart, bodyEnd)
@@ -936,11 +942,8 @@ function parseCanonicalValuesCellBytes(
 	if (contentStart === -1) return -1
 	const valueStart = resolveCanonicalValueStartBytes(bytes, contentStart, bodyEnd)
 	if (valueStart === -1) return -1
-	const parsedInt = parseCanonicalIntegerValueBytes(bytes, valueStart, bodyEnd)
-	if (parsedInt) {
-		out.numberValue = parsedInt.value
-		return parsedInt.next
-	}
+	const parsedIntNext = parseCanonicalIntegerValueIntoOutBytes(bytes, valueStart, bodyEnd, out)
+	if (parsedIntNext !== -1) return parsedIntNext
 	const valueEnd = indexOfBytes(bytes, BYTES_VALUE_CELL_CLOSE, valueStart, bodyEnd)
 	if (valueEnd === -1) return -1
 	const value = parseSimpleXmlNumberBytes(bytes, valueStart, valueEnd)
@@ -4055,11 +4058,12 @@ function resolveCanonicalValueStartBytes(
 		: -1
 }
 
-function parseCanonicalIntegerValueBytes(
+function parseCanonicalIntegerValueIntoOutBytes(
 	bytes: Uint8Array,
 	start: number,
 	end: number,
-): { value: number; next: number } | undefined {
+	out: { numberValue: number | undefined },
+): number {
 	let cursor = start
 	let sign = 1
 	if (bytes[cursor] === 45) {
@@ -4074,8 +4078,9 @@ function parseCanonicalIntegerValueBytes(
 		value = value * 10 + ((code ?? 48) - 48)
 		cursor += 1
 	}
-	if (cursor === digitStart || !startsWithValueCellCloseBytes(bytes, cursor, end)) return undefined
-	return { value: sign * value, next: cursor + BYTES_VALUE_CELL_CLOSE.length }
+	if (cursor === digitStart || !startsWithValueCellCloseBytes(bytes, cursor, end)) return -1
+	out.numberValue = sign * value
+	return cursor + BYTES_VALUE_CELL_CLOSE.length
 }
 
 function startsWithValueCellCloseBytes(bytes: Uint8Array, start: number, end: number): boolean {

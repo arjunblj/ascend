@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { unzipSync } from 'fflate'
 import type { StyleId } from '../../packages/core/src/index.ts'
+import { applyOperation } from '../../packages/engine/src/index.ts'
 import {
 	auditXlsxPackageGraphSafeEditIntegrity,
 	inspectXlsxPackageGraph,
@@ -161,6 +162,60 @@ describe('vendored table package graph fidelity', () => {
 		expect(queryTableContentTypeOverrides(afterGraph)).toEqual(beforeQueryTableOverrides)
 		expectFeatureBytesPreserved(beforeGraph, sourceBytes, written.value, 'preservedQueryTable')
 	})
+
+	test('LibreOffice query table sidecar keeps package identity through table resize', () => {
+		const sourceBytes = readFileSync(
+			new URL('./libreoffice/TableEmptyHeaders.xlsx', import.meta.url),
+		)
+		const beforeGraph = inspectXlsxPackageGraph(sourceBytes)
+		const beforeTableParts = tablePartIdentities(beforeGraph)
+		const beforeQueryTableParts = queryTablePartIdentities(beforeGraph)
+		const beforeTableRelationships = tableRelationshipIdentities(beforeGraph)
+		const beforeTableOverrides = tableContentTypeOverrides(beforeGraph)
+		const beforeQueryTableOverrides = queryTableContentTypeOverrides(beforeGraph)
+
+		const read = readXlsx(sourceBytes)
+		expectOk(read)
+		const resized = applyOperation(read.value.workbook, {
+			op: 'resizeTable',
+			table: 'Bitcoin',
+			ref: 'A1:B17',
+		})
+		expectOk(resized)
+
+		const written = writeXlsx(read.value.workbook, read.value.capsules, {
+			dirtySheetNames: ['BTC'],
+		})
+		expectOk(written)
+		const writtenTableXml = decodeZipPart(written.value, 'xl/tables/table1.xml')
+		expect(writtenTableXml).toContain('ref="A1:B17"')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		const reopenedTable = reopened.value.workbook.sheets
+			.find((entry) => entry.name === 'BTC')
+			?.tables.find((entry) => entry.name === 'Bitcoin')
+		expect(reopenedTable).toMatchObject({
+			ref: { start: { row: 0, col: 0 }, end: { row: 16, col: 1 } },
+			autoFilter: { ref: 'A1:B17' },
+			tableStyleInfo: { name: 'TableStyleMedium7' },
+			queryTable: {
+				relationshipId: 'rId1',
+				partPath: 'xl/queryTables/queryTable1.xml',
+				target: '../queryTables/queryTable1.xml',
+			},
+		})
+		expect(reopenedTable?.columns.map((column) => column.queryTableFieldId)).toEqual([1, 2])
+
+		const afterGraph = inspectXlsxPackageGraph(written.value)
+		expectNoPackageGraphIssues(auditXlsxPackageGraphSafeEditIntegrity(beforeGraph, afterGraph))
+		expect(tablePartIdentities(afterGraph)).toEqual(beforeTableParts)
+		expect(queryTablePartIdentities(afterGraph)).toEqual(beforeQueryTableParts)
+		expect(tableRelationshipIdentities(afterGraph)).toEqual(beforeTableRelationships)
+		expect(tableContentTypeOverrides(afterGraph)).toEqual(beforeTableOverrides)
+		expect(queryTableContentTypeOverrides(afterGraph)).toEqual(beforeQueryTableOverrides)
+		expectFeatureBytesPreserved(beforeGraph, sourceBytes, written.value, 'preservedQueryTable')
+	})
 })
 
 function tablePartIdentities(graph: XlsxPackageGraph): readonly Record<string, unknown>[] {
@@ -286,6 +341,10 @@ function readZipPart(bytes: Uint8Array, path: string): Uint8Array {
 	expect(entry).toBeDefined()
 	if (!entry) throw new Error(`Missing ZIP part ${path}`)
 	return entry
+}
+
+function decodeZipPart(bytes: Uint8Array, path: string): string {
+	return new TextDecoder().decode(readZipPart(bytes, path))
 }
 
 function expectNoPackageGraphIssues(issues: readonly XlsxPackageGraphFidelityIssue[]): void {

@@ -224,7 +224,7 @@ function findDeletedTableColumnInSheetMetadata(
 		}
 	}
 	for (const format of sheet.x14ConditionalFormats) {
-		for (const formula of format.formulas) {
+		for (const formula of format.formulas ?? []) {
 			const match = findDeletedTableColumnInFormulaText(formula, deletedSets)
 			if (!match) continue
 			return deletedTableMetadataReference(

@@ -506,6 +506,49 @@ function checkTableIntegrity(wb: Workbook): CheckIssue[] {
 				})
 			}
 
+			const columnsByName = new Map<string, TableColumnIntegrityEntry>()
+			for (let columnIndex = 0; columnIndex < table.columns.length; columnIndex++) {
+				const column = table.columns[columnIndex]
+				if (!column) continue
+				const normalizedColumnName = column.name.toLowerCase()
+				const columnEntry: TableColumnIntegrityEntry = {
+					columnName: column.name,
+					columnIndex,
+					ref: table.hasHeaders
+						? toA1({ row: table.ref.start.row, col: table.ref.start.col + columnIndex })
+						: ref,
+				}
+				const existingColumn = columnsByName.get(normalizedColumnName)
+				if (existingColumn) {
+					issues.push({
+						rule: 'table-integrity',
+						severity: 'error',
+						message: `Table "${table.name}" has duplicate column name "${column.name}"`,
+						refs: table.hasHeaders
+							? [
+									`${sheet.name}!${ref}`,
+									`${sheet.name}!${existingColumn.ref}`,
+									`${sheet.name}!${columnEntry.ref}`,
+								]
+							: [`${sheet.name}!${ref}`],
+						suggestedFix:
+							'Rename one of the duplicate table columns before using structured references or table column edit operations.',
+						details: {
+							kind: 'duplicate-table-column-name',
+							tableName: table.name,
+							sheetName: sheet.name,
+							ref,
+							normalizedName: normalizedColumnName,
+							first: existingColumn,
+							duplicate: columnEntry,
+							partPath: table.partPath,
+						},
+					})
+				} else {
+					columnsByName.set(normalizedColumnName, columnEntry)
+				}
+			}
+
 			const entry: TableIntegrityEntry = {
 				tableName: table.name,
 				tableId: String(table.id),
@@ -760,6 +803,12 @@ interface TableIntegrityEntry {
 	readonly sheetName: string
 	readonly ref: string
 	readonly partPath?: string
+}
+
+interface TableColumnIntegrityEntry {
+	readonly columnName: string
+	readonly columnIndex: number
+	readonly ref: string
 }
 
 interface TableQueryTableIntegrityEntry {

@@ -320,10 +320,28 @@ export function listOperations(): readonly OperationSchema[] {
 			description: 'Clear values, formulas, styles, or all from a range',
 			requiredFields: ['sheet', 'range', 'what'],
 		},
-		{ op: 'insertRows', description: 'Insert rows', requiredFields: ['sheet', 'at', 'count'] },
-		{ op: 'deleteRows', description: 'Delete rows', requiredFields: ['sheet', 'at', 'count'] },
-		{ op: 'insertCols', description: 'Insert columns', requiredFields: ['sheet', 'at', 'count'] },
-		{ op: 'deleteCols', description: 'Delete columns', requiredFields: ['sheet', 'at', 'count'] },
+		{
+			op: 'insertRows',
+			description: 'Insert rows only when shifted table ranges remain non-overlapping',
+			requiredFields: ['sheet', 'at', 'count'],
+		},
+		{
+			op: 'deleteRows',
+			description:
+				'Delete rows without partially removing table header or totals rows unless deleting the full table span',
+			requiredFields: ['sheet', 'at', 'count'],
+		},
+		{
+			op: 'insertCols',
+			description: 'Insert columns only when shifted table ranges remain non-overlapping',
+			requiredFields: ['sheet', 'at', 'count'],
+		},
+		{
+			op: 'deleteCols',
+			description:
+				'Delete columns only after structured references to removed table fields are rewritten or removed',
+			requiredFields: ['sheet', 'at', 'count'],
+		},
 		{
 			op: 'addSheet',
 			description: 'Add a new sheet',
@@ -1193,10 +1211,29 @@ function operationRecoveryActions(op: string): readonly string[] {
 				...common,
 			]
 		case 'deleteSheet':
-		case 'deleteRows':
-		case 'deleteCols':
 		case 'deleteDefinedName':
 			return [
+				'Review plan.approvals and provide --approval only for intentional deletion.',
+				...common,
+			]
+		case 'insertRows':
+		case 'insertCols':
+			return [
+				'Run ascend check first on imported workbooks; existing overlapping table ranges must be repaired before structural row or column edits.',
+				'Confirm shifted table ranges remain non-overlapping after the insert.',
+				...common,
+			]
+		case 'deleteRows':
+			return [
+				'Run ascend check first on imported workbooks; existing overlapping table ranges must be repaired before structural row edits.',
+				'Do not delete only a table header or totals row; resize/delete the table explicitly, or delete the full table row span in one operation.',
+				'Review plan.approvals and provide --approval only for intentional deletion.',
+				...common,
+			]
+		case 'deleteCols':
+			return [
+				'Run ascend check first on imported workbooks; existing overlapping table ranges must be repaired before structural column edits.',
+				'Rewrite or remove structured references to table fields before deleting the columns that contain those fields.',
 				'Review plan.approvals and provide --approval only for intentional deletion.',
 				...common,
 			]

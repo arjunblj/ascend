@@ -27,6 +27,10 @@ function isValidCellRefToken(raw: string): boolean {
 	return row >= 1
 }
 
+function isStructuredRefEscapedChar(ch: string | undefined): boolean {
+	return ch === '[' || ch === ']' || ch === '#' || ch === "'" || ch === '@'
+}
+
 export function tokenize(formula: string): Token[] {
 	const tokens: Token[] = []
 	const len = formula.length
@@ -258,6 +262,10 @@ export function tokenize(formula: string): Token[] {
 			let depth = 1
 			while (pos < len && depth > 0) {
 				const bc = formula[pos]
+				if (bc === "'" && isStructuredRefEscapedChar(formula[pos + 1])) {
+					pos += 2
+					continue
+				}
 				if (bc === '[') depth++
 				else if (bc === ']') depth--
 				if (depth > 0) pos++

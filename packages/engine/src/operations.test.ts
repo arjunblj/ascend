@@ -142,6 +142,90 @@ const TABLE_FIELD_METADATA_BLOCKERS: readonly {
 	},
 ]
 
+const LOCAL_TABLE_FIELD_METADATA_BLOCKERS: readonly {
+	readonly label: string
+	readonly sourceKind: string
+	readonly sourceRef: string
+	readonly add: (sheet: Sheet) => void
+}[] = [
+	{
+		label: 'local data validation formula2',
+		sourceKind: 'data validation formula2',
+		sourceRef: 'Sheet1!B2:B4',
+		add: (sheet) =>
+			sheet.dataValidations.push({
+				sqref: 'B2:B4',
+				type: 'decimal',
+				formula1: '0',
+				formula2: 'MAX([@Rep])',
+			}),
+	},
+	{
+		label: 'local conditional format formula',
+		sourceKind: 'conditional format formula',
+		sourceRef: 'Sheet1!B2:B4',
+		add: (sheet) =>
+			sheet.conditionalFormats.push({
+				sqref: 'B2:B4',
+				rules: [{ type: 'expression', formulas: ['COUNTA([@Rep])>0'] }],
+			}),
+	},
+	{
+		label: 'local conditional format value object',
+		sourceKind: 'conditional format value object',
+		sourceRef: 'Sheet1!B2:B4',
+		add: (sheet) =>
+			sheet.conditionalFormats.push({
+				sqref: 'B2:B4',
+				rules: [
+					{
+						type: 'expression',
+						formulas: [],
+						colorScale: {
+							cfvo: [{ type: 'formula', value: 'COUNTA([@Rep])' }],
+							colors: [{ rgb: 'FFFF0000' }],
+						},
+					},
+				],
+			}),
+	},
+	{
+		label: 'local x14 data validation formula2',
+		sourceKind: 'x14 data validation formula2',
+		sourceRef: 'Sheet1!B2:B4',
+		add: (sheet) =>
+			sheet.x14DataValidations.push({
+				index: 0,
+				sqref: 'B2:B4',
+				type: 'decimal',
+				formula1: '0',
+				formula2: 'MAX([@Rep])',
+			}),
+	},
+	{
+		label: 'local x14 conditional format formula',
+		sourceKind: 'x14 conditional format formula',
+		sourceRef: 'Sheet1!B2:B4',
+		add: (sheet) =>
+			sheet.x14ConditionalFormats.push({
+				index: 0,
+				sqref: 'B2:B4',
+				formulas: ['COUNTA([@Rep])>0'],
+			}),
+	},
+	{
+		label: 'local x14 conditional format value object',
+		sourceKind: 'x14 conditional format value object',
+		sourceRef: 'Sheet1!B2:B4',
+		add: (sheet) =>
+			sheet.x14ConditionalFormats.push({
+				index: 0,
+				sqref: 'B2:B4',
+				dataBar: { cfvo: [{ type: 'formula', value: 'COUNTA([@Rep])' }] },
+			}),
+	},
+]
+
 describe('applyOperation', () => {
 	test('setCells sets values on existing sheet', () => {
 		const wb = setup()
@@ -2222,6 +2306,47 @@ describe('applyOperation', () => {
 		}
 	})
 
+	test('deleteCols rejects table field deletion across local worksheet metadata formula surfaces', () => {
+		for (const scenario of LOCAL_TABLE_FIELD_METADATA_BLOCKERS) {
+			const { wb, sheet } = setupSalesRepTable()
+			scenario.add(sheet)
+
+			const result = applyOperation(wb, { op: 'deleteCols', sheet: 'Sheet1', at: 1, count: 1 })
+
+			expectErr(result)
+			const diagnostic = `${scenario.label}: ${result.error.message}`
+			expect(diagnostic).toContain(`${scenario.sourceRef} ${scenario.sourceKind}`)
+			expect(diagnostic).toContain('Sales[Rep]')
+			expect(result.error.suggestedFix).toContain('Rewrite or remove structured references')
+			expect(sheet.tables[0]?.columns.map((column) => column.name)).toEqual([
+				'Region',
+				'Rep',
+				'Amount',
+			])
+		}
+	})
+
+	test('deleteCols rejects table field deletion when table-scoped worksheet metadata uses local structured refs', () => {
+		const { wb, sheet } = setupSalesRepTable()
+		sheet.dataValidations.push({
+			sqref: 'A2:C4',
+			type: 'list',
+			formula1: 'COUNTA([@Rep])',
+		})
+
+		const result = applyOperation(wb, { op: 'deleteCols', sheet: 'Sheet1', at: 1, count: 1 })
+
+		expectErr(result)
+		expect(result.error.message).toContain('Sales[Rep]')
+		expect(result.error.message).toContain('Sheet1!A2:C4 data validation formula1')
+		expect(sheet.tables[0]?.columns.map((column) => column.name)).toEqual([
+			'Region',
+			'Rep',
+			'Amount',
+		])
+		expect(sheet.dataValidations[0]?.formula1).toBe('COUNTA([@Rep])')
+	})
+
 	test('deleteCols rejects table field deletion when surviving calculated columns use local structured refs', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
@@ -3386,6 +3511,38 @@ describe('applyOperation', () => {
 			dataBar: { cfvo: [{ type: 'formula', value: 'SUM(Sales[Qty])' }] },
 			iconSet: { cfvo: [{ type: 'formula', value: 'SUM(Sales[Qty])' }] },
 		})
+		sheet.dataValidations.push({
+			sqref: 'A2:A3',
+			type: 'list',
+			formula1: '[@Qty]',
+		})
+		sheet.dataValidations.push({
+			sqref: 'H2:H3',
+			type: 'list',
+			formula1: '[@Qty]',
+		})
+		sheet.conditionalFormats.push({
+			sqref: 'A2:C3',
+			rules: [
+				{
+					type: 'expression',
+					formulas: ['[@Qty]>0'],
+					dataBar: { cfvo: [{ type: 'formula', value: '[@Qty]' }] },
+				},
+			],
+		})
+		sheet.x14DataValidations.push({
+			index: 1,
+			sqref: 'B2:B3',
+			type: 'list',
+			formula1: '[@Qty]',
+		})
+		sheet.x14ConditionalFormats.push({
+			index: 1,
+			sqref: 'C2:C3',
+			formulas: ['[@Qty]>0'],
+			dataBar: { cfvo: [{ type: 'formula', value: '[@Qty]' }] },
+		})
 
 		const result = applyOperation(wb, {
 			op: 'setTableColumn',
@@ -3417,6 +3574,14 @@ describe('applyOperation', () => {
 		expect(sheet.x14ConditionalFormats[0]?.formulas[0]).toBe('SUM(Sales[Units])>0')
 		expect(sheet.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('SUM(Sales[Units])')
 		expect(sheet.x14ConditionalFormats[0]?.iconSet?.cfvo[0]?.value).toBe('SUM(Sales[Units])')
+		expect(sheet.dataValidations[1]?.formula1).toBe('[@Units]')
+		expect(sheet.dataValidations[2]?.formula1).toBe('[@Qty]')
+		const localRule = sheet.conditionalFormats[1]?.rules[0]
+		expect(localRule?.formulas[0]).toBe('[@Units]>0')
+		expect(localRule?.dataBar?.cfvo[0]?.value).toBe('[@Units]')
+		expect(sheet.x14DataValidations[1]?.formula1).toBe('[@Units]')
+		expect(sheet.x14ConditionalFormats[1]?.formulas[0]).toBe('[@Units]>0')
+		expect(sheet.x14ConditionalFormats[1]?.dataBar?.cfvo[0]?.value).toBe('[@Units]')
 
 		const duplicate = applyOperation(wb, {
 			op: 'setTableColumn',
@@ -3425,6 +3590,52 @@ describe('applyOperation', () => {
 			newName: 'Price',
 		})
 		expectErr(duplicate)
+	})
+
+	test('setTableColumn rewrites table-scoped worksheet metadata local structured refs', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 2 } },
+			columns: [
+				{ id: 1, name: 'Qty' },
+				{ id: 2, name: 'Price' },
+				{ id: 3, name: 'Total' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+		sheet.dataValidations.push({
+			sqref: 'A2:C4',
+			type: 'list',
+			formula1: 'SUM([@Qty])',
+		})
+		sheet.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'A2:C4',
+			formulas: ['[@Qty]>0'],
+			dataBar: { cfvo: [{ type: 'formula', value: 'SUM([@Qty])' }] },
+		})
+		sheet.conditionalFormats.push({
+			sqref: 'E2:E4',
+			rules: [{ type: 'expression', formulas: ['[@Qty]>0'] }],
+		})
+
+		const result = applyOperation(wb, {
+			op: 'setTableColumn',
+			table: 'Sales',
+			column: 'Qty',
+			newName: 'Units',
+		})
+
+		expectOk(result)
+		expect(sheet.dataValidations[0]?.formula1).toBe('SUM([@Units])')
+		expect(sheet.x14ConditionalFormats[0]?.formulas[0]).toBe('[@Units]>0')
+		expect(sheet.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('SUM([@Units])')
+		expect(sheet.conditionalFormats[0]?.rules[0]?.formulas[0]).toBe('[@Qty]>0')
 	})
 
 	test('setTableColumn escapes renamed structured reference columns with Excel special characters', () => {
@@ -3905,6 +4116,30 @@ describe('applyOperation', () => {
 		}
 	})
 
+	test('resizeTable rejects dropped table fields across local worksheet metadata formula surfaces', () => {
+		for (const scenario of LOCAL_TABLE_FIELD_METADATA_BLOCKERS) {
+			const { wb, sheet } = setupSalesRepTable()
+			scenario.add(sheet)
+
+			const result = applyOperation(wb, { op: 'resizeTable', table: 'Sales', ref: 'A1:A4' })
+
+			expectErr(result)
+			const diagnostic = `${scenario.label}: ${result.error.message}`
+			expect(diagnostic).toContain(`${scenario.sourceRef} ${scenario.sourceKind}`)
+			expect(diagnostic).toContain('Sales[Rep]')
+			expect(result.error.suggestedFix).toContain('Rewrite or remove structured references')
+			expect(sheet.tables[0]?.ref).toEqual({
+				start: { row: 0, col: 0 },
+				end: { row: 3, col: 2 },
+			})
+			expect(sheet.tables[0]?.columns.map((column) => column.name)).toEqual([
+				'Region',
+				'Rep',
+				'Amount',
+			])
+		}
+	})
+
 	test('resizeTable rejects shifted ranges dropping referenced left-edge fields', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -3979,6 +4214,20 @@ describe('applyOperation', () => {
 		}
 
 		for (const scenario of TABLE_FIELD_METADATA_BLOCKERS) {
+			const { wb, sheet } = setupSalesRepTable()
+			scenario.add(sheet)
+
+			const result = applyOperation(wb, { op: 'deleteTable', table: 'Sales' })
+
+			expectErr(result)
+			const diagnostic = `${scenario.label}: ${result.error.message}`
+			expect(diagnostic).toContain(`${scenario.sourceRef} ${scenario.sourceKind}`)
+			expect(diagnostic).toContain('Sales[Rep]')
+			expect(result.error.suggestedFix).toContain('Rewrite or remove structured references')
+			expect(sheet.tables).toHaveLength(1)
+		}
+
+		for (const scenario of LOCAL_TABLE_FIELD_METADATA_BLOCKERS) {
 			const { wb, sheet } = setupSalesRepTable()
 			scenario.add(sheet)
 

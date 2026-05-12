@@ -189,6 +189,41 @@ describe('checker', () => {
 		).toEqual(['Sheet1!A1:B3', 'Sheet2!C5:D7'])
 	})
 
+	test('detects duplicate table column names case-insensitively', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: s.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 2 } },
+			columns: [{ name: 'Region' }, { name: 'Amount' }, { name: 'region' }],
+			hasHeaders: true,
+			hasTotals: false,
+			partPath: 'xl/tables/table1.xml',
+		})
+
+		const result = check(wb)
+		const issue = result.issues.find(
+			(i) => i.rule === 'table-integrity' && i.details?.kind === 'duplicate-table-column-name',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(issue?.message).toContain('Sales')
+		expect(issue?.refs).toEqual(['Sheet1!A1:C4', 'Sheet1!A1', 'Sheet1!C1'])
+		expect(issue?.suggestedFix).toContain('Rename one of the duplicate table columns')
+		expect(issue?.details).toEqual({
+			kind: 'duplicate-table-column-name',
+			tableName: 'Sales',
+			sheetName: 'Sheet1',
+			ref: 'A1:C4',
+			normalizedName: 'region',
+			first: { columnName: 'Region', columnIndex: 0, ref: 'A1' },
+			duplicate: { columnName: 'region', columnIndex: 2, ref: 'C1' },
+			partPath: 'xl/tables/table1.xml',
+		})
+	})
+
 	test('detects overlapping table ranges on the same worksheet', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

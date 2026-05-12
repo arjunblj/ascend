@@ -1,4 +1,5 @@
 import type { Cell, RangeRef, Sheet, Table, Workbook } from '@ascend/core'
+import { parseRange } from '@ascend/core'
 import type { FormulaCellRef, FormulaNode } from '@ascend/formulas'
 import { cachedParseFormula, printFormula } from '@ascend/formulas'
 import { shiftIndex } from './ref-shift.ts'
@@ -339,7 +340,7 @@ export function rewriteTableColumnInFormulas(
 		for (const [row, col, updated] of updates) {
 			sheet.cells.set(row, col, updated)
 		}
-		rewriteSheetMetadataFormulasForTableColumnRename(sheet, targetTable.name, oldColumn, newColumn)
+		rewriteSheetMetadataFormulasForTableColumnRename(sheet, targetTable, oldColumn, newColumn)
 	}
 }
 
@@ -1015,15 +1016,27 @@ export function rewriteSheetMetadataFormulasForTableRename(
 
 export function rewriteSheetMetadataFormulasForTableColumnRename(
 	sheet: Sheet,
-	tableName: string,
+	targetTable: Table,
 	oldColumn: string,
 	newColumn: string,
 ): void {
-	const rewrite = (formula: string | undefined): string | undefined =>
-		rewriteFormulaTextForTableColumnRename(formula, tableName, oldColumn, newColumn)
+	const tableName = targetTable.name
+	const rewriteForSqref = (sqref: string): FormulaTextRewriter => {
+		const includeLocalRefs =
+			sheet.id === targetTable.sheetId && sqrefIntersectsRange(sqref, targetTable.ref)
+		return (formula) =>
+			rewriteFormulaTextForTableColumnRename(
+				formula,
+				tableName,
+				oldColumn,
+				newColumn,
+				includeLocalRefs,
+			)
+	}
 	for (let i = 0; i < sheet.dataValidations.length; i++) {
 		const validation = sheet.dataValidations[i]
 		if (!validation) continue
+		const rewrite = rewriteForSqref(validation.sqref)
 		const formula1 = rewrite(validation.formula1)
 		const formula2 = rewrite(validation.formula2)
 		sheet.dataValidations[i] = {
@@ -1035,6 +1048,7 @@ export function rewriteSheetMetadataFormulasForTableColumnRename(
 	for (let i = 0; i < sheet.conditionalFormats.length; i++) {
 		const format = sheet.conditionalFormats[i]
 		if (!format) continue
+		const rewrite = rewriteForSqref(format.sqref)
 		sheet.conditionalFormats[i] = {
 			...format,
 			rules: format.rules.map((rule) => rewriteConditionalFormatRuleWith(rule, rewrite)),
@@ -1043,6 +1057,7 @@ export function rewriteSheetMetadataFormulasForTableColumnRename(
 	for (let i = 0; i < sheet.x14DataValidations.length; i++) {
 		const validation = sheet.x14DataValidations[i]
 		if (!validation) continue
+		const rewrite = rewriteForSqref(validation.sqref)
 		const formula1 = rewrite(validation.formula1)
 		const formula2 = rewrite(validation.formula2)
 		sheet.x14DataValidations[i] = {
@@ -1054,12 +1069,13 @@ export function rewriteSheetMetadataFormulasForTableColumnRename(
 	for (let i = 0; i < sheet.x14ConditionalFormats.length; i++) {
 		const format = sheet.x14ConditionalFormats[i]
 		if (!format) continue
+		const rewrite = rewriteForSqref(format.sqref)
 		sheet.x14ConditionalFormats[i] = rewriteX14ConditionalFormatWith(format, rewrite)
 	}
 	for (let i = 0; i < sheet.tables.length; i++) {
 		const table = sheet.tables[i]
 		if (!table) continue
-		const includeLocalRefs = table.name.toLowerCase() === tableName.toLowerCase()
+		const includeLocalRefs = table.id === targetTable.id
 		const columns = table.columns.map((column) => {
 			const formula = rewriteFormulaTextForTableColumnRename(
 				column.formula,
@@ -1693,6 +1709,30 @@ function rewriteTableColumn(
 		default:
 			return node
 	}
+}
+
+function sqrefIntersectsRange(sqref: string, range: RangeRef): boolean {
+	for (const part of sqref.split(/\s+/)) {
+		if (!part) continue
+		try {
+			if (rangesIntersect(parseRange(part), range)) return true
+		} catch {}
+	}
+	return false
+}
+
+function rangesIntersect(a: RangeRef, b: RangeRef): boolean {
+	const aStartRow = Math.min(a.start.row, a.end.row)
+	const aEndRow = Math.max(a.start.row, a.end.row)
+	const aStartCol = Math.min(a.start.col, a.end.col)
+	const aEndCol = Math.max(a.start.col, a.end.col)
+	const bStartRow = Math.min(b.start.row, b.end.row)
+	const bEndRow = Math.max(b.start.row, b.end.row)
+	const bStartCol = Math.min(b.start.col, b.end.col)
+	const bEndCol = Math.max(b.start.col, b.end.col)
+	return (
+		aStartRow <= bEndRow && aEndRow >= bStartRow && aStartCol <= bEndCol && aEndCol >= bStartCol
+	)
 }
 
 function cellWithinTable(table: Table, row: number, col: number): boolean {

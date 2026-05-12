@@ -56,13 +56,27 @@ function wholeColumnRangeNode(startRaw: string, endRaw: string): FormulaNode {
 	}
 }
 
+function isStructuredRefEscapedChar(ch: string | undefined): boolean {
+	return ch === '[' || ch === ']' || ch === '#' || ch === "'" || ch === '@'
+}
+
+function stripOuterStructuredRefBrackets(text: string): string {
+	return text.startsWith('[') && text.endsWith(']') ? text.slice(1, -1) : text
+}
+
+function hasOuterStructuredRefBrackets(text: string): boolean {
+	return text.startsWith('[') && text.endsWith(']')
+}
+
 function splitStructuredRefParts(content: string): string[] {
 	const parts: string[] = []
 	let start = 0
 	let depth = 0
 	for (let i = 0; i < content.length; i++) {
 		const ch = content[i]
-		if (ch === '[') {
+		if (ch === "'" && isStructuredRefEscapedChar(content[i + 1])) {
+			i++
+		} else if (ch === '[') {
 			depth++
 		} else if (ch === ']') {
 			depth--
@@ -73,6 +87,23 @@ function splitStructuredRefParts(content: string): string[] {
 	}
 	parts.push(content.slice(start))
 	return parts
+}
+
+function findStructuredRefTopLevelColon(content: string): number {
+	let depth = 0
+	for (let i = 0; i < content.length; i++) {
+		const ch = content[i]
+		if (ch === "'" && isStructuredRefEscapedChar(content[i + 1])) {
+			i++
+		} else if (ch === '[') {
+			depth++
+		} else if (ch === ']') {
+			depth--
+		} else if (ch === ':' && depth === 0) {
+			return i
+		}
+	}
+	return -1
 }
 
 function unescapeStructuredRefColumn(name: string): string {
@@ -547,13 +578,20 @@ class FormulaParser {
 		let endColumn: string | undefined
 
 		const setColumnSpec = (text: string): void => {
-			const range = /^\[([^\]]+)]\s*:\s*\[([^\]]+)]$/.exec(text)
-			if (range) {
-				column = unescapeStructuredRefColumn(range[1] ?? '')
-				endColumn = unescapeStructuredRefColumn(range[2] ?? '')
-				return
+			const rangeSeparator = findStructuredRefTopLevelColon(text)
+			if (rangeSeparator >= 0) {
+				const startColumn = text.slice(0, rangeSeparator).trim()
+				const endColumnText = text.slice(rangeSeparator + 1).trim()
+				if (
+					hasOuterStructuredRefBrackets(startColumn) &&
+					hasOuterStructuredRefBrackets(endColumnText)
+				) {
+					column = unescapeStructuredRefColumn(stripOuterStructuredRefBrackets(startColumn))
+					endColumn = unescapeStructuredRefColumn(stripOuterStructuredRefBrackets(endColumnText))
+					return
+				}
 			}
-			column = unescapeStructuredRefColumn(text.replace(/^\[|]$/g, ''))
+			column = unescapeStructuredRefColumn(stripOuterStructuredRefBrackets(text))
 		}
 
 		if (content.startsWith('@')) {
@@ -565,7 +603,7 @@ class FormulaParser {
 		} else if (content.startsWith('[')) {
 			const parts = splitStructuredRefParts(content)
 			for (const part of parts) {
-				const cleaned = part.replace(/^\[|]$/g, '')
+				const cleaned = stripOuterStructuredRefBrackets(part)
 				if (cleaned.startsWith('#')) {
 					specifiers.push(cleaned)
 				} else {

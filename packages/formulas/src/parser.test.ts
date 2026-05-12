@@ -1,8 +1,10 @@
 import { describe, expect, it, test } from 'bun:test'
 import type { FormulaNode } from './ast.ts'
+import { tokenize } from './lexer.ts'
 import { parseFormula, parseFormulaOrThrow } from './parser.ts'
 import { printFormula } from './printer.ts'
 import { extractRefs, rewriteRefs } from './refs.ts'
+import { TokenType } from './tokens.ts'
 
 function p(formula: string): FormulaNode {
 	const result = parseFormula(formula)
@@ -577,9 +579,40 @@ describe('printFormula', () => {
 		})
 	})
 
+	it('keeps escaped right brackets inside structured reference tokens', () => {
+		const tokens = tokenize("Sales[A']]")
+		expect(tokens.slice(0, -1).map((token) => [token.type, token.value])).toEqual([
+			[TokenType.Name, 'Sales'],
+			[TokenType.Name, "[A']]"],
+		])
+	})
+
+	it('unescapes structured reference right brackets', () => {
+		expect(p("Sales[A']]")).toMatchObject({
+			type: 'structuredRef',
+			table: 'Sales',
+			column: 'A]',
+		})
+		expect(p("[@A']]")).toMatchObject({
+			type: 'structuredRef',
+			table: '',
+			specifiers: ['@'],
+			column: 'A]',
+		})
+		expect(p("Sales[[A']]:[B']]]")).toMatchObject({
+			type: 'structuredRef',
+			table: 'Sales',
+			column: 'A]',
+			endColumn: 'B]',
+		})
+	})
+
 	it('prints escaped structured reference column special characters', () => {
 		expect(printFormula(p("BillingData[Check'#]"))).toBe("BillingData[Check'#]")
 		expect(printFormula(p("BillingData[@Check'@]"))).toBe("BillingData[@Check'@]")
+		expect(printFormula(p("Sales[A']]"))).toBe("Sales[A']]")
+		expect(printFormula(p("[@A']]"))).toBe("[@A']]")
+		expect(printFormula(p("Sales[[A']]:[B']]]"))).toBe("Sales[[A']]:[B']]]")
 		expect(
 			printFormula({
 				type: 'structuredRef',

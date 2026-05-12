@@ -213,6 +213,10 @@ describe('operation schema agent DX', () => {
 		const create = getOperationsSchema().find((entry) => entry.op === 'createTable')
 		const append = getOperationsSchema().find((entry) => entry.op === 'appendRows')
 		const deleteTable = getOperationsSchema().find((entry) => entry.op === 'deleteTable')
+		const insertRows = getOperationsSchema().find((entry) => entry.op === 'insertRows')
+		const deleteRows = getOperationsSchema().find((entry) => entry.op === 'deleteRows')
+		const insertCols = getOperationsSchema().find((entry) => entry.op === 'insertCols')
+		const deleteCols = getOperationsSchema().find((entry) => entry.op === 'deleteCols')
 		const rename = getOperationsSchema().find((entry) => entry.op === 'renameTable')
 		const resize = getOperationsSchema().find((entry) => entry.op === 'resizeTable')
 
@@ -221,6 +225,16 @@ describe('operation schema agent DX', () => {
 		expect(create?.recoveryActions.join('\n')).toContain('overlapping table ranges')
 		expect(append?.description).toContain('shifting another table')
 		expect(append?.recoveryActions.join('\n')).toContain('totals-row appends')
+		expect(insertRows?.description).toContain('non-overlapping')
+		expect(insertRows?.recoveryActions.join('\n')).toContain('shifted table ranges')
+		expect(deleteRows?.description).toContain('table header or totals rows')
+		expect(deleteRows?.recoveryActions.join('\n')).toContain('delete the full table row span')
+		expect(insertCols?.description).toContain('non-overlapping')
+		expect(insertCols?.recoveryActions.join('\n')).toContain('shifted table ranges')
+		expect(deleteCols?.description).toContain('structured references')
+		expect(deleteCols?.recoveryActions.join('\n')).toContain(
+			'structured references to table fields',
+		)
 		expect(deleteTable?.description).toContain('structured references')
 		expect(deleteTable?.recoveryActions.join('\n')).toContain('Run ascend check first')
 		expect(deleteTable?.recoveryActions.join('\n')).toContain(

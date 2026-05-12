@@ -158,8 +158,14 @@ export class ValueInternPool {
 				return value
 			}
 			case 'number': {
-				const cached = this.smallNumbers.get(value.value)
-				if (cached) return cached
+				const num = value.value
+				if (
+					Number.isInteger(num) &&
+					num >= SMALL_NUMBER_RANGE_START &&
+					num <= SMALL_NUMBER_RANGE_END
+				) {
+					return this.smallNumbers[num - SMALL_NUMBER_RANGE_START] ?? value
+				}
 				return value
 			}
 			case 'string': {
@@ -188,10 +194,10 @@ export class ValueInternPool {
 	}
 }
 
-function buildSmallNumberCache(): Map<number, CellValue> {
-	const cache = new Map<number, CellValue>()
+function buildSmallNumberCache(): readonly CellValue[] {
+	const cache: CellValue[] = []
 	for (let value = SMALL_NUMBER_RANGE_START; value <= SMALL_NUMBER_RANGE_END; value++) {
-		cache.set(value, numberValue(value))
+		cache[value - SMALL_NUMBER_RANGE_START] = numberValue(value)
 	}
 	return cache
 }

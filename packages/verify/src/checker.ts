@@ -1559,6 +1559,26 @@ function checkSlicerTimelinePackageGraphIntegrity(
 				),
 			)
 		}
+		for (const slicer of wb.slicers.filter((entry) => entry.cacheName === cache.name)) {
+			if (
+				!packageGraph.relationships.some(
+					(rel) =>
+						rel.sourcePartPath === cache.partPath &&
+						rel.resolvedTarget === slicer.partPath &&
+						isSlicerRelationshipType(rel.type),
+				)
+			) {
+				issues.push(
+					analyticalUiBindingIssue(
+						'slicer-integrity',
+						'slicer-cache-ui-relationship-binding-mismatch',
+						cache.partPath,
+						slicer.partPath,
+						graphRelationshipsByTarget,
+					),
+				)
+			}
+		}
 	}
 	for (const cache of wb.timelineCaches) {
 		if (!graphPartByPath.has(cache.partPath)) {
@@ -1586,6 +1606,44 @@ function checkSlicerTimelinePackageGraphIntegrity(
 					graphRelationshipsByTarget,
 				),
 			)
+		}
+		for (const timeline of wb.timelines.filter((entry) => entry.cacheName === cache.name)) {
+			if (
+				!packageGraph.relationships.some(
+					(rel) =>
+						rel.sourcePartPath === cache.partPath &&
+						rel.resolvedTarget === timeline.partPath &&
+						isTimelineRelationshipType(rel.type),
+				)
+			) {
+				issues.push(
+					analyticalUiBindingIssue(
+						'timeline-integrity',
+						'timeline-cache-ui-relationship-binding-mismatch',
+						cache.partPath,
+						timeline.partPath,
+						graphRelationshipsByTarget,
+					),
+				)
+			}
+			if (
+				!packageGraph.relationships.some(
+					(rel) =>
+						rel.sourcePartPath.startsWith('xl/worksheets/') &&
+						rel.resolvedTarget === timeline.partPath &&
+						isTimelineRelationshipType(rel.type),
+				)
+			) {
+				issues.push(
+					analyticalUiBindingIssue(
+						'timeline-integrity',
+						'timeline-worksheet-relationship-binding-mismatch',
+						cache.partPath,
+						timeline.partPath,
+						graphRelationshipsByTarget,
+					),
+				)
+			}
 		}
 	}
 	for (const part of packageGraph.parts) {
@@ -1731,6 +1789,31 @@ function workbookAnalyticalBindingIssue(
 	}
 }
 
+function analyticalUiBindingIssue(
+	rule: 'slicer-integrity' | 'timeline-integrity',
+	kind: string,
+	cachePartPath: string,
+	uiPartPath: string,
+	graphRelationshipsByTarget: ReadonlyMap<string, readonly VerifyPackageGraphRelationship[]>,
+): CheckIssue {
+	return {
+		rule,
+		severity: 'error',
+		message: `Analytical cache "${cachePartPath}" does not bind to UI part "${uiPartPath}" in the package graph`,
+		refs: [cachePartPath, uiPartPath],
+		suggestedFix:
+			'Repair the slicer/timeline cache-to-UI package relationship before editing analytical filters.',
+		details: {
+			kind,
+			cachePartPath,
+			uiPartPath,
+			incomingRelationships: (graphRelationshipsByTarget.get(uiPartPath) ?? []).map(
+				packageRelationshipDetails,
+			),
+		},
+	}
+}
+
 function orphanPivotPartIssue(
 	kind: string,
 	part: VerifyPackageGraphPart,
@@ -1796,8 +1879,16 @@ function isSlicerCacheRelationshipType(relationshipType: string | undefined): bo
 	return /\/relationships\/slicercache$/i.test(relationshipType ?? '')
 }
 
+function isSlicerRelationshipType(relationshipType: string | undefined): boolean {
+	return /\/relationships\/slicer$/i.test(relationshipType ?? '')
+}
+
 function isTimelineCacheRelationshipType(relationshipType: string | undefined): boolean {
 	return /\/relationships\/timelinecache$/i.test(relationshipType ?? '')
+}
+
+function isTimelineRelationshipType(relationshipType: string | undefined): boolean {
+	return /\/relationships\/timeline$/i.test(relationshipType ?? '')
 }
 
 function isPivotCacheDefinitionPart(part: VerifyPackageGraphPart): boolean {

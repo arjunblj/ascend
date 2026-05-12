@@ -720,6 +720,89 @@ describe('checker', () => {
 		expect(kinds).toContain('orphan-timeline-part')
 	})
 
+	test('detects slicer and timeline cache-to-UI package relationship loss', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+		wb.slicerCaches.push({
+			partPath: 'xl/slicerCaches/slicerCache1.xml',
+			name: 'Slicer_Region',
+			pivotTableNames: [],
+		})
+		wb.slicers.push({
+			partPath: 'xl/slicers/slicer1.xml',
+			name: 'Region',
+			cacheName: 'Slicer_Region',
+		})
+		wb.timelineCaches.push({
+			partPath: 'xl/timelineCaches/timelineCache1.xml',
+			name: 'Timeline_Date',
+			pivotTableNames: [],
+		})
+		wb.timelines.push({
+			partPath: 'xl/timelines/timeline1.xml',
+			name: 'Date',
+			cacheName: 'Timeline_Date',
+		})
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/slicerCaches/slicerCache1.xml',
+						featureFamily: 'preservedSlicer',
+						ownerScope: 'slicer',
+					},
+					{
+						path: 'xl/slicers/slicer1.xml',
+						featureFamily: 'preservedSlicer',
+						ownerScope: 'slicer',
+					},
+					{
+						path: 'xl/timelineCaches/timelineCache1.xml',
+						featureFamily: 'preservedTimeline',
+						ownerScope: 'timeline',
+					},
+					{
+						path: 'xl/timelines/timeline1.xml',
+						featureFamily: 'preservedTimeline',
+						ownerScope: 'timeline',
+					},
+				],
+				relationships: [
+					{
+						sourcePartPath: 'xl/workbook.xml',
+						relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+						id: 'rIdSlicerCache',
+						type: 'http://schemas.microsoft.com/office/2007/relationships/slicerCache',
+						rawTarget: 'slicerCaches/slicerCache1.xml',
+						resolvedTarget: 'xl/slicerCaches/slicerCache1.xml',
+					},
+					{
+						sourcePartPath: 'xl/workbook.xml',
+						relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+						id: 'rIdTimelineCache',
+						type: 'http://schemas.microsoft.com/office/2011/relationships/timelineCache',
+						rawTarget: 'timelineCaches/timelineCache1.xml',
+						resolvedTarget: 'xl/timelineCaches/timelineCache1.xml',
+					},
+				],
+			},
+		})
+
+		const slicerKinds = result.issues
+			.filter((issue) => issue.rule === 'slicer-integrity')
+			.map((issue) => issue.details?.kind)
+		const timelineKinds = result.issues
+			.filter((issue) => issue.rule === 'timeline-integrity')
+			.map((issue) => issue.details?.kind)
+		expect(result.passed).toBe(false)
+		expect(slicerKinds).toEqual(['slicer-cache-ui-relationship-binding-mismatch'])
+		expect(timelineKinds).toEqual([
+			'timeline-cache-ui-relationship-binding-mismatch',
+			'timeline-worksheet-relationship-binding-mismatch',
+		])
+	})
+
 	test('surfaces stale pivot output and unsupported headless refresh signals', () => {
 		const wb = createWorkbook()
 		wb.addSheet('Sheet1')

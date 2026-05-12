@@ -8,7 +8,11 @@ import type {
 import type { CalcSettings } from '@ascend/schema'
 import { DEFAULT_CALC_SETTINGS } from '@ascend/schema'
 import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
-import { decodeXmlText, normalizeMainSpreadsheetNamespacePrefix } from './xml-utils.ts'
+import {
+	decodeXmlText,
+	normalizeMainSpreadsheetNamespacePrefix,
+	parseXmlAttributes,
+} from './xml-utils.ts'
 
 export interface SheetEntry {
 	readonly name: string
@@ -36,7 +40,6 @@ export interface WorkbookInfo {
 	readonly pivotCacheEntries: readonly { cacheId: number; relId: string }[]
 }
 
-const ATTR_RE = /([A-Za-z_][\w:.-]*)="([^"]*)"/g
 const NS_PREFIX = String.raw`(?:[A-Za-z_][\w.-]*:)?`
 const WORKBOOK_RE = new RegExp(`<${NS_PREFIX}workbook[\\s>]`)
 const SHEET_RE = new RegExp(`<${NS_PREFIX}sheet\\b([^>]*)/?>`, 'g')
@@ -326,14 +329,7 @@ function collectAttributes(
 }
 
 function parseAttributes(rawAttrs: string): Map<string, string> {
-	const attrs = new Map<string, string>()
-	for (const attrMatch of rawAttrs.matchAll(ATTR_RE)) {
-		const key = attrMatch[1]
-		const value = attrMatch[2]
-		if (!key || value === undefined) continue
-		attrs.set(key, decodeXmlText(value))
-	}
-	return attrs
+	return parseXmlAttributes(rawAttrs)
 }
 
 function numberAttr(attrs: Map<string, string>, name: string): number | undefined {

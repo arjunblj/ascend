@@ -1,3 +1,5 @@
+import { parseXmlAttributes } from './xml-utils.ts'
+
 export interface ContentTypes {
 	readonly defaults: ReadonlyMap<string, string>
 	readonly overrides: ReadonlyMap<string, string>
@@ -5,7 +7,6 @@ export interface ContentTypes {
 
 const DEFAULT_RE = /<Default\b([^>]*)\/>/g
 const OVERRIDE_RE = /<Override\b([^>]*)\/>/g
-const ATTR_RE = /([A-Za-z_][\w:.-]*)="([^"]*)"/g
 
 export function parseContentTypes(xml: string): ContentTypes {
 	const defaults = new Map<string, string>()
@@ -32,13 +33,6 @@ function collectAttributes(
 	for (const match of xml.matchAll(pattern)) {
 		const rawAttrs = match[1]
 		if (!rawAttrs) continue
-		const attrs = new Map<string, string>()
-		for (const attrMatch of rawAttrs.matchAll(ATTR_RE)) {
-			const key = attrMatch[1]
-			const value = attrMatch[2]
-			if (!key || value === undefined) continue
-			attrs.set(key, value)
-		}
-		visit(attrs)
+		visit(parseXmlAttributes(rawAttrs))
 	}
 }

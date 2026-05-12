@@ -1,4 +1,5 @@
 const XML_ENTITY_RE = /&(?:lt|gt|quot|apos|amp|#x[0-9a-fA-F]+|#\d+);/g
+const XML_ATTR_RE = /([A-Za-z_][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g
 const XML_ENTITY_MAP: Record<string, string> = {
 	'&lt;': '<',
 	'&gt;': '>',
@@ -18,6 +19,18 @@ function resolveXmlEntity(m: string): string {
 export function decodeXmlText(text: string): string {
 	if (!text.includes('&')) return text
 	return text.replace(XML_ENTITY_RE, resolveXmlEntity)
+}
+
+export function parseXmlAttributes(rawAttrs: string): Map<string, string> {
+	const attrs = new Map<string, string>()
+	XML_ATTR_RE.lastIndex = 0
+	for (const match of rawAttrs.matchAll(XML_ATTR_RE)) {
+		const key = match[1]
+		const value = match[2] ?? match[3]
+		if (!key || value === undefined) continue
+		attrs.set(key, decodeXmlText(value))
+	}
+	return attrs
 }
 
 export function normalizeMainSpreadsheetNamespacePrefix(xml: string): string {

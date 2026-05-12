@@ -49,11 +49,11 @@ import {
 	findTagEnd,
 	isSelfClosingTag,
 	normalizeMainSpreadsheetNamespacePrefix,
+	parseXmlAttributes,
 } from './xml-utils.ts'
 
 const SMALL_NUMBER_RANGE_START = -128
 const SMALL_NUMBER_RANGE_END = 512
-const ATTR_RE = /([A-Za-z_][\w:.-]*)="([^"]*)"/g
 const BYTE_XML_DECODER = new TextDecoder('utf-8')
 const TEXT_NODE_RE =
 	/<([A-Za-z_][\w:.-]*)\b([^>]*)>([\s\S]*?)<\/\1>|<([A-Za-z_][\w:.-]*)\b([^>]*)\/>/g
@@ -189,8 +189,8 @@ function buildSmallNumberCache(): Map<number, CellValue> {
 const CHUNK_SIZE = 64
 
 function parseDimensionRef(xml: string): string | null {
-	const m = /<dimension\s+ref="([^"]+)"/.exec(xml)
-	return m?.[1] ?? null
+	const m = /<dimension\b([^>]*)/.exec(xml)
+	return m ? (rawAttr(m[1] ?? '', 'ref') ?? null) : null
 }
 
 function applyDensityHintFromDimension(sheet: Sheet, xml: string): void {
@@ -281,6 +281,7 @@ export function parseSheetValuesOnlyBytes(
 	if (hasUnsupportedValuesOnlyOuterTagsBytes(bytes, sheetDataLoc)) return null
 
 	const sheet = new Sheet(name, sheetId)
+	sheet.preservedDimensionRef = parseDimensionRefBytes(bytes)
 	applyDensityHintFromDimensionBytes(sheet, bytes)
 	return parseSheetDataBytes(bytes, sheetDataLoc, sheet, ctx) ? sheet : null
 }
@@ -345,17 +346,17 @@ function hasWorksheetTagInRange(xml: string, start: number, end: number, tagName
 
 function hasRowPresentationMetadata(rawAttrs: string): boolean {
 	return (
-		rawAttrs.includes('ht="') ||
-		rawAttrs.includes('spans="') ||
-		rawAttrs.includes('customHeight="') ||
-		rawAttrs.includes('s="') ||
-		rawAttrs.includes('customFormat="') ||
-		rawAttrs.includes('hidden="') ||
-		rawAttrs.includes('collapsed="') ||
-		rawAttrs.includes('outlineLevel="') ||
-		rawAttrs.includes('thickTop="') ||
-		rawAttrs.includes('thickBot="') ||
-		rawAttrs.includes('x14ac:dyDescent="')
+		rawAttrValueStart(rawAttrs, 'ht') !== -1 ||
+		rawAttrValueStart(rawAttrs, 'spans') !== -1 ||
+		rawAttrValueStart(rawAttrs, 'customHeight') !== -1 ||
+		rawAttrValueStart(rawAttrs, 's') !== -1 ||
+		rawAttrValueStart(rawAttrs, 'customFormat') !== -1 ||
+		rawAttrValueStart(rawAttrs, 'hidden') !== -1 ||
+		rawAttrValueStart(rawAttrs, 'collapsed') !== -1 ||
+		rawAttrValueStart(rawAttrs, 'outlineLevel') !== -1 ||
+		rawAttrValueStart(rawAttrs, 'thickTop') !== -1 ||
+		rawAttrValueStart(rawAttrs, 'thickBot') !== -1 ||
+		rawAttrValueStart(rawAttrs, 'x14ac:dyDescent') !== -1
 	)
 }
 
@@ -381,6 +382,7 @@ const BYTE_COLON = 58
 const BYTE_QUESTION = 63
 const BYTE_BANG = 33
 const BYTE_QUOTE = 34
+const BYTE_APOS = 39
 const BYTE_AMP = 38
 const BYTE_SPACE = 32
 const BYTE_TAB = 9
@@ -1224,7 +1226,7 @@ function parseDirectValuesCell(
 	fallbackPosition: CellPosition,
 	out: { row: number; col: number },
 ): Cell | null | undefined {
-	if (rawAttrs.includes('cm="') || rawAttrs.includes('vm="')) return undefined
+	if (hasCellMetadataAttrs(rawAttrs)) return undefined
 	if (!resolveCellPositionInto(rawAttrs, fallbackPosition, out)) return undefined
 	const type = rawAttr(rawAttrs, 't')
 	const styleIdx = ctx.hasDateStyles && type !== 's' ? (rawNumAttr(rawAttrs, 's') ?? 0) : 0
@@ -1606,7 +1608,7 @@ function parseSimpleValuesNumberCell(
 	out: { row: number; col: number },
 ): boolean {
 	if (!ctx.valuesOnly || ctx.hasDateStyles) return false
-	if (rawAttrs.includes('cm="') || rawAttrs.includes('vm="')) return false
+	if (hasCellMetadataAttrs(rawAttrs)) return false
 	const typeStart = rawAttrValueStart(rawAttrs, 't')
 	if (typeStart !== -1 && !rawAttrEquals(rawAttrs, 't', 'n')) return false
 	let cursor = skipXmlWhitespace(xml, bodyStart, bodyEnd)
@@ -1919,9 +1921,10 @@ function resolveSimpleNumberCellOpen(
 		cursor = skipXmlWhitespace(xml, cursor, attrEnd)
 		if (xml.charCodeAt(cursor) !== 61) return false
 		cursor = skipXmlWhitespace(xml, cursor + 1, attrEnd)
-		if (xml.charCodeAt(cursor) !== 34) return false
+		const quote = xml.charCodeAt(cursor)
+		if (quote !== 34 && quote !== 39) return false
 		const valueStart = cursor + 1
-		const valueEnd = xml.indexOf('"', valueStart)
+		const valueEnd = xml.indexOf(String.fromCharCode(quote), valueStart)
 		if (valueEnd === -1 || valueEnd > attrEnd) return false
 		const nameLength = nameEnd - nameStart
 		if (nameLength === 1) {
@@ -1994,7 +1997,7 @@ function parseSimpleValuesSharedStringCell(
 	out: { row: number; col: number },
 ): boolean {
 	if (!ctx.valuesOnly || !rawAttrEquals(rawAttrs, 't', 's')) return false
-	if (rawAttrs.includes('cm="') || rawAttrs.includes('vm="')) return false
+	if (hasCellMetadataAttrs(rawAttrs)) return false
 	let cursor = skipXmlWhitespace(xml, bodyStart, bodyEnd)
 	if (!xml.startsWith('<v>', cursor)) return false
 	cursor += 3
@@ -2027,7 +2030,7 @@ function parseSimpleValuesPlainStringCell(
 	out: { row: number; col: number },
 ): boolean {
 	if (!ctx.valuesOnly || !rawAttrEquals(rawAttrs, 't', 'str')) return false
-	if (rawAttrs.includes('cm="') || rawAttrs.includes('vm="')) return false
+	if (hasCellMetadataAttrs(rawAttrs)) return false
 	let cursor = skipXmlWhitespace(xml, bodyStart, bodyEnd)
 	if (xml.startsWith('<f', cursor)) {
 		cursor = skipSimpleElement(xml, cursor, bodyEnd, 'f')
@@ -2059,7 +2062,7 @@ function parseSimpleValuesInlineStringCell(
 	out: { row: number; col: number },
 ): boolean {
 	if (!ctx.valuesOnly || !rawAttrEquals(rawAttrs, 't', 'inlineStr')) return false
-	if (rawAttrs.includes('cm="') || rawAttrs.includes('vm="')) return false
+	if (hasCellMetadataAttrs(rawAttrs)) return false
 	let cursor = skipXmlWhitespace(xml, bodyStart, bodyEnd)
 	if (xml.startsWith('<f', cursor)) {
 		cursor = skipSimpleElement(xml, cursor, bodyEnd, 'f')
@@ -2110,10 +2113,16 @@ function skipXmlWhitespace(xml: string, cursor: number, end: number): number {
 }
 
 function rawAttrEquals(rawAttrs: string, name: string, expected: string): boolean {
-	const valueStart = rawAttrValueStart(rawAttrs, name)
-	if (valueStart === -1) return false
-	const valueEnd = rawAttrs.indexOf('"', valueStart)
-	return valueEnd === valueStart + expected.length && rawAttrs.startsWith(expected, valueStart)
+	const range = rawAttrRange(rawAttrs, name)
+	return (
+		range !== undefined &&
+		range.end === range.start + expected.length &&
+		rawAttrs.startsWith(expected, range.start)
+	)
+}
+
+function hasCellMetadataAttrs(rawAttrs: string): boolean {
+	return rawAttrValueStart(rawAttrs, 'cm') !== -1 || rawAttrValueStart(rawAttrs, 'vm') !== -1
 }
 
 function resolveCellPositionInto(
@@ -2121,17 +2130,15 @@ function resolveCellPositionInto(
 	fallbackPosition: CellPosition,
 	out: { row: number; col: number },
 ): boolean {
-	const valueStart = rawAttrValueStart(rawAttrs, 'r')
-	if (valueStart === -1) {
+	const range = rawAttrRange(rawAttrs, 'r')
+	if (!range) {
 		out.row = fallbackPosition.row
 		out.col = fallbackPosition.col
 		return true
 	}
-	const valueEnd = rawAttrs.indexOf('"', valueStart)
-	if (valueEnd === -1) return false
-	let index = valueStart
+	let index = range.start
 	let col = 0
-	while (index < valueEnd) {
+	while (index < range.end) {
 		const code = rawAttrs.charCodeAt(index)
 		if (code >= 48 && code <= 57) break
 		if (code >= 65 && code <= 90) {
@@ -2143,9 +2150,9 @@ function resolveCellPositionInto(
 		}
 		index += 1
 	}
-	if (index === valueStart || index >= valueEnd) return false
+	if (index === range.start || index >= range.end) return false
 	let row = 0
-	while (index < valueEnd) {
+	while (index < range.end) {
 		const code = rawAttrs.charCodeAt(index)
 		if (code < 48 || code > 57) return false
 		row = row * 10 + (code - 48)
@@ -2200,11 +2207,7 @@ function locateSheetDataBytes(bytes: Uint8Array): SheetDataLocation | null {
 }
 
 function applyDensityHintFromDimensionBytes(sheet: Sheet, bytes: Uint8Array): void {
-	const open = indexOfElementOpenBytes(bytes, BYTES_DIMENSION_OPEN, 0, bytes.length)
-	if (open === -1) return
-	const tagEnd = findTagEndBytes(bytes, open)
-	if (tagEnd === -1) return
-	const ref = rawAttrDecodedBytes(bytes, open + BYTES_DIMENSION_OPEN.length, tagEnd, 'ref')
+	const ref = parseDimensionRefBytes(bytes)
 	if (!ref) return
 	try {
 		const range = parseRange(ref)
@@ -2220,6 +2223,15 @@ function applyDensityHintFromDimensionBytes(sheet: Sheet, bytes: Uint8Array): vo
 	} catch {
 		// Match the string parser: invalid dimension refs are only a skipped density hint.
 	}
+}
+
+function parseDimensionRefBytes(bytes: Uint8Array): string | null {
+	const open = indexOfElementOpenBytes(bytes, BYTES_DIMENSION_OPEN, 0, bytes.length)
+	if (open === -1) return null
+	const tagEnd = findTagEndBytes(bytes, open)
+	if (tagEnd === -1) return null
+	const ref = rawAttrDecodedBytes(bytes, open + BYTES_DIMENSION_OPEN.length, tagEnd, 'ref')
+	return ref ?? null
 }
 
 function hasPrefixedElementNameBytes(bytes: Uint8Array): boolean {
@@ -2325,24 +2337,25 @@ function buildInlineRunNode(runInnerXml: string): XmlNode {
 	const rPrNode = extractTextNode(runInnerXml, 'rPr')
 	if (!rPrNode?.text) return result
 	const rPr: XmlNode = {}
-	if (runInnerXml.includes('<b')) rPr.b = {}
-	if (runInnerXml.includes('<i')) rPr.i = {}
-	if (runInnerXml.includes('<u')) rPr.u = {}
-	if (runInnerXml.includes('<strike')) rPr.strike = {}
-	const rFont = extractTextNode(runInnerXml, 'rFont') ?? extractTextNode(runInnerXml, 'font')
+	const formattingXml = rPrNode.text
+	if (formattingXml.includes('<b')) rPr.b = {}
+	if (formattingXml.includes('<i')) rPr.i = {}
+	if (formattingXml.includes('<u')) rPr.u = {}
+	if (formattingXml.includes('<strike')) rPr.strike = {}
+	const rFont = extractTextNode(formattingXml, 'rFont') ?? extractTextNode(formattingXml, 'font')
 	if (rFont?.attrs) {
-		const valMatch = /val="([^"]*)"/.exec(rFont.attrs)
-		if (valMatch) rPr.rFont = { '@_val': valMatch[1] }
+		const val = rawAttr(rFont.attrs, 'val')
+		if (val !== undefined) rPr.rFont = { '@_val': val }
 	}
-	const sz = extractTextNode(runInnerXml, 'sz')
+	const sz = extractTextNode(formattingXml, 'sz')
 	if (sz?.attrs) {
-		const valMatch = /val="([^"]*)"/.exec(sz.attrs)
-		if (valMatch) rPr.sz = { '@_val': Number(valMatch[1]) }
+		const val = rawAttr(sz.attrs, 'val')
+		if (val !== undefined) rPr.sz = { '@_val': Number(val) }
 	}
-	const color = extractTextNode(runInnerXml, 'color')
+	const color = extractTextNode(formattingXml, 'color')
 	if (color?.attrs) {
-		const rgbMatch = /rgb="([^"]*)"/.exec(color.attrs)
-		if (rgbMatch) rPr.color = { '@_rgb': rgbMatch[1] }
+		const rgb = rawAttr(color.attrs, 'rgb')
+		if (rgb !== undefined) rPr.color = { '@_rgb': rgb }
 	}
 	if (Object.keys(rPr).length > 0) result.rPr = rPr
 	return result
@@ -2350,72 +2363,77 @@ function buildInlineRunNode(runInnerXml: string): XmlNode {
 
 function parseRawAttributes(rawAttrs: string): XmlNode {
 	const node: XmlNode = {}
-	for (const match of rawAttrs.matchAll(ATTR_RE)) {
-		const key = match[1]
-		const value = match[2]
-		if (!key || value === undefined) continue
-		node[`@_${key}`] = decodeXmlText(value)
+	for (const [key, value] of parseXmlAttributes(rawAttrs)) {
+		node[`@_${key}`] = value
 	}
 	return node
 }
 
-const ATTR_NEEDLES: Record<string, string> = {
-	r: 'r="',
-	t: 't="',
-	s: 's="',
-	cm: 'cm="',
-	ref: 'ref="',
-	si: 'si="',
-}
-
 function rawAttr(rawAttrs: string, name: string): string | undefined {
-	const valueStart = rawAttrValueStart(rawAttrs, name)
-	if (valueStart === -1) return undefined
-	const valueEnd = rawAttrs.indexOf('"', valueStart)
-	if (valueEnd === -1) return undefined
-	return decodeXmlText(rawAttrs.slice(valueStart, valueEnd))
+	const range = rawAttrRange(rawAttrs, name)
+	return range ? decodeXmlText(rawAttrs.slice(range.start, range.end)) : undefined
 }
 
 function rawNumAttr(rawAttrs: string, name: string): number | undefined {
-	const valueStart = rawAttrValueStart(rawAttrs, name)
-	if (valueStart === -1) return undefined
-	const valueEnd = rawAttrs.indexOf('"', valueStart)
-	if (valueEnd === -1) return undefined
-	const parsed = Number(rawAttrs.slice(valueStart, valueEnd))
+	const range = rawAttrRange(rawAttrs, name)
+	if (!range) return undefined
+	const parsed = Number(rawAttrs.slice(range.start, range.end))
 	return Number.isNaN(parsed) ? undefined : parsed
 }
 
 function rawAttrValueStart(rawAttrs: string, name: string): number {
-	const needle = ATTR_NEEDLES[name] ?? `${name}="`
-	let cursor = 0
-	while (cursor < rawAttrs.length) {
-		const start = rawAttrs.indexOf(needle, cursor)
-		if (start === -1) return -1
-		if (start === 0 || isXmlAttrBoundaryCode(rawAttrs.charCodeAt(start - 1))) {
-			return start + needle.length
-		}
-		cursor = start + needle.length
-	}
-	return -1
+	return rawAttrRange(rawAttrs, name)?.start ?? -1
 }
 
 function rawAttrValueStartInRange(xml: string, start: number, end: number, name: string): number {
-	const needle = ATTR_NEEDLES[name] ?? `${name}="`
-	const last = end - needle.length
-	for (let index = start; index <= last; index++) {
-		if (
-			xml.charCodeAt(index) === needle.charCodeAt(0) &&
-			(index === start || isXmlAttrBoundaryCode(xml.charCodeAt(index - 1))) &&
-			xml.startsWith(needle, index)
-		) {
-			return index + needle.length
-		}
-	}
-	return -1
+	return rawAttrRangeInString(xml, start, end, name)?.start ?? -1
 }
 
-function isXmlAttrBoundaryCode(code: number): boolean {
-	return code === 9 || code === 10 || code === 13 || code === 32 || code === 60
+function rawAttrRange(rawAttrs: string, name: string): { start: number; end: number } | undefined {
+	return rawAttrRangeInString(rawAttrs, 0, rawAttrs.length, name)
+}
+
+function rawAttrRangeInString(
+	xml: string,
+	start: number,
+	end: number,
+	name: string,
+): { start: number; end: number } | undefined {
+	let cursor = start
+	while (cursor < end) {
+		cursor = skipXmlWhitespace(xml, cursor, end)
+		if (cursor >= end) break
+		const marker = xml.charCodeAt(cursor)
+		if (marker === 47 || marker === 62) break
+		const nameStart = cursor
+		while (cursor < end) {
+			const code = xml.charCodeAt(cursor)
+			if (code === 61 || code === 47 || code === 62 || isXmlWhitespaceCode(code)) break
+			cursor += 1
+		}
+		const nameEnd = cursor
+		if (nameEnd === nameStart) return undefined
+		cursor = skipXmlWhitespace(xml, cursor, end)
+		if (xml.charCodeAt(cursor) !== 61) return undefined
+		cursor = skipXmlWhitespace(xml, cursor + 1, end)
+		const quote = xml.charCodeAt(cursor)
+		if (quote !== 34 && quote !== 39) return undefined
+		const valueStart = cursor + 1
+		cursor = valueStart
+		while (cursor < end && xml.charCodeAt(cursor) !== quote) cursor += 1
+		if (cursor >= end) return undefined
+		if (attrNameEquals(xml, nameStart, nameEnd, name)) return { start: valueStart, end: cursor }
+		cursor += 1
+	}
+	return undefined
+}
+
+function attrNameEquals(xml: string, start: number, end: number, name: string): boolean {
+	return end - start === name.length && xml.startsWith(name, start)
+}
+
+function isXmlWhitespaceCode(code: number): boolean {
+	return code === 9 || code === 10 || code === 13 || code === 32
 }
 
 function rawPositiveIntAttrInRange(
@@ -2424,18 +2442,18 @@ function rawPositiveIntAttrInRange(
 	end: number,
 	name: string,
 ): number | undefined {
-	let cursor = rawAttrValueStartInRange(xml, start, end, name)
-	if (cursor === -1) return undefined
+	const range = rawAttrRangeInString(xml, start, end, name)
+	if (!range) return undefined
+	let cursor = range.start
 	let value = 0
 	const digitStart = cursor
-	while (cursor < end) {
+	while (cursor < range.end) {
 		const code = xml.charCodeAt(cursor)
-		if (code === 34) return cursor === digitStart ? undefined : value
 		if (code < 48 || code > 57) return undefined
 		value = value * 10 + (code - 48)
 		cursor += 1
 	}
-	return undefined
+	return cursor === digitStart ? undefined : value
 }
 
 function findTagEndBytes(bytes: Uint8Array, start: number): number {
@@ -2549,10 +2567,11 @@ function rawAttrRangeBytes(
 		cursor = skipXmlWhitespaceBytes(bytes, cursor, end)
 		if (bytes[cursor] !== 61) return undefined
 		cursor = skipXmlWhitespaceBytes(bytes, cursor + 1, end)
-		if (bytes[cursor] !== BYTE_QUOTE) return undefined
+		const quote = bytes[cursor]
+		if (quote !== BYTE_QUOTE && quote !== BYTE_APOS) return undefined
 		const valueStart = cursor + 1
 		cursor = valueStart
-		while (cursor < end && bytes[cursor] !== BYTE_QUOTE) cursor += 1
+		while (cursor < end && bytes[cursor] !== quote) cursor += 1
 		if (cursor >= end) return undefined
 		if (asciiEquals(bytes, nameStart, nameEnd, name)) return { start: valueStart, end: cursor }
 		cursor += 1
@@ -2836,10 +2855,11 @@ function resolveSimpleNumberCellOpenBytes(
 		cursor = skipXmlWhitespaceBytes(bytes, cursor, attrEnd)
 		if (bytes[cursor] !== 61) return false
 		cursor = skipXmlWhitespaceBytes(bytes, cursor + 1, attrEnd)
-		if (bytes[cursor] !== BYTE_QUOTE) return false
+		const quote = bytes[cursor]
+		if (quote !== BYTE_QUOTE && quote !== BYTE_APOS) return false
 		const valueStart = cursor + 1
 		cursor = valueStart
-		while (cursor < attrEnd && bytes[cursor] !== BYTE_QUOTE) cursor += 1
+		while (cursor < attrEnd && bytes[cursor] !== quote) cursor += 1
 		if (cursor >= attrEnd) return false
 		const nameLength = nameEnd - nameStart
 		if (nameLength === 1) {

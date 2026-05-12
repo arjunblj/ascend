@@ -1,3 +1,5 @@
+import { parseXmlAttributes } from './xml-utils.ts'
+
 export interface Relationship {
 	readonly id: string
 	readonly type: string
@@ -62,26 +64,17 @@ const EXTERNAL_LINK_PATH_REL_TYPES = new Set([
 ])
 
 const RELATIONSHIP_RE = /<Relationship\b([^>]*)\/>/g
-const ATTR_RE = /([A-Za-z_][\w:.-]*)="([^"]*)"/g
 
 export function parseRelationships(xml: string): Relationship[] {
 	const rels: Relationship[] = []
 	for (const match of xml.matchAll(RELATIONSHIP_RE)) {
 		const rawAttrs = match[1]
 		if (!rawAttrs) continue
-		let id: string | undefined
-		let type: string | undefined
-		let target: string | undefined
-		let targetMode: string | undefined
-		for (const attrMatch of rawAttrs.matchAll(ATTR_RE)) {
-			const key = attrMatch[1]
-			const value = attrMatch[2] ? decodeXmlAttr(attrMatch[2]) : undefined
-			if (!key || value === undefined) continue
-			if (key === 'Id') id = value
-			else if (key === 'Type') type = value
-			else if (key === 'Target') target = value
-			else if (key === 'TargetMode') targetMode = value
-		}
+		const attrs = parseXmlAttributes(rawAttrs)
+		const id = attrs.get('Id')
+		const type = attrs.get('Type')
+		const target = attrs.get('Target')
+		const targetMode = attrs.get('TargetMode')
 		if (id && type && target) {
 			rels.push({
 				id,
@@ -96,15 +89,6 @@ export function parseRelationships(xml: string): Relationship[] {
 
 export function isExternalLinkPathRelationshipType(type: string): boolean {
 	return EXTERNAL_LINK_PATH_REL_TYPES.has(normalizeRelationshipType(type))
-}
-
-function decodeXmlAttr(value: string): string {
-	return value
-		.replace(/&quot;/g, '"')
-		.replace(/&apos;/g, "'")
-		.replace(/&lt;/g, '<')
-		.replace(/&gt;/g, '>')
-		.replace(/&amp;/g, '&')
 }
 
 function normalizeRelationshipType(type: string): string {

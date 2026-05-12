@@ -19,4 +19,10 @@ describe('external link metadata', () => {
 	test('decodes XML entities in relationship ids', () => {
 		expect(parseExternalBookRelationshipId('<externalBook r:id="rId&amp;2"/>')).toBe('rId&2')
 	})
+
+	test('parses XML-legal single-quoted externalBook relationship ids', () => {
+		expect(parseExternalBookRelationshipId("<externalBook r:id='rId&amp;Single'/>")).toBe(
+			'rId&Single',
+		)
+	})
 })

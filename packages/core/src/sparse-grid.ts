@@ -975,9 +975,8 @@ export class SparseGrid {
 		const chunkRow = row >> CHUNK_BITS
 		const chunkCol = col >> CHUNK_BITS
 		const localIndex = ((row & CHUNK_MASK) << CHUNK_BITS) | (col & CHUNK_MASK)
-		const writable = this._writableChunk(chunkRow, chunkCol)
-		const cols = writable.cols
-		let chunk = writable.chunk
+		let chunk = this._writableChunkDirect(chunkRow, chunkCol)
+		const cols = this._lastWriteCols as Map<number, GridChunk>
 		chunk = this.ensureChunkWritable(chunkRow, chunkCol, cols, chunk)
 		const existed = chunk.has(localIndex)
 		const oldSlot = chunk.getSlot(localIndex)
@@ -1018,9 +1017,8 @@ export class SparseGrid {
 		const chunkRow = row >> CHUNK_BITS
 		const chunkCol = col >> CHUNK_BITS
 		const localIndex = ((row & CHUNK_MASK) << CHUNK_BITS) | (col & CHUNK_MASK)
-		const writable = this._writableChunk(chunkRow, chunkCol)
-		const cols = writable.cols
-		let chunk = writable.chunk
+		let chunk = this._writableChunkDirect(chunkRow, chunkCol)
+		const cols = this._lastWriteCols as Map<number, GridChunk>
 		chunk = this.ensureChunkWritable(chunkRow, chunkCol, cols, chunk)
 		const existed = chunk.has(localIndex)
 		const oldSlot = chunk.getSlot(localIndex)
@@ -1055,9 +1053,8 @@ export class SparseGrid {
 		const chunkRow = row >> CHUNK_BITS
 		const chunkCol = col >> CHUNK_BITS
 		const localIndex = ((row & CHUNK_MASK) << CHUNK_BITS) | (col & CHUNK_MASK)
-		const writable = this._writableChunk(chunkRow, chunkCol)
-		const cols = writable.cols
-		let chunk = writable.chunk
+		let chunk = this._writableChunkDirect(chunkRow, chunkCol)
+		const cols = this._lastWriteCols as Map<number, GridChunk>
 		chunk = this.ensureChunkWritable(chunkRow, chunkCol, cols, chunk)
 		if (chunk instanceof DenseChunk) {
 			const write = chunk.writePlainString(localIndex, value, this.stringTable)
@@ -1116,9 +1113,8 @@ export class SparseGrid {
 		const chunkRow = row >> CHUNK_BITS
 		const chunkCol = col >> CHUNK_BITS
 		const localIndex = ((row & CHUNK_MASK) << CHUNK_BITS) | (col & CHUNK_MASK)
-		const writable = this._writableChunk(chunkRow, chunkCol)
-		const cols = writable.cols
-		let chunk = writable.chunk
+		let chunk = this._writableChunkDirect(chunkRow, chunkCol)
+		const cols = this._lastWriteCols as Map<number, GridChunk>
 		chunk = this.ensureChunkWritable(chunkRow, chunkCol, cols, chunk)
 		const existed = chunk.has(localIndex)
 		const oldSlot = chunk.getSlot(localIndex)
@@ -1146,9 +1142,8 @@ export class SparseGrid {
 		const chunkRow = row >> CHUNK_BITS
 		const chunkCol = col >> CHUNK_BITS
 		const localIndex = ((row & CHUNK_MASK) << CHUNK_BITS) | (col & CHUNK_MASK)
-		const writable = this._writableChunk(chunkRow, chunkCol)
-		const cols = writable.cols
-		let chunk = writable.chunk
+		let chunk = this._writableChunkDirect(chunkRow, chunkCol)
+		const cols = this._lastWriteCols as Map<number, GridChunk>
 		chunk = this.ensureChunkWritable(chunkRow, chunkCol, cols, chunk)
 		if (chunk instanceof DenseChunk) {
 			const write = chunk.writePlainNumber(localIndex, value)
@@ -1632,17 +1627,14 @@ export class SparseGrid {
 		return new SparseChunk()
 	}
 
-	private _writableChunk(
-		chunkRow: number,
-		chunkCol: number,
-	): { cols: Map<number, GridChunk>; chunk: GridChunk } {
+	private _writableChunkDirect(chunkRow: number, chunkCol: number): GridChunk {
 		if (
 			this._lastWriteChunkRow === chunkRow &&
 			this._lastWriteChunkCol === chunkCol &&
 			this._lastWriteCols !== null &&
 			this._lastWriteChunk !== null
 		) {
-			return { cols: this._lastWriteCols, chunk: this._lastWriteChunk }
+			return this._lastWriteChunk
 		}
 		let cols = this.chunkRows.get(chunkRow)
 		if (!cols) {
@@ -1657,7 +1649,7 @@ export class SparseGrid {
 			this.invalidateChunkOrder(chunkRow)
 		}
 		this._rememberWriteChunk(chunkRow, chunkCol, cols, chunk)
-		return { cols, chunk }
+		return chunk
 	}
 
 	private _rememberWriteChunk(

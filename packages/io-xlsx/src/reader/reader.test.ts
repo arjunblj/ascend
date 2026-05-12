@@ -930,6 +930,20 @@ describe('readXlsx', () => {
 		})
 	})
 
+	it('eager shared strings preserve plain text, entities, and xml:space fallbacks', () => {
+		const sharedStrings =
+			parseSharedStrings(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="3" uniqueCount="3">
+  <si><t>Alpha</t></si>
+  <si><t>Beta &amp; Gamma</t></si>
+  <si><t xml:space="preserve">  Delta  </t></si>
+</sst>`)
+
+		expect(sharedStrings.get(0)).toEqual({ kind: 'string', value: 'Alpha' })
+		expect(sharedStrings.get(1)).toEqual({ kind: 'string', value: 'Beta & Gamma' })
+		expect(sharedStrings.get(2)).toEqual({ kind: 'string', value: '  Delta  ' })
+	})
+
 	it('keeps lazy plain shared strings bounded when phonetic metadata follows text', () => {
 		const sharedStrings = parseSharedStrings(
 			`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

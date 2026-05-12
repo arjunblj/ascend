@@ -121,8 +121,8 @@ function createLazySharedStrings(
 			const fastText = parseSimplePlainSharedStringEntry(xml, start)
 			if (fastText !== undefined) {
 				plainTextResolved[index] = 1
-				plainTextEntries[index] = fastText
-				return fastText
+				plainTextEntries[index] = fastText.text
+				return fastText.text
 			}
 			const tagEnd = findTagEnd(xml, start)
 			if (tagEnd === -1) {
@@ -187,14 +187,17 @@ function createLazySharedStrings(
 	}
 }
 
-function parseSimplePlainSharedStringEntry(xml: string, start: number): string | undefined {
+function parseSimplePlainSharedStringEntry(
+	xml: string,
+	start: number,
+): { readonly text: string; readonly next: number } | undefined {
 	if (!xml.startsWith('<si><t>', start)) return undefined
 	const valueStart = start + 7
 	const valueEnd = xml.indexOf('</t>', valueStart)
 	if (valueEnd === -1) return undefined
 	if (!xml.startsWith('</si>', valueEnd + 4)) return undefined
 	const text = xml.slice(valueStart, valueEnd)
-	return text.includes('&') ? decodeXmlText(text) : text
+	return { text: text.includes('&') ? decodeXmlText(text) : text, next: valueEnd + 9 }
 }
 
 function parseSharedStringEntries(
@@ -206,6 +209,13 @@ function parseSharedStringEntries(
 	while (true) {
 		const open = xml.indexOf('<si', cursor)
 		if (open === -1) break
+		const fastPlain = parseSimplePlainSharedStringEntry(xml, open)
+		if (fastPlain !== undefined) {
+			const parsed = stringValue(fastPlain.text)
+			entries.push(normalize ? normalize(parsed) : parsed)
+			cursor = fastPlain.next
+			continue
+		}
 		const tagEnd = findTagEnd(xml, open)
 		if (tagEnd === -1) break
 		if (isSelfClosingTag(xml, open, tagEnd)) {

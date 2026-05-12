@@ -3566,6 +3566,7 @@ function checkThreadedCommentIntegrity(
 						suggestedFix:
 							'Inspect the threadedComments part before editing this thread; duplicate ids make replies ambiguous.',
 						details: {
+							kind: 'duplicate-threaded-comment-id',
 							partPath,
 							id: comment.id,
 							firstCommentIndex: existing.index,
@@ -3642,6 +3643,7 @@ function checkThreadedCommentIntegrity(
 					suggestedFix:
 						'Preserve or repair the threaded comment persons part before author-sensitive edits.',
 					details: {
+						kind: 'threaded-comment-unknown-person-id',
 						partPath,
 						commentIndex: index,
 						personId: comment.personId,
@@ -3701,6 +3703,7 @@ function checkThreadedCommentIntegrity(
 				suggestedFix:
 					'Inspect the threadedComments part before editing replies; the parent thread id is missing.',
 				details: {
+					kind: 'missing-threaded-comment-parent-id',
 					partPath,
 					commentIndex: index,
 					parentId: comment.parentId,
@@ -3907,6 +3910,7 @@ function checkLegacyCommentDrawingIntegrity(
 						suggestedFix:
 							'Repair the VML ClientData Row and Column before relying on comment layout edits.',
 						details: {
+							kind: 'legacy-comment-vml-target-drift',
 							ref,
 							expectedRow: cellRef.row,
 							expectedColumn: cellRef.col,
@@ -3924,6 +3928,7 @@ function checkLegacyCommentDrawingIntegrity(
 					refs: [sheetRef],
 					suggestedFix: 'Repair the comment reference before preserving or editing its VML layout.',
 					details: {
+						kind: 'legacy-comment-invalid-ref',
 						ref,
 						...(drawing.shapeId ? { shapeId: drawing.shapeId } : {}),
 					},
@@ -3955,6 +3960,7 @@ function checkLegacyCommentDrawingIntegrity(
 						refs: [`${sheet.name}!${existingRef}`, sheetRef],
 						suggestedFix: 'Assign distinct VML shape ids before editing comment drawing layout.',
 						details: {
+							kind: 'duplicate-legacy-comment-vml-shape-id',
 							shapeId: drawing.shapeId,
 							firstRef: existingRef,
 							duplicateRef: ref,
@@ -3989,6 +3995,7 @@ function checkLegacyCommentDrawingIntegrity(
 					refs: [sheetRef],
 					suggestedFix: 'Repair the VML Anchor tuple before relying on comment drawing placement.',
 					details: {
+						kind: 'legacy-comment-vml-anchor-invalid',
 						ref,
 						anchor: drawing.anchor,
 						...(drawing.shapeId ? { shapeId: drawing.shapeId } : {}),

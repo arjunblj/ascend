@@ -2484,6 +2484,7 @@ describe('checker', () => {
 		expect(issues[0]?.message).toContain('Duplicate threaded comment id')
 		expect(issues[0]?.refs).toEqual(['Sheet1!A1', 'Sheet1!A2'])
 		expect(issues[0]?.details).toEqual({
+			kind: 'duplicate-threaded-comment-id',
 			partPath: 'xl/threadedComments/threadedComment1.xml',
 			id: '{thread-1}',
 			firstCommentIndex: 0,
@@ -2510,6 +2511,7 @@ describe('checker', () => {
 		expect(issues[0]?.message).toContain('references missing parent id')
 		expect(issues[0]?.refs).toEqual(['Sheet1!C3'])
 		expect(issues[0]?.details).toMatchObject({
+			kind: 'missing-threaded-comment-parent-id',
 			partPath: 'xl/threadedComments/threadedComment1.xml',
 			commentIndex: 0,
 			id: '{reply-1}',
@@ -2533,6 +2535,7 @@ describe('checker', () => {
 		expect(issues).toHaveLength(1)
 		expect(issues[0]?.message).toContain('references unknown person id')
 		expect(issues[0]?.details).toMatchObject({
+			kind: 'threaded-comment-unknown-person-id',
 			partPath: 'xl/threadedComments/threadedComment1.xml',
 			commentIndex: 0,
 			id: '{thread-1}',
@@ -2763,6 +2766,7 @@ describe('checker', () => {
 		expect(issues[0]?.message).toContain('points to row 4, column 3')
 		expect(issues[0]?.refs).toEqual(['Sheet1!B2'])
 		expect(issues[0]?.details).toEqual({
+			kind: 'legacy-comment-vml-target-drift',
 			ref: 'B2',
 			expectedRow: 1,
 			expectedColumn: 1,
@@ -2798,6 +2802,7 @@ describe('checker', () => {
 		expect(issues[0]?.message).toContain('Duplicate legacy comment VML shape id')
 		expect(issues[0]?.refs).toEqual(['Sheet1!A1', 'Sheet1!C3'])
 		expect(issues[0]?.details).toEqual({
+			kind: 'duplicate-legacy-comment-vml-shape-id',
 			shapeId: '_x0000_s1025',
 			firstRef: 'A1',
 			duplicateRef: 'C3',
@@ -2822,6 +2827,7 @@ describe('checker', () => {
 		expect(issues).toHaveLength(1)
 		expect(issues[0]?.message).toContain('not eight non-negative integers')
 		expect(issues[0]?.details).toEqual({
+			kind: 'legacy-comment-vml-anchor-invalid',
 			ref: 'A1',
 			anchor: [0, 0, 0, 0, 2, 0, -1, 0],
 			shapeId: '_x0000_s1025',

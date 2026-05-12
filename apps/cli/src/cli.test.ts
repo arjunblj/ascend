@@ -1135,10 +1135,7 @@ describe('ascend cli', () => {
 	test(
 		'check surfaces structured issue metadata for agent repair',
 		async () => {
-			const wb = AscendWorkbook.create()
-			wb.apply([{ op: 'renameSheet', sheet: 'Sheet1', newName: 'SummaryData' }])
-			wb.apply([{ op: 'setFormula', sheet: 'SummaryData', ref: 'A1', formula: '=Summary!B1' }])
-			await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+			await Bun.write(`${import.meta.dir}/${TEST_FILE}`, threadedCommentMissingPersonsWorkbook())
 
 			const json = await run('check', TEST_FILE, '--json')
 			expect(json.exitCode).toBe(2)
@@ -1146,15 +1143,17 @@ describe('ascend cli', () => {
 			expect(parsed.ok).toBe(true)
 			expect(parsed.data.valid).toBe(false)
 			const issue = parsed.data.issues.find(
-				(entry: { rule?: string }) => entry.rule === 'broken-refs',
+				(entry: { rule?: string }) => entry.rule === 'threaded-comment-integrity',
 			)
-			expect(issue.ref).toBe('SummaryData!A1')
-			expect(issue.refs).toEqual(['SummaryData!A1'])
-			expect(issue.suggestedFix).toContain('SummaryData')
+			expect(issue.refs).toEqual(['Sheet1!A1'])
+			expect(issue.details.kind).toBe('threaded-comment-unknown-person-id')
+			expect(issue.suggestedFix).toContain('persons part')
 
 			const pretty = await run('check', TEST_FILE)
 			expect(pretty.exitCode).toBe(2)
-			expect(pretty.stdout).toContain('broken-refs')
+			expect(pretty.stdout).toContain('threaded-comment-integrity')
+			expect(pretty.stdout).toContain('Kind')
+			expect(pretty.stdout).toContain('threaded-comment-unknown-person-id')
 			expect(pretty.stdout).toContain('Suggested Fix')
 		},
 		{ timeout: 15_000 },
@@ -1338,5 +1337,43 @@ function signedMacroWorkbook(): Uint8Array {
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
 		'xl/vbaProject.bin': 'macro-bytes',
 		'xl/vbaProjectSignature.bin': 'signature-bytes',
+	})
+}
+
+function threadedCommentMissingPersonsWorkbook(): Uint8Array {
+	return makeXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/threadedComments/threadedComment1.xml" ContentType="application/vnd.ms-excel.threadedcomments+xml"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+		'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdThreaded" Type="http://schemas.microsoft.com/office/2017/10/relationships/threadedComment" Target="../threadedComments/threadedComment1.xml"/>
+</Relationships>`,
+		'xl/threadedComments/threadedComment1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<ThreadedComments xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">
+  <threadedComment ref="A1" personId="0" id="tc1" dT="2024-01-01T00:00:00.000">
+    <text>Please review</text>
+  </threadedComment>
+</ThreadedComments>`,
 	})
 }

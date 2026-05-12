@@ -904,7 +904,7 @@ export function createServer(): McpServer {
 		},
 		async ({ file }) => {
 			try {
-				const wb = await WorkbookDocument.open(file, { mode: 'formula' })
+				const wb = await WorkbookDocument.open(file)
 				const result = wb.check()
 				if (!result.valid) {
 					const summary = `${result.issues.length} issue(s) found`

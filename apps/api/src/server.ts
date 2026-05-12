@@ -619,7 +619,7 @@ export function createApiFetch() {
 				const file = body ? requireString(body, 'file') : null
 				if (!file) return jsonFailure('Missing or invalid file', 400)
 				try {
-					const wb = await WorkbookDocument.open(file, { mode: 'formula' })
+					const wb = await WorkbookDocument.open(file)
 					return jsonSuccess(wb.check())
 				} catch (e) {
 					return handleError(e, file)

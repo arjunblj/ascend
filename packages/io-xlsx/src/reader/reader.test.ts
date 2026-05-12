@@ -3000,6 +3000,7 @@ describe('readXlsx', () => {
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
   xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"
   xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"
+  xmlns:x14ac="http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac"
   xmlns:xr="http://schemas.microsoft.com/office/spreadsheetml/2014/revision">
   <sheetData>
     <row r="1"><c r="A1"><v>1</v></c></row>
@@ -3009,6 +3010,7 @@ describe('readXlsx', () => {
       <x14:dataValidations count="1">
         <x14:dataValidation type="list" showInputMessage="1" showErrorMessage="1" xr:uid="{DV-UID}" customFlag="1">
           <x14:formula1><xm:f>Lookup!$E$2:$E$123</xm:f></x14:formula1>
+          <x14ac:metadata flag="1"><x14ac:item val="keep"/></x14ac:metadata>
           <xm:sqref>E8:E11</xm:sqref>
         </x14:dataValidation>
       </x14:dataValidations>
@@ -3044,6 +3046,7 @@ describe('readXlsx', () => {
 					'xr:uid': '{DV-UID}',
 					customFlag: '1',
 				},
+				preservedChildXml: ['<x14ac:metadata flag="1"><x14ac:item val="keep"/></x14ac:metadata>'],
 			},
 		])
 	})

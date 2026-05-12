@@ -4690,6 +4690,7 @@ type MutableDataValidation = {
 	formula1?: string
 	formula2?: string
 	preservedAttributes?: Readonly<Record<string, string>>
+	preservedChildXml?: readonly string[]
 }
 
 function parseX14DataValidations(xml: string, sheet: Sheet, pool?: ValueInternPool): void {
@@ -4712,8 +4713,14 @@ function parseX14DataValidations(xml: string, sheet: Sheet, pool?: ValueInternPo
 		if (formula1) parsed.formula1 = formula1
 		const formula2 = readX14DataValidationFormula(body, 'formula2')
 		if (formula2) parsed.formula2 = formula2
+		const preservedChildXml = x14DataValidationPreservedChildXml(body)
+		if (preservedChildXml.length > 0) parsed.preservedChildXml = preservedChildXml
 		pushX14DataValidationInfo(sheet, index, parsed, pool)
-		const { preservedAttributes: _preservedAttributes, ...validationForSheet } = parsed
+		const {
+			preservedAttributes: _preservedAttributes,
+			preservedChildXml: _preservedChildXml,
+			...validationForSheet
+		} = parsed
 		validationForSheet.source = 'x14'
 		pushDataValidation(sheet, validationForSheet, pool)
 		index += 1
@@ -4762,6 +4769,11 @@ function pushX14DataValidationInfo(
 					preservedAttributes: internStringRecord(parsed.preservedAttributes, pool),
 				}
 			: {}),
+		...(parsed.preservedChildXml
+			? {
+					preservedChildXml: internStringArray(parsed.preservedChildXml, pool),
+				}
+			: {}),
 	})
 }
 
@@ -4801,6 +4813,38 @@ function internStringRecord(
 		interned[pool.internString(name)] = pool.internString(value)
 	}
 	return interned
+}
+
+function x14DataValidationPreservedChildXml(xml: string): readonly string[] {
+	const preserved: string[] = []
+	for (const child of directChildXmlBlocks(xml)) {
+		const localName = xmlLocalName(child.name)
+		if (localName === 'formula1' || localName === 'formula2' || localName === 'sqref') continue
+		preserved.push(child.xml)
+	}
+	return preserved
+}
+
+function directChildXmlBlocks(
+	xml: string,
+): readonly { readonly name: string; readonly xml: string }[] {
+	const patternSource = String.raw`<((?:[A-Za-z_][\w.-]*:)?[A-Za-z_][\w.-]*)\b[^>]*(?:\/>|>[\s\S]*?<\/\1>)`
+	const pattern = new RegExp(patternSource, 'g')
+	const children: { name: string; xml: string }[] = []
+	for (const match of xml.matchAll(pattern)) {
+		const name = match[1]
+		if (!name) continue
+		children.push({ name, xml: match[0] })
+	}
+	return children
+}
+
+function xmlLocalName(name: string): string {
+	return name.includes(':') ? name.slice(name.indexOf(':') + 1) : name
+}
+
+function internStringArray(values: readonly string[], pool?: ValueInternPool): readonly string[] {
+	return pool ? values.map((value) => pool.internString(value)) : values
 }
 
 function parseDataValidationAttributes(node: XmlNode, sqref: string): MutableDataValidation {

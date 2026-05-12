@@ -5341,6 +5341,7 @@ describe('writeXlsx', () => {
 				'xr:uid': '{DV-UID}',
 				customFlag: '1',
 			},
+			preservedChildXml: ['<x14ac:metadata flag="1"><x14ac:item val="keep"/></x14ac:metadata>'],
 		})
 		sheet.x14ConditionalFormats.push({
 			index: 0,
@@ -5366,7 +5367,11 @@ describe('writeXlsx', () => {
 		expect(xml).toContain(
 			`xmlns:xr="http://schemas.microsoft.com/office/spreadsheetml/2014/revision"`,
 		)
+		expect(xml).toContain(
+			`xmlns:x14ac="http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac"`,
+		)
 		expect(xml).toContain('customFlag="1"')
+		expect(xml).toContain('<x14ac:metadata flag="1"><x14ac:item val="keep"/></x14ac:metadata>')
 		expect(xml).toContain('<xm:sqref>A2:B2</xm:sqref>')
 		expect(xml).toContain('<xm:sqref>C2:D2</xm:sqref>')
 		expect(xml).toContain('<xm:f>Data!A2&gt;0</xm:f>')
@@ -5384,6 +5389,7 @@ describe('writeXlsx', () => {
 				'xr:uid': '{DV-UID}',
 				customFlag: '1',
 			},
+			preservedChildXml: ['<x14ac:metadata flag="1"><x14ac:item val="keep"/></x14ac:metadata>'],
 		})
 		expect(roundTripped?.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('Data!A2')
 		expect(roundTripped?.x14ConditionalFormats[0]?.iconSet?.cfvo[0]?.value).toBe('Data!B2')

@@ -359,6 +359,7 @@ export interface SheetX14DataValidationInfo {
 	readonly formula1?: string
 	readonly formula2?: string
 	readonly preservedAttributes?: Readonly<Record<string, string>>
+	readonly preservedChildXml?: readonly string[]
 	readonly deleted?: boolean
 }
 
@@ -839,7 +840,15 @@ export function cloneX14ConditionalFormatInfo(
 export function cloneX14DataValidationInfo(
 	validation: SheetX14DataValidationInfo,
 ): SheetX14DataValidationInfo {
-	return { ...validation }
+	return {
+		...validation,
+		...(validation.preservedAttributes
+			? { preservedAttributes: { ...validation.preservedAttributes } }
+			: {}),
+		...(validation.preservedChildXml
+			? { preservedChildXml: [...validation.preservedChildXml] }
+			: {}),
+	}
 }
 
 export function createSheet(name: string, id?: SheetId): Sheet {

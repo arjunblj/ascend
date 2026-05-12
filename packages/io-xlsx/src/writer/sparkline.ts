@@ -299,6 +299,7 @@ function buildX14DataValidationXml(validation: SheetX14DataValidationInfo): stri
 		body.push(`<x14:formula1><xm:f>${escapeXml(validation.formula1)}</xm:f></x14:formula1>`)
 	if (validation.formula2)
 		body.push(`<x14:formula2><xm:f>${escapeXml(validation.formula2)}</xm:f></x14:formula2>`)
+	body.push(...(validation.preservedChildXml ?? []))
 	body.push(`<xm:sqref>${escapeXml(validation.sqref)}</xm:sqref>`)
 	return `<x14:dataValidation${attrs.size > 0 ? ` ${attrsXml(attrs)}` : ''}>${body.join('')}</x14:dataValidation>`
 }
@@ -312,6 +313,15 @@ function x14DataValidationAttrs(validation: SheetX14DataValidationInfo): Map<str
 		if (name.startsWith('x14ac:') && !attrs.has('xmlns:x14ac')) {
 			attrs.set('xmlns:x14ac', X14AC_NS)
 		}
+	}
+	if (validation.preservedChildXml?.some((xml) => xml.includes('xr:')) && !attrs.has('xmlns:xr')) {
+		attrs.set('xmlns:xr', XR_NS)
+	}
+	if (
+		validation.preservedChildXml?.some((xml) => xml.includes('x14ac:')) &&
+		!attrs.has('xmlns:x14ac')
+	) {
+		attrs.set('xmlns:x14ac', X14AC_NS)
 	}
 	if (validation.type) attrs.set('type', validation.type)
 	if (validation.operator) attrs.set('operator', validation.operator)

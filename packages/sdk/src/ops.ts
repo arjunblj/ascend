@@ -96,12 +96,18 @@ const FIELD_SCHEMAS: Record<
 	index: { type: 'integer', description: 'Workbook view index' },
 	at: { type: 'integer', description: 'Row or column index (0-based)' },
 	count: { type: 'integer', description: 'Number of rows/columns' },
-	name: { type: 'string', description: 'Sheet or table name' },
+	name: {
+		type: 'string',
+		description: 'Sheet or table name; table names must be workbook-unique case-insensitively',
+	},
 	position: { type: 'integer', description: 'Position index' },
 	newName: { type: 'string', description: 'New name' },
 	type: { type: 'string', description: 'Sparkline type such as line, column, or stacked' },
 	hasHeaders: { type: 'boolean', description: 'Whether range has header row' },
-	table: { type: 'string', description: 'Table name' },
+	table: {
+		type: 'string',
+		description: 'Workbook-unique table name; run check if imported table names may be ambiguous',
+	},
 	rows: { type: 'array', description: 'Array of row arrays' },
 	column: { type: ['string', 'integer'], description: 'Table column name or 0-based column index' },
 	totalsRowFunction: { type: 'string', description: 'Excel table totalsRowFunction value' },
@@ -333,10 +339,14 @@ export function listOperations(): readonly OperationSchema[] {
 		},
 		{
 			op: 'createTable',
-			description: 'Create a table from a range',
+			description: 'Create a workbook-unique table from a non-overlapping range',
 			requiredFields: ['sheet', 'ref', 'name', 'hasHeaders'],
 		},
-		{ op: 'appendRows', description: 'Append rows to a table', requiredFields: ['table', 'rows'] },
+		{
+			op: 'appendRows',
+			description: 'Append rows to a table without expanding into or shifting another table range',
+			requiredFields: ['table', 'rows'],
+		},
 		{
 			op: 'sortRange',
 			description: 'Sort a range by columns',
@@ -550,7 +560,8 @@ export function listOperations(): readonly OperationSchema[] {
 		},
 		{
 			op: 'resizeTable',
-			description: 'Change a table range (rebuilds columns if width changes)',
+			description:
+				'Change a table range without overlapping another table or dropping referenced fields',
 			requiredFields: ['table', 'ref'],
 		},
 		{
@@ -1192,7 +1203,17 @@ function operationRecoveryActions(op: string): readonly string[] {
 			]
 		case 'createTable':
 		case 'resizeTable':
-			return ['Confirm the table range includes the intended header and data rows.', ...common]
+			return [
+				'Run ascend check first on imported workbooks; duplicate table names, duplicate ids, or overlapping table ranges must be repaired before table edits.',
+				'Confirm the table range includes the intended header and data rows and does not overlap an existing table.',
+				...common,
+			]
+		case 'appendRows':
+			return [
+				'Run ascend check first on imported workbooks; overlapping table ranges make append ownership ambiguous.',
+				'Confirm appended rows will not expand the table into another table; totals-row appends can insert rows and must not shift another table.',
+				...common,
+			]
 		case 'setTableColumn':
 			return [
 				'Use a table column name or 0-based column index; set newName to rename the column and rewrite structured references.',

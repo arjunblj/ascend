@@ -1,4 +1,4 @@
-import { createWorkbook, DEFAULT_STYLE_ID, type Workbook } from '@ascend/core'
+import { createWorkbook, DEFAULT_STYLE_ID, type Sheet, type Workbook } from '@ascend/core'
 import { dateToSerial } from '@ascend/formulas'
 import {
 	ascendError,
@@ -24,15 +24,17 @@ export function readCsv(content: string, dialect?: Partial<CsvDialect>): Result<
 	const sheet = workbook.addSheet('Sheet1')
 
 	try {
-		parseFields(input, d, (row, r) => {
-			for (let c = 0; c < row.length; c++) {
-				const raw = row[c] ?? ''
-				const value = detectType(raw)
-				if (value.kind !== 'empty') {
-					sheet.cells.setResolved(r, c, value, null, DEFAULT_STYLE_ID)
+		if (!parseUnquotedFieldsFast(input, d, sheet)) {
+			parseFields(input, d, (row, r) => {
+				for (let c = 0; c < row.length; c++) {
+					const raw = row[c] ?? ''
+					const value = detectType(raw)
+					if (value.kind !== 'empty') {
+						sheet.cells.setResolved(r, c, value, null, DEFAULT_STYLE_ID)
+					}
 				}
-			}
-		})
+			})
+		}
 	} catch (e) {
 		return err(ascendError('IMPORT_ERROR', e instanceof Error ? e.message : 'CSV parse failed'))
 	}
@@ -61,6 +63,152 @@ export async function readCsvFromUtf8Stream(
 }
 
 type RowCallback = (row: string[], rowIndex: number) => void
+
+function parseUnquotedFieldsFast(input: string, d: CsvDialect, sheet: Sheet): boolean {
+	if (d.delimiter.length !== 1 || d.quote.length !== 1 || input.indexOf(d.quote) !== -1) {
+		return false
+	}
+
+	const delimiterCode = d.delimiter.charCodeAt(0)
+	let row = 0
+	let col = 0
+	let start = 0
+	let i = 0
+	const len = input.length
+
+	while (i <= len) {
+		if (i === len) {
+			setUnquotedField(input, start, i, sheet, row, col)
+			break
+		}
+
+		const code = input.charCodeAt(i)
+		if (code === delimiterCode) {
+			setUnquotedField(input, start, i, sheet, row, col)
+			col++
+			i++
+			start = i
+			continue
+		}
+		if (code === 13 || code === 10) {
+			setUnquotedField(input, start, i, sheet, row, col)
+			row++
+			col = 0
+			i += code === 13 && i + 1 < len && input.charCodeAt(i + 1) === 10 ? 2 : 1
+			start = i
+			continue
+		}
+		i++
+	}
+
+	return true
+}
+
+function setUnquotedField(
+	input: string,
+	start: number,
+	end: number,
+	sheet: Sheet,
+	row: number,
+	col: number,
+): void {
+	if (start === end) return
+
+	if (
+		!isTrimWhitespaceCode(input.charCodeAt(start)) &&
+		!isTrimWhitespaceCode(input.charCodeAt(end - 1))
+	) {
+		const fastNumber = parseSimpleNumber(input, start, end)
+		if (fastNumber !== null) {
+			sheet.cells.setPlainNumber(row, col, fastNumber)
+			return
+		}
+		const raw = input.slice(start, end)
+		const num = Number(raw)
+		if (!Number.isNaN(num)) {
+			sheet.cells.setPlainNumber(row, col, num)
+			return
+		}
+		if (equalsAsciiIgnoreCase(raw, 'true')) {
+			sheet.cells.setResolved(row, col, booleanValue(true), null, DEFAULT_STYLE_ID)
+			return
+		}
+		if (equalsAsciiIgnoreCase(raw, 'false')) {
+			sheet.cells.setResolved(row, col, booleanValue(false), null, DEFAULT_STYLE_ID)
+			return
+		}
+		const date = tryParseDate(raw)
+		if (date !== null) {
+			sheet.cells.setResolved(row, col, dateValue(date), null, DEFAULT_STYLE_ID)
+			return
+		}
+		sheet.cells.setPlainString(row, col, raw)
+		return
+	}
+
+	sheet.cells.setPlainString(row, col, input.slice(start, end))
+}
+
+function parseSimpleNumber(input: string, start: number, end: number): number | null {
+	let i = start
+	let sign = 1
+	const first = input.charCodeAt(i)
+	if (first === 45 || first === 43) {
+		sign = first === 45 ? -1 : 1
+		i++
+		if (i === end) return null
+	}
+
+	let value = 0
+	let hasDigit = false
+	while (i < end) {
+		const digit = input.charCodeAt(i) - 48
+		if (digit < 0 || digit > 9) break
+		value = value * 10 + digit
+		hasDigit = true
+		i++
+	}
+
+	if (i < end && input.charCodeAt(i) === 46) {
+		i++
+		let scale = 0.1
+		while (i < end) {
+			const digit = input.charCodeAt(i) - 48
+			if (digit < 0 || digit > 9) break
+			value += digit * scale
+			scale *= 0.1
+			hasDigit = true
+			i++
+		}
+	}
+
+	if (!hasDigit) return null
+
+	if (i < end) {
+		const exponentMarker = input.charCodeAt(i)
+		if (exponentMarker !== 69 && exponentMarker !== 101) return null
+		i++
+		let exponentSign = 1
+		const signCode = input.charCodeAt(i)
+		if (signCode === 45 || signCode === 43) {
+			exponentSign = signCode === 45 ? -1 : 1
+			i++
+		}
+		let exponent = 0
+		let hasExponentDigit = false
+		while (i < end) {
+			const digit = input.charCodeAt(i) - 48
+			if (digit < 0 || digit > 9) return null
+			exponent = exponent * 10 + digit
+			hasExponentDigit = true
+			i++
+		}
+		if (!hasExponentDigit) return null
+		value *= 10 ** (exponentSign * exponent)
+	}
+
+	return i === end ? sign * value : null
+}
 
 function parseFields(input: string, d: CsvDialect, onRow: RowCallback): void {
 	let row: string[] = []

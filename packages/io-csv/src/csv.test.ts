@@ -100,6 +100,16 @@ describe('readCsv', () => {
 		expect(cellValue(result, 1, 3)).toEqual({ kind: 'boolean', value: false })
 	})
 
+	test('preserves JavaScript numeric fallback forms in unquoted fields', () => {
+		const csv = 'a,b,c\n0x10,Infinity,1e3'
+		const result = readCsv(csv)
+		expect(result.ok).toBe(true)
+
+		expect(cellValue(result, 1, 0)).toEqual({ kind: 'number', value: 16 })
+		expect(cellValue(result, 1, 1)).toEqual({ kind: 'number', value: Infinity })
+		expect(cellValue(result, 1, 2)).toEqual({ kind: 'number', value: 1000 })
+	})
+
 	test('handles empty cells', () => {
 		const csv = 'a,,c\n,2,'
 		const result = readCsv(csv)

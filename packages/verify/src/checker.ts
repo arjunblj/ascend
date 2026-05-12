@@ -138,7 +138,7 @@ function checkBrokenRefs(
 	return issues
 }
 
-function checkExternalRefs(analysis: WorkbookFormulaAnalysis): CheckIssue[] {
+function checkExternalRefs(wb: Workbook, analysis: WorkbookFormulaAnalysis): CheckIssue[] {
 	const issues: CheckIssue[] = []
 
 	for (const formula of analysis.formulas.values()) {
@@ -156,6 +156,30 @@ function checkExternalRefs(analysis: WorkbookFormulaAnalysis): CheckIssue[] {
 						'Replace external reference with a local copy of the data or a defined name',
 				})
 			}
+		}
+	}
+
+	for (const entry of wb.definedNames.list()) {
+		for (const reference of externalReferencesInFormula({
+			field: 'formula',
+			formula: entry.formula,
+		})) {
+			issues.push({
+				rule: 'external-refs',
+				severity: 'warning',
+				message: `Defined name "${entry.name}" references external workbook "${reference.externalTarget}"`,
+				refs: [entry.name],
+				suggestedFix:
+					'Replace the external defined-name formula with local workbook data or verify external link metadata before writing.',
+				details: {
+					kind: 'defined-name-external-reference',
+					name: entry.name,
+					scope: entry.scope,
+					formula: entry.formula,
+					externalSheet: reference.sheetName,
+					externalTarget: reference.externalTarget,
+				},
+			})
 		}
 	}
 
@@ -531,19 +555,28 @@ function checkOrphanedNames(wb: Workbook): CheckIssue[] {
 	for (const entry of wb.definedNames.list()) {
 		const name = entry.name
 		const ref = entry.formula
-		const bang = ref.indexOf('!')
-		if (bang !== -1) {
-			const sheetPart = ref.substring(0, bang).replace(/^'|'$/g, '')
-			if (!sheetNames.has(sheetPart.toLowerCase())) {
-				const closest = findClosestSheetName(sheetPart, sheetNameList)
-				issues.push({
-					rule: 'orphaned-names',
-					severity: 'warning',
-					message: `Defined name "${name}" references non-existent sheet "${sheetPart}"`,
-					refs: [ref],
-					...(closest ? { suggestedFix: `Did you mean sheet "${closest}"?` } : {}),
-				})
-			}
+		for (const missing of missingSheetReferencesInFormula(
+			{ field: 'formula', formula: ref },
+			sheetNames,
+		)) {
+			const closest = findClosestSheetName(missing.sheetName, sheetNameList)
+			issues.push({
+				rule: 'orphaned-names',
+				severity: 'warning',
+				message: `Defined name "${name}" references non-existent sheet "${missing.sheetName}"`,
+				refs: [ref],
+				suggestedFix: closest
+					? `Did you mean sheet "${closest}"?`
+					: 'Repair or remove the defined name before using it in formulas or write workflows.',
+				details: {
+					kind: 'defined-name-missing-sheet-reference',
+					name,
+					scope: entry.scope,
+					field: missing.field,
+					formula: ref,
+					missingSheet: missing.sheetName,
+				},
+			})
 		}
 	}
 
@@ -3431,6 +3464,77 @@ function relationshipKey(
 	return `${sourcePartPath}#${id}`
 }
 
+function pushExternalLinkPathGraphCongruenceIssues(
+	issues: CheckIssue[],
+	detail: Workbook['externalReferenceDetails'][number],
+	pathRelationship: VerifyPackageGraphRelationship,
+): void {
+	const relRef = `${pathRelationship.relationshipPartPath}#${pathRelationship.id}`
+	if (!isExternalLinkPathRelationshipType(pathRelationship.type)) {
+		issues.push({
+			rule: 'external-link-integrity',
+			severity: 'warning',
+			message: `ExternalLink path relationship "${pathRelationship.id}" has package graph type "${pathRelationship.type}" that is not an externalLinkPath relationship`,
+			refs: [relRef],
+			suggestedFix:
+				'Repair the externalLinkPath relationship type before preserving this external workbook target.',
+			details: {
+				kind: 'external-link-package-path-relationship-type-mismatch',
+				partPath: detail.partPath,
+				linkRelId: pathRelationship.id,
+				expectedType: detail.linkRelationshipType,
+				actualType: pathRelationship.type,
+				actualRawType: pathRelationship.rawType,
+			},
+		})
+	}
+
+	if (
+		detail.linkRelationshipRawTarget !== undefined &&
+		pathRelationship.rawTarget !== detail.linkRelationshipRawTarget
+	) {
+		issues.push({
+			rule: 'external-link-integrity',
+			severity: 'error',
+			message: `ExternalLink path relationship "${pathRelationship.id}" package target "${pathRelationship.rawTarget}" does not match metadata target "${detail.linkRelationshipRawTarget}"`,
+			refs: [relRef],
+			suggestedFix:
+				'Repair the externalLinkPath relationship target or refresh externalLink metadata before rewriting external links.',
+			details: {
+				kind: 'external-link-package-path-target-mismatch',
+				partPath: detail.partPath,
+				linkRelId: pathRelationship.id,
+				expectedRawTarget: detail.linkRelationshipRawTarget,
+				actualRawTarget: pathRelationship.rawTarget,
+				metadataTarget: detail.target,
+			},
+		})
+	}
+
+	if (
+		detail.targetMode !== undefined &&
+		pathRelationship.targetMode !== undefined &&
+		pathRelationship.targetMode.toLowerCase() !== detail.targetMode.toLowerCase()
+	) {
+		issues.push({
+			rule: 'external-link-integrity',
+			severity: 'warning',
+			message: `ExternalLink path relationship "${pathRelationship.id}" package TargetMode "${pathRelationship.targetMode}" does not match metadata TargetMode "${detail.targetMode}"`,
+			refs: [relRef],
+			suggestedFix:
+				'Repair the externalLinkPath relationship TargetMode before preserving external link metadata.',
+			details: {
+				kind: 'external-link-package-path-target-mode-mismatch',
+				partPath: detail.partPath,
+				linkRelId: pathRelationship.id,
+				expectedTargetMode: detail.targetMode,
+				actualTargetMode: pathRelationship.targetMode,
+				target: detail.target,
+			},
+		})
+	}
+}
+
 function checkExternalLinkIntegrity(wb: Workbook, packageGraph?: VerifyPackageGraph): CheckIssue[] {
 	const issues: CheckIssue[] = []
 	const externalReferenceParts = new Set(wb.externalReferences)
@@ -3698,6 +3802,8 @@ function checkExternalLinkIntegrity(wb: Workbook, packageGraph?: VerifyPackageGr
 						linkRelationshipPart: detail.linkRelationshipPart,
 					},
 				})
+			} else {
+				pushExternalLinkPathGraphCongruenceIssues(issues, detail, pathRelationship)
 			}
 		}
 	}
@@ -4381,7 +4487,7 @@ export function check(workbook: Workbook, analysis?: CheckAnalysis): CheckResult
 	const sheetNames = workbook.sheets.map((s) => s.name)
 	const issues = [
 		...checkBrokenRefs(workbook, formulas, sheetNames),
-		...checkExternalRefs(formulas),
+		...checkExternalRefs(workbook, formulas),
 		...checkChartSeriesReferences(workbook, sheetNames),
 		...checkChartPartOwnership(workbook, sheetNames, analysis?.packageGraph),
 		...checkCircularRefs(workbook, dependencies),

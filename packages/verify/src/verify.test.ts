@@ -133,6 +133,40 @@ describe('checker', () => {
 		expect(orphanIssues.length).toBeGreaterThanOrEqual(1)
 	})
 
+	test('parses defined name formulas for missing local and external references', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+		wb.definedNames.set('BrokenName', 'SUM(MissingSheet!A1,Sheet1!A1)')
+		wb.definedNames.set('ExternalName', "'[Budget.xlsx]Data'!$A$1")
+
+		const result = check(wb)
+		const orphanIssue = result.issues.find(
+			(issue) => issue.rule === 'orphaned-names' && issue.details?.name === 'BrokenName',
+		)
+		const externalIssue = result.issues.find(
+			(issue) =>
+				issue.rule === 'external-refs' && issue.details?.kind === 'defined-name-external-reference',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(orphanIssue?.message).toContain('MissingSheet')
+		expect(orphanIssue?.details).toMatchObject({
+			kind: 'defined-name-missing-sheet-reference',
+			name: 'BrokenName',
+			missingSheet: 'MissingSheet',
+		})
+		expect(externalIssue?.severity).toBe('warning')
+		expect(externalIssue?.details).toMatchObject({
+			name: 'ExternalName',
+			externalTarget: '[Budget.xlsx]',
+		})
+		expect(
+			result.issues.some(
+				(issue) => issue.rule === 'orphaned-names' && issue.details?.name === 'ExternalName',
+			),
+		).toBe(false)
+	})
+
 	test('detects table integrity issues', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
@@ -1297,6 +1331,91 @@ describe('checker', () => {
 		)
 		expect(orphanPart?.severity).toBe('warning')
 		expect(orphanPart?.refs).toEqual(['xl/externalLinks/externalLink2.xml'])
+	})
+
+	test('detects external link package path target drift from metadata', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+		wb.externalReferences.push('xl/externalLinks/externalLink1.xml')
+		wb.externalReferenceDetails.push({
+			partPath: 'xl/externalLinks/externalLink1.xml',
+			relId: 'rIdExternal',
+			sourcePartPath: 'xl/workbook.xml',
+			sourceRelationshipPart: 'xl/_rels/workbook.xml.rels',
+			sourceRelationshipType:
+				'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink',
+			sourceRelationshipRawTarget: 'externalLinks/externalLink1.xml',
+			sourceRelationshipResolvedTarget: 'xl/externalLinks/externalLink1.xml',
+			externalBookRelId: 'rIdPath',
+			linkRelId: 'rIdPath',
+			linkRelationshipPart: 'xl/externalLinks/_rels/externalLink1.xml.rels',
+			linkRelationshipKind: 'externalLinkPath',
+			linkBindingStatus: 'externalBookRelId',
+			linkRelationshipType:
+				'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath',
+			linkRelationshipRawTarget: '../sources/source.xlsx',
+			target: '../sources/source.xlsx',
+			targetMode: 'External',
+		})
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/workbook.xml',
+						featureFamily: 'workbook',
+						ownerScope: 'workbook',
+					},
+					{
+						path: 'xl/externalLinks/externalLink1.xml',
+						featureFamily: 'preservedExternalLink',
+						ownerScope: 'workbook',
+					},
+				],
+				relationships: [
+					{
+						sourcePartPath: 'xl/workbook.xml',
+						relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+						id: 'rIdExternal',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink',
+						rawTarget: 'externalLinks/externalLink1.xml',
+						resolvedTarget: 'xl/externalLinks/externalLink1.xml',
+						featureFamily: 'preservedExternalLink',
+					},
+					{
+						sourcePartPath: 'xl/externalLinks/externalLink1.xml',
+						relationshipPartPath: 'xl/externalLinks/_rels/externalLink1.xml.rels',
+						id: 'rIdPath',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath',
+						rawTarget: '../sources/drifted.xlsx',
+						targetMode: 'Internal',
+						featureFamily: 'preservedExternalLink',
+					},
+				],
+			},
+		})
+		const externalIssues = result.issues.filter((i) => i.rule === 'external-link-integrity')
+		const targetMismatch = externalIssues.find(
+			(issue) => issue.details?.kind === 'external-link-package-path-target-mismatch',
+		)
+		const targetModeMismatch = externalIssues.find(
+			(issue) => issue.details?.kind === 'external-link-package-path-target-mode-mismatch',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(targetMismatch?.severity).toBe('error')
+		expect(targetMismatch?.refs).toEqual(['xl/externalLinks/_rels/externalLink1.xml.rels#rIdPath'])
+		expect(targetMismatch?.details).toMatchObject({
+			partPath: 'xl/externalLinks/externalLink1.xml',
+			linkRelId: 'rIdPath',
+			expectedRawTarget: '../sources/source.xlsx',
+			actualRawTarget: '../sources/drifted.xlsx',
+		})
+		expect(targetModeMismatch?.severity).toBe('warning')
+		expect(targetModeMismatch?.details).toMatchObject({
+			expectedTargetMode: 'External',
+			actualTargetMode: 'Internal',
+		})
 	})
 
 	test('detects orphaned externalLink workbook metadata', () => {

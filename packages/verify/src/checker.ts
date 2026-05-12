@@ -1061,6 +1061,67 @@ function checkTableQueryTableIntegrity(
 	for (const part of wb.connectionParts) {
 		if (part.kind !== 'queryTable') continue
 		if (claimedQueryParts.has(part.partPath)) continue
+		const sheet = part.sheetName
+			? wb.sheets.find((entry) => entry.name === part.sheetName)
+			: undefined
+		const entry = worksheetQueryTableIntegrityEntry(part)
+		if (part.relType && !isQueryTableRelationshipType(part.relType)) {
+			issues.push({
+				rule: 'table-query-integrity',
+				severity: 'warning',
+				message: `Worksheet queryTable part "${part.partPath}" has unexpected relationship type "${part.relType}"`,
+				refs: [part.sheetName ?? part.partPath, part.partPath],
+				suggestedFix:
+					'Inspect the worksheet queryTable relationship type dialect before preserving queryTable sidecars.',
+				details: {
+					kind: 'worksheet-query-table-relationship-type-mismatch',
+					connectionPart: entry,
+					relationshipType: part.relType,
+				},
+			})
+		}
+		if (packageGraph) {
+			const graphPart = graphPartByPath.get(part.partPath)
+			if (!graphPart) {
+				issues.push({
+					rule: 'table-query-integrity',
+					severity: 'error',
+					message: `Worksheet queryTable inventory references missing package part "${part.partPath}"`,
+					refs: [part.sheetName ?? part.partPath, part.partPath],
+					suggestedFix:
+						'Restore the worksheet queryTable package part or remove the stale queryTable inventory before writing.',
+					details: {
+						kind: 'missing-worksheet-query-table-part',
+						connectionPart: entry,
+					},
+				})
+			} else {
+				const incomingRelationships = graphRelationshipsByTarget.get(part.partPath) ?? []
+				const matchingRelationship = incomingRelationships.find((relationship) => {
+					if (!isQueryTableRelationshipType(relationship.type)) return false
+					if (sheet?.preservedXml?.partPath) {
+						return relationship.sourcePartPath === sheet.preservedXml.partPath
+					}
+					return relationship.sourcePartPath.includes('/worksheets/')
+				})
+				if (!matchingRelationship) {
+					issues.push({
+						rule: 'table-query-integrity',
+						severity: 'error',
+						message: `Worksheet queryTable inventory does not bind "${part.partPath}" to an owning worksheet relationship`,
+						refs: [part.sheetName ?? part.partPath, part.partPath],
+						suggestedFix:
+							'Repair the worksheet relationship target for this queryTable part before editing query-backed data.',
+						details: {
+							kind: 'worksheet-query-table-relationship-binding-mismatch',
+							connectionPart: entry,
+							graphPart,
+							incomingRelationships: incomingRelationships.map(queryTableRelationshipDetails),
+						},
+					})
+				}
+			}
+		}
 		claimedQueryParts.set(part.partPath, {
 			tableName: part.name ?? '(worksheet queryTable)',
 			sheetName: part.sheetName ?? '(unknown sheet)',
@@ -1118,6 +1179,18 @@ interface TableQueryTableIntegrityEntry {
 	readonly tablePartPath?: string
 	readonly queryTablePartPath: string
 	readonly relationshipId: string
+}
+
+function worksheetQueryTableIntegrityEntry(
+	part: Workbook['connectionParts'][number],
+): Readonly<Record<string, unknown>> {
+	return {
+		partPath: part.partPath,
+		...(part.sheetName ? { sheetName: part.sheetName } : {}),
+		...(part.name ? { name: part.name } : {}),
+		...(part.connectionId !== undefined ? { connectionId: part.connectionId } : {}),
+		relationshipCount: part.relationshipCount,
+	}
 }
 
 function isQueryTableRelationshipType(relationshipType: string): boolean {

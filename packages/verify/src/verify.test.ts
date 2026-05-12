@@ -522,6 +522,131 @@ describe('checker', () => {
 		expect(orphanIssues[0]?.refs).toEqual(['xl/queryTables/queryTable2.xml'])
 	})
 
+	test('detects stale worksheet-owned queryTable inventory', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.preservedXml = { partPath: 'xl/worksheets/sheet1.xml' }
+		wb.connectionParts.push(
+			{
+				kind: 'queryTable',
+				partPath: 'xl/queryTables/queryTable1.xml',
+				contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml',
+				relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
+				sheetName: 'Sheet1',
+				relationshipCount: 1,
+				name: 'MissingPartQuery',
+				connectionId: 1,
+			},
+			{
+				kind: 'queryTable',
+				partPath: 'xl/queryTables/queryTable2.xml',
+				contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml',
+				relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
+				sheetName: 'Sheet1',
+				relationshipCount: 1,
+				name: 'WrongSheetQuery',
+				connectionId: 2,
+			},
+			{
+				kind: 'queryTable',
+				partPath: 'xl/queryTables/queryTable3.xml',
+				contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml',
+				relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/unknownQuery',
+				sheetName: 'Sheet1',
+				relationshipCount: 1,
+				name: 'WrongTypeQuery',
+				connectionId: 3,
+			},
+		)
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/queryTables/queryTable2.xml',
+						featureFamily: 'preservedQueryTable',
+						ownerScope: 'worksheet',
+						contentType:
+							'application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml',
+					},
+					{
+						path: 'xl/queryTables/queryTable3.xml',
+						featureFamily: 'preservedQueryTable',
+						ownerScope: 'worksheet',
+						contentType:
+							'application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml',
+					},
+				],
+				relationships: [
+					{
+						sourcePartPath: 'xl/worksheets/sheet2.xml',
+						relationshipPartPath: 'xl/worksheets/_rels/sheet2.xml.rels',
+						id: 'rId2',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
+						rawTarget: '../queryTables/queryTable2.xml',
+						resolvedTarget: 'xl/queryTables/queryTable2.xml',
+						featureFamily: 'preservedQueryTable',
+					},
+					{
+						sourcePartPath: 'xl/worksheets/sheet1.xml',
+						relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+						id: 'rId3',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
+						rawTarget: '../queryTables/queryTable3.xml',
+						resolvedTarget: 'xl/queryTables/queryTable3.xml',
+						featureFamily: 'preservedQueryTable',
+					},
+				],
+			},
+		})
+
+		expect(result.passed).toBe(false)
+		expect(result.issues).toContainEqual(
+			expect.objectContaining({
+				rule: 'table-query-integrity',
+				severity: 'error',
+				refs: ['Sheet1', 'xl/queryTables/queryTable1.xml'],
+				details: expect.objectContaining({
+					kind: 'missing-worksheet-query-table-part',
+					connectionPart: expect.objectContaining({
+						partPath: 'xl/queryTables/queryTable1.xml',
+						sheetName: 'Sheet1',
+						connectionId: 1,
+					}),
+				}),
+			}),
+		)
+		expect(result.issues).toContainEqual(
+			expect.objectContaining({
+				rule: 'table-query-integrity',
+				severity: 'error',
+				refs: ['Sheet1', 'xl/queryTables/queryTable2.xml'],
+				details: expect.objectContaining({
+					kind: 'worksheet-query-table-relationship-binding-mismatch',
+					incomingRelationships: [
+						expect.objectContaining({
+							sourcePartPath: 'xl/worksheets/sheet2.xml',
+							relationshipPartPath: 'xl/worksheets/_rels/sheet2.xml.rels',
+							id: 'rId2',
+						}),
+					],
+				}),
+			}),
+		)
+		expect(result.issues).toContainEqual(
+			expect.objectContaining({
+				rule: 'table-query-integrity',
+				severity: 'warning',
+				refs: ['Sheet1', 'xl/queryTables/queryTable3.xml'],
+				details: expect.objectContaining({
+					kind: 'worksheet-query-table-relationship-type-mismatch',
+					relationshipType:
+						'http://schemas.openxmlformats.org/officeDocument/2006/relationships/unknownQuery',
+				}),
+			}),
+		)
+	})
+
 	test('detects table package relationship binding mismatches and orphan table sidecars', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

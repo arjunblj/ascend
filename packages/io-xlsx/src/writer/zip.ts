@@ -1,11 +1,17 @@
-import { createDeflateRaw, deflateRawSync, constants as zlibConstants } from 'node:zlib'
+import * as zlib from 'node:zlib'
 
 const textEncoder = new TextEncoder()
+const { constants: zlibConstants, createDeflateRaw, deflateRawSync } = zlib
 type BunDeflateSync = (
 	data: Uint8Array,
 	options: { readonly level: number; readonly windowBits: number },
 ) => Uint8Array
+type NativeCrc32 = (data: Uint8Array, value?: number) => number
 const bunDeflateRawSync = getBunDeflateRawSync()
+const nativeCrc32 =
+	typeof (zlib as { readonly crc32?: NativeCrc32 }).crc32 === 'function'
+		? (zlib as unknown as { readonly crc32: NativeCrc32 }).crc32
+		: undefined
 const HUGE_WORKSHEET_XML_BYTES = 256 * 1024 * 1024
 
 export type ZipCompressionProfile = 'fast' | 'compact'
@@ -85,10 +91,18 @@ const CRC_TABLES = /* @__PURE__ */ (() => {
 })()
 
 function crc32(data: Uint8Array): number {
-	return (updateCrc32(0xffffffff, data) ^ 0xffffffff) >>> 0
+	return nativeCrc32 ? nativeCrc32(data) >>> 0 : crc32UpdateFallback(0, data)
 }
 
 function updateCrc32(crc: number, data: Uint8Array): number {
+	return nativeCrc32 ? nativeCrc32(data, crc) >>> 0 : crc32UpdateFallback(crc, data)
+}
+
+function crc32UpdateFallback(crc: number, data: Uint8Array): number {
+	return (updateCrc32State(crc ^ 0xffffffff, data) ^ 0xffffffff) >>> 0
+}
+
+function updateCrc32State(crc: number, data: Uint8Array): number {
 	const t0 = CRC_TABLES[0] as Uint32Array
 	const t1 = CRC_TABLES[1] as Uint32Array
 	const t2 = CRC_TABLES[2] as Uint32Array
@@ -194,7 +208,7 @@ export class StreamingZipBuilder {
 	private readonly entries: ZipEntry[] = []
 	private readonly compressionProfile: ZipCompressionProfile
 	private streamingNameBytes: Uint8Array | null = null
-	private streamingCrc = 0xffffffff
+	private streamingCrc = 0
 	private streamingUncompressedSize = 0
 	private streamingCompressedChunks: Uint8Array[] = []
 	private deflateStream: ReturnType<typeof createDeflateRaw> | null = null
@@ -241,7 +255,7 @@ export class StreamingZipBuilder {
 			throw new Error('Streaming entry already open; call closeEntry first')
 		}
 		this.streamingNameBytes = textEncoder.encode(path)
-		this.streamingCrc = 0xffffffff
+		this.streamingCrc = 0
 		this.streamingUncompressedSize = 0
 		this.streamingCompressedChunks = []
 		this.deflateStream = createDeflateRaw(
@@ -302,14 +316,13 @@ export class StreamingZipBuilder {
 					0,
 				)
 				const dataChunks = this.streamingCompressedChunks
-				const crc = (this.streamingCrc ^ 0xffffffff) >>> 0
 				this.entries.push({
 					nameBytes,
 					dataChunks,
 					uncompressedSize: this.streamingUncompressedSize,
 					compressedSize,
 					method: 8,
-					crc,
+					crc: this.streamingCrc,
 				})
 				this.streamingNameBytes = null
 				this.deflateStream = null

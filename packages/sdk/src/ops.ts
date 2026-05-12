@@ -509,7 +509,8 @@ export function listOperations(): readonly OperationSchema[] {
 		},
 		{
 			op: 'moveRange',
-			description: 'Move a range to another location with optional Excel-like paste mode',
+			description:
+				'Move a range to another location with optional Excel-like paste mode; formulas, defined names, and worksheet metadata must not contain range references that only partially overlap the moved cells',
 			requiredFields: ['sheet', 'source', 'target'],
 			optionalFields: ['targetSheet', 'mode'],
 		},
@@ -1366,6 +1367,12 @@ function operationRecoveryActions(op: string): readonly string[] {
 		case 'clearRange':
 			return [
 				'Use what="values", "formulas", or "styles" unless all content should be removed.',
+				...common,
+			]
+		case 'moveRange':
+			return [
+				'Run ascend plan first; moveRange rejects formulas, defined names, validations, conditional formats, x14 metadata, and table formulas with range references that partially overlap the moved source.',
+				'Move the full referenced range, rewrite the formula reference first, or split the formula so it no longer spans cells that will be left behind.',
 				...common,
 			]
 		case 'createTable':

@@ -88,6 +88,9 @@ describe('operation schema agent DX', () => {
 		const moveSchema = getOperationsSchema().find((entry) => entry.op === 'moveRange')
 		expect(copySchema?.schema.properties.targetSheet?.description).toContain('Destination sheet')
 		expect(moveSchema?.schema.properties.targetSheet?.type).toBe('string')
+		expect(moveSchema?.description).toContain('partially overlap the moved cells')
+		expect(moveSchema?.recoveryActions.join('\n')).toContain('x14 metadata')
+		expect(moveSchema?.recoveryActions.join('\n')).toContain('Move the full referenced range')
 
 		const parsed = parseOperations([
 			{

@@ -283,7 +283,7 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'editable',
 		'P0',
 		'Add broader workbook-corruption regression corpus for overlapping moves around tables, filters, and hidden rows/columns.',
-		'Copy/move supports same-sheet and cross-sheet Excel-like modes for all, values, formulas, formats/styles, validations, comments, hyperlinks, conditional formatting, and merged-cell layout with overlap validation; formulas and defined names that point at moved cells are rewritten to the new location.',
+		'Copy/move supports same-sheet and cross-sheet Excel-like modes for all, values, formulas, formats/styles, validations, comments, hyperlinks, conditional formatting, and merged-cell layout with overlap validation; formulas, defined names, validations, conditional formats, x14 metadata, and table formulas that point wholly at moved cells are rewritten, while partially moved formula ranges are rejected before mutation.',
 		['packages/engine/src/operations.test.ts'],
 	),
 	cap(

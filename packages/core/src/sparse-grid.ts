@@ -107,12 +107,11 @@ interface StoredSlot {
 	readonly heapValue: CellValue | undefined
 }
 
-interface PlainDenseWriteResult {
-	readonly existed: boolean
-	readonly hadFormula: boolean
-	readonly hadFormulaInfo: boolean
-	readonly previousSharedStringKind: SharedStringCellKind | undefined
-}
+const PLAIN_WRITE_EXISTED = 1 << 0
+const PLAIN_WRITE_HAD_FORMULA = 1 << 1
+const PLAIN_WRITE_HAD_FORMULA_INFO = 1 << 2
+const PLAIN_WRITE_PREVIOUS_STRING = 1 << 3
+const PLAIN_WRITE_PREVIOUS_RICH_TEXT = 1 << 4
 
 interface GridChunk {
 	readonly count: number
@@ -680,17 +679,13 @@ class DenseChunk implements GridChunk {
 		return this
 	}
 
-	writePlainNumber(localIndex: number, value: number): PlainDenseWriteResult {
+	writePlainNumber(localIndex: number, value: number): number {
 		const previous = this.preparePlainWrite(localIndex)
 		this.writeResolved(localIndex, SlotTag.Number, DEFAULT_STYLE_ID, value, 0, null, undefined)
 		return previous
 	}
 
-	writePlainString(
-		localIndex: number,
-		value: string,
-		stringTable: StringTable,
-	): PlainDenseWriteResult {
+	writePlainString(localIndex: number, value: string, stringTable: StringTable): number {
 		const previous = this.preparePlainWrite(localIndex)
 		this.writeResolved(
 			localIndex,
@@ -725,7 +720,7 @@ class DenseChunk implements GridChunk {
 		return this
 	}
 
-	private preparePlainWrite(localIndex: number): PlainDenseWriteResult {
+	private preparePlainWrite(localIndex: number): number {
 		const existed = this.has(localIndex)
 		if (!existed) {
 			const rowIndex = localIndex >>> CHUNK_BITS
@@ -733,26 +728,21 @@ class DenseChunk implements GridChunk {
 			this.rowCounts[rowIndex] = (this.rowCounts[rowIndex] ?? 0) + 1
 			this._count++
 			this.updateRowBounds(rowIndex, localCol, true)
-			return {
-				existed: false,
-				hadFormula: false,
-				hadFormulaInfo: false,
-				previousSharedStringKind: undefined,
-			}
+			return 0
 		}
 		const tag = this.readTag(localIndex)
 		const formulaInfo = this.formulaInfos?.[localIndex]
-		return {
-			existed: true,
-			hadFormula: (this.formulas?.[localIndex] ?? null) !== null || formulaInfo !== undefined,
-			hadFormulaInfo: formulaInfo !== undefined,
-			previousSharedStringKind:
-				tag === SlotTag.String
-					? 'string'
-					: tag === SlotTag.Heap && this.heapValues?.[localIndex]?.kind === 'richText'
-						? 'richText'
-						: undefined,
+		let flags = PLAIN_WRITE_EXISTED
+		if ((this.formulas?.[localIndex] ?? null) !== null || formulaInfo !== undefined) {
+			flags |= PLAIN_WRITE_HAD_FORMULA
 		}
+		if (formulaInfo !== undefined) flags |= PLAIN_WRITE_HAD_FORMULA_INFO
+		if (tag === SlotTag.String) {
+			flags |= PLAIN_WRITE_PREVIOUS_STRING
+		} else if (tag === SlotTag.Heap && this.heapValues?.[localIndex]?.kind === 'richText') {
+			flags |= PLAIN_WRITE_PREVIOUS_RICH_TEXT
+		}
+		return flags
 	}
 
 	delete(localIndex: number): boolean {
@@ -1057,14 +1047,14 @@ export class SparseGrid {
 		if (chunk instanceof DenseChunk) {
 			const write = chunk.writePlainString(localIndex, value, this.stringTable)
 			this._rememberWriteChunk(chunkRow, chunkCol, cols, chunk)
-			if (!write.existed) {
+			if ((write & PLAIN_WRITE_EXISTED) === 0) {
 				this._cellCount++
 				if (this._expectedDensity === 'auto') this._autoTotalCells++
 			} else {
-				if (write.hadFormula) this._formulaCellCount--
-				if (write.hadFormulaInfo) this._formulaInfoCellCount--
+				if ((write & PLAIN_WRITE_HAD_FORMULA) !== 0) this._formulaCellCount--
+				if ((write & PLAIN_WRITE_HAD_FORMULA_INFO) !== 0) this._formulaInfoCellCount--
 			}
-			this.updateSharedStringCounts(write.previousSharedStringKind, 'string')
+			this.updateSharedStringCounts(previousSharedStringKindFromPlainWrite(write), 'string')
 			this._trackBounds(row, col)
 			return
 		}
@@ -1148,14 +1138,14 @@ export class SparseGrid {
 		if (chunk instanceof DenseChunk) {
 			const write = chunk.writePlainNumber(localIndex, value)
 			this._rememberWriteChunk(chunkRow, chunkCol, cols, chunk)
-			if (!write.existed) {
+			if ((write & PLAIN_WRITE_EXISTED) === 0) {
 				this._cellCount++
 				if (this._expectedDensity === 'auto') this._autoTotalCells++
 			} else {
-				if (write.hadFormula) this._formulaCellCount--
-				if (write.hadFormulaInfo) this._formulaInfoCellCount--
+				if ((write & PLAIN_WRITE_HAD_FORMULA) !== 0) this._formulaCellCount--
+				if ((write & PLAIN_WRITE_HAD_FORMULA_INFO) !== 0) this._formulaInfoCellCount--
 			}
-			this.updateSharedStringCounts(write.previousSharedStringKind, undefined)
+			this.updateSharedStringCounts(previousSharedStringKindFromPlainWrite(write), undefined)
 			this._trackBounds(row, col)
 			return
 		}
@@ -2096,6 +2086,12 @@ function sharedStringKindFromSlot(slot: StoredSlot | undefined): SharedStringCel
 	if (!slot) return undefined
 	if (slot.tag === SlotTag.String) return 'string'
 	if (slot.heapValue?.kind === 'richText') return 'richText'
+	return undefined
+}
+
+function previousSharedStringKindFromPlainWrite(flags: number): SharedStringCellKind | undefined {
+	if ((flags & PLAIN_WRITE_PREVIOUS_STRING) !== 0) return 'string'
+	if ((flags & PLAIN_WRITE_PREVIOUS_RICH_TEXT) !== 0) return 'richText'
 	return undefined
 }
 

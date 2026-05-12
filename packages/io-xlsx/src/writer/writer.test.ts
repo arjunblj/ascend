@@ -245,6 +245,60 @@ describe('writeXlsx', () => {
 		expect(workbookRels).toContain('relationships/worksheet')
 	})
 
+	it('preserves strict relationship type dialect when dirty writes regenerate rels', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://purl.oclc.org/ooxml/officeDocument/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://purl.oclc.org/ooxml/officeDocument/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>
+</worksheet>`,
+		})
+		const read = readXlsx(bytes)
+		expectOk(read)
+		read.value.workbook.sheets[0]?.cells.set(0, 0, {
+			value: numberValue(2),
+			formula: null,
+			styleId: S0,
+		})
+
+		const written = writeXlsx(read.value.workbook, read.value.capsules, {
+			dirtySheetNames: ['Data'],
+		})
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		const rootRels = new TextDecoder().decode(zip['_rels/.rels'] ?? new Uint8Array())
+		const workbookRels = new TextDecoder().decode(
+			zip['xl/_rels/workbook.xml.rels'] ?? new Uint8Array(),
+		)
+
+		expect(rootRels).toContain(
+			'Type="http://purl.oclc.org/ooxml/officeDocument/relationships/officeDocument"',
+		)
+		expect(workbookRels).toContain(
+			'Type="http://purl.oclc.org/ooxml/officeDocument/relationships/worksheet"',
+		)
+		expect(readXlsx(written.value).ok).toBe(true)
+	})
+
 	it('writes edited tabular slicer cache item state back into preserved package XML', () => {
 		const slicerCacheXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <slicerCacheDefinition xmlns="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" name="Slicer_State" sourceName="State">

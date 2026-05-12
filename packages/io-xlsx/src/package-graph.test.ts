@@ -23,7 +23,7 @@ describe('XLSX package graph', () => {
 </Types>`,
 			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+  <Relationship Id="rIdOffice" Type="http://purl.oclc.org/ooxml/officeDocument/relationships/officeDocument" Target="xl/workbook.xml"/>
 </Relationships>`,
 			'xl/workbook.xml': '<workbook/>',
 			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -61,6 +61,16 @@ describe('XLSX package graph', () => {
 			contentType: 'image/png',
 		})
 		expect(graph.relationships).toContainEqual({
+			sourcePartPath: '',
+			relationshipPartPath: '_rels/.rels',
+			id: 'rIdOffice',
+			type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument',
+			rawType: 'http://purl.oclc.org/ooxml/officeDocument/relationships/officeDocument',
+			rawTarget: 'xl/workbook.xml',
+			resolvedTarget: 'xl/workbook.xml',
+			featureFamily: 'workbook',
+		})
+		expect(graph.relationships).toContainEqual({
 			sourcePartPath: 'xl/drawings/drawing1.xml',
 			relationshipPartPath: 'xl/drawings/_rels/drawing1.xml.rels',
 			id: 'rIdImage',
@@ -73,6 +83,10 @@ describe('XLSX package graph', () => {
 			contentTypeSource: 'override',
 			ownerScope: 'workbook',
 			sourceRelationshipId: 'rIdOffice',
+			sourceRelationshipType:
+				'http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument',
+			sourceRelationshipRawType:
+				'http://purl.oclc.org/ooxml/officeDocument/relationships/officeDocument',
 			featureFamily: 'workbook',
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/worksheets/sheet1.xml')).toMatchObject({

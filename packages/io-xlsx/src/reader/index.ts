@@ -1059,6 +1059,7 @@ function collectCapsules(
 
 		let anchor: PreservationCapsule['anchor'] = { kind: 'workbook' }
 		let relType: string | undefined
+		let relTypeRaw: string | undefined
 		let relId: string | undefined
 		const directSheetAnchor = sheetPathToAnchor.get(partPath)
 		if (directSheetAnchor) {
@@ -1072,11 +1073,13 @@ function collectCapsules(
 		const wbRef = wbRelByTarget.get(partPath)
 		if (wbRef) {
 			relType = wbRef.type
+			relTypeRaw = wbRef.rawType
 			relId = wbRef.id
 		}
 		const rootRef = rootRelByTarget.get(partPath)
 		if (rootRef) {
 			relType = rootRef.type
+			relTypeRaw = rootRef.rawType
 			relId = rootRef.id
 		}
 
@@ -1084,6 +1087,7 @@ function collectCapsules(
 		if (sheetRef) {
 			anchor = { kind: 'sheet', sheetId: sheetRef.sheetId, sheetName: sheetRef.sheetName }
 			relType = sheetRef.rel.type
+			relTypeRaw = sheetRef.rel.rawType
 			relId = sheetRef.rel.id
 		}
 
@@ -1092,6 +1096,7 @@ function collectCapsules(
 			? parseRelationships(capsuleRelsXml).map((r) => ({
 					id: r.id,
 					type: r.type,
+					...(r.rawType ? { rawType: r.rawType } : {}),
 					target: r.target,
 					...(r.targetMode ? { targetMode: r.targetMode } : {}),
 				}))
@@ -1105,6 +1110,7 @@ function collectCapsules(
 			anchor,
 		}
 		if (relType) capsule.relType = relType
+		if (relTypeRaw) capsule.relTypeRaw = relTypeRaw
 		if (relId) capsule.relId = relId
 		capsules.push(capsule)
 	}

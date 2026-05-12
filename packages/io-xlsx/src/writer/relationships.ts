@@ -6,6 +6,7 @@ const NS = 'http://schemas.openxmlformats.org/package/2006/relationships'
 export interface RelEntry {
 	readonly id: string
 	readonly type: string
+	readonly rawType?: string
 	readonly target: string
 	readonly targetMode?: string
 }
@@ -18,7 +19,7 @@ export function buildRelsXml(entries: readonly RelEntry[]): string {
 	for (const e of entries) {
 		const attrs = [
 			`Id="${escapeXmlAttr(e.id)}"`,
-			`Type="${escapeXmlAttr(e.type)}"`,
+			`Type="${escapeXmlAttr(e.rawType ?? e.type)}"`,
 			`Target="${escapeXmlAttr(e.target)}"`,
 		]
 		if (e.targetMode) attrs.push(`TargetMode="${escapeXmlAttr(e.targetMode)}"`)

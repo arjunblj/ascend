@@ -64,6 +64,7 @@ export interface XlsxPackageGraphPart {
 	readonly sourceRelationshipPart?: string
 	readonly sourceRelationshipId?: string
 	readonly sourceRelationshipType?: string
+	readonly sourceRelationshipRawType?: string
 	readonly sourceRelationshipRawTarget?: string
 	readonly sourceRelationshipResolvedTarget?: string
 	readonly sourceRelationshipTargetMode?: string
@@ -77,6 +78,7 @@ export interface XlsxPackageGraphRelationship {
 	readonly relationshipPartPath: string
 	readonly id: string
 	readonly type: string
+	readonly rawType?: string
 	readonly rawTarget: string
 	readonly resolvedTarget?: string
 	readonly targetMode?: string
@@ -124,6 +126,9 @@ export function inspectXlsxPackageGraph(bytes: Uint8Array): XlsxPackageGraph {
 							sourceRelationshipPart: primaryRelationship.relationshipPartPath,
 							sourceRelationshipId: primaryRelationship.id,
 							sourceRelationshipType: primaryRelationship.type,
+							...(primaryRelationship.rawType
+								? { sourceRelationshipRawType: primaryRelationship.rawType }
+								: {}),
 							sourceRelationshipRawTarget: primaryRelationship.rawTarget,
 							...(primaryRelationship.resolvedTarget
 								? { sourceRelationshipResolvedTarget: primaryRelationship.resolvedTarget }
@@ -260,6 +265,7 @@ function collectPackageRelationships(
 				relationshipPartPath: entry.path,
 				id: relationship.id,
 				type: relationship.type,
+				...(relationship.rawType ? { rawType: relationship.rawType } : {}),
 				rawTarget: relationship.target,
 				...(resolvedTarget ? { resolvedTarget } : {}),
 				...(targetMode ? { targetMode } : {}),

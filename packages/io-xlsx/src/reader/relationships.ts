@@ -3,6 +3,7 @@ import { parseXmlAttributes } from './xml-utils.ts'
 export interface Relationship {
 	readonly id: string
 	readonly type: string
+	readonly rawType?: string
 	readonly target: string
 	readonly targetMode?: string
 }
@@ -76,9 +77,11 @@ export function parseRelationships(xml: string): Relationship[] {
 		const target = attrs.get('Target')
 		const targetMode = attrs.get('TargetMode')
 		if (id && type && target) {
+			const normalizedType = normalizeRelationshipType(type)
 			rels.push({
 				id,
-				type: normalizeRelationshipType(type),
+				type: normalizedType,
+				...(normalizedType !== type ? { rawType: type } : {}),
 				target,
 				...(targetMode ? { targetMode } : {}),
 			})

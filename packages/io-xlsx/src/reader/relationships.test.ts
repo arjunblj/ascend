@@ -66,6 +66,26 @@ describe('relationships', () => {
 		).toBe(false)
 	})
 
+	test('keeps raw strict relationship types while exposing normalized lookup types', () => {
+		const rels = parseRelationships(`<?xml version="1.0"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://purl.oclc.org/ooxml/officeDocument/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdMetadata" Type="http://purl.oclc.org/ooxml/officeDocument/relationships/sheetMetadata" Target="metadata.xml"/>
+</Relationships>`)
+
+		expect(rels[0]).toEqual({
+			id: 'rIdSheet',
+			type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet',
+			rawType: 'http://purl.oclc.org/ooxml/officeDocument/relationships/worksheet',
+			target: 'worksheets/sheet1.xml',
+		})
+		expect(rels[1]).toEqual({
+			id: 'rIdMetadata',
+			type: 'http://purl.oclc.org/ooxml/officeDocument/relationships/sheetMetadata',
+			target: 'metadata.xml',
+		})
+	})
+
 	test('resolves internal relationship URI targets to package part paths', () => {
 		expect(resolvePath('', 'xl/work%20book.xml')).toBe('xl/work book.xml')
 		expect(resolvePath('xl/work book.xml', 'worksheets/sheet%201.xml')).toBe(

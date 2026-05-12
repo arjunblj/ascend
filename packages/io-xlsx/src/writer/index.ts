@@ -595,6 +595,12 @@ export function planWriteXlsx(
 		const usedWorkbookRelIds = new Set<string>()
 		const wbRels: RelEntry[] = []
 		const addWorkbookRel = (type: string, partPath: string, fallback: string): string => {
+			const rawType = preservedRelationshipRawType(
+				preservedWorkbookRels,
+				'xl/workbook.xml',
+				type,
+				partPath,
+			)
 			const id = allocateWorkbookRelId(
 				preservedWorkbookRels,
 				reservedWorkbookRelIds,
@@ -607,6 +613,7 @@ export function planWriteXlsx(
 			wbRels.push({
 				id,
 				type,
+				...(rawType ? { rawType } : {}),
 				target: workbookRelTarget(type, partPath, fallback),
 			})
 			return id
@@ -939,6 +946,7 @@ export function planWriteXlsx(
 				sheetRels.push({
 					id: relId,
 					type: capsule.relType,
+					...(capsule.relTypeRaw ? { rawType: capsule.relTypeRaw } : {}),
 					target: sheetRelTarget(
 						capsule.relType,
 						capsule.partPath,
@@ -1125,6 +1133,7 @@ export function planWriteXlsx(
 					sheetRels.push({
 						id: relId,
 						type: REL_TABLE,
+						...(tableCapsule?.relTypeRaw ? { rawType: tableCapsule.relTypeRaw } : {}),
 						target: sheetRelTarget(
 							REL_TABLE,
 							tablePartPath,
@@ -1410,6 +1419,7 @@ export function planWriteXlsx(
 			rootRels.push({
 				id,
 				type: preserved?.type ?? type,
+				...(preserved?.rawType ? { rawType: preserved.rawType } : {}),
 				target: preserved?.target ?? rootRelTarget(type, partPath, fallback),
 			})
 			return id
@@ -2307,6 +2317,15 @@ function preservedRelationshipId(
 		if (resolvePath(sourcePart, rel.target) === resolvedPartPath) return rel.id
 	}
 	return undefined
+}
+
+function preservedRelationshipRawType(
+	rels: readonly Relationship[],
+	sourcePart: string,
+	type: string,
+	resolvedPartPath: string,
+): string | undefined {
+	return preservedPackageRelationship(rels, sourcePart, type, resolvedPartPath)?.rawType
 }
 
 function preservedPackageRelationship(

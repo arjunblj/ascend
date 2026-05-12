@@ -152,6 +152,81 @@ describe('checker', () => {
 		expect(tableIssues.length).toBeGreaterThanOrEqual(1)
 	})
 
+	test('detects duplicate table names and ids across workbook table parts', () => {
+		const wb = createWorkbook()
+		const s1 = wb.addSheet('Sheet1')
+		const s2 = wb.addSheet('Sheet2')
+		const duplicateId = createTableId()
+		s1.tables.push({
+			id: duplicateId,
+			name: 'Sales',
+			sheetId: s1.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } },
+			columns: [{ name: 'Region' }, { name: 'Amount' }],
+			hasHeaders: true,
+			hasTotals: false,
+			partPath: 'xl/tables/table1.xml',
+		})
+		s2.tables.push({
+			id: duplicateId,
+			name: 'SALES',
+			sheetId: s2.id,
+			ref: { start: { row: 4, col: 2 }, end: { row: 6, col: 3 } },
+			columns: [{ name: 'Region' }, { name: 'Amount' }],
+			hasHeaders: true,
+			hasTotals: false,
+			partPath: 'xl/tables/table2.xml',
+		})
+
+		const result = check(wb)
+		const tableIssues = result.issues.filter((i) => i.rule === 'table-integrity')
+
+		expect(result.passed).toBe(false)
+		expect(tableIssues.some((issue) => issue.details?.kind === 'duplicate-table-name')).toBe(true)
+		expect(tableIssues.some((issue) => issue.details?.kind === 'duplicate-table-id')).toBe(true)
+		expect(
+			tableIssues.find((issue) => issue.details?.kind === 'duplicate-table-name')?.refs,
+		).toEqual(['Sheet1!A1:B3', 'Sheet2!C5:D7'])
+	})
+
+	test('detects overlapping table ranges on the same worksheet', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.tables.push(
+			{
+				id: createTableId(),
+				name: 'Actuals',
+				sheetId: s.id,
+				ref: { start: { row: 0, col: 0 }, end: { row: 4, col: 2 } },
+				columns: [{ name: 'Region' }, { name: 'Amount' }, { name: 'Owner' }],
+				hasHeaders: true,
+				hasTotals: false,
+				partPath: 'xl/tables/table1.xml',
+			},
+			{
+				id: createTableId(),
+				name: 'Forecast',
+				sheetId: s.id,
+				ref: { start: { row: 2, col: 1 }, end: { row: 6, col: 3 } },
+				columns: [{ name: 'Scenario' }, { name: 'Amount' }, { name: 'Owner' }],
+				hasHeaders: true,
+				hasTotals: false,
+				partPath: 'xl/tables/table2.xml',
+			},
+		)
+
+		const result = check(wb)
+		const overlapIssue = result.issues.find(
+			(issue) =>
+				issue.rule === 'table-integrity' && issue.details?.kind === 'overlapping-table-ranges',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(overlapIssue?.message).toContain('Actuals')
+		expect(overlapIssue?.refs).toEqual(['Sheet1!A1:C5', 'Sheet1!B3:D7'])
+		expect(overlapIssue?.suggestedFix).toContain('unambiguous table ownership')
+	})
+
 	test('detects ambiguous overlapping conditional format priorities', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

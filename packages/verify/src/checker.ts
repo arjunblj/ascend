@@ -451,23 +451,120 @@ function checkMergeOverlaps(wb: Workbook): CheckIssue[] {
 
 function checkTableIntegrity(wb: Workbook): CheckIssue[] {
 	const issues: CheckIssue[] = []
+	const tablesByName = new Map<string, TableIntegrityEntry>()
+	const tablesById = new Map<string, TableIntegrityEntry>()
 
 	for (const sheet of wb.sheets) {
 		for (const table of sheet.tables) {
 			const rangeWidth = table.ref.end.col - table.ref.start.col + 1
+			const ref = rangeToA1(table.ref)
 			if (table.columns.length !== rangeWidth) {
-				const rangeStr = `${indexToColumn(table.ref.start.col)}${table.ref.start.row + 1}:${indexToColumn(table.ref.end.col)}${table.ref.end.row + 1}`
 				issues.push({
 					rule: 'table-integrity',
 					severity: 'error',
 					message: `Table "${table.name}" has ${table.columns.length} columns but range spans ${rangeWidth}`,
-					refs: [`${sheet.name}!${rangeStr}`],
+					refs: [`${sheet.name}!${ref}`],
+					details: {
+						kind: 'table-column-count-mismatch',
+						tableName: table.name,
+						rangeWidth,
+						columnCount: table.columns.length,
+						partPath: table.partPath,
+					},
+				})
+			}
+
+			const entry: TableIntegrityEntry = {
+				tableName: table.name,
+				tableId: String(table.id),
+				sheetName: sheet.name,
+				ref,
+				...(table.partPath ? { partPath: table.partPath } : {}),
+			}
+			const normalizedName = table.name.toLowerCase()
+			const existingName = tablesByName.get(normalizedName)
+			if (existingName) {
+				issues.push({
+					rule: 'table-integrity',
+					severity: 'error',
+					message: `Duplicate table name "${table.name}" conflicts with "${existingName.tableName}"`,
+					refs: [`${existingName.sheetName}!${existingName.ref}`, `${sheet.name}!${ref}`],
+					suggestedFix:
+						'Rename one table before using structured references or table edit operations.',
+					details: {
+						kind: 'duplicate-table-name',
+						normalizedName,
+						first: existingName,
+						duplicate: entry,
+					},
+				})
+			} else {
+				tablesByName.set(normalizedName, entry)
+			}
+
+			const existingId = tablesById.get(entry.tableId)
+			if (existingId) {
+				issues.push({
+					rule: 'table-integrity',
+					severity: 'error',
+					message: `Duplicate table id "${entry.tableId}" on table "${table.name}"`,
+					refs: [`${existingId.sheetName}!${existingId.ref}`, `${sheet.name}!${ref}`],
+					suggestedFix:
+						'Regenerate table ids so every table part has a workbook-unique identifier.',
+					details: {
+						kind: 'duplicate-table-id',
+						tableId: entry.tableId,
+						first: existingId,
+						duplicate: entry,
+					},
+				})
+			} else {
+				tablesById.set(entry.tableId, entry)
+			}
+		}
+
+		for (let i = 0; i < sheet.tables.length; i++) {
+			const left = sheet.tables[i]
+			if (!left) continue
+			for (let j = i + 1; j < sheet.tables.length; j++) {
+				const right = sheet.tables[j]
+				if (!right || !rangesOverlap2D(left.ref, right.ref)) continue
+				const leftRef = rangeToA1(left.ref)
+				const rightRef = rangeToA1(right.ref)
+				issues.push({
+					rule: 'table-integrity',
+					severity: 'error',
+					message: `Table "${left.name}" overlaps table "${right.name}" on sheet "${sheet.name}"`,
+					refs: [`${sheet.name}!${leftRef}`, `${sheet.name}!${rightRef}`],
+					suggestedFix:
+						'Resize, move, or delete one table so worksheet cells have unambiguous table ownership.',
+					details: {
+						kind: 'overlapping-table-ranges',
+						left: {
+							tableName: left.name,
+							ref: leftRef,
+							partPath: left.partPath,
+						},
+						right: {
+							tableName: right.name,
+							ref: rightRef,
+							partPath: right.partPath,
+						},
+					},
 				})
 			}
 		}
 	}
 
 	return issues
+}
+
+interface TableIntegrityEntry {
+	readonly tableName: string
+	readonly tableId: string
+	readonly sheetName: string
+	readonly ref: string
+	readonly partPath?: string
 }
 
 interface ConditionalFormatPriorityEntry {

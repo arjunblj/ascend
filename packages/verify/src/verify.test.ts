@@ -2676,6 +2676,72 @@ describe('checker', () => {
 		expect(issue?.refs).toEqual(['xl/threadedComments/missing.xml'])
 	})
 
+	test('detects threaded comment relationships that resolve to missing package parts', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [],
+				relationships: [
+					{
+						sourcePartPath: 'xl/worksheets/sheet1.xml',
+						relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+						id: 'rIdThreaded',
+						type: 'http://schemas.microsoft.com/office/2017/10/relationships/threadedComment',
+						rawTarget: '../threadedComments/missing.xml',
+						resolvedTarget: 'xl/threadedComments/missing.xml',
+					},
+				],
+			},
+		})
+		const issue = result.issues.find(
+			(i) =>
+				i.rule === 'threaded-comment-integrity' &&
+				i.details?.kind === 'threaded-comment-relationship-missing-target',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(issue?.severity).toBe('error')
+		expect(issue?.refs).toEqual(['xl/worksheets/_rels/sheet1.xml.rels#rIdThreaded'])
+		expect(issue?.details?.relationship).toMatchObject({
+			id: 'rIdThreaded',
+			sourcePartPath: 'xl/worksheets/sheet1.xml',
+			resolvedTarget: 'xl/threadedComments/missing.xml',
+		})
+	})
+
+	test('detects orphaned threaded comment persons package parts', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/persons/person.xml',
+						featureFamily: 'preservedThreadedComments',
+						ownerScope: 'workbook',
+						contentType: 'application/vnd.ms-excel.person+xml',
+					},
+				],
+				relationships: [],
+			},
+		})
+		const issue = result.issues.find(
+			(i) =>
+				i.rule === 'threaded-comment-integrity' &&
+				i.details?.kind === 'orphan-threaded-comment-persons-part',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(issue?.refs).toEqual(['xl/persons/person.xml'])
+		expect(issue?.details).toMatchObject({
+			partPath: 'xl/persons/person.xml',
+			contentType: 'application/vnd.ms-excel.person+xml',
+		})
+	})
+
 	test('detects legacy comment VML row and column target drift', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
@@ -2874,6 +2940,91 @@ describe('checker', () => {
 
 		expect(result.passed).toBe(false)
 		expect(issue?.refs).toEqual(['xl/comments1.xml'])
+	})
+
+	test('detects extra orphaned classic comments parts when modeled comments exist', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.preservedXml = { partPath: 'xl/worksheets/sheet1.xml' }
+		s.comments.set('A1', { text: 'Keep', author: 'Ada' })
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/comments1.xml',
+						featureFamily: 'preservedComments',
+						ownerScope: 'worksheet',
+						contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml',
+					},
+					{
+						path: 'xl/comments2.xml',
+						featureFamily: 'preservedComments',
+						ownerScope: 'worksheet',
+						contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml',
+					},
+				],
+				relationships: [
+					{
+						sourcePartPath: 'xl/worksheets/sheet1.xml',
+						relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+						id: 'rIdComments',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments',
+						rawTarget: '../comments1.xml',
+						resolvedTarget: 'xl/comments1.xml',
+					},
+					{
+						sourcePartPath: 'xl/worksheets/sheet2.xml',
+						relationshipPartPath: 'xl/worksheets/_rels/sheet2.xml.rels',
+						id: 'rIdComments',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments',
+						rawTarget: '../comments2.xml',
+						resolvedTarget: 'xl/comments2.xml',
+					},
+				],
+			},
+		})
+		const orphanIssues = result.issues.filter(
+			(i) =>
+				i.rule === 'legacy-comment-drawing-integrity' &&
+				i.details?.kind === 'orphan-legacy-comments-part',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(orphanIssues).toHaveLength(1)
+		expect(orphanIssues[0]?.refs).toEqual(['xl/comments2.xml'])
+	})
+
+	test('detects classic comments without VML that are missing comments relationships', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.comments.set('A1', { text: 'Plain note', author: 'Ada' })
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/comments1.xml',
+						featureFamily: 'preservedComments',
+						ownerScope: 'worksheet',
+						contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml',
+					},
+				],
+				relationships: [],
+			},
+		})
+		const issue = result.issues.find(
+			(i) =>
+				i.rule === 'legacy-comment-drawing-integrity' &&
+				i.details?.kind === 'missing-legacy-comments-relationship',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(issue?.message).toContain('no comments relationship')
+		expect(issue?.details).toMatchObject({
+			commentCount: 1,
+			legacyDrawingCount: 0,
+		})
 	})
 
 	test('detects external workbook references', () => {

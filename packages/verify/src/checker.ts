@@ -3482,12 +3482,14 @@ function checkThreadedCommentIntegrity(
 	const idsByPart = new Map<string, Map<string, ThreadedCommentIntegrityEntry>>()
 	const rootRefsByPart = new Map<string, Map<string, ThreadedCommentIntegrityEntry>>()
 	const claimedPartsBySheet = new Map<string, Set<string>>()
+	let threadedCommentCount = 0
 	let threadedCommentsWithPersonIds = 0
 
 	for (const sheet of wb.sheets) {
 		for (let index = 0; index < sheet.threadedComments.length; index++) {
 			const comment = sheet.threadedComments[index]
 			if (!comment) continue
+			threadedCommentCount++
 			const partPath = comment.partPath ?? '(unknown threaded comment part)'
 			if (comment.partPath) {
 				let sheetNames = claimedPartsBySheet.get(comment.partPath)
@@ -3724,6 +3726,27 @@ function checkThreadedCommentIntegrity(
 			},
 		})
 	}
+	if (threadedCommentCount === 0) {
+		for (const part of personParts) {
+			issues.push({
+				rule: 'threaded-comment-integrity',
+				severity: 'warning',
+				message: `Threaded comment persons package part "${part.path}" is not claimed by any threaded comment model`,
+				refs: [part.path],
+				suggestedFix:
+					'Reconnect the persons part to sheet.threadedComments or remove the orphan persons sidecar before writing.',
+				details: {
+					kind: 'orphan-threaded-comment-persons-part',
+					partPath: part.path,
+					ownerScope: part.ownerScope,
+					contentType: part.contentType,
+					incomingRelationships: (graphRelationshipsByTarget.get(part.path) ?? []).map(
+						queryTableRelationshipDetails,
+					),
+				},
+			})
+		}
+	}
 	for (const [partPath, sheetNames] of claimedPartsBySheet) {
 		const graphPart = graphPartByPath.get(partPath)
 		if (!graphPart) {
@@ -3798,6 +3821,22 @@ function checkThreadedCommentIntegrity(
 				},
 			})
 		}
+	}
+	for (const relationship of packageGraph.relationships) {
+		if (!isThreadedCommentRelationshipType(relationship.type)) continue
+		if (relationship.resolvedTarget && graphPartByPath.has(relationship.resolvedTarget)) continue
+		issues.push({
+			rule: 'threaded-comment-integrity',
+			severity: 'error',
+			message: `Threaded comment relationship "${relationship.id}" resolves to missing threadedComments part "${relationship.resolvedTarget ?? relationship.rawTarget}"`,
+			refs: [`${relationship.relationshipPartPath}#${relationship.id}`],
+			suggestedFix:
+				'Repair the threadedComment relationship target or restore the referenced threadedComments part before writing.',
+			details: {
+				kind: 'threaded-comment-relationship-missing-target',
+				relationship: queryTableRelationshipDetails(relationship),
+			},
+		})
 	}
 	for (const part of packageGraph.parts) {
 		if (!isThreadedCommentPart(part)) continue
@@ -4025,8 +4064,24 @@ function checkLegacyCommentDrawingIntegrity(
 	const vmlRelationships = packageGraph.relationships.filter((relationship) =>
 		isVmlDrawingRelationshipType(relationship.type),
 	)
-	if (workbookCommentCount === 0) {
+	const commentSheetPartPaths = new Set(
+		wb.sheets
+			.filter((sheet) => sheet.comments.size > 0 && sheet.preservedXml?.partPath)
+			.map((sheet) => sheet.preservedXml?.partPath as string),
+	)
+	const claimedCommentsPartPaths = new Set(
+		commentsRelationships
+			.filter(
+				(relationship) =>
+					relationship.resolvedTarget && commentSheetPartPaths.has(relationship.sourcePartPath),
+			)
+			.map((relationship) => relationship.resolvedTarget as string),
+	)
+	const shouldClassifyCommentsPartOrphans =
+		workbookCommentCount === 0 || commentSheetPartPaths.size > 0
+	if (shouldClassifyCommentsPartOrphans) {
 		for (const part of commentsParts) {
+			if (workbookCommentCount > 0 && claimedCommentsPartPaths.has(part.path)) continue
 			issues.push({
 				rule: 'legacy-comment-drawing-integrity',
 				severity: 'warning',
@@ -4046,14 +4101,13 @@ function checkLegacyCommentDrawingIntegrity(
 			})
 		}
 	}
-	if (workbookLegacyDrawingCount > 0 && commentsRelationships.length === 0) {
+	if (workbookCommentCount > 0 && commentsRelationships.length === 0) {
 		issues.push({
 			rule: 'legacy-comment-drawing-integrity',
 			severity: 'warning',
-			message: 'Legacy comment drawings exist but the package graph has no comments relationship',
+			message: 'Legacy comments exist but the package graph has no comments relationship',
 			refs: commentsParts.map((part) => part.path),
-			suggestedFix:
-				'Restore the worksheet comments relationship before writing classic comments with preserved VML layout.',
+			suggestedFix: 'Restore the worksheet comments relationship before writing classic comments.',
 			details: {
 				kind: 'missing-legacy-comments-relationship',
 				commentCount: workbookCommentCount,

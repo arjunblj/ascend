@@ -1,5 +1,10 @@
 const XML_ENTITY_RE = /&(?:lt|gt|quot|apos|amp|#x[0-9a-fA-F]+|#\d+);/g
 const XML_ATTR_RE = /([A-Za-z_][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g
+const XMLNS_PREFIX_RE = /\sxmlns:([A-Za-z_][\w.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g
+const MAIN_SPREADSHEET_NAMESPACES = new Set([
+	'http://schemas.openxmlformats.org/spreadsheetml/2006/main',
+	'http://purl.oclc.org/ooxml/spreadsheetml/main',
+])
 const XML_ENTITY_MAP: Record<string, string> = {
 	'&lt;': '<',
 	'&gt;': '>',
@@ -34,13 +39,20 @@ export function parseXmlAttributes(rawAttrs: string): Map<string, string> {
 }
 
 export function normalizeMainSpreadsheetNamespacePrefix(xml: string): string {
-	const match =
-		/\sxmlns:([A-Za-z_][\w.-]*)="http:\/\/schemas\.openxmlformats\.org\/spreadsheetml\/2006\/main"/.exec(
-			xml,
-		)
-	const prefix = match?.[1]
-	if (!prefix) return xml
-	return xml.replace(new RegExp(`(<\\/?)${prefix}:`, 'g'), '$1')
+	let normalized = xml
+	XMLNS_PREFIX_RE.lastIndex = 0
+	for (const match of xml.matchAll(XMLNS_PREFIX_RE)) {
+		const prefix = match[1]
+		const namespace = match[2] ?? match[3]
+		if (!prefix || namespace === undefined) continue
+		if (!MAIN_SPREADSHEET_NAMESPACES.has(decodeXmlText(namespace))) continue
+		normalized = normalized.replace(new RegExp(`(<\\/?)${escapeRegExp(prefix)}:`, 'g'), '$1')
+	}
+	return normalized
+}
+
+function escapeRegExp(value: string): string {
+	return value.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')
 }
 
 export function findTagEnd(xml: string, start: number): number {

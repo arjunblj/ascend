@@ -298,6 +298,33 @@ describe('readXlsx', () => {
 		expect(result.value.workbook.definedNames.get('Total')).toBe('Data!$B$1')
 	})
 
+	it('parses XML-legal strict workbook namespace declarations', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="utf-8"?>
+<x:workbook xmlns:x='http://purl.oclc.org/ooxml/spreadsheetml/main'
+  xmlns:rel='http://purl.oclc.org/ooxml/officeDocument/relationships'>
+  <x:workbookPr date1904='1' codeName='StrictWorkbook'/>
+  <x:sheets><x:sheet name='Data' sheetId='1' rel:id='rId1'/></x:sheets>
+  <x:definedNames><x:definedName name='StrictName'>Data!$A$1</x:definedName></x:definedNames>
+  <x:calcPr calcMode='manual'/>
+</x:workbook>`,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': SHEET_XML,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		expect(result.value.workbook.sheets.map((sheet) => sheet.name)).toEqual(['Data'])
+		expect(result.value.workbook.calcSettings.dateSystem).toBe('1904')
+		expect(result.value.workbook.calcSettings.calcMode).toBe('manual')
+		expect(result.value.workbook.workbookProperties.codeName).toBe('StrictWorkbook')
+		expect(result.value.workbook.definedNames.get('StrictName')).toBe('Data!$A$1')
+	})
+
 	it('parses sheet relationship ids with non-r namespace prefixes', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': CONTENT_TYPES,
@@ -334,7 +361,7 @@ describe('readXlsx', () => {
 			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
 			'xl/workbook.xml': WORKBOOK_XML,
 			'xl/sharedStrings.xml': `<?xml version="1.0" encoding="utf-8"?>
-<x:sst xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2" uniqueCount="2">
+<x:sst xmlns:x='http://schemas.openxmlformats.org/spreadsheetml/2006/main' count="2" uniqueCount="2">
   <x:si><x:t>A</x:t></x:si>
   <x:si><x:r><x:rPr><x:b/></x:rPr><x:t>B</x:t></x:r></x:si>
 </x:sst>`,
@@ -352,6 +379,30 @@ describe('readXlsx', () => {
 			kind: 'richText',
 			runs: [{ text: 'B', bold: true }],
 		})
+	})
+
+	it('parses XML-legal prefixed worksheet namespace declarations', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<x:worksheet xmlns:x='http://schemas.openxmlformats.org/spreadsheetml/2006/main'>
+  <x:sheetData>
+    <x:row r='1'><x:c r='A1' t='s'><x:v>0</x:v></x:c></x:row>
+  </x:sheetData>
+  <x:mergeCells count='1'><x:mergeCell ref='A1:B1'/></x:mergeCells>
+</x:worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet?.cells.get(0, 0)?.value).toEqual({ kind: 'string', value: 'Hello' })
+		expect(sheet?.merges).toEqual([{ start: { row: 0, col: 0 }, end: { row: 0, col: 1 } }])
 	})
 
 	it('values mode reads plain string cells without full cell XML parsing', () => {

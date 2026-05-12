@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import type { StyleId } from '@ascend/core'
-import { createWorkbook, Workbook } from '@ascend/core'
+import { createWorkbook, indexToColumn, Workbook } from '@ascend/core'
 import { booleanValue, dateValue, EMPTY, numberValue, stringValue } from '@ascend/schema'
 import { defaultCalcContext, recalculate } from '../../../engine/src/index.ts'
 import { makeEmbeddedChartXlsx, makeXlsx } from '../../test/helpers.ts'
@@ -3533,10 +3533,15 @@ describe('readXlsx', () => {
 	})
 
 	it('values-only byte parser hydrates canonical rows without generic cell parsing', () => {
+		const sequentialWideCells = Array.from({ length: 28 }, (_, col) => {
+			const ref = `${indexToColumn(col)}2`
+			return `<c r="${ref}"><v>${col + 1}</v></c>`
+		}).join('')
 		const xml = `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <dimension ref="A1:AA1"/>
+  <dimension ref="A1:AB2"/>
   <sheetData>
     <row r="1"><c r="A1"><v>7</v></c><c r="B1" t="inlineStr"><is><t>fast &amp; safe</t></is></c><c r="AA1"><v>-3.5</v></c></row>
+    <row r="2">${sequentialWideCells}</row>
   </sheetData>
 </worksheet>`
 		const sheet = parseSheetValuesOnlyBytes('Sheet1', new TextEncoder().encode(xml), {
@@ -3550,6 +3555,9 @@ describe('readXlsx', () => {
 		expect(sheet?.cells.get(0, 0)?.value).toEqual(numberValue(7))
 		expect(sheet?.cells.get(0, 1)?.value).toEqual(stringValue('fast & safe'))
 		expect(sheet?.cells.get(0, 26)?.value).toEqual(numberValue(-3.5))
+		expect(sheet?.cells.get(1, 25)?.value).toEqual(numberValue(26))
+		expect(sheet?.cells.get(1, 26)?.value).toEqual(numberValue(27))
+		expect(sheet?.cells.get(1, 27)?.value).toEqual(numberValue(28))
 	})
 
 	it('values mode preserves mixed direct values, dates, row metadata, maxRows, and sheet metadata', () => {

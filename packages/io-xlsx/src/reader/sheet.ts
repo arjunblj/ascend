@@ -537,7 +537,7 @@ function parseSimpleValuesRowBytes(
 	if (!ctx.valuesOnly || ctx.hasDateStyles) return false
 	let cursor = bodyStart
 	let nextCol = 0
-	const rowText = String(row + 1)
+	const rowNumber = row + 1
 	const out = {
 		row,
 		col: 0,
@@ -553,7 +553,7 @@ function parseSimpleValuesRowBytes(
 			bytes,
 			cursor,
 			bodyEnd,
-			rowText,
+			rowNumber,
 			row,
 			nextCol,
 			out,
@@ -576,7 +576,7 @@ function parseSimpleValuesRowBytes(
 			bytes,
 			cursor,
 			bodyEnd,
-			rowText,
+			rowNumber,
 			row,
 			nextCol,
 			out,
@@ -640,7 +640,7 @@ function parseCanonicalPlainValueCellBytes(
 	bytes: Uint8Array,
 	cursor: number,
 	bodyEnd: number,
-	fallbackRowText: string,
+	fallbackRowNumber: number,
 	fallbackRow: number,
 	fallbackCol: number,
 	out: {
@@ -657,7 +657,7 @@ function parseCanonicalPlainValueCellBytes(
 		bytes,
 		cursor + 6,
 		bodyEnd,
-		fallbackRowText,
+		fallbackRowNumber,
 		fallbackCol,
 	)
 	if (refEnd === -1 || refEnd + 5 >= bodyEnd) return -1
@@ -698,7 +698,7 @@ function parseCanonicalValuesCellBytes(
 	bytes: Uint8Array,
 	cursor: number,
 	bodyEnd: number,
-	fallbackRowText: string,
+	fallbackRowNumber: number,
 	fallbackRow: number,
 	fallbackCol: number,
 	out: {
@@ -718,7 +718,7 @@ function parseCanonicalValuesCellBytes(
 		bytes,
 		index,
 		bodyEnd,
-		fallbackRowText,
+		fallbackRowNumber,
 		fallbackCol,
 	)
 	if (expectedRefEnd === -1) {
@@ -1672,7 +1672,7 @@ function parseCanonicalStreamedValuesRowBytes(
 	if (!ctx.valuesOnly || ctx.hasDateStyles) return null
 	let cursor = bodyStart
 	let nextCol = 0
-	const rowText = String(row + 1)
+	const rowNumber = row + 1
 	const cells: [number, Cell][] = []
 	const out = {
 		row,
@@ -1689,7 +1689,7 @@ function parseCanonicalStreamedValuesRowBytes(
 			bytes,
 			cursor,
 			bodyEnd,
-			rowText,
+			rowNumber,
 			row,
 			nextCol,
 			out,
@@ -3545,17 +3545,60 @@ function consumeExpectedCellRefBytes(
 	bytes: Uint8Array,
 	start: number,
 	end: number,
-	rowText: string,
+	rowNumber: number,
 	col: number,
 ): number {
-	if (col < 0 || col > 25) return -1
-	if (start >= end || bytes[start] !== 65 + col) return -1
-	let cursor = start + 1
-	for (let index = 0; index < rowText.length; index++) {
-		if (cursor >= end || bytes[cursor] !== rowText.charCodeAt(index)) return -1
-		cursor += 1
-	}
+	let cursor = consumeExpectedColumnBytes(bytes, start, end, col)
+	if (cursor === -1) return -1
+	cursor = consumeExpectedPositiveIntegerBytes(bytes, cursor, end, rowNumber)
+	if (cursor === -1) return -1
 	return cursor < end && bytes[cursor] === BYTE_QUOTE ? cursor : -1
+}
+
+function consumeExpectedColumnBytes(
+	bytes: Uint8Array,
+	start: number,
+	end: number,
+	col: number,
+): number {
+	if (col < 0 || col > 16383) return -1
+	if (col < 26) {
+		return start < end && bytes[start] === 65 + col ? start + 1 : -1
+	}
+	if (col < 702) {
+		return start + 1 < end &&
+			bytes[start] === 65 + Math.floor(col / 26) - 1 &&
+			bytes[start + 1] === 65 + (col % 26)
+			? start + 2
+			: -1
+	}
+	const offset = col - 702
+	const first = Math.floor(offset / 676)
+	const rem = offset % 676
+	return start + 2 < end &&
+		bytes[start] === 65 + first &&
+		bytes[start + 1] === 65 + Math.floor(rem / 26) &&
+		bytes[start + 2] === 65 + (rem % 26)
+		? start + 3
+		: -1
+}
+
+function consumeExpectedPositiveIntegerBytes(
+	bytes: Uint8Array,
+	start: number,
+	end: number,
+	value: number,
+): number {
+	if (value <= 0) return -1
+	let divisor = 1
+	while (divisor * 10 <= value) divisor *= 10
+	let cursor = start
+	while (divisor >= 1) {
+		if (cursor >= end || bytes[cursor] !== 48 + (Math.floor(value / divisor) % 10)) return -1
+		cursor += 1
+		divisor /= 10
+	}
+	return cursor
 }
 
 function parseCellRefInBytes(

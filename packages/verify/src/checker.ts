@@ -3729,6 +3729,28 @@ function checkThreadedCommentIntegrity(
 			},
 		})
 	}
+	if (threadedCommentsWithPersonIds > 0 && personParts.length > 1) {
+		issues.push({
+			rule: 'threaded-comment-integrity',
+			severity: 'warning',
+			message: 'Threaded comments use person ids but the package graph has multiple persons parts',
+			refs: personParts.map((part) => part.path),
+			suggestedFix:
+				'Inspect the threaded comment persons sidecars before author-sensitive edits; duplicate persons parts make personId binding ambiguous.',
+			details: {
+				kind: 'ambiguous-threaded-comment-persons-parts',
+				threadedCommentPartPaths: [...claimedPartsBySheet.keys()],
+				personParts: personParts.map((part) => ({
+					partPath: part.path,
+					ownerScope: part.ownerScope,
+					contentType: part.contentType,
+					incomingRelationships: (graphRelationshipsByTarget.get(part.path) ?? []).map(
+						queryTableRelationshipDetails,
+					),
+				})),
+			},
+		})
+	}
 	if (threadedCommentCount === 0) {
 		for (const part of personParts) {
 			issues.push({

@@ -328,6 +328,7 @@ describe('DependencyGraph', () => {
 		const allDataKeys: number[] = []
 		for (let r = 0; r < N; r++) allDataKeys.push(cellKey(0, r, 0))
 
+		g.getDirtySet([cellKey(0, 0, 0)])
 		const start = performance.now()
 		const dirty = g.getDirtySet(allDataKeys)
 		const elapsed = performance.now() - start

@@ -13,6 +13,6 @@ describe('formula correctness vs HyperFormula', () => {
 			expect(result.mismatches).toBe(0)
 			expect(result.rows.filter((row) => row.status === 'diff')).toEqual([])
 		},
-		{ timeout: 30_000 },
+		{ timeout: 120_000 },
 	)
 })

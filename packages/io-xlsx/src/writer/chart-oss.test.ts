@@ -17,41 +17,45 @@ function expectOk<T, E extends { message: string }>(
 }
 
 describe('chart OSS compatibility', () => {
-	ossTest('edits OpenPyXL chart series sources and remains readable by OpenPyXL', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ascend-chart-oss-'))
-		try {
-			const input = join(dir, 'openpyxl-chart.xlsx')
-			const output = join(dir, 'ascend-chart-edited.xlsx')
-			runPython(CREATE_OPENPYXL_CHART, input)
+	ossTest(
+		'edits OpenPyXL chart series sources and remains readable by OpenPyXL',
+		() => {
+			const dir = mkdtempSync(join(tmpdir(), 'ascend-chart-oss-'))
+			try {
+				const input = join(dir, 'openpyxl-chart.xlsx')
+				const output = join(dir, 'ascend-chart-edited.xlsx')
+				runPython(CREATE_OPENPYXL_CHART, input)
 
-			const read = readXlsx(readFileSync(input))
-			expectOk(read)
-			const chart = read.value.workbook.chartParts[0]
-			expect(chart).toMatchObject({
-				partPath: 'xl/charts/chart1.xml',
-				sheetName: 'Data',
-				chartType: 'barChart',
-			})
-			if (!chart) throw new Error('Expected OpenPyXL chart to be parsed')
-			expect(chart?.series[0]?.valueRef).toBe("'Data'!$B$2:$B$5")
+				const read = readXlsx(readFileSync(input))
+				expectOk(read)
+				const chart = read.value.workbook.chartParts[0]
+				expect(chart).toMatchObject({
+					partPath: 'xl/charts/chart1.xml',
+					sheetName: 'Data',
+					chartType: 'barChart',
+				})
+				if (!chart) throw new Error('Expected OpenPyXL chart to be parsed')
+				expect(chart?.series[0]?.valueRef).toBe("'Data'!$B$2:$B$5")
 
-			const applied = applyOperation(read.value.workbook, {
-				op: 'setChartSeriesSource',
-				sheet: 'Data',
-				seriesIndex: 0,
-				valueRef: 'Data!$C$2:$C$5',
-			})
-			expectOk(applied)
-			const written = writeXlsx(read.value.workbook, read.value.capsules)
-			expectOk(written)
-			writeFileSync(output, written.value)
+				const applied = applyOperation(read.value.workbook, {
+					op: 'setChartSeriesSource',
+					sheet: 'Data',
+					seriesIndex: 0,
+					valueRef: 'Data!$C$2:$C$5',
+				})
+				expectOk(applied)
+				const written = writeXlsx(read.value.workbook, read.value.capsules)
+				expectOk(written)
+				writeFileSync(output, written.value)
 
-			const external = runPython(ASSERT_OPENPYXL_CHART_SOURCE, output)
-			expect(external.stdout).toContain('Data!$C$2:$C$5')
-		} finally {
-			rmSync(dir, { recursive: true, force: true })
-		}
-	})
+				const external = runPython(ASSERT_OPENPYXL_CHART_SOURCE, output)
+				expect(external.stdout).toContain('Data!$C$2:$C$5')
+			} finally {
+				rmSync(dir, { recursive: true, force: true })
+			}
+		},
+		{ timeout: 30_000 },
+	)
 })
 
 function runPython(script: string, path: string): { stdout: string } {

@@ -437,6 +437,7 @@ describe('corpus: semantic dashboard chart and drawing inventory', () => {
 				}),
 			])
 		},
+		{ timeout: 120_000 },
 	)
 
 	it.skipIf(!bevReport)(

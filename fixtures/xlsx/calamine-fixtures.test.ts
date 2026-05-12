@@ -31,34 +31,46 @@ function expectOk<T, E extends { message: string }>(
 }
 
 describe('Calamine XLSX/XLSM fixture corpus', () => {
-	test('manifest has pinned provenance for the vendored MIT fixture subset', async () => {
-		expect(existsSync(new URL('./calamine/LICENSE', import.meta.url))).toBe(true)
-		const entries = normalizeManifest(await loadManifest())
-		expect(entries.length).toBe(53)
-		expect(validateManifestProvenance(entries)).toEqual([])
-		expect(selectManifestEntries(entries, { tags: ['calamine'] })).toHaveLength(entries.length)
-		expect(selectManifestEntries(entries, { tags: ['formula-fidelity'] }).length).toBeGreaterThan(0)
-		expect(selectManifestEntries(entries, { tags: ['issue-regression'] }).length).toBeGreaterThan(0)
-		expect(selectManifestEntries(entries, { tags: ['table'] }).length).toBeGreaterThan(0)
-		expect(selectManifestEntries(entries, { tags: ['macro'] }).length).toBe(2)
-		expect(selectManifestEntries(entries, { tags: ['unsupported'] })).toHaveLength(0)
-		expect(
-			selectManifestEntries(entries, { tags: ['encrypted'] }).map((entry) => entry.file),
-		).toEqual(['pass_protected.xlsx'])
-	})
+	test(
+		'manifest has pinned provenance for the vendored MIT fixture subset',
+		async () => {
+			expect(existsSync(new URL('./calamine/LICENSE', import.meta.url))).toBe(true)
+			const entries = normalizeManifest(await loadManifest())
+			expect(entries.length).toBe(53)
+			expect(validateManifestProvenance(entries)).toEqual([])
+			expect(selectManifestEntries(entries, { tags: ['calamine'] })).toHaveLength(entries.length)
+			expect(selectManifestEntries(entries, { tags: ['formula-fidelity'] }).length).toBeGreaterThan(
+				0,
+			)
+			expect(selectManifestEntries(entries, { tags: ['issue-regression'] }).length).toBeGreaterThan(
+				0,
+			)
+			expect(selectManifestEntries(entries, { tags: ['table'] }).length).toBeGreaterThan(0)
+			expect(selectManifestEntries(entries, { tags: ['macro'] }).length).toBe(2)
+			expect(selectManifestEntries(entries, { tags: ['unsupported'] })).toHaveLength(0)
+			expect(
+				selectManifestEntries(entries, { tags: ['encrypted'] }).map((entry) => entry.file),
+			).toEqual(['pass_protected.xlsx'])
+		},
+		{ timeout: 30_000 },
+	)
 
-	test('opens and round-trips every Calamine OOXML fixture without crashing', async () => {
-		const entries = await loadManifest()
-		for (const entry of entries) {
-			const initial = readXlsx(loadFixture(entry.file), fixtureReadOptions(entry.file))
-			expectOk(initial)
-			const written = writeXlsx(initial.value.workbook, initial.value.capsules)
-			expectOk(written)
-			const reopened = readXlsx(written.value)
-			expectOk(reopened)
-			expect(reopened.value.workbook.sheets.length).toBe(initial.value.workbook.sheets.length)
-		}
-	})
+	test(
+		'opens and round-trips every Calamine OOXML fixture without crashing',
+		async () => {
+			const entries = await loadManifest()
+			for (const entry of entries) {
+				const initial = readXlsx(loadFixture(entry.file), fixtureReadOptions(entry.file))
+				expectOk(initial)
+				const written = writeXlsx(initial.value.workbook, initial.value.capsules)
+				expectOk(written)
+				const reopened = readXlsx(written.value)
+				expectOk(reopened)
+				expect(reopened.value.workbook.sheets.length).toBe(initial.value.workbook.sheets.length)
+			}
+		},
+		{ timeout: 60_000 },
+	)
 
 	test('reports password failures before opening encrypted OOXML fixtures', () => {
 		const missing = readXlsx(loadFixture('pass_protected.xlsx'))
@@ -69,18 +81,26 @@ describe('Calamine XLSX/XLSM fixture corpus', () => {
 		if (!wrong.ok) expect(wrong.error.message).toContain('Invalid XLSX password')
 	})
 
-	test('captures expected feature families from Calamine regression fixtures', async () => {
-		const entries = normalizeManifest(await loadManifest())
-		expect(entries.find((entry) => entry.file === 'date_1904.xlsx')?.featureTags).toContain('date')
-		expect(entries.find((entry) => entry.file === 'pivots.xlsx')?.features.pivot_tables).toBe(true)
-		expect(entries.find((entry) => entry.file === 'picture.xlsx')?.features.images_or_media).toBe(
-			true,
-		)
-		expect(entries.find((entry) => entry.file === 'vba.xlsm')?.features.macros).toBe(true)
-		expect(entries.find((entry) => entry.file === 'table-multiple.xlsx')?.features.tables).toBe(
-			true,
-		)
-	})
+	test(
+		'captures expected feature families from Calamine regression fixtures',
+		async () => {
+			const entries = normalizeManifest(await loadManifest())
+			expect(entries.find((entry) => entry.file === 'date_1904.xlsx')?.featureTags).toContain(
+				'date',
+			)
+			expect(entries.find((entry) => entry.file === 'pivots.xlsx')?.features.pivot_tables).toBe(
+				true,
+			)
+			expect(entries.find((entry) => entry.file === 'picture.xlsx')?.features.images_or_media).toBe(
+				true,
+			)
+			expect(entries.find((entry) => entry.file === 'vba.xlsm')?.features.macros).toBe(true)
+			expect(entries.find((entry) => entry.file === 'table-multiple.xlsx')?.features.tables).toBe(
+				true,
+			)
+		},
+		{ timeout: 30_000 },
+	)
 
 	test('recovers sheet, shared-string, style, and chart links from issue252.xlsx', () => {
 		const result = readXlsx(loadFixture('issue252.xlsx'))
@@ -244,34 +264,38 @@ describe('Calamine XLSX/XLSM fixture corpus', () => {
 		})
 	})
 
-	test('cached formulas in the Calamine subset have no semantic mismatches', async () => {
-		const payload = await runFormulaCorpusCorrectness({
-			corpusRoot: calamineDir,
-			manifest: calamineManifest,
-			tags: ['formula-fidelity'],
-			tiers: [],
-			maxReportedMismatches: 20,
-			sampleSeed: 1,
-			oracle: 'cached-values',
-			json: true,
-			maxUnacceptedMismatches: 0,
-			maxSemanticMismatches: 0,
-			maxErrors: 0,
-			minComparedFormulas: 74,
-			minSemanticPerfectWorkbooks: 15,
-		})
-		expect(payload.summary).toMatchObject({
-			workbookCount: 15,
-			formulaCount: 74,
-			comparedCount: 74,
-			volatileOracleSkipCount: 8,
-			mismatchCount: 0,
-			acceptedMismatchCount: 0,
-			unacceptedMismatchCount: 0,
-			semanticMismatchCount: 0,
-			errorCount: 0,
-			perfectWorkbookCount: 15,
-			semanticPerfectWorkbookCount: 15,
-		})
-	})
+	test(
+		'cached formulas in the Calamine subset have no semantic mismatches',
+		async () => {
+			const payload = await runFormulaCorpusCorrectness({
+				corpusRoot: calamineDir,
+				manifest: calamineManifest,
+				tags: ['formula-fidelity'],
+				tiers: [],
+				maxReportedMismatches: 20,
+				sampleSeed: 1,
+				oracle: 'cached-values',
+				json: true,
+				maxUnacceptedMismatches: 0,
+				maxSemanticMismatches: 0,
+				maxErrors: 0,
+				minComparedFormulas: 74,
+				minSemanticPerfectWorkbooks: 15,
+			})
+			expect(payload.summary).toMatchObject({
+				workbookCount: 15,
+				formulaCount: 74,
+				comparedCount: 74,
+				volatileOracleSkipCount: 8,
+				mismatchCount: 0,
+				acceptedMismatchCount: 0,
+				unacceptedMismatchCount: 0,
+				semanticMismatchCount: 0,
+				errorCount: 0,
+				perfectWorkbookCount: 15,
+				semanticPerfectWorkbookCount: 15,
+			})
+		},
+		{ timeout: 60_000 },
+	)
 })

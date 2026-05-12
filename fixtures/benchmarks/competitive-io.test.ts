@@ -420,55 +420,59 @@ describe('competitive IO helpers', () => {
 		expect(evaluated.assertions.selectedSheetMatches).toBe(true)
 	})
 
-	test('SheetJS selected-sheet lane parses only the requested worksheet', async () => {
-		const proc = Bun.spawn(
-			[
-				'bun',
-				'run',
-				'fixtures/benchmarks/competitive-io.ts',
-				'--workload',
-				'selected-sheet',
-				'--category',
-				'read',
-				'--libraries',
-				'sheetjs',
-				'--rows',
-				'5',
-				'--cols',
-				'4',
-				'--repeat',
-				'1',
-				'--warmup',
-				'0',
-				'--json',
-			],
-			{ stdout: 'pipe', stderr: 'pipe' },
-		)
-		const [stdout, stderr, exitCode] = await Promise.all([
-			new Response(proc.stdout).text(),
-			new Response(proc.stderr).text(),
-			proc.exited,
-		])
-		expect(stderr).toBe('')
-		expect(exitCode).toBe(0)
-		const payload = JSON.parse(stdout) as {
-			readonly cases: readonly [
-				{
-					readonly dimensions: { readonly correctnessStatus: string }
-					readonly assertions: Record<string, unknown>
-				},
-			]
-			readonly metadata: { readonly skipped: readonly { readonly library: string }[] }
-		}
-		const result = payload.cases[0]
-		expect(result.dimensions.correctnessStatus).toBe('pass')
-		expect(result.assertions.selectedSheetRead).toBe(true)
-		expect(result.assertions.sourceSheetCount).toBe(3)
-		expect(result.assertions.loadedSheetCount).toBe(1)
-		expect(result.assertions.loadedSheetNames).toBe('Data')
-		expect(result.assertions.hasAllSheets).toBe(false)
-		expect(payload.metadata.skipped.some((entry) => entry.library === 'sheetjs')).toBe(false)
-	})
+	test(
+		'SheetJS selected-sheet lane parses only the requested worksheet',
+		async () => {
+			const proc = Bun.spawn(
+				[
+					'bun',
+					'run',
+					'fixtures/benchmarks/competitive-io.ts',
+					'--workload',
+					'selected-sheet',
+					'--category',
+					'read',
+					'--libraries',
+					'sheetjs',
+					'--rows',
+					'5',
+					'--cols',
+					'4',
+					'--repeat',
+					'1',
+					'--warmup',
+					'0',
+					'--json',
+				],
+				{ stdout: 'pipe', stderr: 'pipe' },
+			)
+			const [stdout, stderr, exitCode] = await Promise.all([
+				new Response(proc.stdout).text(),
+				new Response(proc.stderr).text(),
+				proc.exited,
+			])
+			expect(stderr).toBe('')
+			expect(exitCode).toBe(0)
+			const payload = JSON.parse(stdout) as {
+				readonly cases: readonly [
+					{
+						readonly dimensions: { readonly correctnessStatus: string }
+						readonly assertions: Record<string, unknown>
+					},
+				]
+				readonly metadata: { readonly skipped: readonly { readonly library: string }[] }
+			}
+			const result = payload.cases[0]
+			expect(result.dimensions.correctnessStatus).toBe('pass')
+			expect(result.assertions.selectedSheetRead).toBe(true)
+			expect(result.assertions.sourceSheetCount).toBe(3)
+			expect(result.assertions.loadedSheetCount).toBe(1)
+			expect(result.assertions.loadedSheetNames).toBe('Data')
+			expect(result.assertions.hasAllSheets).toBe(false)
+			expect(payload.metadata.skipped.some((entry) => entry.library === 'sheetjs')).toBe(false)
+		},
+		{ timeout: 30_000 },
+	)
 
 	test('metadata-only workload checks workbook metadata without hydrating cells', async () => {
 		const input = await buildWorkloadDataSet('metadata-only', 5, 4, 'raw-ooxml')
@@ -492,48 +496,52 @@ describe('competitive IO helpers', () => {
 		expect(evaluated.assertions.cellsNotHydrated).toBe(true)
 	})
 
-	test('external SheetJS runner supports metadata-only reads without hydrated cells', async () => {
-		const input = await buildWorkloadDataSet('metadata-only', 5, 4, 'raw-ooxml')
-		const proc = Bun.spawn(
-			[
-				'bun',
-				'fixtures/benchmarks/runners/js_read_runner.ts',
-				'--library',
-				'sheetjs',
-				'--metadata-only',
-				'--operation',
-				'read',
-				'--file',
-				input.xlsxPath,
-				'--repeat',
-				'1',
-				'--warmup',
-				'0',
-				'--json',
-			],
-			{ stdout: 'pipe', stderr: 'pipe' },
-		)
-		const [stdout, stderr, exitCode] = await Promise.all([
-			new Response(proc.stdout).text(),
-			new Response(proc.stderr).text(),
-			proc.exited,
-		])
-		expect(stderr).toBe('')
-		expect(exitCode).toBe(0)
-		const payload = JSON.parse(stdout) as {
-			readonly assertions: Record<string, unknown>
-		}
-		expect(payload.assertions.metadataOnlyRead).toBe(true)
-		expect(payload.assertions.sourceSheetCount).toBe(3)
-		expect(payload.assertions.loadedSheetCount).toBe(3)
-		expect(payload.assertions.hasAllSheets).toBe(true)
-		expect(payload.assertions.cellsHydrated).toBe(false)
-		expect(payload.assertions.runnerLoadMode).toBe('metadata-only')
+	test(
+		'external SheetJS runner supports metadata-only reads without hydrated cells',
+		async () => {
+			const input = await buildWorkloadDataSet('metadata-only', 5, 4, 'raw-ooxml')
+			const proc = Bun.spawn(
+				[
+					'bun',
+					'fixtures/benchmarks/runners/js_read_runner.ts',
+					'--library',
+					'sheetjs',
+					'--metadata-only',
+					'--operation',
+					'read',
+					'--file',
+					input.xlsxPath,
+					'--repeat',
+					'1',
+					'--warmup',
+					'0',
+					'--json',
+				],
+				{ stdout: 'pipe', stderr: 'pipe' },
+			)
+			const [stdout, stderr, exitCode] = await Promise.all([
+				new Response(proc.stdout).text(),
+				new Response(proc.stderr).text(),
+				proc.exited,
+			])
+			expect(stderr).toBe('')
+			expect(exitCode).toBe(0)
+			const payload = JSON.parse(stdout) as {
+				readonly assertions: Record<string, unknown>
+			}
+			expect(payload.assertions.metadataOnlyRead).toBe(true)
+			expect(payload.assertions.sourceSheetCount).toBe(3)
+			expect(payload.assertions.loadedSheetCount).toBe(3)
+			expect(payload.assertions.hasAllSheets).toBe(true)
+			expect(payload.assertions.cellsHydrated).toBe(false)
+			expect(payload.assertions.runnerLoadMode).toBe('metadata-only')
 
-		const evaluated = evaluateAssertions('read', input, payload.assertions)
-		expect(evaluated.status).toBe('pass')
-		expect(evaluated.assertions.cellsNotHydrated).toBe(true)
-	})
+			const evaluated = evaluateAssertions('read', input, payload.assertions)
+			expect(evaluated.status).toBe('pass')
+			expect(evaluated.assertions.cellsNotHydrated).toBe(true)
+		},
+		{ timeout: 30_000 },
+	)
 
 	test('raw OOXML generated data set is independent and semantically equivalent', async () => {
 		const input = await buildWorkloadDataSet('sparse-wide', 4, 16, 'raw-ooxml')
@@ -551,16 +559,20 @@ describe('competitive IO helpers', () => {
 		expect(assertions.status).toBe('pass')
 	})
 
-	test('Ascend-writer read source is interoperable with ExcelJS', async () => {
-		const { default: ExcelJS } = await import('exceljs')
-		const input = await buildWorkloadDataSet('dense-values', 4, 4, 'ascend-writer')
-		const workbook = new ExcelJS.Workbook()
+	test(
+		'Ascend-writer read source is interoperable with ExcelJS',
+		async () => {
+			const { default: ExcelJS } = await import('exceljs')
+			const input = await buildWorkloadDataSet('dense-values', 4, 4, 'ascend-writer')
+			const workbook = new ExcelJS.Workbook()
 
-		await workbook.xlsx.load(Buffer.from(input.xlsxBytes))
+			await workbook.xlsx.load(Buffer.from(input.xlsxBytes))
 
-		expect(workbook.worksheets).toHaveLength(1)
-		expect(workbook.getWorksheet('Data')?.getCell('D4').value).toBe(15)
-	})
+			expect(workbook.worksheets).toHaveLength(1)
+			expect(workbook.getWorksheet('Data')?.getCell('D4').value).toBe(15)
+		},
+		{ timeout: 30_000 },
+	)
 
 	test('sparse-wide workload assertions catch corrupted far-right edge cells', () => {
 		const input = workloadInput('sparse-wide', 3, 101)

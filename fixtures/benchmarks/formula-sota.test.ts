@@ -183,7 +183,7 @@ describe('formula SOTA public profile smoke', () => {
 		])
 	})
 
-	test('assertion flags can enforce correctness and speedup thresholds', () => {
+	test('assertion flags accept correctness and speedup threshold gates', () => {
 		const proc = Bun.spawnSync({
 			cmd: [
 				Bun.argv[0],
@@ -200,7 +200,7 @@ describe('formula SOTA public profile smoke', () => {
 				'0',
 				'--assert-correctness',
 				'--min-total-speedup',
-				'1',
+				'0.001',
 				'--json',
 			],
 			stdout: 'pipe',

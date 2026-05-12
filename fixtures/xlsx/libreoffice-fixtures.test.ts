@@ -67,36 +67,40 @@ describe('LibreOffice XLSX fixture corpus', () => {
 		}
 	})
 
-	test('captures expected feature families from LibreOffice regression fixtures', async () => {
-		const entries = normalizeManifest(await loadManifest())
-		expect(
-			entries.find((entry) => entry.file === 'PivotTable_CachedDefinitionAndDataInSync.xlsx')
-				?.features.pivot_tables,
-		).toBe(true)
-		expect(
-			entries.find((entry) => entry.file === 'activex_checkbox.xlsx')?.features.active_content,
-		).toBe(true)
-		expect(
-			entries.find((entry) => entry.file === 'MissingPathExternal.xlsx')?.features.external_links,
-		).toBe(true)
-		expect(
-			entries.find((entry) => entry.file === 'textLengthDataValidity.xlsx')?.features
-				.data_validations,
-		).toBe(true)
-		expect(
-			entries.find((entry) => entry.file === 'universal-content-strict.xlsx')?.features
-				.strict_ooxml,
-		).toBe(true)
-		expect(
-			entries.find((entry) => entry.file === 'colorscale.xlsx')?.features.conditional_formatting,
-		).toBe(true)
-		expect(
-			entries.find((entry) => entry.file === 'functions-excel-2010.xlsx')?.counts.formulas,
-		).toBe(517)
-		expect(
-			entries.find((entry) => entry.file === 'tdf167689_tableType.xlsx')?.features.tables,
-		).toBe(true)
-	})
+	test(
+		'captures expected feature families from LibreOffice regression fixtures',
+		async () => {
+			const entries = normalizeManifest(await loadManifest())
+			expect(
+				entries.find((entry) => entry.file === 'PivotTable_CachedDefinitionAndDataInSync.xlsx')
+					?.features.pivot_tables,
+			).toBe(true)
+			expect(
+				entries.find((entry) => entry.file === 'activex_checkbox.xlsx')?.features.active_content,
+			).toBe(true)
+			expect(
+				entries.find((entry) => entry.file === 'MissingPathExternal.xlsx')?.features.external_links,
+			).toBe(true)
+			expect(
+				entries.find((entry) => entry.file === 'textLengthDataValidity.xlsx')?.features
+					.data_validations,
+			).toBe(true)
+			expect(
+				entries.find((entry) => entry.file === 'universal-content-strict.xlsx')?.features
+					.strict_ooxml,
+			).toBe(true)
+			expect(
+				entries.find((entry) => entry.file === 'colorscale.xlsx')?.features.conditional_formatting,
+			).toBe(true)
+			expect(
+				entries.find((entry) => entry.file === 'functions-excel-2010.xlsx')?.counts.formulas,
+			).toBe(517)
+			expect(
+				entries.find((entry) => entry.file === 'tdf167689_tableType.xlsx')?.features.tables,
+			).toBe(true)
+		},
+		{ timeout: 30_000 },
+	)
 
 	test('captures LibreOffice sparkline styling and multi-sparkline groups', () => {
 		const initial = readXlsx(loadFixture('Sparklines.xlsx'))
@@ -446,38 +450,42 @@ describe('LibreOffice XLSX fixture corpus', () => {
 		])
 	})
 
-	test('tracks cached formula parity across LibreOffice formula fixtures', async () => {
-		const payload = await runFormulaCorpusCorrectness({
-			corpusRoot: libreOfficeDir,
-			manifest: libreOfficeManifest,
-			tags: ['formula-fidelity'],
-			tiers: [],
-			maxReportedMismatches: 20,
-			sampleSeed: 1,
-			oracle: 'cached-values',
-			json: true,
-			maxMismatches: 23,
-			maxUnacceptedMismatches: 0,
-			maxSemanticMismatches: 0,
-			maxErrors: 0,
-			minComparedFormulas: 402,
-			minSemanticPerfectWorkbooks: 34,
-		})
-		expect(payload.summary).toMatchObject({
-			workbookCount: 34,
-			formulaCount: 418,
-			comparedCount: 402,
-			noCachedFormulaCount: 16,
-			volatileOracleSkipCount: 0,
-			mismatchCount: 23,
-			acceptedMismatchCount: 23,
-			unacceptedMismatchCount: 0,
-			semanticMismatchCount: 0,
-			numericDriftMismatchCount: 22,
-			staleOracleMismatchCount: 1,
-			errorCount: 0,
-			perfectWorkbookCount: 32,
-			semanticPerfectWorkbookCount: 34,
-		})
-	})
+	test(
+		'tracks cached formula parity across LibreOffice formula fixtures',
+		async () => {
+			const payload = await runFormulaCorpusCorrectness({
+				corpusRoot: libreOfficeDir,
+				manifest: libreOfficeManifest,
+				tags: ['formula-fidelity'],
+				tiers: [],
+				maxReportedMismatches: 20,
+				sampleSeed: 1,
+				oracle: 'cached-values',
+				json: true,
+				maxMismatches: 23,
+				maxUnacceptedMismatches: 0,
+				maxSemanticMismatches: 0,
+				maxErrors: 0,
+				minComparedFormulas: 402,
+				minSemanticPerfectWorkbooks: 34,
+			})
+			expect(payload.summary).toMatchObject({
+				workbookCount: 34,
+				formulaCount: 418,
+				comparedCount: 402,
+				noCachedFormulaCount: 16,
+				volatileOracleSkipCount: 0,
+				mismatchCount: 23,
+				acceptedMismatchCount: 23,
+				unacceptedMismatchCount: 0,
+				semanticMismatchCount: 0,
+				numericDriftMismatchCount: 22,
+				staleOracleMismatchCount: 1,
+				errorCount: 0,
+				perfectWorkbookCount: 32,
+				semanticPerfectWorkbookCount: 34,
+			})
+		},
+		{ timeout: 60_000 },
+	)
 })

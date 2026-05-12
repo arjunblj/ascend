@@ -224,7 +224,13 @@ describe('MCP server', () => {
 			expect(data?.compatibilityFeatures).toContainEqual(
 				expect.objectContaining({
 					feature: 'preservedMacro',
-					locations: ['xl/vbaProject.bin', 'xl/vbaProjectSignature.bin'],
+					locations: ['xl/vbaProject.bin'],
+				}),
+			)
+			expect(data?.compatibilityFeatures).toContainEqual(
+				expect.objectContaining({
+					feature: 'preservedSignature',
+					locations: ['xl/vbaProjectSignature.bin'],
 				}),
 			)
 		} finally {

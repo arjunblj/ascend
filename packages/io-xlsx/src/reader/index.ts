@@ -17,6 +17,7 @@ import type {
 } from '@ascend/schema'
 import { ascendError, emptyReport, err, ok } from '@ascend/schema'
 import { normalizeStoredFormulaText } from '../formula-storage.ts'
+import { classifyPackageFeatureFamily } from '../package-graph.ts'
 import type { PreservationCapsule } from '../preserve.ts'
 import {
 	parseActiveXControlInfo,
@@ -1159,45 +1160,7 @@ function resolveContentTypeInfo(
 }
 
 function capsuleFamily(capsule: PreservationCapsule): string {
-	const path = capsule.partPath
-	const lowerPath = path.toLowerCase()
-	const contentType = capsule.contentType.toLowerCase()
-	const relType = capsule.relType?.toLowerCase() ?? ''
-	if (path.startsWith('docProps/')) return 'preservedDocumentProperties'
-	if (path.includes('/chartsheets/')) return 'preservedChartSheet'
-	if (path.includes('/macrosheets/')) return 'preservedMacroSheet'
-	if (path.includes('/charts/') || path.includes('/chartEx/')) return 'preservedChart'
-	if (path.includes('/queryTables/')) return 'preservedQueryTable'
-	if (path.endsWith('/connections.xml')) return 'preservedConnection'
-	if (path.includes('/customData/')) return 'preservedPowerQuery'
-	if (path.includes('/model/')) return 'preservedDataModel'
-	if (path.includes('/drawings/') && path.endsWith('.vml')) return 'preservedVml'
-	if (path.includes('/drawings/')) return 'preservedDrawing'
-	if (path.includes('/media/')) return 'preservedMedia'
-	if (path.includes('/theme/')) return 'preservedTheme'
-	if (path.includes('/activeX/')) return 'preservedActiveX'
-	if (path.includes('/vbaProject')) return 'preservedMacro'
-	if (path.startsWith('_xmlsignatures/')) return 'preservedSignature'
-	if (isCustomUiPart(lowerPath, contentType, relType)) return 'preservedCustomUi'
-	if (path.includes('/printerSettings/')) return 'preservedPrinterSettings'
-	if (path.startsWith('customXml/')) return 'preservedCustomXml'
-	if (path.includes('/ctrlProps/')) return 'preservedControl'
-	if (/(^|\/)externalLinks\//.test(path)) return 'preservedExternalLink'
-	if (/(^|\/)pivotTables\//.test(path) || /(^|\/)pivotCache\//.test(path)) return 'preservedPivot'
-	if (
-		path.includes('/slicers/') ||
-		path.includes('/slicerCaches/') ||
-		path.includes('/timelines/') ||
-		path.includes('/timelineCaches/')
-	) {
-		return 'preservedSlicer'
-	}
-	if (path.includes('/tables/')) return 'preservedTable'
-	if (path.includes('/metadata')) return 'preservedMetadata'
-	if (path.endsWith('/calcChain.xml')) return 'preservedCalcChain'
-	if (/\/comments\d+\.xml$/i.test(path)) return 'preservedComments'
-	if (path.includes('/threadedComments/')) return 'preservedThreadedComments'
-	return 'preservedOther'
+	return classifyPackageFeatureFamily(capsule.partPath, capsule.contentType, capsule.relType)
 }
 
 function workbookSheetEntryKind(
@@ -1462,11 +1425,29 @@ function preservedFeatureNote(feature: string): string | undefined {
 	if (feature === 'preservedChart') {
 		return 'Chart parts are inventoried and preserved exactly where possible; chart semantics are not yet editable.'
 	}
+	if (feature === 'preservedChartStyle') {
+		return 'Chart style parts are inventoried separately from chart definitions and preserved exactly where possible.'
+	}
+	if (feature === 'preservedChartColor') {
+		return 'Chart color style parts are inventoried separately from chart definitions and preserved exactly where possible.'
+	}
 	if (feature === 'preservedPivot') {
 		return 'Pivot table and pivot cache parts are inventoried and preserved exactly where possible; pivot execution is not performed headlessly.'
 	}
+	if (feature === 'preservedSlicer') {
+		return 'Slicer and slicer cache parts are inventoried with cache/item metadata and preserved exactly where possible.'
+	}
+	if (feature === 'preservedTimeline') {
+		return 'Timeline and timeline cache parts are inventoried with date-range state and preserved exactly where possible.'
+	}
 	if (feature === 'preservedDrawing') {
 		return 'Drawing parts are inventoried and preserved exactly where possible; drawing-object semantics are not yet editable.'
+	}
+	if (feature === 'preservedVml') {
+		return 'VML drawing parts are inventoried and preserved, including legacy comment and form-control drawing anchors.'
+	}
+	if (feature === 'preservedMedia') {
+		return 'Media parts are relationship-inventoried and preserved exactly where possible.'
 	}
 	if (feature === 'preservedMacro') {
 		return 'Macro project bytes are preserved exactly where possible; writes require explicit loss approval because macro semantics are not editable.'
@@ -1492,11 +1473,23 @@ function preservedFeatureNote(feature: string): string | undefined {
 	if (feature === 'preservedThreadedComments') {
 		return 'Threaded comments are inventoried with thread/person metadata and preserved; semantic edits require explicit support.'
 	}
+	if (feature === 'preservedTable') {
+		return 'Table parts are parsed where supported and preserved with package relationship identity across safe edits.'
+	}
 	if (feature === 'preservedExternalLink') {
 		return 'External link package parts are inventoried and preserved; link target edits should use explicit external-link operations.'
 	}
 	if (feature === 'preservedTheme') {
 		return 'Theme parts are inventoried and preserved exactly where possible; full theme editing is not yet first-class.'
+	}
+	if (feature === 'preservedStyles') {
+		return 'Style parts are parsed into the style registry and preserved or patched according to style edit scope.'
+	}
+	if (feature === 'preservedMetadata') {
+		return 'Workbook metadata sidecars are inventoried and preserved; unsupported rich metadata remains inspect-only.'
+	}
+	if (feature === 'preservedEmbedding') {
+		return 'Embedded object package parts are inventoried and preserved exactly where possible; embedded payload execution is blocked.'
 	}
 	if (feature === 'preservedComments') {
 		return 'Classic comment parts are inventoried and preserved; comment text is inspectable when sheet metadata is hydrated.'

@@ -854,7 +854,8 @@ function assertManifestReadCoverage(
 		'timelines',
 		!entry.features.timelines ||
 			((packageCounts.timelines > 0 || packageCounts.timeline_caches > 0) &&
-				(semanticSummary.timelineCount > 0 || semanticSummary.timelineCacheCount > 0)),
+				(semanticSummary.timelineCount > 0 || semanticSummary.timelineCacheCount > 0) &&
+				compatibilityFeatures.has('preservedTimeline')),
 	)
 	assertFeature(
 		entry,
@@ -1195,8 +1196,8 @@ function packageRelationshipIdentityKey(
 	return `${relationship.relationshipPartPath}\u0000${relationship.id}`
 }
 
-function isAllowedPreservedOtherPart(partPath: string): boolean {
-	return /^xl\/(?:richData|persons|customProperty|volatileDependencies)\//i.test(partPath)
+function isAllowedPreservedOtherPart(_partPath: string): boolean {
+	return false
 }
 
 function expectManifestCount(

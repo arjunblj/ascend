@@ -89,7 +89,7 @@ describe('timeline inventory', () => {
 			},
 		])
 		expect(
-			result.value.report.features.find((entry) => entry.feature === 'preservedSlicer'),
+			result.value.report.features.find((entry) => entry.feature === 'preservedTimeline'),
 		).toBeDefined()
 	})
 })

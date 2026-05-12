@@ -350,8 +350,14 @@ describe('active content inventory', () => {
 		expect(
 			result.value.report.features.find((feature) => feature.feature === 'preservedMacro'),
 		).toMatchObject({
-			count: 2,
-			locations: ['xl/vbaProject.bin', 'xl/vbaProjectSignature.bin'],
+			count: 1,
+			locations: ['xl/vbaProject.bin'],
+		})
+		expect(
+			result.value.report.features.find((feature) => feature.feature === 'preservedSignature'),
+		).toMatchObject({
+			count: 1,
+			locations: ['xl/vbaProjectSignature.bin'],
 		})
 	})
 
@@ -418,8 +424,14 @@ describe('active content inventory', () => {
 		expect(
 			result.value.report.features.find((feature) => feature.feature === 'preservedMacro'),
 		).toMatchObject({
-			count: 2,
-			locations: ['xl/vbaProject.bin', 'xl/vbaProjectSignature.bin'],
+			count: 1,
+			locations: ['xl/vbaProject.bin'],
+		})
+		expect(
+			result.value.report.features.find((feature) => feature.feature === 'preservedSignature'),
+		).toMatchObject({
+			count: 1,
+			locations: ['xl/vbaProjectSignature.bin'],
 		})
 	})
 

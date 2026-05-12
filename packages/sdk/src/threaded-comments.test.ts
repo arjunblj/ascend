@@ -38,7 +38,8 @@ describe('threaded comment SDK inventory', () => {
 			),
 		).toMatchObject({
 			tier: 'preserved',
-			locations: ['xl/threadedComments/threadedComment1.xml'],
+			count: 2,
+			locations: ['xl/persons/person.xml', 'xl/threadedComments/threadedComment1.xml'],
 		})
 	})
 

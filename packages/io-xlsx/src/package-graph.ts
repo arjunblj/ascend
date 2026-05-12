@@ -174,12 +174,16 @@ export function classifyPackageFeatureFamily(
 	if (path.includes('/drawings/') && path.endsWith('.vml')) return 'preservedVml'
 	if (path.includes('/drawings/')) return 'preservedDrawing'
 	if (path.includes('/media/')) return 'preservedMedia'
+	if (path.includes('/model/')) return 'preservedDataModel'
 	if (path.includes('/tables/')) return 'preservedTable'
 	if (path.includes('/queryTables/')) return 'preservedQueryTable'
 	if (/\/comments\d+\.xml$/i.test(path)) return 'preservedComments'
 	if (path.includes('/threadedComments/') || path.includes('/persons/')) {
 		return 'preservedThreadedComments'
 	}
+	if (lowerPath.includes('/richdata/')) return 'preservedMetadata'
+	if (lowerPath.includes('/customproperty/')) return 'preservedMetadata'
+	if (lowerPath.includes('/volatiledependencies/')) return 'preservedMetadata'
 	if (/(^|\/)externalLinks\//.test(path)) return 'preservedExternalLink'
 	if (/(^|\/)pivotTables\//.test(path) || /(^|\/)pivotCache\//.test(path)) {
 		return 'preservedPivot'
@@ -188,7 +192,6 @@ export function classifyPackageFeatureFamily(
 	if (path.includes('/timelines/') || path.includes('/timelineCaches/')) return 'preservedTimeline'
 	if (path.endsWith('/connections.xml')) return 'preservedConnection'
 	if (path.includes('/customData/')) return 'preservedPowerQuery'
-	if (path.includes('/model/')) return 'preservedDataModel'
 	if (path.includes('/theme/')) return 'preservedTheme'
 	if (path.includes('/styles.xml')) return 'preservedStyles'
 	if (path.includes('/metadata')) return 'preservedMetadata'

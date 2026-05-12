@@ -234,7 +234,13 @@ describe('API', () => {
 		expect(body.data.compatibilityFeatures).toContainEqual(
 			expect.objectContaining({
 				feature: 'preservedMacro',
-				locations: ['xl/vbaProject.bin', 'xl/vbaProjectSignature.bin'],
+				locations: ['xl/vbaProject.bin'],
+			}),
+		)
+		expect(body.data.compatibilityFeatures).toContainEqual(
+			expect.objectContaining({
+				feature: 'preservedSignature',
+				locations: ['xl/vbaProjectSignature.bin'],
 			}),
 		)
 	})

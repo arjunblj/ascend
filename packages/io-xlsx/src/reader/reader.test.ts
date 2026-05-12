@@ -3663,6 +3663,9 @@ ${rowEntries.join('\n')}
   <Override PartName="/xl/comments1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml"/>
   <Override PartName="/xl/externalLinks/externalLink1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml"/>
   <Override PartName="/xl/theme/theme.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
+  <Override PartName="/xl/charts/style1.xml" ContentType="application/vnd.ms-office.chartstyle+xml"/>
+  <Override PartName="/xl/charts/colors1.xml" ContentType="application/vnd.ms-office.chartcolorstyle+xml"/>
+  <Override PartName="/xl/richData/richValueTypes.xml" ContentType="application/vnd.ms-excel.rdrichvaluetypes+xml"/>
   <Override PartName="/pivotCache/pivotCacheDefinition1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheDefinition+xml"/>
   <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
   <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
@@ -3681,6 +3684,9 @@ ${rowEntries.join('\n')}
 			'xl/comments1.xml': '<comments/>',
 			'xl/externalLinks/externalLink1.xml': '<externalLink/>',
 			'xl/theme/theme.xml': '<a:theme/>',
+			'xl/charts/style1.xml': '<cs:chartStyle/>',
+			'xl/charts/colors1.xml': '<cs:colors/>',
+			'xl/richData/richValueTypes.xml': '<rvTypes/>',
 			'pivotCache/pivotCacheDefinition1.xml': '<pivotCacheDefinition/>',
 			'docProps/core.xml': '<cp:coreProperties/>',
 			'docProps/app.xml': '<Properties/>',
@@ -3738,6 +3744,33 @@ ${rowEntries.join('\n')}
 				tier: 'preserved',
 				count: 1,
 				locations: ['xl/theme/theme.xml'],
+			}),
+		)
+		expect(
+			result.value.report.features.find((feature) => feature.feature === 'preservedChartStyle'),
+		).toEqual(
+			expect.objectContaining({
+				tier: 'preserved',
+				count: 1,
+				locations: ['xl/charts/style1.xml'],
+			}),
+		)
+		expect(
+			result.value.report.features.find((feature) => feature.feature === 'preservedChartColor'),
+		).toEqual(
+			expect.objectContaining({
+				tier: 'preserved',
+				count: 1,
+				locations: ['xl/charts/colors1.xml'],
+			}),
+		)
+		expect(
+			result.value.report.features.find((feature) => feature.feature === 'preservedMetadata'),
+		).toEqual(
+			expect.objectContaining({
+				tier: 'preserved',
+				count: 1,
+				locations: ['xl/richData/richValueTypes.xml'],
 			}),
 		)
 		expect(

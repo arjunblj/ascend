@@ -453,7 +453,13 @@ describe('ascend cli', () => {
 		expect(parsed.data.compatibilityFeatures).toContainEqual(
 			expect.objectContaining({
 				feature: 'preservedMacro',
-				locations: ['xl/vbaProject.bin', 'xl/vbaProjectSignature.bin'],
+				locations: ['xl/vbaProject.bin'],
+			}),
+		)
+		expect(parsed.data.compatibilityFeatures).toContainEqual(
+			expect.objectContaining({
+				feature: 'preservedSignature',
+				locations: ['xl/vbaProjectSignature.bin'],
 			}),
 		)
 	})

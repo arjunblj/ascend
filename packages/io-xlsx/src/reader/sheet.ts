@@ -4073,22 +4073,27 @@ function parseCanonicalIntegerValueIntoOutBytes(
 	let value = 0
 	const digitStart = cursor
 	while (cursor < end) {
-		const code = bytes[cursor]
-		if (!isAsciiDigit(code)) break
-		value = value * 10 + ((code ?? 48) - 48)
+		const code = bytes[cursor] ?? 0
+		if (code < 48 || code > 57) break
+		value = value * 10 + (code - 48)
 		cursor += 1
 	}
-	if (cursor === digitStart || !startsWithValueCellCloseBytes(bytes, cursor, end)) return -1
+	if (
+		cursor === digitStart ||
+		cursor + BYTES_VALUE_CELL_CLOSE.length > end ||
+		(bytes[cursor] ?? -1) !== 60 ||
+		(bytes[cursor + 1] ?? -1) !== 47 ||
+		(bytes[cursor + 2] ?? -1) !== 118 ||
+		(bytes[cursor + 3] ?? -1) !== 62 ||
+		(bytes[cursor + 4] ?? -1) !== 60 ||
+		(bytes[cursor + 5] ?? -1) !== 47 ||
+		(bytes[cursor + 6] ?? -1) !== 99 ||
+		(bytes[cursor + 7] ?? -1) !== 62
+	) {
+		return -1
+	}
 	out.numberValue = sign * value
 	return cursor + BYTES_VALUE_CELL_CLOSE.length
-}
-
-function startsWithValueCellCloseBytes(bytes: Uint8Array, start: number, end: number): boolean {
-	if (start + BYTES_VALUE_CELL_CLOSE.length > end) return false
-	for (let offset = 0; offset < BYTES_VALUE_CELL_CLOSE.length; offset++) {
-		if (bytes[start + offset] !== BYTES_VALUE_CELL_CLOSE[offset]) return false
-	}
-	return true
 }
 
 function consumeExpectedCellRefBytes(

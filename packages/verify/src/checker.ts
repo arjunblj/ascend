@@ -3161,6 +3161,7 @@ function checkConditionalFormatIntegrity(wb: Workbook): CheckIssue[] {
 					suggestedFix:
 						'Assign a positive, unique priority before relying on conditional-format order.',
 					details: {
+						kind: 'conditional-format-nonpositive-priority',
 						source: entry.source,
 						priority: entry.priority,
 						formatIndex: entry.formatIndex,
@@ -3189,6 +3190,7 @@ function checkConditionalFormatIntegrity(wb: Workbook): CheckIssue[] {
 					suggestedFix:
 						'Give overlapping conditional-format rules distinct priorities before editing or reordering them.',
 					details: {
+						kind: 'conditional-format-priority-collision',
 						priority: left.priority,
 						left: {
 							source: left.source,

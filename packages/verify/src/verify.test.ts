@@ -1879,10 +1879,61 @@ describe('checker', () => {
 		expect(issues[0]?.message).toContain('share priority 1')
 		expect(issues[0]?.refs).toEqual(['Sheet1!A1:A5', 'Sheet1!A3:A7'])
 		expect(issues[0]?.details).toMatchObject({
+			kind: 'conditional-format-priority-collision',
 			priority: 1,
 			left: { source: 'conditionalFormat', sqref: 'A1:A5', ruleType: 'expression' },
 			right: { source: 'conditionalFormat', sqref: 'A3:A7', ruleType: 'cellIs' },
 		})
+	})
+
+	test('detects non-positive conditional format priorities', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.conditionalFormats.push({
+			sqref: 'E1',
+			rules: [{ type: 'expression', priority: 0, formulas: ['E1>0'] }],
+		})
+		s.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'F1',
+			priority: -1,
+			type: 'dataBar',
+			formulas: [],
+		})
+
+		const result = check(wb)
+		const issues = result.issues.filter(
+			(i) =>
+				i.rule === 'conditional-format-integrity' &&
+				i.details?.kind === 'conditional-format-nonpositive-priority',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(issues).toHaveLength(2)
+		expect(issues).toContainEqual(
+			expect.objectContaining({
+				severity: 'warning',
+				refs: ['Sheet1!E1'],
+				details: expect.objectContaining({
+					source: 'conditionalFormat',
+					priority: 0,
+					formatIndex: 0,
+					ruleIndex: 0,
+				}),
+			}),
+		)
+		expect(issues).toContainEqual(
+			expect.objectContaining({
+				severity: 'warning',
+				refs: ['Sheet1!F1'],
+				details: expect.objectContaining({
+					source: 'x14ConditionalFormat',
+					priority: -1,
+					formatIndex: 0,
+					ruleType: 'dataBar',
+				}),
+			}),
+		)
 	})
 
 	test('detects overlapping legacy and x14 conditional format priority collisions', () => {
@@ -1903,6 +1954,7 @@ describe('checker', () => {
 		const issues = result.issues.filter((i) => i.rule === 'conditional-format-integrity')
 		expect(issues).toHaveLength(1)
 		expect(issues[0]?.details).toMatchObject({
+			kind: 'conditional-format-priority-collision',
 			priority: 2,
 			left: { source: 'conditionalFormat', sqref: 'B2:B5' },
 			right: { source: 'x14ConditionalFormat', sqref: 'B4:B8', ruleType: 'dataBar' },

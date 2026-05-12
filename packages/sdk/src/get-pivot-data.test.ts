@@ -111,6 +111,74 @@ describe('GETPIVOTDATA metadata queries', () => {
 		})
 	})
 
+	test('resolves saved visible pivot output values by column field filters', () => {
+		const wb = workbookWithSavedPivotColumnOutput()
+
+		const columnGrandTotal = wb.getPivotData({
+			pivotTable: 'PivotTable1',
+			dataField: 'Sales',
+			filters: [{ field: 'Region', item: 'South' }],
+		})
+
+		expect(columnGrandTotal.canResolveOutput).toBe(true)
+		expect(columnGrandTotal.matches[0]?.output).toEqual({
+			sheetName: 'Sheet1',
+			ref: 'C5',
+			value: numberValue(22),
+		})
+
+		const rowAndColumn = wb.getPivotData({
+			pivotTable: 'PivotTable1',
+			dataField: 'Sum of Sales',
+			filters: [
+				{ field: 'Product', item: 'Widget' },
+				{ field: 'Region', item: 'South' },
+			],
+		})
+
+		expect(rowAndColumn.canResolveOutput).toBe(true)
+		expect(rowAndColumn.matches[0]?.output).toEqual({
+			sheetName: 'Sheet1',
+			ref: 'C3',
+			value: numberValue(20),
+		})
+
+		const missingColumnItem = wb.getPivotData({
+			pivotTable: 'PivotTable1',
+			dataField: 'Sales',
+			filters: [{ field: 'Region', item: '2' }],
+		})
+
+		expect(missingColumnItem.canResolveOutput).toBe(false)
+		expect(missingColumnItem.matches[0]?.output).toBeUndefined()
+	})
+
+	test('validates selected report filters before reading saved pivot output', () => {
+		const wb = workbookWithSavedPivotPageFilter()
+
+		const selected = wb.getPivotData({
+			pivotTable: 'PivotTable1',
+			dataField: 'Sales',
+			filters: [{ field: 'Region', item: 'North' }],
+		})
+
+		expect(selected.canResolveOutput).toBe(true)
+		expect(selected.matches[0]?.output).toEqual({
+			sheetName: 'Sheet1',
+			ref: 'B2',
+			value: numberValue(150),
+		})
+
+		const hidden = wb.getPivotData({
+			pivotTable: 'PivotTable1',
+			dataField: 'Sales',
+			filters: [{ field: 'Region', item: 'South' }],
+		})
+
+		expect(hidden.canResolveOutput).toBe(false)
+		expect(hidden.matches[0]?.output).toBeUndefined()
+	})
+
 	test('resolves real Excel saved pivot grand totals', async () => {
 		const wb = await AscendWorkbook.open(readFileSync(MS_EXCEL_PIVOT_FIXTURE), {
 			pivotCacheRecordMaterializeLimit: 'all',
@@ -162,6 +230,116 @@ function workbookWithSavedPivotOutput(): AscendWorkbook {
 		rowFields: [{ index: 0 }],
 		columnFields: [],
 		pageFields: [],
+		dataFields: [{ fieldIndex: 1, name: 'Sum of Sales', subtotal: 'sum' }],
+	})
+	return wb
+}
+
+function workbookWithSavedPivotColumnOutput(): AscendWorkbook {
+	const wb = AscendWorkbook.create()
+	const internal = wb as unknown as {
+		wb: {
+			pivotTables: Array<Record<string, unknown>>
+			sheets: Array<{
+				cells: {
+					set(row: number, col: number, cell: { value: unknown; formula: null; styleId: 0 }): void
+				}
+			}>
+		}
+	}
+	const cells = internal.wb.sheets[0]?.cells
+	if (!cells) throw new Error('Expected default sheet')
+	cells.set(0, 0, { value: stringValue('Sum of Sales'), formula: null, styleId: 0 })
+	cells.set(0, 1, { value: stringValue('Region'), formula: null, styleId: 0 })
+	cells.set(1, 0, { value: stringValue('Product'), formula: null, styleId: 0 })
+	cells.set(1, 1, { value: stringValue('North'), formula: null, styleId: 0 })
+	cells.set(1, 2, { value: stringValue('South'), formula: null, styleId: 0 })
+	cells.set(1, 3, { value: stringValue('Grand Total'), formula: null, styleId: 0 })
+	cells.set(2, 0, { value: stringValue('Widget'), formula: null, styleId: 0 })
+	cells.set(2, 1, { value: numberValue(10), formula: null, styleId: 0 })
+	cells.set(2, 2, { value: numberValue(20), formula: null, styleId: 0 })
+	cells.set(2, 3, { value: numberValue(30), formula: null, styleId: 0 })
+	cells.set(3, 0, { value: stringValue('Gadget'), formula: null, styleId: 0 })
+	cells.set(3, 1, { value: numberValue(1), formula: null, styleId: 0 })
+	cells.set(3, 2, { value: numberValue(2), formula: null, styleId: 0 })
+	cells.set(3, 3, { value: numberValue(3), formula: null, styleId: 0 })
+	cells.set(4, 0, { value: stringValue('Grand Total'), formula: null, styleId: 0 })
+	cells.set(4, 1, { value: numberValue(11), formula: null, styleId: 0 })
+	cells.set(4, 2, { value: numberValue(22), formula: null, styleId: 0 })
+	cells.set(4, 3, { value: numberValue(33), formula: null, styleId: 0 })
+	internal.wb.pivotTables.push({
+		partPath: 'xl/pivotTables/pivotTable1.xml',
+		sheetName: 'Sheet1',
+		name: 'PivotTable1',
+		cacheId: 1,
+		locationRef: 'A1:D5',
+		fields: [
+			{ index: 0, axis: 'axisRow', name: 'Product' },
+			{ index: 1, axis: 'axisCol', name: 'Region' },
+			{ index: 2, dataField: true, name: 'Sales' },
+		],
+		rowFields: [{ index: 0 }],
+		columnFields: [{ index: 1 }],
+		pageFields: [],
+		dataFields: [{ fieldIndex: 2, name: 'Sum of Sales', subtotal: 'sum' }],
+	})
+	return wb
+}
+
+function workbookWithSavedPivotPageFilter(): AscendWorkbook {
+	const wb = AscendWorkbook.create()
+	const internal = wb as unknown as {
+		wb: {
+			pivotCaches: Array<Record<string, unknown>>
+			pivotTables: Array<Record<string, unknown>>
+			sheets: Array<{
+				cells: {
+					set(row: number, col: number, cell: { value: unknown; formula: null; styleId: 0 }): void
+				}
+			}>
+		}
+	}
+	const cells = internal.wb.sheets[0]?.cells
+	if (!cells) throw new Error('Expected default sheet')
+	cells.set(0, 0, { value: stringValue('Sum of Sales'), formula: null, styleId: 0 })
+	cells.set(1, 0, { value: stringValue('Grand Total'), formula: null, styleId: 0 })
+	cells.set(1, 1, { value: numberValue(150), formula: null, styleId: 0 })
+	internal.wb.pivotCaches.push({
+		partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+		cacheId: 1,
+		fields: [
+			{
+				index: 0,
+				name: 'Region',
+				sharedItems: [
+					{ index: 0, kind: 'string', value: 'North' },
+					{ index: 1, kind: 'string', value: 'South' },
+				],
+			},
+			{ index: 1, name: 'Sales' },
+		],
+	})
+	internal.wb.pivotTables.push({
+		partPath: 'xl/pivotTables/pivotTable1.xml',
+		sheetName: 'Sheet1',
+		name: 'PivotTable1',
+		cacheId: 1,
+		locationRef: 'A1:B2',
+		fields: [
+			{
+				index: 0,
+				axis: 'axisPage',
+				name: 'Region',
+				items: [
+					{ index: 0, cacheIndex: 0 },
+					{ index: 1, cacheIndex: 1 },
+				],
+			},
+			{ index: 1, dataField: true, name: 'Sales' },
+		],
+		rowFields: [],
+		columnFields: [],
+		pageFields: [{ index: 0, item: 0 }],
 		dataFields: [{ fieldIndex: 1, name: 'Sum of Sales', subtotal: 'sum' }],
 	})
 	return wb

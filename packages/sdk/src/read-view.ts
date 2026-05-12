@@ -82,6 +82,7 @@ import type {
 	PivotCacheRowsOptions,
 	PivotFieldInfo,
 	PivotFieldItemInfo,
+	PivotFieldReference,
 	PivotOutputAuditInfo,
 	PivotOutputAuditMismatchInfo,
 	PivotRefreshPlanInfo,
@@ -3831,17 +3832,28 @@ function resolveSavedPivotOutput(
 	if (!sheet) return undefined
 	const header = findSavedPivotDataHeader(sheet, bounds, dataField)
 	if (!header) return undefined
-	const fieldColumns = filters.map((filter) => ({
+	const cache = workbook.pivotCaches.find((entry) => entry.cacheId === pivot.cacheId)
+	const visibleFilters = resolveSavedPivotPageFilters(pivot, cache, filters)
+	if (!visibleFilters) return undefined
+	const axisFilters = splitSavedPivotAxisFilters(pivot, cache, visibleFilters)
+	const fieldColumns = axisFilters.row.map((filter) => ({
 		filter,
-		col: findSavedPivotFieldColumn(sheet, bounds, header.row, header.col, filter.field),
+		col: findSavedPivotRowFieldColumn(sheet, bounds, header, filter.field),
 	}))
 	if (fieldColumns.some((entry) => entry.col === undefined)) return undefined
+	const columnHeaderEndRow =
+		(findSavedPivotDataStartRow(sheet, bounds, pivot, cache, header) ?? bounds.end.row + 1) - 1
 	for (let row = header.row + 1; row <= bounds.end.row; row++) {
 		if (!savedPivotRowMatchesFilters(sheet, bounds, row, fieldColumns)) continue
-		const col =
-			fieldColumns.length === 0 && header.col === bounds.start.col
-				? rightmostSavedPivotRowValueCol(sheet, bounds, row)
-				: header.col
+		const col = findSavedPivotValueColumn(
+			sheet,
+			bounds,
+			header,
+			columnHeaderEndRow,
+			axisFilters.column,
+			row,
+			fieldColumns.length,
+		)
 		if (col === undefined) return undefined
 		return {
 			sheetName: pivot.sheetName,
@@ -3850,6 +3862,85 @@ function resolveSavedPivotOutput(
 		}
 	}
 	return undefined
+}
+
+function resolveSavedPivotPageFilters(
+	pivot: PivotTableInfo,
+	cache: PivotCacheInfo | undefined,
+	filters: readonly GetPivotDataFilter[],
+): readonly GetPivotDataFilter[] | null {
+	if (pivot.pageFields.length === 0 || filters.length === 0) return filters
+	const visibleFilters: GetPivotDataFilter[] = []
+	for (const filter of filters) {
+		const pageField = pivot.pageFields.find((candidate) =>
+			savedPivotFieldReferenceCaptionsMatch(pivot, cache, candidate, filter.field),
+		)
+		if (!pageField) {
+			visibleFilters.push(filter)
+			continue
+		}
+		const selected = selectedSavedPivotPageFieldItem(pivot, cache, pageField)
+		if (!selected || normalizePivotAuditText(selected) !== normalizePivotAuditText(filter.item)) {
+			return null
+		}
+	}
+	return visibleFilters
+}
+
+function selectedSavedPivotPageFieldItem(
+	pivot: PivotTableInfo,
+	cache: PivotCacheInfo | undefined,
+	pageField: PivotFieldReference,
+): string | null {
+	if (pageField.index < 0 || pageField.item === undefined) return null
+	const pivotItem = pivot.fields[pageField.index]?.items?.[pageField.item]
+	if (!pivotItem || pivotItem.hidden || pivotItem.missing || pivotItem.cacheIndex === undefined) {
+		return null
+	}
+	if (!cache) return pivotItem.caption ?? null
+	return pivotCacheSharedItemLabel(cache, pageField.index, pivotItem.cacheIndex)
+}
+
+function splitSavedPivotAxisFilters(
+	pivot: PivotTableInfo,
+	cache: PivotCacheInfo | undefined,
+	filters: readonly GetPivotDataFilter[],
+): { readonly row: readonly GetPivotDataFilter[]; readonly column: readonly GetPivotDataFilter[] } {
+	const row: GetPivotDataFilter[] = []
+	const column: GetPivotDataFilter[] = []
+	for (const filter of filters) {
+		if (savedPivotFieldReferenceListMatches(pivot, cache, pivot.columnFields, filter.field)) {
+			column.push(filter)
+		} else {
+			row.push(filter)
+		}
+	}
+	return { row, column }
+}
+
+function savedPivotFieldReferenceListMatches(
+	pivot: PivotTableInfo,
+	cache: PivotCacheInfo | undefined,
+	references: readonly PivotFieldReference[],
+	fieldName: string,
+): boolean {
+	return references.some((reference) =>
+		savedPivotFieldReferenceCaptionsMatch(pivot, cache, reference, fieldName),
+	)
+}
+
+function savedPivotFieldReferenceCaptionsMatch(
+	pivot: PivotTableInfo,
+	cache: PivotCacheInfo | undefined,
+	reference: PivotFieldReference,
+	fieldName: string,
+): boolean {
+	const field = pivot.fields[reference.index]
+	const cacheField = cache?.fields[reference.index]
+	const normalized = normalizePivotAuditText(fieldName)
+	return [field?.name, cacheField?.name, reference.name, reference.caption]
+		.filter((caption): caption is string => caption !== undefined)
+		.some((caption) => normalizePivotAuditText(caption) === normalized)
 }
 
 function findSavedPivotDataHeader(
@@ -3884,6 +3975,103 @@ function findSavedPivotFieldColumn(
 		if (header === normalizedFieldName) return col
 	}
 	return dataCol > bounds.start.col ? bounds.start.col : undefined
+}
+
+function findSavedPivotRowFieldColumn(
+	sheet: Workbook['sheets'][number],
+	bounds: RangeRef,
+	header: { row: number; col: number },
+	fieldName: string,
+): number | undefined {
+	const normalizedFieldName = normalizePivotAuditText(fieldName)
+	const maxHeaderRow = Math.min(bounds.end.row, header.row + 3)
+	const maxLabelCol = header.col > bounds.start.col ? header.col - 1 : bounds.start.col
+	for (let row = bounds.start.row; row <= maxHeaderRow; row++) {
+		for (let col = bounds.start.col; col <= maxLabelCol; col++) {
+			const label = normalizePivotAuditText(cellText(sheet.cells.get(row, col)?.value ?? EMPTY))
+			if (label === normalizedFieldName) return col
+		}
+	}
+	return findSavedPivotFieldColumn(sheet, bounds, header.row, header.col, fieldName)
+}
+
+function findSavedPivotDataStartRow(
+	sheet: Workbook['sheets'][number],
+	bounds: RangeRef,
+	pivot: PivotTableInfo,
+	cache: PivotCacheInfo | undefined,
+	header: { row: number; col: number },
+): number | undefined {
+	if (pivot.rowFields.length === 0) return undefined
+	const rowFieldCols = pivot.rowFields
+		.map((reference) =>
+			findSavedPivotRowFieldColumn(
+				sheet,
+				bounds,
+				header,
+				pivot.fields[reference.index]?.name ?? cache?.fields[reference.index]?.name ?? '',
+			),
+		)
+		.filter((col): col is number => col !== undefined)
+	if (rowFieldCols.length === 0) return undefined
+	for (let row = header.row + 1; row <= bounds.end.row; row++) {
+		for (const col of rowFieldCols) {
+			const label = normalizePivotAuditText(cellText(sheet.cells.get(row, col)?.value ?? EMPTY))
+			if (
+				label &&
+				label !== 'grand total' &&
+				!savedPivotFieldReferenceListMatches(pivot, cache, pivot.rowFields, label)
+			) {
+				return row
+			}
+		}
+	}
+	return undefined
+}
+
+function findSavedPivotValueColumn(
+	sheet: Workbook['sheets'][number],
+	bounds: RangeRef,
+	header: { row: number; col: number },
+	columnHeaderEndRow: number,
+	columnFilters: readonly GetPivotDataFilter[],
+	row: number,
+	rowFilterCount: number,
+): number | undefined {
+	if (columnFilters.length === 0) {
+		return rowFilterCount === 0 && header.col === bounds.start.col
+			? rightmostSavedPivotRowValueCol(sheet, bounds, row)
+			: header.col
+	}
+	const minDataCol = Math.max(bounds.start.col + 1, header.col)
+	for (let col = minDataCol; col <= bounds.end.col; col++) {
+		if (savedPivotColumnMatchesFilters(sheet, bounds, col, columnHeaderEndRow, columnFilters)) {
+			return col
+		}
+	}
+	return undefined
+}
+
+function savedPivotColumnMatchesFilters(
+	sheet: Workbook['sheets'][number],
+	bounds: RangeRef,
+	col: number,
+	columnHeaderEndRow: number,
+	filters: readonly GetPivotDataFilter[],
+): boolean {
+	if (columnHeaderEndRow < bounds.start.row) return false
+	for (const filter of filters) {
+		let matched = false
+		for (let row = bounds.start.row; row <= columnHeaderEndRow; row++) {
+			const value = normalizePivotAuditText(cellText(sheet.cells.get(row, col)?.value ?? EMPTY))
+			if (value === normalizePivotAuditText(filter.item)) {
+				matched = true
+				break
+			}
+		}
+		if (!matched) return false
+	}
+	return true
 }
 
 function savedPivotRowMatchesFilters(

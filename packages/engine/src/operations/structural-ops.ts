@@ -13,6 +13,8 @@ import type { Operation, PasteMode, Result } from '@ascend/schema'
 import { ascendError, EMPTY, err, ok } from '@ascend/schema'
 import { resolveCellFormulaText } from '../analysis.ts'
 import {
+	findPartialFormulaMoveReference,
+	type PartialFormulaMoveReference,
 	retargetExplicitFormulaSheetRefsInRange,
 	rewriteDefinedNameFormulasForMove,
 	rewriteDefinedNameFormulasForShift,
@@ -164,6 +166,22 @@ export function handleTransferRange(
 			})
 	if (!mergePlan.ok) return mergePlan
 
+	if (op.op === 'moveRange' && pasteCells(mode)) {
+		const skipCells = [{ sheetName: sourceSheet.name, range: source }]
+		if (overwritesTargetFormulas(mode)) {
+			skipCells.push({ sheetName: targetSheet.name, range: mergePlan.value.targetRange })
+		}
+		const partialFormulaBlocker = findPartialFormulaMoveReference(
+			workbook,
+			sourceSheet.name,
+			source,
+			{ skipCells },
+		)
+		if (partialFormulaBlocker) {
+			return err(partialMoveFormulaReferenceError(partialFormulaBlocker, source))
+		}
+	}
+
 	const snapshot = collectRangeCells(sourceSheet, source)
 
 	if (pasteCells(mode)) {
@@ -290,6 +308,10 @@ function pasteMerges(mode: PasteMode): boolean {
 }
 
 function pasteRequiresRecalc(mode: PasteMode): boolean {
+	return mode === 'all' || mode === 'values' || mode === 'formulas'
+}
+
+function overwritesTargetFormulas(mode: PasteMode): boolean {
 	return mode === 'all' || mode === 'values' || mode === 'formulas'
 }
 
@@ -546,6 +568,29 @@ function partialTargetMergeError(
 			refs: [rangeToA1(target), rangeToA1(merge)],
 			suggestedFix:
 				'Choose a target that fully covers the existing merged range, unmerge it first, or paste without formats.',
+		},
+	)
+}
+
+function partialMoveFormulaReferenceError(
+	blocker: PartialFormulaMoveReference,
+	source: RangeRef,
+): ReturnType<typeof ascendError> {
+	return ascendError(
+		'VALIDATION_ERROR',
+		`Cannot move ${rangeToA1(source)} because ${blocker.owner} contains a formula range reference that partially overlaps the moved cells`,
+		{
+			refs: [rangeToA1(source), blocker.owner, blocker.reference],
+			suggestedFix:
+				'Move the full referenced range, edit the formula reference first, or split the formula so it no longer spans cells that will be left behind.',
+			details: {
+				kind: 'partial-move-formula-reference',
+				ownerKind: blocker.ownerKind,
+				owner: blocker.owner,
+				formula: blocker.formula,
+				reference: blocker.reference,
+				source: rangeToA1(source),
+			},
 		},
 	)
 }

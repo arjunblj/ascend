@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { Sheet, StyleId } from '@ascend/core'
+import type { Sheet, StyleId, Workbook } from '@ascend/core'
 import { createTableId, createWorkbook } from '@ascend/core'
 import { EMPTY, numberValue, stringValue } from '@ascend/schema'
 import { recalculate } from './calc.ts'
@@ -1518,6 +1518,198 @@ describe('applyOperation', () => {
 		expect(summary.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('Sheet2!B2')
 		expect(summary.tables[0]?.columns[0]?.formula).toBe('Sheet2!B2')
 		expect(summary.tables[0]?.columns[0]?.totalsRowFormula).toBe('SUM(Sheet2!B2)')
+	})
+
+	test('moveRange rejects cell formulas with partially moved range references before mutation', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, cell(numberValue(1)))
+		sheet.cells.set(1, 0, cell(numberValue(2)))
+		sheet.cells.set(2, 0, cell(numberValue(3)))
+		sheet.cells.set(0, 3, cell(EMPTY, 'SUM(A1:A3)'))
+
+		const result = applyOperation(wb, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'A2',
+			target: 'C2',
+		})
+
+		expectErr(result)
+		expect(result.error.message).toContain('partially overlaps the moved cells')
+		expect(result.error.details).toMatchObject({
+			kind: 'partial-move-formula-reference',
+			ownerKind: 'cell-formula',
+			owner: 'Sheet1!D1',
+			reference: 'A1:A3',
+			source: 'A2',
+		})
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(1, 2)).toBeUndefined()
+		expect(sheet.cells.get(0, 3)?.formula).toBe('SUM(A1:A3)')
+	})
+
+	test('moveRange rejects cross-sheet formulas with partially moved range references', () => {
+		const wb = createWorkbook()
+		const source = wb.addSheet('Sheet1')
+		const target = wb.addSheet('Sheet2')
+		const summary = wb.addSheet('Summary')
+		source.cells.set(0, 0, cell(numberValue(1)))
+		source.cells.set(1, 0, cell(numberValue(2)))
+		source.cells.set(2, 0, cell(numberValue(3)))
+		summary.cells.set(0, 0, cell(EMPTY, 'SUM(Sheet1!A1:A3)'))
+
+		const result = applyOperation(wb, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'A2',
+			targetSheet: 'Sheet2',
+			target: 'C2',
+		})
+
+		expectErr(result)
+		expect(result.error.details).toMatchObject({
+			kind: 'partial-move-formula-reference',
+			owner: 'Summary!A1',
+			reference: 'Sheet1!A1:A3',
+		})
+		expect(source.cells.get(1, 0)?.value).toEqual(numberValue(2))
+		expect(target.cells.get(1, 2)).toBeUndefined()
+		expect(summary.cells.get(0, 0)?.formula).toBe('SUM(Sheet1!A1:A3)')
+	})
+
+	test('moveRange rejects defined names and worksheet metadata formulas with partial moved range refs', () => {
+		const cases: readonly {
+			readonly label: string
+			readonly setup: (wb: Workbook, source: Sheet, summary: Sheet) => void
+			readonly ownerKind: string
+			readonly ownerIncludes: string
+		}[] = [
+			{
+				label: 'defined name',
+				setup: (wb) => wb.definedNames.set('Totals', 'Sheet1!A1:A3'),
+				ownerKind: 'defined-name',
+				ownerIncludes: 'Totals',
+			},
+			{
+				label: 'data validation formula',
+				setup: (_wb, _source, summary) =>
+					summary.dataValidations.push({
+						sqref: 'A1',
+						type: 'list',
+						formula1: 'SUM(Sheet1!A1:A3)',
+					}),
+				ownerKind: 'worksheet-metadata',
+				ownerIncludes: 'dataValidation',
+			},
+			{
+				label: 'conditional format formula',
+				setup: (_wb, _source, summary) =>
+					summary.conditionalFormats.push({
+						sqref: 'B1',
+						rules: [{ type: 'expression', formulas: ['SUM(Sheet1!A1:A3)>0'] }],
+					}),
+				ownerKind: 'worksheet-metadata',
+				ownerIncludes: 'conditionalFormat',
+			},
+			{
+				label: 'conditional format cfvo',
+				setup: (_wb, _source, summary) =>
+					summary.conditionalFormats.push({
+						sqref: 'C1',
+						rules: [
+							{
+								type: 'colorScale',
+								formulas: [],
+								colorScale: {
+									cfvo: [{ type: 'formula', value: 'SUM(Sheet1!A1:A3)' }],
+									colors: [{ rgb: 'FFFF0000' }],
+								},
+							},
+						],
+					}),
+				ownerKind: 'worksheet-metadata',
+				ownerIncludes: 'colorScale.cfvo',
+			},
+			{
+				label: 'x14 data validation formula',
+				setup: (_wb, _source, summary) =>
+					summary.x14DataValidations.push({
+						index: 0,
+						sqref: 'D1',
+						type: 'list',
+						formula1: 'SUM(Sheet1!A1:A3)',
+					}),
+				ownerKind: 'worksheet-metadata',
+				ownerIncludes: 'x14DataValidation',
+			},
+			{
+				label: 'x14 conditional format formula',
+				setup: (_wb, _source, summary) =>
+					summary.x14ConditionalFormats.push({
+						index: 0,
+						sqref: 'E1',
+						formulas: ['SUM(Sheet1!A1:A3)>0'],
+					}),
+				ownerKind: 'worksheet-metadata',
+				ownerIncludes: 'x14ConditionalFormat',
+			},
+			{
+				label: 'x14 conditional format cfvo',
+				setup: (_wb, _source, summary) =>
+					summary.x14ConditionalFormats.push({
+						index: 0,
+						sqref: 'F1',
+						formulas: [],
+						dataBar: { cfvo: [{ type: 'formula', value: 'SUM(Sheet1!A1:A3)' }] },
+					}),
+				ownerKind: 'worksheet-metadata',
+				ownerIncludes: 'dataBar.cfvo',
+			},
+			{
+				label: 'table column formula',
+				setup: (_wb, _source, summary) =>
+					summary.tables.push({
+						id: createTableId(),
+						name: 'SummaryTable',
+						sheetId: summary.id,
+						ref: { start: { row: 0, col: 7 }, end: { row: 2, col: 8 } },
+						columns: [{ name: 'Name' }, { name: 'Calc', formula: 'SUM(Sheet1!A1:A3)' }],
+						hasHeaders: true,
+						hasTotals: false,
+					}),
+				ownerKind: 'worksheet-metadata',
+				ownerIncludes: 'table(SummaryTable)',
+			},
+		]
+
+		for (const scenario of cases) {
+			const wb = createWorkbook()
+			const source = wb.addSheet('Sheet1')
+			const summary = wb.addSheet('Summary')
+			source.cells.set(0, 0, cell(numberValue(1)))
+			source.cells.set(1, 0, cell(numberValue(2)))
+			source.cells.set(2, 0, cell(numberValue(3)))
+			scenario.setup(wb, source, summary)
+
+			const result = applyOperation(wb, {
+				op: 'moveRange',
+				sheet: 'Sheet1',
+				source: 'A2',
+				target: 'C2',
+			})
+
+			expectErr(result)
+			expect(result.error.details).toMatchObject({
+				kind: 'partial-move-formula-reference',
+				ownerKind: scenario.ownerKind,
+				reference: 'Sheet1!A1:A3',
+				source: 'A2',
+			})
+			expect(String(result.error.details?.owner)).toContain(scenario.ownerIncludes)
+			expect(source.cells.get(1, 0)?.value, scenario.label).toEqual(numberValue(2))
+			expect(source.cells.get(1, 2), scenario.label).toBeUndefined()
+		}
 	})
 
 	test('copyRange copies merged-cell layout and replaces covered target merges', () => {

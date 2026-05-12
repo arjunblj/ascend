@@ -1,5 +1,5 @@
 import type { Cell, RangeRef, Sheet, Table, Workbook } from '@ascend/core'
-import { parseRange } from '@ascend/core'
+import { parseRange, toA1 } from '@ascend/core'
 import type { FormulaCellRef, FormulaNode } from '@ascend/formulas'
 import { cachedParseFormula, printFormula } from '@ascend/formulas'
 import { shiftIndex, shiftRangeBounds } from './ref-shift.ts'
@@ -8,6 +8,18 @@ type ConditionalFormatRule = Sheet['conditionalFormats'][number]['rules'][number
 type X14ConditionalFormat = Sheet['x14ConditionalFormats'][number]
 type FormulaTextRewriter = (formula: string | undefined) => string | undefined
 const REF_ERROR_NODE: FormulaNode = { type: 'error', value: '#REF!' }
+
+export interface PartialFormulaMoveReference {
+	readonly ownerKind: 'cell-formula' | 'defined-name' | 'worksheet-metadata'
+	readonly owner: string
+	readonly formula: string
+	readonly reference: string
+}
+
+export interface FormulaMoveSkipRange {
+	readonly sheetName: string
+	readonly range: RangeRef
+}
 
 export function rewriteWorkbookFormulasForShift(
 	workbook: Workbook,
@@ -165,6 +177,79 @@ export function rewriteWorkbookMetadataFormulasForMove(
 	}
 }
 
+export function findPartialFormulaMoveReference(
+	workbook: Workbook,
+	sourceSheet: string,
+	sourceRange: RangeRef,
+	options: { readonly skipCells?: readonly FormulaMoveSkipRange[] } = {},
+): PartialFormulaMoveReference | null {
+	for (const sheet of workbook.sheets) {
+		for (const [row, col, existing] of sheet.cells.iterate()) {
+			if (existing.formula === null) continue
+			if (shouldSkipFormulaCell(sheet.name, row, col, options.skipCells)) continue
+			const reference = findPartialMoveReferenceInFormula(
+				existing.formula,
+				sourceSheet,
+				sheet.name,
+				sourceRange,
+			)
+			if (!reference) continue
+			return {
+				ownerKind: 'cell-formula',
+				owner: `${sheet.name}!${toA1({ row, col })}`,
+				formula: existing.formula,
+				reference,
+			}
+		}
+	}
+
+	for (const entry of workbook.definedNames.list()) {
+		const nameScope = entry.scope
+		const scope =
+			nameScope.kind === 'sheet'
+				? workbook.sheets.find((sheet) => sheet.id === nameScope.sheetId)?.name
+				: undefined
+		const formulaSheet = scope ?? sourceSheet
+		const reference = findPartialMoveReferenceInFormula(
+			entry.formula,
+			sourceSheet,
+			formulaSheet,
+			sourceRange,
+		)
+		if (!reference) continue
+		return {
+			ownerKind: 'defined-name',
+			owner: scope ? `${scope}!${entry.name}` : entry.name,
+			formula: entry.formula,
+			reference,
+		}
+	}
+
+	for (const sheet of workbook.sheets) {
+		const issue = findPartialMoveReferenceInSheetMetadata(
+			sheet,
+			sourceSheet,
+			sheet.name,
+			sourceRange,
+		)
+		if (issue) return issue
+	}
+	return null
+}
+
+function shouldSkipFormulaCell(
+	sheetName: string,
+	row: number,
+	col: number,
+	skipCells: readonly FormulaMoveSkipRange[] | undefined,
+): boolean {
+	return (
+		skipCells?.some(
+			(skip) => skip.sheetName === sheetName && rangeContainsCell(skip.range, row, col),
+		) ?? false
+	)
+}
+
 export function retargetExplicitFormulaSheetRefsInRange(
 	formula: string | undefined,
 	sourceSheet: string,
@@ -200,6 +285,19 @@ function rewriteFormulaTextForMove(
 			targetRange,
 		),
 	)
+}
+
+function findPartialMoveReferenceInFormula(
+	formula: string | undefined,
+	sourceSheet: string,
+	formulaSheet: string,
+	sourceRange: RangeRef,
+): string | null {
+	if (!formula) return null
+	const parsed = cachedParseFormula(formula)
+	if (!parsed.ok) return null
+	const issue = findPartialMoveReferenceAst(parsed.value, sourceSheet, formulaSheet, sourceRange)
+	return issue ? printFormula(issue) : null
 }
 
 export function rewriteFormulaTextForShift(
@@ -900,6 +998,114 @@ export function rewriteSheetMetadataFormulasForMove(
 	}
 }
 
+function findPartialMoveReferenceInSheetMetadata(
+	sheet: Sheet,
+	sourceSheet: string,
+	formulaSheet: string,
+	sourceRange: RangeRef,
+): PartialFormulaMoveReference | null {
+	const check = (
+		formula: string | undefined,
+		owner: string,
+	): PartialFormulaMoveReference | null => {
+		if (!formula) return null
+		const reference = findPartialMoveReferenceInFormula(
+			formula,
+			sourceSheet,
+			formulaSheet,
+			sourceRange,
+		)
+		if (!reference) return null
+		return { ownerKind: 'worksheet-metadata', owner, formula, reference }
+	}
+
+	for (const validation of sheet.dataValidations) {
+		const owner = `${sheet.name}!dataValidation(${validation.sqref})`
+		const formula1 = check(validation.formula1, `${owner}.formula1`)
+		if (formula1) return formula1
+		const formula2 = check(validation.formula2, `${owner}.formula2`)
+		if (formula2) return formula2
+	}
+	for (const format of sheet.conditionalFormats) {
+		for (const [ruleIndex, rule] of format.rules.entries()) {
+			const owner = `${sheet.name}!conditionalFormat(${format.sqref}).rules[${ruleIndex}]`
+			for (const [formulaIndex, formula] of rule.formulas.entries()) {
+				const issue = check(formula, `${owner}.formulas[${formulaIndex}]`)
+				if (issue) return issue
+			}
+			const colorScale = findPartialMoveReferenceInValueObjects(
+				rule.colorScale?.cfvo,
+				check,
+				`${owner}.colorScale.cfvo`,
+			)
+			if (colorScale) return colorScale
+			const dataBar = findPartialMoveReferenceInValueObjects(
+				rule.dataBar?.cfvo,
+				check,
+				`${owner}.dataBar.cfvo`,
+			)
+			if (dataBar) return dataBar
+			const iconSet = findPartialMoveReferenceInValueObjects(
+				rule.iconSet?.cfvo,
+				check,
+				`${owner}.iconSet.cfvo`,
+			)
+			if (iconSet) return iconSet
+		}
+	}
+	for (const validation of sheet.x14DataValidations) {
+		if (validation.deleted) continue
+		const owner = `${sheet.name}!x14DataValidation(${validation.sqref})`
+		const formula1 = check(validation.formula1, `${owner}.formula1`)
+		if (formula1) return formula1
+		const formula2 = check(validation.formula2, `${owner}.formula2`)
+		if (formula2) return formula2
+	}
+	for (const format of sheet.x14ConditionalFormats) {
+		if (format.deleted) continue
+		const owner = `${sheet.name}!x14ConditionalFormat(${format.sqref})`
+		for (const [formulaIndex, formula] of format.formulas.entries()) {
+			const issue = check(formula, `${owner}.formulas[${formulaIndex}]`)
+			if (issue) return issue
+		}
+		const dataBar = findPartialMoveReferenceInValueObjects(
+			format.dataBar?.cfvo,
+			check,
+			`${owner}.dataBar.cfvo`,
+		)
+		if (dataBar) return dataBar
+		const iconSet = findPartialMoveReferenceInValueObjects(
+			format.iconSet?.cfvo,
+			check,
+			`${owner}.iconSet.cfvo`,
+		)
+		if (iconSet) return iconSet
+	}
+	for (const table of sheet.tables) {
+		for (const [columnIndex, column] of table.columns.entries()) {
+			const owner = `${sheet.name}!table(${table.name}).columns[${columnIndex}]`
+			const formula = check(column.formula, `${owner}.formula`)
+			if (formula) return formula
+			const totalsRowFormula = check(column.totalsRowFormula, `${owner}.totalsRowFormula`)
+			if (totalsRowFormula) return totalsRowFormula
+		}
+	}
+	return null
+}
+
+function findPartialMoveReferenceInValueObjects<T extends { readonly value?: string }>(
+	entries: readonly T[] | undefined,
+	check: (formula: string | undefined, owner: string) => PartialFormulaMoveReference | null,
+	owner: string,
+): PartialFormulaMoveReference | null {
+	if (!entries) return null
+	for (const [index, entry] of entries.entries()) {
+		const issue = check(entry.value, `${owner}[${index}]`)
+		if (issue) return issue
+	}
+	return null
+}
+
 export function rewriteSheetMetadataFormulasForRename(
 	sheet: Sheet,
 	oldName: string,
@@ -1402,9 +1608,99 @@ function rewriteFormulaAstForMove(
 	}
 }
 
+function findPartialMoveReferenceAst(
+	node: FormulaNode,
+	sourceSheet: string,
+	formulaSheet: string,
+	sourceRange: RangeRef,
+): FormulaNode | null {
+	const refOnSource = (refSheet: string | undefined) => (refSheet ?? formulaSheet) === sourceSheet
+	switch (node.type) {
+		case 'rangeRef': {
+			if (!refOnSource(node.sheet)) return null
+			const range = formulaRangeFromRefs(node.start, node.end)
+			return rangesOverlap(range, sourceRange) && !rangeContainsRange(sourceRange, range)
+				? node
+				: null
+		}
+		case 'wholeRowRange':
+			if (!refOnSource(node.sheet)) return null
+			return node.endRow >= sourceRange.start.row && node.startRow <= sourceRange.end.row
+				? node
+				: null
+		case 'wholeColumnRange':
+			if (!refOnSource(node.sheet)) return null
+			return node.endCol >= sourceRange.start.col && node.startCol <= sourceRange.end.col
+				? node
+				: null
+		case 'binary':
+			return (
+				findPartialMoveReferenceAst(node.left, sourceSheet, formulaSheet, sourceRange) ??
+				findPartialMoveReferenceAst(node.right, sourceSheet, formulaSheet, sourceRange)
+			)
+		case 'dynamicRangeRef':
+			return (
+				findPartialMoveReferenceAst(node.start, sourceSheet, formulaSheet, sourceRange) ??
+				findPartialMoveReferenceAst(node.end, sourceSheet, formulaSheet, sourceRange)
+			)
+		case 'unary':
+			return findPartialMoveReferenceAst(node.operand, sourceSheet, formulaSheet, sourceRange)
+		case 'spillRef':
+			return findPartialMoveReferenceAst(node.target, sourceSheet, formulaSheet, sourceRange)
+		case 'function':
+			for (const arg of node.args) {
+				const issue = findPartialMoveReferenceAst(arg, sourceSheet, formulaSheet, sourceRange)
+				if (issue) return issue
+			}
+			return null
+		case 'array':
+			for (const row of node.rows) {
+				for (const cell of row) {
+					const issue = findPartialMoveReferenceAst(cell, sourceSheet, formulaSheet, sourceRange)
+					if (issue) return issue
+				}
+			}
+			return null
+		case 'sheetSpanRef':
+			if (node.startSheet !== sourceSheet && node.endSheet !== sourceSheet) return null
+			return findPartialMoveReferenceAst(node.target, sourceSheet, sourceSheet, sourceRange)
+		default:
+			return null
+	}
+}
+
+function formulaRangeFromRefs(start: FormulaCellRef, end: FormulaCellRef): RangeRef {
+	return {
+		start: {
+			row: Math.min(start.row, end.row),
+			col: Math.min(start.col, end.col),
+		},
+		end: {
+			row: Math.max(start.row, end.row),
+			col: Math.max(start.col, end.col),
+		},
+	}
+}
+
 function rangeContainsCell(range: RangeRef, row: number, col: number): boolean {
 	return (
 		row >= range.start.row && row <= range.end.row && col >= range.start.col && col <= range.end.col
+	)
+}
+
+function rangeContainsRange(outer: RangeRef, inner: RangeRef): boolean {
+	return (
+		rangeContainsCell(outer, inner.start.row, inner.start.col) &&
+		rangeContainsCell(outer, inner.end.row, inner.end.col)
+	)
+}
+
+function rangesOverlap(a: RangeRef, b: RangeRef): boolean {
+	return !(
+		a.end.row < b.start.row ||
+		a.start.row > b.end.row ||
+		a.end.col < b.start.col ||
+		a.start.col > b.end.col
 	)
 }
 

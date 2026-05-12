@@ -1030,6 +1030,17 @@ describe('recalculate', () => {
 			formula: 'GETPIVOTDATA("Revenue",$R$4,"Segment","Strategic")',
 			styleId: sid,
 		})
+		sheet.cells.set(16, 22, {
+			value: EMPTY,
+			formula: 'GETPIVOTDATA("Revenue",$R$4:$T$6,"Segment","Strategic")',
+			styleId: sid,
+		})
+		sheet.cells.set(16, 23, {
+			value: EMPTY,
+			formula: 'GETPIVOTDATA("Revenue",PivotAnchor,"Segment","Strategic")',
+			styleId: sid,
+		})
+		wb.definedNames.set('PivotAnchor', "'Pivot Tables'!R4:T6")
 		wb.pivotTables.push({
 			partPath: 'xl/pivotTables/pivotTable1.xml',
 			sheetName: 'Pivot Tables',
@@ -1050,6 +1061,55 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(16, 19)?.value).toEqual(numberValue(32_125_000))
 		expect(sheet.cells.get(16, 20)?.value).toEqual(numberValue(99_000_000))
 		expect(sheet.cells.get(16, 21)?.value).toEqual(numberValue(49_478_096))
+		expect(sheet.cells.get(16, 22)?.value).toEqual(numberValue(49_478_096))
+		expect(sheet.cells.get(16, 23)?.value).toEqual(numberValue(49_478_096))
+	})
+
+	test('GETPIVOTDATA range anchors prefer the most recently listed overlapping pivot', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Pivot Tables')
+		sheet.cells.set(0, 0, { value: stringValue('Grand Total'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Sum of Sales'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('Grand Total'), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(0, 3, { value: stringValue('Grand Total'), formula: null, styleId: sid })
+		sheet.cells.set(0, 4, { value: stringValue('Sum of Sales'), formula: null, styleId: sid })
+		sheet.cells.set(1, 3, { value: stringValue('Grand Total'), formula: null, styleId: sid })
+		sheet.cells.set(1, 4, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(3, 0, {
+			value: EMPTY,
+			formula: 'GETPIVOTDATA("Sales",$A$1:$E$2)',
+			styleId: sid,
+		})
+		wb.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'Pivot Tables',
+			name: 'PivotTable1',
+			cacheId: 1,
+			locationRef: 'A1:B2',
+			fields: [],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [],
+			dataFields: [{ fieldIndex: 0, name: 'Sum of Sales', subtotal: 'sum' }],
+		})
+		wb.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable2.xml',
+			sheetName: 'Pivot Tables',
+			name: 'PivotTable2',
+			cacheId: 2,
+			locationRef: 'D1:E2',
+			fields: [],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [],
+			dataFields: [{ fieldIndex: 0, name: 'Sum of Sales', subtotal: 'sum' }],
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(3, 0)?.value).toEqual(numberValue(20))
 	})
 
 	test('GETPIVOTDATA reads no-filter grand total from column-labeled pivot output', () => {

@@ -1209,10 +1209,11 @@ function evalGetPivotData(argNodes: readonly FormulaNode[], ctx: EvalContext): C
 	if (normalizePivotText(dataField).length === 0) return errorValue('#REF!')
 
 	const anchor = resolveReferenceNode(argNodes[1] ?? { type: 'missing' }, ctx)
-	if (!anchor?.ref || anchor.ref.kind !== 'cell') {
+	const anchorBounds = getPivotAnchorBounds(anchor)
+	if (!anchorBounds) {
 		return anchor?.value.kind === 'error' ? anchor.value : errorValue('#REF!')
 	}
-	const anchorSheet = ctx.workbook.sheets[anchor.ref.sheetIndex]
+	const anchorSheet = ctx.workbook.sheets[anchorBounds.sheetIndex]
 	if (!anchorSheet) return errorValue('#REF!')
 
 	const filters: { field: string; item: string }[] = []
@@ -1227,22 +1228,47 @@ function evalGetPivotData(argNodes: readonly FormulaNode[], ctx: EvalContext): C
 		})
 	}
 
-	for (const pivot of ctx.workbook.pivotTables) {
+	for (let i = ctx.workbook.pivotTables.length - 1; i >= 0; i--) {
+		const pivot = ctx.workbook.pivotTables[i]
+		if (!pivot) continue
 		if (pivot.sheetName !== anchorSheet.name || !pivot.locationRef) continue
 		const bounds = parsePivotLocation(pivot.locationRef)
 		if (!bounds) continue
-		if (
-			anchor.ref.row < bounds.startRow ||
-			anchor.ref.row > bounds.endRow ||
-			anchor.ref.col < bounds.startCol ||
-			anchor.ref.col > bounds.endCol
-		) {
-			continue
-		}
-		const value = lookupVisiblePivotValue(ctx, anchor.ref.sheetIndex, bounds, dataField, filters)
+		if (!rangesIntersect(anchorBounds, bounds)) continue
+		const value = lookupVisiblePivotValue(ctx, anchorBounds.sheetIndex, bounds, dataField, filters)
 		if (value) return value
 	}
 	return errorValue('#REF!')
+}
+
+function getPivotAnchorBounds(anchor: EvalArg | null): {
+	sheetIndex: number
+	startRow: number
+	startCol: number
+	endRow: number
+	endCol: number
+} | null {
+	const ref = anchor?.ref
+	if (!ref) return null
+	return {
+		sheetIndex: ref.sheetIndex,
+		startRow: ref.row,
+		startCol: ref.col,
+		endRow: ref.kind === 'range' ? (ref.endRow ?? ref.row) : ref.row,
+		endCol: ref.kind === 'range' ? (ref.endCol ?? ref.col) : ref.col,
+	}
+}
+
+function rangesIntersect(
+	left: { startRow: number; startCol: number; endRow: number; endCol: number },
+	right: { startRow: number; startCol: number; endRow: number; endCol: number },
+): boolean {
+	return (
+		left.startRow <= right.endRow &&
+		left.endRow >= right.startRow &&
+		left.startCol <= right.endCol &&
+		left.endCol >= right.startCol
+	)
 }
 
 function parsePivotLocation(locationRef: string): {

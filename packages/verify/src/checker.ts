@@ -1,5 +1,5 @@
 import type { CellFormulaBinding, RangeRef, Workbook } from '@ascend/core'
-import { indexToColumn, toA1 } from '@ascend/core'
+import { indexToColumn, parseRange, toA1 } from '@ascend/core'
 import {
 	analyzeWorkbookDependencies,
 	analyzeWorkbookFormulas,
@@ -344,6 +344,144 @@ function checkTableIntegrity(wb: Workbook): CheckIssue[] {
 	return issues
 }
 
+interface ConditionalFormatPriorityEntry {
+	readonly source: 'conditionalFormat' | 'x14ConditionalFormat'
+	readonly sheetName: string
+	readonly priority: number
+	readonly sqref: string
+	readonly formatIndex: number
+	readonly ruleIndex?: number
+	readonly ruleType?: string
+	readonly ranges: readonly RangeRef[]
+}
+
+function rangeToA1(range: RangeRef): string {
+	const start = `${indexToColumn(range.start.col)}${range.start.row + 1}`
+	const end = `${indexToColumn(range.end.col)}${range.end.row + 1}`
+	return start === end ? start : `${start}:${end}`
+}
+
+function parseSqrefRanges(sqref: string): RangeRef[] {
+	const ranges: RangeRef[] = []
+	for (const token of sqref.trim().split(/\s+/)) {
+		if (!token) continue
+		try {
+			ranges.push(parseRange(token))
+		} catch {
+			// Malformed sqref values are preserved by the reader; other checks can flag them later.
+		}
+	}
+	return ranges
+}
+
+function firstOverlappingRange(
+	left: ConditionalFormatPriorityEntry,
+	right: ConditionalFormatPriorityEntry,
+): [RangeRef, RangeRef] | null {
+	for (const leftRange of left.ranges) {
+		for (const rightRange of right.ranges) {
+			if (rangesOverlap2D(leftRange, rightRange)) return [leftRange, rightRange]
+		}
+	}
+	return null
+}
+
+function checkConditionalFormatIntegrity(wb: Workbook): CheckIssue[] {
+	const issues: CheckIssue[] = []
+	for (const sheet of wb.sheets) {
+		const entries: ConditionalFormatPriorityEntry[] = []
+		for (let formatIndex = 0; formatIndex < sheet.conditionalFormats.length; formatIndex++) {
+			const format = sheet.conditionalFormats[formatIndex]
+			if (!format) continue
+			const ranges = parseSqrefRanges(format.sqref)
+			for (let ruleIndex = 0; ruleIndex < format.rules.length; ruleIndex++) {
+				const rule = format.rules[ruleIndex]
+				if (!rule || rule.priority === undefined) continue
+				entries.push({
+					source: 'conditionalFormat',
+					sheetName: sheet.name,
+					priority: rule.priority,
+					sqref: format.sqref,
+					formatIndex,
+					ruleIndex,
+					ruleType: rule.type,
+					ranges,
+				})
+			}
+		}
+		for (const format of sheet.x14ConditionalFormats) {
+			if (format.priority === undefined) continue
+			entries.push({
+				source: 'x14ConditionalFormat',
+				sheetName: sheet.name,
+				priority: format.priority,
+				sqref: format.sqref,
+				formatIndex: format.index,
+				ranges: parseSqrefRanges(format.sqref),
+				...(format.type ? { ruleType: format.type } : {}),
+			})
+		}
+		for (const entry of entries) {
+			if (entry.priority <= 0) {
+				issues.push({
+					rule: 'conditional-format-integrity',
+					severity: 'warning',
+					message: `Conditional format on sheet "${sheet.name}" has non-positive priority ${entry.priority}`,
+					refs: [`${sheet.name}!${entry.sqref}`],
+					suggestedFix:
+						'Assign a positive, unique priority before relying on conditional-format order.',
+					details: {
+						source: entry.source,
+						priority: entry.priority,
+						formatIndex: entry.formatIndex,
+						...(entry.ruleIndex !== undefined ? { ruleIndex: entry.ruleIndex } : {}),
+						...(entry.ruleType ? { ruleType: entry.ruleType } : {}),
+					},
+				})
+			}
+		}
+		for (let i = 0; i < entries.length; i++) {
+			const left = entries[i]
+			if (!left) continue
+			for (let j = i + 1; j < entries.length; j++) {
+				const right = entries[j]
+				if (!right || left.priority !== right.priority) continue
+				const overlap = firstOverlappingRange(left, right)
+				if (!overlap) continue
+				issues.push({
+					rule: 'conditional-format-integrity',
+					severity: 'warning',
+					message: `Overlapping conditional formats on sheet "${sheet.name}" share priority ${left.priority}`,
+					refs: [
+						`${sheet.name}!${rangeToA1(overlap[0])}`,
+						`${sheet.name}!${rangeToA1(overlap[1])}`,
+					],
+					suggestedFix:
+						'Give overlapping conditional-format rules distinct priorities before editing or reordering them.',
+					details: {
+						priority: left.priority,
+						left: {
+							source: left.source,
+							sqref: left.sqref,
+							formatIndex: left.formatIndex,
+							...(left.ruleIndex !== undefined ? { ruleIndex: left.ruleIndex } : {}),
+							...(left.ruleType ? { ruleType: left.ruleType } : {}),
+						},
+						right: {
+							source: right.source,
+							sqref: right.sqref,
+							formatIndex: right.formatIndex,
+							...(right.ruleIndex !== undefined ? { ruleIndex: right.ruleIndex } : {}),
+							...(right.ruleType ? { ruleType: right.ruleType } : {}),
+						},
+					},
+				})
+			}
+		}
+	}
+	return issues
+}
+
 export function check(
 	workbook: Workbook,
 	analysis?: {
@@ -363,6 +501,7 @@ export function check(
 		...checkOrphanedNames(workbook),
 		...checkMergeOverlaps(workbook),
 		...checkTableIntegrity(workbook),
+		...checkConditionalFormatIntegrity(workbook),
 	]
 	return { passed: issues.length === 0, issues }
 }

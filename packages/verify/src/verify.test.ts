@@ -146,6 +146,56 @@ describe('checker', () => {
 		expect(tableIssues.length).toBeGreaterThanOrEqual(1)
 	})
 
+	test('detects ambiguous overlapping conditional format priorities', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.conditionalFormats.push(
+			{
+				sqref: 'A1:A5',
+				rules: [{ type: 'expression', priority: 1, formulas: ['A1>0'] }],
+			},
+			{
+				sqref: 'A3:A7',
+				rules: [{ type: 'cellIs', priority: 1, formulas: ['3'] }],
+			},
+		)
+		const result = check(wb)
+		const issues = result.issues.filter((i) => i.rule === 'conditional-format-integrity')
+		expect(result.passed).toBe(false)
+		expect(issues).toHaveLength(1)
+		expect(issues[0]?.message).toContain('share priority 1')
+		expect(issues[0]?.refs).toEqual(['Sheet1!A1:A5', 'Sheet1!A3:A7'])
+		expect(issues[0]?.details).toMatchObject({
+			priority: 1,
+			left: { source: 'conditionalFormat', sqref: 'A1:A5', ruleType: 'expression' },
+			right: { source: 'conditionalFormat', sqref: 'A3:A7', ruleType: 'cellIs' },
+		})
+	})
+
+	test('detects overlapping legacy and x14 conditional format priority collisions', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.conditionalFormats.push({
+			sqref: 'B2:B5',
+			rules: [{ type: 'expression', priority: 2, formulas: ['B2>0'] }],
+		})
+		s.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'B4:B8',
+			priority: 2,
+			type: 'dataBar',
+			formulas: [],
+		})
+		const result = check(wb)
+		const issues = result.issues.filter((i) => i.rule === 'conditional-format-integrity')
+		expect(issues).toHaveLength(1)
+		expect(issues[0]?.details).toMatchObject({
+			priority: 2,
+			left: { source: 'conditionalFormat', sqref: 'B2:B5' },
+			right: { source: 'x14ConditionalFormat', sqref: 'B4:B8', ruleType: 'dataBar' },
+		})
+	})
+
 	test('detects external workbook references', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

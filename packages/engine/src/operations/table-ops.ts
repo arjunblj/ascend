@@ -98,6 +98,21 @@ export function handleAppendRows(
 	const width = table.columns.length
 	const affected: string[] = []
 	const originalEndRow = table.ref.end.row
+	const rowDelta = op.rows.length
+	const nextTableRef = {
+		start: table.ref.start,
+		end: { row: originalEndRow + rowDelta, col: table.ref.end.col },
+	}
+	const overlappingTable = findOverlappingTable(sheet, nextTableRef, table.id)
+	if (overlappingTable) {
+		return err(
+			tableRangeOverlapError('append', table.name, rangeToA1(nextTableRef), overlappingTable),
+		)
+	}
+	if (table.hasTotals) {
+		const shiftedTable = findTableShiftedByTotalsAppend(sheet, table, originalEndRow)
+		if (shiftedTable) return err(tableAppendTotalsShiftError(table, shiftedTable))
+	}
 	if (table.hasTotals) {
 		sheet.cells.insertRows(originalEndRow, op.rows.length)
 	}
@@ -146,7 +161,6 @@ export function handleAppendRows(
 
 	const tableIndex = sheet.tables.findIndex((candidate) => candidate.id === table.id)
 	if (tableIndex >= 0) {
-		const rowDelta = op.rows.length
 		sheet.tables.splice(tableIndex, 1, {
 			...table,
 			ref: {
@@ -312,6 +326,18 @@ function findOverlappingTable(
 	)
 }
 
+function findTableShiftedByTotalsAppend(
+	sheet: Sheet,
+	table: Table,
+	insertAt: number,
+): Table | null {
+	return (
+		sheet.tables.find(
+			(candidate) => candidate.id !== table.id && candidate.ref.start.row >= insertAt,
+		) ?? null
+	)
+}
+
 function tableRangesOverlap(a: Table['ref'], b: Table['ref']): boolean {
 	return (
 		a.start.row <= b.end.row &&
@@ -322,18 +348,37 @@ function tableRangesOverlap(a: Table['ref'], b: Table['ref']): boolean {
 }
 
 function tableRangeOverlapError(
-	operation: 'create' | 'resize',
+	operation: 'append' | 'create' | 'resize',
 	tableName: string,
 	ref: string,
 	overlappingTable: Table,
 ): ReturnType<typeof ascendError> {
+	const action =
+		operation === 'append'
+			? `append rows to table "${tableName}" through ${ref}`
+			: `${operation} table "${tableName}" at ${ref}`
 	return ascendError(
 		'VALIDATION_ERROR',
-		`Cannot ${operation} table "${tableName}" at ${ref} because it overlaps table "${overlappingTable.name}" at ${rangeToA1(overlappingTable.ref)}`,
+		`Cannot ${action} because it overlaps table "${overlappingTable.name}" at ${rangeToA1(overlappingTable.ref)}`,
 		{
 			refs: [ref, rangeToA1(overlappingTable.ref)],
 			suggestedFix:
 				'Choose a non-overlapping range or resize/delete the existing table before changing table ownership.',
+		},
+	)
+}
+
+function tableAppendTotalsShiftError(
+	table: Table,
+	shiftedTable: Table,
+): ReturnType<typeof ascendError> {
+	return ascendError(
+		'VALIDATION_ERROR',
+		`Cannot append rows to table "${table.name}" because inserting before its totals row would shift table "${shiftedTable.name}" at ${rangeToA1(shiftedTable.ref)}`,
+		{
+			refs: [rangeToA1(table.ref), rangeToA1(shiftedTable.ref)],
+			suggestedFix:
+				'Move the following table or remove the totals row before appending rows that require worksheet row insertion.',
 		},
 	)
 }

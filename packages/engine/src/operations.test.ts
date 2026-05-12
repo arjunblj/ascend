@@ -2940,6 +2940,78 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(2, 0)?.value).toEqual(stringValue('Cash'))
 	})
 
+	test('appendRows rejects expansion into another table range', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.tables.push(
+			{
+				id: createTableId(),
+				name: 'Sales',
+				sheetId: sheet.id,
+				ref: { start: { row: 0, col: 0 }, end: { row: 1, col: 1 } },
+				columns: [{ name: 'Name' }, { name: 'Amount' }],
+				hasHeaders: true,
+				hasTotals: false,
+			},
+			{
+				id: createTableId(),
+				name: 'Forecast',
+				sheetId: sheet.id,
+				ref: { start: { row: 2, col: 0 }, end: { row: 3, col: 1 } },
+				columns: [{ name: 'Name' }, { name: 'Amount' }],
+				hasHeaders: true,
+				hasTotals: false,
+			},
+		)
+
+		const result = applyOperation(wb, {
+			op: 'appendRows',
+			table: 'Sales',
+			rows: [['Debt', 20]],
+		})
+
+		expectErr(result)
+		expect(result.error.message).toContain('overlaps table "Forecast"')
+		expect(sheet.tables[0]?.ref.end.row).toBe(1)
+		expect(sheet.cells.get(2, 0)).toBeUndefined()
+	})
+
+	test('appendRows rejects totals-row insertion that would shift another table', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.tables.push(
+			{
+				id: createTableId(),
+				name: 'Sales',
+				sheetId: sheet.id,
+				ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } },
+				columns: [{ name: 'Name' }, { name: 'Amount' }],
+				hasHeaders: true,
+				hasTotals: true,
+			},
+			{
+				id: createTableId(),
+				name: 'Forecast',
+				sheetId: sheet.id,
+				ref: { start: { row: 4, col: 3 }, end: { row: 5, col: 4 } },
+				columns: [{ name: 'Scenario' }, { name: 'Value' }],
+				hasHeaders: true,
+				hasTotals: false,
+			},
+		)
+
+		const result = applyOperation(wb, {
+			op: 'appendRows',
+			table: 'Sales',
+			rows: [['Debt', 20]],
+		})
+
+		expectErr(result)
+		expect(result.error.message).toContain('would shift table "Forecast"')
+		expect(sheet.tables[0]?.ref.end.row).toBe(2)
+		expect(sheet.tables[1]?.ref.start.row).toBe(4)
+	})
+
 	test('setTableColumn applies calculated-column formulas and totals metadata', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import type { StyleId } from '@ascend/core'
 import { createWorkbook, parseRange } from '@ascend/core'
+import { parseFormula } from '@ascend/formulas'
 import { EMPTY, numberValue, stringValue } from '@ascend/schema'
-import { rewriteFormulaTextForShift } from './formula-rewrite.ts'
+import { rewriteFormulaAstForShift, rewriteFormulaTextForShift } from './formula-rewrite.ts'
 import { shiftSqref } from './ref-shift.ts'
 import { sortSheetRange } from './sort-range.ts'
 
@@ -13,6 +14,16 @@ describe('structural helpers', () => {
 		expect(rewriteFormulaTextForShift('SUM(A1:A2)', 'Sheet1', 'Sheet1', 'row', 1, 1)).toBe(
 			'SUM(A1:A3)',
 		)
+	})
+
+	test('rewriteFormulaAstForShift preserves unaffected range refs without allocation', () => {
+		const parsed = parseFormula('SUM(A1:A2)')
+		expect(parsed.ok).toBe(true)
+		if (!parsed.ok) return
+
+		const rewritten = rewriteFormulaAstForShift(parsed.value, 'Sheet1', 'Sheet1', 'row', 10, 1)
+
+		expect(rewritten).toBe(parsed.value)
 	})
 
 	test('shiftSqref shifts multipart row ranges', () => {

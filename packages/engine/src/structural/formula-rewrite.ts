@@ -1339,6 +1339,7 @@ export function rewriteFormulaAstForShift(
 			const endIndex = axis === 'row' ? node.end.row : node.end.col
 			const shifted = shiftRangeBounds(startIndex, endIndex, at, delta)
 			if (!shifted) return REF_ERROR_NODE
+			if (shifted.start === startIndex && shifted.end === endIndex) return node
 			const start =
 				axis === 'row'
 					? { ...node.start, row: shifted.start }

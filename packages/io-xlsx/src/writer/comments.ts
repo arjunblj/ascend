@@ -12,6 +12,7 @@ const XML_NAME = String.raw`[A-Za-z_][\w.-]*`
 const PREFIXED_TAG = `(?:${XML_NAME}:)?`
 const COMMENT_RE = new RegExp(String.raw`<(${PREFIXED_TAG}comment)\b([^>]*)>([\s\S]*?)<\/\1>`, 'g')
 const COMMENT_TEXT_RE = new RegExp(String.raw`<(${PREFIXED_TAG}text)\b([^>]*)>([\s\S]*?)<\/\1>`)
+const AUTHOR_RE = new RegExp(String.raw`<(${PREFIXED_TAG}author)\b[^>]*>([\s\S]*?)<\/\1>`, 'g')
 
 export interface LegacyCommentTextUpdate {
 	readonly ref: string
@@ -59,6 +60,34 @@ export function updateCommentsXml(
 		if (!update) return commentXml
 		return replaceCommentText(commentXml, tag, attrs, body, update.text)
 	})
+}
+
+export function syncCommentsXml(xml: string, sheet: Sheet): string {
+	const sourceComments = readSourceComments(xml)
+	if (sourceComments.length === 0) return buildCommentsXml(sheet)
+	const { xml: xmlWithAuthors, authorIds } = syncCommentAuthorsXml(xml, uniqueAuthors(sheet))
+	const sourceByRef = new Map(sourceComments.map((comment) => [comment.ref.toUpperCase(), comment]))
+	const fallbackTag = sourceComments[0]?.tag ?? 'comment'
+	const renderedComments = [...sheet.comments]
+		.map(([ref, comment]) => {
+			const source = sourceByRef.get(ref.toUpperCase())
+			const authorId = authorIds.get(comment.author ?? '')
+			if (!source) return buildCommentElement(fallbackTag, ref, comment.text, authorId)
+			const attrs = setXmlAttr(source.attrs, 'authorId', authorId?.toString())
+			const withAttrs = `<${source.tag}${attrs}>${source.body}</${source.tag}>`
+			if (source.text === comment.text) return withAttrs
+			return replaceCommentText(withAttrs, source.tag, attrs, source.body, comment.text)
+		})
+		.join('\n')
+	const stripped = xmlWithAuthors.replace(COMMENT_RE, '').replace(/\s+$/, '')
+	const listClose = /<\/((?:[A-Za-z_][\w.-]*:)?commentList)>/u
+	const match = stripped.match(listClose)
+	if (!match) return buildCommentsXml(sheet)
+	const closingTag = match[0].trim()
+	return stripped.replace(
+		listClose,
+		`${renderedComments ? `\n${renderedComments}\n` : '\n'}${closingTag}`,
+	)
 }
 
 export function buildCommentsVml(sheet: Sheet): string {
@@ -135,6 +164,82 @@ function uniqueCommentShapeId(
 	return generated
 }
 
+interface SourceComment {
+	readonly xml: string
+	readonly tag: string
+	readonly attrs: string
+	readonly body: string
+	readonly ref: string
+	readonly text: string
+}
+
+function readSourceComments(xml: string): readonly SourceComment[] {
+	const comments: SourceComment[] = []
+	for (const match of xml.matchAll(COMMENT_RE)) {
+		const attrs = match[2] ?? ''
+		const ref = readXmlAttr(attrs, 'ref')
+		if (!ref) continue
+		const body = match[3] ?? ''
+		comments.push({
+			xml: match[0],
+			tag: match[1] ?? 'comment',
+			attrs,
+			body,
+			ref,
+			text: readCommentText(body),
+		})
+	}
+	return comments
+}
+
+function syncCommentAuthorsXml(
+	xml: string,
+	requiredAuthors: readonly string[],
+): { readonly xml: string; readonly authorIds: ReadonlyMap<string, number> } {
+	const authors = readCommentAuthors(xml)
+	const authorIds = new Map(authors.map((author, index) => [author, index] as const))
+	const missingAuthors = requiredAuthors.filter((author) => !authorIds.has(author))
+	if (missingAuthors.length === 0) return { xml, authorIds }
+	for (const author of missingAuthors) {
+		authorIds.set(author, authors.length)
+		authors.push(author)
+	}
+	const authorTag = inferAuthorTag(xml)
+	const renderedAuthors = missingAuthors
+		.map((author) => `<${authorTag}>${escapeXml(author)}</${authorTag}>`)
+		.join('')
+	const authorsClose = /<\/((?:[A-Za-z_][\w.-]*:)?authors)>/u
+	if (authorsClose.test(xml)) {
+		return { xml: xml.replace(authorsClose, `${renderedAuthors}</$1>`), authorIds }
+	}
+	const commentsOpen = /<((?:[A-Za-z_][\w.-]*:)?comments)\b[^>]*>/u
+	return {
+		xml: xml.replace(commentsOpen, (open) => `${open}<authors>${renderedAuthors}</authors>`),
+		authorIds,
+	}
+}
+
+function readCommentAuthors(xml: string): string[] {
+	return [...xml.matchAll(AUTHOR_RE)].map((match) => decodeXmlText(stripXmlTags(match[2] ?? '')))
+}
+
+function inferAuthorTag(xml: string): string {
+	const match = xml.match(new RegExp(String.raw`<(${PREFIXED_TAG}author)\b`, 'u'))
+	return match?.[1] ?? 'author'
+}
+
+function buildCommentElement(
+	tag: string,
+	ref: string,
+	text: string,
+	authorId: number | undefined,
+): string {
+	const attrs = [`ref="${escapeXml(ref)}"`]
+	if (authorId !== undefined) attrs.push(`authorId="${authorId}"`)
+	const prefix = tag.includes(':') ? `${tag.slice(0, tag.indexOf(':'))}:` : ''
+	return `<${tag} ${attrs.join(' ')}><${prefix}text><${prefix}t>${escapeXml(text)}</${prefix}t></${prefix}text></${tag}>`
+}
+
 function uniqueAuthors(sheet: Sheet): string[] {
 	const authors = new Set<string>()
 	for (const comment of sheet.comments.values()) {
@@ -171,4 +276,31 @@ function replaceCommentText(
 		const textPrefix = textTag.includes(':') ? `${textTag.slice(0, textTag.indexOf(':'))}:` : ''
 		return `<${textTag}${textAttrs}><${textPrefix}t>${escapeXml(text)}</${textPrefix}t></${textTag}>`
 	})
+}
+
+function readCommentText(body: string): string {
+	const match = body.match(COMMENT_TEXT_RE)
+	if (!match) return ''
+	return decodeXmlText(stripXmlTags(match[3] ?? ''))
+}
+
+function stripXmlTags(value: string): string {
+	return value.replace(/<[^>]*>/g, '')
+}
+
+function decodeXmlText(value: string): string {
+	return value
+		.replaceAll('&lt;', '<')
+		.replaceAll('&gt;', '>')
+		.replaceAll('&quot;', '"')
+		.replaceAll('&apos;', "'")
+		.replaceAll('&amp;', '&')
+}
+
+function setXmlAttr(attrs: string, name: string, value: string | undefined): string {
+	const attrRe = new RegExp(String.raw`\s${name}\s*=\s*(?:"[^"]*"|'[^']*')`, 'u')
+	if (value === undefined) return attrs.replace(attrRe, '')
+	const escaped = escapeXml(value)
+	if (attrRe.test(attrs)) return attrs.replace(attrRe, ` ${name}="${escaped}"`)
+	return `${attrs} ${name}="${escaped}"`
 }

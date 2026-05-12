@@ -4111,6 +4111,11 @@ describe('writeXlsx', () => {
 		})
 		expectOk(written)
 		const entries = unzipSync(written.value)
+		const commentsXml = decodeTestXml(entries['xl/comments1.xml'])
+		expect(commentsXml).toContain('xr:uid="{comment-c3}"')
+		expect(commentsXml).toContain('<rPr><b/></rPr><t>LegacyHidden</t>')
+		expect(commentsXml).toContain('<phoneticPr fontId="1"/>')
+		expect(commentsXml).toContain('<comment ref="E5" authorId="0">')
 		const vmlXml = decodeTestXml(entries['xl/drawings/vmlDrawing1.vml'])
 		const noteShapeIds = [
 			...vmlXml.matchAll(/<v:shape\b[^>]*\bid="([^"]+)"[\s\S]*?<x:ClientData ObjectType="Note">/g),
@@ -4136,6 +4141,38 @@ describe('writeXlsx', () => {
 				row: 4,
 				column: 4,
 			},
+		})
+	})
+
+	it('preserves untouched rich legacy comment XML when deleting another note', () => {
+		const source = commentsAndThreadedCommentsWorkbook()
+		const opened = readXlsx(source)
+		expectOk(opened)
+		const applied = applyOperations(opened.value.workbook, [
+			{ op: 'deleteComment', sheet: 'Sheet1', ref: 'B1' },
+		])
+		expectOk(applied)
+		expect(applied.value.sheetsModified).toEqual(['Sheet1'])
+
+		const written = writeXlsx(opened.value.workbook, opened.value.capsules, {
+			dirtySheetNames: applied.value.sheetsModified,
+		})
+		expectOk(written)
+		const entries = unzipSync(written.value)
+		const commentsXml = decodeTestXml(entries['xl/comments1.xml'])
+		expect(commentsXml).not.toContain('ref="B1"')
+		expect(commentsXml).toContain('ref="C3"')
+		expect(commentsXml).toContain('xr:uid="{comment-c3}"')
+		expect(commentsXml).toContain('<rPr><b/></rPr><t>LegacyHidden</t>')
+		expect(commentsXml).toContain('<phoneticPr fontId="1"/>')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		const reopenedSheet = reopened.value.workbook.getSheet('Sheet1')
+		expect(reopenedSheet?.comments.has('B1')).toBe(false)
+		expect(reopenedSheet?.comments.get('C3')).toMatchObject({
+			text: 'LegacyHiddenNote',
+			author: 'Grace',
 		})
 	})
 

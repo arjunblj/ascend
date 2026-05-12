@@ -48,12 +48,7 @@ import { parseSharedStrings } from '../reader/shared-strings.ts'
 import { parseTable } from '../reader/table.ts'
 import { extractZip, type ZipArchive } from '../reader/zip.ts'
 import { updateChartXml } from './chart.ts'
-import {
-	buildCommentsVml,
-	buildCommentsXml,
-	type LegacyCommentTextUpdate,
-	updateCommentsXml,
-} from './comments.ts'
+import { buildCommentsVml, buildCommentsXml, syncCommentsXml } from './comments.ts'
 import { updateConnectionPartXml } from './connection.ts'
 import { buildContentTypesXml } from './content-types.ts'
 import { buildAppPropsXml, buildCorePropsXml, buildCustomPropsXml } from './doc-props.ts'
@@ -1068,10 +1063,10 @@ export function planWriteXlsx(
 						commentsCapsule &&
 						existingVmlCapsule &&
 						commentsMatchSource(sourceArchive, commentsCapsule, sheet.comments)
-					const commentsPatch =
+					const sourceCommentsXml =
 						commentsCapsule && !canPreserveComments
-							? collectLegacyCommentTextUpdates(sourceArchive, commentsCapsule, sheet.comments)
-							: null
+							? sourceArchive?.readText(commentsCapsule.partPath)
+							: undefined
 					const canPreserveCommentVml =
 						existingVmlCapsule &&
 						commentVmlRefsMatchSource(sourceArchive, existingVmlCapsule, sheet.comments)
@@ -1084,8 +1079,8 @@ export function planWriteXlsx(
 								contentType: CT_COMMENTS,
 							},
 							() =>
-								commentsPatch
-									? updateCommentsXml(commentsPatch.xml, commentsPatch.updates)
+								sourceCommentsXml
+									? syncCommentsXml(sourceCommentsXml, sheet)
 									: buildCommentsXml(sheet),
 						)
 						plan.addOverride(commentsPartPath, CT_COMMENTS)
@@ -2383,28 +2378,6 @@ function commentsMatchSource(
 		return commentsEqual(parseCommentsXml(xml), comments)
 	} catch {
 		return false
-	}
-}
-
-function collectLegacyCommentTextUpdates(
-	sourceArchive: ZipArchive | undefined,
-	commentsCapsule: PreservationCapsule,
-	comments: ReadonlyMap<string, { readonly text: string; readonly author?: string }>,
-): { readonly xml: string; readonly updates: readonly LegacyCommentTextUpdate[] } | null {
-	const xml = sourceArchive?.readText(commentsCapsule.partPath)
-	if (!xml) return null
-	try {
-		const sourceComments = parseCommentsXml(xml)
-		if (sourceComments.size !== comments.size) return null
-		const updates: LegacyCommentTextUpdate[] = []
-		for (const [ref, comment] of comments) {
-			const source = sourceComments.get(ref)
-			if (!source || source.author !== comment.author) return null
-			if (source.text !== comment.text) updates.push({ ref, text: comment.text })
-		}
-		return updates.length > 0 ? { xml, updates } : null
-	} catch {
-		return null
 	}
 }
 

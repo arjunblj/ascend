@@ -220,6 +220,15 @@ function canCodegen(node: FormulaNode): boolean {
 			) {
 				return canCodegen(node.args[1] as FormulaNode)
 			}
+			if (
+				upper === 'SUMIFS' &&
+				node.args.length === 3 &&
+				(node.args[0] as FormulaNode).type === 'rangeRef' &&
+				(node.args[1] as FormulaNode).type === 'rangeRef' &&
+				!isRangeLikeNode(node.args[2] as FormulaNode)
+			) {
+				return canCodegen(node.args[2] as FormulaNode)
+			}
 			if (upper === 'TEXT' && node.args.length === 2) return node.args.every(canCodegen)
 			if (upper === 'TEXTJOIN' && node.args.length >= 3) return node.args.every(canCodegen)
 			return PARTIAL_CODEGEN_FUNCTIONS.has(upper)
@@ -612,6 +621,7 @@ function emitFunction(state: CodegenState, node: FormulaNode & { type: 'function
 	if (upper === 'NOW') return emitNow(state)
 	if (upper === 'SUMIF') return emitSumif(state, node)
 	if (upper === 'COUNTIF') return emitCountif(state, node)
+	if (upper === 'SUMIFS') return emitSumifs(state, node)
 	if (upper === 'TEXT') return emitTextFormat(state, node)
 	if (upper === 'TEXTJOIN') return emitTextJoin(state, node)
 	if (upper === 'INDEX') return emitIndex(state, node)
@@ -1042,6 +1052,22 @@ function emitCountif(state: CodegenState, node: FormulaNode & { type: 'function'
 	const anchorCol = state.sharedAnchor?.col ?? -1
 	state.lines.push(
 		`var ${result} = _countifRange(ctx, _sheet, ${sheetExpr}, ${rangeArg.start.row}, ${rangeArg.start.col}, ${rangeArg.start.rowAbsolute}, ${rangeArg.start.colAbsolute}, ${rangeArg.end.row}, ${rangeArg.end.col}, ${rangeArg.end.rowAbsolute}, ${rangeArg.end.colAbsolute}, ${anchorRow}, ${anchorCol}, ${criteriaVar});`,
+	)
+	return result
+}
+
+function emitSumifs(state: CodegenState, node: FormulaNode & { type: 'function' }): string {
+	const sumRangeArg = node.args[0] as FormulaNode & { type: 'rangeRef' }
+	const criteriaRangeArg = node.args[1] as FormulaNode & { type: 'rangeRef' }
+	const criteriaVar = emitNode(state, node.args[2] as FormulaNode)
+	const result = freshVar(state)
+	const sumSheetExpr = sumRangeArg.sheet === undefined ? 'null' : JSON.stringify(sumRangeArg.sheet)
+	const criteriaSheetExpr =
+		criteriaRangeArg.sheet === undefined ? 'null' : JSON.stringify(criteriaRangeArg.sheet)
+	const anchorRow = state.sharedAnchor?.row ?? -1
+	const anchorCol = state.sharedAnchor?.col ?? -1
+	state.lines.push(
+		`var ${result} = _sumifsSingleRange(ctx, _sheet, ${sumSheetExpr}, ${sumRangeArg.start.row}, ${sumRangeArg.start.col}, ${sumRangeArg.start.rowAbsolute}, ${sumRangeArg.start.colAbsolute}, ${sumRangeArg.end.row}, ${sumRangeArg.end.col}, ${sumRangeArg.end.rowAbsolute}, ${sumRangeArg.end.colAbsolute}, ${criteriaSheetExpr}, ${criteriaRangeArg.start.row}, ${criteriaRangeArg.start.col}, ${criteriaRangeArg.start.rowAbsolute}, ${criteriaRangeArg.start.colAbsolute}, ${criteriaRangeArg.end.row}, ${criteriaRangeArg.end.col}, ${criteriaRangeArg.end.rowAbsolute}, ${criteriaRangeArg.end.colAbsolute}, ${anchorRow}, ${anchorCol}, ${criteriaVar});`,
 	)
 	return result
 }
@@ -1908,8 +1934,8 @@ function xlookupExact(
 }
 
 function buildCriteriaMatcher(criteria: CellValue): (v: CellValue) => boolean {
-	if (criteria.kind === 'number') {
-		const t = criteria.value
+	if (criteria.kind === 'number' || criteria.kind === 'date') {
+		const t = criteria.kind === 'date' ? criteria.serial : criteria.value
 		return (v) => {
 			const n = toNumber(v)
 			return n !== null && n === t
@@ -2088,6 +2114,162 @@ function countifRange(
 	return numberValue(count)
 }
 
+function sumifsSingleRange(
+	ctx: EvalContext,
+	currentSheet: import('@ascend/core').Workbook['sheets'][number] | undefined,
+	sumSheetName: string | null,
+	sumStartRow: number,
+	sumStartCol: number,
+	sumStartRowAbsolute: boolean,
+	sumStartColAbsolute: boolean,
+	sumEndRow: number,
+	sumEndCol: number,
+	sumEndRowAbsolute: boolean,
+	sumEndColAbsolute: boolean,
+	criteriaSheetName: string | null,
+	criteriaStartRow: number,
+	criteriaStartCol: number,
+	criteriaStartRowAbsolute: boolean,
+	criteriaStartColAbsolute: boolean,
+	criteriaEndRow: number,
+	criteriaEndCol: number,
+	criteriaEndRowAbsolute: boolean,
+	criteriaEndColAbsolute: boolean,
+	anchorRow: number,
+	anchorCol: number,
+	criteriaVal: CellValue,
+): CellValue {
+	const ssr = resolveRelativeIndex(sumStartRow, sumStartRowAbsolute, ctx.row, anchorRow)
+	const ssc = resolveRelativeIndex(sumStartCol, sumStartColAbsolute, ctx.col, anchorCol)
+	const ser = resolveRelativeIndex(sumEndRow, sumEndRowAbsolute, ctx.row, anchorRow)
+	const sec = resolveRelativeIndex(sumEndCol, sumEndColAbsolute, ctx.col, anchorCol)
+	const csr = resolveRelativeIndex(criteriaStartRow, criteriaStartRowAbsolute, ctx.row, anchorRow)
+	const csc = resolveRelativeIndex(criteriaStartCol, criteriaStartColAbsolute, ctx.col, anchorCol)
+	const cer = resolveRelativeIndex(criteriaEndRow, criteriaEndRowAbsolute, ctx.row, anchorRow)
+	const cec = resolveRelativeIndex(criteriaEndCol, criteriaEndColAbsolute, ctx.col, anchorCol)
+	if (ssr < 0 || ssc < 0 || ser < 0 || sec < 0 || csr < 0 || csc < 0 || cer < 0 || cec < 0) {
+		return errorValue('#REF!')
+	}
+
+	const sumFromRow = Math.min(ssr, ser)
+	const sumToRow = Math.max(ssr, ser)
+	const sumFromCol = Math.min(ssc, sec)
+	const sumToCol = Math.max(ssc, sec)
+	const criteriaFromRow = Math.min(csr, cer)
+	const criteriaToRow = Math.max(csr, cer)
+	const criteriaFromCol = Math.min(csc, cec)
+	const criteriaToCol = Math.max(csc, cec)
+	const rows = sumToRow - sumFromRow + 1
+	const cols = sumToCol - sumFromCol + 1
+	if (
+		rows !== criteriaToRow - criteriaFromRow + 1 ||
+		cols !== criteriaToCol - criteriaFromCol + 1
+	) {
+		return errorValue('#VALUE!')
+	}
+
+	const sumSheet = resolveRangeSheet(ctx, currentSheet, sumSheetName)
+	const criteriaSheet = resolveRangeSheet(ctx, currentSheet, criteriaSheetName)
+	if (!sumSheet || !criteriaSheet) return errorValue('#REF!')
+
+	const criteria = topLeftScalar(criteriaVal)
+	if (criteria.kind === 'error') return criteria
+	const cache = ctx.aggregateRangeCache
+	const cacheKey = cache
+		? sumifsSingleRangeCacheKey(
+				ctx,
+				sumSheetName,
+				sumFromRow,
+				sumFromCol,
+				sumToRow,
+				sumToCol,
+				criteriaSheetName,
+				criteriaFromRow,
+				criteriaFromCol,
+				criteriaToRow,
+				criteriaToCol,
+				criteria,
+			)
+		: null
+	const cached = cacheKey ? cache?.get(cacheKey) : undefined
+	if (cached) return cached
+
+	const match = buildCriteriaMatcher(criteria)
+	let sum = 0
+	for (let rowOffset = 0; rowOffset < rows; rowOffset++) {
+		for (let colOffset = 0; colOffset < cols; colOffset++) {
+			if (
+				!match(
+					criteriaSheet.cells.readValue(criteriaFromRow + rowOffset, criteriaFromCol + colOffset),
+				)
+			) {
+				continue
+			}
+			const value = sumifsNumericValue(
+				sumSheet.cells.readValue(sumFromRow + rowOffset, sumFromCol + colOffset),
+			)
+			if (value !== null) sum += value
+		}
+	}
+	const result = numberValue(sum)
+	if (cacheKey) cache?.set(cacheKey, result)
+	return result
+}
+
+function sumifsSingleRangeCacheKey(
+	ctx: EvalContext,
+	sumSheetName: string | null,
+	sumFromRow: number,
+	sumFromCol: number,
+	sumToRow: number,
+	sumToCol: number,
+	criteriaSheetName: string | null,
+	criteriaFromRow: number,
+	criteriaFromCol: number,
+	criteriaToRow: number,
+	criteriaToCol: number,
+	criteria: CellValue,
+): string | null {
+	const sumSheetIndex =
+		sumSheetName === null
+			? ctx.sheetIndex
+			: resolveSheetIndex(ctx.workbook, sumSheetName, ctx.sheetIndex)
+	if (sumSheetIndex < 0) return null
+	const criteriaSheetIndex =
+		criteriaSheetName === null
+			? ctx.sheetIndex
+			: resolveSheetIndex(ctx.workbook, criteriaSheetName, ctx.sheetIndex)
+	if (criteriaSheetIndex < 0) return null
+	return `CODEGEN:SUMIFS:${sumSheetIndex}:${sumFromRow}:${sumFromCol}:${sumToRow}:${sumToCol}:${criteriaSheetIndex}:${criteriaFromRow}:${criteriaFromCol}:${criteriaToRow}:${criteriaToCol}:${criteriaCodegenCacheKey(criteria)}`
+}
+
+function criteriaCodegenCacheKey(criteria: CellValue): string {
+	switch (criteria.kind) {
+		case 'empty':
+			return 'z'
+		case 'number':
+			return `n:${criteria.value}`
+		case 'date':
+			return `d:${criteria.serial}`
+		case 'boolean':
+			return criteria.value ? 'b:1' : 'b:0'
+		case 'error':
+			return `e:${criteria.value}`
+		case 'string':
+			return `s:${criteria.value.length}:${criteria.value}`
+		default:
+			break
+	}
+	return JSON.stringify(criteria)
+}
+
+function sumifsNumericValue(value: CellValue): number | null {
+	const scalar = topLeftScalar(value)
+	if (scalar.kind === 'number') return scalar.value
+	if (scalar.kind === 'date') return scalar.serial
+	return null
+}
+
 function buildCodegenFn(node: FormulaNode, sharedAnchor?: SharedAnchor): CodegenFn | null {
 	if (!canCodegen(node)) return null
 
@@ -2129,6 +2311,7 @@ function buildCodegenFn(node: FormulaNode, sharedAnchor?: SharedAnchor): Codegen
 		'_formatTextValue',
 		'_sumifRange',
 		'_countifRange',
+		'_sumifsSingleRange',
 		'_isCellInBounds',
 		'_tanExcel',
 	]
@@ -2158,6 +2341,7 @@ function buildCodegenFn(node: FormulaNode, sharedAnchor?: SharedAnchor): Codegen
 		formatTextValue,
 		sumifRange,
 		countifRange,
+		sumifsSingleRange,
 		isCellInBounds,
 		tanExcel,
 	]

@@ -2,7 +2,14 @@ import { describe, expect, test } from 'bun:test'
 import type { StyleId } from '@ascend/core'
 import { createWorkbook } from '@ascend/core'
 import { dateToSerial, parseFormula } from '@ascend/formulas'
-import { booleanValue, EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
+import {
+	booleanValue,
+	dateValue,
+	EMPTY,
+	errorValue,
+	numberValue,
+	stringValue,
+} from '@ascend/schema'
 import type { CalcContext } from './calc-context.ts'
 import { defaultCalcContext } from './calc-context.ts'
 import { clearCodegenCache, codegenFormula, codegenSharedFormula } from './codegen.ts'
@@ -503,7 +510,44 @@ describe('codegen', () => {
 		expect(codegenEval('COUNTIF(A1:A3,"~?")', wb)).toEqual(numberValue(1))
 	})
 
-	test('SUMIF/COUNTIF is codegen-able', () => {
+	test('SUMIFS with a single scalar criteria range', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const categories = ['East', 'West', 'East', 'West']
+		const values = [10, 20, 30, 40]
+		for (let r = 0; r < categories.length; r++) {
+			sheet.cells.set(r, 0, {
+				value: stringValue(categories[r] ?? ''),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(r, 1, { value: numberValue(values[r] ?? 0), formula: null, styleId: sid })
+		}
+
+		expect(codegenEval('SUMIFS(B1:B4,A1:A4,"East")', wb)).toEqual(numberValue(40))
+	})
+
+	test('SUMIFS compiled path rejects mismatched criteria shapes', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(1), formula: null, styleId: sid })
+
+		expect(codegenEval('SUMIFS(A1:A2,B1:B1,1)', wb)).toEqual(errorValue('#VALUE!'))
+	})
+
+	test('SUMIFS compiled path matches date criteria by serial', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: dateValue(45_000), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: dateValue(45_000), formula: null, styleId: sid })
+
+		expect(codegenEval('SUMIFS(A1:A1,B1:B1,C1)', wb)).toEqual(numberValue(10))
+	})
+
+	test('SUMIF/COUNTIF/SUMIFS is codegen-able', () => {
 		const wb = createWorkbook()
 		wb.addSheet('Sheet1')
 		const parsed1 = parseFormula('SUMIF(A1:A10,">5")')
@@ -511,6 +555,11 @@ describe('codegen', () => {
 		clearCodegenCache()
 		const parsed2 = parseFormula('COUNTIF(A1:A10,1)')
 		expect(parsed2.ok && codegenFormula('COUNTIF(A1:A10,1)', parsed2.value)).not.toBeNull()
+		clearCodegenCache()
+		const parsed3 = parseFormula('SUMIFS(B1:B10,A1:A10,"East")')
+		expect(
+			parsed3.ok && codegenFormula('SUMIFS(B1:B10,A1:A10,"East")', parsed3.value),
+		).not.toBeNull()
 	})
 
 	test('TEXT formats a number', () => {

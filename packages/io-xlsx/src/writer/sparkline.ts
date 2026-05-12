@@ -281,15 +281,38 @@ function insertIntoFirstExt(xml: string, body: string): string {
 }
 
 function buildX14ConditionalFormattingXml(format: SheetX14ConditionalFormatInfo): string {
-	const ruleAttrs: string[] = []
-	if (format.type) ruleAttrs.push(`type="${escapeXml(format.type)}"`)
-	if (format.priority !== undefined) ruleAttrs.push(`priority="${format.priority}"`)
-	if (format.id) ruleAttrs.push(`id="${escapeXml(format.id)}"`)
+	const ruleAttrs = x14ConditionalFormatRuleAttrs(format)
 	const ruleBody: string[] = []
 	for (const formula of format.formulas) ruleBody.push(`<xm:f>${escapeXml(formula)}</xm:f>`)
 	if (format.dataBar) ruleBody.push(buildX14DataBarXml(format.dataBar))
 	if (format.iconSet) ruleBody.push(buildX14IconSetXml(format.iconSet))
-	return `<x14:conditionalFormatting><x14:cfRule${ruleAttrs.length > 0 ? ` ${ruleAttrs.join(' ')}` : ''}>${ruleBody.join('')}</x14:cfRule><xm:sqref>${escapeXml(format.sqref)}</xm:sqref></x14:conditionalFormatting>`
+	ruleBody.push(...(format.preservedRuleChildXml ?? []))
+	return `<x14:conditionalFormatting><x14:cfRule${ruleAttrs.size > 0 ? ` ${attrsXml(ruleAttrs)}` : ''}>${ruleBody.join('')}</x14:cfRule><xm:sqref>${escapeXml(format.sqref)}</xm:sqref></x14:conditionalFormatting>`
+}
+
+function x14ConditionalFormatRuleAttrs(format: SheetX14ConditionalFormatInfo): Map<string, string> {
+	const attrs = new Map<string, string>()
+	for (const [name, value] of Object.entries(format.preservedRuleAttributes ?? {})) {
+		if (!canEmitPreservedOfficeExtensionAttr(name)) continue
+		attrs.set(name, value)
+		if (name.startsWith('xr:') && !attrs.has('xmlns:xr')) attrs.set('xmlns:xr', XR_NS)
+		if (name.startsWith('x14ac:') && !attrs.has('xmlns:x14ac')) {
+			attrs.set('xmlns:x14ac', X14AC_NS)
+		}
+	}
+	if (format.preservedRuleChildXml?.some((xml) => xml.includes('xr:')) && !attrs.has('xmlns:xr')) {
+		attrs.set('xmlns:xr', XR_NS)
+	}
+	if (
+		format.preservedRuleChildXml?.some((xml) => xml.includes('x14ac:')) &&
+		!attrs.has('xmlns:x14ac')
+	) {
+		attrs.set('xmlns:x14ac', X14AC_NS)
+	}
+	if (format.type) attrs.set('type', format.type)
+	if (format.priority !== undefined) attrs.set('priority', String(format.priority))
+	if (format.id) attrs.set('id', format.id)
+	return attrs
 }
 
 function buildX14DataValidationXml(validation: SheetX14DataValidationInfo): string {
@@ -346,6 +369,10 @@ function x14DataValidationAttrs(validation: SheetX14DataValidationInfo): Map<str
 }
 
 function canEmitPreservedX14DataValidationAttr(name: string): boolean {
+	return canEmitPreservedOfficeExtensionAttr(name)
+}
+
+function canEmitPreservedOfficeExtensionAttr(name: string): boolean {
 	if (name === 'xmlns' || name.startsWith('xmlns:')) return false
 	if (!name.includes(':')) return true
 	return name.startsWith('xr:') || name.startsWith('x14ac:')

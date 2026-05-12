@@ -309,6 +309,8 @@ export interface SheetX14ConditionalFormatInfo {
 	readonly type?: string
 	readonly priority?: number
 	readonly id?: string
+	readonly preservedRuleAttributes?: Readonly<Record<string, string>>
+	readonly preservedRuleChildXml?: readonly string[]
 	readonly dataBar?: SheetX14ConditionalFormatDataBarInfo
 	readonly iconSet?: SheetX14ConditionalFormatIconSetInfo
 	readonly deleted?: boolean
@@ -805,6 +807,12 @@ export function cloneX14ConditionalFormatInfo(
 	return {
 		...format,
 		formulas: [...format.formulas],
+		...(format.preservedRuleAttributes
+			? { preservedRuleAttributes: { ...format.preservedRuleAttributes } }
+			: {}),
+		...(format.preservedRuleChildXml
+			? { preservedRuleChildXml: [...format.preservedRuleChildXml] }
+			: {}),
 		...(format.dataBar
 			? {
 					dataBar: {

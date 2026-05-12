@@ -4519,6 +4519,10 @@ function parseX14ConditionalFormats(xml: string, sheet: Sheet, pool?: ValueInter
 		const id = rule ? attr(rule.attrs, 'id') : undefined
 		const dataBar = rule ? parseX14DataBar(rule.body) : undefined
 		const iconSet = rule ? parseX14IconSet(rule.body) : undefined
+		const preservedRuleAttributes = rule
+			? x14ConditionalFormatRulePreservedAttributes(rule.attrs)
+			: {}
+		const preservedRuleChildXml = rule ? x14ConditionalFormatRulePreservedChildXml(rule.body) : []
 		sheet.x14ConditionalFormats.push({
 			index,
 			sqref: pool ? pool.internString(sqref) : sqref,
@@ -4526,6 +4530,12 @@ function parseX14ConditionalFormats(xml: string, sheet: Sheet, pool?: ValueInter
 			...(type ? { type: pool ? pool.internString(type) : type } : {}),
 			...(priority !== undefined ? { priority } : {}),
 			...(id ? { id: pool ? pool.internString(id) : id } : {}),
+			...(Object.keys(preservedRuleAttributes).length > 0
+				? { preservedRuleAttributes: internStringRecord(preservedRuleAttributes, pool) }
+				: {}),
+			...(preservedRuleChildXml.length > 0
+				? { preservedRuleChildXml: internStringArray(preservedRuleChildXml, pool) }
+				: {}),
 			...(dataBar ? { dataBar: internX14DataBar(dataBar, pool) } : {}),
 			...(iconSet ? { iconSet: internX14IconSet(iconSet, pool) } : {}),
 		})
@@ -4582,6 +4592,30 @@ function parseX14IconSet(xml: string): SheetX14ConditionalFormatIconSetInfo | un
 	const icons = readX14CfIcons(iconSet.body)
 	if (icons.length > 0) Object.assign(parsed, { icons })
 	return parsed
+}
+
+function x14ConditionalFormatRulePreservedAttributes(
+	attrs: XmlNode,
+): Readonly<Record<string, string>> {
+	const preserved: Record<string, string> = {}
+	const modeled = new Set(['type', 'priority', 'id'])
+	for (const [rawName, value] of Object.entries(attrs)) {
+		const name = rawName.startsWith('@_') ? rawName.slice(2) : rawName
+		if (modeled.has(name) || name === 'xmlns' || name.startsWith('xmlns:')) continue
+		if (value === undefined || value === null) continue
+		preserved[name] = String(value)
+	}
+	return preserved
+}
+
+function x14ConditionalFormatRulePreservedChildXml(xml: string): readonly string[] {
+	const preserved: string[] = []
+	for (const child of directChildXmlBlocks(xml)) {
+		const localName = xmlLocalName(child.name)
+		if (localName === 'f' || localName === 'dataBar' || localName === 'iconSet') continue
+		preserved.push(child.xml)
+	}
+	return preserved
 }
 
 function readX14Cfvos(xml: string): SheetConditionalFormatValueObject[] {

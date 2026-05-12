@@ -5348,6 +5348,13 @@ describe('writeXlsx', () => {
 			sqref: 'C2:D2',
 			formulas: ['Data!A2>0'],
 			type: 'expression',
+			preservedRuleAttributes: {
+				activePresent: '1',
+				'xr:uid': '{CF-UID}',
+			},
+			preservedRuleChildXml: [
+				'<x14:extLst><x14:ext uri="{cf-extension}"><x14ac:metadata flag="1"/></x14:ext></x14:extLst>',
+			],
 			dataBar: { cfvo: [{ type: 'formula', value: 'Data!A2' }] },
 			iconSet: { cfvo: [{ type: 'formula', value: 'Data!B2' }] },
 		})
@@ -5371,7 +5378,12 @@ describe('writeXlsx', () => {
 			`xmlns:x14ac="http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac"`,
 		)
 		expect(xml).toContain('customFlag="1"')
+		expect(xml).toContain('activePresent="1"')
+		expect(xml).toContain('xr:uid="{CF-UID}"')
 		expect(xml).toContain('<x14ac:metadata flag="1"><x14ac:item val="keep"/></x14ac:metadata>')
+		expect(xml).toContain(
+			'<x14:extLst><x14:ext uri="{cf-extension}"><x14ac:metadata flag="1"/></x14:ext></x14:extLst>',
+		)
 		expect(xml).toContain('<xm:sqref>A2:B2</xm:sqref>')
 		expect(xml).toContain('<xm:sqref>C2:D2</xm:sqref>')
 		expect(xml).toContain('<xm:f>Data!A2&gt;0</xm:f>')
@@ -5393,6 +5405,13 @@ describe('writeXlsx', () => {
 		})
 		expect(roundTripped?.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('Data!A2')
 		expect(roundTripped?.x14ConditionalFormats[0]?.iconSet?.cfvo[0]?.value).toBe('Data!B2')
+		expect(roundTripped?.x14ConditionalFormats[0]?.preservedRuleAttributes).toEqual({
+			activePresent: '1',
+			'xr:uid': '{CF-UID}',
+		})
+		expect(roundTripped?.x14ConditionalFormats[0]?.preservedRuleChildXml).toEqual([
+			'<x14:extLst><x14:ext uri="{cf-extension}"><x14ac:metadata flag="1"/></x14:ext></x14:extLst>',
+		])
 	})
 
 	it('removes x14 data-validation extension entries deleted by structural edits', () => {

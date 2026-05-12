@@ -3091,6 +3091,63 @@ describe('readXlsx', () => {
 		])
 	})
 
+	it('parses extension-list conditional formatting rule payloads', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"
+  xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"
+  xmlns:x14ac="http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac"
+  xmlns:xr="http://schemas.microsoft.com/office/spreadsheetml/2014/revision">
+  <sheetData/>
+  <extLst>
+    <ext uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}">
+      <x14:conditionalFormattings>
+        <x14:conditionalFormatting>
+          <x14:cfRule type="dataBar" priority="4" activePresent="1" xr:uid="{CF-UID}">
+            <x14:dataBar><x14:cfvo type="formula"><xm:f>A1</xm:f></x14:cfvo></x14:dataBar>
+            <x14:extLst><x14:ext uri="{cf-extension}"><x14ac:metadata flag="1"/></x14:ext></x14:extLst>
+          </x14:cfRule>
+          <xm:sqref>A1:A5</xm:sqref>
+        </x14:conditionalFormatting>
+      </x14:conditionalFormattings>
+    </ext>
+  </extLst>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		expect(result.value.workbook.sheets[0]?.x14ConditionalFormats).toEqual([
+			{
+				index: 0,
+				sqref: 'A1:A5',
+				formulas: ['A1'],
+				type: 'dataBar',
+				priority: 4,
+				preservedRuleAttributes: {
+					activePresent: '1',
+					'xr:uid': '{CF-UID}',
+				},
+				preservedRuleChildXml: [
+					'<x14:extLst><x14:ext uri="{cf-extension}"><x14ac:metadata flag="1"/></x14:ext></x14:extLst>',
+				],
+				dataBar: { cfvo: [{ type: 'formula', value: 'A1' }] },
+			},
+		])
+	})
+
 	it('collapses equivalent normal and extension-list data validations', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

@@ -1049,6 +1049,15 @@ export class SparseGrid {
 		styleId: StyleId,
 		formulaInfo?: CellFormulaBinding,
 	): void {
+		if (
+			value.kind === 'number' &&
+			formula === null &&
+			styleId === DEFAULT_STYLE_ID &&
+			formulaInfo === undefined
+		) {
+			this.setPlainNumber(row, col, value.value)
+			return
+		}
 		this.ensureWritable()
 		const chunkRow = row >> CHUNK_BITS
 		const chunkCol = col >> CHUNK_BITS

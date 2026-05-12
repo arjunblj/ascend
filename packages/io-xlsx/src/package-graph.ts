@@ -9,6 +9,7 @@ import {
 	REL_MACROSHEET,
 	REL_OFFICE_DOC,
 	REL_PIVOT_CACHE_DEFINITION,
+	REL_PIVOT_CACHE_RECORDS,
 	REL_PIVOT_TABLE,
 	REL_QUERY_TABLE,
 	REL_SHARED_STRINGS,
@@ -357,7 +358,11 @@ function classifyOwnerScope(
 	if (primary?.type === REL_MACROSHEET) return 'macrosheet'
 	if (primary?.type === REL_DRAWING || primary?.type === REL_VML_DRAWING) return 'drawing'
 	if (primary?.type === REL_CHART) return 'chart'
-	if (primary?.type === REL_PIVOT_TABLE || primary?.type === REL_PIVOT_CACHE_DEFINITION) {
+	if (
+		primary?.type === REL_PIVOT_TABLE ||
+		primary?.type === REL_PIVOT_CACHE_DEFINITION ||
+		primary?.type === REL_PIVOT_CACHE_RECORDS
+	) {
 		return 'pivot'
 	}
 	if (/(^|\/)externalLinks\//.test(partPath)) return 'external-link'
@@ -390,7 +395,11 @@ function classifyRelationshipFeatureFamily(
 	if (relationship.type === REL_VML_DRAWING) return 'preservedVml'
 	if (relationship.type === REL_CHART) return 'preservedChart'
 	if (isExternalLinkPathRelationshipType(relationship.type)) return 'preservedExternalLink'
-	if (relationship.type === REL_PIVOT_TABLE || relationship.type === REL_PIVOT_CACHE_DEFINITION) {
+	if (
+		relationship.type === REL_PIVOT_TABLE ||
+		relationship.type === REL_PIVOT_CACHE_DEFINITION ||
+		relationship.type === REL_PIVOT_CACHE_RECORDS
+	) {
 		return 'preservedPivot'
 	}
 	return resolvedTarget

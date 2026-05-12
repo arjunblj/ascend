@@ -33,6 +33,8 @@ export const REL_DRAWING =
 export const REL_IMAGE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image'
 export const REL_PIVOT_CACHE_DEFINITION =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheDefinition'
+export const REL_PIVOT_CACHE_RECORDS =
+	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheRecords'
 export const REL_PIVOT_TABLE =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable'
 export const REL_CALC_CHAIN =

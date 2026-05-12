@@ -815,6 +815,83 @@ describe('writeXlsx', () => {
 		expect(updatedCache).not.toContain("sheet='Old' sheet=")
 	})
 
+	it('updates prefixed pivot cache definition and worksheet source tags', () => {
+		const pivotCacheXml = `<?xml version="1.0"?>
+<x:pivotCacheDefinition xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" refreshOnLoad='0' invalid='1' recordCount="2">
+  <x:cacheSource type="worksheet">
+    <x:worksheetSource sheet='Old' ref='A1:B2'/>
+  </x:cacheSource>
+  <x:cacheFields count="1"/>
+</x:pivotCacheDefinition>`
+		const updated = updatePivotCacheDefinitionXml(pivotCacheXml, {
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			cacheId: 1,
+			refreshOnLoad: true,
+			enableRefresh: false,
+			invalid: false,
+			saveData: true,
+			sourceSheet: 'New Data',
+			sourceRef: 'C1:D20',
+		})
+
+		expect(updated).toContain('<x:pivotCacheDefinition')
+		expect(updated).toContain('refreshOnLoad="1"')
+		expect(updated).toContain('enableRefresh="0"')
+		expect(updated).toContain('invalid="0"')
+		expect(updated).toContain('saveData="1"')
+		expect(updated).toContain('<x:cacheSource type="worksheet">')
+		expect(updated).toContain('<x:worksheetSource sheet="New Data" ref="C1:D20"/>')
+		expect(updated).toContain('<x:cacheFields count="1"/>')
+		expect(updated).not.toContain('<pivotCacheDefinition')
+		expect(updated).not.toContain('<worksheetSource')
+		expect(updated).not.toContain("sheet='Old' sheet=")
+	})
+
+	it('inserts prefixed pivot cache source tags when source nodes are missing', () => {
+		const withCacheSource = `<x:pivotCacheDefinition xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:cacheSource type="worksheet"></x:cacheSource></x:pivotCacheDefinition>`
+		const updatedWithCacheSource = updatePivotCacheDefinitionXml(withCacheSource, {
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			cacheId: 1,
+			sourceSheet: 'Raw',
+			sourceRef: 'A1:E200',
+		})
+
+		expect(updatedWithCacheSource).toContain(
+			'<x:cacheSource type="worksheet"><x:worksheetSource ref="A1:E200" sheet="Raw"/>',
+		)
+		expect(updatedWithCacheSource).not.toContain('<worksheetSource')
+
+		const withSelfClosingCacheSource = `<x:pivotCacheDefinition xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:cacheSource type="worksheet"/></x:pivotCacheDefinition>`
+		const updatedWithSelfClosingCacheSource = updatePivotCacheDefinitionXml(
+			withSelfClosingCacheSource,
+			{
+				partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+				cacheId: 1,
+				sourceSheet: 'Raw',
+				sourceRef: 'A1:E200',
+			},
+		)
+
+		expect(updatedWithSelfClosingCacheSource).toContain(
+			'<x:cacheSource type="worksheet"><x:worksheetSource ref="A1:E200" sheet="Raw"/></x:cacheSource>',
+		)
+		expect(updatedWithSelfClosingCacheSource).not.toContain('<x:cacheSource type="worksheet"/>')
+
+		const withoutCacheSource = `<x:pivotCacheDefinition xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" recordCount="0"><x:cacheFields count="0"/></x:pivotCacheDefinition>`
+		const updatedWithoutCacheSource = updatePivotCacheDefinitionXml(withoutCacheSource, {
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			cacheId: 1,
+			sourceSheet: 'Raw',
+			sourceRef: 'A1:E200',
+		})
+
+		expect(updatedWithoutCacheSource).toContain(
+			'<x:pivotCacheDefinition xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" recordCount="0"><x:cacheSource type="worksheet"><x:worksheetSource ref="A1:E200" sheet="Raw"/></x:cacheSource>',
+		)
+		expect(updatedWithoutCacheSource).toContain('<x:cacheFields count="0"/>')
+		expect(updatedWithoutCacheSource).not.toContain('<cacheSource')
+	})
+
 	it('updates XML-legal single-quoted connection attributes without duplicating them', () => {
 		const xml = `<connections><connection id='1' name='Sales' refreshOnLoad='0' saveData='1' refreshedVersion='5'/></connections>`
 		const updated = updateConnectionPartXml(xml, [

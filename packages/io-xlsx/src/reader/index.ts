@@ -96,7 +96,7 @@ import { type DefinedNameEntry, parseWorkbookXml, type SheetEntry } from './work
 import { extractZip, type ZipArchive } from './zip.ts'
 
 const XML_DECODER = new TextDecoder('utf-8')
-const VALUES_ONLY_BYTE_PARSE_MIN_BYTES = 10_000_000
+const VALUES_ONLY_BYTE_PARSE_MIN_BYTES = 128 * 1024
 const CT_WORKSHEET = 'application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml'
 const CT_CHARTSHEET = 'application/vnd.openxmlformats-officedocument.spreadsheetml.chartsheet+xml'
 const CT_SHARED_STRINGS =

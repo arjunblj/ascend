@@ -38,7 +38,7 @@ import {
 	parseFormula,
 	printFormula,
 } from '@ascend/formulas'
-import type { CellValue, CompatibilityReport } from '@ascend/schema'
+import type { CellUpdate, CellValue, CompatibilityReport, Operation } from '@ascend/schema'
 import { EMPTY } from '@ascend/schema'
 import { trace as verifyTrace } from '@ascend/verify'
 import { getCapability, isCapabilityGap } from './capabilities.ts'
@@ -85,6 +85,10 @@ import type {
 	PivotFieldReference,
 	PivotOutputAuditInfo,
 	PivotOutputAuditMismatchInfo,
+	PivotOutputMaterializeMode,
+	PivotOutputMaterializeOpsResult,
+	PivotOutputMaterializeOptions,
+	PivotOutputMaterializeUnsupportedInfo,
 	PivotRefreshPlanInfo,
 	PivotRefreshRecommendedOp,
 	PivotTableInfo,
@@ -702,6 +706,16 @@ export class WorkbookReadView {
 
 	pivotOutputAudits(): readonly PivotOutputAuditInfo[] {
 		return buildPivotOutputAudits(this.wb, this.loadInfo.cellsHydrated)
+	}
+
+	/**
+	 * Build `setCells` operations that materialize supported PivotTable output cells.
+	 * Unsupported layouts are reported in the result instead of guessed.
+	 */
+	pivotOutputMaterializeOps(
+		options: PivotOutputMaterializeOptions = {},
+	): PivotOutputMaterializeOpsResult {
+		return buildPivotOutputMaterializeOps(this.wb, this.loadInfo.cellsHydrated, options)
 	}
 
 	pivotRefreshPlans(): readonly PivotRefreshPlanInfo[] {
@@ -1355,6 +1369,134 @@ function buildPivotOutputAudits(
 		if (audit) audits.push(audit)
 	}
 	return audits
+}
+
+function buildPivotOutputMaterializeOps(
+	workbook: Workbook,
+	cellsHydrated: boolean,
+	options: PivotOutputMaterializeOptions,
+): PivotOutputMaterializeOpsResult {
+	const context = createPivotOutputAuditContext()
+	const mode = options.mode ?? 'mismatches'
+	const updatesBySheet = new Map<string, CellUpdate[]>()
+	const unsupported: PivotOutputMaterializeUnsupportedInfo[] = []
+	let plannedCellCount = 0
+	for (const pivot of workbook.pivotTables) {
+		if (options.pivotTable !== undefined && pivot.name !== options.pivotTable) continue
+		if (options.partPath !== undefined && pivot.partPath !== options.partPath) continue
+		const plan = buildPivotOutputMaterializePlan(workbook, cellsHydrated, pivot, context, mode)
+		if (!plan.ok) {
+			unsupported.push(plan.unsupported)
+			continue
+		}
+		if (plan.updates.length === 0) continue
+		plannedCellCount += plan.updates.length
+		const sheetUpdates = updatesBySheet.get(plan.sheetName)
+		if (sheetUpdates) {
+			sheetUpdates.push(...plan.updates)
+		} else {
+			updatesBySheet.set(plan.sheetName, [...plan.updates])
+		}
+	}
+	const ops: Operation[] = Array.from(updatesBySheet, ([sheet, updates]) => ({
+		op: 'setCells',
+		sheet,
+		updates,
+	}))
+	return { ops, plannedCellCount, unsupported }
+}
+
+function buildPivotOutputMaterializePlan(
+	workbook: Workbook,
+	cellsHydrated: boolean,
+	pivot: PivotTableInfo,
+	context: PivotOutputAuditContext,
+	mode: PivotOutputMaterializeMode,
+):
+	| { ok: true; sheetName: string; updates: readonly CellUpdate[] }
+	| { ok: false; unsupported: PivotOutputMaterializeUnsupportedInfo } {
+	const base = pivotMaterializeUnsupportedBase(pivot)
+	if (!cellsHydrated) {
+		return unsupportedPivotMaterialize(
+			base,
+			'Pivot output cells are not hydrated in this load mode.',
+		)
+	}
+	const sheet = workbook.getSheet(pivot.sheetName)
+	if (!sheet) return unsupportedPivotMaterialize(base, 'Pivot output sheet was not loaded.')
+	if (!pivot.locationRef) {
+		return unsupportedPivotMaterialize(base, 'Pivot table has no output location.')
+	}
+	let bounds: RangeRef
+	try {
+		bounds = parseRange(pivot.locationRef)
+	} catch {
+		return unsupportedPivotMaterialize(base, `Pivot output range is invalid: ${pivot.locationRef}`)
+	}
+	let cache = workbook.pivotCaches.find((entry) => entry.cacheId === pivot.cacheId)
+	if (!cache) return unsupportedPivotMaterialize(base, 'Pivot cache metadata was not found.')
+	if (isEmptyPivotOutput(pivot)) {
+		return unsupportedPivotMaterialize(
+			base,
+			'Empty PivotTable outputs do not need materialization.',
+		)
+	}
+	if (pivot.dataFields.length === 0) {
+		return unsupportedPivotMaterialize(base, 'No-data PivotTable outputs are not materialized.')
+	}
+	if (pivot.rowFields.length !== 1) {
+		return unsupportedPivotMaterialize(
+			base,
+			'Only one-row-field PivotTable outputs are materialized.',
+		)
+	}
+	if (pivot.columnFields.length > 0 && !pivot.columnFields.every((field) => field.index === -2)) {
+		return unsupportedPivotMaterialize(
+			base,
+			'Column-field PivotTable outputs are not materialized yet.',
+		)
+	}
+	const rowFieldIndex = pivot.rowFields[0]?.index
+	if (rowFieldIndex === undefined || rowFieldIndex < 0) {
+		return unsupportedPivotMaterialize(base, 'Pivot row field metadata was not found.')
+	}
+	const auditCache = pivotCacheWithMaterializedAuditRows(workbook, cache)
+	if (!auditCache.ok) return unsupportedPivotMaterialize(base, auditCache.warning)
+	cache = auditCache.value
+	const expected = aggregateSimplePivotOutput(
+		cache,
+		pivot,
+		rowFieldIndex,
+		pivotOutputAuditCacheRows(context, cache),
+	)
+	if (!expected.ok) return unsupportedPivotMaterialize(base, expected.warning)
+	const updates = buildSimplePivotOutputMaterializeUpdates(
+		sheet,
+		bounds,
+		pivot,
+		expected.value,
+		mode,
+	)
+	if (!updates.ok) return unsupportedPivotMaterialize(base, updates.warning)
+	return { ok: true, sheetName: pivot.sheetName, updates: updates.value }
+}
+
+function pivotMaterializeUnsupportedBase(
+	pivot: PivotTableInfo,
+): Omit<PivotOutputMaterializeUnsupportedInfo, 'warning'> {
+	return {
+		...(pivot.name !== undefined ? { pivotTable: pivot.name } : {}),
+		partPath: pivot.partPath,
+		sheetName: pivot.sheetName,
+		...(pivot.cacheId !== undefined ? { cacheId: pivot.cacheId } : {}),
+	}
+}
+
+function unsupportedPivotMaterialize(
+	base: Omit<PivotOutputMaterializeUnsupportedInfo, 'warning'>,
+	warning: string,
+): { ok: false; unsupported: PivotOutputMaterializeUnsupportedInfo } {
+	return { ok: false, unsupported: { ...base, warning } }
 }
 
 type PivotOutputAuditContext = {
@@ -3097,6 +3239,7 @@ function aggregateSimplePivotOutput(
 	| {
 			ok: true
 			value: {
+				rowKeys: readonly string[]
 				dataFieldNames: readonly string[]
 				checkedValueCount: number
 				values: ReadonlyMap<string, ReadonlyMap<string, number>>
@@ -3162,11 +3305,92 @@ function aggregateSimplePivotOutput(
 	return {
 		ok: true,
 		value: {
+			rowKeys: rows.value.map((row) => row.key),
 			dataFieldNames,
 			checkedValueCount: rows.value.length * dataFieldNames.length,
 			values: output,
 		},
 	}
+}
+
+function buildSimplePivotOutputMaterializeUpdates(
+	sheet: Workbook['sheets'][number],
+	bounds: RangeRef,
+	pivot: PivotTableInfo,
+	expected: {
+		readonly rowKeys: readonly string[]
+		readonly dataFieldNames: readonly string[]
+		readonly values: ReadonlyMap<string, ReadonlyMap<string, number>>
+	},
+	mode: PivotOutputMaterializeMode,
+): { ok: true; value: readonly CellUpdate[] } | { ok: false; warning: string } {
+	const headerRowOffset = Math.max(0, (pivot.location?.firstDataRow ?? 1) - 1)
+	const dataStartRow = bounds.start.row + (pivot.location?.firstDataRow ?? headerRowOffset + 1)
+	const dataStartCol = bounds.start.col + (pivot.location?.firstDataCol ?? 1)
+	const headerRow = bounds.start.row + headerRowOffset
+	const labelCol = dataStartCol > bounds.start.col ? dataStartCol - 1 : bounds.start.col
+	if (
+		headerRow < bounds.start.row ||
+		headerRow > bounds.end.row ||
+		dataStartRow > bounds.end.row ||
+		dataStartCol > bounds.end.col ||
+		labelCol < bounds.start.col ||
+		labelCol > bounds.end.col ||
+		dataStartRow + expected.rowKeys.length - 1 > bounds.end.row ||
+		dataStartCol + expected.dataFieldNames.length - 1 > bounds.end.col
+	) {
+		return { ok: false, warning: 'Simple PivotTable output bounds were not resolved.' }
+	}
+	const updates: CellUpdate[] = []
+	pushPivotMaterializeUpdate(
+		sheet,
+		updates,
+		headerRow,
+		labelCol,
+		pivot.options?.rowHeaderCaption ?? 'Row Labels',
+		mode,
+	)
+	for (let fieldIndex = 0; fieldIndex < expected.dataFieldNames.length; fieldIndex++) {
+		pushPivotMaterializeUpdate(
+			sheet,
+			updates,
+			headerRow,
+			dataStartCol + fieldIndex,
+			expected.dataFieldNames[fieldIndex] ?? `DataField${fieldIndex + 1}`,
+			mode,
+		)
+	}
+	for (let rowIndex = 0; rowIndex < expected.rowKeys.length; rowIndex++) {
+		const rowKey = expected.rowKeys[rowIndex] ?? `Row ${rowIndex + 1}`
+		const row = dataStartRow + rowIndex
+		pushPivotMaterializeUpdate(sheet, updates, row, labelCol, rowKey, mode)
+		for (let fieldIndex = 0; fieldIndex < expected.dataFieldNames.length; fieldIndex++) {
+			const fieldName = expected.dataFieldNames[fieldIndex] ?? `DataField${fieldIndex + 1}`
+			const value = expected.values.get(rowKey)?.get(fieldName) ?? 0
+			pushPivotMaterializeUpdate(sheet, updates, row, dataStartCol + fieldIndex, value, mode)
+		}
+	}
+	return { ok: true, value: updates }
+}
+
+function pushPivotMaterializeUpdate(
+	sheet: Workbook['sheets'][number],
+	updates: CellUpdate[],
+	row: number,
+	col: number,
+	value: string | number | null,
+	mode: PivotOutputMaterializeMode,
+): void {
+	const existing = sheet.cells.get(row, col)?.value ?? EMPTY
+	if (mode === 'missing' && existing.kind !== 'empty') return
+	if (mode === 'mismatches' && pivotMaterializedCellMatches(existing, value)) return
+	updates.push({ ref: `${indexToColumn(col)}${row + 1}`, value })
+}
+
+function pivotMaterializedCellMatches(existing: CellValue, value: string | number | null): boolean {
+	if (value === null) return existing.kind === 'empty'
+	if (typeof value === 'number') return numericCellMatches(existing, value)
+	return cellText(existing) === value
 }
 
 type PivotAuditFilters = ReadonlyMap<number, ReadonlySet<string>>

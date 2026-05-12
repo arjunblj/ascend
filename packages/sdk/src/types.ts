@@ -55,7 +55,13 @@ export type {
 
 import type { CellChange, ExternalReferenceResolver, SheetDiff, WorkbookDiff } from '@ascend/engine'
 import type { FormulaNode, Token } from '@ascend/formulas'
-import type { AscendError, CellValue, CompatibilityReport, FeatureReport } from '@ascend/schema'
+import type {
+	AscendError,
+	CellValue,
+	CompatibilityReport,
+	FeatureReport,
+	Operation,
+} from '@ascend/schema'
 import type { CapabilityPriority, CapabilityStatus } from './capabilities.ts'
 
 export interface WorkbookInfo {
@@ -1108,6 +1114,32 @@ export interface ApplyResult {
 export interface ApplyAndRecalcResult {
 	readonly apply: ApplyResult
 	readonly recalc: RecalcResult | null
+}
+
+export type PivotOutputMaterializeMode = 'missing' | 'mismatches' | 'all'
+
+export interface PivotOutputMaterializeOptions {
+	readonly pivotTable?: string
+	readonly partPath?: string
+	readonly mode?: PivotOutputMaterializeMode
+}
+
+export interface PivotOutputMaterializeUnsupportedInfo {
+	readonly pivotTable?: string
+	readonly partPath: string
+	readonly sheetName: string
+	readonly cacheId?: number
+	readonly warning: string
+}
+
+export interface PivotOutputMaterializeOpsResult {
+	readonly ops: readonly Operation[]
+	readonly plannedCellCount: number
+	readonly unsupported: readonly PivotOutputMaterializeUnsupportedInfo[]
+}
+
+export interface PivotOutputMaterializeResult extends PivotOutputMaterializeOpsResult {
+	readonly apply: ApplyResult
 }
 
 export interface BatchResult {

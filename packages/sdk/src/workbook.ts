@@ -61,6 +61,8 @@ import type {
 	EvalOptions,
 	LintResult,
 	LintWarning,
+	PivotOutputMaterializeOptions,
+	PivotOutputMaterializeResult,
 	RecalcOptions,
 	RecalcResult,
 	WritePlanInfo,
@@ -398,6 +400,28 @@ export class AscendWorkbook extends WorkbookReadView {
 			apply,
 			recalc: this.recalc(opts),
 		}
+	}
+
+	/**
+	 * Materialize supported PivotTable output cells through ordinary cell writes.
+	 * Pivot metadata and preserved PivotTable package parts are left untouched.
+	 */
+	materializePivotOutputs(
+		options: PivotOutputMaterializeOptions = {},
+	): PivotOutputMaterializeResult {
+		const planned = this.pivotOutputMaterializeOps(options)
+		if (planned.ops.length === 0) {
+			return {
+				...planned,
+				apply: {
+					affectedCells: [],
+					sheetsModified: [],
+					recalcRequired: false,
+					errors: [],
+				},
+			}
+		}
+		return { ...planned, apply: this.apply(planned.ops, { transaction: true }) }
 	}
 
 	/**

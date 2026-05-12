@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { existsSync, readFileSync } from 'node:fs'
 import { numberValue, stringValue } from '@ascend/schema'
+import { extractZip } from '../../io-xlsx/src/reader/zip.ts'
 import { AscendWorkbook, WorkbookDocument, WorkbookSession } from './index.ts'
 
 const MS_EXCEL_PIVOT_FIXTURE = new URL(
@@ -456,6 +457,105 @@ describe('pivot output audits', () => {
 		session.close()
 	})
 
+	test('materializes missing simple pivot output cells from cache records', () => {
+		const wb = workbookWithMissingSimplePivotOutput()
+
+		expect(wb.pivotOutputAudits()).toEqual([
+			expect.objectContaining({
+				pivotTable: 'MissingOutputPivot',
+				status: 'unsupported',
+				warnings: ['Pivot output sheet has no saved cells to audit.'],
+			}),
+		])
+
+		const planned = wb.pivotOutputMaterializeOps({ pivotTable: 'MissingOutputPivot' })
+		expect(planned.unsupported).toEqual([])
+		expect(planned.plannedCellCount).toBe(8)
+		expect(planned.ops).toEqual([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Row Labels' },
+					{ ref: 'B1', value: 'Sum of Sales' },
+					{ ref: 'A2', value: 'West' },
+					{ ref: 'B2', value: 100 },
+					{ ref: 'A3', value: 'East' },
+					{ ref: 'B3', value: 50 },
+					{ ref: 'A4', value: 'Grand Total' },
+					{ ref: 'B4', value: 150 },
+				],
+			},
+		])
+
+		const result = wb.materializePivotOutputs({ pivotTable: 'MissingOutputPivot' })
+		expect(result.apply.errors).toEqual([])
+		expect(result.apply.affectedCells).toHaveLength(8)
+		expect(wb.get('Sheet1!A4')).toEqual(stringValue('Grand Total'))
+		expect(wb.get('Sheet1!B4')).toEqual(numberValue(150))
+		expect(wb.pivotOutputAudits()).toEqual([
+			expect.objectContaining({
+				pivotTable: 'MissingOutputPivot',
+				status: 'passed',
+				checkedValueCount: 3,
+				mismatches: [],
+				warnings: [],
+			}),
+		])
+	})
+
+	test('does not rewrite matching saved simple pivot output cells', async () => {
+		const wb = await AscendWorkbook.open(
+			loadLibreOfficeFixture('PivotTable_CachedDefinitionAndDataInSync.xlsx'),
+			{ pivotCacheRecordMaterializeLimit: 'all' },
+		)
+
+		expect(wb.pivotOutputAudits()).toEqual([
+			expect.objectContaining({
+				pivotTable: 'PivotTable1',
+				status: 'passed',
+				mismatches: [],
+				warnings: [],
+			}),
+		])
+		expect(wb.pivotOutputMaterializeOps({ pivotTable: 'PivotTable1' })).toEqual({
+			ops: [],
+			plannedCellCount: 0,
+			unsupported: [],
+		})
+	})
+
+	test('materializes worksheet output without rewriting pivot package parts', async () => {
+		const bytes = loadLibreOfficeFixture('PivotTable_CachedDefinitionAndDataInSync.xlsx')
+		const originalZip = extractZip(bytes)
+		const wb = await AscendWorkbook.open(bytes, { pivotCacheRecordMaterializeLimit: 'all' })
+
+		const cleared = wb.apply([
+			{ op: 'clearRange', sheet: 'Sheet3', range: 'A3:B6', what: 'values' },
+		])
+		expect(cleared.errors).toEqual([])
+		const materialized = wb.materializePivotOutputs({ pivotTable: 'PivotTable1' })
+		expect(materialized.apply.errors).toEqual([])
+		expect(materialized.plannedCellCount).toBe(8)
+		expect(wb.pivotOutputAudits()).toEqual([
+			expect.objectContaining({
+				pivotTable: 'PivotTable1',
+				status: 'passed',
+				mismatches: [],
+				warnings: [],
+			}),
+		])
+
+		const outZip = extractZip(wb.toBytes())
+		for (const part of [
+			'xl/pivotTables/pivotTable1.xml',
+			'xl/pivotCache/pivotCacheDefinition1.xml',
+			'xl/pivotCache/pivotCacheRecords1.xml',
+		]) {
+			expect(outZip.readText(part)).toBe(originalZip.readText(part))
+		}
+	})
+
 	test('reports unsupported instead of overclaiming when cache records are absent', () => {
 		const wb = workbookWithoutMaterializedPivot()
 
@@ -598,6 +698,84 @@ function loadLibreOfficeFixture(file: string): Uint8Array {
 
 function loadCalamineFixture(file: string): Uint8Array {
 	return readFileSync(new URL(`../../../fixtures/xlsx/calamine/${file}`, import.meta.url))
+}
+
+function workbookWithMissingSimplePivotOutput(): AscendWorkbook {
+	const wb = AscendWorkbook.create()
+	const internal = wb as unknown as {
+		wb: {
+			pivotCaches: Array<Record<string, unknown>>
+			pivotTables: Array<Record<string, unknown>>
+		}
+	}
+	internal.wb.pivotCaches.push({
+		partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+		cacheId: 11,
+		fields: [
+			{
+				index: 0,
+				name: 'Region',
+				sharedItems: [
+					{ index: 0, kind: 'string', value: 'West' },
+					{ index: 1, kind: 'string', value: 'East' },
+				],
+			},
+			{ index: 1, name: 'Sales' },
+		],
+		records: {
+			partPath: 'xl/pivotCache/pivotCacheRecords1.xml',
+			parsedCount: 2,
+			materializedCount: 2,
+			materializedComplete: true,
+			preview: [],
+			valueKindCounts: [],
+			materializedRecords: [
+				{
+					index: 0,
+					values: [
+						{ index: 0, kind: 'sharedItem', sharedItemIndex: 0 },
+						{ index: 1, kind: 'number', value: '100' },
+					],
+				},
+				{
+					index: 1,
+					values: [
+						{ index: 0, kind: 'sharedItem', sharedItemIndex: 1 },
+						{ index: 1, kind: 'number', value: '50' },
+					],
+				},
+			],
+		},
+	})
+	internal.wb.pivotTables.push({
+		partPath: 'xl/pivotTables/pivotTable1.xml',
+		sheetName: 'Sheet1',
+		name: 'MissingOutputPivot',
+		cacheId: 11,
+		locationRef: 'A1:B4',
+		location: { ref: 'A1:B4', firstDataRow: 1, firstDataCol: 1 },
+		fields: [
+			{
+				index: 0,
+				axis: 'axisRow',
+				items: [
+					{ index: 0, cacheIndex: 0 },
+					{ index: 1, cacheIndex: 1 },
+				],
+			},
+			{ index: 1, dataField: true },
+		],
+		rowFields: [{ index: 0 }],
+		columnFields: [],
+		pageFields: [],
+		dataFields: [{ fieldIndex: 1, name: 'Sum of Sales' }],
+		rowItems: [
+			{ index: 0, fieldItems: [{ index: 0, item: 0 }] },
+			{ index: 1, fieldItems: [{ index: 0, item: 1 }] },
+			{ index: 2, itemType: 'grand', fieldItems: [{ index: 0 }] },
+		],
+	})
+	return wb
 }
 
 function workbookWithoutMaterializedPivot(): AscendWorkbook {

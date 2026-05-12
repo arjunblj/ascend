@@ -2670,8 +2670,9 @@ function buildGeneratedExternalLinkRelationships(
 	if (relationships.length === 0) {
 		return [
 			{
-				id: detail.linkRelId ?? 'rId1',
-				type: REL_EXTERNAL_LINK_PATH,
+				id: detail.linkRelId ?? detail.externalBookRelId ?? 'rId1',
+				type: detail.linkRelationshipType ?? REL_EXTERNAL_LINK_PATH,
+				...(detail.linkRelationshipRawType ? { rawType: detail.linkRelationshipRawType } : {}),
 				target,
 				targetMode: detail.targetMode ?? 'External',
 			},
@@ -2690,7 +2691,23 @@ function buildGeneratedExternalLinkRelationships(
 			...(detail.targetMode !== undefined ? { targetMode: detail.targetMode } : {}),
 		}
 	})
-	return changed ? updated : []
+	if (changed) return updated
+	if (
+		detail.externalBookRelId !== undefined &&
+		!relationships.some((rel) => rel.id === detail.externalBookRelId)
+	) {
+		return [
+			...relationships,
+			{
+				id: detail.externalBookRelId,
+				type: detail.linkRelationshipType ?? REL_EXTERNAL_LINK_PATH,
+				...(detail.linkRelationshipRawType ? { rawType: detail.linkRelationshipRawType } : {}),
+				target,
+				targetMode: detail.targetMode ?? 'External',
+			},
+		]
+	}
+	return []
 }
 
 function computeRelativePath(fromDir: string, toPath: string): string {

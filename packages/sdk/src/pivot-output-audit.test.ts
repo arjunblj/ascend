@@ -279,13 +279,33 @@ describe('pivot output audits', () => {
 		}
 	})
 
-	test('skips pivot definitions that have no saved output cells to audit', async () => {
+	test('reports pivot definitions that have no saved output cells to audit', async () => {
 		const wb = await AscendWorkbook.open(readFileSync(CLOSEDXML_PIVOT_FIXTURE), {
 			pivotCacheRecordMaterializeLimit: 'all',
 		})
 
 		expect(wb.pivotTables()).toHaveLength(10)
-		expect(wb.pivotOutputAudits()).toEqual([])
+		expect(wb.pivotOutputAudits()).toHaveLength(10)
+		expect(wb.pivotOutputAudits()).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					pivotTable: 'pvt',
+					sheetName: 'pvt1',
+					status: 'unsupported',
+					checkedValueCount: 0,
+					mismatches: [],
+					warnings: ['Pivot output sheet has no saved cells to audit.'],
+				}),
+				expect.objectContaining({
+					pivotTable: 'pvtInteger',
+					sheetName: 'pvtInteger',
+					status: 'unsupported',
+					checkedValueCount: 0,
+					mismatches: [],
+					warnings: ['Pivot output sheet has no saved cells to audit.'],
+				}),
+			]),
+		)
 	})
 
 	test('audits real LibreOffice duplicated-member page filters with field-only headers', async () => {

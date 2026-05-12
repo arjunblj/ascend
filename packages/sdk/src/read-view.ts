@@ -1366,7 +1366,6 @@ function buildPivotOutputAudit(
 	const sheet = workbook.getSheet(pivot.sheetName)
 	if (!sheet) return unsupportedPivotAudit(base, 'Pivot output sheet was not loaded.')
 	if (!pivot.locationRef) return unsupportedPivotAudit(base, 'Pivot table has no output location.')
-	if (!isEmptyPivotOutput(pivot) && !hasSavedSheetCells(sheet)) return undefined
 	let cache = workbook.pivotCaches.find((entry) => entry.cacheId === pivot.cacheId)
 	if (!cache) return unsupportedPivotAudit(base, 'Pivot cache metadata was not found.')
 	if (isEmptyPivotOutput(pivot)) {
@@ -1379,6 +1378,9 @@ function buildPivotOutputAudit(
 			mismatches: [],
 			warnings: [],
 		}
+	}
+	if (!hasSavedSheetCells(sheet)) {
+		return unsupportedPivotAudit(base, 'Pivot output sheet has no saved cells to audit.')
 	}
 	const auditCache = pivotCacheWithMaterializedAuditRows(workbook, cache)
 	if (!auditCache.ok) return unsupportedPivotAudit(base, auditCache.warning)

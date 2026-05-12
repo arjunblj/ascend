@@ -39,6 +39,17 @@ export interface Table {
 	readonly name: string
 	readonly nameAttribute?: string | null
 	readonly sheetId: SheetId
+	readonly partPath?: string
+	readonly contentType?: string
+	readonly contentTypeSource?: 'override' | 'default' | 'fallback'
+	readonly sourcePartPath?: string
+	readonly sourceRelationshipPart?: string
+	readonly sourceRelationshipId?: string
+	readonly sourceRelationshipType?: string
+	readonly sourceRelationshipRawType?: string
+	readonly sourceRelationshipRawTarget?: string
+	readonly sourceRelationshipResolvedTarget?: string
+	readonly sourceRelationshipTargetMode?: string
 	readonly uid?: string
 	readonly ref: RangeRef
 	readonly tableType?: string

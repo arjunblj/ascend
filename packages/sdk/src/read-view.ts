@@ -1209,6 +1209,29 @@ function buildTableInfo(
 	return {
 		name: table.name,
 		ref: table.ref,
+		...(table.partPath ? { partPath: table.partPath } : {}),
+		...(table.contentType ? { contentType: table.contentType } : {}),
+		...(table.contentTypeSource ? { contentTypeSource: table.contentTypeSource } : {}),
+		...(table.sourcePartPath ? { sourcePartPath: table.sourcePartPath } : {}),
+		...(table.sourceRelationshipPart
+			? { sourceRelationshipPart: table.sourceRelationshipPart }
+			: {}),
+		...(table.sourceRelationshipId ? { sourceRelationshipId: table.sourceRelationshipId } : {}),
+		...(table.sourceRelationshipType
+			? { sourceRelationshipType: table.sourceRelationshipType }
+			: {}),
+		...(table.sourceRelationshipRawType
+			? { sourceRelationshipRawType: table.sourceRelationshipRawType }
+			: {}),
+		...(table.sourceRelationshipRawTarget
+			? { sourceRelationshipRawTarget: table.sourceRelationshipRawTarget }
+			: {}),
+		...(table.sourceRelationshipResolvedTarget
+			? { sourceRelationshipResolvedTarget: table.sourceRelationshipResolvedTarget }
+			: {}),
+		...(table.sourceRelationshipTargetMode
+			? { sourceRelationshipTargetMode: table.sourceRelationshipTargetMode }
+			: {}),
 		rowCount: table.ref.end.row - table.ref.start.row + 1 - headerOffset - totalOffset,
 		hasHeaders: table.hasHeaders,
 		hasTotals: table.hasTotals,

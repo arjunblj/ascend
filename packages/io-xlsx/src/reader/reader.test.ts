@@ -1493,6 +1493,18 @@ describe('readXlsx', () => {
 		const sheet = result.value.workbook.sheets[0]
 		expect(sheet?.tables).toHaveLength(1)
 		expect(sheet?.tables[0]?.name).toBe('Scores')
+		expect(sheet?.tables[0]).toMatchObject({
+			partPath: 'xl/tables/table1.xml',
+			contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml',
+			contentTypeSource: 'override',
+			sourcePartPath: 'xl/worksheets/sheet1.xml',
+			sourceRelationshipPart: 'xl/worksheets/_rels/sheet1.xml.rels',
+			sourceRelationshipId: 'rId1',
+			sourceRelationshipType:
+				'http://schemas.openxmlformats.org/officeDocument/2006/relationships/table',
+			sourceRelationshipRawTarget: '../tables/table1.xml',
+			sourceRelationshipResolvedTarget: 'xl/tables/table1.xml',
+		})
 		expect(sheet?.tables[0]?.nameAttribute).toBe('Table1')
 		expect(sheet?.tables[0]?.hasHeaders).toBe(true)
 		expect(sheet?.tables[0]?.columns).toEqual([
@@ -1595,6 +1607,19 @@ describe('readXlsx', () => {
 		const sheet = result.value.workbook.sheets[0]
 		expect(sheet?.tables).toHaveLength(1)
 		expect(sheet?.tables[0]?.name).toBe('StrictTable')
+		expect(sheet?.tables[0]).toMatchObject({
+			partPath: 'xl/tables/table1.xml',
+			contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml',
+			contentTypeSource: 'override',
+			sourcePartPath: 'xl/worksheets/sheet1.xml',
+			sourceRelationshipPart: 'xl/worksheets/_rels/sheet1.xml.rels',
+			sourceRelationshipId: 'rId1',
+			sourceRelationshipType:
+				'http://schemas.openxmlformats.org/officeDocument/2006/relationships/table',
+			sourceRelationshipRawType: 'http://purl.oclc.org/ooxml/officeDocument/relationships/table',
+			sourceRelationshipRawTarget: '../tables/table1.xml',
+			sourceRelationshipResolvedTarget: 'xl/tables/table1.xml',
+		})
 		expect(sheet?.tables[0]?.ref).toEqual({ start: { row: 0, col: 0 }, end: { row: 1, col: 1 } })
 		expect(sheet?.tables[0]?.columns).toHaveLength(2)
 		expect(sheet?.cells.get(0, 0)?.value).toEqual({ kind: 'string', value: 'Hello' })

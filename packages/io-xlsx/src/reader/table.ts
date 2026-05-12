@@ -20,6 +20,12 @@ const X14_NS = 'http://schemas.microsoft.com/office/spreadsheetml/2009/9/main'
 
 export interface ParseTableOptions {
 	readonly tablePath?: string
+	readonly contentType?: string
+	readonly contentTypeSource?: 'override' | 'default' | 'fallback'
+	readonly sourcePartPath?: string
+	readonly sourceRelationshipPart?: string
+	readonly sourceRelationship?: Relationship
+	readonly sourceRelationshipResolvedTarget?: string
 	readonly relationships?: readonly Relationship[]
 }
 
@@ -74,6 +80,17 @@ export function parseTable(
 		name: string
 		nameAttribute?: string | null
 		sheetId: SheetId
+		partPath?: string
+		contentType?: string
+		contentTypeSource?: 'override' | 'default' | 'fallback'
+		sourcePartPath?: string
+		sourceRelationshipPart?: string
+		sourceRelationshipId?: string
+		sourceRelationshipType?: string
+		sourceRelationshipRawType?: string
+		sourceRelationshipRawTarget?: string
+		sourceRelationshipResolvedTarget?: string
+		sourceRelationshipTargetMode?: string
 		uid?: string
 		ref: RangeRef
 		tableType?: string
@@ -108,6 +125,25 @@ export function parseTable(
 	if (tableType) parsed.tableType = tableType
 	if (nameAttribute !== undefined) parsed.nameAttribute = nameAttribute
 	else parsed.nameAttribute = null
+	if (options.tablePath) parsed.partPath = options.tablePath
+	if (options.contentType) parsed.contentType = options.contentType
+	if (options.contentTypeSource) parsed.contentTypeSource = options.contentTypeSource
+	if (options.sourcePartPath) parsed.sourcePartPath = options.sourcePartPath
+	if (options.sourceRelationshipPart) parsed.sourceRelationshipPart = options.sourceRelationshipPart
+	if (options.sourceRelationship) {
+		parsed.sourceRelationshipId = options.sourceRelationship.id
+		parsed.sourceRelationshipType = options.sourceRelationship.type
+		if (options.sourceRelationship.rawType) {
+			parsed.sourceRelationshipRawType = options.sourceRelationship.rawType
+		}
+		parsed.sourceRelationshipRawTarget = options.sourceRelationship.target
+		if (options.sourceRelationship.targetMode) {
+			parsed.sourceRelationshipTargetMode = options.sourceRelationship.targetMode
+		}
+	}
+	if (options.sourceRelationshipResolvedTarget) {
+		parsed.sourceRelationshipResolvedTarget = options.sourceRelationshipResolvedTarget
+	}
 	if (uid) parsed.uid = uid
 	if (insertRow !== undefined) parsed.insertRow = insertRow
 	if (insertRowShift !== undefined) parsed.insertRowShift = insertRowShift

@@ -613,7 +613,9 @@ export function readXlsx(
 					attachDrawingImages(archive, entry.path, sheet, sheetRelationships)
 					attachPivotTables(archive, entry.path, entry.name, workbook, sheetRelationships)
 				}
-				if (hydrateRichSheetMetadata) attachTables(archive, entry.path, sheet, sheetRelationships)
+				if (hydrateRichSheetMetadata) {
+					attachTables(archive, contentTypes, entry.path, sheet, sheetRelationships)
+				}
 				sheet.state = entry.state
 				if (hydrateRichSheetMetadata) {
 					sheet.preservedXml = {
@@ -1673,6 +1675,7 @@ function buildReport(
 
 function attachTables(
 	archive: ZipArchive,
+	contentTypes: ContentTypes,
 	sheetPath: string,
 	sheet: Workbook['sheets'][number],
 	sheetRelationships: readonly Relationship[],
@@ -1683,11 +1686,21 @@ function attachTables(
 		const tablePath = resolvePath(sheetPath, rel.target)
 		const tableXml = readPart(archive, tablePath)
 		if (!tableXml) continue
+		const tableContentType = resolveContentTypeInfo(tablePath, contentTypes)
 		const tableRelsXml = readPart(archive, getRelsPath(tablePath))
 		const tableRelationships = tableRelsXml
 			? parseRelationships(tableRelsXml).filter((entry) => entry.type === REL_QUERY_TABLE)
 			: []
-		const table = parseTable(tableXml, sheet.id, { tablePath, relationships: tableRelationships })
+		const table = parseTable(tableXml, sheet.id, {
+			tablePath,
+			contentType: tableContentType.value,
+			contentTypeSource: tableContentType.source,
+			sourcePartPath: sheetPath,
+			sourceRelationshipPart: getRelsPath(sheetPath),
+			sourceRelationship: rel,
+			sourceRelationshipResolvedTarget: tablePath,
+			relationships: tableRelationships,
+		})
 		if (!table) continue
 		sheet.tables.push(table)
 	}

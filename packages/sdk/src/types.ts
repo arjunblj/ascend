@@ -851,6 +851,17 @@ export interface PageMetadataSummary {
 export interface TableInfo {
 	readonly name: string
 	readonly ref: RangeRef
+	readonly partPath?: string
+	readonly contentType?: string
+	readonly contentTypeSource?: 'override' | 'default' | 'fallback'
+	readonly sourcePartPath?: string
+	readonly sourceRelationshipPart?: string
+	readonly sourceRelationshipId?: string
+	readonly sourceRelationshipType?: string
+	readonly sourceRelationshipRawType?: string
+	readonly sourceRelationshipRawTarget?: string
+	readonly sourceRelationshipResolvedTarget?: string
+	readonly sourceRelationshipTargetMode?: string
 	readonly rowCount: number
 	readonly hasHeaders: boolean
 	readonly hasTotals: boolean

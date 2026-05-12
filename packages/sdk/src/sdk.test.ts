@@ -2327,6 +2327,26 @@ describe('AscendWorkbook', () => {
 		])
 	})
 
+	test('inspectSheet exposes table package relationship provenance', async () => {
+		const wb = await AscendWorkbook.open(
+			readFileSync(join(import.meta.dir, '../../../fixtures/xlsx/poi/StructuredReferences.xlsx')),
+		)
+		const detail = wb.inspectSheet('Table')
+		expect(detail?.tables?.[0]).toMatchObject({
+			name: '\\_Prime.1',
+			partPath: 'xl/tables/table1.xml',
+			contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml',
+			contentTypeSource: 'override',
+			sourcePartPath: 'xl/worksheets/sheet2.xml',
+			sourceRelationshipPart: 'xl/worksheets/_rels/sheet2.xml.rels',
+			sourceRelationshipId: 'rId1',
+			sourceRelationshipType:
+				'http://schemas.openxmlformats.org/officeDocument/2006/relationships/table',
+			sourceRelationshipRawTarget: '../tables/table1.xml',
+			sourceRelationshipResolvedTarget: 'xl/tables/table1.xml',
+		})
+	})
+
 	test('formula metadata exposes workbook-qualified external references symbolically', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=[Book.xlsx]Sheet1!A1' }])

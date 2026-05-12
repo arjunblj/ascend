@@ -2676,7 +2676,7 @@ function parseSimpleFullScalarRow(
 		} else {
 			sheet.cells.setNumberResolved(out.row, out.col, out.numberValue, formula, styleId)
 		}
-		if (out.formulaText !== null) {
+		if (out.formulaText !== null && out.formulaText !== formula) {
 			sheet.storedFormulaText.set(formulaStorageKey(out.row, out.col), out.formulaText)
 		}
 		nextCol = out.col + 1

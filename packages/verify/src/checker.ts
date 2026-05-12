@@ -207,6 +207,54 @@ function checkChartSeriesReferences(wb: Workbook, sheetNames: readonly string[])
 	return issues
 }
 
+function checkChartPartOwnership(wb: Workbook, sheetNames: readonly string[]): CheckIssue[] {
+	const issues: CheckIssue[] = []
+	const sheetNameSet = new Set(sheetNames.map((name) => name.toLowerCase()))
+	const chartSheetOwnerByPartPath = new Map<string, string>()
+	for (const chartSheet of wb.chartSheets) {
+		for (const partPath of chartSheet.chartPartPaths) {
+			if (!chartSheetOwnerByPartPath.has(partPath)) {
+				chartSheetOwnerByPartPath.set(partPath, chartSheet.name)
+			}
+		}
+	}
+	for (const chart of wb.chartParts) {
+		const chartSheetOwner = chartSheetOwnerByPartPath.get(chart.partPath)
+		if (chart.sheetName && sheetNameSet.has(chart.sheetName.toLowerCase())) continue
+		if (!chart.sheetName && chartSheetOwner) continue
+		if (chart.sheetName && !sheetNameSet.has(chart.sheetName.toLowerCase())) {
+			const closest = findClosestSheetName(chart.sheetName, sheetNames)
+			issues.push({
+				rule: 'chart-part-ownership',
+				severity: 'warning',
+				message: `Chart part "${chart.partPath}" is attributed to non-existent sheet "${chart.sheetName}"`,
+				refs: [chart.partPath],
+				suggestedFix: closest
+					? `Did you mean sheet "${closest}"?`
+					: 'Inspect drawing and chartsheet relationships before editing this chart.',
+				details: {
+					partPath: chart.partPath,
+					ownerSheet: chart.sheetName,
+					...(chart.chartType ? { chartType: chart.chartType } : {}),
+				},
+			})
+			continue
+		}
+		issues.push({
+			rule: 'chart-part-ownership',
+			severity: 'warning',
+			message: `Chart part "${chart.partPath}" is not attributed to a worksheet or chartsheet`,
+			refs: [chart.partPath],
+			suggestedFix: 'Inspect drawing and chartsheet relationships before editing this chart.',
+			details: {
+				partPath: chart.partPath,
+				...(chart.chartType ? { chartType: chart.chartType } : {}),
+			},
+		})
+	}
+	return issues
+}
+
 function checkCircularRefs(wb: Workbook, analysis: WorkbookDependencyAnalysis): CheckIssue[] {
 	return analysis.cycles.map((cycle) => {
 		const refs = cycle.map((key) => {
@@ -734,6 +782,7 @@ export function check(
 		...checkBrokenRefs(workbook, formulas, sheetNames),
 		...checkExternalRefs(formulas),
 		...checkChartSeriesReferences(workbook, sheetNames),
+		...checkChartPartOwnership(workbook, sheetNames),
 		...checkCircularRefs(workbook, dependencies),
 		...checkFormulaErrors(workbook, formulas),
 		...checkBlockedSpills(workbook),

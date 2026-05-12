@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { createTableId, createWorkbook, type StyleId, type Table } from '@ascend/core'
+import {
+	createSheetId,
+	createTableId,
+	createWorkbook,
+	type StyleId,
+	type Table,
+} from '@ascend/core'
 import { EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
 import { check } from './checker.ts'
 import { lint } from './linter.ts'
@@ -428,6 +434,66 @@ describe('checker', () => {
 
 		const result = check(wb)
 		expect(result.issues.filter((i) => i.rule === 'chart-series-integrity')).toHaveLength(0)
+	})
+
+	test('detects chart parts without worksheet or chartsheet ownership', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Data')
+		wb.chartParts.push({
+			partPath: 'xl/charts/chart1.xml',
+			chartType: 'lineChart',
+			series: [],
+		})
+
+		const result = check(wb)
+		const issues = result.issues.filter((i) => i.rule === 'chart-part-ownership')
+		expect(result.passed).toBe(false)
+		expect(issues).toHaveLength(1)
+		expect(issues[0]?.message).toContain('not attributed')
+		expect(issues[0]?.details).toEqual({
+			partPath: 'xl/charts/chart1.xml',
+			chartType: 'lineChart',
+		})
+	})
+
+	test('accepts chartsheet-owned chart parts without worksheet ownership', () => {
+		const wb = createWorkbook()
+		wb.chartParts.push({
+			partPath: 'xl/charts/chart1.xml',
+			chartType: 'barChart',
+			series: [],
+		})
+		wb.chartSheets.push({
+			name: 'Chart 1',
+			sheetId: createSheetId(),
+			relId: 'rIdChartSheet',
+			partPath: 'xl/chartsheets/sheet1.xml',
+			state: 'visible',
+			chartPartPaths: ['xl/charts/chart1.xml'],
+		})
+
+		const result = check(wb)
+		expect(result.issues.filter((i) => i.rule === 'chart-part-ownership')).toHaveLength(0)
+	})
+
+	test('detects chart parts attributed to missing worksheet owners', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Summary')
+		wb.chartParts.push({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Summry',
+			series: [],
+		})
+
+		const result = check(wb)
+		const issues = result.issues.filter((i) => i.rule === 'chart-part-ownership')
+		expect(issues).toHaveLength(1)
+		expect(issues[0]?.message).toContain('Summry')
+		expect(issues[0]?.suggestedFix).toContain('Summary')
+		expect(issues[0]?.details).toEqual({
+			partPath: 'xl/charts/chart1.xml',
+			ownerSheet: 'Summry',
+		})
 	})
 
 	test('suggests closest sheet name for broken refs', () => {

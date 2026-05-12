@@ -3871,6 +3871,89 @@ function pushExternalLinkPathGraphCongruenceIssues(
 	}
 }
 
+function externalBookRelationshipRef(
+	detail: Workbook['externalReferenceDetails'][number],
+	relationshipId: string,
+): string {
+	return detail.linkRelationshipPart
+		? `${detail.linkRelationshipPart}#${relationshipId}`
+		: `${detail.partPath}#${relationshipId}`
+}
+
+function pushExternalBookRelationshipGraphIssues(
+	issues: CheckIssue[],
+	detail: Workbook['externalReferenceDetails'][number],
+	externalBookRelationship: VerifyPackageGraphRelationship,
+): void {
+	const relRef = externalBookRelationshipRef(detail, externalBookRelationship.id)
+	if (!isExternalLinkPathRelationshipType(externalBookRelationship.type)) {
+		issues.push({
+			rule: 'external-link-integrity',
+			severity: 'warning',
+			message: `ExternalBook r:id "${externalBookRelationship.id}" on "${detail.partPath}" has package graph type "${externalBookRelationship.type}" that is not an externalLinkPath relationship`,
+			refs: [relRef],
+			suggestedFix:
+				'Repair the externalBook r:id relationship type before preserving or rewriting external link metadata.',
+			details: {
+				kind: 'external-book-relationship-type-mismatch',
+				partPath: detail.partPath,
+				externalBookRelId: externalBookRelationship.id,
+				linkRelId: detail.linkRelId,
+				expectedType: detail.linkRelationshipType,
+				actualType: externalBookRelationship.type,
+				actualRawType: externalBookRelationship.rawType,
+			},
+		})
+	}
+
+	if (
+		detail.linkRelationshipRawTarget !== undefined &&
+		externalBookRelationship.rawTarget !== detail.linkRelationshipRawTarget
+	) {
+		issues.push({
+			rule: 'external-link-integrity',
+			severity: 'error',
+			message: `ExternalBook r:id "${externalBookRelationship.id}" on "${detail.partPath}" targets "${externalBookRelationship.rawTarget}" but metadata selected "${detail.linkRelationshipRawTarget}"`,
+			refs: [relRef],
+			suggestedFix:
+				'Repair the externalBook r:id target or refresh external link metadata before writing.',
+			details: {
+				kind: 'external-book-relationship-target-mismatch',
+				partPath: detail.partPath,
+				externalBookRelId: externalBookRelationship.id,
+				linkRelId: detail.linkRelId,
+				expectedRawTarget: detail.linkRelationshipRawTarget,
+				actualRawTarget: externalBookRelationship.rawTarget,
+				metadataTarget: detail.target,
+			},
+		})
+	}
+
+	if (
+		detail.targetMode !== undefined &&
+		externalBookRelationship.targetMode !== undefined &&
+		externalBookRelationship.targetMode.toLowerCase() !== detail.targetMode.toLowerCase()
+	) {
+		issues.push({
+			rule: 'external-link-integrity',
+			severity: 'warning',
+			message: `ExternalBook r:id "${externalBookRelationship.id}" on "${detail.partPath}" has package TargetMode "${externalBookRelationship.targetMode}" but metadata selected "${detail.targetMode}"`,
+			refs: [relRef],
+			suggestedFix:
+				'Repair the externalBook r:id TargetMode before preserving external link metadata.',
+			details: {
+				kind: 'external-book-relationship-target-mode-mismatch',
+				partPath: detail.partPath,
+				externalBookRelId: externalBookRelationship.id,
+				linkRelId: detail.linkRelId,
+				expectedTargetMode: detail.targetMode,
+				actualTargetMode: externalBookRelationship.targetMode,
+				target: detail.target,
+			},
+		})
+	}
+}
+
 function checkExternalLinkIntegrity(wb: Workbook, packageGraph?: VerifyPackageGraph): CheckIssue[] {
 	const issues: CheckIssue[] = []
 	const externalReferenceParts = new Set(wb.externalReferences)
@@ -4140,6 +4223,36 @@ function checkExternalLinkIntegrity(wb: Workbook, packageGraph?: VerifyPackageGr
 				})
 			} else {
 				pushExternalLinkPathGraphCongruenceIssues(issues, detail, pathRelationship)
+			}
+		}
+
+		if (
+			detail.externalBookRelId &&
+			detail.linkRelId &&
+			detail.externalBookRelId !== detail.linkRelId
+		) {
+			const externalBookRelationship = graphRelationshipBySourceAndId.get(
+				`${detail.partPath}#${detail.externalBookRelId}`,
+			)
+			if (!externalBookRelationship) {
+				issues.push({
+					rule: 'external-link-integrity',
+					severity: 'error',
+					message: `ExternalBook r:id "${detail.externalBookRelId}" is missing from "${detail.partPath}" even though metadata fell back to path relationship "${detail.linkRelId}"`,
+					refs: [externalBookRelationshipRef(detail, detail.externalBookRelId)],
+					suggestedFix:
+						'Repair the externalBook r:id relationship before writing external link metadata.',
+					details: {
+						kind: 'external-book-relationship-missing',
+						partPath: detail.partPath,
+						externalBookRelId: detail.externalBookRelId,
+						linkRelId: detail.linkRelId,
+						linkRelationshipPart: detail.linkRelationshipPart,
+						linkBindingStatus: detail.linkBindingStatus,
+					},
+				})
+			} else {
+				pushExternalBookRelationshipGraphIssues(issues, detail, externalBookRelationship)
 			}
 		}
 	}

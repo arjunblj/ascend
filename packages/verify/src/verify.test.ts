@@ -1352,8 +1352,12 @@ describe('checker', () => {
 			relId: 'rIdExternal2',
 			sourcePartPath: 'xl/workbook.xml',
 			sourceRelationshipPart: 'xl/_rels/workbook.xml.rels',
-			externalBookRelId: 'rIdMissing',
+			externalBookRelId: 'rIdBad',
 			linkRelId: 'rIdPath',
+			linkRelationshipPart: 'xl/externalLinks/_rels/externalLink2.xml.rels',
+			linkRelationshipType:
+				'http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlLibrary',
+			linkRelationshipRawTarget: 'library.xlsx',
 			linkBindingStatus: 'fallbackPathRelationship',
 			target: 'library.xlsx',
 			targetMode: 'External',
@@ -1390,6 +1394,16 @@ describe('checker', () => {
 					{
 						sourcePartPath: 'xl/externalLinks/externalLink2.xml',
 						relationshipPartPath: 'xl/externalLinks/_rels/externalLink2.xml.rels',
+						id: 'rIdBad',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet',
+						rawTarget: '../worksheets/sheet1.xml',
+						resolvedTarget: 'xl/worksheets/sheet1.xml',
+						targetMode: 'Internal',
+						featureFamily: 'worksheet',
+					},
+					{
+						sourcePartPath: 'xl/externalLinks/externalLink2.xml',
+						relationshipPartPath: 'xl/externalLinks/_rels/externalLink2.xml.rels',
 						id: 'rIdPath',
 						type: 'http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlLibrary',
 						rawTarget: 'library.xlsx',
@@ -1406,10 +1420,56 @@ describe('checker', () => {
 			expect.objectContaining({
 				severity: 'warning',
 				message: expect.stringContaining('fallbackPathRelationship'),
-				refs: ['xl/externalLinks/externalLink2.xml', 'xl/externalLinks/externalLink2.xml'],
+				refs: [
+					'xl/externalLinks/externalLink2.xml',
+					'xl/externalLinks/_rels/externalLink2.xml.rels#rIdPath',
+				],
 				suggestedFix: expect.stringContaining('externalBook r:id'),
 				details: expect.objectContaining({
 					kind: 'external-link-binding-risk',
+					externalBookRelId: 'rIdBad',
+				}),
+			}),
+		)
+		expect(externalIssues).toContainEqual(
+			expect.objectContaining({
+				severity: 'warning',
+				message: expect.stringContaining('rIdBad'),
+				refs: ['xl/externalLinks/_rels/externalLink2.xml.rels#rIdBad'],
+				suggestedFix: expect.stringContaining('externalBook r:id'),
+				details: expect.objectContaining({
+					kind: 'external-book-relationship-type-mismatch',
+					partPath: 'xl/externalLinks/externalLink2.xml',
+					externalBookRelId: 'rIdBad',
+					linkRelId: 'rIdPath',
+					actualType:
+						'http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet',
+				}),
+			}),
+		)
+		expect(externalIssues).toContainEqual(
+			expect.objectContaining({
+				severity: 'error',
+				message: expect.stringContaining('rIdBad'),
+				refs: ['xl/externalLinks/_rels/externalLink2.xml.rels#rIdBad'],
+				details: expect.objectContaining({
+					kind: 'external-book-relationship-target-mismatch',
+					partPath: 'xl/externalLinks/externalLink2.xml',
+					externalBookRelId: 'rIdBad',
+					linkRelId: 'rIdPath',
+					expectedRawTarget: 'library.xlsx',
+					actualRawTarget: '../worksheets/sheet1.xml',
+				}),
+			}),
+		)
+		expect(externalIssues).toContainEqual(
+			expect.objectContaining({
+				severity: 'warning',
+				message: expect.stringContaining('TargetMode'),
+				refs: ['xl/externalLinks/_rels/externalLink2.xml.rels#rIdBad'],
+				details: expect.objectContaining({
+					kind: 'external-book-relationship-target-mode-mismatch',
+					externalBookRelId: 'rIdBad',
 				}),
 			}),
 		)

@@ -133,14 +133,18 @@ export function diffWorkbooks(before: Workbook, after: Workbook): WorkbookDiff {
 		const bs = beforeSheets.get(name)
 		const as = afterSheets.get(name)
 		if (!bs || !as) continue
+		const dataValidationsChanged =
+			JSON.stringify(bs.dataValidations) !== JSON.stringify(as.dataValidations) ||
+			JSON.stringify(bs.x14DataValidations) !== JSON.stringify(as.x14DataValidations)
+		const conditionalFormatsChanged =
+			JSON.stringify(bs.conditionalFormats) !== JSON.stringify(as.conditionalFormats) ||
+			JSON.stringify(bs.x14ConditionalFormats) !== JSON.stringify(as.x14ConditionalFormats)
 		const featureDiff: SheetFeatureDiff = {
 			name,
 			mergesChanged: JSON.stringify(bs.merges) !== JSON.stringify(as.merges),
 			tablesChanged: JSON.stringify(bs.tables) !== JSON.stringify(as.tables),
-			dataValidationsChanged:
-				JSON.stringify(bs.dataValidations) !== JSON.stringify(as.dataValidations),
-			conditionalFormatsChanged:
-				JSON.stringify(bs.conditionalFormats) !== JSON.stringify(as.conditionalFormats),
+			dataValidationsChanged,
+			conditionalFormatsChanged,
 			sheetProtectionChanged: JSON.stringify(bs.protection) !== JSON.stringify(as.protection),
 		}
 		if (

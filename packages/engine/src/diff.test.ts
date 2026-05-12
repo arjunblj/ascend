@@ -162,6 +162,39 @@ describe('diffWorkbooks', () => {
 			},
 		])
 	})
+
+	test('detects x14-only validation and conditional format changes as sheet features', () => {
+		const a = createWorkbook()
+		a.addSheet('Sheet1')
+
+		const b = createWorkbook()
+		const sheet = b.addSheet('Sheet1')
+		sheet.x14DataValidations.push({
+			index: 0,
+			sqref: 'A1',
+			type: 'list',
+			formula1: '"Yes,No"',
+		})
+		sheet.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'B1',
+			formulas: ['B1>0'],
+			dataBar: { cfvo: [{ type: 'num', value: 0 }] },
+		})
+
+		const diff = diffWorkbooks(a, b)
+		expect(diff.sheets).toEqual([])
+		expect(diff.sheetFeatures).toEqual([
+			{
+				name: 'Sheet1',
+				mergesChanged: false,
+				tablesChanged: false,
+				dataValidationsChanged: true,
+				conditionalFormatsChanged: true,
+				sheetProtectionChanged: false,
+			},
+		])
+	})
 })
 
 describe('snapshot round-trip', () => {
@@ -201,6 +234,31 @@ describe('snapshot round-trip', () => {
 		const snap = createSnapshot(wb)
 		expect(snap.workbookProtectionJson).toContain('lockStructure')
 		expect(snap.sheets[0]?.mergesJson).toContain('start')
+	})
+
+	test('createSnapshot captures x14 validation and conditional format state', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.x14DataValidations.push({
+			index: 0,
+			sqref: 'A1',
+			type: 'list',
+			formula1: '"Yes,No"',
+		})
+		s.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'B1',
+			formulas: ['B1>0'],
+			dataBar: { cfvo: [{ type: 'num', value: 0 }] },
+		})
+
+		const snap = createSnapshot(wb)
+		expect(JSON.parse(snap.sheets[0]?.x14DataValidationsJson ?? '[]')[0]).toMatchObject({
+			formula1: '"Yes,No"',
+		})
+		expect(JSON.parse(snap.sheets[0]?.x14ConditionalFormatsJson ?? '[]')[0]).toMatchObject({
+			formulas: ['B1>0'],
+		})
 	})
 
 	test('compareSnapshots detects changes', () => {
@@ -266,6 +324,39 @@ describe('snapshot round-trip', () => {
 				tablesChanged: false,
 				dataValidationsChanged: false,
 				conditionalFormatsChanged: false,
+				sheetProtectionChanged: false,
+			},
+		])
+	})
+
+	test('compareSnapshots detects x14-only validation and conditional format changes', () => {
+		const wb1 = createWorkbook()
+		wb1.addSheet('Sheet1')
+
+		const wb2 = createWorkbook()
+		const s2 = wb2.addSheet('Sheet1')
+		s2.x14DataValidations.push({
+			index: 0,
+			sqref: 'A1',
+			type: 'list',
+			formula1: '"Yes,No"',
+		})
+		s2.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'B1',
+			formulas: ['B1>0'],
+			dataBar: { cfvo: [{ type: 'num', value: 0 }] },
+		})
+
+		const diff = compareSnapshots(createSnapshot(wb1), createSnapshot(wb2))
+		expect(diff.sheets).toEqual([])
+		expect(diff.sheetFeatures).toEqual([
+			{
+				name: 'Sheet1',
+				mergesChanged: false,
+				tablesChanged: false,
+				dataValidationsChanged: true,
+				conditionalFormatsChanged: true,
 				sheetProtectionChanged: false,
 			},
 		])

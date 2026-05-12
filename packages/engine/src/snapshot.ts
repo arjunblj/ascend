@@ -10,7 +10,9 @@ export interface SheetSnapshot {
 	readonly mergesJson: string
 	readonly tablesJson: string
 	readonly dataValidationsJson: string
+	readonly x14DataValidationsJson: string
 	readonly conditionalFormatsJson: string
+	readonly x14ConditionalFormatsJson: string
 	readonly protectionJson: string
 }
 
@@ -33,7 +35,9 @@ export function createSnapshot(workbook: Workbook): WorkbookSnapshot {
 			mergesJson: JSON.stringify(sheet.merges),
 			tablesJson: JSON.stringify(sheet.tables),
 			dataValidationsJson: JSON.stringify(sheet.dataValidations),
+			x14DataValidationsJson: JSON.stringify(sheet.x14DataValidations),
 			conditionalFormatsJson: JSON.stringify(sheet.conditionalFormats),
+			x14ConditionalFormatsJson: JSON.stringify(sheet.x14ConditionalFormats),
 			protectionJson: JSON.stringify(sheet.protection),
 		}
 	})
@@ -152,8 +156,12 @@ export function compareSnapshots(a: WorkbookSnapshot, b: WorkbookSnapshot): Work
 			name,
 			mergesChanged: sheetA.mergesJson !== sheetB.mergesJson,
 			tablesChanged: sheetA.tablesJson !== sheetB.tablesJson,
-			dataValidationsChanged: sheetA.dataValidationsJson !== sheetB.dataValidationsJson,
-			conditionalFormatsChanged: sheetA.conditionalFormatsJson !== sheetB.conditionalFormatsJson,
+			dataValidationsChanged:
+				sheetA.dataValidationsJson !== sheetB.dataValidationsJson ||
+				sheetA.x14DataValidationsJson !== sheetB.x14DataValidationsJson,
+			conditionalFormatsChanged:
+				sheetA.conditionalFormatsJson !== sheetB.conditionalFormatsJson ||
+				sheetA.x14ConditionalFormatsJson !== sheetB.x14ConditionalFormatsJson,
 			sheetProtectionChanged: sheetA.protectionJson !== sheetB.protectionJson,
 		}
 		if (

@@ -121,6 +121,8 @@ describe('LibreOffice XLSX fixture corpus', () => {
 				externalBookRelId: 'rId1',
 				linkRelId: 'rId1',
 				linkRelationshipPart: 'xl/externalLinks/_rels/externalLink1.xml.rels',
+				linkRelationshipKind: 'xlPathMissing',
+				linkBindingStatus: 'externalBookRelId',
 				linkRelationshipType:
 					'http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlPathMissing',
 				linkRelationshipRawTarget: 'Tabelle1',
@@ -149,6 +151,8 @@ describe('LibreOffice XLSX fixture corpus', () => {
 				externalBookRelId: 'rId1',
 				linkRelId: 'rId1',
 				linkRelationshipPart: 'xl/externalLinks/_rels/externalLink1.xml.rels',
+				linkRelationshipKind: 'xlStartup',
+				linkBindingStatus: 'externalBookRelId',
 				linkRelationshipType:
 					'http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlStartup',
 				linkRelationshipRawTarget: 'personal.xls',

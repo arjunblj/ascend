@@ -53,6 +53,14 @@ export const REL_EXTERNAL_LINK_LIBRARY_PATH =
 export const REL_EXTERNAL_LINK_MISSING_PATH =
 	'http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlPathMissing'
 
+export type ExternalLinkPathRelationshipKind =
+	| 'externalLinkPath'
+	| 'xlStartup'
+	| 'xlAlternateStartup'
+	| 'xlLibrary'
+	| 'xlPathMissing'
+	| 'unknown'
+
 const STRICT_REL_PREFIX = 'http://purl.oclc.org/ooxml/officeDocument/relationships/'
 const TRANSITIONAL_REL_PREFIX =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
@@ -92,6 +100,28 @@ export function parseRelationships(xml: string): Relationship[] {
 
 export function isExternalLinkPathRelationshipType(type: string): boolean {
 	return EXTERNAL_LINK_PATH_REL_TYPES.has(normalizeRelationshipType(type))
+}
+
+export function externalLinkPathRelationshipKind(type: string): ExternalLinkPathRelationshipKind
+export function externalLinkPathRelationshipKind(type: undefined): undefined
+export function externalLinkPathRelationshipKind(
+	type: string | undefined,
+): ExternalLinkPathRelationshipKind | undefined {
+	if (!type) return undefined
+	switch (normalizeRelationshipType(type)) {
+		case REL_EXTERNAL_LINK_PATH:
+			return 'externalLinkPath'
+		case REL_EXTERNAL_LINK_STARTUP_PATH:
+			return 'xlStartup'
+		case REL_EXTERNAL_LINK_ALTERNATE_STARTUP_PATH:
+			return 'xlAlternateStartup'
+		case REL_EXTERNAL_LINK_LIBRARY_PATH:
+			return 'xlLibrary'
+		case REL_EXTERNAL_LINK_MISSING_PATH:
+			return 'xlPathMissing'
+		default:
+			return 'unknown'
+	}
 }
 
 function normalizeRelationshipType(type: string): string {

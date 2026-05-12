@@ -172,6 +172,9 @@ export type {
 	TableXmlColumnPr,
 } from './table.ts'
 export type {
+	ExternalReferenceInfo,
+	ExternalReferenceLinkBindingStatus,
+	ExternalReferenceLinkRelationshipKind,
 	NamedStyleInfo,
 	WorkbookCoreDocumentProperties,
 	WorkbookCustomDocumentProperty,

@@ -560,6 +560,8 @@ describe('ClosedXML XLSX fixture corpus', () => {
 					externalBookRelId: 'rId1',
 					linkRelId: 'rId1',
 					linkRelationshipPart: 'xl/externalLinks/_rels/externalLink1.xml.rels',
+					linkRelationshipKind: 'externalLinkPath',
+					linkBindingStatus: 'externalBookRelId',
 					linkRelationshipType:
 						'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath',
 					linkRelationshipRawTarget: 'book1.xlsx',

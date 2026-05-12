@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+	externalLinkPathRelationshipKind,
 	isExternalLinkPathRelationshipType,
 	parseRelationships,
 	resolvePath,
@@ -64,6 +65,45 @@ describe('relationships', () => {
 				'http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml',
 			),
 		).toBe(false)
+	})
+
+	test('classifies Excel external workbook path relationship base semantics', () => {
+		expect(
+			externalLinkPathRelationshipKind(
+				'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath',
+			),
+		).toBe('externalLinkPath')
+		expect(
+			externalLinkPathRelationshipKind(
+				'http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlStartup',
+			),
+		).toBe('xlStartup')
+		expect(
+			externalLinkPathRelationshipKind(
+				'http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlAlternateStartup',
+			),
+		).toBe('xlAlternateStartup')
+		expect(
+			externalLinkPathRelationshipKind(
+				'http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlLibrary',
+			),
+		).toBe('xlLibrary')
+		expect(
+			externalLinkPathRelationshipKind(
+				'http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlPathMissing',
+			),
+		).toBe('xlPathMissing')
+		expect(
+			externalLinkPathRelationshipKind(
+				'http://purl.oclc.org/ooxml/officeDocument/relationships/externalLinkPath',
+			),
+		).toBe('externalLinkPath')
+		expect(
+			externalLinkPathRelationshipKind(
+				'http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml',
+			),
+		).toBe('unknown')
+		expect(externalLinkPathRelationshipKind(undefined)).toBeUndefined()
 	})
 
 	test('keeps raw strict relationship types while exposing normalized lookup types', () => {

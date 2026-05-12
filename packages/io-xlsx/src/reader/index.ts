@@ -57,6 +57,7 @@ import {
 	parseTimelineXml,
 } from './pivots.ts'
 import {
+	externalLinkPathRelationshipKind,
 	getRelsPath,
 	isExternalLinkPathRelationshipType,
 	parseRelationships,
@@ -253,14 +254,21 @@ export function readXlsx(
 			const linkXml = readPart(archive, partPath)
 			const externalBookRelId = linkXml ? parseExternalBookRelationshipId(linkXml) : undefined
 			const linkRelationships = relsXml ? parseRelationships(relsXml) : []
-			const linkRelationship =
-				(externalBookRelId
-					? linkRelationships.find(
-							(entry) =>
-								entry.id === externalBookRelId && isExternalLinkPathRelationshipType(entry.type),
-						)
-					: undefined) ??
-				linkRelationships.find((entry) => isExternalLinkPathRelationshipType(entry.type))
+			const linkedByExternalBookRelId = externalBookRelId
+				? linkRelationships.find(
+						(entry) =>
+							entry.id === externalBookRelId && isExternalLinkPathRelationshipType(entry.type),
+					)
+				: undefined
+			const fallbackLinkRelationship = linkRelationships.find((entry) =>
+				isExternalLinkPathRelationshipType(entry.type),
+			)
+			const linkRelationship = linkedByExternalBookRelId ?? fallbackLinkRelationship
+			const linkBindingStatus = linkedByExternalBookRelId
+				? 'externalBookRelId'
+				: linkRelationship
+					? 'fallbackPathRelationship'
+					: 'missingPathRelationship'
 			workbook.externalReferenceDetails.push({
 				partPath,
 				relId,
@@ -273,6 +281,10 @@ export function readXlsx(
 				...(externalBookRelId ? { externalBookRelId } : {}),
 				...(linkRelationship?.id ? { linkRelId: linkRelationship.id } : {}),
 				...(linkRelationship ? { linkRelationshipPart: getRelsPath(partPath) } : {}),
+				...(linkRelationship?.type
+					? { linkRelationshipKind: externalLinkPathRelationshipKind(linkRelationship.type) }
+					: {}),
+				linkBindingStatus,
 				...(linkRelationship?.type ? { linkRelationshipType: linkRelationship.type } : {}),
 				...(linkRelationship?.rawType ? { linkRelationshipRawType: linkRelationship.rawType } : {}),
 				...(linkRelationship?.target ? { linkRelationshipRawTarget: linkRelationship.target } : {}),

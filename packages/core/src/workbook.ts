@@ -196,12 +196,27 @@ export interface ExternalReferenceInfo {
 	readonly externalBookRelId?: string
 	readonly linkRelId?: string
 	readonly linkRelationshipPart?: string
+	readonly linkRelationshipKind?: ExternalReferenceLinkRelationshipKind
+	readonly linkBindingStatus?: ExternalReferenceLinkBindingStatus
 	readonly linkRelationshipType?: string
 	readonly linkRelationshipRawType?: string
 	readonly linkRelationshipRawTarget?: string
 	readonly target?: string
 	readonly targetMode?: string
 }
+
+export type ExternalReferenceLinkRelationshipKind =
+	| 'externalLinkPath'
+	| 'xlStartup'
+	| 'xlAlternateStartup'
+	| 'xlLibrary'
+	| 'xlPathMissing'
+	| 'unknown'
+
+export type ExternalReferenceLinkBindingStatus =
+	| 'externalBookRelId'
+	| 'fallbackPathRelationship'
+	| 'missingPathRelationship'
 
 export class Workbook {
 	readonly id: WorkbookId

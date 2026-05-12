@@ -2545,6 +2545,44 @@ describe('applyOperation', () => {
 		expectErr(duplicate)
 	})
 
+	test('setTableColumn escapes renamed structured reference columns with Excel special characters', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Qty'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Price'), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: stringValue('Total'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(5), formula: null, styleId: sid })
+		applyOperation(wb, {
+			op: 'createTable',
+			sheet: 'Sheet1',
+			ref: 'A1:C2',
+			name: 'Sales',
+			hasHeaders: true,
+		})
+		applyOperation(wb, {
+			op: 'setTableColumn',
+			table: 'Sales',
+			column: 'Total',
+			formula: '=[@Qty]*[@Price]',
+			totalsRowFormula: '=SUM(Sales[Qty])',
+		})
+		sheet.cells.set(4, 0, { value: EMPTY, formula: 'SUM(Sales[[Qty]:[Price]])', styleId: sid })
+
+		const result = applyOperation(wb, {
+			op: 'setTableColumn',
+			table: 'Sales',
+			column: 'Qty',
+			newName: 'Units#',
+		})
+		expectOk(result)
+
+		expect(sheet.cells.get(1, 2)?.formula).toBe("[@Units'#]*[@Price]")
+		expect(sheet.tables[0]?.columns[2]?.formula).toBe("[@Units'#]*[@Price]")
+		expect(sheet.tables[0]?.columns[2]?.totalsRowFormula).toBe("SUM(Sales[Units'#])")
+		expect(sheet.cells.get(4, 0)?.formula).toBe("SUM(Sales[[Units'#]:[Price]])")
+	})
+
 	test('setTableColumn materializes totals-row cells from metadata edits', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

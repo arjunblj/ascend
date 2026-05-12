@@ -82,7 +82,11 @@ function printBinary(node: BinaryNode, ctx: PrintContext): string {
 function printStructuredRef(node: StructuredRefNode): string {
 	let inner: string
 	const columnPart =
-		node.column && node.endColumn ? `[${node.column}]:[${node.endColumn}]` : node.column
+		node.column && node.endColumn
+			? `[${escapeStructuredRefColumn(node.column)}]:[${escapeStructuredRefColumn(node.endColumn)}]`
+			: node.column
+				? escapeStructuredRefColumn(node.column)
+				: undefined
 	if (node.specifiers.length > 0 && columnPart !== undefined) {
 		if (node.specifiers.length === 1 && node.specifiers[0] === '@') {
 			inner = `${node.specifiers[0]}${columnPart}`
@@ -96,6 +100,10 @@ function printStructuredRef(node: StructuredRefNode): string {
 		inner = columnPart ?? ''
 	}
 	return `${node.table}[${inner}]`
+}
+
+function escapeStructuredRefColumn(name: string): string {
+	return name.replace(/([#@[\]'])/g, "'$1")
 }
 
 type PrintContext = { rowDelta: number; colDelta: number } | null

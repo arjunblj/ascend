@@ -577,6 +577,20 @@ describe('printFormula', () => {
 		})
 	})
 
+	it('prints escaped structured reference column special characters', () => {
+		expect(printFormula(p("BillingData[Check'#]"))).toBe("BillingData[Check'#]")
+		expect(printFormula(p("BillingData[@Check'@]"))).toBe("BillingData[@Check'@]")
+		expect(
+			printFormula({
+				type: 'structuredRef',
+				table: 'BillingData',
+				specifiers: [],
+				column: 'A[',
+				endColumn: "B]'",
+			}),
+		).toBe("BillingData[[A'[]:[B']'']]")
+	})
+
 	it('parses escaped table names with dotted numeric suffixes', () => {
 		expect(p('\\_Prime.1[Name]')).toMatchObject({
 			type: 'structuredRef',

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { unzipSync } from 'fflate'
-import type { StyleId } from '../../packages/core/src/index.ts'
+import type { StyleId, Workbook } from '../../packages/core/src/index.ts'
 import { applyOperation } from '../../packages/engine/src/index.ts'
 import {
 	auditXlsxPackageGraphSafeEditIntegrity,
@@ -159,6 +159,128 @@ describe('vendored table package graph fidelity', () => {
 		expectNoPackageGraphIssues(auditXlsxPackageGraphSafeEditIntegrity(beforeGraph, afterGraph))
 		expect(queryTablePartIdentities(afterGraph)).toEqual(beforeQueryTableParts)
 		expect(tableRelationshipIdentities(afterGraph)).toEqual(beforeTableRelationships)
+		expect(queryTableContentTypeOverrides(afterGraph)).toEqual(beforeQueryTableOverrides)
+		expectFeatureBytesPreserved(beforeGraph, sourceBytes, written.value, 'preservedQueryTable')
+	})
+
+	test('LibreOffice worksheet-owned query tables preserve relationships and connection inventory', () => {
+		const sourceBytes = readFileSync(
+			new URL('./libreoffice/queryTableExport.xlsx', import.meta.url),
+		)
+		const beforeGraph = inspectXlsxPackageGraph(sourceBytes)
+		const beforeQueryTableParts = queryTablePartIdentities(beforeGraph)
+		const beforeQueryTableRelationships = queryTableRelationshipIdentities(beforeGraph)
+		const beforeQueryTableOverrides = queryTableContentTypeOverrides(beforeGraph)
+		expect(beforeQueryTableParts).toEqual([
+			expect.objectContaining({
+				path: 'xl/queryTables/queryTable1.xml',
+				contentType: QUERY_TABLE_CONTENT_TYPE,
+				ownerScope: 'worksheet',
+				sourceRelationshipPart: 'xl/worksheets/_rels/sheet1.xml.rels',
+				sourceRelationshipId: 'rId1',
+				sourceRelationshipRawTarget: '../queryTables/queryTable1.xml',
+				preservationPolicy: 'preserve-exact',
+			}),
+			expect.objectContaining({
+				path: 'xl/queryTables/queryTable2.xml',
+				contentType: QUERY_TABLE_CONTENT_TYPE,
+				ownerScope: 'worksheet',
+				sourceRelationshipPart: 'xl/worksheets/_rels/sheet1.xml.rels',
+				sourceRelationshipId: 'rId2',
+				sourceRelationshipRawTarget: '../queryTables/queryTable2.xml',
+				preservationPolicy: 'preserve-exact',
+			}),
+		])
+		expect(beforeQueryTableRelationships).toEqual([
+			{
+				sourcePartPath: 'xl/worksheets/sheet1.xml',
+				relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+				id: 'rId1',
+				type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
+				rawType: undefined,
+				rawTarget: '../queryTables/queryTable1.xml',
+				resolvedTarget: 'xl/queryTables/queryTable1.xml',
+				targetMode: undefined,
+				featureFamily: 'preservedQueryTable',
+			},
+			{
+				sourcePartPath: 'xl/worksheets/sheet1.xml',
+				relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+				id: 'rId2',
+				type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
+				rawType: undefined,
+				rawTarget: '../queryTables/queryTable2.xml',
+				resolvedTarget: 'xl/queryTables/queryTable2.xml',
+				targetMode: undefined,
+				featureFamily: 'preservedQueryTable',
+			},
+		])
+		expect(beforeQueryTableOverrides).toEqual([
+			{
+				partPath: 'xl/queryTables/queryTable1.xml',
+				contentType: QUERY_TABLE_CONTENT_TYPE,
+			},
+			{
+				partPath: 'xl/queryTables/queryTable2.xml',
+				contentType: QUERY_TABLE_CONTENT_TYPE,
+			},
+		])
+
+		const read = readXlsx(sourceBytes)
+		expectOk(read)
+		const sheet = read.value.workbook.sheets.find((entry) => entry.name === 'Sheet1')
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+		expect(queryTableConnectionParts(read.value.workbook.connectionParts)).toEqual([
+			{
+				partPath: 'xl/queryTables/queryTable1.xml',
+				sheetName: 'Sheet1',
+				connectionId: 1,
+				name: 'conn_with_delim',
+			},
+			{
+				partPath: 'xl/queryTables/queryTable2.xml',
+				sheetName: 'Sheet1',
+				connectionId: 2,
+				name: 'conn_with_comma',
+			},
+		])
+
+		sheet.cells.set(199, 30, {
+			value: stringValue('__ascend_worksheet_query_table_safe_edit__'),
+			formula: null,
+			styleId: S0,
+		})
+		const written = writeXlsx(read.value.workbook, read.value.capsules, {
+			dirtySheetNames: [sheet.name],
+		})
+		expectOk(written)
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(queryTableConnectionParts(reopened.value.workbook.connectionParts)).toEqual([
+			{
+				partPath: 'xl/queryTables/queryTable1.xml',
+				sheetName: 'Sheet1',
+				connectionId: 1,
+				name: 'conn_with_delim',
+			},
+			{
+				partPath: 'xl/queryTables/queryTable2.xml',
+				sheetName: 'Sheet1',
+				connectionId: 2,
+				name: 'conn_with_comma',
+			},
+		])
+
+		const afterGraph = inspectXlsxPackageGraph(written.value)
+		expectNoPackageGraphIssues(
+			auditXlsxPackageGraphSafeEditIntegrity(beforeGraph, afterGraph, {
+				ignoredRelationshipFamilies: ['preservedDocumentProperties'],
+			}),
+		)
+		expect(queryTablePartIdentities(afterGraph)).toEqual(beforeQueryTableParts)
+		expect(queryTableRelationshipIdentities(afterGraph)).toEqual(beforeQueryTableRelationships)
 		expect(queryTableContentTypeOverrides(afterGraph)).toEqual(beforeQueryTableOverrides)
 		expectFeatureBytesPreserved(beforeGraph, sourceBytes, written.value, 'preservedQueryTable')
 	})
@@ -351,6 +473,25 @@ function tableRelationshipIdentities(graph: XlsxPackageGraph): readonly Record<s
 		.sort(compareJson)
 }
 
+function queryTableRelationshipIdentities(
+	graph: XlsxPackageGraph,
+): readonly Record<string, unknown>[] {
+	return graph.relationships
+		.filter((relationship) => relationship.featureFamily === 'preservedQueryTable')
+		.map((relationship) => ({
+			sourcePartPath: relationship.sourcePartPath,
+			relationshipPartPath: relationship.relationshipPartPath,
+			id: relationship.id,
+			type: relationship.type,
+			rawType: relationship.rawType,
+			rawTarget: relationship.rawTarget,
+			resolvedTarget: relationship.resolvedTarget,
+			targetMode: relationship.targetMode,
+			featureFamily: relationship.featureFamily,
+		}))
+		.sort(compareJson)
+}
+
 function tableContentTypeOverrides(graph: XlsxPackageGraph): readonly Record<string, unknown>[] {
 	const tablePaths = new Set(
 		graph.parts.filter((part) => part.featureFamily === 'preservedTable').map((part) => part.path),
@@ -397,6 +538,20 @@ function queryTableContentTypeOverrides(
 		.map((override) => ({
 			partPath: override.partPath,
 			contentType: override.contentType,
+		}))
+		.sort(compareJson)
+}
+
+function queryTableConnectionParts(
+	connectionParts: Workbook['connectionParts'],
+): readonly Record<string, unknown>[] {
+	return connectionParts
+		.filter((part) => part.kind === 'queryTable')
+		.map((part) => ({
+			partPath: part.partPath,
+			sheetName: part.sheetName,
+			connectionId: part.connectionId,
+			name: part.name,
 		}))
 		.sort(compareJson)
 }

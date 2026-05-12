@@ -459,6 +459,69 @@ describe('checker', () => {
 		expect(orphanIssue?.suggestedFix).toContain('orphan queryTable sidecar')
 	})
 
+	test('does not treat worksheet-owned queryTable connection parts as table orphans', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+		wb.connectionParts.push({
+			kind: 'queryTable',
+			partPath: 'xl/queryTables/queryTable1.xml',
+			contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml',
+			relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
+			sheetName: 'Sheet1',
+			relationshipCount: 0,
+			name: 'Query1',
+			connectionId: 1,
+		})
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/queryTables/queryTable1.xml',
+						featureFamily: 'preservedQueryTable',
+						ownerScope: 'worksheet',
+						contentType:
+							'application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml',
+					},
+					{
+						path: 'xl/queryTables/queryTable2.xml',
+						featureFamily: 'preservedQueryTable',
+						ownerScope: 'worksheet',
+						contentType:
+							'application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml',
+					},
+				],
+				relationships: [
+					{
+						sourcePartPath: 'xl/worksheets/sheet1.xml',
+						relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+						id: 'rId1',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
+						rawTarget: '../queryTables/queryTable1.xml',
+						resolvedTarget: 'xl/queryTables/queryTable1.xml',
+						featureFamily: 'preservedQueryTable',
+					},
+					{
+						sourcePartPath: 'xl/worksheets/sheet1.xml',
+						relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+						id: 'rId2',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
+						rawTarget: '../queryTables/queryTable2.xml',
+						resolvedTarget: 'xl/queryTables/queryTable2.xml',
+						featureFamily: 'preservedQueryTable',
+					},
+				],
+			},
+		})
+
+		const orphanIssues = result.issues.filter(
+			(i) => i.rule === 'table-query-integrity' && i.details?.kind === 'orphan-query-table-part',
+		)
+		expect(result.passed).toBe(false)
+		expect(orphanIssues).toHaveLength(1)
+		expect(orphanIssues[0]?.refs).toEqual(['xl/queryTables/queryTable2.xml'])
+	})
+
 	test('detects table package relationship binding mismatches and orphan table sidecars', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

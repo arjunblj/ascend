@@ -1058,6 +1058,17 @@ function checkTableQueryTableIntegrity(
 			}
 		}
 	}
+	for (const part of wb.connectionParts) {
+		if (part.kind !== 'queryTable') continue
+		if (claimedQueryParts.has(part.partPath)) continue
+		claimedQueryParts.set(part.partPath, {
+			tableName: part.name ?? '(worksheet queryTable)',
+			sheetName: part.sheetName ?? '(unknown sheet)',
+			ref: part.partPath,
+			queryTablePartPath: part.partPath,
+			relationshipId: '(worksheet relationship)',
+		})
+	}
 
 	if (packageGraph) {
 		for (const part of packageGraph.parts) {

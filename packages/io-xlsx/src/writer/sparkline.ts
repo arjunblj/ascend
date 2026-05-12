@@ -27,6 +27,8 @@ const DATA_VALIDATIONS_CONTAINER_RE = new RegExp(
 )
 const X14_NS = 'http://schemas.microsoft.com/office/spreadsheetml/2009/9/main'
 const XM_NS = 'http://schemas.microsoft.com/office/excel/2006/main'
+const XR_NS = 'http://schemas.microsoft.com/office/spreadsheetml/2014/revision'
+const X14AC_NS = 'http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac'
 const X14_WORKSHEET_EXT_URI = '{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}'
 
 export function updateWorksheetExtLstXml(
@@ -291,33 +293,56 @@ function buildX14ConditionalFormattingXml(format: SheetX14ConditionalFormatInfo)
 }
 
 function buildX14DataValidationXml(validation: SheetX14DataValidationInfo): string {
-	const attrs: string[] = []
-	if (validation.type) attrs.push(`type="${escapeXml(validation.type)}"`)
-	if (validation.operator) attrs.push(`operator="${escapeXml(validation.operator)}"`)
-	if (validation.allowBlank !== undefined)
-		attrs.push(`allowBlank="${validation.allowBlank ? '1' : '0'}"`)
-	if (validation.showInputMessage !== undefined) {
-		attrs.push(`showInputMessage="${validation.showInputMessage ? '1' : '0'}"`)
-	}
-	if (validation.showErrorMessage !== undefined) {
-		attrs.push(`showErrorMessage="${validation.showErrorMessage ? '1' : '0'}"`)
-	}
-	if (validation.showDropDown !== undefined) {
-		attrs.push(`showDropDown="${validation.showDropDown ? '1' : '0'}"`)
-	}
-	if (validation.promptTitle) attrs.push(`promptTitle="${escapeXml(validation.promptTitle)}"`)
-	if (validation.prompt) attrs.push(`prompt="${escapeXml(validation.prompt)}"`)
-	if (validation.errorTitle) attrs.push(`errorTitle="${escapeXml(validation.errorTitle)}"`)
-	if (validation.error) attrs.push(`error="${escapeXml(validation.error)}"`)
-	if (validation.errorStyle) attrs.push(`errorStyle="${escapeXml(validation.errorStyle)}"`)
-	if (validation.imeMode) attrs.push(`imeMode="${escapeXml(validation.imeMode)}"`)
+	const attrs = x14DataValidationAttrs(validation)
 	const body: string[] = []
 	if (validation.formula1)
 		body.push(`<x14:formula1><xm:f>${escapeXml(validation.formula1)}</xm:f></x14:formula1>`)
 	if (validation.formula2)
 		body.push(`<x14:formula2><xm:f>${escapeXml(validation.formula2)}</xm:f></x14:formula2>`)
 	body.push(`<xm:sqref>${escapeXml(validation.sqref)}</xm:sqref>`)
-	return `<x14:dataValidation${attrs.length > 0 ? ` ${attrs.join(' ')}` : ''}>${body.join('')}</x14:dataValidation>`
+	return `<x14:dataValidation${attrs.size > 0 ? ` ${attrsXml(attrs)}` : ''}>${body.join('')}</x14:dataValidation>`
+}
+
+function x14DataValidationAttrs(validation: SheetX14DataValidationInfo): Map<string, string> {
+	const attrs = new Map<string, string>()
+	for (const [name, value] of Object.entries(validation.preservedAttributes ?? {})) {
+		if (!canEmitPreservedX14DataValidationAttr(name)) continue
+		attrs.set(name, value)
+		if (name.startsWith('xr:') && !attrs.has('xmlns:xr')) attrs.set('xmlns:xr', XR_NS)
+		if (name.startsWith('x14ac:') && !attrs.has('xmlns:x14ac')) {
+			attrs.set('xmlns:x14ac', X14AC_NS)
+		}
+	}
+	if (validation.type) attrs.set('type', validation.type)
+	if (validation.operator) attrs.set('operator', validation.operator)
+	if (validation.allowBlank !== undefined)
+		attrs.set('allowBlank', validation.allowBlank ? '1' : '0')
+	if (validation.showInputMessage !== undefined) {
+		attrs.set('showInputMessage', validation.showInputMessage ? '1' : '0')
+	}
+	if (validation.showErrorMessage !== undefined) {
+		attrs.set('showErrorMessage', validation.showErrorMessage ? '1' : '0')
+	}
+	if (validation.showDropDown !== undefined) {
+		attrs.set('showDropDown', validation.showDropDown ? '1' : '0')
+	}
+	if (validation.promptTitle) attrs.set('promptTitle', validation.promptTitle)
+	if (validation.prompt) attrs.set('prompt', validation.prompt)
+	if (validation.errorTitle) attrs.set('errorTitle', validation.errorTitle)
+	if (validation.error) attrs.set('error', validation.error)
+	if (validation.errorStyle) attrs.set('errorStyle', validation.errorStyle)
+	if (validation.imeMode) attrs.set('imeMode', validation.imeMode)
+	return attrs
+}
+
+function canEmitPreservedX14DataValidationAttr(name: string): boolean {
+	if (name === 'xmlns' || name.startsWith('xmlns:')) return false
+	if (!name.includes(':')) return true
+	return name.startsWith('xr:') || name.startsWith('x14ac:')
+}
+
+function attrsXml(attrs: ReadonlyMap<string, string>): string {
+	return [...attrs.entries()].map(([name, value]) => `${name}="${escapeXml(value)}"`).join(' ')
 }
 
 function buildX14DataBarXml(

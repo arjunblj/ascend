@@ -4689,6 +4689,7 @@ type MutableDataValidation = {
 	imeMode?: string
 	formula1?: string
 	formula2?: string
+	preservedAttributes?: Readonly<Record<string, string>>
 }
 
 function parseX14DataValidations(xml: string, sheet: Sheet, pool?: ValueInternPool): void {
@@ -4703,13 +4704,18 @@ function parseX14DataValidations(xml: string, sheet: Sheet, pool?: ValueInternPo
 			continue
 		}
 		const parsed = parseDataValidationAttributes(attrs, sqref)
+		const preservedAttributes = x14DataValidationPreservedAttributes(attrs)
+		if (Object.keys(preservedAttributes).length > 0) {
+			parsed.preservedAttributes = preservedAttributes
+		}
 		const formula1 = readX14DataValidationFormula(body, 'formula1')
 		if (formula1) parsed.formula1 = formula1
 		const formula2 = readX14DataValidationFormula(body, 'formula2')
 		if (formula2) parsed.formula2 = formula2
 		pushX14DataValidationInfo(sheet, index, parsed, pool)
-		parsed.source = 'x14'
-		pushDataValidation(sheet, parsed, pool)
+		const { preservedAttributes: _preservedAttributes, ...validationForSheet } = parsed
+		validationForSheet.source = 'x14'
+		pushDataValidation(sheet, validationForSheet, pool)
 		index += 1
 	}
 }
@@ -4751,7 +4757,50 @@ function pushX14DataValidationInfo(
 		...(parsed.formula2
 			? { formula2: pool ? pool.internString(parsed.formula2) : parsed.formula2 }
 			: {}),
+		...(parsed.preservedAttributes
+			? {
+					preservedAttributes: internStringRecord(parsed.preservedAttributes, pool),
+				}
+			: {}),
 	})
+}
+
+function x14DataValidationPreservedAttributes(attrs: XmlNode): Readonly<Record<string, string>> {
+	const preserved: Record<string, string> = {}
+	const known = new Set([
+		'sqref',
+		'type',
+		'operator',
+		'errorStyle',
+		'imeMode',
+		'allowBlank',
+		'showInputMessage',
+		'showErrorMessage',
+		'showDropDown',
+		'promptTitle',
+		'prompt',
+		'errorTitle',
+		'error',
+	])
+	for (const [rawName, value] of Object.entries(attrs)) {
+		const name = rawName.startsWith('@_') ? rawName.slice(2) : rawName
+		if (known.has(name) || name === 'xmlns' || name.startsWith('xmlns:')) continue
+		if (value === undefined || value === null) continue
+		preserved[name] = String(value)
+	}
+	return preserved
+}
+
+function internStringRecord(
+	record: Readonly<Record<string, string>>,
+	pool?: ValueInternPool,
+): Readonly<Record<string, string>> {
+	if (!pool) return record
+	const interned: Record<string, string> = {}
+	for (const [name, value] of Object.entries(record)) {
+		interned[pool.internString(name)] = pool.internString(value)
+	}
+	return interned
 }
 
 function parseDataValidationAttributes(node: XmlNode, sqref: string): MutableDataValidation {

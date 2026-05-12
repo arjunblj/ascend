@@ -5337,6 +5337,10 @@ describe('writeXlsx', () => {
 			type: 'whole',
 			formula1: 'Data!A2',
 			formula2: 'Data!B2',
+			preservedAttributes: {
+				'xr:uid': '{DV-UID}',
+				customFlag: '1',
+			},
 		})
 		sheet.x14ConditionalFormats.push({
 			index: 0,
@@ -5358,6 +5362,11 @@ describe('writeXlsx', () => {
 		expect(xml).toContain('<extLst')
 		expect(xml).toContain('<x14:conditionalFormattings>')
 		expect(xml).toContain('<x14:dataValidations count="1">')
+		expect(xml).toContain('xr:uid="{DV-UID}"')
+		expect(xml).toContain(
+			`xmlns:xr="http://schemas.microsoft.com/office/spreadsheetml/2014/revision"`,
+		)
+		expect(xml).toContain('customFlag="1"')
 		expect(xml).toContain('<xm:sqref>A2:B2</xm:sqref>')
 		expect(xml).toContain('<xm:sqref>C2:D2</xm:sqref>')
 		expect(xml).toContain('<xm:f>Data!A2&gt;0</xm:f>')
@@ -5371,6 +5380,10 @@ describe('writeXlsx', () => {
 			sqref: 'A2:B2',
 			formula1: 'Data!A2',
 			formula2: 'Data!B2',
+			preservedAttributes: {
+				'xr:uid': '{DV-UID}',
+				customFlag: '1',
+			},
 		})
 		expect(roundTripped?.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('Data!A2')
 		expect(roundTripped?.x14ConditionalFormats[0]?.iconSet?.cfvo[0]?.value).toBe('Data!B2')

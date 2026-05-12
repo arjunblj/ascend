@@ -358,6 +358,7 @@ export interface SheetX14DataValidationInfo {
 	readonly imeMode?: string
 	readonly formula1?: string
 	readonly formula2?: string
+	readonly preservedAttributes?: Readonly<Record<string, string>>
 	readonly deleted?: boolean
 }
 

@@ -2999,14 +2999,15 @@ describe('readXlsx', () => {
 			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
   xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"
-  xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main">
+  xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"
+  xmlns:xr="http://schemas.microsoft.com/office/spreadsheetml/2014/revision">
   <sheetData>
     <row r="1"><c r="A1"><v>1</v></c></row>
   </sheetData>
   <extLst>
     <ext uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}">
       <x14:dataValidations count="1">
-        <x14:dataValidation type="list" showInputMessage="1" showErrorMessage="1">
+        <x14:dataValidation type="list" showInputMessage="1" showErrorMessage="1" xr:uid="{DV-UID}" customFlag="1">
           <x14:formula1><xm:f>Lookup!$E$2:$E$123</xm:f></x14:formula1>
           <xm:sqref>E8:E11</xm:sqref>
         </x14:dataValidation>
@@ -3028,6 +3029,7 @@ describe('readXlsx', () => {
 				showInputMessage: true,
 				showErrorMessage: true,
 				formula1: 'Lookup!$E$2:$E$123',
+				uid: '{DV-UID}',
 			},
 		])
 		expect(sheet?.x14DataValidations).toEqual([
@@ -3038,6 +3040,10 @@ describe('readXlsx', () => {
 				showInputMessage: true,
 				showErrorMessage: true,
 				formula1: 'Lookup!$E$2:$E$123',
+				preservedAttributes: {
+					'xr:uid': '{DV-UID}',
+					customFlag: '1',
+				},
 			},
 		])
 	})

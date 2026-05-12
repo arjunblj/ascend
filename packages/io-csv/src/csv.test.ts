@@ -89,6 +89,17 @@ describe('readCsv', () => {
 		expect(cellValue(result, 1, 3)).toEqual({ kind: 'boolean', value: false })
 	})
 
+	test('keeps whitespace-padded numerics as strings and detects mixed-case booleans', () => {
+		const csv = 'a,b,c,d\n 42,\u00A042,TrUe,FaLsE'
+		const result = readCsv(csv)
+		expect(result.ok).toBe(true)
+
+		expect(cellValue(result, 1, 0)).toEqual({ kind: 'string', value: ' 42' })
+		expect(cellValue(result, 1, 1)).toEqual({ kind: 'string', value: '\u00A042' })
+		expect(cellValue(result, 1, 2)).toEqual({ kind: 'boolean', value: true })
+		expect(cellValue(result, 1, 3)).toEqual({ kind: 'boolean', value: false })
+	})
+
 	test('handles empty cells', () => {
 		const csv = 'a,,c\n,2,'
 		const result = readCsv(csv)

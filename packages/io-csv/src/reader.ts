@@ -132,14 +132,15 @@ function parseFields(input: string, d: CsvDialect, onRow: RowCallback): void {
 function detectType(raw: string): CellValue {
 	if (raw === '') return EMPTY
 
-	const lower = raw.toLowerCase()
-	if (lower === 'true') return booleanValue(true)
-	if (lower === 'false') return booleanValue(false)
-
-	const num = Number(raw)
-	if (raw.length > 0 && !Number.isNaN(num) && raw.trim() === raw) {
-		return numberValue(num)
+	if (!hasEdgeTrimWhitespace(raw)) {
+		const num = Number(raw)
+		if (!Number.isNaN(num)) {
+			return numberValue(num)
+		}
 	}
+
+	if (equalsAsciiIgnoreCase(raw, 'true')) return booleanValue(true)
+	if (equalsAsciiIgnoreCase(raw, 'false')) return booleanValue(false)
 
 	const date = tryParseDate(raw)
 	if (date !== null) {
@@ -147,6 +148,38 @@ function detectType(raw: string): CellValue {
 	}
 
 	return stringValue(raw)
+}
+
+function hasEdgeTrimWhitespace(raw: string): boolean {
+	return (
+		isTrimWhitespaceCode(raw.charCodeAt(0)) || isTrimWhitespaceCode(raw.charCodeAt(raw.length - 1))
+	)
+}
+
+function isTrimWhitespaceCode(code: number): boolean {
+	return (
+		(code >= 0x09 && code <= 0x0d) ||
+		code === 0x20 ||
+		code === 0xa0 ||
+		code === 0x1680 ||
+		(code >= 0x2000 && code <= 0x200a) ||
+		code === 0x2028 ||
+		code === 0x2029 ||
+		code === 0x202f ||
+		code === 0x205f ||
+		code === 0x3000 ||
+		code === 0xfeff
+	)
+}
+
+function equalsAsciiIgnoreCase(raw: string, literal: string): boolean {
+	if (raw.length !== literal.length) return false
+	for (let i = 0; i < literal.length; i++) {
+		let code = raw.charCodeAt(i)
+		if (code >= 65 && code <= 90) code += 32
+		if (code !== literal.charCodeAt(i)) return false
+	}
+	return true
 }
 
 function tryParseDate(raw: string): number | null {

@@ -1878,6 +1878,127 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('deleteCols rejects table field deletion when cell formulas still reference the field', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: s.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 2 } },
+			columns: [
+				{ id: 1, name: 'Region' },
+				{ id: 2, name: 'Rep' },
+				{ id: 3, name: 'Amount' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+		s.cells.set(0, 4, cell(EMPTY, 'COUNTA(Sales[Rep])'))
+
+		const result = applyOperation(wb, { op: 'deleteCols', sheet: 'Sheet1', at: 1, count: 1 })
+
+		expectErr(result)
+		expect(result.error.message).toContain('Sales[Rep]')
+		expect(s.tables[0]?.columns.map((column) => column.name)).toEqual(['Region', 'Rep', 'Amount'])
+	})
+
+	test('deleteCols rejects table field deletion when defined names still reference the field', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: s.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 2 } },
+			columns: [
+				{ id: 1, name: 'Region' },
+				{ id: 2, name: 'Rep' },
+				{ id: 3, name: 'Amount' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+		wb.definedNames.set('SalesReps', 'COUNTA(Sales[Rep])')
+
+		const result = applyOperation(wb, { op: 'deleteCols', sheet: 'Sheet1', at: 1, count: 1 })
+
+		expectErr(result)
+		expect(result.error.message).toContain('Sales[Rep]')
+		expect(wb.definedNames.get('SalesReps')).toBe('COUNTA(Sales[Rep])')
+	})
+
+	test('deleteCols rejects table field deletion when worksheet metadata still references the field', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: s.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 2 } },
+			columns: [
+				{ id: 1, name: 'Region' },
+				{ id: 2, name: 'Rep' },
+				{ id: 3, name: 'Amount' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+		s.dataValidations.push({ sqref: 'E1:E4', type: 'list', formula1: 'Sales[Rep]' })
+
+		const result = applyOperation(wb, { op: 'deleteCols', sheet: 'Sheet1', at: 1, count: 1 })
+
+		expectErr(result)
+		expect(result.error.message).toContain('Sales[Rep]')
+		expect(s.dataValidations[0]?.formula1).toBe('Sales[Rep]')
+	})
+
+	test('deleteCols rejects table field deletion when surviving calculated columns use local structured refs', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: s.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 2 } },
+			columns: [
+				{ id: 1, name: 'Region' },
+				{ id: 2, name: 'Rep' },
+				{ id: 3, name: 'Amount', formula: 'COUNTA([Rep])' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+
+		const result = applyOperation(wb, { op: 'deleteCols', sheet: 'Sheet1', at: 1, count: 1 })
+
+		expectErr(result)
+		expect(result.error.message).toContain('Sales[Rep]')
+		expect(s.tables[0]?.columns[2]?.formula).toBe('COUNTA([Rep])')
+	})
+
+	test('deleteCols removes unreferenced table metadata when the full table range is deleted', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.tables.push({
+			id: createTableId(),
+			name: 'SingleColumn',
+			sheetId: s.id,
+			ref: { start: { row: 0, col: 1 }, end: { row: 3, col: 1 } },
+			columns: [{ id: 1, name: 'Value' }],
+			hasHeaders: true,
+			hasTotals: false,
+			autoFilter: {
+				ref: 'B1:B4',
+				columns: [{ colId: 0, kind: 'filters', values: ['10'] }],
+			},
+		})
+
+		expectOk(applyOperation(wb, { op: 'deleteCols', sheet: 'Sheet1', at: 1, count: 1 }))
+
+		expect(s.tables).toHaveLength(0)
+	})
+
 	test('insertCols adds generated tableColumn metadata for inserted columns inside a table', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

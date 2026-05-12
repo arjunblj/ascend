@@ -246,7 +246,11 @@ function shiftSheetTables(sheet: Sheet, axis: 'row' | 'col', at: number, delta: 
 		const table = sheet.tables[index]
 		if (!table) continue
 		const ref = shiftRangeRef(table.ref, axis, at, delta)
-		if (!ref) continue
+		if (!ref) {
+			sheet.tables.splice(index, 1)
+			index--
+			continue
+		}
 		const autoFilter = shiftAutoFilter(table.autoFilter, axis, at, delta)
 		const sortState = shiftSortState(table.sortState, axis, at, delta)
 		const columns = shiftTableColumns(sheet, table, ref, axis, at, delta)

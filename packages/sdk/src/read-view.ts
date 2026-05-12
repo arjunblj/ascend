@@ -1253,6 +1253,7 @@ function buildTableInfo(
 		autoFilter: table.autoFilter ?? null,
 		...(table.sortState ? { sortState: table.sortState } : {}),
 		...(table.tableStyleInfo ? { styleInfo: table.tableStyleInfo } : {}),
+		...(table.queryTable ? { queryTable: { ...table.queryTable } } : {}),
 		columnDefs: [...table.columns],
 		...(headerRow ? { headerRow } : {}),
 		...(totalsRow ? { totalsRow } : {}),

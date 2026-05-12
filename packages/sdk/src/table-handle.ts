@@ -1,6 +1,6 @@
 import type { AutoFilter, RangeRef, Sheet, Table, TableColumn, TableStyleInfo } from '@ascend/core'
 import { AscendException, ascendError, type CellValue } from '@ascend/schema'
-import type { TableWindowInfo } from './types.ts'
+import type { TableQueryTableInfo, TableWindowInfo } from './types.ts'
 
 export class TableHandle {
 	private readonly tableName: string
@@ -43,6 +43,11 @@ export class TableHandle {
 
 	get styleInfo(): TableStyleInfo | undefined {
 		return this.requireTable().table.tableStyleInfo
+	}
+
+	get queryTable(): TableQueryTableInfo | null {
+		const queryTable = this.requireTable().table.queryTable
+		return queryTable ? { ...queryTable } : null
 	}
 
 	get autoFilter(): AutoFilter | null {

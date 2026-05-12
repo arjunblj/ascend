@@ -874,9 +874,19 @@ export interface TableInfo {
 	readonly autoFilter: AutoFilter | null
 	readonly sortState?: SortState
 	readonly styleInfo?: TableStyleInfo
+	readonly queryTable?: TableQueryTableInfo
 	readonly columnDefs: readonly TableColumn[]
 	readonly headerRow?: readonly CellValue[]
 	readonly totalsRow?: readonly CellValue[]
+}
+
+export interface TableQueryTableInfo {
+	readonly relationshipId: string
+	readonly partPath: string
+	readonly relationshipType: string
+	readonly relationshipRawType?: string
+	readonly target: string
+	readonly targetMode?: string
 }
 
 export interface SheetInspectInfo extends SheetInfo {

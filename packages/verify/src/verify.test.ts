@@ -2923,6 +2923,60 @@ describe('checker', () => {
 		})
 	})
 
+	test('detects duplicate threaded comment person ids from package graph metadata', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.threadedComments.push({
+			ref: 'A1',
+			text: 'Root',
+			id: '{thread-1}',
+			personId: '{person-1}',
+			author: 'Ada Duplicate',
+			partPath: 'xl/threadedComments/threadedComment1.xml',
+		})
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/threadedComments/threadedComment1.xml',
+						featureFamily: 'preservedThreadedComments',
+						ownerScope: 'worksheet',
+						contentType: 'application/vnd.ms-excel.threadedcomments+xml',
+					},
+					{
+						path: 'xl/persons/person.xml',
+						featureFamily: 'preservedThreadedComments',
+						ownerScope: 'workbook',
+						contentType: 'application/vnd.ms-excel.person+xml',
+						threadedCommentPersons: [
+							{ id: '{person-1}', displayName: 'Ada', index: 0 },
+							{ id: '{person-1}', displayName: 'Ada Duplicate', index: 1 },
+						],
+					},
+				],
+				relationships: [],
+			},
+		})
+		const issue = result.issues.find(
+			(i) =>
+				i.rule === 'threaded-comment-integrity' &&
+				i.details?.kind === 'duplicate-threaded-comment-person-id',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(issue?.severity).toBe('warning')
+		expect(issue?.refs).toEqual(['xl/persons/person.xml'])
+		expect(issue?.details).toMatchObject({
+			partPath: 'xl/persons/person.xml',
+			personId: '{person-1}',
+			firstPersonIndex: 0,
+			duplicatePersonIndex: 1,
+			firstDisplayName: 'Ada',
+			duplicateDisplayName: 'Ada Duplicate',
+		})
+	})
+
 	test('detects legacy comment VML row and column target drift', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

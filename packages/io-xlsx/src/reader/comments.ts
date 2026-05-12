@@ -113,20 +113,40 @@ export function parseThreadedCommentsXml(
 }
 
 export function parseThreadedCommentPersonsXml(xml: string): Map<string, string> {
+	const entries = parseThreadedCommentPersonEntriesXml(xml)
+	const people = new Map<string, string>()
+	for (const entry of entries) {
+		if (entry.displayName) people.set(entry.id, entry.displayName)
+	}
+	return people
+}
+
+export interface ThreadedCommentPersonEntry {
+	readonly id: string
+	readonly displayName?: string
+	readonly index: number
+}
+
+export function parseThreadedCommentPersonEntriesXml(
+	xml: string,
+): readonly ThreadedCommentPersonEntry[] {
 	const doc = parseXml(xml)
 	const root =
 		(doc.personList as XmlNode | undefined) ??
 		(doc.persons as XmlNode | undefined) ??
 		(doc.PersonList as XmlNode | undefined)
-	const people = new Map<string, string>()
-	if (!root) return people
-	for (const person of asArray<XmlNode>(root.person as XmlNode | XmlNode[] | undefined)) {
+	const entries: ThreadedCommentPersonEntry[] = []
+	if (!root) return entries
+	const persons = asArray<XmlNode>(root.person as XmlNode | XmlNode[] | undefined)
+	for (let index = 0; index < persons.length; index++) {
+		const person = persons[index]
+		if (!person) continue
 		const id = attr(person, 'id') ?? attr(person, 'personId')
 		const displayName =
 			attr(person, 'displayName') ?? attr(person, 'name') ?? attr(person, 'userId')
-		if (id && displayName) people.set(id, displayName)
+		if (id) entries.push({ id, ...(displayName ? { displayName } : {}), index })
 	}
-	return people
+	return entries
 }
 
 function extractCommentText(textNode: XmlNode | undefined): string {

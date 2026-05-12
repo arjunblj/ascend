@@ -53,6 +53,13 @@ export interface VerifyPackageGraphPart {
 	readonly ownerScope?: string
 	readonly contentType?: string
 	readonly preservationPolicy?: string
+	readonly threadedCommentPersons?: readonly VerifyThreadedCommentPersonEntry[]
+}
+
+export interface VerifyThreadedCommentPersonEntry {
+	readonly id: string
+	readonly displayName?: string
+	readonly index: number
 }
 
 export interface VerifyPackageGraphRelationship {
@@ -3760,6 +3767,33 @@ function checkThreadedCommentIntegrity(
 	if (!packageGraph) return issues
 
 	const personParts = packageGraph.parts.filter(isThreadedPersonPart)
+	for (const part of personParts) {
+		const personsById = new Map<string, VerifyThreadedCommentPersonEntry>()
+		for (const person of part.threadedCommentPersons ?? []) {
+			const existing = personsById.get(person.id)
+			if (!existing) {
+				personsById.set(person.id, person)
+				continue
+			}
+			issues.push({
+				rule: 'threaded-comment-integrity',
+				severity: 'warning',
+				message: `Threaded comment persons part "${part.path}" contains duplicate person id "${person.id}"`,
+				refs: [part.path],
+				suggestedFix:
+					'Repair duplicate person ids before author-sensitive threaded comment edits; personId binding must identify one author.',
+				details: {
+					kind: 'duplicate-threaded-comment-person-id',
+					partPath: part.path,
+					personId: person.id,
+					firstPersonIndex: existing.index,
+					duplicatePersonIndex: person.index,
+					...(existing.displayName ? { firstDisplayName: existing.displayName } : {}),
+					...(person.displayName ? { duplicateDisplayName: person.displayName } : {}),
+				},
+			})
+		}
+	}
 	if (threadedCommentsWithPersonIds > 0 && personParts.length === 0) {
 		issues.push({
 			rule: 'threaded-comment-integrity',

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { makeXlsx } from '../../test/helpers.ts'
+import { inspectXlsxPackageGraph } from '../package-graph.ts'
 import { readXlsx } from './index.ts'
 
 function expectOk<T, E extends { message: string }>(
@@ -47,9 +48,30 @@ describe('threaded comment inventory', () => {
 			locations: ['xl/persons/person.xml', 'xl/threadedComments/threadedComment1.xml'],
 		})
 	})
+
+	test('preserves duplicate threaded comment person ids in package graph metadata', () => {
+		const bytes = threadedCommentWorkbook(`<?xml version="1.0"?>
+<personList xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">
+  <person id="0" displayName="Ada Lovelace"/>
+  <person id="0" displayName="Ada Duplicate"/>
+  <person id="1" displayName="Grace Hopper"/>
+</personList>`)
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		expect(result.value.workbook.sheets[0]?.threadedComments[0]?.author).toBe('Ada Duplicate')
+		const graph = inspectXlsxPackageGraph(bytes)
+		expect(
+			graph.parts.find((part) => part.path === 'xl/persons/person.xml')?.threadedCommentPersons,
+		).toEqual([
+			{ id: '0', displayName: 'Ada Lovelace', index: 0 },
+			{ id: '0', displayName: 'Ada Duplicate', index: 1 },
+			{ id: '1', displayName: 'Grace Hopper', index: 2 },
+		])
+	})
 })
 
-function threadedCommentWorkbook(): Uint8Array {
+function threadedCommentWorkbook(personsXml = DEFAULT_PERSONS_XML): Uint8Array {
 	return makeXlsx({
 		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -79,11 +101,7 @@ function threadedCommentWorkbook(): Uint8Array {
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rIdThreaded" Type="http://schemas.microsoft.com/office/2017/10/relationships/threadedComment" Target="../threadedComments/threadedComment1.xml"/>
 </Relationships>`,
-		'xl/persons/person.xml': `<?xml version="1.0"?>
-<personList xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">
-  <person id="0" displayName="Ada Lovelace"/>
-  <person id="1" displayName="Grace Hopper"/>
-</personList>`,
+		'xl/persons/person.xml': personsXml,
 		'xl/threadedComments/threadedComment1.xml': `<?xml version="1.0"?>
 <ThreadedComments xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">
   <threadedComment ref="A1" personId="0" id="tc1" dT="2024-01-01T00:00:00.000">
@@ -95,3 +113,9 @@ function threadedCommentWorkbook(): Uint8Array {
 </ThreadedComments>`,
 	})
 }
+
+const DEFAULT_PERSONS_XML = `<?xml version="1.0"?>
+<personList xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">
+  <person id="0" displayName="Ada Lovelace"/>
+  <person id="1" displayName="Grace Hopper"/>
+</personList>`

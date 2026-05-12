@@ -1,3 +1,7 @@
+import {
+	parseThreadedCommentPersonEntriesXml,
+	type ThreadedCommentPersonEntry,
+} from './reader/comments.ts'
 import { parseContentTypes } from './reader/content-types.ts'
 import {
 	isExternalLinkPathRelationshipType,
@@ -80,6 +84,7 @@ export interface XlsxPackageGraphPart {
 	readonly featureFamily: string
 	readonly preservationPolicy: XlsxPackageLossPolicy
 	readonly bytePreservationExpected: boolean
+	readonly threadedCommentPersons?: readonly ThreadedCommentPersonEntry[]
 }
 
 export interface XlsxPackageGraphRelationship {
@@ -150,6 +155,13 @@ export function inspectXlsxPackageGraph(bytes: Uint8Array): XlsxPackageGraph {
 				featureFamily,
 				preservationPolicy: packageFeatureLossPolicy(featureFamily),
 				bytePreservationExpected: packageFeatureLossPolicy(featureFamily) === 'preserve-exact',
+				...(isThreadedCommentPersonsPart(entry.path)
+					? {
+							threadedCommentPersons: parseThreadedCommentPersonEntriesXml(
+								archive.readText(entry.path) ?? '',
+							),
+						}
+					: {}),
 			}
 		})
 		.sort((left, right) => left.path.localeCompare(right.path))
@@ -163,6 +175,10 @@ export function inspectXlsxPackageGraph(bytes: Uint8Array): XlsxPackageGraph {
 			.map(([partPath, contentType]) => ({ partPath, contentType }))
 			.sort((left, right) => left.partPath.localeCompare(right.partPath)),
 	}
+}
+
+function isThreadedCommentPersonsPart(path: string): boolean {
+	return /^xl\/persons\/[^/]+\.xml$/i.test(path)
 }
 
 export function classifyPackageFeatureFamily(

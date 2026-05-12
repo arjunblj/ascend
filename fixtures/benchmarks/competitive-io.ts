@@ -460,7 +460,22 @@ export function expectedWorkloadValuesHash(
 	rows: number,
 	cols: number,
 ): string {
-	return hashLines(semanticLinesForValues(buildWorkloadValues(workloadName, rows, cols)))
+	const hash = new Bun.CryptoHasher('sha256')
+	const columns = columnNameCache(cols)
+		.map((name, col) => ({ name, col }))
+		.sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0))
+	const rowOrder = lexicographicRowOrder(rows)
+	for (const { name: columnName, col } of columns) {
+		for (const row of rowOrder) {
+			const value = workloadValue(workloadName, row, col, cols)
+			if (value === null) continue
+			const line = `Data!${columnName}${row + 1}\t${scalarPayload(value)}`
+			hash.update(`${line.length}:`)
+			hash.update(line)
+			hash.update('\n')
+		}
+	}
+	return hash.digest('hex')
 }
 
 export function expectedOrderedWorkloadValuesHash(
@@ -980,6 +995,14 @@ function hashGeneratedWorksheetValues(
 
 function columnNameCache(cols: number): readonly string[] {
 	return Array.from({ length: Math.max(0, cols) }, (_, col) => indexToColumn(col))
+}
+
+function lexicographicRowOrder(rows: number): readonly number[] {
+	return Array.from({ length: Math.max(0, rows) }, (_, row) => row).sort((left, right) => {
+		const leftText = `${left + 1}`
+		const rightText = `${right + 1}`
+		return leftText < rightText ? -1 : leftText > rightText ? 1 : 0
+	})
 }
 
 function parsePositiveIntAttr(attrs: string, name: string): number | undefined {
@@ -1671,35 +1694,36 @@ function formulaForWorkload(workloadName: WorkloadName, row: number, col: number
 	return `A${currentRow}+B${currentRow}+${col}`
 }
 
-function buildRawOoxmlXlsx(
-	workloadName: WorkloadName,
-	values: readonly (readonly WorkloadCellValue[])[],
-	rows: number,
-	cols: number,
-): Uint8Array {
+interface RawOoxmlValueSource {
+	readonly rows: number
+	readonly cols: number
+	valueAt(row: number, col: number): WorkloadCellValue | undefined
+}
+
+function buildRawOoxmlXlsx(workloadName: WorkloadName, source: RawOoxmlValueSource): Uint8Array {
+	const { rows, cols } = source
+	const columnNames = columnNameCache(cols)
 	const sheetRows: string[] = []
 	for (let row = 0; row < rows; row++) {
-		const cells: string[] = []
-		const sourceRow = values[row]
-		if (!sourceRow) continue
+		let rowXml = `<row r="${row + 1}">`
+		let hasCells = false
 		for (let col = 0; col < cols; col++) {
-			const value = sourceRow[col]
+			const value = source.valueAt(row, col)
 			if (value === undefined || value === null) continue
-			const ref = `${indexToColumn(col)}${row + 1}`
+			const ref = `${columnNames[col] ?? indexToColumn(col)}${row + 1}`
 			const styleAttr = workloadName === 'styles-heavy' ? ` s="${((row + col) % 4) + 1}"` : ''
 			const formula = formulaForWorkload(workloadName, row, col)
 			const formulaXml = formula ? `<f>${escapeXml(formula)}</f>` : ''
 			if (typeof value === 'number') {
-				cells.push(`<c r="${ref}"${styleAttr}>${formulaXml}<v>${value}</v></c>`)
+				rowXml += `<c r="${ref}"${styleAttr}>${formulaXml}<v>${value}</v></c>`
 			} else if (typeof value === 'boolean') {
-				cells.push(`<c r="${ref}" t="b"${styleAttr}>${formulaXml}<v>${value ? 1 : 0}</v></c>`)
+				rowXml += `<c r="${ref}" t="b"${styleAttr}>${formulaXml}<v>${value ? 1 : 0}</v></c>`
 			} else {
-				cells.push(
-					`<c r="${ref}" t="inlineStr"${styleAttr}>${formulaXml}<is><t>${escapeXml(value)}</t></is></c>`,
-				)
+				rowXml += `<c r="${ref}" t="inlineStr"${styleAttr}>${formulaXml}<is><t>${escapeXml(value)}</t></is></c>`
 			}
+			hasCells = true
 		}
-		if (cells.length > 0) sheetRows.push(`<row r="${row + 1}">${cells.join('')}</row>`)
+		if (hasCells) sheetRows.push(`${rowXml}</row>`)
 	}
 	const hasStyles = workloadName === 'styles-heavy'
 	const hasTable = workloadName === 'table-heavy' && rows > 0 && cols > 0
@@ -1876,7 +1900,11 @@ export async function buildWorkloadDataSet(
 	const semanticLines = semanticLinesForValues(values)
 	const bytes =
 		readSource === 'raw-ooxml'
-			? buildRawOoxmlXlsx(workloadName, values, rows, cols)
+			? buildRawOoxmlXlsx(workloadName, {
+					rows,
+					cols,
+					valueAt: (row, col) => values[row]?.[col],
+				})
 			: (() => {
 					const workbook = createWorkbook()
 					setCoreCell(workbook, values, rows, cols, workloadName)
@@ -1898,6 +1926,35 @@ export async function buildWorkloadDataSet(
 		values,
 		semanticCellValuesHash: hashLines(semanticLines),
 		orderedSemanticCellValuesHash: hashOrderedLines(semanticLines),
+		xlsxPath,
+		xlsxBytes: bytes,
+	}
+}
+
+export async function buildRawReadWorkloadDataSet(
+	workloadName: WorkloadName,
+	rows: number,
+	cols: number,
+): Promise<CompetitiveDataSet> {
+	const bytes = buildRawOoxmlXlsx(workloadName, {
+		rows,
+		cols,
+		valueAt: (row, col) => workloadValue(workloadName, row, col, cols),
+	})
+	const xlsxPath = join(
+		tmpdir(),
+		`ascend-competitive-io-raw-ooxml-${workloadName}-${Date.now()}-${rows}x${cols}.xlsx`,
+	)
+	await writeFile(xlsxPath, bytes)
+	return {
+		workloadName,
+		readSource: 'raw-ooxml',
+		rows,
+		cols,
+		cells: generatedWorkloadCellCount(workloadName, rows, cols),
+		values: [],
+		semanticCellValuesHash: expectedWorkloadValuesHash(workloadName, rows, cols),
+		orderedSemanticCellValuesHash: expectedOrderedWorkloadValuesHash(workloadName, rows, cols),
 		xlsxPath,
 		xlsxBytes: bytes,
 	}

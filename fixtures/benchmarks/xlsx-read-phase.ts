@@ -1,12 +1,13 @@
 #!/usr/bin/env bun
-import type { Workbook } from '../../packages/core/src/index.ts'
+import { indexToColumn, type Workbook } from '../../packages/core/src/index.ts'
 import { readXlsx, readXlsxRowsStream } from '../../packages/io-xlsx/src/index.ts'
 import { extractZip } from '../../packages/io-xlsx/src/reader/zip.ts'
+import type { CellValue } from '../../packages/schema/src/index.ts'
 import {
 	buildGeneratedWriteDataSet,
+	buildRawReadWorkloadDataSet,
 	buildWorkloadDataSet,
 	type CompetitiveDataSet,
-	denseWorkbookAssertions,
 	type ReadSource,
 	type WorkloadName,
 	workloadValue,
@@ -306,12 +307,63 @@ function readOptionsForWorkload(workload: WorkloadName): ReadXlsxOptions {
 
 function assertReadPhaseWorkbook(workbook: Workbook, input: CompetitiveDataSet): void {
 	if (input.workloadName !== 'metadata-only') {
-		denseWorkbookAssertions(workbook, input)
+		assertDenseWorkbookOrderedValues(workbook, input)
 		return
 	}
 	const cellCount = workbook.sheets.reduce((sum, sheet) => sum + sheet.cells.cellCount(), 0)
 	if (cellCount !== 0) {
 		throw new Error(`metadata-only read hydrated ${cellCount} cells`)
+	}
+}
+
+function assertDenseWorkbookOrderedValues(workbook: Workbook, input: CompetitiveDataSet): void {
+	const sheet = workbook.getSheet('Data')
+	if (!sheet) throw new Error('Missing Data sheet')
+	const hash = new Bun.CryptoHasher('sha256')
+	const columnNames = Array.from({ length: input.cols }, (_, col) => indexToColumn(col))
+	let cellCount = 0
+	const usedRange = sheet.cells.usedRange()
+	if (usedRange) {
+		sheet.cells.forEachValueInRange(
+			usedRange.start.row,
+			usedRange.start.col,
+			usedRange.end.row,
+			usedRange.end.col,
+			(value, row, col) => {
+				const payload = cellValuePayload(value)
+				if (payload === null) return
+				const columnName = columnNames[col] ?? indexToColumn(col)
+				const line = `Data!${columnName}${row + 1}\t${payload}`
+				hash.update(`${line.length}:`)
+				hash.update(line)
+				hash.update('\n')
+				cellCount++
+			},
+		)
+	}
+	if (cellCount !== input.cells) {
+		throw new Error(`read hydrated ${cellCount} semantic cells; expected ${input.cells}`)
+	}
+	if (input.orderedSemanticCellValuesHash !== undefined) {
+		const observedHash = hash.digest('hex')
+		if (observedHash !== input.orderedSemanticCellValuesHash) {
+			throw new Error(
+				`ordered semantic hash mismatch: ${observedHash}; expected ${input.orderedSemanticCellValuesHash}`,
+			)
+		}
+	}
+}
+
+function cellValuePayload(value: CellValue): string | null {
+	switch (value.kind) {
+		case 'number':
+			return `n:${value.value}`
+		case 'string':
+			return `s:${value.value}`
+		case 'boolean':
+			return `b:${value.value}`
+		default:
+			return null
 	}
 }
 
@@ -518,6 +570,9 @@ async function consumeRowsStream(bytes: Uint8Array, chunkedSheetXml: boolean): P
 
 async function loadInput(args: Args): Promise<CompetitiveDataSet> {
 	if (!args.inputFile) {
+		if (args.readSource === 'raw-ooxml') {
+			return buildRawReadWorkloadDataSet(args.workload, args.rows, args.cols)
+		}
 		return buildWorkloadDataSet(args.workload, args.rows, args.cols, args.readSource)
 	}
 	const bytes = await Bun.file(args.inputFile).bytes()

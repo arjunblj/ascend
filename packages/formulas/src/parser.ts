@@ -688,8 +688,10 @@ const globalParseCache = new Map<string, Result<FormulaNode>>()
 export function cachedParseFormula(formula: string): Result<FormulaNode> {
 	const hit = globalParseCache.get(formula)
 	if (hit) {
-		globalParseCache.delete(formula)
-		globalParseCache.set(formula, hit)
+		if (globalParseCache.size >= PARSE_CACHE_LIMIT) {
+			globalParseCache.delete(formula)
+			globalParseCache.set(formula, hit)
+		}
 		return hit
 	}
 	const result = parseFormula(formula)

@@ -2674,6 +2674,14 @@ interface ExternalLinkRelatedOperation {
 		| 'definedName'
 		| 'deletedDefinedName'
 		| 'externalLinkRewrite'
+		| 'dataValidation'
+		| 'conditionalFormat'
+		| 'tableColumnFormula'
+		| 'tableTotalsRowFormula'
+		| 'chartSeriesName'
+		| 'chartSeriesCategory'
+		| 'chartSeriesValue'
+		| 'sparklineGroupRange'
 	readonly sheetName?: string | undefined
 	readonly sourceRef?: string | undefined
 	readonly range?: string | undefined
@@ -2775,80 +2783,166 @@ function collectExternalLinkRelatedOperations(
 	operations.forEach((operation, operationIndex) => {
 		switch (operation.op) {
 			case 'setFormula':
-				for (const group of externalFormulaReferenceGroups(operation.formula, externalReferences)) {
-					related.push({
-						operationIndex,
-						op: operation.op,
+				pushExternalLinkFormulaOperations(related, externalReferences, operationIndex, operation, [
+					{
 						sourceKind: 'cellFormula',
 						sheetName: operation.sheet,
 						sourceRef: `${operation.sheet}!${operation.ref}`,
 						formula: operation.formula,
-						workbook: group.workbook,
-						...(group.sheet ? { sheet: group.sheet } : {}),
-						references: group.references,
-						...(group.externalReference
-							? { externalReference: copyExternalReferenceInfo(group.externalReference) }
-							: {}),
-					})
-				}
+					},
+				])
 				break
 			case 'fillFormula':
-				for (const group of externalFormulaReferenceGroups(operation.formula, externalReferences)) {
-					related.push({
-						operationIndex,
-						op: operation.op,
+				pushExternalLinkFormulaOperations(related, externalReferences, operationIndex, operation, [
+					{
 						sourceKind: 'fillFormula',
 						sheetName: operation.sheet,
 						range: operation.range,
 						formula: operation.formula,
-						workbook: group.workbook,
-						...(group.sheet ? { sheet: group.sheet } : {}),
-						references: group.references,
-						...(group.externalReference
-							? { externalReference: copyExternalReferenceInfo(group.externalReference) }
-							: {}),
-					})
-				}
+					},
+				])
 				break
 			case 'setDefinedName':
-				for (const group of externalFormulaReferenceGroups(operation.ref, externalReferences)) {
-					related.push({
-						operationIndex,
-						op: operation.op,
+				pushExternalLinkFormulaOperations(related, externalReferences, operationIndex, operation, [
+					{
 						sourceKind: 'definedName',
 						name: operation.name,
 						...(operation.scope ? { scope: operation.scope } : {}),
 						formula: operation.ref,
-						workbook: group.workbook,
-						...(group.sheet ? { sheet: group.sheet } : {}),
-						references: group.references,
-						...(group.externalReference
-							? { externalReference: copyExternalReferenceInfo(group.externalReference) }
-							: {}),
-					})
-				}
+					},
+				])
 				break
 			case 'deleteDefinedName':
 				for (const name of matchingDefinedNames(workbook, operation)) {
-					for (const group of externalFormulaReferenceGroups(name.formula, externalReferences)) {
-						related.push({
-							operationIndex,
-							op: operation.op,
-							sourceKind: 'deletedDefinedName',
-							name: name.name,
-							...(definedNameScopeName(workbook, name.scope)
-								? { scope: definedNameScopeName(workbook, name.scope) }
-								: {}),
-							formula: name.formula,
-							workbook: group.workbook,
-							...(group.sheet ? { sheet: group.sheet } : {}),
-							references: group.references,
-							...(group.externalReference
-								? { externalReference: copyExternalReferenceInfo(group.externalReference) }
-								: {}),
-						})
-					}
+					pushExternalLinkFormulaOperations(
+						related,
+						externalReferences,
+						operationIndex,
+						operation,
+						[
+							{
+								sourceKind: 'deletedDefinedName',
+								name: name.name,
+								...(definedNameScopeName(workbook, name.scope)
+									? { scope: definedNameScopeName(workbook, name.scope) }
+									: {}),
+								formula: name.formula,
+							},
+						],
+					)
 				}
+				break
+			case 'setDataValidation':
+				pushExternalLinkFormulaOperations(
+					related,
+					externalReferences,
+					operationIndex,
+					operation,
+					[operation.rule.formula1, operation.rule.formula2]
+						.filter((formula): formula is string => formula !== undefined)
+						.map((formula) => ({
+							sourceKind: 'dataValidation',
+							sheetName: operation.sheet,
+							sourceRef: `${operation.sheet}!${operation.range}`,
+							range: operation.range,
+							formula,
+						})),
+				)
+				break
+			case 'setConditionalFormat':
+				pushExternalLinkFormulaOperations(
+					related,
+					externalReferences,
+					operationIndex,
+					operation,
+					conditionalFormatOperationFormulaTexts(operation.rule).map((formula) => ({
+						sourceKind: 'conditionalFormat',
+						sheetName: operation.sheet,
+						sourceRef: `${operation.sheet}!${operation.range}`,
+						range: operation.range,
+						formula,
+					})),
+				)
+				break
+			case 'setTableColumn': {
+				const sourceRef = `${operation.table}[${String(operation.column)}]`
+				const sources: ExternalLinkFormulaOperationSource[] = []
+				if (operation.formula) {
+					sources.push({
+						sourceKind: 'tableColumnFormula',
+						sourceRef,
+						name: operation.table,
+						formula: operation.formula,
+					})
+				}
+				if (operation.totalsRowFormula) {
+					sources.push({
+						sourceKind: 'tableTotalsRowFormula',
+						sourceRef,
+						name: operation.table,
+						formula: operation.totalsRowFormula,
+					})
+				}
+				pushExternalLinkFormulaOperations(
+					related,
+					externalReferences,
+					operationIndex,
+					operation,
+					sources,
+				)
+				break
+			}
+			case 'setChartSeriesSource': {
+				const sourceRef = chartOperationSourceRef(operation)
+				const sources: ExternalLinkFormulaOperationSource[] = []
+				if (operation.nameRef) {
+					sources.push({
+						sourceKind: 'chartSeriesName',
+						sourceRef,
+						formula: operation.nameRef,
+					})
+				}
+				if (operation.categoryRef) {
+					sources.push({
+						sourceKind: 'chartSeriesCategory',
+						sourceRef,
+						formula: operation.categoryRef,
+					})
+				}
+				if (operation.valueRef) {
+					sources.push({
+						sourceKind: 'chartSeriesValue',
+						sourceRef,
+						formula: operation.valueRef,
+					})
+				}
+				pushExternalLinkFormulaOperations(
+					related,
+					externalReferences,
+					operationIndex,
+					operation,
+					sources,
+				)
+				break
+			}
+			case 'setSparklineGroup':
+				pushExternalLinkFormulaOperations(
+					related,
+					externalReferences,
+					operationIndex,
+					operation,
+					operation.range
+						? [
+								{
+									sourceKind: 'sparklineGroupRange',
+									sheetName: operation.sheet,
+									sourceRef: `${operation.sheet}!sparklineGroup${operation.groupIndex}`,
+									range: operation.range,
+									formula: operation.range,
+								},
+							]
+						: [],
+				)
 				break
 			case 'rewriteExternalLink':
 				for (const reference of externalReferences.filter((entry) =>
@@ -2868,6 +2962,70 @@ function collectExternalLinkRelatedOperations(
 		}
 	})
 	return related
+}
+
+type ExternalLinkFormulaOperationSource = Pick<
+	ExternalLinkRelatedOperation,
+	'sourceKind' | 'sheetName' | 'sourceRef' | 'range' | 'name' | 'scope' | 'formula'
+> & {
+	readonly formula: string
+}
+
+function pushExternalLinkFormulaOperations(
+	related: ExternalLinkRelatedOperation[],
+	externalReferences: readonly ExternalReferenceInfo[],
+	operationIndex: number,
+	operation: Operation,
+	sources: readonly ExternalLinkFormulaOperationSource[],
+): void {
+	for (const source of sources) {
+		for (const group of externalFormulaReferenceGroups(source.formula, externalReferences)) {
+			related.push({
+				operationIndex,
+				op: operation.op,
+				...source,
+				workbook: group.workbook,
+				...(group.sheet ? { sheet: group.sheet } : {}),
+				references: group.references,
+				...(group.externalReference
+					? { externalReference: copyExternalReferenceInfo(group.externalReference) }
+					: {}),
+			})
+		}
+	}
+}
+
+function conditionalFormatOperationFormulaTexts(
+	rule: Extract<Operation, { op: 'setConditionalFormat' }>['rule'],
+): string[] {
+	return [
+		...[rule.formula, rule.formula2].filter((formula): formula is string => formula !== undefined),
+		...conditionalFormatValueObjectFormulas(rule.colorScale?.cfvo),
+		...conditionalFormatValueObjectFormulas(rule.dataBar?.cfvo),
+		...conditionalFormatValueObjectFormulas(rule.iconSet?.cfvo),
+	]
+}
+
+function conditionalFormatValueObjectFormulas(
+	values:
+		| readonly {
+				readonly type?: string
+				readonly value?: string
+		  }[]
+		| undefined,
+): string[] {
+	return (
+		values?.flatMap((value) => (value.type === 'formula' && value.value ? [value.value] : [])) ?? []
+	)
+}
+
+function chartOperationSourceRef(
+	operation: Extract<Operation, { op: 'setChartSeriesSource' }>,
+): string {
+	if (operation.partPath) return `${operation.partPath}#series${operation.seriesIndex}`
+	if (operation.sheet)
+		return `${operation.sheet}!chart${operation.chartIndex ?? 0}#series${operation.seriesIndex}`
+	return `chart${operation.chartIndex ?? 0}#series${operation.seriesIndex}`
 }
 
 function externalFormulaReferenceGroups(

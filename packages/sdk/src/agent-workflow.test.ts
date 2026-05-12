@@ -316,6 +316,22 @@ describe('agent workflow loss audit', () => {
 				name: 'BudgetSource',
 				ref: '[1]FY26!A1:D10',
 			},
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'C2:C20',
+				rule: { type: 'list', formula1: '[1]FY26!$A$1:$A$4' },
+			},
+			{
+				op: 'setConditionalFormat',
+				sheet: 'Sheet1',
+				range: 'D2:D20',
+				rule: {
+					type: 'expression',
+					formula: '=SUM([1]FY26!D2:D20)>0',
+					dataBar: { cfvo: [{ type: 'formula', value: '[1]FY26!$D$1' }] },
+				},
+			},
 		])
 
 		expect(plan.writePolicy.summary.externalReferences).toBe(1)
@@ -334,7 +350,7 @@ describe('agent workflow loss audit', () => {
 				],
 				details: expect.objectContaining({
 					operationScoped: true,
-					relatedOperations: [
+					relatedOperations: expect.arrayContaining([
 						expect.objectContaining({
 							operationIndex: 0,
 							op: 'setFormula',
@@ -351,7 +367,37 @@ describe('agent workflow loss audit', () => {
 							formula: '[1]FY26!A1:D10',
 							references: ['[1]FY26!A1:D10'],
 						}),
-					],
+						expect.objectContaining({
+							operationIndex: 2,
+							op: 'setDataValidation',
+							sourceKind: 'dataValidation',
+							sheetName: 'Sheet1',
+							sourceRef: 'Sheet1!C2:C20',
+							range: 'C2:C20',
+							formula: '[1]FY26!$A$1:$A$4',
+							references: ['[1]FY26!$A$1:$A$4'],
+						}),
+						expect.objectContaining({
+							operationIndex: 3,
+							op: 'setConditionalFormat',
+							sourceKind: 'conditionalFormat',
+							sheetName: 'Sheet1',
+							sourceRef: 'Sheet1!D2:D20',
+							range: 'D2:D20',
+							formula: '=SUM([1]FY26!D2:D20)>0',
+							references: ['[1]FY26!D2:D20'],
+						}),
+						expect.objectContaining({
+							operationIndex: 3,
+							op: 'setConditionalFormat',
+							sourceKind: 'conditionalFormat',
+							sheetName: 'Sheet1',
+							sourceRef: 'Sheet1!D2:D20',
+							range: 'D2:D20',
+							formula: '[1]FY26!$D$1',
+							references: ['[1]FY26!$D$1'],
+						}),
+					]),
 				}),
 			}),
 		)
@@ -365,6 +411,13 @@ describe('agent workflow loss audit', () => {
 				details: expect.objectContaining({
 					operationScoped: true,
 					bindingIssueCounts: { fallback: 0, missing: 1 },
+					relatedOperations: expect.arrayContaining([
+						expect.objectContaining({ op: 'setDataValidation', sourceKind: 'dataValidation' }),
+						expect.objectContaining({
+							op: 'setConditionalFormat',
+							sourceKind: 'conditionalFormat',
+						}),
+					]),
 					externalLinks: [
 						expect.objectContaining({
 							bindingRisk: expect.objectContaining({

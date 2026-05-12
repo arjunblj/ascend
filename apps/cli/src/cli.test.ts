@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from 'bun:test'
 import { existsSync, unlinkSync } from 'node:fs'
 import { inspect as inspectValue } from 'node:util'
 import { AscendWorkbook } from '@ascend/sdk'
+import { makeXlsx } from '../../../packages/io-xlsx/test/helpers.ts'
 import { runCli } from './index.ts'
 
 const CLI = new URL('./index.ts', import.meta.url).pathname
@@ -9,6 +10,7 @@ const TEST_FILE = 'test-output.xlsx'
 const MULTI_SHEET_FILE = 'test-multi.xlsx'
 const NAMED_RANGE_FILE = 'test-named.xlsx'
 const TUI_TEST_FILE = 'test-tui.xlsx'
+const ACTIVE_CONTENT_FILE = 'test-active-content.xlsm'
 const PIVOT_CORPUS_FILE = '../../../research/excel-corpus/ms-excel-formulas-and-pivot-tables.xlsx'
 const SLICER_CORPUS_FILE = '../../../research/excel-corpus/excel-dashboard-v2.xlsx'
 const HAS_PIVOT_CORPUS_FILE = existsSync(`${import.meta.dir}/${PIVOT_CORPUS_FILE}`)
@@ -89,6 +91,7 @@ afterAll(() => {
 		MULTI_SHEET_FILE,
 		NAMED_RANGE_FILE,
 		TUI_TEST_FILE,
+		ACTIVE_CONTENT_FILE,
 		'exported.tsv',
 		'exported.json',
 		'plan-ops.json',
@@ -386,6 +389,44 @@ describe('ascend cli', () => {
 		expect(parsed.data.load.mode).toBe('metadata-only')
 		expect(parsed.data.sheets).toBeArray()
 		expect(parsed.data.sheets[0].name).toBe('Sheet1')
+	})
+
+	test('inspect --detail active-content --json returns metadata-only risk inventory', async () => {
+		await Bun.write(`${import.meta.dir}/${ACTIVE_CONTENT_FILE}`, signedMacroWorkbook())
+
+		const { stdout, exitCode } = await run(
+			'inspect',
+			ACTIVE_CONTENT_FILE,
+			'--detail',
+			'active-content',
+			'--json',
+		)
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.formatVersion).toBe(1)
+		expect(parsed.ok).toBe(true)
+		expect(parsed.data.activeContentCount).toBe(2)
+		expect(parsed.data.activeContent).toContainEqual(
+			expect.objectContaining({
+				kind: 'vbaProject',
+				partPath: 'xl/vbaProject.bin',
+				sourceRelationshipId: 'rIdVba',
+			}),
+		)
+		expect(parsed.data.activeContent).toContainEqual(
+			expect.objectContaining({
+				kind: 'vbaSignature',
+				partPath: 'xl/vbaProjectSignature.bin',
+				sourcePartPath: 'xl/vbaProject.bin',
+				sourceRelationshipId: 'rIdVbaSignature',
+			}),
+		)
+		expect(parsed.data.compatibilityFeatures).toContainEqual(
+			expect.objectContaining({
+				feature: 'preservedMacro',
+				locations: ['xl/vbaProject.bin', 'xl/vbaProjectSignature.bin'],
+			}),
+		)
 	})
 
 	test('unknown inspect flag suggests the closest supported flag', async () => {
@@ -1194,3 +1235,40 @@ describe('ascend cli', () => {
 		expect(parsed).toBeDefined()
 	})
 })
+
+function signedMacroWorkbook(): Uint8Array {
+	return makeXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="bin" ContentType="application/vnd.ms-office.vbaProject"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.ms-excel.sheet.macroEnabled.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/vbaProject.bin" ContentType="application/vnd.ms-office.vbaProject"/>
+  <Override PartName="/xl/vbaProjectSignature.bin" ContentType="application/vnd.ms-office.vbaProjectSignature"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdVba" Type="http://schemas.microsoft.com/office/2006/relationships/vbaProject" Target="vbaProject.bin"/>
+</Relationships>`,
+		'xl/_rels/vbaProject.bin.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdVbaSignature" Type="http://schemas.microsoft.com/office/2006/relationships/vbaProjectSignature" Target="vbaProjectSignature.bin"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+		'xl/vbaProject.bin': 'macro-bytes',
+		'xl/vbaProjectSignature.bin': 'signature-bytes',
+	})
+}

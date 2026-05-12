@@ -142,6 +142,32 @@ function sheetNotFoundResponse(sheetName: string, wb: WorkbookDocument | AscendW
 	)
 }
 
+function activeContentPayload(wb: WorkbookDocument) {
+	const info = wb.inspect()
+	const activeFeatureFamilies = new Set([
+		'preservedMacro',
+		'preservedMacroSheet',
+		'preservedActiveContent',
+		'preservedSignature',
+	])
+	return {
+		activeContentCount: info.activeContentCount,
+		macroSheetCount: info.macroSheetCount,
+		activeContent: info.activeContent,
+		macroSheets: info.macroSheets,
+		compatibilityFeatures: info.compatibility.features.filter(
+			(feature) =>
+				activeFeatureFamilies.has(feature.feature) ||
+				feature.locations.some((location) =>
+					/(vba|macro|activex|ctrlprops|_xmlsignatures|signature)/i.test(location),
+				),
+		),
+		capabilityWarnings: info.capabilityWarnings.filter(
+			(warning) => warning.family === 'active content',
+		),
+	}
+}
+
 const CORS_HEADERS: Record<string, string> = {
 	'Access-Control-Allow-Origin': '*',
 	'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -206,6 +232,18 @@ export function createApiFetch() {
 					const sheet = wb.inspectSheet(sheetName)
 					if (!sheet) return sheetNotFoundResponse(sheetName, wb)
 					return jsonSuccess(sheet)
+				} catch (e) {
+					return handleError(e, file)
+				}
+			}
+
+			if (method === 'POST' && path === '/active-content') {
+				const body = await parseJson<{ file?: string }>(req)
+				const file = body ? requireString(body, 'file') : null
+				if (!file) return jsonFailure('Missing or invalid file', 400)
+				try {
+					const wb = await WorkbookDocument.open(file, { mode: 'metadata-only' })
+					return jsonSuccess(activeContentPayload(wb))
 				} catch (e) {
 					return handleError(e, file)
 				}

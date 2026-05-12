@@ -13,7 +13,7 @@ Arguments:
 
 Flags:
   --sheet <name>  Sheet name (alternative to positional argument)
-  --detail <type> Show detail for: cf, dv, hyperlinks, tables, comments, drawings, images, compatibility, visuals, pivots, slicers, names, external-refs, views
+  --detail <type> Show detail for: cf, dv, hyperlinks, tables, comments, drawings, images, compatibility, active-content, visuals, pivots, slicers, names, external-refs, views
   --mode <mode>   Load mode: metadata, values, or full
   --json          Output as JSON
   --verbose       Show compatibility report and timing
@@ -30,6 +30,7 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 	const detail = flags.get('detail')
 	const verbose = flags.has('verbose')
 	const workbookDetail = detail === 'compatibility'
+	const activeContentDetail = detail === 'active-content'
 	const workbookStructureDetail =
 		detail === 'pivots' ||
 		detail === 'slicers' ||
@@ -58,13 +59,15 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 				? { mode: 'full' as const, pivotCacheRecordMaterializeLimit: 'all' as const }
 				: workbookDetail
 					? { mode: 'full' as const }
-					: workbookStructureDetail
-						? { mode: 'full' as const }
-						: detail && sheetArg
-							? { sheets: [sheetArg] }
-							: sheetArg
-								? { mode: 'values' as const, sheets: [sheetArg] }
-								: { mode: 'metadata-only' as const }
+					: activeContentDetail
+						? { mode: 'metadata-only' as const }
+						: workbookStructureDetail
+							? { mode: 'full' as const }
+							: detail && sheetArg
+								? { sheets: [sheetArg] }
+								: sheetArg
+									? { mode: 'values' as const, sheets: [sheetArg] }
+									: { mode: 'metadata-only' as const }
 	const { document: wb, durationMs: openMs } = await openWorkbookDocumentWithProgress(
 		file,
 		openOptions,
@@ -72,6 +75,10 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 
 	if (detail === 'compatibility') {
 		return printCompatibilityDetail(wb, flags.has('json'))
+	}
+
+	if (detail === 'active-content') {
+		return printActiveContentDetail(wb, flags.has('json'))
 	}
 
 	if (detail === 'pivots') {
@@ -214,6 +221,8 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 	console.log(bullet('Slicer caches', info.slicerCacheCount))
 	console.log(bullet('Workbook views', info.workbookViewCount))
 	console.log(bullet('External references', info.externalReferenceCount))
+	console.log(bullet('Active content', info.activeContentCount))
+	console.log(bullet('Macro sheets', info.macroSheetCount))
 	console.log(bullet('Workbook protection', info.hasWorkbookProtection ? 'yes' : 'no'))
 	console.log(bullet('Cell styles', info.styleSummary.cellXfCount))
 	console.log(bullet('Diff styles', info.styleSummary.dxfCount))
@@ -477,7 +486,7 @@ function printSheetDetail(
 		}
 		default:
 			cliError(
-				`Unknown detail type: ${detail}. Options: cf, dv, hyperlinks, comments, drawings, images, tables, compatibility, visuals, pivots, slicers, names, external-refs, views`,
+				`Unknown detail type: ${detail}. Options: cf, dv, hyperlinks, comments, drawings, images, tables, compatibility, active-content, visuals, pivots, slicers, names, external-refs, views`,
 				flags,
 			)
 			return 1
@@ -495,6 +504,69 @@ function printCompatibilityDetail(wb: WorkbookDocument, json: boolean): number {
 	for (const f of report.features) {
 		console.log(bullet(`${f.feature} (${f.tier})`, `${f.count} location(s)`))
 		if (f.note) console.log(`    ${f.note}`)
+	}
+	return 0
+}
+
+function printActiveContentDetail(wb: WorkbookDocument, json: boolean): number {
+	const info = wb.inspect()
+	const activeFeatureFamilies = new Set([
+		'preservedMacro',
+		'preservedMacroSheet',
+		'preservedActiveContent',
+		'preservedSignature',
+	])
+	const compatibilityFeatures = info.compatibility.features.filter(
+		(feature) =>
+			activeFeatureFamilies.has(feature.feature) ||
+			feature.locations.some((location) =>
+				/(vba|macro|activex|ctrlprops|_xmlsignatures|signature)/i.test(location),
+			),
+	)
+	const capabilityWarnings = info.capabilityWarnings.filter(
+		(warning) => warning.family === 'active content',
+	)
+	if (json) {
+		console.log(
+			jsonOut({
+				activeContentCount: info.activeContentCount,
+				macroSheetCount: info.macroSheetCount,
+				activeContent: info.activeContent,
+				macroSheets: info.macroSheets,
+				compatibilityFeatures,
+				capabilityWarnings,
+			}),
+		)
+		return 0
+	}
+	console.log(heading('Active Content'))
+	console.log(bullet('Active content parts', String(info.activeContentCount)))
+	console.log(bullet('Macro sheets', String(info.macroSheetCount)))
+	for (const content of info.activeContent) {
+		console.log(
+			bullet(
+				content.partPath,
+				[
+					content.kind,
+					content.sheetName ? `sheet=${content.sheetName}` : undefined,
+					content.sourceRelationshipId ? `rel=${content.sourceRelationshipId}` : undefined,
+					content.sourcePartPath ? `source=${content.sourcePartPath}` : undefined,
+				]
+					.filter(Boolean)
+					.join(' | '),
+			),
+		)
+	}
+	for (const sheet of info.macroSheets) {
+		console.log(bullet(sheet.partPath, `macroSheet | sheet=${sheet.name} | rel=${sheet.relId}`))
+	}
+	if (info.activeContent.length === 0 && info.macroSheets.length === 0) console.log('  (none)')
+	if (compatibilityFeatures.length > 0) {
+		console.log('')
+		console.log(heading('Compatibility Features'))
+		for (const feature of compatibilityFeatures) {
+			console.log(bullet(`${feature.feature} (${feature.tier})`, `${feature.count} location(s)`))
+		}
 	}
 	return 0
 }

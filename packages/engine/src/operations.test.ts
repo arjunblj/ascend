@@ -3132,6 +3132,84 @@ describe('applyOperation', () => {
 		expectErr(missingField)
 	})
 
+	test('resizeTable preserves overlapping tableColumn metadata when shrinking columns', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 2 } },
+			columns: [
+				{ id: 10, name: 'Region', dataCellStyle: 'Input' },
+				{ id: 11, name: 'Amount', formula: '[@Units]*[@Price]', totalsRowFunction: 'sum' },
+				{ id: 12, name: 'Notes', totalsRowLabel: 'Memo' },
+			],
+			hasHeaders: true,
+			hasTotals: true,
+		})
+
+		expectOk(applyOperation(wb, { op: 'resizeTable', table: 'Sales', ref: 'A1:B4' }))
+
+		expect(sheet.tables[0]?.columns).toEqual([
+			{ id: 10, name: 'Region', dataCellStyle: 'Input' },
+			{ id: 11, name: 'Amount', formula: '[@Units]*[@Price]', totalsRowFunction: 'sum' },
+		])
+	})
+
+	test('resizeTable preserves overlapping tableColumn metadata when shifting the range', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 3, { value: stringValue('Forecast'), formula: null, styleId: sid })
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 2 } },
+			columns: [
+				{ id: 1, name: 'Region' },
+				{ id: 2, name: 'Amount', formula: '[@Units]*[@Price]' },
+				{ id: 3, name: 'Status', totalsRowLabel: 'Open' },
+			],
+			hasHeaders: true,
+			hasTotals: true,
+		})
+
+		expectOk(applyOperation(wb, { op: 'resizeTable', table: 'Sales', ref: 'B1:D4' }))
+
+		expect(sheet.tables[0]?.columns).toEqual([
+			{ id: 2, name: 'Amount', formula: '[@Units]*[@Price]' },
+			{ id: 3, name: 'Status', totalsRowLabel: 'Open' },
+			{ id: 4, name: 'Forecast' },
+		])
+	})
+
+	test('resizeTable preserves existing tableColumn metadata when expanding columns', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 2, { value: stringValue('Forecast'), formula: null, styleId: sid })
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 1 } },
+			columns: [
+				{ id: 1, name: 'Region', queryTableFieldId: 7 },
+				{ id: 2, name: 'Amount', formula: 'SUM(A2:A4)', totalsRowFormula: 'SUM([Amount])' },
+			],
+			hasHeaders: true,
+			hasTotals: true,
+		})
+
+		expectOk(applyOperation(wb, { op: 'resizeTable', table: 'Sales', ref: 'A1:C4' }))
+
+		expect(sheet.tables[0]?.columns).toEqual([
+			{ id: 1, name: 'Region', queryTableFieldId: 7 },
+			{ id: 2, name: 'Amount', formula: 'SUM(A2:A4)', totalsRowFormula: 'SUM([Amount])' },
+			{ id: 3, name: 'Forecast' },
+		])
+	})
+
 	test('table management operations rename, resize, and delete table metadata', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

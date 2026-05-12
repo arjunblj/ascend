@@ -246,11 +246,7 @@ export function handleResizeTable(
 	const rangeResult = safeParseRange(op.ref)
 	if (!rangeResult.ok) return rangeResult
 	const ref = rangeResult.value
-	const width = ref.end.col - ref.start.col + 1
-	const columns =
-		width === table.columns.length
-			? table.columns
-			: buildTableColumns(sheet, ref, width, table.hasHeaders)
+	const columns = buildResizedTableColumns(sheet, table, ref)
 	const idx = sheet.tables.findIndex((t) => t.id === table.id)
 	if (idx >= 0) {
 		sheet.tables[idx] = {
@@ -263,6 +259,53 @@ export function handleResizeTable(
 	}
 	clearFormulaMetadata(workbook)
 	return ok(patch([], [sheet.name], true))
+}
+
+function buildResizedTableColumns(
+	sheet: Sheet,
+	table: Table,
+	ref: Table['ref'],
+): readonly TableColumn[] {
+	const width = ref.end.col - ref.start.col + 1
+	const inferred = buildTableColumns(sheet, ref, width, table.hasHeaders)
+	const shiftedByOffset = new Map<number, TableColumn>()
+	for (const [index, column] of table.columns.entries()) {
+		const oldColumn = table.ref.start.col + index
+		if (oldColumn < ref.start.col || oldColumn > ref.end.col) continue
+		shiftedByOffset.set(oldColumn - ref.start.col, { ...column })
+	}
+	const hasExplicitIds = table.columns.some((column) => column.id !== undefined)
+	let nextId = Math.max(0, ...table.columns.map((column) => column.id ?? 0)) + 1
+	const usedNames = new Set<string>()
+	const columns: TableColumn[] = []
+	for (let offset = 0; offset < width; offset++) {
+		const shifted = shiftedByOffset.get(offset)
+		if (shifted) {
+			columns.push(shifted)
+			usedNames.add(shifted.name.toLowerCase())
+			continue
+		}
+		const name = nextUniqueTableColumnName(
+			inferred[offset]?.name ?? `Column${offset + 1}`,
+			usedNames,
+		)
+		columns.push({
+			name,
+			...(hasExplicitIds ? { id: nextId++ } : {}),
+		})
+	}
+	return columns
+}
+
+function nextUniqueTableColumnName(base: string, usedNames: Set<string>): string {
+	let candidate = base
+	let suffix = 2
+	while (usedNames.has(candidate.toLowerCase())) {
+		candidate = `${base}_${suffix}`
+		suffix++
+	}
+	usedNames.add(candidate.toLowerCase())
+	return candidate
 }
 
 export function handleSetTableColumn(

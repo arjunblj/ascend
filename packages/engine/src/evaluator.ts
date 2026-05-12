@@ -7,6 +7,7 @@ import {
 	type FilterDateGroupItem,
 	indexToColumn,
 	parseRange,
+	pivotDataFieldCaptionsMatch,
 	type Sheet,
 	type Workbook,
 } from '@ascend/core'
@@ -1204,8 +1205,8 @@ function evalGetPivotData(argNodes: readonly FormulaNode[], ctx: EvalContext): C
 	if (argNodes.length < 2 || argNodes.length % 2 !== 0) return errorValue('#REF!')
 	const dataFieldValue = evaluate(argNodes[0] ?? { type: 'missing' }, ctx)
 	if (dataFieldValue.kind === 'error') return dataFieldValue
-	const dataField = normalizePivotText(coerceToString(dataFieldValue))
-	if (dataField.length === 0) return errorValue('#REF!')
+	const dataField = coerceToString(dataFieldValue)
+	if (normalizePivotText(dataField).length === 0) return errorValue('#REF!')
 
 	const anchor = resolveReferenceNode(argNodes[1] ?? { type: 'missing' }, ctx)
 	if (!anchor?.ref || anchor.ref.kind !== 'cell') {
@@ -1334,7 +1335,7 @@ function findPivotDataHeader(
 			const value = normalizePivotText(
 				coerceToString(getCellValue(ctx.workbook, sheetIndex, row, col)),
 			)
-			if (value === dataField) return { row, col }
+			if (pivotDataFieldCaptionsMatch(dataField, value)) return { row, col }
 		}
 	}
 	return null

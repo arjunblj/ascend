@@ -1025,6 +1025,11 @@ describe('recalculate', () => {
 			formula: 'GETPIVOTDATA("Sum of Revenue",$R$4)',
 			styleId: sid,
 		})
+		sheet.cells.set(16, 21, {
+			value: EMPTY,
+			formula: 'GETPIVOTDATA("Revenue",$R$4,"Segment","Strategic")',
+			styleId: sid,
+		})
 		wb.pivotTables.push({
 			partPath: 'xl/pivotTables/pivotTable1.xml',
 			sheetName: 'Pivot Tables',
@@ -1044,6 +1049,7 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(16, 18)?.value).toEqual(numberValue(49_478_096))
 		expect(sheet.cells.get(16, 19)?.value).toEqual(numberValue(32_125_000))
 		expect(sheet.cells.get(16, 20)?.value).toEqual(numberValue(99_000_000))
+		expect(sheet.cells.get(16, 21)?.value).toEqual(numberValue(49_478_096))
 	})
 
 	test('GETPIVOTDATA reads no-filter grand total from column-labeled pivot output', () => {
@@ -1057,7 +1063,7 @@ describe('recalculate', () => {
 		sheet.cells.set(2, 2, { value: numberValue(57), formula: null, styleId: sid })
 		sheet.cells.set(4, 0, {
 			value: EMPTY,
-			formula: 'GETPIVOTDATA("Sum of Qux",$A$1)',
+			formula: 'GETPIVOTDATA("Qux",$A$1)',
 			styleId: sid,
 		})
 		wb.pivotTables.push({

@@ -64,7 +64,12 @@ export type {
 	TimelineRangeInfo,
 	TimelineStateInfo,
 } from './pivot.ts'
-export { clonePivotCacheInfo, clonePivotTableInfo } from './pivot.ts'
+export {
+	clonePivotCacheInfo,
+	clonePivotTableInfo,
+	normalizePivotCaption,
+	pivotDataFieldCaptionsMatch,
+} from './pivot.ts'
 export type { CellRef, RangeRef } from './refs.ts'
 export {
 	columnToIndex,

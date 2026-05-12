@@ -95,6 +95,20 @@ describe('GETPIVOTDATA metadata queries', () => {
 			ref: 'B4',
 			value: numberValue(150),
 		})
+
+		const rootName = wb.getPivotData({
+			pivotTable: 'PivotTable1',
+			dataField: 'Sales',
+			filters: [{ field: 'Region', item: 'West' }],
+		})
+
+		expect(rootName.canResolveOutput).toBe(true)
+		expect(rootName.matches[0]?.dataField.name).toBe('Sum of Sales')
+		expect(rootName.matches[0]?.output).toEqual({
+			sheetName: 'Sheet1',
+			ref: 'B2',
+			value: numberValue(100),
+		})
 	})
 
 	test('resolves real Excel saved pivot grand totals', async () => {

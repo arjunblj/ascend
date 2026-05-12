@@ -11,6 +11,7 @@ import {
 	indexToColumn,
 	parseA1,
 	parseRange,
+	pivotDataFieldCaptionsMatch,
 	type RangeRef,
 	type SheetDrawingObjectRef,
 	type SheetImageAnchor,
@@ -3751,15 +3752,17 @@ function copyPivotTableInfo(pivot: PivotTableInfo): PivotTableInfo {
 }
 
 function buildGetPivotDataResult(query: GetPivotDataQuery, workbook: Workbook): GetPivotDataResult {
-	const normalizedDataField = query.dataField.toLowerCase()
 	const normalizedPivotTable = query.pivotTable?.toLowerCase()
 	const filters = query.filters ?? []
 	const matches = workbook.pivotTables.flatMap((pivot) => {
 		if (normalizedPivotTable && pivot.name?.toLowerCase() !== normalizedPivotTable) return []
 		const dataField = pivot.dataFields.find((field) => {
+			const sourceFieldName = pivot.fields.find(
+				(pivotField) => pivotField.index === field.fieldIndex,
+			)?.name
 			return (
-				field.name?.toLowerCase() === normalizedDataField ||
-				field.subtotal?.toLowerCase() === normalizedDataField
+				pivotDataFieldCaptionsMatch(query.dataField, field.name) ||
+				pivotDataFieldCaptionsMatch(query.dataField, sourceFieldName)
 			)
 		})
 		if (!dataField) return []
@@ -3854,12 +3857,11 @@ function findSavedPivotDataHeader(
 	bounds: RangeRef,
 	dataField: string,
 ): { row: number; col: number } | undefined {
-	const normalizedDataField = normalizePivotAuditText(dataField)
 	const maxHeaderRow = Math.min(bounds.end.row, bounds.start.row + 8)
 	for (let row = bounds.start.row; row <= maxHeaderRow; row++) {
 		for (let col = bounds.start.col; col <= bounds.end.col; col++) {
-			const header = normalizePivotAuditText(cellText(sheet.cells.get(row, col)?.value ?? EMPTY))
-			if (header === normalizedDataField) {
+			const header = cellText(sheet.cells.get(row, col)?.value ?? EMPTY)
+			if (pivotDataFieldCaptionsMatch(dataField, header)) {
 				return { row, col }
 			}
 		}

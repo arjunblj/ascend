@@ -18,6 +18,48 @@ export interface PivotTableInfo {
 	readonly chartFormats?: readonly PivotChartFormatInfo[]
 }
 
+const PIVOT_DATA_FIELD_AGGREGATE_PREFIXES = [
+	'sum of ',
+	'count of ',
+	'average of ',
+	'max of ',
+	'min of ',
+	'product of ',
+	'count numbers of ',
+	'stddev of ',
+	'stddevp of ',
+	'var of ',
+	'varp of ',
+]
+
+export function normalizePivotCaption(value: string): string {
+	return value.trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
+export function pivotDataFieldCaptionsMatch(
+	requestedCaption: string,
+	candidateCaption: string | undefined,
+): boolean {
+	const requested = normalizePivotCaption(requestedCaption)
+	const candidate = normalizePivotCaption(candidateCaption ?? '')
+	if (requested.length === 0 || candidate.length === 0) return false
+	if (requested === candidate) return true
+	const requestedRoot = stripPivotDataFieldAggregatePrefix(requested)
+	const candidateRoot = stripPivotDataFieldAggregatePrefix(candidate)
+	return (
+		requested === candidateRoot || requestedRoot === candidate || requestedRoot === candidateRoot
+	)
+}
+
+function stripPivotDataFieldAggregatePrefix(caption: string): string {
+	for (const prefix of PIVOT_DATA_FIELD_AGGREGATE_PREFIXES) {
+		if (!caption.startsWith(prefix)) continue
+		const root = caption.slice(prefix.length).trim()
+		if (root.length > 0) return root
+	}
+	return caption
+}
+
 export interface PivotTableLocationInfo {
 	readonly ref?: string
 	readonly firstHeaderRow?: number

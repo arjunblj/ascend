@@ -776,46 +776,39 @@ function pushDefaultStyleScalarCellsWithoutRefs(
 	usePlainStrings?: boolean,
 ): boolean {
 	if (cells.length === 0) return false
-	const startLength = out.length
+	let body = ''
 	for (let index = 0; index < cells.length; index++) {
 		const entry = cells[index]
-		if (!entry || entry[0] !== index) {
-			out.length = startLength
-			return false
-		}
+		if (!entry || entry[0] !== index) return false
 		const cell = entry[1]
-		if ((cell.styleId as number) !== 0 || cell.formula || cell.formulaInfo) {
-			out.length = startLength
-			return false
-		}
+		if ((cell.styleId as number) !== 0 || cell.formula || cell.formulaInfo) return false
 		const value = cell.value
 		if (value.kind === 'number') {
-			out.push(`<c><v>${value.value}</v></c>`)
+			body += `<c><v>${value.value}</v></c>`
 		} else if (value.kind === 'date') {
-			out.push(`<c><v>${value.serial}</v></c>`)
+			body += `<c><v>${value.serial}</v></c>`
 		} else if (value.kind === 'boolean') {
-			out.push(`<c t="b"><v>${value.value ? '1' : '0'}</v></c>`)
+			body += value.value ? '<c t="b"><v>1</v></c>' : '<c t="b"><v>0</v></c>'
 		} else if (value.kind === 'error') {
-			out.push(`<c t="e"><v>${escapeXml(value.value)}</v></c>`)
+			body += `<c t="e"><v>${escapeXml(value.value)}</v></c>`
 		} else if (value.kind === 'empty') {
-			out.push('<c/>')
+			body += '<c/>'
 		} else if (value.kind === 'string') {
 			if (usePlainStrings) {
-				out.push(`<c t="str"><v>${escapeXml(value.value)}</v></c>`)
+				body += `<c t="str"><v>${escapeXml(value.value)}</v></c>`
 			} else if (useInlineStrings) {
-				out.push(`<c t="inlineStr"><is><t>${escapeXml(value.value)}</t></is></c>`)
+				body += `<c t="inlineStr"><is><t>${escapeXml(value.value)}</t></is></c>`
 			} else {
-				out.length = startLength
 				return false
 			}
 		} else if ((usePlainStrings || useInlineStrings) && value.kind === 'richText') {
 			const runsXml = value.runs.map((run) => inlineStrRunXml(run)).join('')
-			out.push(`<c t="inlineStr"><is>${runsXml}</is></c>`)
+			body += `<c t="inlineStr"><is>${runsXml}</is></c>`
 		} else {
-			out.length = startLength
 			return false
 		}
 	}
+	out.push(body)
 	return true
 }
 

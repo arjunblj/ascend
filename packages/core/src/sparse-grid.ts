@@ -908,7 +908,13 @@ class DenseChunk implements GridChunk {
 		for (let localCol = startCol; localCol <= endCol; localCol++) {
 			const localIndex = rowBase + localCol
 			if (!this.has(localIndex)) continue
-			const value = this.readValue(localIndex, stringTable)
+			const value = readDenseValue(
+				this.readTag(localIndex),
+				this.numbers[localIndex] ?? 0,
+				this.stringIds[localIndex] ?? 0,
+				this.heapValues?.[localIndex],
+				stringTable,
+			)
 			if (value !== undefined) fn(localCol, value)
 		}
 	}
@@ -1340,11 +1346,13 @@ export class SparseGrid {
 					const localColStart = chunkCol === startChunkCol ? startCol & CHUNK_MASK : 0
 					const localColEnd = chunkCol === endChunkCol ? endCol & CHUNK_MASK : CHUNK_MASK
 					const baseCol = chunkCol << CHUNK_BITS
-					for (let localCol = localColStart; localCol <= localColEnd; localCol++) {
-						const localIndex = (localRow << CHUNK_BITS) | localCol
-						const value = chunk.readValue(localIndex, this.stringTable)
-						if (value !== undefined) fn(value, row, baseCol + localCol)
-					}
+					chunk.forEachValueInRow(
+						localRow,
+						localColStart,
+						localColEnd,
+						this.stringTable,
+						(localCol, value) => fn(value, row, baseCol + localCol),
+					)
 				}
 			}
 		}

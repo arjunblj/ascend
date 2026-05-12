@@ -101,6 +101,38 @@ const benchmarks: readonly MicroBenchmark[] = [
 		},
 	},
 	{
+		name: 'SparseGrid.forEachValueInRange sparse-wide scan',
+		targetOpsPerSec: 350_000,
+		run() {
+			const grid = new SparseGrid()
+			const rows = 8192
+			const cols = 512
+			let populated = 0
+			for (let row = 0; row < rows; row++) {
+				grid.setResolved(row, 0, numberValue(row), null, SID)
+				grid.setResolved(row, cols - 1, stringValue(`edge-${row}-${cols}`), null, SID)
+				populated += 2
+				for (let col = 1; col < cols - 1; col++) {
+					if ((row * 31 + col * 17) % 97 !== 0) continue
+					grid.setResolved(row, col, numberValue(row * cols + col), null, SID)
+					populated++
+				}
+			}
+			let visited = 0
+			let checksum = 0
+			grid.forEachValueInRange(0, 0, rows - 1, cols - 1, (value) => {
+				visited++
+				if (value.kind === 'number') checksum += value.value
+				else if (value.kind === 'string') checksum += value.value.length
+			})
+			if (visited !== populated) {
+				throw new Error(`Sparse-wide scan visited ${visited} cells; expected ${populated}`)
+			}
+			void checksum
+			return populated
+		},
+	},
+	{
 		name: 'SparseGrid 40K dense (default, triggers upgrade)',
 		targetOpsPerSec: 150_000,
 		run() {

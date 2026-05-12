@@ -219,8 +219,8 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'Conditional formatting',
 		'editable',
 		'P0',
-		'Add overlap diagnostics and extLst/x14 rule preservation.',
-		'CellIs/expression and visual rules round-trip; operations can append overlapping rules, delete individual priorities, reassign rule priority order, and copy/move contained rule ranges with formula translation.',
+		'Broaden real-workbook coverage for complex x14 and nested extLst rule families.',
+		'CellIs/expression and visual rules round-trip; x14 rule attrs and extension child payloads are preserved; verify reports overlapping priority collisions; operations can append overlapping rules, delete individual priorities, reassign rule priority order, and copy/move contained rule ranges with formula translation.',
 		[
 			'packages/engine/src/operations.test.ts',
 			'packages/io-xlsx/src/writer/conditional-format-visual.test.ts',

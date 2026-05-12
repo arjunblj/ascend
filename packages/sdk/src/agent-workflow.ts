@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { copyFile, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
-import type { ExternalReferenceInfo } from '@ascend/core'
+import type { ExternalReferenceInfo, Workbook } from '@ascend/core'
 import type {
 	XlsxPackageGraph,
 	XlsxPackageGraphFidelityIssue,
@@ -123,6 +123,7 @@ export interface WritePolicyReport {
 		readonly packageGraphIssues: number
 		readonly externalReferences: number
 		readonly externalReferenceBindingIssues: number
+		readonly x14ConditionalFormatExtensionPayloads: number
 		readonly calcChainPolicy: 'not-present' | 'preserved' | 'discarded-for-formula-topology'
 	}
 }
@@ -137,6 +138,7 @@ export interface WritePolicyDiagnostic {
 		| 'calc-chain-discarded'
 		| 'active-content-preserved'
 		| 'visual-sidecar-preservation-risk'
+		| 'conditional-format-extension-preservation'
 		| 'external-link-dependency'
 		| 'external-link-binding-risk'
 		| 'package-graph-audit-issue'
@@ -149,6 +151,7 @@ export interface WritePolicyDiagnostic {
 	readonly featureFamily?: string
 	readonly ownerScope?: XlsxPackageOwnerScope
 	readonly preservationPolicy?: XlsxPackageLossPolicy
+	readonly details?: unknown
 }
 
 export interface WritePolicyPackagePart {
@@ -308,6 +311,7 @@ export async function createAgentPlan(
 		packageGraph,
 		preservation,
 		packageGraphAudit,
+		wb.getWorkbookModel(),
 		wb.inspect().externalReferenceDetails,
 	)
 	await progressFromPhase(writePolicyPhase(writePolicy), progress)
@@ -482,6 +486,7 @@ export async function commitAgentPlan(
 		packageGraph,
 		preservation,
 		packageGraphAudit,
+		wb.getWorkbookModel(),
 		wb.inspect().externalReferenceDetails,
 	)
 	await progressFromPhase(writePolicyPhase(writePolicy), progress)
@@ -1206,6 +1211,7 @@ function buildWritePolicyReport(
 	packageGraph: XlsxPackageGraph,
 	preservation: ReturnType<AscendWorkbook['writePlanSummary']>,
 	packageGraphAudit: PackageGraphAudit,
+	workbook: Workbook,
 	externalReferences: readonly ExternalReferenceInfo[] = [],
 ): WritePolicyReport {
 	const diagnostics: WritePolicyDiagnostic[] = []
@@ -1346,6 +1352,26 @@ function buildWritePolicyReport(
 			preservationPolicy: 'preserve-exact',
 		})
 	}
+	const x14ConditionalFormatExtensionPayloads =
+		collectX14ConditionalFormatExtensionPayloads(workbook)
+	if (x14ConditionalFormatExtensionPayloads.length > 0) {
+		const partPaths = uniqueStrings(
+			x14ConditionalFormatExtensionPayloads.flatMap((entry) =>
+				entry.sheetPartPath ? [entry.sheetPartPath] : [],
+			),
+		)
+		diagnostics.push({
+			code: 'conditional-format-extension-preservation',
+			severity: 'warning',
+			message: `${x14ConditionalFormatExtensionPayloads.length} x14 conditional-format rule extension payload(s) will be preserved inside generated worksheet XML.`,
+			suggestedAction:
+				'Inspect sheet x14ConditionalFormats before editing conditional-format order or rules, then verify postWrite.packageGraphAudit after write.',
+			...(partPaths.length > 0 ? { partPaths } : {}),
+			featureFamily: 'x14ConditionalFormatting',
+			preservationPolicy: 'generated',
+			details: { x14ConditionalFormats: x14ConditionalFormatExtensionPayloads },
+		})
+	}
 	if (externalReferences.length > 0) {
 		const externalReferencePartPaths = uniqueStrings(
 			externalReferences.map((entry) => entry.partPath),
@@ -1433,9 +1459,53 @@ function buildWritePolicyReport(
 			packageGraphIssues: packageGraphAudit.issues.length,
 			externalReferences: externalReferences.length,
 			externalReferenceBindingIssues: externalReferenceBindingIssues.length,
+			x14ConditionalFormatExtensionPayloads: x14ConditionalFormatExtensionPayloads.length,
 			calcChainPolicy,
 		},
 	}
+}
+
+interface X14ConditionalFormatExtensionPayload {
+	readonly sheetName: string
+	readonly sheetPartPath?: string
+	readonly sqref: string
+	readonly index: number
+	readonly priority?: number
+	readonly type?: string
+	readonly preservedAttributeNames: readonly string[]
+	readonly preservedChildElements: readonly string[]
+}
+
+function collectX14ConditionalFormatExtensionPayloads(
+	workbook: Workbook,
+): X14ConditionalFormatExtensionPayload[] {
+	const payloads: X14ConditionalFormatExtensionPayload[] = []
+	for (const sheet of workbook.sheets) {
+		for (const format of sheet.x14ConditionalFormats) {
+			const preservedAttributeNames = Object.keys(format.preservedRuleAttributes ?? {}).sort()
+			const preservedChildElements = uniqueStrings(
+				(format.preservedRuleChildXml ?? []).map(preservedChildElementName),
+			).sort()
+			if (preservedAttributeNames.length === 0 && preservedChildElements.length === 0) {
+				continue
+			}
+			payloads.push({
+				sheetName: sheet.name,
+				...(sheet.preservedXml?.partPath ? { sheetPartPath: sheet.preservedXml.partPath } : {}),
+				sqref: format.sqref,
+				index: format.index,
+				...(format.priority !== undefined ? { priority: format.priority } : {}),
+				...(format.type ? { type: format.type } : {}),
+				preservedAttributeNames,
+				preservedChildElements,
+			})
+		}
+	}
+	return payloads
+}
+
+function preservedChildElementName(xml: string): string {
+	return /^<\s*([A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?)/.exec(xml)?.[1] ?? 'unknown'
 }
 
 function packagePartDetails(

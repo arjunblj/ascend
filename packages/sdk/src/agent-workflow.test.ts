@@ -443,6 +443,59 @@ describe('agent workflow loss audit', () => {
 		)
 	})
 
+	test('plans surface preserved x14 conditional formatting extension payloads', async () => {
+		const input = join(TEMP_DIR, 'x14-conditional-format.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		wb.getWorkbookModel().sheets[0]?.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'A1:A5',
+			type: 'dataBar',
+			priority: 4,
+			formulas: [],
+			preservedRuleAttributes: {
+				activePresent: '1',
+				'xr:uid': '{CF-UID}',
+			},
+			preservedRuleChildXml: [
+				'<x14:extLst><x14:ext uri="{cf-extension}"><x14ac:metadata flag="1"/></x14:ext></x14:extLst>',
+			],
+		})
+		await wb.save(input)
+
+		const plan = await createAgentPlan(input, [
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'B1', value: 7 }] },
+		])
+
+		expect(plan.writePolicy.summary.x14ConditionalFormatExtensionPayloads).toBe(1)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'conditional-format-extension-preservation',
+				severity: 'warning',
+				partPaths: ['xl/worksheets/sheet1.xml'],
+				featureFamily: 'x14ConditionalFormatting',
+				preservationPolicy: 'generated',
+				details: {
+					x14ConditionalFormats: [
+						{
+							sheetName: 'Sheet1',
+							sheetPartPath: 'xl/worksheets/sheet1.xml',
+							sqref: 'A1:A5',
+							index: 0,
+							priority: 4,
+							type: 'dataBar',
+							preservedAttributeNames: ['activePresent', 'xr:uid'],
+							preservedChildElements: ['x14:extLst'],
+						},
+					],
+				},
+			}),
+		)
+		expect(plan.trace.phases.find((phase) => phase.phase === 'write-policy')?.status).toBe(
+			'warning',
+		)
+	})
+
 	test('partial workbook views cannot produce full-fidelity write plans', async () => {
 		const wb = AscendWorkbook.create()
 		const bytes = wb.toBytes()

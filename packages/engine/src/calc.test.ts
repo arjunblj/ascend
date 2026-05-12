@@ -2385,6 +2385,66 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(3, 2)).toBeUndefined()
 	})
 
+	test('rebuilds imported stale spill metadata when recalculated dimensions shrink', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const anchorInfo = {
+			kind: 'spill' as const,
+			anchorRef: 'Sheet1!A1',
+			ref: 'A1:A4',
+			isAnchor: true,
+		}
+		const memberInfo = {
+			kind: 'spill' as const,
+			anchorRef: 'Sheet1!A1',
+			ref: 'A1:A4',
+			isAnchor: false,
+		}
+		sheet.cells.set(0, 0, {
+			value: numberValue(1),
+			formula: 'SEQUENCE(2)',
+			styleId: sid,
+			formulaInfo: anchorInfo,
+		})
+		sheet.cells.set(1, 0, {
+			value: numberValue(2),
+			formula: null,
+			styleId: sid,
+			formulaInfo: memberInfo,
+		})
+		sheet.cells.set(2, 0, {
+			value: numberValue(3),
+			formula: null,
+			styleId: sid,
+			formulaInfo: memberInfo,
+		})
+		sheet.cells.set(3, 0, {
+			value: numberValue(4),
+			formula: null,
+			styleId: sid,
+			formulaInfo: memberInfo,
+		})
+
+		recalculate(wb, makeCtx())
+
+		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toEqual({
+			kind: 'spill',
+			anchorRef: 'Sheet1!A1',
+			ref: 'A1:A2',
+			isAnchor: true,
+		})
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(1, 0)?.formulaInfo).toEqual({
+			kind: 'spill',
+			anchorRef: 'Sheet1!A1',
+			ref: 'A1:A2',
+			isAnchor: false,
+		})
+		expect(sheet.cells.get(2, 0)).toBeUndefined()
+		expect(sheet.cells.get(3, 0)).toBeUndefined()
+	})
+
 	test('spill shrink/grow: dynamic array size change updates spill range correctly', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -2446,6 +2506,68 @@ describe('recalculate', () => {
 
 		recalculate(wb, makeCtx())
 		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(6))
+	})
+
+	test('dirty recalc updates same-sheet spill dependents when a spill grows', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		for (let r = 0; r < 4; r++) {
+			sheet.cells.set(r, 0, { value: numberValue(r + 1), formula: null, styleId: sid })
+			sheet.cells.set(r, 1, {
+				value: { kind: 'boolean', value: r < 2 },
+				formula: null,
+				styleId: sid,
+			})
+		}
+		sheet.cells.set(0, 2, { value: EMPTY, formula: 'FILTER(A1:A4,B1:B4)', styleId: sid })
+		sheet.cells.set(0, 3, { value: EMPTY, formula: 'SUM(C1#)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 3)?.value).toEqual(numberValue(3))
+
+		sheet.cells.set(2, 1, { value: { kind: 'boolean', value: true }, formula: null, styleId: sid })
+		sheet.cells.set(3, 1, { value: { kind: 'boolean', value: true }, formula: null, styleId: sid })
+		recalculate(wb, makeCtx(), { dirtyOnly: true, dirtyRefs: ['Sheet1!B3:B4'] })
+
+		expect(sheet.cells.get(0, 2)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(3, 2)?.value).toEqual(numberValue(4))
+		expect(sheet.cells.get(0, 3)?.value).toEqual(numberValue(10))
+	})
+
+	test('dirty recalc updates cross-sheet spill dependents when a spill shrinks', () => {
+		const wb = createWorkbook()
+		const source = wb.addSheet('Source')
+		const summary = wb.addSheet('Summary')
+		for (let r = 0; r < 4; r++) {
+			source.cells.set(r, 0, { value: numberValue(r + 1), formula: null, styleId: sid })
+			source.cells.set(r, 1, {
+				value: { kind: 'boolean', value: true },
+				formula: null,
+				styleId: sid,
+			})
+		}
+		source.cells.set(0, 2, { value: EMPTY, formula: 'FILTER(A1:A4,B1:B4)', styleId: sid })
+		summary.cells.set(0, 0, { value: EMPTY, formula: 'SUM(Source!C1#)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(summary.cells.get(0, 0)?.value).toEqual(numberValue(10))
+
+		source.cells.set(2, 1, {
+			value: { kind: 'boolean', value: false },
+			formula: null,
+			styleId: sid,
+		})
+		source.cells.set(3, 1, {
+			value: { kind: 'boolean', value: false },
+			formula: null,
+			styleId: sid,
+		})
+		recalculate(wb, makeCtx(), { dirtyOnly: true, dirtyRefs: ['Source!B3:B4'] })
+
+		expect(source.cells.get(0, 2)?.value).toEqual(numberValue(1))
+		expect(source.cells.get(1, 2)?.value).toEqual(numberValue(2))
+		expect(source.cells.get(2, 2)).toBeUndefined()
+		expect(summary.cells.get(0, 0)?.value).toEqual(numberValue(3))
 	})
 
 	test('dynamic array functions spill sorted results', () => {

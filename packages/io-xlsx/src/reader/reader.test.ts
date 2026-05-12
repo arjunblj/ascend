@@ -3476,6 +3476,24 @@ describe('readXlsx', () => {
 		})
 	})
 
+	it('values-only byte parser rejects prefixed sheetData children for XML fallback', () => {
+		const xml = `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <x:row r="1"><x:c r="A1"><x:v>7</x:v></x:c></x:row>
+  </sheetData>
+</worksheet>`
+
+		const sheet = parseSheetValuesOnlyBytes('Sheet1', new TextEncoder().encode(xml), {
+			sharedStrings: emptySharedStrings(),
+			styleIds: [S0],
+			isDateFormat: [false],
+			hasDateStyles: false,
+			valuesOnly: true,
+		})
+
+		expect(sheet).toBeNull()
+	})
+
 	it('values-only byte parser hydrates canonical rows without generic cell parsing', () => {
 		const xml = `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <dimension ref="A1:AA1"/>

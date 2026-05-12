@@ -276,7 +276,6 @@ export function parseSheetValuesOnlyBytes(
 	if (!ctx.valuesOnly || ctx.richMetadata || ctx.formulaOnly) return null
 	const sheetDataLoc = locateSheetDataBytes(bytes)
 	if (!sheetDataLoc) return null
-	if (hasPrefixedElementNameBytes(bytes)) return null
 	if (hasUnsupportedValuesOnlyOuterTagsBytes(bytes, sheetDataLoc)) return null
 
 	const sheet = new Sheet(name, sheetId)
@@ -377,7 +376,6 @@ function hasRowPresentationMetadataInRange(xml: string, start: number, end: numb
 
 const BYTE_LT = 60
 const BYTE_SLASH = 47
-const BYTE_COLON = 58
 const BYTE_QUESTION = 63
 const BYTE_BANG = 33
 const BYTE_QUOTE = 34
@@ -426,8 +424,14 @@ function parseSheetDataBytes(
 	const cellOut = { row: 0, col: 0 }
 
 	while (true) {
-		const rowOpen = indexOfElementOpenBytes(bytes, BYTES_ROW_OPEN, rowCursor, sheetData.contentEnd)
+		const rowOpen = nextXmlElementOpenBytes(bytes, rowCursor, sheetData.contentEnd)
 		if (rowOpen === -1) return true
+		if (
+			rowOpen === -2 ||
+			!startsWithElementOpenAtBytes(bytes, BYTES_ROW_OPEN, rowOpen, sheetData.contentEnd)
+		) {
+			return false
+		}
 		const rowTagEnd = findTagEndBytes(bytes, rowOpen)
 		if (rowTagEnd === -1 || rowTagEnd >= sheetData.contentEnd) return false
 		const rowAttrStart = rowOpen + BYTES_ROW_OPEN.length
@@ -435,7 +439,9 @@ function parseSheetDataBytes(
 		const row = explicitRowIndex !== undefined ? explicitRowIndex - 1 : currentRow + 1
 		currentRow = row
 		if (ctx.maxRows !== undefined && row >= ctx.maxRows) return true
-		parseRowPresentationMetadataBytes(bytes, rowAttrStart, rowTagEnd, row, sheet)
+		if (hasRowPresentationMetadataBytes(bytes, rowAttrStart, rowTagEnd)) {
+			parseRowPresentationMetadataBytes(bytes, rowAttrStart, rowTagEnd, row, sheet)
+		}
 		if (isSelfClosingTagBytes(bytes, rowOpen, rowTagEnd)) {
 			rowCursor = rowTagEnd + 1
 			continue
@@ -450,8 +456,14 @@ function parseSheetDataBytes(
 		let cellCursor = rowTagEnd + 1
 		let nextCol = 0
 		while (true) {
-			const cellOpen = indexOfElementOpenBytes(bytes, BYTES_CELL_OPEN, cellCursor, rowClose)
+			const cellOpen = nextXmlElementOpenBytes(bytes, cellCursor, rowClose)
 			if (cellOpen === -1) break
+			if (
+				cellOpen === -2 ||
+				!startsWithElementOpenAtBytes(bytes, BYTES_CELL_OPEN, cellOpen, rowClose)
+			) {
+				return false
+			}
 			const cellTagEnd = findTagEndBytes(bytes, cellOpen)
 			if (cellTagEnd === -1 || cellTagEnd > rowClose) return false
 			const selfClosing = isSelfClosingTagBytes(bytes, cellOpen, cellTagEnd)
@@ -2233,32 +2245,6 @@ function parseDimensionRefBytes(bytes: Uint8Array): string | null {
 	return ref ?? null
 }
 
-function hasPrefixedElementNameBytes(bytes: Uint8Array): boolean {
-	let cursor = 0
-	while (cursor < bytes.length) {
-		if (bytes[cursor] !== BYTE_LT) {
-			cursor += 1
-			continue
-		}
-		cursor += 1
-		const first = bytes[cursor]
-		if (first === BYTE_QUESTION || first === BYTE_BANG) {
-			const tagEnd = findTagEndBytes(bytes, cursor - 1)
-			if (tagEnd === -1) return true
-			cursor = tagEnd + 1
-			continue
-		}
-		if (first === BYTE_SLASH) cursor += 1
-		while (cursor < bytes.length) {
-			const code = bytes[cursor]
-			if (code === BYTE_COLON) return true
-			if (isXmlNameDelimiterByte(code)) break
-			cursor += 1
-		}
-	}
-	return false
-}
-
 function hasUnsupportedValuesOnlyOuterTagsBytes(
 	bytes: Uint8Array,
 	sheetData: SheetDataLocation,
@@ -2506,6 +2492,12 @@ function indexOfElementOpenBytes(
 	return -1
 }
 
+function nextXmlElementOpenBytes(bytes: Uint8Array, start: number, end: number): number {
+	const cursor = skipXmlWhitespaceBytes(bytes, start, end)
+	if (cursor >= end) return -1
+	return bytes[cursor] === BYTE_LT ? cursor : -2
+}
+
 function hasElementOpenBytes(
 	bytes: Uint8Array,
 	needle: Uint8Array,
@@ -2544,6 +2536,51 @@ function isXmlWhitespaceByte(code: number | undefined): boolean {
 function skipXmlWhitespaceBytes(bytes: Uint8Array, cursor: number, end: number): number {
 	while (cursor < end && isXmlWhitespaceByte(bytes[cursor])) cursor += 1
 	return cursor
+}
+
+function hasRowPresentationMetadataBytes(bytes: Uint8Array, start: number, end: number): boolean {
+	let cursor = start
+	while (cursor < end) {
+		cursor = skipXmlWhitespaceBytes(bytes, cursor, end)
+		if (cursor >= end || bytes[cursor] === BYTE_SLASH) return false
+		const nameStart = cursor
+		while (cursor < end) {
+			const code = bytes[cursor]
+			if (code === 61 || isXmlWhitespaceByte(code)) break
+			cursor += 1
+		}
+		const nameEnd = cursor
+		const first = bytes[nameStart]
+		if (
+			(first === 104 &&
+				(asciiEquals(bytes, nameStart, nameEnd, 'ht') ||
+					asciiEquals(bytes, nameStart, nameEnd, 'hidden'))) ||
+			(first === 115 &&
+				(asciiEquals(bytes, nameStart, nameEnd, 's') ||
+					asciiEquals(bytes, nameStart, nameEnd, 'spans'))) ||
+			(first === 99 &&
+				(asciiEquals(bytes, nameStart, nameEnd, 'collapsed') ||
+					asciiEquals(bytes, nameStart, nameEnd, 'customHeight') ||
+					asciiEquals(bytes, nameStart, nameEnd, 'customFormat'))) ||
+			(first === 111 && asciiEquals(bytes, nameStart, nameEnd, 'outlineLevel')) ||
+			(first === 116 &&
+				(asciiEquals(bytes, nameStart, nameEnd, 'thickTop') ||
+					asciiEquals(bytes, nameStart, nameEnd, 'thickBot'))) ||
+			(first === 120 && asciiEquals(bytes, nameStart, nameEnd, 'x14ac:dyDescent'))
+		) {
+			return true
+		}
+		cursor = skipXmlWhitespaceBytes(bytes, cursor, end)
+		if (bytes[cursor] !== 61) return false
+		cursor = skipXmlWhitespaceBytes(bytes, cursor + 1, end)
+		const quote = bytes[cursor]
+		if (quote !== BYTE_QUOTE && quote !== BYTE_APOS) return false
+		cursor += 1
+		while (cursor < end && bytes[cursor] !== quote) cursor += 1
+		if (cursor >= end) return false
+		cursor += 1
+	}
+	return false
 }
 
 function rawAttrRangeBytes(
@@ -3107,13 +3144,21 @@ function asciiSlice(bytes: Uint8Array, start: number, end: number): string {
 
 function decodeXmlBytesText(bytes: Uint8Array, start: number, end: number): string {
 	let hasEntity = false
+	let needsUtf8Decoder = false
 	for (let index = start; index < end; index++) {
-		if (bytes[index] === BYTE_AMP) {
+		const byte = bytes[index]
+		if (byte === BYTE_AMP) {
 			hasEntity = true
+		} else if (byte !== undefined && byte >= 0x80) {
+			needsUtf8Decoder = true
+		}
+		if (hasEntity && needsUtf8Decoder) {
 			break
 		}
 	}
-	const text = BYTE_XML_DECODER.decode(bytes.subarray(start, end))
+	const text = needsUtf8Decoder
+		? BYTE_XML_DECODER.decode(bytes.subarray(start, end))
+		: asciiSlice(bytes, start, end)
 	return hasEntity ? decodeXmlText(text) : text
 }
 

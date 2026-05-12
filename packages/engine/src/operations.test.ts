@@ -1650,6 +1650,100 @@ describe('applyOperation', () => {
 		expect(s.tables[0]?.autoFilter?.ref).toBe('A1:B3')
 	})
 
+	test('deleteCols prunes deleted sortCondition refs across sheet, autofilter, and table sort states', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.autoFilter = {
+			ref: 'A1:D4',
+			columns: [],
+			sortState: {
+				ref: 'A1:D4',
+				conditions: [{ ref: 'B1:B4', descending: true }, { ref: 'D1:D4' }],
+			},
+		}
+		s.sortState = {
+			ref: 'A1:D4',
+			conditions: [{ ref: 'B1:B4', descending: true }, { ref: 'D1:D4' }],
+		}
+		s.tables.push({
+			id: createTableId(),
+			name: 'SortedTable',
+			sheetId: s.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 3 } },
+			columns: [{ name: 'A' }, { name: 'B' }, { name: 'C' }, { name: 'D' }],
+			hasHeaders: true,
+			hasTotals: false,
+			autoFilter: {
+				ref: 'A1:D4',
+				columns: [],
+				sortState: {
+					ref: 'A1:D4',
+					conditions: [{ ref: 'B1:B4', descending: true }, { ref: 'D1:D4' }],
+				},
+			},
+			sortState: {
+				ref: 'A1:D4',
+				conditions: [{ ref: 'B1:B4', descending: true }, { ref: 'D1:D4' }],
+			},
+		})
+
+		expectOk(applyOperation(wb, { op: 'deleteCols', sheet: 'Sheet1', at: 1, count: 1 }))
+
+		expect(s.autoFilter?.sortState).toEqual({
+			ref: 'A1:C4',
+			conditions: [{ ref: 'C1:C4' }],
+		})
+		expect(s.sortState).toEqual({
+			ref: 'A1:C4',
+			conditions: [{ ref: 'C1:C4' }],
+		})
+		expect(s.tables[0]?.autoFilter?.sortState).toEqual({
+			ref: 'A1:C4',
+			conditions: [{ ref: 'C1:C4' }],
+		})
+		expect(s.tables[0]?.sortState).toEqual({
+			ref: 'A1:C4',
+			conditions: [{ ref: 'C1:C4' }],
+		})
+	})
+
+	test('deleteCols removes empty sort states when every sortCondition ref is deleted', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.autoFilter = {
+			ref: 'A1:C4',
+			columns: [],
+			sortState: { ref: 'A1:C4', conditions: [{ ref: 'B1:B4' }] },
+		}
+		s.preservedAutoFilterSortStateAttributes = { ref: 'A1:C4' }
+		s.sortState = { ref: 'A1:C4', conditions: [{ ref: 'B1:B4' }] }
+		s.preservedSortStateAttributes = { ref: 'A1:C4' }
+		s.tables.push({
+			id: createTableId(),
+			name: 'EmptySortedTable',
+			sheetId: s.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 2 } },
+			columns: [{ name: 'A' }, { name: 'B' }, { name: 'C' }],
+			hasHeaders: true,
+			hasTotals: false,
+			autoFilter: {
+				ref: 'A1:C4',
+				columns: [],
+				sortState: { ref: 'A1:C4', conditions: [{ ref: 'B1:B4' }] },
+			},
+			sortState: { ref: 'A1:C4', conditions: [{ ref: 'B1:B4' }] },
+		})
+
+		expectOk(applyOperation(wb, { op: 'deleteCols', sheet: 'Sheet1', at: 1, count: 1 }))
+
+		expect(s.autoFilter).toEqual({ ref: 'A1:B4', columns: [] })
+		expect(s.preservedAutoFilterSortStateAttributes).toBeNull()
+		expect(s.sortState).toBeNull()
+		expect(s.preservedSortStateAttributes).toBeNull()
+		expect(s.tables[0]?.autoFilter).toEqual({ ref: 'A1:B4', columns: [] })
+		expect(s.tables[0]?.sortState).toBeUndefined()
+	})
+
 	test('insertRows rewrites formulas', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

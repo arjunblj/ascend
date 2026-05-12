@@ -1,4 +1,4 @@
-import type { Sheet } from '@ascend/core'
+import type { Sheet, SortState } from '@ascend/core'
 import { rewriteSheetMetadataFormulasForShift } from './formula-rewrite.ts'
 import {
 	expandSqrefRows,
@@ -28,6 +28,7 @@ export function shiftSheetCellMetadata(
 	shiftX14SqrefEntries(sheet.x14ConditionalFormats, axis, at, delta)
 	shiftIgnoredErrors(sheet.ignoredErrors, axis, at, delta)
 	shiftSheetAutoFilter(sheet, axis, at, delta)
+	shiftSheetSortState(sheet, axis, at, delta)
 	shiftSheetTables(sheet, axis, at, delta)
 	rewriteSheetMetadataFormulasForShift(sheet, axis, at, delta)
 }
@@ -191,26 +192,23 @@ function shiftSheetAutoFilter(sheet: Sheet, axis: 'row' | 'col', at: number, del
 	const ref = shiftSqref(sheet.autoFilter.ref, axis, at, delta)
 	if (!ref) {
 		sheet.autoFilter = null
+		sheet.preservedAutoFilterSortStateAttributes = null
 		return
 	}
+	const sortState = shiftSortState(sheet.autoFilter.sortState, axis, at, delta)
+	const { sortState: _sortState, ...autoFilter } = sheet.autoFilter
 	sheet.autoFilter = {
-		...sheet.autoFilter,
+		...autoFilter,
 		ref,
-		...(sheet.autoFilter.sortState
-			? {
-					sortState: {
-						...sheet.autoFilter.sortState,
-						ref:
-							shiftSqref(sheet.autoFilter.sortState.ref, axis, at, delta) ??
-							sheet.autoFilter.sortState.ref,
-						conditions: sheet.autoFilter.sortState.conditions.map((condition) => ({
-							...condition,
-							ref: shiftSqref(condition.ref, axis, at, delta) ?? condition.ref,
-						})),
-					},
-				}
-			: {}),
+		...(sortState ? { sortState } : {}),
 	}
+	if (!sortState) sheet.preservedAutoFilterSortStateAttributes = null
+}
+
+function shiftSheetSortState(sheet: Sheet, axis: 'row' | 'col', at: number, delta: number): void {
+	if (!sheet.sortState) return
+	sheet.sortState = shiftSortState(sheet.sortState, axis, at, delta) ?? null
+	if (!sheet.sortState) sheet.preservedSortStateAttributes = null
 }
 
 function shiftSheetTables(sheet: Sheet, axis: 'row' | 'col', at: number, delta: number): void {
@@ -219,45 +217,50 @@ function shiftSheetTables(sheet: Sheet, axis: 'row' | 'col', at: number, delta: 
 		if (!table) continue
 		const ref = shiftRangeRef(table.ref, axis, at, delta)
 		if (!ref) continue
+		const autoFilterRef = table.autoFilter?.ref
+			? shiftSqref(table.autoFilter.ref, axis, at, delta)
+			: undefined
+		const autoFilterSortState = shiftSortState(table.autoFilter?.sortState, axis, at, delta)
+		const sortState = shiftSortState(table.sortState, axis, at, delta)
+		const { autoFilter: _autoFilter, sortState: _tableSortState, ...shiftedTable } = table
+		const { sortState: _autoFilterSortState, ...shiftedAutoFilter } = table.autoFilter ?? {
+			ref: '',
+			columns: [],
+		}
 		sheet.tables[index] = {
-			...table,
+			...shiftedTable,
 			ref,
-			...(table.autoFilter
+			...(table.autoFilter && autoFilterRef
 				? {
 						autoFilter: {
-							...table.autoFilter,
-							ref: shiftSqref(table.autoFilter.ref, axis, at, delta) ?? table.autoFilter.ref,
-							...(table.autoFilter.sortState
-								? {
-										sortState: {
-											...table.autoFilter.sortState,
-											ref:
-												shiftSqref(table.autoFilter.sortState.ref, axis, at, delta) ??
-												table.autoFilter.sortState.ref,
-											conditions: table.autoFilter.sortState.conditions.map((condition) => ({
-												...condition,
-												ref: shiftSqref(condition.ref, axis, at, delta) ?? condition.ref,
-											})),
-										},
-									}
-								: {}),
+							...shiftedAutoFilter,
+							ref: autoFilterRef,
+							...(autoFilterSortState ? { sortState: autoFilterSortState } : {}),
 						},
 					}
 				: {}),
-			...(table.sortState
-				? {
-						sortState: {
-							...table.sortState,
-							ref: shiftSqref(table.sortState.ref, axis, at, delta) ?? table.sortState.ref,
-							conditions: table.sortState.conditions.map((condition) => ({
-								...condition,
-								ref: shiftSqref(condition.ref, axis, at, delta) ?? condition.ref,
-							})),
-						},
-					}
-				: {}),
+			...(sortState ? { sortState } : {}),
 		}
 	}
+}
+
+function shiftSortState(
+	sortState: SortState | null | undefined,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): SortState | undefined {
+	if (!sortState) return undefined
+	const ref = shiftSqref(sortState.ref, axis, at, delta)
+	if (!ref) return undefined
+	const conditions = sortState.conditions
+		.map((condition) => {
+			const conditionRef = shiftSqref(condition.ref, axis, at, delta)
+			return conditionRef ? { ...condition, ref: conditionRef } : null
+		})
+		.filter((condition): condition is SortState['conditions'][number] => condition !== null)
+	if (conditions.length === 0) return undefined
+	return { ...sortState, ref, conditions }
 }
 
 export function expandTableRefRows(ref: string, count: number): string {

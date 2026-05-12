@@ -3936,6 +3936,63 @@ describe('applyOperation', () => {
 		])
 	})
 
+	test('deleteTable rejects structured references that would outlive the table', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 2 } },
+			columns: [
+				{ id: 1, name: 'Region' },
+				{ id: 2, name: 'Rep' },
+				{ id: 3, name: 'Amount' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+		sheet.cells.set(5, 0, { value: EMPTY, formula: 'COUNTA(Sales[Rep])', styleId: sid })
+
+		const result = applyOperation(wb, { op: 'deleteTable', table: 'Sales' })
+
+		expectErr(result)
+		expect(result.error.message).toContain('Sheet1!A6 cell formula')
+		expect(result.error.message).toContain('Sales[Rep]')
+		expect(result.error.suggestedFix).toContain('Rewrite or remove structured references')
+		expect(sheet.tables).toHaveLength(1)
+		expect(sheet.cells.get(5, 0)?.formula).toBe('COUNTA(Sales[Rep])')
+	})
+
+	test('deleteTable rejects defined names and worksheet metadata structured references', () => {
+		{
+			const { wb, sheet } = setupSalesRepTable()
+			wb.definedNames.set('SalesReps', 'COUNTA(Sales[Rep])')
+
+			const result = applyOperation(wb, { op: 'deleteTable', table: 'Sales' })
+
+			expectErr(result)
+			expect(result.error.message).toContain('SalesReps defined name')
+			expect(result.error.message).toContain('Sales[Rep]')
+			expect(sheet.tables).toHaveLength(1)
+			expect(wb.definedNames.get('SalesReps')).toBe('COUNTA(Sales[Rep])')
+		}
+
+		for (const scenario of TABLE_FIELD_METADATA_BLOCKERS) {
+			const { wb, sheet } = setupSalesRepTable()
+			scenario.add(sheet)
+
+			const result = applyOperation(wb, { op: 'deleteTable', table: 'Sales' })
+
+			expectErr(result)
+			const diagnostic = `${scenario.label}: ${result.error.message}`
+			expect(diagnostic).toContain(`${scenario.sourceRef} ${scenario.sourceKind}`)
+			expect(diagnostic).toContain('Sales[Rep]')
+			expect(result.error.suggestedFix).toContain('Rewrite or remove structured references')
+			expect(sheet.tables).toHaveLength(1)
+		}
+	})
+
 	test('table management operations rename, resize, and delete table metadata', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -3951,6 +4008,15 @@ describe('applyOperation', () => {
 			ref: 'A1:B2',
 			name: 'Sales',
 			hasHeaders: true,
+		})
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Archive',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 7 }, end: { row: 1, col: 7 } },
+			columns: [{ name: 'Legacy' }],
+			hasHeaders: true,
+			hasTotals: false,
 		})
 		sheet.cells.set(3, 0, { value: EMPTY, formula: 'SUM(Sales[Value])', styleId: sid })
 		wb.definedNames.set('SalesValues', 'SUM(Sales[Value])')
@@ -4045,10 +4111,10 @@ describe('applyOperation', () => {
 			conditions: [{ ref: 'A1:A2' }],
 		})
 
-		const deleted = applyOperation(wb, { op: 'deleteTable', table: 'Revenue' })
+		const deleted = applyOperation(wb, { op: 'deleteTable', table: 'Archive' })
 		expectOk(deleted)
 		expect(deleted.value.recalcRequired).toBe(true)
-		expect(sheet.tables).toHaveLength(0)
+		expect(sheet.tables.map((table) => table.name)).toEqual(['Revenue'])
 		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(10))
 	})
 

@@ -24,6 +24,7 @@ import {
 import { sortSheetRange } from '../structural/sort-range.ts'
 import {
 	collectDroppedTableColumnsForResize,
+	collectTableColumnsForDelete,
 	type DeletedTableColumnReference,
 	findDeletedTableColumnReference,
 } from '../structural/table-field-guards.ts'
@@ -212,6 +213,14 @@ export function handleDeleteTable(
 		return err(ascendError('NAME_NOT_FOUND', `Table "${op.table}" not found`))
 	}
 	const { table, sheet } = located
+	const deletedColumnBlocker = findDeletedTableColumnReference(
+		workbook,
+		collectTableColumnsForDelete(table),
+		{ skipDeletedTableColumnFormulas: true },
+	)
+	if (deletedColumnBlocker) {
+		return err(tableDeleteReferenceError(deletedColumnBlocker))
+	}
 	const idx = sheet.tables.findIndex((t) => t.id === table.id)
 	if (idx >= 0) sheet.tables.splice(idx, 1)
 	if (sheet.autoFilter?.ref) {
@@ -430,6 +439,20 @@ function tableResizeDroppedColumnReferenceError(
 			refs: [blocker.sourceRef],
 			suggestedFix:
 				'Rewrite or remove structured references to the table field before resizing the table to exclude it.',
+		},
+	)
+}
+
+function tableDeleteReferenceError(
+	blocker: DeletedTableColumnReference,
+): ReturnType<typeof ascendError> {
+	return ascendError(
+		'VALIDATION_ERROR',
+		`Cannot delete table because ${blocker.sourceRef} ${blocker.sourceKind} references table column ${blocker.tableName}[${blocker.columnName}]`,
+		{
+			refs: [blocker.sourceRef],
+			suggestedFix:
+				'Rewrite or remove structured references to the table before deleting the table metadata.',
 		},
 	)
 }

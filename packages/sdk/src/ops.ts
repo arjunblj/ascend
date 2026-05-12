@@ -552,7 +552,12 @@ export function listOperations(): readonly OperationSchema[] {
 			description: 'Set workbook-level protection metadata',
 			requiredFields: ['protection'],
 		},
-		{ op: 'deleteTable', description: 'Remove a table from its sheet', requiredFields: ['table'] },
+		{
+			op: 'deleteTable',
+			description:
+				'Remove table metadata only after structured references are rewritten or removed',
+			requiredFields: ['table'],
+		},
 		{
 			op: 'renameTable',
 			description: 'Rename an existing table to a workbook-unique name',
@@ -1190,7 +1195,6 @@ function operationRecoveryActions(op: string): readonly string[] {
 		case 'deleteSheet':
 		case 'deleteRows':
 		case 'deleteCols':
-		case 'deleteTable':
 		case 'deleteDefinedName':
 			return [
 				'Review plan.approvals and provide --approval only for intentional deletion.',
@@ -1212,6 +1216,13 @@ function operationRecoveryActions(op: string): readonly string[] {
 			return [
 				'Run ascend check first on imported workbooks; overlapping table ranges make append ownership ambiguous.',
 				'Confirm appended rows will not expand the table into another table; totals-row appends can insert rows and must not shift another table.',
+				...common,
+			]
+		case 'deleteTable':
+			return [
+				'Run ascend check first on imported workbooks; duplicate table names, duplicate ids, overlapping ranges, or structured-reference issues must be resolved before deleting table metadata.',
+				'Rewrite or remove structured references that target the table before deleting its metadata.',
+				'Review plan.approvals and provide --approval only for intentional deletion.',
 				...common,
 			]
 		case 'renameTable':

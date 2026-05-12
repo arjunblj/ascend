@@ -92,6 +92,28 @@ export function collectDroppedTableColumnsForResize(
 			]
 }
 
+export function collectTableColumnsForDelete(table: Table): DeletedTableColumnSet[] {
+	if (table.columns.length === 0) return []
+	const deletedIndexes = new Set<number>()
+	const deletedNames = new Set<string>()
+	const indexByName = new Map<string, number>()
+	for (const [index, column] of table.columns.entries()) {
+		const lowerName = column.name.toLowerCase()
+		deletedIndexes.add(index)
+		deletedNames.add(lowerName)
+		indexByName.set(lowerName, index)
+	}
+	return [
+		{
+			table,
+			tableNameLower: table.name.toLowerCase(),
+			deletedIndexes,
+			deletedNames,
+			indexByName,
+		},
+	]
+}
+
 export function findDeletedTableColumnReference(
 	workbook: Workbook,
 	deletedSets: readonly DeletedTableColumnSet[],

@@ -1049,6 +1049,88 @@ describe('agent workflow loss audit', () => {
 		)
 	})
 
+	test('plans attach legacy comment package graph relationship failures to comment risk', async () => {
+		const input = join(TEMP_DIR, 'legacy-comments-missing-target.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makeMissingLegacyCommentsTargetXlsx())
+
+		const plan = await createAgentPlan(input, [
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'ok' }] },
+		])
+
+		expect(plan.packageGraphAudit.issues).toContainEqual(
+			expect.objectContaining({
+				code: 'package_relationship_target',
+				relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+				relationshipId: 'rIdComments',
+				featureFamily: 'preservedComments',
+			}),
+		)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'legacy-comment-preservation-risk',
+				details: expect.objectContaining({
+					packageGraphIssues: expect.arrayContaining([
+						expect.objectContaining({
+							code: 'package_relationship_target',
+							relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+							relationshipId: 'rIdComments',
+						}),
+					]),
+					verifyIssues: expect.arrayContaining([
+						expect.objectContaining({
+							rule: 'legacy-comment-drawing-integrity',
+							details: expect.objectContaining({
+								kind: 'legacy-comments-relationship-missing-target',
+							}),
+						}),
+					]),
+				}),
+			}),
+		)
+	})
+
+	test('plans attach threaded comment package graph relationship failures to threaded risk', async () => {
+		const input = join(TEMP_DIR, 'threaded-comments-missing-target.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makeMissingThreadedCommentsTargetXlsx())
+
+		const plan = await createAgentPlan(input, [
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'ok' }] },
+		])
+
+		expect(plan.packageGraphAudit.issues).toContainEqual(
+			expect.objectContaining({
+				code: 'package_relationship_target',
+				relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+				relationshipId: 'rIdThreaded',
+				featureFamily: 'preservedThreadedComments',
+			}),
+		)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'threaded-comment-preservation-risk',
+				details: expect.objectContaining({
+					packageGraphIssues: expect.arrayContaining([
+						expect.objectContaining({
+							code: 'package_relationship_target',
+							relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+							relationshipId: 'rIdThreaded',
+						}),
+					]),
+					verifyIssues: expect.arrayContaining([
+						expect.objectContaining({
+							rule: 'threaded-comment-integrity',
+							details: expect.objectContaining({
+								kind: 'threaded-comment-relationship-missing-target',
+							}),
+						}),
+					]),
+				}),
+			}),
+		)
+	})
+
 	test('plans explain preserved x14 conditional formatting payloads without warning on unrelated edits', async () => {
 		const input = join(TEMP_DIR, 'x14-conditional-format.xlsx')
 		mkdirSync(TEMP_DIR, { recursive: true })
@@ -1615,6 +1697,78 @@ function makeThreadedCommentXlsx(options: { readonly includePersons?: boolean } 
     <text>Reviewed</text>
   </threadedComment>
 </ThreadedComments>`),
+			}),
+		),
+	)
+}
+
+function makeMissingLegacyCommentsTargetXlsx(): Uint8Array {
+	return createZip(
+		new Map(
+			Object.entries({
+				'[Content_Types].xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`),
+				'_rels/.rels': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+				'xl/_rels/workbook.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`),
+				'xl/workbook.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`),
+				'xl/worksheets/sheet1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`),
+				'xl/worksheets/_rels/sheet1.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdComments" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="../comments1.xml"/>
+</Relationships>`),
+			}),
+		),
+	)
+}
+
+function makeMissingThreadedCommentsTargetXlsx(): Uint8Array {
+	return createZip(
+		new Map(
+			Object.entries({
+				'[Content_Types].xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`),
+				'_rels/.rels': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+				'xl/_rels/workbook.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`),
+				'xl/workbook.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`),
+				'xl/worksheets/sheet1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`),
+				'xl/worksheets/_rels/sheet1.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdThreaded" Type="http://schemas.microsoft.com/office/2017/10/relationships/threadedComment" Target="../threadedComments/missing.xml"/>
+</Relationships>`),
 			}),
 		),
 	)

@@ -1520,7 +1520,10 @@ function buildWritePolicyReport(
 			details: {
 				comments: legacyCommentLocations,
 				relatedOperations,
-				packageGraphIssues: packageGraphIssuesForParts(packageGraphAudit, legacyCommentPartPaths),
+				packageGraphIssues: packageGraphIssuesForParts(packageGraphAudit, legacyCommentPartPaths, [
+					'preservedComments',
+					'preservedVml',
+				]),
 				verifyIssues: commentIntegrityIssues.legacy,
 				safeTextEdit: 'setComment',
 			},
@@ -1552,7 +1555,11 @@ function buildWritePolicyReport(
 			details: {
 				threadedComments: threadedCommentLocations,
 				relatedOperations,
-				packageGraphIssues: packageGraphIssuesForParts(packageGraphAudit, threadedCommentPartPaths),
+				packageGraphIssues: packageGraphIssuesForParts(
+					packageGraphAudit,
+					threadedCommentPartPaths,
+					['preservedThreadedComments'],
+				),
 				verifyIssues: commentIntegrityIssues.threaded,
 				safeTextEdit: 'setThreadedComment',
 			},
@@ -3334,10 +3341,20 @@ function collectThreadedCommentPartPaths(
 function packageGraphIssuesForParts(
 	audit: PackageGraphAudit,
 	partPaths: readonly string[],
+	featureFamilies: readonly string[] = [],
 ): readonly XlsxPackageGraphFidelityIssue[] {
-	if (partPaths.length === 0) return []
+	if (partPaths.length === 0 && featureFamilies.length === 0) return []
 	const pathSet = new Set(partPaths)
-	return audit.issues.filter((issue) => issue.partPath !== undefined && pathSet.has(issue.partPath))
+	const featureFamilySet = new Set(featureFamilies)
+	return audit.issues.filter((issue) => {
+		if (issue.partPath !== undefined && pathSet.has(issue.partPath)) return true
+		if (issue.sourcePartPath !== undefined && pathSet.has(issue.sourcePartPath)) return true
+		if (issue.relationshipPartPath !== undefined && pathSet.has(issue.relationshipPartPath)) {
+			return true
+		}
+		if (typeof issue.actual === 'string' && pathSet.has(issue.actual)) return true
+		return issue.featureFamily !== undefined && featureFamilySet.has(issue.featureFamily)
+	})
 }
 
 function collectLegacyCommentRelatedOperations(

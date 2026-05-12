@@ -2267,6 +2267,19 @@ interface ExternalMetadataReference {
 	readonly token?: string
 }
 
+interface InvalidSqrefReference {
+	readonly field: 'sqref'
+	readonly reference: string
+	readonly token: string
+	readonly reason?: string
+}
+
+interface DeletedFormulaReference {
+	readonly field: string
+	readonly reference: string
+	readonly error: '#REF!'
+}
+
 function sqrefTokens(sqref: string): string[] {
 	return sqref.trim().split(/\s+/).filter(Boolean)
 }
@@ -2278,12 +2291,34 @@ function x14EntryRefs(sheetName: string, sqref: string, fallback: string): strin
 	return refs.length > 0 ? refs : [`${sheetName}#${fallback}`]
 }
 
+function invalidSqrefReferences(sqref: string): InvalidSqrefReference[] {
+	const invalid: InvalidSqrefReference[] = []
+	for (const token of sqrefTokens(sqref)) {
+		try {
+			parseRange(token)
+		} catch (error) {
+			invalid.push({
+				field: 'sqref',
+				reference: sqref,
+				token,
+				...(error instanceof Error ? { reason: error.message } : {}),
+			})
+		}
+	}
+	return invalid
+}
+
 function missingSheetReferencesInSqref(
 	sqref: string,
 	sheetNameSet: ReadonlySet<string>,
 ): MissingSheetReference[] {
 	const missing: MissingSheetReference[] = []
 	for (const token of sqrefTokens(sqref)) {
+		try {
+			parseRange(token)
+		} catch {
+			continue
+		}
 		const parsed = chartReferenceSheetName(token)
 		if (parsed.external || !parsed.sheetName) continue
 		if (sheetNameSet.has(parsed.sheetName.toLowerCase())) continue
@@ -2373,6 +2408,12 @@ function externalReferencesInFormula(entry: X14FormulaReferenceEntry): ExternalM
 	return external
 }
 
+function deletedReferencesInFormula(entry: X14FormulaReferenceEntry): DeletedFormulaReference[] {
+	const parsed = parseFormulaText(entry.formula)
+	if (!parsed.ok || !formulaHasDeletedReference(parsed.value)) return []
+	return [{ field: entry.field, reference: entry.formula, error: '#REF!' }]
+}
+
 function sheetNamesForFormula(node: FormulaNode): string[] {
 	const sheetNames = new Map<string, string>()
 	for (const ref of extractRefs(node)) {
@@ -2380,6 +2421,29 @@ function sheetNamesForFormula(node: FormulaNode): string[] {
 	}
 	collectSheetQualifiedNameReferences(node, sheetNames)
 	return [...sheetNames.values()]
+}
+
+function formulaHasDeletedReference(node: FormulaNode): boolean {
+	switch (node.type) {
+		case 'error':
+			return node.value === '#REF!'
+		case 'binary':
+			return formulaHasDeletedReference(node.left) || formulaHasDeletedReference(node.right)
+		case 'dynamicRangeRef':
+			return formulaHasDeletedReference(node.start) || formulaHasDeletedReference(node.end)
+		case 'unary':
+			return formulaHasDeletedReference(node.operand)
+		case 'function':
+			return node.args.some(formulaHasDeletedReference)
+		case 'array':
+			return node.rows.some((row) => row.some(formulaHasDeletedReference))
+		case 'spillRef':
+			return formulaHasDeletedReference(node.target)
+		case 'sheetSpanRef':
+			return formulaHasDeletedReference(node.target)
+		default:
+			return false
+	}
 }
 
 function addFormulaSheetName(sheetNames: Map<string, string>, sheetName: string): void {
@@ -2511,7 +2575,9 @@ function pushX14MissingTableIssues(
 function formulaHasDetectableReferences(formula: string | undefined): boolean {
 	if (!formula) return false
 	const parsed = parseFormulaText(formula)
-	return parsed.ok && extractRefs(parsed.value).length > 0
+	return (
+		parsed.ok && (extractRefs(parsed.value).length > 0 || formulaHasDeletedReference(parsed.value))
+	)
 }
 
 function x14FormulaLiveFields(entries: readonly X14FormulaReferenceEntry[]): string[] {
@@ -2600,6 +2666,72 @@ function pushX14MissingSheetIssues(
 				reference: missing.reference,
 				missingSheet: missing.sheetName,
 				...(missing.token ? { token: missing.token } : {}),
+			},
+		})
+	}
+}
+
+function pushInvalidX14SqrefIssues(
+	issues: CheckIssue[],
+	params: {
+		readonly rule: 'conditional-format-integrity' | 'data-validation-integrity'
+		readonly source: 'x14ConditionalFormat' | 'x14DataValidation'
+		readonly sheetName: string
+		readonly index: number
+		readonly sqref: string
+		readonly invalid: readonly InvalidSqrefReference[]
+		readonly fallbackRef: string
+	},
+): void {
+	for (const invalid of params.invalid) {
+		issues.push({
+			rule: params.rule,
+			severity: 'error',
+			message: `${params.source} sqref on sheet "${params.sheetName}" contains invalid range token "${invalid.token}"`,
+			refs: x14EntryRefs(params.sheetName, params.sqref, params.fallbackRef),
+			suggestedFix: 'Repair the x14 sqref range before writing preserved extension metadata.',
+			details: {
+				kind: 'x14-sqref-invalid',
+				source: params.source,
+				sheetName: params.sheetName,
+				index: params.index,
+				field: invalid.field,
+				reference: invalid.reference,
+				token: invalid.token,
+				...(invalid.reason ? { reason: invalid.reason } : {}),
+			},
+		})
+	}
+}
+
+function pushX14DeletedFormulaReferenceIssues(
+	issues: CheckIssue[],
+	params: {
+		readonly rule: 'conditional-format-integrity' | 'data-validation-integrity'
+		readonly source: 'x14ConditionalFormat' | 'x14DataValidation'
+		readonly sheetName: string
+		readonly index: number
+		readonly sqref: string
+		readonly deleted: readonly DeletedFormulaReference[]
+		readonly fallbackRef: string
+	},
+): void {
+	for (const deleted of params.deleted) {
+		issues.push({
+			rule: params.rule,
+			severity: 'error',
+			message: `${params.source} ${deleted.field} on sheet "${params.sheetName}" contains deleted reference ${deleted.error}`,
+			refs: x14EntryRefs(params.sheetName, params.sqref, params.fallbackRef),
+			suggestedFix:
+				'Repair the deleted formula reference before writing preserved x14 extension metadata.',
+			details: {
+				kind: 'x14-formula-deleted-reference',
+				source: params.source,
+				sheetName: params.sheetName,
+				index: params.index,
+				field: deleted.field,
+				reference: deleted.reference,
+				error: deleted.error,
 			},
 		})
 	}
@@ -2750,6 +2882,15 @@ function checkX14DataValidationIntegrity(
 				formulaEntries.push({ field: 'formula2', formula: validation.formula2 })
 			}
 			const fallbackRef = `x14DataValidation[${validation.index}]`
+			pushInvalidX14SqrefIssues(issues, {
+				rule: 'data-validation-integrity',
+				source: 'x14DataValidation',
+				sheetName: sheet.name,
+				index: validation.index,
+				sqref: validation.sqref,
+				invalid: invalidSqrefReferences(validation.sqref),
+				fallbackRef,
+			})
 			pushX14MissingSheetIssues(issues, {
 				rule: 'data-validation-integrity',
 				source: 'x14DataValidation',
@@ -2774,6 +2915,15 @@ function checkX14DataValidationIntegrity(
 				missing: formulaEntries.flatMap((entry) =>
 					missingTableReferencesInFormula(entry, tableNameSet),
 				),
+				fallbackRef,
+			})
+			pushX14DeletedFormulaReferenceIssues(issues, {
+				rule: 'data-validation-integrity',
+				source: 'x14DataValidation',
+				sheetName: sheet.name,
+				index: validation.index,
+				sqref: validation.sqref,
+				deleted: formulaEntries.flatMap(deletedReferencesInFormula),
 				fallbackRef,
 			})
 			pushExternalMetadataReferenceIssues(issues, {
@@ -2904,6 +3054,15 @@ function checkConditionalFormatIntegrity(wb: Workbook): CheckIssue[] {
 		for (const format of sheet.x14ConditionalFormats) {
 			const fallbackRef = `x14ConditionalFormat[${format.index}]`
 			const formulaEntries = x14ConditionalFormatFormulaEntries(format)
+			pushInvalidX14SqrefIssues(issues, {
+				rule: 'conditional-format-integrity',
+				source: 'x14ConditionalFormat',
+				sheetName: sheet.name,
+				index: format.index,
+				sqref: format.sqref,
+				invalid: invalidSqrefReferences(format.sqref),
+				fallbackRef,
+			})
 			pushX14MissingSheetIssues(issues, {
 				rule: 'conditional-format-integrity',
 				source: 'x14ConditionalFormat',
@@ -2928,6 +3087,15 @@ function checkConditionalFormatIntegrity(wb: Workbook): CheckIssue[] {
 				missing: formulaEntries.flatMap((entry) =>
 					missingTableReferencesInFormula(entry, tableNameSet),
 				),
+				fallbackRef,
+			})
+			pushX14DeletedFormulaReferenceIssues(issues, {
+				rule: 'conditional-format-integrity',
+				source: 'x14ConditionalFormat',
+				sheetName: sheet.name,
+				index: format.index,
+				sqref: format.sqref,
+				deleted: formulaEntries.flatMap(deletedReferencesInFormula),
 				fallbackRef,
 			})
 			pushExternalMetadataReferenceIssues(issues, {

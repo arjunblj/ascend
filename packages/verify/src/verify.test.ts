@@ -1914,6 +1914,123 @@ describe('checker', () => {
 		})
 	})
 
+	test('detects malformed x14 sqref ranges', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.x14DataValidations.push({
+			index: 0,
+			sqref: 'A1:Bogus',
+			type: 'list',
+		})
+		s.x14ConditionalFormats.push({
+			index: 0,
+			sqref: '#REF!',
+			type: 'dataBar',
+			formulas: [],
+		})
+
+		const result = check(wb)
+		const invalidIssues = result.issues.filter(
+			(i) =>
+				(i.rule === 'data-validation-integrity' || i.rule === 'conditional-format-integrity') &&
+				i.details?.kind === 'x14-sqref-invalid',
+		)
+		const missingSqrefIssues = result.issues.filter(
+			(i) =>
+				(i.rule === 'data-validation-integrity' || i.rule === 'conditional-format-integrity') &&
+				i.details?.kind === 'x14-sqref-missing-sheet',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(invalidIssues).toHaveLength(2)
+		expect(invalidIssues).toContainEqual(
+			expect.objectContaining({
+				rule: 'data-validation-integrity',
+				severity: 'error',
+				refs: ['Sheet1!A1:Bogus'],
+				details: expect.objectContaining({
+					source: 'x14DataValidation',
+					field: 'sqref',
+					reference: 'A1:Bogus',
+					token: 'A1:Bogus',
+				}),
+			}),
+		)
+		expect(invalidIssues).toContainEqual(
+			expect.objectContaining({
+				rule: 'conditional-format-integrity',
+				severity: 'error',
+				details: expect.objectContaining({
+					source: 'x14ConditionalFormat',
+					field: 'sqref',
+					reference: '#REF!',
+					token: '#REF!',
+				}),
+			}),
+		)
+		expect(missingSqrefIssues).toHaveLength(0)
+	})
+
+	test('detects deleted references in x14 metadata formulas', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.x14DataValidations.push({
+			index: 0,
+			sqref: 'A1:A5',
+			type: 'list',
+			formula1: '#REF!',
+			formula2: 'SUM(#REF!)',
+		})
+		s.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'B1:B5',
+			type: 'dataBar',
+			formulas: ['#REF!'],
+			dataBar: { cfvo: [{ type: 'formula', value: 'SUM(#REF!)' }] },
+		})
+
+		const result = check(wb)
+		const deletedIssues = result.issues.filter(
+			(i) =>
+				(i.rule === 'data-validation-integrity' || i.rule === 'conditional-format-integrity') &&
+				i.details?.kind === 'x14-formula-deleted-reference',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(deletedIssues).toHaveLength(4)
+		expect(deletedIssues.every((issue) => issue.severity === 'error')).toBe(true)
+		expect(deletedIssues.map((issue) => issue.details?.field).sort()).toEqual([
+			'dataBar.cfvo[0].value',
+			'formula1',
+			'formula2',
+			'formulas[0]',
+		])
+		expect(deletedIssues).toContainEqual(
+			expect.objectContaining({
+				rule: 'data-validation-integrity',
+				refs: ['Sheet1!A1:A5'],
+				details: expect.objectContaining({
+					source: 'x14DataValidation',
+					field: 'formula2',
+					reference: 'SUM(#REF!)',
+					error: '#REF!',
+				}),
+			}),
+		)
+		expect(deletedIssues).toContainEqual(
+			expect.objectContaining({
+				rule: 'conditional-format-integrity',
+				refs: ['Sheet1!B1:B5'],
+				details: expect.objectContaining({
+					source: 'x14ConditionalFormat',
+					field: 'dataBar.cfvo[0].value',
+					reference: 'SUM(#REF!)',
+					error: '#REF!',
+				}),
+			}),
+		)
+	})
+
 	test('detects missing structured tables in x14 metadata formulas', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
@@ -2032,12 +2149,14 @@ describe('checker', () => {
 			index: 0,
 			sqref: 'A1',
 			formula1: 'Sheet1!B1',
+			formula2: '#REF!',
 			deleted: true,
 		})
 		s.x14ConditionalFormats.push({
 			index: 0,
 			sqref: 'C1',
 			formulas: ['Sheet1!D1>0'],
+			dataBar: { cfvo: [{ type: 'formula', value: '#REF!' }] },
 			deleted: true,
 		})
 
@@ -2059,14 +2178,14 @@ describe('checker', () => {
 		expect(dataValidationIssue?.details).toMatchObject({
 			source: 'x14DataValidation',
 			index: 0,
-			liveFields: ['sqref', 'formula1'],
+			liveFields: ['sqref', 'formula1', 'formula2'],
 		})
 		expect(conditionalFormatIssue?.severity).toBe('warning')
 		expect(conditionalFormatIssue?.refs).toEqual(['Sheet1!C1'])
 		expect(conditionalFormatIssue?.details).toMatchObject({
 			source: 'x14ConditionalFormat',
 			index: 0,
-			liveFields: ['sqref', 'formulas[0]'],
+			liveFields: ['sqref', 'formulas[0]', 'dataBar.cfvo[0].value'],
 		})
 	})
 

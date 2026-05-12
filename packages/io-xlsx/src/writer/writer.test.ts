@@ -117,7 +117,7 @@ function commentsAndThreadedCommentsWorkbook(): Uint8Array {
   </authors>
   <commentList>
     <comment ref="B1" authorId="0"><text><t>Legacy visible note</t></text></comment>
-    <comment ref="C3" authorId="1"><text><t>Legacy hidden note</t></text></comment>
+    <comment ref="C3" authorId="1" xmlns:xr="http://schemas.microsoft.com/office/spreadsheetml/2014/revision" xr:uid="{comment-c3}"><text><r><rPr><b/></rPr><t>LegacyHidden</t></r><r><t>Note</t></r><phoneticPr fontId="1"/></text></comment>
   </commentList>
 </comments>`,
 		'xl/drawings/vmlDrawing1.vml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -3706,6 +3706,42 @@ describe('writeXlsx', () => {
 		},
 	)
 
+	it('patches legacy comment text without rewriting untouched comment payloads', () => {
+		const source = commentsAndThreadedCommentsWorkbook()
+		const opened = readXlsx(source)
+		expectOk(opened)
+		const sheet = opened.value.workbook.getSheet('Sheet1')
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+		const original = sheet.comments.get('B1')
+		expect(original).toBeDefined()
+		if (!original) return
+		sheet.comments.set('B1', { ...original, text: 'Updated legacy text' })
+
+		const written = writeXlsx(opened.value.workbook, opened.value.capsules, {
+			dirtySheetNames: [sheet.name],
+		})
+		expectOk(written)
+		const sourceEntries = unzipSync(source)
+		const writtenEntries = unzipSync(written.value)
+		const commentsXml = new TextDecoder().decode(writtenEntries['xl/comments1.xml'])
+
+		expect(commentsXml).toContain('Updated legacy text')
+		expect(commentsXml).toContain('xr:uid="{comment-c3}"')
+		expect(commentsXml).toContain('<rPr><b/></rPr><t>LegacyHidden</t>')
+		expect(commentsXml).toContain('<phoneticPr fontId="1"/>')
+		expect(writtenEntries['xl/drawings/vmlDrawing1.vml']).toEqual(
+			sourceEntries['xl/drawings/vmlDrawing1.vml'],
+		)
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.getSheet('Sheet1')?.comments.get('C3')).toMatchObject({
+			text: 'LegacyHiddenNote',
+			author: 'Grace',
+		})
+	})
+
 	it('preserves comments, VML, threaded comments, persons, and package graph through dirty cell edits', () => {
 		const source = commentsAndThreadedCommentsWorkbook()
 		const sourceEntries = unzipSync(source)
@@ -3727,7 +3763,7 @@ describe('writeXlsx', () => {
 			},
 		})
 		expect(sheet.comments.get('C3')).toMatchObject({
-			text: 'Legacy hidden note',
+			text: 'LegacyHiddenNote',
 			author: 'Grace',
 			legacyDrawing: {
 				shapeId: '_x0000_s2049',
@@ -3824,7 +3860,7 @@ describe('writeXlsx', () => {
 			},
 		})
 		expect(reopenedSheet?.comments.get('C3')).toMatchObject({
-			text: 'Legacy hidden note',
+			text: 'LegacyHiddenNote',
 			author: 'Grace',
 			legacyDrawing: {
 				shapeId: '_x0000_s2049',
@@ -3833,6 +3869,67 @@ describe('writeXlsx', () => {
 			},
 		})
 		expect(reopenedSheet?.threadedComments).toEqual(sheet.threadedComments)
+	})
+
+	it('regenerates legacy comment VML from shifted layout metadata', () => {
+		const source = commentsAndThreadedCommentsWorkbook()
+		const opened = readXlsx(source)
+		expectOk(opened)
+
+		const applied = applyOperations(opened.value.workbook, [
+			{ op: 'insertRows', sheet: 'Sheet1', at: 0, count: 1 },
+			{ op: 'insertCols', sheet: 'Sheet1', at: 0, count: 1 },
+		])
+		expectOk(applied)
+		expect(applied.value.sheetsModified).toEqual(['Sheet1'])
+
+		const sheet = opened.value.workbook.getSheet('Sheet1')
+		expect(sheet?.comments.get('C2')?.legacyDrawing).toMatchObject({
+			shapeId: '_x0000_s2048',
+			anchor: [2, 15, 1, 2, 4, 20, 5, 8],
+			visible: true,
+		})
+		expect(sheet?.comments.get('D4')?.legacyDrawing).toMatchObject({
+			shapeId: '_x0000_s2049',
+			anchor: [3, 10, 3, 4, 6, 30, 7, 12],
+			visible: false,
+		})
+
+		const written = writeXlsx(opened.value.workbook, opened.value.capsules, {
+			dirtySheetNames: applied.value.sheetsModified,
+		})
+		expectOk(written)
+		const writtenEntries = unzipSync(written.value)
+		const vmlXml = decodeTestXml(writtenEntries['xl/drawings/vmlDrawing1.vml'])
+		expect(vmlXml).toContain('id="_x0000_s2048"')
+		expect(vmlXml).toContain('<x:Anchor>2, 15, 1, 2, 4, 20, 5, 8</x:Anchor>')
+		expect(vmlXml).toContain('<x:Row>1</x:Row>')
+		expect(vmlXml).toContain('<x:Column>2</x:Column>')
+		expect(vmlXml).toContain('<x:Visible/>')
+		expect(vmlXml).toContain('id="_x0000_s2049"')
+		expect(vmlXml).toContain('<x:Anchor>3, 10, 3, 4, 6, 30, 7, 12</x:Anchor>')
+		expect(vmlXml).toContain('<x:Row>3</x:Row>')
+		expect(vmlXml).toContain('<x:Column>3</x:Column>')
+		expect(vmlXml).toContain('<x:Visible>false</x:Visible>')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.getSheet('Sheet1')?.comments.get('C2')).toMatchObject({
+			text: 'Legacy visible note',
+			legacyDrawing: {
+				shapeId: '_x0000_s2048',
+				anchor: [2, 15, 1, 2, 4, 20, 5, 8],
+				visible: true,
+			},
+		})
+		expect(reopened.value.workbook.getSheet('Sheet1')?.comments.get('D4')).toMatchObject({
+			text: 'LegacyHiddenNote',
+			legacyDrawing: {
+				shapeId: '_x0000_s2049',
+				anchor: [3, 10, 3, 4, 6, 30, 7, 12],
+				visible: false,
+			},
+		})
 	})
 
 	it('preserves conditional formatting and data validations on round-trip', () => {

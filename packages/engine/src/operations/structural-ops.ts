@@ -55,6 +55,9 @@ function applyAxisShift(
 	if (deletedTableColumnBlocker) {
 		return err(deletedTableColumnStructuralEditError(deletedTableColumnBlocker))
 	}
+	const tableBoundaryBlocker =
+		axis === 'row' && delta < 0 ? findPartialTableBoundaryRowDelete(sheet, at, count) : null
+	if (tableBoundaryBlocker) return err(tableBoundaryRowStructuralEditError(tableBoundaryBlocker))
 
 	if (axis === 'row') {
 		delta > 0 ? sheet.cells.insertRows(at, count) : sheet.cells.deleteRows(at, count)
@@ -665,6 +668,52 @@ function deletedTableColumnStructuralEditError(
 			refs: [blocker.sourceRef],
 			suggestedFix:
 				'Rewrite or remove structured references to the table field before deleting the column.',
+		},
+	)
+}
+
+interface TableBoundaryRowDelete {
+	readonly tableName: string
+	readonly boundary: 'header' | 'totals'
+	readonly ref: string
+}
+
+function findPartialTableBoundaryRowDelete(
+	sheet: Sheet,
+	at: number,
+	count: number,
+): TableBoundaryRowDelete | null {
+	const deleteEnd = at + count
+	for (const table of sheet.tables) {
+		if (table.ref.start.row >= at && table.ref.end.row < deleteEnd) continue
+		if (table.hasHeaders && table.ref.start.row >= at && table.ref.start.row < deleteEnd) {
+			return {
+				tableName: table.name,
+				boundary: 'header',
+				ref: rangeToA1(table.ref),
+			}
+		}
+		if (table.hasTotals && table.ref.end.row >= at && table.ref.end.row < deleteEnd) {
+			return {
+				tableName: table.name,
+				boundary: 'totals',
+				ref: rangeToA1(table.ref),
+			}
+		}
+	}
+	return null
+}
+
+function tableBoundaryRowStructuralEditError(
+	blocker: TableBoundaryRowDelete,
+): ReturnType<typeof ascendError> {
+	return ascendError(
+		'VALIDATION_ERROR',
+		`Cannot delete the ${blocker.boundary} row of table ${blocker.tableName} without deleting the whole table range`,
+		{
+			refs: [blocker.ref],
+			suggestedFix:
+				'Resize or delete the table explicitly before removing its header or totals row, or delete the full table range in one structural edit.',
 		},
 	)
 }

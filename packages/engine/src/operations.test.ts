@@ -1650,6 +1650,71 @@ describe('applyOperation', () => {
 		expect(s.tables[0]?.autoFilter?.ref).toBe('A1:B3')
 	})
 
+	test('deleteRows rejects partial table header row deletion', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.tables.push({
+			id: createTableId(),
+			name: 'HeaderedTable',
+			sheetId: s.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 1 } },
+			columns: [{ name: 'Name' }, { name: 'Value' }],
+			hasHeaders: true,
+			hasTotals: false,
+			autoFilter: { ref: 'A1:B4', columns: [] },
+		})
+
+		const result = applyOperation(wb, { op: 'deleteRows', sheet: 'Sheet1', at: 0, count: 1 })
+
+		expectErr(result)
+		expect(result.error.message).toContain('header row')
+		expect(s.tables[0]?.ref).toEqual({
+			start: { row: 0, col: 0 },
+			end: { row: 3, col: 1 },
+		})
+	})
+
+	test('deleteRows rejects partial table totals row deletion', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.tables.push({
+			id: createTableId(),
+			name: 'TotalsTable',
+			sheetId: s.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 4, col: 1 } },
+			columns: [{ name: 'Name' }, { name: 'Value', totalsRowFormula: 'SUM([Value])' }],
+			hasHeaders: true,
+			hasTotals: true,
+			autoFilter: { ref: 'A1:B4', columns: [] },
+		})
+
+		const result = applyOperation(wb, { op: 'deleteRows', sheet: 'Sheet1', at: 4, count: 1 })
+
+		expectErr(result)
+		expect(result.error.message).toContain('totals row')
+		expect(s.tables[0]?.hasTotals).toBe(true)
+		expect(s.tables[0]?.ref.end.row).toBe(4)
+	})
+
+	test('deleteRows removes unreferenced table metadata when the full table row span is deleted', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.tables.push({
+			id: createTableId(),
+			name: 'DeletedRowsTable',
+			sheetId: s.id,
+			ref: { start: { row: 1, col: 0 }, end: { row: 3, col: 1 } },
+			columns: [{ name: 'Name' }, { name: 'Value' }],
+			hasHeaders: true,
+			hasTotals: false,
+			autoFilter: { ref: 'A2:B4', columns: [] },
+		})
+
+		expectOk(applyOperation(wb, { op: 'deleteRows', sheet: 'Sheet1', at: 1, count: 3 }))
+
+		expect(s.tables).toHaveLength(0)
+	})
+
 	test('deleteCols prunes deleted sortCondition refs across sheet, autofilter, and table sort states', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

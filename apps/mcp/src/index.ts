@@ -200,6 +200,28 @@ export function createServer(): McpServer {
 	)
 
 	server.tool(
+		'ascend.package_graph',
+		'Inspect XLSX OPC package parts, content types, relationship ids, raw/resolved targets, ownership, feature families, and preservation policy',
+		{
+			file: z.string().describe('Path to workbook file'),
+		},
+		async ({ file }) => {
+			try {
+				const wb = await WorkbookDocument.open(file, { mode: 'metadata-only' })
+				const graph = await wb.packageGraph()
+				return okResponse(
+					graph,
+					`Inspected ${graph.parts.length} package part(s) and ${graph.relationships.length} relationship(s) in "${file}"`,
+				)
+			} catch (e) {
+				return errorResponse(
+					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
+				)
+			}
+		},
+	)
+
+	server.tool(
 		'ascend.visuals',
 		'Inspect workbook visual inventory: charts, drawings, media, image anchors, drawing object links, and preserve-first visual gaps',
 		{
@@ -1133,14 +1155,15 @@ function buildAgentWorkflowGuide(): string {
 		'# Ascend Agent Workflow',
 		'',
 		'1. Inspect workbook structure with ascend.inspect or ascend.list_sheets.',
-		'2. Audit high-risk workbook content with ascend.active_content before editing macro-enabled, signed, ActiveX, Custom UI, or Excel 4 macro-sheet files.',
-		'3. Locate data with ascend.find, ascend.read, ascend.read_table, ascend.visuals, and ascend.pivots for PivotTable inventory/audits/materialization ops.',
-		'4. Use ascend.search_docs or ascend.search_examples when you need command, schema, workflow, or example recovery context.',
-		'5. Fetch operation schemas from ascend.list_operations or ascend://operations.',
-		'6. Preview edits with ascend.plan before writing.',
-		'7. Commit with ascend.commit using output paths, input hash guards, approvals, and allow-loss only when explicit.',
-		'8. Verify with ascend.check, ascend.lint, ascend.trace, ascend.diff, and ascend.export as needed.',
-		'9. Use ascend.repair_plan when checks, lints, approvals, or unsupported-feature audits need recovery actions.',
+		'2. Audit package fidelity with ascend.package_graph when sidecars, relationships, content types, or preservation policy can affect the edit.',
+		'3. Audit high-risk workbook content with ascend.active_content before editing macro-enabled, signed, ActiveX, Custom UI, or Excel 4 macro-sheet files.',
+		'4. Locate data with ascend.find, ascend.read, ascend.read_table, ascend.visuals, and ascend.pivots for PivotTable inventory/audits/materialization ops.',
+		'5. Use ascend.search_docs or ascend.search_examples when you need command, schema, workflow, or example recovery context.',
+		'6. Fetch operation schemas from ascend.list_operations or ascend://operations.',
+		'7. Preview edits with ascend.plan before writing.',
+		'8. Commit with ascend.commit using output paths, input hash guards, approvals, and allow-loss only when explicit.',
+		'9. Verify with ascend.check, ascend.lint, ascend.trace, ascend.diff, and ascend.export as needed.',
+		'10. Use ascend.repair_plan when checks, lints, approvals, or unsupported-feature audits need recovery actions.',
 	].join('\n')
 }
 
@@ -1155,7 +1178,7 @@ function buildAgentWorkflowPrompt(file?: string, task?: string): string {
 		'',
 		'Use Ascend as the source of truth for spreadsheet structure and edit safety.',
 		'If you need recovery context, call ascend.search_docs or ascend.search_examples before guessing.',
-		'Start with ascend.inspect or ascend.list_sheets; call ascend.active_content before editing macro-enabled, signed, ActiveX, Custom UI, or Excel 4 macro-sheet workbooks.',
+		'Start with ascend.inspect or ascend.list_sheets; call ascend.package_graph when package sidecars, relationship identity, or preservation policy matter; call ascend.active_content before editing macro-enabled, signed, ActiveX, Custom UI, or Excel 4 macro-sheet workbooks.',
 		'Then use ascend.read, ascend.read_table, ascend.find, ascend.visuals, and ascend.pivots to gather only the necessary workbook context.',
 		'Before modifying anything, read ascend://operations or call ascend.list_operations and build operations that match the published schemas.',
 		'Always run ascend.plan and inspect approvals, unsupported features, preview diffs, recalc status, and modelOutput before commit.',

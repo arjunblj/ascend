@@ -51,13 +51,14 @@ describe('MCP server', () => {
 		expect(names).toContain('ascend.diff')
 		expect(names).toContain('ascend.export')
 		expect(names).toContain('ascend.list_sheets')
+		expect(names).toContain('ascend.package_graph')
 		expect(names).toContain('ascend.visuals')
 		expect(names).toContain('ascend.pivots')
 		expect(names).toContain('ascend.capabilities')
 		expect(names).toContain('ascend.plan')
 		expect(names).toContain('ascend.commit')
 		expect(names).toContain('ascend.repair_plan')
-		expect(names.length).toBe(25)
+		expect(names.length).toBe(26)
 	})
 
 	test('agent resources and prompts are registered', () => {
@@ -229,6 +230,50 @@ describe('MCP server', () => {
 		} finally {
 			await unlink(activeFile).catch(() => {})
 		}
+	})
+
+	test('ascend.package_graph exposes package identity for agents', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test
+		const handler = (server as any)._registeredTools['ascend.package_graph'].handler as (args: {
+			file: string
+		}) => Promise<{
+			structuredContent?: {
+				data?: {
+					parts?: Array<{
+						path?: string
+						featureFamily?: string
+						ownerScope?: string
+						sourceRelationshipId?: string
+					}>
+					relationships?: Array<{
+						relationshipPartPath?: string
+						id?: string
+						resolvedTarget?: string
+					}>
+				}
+			}
+		}>
+
+		const result = await handler({ file: TEMP_FILE })
+		expect(result.structuredContent?.data?.parts).toContainEqual(
+			expect.objectContaining({
+				path: 'xl/workbook.xml',
+				featureFamily: 'workbook',
+				ownerScope: 'workbook',
+				sourceRelationshipId: 'rId1',
+			}),
+		)
+		expect(result.structuredContent?.data?.relationships).toContainEqual(
+			expect.objectContaining({
+				relationshipPartPath: '_rels/.rels',
+				id: 'rId1',
+				resolvedTarget: 'xl/workbook.xml',
+			}),
+		)
 	})
 
 	test('ascend.write recalculates before saving when needed', async () => {

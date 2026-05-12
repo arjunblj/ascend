@@ -239,6 +239,36 @@ describe('API', () => {
 		)
 	})
 
+	test('package-graph endpoint exposes package identity for agents', async () => {
+		const tempFile = join(tempDir, 'api-package-graph.xlsx')
+		const wb = AscendWorkbook.create()
+		await wb.save(tempFile)
+
+		const res = await api(`/package-graph`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ file: tempFile }),
+		})
+		expect(res.status).toBe(200)
+		const body = await res.json()
+		expect(body.ok).toBe(true)
+		expect(body.data.parts).toContainEqual(
+			expect.objectContaining({
+				path: 'xl/workbook.xml',
+				featureFamily: 'workbook',
+				ownerScope: 'workbook',
+				sourceRelationshipId: 'rId1',
+			}),
+		)
+		expect(body.data.relationships).toContainEqual(
+			expect.objectContaining({
+				relationshipPartPath: '_rels/.rels',
+				id: 'rId1',
+				resolvedTarget: 'xl/workbook.xml',
+			}),
+		)
+	})
+
 	test('pivots endpoint exposes output audits and materialization ops for agents', async () => {
 		const res = await api(`/pivots`, {
 			method: 'POST',

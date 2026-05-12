@@ -249,6 +249,18 @@ export function createApiFetch() {
 				}
 			}
 
+			if (method === 'POST' && path === '/package-graph') {
+				const body = await parseJson<{ file?: string }>(req)
+				const file = body ? requireString(body, 'file') : null
+				if (!file) return jsonFailure('Missing or invalid file', 400)
+				try {
+					const wb = await WorkbookDocument.open(file, { mode: 'metadata-only' })
+					return jsonSuccess(await wb.packageGraph())
+				} catch (e) {
+					return handleError(e, file)
+				}
+			}
+
 			if (method === 'POST' && path === '/visuals') {
 				const body = await parseJson<{ file?: string }>(req)
 				const file = body ? requireString(body, 'file') : null

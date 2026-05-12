@@ -514,7 +514,6 @@ function parseSimpleValuesRowBytes(
 		stringStart: -1,
 		stringEnd: -1,
 		stringHasEntity: false,
-		stringNeedsUtf8Decoder: false,
 	}
 	while (true) {
 		cursor = skipXmlWhitespaceBytes(bytes, cursor, bodyEnd)
@@ -535,13 +534,7 @@ function parseSimpleValuesRowBytes(
 				sheet.cells.setPlainString(
 					out.row,
 					out.col,
-					decodeXmlBytesTextKnown(
-						bytes,
-						out.stringStart,
-						out.stringEnd,
-						out.stringHasEntity,
-						out.stringNeedsUtf8Decoder,
-					),
+					decodeXmlBytesTextKnown(bytes, out.stringStart, out.stringEnd, out.stringHasEntity),
 				)
 			} else return false
 			nextCol = out.col + 1
@@ -603,7 +596,6 @@ function parseCanonicalValuesCellBytes(
 		stringStart: number
 		stringEnd: number
 		stringHasEntity: boolean
-		stringNeedsUtf8Decoder: boolean
 	},
 ): number {
 	if (!startsWithCellRefBytes(bytes, cursor, bodyEnd)) return -1
@@ -632,7 +624,6 @@ function parseCanonicalValuesCellBytes(
 	out.stringStart = -1
 	out.stringEnd = -1
 	out.stringHasEntity = false
-	out.stringNeedsUtf8Decoder = false
 
 	const inlineValueStart = parseCanonicalInlineStringValueStartBytes(bytes, index, bodyEnd)
 	if (inlineValueStart !== -1) {
@@ -641,7 +632,6 @@ function parseCanonicalValuesCellBytes(
 			const byte = bytes[valueEnd]
 			if (byte === BYTE_LT) break
 			if (byte === BYTE_AMP) out.stringHasEntity = true
-			else if (byte !== undefined && byte >= 0x80) out.stringNeedsUtf8Decoder = true
 			valueEnd += 1
 		}
 		if (!endsCanonicalInlineStringBytes(bytes, valueEnd, bodyEnd)) return -1
@@ -1285,7 +1275,6 @@ function parseCanonicalStreamedValuesRowBytes(
 		stringStart: -1,
 		stringEnd: -1,
 		stringHasEntity: false,
-		stringNeedsUtf8Decoder: false,
 	}
 	while (true) {
 		cursor = skipXmlWhitespaceBytes(bytes, cursor, bodyEnd)
@@ -1307,13 +1296,7 @@ function parseCanonicalStreamedValuesRowBytes(
 					? internValue(
 							ctx,
 							stringValue(
-								decodeXmlBytesTextKnown(
-									bytes,
-									out.stringStart,
-									out.stringEnd,
-									out.stringHasEntity,
-									out.stringNeedsUtf8Decoder,
-								),
+								decodeXmlBytesTextKnown(bytes, out.stringStart, out.stringEnd, out.stringHasEntity),
 							),
 						)
 					: undefined
@@ -3425,21 +3408,14 @@ function asciiSlice(bytes: Uint8Array, start: number, end: number): string {
 
 function decodeXmlBytesText(bytes: Uint8Array, start: number, end: number): string {
 	let hasEntity = false
-	let needsUtf8Decoder = false
 	for (let index = start; index < end; index++) {
 		const byte = bytes[index]
 		if (byte === BYTE_AMP) {
 			hasEntity = true
-		} else if (byte !== undefined && byte >= 0x80) {
-			needsUtf8Decoder = true
-		}
-		if (hasEntity && needsUtf8Decoder) {
 			break
 		}
 	}
-	const text = needsUtf8Decoder
-		? BYTE_XML_DECODER.decode(bytes.subarray(start, end))
-		: asciiSlice(bytes, start, end)
+	const text = BYTE_XML_DECODER.decode(bytes.subarray(start, end))
 	return hasEntity ? decodeXmlText(text) : text
 }
 
@@ -3448,11 +3424,8 @@ function decodeXmlBytesTextKnown(
 	start: number,
 	end: number,
 	hasEntity: boolean,
-	needsUtf8Decoder: boolean,
 ): string {
-	const text = needsUtf8Decoder
-		? BYTE_XML_DECODER.decode(bytes.subarray(start, end))
-		: asciiSlice(bytes, start, end)
+	const text = BYTE_XML_DECODER.decode(bytes.subarray(start, end))
 	return hasEntity ? decodeXmlText(text) : text
 }
 

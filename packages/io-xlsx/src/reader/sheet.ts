@@ -513,6 +513,8 @@ function parseSimpleValuesRowBytes(
 		numberValue: undefined as number | undefined,
 		stringStart: -1,
 		stringEnd: -1,
+		stringHasEntity: false,
+		stringNeedsUtf8Decoder: false,
 	}
 	while (true) {
 		cursor = skipXmlWhitespaceBytes(bytes, cursor, bodyEnd)
@@ -533,7 +535,13 @@ function parseSimpleValuesRowBytes(
 				sheet.cells.setPlainString(
 					out.row,
 					out.col,
-					decodeXmlBytesText(bytes, out.stringStart, out.stringEnd),
+					decodeXmlBytesTextKnown(
+						bytes,
+						out.stringStart,
+						out.stringEnd,
+						out.stringHasEntity,
+						out.stringNeedsUtf8Decoder,
+					),
 				)
 			} else return false
 			nextCol = out.col + 1
@@ -594,6 +602,8 @@ function parseCanonicalValuesCellBytes(
 		numberValue: number | undefined
 		stringStart: number
 		stringEnd: number
+		stringHasEntity: boolean
+		stringNeedsUtf8Decoder: boolean
 	},
 ): number {
 	if (!startsWithCellRefBytes(bytes, cursor, bodyEnd)) return -1
@@ -621,12 +631,17 @@ function parseCanonicalValuesCellBytes(
 	out.numberValue = undefined
 	out.stringStart = -1
 	out.stringEnd = -1
+	out.stringHasEntity = false
+	out.stringNeedsUtf8Decoder = false
 
 	const inlineValueStart = parseCanonicalInlineStringValueStartBytes(bytes, index, bodyEnd)
 	if (inlineValueStart !== -1) {
 		let valueEnd = inlineValueStart
 		while (valueEnd < bodyEnd) {
-			if (bytes[valueEnd] === BYTE_LT) break
+			const byte = bytes[valueEnd]
+			if (byte === BYTE_LT) break
+			if (byte === BYTE_AMP) out.stringHasEntity = true
+			else if (byte !== undefined && byte >= 0x80) out.stringNeedsUtf8Decoder = true
 			valueEnd += 1
 		}
 		if (!endsCanonicalInlineStringBytes(bytes, valueEnd, bodyEnd)) return -1
@@ -1269,6 +1284,8 @@ function parseCanonicalStreamedValuesRowBytes(
 		numberValue: undefined as number | undefined,
 		stringStart: -1,
 		stringEnd: -1,
+		stringHasEntity: false,
+		stringNeedsUtf8Decoder: false,
 	}
 	while (true) {
 		cursor = skipXmlWhitespaceBytes(bytes, cursor, bodyEnd)
@@ -1287,7 +1304,18 @@ function parseCanonicalStreamedValuesRowBytes(
 			out.numberValue !== undefined
 				? internValue(ctx, numberValue(out.numberValue))
 				: out.stringStart >= 0
-					? internValue(ctx, stringValue(decodeXmlBytesText(bytes, out.stringStart, out.stringEnd)))
+					? internValue(
+							ctx,
+							stringValue(
+								decodeXmlBytesTextKnown(
+									bytes,
+									out.stringStart,
+									out.stringEnd,
+									out.stringHasEntity,
+									out.stringNeedsUtf8Decoder,
+								),
+							),
+						)
 					: undefined
 		if (value === undefined) return null
 		cells.push([out.col, { value, formula: null, styleId: DEFAULT_STYLE_ID }])
@@ -3409,6 +3437,19 @@ function decodeXmlBytesText(bytes: Uint8Array, start: number, end: number): stri
 			break
 		}
 	}
+	const text = needsUtf8Decoder
+		? BYTE_XML_DECODER.decode(bytes.subarray(start, end))
+		: asciiSlice(bytes, start, end)
+	return hasEntity ? decodeXmlText(text) : text
+}
+
+function decodeXmlBytesTextKnown(
+	bytes: Uint8Array,
+	start: number,
+	end: number,
+	hasEntity: boolean,
+	needsUtf8Decoder: boolean,
+): string {
 	const text = needsUtf8Decoder
 		? BYTE_XML_DECODER.decode(bytes.subarray(start, end))
 		: asciiSlice(bytes, start, end)

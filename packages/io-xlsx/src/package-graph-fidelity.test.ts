@@ -135,6 +135,72 @@ describe('XLSX package graph fidelity audits', () => {
 		).toHaveLength(0)
 	})
 
+	test('reports stale content type overrides whose target part is missing', () => {
+		const graph = inspectXlsxPackageGraph(
+			makeXlsx({
+				'[Content_Types].xml': contentTypesXml(`
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/comments1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml"/>
+`),
+				'_rels/.rels': relationshipsXml(`
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+`),
+				'xl/workbook.xml': '<workbook/>',
+			}),
+		)
+
+		expect(auditXlsxPackageGraphReadIntegrity(graph)).toContainEqual(
+			expect.objectContaining({
+				code: 'package_content_type_override_target',
+				severity: 'error',
+				partPath: 'xl/comments1.xml',
+				contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml',
+				expected: 'xl/comments1.xml',
+				actual: undefined,
+				suggestedAction: expect.stringContaining('stale content type override'),
+			}),
+		)
+	})
+
+	test('reports content type overrides that disagree with resolved package part type', () => {
+		const graph = {
+			parts: [
+				{
+					path: 'xl/threadedComments/threadedComment1.xml',
+					contentType: 'application/vnd.ms-excel.threadedcomments+xml',
+					contentTypeSource: 'override',
+					ownerScope: 'worksheet',
+					featureFamily: 'preservedThreadedComments',
+					preservationPolicy: 'preserve-exact',
+					bytePreservationExpected: true,
+				},
+			],
+			relationships: [],
+			contentTypeDefaults: [],
+			contentTypeOverrides: [
+				{
+					partPath: 'xl/threadedComments/threadedComment1.xml',
+					contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml',
+				},
+			],
+		} as const
+
+		expect(auditXlsxPackageGraphReadIntegrity(graph)).toContainEqual(
+			expect.objectContaining({
+				code: 'package_content_type_override_mismatch',
+				severity: 'error',
+				partPath: 'xl/threadedComments/threadedComment1.xml',
+				featureFamily: 'preservedThreadedComments',
+				ownerScope: 'worksheet',
+				expected: 'application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml',
+				actual: 'application/vnd.ms-excel.threadedcomments+xml',
+				suggestedAction: expect.stringContaining('content type override'),
+			}),
+		)
+	})
+
 	test('compares relationship identity with raw strict dialect and package scope', () => {
 		const before = inspectXlsxPackageGraph(
 			makeXlsx({

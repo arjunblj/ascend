@@ -5,6 +5,8 @@ export type XlsxPackageGraphFidelityIssueCode =
 	| 'package_feature_classification'
 	| 'package_relationship_source'
 	| 'package_relationship_target'
+	| 'package_content_type_override_target'
+	| 'package_content_type_override_mismatch'
 	| 'package_content_type_default_set'
 	| 'package_content_type_override'
 	| 'package_signature_invalidation'
@@ -24,6 +26,7 @@ export interface XlsxPackageGraphFidelityIssue {
 	readonly sourcePartPath?: string
 	readonly relationshipPartPath?: string
 	readonly relationshipId?: string
+	readonly contentType?: string
 	readonly featureFamily?: string
 	readonly ownerScope?: string
 	readonly suggestedAction?: string
@@ -49,6 +52,7 @@ export function auditXlsxPackageGraphReadIntegrity(
 ): readonly XlsxPackageGraphFidelityIssue[] {
 	const issues: XlsxPackageGraphFidelityIssue[] = []
 	const partPaths = new Set(graph.parts.map((part) => part.path))
+	const partByPath = new Map(graph.parts.map((part) => [part.path, part]))
 	const reportedMissingSourceSidecars = new Set<string>()
 	const allowPreservedOtherPart = options.allowPreservedOtherPart ?? (() => false)
 	for (const part of graph.parts) {
@@ -117,6 +121,37 @@ export function auditXlsxPackageGraphReadIntegrity(
 			expected: sourcePartPath,
 			actual: undefined,
 		})
+	}
+	for (const override of graph.contentTypeOverrides) {
+		const part = partByPath.get(override.partPath)
+		if (!part) {
+			issues.push({
+				code: 'package_content_type_override_target',
+				severity: 'error',
+				message: `content type override points to missing package part: ${override.partPath}`,
+				partPath: override.partPath,
+				contentType: override.contentType,
+				suggestedAction:
+					'Remove the stale content type override or restore the referenced package part before writing.',
+				expected: override.partPath,
+				actual: undefined,
+			})
+			continue
+		}
+		if (part.contentType !== override.contentType) {
+			issues.push({
+				code: 'package_content_type_override_mismatch',
+				severity: 'error',
+				message: `content type override for ${override.partPath} declares ${override.contentType} but package graph resolved ${part.contentType}`,
+				partPath: override.partPath,
+				featureFamily: part.featureFamily,
+				ownerScope: part.ownerScope,
+				suggestedAction:
+					'Make the content type override agree with the resolved package part type before writing.',
+				expected: override.contentType,
+				actual: part.contentType,
+			})
+		}
 	}
 	return issues
 }

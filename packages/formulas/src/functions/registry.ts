@@ -44,9 +44,22 @@ export interface EvalArg {
 
 export type FnArg = EvalArg
 
-export interface ExactLookupHit {
-	readonly first: number
-	readonly last: number
+export type ExactLookupHit = number
+
+// Excel lookup vectors are bounded by worksheet rows/columns; the row limit is the larger bound.
+const EXACT_LOOKUP_HIT_STRIDE = 1_048_576
+
+export function packExactLookupHit(first: number, last: number): ExactLookupHit {
+	return first * EXACT_LOOKUP_HIT_STRIDE + last
+}
+
+export function exactLookupHitFirst(hit: ExactLookupHit): number {
+	return Math.floor(hit / EXACT_LOOKUP_HIT_STRIDE)
+}
+
+export function exactLookupHitLast(hit: ExactLookupHit): number {
+	const first = exactLookupHitFirst(hit)
+	return hit - first * EXACT_LOOKUP_HIT_STRIDE
 }
 
 export type ExactLookupCache = Map<string, ReadonlyMap<string, ExactLookupHit>>

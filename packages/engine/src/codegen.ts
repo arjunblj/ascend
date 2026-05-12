@@ -1,9 +1,13 @@
 import type { FormulaNode } from '@ascend/formulas'
 import {
 	dateToSerial,
+	type ExactLookupHit,
+	exactLookupHitFirst,
+	exactLookupHitLast,
 	formatNumber,
 	formatTextValue,
 	hasWildcardPatternSyntax,
+	packExactLookupHit,
 	serialToDate,
 	serialToDatePart,
 	tanExcel,
@@ -1584,36 +1588,36 @@ function getLookupIndex(
 	col: number,
 	startRow: number,
 	endRow: number,
-): ReadonlyMap<string, { first: number; last: number }> {
+): ReadonlyMap<string, ExactLookupHit> {
 	const cacheKey = `column:${sheetIndex}:${col}:${startRow}:${endRow}`
 	if (ctx.exactLookupCache) {
 		const cached = ctx.exactLookupCache.get(cacheKey)
 		if (cached) return cached
 	}
 	const sheet = ctx.workbook.sheets[sheetIndex]
-	const index = new Map<string, { first: number; last: number }>()
+	const index = new Map<string, ExactLookupHit>()
 	if (sheet) {
 		for (let i = startRow; i <= endRow; i++) {
 			const key = lookupValueKey(sheet.cells.readValue(i, col))
 			if (key === null) continue
 			const offset = i - startRow
 			const existing = index.get(key)
-			if (existing) index.set(key, { first: existing.first, last: offset })
-			else index.set(key, { first: offset, last: offset })
+			if (existing !== undefined) {
+				index.set(key, packExactLookupHit(exactLookupHitFirst(existing), offset))
+			} else {
+				index.set(key, packExactLookupHit(offset, offset))
+			}
 		}
 	}
 	ctx.exactLookupCache?.set(cacheKey, index)
 	return index
 }
 
-function indexedLookup(
-	lookup: CellValue,
-	index: ReadonlyMap<string, { first: number; last: number }>,
-): number {
+function indexedLookup(lookup: CellValue, index: ReadonlyMap<string, ExactLookupHit>): number {
 	const key = lookupValueKey(lookup)
 	if (key === null) return -1
 	const hit = index.get(key)
-	return hit ? hit.first : -1
+	return hit !== undefined ? exactLookupHitFirst(hit) : -1
 }
 
 function hasWildcardChars(text: string): boolean {
@@ -1728,21 +1732,24 @@ function matchExact(
 
 	if (isRow) {
 		const rowCacheKey = `row:${targetSheetIndex}:${sr}:${sc}:${ec}`
-		let rowIndex: ReadonlyMap<string, { first: number; last: number }> | undefined
+		let rowIndex: ReadonlyMap<string, ExactLookupHit> | undefined
 		if (ctx.exactLookupCache) {
 			rowIndex = ctx.exactLookupCache.get(rowCacheKey)
 		}
 		if (!rowIndex) {
 			const sheet = ctx.workbook.sheets[targetSheetIndex]
-			const built = new Map<string, { first: number; last: number }>()
+			const built = new Map<string, ExactLookupHit>()
 			if (sheet) {
 				for (let i = sc; i <= ec; i++) {
 					const key = lookupValueKey(sheet.cells.readValue(sr, i))
 					if (key === null) continue
 					const offset = i - sc
 					const existing = built.get(key)
-					if (existing) built.set(key, { first: existing.first, last: offset })
-					else built.set(key, { first: offset, last: offset })
+					if (existing !== undefined) {
+						built.set(key, packExactLookupHit(exactLookupHitFirst(existing), offset))
+					} else {
+						built.set(key, packExactLookupHit(offset, offset))
+					}
 				}
 			}
 			rowIndex = built
@@ -1873,7 +1880,7 @@ function xlookupExact(
 		: `row:${targetSheetIndex}:${lsr}:${lsc}:${lec}`
 	let index = ctx.exactLookupCache?.get(cacheKey)
 	if (!index) {
-		const built = new Map<string, { first: number; last: number }>()
+		const built = new Map<string, ExactLookupHit>()
 		const count = isColumn ? lookupRows : lookupCols
 		for (let offset = 0; offset < count; offset++) {
 			const value = isColumn
@@ -1882,16 +1889,19 @@ function xlookupExact(
 			const key = lookupValueKey(value)
 			if (key === null) continue
 			const existing = built.get(key)
-			if (existing) built.set(key, { first: existing.first, last: offset })
-			else built.set(key, { first: offset, last: offset })
+			if (existing !== undefined) {
+				built.set(key, packExactLookupHit(exactLookupHitFirst(existing), offset))
+			} else {
+				built.set(key, packExactLookupHit(offset, offset))
+			}
 		}
 		index = built
 		ctx.exactLookupCache?.set(cacheKey, built)
 	}
 	const key = lookupValueKey(lookup)
 	const hit = key === null ? undefined : index.get(key)
-	if (!hit) return ifNotFound ?? errorValue('#N/A')
-	const offset = fromEnd ? hit.last : hit.first
+	if (hit === undefined) return ifNotFound ?? errorValue('#N/A')
+	const offset = fromEnd ? exactLookupHitLast(hit) : exactLookupHitFirst(hit)
 	return isColumn
 		? sheet.cells.readValue(rsr + offset, rsc)
 		: sheet.cells.readValue(rsr, rsc + offset)

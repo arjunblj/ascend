@@ -13,9 +13,12 @@ import {
 	compareValues,
 	type EvalArg,
 	type ExactLookupHit,
+	exactLookupHitFirst,
+	exactLookupHitLast,
 	type FunctionEvalContext,
 	getRange,
 	numArg,
+	packExactLookupHit,
 	rangeShape,
 	valuesEqual,
 	wildcardMatch,
@@ -200,8 +203,11 @@ function getArgVectorWithIndex(
 				const key = exactLookupValueKey(value)
 				if (key !== null) {
 					const existing = index.get(key)
-					if (existing) index.set(key, { first: existing.first, last: i })
-					else index.set(key, { first: i, last: i })
+					if (existing !== undefined) {
+						index.set(key, packExactLookupHit(exactLookupHitFirst(existing), i))
+					} else {
+						index.set(key, packExactLookupHit(i, i))
+					}
 				}
 			}
 		})
@@ -237,8 +243,8 @@ function buildExactLookupIndex(data: readonly CellValue[]): Map<string, ExactLoo
 		const key = exactLookupValueKey(v(data, i))
 		if (key === null) continue
 		const existing = index.get(key)
-		if (existing) index.set(key, { first: existing.first, last: i })
-		else index.set(key, { first: i, last: i })
+		if (existing !== undefined) index.set(key, packExactLookupHit(exactLookupHitFirst(existing), i))
+		else index.set(key, packExactLookupHit(i, i))
 	}
 	return index
 }
@@ -266,7 +272,7 @@ function indexedExactMatch(
 	const key = exactLookupValueKey(lookup)
 	if (key === null) return -1
 	const hit = index.get(key)
-	return hit ? (fromEnd ? hit.last : hit.first) : -1
+	return hit !== undefined ? (fromEnd ? exactLookupHitLast(hit) : exactLookupHitFirst(hit)) : -1
 }
 
 function nextLargerMatch(lookup: CellValue, data: readonly CellValue[]): number {

@@ -3,6 +3,7 @@ import type { Operation, Result } from '@ascend/schema'
 import { ascendError, err, ok } from '@ascend/schema'
 import { invalidateSheetIndexCache } from '../evaluator.ts'
 import {
+	rewriteFormulaTextForRename,
 	rewriteSheetMetadataFormulasForRename,
 	rewriteSheetNameInDefinedNames,
 	rewriteSheetNameInFormulas,
@@ -52,6 +53,7 @@ export function handleDeleteSheet(
 	workbook.removeSheet(op.sheet)
 	removeSheetScopedDefinedNames(workbook, targetSheet.id)
 	removeWorkbookMetadataForDeletedSheet(workbook, op.sheet, removedPivotNames)
+	removeChartsForDeletedSheet(workbook, op.sheet)
 	return ok(patch([], [op.sheet]))
 }
 
@@ -77,6 +79,7 @@ export function handleRenameSheet(
 	clearFormulaMetadata(workbook)
 	rewriteSheetNameInFormulas(workbook, oldName, op.newName)
 	rewriteSheetNameInDefinedNames(workbook, oldName, op.newName)
+	rewriteChartSheetReferencesForRename(workbook, oldName, op.newName)
 	for (const workbookSheet of workbook.sheets) {
 		rewriteSheetMetadataFormulasForRename(workbookSheet, oldName, op.newName)
 		for (const [ref, hyperlink] of workbookSheet.hyperlinks) {
@@ -118,7 +121,13 @@ export function handleCopySheet(
 	const pos = op.position ?? workbook.sheets.length
 	const newSheet = source.clone()
 	newSheet.name = op.newName
+	newSheet.ensureWritable()
+	retargetCopiedSheetDrawingParts(workbook, newSheet)
+	retargetCopiedSheetImageTargets(workbook, newSheet)
+	const chartPartPaths = cloneChartsForCopiedSheet(workbook, source.name, op.newName)
+	retargetCopiedSheetChartRelationships(newSheet, chartPartPaths)
 	workbook.sheets.splice(pos, 0, newSheet)
+	workbook.invalidateSheetCache()
 	invalidateSheetIndexCache(workbook)
 	return ok(patch([], [op.newName]))
 }
@@ -291,5 +300,238 @@ function removeWorkbookMetadataForDeletedSheet(
 				pivotTableNames: remainingPivotNames,
 			}
 		}
+	}
+}
+
+function removeChartsForDeletedSheet(workbook: Workbook, sheetName: string): void {
+	for (let index = workbook.chartParts.length - 1; index >= 0; index--) {
+		if (workbook.chartParts[index]?.sheetName === sheetName) {
+			workbook.chartParts.splice(index, 1)
+		}
+	}
+}
+
+function rewriteChartSheetReferencesForRename(
+	workbook: Workbook,
+	oldName: string,
+	newName: string,
+): void {
+	for (let index = 0; index < workbook.chartParts.length; index++) {
+		const chart = workbook.chartParts[index]
+		if (!chart) continue
+		workbook.chartParts[index] = {
+			...chart,
+			...(chart.sheetName === oldName ? { sheetName: newName } : {}),
+			series: chart.series.map((series) => ({
+				...series,
+				...(series.nameRef !== undefined
+					? { nameRef: rewriteChartSeriesRef(series.nameRef, oldName, newName) }
+					: {}),
+				...(series.categoryRef !== undefined
+					? { categoryRef: rewriteChartSeriesRef(series.categoryRef, oldName, newName) }
+					: {}),
+				...(series.valueRef !== undefined
+					? { valueRef: rewriteChartSeriesRef(series.valueRef, oldName, newName) }
+					: {}),
+			})),
+		}
+	}
+}
+
+function cloneChartsForCopiedSheet(
+	workbook: Workbook,
+	sourceSheetName: string,
+	newSheetName: string,
+): Map<string, string> {
+	const pathMap = new Map<string, string>()
+	const copiedCharts = workbook.chartParts
+		.filter((chart) => chart.sheetName === sourceSheetName)
+		.map((chart) => {
+			const partPath = nextChartPartPath(workbook, pathMap)
+			pathMap.set(chart.partPath, partPath)
+			return {
+				...chart,
+				partPath,
+				sheetName: newSheetName,
+				series: chart.series.map((series) => ({
+					...series,
+					...(series.nameRef !== undefined
+						? {
+								nameRef: rewriteChartSeriesRef(series.nameRef, sourceSheetName, newSheetName),
+							}
+						: {}),
+					...(series.categoryRef !== undefined
+						? {
+								categoryRef: rewriteChartSeriesRef(
+									series.categoryRef,
+									sourceSheetName,
+									newSheetName,
+								),
+							}
+						: {}),
+					...(series.valueRef !== undefined
+						? {
+								valueRef: rewriteChartSeriesRef(series.valueRef, sourceSheetName, newSheetName),
+							}
+						: {}),
+				})),
+			}
+		})
+	workbook.chartParts.push(...copiedCharts)
+	return pathMap
+}
+
+function rewriteChartSeriesRef(ref: string, oldName: string, newName: string): string {
+	return rewriteFormulaTextForRename(ref, oldName, newName) ?? ref
+}
+
+function retargetCopiedSheetDrawingParts(
+	workbook: Workbook,
+	sheet: Workbook['sheets'][number],
+): void {
+	const drawingPartPaths = new Set<string>()
+	for (const image of sheet.imageRefs) drawingPartPaths.add(image.drawingPartPath)
+	for (const object of sheet.drawingObjectRefs) drawingPartPaths.add(object.drawingPartPath)
+	if (drawingPartPaths.size === 0) return
+
+	const partPathMap = new Map<string, string>()
+	for (const partPath of drawingPartPaths) {
+		partPathMap.set(partPath, nextDrawingPartPath(workbook, partPathMap))
+	}
+	for (let index = 0; index < sheet.imageRefs.length; index++) {
+		const image = sheet.imageRefs[index]
+		if (!image) continue
+		sheet.imageRefs[index] = {
+			...image,
+			drawingPartPath: partPathMap.get(image.drawingPartPath) ?? image.drawingPartPath,
+		}
+	}
+	for (let index = 0; index < sheet.drawingObjectRefs.length; index++) {
+		const object = sheet.drawingObjectRefs[index]
+		if (!object) continue
+		sheet.drawingObjectRefs[index] = {
+			...object,
+			drawingPartPath: partPathMap.get(object.drawingPartPath) ?? object.drawingPartPath,
+		}
+	}
+}
+
+function retargetCopiedSheetImageTargets(
+	workbook: Workbook,
+	sheet: Workbook['sheets'][number],
+): void {
+	const targetPathMap = new Map<string, string>()
+	for (let index = 0; index < sheet.imageRefs.length; index++) {
+		const image = sheet.imageRefs[index]
+		if (!image?.content || !image.contentType) continue
+		let targetPath = targetPathMap.get(image.targetPath)
+		if (!targetPath) {
+			targetPath = nextImageTargetPath(
+				workbook,
+				targetPathMap,
+				imageExtensionForContentType(image.contentType),
+			)
+			targetPathMap.set(image.targetPath, targetPath)
+		}
+		sheet.imageRefs[index] = { ...image, targetPath }
+	}
+}
+
+function retargetCopiedSheetChartRelationships(
+	sheet: Workbook['sheets'][number],
+	chartPartPaths: ReadonlyMap<string, string>,
+): void {
+	if (chartPartPaths.size === 0) return
+	for (let index = 0; index < sheet.drawingObjectRefs.length; index++) {
+		const object = sheet.drawingObjectRefs[index]
+		if (!object?.relationshipRefs) continue
+		const relationshipRefs = object.relationshipRefs.map((relationship) => {
+			const partPath = findRetargetedChartPath(relationship.target, chartPartPaths)
+			return partPath
+				? { ...relationship, target: chartRelationshipTarget(partPath) }
+				: relationship
+		})
+		sheet.drawingObjectRefs[index] = { ...object, relationshipRefs }
+	}
+}
+
+function findRetargetedChartPath(
+	target: string,
+	chartPartPaths: ReadonlyMap<string, string>,
+): string | undefined {
+	for (const [oldPath, newPath] of chartPartPaths) {
+		if (chartRelationshipTargetMatches(target, oldPath)) return newPath
+	}
+	return undefined
+}
+
+function chartRelationshipTargetMatches(target: string, chartPartPath: string): boolean {
+	const normalizedTarget = target.replace(/^\/+/, '')
+	const normalizedPartPath = chartPartPath.replace(/^\/+/, '')
+	if (normalizedTarget === normalizedPartPath) return true
+	const fileName = normalizedPartPath.slice(normalizedPartPath.lastIndexOf('/') + 1)
+	return (
+		normalizedTarget === `../charts/${fileName}` ||
+		normalizedTarget === `charts/${fileName}` ||
+		normalizedTarget.endsWith(`/charts/${fileName}`)
+	)
+}
+
+function chartRelationshipTarget(chartPartPath: string): string {
+	const fileName = chartPartPath.slice(chartPartPath.lastIndexOf('/') + 1)
+	return `../charts/${fileName}`
+}
+
+function nextChartPartPath(workbook: Workbook, pendingPaths: ReadonlyMap<string, string>): string {
+	const used = new Set(workbook.chartParts.map((chart) => chart.partPath))
+	for (const path of pendingPaths.values()) used.add(path)
+	let index = used.size + 1
+	while (used.has(`xl/charts/chart${index}.xml`)) index++
+	return `xl/charts/chart${index}.xml`
+}
+
+function nextDrawingPartPath(
+	workbook: Workbook,
+	pendingPaths: ReadonlyMap<string, string>,
+): string {
+	const used = new Set<string>()
+	for (const sheet of workbook.sheets) {
+		for (const image of sheet.imageRefs) used.add(image.drawingPartPath)
+		for (const object of sheet.drawingObjectRefs) used.add(object.drawingPartPath)
+	}
+	for (const path of pendingPaths.values()) used.add(path)
+	let index = used.size + 1
+	while (used.has(`xl/drawings/drawing${index}.xml`)) index++
+	return `xl/drawings/drawing${index}.xml`
+}
+
+function nextImageTargetPath(
+	workbook: Workbook,
+	pendingPaths: ReadonlyMap<string, string>,
+	extension: string,
+): string {
+	const used = new Set<string>()
+	for (const sheet of workbook.sheets) {
+		for (const image of sheet.imageRefs) used.add(image.targetPath)
+	}
+	for (const path of pendingPaths.values()) used.add(path)
+	let index = used.size + 1
+	while (used.has(`xl/media/image${index}.${extension}`)) index++
+	return `xl/media/image${index}.${extension}`
+}
+
+function imageExtensionForContentType(contentType: string): string {
+	switch (contentType) {
+		case 'image/jpeg':
+		case 'image/jpg':
+			return 'jpg'
+		case 'image/gif':
+			return 'gif'
+		case 'image/bmp':
+			return 'bmp'
+		case 'image/webp':
+			return 'webp'
+		default:
+			return 'png'
 	}
 }

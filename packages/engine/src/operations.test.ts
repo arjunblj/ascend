@@ -744,6 +744,63 @@ describe('applyOperation', () => {
 		expect(sheet.drawingRefs.hasDrawing).toBe(false)
 	})
 
+	test('deleteImage preserves drawing state when non-image drawing objects remain', () => {
+		const wb = setup()
+		const sheet = wb.getSheet('Sheet1')
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+		sheet.drawingRefs = { hasDrawing: true, hasLegacyDrawing: false }
+		sheet.imageRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			relId: 'rIdImage1',
+			targetPath: 'xl/media/image1.png',
+			contentType: 'image/png',
+			content: new Uint8Array([1, 2, 3]),
+			name: 'Logo',
+		})
+		sheet.drawingObjectRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			kind: 'textBox',
+			id: 2,
+			name: 'Callout',
+			text: 'Keep me',
+		})
+
+		const result = applyOperation(wb, {
+			op: 'deleteImage',
+			sheet: 'Sheet1',
+			name: 'Logo',
+		})
+		expectOk(result)
+
+		expect(sheet.imageRefs).toEqual([])
+		expect(sheet.drawingObjectRefs).toHaveLength(1)
+		expect(sheet.drawingRefs.hasDrawing).toBe(true)
+	})
+
+	test('insertImage rejects workbook-wide targetPath collisions', () => {
+		const wb = setup()
+		const sheet2 = wb.addSheet('Sheet2')
+		sheet2.imageRefs.push({
+			drawingPartPath: 'xl/drawings/drawing2.xml',
+			relId: 'rIdImage1',
+			targetPath: 'xl/media/image1.png',
+			contentType: 'image/png',
+			content: new Uint8Array([1, 2, 3]),
+		})
+
+		const result = applyOperation(wb, {
+			op: 'insertImage',
+			sheet: 'Sheet1',
+			targetPath: 'xl/media/image1.png',
+			contentBase64: 'BAUG',
+			contentType: 'image/png',
+		})
+
+		expectErr(result)
+		expect(result.error.message).toContain('targetPath already exists')
+	})
+
 	test('setChartSeriesSource updates parsed chart source refs', () => {
 		const wb = setup()
 		wb.chartParts.push({
@@ -3173,6 +3230,180 @@ describe('applyOperation', () => {
 		expect(s.hyperlinks.get('A1')?.location).toBe('Data!A1')
 		expect(s.tables[0]?.columns[0]?.formula).toBe('Data!A:A')
 		expect(s.tables[0]?.columns[0]?.totalsRowFormula).toBe('SUM(Data!A:A)')
+	})
+
+	test('renameSheet updates chart ownership and series source refs', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+		wb.chartParts.push({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Sheet1',
+			chartType: 'lineChart',
+			series: [
+				{
+					nameRef: 'Sheet1!$B$1',
+					categoryRef: 'Sheet1!$A$2:$A$4',
+					valueRef: 'Sheet1!$B$2:$B$4',
+				},
+			],
+		})
+
+		expectOk(applyOperation(wb, { op: 'renameSheet', sheet: 'Sheet1', newName: 'Data' }))
+
+		expect(wb.chartParts[0]).toMatchObject({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Data',
+			series: [
+				{
+					nameRef: 'Data!$B$1',
+					categoryRef: 'Data!$A$2:$A$4',
+					valueRef: 'Data!$B$2:$B$4',
+				},
+			],
+		})
+	})
+
+	test('deleteSheet removes chart parts owned by the deleted sheet', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+		wb.addSheet('Sheet2')
+		wb.chartParts.push(
+			{
+				partPath: 'xl/charts/chart1.xml',
+				sheetName: 'Sheet1',
+				series: [{ valueRef: 'Sheet1!$A$1:$A$3' }],
+			},
+			{
+				partPath: 'xl/charts/chart2.xml',
+				sheetName: 'Sheet2',
+				series: [{ valueRef: 'Sheet2!$A$1:$A$3' }],
+			},
+		)
+
+		expectOk(applyOperation(wb, { op: 'deleteSheet', sheet: 'Sheet2' }))
+
+		expect(wb.chartParts).toEqual([
+			{
+				partPath: 'xl/charts/chart1.xml',
+				sheetName: 'Sheet1',
+				series: [{ valueRef: 'Sheet1!$A$1:$A$3' }],
+			},
+		])
+	})
+
+	test('copySheet duplicates visual metadata and chart source refs independently', () => {
+		const wb = createWorkbook()
+		const source = wb.addSheet('Sheet1')
+		source.drawingRefs = { hasDrawing: true, hasLegacyDrawing: false }
+		source.imageRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			relId: 'rIdImage1',
+			targetPath: 'xl/media/image1.png',
+			contentType: 'image/png',
+			content: new Uint8Array([1, 2, 3]),
+			name: 'Logo',
+		})
+		source.drawingObjectRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			kind: 'graphicFrame',
+			id: 4,
+			name: 'Chart 1',
+			relationshipRefs: [
+				{
+					id: 'rId2',
+					type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart',
+					target: '../charts/chart1.xml',
+				},
+			],
+		})
+		wb.chartParts.push({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Sheet1',
+			chartType: 'barChart',
+			series: [
+				{
+					nameRef: 'Sheet1!$B$1',
+					categoryRef: 'Sheet1!$A$2:$A$4',
+					valueRef: 'Sheet1!$B$2:$B$4',
+				},
+			],
+		})
+
+		expectOk(applyOperation(wb, { op: 'copySheet', sheet: 'Sheet1', newName: 'Copy' }))
+		const copy = wb.getSheet('Copy')
+		expect(copy).toBeDefined()
+		if (!copy) return
+
+		expect(copy.imageRefs[0]).not.toBe(source.imageRefs[0])
+		expect(copy.drawingObjectRefs[0]).not.toBe(source.drawingObjectRefs[0])
+		expect(copy.imageRefs[0]).toMatchObject({
+			drawingPartPath: 'xl/drawings/drawing2.xml',
+			targetPath: 'xl/media/image2.png',
+		})
+		expect(copy.drawingObjectRefs[0]?.drawingPartPath).toBe('xl/drawings/drawing2.xml')
+		expect(copy.drawingObjectRefs[0]?.relationshipRefs?.[0]?.target).toBe('../charts/chart2.xml')
+		expect(wb.chartParts).toHaveLength(2)
+		expect(wb.chartParts[1]).toMatchObject({
+			partPath: 'xl/charts/chart2.xml',
+			sheetName: 'Copy',
+			series: [
+				{
+					nameRef: 'Copy!$B$1',
+					categoryRef: 'Copy!$A$2:$A$4',
+					valueRef: 'Copy!$B$2:$B$4',
+				},
+			],
+		})
+
+		expectOk(
+			applyOperation(wb, {
+				op: 'replaceImage',
+				sheet: 'Copy',
+				name: 'Logo',
+				contentBase64: 'BAUG',
+				contentType: 'image/png',
+			}),
+		)
+		expect(Array.from(source.imageRefs[0]?.content ?? [])).toEqual([1, 2, 3])
+		expect(Array.from(copy.imageRefs[0]?.content ?? [])).toEqual([4, 5, 6])
+	})
+
+	test('moveSheet preserves visual metadata and chart source refs', () => {
+		const wb = createWorkbook()
+		const source = wb.addSheet('Sheet1')
+		wb.addSheet('Sheet2')
+		source.drawingRefs = { hasDrawing: true, hasLegacyDrawing: false }
+		source.imageRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			relId: 'rIdImage1',
+			targetPath: 'xl/media/image1.png',
+			contentType: 'image/png',
+			content: new Uint8Array([1, 2, 3]),
+			name: 'Logo',
+		})
+		source.drawingObjectRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			kind: 'textBox',
+			id: 2,
+			name: 'Callout',
+			text: 'Keep me',
+		})
+		wb.chartParts.push({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Sheet1',
+			series: [{ valueRef: 'Sheet1!$B$2:$B$4' }],
+		})
+
+		expectOk(applyOperation(wb, { op: 'moveSheet', sheet: 'Sheet1', position: 1 }))
+
+		expect(wb.sheets.map((sheet) => sheet.name)).toEqual(['Sheet2', 'Sheet1'])
+		expect(source.imageRefs[0]?.name).toBe('Logo')
+		expect(source.drawingObjectRefs[0]?.text).toBe('Keep me')
+		expect(wb.chartParts[0]).toEqual({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Sheet1',
+			series: [{ valueRef: 'Sheet1!$B$2:$B$4' }],
+		})
 	})
 
 	test('clearRange removes cell data', () => {

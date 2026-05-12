@@ -212,6 +212,9 @@ function externalTargetFromSheetName(sheetName: string): string {
 function checkChartSeriesReferences(wb: Workbook, sheetNames: readonly string[]): CheckIssue[] {
 	const issues: CheckIssue[] = []
 	const sheetNameSet = new Set(sheetNames.map((name) => name.toLowerCase()))
+	const tableNames = new Set(
+		wb.sheets.flatMap((sheet) => sheet.tables.map((table) => table.name.toLowerCase())),
+	)
 	for (const chart of wb.chartParts) {
 		for (let seriesIndex = 0; seriesIndex < chart.series.length; seriesIndex++) {
 			const series = chart.series[seriesIndex]
@@ -242,34 +245,66 @@ function checkChartSeriesReferences(wb: Workbook, sheetNames: readonly string[])
 					})
 					continue
 				}
-				if (!parsed.sheetName) continue
-				if (sheetNameSet.has(parsed.sheetName.toLowerCase())) continue
-				const closest = findClosestSheetName(parsed.sheetName, sheetNames)
-				issues.push({
-					rule: 'chart-series-integrity',
-					severity: 'warning',
-					message: `Chart series ${entry.field} in "${chart.partPath}" references non-existent sheet "${parsed.sheetName}"`,
-					refs: [`${chart.partPath}#series${seriesIndex}`],
-					suggestedFix: closest
-						? `Did you mean sheet "${closest}"?`
-						: 'Repair the chart series source reference before editing chart data ranges.',
-					details: {
-						partPath: chart.partPath,
-						seriesIndex,
-						field: entry.field,
-						reference: entry.reference,
-						sheetName: parsed.sheetName,
-						...(chart.sheetName ? { ownerSheet: chart.sheetName } : {}),
-						...(chart.chartType ? { chartType: chart.chartType } : {}),
-					},
-				})
+				if (parsed.sheetName && !sheetNameSet.has(parsed.sheetName.toLowerCase())) {
+					const closest = findClosestSheetName(parsed.sheetName, sheetNames)
+					issues.push({
+						rule: 'chart-series-integrity',
+						severity: 'warning',
+						message: `Chart series ${entry.field} in "${chart.partPath}" references non-existent sheet "${parsed.sheetName}"`,
+						refs: [`${chart.partPath}#series${seriesIndex}`],
+						suggestedFix: closest
+							? `Did you mean sheet "${closest}"?`
+							: 'Repair the chart series source reference before editing chart data ranges.',
+						details: {
+							partPath: chart.partPath,
+							seriesIndex,
+							field: entry.field,
+							reference: entry.reference,
+							sheetName: parsed.sheetName,
+							...(chart.sheetName ? { ownerSheet: chart.sheetName } : {}),
+							...(chart.chartType ? { chartType: chart.chartType } : {}),
+						},
+					})
+					continue
+				}
+				const tableName = chartStructuredTableReferenceName(entry.reference)
+				if (tableName && !tableNames.has(tableName.toLowerCase())) {
+					issues.push({
+						rule: 'chart-series-integrity',
+						severity: 'warning',
+						message: `Chart series ${entry.field} in "${chart.partPath}" references non-existent table "${tableName}"`,
+						refs: [`${chart.partPath}#series${seriesIndex}`],
+						suggestedFix:
+							'Repair the chart source table reference before editing chart data ranges.',
+						details: {
+							kind: 'chart-series-missing-table-reference',
+							partPath: chart.partPath,
+							seriesIndex,
+							field: entry.field,
+							reference: entry.reference,
+							tableName,
+							...(chart.sheetName ? { ownerSheet: chart.sheetName } : {}),
+							...(chart.chartType ? { chartType: chart.chartType } : {}),
+						},
+					})
+				}
 			}
 		}
 	}
 	return issues
 }
 
-function checkChartPartOwnership(wb: Workbook, sheetNames: readonly string[]): CheckIssue[] {
+function chartStructuredTableReferenceName(reference: string): string | null {
+	const local = reference.trim().replace(/^=/, '').split('!').pop()?.trim() ?? ''
+	const match = /^'?([A-Za-z_\\][\w.]*)'?\s*\[/.exec(local)
+	return match?.[1] ?? null
+}
+
+function checkChartPartOwnership(
+	wb: Workbook,
+	sheetNames: readonly string[],
+	packageGraph?: VerifyPackageGraph,
+): CheckIssue[] {
 	const issues: CheckIssue[] = []
 	const sheetNameSet = new Set(sheetNames.map((name) => name.toLowerCase()))
 	const chartSheetOwnerByPartPath = new Map<string, string>()
@@ -313,6 +348,49 @@ function checkChartPartOwnership(wb: Workbook, sheetNames: readonly string[]): C
 				...(chart.chartType ? { chartType: chart.chartType } : {}),
 			},
 		})
+	}
+	if (packageGraph) {
+		const graphPartByPath = new Map(packageGraph.parts.map((part) => [part.path, part]))
+		const chartModelPartPaths = new Set(wb.chartParts.map((chart) => chart.partPath))
+		const graphRelationshipsByTarget = relationshipsByTarget(packageGraph.relationships)
+		for (const chart of wb.chartParts) {
+			if (graphPartByPath.has(chart.partPath)) continue
+			issues.push({
+				rule: 'chart-part-ownership',
+				severity: 'error',
+				message: `Chart model references missing package part "${chart.partPath}"`,
+				refs: [chart.partPath],
+				suggestedFix:
+					'Restore the chart package part or remove the stale chart metadata before writing.',
+				details: {
+					kind: 'missing-chart-package-part',
+					partPath: chart.partPath,
+					...(chart.sheetName ? { ownerSheet: chart.sheetName } : {}),
+					...(chart.chartType ? { chartType: chart.chartType } : {}),
+				},
+			})
+		}
+		for (const part of packageGraph.parts) {
+			if (!isChartPackagePart(part)) continue
+			if (chartModelPartPaths.has(part.path)) continue
+			issues.push({
+				rule: 'chart-part-ownership',
+				severity: 'warning',
+				message: `Chart package part "${part.path}" is not claimed by the workbook chart model`,
+				refs: [part.path],
+				suggestedFix:
+					'Reconnect the chart part through its drawing or chartsheet owner, or remove the orphan chart sidecar before writing.',
+				details: {
+					kind: 'orphan-chart-package-part',
+					partPath: part.path,
+					ownerScope: part.ownerScope,
+					contentType: part.contentType,
+					incomingRelationships: (graphRelationshipsByTarget.get(part.path) ?? []).map(
+						packageRelationshipDetails,
+					),
+				},
+			})
+		}
 	}
 	return issues
 }
@@ -882,6 +960,12 @@ function isQueryTableRelationshipType(relationshipType: string): boolean {
 }
 
 function queryTableRelationshipDetails(
+	relationship: VerifyPackageGraphRelationship,
+): Readonly<Record<string, unknown>> {
+	return packageRelationshipDetails(relationship)
+}
+
+function packageRelationshipDetails(
 	relationship: VerifyPackageGraphRelationship,
 ): Readonly<Record<string, unknown>> {
 	return {
@@ -2577,6 +2661,583 @@ function checkExternalLinkIntegrity(wb: Workbook, packageGraph?: VerifyPackageGr
 	return issues
 }
 
+function checkDrawingPackageIntegrity(
+	wb: Workbook,
+	packageGraph?: VerifyPackageGraph,
+): CheckIssue[] {
+	if (!packageGraph) return []
+	const issues: CheckIssue[] = []
+	const graphPartByPath = new Map(packageGraph.parts.map((part) => [part.path, part]))
+	const graphRelationshipBySourceAndId = new Map(
+		packageGraph.relationships.map((relationship) => [
+			`${relationship.sourcePartPath}#${relationship.id}`,
+			relationship,
+		]),
+	)
+	const graphRelationshipsByTarget = relationshipsByTarget(packageGraph.relationships)
+	const modelDrawingPartPaths = new Set<string>()
+	const drawingObjectNamesBySheet = new Map<string, Map<string, WorkbookDrawingObjectOwner>>()
+
+	for (const sheet of wb.sheets) {
+		for (const image of sheet.imageRefs) {
+			modelDrawingPartPaths.add(image.drawingPartPath)
+			const drawingPart = graphPartByPath.get(image.drawingPartPath)
+			if (!drawingPart) {
+				issues.push({
+					rule: 'drawing-integrity',
+					severity: 'error',
+					message: `Image "${image.relId}" on sheet "${sheet.name}" references missing drawing package part "${image.drawingPartPath}"`,
+					refs: [`${sheet.name}#${image.relId}`, image.drawingPartPath],
+					suggestedFix:
+						'Restore the drawing package part or remove the stale sheet image reference before writing.',
+					details: {
+						kind: 'image-missing-drawing-part',
+						sheetName: sheet.name,
+						drawingPartPath: image.drawingPartPath,
+						relationshipId: image.relId,
+						targetPath: image.targetPath,
+					},
+				})
+				continue
+			}
+			if (!isDrawingPackagePart(drawingPart)) {
+				issues.push({
+					rule: 'drawing-integrity',
+					severity: 'error',
+					message: `Image "${image.relId}" on sheet "${sheet.name}" is attached to non-DrawingML part "${image.drawingPartPath}"`,
+					refs: [`${sheet.name}#${image.relId}`, image.drawingPartPath],
+					suggestedFix:
+						'Bind sheet image references to a DrawingML worksheet drawing part before writing.',
+					details: {
+						kind: 'image-drawing-part-type-mismatch',
+						sheetName: sheet.name,
+						drawingPartPath: image.drawingPartPath,
+						relationshipId: image.relId,
+						graphPart: drawingPart,
+					},
+				})
+			}
+			const imageRelationship = graphRelationshipBySourceAndId.get(
+				`${image.drawingPartPath}#${image.relId}`,
+			)
+			if (!imageRelationship) {
+				issues.push({
+					rule: 'drawing-integrity',
+					severity: 'error',
+					message: `Image relationship "${image.relId}" is missing from drawing part "${image.drawingPartPath}"`,
+					refs: [`${sheet.name}#${image.relId}`, image.drawingPartPath],
+					suggestedFix:
+						'Restore the drawing image relationship or remove the stale image anchor before writing.',
+					details: {
+						kind: 'image-relationship-missing',
+						sheetName: sheet.name,
+						drawingPartPath: image.drawingPartPath,
+						relationshipId: image.relId,
+						targetPath: image.targetPath,
+					},
+				})
+				continue
+			}
+			pushDrawingMediaRelationshipIssues(issues, {
+				relationship: imageRelationship,
+				expectedTargetPath: image.targetPath,
+				refs: [
+					`${sheet.name}#${image.relId}`,
+					`${imageRelationship.relationshipPartPath}#${image.relId}`,
+				],
+				details: {
+					sheetName: sheet.name,
+					drawingPartPath: image.drawingPartPath,
+					relationshipId: image.relId,
+					...(image.name ? { imageName: image.name } : {}),
+				},
+				graphPartByPath,
+			})
+		}
+
+		for (let index = 0; index < sheet.drawingObjectRefs.length; index++) {
+			const object = sheet.drawingObjectRefs[index]
+			if (!object) continue
+			modelDrawingPartPaths.add(object.drawingPartPath)
+			const ownerKey = drawingObjectOwnerKey(object)
+			if (ownerKey) {
+				let owners = drawingObjectNamesBySheet.get(sheet.name)
+				if (!owners) {
+					owners = new Map()
+					drawingObjectNamesBySheet.set(sheet.name, owners)
+				}
+				const existing = owners.get(ownerKey)
+				if (existing && existing.source !== object.source) {
+					issues.push({
+						rule: 'drawing-integrity',
+						severity: 'warning',
+						message: `Drawing object "${ownerKey}" on sheet "${sheet.name}" is claimed by both DrawingML and VML metadata`,
+						refs: [
+							`${sheet.name}#drawingObject${existing.index}`,
+							`${sheet.name}#drawingObject${index}`,
+						],
+						suggestedFix:
+							'Inspect DrawingML and VML ownership before editing shape or image layout metadata.',
+						details: {
+							kind: 'vml-drawingml-ownership-ambiguity',
+							sheetName: sheet.name,
+							ownerKey,
+							first: existing,
+							duplicate: {
+								index,
+								source: object.source,
+								drawingPartPath: object.drawingPartPath,
+								kind: object.kind,
+							},
+						},
+					})
+				} else {
+					owners.set(ownerKey, {
+						index,
+						source: object.source,
+						drawingPartPath: object.drawingPartPath,
+						kind: object.kind,
+					})
+				}
+			}
+			for (const relId of object.relIds ?? []) {
+				const relationship = graphRelationshipBySourceAndId.get(
+					`${object.drawingPartPath}#${relId}`,
+				)
+				if (!relationship) {
+					issues.push({
+						rule: 'drawing-integrity',
+						severity: 'error',
+						message: `Drawing object relationship "${relId}" is missing from "${object.drawingPartPath}"`,
+						refs: [`${sheet.name}#drawingObject${index}`, `${object.drawingPartPath}#${relId}`],
+						suggestedFix:
+							'Restore the drawing relationship before editing drawing objects or their linked content.',
+						details: {
+							kind: 'drawing-object-relationship-missing',
+							sheetName: sheet.name,
+							objectIndex: index,
+							drawingPartPath: object.drawingPartPath,
+							relationshipId: relId,
+							source: object.source,
+						},
+					})
+					continue
+				}
+				if (isImageRelationshipType(relationship.type)) {
+					pushDrawingMediaRelationshipIssues(issues, {
+						relationship,
+						refs: [
+							`${sheet.name}#drawingObject${index}`,
+							`${relationship.relationshipPartPath}#${relId}`,
+						],
+						details: {
+							sheetName: sheet.name,
+							objectIndex: index,
+							drawingPartPath: object.drawingPartPath,
+							relationshipId: relId,
+							source: object.source,
+						},
+						graphPartByPath,
+					})
+				}
+				if (isChartRelationshipType(relationship.type)) {
+					pushDrawingChartRelationshipIssues(issues, {
+						relationship,
+						refs: [
+							`${sheet.name}#drawingObject${index}`,
+							`${relationship.relationshipPartPath}#${relId}`,
+						],
+						details: {
+							sheetName: sheet.name,
+							objectIndex: index,
+							drawingPartPath: object.drawingPartPath,
+							relationshipId: relId,
+							source: object.source,
+						},
+						graphPartByPath,
+					})
+				}
+			}
+		}
+	}
+
+	for (const relationship of packageGraph.relationships) {
+		if (
+			isDrawingRelationshipType(relationship.type) ||
+			isVmlDrawingRelationshipType(relationship.type)
+		) {
+			if (
+				!isWorksheetPartPath(relationship.sourcePartPath) &&
+				!isChartSheetPartPath(relationship.sourcePartPath)
+			) {
+				issues.push({
+					rule: 'drawing-integrity',
+					severity: 'warning',
+					message: `Drawing relationship "${relationship.id}" is not owned by a worksheet or chartsheet`,
+					refs: [`${relationship.relationshipPartPath}#${relationship.id}`],
+					suggestedFix:
+						'Bind drawing sidecars from their worksheet or chartsheet owner before writing.',
+					details: {
+						kind: 'drawing-missing-worksheet-chartsheet-owner',
+						relationship: packageRelationshipDetails(relationship),
+					},
+				})
+			}
+		}
+		if (isChartRelationshipType(relationship.type)) {
+			pushDrawingChartRelationshipIssues(issues, {
+				relationship,
+				refs: [`${relationship.relationshipPartPath}#${relationship.id}`],
+				details: { sourcePartPath: relationship.sourcePartPath },
+				graphPartByPath,
+			})
+		}
+		if (isImageRelationshipType(relationship.type)) {
+			pushDrawingMediaRelationshipIssues(issues, {
+				relationship,
+				refs: [`${relationship.relationshipPartPath}#${relationship.id}`],
+				details: { sourcePartPath: relationship.sourcePartPath },
+				graphPartByPath,
+			})
+		}
+	}
+
+	for (const part of packageGraph.parts) {
+		if (!isDrawingPackagePart(part) && !isVmlPackagePart(part)) continue
+		if (modelDrawingPartPaths.has(part.path)) continue
+		const incomingRelationships = graphRelationshipsByTarget.get(part.path) ?? []
+		const ownerRelationships = incomingRelationships.filter(
+			(relationship) =>
+				isDrawingRelationshipType(relationship.type) ||
+				isVmlDrawingRelationshipType(relationship.type),
+		)
+		if (ownerRelationships.length === 0) {
+			issues.push({
+				rule: 'drawing-integrity',
+				severity: 'warning',
+				message: `Drawing package part "${part.path}" is not owned by a worksheet or chartsheet relationship`,
+				refs: [part.path],
+				suggestedFix:
+					'Reconnect the drawing part to its worksheet/chartsheet or remove the orphan drawing sidecar before writing.',
+				details: {
+					kind: isVmlPackagePart(part) ? 'orphan-vml-drawing-part' : 'orphan-drawing-part',
+					partPath: part.path,
+					ownerScope: part.ownerScope,
+					contentType: part.contentType,
+					incomingRelationships: incomingRelationships.map(packageRelationshipDetails),
+				},
+			})
+			continue
+		}
+		const hasDrawingOwner = ownerRelationships.some((relationship) =>
+			isDrawingRelationshipType(relationship.type),
+		)
+		const hasVmlOwner = ownerRelationships.some((relationship) =>
+			isVmlDrawingRelationshipType(relationship.type),
+		)
+		if (hasDrawingOwner && hasVmlOwner) {
+			issues.push({
+				rule: 'drawing-integrity',
+				severity: 'warning',
+				message: `Drawing package part "${part.path}" is claimed by both DrawingML and VML relationships`,
+				refs: [
+					part.path,
+					...ownerRelationships.map((rel) => `${rel.relationshipPartPath}#${rel.id}`),
+				],
+				suggestedFix:
+					'Separate DrawingML and VML sidecars before editing drawing or legacy shape metadata.',
+				details: {
+					kind: 'vml-drawingml-package-owner-ambiguity',
+					partPath: part.path,
+					relationships: ownerRelationships.map(packageRelationshipDetails),
+				},
+			})
+		}
+	}
+
+	return issues
+}
+
+interface WorkbookDrawingObjectOwner {
+	readonly index: number
+	readonly source: 'drawingml' | 'vml' | undefined
+	readonly drawingPartPath: string
+	readonly kind: string
+}
+
+function pushDrawingChartRelationshipIssues(
+	issues: CheckIssue[],
+	params: {
+		readonly relationship: VerifyPackageGraphRelationship
+		readonly refs: readonly string[]
+		readonly details: Readonly<Record<string, unknown>>
+		readonly graphPartByPath: ReadonlyMap<string, VerifyPackageGraphPart>
+	},
+): void {
+	if (!params.relationship.resolvedTarget) return
+	const targetPart = params.graphPartByPath.get(params.relationship.resolvedTarget)
+	if (!targetPart) {
+		issues.push({
+			rule: 'drawing-integrity',
+			severity: 'error',
+			message: `Drawing chart relationship "${params.relationship.id}" resolves to missing chart part "${params.relationship.resolvedTarget}"`,
+			refs: params.refs,
+			suggestedFix:
+				'Repair the drawing chart relationship target or restore the referenced chart part before writing.',
+			details: {
+				kind: 'drawing-chart-relationship-missing-target',
+				relationship: packageRelationshipDetails(params.relationship),
+				...params.details,
+			},
+		})
+		return
+	}
+	if (isChartPackagePart(targetPart)) return
+	issues.push({
+		rule: 'drawing-integrity',
+		severity: 'error',
+		message: `Drawing chart relationship "${params.relationship.id}" targets non-chart part "${params.relationship.resolvedTarget}"`,
+		refs: params.refs,
+		suggestedFix: 'Repair the drawing chart relationship target before editing embedded charts.',
+		details: {
+			kind: 'drawing-chart-target-type-mismatch',
+			relationship: packageRelationshipDetails(params.relationship),
+			targetPart,
+			...params.details,
+		},
+	})
+}
+
+function pushDrawingMediaRelationshipIssues(
+	issues: CheckIssue[],
+	params: {
+		readonly relationship: VerifyPackageGraphRelationship
+		readonly refs: readonly string[]
+		readonly expectedTargetPath?: string
+		readonly details: Readonly<Record<string, unknown>>
+		readonly graphPartByPath: ReadonlyMap<string, VerifyPackageGraphPart>
+	},
+): void {
+	if (!isImageRelationshipType(params.relationship.type)) {
+		issues.push({
+			rule: 'drawing-integrity',
+			severity: 'error',
+			message: `Image relationship "${params.relationship.id}" has unexpected type "${params.relationship.type}"`,
+			refs: params.refs,
+			suggestedFix: 'Repair the image relationship type before writing drawing media references.',
+			details: {
+				kind: 'image-relationship-type-mismatch',
+				relationship: packageRelationshipDetails(params.relationship),
+				...params.details,
+			},
+		})
+		return
+	}
+	if (
+		params.expectedTargetPath &&
+		params.relationship.resolvedTarget &&
+		params.relationship.resolvedTarget !== params.expectedTargetPath
+	) {
+		issues.push({
+			rule: 'drawing-integrity',
+			severity: 'error',
+			message: `Image relationship "${params.relationship.id}" resolves to "${params.relationship.resolvedTarget}" but sheet image metadata expects "${params.expectedTargetPath}"`,
+			refs: params.refs,
+			suggestedFix:
+				'Make the sheet image targetPath match the drawing relationship target before writing.',
+			details: {
+				kind: 'image-media-target-mismatch',
+				relationship: packageRelationshipDetails(params.relationship),
+				expectedTargetPath: params.expectedTargetPath,
+				actualTargetPath: params.relationship.resolvedTarget,
+				...params.details,
+			},
+		})
+	}
+	if (!params.relationship.resolvedTarget) return
+	const targetPart = params.graphPartByPath.get(params.relationship.resolvedTarget)
+	if (!targetPart) {
+		issues.push({
+			rule: 'drawing-integrity',
+			severity: 'error',
+			message: `Image relationship "${params.relationship.id}" resolves to missing media part "${params.relationship.resolvedTarget}"`,
+			refs: params.refs,
+			suggestedFix:
+				'Repair the image relationship target or restore the referenced media part before writing.',
+			details: {
+				kind: 'image-media-relationship-missing-target',
+				relationship: packageRelationshipDetails(params.relationship),
+				...params.details,
+			},
+		})
+		return
+	}
+	if (isMediaPackagePart(targetPart)) return
+	issues.push({
+		rule: 'drawing-integrity',
+		severity: 'error',
+		message: `Image relationship "${params.relationship.id}" targets non-media part "${params.relationship.resolvedTarget}"`,
+		refs: params.refs,
+		suggestedFix: 'Repair the image relationship target so it points at an xl/media package part.',
+		details: {
+			kind: 'image-media-target-type-mismatch',
+			relationship: packageRelationshipDetails(params.relationship),
+			targetPart,
+			...params.details,
+		},
+	})
+}
+
+function checkChartStyleColorIntegrity(packageGraph?: VerifyPackageGraph): CheckIssue[] {
+	if (!packageGraph) return []
+	const issues: CheckIssue[] = []
+	const graphPartByPath = new Map(packageGraph.parts.map((part) => [part.path, part]))
+	const graphRelationshipsByTarget = relationshipsByTarget(packageGraph.relationships)
+	for (const relationship of packageGraph.relationships) {
+		if (
+			!isChartStyleRelationshipType(relationship.type) &&
+			!isChartColorRelationshipType(relationship.type)
+		) {
+			continue
+		}
+		const expected = isChartStyleRelationshipType(relationship.type)
+			? 'preservedChartStyle'
+			: 'preservedChartColor'
+		const targetPart = relationship.resolvedTarget
+			? graphPartByPath.get(relationship.resolvedTarget)
+			: undefined
+		if (targetPart && targetPart.featureFamily !== expected) {
+			issues.push({
+				rule: 'chart-package-integrity',
+				severity: 'error',
+				message: `Chart relationship "${relationship.id}" targets ${targetPart.featureFamily ?? 'unknown'} part "${relationship.resolvedTarget}" where ${expected} is expected`,
+				refs: [`${relationship.relationshipPartPath}#${relationship.id}`],
+				suggestedFix:
+					'Repair the chart style/color relationship target before preserving chart formatting sidecars.',
+				details: {
+					kind: 'chart-style-color-target-mismatch',
+					expectedFeatureFamily: expected,
+					relationship: packageRelationshipDetails(relationship),
+					targetPart,
+				},
+			})
+		}
+		if (!isChartPartPath(relationship.sourcePartPath)) {
+			issues.push({
+				rule: 'chart-package-integrity',
+				severity: 'warning',
+				message: `Chart style/color relationship "${relationship.id}" is not owned by a chart part`,
+				refs: [`${relationship.relationshipPartPath}#${relationship.id}`],
+				suggestedFix: 'Bind chart style/color sidecars from their chart part before writing.',
+				details: {
+					kind: 'chart-style-color-owner-mismatch',
+					relationship: packageRelationshipDetails(relationship),
+				},
+			})
+		}
+	}
+	for (const part of packageGraph.parts) {
+		if (!isChartStylePackagePart(part) && !isChartColorPackagePart(part)) continue
+		const incoming = graphRelationshipsByTarget.get(part.path) ?? []
+		const expectedRelationship = isChartStylePackagePart(part)
+			? isChartStyleRelationshipType
+			: isChartColorRelationshipType
+		if (incoming.some((relationship) => expectedRelationship(relationship.type))) continue
+		issues.push({
+			rule: 'chart-package-integrity',
+			severity: 'warning',
+			message: `Chart ${isChartStylePackagePart(part) ? 'style' : 'color'} package part "${part.path}" is not claimed by any chart relationship`,
+			refs: [part.path],
+			suggestedFix:
+				'Reconnect the chart style/color sidecar to its chart part or remove the orphan sidecar before writing.',
+			details: {
+				kind: isChartStylePackagePart(part) ? 'orphan-chart-style-part' : 'orphan-chart-color-part',
+				partPath: part.path,
+				ownerScope: part.ownerScope,
+				contentType: part.contentType,
+				incomingRelationships: incoming.map(packageRelationshipDetails),
+			},
+		})
+	}
+	return issues
+}
+
+function relationshipsByTarget(
+	relationships: readonly VerifyPackageGraphRelationship[],
+): Map<string, VerifyPackageGraphRelationship[]> {
+	const byTarget = new Map<string, VerifyPackageGraphRelationship[]>()
+	for (const relationship of relationships) {
+		if (!relationship.resolvedTarget) continue
+		const entries = byTarget.get(relationship.resolvedTarget)
+		if (entries) entries.push(relationship)
+		else byTarget.set(relationship.resolvedTarget, [relationship])
+	}
+	return byTarget
+}
+
+function drawingObjectOwnerKey(
+	object: Workbook['sheets'][number]['drawingObjectRefs'][number],
+): string | null {
+	if (object.name) return `name:${object.name}`
+	if (object.id !== undefined) return `id:${object.id}`
+	return null
+}
+
+function isDrawingRelationshipType(relationshipType: string | undefined): boolean {
+	return relationshipType?.toLowerCase().endsWith('/relationships/drawing') ?? false
+}
+
+function isChartRelationshipType(relationshipType: string | undefined): boolean {
+	return relationshipType?.toLowerCase().endsWith('/relationships/chart') ?? false
+}
+
+function isImageRelationshipType(relationshipType: string | undefined): boolean {
+	return relationshipType?.toLowerCase().endsWith('/relationships/image') ?? false
+}
+
+function isChartStyleRelationshipType(relationshipType: string | undefined): boolean {
+	return /\/relationships\/chartstyle$/i.test(relationshipType ?? '')
+}
+
+function isChartColorRelationshipType(relationshipType: string | undefined): boolean {
+	return /\/relationships\/chartcolorstyle$/i.test(relationshipType ?? '')
+}
+
+function isChartSheetPartPath(partPath: string): boolean {
+	return /(^|\/)chartsheets\/sheet\d+\.xml$/i.test(partPath)
+}
+
+function isChartPartPath(partPath: string): boolean {
+	return /(^|\/)(charts\/chart\d+|chartEx\/chartEx\d+)\.xml$/i.test(partPath)
+}
+
+function isChartPackagePart(part: VerifyPackageGraphPart): boolean {
+	return part.featureFamily === 'preservedChart' && isChartPartPath(part.path)
+}
+
+function isChartStylePackagePart(part: VerifyPackageGraphPart): boolean {
+	return part.featureFamily === 'preservedChartStyle'
+}
+
+function isChartColorPackagePart(part: VerifyPackageGraphPart): boolean {
+	return part.featureFamily === 'preservedChartColor'
+}
+
+function isDrawingPackagePart(part: VerifyPackageGraphPart): boolean {
+	return (
+		part.featureFamily === 'preservedDrawing' &&
+		/(^|\/)drawings\/drawing[^/]*\.xml$/i.test(part.path)
+	)
+}
+
+function isVmlPackagePart(part: VerifyPackageGraphPart): boolean {
+	return part.featureFamily === 'preservedVml' || /(^|\/)drawings\/[^/]+\.vml$/i.test(part.path)
+}
+
+function isMediaPackagePart(part: VerifyPackageGraphPart): boolean {
+	return part.featureFamily === 'preservedMedia' || /(^|\/)media\//i.test(part.path)
+}
+
 function checkPackageGraphIntegrity(packageGraph?: VerifyPackageGraph): CheckIssue[] {
 	if (!packageGraph) return []
 	const issues: CheckIssue[] = []
@@ -2615,7 +3276,7 @@ export function check(workbook: Workbook, analysis?: CheckAnalysis): CheckResult
 		...checkBrokenRefs(workbook, formulas, sheetNames),
 		...checkExternalRefs(formulas),
 		...checkChartSeriesReferences(workbook, sheetNames),
-		...checkChartPartOwnership(workbook, sheetNames),
+		...checkChartPartOwnership(workbook, sheetNames, analysis?.packageGraph),
 		...checkCircularRefs(workbook, dependencies),
 		...checkFormulaErrors(workbook, formulas),
 		...checkBlockedSpills(workbook),
@@ -2628,6 +3289,8 @@ export function check(workbook: Workbook, analysis?: CheckAnalysis): CheckResult
 		...checkConditionalFormatIntegrity(workbook),
 		...checkThreadedCommentIntegrity(workbook, analysis?.packageGraph),
 		...checkLegacyCommentDrawingIntegrity(workbook, analysis?.packageGraph),
+		...checkDrawingPackageIntegrity(workbook, analysis?.packageGraph),
+		...checkChartStyleColorIntegrity(analysis?.packageGraph),
 		...checkPackageGraphIntegrity(analysis?.packageGraph),
 	]
 	return { passed: issues.length === 0, issues }

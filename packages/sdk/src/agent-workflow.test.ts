@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test'
+import { Buffer } from 'node:buffer'
 import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { inspectXlsxPackageGraph } from '@ascend/io-xlsx'
 import { createZip, encode } from '../../io-xlsx/src/writer/zip.ts'
+import { makeEmbeddedChartXlsx } from '../../io-xlsx/test/helpers.ts'
 import {
 	AscendWorkbook,
 	auditLossPolicy,
@@ -403,7 +405,7 @@ describe('agent workflow loss audit', () => {
 		)
 	})
 
-	test('dirty cell edits preserve visual sidecars and require post-write audit inspection', async () => {
+	test('dirty cell edits preserve visual sidecars without visual-edit noise', async () => {
 		const input = join(TEMP_DIR, 'visual.xlsx')
 		const output = join(TEMP_DIR, 'visual-out.xlsx')
 		mkdirSync(TEMP_DIR, { recursive: true })
@@ -415,7 +417,7 @@ describe('agent workflow loss audit', () => {
 		expect(plan.writePolicy.diagnostics).toContainEqual(
 			expect.objectContaining({
 				code: 'visual-sidecar-preservation-risk',
-				severity: 'warning',
+				severity: 'info',
 				partPaths: expect.arrayContaining([
 					'xl/drawings/drawing1.xml',
 					'xl/media/image1.png',
@@ -454,8 +456,19 @@ describe('agent workflow loss audit', () => {
 						contentTypeSource: 'override',
 					}),
 				]),
+				details: expect.objectContaining({
+					operationScoped: false,
+					relatedOperations: [],
+					chartSourceRefDrift: [],
+					drawingmlVmlDrift: [],
+				}),
 			}),
 		)
+		expect(
+			plan.writePolicy.diagnostics.some(
+				(diagnostic) => diagnostic.code === 'visual-edit-preservation-risk',
+			),
+		).toBe(false)
 		expect(plan.writePolicy.diagnostics).toContainEqual(
 			expect.objectContaining({
 				code: 'copied-through-package-parts',
@@ -496,6 +509,174 @@ describe('agent workflow loss audit', () => {
 				'xl/charts/style1.xml',
 				'xl/charts/colors1.xml',
 			]),
+		)
+	})
+
+	test('plans image replacement with selector and sidecar recommendations', async () => {
+		const input = join(TEMP_DIR, 'image-replace.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makeVisualXlsx())
+
+		const plan = await createAgentPlan(input, [
+			{
+				op: 'replaceImage',
+				sheet: 'Sheet1',
+				imageIndex: 0,
+				contentBase64: Buffer.from('new-png-bytes').toString('base64'),
+				contentType: 'image/png',
+			},
+		])
+
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'visual-sidecar-preservation-risk',
+				severity: 'warning',
+				details: expect.objectContaining({ operationScoped: true }),
+			}),
+		)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'visual-edit-preservation-risk',
+				severity: 'info',
+				partPaths: expect.arrayContaining(['xl/drawings/drawing1.xml', 'xl/media/image1.png']),
+				details: expect.objectContaining({
+					relatedOperations: [
+						expect.objectContaining({
+							op: 'replaceImage',
+							targetKind: 'image',
+							selector: { imageIndex: 0 },
+							matchCount: 1,
+							matches: [
+								expect.objectContaining({
+									drawingPartPath: 'xl/drawings/drawing1.xml',
+									targetPath: 'xl/media/image1.png',
+									relId: 'rIdImage1',
+								}),
+							],
+							recommendation: expect.stringContaining('unique image selector'),
+						}),
+					],
+				}),
+			}),
+		)
+	})
+
+	test('plans chart source ref drift and safe setChartSeriesSource recommendation', async () => {
+		const input = join(TEMP_DIR, 'chart-source-drift.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makeEmbeddedChartXlsx({ sheetName: 'Data' }))
+
+		const plan = await createAgentPlan(input, [
+			{ op: 'insertRows', sheet: 'Data', at: 2, count: 1 },
+		])
+
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'chart-source-ref-drift-risk',
+				severity: 'warning',
+				partPaths: expect.arrayContaining([
+					'xl/charts/chart1.xml',
+					'xl/charts/style1.xml',
+					'xl/charts/colors1.xml',
+				]),
+				suggestedAction: expect.stringContaining('setChartSeriesSource'),
+				details: expect.objectContaining({
+					chartSourceRefDrift: [
+						expect.objectContaining({
+							chartPartPath: 'xl/charts/chart1.xml',
+							sheetName: 'Data',
+							chartIndex: 0,
+							seriesIndex: 0,
+							sourceRefs: expect.arrayContaining([
+								expect.objectContaining({
+									sourceKind: 'categoryRef',
+									ref: 'Data!$A$2:$A$4',
+									referencedSheets: ['Data'],
+								}),
+								expect.objectContaining({
+									sourceKind: 'valueRef',
+									ref: 'Data!$B$2:$B$4',
+									referencedSheets: ['Data'],
+								}),
+							]),
+							relatedOperations: [
+								expect.objectContaining({
+									op: 'insertRows',
+									sheetName: 'Data',
+									rangeImpact: 'rows',
+									at: 2,
+									count: 1,
+								}),
+							],
+							recommendation: expect.objectContaining({
+								op: 'setChartSeriesSource',
+								partPath: 'xl/charts/chart1.xml',
+								chartIndex: 0,
+								seriesIndex: 0,
+							}),
+						}),
+					],
+				}),
+			}),
+		)
+	})
+
+	test('plans DrawingML versus VML drift for visual edits on mixed sheets', async () => {
+		const input = join(TEMP_DIR, 'mixed-drawings.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makeMixedDrawingXlsx())
+
+		const plan = await createAgentPlan(input, [
+			{
+				op: 'setDrawingText',
+				sheet: 'Sheet1',
+				drawingPartPath: 'xl/drawings/drawing1.xml',
+				id: 2,
+				text: 'Updated',
+			},
+		])
+
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'drawingml-vml-drift-risk',
+				severity: 'warning',
+				partPaths: expect.arrayContaining([
+					'xl/drawings/drawing1.xml',
+					'xl/drawings/vmlDrawing1.vml',
+				]),
+				suggestedAction: expect.stringContaining('DrawingML plus VML'),
+				details: expect.objectContaining({
+					drift: [
+						expect.objectContaining({
+							op: 'setDrawingText',
+							sheetName: 'Sheet1',
+							drawingMlObjectCount: 1,
+							vmlObjectCount: 1,
+							recommendation: expect.stringContaining('separate package graphs'),
+						}),
+					],
+				}),
+			}),
+		)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'visual-edit-preservation-risk',
+				details: expect.objectContaining({
+					relatedOperations: [
+						expect.objectContaining({
+							op: 'setDrawingText',
+							targetKind: 'drawingText',
+							matchCount: 1,
+							matches: [
+								expect.objectContaining({
+									source: 'drawingml',
+									editableText: true,
+								}),
+							],
+						}),
+					],
+				}),
+			}),
 		)
 	})
 
@@ -1272,6 +1453,69 @@ function makeVisualXlsx(): Uint8Array {
 <cs:chartStyle xmlns:cs="http://schemas.microsoft.com/office/drawing/2012/chartStyle" id="10"/>`),
 				'xl/charts/colors1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cs:colorStyle xmlns:cs="http://schemas.microsoft.com/office/drawing/2012/chartStyle" meth="cycle"/>`),
+			}),
+		),
+	)
+}
+
+function makeMixedDrawingXlsx(): Uint8Array {
+	return createZip(
+		new Map(
+			Object.entries({
+				'[Content_Types].xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="vml" ContentType="application/vnd.openxmlformats-officedocument.vmlDrawing"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>
+</Types>`),
+				'_rels/.rels': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+				'xl/_rels/workbook.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`),
+				'xl/worksheets/_rels/sheet1.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdDrawing" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>
+  <Relationship Id="rIdVml" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing" Target="../drawings/vmlDrawing1.vml"/>
+</Relationships>`),
+				'xl/workbook.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet1"/></sheets>
+</workbook>`),
+				'xl/worksheets/sheet1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheetData/>
+  <drawing r:id="rIdDrawing"/>
+  <legacyDrawing r:id="rIdVml"/>
+</worksheet>`),
+				'xl/drawings/drawing1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <xdr:twoCellAnchor>
+    <xdr:from><xdr:col>1</xdr:col><xdr:row>2</xdr:row></xdr:from>
+    <xdr:to><xdr:col>3</xdr:col><xdr:row>4</xdr:row></xdr:to>
+    <xdr:sp>
+      <xdr:nvSpPr><xdr:cNvPr id="2" name="Callout"/></xdr:nvSpPr>
+      <xdr:txBody><a:bodyPr/><a:p><a:r><a:t>Original</a:t></a:r></a:p></xdr:txBody>
+    </xdr:sp>
+    <xdr:clientData/>
+  </xdr:twoCellAnchor>
+</xdr:wsDr>`),
+				'xl/drawings/vmlDrawing1.vml':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xml xmlns:v="urn:schemas-microsoft-com:vml" xmlns:x="urn:schemas-microsoft-com:office:excel">
+  <v:shape id="_x0000_s1025" type="#_x0000_t201" style="position:absolute;visibility:visible">
+    <v:textbox><div>Legacy text</div></v:textbox>
+    <x:ClientData ObjectType="Button"><x:Anchor>2, 14, 3, 6, 4, 3, 8, 0</x:Anchor></x:ClientData>
+  </v:shape>
+</xml>`),
 			}),
 		),
 	)

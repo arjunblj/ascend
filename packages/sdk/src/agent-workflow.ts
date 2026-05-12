@@ -1,7 +1,15 @@
 import { createHash } from 'node:crypto'
 import { copyFile, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
-import { type ExternalReferenceInfo, parseRange, type RangeRef, type Workbook } from '@ascend/core'
+import {
+	type ChartPartInfo,
+	type ExternalReferenceInfo,
+	parseRange,
+	type RangeRef,
+	type SheetDrawingObjectRef,
+	type SheetImageRef,
+	type Workbook,
+} from '@ascend/core'
 import { normalizeFormulaInput, parseFormula } from '@ascend/formulas'
 import type {
 	XlsxPackageGraph,
@@ -145,6 +153,9 @@ export interface WritePolicyDiagnostic {
 		| 'calc-chain-discarded'
 		| 'active-content-preserved'
 		| 'visual-sidecar-preservation-risk'
+		| 'visual-edit-preservation-risk'
+		| 'drawingml-vml-drift-risk'
+		| 'chart-source-ref-drift-risk'
 		| 'legacy-comment-preservation-risk'
 		| 'threaded-comment-preservation-risk'
 		| 'conditional-format-extension-preservation'
@@ -1357,17 +1368,95 @@ function buildWritePolicyReport(
 		visualFamilies.add(part.featureFamily)
 		visualPartPaths.push(part.path)
 	}
+	const visualWriteRisk = buildVisualWriteRisk(workbook, operations, packageGraph.parts)
+	const visualHasOperationRisk =
+		visualWriteRisk.relatedOperations.length > 0 ||
+		visualWriteRisk.chartSourceRefDrift.length > 0 ||
+		visualWriteRisk.drawingmlVmlDrift.length > 0
 	if (visualPartPaths.length > 0) {
 		diagnostics.push({
 			code: 'visual-sidecar-preservation-risk',
-			severity: 'warning',
-			message: `${visualPartPaths.length} chart, drawing, pivot, slicer, or timeline sidecar part(s) require post-write preservation audit.`,
-			suggestedAction:
-				'Inspect postWrite.packageGraphAudit before treating visuals or analytical caches as fidelity-safe.',
+			severity: visualHasOperationRisk ? 'warning' : 'info',
+			message: visualHasOperationRisk
+				? `${visualPartPaths.length} chart, drawing, pivot, slicer, or timeline sidecar part(s) intersect planned visual or chart-source edits and require post-write preservation audit.`
+				: `${visualPartPaths.length} chart, drawing, pivot, slicer, or timeline sidecar part(s) will be copied through; no visual or chart-source edit is planned.`,
+			suggestedAction: visualHasOperationRisk
+				? 'Inspect postWrite.packageGraphAudit before treating visuals or analytical caches as fidelity-safe.'
+				: 'No action is required for unrelated cell edits; retain visualInventory/packageGraphAudit with the edit record when visual fidelity is audited.',
 			partPaths: visualPartPaths,
 			packageParts: packagePartDetails(packagePartByPath, visualPartPaths),
 			featureFamily: [...visualFamilies].sort().join(','),
 			preservationPolicy: 'preserve-exact',
+			details: {
+				operationScoped: visualHasOperationRisk,
+				relatedOperations: visualWriteRisk.relatedOperations,
+				chartSourceRefDrift: visualWriteRisk.chartSourceRefDrift,
+				drawingmlVmlDrift: visualWriteRisk.drawingmlVmlDrift,
+			},
+		})
+	}
+	if (visualWriteRisk.relatedOperations.length > 0) {
+		const relatedPartPaths = uniqueStrings(
+			visualWriteRisk.relatedOperations.flatMap((operation) => operation.partPaths),
+		)
+		diagnostics.push({
+			code: 'visual-edit-preservation-risk',
+			severity: visualWriteRisk.relatedOperations.some((operation) => operation.matchCount !== 1)
+				? 'warning'
+				: 'info',
+			message: `${visualWriteRisk.relatedOperations.length} planned drawing, image, or chart operation(s) should be checked against visualInventory selectors before commit.`,
+			suggestedAction:
+				'Use targetPath/relId/imageIndex for image replacement, drawingPartPath/id/drawingObjectIndex for drawing text, and partPath/chartIndex/seriesIndex for chart source edits; verify postWrite.packageGraphAudit after write.',
+			...(relatedPartPaths.length > 0 ? { partPaths: relatedPartPaths } : {}),
+			...(relatedPartPaths.length > 0
+				? { packageParts: packagePartDetails(packagePartByPath, relatedPartPaths) }
+				: {}),
+			preservationPolicy: 'preserve-exact',
+			details: {
+				relatedOperations: visualWriteRisk.relatedOperations,
+			},
+		})
+	}
+	if (visualWriteRisk.drawingmlVmlDrift.length > 0) {
+		const driftPartPaths = uniqueStrings(
+			visualWriteRisk.drawingmlVmlDrift.flatMap((entry) => entry.partPaths),
+		)
+		diagnostics.push({
+			code: 'drawingml-vml-drift-risk',
+			severity: 'warning',
+			message: `${visualWriteRisk.drawingmlVmlDrift.length} visual operation(s) target sheet(s) that contain both DrawingML and VML drawing state.`,
+			suggestedAction:
+				'Select the exact drawing object or image from visualInventory and verify DrawingML plus VML/comment layout metadata after write; image and DrawingML text operations do not imply legacy VML shape updates.',
+			...(driftPartPaths.length > 0 ? { partPaths: driftPartPaths } : {}),
+			...(driftPartPaths.length > 0
+				? { packageParts: packagePartDetails(packagePartByPath, driftPartPaths) }
+				: {}),
+			featureFamily: 'preservedDrawing,preservedVml',
+			preservationPolicy: 'preserve-exact',
+			details: {
+				drift: visualWriteRisk.drawingmlVmlDrift,
+			},
+		})
+	}
+	if (visualWriteRisk.chartSourceRefDrift.length > 0) {
+		const driftPartPaths = uniqueStrings(
+			visualWriteRisk.chartSourceRefDrift.flatMap((entry) => entry.partPaths),
+		)
+		diagnostics.push({
+			code: 'chart-source-ref-drift-risk',
+			severity: 'warning',
+			message: `${visualWriteRisk.chartSourceRefDrift.length} chart source reference group(s) may drift under planned sheet, row, or column topology edits.`,
+			suggestedAction:
+				'Use setChartSeriesSource with explicit partPath, chartIndex, and seriesIndex when a structural edit should move chart name/category/value refs; verify chart series refs after write.',
+			...(driftPartPaths.length > 0 ? { partPaths: driftPartPaths } : {}),
+			...(driftPartPaths.length > 0
+				? { packageParts: packagePartDetails(packagePartByPath, driftPartPaths) }
+				: {}),
+			featureFamily: 'preservedChart',
+			preservationPolicy: 'preserve-exact',
+			details: {
+				chartSourceRefDrift: visualWriteRisk.chartSourceRefDrift,
+			},
 		})
 	}
 	const commentIntegrityIssues = collectCommentIntegrityIssues(checkIssues)
@@ -1645,6 +1734,548 @@ function buildWritePolicyReport(
 			calcChainPolicy,
 		},
 	}
+}
+
+interface VisualWriteRisk {
+	readonly relatedOperations: readonly VisualRelatedOperation[]
+	readonly drawingmlVmlDrift: readonly VisualDrawingDriftRisk[]
+	readonly chartSourceRefDrift: readonly ChartSourceRefDriftRisk[]
+}
+
+interface VisualRelatedOperation {
+	readonly operationIndex: number
+	readonly op: Operation['op']
+	readonly sheetName?: string | undefined
+	readonly targetKind: 'image' | 'drawingText' | 'chartSource'
+	readonly selector: Readonly<Record<string, unknown>>
+	readonly matchCount: number
+	readonly matches: readonly Record<string, unknown>[]
+	readonly partPaths: readonly string[]
+	readonly recommendation: string
+}
+
+interface VisualDrawingDriftRisk {
+	readonly operationIndex: number
+	readonly op: Operation['op']
+	readonly sheetName: string
+	readonly partPaths: readonly string[]
+	readonly drawingMlObjectCount: number
+	readonly vmlObjectCount: number
+	readonly imageCount: number
+	readonly recommendation: string
+}
+
+interface ChartSourceRefDriftRisk {
+	readonly chartPartPath: string
+	readonly sheetName?: string | undefined
+	readonly chartIndex: number
+	readonly seriesIndex: number
+	readonly sourceRefs: readonly ChartSourceRefAudit[]
+	readonly relatedOperations: readonly ChartSourceRelatedOperation[]
+	readonly partPaths: readonly string[]
+	readonly recommendation: Readonly<Record<string, unknown>>
+}
+
+interface ChartSourceRefAudit {
+	readonly sourceKind: 'nameRef' | 'categoryRef' | 'valueRef'
+	readonly ref: string
+	readonly referencedSheets: readonly string[]
+}
+
+interface ChartSourceRelatedOperation {
+	readonly operationIndex: number
+	readonly op: Operation['op']
+	readonly sheetName: string
+	readonly rangeImpact: 'rows' | 'columns' | 'sheet'
+	readonly at?: number | undefined
+	readonly count?: number | undefined
+	readonly newName?: string | undefined
+}
+
+function buildVisualWriteRisk(
+	workbook: Workbook,
+	operations: readonly Operation[],
+	parts: readonly XlsxPackageGraph['parts'][number][],
+): VisualWriteRisk {
+	return {
+		relatedOperations: collectVisualRelatedOperations(workbook, operations),
+		drawingmlVmlDrift: collectDrawingMlVmlDriftRisks(workbook, operations, parts),
+		chartSourceRefDrift: collectChartSourceRefDriftRisks(workbook, operations, parts),
+	}
+}
+
+function collectVisualRelatedOperations(
+	workbook: Workbook,
+	operations: readonly Operation[],
+): VisualRelatedOperation[] {
+	return operations.flatMap((operation, operationIndex) => {
+		switch (operation.op) {
+			case 'replaceImage':
+			case 'deleteImage':
+				return [imageReplacementRecommendation(workbook, operation, operationIndex)]
+			case 'insertImage':
+				return [imageInsertRecommendation(workbook, operation, operationIndex)]
+			case 'setDrawingText':
+				return [drawingTextRecommendation(workbook, operation, operationIndex)]
+			case 'setChartSeriesSource':
+				return [chartSourceReplacementRecommendation(workbook, operation, operationIndex)]
+			default:
+				return []
+		}
+	})
+}
+
+function imageReplacementRecommendation(
+	workbook: Workbook,
+	operation: Extract<Operation, { op: 'replaceImage' | 'deleteImage' }>,
+	operationIndex: number,
+): VisualRelatedOperation {
+	const sheet = workbook.getSheet(operation.sheet)
+	const matches = sheet
+		? sheet.imageRefs
+				.map((image, index) => ({ image, index }))
+				.filter(({ image, index }) => imageSelectorMatches(image, index, operation))
+				.map(({ image, index }) => ({
+					index,
+					drawingPartPath: image.drawingPartPath,
+					targetPath: image.targetPath,
+					relId: image.relId,
+					...(image.name ? { name: image.name } : {}),
+				}))
+		: []
+	return {
+		operationIndex,
+		op: operation.op,
+		sheetName: operation.sheet,
+		targetKind: 'image',
+		selector: compactRecord({
+			targetPath: operation.targetPath,
+			relId: operation.relId,
+			name: operation.name,
+			imageIndex: operation.imageIndex,
+		}),
+		matchCount: matches.length,
+		matches,
+		partPaths: uniqueStrings(matches.flatMap((match) => [match.drawingPartPath, match.targetPath])),
+		recommendation:
+			matches.length === 1
+				? `${operation.op} has a unique image selector; keep targetPath or imageIndex in the edit record and verify the drawing relationship plus media bytes after write.`
+				: `Use inspect --detail images or visualInventory to choose one image by targetPath, relId, name, or imageIndex before ${operation.op}.`,
+	}
+}
+
+function imageInsertRecommendation(
+	workbook: Workbook,
+	operation: Extract<Operation, { op: 'insertImage' }>,
+	operationIndex: number,
+): VisualRelatedOperation {
+	const sheet = workbook.getSheet(operation.sheet)
+	const collisions = sheet
+		? sheet.imageRefs
+				.map((image, index) => ({ image, index }))
+				.filter(
+					({ image }) =>
+						(operation.targetPath !== undefined && image.targetPath === operation.targetPath) ||
+						(operation.relId !== undefined && image.relId === operation.relId),
+				)
+				.map(({ image, index }) => ({
+					index,
+					drawingPartPath: image.drawingPartPath,
+					targetPath: image.targetPath,
+					relId: image.relId,
+				}))
+		: []
+	const drawingPartPath =
+		operation.drawingPartPath ?? sheet?.imageRefs[0]?.drawingPartPath ?? 'xl/drawings/drawing1.xml'
+	return {
+		operationIndex,
+		op: operation.op,
+		sheetName: operation.sheet,
+		targetKind: 'image',
+		selector: compactRecord({
+			drawingPartPath: operation.drawingPartPath,
+			targetPath: operation.targetPath,
+			relId: operation.relId,
+			name: operation.name,
+		}),
+		matchCount: collisions.length === 0 ? 1 : collisions.length,
+		matches: collisions,
+		partPaths: uniqueStrings([
+			drawingPartPath,
+			...(operation.targetPath ? [operation.targetPath] : []),
+		]),
+		recommendation:
+			collisions.length === 0
+				? 'insertImage can allocate missing media and relationship ids; provide an anchor when placement matters and verify the generated drawing relationship after write.'
+				: 'insertImage selector collides with existing image identity; omit targetPath/relId or provide unique values before commit.',
+	}
+}
+
+function drawingTextRecommendation(
+	workbook: Workbook,
+	operation: Extract<Operation, { op: 'setDrawingText' }>,
+	operationIndex: number,
+): VisualRelatedOperation {
+	const sheet = workbook.getSheet(operation.sheet)
+	const matches = sheet
+		? sheet.drawingObjectRefs
+				.map((object, index) => ({ object, index }))
+				.filter(({ object, index }) => drawingObjectSelectorMatches(object, index, operation))
+				.map(({ object, index }) => ({
+					index,
+					drawingPartPath: object.drawingPartPath,
+					kind: object.kind,
+					...(object.source ? { source: object.source } : {}),
+					...(object.id !== undefined ? { id: object.id } : {}),
+					...(object.name ? { name: object.name } : {}),
+					editableText: object.text !== undefined,
+				}))
+		: []
+	return {
+		operationIndex,
+		op: operation.op,
+		sheetName: operation.sheet,
+		targetKind: 'drawingText',
+		selector: compactRecord({
+			drawingPartPath: operation.drawingPartPath,
+			id: operation.id,
+			name: operation.name,
+			drawingObjectIndex: operation.drawingObjectIndex,
+		}),
+		matchCount: matches.length,
+		matches,
+		partPaths: uniqueStrings(matches.map((match) => match.drawingPartPath)),
+		recommendation:
+			matches.length === 1 && matches[0]?.editableText === true
+				? 'setDrawingText has a unique text-bearing object; preserve drawingPartPath plus id/name or drawingObjectIndex and verify the drawing part after write.'
+				: 'Use inspect --detail visuals or visualInventory to select exactly one text-bearing DrawingML/VML object before setDrawingText.',
+	}
+}
+
+function chartSourceReplacementRecommendation(
+	workbook: Workbook,
+	operation: Extract<Operation, { op: 'setChartSeriesSource' }>,
+	operationIndex: number,
+): VisualRelatedOperation {
+	const matches = matchingCharts(workbook, operation).map((chart) => ({
+		partPath: chart.partPath,
+		...(chart.sheetName ? { sheetName: chart.sheetName } : {}),
+		seriesCount: chart.series.length,
+		seriesExists: chart.series[operation.seriesIndex] !== undefined,
+		currentSeries: chart.series[operation.seriesIndex],
+		replacement: compactRecord({
+			nameRef: operation.nameRef,
+			categoryRef: operation.categoryRef,
+			valueRef: operation.valueRef,
+		}),
+	}))
+	return {
+		operationIndex,
+		op: operation.op,
+		...(operation.sheet ? { sheetName: operation.sheet } : {}),
+		targetKind: 'chartSource',
+		selector: compactRecord({
+			partPath: operation.partPath,
+			sheet: operation.sheet,
+			chartIndex: operation.chartIndex,
+			seriesIndex: operation.seriesIndex,
+		}),
+		matchCount: matches.length,
+		matches,
+		partPaths: uniqueStrings(matches.map((match) => match.partPath)),
+		recommendation:
+			matches.length === 1 && matches[0]?.seriesExists === true
+				? 'setChartSeriesSource has a unique chart and existing series; keep partPath/chartIndex/seriesIndex and verify name/category/value refs after write.'
+				: 'Use inspect --detail visuals or visualInventory to select one chart by partPath or chartIndex and an existing seriesIndex before editing source refs.',
+	}
+}
+
+function collectDrawingMlVmlDriftRisks(
+	workbook: Workbook,
+	operations: readonly Operation[],
+	parts: readonly XlsxPackageGraph['parts'][number][],
+): VisualDrawingDriftRisk[] {
+	return operations.flatMap((operation, operationIndex) => {
+		if (!isSheetVisualOperation(operation)) return []
+		const sheet = workbook.getSheet(operation.sheet)
+		if (!sheet?.drawingRefs.hasDrawing || !sheet.drawingRefs.hasLegacyDrawing) return []
+		const drawingMlObjectCount = sheet.drawingObjectRefs.filter(
+			(object) => object.source !== 'vml',
+		).length
+		const vmlObjectCount = sheet.drawingObjectRefs.filter(
+			(object) => object.source === 'vml',
+		).length
+		return [
+			{
+				operationIndex,
+				op: operation.op,
+				sheetName: operation.sheet,
+				drawingMlObjectCount,
+				vmlObjectCount,
+				imageCount: sheet.imageRefs.length,
+				partPaths: sheetVisualPartPaths(sheet.imageRefs, sheet.drawingObjectRefs, parts),
+				recommendation:
+					'DrawingML and VML are separate package graphs; verify the selected object source and legacy VML/comment layout after write.',
+			},
+		]
+	})
+}
+
+function collectChartSourceRefDriftRisks(
+	workbook: Workbook,
+	operations: readonly Operation[],
+	parts: readonly XlsxPackageGraph['parts'][number][],
+): ChartSourceRefDriftRisk[] {
+	const risks: ChartSourceRefDriftRisk[] = []
+	for (const [chartIndex, chart] of workbook.chartParts.entries()) {
+		for (const [seriesIndex, series] of chart.series.entries()) {
+			const sourceRefs = chartSourceRefs(series, chart.sheetName)
+			const referencedSheets = new Set(sourceRefs.flatMap((source) => source.referencedSheets))
+			const relatedOperations = chartSourceRelatedOperations(operations, referencedSheets)
+			if (sourceRefs.length === 0 || relatedOperations.length === 0) continue
+			risks.push({
+				chartPartPath: chart.partPath,
+				...(chart.sheetName ? { sheetName: chart.sheetName } : {}),
+				chartIndex,
+				seriesIndex,
+				sourceRefs,
+				relatedOperations,
+				partPaths: chartRelatedPartPaths(chart.partPath, parts),
+				recommendation: {
+					op: 'setChartSeriesSource',
+					partPath: chart.partPath,
+					chartIndex,
+					seriesIndex,
+					current: compactRecord({
+						nameRef: series.nameRef,
+						categoryRef: series.categoryRef,
+						valueRef: series.valueRef,
+					}),
+				},
+			})
+		}
+	}
+	return risks
+}
+
+function imageSelectorMatches(
+	image: SheetImageRef,
+	index: number,
+	operation: Extract<Operation, { op: 'replaceImage' | 'deleteImage' }>,
+): boolean {
+	if (
+		operation.imageIndex === undefined &&
+		operation.targetPath === undefined &&
+		operation.relId === undefined &&
+		operation.name === undefined
+	) {
+		return false
+	}
+	if (operation.imageIndex !== undefined && index !== operation.imageIndex) return false
+	if (operation.targetPath !== undefined && image.targetPath !== operation.targetPath) return false
+	if (operation.relId !== undefined && image.relId !== operation.relId) return false
+	if (operation.name !== undefined && image.name !== operation.name) return false
+	return true
+}
+
+function drawingObjectSelectorMatches(
+	object: SheetDrawingObjectRef,
+	index: number,
+	operation: Extract<Operation, { op: 'setDrawingText' }>,
+): boolean {
+	if (
+		operation.drawingObjectIndex === undefined &&
+		operation.drawingPartPath === undefined &&
+		operation.id === undefined &&
+		operation.name === undefined
+	) {
+		return false
+	}
+	if (operation.drawingObjectIndex !== undefined && index !== operation.drawingObjectIndex) {
+		return false
+	}
+	if (
+		operation.drawingPartPath !== undefined &&
+		object.drawingPartPath !== operation.drawingPartPath
+	) {
+		return false
+	}
+	if (operation.id !== undefined && object.id !== operation.id) return false
+	if (operation.name !== undefined && object.name !== operation.name) return false
+	return true
+}
+
+function matchingCharts(
+	workbook: Workbook,
+	operation: Extract<Operation, { op: 'setChartSeriesSource' }>,
+): ChartPartInfo[] {
+	let candidates = workbook.chartParts
+	if (operation.partPath !== undefined) {
+		candidates = candidates.filter((chart) => chart.partPath === operation.partPath)
+	}
+	if (operation.sheet !== undefined) {
+		candidates = candidates.filter((chart) => chart.sheetName === operation.sheet)
+	}
+	if (operation.chartIndex !== undefined) {
+		const chart = candidates[operation.chartIndex]
+		return chart ? [chart] : []
+	}
+	return candidates
+}
+
+function isSheetVisualOperation(
+	operation: Operation,
+): operation is Extract<
+	Operation,
+	{ op: 'replaceImage' | 'insertImage' | 'deleteImage' | 'setDrawingText' }
+> {
+	return (
+		operation.op === 'replaceImage' ||
+		operation.op === 'insertImage' ||
+		operation.op === 'deleteImage' ||
+		operation.op === 'setDrawingText'
+	)
+}
+
+function sheetVisualPartPaths(
+	imageRefs: readonly SheetImageRef[],
+	drawingObjectRefs: readonly SheetDrawingObjectRef[],
+	parts: readonly XlsxPackageGraph['parts'][number][],
+): string[] {
+	const drawingPartPaths = uniqueStrings([
+		...imageRefs.map((image) => image.drawingPartPath),
+		...drawingObjectRefs.map((object) => object.drawingPartPath),
+	])
+	const mediaPartPaths = imageRefs.map((image) => image.targetPath)
+	const vmlPartPaths = parts
+		.filter((part) => part.featureFamily === 'preservedVml')
+		.map((part) => part.path)
+	return uniqueStrings([...drawingPartPaths, ...mediaPartPaths, ...vmlPartPaths])
+}
+
+function chartSourceRefs(
+	series: ChartPartInfo['series'][number],
+	defaultSheetName?: string,
+): ChartSourceRefAudit[] {
+	return [
+		chartSourceRef('nameRef', series.nameRef, defaultSheetName),
+		chartSourceRef('categoryRef', series.categoryRef, defaultSheetName),
+		chartSourceRef('valueRef', series.valueRef, defaultSheetName),
+	].filter((entry): entry is ChartSourceRefAudit => entry !== undefined)
+}
+
+function chartSourceRef(
+	sourceKind: ChartSourceRefAudit['sourceKind'],
+	ref: string | undefined,
+	defaultSheetName?: string,
+): ChartSourceRefAudit | undefined {
+	if (!ref) return undefined
+	return {
+		sourceKind,
+		ref,
+		referencedSheets: chartSourceReferencedSheets(ref, defaultSheetName),
+	}
+}
+
+function chartSourceReferencedSheets(ref: string, defaultSheetName?: string): string[] {
+	const parsed = parseFormula(normalizeFormulaInput(ref))
+	if (parsed.ok) {
+		const sheets = flattenFormulaReferences(collectFormulaReferences(parsed.value)).flatMap(
+			(reference) => {
+				if (reference.scope?.kind === 'sheet') return [reference.scope.sheet]
+				if (reference.scope?.kind === 'sheetSpan') {
+					return [reference.scope.startSheet, reference.scope.endSheet]
+				}
+				if (reference.scope?.kind === 'local' && defaultSheetName) return [defaultSheetName]
+				return []
+			},
+		)
+		if (sheets.length > 0) return uniqueStrings(sheets)
+	}
+	const regexMatch = /^'([^']|'')+'!|^([^'!:]+)!/.exec(ref)
+	if (regexMatch?.[0]) {
+		return [regexMatch[0].slice(0, -1).replace(/^'|'$/g, '').replace(/''/g, "'")]
+	}
+	return defaultSheetName ? [defaultSheetName] : []
+}
+
+function chartSourceRelatedOperations(
+	operations: readonly Operation[],
+	referencedSheets: ReadonlySet<string>,
+): ChartSourceRelatedOperation[] {
+	const related: ChartSourceRelatedOperation[] = []
+	operations.forEach((operation, operationIndex) => {
+		switch (operation.op) {
+			case 'insertRows':
+			case 'deleteRows':
+				if (!referencedSheets.has(operation.sheet)) return
+				related.push({
+					operationIndex,
+					op: operation.op,
+					sheetName: operation.sheet,
+					rangeImpact: 'rows',
+					at: operation.at,
+					count: operation.count,
+				})
+				break
+			case 'insertCols':
+			case 'deleteCols':
+				if (!referencedSheets.has(operation.sheet)) return
+				related.push({
+					operationIndex,
+					op: operation.op,
+					sheetName: operation.sheet,
+					rangeImpact: 'columns',
+					at: operation.at,
+					count: operation.count,
+				})
+				break
+			case 'renameSheet':
+				if (!referencedSheets.has(operation.sheet)) return
+				related.push({
+					operationIndex,
+					op: operation.op,
+					sheetName: operation.sheet,
+					rangeImpact: 'sheet',
+					newName: operation.newName,
+				})
+				break
+			case 'deleteSheet':
+				if (!referencedSheets.has(operation.sheet)) return
+				related.push({
+					operationIndex,
+					op: operation.op,
+					sheetName: operation.sheet,
+					rangeImpact: 'sheet',
+				})
+				break
+		}
+	})
+	return related
+}
+
+function chartRelatedPartPaths(
+	chartPartPath: string,
+	parts: readonly XlsxPackageGraph['parts'][number][],
+): string[] {
+	return uniqueStrings(
+		parts
+			.filter(
+				(part) =>
+					part.path === chartPartPath ||
+					part.featureFamily === 'preservedChartStyle' ||
+					part.featureFamily === 'preservedChartColor',
+			)
+			.map((part) => part.path),
+	)
+}
+
+function compactRecord(
+	value: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+	return Object.fromEntries(
+		Object.entries(value).filter(([, entryValue]) => entryValue !== undefined),
+	)
 }
 
 interface ExternalLinkRisk {

@@ -1408,6 +1408,44 @@ describe('checker', () => {
 		})
 	})
 
+	test('detects chart series references to missing structured tables', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Data')
+		s.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: s.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } },
+			columns: [{ name: 'Month' }, { name: 'Amount' }],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+		wb.chartParts.push({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Data',
+			chartType: 'lineChart',
+			series: [{ categoryRef: 'Sales[Month]', valueRef: 'MissingSales[Amount]' }],
+		})
+
+		const result = check(wb)
+		const issue = result.issues.find(
+			(i) =>
+				i.rule === 'chart-series-integrity' &&
+				i.details?.kind === 'chart-series-missing-table-reference',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(issue?.severity).toBe('warning')
+		expect(issue?.refs).toEqual(['xl/charts/chart1.xml#series0'])
+		expect(issue?.details).toMatchObject({
+			partPath: 'xl/charts/chart1.xml',
+			seriesIndex: 0,
+			field: 'valueRef',
+			tableName: 'MissingSales',
+			ownerSheet: 'Data',
+		})
+	})
+
 	test('detects external refs in table, validation, and conditional metadata', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
@@ -1541,6 +1579,187 @@ describe('checker', () => {
 			partPath: 'xl/charts/chart1.xml',
 			ownerSheet: 'Summry',
 		})
+	})
+
+	test('detects drawing chart and image package integrity issues', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.imageRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			relId: 'rIdImg',
+			targetPath: 'xl/media/image1.png',
+		})
+		s.drawingObjectRefs.push(
+			{
+				drawingPartPath: 'xl/drawings/drawing1.xml',
+				source: 'drawingml',
+				kind: 'graphicFrame',
+				name: 'Shared Shape',
+				relIds: ['rIdChart'],
+			},
+			{
+				drawingPartPath: 'xl/drawings/vmlDrawing1.vml',
+				source: 'vml',
+				kind: 'shape',
+				name: 'Shared Shape',
+			},
+		)
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{ path: 'xl/worksheets/sheet1.xml', featureFamily: 'worksheet' },
+					{ path: 'xl/workbook.xml', featureFamily: 'workbook' },
+					{
+						path: 'xl/drawings/drawing1.xml',
+						featureFamily: 'preservedDrawing',
+						ownerScope: 'drawing',
+						contentType: 'application/vnd.openxmlformats-officedocument.drawing+xml',
+					},
+					{
+						path: 'xl/drawings/vmlDrawing1.vml',
+						featureFamily: 'preservedVml',
+						ownerScope: 'drawing',
+					},
+					{
+						path: 'xl/drawings/drawing2.xml',
+						featureFamily: 'preservedDrawing',
+						ownerScope: 'unknown',
+					},
+					{
+						path: 'xl/drawings/drawing3.xml',
+						featureFamily: 'preservedDrawing',
+						ownerScope: 'workbook',
+					},
+					{ path: 'xl/charts/chart1.xml', featureFamily: 'preservedChart' },
+					{
+						path: 'xl/media/image2.png',
+						featureFamily: 'preservedMedia',
+						contentType: 'image/png',
+					},
+				],
+				relationships: [
+					{
+						sourcePartPath: 'xl/worksheets/sheet1.xml',
+						relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+						id: 'rIdDrawing',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing',
+						rawTarget: '../drawings/drawing1.xml',
+						resolvedTarget: 'xl/drawings/drawing1.xml',
+					},
+					{
+						sourcePartPath: 'xl/worksheets/sheet1.xml',
+						relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+						id: 'rIdVml',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing',
+						rawTarget: '../drawings/vmlDrawing1.vml',
+						resolvedTarget: 'xl/drawings/vmlDrawing1.vml',
+					},
+					{
+						sourcePartPath: 'xl/workbook.xml',
+						relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+						id: 'rIdBadOwner',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing',
+						rawTarget: 'drawings/drawing3.xml',
+						resolvedTarget: 'xl/drawings/drawing3.xml',
+					},
+					{
+						sourcePartPath: 'xl/drawings/drawing1.xml',
+						relationshipPartPath: 'xl/drawings/_rels/drawing1.xml.rels',
+						id: 'rIdImg',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',
+						rawTarget: '../media/image2.png',
+						resolvedTarget: 'xl/media/image2.png',
+					},
+					{
+						sourcePartPath: 'xl/drawings/drawing1.xml',
+						relationshipPartPath: 'xl/drawings/_rels/drawing1.xml.rels',
+						id: 'rIdMissingMedia',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',
+						rawTarget: '../media/missing.png',
+						resolvedTarget: 'xl/media/missing.png',
+					},
+					{
+						sourcePartPath: 'xl/drawings/drawing1.xml',
+						relationshipPartPath: 'xl/drawings/_rels/drawing1.xml.rels',
+						id: 'rIdChart',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart',
+						rawTarget: '../media/image2.png',
+						resolvedTarget: 'xl/media/image2.png',
+					},
+				],
+			},
+		})
+		const drawingIssues = result.issues.filter((i) => i.rule === 'drawing-integrity')
+		const kinds = new Set(drawingIssues.map((issue) => issue.details?.kind))
+
+		expect(result.passed).toBe(false)
+		expect(kinds.has('image-media-target-mismatch')).toBe(true)
+		expect(kinds.has('image-media-relationship-missing-target')).toBe(true)
+		expect(kinds.has('drawing-chart-target-type-mismatch')).toBe(true)
+		expect(kinds.has('orphan-drawing-part')).toBe(true)
+		expect(kinds.has('drawing-missing-worksheet-chartsheet-owner')).toBe(true)
+		expect(kinds.has('vml-drawingml-ownership-ambiguity')).toBe(true)
+		expect(
+			drawingIssues.find((issue) => issue.details?.kind === 'image-media-target-mismatch')?.details,
+		).toMatchObject({
+			expectedTargetPath: 'xl/media/image1.png',
+			actualTargetPath: 'xl/media/image2.png',
+			relationshipId: 'rIdImg',
+		})
+	})
+
+	test('detects chart style and color sidecar orphan and mismatch issues', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{ path: 'xl/charts/chart1.xml', featureFamily: 'preservedChart' },
+					{ path: 'xl/drawings/drawing1.xml', featureFamily: 'preservedDrawing' },
+					{ path: 'xl/charts/style1.xml', featureFamily: 'preservedChartStyle' },
+					{ path: 'xl/charts/style2.xml', featureFamily: 'preservedChartStyle' },
+					{ path: 'xl/charts/colors1.xml', featureFamily: 'preservedChartColor' },
+				],
+				relationships: [
+					{
+						sourcePartPath: 'xl/charts/chart1.xml',
+						relationshipPartPath: 'xl/charts/_rels/chart1.xml.rels',
+						id: 'rIdStyle',
+						type: 'http://schemas.microsoft.com/office/2011/relationships/chartStyle',
+						rawTarget: 'colors1.xml',
+						resolvedTarget: 'xl/charts/colors1.xml',
+					},
+					{
+						sourcePartPath: 'xl/charts/chart1.xml',
+						relationshipPartPath: 'xl/charts/_rels/chart1.xml.rels',
+						id: 'rIdColor',
+						type: 'http://schemas.microsoft.com/office/2011/relationships/chartColorStyle',
+						rawTarget: 'colors1.xml',
+						resolvedTarget: 'xl/charts/colors1.xml',
+					},
+					{
+						sourcePartPath: 'xl/drawings/drawing1.xml',
+						relationshipPartPath: 'xl/drawings/_rels/drawing1.xml.rels',
+						id: 'rIdStyleOwner',
+						type: 'http://schemas.microsoft.com/office/2011/relationships/chartStyle',
+						rawTarget: '../charts/style1.xml',
+						resolvedTarget: 'xl/charts/style1.xml',
+					},
+				],
+			},
+		})
+		const issues = result.issues.filter((i) => i.rule === 'chart-package-integrity')
+		const kinds = new Set(issues.map((issue) => issue.details?.kind))
+
+		expect(result.passed).toBe(false)
+		expect(kinds.has('chart-style-color-target-mismatch')).toBe(true)
+		expect(kinds.has('chart-style-color-owner-mismatch')).toBe(true)
+		expect(kinds.has('orphan-chart-style-part')).toBe(true)
+		expect(issues.find((issue) => issue.details?.kind === 'orphan-chart-style-part')?.refs).toEqual(
+			['xl/charts/style2.xml'],
+		)
 	})
 
 	test('suggests closest sheet name for broken refs', () => {

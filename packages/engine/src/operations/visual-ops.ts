@@ -18,6 +18,10 @@ export function handleReplaceImage(workbook: Workbook, op: ReplaceImageOp): Resu
 
 	const content = decodeBase64(op.contentBase64)
 	if (!content.ok) return content
+	const contentTypeResult = validateImageContentType(op.contentType)
+	if (!contentTypeResult.ok) return contentTypeResult
+	const imageIndexResult = validateOptionalIndex(op.imageIndex, 'imageIndex')
+	if (!imageIndexResult.ok) return imageIndexResult
 
 	const matches = sheet.imageRefs
 		.map((image, index) => ({ image, index }))
@@ -67,6 +71,7 @@ export function handleReplaceImage(workbook: Workbook, op: ReplaceImageOp): Resu
 	if (!match) {
 		return err(ascendError('VALIDATION_ERROR', 'No matching image found for replaceImage'))
 	}
+	sheet.ensureWritable()
 	sheet.imageRefs[match.index] = {
 		...match.image,
 		content: content.value,
@@ -84,21 +89,27 @@ export function handleInsertImage(workbook: Workbook, op: InsertImageOp): Result
 
 	const content = decodeBase64(op.contentBase64)
 	if (!content.ok) return content
-	if (!op.contentType.startsWith('image/')) {
-		return err(
-			ascendError('VALIDATION_ERROR', 'contentType must be an image MIME type', {
-				suggestedFix:
-					'Use image/png, image/jpeg, image/gif, or another valid image/* content type.',
-			}),
-		)
-	}
+	const contentTypeResult = validateImageContentType(op.contentType)
+	if (!contentTypeResult.ok) return contentTypeResult
 
+	sheet.ensureWritable()
 	const drawingPartPath =
 		op.drawingPartPath ?? sheet.imageRefs[0]?.drawingPartPath ?? 'xl/drawings/drawing1.xml'
 	const targetPath =
 		op.targetPath ?? nextImageTargetPath(workbook, imageExtensionForContentType(op.contentType))
 	const relId = op.relId ?? nextImageRelId(sheet)
-	if (sheet.imageRefs.some((image) => image.targetPath === targetPath || image.relId === relId)) {
+	if (
+		workbook.sheets.some((entry) =>
+			entry.imageRefs.some((image) => image.targetPath === targetPath),
+		)
+	) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'insertImage targetPath already exists in workbook', {
+				suggestedFix: 'Provide a unique targetPath or omit it so Ascend can allocate one.',
+			}),
+		)
+	}
+	if (sheet.imageRefs.some((image) => image.relId === relId)) {
 		return err(
 			ascendError('VALIDATION_ERROR', 'insertImage targetPath or relId already exists on sheet', {
 				suggestedFix: 'Provide a unique targetPath/relId or omit them so Ascend can allocate one.',
@@ -162,6 +173,8 @@ export function handleDeleteImage(workbook: Workbook, op: DeleteImageOp): Result
 	if (!sheetResult.ok) return sheetResult
 	const sheet = sheetResult.value
 
+	const imageIndexResult = validateOptionalIndex(op.imageIndex, 'imageIndex')
+	if (!imageIndexResult.ok) return imageIndexResult
 	if (
 		op.imageIndex === undefined &&
 		op.targetPath === undefined &&
@@ -207,8 +220,9 @@ export function handleDeleteImage(workbook: Workbook, op: DeleteImageOp): Result
 
 	const match = matches[0]
 	if (!match) return err(ascendError('VALIDATION_ERROR', 'No matching image found for deleteImage'))
+	sheet.ensureWritable()
 	sheet.imageRefs.splice(match.index, 1)
-	if (sheet.imageRefs.length === 0) {
+	if (sheet.imageRefs.length === 0 && sheet.drawingObjectRefs.length === 0) {
 		sheet.drawingRefs = { ...sheet.drawingRefs, hasDrawing: false }
 	}
 
@@ -290,6 +304,7 @@ export function handleSetDrawingText(
 		)
 	}
 
+	sheet.ensureWritable()
 	sheet.drawingObjectRefs[match.index] = { ...match.object, text: op.text }
 	sheet.drawingRefs = { ...sheet.drawingRefs, hasDrawing: true }
 
@@ -392,6 +407,21 @@ function decodeBase64(input: string): Result<Uint8Array> {
 			}),
 		)
 	}
+}
+
+function validateImageContentType(contentType: string): Result<undefined> {
+	if (contentType.startsWith('image/')) return ok(undefined)
+	return err(
+		ascendError('VALIDATION_ERROR', 'contentType must be an image MIME type', {
+			suggestedFix: 'Use image/png, image/jpeg, image/gif, or another valid image/* content type.',
+		}),
+	)
+}
+
+function validateOptionalIndex(index: number | undefined, field: string): Result<undefined> {
+	if (index === undefined) return ok(undefined)
+	if (index >= 0 && Number.isInteger(index)) return ok(undefined)
+	return err(ascendError('VALIDATION_ERROR', `${field} must be a non-negative integer`))
 }
 
 function hasSparklineGroupUpdate(op: SetSparklineGroupOp): boolean {

@@ -226,39 +226,43 @@ function scanRangeAggregateState(
 	let min = base?.min ?? Number.POSITIVE_INFINITY
 	let max = base?.max ?? Number.NEGATIVE_INFINITY
 	let error = base?.error ?? null
-	for (let row = startRow; row <= endRow; row++) {
-		for (let col = startCol; col <= endCol; col++) {
-			const rangeValue = readRangeAggregateNumericCell(sheet, row, col)
-			if (typeof rangeValue === 'number') {
-				switch (functionName) {
-					case 'SUM':
-						sum += rangeValue
-						break
-					case 'COUNT':
-						count++
-						break
-					case 'AVERAGE':
-						sum += rangeValue
-						count++
-						break
-					case 'MIN':
-						count++
-						if (rangeValue < min) min = rangeValue
-						break
-					case 'MAX':
-						count++
-						if (rangeValue > max) max = rangeValue
-						break
-				}
-				continue
+	sheet.cells.forEachValueInRange(startRow, startCol, endRow, endCol, (cellValue) => {
+		if (error) return
+		const rangeValue = rangeAggregateNumericValue(cellValue)
+		if (typeof rangeValue === 'number') {
+			switch (functionName) {
+				case 'SUM':
+					sum += rangeValue
+					break
+				case 'COUNT':
+					count++
+					break
+				case 'AVERAGE':
+					sum += rangeValue
+					count++
+					break
+				case 'MIN':
+					count++
+					if (rangeValue < min) min = rangeValue
+					break
+				case 'MAX':
+					count++
+					if (rangeValue > max) max = rangeValue
+					break
 			}
-			if (rangeValue?.kind === 'error' && functionName !== 'COUNT') {
-				error = rangeValue
-				return { sum, count, min, max, error }
-			}
+			return
 		}
-	}
+		if (rangeValue?.kind === 'error' && functionName !== 'COUNT') error = rangeValue
+	})
 	return { sum, count, min, max, error }
+}
+
+function rangeAggregateNumericValue(value: CellValue): number | CellValue | null {
+	const scalar = topLeftScalar(value)
+	if (scalar.kind === 'number') return scalar.value
+	if (scalar.kind === 'date') return scalar.serial
+	if (scalar.kind === 'error') return scalar
+	return null
 }
 
 function readRangeAggregateNumericCell(

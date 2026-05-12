@@ -1,5 +1,6 @@
 import {
 	createWorkbook,
+	indexToColumn,
 	SparseGrid,
 	type StyleId,
 	StyleRegistry,
@@ -14,9 +15,10 @@ import {
 	type EvalContext,
 	evaluateCompiled,
 	evaluateConditionalFormats,
+	recalculate,
 } from '../../packages/engine/src/index.ts'
 import { clearGlobalParseCache, parseFormula } from '../../packages/formulas/src/index.ts'
-import { numberValue, stringValue } from '../../packages/schema/src/index.ts'
+import { EMPTY, numberValue, stringValue } from '../../packages/schema/src/index.ts'
 
 const SID = 0 as StyleId
 
@@ -222,6 +224,42 @@ const benchmarks: readonly MicroBenchmark[] = [
 				evaluateCompiled(compiled, ctx)
 			}
 			return count
+		},
+	},
+	{
+		name: 'Recalc sparse wide SUM range',
+		targetOpsPerSec: 500_000,
+		run() {
+			const workbook = createWorkbook()
+			const sheet = workbook.addSheet('Sheet1')
+			const rows = 4096
+			const cols = 512
+			let expected = 0
+			for (let row = 0; row < rows; row++) {
+				sheet.cells.setResolved(row, 0, numberValue(row), null, SID)
+				expected += row
+				for (let col = 1; col < cols; col++) {
+					if ((row * 31 + col * 17) % 97 !== 0) continue
+					const value = row * cols + col
+					sheet.cells.setResolved(row, col, numberValue(value), null, SID)
+					expected += value
+				}
+			}
+			const formulaRow = rows
+			sheet.cells.set(formulaRow, 0, {
+				value: EMPTY,
+				formula: `SUM(A1:${indexToColumn(cols - 1)}${rows})`,
+				styleId: SID,
+			})
+			const result = recalculate(workbook, defaultCalcContext())
+			if (result.errors.length > 0) {
+				throw new Error(`Sparse aggregate recalc failed: ${result.errors[0]?.error.message}`)
+			}
+			const value = sheet.cells.readValue(formulaRow, 0)
+			if (value.kind !== 'number' || value.value !== expected) {
+				throw new Error(`Sparse aggregate produced ${JSON.stringify(value)}; expected ${expected}`)
+			}
+			return rows * cols
 		},
 	},
 	{

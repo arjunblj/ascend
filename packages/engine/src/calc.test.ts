@@ -1007,8 +1007,11 @@ describe('recalculate', () => {
 		sheet.cells.set(4, 17, { value: stringValue('Strategic'), formula: null, styleId: sid })
 		sheet.cells.set(4, 18, { value: numberValue(49_478_096), formula: null, styleId: sid })
 		sheet.cells.set(4, 19, { value: numberValue(32_125_000), formula: null, styleId: sid })
-		sheet.cells.set(5, 17, { value: stringValue('Grand Total'), formula: null, styleId: sid })
-		sheet.cells.set(5, 18, { value: numberValue(99_000_000), formula: null, styleId: sid })
+		sheet.cells.set(5, 17, { value: stringValue('SMB'), formula: null, styleId: sid })
+		sheet.cells.set(5, 18, { value: numberValue(49_521_904), formula: null, styleId: sid })
+		sheet.cells.set(5, 19, { value: numberValue(31_875_000), formula: null, styleId: sid })
+		sheet.cells.set(6, 17, { value: stringValue('Grand Total'), formula: null, styleId: sid })
+		sheet.cells.set(6, 18, { value: numberValue(99_000_000), formula: null, styleId: sid })
 		sheet.cells.set(16, 17, { value: stringValue('Strategic'), formula: null, styleId: sid })
 		sheet.cells.set(16, 18, {
 			value: EMPTY,
@@ -1040,13 +1043,18 @@ describe('recalculate', () => {
 			formula: 'GETPIVOTDATA("Revenue",PivotAnchor,"Segment","Strategic")',
 			styleId: sid,
 		})
-		wb.definedNames.set('PivotAnchor', "'Pivot Tables'!R4:T6")
+		sheet.cells.set(16, 24, {
+			value: EMPTY,
+			formula: 'SUM(GETPIVOTDATA("Revenue",$R$4,"Segment",{"Strategic","SMB"}))',
+			styleId: sid,
+		})
+		wb.definedNames.set('PivotAnchor', "'Pivot Tables'!R4:T7")
 		wb.pivotTables.push({
 			partPath: 'xl/pivotTables/pivotTable1.xml',
 			sheetName: 'Pivot Tables',
 			name: 'PivotTable1',
 			cacheId: 1,
-			locationRef: 'R4:T6',
+			locationRef: 'R4:T7',
 			fields: [],
 			rowFields: [],
 			columnFields: [],
@@ -1063,6 +1071,7 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(16, 21)?.value).toEqual(numberValue(49_478_096))
 		expect(sheet.cells.get(16, 22)?.value).toEqual(numberValue(49_478_096))
 		expect(sheet.cells.get(16, 23)?.value).toEqual(numberValue(49_478_096))
+		expect(sheet.cells.get(16, 24)?.value).toEqual(numberValue(99_000_000))
 	})
 
 	test('GETPIVOTDATA range anchors prefer the most recently listed overlapping pivot', () => {

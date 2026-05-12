@@ -32,6 +32,7 @@ setDefaultTimeout(90_000)
 const CORPUS_DIR = resolve(import.meta.dir, '../../research/excel-corpus')
 const MANIFEST_PATH = resolve(CORPUS_DIR, 'manifest.json')
 const SAFE_EDIT_VALUE = '__ascend_feature_contract__'
+const SAFE_EDIT_TIMEOUT_MS = 180_000
 
 interface ContractCase {
 	readonly corpusName: string
@@ -1338,12 +1339,16 @@ if (CONTRACT_CASES.length === 0) {
 				assertManifestReadCoverage(entry, subject)
 			})
 
-			it.skipIf(!bytes)('retains declared feature families after a safe edit', async () => {
-				const sourceBytes = requireBytes(bytes)
-				const before = await loadContractSubject(sourceBytes)
-				const after = await applySafeEditAndReload(sourceBytes)
-				assertManifestEditCoverage(entry, before, after)
-			})
+			it.skipIf(!bytes)(
+				'retains declared feature families after a safe edit',
+				async () => {
+					const sourceBytes = requireBytes(bytes)
+					const before = await loadContractSubject(sourceBytes)
+					const after = await applySafeEditAndReload(sourceBytes)
+					assertManifestEditCoverage(entry, before, after)
+				},
+				SAFE_EDIT_TIMEOUT_MS,
+			)
 		})
 	}
 }

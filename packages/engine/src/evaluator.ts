@@ -1216,7 +1216,7 @@ function evalGetPivotData(argNodes: readonly FormulaNode[], ctx: EvalContext): C
 	const anchorSheet = ctx.workbook.sheets[anchorBounds.sheetIndex]
 	if (!anchorSheet) return errorValue('#REF!')
 
-	const filters: { field: string; item: string }[] = []
+	const filters: PivotFilterArg[] = []
 	for (let i = 2; i + 1 < argNodes.length; i += 2) {
 		const fieldValue = evaluate(argNodes[i] ?? { type: 'missing' }, ctx)
 		if (fieldValue.kind === 'error') return fieldValue
@@ -1224,30 +1224,124 @@ function evalGetPivotData(argNodes: readonly FormulaNode[], ctx: EvalContext): C
 		if (itemValue.kind === 'error') return itemValue
 		filters.push({
 			field: normalizePivotText(coerceToString(fieldValue)),
-			item: normalizePivotText(coerceToString(itemValue)),
+			item: itemValue,
 		})
 	}
 
+	const arrayResult = evalGetPivotDataArray(ctx, anchorSheet.name, anchorBounds, dataField, filters)
+	if (arrayResult) return arrayResult
+	const scalarFilters = scalarPivotFilters(filters)
+	if (isPivotFilterError(scalarFilters)) return scalarFilters
+	return (
+		lookupPivotValueForFilters(ctx, anchorSheet.name, anchorBounds, dataField, scalarFilters) ??
+		errorValue('#REF!')
+	)
+}
+
+type PivotAnchorBounds = {
+	sheetIndex: number
+	startRow: number
+	startCol: number
+	endRow: number
+	endCol: number
+}
+
+type PivotFilterArg = {
+	field: string
+	item: CellValue
+}
+
+type PivotFilter = {
+	field: string
+	item: string
+}
+
+function evalGetPivotDataArray(
+	ctx: EvalContext,
+	anchorSheetName: string,
+	anchorBounds: PivotAnchorBounds,
+	dataField: string,
+	filters: readonly PivotFilterArg[],
+): CellValue | null {
+	const arrayFilters = filters.filter((filter) => filter.item.kind === 'array')
+	if (arrayFilters.length === 0) return null
+	let rows = 1
+	let cols = 1
+	for (const filter of arrayFilters) {
+		const item = filter.item
+		if (item.kind !== 'array') continue
+		const nextRows = broadcastLength(rows, item.rows.length)
+		const nextCols = broadcastLength(cols, maxRowLength(item.rows))
+		if (nextRows === null || nextCols === null) return errorValue('#VALUE!')
+		rows = nextRows
+		cols = nextCols
+	}
+
+	const result: ScalarCellValue[][] = []
+	for (let row = 0; row < rows; row++) {
+		const resultRow: ScalarCellValue[] = []
+		for (let col = 0; col < cols; col++) {
+			const scalarFilters = scalarPivotFilters(filters, row, col)
+			const value = isPivotFilterError(scalarFilters)
+				? scalarFilters
+				: (lookupPivotValueForFilters(
+						ctx,
+						anchorSheetName,
+						anchorBounds,
+						dataField,
+						scalarFilters,
+					) ?? errorValue('#REF!'))
+			resultRow.push(topLeftScalar(value))
+		}
+		result.push(resultRow)
+	}
+	return arrayValue(result)
+}
+
+function isPivotFilterError(
+	value: readonly PivotFilter[] | Extract<CellValue, { kind: 'error' }>,
+): value is Extract<CellValue, { kind: 'error' }> {
+	return 'kind' in value && value.kind === 'error'
+}
+
+function scalarPivotFilters(
+	filters: readonly PivotFilterArg[],
+	row = 0,
+	col = 0,
+): readonly PivotFilter[] | Extract<CellValue, { kind: 'error' }> {
+	const scalarFilters: PivotFilter[] = []
+	for (const filter of filters) {
+		const itemValue = arrayCellAt(filter.item, row, col)
+		if (itemValue.kind === 'error') return itemValue
+		scalarFilters.push({
+			field: filter.field,
+			item: normalizePivotText(coerceToString(itemValue)),
+		})
+	}
+	return scalarFilters
+}
+
+function lookupPivotValueForFilters(
+	ctx: EvalContext,
+	anchorSheetName: string,
+	anchorBounds: PivotAnchorBounds,
+	dataField: string,
+	filters: readonly PivotFilter[],
+): CellValue | null {
 	for (let i = ctx.workbook.pivotTables.length - 1; i >= 0; i--) {
 		const pivot = ctx.workbook.pivotTables[i]
 		if (!pivot) continue
-		if (pivot.sheetName !== anchorSheet.name || !pivot.locationRef) continue
+		if (pivot.sheetName !== anchorSheetName || !pivot.locationRef) continue
 		const bounds = parsePivotLocation(pivot.locationRef)
 		if (!bounds) continue
 		if (!rangesIntersect(anchorBounds, bounds)) continue
 		const value = lookupVisiblePivotValue(ctx, anchorBounds.sheetIndex, bounds, dataField, filters)
 		if (value) return value
 	}
-	return errorValue('#REF!')
+	return null
 }
 
-function getPivotAnchorBounds(anchor: EvalArg | null): {
-	sheetIndex: number
-	startRow: number
-	startCol: number
-	endRow: number
-	endCol: number
-} | null {
+function getPivotAnchorBounds(anchor: EvalArg | null): PivotAnchorBounds | null {
 	const ref = anchor?.ref
 	if (!ref) return null
 	return {
@@ -1295,7 +1389,7 @@ function lookupVisiblePivotValue(
 	sheetIndex: number,
 	bounds: { startRow: number; startCol: number; endRow: number; endCol: number },
 	dataField: string,
-	filters: readonly { field: string; item: string }[],
+	filters: readonly PivotFilter[],
 ): CellValue | null {
 	const header = findPivotDataHeader(ctx, sheetIndex, bounds, dataField)
 	if (!header) return null

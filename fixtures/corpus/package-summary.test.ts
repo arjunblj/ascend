@@ -33,4 +33,26 @@ describe('OOXML package summaries', () => {
 			pivotCaches: 1,
 		})
 	})
+
+	test('counts slicer and timeline data parts without relationship folders', () => {
+		const bytes = makeXlsx({
+			'xl/workbook.xml': '<workbook/>',
+			'xl/worksheets/sheet1.xml': '<worksheet/>',
+			'xl/slicerCaches/cache_region.xml': '<slicerCacheDefinition/>',
+			'xl/slicerCaches/_rels/cache_region.xml.rels': '<Relationships/>',
+			'xl/slicers/ui_region.xml': '<slicers/>',
+			'xl/slicers/_rels/ui_region.xml.rels': '<Relationships/>',
+			'xl/timelineCaches/cache_date.xml': '<timelineCacheDefinition/>',
+			'xl/timelineCaches/_rels/cache_date.xml.rels': '<Relationships/>',
+			'xl/timelines/ui_date.xml': '<timelines/>',
+			'xl/timelines/_rels/ui_date.xml.rels': '<Relationships/>',
+		})
+
+		expect(summarizeOoxmlPackage(bytes).families).toMatchObject({
+			slicerCaches: 1,
+			slicers: 1,
+			timelineCaches: 1,
+			timelines: 1,
+		})
+	})
 })

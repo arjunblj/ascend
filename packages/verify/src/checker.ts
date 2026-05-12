@@ -763,6 +763,127 @@ function checkTableIntegrity(wb: Workbook): CheckIssue[] {
 	return issues
 }
 
+function checkTablePackageGraphIntegrity(
+	wb: Workbook,
+	packageGraph?: VerifyPackageGraph,
+): CheckIssue[] {
+	if (!packageGraph) return []
+	const issues: CheckIssue[] = []
+	const graphPartByPath = new Map(packageGraph.parts.map((part) => [part.path, part]))
+	const graphRelationshipsByTarget = relationshipsByTarget(packageGraph.relationships)
+	const claimedTableParts = new Map<string, TableIntegrityEntry>()
+
+	for (const sheet of wb.sheets) {
+		for (const table of sheet.tables) {
+			if (!table.partPath) continue
+			const tableRef = rangeToA1(table.ref)
+			const entry: TableIntegrityEntry = {
+				tableName: table.name,
+				tableId: String(table.id),
+				sheetName: sheet.name,
+				ref: tableRef,
+				partPath: table.partPath,
+			}
+			const existingClaim = claimedTableParts.get(table.partPath)
+			if (existingClaim) {
+				issues.push({
+					rule: 'table-package-integrity',
+					severity: 'error',
+					message: `Table package part "${table.partPath}" is claimed by multiple workbook tables`,
+					refs: [
+						`${existingClaim.sheetName}!${existingClaim.ref}`,
+						`${sheet.name}!${tableRef}`,
+						table.partPath,
+					],
+					suggestedFix:
+						'Give each table a distinct worksheet table relationship before editing table topology.',
+					details: {
+						kind: 'duplicate-table-part-owner',
+						first: existingClaim,
+						duplicate: entry,
+					},
+				})
+			} else {
+				claimedTableParts.set(table.partPath, entry)
+			}
+
+			const graphPart = graphPartByPath.get(table.partPath)
+			if (!graphPart) {
+				issues.push({
+					rule: 'table-package-integrity',
+					severity: 'error',
+					message: `Table "${table.name}" references missing package part "${table.partPath}"`,
+					refs: [`${sheet.name}!${tableRef}`, table.partPath],
+					suggestedFix:
+						'Restore the table package part or remove the stale table relationship before writing.',
+					details: {
+						kind: 'missing-table-part',
+						table: entry,
+					},
+				})
+				continue
+			}
+
+			if (!table.sourcePartPath || !table.sourceRelationshipId) continue
+			const incomingRelationships = graphRelationshipsByTarget.get(table.partPath) ?? []
+			const matchingRelationship = incomingRelationships.find(
+				(relationship) =>
+					relationship.sourcePartPath === table.sourcePartPath &&
+					relationship.id === table.sourceRelationshipId &&
+					isTableRelationshipType(relationship.type),
+			)
+			if (!matchingRelationship) {
+				issues.push({
+					rule: 'table-package-integrity',
+					severity: 'error',
+					message: `Table "${table.name}" relationship "${table.sourceRelationshipId}" does not bind to "${table.partPath}" in the package graph`,
+					refs: [`${sheet.name}!${tableRef}`, table.partPath],
+					suggestedFix:
+						'Repair the worksheet table relationship id/target binding before editing table structure.',
+					details: {
+						kind: 'table-relationship-binding-mismatch',
+						table: {
+							...entry,
+							sourcePartPath: table.sourcePartPath,
+							sourceRelationshipPart: table.sourceRelationshipPart,
+							sourceRelationshipId: table.sourceRelationshipId,
+							sourceRelationshipType: table.sourceRelationshipType,
+							sourceRelationshipRawTarget: table.sourceRelationshipRawTarget,
+							sourceRelationshipResolvedTarget: table.sourceRelationshipResolvedTarget,
+						},
+						graphPart,
+						incomingRelationships: incomingRelationships.map(packageRelationshipDetails),
+					},
+				})
+			}
+		}
+	}
+
+	for (const part of packageGraph.parts) {
+		if (!isTablePart(part)) continue
+		if (claimedTableParts.has(part.path)) continue
+		issues.push({
+			rule: 'table-package-integrity',
+			severity: 'warning',
+			message: `Table package part "${part.path}" is not claimed by any workbook table model`,
+			refs: [part.path],
+			suggestedFix:
+				'Inspect worksheet table relationships and reconnect or intentionally remove the orphan table sidecar before table edits.',
+			details: {
+				kind: 'orphan-table-part',
+				partPath: part.path,
+				ownerScope: part.ownerScope,
+				contentType: part.contentType,
+				incomingRelationships: (graphRelationshipsByTarget.get(part.path) ?? []).map(
+					packageRelationshipDetails,
+				),
+			},
+		})
+	}
+
+	return issues
+}
+
 function checkTableQueryTableIntegrity(
 	wb: Workbook,
 	packageGraph?: VerifyPackageGraph,
@@ -1875,6 +1996,10 @@ function isPivotTableRelationshipType(relationshipType: string | undefined): boo
 	return /\/relationships\/pivottable$/i.test(relationshipType ?? '')
 }
 
+function isTableRelationshipType(relationshipType: string | undefined): boolean {
+	return /\/relationships\/table$/i.test(relationshipType ?? '')
+}
+
 function isSlicerCacheRelationshipType(relationshipType: string | undefined): boolean {
 	return /\/relationships\/slicercache$/i.test(relationshipType ?? '')
 }
@@ -1912,30 +2037,38 @@ function isPivotTablePart(part: VerifyPackageGraphPart): boolean {
 	)
 }
 
+function isTablePart(part: VerifyPackageGraphPart): boolean {
+	return (
+		part.featureFamily === 'preservedTable' &&
+		/(^|\/)tables\/(?!_rels\/)[^/]+\.xml$/i.test(part.path)
+	)
+}
+
 function isSlicerCachePart(part: VerifyPackageGraphPart): boolean {
 	return (
 		part.featureFamily === 'preservedSlicer' &&
-		/(^|\/)slicerCaches\/slicerCache\d+\.xml$/i.test(part.path)
+		/(^|\/)slicerCaches\/(?!_rels\/)[^/]+\.xml$/i.test(part.path)
 	)
 }
 
 function isSlicerPart(part: VerifyPackageGraphPart): boolean {
 	return (
-		part.featureFamily === 'preservedSlicer' && /(^|\/)slicers\/slicer\d+\.xml$/i.test(part.path)
+		part.featureFamily === 'preservedSlicer' &&
+		/(^|\/)slicers\/(?!_rels\/)[^/]+\.xml$/i.test(part.path)
 	)
 }
 
 function isTimelineCachePart(part: VerifyPackageGraphPart): boolean {
 	return (
 		part.featureFamily === 'preservedTimeline' &&
-		/(^|\/)timelineCaches\/timelineCache\d+\.xml$/i.test(part.path)
+		/(^|\/)timelineCaches\/(?!_rels\/)[^/]+\.xml$/i.test(part.path)
 	)
 }
 
 function isTimelinePart(part: VerifyPackageGraphPart): boolean {
 	return (
 		part.featureFamily === 'preservedTimeline' &&
-		/(^|\/)timelines\/timeline\d+\.xml$/i.test(part.path)
+		/(^|\/)timelines\/(?!_rels\/)[^/]+\.xml$/i.test(part.path)
 	)
 }
 
@@ -4257,6 +4390,7 @@ export function check(workbook: Workbook, analysis?: CheckAnalysis): CheckResult
 		...checkOrphanedNames(workbook),
 		...checkMergeOverlaps(workbook),
 		...checkTableIntegrity(workbook),
+		...checkTablePackageGraphIntegrity(workbook, analysis?.packageGraph),
 		...checkTableQueryTableIntegrity(workbook, analysis?.packageGraph),
 		...checkExternalLinkIntegrity(workbook, analysis?.packageGraph),
 		...checkPivotSlicerTimelineIntegrity(workbook, analysis?.packageGraph),

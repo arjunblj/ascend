@@ -116,4 +116,54 @@ describe('OOXML feature probe', () => {
 		expect(probe.analytics.timelineCaches[0]?.name).toBe('Timeline_Date')
 		expect(probe.analytics.timelines[0]?.cacheName).toBe('Timeline_Date')
 	})
+
+	test('extracts nonnumeric slicer and timeline analytics parts', () => {
+		const bytes = makeXlsx({
+			'xl/workbook.xml': '<workbook/>',
+			'xl/worksheets/sheet1.xml': '<worksheet/>',
+			'xl/slicerCaches/cache_region.xml': `<?xml version="1.0"?>
+<slicerCacheDefinition name="Slicer_Region">
+  <pivotTables><pivotTable name="PivotTable1"/></pivotTables>
+</slicerCacheDefinition>`,
+			'xl/slicerCaches/_rels/cache_region.xml.rels': '<Relationships/>',
+			'xl/slicers/ui_region.xml': `<?xml version="1.0"?>
+<slicers><slicer name="Region" cache="Slicer_Region"/></slicers>`,
+			'xl/timelineCaches/cache_date.xml': `<?xml version="1.0"?>
+<timelineCacheDefinition name="Timeline_Date">
+  <pivotTables><pivotTable name="PivotTable1"/></pivotTables>
+</timelineCacheDefinition>`,
+			'xl/timelineCaches/_rels/cache_date.xml.rels': '<Relationships/>',
+			'xl/timelines/ui_date.xml': `<?xml version="1.0"?>
+<timelines><timeline name="Date" cache="Timeline_Date"/></timelines>`,
+		})
+
+		const probe = inspectOoxmlPackageFeatures(bytes)
+
+		expect(probe.counts).toMatchObject({
+			slicer_caches: 1,
+			slicers: 1,
+			timeline_caches: 1,
+			timelines: 1,
+		})
+		expect(probe.analytics.slicerCaches[0]).toMatchObject({
+			partPath: 'xl/slicerCaches/cache_region.xml',
+			name: 'Slicer_Region',
+			pivotTableNames: ['PivotTable1'],
+		})
+		expect(probe.analytics.slicers[0]).toMatchObject({
+			partPath: 'xl/slicers/ui_region.xml',
+			name: 'Region',
+			cacheName: 'Slicer_Region',
+		})
+		expect(probe.analytics.timelineCaches[0]).toMatchObject({
+			partPath: 'xl/timelineCaches/cache_date.xml',
+			name: 'Timeline_Date',
+			pivotTableNames: ['PivotTable1'],
+		})
+		expect(probe.analytics.timelines[0]).toMatchObject({
+			partPath: 'xl/timelines/ui_date.xml',
+			name: 'Date',
+			cacheName: 'Timeline_Date',
+		})
+	})
 })

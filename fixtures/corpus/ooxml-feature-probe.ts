@@ -164,16 +164,16 @@ export function inspectOoxmlPackageFeatures(bytes: Uint8Array): OoxmlPackageProb
 			/^xl\/pivotCache\/pivotCacheRecords\d+\.xml$/i.test(path),
 		),
 		slicerCaches: paths
-			.filter((path) => /^xl\/slicerCaches\/slicerCache\d+\.xml$/i.test(path))
+			.filter(isSlicerCachePartPath)
 			.map((path) => parseLinkedCache(path, decodePart(files, path))),
 		slicers: paths
-			.filter((path) => /^xl\/slicers\/slicer\d+\.xml$/i.test(path))
+			.filter(isSlicerPartPath)
 			.flatMap((path) => parseLinkedUi(path, decodePart(files, path), 'slicer')),
 		timelineCaches: paths
-			.filter((path) => /^xl\/timelineCaches\/timelineCache\d+\.xml$/i.test(path))
+			.filter(isTimelineCachePartPath)
 			.map((path) => parseLinkedCache(path, decodePart(files, path))),
 		timelines: paths
-			.filter((path) => /^xl\/timelines\/timeline\d+\.xml$/i.test(path))
+			.filter(isTimelinePartPath)
 			.flatMap((path) => parseLinkedUi(path, decodePart(files, path), 'timeline')),
 	}
 	const features = {
@@ -215,6 +215,22 @@ function decodePart(files: Record<string, Uint8Array>, path: string): string {
 
 function countPaths(paths: readonly string[], pattern: RegExp): number {
 	return paths.filter((path) => pattern.test(path)).length
+}
+
+function isSlicerCachePartPath(path: string): boolean {
+	return /^xl\/slicerCaches\/(?!_rels\/)[^/]+\.xml$/i.test(path)
+}
+
+function isSlicerPartPath(path: string): boolean {
+	return /^xl\/slicers\/(?!_rels\/)[^/]+\.xml$/i.test(path)
+}
+
+function isTimelineCachePartPath(path: string): boolean {
+	return /^xl\/timelineCaches\/(?!_rels\/)[^/]+\.xml$/i.test(path)
+}
+
+function isTimelinePartPath(path: string): boolean {
+	return /^xl\/timelines\/(?!_rels\/)[^/]+\.xml$/i.test(path)
 }
 
 function countXmlTags(xmlParts: readonly string[], tag: string): number {

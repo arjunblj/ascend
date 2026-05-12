@@ -389,6 +389,89 @@ describe('checker', () => {
 		expect(orphanIssue?.suggestedFix).toContain('orphan queryTable sidecar')
 	})
 
+	test('detects table package relationship binding mismatches and orphan table sidecars', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: s.id,
+			partPath: 'xl/tables/table1.xml',
+			sourcePartPath: 'xl/worksheets/sheet1.xml',
+			sourceRelationshipPart: 'xl/worksheets/_rels/sheet1.xml.rels',
+			sourceRelationshipId: 'rIdTable',
+			sourceRelationshipType:
+				'http://schemas.openxmlformats.org/officeDocument/2006/relationships/table',
+			sourceRelationshipRawTarget: '../tables/table1.xml',
+			sourceRelationshipResolvedTarget: 'xl/tables/table1.xml',
+			ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } },
+			columns: [{ name: 'Name' }, { name: 'Amount' }],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/tables/table1.xml',
+						featureFamily: 'preservedTable',
+						ownerScope: 'worksheet',
+					},
+					{
+						path: 'xl/tables/table_custom.xml',
+						featureFamily: 'preservedTable',
+						ownerScope: 'worksheet',
+					},
+				],
+				relationships: [
+					{
+						sourcePartPath: 'xl/worksheets/sheet1.xml',
+						relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+						id: 'rIdOther',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/table',
+						rawTarget: '../tables/table1.xml',
+						resolvedTarget: 'xl/tables/table1.xml',
+						featureFamily: 'preservedTable',
+					},
+					{
+						sourcePartPath: 'xl/worksheets/sheet1.xml',
+						relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+						id: 'rIdOrphan',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/table',
+						rawTarget: '../tables/table_custom.xml',
+						resolvedTarget: 'xl/tables/table_custom.xml',
+						featureFamily: 'preservedTable',
+					},
+				],
+			},
+		})
+		const packageIssues = result.issues.filter((i) => i.rule === 'table-package-integrity')
+		expect(result.passed).toBe(false)
+		expect(packageIssues.map((issue) => issue.details?.kind)).toEqual([
+			'table-relationship-binding-mismatch',
+			'orphan-table-part',
+		])
+		expect(packageIssues[0]?.refs).toEqual(['Sheet1!A1:B3', 'xl/tables/table1.xml'])
+		expect(packageIssues[0]?.details).toMatchObject({
+			table: {
+				tableName: 'Sales',
+				partPath: 'xl/tables/table1.xml',
+				sourcePartPath: 'xl/worksheets/sheet1.xml',
+				sourceRelationshipId: 'rIdTable',
+			},
+			incomingRelationships: [
+				{
+					sourcePartPath: 'xl/worksheets/sheet1.xml',
+					id: 'rIdOther',
+					resolvedTarget: 'xl/tables/table1.xml',
+				},
+			],
+		})
+		expect(packageIssues[1]?.severity).toBe('warning')
+		expect(packageIssues[1]?.refs).toEqual(['xl/tables/table_custom.xml'])
+	})
+
 	test('detects orphan pivot cache, records, and table package sidecars', () => {
 		const wb = createWorkbook()
 		wb.addSheet('Sheet1')
@@ -801,6 +884,59 @@ describe('checker', () => {
 			'timeline-cache-ui-relationship-binding-mismatch',
 			'timeline-worksheet-relationship-binding-mismatch',
 		])
+	})
+
+	test('detects nonnumeric slicer and timeline orphan package sidecars', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/slicerCaches/cache_region.xml',
+						featureFamily: 'preservedSlicer',
+						ownerScope: 'workbook',
+					},
+					{
+						path: 'xl/slicers/ui_region.xml',
+						featureFamily: 'preservedSlicer',
+						ownerScope: 'worksheet',
+					},
+					{
+						path: 'xl/timelineCaches/cache_date.xml',
+						featureFamily: 'preservedTimeline',
+						ownerScope: 'workbook',
+					},
+					{
+						path: 'xl/timelines/ui_date.xml',
+						featureFamily: 'preservedTimeline',
+						ownerScope: 'worksheet',
+					},
+					{
+						path: 'xl/slicerCaches/_rels/cache_region.xml.rels',
+						featureFamily: 'packageRelationships',
+						ownerScope: 'relationship-part',
+					},
+					{
+						path: 'xl/timelineCaches/_rels/cache_date.xml.rels',
+						featureFamily: 'packageRelationships',
+						ownerScope: 'relationship-part',
+					},
+				],
+				relationships: [],
+			},
+		})
+
+		const slicerKinds = result.issues
+			.filter((issue) => issue.rule === 'slicer-integrity')
+			.map((issue) => issue.details?.kind)
+		const timelineKinds = result.issues
+			.filter((issue) => issue.rule === 'timeline-integrity')
+			.map((issue) => issue.details?.kind)
+		expect(result.passed).toBe(false)
+		expect(slicerKinds).toEqual(['orphan-slicer-cache-part', 'orphan-slicer-part'])
+		expect(timelineKinds).toEqual(['orphan-timeline-cache-part', 'orphan-timeline-part'])
 	})
 
 	test('surfaces stale pivot output and unsupported headless refresh signals', () => {

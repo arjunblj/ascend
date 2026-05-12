@@ -690,13 +690,13 @@ function parseCanonicalPlainValueCellBytes(
 	},
 ): number {
 	if (!startsWithCellRefBytes(bytes, cursor, bodyEnd)) return -1
-	const refEnd = consumeExpectedCellRefBytes(
-		bytes,
-		cursor + 6,
-		bodyEnd,
-		fallbackRowNumber,
-		fallbackCol,
-	)
+	let refEnd =
+		fallbackCol >= 0 && fallbackCol < 26 && bytes[cursor + 6] === 65 + fallbackCol
+			? consumeExpectedPositiveIntegerBytes(bytes, cursor + 7, bodyEnd, fallbackRowNumber)
+			: -1
+	if (refEnd === -1 || bytes[refEnd] !== BYTE_QUOTE) {
+		refEnd = consumeExpectedCellRefBytes(bytes, cursor + 6, bodyEnd, fallbackRowNumber, fallbackCol)
+	}
 	if (refEnd === -1 || refEnd + 5 >= bodyEnd) return -1
 	out.row = fallbackRow
 	out.col = fallbackCol

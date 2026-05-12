@@ -82,7 +82,7 @@ const AUTO_DENSE_FILL_RATIO = 0.5
 const SLOT_TAG_MASK = 0b111
 const SLOT_OCCUPIED_BIT = 0b1000
 
-type ChunkBuffer = SharedArrayBuffer | ArrayBuffer
+type ChunkBuffer = ArrayBuffer
 
 enum SlotTag {
 	Empty = 0,
@@ -1947,9 +1947,7 @@ function resolveChunkBits(): number {
 }
 
 function createChunkBuffer(byteLength: number): ChunkBuffer {
-	return typeof SharedArrayBuffer === 'function'
-		? new SharedArrayBuffer(byteLength)
-		: new ArrayBuffer(byteLength)
+	return new ArrayBuffer(byteLength)
 }
 
 function cloneCellValue(value: CellValue): CellValue {

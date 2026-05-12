@@ -4834,6 +4834,106 @@ describe('writeXlsx', () => {
 		)
 	})
 
+	it('persists table structured-reference rewrites in worksheet metadata', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Data')
+		sheet.cells.set(0, 0, { value: stringValue('Qty'), formula: null, styleId: S0 })
+		sheet.cells.set(0, 1, { value: stringValue('Price'), formula: null, styleId: S0 })
+		sheet.cells.set(0, 2, { value: stringValue('Total'), formula: null, styleId: S0 })
+		sheet.cells.set(1, 0, { value: numberValue(5), formula: null, styleId: S0 })
+		sheet.cells.set(1, 1, { value: numberValue(4), formula: null, styleId: S0 })
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 1, col: 2 } },
+			columns: [
+				{ id: 1, name: 'Qty' },
+				{ id: 2, name: 'Price' },
+				{ id: 3, name: 'Total', formula: '[@Qty]*[@Price]' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+		sheet.dataValidations.push({
+			sqref: 'D2:D3',
+			type: 'list',
+			formula1: 'SUM(Sales[Qty])',
+		})
+		sheet.conditionalFormats.push({
+			sqref: 'E2:E3',
+			rules: [
+				{
+					type: 'expression',
+					formulas: ['SUM(Sales[Qty])>0'],
+					colorScale: {
+						cfvo: [{ type: 'formula', value: 'SUM(Sales[Qty])' }],
+						colors: [{ rgb: 'FFFF0000' }],
+					},
+					dataBar: {
+						cfvo: [{ type: 'formula', value: 'SUM(Sales[Qty])' }],
+						color: { rgb: 'FF00AA00' },
+					},
+					iconSet: {
+						cfvo: [{ type: 'formula', value: 'SUM(Sales[Qty])' }],
+					},
+				},
+			],
+		})
+		sheet.x14DataValidations.push({
+			index: 0,
+			sqref: 'F2:F3',
+			type: 'list',
+			formula1: 'SUM(Sales[Qty])',
+		})
+		sheet.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'G2:G3',
+			formulas: ['SUM(Sales[Qty])>0'],
+			dataBar: { cfvo: [{ type: 'formula', value: 'SUM(Sales[Qty])' }] },
+			iconSet: { cfvo: [{ type: 'formula', value: 'SUM(Sales[Qty])' }] },
+		})
+
+		const applied = applyOperations(wb, [
+			{ op: 'renameTable', table: 'Sales', newName: 'Inventory' },
+			{ op: 'setTableColumn', table: 'Inventory', column: 'Qty', newName: 'Units' },
+		])
+		expectOk(applied)
+
+		const { result, bytes } = roundTrip(wb)
+		const roundTrippedSheet = result.workbook.sheets[0]
+		expect(roundTrippedSheet?.tables[0]?.name).toBe('Inventory')
+		expect(roundTrippedSheet?.tables[0]?.columns.map((column) => column.name)).toEqual([
+			'Units',
+			'Price',
+			'Total',
+		])
+		expect(roundTrippedSheet?.tables[0]?.columns[2]?.formula).toBe('[@Units]*[@Price]')
+		expect(roundTrippedSheet?.dataValidations[0]?.formula1).toBe('SUM(Inventory[Units])')
+		const rule = roundTrippedSheet?.conditionalFormats[0]?.rules[0]
+		expect(rule?.formulas[0]).toBe('SUM(Inventory[Units])>0')
+		expect(rule?.colorScale?.cfvo[0]?.value).toBe('SUM(Inventory[Units])')
+		expect(rule?.dataBar?.cfvo[0]?.value).toBe('SUM(Inventory[Units])')
+		expect(rule?.iconSet?.cfvo[0]?.value).toBe('SUM(Inventory[Units])')
+		expect(roundTrippedSheet?.x14DataValidations[0]?.formula1).toBe('SUM(Inventory[Units])')
+		expect(roundTrippedSheet?.x14ConditionalFormats[0]?.formulas[0]).toBe('SUM(Inventory[Units])>0')
+		expect(roundTrippedSheet?.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe(
+			'SUM(Inventory[Units])',
+		)
+		expect(roundTrippedSheet?.x14ConditionalFormats[0]?.iconSet?.cfvo[0]?.value).toBe(
+			'SUM(Inventory[Units])',
+		)
+
+		const entries = unzipSync(bytes)
+		const sheetXml = new TextDecoder().decode(
+			entries['xl/worksheets/sheet1.xml'] ?? new Uint8Array(),
+		)
+		expect(sheetXml).toContain('SUM(Inventory[Units])')
+		expect(sheetXml).toContain('SUM(Inventory[Units])&gt;0')
+		expect(sheetXml).not.toContain('Sales[Qty]')
+		expect(sheetXml).not.toContain('Inventory[Qty]')
+	})
+
 	it('writes materialized table totals rows from metadata edits', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Data')

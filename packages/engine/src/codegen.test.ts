@@ -261,6 +261,8 @@ describe('codegen', () => {
 
 		expect(codegenEval('VLOOKUP("b",A1:B3,2,FALSE)+1', wb)).toEqual(numberValue(21))
 		expect(codegenEval('INDEX(B1:B3,MATCH("c",A1:A3,0))+2', wb)).toEqual(numberValue(32))
+		expect(codegenEval('XLOOKUP("a",A1:A3,B1:B3,"missing",0)+3', wb)).toEqual(numberValue(13))
+		expect(codegenEval('XLOOKUP("z",A1:A3,B1:B3,"missing",0)', wb)).toEqual(stringValue('missing'))
 	})
 
 	test('caching returns same function for same formula text', () => {

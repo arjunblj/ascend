@@ -68,7 +68,7 @@ const sharedCodegenCache = new GenerationalCache<CodegenFn | null>(CODEGEN_CACHE
 
 const CODEGEN_FUNCTIONS = new Set(['IF', 'IFERROR', 'IFNA', 'AND', 'OR', 'NOT'])
 const RANGE_AGG_FUNCTIONS = new Set(['SUM', 'AVERAGE', 'COUNT', 'COUNTA', 'MIN', 'MAX'])
-const PARTIAL_CODEGEN_FUNCTIONS = new Set(['VLOOKUP', 'MATCH', 'INDEX'])
+const PARTIAL_CODEGEN_FUNCTIONS = new Set(['VLOOKUP', 'MATCH', 'INDEX', 'XLOOKUP'])
 const DATE_EXTRACT_FUNCTIONS = new Set(['YEAR', 'MONTH', 'DAY'])
 const EXCEL_MAX_ROWS = 1_048_576
 const EXCEL_MAX_COLS = 16_384
@@ -613,6 +613,7 @@ function emitFunction(state: CodegenState, node: FormulaNode & { type: 'function
 	if (upper === 'INDEX') return emitIndex(state, node)
 	if (upper === 'MATCH') return emitMatch(state, node)
 	if (upper === 'VLOOKUP') return emitVlookup(state, node)
+	if (upper === 'XLOOKUP') return emitXlookup(state, node)
 
 	return emitTreeFallback(state, node)
 }
@@ -1174,6 +1175,52 @@ function emitVlookup(state: CodegenState, node: FormulaNode & { type: 'function'
 	const anchorCol = state.sharedAnchor?.col ?? -1
 	state.lines.push(
 		`var ${result} = _vlookupExact(ctx, _sheet, ${sheetExpr}, ${tableArg.start.row}, ${tableArg.start.col}, ${tableArg.start.rowAbsolute}, ${tableArg.start.colAbsolute}, ${tableArg.end.row}, ${tableArg.end.col}, ${tableArg.end.rowAbsolute}, ${tableArg.end.colAbsolute}, ${anchorRow}, ${anchorCol}, ${lookupVar}, ${colIdxVar}, ${nodeKey});`,
+	)
+	return result
+}
+
+function emitXlookup(state: CodegenState, node: FormulaNode & { type: 'function' }): string {
+	const args = node.args
+	if (args.length < 3 || args.length > 6) return emitTreeFallback(state, node)
+	const lookupRange = args[1]
+	const returnRange = args[2]
+	if (!lookupRange || lookupRange.type !== 'rangeRef') return emitTreeFallback(state, node)
+	if (!returnRange || returnRange.type !== 'rangeRef') return emitTreeFallback(state, node)
+	if (lookupRange.sheet !== returnRange.sheet) return emitTreeFallback(state, node)
+	const lookupRows = lookupRange.end.row - lookupRange.start.row + 1
+	const lookupCols = lookupRange.end.col - lookupRange.start.col + 1
+	const returnRows = returnRange.end.row - returnRange.start.row + 1
+	const returnCols = returnRange.end.col - returnRange.start.col + 1
+	const sameColumnShape =
+		lookupCols === 1 && returnCols === 1 && lookupRows === returnRows && lookupRows > 0
+	const sameRowShape =
+		lookupRows === 1 && returnRows === 1 && lookupCols === returnCols && lookupCols > 0
+	if (!sameColumnShape && !sameRowShape) return emitTreeFallback(state, node)
+	if (args.length >= 5) {
+		const matchMode = args[4]
+		if (!matchMode || matchMode.type !== 'number' || matchMode.value !== 0) {
+			return emitTreeFallback(state, node)
+		}
+	}
+	let fromEnd = false
+	if (args.length >= 6) {
+		const searchMode = args[5]
+		if (!searchMode || searchMode.type !== 'number') return emitTreeFallback(state, node)
+		if (searchMode.value === -1) fromEnd = true
+		else if (searchMode.value !== 1) return emitTreeFallback(state, node)
+	}
+
+	const lookupVar = emitNode(state, args[0] as FormulaNode)
+	const ifNotFoundVar = args.length >= 4 ? emitNode(state, args[3] as FormulaNode) : 'null'
+	const nodeKey = `_tree${state.treeNodes.size}`
+	state.treeNodes.set(nodeKey, node)
+
+	const result = freshVar(state)
+	const sheetExpr = lookupRange.sheet === undefined ? 'null' : JSON.stringify(lookupRange.sheet)
+	const anchorRow = state.sharedAnchor?.row ?? -1
+	const anchorCol = state.sharedAnchor?.col ?? -1
+	state.lines.push(
+		`var ${result} = _xlookupExact(ctx, _sheet, ${sheetExpr}, ${lookupRange.start.row}, ${lookupRange.start.col}, ${lookupRange.start.rowAbsolute}, ${lookupRange.start.colAbsolute}, ${lookupRange.end.row}, ${lookupRange.end.col}, ${lookupRange.end.rowAbsolute}, ${lookupRange.end.colAbsolute}, ${returnRange.start.row}, ${returnRange.start.col}, ${returnRange.start.rowAbsolute}, ${returnRange.start.colAbsolute}, ${returnRange.end.row}, ${returnRange.end.col}, ${returnRange.end.rowAbsolute}, ${returnRange.end.colAbsolute}, ${anchorRow}, ${anchorCol}, ${lookupVar}, ${ifNotFoundVar}, ${fromEnd}, ${nodeKey});`,
 	)
 	return result
 }
@@ -1761,6 +1808,95 @@ function vlookupExact(
 	return idx < 0 ? errorValue('#N/A') : sheet.cells.readValue(sr + idx, sc + colInt - 1)
 }
 
+function xlookupExact(
+	ctx: EvalContext,
+	currentSheet: import('@ascend/core').Workbook['sheets'][number] | undefined,
+	sheetName: string | null,
+	lookupStartRow: number,
+	lookupStartCol: number,
+	lookupStartRowAbsolute: boolean,
+	lookupStartColAbsolute: boolean,
+	lookupEndRow: number,
+	lookupEndCol: number,
+	lookupEndRowAbsolute: boolean,
+	lookupEndColAbsolute: boolean,
+	returnStartRow: number,
+	returnStartCol: number,
+	returnStartRowAbsolute: boolean,
+	returnStartColAbsolute: boolean,
+	returnEndRow: number,
+	returnEndCol: number,
+	returnEndRowAbsolute: boolean,
+	returnEndColAbsolute: boolean,
+	anchorRow: number,
+	anchorCol: number,
+	lookupVal: CellValue,
+	ifNotFound: CellValue | null,
+	fromEnd: boolean,
+	fallbackNode: FormulaNode,
+): CellValue {
+	if (lookupVal.kind === 'array') return treeEvaluate(fallbackNode, ctx)
+
+	const lsr = resolveRelativeIndex(lookupStartRow, lookupStartRowAbsolute, ctx.row, anchorRow)
+	const lsc = resolveRelativeIndex(lookupStartCol, lookupStartColAbsolute, ctx.col, anchorCol)
+	const ler = resolveRelativeIndex(lookupEndRow, lookupEndRowAbsolute, ctx.row, anchorRow)
+	const lec = resolveRelativeIndex(lookupEndCol, lookupEndColAbsolute, ctx.col, anchorCol)
+	const rsr = resolveRelativeIndex(returnStartRow, returnStartRowAbsolute, ctx.row, anchorRow)
+	const rsc = resolveRelativeIndex(returnStartCol, returnStartColAbsolute, ctx.col, anchorCol)
+	const rer = resolveRelativeIndex(returnEndRow, returnEndRowAbsolute, ctx.row, anchorRow)
+	const rec = resolveRelativeIndex(returnEndCol, returnEndColAbsolute, ctx.col, anchorCol)
+	if (lsr < 0 || lsc < 0 || ler < 0 || lec < 0 || rsr < 0 || rsc < 0 || rer < 0 || rec < 0) {
+		return errorValue('#REF!')
+	}
+
+	let sheet = currentSheet
+	let targetSheetIndex = ctx.sheetIndex
+	if (sheetName !== null) {
+		targetSheetIndex = resolveSheetIndex(ctx.workbook, sheetName, ctx.sheetIndex)
+		if (targetSheetIndex < 0) return errorValue('#REF!')
+		sheet = ctx.workbook.sheets[targetSheetIndex]
+	}
+	if (!sheet) return errorValue('#REF!')
+
+	const lookupRows = ler - lsr + 1
+	const lookupCols = lec - lsc + 1
+	const returnRows = rer - rsr + 1
+	const returnCols = rec - rsc + 1
+	const isColumn = lookupCols === 1 && returnCols === 1 && lookupRows === returnRows
+	const isRow = lookupRows === 1 && returnRows === 1 && lookupCols === returnCols
+	if (!isColumn && !isRow) return treeEvaluate(fallbackNode, ctx)
+
+	const lookup = topLeftScalar(lookupVal)
+	if (lookup.kind === 'error') return lookup
+	const cacheKey = isColumn
+		? `column:${targetSheetIndex}:${lsc}:${lsr}:${ler}`
+		: `row:${targetSheetIndex}:${lsr}:${lsc}:${lec}`
+	let index = ctx.exactLookupCache?.get(cacheKey)
+	if (!index) {
+		const built = new Map<string, { first: number; last: number }>()
+		const count = isColumn ? lookupRows : lookupCols
+		for (let offset = 0; offset < count; offset++) {
+			const value = isColumn
+				? sheet.cells.readValue(lsr + offset, lsc)
+				: sheet.cells.readValue(lsr, lsc + offset)
+			const key = lookupValueKey(value)
+			if (key === null) continue
+			const existing = built.get(key)
+			if (existing) built.set(key, { first: existing.first, last: offset })
+			else built.set(key, { first: offset, last: offset })
+		}
+		index = built
+		ctx.exactLookupCache?.set(cacheKey, built)
+	}
+	const key = lookupValueKey(lookup)
+	const hit = key === null ? undefined : index.get(key)
+	if (!hit) return ifNotFound ?? errorValue('#N/A')
+	const offset = fromEnd ? hit.last : hit.first
+	return isColumn
+		? sheet.cells.readValue(rsr + offset, rsc)
+		: sheet.cells.readValue(rsr, rsc + offset)
+}
+
 function buildCriteriaMatcher(criteria: CellValue): (v: CellValue) => boolean {
 	if (criteria.kind === 'number') {
 		const t = criteria.value
@@ -1975,6 +2111,7 @@ function buildCodegenFn(node: FormulaNode, sharedAnchor?: SharedAnchor): Codegen
 		'_indexRange',
 		'_matchExact',
 		'_vlookupExact',
+		'_xlookupExact',
 		'_serialToDate',
 		'_serialToDatePart',
 		'_dateToSerial',
@@ -2003,6 +2140,7 @@ function buildCodegenFn(node: FormulaNode, sharedAnchor?: SharedAnchor): Codegen
 		indexRange,
 		matchExact,
 		vlookupExact,
+		xlookupExact,
 		serialToDate,
 		serialToDatePart,
 		dateToSerial,

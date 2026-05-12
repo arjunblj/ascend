@@ -7,7 +7,7 @@ import type {
 	SheetProtection,
 	WorkbookProtection,
 } from '@ascend/core'
-import { readXlsx } from '@ascend/io-xlsx'
+import { inspectXlsxPackageGraph, readXlsx, type XlsxPackageGraph } from '@ascend/io-xlsx'
 import type { CompatibilityTier, FeatureReport } from '@ascend/schema'
 import {
 	type ActiveContentInfo,
@@ -121,6 +121,7 @@ interface SheetProtectionSummary {
 }
 
 interface ContractSubject {
+	readonly packageGraph: XlsxPackageGraph
 	readonly packageSummary: PackageSummary
 	readonly packageCounts: OoxmlPackageProbe['counts']
 	readonly analytics: OoxmlAnalyticsProbe
@@ -638,6 +639,7 @@ async function loadContractSubject(bytes: Uint8Array): Promise<ContractSubject> 
 		sheet.protection ? [{ sheetName: sheet.name, protection: sheet.protection }] : [],
 	)
 	return {
+		packageGraph: inspectXlsxPackageGraph(bytes),
 		packageSummary: summarizePackage(bytes),
 		packageCounts: packageProbe.counts,
 		analytics: packageProbe.analytics,
@@ -759,6 +761,7 @@ function assertManifestReadCoverage(
 	subject: ContractSubject,
 ): void {
 	const { packageSummary, packageCounts, semanticSummary, compatibilityFeatures } = subject
+	assertPackageGraphReadIntegrity(entry, subject.packageGraph)
 	expectManifestCount(entry, 'worksheets', [semanticSummary.sheetCount, packageCounts.worksheets])
 	expectManifestCount(entry, 'charts', [packageSummary.charts, packageCounts.charts])
 	expectManifestCount(entry, 'tables', [packageSummary.tables, packageCounts.tables])
@@ -937,6 +940,7 @@ function assertManifestEditCoverage(
 	before: ContractSubject,
 	after: ContractSubject,
 ): void {
+	assertPackageGraphEditIntegrity(entry, before.packageGraph, after.packageGraph)
 	expect(after.semanticSummary.sheetCount).toBe(before.semanticSummary.sheetCount)
 	expect(after.packageSummary.charts).toBe(before.packageSummary.charts)
 	expect(after.packageSummary.structuredCharts).toBe(before.packageSummary.structuredCharts)
@@ -1047,6 +1051,152 @@ function assertManifestEditCoverage(
 		)
 	}
 	assertAnalyticsEditIntegrity(entry, before, after)
+}
+
+function assertPackageGraphReadIntegrity(
+	entry: NormalizedCorpusManifestEntry,
+	graph: XlsxPackageGraph,
+): void {
+	const partPaths = new Set(graph.parts.map((part) => part.path))
+	const vagueParts = graph.parts.filter(
+		(part) => part.featureFamily === 'preservedOther' && !isAllowedPreservedOtherPart(part.path),
+	)
+	assertFeature(
+		entry,
+		'package_feature_classification',
+		vagueParts.length === 0,
+		`package graph has unclassified preservedOther parts: ${vagueParts.map((part) => part.path).join(', ')}`,
+	)
+	for (const relationship of graph.relationships) {
+		if (relationship.targetMode?.toLowerCase() === 'external') continue
+		assertFeature(
+			entry,
+			'package_relationship_target',
+			relationship.resolvedTarget !== undefined && partPaths.has(relationship.resolvedTarget),
+			`relationship ${relationship.relationshipPartPath}#${relationship.id} resolves to missing target ${relationship.resolvedTarget ?? relationship.rawTarget}`,
+		)
+	}
+}
+
+function assertPackageGraphEditIntegrity(
+	entry: NormalizedCorpusManifestEntry,
+	before: XlsxPackageGraph,
+	after: XlsxPackageGraph,
+): void {
+	expect(after.contentTypeDefaults).toEqual(before.contentTypeDefaults)
+	const afterOverrides = new Set(
+		preservationRelevantContentTypeOverrides(after).map(contentTypeOverrideKey),
+	)
+	for (const override of preservationRelevantContentTypeOverrides(before)) {
+		assertFeature(
+			entry,
+			'package_content_type_override',
+			afterOverrides.has(contentTypeOverrideKey(override)),
+			`content type override disappeared after safe edit: ${override.partPath}`,
+		)
+	}
+
+	const afterParts = new Map(after.parts.map((part) => [part.path, part]))
+	for (const beforePart of before.parts) {
+		if (beforePart.preservationPolicy === 'discard-on-recalc') continue
+		if (beforePart.preservationPolicy === 'generated') continue
+		if (beforePart.preservationPolicy === 'invalidate-on-edit') {
+			assertFeature(
+				entry,
+				'package_signature_invalidation',
+				afterParts.get(beforePart.path) === undefined,
+				`signature part ${beforePart.path} was retained after a generated workbook mutation`,
+			)
+			continue
+		}
+		const afterPart = afterParts.get(beforePart.path)
+		assertFeature(
+			entry,
+			'package_preserved_part',
+			afterPart !== undefined,
+			`preserved package part disappeared after safe edit: ${beforePart.path}`,
+		)
+		if (!afterPart) continue
+		assertFeature(
+			entry,
+			'package_preserved_part_identity',
+			JSON.stringify(packagePartIdentity(afterPart)) ===
+				JSON.stringify(packagePartIdentity(beforePart)),
+			`preserved package part identity changed after safe edit: ${beforePart.path}`,
+		)
+	}
+
+	const afterRels = new Map(
+		after.relationships.map((relationship) => [
+			packageRelationshipIdentityKey(relationship),
+			relationship,
+		]),
+	)
+	for (const beforeRel of before.relationships) {
+		if (!beforeRel.featureFamily.startsWith('preserved')) continue
+		if (beforeRel.featureFamily === 'preservedCalcChain') continue
+		if (beforeRel.featureFamily === 'preservedSignature') continue
+		const afterRel = afterRels.get(packageRelationshipIdentityKey(beforeRel))
+		assertFeature(
+			entry,
+			'package_preserved_relationship',
+			afterRel !== undefined,
+			`preserved relationship disappeared after safe edit: ${beforeRel.relationshipPartPath}#${beforeRel.id}`,
+		)
+		if (!afterRel) continue
+		assertFeature(
+			entry,
+			'package_preserved_relationship_identity',
+			JSON.stringify(afterRel) === JSON.stringify(beforeRel),
+			`preserved relationship identity changed after safe edit: ${beforeRel.relationshipPartPath}#${beforeRel.id}`,
+		)
+	}
+}
+
+function preservationRelevantContentTypeOverrides(
+	graph: XlsxPackageGraph,
+): readonly XlsxPackageGraph['contentTypeOverrides'][number][] {
+	return graph.contentTypeOverrides.filter(
+		(override) =>
+			classifyPackageGraphOverrideFamily(graph, override.partPath) !== 'preservedSignature',
+	)
+}
+
+function classifyPackageGraphOverrideFamily(graph: XlsxPackageGraph, partPath: string): string {
+	return graph.parts.find((part) => part.path === partPath)?.featureFamily ?? 'preservedOther'
+}
+
+function contentTypeOverrideKey(
+	override: XlsxPackageGraph['contentTypeOverrides'][number],
+): string {
+	return `${override.partPath}\u0000${override.contentType}`
+}
+
+function packagePartIdentity(part: XlsxPackageGraph['parts'][number]): Record<string, unknown> {
+	return {
+		contentType: part.contentType,
+		contentTypeSource: part.contentTypeSource,
+		ownerScope: part.ownerScope,
+		sourceRelationshipPart: part.sourceRelationshipPart,
+		sourceRelationshipId: part.sourceRelationshipId,
+		sourceRelationshipType: part.sourceRelationshipType,
+		sourceRelationshipRawTarget: part.sourceRelationshipRawTarget,
+		sourceRelationshipResolvedTarget: part.sourceRelationshipResolvedTarget,
+		sourceRelationshipTargetMode: part.sourceRelationshipTargetMode,
+		featureFamily: part.featureFamily,
+		preservationPolicy: part.preservationPolicy,
+		bytePreservationExpected: part.bytePreservationExpected,
+	}
+}
+
+function packageRelationshipIdentityKey(
+	relationship: XlsxPackageGraph['relationships'][number],
+): string {
+	return `${relationship.relationshipPartPath}\u0000${relationship.id}`
+}
+
+function isAllowedPreservedOtherPart(partPath: string): boolean {
+	return /^xl\/(?:richData|persons|customProperty|volatileDependencies)\//i.test(partPath)
 }
 
 function expectManifestCount(

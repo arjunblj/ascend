@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
 import { statSync } from 'node:fs'
-import { stat } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { inspectXlsxPackageGraph, type XlsxPackageGraph } from '@ascend/io-xlsx'
 import { check as verifyCheck, lint as verifyLint } from '@ascend/verify'
 import { partialDependencyCheckIssue, sdkCheckIssueFromVerify } from './check-issues.ts'
 import { openWorkbookSource } from './load.ts'
@@ -211,6 +212,10 @@ export class WorkbookDocument {
 		return this.view.visualInventory()
 	}
 
+	async packageGraph(): Promise<XlsxPackageGraph> {
+		return inspectXlsxPackageGraph(await this.readSourceBytes())
+	}
+
 	inspectSheet(name: string): SheetInspectInfo | undefined {
 		return this.view.inspectSheet(name)
 	}
@@ -253,6 +258,13 @@ export class WorkbookDocument {
 		opts?: AgentViewOptions,
 	): AgentViewResult | undefined {
 		return this.view.agentView(sheetName, range, opts)
+	}
+
+	private async readSourceBytes(): Promise<Uint8Array> {
+		if (this.source instanceof Uint8Array) return this.source
+		return typeof Bun !== 'undefined'
+			? Bun.file(this.source).bytes()
+			: new Uint8Array(await readFile(this.source))
 	}
 
 	readRows(

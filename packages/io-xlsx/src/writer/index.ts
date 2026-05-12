@@ -917,6 +917,9 @@ export function planWriteXlsx(
 							preservedSheetXml?.relsPath,
 						)
 					: undefined
+			const sheetRelTarget = (type: string, partPath: string, fallback: string): string =>
+				preservedRelationshipTarget(preservedSheetRelsText, sheetPartPath, type, partPath) ??
+				fallback
 			const preservedSheetRelsBytes = resolvePreservedBytes(
 				sourceArchive,
 				preservedSheetXml?.relsPath,
@@ -936,7 +939,11 @@ export function planWriteXlsx(
 				sheetRels.push({
 					id: relId,
 					type: capsule.relType,
-					target: computeRelativePath('xl/worksheets/', capsule.partPath),
+					target: sheetRelTarget(
+						capsule.relType,
+						capsule.partPath,
+						computeRelativePath('xl/worksheets/', capsule.partPath),
+					),
 				})
 				if (capsule.relType === REL_COMMENTS && !commentsRelId) {
 					commentsRelId = relId
@@ -1020,7 +1027,11 @@ export function planWriteXlsx(
 							sheetRels.push({
 								id: commentsRelId,
 								type: REL_COMMENTS,
-								target: computeRelativePath('xl/worksheets/', commentsPartPath),
+								target: sheetRelTarget(
+									REL_COMMENTS,
+									commentsPartPath,
+									computeRelativePath('xl/worksheets/', commentsPartPath),
+								),
 							})
 						}
 						if (!legacyDrawingRelId) {
@@ -1028,7 +1039,11 @@ export function planWriteXlsx(
 							sheetRels.push({
 								id: legacyDrawingRelId,
 								type: REL_VML_DRAWING,
-								target: computeRelativePath('xl/worksheets/', vmlPartPath),
+								target: sheetRelTarget(
+									REL_VML_DRAWING,
+									vmlPartPath,
+									computeRelativePath('xl/worksheets/', vmlPartPath),
+								),
 							})
 						}
 						if (!commentsCapsule) nextGeneratedCommentsNumber++
@@ -1110,7 +1125,11 @@ export function planWriteXlsx(
 					sheetRels.push({
 						id: relId,
 						type: REL_TABLE,
-						target: computeRelativePath('xl/worksheets/', tablePartPath),
+						target: sheetRelTarget(
+							REL_TABLE,
+							tablePartPath,
+							computeRelativePath('xl/worksheets/', tablePartPath),
+						),
 					})
 					tableRelIds.push(relId)
 					nextGeneratedTableNumber++
@@ -1167,7 +1186,11 @@ export function planWriteXlsx(
 					sheetRels.push({
 						id: drawingRelId,
 						type: REL_DRAWING,
-						target: computeRelativePath('xl/worksheets/', drawingPartPath),
+						target: sheetRelTarget(
+							REL_DRAWING,
+							drawingPartPath,
+							computeRelativePath('xl/worksheets/', drawingPartPath),
+						),
 					})
 					nextGeneratedDrawingNumber++
 					hasGeneratedDrawing = true

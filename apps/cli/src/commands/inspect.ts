@@ -13,7 +13,7 @@ Arguments:
 
 Flags:
   --sheet <name>  Sheet name (alternative to positional argument)
-  --detail <type> Show detail for: cf, dv, hyperlinks, tables, comments, drawings, images, compatibility, active-content, visuals, pivots, slicers, names, external-refs, views
+  --detail <type> Show detail for: cf, dv, hyperlinks, tables, comments, drawings, images, compatibility, package-graph, active-content, visuals, pivots, slicers, names, external-refs, views
   --mode <mode>   Load mode: metadata, values, or full
   --json          Output as JSON
   --verbose       Show compatibility report and timing
@@ -75,6 +75,10 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 
 	if (detail === 'compatibility') {
 		return printCompatibilityDetail(wb, flags.has('json'))
+	}
+
+	if (detail === 'package-graph') {
+		return printPackageGraphDetail(wb, flags.has('json'))
 	}
 
 	if (detail === 'active-content') {
@@ -486,7 +490,7 @@ function printSheetDetail(
 		}
 		default:
 			cliError(
-				`Unknown detail type: ${detail}. Options: cf, dv, hyperlinks, comments, drawings, images, tables, compatibility, active-content, visuals, pivots, slicers, names, external-refs, views`,
+				`Unknown detail type: ${detail}. Options: cf, dv, hyperlinks, comments, drawings, images, tables, compatibility, package-graph, active-content, visuals, pivots, slicers, names, external-refs, views`,
 				flags,
 			)
 			return 1
@@ -504,6 +508,36 @@ function printCompatibilityDetail(wb: WorkbookDocument, json: boolean): number {
 	for (const f of report.features) {
 		console.log(bullet(`${f.feature} (${f.tier})`, `${f.count} location(s)`))
 		if (f.note) console.log(`    ${f.note}`)
+	}
+	return 0
+}
+
+async function printPackageGraphDetail(wb: WorkbookDocument, json: boolean): Promise<number> {
+	const graph = await wb.packageGraph()
+	if (json) {
+		console.log(jsonOut(graph))
+		return 0
+	}
+	const familyCounts = new Map<string, number>()
+	const ownerCounts = new Map<string, number>()
+	for (const part of graph.parts) {
+		familyCounts.set(part.featureFamily, (familyCounts.get(part.featureFamily) ?? 0) + 1)
+		ownerCounts.set(part.ownerScope, (ownerCounts.get(part.ownerScope) ?? 0) + 1)
+	}
+	console.log(heading('Package Graph'))
+	console.log(bullet('Parts', String(graph.parts.length)))
+	console.log(bullet('Relationships', String(graph.relationships.length)))
+	console.log(bullet('Content type defaults', String(graph.contentTypeDefaults.length)))
+	console.log(bullet('Content type overrides', String(graph.contentTypeOverrides.length)))
+	console.log('')
+	console.log(heading('Feature Families'))
+	for (const [family, count] of [...familyCounts].sort(([a], [b]) => a.localeCompare(b))) {
+		console.log(bullet(family, String(count)))
+	}
+	console.log('')
+	console.log(heading('Owner Scopes'))
+	for (const [owner, count] of [...ownerCounts].sort(([a], [b]) => a.localeCompare(b))) {
+		console.log(bullet(owner, String(count)))
 	}
 	return 0
 }

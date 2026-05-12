@@ -1,3 +1,14 @@
+export type {
+	XlsxPackageContentTypeDefault,
+	XlsxPackageContentTypeOverride,
+	XlsxPackageContentTypeSource,
+	XlsxPackageGraph,
+	XlsxPackageGraphPart,
+	XlsxPackageGraphRelationship,
+	XlsxPackageLossPolicy,
+	XlsxPackageOwnerScope,
+} from './package-graph.ts'
+export { classifyPackageFeatureFamily, inspectXlsxPackageGraph } from './package-graph.ts'
 export type { PreservationCapsule } from './preserve.ts'
 export type { ReadXlsxLoadInfo, ReadXlsxOptions, ReadXlsxResult } from './reader/index.ts'
 export { readXlsx } from './reader/index.ts'

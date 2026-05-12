@@ -23,9 +23,11 @@ import { cachedParseFormula, normalizeFormulaInput } from '@ascend/formulas'
 import { readCsv, writeCsv } from '@ascend/io-csv'
 import {
 	extractZip,
+	inspectXlsxPackageGraph,
 	type PreservationCapsule,
 	summarizePlannedWrite,
 	writeXlsx,
+	type XlsxPackageGraph,
 	type ZipArchive,
 } from '@ascend/io-xlsx'
 import {
@@ -824,6 +826,12 @@ export class AscendWorkbook extends WorkbookReadView {
 		)
 		if (!result.ok) throw new AscendException(result.error)
 		return result.value
+	}
+
+	packageGraph(): XlsxPackageGraph {
+		return inspectXlsxPackageGraph(
+			this.originalBytes && !this.dirty ? this.originalBytes : this.toBytes(),
+		)
 	}
 
 	private assertWritable(): void {

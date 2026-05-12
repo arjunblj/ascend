@@ -391,6 +391,35 @@ describe('ascend cli', () => {
 		expect(parsed.data.sheets[0].name).toBe('Sheet1')
 	})
 
+	test('inspect --detail package-graph --json returns package graph identity', async () => {
+		const { stdout, exitCode } = await run(
+			'inspect',
+			TEST_FILE,
+			'--detail',
+			'package-graph',
+			'--json',
+		)
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.formatVersion).toBe(1)
+		expect(parsed.ok).toBe(true)
+		expect(parsed.data.parts).toContainEqual(
+			expect.objectContaining({
+				path: 'xl/workbook.xml',
+				featureFamily: 'workbook',
+				ownerScope: 'workbook',
+				sourceRelationshipId: 'rId1',
+			}),
+		)
+		expect(parsed.data.relationships).toContainEqual(
+			expect.objectContaining({
+				relationshipPartPath: '_rels/.rels',
+				id: 'rId1',
+				resolvedTarget: 'xl/workbook.xml',
+			}),
+		)
+	})
+
 	test('inspect --detail active-content --json returns metadata-only risk inventory', async () => {
 		await Bun.write(`${import.meta.dir}/${ACTIVE_CONTENT_FILE}`, signedMacroWorkbook())
 

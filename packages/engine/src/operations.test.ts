@@ -3728,6 +3728,36 @@ describe('applyOperation', () => {
 			ref: 'A1:B2',
 			columns: [],
 		})
+		expect(result.value.recalcRequired).toBe(true)
+	})
+
+	test('createTable invalidates structured references that target the new table', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Value'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('Cash'), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(3, 0, {
+			value: EMPTY,
+			formula: 'SUM(BalanceTable[Value])',
+			styleId: sid,
+		})
+
+		expect(recalculate(wb, defaultCalcContext()).errors).toEqual([])
+
+		const result = applyOperation(wb, {
+			op: 'createTable',
+			sheet: 'Sheet1',
+			ref: 'A1:B2',
+			name: 'BalanceTable',
+			hasHeaders: true,
+		})
+		expectOk(result)
+		expect(result.value.recalcRequired).toBe(true)
+
+		expect(recalculate(wb, defaultCalcContext()).errors).toEqual([])
+		expect(sheet.cells.get(3, 0)?.value).toEqual(numberValue(10))
 	})
 
 	test('createTable rejects workbook-scoped duplicate table names', () => {

@@ -87,7 +87,7 @@ export function handleCreateTable(
 			columns: [],
 		}
 	}
-	return ok(patch([], [op.sheet]))
+	return ok(patch([], [op.sheet], true))
 }
 
 export function handleAppendRows(

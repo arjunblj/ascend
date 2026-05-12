@@ -337,10 +337,9 @@ export function operationAffectsFormulas(op: Operation): boolean {
 		case 'setCells':
 		case 'setRichText':
 			return false
-		case 'createTable':
-			return false
 		case 'setWorkbookProtection':
 			return false
+		case 'createTable':
 		case 'deleteTable':
 		case 'renameTable':
 		case 'resizeTable':

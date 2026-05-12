@@ -287,10 +287,23 @@ interface RangeContext {
 }
 
 const RANGE_CONTEXT_TYPES = new Set(['duplicateValues', 'uniqueValues', 'top10', 'aboveAverage'])
+const OCCUPIED_ONLY_RULE_TYPES = new Set([
+	'notContainsBlanks',
+	'containsErrors',
+	'duplicateValues',
+	'uniqueValues',
+	'top10',
+	'aboveAverage',
+	'timePeriod',
+])
 const EXCEL_MAX_COLS = 16_384
 
 function needsRangeContext(type: string): boolean {
 	return RANGE_CONTEXT_TYPES.has(type)
+}
+
+function canSkipBlankCellsForRule(rule: SheetConditionalFormatRule): boolean {
+	return OCCUPIED_ONLY_RULE_TYPES.has(rule.type)
 }
 
 function buildRangeContext(sheet: Sheet, parts: readonly ParsedSqrefPart[]): RangeContext {
@@ -617,8 +630,21 @@ export function evaluateConditionalFormats(
 	const cellsToCheck = new Set<number>()
 	for (const cf of sheet.conditionalFormats) {
 		const parts = getParsedSqref(cf.sqref)
+		const skipBlankCells = cf.rules.every(canSkipBlankCellsForRule)
 		for (const part of parts) {
 			const range = part.range
+			if (skipBlankCells) {
+				sheet.cells.forEachValueInRange(
+					range.start.row,
+					range.start.col,
+					range.end.row,
+					range.end.col,
+					(_value, row, col) => {
+						cellsToCheck.add(row * EXCEL_MAX_COLS + col)
+					},
+				)
+				continue
+			}
 			for (let row = range.start.row; row <= range.end.row; row++) {
 				for (let col = range.start.col; col <= range.end.col; col++) {
 					cellsToCheck.add(row * EXCEL_MAX_COLS + col)

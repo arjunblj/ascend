@@ -320,6 +320,38 @@ const benchmarks: readonly MicroBenchmark[] = [
 		},
 	},
 	{
+		name: 'Conditional formatting sparse-wide occupied scan',
+		targetOpsPerSec: 500_000,
+		run() {
+			const workbook = createWorkbook()
+			const sheet = workbook.addSheet('Sheet1')
+			const rows = 4096
+			const cols = 512
+			let populated = 0
+			for (let row = 0; row < rows; row++) {
+				sheet.cells.setResolved(row, 0, numberValue(row), null, SID)
+				populated++
+				for (let col = 1; col < cols; col++) {
+					if ((row * 31 + col * 17) % 97 !== 0) continue
+					sheet.cells.setResolved(row, col, numberValue((row * cols + col) % 10000), null, SID)
+					populated++
+				}
+			}
+			sheet.conditionalFormats.push({
+				sqref: `A1:${indexToColumn(cols - 1)}${rows}`,
+				rules: [
+					{ type: 'top10', rank: 10, percent: true, priority: 1 },
+					{ type: 'aboveAverage', priority: 2 },
+				],
+			})
+			const result = evaluateConditionalFormats(sheet, workbook)
+			if (result.size === 0 || result.size > populated) {
+				throw new Error(`conditional formatting sparse-wide matched ${result.size} cells`)
+			}
+			return rows * cols
+		},
+	},
+	{
 		name: 'CellValue creation (100k numberValue + stringValue)',
 		targetOpsPerSec: 2_000_000,
 		run() {

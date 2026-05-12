@@ -363,19 +363,56 @@ function hasWorksheetTagInRange(xml: string, start: number, end: number, tagName
 }
 
 function hasRowPresentationMetadataInRange(xml: string, start: number, end: number): boolean {
-	return (
-		rawAttrValueStartInRange(xml, start, end, 'ht') !== -1 ||
-		rawAttrValueStartInRange(xml, start, end, 'spans') !== -1 ||
-		rawAttrValueStartInRange(xml, start, end, 'customHeight') !== -1 ||
-		rawAttrValueStartInRange(xml, start, end, 's') !== -1 ||
-		rawAttrValueStartInRange(xml, start, end, 'customFormat') !== -1 ||
-		rawAttrValueStartInRange(xml, start, end, 'hidden') !== -1 ||
-		rawAttrValueStartInRange(xml, start, end, 'collapsed') !== -1 ||
-		rawAttrValueStartInRange(xml, start, end, 'outlineLevel') !== -1 ||
-		rawAttrValueStartInRange(xml, start, end, 'thickTop') !== -1 ||
-		rawAttrValueStartInRange(xml, start, end, 'thickBot') !== -1 ||
-		rawAttrValueStartInRange(xml, start, end, 'x14ac:dyDescent') !== -1
-	)
+	let cursor = start
+	while (cursor < end) {
+		cursor = skipXmlWhitespace(xml, cursor, end)
+		if (cursor >= end) return false
+		const marker = xml.charCodeAt(cursor)
+		if (marker === 47 || marker === 62) return false
+		const nameStart = cursor
+		while (cursor < end) {
+			const code = xml.charCodeAt(cursor)
+			if (code === 61 || code === 47 || code === 62 || isXmlWhitespaceCode(code)) break
+			cursor += 1
+		}
+		const nameEnd = cursor
+		if (isRowPresentationAttrName(xml, nameStart, nameEnd)) return true
+		cursor = skipXmlWhitespace(xml, cursor, end)
+		if (xml.charCodeAt(cursor) !== 61) return false
+		cursor = skipXmlWhitespace(xml, cursor + 1, end)
+		const quote = xml.charCodeAt(cursor)
+		if (quote !== 34 && quote !== 39) return false
+		cursor += 1
+		while (cursor < end && xml.charCodeAt(cursor) !== quote) cursor += 1
+		if (cursor >= end) return false
+		cursor += 1
+	}
+	return false
+}
+
+function isRowPresentationAttrName(xml: string, start: number, end: number): boolean {
+	switch (xml.charCodeAt(start)) {
+		case 104:
+			return attrNameEquals(xml, start, end, 'ht') || attrNameEquals(xml, start, end, 'hidden')
+		case 115:
+			return attrNameEquals(xml, start, end, 's') || attrNameEquals(xml, start, end, 'spans')
+		case 99:
+			return (
+				attrNameEquals(xml, start, end, 'collapsed') ||
+				attrNameEquals(xml, start, end, 'customHeight') ||
+				attrNameEquals(xml, start, end, 'customFormat')
+			)
+		case 111:
+			return attrNameEquals(xml, start, end, 'outlineLevel')
+		case 116:
+			return (
+				attrNameEquals(xml, start, end, 'thickTop') || attrNameEquals(xml, start, end, 'thickBot')
+			)
+		case 120:
+			return attrNameEquals(xml, start, end, 'x14ac:dyDescent')
+		default:
+			return false
+	}
 }
 
 const BYTE_LT = 60
@@ -3037,10 +3074,6 @@ function rawNumAttr(rawAttrs: string, name: string): number | undefined {
 
 function rawAttrValueStart(rawAttrs: string, name: string): number {
 	return rawAttrRange(rawAttrs, name)?.start ?? -1
-}
-
-function rawAttrValueStartInRange(xml: string, start: number, end: number, name: string): number {
-	return rawAttrRangeInString(xml, start, end, name)?.start ?? -1
 }
 
 function rawAttrRange(rawAttrs: string, name: string): { start: number; end: number } | undefined {

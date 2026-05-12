@@ -15,6 +15,7 @@ import { writeDenseRowsXlsx, writeDenseRowsXlsxStreaming } from './dense-rows.ts
 import { planWriteXlsx, writeXlsx, writeXlsxStreaming } from './index.ts'
 import { updatePivotCacheDefinitionXml } from './pivot-cache.ts'
 import { updatePivotTableDefinitionXml } from './pivot-table.ts'
+import { buildPreservedStylesXml } from './styles.ts'
 
 const S0 = 0 as StyleId
 const DASHBOARD_CORPUS_FIXTURE = new URL(
@@ -2526,11 +2527,12 @@ describe('writeXlsx', () => {
 </Relationships>`,
 			'xl/styles.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <numFmts count='1'><numFmt numFmtId='165' formatCode='0.0%'/></numFmts>
   <fonts count="1"><font/></fonts>
   <fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
   <borders count="1"><border/></borders>
   <cellStyleXfs count="1"><xf/></cellStyleXfs>
-  <cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellXfs>
+  <cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/><xf numFmtId='165' fontId='0' fillId='0' borderId='0' applyNumberFormat='1'/></cellXfs>
   <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
   <tableStyles count="1" defaultTableStyle="TableStyleMedium2" defaultPivotStyle="PivotStyleLight16">
     <tableStyle name="TableStyleMedium2"/>
@@ -2538,7 +2540,7 @@ describe('writeXlsx', () => {
 </styleSheet>`,
 			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <sheetData><row r="1"><c r="A1"><v>0.25</v></c></row></sheetData>
+  <sheetData><row r="1"><c r="A1" s="1"><v>0.25</v></c><c r="B1"><v>0.5</v></c></row></sheetData>
 </worksheet>`,
 		})
 
@@ -2546,7 +2548,7 @@ describe('writeXlsx', () => {
 		expectOk(source)
 
 		const applied = applyOperations(source.value.workbook, [
-			{ op: 'setNumberFormat', sheet: 'Sheet1', range: 'A1:A1', format: '0.0%' },
+			{ op: 'setNumberFormat', sheet: 'Sheet1', range: 'B1:B1', format: '0.0%' },
 		])
 		expectOk(applied)
 
@@ -2557,8 +2559,10 @@ describe('writeXlsx', () => {
 
 		const zip = unzipSync(written.value)
 		const stylesXml = new TextDecoder().decode(zip['xl/styles.xml'] ?? new Uint8Array())
-		expect(stylesXml).toContain('formatCode="0.0%"')
-		expect(stylesXml).toContain('applyNumberFormat="1"')
+		expect(stylesXml).toContain("formatCode='0.0%'")
+		expect(stylesXml).toContain("numFmtId='165'")
+		expect(stylesXml).not.toContain('numFmtId="164" formatCode="0.0%"')
+		expect(stylesXml).toContain("applyNumberFormat='1'")
 		expect(stylesXml).toContain('<cellStyleXfs')
 		expect(stylesXml).toContain('<cellStyles')
 		expect(stylesXml).toContain('defaultTableStyle="TableStyleMedium2"')
@@ -2570,6 +2574,34 @@ describe('writeXlsx', () => {
 		const cell = reopened.value.workbook.sheets[0]?.cells.get(0, 0)
 		const style = reopened.value.workbook.styles.get(cell?.styleId ?? (0 as StyleId))
 		expect(style?.numberFormat).toBe('0.0%')
+	})
+
+	it('reuses XML-legal single-quoted preserved number formats when patching styles', () => {
+		const wb = new Workbook()
+		const baseStyleId = wb.styles.register({})
+		const formattedStyleId = wb.styles.register({ numberFormat: '0.0%' })
+		const sourceStylesXml = `<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <numFmts count='1'><numFmt numFmtId='165' formatCode='0.0%'/></numFmts>
+  <fonts count="1"><font/></fonts>
+  <fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
+  <borders count="1"><border/></borders>
+  <cellXfs count='1'><xf numFmtId='0' fontId='0' fillId='0' borderId='0'/></cellXfs>
+</styleSheet>`
+
+		const result = buildPreservedStylesXml(
+			sourceStylesXml,
+			{
+				path: 'xl/styles.xml',
+				xfByStyleId: { [baseStyleId]: 0 },
+				baseStyleIdByStyleId: { [formattedStyleId]: baseStyleId },
+			},
+			wb.styles,
+		)
+
+		expect(result?.xml).toContain("formatCode='0.0%'")
+		expect(result?.xml).toContain('numFmtId="165"')
+		expect(result?.xml).not.toContain('numFmtId="164" formatCode="0.0%"')
+		expect(result?.xml).toContain('count="2"')
 	})
 
 	it('preserves merges on round-trip', () => {

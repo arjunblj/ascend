@@ -67,7 +67,7 @@ function borderKey(b: BorderStyle | undefined): string {
 
 import { escapeXml } from '../xml.ts'
 import { ChunkedStringBuilder } from './chunked-string-builder.ts'
-import { removeXmlAttr, setXmlAttr } from './xml-attrs.ts'
+import { readNumberXmlAttr, readXmlAttr, removeXmlAttr, setXmlAttr } from './xml-attrs.ts'
 
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
@@ -289,10 +289,8 @@ function parsePreservedStylesXml(xml: string): ParsedPreservedStyles {
 	let nextNumFmtId = 164
 	for (const match of xml.matchAll(/<numFmt\b([^>]*)\/>/g)) {
 		const attrs = match[1] ?? ''
-		const idMatch = /numFmtId="(\d+)"/.exec(attrs)
-		const codeMatch = /formatCode="([^"]*)"/.exec(attrs)
-		const id = idMatch ? Number(idMatch[1]) : undefined
-		const rawCode = codeMatch?.[1]
+		const id = readNumberXmlAttr(attrs, 'numFmtId')
+		const rawCode = readXmlAttr(attrs, 'formatCode')
 		const code = rawCode !== undefined ? decodeXmlAttr(rawCode) : undefined
 		if (id === undefined || !code) continue
 		if (!BUILTIN_FMT_CODES.has(code)) customNumFmtIds.set(code, id)
@@ -377,9 +375,12 @@ function serializePatchedStylesXml(parsed: ParsedPreservedStyles): string {
 			.join('')
 		if (/<numFmts\b[^>]*>/.test(xml)) {
 			xml = xml.replace(
-				/<numFmts\b([^>]*)count="(\d+)"([^>]*)>([\s\S]*?)<\/numFmts>/,
-				(_match, before, count, after, body) =>
-					`<numFmts${before}count="${Number(count) + parsed.appendedNumFmts.length}"${after}>${body}${appended}</numFmts>`,
+				/<numFmts\b([^>]*)>([\s\S]*?)<\/numFmts>/,
+				(_match, attrs: string, body: string) => {
+					const count = readNumberXmlAttr(attrs, 'count') ?? 0
+					const updatedAttrs = setXmlAttr(attrs, 'count', count + parsed.appendedNumFmts.length)
+					return `<numFmts${updatedAttrs}>${body}${appended}</numFmts>`
+				},
 			)
 		} else {
 			xml = xml.replace(
@@ -392,9 +393,12 @@ function serializePatchedStylesXml(parsed: ParsedPreservedStyles): string {
 	if (parsed.appendedXfEntries.length > 0) {
 		const appended = parsed.appendedXfEntries.join('')
 		xml = xml.replace(
-			/<cellXfs\b([^>]*)count="(\d+)"([^>]*)>([\s\S]*?)<\/cellXfs>/,
-			(_match, before, count, after, body) =>
-				`<cellXfs${before}count="${Number(count) + parsed.appendedXfEntries.length}"${after}>${body}${appended}</cellXfs>`,
+			/<cellXfs\b([^>]*)>([\s\S]*?)<\/cellXfs>/,
+			(_match, attrs: string, body: string) => {
+				const count = readNumberXmlAttr(attrs, 'count') ?? 0
+				const updatedAttrs = setXmlAttr(attrs, 'count', count + parsed.appendedXfEntries.length)
+				return `<cellXfs${updatedAttrs}>${body}${appended}</cellXfs>`
+			},
 		)
 	}
 	return xml

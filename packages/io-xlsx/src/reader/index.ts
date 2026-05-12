@@ -41,6 +41,7 @@ import {
 	parseVmlDrawingObjectRefs,
 } from './drawing.ts'
 import { maybeDecryptOoxmlPackage } from './encryption.ts'
+import { parseExternalBookRelationshipId } from './external-links.ts'
 import { inferLegacyArrayFormulaBlocks } from './legacy-array-inference.ts'
 import { parseMacroSheetInfo } from './macro-sheet.ts'
 import { parseMetadataXml } from './metadata.ts'
@@ -247,11 +248,17 @@ export function readXlsx(
 			const partPath = resolvePath(workbookPath, rel.target)
 			workbook.externalReferences.push(partPath)
 			const relsXml = readPart(archive, getRelsPath(partPath))
-			const linkRelationship = relsXml
-				? parseRelationships(relsXml).find((entry) =>
-						isExternalLinkPathRelationshipType(entry.type),
-					)
-				: undefined
+			const linkXml = readPart(archive, partPath)
+			const externalBookRelId = linkXml ? parseExternalBookRelationshipId(linkXml) : undefined
+			const linkRelationships = relsXml ? parseRelationships(relsXml) : []
+			const linkRelationship =
+				(externalBookRelId
+					? linkRelationships.find(
+							(entry) =>
+								entry.id === externalBookRelId && isExternalLinkPathRelationshipType(entry.type),
+						)
+					: undefined) ??
+				linkRelationships.find((entry) => isExternalLinkPathRelationshipType(entry.type))
 			workbook.externalReferenceDetails.push({
 				partPath,
 				relId,

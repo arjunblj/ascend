@@ -49,6 +49,7 @@ export function auditXlsxPackageGraphReadIntegrity(
 ): readonly XlsxPackageGraphFidelityIssue[] {
 	const issues: XlsxPackageGraphFidelityIssue[] = []
 	const partPaths = new Set(graph.parts.map((part) => part.path))
+	const reportedMissingSourceSidecars = new Set<string>()
 	const allowPreservedOtherPart = options.allowPreservedOtherPart ?? (() => false)
 	for (const part of graph.parts) {
 		if (part.featureFamily !== 'preservedOther' || allowPreservedOtherPart(part.path)) continue
@@ -78,6 +79,7 @@ export function auditXlsxPackageGraphReadIntegrity(
 				expected: relationship.sourcePartPath,
 				actual: undefined,
 			})
+			reportedMissingSourceSidecars.add(relationship.relationshipPartPath)
 		}
 		if (relationship.targetMode?.toLowerCase() === 'external') continue
 		if (relationship.resolvedTarget !== undefined && partPaths.has(relationship.resolvedTarget)) {
@@ -97,7 +99,35 @@ export function auditXlsxPackageGraphReadIntegrity(
 			actual: relationship.resolvedTarget,
 		})
 	}
+	for (const part of graph.parts) {
+		if (part.ownerScope !== 'relationship-part') continue
+		if (reportedMissingSourceSidecars.has(part.path)) continue
+		const sourcePartPath = sourcePartFromRelationshipPartPath(part.path)
+		if (sourcePartPath === null || sourcePartPath === '' || partPaths.has(sourcePartPath)) continue
+		issues.push({
+			code: 'package_relationship_source',
+			severity: 'error',
+			message: `relationship sidecar ${part.path} belongs to missing source part ${sourcePartPath}`,
+			sourcePartPath,
+			relationshipPartPath: part.path,
+			featureFamily: part.featureFamily,
+			ownerScope: part.ownerScope,
+			suggestedAction:
+				'Remove the orphan relationship sidecar or restore the source package part before writing.',
+			expected: sourcePartPath,
+			actual: undefined,
+		})
+	}
 	return issues
+}
+
+function sourcePartFromRelationshipPartPath(path: string): string | null {
+	if (path === '_rels/.rels') return ''
+	const match = /^(.*)\/_rels\/([^/]+)\.rels$/i.exec(path)
+	if (!match) return null
+	const fileName = match[2]
+	if (!fileName) return null
+	return match[1] ? `${match[1]}/${fileName}` : fileName
 }
 
 export function auditXlsxPackageGraphSafeEditIntegrity(

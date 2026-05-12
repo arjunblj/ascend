@@ -5072,6 +5072,7 @@ function checkPackageGraphIntegrity(packageGraph?: VerifyPackageGraph): CheckIss
 	if (!packageGraph) return []
 	const issues: CheckIssue[] = []
 	const partPaths = new Set(packageGraph.parts.map((part) => part.path))
+	const reportedMissingSourceSidecars = new Set<string>()
 
 	for (const relationship of packageGraph.relationships) {
 		if (relationship.sourcePartPath !== '' && !partPaths.has(relationship.sourcePartPath)) {
@@ -5092,6 +5093,7 @@ function checkPackageGraphIntegrity(packageGraph?: VerifyPackageGraph): CheckIss
 					actual: undefined,
 				},
 			})
+			reportedMissingSourceSidecars.add(relationship.relationshipPartPath)
 		}
 		if (relationship.targetMode?.toLowerCase() === 'external') continue
 		if (relationship.resolvedTarget && partPaths.has(relationship.resolvedTarget)) continue
@@ -5113,8 +5115,40 @@ function checkPackageGraphIntegrity(packageGraph?: VerifyPackageGraph): CheckIss
 			},
 		})
 	}
+	for (const part of packageGraph.parts) {
+		if (part.ownerScope !== 'relationship-part') continue
+		if (reportedMissingSourceSidecars.has(part.path)) continue
+		const sourcePartPath = sourcePartFromRelationshipPartPath(part.path)
+		if (sourcePartPath === null || sourcePartPath === '' || partPaths.has(sourcePartPath)) continue
+		issues.push({
+			rule: 'package-graph-integrity',
+			severity: 'error',
+			message: `Package relationship sidecar ${part.path} belongs to missing source part "${sourcePartPath}"`,
+			refs: [part.path],
+			suggestedFix:
+				'Remove the orphan relationship sidecar or restore the source package part before writing.',
+			details: {
+				code: 'package_relationship_source',
+				sourcePartPath,
+				relationshipPartPath: part.path,
+				featureFamily: part.featureFamily,
+				ownerScope: part.ownerScope,
+				expected: sourcePartPath,
+				actual: undefined,
+			},
+		})
+	}
 
 	return issues
+}
+
+function sourcePartFromRelationshipPartPath(path: string): string | null {
+	if (path === '_rels/.rels') return ''
+	const match = /^(.*)\/_rels\/([^/]+)\.rels$/i.exec(path)
+	if (!match) return null
+	const fileName = match[2]
+	if (!fileName) return null
+	return match[1] ? `${match[1]}/${fileName}` : fileName
 }
 
 export function check(workbook: Workbook, analysis?: CheckAnalysis): CheckResult {

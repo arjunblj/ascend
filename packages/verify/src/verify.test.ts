@@ -1571,6 +1571,67 @@ describe('checker', () => {
 		expect(packageIssues[0]?.suggestedFix).toContain('orphan relationship sidecar')
 	})
 
+	test('surfaces empty orphan relationship sidecars as check diagnostics', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/externalLinks/_rels/externalLink9.xml.rels',
+						featureFamily: 'packageRelationships',
+						ownerScope: 'relationship-part',
+					},
+				],
+				relationships: [],
+			},
+		})
+
+		const packageIssues = result.issues.filter((i) => i.rule === 'package-graph-integrity')
+		expect(result.passed).toBe(false)
+		expect(packageIssues).toHaveLength(1)
+		expect(packageIssues[0]?.refs).toEqual(['xl/externalLinks/_rels/externalLink9.xml.rels'])
+		expect(packageIssues[0]?.details).toMatchObject({
+			code: 'package_relationship_source',
+			sourcePartPath: 'xl/externalLinks/externalLink9.xml',
+			relationshipPartPath: 'xl/externalLinks/_rels/externalLink9.xml.rels',
+			featureFamily: 'packageRelationships',
+			ownerScope: 'relationship-part',
+		})
+		expect(packageIssues[0]?.details?.relationshipId).toBeUndefined()
+	})
+
+	test('accepts empty relationship sidecars whose source part exists', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/externalLinks/externalLink1.xml',
+						featureFamily: 'preservedExternalLink',
+						ownerScope: 'external-link',
+					},
+					{
+						path: 'xl/externalLinks/_rels/externalLink1.xml.rels',
+						featureFamily: 'packageRelationships',
+						ownerScope: 'relationship-part',
+					},
+				],
+				relationships: [],
+			},
+		})
+
+		expect(
+			result.issues.filter(
+				(i) =>
+					i.rule === 'package-graph-integrity' && i.details?.code === 'package_relationship_source',
+			),
+		).toHaveLength(0)
+	})
+
 	test('detects external link relationship mismatches and orphan package sidecars', () => {
 		const wb = createWorkbook()
 		wb.addSheet('Sheet1')

@@ -80,6 +80,61 @@ describe('XLSX package graph fidelity audits', () => {
 		)
 	})
 
+	test('reports empty relationship sidecars whose source part is missing', () => {
+		const graph = inspectXlsxPackageGraph(
+			makeXlsx({
+				'[Content_Types].xml': contentTypesXml(`
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+`),
+				'_rels/.rels': relationshipsXml(`
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+`),
+				'xl/workbook.xml': '<workbook/>',
+				'xl/externalLinks/_rels/externalLink9.xml.rels': relationshipsXml(''),
+			}),
+		)
+
+		expect(auditXlsxPackageGraphReadIntegrity(graph)).toContainEqual(
+			expect.objectContaining({
+				code: 'package_relationship_source',
+				severity: 'error',
+				sourcePartPath: 'xl/externalLinks/externalLink9.xml',
+				relationshipPartPath: 'xl/externalLinks/_rels/externalLink9.xml.rels',
+				ownerScope: 'relationship-part',
+				suggestedAction: expect.stringContaining('orphan relationship sidecar'),
+			}),
+		)
+	})
+
+	test('accepts empty relationship sidecars whose source part exists', () => {
+		const graph = inspectXlsxPackageGraph(
+			makeXlsx({
+				'[Content_Types].xml': contentTypesXml(`
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/externalLinks/externalLink1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml"/>
+`),
+				'_rels/.rels': relationshipsXml(`
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+`),
+				'xl/workbook.xml': '<workbook/>',
+				'xl/externalLinks/externalLink1.xml': '<externalLink/>',
+				'xl/externalLinks/_rels/externalLink1.xml.rels': relationshipsXml(''),
+			}),
+		)
+
+		expect(
+			auditXlsxPackageGraphReadIntegrity(graph).filter(
+				(issue) =>
+					issue.code === 'package_relationship_source' &&
+					issue.relationshipPartPath === 'xl/externalLinks/_rels/externalLink1.xml.rels',
+			),
+		).toHaveLength(0)
+	})
+
 	test('compares relationship identity with raw strict dialect and package scope', () => {
 		const before = inspectXlsxPackageGraph(
 			makeXlsx({

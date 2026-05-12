@@ -12,6 +12,7 @@ import {
 import { emptySharedStrings, parseSharedStrings } from './shared-strings.ts'
 import {
 	type StreamedSheetRow,
+	streamSheetRowsBytes,
 	streamSheetRowsTextChunks,
 	streamSheetRowsXml,
 	ValueInternPool,
@@ -86,8 +87,9 @@ export async function readXlsxRowsStream(
 	const shouldChunkSheetXml =
 		chunkedSheetXml &&
 		(sheetZipEntry?.uncompressedSize ?? Number.POSITIVE_INFINITY) > 64 * 1024 * 1024
+	const shouldParseSheetBytes = mode === 'values' && !shouldChunkSheetXml
 	const parsePaths =
-		mode === 'values' && shouldChunkSheetXml
+		mode === 'values' && (shouldChunkSheetXml || shouldParseSheetBytes)
 			? [sharedStringsPath, stylesPath].filter((path): path is string => path !== null)
 			: [sheetPath, sharedStringsPath, stylesPath].filter((path): path is string => path !== null)
 	const parseParts = await archive.readTextsAsync(parsePaths)
@@ -114,10 +116,17 @@ export async function readXlsxRowsStream(
 		valuesOnly: mode === 'values',
 		formulaOnly: mode === 'formula',
 	}
+	const sheetBytes = shouldParseSheetBytes ? archive.readBytes(sheetPath) : undefined
 	const iterator =
 		mode === 'values' && shouldChunkSheetXml
 			? streamSheetRowsTextChunks(sheetEntry.name, archive.readTextChunks(sheetPath), ctx)
-			: streamSheetRowsXml(sheetEntry.name, parseParts.get(sheetPath) ?? '', ctx)
+			: sheetBytes
+				? streamSheetRowsBytes(sheetEntry.name, sheetBytes, ctx)
+				: streamSheetRowsXml(
+						sheetEntry.name,
+						parseParts.get(sheetPath) ?? archive.readText(sheetPath) ?? '',
+						ctx,
+					)
 	return ok(
 		(async function* () {
 			for (const row of iterator) yield row

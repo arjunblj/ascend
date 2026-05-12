@@ -1060,6 +1060,62 @@ export function* streamSheetRowsXml(
 	}
 }
 
+export function* streamSheetRowsBytes(
+	name: string,
+	bytes: Uint8Array,
+	ctx: SheetParseContext,
+): Generator<StreamedSheetRow> {
+	const sheetData = locateSheetDataBytes(bytes)
+	if (!sheetData) return
+	const sharedFormulaMasters: SharedFormulaMasterMap = new Map()
+	let rowCursor = sheetData.contentStart
+	let currentRow = -1
+	const fallbackPos = { row: 0, col: 0 }
+	const cellOut = { row: 0, col: 0 }
+	const rowSheet = new Sheet(name)
+
+	while (true) {
+		const rowOpen = nextXmlElementOpenBytes(bytes, rowCursor, sheetData.contentEnd)
+		if (rowOpen === -1) return
+		if (
+			rowOpen === -2 ||
+			!startsWithElementOpenAtBytes(bytes, BYTES_ROW_OPEN, rowOpen, sheetData.contentEnd)
+		) {
+			return
+		}
+		const rowTagEnd = findTagEndBytes(bytes, rowOpen)
+		if (rowTagEnd === -1 || rowTagEnd >= sheetData.contentEnd) return
+		const rowEnd = isSelfClosingTagBytes(bytes, rowOpen, rowTagEnd)
+			? rowTagEnd + 1
+			: (() => {
+					const rowClose = indexOfBytes(bytes, BYTES_ROW_CLOSE, rowTagEnd + 1, sheetData.contentEnd)
+					return rowClose === -1 ? -1 : rowClose + BYTES_ROW_CLOSE.length
+				})()
+		if (rowEnd === -1) return
+		const directParsed = parseStreamedValuesRowBytes(bytes, rowOpen, rowEnd, currentRow, ctx)
+		if (directParsed) {
+			currentRow = directParsed.row
+			yield directParsed
+			rowCursor = rowEnd
+			continue
+		}
+		const rowXml = BYTE_XML_DECODER.decode(bytes.subarray(rowOpen, rowEnd))
+		const parsed = parseStreamedSheetRowXml(
+			rowXml,
+			currentRow,
+			ctx,
+			sharedFormulaMasters,
+			rowSheet,
+			fallbackPos,
+			cellOut,
+		)
+		if (!parsed) return
+		currentRow = parsed.row
+		yield parsed
+		rowCursor = rowEnd
+	}
+}
+
 export function* streamSheetRowsTextChunks(
 	name: string,
 	chunks: Iterable<string>,
@@ -1129,6 +1185,203 @@ export function* streamSheetRowsTextChunks(
 			yield parsed
 		}
 	}
+}
+
+function parseStreamedValuesRowBytes(
+	bytes: Uint8Array,
+	rowOpen: number,
+	rowEnd: number,
+	currentRow: number,
+	ctx: SheetParseContext,
+): StreamedSheetRow | null {
+	if (!ctx.valuesOnly || ctx.formulaOnly) return null
+	const rowTagEnd = findTagEndBytes(bytes, rowOpen)
+	if (rowTagEnd === -1 || rowTagEnd > rowEnd) return null
+	const rowAttrStart = rowOpen + BYTES_ROW_OPEN.length
+	const explicitRowIndex = rawPositiveIntAttrInBytes(bytes, rowAttrStart, rowTagEnd, 'r')
+	const row = explicitRowIndex !== undefined ? explicitRowIndex - 1 : currentRow + 1
+	if (ctx.maxRows !== undefined && row >= ctx.maxRows) return null
+	if (isSelfClosingTagBytes(bytes, rowOpen, rowTagEnd)) return { row, cells: [] }
+
+	const rowClose =
+		rowEnd >= BYTES_ROW_CLOSE.length &&
+		indexOfBytes(bytes, BYTES_ROW_CLOSE, rowEnd - BYTES_ROW_CLOSE.length, rowEnd) ===
+			rowEnd - BYTES_ROW_CLOSE.length
+			? rowEnd - BYTES_ROW_CLOSE.length
+			: -1
+	if (rowClose === -1) return null
+	const canonical = parseCanonicalStreamedValuesRowBytes(bytes, rowTagEnd + 1, rowClose, row, ctx)
+	if (canonical) return canonical
+	let cellCursor = rowTagEnd + 1
+	let nextCol = 0
+	const cells: [number, Cell][] = []
+	const out = { row, col: 0 }
+	while (true) {
+		const cellOpen = nextXmlElementOpenBytes(bytes, cellCursor, rowClose)
+		if (cellOpen === -1) break
+		if (
+			cellOpen === -2 ||
+			!startsWithElementOpenAtBytes(bytes, BYTES_CELL_OPEN, cellOpen, rowClose)
+		) {
+			return null
+		}
+		const cellTagEnd = findTagEndBytes(bytes, cellOpen)
+		if (cellTagEnd === -1 || cellTagEnd > rowClose) return null
+		const selfClosing = isSelfClosingTagBytes(bytes, cellOpen, cellTagEnd)
+		const cellClose = selfClosing
+			? -1
+			: indexOfBytes(bytes, BYTES_CELL_CLOSE, cellTagEnd + 1, rowClose)
+		if (!selfClosing && cellClose === -1) return null
+		const parsed = parseDirectValuesCellBytes(
+			bytes,
+			cellOpen + BYTES_CELL_OPEN.length,
+			cellTagEnd,
+			cellTagEnd + 1,
+			selfClosing ? cellTagEnd + 1 : cellClose,
+			selfClosing,
+			ctx,
+			{ row, col: nextCol },
+			out,
+		)
+		if (parsed === undefined) return null
+		if (parsed) cells.push([out.col, parsed])
+		nextCol = out.col + 1
+		cellCursor = selfClosing ? cellTagEnd + 1 : cellClose + BYTES_CELL_CLOSE.length
+	}
+	return { row, cells }
+}
+
+function parseCanonicalStreamedValuesRowBytes(
+	bytes: Uint8Array,
+	bodyStart: number,
+	bodyEnd: number,
+	row: number,
+	ctx: SheetParseContext,
+): StreamedSheetRow | null {
+	if (!ctx.valuesOnly || ctx.hasDateStyles) return null
+	let cursor = bodyStart
+	let nextCol = 0
+	const rowText = String(row + 1)
+	const cells: [number, Cell][] = []
+	const out = {
+		row,
+		col: 0,
+		numberValue: undefined as number | undefined,
+		stringStart: -1,
+		stringEnd: -1,
+	}
+	while (true) {
+		cursor = skipXmlWhitespaceBytes(bytes, cursor, bodyEnd)
+		if (cursor >= bodyEnd) return { row, cells }
+		const canonicalNext = parseCanonicalValuesCellBytes(
+			bytes,
+			cursor,
+			bodyEnd,
+			rowText,
+			row,
+			nextCol,
+			out,
+		)
+		if (canonicalNext === -1) return null
+		const value =
+			out.numberValue !== undefined
+				? internValue(ctx, numberValue(out.numberValue))
+				: out.stringStart >= 0
+					? internValue(ctx, stringValue(decodeXmlBytesText(bytes, out.stringStart, out.stringEnd)))
+					: undefined
+		if (value === undefined) return null
+		cells.push([out.col, { value, formula: null, styleId: DEFAULT_STYLE_ID }])
+		nextCol = out.col + 1
+		cursor = canonicalNext
+	}
+}
+
+function parseDirectValuesCellBytes(
+	bytes: Uint8Array,
+	attrStart: number,
+	attrEnd: number,
+	bodyStart: number,
+	bodyEnd: number,
+	selfClosing: boolean,
+	ctx: SheetParseContext,
+	fallbackPosition: CellPosition,
+	out: { row: number; col: number },
+): Cell | null | undefined {
+	if (hasCellMetadataAttrsBytes(bytes, attrStart, attrEnd)) return undefined
+	if (
+		!resolveCellPositionBytes(
+			bytes,
+			attrStart,
+			attrEnd,
+			fallbackPosition.row,
+			fallbackPosition.col,
+			out,
+		)
+	) {
+		return undefined
+	}
+	const type = rawAttrAsciiBytes(bytes, attrStart, attrEnd, 't')
+	const styleIdx =
+		ctx.hasDateStyles && type !== 's' ? (rawNumAttrInBytes(bytes, attrStart, attrEnd, 's') ?? 0) : 0
+	const styleId = DEFAULT_STYLE_ID
+	if (selfClosing) {
+		if (type === 'n') return { value: internValue(ctx, numberValue(0)), formula: null, styleId }
+		return null
+	}
+
+	if (type === 'inlineStr' || startsWithInlineStringBytes(bytes, bodyStart, bodyEnd)) {
+		const text = parseInlineStringTextBytes(bytes, bodyStart, bodyEnd)
+		if (text === undefined) return undefined
+		return { value: internValue(ctx, stringValue(text)), formula: null, styleId }
+	}
+
+	const rawValue = extractVTagTextBytes(bytes, bodyStart, bodyEnd)
+	if (type === 's') {
+		const idx = rawValue !== undefined ? fastParseNonNegInt(rawValue) : -1
+		if (idx < 0) return { value: internValue(ctx, stringValue('')), formula: null, styleId }
+		const text = ctx.sharedStrings.getString?.(idx)
+		if (text !== undefined) {
+			return { value: internValue(ctx, stringValue(text)), formula: null, styleId }
+		}
+		const entry = ctx.sharedStrings.get(idx)
+		return { value: internValue(ctx, entry ?? stringValue('')), formula: null, styleId }
+	}
+	if (type === 'b') {
+		return { value: internValue(ctx, booleanValue(rawValue === '1')), formula: null, styleId }
+	}
+	if (type === 'e') {
+		return {
+			value: internValue(ctx, errorValue((rawValue ?? '#VALUE!') as ExcelError)),
+			formula: null,
+			styleId,
+		}
+	}
+	if (type === 'str') {
+		return { value: internValue(ctx, stringValue(rawValue ?? '')), formula: null, styleId }
+	}
+	if (rawValue !== undefined && rawValue !== '') {
+		const num = Number(rawValue)
+		if (Number.isNaN(num)) {
+			return { value: internValue(ctx, stringValue(rawValue)), formula: null, styleId }
+		}
+		if (ctx.isDateFormat[styleIdx]) {
+			return { value: internValue(ctx, dateValue(num)), formula: null, styleId }
+		}
+		return { value: internValue(ctx, numberValue(num)), formula: null, styleId }
+	}
+	if (hasElementOpenBytes(bytes, BYTES_F_OPEN, bodyStart, bodyEnd)) {
+		return { value: EMPTY, formula: null, styleId }
+	}
+	if (type === 'n') return { value: internValue(ctx, numberValue(0)), formula: null, styleId }
+	if (type) return { value: EMPTY, formula: null, styleId }
+	return null
+}
+
+function hasCellMetadataAttrsBytes(bytes: Uint8Array, start: number, end: number): boolean {
+	return (
+		rawAttrRangeBytes(bytes, start, end, 'cm') !== undefined ||
+		rawAttrRangeBytes(bytes, start, end, 'vm') !== undefined
+	)
 }
 
 function parseStreamedValuesRowXml(

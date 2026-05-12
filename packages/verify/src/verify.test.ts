@@ -1961,6 +1961,129 @@ describe('checker', () => {
 		})
 	})
 
+	test('detects broken legacy data validation references', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.dataValidations.push(
+			{
+				sqref: 'MissingRange!C1',
+				type: 'list',
+				formula1: 'MissingList!A1:A5',
+				formula2: '#REF!',
+			},
+			{
+				sqref: 'A1',
+				type: 'list',
+				formula1: 'MissingTable[Name]',
+			},
+		)
+
+		const result = check(wb)
+		const issues = result.issues.filter((i) => i.rule === 'data-validation-integrity')
+
+		expect(result.passed).toBe(false)
+		expect(issues.map((issue) => issue.details?.kind).sort()).toEqual([
+			'data-validation-formula-deleted-reference',
+			'data-validation-formula-missing-sheet',
+			'data-validation-formula-missing-table',
+			'data-validation-sqref-missing-sheet',
+		])
+		expect(issues).toContainEqual(
+			expect.objectContaining({
+				severity: 'error',
+				refs: ['MissingRange!C1'],
+				details: expect.objectContaining({
+					kind: 'data-validation-sqref-missing-sheet',
+					source: 'dataValidation',
+					index: 0,
+					field: 'sqref',
+					reference: 'MissingRange!C1',
+					missingSheet: 'MissingRange',
+					token: 'MissingRange!C1',
+					validationType: 'list',
+				}),
+			}),
+		)
+		expect(issues).toContainEqual(
+			expect.objectContaining({
+				severity: 'error',
+				refs: ['Sheet1!A1'],
+				details: expect.objectContaining({
+					kind: 'data-validation-formula-missing-table',
+					source: 'dataValidation',
+					index: 1,
+					field: 'formula1',
+					reference: 'MissingTable[Name]',
+					tableName: 'MissingTable',
+					column: 'Name',
+				}),
+			}),
+		)
+	})
+
+	test('detects broken legacy conditional format references', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.conditionalFormats.push({
+			sqref: 'MissingCfRange!A1:A5',
+			rules: [
+				{
+					type: 'expression',
+					priority: 1,
+					formulas: ['MissingFormula!A1>0', '#REF!', 'MissingRules[Amount]>0'],
+				},
+				{
+					type: 'dataBar',
+					priority: 2,
+					formulas: [],
+					dataBar: { cfvo: [{ type: 'formula', value: 'SUM(#REF!)' }] },
+				},
+			],
+		})
+
+		const result = check(wb)
+		const issues = result.issues.filter((i) => i.rule === 'conditional-format-integrity')
+
+		expect(result.passed).toBe(false)
+		expect(issues.map((issue) => issue.details?.kind).sort()).toEqual([
+			'conditional-format-formula-deleted-reference',
+			'conditional-format-formula-deleted-reference',
+			'conditional-format-formula-missing-sheet',
+			'conditional-format-formula-missing-table',
+			'conditional-format-sqref-missing-sheet',
+		])
+		expect(issues).toContainEqual(
+			expect.objectContaining({
+				severity: 'error',
+				refs: ['MissingCfRange!A1:A5'],
+				details: expect.objectContaining({
+					kind: 'conditional-format-sqref-missing-sheet',
+					source: 'conditionalFormat',
+					index: 0,
+					field: 'sqref',
+					reference: 'MissingCfRange!A1:A5',
+					missingSheet: 'MissingCfRange',
+				}),
+			}),
+		)
+		expect(issues).toContainEqual(
+			expect.objectContaining({
+				severity: 'error',
+				refs: ['MissingCfRange!A1:A5'],
+				details: expect.objectContaining({
+					kind: 'conditional-format-formula-deleted-reference',
+					source: 'conditionalFormat',
+					index: 0,
+					ruleIndex: 1,
+					ruleType: 'dataBar',
+					field: 'rules[1].dataBar.cfvo[0].value',
+					reference: 'SUM(#REF!)',
+					error: '#REF!',
+				}),
+			}),
+		)
+	})
+
 	test('detects broken x14 data validation sheet references', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

@@ -2280,6 +2280,12 @@ interface DeletedFormulaReference {
 	readonly error: '#REF!'
 }
 
+type MetadataReferenceSource =
+	| 'conditionalFormat'
+	| 'x14ConditionalFormat'
+	| 'dataValidation'
+	| 'x14DataValidation'
+
 function sqrefTokens(sqref: string): string[] {
 	return sqref.trim().split(/\s+/).filter(Boolean)
 }
@@ -2541,12 +2547,13 @@ function pushX14MissingTableIssues(
 	issues: CheckIssue[],
 	params: {
 		readonly rule: 'conditional-format-integrity' | 'data-validation-integrity'
-		readonly source: 'x14ConditionalFormat' | 'x14DataValidation'
+		readonly source: MetadataReferenceSource
 		readonly sheetName: string
 		readonly index: number
 		readonly sqref: string
 		readonly missing: readonly MissingTableReference[]
 		readonly fallbackRef: string
+		readonly details?: Readonly<Record<string, unknown>>
 	},
 ): void {
 	for (const missing of params.missing) {
@@ -2555,10 +2562,9 @@ function pushX14MissingTableIssues(
 			severity: 'error',
 			message: `${params.source} ${missing.field} on sheet "${params.sheetName}" references missing table "${missing.tableName}"`,
 			refs: x14EntryRefs(params.sheetName, params.sqref, params.fallbackRef),
-			suggestedFix:
-				'Repair the structured reference table name before writing preserved x14 extension metadata.',
+			suggestedFix: 'Repair the structured reference table name before writing workbook metadata.',
 			details: {
-				kind: 'x14-formula-missing-table',
+				kind: metadataMissingTableKind(params.source),
 				source: params.source,
 				sheetName: params.sheetName,
 				index: params.index,
@@ -2567,8 +2573,20 @@ function pushX14MissingTableIssues(
 				tableName: missing.tableName,
 				...(missing.column ? { column: missing.column } : {}),
 				...(missing.endColumn ? { endColumn: missing.endColumn } : {}),
+				...params.details,
 			},
 		})
+	}
+}
+
+function metadataMissingTableKind(source: MetadataReferenceSource): string {
+	switch (source) {
+		case 'dataValidation':
+			return 'data-validation-formula-missing-table'
+		case 'conditionalFormat':
+			return 'conditional-format-formula-missing-table'
+		default:
+			return 'x14-formula-missing-table'
 	}
 }
 
@@ -2638,13 +2656,14 @@ function pushX14MissingSheetIssues(
 	issues: CheckIssue[],
 	params: {
 		readonly rule: 'conditional-format-integrity' | 'data-validation-integrity'
-		readonly source: 'x14ConditionalFormat' | 'x14DataValidation'
+		readonly source: MetadataReferenceSource
 		readonly sheetName: string
 		readonly index: number
 		readonly sqref: string
 		readonly missing: readonly MissingSheetReference[]
 		readonly sheetNames: readonly string[]
 		readonly fallbackRef: string
+		readonly details?: Readonly<Record<string, unknown>>
 	},
 ): void {
 	for (const missing of params.missing) {
@@ -2656,9 +2675,9 @@ function pushX14MissingSheetIssues(
 			refs: x14EntryRefs(params.sheetName, params.sqref, params.fallbackRef),
 			suggestedFix: closest
 				? `Did you mean sheet "${closest}"?`
-				: 'Repair the x14 reference before writing preserved extension metadata.',
+				: 'Repair the metadata reference before writing workbook metadata.',
 			details: {
-				kind: missing.field === 'sqref' ? 'x14-sqref-missing-sheet' : 'x14-formula-missing-sheet',
+				kind: metadataMissingSheetKind(params.source, missing.field),
 				source: params.source,
 				sheetName: params.sheetName,
 				index: params.index,
@@ -2666,21 +2685,37 @@ function pushX14MissingSheetIssues(
 				reference: missing.reference,
 				missingSheet: missing.sheetName,
 				...(missing.token ? { token: missing.token } : {}),
+				...params.details,
 			},
 		})
 	}
+}
+
+function metadataMissingSheetKind(source: MetadataReferenceSource, field: string): string {
+	if (source === 'dataValidation') {
+		return field === 'sqref'
+			? 'data-validation-sqref-missing-sheet'
+			: 'data-validation-formula-missing-sheet'
+	}
+	if (source === 'conditionalFormat') {
+		return field === 'sqref'
+			? 'conditional-format-sqref-missing-sheet'
+			: 'conditional-format-formula-missing-sheet'
+	}
+	return field === 'sqref' ? 'x14-sqref-missing-sheet' : 'x14-formula-missing-sheet'
 }
 
 function pushInvalidX14SqrefIssues(
 	issues: CheckIssue[],
 	params: {
 		readonly rule: 'conditional-format-integrity' | 'data-validation-integrity'
-		readonly source: 'x14ConditionalFormat' | 'x14DataValidation'
+		readonly source: MetadataReferenceSource
 		readonly sheetName: string
 		readonly index: number
 		readonly sqref: string
 		readonly invalid: readonly InvalidSqrefReference[]
 		readonly fallbackRef: string
+		readonly details?: Readonly<Record<string, unknown>>
 	},
 ): void {
 	for (const invalid of params.invalid) {
@@ -2689,9 +2724,9 @@ function pushInvalidX14SqrefIssues(
 			severity: 'error',
 			message: `${params.source} sqref on sheet "${params.sheetName}" contains invalid range token "${invalid.token}"`,
 			refs: x14EntryRefs(params.sheetName, params.sqref, params.fallbackRef),
-			suggestedFix: 'Repair the x14 sqref range before writing preserved extension metadata.',
+			suggestedFix: 'Repair the metadata sqref range before writing workbook metadata.',
 			details: {
-				kind: 'x14-sqref-invalid',
+				kind: metadataInvalidSqrefKind(params.source),
 				source: params.source,
 				sheetName: params.sheetName,
 				index: params.index,
@@ -2699,8 +2734,20 @@ function pushInvalidX14SqrefIssues(
 				reference: invalid.reference,
 				token: invalid.token,
 				...(invalid.reason ? { reason: invalid.reason } : {}),
+				...params.details,
 			},
 		})
+	}
+}
+
+function metadataInvalidSqrefKind(source: MetadataReferenceSource): string {
+	switch (source) {
+		case 'dataValidation':
+			return 'data-validation-sqref-invalid'
+		case 'conditionalFormat':
+			return 'conditional-format-sqref-invalid'
+		default:
+			return 'x14-sqref-invalid'
 	}
 }
 
@@ -2708,12 +2755,13 @@ function pushX14DeletedFormulaReferenceIssues(
 	issues: CheckIssue[],
 	params: {
 		readonly rule: 'conditional-format-integrity' | 'data-validation-integrity'
-		readonly source: 'x14ConditionalFormat' | 'x14DataValidation'
+		readonly source: MetadataReferenceSource
 		readonly sheetName: string
 		readonly index: number
 		readonly sqref: string
 		readonly deleted: readonly DeletedFormulaReference[]
 		readonly fallbackRef: string
+		readonly details?: Readonly<Record<string, unknown>>
 	},
 ): void {
 	for (const deleted of params.deleted) {
@@ -2722,18 +2770,29 @@ function pushX14DeletedFormulaReferenceIssues(
 			severity: 'error',
 			message: `${params.source} ${deleted.field} on sheet "${params.sheetName}" contains deleted reference ${deleted.error}`,
 			refs: x14EntryRefs(params.sheetName, params.sqref, params.fallbackRef),
-			suggestedFix:
-				'Repair the deleted formula reference before writing preserved x14 extension metadata.',
+			suggestedFix: 'Repair the deleted formula reference before writing workbook metadata.',
 			details: {
-				kind: 'x14-formula-deleted-reference',
+				kind: metadataDeletedFormulaKind(params.source),
 				source: params.source,
 				sheetName: params.sheetName,
 				index: params.index,
 				field: deleted.field,
 				reference: deleted.reference,
 				error: deleted.error,
+				...params.details,
 			},
 		})
+	}
+}
+
+function metadataDeletedFormulaKind(source: MetadataReferenceSource): string {
+	switch (source) {
+		case 'dataValidation':
+			return 'data-validation-formula-deleted-reference'
+		case 'conditionalFormat':
+			return 'conditional-format-formula-deleted-reference'
+		default:
+			return 'x14-formula-deleted-reference'
 	}
 }
 
@@ -2855,6 +2914,67 @@ function checkX14DataValidationIntegrity(
 			if (validation.formula2) {
 				formulaEntries.push({ field: 'formula2', formula: validation.formula2 })
 			}
+			const fallbackRef = `dataValidation[${index}]`
+			pushInvalidX14SqrefIssues(issues, {
+				rule: 'data-validation-integrity',
+				source: 'dataValidation',
+				sheetName: sheet.name,
+				index,
+				sqref: validation.sqref,
+				invalid: invalidSqrefReferences(validation.sqref),
+				fallbackRef,
+				details: {
+					sqref: validation.sqref,
+					...(validation.type ? { validationType: validation.type } : {}),
+				},
+			})
+			pushX14MissingSheetIssues(issues, {
+				rule: 'data-validation-integrity',
+				source: 'dataValidation',
+				sheetName: sheet.name,
+				index,
+				sqref: validation.sqref,
+				missing: [
+					...missingSheetReferencesInSqref(validation.sqref, sheetNameSet),
+					...formulaEntries.flatMap((entry) =>
+						missingSheetReferencesInFormula(entry, sheetNameSet),
+					),
+				],
+				sheetNames,
+				fallbackRef,
+				details: {
+					sqref: validation.sqref,
+					...(validation.type ? { validationType: validation.type } : {}),
+				},
+			})
+			pushX14MissingTableIssues(issues, {
+				rule: 'data-validation-integrity',
+				source: 'dataValidation',
+				sheetName: sheet.name,
+				index,
+				sqref: validation.sqref,
+				missing: formulaEntries.flatMap((entry) =>
+					missingTableReferencesInFormula(entry, tableNameSet),
+				),
+				fallbackRef,
+				details: {
+					sqref: validation.sqref,
+					...(validation.type ? { validationType: validation.type } : {}),
+				},
+			})
+			pushX14DeletedFormulaReferenceIssues(issues, {
+				rule: 'data-validation-integrity',
+				source: 'dataValidation',
+				sheetName: sheet.name,
+				index,
+				sqref: validation.sqref,
+				deleted: formulaEntries.flatMap(deletedReferencesInFormula),
+				fallbackRef,
+				details: {
+					sqref: validation.sqref,
+					...(validation.type ? { validationType: validation.type } : {}),
+				},
+			})
 			pushExternalMetadataReferenceIssues(issues, {
 				rule: 'data-validation-integrity',
 				source: 'dataValidation',
@@ -2864,7 +2984,7 @@ function checkX14DataValidationIntegrity(
 					...externalReferencesInSqref(validation.sqref),
 					...formulaEntries.flatMap(externalReferencesInFormula),
 				],
-				refs: x14EntryRefs(sheet.name, validation.sqref, `dataValidation[${index}]`),
+				refs: x14EntryRefs(sheet.name, validation.sqref, fallbackRef),
 				suggestedFix:
 					'Replace validation references with local workbook ranges or verify the external link metadata before editing validations.',
 				details: {
@@ -2995,13 +3115,35 @@ function checkConditionalFormatIntegrity(wb: Workbook): CheckIssue[] {
 			const format = sheet.conditionalFormats[formatIndex]
 			if (!format) continue
 			const ranges = parseSqrefRanges(format.sqref)
+			const fallbackRef = `conditionalFormat[${formatIndex}]`
+			pushInvalidX14SqrefIssues(issues, {
+				rule: 'conditional-format-integrity',
+				source: 'conditionalFormat',
+				sheetName: sheet.name,
+				index: formatIndex,
+				sqref: format.sqref,
+				invalid: invalidSqrefReferences(format.sqref),
+				fallbackRef,
+				details: { sqref: format.sqref },
+			})
+			pushX14MissingSheetIssues(issues, {
+				rule: 'conditional-format-integrity',
+				source: 'conditionalFormat',
+				sheetName: sheet.name,
+				index: formatIndex,
+				sqref: format.sqref,
+				missing: missingSheetReferencesInSqref(format.sqref, sheetNameSet),
+				sheetNames,
+				fallbackRef,
+				details: { sqref: format.sqref },
+			})
 			pushExternalMetadataReferenceIssues(issues, {
 				rule: 'conditional-format-integrity',
 				source: 'conditionalFormat',
 				sheetName: sheet.name,
 				index: formatIndex,
 				references: externalReferencesInSqref(format.sqref),
-				refs: x14EntryRefs(sheet.name, format.sqref, `conditionalFormat[${formatIndex}]`),
+				refs: x14EntryRefs(sheet.name, format.sqref, fallbackRef),
 				suggestedFix:
 					'Replace conditional-format ranges with local workbook ranges or verify the external link metadata before editing conditional formats.',
 				details: {
@@ -3011,22 +3153,57 @@ function checkConditionalFormatIntegrity(wb: Workbook): CheckIssue[] {
 			for (let ruleIndex = 0; ruleIndex < format.rules.length; ruleIndex++) {
 				const rule = format.rules[ruleIndex]
 				if (!rule) continue
+				const formulaEntries = conditionalFormatRuleFormulaEntries(rule, ruleIndex)
+				const ruleDetails = {
+					sqref: format.sqref,
+					ruleIndex,
+					ruleType: rule.type,
+				}
+				pushX14MissingSheetIssues(issues, {
+					rule: 'conditional-format-integrity',
+					source: 'conditionalFormat',
+					sheetName: sheet.name,
+					index: formatIndex,
+					sqref: format.sqref,
+					missing: formulaEntries.flatMap((entry) =>
+						missingSheetReferencesInFormula(entry, sheetNameSet),
+					),
+					sheetNames,
+					fallbackRef,
+					details: ruleDetails,
+				})
+				pushX14MissingTableIssues(issues, {
+					rule: 'conditional-format-integrity',
+					source: 'conditionalFormat',
+					sheetName: sheet.name,
+					index: formatIndex,
+					sqref: format.sqref,
+					missing: formulaEntries.flatMap((entry) =>
+						missingTableReferencesInFormula(entry, tableNameSet),
+					),
+					fallbackRef,
+					details: ruleDetails,
+				})
+				pushX14DeletedFormulaReferenceIssues(issues, {
+					rule: 'conditional-format-integrity',
+					source: 'conditionalFormat',
+					sheetName: sheet.name,
+					index: formatIndex,
+					sqref: format.sqref,
+					deleted: formulaEntries.flatMap(deletedReferencesInFormula),
+					fallbackRef,
+					details: ruleDetails,
+				})
 				pushExternalMetadataReferenceIssues(issues, {
 					rule: 'conditional-format-integrity',
 					source: 'conditionalFormat',
 					sheetName: sheet.name,
 					index: formatIndex,
-					references: conditionalFormatRuleFormulaEntries(rule, ruleIndex).flatMap(
-						externalReferencesInFormula,
-					),
-					refs: x14EntryRefs(sheet.name, format.sqref, `conditionalFormat[${formatIndex}]`),
+					references: formulaEntries.flatMap(externalReferencesInFormula),
+					refs: x14EntryRefs(sheet.name, format.sqref, fallbackRef),
 					suggestedFix:
 						'Replace conditional-format formulas with local workbook ranges or verify the external link metadata before editing conditional formats.',
-					details: {
-						sqref: format.sqref,
-						ruleIndex,
-						ruleType: rule.type,
-					},
+					details: ruleDetails,
 				})
 				entries.push({
 					source: 'conditionalFormat',

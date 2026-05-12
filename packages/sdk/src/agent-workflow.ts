@@ -1498,6 +1498,7 @@ function buildWritePolicyReport(
 	const legacyCommentPartPaths = collectLegacyCommentPartPaths(
 		packageGraph.parts,
 		legacyCommentLocations,
+		commentIntegrityIssues.legacy,
 	)
 	if (legacyCommentLocations.length > 0 || commentIntegrityIssues.legacy.length > 0) {
 		const relatedOperations = collectLegacyCommentRelatedOperations(operations)
@@ -1533,6 +1534,7 @@ function buildWritePolicyReport(
 	const threadedCommentPartPaths = collectThreadedCommentPartPaths(
 		packageGraph.parts,
 		threadedCommentLocations,
+		commentIntegrityIssues.threaded,
 	)
 	if (threadedCommentLocations.length > 0 || commentIntegrityIssues.threaded.length > 0) {
 		const relatedOperations = collectThreadedCommentRelatedOperations(operations)
@@ -3264,8 +3266,8 @@ function collectCommentIntegrityIssues(checkIssues: readonly CheckIssue[]): {
 	readonly threaded: readonly CheckIssue[]
 } {
 	return {
-		legacy: checkIssues.filter((issue) => issue.rule === 'legacy-comment-drawing-integrity'),
-		threaded: checkIssues.filter((issue) => issue.rule === 'threaded-comment-integrity'),
+		legacy: checkIssues.filter(isLegacyCommentIntegrityIssue),
+		threaded: checkIssues.filter(isThreadedCommentIntegrityIssue),
 	}
 }
 
@@ -3313,29 +3315,128 @@ function collectThreadedCommentLocations(workbook: Workbook): ThreadedCommentLoc
 function collectLegacyCommentPartPaths(
 	parts: readonly XlsxPackageGraph['parts'][number][],
 	locations: readonly LegacyCommentLocation[],
+	issues: readonly CheckIssue[] = [],
 ): string[] {
 	const hasVmlLayout = locations.some((location) => location.hasLegacyDrawing)
-	return uniqueStrings(
-		parts
+	return uniqueStrings([
+		...parts
 			.filter(
 				(part) =>
 					part.featureFamily === 'preservedComments' ||
 					(hasVmlLayout && part.featureFamily === 'preservedVml'),
 			)
 			.map((part) => part.path),
-	)
+		...issues.flatMap((issue) =>
+			checkIssuePackagePartPaths(issue).filter(isLegacyCommentPackagePartPath),
+		),
+	])
 }
 
 function collectThreadedCommentPartPaths(
 	parts: readonly XlsxPackageGraph['parts'][number][],
 	locations: readonly ThreadedCommentLocation[],
+	issues: readonly CheckIssue[] = [],
 ): string[] {
 	return uniqueStrings([
 		...parts
 			.filter((part) => part.featureFamily === 'preservedThreadedComments')
 			.map((part) => part.path),
 		...locations.flatMap((location) => (location.partPath ? [location.partPath] : [])),
+		...issues.flatMap((issue) =>
+			checkIssuePackagePartPaths(issue).filter(isThreadedCommentPackagePartPath),
+		),
 	])
+}
+
+function isLegacyCommentIntegrityIssue(issue: CheckIssue): boolean {
+	if (issue.rule === 'legacy-comment-drawing-integrity') return true
+	if (issue.rule === 'drawing-integrity' && issue.details?.kind === 'orphan-vml-drawing-part') {
+		return checkIssuePackagePartPaths(issue).some(isLegacyCommentPackagePartPath)
+	}
+	if (issue.rule !== 'package-graph-integrity') return false
+	if (checkIssueFeatureFamilies(issue).some(isThreadedCommentFeatureFamily)) return false
+	if (checkIssuePackagePartPaths(issue).some(isThreadedCommentPackagePartPath)) return false
+	if (checkIssueFeatureFamilies(issue).some(isLegacyCommentFeatureFamily)) return true
+	return (
+		checkIssuePackagePartPaths(issue).some(isLegacyCommentPackagePartPath) ||
+		checkIssueContentTypes(issue).some(isLegacyCommentContentType)
+	)
+}
+
+function isThreadedCommentIntegrityIssue(issue: CheckIssue): boolean {
+	if (issue.rule === 'threaded-comment-integrity') return true
+	if (issue.rule !== 'package-graph-integrity') return false
+	if (checkIssueFeatureFamilies(issue).some(isThreadedCommentFeatureFamily)) return true
+	return (
+		checkIssuePackagePartPaths(issue).some(isThreadedCommentPackagePartPath) ||
+		checkIssueContentTypes(issue).some(isThreadedCommentContentType)
+	)
+}
+
+function checkIssuePackagePartPaths(issue: CheckIssue): string[] {
+	const details = issue.details ?? {}
+	const values = [
+		...(issue.refs ?? []).filter(isPackagePartPath),
+		stringDetail(details, 'partPath'),
+		stringDetail(details, 'drawingPartPath'),
+		stringDetail(details, 'firstPartPath'),
+		stringDetail(details, 'duplicatePartPath'),
+		stringDetail(details, 'relationshipPartPath'),
+	].filter((value): value is string => value !== undefined && isPackagePartPath(value))
+	return uniqueStrings(values)
+}
+
+function checkIssueContentTypes(issue: CheckIssue): string[] {
+	const details = issue.details ?? {}
+	return [
+		stringDetail(details, 'contentType'),
+		stringDetail(details, 'expected'),
+		stringDetail(details, 'actual'),
+	].filter((value): value is string => typeof value === 'string' && value.includes('/'))
+}
+
+function checkIssueFeatureFamilies(issue: CheckIssue): string[] {
+	const featureFamily = stringDetail(issue.details ?? {}, 'featureFamily')
+	return featureFamily ? [featureFamily] : []
+}
+
+function stringDetail(details: Readonly<Record<string, unknown>>, key: string): string | undefined {
+	const value = details[key]
+	return typeof value === 'string' ? value : undefined
+}
+
+function isPackagePartPath(value: string): boolean {
+	return value === '[Content_Types].xml' || /^[^!#]+\/[^!#]+\.[A-Za-z0-9]+$/i.test(value)
+}
+
+function isLegacyCommentPackagePartPath(path: string): boolean {
+	return /^xl\/comments\d+\.xml$/i.test(path) || /^xl\/drawings\/[^/]+\.vml$/i.test(path)
+}
+
+function isThreadedCommentPackagePartPath(path: string): boolean {
+	return /^xl\/threadedComments\/[^/]+\.xml$/i.test(path) || /^xl\/persons\/[^/]+\.xml$/i.test(path)
+}
+
+function isLegacyCommentFeatureFamily(featureFamily: string): boolean {
+	return featureFamily === 'preservedComments' || featureFamily === 'preservedVml'
+}
+
+function isThreadedCommentFeatureFamily(featureFamily: string): boolean {
+	return featureFamily === 'preservedThreadedComments'
+}
+
+function isLegacyCommentContentType(contentType: string): boolean {
+	return (
+		contentType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml' ||
+		contentType === 'application/vnd.openxmlformats-officedocument.vmlDrawing'
+	)
+}
+
+function isThreadedCommentContentType(contentType: string): boolean {
+	return (
+		contentType === 'application/vnd.ms-excel.threadedcomments+xml' ||
+		contentType === 'application/vnd.ms-excel.person+xml'
+	)
 }
 
 function packageGraphIssuesForParts(

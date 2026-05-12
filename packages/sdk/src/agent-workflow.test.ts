@@ -1131,6 +1131,144 @@ describe('agent workflow loss audit', () => {
 		)
 	})
 
+	test('plans attach stale legacy comment content type overrides to comment risk', async () => {
+		const input = join(TEMP_DIR, 'legacy-comment-stale-content-type.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(
+			input,
+			makeStaleContentTypeOverrideXlsx(
+				'xl/comments1.xml',
+				'application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml',
+			),
+		)
+
+		const plan = await createAgentPlan(input, [
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'ok' }] },
+		])
+
+		expect(plan.check.issues).toContainEqual(
+			expect.objectContaining({
+				rule: 'package-graph-integrity',
+				refs: ['[Content_Types].xml', 'xl/comments1.xml'],
+				details: expect.objectContaining({
+					code: 'package_content_type_override_target',
+					partPath: 'xl/comments1.xml',
+				}),
+			}),
+		)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'legacy-comment-preservation-risk',
+				partPaths: ['xl/comments1.xml'],
+				details: expect.objectContaining({
+					verifyIssues: expect.arrayContaining([
+						expect.objectContaining({
+							rule: 'package-graph-integrity',
+							details: expect.objectContaining({
+								code: 'package_content_type_override_target',
+								partPath: 'xl/comments1.xml',
+							}),
+						}),
+					]),
+				}),
+			}),
+		)
+	})
+
+	test('plans attach stale threaded comment content type overrides to threaded risk', async () => {
+		const input = join(TEMP_DIR, 'threaded-comment-stale-content-type.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(
+			input,
+			makeStaleContentTypeOverrideXlsx(
+				'xl/threadedComments/threadedComment1.xml',
+				'application/vnd.ms-excel.threadedcomments+xml',
+			),
+		)
+
+		const plan = await createAgentPlan(input, [
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'ok' }] },
+		])
+
+		expect(plan.check.issues).toContainEqual(
+			expect.objectContaining({
+				rule: 'package-graph-integrity',
+				refs: ['[Content_Types].xml', 'xl/threadedComments/threadedComment1.xml'],
+				details: expect.objectContaining({
+					code: 'package_content_type_override_target',
+					partPath: 'xl/threadedComments/threadedComment1.xml',
+				}),
+			}),
+		)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'threaded-comment-preservation-risk',
+				partPaths: ['xl/threadedComments/threadedComment1.xml'],
+				details: expect.objectContaining({
+					verifyIssues: expect.arrayContaining([
+						expect.objectContaining({
+							rule: 'package-graph-integrity',
+							details: expect.objectContaining({
+								code: 'package_content_type_override_target',
+								partPath: 'xl/threadedComments/threadedComment1.xml',
+							}),
+						}),
+					]),
+				}),
+			}),
+		)
+	})
+
+	test('plans attach raw legacy note VML inventory issues to comment risk', async () => {
+		const input = join(TEMP_DIR, 'raw-legacy-note-vml.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makeRawLegacyNoteVmlXlsx())
+
+		const plan = await createAgentPlan(input, [
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'ok' }] },
+		])
+
+		expect(plan.check.issues).toContainEqual(
+			expect.objectContaining({
+				rule: 'legacy-comment-drawing-integrity',
+				refs: ['xl/drawings/vmlDrawing1.vml'],
+				details: expect.objectContaining({
+					kind: 'legacy-comment-vml-without-comments-part',
+					noteShapeCount: 2,
+				}),
+			}),
+		)
+		expect(plan.writePolicy.summary.commentIntegrityIssues).toBe(2)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'legacy-comment-preservation-risk',
+				partPaths: expect.arrayContaining(['xl/drawings/vmlDrawing1.vml']),
+				packageParts: expect.arrayContaining([
+					expect.objectContaining({
+						partPath: 'xl/drawings/vmlDrawing1.vml',
+						featureFamily: 'preservedVml',
+					}),
+				]),
+				details: expect.objectContaining({
+					verifyIssues: expect.arrayContaining([
+						expect.objectContaining({
+							rule: 'legacy-comment-drawing-integrity',
+							details: expect.objectContaining({
+								kind: 'legacy-comment-vml-without-comments-part',
+							}),
+						}),
+						expect.objectContaining({
+							rule: 'legacy-comment-drawing-integrity',
+							details: expect.objectContaining({
+								kind: 'duplicate-raw-legacy-comment-vml-shape-id',
+							}),
+						}),
+					]),
+				}),
+			}),
+		)
+	})
+
 	test('plans explain preserved x14 conditional formatting payloads without warning on unrelated edits', async () => {
 		const input = join(TEMP_DIR, 'x14-conditional-format.xlsx')
 		mkdirSync(TEMP_DIR, { recursive: true })
@@ -1697,6 +1835,90 @@ function makeThreadedCommentXlsx(options: { readonly includePersons?: boolean } 
     <text>Reviewed</text>
   </threadedComment>
 </ThreadedComments>`),
+			}),
+		),
+	)
+}
+
+function makeStaleContentTypeOverrideXlsx(partPath: string, contentType: string): Uint8Array {
+	return createZip(
+		new Map(
+			Object.entries({
+				'[Content_Types].xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/${partPath}" ContentType="${contentType}"/>
+</Types>`),
+				'_rels/.rels': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+				'xl/_rels/workbook.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`),
+				'xl/workbook.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`),
+				'xl/worksheets/sheet1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`),
+			}),
+		),
+	)
+}
+
+function makeRawLegacyNoteVmlXlsx(): Uint8Array {
+	return createZip(
+		new Map(
+			Object.entries({
+				'[Content_Types].xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="vml" ContentType="application/vnd.openxmlformats-officedocument.vmlDrawing"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`),
+				'_rels/.rels': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+				'xl/_rels/workbook.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`),
+				'xl/worksheets/_rels/sheet1.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdVml" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing" Target="../drawings/vmlDrawing1.vml"/>
+</Relationships>`),
+				'xl/workbook.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`),
+				'xl/worksheets/sheet1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheetData/>
+  <legacyDrawing r:id="rIdVml"/>
+</worksheet>`),
+				'xl/drawings/vmlDrawing1.vml':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xml xmlns:v="urn:schemas-microsoft-com:vml" xmlns:x="urn:schemas-microsoft-com:office:excel">
+  <v:shape id="_x0000_s1025" type="#_x0000_t202" style="position:absolute;visibility:visible">
+    <v:textbox><div>First note</div></v:textbox>
+    <x:ClientData ObjectType="Note"><x:Row>0</x:Row><x:Column>0</x:Column></x:ClientData>
+  </v:shape>
+  <v:shape id="_x0000_s1025" type="#_x0000_t202" style="position:absolute;visibility:visible">
+    <v:textbox><div>Duplicate note</div></v:textbox>
+    <x:ClientData ObjectType="Note"><x:Row>1</x:Row><x:Column>0</x:Column></x:ClientData>
+  </v:shape>
+</xml>`),
 			}),
 		),
 	)

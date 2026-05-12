@@ -3,6 +3,7 @@ import { extractZip } from './reader/zip.ts'
 
 export type XlsxPackageGraphFidelityIssueCode =
 	| 'package_feature_classification'
+	| 'package_relationship_source'
 	| 'package_relationship_target'
 	| 'package_content_type_default_set'
 	| 'package_content_type_override'
@@ -63,6 +64,21 @@ export function auditXlsxPackageGraphReadIntegrity(
 		})
 	}
 	for (const relationship of graph.relationships) {
+		if (relationship.sourcePartPath !== '' && !partPaths.has(relationship.sourcePartPath)) {
+			issues.push({
+				code: 'package_relationship_source',
+				severity: 'error',
+				message: `relationship sidecar ${relationship.relationshipPartPath} belongs to missing source part ${relationship.sourcePartPath}`,
+				sourcePartPath: relationship.sourcePartPath,
+				relationshipPartPath: relationship.relationshipPartPath,
+				relationshipId: relationship.id,
+				featureFamily: relationship.featureFamily,
+				suggestedAction:
+					'Remove the orphan relationship sidecar or restore the source package part before writing.',
+				expected: relationship.sourcePartPath,
+				actual: undefined,
+			})
+		}
 		if (relationship.targetMode?.toLowerCase() === 'external') continue
 		if (relationship.resolvedTarget !== undefined && partPaths.has(relationship.resolvedTarget)) {
 			continue

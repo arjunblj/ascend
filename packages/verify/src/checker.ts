@@ -4507,6 +4507,25 @@ function checkPackageGraphIntegrity(packageGraph?: VerifyPackageGraph): CheckIss
 	const partPaths = new Set(packageGraph.parts.map((part) => part.path))
 
 	for (const relationship of packageGraph.relationships) {
+		if (relationship.sourcePartPath !== '' && !partPaths.has(relationship.sourcePartPath)) {
+			issues.push({
+				rule: 'package-graph-integrity',
+				severity: 'error',
+				message: `Package relationship sidecar ${relationship.relationshipPartPath} belongs to missing source part "${relationship.sourcePartPath}"`,
+				refs: [`${relationship.relationshipPartPath}#${relationship.id}`],
+				suggestedFix:
+					'Remove the orphan relationship sidecar or restore the source package part before writing.',
+				details: {
+					code: 'package_relationship_source',
+					sourcePartPath: relationship.sourcePartPath,
+					relationshipPartPath: relationship.relationshipPartPath,
+					relationshipId: relationship.id,
+					featureFamily: relationship.featureFamily,
+					expected: relationship.sourcePartPath,
+					actual: undefined,
+				},
+			})
+		}
 		if (relationship.targetMode?.toLowerCase() === 'external') continue
 		if (relationship.resolvedTarget && partPaths.has(relationship.resolvedTarget)) continue
 		issues.push({

@@ -47,6 +47,39 @@ describe('XLSX package graph fidelity audits', () => {
 		})
 	})
 
+	test('reports relationship sidecars whose source part is missing', () => {
+		const graph = inspectXlsxPackageGraph(
+			makeXlsx({
+				'[Content_Types].xml': contentTypesXml(`
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="png" ContentType="image/png"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+`),
+				'_rels/.rels': relationshipsXml(`
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+`),
+				'xl/workbook.xml': '<workbook/>',
+				'xl/media/image1.png': 'image-bytes',
+				'xl/drawings/_rels/missingDrawing.xml.rels': relationshipsXml(`
+  <Relationship Id="rIdImage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/>
+`),
+			}),
+		)
+
+		expect(auditXlsxPackageGraphReadIntegrity(graph)).toContainEqual(
+			expect.objectContaining({
+				code: 'package_relationship_source',
+				severity: 'error',
+				sourcePartPath: 'xl/drawings/missingDrawing.xml',
+				relationshipPartPath: 'xl/drawings/_rels/missingDrawing.xml.rels',
+				relationshipId: 'rIdImage',
+				featureFamily: 'preservedMedia',
+				suggestedAction: expect.stringContaining('orphan relationship sidecar'),
+			}),
+		)
+	})
+
 	test('compares relationship identity with raw strict dialect and package scope', () => {
 		const before = inspectXlsxPackageGraph(
 			makeXlsx({

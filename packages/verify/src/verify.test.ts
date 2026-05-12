@@ -1277,6 +1277,52 @@ describe('checker', () => {
 		expect(packageIssues[0]?.suggestedFix).toContain('restore the referenced package part')
 	})
 
+	test('surfaces package graph relationship source issues as check diagnostics', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/media/image1.png',
+						featureFamily: 'preservedMedia',
+						ownerScope: 'drawing',
+					},
+					{
+						path: 'xl/drawings/_rels/missingDrawing.xml.rels',
+						featureFamily: 'packageRelationships',
+						ownerScope: 'relationship-part',
+					},
+				],
+				relationships: [
+					{
+						sourcePartPath: 'xl/drawings/missingDrawing.xml',
+						relationshipPartPath: 'xl/drawings/_rels/missingDrawing.xml.rels',
+						id: 'rIdImage',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',
+						rawTarget: '../media/image1.png',
+						resolvedTarget: 'xl/media/image1.png',
+						featureFamily: 'preservedMedia',
+					},
+				],
+			},
+		})
+
+		const packageIssues = result.issues.filter((i) => i.rule === 'package-graph-integrity')
+		expect(result.passed).toBe(false)
+		expect(packageIssues).toHaveLength(1)
+		expect(packageIssues[0]?.details).toMatchObject({
+			code: 'package_relationship_source',
+			sourcePartPath: 'xl/drawings/missingDrawing.xml',
+			relationshipPartPath: 'xl/drawings/_rels/missingDrawing.xml.rels',
+			relationshipId: 'rIdImage',
+			featureFamily: 'preservedMedia',
+		})
+		expect(packageIssues[0]?.refs).toEqual(['xl/drawings/_rels/missingDrawing.xml.rels#rIdImage'])
+		expect(packageIssues[0]?.suggestedFix).toContain('orphan relationship sidecar')
+	})
+
 	test('detects external link relationship mismatches and orphan package sidecars', () => {
 		const wb = createWorkbook()
 		wb.addSheet('Sheet1')

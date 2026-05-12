@@ -281,6 +281,92 @@ describe('checker', () => {
 		})
 	})
 
+	test('detects legacy comment VML row and column target drift', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.comments.set('B2', {
+			text: 'Review',
+			author: 'Ada',
+			legacyDrawing: {
+				shapeId: '_x0000_s1025',
+				row: 4,
+				column: 3,
+				anchor: [1, 15, 1, 2, 3, 15, 4, 16],
+			},
+		})
+
+		const result = check(wb)
+		const issues = result.issues.filter((i) => i.rule === 'legacy-comment-drawing-integrity')
+		expect(result.passed).toBe(false)
+		expect(issues).toHaveLength(1)
+		expect(issues[0]?.message).toContain('points to row 4, column 3')
+		expect(issues[0]?.refs).toEqual(['Sheet1!B2'])
+		expect(issues[0]?.details).toEqual({
+			ref: 'B2',
+			expectedRow: 1,
+			expectedColumn: 1,
+			actualRow: 4,
+			actualColumn: 3,
+			shapeId: '_x0000_s1025',
+		})
+	})
+
+	test('detects duplicate legacy comment VML shape ids', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.comments.set('A1', {
+			text: 'One',
+			legacyDrawing: {
+				shapeId: '_x0000_s1025',
+				row: 0,
+				column: 0,
+			},
+		})
+		s.comments.set('C3', {
+			text: 'Two',
+			legacyDrawing: {
+				shapeId: '_x0000_s1025',
+				row: 2,
+				column: 2,
+			},
+		})
+
+		const result = check(wb)
+		const issues = result.issues.filter((i) => i.rule === 'legacy-comment-drawing-integrity')
+		expect(issues).toHaveLength(1)
+		expect(issues[0]?.message).toContain('Duplicate legacy comment VML shape id')
+		expect(issues[0]?.refs).toEqual(['Sheet1!A1', 'Sheet1!C3'])
+		expect(issues[0]?.details).toEqual({
+			shapeId: '_x0000_s1025',
+			firstRef: 'A1',
+			duplicateRef: 'C3',
+		})
+	})
+
+	test('detects legacy comment VML anchors with negative coordinates', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.comments.set('A1', {
+			text: 'One',
+			legacyDrawing: {
+				shapeId: '_x0000_s1025',
+				row: 0,
+				column: 0,
+				anchor: [0, 0, 0, 0, 2, 0, -1, 0],
+			},
+		})
+
+		const result = check(wb)
+		const issues = result.issues.filter((i) => i.rule === 'legacy-comment-drawing-integrity')
+		expect(issues).toHaveLength(1)
+		expect(issues[0]?.message).toContain('not eight non-negative integers')
+		expect(issues[0]?.details).toEqual({
+			ref: 'A1',
+			anchor: [0, 0, 0, 0, 2, 0, -1, 0],
+			shapeId: '_x0000_s1025',
+		})
+	})
+
 	test('detects external workbook references', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

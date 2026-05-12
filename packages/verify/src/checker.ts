@@ -1,5 +1,5 @@
 import type { CellFormulaBinding, RangeRef, Workbook } from '@ascend/core'
-import { indexToColumn, parseRange, toA1 } from '@ascend/core'
+import { indexToColumn, parseA1, parseRange, toA1 } from '@ascend/core'
 import {
 	analyzeWorkbookDependencies,
 	analyzeWorkbookFormulas,
@@ -560,6 +560,88 @@ function checkThreadedCommentIntegrity(wb: Workbook): CheckIssue[] {
 	return issues
 }
 
+function checkLegacyCommentDrawingIntegrity(wb: Workbook): CheckIssue[] {
+	const issues: CheckIssue[] = []
+	for (const sheet of wb.sheets) {
+		const shapeIds = new Map<string, string>()
+		for (const [ref, comment] of sheet.comments) {
+			const drawing = comment.legacyDrawing
+			if (!drawing) continue
+			const sheetRef = `${sheet.name}!${ref}`
+			try {
+				const cellRef = parseA1(ref)
+				if (
+					(drawing.row !== undefined && drawing.row !== cellRef.row) ||
+					(drawing.column !== undefined && drawing.column !== cellRef.col)
+				) {
+					issues.push({
+						rule: 'legacy-comment-drawing-integrity',
+						severity: 'warning',
+						message: `Legacy comment VML target for ${sheetRef} points to row ${drawing.row ?? '(missing)'}, column ${drawing.column ?? '(missing)'}`,
+						refs: [sheetRef],
+						suggestedFix:
+							'Repair the VML ClientData Row and Column before relying on comment layout edits.',
+						details: {
+							ref,
+							expectedRow: cellRef.row,
+							expectedColumn: cellRef.col,
+							...(drawing.row !== undefined ? { actualRow: drawing.row } : {}),
+							...(drawing.column !== undefined ? { actualColumn: drawing.column } : {}),
+							...(drawing.shapeId ? { shapeId: drawing.shapeId } : {}),
+						},
+					})
+				}
+			} catch {
+				issues.push({
+					rule: 'legacy-comment-drawing-integrity',
+					severity: 'warning',
+					message: `Legacy comment has invalid cell reference "${ref}"`,
+					refs: [sheetRef],
+					suggestedFix: 'Repair the comment reference before preserving or editing its VML layout.',
+					details: {
+						ref,
+						...(drawing.shapeId ? { shapeId: drawing.shapeId } : {}),
+					},
+				})
+			}
+			if (drawing.shapeId) {
+				const existingRef = shapeIds.get(drawing.shapeId)
+				if (existingRef) {
+					issues.push({
+						rule: 'legacy-comment-drawing-integrity',
+						severity: 'warning',
+						message: `Duplicate legacy comment VML shape id "${drawing.shapeId}" on sheet "${sheet.name}"`,
+						refs: [`${sheet.name}!${existingRef}`, sheetRef],
+						suggestedFix: 'Assign distinct VML shape ids before editing comment drawing layout.',
+						details: {
+							shapeId: drawing.shapeId,
+							firstRef: existingRef,
+							duplicateRef: ref,
+						},
+					})
+				} else {
+					shapeIds.set(drawing.shapeId, ref)
+				}
+			}
+			if (drawing.anchor?.some((value) => !Number.isInteger(value) || value < 0)) {
+				issues.push({
+					rule: 'legacy-comment-drawing-integrity',
+					severity: 'warning',
+					message: `Legacy comment VML anchor for ${sheetRef} is not eight non-negative integers`,
+					refs: [sheetRef],
+					suggestedFix: 'Repair the VML Anchor tuple before relying on comment drawing placement.',
+					details: {
+						ref,
+						anchor: drawing.anchor,
+						...(drawing.shapeId ? { shapeId: drawing.shapeId } : {}),
+					},
+				})
+			}
+		}
+	}
+	return issues
+}
+
 export function check(
 	workbook: Workbook,
 	analysis?: {
@@ -581,6 +663,7 @@ export function check(
 		...checkTableIntegrity(workbook),
 		...checkConditionalFormatIntegrity(workbook),
 		...checkThreadedCommentIntegrity(workbook),
+		...checkLegacyCommentDrawingIntegrity(workbook),
 	]
 	return { passed: issues.length === 0, issues }
 }

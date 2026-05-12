@@ -130,6 +130,45 @@ export class ZipArchive {
 		}
 	}
 
+	*readByteChunks(path: string, chunkSize = STREAM_CHUNK_BYTES): IterableIterator<Uint8Array> {
+		const entry = this.entriesByPath.get(path)
+		if (!entry) return
+		const compressed = this.bytes.subarray(
+			entry.dataOffset,
+			entry.dataOffset + entry.compressedSize,
+		)
+		if (entry.compressionMethod === 0) {
+			for (let offset = 0; offset < compressed.byteLength; offset += chunkSize) {
+				yield compressed.subarray(offset, offset + chunkSize)
+			}
+			return
+		}
+		if (entry.compressionMethod !== 8) {
+			throw new Error(`Unsupported ZIP compression method ${entry.compressionMethod} for ${path}`)
+		}
+		if (bunInflateRawSync && entry.uncompressedSize <= FULL_INFLATE_TEXT_CHUNK_LIMIT_BYTES) {
+			const bytes = inflateRawBytesSync(compressed)
+			for (let offset = 0; offset < bytes.byteLength; offset += chunkSize) {
+				yield bytes.subarray(offset, offset + chunkSize)
+			}
+			return
+		}
+		const pending: Uint8Array[] = []
+		const inflater = new Inflate((chunk) => {
+			if (chunk.byteLength > 0) pending.push(chunk)
+		})
+		for (let offset = 0; offset < compressed.byteLength; offset += chunkSize) {
+			inflater.push(
+				compressed.subarray(offset, offset + chunkSize),
+				offset + chunkSize >= compressed.byteLength,
+			)
+			while (pending.length > 0) {
+				const bytes = pending.shift()
+				if (bytes) yield bytes
+			}
+		}
+	}
+
 	async *readTextChunksAsync(path: string, chunkSize = STREAM_CHUNK_BYTES): AsyncGenerator<string> {
 		const entry = this.entriesByPath.get(path)
 		if (!entry) return

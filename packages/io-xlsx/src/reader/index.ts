@@ -7,7 +7,7 @@ import type {
 	WorkbookConnectionPartInfo,
 	WorkbookDataModelPartInfo,
 } from '@ascend/core'
-import { DEFAULT_STYLE_ID, Workbook } from '@ascend/core'
+import { DEFAULT_STYLE_ID, Sheet, Workbook } from '@ascend/core'
 import type {
 	AscendError,
 	CompatibilityReport,
@@ -86,6 +86,9 @@ import {
 	parseSheet,
 	parseSheetValuesOnlyBytes,
 	type SheetFormulaFeatures,
+	type SheetParseContext,
+	type StreamedSheetRow,
+	streamSheetRowsByteChunks,
 	ValueInternPool,
 } from './sheet.ts'
 import { parseStyles, parseStylesLite } from './styles.ts'
@@ -560,19 +563,25 @@ export function readXlsx(
 			const hasDateStyles = isDateFormat.some(Boolean)
 
 			for (const entry of sheetsToParse) {
+				const sheetEntryInfo = archive.get(entry.path)
+				const canUseStreamedMaxRowsParser =
+					valuesOnly &&
+					!hydrateRichSheetMetadata &&
+					options.maxRows !== undefined &&
+					(sheetEntryInfo?.uncompressedSize ?? 0) >= VALUES_ONLY_BYTE_PARSE_MIN_BYTES
 				const canUseValuesOnlyByteParser =
 					valuesOnly &&
 					!hydrateRichSheetMetadata &&
-					(archive.get(entry.path)?.uncompressedSize ?? 0) >= VALUES_ONLY_BYTE_PARSE_MIN_BYTES &&
-					options.maxRows === undefined
+					!canUseStreamedMaxRowsParser &&
+					(sheetEntryInfo?.uncompressedSize ?? 0) >= VALUES_ONLY_BYTE_PARSE_MIN_BYTES
 				const sheetBytes = canUseValuesOnlyByteParser
 					? readPartBytes(archive, entry.path)
 					: undefined
 				let sheetXml =
-					sheetBytes === undefined || hydrateRichSheetMetadata
+					(sheetBytes === undefined && !canUseStreamedMaxRowsParser) || hydrateRichSheetMetadata
 						? readPart(archive, entry.path)
 						: undefined
-				if (sheetBytes === undefined && !sheetXml) continue
+				if (sheetBytes === undefined && !sheetXml && !canUseStreamedMaxRowsParser) continue
 				const sheetRelsPart = hydrateRichSheetMetadata
 					? readPartWithPath(archive, getRelsPath(entry.path))
 					: undefined
@@ -603,9 +612,16 @@ export function readXlsx(
 				}
 				const resolvedSheetId = (sheetPathToAnchor.get(entry.path)?.sheetId ??
 					entry.name) as SheetId
-				let sheet = sheetBytes
-					? parseSheetValuesOnlyBytes(entry.name, sheetBytes, sheetCtx, resolvedSheetId)
-					: null
+				let sheet = canUseStreamedMaxRowsParser
+					? parseSheetValuesOnlyByteChunks(
+							entry.name,
+							archive.readByteChunks(entry.path),
+							sheetCtx,
+							resolvedSheetId,
+						)
+					: sheetBytes
+						? parseSheetValuesOnlyBytes(entry.name, sheetBytes, sheetCtx, resolvedSheetId)
+						: null
 				if (!sheet) {
 					sheetXml ??= sheetBytes ? XML_DECODER.decode(sheetBytes) : readPart(archive, entry.path)
 					if (!sheetXml) continue
@@ -719,6 +735,26 @@ export function readXlsx(
 				`Invalid workbook payload: ${e instanceof Error ? e.message : 'unknown'}`,
 			),
 		)
+	}
+}
+
+function parseSheetValuesOnlyByteChunks(
+	name: string,
+	chunks: Iterable<Uint8Array>,
+	ctx: SheetParseContext,
+	sheetId: SheetId,
+): Sheet {
+	const sheet = new Sheet(name, sheetId)
+	sheet.cells.setExpectedDensity('dense')
+	for (const row of streamSheetRowsByteChunks(name, chunks, ctx)) {
+		applyStreamedRow(sheet, row)
+	}
+	return sheet
+}
+
+function applyStreamedRow(sheet: Sheet, row: StreamedSheetRow): void {
+	for (const [col, cell] of row.cells) {
+		sheet.cells.set(row.row, col, cell)
 	}
 }
 

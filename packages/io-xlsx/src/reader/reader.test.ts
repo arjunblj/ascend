@@ -8,7 +8,11 @@ import { writeXlsx } from '../writer/index.ts'
 import { readXlsx } from './index.ts'
 import { emptySharedStrings, parseSharedStrings } from './shared-strings.ts'
 import type { StreamedSheetRow } from './sheet.ts'
-import { parseSheetValuesOnlyBytes, streamSheetRowsTextChunks } from './sheet.ts'
+import {
+	parseSheetValuesOnlyBytes,
+	streamSheetRowsByteChunks,
+	streamSheetRowsTextChunks,
+} from './sheet.ts'
 import { readXlsxRowsStream } from './stream.ts'
 
 const S0 = 0 as StyleId
@@ -658,6 +662,40 @@ describe('readXlsx', () => {
 					styleIds: [S0],
 					isDateFormat: [false],
 					valuesOnly: true,
+				},
+			),
+		]
+		expect(rows).toEqual([
+			{
+				row: 0,
+				cells: [
+					[0, { value: { kind: 'number', value: 1 }, formula: null, styleId: S0 }],
+					[1, { value: { kind: 'number', value: 2 }, formula: null, styleId: S0 }],
+				],
+			},
+			{
+				row: 1,
+				cells: [
+					[0, { value: { kind: 'string', value: 'plain & text' }, formula: null, styleId: S0 }],
+				],
+			},
+		])
+	})
+
+	it('streams worksheet byte chunks split inside rows, cells, and values', () => {
+		const xml =
+			'<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c><c><v>2</v></c></row><row><c t="str"><v>plain &amp; text</v></c></row><row r="3"><c r="A3"><v>3'
+		const bytes = new TextEncoder().encode(xml)
+		const rows = [
+			...streamSheetRowsByteChunks(
+				'Data',
+				[bytes.subarray(0, 29), bytes.subarray(29, 53), bytes.subarray(53, 91), bytes.subarray(91)],
+				{
+					sharedStrings: emptySharedStrings(),
+					styleIds: [S0],
+					isDateFormat: [false],
+					valuesOnly: true,
+					maxRows: 2,
 				},
 			),
 		]

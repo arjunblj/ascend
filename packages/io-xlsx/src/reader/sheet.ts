@@ -404,6 +404,7 @@ const BYTES_T_CLOSE = bytesLiteral('</t>')
 const BYTES_IS_CLOSE = bytesLiteral('</is>')
 const BYTES_CANONICAL_INLINE_STRING_PREFIX = bytesLiteral('" t="inlineStr"><is><t>')
 const BYTES_CANONICAL_INLINE_STRING_SUFFIX = bytesLiteral('</t></is></c>')
+const EMPTY_BYTES = new Uint8Array(0)
 
 const VALUES_MODE_ALLOWED_OUTER_TAGS = new Set(['worksheet', 'dimension', 'sheetData'])
 
@@ -1152,14 +1153,22 @@ export function* streamSheetRowsTextChunks(
 				inSheetData = true
 			}
 
-			const sheetDataClose = buffer.indexOf('</sheetData>')
 			const rowOpen = buffer.indexOf('<row')
-			if (rowOpen === -1 || (sheetDataClose !== -1 && sheetDataClose < rowOpen)) return
+			if (rowOpen === -1) {
+				if (buffer.indexOf('</sheetData>') !== -1) return
+				buffer = buffer.slice(Math.max(0, buffer.length - '<row'.length))
+				break
+			}
 			if (rowOpen > 0) {
+				if (buffer.slice(0, rowOpen).includes('</sheetData>')) return
 				buffer = buffer.slice(rowOpen)
 			}
 			const rowTagEnd = findTagEnd(buffer, 0)
 			if (rowTagEnd === -1) break
+			const rowAttrsRaw = buffer.slice(4, rowTagEnd)
+			const explicitRowIndex = rawNumAttr(rowAttrsRaw, 'r')
+			const row = explicitRowIndex !== undefined ? explicitRowIndex - 1 : currentRow + 1
+			if (ctx.maxRows !== undefined && row >= ctx.maxRows) return
 			let rowEnd: number
 			if (isSelfClosingTag(buffer, 0, rowTagEnd)) {
 				rowEnd = rowTagEnd + 1
@@ -1190,6 +1199,116 @@ export function* streamSheetRowsTextChunks(
 			yield parsed
 		}
 	}
+}
+
+export function* streamSheetRowsByteChunks(
+	name: string,
+	chunks: Iterable<Uint8Array>,
+	ctx: SheetParseContext,
+): Generator<StreamedSheetRow> {
+	const sharedFormulaMasters: SharedFormulaMasterMap = new Map()
+	let currentRow = -1
+	let buffer: Uint8Array<ArrayBufferLike> = EMPTY_BYTES
+	let inSheetData = false
+	const fallbackPos = { row: 0, col: 0 }
+	const cellOut = { row: 0, col: 0 }
+	const rowSheet = new Sheet(name)
+
+	for (const chunk of chunks) {
+		buffer = appendBytes(buffer, chunk)
+		while (true) {
+			if (!inSheetData) {
+				const sheetDataOpen = indexOfElementOpenBytes(
+					buffer,
+					BYTES_SHEET_DATA_OPEN,
+					0,
+					buffer.length,
+				)
+				if (sheetDataOpen === -1) {
+					buffer = trailingBytes(buffer, BYTES_SHEET_DATA_OPEN.length)
+					break
+				}
+				const sheetDataTagEnd = findTagEndBytes(buffer, sheetDataOpen)
+				if (sheetDataTagEnd === -1) {
+					buffer = buffer.subarray(sheetDataOpen)
+					break
+				}
+				if (isSelfClosingTagBytes(buffer, sheetDataOpen, sheetDataTagEnd)) return
+				buffer = buffer.subarray(sheetDataTagEnd + 1)
+				inSheetData = true
+			}
+
+			const rowOpen = indexOfElementOpenBytes(buffer, BYTES_ROW_OPEN, 0, buffer.length)
+			if (rowOpen === -1) {
+				const sheetDataClose = indexOfBytes(buffer, BYTES_SHEET_DATA_CLOSE, 0, buffer.length)
+				if (sheetDataClose !== -1) return
+				buffer = trailingBytes(buffer, BYTES_ROW_OPEN.length)
+				break
+			}
+			if (rowOpen > 0) {
+				if (indexOfBytes(buffer, BYTES_SHEET_DATA_CLOSE, 0, rowOpen) !== -1) return
+				buffer = buffer.subarray(rowOpen)
+			}
+			const rowTagEnd = findTagEndBytes(buffer, 0)
+			if (rowTagEnd === -1) break
+			const explicitRowIndex = rawPositiveIntAttrInBytes(
+				buffer,
+				BYTES_ROW_OPEN.length,
+				rowTagEnd,
+				'r',
+			)
+			const row = explicitRowIndex !== undefined ? explicitRowIndex - 1 : currentRow + 1
+			if (ctx.maxRows !== undefined && row >= ctx.maxRows) return
+			let rowEnd: number
+			if (isSelfClosingTagBytes(buffer, 0, rowTagEnd)) {
+				rowEnd = rowTagEnd + 1
+			} else {
+				const rowClose = indexOfBytes(buffer, BYTES_ROW_CLOSE, rowTagEnd + 1, buffer.length)
+				if (rowClose === -1) break
+				rowEnd = rowClose + BYTES_ROW_CLOSE.length
+			}
+
+			const directParsed = parseStreamedValuesRowBytes(buffer, 0, rowEnd, currentRow, ctx)
+			if (directParsed) {
+				buffer = buffer.subarray(rowEnd)
+				currentRow = directParsed.row
+				yield directParsed
+				continue
+			}
+			const parsed = parseStreamedSheetRowXml(
+				BYTE_XML_DECODER.decode(buffer.subarray(0, rowEnd)),
+				currentRow,
+				ctx,
+				sharedFormulaMasters,
+				rowSheet,
+				fallbackPos,
+				cellOut,
+			)
+			buffer = buffer.subarray(rowEnd)
+			if (!parsed) continue
+			currentRow = parsed.row
+			yield parsed
+		}
+	}
+}
+
+function appendBytes(
+	left: Uint8Array<ArrayBufferLike>,
+	right: Uint8Array<ArrayBufferLike>,
+): Uint8Array<ArrayBufferLike> {
+	if (left.byteLength === 0) return right
+	if (right.byteLength === 0) return left
+	const out = new Uint8Array(left.byteLength + right.byteLength)
+	out.set(left, 0)
+	out.set(right, left.byteLength)
+	return out
+}
+
+function trailingBytes(
+	bytes: Uint8Array<ArrayBufferLike>,
+	length: number,
+): Uint8Array<ArrayBufferLike> {
+	return bytes.length <= length ? bytes : bytes.subarray(bytes.length - length)
 }
 
 function parseStreamedValuesRowBytes(

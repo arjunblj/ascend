@@ -1,5 +1,5 @@
 import type { TimelineCacheInfo, TimelineRangeInfo } from '@ascend/core'
-import { escapeXml } from '../xml.ts'
+import { setXmlAttr } from './xml-attrs.ts'
 
 const XML_NAME = String.raw`[A-Za-z_][\w.-]*`
 const PREFIXED_TAG = `(?:${XML_NAME}:)?`
@@ -105,11 +105,4 @@ function rangeAttrs(attrs: string, range: TimelineRangeInfo): string {
 function deriveChildTag(parentTag: string, localName: string): string {
 	const colon = parentTag.indexOf(':')
 	return colon === -1 ? localName : `${parentTag.slice(0, colon + 1)}${localName}`
-}
-
-function setXmlAttr(attrs: string, name: string, value: string): string {
-	const attrText = `${name}="${escapeXml(value)}"`
-	const attrPattern = new RegExp(String.raw`\s${name}="[^"]*"`)
-	if (attrPattern.test(attrs)) return attrs.replace(attrPattern, ` ${attrText}`)
-	return `${attrs} ${attrText}`
 }

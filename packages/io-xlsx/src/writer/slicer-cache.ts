@@ -1,5 +1,5 @@
 import type { SlicerCacheInfo, SlicerCacheItemInfo } from '@ascend/core'
-import { escapeXml } from '../xml.ts'
+import { readNumberXmlAttr, removeXmlAttr, setXmlAttr } from './xml-attrs.ts'
 
 const XML_NAME = String.raw`[A-Za-z_][\w.-]*`
 const PREFIXED_TAG = `(?:${XML_NAME}:)?`
@@ -82,31 +82,12 @@ function deriveChildTag(parentTag: string, localName: string): string {
 }
 
 function readNumberAttr(attrs: string, name: string): number | undefined {
-	const value = readXmlAttr(attrs, name)
-	if (value === undefined) return undefined
-	const parsed = Number(value)
-	return Number.isFinite(parsed) ? parsed : undefined
-}
-
-function readXmlAttr(attrs: string, name: string): string | undefined {
-	const match = attrs.match(new RegExp(String.raw`\s${name}="([^"]*)"`))
-	return match?.[1]
+	return readNumberXmlAttr(attrs, name)
 }
 
 function setOptionalBoolAttr(attrs: string, name: string, value: boolean | undefined): string {
 	if (value === undefined) return removeXmlAttr(attrs, name)
 	return setXmlAttr(attrs, name, value ? '1' : '0')
-}
-
-function setXmlAttr(attrs: string, name: string, value: string): string {
-	const attrText = `${name}="${escapeXml(value)}"`
-	const attrPattern = new RegExp(String.raw`\s${name}="[^"]*"`)
-	if (attrPattern.test(attrs)) return attrs.replace(attrPattern, ` ${attrText}`)
-	return `${attrs} ${attrText}`
-}
-
-function removeXmlAttr(attrs: string, name: string): string {
-	return attrs.replace(new RegExp(String.raw`\s${name}="[^"]*"`, 'g'), '')
 }
 
 function countItems(body: string): number {

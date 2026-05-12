@@ -3,6 +3,7 @@ import type { CellValue, RichTextRun } from '@ascend/schema'
 import { escapeXml } from '../xml.ts'
 import { ChunkedStringBuilder } from './chunked-string-builder.ts'
 import type { DynamicArrayMetadataEntry } from './metadata.ts'
+import { setXmlAttr } from './xml-attrs.ts'
 
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
@@ -133,9 +134,7 @@ function rewriteSharedStringRoot(
 }
 
 function setXmlAttribute(openTag: string, name: string, value: string): string {
-	const attr = new RegExp(String.raw`(\s${name}=")[^"]*(")`, 'u')
-	if (attr.test(openTag)) return openTag.replace(attr, `$1${value}$2`)
-	return `${openTag} ${name}="${value}"`
+	return setXmlAttr(openTag, name, value)
 }
 
 export function scanWorkbookWriteFactsFast(workbook: Workbook): WorkbookWriteFacts {

@@ -1,3 +1,5 @@
+import { readXmlAttr } from './xml-attrs.ts'
+
 const XML_NAME = String.raw`[A-Za-z_][\w.-]*`
 const PREFIXED_TAG = `(?:${XML_NAME}:)?`
 const THREADED_COMMENT_RE = new RegExp(
@@ -77,11 +79,6 @@ function readThreadedCommentText(body: string): string {
 	const match = body.match(TEXT_RE)
 	if (!match) return ''
 	return decodeXmlText(match[3] ?? '')
-}
-
-function readXmlAttr(attrs: string, name: string): string | undefined {
-	const match = attrs.match(new RegExp(String.raw`\s${name}="([^"]*)"`))
-	return match?.[1]
 }
 
 function decodeXmlText(value: string): string {

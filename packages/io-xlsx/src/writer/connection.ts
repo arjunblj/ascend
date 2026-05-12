@@ -1,5 +1,5 @@
 import type { WorkbookConnectionPartInfo } from '@ascend/core'
-import { escapeXml } from '../xml.ts'
+import { readNumberXmlAttr, readXmlAttr, setXmlAttr } from './xml-attrs.ts'
 
 const XML_NAME = String.raw`[A-Za-z_][\w.-]*`
 const PREFIXED_TAG = `(?:${XML_NAME}:)?`
@@ -58,15 +58,7 @@ function updateConnectionAttrs(attrs: string, part: WorkbookConnectionPartInfo):
 }
 
 function readNumberAttr(attrs: string, name: string): number | undefined {
-	const value = readXmlAttr(attrs, name)
-	if (value === undefined) return undefined
-	const parsed = Number(value)
-	return Number.isFinite(parsed) ? parsed : undefined
-}
-
-function readXmlAttr(attrs: string, name: string): string | undefined {
-	const match = attrs.match(new RegExp(String.raw`\s${name}="([^"]*)"`))
-	return match?.[1]
+	return readNumberXmlAttr(attrs, name)
 }
 
 function setOptionalBoolAttr(attrs: string, name: string, value: boolean | undefined): string {
@@ -77,11 +69,4 @@ function setOptionalBoolAttr(attrs: string, name: string, value: boolean | undef
 function setOptionalNumberAttr(attrs: string, name: string, value: number | undefined): string {
 	if (value === undefined) return attrs
 	return setXmlAttr(attrs, name, String(value))
-}
-
-function setXmlAttr(attrs: string, name: string, value: string): string {
-	const attrText = `${name}="${escapeXml(value)}"`
-	const attrPattern = new RegExp(String.raw`\s${name}="[^"]*"`)
-	if (attrPattern.test(attrs)) return attrs.replace(attrPattern, ` ${attrText}`)
-	return `${attrs} ${attrText}`
 }

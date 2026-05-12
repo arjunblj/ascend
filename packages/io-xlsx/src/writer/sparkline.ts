@@ -7,6 +7,7 @@ import type {
 	SheetX14DataValidationInfo,
 } from '@ascend/core'
 import { escapeXml } from '../xml.ts'
+import { readXmlAttr, setXmlAttr as setXmlAttrBase, xmlAttrPattern } from './xml-attrs.ts'
 
 const XML_NAME = String.raw`[A-Za-z_][\w.-]*`
 const PREFIXED_TAG = `(?:${XML_NAME}:)?`
@@ -160,7 +161,7 @@ function setFirstSparklineText(xml: string, localName: string, value: string | u
 			return `<${tag}${attrs}>${escapeXml(value)}</${tag}>`
 		})
 	}
-	const attrRe = new RegExp(String.raw`\s${localName}="[^"]*"`)
+	const attrRe = xmlAttrPattern(localName)
 	return attrRe.test(xml) ? xml.replace(attrRe, ` ${localName}="${escapeXml(value)}"`) : xml
 }
 
@@ -422,17 +423,13 @@ function setOptionalBoolAttr(attrs: string, name: string, value: boolean | undef
 }
 
 function setXmlAttr(attrs: string, name: string, value: string): string {
-	const attrText = `${name}="${escapeXml(value)}"`
-	const attrPattern = attrRe(name)
-	if (attrPattern.test(attrs)) return attrs.replace(attrPattern, ` ${attrText}`)
-	return `${attrs} ${attrText}`
+	return setXmlAttrBase(attrs, name, value)
 }
 
 function attr(attrs: string, name: string): string | undefined {
-	const match = new RegExp(String.raw`\s${name}="([^"]*)"`).exec(attrs)
-	return match?.[1]
+	return readXmlAttr(attrs, name)
 }
 
 function attrRe(name: string): RegExp {
-	return new RegExp(String.raw`\s${name}="[^"]*"`)
+	return xmlAttrPattern(name)
 }

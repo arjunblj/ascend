@@ -1,5 +1,5 @@
 import type { PivotFieldItemInfo, PivotTableInfo } from '@ascend/core'
-import { escapeXml } from '../xml.ts'
+import { readNumberXmlAttr, removeXmlAttr, setXmlAttr } from './xml-attrs.ts'
 
 export function updatePivotTableDefinitionXml(xml: string, pivot: PivotTableInfo): string {
 	let out = updatePivotFieldItems(xml, pivot)
@@ -215,17 +215,9 @@ function syncXmlAttr(
 	name: string,
 	value: string | number | boolean | undefined,
 ): string {
-	const attrPattern = new RegExp(`\\s${name}="[^"]*"`)
-	if (value === undefined) return attrs.replace(attrPattern, '')
-	const serialized = typeof value === 'boolean' ? (value ? '1' : '0') : escapeXml(String(value))
-	const attrText = `${name}="${serialized}"`
-	if (attrPattern.test(attrs)) return attrs.replace(attrPattern, ` ${attrText}`)
-	return `${attrs} ${attrText}`
+	return value === undefined ? removeXmlAttr(attrs, name) : setXmlAttr(attrs, name, value)
 }
 
 function readNumberAttr(attrs: string, name: string): number | undefined {
-	const match = new RegExp(`\\s${name}="([^"]*)"`).exec(attrs)
-	if (!match?.[1]) return undefined
-	const parsed = Number(match[1])
-	return Number.isNaN(parsed) ? undefined : parsed
+	return readNumberXmlAttr(attrs, name)
 }

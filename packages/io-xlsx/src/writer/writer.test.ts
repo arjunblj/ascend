@@ -10,8 +10,10 @@ import { makeXlsx } from '../../test/helpers.ts'
 import type { PreservationCapsule } from '../preserve.ts'
 import { advancedFilterSparklineWorkbook } from '../reader/advanced-filter-sparkline.test.ts'
 import { readXlsx } from '../reader/index.ts'
+import { updateConnectionPartXml } from './connection.ts'
 import { writeDenseRowsXlsx, writeDenseRowsXlsxStreaming } from './dense-rows.ts'
 import { planWriteXlsx, writeXlsx, writeXlsxStreaming } from './index.ts'
+import { updatePivotCacheDefinitionXml } from './pivot-cache.ts'
 import { updatePivotTableDefinitionXml } from './pivot-table.ts'
 
 const S0 = 0 as StyleId
@@ -530,6 +532,67 @@ describe('writeXlsx', () => {
 		expect(updated).toContain(
 			'<pivotField><items count="1"><item x="2" s="1"/></items></pivotField>',
 		)
+	})
+
+	it('updates XML-legal single-quoted pivot attributes without duplicating them', () => {
+		const pivotTableXml = `<pivotTableDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <pivotFields count='1'><pivotField><items count='1'><item x='0' h='1'/></items></pivotField></pivotFields>
+  <pageFields count='1'><pageField fld='0' item='0'/></pageFields>
+</pivotTableDefinition>`
+		const updatedPivot = updatePivotTableDefinitionXml(pivotTableXml, {
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'Sheet1',
+			name: 'PivotTable1',
+			cacheId: 1,
+			fields: [{ index: 0, items: [{ index: 0, cacheIndex: 2, hidden: false }] }],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [{ index: 0, item: 1 }],
+			dataFields: [],
+		})
+
+		expect(updatedPivot).toContain('<item x="2" h="0"/>')
+		expect(updatedPivot).toContain('<pageField fld=\'0\' item="1"/>')
+		expect(updatedPivot).not.toContain("x='0'")
+		expect(updatedPivot).not.toContain("item='0' item=")
+
+		const pivotCacheXml = `<pivotCacheDefinition refreshOnLoad='0' invalid='0'><cacheSource type='worksheet'><worksheetSource sheet='Old' ref='A1:B2'/></cacheSource></pivotCacheDefinition>`
+		const updatedCache = updatePivotCacheDefinitionXml(pivotCacheXml, {
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			cacheId: 1,
+			refreshOnLoad: true,
+			invalid: false,
+			sourceSheet: 'New',
+			sourceRef: 'C1:D2',
+		})
+
+		expect(updatedCache).toContain('refreshOnLoad="1"')
+		expect(updatedCache).toContain('invalid="0"')
+		expect(updatedCache).toContain('sheet="New"')
+		expect(updatedCache).toContain('ref="C1:D2"')
+		expect(updatedCache).not.toContain("refreshOnLoad='0' refreshOnLoad=")
+		expect(updatedCache).not.toContain("sheet='Old' sheet=")
+	})
+
+	it('updates XML-legal single-quoted connection attributes without duplicating them', () => {
+		const xml = `<connections><connection id='1' name='Sales' refreshOnLoad='0' saveData='1' refreshedVersion='5'/></connections>`
+		const updated = updateConnectionPartXml(xml, [
+			{
+				kind: 'connection',
+				partPath: 'xl/connections.xml',
+				connectionId: 1,
+				name: 'Sales',
+				refreshOnLoad: true,
+				saveData: false,
+				refreshedVersion: 7,
+			},
+		])
+
+		expect(updated).toContain('refreshOnLoad="1"')
+		expect(updated).toContain('saveData="0"')
+		expect(updated).toContain('refreshedVersion="7"')
+		expect(updated).not.toContain("refreshOnLoad='0' refreshOnLoad=")
+		expect(updated).not.toContain("refreshedVersion='5' refreshedVersion=")
 	})
 
 	it('writes real Calamine pivot page-filter edits and dirties the linked cache', () => {
@@ -5823,7 +5886,7 @@ ${sparklineExtLst}
   <sheetData/>
   <extLst><ext uri="{05C60535-1F16-4fd2-B633-F4F36F0B64E0}">
     <x14:sparklineGroups>
-      <x14:sparklineGroup type="line" markers="1" high="1" displayXAxis="1">
+      <x14:sparklineGroup type='line' markers='1' high='1' displayXAxis='1'>
         <x14:sparklines><x14:sparkline><xm:f>Data!B2:B4</xm:f><xm:sqref>D2:D4</xm:sqref></x14:sparkline></x14:sparklines>
       </x14:sparklineGroup>
     </x14:sparklineGroups>
@@ -5857,6 +5920,8 @@ ${sparklineExtLst}
 		expect(sheetXml).toContain('markers="0"')
 		expect(sheetXml).toContain('high="0"')
 		expect(sheetXml).toContain('displayXAxis="0"')
+		expect(sheetXml).not.toContain("markers='1' markers=")
+		expect(sheetXml).not.toContain("displayXAxis='1' displayXAxis=")
 		expect(sheetXml).toContain('<xm:f>Data!C2:C4</xm:f>')
 		expect(sheetXml).toContain('<xm:sqref>E2:E4</xm:sqref>')
 

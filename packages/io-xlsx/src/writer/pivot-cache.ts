@@ -1,5 +1,6 @@
 import type { PivotCacheInfo } from '@ascend/core'
 import { escapeXml } from '../xml.ts'
+import { setXmlAttr } from './xml-attrs.ts'
 
 export function updatePivotCacheDefinitionXml(xml: string, cache: PivotCacheInfo): string {
 	let out = updateRootAttributes(xml, cache)
@@ -43,17 +44,4 @@ function buildWorksheetSource(cache: PivotCacheInfo): string {
 	if (cache.sourceRef !== undefined) attrs.push(`ref="${escapeXml(cache.sourceRef)}"`)
 	if (cache.sourceSheet !== undefined) attrs.push(`sheet="${escapeXml(cache.sourceSheet)}"`)
 	return `<worksheetSource ${attrs.join(' ')}/>`
-}
-
-function setXmlAttr(
-	attrs: string,
-	name: string,
-	value: string | number | boolean | undefined,
-): string {
-	if (value === undefined) return attrs
-	const serialized = typeof value === 'boolean' ? (value ? '1' : '0') : escapeXml(String(value))
-	const attrText = `${name}="${serialized}"`
-	const attrPattern = new RegExp(`\\s${name}="[^"]*"`)
-	if (attrPattern.test(attrs)) return attrs.replace(attrPattern, ` ${attrText}`)
-	return `${attrs} ${attrText}`
 }

@@ -1,5 +1,6 @@
 import type { SheetAnchorMarker, SheetImageRef } from '@ascend/core'
 import { ChunkedStringBuilder } from './chunked-string-builder.ts'
+import { readNumberXmlAttr, readXmlAttr } from './xml-attrs.ts'
 
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 const NS_XDR = 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing'
@@ -83,15 +84,7 @@ function replaceShapeTextRuns(shapeXml: string, text: string): string {
 }
 
 function readNumberAttr(attrs: string, name: string): number | undefined {
-	const value = readXmlAttr(attrs, name)
-	if (value === undefined) return undefined
-	const parsed = Number(value)
-	return Number.isFinite(parsed) ? parsed : undefined
-}
-
-function readXmlAttr(attrs: string, name: string): string | undefined {
-	const match = attrs.match(new RegExp(String.raw`\s${name}="([^"]*)"`))
-	return match?.[1]
+	return readNumberXmlAttr(attrs, name)
 }
 
 function pictureXml(image: SheetImageRef, index: number): string {

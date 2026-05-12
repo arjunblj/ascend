@@ -67,6 +67,7 @@ function borderKey(b: BorderStyle | undefined): string {
 
 import { escapeXml } from '../xml.ts'
 import { ChunkedStringBuilder } from './chunked-string-builder.ts'
+import { removeXmlAttr, setXmlAttr } from './xml-attrs.ts'
 
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
@@ -354,16 +355,16 @@ function stylesDifferOnlyByNumberFormat(
 }
 
 function patchXfNumFmt(xfXmlSource: string, numFmtId: number): string {
-	let out = xfXmlSource.replace(/numFmtId="[^"]*"/, `numFmtId="${numFmtId}"`)
+	let out = setXmlAttr(xfXmlSource, 'numFmtId', numFmtId)
 	if (!/numFmtId=/.test(out)) {
 		out = out.replace('<xf', `<xf numFmtId="${numFmtId}"`)
 	}
 	if (numFmtId === 0) {
-		out = out.replace(/\sapplyNumberFormat="[^"]*"/, '')
+		out = removeXmlAttr(out, 'applyNumberFormat')
 		return out
 	}
 	if (/applyNumberFormat=/.test(out)) {
-		return out.replace(/applyNumberFormat="[^"]*"/, 'applyNumberFormat="1"')
+		return setXmlAttr(out, 'applyNumberFormat', '1')
 	}
 	return out.replace(/<xf\b/, '<xf applyNumberFormat="1"')
 }

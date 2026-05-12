@@ -1,5 +1,6 @@
 import type { WorkbookThemeColor, WorkbookThemeMetadata } from '@ascend/core'
 import { parseThemeColorsXml, parseThemeXml } from '../reader/theme.ts'
+import { setXmlAttr } from './xml-attrs.ts'
 
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 const NS_A = 'http://schemas.openxmlformats.org/drawingml/2006/main'
@@ -132,10 +133,7 @@ function updateAttr(xml: string, tagRe: RegExp, name: string, value: string | un
 }
 
 function setAttr(attrs: string, name: string, value: string): string {
-	const escaped = escapeXml(value)
-	const attrRe = new RegExp(String.raw`\s${name}="[^"]*"`)
-	if (attrRe.test(attrs)) return attrs.replace(attrRe, ` ${name}="${escaped}"`)
-	return `${attrs} ${name}="${escaped}"`
+	return setXmlAttr(attrs, name, value)
 }
 
 function updateLatinOpenTag(

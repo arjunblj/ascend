@@ -109,4 +109,59 @@ describe('pivot refresh plans', () => {
 			recommendedOps: [],
 		})
 	})
+
+	test('cached pivot records still require refresh when output cells are not saved', () => {
+		const wb = AscendWorkbook.create()
+		const internal = wb as unknown as {
+			wb: {
+				pivotCaches: Array<Record<string, unknown>>
+				pivotTables: Array<Record<string, unknown>>
+			}
+		}
+		internal.wb.pivotCaches.push({
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			cacheId: 8,
+			recordCount: 2,
+			sourceSheet: 'Raw',
+			sourceRef: 'A1:B3',
+			fields: [
+				{ index: 0, name: 'Region' },
+				{ index: 1, name: 'Sales' },
+			],
+		})
+		internal.wb.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'Sheet1',
+			name: 'MissingOutputPivot',
+			cacheId: 8,
+			locationRef: 'A1:B3',
+			fields: [
+				{ index: 0, name: 'Region', axis: 'axisRow' },
+				{ index: 1, name: 'Sales', dataField: true },
+			],
+			rowFields: [{ index: 0 }],
+			columnFields: [],
+			pageFields: [],
+			dataFields: [{ fieldIndex: 1, name: 'Sum of Sales', subtotal: 'sum' }],
+		})
+
+		const plan = wb.pivotRefreshPlans()[0]
+
+		expect(plan).toMatchObject({
+			outputState: 'not-saved',
+			requiresExternalRefresh: true,
+			recommendedOps: [
+				{
+					op: 'setPivotCache',
+					partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+					cacheId: 8,
+					refreshOnLoad: true,
+					invalid: true,
+					saveData: false,
+				},
+			],
+		})
+		expect(plan?.warnings.join('\n')).toContain('PivotTable output range(s) have no saved cells')
+		expect(wb.refreshMetadata().notSavedCount).toBe(1)
+	})
 })

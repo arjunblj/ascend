@@ -194,8 +194,12 @@ export class WorkbookReadView {
 			macroSheetCount: this.wb.macroSheets.length,
 			pivotTableCount: this.wb.pivotTables.length,
 			pivotCacheCount: this.wb.pivotCaches.length,
-			pivotRefreshPlans: buildPivotRefreshPlans(this.wb.pivotCaches, this.wb.pivotTables),
-			refreshMetadata: buildWorkbookRefreshMetadata(this.wb, this.compat),
+			pivotRefreshPlans: buildPivotRefreshPlans(this.wb, this.loadInfo.cellsHydrated),
+			refreshMetadata: buildWorkbookRefreshMetadata(
+				this.wb,
+				this.compat,
+				this.loadInfo.cellsHydrated,
+			),
 			slicerCount: this.wb.slicers.length,
 			slicerCacheCount: this.wb.slicerCaches.length,
 			timelineCount: this.wb.timelines.length,
@@ -701,11 +705,11 @@ export class WorkbookReadView {
 	}
 
 	pivotRefreshPlans(): readonly PivotRefreshPlanInfo[] {
-		return buildPivotRefreshPlans(this.wb.pivotCaches, this.wb.pivotTables)
+		return buildPivotRefreshPlans(this.wb, this.loadInfo.cellsHydrated)
 	}
 
 	refreshMetadata(): WorkbookRefreshMetadataInfo {
-		return buildWorkbookRefreshMetadata(this.wb, this.compat)
+		return buildWorkbookRefreshMetadata(this.wb, this.compat, this.loadInfo.cellsHydrated)
 	}
 
 	getPivotData(query: GetPivotDataQuery): GetPivotDataResult {
@@ -1345,17 +1349,43 @@ function buildPivotOutputAudits(
 	cellsHydrated: boolean,
 ): PivotOutputAuditInfo[] {
 	const audits: PivotOutputAuditInfo[] = []
+	const context = createPivotOutputAuditContext()
 	for (const pivot of workbook.pivotTables) {
-		const audit = buildPivotOutputAudit(workbook, cellsHydrated, pivot)
+		const audit = buildPivotOutputAudit(workbook, cellsHydrated, pivot, context)
 		if (audit) audits.push(audit)
 	}
 	return audits
+}
+
+type PivotOutputAuditContext = {
+	readonly cacheRowsByKey: Map<string, readonly PivotCacheMaterializedRowInfo[]>
+}
+
+function createPivotOutputAuditContext(): PivotOutputAuditContext {
+	return { cacheRowsByKey: new Map() }
+}
+
+function pivotOutputAuditCacheRows(
+	context: PivotOutputAuditContext,
+	cache: PivotCacheInfo,
+): readonly PivotCacheMaterializedRowInfo[] {
+	const key = pivotOutputAuditCacheKey(cache)
+	const cached = context.cacheRowsByKey.get(key)
+	if (cached) return cached
+	const rows = buildPivotCacheRows([cache], {})
+	context.cacheRowsByKey.set(key, rows)
+	return rows
+}
+
+function pivotOutputAuditCacheKey(cache: PivotCacheInfo): string {
+	return `${cache.partPath}\u0000${cache.cacheId ?? ''}`
 }
 
 function buildPivotOutputAudit(
 	workbook: Workbook,
 	cellsHydrated: boolean,
 	pivot: PivotTableInfo,
+	context: PivotOutputAuditContext,
 ): PivotOutputAuditInfo | undefined {
 	const base = {
 		...(pivot.name !== undefined ? { pivotTable: pivot.name } : {}),
@@ -1388,6 +1418,7 @@ function buildPivotOutputAudit(
 	const auditCache = pivotCacheWithMaterializedAuditRows(workbook, cache)
 	if (!auditCache.ok) return unsupportedPivotAudit(base, auditCache.warning)
 	cache = auditCache.value
+	const cacheRows = pivotOutputAuditCacheRows(context, cache)
 	if (pivot.dataFields.length === 0) {
 		const labelAudit = auditRowLabelOnlyPivotOutput(workbook, sheet.id, pivot, cache)
 		if (!labelAudit.ok) return unsupportedPivotAudit(base, labelAudit.warning)
@@ -1400,7 +1431,7 @@ function buildPivotOutputAudit(
 		}
 	}
 	if (isDataFieldsNestedOnRowsPivot(pivot)) {
-		const expected = aggregateDataFieldsNestedOnRowsPivotOutput(cache, pivot)
+		const expected = aggregateDataFieldsNestedOnRowsPivotOutput(cache, pivot, cacheRows)
 		if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
 		const actual = readMultiRowAxisPivotOutput(
 			workbook,
@@ -1420,7 +1451,7 @@ function buildPivotOutputAudit(
 		}
 	}
 	if (isDataFieldsOnRowsPivot(pivot)) {
-		const expected = aggregateDataFieldsOnRowsPivotOutput(cache, pivot)
+		const expected = aggregateDataFieldsOnRowsPivotOutput(cache, pivot, cacheRows)
 		if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
 		const actual = readDataFieldsOnRowsPivotOutput(
 			workbook,
@@ -1440,7 +1471,7 @@ function buildPivotOutputAudit(
 		}
 	}
 	if (isDataFieldsOnColumnsPivot(pivot)) {
-		const expected = aggregateDataFieldsOnColumnsPivotOutput(cache, pivot)
+		const expected = aggregateDataFieldsOnColumnsPivotOutput(cache, pivot, cacheRows)
 		if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
 		const actual = readMultiRowAxisPivotOutput(
 			workbook,
@@ -1460,7 +1491,7 @@ function buildPivotOutputAudit(
 		}
 	}
 	if (isDataFieldsOnlyColumnsPivot(pivot)) {
-		const expected = aggregateDataFieldsOnlyColumnsPivotOutput(cache, pivot)
+		const expected = aggregateDataFieldsOnlyColumnsPivotOutput(cache, pivot, cacheRows)
 		if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
 		const actual = readMultiRowAxisPivotOutput(
 			workbook,
@@ -1480,7 +1511,7 @@ function buildPivotOutputAudit(
 		}
 	}
 	if (isAxisItemMatrixPivot(pivot)) {
-		const expected = aggregateMultiRowAxisPivotOutput(cache, pivot)
+		const expected = aggregateMultiRowAxisPivotOutput(cache, pivot, cacheRows)
 		if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
 		const actual = readMultiRowAxisPivotOutput(
 			workbook,
@@ -1500,7 +1531,7 @@ function buildPivotOutputAudit(
 		}
 	}
 	if (isMultiRowAxisSingleDataPivot(pivot)) {
-		const expected = aggregateMultiRowAxisSingleDataPivotOutput(cache, pivot)
+		const expected = aggregateMultiRowAxisSingleDataPivotOutput(cache, pivot, cacheRows)
 		if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
 		const actual = readMultiRowAxisPivotOutput(
 			workbook,
@@ -1531,7 +1562,7 @@ function buildPivotOutputAudit(
 	const rowFieldIndex = pivot.rowFields[0]?.index
 	const rowField = rowFieldIndex === undefined ? undefined : cache.fields[rowFieldIndex]
 	if (!rowField) return unsupportedPivotAudit(base, 'Pivot row field metadata was not found.')
-	const expected = aggregateSimplePivotOutput(cache, pivot, rowField.index)
+	const expected = aggregateSimplePivotOutput(cache, pivot, rowField.index, cacheRows)
 	if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
 	const actual = readSimplePivotOutput(workbook, sheet.id, pivot, expected.value.dataFieldNames)
 	if (!actual.ok) return unsupportedPivotAudit(base, actual.warning)
@@ -1822,6 +1853,7 @@ function auditRowLabelOnlyPivotOutput(
 function aggregateDataFieldsOnRowsPivotOutput(
 	cache: PivotCacheInfo,
 	pivot: PivotTableInfo,
+	cacheRows: readonly PivotCacheMaterializedRowInfo[],
 ):
 	| {
 			ok: true
@@ -1849,7 +1881,7 @@ function aggregateDataFieldsOnRowsPivotOutput(
 		for (const column of columns.value) byColumn.set(column.key, 0)
 		output.set(dataFieldName, byColumn)
 	}
-	for (const row of buildPivotCacheRows([cache], {})) {
+	for (const row of cacheRows) {
 		if (!pivotCacheRowMatchesFilters(row, pageFilters.value)) continue
 		for (const column of columns.value) {
 			if (!column.matches(row)) continue
@@ -1951,6 +1983,7 @@ interface PivotDataFieldRowOutputItem extends PivotAxisOutputItem {
 function aggregateDataFieldsNestedOnRowsPivotOutput(
 	cache: PivotCacheInfo,
 	pivot: PivotTableInfo,
+	cacheRows: readonly PivotCacheMaterializedRowInfo[],
 ):
 	| {
 			ok: true
@@ -1979,14 +2012,14 @@ function aggregateDataFieldsNestedOnRowsPivotOutput(
 		for (const column of columnItems) byColumn.set(column.key, 0)
 		output.set(row.key, byColumn)
 	}
-	for (const cacheRow of buildPivotCacheRows([cache], {})) {
+	const rowMatcher = buildPivotAxisOutputMatcher(rows.value)
+	const columnMatcher = buildPivotAxisOutputMatcher(columnItems)
+	for (const cacheRow of cacheRows) {
 		if (!pivotCacheRowMatchesFilters(cacheRow, pageFilters.value)) continue
-		for (const rowItem of rows.value) {
-			if (!pivotCacheRowMatchesFilters(cacheRow, rowItem.filters)) continue
+		for (const rowItem of matchingPivotAxisOutputItems(cacheRow, rowMatcher)) {
 			const measured = measurePivotDataField(cache, cacheRow, rowItem.dataField)
 			if (!measured.ok) return measured
-			for (const columnItem of columnItems) {
-				if (!pivotCacheRowMatchesFilters(cacheRow, columnItem.filters)) continue
+			for (const columnItem of matchingPivotAxisOutputItems(cacheRow, columnMatcher)) {
 				addPivotOutput(output, rowItem.key, columnItem.key, measured.value)
 			}
 		}
@@ -2106,6 +2139,7 @@ function pivotDataFieldRowKey(
 function aggregateDataFieldsOnColumnsPivotOutput(
 	cache: PivotCacheInfo,
 	pivot: PivotTableInfo,
+	cacheRows: readonly PivotCacheMaterializedRowInfo[],
 ):
 	| {
 			ok: true
@@ -2132,12 +2166,12 @@ function aggregateDataFieldsOnColumnsPivotOutput(
 		for (const column of columns.value) byColumn.set(column.key, 0)
 		output.set(row.key, byColumn)
 	}
-	for (const row of buildPivotCacheRows([cache], {})) {
+	const rowMatcher = buildPivotAxisOutputMatcher(rows.value)
+	const columnMatcher = buildPivotAxisOutputMatcher(columns.value)
+	for (const row of cacheRows) {
 		if (!pivotCacheRowMatchesFilters(row, pageFilters.value)) continue
-		for (const rowItem of rows.value) {
-			if (!pivotCacheRowMatchesFilters(row, rowItem.filters)) continue
-			for (const columnItem of columns.value) {
-				if (!pivotCacheRowMatchesFilters(row, columnItem.filters)) continue
+		for (const rowItem of matchingPivotAxisOutputItems(row, rowMatcher)) {
+			for (const columnItem of matchingPivotAxisOutputItems(row, columnMatcher)) {
 				const measured = measurePivotDataField(cache, row, columnItem.dataField)
 				if (!measured.ok) return measured
 				addPivotOutput(output, rowItem.key, columnItem.key, measured.value)
@@ -2399,6 +2433,7 @@ function applyPivotDataFieldColumnShowDataAs(
 function aggregateMultiRowAxisPivotOutput(
 	cache: PivotCacheInfo,
 	pivot: PivotTableInfo,
+	cacheRows: readonly PivotCacheMaterializedRowInfo[],
 ):
 	| {
 			ok: true
@@ -2438,14 +2473,14 @@ function aggregateMultiRowAxisPivotOutput(
 		for (const column of columns.value) byColumn.set(column.key, 0)
 		output.set(row.key, byColumn)
 	}
-	for (const row of buildPivotCacheRows([cache], {})) {
+	const rowMatcher = buildPivotAxisOutputMatcher(rows.value)
+	const columnMatcher = buildPivotAxisOutputMatcher(columns.value)
+	for (const row of cacheRows) {
 		if (!pivotCacheRowMatchesFilters(row, pageFilters.value)) continue
 		const measured = measurePivotDataField(cache, row, dataField)
 		if (!measured.ok) return measured
-		for (const rowItem of rows.value) {
-			if (!pivotCacheRowMatchesFilters(row, rowItem.filters)) continue
-			for (const columnItem of columns.value) {
-				if (!pivotCacheRowMatchesFilters(row, columnItem.filters)) continue
+		for (const rowItem of matchingPivotAxisOutputItems(row, rowMatcher)) {
+			for (const columnItem of matchingPivotAxisOutputItems(row, columnMatcher)) {
 				addPivotOutput(output, rowItem.key, columnItem.key, measured.value)
 			}
 		}
@@ -2470,6 +2505,7 @@ function aggregateMultiRowAxisPivotOutput(
 function aggregateDataFieldsOnlyColumnsPivotOutput(
 	cache: PivotCacheInfo,
 	pivot: PivotTableInfo,
+	cacheRows: readonly PivotCacheMaterializedRowInfo[],
 ):
 	| {
 			ok: true
@@ -2493,10 +2529,10 @@ function aggregateDataFieldsOnlyColumnsPivotOutput(
 		for (const column of columns.value) byColumn.set(column.key, 0)
 		output.set(row.key, byColumn)
 	}
-	for (const row of buildPivotCacheRows([cache], {})) {
+	const rowMatcher = buildPivotAxisOutputMatcher(rows.value)
+	for (const row of cacheRows) {
 		if (!pivotCacheRowMatchesFilters(row, pageFilters.value)) continue
-		for (const rowItem of rows.value) {
-			if (!pivotCacheRowMatchesFilters(row, rowItem.filters)) continue
+		for (const rowItem of matchingPivotAxisOutputItems(row, rowMatcher)) {
 			for (const columnItem of columns.value) {
 				const measured = measurePivotDataField(cache, row, columnItem.dataField)
 				if (!measured.ok) return measured
@@ -2520,6 +2556,7 @@ function aggregateDataFieldsOnlyColumnsPivotOutput(
 function aggregateMultiRowAxisSingleDataPivotOutput(
 	cache: PivotCacheInfo,
 	pivot: PivotTableInfo,
+	cacheRows: readonly PivotCacheMaterializedRowInfo[],
 ):
 	| {
 			ok: true
@@ -2543,12 +2580,12 @@ function aggregateMultiRowAxisSingleDataPivotOutput(
 	for (const row of rows.value) {
 		output.set(row.key, new Map([[columnKey, 0]]))
 	}
-	for (const row of buildPivotCacheRows([cache], {})) {
+	const rowMatcher = buildPivotAxisOutputMatcher(rows.value)
+	for (const row of cacheRows) {
 		if (!pivotCacheRowMatchesFilters(row, pageFilters.value)) continue
 		const measured = measurePivotDataField(cache, row, dataField)
 		if (!measured.ok) return measured
-		for (const rowItem of rows.value) {
-			if (!pivotCacheRowMatchesFilters(row, rowItem.filters)) continue
+		for (const rowItem of matchingPivotAxisOutputItems(row, rowMatcher)) {
 			addPivotOutput(output, rowItem.key, columnKey, measured.value)
 		}
 	}
@@ -3055,6 +3092,7 @@ function aggregateSimplePivotOutput(
 	cache: PivotCacheInfo,
 	pivot: PivotTableInfo,
 	rowFieldIndex: number,
+	cacheRows: readonly PivotCacheMaterializedRowInfo[],
 ):
 	| {
 			ok: true
@@ -3075,10 +3113,10 @@ function aggregateSimplePivotOutput(
 	const output = new Map<string, Map<string, number>>()
 	const baseTotals = new Map<string, Map<string, number>>()
 	const averageTotals = new Map<string, Map<string, { sum: number; count: number }>>()
-	const rowMatcher = buildPivotRowOutputMatcher(rows.value)
-	for (const row of buildPivotCacheRows([cache], {})) {
+	const rowMatcher = buildPivotAxisOutputMatcher(rows.value)
+	for (const row of cacheRows) {
 		if (!pivotCacheRowMatchesFilters(row, pageFilters.value)) continue
-		const rowItems = matchingPivotRowOutputItems(row, rowMatcher)
+		const rowItems = matchingPivotAxisOutputItems(row, rowMatcher)
 		if (rowItems.length === 0) continue
 		for (const rowItem of rowItems) addPivotBaseTotals(cache, row, baseTotals, rowItem.key)
 		for (let i = 0; i < pivot.dataFields.length; i++) {
@@ -3133,14 +3171,16 @@ function aggregateSimplePivotOutput(
 
 type PivotAuditFilters = ReadonlyMap<number, ReadonlySet<string>>
 
-type PivotRowOutputMatcher = {
-	readonly byFieldValue: ReadonlyMap<number, ReadonlyMap<string, readonly PivotAxisOutputItem[]>>
-	readonly fallback: readonly PivotAxisOutputItem[]
+type PivotAxisOutputMatcher<T extends PivotAxisOutputItem> = {
+	readonly byFieldValue: ReadonlyMap<number, ReadonlyMap<string, readonly T[]>>
+	readonly fallback: readonly T[]
 }
 
-function buildPivotRowOutputMatcher(items: readonly PivotAxisOutputItem[]): PivotRowOutputMatcher {
-	const byFieldValue = new Map<number, Map<string, PivotAxisOutputItem[]>>()
-	const fallback: PivotAxisOutputItem[] = []
+function buildPivotAxisOutputMatcher<T extends PivotAxisOutputItem>(
+	items: readonly T[],
+): PivotAxisOutputMatcher<T> {
+	const byFieldValue = new Map<number, Map<string, T[]>>()
+	const fallback: T[] = []
 	for (const item of items) {
 		if (item.filters.size !== 1) {
 			fallback.push(item)
@@ -3169,11 +3209,11 @@ function buildPivotRowOutputMatcher(items: readonly PivotAxisOutputItem[]): Pivo
 	return { byFieldValue, fallback }
 }
 
-function matchingPivotRowOutputItems(
+function matchingPivotAxisOutputItems<T extends PivotAxisOutputItem>(
 	row: PivotCacheMaterializedRowInfo,
-	matcher: PivotRowOutputMatcher,
-): readonly PivotAxisOutputItem[] {
-	const output: PivotAxisOutputItem[] = []
+	matcher: PivotAxisOutputMatcher<T>,
+): readonly T[] {
+	const output: T[] = []
 	for (const [fieldIndex, byValue] of matcher.byFieldValue) {
 		const actualValue = row.values.find((value) => value.fieldIndex === fieldIndex)
 		const actual = actualValue ? pivotCacheDecodedFilterValue(actualValue) : undefined
@@ -4453,20 +4493,23 @@ function flattenFormulaReferences(
 }
 
 function buildPivotRefreshPlans(
-	caches: readonly PivotCacheInfo[],
-	pivots: readonly PivotTableInfo[],
+	workbook: Workbook,
+	cellsHydrated: boolean,
 ): PivotRefreshPlanInfo[] {
-	return caches.map((cache) => {
-		const pivotTables = pivots
-			.filter((pivot) => pivot.cacheId !== undefined && pivot.cacheId === cache.cacheId)
-			.map((pivot) => ({
-				partPath: pivot.partPath,
-				sheetName: pivot.sheetName,
-				...(pivot.name !== undefined ? { name: pivot.name } : {}),
-				...(pivot.locationRef !== undefined ? { locationRef: pivot.locationRef } : {}),
-			}))
-		const outputState = pivotRefreshOutputState(cache)
-		const warnings = pivotRefreshWarnings(cache, pivotTables.length, outputState)
+	return workbook.pivotCaches.map((cache) => {
+		const linkedPivots = workbook.pivotTables.filter(
+			(pivot) => pivot.cacheId !== undefined && pivot.cacheId === cache.cacheId,
+		)
+		const pivotTables = linkedPivots.map((pivot) => ({
+			partPath: pivot.partPath,
+			sheetName: pivot.sheetName,
+			...(pivot.name !== undefined ? { name: pivot.name } : {}),
+			...(pivot.locationRef !== undefined ? { locationRef: pivot.locationRef } : {}),
+		}))
+		const cacheState = pivotRefreshCacheState(cache)
+		const outputSummary = pivotRefreshOutputSummary(workbook, cellsHydrated, linkedPivots)
+		const outputState = pivotRefreshOutputState(cacheState, outputSummary)
+		const warnings = pivotRefreshWarnings(cache, pivotTables.length, outputState, outputSummary)
 		const recommendedOps = pivotRefreshRecommendedOps(cache, outputState)
 		return {
 			partPath: cache.partPath,
@@ -4501,7 +4544,7 @@ function buildPivotRefreshPlans(
 	})
 }
 
-function pivotRefreshOutputState(cache: PivotCacheInfo): PivotRefreshPlanInfo['outputState'] {
+function pivotRefreshCacheState(cache: PivotCacheInfo): PivotRefreshPlanInfo['outputState'] {
 	if (cache.invalid) return 'stale'
 	if (cache.refreshOnLoad) return 'refresh-on-open'
 	if (cache.saveData === false) return 'not-saved'
@@ -4509,10 +4552,65 @@ function pivotRefreshOutputState(cache: PivotCacheInfo): PivotRefreshPlanInfo['o
 	return 'cached'
 }
 
+type PivotOutputRefreshSummary = {
+	readonly notSavedCount: number
+	readonly unknownCount: number
+}
+
+function pivotRefreshOutputState(
+	cacheState: PivotRefreshPlanInfo['outputState'],
+	outputSummary: PivotOutputRefreshSummary,
+): PivotRefreshPlanInfo['outputState'] {
+	if (cacheState !== 'cached') return cacheState
+	if (outputSummary.notSavedCount > 0) return 'not-saved'
+	if (outputSummary.unknownCount > 0) return 'unknown'
+	return 'cached'
+}
+
+function pivotRefreshOutputSummary(
+	workbook: Workbook,
+	cellsHydrated: boolean,
+	pivots: readonly PivotTableInfo[],
+): PivotOutputRefreshSummary {
+	let notSavedCount = 0
+	let unknownCount = 0
+	for (const pivot of pivots) {
+		const state = pivotSavedOutputState(workbook, cellsHydrated, pivot)
+		if (state === 'not-saved') notSavedCount++
+		if (state === 'unknown') unknownCount++
+	}
+	return { notSavedCount, unknownCount }
+}
+
+function pivotSavedOutputState(
+	workbook: Workbook,
+	cellsHydrated: boolean,
+	pivot: PivotTableInfo,
+): 'cached' | 'not-saved' | 'unknown' {
+	if (!cellsHydrated) return 'unknown'
+	if (isEmptyPivotOutput(pivot)) return 'cached'
+	if (!pivot.locationRef) return 'unknown'
+	let bounds: RangeRef
+	try {
+		bounds = parseRange(pivot.locationRef)
+	} catch {
+		return 'unknown'
+	}
+	const sheet = workbook.sheets.find((entry) => entry.name === pivot.sheetName)
+	if (!sheet) return 'unknown'
+	for (let row = bounds.start.row; row <= bounds.end.row; row++) {
+		for (let col = bounds.start.col; col <= bounds.end.col; col++) {
+			if ((sheet.cells.get(row, col)?.value ?? EMPTY).kind !== 'empty') return 'cached'
+		}
+	}
+	return 'not-saved'
+}
+
 function pivotRefreshWarnings(
 	cache: PivotCacheInfo,
 	pivotTableCount: number,
 	outputState: PivotRefreshPlanInfo['outputState'],
+	outputSummary: PivotOutputRefreshSummary,
 ): string[] {
 	const warnings: string[] = []
 	if (outputState === 'stale') {
@@ -4524,10 +4622,24 @@ function pivotRefreshWarnings(
 		)
 	}
 	if (outputState === 'not-saved') {
-		warnings.push('Pivot cache records are not saved; a pivot-aware application must rebuild them.')
+		if (cache.saveData === false) {
+			warnings.push(
+				'Pivot cache records are not saved; a pivot-aware application must rebuild them.',
+			)
+		}
 	}
 	if (outputState === 'unknown') {
 		warnings.push('Pivot cache freshness is unknown because cache records were not inventoried.')
+	}
+	if (outputSummary.notSavedCount > 0) {
+		warnings.push(
+			`${outputSummary.notSavedCount} PivotTable output range(s) have no saved cells; a pivot-aware application must materialize them.`,
+		)
+	}
+	if (outputSummary.unknownCount > 0) {
+		warnings.push(
+			`${outputSummary.unknownCount} PivotTable output range(s) could not be inspected for saved cells.`,
+		)
 	}
 	if (pivotTableCount > 0 && (cache.sourceSheet !== undefined || cache.sourceRef !== undefined)) {
 		warnings.push(
@@ -4557,6 +4669,7 @@ function pivotRefreshRecommendedOps(
 function buildWorkbookRefreshMetadata(
 	workbook: Workbook,
 	report: CompatibilityReport,
+	cellsHydrated: boolean,
 ): WorkbookRefreshMetadataInfo {
 	const entries: WorkbookRefreshMetadataEntry[] = []
 	const calcWarnings: string[] = []
@@ -4594,7 +4707,7 @@ function buildWorkbookRefreshMetadata(
 		}
 	}
 
-	for (const plan of buildPivotRefreshPlans(workbook.pivotCaches, workbook.pivotTables)) {
+	for (const plan of buildPivotRefreshPlans(workbook, cellsHydrated)) {
 		entries.push({
 			kind: 'pivotCache',
 			partPath: plan.partPath,

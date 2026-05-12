@@ -1503,6 +1503,12 @@ function preservedFeatureNote(feature: string): string | undefined {
 	if (feature === 'preservedDocumentProperties') {
 		return 'Document property parts are preserved exactly when untouched; core, app, and custom docProps are inspectable and editable through setDocumentProperties.'
 	}
+	if (feature === 'preservedCustomXml') {
+		return 'Custom XML data and workbook XML map parts are inventoried and preserved exactly where possible; XML mappings are not semantically editable.'
+	}
+	if (feature === 'preservedRevision') {
+		return 'Workbook revision tracking parts are inventoried and preserved exactly where possible; tracked-change semantics are inspect-only.'
+	}
 	if (feature === 'preservedCustomUi') {
 		return 'Office RibbonX custom UI parts are inventoried with callback metadata and preserved; callback execution is blocked and semantic editing is not yet supported.'
 	}

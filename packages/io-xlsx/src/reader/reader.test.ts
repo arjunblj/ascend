@@ -3666,6 +3666,10 @@ ${rowEntries.join('\n')}
   <Override PartName="/xl/charts/style1.xml" ContentType="application/vnd.ms-office.chartstyle+xml"/>
   <Override PartName="/xl/charts/colors1.xml" ContentType="application/vnd.ms-office.chartcolorstyle+xml"/>
   <Override PartName="/xl/richData/richValueTypes.xml" ContentType="application/vnd.ms-excel.rdrichvaluetypes+xml"/>
+  <Override PartName="/xl/xmlMaps.xml" ContentType="application/xml"/>
+  <Override PartName="/xl/customProperty1.bin" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.customProperty"/>
+  <Override PartName="/xl/diagrams/data1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.diagramData+xml"/>
+  <Override PartName="/xl/revisions/revisionHeaders.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.revisionHeaders+xml"/>
   <Override PartName="/pivotCache/pivotCacheDefinition1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheDefinition+xml"/>
   <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
   <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
@@ -3676,6 +3680,10 @@ ${rowEntries.join('\n')}
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
   <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>
   <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain" Target="calcChain.xml"/>
+  <Relationship Id="rIdXmlMaps" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/xmlMaps" Target="xmlMaps.xml"/>
+  <Relationship Id="rIdCustomProperty" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customProperty" Target="customProperty1.bin"/>
+  <Relationship Id="rIdDiagramData" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData" Target="diagrams/data1.xml"/>
+  <Relationship Id="rIdRevisionHeaders" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/revisionHeaders" Target="revisions/revisionHeaders.xml"/>
 </Relationships>`,
 			'xl/workbook.xml': WORKBOOK_XML,
 			'xl/worksheets/sheet1.xml': SHEET_XML,
@@ -3687,6 +3695,10 @@ ${rowEntries.join('\n')}
 			'xl/charts/style1.xml': '<cs:chartStyle/>',
 			'xl/charts/colors1.xml': '<cs:colors/>',
 			'xl/richData/richValueTypes.xml': '<rvTypes/>',
+			'xl/xmlMaps.xml': '<MapInfo/>',
+			'xl/customProperty1.bin': 'custom-property-bytes',
+			'xl/diagrams/data1.xml': '<dgm:dataModel/>',
+			'xl/revisions/revisionHeaders.xml': '<headers/>',
 			'pivotCache/pivotCacheDefinition1.xml': '<pivotCacheDefinition/>',
 			'docProps/core.xml': '<cp:coreProperties/>',
 			'docProps/app.xml': '<Properties/>',
@@ -3769,8 +3781,35 @@ ${rowEntries.join('\n')}
 		).toEqual(
 			expect.objectContaining({
 				tier: 'preserved',
+				count: 2,
+				locations: ['xl/richData/richValueTypes.xml', 'xl/customProperty1.bin'],
+			}),
+		)
+		expect(
+			result.value.report.features.find((feature) => feature.feature === 'preservedCustomXml'),
+		).toEqual(
+			expect.objectContaining({
+				tier: 'preserved',
 				count: 1,
-				locations: ['xl/richData/richValueTypes.xml'],
+				locations: ['xl/xmlMaps.xml'],
+			}),
+		)
+		expect(
+			result.value.report.features.find((feature) => feature.feature === 'preservedDrawing'),
+		).toEqual(
+			expect.objectContaining({
+				tier: 'preserved',
+				count: 1,
+				locations: ['xl/diagrams/data1.xml'],
+			}),
+		)
+		expect(
+			result.value.report.features.find((feature) => feature.feature === 'preservedRevision'),
+		).toEqual(
+			expect.objectContaining({
+				tier: 'preserved',
+				count: 1,
+				locations: ['xl/revisions/revisionHeaders.xml'],
 			}),
 		)
 		expect(

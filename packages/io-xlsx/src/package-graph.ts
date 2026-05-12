@@ -182,7 +182,13 @@ export function classifyPackageFeatureFamily(
 		return 'preservedThreadedComments'
 	}
 	if (lowerPath.includes('/richdata/')) return 'preservedMetadata'
-	if (lowerPath.includes('/customproperty/')) return 'preservedMetadata'
+	if (
+		lowerPath.includes('/customproperty') ||
+		lowerContentType.includes('spreadsheetml.customproperty') ||
+		lowerRelType.endsWith('/relationships/customproperty')
+	) {
+		return 'preservedMetadata'
+	}
 	if (lowerPath.includes('/volatiledependencies/')) return 'preservedMetadata'
 	if (/(^|\/)externalLinks\//.test(path)) return 'preservedExternalLink'
 	if (/(^|\/)pivotTables\//.test(path) || /(^|\/)pivotCache\//.test(path)) {
@@ -195,6 +201,20 @@ export function classifyPackageFeatureFamily(
 	if (path.includes('/theme/')) return 'preservedTheme'
 	if (path.includes('/styles.xml')) return 'preservedStyles'
 	if (path.includes('/metadata')) return 'preservedMetadata'
+	if (path.includes('/diagrams/') || lowerRelType.includes('/relationships/diagram')) {
+		return 'preservedDrawing'
+	}
+	if (path === 'xl/xmlMaps.xml' || lowerRelType.endsWith('/relationships/xmlmaps')) {
+		return 'preservedCustomXml'
+	}
+	if (
+		path.includes('/revisions/') ||
+		lowerRelType.endsWith('/relationships/revisionheaders') ||
+		lowerRelType.endsWith('/relationships/revisionlog') ||
+		lowerRelType.endsWith('/relationships/usernames')
+	) {
+		return 'preservedRevision'
+	}
 	if (path.endsWith('/calcChain.xml')) return 'preservedCalcChain'
 	if (path.includes('/vbaProjectSignature') || path.startsWith('_xmlsignatures/')) {
 		return 'preservedSignature'

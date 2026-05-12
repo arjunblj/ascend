@@ -233,6 +233,14 @@ const COMMON_INTERNED_STRINGS = [
 
 class SparseChunk implements GridChunk {
 	private readonly slots = new Map<number, StoredSlot>()
+	private readonly rowCounts = new Uint16Array(CHUNK_SIZE)
+	private readonly rowMinCol = new Int16Array(CHUNK_SIZE)
+	private readonly rowMaxCol = new Int16Array(CHUNK_SIZE)
+
+	constructor() {
+		this.rowMinCol.fill(ROW_EMPTY_MIN)
+		this.rowMaxCol.fill(ROW_EMPTY_MAX)
+	}
 
 	get count(): number {
 		return this.slots.size
@@ -243,6 +251,9 @@ class SparseChunk implements GridChunk {
 		for (const [index, slot] of this.slots) {
 			next.slots.set(index, slot)
 		}
+		next.rowCounts.set(this.rowCounts)
+		next.rowMinCol.set(this.rowMinCol)
+		next.rowMaxCol.set(this.rowMaxCol)
 		return next
 	}
 
@@ -365,6 +376,12 @@ class SparseChunk implements GridChunk {
 	}
 
 	setSlot(localIndex: number, slot: StoredSlot): GridChunk {
+		if (!this.slots.has(localIndex)) {
+			const rowIndex = localIndex >>> CHUNK_BITS
+			const localCol = localIndex & CHUNK_MASK
+			this.rowCounts[rowIndex] = (this.rowCounts[rowIndex] ?? 0) + 1
+			this.updateRowBounds(rowIndex, localCol, true)
+		}
 		this.slots.set(localIndex, slot)
 		if (this.slots.size < SPARSE_TO_DENSE_THRESHOLD) return this
 		const dense = new DenseChunk()
@@ -375,7 +392,50 @@ class SparseChunk implements GridChunk {
 	}
 
 	delete(localIndex: number): boolean {
-		return this.slots.delete(localIndex)
+		if (!this.slots.delete(localIndex)) return false
+		const rowIndex = localIndex >>> CHUNK_BITS
+		const localCol = localIndex & CHUNK_MASK
+		this.rowCounts[rowIndex] = Math.max(0, (this.rowCounts[rowIndex] ?? 0) - 1)
+		this.updateRowBounds(rowIndex, localCol, false)
+		return true
+	}
+
+	private updateRowBounds(rowIndex: number, localCol: number, isAdd: boolean): void {
+		if (isAdd) {
+			const count = this.rowCounts[rowIndex] ?? 0
+			if (count === 1) {
+				this.rowMinCol[rowIndex] = localCol
+				this.rowMaxCol[rowIndex] = localCol
+			} else {
+				this.rowMinCol[rowIndex] = Math.min(this.rowMinCol[rowIndex] ?? ROW_EMPTY_MIN, localCol)
+				this.rowMaxCol[rowIndex] = Math.max(this.rowMaxCol[rowIndex] ?? ROW_EMPTY_MAX, localCol)
+			}
+			return
+		}
+		const count = this.rowCounts[rowIndex] ?? 0
+		if (count === 0) {
+			this.rowMinCol[rowIndex] = ROW_EMPTY_MIN
+			this.rowMaxCol[rowIndex] = ROW_EMPTY_MAX
+		} else if (
+			localCol === (this.rowMinCol[rowIndex] ?? ROW_EMPTY_MIN) ||
+			localCol === (this.rowMaxCol[rowIndex] ?? ROW_EMPTY_MAX)
+		) {
+			this.recomputeRowBounds(rowIndex)
+		}
+	}
+
+	private recomputeRowBounds(rowIndex: number): void {
+		const rowBase = rowIndex << CHUNK_BITS
+		let minC = ROW_EMPTY_MIN
+		let maxC = ROW_EMPTY_MAX
+		for (let localCol = 0; localCol <= CHUNK_MASK; localCol++) {
+			if (this.slots.has(rowBase + localCol)) {
+				minC = Math.min(minC, localCol)
+				maxC = Math.max(maxC, localCol)
+			}
+		}
+		this.rowMinCol[rowIndex] = minC
+		this.rowMaxCol[rowIndex] = maxC
 	}
 
 	forEachRow(
@@ -384,8 +444,14 @@ class SparseChunk implements GridChunk {
 		maxLocalCol: number,
 		fn: (localCol: number, slot: StoredSlot) => void,
 	): void {
+		if ((this.rowCounts[localRow] ?? 0) === 0) return
+		const rowMin = this.rowMinCol[localRow] ?? ROW_EMPTY_MIN
+		const rowMax = this.rowMaxCol[localRow] ?? ROW_EMPTY_MAX
+		if (rowMin > rowMax || rowMax < minLocalCol || rowMin > maxLocalCol) return
+		const startCol = Math.max(minLocalCol, rowMin)
+		const endCol = Math.min(maxLocalCol, rowMax)
 		const rowBase = localRow << CHUNK_BITS
-		for (let localCol = minLocalCol; localCol <= maxLocalCol; localCol++) {
+		for (let localCol = startCol; localCol <= endCol; localCol++) {
 			const slot = this.slots.get(rowBase | localCol)
 			if (slot) fn(localCol, slot)
 		}
@@ -398,8 +464,14 @@ class SparseChunk implements GridChunk {
 		stringTable: StringTable,
 		fn: (localCol: number, value: CellValue) => void,
 	): void {
+		if ((this.rowCounts[localRow] ?? 0) === 0) return
+		const rowMin = this.rowMinCol[localRow] ?? ROW_EMPTY_MIN
+		const rowMax = this.rowMaxCol[localRow] ?? ROW_EMPTY_MAX
+		if (rowMin > rowMax || rowMax < minLocalCol || rowMin > maxLocalCol) return
+		const startCol = Math.max(minLocalCol, rowMin)
+		const endCol = Math.min(maxLocalCol, rowMax)
 		const rowBase = localRow << CHUNK_BITS
-		for (let localCol = minLocalCol; localCol <= maxLocalCol; localCol++) {
+		for (let localCol = startCol; localCol <= endCol; localCol++) {
 			const slot = this.slots.get(rowBase | localCol)
 			if (slot) {
 				const value = readSlotValue(slot, stringTable)

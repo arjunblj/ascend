@@ -1836,6 +1836,87 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('deleteCols removes deleted tableColumn metadata and keeps surviving columns aligned with table ref', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.tables.push({
+			id: createTableId(),
+			name: 'ColumnDeleteTable',
+			sheetId: s.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 3 } },
+			columns: [
+				{ id: 10, name: 'Region' },
+				{ id: 11, name: 'Rep', totalsRowLabel: 'Total' },
+				{ id: 12, name: 'Amount', formula: 'SUM(A2:A4)' },
+				{ id: 13, name: 'Status' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+			autoFilter: {
+				ref: 'A1:D4',
+				columns: [
+					{ colId: 1, kind: 'filters', values: ['Ada'] },
+					{ colId: 3, kind: 'filters', values: ['Open'] },
+				],
+			},
+		})
+
+		expectOk(applyOperation(wb, { op: 'deleteCols', sheet: 'Sheet1', at: 1, count: 1 }))
+
+		expect(s.tables[0]?.ref).toEqual({
+			start: { row: 0, col: 0 },
+			end: { row: 3, col: 2 },
+		})
+		expect(s.tables[0]?.columns).toEqual([
+			{ id: 10, name: 'Region' },
+			{ id: 12, name: 'Amount', formula: 'SUM(A2:A4)' },
+			{ id: 13, name: 'Status' },
+		])
+		expect(s.tables[0]?.autoFilter).toEqual({
+			ref: 'A1:C4',
+			columns: [{ colId: 2, kind: 'filters', values: ['Open'] }],
+		})
+	})
+
+	test('insertCols adds generated tableColumn metadata for inserted columns inside a table', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.tables.push({
+			id: createTableId(),
+			name: 'ColumnInsertTable',
+			sheetId: s.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 2 } },
+			columns: [
+				{ id: 1, name: 'Region' },
+				{ id: 2, name: 'Column2' },
+				{ id: 3, name: 'Amount' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+			autoFilter: {
+				ref: 'A1:C4',
+				columns: [{ colId: 1, kind: 'filters', values: ['West'] }],
+			},
+		})
+
+		expectOk(applyOperation(wb, { op: 'insertCols', sheet: 'Sheet1', at: 1, count: 1 }))
+
+		expect(s.tables[0]?.ref).toEqual({
+			start: { row: 0, col: 0 },
+			end: { row: 3, col: 3 },
+		})
+		expect(s.tables[0]?.columns).toEqual([
+			{ id: 1, name: 'Region' },
+			{ id: 4, name: 'Column2_2' },
+			{ id: 2, name: 'Column2' },
+			{ id: 3, name: 'Amount' },
+		])
+		expect(s.tables[0]?.autoFilter).toEqual({
+			ref: 'A1:D4',
+			columns: [{ colId: 2, kind: 'filters', values: ['West'] }],
+		})
+	})
+
 	test('insertRows rewrites formulas', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

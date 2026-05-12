@@ -4,6 +4,8 @@ import type {
 	Sheet,
 	SheetAdvancedFilterInfo,
 	SortState,
+	Table,
+	TableColumn,
 } from '@ascend/core'
 import { parseRange } from '@ascend/core'
 import { rewriteSheetMetadataFormulasForShift } from './formula-rewrite.ts'
@@ -247,14 +249,77 @@ function shiftSheetTables(sheet: Sheet, axis: 'row' | 'col', at: number, delta: 
 		if (!ref) continue
 		const autoFilter = shiftAutoFilter(table.autoFilter, axis, at, delta)
 		const sortState = shiftSortState(table.sortState, axis, at, delta)
+		const columns = shiftTableColumns(sheet, table, ref, axis, at, delta)
 		const { autoFilter: _autoFilter, sortState: _tableSortState, ...shiftedTable } = table
 		sheet.tables[index] = {
 			...shiftedTable,
 			ref,
+			columns,
 			...(autoFilter ? { autoFilter } : {}),
 			...(sortState ? { sortState } : {}),
 		}
 	}
+}
+
+function shiftTableColumns(
+	sheet: Sheet,
+	table: Table,
+	nextRef: Table['ref'],
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): readonly TableColumn[] {
+	if (axis !== 'col') return table.columns.map((column) => ({ ...column }))
+	const nextStart = nextRef.start.col
+	const nextEnd = nextRef.end.col
+	const nextWidth = nextEnd - nextStart + 1
+	const shiftedByOffset = new Map<number, TableColumn>()
+	for (const [index, column] of table.columns.entries()) {
+		const oldColumn = table.ref.start.col + index
+		const nextColumn = shiftIndex(oldColumn, at, delta)
+		if (nextColumn === null || nextColumn < nextStart || nextColumn > nextEnd) continue
+		shiftedByOffset.set(nextColumn - nextStart, { ...column })
+	}
+	const hasExplicitIds = table.columns.some((column) => column.id !== undefined)
+	let nextId = Math.max(0, ...table.columns.map((column) => column.id ?? 0)) + 1
+	const usedNames = new Set(
+		[...shiftedByOffset.values()].map((column) => column.name.toLowerCase()),
+	)
+	const columns: TableColumn[] = []
+	for (let offset = 0; offset < nextWidth; offset++) {
+		const shifted = shiftedByOffset.get(offset)
+		if (shifted) {
+			columns.push(shifted)
+			continue
+		}
+		const name = nextTableColumnName(sheet, nextRef, offset, usedNames)
+		columns.push({
+			name,
+			...(hasExplicitIds ? { id: nextId++ } : {}),
+		})
+	}
+	return columns
+}
+
+function nextTableColumnName(
+	sheet: Sheet,
+	ref: Table['ref'],
+	offset: number,
+	usedNames: Set<string>,
+): string {
+	const cellValue = sheet.cells.get(ref.start.row, ref.start.col + offset)?.value
+	const base =
+		cellValue?.kind === 'string' && cellValue.value.trim() !== ''
+			? cellValue.value.trim()
+			: `Column${offset + 1}`
+	let candidate = base
+	let suffix = 2
+	while (usedNames.has(candidate.toLowerCase())) {
+		candidate = `${base}_${suffix}`
+		suffix++
+	}
+	usedNames.add(candidate.toLowerCase())
+	return candidate
 }
 
 function shiftAutoFilter(

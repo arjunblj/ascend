@@ -117,6 +117,8 @@ export interface StreamedSheetRow {
 	readonly rowHeight?: number
 }
 
+type StreamedRowMetadata = Pick<StreamedSheetRow, 'rowDef' | 'rowHeight'>
+
 export class ValueInternPool {
 	private readonly strings = new Map<string, string>()
 	private readonly stringValues = new Map<string, CellValue>()
@@ -1304,9 +1306,8 @@ function trailingBytes(
 	return bytes.length <= length ? bytes : bytes.subarray(bytes.length - length)
 }
 
-function streamedRowMetadataFromRawAttrs(
-	rowAttrsRaw: string,
-): Pick<StreamedSheetRow, 'rowDef' | 'rowHeight'> {
+function streamedRowMetadataFromRawAttrs(rowAttrsRaw: string): StreamedRowMetadata | undefined {
+	if (!hasRowPresentationMetadataInRange(rowAttrsRaw, 0, rowAttrsRaw.length)) return undefined
 	const rowHeight = rawNumAttr(rowAttrsRaw, 'ht')
 	const hidden = rawBoolAttr(rowAttrsRaw, 'hidden')
 	const collapsed = rawBoolAttr(rowAttrsRaw, 'collapsed')
@@ -1326,7 +1327,8 @@ function streamedRowMetadataFromRawByteAttrs(
 	bytes: Uint8Array,
 	start: number,
 	end: number,
-): Pick<StreamedSheetRow, 'rowDef' | 'rowHeight'> {
+): StreamedRowMetadata | undefined {
+	if (!hasRowPresentationMetadataBytes(bytes, start, end)) return undefined
 	const rowHeight = rawNumAttrInBytes(bytes, start, end, 'ht')
 	const hidden = rawBoolAttrInBytes(bytes, start, end, 'hidden')
 	const collapsed = rawBoolAttrInBytes(bytes, start, end, 'collapsed')
@@ -1344,9 +1346,9 @@ function streamedRowMetadataFromRawByteAttrs(
 
 function withStreamedRowMetadata(
 	row: StreamedSheetRow,
-	metadata: Pick<StreamedSheetRow, 'rowDef' | 'rowHeight'>,
+	metadata: StreamedRowMetadata | undefined,
 ): StreamedSheetRow {
-	return metadata.rowDef || metadata.rowHeight !== undefined ? { ...row, ...metadata } : row
+	return metadata ? { ...row, ...metadata } : row
 }
 
 function parseStreamedValuesRowBytes(

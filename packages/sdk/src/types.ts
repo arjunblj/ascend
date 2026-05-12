@@ -1181,6 +1181,19 @@ export interface WritePlanInfo {
 		sheet: number
 	}>
 	readonly sheetPartCounts: Readonly<Record<string, number>>
+	readonly parts: readonly WritePlanPartInfo[]
+	readonly skippedCapsules: readonly string[]
+}
+
+export interface WritePlanPartInfo {
+	readonly path: string
+	readonly owner:
+		| { readonly kind: 'package' }
+		| { readonly kind: 'workbook' }
+		| { readonly kind: 'sheet'; readonly sheetName: string }
+	readonly origin: 'generated' | 'preserved-inline' | 'preserved-source' | 'capsule'
+	readonly contentType?: string
+	readonly streaming: boolean
 }
 
 export interface CheckResult {

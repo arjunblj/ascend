@@ -16,6 +16,14 @@ export interface WritePartDescriptor {
 	readonly streamingBuild?: (onChunk: (chunk: string) => void) => void
 }
 
+export interface WritePlanPartSummary {
+	readonly path: string
+	readonly owner: WritePartOwner
+	readonly origin: WritePartOrigin
+	readonly contentType?: string
+	readonly streaming: boolean
+}
+
 export interface WritePlanResult {
 	readonly parts: ReadonlyMap<string, Uint8Array>
 	readonly descriptors: readonly WritePartDescriptor[]
@@ -28,6 +36,8 @@ export interface WritePlanSummary {
 	readonly byOrigin: Readonly<Record<WritePartOrigin, number>>
 	readonly byOwnerKind: Readonly<Record<WritePartOwner['kind'], number>>
 	readonly sheetPartCounts: Readonly<Record<string, number>>
+	readonly parts: readonly WritePlanPartSummary[]
+	readonly skippedCapsules: readonly string[]
 }
 
 export class WritePlanBuilder {
@@ -120,5 +130,13 @@ export function summarizeWritePlan(plan: WritePlanResult): WritePlanSummary {
 		byOrigin,
 		byOwnerKind,
 		sheetPartCounts,
+		parts: plan.descriptors.map((descriptor) => ({
+			path: descriptor.path,
+			owner: descriptor.owner,
+			origin: descriptor.origin,
+			...(descriptor.contentType ? { contentType: descriptor.contentType } : {}),
+			streaming: descriptor.streamingBuild !== undefined,
+		})),
+		skippedCapsules: [...plan.skippedCapsulePaths].sort(),
 	}
 }

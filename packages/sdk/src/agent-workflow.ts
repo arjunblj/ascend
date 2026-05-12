@@ -29,6 +29,7 @@ export interface AgentPlanResult {
 	readonly check: ReturnType<AscendWorkbook['check']>
 	readonly lint: ReturnType<AscendWorkbook['lint']>
 	readonly preservation: ReturnType<AscendWorkbook['writePlanSummary']>
+	readonly writePolicy: WritePolicyReport
 	readonly unsupportedFeatures: readonly unknown[]
 	readonly lossAudit: LossAudit
 	readonly packageGraphAudit: PackageGraphAudit
@@ -61,6 +62,7 @@ export interface AgentCommitResult {
 	readonly check: ReturnType<AscendWorkbook['check']>
 	readonly lint: ReturnType<AscendWorkbook['lint']>
 	readonly preservation: ReturnType<AscendWorkbook['writePlanSummary']>
+	readonly writePolicy: WritePolicyReport
 	readonly postWrite: AgentPostWriteVerification
 	readonly lossAudit: LossAudit
 	readonly packageGraphAudit: PackageGraphAudit
@@ -106,6 +108,41 @@ export interface PackageGraphAudit {
 	readonly ok: boolean
 	readonly issues: readonly XlsxPackageGraphFidelityIssue[]
 	readonly policy: 'read-integrity' | 'safe-edit-roundtrip'
+}
+
+export interface WritePolicyReport {
+	readonly ok: boolean
+	readonly diagnostics: readonly WritePolicyDiagnostic[]
+	readonly summary: {
+		readonly generatedParts: number
+		readonly copiedThroughParts: number
+		readonly skippedCapsules: number
+		readonly invalidatedSignatures: number
+		readonly approvalRequiredFeatures: number
+		readonly packageGraphIssues: number
+		readonly calcChainPolicy: 'not-present' | 'preserved' | 'discarded-for-formula-topology'
+	}
+}
+
+export interface WritePolicyDiagnostic {
+	readonly code:
+		| 'generated-replacement-parts'
+		| 'copied-through-package-parts'
+		| 'skipped-preservation-capsules'
+		| 'signature-invalidation'
+		| 'calc-chain-preserved'
+		| 'calc-chain-discarded'
+		| 'active-content-preserved'
+		| 'visual-sidecar-preservation-risk'
+		| 'package-graph-audit-issue'
+		| 'approval-required-feature'
+	readonly severity: 'info' | 'warning' | 'blocker'
+	readonly message: string
+	readonly suggestedAction: string
+	readonly partPaths?: readonly string[]
+	readonly featureFamily?: string
+	readonly ownerScope?: XlsxPackageOwnerScope
+	readonly preservationPolicy?: XlsxPackageLossPolicy
 }
 
 export interface AgentWorkflowTrace {
@@ -173,6 +210,7 @@ export interface AgentModelOutput {
 		readonly packageGraphIssues?: number
 		readonly postWritePackageGraphIssues?: number
 		readonly preservationParts?: number
+		readonly writePolicyDiagnostics?: number
 	}
 }
 
@@ -239,8 +277,16 @@ export async function createAgentPlan(
 	const lint = wb.lint()
 	await progressFromPhase(lintPhase(lint), progress)
 	await progress('preservation-audit', 'started', 'Summarizing package preservation.')
-	const preservation = wb.writePlanSummary()
+	const preservation = preview.writePlan ?? wb.writePlanSummary()
 	await progressFromPhase(preservationPhase(preservation), progress)
+	await progress('write-policy', 'started', 'Explaining write preservation and loss policy.')
+	const writePolicy = buildWritePolicyReport(
+		wb.report.features,
+		packageGraph,
+		preservation,
+		packageGraphAudit,
+	)
+	await progressFromPhase(writePolicyPhase(writePolicy), progress)
 	const planDigest = digestPlan(inputSha256, ops)
 	await progress('finalize', 'ok', 'Plan digest and trace finalized.')
 	const trace = finalizeTrace({
@@ -258,6 +304,7 @@ export async function createAgentPlan(
 			packageGraphAuditPhase(packageGraphAudit),
 			approvalPhase(approvals),
 			preservationPhase(preservation),
+			writePolicyPhase(writePolicy),
 		],
 		artifacts: [
 			artifact('ops', ops, `${ops.length} operation(s)`),
@@ -270,6 +317,11 @@ export async function createAgentPlan(
 			),
 			artifact('approvals', approvals, `${approvals.length} approval requirement(s)`),
 			artifact('preservation', preservation, `${preservation.totalParts} package part(s)`),
+			artifact(
+				'writePolicy',
+				writePolicy,
+				`${writePolicy.diagnostics.length} write policy diagnostic(s)`,
+			),
 		],
 	})
 	return {
@@ -285,6 +337,7 @@ export async function createAgentPlan(
 		check,
 		lint,
 		preservation,
+		writePolicy,
 		unsupportedFeatures: wb.report.features,
 		lossAudit,
 		packageGraphAudit,
@@ -399,6 +452,14 @@ export async function commitAgentPlan(
 	await progress('preservation-audit', 'started', 'Summarizing package preservation.')
 	const preservation = wb.writePlanSummary()
 	await progressFromPhase(preservationPhase(preservation), progress)
+	await progress('write-policy', 'started', 'Explaining write preservation and loss policy.')
+	const writePolicy = buildWritePolicyReport(
+		wb.report.features,
+		packageGraph,
+		preservation,
+		packageGraphAudit,
+	)
+	await progressFromPhase(writePolicyPhase(writePolicy), progress)
 	const sourceBytes = await readFile(file)
 	await progress('write', 'started', `Writing workbook to ${output}.`)
 	await writeWorkbookAtomically(wb, output)
@@ -438,6 +499,7 @@ export async function commitAgentPlan(
 			applyPhase(apply),
 			recalcPhase(recalc),
 			preservationPhase(preservation),
+			writePolicyPhase(writePolicy),
 			okPhase('write', `Workbook written to ${output}.`),
 			postWritePhase(postWrite),
 			checkPhase(check),
@@ -459,6 +521,11 @@ export async function commitAgentPlan(
 			),
 			artifact('approvals', approvals, `${approvals.length} approval requirement(s)`),
 			artifact('preservation', preservation, `${preservation.totalParts} package part(s)`),
+			artifact(
+				'writePolicy',
+				writePolicy,
+				`${writePolicy.diagnostics.length} write policy diagnostic(s)`,
+			),
 			artifact(
 				'postWrite',
 				postWrite,
@@ -485,6 +552,7 @@ export async function commitAgentPlan(
 		check,
 		lint,
 		preservation,
+		writePolicy,
 		postWrite,
 		lossAudit,
 		packageGraphAudit,
@@ -916,6 +984,36 @@ function preservationPhase(
 	)
 }
 
+function writePolicyPhase(writePolicy: WritePolicyReport): AgentTracePhase {
+	const blockers = writePolicy.diagnostics.filter((diagnostic) => diagnostic.severity === 'blocker')
+	if (blockers.length > 0) {
+		return phaseResult(
+			'write-policy',
+			'blocked',
+			`${blockers.length} write policy blocker(s) require action before commit.`,
+			blockers.length,
+			writePolicy,
+		)
+	}
+	const warnings = writePolicy.diagnostics.filter((diagnostic) => diagnostic.severity === 'warning')
+	if (warnings.length > 0) {
+		return phaseResult(
+			'write-policy',
+			'warning',
+			`${warnings.length} write policy warning(s) require inspection.`,
+			warnings.length,
+			writePolicy,
+		)
+	}
+	return phaseResult(
+		'write-policy',
+		'ok',
+		'Write policy has no warning or blocker diagnostics.',
+		writePolicy.diagnostics.length,
+		writePolicy,
+	)
+}
+
 function postWritePhase(postWrite: AgentPostWriteVerification): AgentTracePhase {
 	const checkErrors = postWrite.check.issues.filter((issue) => issue.severity === 'error')
 	if (!postWrite.valid || checkErrors.length > 0) {
@@ -988,6 +1086,7 @@ function modelOutputFromTrace(trace: AgentWorkflowTrace): AgentModelOutput {
 	setCount(counts, 'packageGraphIssues', phaseCount(trace, 'package-graph-audit', 'warning'))
 	setCount(counts, 'postWritePackageGraphIssues', postWritePackageGraphIssueCount(trace))
 	setCount(counts, 'preservationParts', phaseCount(trace, 'preservation-audit'))
+	setCount(counts, 'writePolicyDiagnostics', phaseCount(trace, 'write-policy'))
 	return {
 		summary: blocked
 			? `${trace.kind} needs attention before it can be treated as safe.`
@@ -1036,6 +1135,12 @@ function buildNextActions(trace: AgentWorkflowTrace): string[] {
 			'Compare the output workbook hash and retain the traceDigest with the edit record.',
 		]
 	}
+	if (trace.phases.some((phase) => phase.phase === 'write-policy' && phase.status === 'warning')) {
+		return [
+			'Inspect writePolicy.diagnostics before committing around invalidated or copied-through package features.',
+			...(trace.kind === 'plan' ? ['Commit with this planDigest and inputSha256 when ready.'] : []),
+		]
+	}
 	if (
 		trace.phases.some(
 			(phase) => phase.phase === 'package-graph-audit' && phase.status === 'warning',
@@ -1069,6 +1174,205 @@ function packageGraphAuditFromDetails(details: unknown): PackageGraphAudit | und
 		return undefined
 	}
 	return audit as PackageGraphAudit
+}
+
+function buildWritePolicyReport(
+	features: readonly FeatureReport[],
+	packageGraph: XlsxPackageGraph,
+	preservation: ReturnType<AscendWorkbook['writePlanSummary']>,
+	packageGraphAudit: PackageGraphAudit,
+): WritePolicyReport {
+	const diagnostics: WritePolicyDiagnostic[] = []
+	const copiedThroughParts = preservation.parts.filter((part) => part.origin !== 'generated')
+	const generatedParts = preservation.parts.filter((part) => part.origin === 'generated')
+	const skipped = preservation.skippedCapsules
+	if (generatedParts.length > 0) {
+		diagnostics.push({
+			code: 'generated-replacement-parts',
+			severity: 'info',
+			message: `${generatedParts.length} package part(s) will be generated or regenerated by Ascend.`,
+			suggestedAction:
+				'Inspect preservation.parts where origin is generated when auditing replacement package XML.',
+			partPaths: generatedParts.map((part) => part.path),
+		})
+	}
+	if (copiedThroughParts.length > 0) {
+		diagnostics.push({
+			code: 'copied-through-package-parts',
+			severity: 'info',
+			message: `${copiedThroughParts.length} package part(s) will be copied through from preserved source or capsule bytes.`,
+			suggestedAction:
+				'Expect byte-preservation audit coverage for copied-through package parts after write.',
+			partPaths: copiedThroughParts.map((part) => part.path),
+		})
+	}
+	const signatureParts = packageGraph.parts.filter(
+		(part) => part.featureFamily === 'preservedSignature',
+	)
+	const skippedSignatureParts = signatureParts.filter((part) => skipped.includes(part.path))
+	if (skippedSignatureParts.length > 0) {
+		diagnostics.push({
+			code: 'signature-invalidation',
+			severity: 'warning',
+			message: `${skippedSignatureParts.length} digital signature package part(s) will be omitted because generated edits invalidate signed package content.`,
+			suggestedAction:
+				'Commit only with explicit approval and re-sign the workbook outside Ascend if a trusted signature is required.',
+			partPaths: skippedSignatureParts.map((part) => part.path),
+			featureFamily: 'preservedSignature',
+			preservationPolicy: 'invalidate-on-edit',
+		})
+	}
+	const calcChainParts = packageGraph.parts.filter(
+		(part) => part.featureFamily === 'preservedCalcChain',
+	)
+	const skippedCalcChainParts = calcChainParts.filter((part) => skipped.includes(part.path))
+	const calcChainPolicy =
+		calcChainParts.length === 0
+			? 'not-present'
+			: skippedCalcChainParts.length > 0
+				? 'discarded-for-formula-topology'
+				: 'preserved'
+	if (skippedCalcChainParts.length > 0) {
+		diagnostics.push({
+			code: 'calc-chain-discarded',
+			severity: 'warning',
+			message:
+				'The imported calculation chain will be discarded because the planned edit changes formula topology or recalculation freshness.',
+			suggestedAction:
+				'Allow Excel or another spreadsheet application to rebuild calcChain on open; do not treat the old order as authoritative.',
+			partPaths: skippedCalcChainParts.map((part) => part.path),
+			featureFamily: 'preservedCalcChain',
+			preservationPolicy: 'discard-on-recalc',
+		})
+	} else if (calcChainParts.length > 0) {
+		diagnostics.push({
+			code: 'calc-chain-preserved',
+			severity: 'info',
+			message:
+				'The imported calculation chain is planned for preservation because this edit does not alter formula topology.',
+			suggestedAction:
+				'Post-write package graph audit should confirm the calcChain part and workbook relationship survive.',
+			partPaths: calcChainParts.map((part) => part.path),
+			featureFamily: 'preservedCalcChain',
+			preservationPolicy: 'discard-on-recalc',
+		})
+	}
+	const skippedNonSignatureCalc = skipped.filter(
+		(path) =>
+			!signatureParts.some((part) => part.path === path) &&
+			!calcChainParts.some((part) => part.path === path) &&
+			!preservation.parts.some((part) => part.path === path),
+	)
+	if (skippedNonSignatureCalc.length > 0) {
+		diagnostics.push({
+			code: 'skipped-preservation-capsules',
+			severity: 'warning',
+			message: `${skippedNonSignatureCalc.length} preservation capsule(s) will not be copied into the written package.`,
+			suggestedAction:
+				'Inspect skippedCapsules and confirm each skipped part is intentionally regenerated or no longer package-reachable.',
+			partPaths: skippedNonSignatureCalc,
+		})
+	}
+	for (const part of packageGraph.parts.filter((part) =>
+		isActiveContentFeature(part.featureFamily),
+	)) {
+		diagnostics.push({
+			code: 'active-content-preserved',
+			severity: 'warning',
+			message: `${part.featureFamily} part ${part.path} is active or security-sensitive content planned for preservation, not execution.`,
+			suggestedAction:
+				'Require explicit approval before writing and never imply macro, ActiveX, callback, or protected-payload execution support.',
+			partPaths: [part.path],
+			featureFamily: part.featureFamily,
+			ownerScope: part.ownerScope,
+			preservationPolicy: part.preservationPolicy,
+		})
+	}
+	const visualFamilies = new Set<string>()
+	const visualPartPaths: string[] = []
+	for (const part of packageGraph.parts) {
+		if (!isVisualOrAnalyticalSidecar(part.featureFamily)) continue
+		visualFamilies.add(part.featureFamily)
+		visualPartPaths.push(part.path)
+	}
+	if (visualPartPaths.length > 0) {
+		diagnostics.push({
+			code: 'visual-sidecar-preservation-risk',
+			severity: 'warning',
+			message: `${visualPartPaths.length} chart, drawing, pivot, slicer, or timeline sidecar part(s) require post-write preservation audit.`,
+			suggestedAction:
+				'Inspect postWrite.packageGraphAudit before treating visuals or analytical caches as fidelity-safe.',
+			partPaths: visualPartPaths,
+			featureFamily: [...visualFamilies].sort().join(','),
+			preservationPolicy: 'preserve-exact',
+		})
+	}
+	if (!packageGraphAudit.ok) {
+		diagnostics.push({
+			code: 'package-graph-audit-issue',
+			severity: 'warning',
+			message: `${packageGraphAudit.issues.length} package graph issue(s) were found before write planning.`,
+			suggestedAction:
+				'Inspect packageGraphAudit.issues and resolve or explicitly accept package graph risk before committing.',
+			partPaths: packageGraphAudit.issues.flatMap((issue) =>
+				issue.partPath ? [issue.partPath] : [],
+			),
+		})
+	}
+	for (const feature of features) {
+		if (feature.tier !== 'preserved' && feature.tier !== 'unsupported') continue
+		if (isSafePackagePreservationFeature(feature)) continue
+		diagnostics.push({
+			code: 'approval-required-feature',
+			severity: 'warning',
+			message: `${feature.feature} (${feature.tier}) requires explicit approval before write.`,
+			suggestedAction:
+				'Inspect plan.approvals and pass only the corresponding approval id or allow-loss entry when intentional.',
+			partPaths: feature.locations,
+			featureFamily: feature.feature,
+		})
+	}
+	const warningsOrBlockers = diagnostics.some((diagnostic) => diagnostic.severity !== 'info')
+	return {
+		ok: !warningsOrBlockers,
+		diagnostics,
+		summary: {
+			generatedParts: generatedParts.length,
+			copiedThroughParts: copiedThroughParts.length,
+			skippedCapsules: skipped.length,
+			invalidatedSignatures: skippedSignatureParts.length,
+			approvalRequiredFeatures: diagnostics.filter(
+				(diagnostic) => diagnostic.code === 'approval-required-feature',
+			).length,
+			packageGraphIssues: packageGraphAudit.issues.length,
+			calcChainPolicy,
+		},
+	}
+}
+
+function isActiveContentFeature(featureFamily: string): boolean {
+	return (
+		featureFamily === 'preservedMacro' ||
+		featureFamily === 'preservedActiveX' ||
+		featureFamily === 'preservedControl' ||
+		featureFamily === 'preservedCustomUi' ||
+		featureFamily === 'preservedVendorSecurity'
+	)
+}
+
+function isVisualOrAnalyticalSidecar(featureFamily: string): boolean {
+	return (
+		featureFamily === 'preservedDrawing' ||
+		featureFamily === 'preservedChart' ||
+		featureFamily === 'preservedChartSheet' ||
+		featureFamily === 'preservedChartStyle' ||
+		featureFamily === 'preservedChartColor' ||
+		featureFamily === 'preservedMedia' ||
+		featureFamily === 'preservedVml' ||
+		featureFamily === 'preservedPivot' ||
+		featureFamily === 'preservedSlicer' ||
+		featureFamily === 'preservedTimeline'
+	)
 }
 
 function buildBlockedPackageParts(

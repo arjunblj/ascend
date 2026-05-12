@@ -551,7 +551,10 @@ export function planWriteXlsx(
 					plan.skipCapsulePath(capsule.partPath)
 					continue
 				}
-				if (isCalcChainCapsule(capsule) && effectiveCalcChainDirty) continue
+				if (isCalcChainCapsule(capsule) && effectiveCalcChainDirty) {
+					plan.skipCapsulePath(capsule.partPath)
+					continue
+				}
 				if (capsule.anchor.kind === 'sheet') {
 					const sheetId: SheetId = capsule.anchor.sheetId as SheetId
 					if (!sheetNameById.has(sheetId)) continue

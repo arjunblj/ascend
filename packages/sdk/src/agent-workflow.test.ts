@@ -209,6 +209,23 @@ describe('agent workflow loss audit', () => {
 				}),
 			]),
 		)
+		expect(plan.preservation.skippedCapsules).toEqual(
+			expect.arrayContaining(['_xmlsignatures/origin.sigs', '_xmlsignatures/sig1.xml']),
+		)
+		expect(plan.writePolicy.summary.invalidatedSignatures).toBe(2)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'signature-invalidation',
+				severity: 'warning',
+				partPaths: expect.arrayContaining([
+					'_xmlsignatures/origin.sigs',
+					'_xmlsignatures/sig1.xml',
+				]),
+			}),
+		)
+		expect(plan.trace.phases.find((phase) => phase.phase === 'write-policy')?.status).toBe(
+			'warning',
+		)
 	})
 
 	test('clean workbooks commit without allow-loss', async () => {
@@ -224,6 +241,8 @@ describe('agent workflow loss audit', () => {
 			{ output },
 		)
 		expect(committed.lossAudit.ok).toBe(true)
+		expect(committed.writePolicy.ok).toBe(true)
+		expect(committed.writePolicy.diagnostics.every((entry) => entry.severity === 'info')).toBe(true)
 		expect(committed.packageGraphAudit.ok).toBe(true)
 		expect(committed.postWrite.valid).toBe(true)
 		expect(committed.postWrite.packageGraphAudit.ok).toBe(true)
@@ -234,6 +253,97 @@ describe('agent workflow loss audit', () => {
 		expect(committed.trace.artifacts.map((artifact) => artifact.name)).toContain('apply')
 		expect(committed.trace.artifacts.map((artifact) => artifact.name)).toContain('postWrite')
 		expect(committed.modelOutput.counts.operations).toBe(1)
+	})
+
+	test('plans explain calc chain preservation versus formula-topology invalidation', async () => {
+		const input = join(TEMP_DIR, 'calc-chain.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makeCalcChainXlsx())
+
+		const valueEdit = await createAgentPlan(input, [
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] },
+		])
+		expect(valueEdit.writePolicy.summary.calcChainPolicy).toBe('preserved')
+		expect(valueEdit.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'calc-chain-preserved',
+				severity: 'info',
+				partPaths: ['xl/calcChain.xml'],
+			}),
+		)
+
+		const formulaEdit = await createAgentPlan(input, [
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: '=A1*3' },
+		])
+		expect(formulaEdit.preservation.skippedCapsules).toContain('xl/calcChain.xml')
+		expect(formulaEdit.writePolicy.summary.calcChainPolicy).toBe('discarded-for-formula-topology')
+		expect(formulaEdit.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'calc-chain-discarded',
+				severity: 'warning',
+				preservationPolicy: 'discard-on-recalc',
+			}),
+		)
+	})
+
+	test('plans report preserved active content without implying execution support', async () => {
+		const input = join(TEMP_DIR, 'macro.xlsm')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makeMacroXlsx())
+
+		const plan = await createAgentPlan(input, [
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] },
+		])
+		expect(plan.lossAudit.blockedFeatures).toContainEqual(
+			expect.objectContaining({ feature: 'preservedMacro' }),
+		)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'active-content-preserved',
+				severity: 'warning',
+				featureFamily: 'preservedMacro',
+				partPaths: ['xl/vbaProject.bin'],
+			}),
+		)
+	})
+
+	test('dirty cell edits preserve visual sidecars and require post-write audit inspection', async () => {
+		const input = join(TEMP_DIR, 'visual.xlsx')
+		const output = join(TEMP_DIR, 'visual-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makeVisualXlsx())
+
+		const plan = await createAgentPlan(input, [
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 7 }] },
+		])
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'visual-sidecar-preservation-risk',
+				severity: 'warning',
+				partPaths: expect.arrayContaining(['xl/drawings/drawing1.xml', 'xl/media/image1.png']),
+			}),
+		)
+
+		const committed = await commitAgentPlan(
+			input,
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 7 }] }],
+			{ output, allowLoss: ['preservedDrawing', 'preservedMedia'] },
+		)
+		expect(committed.postWrite.packageGraphAudit.ok).toBe(true)
+		const outputGraph = inspectXlsxPackageGraph(await Bun.file(output).bytes())
+		expect(outputGraph.parts.map((part) => part.path)).toEqual(
+			expect.arrayContaining(['xl/drawings/drawing1.xml', 'xl/media/image1.png']),
+		)
+	})
+
+	test('partial workbook views cannot produce full-fidelity write plans', async () => {
+		const wb = AscendWorkbook.create()
+		const bytes = wb.toBytes()
+		const partial = await AscendWorkbook.open(bytes, { mode: 'values' })
+		expect(partial.inspect().load.isPartial).toBe(true)
+		expect(() => partial.writePlanSummary()).toThrow(
+			'Cannot export a partial workbook view. Reopen the workbook with a full load before saving or exporting.',
+		)
 	})
 
 	test('plan and commit emit ordered workflow progress events', async () => {
@@ -368,6 +478,132 @@ function makeSignedXlsx(): Uint8Array {
 				'_xmlsignatures/sig1.xml': encode(
 					`<?xml version="1.0"?><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"/>`,
 				),
+			}),
+		),
+	)
+}
+
+function makeCalcChainXlsx(): Uint8Array {
+	return createZip(
+		new Map(
+			Object.entries({
+				'[Content_Types].xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/calcChain.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.calcChain+xml"/>
+</Types>`),
+				'_rels/.rels': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+				'xl/_rels/workbook.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdCalcChain" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain" Target="calcChain.xml"/>
+</Relationships>`),
+				'xl/workbook.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet1"/></sheets>
+</workbook>`),
+				'xl/worksheets/sheet1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1"><c r="A1"><v>1</v></c><c r="B1"><f>A1*2</f><v>2</v></c></row>
+  </sheetData>
+</worksheet>`),
+				'xl/calcChain.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<calcChain xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <c r="B1" i="1"/>
+</calcChain>`),
+			}),
+		),
+	)
+}
+
+function makeMacroXlsx(): Uint8Array {
+	return createZip(
+		new Map(
+			Object.entries({
+				'[Content_Types].xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="bin" ContentType="application/vnd.ms-office.vbaProject"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.ms-excel.sheet.macroEnabled.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`),
+				'_rels/.rels': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+				'xl/_rels/workbook.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdVba" Type="http://schemas.microsoft.com/office/2006/relationships/vbaProject" Target="vbaProject.bin"/>
+</Relationships>`),
+				'xl/workbook.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet1"/></sheets>
+</workbook>`),
+				'xl/worksheets/sheet1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`),
+				'xl/vbaProject.bin': encode('vba-project-bytes'),
+			}),
+		),
+	)
+}
+
+function makeVisualXlsx(): Uint8Array {
+	return createZip(
+		new Map(
+			Object.entries({
+				'[Content_Types].xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="png" ContentType="image/png"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>
+</Types>`),
+				'_rels/.rels': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+				'xl/_rels/workbook.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`),
+				'xl/worksheets/_rels/sheet1.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdDrawing1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>
+</Relationships>`),
+				'xl/drawings/_rels/drawing1.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdImage1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/>
+</Relationships>`),
+				'xl/workbook.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet1"/></sheets>
+</workbook>`),
+				'xl/worksheets/sheet1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheetData/>
+  <drawing r:id="rIdDrawing1"/>
+</worksheet>`),
+				'xl/drawings/drawing1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:ext cx="1" cy="1"/><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="1" name="Picture 1"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rIdImage1"/></xdr:blipFill><xdr:spPr/></xdr:pic><xdr:clientData/></xdr:oneCellAnchor>
+</xdr:wsDr>`),
+				'xl/media/image1.png': encode('png-bytes'),
 			}),
 		),
 	)

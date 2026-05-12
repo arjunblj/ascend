@@ -13,6 +13,8 @@ import {
 	listCapabilities,
 	listOperations,
 	normalizeExportFormat,
+	type PivotOutputMaterializeMode,
+	type PivotOutputMaterializeOptions,
 	parseOperations,
 	summarizeCapabilities,
 	WorkbookDocument,
@@ -44,6 +46,23 @@ function requireOptionalNumber(obj: unknown, key: string): number | undefined {
 	if (obj === null || typeof obj !== 'object') return undefined
 	const v = (obj as Record<string, unknown>)[key]
 	return typeof v === 'number' && Number.isFinite(v) ? v : undefined
+}
+
+function parsePivotOutputMaterializeOptions(
+	body: Record<string, unknown> | null,
+): PivotOutputMaterializeOptions | null {
+	if (!body) return {}
+	const mode = body.mode
+	if (mode !== undefined && mode !== 'missing' && mode !== 'mismatches' && mode !== 'all') {
+		return null
+	}
+	const pivotTable = typeof body.pivotTable === 'string' ? body.pivotTable : undefined
+	const partPath = typeof body.partPath === 'string' ? body.partPath : undefined
+	return {
+		...(pivotTable ? { pivotTable } : {}),
+		...(partPath ? { partPath } : {}),
+		...(mode ? { mode: mode as PivotOutputMaterializeMode } : {}),
+	}
 }
 
 function parseAllowLoss(value: unknown): readonly string[] | 'all' | undefined {
@@ -199,6 +218,38 @@ export function createApiFetch() {
 				try {
 					const wb = await WorkbookDocument.open(file, { mode: 'full' })
 					return jsonSuccess(wb.visualInventory())
+				} catch (e) {
+					return handleError(e, file)
+				}
+			}
+
+			if (method === 'POST' && path === '/pivots') {
+				const body = await parseJson<{
+					file?: string
+					pivotTable?: string
+					partPath?: string
+					mode?: PivotOutputMaterializeMode
+				}>(req)
+				const file = body ? requireString(body, 'file') : null
+				if (!file) return jsonFailure('Missing or invalid file', 400)
+				const options = parsePivotOutputMaterializeOptions(
+					body && typeof body === 'object' ? (body as Record<string, unknown>) : null,
+				)
+				if (!options) {
+					return jsonFailure('Invalid mode. Use one of: missing, mismatches, all', 400)
+				}
+				try {
+					const wb = await WorkbookDocument.open(file, {
+						mode: 'full',
+						pivotCacheRecordMaterializeLimit: 'all',
+					})
+					return jsonSuccess({
+						pivotTables: wb.pivotTables(),
+						pivotCaches: wb.pivotCaches(),
+						pivotOutputAudits: wb.pivotOutputAudits(),
+						pivotRefreshPlans: wb.pivotRefreshPlans(),
+						pivotOutputMaterializePlan: wb.pivotOutputMaterializeOps(options),
+					})
 				} catch (e) {
 					return handleError(e, file)
 				}

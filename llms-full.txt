@@ -30,6 +30,7 @@ Use JSON for automation:
 - `ascend ops --json`
 - `ascend capabilities --json`
 - `ascend inspect <file> --json --verbose`
+- `ascend inspect <file> --detail pivots --json`
 - `ascend read <file> <selector> --json`
 - `ascend find <file> <query> --json`
 - `ascend plan <file> --ops ops.json --progress jsonl --json`
@@ -69,6 +70,7 @@ Workbook tools:
 - `ascend.read_table`
 - `ascend.find`
 - `ascend.visuals`
+- `ascend.pivots`
 - `ascend.agent_view`
 - `ascend.preview`
 - `ascend.write`

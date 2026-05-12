@@ -12,6 +12,7 @@ Core commands:
 - `ascend ops --json` lists all operation schemas, examples, invalid examples, recovery actions, and approval metadata.
 - `ascend capabilities --json` returns Excel feature coverage, priorities, OSS baseline notes, tests, gap reasons, and next milestones.
 - `ascend inspect <file> --json --verbose` opens workbook metadata and compatibility context.
+- `ascend inspect <file> --detail pivots --json` returns PivotTable inventory, saved-output audits, refresh plans, and supported output materialization `setCells` ops for safe plan/commit.
 - `ascend read <file> <selector> --json` reads ranges, tables, named ranges, cells, rows, objects, compact cells, or TSV depending on flags.
 - `ascend find <file> <query> --json` searches values and formulas.
 - `ascend plan <file> --ops ops.json --progress jsonl --json` validates operations, previews diffs, audits recalc, approvals, and preservation risk.
@@ -48,6 +49,7 @@ Use these workbook tools for normal work:
 - `ascend.read_table({ file, table, rowOffset?, rowLimit?, display? })`
 - `ascend.find({ file, query, sheet?, in?, caseSensitive?, limit? })`
 - `ascend.visuals({ file })`
+- `ascend.pivots({ file, pivotTable?, partPath?, mode? })`
 - `ascend.agent_view({ file, sheet?, range, rowChunkSize?, sampleRowLimit?, sampleValueLimit? })`
 - `ascend.plan({ file, ops })`
 - `ascend.commit({ file, ops, output?, inPlace?, backup?, expectSha256?, allowLoss?, approvals? })`

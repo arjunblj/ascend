@@ -9,6 +9,10 @@ const TEMP_FILE = join(
 	tmpdir(),
 	`ascend-mcp-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsx`,
 )
+const PIVOT_FIXTURE = join(
+	import.meta.dir,
+	'../../../fixtures/xlsx/libreoffice/PivotTable_CachedDefinitionAndDataInSync.xlsx',
+)
 
 afterAll(async () => {
 	await unlink(TEMP_FILE).catch(() => {})
@@ -46,11 +50,12 @@ describe('MCP server', () => {
 		expect(names).toContain('ascend.export')
 		expect(names).toContain('ascend.list_sheets')
 		expect(names).toContain('ascend.visuals')
+		expect(names).toContain('ascend.pivots')
 		expect(names).toContain('ascend.capabilities')
 		expect(names).toContain('ascend.plan')
 		expect(names).toContain('ascend.commit')
 		expect(names).toContain('ascend.repair_plan')
-		expect(names.length).toBe(23)
+		expect(names.length).toBe(24)
 	})
 
 	test('agent resources and prompts are registered', () => {
@@ -876,6 +881,39 @@ describe('MCP server', () => {
 		expect(result.structuredContent?.data?.sheets?.[0]).toMatchObject({
 			sheet: 'Sheet1',
 			imageCount: 0,
+		})
+	})
+
+	test('ascend.pivots returns audits and materialization operations', async () => {
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test
+		const handler = (server as any)._registeredTools['ascend.pivots'].handler as (args: {
+			file: string
+			pivotTable?: string
+		}) => Promise<{
+			structuredContent?: {
+				data?: {
+					pivotTables?: Array<{ name?: string }>
+					pivotOutputAudits?: Array<{ pivotTable?: string; status?: string }>
+					pivotOutputMaterializePlan?: {
+						ops: unknown[]
+						plannedCellCount: number
+						unsupported: unknown[]
+					}
+				}
+			}
+		}>
+
+		const result = await handler({ file: PIVOT_FIXTURE, pivotTable: 'PivotTable1' })
+		expect(result.structuredContent?.data?.pivotTables?.[0]?.name).toBe('PivotTable1')
+		expect(result.structuredContent?.data?.pivotOutputAudits?.[0]).toMatchObject({
+			pivotTable: 'PivotTable1',
+			status: 'passed',
+		})
+		expect(result.structuredContent?.data?.pivotOutputMaterializePlan).toEqual({
+			ops: [],
+			plannedCellCount: 0,
+			unsupported: [],
 		})
 	})
 

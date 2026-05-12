@@ -14,6 +14,7 @@ import {
 	inferExportFormat,
 	listCapabilities,
 	normalizeExportFormat,
+	type PivotOutputMaterializeMode,
 	parseA1,
 	parseOperations,
 	type RangeObjectsInfo,
@@ -164,6 +165,50 @@ export function createServer(): McpServer {
 				const wb = await WorkbookDocument.open(file, { mode: 'full' })
 				const inventory = wb.visualInventory()
 				return okResponse(inventory, `Inspected visual inventory for "${file}"`)
+			} catch (e) {
+				return errorResponse(
+					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
+				)
+			}
+		},
+	)
+
+	server.tool(
+		'ascend.pivots',
+		'Inspect PivotTables, cache records, saved-output audits, refresh plans, and planned setCells ops for supported output materialization',
+		{
+			file: z.string().describe('Path to workbook file'),
+			pivotTable: z.string().optional().describe('Optional PivotTable name filter'),
+			partPath: z.string().optional().describe('Optional PivotTable part path filter'),
+			mode: z
+				.enum(['missing', 'mismatches', 'all'])
+				.optional()
+				.describe(
+					'Materialization planning mode: write only missing cells, mismatched cells, or all supported output cells',
+				),
+		},
+		async ({ file, pivotTable, partPath, mode }) => {
+			try {
+				const wb = await WorkbookDocument.open(file, {
+					mode: 'full',
+					pivotCacheRecordMaterializeLimit: 'all',
+				})
+				const materializeOptions = {
+					...(pivotTable ? { pivotTable } : {}),
+					...(partPath ? { partPath } : {}),
+					...(mode ? { mode: mode as PivotOutputMaterializeMode } : {}),
+				}
+				const plan = wb.pivotOutputMaterializeOps(materializeOptions)
+				return okResponse(
+					{
+						pivotTables: wb.pivotTables(),
+						pivotCaches: wb.pivotCaches(),
+						pivotOutputAudits: wb.pivotOutputAudits(),
+						pivotRefreshPlans: wb.pivotRefreshPlans(),
+						pivotOutputMaterializePlan: plan,
+					},
+					`Planned ${plan.plannedCellCount} PivotTable output cell(s) for "${file}"`,
+				)
 			} catch (e) {
 				return errorResponse(
 					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
@@ -1043,7 +1088,7 @@ function buildAgentWorkflowGuide(): string {
 		'# Ascend Agent Workflow',
 		'',
 		'1. Inspect workbook structure with ascend.inspect or ascend.list_sheets.',
-		'2. Locate data with ascend.find, ascend.read, ascend.read_table, and ascend.visuals.',
+		'2. Locate data with ascend.find, ascend.read, ascend.read_table, ascend.visuals, and ascend.pivots for PivotTable inventory/audits/materialization ops.',
 		'3. Use ascend.search_docs or ascend.search_examples when you need command, schema, workflow, or example recovery context.',
 		'4. Fetch operation schemas from ascend.list_operations or ascend://operations.',
 		'5. Preview edits with ascend.plan before writing.',
@@ -1064,7 +1109,7 @@ function buildAgentWorkflowPrompt(file?: string, task?: string): string {
 		'',
 		'Use Ascend as the source of truth for spreadsheet structure and edit safety.',
 		'If you need recovery context, call ascend.search_docs or ascend.search_examples before guessing.',
-		'Start with ascend.inspect or ascend.list_sheets, then use ascend.read, ascend.read_table, ascend.find, and ascend.visuals to gather only the necessary workbook context.',
+		'Start with ascend.inspect or ascend.list_sheets, then use ascend.read, ascend.read_table, ascend.find, ascend.visuals, and ascend.pivots to gather only the necessary workbook context.',
 		'Before modifying anything, read ascend://operations or call ascend.list_operations and build operations that match the published schemas.',
 		'Always run ascend.plan and inspect approvals, unsupported features, preview diffs, recalc status, and modelOutput before commit.',
 		'Use ascend.commit with a non-destructive output path by default, pass expectSha256 when available, and only pass approvals or allowLoss values emitted by the plan.',

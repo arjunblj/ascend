@@ -54,15 +54,17 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 					mode: explicitMode,
 					...(sheetArg ? { sheets: [sheetArg] } : {}),
 				}
-			: workbookDetail
-				? { mode: 'full' as const }
-				: workbookStructureDetail
+			: detail === 'pivots'
+				? { mode: 'full' as const, pivotCacheRecordMaterializeLimit: 'all' as const }
+				: workbookDetail
 					? { mode: 'full' as const }
-					: detail && sheetArg
-						? { sheets: [sheetArg] }
-						: sheetArg
-							? { mode: 'values' as const, sheets: [sheetArg] }
-							: { mode: 'metadata-only' as const }
+					: workbookStructureDetail
+						? { mode: 'full' as const }
+						: detail && sheetArg
+							? { sheets: [sheetArg] }
+							: sheetArg
+								? { mode: 'values' as const, sheets: [sheetArg] }
+								: { mode: 'metadata-only' as const }
 	const { document: wb, durationMs: openMs } = await openWorkbookDocumentWithProgress(
 		file,
 		openOptions,
@@ -570,7 +572,9 @@ function printPivotDetail(wb: WorkbookDocument, json: boolean): number {
 			jsonOut({
 				pivotTables: wb.pivotTables(),
 				pivotCaches: wb.pivotCaches(),
+				pivotOutputAudits: wb.pivotOutputAudits(),
 				pivotRefreshPlans: wb.pivotRefreshPlans(),
+				pivotOutputMaterializePlan: wb.pivotOutputMaterializeOps(),
 			}),
 		)
 		return 0
@@ -637,6 +641,17 @@ function printPivotDetail(wb: WorkbookDocument, json: boolean): number {
 				),
 			)
 			for (const warning of plan.warnings) console.log(`    warning: ${warning}`)
+		}
+	}
+	const materializePlan = wb.pivotOutputMaterializeOps()
+	console.log('')
+	console.log(heading('Pivot Output Materialization'))
+	console.log(bullet('Planned cells', String(materializePlan.plannedCellCount)))
+	console.log(bullet('Operations', String(materializePlan.ops.length)))
+	if (materializePlan.unsupported.length > 0) {
+		console.log(bullet('Unsupported layouts', String(materializePlan.unsupported.length)))
+		for (const unsupported of materializePlan.unsupported) {
+			console.log(`    ${unsupported.pivotTable ?? unsupported.partPath}: ${unsupported.warning}`)
 		}
 	}
 	return 0

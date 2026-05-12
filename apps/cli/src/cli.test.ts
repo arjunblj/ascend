@@ -428,6 +428,10 @@ describe('ascend cli', () => {
 			const parsed = JSON.parse(stdout)
 			expect(parsed.data.pivotTables.length).toBeGreaterThan(0)
 			expect(parsed.data.pivotCaches.length).toBeGreaterThan(0)
+			expect(parsed.data.pivotOutputAudits.length).toBeGreaterThan(0)
+			expect(parsed.data.pivotOutputMaterializePlan.ops).toBeArray()
+			expect(parsed.data.pivotOutputMaterializePlan.unsupported).toBeArray()
+			expect(typeof parsed.data.pivotOutputMaterializePlan.plannedCellCount).toBe('number')
 			expect(parsed.data.pivotRefreshPlans.length).toBe(parsed.data.pivotCaches.length)
 			expect(parsed.data.pivotRefreshPlans[0].canRefreshHeadlessly).toBe(false)
 			expect(parsed.data.pivotRefreshPlans[0].cacheRecords).toMatchObject({

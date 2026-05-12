@@ -7,6 +7,10 @@ import { createApiFetch } from './src/server.ts'
 
 const apiFetch = createApiFetch()
 let tempDir = ''
+const PIVOT_FIXTURE = join(
+	import.meta.dir,
+	'../../fixtures/xlsx/libreoffice/PivotTable_CachedDefinitionAndDataInSync.xlsx',
+)
 
 beforeAll(() => {
 	tempDir = mkdtempSync(join(tmpdir(), 'ascend-api-test-'))
@@ -196,6 +200,27 @@ describe('API', () => {
 		expect(body.data.sheets[0].imageCount).toBeNull()
 		expect(body.data.cellCount).toBeNull()
 		expect(body.data.load.mode).toBe('metadata-only')
+	})
+
+	test('pivots endpoint exposes output audits and materialization ops for agents', async () => {
+		const res = await api(`/pivots`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ file: PIVOT_FIXTURE, pivotTable: 'PivotTable1' }),
+		})
+		expect(res.status).toBe(200)
+		const body = await res.json()
+		expect(body.ok).toBe(true)
+		expect(body.data.pivotTables[0].name).toBe('PivotTable1')
+		expect(body.data.pivotOutputAudits[0]).toMatchObject({
+			pivotTable: 'PivotTable1',
+			status: 'passed',
+		})
+		expect(body.data.pivotOutputMaterializePlan).toEqual({
+			ops: [],
+			plannedCellCount: 0,
+			unsupported: [],
+		})
 	})
 
 	test('inspect can return a values-loaded sheet summary', async () => {

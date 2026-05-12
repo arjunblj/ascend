@@ -24,6 +24,8 @@ import type {
 	PivotCacheMaterializedRowInfo,
 	PivotCacheRowsOptions,
 	PivotOutputAuditInfo,
+	PivotOutputMaterializeOpsResult,
+	PivotOutputMaterializeOptions,
 	PivotRefreshPlanInfo,
 	PivotTableInfo,
 	RangeInfo,
@@ -367,6 +369,12 @@ export class WorkbookDocument {
 		return this.view.pivotOutputAudits()
 	}
 
+	pivotOutputMaterializeOps(
+		options: PivotOutputMaterializeOptions = {},
+	): PivotOutputMaterializeOpsResult {
+		return this.view.pivotOutputMaterializeOps(options)
+	}
+
 	pivotRefreshPlans(): readonly PivotRefreshPlanInfo[] {
 		return this.view.pivotRefreshPlans()
 	}
@@ -493,6 +501,13 @@ export class WorkbookSession {
 	pivotOutputAudits(): readonly PivotOutputAuditInfo[] {
 		this.assertOpen()
 		return this.document.pivotOutputAudits()
+	}
+
+	pivotOutputMaterializeOps(
+		options: PivotOutputMaterializeOptions = {},
+	): PivotOutputMaterializeOpsResult {
+		this.assertOpen()
+		return this.document.pivotOutputMaterializeOps(options)
 	}
 
 	isStale(): boolean {

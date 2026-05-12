@@ -17,6 +17,9 @@ const corpusFileCache = new Map<string, Uint8Array | null>()
 const readResultCache = new WeakMap<Uint8Array, ReturnType<typeof readXlsx>>()
 const packageSummaryCache = new WeakMap<Uint8Array, ReturnType<typeof summarizeOoxmlPackage>>()
 const sdkWorkbookCache = new WeakMap<Uint8Array, Promise<AscendWorkbook>>()
+const savedSdkBytesCache = new WeakMap<Uint8Array, Promise<Uint8Array>>()
+const reopenedSavedSdkWorkbookCache = new WeakMap<Uint8Array, Promise<AscendWorkbook>>()
+const fullPivotCacheSdkWorkbookCache = new WeakMap<Uint8Array, Promise<AscendWorkbook>>()
 
 function sha256(bytes: Uint8Array): string {
 	return createHash('sha256').update(bytes).digest('hex')
@@ -67,6 +70,35 @@ function openReadOnlySdkWorkbook(bytes: Uint8Array | null): Promise<AscendWorkbo
 	if (cached) return cached
 	const workbook = AscendWorkbook.open(sourceBytes)
 	sdkWorkbookCache.set(sourceBytes, workbook)
+	return workbook
+}
+
+function saveSdkWorkbookBytes(bytes: Uint8Array | null): Promise<Uint8Array> {
+	const sourceBytes = requireBytes(bytes)
+	const cached = savedSdkBytesCache.get(sourceBytes)
+	if (cached) return cached
+	const saved = openReadOnlySdkWorkbook(sourceBytes).then((workbook) => workbook.toBytes())
+	savedSdkBytesCache.set(sourceBytes, saved)
+	return saved
+}
+
+function reopenSavedSdkWorkbook(bytes: Uint8Array | null): Promise<AscendWorkbook> {
+	const sourceBytes = requireBytes(bytes)
+	const cached = reopenedSavedSdkWorkbookCache.get(sourceBytes)
+	if (cached) return cached
+	const reopened = saveSdkWorkbookBytes(sourceBytes).then((saved) => AscendWorkbook.open(saved))
+	reopenedSavedSdkWorkbookCache.set(sourceBytes, reopened)
+	return reopened
+}
+
+function openFullPivotCacheSdkWorkbook(bytes: Uint8Array | null): Promise<AscendWorkbook> {
+	const sourceBytes = requireBytes(bytes)
+	const cached = fullPivotCacheSdkWorkbookCache.get(sourceBytes)
+	if (cached) return cached
+	const workbook = AscendWorkbook.open(sourceBytes, {
+		pivotCacheRecordMaterializeLimit: 'all',
+	})
+	fullPivotCacheSdkWorkbookCache.set(sourceBytes, workbook)
 	return workbook
 }
 
@@ -202,15 +234,12 @@ for (const entry of CORPUS) {
 
 		it.skipIf(!bytes)('no-op save produces byte-identical output', async () => {
 			const sourceBytes = requireBytes(bytes)
-			const wb = await AscendWorkbook.open(sourceBytes)
-			const saved = wb.toBytes()
+			const saved = await saveSdkWorkbookBytes(sourceBytes)
 			expect(sha256(saved)).toBe(sha256(sourceBytes))
 		})
 
 		it.skipIf(!bytes)('reopen after save succeeds', async () => {
-			const wb = await AscendWorkbook.open(requireBytes(bytes))
-			const saved = wb.toBytes()
-			const reopened = await AscendWorkbook.open(saved)
+			const reopened = await reopenSavedSdkWorkbook(bytes)
 			expect(reopened.sheets.length).toBe(entry.expectedSheets)
 		})
 
@@ -283,10 +312,9 @@ for (const entry of CORPUS) {
 			it(
 				'SDK toBytes roundtrip succeeds',
 				async () => {
-					const wb = await AscendWorkbook.open(requireBytes(bytes))
-					const saved = wb.toBytes()
+					const saved = await saveSdkWorkbookBytes(bytes)
 					expect(saved.length).toBeGreaterThan(0)
-					const reopened = await AscendWorkbook.open(saved)
+					const reopened = await reopenSavedSdkWorkbook(bytes)
 					expect(reopened.sheets.length).toBe(entry.expectedSheets)
 				},
 				testOptions,
@@ -405,9 +433,7 @@ describe('corpus: semantic dashboard chart and drawing inventory', () => {
 	it.skipIf(!dashboard)(
 		'audits saved dashboard pivot outputs from full cache records',
 		async () => {
-			const workbook = await AscendWorkbook.open(requireBytes(dashboard), {
-				pivotCacheRecordMaterializeLimit: 'all',
-			})
+			const workbook = await openFullPivotCacheSdkWorkbook(dashboard)
 
 			expect(workbook.pivotOutputAudits()).toEqual([
 				expect.objectContaining({

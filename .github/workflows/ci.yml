@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 jobs:
-  check:
+  quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -32,14 +32,61 @@ jobs:
 
       - run: bun ci
 
-      - name: Local CI gate
-        run: bun run ci:check
+      - name: Lint, typecheck, build, and docs
+        run: bunx biome ci && bunx tsc --build && bun run build:js && bun run docs:sdk
 
       - name: Upload SDK docs
         uses: actions/upload-artifact@v7
         with:
           name: sdk-docs-${{ github.sha }}
           path: dist/docs/sdk-api
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Cache Bun packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      - run: bun ci
+
+      - name: Test shard ${{ matrix.shard }}/4
+        run: bun test --recursive --parallel=8 --timeout 30000 --only-failures --shard=${{ matrix.shard }}/4
+
+  coverage:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Cache Bun packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      - run: bun ci
+
+      - name: Coverage gate
+        run: bun run ci:coverage
 
   perf-smoke:
     runs-on: ubuntu-latest

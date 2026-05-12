@@ -105,7 +105,9 @@ Benchmark snapshot: local median, 5 samples, external-process runners, correctne
 
 ```bash
 bun install
-bun test --recursive
+bun run test
+bun run test:changed
+bun run test:serial   # fallback for isolation/debugging
 bunx biome check
 bunx tsc --build
 ```

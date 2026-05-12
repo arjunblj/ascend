@@ -33,6 +33,9 @@ const CORPUS_DIR = resolve(import.meta.dir, '../../research/excel-corpus')
 const MANIFEST_PATH = resolve(CORPUS_DIR, 'manifest.json')
 const SAFE_EDIT_VALUE = '__ascend_feature_contract__'
 const SAFE_EDIT_TIMEOUT_MS = 180_000
+const corpusFileCache = new Map<string, Uint8Array | null>()
+const contractSubjectCache = new WeakMap<Uint8Array, Promise<ContractSubject>>()
+const safeEditSubjectCache = new WeakMap<Uint8Array, Promise<ContractSubject>>()
 
 interface ContractCase {
 	readonly corpusName: string
@@ -256,9 +259,12 @@ async function loadContractCases(): Promise<readonly ContractCase[]> {
 }
 
 function loadCorpusFile(rootDir: string, filename: string): Uint8Array | null {
+	const cacheKey = `${rootDir}\u0000${filename}`
+	if (corpusFileCache.has(cacheKey)) return corpusFileCache.get(cacheKey) ?? null
 	const path = resolve(rootDir, filename)
-	if (!existsSync(path)) return null
-	return new Uint8Array(readFileSync(path))
+	const bytes = existsSync(path) ? new Uint8Array(readFileSync(path)) : null
+	corpusFileCache.set(cacheKey, bytes)
+	return bytes
 }
 
 function requireBytes(bytes: Uint8Array | null): Uint8Array {
@@ -610,6 +616,14 @@ function summarizeCompatibilityFeatures(
 }
 
 async function loadContractSubject(bytes: Uint8Array): Promise<ContractSubject> {
+	const cached = contractSubjectCache.get(bytes)
+	if (cached) return cached
+	const subject = buildContractSubject(bytes)
+	contractSubjectCache.set(bytes, subject)
+	return subject
+}
+
+async function buildContractSubject(bytes: Uint8Array): Promise<ContractSubject> {
 	const raw = readXlsx(bytes)
 	expectOk(raw)
 	const workbook = await AscendWorkbook.open(bytes)
@@ -705,6 +719,14 @@ async function loadContractSubject(bytes: Uint8Array): Promise<ContractSubject> 
 }
 
 async function applySafeEditAndReload(bytes: Uint8Array): Promise<ContractSubject> {
+	const cached = safeEditSubjectCache.get(bytes)
+	if (cached) return cached
+	const subject = applySafeEditAndReloadUncached(bytes)
+	safeEditSubjectCache.set(bytes, subject)
+	return subject
+}
+
+async function applySafeEditAndReloadUncached(bytes: Uint8Array): Promise<ContractSubject> {
 	const workbook = await AscendWorkbook.open(bytes)
 	const probe = pickProbeTarget(workbook)
 	const apply = workbook.apply([

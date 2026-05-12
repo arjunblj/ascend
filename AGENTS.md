@@ -23,7 +23,10 @@ Agent-native spreadsheet platform. TypeScript monorepo with Bun.
 
 ```bash
 bun install                                     # install deps
-bun test --recursive                            # run all tests
+bun run test                                    # run all tests with Bun worker parallelism
+bun run test:ci                                 # CI-equivalent tests, 8 workers, 30s timeout
+bun run test:changed                            # run dependency-aware affected tests vs origin/main
+bun run test:serial                             # single-process fallback for isolation/debugging
 bunx biome check                                # lint + format check
 bunx biome check --write                        # auto-fix
 bunx tsc --build                                # typecheck all packages
@@ -31,6 +34,14 @@ bun bench                                       # all synthetic benchmarks
 bun bench --scenario <name> --repeat N --json   # single scenario, JSON output
 bun run fixtures/benchmarks/micro.ts            # microbenchmarks
 ```
+
+## Test Performance
+
+- Default to `bun run test` or a narrower package filter, not raw `bun test --recursive`.
+- Use `bun run test:changed` for local PR iteration; it expands changed packages through the Ascend dependency graph.
+- Use `bun run test:serial` only when debugging order/global-state/reporter issues.
+- CI does not have private `research/excel-corpus` workbooks. Tests that depend on those files must keep `skipIf`/existence guards and should be treated as local fixture coverage.
+- Heavy XLSX fixture tests should cache immutable parsed state, package summaries, saved bytes, and reopen checks with `Map`/`WeakMap`; do not share mutable workbooks across tests that apply operations.
 
 ## Conventions
 

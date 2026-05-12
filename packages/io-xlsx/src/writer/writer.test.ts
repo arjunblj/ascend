@@ -4582,6 +4582,78 @@ describe('writeXlsx', () => {
 		expect(tableXml).toContain('<sortState ref="A1:B3">')
 	})
 
+	it('persists table resize filter remaps through generated table XML', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Data')
+		sheet.cells.set(0, 0, { value: stringValue('Region'), formula: null, styleId: S0 })
+		sheet.cells.set(0, 1, { value: stringValue('Amount'), formula: null, styleId: S0 })
+		sheet.cells.set(0, 2, { value: stringValue('Status'), formula: null, styleId: S0 })
+		sheet.cells.set(0, 3, { value: stringValue('Forecast'), formula: null, styleId: S0 })
+		sheet.cells.set(1, 0, { value: stringValue('West'), formula: null, styleId: S0 })
+		sheet.cells.set(1, 1, { value: numberValue(10), formula: null, styleId: S0 })
+		sheet.cells.set(1, 2, { value: stringValue('Open'), formula: null, styleId: S0 })
+		sheet.cells.set(1, 3, { value: numberValue(20), formula: null, styleId: S0 })
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 2 } },
+			columns: [
+				{ id: 1, name: 'Region' },
+				{ id: 2, name: 'Amount' },
+				{ id: 3, name: 'Status' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+			autoFilter: {
+				ref: 'A1:C4',
+				columns: [
+					{ colId: 0, kind: 'filters', values: ['West'] },
+					{ colId: 2, kind: 'filters', values: ['Open'] },
+				],
+				sortState: {
+					ref: 'A1:C4',
+					conditions: [{ ref: 'A2:A4' }, { ref: 'C2:C4', descending: true }],
+				},
+			},
+			sortState: {
+				ref: 'A1:C4',
+				conditions: [{ ref: 'A2:A4' }, { ref: 'C2:C4', descending: true }],
+			},
+		})
+
+		const resized = applyOperations(wb, [{ op: 'resizeTable', table: 'Sales', ref: 'B1:D4' }])
+		expectOk(resized)
+
+		const { result, bytes } = roundTrip(wb)
+		const table = result.workbook.sheets[0]?.tables[0]
+		expect(table?.ref).toEqual({ start: { row: 0, col: 1 }, end: { row: 3, col: 3 } })
+		expect(table?.columns.map((column) => column.name)).toEqual(['Amount', 'Status', 'Forecast'])
+		expect(table?.autoFilter).toEqual({
+			ref: 'B1:D4',
+			columns: [{ colId: 1, kind: 'filters', values: ['Open'] }],
+			sortState: {
+				ref: 'B1:D4',
+				conditions: [{ ref: 'C2:C4', descending: true }],
+			},
+		})
+		expect(table?.sortState).toEqual({
+			ref: 'B1:D4',
+			conditions: [{ ref: 'C2:C4', descending: true }],
+		})
+
+		const tableEntry = unzipSync(bytes)['xl/tables/table1.xml']
+		expect(tableEntry).toBeDefined()
+		if (!tableEntry) return
+		const tableXml = new TextDecoder().decode(tableEntry)
+		expect(tableXml).toContain('<autoFilter ref="B1:D4">')
+		expect(tableXml).toContain('<filterColumn colId="1">')
+		expect(tableXml).toContain('<sortState ref="B1:D4">')
+		expect(tableXml).toContain('<sortCondition ref="C2:C4" descending="1"/>')
+		expect(tableXml).not.toContain('colId="0"')
+		expect(tableXml).not.toContain('ref="A2:A4"')
+	})
+
 	it('preserves richer table metadata on round-trip', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Inventory')

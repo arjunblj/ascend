@@ -443,7 +443,7 @@ describe('agent workflow loss audit', () => {
 		)
 	})
 
-	test('plans surface preserved x14 conditional formatting extension payloads', async () => {
+	test('plans explain preserved x14 conditional formatting payloads without warning on unrelated edits', async () => {
 		const input = join(TEMP_DIR, 'x14-conditional-format.xlsx')
 		mkdirSync(TEMP_DIR, { recursive: true })
 		const wb = AscendWorkbook.create()
@@ -471,15 +471,20 @@ describe('agent workflow loss audit', () => {
 		expect(plan.writePolicy.diagnostics).toContainEqual(
 			expect.objectContaining({
 				code: 'conditional-format-extension-preservation',
-				severity: 'warning',
+				severity: 'info',
 				partPaths: ['xl/worksheets/sheet1.xml'],
 				featureFamily: 'x14ConditionalFormatting',
 				preservationPolicy: 'generated',
 				details: {
+					provenance: 'worksheet-extLst',
+					preservationMode: 'opaque-payload-preserved-in-generated-worksheet-xml',
+					semanticEditRisk: false,
+					relatedOperations: [],
 					x14ConditionalFormats: [
 						{
 							sheetName: 'Sheet1',
 							sheetPartPath: 'xl/worksheets/sheet1.xml',
+							source: 'x14:conditionalFormatting',
 							sqref: 'A1:A5',
 							index: 0,
 							priority: 4,
@@ -491,12 +496,53 @@ describe('agent workflow loss audit', () => {
 				},
 			}),
 		)
-		expect(plan.trace.phases.find((phase) => phase.phase === 'write-policy')?.status).toBe(
-			'warning',
+		expect(
+			plan.writePolicy.diagnostics.find(
+				(diagnostic) => diagnostic.code === 'conditional-format-extension-preservation',
+			)?.message,
+		).toContain('no conditional-format semantic edit is planned')
+		expect(plan.trace.phases.find((phase) => phase.phase === 'write-policy')?.status).toBe('ok')
+
+		const semanticEdit = await createAgentPlan(input, [
+			{
+				op: 'setConditionalFormat',
+				sheet: 'Sheet1',
+				range: 'A2:A4',
+				rule: { type: 'cellIs', operator: 'greaterThan', formula: '0' },
+			},
+		])
+		expect(semanticEdit.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'conditional-format-extension-preservation',
+				severity: 'warning',
+				message: expect.stringContaining('planned conditional-format semantic edits'),
+				suggestedAction: expect.stringContaining('index, priority, and sqref'),
+				details: expect.objectContaining({
+					semanticEditRisk: true,
+					relatedOperations: [
+						expect.objectContaining({
+							operationIndex: 0,
+							op: 'setConditionalFormat',
+							sheetName: 'Sheet1',
+							range: 'A2:A4',
+							affectedPayloads: [
+								expect.objectContaining({
+									sheetName: 'Sheet1',
+									sheetPartPath: 'xl/worksheets/sheet1.xml',
+									source: 'x14:conditionalFormatting',
+									sqref: 'A1:A5',
+									index: 0,
+									priority: 4,
+								}),
+							],
+						}),
+					],
+				}),
+			}),
 		)
 	})
 
-	test('plans surface preserved x14 data validation extension payloads', async () => {
+	test('plans explain preserved x14 data validation payloads without warning on unrelated edits', async () => {
 		const input = join(TEMP_DIR, 'x14-data-validation.xlsx')
 		mkdirSync(TEMP_DIR, { recursive: true })
 		const wb = AscendWorkbook.create()
@@ -522,15 +568,20 @@ describe('agent workflow loss audit', () => {
 		expect(plan.writePolicy.diagnostics).toContainEqual(
 			expect.objectContaining({
 				code: 'data-validation-extension-preservation',
-				severity: 'warning',
+				severity: 'info',
 				partPaths: ['xl/worksheets/sheet1.xml'],
 				featureFamily: 'x14DataValidation',
 				preservationPolicy: 'generated',
 				details: {
+					provenance: 'worksheet-extLst',
+					preservationMode: 'opaque-payload-preserved-in-generated-worksheet-xml',
+					semanticEditRisk: false,
+					relatedOperations: [],
 					x14DataValidations: [
 						{
 							sheetName: 'Sheet1',
 							sheetPartPath: 'xl/worksheets/sheet1.xml',
+							source: 'x14:dataValidations',
 							sqref: 'C2:C5',
 							index: 0,
 							type: 'list',
@@ -544,7 +595,86 @@ describe('agent workflow loss audit', () => {
 				},
 			}),
 		)
-		expect(plan.modelOutput.warnings).toContainEqual(expect.stringContaining('write-policy:'))
+		expect(
+			plan.writePolicy.diagnostics.find(
+				(diagnostic) => diagnostic.code === 'data-validation-extension-preservation',
+			)?.message,
+		).toContain('no data-validation semantic edit is planned')
+		expect(plan.modelOutput.warnings).not.toContainEqual(expect.stringContaining('write-policy:'))
+
+		const semanticEdit = await createAgentPlan(input, [
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'C3:C4',
+				rule: { type: 'whole', formula1: '1', formula2: '10', operator: 'between' },
+			},
+		])
+		expect(semanticEdit.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'data-validation-extension-preservation',
+				severity: 'warning',
+				message: expect.stringContaining('overlap planned data-validation semantic edits'),
+				suggestedAction: expect.stringContaining('index, and sqref'),
+				details: expect.objectContaining({
+					semanticEditRisk: true,
+					relatedOperations: [
+						expect.objectContaining({
+							operationIndex: 0,
+							op: 'setDataValidation',
+							sheetName: 'Sheet1',
+							range: 'C3:C4',
+							affectedPayloads: [
+								expect.objectContaining({
+									sheetName: 'Sheet1',
+									sheetPartPath: 'xl/worksheets/sheet1.xml',
+									source: 'x14:dataValidations',
+									sqref: 'C2:C5',
+									index: 0,
+								}),
+							],
+						}),
+					],
+				}),
+			}),
+		)
+	})
+
+	test('simple x14 rules do not produce extension preservation diagnostics', async () => {
+		const input = join(TEMP_DIR, 'simple-x14-rules.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		wb.getWorkbookModel().sheets[0]?.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'D1:D5',
+			type: 'dataBar',
+			priority: 1,
+			formulas: [],
+		})
+		wb.getWorkbookModel().sheets[0]?.x14DataValidations.push({
+			index: 0,
+			sqref: 'A1:A5',
+			type: 'whole',
+			operator: 'between',
+			formula1: '1',
+			formula2: '10',
+			showErrorMessage: true,
+		})
+		await wb.save(input)
+
+		const plan = await createAgentPlan(input, [
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'B1', value: 7 }] },
+		])
+
+		expect(plan.writePolicy.summary.x14ConditionalFormatExtensionPayloads).toBe(0)
+		expect(plan.writePolicy.summary.x14DataValidationExtensionPayloads).toBe(0)
+		expect(
+			plan.writePolicy.diagnostics.some(
+				(diagnostic) =>
+					diagnostic.code === 'conditional-format-extension-preservation' ||
+					diagnostic.code === 'data-validation-extension-preservation',
+			),
+		).toBe(false)
 	})
 
 	test('partial workbook views cannot produce full-fidelity write plans', async () => {

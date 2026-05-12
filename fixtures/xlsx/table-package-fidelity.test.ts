@@ -216,6 +216,97 @@ describe('vendored table package graph fidelity', () => {
 		expect(queryTableContentTypeOverrides(afterGraph)).toEqual(beforeQueryTableOverrides)
 		expectFeatureBytesPreserved(beforeGraph, sourceBytes, written.value, 'preservedQueryTable')
 	})
+
+	test('LibreOffice query table rename keeps table name and displayName synchronized', () => {
+		const sourceBytes = readFileSync(
+			new URL('./libreoffice/TableEmptyHeaders.xlsx', import.meta.url),
+		)
+		const read = readXlsx(sourceBytes)
+		expectOk(read)
+
+		const renamed = applyOperation(read.value.workbook, {
+			op: 'renameTable',
+			table: 'Bitcoin',
+			newName: 'RenamedBitcoin',
+		})
+		expectOk(renamed)
+		const written = writeXlsx(read.value.workbook, read.value.capsules, {
+			dirtySheetNames: ['BTC'],
+		})
+		expectOk(written)
+
+		const tableXml = decodeZipPart(written.value, 'xl/tables/table1.xml')
+		expect(tableXml).toContain('name="RenamedBitcoin"')
+		expect(tableXml).toContain('displayName="RenamedBitcoin"')
+		expect(tableXml).not.toContain('name="Bitcoin" displayName="RenamedBitcoin"')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		const reopenedTable = reopened.value.workbook.sheets
+			.find((entry) => entry.name === 'BTC')
+			?.tables.find((entry) => entry.name === 'RenamedBitcoin')
+		expect(reopenedTable?.queryTable).toMatchObject({
+			relationshipId: 'rId1',
+			partPath: 'xl/queryTables/queryTable1.xml',
+			target: '../queryTables/queryTable1.xml',
+		})
+		expect(reopenedTable?.columns.map((column) => column.queryTableFieldId)).toEqual([1, 2])
+	})
+
+	test('LibreOffice query table deletion removes table and queryTable package sidecars', () => {
+		const sourceBytes = readFileSync(
+			new URL('./libreoffice/TableEmptyHeaders.xlsx', import.meta.url),
+		)
+		const read = readXlsx(sourceBytes)
+		expectOk(read)
+
+		const deleted = applyOperation(read.value.workbook, { op: 'deleteTable', table: 'Bitcoin' })
+		expectOk(deleted)
+		const written = writeXlsx(read.value.workbook, read.value.capsules, {
+			dirtySheetNames: ['BTC'],
+		})
+		expectOk(written)
+
+		const parts = unzipSync(written.value)
+		expect(parts['xl/tables/table1.xml']).toBeUndefined()
+		expect(parts['xl/tables/_rels/table1.xml.rels']).toBeUndefined()
+		expect(parts['xl/queryTables/queryTable1.xml']).toBeUndefined()
+
+		const afterGraph = inspectXlsxPackageGraph(written.value)
+		expect(tablePartIdentities(afterGraph)).toEqual([])
+		expect(queryTablePartIdentities(afterGraph)).toEqual([])
+		expect(tableContentTypeOverrides(afterGraph)).toEqual([])
+		expect(queryTableContentTypeOverrides(afterGraph)).toEqual([])
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		const btc = reopened.value.workbook.sheets.find((entry) => entry.name === 'BTC')
+		expect(btc?.tables).toEqual([])
+	})
+
+	test('LibreOffice query table resize rejects horizontal field remapping without sidecar rewrite', () => {
+		const sourceBytes = readFileSync(
+			new URL('./libreoffice/TableEmptyHeaders.xlsx', import.meta.url),
+		)
+		const read = readXlsx(sourceBytes)
+		expectOk(read)
+
+		const resized = applyOperation(read.value.workbook, {
+			op: 'resizeTable',
+			table: 'Bitcoin',
+			ref: 'A1:A17',
+		})
+
+		expectErr(resized)
+		expect(resized.error.message).toContain('queryTable-backed table "Bitcoin"')
+		expect(resized.error.details).toMatchObject({
+			kind: 'query-table-column-resize',
+			tableName: 'Bitcoin',
+			currentRef: 'A1:B16',
+			requestedRef: 'A1:A17',
+			queryTablePartPath: 'xl/queryTables/queryTable1.xml',
+		})
+	})
 })
 
 function tablePartIdentities(graph: XlsxPackageGraph): readonly Record<string, unknown>[] {
@@ -381,4 +472,11 @@ function expectOk<T, E extends { message: string }>(
 ): asserts result is { ok: true; value: T } {
 	expect(result.ok).toBe(true)
 	if (!result.ok) throw new Error(result.error.message)
+}
+
+function expectErr<T, E extends { message: string }>(
+	result: { ok: true; value: T } | { ok: false; error: E },
+): asserts result is { ok: false; error: E } {
+	expect(result.ok).toBe(false)
+	if (result.ok) throw new Error('expected operation to fail')
 }

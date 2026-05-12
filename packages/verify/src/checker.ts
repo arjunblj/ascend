@@ -11,6 +11,7 @@ import {
 	type WorkbookDependencyAnalysis,
 	type WorkbookFormulaAnalysis,
 } from '@ascend/engine'
+import { extractRefs, type FormulaRef, parseFormula } from '@ascend/formulas'
 import { isError, levenshtein } from '@ascend/schema'
 
 export interface CheckResult {
@@ -841,7 +842,7 @@ function queryTableRelationshipDetails(
 interface ConditionalFormatPriorityEntry {
 	readonly source: 'conditionalFormat' | 'x14ConditionalFormat'
 	readonly sheetName: string
-	readonly priority: number
+	readonly priority?: number
 	readonly sqref: string
 	readonly formatIndex: number
 	readonly ruleIndex?: number
@@ -868,6 +869,204 @@ function parseSqrefRanges(sqref: string): RangeRef[] {
 	return ranges
 }
 
+interface X14FormulaReferenceEntry {
+	readonly field: string
+	readonly formula: string
+}
+
+interface MissingSheetReference {
+	readonly field: string
+	readonly reference: string
+	readonly sheetName: string
+	readonly token?: string
+}
+
+function sqrefTokens(sqref: string): string[] {
+	return sqref.trim().split(/\s+/).filter(Boolean)
+}
+
+function x14EntryRefs(sheetName: string, sqref: string, fallback: string): string[] {
+	const refs = sqrefTokens(sqref).map((token) =>
+		chartReferenceSheetName(token).sheetName ? token : `${sheetName}!${token}`,
+	)
+	return refs.length > 0 ? refs : [`${sheetName}#${fallback}`]
+}
+
+function missingSheetReferencesInSqref(
+	sqref: string,
+	sheetNameSet: ReadonlySet<string>,
+): MissingSheetReference[] {
+	const missing: MissingSheetReference[] = []
+	for (const token of sqrefTokens(sqref)) {
+		const parsed = chartReferenceSheetName(token)
+		if (parsed.external || !parsed.sheetName) continue
+		if (sheetNameSet.has(parsed.sheetName.toLowerCase())) continue
+		missing.push({
+			field: 'sqref',
+			reference: sqref,
+			sheetName: parsed.sheetName,
+			token,
+		})
+	}
+	return missing
+}
+
+function missingSheetReferencesInFormula(
+	entry: X14FormulaReferenceEntry,
+	sheetNameSet: ReadonlySet<string>,
+): MissingSheetReference[] {
+	const parsed = parseFormula(entry.formula)
+	if (!parsed.ok) return []
+	const missing: MissingSheetReference[] = []
+	for (const ref of extractRefs(parsed.value)) {
+		for (const sheetName of sheetNamesForFormulaRef(ref)) {
+			if (sheetName.startsWith('[')) continue
+			if (sheetNameSet.has(sheetName.toLowerCase())) continue
+			missing.push({
+				field: entry.field,
+				reference: entry.formula,
+				sheetName,
+			})
+		}
+	}
+	return missing
+}
+
+function sheetNamesForFormulaRef(ref: FormulaRef): string[] {
+	if (ref.kind === 'sheetSpan') return [ref.startSheet, ref.endSheet]
+	return ref.sheet ? [ref.sheet] : []
+}
+
+function formulaHasDetectableReferences(formula: string | undefined): boolean {
+	if (!formula) return false
+	const parsed = parseFormula(formula)
+	return parsed.ok && extractRefs(parsed.value).length > 0
+}
+
+function x14FormulaLiveFields(entries: readonly X14FormulaReferenceEntry[]): string[] {
+	const fields: string[] = []
+	for (const entry of entries) {
+		if (formulaHasDetectableReferences(entry.formula)) fields.push(entry.field)
+	}
+	return fields
+}
+
+function pushX14MissingSheetIssues(
+	issues: CheckIssue[],
+	params: {
+		readonly rule: 'conditional-format-integrity' | 'data-validation-integrity'
+		readonly source: 'x14ConditionalFormat' | 'x14DataValidation'
+		readonly sheetName: string
+		readonly index: number
+		readonly sqref: string
+		readonly missing: readonly MissingSheetReference[]
+		readonly sheetNames: readonly string[]
+		readonly fallbackRef: string
+	},
+): void {
+	for (const missing of params.missing) {
+		const closest = findClosestSheetName(missing.sheetName, params.sheetNames)
+		issues.push({
+			rule: params.rule,
+			severity: 'error',
+			message: `${params.source} ${missing.field} on sheet "${params.sheetName}" references non-existent sheet "${missing.sheetName}"`,
+			refs: x14EntryRefs(params.sheetName, params.sqref, params.fallbackRef),
+			suggestedFix: closest
+				? `Did you mean sheet "${closest}"?`
+				: 'Repair the x14 reference before writing preserved extension metadata.',
+			details: {
+				kind: missing.field === 'sqref' ? 'x14-sqref-missing-sheet' : 'x14-formula-missing-sheet',
+				source: params.source,
+				sheetName: params.sheetName,
+				index: params.index,
+				field: missing.field,
+				reference: missing.reference,
+				missingSheet: missing.sheetName,
+				...(missing.token ? { token: missing.token } : {}),
+			},
+		})
+	}
+}
+
+function x14ConditionalFormatFormulaEntries(
+	format: Workbook['sheets'][number]['x14ConditionalFormats'][number],
+): X14FormulaReferenceEntry[] {
+	const entries: X14FormulaReferenceEntry[] = format.formulas.map((formula, index) => ({
+		field: `formulas[${index}]`,
+		formula,
+	}))
+	for (let index = 0; index < (format.dataBar?.cfvo.length ?? 0); index++) {
+		const value = format.dataBar?.cfvo[index]?.value
+		if (value !== undefined) entries.push({ field: `dataBar.cfvo[${index}].value`, formula: value })
+	}
+	for (let index = 0; index < (format.iconSet?.cfvo.length ?? 0); index++) {
+		const value = format.iconSet?.cfvo[index]?.value
+		if (value !== undefined) entries.push({ field: `iconSet.cfvo[${index}].value`, formula: value })
+	}
+	return entries
+}
+
+function checkX14DataValidationIntegrity(
+	wb: Workbook,
+	sheetNames: readonly string[],
+): CheckIssue[] {
+	const issues: CheckIssue[] = []
+	const sheetNameSet = new Set(sheetNames.map((name) => name.toLowerCase()))
+
+	for (const sheet of wb.sheets) {
+		for (const validation of sheet.x14DataValidations) {
+			const formulaEntries: X14FormulaReferenceEntry[] = []
+			if (validation.formula1) {
+				formulaEntries.push({ field: 'formula1', formula: validation.formula1 })
+			}
+			if (validation.formula2) {
+				formulaEntries.push({ field: 'formula2', formula: validation.formula2 })
+			}
+			const fallbackRef = `x14DataValidation[${validation.index}]`
+			pushX14MissingSheetIssues(issues, {
+				rule: 'data-validation-integrity',
+				source: 'x14DataValidation',
+				sheetName: sheet.name,
+				index: validation.index,
+				sqref: validation.sqref,
+				missing: [
+					...missingSheetReferencesInSqref(validation.sqref, sheetNameSet),
+					...formulaEntries.flatMap((entry) =>
+						missingSheetReferencesInFormula(entry, sheetNameSet),
+					),
+				],
+				sheetNames,
+				fallbackRef,
+			})
+
+			if (!validation.deleted) continue
+			const liveFields = [
+				...(validation.sqref.trim() ? ['sqref'] : []),
+				...x14FormulaLiveFields(formulaEntries),
+			]
+			if (liveFields.length === 0) continue
+			issues.push({
+				rule: 'data-validation-integrity',
+				severity: 'warning',
+				message: `Deleted x14DataValidation on sheet "${sheet.name}" still carries live references`,
+				refs: x14EntryRefs(sheet.name, validation.sqref, fallbackRef),
+				suggestedFix:
+					'Clear the deleted x14 data-validation entry or restore it before writing preserved extension metadata.',
+				details: {
+					kind: 'deleted-x14-data-validation-live-refs',
+					source: 'x14DataValidation',
+					sheetName: sheet.name,
+					index: validation.index,
+					liveFields,
+					sqref: validation.sqref,
+				},
+			})
+		}
+	}
+
+	return issues
+}
+
 function firstOverlappingRange(
 	left: ConditionalFormatPriorityEntry,
 	right: ConditionalFormatPriorityEntry,
@@ -882,6 +1081,8 @@ function firstOverlappingRange(
 
 function checkConditionalFormatIntegrity(wb: Workbook): CheckIssue[] {
 	const issues: CheckIssue[] = []
+	const sheetNames = wb.sheets.map((sheet) => sheet.name)
+	const sheetNameSet = new Set(sheetNames.map((name) => name.toLowerCase()))
 	for (const sheet of wb.sheets) {
 		const entries: ConditionalFormatPriorityEntry[] = []
 		for (let formatIndex = 0; formatIndex < sheet.conditionalFormats.length; formatIndex++) {
@@ -890,33 +1091,75 @@ function checkConditionalFormatIntegrity(wb: Workbook): CheckIssue[] {
 			const ranges = parseSqrefRanges(format.sqref)
 			for (let ruleIndex = 0; ruleIndex < format.rules.length; ruleIndex++) {
 				const rule = format.rules[ruleIndex]
-				if (!rule || rule.priority === undefined) continue
+				if (!rule) continue
 				entries.push({
 					source: 'conditionalFormat',
 					sheetName: sheet.name,
-					priority: rule.priority,
 					sqref: format.sqref,
 					formatIndex,
 					ruleIndex,
 					ruleType: rule.type,
 					ranges,
+					...(rule.priority !== undefined ? { priority: rule.priority } : {}),
 				})
 			}
 		}
 		for (const format of sheet.x14ConditionalFormats) {
-			if (format.priority === undefined) continue
+			const fallbackRef = `x14ConditionalFormat[${format.index}]`
+			const formulaEntries = x14ConditionalFormatFormulaEntries(format)
+			pushX14MissingSheetIssues(issues, {
+				rule: 'conditional-format-integrity',
+				source: 'x14ConditionalFormat',
+				sheetName: sheet.name,
+				index: format.index,
+				sqref: format.sqref,
+				missing: [
+					...missingSheetReferencesInSqref(format.sqref, sheetNameSet),
+					...formulaEntries.flatMap((entry) =>
+						missingSheetReferencesInFormula(entry, sheetNameSet),
+					),
+				],
+				sheetNames,
+				fallbackRef,
+			})
+
+			if (format.deleted) {
+				const liveFields = [
+					...(format.sqref.trim() ? ['sqref'] : []),
+					...x14FormulaLiveFields(formulaEntries),
+				]
+				if (liveFields.length > 0) {
+					issues.push({
+						rule: 'conditional-format-integrity',
+						severity: 'warning',
+						message: `Deleted x14ConditionalFormat on sheet "${sheet.name}" still carries live references`,
+						refs: x14EntryRefs(sheet.name, format.sqref, fallbackRef),
+						suggestedFix:
+							'Clear the deleted x14 conditional-format entry or restore it before writing preserved extension metadata.',
+						details: {
+							kind: 'deleted-x14-conditional-format-live-refs',
+							source: 'x14ConditionalFormat',
+							sheetName: sheet.name,
+							index: format.index,
+							liveFields,
+							sqref: format.sqref,
+						},
+					})
+				}
+				continue
+			}
 			entries.push({
 				source: 'x14ConditionalFormat',
 				sheetName: sheet.name,
-				priority: format.priority,
 				sqref: format.sqref,
 				formatIndex: format.index,
 				ranges: parseSqrefRanges(format.sqref),
+				...(format.priority !== undefined ? { priority: format.priority } : {}),
 				...(format.type ? { ruleType: format.type } : {}),
 			})
 		}
 		for (const entry of entries) {
-			if (entry.priority <= 0) {
+			if (entry.priority !== undefined && entry.priority <= 0) {
 				issues.push({
 					rule: 'conditional-format-integrity',
 					severity: 'warning',
@@ -939,7 +1182,7 @@ function checkConditionalFormatIntegrity(wb: Workbook): CheckIssue[] {
 			if (!left) continue
 			for (let j = i + 1; j < entries.length; j++) {
 				const right = entries[j]
-				if (!right || left.priority !== right.priority) continue
+				if (!right || left.priority === undefined || left.priority !== right.priority) continue
 				const overlap = firstOverlappingRange(left, right)
 				if (!overlap) continue
 				issues.push({
@@ -965,6 +1208,47 @@ function checkConditionalFormatIntegrity(wb: Workbook): CheckIssue[] {
 							source: right.source,
 							sqref: right.sqref,
 							formatIndex: right.formatIndex,
+							...(right.ruleIndex !== undefined ? { ruleIndex: right.ruleIndex } : {}),
+							...(right.ruleType ? { ruleType: right.ruleType } : {}),
+						},
+					},
+				})
+			}
+		}
+		for (let i = 0; i < entries.length; i++) {
+			const left = entries[i]
+			if (!left) continue
+			for (let j = i + 1; j < entries.length; j++) {
+				const right = entries[j]
+				if (!right || left.source === right.source) continue
+				if (left.priority !== undefined && right.priority !== undefined) continue
+				const overlap = firstOverlappingRange(left, right)
+				if (!overlap) continue
+				issues.push({
+					rule: 'conditional-format-integrity',
+					severity: 'warning',
+					message: `Overlapping legacy and x14 conditional formats on sheet "${sheet.name}" have ambiguous priority metadata`,
+					refs: [
+						`${sheet.name}!${rangeToA1(overlap[0])}`,
+						`${sheet.name}!${rangeToA1(overlap[1])}`,
+					],
+					suggestedFix:
+						'Assign explicit priorities or separate the ranges before editing conditional-format order.',
+					details: {
+						kind: 'ambiguous-x14-legacy-overlap',
+						left: {
+							source: left.source,
+							sqref: left.sqref,
+							formatIndex: left.formatIndex,
+							...(left.priority !== undefined ? { priority: left.priority } : {}),
+							...(left.ruleIndex !== undefined ? { ruleIndex: left.ruleIndex } : {}),
+							...(left.ruleType ? { ruleType: left.ruleType } : {}),
+						},
+						right: {
+							source: right.source,
+							sqref: right.sqref,
+							formatIndex: right.formatIndex,
+							...(right.priority !== undefined ? { priority: right.priority } : {}),
 							...(right.ruleIndex !== undefined ? { ruleIndex: right.ruleIndex } : {}),
 							...(right.ruleType ? { ruleType: right.ruleType } : {}),
 						},
@@ -1182,6 +1466,7 @@ export function check(workbook: Workbook, analysis?: CheckAnalysis): CheckResult
 		...checkMergeOverlaps(workbook),
 		...checkTableIntegrity(workbook),
 		...checkTableQueryTableIntegrity(workbook, analysis?.packageGraph),
+		...checkX14DataValidationIntegrity(workbook, sheetNames),
 		...checkConditionalFormatIntegrity(workbook),
 		...checkThreadedCommentIntegrity(workbook),
 		...checkLegacyCommentDrawingIntegrity(workbook),

@@ -1650,6 +1650,58 @@ describe('applyOperation', () => {
 		expect(target.x14ConditionalFormats[0]?.iconSet?.cfvo[0]?.value).toBe('Sheet2!B2')
 	})
 
+	test('copyRange copies x14 validation and conditional format formulas', () => {
+		const wb = createWorkbook()
+		const source = wb.addSheet('Sheet1')
+		const target = wb.addSheet('Sheet2')
+		source.cells.set(0, 0, cell(numberValue(10)))
+		source.cells.set(0, 1, cell(numberValue(20)))
+		source.x14DataValidations.push({
+			index: 3,
+			sqref: 'A1:B1',
+			type: 'whole',
+			formula1: 'A1',
+			formula2: 'B1',
+		})
+		source.x14ConditionalFormats.push({
+			index: 4,
+			sqref: 'A1:B1',
+			formulas: ['A1>0'],
+			dataBar: { cfvo: [{ type: 'formula', value: 'A1' }] },
+			iconSet: { cfvo: [{ type: 'formula', value: 'B1' }] },
+		})
+
+		const result = applyOperation(wb, {
+			op: 'copyRange',
+			sheet: 'Sheet1',
+			source: 'A1:B1',
+			targetSheet: 'Sheet2',
+			target: 'C3',
+		})
+		expectOk(result)
+
+		expect(source.x14DataValidations).toHaveLength(1)
+		expect(source.x14ConditionalFormats).toHaveLength(1)
+		expect(target.x14DataValidations).toEqual([
+			{
+				index: 0,
+				sqref: 'C3:D3',
+				type: 'whole',
+				formula1: 'C3',
+				formula2: 'D3',
+			},
+		])
+		expect(target.x14ConditionalFormats).toEqual([
+			{
+				index: 0,
+				sqref: 'C3:D3',
+				formulas: ['C3>0'],
+				dataBar: { cfvo: [{ type: 'formula', value: 'C3' }] },
+				iconSet: { cfvo: [{ type: 'formula', value: 'D3' }] },
+			},
+		])
+	})
+
 	test('hideSheet and hideCols update sheet visibility metadata', () => {
 		const wb = setup()
 		const result1 = applyOperation(wb, {
@@ -1835,6 +1887,39 @@ describe('applyOperation', () => {
 			end: { row: 2, col: 1 },
 		})
 		expect(s.tables[0]?.autoFilter?.ref).toBe('A1:B3')
+	})
+
+	test('deleteRows tombstones fully removed x14 metadata without rewriting formulas', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.x14DataValidations.push({
+			index: 0,
+			sqref: 'A2',
+			type: 'list',
+			formula1: 'A3',
+		})
+		s.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'B2',
+			formulas: ['A3>0'],
+			dataBar: { cfvo: [{ type: 'formula', value: 'A3' }] },
+			iconSet: { cfvo: [{ type: 'formula', value: 'B3' }] },
+		})
+
+		expectOk(applyOperation(wb, { op: 'deleteRows', sheet: 'Sheet1', at: 1, count: 1 }))
+
+		expect(s.x14DataValidations[0]).toMatchObject({
+			sqref: '',
+			deleted: true,
+			formula1: 'A3',
+		})
+		expect(s.x14ConditionalFormats[0]).toMatchObject({
+			sqref: '',
+			deleted: true,
+			formulas: ['A3>0'],
+		})
+		expect(s.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('A3')
+		expect(s.x14ConditionalFormats[0]?.iconSet?.cfvo[0]?.value).toBe('B3')
 	})
 
 	test('deleteRows rejects partial table header row deletion', () => {
@@ -2500,12 +2585,24 @@ describe('applyOperation', () => {
 		s.dataValidations.push({ sqref: 'A2:B2', type: 'list', formula1: 'A2' })
 		s.conditionalFormats.push({
 			sqref: 'A2',
-			rules: [{ type: 'expression', formulas: ['A2>0'] }],
+			rules: [
+				{
+					type: 'expression',
+					formulas: ['A2>0'],
+					colorScale: {
+						cfvo: [{ type: 'formula', value: 'B2' }],
+						colors: [{ rgb: 'FFFF0000' }],
+					},
+					dataBar: { cfvo: [{ type: 'formula', value: 'C2' }] },
+					iconSet: { cfvo: [{ type: 'formula', value: 'D2' }] },
+				},
+			],
 		})
 		s.x14ConditionalFormats.push({
 			index: 0,
 			sqref: 'C2',
 			formulas: ['A2>0'],
+			dataBar: { cfvo: [{ type: 'formula', value: 'B2' }] },
 			iconSet: { cfvo: [{ type: 'formula', value: 'A2' }] },
 		})
 		s.x14DataValidations.push({
@@ -2529,8 +2626,12 @@ describe('applyOperation', () => {
 		expect(s.dataValidations[0]?.formula1).toBe('A4')
 		expect(s.conditionalFormats[0]?.sqref).toBe('A4')
 		expect(s.conditionalFormats[0]?.rules[0]?.formulas[0]).toBe('A4>0')
+		expect(s.conditionalFormats[0]?.rules[0]?.colorScale?.cfvo[0]?.value).toBe('B4')
+		expect(s.conditionalFormats[0]?.rules[0]?.dataBar?.cfvo[0]?.value).toBe('C4')
+		expect(s.conditionalFormats[0]?.rules[0]?.iconSet?.cfvo[0]?.value).toBe('D4')
 		expect(s.x14ConditionalFormats[0]?.sqref).toBe('C4')
 		expect(s.x14ConditionalFormats[0]?.formulas[0]).toBe('A4>0')
+		expect(s.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('B4')
 		expect(s.x14ConditionalFormats[0]?.iconSet?.cfvo[0]?.value).toBe('A4')
 		expect(s.x14DataValidations[0]).toMatchObject({
 			sqref: 'D4',

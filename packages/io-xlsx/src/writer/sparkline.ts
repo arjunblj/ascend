@@ -53,8 +53,8 @@ export function buildWorksheetExtLstXml(updates: {
 	readonly x14ConditionalFormats: readonly SheetX14ConditionalFormatInfo[]
 	readonly x14DataValidations: readonly SheetX14DataValidationInfo[]
 }): string {
-	const conditionalFormats = updates.x14ConditionalFormats.filter((entry) => !entry.deleted)
-	const dataValidations = updates.x14DataValidations.filter((entry) => !entry.deleted)
+	const conditionalFormats = activeX14Entries(updates.x14ConditionalFormats)
+	const dataValidations = activeX14Entries(updates.x14DataValidations)
 	if (conditionalFormats.length === 0 && dataValidations.length === 0) return ''
 	const body: string[] = []
 	if (conditionalFormats.length > 0) {
@@ -195,7 +195,7 @@ function updateX14ConditionalFormattingExtLstXml(
 			return `<${tag}${attrs}>${updatedBody}</${tag}>`
 		},
 	)
-	const missing = formats.filter((entry) => !entry.deleted && entry.index >= entryIndex)
+	const missing = activeX14Entries(formats).filter((entry) => entry.index >= entryIndex)
 	return normalizeX14ConditionalFormattingContainers(appendX14ConditionalFormattings(next, missing))
 }
 
@@ -226,7 +226,7 @@ function updateX14DataValidationExtLstXml(
 			return `<${tag}${updatedAttrs}>${updatedBody}</${tag}>`
 		},
 	)
-	const missing = validations.filter((entry) => !entry.deleted && entry.index >= entryIndex)
+	const missing = activeX14Entries(validations).filter((entry) => entry.index >= entryIndex)
 	return normalizeX14DataValidationCounts(appendX14DataValidations(next, missing))
 }
 
@@ -257,9 +257,13 @@ function appendX14ConditionalFormattings(
 ): string {
 	if (formats.length === 0) return xml
 	const additions = formats.map(buildX14ConditionalFormattingXml).join('')
+	const selfClosing = new RegExp(String.raw`<(${PREFIXED_TAG}conditionalFormattings)\b([^>]*)\/>`)
+	if (selfClosing.test(xml)) {
+		return xml.replace(selfClosing, `<$1$2>${additions}</$1>`)
+	}
 	const closing = new RegExp(String.raw`<\/(${PREFIXED_TAG}conditionalFormattings)>`)
 	if (closing.test(xml)) return xml.replace(closing, `${additions}</$1>`)
-	return insertIntoFirstExt(
+	return insertIntoWorksheetExt(
 		xml,
 		`<x14:conditionalFormattings>${additions}</x14:conditionalFormattings>`,
 	)
@@ -273,6 +277,7 @@ function appendX14DataValidations(
 	const additions = validations.map(buildX14DataValidationXml).join('')
 	const opening = new RegExp(String.raw`<(${PREFIXED_TAG}dataValidations)\b([^>]*)>`)
 	const closing = new RegExp(String.raw`<\/(${PREFIXED_TAG}dataValidations)>`)
+	const selfClosing = new RegExp(String.raw`<(${PREFIXED_TAG}dataValidations)\b([^>]*)\/>`)
 	if (opening.test(xml) && closing.test(xml)) {
 		const withCount = xml.replace(opening, (_match, tag: string, attrs: string) => {
 			const existingCount = Number(attr(attrs, 'count') ?? 0)
@@ -283,16 +288,63 @@ function appendX14DataValidations(
 		})
 		return withCount.replace(closing, `${additions}</$1>`)
 	}
-	return insertIntoFirstExt(
+	if (selfClosing.test(xml)) {
+		return xml.replace(selfClosing, (_match, tag: string, attrs: string) => {
+			return `<${tag}${setXmlAttr(attrs, 'count', String(validations.length))}>${additions}</${tag}>`
+		})
+	}
+	return insertIntoWorksheetExt(
 		xml,
 		`<x14:dataValidations count="${validations.length}">${additions}</x14:dataValidations>`,
 	)
 }
 
-function insertIntoFirstExt(xml: string, body: string): string {
-	const closing = new RegExp(String.raw`<\/(${PREFIXED_TAG}ext)>`)
-	if (closing.test(xml)) return xml.replace(closing, `${body}</$1>`)
-	return xml
+function insertIntoWorksheetExt(xml: string, body: string): string {
+	const openClose = new RegExp(String.raw`<(${PREFIXED_TAG}ext)\b([^>]*)>([\s\S]*?)<\/\1>`, 'g')
+	let inserted = false
+	const next = xml.replace(openClose, (match, tag: string, attrs: string, extBody: string) => {
+		if (inserted || attr(attrs, 'uri') !== X14_WORKSHEET_EXT_URI) return match
+		inserted = true
+		return `<${tag}${worksheetExtAttrs(xml, attrs)}>${extBody}${body}</${tag}>`
+	})
+	if (inserted) return next
+
+	const selfClosing = new RegExp(String.raw`<(${PREFIXED_TAG}ext)\b([^>]*)\/>`, 'g')
+	const expanded = xml.replace(selfClosing, (match, tag: string, attrs: string) => {
+		if (inserted || attr(attrs, 'uri') !== X14_WORKSHEET_EXT_URI) return match
+		inserted = true
+		return `<${tag}${worksheetExtAttrs(xml, attrs)}>${body}</${tag}>`
+	})
+	if (inserted) return expanded
+
+	const extLstClosing = new RegExp(String.raw`<\/(${PREFIXED_TAG}extLst)>`)
+	if (!extLstClosing.test(xml)) return xml
+	return xml.replace(
+		extLstClosing,
+		`<ext uri="${X14_WORKSHEET_EXT_URI}" xmlns:x14="${X14_NS}" xmlns:xm="${XM_NS}">${body}</ext></$1>`,
+	)
+}
+
+function worksheetExtAttrs(xml: string, attrs: string): string {
+	let next = attrs
+	if (!extLstDeclaresNamespace(xml, 'x14') && !attr(attrs, 'xmlns:x14')) {
+		next = setXmlAttr(next, 'xmlns:x14', X14_NS)
+	}
+	if (!extLstDeclaresNamespace(xml, 'xm') && !attr(attrs, 'xmlns:xm')) {
+		next = setXmlAttr(next, 'xmlns:xm', XM_NS)
+	}
+	return next
+}
+
+function extLstDeclaresNamespace(xml: string, prefix: string): boolean {
+	const match = new RegExp(String.raw`<${PREFIXED_TAG}extLst\b([^>]*)>`).exec(xml)
+	return match ? attr(match[1] ?? '', `xmlns:${prefix}`) !== undefined : false
+}
+
+function activeX14Entries<T extends { readonly index: number; readonly deleted?: boolean }>(
+	entries: readonly T[],
+): T[] {
+	return entries.filter((entry) => !entry.deleted).sort((a, b) => a.index - b.index)
 }
 
 function buildX14ConditionalFormattingXml(format: SheetX14ConditionalFormatInfo): string {

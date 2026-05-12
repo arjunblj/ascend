@@ -410,6 +410,7 @@ export function planWriteXlsx(
 		])
 		const sheetCapsuleMap = new Map<string, PreservationCapsule[]>()
 		const workbookCapsules: PreservationCapsule[] = []
+		const liveQueryTablePartPaths = collectLiveQueryTablePartPaths(workbook)
 		let nextGeneratedTableNumber = 1
 		let nextGeneratedCommentsNumber = 1
 		let nextGeneratedVmlNumber = 1
@@ -547,6 +548,10 @@ export function planWriteXlsx(
 
 		if (capsules) {
 			for (const capsule of capsules) {
+				if (isDeletedQueryTableCapsule(capsule, liveQueryTablePartPaths)) {
+					plan.skipCapsulePath(capsule.partPath)
+					continue
+				}
 				if (invalidateDigitalSignatures && isDigitalSignatureCapsule(capsule)) {
 					plan.skipCapsulePath(capsule.partPath)
 					continue
@@ -1145,6 +1150,9 @@ export function planWriteXlsx(
 					})
 					tableRelIds.push(relId)
 					nextGeneratedTableNumber++
+				}
+				for (const tableCapsule of tableCapsules) {
+					if (!usedTableCapsules.has(tableCapsule)) plan.skipCapsulePath(tableCapsule.partPath)
 				}
 				const generatedImages = sheet.imageRefs.filter(
 					(image) => image.content && image.contentType,
@@ -1899,6 +1907,27 @@ function resolveCapsuleOwner(
 	return sheetName ? { kind: 'sheet', sheetName } : null
 }
 
+function collectLiveQueryTablePartPaths(workbook: Workbook): ReadonlySet<string> {
+	const paths = new Set<string>()
+	for (const sheet of workbook.sheets) {
+		for (const table of sheet.tables) {
+			if (table.queryTable?.partPath) paths.add(table.queryTable.partPath)
+		}
+	}
+	for (const part of workbook.connectionParts) {
+		if (part.kind === 'queryTable') paths.add(part.partPath)
+	}
+	return paths
+}
+
+function isDeletedQueryTableCapsule(
+	capsule: PreservationCapsule,
+	liveQueryTablePartPaths: ReadonlySet<string>,
+): boolean {
+	if (isQueryTableDefinitionCapsule(capsule)) return !liveQueryTablePartPaths.has(capsule.partPath)
+	return false
+}
+
 function canPreserveTableCapsule(
 	table: Table,
 	content: Uint8Array,
@@ -2527,6 +2556,14 @@ function isPivotTableDefinitionCapsule(capsule: PreservationCapsule): boolean {
 		capsule.relType === REL_PIVOT_TABLE ||
 		capsule.contentType.includes('pivotTable+xml') ||
 		capsule.partPath.includes('/pivotTables/')
+	)
+}
+
+function isQueryTableDefinitionCapsule(capsule: PreservationCapsule): boolean {
+	return (
+		capsule.relType === REL_QUERY_TABLE ||
+		capsule.contentType.includes('queryTable+xml') ||
+		capsule.partPath.includes('/queryTables/')
 	)
 }
 

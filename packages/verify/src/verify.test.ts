@@ -479,6 +479,147 @@ describe('checker', () => {
 		})
 	})
 
+	test('detects broken x14 data validation sheet references', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.x14DataValidations.push({
+			index: 0,
+			sqref: 'MissingRange!C1',
+			type: 'list',
+			formula1: 'MissingList!A1:A5',
+		})
+
+		const result = check(wb)
+		const issues = result.issues.filter((i) => i.rule === 'data-validation-integrity')
+
+		expect(result.passed).toBe(false)
+		expect(issues).toHaveLength(2)
+		expect(issues.map((issue) => issue.details?.kind).sort()).toEqual([
+			'x14-formula-missing-sheet',
+			'x14-sqref-missing-sheet',
+		])
+		expect(issues.every((issue) => issue.severity === 'error')).toBe(true)
+		expect(issues.find((issue) => issue.details?.field === 'formula1')?.details).toMatchObject({
+			source: 'x14DataValidation',
+			index: 0,
+			missingSheet: 'MissingList',
+			reference: 'MissingList!A1:A5',
+		})
+		expect(issues.find((issue) => issue.details?.field === 'sqref')?.refs).toEqual([
+			'MissingRange!C1',
+		])
+	})
+
+	test('detects broken x14 conditional format sheet references', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'MissingCfRange!A1:A5',
+			type: 'dataBar',
+			formulas: ['MissingFormula!A1>0'],
+			dataBar: { cfvo: [{ type: 'formula', value: 'MissingBar!A1' }] },
+			iconSet: { cfvo: [{ type: 'formula', value: 'MissingIcon!A1' }] },
+		})
+
+		const result = check(wb)
+		const issues = result.issues.filter(
+			(i) =>
+				i.rule === 'conditional-format-integrity' &&
+				(i.details?.kind === 'x14-formula-missing-sheet' ||
+					i.details?.kind === 'x14-sqref-missing-sheet'),
+		)
+
+		expect(result.passed).toBe(false)
+		expect(issues).toHaveLength(4)
+		expect(issues.every((issue) => issue.severity === 'error')).toBe(true)
+		expect(issues.map((issue) => issue.details?.field).sort()).toEqual([
+			'dataBar.cfvo[0].value',
+			'formulas[0]',
+			'iconSet.cfvo[0].value',
+			'sqref',
+		])
+		expect(issues[0]?.details).toMatchObject({
+			source: 'x14ConditionalFormat',
+			index: 0,
+		})
+	})
+
+	test('detects deleted x14 entries that still carry live references', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.x14DataValidations.push({
+			index: 0,
+			sqref: 'A1',
+			formula1: 'Sheet1!B1',
+			deleted: true,
+		})
+		s.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'C1',
+			formulas: ['Sheet1!D1>0'],
+			deleted: true,
+		})
+
+		const result = check(wb)
+		const dataValidationIssue = result.issues.find(
+			(i) =>
+				i.rule === 'data-validation-integrity' &&
+				i.details?.kind === 'deleted-x14-data-validation-live-refs',
+		)
+		const conditionalFormatIssue = result.issues.find(
+			(i) =>
+				i.rule === 'conditional-format-integrity' &&
+				i.details?.kind === 'deleted-x14-conditional-format-live-refs',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(dataValidationIssue?.severity).toBe('warning')
+		expect(dataValidationIssue?.refs).toEqual(['Sheet1!A1'])
+		expect(dataValidationIssue?.details).toMatchObject({
+			source: 'x14DataValidation',
+			index: 0,
+			liveFields: ['sqref', 'formula1'],
+		})
+		expect(conditionalFormatIssue?.severity).toBe('warning')
+		expect(conditionalFormatIssue?.refs).toEqual(['Sheet1!C1'])
+		expect(conditionalFormatIssue?.details).toMatchObject({
+			source: 'x14ConditionalFormat',
+			index: 0,
+			liveFields: ['sqref', 'formulas[0]'],
+		})
+	})
+
+	test('detects ambiguous legacy and x14 conditional format overlap with missing priorities', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.conditionalFormats.push({
+			sqref: 'D1:D5',
+			rules: [{ type: 'expression', formulas: ['D1>0'] }],
+		})
+		s.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'D3:D7',
+			type: 'dataBar',
+			formulas: [],
+		})
+
+		const result = check(wb)
+		const issue = result.issues.find(
+			(i) =>
+				i.rule === 'conditional-format-integrity' &&
+				i.details?.kind === 'ambiguous-x14-legacy-overlap',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(issue?.severity).toBe('warning')
+		expect(issue?.refs).toEqual(['Sheet1!D1:D5', 'Sheet1!D3:D7'])
+		expect(issue?.details).toMatchObject({
+			left: { source: 'conditionalFormat', sqref: 'D1:D5', ruleType: 'expression' },
+			right: { source: 'x14ConditionalFormat', sqref: 'D3:D7', ruleType: 'dataBar' },
+		})
+	})
+
 	test('detects duplicate threaded comment ids in the same part', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

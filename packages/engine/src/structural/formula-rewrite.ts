@@ -451,20 +451,16 @@ export function rewriteSheetMetadataFormulasForShift(
 	for (let i = 0; i < sheet.conditionalFormats.length; i++) {
 		const format = sheet.conditionalFormats[i]
 		if (!format) continue
+		const rewrite = (formula: string | undefined): string | undefined =>
+			rewriteFormulaTextForShift(formula, sheet.name, sheet.name, axis, at, delta)
 		sheet.conditionalFormats[i] = {
 			...format,
-			rules: format.rules.map((rule) => ({
-				...rule,
-				formulas: rule.formulas.map(
-					(formula) =>
-						rewriteFormulaTextForShift(formula, sheet.name, sheet.name, axis, at, delta) ?? formula,
-				),
-			})),
+			rules: format.rules.map((rule) => rewriteConditionalFormatRuleWith(rule, rewrite)),
 		}
 	}
 	for (let i = 0; i < sheet.x14DataValidations.length; i++) {
 		const validation = sheet.x14DataValidations[i]
-		if (!validation) continue
+		if (!validation || validation.deleted) continue
 		const formula1 = rewriteFormulaTextForShift(
 			validation.formula1,
 			sheet.name,
@@ -489,7 +485,7 @@ export function rewriteSheetMetadataFormulasForShift(
 	}
 	for (let i = 0; i < sheet.x14ConditionalFormats.length; i++) {
 		const format = sheet.x14ConditionalFormats[i]
-		if (!format) continue
+		if (!format || format.deleted) continue
 		sheet.x14ConditionalFormats[i] = {
 			...format,
 			formulas: format.formulas.map(
@@ -798,7 +794,7 @@ export function rewriteSheetMetadataFormulasForMove(
 	}
 	for (let i = 0; i < sheet.x14DataValidations.length; i++) {
 		const validation = sheet.x14DataValidations[i]
-		if (!validation) continue
+		if (!validation || validation.deleted) continue
 		const formula1 = rewriteFormulaTextForMove(
 			validation.formula1,
 			sourceSheet,
@@ -823,7 +819,7 @@ export function rewriteSheetMetadataFormulasForMove(
 	}
 	for (let i = 0; i < sheet.x14ConditionalFormats.length; i++) {
 		const format = sheet.x14ConditionalFormats[i]
-		if (!format) continue
+		if (!format || format.deleted) continue
 		sheet.x14ConditionalFormats[i] = {
 			...format,
 			formulas: format.formulas.map(
@@ -980,7 +976,7 @@ export function rewriteSheetMetadataFormulasForTableRename(
 	}
 	for (let i = 0; i < sheet.x14DataValidations.length; i++) {
 		const validation = sheet.x14DataValidations[i]
-		if (!validation) continue
+		if (!validation || validation.deleted) continue
 		const formula1 = rewrite(validation.formula1)
 		const formula2 = rewrite(validation.formula2)
 		sheet.x14DataValidations[i] = {
@@ -991,7 +987,7 @@ export function rewriteSheetMetadataFormulasForTableRename(
 	}
 	for (let i = 0; i < sheet.x14ConditionalFormats.length; i++) {
 		const format = sheet.x14ConditionalFormats[i]
-		if (!format) continue
+		if (!format || format.deleted) continue
 		sheet.x14ConditionalFormats[i] = rewriteX14ConditionalFormatWith(format, rewrite)
 	}
 	for (let i = 0; i < sheet.tables.length; i++) {
@@ -1056,7 +1052,7 @@ export function rewriteSheetMetadataFormulasForTableColumnRename(
 	}
 	for (let i = 0; i < sheet.x14DataValidations.length; i++) {
 		const validation = sheet.x14DataValidations[i]
-		if (!validation) continue
+		if (!validation || validation.deleted) continue
 		const rewrite = rewriteForSqref(validation.sqref)
 		const formula1 = rewrite(validation.formula1)
 		const formula2 = rewrite(validation.formula2)
@@ -1068,7 +1064,7 @@ export function rewriteSheetMetadataFormulasForTableColumnRename(
 	}
 	for (let i = 0; i < sheet.x14ConditionalFormats.length; i++) {
 		const format = sheet.x14ConditionalFormats[i]
-		if (!format) continue
+		if (!format || format.deleted) continue
 		const rewrite = rewriteForSqref(format.sqref)
 		sheet.x14ConditionalFormats[i] = rewriteX14ConditionalFormatWith(format, rewrite)
 	}

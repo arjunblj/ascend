@@ -223,6 +223,14 @@ export function handleDeleteTable(
 	}
 	const idx = sheet.tables.findIndex((t) => t.id === table.id)
 	if (idx >= 0) sheet.tables.splice(idx, 1)
+	if (table.queryTable?.partPath) {
+		for (let i = workbook.connectionParts.length - 1; i >= 0; i--) {
+			const part = workbook.connectionParts[i]
+			if (part?.kind === 'queryTable' && part.partPath === table.queryTable.partPath) {
+				workbook.connectionParts.splice(i, 1)
+			}
+		}
+	}
 	if (sheet.autoFilter?.ref) {
 		const af = safeParseRange(sheet.autoFilter.ref)
 		if (
@@ -260,7 +268,11 @@ export function handleRenameTable(
 	}
 	const idx = sheet.tables.findIndex((t) => t.id === table.id)
 	if (idx >= 0) {
-		sheet.tables[idx] = { ...table, name: op.newName }
+		sheet.tables[idx] = {
+			...table,
+			name: op.newName,
+			...(table.nameAttribute !== null ? { nameAttribute: op.newName } : {}),
+		}
 	}
 	clearFormulaMetadata(workbook)
 	rewriteTableNameInFormulas(workbook, table.name, op.newName)
@@ -283,6 +295,9 @@ export function handleResizeTable(
 	const overlappingTable = findOverlappingTable(sheet, ref, table.id)
 	if (overlappingTable) {
 		return err(tableRangeOverlapError('resize', table.name, op.ref, overlappingTable))
+	}
+	if (table.queryTable && tableColumnsChanged(table.ref, ref)) {
+		return err(queryTableColumnResizeError(table, op.ref))
 	}
 	const droppedColumnBlocker = findDeletedTableColumnReference(
 		workbook,
@@ -310,6 +325,10 @@ export function handleResizeTable(
 	}
 	clearFormulaMetadata(workbook)
 	return ok(patch([], [sheet.name], true))
+}
+
+function tableColumnsChanged(before: RangeRef, after: RangeRef): boolean {
+	return before.start.col !== after.start.col || before.end.col !== after.end.col
 }
 
 function validateTableName(name: string): ReturnType<typeof ascendError> | null {
@@ -400,6 +419,25 @@ function tableRangeOverlapError(
 					...(overlappingTable.partPath ? { partPath: overlappingTable.partPath } : {}),
 				},
 			},
+		},
+	)
+}
+
+function queryTableColumnResizeError(table: Table, ref: string): ReturnType<typeof ascendError> {
+	return ascendError(
+		'VALIDATION_ERROR',
+		`Cannot resize queryTable-backed table "${table.name}" to ${ref} because changing columns would leave queryTable field bindings ambiguous`,
+		{
+			refs: [rangeToA1(table.ref), ref],
+			details: {
+				kind: 'query-table-column-resize',
+				tableName: table.name,
+				currentRef: rangeToA1(table.ref),
+				requestedRef: ref,
+				queryTablePartPath: table.queryTable?.partPath,
+			},
+			suggestedFix:
+				'Resize only the row span, or remove and rebuild the queryTable sidecar with matching queryTableField bindings before changing table columns.',
 		},
 	)
 }

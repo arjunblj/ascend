@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { copyFile, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
-import type { ExternalReferenceInfo, Workbook } from '@ascend/core'
+import { type ExternalReferenceInfo, parseRange, type RangeRef, type Workbook } from '@ascend/core'
 import type {
 	XlsxPackageGraph,
 	XlsxPackageGraphFidelityIssue,
@@ -314,6 +314,7 @@ export async function createAgentPlan(
 		preservation,
 		packageGraphAudit,
 		wb.getWorkbookModel(),
+		ops,
 		wb.inspect().externalReferenceDetails,
 	)
 	await progressFromPhase(writePolicyPhase(writePolicy), progress)
@@ -489,6 +490,7 @@ export async function commitAgentPlan(
 		preservation,
 		packageGraphAudit,
 		wb.getWorkbookModel(),
+		ops,
 		wb.inspect().externalReferenceDetails,
 	)
 	await progressFromPhase(writePolicyPhase(writePolicy), progress)
@@ -1214,6 +1216,7 @@ function buildWritePolicyReport(
 	preservation: ReturnType<AscendWorkbook['writePlanSummary']>,
 	packageGraphAudit: PackageGraphAudit,
 	workbook: Workbook,
+	operations: readonly Operation[] = [],
 	externalReferences: readonly ExternalReferenceInfo[] = [],
 ): WritePolicyReport {
 	const diagnostics: WritePolicyDiagnostic[] = []
@@ -1357,6 +1360,10 @@ function buildWritePolicyReport(
 	const x14ConditionalFormatExtensionPayloads =
 		collectX14ConditionalFormatExtensionPayloads(workbook)
 	if (x14ConditionalFormatExtensionPayloads.length > 0) {
+		const relatedOperations = collectX14ConditionalFormatSemanticEdits(
+			operations,
+			x14ConditionalFormatExtensionPayloads,
+		)
 		const partPaths = uniqueStrings(
 			x14ConditionalFormatExtensionPayloads.flatMap((entry) =>
 				entry.sheetPartPath ? [entry.sheetPartPath] : [],
@@ -1364,18 +1371,30 @@ function buildWritePolicyReport(
 		)
 		diagnostics.push({
 			code: 'conditional-format-extension-preservation',
-			severity: 'warning',
-			message: `${x14ConditionalFormatExtensionPayloads.length} x14 conditional-format rule extension payload(s) will be preserved inside generated worksheet XML.`,
-			suggestedAction:
-				'Inspect sheet x14ConditionalFormats before editing conditional-format order or rules, then verify postWrite.packageGraphAudit after write.',
+			severity: relatedOperations.length > 0 ? 'warning' : 'info',
+			message:
+				relatedOperations.length > 0
+					? `${x14ConditionalFormatExtensionPayloads.length} preserved x14 conditional-format extension payload(s) share a sheet with planned conditional-format semantic edits.`
+					: `${x14ConditionalFormatExtensionPayloads.length} x14 conditional-format extension payload(s) will be preserved as opaque worksheet XML; no conditional-format semantic edit is planned.`,
+			suggestedAction: x14ConditionalFormatSuggestedAction(relatedOperations.length > 0),
 			...(partPaths.length > 0 ? { partPaths } : {}),
 			featureFamily: 'x14ConditionalFormatting',
 			preservationPolicy: 'generated',
-			details: { x14ConditionalFormats: x14ConditionalFormatExtensionPayloads },
+			details: {
+				provenance: 'worksheet-extLst',
+				preservationMode: 'opaque-payload-preserved-in-generated-worksheet-xml',
+				semanticEditRisk: relatedOperations.length > 0,
+				relatedOperations,
+				x14ConditionalFormats: x14ConditionalFormatExtensionPayloads,
+			},
 		})
 	}
 	const x14DataValidationExtensionPayloads = collectX14DataValidationExtensionPayloads(workbook)
 	if (x14DataValidationExtensionPayloads.length > 0) {
+		const relatedOperations = collectX14DataValidationSemanticEdits(
+			operations,
+			x14DataValidationExtensionPayloads,
+		)
 		const partPaths = uniqueStrings(
 			x14DataValidationExtensionPayloads.flatMap((entry) =>
 				entry.sheetPartPath ? [entry.sheetPartPath] : [],
@@ -1383,14 +1402,22 @@ function buildWritePolicyReport(
 		)
 		diagnostics.push({
 			code: 'data-validation-extension-preservation',
-			severity: 'warning',
-			message: `${x14DataValidationExtensionPayloads.length} x14 data-validation extension rule(s) will be preserved inside generated worksheet XML.`,
-			suggestedAction:
-				'Inspect sheet x14DataValidations before editing validation ranges or formulas, then verify postWrite.packageGraphAudit after write.',
+			severity: relatedOperations.length > 0 ? 'warning' : 'info',
+			message:
+				relatedOperations.length > 0
+					? `${x14DataValidationExtensionPayloads.length} preserved x14 data-validation extension payload(s) overlap planned data-validation semantic edits.`
+					: `${x14DataValidationExtensionPayloads.length} x14 data-validation extension payload(s) will be preserved as opaque worksheet XML; no data-validation semantic edit is planned.`,
+			suggestedAction: x14DataValidationSuggestedAction(relatedOperations.length > 0),
 			...(partPaths.length > 0 ? { partPaths } : {}),
 			featureFamily: 'x14DataValidation',
 			preservationPolicy: 'generated',
-			details: { x14DataValidations: x14DataValidationExtensionPayloads },
+			details: {
+				provenance: 'worksheet-extLst',
+				preservationMode: 'opaque-payload-preserved-in-generated-worksheet-xml',
+				semanticEditRisk: relatedOperations.length > 0,
+				relatedOperations,
+				x14DataValidations: x14DataValidationExtensionPayloads,
+			},
 		})
 	}
 	if (externalReferences.length > 0) {
@@ -1490,6 +1517,7 @@ function buildWritePolicyReport(
 interface X14ConditionalFormatExtensionPayload {
 	readonly sheetName: string
 	readonly sheetPartPath?: string
+	readonly source: 'x14:conditionalFormatting'
 	readonly sqref: string
 	readonly index: number
 	readonly priority?: number
@@ -1504,7 +1532,10 @@ function collectX14ConditionalFormatExtensionPayloads(
 	const payloads: X14ConditionalFormatExtensionPayload[] = []
 	for (const sheet of workbook.sheets) {
 		for (const format of sheet.x14ConditionalFormats) {
-			const preservedAttributeNames = Object.keys(format.preservedRuleAttributes ?? {}).sort()
+			if (format.deleted) continue
+			const preservedAttributeNames = Object.keys(format.preservedRuleAttributes ?? {})
+				.filter((name) => !X14_CONDITIONAL_FORMAT_MODELED_ATTRIBUTES.has(name))
+				.sort()
 			const preservedChildElements = uniqueStrings(
 				(format.preservedRuleChildXml ?? []).map(preservedChildElementName),
 			).sort()
@@ -1514,6 +1545,7 @@ function collectX14ConditionalFormatExtensionPayloads(
 			payloads.push({
 				sheetName: sheet.name,
 				...(sheet.preservedXml?.partPath ? { sheetPartPath: sheet.preservedXml.partPath } : {}),
+				source: 'x14:conditionalFormatting',
 				sqref: format.sqref,
 				index: format.index,
 				...(format.priority !== undefined ? { priority: format.priority } : {}),
@@ -1529,6 +1561,7 @@ function collectX14ConditionalFormatExtensionPayloads(
 interface X14DataValidationExtensionPayload {
 	readonly sheetName: string
 	readonly sheetPartPath?: string
+	readonly source: 'x14:dataValidations'
 	readonly sqref: string
 	readonly index: number
 	readonly type?: string
@@ -1545,23 +1578,217 @@ function collectX14DataValidationExtensionPayloads(
 	const payloads: X14DataValidationExtensionPayload[] = []
 	for (const sheet of workbook.sheets) {
 		for (const validation of sheet.x14DataValidations) {
+			if (validation.deleted) continue
+			const preservedAttributeNames = Object.keys(validation.preservedAttributes ?? {})
+				.filter((name) => !X14_DATA_VALIDATION_MODELED_ATTRIBUTES.has(name))
+				.sort()
+			const preservedChildElements = uniqueStrings(
+				(validation.preservedChildXml ?? []).map(preservedChildElementName),
+			).sort()
+			if (preservedAttributeNames.length === 0 && preservedChildElements.length === 0) {
+				continue
+			}
 			payloads.push({
 				sheetName: sheet.name,
 				...(sheet.preservedXml?.partPath ? { sheetPartPath: sheet.preservedXml.partPath } : {}),
+				source: 'x14:dataValidations',
 				sqref: validation.sqref,
 				index: validation.index,
 				...(validation.type ? { type: validation.type } : {}),
 				...(validation.operator ? { operator: validation.operator } : {}),
 				hasFormula1: validation.formula1 !== undefined,
 				hasFormula2: validation.formula2 !== undefined,
-				preservedAttributeNames: Object.keys(validation.preservedAttributes ?? {}).sort(),
-				preservedChildElements: uniqueStrings(
-					(validation.preservedChildXml ?? []).map(preservedChildElementName),
-				).sort(),
+				preservedAttributeNames,
+				preservedChildElements,
 			})
 		}
 	}
 	return payloads
+}
+
+const X14_CONDITIONAL_FORMAT_MODELED_ATTRIBUTES = new Set(['type', 'priority', 'id'])
+
+const X14_DATA_VALIDATION_MODELED_ATTRIBUTES = new Set([
+	'sqref',
+	'type',
+	'operator',
+	'errorStyle',
+	'imeMode',
+	'allowBlank',
+	'showInputMessage',
+	'showErrorMessage',
+	'showDropDown',
+	'promptTitle',
+	'prompt',
+	'errorTitle',
+	'error',
+])
+
+interface X14SemanticEdit {
+	readonly operationIndex: number
+	readonly op: Operation['op']
+	readonly sheetName: string
+	readonly range?: string
+	readonly priority?: number
+	readonly ruleIndex?: number
+	readonly affectedPayloads: readonly X14AffectedPayload[]
+	readonly reason: string
+}
+
+interface X14AffectedPayload {
+	readonly sheetName: string
+	readonly sheetPartPath?: string
+	readonly source:
+		| X14ConditionalFormatExtensionPayload['source']
+		| X14DataValidationExtensionPayload['source']
+	readonly sqref: string
+	readonly index: number
+	readonly priority?: number
+}
+
+function collectX14ConditionalFormatSemanticEdits(
+	operations: readonly Operation[],
+	payloads: readonly X14ConditionalFormatExtensionPayload[],
+): X14SemanticEdit[] {
+	const edits: X14SemanticEdit[] = []
+	operations.forEach((operation, operationIndex) => {
+		if (operation.op !== 'setConditionalFormat' && operation.op !== 'deleteConditionalFormat') {
+			return
+		}
+		const affectedPayloads = payloads.filter((payload) =>
+			conditionalFormatOperationAffectsPayload(operation, payload),
+		)
+		if (affectedPayloads.length === 0) return
+		edits.push({
+			operationIndex,
+			op: operation.op,
+			sheetName: operation.sheet,
+			...(operation.range ? { range: operation.range } : {}),
+			...(operation.op === 'deleteConditionalFormat' && operation.priority !== undefined
+				? { priority: operation.priority }
+				: {}),
+			...(operation.op === 'deleteConditionalFormat' && operation.ruleIndex !== undefined
+				? { ruleIndex: operation.ruleIndex }
+				: {}),
+			affectedPayloads: affectedPayloads.map(x14AffectedPayload),
+			reason:
+				'conditional-format operation may change rule order, priority, or range semantics around preserved x14 extension XML',
+		})
+	})
+	return edits
+}
+
+function collectX14DataValidationSemanticEdits(
+	operations: readonly Operation[],
+	payloads: readonly X14DataValidationExtensionPayload[],
+): X14SemanticEdit[] {
+	const edits: X14SemanticEdit[] = []
+	operations.forEach((operation, operationIndex) => {
+		if (operation.op !== 'setDataValidation' && operation.op !== 'deleteDataValidation') return
+		const affectedPayloads = payloads.filter((payload) =>
+			dataValidationOperationAffectsPayload(operation, payload),
+		)
+		if (affectedPayloads.length === 0) return
+		edits.push({
+			operationIndex,
+			op: operation.op,
+			sheetName: operation.sheet,
+			range: operation.range,
+			affectedPayloads: affectedPayloads.map(x14AffectedPayload),
+			reason:
+				'data-validation operation overlaps preserved x14 extension XML for the same worksheet range',
+		})
+	})
+	return edits
+}
+
+function conditionalFormatOperationAffectsPayload(
+	operation: Extract<Operation, { op: 'setConditionalFormat' | 'deleteConditionalFormat' }>,
+	payload: X14ConditionalFormatExtensionPayload,
+): boolean {
+	if (operation.sheet !== payload.sheetName) return false
+	if (operation.op === 'deleteConditionalFormat') {
+		if (operation.ruleIndex !== undefined) return operation.ruleIndex === payload.index
+		if (operation.priority !== undefined) return operation.priority === payload.priority
+	}
+	if (!operation.range) return true
+	return rangesMayOverlap(operation.range, payload.sqref)
+}
+
+function dataValidationOperationAffectsPayload(
+	operation: Extract<Operation, { op: 'setDataValidation' | 'deleteDataValidation' }>,
+	payload: X14DataValidationExtensionPayload,
+): boolean {
+	if (operation.sheet !== payload.sheetName) return false
+	return rangesMayOverlap(operation.range, payload.sqref)
+}
+
+function rangesMayOverlap(left: string, right: string): boolean {
+	const leftRanges = parseSqrefRanges(left)
+	const rightRanges = parseSqrefRanges(right)
+	if (leftRanges.length === 0 || rightRanges.length === 0) return true
+	return leftRanges.some((leftRange) =>
+		rightRanges.some((rightRange) => rangesOverlap(leftRange, rightRange)),
+	)
+}
+
+function parseSqrefRanges(sqref: string): RangeRef[] {
+	const ranges: RangeRef[] = []
+	for (const part of sqref.trim().split(/\s+/)) {
+		if (!part) continue
+		try {
+			ranges.push(parseRange(part))
+		} catch {
+			return []
+		}
+	}
+	return ranges
+}
+
+function rangesOverlap(left: RangeRef, right: RangeRef): boolean {
+	const leftStartRow = Math.min(left.start.row, left.end.row)
+	const leftEndRow = Math.max(left.start.row, left.end.row)
+	const leftStartCol = Math.min(left.start.col, left.end.col)
+	const leftEndCol = Math.max(left.start.col, left.end.col)
+	const rightStartRow = Math.min(right.start.row, right.end.row)
+	const rightEndRow = Math.max(right.start.row, right.end.row)
+	const rightStartCol = Math.min(right.start.col, right.end.col)
+	const rightEndCol = Math.max(right.start.col, right.end.col)
+	return (
+		leftStartRow <= rightEndRow &&
+		leftEndRow >= rightStartRow &&
+		leftStartCol <= rightEndCol &&
+		leftEndCol >= rightStartCol
+	)
+}
+
+function x14AffectedPayload(
+	payload: X14ConditionalFormatExtensionPayload | X14DataValidationExtensionPayload,
+): X14AffectedPayload {
+	return {
+		sheetName: payload.sheetName,
+		...(payload.sheetPartPath ? { sheetPartPath: payload.sheetPartPath } : {}),
+		source: payload.source,
+		sqref: payload.sqref,
+		index: payload.index,
+		...('priority' in payload && payload.priority !== undefined
+			? { priority: payload.priority }
+			: {}),
+	}
+}
+
+function x14ConditionalFormatSuggestedAction(hasSemanticEditRisk: boolean): string {
+	if (hasSemanticEditRisk) {
+		return 'Inspect inspectSheet(sheet).x14ConditionalFormats entries by sheetName, sheetPartPath, index, priority, and sqref before committing conditional-format edits; verify postWrite.packageGraphAudit after write.'
+	}
+	return 'No action is required for unrelated cell edits; keep inspectSheet(sheet).x14ConditionalFormats provenance with the edit record if auditing opaque x14 payload preservation.'
+}
+
+function x14DataValidationSuggestedAction(hasSemanticEditRisk: boolean): string {
+	if (hasSemanticEditRisk) {
+		return 'Inspect inspectSheet(sheet).x14DataValidations entries by sheetName, sheetPartPath, index, and sqref before committing data-validation edits; verify postWrite.packageGraphAudit after write.'
+	}
+	return 'No action is required for unrelated cell edits; keep inspectSheet(sheet).x14DataValidations provenance with the edit record if auditing opaque x14 payload preservation.'
 }
 
 function preservedChildElementName(xml: string): string {

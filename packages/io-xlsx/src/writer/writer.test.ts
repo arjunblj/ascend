@@ -5553,6 +5553,189 @@ describe('writeXlsx', () => {
 		expect(xml).not.toContain('Lookup!$A$1:$A$2')
 	})
 
+	it('preserves x14 validation and conditional-format payloads while updating and deleting entries', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Data')
+		sheet.x14DataValidations.push(
+			{
+				index: 0,
+				sqref: 'A2',
+				type: 'list',
+				formula1: 'List!$A$2:$A$3',
+			},
+			{
+				index: 1,
+				sqref: 'B1',
+				type: 'whole',
+				deleted: true,
+			},
+		)
+		sheet.x14ConditionalFormats.push(
+			{
+				index: 0,
+				sqref: 'C2',
+				formulas: ['A2>0'],
+				type: 'expression',
+			},
+			{
+				index: 1,
+				sqref: 'D1',
+				formulas: ['B1>0'],
+				type: 'expression',
+				deleted: true,
+			},
+		)
+		sheet.preservedExtLst = `<extLst xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main" xmlns:x14ac="http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac" xmlns:xr="http://schemas.microsoft.com/office/spreadsheetml/2014/revision"><ext uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}"><x14:conditionalFormattings><x14:conditionalFormatting><x14:cfRule type="expression" activePresent="1" xr:uid="{CF-KEEP}"><xm:f>A1&gt;0</xm:f><x14:extLst><x14:ext uri="{cf-child}"><x14ac:metadata flag="keep"/></x14:ext></x14:extLst></x14:cfRule><xm:sqref>C1</xm:sqref></x14:conditionalFormatting><x14:conditionalFormatting><x14:cfRule type="expression"><xm:f>B1&gt;0</xm:f></x14:cfRule><xm:sqref>D1</xm:sqref></x14:conditionalFormatting></x14:conditionalFormattings><x14:dataValidations count="2"><x14:dataValidation type="list" customFlag="keep"><x14:formula1><xm:f>List!$A$1:$A$2</xm:f></x14:formula1><x14ac:metadata flag="keep"><x14ac:item val="1"/></x14ac:metadata><xm:sqref>A1</xm:sqref></x14:dataValidation><x14:dataValidation type="whole" customFlag="drop"><xm:sqref>B1</xm:sqref></x14:dataValidation></x14:dataValidations></ext></extLst>`
+
+		const written = writeXlsx(wb)
+		expectOk(written)
+		const entries = unzipSync(written.value)
+		const worksheet = entries['xl/worksheets/sheet1.xml']
+		expect(worksheet).toBeDefined()
+		if (!worksheet) return
+		const xml = new TextDecoder().decode(worksheet)
+		const validationXml = xml.match(/<x14:dataValidations\b[\s\S]*?<\/x14:dataValidations>/)?.[0]
+		const conditionalXml = xml.match(
+			/<x14:conditionalFormattings\b[\s\S]*?<\/x14:conditionalFormattings>/,
+		)?.[0]
+
+		expect(validationXml).toContain('<x14:dataValidations count="1">')
+		expect(validationXml).toContain('customFlag="keep"')
+		expect(validationXml).toContain(
+			'<x14ac:metadata flag="keep"><x14ac:item val="1"/></x14ac:metadata>',
+		)
+		expect(validationXml).toContain('<xm:f>List!$A$2:$A$3</xm:f>')
+		expect(validationXml).toContain('<xm:sqref>A2</xm:sqref>')
+		expect(validationXml).not.toContain('customFlag="drop"')
+		expect(validationXml).not.toContain('<xm:sqref>B1</xm:sqref>')
+		expect(validationXml?.indexOf('<x14:formula1')).toBeLessThan(
+			validationXml?.indexOf('<x14ac:metadata') ?? -1,
+		)
+		expect(validationXml?.indexOf('<x14ac:metadata')).toBeLessThan(
+			validationXml?.indexOf('<xm:sqref>A2</xm:sqref>') ?? -1,
+		)
+
+		expect(conditionalXml).toContain('activePresent="1"')
+		expect(conditionalXml).toContain('xr:uid="{CF-KEEP}"')
+		expect(conditionalXml).toContain(
+			'<x14:extLst><x14:ext uri="{cf-child}"><x14ac:metadata flag="keep"/></x14:ext></x14:extLst>',
+		)
+		expect(conditionalXml).toContain('<xm:f>A2&gt;0</xm:f>')
+		expect(conditionalXml).toContain('<xm:sqref>C2</xm:sqref>')
+		expect(conditionalXml).not.toContain('<xm:sqref>D1</xm:sqref>')
+		expect(conditionalXml).not.toContain('<xm:f>B1&gt;0</xm:f>')
+		expect(conditionalXml?.indexOf('<xm:f>A2&gt;0</xm:f>')).toBeLessThan(
+			conditionalXml?.indexOf('<x14:extLst>') ?? -1,
+		)
+		expect(conditionalXml?.indexOf('<x14:extLst>')).toBeLessThan(
+			conditionalXml?.indexOf('<xm:sqref>C2</xm:sqref>') ?? -1,
+		)
+	})
+
+	it('writes generated x14 containers into the worksheet extension and preserves extension order', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Data')
+		sheet.x14DataValidations.push(
+			{
+				index: 2,
+				sqref: 'B3',
+				type: 'whole',
+			},
+			{
+				index: 1,
+				sqref: 'B2',
+				type: 'list',
+				formula1: 'List!$A$1:$A$2',
+				preservedAttributes: { customFlag: '1' },
+				preservedChildXml: ['<x14ac:metadata flag="dv"/>'],
+			},
+		)
+		sheet.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'C2',
+			formulas: ['B2>0'],
+			type: 'expression',
+			preservedRuleAttributes: { activePresent: '1' },
+			preservedRuleChildXml: [
+				'<x14:extLst><x14:ext uri="{cf-child}"><x14ac:metadata flag="cf"/></x14:ext></x14:extLst>',
+			],
+		})
+		sheet.preservedExtLst = `<extLst xmlns:x15="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main"><ext uri="{UNRELATED}"><x15:keep/></ext><ext uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}"><x15:before/></ext></extLst>`
+
+		const written = writeXlsx(wb)
+		expectOk(written)
+		const entries = unzipSync(written.value)
+		const worksheet = entries['xl/worksheets/sheet1.xml']
+		expect(worksheet).toBeDefined()
+		if (!worksheet) return
+		const xml = new TextDecoder().decode(worksheet)
+		const unrelatedExt = xml.match(/<ext uri="\{UNRELATED\}">[\s\S]*?<\/ext>/)?.[0]
+		const worksheetExt = xml.match(
+			/<ext uri="\{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF\}"[\s\S]*?<\/ext>/,
+		)?.[0]
+
+		expect(unrelatedExt).toBe('<ext uri="{UNRELATED}"><x15:keep/></ext>')
+		expect(worksheetExt).toContain(
+			'xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"',
+		)
+		expect(worksheetExt).toContain('xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"')
+		expect(worksheetExt).toContain('<x15:before/>')
+		expect(worksheetExt).toContain('<x14:conditionalFormattings>')
+		expect(worksheetExt).toContain('<x14:dataValidations count="2">')
+		expect(worksheetExt).toContain('activePresent="1"')
+		expect(worksheetExt).toContain('customFlag="1"')
+		expect(worksheetExt).toContain('<x14ac:metadata flag="dv"/>')
+		expect(worksheetExt).toContain(
+			'<x14:extLst><x14:ext uri="{cf-child}"><x14ac:metadata flag="cf"/></x14:ext></x14:extLst>',
+		)
+		expect(worksheetExt?.indexOf('<xm:sqref>B2</xm:sqref>')).toBeLessThan(
+			worksheetExt?.indexOf('<xm:sqref>B3</xm:sqref>') ?? -1,
+		)
+		expect(xml.indexOf('<ext uri="{UNRELATED}">')).toBeLessThan(
+			xml.indexOf('<ext uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}"'),
+		)
+		expect(worksheetExt?.indexOf('<x15:before/>')).toBeLessThan(
+			worksheetExt?.indexOf('<x14:conditionalFormattings>') ?? -1,
+		)
+		expect(worksheetExt?.indexOf('<x14:conditionalFormattings>')).toBeLessThan(
+			worksheetExt?.indexOf('<x14:dataValidations') ?? -1,
+		)
+	})
+
+	it('expands self-closing x14 containers when generated entries are added', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Data')
+		sheet.x14DataValidations.push({
+			index: 0,
+			sqref: 'A1',
+			type: 'whole',
+		})
+		sheet.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'B1',
+			formulas: ['A1>0'],
+			type: 'expression',
+		})
+		sheet.preservedExtLst = `<extLst xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"><ext uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}"><x14:conditionalFormattings/><x14:dataValidations count="0"/></ext></extLst>`
+
+		const written = writeXlsx(wb)
+		expectOk(written)
+		const entries = unzipSync(written.value)
+		const worksheet = entries['xl/worksheets/sheet1.xml']
+		expect(worksheet).toBeDefined()
+		if (!worksheet) return
+		const xml = new TextDecoder().decode(worksheet)
+
+		expect([...xml.matchAll(/<x14:conditionalFormattings\b/g)]).toHaveLength(1)
+		expect([...xml.matchAll(/<x14:dataValidations\b/g)]).toHaveLength(1)
+		expect(xml).toContain(
+			'<x14:conditionalFormattings><x14:conditionalFormatting><x14:cfRule type="expression"><xm:f>A1&gt;0</xm:f></x14:cfRule><xm:sqref>B1</xm:sqref></x14:conditionalFormatting></x14:conditionalFormattings>',
+		)
+		expect(xml).toContain(
+			'<x14:dataValidations count="1"><x14:dataValidation type="whole"><xm:sqref>A1</xm:sqref></x14:dataValidation></x14:dataValidations>',
+		)
+	})
+
 	it('preserves threaded comments XML through read-write round-trip', () => {
 		const threadedCommentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <ThreadedComments xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">

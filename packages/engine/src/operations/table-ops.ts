@@ -1,4 +1,12 @@
-import type { AutoFilter, Sheet, Table, TableColumn, TableStyleInfo, Workbook } from '@ascend/core'
+import type {
+	AutoFilter,
+	Sheet,
+	Table,
+	TableColumn,
+	TableId,
+	TableStyleInfo,
+	Workbook,
+} from '@ascend/core'
 import { createTableId, toA1 } from '@ascend/core'
 import { normalizeFormulaInput } from '@ascend/formulas'
 import type { Operation, Result } from '@ascend/schema'
@@ -42,16 +50,20 @@ export function handleCreateTable(
 	const sheet = result.value
 	const rangeResult = safeParseRange(op.ref)
 	if (!rangeResult.ok) return rangeResult
-	if (sheet.tables.some((table) => table.name === op.name)) {
+	if (findTableNameCollision(workbook, op.name)) {
 		return err(
 			ascendError('NAME_CONFLICT', `Table "${op.name}" already exists`, {
 				suggestedFix:
-					'Choose a different table name or use a range that does not overlap with existing tables',
+					'Choose a workbook-unique table name so structured references remain unambiguous.',
 			}),
 		)
 	}
 
 	const ref = rangeResult.value
+	const overlappingTable = findOverlappingTable(sheet, ref)
+	if (overlappingTable) {
+		return err(tableRangeOverlapError('create', op.name, op.ref, overlappingTable))
+	}
 	const width = ref.end.col - ref.start.col + 1
 	const columns = buildTableColumns(sheet, ref, width, op.hasHeaders)
 	sheet.tables.push({
@@ -251,6 +263,10 @@ export function handleResizeTable(
 	const rangeResult = safeParseRange(op.ref)
 	if (!rangeResult.ok) return rangeResult
 	const ref = rangeResult.value
+	const overlappingTable = findOverlappingTable(sheet, ref, table.id)
+	if (overlappingTable) {
+		return err(tableRangeOverlapError('resize', table.name, op.ref, overlappingTable))
+	}
 	const droppedColumnBlocker = findDeletedTableColumnReference(
 		workbook,
 		collectDroppedTableColumnsForResize(table, ref),
@@ -272,6 +288,54 @@ export function handleResizeTable(
 	}
 	clearFormulaMetadata(workbook)
 	return ok(patch([], [sheet.name], true))
+}
+
+function findTableNameCollision(workbook: Workbook, name: string): Table | null {
+	const lowerName = name.toLowerCase()
+	for (const sheet of workbook.sheets) {
+		for (const table of sheet.tables) {
+			if (table.name.toLowerCase() === lowerName) return table
+		}
+	}
+	return null
+}
+
+function findOverlappingTable(
+	sheet: Sheet,
+	ref: Table['ref'],
+	exceptTableId?: TableId,
+): Table | null {
+	return (
+		sheet.tables.find(
+			(table) => table.id !== exceptTableId && tableRangesOverlap(table.ref, ref),
+		) ?? null
+	)
+}
+
+function tableRangesOverlap(a: Table['ref'], b: Table['ref']): boolean {
+	return (
+		a.start.row <= b.end.row &&
+		a.end.row >= b.start.row &&
+		a.start.col <= b.end.col &&
+		a.end.col >= b.start.col
+	)
+}
+
+function tableRangeOverlapError(
+	operation: 'create' | 'resize',
+	tableName: string,
+	ref: string,
+	overlappingTable: Table,
+): ReturnType<typeof ascendError> {
+	return ascendError(
+		'VALIDATION_ERROR',
+		`Cannot ${operation} table "${tableName}" at ${ref} because it overlaps table "${overlappingTable.name}" at ${rangeToA1(overlappingTable.ref)}`,
+		{
+			refs: [ref, rangeToA1(overlappingTable.ref)],
+			suggestedFix:
+				'Choose a non-overlapping range or resize/delete the existing table before changing table ownership.',
+		},
+	)
 }
 
 function tableResizeDroppedColumnReferenceError(
@@ -322,6 +386,10 @@ function buildResizedTableColumns(
 		})
 	}
 	return columns
+}
+
+function rangeToA1(range: Table['ref']): string {
+	return `${toA1(range.start)}:${toA1(range.end)}`
 }
 
 function nextUniqueTableColumnName(base: string, usedNames: Set<string>): string {

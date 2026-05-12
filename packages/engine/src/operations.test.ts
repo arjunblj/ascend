@@ -2804,6 +2804,59 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('createTable rejects workbook-scoped duplicate table names', () => {
+		const wb = createWorkbook()
+		const sheet1 = wb.addSheet('Sheet1')
+		const sheet2 = wb.addSheet('Sheet2')
+		sheet1.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: sheet1.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 1, col: 1 } },
+			columns: [{ name: 'Name' }, { name: 'Amount' }],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+
+		const result = applyOperation(wb, {
+			op: 'createTable',
+			sheet: 'Sheet2',
+			ref: 'A1:B2',
+			name: 'sales',
+			hasHeaders: true,
+		})
+
+		expectErr(result)
+		expect(result.error.message).toContain('already exists')
+		expect(sheet2.tables).toHaveLength(0)
+	})
+
+	test('createTable rejects ranges that overlap existing tables', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 2 } },
+			columns: [{ name: 'Region' }, { name: 'Rep' }, { name: 'Amount' }],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+
+		const result = applyOperation(wb, {
+			op: 'createTable',
+			sheet: 'Sheet1',
+			ref: 'C3:D5',
+			name: 'Forecast',
+			hasHeaders: true,
+		})
+
+		expectErr(result)
+		expect(result.error.message).toContain('overlaps table "Sales"')
+		expect(sheet.tables.map((table) => table.name)).toEqual(['Sales'])
+	})
+
 	test('appendRows expands a table and writes new values', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -3208,6 +3261,46 @@ describe('applyOperation', () => {
 			{ id: 2, name: 'Amount', formula: 'SUM(A2:A4)', totalsRowFormula: 'SUM([Amount])' },
 			{ id: 3, name: 'Forecast' },
 		])
+	})
+
+	test('resizeTable rejects ranges that overlap another table', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.tables.push(
+			{
+				id: createTableId(),
+				name: 'Sales',
+				sheetId: sheet.id,
+				ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 1 } },
+				columns: [
+					{ id: 1, name: 'Region' },
+					{ id: 2, name: 'Amount' },
+				],
+				hasHeaders: true,
+				hasTotals: false,
+			},
+			{
+				id: createTableId(),
+				name: 'Forecast',
+				sheetId: sheet.id,
+				ref: { start: { row: 0, col: 3 }, end: { row: 3, col: 4 } },
+				columns: [
+					{ id: 3, name: 'Scenario' },
+					{ id: 4, name: 'Value' },
+				],
+				hasHeaders: true,
+				hasTotals: false,
+			},
+		)
+
+		const result = applyOperation(wb, { op: 'resizeTable', table: 'Sales', ref: 'B1:D4' })
+
+		expectErr(result)
+		expect(result.error.message).toContain('overlaps table "Forecast"')
+		expect(sheet.tables[0]?.ref).toEqual({
+			start: { row: 0, col: 0 },
+			end: { row: 3, col: 1 },
+		})
 	})
 
 	test('resizeTable rejects dropping table fields referenced by cell formulas', () => {

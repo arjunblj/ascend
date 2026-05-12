@@ -341,20 +341,23 @@ describe('operation schema agent DX', () => {
 
 	test('setSlicerCacheItem is exposed with slicer refresh guidance', () => {
 		const schema = getOperationsSchema().find((entry) => entry.op === 'setSlicerCacheItem')
-		expect(schema?.schema.required).toEqual(['op', 'item'])
+		expect(schema?.schema.required).toEqual(['op', 'itemIndex'])
 		expect(schema?.schema.properties.slicerCache?.description).toContain('Slicer cache')
 		expect(schema?.examples[0]).toMatchObject({
 			op: 'setSlicerCacheItem',
 			slicerCache: 'Slicer_State',
-			item: 0,
+			itemIndex: 0,
 			selected: true,
 		})
 		expect(schema?.recoveryActions.join('\n')).toContain('pivot output')
 
 		const parsed = parseOperations([
-			{ op: 'setSlicerCacheItem', slicerCache: 'Slicer_State', item: 0, selected: null },
+			{ op: 'setSlicerCacheItem', slicerCache: 'Slicer_State', itemIndex: 0, selected: null },
 		])
 		expect(parsed.ok).toBe(true)
+		if (parsed.ok) {
+			expect(parsed.value[0]).toMatchObject({ op: 'setSlicerCacheItem', item: 0 })
+		}
 	})
 
 	test('setTimelineRange is exposed with timeline refresh guidance', () => {
@@ -379,6 +382,72 @@ describe('operation schema agent DX', () => {
 			},
 		])
 		expect(parsed.ok).toBe(true)
+	})
+
+	test('parse failures reject incomplete analytics operations before execution', () => {
+		const parsed = parseOperations([
+			{ op: 'setPivotCache', refreshOnLoad: true },
+			{ op: 'setPivotCache', pivotTable: 'PivotTable1' },
+			{ op: 'setPivotFieldItem', fieldIndex: 0, itemIndex: 2, hidden: true },
+			{ op: 'setPivotFieldItem', pivotTable: 'PivotTable1', fieldIndex: 0, itemIndex: 2 },
+			{ op: 'setSlicerCacheItem', itemIndex: 0, selected: true },
+			{ op: 'setSlicerCacheItem', slicerCache: 'Slicer_State', itemIndex: 0 },
+			{
+				op: 'setTimelineRange',
+				startDate: '2024-01-01T00:00:00',
+				endDate: '2024-03-31T00:00:00',
+			},
+		])
+		expect(parsed.ok).toBe(false)
+		if (!parsed.ok) {
+			expect(parsed.issues).toContain(
+				'ops[0].cacheId, ops[0].partPath, or ops[0].pivotTable is required for setPivotCache',
+			)
+			expect(parsed.issues).toContain(
+				'ops[1] requires one of sourceSheet, sourceRef, refreshOnLoad, enableRefresh, invalid, saveData for setPivotCache',
+			)
+			expect(parsed.issues).toContain(
+				'ops[2].partPath or ops[2].pivotTable is required for setPivotFieldItem',
+			)
+			expect(parsed.issues).toContain(
+				'ops[3] requires one of hidden, showDetails, manualFilter, selectedPageItem for setPivotFieldItem',
+			)
+			expect(parsed.issues).toContain(
+				'ops[4].slicerCache or ops[4].partPath is required for setSlicerCacheItem',
+			)
+			expect(parsed.issues).toContain('ops[5] requires selected or noData for setSlicerCacheItem')
+			expect(parsed.issues).toContain(
+				'ops[6].timelineCache or ops[6].partPath is required for setTimelineRange',
+			)
+		}
+	})
+
+	test('parse failures reject invalid timeline ranges before execution', () => {
+		const invalidDate = parseOperations([
+			{
+				op: 'setTimelineRange',
+				timelineCache: 'Timeline_Order_Date',
+				startDate: 'not-a-date',
+				endDate: '2024-03-31T00:00:00',
+			},
+		])
+		expect(invalidDate.ok).toBe(false)
+		if (!invalidDate.ok) {
+			expect(invalidDate.issues[0]).toBe('ops[0].startDate must be a valid date-time string')
+		}
+
+		const reversed = parseOperations([
+			{
+				op: 'setTimelineRange',
+				timelineCache: 'Timeline_Order_Date',
+				startDate: '2024-04-01T00:00:00',
+				endDate: '2024-03-31T00:00:00',
+			},
+		])
+		expect(reversed.ok).toBe(false)
+		if (!reversed.ok) {
+			expect(reversed.issues[0]).toBe('ops[0].startDate must be before or equal to ops[0].endDate')
+		}
 	})
 
 	test('setSparklineGroup is exposed with sparkline range guidance', () => {

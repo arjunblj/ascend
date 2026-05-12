@@ -267,7 +267,7 @@ const FIELD_SCHEMAS: Record<
 	commentIndex: { type: 'integer', description: 'Zero-based threaded comment index on the sheet' },
 	pivotTable: { type: 'string', description: 'Pivot table name that uses the cache' },
 	fieldIndex: { type: 'integer', description: 'Zero-based pivot field index' },
-	itemIndex: { type: 'integer', description: 'Zero-based pivot field item index' },
+	itemIndex: { type: 'integer', description: 'Zero-based pivot field or slicer cache item index' },
 	showDetails: {
 		type: ['boolean', 'null'],
 		description: 'Pivot field item show-details state; use null to clear',
@@ -681,7 +681,7 @@ export function listOperations(): readonly OperationSchema[] {
 			op: 'setSlicerCacheItem',
 			description:
 				'Edit tabular slicer cache item selected/no-data flags without recalculating output',
-			requiredFields: ['item'],
+			requiredFields: ['itemIndex'],
 			optionalFields: ['slicerCache', 'partPath', 'selected', 'noData'],
 		},
 		{
@@ -825,14 +825,140 @@ export function parseOperations(input: unknown): ParseOperationsResult {
 		) {
 			issues.push(`ops[${index}].url or ops[${index}].location is required for setHyperlink`)
 		}
-		ops.push(record as Operation)
+		issues.push(...validateOperationSemantics(record, `ops[${index}]`))
+		ops.push(normalizeOperationRecord(record) as Operation)
 	})
 	if (issues.length > 0) return { ok: false, error: issues[0] ?? 'Invalid operations', issues }
 	return { ok: true, value: ops }
 }
 
+function normalizeOperationRecord(record: Record<string, unknown>): Record<string, unknown> {
+	if (record.op !== 'setSlicerCacheItem' || !('itemIndex' in record)) return record
+	const { itemIndex: item, ...normalized } = record
+	return { ...normalized, item }
+}
+
 function hasNonEmptyString(value: unknown): boolean {
 	return typeof value === 'string' && value.trim().length > 0
+}
+
+function validateOperationSemantics(
+	record: Record<string, unknown>,
+	path: string,
+): readonly string[] {
+	switch (record.op) {
+		case 'setPivotCache':
+			return validateSetPivotCache(record, path)
+		case 'setPivotFieldItem':
+			return validateSetPivotFieldItem(record, path)
+		case 'setSlicerCacheItem':
+			return validateSetSlicerCacheItem(record, path)
+		case 'setTimelineRange':
+			return validateSetTimelineRange(record, path)
+		default:
+			return []
+	}
+}
+
+function validateSetPivotCache(record: Record<string, unknown>, path: string): readonly string[] {
+	const issues: string[] = []
+	if (
+		!isNonNegativeInteger(record.cacheId) &&
+		!hasNonEmptyString(record.partPath) &&
+		!hasNonEmptyString(record.pivotTable)
+	) {
+		issues.push(
+			`${path}.cacheId, ${path}.partPath, or ${path}.pivotTable is required for setPivotCache`,
+		)
+	}
+	if (!hasAnyField(record, PIVOT_CACHE_EDIT_FIELDS)) {
+		issues.push(
+			`${path} requires one of sourceSheet, sourceRef, refreshOnLoad, enableRefresh, invalid, saveData for setPivotCache`,
+		)
+	}
+	return issues
+}
+
+function validateSetPivotFieldItem(
+	record: Record<string, unknown>,
+	path: string,
+): readonly string[] {
+	const issues: string[] = []
+	if (!hasNonEmptyString(record.partPath) && !hasNonEmptyString(record.pivotTable)) {
+		issues.push(`${path}.partPath or ${path}.pivotTable is required for setPivotFieldItem`)
+	}
+	if (!hasAnyField(record, PIVOT_FIELD_ITEM_EDIT_FIELDS)) {
+		issues.push(
+			`${path} requires one of hidden, showDetails, manualFilter, selectedPageItem for setPivotFieldItem`,
+		)
+	}
+	return issues
+}
+
+function validateSetSlicerCacheItem(
+	record: Record<string, unknown>,
+	path: string,
+): readonly string[] {
+	const issues: string[] = []
+	if (!hasNonEmptyString(record.slicerCache) && !hasNonEmptyString(record.partPath)) {
+		issues.push(`${path}.slicerCache or ${path}.partPath is required for setSlicerCacheItem`)
+	}
+	if (!hasAnyField(record, SLICER_CACHE_ITEM_EDIT_FIELDS)) {
+		issues.push(`${path} requires selected or noData for setSlicerCacheItem`)
+	}
+	return issues
+}
+
+function validateSetTimelineRange(
+	record: Record<string, unknown>,
+	path: string,
+): readonly string[] {
+	const issues: string[] = []
+	if (!hasNonEmptyString(record.timelineCache) && !hasNonEmptyString(record.partPath)) {
+		issues.push(`${path}.timelineCache or ${path}.partPath is required for setTimelineRange`)
+	}
+	if (typeof record.startDate === 'string' && !isValidDateString(record.startDate)) {
+		issues.push(`${path}.startDate must be a valid date-time string`)
+	}
+	if (typeof record.endDate === 'string' && !isValidDateString(record.endDate)) {
+		issues.push(`${path}.endDate must be a valid date-time string`)
+	}
+	if (
+		typeof record.startDate === 'string' &&
+		typeof record.endDate === 'string' &&
+		isValidDateString(record.startDate) &&
+		isValidDateString(record.endDate) &&
+		Date.parse(record.startDate) > Date.parse(record.endDate)
+	) {
+		issues.push(`${path}.startDate must be before or equal to ${path}.endDate`)
+	}
+	return issues
+}
+
+const PIVOT_CACHE_EDIT_FIELDS = [
+	'sourceSheet',
+	'sourceRef',
+	'refreshOnLoad',
+	'enableRefresh',
+	'invalid',
+	'saveData',
+] as const
+
+const PIVOT_FIELD_ITEM_EDIT_FIELDS = [
+	'hidden',
+	'showDetails',
+	'manualFilter',
+	'selectedPageItem',
+] as const
+
+const SLICER_CACHE_ITEM_EDIT_FIELDS = ['selected', 'noData'] as const
+
+function hasAnyField(record: Record<string, unknown>, fields: readonly string[]): boolean {
+	return fields.some((field) => field in record)
+}
+
+function isValidDateString(value: string): boolean {
+	return Number.isFinite(Date.parse(value))
 }
 
 const PASTE_MODES = new Set([
@@ -1637,7 +1763,7 @@ function operationExample(op: string): Record<string, unknown> {
 			return {
 				op,
 				slicerCache: 'Slicer_State',
-				item: 0,
+				itemIndex: 0,
 				selected: true,
 				noData: false,
 			}

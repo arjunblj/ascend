@@ -156,6 +156,7 @@ export interface WritePolicyDiagnostic {
 		| 'visual-edit-preservation-risk'
 		| 'drawingml-vml-drift-risk'
 		| 'chart-source-ref-drift-risk'
+		| 'analytics-pivot-refresh-risk'
 		| 'legacy-comment-preservation-risk'
 		| 'threaded-comment-preservation-risk'
 		| 'conditional-format-extension-preservation'
@@ -1372,14 +1373,15 @@ function buildWritePolicyReport(
 	const visualHasOperationRisk =
 		visualWriteRisk.relatedOperations.length > 0 ||
 		visualWriteRisk.chartSourceRefDrift.length > 0 ||
-		visualWriteRisk.drawingmlVmlDrift.length > 0
+		visualWriteRisk.drawingmlVmlDrift.length > 0 ||
+		visualWriteRisk.analyticsPivotRefreshRisk.length > 0
 	if (visualPartPaths.length > 0) {
 		diagnostics.push({
 			code: 'visual-sidecar-preservation-risk',
 			severity: visualHasOperationRisk ? 'warning' : 'info',
 			message: visualHasOperationRisk
-				? `${visualPartPaths.length} chart, drawing, pivot, slicer, or timeline sidecar part(s) intersect planned visual or chart-source edits and require post-write preservation audit.`
-				: `${visualPartPaths.length} chart, drawing, pivot, slicer, or timeline sidecar part(s) will be copied through; no visual or chart-source edit is planned.`,
+				? `${visualPartPaths.length} chart, drawing, pivot, slicer, or timeline sidecar part(s) intersect planned visual, chart-source, or analytics refresh edits and require post-write preservation audit.`
+				: `${visualPartPaths.length} chart, drawing, pivot, slicer, or timeline sidecar part(s) will be copied through; no visual, chart-source, or analytics refresh edit is planned.`,
 			suggestedAction: visualHasOperationRisk
 				? 'Inspect postWrite.packageGraphAudit before treating visuals or analytical caches as fidelity-safe.'
 				: 'No action is required for unrelated cell edits; retain visualInventory/packageGraphAudit with the edit record when visual fidelity is audited.',
@@ -1392,6 +1394,7 @@ function buildWritePolicyReport(
 				relatedOperations: visualWriteRisk.relatedOperations,
 				chartSourceRefDrift: visualWriteRisk.chartSourceRefDrift,
 				drawingmlVmlDrift: visualWriteRisk.drawingmlVmlDrift,
+				analyticsPivotRefreshRisk: visualWriteRisk.analyticsPivotRefreshRisk,
 			},
 		})
 	}
@@ -1456,6 +1459,28 @@ function buildWritePolicyReport(
 			preservationPolicy: 'preserve-exact',
 			details: {
 				chartSourceRefDrift: visualWriteRisk.chartSourceRefDrift,
+			},
+		})
+	}
+	if (visualWriteRisk.analyticsPivotRefreshRisk.length > 0) {
+		const refreshPartPaths = uniqueStrings(
+			visualWriteRisk.analyticsPivotRefreshRisk.flatMap((entry) => entry.partPaths),
+		)
+		diagnostics.push({
+			code: 'analytics-pivot-refresh-risk',
+			severity: 'warning',
+			message: `${visualWriteRisk.analyticsPivotRefreshRisk.length} planned pivot, slicer, or timeline operation(s) update analytical filter/cache state; linked pivot output can remain stale until refreshed.`,
+			suggestedAction:
+				'After write, open the workbook in Excel or another pivot-aware engine, refresh affected pivots/caches, and recalculate formulas before trusting analytical output cells.',
+			...(refreshPartPaths.length > 0 ? { partPaths: refreshPartPaths } : {}),
+			...(refreshPartPaths.length > 0
+				? { packageParts: packagePartDetails(packagePartByPath, refreshPartPaths) }
+				: {}),
+			featureFamily: 'preservedPivot,preservedSlicer,preservedTimeline',
+			preservationPolicy: 'preserve-exact',
+			details: {
+				operationScoped: true,
+				analyticsPivotRefreshRisk: visualWriteRisk.analyticsPivotRefreshRisk,
 			},
 		})
 	}
@@ -1740,6 +1765,7 @@ interface VisualWriteRisk {
 	readonly relatedOperations: readonly VisualRelatedOperation[]
 	readonly drawingmlVmlDrift: readonly VisualDrawingDriftRisk[]
 	readonly chartSourceRefDrift: readonly ChartSourceRefDriftRisk[]
+	readonly analyticsPivotRefreshRisk: readonly AnalyticsPivotRefreshRisk[]
 }
 
 interface VisualRelatedOperation {
@@ -1792,6 +1818,18 @@ interface ChartSourceRelatedOperation {
 	readonly newName?: string | undefined
 }
 
+interface AnalyticsPivotRefreshRisk {
+	readonly operationIndex: number
+	readonly op: Operation['op']
+	readonly targetKind: 'pivotFieldItem' | 'slicerCacheItem' | 'timelineRange'
+	readonly selector: Readonly<Record<string, unknown>>
+	readonly matchCount: number
+	readonly matches: readonly Record<string, unknown>[]
+	readonly linkedPivotTableNames: readonly string[]
+	readonly partPaths: readonly string[]
+	readonly recommendation: string
+}
+
 function buildVisualWriteRisk(
 	workbook: Workbook,
 	operations: readonly Operation[],
@@ -1801,6 +1839,7 @@ function buildVisualWriteRisk(
 		relatedOperations: collectVisualRelatedOperations(workbook, operations),
 		drawingmlVmlDrift: collectDrawingMlVmlDriftRisks(workbook, operations, parts),
 		chartSourceRefDrift: collectChartSourceRefDriftRisks(workbook, operations, parts),
+		analyticsPivotRefreshRisk: collectAnalyticsPivotRefreshRisks(workbook, operations, parts),
 	}
 }
 
@@ -2058,6 +2097,228 @@ function collectChartSourceRefDriftRisks(
 	return risks
 }
 
+function collectAnalyticsPivotRefreshRisks(
+	workbook: Workbook,
+	operations: readonly Operation[],
+	parts: readonly XlsxPackageGraph['parts'][number][],
+): AnalyticsPivotRefreshRisk[] {
+	return operations.flatMap((operation, operationIndex) => {
+		switch (operation.op) {
+			case 'setPivotFieldItem':
+				return [pivotFieldItemRefreshRisk(workbook, operation, operationIndex)]
+			case 'setSlicerCacheItem':
+				return [slicerCacheItemRefreshRisk(workbook, operation, operationIndex, parts)]
+			case 'setTimelineRange':
+				return [timelineRangeRefreshRisk(workbook, operation, operationIndex, parts)]
+			default:
+				return []
+		}
+	})
+}
+
+function pivotFieldItemRefreshRisk(
+	workbook: Workbook,
+	operation: Extract<Operation, { op: 'setPivotFieldItem' }>,
+	operationIndex: number,
+): AnalyticsPivotRefreshRisk {
+	const matches = workbook.pivotTables
+		.filter((pivot) => pivotTableSelectorMatches(pivot, operation))
+		.map((pivot) => {
+			const field = pivot.fields[operation.fieldIndex]
+			const item = field?.items?.[operation.itemIndex]
+			const cache = pivotCacheForTable(workbook, pivot)
+			return compactRecord({
+				pivotTable: pivot.name,
+				sheetName: pivot.sheetName,
+				partPath: pivot.partPath,
+				cacheId: pivot.cacheId,
+				cachePartPath: cache?.partPath,
+				cacheRecordsPartPath: cache?.recordsPartPath,
+				fieldIndex: operation.fieldIndex,
+				fieldName: field?.name,
+				fieldExists: field !== undefined,
+				itemIndex: operation.itemIndex,
+				itemCaption: item?.caption,
+				itemExists: item !== undefined,
+			})
+		})
+	const linkedPivotTableNames = uniqueStrings(
+		matches.flatMap((match) =>
+			typeof match.pivotTable === 'string' && match.pivotTable.length > 0 ? [match.pivotTable] : [],
+		),
+	)
+	const partPaths = uniqueStrings(
+		matches.flatMap((match) =>
+			[match.partPath, match.cachePartPath, match.cacheRecordsPartPath].filter(
+				(path): path is string => typeof path === 'string' && path.length > 0,
+			),
+		),
+	)
+	return {
+		operationIndex,
+		op: operation.op,
+		targetKind: 'pivotFieldItem',
+		selector: compactRecord({
+			pivotTable: operation.pivotTable,
+			partPath: operation.partPath,
+			sheet: operation.sheet,
+			fieldIndex: operation.fieldIndex,
+			itemIndex: operation.itemIndex,
+		}),
+		matchCount: matches.length,
+		matches,
+		linkedPivotTableNames,
+		partPaths,
+		recommendation:
+			matches.length === 1 && matches[0]?.fieldExists === true && matches[0]?.itemExists === true
+				? 'setPivotFieldItem matched one pivot field item; refresh the linked pivot cache/table in Excel or another pivot-aware engine after write.'
+				: 'Use inspect --detail pivots to select one pivot table by name or partPath and an existing fieldIndex/itemIndex before editing filter state.',
+	}
+}
+
+function slicerCacheItemRefreshRisk(
+	workbook: Workbook,
+	operation: Extract<Operation, { op: 'setSlicerCacheItem' }>,
+	operationIndex: number,
+	parts: readonly XlsxPackageGraph['parts'][number][],
+): AnalyticsPivotRefreshRisk {
+	const matches = workbook.slicerCaches
+		.filter((cache) => slicerCacheSelectorMatches(cache, operation))
+		.map((cache) => {
+			const linkedPivots = linkedPivotTables(workbook, cache.pivotTableNames, cache.pivotCacheId)
+			const linkedCaches = linkedPivotCaches(workbook, linkedPivots, cache.pivotCacheId)
+			const slicerPartPaths = workbook.slicers
+				.filter((slicer) => slicer.cacheName === cache.name)
+				.map((slicer) => slicer.partPath)
+			return compactRecord({
+				slicerCache: cache.name,
+				partPath: cache.partPath,
+				sourceName: cache.sourceName,
+				pivotCacheId: cache.pivotCacheId,
+				item: operation.item,
+				itemExists: cache.items?.some((item) => item.index === operation.item) === true,
+				linkedPivotTableNames: linkedPivotNames(linkedPivots, cache.pivotTableNames),
+				slicerPartPaths,
+				pivotTablePartPaths: linkedPivots.map((pivot) => pivot.partPath),
+				pivotCachePartPaths: linkedCaches.map((pivotCache) => pivotCache.partPath),
+				pivotCacheRecordsPartPaths: linkedCaches.flatMap((pivotCache) =>
+					pivotCache.recordsPartPath ? [pivotCache.recordsPartPath] : [],
+				),
+			})
+		})
+	const linkedPivotTableNames = uniqueStrings(
+		matches.flatMap((match) =>
+			Array.isArray(match.linkedPivotTableNames)
+				? match.linkedPivotTableNames.filter((name): name is string => typeof name === 'string')
+				: [],
+		),
+	)
+	const partPaths = uniqueStrings([
+		...matches.flatMap((match) =>
+			[
+				match.partPath,
+				...(Array.isArray(match.slicerPartPaths) ? match.slicerPartPaths : []),
+				...(Array.isArray(match.pivotTablePartPaths) ? match.pivotTablePartPaths : []),
+				...(Array.isArray(match.pivotCachePartPaths) ? match.pivotCachePartPaths : []),
+				...(Array.isArray(match.pivotCacheRecordsPartPaths)
+					? match.pivotCacheRecordsPartPaths
+					: []),
+			].filter((path): path is string => typeof path === 'string' && path.length > 0),
+		),
+		...operationScopedAnalyticalPartPaths(operation.partPath, parts),
+	])
+	return {
+		operationIndex,
+		op: operation.op,
+		targetKind: 'slicerCacheItem',
+		selector: compactRecord({
+			slicerCache: operation.slicerCache,
+			partPath: operation.partPath,
+			item: operation.item,
+		}),
+		matchCount: matches.length,
+		matches,
+		linkedPivotTableNames,
+		partPaths,
+		recommendation:
+			matches.length === 1
+				? 'setSlicerCacheItem matched one slicer cache; refresh linked pivot tables/caches in Excel or another pivot-aware engine after write.'
+				: 'Use inspect --detail slicers to select one slicer cache by name or partPath before editing item state.',
+	}
+}
+
+function timelineRangeRefreshRisk(
+	workbook: Workbook,
+	operation: Extract<Operation, { op: 'setTimelineRange' }>,
+	operationIndex: number,
+	parts: readonly XlsxPackageGraph['parts'][number][],
+): AnalyticsPivotRefreshRisk {
+	const matches = workbook.timelineCaches
+		.filter((cache) => timelineCacheSelectorMatches(cache, operation))
+		.map((cache) => {
+			const linkedPivots = linkedPivotTables(workbook, cache.pivotTableNames, cache.pivotCacheId)
+			const linkedCaches = linkedPivotCaches(workbook, linkedPivots, cache.pivotCacheId)
+			const timelinePartPaths = workbook.timelines
+				.filter((timeline) => timeline.cacheName === cache.name)
+				.map((timeline) => timeline.partPath)
+			return compactRecord({
+				timelineCache: cache.name,
+				partPath: cache.partPath,
+				sourceName: cache.sourceName,
+				pivotCacheId: cache.pivotCacheId,
+				startDate: operation.startDate,
+				endDate: operation.endDate,
+				linkedPivotTableNames: linkedPivotNames(linkedPivots, cache.pivotTableNames),
+				timelinePartPaths,
+				pivotTablePartPaths: linkedPivots.map((pivot) => pivot.partPath),
+				pivotCachePartPaths: linkedCaches.map((pivotCache) => pivotCache.partPath),
+				pivotCacheRecordsPartPaths: linkedCaches.flatMap((pivotCache) =>
+					pivotCache.recordsPartPath ? [pivotCache.recordsPartPath] : [],
+				),
+			})
+		})
+	const linkedPivotTableNames = uniqueStrings(
+		matches.flatMap((match) =>
+			Array.isArray(match.linkedPivotTableNames)
+				? match.linkedPivotTableNames.filter((name): name is string => typeof name === 'string')
+				: [],
+		),
+	)
+	const partPaths = uniqueStrings([
+		...matches.flatMap((match) =>
+			[
+				match.partPath,
+				...(Array.isArray(match.timelinePartPaths) ? match.timelinePartPaths : []),
+				...(Array.isArray(match.pivotTablePartPaths) ? match.pivotTablePartPaths : []),
+				...(Array.isArray(match.pivotCachePartPaths) ? match.pivotCachePartPaths : []),
+				...(Array.isArray(match.pivotCacheRecordsPartPaths)
+					? match.pivotCacheRecordsPartPaths
+					: []),
+			].filter((path): path is string => typeof path === 'string' && path.length > 0),
+		),
+		...operationScopedAnalyticalPartPaths(operation.partPath, parts),
+	])
+	return {
+		operationIndex,
+		op: operation.op,
+		targetKind: 'timelineRange',
+		selector: compactRecord({
+			timelineCache: operation.timelineCache,
+			partPath: operation.partPath,
+			startDate: operation.startDate,
+			endDate: operation.endDate,
+		}),
+		matchCount: matches.length,
+		matches,
+		linkedPivotTableNames,
+		partPaths,
+		recommendation:
+			matches.length === 1
+				? 'setTimelineRange matched one timeline cache; refresh linked pivot tables/caches in Excel or another pivot-aware engine after write.'
+				: 'Use inspect --detail timelines to select one timeline cache by name or partPath before editing date range state.',
+	}
+}
+
 function imageSelectorMatches(
 	image: SheetImageRef,
 	index: number,
@@ -2121,6 +2382,106 @@ function matchingCharts(
 		return chart ? [chart] : []
 	}
 	return candidates
+}
+
+function pivotTableSelectorMatches(
+	pivot: Workbook['pivotTables'][number],
+	operation: Extract<Operation, { op: 'setPivotFieldItem' }>,
+): boolean {
+	if (operation.partPath !== undefined && pivot.partPath !== operation.partPath) return false
+	if (operation.pivotTable !== undefined && pivot.name !== operation.pivotTable) return false
+	if (operation.sheet !== undefined && pivot.sheetName !== operation.sheet) return false
+	return true
+}
+
+function pivotCacheForTable(
+	workbook: Workbook,
+	pivot: Workbook['pivotTables'][number],
+): Workbook['pivotCaches'][number] | undefined {
+	if (pivot.cacheId === undefined) return undefined
+	return workbook.pivotCaches.find((cache) => cache.cacheId === pivot.cacheId)
+}
+
+function slicerCacheSelectorMatches(
+	cache: Workbook['slicerCaches'][number],
+	operation: Extract<Operation, { op: 'setSlicerCacheItem' }>,
+): boolean {
+	if (operation.partPath !== undefined && cache.partPath !== operation.partPath) return false
+	if (
+		operation.slicerCache !== undefined &&
+		cache.name !== operation.slicerCache &&
+		cache.partPath !== operation.slicerCache
+	) {
+		return false
+	}
+	return true
+}
+
+function timelineCacheSelectorMatches(
+	cache: Workbook['timelineCaches'][number],
+	operation: Extract<Operation, { op: 'setTimelineRange' }>,
+): boolean {
+	if (operation.partPath !== undefined && cache.partPath !== operation.partPath) return false
+	if (
+		operation.timelineCache !== undefined &&
+		cache.name !== operation.timelineCache &&
+		cache.partPath !== operation.timelineCache
+	) {
+		return false
+	}
+	return true
+}
+
+function linkedPivotTables(
+	workbook: Workbook,
+	pivotTableNames: readonly string[],
+	pivotCacheId: number | undefined,
+): Workbook['pivotTables'] {
+	const names = new Set(pivotTableNames)
+	return workbook.pivotTables.filter((pivot) => {
+		if (pivot.name !== undefined && names.has(pivot.name)) return true
+		if (pivotCacheId !== undefined && pivot.cacheId === pivotCacheId) return true
+		return false
+	})
+}
+
+function linkedPivotCaches(
+	workbook: Workbook,
+	pivots: readonly Workbook['pivotTables'][number][],
+	pivotCacheId: number | undefined,
+): Workbook['pivotCaches'] {
+	const cacheIds = new Set(
+		[
+			pivotCacheId,
+			...pivots.flatMap((pivot) => (pivot.cacheId === undefined ? [] : [pivot.cacheId])),
+		].filter((cacheId): cacheId is number => cacheId !== undefined),
+	)
+	return workbook.pivotCaches.filter((cache) => {
+		if (cache.cacheId === undefined) return false
+		return cacheIds.has(cache.cacheId)
+	})
+}
+
+function linkedPivotNames(
+	pivots: readonly Workbook['pivotTables'][number][],
+	pivotTableNames: readonly string[],
+): string[] {
+	return uniqueStrings([
+		...pivotTableNames,
+		...pivots.flatMap((pivot) =>
+			pivot.name !== undefined && pivot.name.length > 0 ? [pivot.name] : [],
+		),
+	])
+}
+
+function operationScopedAnalyticalPartPaths(
+	partPath: string | undefined,
+	parts: readonly XlsxPackageGraph['parts'][number][],
+): string[] {
+	if (partPath === undefined) return []
+	return parts.some((part) => part.path === partPath && isAnalyticalSidecar(part.featureFamily))
+		? [partPath]
+		: []
 }
 
 function isSheetVisualOperation(
@@ -3200,6 +3561,14 @@ function isVisualOrAnalyticalSidecar(featureFamily: string): boolean {
 		featureFamily === 'preservedChartColor' ||
 		featureFamily === 'preservedMedia' ||
 		featureFamily === 'preservedVml' ||
+		featureFamily === 'preservedPivot' ||
+		featureFamily === 'preservedSlicer' ||
+		featureFamily === 'preservedTimeline'
+	)
+}
+
+function isAnalyticalSidecar(featureFamily: string): boolean {
+	return (
 		featureFamily === 'preservedPivot' ||
 		featureFamily === 'preservedSlicer' ||
 		featureFamily === 'preservedTimeline'

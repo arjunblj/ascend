@@ -965,6 +965,889 @@ function queryTableRelationshipDetails(
 	return packageRelationshipDetails(relationship)
 }
 
+function checkPivotSlicerTimelineIntegrity(
+	wb: Workbook,
+	packageGraph?: VerifyPackageGraph,
+): CheckIssue[] {
+	const issues: CheckIssue[] = []
+	const sheetNames = new Set(wb.sheets.map((sheet) => sheet.name))
+	const pivotCachesById = new Map<number, Workbook['pivotCaches'][number]>()
+	const duplicateCacheIds = new Map<number, Workbook['pivotCaches'][number][]>()
+	for (const cache of wb.pivotCaches) {
+		if (cache.cacheId === undefined) continue
+		const existing = pivotCachesById.get(cache.cacheId)
+		if (existing)
+			duplicateCacheIds.set(cache.cacheId, [
+				...(duplicateCacheIds.get(cache.cacheId) ?? [existing]),
+				cache,
+			])
+		else pivotCachesById.set(cache.cacheId, cache)
+	}
+	for (const [cacheId, caches] of duplicateCacheIds) {
+		issues.push({
+			rule: 'pivot-integrity',
+			severity: 'error',
+			message: `Pivot cache id "${cacheId}" is used by multiple pivot cache definitions`,
+			refs: caches.map((cache) => cache.partPath),
+			suggestedFix:
+				'Repair workbook pivotCache ids before editing pivot tables or cache definitions.',
+			details: {
+				kind: 'duplicate-pivot-cache-id',
+				cacheId,
+				partPaths: caches.map((cache) => cache.partPath),
+			},
+		})
+	}
+
+	for (const pivot of wb.pivotTables) {
+		if (!sheetNames.has(pivot.sheetName)) {
+			issues.push({
+				rule: 'pivot-integrity',
+				severity: 'error',
+				message: `Pivot table "${pivot.name ?? pivot.partPath}" belongs to missing sheet "${pivot.sheetName}"`,
+				refs: [pivot.partPath, pivot.sheetName],
+				suggestedFix:
+					'Restore the owning worksheet or remove the stale pivot table metadata before writing.',
+				details: { kind: 'pivot-table-sheet-missing', pivotTable: pivotSummary(pivot) },
+			})
+		}
+		if (pivot.cacheId !== undefined && !pivotCachesById.has(pivot.cacheId)) {
+			issues.push({
+				rule: 'pivot-integrity',
+				severity: 'error',
+				message: `Pivot table "${pivot.name ?? pivot.partPath}" references missing cacheId "${pivot.cacheId}"`,
+				refs: [pivot.partPath],
+				suggestedFix:
+					'Reconnect the pivot table cacheId to a workbook pivot cache definition before editing pivot output.',
+				details: { kind: 'pivot-table-cache-id-missing', pivotTable: pivotSummary(pivot) },
+			})
+		}
+	}
+
+	for (const cache of wb.pivotCaches) {
+		issues.push(...checkPivotCacheSourceIntegrity(wb, cache, sheetNames))
+		issues.push(...checkPivotCacheRecordIntegrity(cache))
+		issues.push(...checkPivotRefreshIntegrity(wb, cache))
+	}
+	issues.push(...checkSlicerTimelineModelIntegrity(wb))
+	if (packageGraph) {
+		issues.push(...checkPivotPackageGraphIntegrity(wb, packageGraph))
+		issues.push(...checkSlicerTimelinePackageGraphIntegrity(wb, packageGraph))
+	}
+	return issues
+}
+
+function checkPivotCacheSourceIntegrity(
+	wb: Workbook,
+	cache: Workbook['pivotCaches'][number],
+	sheetNames: ReadonlySet<string>,
+): CheckIssue[] {
+	const issues: CheckIssue[] = []
+	if (cache.sourceType === 'worksheet' && cache.sourceSheet && !sheetNames.has(cache.sourceSheet)) {
+		issues.push({
+			rule: 'pivot-source-integrity',
+			severity: 'error',
+			message: `Pivot cache "${cache.partPath}" references missing source sheet "${cache.sourceSheet}"`,
+			refs: [cache.partPath, cache.sourceSheet],
+			suggestedFix:
+				'Restore the source worksheet or update the pivot cache worksheetSource before writing.',
+			details: { kind: 'pivot-cache-source-sheet-missing', cache: pivotCacheSummary(cache) },
+		})
+	}
+	if (cache.sourceRef) {
+		try {
+			parseRange(cache.sourceRef)
+		} catch {
+			issues.push({
+				rule: 'pivot-source-integrity',
+				severity: 'error',
+				message: `Pivot cache "${cache.partPath}" has invalid worksheetSource ref "${cache.sourceRef}"`,
+				refs: [cache.partPath, cache.sourceRef],
+				suggestedFix:
+					'Repair worksheetSource ref to a valid A1 range before relying on pivot refresh metadata.',
+				details: { kind: 'pivot-cache-source-ref-invalid', cache: pivotCacheSummary(cache) },
+			})
+		}
+	}
+	if (!cache.sourceName) return issues
+	const tableMatches = wb.sheets.flatMap((sheet) =>
+		sheet.tables
+			.filter((table) => table.name === cache.sourceName)
+			.map((table) => ({
+				sheetName: sheet.name,
+				tableName: table.name,
+				ref: rangeToA1(table.ref),
+			})),
+	)
+	const hasDefinedName = wb.definedNames.has(cache.sourceName)
+	if (tableMatches.length === 0 && !hasDefinedName) {
+		issues.push({
+			rule: 'pivot-source-integrity',
+			severity: 'error',
+			message: `Pivot cache "${cache.partPath}" references missing source name "${cache.sourceName}"`,
+			refs: [cache.partPath, cache.sourceName],
+			suggestedFix:
+				'Restore the source table/defined name or update the pivot cache sourceName before writing.',
+			details: { kind: 'pivot-cache-source-table-missing', cache: pivotCacheSummary(cache) },
+		})
+	}
+	if (cache.sourceSheet && tableMatches.some((table) => table.sheetName !== cache.sourceSheet)) {
+		issues.push({
+			rule: 'pivot-source-integrity',
+			severity: 'warning',
+			message: `Pivot cache "${cache.partPath}" sourceName "${cache.sourceName}" is not on source sheet "${cache.sourceSheet}"`,
+			refs: [cache.partPath, ...tableMatches.map((table) => `${table.sheetName}!${table.ref}`)],
+			suggestedFix:
+				'Align worksheetSource sheet/name metadata before refreshing or rewriting pivot sources.',
+			details: {
+				kind: 'pivot-cache-source-table-sheet-mismatch',
+				cache: pivotCacheSummary(cache),
+				tables: tableMatches,
+			},
+		})
+	}
+	return issues
+}
+
+function checkPivotCacheRecordIntegrity(cache: Workbook['pivotCaches'][number]): CheckIssue[] {
+	const issues: CheckIssue[] = []
+	const records = cache.records
+	if (!records) return issues
+	const counts = [
+		['cacheRecordCount', cache.recordCount],
+		['recordsDeclaredCount', records.declaredCount],
+		['recordsParsedCount', records.parsedCount],
+	] as const
+	const definedCounts = counts.flatMap(([key, value]) =>
+		value === undefined ? [] : ([[key, value]] as const),
+	)
+	const distinctCounts = new Set(definedCounts.map(([, count]) => count))
+	if (distinctCounts.size > 1) {
+		issues.push({
+			rule: 'pivot-integrity',
+			severity: 'error',
+			message: `Pivot cache "${cache.partPath}" record counts disagree between cache definition and records part`,
+			refs: [cache.partPath, records.partPath],
+			suggestedFix:
+				'Regenerate or refresh pivot cache records so recordCount and pivotCacheRecords count agree.',
+			details: {
+				kind: 'pivot-cache-record-count-mismatch',
+				cache: pivotCacheSummary(cache),
+				counts: Object.fromEntries(definedCounts),
+			},
+		})
+	}
+	const expectedWidth = cache.fields.length
+	if (expectedWidth > 0) {
+		const mismatched = [...records.preview, ...(records.materializedRecords ?? [])]
+			.filter((record) => record.values.length !== expectedWidth)
+			.slice(0, 5)
+		if (mismatched.length > 0) {
+			issues.push({
+				rule: 'pivot-integrity',
+				severity: 'error',
+				message: `Pivot cache "${cache.partPath}" has records whose value count does not match ${expectedWidth} cache field(s)`,
+				refs: [cache.partPath, records.partPath],
+				suggestedFix:
+					'Repair pivot cache records before using saved cache rows for output auditing.',
+				details: {
+					kind: 'pivot-cache-record-width-mismatch',
+					cache: pivotCacheSummary(cache),
+					expectedWidth,
+					mismatchedRecords: mismatched.map((record) => ({
+						index: record.index,
+						actualWidth: record.values.length,
+					})),
+				},
+			})
+		}
+	}
+	return issues
+}
+
+function checkPivotRefreshIntegrity(
+	wb: Workbook,
+	cache: Workbook['pivotCaches'][number],
+): CheckIssue[] {
+	const issues: CheckIssue[] = []
+	const needsRefresh =
+		cache.invalid === true ||
+		cache.refreshOnLoad === true ||
+		cache.upgradeOnRefresh === true ||
+		cache.saveData === false
+	if (!needsRefresh) {
+		if (cache.records?.materializedComplete === false) {
+			issues.push({
+				rule: 'pivot-refresh-integrity',
+				severity: 'info',
+				message: `Pivot cache "${cache.partPath}" records were only partially materialized for verification`,
+				refs: [cache.partPath, cache.records.partPath],
+				suggestedFix:
+					'Reopen with pivotCacheRecordMaterializeLimit: "all" before claiming complete cache-row audit coverage.',
+				details: {
+					kind: 'pivot-records-not-materialized',
+					cache: pivotCacheSummary(cache),
+					materializedCount: cache.records.materializedCount,
+					parsedCount: cache.records.parsedCount,
+				},
+			})
+		}
+		return issues
+	}
+	issues.push({
+		rule: 'pivot-refresh-integrity',
+		severity: 'warning',
+		message: `Pivot cache "${cache.partPath}" is marked for pivot-aware refresh`,
+		refs: [cache.partPath],
+		suggestedFix:
+			'Preserve the cache and require Excel or a pivot-aware refresh engine before trusting saved pivot output.',
+		details: {
+			kind: 'pivot-cache-refresh-required',
+			cache: pivotCacheSummary(cache),
+			signals: {
+				invalid: cache.invalid,
+				refreshOnLoad: cache.refreshOnLoad,
+				upgradeOnRefresh: cache.upgradeOnRefresh,
+				saveData: cache.saveData,
+			},
+		},
+	})
+	if (cache.enableRefresh === false) {
+		issues.push({
+			rule: 'pivot-refresh-integrity',
+			severity: 'warning',
+			message: `Pivot cache "${cache.partPath}" needs refresh but enableRefresh is false`,
+			refs: [cache.partPath],
+			suggestedFix:
+				'Inspect workbook policy before attempting headless pivot refresh or cache rewrites.',
+			details: { kind: 'pivot-cache-refresh-disabled', cache: pivotCacheSummary(cache) },
+		})
+	}
+	for (const pivot of wb.pivotTables.filter((pivot) => pivot.cacheId === cache.cacheId)) {
+		issues.push({
+			rule: 'pivot-refresh-integrity',
+			severity: 'warning',
+			message: `Pivot table "${pivot.name ?? pivot.partPath}" may show stale saved output from cacheId "${cache.cacheId}"`,
+			refs: [pivot.partPath, cache.partPath],
+			suggestedFix:
+				'Refresh the pivot cache before treating worksheet pivot output cells as authoritative.',
+			details: {
+				kind: 'pivot-output-may-be-stale',
+				pivotTable: pivotSummary(pivot),
+				cache: pivotCacheSummary(cache),
+			},
+		})
+	}
+	return issues
+}
+
+function checkPivotPackageGraphIntegrity(
+	wb: Workbook,
+	packageGraph: VerifyPackageGraph,
+): CheckIssue[] {
+	const issues: CheckIssue[] = []
+	const graphPartByPath = new Map(packageGraph.parts.map((part) => [part.path, part]))
+	const graphRelationshipsByTarget = relationshipsByTarget(packageGraph.relationships)
+	const claimedPivotTables = new Set(wb.pivotTables.map((pivot) => pivot.partPath))
+	const claimedCaches = new Set(wb.pivotCaches.map((cache) => cache.partPath))
+	const claimedRecords = new Set(
+		wb.pivotCaches.flatMap((cache) => (cache.recordsPartPath ? [cache.recordsPartPath] : [])),
+	)
+
+	for (const cache of wb.pivotCaches) {
+		if (!graphPartByPath.has(cache.partPath)) {
+			issues.push({
+				rule: 'pivot-integrity',
+				severity: 'error',
+				message: `Pivot cache metadata references missing package part "${cache.partPath}"`,
+				refs: [cache.partPath],
+				suggestedFix: 'Restore the pivot cache definition part before writing.',
+				details: { kind: 'missing-pivot-cache-part', cache: pivotCacheSummary(cache) },
+			})
+		}
+		if (cache.recordsPartPath && !graphPartByPath.has(cache.recordsPartPath)) {
+			issues.push({
+				rule: 'pivot-integrity',
+				severity: 'error',
+				message: `Pivot cache "${cache.partPath}" references missing records part "${cache.recordsPartPath}"`,
+				refs: [cache.partPath, cache.recordsPartPath],
+				suggestedFix:
+					'Restore the pivotCacheRecords part or remove the stale cache records relationship.',
+				details: { kind: 'missing-pivot-cache-records-part', cache: pivotCacheSummary(cache) },
+			})
+		}
+		if (cache.relId) {
+			const workbookRel = packageGraph.relationships.find(
+				(rel) =>
+					rel.sourcePartPath === 'xl/workbook.xml' &&
+					rel.id === cache.relId &&
+					rel.resolvedTarget === cache.partPath &&
+					isPivotCacheDefinitionRelationshipType(rel.type),
+			)
+			if (!workbookRel) {
+				issues.push({
+					rule: 'pivot-integrity',
+					severity: 'error',
+					message: `Workbook pivotCache relationship "${cache.relId}" does not bind to "${cache.partPath}" in the package graph`,
+					refs: [`xl/_rels/workbook.xml.rels#${cache.relId}`, cache.partPath],
+					suggestedFix:
+						'Repair workbook pivotCache relationship id/target binding before editing pivot caches.',
+					details: {
+						kind: 'pivot-cache-workbook-relationship-binding-mismatch',
+						cache: pivotCacheSummary(cache),
+						incomingRelationships: (graphRelationshipsByTarget.get(cache.partPath) ?? []).map(
+							packageRelationshipDetails,
+						),
+					},
+				})
+			}
+		}
+		if (cache.recordsPartPath) {
+			const recordsRel = packageGraph.relationships.find(
+				(rel) =>
+					rel.sourcePartPath === cache.partPath &&
+					rel.resolvedTarget === cache.recordsPartPath &&
+					isPivotCacheRecordsRelationshipType(rel.type),
+			)
+			if (!recordsRel) {
+				issues.push({
+					rule: 'pivot-integrity',
+					severity: 'error',
+					message: `Pivot cache records relationship from "${cache.partPath}" does not bind to "${cache.recordsPartPath}"`,
+					refs: [cache.partPath, cache.recordsPartPath],
+					suggestedFix:
+						'Repair the pivotCacheDefinition relationship to its records part before cache edits.',
+					details: {
+						kind: 'pivot-cache-records-relationship-binding-mismatch',
+						cache: pivotCacheSummary(cache),
+						incomingRelationships: (
+							graphRelationshipsByTarget.get(cache.recordsPartPath) ?? []
+						).map(packageRelationshipDetails),
+					},
+				})
+			}
+		}
+	}
+
+	for (const pivot of wb.pivotTables) {
+		if (!graphPartByPath.has(pivot.partPath)) {
+			issues.push({
+				rule: 'pivot-integrity',
+				severity: 'error',
+				message: `Pivot table metadata references missing package part "${pivot.partPath}"`,
+				refs: [pivot.partPath],
+				suggestedFix: 'Restore the pivot table part before writing.',
+				details: { kind: 'missing-pivot-table-part', pivotTable: pivotSummary(pivot) },
+			})
+		}
+		const worksheetOwner = (graphRelationshipsByTarget.get(pivot.partPath) ?? []).find(
+			(rel) => isPivotTableRelationshipType(rel.type) && isWorksheetPartPath(rel.sourcePartPath),
+		)
+		if (!worksheetOwner) {
+			issues.push({
+				rule: 'pivot-integrity',
+				severity: 'error',
+				message: `Pivot table part "${pivot.partPath}" is not bound from an owning worksheet relationship`,
+				refs: [pivot.partPath],
+				suggestedFix:
+					'Reconnect the pivot table part from its worksheet relationship before writing.',
+				details: {
+					kind: 'pivot-table-worksheet-relationship-binding-mismatch',
+					pivotTable: pivotSummary(pivot),
+					incomingRelationships: (graphRelationshipsByTarget.get(pivot.partPath) ?? []).map(
+						packageRelationshipDetails,
+					),
+				},
+			})
+		}
+	}
+
+	for (const part of packageGraph.parts) {
+		if (isPivotCacheDefinitionPart(part) && !claimedCaches.has(part.path)) {
+			issues.push(orphanPivotPartIssue('orphan-pivot-cache-part', part, graphRelationshipsByTarget))
+		}
+		if (isPivotCacheRecordsPart(part) && !claimedRecords.has(part.path)) {
+			issues.push(
+				orphanPivotPartIssue('orphan-pivot-cache-records-part', part, graphRelationshipsByTarget),
+			)
+		}
+		if (isPivotTablePart(part) && !claimedPivotTables.has(part.path)) {
+			issues.push(orphanPivotPartIssue('orphan-pivot-table-part', part, graphRelationshipsByTarget))
+		}
+	}
+	return issues
+}
+
+function checkSlicerTimelineModelIntegrity(wb: Workbook): CheckIssue[] {
+	const issues: CheckIssue[] = []
+	const pivotTablesByName = new Map(
+		wb.pivotTables.filter((pivot) => pivot.name).map((pivot) => [pivot.name as string, pivot]),
+	)
+	const pivotCacheIdsByTable = new Map(
+		wb.pivotTables.map((pivot) => [pivot.partPath, linkedPivotCacheIds(wb, pivot)]),
+	)
+	const slicerCachesByName = new Map(
+		wb.slicerCaches.filter((cache) => cache.name).map((cache) => [cache.name as string, cache]),
+	)
+	for (const slicer of wb.slicers) {
+		if (slicer.cacheName && !slicerCachesByName.has(slicer.cacheName)) {
+			issues.push({
+				rule: 'slicer-integrity',
+				severity: 'error',
+				message: `Slicer "${slicer.name ?? slicer.partPath}" references missing slicer cache "${slicer.cacheName}"`,
+				refs: [slicer.partPath, slicer.cacheName],
+				suggestedFix: 'Reconnect the slicer to an existing slicer cache before writing.',
+				details: { kind: 'slicer-cache-name-missing', slicer },
+			})
+		}
+	}
+	for (const cache of wb.slicerCaches) {
+		for (const pivotTableName of cache.pivotTableNames) {
+			const pivot = pivotTablesByName.get(pivotTableName)
+			if (!pivot) {
+				issues.push(
+					linkedPivotMissingIssue(
+						'slicer-integrity',
+						'slicer-cache-pivot-table-missing',
+						cache.partPath,
+						pivotTableName,
+					),
+				)
+			} else if (
+				cache.pivotCacheId !== undefined &&
+				pivot.cacheId !== undefined &&
+				cache.pivotCacheId !== pivot.cacheId &&
+				!(pivotCacheIdsByTable.get(pivot.partPath) ?? new Set()).has(cache.pivotCacheId)
+			) {
+				issues.push(
+					cachePivotIdMismatchIssue(
+						'slicer-integrity',
+						'slicer-cache-pivot-cache-id-mismatch',
+						cache.partPath,
+						cache.pivotCacheId,
+						pivot,
+					),
+				)
+			}
+		}
+	}
+
+	const timelineCachesByName = new Map(
+		wb.timelineCaches.filter((cache) => cache.name).map((cache) => [cache.name as string, cache]),
+	)
+	for (const timeline of wb.timelines) {
+		if (timeline.cacheName && !timelineCachesByName.has(timeline.cacheName)) {
+			issues.push({
+				rule: 'timeline-integrity',
+				severity: 'error',
+				message: `Timeline "${timeline.name ?? timeline.partPath}" references missing timeline cache "${timeline.cacheName}"`,
+				refs: [timeline.partPath, timeline.cacheName],
+				suggestedFix: 'Reconnect the timeline to an existing timeline cache before writing.',
+				details: { kind: 'timeline-cache-name-missing', timeline },
+			})
+		}
+	}
+	for (const cache of wb.timelineCaches) {
+		if (
+			cache.state?.pivotCacheId !== undefined &&
+			cache.pivotCacheId !== undefined &&
+			cache.state.pivotCacheId !== cache.pivotCacheId
+		) {
+			issues.push({
+				rule: 'timeline-integrity',
+				severity: 'error',
+				message: `Timeline cache "${cache.partPath}" state pivotCacheId does not match cache pivotCacheId`,
+				refs: [cache.partPath],
+				suggestedFix: 'Repair timeline state pivot cache ids before editing timeline selections.',
+				details: {
+					kind: 'timeline-state-pivot-cache-id-mismatch',
+					partPath: cache.partPath,
+					pivotCacheId: cache.pivotCacheId,
+					statePivotCacheId: cache.state.pivotCacheId,
+				},
+			})
+		}
+		if (cache.state?.filterPivotName && !pivotTablesByName.has(cache.state.filterPivotName)) {
+			issues.push(
+				linkedPivotMissingIssue(
+					'timeline-integrity',
+					'timeline-state-filter-pivot-missing',
+					cache.partPath,
+					cache.state.filterPivotName,
+				),
+			)
+		}
+		for (const pivotTableName of cache.pivotTableNames) {
+			const pivot = pivotTablesByName.get(pivotTableName)
+			if (!pivot) {
+				issues.push(
+					linkedPivotMissingIssue(
+						'timeline-integrity',
+						'timeline-cache-pivot-table-missing',
+						cache.partPath,
+						pivotTableName,
+					),
+				)
+			} else if (
+				cache.pivotCacheId !== undefined &&
+				pivot.cacheId !== undefined &&
+				cache.pivotCacheId !== pivot.cacheId &&
+				!(pivotCacheIdsByTable.get(pivot.partPath) ?? new Set()).has(cache.pivotCacheId)
+			) {
+				issues.push(
+					cachePivotIdMismatchIssue(
+						'timeline-integrity',
+						'timeline-cache-pivot-cache-id-mismatch',
+						cache.partPath,
+						cache.pivotCacheId,
+						pivot,
+					),
+				)
+			}
+		}
+	}
+	return issues
+}
+
+function linkedPivotCacheIds(
+	wb: Workbook,
+	pivot: Workbook['pivotTables'][number],
+): ReadonlySet<number> {
+	const ids = new Set<number>()
+	if (pivot.cacheId !== undefined) ids.add(pivot.cacheId)
+	const cache = wb.pivotCaches.find((entry) => entry.cacheId === pivot.cacheId)
+	if (cache?.extensionCacheId !== undefined) ids.add(cache.extensionCacheId)
+	return ids
+}
+
+function checkSlicerTimelinePackageGraphIntegrity(
+	wb: Workbook,
+	packageGraph: VerifyPackageGraph,
+): CheckIssue[] {
+	const issues: CheckIssue[] = []
+	const graphPartByPath = new Map(packageGraph.parts.map((part) => [part.path, part]))
+	const graphRelationshipsByTarget = relationshipsByTarget(packageGraph.relationships)
+	const claimedSlicerCaches = new Set(wb.slicerCaches.map((cache) => cache.partPath))
+	const claimedSlicers = new Set(wb.slicers.map((slicer) => slicer.partPath))
+	const claimedTimelineCaches = new Set(wb.timelineCaches.map((cache) => cache.partPath))
+	const claimedTimelines = new Set(wb.timelines.map((timeline) => timeline.partPath))
+
+	for (const cache of wb.slicerCaches) {
+		if (!graphPartByPath.has(cache.partPath)) {
+			issues.push(
+				missingAnalyticalPartIssue(
+					'slicer-integrity',
+					'slicer-cache-missing-package-part',
+					cache.partPath,
+				),
+			)
+		}
+		if (
+			!packageGraph.relationships.some(
+				(rel) =>
+					rel.sourcePartPath === 'xl/workbook.xml' &&
+					rel.resolvedTarget === cache.partPath &&
+					isSlicerCacheRelationshipType(rel.type),
+			)
+		) {
+			issues.push(
+				workbookAnalyticalBindingIssue(
+					'slicer-integrity',
+					'slicer-cache-workbook-relationship-binding-mismatch',
+					cache.partPath,
+					graphRelationshipsByTarget,
+				),
+			)
+		}
+	}
+	for (const cache of wb.timelineCaches) {
+		if (!graphPartByPath.has(cache.partPath)) {
+			issues.push(
+				missingAnalyticalPartIssue(
+					'timeline-integrity',
+					'timeline-cache-missing-package-part',
+					cache.partPath,
+				),
+			)
+		}
+		if (
+			!packageGraph.relationships.some(
+				(rel) =>
+					rel.sourcePartPath === 'xl/workbook.xml' &&
+					rel.resolvedTarget === cache.partPath &&
+					isTimelineCacheRelationshipType(rel.type),
+			)
+		) {
+			issues.push(
+				workbookAnalyticalBindingIssue(
+					'timeline-integrity',
+					'timeline-cache-workbook-relationship-binding-mismatch',
+					cache.partPath,
+					graphRelationshipsByTarget,
+				),
+			)
+		}
+	}
+	for (const part of packageGraph.parts) {
+		if (isSlicerCachePart(part) && !claimedSlicerCaches.has(part.path)) {
+			issues.push(
+				orphanAnalyticalPartIssue(
+					'slicer-integrity',
+					'orphan-slicer-cache-part',
+					part,
+					graphRelationshipsByTarget,
+				),
+			)
+		}
+		if (isSlicerPart(part) && !claimedSlicers.has(part.path)) {
+			issues.push(
+				orphanAnalyticalPartIssue(
+					'slicer-integrity',
+					'orphan-slicer-part',
+					part,
+					graphRelationshipsByTarget,
+				),
+			)
+		}
+		if (isTimelineCachePart(part) && !claimedTimelineCaches.has(part.path)) {
+			issues.push(
+				orphanAnalyticalPartIssue(
+					'timeline-integrity',
+					'orphan-timeline-cache-part',
+					part,
+					graphRelationshipsByTarget,
+				),
+			)
+		}
+		if (isTimelinePart(part) && !claimedTimelines.has(part.path)) {
+			issues.push(
+				orphanAnalyticalPartIssue(
+					'timeline-integrity',
+					'orphan-timeline-part',
+					part,
+					graphRelationshipsByTarget,
+				),
+			)
+		}
+	}
+	return issues
+}
+
+function pivotSummary(pivot: Workbook['pivotTables'][number]): Readonly<Record<string, unknown>> {
+	return {
+		partPath: pivot.partPath,
+		sheetName: pivot.sheetName,
+		...(pivot.name ? { name: pivot.name } : {}),
+		...(pivot.cacheId !== undefined ? { cacheId: pivot.cacheId } : {}),
+		...(pivot.locationRef ? { locationRef: pivot.locationRef } : {}),
+	}
+}
+
+function pivotCacheSummary(
+	cache: Workbook['pivotCaches'][number],
+): Readonly<Record<string, unknown>> {
+	return {
+		partPath: cache.partPath,
+		...(cache.cacheId !== undefined ? { cacheId: cache.cacheId } : {}),
+		...(cache.relId ? { relId: cache.relId } : {}),
+		...(cache.recordsPartPath ? { recordsPartPath: cache.recordsPartPath } : {}),
+		...(cache.sourceType ? { sourceType: cache.sourceType } : {}),
+		...(cache.sourceSheet ? { sourceSheet: cache.sourceSheet } : {}),
+		...(cache.sourceRef ? { sourceRef: cache.sourceRef } : {}),
+		...(cache.sourceName ? { sourceName: cache.sourceName } : {}),
+	}
+}
+
+function linkedPivotMissingIssue(
+	rule: 'slicer-integrity' | 'timeline-integrity',
+	kind: string,
+	partPath: string,
+	pivotTableName: string,
+): CheckIssue {
+	return {
+		rule,
+		severity: 'error',
+		message: `Analytical cache "${partPath}" references missing pivot table "${pivotTableName}"`,
+		refs: [partPath, pivotTableName],
+		suggestedFix:
+			'Reconnect the cache to an existing pivot table or remove the stale pivot-table binding before writing.',
+		details: { kind, partPath, pivotTableName },
+	}
+}
+
+function cachePivotIdMismatchIssue(
+	rule: 'slicer-integrity' | 'timeline-integrity',
+	kind: string,
+	partPath: string,
+	pivotCacheId: number,
+	pivot: Workbook['pivotTables'][number],
+): CheckIssue {
+	return {
+		rule,
+		severity: 'error',
+		message: `Analytical cache "${partPath}" pivotCacheId "${pivotCacheId}" does not match linked pivot table "${pivot.name ?? pivot.partPath}"`,
+		refs: [partPath, pivot.partPath],
+		suggestedFix:
+			'Align slicer/timeline cache pivotCacheId with the linked pivot table cache before editing filters.',
+		details: { kind, partPath, pivotCacheId, pivotTable: pivotSummary(pivot) },
+	}
+}
+
+function missingAnalyticalPartIssue(
+	rule: 'slicer-integrity' | 'timeline-integrity',
+	kind: string,
+	partPath: string,
+): CheckIssue {
+	return {
+		rule,
+		severity: 'error',
+		message: `Analytical cache metadata references missing package part "${partPath}"`,
+		refs: [partPath],
+		suggestedFix: 'Restore the analytical cache package part before writing.',
+		details: { kind, partPath },
+	}
+}
+
+function workbookAnalyticalBindingIssue(
+	rule: 'slicer-integrity' | 'timeline-integrity',
+	kind: string,
+	partPath: string,
+	graphRelationshipsByTarget: ReadonlyMap<string, readonly VerifyPackageGraphRelationship[]>,
+): CheckIssue {
+	return {
+		rule,
+		severity: 'error',
+		message: `Workbook analytical cache relationship does not bind to "${partPath}" in the package graph`,
+		refs: [partPath],
+		suggestedFix:
+			'Repair the workbook relationship id/target binding before editing slicer or timeline caches.',
+		details: {
+			kind,
+			partPath,
+			incomingRelationships: (graphRelationshipsByTarget.get(partPath) ?? []).map(
+				packageRelationshipDetails,
+			),
+		},
+	}
+}
+
+function orphanPivotPartIssue(
+	kind: string,
+	part: VerifyPackageGraphPart,
+	graphRelationshipsByTarget: ReadonlyMap<string, readonly VerifyPackageGraphRelationship[]>,
+): CheckIssue {
+	return {
+		rule: 'pivot-integrity',
+		severity: 'warning',
+		message: `Pivot package part "${part.path}" is not claimed by workbook pivot metadata`,
+		refs: [part.path],
+		suggestedFix:
+			'Reconnect the pivot sidecar to workbook pivot metadata or remove the orphan part before writing.',
+		details: {
+			kind,
+			partPath: part.path,
+			ownerScope: part.ownerScope,
+			contentType: part.contentType,
+			incomingRelationships: (graphRelationshipsByTarget.get(part.path) ?? []).map(
+				packageRelationshipDetails,
+			),
+		},
+	}
+}
+
+function orphanAnalyticalPartIssue(
+	rule: 'slicer-integrity' | 'timeline-integrity',
+	kind: string,
+	part: VerifyPackageGraphPart,
+	graphRelationshipsByTarget: ReadonlyMap<string, readonly VerifyPackageGraphRelationship[]>,
+): CheckIssue {
+	return {
+		rule,
+		severity: 'warning',
+		message: `Analytical package part "${part.path}" is not claimed by workbook ${rule.replace('-integrity', '')} metadata`,
+		refs: [part.path],
+		suggestedFix:
+			'Reconnect the analytical sidecar to workbook metadata or remove the orphan part before writing.',
+		details: {
+			kind,
+			partPath: part.path,
+			ownerScope: part.ownerScope,
+			contentType: part.contentType,
+			incomingRelationships: (graphRelationshipsByTarget.get(part.path) ?? []).map(
+				packageRelationshipDetails,
+			),
+		},
+	}
+}
+
+function isPivotCacheDefinitionRelationshipType(relationshipType: string | undefined): boolean {
+	return /\/relationships\/pivotcachedefinition$/i.test(relationshipType ?? '')
+}
+
+function isPivotCacheRecordsRelationshipType(relationshipType: string | undefined): boolean {
+	return /\/relationships\/pivotcacherecords$/i.test(relationshipType ?? '')
+}
+
+function isPivotTableRelationshipType(relationshipType: string | undefined): boolean {
+	return /\/relationships\/pivottable$/i.test(relationshipType ?? '')
+}
+
+function isSlicerCacheRelationshipType(relationshipType: string | undefined): boolean {
+	return /\/relationships\/slicercache$/i.test(relationshipType ?? '')
+}
+
+function isTimelineCacheRelationshipType(relationshipType: string | undefined): boolean {
+	return /\/relationships\/timelinecache$/i.test(relationshipType ?? '')
+}
+
+function isPivotCacheDefinitionPart(part: VerifyPackageGraphPart): boolean {
+	return (
+		part.featureFamily === 'preservedPivot' &&
+		/(^|\/)pivotCache\/pivotCacheDefinition\d+\.xml$/i.test(part.path)
+	)
+}
+
+function isPivotCacheRecordsPart(part: VerifyPackageGraphPart): boolean {
+	return (
+		part.featureFamily === 'preservedPivot' &&
+		/(^|\/)pivotCache\/pivotCacheRecords\d+\.xml$/i.test(part.path)
+	)
+}
+
+function isPivotTablePart(part: VerifyPackageGraphPart): boolean {
+	return (
+		part.featureFamily === 'preservedPivot' &&
+		/(^|\/)pivotTables\/pivotTable\d+\.xml$/i.test(part.path)
+	)
+}
+
+function isSlicerCachePart(part: VerifyPackageGraphPart): boolean {
+	return (
+		part.featureFamily === 'preservedSlicer' &&
+		/(^|\/)slicerCaches\/slicerCache\d+\.xml$/i.test(part.path)
+	)
+}
+
+function isSlicerPart(part: VerifyPackageGraphPart): boolean {
+	return (
+		part.featureFamily === 'preservedSlicer' && /(^|\/)slicers\/slicer\d+\.xml$/i.test(part.path)
+	)
+}
+
+function isTimelineCachePart(part: VerifyPackageGraphPart): boolean {
+	return (
+		part.featureFamily === 'preservedTimeline' &&
+		/(^|\/)timelineCaches\/timelineCache\d+\.xml$/i.test(part.path)
+	)
+}
+
+function isTimelinePart(part: VerifyPackageGraphPart): boolean {
+	return (
+		part.featureFamily === 'preservedTimeline' &&
+		/(^|\/)timelines\/timeline\d+\.xml$/i.test(part.path)
+	)
+}
+
 function packageRelationshipDetails(
 	relationship: VerifyPackageGraphRelationship,
 ): Readonly<Record<string, unknown>> {
@@ -3285,6 +4168,7 @@ export function check(workbook: Workbook, analysis?: CheckAnalysis): CheckResult
 		...checkTableIntegrity(workbook),
 		...checkTableQueryTableIntegrity(workbook, analysis?.packageGraph),
 		...checkExternalLinkIntegrity(workbook, analysis?.packageGraph),
+		...checkPivotSlicerTimelineIntegrity(workbook, analysis?.packageGraph),
 		...checkX14DataValidationIntegrity(workbook, sheetNames),
 		...checkConditionalFormatIntegrity(workbook),
 		...checkThreadedCommentIntegrity(workbook, analysis?.packageGraph),

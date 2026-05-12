@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { inspectXlsxPackageGraph } from '@ascend/io-xlsx'
 import { createZip, encode } from '../../io-xlsx/src/writer/zip.ts'
-import { makeEmbeddedChartXlsx } from '../../io-xlsx/test/helpers.ts'
+import { makeEmbeddedChartXlsx, makeXlsx } from '../../io-xlsx/test/helpers.ts'
 import {
 	AscendWorkbook,
 	auditLossPolicy,
@@ -247,6 +247,11 @@ describe('agent workflow loss audit', () => {
 		expect(committed.writePolicy.diagnostics.every((entry) => entry.severity === 'info')).toBe(true)
 		expect(
 			committed.writePolicy.diagnostics.some((entry) => entry.code.startsWith('external-link')),
+		).toBe(false)
+		expect(
+			committed.writePolicy.diagnostics.some(
+				(entry) => entry.code === 'analytics-pivot-refresh-risk',
+			),
 		).toBe(false)
 		expect(committed.writePolicy.diagnostics.some((entry) => entry.code.includes('comment'))).toBe(
 			false,
@@ -509,6 +514,154 @@ describe('agent workflow loss audit', () => {
 				'xl/charts/style1.xml',
 				'xl/charts/colors1.xml',
 			]),
+		)
+	})
+
+	test('plans analytics pivot refresh risk for pivot slicer and timeline edits', async () => {
+		const input = join(TEMP_DIR, 'analytics-refresh.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makeAnalyticsRefreshXlsx())
+
+		const plan = await createAgentPlan(input, [
+			{
+				op: 'setPivotFieldItem',
+				pivotTable: 'PivotTable1',
+				fieldIndex: 0,
+				itemIndex: 1,
+				hidden: true,
+			},
+			{
+				op: 'setSlicerCacheItem',
+				slicerCache: 'Slicer_Region',
+				item: 0,
+				selected: false,
+			},
+			{
+				op: 'setTimelineRange',
+				timelineCache: 'Timeline_Order_Date',
+				startDate: '2024-01-01T00:00:00',
+				endDate: '2024-03-31T00:00:00',
+			},
+		])
+
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'visual-sidecar-preservation-risk',
+				severity: 'warning',
+				details: expect.objectContaining({
+					operationScoped: true,
+					analyticsPivotRefreshRisk: expect.arrayContaining([
+						expect.objectContaining({ op: 'setPivotFieldItem' }),
+						expect.objectContaining({ op: 'setSlicerCacheItem' }),
+						expect.objectContaining({ op: 'setTimelineRange' }),
+					]),
+				}),
+			}),
+		)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'analytics-pivot-refresh-risk',
+				severity: 'warning',
+				partPaths: expect.arrayContaining([
+					'xl/pivotTables/pivotTable1.xml',
+					'xl/pivotCache/pivotCacheDefinition1.xml',
+					'xl/pivotCache/pivotCacheRecords1.xml',
+					'xl/slicerCaches/slicerCache1.xml',
+					'xl/slicers/slicer1.xml',
+					'xl/timelineCaches/timelineCache1.xml',
+					'xl/timelines/timeline1.xml',
+				]),
+				packageParts: expect.arrayContaining([
+					expect.objectContaining({
+						partPath: 'xl/pivotTables/pivotTable1.xml',
+						featureFamily: 'preservedPivot',
+					}),
+					expect.objectContaining({
+						partPath: 'xl/slicerCaches/slicerCache1.xml',
+						featureFamily: 'preservedSlicer',
+					}),
+					expect.objectContaining({
+						partPath: 'xl/timelineCaches/timelineCache1.xml',
+						featureFamily: 'preservedTimeline',
+					}),
+				]),
+				suggestedAction: expect.stringContaining('Excel'),
+				details: expect.objectContaining({
+					operationScoped: true,
+					analyticsPivotRefreshRisk: [
+						expect.objectContaining({
+							op: 'setPivotFieldItem',
+							targetKind: 'pivotFieldItem',
+							matchCount: 1,
+							linkedPivotTableNames: ['PivotTable1'],
+							partPaths: expect.arrayContaining([
+								'xl/pivotTables/pivotTable1.xml',
+								'xl/pivotCache/pivotCacheDefinition1.xml',
+								'xl/pivotCache/pivotCacheRecords1.xml',
+							]),
+							selector: {
+								pivotTable: 'PivotTable1',
+								fieldIndex: 0,
+								itemIndex: 1,
+							},
+							matches: [
+								expect.objectContaining({
+									pivotTable: 'PivotTable1',
+									sheetName: 'PivotSheet',
+									fieldExists: true,
+									itemExists: true,
+								}),
+							],
+						}),
+						expect.objectContaining({
+							op: 'setSlicerCacheItem',
+							targetKind: 'slicerCacheItem',
+							matchCount: 1,
+							linkedPivotTableNames: ['PivotTable1'],
+							partPaths: expect.arrayContaining([
+								'xl/slicerCaches/slicerCache1.xml',
+								'xl/slicers/slicer1.xml',
+								'xl/pivotTables/pivotTable1.xml',
+							]),
+							selector: {
+								slicerCache: 'Slicer_Region',
+								item: 0,
+							},
+							matches: [
+								expect.objectContaining({
+									slicerCache: 'Slicer_Region',
+									itemExists: true,
+									linkedPivotTableNames: ['PivotTable1'],
+									slicerPartPaths: ['xl/slicers/slicer1.xml'],
+								}),
+							],
+						}),
+						expect.objectContaining({
+							op: 'setTimelineRange',
+							targetKind: 'timelineRange',
+							matchCount: 1,
+							linkedPivotTableNames: ['PivotTable1'],
+							partPaths: expect.arrayContaining([
+								'xl/timelineCaches/timelineCache1.xml',
+								'xl/timelines/timeline1.xml',
+								'xl/pivotTables/pivotTable1.xml',
+							]),
+							selector: {
+								timelineCache: 'Timeline_Order_Date',
+								startDate: '2024-01-01T00:00:00',
+								endDate: '2024-03-31T00:00:00',
+							},
+							matches: [
+								expect.objectContaining({
+									timelineCache: 'Timeline_Order_Date',
+									linkedPivotTableNames: ['PivotTable1'],
+									timelinePartPaths: ['xl/timelines/timeline1.xml'],
+								}),
+							],
+						}),
+					],
+				}),
+			}),
 		)
 	})
 
@@ -1399,6 +1552,100 @@ function makeMacroXlsx(): Uint8Array {
 			}),
 		),
 	)
+}
+
+function makeAnalyticsRefreshXlsx(): Uint8Array {
+	return makeXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/pivotTables/pivotTable1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotTable+xml"/>
+  <Override PartName="/xl/pivotCache/pivotCacheDefinition1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheDefinition+xml"/>
+  <Override PartName="/xl/pivotCache/pivotCacheRecords1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheRecords+xml"/>
+  <Override PartName="/xl/slicerCaches/slicerCache1.xml" ContentType="application/vnd.ms-excel.slicerCache+xml"/>
+  <Override PartName="/xl/slicers/slicer1.xml" ContentType="application/vnd.ms-excel.slicer+xml"/>
+  <Override PartName="/xl/timelineCaches/timelineCache1.xml" ContentType="application/vnd.ms-excel.timelineCache+xml"/>
+  <Override PartName="/xl/timelines/timeline1.xml" ContentType="application/vnd.ms-excel.timeline+xml"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdPivotCache" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheDefinition" Target="pivotCache/pivotCacheDefinition1.xml"/>
+  <Relationship Id="rIdSlicerCache" Type="http://schemas.microsoft.com/office/2007/relationships/slicerCache" Target="slicerCaches/slicerCache1.xml"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <pivotCaches><pivotCache cacheId="34" r:id="rIdPivotCache"/></pivotCaches>
+  <sheets><sheet name="PivotSheet" sheetId="1" r:id="rIdSheet1"/></sheets>
+</workbook>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+		'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdPivotTable" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable" Target="../pivotTables/pivotTable1.xml"/>
+</Relationships>`,
+		'xl/pivotTables/pivotTable1.xml': `<?xml version="1.0"?>
+<pivotTableDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="PivotTable1" cacheId="34">
+  <location ref="A3:C8" firstHeaderRow="0" firstDataRow="1" firstDataCol="1"/>
+  <pivotFields count="1">
+    <pivotField axis="axisPage" multipleItemSelectionAllowed="1" showAll="0">
+      <items count="2">
+        <item x="0"/>
+        <item x="1"/>
+      </items>
+    </pivotField>
+  </pivotFields>
+  <pageFields count="1"><pageField fld="0" item="0" name="Region"/></pageFields>
+</pivotTableDefinition>`,
+		'xl/pivotCache/pivotCacheDefinition1.xml': `<?xml version="1.0"?>
+<pivotCacheDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+  r:id="rIdRecords" recordCount="2" refreshOnLoad="1" enableRefresh="1">
+  <cacheSource type="worksheet">
+    <worksheetSource ref="A1:B3" sheet="Raw"/>
+  </cacheSource>
+  <cacheFields count="1">
+    <cacheField name="Region" databaseField="1">
+      <sharedItems count="2"><s v="West"/><s v="East"/></sharedItems>
+    </cacheField>
+  </cacheFields>
+</pivotCacheDefinition>`,
+		'xl/pivotCache/_rels/pivotCacheDefinition1.xml.rels': `<?xml version="1.0"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdRecords" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheRecords" Target="pivotCacheRecords1.xml"/>
+</Relationships>`,
+		'xl/pivotCache/pivotCacheRecords1.xml':
+			'<pivotCacheRecords xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="0"/>',
+		'xl/slicerCaches/slicerCache1.xml': `<?xml version="1.0"?>
+<slicerCacheDefinition xmlns="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" name="Slicer_Region" sourceName="Region">
+  <pivotTables><pivotTable name="PivotTable1"/></pivotTables>
+  <data><tabular pivotCacheId="34"><items count="2"><i x="0" s="1"/><i x="1"/></items></tabular></data>
+</slicerCacheDefinition>`,
+		'xl/slicers/slicer1.xml': `<?xml version="1.0"?>
+<slicers xmlns="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">
+  <slicer name="Region" cache="Slicer_Region" caption="Region"/>
+</slicers>`,
+		'xl/timelineCaches/timelineCache1.xml': `<?xml version="1.0"?>
+<timelineCacheDefinition xmlns="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main" name="Timeline_Order_Date" sourceName="Order Date">
+  <data><tabular pivotCacheId="34"/></data>
+  <pivotTables><pivotTable name="PivotTable1"/></pivotTables>
+  <state filterId="7" filterPivotName="PivotTable1" filterType="dateRange" filterTabId="2" pivotCacheId="34" singleRangeFilterState="1">
+    <selection startDate="2023-01-01T00:00:00" endDate="2023-12-31T00:00:00"/>
+  </state>
+</timelineCacheDefinition>`,
+		'xl/timelines/timeline1.xml': `<?xml version="1.0"?>
+<timelines xmlns="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main">
+  <timeline name="Order_Date" cache="Timeline_Order_Date" caption="Order Date"/>
+</timelines>`,
+	})
 }
 
 function makeVisualXlsx(): Uint8Array {

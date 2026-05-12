@@ -69,3 +69,10 @@ export {
 	type SheetSnapshot,
 	type WorkbookSnapshot,
 } from './snapshot.ts'
+export {
+	findOverlappingTable,
+	findShiftedTableRangeOverlap,
+	findTableRangeOverlaps,
+	type TableRangeOverlap,
+	tableRangesOverlap,
+} from './table-topology.ts'

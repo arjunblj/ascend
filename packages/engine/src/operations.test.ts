@@ -1847,6 +1847,11 @@ describe('applyOperation', () => {
 
 		expectErr(result)
 		expect(result.error.message).toContain('would overlap table Forecast')
+		expect(result.error.details).toMatchObject({
+			kind: 'overlapping-table-ranges',
+			left: { tableName: 'Sales', ref: 'A1:B4' },
+			right: { tableName: 'Forecast', ref: 'B3:C5' },
+		})
 		expect(s.cells.get(1, 0)?.value).toEqual(stringValue('kept'))
 		expect(s.tables[0]?.ref.end.row).toBe(2)
 		expect(s.tables[1]?.ref.start.row).toBe(1)
@@ -1884,6 +1889,11 @@ describe('applyOperation', () => {
 
 		expectErr(colResult)
 		expect(colResult.error.message).toContain('would overlap table Targets')
+		expect(colResult.error.details).toMatchObject({
+			kind: 'overlapping-table-ranges',
+			left: { tableName: 'Actuals', ref: 'A1:D2' },
+			right: { tableName: 'Targets', ref: 'C2:E3' },
+		})
 		expect(colSheet.cells.get(0, 1)?.value).toEqual(stringValue('kept'))
 		expect(colSheet.tables[0]?.ref.end.col).toBe(2)
 		expect(colSheet.tables[1]?.ref.start.col).toBe(1)
@@ -3080,6 +3090,13 @@ describe('applyOperation', () => {
 
 		expectErr(result)
 		expect(result.error.message).toContain('overlaps table "Sales"')
+		expect(result.error.details).toMatchObject({
+			kind: 'overlapping-table-ranges',
+			operation: 'create',
+			tableName: 'Forecast',
+			ref: 'C3:D5',
+			overlappingTable: { tableName: 'Sales', ref: 'A1:C3' },
+		})
 		expect(sheet.tables.map((table) => table.name)).toEqual(['Sales'])
 	})
 
@@ -3198,6 +3215,13 @@ describe('applyOperation', () => {
 
 		expectErr(result)
 		expect(result.error.message).toContain('overlaps table "Forecast"')
+		expect(result.error.details).toMatchObject({
+			kind: 'overlapping-table-ranges',
+			operation: 'append',
+			tableName: 'Sales',
+			ref: 'A1:B3',
+			overlappingTable: { tableName: 'Forecast', ref: 'A3:B4' },
+		})
 		expect(sheet.tables[0]?.ref.end.row).toBe(1)
 		expect(sheet.cells.get(2, 0)).toBeUndefined()
 	})
@@ -3234,6 +3258,12 @@ describe('applyOperation', () => {
 
 		expectErr(result)
 		expect(result.error.message).toContain('would shift table "Forecast"')
+		expect(result.error.details).toMatchObject({
+			kind: 'table-totals-append-would-shift-table',
+			tableName: 'Sales',
+			ref: 'A1:B3',
+			shiftedTable: { tableName: 'Forecast', ref: 'D5:E6' },
+		})
 		expect(sheet.tables[0]?.ref.end.row).toBe(2)
 		expect(sheet.tables[1]?.ref.start.row).toBe(4)
 	})
@@ -3759,6 +3789,13 @@ describe('applyOperation', () => {
 
 		expectErr(result)
 		expect(result.error.message).toContain('overlaps table "Forecast"')
+		expect(result.error.details).toMatchObject({
+			kind: 'overlapping-table-ranges',
+			operation: 'resize',
+			tableName: 'Sales',
+			ref: 'B1:D4',
+			overlappingTable: { tableName: 'Forecast', ref: 'D1:E4' },
+		})
 		expect(sheet.tables[0]?.ref).toEqual({
 			start: { row: 0, col: 0 },
 			end: { row: 3, col: 1 },

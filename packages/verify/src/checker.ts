@@ -5,6 +5,7 @@ import {
 	analyzeWorkbookFormulas,
 	cellHasFormula,
 	defaultCalcContext,
+	findTableRangeOverlaps,
 	parseCellKey,
 	recalculate,
 	type WorkbookDependencyAnalysis,
@@ -523,36 +524,30 @@ function checkTableIntegrity(wb: Workbook): CheckIssue[] {
 			}
 		}
 
-		for (let i = 0; i < sheet.tables.length; i++) {
-			const left = sheet.tables[i]
-			if (!left) continue
-			for (let j = i + 1; j < sheet.tables.length; j++) {
-				const right = sheet.tables[j]
-				if (!right || !rangesOverlap2D(left.ref, right.ref)) continue
-				const leftRef = rangeToA1(left.ref)
-				const rightRef = rangeToA1(right.ref)
-				issues.push({
-					rule: 'table-integrity',
-					severity: 'error',
-					message: `Table "${left.name}" overlaps table "${right.name}" on sheet "${sheet.name}"`,
-					refs: [`${sheet.name}!${leftRef}`, `${sheet.name}!${rightRef}`],
-					suggestedFix:
-						'Resize, move, or delete one table so worksheet cells have unambiguous table ownership.',
-					details: {
-						kind: 'overlapping-table-ranges',
-						left: {
-							tableName: left.name,
-							ref: leftRef,
-							partPath: left.partPath,
-						},
-						right: {
-							tableName: right.name,
-							ref: rightRef,
-							partPath: right.partPath,
-						},
+		for (const overlap of findTableRangeOverlaps(sheet)) {
+			const leftRef = rangeToA1(overlap.leftRef)
+			const rightRef = rangeToA1(overlap.rightRef)
+			issues.push({
+				rule: 'table-integrity',
+				severity: 'error',
+				message: `Table "${overlap.left.name}" overlaps table "${overlap.right.name}" on sheet "${sheet.name}"`,
+				refs: [`${sheet.name}!${leftRef}`, `${sheet.name}!${rightRef}`],
+				suggestedFix:
+					'Resize, move, or delete one table so worksheet cells have unambiguous table ownership.',
+				details: {
+					kind: 'overlapping-table-ranges',
+					left: {
+						tableName: overlap.left.name,
+						ref: leftRef,
+						partPath: overlap.left.partPath,
 					},
-				})
-			}
+					right: {
+						tableName: overlap.right.name,
+						ref: rightRef,
+						partPath: overlap.right.partPath,
+					},
+				},
+			})
 		}
 	}
 

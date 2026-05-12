@@ -27,6 +27,7 @@ import {
 	type DeletedTableColumnReference,
 	findDeletedTableColumnReference,
 } from '../structural/table-field-guards.ts'
+import { findOverlappingTable, tableRangesOverlap } from '../table-topology.ts'
 import type { PatchResult } from './helpers.ts'
 import {
 	buildTableColumns,
@@ -350,18 +351,6 @@ function findTableNameCollision(
 	return null
 }
 
-function findOverlappingTable(
-	sheet: Sheet,
-	ref: Table['ref'],
-	exceptTableId?: TableId,
-): Table | null {
-	return (
-		sheet.tables.find(
-			(table) => table.id !== exceptTableId && tableRangesOverlap(table.ref, ref),
-		) ?? null
-	)
-}
-
 function findTableShiftedByTotalsAppend(
 	sheet: Sheet,
 	table: Table,
@@ -371,15 +360,6 @@ function findTableShiftedByTotalsAppend(
 		sheet.tables.find(
 			(candidate) => candidate.id !== table.id && candidate.ref.start.row >= insertAt,
 		) ?? null
-	)
-}
-
-function tableRangesOverlap(a: Table['ref'], b: Table['ref']): boolean {
-	return (
-		a.start.row <= b.end.row &&
-		a.end.row >= b.start.row &&
-		a.start.col <= b.end.col &&
-		a.end.col >= b.start.col
 	)
 }
 
@@ -400,6 +380,17 @@ function tableRangeOverlapError(
 			refs: [ref, rangeToA1(overlappingTable.ref)],
 			suggestedFix:
 				'Choose a non-overlapping range or resize/delete the existing table before changing table ownership.',
+			details: {
+				kind: 'overlapping-table-ranges',
+				operation,
+				tableName,
+				ref,
+				overlappingTable: {
+					tableName: overlappingTable.name,
+					ref: rangeToA1(overlappingTable.ref),
+					...(overlappingTable.partPath ? { partPath: overlappingTable.partPath } : {}),
+				},
+			},
 		},
 	)
 }
@@ -415,6 +406,16 @@ function tableAppendTotalsShiftError(
 			refs: [rangeToA1(table.ref), rangeToA1(shiftedTable.ref)],
 			suggestedFix:
 				'Move the following table or remove the totals row before appending rows that require worksheet row insertion.',
+			details: {
+				kind: 'table-totals-append-would-shift-table',
+				tableName: table.name,
+				ref: rangeToA1(table.ref),
+				shiftedTable: {
+					tableName: shiftedTable.name,
+					ref: rangeToA1(shiftedTable.ref),
+					...(shiftedTable.partPath ? { partPath: shiftedTable.partPath } : {}),
+				},
+			},
 		},
 	)
 }

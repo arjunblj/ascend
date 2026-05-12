@@ -4,7 +4,6 @@ import type {
 	SheetConditionalFormat,
 	SheetConditionalFormatValueObject,
 	SheetDataValidation,
-	Table,
 	Workbook,
 } from '@ascend/core'
 import { parseA1, parseRange, toA1 } from '@ascend/core'
@@ -20,13 +19,13 @@ import {
 	rewriteWorkbookFormulasForShift,
 	rewriteWorkbookMetadataFormulasForMove,
 } from '../structural/formula-rewrite.ts'
-import { shiftRangeRef } from '../structural/ref-shift.ts'
 import { shiftSheetCellMetadata } from '../structural/sheet-topology.ts'
 import {
 	collectDeletedTableColumns,
 	type DeletedTableColumnReference,
 	findDeletedTableColumnReference,
 } from '../structural/table-field-guards.ts'
+import { findShiftedTableRangeOverlap, type TableRangeOverlap } from '../table-topology.ts'
 import type { PatchResult } from './helpers.ts'
 import {
 	cellWithExisting,
@@ -67,7 +66,7 @@ function applyAxisShift(
 	const tableBoundaryBlocker =
 		axis === 'row' && delta < 0 ? findPartialTableBoundaryRowDelete(sheet, at, count) : null
 	if (tableBoundaryBlocker) return err(tableBoundaryRowStructuralEditError(tableBoundaryBlocker))
-	const tableOverlapBlocker = findShiftedTableOverlap(sheet, axis, at, delta)
+	const tableOverlapBlocker = findShiftedTableRangeOverlap(sheet, axis, at, delta)
 	if (tableOverlapBlocker) return err(tableStructuralShiftOverlapError(tableOverlapBlocker))
 
 	if (axis === 'row') {
@@ -393,51 +392,31 @@ function tableBoundaryRowStructuralEditError(
 	)
 }
 
-interface ShiftedTableOverlap {
-	readonly leftName: string
-	readonly leftRef: string
-	readonly rightName: string
-	readonly rightRef: string
-}
-
-function findShiftedTableOverlap(
-	sheet: Sheet,
-	axis: 'row' | 'col',
-	at: number,
-	delta: number,
-): ShiftedTableOverlap | null {
-	const shiftedTables: Array<{ readonly table: Table; readonly ref: RangeRef }> = []
-	for (const table of sheet.tables) {
-		const ref = shiftRangeRef(table.ref, axis, at, delta)
-		if (ref) shiftedTables.push({ table, ref })
-	}
-	for (let i = 0; i < shiftedTables.length; i++) {
-		const left = shiftedTables[i]
-		if (!left) continue
-		for (let j = i + 1; j < shiftedTables.length; j++) {
-			const right = shiftedTables[j]
-			if (!right || !rangesOverlap(left.ref, right.ref)) continue
-			return {
-				leftName: left.table.name,
-				leftRef: rangeToA1(left.ref),
-				rightName: right.table.name,
-				rightRef: rangeToA1(right.ref),
-			}
-		}
-	}
-	return null
-}
-
 function tableStructuralShiftOverlapError(
-	blocker: ShiftedTableOverlap,
+	blocker: TableRangeOverlap,
 ): ReturnType<typeof ascendError> {
+	const leftRef = rangeToA1(blocker.leftRef)
+	const rightRef = rangeToA1(blocker.rightRef)
 	return ascendError(
 		'VALIDATION_ERROR',
-		`Cannot structurally edit rows or columns because shifted table ${blocker.leftName} at ${blocker.leftRef} would overlap table ${blocker.rightName} at ${blocker.rightRef}`,
+		`Cannot structurally edit rows or columns because shifted table ${blocker.left.name} at ${leftRef} would overlap table ${blocker.right.name} at ${rightRef}`,
 		{
-			refs: [blocker.leftRef, blocker.rightRef],
+			refs: [leftRef, rightRef],
 			suggestedFix:
 				'Resolve the overlapping table ranges before applying row or column structural edits.',
+			details: {
+				kind: 'overlapping-table-ranges',
+				left: {
+					tableName: blocker.left.name,
+					ref: leftRef,
+					...(blocker.left.partPath ? { partPath: blocker.left.partPath } : {}),
+				},
+				right: {
+					tableName: blocker.right.name,
+					ref: rightRef,
+					...(blocker.right.partPath ? { partPath: blocker.right.partPath } : {}),
+				},
+			},
 		},
 	)
 }

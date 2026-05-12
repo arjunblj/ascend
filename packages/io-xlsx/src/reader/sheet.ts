@@ -642,6 +642,8 @@ function parseSimpleValuesRowBytes(
 		row,
 		col: 0,
 		numberValue: undefined as number | undefined,
+		sharedStringIndex: -1,
+		booleanRaw: -1,
 		stringStart: -1,
 		stringEnd: -1,
 		stringHasEntity: false,
@@ -662,6 +664,28 @@ function parseSimpleValuesRowBytes(
 		if (plainValueNext !== -1) {
 			if (out.numberValue !== undefined) {
 				sheet.cells.setPlainNumber(out.row, out.col, out.numberValue)
+			} else if (out.sharedStringIndex >= 0) {
+				const text = ctx.sharedStrings.getString?.(out.sharedStringIndex)
+				if (text !== undefined)
+					sheet.cells.setStringResolved(out.row, out.col, text, null, DEFAULT_STYLE_ID)
+				else {
+					const entry = ctx.sharedStrings.get(out.sharedStringIndex)
+					sheet.cells.setResolved(
+						out.row,
+						out.col,
+						entry ?? stringValue(''),
+						null,
+						DEFAULT_STYLE_ID,
+					)
+				}
+			} else if (out.booleanRaw >= 0) {
+				sheet.cells.setResolved(
+					out.row,
+					out.col,
+					internValue(ctx, booleanValue(out.booleanRaw === 1)),
+					null,
+					DEFAULT_STYLE_ID,
+				)
 			} else if (out.stringStart >= 0) {
 				sheet.cells.setPlainString(
 					out.row,
@@ -685,6 +709,28 @@ function parseSimpleValuesRowBytes(
 		if (canonicalNext !== -1) {
 			if (out.numberValue !== undefined) {
 				sheet.cells.setPlainNumber(out.row, out.col, out.numberValue)
+			} else if (out.sharedStringIndex >= 0) {
+				const text = ctx.sharedStrings.getString?.(out.sharedStringIndex)
+				if (text !== undefined)
+					sheet.cells.setStringResolved(out.row, out.col, text, null, DEFAULT_STYLE_ID)
+				else {
+					const entry = ctx.sharedStrings.get(out.sharedStringIndex)
+					sheet.cells.setResolved(
+						out.row,
+						out.col,
+						entry ?? stringValue(''),
+						null,
+						DEFAULT_STYLE_ID,
+					)
+				}
+			} else if (out.booleanRaw >= 0) {
+				sheet.cells.setResolved(
+					out.row,
+					out.col,
+					internValue(ctx, booleanValue(out.booleanRaw === 1)),
+					null,
+					DEFAULT_STYLE_ID,
+				)
 			} else if (out.stringStart >= 0) {
 				sheet.cells.setPlainString(
 					out.row,
@@ -748,6 +794,8 @@ function parseCanonicalPlainValueCellBytes(
 		row: number
 		col: number
 		numberValue: number | undefined
+		sharedStringIndex: number
+		booleanRaw: number
 		stringStart: number
 		stringEnd: number
 		stringHasEntity: boolean
@@ -766,6 +814,8 @@ function parseCanonicalPlainValueCellBytes(
 	out.row = fallbackRow
 	out.col = fallbackCol
 	out.numberValue = undefined
+	out.sharedStringIndex = -1
+	out.booleanRaw = -1
 	out.stringStart = -1
 	out.stringEnd = -1
 	out.stringHasEntity = false
@@ -807,6 +857,8 @@ function parseCanonicalValuesCellBytes(
 		row: number
 		col: number
 		numberValue: number | undefined
+		sharedStringIndex: number
+		booleanRaw: number
 		stringStart: number
 		stringEnd: number
 		stringHasEntity: boolean
@@ -835,6 +887,8 @@ function parseCanonicalValuesCellBytes(
 	out.row = row
 	out.col = col
 	out.numberValue = undefined
+	out.sharedStringIndex = -1
+	out.booleanRaw = -1
 	out.stringStart = -1
 	out.stringEnd = -1
 	out.stringHasEntity = false
@@ -854,6 +908,24 @@ function parseCanonicalValuesCellBytes(
 		return valueEnd + 13
 	}
 
+	const typed = resolveCanonicalTypedValueStartBytes(bytes, index, bodyEnd)
+	if (typed) {
+		const parsedInt = parseCanonicalIntegerValueBytes(bytes, typed.valueStart, bodyEnd)
+		if (parsedInt) {
+			if (typed.kind === 'sharedString') out.sharedStringIndex = parsedInt.value
+			else if (typed.kind === 'boolean') out.booleanRaw = parsedInt.value === 1 ? 1 : 0
+			else out.numberValue = parsedInt.value
+			return parsedInt.next
+		}
+		if (typed.kind !== 'number') return -1
+		const valueEnd = indexOfBytes(bytes, BYTES_VALUE_CELL_CLOSE, typed.valueStart, bodyEnd)
+		if (valueEnd === -1) return -1
+		const value = parseSimpleXmlNumberBytes(bytes, typed.valueStart, valueEnd)
+		if (value === undefined) return -1
+		out.numberValue = value
+		return valueEnd + BYTES_VALUE_CELL_CLOSE.length
+	}
+
 	const contentStart = resolveCanonicalNumberContentStartBytes(bytes, index, bodyEnd)
 	if (contentStart === -1) return -1
 	const valueStart = resolveCanonicalValueStartBytes(bytes, contentStart, bodyEnd)
@@ -869,6 +941,61 @@ function parseCanonicalValuesCellBytes(
 	if (value === undefined) return -1
 	out.numberValue = value
 	return valueEnd + BYTES_VALUE_CELL_CLOSE.length
+}
+
+function resolveCanonicalTypedValueStartBytes(
+	bytes: Uint8Array,
+	refEnd: number,
+	end: number,
+): { kind: 'number' | 'sharedString' | 'boolean'; valueStart: number } | undefined {
+	let cursor = refEnd + 1
+	let kind: 'number' | 'sharedString' | 'boolean' = 'number'
+	while (cursor < end) {
+		cursor = skipXmlWhitespaceBytes(bytes, cursor, end)
+		const marker = bytes[cursor]
+		if (marker === 62) {
+			return cursor + 3 < end &&
+				bytes[cursor + 1] === BYTE_LT &&
+				bytes[cursor + 2] === 118 &&
+				bytes[cursor + 3] === 62
+				? { kind, valueStart: cursor + 4 }
+				: undefined
+		}
+		if (marker === BYTE_SLASH) return undefined
+		const nameStart = cursor
+		while (cursor < end) {
+			const code = bytes[cursor]
+			if (code === 61 || code === BYTE_SLASH || code === 62 || isXmlWhitespaceByte(code)) break
+			cursor += 1
+		}
+		const nameEnd = cursor
+		if (nameEnd === nameStart) return undefined
+		cursor = skipXmlWhitespaceBytes(bytes, cursor, end)
+		if (bytes[cursor] !== 61) return undefined
+		cursor = skipXmlWhitespaceBytes(bytes, cursor + 1, end)
+		const quote = bytes[cursor]
+		if (quote !== BYTE_QUOTE && quote !== BYTE_APOS) return undefined
+		const valueStart = cursor + 1
+		cursor = valueStart
+		while (cursor < end && bytes[cursor] !== quote) cursor += 1
+		if (cursor >= end) return undefined
+		if (nameEnd === nameStart + 1 && bytes[nameStart] === 116) {
+			if (cursor !== valueStart + 1) return undefined
+			const type = bytes[valueStart]
+			if (type === 110) kind = 'number'
+			else if (type === 115) kind = 'sharedString'
+			else if (type === 98) kind = 'boolean'
+			else return undefined
+		} else if (nameEnd === nameStart + 1 && bytes[nameStart] === 115) {
+			for (let index = valueStart; index < cursor; index++) {
+				if (!isAsciiDigit(bytes[index])) return undefined
+			}
+		} else {
+			return undefined
+		}
+		cursor += 1
+	}
+	return undefined
 }
 
 function parseValuesOnlyCellBytes(
@@ -1784,6 +1911,8 @@ function parseCanonicalStreamedValuesRowBytes(
 		row,
 		col: 0,
 		numberValue: undefined as number | undefined,
+		sharedStringIndex: -1,
+		booleanRaw: -1,
 		stringStart: -1,
 		stringEnd: -1,
 		stringHasEntity: false,
@@ -1804,14 +1933,23 @@ function parseCanonicalStreamedValuesRowBytes(
 		const value =
 			out.numberValue !== undefined
 				? internValue(ctx, numberValue(out.numberValue))
-				: out.stringStart >= 0
-					? internValue(
-							ctx,
-							stringValue(
-								decodeXmlBytesTextKnown(bytes, out.stringStart, out.stringEnd, out.stringHasEntity),
-							),
-						)
-					: undefined
+				: out.sharedStringIndex >= 0
+					? (ctx.sharedStrings.get(out.sharedStringIndex) ?? stringValue(''))
+					: out.booleanRaw >= 0
+						? internValue(ctx, booleanValue(out.booleanRaw === 1))
+						: out.stringStart >= 0
+							? internValue(
+									ctx,
+									stringValue(
+										decodeXmlBytesTextKnown(
+											bytes,
+											out.stringStart,
+											out.stringEnd,
+											out.stringHasEntity,
+										),
+									),
+								)
+							: undefined
 		if (value === undefined) return null
 		cells.push([out.col, { value, formula: null, styleId: DEFAULT_STYLE_ID }])
 		nextCol = out.col + 1

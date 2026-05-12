@@ -3666,7 +3666,12 @@ describe('readXlsx', () => {
 		expect(sheet).toBeNull()
 	})
 
-	it('values-only byte parser hydrates canonical rows without generic cell parsing', () => {
+	it('values-only byte parser hydrates canonical typed rows without generic cell parsing', () => {
+		const sharedStrings = parseSharedStrings(
+			`<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <si><t>Shared &amp; typed</t></si>
+</sst>`,
+		)
 		const sequentialWideCells = Array.from({ length: 28 }, (_, col) => {
 			const ref = `${indexToColumn(col)}2`
 			return `<c r="${ref}"><v>${col + 1}</v></c>`
@@ -3674,13 +3679,13 @@ describe('readXlsx', () => {
 		const xml = `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <dimension ref="A1:AB3"/>
   <sheetData>
-    <row r="1"><c r="A1"><v>7</v></c><c r="B1" t="inlineStr"><is><t>fast &amp; safe</t></is></c><c r="AA1"><v>-3.5</v></c></row>
+    <row r="1"><c r="A1"><v>7</v></c><c r="B1" t="inlineStr"><is><t>fast &amp; safe</t></is></c><c r="C1" t="s"><v>0</v></c><c r="D1" t="b"><v>1</v></c><c r="AA1"><v>-3.5</v></c></row>
     <row r="2">${sequentialWideCells}</row>
     <row r="3"><c><v>-12</v></c><c><v>1.25E3</v></c><c><v>12345678901234567</v></c></row>
   </sheetData>
 </worksheet>`
 		const sheet = parseSheetValuesOnlyBytes('Sheet1', new TextEncoder().encode(xml), {
-			sharedStrings: emptySharedStrings(),
+			sharedStrings,
 			styleIds: [S0],
 			isDateFormat: [false],
 			hasDateStyles: false,
@@ -3689,6 +3694,8 @@ describe('readXlsx', () => {
 
 		expect(sheet?.cells.get(0, 0)?.value).toEqual(numberValue(7))
 		expect(sheet?.cells.get(0, 1)?.value).toEqual(stringValue('fast & safe'))
+		expect(sheet?.cells.get(0, 2)?.value).toEqual(stringValue('Shared & typed'))
+		expect(sheet?.cells.get(0, 3)?.value).toEqual(booleanValue(true))
 		expect(sheet?.cells.get(0, 26)?.value).toEqual(numberValue(-3.5))
 		expect(sheet?.cells.get(1, 25)?.value).toEqual(numberValue(26))
 		expect(sheet?.cells.get(1, 26)?.value).toEqual(numberValue(27))

@@ -549,7 +549,7 @@ function parseSimpleValuesRowBytes(
 	while (true) {
 		cursor = skipXmlWhitespaceBytes(bytes, cursor, bodyEnd)
 		if (cursor >= bodyEnd) return true
-		const plainNumberNext = parseCanonicalPlainNumberCellBytes(
+		const plainValueNext = parseCanonicalPlainValueCellBytes(
 			bytes,
 			cursor,
 			bodyEnd,
@@ -558,10 +558,18 @@ function parseSimpleValuesRowBytes(
 			nextCol,
 			out,
 		)
-		if (plainNumberNext !== -1) {
-			sheet.cells.setPlainNumber(out.row, out.col, out.numberValue ?? 0)
+		if (plainValueNext !== -1) {
+			if (out.numberValue !== undefined) {
+				sheet.cells.setPlainNumber(out.row, out.col, out.numberValue)
+			} else if (out.stringStart >= 0) {
+				sheet.cells.setPlainString(
+					out.row,
+					out.col,
+					decodeXmlBytesTextKnown(bytes, out.stringStart, out.stringEnd, out.stringHasEntity),
+				)
+			} else return false
 			nextCol = out.col + 1
-			cursor = plainNumberNext
+			cursor = plainValueNext
 			continue
 		}
 		const canonicalNext = parseCanonicalValuesCellBytes(
@@ -628,7 +636,7 @@ function parseSimpleValuesRowBytes(
 	}
 }
 
-function parseCanonicalPlainNumberCellBytes(
+function parseCanonicalPlainValueCellBytes(
 	bytes: Uint8Array,
 	cursor: number,
 	bodyEnd: number,
@@ -653,24 +661,37 @@ function parseCanonicalPlainNumberCellBytes(
 		fallbackCol,
 	)
 	if (refEnd === -1 || refEnd + 5 >= bodyEnd) return -1
-	if (
-		bytes[refEnd + 1] !== 62 ||
-		bytes[refEnd + 2] !== BYTE_LT ||
-		bytes[refEnd + 3] !== 118 ||
-		bytes[refEnd + 4] !== 62
-	) {
-		return -1
-	}
-	const valueStart = refEnd + 5
-	const parsedInt = parseCanonicalIntegerValueBytes(bytes, valueStart, bodyEnd)
-	if (!parsedInt) return -1
 	out.row = fallbackRow
 	out.col = fallbackCol
-	out.numberValue = parsedInt.value
+	out.numberValue = undefined
 	out.stringStart = -1
 	out.stringEnd = -1
 	out.stringHasEntity = false
-	return parsedInt.next
+	if (
+		bytes[refEnd + 1] === 62 &&
+		bytes[refEnd + 2] === BYTE_LT &&
+		bytes[refEnd + 3] === 118 &&
+		bytes[refEnd + 4] === 62
+	) {
+		const valueStart = refEnd + 5
+		const parsedInt = parseCanonicalIntegerValueBytes(bytes, valueStart, bodyEnd)
+		if (!parsedInt) return -1
+		out.numberValue = parsedInt.value
+		return parsedInt.next
+	}
+	const inlineValueStart = parseCanonicalInlineStringValueStartBytes(bytes, refEnd, bodyEnd)
+	if (inlineValueStart === -1) return -1
+	let valueEnd = inlineValueStart
+	while (valueEnd < bodyEnd) {
+		const byte = bytes[valueEnd]
+		if (byte === BYTE_LT) break
+		if (byte === BYTE_AMP) out.stringHasEntity = true
+		valueEnd += 1
+	}
+	if (!endsCanonicalInlineStringBytes(bytes, valueEnd, bodyEnd)) return -1
+	out.stringStart = inlineValueStart
+	out.stringEnd = valueEnd
+	return valueEnd + BYTES_CANONICAL_INLINE_STRING_SUFFIX.length
 }
 
 function parseCanonicalValuesCellBytes(

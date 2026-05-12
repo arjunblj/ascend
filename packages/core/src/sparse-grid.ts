@@ -167,6 +167,8 @@ class StringTable {
 	private readonly ids = new Map<string, number>()
 	private readonly values = ['']
 	private reverseLookupEnabled = true
+	private lookupCount = 0
+	private missCount = 0
 
 	constructor() {
 		for (const value of COMMON_INTERNED_STRINGS) {
@@ -182,8 +184,19 @@ class StringTable {
 			this.values.push(value)
 			return id
 		}
+		this.lookupCount++
 		const existing = this.ids.get(value)
 		if (existing !== undefined) return existing
+		this.missCount++
+		if (
+			this.values.length >= ADAPTIVE_REVERSE_STRING_INTERN_MIN_IDS &&
+			this.missCount / this.lookupCount >= ADAPTIVE_REVERSE_STRING_INTERN_MISS_RATIO
+		) {
+			this.disableReverseLookup()
+			const id = this.values.length
+			this.values.push(value)
+			return id
+		}
 		const id = this.values.length
 		this.values.push(value)
 		this.ids.set(value, id)
@@ -201,6 +214,8 @@ class StringTable {
 }
 
 const MAX_REVERSE_STRING_INTERN_IDS = 65_536
+const ADAPTIVE_REVERSE_STRING_INTERN_MIN_IDS = 16_384
+const ADAPTIVE_REVERSE_STRING_INTERN_MISS_RATIO = 0.98
 
 const COMMON_INTERNED_STRINGS = [
 	'TRUE',

@@ -1388,6 +1388,17 @@ function buildPivotOutputAudit(
 	const auditCache = pivotCacheWithMaterializedAuditRows(workbook, cache)
 	if (!auditCache.ok) return unsupportedPivotAudit(base, auditCache.warning)
 	cache = auditCache.value
+	if (pivot.dataFields.length === 0) {
+		const labelAudit = auditRowLabelOnlyPivotOutput(workbook, sheet.id, pivot, cache)
+		if (!labelAudit.ok) return unsupportedPivotAudit(base, labelAudit.warning)
+		return {
+			...base,
+			status: 'passed',
+			checkedValueCount: labelAudit.checkedCellCount,
+			mismatches: [],
+			warnings: [],
+		}
+	}
 	if (isDataFieldsNestedOnRowsPivot(pivot)) {
 		const expected = aggregateDataFieldsNestedOnRowsPivotOutput(cache, pivot)
 		if (!expected.ok) return unsupportedPivotAudit(base, expected.warning)
@@ -1761,6 +1772,51 @@ function auditEmptyPivotOutput(
 		}
 	}
 	return { ok: true, checkedCellCount }
+}
+
+function auditRowLabelOnlyPivotOutput(
+	workbook: Workbook,
+	sheetId: string,
+	pivot: PivotTableInfo,
+	cache: PivotCacheInfo,
+): { ok: true; checkedCellCount: number } | { ok: false; warning: string } {
+	if (pivot.columnFields.length > 0) {
+		return { ok: false, warning: 'No-data pivot column labels are not audited.' }
+	}
+	if (pivot.rowFields.length !== 1) {
+		return { ok: false, warning: 'No-data pivot audits require exactly one row field.' }
+	}
+	if (!pivot.locationRef) return { ok: false, warning: 'Pivot table has no output location.' }
+	let bounds: RangeRef
+	try {
+		bounds = parseRange(pivot.locationRef)
+	} catch {
+		return { ok: false, warning: `Pivot output range is invalid: ${pivot.locationRef}` }
+	}
+	const sheet = workbook.sheets.find((entry) => entry.id === sheetId)
+	if (!sheet) return { ok: false, warning: 'Pivot output sheet was not loaded.' }
+	const rowFieldIndex = pivot.rowFields[0]?.index
+	if (rowFieldIndex === undefined || rowFieldIndex < 0) {
+		return { ok: false, warning: 'No-data pivot row field metadata was not found.' }
+	}
+	const rows = buildPivotSimpleRowOutputItems(cache, pivot, rowFieldIndex)
+	if (!rows.ok) return rows
+	const dataStartOffset = pivot.location?.firstDataRow ?? 1
+	const dataStartRow = bounds.start.row + dataStartOffset
+	const labelCol = bounds.start.col
+	if (dataStartRow + rows.value.length - 1 > bounds.end.row) {
+		return { ok: false, warning: 'No-data pivot output range is missing saved row labels.' }
+	}
+	for (let index = 0; index < rows.value.length; index++) {
+		const expected = normalizeSavedPivotLabel(rows.value[index]?.key ?? '')
+		const actual = normalizeSavedPivotLabel(
+			cellText(sheet.cells.get(dataStartRow + index, labelCol)?.value ?? EMPTY),
+		)
+		if (actual !== expected) {
+			return { ok: false, warning: 'No-data pivot output labels did not match saved cells.' }
+		}
+	}
+	return { ok: true, checkedCellCount: rows.value.length }
 }
 
 function aggregateDataFieldsOnRowsPivotOutput(
@@ -3733,6 +3789,10 @@ function normalizeGrandTotalLabel(label: string): string {
 		normalized === 'общий итог'
 		? 'Grand Total'
 		: label
+}
+
+function normalizeSavedPivotLabel(label: string): string {
+	return normalizePivotAuditText(normalizeGrandTotalLabel(label))
 }
 
 function normalizePivotAuditText(value: string): string {

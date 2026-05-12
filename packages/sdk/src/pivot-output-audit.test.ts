@@ -241,7 +241,7 @@ describe('pivot output audits', () => {
 			expect.objectContaining({
 				pivotTable: 'PivotTable1',
 				status: 'passed',
-				checkedValueCount: 0,
+				checkedValueCount: 4,
 				mismatches: [],
 				warnings: [],
 			}),
@@ -571,6 +571,23 @@ describe('pivot output audits', () => {
 				mismatches: [],
 				warnings: [],
 			},
+		])
+	})
+
+	test('audits real LibreOffice date row-label-only pivot outputs', async () => {
+		const oneSecond = await AscendWorkbook.open(
+			loadLibreOfficeFixture('pivottable_1s_difference.xlsx'),
+			{ pivotCacheRecordMaterializeLimit: 'all' },
+		)
+
+		expect(oneSecond.pivotOutputAudits()).toEqual([
+			expect.objectContaining({
+				pivotTable: 'PivotTable2',
+				status: 'passed',
+				checkedValueCount: 4,
+				mismatches: [],
+				warnings: [],
+			}),
 		])
 	})
 })

@@ -6,11 +6,17 @@ import { ChunkedStringBuilder } from './chunked-string-builder.ts'
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 const NS_MAIN = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
 const NS_R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+const NS_X14 = 'http://schemas.microsoft.com/office/spreadsheetml/2009/9/main'
+const NS_X15 = 'http://schemas.microsoft.com/office/spreadsheetml/2010/11/main'
+const X14_SLICER_CACHES_EXT_URI = '{BBE1A952-AA13-448e-AADC-164F8A28A991}'
+const X15_TIMELINE_CACHES_EXT_URI = '{7E03D99C-DC04-49d9-9315-930204A7B6E9}'
 
 export interface WorkbookXmlOptions {
 	readonly worksheetRelIds?: readonly string[]
 	readonly externalReferenceRelIds?: readonly string[]
 	readonly pivotCacheRelIds?: readonly string[]
+	readonly slicerCacheRelIds?: readonly string[]
+	readonly timelineCacheRelIds?: readonly string[]
 	readonly chartSheetRelIds?: readonly string[]
 	readonly macroSheetRelIds?: readonly string[]
 	readonly calcStateDirty?: boolean
@@ -19,7 +25,13 @@ export interface WorkbookXmlOptions {
 export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions = {}): string {
 	const out = new ChunkedStringBuilder()
 	out.push(XML_HEADER)
-	out.push(`<workbook xmlns="${NS_MAIN}" xmlns:r="${NS_R}">`)
+	const workbookNamespaceAttrs = [`xmlns="${NS_MAIN}"`, `xmlns:r="${NS_R}"`]
+	if ((options.slicerCacheRelIds?.length ?? 0) > 0)
+		workbookNamespaceAttrs.push(`xmlns:x14="${NS_X14}"`)
+	if ((options.timelineCacheRelIds?.length ?? 0) > 0) {
+		workbookNamespaceAttrs.push(`xmlns:x15="${NS_X15}"`)
+	}
+	out.push(`<workbook ${workbookNamespaceAttrs.join(' ')}>`)
 
 	const workbookPrAttrs: string[] = []
 	if (workbook.calcSettings.dateSystem === '1904' || workbook.workbookProperties.date1904) {
@@ -183,8 +195,30 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 		out.push('<calcPr/>')
 	}
 
+	const extLstXml = buildWorkbookExtLstXml(options)
+	if (extLstXml) out.push(extLstXml)
+
 	out.push('</workbook>')
 	return out.toString()
+}
+
+function buildWorkbookExtLstXml(options: WorkbookXmlOptions): string {
+	const extXml: string[] = []
+	if ((options.slicerCacheRelIds?.length ?? 0) > 0) {
+		extXml.push(
+			`<ext uri="${X14_SLICER_CACHES_EXT_URI}"><x14:slicerCaches>${options.slicerCacheRelIds
+				?.map((relId) => `<x14:slicerCache r:id="${escapeXml(relId)}"/>`)
+				.join('')}</x14:slicerCaches></ext>`,
+		)
+	}
+	if ((options.timelineCacheRelIds?.length ?? 0) > 0) {
+		extXml.push(
+			`<ext uri="${X15_TIMELINE_CACHES_EXT_URI}"><x15:timelineCaches>${options.timelineCacheRelIds
+				?.map((relId) => `<x15:timelineCacheRef r:id="${escapeXml(relId)}"/>`)
+				.join('')}</x15:timelineCaches></ext>`,
+		)
+	}
+	return extXml.length > 0 ? `<extLst>${extXml.join('')}</extLst>` : ''
 }
 
 function isCoreDefinedNameAttribute(name: string): boolean {

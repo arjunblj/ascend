@@ -33,9 +33,11 @@ import {
 	REL_QUERY_TABLE,
 	REL_SHARED_STRINGS,
 	REL_SHEET_METADATA,
+	REL_SLICER_CACHE,
 	REL_STYLES,
 	REL_TABLE,
 	REL_THEME,
+	REL_TIMELINE_CACHE,
 	REL_VML_DRAWING,
 	REL_WORKSHEET,
 	type Relationship,
@@ -674,6 +676,23 @@ export function planWriteXlsx(
 			pivotCacheRelIds.push(addWorkbookRel(REL_PIVOT_CACHE_DEFINITION, cache.partPath, target))
 		}
 
+		const workbookCapsulePartPaths = new Set(workbookCapsules.map((capsule) => capsule.partPath))
+		const slicerCachePartPaths = new Set(workbook.slicerCaches.map((cache) => cache.partPath))
+		const slicerCacheRelIds: string[] = []
+		for (const cache of workbook.slicerCaches) {
+			if (!workbookCapsulePartPaths.has(cache.partPath)) continue
+			const target = cache.partPath.replace(/^xl\//, '')
+			slicerCacheRelIds.push(addWorkbookRel(REL_SLICER_CACHE, cache.partPath, target))
+		}
+
+		const timelineCachePartPaths = new Set(workbook.timelineCaches.map((cache) => cache.partPath))
+		const timelineCacheRelIds: string[] = []
+		for (const cache of workbook.timelineCaches) {
+			if (!workbookCapsulePartPaths.has(cache.partPath)) continue
+			const target = cache.partPath.replace(/^xl\//, '')
+			timelineCacheRelIds.push(addWorkbookRel(REL_TIMELINE_CACHE, cache.partPath, target))
+		}
+
 		const chartSheetPartPaths = new Set(workbook.chartSheets.map((sheet) => sheet.partPath))
 		const chartSheetRelIds: string[] = []
 		for (const chartSheet of workbook.chartSheets) {
@@ -697,6 +716,8 @@ export function planWriteXlsx(
 			if (chartSheetPartPaths.has(capsule.partPath)) continue
 			if (macroSheetPartPaths.has(capsule.partPath)) continue
 			if (pivotCachePartPaths.has(capsule.partPath)) continue
+			if (slicerCachePartPaths.has(capsule.partPath)) continue
+			if (timelineCachePartPaths.has(capsule.partPath)) continue
 			const target = computeRelativePath('xl/', capsule.partPath)
 			addWorkbookRel(capsule.relType, capsule.partPath, target)
 		}
@@ -790,6 +811,8 @@ export function planWriteXlsx(
 								worksheetRelIds,
 								externalReferenceRelIds,
 								pivotCacheRelIds,
+								slicerCacheRelIds,
+								timelineCacheRelIds,
 								chartSheetRelIds,
 								macroSheetRelIds,
 								...(options.calcStateDirty !== undefined

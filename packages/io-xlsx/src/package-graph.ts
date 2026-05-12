@@ -13,10 +13,14 @@ import {
 	REL_PIVOT_TABLE,
 	REL_QUERY_TABLE,
 	REL_SHARED_STRINGS,
+	REL_SLICER,
+	REL_SLICER_CACHE,
 	REL_STYLES,
 	REL_TABLE,
 	REL_THEME,
 	REL_THREADED_COMMENT,
+	REL_TIMELINE,
+	REL_TIMELINE_CACHE,
 	REL_VML_DRAWING,
 	REL_WORKSHEET,
 	type Relationship,
@@ -36,6 +40,8 @@ export type XlsxPackageOwnerScope =
 	| 'drawing'
 	| 'chart'
 	| 'pivot'
+	| 'slicer'
+	| 'timeline'
 	| 'external-link'
 	| 'custom-xml'
 	| 'active-content'
@@ -365,6 +371,15 @@ function classifyOwnerScope(
 	) {
 		return 'pivot'
 	}
+	if (primary?.type === REL_SLICER_CACHE || /(^|\/)(slicerCaches|slicers)\//i.test(partPath)) {
+		return 'slicer'
+	}
+	if (
+		primary?.type === REL_TIMELINE_CACHE ||
+		/(^|\/)(timelineCaches|timelines)\//i.test(partPath)
+	) {
+		return 'timeline'
+	}
 	if (/(^|\/)externalLinks\//.test(partPath)) return 'external-link'
 	if (partPath.startsWith('customXml/')) return 'custom-xml'
 	if (/(^|\/)(activeX|ctrlProps|embeddings)\//i.test(partPath)) return 'active-content'
@@ -401,6 +416,12 @@ function classifyRelationshipFeatureFamily(
 		relationship.type === REL_PIVOT_CACHE_RECORDS
 	) {
 		return 'preservedPivot'
+	}
+	if (relationship.type === REL_SLICER || relationship.type === REL_SLICER_CACHE) {
+		return 'preservedSlicer'
+	}
+	if (relationship.type === REL_TIMELINE || relationship.type === REL_TIMELINE_CACHE) {
+		return 'preservedTimeline'
 	}
 	return resolvedTarget
 		? classifyPackageFeatureFamily(resolvedTarget, '', relationship.type)

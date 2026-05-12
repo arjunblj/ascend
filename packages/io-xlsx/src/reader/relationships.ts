@@ -39,7 +39,11 @@ export const REL_PIVOT_TABLE =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable'
 export const REL_CALC_CHAIN =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain'
+export const REL_SLICER = 'http://schemas.microsoft.com/office/2007/relationships/slicer'
 export const REL_SLICER_CACHE = 'http://schemas.microsoft.com/office/2007/relationships/slicerCache'
+export const REL_TIMELINE = 'http://schemas.microsoft.com/office/2011/relationships/timeline'
+export const REL_TIMELINE_CACHE =
+	'http://schemas.microsoft.com/office/2011/relationships/timelineCache'
 export const REL_VML_DRAWING =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing'
 export const REL_THREADED_COMMENT =

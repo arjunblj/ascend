@@ -7,7 +7,7 @@ import type {
 	WorkbookConnectionPartInfo,
 	WorkbookDataModelPartInfo,
 } from '@ascend/core'
-import { DEFAULT_STYLE_ID, Sheet, Workbook } from '@ascend/core'
+import { DEFAULT_STYLE_ID, Workbook } from '@ascend/core'
 import type {
 	AscendError,
 	CompatibilityReport,
@@ -84,11 +84,9 @@ import {
 import { emptySharedStrings, parseSharedStrings } from './shared-strings.ts'
 import {
 	parseSheet,
+	parseSheetValuesOnlyByteChunks,
 	parseSheetValuesOnlyBytes,
 	type SheetFormulaFeatures,
-	type SheetParseContext,
-	type StreamedSheetRow,
-	streamSheetRowsByteChunks,
 	ValueInternPool,
 } from './sheet.ts'
 import { parseStyles, parseStylesLite } from './styles.ts'
@@ -735,28 +733,6 @@ export function readXlsx(
 				`Invalid workbook payload: ${e instanceof Error ? e.message : 'unknown'}`,
 			),
 		)
-	}
-}
-
-function parseSheetValuesOnlyByteChunks(
-	name: string,
-	chunks: Iterable<Uint8Array>,
-	ctx: SheetParseContext,
-	sheetId: SheetId,
-): Sheet {
-	const sheet = new Sheet(name, sheetId)
-	sheet.cells.setExpectedDensity('dense')
-	for (const row of streamSheetRowsByteChunks(name, chunks, ctx)) {
-		applyStreamedRow(sheet, row)
-	}
-	return sheet
-}
-
-function applyStreamedRow(sheet: Sheet, row: StreamedSheetRow): void {
-	if (row.rowHeight !== undefined) sheet.rowHeights.set(row.row, row.rowHeight)
-	if (row.rowDef) sheet.rowDefs.set(row.row, row.rowDef)
-	for (const [col, cell] of row.cells) {
-		sheet.cells.set(row.row, col, cell)
 	}
 }
 

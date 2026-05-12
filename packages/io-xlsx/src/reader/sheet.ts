@@ -1287,6 +1287,120 @@ export function* streamSheetRowsByteChunks(
 	}
 }
 
+export function parseSheetValuesOnlyByteChunks(
+	name: string,
+	chunks: Iterable<Uint8Array>,
+	ctx: SheetParseContext,
+	sheetId?: Sheet['id'],
+): Sheet | null {
+	if (!ctx.valuesOnly || ctx.richMetadata || ctx.formulaOnly) return null
+	const sheet = new Sheet(name, sheetId)
+	sheet.cells.setExpectedDensity('dense')
+	const sharedFormulaMasters: SharedFormulaMasterMap = new Map()
+	let currentRow = -1
+	let buffer: Uint8Array<ArrayBufferLike> = EMPTY_BYTES
+	let inSheetData = false
+	let sawSheetData = false
+	const fallbackPos = { row: 0, col: 0 }
+	const cellOut = { row: 0, col: 0 }
+	const rowSheet = new Sheet(name)
+
+	for (const chunk of chunks) {
+		buffer = appendBytes(buffer, chunk)
+		while (true) {
+			if (!inSheetData) {
+				const sheetDataOpen = indexOfElementOpenBytes(
+					buffer,
+					BYTES_SHEET_DATA_OPEN,
+					0,
+					buffer.length,
+				)
+				if (sheetDataOpen === -1) {
+					buffer = trailingBytes(buffer, BYTES_SHEET_DATA_OPEN.length)
+					break
+				}
+				const sheetDataTagEnd = findTagEndBytes(buffer, sheetDataOpen)
+				if (sheetDataTagEnd === -1) {
+					buffer = buffer.subarray(sheetDataOpen)
+					break
+				}
+				sawSheetData = true
+				if (isSelfClosingTagBytes(buffer, sheetDataOpen, sheetDataTagEnd)) return sheet
+				buffer = buffer.subarray(sheetDataTagEnd + 1)
+				inSheetData = true
+			}
+
+			const rowOpen = indexOfElementOpenBytes(buffer, BYTES_ROW_OPEN, 0, buffer.length)
+			if (rowOpen === -1) {
+				const sheetDataClose = indexOfBytes(buffer, BYTES_SHEET_DATA_CLOSE, 0, buffer.length)
+				if (sheetDataClose !== -1) return sheet
+				buffer = trailingBytes(buffer, BYTES_ROW_OPEN.length)
+				break
+			}
+			if (rowOpen > 0) {
+				if (indexOfBytes(buffer, BYTES_SHEET_DATA_CLOSE, 0, rowOpen) !== -1) return sheet
+				buffer = buffer.subarray(rowOpen)
+			}
+			const rowTagEnd = findTagEndBytes(buffer, 0)
+			if (rowTagEnd === -1) break
+			const explicitRowIndex = rawPositiveIntAttrInBytes(
+				buffer,
+				BYTES_ROW_OPEN.length,
+				rowTagEnd,
+				'r',
+			)
+			const row = explicitRowIndex !== undefined ? explicitRowIndex - 1 : currentRow + 1
+			if (ctx.maxRows !== undefined && row >= ctx.maxRows) return sheet
+			const rowMetadata = streamedRowMetadataFromRawByteAttrs(
+				buffer,
+				BYTES_ROW_OPEN.length,
+				rowTagEnd,
+			)
+			let rowEnd: number
+			let rowClose: number
+			if (isSelfClosingTagBytes(buffer, 0, rowTagEnd)) {
+				applyStreamedRowMetadata(sheet, row, rowMetadata)
+				buffer = buffer.subarray(rowTagEnd + 1)
+				currentRow = row
+				continue
+			} else {
+				rowClose = indexOfBytes(buffer, BYTES_ROW_CLOSE, rowTagEnd + 1, buffer.length)
+				if (rowClose === -1) break
+				rowEnd = rowClose + BYTES_ROW_CLOSE.length
+			}
+
+			if (parseSimpleValuesRowBytes(buffer, rowTagEnd + 1, rowClose, row, ctx, sheet)) {
+				applyStreamedRowMetadata(sheet, row, rowMetadata)
+				buffer = buffer.subarray(rowEnd)
+				currentRow = row
+				continue
+			}
+			const directParsed = parseStreamedValuesRowBytes(buffer, 0, rowEnd, currentRow, ctx)
+			if (directParsed) {
+				applyStreamedRowToSheet(sheet, withStreamedRowMetadata(directParsed, rowMetadata))
+				buffer = buffer.subarray(rowEnd)
+				currentRow = directParsed.row
+				continue
+			}
+			const parsed = parseStreamedSheetRowXml(
+				BYTE_XML_DECODER.decode(buffer.subarray(0, rowEnd)),
+				currentRow,
+				ctx,
+				sharedFormulaMasters,
+				rowSheet,
+				fallbackPos,
+				cellOut,
+			)
+			buffer = buffer.subarray(rowEnd)
+			if (!parsed) continue
+			applyStreamedRowToSheet(sheet, parsed)
+			currentRow = parsed.row
+		}
+	}
+
+	return sawSheetData ? sheet : null
+}
+
 function appendBytes(
 	left: Uint8Array<ArrayBufferLike>,
 	right: Uint8Array<ArrayBufferLike>,
@@ -1349,6 +1463,22 @@ function withStreamedRowMetadata(
 	metadata: StreamedRowMetadata | undefined,
 ): StreamedSheetRow {
 	return metadata ? { ...row, ...metadata } : row
+}
+
+function applyStreamedRowToSheet(sheet: Sheet, row: StreamedSheetRow): void {
+	applyStreamedRowMetadata(sheet, row.row, row)
+	for (const [col, cell] of row.cells) {
+		sheet.cells.set(row.row, col, cell)
+	}
+}
+
+function applyStreamedRowMetadata(
+	sheet: Sheet,
+	row: number,
+	metadata: StreamedRowMetadata | undefined,
+): void {
+	if (metadata?.rowHeight !== undefined) sheet.rowHeights.set(row, metadata.rowHeight)
+	if (metadata?.rowDef) sheet.rowDefs.set(row, metadata.rowDef)
 }
 
 function parseStreamedValuesRowBytes(

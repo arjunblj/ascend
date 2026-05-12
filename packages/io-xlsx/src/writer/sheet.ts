@@ -777,6 +777,10 @@ function defaultStyleScalarCellsWithoutRefsXml(
 	usePlainStrings?: boolean,
 ): string | false {
 	if (cells.length === 0) return false
+	const first = cells[0]
+	if (first?.[1].value.kind === 'number') {
+		return defaultStyleNumberCellsWithoutRefsXml(cells)
+	}
 	let body = ''
 	for (let index = 0; index < cells.length; index++) {
 		const entry = cells[index]
@@ -808,6 +812,22 @@ function defaultStyleScalarCellsWithoutRefsXml(
 		} else {
 			return false
 		}
+	}
+	return body
+}
+
+function defaultStyleNumberCellsWithoutRefsXml(
+	cells: readonly (readonly [number, Cell])[],
+): string | false {
+	let body = ''
+	for (let index = 0; index < cells.length; index++) {
+		const entry = cells[index]
+		if (!entry || entry[0] !== index) return false
+		const cell = entry[1]
+		if ((cell.styleId as number) !== 0 || cell.formula || cell.formulaInfo) return false
+		const value = cell.value
+		if (value.kind !== 'number') return false
+		body += `<c><v>${value.value}</v></c>`
 	}
 	return body
 }

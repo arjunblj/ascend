@@ -3492,6 +3492,7 @@ function checkThreadedCommentIntegrity(
 		else graphRelationshipsByTarget.set(relationship.resolvedTarget, [relationship])
 	}
 	const idsByPart = new Map<string, Map<string, ThreadedCommentIntegrityEntry>>()
+	const idsByWorkbook = new Map<string, ThreadedCommentIntegrityEntry>()
 	const rootRefsByPart = new Map<string, Map<string, ThreadedCommentIntegrityEntry>>()
 	const claimedPartsBySheet = new Map<string, Set<string>>()
 	let threadedCommentCount = 0
@@ -3590,6 +3591,38 @@ function checkThreadedCommentIntegrity(
 					})
 				} else {
 					ids.set(comment.id, {
+						sheetName: sheet.name,
+						ref: comment.ref,
+						index,
+						partPath,
+						id: comment.id,
+					})
+				}
+				const existingWorkbookId = idsByWorkbook.get(comment.id)
+				if (existingWorkbookId && existingWorkbookId.partPath !== partPath) {
+					issues.push({
+						rule: 'threaded-comment-integrity',
+						severity: 'warning',
+						message: `Duplicate threaded comment id "${comment.id}" across threaded comment parts`,
+						refs: [
+							`${existingWorkbookId.sheetName}!${existingWorkbookId.ref}`,
+							`${sheet.name}!${comment.ref}`,
+						],
+						suggestedFix:
+							'Assign workbook-unique threadedComment ids before editing replies or merging threaded comment parts.',
+						details: {
+							kind: 'duplicate-threaded-comment-id-across-parts',
+							id: comment.id,
+							firstPartPath: existingWorkbookId.partPath,
+							duplicatePartPath: partPath,
+							firstSheetName: existingWorkbookId.sheetName,
+							duplicateSheetName: sheet.name,
+							firstCommentIndex: existingWorkbookId.index,
+							duplicateCommentIndex: index,
+						},
+					})
+				} else if (!existingWorkbookId) {
+					idsByWorkbook.set(comment.id, {
 						sheetName: sheet.name,
 						ref: comment.ref,
 						index,

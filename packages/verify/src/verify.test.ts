@@ -2571,6 +2571,44 @@ describe('checker', () => {
 		})
 	})
 
+	test('detects duplicate threaded comment ids across threaded comment parts', () => {
+		const wb = createWorkbook()
+		const s1 = wb.addSheet('Sheet1')
+		const s2 = wb.addSheet('Sheet2')
+		s1.threadedComments.push({
+			ref: 'A1',
+			text: 'Root',
+			id: '{thread-1}',
+			author: 'Alex',
+			partPath: 'xl/threadedComments/threadedComment1.xml',
+		})
+		s2.threadedComments.push({
+			ref: 'B2',
+			text: 'Unexpected duplicate',
+			id: '{thread-1}',
+			author: 'Blair',
+			partPath: 'xl/threadedComments/threadedComment2.xml',
+		})
+
+		const result = check(wb)
+		const issues = result.issues.filter((i) => i.rule === 'threaded-comment-integrity')
+
+		expect(result.passed).toBe(false)
+		expect(issues).toHaveLength(1)
+		expect(issues[0]?.details).toEqual({
+			kind: 'duplicate-threaded-comment-id-across-parts',
+			id: '{thread-1}',
+			firstPartPath: 'xl/threadedComments/threadedComment1.xml',
+			duplicatePartPath: 'xl/threadedComments/threadedComment2.xml',
+			firstSheetName: 'Sheet1',
+			duplicateSheetName: 'Sheet2',
+			firstCommentIndex: 0,
+			duplicateCommentIndex: 0,
+		})
+		expect(issues[0]?.refs).toEqual(['Sheet1!A1', 'Sheet2!B2'])
+		expect(issues[0]?.suggestedFix).toContain('workbook-unique')
+	})
+
 	test('detects threaded comment replies with missing parent ids', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

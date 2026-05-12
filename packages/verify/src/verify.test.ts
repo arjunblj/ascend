@@ -1632,6 +1632,85 @@ describe('checker', () => {
 		).toHaveLength(0)
 	})
 
+	test('surfaces stale content type overrides as package graph diagnostics', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/workbook.xml',
+						featureFamily: 'workbook',
+						ownerScope: 'workbook',
+						contentType:
+							'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml',
+					},
+				],
+				relationships: [],
+				contentTypeOverrides: [
+					{
+						partPath: 'xl/comments1.xml',
+						contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml',
+					},
+				],
+			},
+		})
+
+		const packageIssues = result.issues.filter((i) => i.rule === 'package-graph-integrity')
+		expect(result.passed).toBe(false)
+		expect(packageIssues).toHaveLength(1)
+		expect(packageIssues[0]?.refs).toEqual(['[Content_Types].xml', 'xl/comments1.xml'])
+		expect(packageIssues[0]?.details).toMatchObject({
+			code: 'package_content_type_override_target',
+			partPath: 'xl/comments1.xml',
+			contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml',
+			expected: 'xl/comments1.xml',
+			actual: undefined,
+		})
+		expect(packageIssues[0]?.suggestedFix).toContain('stale content type override')
+	})
+
+	test('surfaces content type override mismatches as package graph diagnostics', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/threadedComments/threadedComment1.xml',
+						featureFamily: 'preservedThreadedComments',
+						ownerScope: 'worksheet',
+						contentType: 'application/vnd.ms-excel.threadedcomments+xml',
+					},
+				],
+				relationships: [],
+				contentTypeOverrides: [
+					{
+						partPath: 'xl/threadedComments/threadedComment1.xml',
+						contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml',
+					},
+				],
+			},
+		})
+
+		const packageIssues = result.issues.filter((i) => i.rule === 'package-graph-integrity')
+		expect(result.passed).toBe(false)
+		expect(packageIssues).toContainEqual(
+			expect.objectContaining({
+				refs: ['[Content_Types].xml', 'xl/threadedComments/threadedComment1.xml'],
+				details: expect.objectContaining({
+					code: 'package_content_type_override_mismatch',
+					partPath: 'xl/threadedComments/threadedComment1.xml',
+					expected: 'application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml',
+					actual: 'application/vnd.ms-excel.threadedcomments+xml',
+					featureFamily: 'preservedThreadedComments',
+				}),
+			}),
+		)
+	})
+
 	test('detects external link relationship mismatches and orphan package sidecars', () => {
 		const wb = createWorkbook()
 		wb.addSheet('Sheet1')

@@ -43,6 +43,8 @@ export interface CheckAnalysis {
 export interface VerifyPackageGraph {
 	readonly parts: readonly VerifyPackageGraphPart[]
 	readonly relationships: readonly VerifyPackageGraphRelationship[]
+	readonly contentTypeDefaults?: readonly VerifyPackageContentTypeDefault[]
+	readonly contentTypeOverrides?: readonly VerifyPackageContentTypeOverride[]
 }
 
 export interface VerifyPackageGraphPart {
@@ -63,6 +65,16 @@ export interface VerifyPackageGraphRelationship {
 	readonly resolvedTarget?: string
 	readonly targetMode?: string
 	readonly featureFamily?: string
+}
+
+export interface VerifyPackageContentTypeDefault {
+	readonly extension: string
+	readonly contentType: string
+}
+
+export interface VerifyPackageContentTypeOverride {
+	readonly partPath: string
+	readonly contentType: string
 }
 
 function findClosestSheetName(target: string, sheetNames: readonly string[]): string | null {
@@ -5333,7 +5345,8 @@ function isMediaPackagePart(part: VerifyPackageGraphPart): boolean {
 function checkPackageGraphIntegrity(packageGraph?: VerifyPackageGraph): CheckIssue[] {
 	if (!packageGraph) return []
 	const issues: CheckIssue[] = []
-	const partPaths = new Set(packageGraph.parts.map((part) => part.path))
+	const partByPath = new Map(packageGraph.parts.map((part) => [part.path, part]))
+	const partPaths = new Set(partByPath.keys())
 	const reportedMissingSourceSidecars = new Set<string>()
 
 	for (const relationship of packageGraph.relationships) {
@@ -5399,6 +5412,44 @@ function checkPackageGraphIntegrity(packageGraph?: VerifyPackageGraph): CheckIss
 				actual: undefined,
 			},
 		})
+	}
+	for (const override of packageGraph.contentTypeOverrides ?? []) {
+		const part = partByPath.get(override.partPath)
+		if (!part) {
+			issues.push({
+				rule: 'package-graph-integrity',
+				severity: 'error',
+				message: `Content type override points to missing package part "${override.partPath}"`,
+				refs: ['[Content_Types].xml', override.partPath],
+				suggestedFix:
+					'Remove the stale content type override or restore the referenced package part before writing.',
+				details: {
+					code: 'package_content_type_override_target',
+					partPath: override.partPath,
+					contentType: override.contentType,
+					expected: override.partPath,
+					actual: undefined,
+				},
+			})
+			continue
+		}
+		if (part.contentType && part.contentType !== override.contentType) {
+			issues.push({
+				rule: 'package-graph-integrity',
+				severity: 'error',
+				message: `Content type override for "${override.partPath}" declares "${override.contentType}" but package graph resolved "${part.contentType}"`,
+				refs: ['[Content_Types].xml', override.partPath],
+				suggestedFix:
+					'Make the content type override agree with the actual package part type before writing.',
+				details: {
+					code: 'package_content_type_override_mismatch',
+					partPath: override.partPath,
+					expected: override.contentType,
+					actual: part.contentType,
+					featureFamily: part.featureFamily,
+				},
+			})
+		}
 	}
 
 	return issues

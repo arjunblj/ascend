@@ -25,6 +25,7 @@ export type {
 	AgentWorkflowTrace,
 	ApprovalRequirement,
 	LossAudit,
+	LossAuditPackagePart,
 	RepairAction,
 	RepairPlanResult,
 } from './agent-workflow.ts'

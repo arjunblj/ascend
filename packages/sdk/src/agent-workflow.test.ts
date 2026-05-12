@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { inspectXlsxPackageGraph } from '@ascend/io-xlsx'
 import { createZip, encode } from '../../io-xlsx/src/writer/zip.ts'
 import { AscendWorkbook, auditLossPolicy, commitAgentPlan, createAgentPlan } from './index.ts'
 
@@ -56,6 +57,29 @@ describe('agent workflow loss audit', () => {
 		])
 		expect(unknownPackageAudit.ok).toBe(false)
 		expect(unknownPackageAudit.blockedFeatures[0]?.feature).toBe('preservedOther')
+		expect(unknownPackageAudit.blockedPackageParts).toHaveLength(0)
+
+		const packageGraphAudit = auditLossPolicy(
+			[
+				{
+					feature: 'preservedOther',
+					tier: 'preserved',
+					count: 1,
+					locations: ['xl/custom/custom1.xml'],
+				},
+			],
+			[],
+			inspectXlsxPackageGraph(makePreservedCustomXlsx()),
+		)
+		expect(packageGraphAudit.blockedPackageParts).toEqual([
+			expect.objectContaining({
+				partPath: 'xl/custom/custom1.xml',
+				featureFamily: 'preservedOther',
+				preservationPolicy: 'unknown-review-required',
+				ownerScope: 'unknown',
+				bytePreservationExpected: false,
+			}),
+		])
 	})
 
 	test('plans report blocked preserved features and commits require explicit allow-loss', async () => {
@@ -68,9 +92,26 @@ describe('agent workflow loss audit', () => {
 		const plan = await createAgentPlan(input, ops)
 		expect(plan.lossAudit.ok).toBe(false)
 		expect(plan.lossAudit.blockedFeatures[0]?.feature).toBe('preservedOther')
+		expect(plan.lossAudit.blockedPackageParts).toEqual([
+			expect.objectContaining({
+				partPath: 'xl/custom/custom1.xml',
+				featureFamily: 'preservedOther',
+				preservationPolicy: 'unknown-review-required',
+				reason: expect.stringContaining('cannot classify'),
+			}),
+		])
 		expect(plan.trace.kind).toBe('plan')
 		expect(plan.trace.traceDigest).toMatch(/^[a-f0-9]{64}$/)
-		expect(plan.trace.phases.find((phase) => phase.phase === 'loss-audit')?.status).toBe('blocked')
+		const lossPhase = plan.trace.phases.find((phase) => phase.phase === 'loss-audit')
+		expect(lossPhase?.status).toBe('blocked')
+		expect(lossPhase?.details).toMatchObject({
+			blockedPackageParts: [
+				expect.objectContaining({
+					partPath: 'xl/custom/custom1.xml',
+					preservationPolicy: 'unknown-review-required',
+				}),
+			],
+		})
 		expect(plan.needsApproval).toBe(true)
 		expect(plan.approvals[0]?.kind).toBe('lossy-write')
 		expect(plan.modelOutput.blocked).toBe(true)
@@ -93,6 +134,39 @@ describe('agent workflow loss audit', () => {
 		expect(committed.trace.phases.find((phase) => phase.phase === 'post-write')?.status).toBe('ok')
 		expect(committed.modelOutput.blocked).toBe(false)
 		expect(committed.modelOutput.digests.traceDigest).toBe(committed.trace.traceDigest)
+	})
+
+	test('plans expose digital signature invalidation package policy', async () => {
+		const input = join(TEMP_DIR, 'signed.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makeSignedXlsx())
+
+		const plan = await createAgentPlan(input, [
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] },
+		])
+		expect(plan.lossAudit.ok).toBe(false)
+		expect(plan.lossAudit.blockedFeatures).toContainEqual(
+			expect.objectContaining({ feature: 'preservedSignature' }),
+		)
+		expect(plan.lossAudit.blockedPackageParts).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					partPath: '_xmlsignatures/origin.sigs',
+					featureFamily: 'preservedSignature',
+					preservationPolicy: 'invalidate-on-edit',
+					sourceRelationshipPart: '_rels/.rels',
+					sourceRelationshipId: 'rIdSignatureOrigin',
+					reason: expect.stringContaining('invalidate'),
+				}),
+				expect.objectContaining({
+					partPath: '_xmlsignatures/sig1.xml',
+					featureFamily: 'preservedSignature',
+					preservationPolicy: 'invalidate-on-edit',
+					sourceRelationshipPart: '_xmlsignatures/_rels/origin.sigs.rels',
+					sourceRelationshipId: 'rIdSignature',
+				}),
+			]),
+		)
 	})
 
 	test('clean workbooks commit without allow-loss', async () => {
@@ -204,6 +278,49 @@ function makePreservedCustomXlsx(): Uint8Array {
 				'xl/worksheets/sheet1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`),
 				'xl/custom/custom1.xml': encode('<custom>preserve me</custom>'),
+			}),
+		),
+	)
+}
+
+function makeSignedXlsx(): Uint8Array {
+	return createZip(
+		new Map(
+			Object.entries({
+				'[Content_Types].xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/_xmlsignatures/origin.sigs" ContentType="application/vnd.openxmlformats-package.digital-signature-origin"/>
+  <Override PartName="/_xmlsignatures/sig1.xml" ContentType="application/vnd.openxmlformats-package.digital-signature-xmlsignature+xml"/>
+</Types>`),
+				'_rels/.rels': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+  <Relationship Id="rIdSignatureOrigin" Type="http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/origin" Target="_xmlsignatures/origin.sigs"/>
+</Relationships>`),
+				'_xmlsignatures/_rels/origin.sigs.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSignature" Type="http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/signature" Target="sig1.xml"/>
+</Relationships>`),
+				'xl/_rels/workbook.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`),
+				'xl/workbook.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`),
+				'xl/worksheets/sheet1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`),
+				'_xmlsignatures/origin.sigs': encode(''),
+				'_xmlsignatures/sig1.xml': encode(
+					`<?xml version="1.0"?><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"/>`,
+				),
 			}),
 		),
 	)

@@ -1,6 +1,11 @@
 import { createHash } from 'node:crypto'
 import { copyFile, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
+import type {
+	XlsxPackageGraph,
+	XlsxPackageLossPolicy,
+	XlsxPackageOwnerScope,
+} from '@ascend/io-xlsx'
 import { AscendException, ascendError, type FeatureReport, type Operation } from '@ascend/schema'
 import { listCapabilities, summarizeCapabilities } from './capabilities.ts'
 import { AscendWorkbook } from './workbook.ts'
@@ -66,8 +71,26 @@ export interface AgentPostWriteVerification {
 export interface LossAudit {
 	readonly ok: boolean
 	readonly blockedFeatures: readonly FeatureReport[]
+	readonly blockedPackageParts: readonly LossAuditPackagePart[]
 	readonly allowedLoss: readonly string[] | 'all'
 	readonly policy: 'block-preserved-and-unsupported'
+}
+
+export interface LossAuditPackagePart {
+	readonly partPath: string
+	readonly featureFamily: string
+	readonly preservationPolicy: XlsxPackageLossPolicy
+	readonly ownerScope: XlsxPackageOwnerScope
+	readonly bytePreservationExpected: boolean
+	readonly contentType: string
+	readonly contentTypeSource: string
+	readonly sourceRelationshipPart?: string
+	readonly sourceRelationshipId?: string
+	readonly sourceRelationshipType?: string
+	readonly sourceRelationshipRawTarget?: string
+	readonly sourceRelationshipResolvedTarget?: string
+	readonly sourceRelationshipTargetMode?: string
+	readonly reason: string
 }
 
 export interface AgentWorkflowTrace {
@@ -183,7 +206,7 @@ export async function createAgentPlan(
 	const preview = wb.preview(ops)
 	await progressFromPhase(previewPhase(preview), progress)
 	await progress('loss-audit', 'started', 'Auditing preserved and unsupported features.')
-	const lossAudit = auditLossPolicy(wb.report.features)
+	const lossAudit = auditLossPolicy(wb.report.features, [], wb.packageGraph())
 	await progressFromPhase(lossAuditPhase(lossAudit), progress)
 	await progress('approval-audit', 'started', 'Auditing explicit approval requirements.')
 	const approvals = buildApprovalRequirements(wb.report.features, ops)
@@ -299,7 +322,7 @@ export async function commitAgentPlan(
 		approvalSatisfiedLossFeatures(approvals, options.approvals),
 	)
 	await progress('loss-audit', 'started', 'Auditing preserved and unsupported features.')
-	const lossAudit = auditLossPolicy(wb.report.features, effectiveAllowLoss)
+	const lossAudit = auditLossPolicy(wb.report.features, effectiveAllowLoss, wb.packageGraph())
 	const blockedApprovals = unsatisfiedApprovalRequirements(approvals, lossAudit, options.approvals)
 	await progressFromPhase(lossAuditPhase(lossAudit), progress)
 	await progressFromPhase(approvalPhase(approvals, options.approvals, blockedApprovals), progress)
@@ -446,6 +469,7 @@ async function verifyWrittenWorkbook(
 export function auditLossPolicy(
 	features: readonly FeatureReport[],
 	allowLoss: readonly string[] | 'all' = [],
+	packageGraph?: XlsxPackageGraph,
 ): LossAudit {
 	const allowed = allowLoss === 'all' ? 'all' : allowLoss.map((entry) => entry.toLowerCase())
 	const blockedFeatures = features.filter((feature) => {
@@ -454,9 +478,13 @@ export function auditLossPolicy(
 		if (allowed === 'all') return false
 		return !allowed.includes(feature.feature.toLowerCase()) && !allowed.includes(feature.tier)
 	})
+	const blockedPackageParts = packageGraph
+		? buildBlockedPackageParts(packageGraph, blockedFeatures)
+		: []
 	return {
 		ok: blockedFeatures.length === 0,
 		blockedFeatures,
+		blockedPackageParts,
 		allowedLoss: allowLoss,
 		policy: 'block-preserved-and-unsupported',
 	}
@@ -740,7 +768,10 @@ function lossAuditPhase(lossAudit: LossAudit): AgentTracePhase {
 			'blocked',
 			`${lossAudit.blockedFeatures.length} preserved or unsupported feature(s) require approval.`,
 			lossAudit.blockedFeatures.length,
-			lossAudit.blockedFeatures,
+			{
+				blockedFeatures: lossAudit.blockedFeatures,
+				blockedPackageParts: lossAudit.blockedPackageParts,
+			},
 		)
 	return okPhase('loss-audit', 'No unapproved preserved or unsupported feature loss detected.', 0)
 }
@@ -875,7 +906,7 @@ function buildNextActions(trace: AgentWorkflowTrace): string[] {
 	}
 	if (trace.phases.some((phase) => phase.phase === 'loss-audit' && phase.status === 'blocked')) {
 		return [
-			'Inspect lossAudit.blockedFeatures.',
+			'Inspect lossAudit.blockedFeatures and lossAudit.blockedPackageParts.',
 			'Commit only with explicit allowLoss entries if the write is intentionally lossy.',
 		]
 	}
@@ -886,6 +917,59 @@ function buildNextActions(trace: AgentWorkflowTrace): string[] {
 	if (trace.kind === 'commit')
 		return ['Verify the output workbook hash and retain the traceDigest.']
 	return ['Follow the suggested repair actions in order.']
+}
+
+function buildBlockedPackageParts(
+	packageGraph: XlsxPackageGraph,
+	blockedFeatures: readonly FeatureReport[],
+): LossAuditPackagePart[] {
+	const blockedFamilies = new Set(blockedFeatures.map((feature) => feature.feature.toLowerCase()))
+	if (blockedFamilies.size === 0) return []
+	return packageGraph.parts
+		.filter((part) => blockedFamilies.has(part.featureFamily.toLowerCase()))
+		.map((part) => ({
+			partPath: part.path,
+			featureFamily: part.featureFamily,
+			preservationPolicy: part.preservationPolicy,
+			ownerScope: part.ownerScope,
+			bytePreservationExpected: part.bytePreservationExpected,
+			contentType: part.contentType,
+			contentTypeSource: part.contentTypeSource,
+			...(part.sourceRelationshipPart
+				? { sourceRelationshipPart: part.sourceRelationshipPart }
+				: {}),
+			...(part.sourceRelationshipId ? { sourceRelationshipId: part.sourceRelationshipId } : {}),
+			...(part.sourceRelationshipType
+				? { sourceRelationshipType: part.sourceRelationshipType }
+				: {}),
+			...(part.sourceRelationshipRawTarget
+				? { sourceRelationshipRawTarget: part.sourceRelationshipRawTarget }
+				: {}),
+			...(part.sourceRelationshipResolvedTarget
+				? { sourceRelationshipResolvedTarget: part.sourceRelationshipResolvedTarget }
+				: {}),
+			...(part.sourceRelationshipTargetMode
+				? { sourceRelationshipTargetMode: part.sourceRelationshipTargetMode }
+				: {}),
+			reason: packagePartLossReason(part.preservationPolicy),
+		}))
+}
+
+function packagePartLossReason(policy: XlsxPackageLossPolicy): string {
+	switch (policy) {
+		case 'invalidate-on-edit':
+			return 'Generated workbook edits invalidate this package feature unless the workbook is re-signed outside Ascend.'
+		case 'unknown-review-required':
+			return 'Ascend cannot classify this preserved package part, so an agent must explicitly approve any write around it.'
+		case 'preserve-exact':
+			return 'This package part is expected to be byte-preserved, but writing around preserved features still requires explicit agent approval.'
+		case 'discard-on-recalc':
+			return 'This package part may be discarded when formula recalculation invalidates the cached dependency state.'
+		case 'inspect-only':
+			return 'This package part is inspect-only and cannot be safely regenerated by Ascend.'
+		case 'generated':
+			return 'This package part is regenerated by Ascend during writes.'
+	}
 }
 
 function buildApprovalRequirements(

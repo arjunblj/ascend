@@ -61,7 +61,8 @@ Use these workbook tools for normal work:
 - Prefer non-destructive output paths over in-place edits.
 - Use `inputSha256` from plan as `expectSha256` during commit.
 - Pass only approval IDs emitted by plan.
-- Pass `allowLoss` only when the user explicitly accepts the exact feature/tier loss.
+- Inspect both `lossAudit.blockedFeatures` and `lossAudit.blockedPackageParts` before approving a lossy write.
+- Pass `allowLoss` only when the user explicitly accepts the exact feature/tier and package-part loss.
 - Treat macros, signatures, ActiveX, form controls, Power Query, data models, pivots, slicers, chartsheets, and other preserve-first features as high-risk unless plan says the write is safe.
 
 ## Operation Pattern

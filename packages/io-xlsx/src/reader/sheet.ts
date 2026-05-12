@@ -58,8 +58,7 @@ const BYTE_XML_DECODER = new TextDecoder('utf-8')
 const TEXT_NODE_RE =
 	/<([A-Za-z_][\w:.-]*)\b([^>]*)>([\s\S]*?)<\/\1>|<([A-Za-z_][\w:.-]*)\b([^>]*)\/>/g
 const X14_DATA_VALIDATION_RE =
-	/<([A-Za-z_][\w.-]*):dataValidation\b([^>]*)>([\s\S]*?)<\/\1:dataValidation>/gi
-const X14_SELF_CLOSING_DATA_VALIDATION_RE = /<([A-Za-z_][\w.-]*):dataValidation\b([^>]*)\/>/gi
+	/<([A-Za-z_][\w.-]*):dataValidation\b([^>]*?)(?:\/>|>([\s\S]*?)<\/\1:dataValidation>)/gi
 const X14_CONDITIONAL_FORMATTING_RE =
 	/<([A-Za-z_][\w.-]*):conditionalFormatting\b([^>]*)>([\s\S]*?)<\/\1:conditionalFormatting>/gi
 
@@ -4708,19 +4707,6 @@ function parseX14DataValidations(xml: string, sheet: Sheet, pool?: ValueInternPo
 		if (formula1) parsed.formula1 = formula1
 		const formula2 = readX14DataValidationFormula(body, 'formula2')
 		if (formula2) parsed.formula2 = formula2
-		pushX14DataValidationInfo(sheet, index, parsed, pool)
-		parsed.source = 'x14'
-		pushDataValidation(sheet, parsed, pool)
-		index += 1
-	}
-	for (const match of xml.matchAll(X14_SELF_CLOSING_DATA_VALIDATION_RE)) {
-		const attrs = parseRawAttributes(match[2] ?? '')
-		const sqref = attr(attrs, 'sqref')
-		if (!sqref) {
-			index += 1
-			continue
-		}
-		const parsed = parseDataValidationAttributes(attrs, sqref)
 		pushX14DataValidationInfo(sheet, index, parsed, pool)
 		parsed.source = 'x14'
 		pushDataValidation(sheet, parsed, pool)

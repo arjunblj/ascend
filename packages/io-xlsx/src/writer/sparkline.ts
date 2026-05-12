@@ -19,8 +19,10 @@ const CONDITIONAL_FORMATTING_RE = new RegExp(
 	String.raw`<(${PREFIXED_TAG}conditionalFormatting)\b([^>]*)>([\s\S]*?)<\/\1>`,
 	'g',
 )
-const DATA_VALIDATION_RE = new RegExp(
-	String.raw`<(${PREFIXED_TAG}dataValidation)\b([^>]*)>([\s\S]*?)<\/\1>`,
+const DATA_VALIDATION_ENTRY_SOURCE = String.raw`<(${PREFIXED_TAG}dataValidation)\b([^>]*?)(?:\/>|>([\s\S]*?)<\/\1>)`
+const DATA_VALIDATION_RE = new RegExp(DATA_VALIDATION_ENTRY_SOURCE, 'g')
+const DATA_VALIDATIONS_CONTAINER_RE = new RegExp(
+	String.raw`<(${PREFIXED_TAG}dataValidations)\b([^>]*)>([\s\S]*?)<\/\1>`,
 	'g',
 )
 const X14_NS = 'http://schemas.microsoft.com/office/spreadsheetml/2009/9/main'
@@ -199,7 +201,7 @@ function updateX14DataValidationExtLstXml(
 	let entryIndex = 0
 	const next = xml.replace(
 		DATA_VALIDATION_RE,
-		(match, tag: string, attrs: string, body: string) => {
+		(match, tag: string, attrs: string, body: string | undefined) => {
 			const validation = validations.find((entry) => entry.index === entryIndex)
 			entryIndex += 1
 			if (!validation) return match
@@ -211,14 +213,25 @@ function updateX14DataValidationExtLstXml(
 					` sqref="${escapeXml(validation.sqref)}"`,
 				)
 			}
-			let updatedBody = setFirstSparklineText(body, 'sqref', validation.sqref)
+			let updatedBody = setFirstSparklineText(body ?? '', 'sqref', validation.sqref)
 			updatedBody = setNestedFormulaText(updatedBody, 'formula1', validation.formula1)
 			updatedBody = setNestedFormulaText(updatedBody, 'formula2', validation.formula2)
+			if (updatedBody.length === 0) return `<${tag}${updatedAttrs}/>`
 			return `<${tag}${updatedAttrs}>${updatedBody}</${tag}>`
 		},
 	)
 	const missing = validations.filter((entry) => !entry.deleted && entry.index >= entryIndex)
-	return appendX14DataValidations(next, missing)
+	return normalizeX14DataValidationCounts(appendX14DataValidations(next, missing))
+}
+
+function normalizeX14DataValidationCounts(xml: string): string {
+	return xml.replace(
+		DATA_VALIDATIONS_CONTAINER_RE,
+		(_match, tag: string, attrs: string, body: string) => {
+			const count = [...body.matchAll(new RegExp(DATA_VALIDATION_ENTRY_SOURCE, 'g'))].length
+			return `<${tag}${setXmlAttr(attrs, 'count', String(count))}>${body}</${tag}>`
+		},
+	)
 }
 
 function appendX14ConditionalFormattings(

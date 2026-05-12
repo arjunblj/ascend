@@ -5074,6 +5074,32 @@ describe('writeXlsx', () => {
 		expect(xml).not.toContain('<xm:f>A2:A3</xm:f>')
 	})
 
+	it('updates mixed self-closing x14 data-validation entries by document-order index', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Data')
+		sheet.x14DataValidations.push(
+			{ index: 0, sqref: 'A2' },
+			{ index: 1, sqref: 'B1', formula1: 'Lookup!$A$1:$A$2', deleted: true },
+			{ index: 2, sqref: 'C1', deleted: true },
+		)
+		sheet.preservedExtLst = `<extLst xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"><ext uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}"><x14:dataValidations count="3"><x14:dataValidation sqref="A1"/><x14:dataValidation type="list"><x14:formula1><xm:f>Lookup!$A$1:$A$2</xm:f></x14:formula1><xm:sqref>B1</xm:sqref></x14:dataValidation><x14:dataValidation sqref="C1"/></x14:dataValidations></ext></extLst>`
+
+		const written = writeXlsx(wb)
+		expectOk(written)
+		const entries = unzipSync(written.value)
+		const worksheet = entries['xl/worksheets/sheet1.xml']
+		expect(worksheet).toBeDefined()
+		if (!worksheet) return
+		const xml = new TextDecoder().decode(worksheet)
+
+		expect(xml).toContain('<x14:dataValidations count="1">')
+		expect(xml).toContain('<x14:dataValidation sqref="A2"/>')
+		expect(xml).not.toContain('sqref="A1"')
+		expect(xml).not.toContain('<xm:sqref>B1</xm:sqref>')
+		expect(xml).not.toContain('sqref="C1"')
+		expect(xml).not.toContain('Lookup!$A$1:$A$2')
+	})
+
 	it('preserves threaded comments XML through read-write round-trip', () => {
 		const threadedCommentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <ThreadedComments xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">

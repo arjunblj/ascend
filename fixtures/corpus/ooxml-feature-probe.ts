@@ -105,7 +105,8 @@ export function inspectOoxmlPackageFeatures(bytes: Uint8Array): OoxmlPackageProb
 		active_content:
 			countPaths(paths, /^xl\/activeX\/(?!_rels\/).+/i) +
 			countPaths(paths, /^xl\/ctrlProps\/(?!_rels\/).+/i) +
-			countPaths(paths, /^xl\/embeddings\/(?!_rels\/).+/i),
+			countPaths(paths, /^xl\/embeddings\/(?!_rels\/).+/i) +
+			countPaths(paths, /^customUI\/(?!_rels\/).+/i),
 		worksheet_controls: countXmlTags(worksheetXml, 'control'),
 		custom_xml: countPaths(paths, /^customXml\//i),
 		external_links: countPaths(paths, /^xl\/externalLinks\//i),

@@ -1280,6 +1280,7 @@ function collectActiveContent(
 			...(kind === 'vbaProject' && entry ? { byteSize: entry.uncompressedSize } : {}),
 			...(kind === 'vbaProject' ? { opaque: true, executionPolicy: 'blocked' as const } : {}),
 			...(kind === 'macroSheet' ? { opaque: true, executionPolicy: 'blocked' as const } : {}),
+			...(kind === 'customUi' ? { executionPolicy: 'blocked' as const } : {}),
 			...(kind === 'digitalSignature' || kind === 'vbaSignature'
 				? {
 						invalidationPolicy: 'invalidatedByPackageEdit' as const,

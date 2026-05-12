@@ -65,6 +65,7 @@ describe('active content inventory', () => {
 			relType: 'http://schemas.microsoft.com/office/2007/relationships/ui/extensibility',
 			sourceRelationshipId: 'rIdCustomUi',
 			relationshipCount: 1,
+			executionPolicy: 'blocked',
 			customUi: {
 				namespaceUri: 'http://schemas.microsoft.com/office/2009/07/customui',
 				callbackCount: 4,

@@ -886,7 +886,8 @@ function assertManifestReadCoverage(
 			(packageCounts.active_content > 0 &&
 				semanticSummary.activeContentCount > 0 &&
 				(compatibilityFeatures.has('preservedActiveX') ||
-					compatibilityFeatures.has('preservedControl')) &&
+					compatibilityFeatures.has('preservedControl') ||
+					compatibilityFeatures.has('preservedCustomUi')) &&
 				(entry.file !== 'activex_checkbox.xlsx' ||
 					hasLibreOfficeActiveXControlLinkage(semanticSummary))),
 	)

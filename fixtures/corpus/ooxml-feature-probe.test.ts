@@ -46,6 +46,8 @@ describe('OOXML feature probe', () => {
 </timelineCacheDefinition>`,
 			'xl/timelines/timeline1.xml': `<?xml version="1.0"?>
 <timelines><timeline name="Date" cache="Timeline_Date"/></timelines>`,
+			'customUI/customUI.xml': `<?xml version="1.0"?>
+<customUI xmlns="http://schemas.microsoft.com/office/2006/01/customui" onLoad="Ribbon.OnLoad"/>`,
 		})
 
 		const probe = inspectOoxmlPackageFeatures(bytes)
@@ -57,6 +59,7 @@ describe('OOXML feature probe', () => {
 			slicer_caches: 1,
 			timelines: 1,
 			timeline_caches: 1,
+			active_content: 1,
 			workbook_protection: 1,
 			sheet_protection: 1,
 		})
@@ -64,6 +67,7 @@ describe('OOXML feature probe', () => {
 			pivot_tables: true,
 			slicers: true,
 			timelines: true,
+			active_content: true,
 			workbook_protection: true,
 			sheet_protection: true,
 			protection: true,

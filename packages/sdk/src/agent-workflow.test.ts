@@ -170,6 +170,10 @@ describe('agent workflow loss audit', () => {
 		expect(committed.trace.phases.find((phase) => phase.phase === 'post-write')?.status).toBe(
 			'warning',
 		)
+		expect(committed.modelOutput.counts.postWritePackageGraphIssues).toBeGreaterThan(0)
+		expect(committed.modelOutput.nextActions.join('\n')).toContain(
+			'postWrite.packageGraphAudit.issues',
+		)
 		expect(committed.modelOutput.blocked).toBe(false)
 		expect(committed.modelOutput.digests.traceDigest).toBe(committed.trace.traceDigest)
 	})
@@ -224,6 +228,7 @@ describe('agent workflow loss audit', () => {
 		expect(committed.postWrite.valid).toBe(true)
 		expect(committed.postWrite.packageGraphAudit.ok).toBe(true)
 		expect(committed.postWrite.packageGraphAudit.policy).toBe('safe-edit-roundtrip')
+		expect(committed.modelOutput.counts.postWritePackageGraphIssues).toBe(0)
 		expect(committed.postWrite.reopened).toBe(true)
 		expect(committed.postWrite.check.valid).toBe(true)
 		expect(committed.trace.artifacts.map((artifact) => artifact.name)).toContain('apply')

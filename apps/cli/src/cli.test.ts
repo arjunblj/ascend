@@ -97,6 +97,7 @@ afterAll(() => {
 		'plan-ops.json',
 		'commit-ops.json',
 		'commit-output.xlsx',
+		'commit-pretty-output.xlsx',
 		'progress-ops.json',
 		'progress-output.xlsx',
 	]) {
@@ -304,6 +305,19 @@ describe('ascend cli', () => {
 		expect(committed.ok).toBe(true)
 		expect(committed.data.outputSha256).toMatch(/^[a-f0-9]{64}$/)
 		expect(existsSync(`${import.meta.dir}/commit-output.xlsx`)).toBe(true)
+
+		const prettyCommit = await run(
+			'commit',
+			TEST_FILE,
+			'--ops',
+			'commit-ops.json',
+			'--output',
+			'commit-pretty-output.xlsx',
+			'--expect-sha256',
+			planned.data.inputSha256,
+		)
+		expect(prettyCommit.exitCode).toBe(0)
+		expect(prettyCommit.stdout).toContain('Post-write package graph issues: 0')
 	})
 
 	test('plan, commit, and check can emit JSONL progress events', async () => {

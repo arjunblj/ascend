@@ -171,6 +171,7 @@ export interface AgentModelOutput {
 		readonly lintWarnings?: number
 		readonly blockedFeatures?: number
 		readonly packageGraphIssues?: number
+		readonly postWritePackageGraphIssues?: number
 		readonly preservationParts?: number
 	}
 }
@@ -985,6 +986,7 @@ function modelOutputFromTrace(trace: AgentWorkflowTrace): AgentModelOutput {
 	setCount(counts, 'lintWarnings', phaseCount(trace, 'lint', 'warning'))
 	setCount(counts, 'blockedFeatures', phaseCount(trace, 'loss-audit', 'blocked'))
 	setCount(counts, 'packageGraphIssues', phaseCount(trace, 'package-graph-audit', 'warning'))
+	setCount(counts, 'postWritePackageGraphIssues', postWritePackageGraphIssueCount(trace))
 	setCount(counts, 'preservationParts', phaseCount(trace, 'preservation-audit'))
 	return {
 		summary: blocked
@@ -1028,6 +1030,12 @@ function buildNextActions(trace: AgentWorkflowTrace): string[] {
 	if (trace.phases.some((phase) => phase.status === 'failed')) {
 		return ['Inspect failed trace phases and run repair-plan before committing.']
 	}
+	if ((postWritePackageGraphIssueCount(trace) ?? 0) > 0) {
+		return [
+			'Inspect postWrite.packageGraphAudit.issues before treating the output workbook as package-fidelity safe.',
+			'Compare the output workbook hash and retain the traceDigest with the edit record.',
+		]
+	}
 	if (
 		trace.phases.some(
 			(phase) => phase.phase === 'package-graph-audit' && phase.status === 'warning',
@@ -1042,6 +1050,25 @@ function buildNextActions(trace: AgentWorkflowTrace): string[] {
 	if (trace.kind === 'commit')
 		return ['Verify the output workbook hash and retain the traceDigest.']
 	return ['Follow the suggested repair actions in order.']
+}
+
+function postWritePackageGraphIssueCount(trace: AgentWorkflowTrace): number | undefined {
+	const postWrite = trace.phases.find((phase) => phase.phase === 'post-write')
+	const audit = packageGraphAuditFromDetails(postWrite?.details)
+	return audit ? audit.issues.length : undefined
+}
+
+function packageGraphAuditFromDetails(details: unknown): PackageGraphAudit | undefined {
+	if (!details || typeof details !== 'object') return undefined
+	const audit = (details as { packageGraphAudit?: unknown }).packageGraphAudit
+	if (!audit || typeof audit !== 'object') return undefined
+	const issues = (audit as { issues?: unknown }).issues
+	const policy = (audit as { policy?: unknown }).policy
+	const ok = (audit as { ok?: unknown }).ok
+	if (!Array.isArray(issues) || typeof policy !== 'string' || typeof ok !== 'boolean') {
+		return undefined
+	}
+	return audit as PackageGraphAudit
 }
 
 function buildBlockedPackageParts(

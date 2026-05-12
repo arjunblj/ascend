@@ -119,6 +119,12 @@ export interface StreamedSheetRow {
 
 type StreamedRowMetadata = Pick<StreamedSheetRow, 'rowDef' | 'rowHeight'>
 
+interface RowIndexAttrBytes {
+	readonly value: number
+	readonly start: number
+	readonly end: number
+}
+
 export class ValueInternPool {
 	private readonly strings = new Map<string, string>()
 	private readonly stringValues = new Map<string, CellValue>()
@@ -499,8 +505,8 @@ function parseSheetDataRowsBytes(
 		const rowTagEnd = findTagEndBytes(bytes, rowOpen)
 		if (rowTagEnd === -1 || rowTagEnd >= contentEnd) return false
 		const rowAttrStart = rowOpen + BYTES_ROW_OPEN.length
-		const explicitRowIndex = rawRowIndexAttrInBytes(bytes, rowAttrStart, rowTagEnd)
-		const row = explicitRowIndex !== undefined ? explicitRowIndex - 1 : currentRow + 1
+		const explicitRowIndex = rawRowIndexAttrInfoInBytes(bytes, rowAttrStart, rowTagEnd)
+		const row = explicitRowIndex ? explicitRowIndex.value - 1 : currentRow + 1
 		currentRow = row
 		if (ctx.maxRows !== undefined && row >= ctx.maxRows) {
 			if (!stopAtSheetDataClose) return contentEnd
@@ -517,7 +523,9 @@ function parseSheetDataRowsBytes(
 
 		const rowClose = indexOfBytes(bytes, BYTES_ROW_CLOSE, rowTagEnd + 1, contentEnd)
 		if (rowClose === -1) return false
-		if (parseSimpleValuesRowBytes(bytes, rowTagEnd + 1, rowClose, row, ctx, sheet)) {
+		if (
+			parseSimpleValuesRowBytes(bytes, rowTagEnd + 1, rowClose, row, ctx, sheet, explicitRowIndex)
+		) {
 			rowCursor = rowClose + BYTES_ROW_CLOSE.length
 			continue
 		}
@@ -570,6 +578,7 @@ function parseSimpleValuesRowBytes(
 	row: number,
 	ctx: SheetParseContext,
 	sheet: Sheet,
+	rowIndexAttr?: RowIndexAttrBytes,
 ): boolean {
 	if (!ctx.valuesOnly || ctx.hasDateStyles) return false
 	let cursor = bodyStart
@@ -594,6 +603,7 @@ function parseSimpleValuesRowBytes(
 			row,
 			nextCol,
 			out,
+			rowIndexAttr,
 		)
 		if (plainValueNext !== -1) {
 			if (out.numberValue !== undefined) {
@@ -688,11 +698,12 @@ function parseCanonicalPlainValueCellBytes(
 		stringEnd: number
 		stringHasEntity: boolean
 	},
+	rowIndexAttr?: RowIndexAttrBytes,
 ): number {
 	if (!startsWithCellRefBytes(bytes, cursor, bodyEnd)) return -1
 	let refEnd =
 		fallbackCol >= 0 && fallbackCol < 26 && bytes[cursor + 6] === 65 + fallbackCol
-			? consumeExpectedPositiveIntegerBytes(bytes, cursor + 7, bodyEnd, fallbackRowNumber)
+			? consumeExpectedRowNumberBytes(bytes, cursor + 7, bodyEnd, fallbackRowNumber, rowIndexAttr)
 			: -1
 	if (refEnd === -1 || bytes[refEnd] !== BYTE_QUOTE) {
 		refEnd = consumeExpectedCellRefBytes(bytes, cursor + 6, bodyEnd, fallbackRowNumber, fallbackCol)
@@ -3367,6 +3378,14 @@ function rawPositiveIntAttrInBytes(
 }
 
 function rawRowIndexAttrInBytes(bytes: Uint8Array, start: number, end: number): number | undefined {
+	return rawRowIndexAttrInfoInBytes(bytes, start, end)?.value
+}
+
+function rawRowIndexAttrInfoInBytes(
+	bytes: Uint8Array,
+	start: number,
+	end: number,
+): RowIndexAttrBytes | undefined {
 	let cursor = skipXmlWhitespaceBytes(bytes, start, end)
 	if (
 		cursor + 3 < end &&
@@ -3384,7 +3403,9 @@ function rawRowIndexAttrInBytes(bytes: Uint8Array, start: number, end: number): 
 			value = value * 10 + (code - 48)
 			cursor += 1
 		}
-		return cursor > valueStart && cursor < end ? value : undefined
+		return cursor > valueStart && cursor < end
+			? { value, start: valueStart, end: cursor }
+			: undefined
 	}
 	cursor = start
 	while (cursor < end) {
@@ -3413,7 +3434,7 @@ function rawRowIndexAttrInBytes(bytes: Uint8Array, start: number, end: number): 
 				if (code < 48 || code > 57) return undefined
 				value = value * 10 + (code - 48)
 			}
-			return cursor > valueStart ? value : undefined
+			return cursor > valueStart ? { value, start: valueStart, end: cursor } : undefined
 		}
 		cursor += 1
 	}
@@ -3586,6 +3607,26 @@ function consumeExpectedCellRefBytes(
 	cursor = consumeExpectedPositiveIntegerBytes(bytes, cursor, end, rowNumber)
 	if (cursor === -1) return -1
 	return cursor < end && bytes[cursor] === BYTE_QUOTE ? cursor : -1
+}
+
+function consumeExpectedRowNumberBytes(
+	bytes: Uint8Array,
+	start: number,
+	end: number,
+	rowNumber: number,
+	rowIndexAttr: RowIndexAttrBytes | undefined,
+): number {
+	if (rowIndexAttr) {
+		const length = rowIndexAttr.end - rowIndexAttr.start
+		if (start + length <= end) {
+			let offset = 0
+			while (offset < length && bytes[start + offset] === bytes[rowIndexAttr.start + offset]) {
+				offset += 1
+			}
+			if (offset === length) return start + length
+		}
+	}
+	return consumeExpectedPositiveIntegerBytes(bytes, start, end, rowNumber)
 }
 
 function consumeExpectedColumnBytes(

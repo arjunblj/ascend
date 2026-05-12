@@ -929,9 +929,11 @@ export interface WorkbookVisualInventoryInfo {
 	readonly structuredChartCount: number
 	readonly chartSheetCount: number
 	readonly packageChartFeatureCount: number
+	readonly packageChartSidecarFeatureCount: number
 	readonly packageDrawingFeatureCount: number
 	readonly packageMediaFeatureCount: number
 	readonly hasPreservedCharts: boolean
+	readonly hasPreservedChartSidecars: boolean
 	readonly hasPreservedDrawings: boolean
 	readonly hasPreservedMedia: boolean
 	readonly notes: readonly string[]

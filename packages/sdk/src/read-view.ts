@@ -293,6 +293,12 @@ export class WorkbookReadView {
 		const packageChartFeatureCount = packageFeatures
 			.filter((feature) => feature.category === 'chart')
 			.reduce((sum, feature) => sum + feature.count, 0)
+		const packageChartSidecarFeatureCount = packageFeatures
+			.filter(
+				(feature) =>
+					feature.feature === 'preservedChartStyle' || feature.feature === 'preservedChartColor',
+			)
+			.reduce((sum, feature) => sum + feature.count, 0)
 		const packageDrawingFeatureCount = packageFeatures
 			.filter(
 				(feature) => feature.category === 'drawing' || feature.category === 'shape-or-control',
@@ -309,6 +315,8 @@ export class WorkbookReadView {
 			notes.push('Chart parts expose type, title, and series source refs; source edits are staged.')
 		else if (packageChartFeatureCount > 0)
 			notes.push('Chart parts are preserved but not structurally parsed in this load mode.')
+		if (packageChartSidecarFeatureCount > 0)
+			notes.push('Chart style/color sidecars are preserved separately from chart definitions.')
 		if (chartSheets.length > 0)
 			notes.push('Chartsheets are inventoried and blocked by the loss audit before writes.')
 		if (packageDrawingFeatureCount > 0)
@@ -326,10 +334,17 @@ export class WorkbookReadView {
 			structuredChartCount: charts.length,
 			chartSheetCount: chartSheets.length,
 			packageChartFeatureCount,
+			packageChartSidecarFeatureCount,
 			packageDrawingFeatureCount,
 			packageMediaFeatureCount,
 			hasPreservedCharts: packageFeatures.some(
 				(feature) => feature.category === 'chart' && feature.tier === 'preserved',
+			),
+			hasPreservedChartSidecars: packageFeatures.some(
+				(feature) =>
+					(feature.feature === 'preservedChartStyle' ||
+						feature.feature === 'preservedChartColor') &&
+					feature.tier === 'preserved',
 			),
 			hasPreservedDrawings: packageFeatures.some(
 				(feature) =>

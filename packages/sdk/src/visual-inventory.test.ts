@@ -65,12 +65,17 @@ describe('visual inventory', () => {
 		expect(inventory.sheetImageCount).toBe(1)
 		expect(inventory.sheetDrawingObjectCount).toBe(1)
 		expect(inventory.structuredChartCount).toBe(1)
-		expect(inventory.packageChartFeatureCount).toBe(2)
+		expect(inventory.packageChartFeatureCount).toBe(4)
+		expect(inventory.packageChartSidecarFeatureCount).toBe(2)
 		expect(inventory.packageDrawingFeatureCount).toBe(2)
 		expect(inventory.packageMediaFeatureCount).toBe(1)
 		expect(inventory.hasPreservedCharts).toBe(true)
+		expect(inventory.hasPreservedChartSidecars).toBe(true)
 		expect(inventory.hasPreservedDrawings).toBe(true)
 		expect(inventory.hasPreservedMedia).toBe(true)
+		expect(inventory.notes).toContain(
+			'Chart style/color sidecars are preserved separately from chart definitions.',
+		)
 		expect(inventory.sheets[0]).toMatchObject({
 			sheet: 'Sheet1',
 			hasDrawing: true,
@@ -112,6 +117,8 @@ describe('visual inventory', () => {
 			],
 		})
 		expect(inventory.packageFeatures.map((feature) => feature.category)).toEqual([
+			'chart',
+			'chart',
 			'chart',
 			'drawing',
 			'image',
@@ -194,13 +201,25 @@ function visualCompatibilityReport(): CompatibilityReport {
 	return {
 		status: 'has-preserved',
 		sourceFormat: 'xlsx',
-		summary: { exact: 0, normalized: 0, preserved: 4, unsupported: 0 },
+		summary: { exact: 0, normalized: 0, preserved: 6, unsupported: 0 },
 		features: [
 			{
 				feature: 'preservedChart',
 				tier: 'preserved',
 				count: 2,
 				locations: ['xl/charts/chart1.xml', 'xl/charts/chart2.xml'],
+			},
+			{
+				feature: 'preservedChartStyle',
+				tier: 'preserved',
+				count: 1,
+				locations: ['xl/charts/style1.xml'],
+			},
+			{
+				feature: 'preservedChartColor',
+				tier: 'preserved',
+				count: 1,
+				locations: ['xl/charts/colors1.xml'],
 			},
 			{
 				feature: 'preservedDrawing',

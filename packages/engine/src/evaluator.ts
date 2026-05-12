@@ -1518,11 +1518,8 @@ function rightmostVisiblePivotRowValue(
 	bounds: { startRow: number; startCol: number; endRow: number; endCol: number },
 	row: number,
 ): CellValue | null {
-	for (let col = bounds.endCol; col > bounds.startCol; col--) {
-		const value = getCellValue(ctx.workbook, sheetIndex, row, col)
-		if (value.kind !== 'empty') return value
-	}
-	return null
+	if (bounds.endCol <= bounds.startCol) return null
+	return getCellValue(ctx.workbook, sheetIndex, row, bounds.endCol)
 }
 
 function findPivotDataHeader(

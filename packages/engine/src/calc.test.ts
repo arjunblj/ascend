@@ -1154,6 +1154,39 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(4, 0)?.value).toEqual(numberValue(57))
 	})
 
+	test('GETPIVOTDATA preserves blank grand total cells from saved pivot output', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Pivot Tables')
+		sheet.cells.set(0, 0, { value: stringValue('Pivot Table'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('Sum of Blank'), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: stringValue('Column Labels'), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: stringValue('Grand Total'), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: numberValue(6), formula: null, styleId: sid })
+		sheet.cells.set(2, 2, { value: EMPTY, formula: null, styleId: sid })
+		sheet.cells.set(4, 0, {
+			value: stringValue('stale'),
+			formula: 'GETPIVOTDATA("Blank",$A$1)',
+			styleId: sid,
+		})
+		wb.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'Pivot Tables',
+			name: 'PivotTable1',
+			cacheId: 1,
+			locationRef: 'A1:C3',
+			fields: [],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [],
+			dataFields: [{ fieldIndex: 0, name: 'Sum of Blank', subtotal: 'sum' }],
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(4, 0)?.value).toEqual(EMPTY)
+	})
+
 	test('GETPIVOTDATA returns #REF! for missing visible pivot items', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Pivot Tables')

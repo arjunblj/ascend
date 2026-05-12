@@ -6282,6 +6282,35 @@ ${sparklineExtLst}
 		})
 	})
 
+	it('removes cleared advanced filters from preserved custom sheet views on dirty writes', () => {
+		const read = readXlsx(advancedFilterSparklineWorkbook())
+		expectOk(read)
+		const sheet = read.value.workbook.sheets[0]
+		if (!sheet) throw new Error('expected sheet')
+		const filter = sheet.advancedFilters[0]
+		if (!filter) throw new Error('expected advanced filter')
+		const { autoFilter: _autoFilter, ref: _ref, ...clearedFilter } = filter
+		sheet.advancedFilters[0] = {
+			...clearedFilter,
+			filterColumnCount: 0,
+			sortConditionCount: 0,
+		}
+
+		const written = writeXlsx(read.value.workbook, read.value.capsules, {
+			dirtySheetNames: [sheet.name],
+		})
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+		const customSheetViewsXml = sheetXml.match(/<customSheetViews>[\s\S]*<\/customSheetViews>/)?.[0]
+		expect(customSheetViewsXml).toContain('name="WestOnly"')
+		expect(customSheetViewsXml).not.toContain('<autoFilter')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.sheets[0]?.advancedFilters).toHaveLength(0)
+	})
+
 	it('preserves worksheet-level extLst instead of nested rule extensions', () => {
 		const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main">

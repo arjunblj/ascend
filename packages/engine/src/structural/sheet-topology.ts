@@ -1,4 +1,11 @@
-import type { Sheet, SortState } from '@ascend/core'
+import type {
+	AutoFilter,
+	FilterColumn,
+	Sheet,
+	SheetAdvancedFilterInfo,
+	SortState,
+} from '@ascend/core'
+import { parseRange } from '@ascend/core'
 import { rewriteSheetMetadataFormulasForShift } from './formula-rewrite.ts'
 import {
 	expandSqrefRows,
@@ -29,6 +36,7 @@ export function shiftSheetCellMetadata(
 	shiftIgnoredErrors(sheet.ignoredErrors, axis, at, delta)
 	shiftSheetAutoFilter(sheet, axis, at, delta)
 	shiftSheetSortState(sheet, axis, at, delta)
+	shiftAdvancedFilters(sheet, axis, at, delta)
 	shiftSheetTables(sheet, axis, at, delta)
 	rewriteSheetMetadataFormulasForShift(sheet, axis, at, delta)
 }
@@ -189,20 +197,8 @@ function shiftX14SqrefEntries(
 
 function shiftSheetAutoFilter(sheet: Sheet, axis: 'row' | 'col', at: number, delta: number): void {
 	if (!sheet.autoFilter) return
-	const ref = shiftSqref(sheet.autoFilter.ref, axis, at, delta)
-	if (!ref) {
-		sheet.autoFilter = null
-		sheet.preservedAutoFilterSortStateAttributes = null
-		return
-	}
-	const sortState = shiftSortState(sheet.autoFilter.sortState, axis, at, delta)
-	const { sortState: _sortState, ...autoFilter } = sheet.autoFilter
-	sheet.autoFilter = {
-		...autoFilter,
-		ref,
-		...(sortState ? { sortState } : {}),
-	}
-	if (!sortState) sheet.preservedAutoFilterSortStateAttributes = null
+	sheet.autoFilter = shiftAutoFilter(sheet.autoFilter, axis, at, delta) ?? null
+	if (!sheet.autoFilter?.sortState) sheet.preservedAutoFilterSortStateAttributes = null
 }
 
 function shiftSheetSortState(sheet: Sheet, axis: 'row' | 'col', at: number, delta: number): void {
@@ -211,36 +207,111 @@ function shiftSheetSortState(sheet: Sheet, axis: 'row' | 'col', at: number, delt
 	if (!sheet.sortState) sheet.preservedSortStateAttributes = null
 }
 
+function shiftAdvancedFilters(sheet: Sheet, axis: 'row' | 'col', at: number, delta: number): void {
+	if (sheet.advancedFilters.length === 0) return
+	sheet.advancedFilters = sheet.advancedFilters.map((filter) =>
+		shiftAdvancedFilter(filter, axis, at, delta),
+	)
+}
+
+function shiftAdvancedFilter(
+	filter: SheetAdvancedFilterInfo,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): SheetAdvancedFilterInfo {
+	if (!filter.autoFilter) return filter
+	const autoFilter = shiftAutoFilter(filter.autoFilter, axis, at, delta)
+	const { autoFilter: _autoFilter, ref: _ref, ...rest } = filter
+	if (!autoFilter) {
+		return {
+			...rest,
+			filterColumnCount: 0,
+			sortConditionCount: 0,
+		}
+	}
+	return {
+		...rest,
+		ref: autoFilter.ref,
+		autoFilter,
+		filterColumnCount: autoFilter.columns.length,
+		sortConditionCount: autoFilter.sortState?.conditions.length ?? 0,
+	}
+}
+
 function shiftSheetTables(sheet: Sheet, axis: 'row' | 'col', at: number, delta: number): void {
 	for (let index = 0; index < sheet.tables.length; index++) {
 		const table = sheet.tables[index]
 		if (!table) continue
 		const ref = shiftRangeRef(table.ref, axis, at, delta)
 		if (!ref) continue
-		const autoFilterRef = table.autoFilter?.ref
-			? shiftSqref(table.autoFilter.ref, axis, at, delta)
-			: undefined
-		const autoFilterSortState = shiftSortState(table.autoFilter?.sortState, axis, at, delta)
+		const autoFilter = shiftAutoFilter(table.autoFilter, axis, at, delta)
 		const sortState = shiftSortState(table.sortState, axis, at, delta)
 		const { autoFilter: _autoFilter, sortState: _tableSortState, ...shiftedTable } = table
-		const { sortState: _autoFilterSortState, ...shiftedAutoFilter } = table.autoFilter ?? {
-			ref: '',
-			columns: [],
-		}
 		sheet.tables[index] = {
 			...shiftedTable,
 			ref,
-			...(table.autoFilter && autoFilterRef
-				? {
-						autoFilter: {
-							...shiftedAutoFilter,
-							ref: autoFilterRef,
-							...(autoFilterSortState ? { sortState: autoFilterSortState } : {}),
-						},
-					}
-				: {}),
+			...(autoFilter ? { autoFilter } : {}),
 			...(sortState ? { sortState } : {}),
 		}
+	}
+}
+
+function shiftAutoFilter(
+	autoFilter: AutoFilter | null | undefined,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): AutoFilter | undefined {
+	if (!autoFilter) return undefined
+	const ref = shiftSqref(autoFilter.ref, axis, at, delta)
+	if (!ref) return undefined
+	const sortState = shiftSortState(autoFilter.sortState, axis, at, delta)
+	const columns = shiftFilterColumns(autoFilter.columns, autoFilter.ref, ref, axis, at, delta)
+	const { sortState: _sortState, ref: _ref, columns: _columns, ...shiftedAutoFilter } = autoFilter
+	return {
+		...shiftedAutoFilter,
+		ref,
+		columns,
+		...(sortState ? { sortState } : {}),
+	}
+}
+
+function shiftFilterColumns(
+	columns: readonly FilterColumn[],
+	oldRef: string,
+	nextRef: string,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): readonly FilterColumn[] {
+	if (axis !== 'col' || columns.length === 0) return columns.map((column) => ({ ...column }))
+	const oldRange = parseSingleRange(oldRef)
+	const nextRange = parseSingleRange(nextRef)
+	if (!oldRange || !nextRange) return columns.map((column) => ({ ...column }))
+	return columns
+		.map((column) => {
+			const oldColumn = oldRange.start.col + column.colId
+			const nextColumn = shiftIndex(oldColumn, at, delta)
+			if (
+				nextColumn === null ||
+				nextColumn < nextRange.start.col ||
+				nextColumn > nextRange.end.col
+			) {
+				return null
+			}
+			return { ...column, colId: nextColumn - nextRange.start.col }
+		})
+		.filter((column): column is FilterColumn => column !== null)
+		.sort((left, right) => left.colId - right.colId)
+}
+
+function parseSingleRange(ref: string) {
+	if (ref.trim().includes(' ')) return null
+	try {
+		return parseRange(ref)
+	} catch {
+		return null
 	}
 }
 

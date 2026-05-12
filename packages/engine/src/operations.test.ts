@@ -1744,6 +1744,98 @@ describe('applyOperation', () => {
 		expect(s.tables[0]?.sortState).toBeUndefined()
 	})
 
+	test('deleteCols remaps autoFilter filterColumn ids and removes criteria for deleted columns', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		const autoFilter = {
+			ref: 'A1:D4',
+			columns: [
+				{ colId: 1, kind: 'filters' as const, values: ['West'] },
+				{ colId: 3, kind: 'filters' as const, values: ['Open'] },
+			],
+		}
+		s.autoFilter = autoFilter
+		s.advancedFilters.push({
+			viewName: 'SavedView',
+			ref: 'A1:D4',
+			autoFilter,
+			filterColumnCount: 2,
+			sortConditionCount: 0,
+		})
+		s.tables.push({
+			id: createTableId(),
+			name: 'FilteredTable',
+			sheetId: s.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 3 } },
+			columns: [{ name: 'A' }, { name: 'B' }, { name: 'C' }, { name: 'D' }],
+			hasHeaders: true,
+			hasTotals: false,
+			autoFilter,
+		})
+
+		expectOk(applyOperation(wb, { op: 'deleteCols', sheet: 'Sheet1', at: 1, count: 1 }))
+
+		expect(s.autoFilter).toEqual({
+			ref: 'A1:C4',
+			columns: [{ colId: 2, kind: 'filters', values: ['Open'] }],
+		})
+		expect(s.advancedFilters[0]).toMatchObject({
+			ref: 'A1:C4',
+			filterColumnCount: 1,
+			sortConditionCount: 0,
+			autoFilter: {
+				ref: 'A1:C4',
+				columns: [{ colId: 2, kind: 'filters', values: ['Open'] }],
+			},
+		})
+		expect(s.tables[0]?.autoFilter).toEqual({
+			ref: 'A1:C4',
+			columns: [{ colId: 2, kind: 'filters', values: ['Open'] }],
+		})
+	})
+
+	test('insertCols remaps filterColumn ids relative to expanded autoFilter ranges', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		const autoFilter = {
+			ref: 'A1:C4',
+			columns: [{ colId: 1, kind: 'filters' as const, values: ['West'] }],
+		}
+		s.autoFilter = autoFilter
+		s.advancedFilters.push({
+			viewName: 'SavedView',
+			ref: 'A1:C4',
+			autoFilter,
+			filterColumnCount: 1,
+			sortConditionCount: 0,
+		})
+		s.tables.push({
+			id: createTableId(),
+			name: 'InsertedFilterTable',
+			sheetId: s.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 2 } },
+			columns: [{ name: 'A' }, { name: 'B' }, { name: 'C' }],
+			hasHeaders: true,
+			hasTotals: false,
+			autoFilter,
+		})
+
+		expectOk(applyOperation(wb, { op: 'insertCols', sheet: 'Sheet1', at: 1, count: 1 }))
+
+		expect(s.autoFilter).toEqual({
+			ref: 'A1:D4',
+			columns: [{ colId: 2, kind: 'filters', values: ['West'] }],
+		})
+		expect(s.advancedFilters[0]?.autoFilter).toEqual({
+			ref: 'A1:D4',
+			columns: [{ colId: 2, kind: 'filters', values: ['West'] }],
+		})
+		expect(s.tables[0]?.autoFilter).toEqual({
+			ref: 'A1:D4',
+			columns: [{ colId: 2, kind: 'filters', values: ['West'] }],
+		})
+	})
+
 	test('insertRows rewrites formulas', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

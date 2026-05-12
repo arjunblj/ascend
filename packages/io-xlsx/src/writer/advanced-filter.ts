@@ -18,15 +18,16 @@ export function updateCustomSheetViewsXml(
 			| { readonly prefix?: string; readonly attrs?: string; readonly body?: string }
 			| undefined
 		const filter = filters[index++]
-		if (!filter?.autoFilter) return match
+		if (!filter) return match
 		const prefix = groups?.prefix
 		const tagName = prefix ? `${prefix}:customSheetView` : 'customSheetView'
 		const body = groups?.body ?? ''
-		const autoFilterXml = buildAutoFilterXml(
-			filter.autoFilter,
-			prefix ? { tagPrefix: prefix } : undefined,
-		)
-		const updatedBody = replaceOrInsertAutoFilter(body, autoFilterXml)
+		const updatedBody = filter.autoFilter
+			? replaceOrInsertAutoFilter(
+					body,
+					buildAutoFilterXml(filter.autoFilter, prefix ? { tagPrefix: prefix } : undefined),
+				)
+			: removeAutoFilter(body)
 		return `<${tagName}${groups?.attrs ?? ''}>${updatedBody}</${tagName}>`
 	})
 }
@@ -58,4 +59,8 @@ function replaceOrInsertAutoFilter(body: string, autoFilterXml: string): string 
 	})
 	if (replaced) return updated
 	return `${autoFilterXml}${body}`
+}
+
+function removeAutoFilter(body: string): string {
+	return body.replace(AUTO_FILTER_RE, '')
 }

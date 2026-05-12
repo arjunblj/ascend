@@ -282,8 +282,9 @@ export function parseSheetValuesOnlyBytes(
 	const sheetDataStart = locateSheetDataStartBytes(bytes)
 	if (!sheetDataStart) return null
 	const sheet = new Sheet(name, sheetId)
-	sheet.preservedDimensionRef = parseDimensionRefBytes(bytes)
-	applyDensityHintFromDimensionBytes(sheet, bytes)
+	const dimensionRef = parseDimensionRefBytes(bytes)
+	sheet.preservedDimensionRef = dimensionRef
+	applyDensityHintFromDimensionRef(sheet, dimensionRef)
 	if (sheetDataStart.selfClosing) {
 		if (
 			hasUnsupportedValuesOnlyOuterTagsInRangeBytes(bytes, 0, sheetDataStart.tagStart) ||
@@ -548,6 +549,21 @@ function parseSimpleValuesRowBytes(
 	while (true) {
 		cursor = skipXmlWhitespaceBytes(bytes, cursor, bodyEnd)
 		if (cursor >= bodyEnd) return true
+		const plainNumberNext = parseCanonicalPlainNumberCellBytes(
+			bytes,
+			cursor,
+			bodyEnd,
+			rowText,
+			row,
+			nextCol,
+			out,
+		)
+		if (plainNumberNext !== -1) {
+			sheet.cells.setPlainNumber(out.row, out.col, out.numberValue ?? 0)
+			nextCol = out.col + 1
+			cursor = plainNumberNext
+			continue
+		}
 		const canonicalNext = parseCanonicalValuesCellBytes(
 			bytes,
 			cursor,
@@ -610,6 +626,51 @@ function parseSimpleValuesRowBytes(
 		nextCol = out.col + 1
 		cursor += BYTES_CELL_CLOSE.length
 	}
+}
+
+function parseCanonicalPlainNumberCellBytes(
+	bytes: Uint8Array,
+	cursor: number,
+	bodyEnd: number,
+	fallbackRowText: string,
+	fallbackRow: number,
+	fallbackCol: number,
+	out: {
+		row: number
+		col: number
+		numberValue: number | undefined
+		stringStart: number
+		stringEnd: number
+		stringHasEntity: boolean
+	},
+): number {
+	if (!startsWithCellRefBytes(bytes, cursor, bodyEnd)) return -1
+	const refEnd = consumeExpectedCellRefBytes(
+		bytes,
+		cursor + 6,
+		bodyEnd,
+		fallbackRowText,
+		fallbackCol,
+	)
+	if (refEnd === -1 || refEnd + 5 >= bodyEnd) return -1
+	if (
+		bytes[refEnd + 1] !== 62 ||
+		bytes[refEnd + 2] !== BYTE_LT ||
+		bytes[refEnd + 3] !== 118 ||
+		bytes[refEnd + 4] !== 62
+	) {
+		return -1
+	}
+	const valueStart = refEnd + 5
+	const parsedInt = parseCanonicalIntegerValueBytes(bytes, valueStart, bodyEnd)
+	if (!parsedInt) return -1
+	out.row = fallbackRow
+	out.col = fallbackCol
+	out.numberValue = parsedInt.value
+	out.stringStart = -1
+	out.stringEnd = -1
+	out.stringHasEntity = false
+	return parsedInt.next
 }
 
 function parseCanonicalValuesCellBytes(
@@ -2815,8 +2876,7 @@ function locateSheetDataBytes(bytes: Uint8Array): SheetDataLocation | null {
 	}
 }
 
-function applyDensityHintFromDimensionBytes(sheet: Sheet, bytes: Uint8Array): void {
-	const ref = parseDimensionRefBytes(bytes)
+function applyDensityHintFromDimensionRef(sheet: Sheet, ref: string | null): void {
 	if (!ref) return
 	try {
 		const range = parseRange(ref)

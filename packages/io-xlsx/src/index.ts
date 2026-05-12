@@ -9,6 +9,17 @@ export type {
 	XlsxPackageOwnerScope,
 } from './package-graph.ts'
 export { classifyPackageFeatureFamily, inspectXlsxPackageGraph } from './package-graph.ts'
+export type {
+	XlsxPackageGraphFidelityIssue,
+	XlsxPackageGraphFidelityIssueCode,
+	XlsxPackageGraphReadIntegrityOptions,
+	XlsxPackageGraphSafeEditIntegrityOptions,
+} from './package-graph-fidelity.ts'
+export {
+	auditXlsxPackageGraphBytePreservation,
+	auditXlsxPackageGraphReadIntegrity,
+	auditXlsxPackageGraphSafeEditIntegrity,
+} from './package-graph-fidelity.ts'
 export type { PreservationCapsule } from './preserve.ts'
 export type { ReadXlsxLoadInfo, ReadXlsxOptions, ReadXlsxResult } from './reader/index.ts'
 export { readXlsx } from './reader/index.ts'

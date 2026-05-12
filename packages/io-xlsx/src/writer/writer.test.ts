@@ -3987,6 +3987,59 @@ describe('writeXlsx', () => {
 		})
 	})
 
+	it('preserves regular conditional formatting extension attributes and child XML', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Rules')
+		sheet.conditionalFormats.push({
+			sqref: 'A1:A5',
+			rules: [
+				{
+					type: 'dataBar',
+					priority: 1,
+					formulas: [],
+					preservedRuleAttributes: {
+						activePresent: '1',
+						'xr:uid': '{REGULAR-CF-UID}',
+					},
+					preservedRuleChildXml: [
+						'<extLst><ext uri="{regular-cf-extension}"><x14ac:metadata flag="1"/></ext></extLst>',
+					],
+					dataBar: {
+						cfvo: [{ type: 'min' }, { type: 'max' }],
+						color: { rgb: 'FF638EC6' },
+					},
+				},
+			],
+		})
+
+		const { bytes, result } = roundTrip(wb)
+		const zip = unzipSync(bytes)
+		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+
+		expect(sheetXml).toContain(
+			'xmlns:xr="http://schemas.microsoft.com/office/spreadsheetml/2014/revision"',
+		)
+		expect(sheetXml).toContain(
+			'xmlns:x14ac="http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac"',
+		)
+		expect(sheetXml).toContain('activePresent="1"')
+		expect(sheetXml).toContain('xr:uid="{REGULAR-CF-UID}"')
+		expect(sheetXml).toContain(
+			'<extLst><ext uri="{regular-cf-extension}"><x14ac:metadata flag="1"/></ext></extLst>',
+		)
+		expect(result.workbook.sheets[0]?.conditionalFormats[0]?.rules[0]).toMatchObject({
+			type: 'dataBar',
+			priority: 1,
+			preservedRuleAttributes: {
+				activePresent: '1',
+				'xr:uid': '{REGULAR-CF-UID}',
+			},
+			preservedRuleChildXml: [
+				'<extLst><ext uri="{regular-cf-extension}"><x14ac:metadata flag="1"/></ext></extLst>',
+			],
+		})
+	})
+
 	it('preserves defined names on round-trip', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Data')
@@ -6522,7 +6575,7 @@ ${sparklineExtLst}
 		expect(reopened.value.workbook.sheets[0]?.advancedFilters).toHaveLength(0)
 	})
 
-	it('preserves worksheet-level extLst instead of nested rule extensions', () => {
+	it('keeps worksheet and nested rule extLst payloads in their owning scopes', () => {
 		const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <x:sheetData><x:row r="1"><x:c r="A1"><x:v>1</x:v></x:c></x:row></x:sheetData>
@@ -6561,6 +6614,9 @@ ${sparklineExtLst}
 		expect(preserved).toContain('uri="{worksheet}"')
 		expect(preserved).toContain('x14:conditionalFormattings')
 		expect(preserved).not.toContain('uri="{nested}"')
+		expect(
+			read.value.workbook.sheets[0]?.conditionalFormats[0]?.rules[0]?.preservedRuleChildXml,
+		).toEqual(['<extLst><ext uri="{nested}"/></extLst>'])
 
 		const written = writeXlsx(read.value.workbook, read.value.capsules, {
 			dirtySheetNames: ['Sheet1'],
@@ -6570,7 +6626,9 @@ ${sparklineExtLst}
 		const writtenSheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'])
 		expect(writtenSheetXml).toContain('<extLst>')
 		expect(writtenSheetXml).toContain('x14:conditionalFormattings')
-		expect(writtenSheetXml).not.toContain('uri="{nested}"')
+		expect(writtenSheetXml).toContain(
+			'<cfRule type="dataBar" priority="1"><extLst><ext uri="{nested}"/></extLst></cfRule>',
+		)
 	})
 
 	it('emits dimension element for non-empty sheets', () => {

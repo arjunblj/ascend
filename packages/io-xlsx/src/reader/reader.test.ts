@@ -3051,6 +3051,53 @@ describe('readXlsx', () => {
 		])
 	})
 
+	it('parses regular conditional formatting extension payloads', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"
+  xmlns:x14ac="http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac"
+  xmlns:xr="http://schemas.microsoft.com/office/spreadsheetml/2014/revision">
+  <sheetData/>
+  <conditionalFormatting sqref="A1:A5">
+    <cfRule type="dataBar" priority="1" activePresent="1" xr:uid="{REGULAR-CF-UID}">
+      <dataBar><cfvo type="min"/><cfvo type="max"/><color rgb="FF638EC6"/></dataBar>
+      <extLst><ext uri="{regular-cf-extension}"><x14ac:metadata flag="1"/></ext></extLst>
+    </cfRule>
+  </conditionalFormatting>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		expect(result.value.workbook.sheets[0]?.conditionalFormats[0]?.rules[0]).toMatchObject({
+			type: 'dataBar',
+			priority: 1,
+			preservedRuleAttributes: {
+				activePresent: '1',
+				'xr:uid': '{REGULAR-CF-UID}',
+			},
+			preservedRuleChildXml: [
+				'<extLst><ext uri="{regular-cf-extension}"><x14ac:metadata flag="1"/></ext></extLst>',
+			],
+			dataBar: {
+				cfvo: [{ type: 'min' }, { type: 'max' }],
+				color: { rgb: 'FF638EC6' },
+			},
+		})
+	})
+
 	it('preserves document-order indexes for mixed x14 data-validation elements', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

@@ -1,4 +1,11 @@
-import type { Cell, RangeRef, Sheet, SheetCellMetadataAttrs, SheetColDef } from '@ascend/core'
+import type {
+	Cell,
+	RangeRef,
+	Sheet,
+	SheetCellMetadataAttrs,
+	SheetColDef,
+	SheetConditionalFormatRule,
+} from '@ascend/core'
 import { indexToColumn, parseRange } from '@ascend/core'
 import { type FormulaNode, parseFormula, printFormulaWithOffset } from '@ascend/formulas'
 import type { CellValue, RichTextRun } from '@ascend/schema'
@@ -16,7 +23,9 @@ const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
 const NS_R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
 const NS_XR = 'http://schemas.microsoft.com/office/spreadsheetml/2014/revision'
+const NS_X14 = 'http://schemas.microsoft.com/office/spreadsheetml/2009/9/main'
 const NS_X14AC = 'http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac'
+const NS_XM = 'http://schemas.microsoft.com/office/excel/2006/main'
 const MAX_SHARED_FORMULA_LENGTH = 8192
 
 export interface SheetXmlOptions {
@@ -66,12 +75,23 @@ function buildSheetXmlToSink(
 	) {
 		worksheetAttrs.push(`xmlns:r="${NS_R}"`)
 	}
-	if (sheet.dataValidations.some((validation) => validation.uid) || sheet.autoFilter?.uid) {
+	if (
+		sheet.dataValidations.some((validation) => validation.uid) ||
+		sheet.autoFilter?.uid ||
+		sheetHasPreservedOfficeExtensionXml(sheet, 'xr:')
+	) {
 		worksheetAttrs.push(`xmlns:xr="${NS_XR}"`)
+	}
+	if (sheetHasPreservedOfficeExtensionXml(sheet, 'x14:')) {
+		worksheetAttrs.push(`xmlns:x14="${NS_X14}"`)
+	}
+	if (sheetHasPreservedOfficeExtensionXml(sheet, 'xm:')) {
+		worksheetAttrs.push(`xmlns:xm="${NS_XM}"`)
 	}
 	if (
 		sheet.sheetFormatPr?.dyDescent !== undefined ||
-		[...sheet.rowDefs.values()].some((rowDef) => rowDef.dyDescent !== undefined)
+		[...sheet.rowDefs.values()].some((rowDef) => rowDef.dyDescent !== undefined) ||
+		sheetHasPreservedOfficeExtensionXml(sheet, 'x14ac:')
 	) {
 		worksheetAttrs.push(`xmlns:x14ac="${NS_X14AC}"`)
 	}
@@ -403,21 +423,7 @@ function buildSheetXmlToSink(
 				const rule = conditionalFormat.rules[ruleIdx]
 				if (!rule) continue
 				const effectiveDxfId = rule.dxfId ?? cfDxfIdOverrides?.get(`${cfIdx}:${ruleIdx}`)
-				const attrs = [`type="${escapeXml(rule.type)}"`]
-				if (rule.operator) attrs.push(`operator="${escapeXml(rule.operator)}"`)
-				if (rule.priority !== undefined) attrs.push(`priority="${rule.priority}"`)
-				if (effectiveDxfId !== undefined) attrs.push(`dxfId="${effectiveDxfId}"`)
-				if (rule.stopIfTrue) attrs.push('stopIfTrue="1"')
-				if (rule.rank !== undefined) attrs.push(`rank="${rule.rank}"`)
-				if (rule.percent !== undefined) attrs.push(`percent="${rule.percent ? '1' : '0'}"`)
-				if (rule.bottom !== undefined) attrs.push(`bottom="${rule.bottom ? '1' : '0'}"`)
-				if (rule.aboveAverage !== undefined)
-					attrs.push(`aboveAverage="${rule.aboveAverage ? '1' : '0'}"`)
-				if (rule.equalAverage !== undefined)
-					attrs.push(`equalAverage="${rule.equalAverage ? '1' : '0'}"`)
-				if (rule.stdDev !== undefined) attrs.push(`stdDev="${rule.stdDev}"`)
-				if (rule.text !== undefined) attrs.push(`text="${escapeXml(rule.text)}"`)
-				if (rule.timePeriod) attrs.push(`timePeriod="${escapeXml(rule.timePeriod)}"`)
+				const attrs = conditionalFormatRuleAttrs(rule, effectiveDxfId)
 
 				out.push(`<cfRule ${attrs.join(' ')}>`)
 				for (const formula of rule.formulas) {
@@ -426,6 +432,7 @@ function buildSheetXmlToSink(
 				if (rule.colorScale) out.push(buildColorScaleXml(rule.colorScale))
 				if (rule.dataBar) out.push(buildDataBarXml(rule.dataBar))
 				if (rule.iconSet) out.push(buildIconSetXml(rule.iconSet))
+				for (const childXml of rule.preservedRuleChildXml ?? []) out.push(childXml)
 				out.push('</cfRule>')
 			}
 			out.push('</conditionalFormatting>')
@@ -598,6 +605,62 @@ function buildSheetXmlToSink(
 	}
 
 	out.push('</worksheet>')
+}
+
+function sheetHasPreservedOfficeExtensionXml(sheet: Sheet, needle: string): boolean {
+	if (sheet.preservedExtLst?.includes(needle) || sheet.preservedControlsXml?.includes(needle)) {
+		return true
+	}
+	for (const validation of sheet.x14DataValidations) {
+		if (recordHasNamePrefix(validation.preservedAttributes, needle)) return true
+		if (validation.preservedChildXml?.some((xml) => xml.includes(needle))) return true
+	}
+	for (const format of sheet.x14ConditionalFormats) {
+		if (recordHasNamePrefix(format.preservedRuleAttributes, needle)) return true
+		if (format.preservedRuleChildXml?.some((xml) => xml.includes(needle))) return true
+	}
+	for (const format of sheet.conditionalFormats) {
+		for (const rule of format.rules) {
+			if (recordHasNamePrefix(rule.preservedRuleAttributes, needle)) return true
+			if (rule.preservedRuleChildXml?.some((xml) => xml.includes(needle))) return true
+		}
+	}
+	return false
+}
+
+function recordHasNamePrefix(
+	record: Readonly<Record<string, string>> | undefined,
+	prefix: string,
+): boolean {
+	return Object.keys(record ?? {}).some((name) => name.startsWith(prefix))
+}
+
+function conditionalFormatRuleAttrs(
+	rule: SheetConditionalFormatRule,
+	effectiveDxfId?: number,
+): string[] {
+	const attrs = new Map<string, string>()
+	for (const [name, value] of Object.entries(rule.preservedRuleAttributes ?? {})) {
+		if (canEmitPreservedConditionalFormatRuleAttr(name)) attrs.set(name, value)
+	}
+	attrs.set('type', rule.type)
+	if (rule.operator) attrs.set('operator', rule.operator)
+	if (rule.priority !== undefined) attrs.set('priority', String(rule.priority))
+	if (effectiveDxfId !== undefined) attrs.set('dxfId', String(effectiveDxfId))
+	if (rule.stopIfTrue) attrs.set('stopIfTrue', '1')
+	if (rule.rank !== undefined) attrs.set('rank', String(rule.rank))
+	if (rule.percent !== undefined) attrs.set('percent', rule.percent ? '1' : '0')
+	if (rule.bottom !== undefined) attrs.set('bottom', rule.bottom ? '1' : '0')
+	if (rule.aboveAverage !== undefined) attrs.set('aboveAverage', rule.aboveAverage ? '1' : '0')
+	if (rule.equalAverage !== undefined) attrs.set('equalAverage', rule.equalAverage ? '1' : '0')
+	if (rule.stdDev !== undefined) attrs.set('stdDev', String(rule.stdDev))
+	if (rule.text !== undefined) attrs.set('text', rule.text)
+	if (rule.timePeriod) attrs.set('timePeriod', rule.timePeriod)
+	return [...attrs.entries()].map(([name, value]) => `${name}="${escapeXml(value)}"`)
+}
+
+function canEmitPreservedConditionalFormatRuleAttr(name: string): boolean {
+	return name !== 'xmlns' && !name.startsWith('xmlns:')
 }
 
 function setSheetViewAttr(attrs: Map<string, string>, name: string, value: string): void {

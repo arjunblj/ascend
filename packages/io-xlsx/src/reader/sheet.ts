@@ -254,7 +254,7 @@ export function parseSheet(
 	parseIgnoredErrors(ws, sheet)
 	if (richMetadata) {
 		parseHyperlinks(ws, sheet, ctx.relationships ?? [], ctx.valuePool)
-		parseConditionalFormatting(ws, sheet, ctx.differentialStyles ?? [], ctx.valuePool)
+		parseConditionalFormatting(ws, strippedXml, sheet, ctx.differentialStyles ?? [], ctx.valuePool)
 		parseDataValidations(ws, sheet, ctx.valuePool)
 		parseX14ConditionalFormats(strippedXml, sheet, ctx.valuePool)
 		parseX14DataValidations(strippedXml, sheet, ctx.valuePool)
@@ -4298,10 +4298,12 @@ function parseHyperlinks(
 
 function parseConditionalFormatting(
 	ws: XmlNode,
+	xml: string,
 	sheet: Sheet,
 	differentialStyles: readonly CellStyle[],
 	pool?: ValueInternPool,
 ): void {
+	const preservedRulePayloads = regularConditionalFormatRulePayloads(xml)
 	for (const conditionalFormatting of asArray<XmlNode>(
 		ws.conditionalFormatting as XmlNode | XmlNode[] | undefined,
 	)) {
@@ -4312,6 +4314,9 @@ function parseConditionalFormatting(
 		for (const rule of asArray<XmlNode>(conditionalFormatting.cfRule as XmlNode | XmlNode[])) {
 			const type = attr(rule, 'type')
 			if (!type) continue
+			const preservedPayload = preservedRulePayloads.get(
+				`${sheet.conditionalFormats.length}:${rules.length}`,
+			)
 			const formulas = asArray<XmlNode | string | number | boolean>(
 				rule.formula as XmlNode | XmlNode[] | string | string[] | undefined,
 			).map((formula) => {
@@ -4335,6 +4340,8 @@ function parseConditionalFormatting(
 				stdDev?: number
 				text?: string
 				timePeriod?: string
+				preservedRuleAttributes?: Readonly<Record<string, string>>
+				preservedRuleChildXml?: readonly string[]
 				colorScale?: SheetConditionalFormatRule['colorScale']
 				dataBar?: SheetConditionalFormatRule['dataBar']
 				iconSet?: SheetConditionalFormatRule['iconSet']
@@ -4364,6 +4371,21 @@ function parseConditionalFormatting(
 			if (text !== undefined) parsedRule.text = text
 			const timePeriod = attr(rule, 'timePeriod')
 			if (timePeriod) parsedRule.timePeriod = timePeriod
+			if (
+				preservedPayload?.preservedRuleAttributes &&
+				Object.keys(preservedPayload.preservedRuleAttributes).length > 0
+			) {
+				parsedRule.preservedRuleAttributes = internStringRecord(
+					preservedPayload.preservedRuleAttributes,
+					pool,
+				)
+			}
+			if (preservedPayload?.preservedRuleChildXml?.length) {
+				parsedRule.preservedRuleChildXml = internStringArray(
+					preservedPayload.preservedRuleChildXml,
+					pool,
+				)
+			}
 			const colorScale = parseConditionalColorScale(rule.colorScale as XmlNode | undefined)
 			if (colorScale) parsedRule.colorScale = colorScale
 			const dataBar = parseConditionalDataBar(rule.dataBar as XmlNode | undefined)
@@ -4613,6 +4635,87 @@ function x14ConditionalFormatRulePreservedChildXml(xml: string): readonly string
 	for (const child of directChildXmlBlocks(xml)) {
 		const localName = xmlLocalName(child.name)
 		if (localName === 'f' || localName === 'dataBar' || localName === 'iconSet') continue
+		preserved.push(child.xml)
+	}
+	return preserved
+}
+
+function regularConditionalFormatRulePayloads(xml: string): ReadonlyMap<
+	string,
+	{
+		readonly preservedRuleAttributes: Readonly<Record<string, string>>
+		readonly preservedRuleChildXml: readonly string[]
+	}
+> {
+	const payloads = new Map<
+		string,
+		{
+			readonly preservedRuleAttributes: Readonly<Record<string, string>>
+			readonly preservedRuleChildXml: readonly string[]
+		}
+	>()
+	const cfPattern =
+		/<conditionalFormatting\b[^>]*>([\s\S]*?)<\/conditionalFormatting>|<conditionalFormatting\b[^>]*\/>/gi
+	let cfIndex = 0
+	for (const cfMatch of xml.matchAll(cfPattern)) {
+		const body = cfMatch[1] ?? ''
+		let ruleIndex = 0
+		for (const rule of readXmlElements(body, 'cfRule')) {
+			const preservedRuleAttributes = regularConditionalFormatRulePreservedAttributes(rule.attrs)
+			const preservedRuleChildXml = regularConditionalFormatRulePreservedChildXml(rule.body)
+			if (Object.keys(preservedRuleAttributes).length > 0 || preservedRuleChildXml.length > 0) {
+				payloads.set(`${cfIndex}:${ruleIndex}`, {
+					preservedRuleAttributes,
+					preservedRuleChildXml,
+				})
+			}
+			ruleIndex++
+		}
+		cfIndex++
+	}
+	return payloads
+}
+
+function regularConditionalFormatRulePreservedAttributes(
+	attrs: XmlNode,
+): Readonly<Record<string, string>> {
+	const preserved: Record<string, string> = {}
+	const modeled = new Set([
+		'type',
+		'operator',
+		'dxfId',
+		'priority',
+		'stopIfTrue',
+		'rank',
+		'percent',
+		'bottom',
+		'aboveAverage',
+		'equalAverage',
+		'stdDev',
+		'text',
+		'timePeriod',
+	])
+	for (const [rawName, value] of Object.entries(attrs)) {
+		const name = rawName.startsWith('@_') ? rawName.slice(2) : rawName
+		if (modeled.has(name) || name === 'xmlns' || name.startsWith('xmlns:')) continue
+		if (value === undefined || value === null) continue
+		preserved[name] = String(value)
+	}
+	return preserved
+}
+
+function regularConditionalFormatRulePreservedChildXml(xml: string): readonly string[] {
+	const preserved: string[] = []
+	for (const child of directChildXmlBlocks(xml)) {
+		const localName = xmlLocalName(child.name)
+		if (
+			localName === 'formula' ||
+			localName === 'colorScale' ||
+			localName === 'dataBar' ||
+			localName === 'iconSet'
+		) {
+			continue
+		}
 		preserved.push(child.xml)
 	}
 	return preserved

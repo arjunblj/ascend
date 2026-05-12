@@ -416,6 +416,8 @@ export interface SheetConditionalFormatRule {
 	readonly stdDev?: number
 	readonly text?: string
 	readonly timePeriod?: string
+	readonly preservedRuleAttributes?: Readonly<Record<string, string>>
+	readonly preservedRuleChildXml?: readonly string[]
 	readonly colorScale?: SheetConditionalFormatColorScale
 	readonly dataBar?: SheetConditionalFormatDataBar
 	readonly iconSet?: SheetConditionalFormatIconSet
@@ -466,6 +468,12 @@ function cloneConditionalFormatRule(rule: SheetConditionalFormatRule): SheetCond
 	return {
 		...rule,
 		formulas: [...rule.formulas],
+		...(rule.preservedRuleAttributes
+			? { preservedRuleAttributes: { ...rule.preservedRuleAttributes } }
+			: {}),
+		...(rule.preservedRuleChildXml
+			? { preservedRuleChildXml: [...rule.preservedRuleChildXml] }
+			: {}),
 		...(rule.style ? { style: cloneCellStyle(rule.style) } : {}),
 		...(rule.colorScale
 			? {

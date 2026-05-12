@@ -10,6 +10,9 @@ const NS_X14 = 'http://schemas.microsoft.com/office/spreadsheetml/2009/9/main'
 const NS_X15 = 'http://schemas.microsoft.com/office/spreadsheetml/2010/11/main'
 const X14_SLICER_CACHES_EXT_URI = '{BBE1A952-AA13-448e-AADC-164F8A28A991}'
 const X15_TIMELINE_CACHES_EXT_URI = '{7E03D99C-DC04-49d9-9315-930204A7B6E9}'
+const OWNED_WORKBOOK_EXT_URIS = new Set([X14_SLICER_CACHES_EXT_URI, X15_TIMELINE_CACHES_EXT_URI])
+const XML_TAG_RE = /<[^>]+>/g
+const XML_ATTR_RE = /([A-Za-z_][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g
 
 export interface WorkbookXmlOptions {
 	readonly worksheetRelIds?: readonly string[]
@@ -20,18 +23,26 @@ export interface WorkbookXmlOptions {
 	readonly chartSheetRelIds?: readonly string[]
 	readonly macroSheetRelIds?: readonly string[]
 	readonly calcStateDirty?: boolean
+	readonly preservedWorkbookXml?: string
 }
 
 export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions = {}): string {
 	const out = new ChunkedStringBuilder()
 	out.push(XML_HEADER)
-	const workbookNamespaceAttrs = [`xmlns="${NS_MAIN}"`, `xmlns:r="${NS_R}"`]
-	if ((options.slicerCacheRelIds?.length ?? 0) > 0)
-		workbookNamespaceAttrs.push(`xmlns:x14="${NS_X14}"`)
-	if ((options.timelineCacheRelIds?.length ?? 0) > 0) {
-		workbookNamespaceAttrs.push(`xmlns:x15="${NS_X15}"`)
+	const workbookNamespaceAttrs = new Map<string, string>([
+		['xmlns', NS_MAIN],
+		['xmlns:r', NS_R],
+	])
+	for (const [name, value] of extractSourceWorkbookNamespaceAttrs(options.preservedWorkbookXml)) {
+		if (!workbookNamespaceAttrs.has(name)) workbookNamespaceAttrs.set(name, value)
 	}
-	out.push(`<workbook ${workbookNamespaceAttrs.join(' ')}>`)
+	if ((options.slicerCacheRelIds?.length ?? 0) > 0) workbookNamespaceAttrs.set('xmlns:x14', NS_X14)
+	if ((options.timelineCacheRelIds?.length ?? 0) > 0) {
+		workbookNamespaceAttrs.set('xmlns:x15', NS_X15)
+	}
+	out.push(
+		`<workbook ${Array.from(workbookNamespaceAttrs, ([name, value]) => `${name}="${escapeXml(value)}"`).join(' ')}>`,
+	)
 
 	const workbookPrAttrs: string[] = []
 	if (workbook.calcSettings.dateSystem === '1904' || workbook.workbookProperties.date1904) {
@@ -203,7 +214,7 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 }
 
 function buildWorkbookExtLstXml(options: WorkbookXmlOptions): string {
-	const extXml: string[] = []
+	const extXml = extractPreservedWorkbookExtXml(options.preservedWorkbookXml)
 	if ((options.slicerCacheRelIds?.length ?? 0) > 0) {
 		extXml.push(
 			`<ext uri="${X14_SLICER_CACHES_EXT_URI}"><x14:slicerCaches>${options.slicerCacheRelIds
@@ -219,6 +230,141 @@ function buildWorkbookExtLstXml(options: WorkbookXmlOptions): string {
 		)
 	}
 	return extXml.length > 0 ? `<extLst>${extXml.join('')}</extLst>` : ''
+}
+
+function extractSourceWorkbookNamespaceAttrs(
+	sourceXml: string | undefined,
+): readonly [string, string][] {
+	if (!sourceXml) return []
+	const root = findFirstElement(sourceXml, 'workbook', 0, sourceXml.length)
+	if (!root) return []
+	const attrs: [string, string][] = []
+	for (const element of [root, ...extractDirectChildElements(sourceXml, 'workbook', 'extLst')]) {
+		for (const [name, value] of parseRawXmlAttributes(element.attrs)) {
+			if (name.startsWith('xmlns:')) attrs.push([name, value])
+		}
+	}
+	return attrs
+}
+
+function extractPreservedWorkbookExtXml(sourceXml: string | undefined): string[] {
+	if (!sourceXml) return []
+	return extractDirectChildElements(sourceXml, 'workbook', 'extLst')
+		.flatMap((extLst) => extractDirectChildElements(extLst.xml, 'extLst', 'ext'))
+		.filter((ext) => {
+			const uri = parseRawXmlAttributes(ext.attrs).get('uri')
+			return !uri || !OWNED_WORKBOOK_EXT_URIS.has(uri)
+		})
+		.map((ext) => ext.xml)
+}
+
+interface XmlElementSlice {
+	readonly xml: string
+	readonly attrs: string
+	readonly start: number
+	readonly openEnd: number
+	readonly end: number
+	readonly selfClosing: boolean
+}
+
+function extractDirectChildElements(
+	xml: string,
+	parentLocalName: string,
+	childLocalName: string,
+): XmlElementSlice[] {
+	const parent = findFirstElement(xml, parentLocalName, 0, xml.length)
+	if (!parent || parent.selfClosing) return []
+	const children: XmlElementSlice[] = []
+	let cursor = parent.openEnd
+	while (cursor < parent.end) {
+		const child = findFirstElement(xml, undefined, cursor, parent.end)
+		if (!child || child.start >= parent.end) break
+		if (localNameFromTag(xml.slice(child.start + 1, child.openEnd)) === childLocalName) {
+			children.push(child)
+		}
+		cursor = child.end
+	}
+	return children
+}
+
+function findFirstElement(
+	xml: string,
+	localName: string | undefined,
+	start: number,
+	end: number,
+): XmlElementSlice | undefined {
+	XML_TAG_RE.lastIndex = start
+	for (let match = XML_TAG_RE.exec(xml); match && match.index < end; match = XML_TAG_RE.exec(xml)) {
+		const raw = match[0]
+		const tag = parseTag(raw)
+		if (!tag || tag.closing) continue
+		if (localName && tag.localName !== localName) continue
+		const closeEnd = tag.selfClosing ? match.index + raw.length : findElementEnd(xml, tag.localName)
+		if (closeEnd === undefined || closeEnd > end) return undefined
+		return {
+			xml: xml.slice(match.index, closeEnd),
+			attrs: tag.attrs,
+			start: match.index,
+			openEnd: match.index + raw.length,
+			end: closeEnd,
+			selfClosing: tag.selfClosing,
+		}
+	}
+	return undefined
+}
+
+function findElementEnd(xml: string, localName: string): number | undefined {
+	let depth = 1
+	for (let match = XML_TAG_RE.exec(xml); match; match = XML_TAG_RE.exec(xml)) {
+		const raw = match[0]
+		const tag = parseTag(raw)
+		if (!tag || tag.localName !== localName) continue
+		if (tag.closing) {
+			depth--
+			if (depth === 0) return match.index + raw.length
+		} else if (!tag.selfClosing) {
+			depth++
+		}
+	}
+	return undefined
+}
+
+function parseTag(rawTag: string):
+	| {
+			readonly localName: string
+			readonly attrs: string
+			readonly closing: boolean
+			readonly selfClosing: boolean
+	  }
+	| undefined {
+	if (rawTag.startsWith('<?') || rawTag.startsWith('<!')) return undefined
+	const closing = rawTag.startsWith('</')
+	const bodyStart = closing ? 2 : 1
+	const body = rawTag.slice(bodyStart, -1).trim()
+	const name = body.match(/^[^\s/>]+/)?.[0]
+	if (!name) return undefined
+	return {
+		localName: name.includes(':') ? (name.split(':').pop() ?? name) : name,
+		attrs: closing ? '' : body.slice(name.length).replace(/\/\s*$/, ''),
+		closing,
+		selfClosing: !closing && /\/\s*>$/.test(rawTag),
+	}
+}
+
+function localNameFromTag(rawTagBody: string): string {
+	const name = rawTagBody.trim().match(/^[^\s/>]+/)?.[0] ?? ''
+	return name.includes(':') ? (name.split(':').pop() ?? name) : name
+}
+
+function parseRawXmlAttributes(rawAttrs: string): Map<string, string> {
+	const attrs = new Map<string, string>()
+	XML_ATTR_RE.lastIndex = 0
+	for (const match of rawAttrs.matchAll(XML_ATTR_RE)) {
+		const name = match[1]
+		const value = match[2] ?? match[3]
+		if (name && value !== undefined) attrs.set(name, value)
+	}
+	return attrs
 }
 
 function isCoreDefinedNameAttribute(name: string): boolean {

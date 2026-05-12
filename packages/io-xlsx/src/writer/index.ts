@@ -756,6 +756,14 @@ export function planWriteXlsx(
 						preservedWorkbookXml?.workbookPath,
 					)
 				: undefined
+		const sourceWorkbookXmlText =
+			!options.summaryOnly && preservedWorkbookXml
+				? resolvePreservedText(
+						sourceArchive,
+						preservedWorkbookXml.workbookXml,
+						preservedWorkbookXml.workbookPath,
+					)
+				: undefined
 		const preservedWorkbookRelsText =
 			hasPreservedWorkbookRels && !options.summaryOnly
 				? resolvePreservedText(
@@ -815,6 +823,9 @@ export function planWriteXlsx(
 								timelineCacheRelIds,
 								chartSheetRelIds,
 								macroSheetRelIds,
+								...(sourceWorkbookXmlText !== undefined
+									? { preservedWorkbookXml: sourceWorkbookXmlText }
+									: {}),
 								...(options.calcStateDirty !== undefined
 									? { calcStateDirty: options.calcStateDirty }
 									: {}),

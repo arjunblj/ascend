@@ -179,6 +179,9 @@ describe('slicer and timeline package fidelity', () => {
 		expect(workbookXml).toContain(
 			'xmlns:x15="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main"',
 		)
+		expect(workbookXml).toContain('xmlns:mx="urn:ascend:test-workbook-ext"')
+		expect(workbookXml).toContain('<ext uri="{ASCEND-UNKNOWN-WORKBOOK-EXT}">')
+		expect(workbookXml).toContain('<mx:keep attr="A&amp;B" nested="1"/>')
 		expect(workbookXml).toContain('<x14:slicerCache r:id="rIdSlicerCacheOdd"/>')
 		expect(workbookXml).toContain('<x15:timelineCacheRef r:id="rIdTimelineCacheAbsolute"/>')
 		for (const partPath of [
@@ -248,6 +251,9 @@ describe('slicer and timeline package fidelity', () => {
 		const beforeZip = unzipSync(sourceBytes)
 		const afterZip = unzipSync(written.value)
 		const workbookXml = decode(afterZip['xl/workbook.xml'])
+		expect(workbookXml).toContain('xmlns:mx="urn:ascend:test-workbook-ext"')
+		expect(workbookXml).toContain('<ext uri="{ASCEND-UNKNOWN-WORKBOOK-EXT}">')
+		expect(workbookXml).toContain('<mx:keep attr="A&amp;B" nested="1"/>')
 		expect(workbookXml).toContain('<x14:slicerCache r:id="rIdSlicerCacheOdd"/>')
 		expect(workbookXml).toContain('<x15:timelineCacheRef r:id="rIdTimelineCacheAbsolute"/>')
 		const slicerCacheXml = decode(afterZip['xl/slicerCaches/slicerCache7.xml'])
@@ -353,7 +359,8 @@ function analyticsPackageWorkbook(): Uint8Array {
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
   xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
   xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"
-  xmlns:x15="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main">
+  xmlns:x15="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main"
+  xmlns:mx="urn:ascend:test-workbook-ext">
   <pivotCaches><pivotCache cacheId="42" r:id="rIdPivotCacheMain"/></pivotCaches>
   <sheets>
     <sheet name="Data" sheetId="1" r:id="rIdSheetData"/>
@@ -365,6 +372,9 @@ function analyticsPackageWorkbook(): Uint8Array {
     </ext>
     <ext uri="{7E03D99C-DC04-49d9-9315-930204A7B6E9}">
       <x15:timelineCaches><x15:timelineCacheRef r:id="rIdTimelineCacheAbsolute"/></x15:timelineCaches>
+    </ext>
+    <ext uri="{ASCEND-UNKNOWN-WORKBOOK-EXT}">
+      <mx:keep attr="A&amp;B" nested="1"/>
     </ext>
   </extLst>
 </workbook>`,

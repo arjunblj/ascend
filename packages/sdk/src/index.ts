@@ -33,6 +33,7 @@ export type {
 export {
 	auditLossPolicy,
 	auditPackageGraphIntegrity,
+	auditPackageGraphRoundtrip,
 	commitAgentPlan,
 	createAgentPlan,
 	createRepairPlan,

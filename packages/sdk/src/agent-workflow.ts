@@ -7,7 +7,11 @@ import type {
 	XlsxPackageLossPolicy,
 	XlsxPackageOwnerScope,
 } from '@ascend/io-xlsx'
-import { auditXlsxPackageGraphReadIntegrity } from '@ascend/io-xlsx'
+import {
+	auditXlsxPackageGraphBytePreservation,
+	auditXlsxPackageGraphReadIntegrity,
+	auditXlsxPackageGraphSafeEditIntegrity,
+} from '@ascend/io-xlsx'
 import { AscendException, ascendError, type FeatureReport, type Operation } from '@ascend/schema'
 import { listCapabilities, summarizeCapabilities } from './capabilities.ts'
 import { AscendWorkbook } from './workbook.ts'
@@ -70,6 +74,7 @@ export interface AgentPostWriteVerification {
 	readonly check: ReturnType<AscendWorkbook['check']>
 	readonly lint: ReturnType<AscendWorkbook['lint']>
 	readonly preservation: ReturnType<AscendWorkbook['writePlanSummary']>
+	readonly packageGraphAudit: PackageGraphAudit
 }
 
 export interface LossAudit {
@@ -100,7 +105,7 @@ export interface LossAuditPackagePart {
 export interface PackageGraphAudit {
 	readonly ok: boolean
 	readonly issues: readonly XlsxPackageGraphFidelityIssue[]
-	readonly policy: 'read-integrity'
+	readonly policy: 'read-integrity' | 'safe-edit-roundtrip'
 }
 
 export interface AgentWorkflowTrace {
@@ -393,12 +398,18 @@ export async function commitAgentPlan(
 	await progress('preservation-audit', 'started', 'Summarizing package preservation.')
 	const preservation = wb.writePlanSummary()
 	await progressFromPhase(preservationPhase(preservation), progress)
+	const sourceBytes = await readFile(file)
 	await progress('write', 'started', `Writing workbook to ${output}.`)
 	await writeWorkbookAtomically(wb, output)
 	const outputSha256 = await fileSha256(output)
 	await progress('write', 'ok', `Workbook written to ${output}.`)
 	await progress('post-write', 'started', 'Reopening written workbook for verification.')
-	const postWrite = await verifyWrittenWorkbook(output, outputSha256)
+	const postWrite = await verifyWrittenWorkbook(
+		output,
+		outputSha256,
+		packageGraph,
+		new Uint8Array(sourceBytes.buffer, sourceBytes.byteOffset, sourceBytes.byteLength),
+	)
 	await progressFromPhase(postWritePhase(postWrite), progress)
 	await progress('check', 'started', 'Running structural checks.')
 	const check = wb.check()
@@ -483,11 +494,20 @@ export async function commitAgentPlan(
 async function verifyWrittenWorkbook(
 	output: string,
 	outputSha256: string,
+	sourceGraph: XlsxPackageGraph,
+	sourceBytes: Uint8Array,
 ): Promise<AgentPostWriteVerification> {
 	const reopened = await AscendWorkbook.open(output, { richMetadata: true })
 	const check = reopened.check()
 	const lint = reopened.lint()
 	const preservation = reopened.writePlanSummary()
+	const outputBytes = await readFile(output)
+	const packageGraphAudit = auditPackageGraphRoundtrip(
+		sourceGraph,
+		sourceBytes,
+		reopened.packageGraph(),
+		new Uint8Array(outputBytes.buffer, outputBytes.byteOffset, outputBytes.byteLength),
+	)
 	return {
 		valid: check.valid,
 		output,
@@ -496,6 +516,7 @@ async function verifyWrittenWorkbook(
 		check,
 		lint,
 		preservation,
+		packageGraphAudit,
 	}
 }
 
@@ -529,6 +550,24 @@ export function auditPackageGraphIntegrity(packageGraph: XlsxPackageGraph): Pack
 		ok: issues.length === 0,
 		issues,
 		policy: 'read-integrity',
+	}
+}
+
+export function auditPackageGraphRoundtrip(
+	sourceGraph: XlsxPackageGraph,
+	sourceBytes: Uint8Array,
+	outputGraph: XlsxPackageGraph,
+	outputBytes: Uint8Array,
+): PackageGraphAudit {
+	const issues = [
+		...auditXlsxPackageGraphReadIntegrity(outputGraph),
+		...auditXlsxPackageGraphSafeEditIntegrity(sourceGraph, outputGraph),
+		...auditXlsxPackageGraphBytePreservation(sourceGraph, sourceBytes, outputBytes),
+	]
+	return {
+		ok: issues.length === 0,
+		issues,
+		policy: 'safe-edit-roundtrip',
 	}
 }
 
@@ -891,22 +930,42 @@ function postWritePhase(postWrite: AgentPostWriteVerification): AgentTracePhase 
 		return phaseResult(
 			'post-write',
 			'warning',
-			`Written workbook reopened with ${postWrite.check.issues.length} check issue(s) and ${postWrite.lint.warnings.length} lint warning(s).`,
-			postWrite.check.issues.length + postWrite.lint.warnings.length,
+			`Written workbook reopened with ${postWrite.check.issues.length} check issue(s), ${postWrite.lint.warnings.length} lint warning(s), and ${postWrite.packageGraphAudit.issues.length} package graph issue(s).`,
+			postWrite.check.issues.length +
+				postWrite.lint.warnings.length +
+				postWrite.packageGraphAudit.issues.length,
 			{
 				output: postWrite.output,
 				outputSha256: postWrite.outputSha256,
 				check: postWrite.check,
 				lint: postWrite.lint,
+				packageGraphAudit: postWrite.packageGraphAudit,
+			},
+		)
+	}
+	if (!postWrite.packageGraphAudit.ok) {
+		return phaseResult(
+			'post-write',
+			'warning',
+			`Written workbook reopened but package graph roundtrip audit found ${postWrite.packageGraphAudit.issues.length} issue(s).`,
+			postWrite.packageGraphAudit.issues.length,
+			{
+				output: postWrite.output,
+				outputSha256: postWrite.outputSha256,
+				packageGraphAudit: postWrite.packageGraphAudit,
 			},
 		)
 	}
 	return phaseResult(
 		'post-write',
 		'ok',
-		'Written workbook reopened and passed post-write verification.',
+		'Written workbook reopened and passed post-write package graph verification.',
 		0,
-		{ output: postWrite.output, outputSha256: postWrite.outputSha256 },
+		{
+			output: postWrite.output,
+			outputSha256: postWrite.outputSha256,
+			packageGraphAudit: postWrite.packageGraphAudit,
+		},
 	)
 }
 

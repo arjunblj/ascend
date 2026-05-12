@@ -155,12 +155,21 @@ describe('agent workflow loss audit', () => {
 		})
 		expect(committed.lossAudit.ok).toBe(true)
 		expect(committed.packageGraphAudit.ok).toBe(false)
+		expect(committed.postWrite.packageGraphAudit.ok).toBe(false)
+		expect(committed.postWrite.packageGraphAudit.issues).toContainEqual(
+			expect.objectContaining({
+				code: 'package_feature_classification',
+				partPath: 'xl/custom/custom1.xml',
+			}),
+		)
 		expect(committed.outputSha256).toMatch(/^[a-f0-9]{64}$/)
 		expect(committed.postWrite.valid).toBe(true)
 		expect(committed.postWrite.outputSha256).toBe(committed.outputSha256)
 		expect(committed.trace.kind).toBe('commit')
 		expect(committed.trace.outputSha256).toBe(committed.outputSha256)
-		expect(committed.trace.phases.find((phase) => phase.phase === 'post-write')?.status).toBe('ok')
+		expect(committed.trace.phases.find((phase) => phase.phase === 'post-write')?.status).toBe(
+			'warning',
+		)
 		expect(committed.modelOutput.blocked).toBe(false)
 		expect(committed.modelOutput.digests.traceDigest).toBe(committed.trace.traceDigest)
 	})
@@ -213,6 +222,8 @@ describe('agent workflow loss audit', () => {
 		expect(committed.lossAudit.ok).toBe(true)
 		expect(committed.packageGraphAudit.ok).toBe(true)
 		expect(committed.postWrite.valid).toBe(true)
+		expect(committed.postWrite.packageGraphAudit.ok).toBe(true)
+		expect(committed.postWrite.packageGraphAudit.policy).toBe('safe-edit-roundtrip')
 		expect(committed.postWrite.reopened).toBe(true)
 		expect(committed.postWrite.check.valid).toBe(true)
 		expect(committed.trace.artifacts.map((artifact) => artifact.name)).toContain('apply')

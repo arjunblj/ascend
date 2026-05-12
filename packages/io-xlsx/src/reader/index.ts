@@ -189,7 +189,7 @@ export function readXlsx(
 		if (!docRel) {
 			return err(ascendError('CORRUPT_FILE', 'No officeDocument relationship found'))
 		}
-		const workbookPath = docRel.target.replace(/^\//, '')
+		const workbookPath = resolvePath('', docRel.target)
 
 		const wbXml = readPart(archive, workbookPath)
 		if (!wbXml) {

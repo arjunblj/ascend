@@ -269,6 +269,43 @@ describe('readXlsx', () => {
 		})
 	})
 
+	it('resolves URI-encoded internal relationship targets to package parts', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/work book.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet 1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/shared Strings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/work%20book.xml"/>
+</Relationships>`,
+			'xl/_rels/work book.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets\\sheet%201.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="shared%20Strings.xml"/>
+</Relationships>`,
+			'xl/work book.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+			'xl/shared Strings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet 1.xml': SHEET_XML,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		expect(result.value.workbook.sheets[0]?.cells.get(0, 0)?.value).toEqual({
+			kind: 'string',
+			value: 'Hello',
+		})
+	})
+
 	it('parses prefixed workbook namespace elements', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': CONTENT_TYPES,

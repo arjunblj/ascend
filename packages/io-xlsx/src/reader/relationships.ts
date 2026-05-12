@@ -107,9 +107,10 @@ export function getRelsPath(partPath: string): string {
 }
 
 export function resolvePath(basePart: string, target: string): string {
-	if (target.startsWith('/')) return target.substring(1)
+	const normalizedTarget = target.replace(/\\/g, '/')
+	if (normalizedTarget.startsWith('/')) return decodePackagePath(normalizedTarget.substring(1))
 	const baseDir = basePart.substring(0, basePart.lastIndexOf('/') + 1)
-	const segments = [...baseDir.split('/').filter(Boolean), ...target.split('/')]
+	const segments = [...baseDir.split('/').filter(Boolean), ...normalizedTarget.split('/')]
 	const resolved: string[] = []
 	for (const segment of segments) {
 		if (segment === '' || segment === '.') continue
@@ -117,7 +118,24 @@ export function resolvePath(basePart: string, target: string): string {
 			resolved.pop()
 			continue
 		}
-		resolved.push(segment)
+		resolved.push(decodePackagePathSegment(segment))
 	}
 	return resolved.join('/')
+}
+
+function decodePackagePath(path: string): string {
+	return path
+		.split('/')
+		.map((segment) => decodePackagePathSegment(segment))
+		.join('/')
+}
+
+function decodePackagePathSegment(segment: string): string {
+	if (!segment.includes('%')) return segment
+	const protectedSeparators = segment.replace(/%(2f|5c)/gi, (match) => `%25${match.slice(1)}`)
+	try {
+		return decodeURIComponent(protectedSeparators)
+	} catch {
+		return segment
+	}
 }

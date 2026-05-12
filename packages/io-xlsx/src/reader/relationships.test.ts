@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { isExternalLinkPathRelationshipType, parseRelationships } from './relationships.ts'
+import {
+	isExternalLinkPathRelationshipType,
+	parseRelationships,
+	resolvePath,
+} from './relationships.ts'
 
 describe('relationships', () => {
 	test('parses XML-legal single-quoted relationship attributes', () => {
@@ -60,5 +64,18 @@ describe('relationships', () => {
 				'http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml',
 			),
 		).toBe(false)
+	})
+
+	test('resolves internal relationship URI targets to package part paths', () => {
+		expect(resolvePath('', 'xl/work%20book.xml')).toBe('xl/work book.xml')
+		expect(resolvePath('xl/work book.xml', 'worksheets/sheet%201.xml')).toBe(
+			'xl/worksheets/sheet 1.xml',
+		)
+		expect(resolvePath('xl/worksheets/sheet 1.xml', '..\\drawings\\drawing%201.xml')).toBe(
+			'xl/drawings/drawing 1.xml',
+		)
+		expect(resolvePath('xl/workbook.xml', 'worksheets/sheet%2F1.xml')).toBe(
+			'xl/worksheets/sheet%2F1.xml',
+		)
 	})
 })

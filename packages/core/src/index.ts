@@ -2,6 +2,8 @@ export {
 	type ActiveContentInfo,
 	type ActiveContentKind,
 	type ActiveXControlInfo,
+	type CustomUiCallbackInfo,
+	type CustomUiInfo,
 	cloneActiveContentInfo,
 	type FormControlInfo,
 	type VbaModuleInfo,

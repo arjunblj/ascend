@@ -1400,7 +1400,14 @@ export function planWriteXlsx(
 		if (capsules) {
 			for (const capsule of capsules) {
 				if (plan.isCapsulePathSkipped(capsule.partPath)) continue
-				if (!isPackageDocPropsCapsule(capsule) && !isPackageSignatureOriginCapsule(capsule)) {
+				const preservedRootRelationship = capsule.relType
+					? preservedPackageRelationship(preservedRootRels, '', capsule.relType, capsule.partPath)
+					: undefined
+				if (
+					!isPackageDocPropsCapsule(capsule) &&
+					!isPackageSignatureOriginCapsule(capsule) &&
+					!preservedRootRelationship
+				) {
 					continue
 				}
 				if (!capsule.relType) continue

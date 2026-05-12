@@ -711,6 +711,16 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 			'packages/io-xlsx/src/reader/active-content.test.ts',
 		],
 	),
+	cap(
+		'active.custom-ui',
+		'active content',
+		'Custom UI callbacks',
+		'inspectable',
+		'P1',
+		'Add safe RibbonX editing and callback-to-VBA linkage diagnostics.',
+		'Office RibbonX custom UI parts are inventoried from package relationships with callback attributes, source relationship provenance, preservation, and executionPolicy=blocked; callback execution and semantic UI edits remain blocked.',
+		['packages/io-xlsx/src/reader/active-content.test.ts'],
+	),
 
 	cap(
 		'connections.external-workbooks',

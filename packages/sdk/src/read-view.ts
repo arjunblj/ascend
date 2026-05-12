@@ -1039,6 +1039,12 @@ function buildCapabilityWarnings(
 			([kind, count]) => `${kind}=${count}`,
 		),
 	)
+	add(
+		'active.custom-ui',
+		countActiveKinds(workbook.activeContent, ['customUi']).map(
+			([kind, count]) => `${kind}=${count}`,
+		),
+	)
 	add('connections.power-query', [
 		...countConnectionKinds(workbook.connectionParts, ['powerQueryMashup']).map(
 			([kind, count]) => `${kind}=${count}`,

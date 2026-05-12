@@ -20,6 +20,7 @@ import { normalizeStoredFormulaText } from '../formula-storage.ts'
 import type { PreservationCapsule } from '../preserve.ts'
 import {
 	parseActiveXControlInfo,
+	parseCustomUiInfo,
 	parseFormControlInfo,
 	parseVmlControlInfos,
 	parseWorksheetControlInfos,
@@ -1157,7 +1158,11 @@ function resolveContentTypeInfo(
 	return { value: 'application/octet-stream', source: 'fallback' }
 }
 
-function capsuleFamily(path: string): string {
+function capsuleFamily(capsule: PreservationCapsule): string {
+	const path = capsule.partPath
+	const lowerPath = path.toLowerCase()
+	const contentType = capsule.contentType.toLowerCase()
+	const relType = capsule.relType?.toLowerCase() ?? ''
 	if (path.startsWith('docProps/')) return 'preservedDocumentProperties'
 	if (path.includes('/chartsheets/')) return 'preservedChartSheet'
 	if (path.includes('/macrosheets/')) return 'preservedMacroSheet'
@@ -1173,6 +1178,7 @@ function capsuleFamily(path: string): string {
 	if (path.includes('/activeX/')) return 'preservedActiveX'
 	if (path.includes('/vbaProject')) return 'preservedMacro'
 	if (path.startsWith('_xmlsignatures/')) return 'preservedSignature'
+	if (isCustomUiPart(lowerPath, contentType, relType)) return 'preservedCustomUi'
 	if (path.includes('/printerSettings/')) return 'preservedPrinterSettings'
 	if (path.startsWith('customXml/')) return 'preservedCustomXml'
 	if (path.includes('/ctrlProps/')) return 'preservedControl'
@@ -1205,7 +1211,7 @@ function workbookSheetEntryKind(
 function categorizeCapsules(capsules: readonly PreservationCapsule[]): Map<string, string[]> {
 	const families = new Map<string, string[]>()
 	for (const capsule of capsules) {
-		const family = capsuleFamily(capsule.partPath)
+		const family = capsuleFamily(capsule)
 		let paths = families.get(family)
 		if (!paths) {
 			paths = []
@@ -1255,6 +1261,10 @@ function collectActiveContent(
 			kind === 'formControl'
 				? parseFormControlInfo(readXmlMetadataPart(archive, capsule.partPath, capsule.contentType))
 				: undefined
+		const customUi =
+			kind === 'customUi'
+				? parseCustomUiInfo(readXmlMetadataPart(archive, capsule.partPath, capsule.contentType))
+				: undefined
 		const relType = capsule.relType ?? sourceRelationship?.relationship.type
 		const sourceRelationshipId = capsule.relId ?? sourceRelationship?.relationship.id
 		activeContent.push({
@@ -1279,6 +1289,7 @@ function collectActiveContent(
 			...(vbaProject ? { vbaProject } : {}),
 			...(activeX ? { activeX } : {}),
 			...(formControl ? { formControl } : {}),
+			...(customUi ? { customUi } : {}),
 			...(worksheetControl ? { worksheetControl } : {}),
 		})
 	}
@@ -1427,9 +1438,17 @@ function classifyActiveContent(capsule: PreservationCapsule): ActiveContentInfo[
 	}
 	if (path.includes('/ctrlprops/') || contentType.includes('controlproperties'))
 		return 'formControl'
-	if (path.startsWith('customui/') || contentType.includes('customui')) return 'customUi'
+	if (isCustomUiPart(path, contentType, relType)) return 'customUi'
 	if (relType.includes('control') || relType.includes('macro')) return 'unknownActiveContent'
 	return null
+}
+
+function isCustomUiPart(path: string, contentType: string, relType: string): boolean {
+	return (
+		path.startsWith('customui/') ||
+		contentType.includes('customui') ||
+		relType.endsWith('/relationships/ui/extensibility')
+	)
 }
 
 function preservedFeatureNote(feature: string): string | undefined {
@@ -1489,6 +1508,9 @@ function preservedFeatureNote(feature: string): string | undefined {
 	}
 	if (feature === 'preservedDocumentProperties') {
 		return 'Document property parts are preserved exactly when untouched; core, app, and custom docProps are inspectable and editable through setDocumentProperties.'
+	}
+	if (feature === 'preservedCustomUi') {
+		return 'Office RibbonX custom UI parts are inventoried with callback metadata and preserved; callback execution is blocked and semantic editing is not yet supported.'
 	}
 	return undefined
 }

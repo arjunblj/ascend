@@ -1,5 +1,6 @@
 import type {
 	ActiveXControlInfo,
+	CustomUiInfo,
 	FormControlInfo,
 	SheetAnchorMarker,
 	SheetImageAnchor,
@@ -15,6 +16,10 @@ type ActiveXControlBuilder = {
 
 type FormControlBuilder = {
 	-readonly [K in keyof FormControlInfo]?: FormControlInfo[K]
+}
+
+type CustomUiBuilder = {
+	-readonly [K in keyof CustomUiInfo]?: CustomUiInfo[K]
 }
 
 type WorksheetControlBuilder = {
@@ -68,6 +73,18 @@ export function parseFormControlInfo(xml: string | undefined): FormControlInfo |
 	const dropLines = numAttr(root, 'dropLines')
 	if (dropLines !== undefined) info.dropLines = dropLines
 	return nonEmpty(info)
+}
+
+export function parseCustomUiInfo(xml: string | undefined): CustomUiInfo | undefined {
+	if (!xml) return undefined
+	const root = firstElement(parseXml(xml), 'customUI')
+	const callbacks = collectCustomUiCallbacks(xml)
+	const namespaceUri = root ? attr(root, 'xmlns') : undefined
+	return {
+		callbackCount: callbacks.length,
+		callbacks,
+		...(namespaceUri ? { namespaceUri } : {}),
+	}
 }
 
 export function parseWorksheetControlInfos(
@@ -187,6 +204,37 @@ const CONTROL_RE =
 	/<(?:[A-Za-z_][\w.-]*:)?control\b([^/>]*?)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?control>|<(?:[A-Za-z_][\w.-]*:)?control\b([^/>]*?)\/>/g
 const VML_SHAPE_RE = /<v:shape\b([^>]*)>([\s\S]*?)<\/v:shape>/g
 const ATTR_RE = /([A-Za-z_][\w:.-]*)=(?:"([^"]*)"|'([^']*)')/g
+const CUSTOM_UI_TAG_RE = /<(?:[A-Za-z_][\w.-]*:)?[A-Za-z_][\w.-]*\b([^<>]*?)(?:\/>|>)/g
+const CUSTOM_UI_CALLBACK_ATTRS = new Set([
+	'getContent',
+	'getDescription',
+	'getEnabled',
+	'getImage',
+	'getItemCount',
+	'getItemID',
+	'getItemImage',
+	'getItemLabel',
+	'getItemScreentip',
+	'getItemSupertip',
+	'getItemWidth',
+	'getKeytip',
+	'getLabel',
+	'getPressed',
+	'getScreentip',
+	'getSelectedItemID',
+	'getSelectedItemIndex',
+	'getShowImage',
+	'getShowLabel',
+	'getSize',
+	'getSupertip',
+	'getText',
+	'getTitle',
+	'getVisible',
+	'loadImage',
+	'onAction',
+	'onChange',
+	'onLoad',
+])
 
 function extractControlNodes(
 	xml: string,
@@ -225,6 +273,22 @@ function parseAttrs(raw: string): ReadonlyMap<string, string> {
 function firstTagAttrs(xml: string, localName: string): ReadonlyMap<string, string> {
 	const re = new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${localName}\\b([^>]*)>`, 'i')
 	return parseAttrs(xml.match(re)?.[1] ?? '')
+}
+
+function collectCustomUiCallbacks(xml: string): CustomUiInfo['callbacks'] {
+	const callbacks: Array<{ attribute: string; macro: string }> = []
+	const seen = new Set<string>()
+	for (const match of xml.matchAll(CUSTOM_UI_TAG_RE)) {
+		const attrs = parseAttrs(match[1] ?? '')
+		for (const [attribute, macro] of attrs) {
+			if (!CUSTOM_UI_CALLBACK_ATTRS.has(attribute) || macro.length === 0) continue
+			const key = `${attribute}\u0000${macro}`
+			if (seen.has(key)) continue
+			seen.add(key)
+			callbacks.push({ attribute, macro })
+		}
+	}
+	return callbacks
 }
 
 function parseWorksheetControlAnchor(xml: string): SheetImageAnchor | undefined {
@@ -296,6 +360,7 @@ function assignText<
 	T extends
 		| ActiveXControlBuilder
 		| FormControlBuilder
+		| CustomUiBuilder
 		| WorksheetControlBuilder
 		| VmlControlBuilder,
 	K extends keyof T,
@@ -303,8 +368,8 @@ function assignText<
 	if (value !== undefined && value.length > 0) info[key] = value as T[K]
 }
 
-function nonEmpty<T extends ActiveXControlBuilder | FormControlBuilder | WorksheetControlBuilder>(
-	info: T,
-): T | undefined {
+function nonEmpty<
+	T extends ActiveXControlBuilder | FormControlBuilder | CustomUiBuilder | WorksheetControlBuilder,
+>(info: T): T | undefined {
 	return Object.keys(info).length > 0 ? info : undefined
 }

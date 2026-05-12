@@ -41,6 +41,17 @@ export interface FormControlInfo {
 	readonly dropLines?: number
 }
 
+export interface CustomUiCallbackInfo {
+	readonly attribute: string
+	readonly macro: string
+}
+
+export interface CustomUiInfo {
+	readonly namespaceUri?: string
+	readonly callbackCount: number
+	readonly callbacks: readonly CustomUiCallbackInfo[]
+}
+
 export interface WorksheetControlInfo {
 	readonly shapeId?: number
 	readonly name?: string
@@ -76,6 +87,7 @@ export interface ActiveContentInfo {
 	readonly vbaProject?: VbaProjectInfo
 	readonly activeX?: ActiveXControlInfo
 	readonly formControl?: FormControlInfo
+	readonly customUi?: CustomUiInfo
 	readonly worksheetControl?: WorksheetControlInfo
 }
 
@@ -84,6 +96,14 @@ export function cloneActiveContentInfo(entry: ActiveContentInfo): ActiveContentI
 		...entry,
 		...(entry.activeX ? { activeX: { ...entry.activeX } } : {}),
 		...(entry.formControl ? { formControl: { ...entry.formControl } } : {}),
+		...(entry.customUi
+			? {
+					customUi: {
+						...entry.customUi,
+						callbacks: entry.customUi.callbacks.map((callback) => ({ ...callback })),
+					},
+				}
+			: {}),
 		...(entry.worksheetControl
 			? {
 					worksheetControl: {

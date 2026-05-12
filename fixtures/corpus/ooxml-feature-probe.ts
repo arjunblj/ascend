@@ -56,6 +56,9 @@ export interface OoxmlAnalyticsProbe {
 	readonly pivotCacheRelationships: readonly OoxmlRelationshipProbe[]
 	readonly pivotCacheRecordRelationships: readonly OoxmlRelationshipProbe[]
 	readonly slicerCacheRelationships: readonly OoxmlRelationshipProbe[]
+	readonly slicerRelationships: readonly OoxmlRelationshipProbe[]
+	readonly timelineCacheRelationships: readonly OoxmlRelationshipProbe[]
+	readonly timelineRelationships: readonly OoxmlRelationshipProbe[]
 	readonly pivotTables: readonly OoxmlPivotTableProbe[]
 	readonly pivotCaches: readonly OoxmlPivotCacheProbe[]
 	readonly pivotCacheRecords: readonly string[]
@@ -72,7 +75,10 @@ const PIVOT_CACHE_RECORDS_REL =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheRecords'
 const PIVOT_TABLE_REL =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable'
+const SLICER_REL = 'http://schemas.microsoft.com/office/2007/relationships/slicer'
 const SLICER_CACHE_REL = 'http://schemas.microsoft.com/office/2007/relationships/slicerCache'
+const TIMELINE_REL = 'http://schemas.microsoft.com/office/2011/relationships/timeline'
+const TIMELINE_CACHE_REL = 'http://schemas.microsoft.com/office/2011/relationships/timelineCache'
 const STRICT_REL_PREFIX = 'http://purl.oclc.org/ooxml/officeDocument/relationships/'
 const TRANSITIONAL_REL_PREFIX =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
@@ -96,10 +102,10 @@ export function inspectOoxmlPackageFeatures(bytes: Uint8Array): OoxmlPackageProb
 		comments: countPaths(paths, /^xl\/comments\d+\.xml$/i),
 		threaded_comments: countPaths(paths, /^xl\/threadedComments\//i),
 		media: countPaths(paths, /^xl\/media\//i),
-		slicers: countPaths(paths, /^xl\/slicers\//i),
-		slicer_caches: countPaths(paths, /^xl\/slicerCaches\//i),
-		timelines: countPaths(paths, /^xl\/timelines\//i),
-		timeline_caches: countPaths(paths, /^xl\/timelineCaches\//i),
+		slicers: countPaths(paths, /^xl\/slicers\/(?!_rels\/).+/i),
+		slicer_caches: countPaths(paths, /^xl\/slicerCaches\/(?!_rels\/).+/i),
+		timelines: countPaths(paths, /^xl\/timelines\/(?!_rels\/).+/i),
+		timeline_caches: countPaths(paths, /^xl\/timelineCaches\/(?!_rels\/).+/i),
 		sparklines: countXmlTags(worksheetXml, 'sparklineGroup'),
 		macros: countPaths(paths, /^xl\/vbaProject\.bin$/i),
 		active_content:
@@ -133,6 +139,13 @@ export function inspectOoxmlPackageFeatures(bytes: Uint8Array): OoxmlPackageProb
 		pivotCacheRecordRelationships,
 		slicerCacheRelationships: relationships.filter(
 			(relationship) => relationship.type === SLICER_CACHE_REL,
+		),
+		slicerRelationships: relationships.filter((relationship) => relationship.type === SLICER_REL),
+		timelineCacheRelationships: relationships.filter(
+			(relationship) => relationship.type === TIMELINE_CACHE_REL,
+		),
+		timelineRelationships: relationships.filter(
+			(relationship) => relationship.type === TIMELINE_REL,
 		),
 		pivotTables: paths
 			.filter((path) => /^xl\/pivotTables\/pivotTable\d+\.xml$/i.test(path))

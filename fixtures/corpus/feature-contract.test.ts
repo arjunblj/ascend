@@ -1266,6 +1266,7 @@ function assertAnalyticsReadIntegrity(
 		semanticPivotNames,
 	})
 	assertLinkedCacheIntegrity(entry, 'timeline', analytics.timelineCaches, analytics.timelines, {
+		cacheRelationships: analytics.timelineCacheRelationships,
 		semanticCaches: semanticSummary.timelineCaches,
 		semanticUis: semanticSummary.timelines,
 		semanticPivotNames,
@@ -1389,6 +1390,15 @@ function assertAnalyticsEditIntegrity(
 	)
 	expect(expectRelationshipSignature(after.analytics.slicerCacheRelationships)).toEqual(
 		expectRelationshipSignature(before.analytics.slicerCacheRelationships),
+	)
+	expect(expectRelationshipSignature(after.analytics.slicerRelationships)).toEqual(
+		expectRelationshipSignature(before.analytics.slicerRelationships),
+	)
+	expect(expectRelationshipSignature(after.analytics.timelineCacheRelationships)).toEqual(
+		expectRelationshipSignature(before.analytics.timelineCacheRelationships),
+	)
+	expect(expectRelationshipSignature(after.analytics.timelineRelationships)).toEqual(
+		expectRelationshipSignature(before.analytics.timelineRelationships),
 	)
 }
 

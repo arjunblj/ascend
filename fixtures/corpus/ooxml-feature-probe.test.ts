@@ -14,12 +14,14 @@ describe('OOXML feature probe', () => {
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rIdPivotCache" Type="http://purl.oclc.org/ooxml/officeDocument/relationships/pivotCacheDefinition" Target="/xl/pivotCache/./pivotCacheDefinition1.xml"/>
   <Relationship Id="rIdSlicerCache" Type="http://schemas.microsoft.com/office/2007/relationships/slicerCache" Target="slicerCaches\\slicerCache1.xml"/>
+  <Relationship Id="rIdTimelineCache" Type="http://schemas.microsoft.com/office/2011/relationships/timelineCache" Target="/xl/timelineCaches/timelineCache1.xml"/>
 </Relationships>`,
 			'xl/worksheets/sheet1.xml': '<worksheet/>',
 			'xl/worksheets/sheet2.xml': '<worksheet><sheetProtection sheet="1"/></worksheet>',
 			'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rIdPivotTable" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable" Target="../pivotTables/pivotTable1.xml"/>
+  <Relationship Id="rIdTimeline" Type="http://schemas.microsoft.com/office/2011/relationships/timeline" Target="../timelines/timeline1.xml"/>
 </Relationships>`,
 			'xl/pivotTables/pivotTable1.xml': `<?xml version="1.0"?>
 <pivotTableDefinition name="PivotTable1" cacheId="34">
@@ -37,6 +39,10 @@ describe('OOXML feature probe', () => {
   <data><tabular pivotCacheId="34"/></data>
   <pivotTables><pivotTable name="PivotTable1"/></pivotTables>
 </slicerCacheDefinition>`,
+			'xl/slicerCaches/_rels/slicerCache1.xml.rels': `<?xml version="1.0"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSlicer" Type="http://schemas.microsoft.com/office/2007/relationships/slicer" Target="../slicers/slicer1.xml"/>
+</Relationships>`,
 			'xl/slicers/slicer1.xml': `<?xml version="1.0"?>
 <slicers><slicer name="Product" cache="Slicer_Product"/></slicers>`,
 			'xl/timelineCaches/timelineCache1.xml': `<?xml version="1.0"?>
@@ -85,6 +91,17 @@ describe('OOXML feature probe', () => {
 		expect(probe.analytics.slicerCacheRelationships[0]?.targetPartPath).toBe(
 			'xl/slicerCaches/slicerCache1.xml',
 		)
+		expect(probe.analytics.slicerRelationships[0]?.targetPartPath).toBe('xl/slicers/slicer1.xml')
+		expect(probe.analytics.timelineCacheRelationships[0]?.targetPartPath).toBe(
+			'xl/timelineCaches/timelineCache1.xml',
+		)
+		expect(probe.analytics.timelineRelationships).toEqual([
+			expect.objectContaining({
+				sourcePartPath: 'xl/worksheets/sheet1.xml',
+				id: 'rIdTimeline',
+				targetPartPath: 'xl/timelines/timeline1.xml',
+			}),
+		])
 		expect(probe.analytics.slicerCaches[0]).toMatchObject({
 			partPath: 'xl/slicerCaches/slicerCache1.xml',
 			name: 'Slicer_Product',

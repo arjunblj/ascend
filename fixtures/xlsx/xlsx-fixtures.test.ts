@@ -317,7 +317,7 @@ if (poiFixtures.length > 0) {
 				type: 'iconSet',
 				priority: 6,
 				id: '{23404A22-2791-4FFE-B3BF-645D3DA783FE}',
-				formulas: ['0', '33', '67'],
+				formulas: [],
 				iconSet: {
 					iconSet: '3Stars',
 					cfvo: [

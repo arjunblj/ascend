@@ -3232,7 +3232,7 @@ describe('readXlsx', () => {
 			{
 				index: 0,
 				sqref: 'A1:A5',
-				formulas: ['A1'],
+				formulas: [],
 				type: 'dataBar',
 				priority: 4,
 				preservedRuleAttributes: {

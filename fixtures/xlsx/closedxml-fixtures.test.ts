@@ -330,7 +330,7 @@ describe('ClosedXML XLSX fixture corpus', () => {
 			{
 				index: 1,
 				sqref: 'B2:B6',
-				formulas: ['0', '0'],
+				formulas: [],
 				type: 'dataBar',
 				id: '{0671ebad-2a52-43f6-a3a9-585018af6f01}',
 				dataBar: {
@@ -347,7 +347,7 @@ describe('ClosedXML XLSX fixture corpus', () => {
 			{
 				index: 2,
 				sqref: 'C2:C6',
-				formulas: ['0', '10'],
+				formulas: [],
 				type: 'dataBar',
 				id: '{0b10551c-b4e0-4975-ac10-c045e09df4bf}',
 				dataBar: {
@@ -364,7 +364,7 @@ describe('ClosedXML XLSX fixture corpus', () => {
 			{
 				index: 3,
 				sqref: 'D2:D6',
-				formulas: ['50', '100'],
+				formulas: [],
 				type: 'dataBar',
 				id: '{49ad88bb-d5a9-4684-afcc-8033d8d051eb}',
 				dataBar: {
@@ -381,7 +381,7 @@ describe('ClosedXML XLSX fixture corpus', () => {
 			{
 				index: 4,
 				sqref: 'E2:E6',
-				formulas: ['-SUM($A$2:$E$2)', 'SUM($A$6:$E$6)'],
+				formulas: [],
 				type: 'dataBar',
 				id: '{93055e58-8649-4a74-9a8e-1e4036062ece}',
 				dataBar: {
@@ -398,7 +398,7 @@ describe('ClosedXML XLSX fixture corpus', () => {
 			{
 				index: 5,
 				sqref: 'F2:F6',
-				formulas: ['30', '70'],
+				formulas: [],
 				type: 'dataBar',
 				id: '{01b3b3bb-243e-4add-ae5b-fd208d5e5960}',
 				dataBar: {

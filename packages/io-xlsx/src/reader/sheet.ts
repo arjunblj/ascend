@@ -5930,8 +5930,8 @@ function parseX14ConditionalFormats(xml: string, sheet: Sheet, pool?: ValueInter
 			index += 1
 			continue
 		}
-		const formulas = readXmlElementTexts(body, 'f')
 		const rule = readFirstXmlElement(body, 'cfRule')
+		const formulas = rule ? readDirectXmlElementTexts(rule.body, 'f') : []
 		const type = rule ? attr(rule.attrs, 'type') : undefined
 		const priority = rule ? numAttr(rule.attrs, 'priority') : undefined
 		const id = rule ? attr(rule.attrs, 'id') : undefined
@@ -6470,15 +6470,11 @@ function readFirstXmlElementText(xml: string, localName: string): string | undef
 	return readXmlTextContent(body)
 }
 
-function readXmlElementTexts(xml: string, localName: string): string[] {
-	const escapedName = escapeRegExp(localName)
-	const pattern = new RegExp(
-		`<(?:[A-Za-z_][\\w.-]*:)?${escapedName}\\b[^>]*>([\\s\\S]*?)<\\/(?:[A-Za-z_][\\w.-]*:)?${escapedName}>`,
-		'gi',
-	)
+function readDirectXmlElementTexts(xml: string, localName: string): string[] {
 	const values: string[] = []
-	for (const match of xml.matchAll(pattern)) {
-		const text = readXmlTextContent(match[1] ?? '')
+	for (const child of directChildXmlBlocks(xml)) {
+		if (xmlLocalName(child.name) !== localName) continue
+		const text = readXmlTextContent(child.xml)
 		if (text !== undefined) values.push(text)
 	}
 	return values

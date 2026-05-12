@@ -2256,12 +2256,17 @@ function externalReferencesInFormula(entry: X14FormulaReferenceEntry): ExternalM
 }
 
 function sheetNamesForFormula(node: FormulaNode): string[] {
-	const sheetNames = new Set<string>()
+	const sheetNames = new Map<string, string>()
 	for (const ref of extractRefs(node)) {
-		for (const sheetName of sheetNamesForFormulaRef(ref)) sheetNames.add(sheetName)
+		for (const sheetName of sheetNamesForFormulaRef(ref)) addFormulaSheetName(sheetNames, sheetName)
 	}
 	collectSheetQualifiedNameReferences(node, sheetNames)
-	return [...sheetNames]
+	return [...sheetNames.values()]
+}
+
+function addFormulaSheetName(sheetNames: Map<string, string>, sheetName: string): void {
+	const normalized = sheetName.toLowerCase()
+	if (!sheetNames.has(normalized)) sheetNames.set(normalized, sheetName)
 }
 
 function sheetNamesForFormulaRef(ref: FormulaRef): string[] {
@@ -2269,10 +2274,13 @@ function sheetNamesForFormulaRef(ref: FormulaRef): string[] {
 	return ref.sheet ? [ref.sheet] : []
 }
 
-function collectSheetQualifiedNameReferences(node: FormulaNode, sheetNames: Set<string>): void {
+function collectSheetQualifiedNameReferences(
+	node: FormulaNode,
+	sheetNames: Map<string, string>,
+): void {
 	switch (node.type) {
 		case 'name':
-			if (node.sheet) sheetNames.add(node.sheet)
+			if (node.sheet) addFormulaSheetName(sheetNames, node.sheet)
 			break
 		case 'binary':
 			collectSheetQualifiedNameReferences(node.left, sheetNames)
@@ -2297,8 +2305,8 @@ function collectSheetQualifiedNameReferences(node: FormulaNode, sheetNames: Set<
 			collectSheetQualifiedNameReferences(node.target, sheetNames)
 			break
 		case 'sheetSpanRef':
-			if (node.startSheet) sheetNames.add(node.startSheet)
-			if (node.endSheet) sheetNames.add(node.endSheet)
+			if (node.startSheet) addFormulaSheetName(sheetNames, node.startSheet)
+			if (node.endSheet) addFormulaSheetName(sheetNames, node.endSheet)
 			collectSheetQualifiedNameReferences(node.target, sheetNames)
 			break
 		default:

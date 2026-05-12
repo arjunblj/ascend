@@ -139,20 +139,35 @@ describe('checker', () => {
 		wb.addSheet("O'Brien")
 		wb.definedNames.set('BrokenName', 'SUM(MissingSheet!A1,Sheet1!A1)')
 		wb.definedNames.set('QualifiedName', 'MissingSheet!SomeName')
+		wb.definedNames.set('RepeatedQualifiedName', 'MissingSheet!SomeName+missingsheet!OtherName')
 		wb.definedNames.set('TextOnly', '"MissingSheet!A1"')
+		wb.definedNames.set('TextInFunction', 'IF(TRUE,"MissingSheet!SomeName","")')
 		wb.definedNames.set('QuotedLocal', "'O''Brien'!A1")
 		wb.definedNames.set('ExternalName', "'[Budget.xlsx]Data'!$A$1")
+		wb.definedNames.set('ExternalQualifiedName', '[0]!SomeName')
 
 		const result = check(wb)
 		const orphanIssues = result.issues.filter((issue) => issue.rule === 'orphaned-names')
 		const formulaIssue = orphanIssues.find((issue) => issue.details?.name === 'BrokenName')
 		const qualifiedNameIssue = orphanIssues.find((issue) => issue.details?.name === 'QualifiedName')
+		const repeatedQualifiedNameIssues = orphanIssues.filter(
+			(issue) => issue.details?.name === 'RepeatedQualifiedName',
+		)
 		const externalIssue = result.issues.find(
+			(issue) =>
+				issue.rule === 'external-refs' && issue.details?.kind === 'defined-name-external-reference',
+		)
+		const externalNameIssues = result.issues.filter(
 			(issue) =>
 				issue.rule === 'external-refs' && issue.details?.kind === 'defined-name-external-reference',
 		)
 
 		expect(result.passed).toBe(false)
+		expect(orphanIssues.map((issue) => issue.details?.name).sort()).toEqual([
+			'BrokenName',
+			'QualifiedName',
+			'RepeatedQualifiedName',
+		])
 		expect(formulaIssue?.message).toContain('MissingSheet')
 		expect(formulaIssue?.details).toMatchObject({
 			kind: 'defined-name-missing-sheet-reference',
@@ -164,13 +179,27 @@ describe('checker', () => {
 			name: 'QualifiedName',
 			missingSheet: 'MissingSheet',
 		})
+		expect(repeatedQualifiedNameIssues).toHaveLength(1)
+		expect(repeatedQualifiedNameIssues[0]?.details).toMatchObject({
+			kind: 'defined-name-missing-sheet-reference',
+			name: 'RepeatedQualifiedName',
+			missingSheet: 'MissingSheet',
+		})
 		expect(externalIssue?.severity).toBe('warning')
 		expect(externalIssue?.details).toMatchObject({
 			name: 'ExternalName',
 			externalTarget: '[Budget.xlsx]',
 		})
+		expect(externalNameIssues.map((issue) => issue.details?.name).sort()).toEqual([
+			'ExternalName',
+			'ExternalQualifiedName',
+		])
 		expect(orphanIssues.some((issue) => issue.details?.name === 'ExternalName')).toBe(false)
+		expect(orphanIssues.some((issue) => issue.details?.name === 'ExternalQualifiedName')).toBe(
+			false,
+		)
 		expect(orphanIssues.some((issue) => issue.details?.name === 'TextOnly')).toBe(false)
+		expect(orphanIssues.some((issue) => issue.details?.name === 'TextInFunction')).toBe(false)
 		expect(orphanIssues.some((issue) => issue.details?.name === 'QuotedLocal')).toBe(false)
 	})
 
@@ -1393,7 +1422,9 @@ describe('checker', () => {
 						sourcePartPath: 'xl/externalLinks/externalLink1.xml',
 						relationshipPartPath: 'xl/externalLinks/_rels/externalLink1.xml.rels',
 						id: 'rIdPath',
-						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet',
+						rawType:
+							'http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet',
 						rawTarget: '../sources/drifted.xlsx',
 						targetMode: 'Internal',
 						featureFamily: 'preservedExternalLink',
@@ -1402,6 +1433,9 @@ describe('checker', () => {
 			},
 		})
 		const externalIssues = result.issues.filter((i) => i.rule === 'external-link-integrity')
+		const typeMismatch = externalIssues.find(
+			(issue) => issue.details?.kind === 'external-link-package-path-relationship-type-mismatch',
+		)
 		const targetMismatch = externalIssues.find(
 			(issue) => issue.details?.kind === 'external-link-package-path-target-mismatch',
 		)
@@ -1410,6 +1444,17 @@ describe('checker', () => {
 		)
 
 		expect(result.passed).toBe(false)
+		expect(typeMismatch?.severity).toBe('warning')
+		expect(typeMismatch?.refs).toEqual(['xl/externalLinks/_rels/externalLink1.xml.rels#rIdPath'])
+		expect(typeMismatch?.details).toMatchObject({
+			partPath: 'xl/externalLinks/externalLink1.xml',
+			linkRelId: 'rIdPath',
+			expectedType:
+				'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath',
+			actualType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet',
+			actualRawType:
+				'http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet',
+		})
 		expect(targetMismatch?.severity).toBe('error')
 		expect(targetMismatch?.refs).toEqual(['xl/externalLinks/_rels/externalLink1.xml.rels#rIdPath'])
 		expect(targetMismatch?.details).toMatchObject({

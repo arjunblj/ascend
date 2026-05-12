@@ -4088,6 +4088,57 @@ describe('writeXlsx', () => {
 		})
 	})
 
+	it('deduplicates legacy comment VML shape ids after copying notes', () => {
+		const source = commentsAndThreadedCommentsWorkbook()
+		const opened = readXlsx(source)
+		expectOk(opened)
+		const applied = applyOperations(opened.value.workbook, [
+			{ op: 'copyRange', sheet: 'Sheet1', source: 'B1', target: 'E5', mode: 'comments' },
+		])
+		expectOk(applied)
+		expect(applied.value.sheetsModified).toEqual(['Sheet1'])
+
+		const sheet = opened.value.workbook.getSheet('Sheet1')
+		expect(sheet?.comments.get('E5')?.legacyDrawing).toMatchObject({
+			shapeId: '_x0000_s2048',
+			anchor: [4, 15, 4, 2, 6, 20, 8, 8],
+			row: 4,
+			column: 4,
+		})
+
+		const written = writeXlsx(opened.value.workbook, opened.value.capsules, {
+			dirtySheetNames: applied.value.sheetsModified,
+		})
+		expectOk(written)
+		const entries = unzipSync(written.value)
+		const vmlXml = decodeTestXml(entries['xl/drawings/vmlDrawing1.vml'])
+		const noteShapeIds = [
+			...vmlXml.matchAll(/<v:shape\b[^>]*\bid="([^"]+)"[\s\S]*?<x:ClientData ObjectType="Note">/g),
+		].map((match) => match[1])
+		expect(noteShapeIds).toHaveLength(3)
+		expect(new Set(noteShapeIds).size).toBe(3)
+		expect(noteShapeIds).toEqual(['_x0000_s2048', '_x0000_s2049', '_x0000_s2050'])
+		expect(vmlXml).toContain('<x:Anchor>4, 15, 4, 2, 6, 20, 8, 8</x:Anchor>')
+		expect(vmlXml).toContain('<x:Row>4</x:Row>')
+		expect(vmlXml).toContain('<x:Column>4</x:Column>')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		const reopenedSheet = reopened.value.workbook.getSheet('Sheet1')
+		expect(reopenedSheet?.comments.get('B1')).toBeDefined()
+		expect(reopenedSheet?.comments.get('C3')).toBeDefined()
+		expect(reopenedSheet?.comments.get('E5')).toMatchObject({
+			text: 'Legacy visible note',
+			author: 'Ada',
+			legacyDrawing: {
+				shapeId: '_x0000_s2050',
+				anchor: [4, 15, 4, 2, 6, 20, 8, 8],
+				row: 4,
+				column: 4,
+			},
+		})
+	})
+
 	it('preserves conditional formatting and data validations on round-trip', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Rules')

@@ -72,13 +72,18 @@ export function buildCommentsVml(sheet: Sheet): string {
 	out.push('<v:stroke joinstyle="miter"/>')
 	out.push('<v:path gradientshapeok="t" o:connecttype="rect"/>')
 	out.push('</v:shapetype>')
-	let shapeId = 1024
+	const usedShapeIds = new Set<string>()
+	let nextShapeId = nextGeneratedShapeIdStart(sheet)
 	for (const [ref] of sheet.comments) {
 		const pos = parseA1Safe(ref)
 		if (!pos) continue
 		const comment = sheet.comments.get(ref)
 		const drawing = comment?.legacyDrawing
-		const shapeIdValue = drawing?.shapeId ?? `_x0000_s${shapeId}`
+		const shapeIdValue = uniqueCommentShapeId(drawing?.shapeId, usedShapeIds, () => {
+			let candidate = `_x0000_s${nextShapeId++}`
+			while (usedShapeIds.has(candidate)) candidate = `_x0000_s${nextShapeId++}`
+			return candidate
+		})
 		const visible = drawing?.visible ?? false
 		const style = normalizeCommentVmlStyle(drawing?.style, visible)
 		out.push(
@@ -101,10 +106,33 @@ export function buildCommentsVml(sheet: Sheet): string {
 		out.push(`<x:Column>${pos.col}</x:Column>`)
 		out.push('</x:ClientData>')
 		out.push('</v:shape>')
-		shapeId++
 	}
 	out.push('</xml>')
 	return out.toString()
+}
+
+function nextGeneratedShapeIdStart(sheet: Sheet): number {
+	let maxShapeId = 1023
+	for (const comment of sheet.comments.values()) {
+		const match = comment.legacyDrawing?.shapeId?.match(/^_x0000_s(\d+)$/)
+		if (!match) continue
+		maxShapeId = Math.max(maxShapeId, Number(match[1]))
+	}
+	return Math.max(1024, maxShapeId + 1)
+}
+
+function uniqueCommentShapeId(
+	preferred: string | undefined,
+	usedShapeIds: Set<string>,
+	nextGenerated: () => string,
+): string {
+	if (preferred && !usedShapeIds.has(preferred)) {
+		usedShapeIds.add(preferred)
+		return preferred
+	}
+	const generated = nextGenerated()
+	usedShapeIds.add(generated)
+	return generated
 }
 
 function uniqueAuthors(sheet: Sheet): string[] {

@@ -320,19 +320,86 @@ describe('agent workflow loss audit', () => {
 			expect.objectContaining({
 				code: 'visual-sidecar-preservation-risk',
 				severity: 'warning',
-				partPaths: expect.arrayContaining(['xl/drawings/drawing1.xml', 'xl/media/image1.png']),
+				partPaths: expect.arrayContaining([
+					'xl/drawings/drawing1.xml',
+					'xl/media/image1.png',
+					'xl/charts/style1.xml',
+					'xl/charts/colors1.xml',
+				]),
+				packageParts: expect.arrayContaining([
+					expect.objectContaining({
+						partPath: 'xl/drawings/drawing1.xml',
+						featureFamily: 'preservedDrawing',
+						ownerScope: 'drawing',
+						preservationPolicy: 'preserve-exact',
+						bytePreservationExpected: true,
+						contentTypeSource: 'override',
+						sourceRelationshipPart: 'xl/worksheets/_rels/sheet1.xml.rels',
+						sourceRelationshipId: 'rIdDrawing1',
+					}),
+					expect.objectContaining({
+						partPath: 'xl/media/image1.png',
+						featureFamily: 'preservedMedia',
+						ownerScope: 'drawing',
+						contentTypeSource: 'default',
+						sourceRelationshipPart: 'xl/drawings/_rels/drawing1.xml.rels',
+						sourceRelationshipId: 'rIdImage1',
+					}),
+					expect.objectContaining({
+						partPath: 'xl/charts/style1.xml',
+						featureFamily: 'preservedChartStyle',
+						ownerScope: 'unknown',
+						contentTypeSource: 'override',
+					}),
+					expect.objectContaining({
+						partPath: 'xl/charts/colors1.xml',
+						featureFamily: 'preservedChartColor',
+						ownerScope: 'unknown',
+						contentTypeSource: 'override',
+					}),
+				]),
+			}),
+		)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'copied-through-package-parts',
+				packageParts: expect.arrayContaining([
+					expect.objectContaining({
+						partPath: 'xl/charts/style1.xml',
+						featureFamily: 'preservedChartStyle',
+						preservationPolicy: 'preserve-exact',
+					}),
+					expect.objectContaining({
+						partPath: 'xl/charts/colors1.xml',
+						featureFamily: 'preservedChartColor',
+						preservationPolicy: 'preserve-exact',
+					}),
+				]),
 			}),
 		)
 
 		const committed = await commitAgentPlan(
 			input,
 			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 7 }] }],
-			{ output, allowLoss: ['preservedDrawing', 'preservedMedia'] },
+			{
+				output,
+				allowLoss: [
+					'preservedDrawing',
+					'preservedMedia',
+					'preservedChartStyle',
+					'preservedChartColor',
+				],
+			},
 		)
 		expect(committed.postWrite.packageGraphAudit.ok).toBe(true)
 		const outputGraph = inspectXlsxPackageGraph(await Bun.file(output).bytes())
 		expect(outputGraph.parts.map((part) => part.path)).toEqual(
-			expect.arrayContaining(['xl/drawings/drawing1.xml', 'xl/media/image1.png']),
+			expect.arrayContaining([
+				'xl/drawings/drawing1.xml',
+				'xl/media/image1.png',
+				'xl/charts/style1.xml',
+				'xl/charts/colors1.xml',
+			]),
 		)
 	})
 
@@ -570,6 +637,8 @@ function makeVisualXlsx(): Uint8Array {
   <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
   <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
   <Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>
+  <Override PartName="/xl/charts/style1.xml" ContentType="application/vnd.ms-office.chartstyle+xml"/>
+  <Override PartName="/xl/charts/colors1.xml" ContentType="application/vnd.ms-office.chartcolorstyle+xml"/>
 </Types>`),
 				'_rels/.rels': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
@@ -604,6 +673,10 @@ function makeVisualXlsx(): Uint8Array {
   <xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:ext cx="1" cy="1"/><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="1" name="Picture 1"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rIdImage1"/></xdr:blipFill><xdr:spPr/></xdr:pic><xdr:clientData/></xdr:oneCellAnchor>
 </xdr:wsDr>`),
 				'xl/media/image1.png': encode('png-bytes'),
+				'xl/charts/style1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cs:chartStyle xmlns:cs="http://schemas.microsoft.com/office/drawing/2012/chartStyle" id="10"/>`),
+				'xl/charts/colors1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cs:colorStyle xmlns:cs="http://schemas.microsoft.com/office/drawing/2012/chartStyle" meth="cycle"/>`),
 			}),
 		),
 	)

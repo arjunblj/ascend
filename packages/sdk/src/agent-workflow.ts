@@ -140,9 +140,27 @@ export interface WritePolicyDiagnostic {
 	readonly message: string
 	readonly suggestedAction: string
 	readonly partPaths?: readonly string[]
+	readonly packageParts?: readonly WritePolicyPackagePart[]
 	readonly featureFamily?: string
 	readonly ownerScope?: XlsxPackageOwnerScope
 	readonly preservationPolicy?: XlsxPackageLossPolicy
+}
+
+export interface WritePolicyPackagePart {
+	readonly partPath: string
+	readonly featureFamily: string
+	readonly preservationPolicy: XlsxPackageLossPolicy
+	readonly ownerScope: XlsxPackageOwnerScope
+	readonly bytePreservationExpected: boolean
+	readonly contentType: string
+	readonly contentTypeSource: string
+	readonly sourceRelationshipPart?: string
+	readonly sourceRelationshipId?: string
+	readonly sourceRelationshipType?: string
+	readonly sourceRelationshipRawType?: string
+	readonly sourceRelationshipRawTarget?: string
+	readonly sourceRelationshipResolvedTarget?: string
+	readonly sourceRelationshipTargetMode?: string
 }
 
 export interface AgentWorkflowTrace {
@@ -1186,6 +1204,7 @@ function buildWritePolicyReport(
 	const copiedThroughParts = preservation.parts.filter((part) => part.origin !== 'generated')
 	const generatedParts = preservation.parts.filter((part) => part.origin === 'generated')
 	const skipped = preservation.skippedCapsules
+	const packagePartByPath = new Map(packageGraph.parts.map((part) => [part.path, part]))
 	if (generatedParts.length > 0) {
 		diagnostics.push({
 			code: 'generated-replacement-parts',
@@ -1197,6 +1216,10 @@ function buildWritePolicyReport(
 		})
 	}
 	if (copiedThroughParts.length > 0) {
+		const packageParts = packagePartDetails(
+			packagePartByPath,
+			copiedThroughParts.map((part) => part.path),
+		)
 		diagnostics.push({
 			code: 'copied-through-package-parts',
 			severity: 'info',
@@ -1204,6 +1227,7 @@ function buildWritePolicyReport(
 			suggestedAction:
 				'Expect byte-preservation audit coverage for copied-through package parts after write.',
 			partPaths: copiedThroughParts.map((part) => part.path),
+			...(packageParts.length > 0 ? { packageParts } : {}),
 		})
 	}
 	const signatureParts = packageGraph.parts.filter(
@@ -1218,6 +1242,7 @@ function buildWritePolicyReport(
 			suggestedAction:
 				'Commit only with explicit approval and re-sign the workbook outside Ascend if a trusted signature is required.',
 			partPaths: skippedSignatureParts.map((part) => part.path),
+			packageParts: packagePartDetailsFromParts(skippedSignatureParts),
 			featureFamily: 'preservedSignature',
 			preservationPolicy: 'invalidate-on-edit',
 		})
@@ -1241,6 +1266,7 @@ function buildWritePolicyReport(
 			suggestedAction:
 				'Allow Excel or another spreadsheet application to rebuild calcChain on open; do not treat the old order as authoritative.',
 			partPaths: skippedCalcChainParts.map((part) => part.path),
+			packageParts: packagePartDetailsFromParts(skippedCalcChainParts),
 			featureFamily: 'preservedCalcChain',
 			preservationPolicy: 'discard-on-recalc',
 		})
@@ -1253,6 +1279,7 @@ function buildWritePolicyReport(
 			suggestedAction:
 				'Post-write package graph audit should confirm the calcChain part and workbook relationship survive.',
 			partPaths: calcChainParts.map((part) => part.path),
+			packageParts: packagePartDetailsFromParts(calcChainParts),
 			featureFamily: 'preservedCalcChain',
 			preservationPolicy: 'discard-on-recalc',
 		})
@@ -1264,6 +1291,7 @@ function buildWritePolicyReport(
 			!preservation.parts.some((part) => part.path === path),
 	)
 	if (skippedNonSignatureCalc.length > 0) {
+		const packageParts = packagePartDetails(packagePartByPath, skippedNonSignatureCalc)
 		diagnostics.push({
 			code: 'skipped-preservation-capsules',
 			severity: 'warning',
@@ -1271,6 +1299,7 @@ function buildWritePolicyReport(
 			suggestedAction:
 				'Inspect skippedCapsules and confirm each skipped part is intentionally regenerated or no longer package-reachable.',
 			partPaths: skippedNonSignatureCalc,
+			...(packageParts.length > 0 ? { packageParts } : {}),
 		})
 	}
 	for (const part of packageGraph.parts.filter((part) =>
@@ -1283,6 +1312,7 @@ function buildWritePolicyReport(
 			suggestedAction:
 				'Require explicit approval before writing and never imply macro, ActiveX, callback, or protected-payload execution support.',
 			partPaths: [part.path],
+			packageParts: packagePartDetailsFromParts([part]),
 			featureFamily: part.featureFamily,
 			ownerScope: part.ownerScope,
 			preservationPolicy: part.preservationPolicy,
@@ -1303,25 +1333,30 @@ function buildWritePolicyReport(
 			suggestedAction:
 				'Inspect postWrite.packageGraphAudit before treating visuals or analytical caches as fidelity-safe.',
 			partPaths: visualPartPaths,
+			packageParts: packagePartDetails(packagePartByPath, visualPartPaths),
 			featureFamily: [...visualFamilies].sort().join(','),
 			preservationPolicy: 'preserve-exact',
 		})
 	}
 	if (!packageGraphAudit.ok) {
+		const issuePartPaths = uniqueStrings(
+			packageGraphAudit.issues.flatMap((issue) => (issue.partPath ? [issue.partPath] : [])),
+		)
+		const packageParts = packagePartDetails(packagePartByPath, issuePartPaths)
 		diagnostics.push({
 			code: 'package-graph-audit-issue',
 			severity: 'warning',
 			message: `${packageGraphAudit.issues.length} package graph issue(s) were found before write planning.`,
 			suggestedAction:
 				'Inspect packageGraphAudit.issues and resolve or explicitly accept package graph risk before committing.',
-			partPaths: packageGraphAudit.issues.flatMap((issue) =>
-				issue.partPath ? [issue.partPath] : [],
-			),
+			partPaths: issuePartPaths,
+			...(packageParts.length > 0 ? { packageParts } : {}),
 		})
 	}
 	for (const feature of features) {
 		if (feature.tier !== 'preserved' && feature.tier !== 'unsupported') continue
 		if (isSafePackagePreservationFeature(feature)) continue
+		const packageParts = packagePartDetails(packagePartByPath, feature.locations)
 		diagnostics.push({
 			code: 'approval-required-feature',
 			severity: 'warning',
@@ -1329,6 +1364,7 @@ function buildWritePolicyReport(
 			suggestedAction:
 				'Inspect plan.approvals and pass only the corresponding approval id or allow-loss entry when intentional.',
 			partPaths: feature.locations,
+			...(packageParts.length > 0 ? { packageParts } : {}),
 			featureFamily: feature.feature,
 		})
 	}
@@ -1348,6 +1384,50 @@ function buildWritePolicyReport(
 			calcChainPolicy,
 		},
 	}
+}
+
+function packagePartDetails(
+	packagePartByPath: ReadonlyMap<string, XlsxPackageGraph['parts'][number]>,
+	paths: readonly string[],
+): WritePolicyPackagePart[] {
+	return packagePartDetailsFromParts(
+		uniqueStrings(paths)
+			.map((path) => packagePartByPath.get(path))
+			.filter((part): part is XlsxPackageGraph['parts'][number] => part !== undefined),
+	)
+}
+
+function packagePartDetailsFromParts(
+	parts: readonly XlsxPackageGraph['parts'][number][],
+): WritePolicyPackagePart[] {
+	return parts.map((part) => ({
+		partPath: part.path,
+		featureFamily: part.featureFamily,
+		preservationPolicy: part.preservationPolicy,
+		ownerScope: part.ownerScope,
+		bytePreservationExpected: part.bytePreservationExpected,
+		contentType: part.contentType,
+		contentTypeSource: part.contentTypeSource,
+		...(part.sourceRelationshipPart ? { sourceRelationshipPart: part.sourceRelationshipPart } : {}),
+		...(part.sourceRelationshipId ? { sourceRelationshipId: part.sourceRelationshipId } : {}),
+		...(part.sourceRelationshipType ? { sourceRelationshipType: part.sourceRelationshipType } : {}),
+		...(part.sourceRelationshipRawType
+			? { sourceRelationshipRawType: part.sourceRelationshipRawType }
+			: {}),
+		...(part.sourceRelationshipRawTarget
+			? { sourceRelationshipRawTarget: part.sourceRelationshipRawTarget }
+			: {}),
+		...(part.sourceRelationshipResolvedTarget
+			? { sourceRelationshipResolvedTarget: part.sourceRelationshipResolvedTarget }
+			: {}),
+		...(part.sourceRelationshipTargetMode
+			? { sourceRelationshipTargetMode: part.sourceRelationshipTargetMode }
+			: {}),
+	}))
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+	return [...new Set(values)]
 }
 
 function isActiveContentFeature(featureFamily: string): boolean {

@@ -76,7 +76,14 @@ import { updateSlicerCacheDefinitionXml } from './slicer-cache.ts'
 import { buildPreservedStylesXml, buildStylesXml } from './styles.ts'
 import { buildTableXml } from './table.ts'
 import { buildThemeXml, themeXmlMatches, updateThemeXml } from './theme.ts'
-import { syncThreadedCommentsXml, threadedCommentsMatchModel } from './threaded-comments.ts'
+import {
+	buildThreadedCommentPersonsXml,
+	hasThreadedCommentPersonAuthors,
+	syncThreadedCommentPersonsXml,
+	syncThreadedCommentsXml,
+	threadedCommentPersonsMatchModel,
+	threadedCommentsMatchModel,
+} from './threaded-comments.ts'
 import { updateTimelineCacheDefinitionXml } from './timeline-cache.ts'
 import { buildWorkbookXml } from './workbook.ts'
 import { createZip, encode, StreamingZipBuilder } from './zip.ts'
@@ -100,6 +107,7 @@ const CT_DRAWING = 'application/vnd.openxmlformats-officedocument.drawing+xml'
 const CT_TABLE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml'
 const CT_VML = 'application/vnd.openxmlformats-officedocument.vmlDrawing'
 const CT_THEME = 'application/vnd.openxmlformats-officedocument.theme+xml'
+const CT_THREADED_COMMENT_PERSONS = 'application/vnd.ms-excel.person+xml'
 const STREAMING_XML_BATCH_CHARS = 524_288
 
 function worksheetPartPath(sheet: Workbook['sheets'][number] | undefined, index: number): string {
@@ -1473,6 +1481,51 @@ export function planWriteXlsx(
 			}
 		}
 
+		const workbookThreadedComments = collectWorkbookThreadedComments(workbook)
+		const threadedPersonCapsule = capsules?.find(isThreadedCommentPersonCapsule)
+		const threadedPersonPartPath = threadedPersonCapsule?.partPath ?? 'xl/persons/person.xml'
+		if (threadedPersonCapsule) {
+			if (
+				shouldDropThreadedCommentPersonCapsule(
+					threadedPersonCapsule,
+					workbook,
+					options.dirtySheetNames,
+				)
+			) {
+				plan.skipCapsulePath(threadedPersonCapsule.partPath)
+			} else {
+				const personsXml = sourceArchive?.readText(threadedPersonCapsule.partPath)
+				if (
+					personsXml &&
+					hasThreadedCommentPersonAuthors(workbookThreadedComments) &&
+					!threadedCommentPersonsMatchModel(personsXml, workbookThreadedComments)
+				) {
+					recordXml(
+						threadedPersonCapsule.partPath,
+						{
+							owner: { kind: 'workbook' },
+							origin: 'generated',
+							contentType: threadedPersonCapsule.contentType,
+						},
+						() => syncThreadedCommentPersonsXml(personsXml, workbookThreadedComments),
+					)
+					plan.addOverride(threadedPersonCapsule.partPath, threadedPersonCapsule.contentType)
+					plan.skipCapsulePath(threadedPersonCapsule.partPath)
+				}
+			}
+		} else if (hasThreadedCommentPersonAuthors(workbookThreadedComments)) {
+			recordXml(
+				threadedPersonPartPath,
+				{
+					owner: { kind: 'workbook' },
+					origin: 'generated',
+					contentType: CT_THREADED_COMMENT_PERSONS,
+				},
+				() => buildThreadedCommentPersonsXml(workbookThreadedComments),
+			)
+			plan.addOverride(threadedPersonPartPath, CT_THREADED_COMMENT_PERSONS)
+		}
+
 		const rootRels: RelEntry[] = []
 		const preservedRootRels = preservedRootRelsText ? parseRelationships(preservedRootRelsText) : []
 		const reservedRootRelIds = new Set(preservedRootRels.map((rel) => rel.id))
@@ -1501,11 +1554,6 @@ export function planWriteXlsx(
 			if (shouldWriteCustomDocProps) addRootRel(REL_CUSTOM_PROPS, customPropsPath, customPropsPath)
 		}
 		if (capsules) {
-			for (const capsule of capsules) {
-				if (shouldDropThreadedCommentPersonCapsule(capsule, workbook, options.dirtySheetNames)) {
-					plan.skipCapsulePath(capsule.partPath)
-				}
-			}
 			for (const capsule of capsules) {
 				if (plan.isCapsulePathSkipped(capsule.partPath)) continue
 				const preservedRootRelationship = capsule.relType
@@ -2446,7 +2494,7 @@ function shouldDropThreadedCommentPersonCapsule(
 ): boolean {
 	if (!dirtySheetNames || dirtySheetNames.length === 0) return false
 	if (!isThreadedCommentPersonCapsule(capsule)) return false
-	return workbook.sheets.every((sheet) => sheet.threadedComments.length === 0)
+	return collectWorkbookThreadedComments(workbook).every((comment) => !comment.personId)
 }
 
 function commentsEqual(
@@ -2847,6 +2895,14 @@ function collectThreadedCommentsForPart(
 			comments.push(comment)
 		}
 	}
+	return comments
+}
+
+function collectWorkbookThreadedComments(
+	workbook: Workbook,
+): readonly Workbook['sheets'][number]['threadedComments'][number][] {
+	const comments: Workbook['sheets'][number]['threadedComments'][number][] = []
+	for (const sheet of workbook.sheets) comments.push(...sheet.threadedComments)
 	return comments
 }
 

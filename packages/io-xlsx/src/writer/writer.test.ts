@@ -187,6 +187,21 @@ function commentsAndMixedVmlWorkbook(): Uint8Array {
 	return makeXlsx(parts)
 }
 
+function commentsAndThreadedCommentsWithoutPersonsWorkbook(): Uint8Array {
+	const parts = Object.fromEntries(
+		Object.entries(unzipSync(commentsAndThreadedCommentsWorkbook())).map(([path, bytes]) => [
+			path,
+			new TextDecoder().decode(bytes),
+		]),
+	)
+	delete parts['xl/persons/person.xml']
+	parts['[Content_Types].xml'] = parts['[Content_Types].xml']?.replace(
+		/\n {2}<Override PartName="\/xl\/persons\/person\.xml" ContentType="application\/vnd\.ms-excel\.person\+xml"\/>/,
+		'',
+	)
+	return makeXlsx(parts)
+}
+
 describe('writeXlsx', () => {
 	it('round-trips cell values correctly', () => {
 		const wb = new Workbook()
@@ -6591,6 +6606,65 @@ describe('writeXlsx', () => {
 			text: 'Reviewed & approved',
 			done: true,
 		})
+	})
+
+	it('generates threaded comment persons XML from model author identity', () => {
+		const source = commentsAndThreadedCommentsWithoutPersonsWorkbook()
+		const opened = readXlsx(source)
+		expectOk(opened)
+		const sheet = opened.value.workbook.getSheet('Sheet1')
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+		sheet.threadedComments = sheet.threadedComments.map((comment) => ({
+			...comment,
+			author: comment.personId === '{person-grace}' ? 'Grace Thread' : 'Ada Thread',
+		}))
+
+		const written = writeXlsx(opened.value.workbook, opened.value.capsules, {
+			dirtySheetNames: [sheet.name],
+		})
+		expectOk(written)
+		const entries = unzipSync(written.value)
+		const personsXml = decodeTestXml(entries['xl/persons/person.xml'])
+		expect(personsXml).toContain('id="{person-ada}"')
+		expect(personsXml).toContain('displayName="Ada Thread"')
+		expect(personsXml).toContain('id="{person-grace}"')
+		expect(personsXml).toContain('displayName="Grace Thread"')
+		const contentTypesXml = decodeTestXml(entries['[Content_Types].xml'])
+		expect(contentTypesXml).toContain('ContentType="application/vnd.ms-excel.person+xml"')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.getSheet('Sheet1')?.threadedComments).toEqual(
+			sheet.threadedComments,
+		)
+	})
+
+	it('repairs stale threaded comment person display names on dirty writes', () => {
+		const source = commentsAndThreadedCommentsWorkbook()
+		const opened = readXlsx(source)
+		expectOk(opened)
+		const sheet = opened.value.workbook.getSheet('Sheet1')
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+		sheet.threadedComments = sheet.threadedComments.map((comment) =>
+			comment.personId === '{person-ada}' ? { ...comment, author: 'Ada Updated' } : comment,
+		)
+
+		const written = writeXlsx(opened.value.workbook, opened.value.capsules, {
+			dirtySheetNames: [sheet.name],
+		})
+		expectOk(written)
+		const entries = unzipSync(written.value)
+		const personsXml = decodeTestXml(entries['xl/persons/person.xml'])
+		expect(personsXml).toContain('id="{person-ada}" displayName="Ada Updated"')
+		expect(personsXml).toContain('id="{person-grace}" displayName="Grace Thread"')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.getSheet('Sheet1')?.threadedComments).toEqual(
+			sheet.threadedComments,
+		)
 	})
 
 	it('writes shifted threaded comment refs from the current model', () => {

@@ -8,6 +8,10 @@ const THREADED_COMMENT_RE = new RegExp(
 	'g',
 )
 const TEXT_RE = new RegExp(String.raw`<(${PREFIXED_TAG}text)\b([^>]*)>([\s\S]*?)<\/\1>`)
+const PERSON_RE = new RegExp(
+	String.raw`<(${PREFIXED_TAG}person)\b([^>]*?)(\/>|>([\s\S]*?)<\/\1>)`,
+	'g',
+)
 
 export interface ThreadedCommentTextRef {
 	readonly id?: string
@@ -103,6 +107,79 @@ export function syncThreadedCommentsXml(
 	)
 }
 
+export function threadedCommentPersonsMatchModel(
+	xml: string,
+	comments: readonly SheetThreadedComment[],
+): boolean {
+	const requiredPeople = collectRequiredThreadedCommentPeople(comments)
+	if (requiredPeople.size === 0) return true
+	const sourcePeople = readThreadedCommentPersons(xml)
+	for (const [personId, author] of requiredPeople) {
+		if (sourcePeople.get(personId) !== author) return false
+	}
+	return true
+}
+
+export function syncThreadedCommentPersonsXml(
+	xml: string,
+	comments: readonly SheetThreadedComment[],
+): string {
+	const requiredPeople = collectRequiredThreadedCommentPeople(comments)
+	if (requiredPeople.size === 0) return xml
+
+	const seen = new Set<string>()
+	const updated = xml.replace(
+		PERSON_RE,
+		(personXml, tag: string, attrs: string, closeOrBody: string) => {
+			const personId = readXmlAttr(attrs, 'id') ?? readXmlAttr(attrs, 'personId')
+			if (!personId) return personXml
+			const author = requiredPeople.get(personId)
+			if (author === undefined) return personXml
+			seen.add(personId)
+			const nextAttrs = setXmlAttr(attrs, 'displayName', author)
+			return `<${tag}${nextAttrs}${closeOrBody}`
+		},
+	)
+	const missingPeople = [...requiredPeople].filter(([personId]) => !seen.has(personId))
+	if (missingPeople.length === 0) return updated
+
+	const rootClose = /<\/((?:[A-Za-z_][\w.-]*:)?(?:personList|persons|PersonList))>\s*$/u
+	const match = updated.match(rootClose)
+	const personPrefix = inferPersonTagPrefix(updated)
+	const renderedPeople = missingPeople
+		.map(
+			([personId, author]) =>
+				`<${personPrefix}person id="${escapeXml(personId)}" displayName="${escapeXml(author)}"/>`,
+		)
+		.join('\n')
+	if (!match) return `${updated}\n${renderedPeople}`
+	const closingTag = match[0].trim()
+	return updated.replace(
+		rootClose,
+		`${renderedPeople ? `\n${renderedPeople}\n` : '\n'}${closingTag}`,
+	)
+}
+
+export function buildThreadedCommentPersonsXml(comments: readonly SheetThreadedComment[]): string {
+	const people = collectRequiredThreadedCommentPeople(comments)
+	const persons = [...people]
+		.map(
+			([personId, author]) =>
+				`  <person id="${escapeXml(personId)}" displayName="${escapeXml(author)}"/>`,
+		)
+		.join('\n')
+	return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<personList xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">
+${persons}
+</personList>`
+}
+
+export function hasThreadedCommentPersonAuthors(
+	comments: readonly SheetThreadedComment[],
+): boolean {
+	return collectRequiredThreadedCommentPeople(comments).size > 0
+}
+
 function findThreadedCommentUpdate(
 	attrs: string,
 	updates: readonly ThreadedCommentTextRef[],
@@ -172,6 +249,37 @@ function readSourceThreadedComments(xml: string): readonly SourceThreadedComment
 		})
 	}
 	return refs
+}
+
+function readThreadedCommentPersons(xml: string): Map<string, string> {
+	const people = new Map<string, string>()
+	for (const match of xml.matchAll(PERSON_RE)) {
+		const attrs = match[2] ?? ''
+		const personId = readXmlAttr(attrs, 'id') ?? readXmlAttr(attrs, 'personId')
+		const displayName =
+			readXmlAttr(attrs, 'displayName') ??
+			readXmlAttr(attrs, 'name') ??
+			readXmlAttr(attrs, 'userId')
+		if (personId && displayName) people.set(personId, displayName)
+	}
+	return people
+}
+
+function collectRequiredThreadedCommentPeople(
+	comments: readonly SheetThreadedComment[],
+): Map<string, string> {
+	const people = new Map<string, string>()
+	for (const comment of comments) {
+		if (!comment.personId || !comment.author || people.has(comment.personId)) continue
+		people.set(comment.personId, comment.author)
+	}
+	return people
+}
+
+function inferPersonTagPrefix(xml: string): string {
+	const match = xml.match(new RegExp(String.raw`<(${PREFIXED_TAG}person)\b`, 'u'))
+	const tag = match?.[1]
+	return tag?.includes(':') ? `${tag.slice(0, tag.indexOf(':'))}:` : ''
 }
 
 function updateThreadedCommentElement(

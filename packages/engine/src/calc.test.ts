@@ -1185,6 +1185,69 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(16, 29)?.value).toEqual(numberValue(0))
 	})
 
+	test('GETPIVOTDATA validates report filter arguments against selected page fields', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Pivot Tables')
+		sheet.cells.set(0, 0, { value: stringValue('Grand Total'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Sum of Sales'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('Grand Total'), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(100), formula: null, styleId: sid })
+		sheet.cells.set(3, 0, {
+			value: EMPTY,
+			formula: 'GETPIVOTDATA("Sales",$A$1,"Region","North")',
+			styleId: sid,
+		})
+		sheet.cells.set(4, 0, {
+			value: EMPTY,
+			formula: 'GETPIVOTDATA("Sales",$A$1,"Region","South")',
+			styleId: sid,
+		})
+		wb.pivotCaches.push({
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			cacheId: 1,
+			fields: [
+				{
+					index: 0,
+					name: 'Region',
+					sharedItems: [
+						{ index: 0, kind: 'string', value: 'North' },
+						{ index: 1, kind: 'string', value: 'South' },
+					],
+				},
+				{ index: 1, name: 'Sales' },
+			],
+		})
+		wb.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'Pivot Tables',
+			name: 'PivotTable1',
+			cacheId: 1,
+			locationRef: 'A1:B2',
+			fields: [
+				{
+					index: 0,
+					axis: 'axisPage',
+					name: 'Region',
+					items: [
+						{ index: 0, cacheIndex: 0 },
+						{ index: 1, cacheIndex: 1 },
+					],
+				},
+				{ index: 1, dataField: true, name: 'Sales' },
+			],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [{ index: 0, item: 0 }],
+			dataFields: [{ fieldIndex: 1, name: 'Sum of Sales', subtotal: 'sum' }],
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(3, 0)?.value).toEqual(numberValue(100))
+		expect(sheet.cells.get(4, 0)?.value).toEqual(errorValue('#REF!'))
+	})
+
 	test('binary arithmetic broadcasts row and column arrays', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

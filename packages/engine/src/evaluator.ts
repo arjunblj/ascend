@@ -1335,9 +1335,78 @@ function lookupPivotValueForFilters(
 		const bounds = parsePivotLocation(pivot.locationRef)
 		if (!bounds) continue
 		if (!rangesIntersect(anchorBounds, bounds)) continue
-		const value = lookupVisiblePivotValue(ctx, anchorBounds.sheetIndex, bounds, dataField, filters)
+		const visibleFilters = resolvePivotPageFilters(ctx.workbook, pivot, filters)
+		if (!visibleFilters) continue
+		const value = lookupVisiblePivotValue(
+			ctx,
+			anchorBounds.sheetIndex,
+			bounds,
+			dataField,
+			visibleFilters,
+		)
 		if (value) return value
 	}
+	return null
+}
+
+function resolvePivotPageFilters(
+	workbook: Workbook,
+	pivot: Workbook['pivotTables'][number],
+	filters: readonly PivotFilter[],
+): readonly PivotFilter[] | null {
+	if (pivot.pageFields.length === 0 || filters.length === 0) return filters
+	const cache =
+		pivot.cacheId === undefined
+			? undefined
+			: workbook.pivotCaches.find((entry) => entry.cacheId === pivot.cacheId)
+	const visibleFilters: PivotFilter[] = []
+	for (const filter of filters) {
+		const pageField = pivot.pageFields.find((candidate) =>
+			pivotFieldCaptionsMatch(pivot, cache, candidate.index, filter.field),
+		)
+		if (!pageField) {
+			visibleFilters.push(filter)
+			continue
+		}
+		const selected = selectedPivotPageFieldItem(pivot, cache, pageField)
+		if (!selected || selected !== filter.item) return null
+	}
+	return visibleFilters
+}
+
+function pivotFieldCaptionsMatch(
+	pivot: Workbook['pivotTables'][number],
+	cache: Workbook['pivotCaches'][number] | undefined,
+	fieldIndex: number,
+	filterField: string,
+): boolean {
+	const field = pivot.fields[fieldIndex]
+	const cacheField = cache?.fields[fieldIndex]
+	return [
+		field?.name,
+		cacheField?.name,
+		pivot.pageFields.find((entry) => entry.index === fieldIndex)?.name,
+		pivot.pageFields.find((entry) => entry.index === fieldIndex)?.caption,
+	]
+		.filter((caption): caption is string => caption !== undefined)
+		.some((caption) => normalizePivotText(caption) === filterField)
+}
+
+function selectedPivotPageFieldItem(
+	pivot: Workbook['pivotTables'][number],
+	cache: Workbook['pivotCaches'][number] | undefined,
+	pageField: Workbook['pivotTables'][number]['pageFields'][number],
+): string | null {
+	if (pageField.index < 0 || pageField.item === undefined) return null
+	const pivotItem = pivot.fields[pageField.index]?.items?.[pageField.item]
+	if (!pivotItem || pivotItem.hidden || pivotItem.missing || pivotItem.cacheIndex === undefined) {
+		return null
+	}
+	const cacheItem = cache?.fields[pageField.index]?.sharedItems?.find(
+		(entry) => entry.index === pivotItem.cacheIndex,
+	)
+	if (cacheItem?.value !== undefined) return normalizePivotText(cacheItem.value)
+	if (cacheItem?.kind === 'missing') return normalizePivotText('(blank)')
 	return null
 }
 

@@ -297,13 +297,27 @@ function buildSheetXmlToSink(
 			rowParts === undefined ? out : { push: (chunk) => rowParts.push(chunk) }
 		if (rowParts === undefined) out.push(rowStart)
 		const rowNumber = row + 1
+		const wroteDenseCellsWithoutRefs =
+			rowParts !== undefined &&
+			options.omitDenseCellRefs === true &&
+			blankCells.length === 0 &&
+			pushDefaultStyleScalarCellsWithoutRefs(
+				rowParts,
+				cells,
+				options.useInlineStrings,
+				options.usePlainStrings,
+			)
 		const omitCellRefs =
+			!wroteDenseCellsWithoutRefs &&
 			options.omitDenseCellRefs === true &&
 			blankCells.length === 0 &&
 			canOmitDenseCellRefs(cells, options.useInlineStrings, options.usePlainStrings)
 		let cellIndex = 0
 		let blankIndex = 0
-		while (cellIndex < cells.length || blankIndex < blankCells.length) {
+		while (
+			!wroteDenseCellsWithoutRefs &&
+			(cellIndex < cells.length || blankIndex < blankCells.length)
+		) {
 			const cellEntry = cells[cellIndex]
 			const blankEntry = blankCells[blankIndex]
 			if (blankEntry && (!cellEntry || blankEntry[0] < cellEntry[0])) {
@@ -749,6 +763,56 @@ function canOmitDenseCellRefs(
 			cell.formulaInfo ||
 			!canOmitDefaultStyleScalarCellRef(cell, useInlineStrings, usePlainStrings)
 		) {
+			return false
+		}
+	}
+	return true
+}
+
+function pushDefaultStyleScalarCellsWithoutRefs(
+	out: string[],
+	cells: readonly (readonly [number, Cell])[],
+	useInlineStrings?: boolean,
+	usePlainStrings?: boolean,
+): boolean {
+	if (cells.length === 0) return false
+	const startLength = out.length
+	for (let index = 0; index < cells.length; index++) {
+		const entry = cells[index]
+		if (!entry || entry[0] !== index) {
+			out.length = startLength
+			return false
+		}
+		const cell = entry[1]
+		if ((cell.styleId as number) !== 0 || cell.formula || cell.formulaInfo) {
+			out.length = startLength
+			return false
+		}
+		const value = cell.value
+		if (value.kind === 'number') {
+			out.push(`<c><v>${value.value}</v></c>`)
+		} else if (value.kind === 'date') {
+			out.push(`<c><v>${value.serial}</v></c>`)
+		} else if (value.kind === 'boolean') {
+			out.push(`<c t="b"><v>${value.value ? '1' : '0'}</v></c>`)
+		} else if (value.kind === 'error') {
+			out.push(`<c t="e"><v>${escapeXml(value.value)}</v></c>`)
+		} else if (value.kind === 'empty') {
+			out.push('<c/>')
+		} else if (value.kind === 'string') {
+			if (usePlainStrings) {
+				out.push(`<c t="str"><v>${escapeXml(value.value)}</v></c>`)
+			} else if (useInlineStrings) {
+				out.push(`<c t="inlineStr"><is><t>${escapeXml(value.value)}</t></is></c>`)
+			} else {
+				out.length = startLength
+				return false
+			}
+		} else if ((usePlainStrings || useInlineStrings) && value.kind === 'richText') {
+			const runsXml = value.runs.map((run) => inlineStrRunXml(run)).join('')
+			out.push(`<c t="inlineStr"><is>${runsXml}</is></c>`)
+		} else {
+			out.length = startLength
 			return false
 		}
 	}

@@ -4428,6 +4428,22 @@ describe('writeXlsx', () => {
 		expect(readSheet?.cells.get(1, 1)?.value).toEqual({ kind: 'string', value: 'sparse' })
 	})
 
+	it('keeps dense cell refs when formula state follows scalar cells', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Test')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: S0 })
+		sheet.cells.set(0, 1, { value: numberValue(2), formula: 'A1+1', styleId: S0 })
+
+		const written = writeXlsx(wb, undefined, { omitDenseCellRefs: true })
+		expectOk(written)
+
+		const zip = unzipSync(written.value)
+		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+		expect(sheetXml).toContain(
+			'<row r="1"><c r="A1"><v>1</v></c><c r="B1"><f>A1+1</f><v>2</v></c></row>',
+		)
+	})
+
 	it('writes dense rows without materializing a workbook', () => {
 		const written = writeDenseRowsXlsx({
 			rows: 2,

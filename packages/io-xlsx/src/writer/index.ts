@@ -37,6 +37,7 @@ import {
 	REL_STYLES,
 	REL_TABLE,
 	REL_THEME,
+	REL_THREADED_COMMENT,
 	REL_TIMELINE_CACHE,
 	REL_VML_DRAWING,
 	REL_WORKSHEET,
@@ -413,6 +414,7 @@ export function planWriteXlsx(
 		])
 		const sheetCapsuleMap = new Map<string, PreservationCapsule[]>()
 		const workbookCapsules: PreservationCapsule[] = []
+		const rewrittenLegacyCommentVmlXml = new Map<string, string>()
 		const liveQueryTablePartPaths = collectLiveQueryTablePartPaths(workbook)
 		let nextGeneratedTableNumber = 1
 		let nextGeneratedCommentsNumber = 1
@@ -985,6 +987,21 @@ export function planWriteXlsx(
 			for (const capsule of sheetCapsules) {
 				if (!capsule.relType) continue
 				if (capsule.relType === REL_TABLE) continue
+				const commentCapsuleAction = reconcileSheetCommentCapsule(
+					capsule,
+					sheet,
+					workbook,
+					sourceArchive,
+					options.dirtySheetNames,
+				)
+				if (commentCapsuleAction.kind === 'drop') {
+					plan.skipCapsulePath(capsule.partPath)
+					continue
+				}
+				if (commentCapsuleAction.kind === 'rewrite') {
+					plan.skipCapsulePath(capsule.partPath)
+					rewrittenLegacyCommentVmlXml.set(capsule.partPath, commentCapsuleAction.xml)
+				}
 				const relId = nextSheetRelId(capsule.relId)
 				sheetRels.push({
 					id: relId,
@@ -1485,6 +1502,11 @@ export function planWriteXlsx(
 		}
 		if (capsules) {
 			for (const capsule of capsules) {
+				if (shouldDropThreadedCommentPersonCapsule(capsule, workbook, options.dirtySheetNames)) {
+					plan.skipCapsulePath(capsule.partPath)
+				}
+			}
+			for (const capsule of capsules) {
 				if (plan.isCapsulePathSkipped(capsule.partPath)) continue
 				const preservedRootRelationship = capsule.relType
 					? preservedPackageRelationship(preservedRootRels, '', capsule.relType, capsule.partPath)
@@ -1520,6 +1542,33 @@ export function planWriteXlsx(
 		if (capsules) {
 			for (const capsule of capsules) {
 				if (isCalcChainCapsule(capsule) && !preserveCalcChainCapsules) continue
+				const rewrittenVmlXml = rewrittenLegacyCommentVmlXml.get(capsule.partPath)
+				if (rewrittenVmlXml !== undefined) {
+					const owner = resolveCapsuleOwner(capsule, sheetNameById)
+					if (!owner) continue
+					recordXml(
+						capsule.partPath,
+						{
+							owner,
+							origin: 'generated',
+							contentType: capsule.contentType,
+						},
+						() => rewrittenVmlXml,
+					)
+					plan.addOverride(capsule.partPath, capsule.contentType)
+					if (capsule.relationships.length > 0) {
+						const capsuleRelsPath = getRelsPath(capsule.partPath)
+						recordXml(
+							capsuleRelsPath,
+							{
+								owner,
+								origin: 'capsule',
+							},
+							() => buildRelsXml(resolveCapsuleRelationships(workbook, capsule)),
+						)
+					}
+					continue
+				}
 				if (plan.isCapsulePathSkipped(capsule.partPath)) continue
 				const content = capsule.content ?? sourceArchive?.readBytes(capsule.partPath)
 				if (!content) continue
@@ -2330,6 +2379,76 @@ function commentVmlRefsMatchSource(
 	}
 }
 
+type SheetCommentCapsuleAction =
+	| { readonly kind: 'preserve' }
+	| { readonly kind: 'drop' }
+	| { readonly kind: 'rewrite'; readonly xml: string }
+
+function reconcileSheetCommentCapsule(
+	capsule: PreservationCapsule,
+	sheet: Workbook['sheets'][number],
+	workbook: Workbook,
+	sourceArchive: ZipArchive | undefined,
+	dirtySheetNames: readonly string[] | undefined,
+): SheetCommentCapsuleAction {
+	if (!dirtySheetNames?.includes(sheet.name)) return { kind: 'preserve' }
+	if (capsule.relType === REL_COMMENTS) {
+		return sheet.comments.size === 0 ? { kind: 'drop' } : { kind: 'preserve' }
+	}
+	if (capsule.relType === REL_VML_DRAWING) {
+		if (sheet.comments.size !== 0) return { kind: 'preserve' }
+		return reconcileLegacyCommentVmlCapsule(sourceArchive, capsule)
+	}
+	if (capsule.relType === REL_THREADED_COMMENT) {
+		return collectThreadedCommentsForPart(workbook, capsule.partPath).length === 0
+			? { kind: 'drop' }
+			: { kind: 'preserve' }
+	}
+	return { kind: 'preserve' }
+}
+
+function reconcileLegacyCommentVmlCapsule(
+	sourceArchive: ZipArchive | undefined,
+	vmlCapsule: PreservationCapsule,
+): SheetCommentCapsuleAction {
+	const xml = sourceArchive?.readText(vmlCapsule.partPath)
+	if (!xml) return { kind: 'preserve' }
+	const stripped = stripLegacyCommentVmlShapes(xml)
+	if (stripped.noteShapeCount === 0) return { kind: 'preserve' }
+	if (stripped.noteShapeCount === stripped.shapeCount) return { kind: 'drop' }
+	if (parseCommentVmlXml(xml).size === 0) return { kind: 'preserve' }
+	return { kind: 'rewrite', xml: stripped.xml }
+}
+
+function stripLegacyCommentVmlShapes(xml: string): {
+	readonly xml: string
+	readonly shapeCount: number
+	readonly noteShapeCount: number
+} {
+	let shapeCount = 0
+	let noteShapeCount = 0
+	const strippedXml = xml.replace(
+		/<([A-Za-z_][\w.-]*:shape|shape)\b(?=[\s/>])(?:[^>]*\/>|[\s\S]*?<\/\1>)/gi,
+		(shape) => {
+			shapeCount++
+			if (!/\bObjectType\s*=\s*["']Note["']/i.test(shape)) return shape
+			noteShapeCount++
+			return ''
+		},
+	)
+	return { xml: strippedXml, shapeCount, noteShapeCount }
+}
+
+function shouldDropThreadedCommentPersonCapsule(
+	capsule: PreservationCapsule,
+	workbook: Workbook,
+	dirtySheetNames: readonly string[] | undefined,
+): boolean {
+	if (!dirtySheetNames || dirtySheetNames.length === 0) return false
+	if (!isThreadedCommentPersonCapsule(capsule)) return false
+	return workbook.sheets.every((sheet) => sheet.threadedComments.length === 0)
+}
+
 function commentsEqual(
 	left: ReadonlyMap<string, { readonly text: string; readonly author?: string }>,
 	right: ReadonlyMap<string, { readonly text: string; readonly author?: string }>,
@@ -2673,6 +2792,10 @@ function isThreadedCommentCapsule(capsule: PreservationCapsule): boolean {
 		capsule.contentType.includes('threadedcomments+xml') ||
 		capsule.partPath.includes('/threadedComments/')
 	)
+}
+
+function isThreadedCommentPersonCapsule(capsule: PreservationCapsule): boolean {
+	return capsule.contentType.includes('person+xml') || capsule.partPath.includes('/persons/')
 }
 
 function isDirtySheetCapsule(

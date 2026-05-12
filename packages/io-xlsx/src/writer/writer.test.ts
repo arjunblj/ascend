@@ -154,6 +154,39 @@ function commentsAndThreadedCommentsWorkbook(): Uint8Array {
 	})
 }
 
+function commentsAndMixedVmlWorkbook(): Uint8Array {
+	const parts = Object.fromEntries(
+		Object.entries(unzipSync(commentsAndThreadedCommentsWorkbook())).map(([path, bytes]) => [
+			path,
+			new TextDecoder().decode(bytes),
+		]),
+	)
+	parts['xl/drawings/vmlDrawing1.vml'] = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xml xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">
+  <o:shapelayout v:ext="edit"><o:idmap v:ext="edit" data="2"/></o:shapelayout>
+  <v:shapetype id="_x0000_t202" coordsize="21600,21600" o:spt="202" path="m,l,21600r21600,l21600,xe">
+    <v:stroke joinstyle="miter"/><v:path gradientshapeok="t" o:connecttype="rect"/>
+  </v:shapetype>
+  <v:shape id="_x0000_s2048" type="#_x0000_t202" style="position:absolute;margin-left:59.25pt;margin-top:1.5pt;width:144pt;height:79.5pt;z-index:1;visibility:visible" fillcolor="#ffffe1" o:insetmode="auto">
+    <v:fill color2="#ffffe1"/><v:shadow on="t" color="black" obscured="t"/><v:path o:connecttype="none"/>
+    <v:textbox style="mso-direction-alt:auto"><div style="text-align:left"/></v:textbox>
+    <x:ClientData ObjectType="Note"><x:MoveWithCells/><x:SizeWithCells/><x:Anchor>1, 15, 0, 2, 3, 20, 4, 8</x:Anchor><x:Visible/><x:Row>0</x:Row><x:Column>1</x:Column></x:ClientData>
+  </v:shape>
+  <v:shape id="_x0000_s2049" type="#_x0000_t202" style="position:absolute;margin-left:90pt;margin-top:36pt;width:120pt;height:60pt;z-index:2;visibility:hidden" fillcolor="#ffffe1" o:insetmode="auto">
+    <v:fill color2="#ffffe1"/><v:shadow on="t" color="black" obscured="t"/><v:path o:connecttype="none"/>
+    <v:textbox style="mso-direction-alt:auto"><div style="text-align:left"/></v:textbox>
+    <x:ClientData ObjectType="Note"><x:MoveWithCells/><x:SizeWithCells/><x:Anchor>2, 10, 2, 4, 5, 30, 6, 12</x:Anchor><x:Visible>false</x:Visible><x:Row>2</x:Row><x:Column>2</x:Column></x:ClientData>
+  </v:shape>
+  <v:shape id="_x0000_sButton" style="position:absolute;visibility:visible">
+    <x:ClientData ObjectType="Button"><x:Anchor>1, 15, 2, 3, 4, 5, 6, 7</x:Anchor><x:Visible/></x:ClientData>
+  </v:shape>
+  <v:shape id="_x0000_sUnknown" style="position:absolute;visibility:visible">
+    <v:textbox><div>preserve unknown VML shape</div></v:textbox>
+  </v:shape>
+</xml>`
+	return makeXlsx(parts)
+}
+
 describe('writeXlsx', () => {
 	it('round-trips cell values correctly', () => {
 		const wb = new Workbook()
@@ -3818,7 +3851,9 @@ describe('writeXlsx', () => {
 		const worksheetXml = decodeTestXml(writtenEntries['xl/worksheets/sheet1.xml'])
 		expect(worksheetXml).toContain('r:id="rIdVml"')
 		expect(worksheetXml).toContain('<t>edited</t>')
-		const worksheetRelsXml = decodeTestXml(writtenEntries['xl/worksheets/_rels/sheet1.xml.rels'])
+		const worksheetRelsXml = writtenEntries['xl/worksheets/_rels/sheet1.xml.rels']
+			? decodeTestXml(writtenEntries['xl/worksheets/_rels/sheet1.xml.rels'])
+			: ''
 		expect(worksheetRelsXml).toContain('Id="rIdComments"')
 		expect(worksheetRelsXml).toContain(
 			'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments"',
@@ -3869,6 +3904,112 @@ describe('writeXlsx', () => {
 			},
 		})
 		expect(reopenedSheet?.threadedComments).toEqual(sheet.threadedComments)
+	})
+
+	it('drops stale comment sidecars after deleting all legacy and threaded comments', () => {
+		const source = commentsAndThreadedCommentsWorkbook()
+		const opened = readXlsx(source)
+		expectOk(opened)
+		const applied = applyOperations(opened.value.workbook, [
+			{ op: 'deleteComment', sheet: 'Sheet1', ref: 'B1' },
+			{ op: 'deleteComment', sheet: 'Sheet1', ref: 'C3' },
+			{ op: 'deleteComment', sheet: 'Sheet1', ref: 'D4' },
+		])
+		expectOk(applied)
+		expect(applied.value.sheetsModified).toEqual(['Sheet1'])
+
+		const sheet = opened.value.workbook.getSheet('Sheet1')
+		expect(sheet?.comments.size).toBe(0)
+		expect(sheet?.threadedComments).toEqual([])
+
+		const written = writeXlsx(opened.value.workbook, opened.value.capsules, {
+			dirtySheetNames: applied.value.sheetsModified,
+		})
+		expectOk(written)
+		const writtenEntries = unzipSync(written.value)
+		expect(writtenEntries['xl/comments1.xml']).toBeUndefined()
+		expect(writtenEntries['xl/drawings/vmlDrawing1.vml']).toBeUndefined()
+		expect(writtenEntries['xl/threadedComments/threadedComment1.xml']).toBeUndefined()
+		expect(writtenEntries['xl/persons/person.xml']).toBeUndefined()
+
+		const worksheetXml = decodeTestXml(writtenEntries['xl/worksheets/sheet1.xml'])
+		expect(worksheetXml).not.toContain('<legacyDrawing')
+		const worksheetRelsXml = writtenEntries['xl/worksheets/_rels/sheet1.xml.rels']
+			? decodeTestXml(writtenEntries['xl/worksheets/_rels/sheet1.xml.rels'])
+			: ''
+		expect(worksheetRelsXml).not.toContain('/relationships/comments')
+		expect(worksheetRelsXml).not.toContain('/relationships/vmlDrawing')
+		expect(worksheetRelsXml).not.toContain('/relationships/threadedComment')
+		const contentTypesXml = decodeTestXml(writtenEntries['[Content_Types].xml'])
+		expect(contentTypesXml).not.toContain('spreadsheetml.comments+xml')
+		expect(contentTypesXml).not.toContain('vnd.ms-excel.threadedcomments+xml')
+		expect(contentTypesXml).not.toContain('vnd.ms-excel.person+xml')
+
+		const writtenGraph = inspectXlsxPackageGraph(written.value)
+		expect(auditXlsxPackageGraphReadIntegrity(writtenGraph)).toEqual([])
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		const reopenedSheet = reopened.value.workbook.getSheet('Sheet1')
+		expect(reopenedSheet?.comments.size).toBe(0)
+		expect(reopenedSheet?.threadedComments).toEqual([])
+	})
+
+	it('strips deleted legacy comment shapes from mixed VML drawings without dropping controls', () => {
+		const source = commentsAndMixedVmlWorkbook()
+		const opened = readXlsx(source)
+		expectOk(opened)
+		const applied = applyOperations(opened.value.workbook, [
+			{ op: 'deleteComment', sheet: 'Sheet1', ref: 'B1' },
+			{ op: 'deleteComment', sheet: 'Sheet1', ref: 'C3' },
+		])
+		expectOk(applied)
+
+		const written = writeXlsx(opened.value.workbook, opened.value.capsules, {
+			dirtySheetNames: applied.value.sheetsModified,
+		})
+		expectOk(written)
+		const writtenEntries = unzipSync(written.value)
+		expect(writtenEntries['xl/comments1.xml']).toBeUndefined()
+		expect(writtenEntries['xl/drawings/vmlDrawing1.vml']).toBeDefined()
+
+		const vmlXml = decodeTestXml(writtenEntries['xl/drawings/vmlDrawing1.vml'])
+		expect(vmlXml).not.toContain('_x0000_s2048')
+		expect(vmlXml).not.toContain('_x0000_s2049')
+		expect(vmlXml).toContain('_x0000_sButton')
+		expect(vmlXml).toContain('ObjectType="Button"')
+		expect(vmlXml).toContain('_x0000_sUnknown')
+		expect(vmlXml).toContain('preserve unknown VML shape')
+
+		const worksheetXml = decodeTestXml(writtenEntries['xl/worksheets/sheet1.xml'])
+		expect(worksheetXml).toContain('<legacyDrawing')
+		const worksheetRelsXml = decodeTestXml(writtenEntries['xl/worksheets/_rels/sheet1.xml.rels'])
+		expect(worksheetRelsXml).not.toContain('/relationships/comments')
+		expect(worksheetRelsXml).toContain('/relationships/vmlDrawing')
+		expect(worksheetRelsXml).toContain('/relationships/threadedComment')
+		const contentTypesXml = decodeTestXml(writtenEntries['[Content_Types].xml'])
+		expect(contentTypesXml).not.toContain('spreadsheetml.comments+xml')
+		expect(contentTypesXml).toContain('vnd.ms-excel.threadedcomments+xml')
+		expect(contentTypesXml).toContain('vnd.ms-excel.person+xml')
+
+		const writtenGraph = inspectXlsxPackageGraph(written.value)
+		expect(auditXlsxPackageGraphReadIntegrity(writtenGraph)).toEqual([])
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		const reopenedSheet = reopened.value.workbook.getSheet('Sheet1')
+		expect(reopenedSheet?.comments.size).toBe(0)
+		expect(reopenedSheet?.threadedComments).toEqual(
+			opened.value.workbook.getSheet('Sheet1')?.threadedComments,
+		)
+		expect(reopenedSheet?.drawingObjectRefs).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ source: 'vml', vmlObjectType: 'Button' }),
+				expect.objectContaining({
+					source: 'vml',
+					vmlShapeId: '_x0000_sUnknown',
+					text: 'preserve unknown VML shape',
+				}),
+			]),
+		)
 	})
 
 	it('regenerates legacy comment VML from shifted layout metadata', () => {

@@ -1,4 +1,4 @@
-import type { Cell, RangeRef, Sheet, Workbook } from '@ascend/core'
+import type { Cell, RangeRef, Sheet, SheetComment, Workbook } from '@ascend/core'
 import { columnToIndex, parseA1, parseRange, toA1 } from '@ascend/core'
 import { compareValues } from '@ascend/formulas'
 import type { CellValue, Result, SortSpec } from '@ascend/schema'
@@ -93,6 +93,10 @@ interface SortRow {
 		ref: string
 		comment: Sheet['comments'] extends Map<string, infer T> ? T : never
 	}>
+	readonly threadedComments: Array<{
+		colOffset: number
+		comment: Sheet['threadedComments'][number]
+	}>
 	readonly hyperlinks: Array<{
 		colOffset: number
 		ref: string
@@ -127,6 +131,14 @@ function captureSortedRows(sheet: Sheet, range: RangeRef, startRow: number): Sor
 			}
 		}
 
+		const threadedComments: SortRow['threadedComments'] = []
+		for (const comment of sheet.threadedComments) {
+			const pos = parseA1(comment.ref)
+			if (pos.row === row && pos.col >= range.start.col && pos.col <= range.end.col) {
+				threadedComments.push({ colOffset: pos.col - range.start.col, comment })
+			}
+		}
+
 		const hyperlinks: SortRow['hyperlinks'] = []
 		for (const [ref, hyperlink] of sheet.hyperlinks) {
 			const pos = parseA1(ref)
@@ -139,6 +151,7 @@ function captureSortedRows(sheet: Sheet, range: RangeRef, startRow: number): Sor
 			originalIndex: row - startRow,
 			cells,
 			comments,
+			threadedComments,
 			hyperlinks,
 			dataValidations: captureRowScopedSqrefEntries(sheet.dataValidations, range, row),
 			conditionalFormats: captureRowScopedSqrefEntries(sheet.conditionalFormats, range, row),
@@ -196,6 +209,15 @@ function rewriteSortedRows(
 		}
 		sheet.rowHeights.delete(row)
 	}
+	sheet.threadedComments = sheet.threadedComments.filter((comment) => {
+		const pos = parseA1(comment.ref)
+		return (
+			pos.row < startRow ||
+			pos.row > range.end.row ||
+			pos.col < range.start.col ||
+			pos.col > range.end.col
+		)
+	})
 
 	rows.forEach((rowData, index) => {
 		const targetRow = startRow + index
@@ -203,10 +225,18 @@ function rewriteSortedRows(
 			sheet.cells.set(targetRow, range.start.col + entry.colOffset, entry.cell)
 		}
 		for (const entry of rowData.comments) {
+			const target = { row: targetRow, col: range.start.col + entry.colOffset }
+			const original = parseA1(entry.ref)
 			sheet.comments.set(
-				toA1({ row: targetRow, col: range.start.col + entry.colOffset }),
-				entry.comment,
+				toA1(target),
+				retargetLegacyCommentDrawing(entry.comment, target, target.row - original.row),
 			)
+		}
+		for (const entry of rowData.threadedComments) {
+			sheet.threadedComments.push({
+				...entry.comment,
+				ref: toA1({ row: targetRow, col: range.start.col + entry.colOffset }),
+			})
 		}
 		for (const entry of rowData.hyperlinks) {
 			sheet.hyperlinks.set(
@@ -269,6 +299,34 @@ function parseRowScopedSqref(
 	} catch {
 		return null
 	}
+}
+
+function retargetLegacyCommentDrawing(
+	comment: SheetComment,
+	target: { readonly row: number; readonly col: number },
+	rowDelta: number,
+): SheetComment {
+	const drawing = comment.legacyDrawing
+	if (!drawing) return comment
+	return {
+		...comment,
+		legacyDrawing: {
+			...drawing,
+			...(drawing.row !== undefined ? { row: target.row } : {}),
+			...(drawing.column !== undefined ? { column: target.col } : {}),
+			...(drawing.anchor ? { anchor: translateLegacyCommentAnchor(drawing.anchor, rowDelta) } : {}),
+		},
+	}
+}
+
+function translateLegacyCommentAnchor(
+	anchor: NonNullable<NonNullable<SheetComment['legacyDrawing']>['anchor']>,
+	rowDelta: number,
+): NonNullable<NonNullable<SheetComment['legacyDrawing']>['anchor']> {
+	const next = [...anchor] as [number, number, number, number, number, number, number, number]
+	next[2] = Math.max(0, next[2] + rowDelta)
+	next[6] = Math.max(next[2], next[6] + rowDelta)
+	return next
 }
 
 function rewriteRowScopedSqrefEntry<T extends { sqref: string }>(

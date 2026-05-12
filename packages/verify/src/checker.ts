@@ -1525,17 +1525,122 @@ function checkConditionalFormatIntegrity(wb: Workbook): CheckIssue[] {
 	return issues
 }
 
-function checkThreadedCommentIntegrity(wb: Workbook): CheckIssue[] {
+interface ThreadedCommentIntegrityEntry {
+	readonly sheetName: string
+	readonly ref: string
+	readonly index: number
+	readonly partPath: string
+	readonly id?: string
+}
+
+function isThreadedCommentRelationshipType(relationshipType: string | undefined): boolean {
+	return relationshipType?.toLowerCase().endsWith('/relationships/threadedcomment') ?? false
+}
+
+function isCommentsRelationshipType(relationshipType: string | undefined): boolean {
+	return relationshipType?.toLowerCase().endsWith('/relationships/comments') ?? false
+}
+
+function isVmlDrawingRelationshipType(relationshipType: string | undefined): boolean {
+	return relationshipType?.toLowerCase().endsWith('/relationships/vmldrawing') ?? false
+}
+
+function isWorksheetPartPath(partPath: string): boolean {
+	return /(^|\/)worksheets\/sheet\d+\.xml$/i.test(partPath)
+}
+
+function isThreadedCommentPart(part: VerifyPackageGraphPart): boolean {
+	return (
+		part.featureFamily === 'preservedThreadedComments' && /\/threadedComments\//i.test(part.path)
+	)
+}
+
+function isThreadedPersonPart(part: VerifyPackageGraphPart): boolean {
+	return part.featureFamily === 'preservedThreadedComments' && /\/persons\//i.test(part.path)
+}
+
+function checkThreadedCommentIntegrity(
+	wb: Workbook,
+	packageGraph?: VerifyPackageGraph,
+): CheckIssue[] {
 	const issues: CheckIssue[] = []
+	const graphPartByPath = new Map(packageGraph?.parts.map((part) => [part.path, part]) ?? [])
+	const graphRelationshipsByTarget = new Map<string, VerifyPackageGraphRelationship[]>()
+	for (const relationship of packageGraph?.relationships ?? []) {
+		if (!relationship.resolvedTarget) continue
+		const relationships = graphRelationshipsByTarget.get(relationship.resolvedTarget)
+		if (relationships) relationships.push(relationship)
+		else graphRelationshipsByTarget.set(relationship.resolvedTarget, [relationship])
+	}
+	const idsByPart = new Map<string, Map<string, ThreadedCommentIntegrityEntry>>()
+	const rootRefsByPart = new Map<string, Map<string, ThreadedCommentIntegrityEntry>>()
+	const claimedPartsBySheet = new Map<string, Set<string>>()
+	let threadedCommentsWithPersonIds = 0
+
 	for (const sheet of wb.sheets) {
-		const idsByPart = new Map<
-			string,
-			Map<string, { readonly ref: string; readonly index: number }>
-		>()
 		for (let index = 0; index < sheet.threadedComments.length; index++) {
 			const comment = sheet.threadedComments[index]
 			if (!comment) continue
 			const partPath = comment.partPath ?? '(unknown threaded comment part)'
+			if (comment.partPath) {
+				let sheetNames = claimedPartsBySheet.get(comment.partPath)
+				if (!sheetNames) {
+					sheetNames = new Set()
+					claimedPartsBySheet.set(comment.partPath, sheetNames)
+				}
+				sheetNames.add(sheet.name)
+			}
+			if (!comment.ref) {
+				issues.push({
+					rule: 'threaded-comment-integrity',
+					severity: 'error',
+					message: `Threaded comment at index ${index} on sheet "${sheet.name}" is missing a cell reference`,
+					refs: [`${sheet.name}!(missing ref)`],
+					suggestedFix:
+						'Restore the threadedComment ref before writing; comments without cell refs cannot be bound to worksheet cells.',
+					details: {
+						kind: 'missing-threaded-comment-ref',
+						partPath,
+						commentIndex: index,
+						...(comment.id ? { id: comment.id } : {}),
+					},
+				})
+			} else {
+				try {
+					parseA1(comment.ref)
+				} catch {
+					issues.push({
+						rule: 'threaded-comment-integrity',
+						severity: 'error',
+						message: `Threaded comment on sheet "${sheet.name}" has invalid cell reference "${comment.ref}"`,
+						refs: [`${sheet.name}!${comment.ref}`],
+						suggestedFix:
+							'Repair the threadedComment ref before writing; invalid refs cannot be round-tripped safely.',
+						details: {
+							kind: 'invalid-threaded-comment-ref',
+							partPath,
+							commentIndex: index,
+							ref: comment.ref,
+							...(comment.id ? { id: comment.id } : {}),
+						},
+					})
+				}
+			}
+			if (!comment.partPath) {
+				issues.push({
+					rule: 'threaded-comment-integrity',
+					severity: 'warning',
+					message: `Threaded comment at ${sheet.name}!${comment.ref || '(missing ref)'} has no source part path`,
+					refs: [`${sheet.name}!${comment.ref || '(missing ref)'}`],
+					suggestedFix:
+						'Preserve the threadedComments part path before editing or writing threaded comment metadata.',
+					details: {
+						kind: 'missing-threaded-comment-part-path',
+						commentIndex: index,
+						...(comment.id ? { id: comment.id } : {}),
+					},
+				})
+			}
 			if (comment.id) {
 				let ids = idsByPart.get(partPath)
 				if (!ids) {
@@ -1548,7 +1653,7 @@ function checkThreadedCommentIntegrity(wb: Workbook): CheckIssue[] {
 						rule: 'threaded-comment-integrity',
 						severity: 'warning',
 						message: `Duplicate threaded comment id "${comment.id}" on sheet "${sheet.name}"`,
-						refs: [`${sheet.name}!${existing.ref}`, `${sheet.name}!${comment.ref}`],
+						refs: [`${existing.sheetName}!${existing.ref}`, `${sheet.name}!${comment.ref}`],
 						suggestedFix:
 							'Inspect the threadedComments part before editing this thread; duplicate ids make replies ambiguous.',
 						details: {
@@ -1556,13 +1661,70 @@ function checkThreadedCommentIntegrity(wb: Workbook): CheckIssue[] {
 							id: comment.id,
 							firstCommentIndex: existing.index,
 							duplicateCommentIndex: index,
+							...(existing.sheetName !== sheet.name
+								? { firstSheetName: existing.sheetName, duplicateSheetName: sheet.name }
+								: {}),
 						},
 					})
 				} else {
-					ids.set(comment.id, { ref: comment.ref, index })
+					ids.set(comment.id, {
+						sheetName: sheet.name,
+						ref: comment.ref,
+						index,
+						partPath,
+						id: comment.id,
+					})
+				}
+			} else {
+				issues.push({
+					rule: 'threaded-comment-integrity',
+					severity: 'warning',
+					message: `Threaded comment at ${sheet.name}!${comment.ref || '(missing ref)'} is missing an id`,
+					refs: [`${sheet.name}!${comment.ref || '(missing ref)'}`],
+					suggestedFix:
+						'Restore the threadedComment id before editing replies; missing ids make thread parentage ambiguous.',
+					details: {
+						kind: 'missing-threaded-comment-id',
+						partPath,
+						commentIndex: index,
+					},
+				})
+			}
+			if (!comment.parentId && comment.ref) {
+				let rootRefs = rootRefsByPart.get(partPath)
+				if (!rootRefs) {
+					rootRefs = new Map()
+					rootRefsByPart.set(partPath, rootRefs)
+				}
+				const existing = rootRefs.get(comment.ref.toUpperCase())
+				if (existing) {
+					issues.push({
+						rule: 'threaded-comment-integrity',
+						severity: 'warning',
+						message: `Duplicate root threaded comment ref "${comment.ref}" in "${partPath}"`,
+						refs: [`${existing.sheetName}!${existing.ref}`, `${sheet.name}!${comment.ref}`],
+						suggestedFix:
+							'Merge duplicate thread roots or give each threaded comment root a distinct cell ref before writing.',
+						details: {
+							kind: 'duplicate-threaded-comment-root-ref',
+							partPath,
+							ref: comment.ref,
+							firstCommentIndex: existing.index,
+							duplicateCommentIndex: index,
+						},
+					})
+				} else {
+					rootRefs.set(comment.ref.toUpperCase(), {
+						sheetName: sheet.name,
+						ref: comment.ref,
+						index,
+						partPath,
+						...(comment.id ? { id: comment.id } : {}),
+					})
 				}
 			}
 			if (comment.personId && !comment.author) {
+				threadedCommentsWithPersonIds++
 				issues.push({
 					rule: 'threaded-comment-integrity',
 					severity: 'warning',
@@ -1577,12 +1739,50 @@ function checkThreadedCommentIntegrity(wb: Workbook): CheckIssue[] {
 						...(comment.id ? { id: comment.id } : {}),
 					},
 				})
+			} else if (comment.personId) {
+				threadedCommentsWithPersonIds++
 			}
 		}
+	}
+	for (const [partPath, sheetNames] of claimedPartsBySheet) {
+		if (sheetNames.size <= 1) continue
+		issues.push({
+			rule: 'threaded-comment-integrity',
+			severity: 'warning',
+			message: `Threaded comments part "${partPath}" is claimed by multiple sheets`,
+			refs: [...sheetNames],
+			suggestedFix:
+				'Give each worksheet its own threadedComments relationship before writing threaded comment parts.',
+			details: {
+				kind: 'threaded-comment-part-multiple-sheet-owners',
+				partPath,
+				sheetNames: [...sheetNames],
+			},
+		})
+	}
+	for (const sheet of wb.sheets) {
 		for (let index = 0; index < sheet.threadedComments.length; index++) {
 			const comment = sheet.threadedComments[index]
 			if (!comment?.parentId) continue
 			const partPath = comment.partPath ?? '(unknown threaded comment part)'
+			if (comment.id && comment.parentId === comment.id) {
+				issues.push({
+					rule: 'threaded-comment-integrity',
+					severity: 'warning',
+					message: `Threaded comment at ${sheet.name}!${comment.ref} references itself as parent id "${comment.parentId}"`,
+					refs: [`${sheet.name}!${comment.ref}`],
+					suggestedFix:
+						'Repair the threadedComment parentId before editing replies; self-parented replies cannot form a valid thread.',
+					details: {
+						kind: 'self-parented-threaded-comment',
+						partPath,
+						commentIndex: index,
+						id: comment.id,
+						parentId: comment.parentId,
+					},
+				})
+				continue
+			}
 			if (idsByPart.get(partPath)?.has(comment.parentId)) continue
 			issues.push({
 				rule: 'threaded-comment-integrity',
@@ -1600,22 +1800,158 @@ function checkThreadedCommentIntegrity(wb: Workbook): CheckIssue[] {
 			})
 		}
 	}
+	if (!packageGraph) return issues
+
+	const personParts = packageGraph.parts.filter(isThreadedPersonPart)
+	if (threadedCommentsWithPersonIds > 0 && personParts.length === 0) {
+		issues.push({
+			rule: 'threaded-comment-integrity',
+			severity: 'warning',
+			message: 'Threaded comments use person ids but the package graph has no persons part',
+			refs: [...claimedPartsBySheet.keys()],
+			suggestedFix:
+				'Restore the threaded comment persons part before author-sensitive threaded comment edits.',
+			details: {
+				kind: 'missing-threaded-comment-persons-part',
+				threadedCommentPartPaths: [...claimedPartsBySheet.keys()],
+			},
+		})
+	}
+	for (const [partPath, sheetNames] of claimedPartsBySheet) {
+		const graphPart = graphPartByPath.get(partPath)
+		if (!graphPart) {
+			issues.push({
+				rule: 'threaded-comment-integrity',
+				severity: 'error',
+				message: `Threaded comments model references missing package part "${partPath}"`,
+				refs: [partPath],
+				suggestedFix:
+					'Restore the threadedComments package part or clear stale threaded comment metadata before writing.',
+				details: {
+					kind: 'missing-threaded-comment-part',
+					partPath,
+					sheetNames: [...sheetNames],
+				},
+			})
+			continue
+		}
+		const incomingRelationships = graphRelationshipsByTarget.get(partPath) ?? []
+		const threadedRelationships = incomingRelationships.filter((relationship) =>
+			isThreadedCommentRelationshipType(relationship.type),
+		)
+		if (threadedRelationships.length === 0) {
+			issues.push({
+				rule: 'threaded-comment-integrity',
+				severity: 'error',
+				message: `Threaded comments part "${partPath}" has no worksheet threadedComment relationship`,
+				refs: [partPath],
+				suggestedFix:
+					'Restore the worksheet threadedComment relationship before writing threaded comment metadata.',
+				details: {
+					kind: 'threaded-comment-relationship-binding-missing',
+					partPath,
+					graphPart,
+					incomingRelationships: incomingRelationships.map(queryTableRelationshipDetails),
+				},
+			})
+			continue
+		}
+		const worksheetOwners = new Set(
+			threadedRelationships
+				.filter((relationship) => isWorksheetPartPath(relationship.sourcePartPath))
+				.map((relationship) => relationship.sourcePartPath),
+		)
+		if (worksheetOwners.size === 0) {
+			issues.push({
+				rule: 'threaded-comment-integrity',
+				severity: 'warning',
+				message: `Threaded comments part "${partPath}" is not owned by a worksheet relationship`,
+				refs: [partPath],
+				suggestedFix:
+					'Bind the threadedComments part from its owning worksheet before writing threaded comments.',
+				details: {
+					kind: 'threaded-comment-part-non-worksheet-owner',
+					partPath,
+					relationships: threadedRelationships.map(queryTableRelationshipDetails),
+				},
+			})
+		}
+		if (worksheetOwners.size > 1) {
+			issues.push({
+				rule: 'threaded-comment-integrity',
+				severity: 'warning',
+				message: `Threaded comments part "${partPath}" has multiple worksheet relationship owners`,
+				refs: [...worksheetOwners, partPath],
+				suggestedFix:
+					'Give each worksheet a distinct threadedComments part before writing threaded comment metadata.',
+				details: {
+					kind: 'threaded-comment-part-ambiguous-package-owner',
+					partPath,
+					worksheetPartPaths: [...worksheetOwners],
+				},
+			})
+		}
+	}
+	for (const part of packageGraph.parts) {
+		if (!isThreadedCommentPart(part)) continue
+		if (claimedPartsBySheet.has(part.path)) continue
+		issues.push({
+			rule: 'threaded-comment-integrity',
+			severity: 'warning',
+			message: `Threaded comments package part "${part.path}" is not claimed by any sheet model`,
+			refs: [part.path],
+			suggestedFix:
+				'Reconnect the threadedComments part to sheet.threadedComments or remove the orphan sidecar before writing.',
+			details: {
+				kind: 'orphan-threaded-comment-part',
+				partPath: part.path,
+				ownerScope: part.ownerScope,
+				contentType: part.contentType,
+				incomingRelationships: (graphRelationshipsByTarget.get(part.path) ?? []).map(
+					queryTableRelationshipDetails,
+				),
+			},
+		})
+	}
 	return issues
 }
 
-function checkLegacyCommentDrawingIntegrity(wb: Workbook): CheckIssue[] {
+function styleVisibility(style: string | undefined): boolean | undefined {
+	if (!style) return undefined
+	const match = /(?:^|;)\s*visibility\s*:\s*(visible|hidden)\s*(?:;|$)/i.exec(style)
+	if (!match) return undefined
+	return match[1]?.toLowerCase() === 'visible'
+}
+
+function checkLegacyCommentDrawingIntegrity(
+	wb: Workbook,
+	packageGraph?: VerifyPackageGraph,
+): CheckIssue[] {
 	const issues: CheckIssue[] = []
+	const graphRelationshipsByTarget = new Map<string, VerifyPackageGraphRelationship[]>()
+	for (const relationship of packageGraph?.relationships ?? []) {
+		if (!relationship.resolvedTarget) continue
+		const relationships = graphRelationshipsByTarget.get(relationship.resolvedTarget)
+		if (relationships) relationships.push(relationship)
+		else graphRelationshipsByTarget.set(relationship.resolvedTarget, [relationship])
+	}
+	let workbookCommentCount = 0
+	let workbookLegacyDrawingCount = 0
 	for (const sheet of wb.sheets) {
 		const shapeIds = new Map<string, string>()
 		for (const [ref, comment] of sheet.comments) {
+			workbookCommentCount++
 			const drawing = comment.legacyDrawing
 			if (!drawing) continue
+			workbookLegacyDrawingCount++
 			const sheetRef = `${sheet.name}!${ref}`
 			try {
 				const cellRef = parseA1(ref)
 				if (
-					(drawing.row !== undefined && drawing.row !== cellRef.row) ||
-					(drawing.column !== undefined && drawing.column !== cellRef.col)
+					drawing.row === undefined ||
+					drawing.column === undefined ||
+					drawing.row !== cellRef.row ||
+					drawing.column !== cellRef.col
 				) {
 					issues.push({
 						rule: 'legacy-comment-drawing-integrity',
@@ -1648,6 +1984,22 @@ function checkLegacyCommentDrawingIntegrity(wb: Workbook): CheckIssue[] {
 				})
 			}
 			if (drawing.shapeId) {
+				if (!/^_x0000_s\d+$/i.test(drawing.shapeId)) {
+					issues.push({
+						rule: 'legacy-comment-drawing-integrity',
+						severity: 'warning',
+						message: `Legacy comment VML shape id "${drawing.shapeId}" for ${sheetRef} has an unexpected format`,
+						refs: [sheetRef],
+						suggestedFix:
+							'Repair the VML shape id before editing comment drawing layout; note shapes should use Excel VML shape ids such as "_x0000_s1025".',
+						details: {
+							kind: 'legacy-comment-vml-shape-id-format',
+							ref,
+							shapeId: drawing.shapeId,
+							expectedPattern: '_x0000_s<number>',
+						},
+					})
+				}
 				const existingRef = shapeIds.get(drawing.shapeId)
 				if (existingRef) {
 					issues.push({
@@ -1665,8 +2017,25 @@ function checkLegacyCommentDrawingIntegrity(wb: Workbook): CheckIssue[] {
 				} else {
 					shapeIds.set(drawing.shapeId, ref)
 				}
+			} else {
+				issues.push({
+					rule: 'legacy-comment-drawing-integrity',
+					severity: 'warning',
+					message: `Legacy comment VML drawing for ${sheetRef} is missing a shape id`,
+					refs: [sheetRef],
+					suggestedFix:
+						'Restore the VML shape id before editing comment drawing layout; missing ids make shape ownership ambiguous.',
+					details: {
+						kind: 'legacy-comment-vml-missing-shape-id',
+						ref,
+					},
+				})
 			}
-			if (drawing.anchor?.some((value) => !Number.isInteger(value) || value < 0)) {
+			const anchor = drawing.anchor as readonly number[] | undefined
+			if (
+				anchor &&
+				(anchor.length !== 8 || anchor.some((value) => !Number.isInteger(value) || value < 0))
+			) {
 				issues.push({
 					rule: 'legacy-comment-drawing-integrity',
 					severity: 'warning',
@@ -1680,9 +2049,174 @@ function checkLegacyCommentDrawingIntegrity(wb: Workbook): CheckIssue[] {
 					},
 				})
 			}
+			if (isValidLegacyCommentAnchor(anchor)) {
+				const [
+					fromCol,
+					fromColOffset,
+					fromRow,
+					fromRowOffset,
+					toCol,
+					toColOffset,
+					toRow,
+					toRowOffset,
+				] = anchor
+				const reversed =
+					toCol < fromCol ||
+					toRow < fromRow ||
+					(toCol === fromCol && toColOffset < fromColOffset) ||
+					(toRow === fromRow && toRowOffset < fromRowOffset)
+				if (reversed) {
+					issues.push({
+						rule: 'legacy-comment-drawing-integrity',
+						severity: 'warning',
+						message: `Legacy comment VML anchor for ${sheetRef} ends before it starts`,
+						refs: [sheetRef],
+						suggestedFix:
+							'Repair the VML Anchor tuple so the end row/column is after the start row/column before editing comment layout.',
+						details: {
+							kind: 'legacy-comment-vml-anchor-reversed',
+							ref,
+							anchor,
+							...(drawing.shapeId ? { shapeId: drawing.shapeId } : {}),
+						},
+					})
+				}
+			}
+			const styleVisible = styleVisibility(drawing.style)
+			if (
+				styleVisible !== undefined &&
+				drawing.visible !== undefined &&
+				styleVisible !== drawing.visible
+			) {
+				issues.push({
+					rule: 'legacy-comment-drawing-integrity',
+					severity: 'warning',
+					message: `Legacy comment VML visibility metadata for ${sheetRef} conflicts between style and ClientData`,
+					refs: [sheetRef],
+					suggestedFix:
+						'Make the VML style visibility and ClientData Visible flag agree before editing comment display state.',
+					details: {
+						kind: 'legacy-comment-vml-visibility-conflict',
+						ref,
+						styleVisible,
+						clientDataVisible: drawing.visible,
+						...(drawing.shapeId ? { shapeId: drawing.shapeId } : {}),
+					},
+				})
+			}
 		}
 	}
+	if (!packageGraph) return issues
+
+	const commentsParts = packageGraph.parts.filter(
+		(part) => part.featureFamily === 'preservedComments',
+	)
+	const vmlParts = packageGraph.parts.filter((part) => part.featureFamily === 'preservedVml')
+	const commentsRelationships = packageGraph.relationships.filter((relationship) =>
+		isCommentsRelationshipType(relationship.type),
+	)
+	const vmlRelationships = packageGraph.relationships.filter((relationship) =>
+		isVmlDrawingRelationshipType(relationship.type),
+	)
+	if (workbookCommentCount === 0) {
+		for (const part of commentsParts) {
+			issues.push({
+				rule: 'legacy-comment-drawing-integrity',
+				severity: 'warning',
+				message: `Classic comments package part "${part.path}" is not claimed by any sheet comments model`,
+				refs: [part.path],
+				suggestedFix:
+					'Reconnect the comments part to sheet.comments or remove the orphan comments sidecar before writing.',
+				details: {
+					kind: 'orphan-legacy-comments-part',
+					partPath: part.path,
+					ownerScope: part.ownerScope,
+					contentType: part.contentType,
+					incomingRelationships: (graphRelationshipsByTarget.get(part.path) ?? []).map(
+						queryTableRelationshipDetails,
+					),
+				},
+			})
+		}
+	}
+	if (workbookLegacyDrawingCount > 0 && commentsRelationships.length === 0) {
+		issues.push({
+			rule: 'legacy-comment-drawing-integrity',
+			severity: 'warning',
+			message: 'Legacy comment drawings exist but the package graph has no comments relationship',
+			refs: commentsParts.map((part) => part.path),
+			suggestedFix:
+				'Restore the worksheet comments relationship before writing classic comments with preserved VML layout.',
+			details: {
+				kind: 'missing-legacy-comments-relationship',
+				commentCount: workbookCommentCount,
+				legacyDrawingCount: workbookLegacyDrawingCount,
+			},
+		})
+	}
+	if (workbookLegacyDrawingCount > 0 && vmlRelationships.length === 0) {
+		issues.push({
+			rule: 'legacy-comment-drawing-integrity',
+			severity: 'warning',
+			message:
+				'Legacy comment drawings exist but the package graph has no VML drawing relationship',
+			refs: vmlParts.map((part) => part.path),
+			suggestedFix:
+				'Restore the worksheet legacyDrawing relationship and VML sidecar before writing preserved comment layout.',
+			details: {
+				kind: 'missing-legacy-comment-vml-relationship',
+				commentCount: workbookCommentCount,
+				legacyDrawingCount: workbookLegacyDrawingCount,
+			},
+		})
+	}
+	for (const relationship of commentsRelationships) {
+		if (
+			relationship.resolvedTarget &&
+			commentsParts.some((part) => part.path === relationship.resolvedTarget)
+		) {
+			continue
+		}
+		issues.push({
+			rule: 'legacy-comment-drawing-integrity',
+			severity: 'error',
+			message: `Comments relationship "${relationship.id}" resolves to missing comments part "${relationship.resolvedTarget ?? relationship.rawTarget}"`,
+			refs: [`${relationship.relationshipPartPath}#${relationship.id}`],
+			suggestedFix:
+				'Repair the comments relationship target or restore the referenced comments part before writing.',
+			details: {
+				kind: 'legacy-comments-relationship-missing-target',
+				relationship: queryTableRelationshipDetails(relationship),
+			},
+		})
+	}
+	for (const relationship of vmlRelationships) {
+		if (
+			relationship.resolvedTarget &&
+			vmlParts.some((part) => part.path === relationship.resolvedTarget)
+		) {
+			continue
+		}
+		issues.push({
+			rule: 'legacy-comment-drawing-integrity',
+			severity: 'error',
+			message: `VML drawing relationship "${relationship.id}" resolves to missing VML part "${relationship.resolvedTarget ?? relationship.rawTarget}"`,
+			refs: [`${relationship.relationshipPartPath}#${relationship.id}`],
+			suggestedFix:
+				'Repair the legacyDrawing relationship target or restore the referenced VML part before writing.',
+			details: {
+				kind: 'legacy-comment-vml-relationship-missing-target',
+				relationship: queryTableRelationshipDetails(relationship),
+			},
+		})
+	}
 	return issues
+}
+
+function isValidLegacyCommentAnchor(
+	anchor: readonly number[] | undefined,
+): anchor is readonly [number, number, number, number, number, number, number, number] {
+	return anchor?.length === 8 && anchor.every((value) => Number.isInteger(value) && value >= 0)
 }
 
 function isExternalLinkRelationshipType(relationshipType: string | undefined): boolean {
@@ -2092,8 +2626,8 @@ export function check(workbook: Workbook, analysis?: CheckAnalysis): CheckResult
 		...checkExternalLinkIntegrity(workbook, analysis?.packageGraph),
 		...checkX14DataValidationIntegrity(workbook, sheetNames),
 		...checkConditionalFormatIntegrity(workbook),
-		...checkThreadedCommentIntegrity(workbook),
-		...checkLegacyCommentDrawingIntegrity(workbook),
+		...checkThreadedCommentIntegrity(workbook, analysis?.packageGraph),
+		...checkLegacyCommentDrawingIntegrity(workbook, analysis?.packageGraph),
 		...checkPackageGraphIntegrity(analysis?.packageGraph),
 	]
 	return { passed: issues.length === 0, issues }

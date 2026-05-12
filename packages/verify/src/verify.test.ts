@@ -997,6 +997,142 @@ describe('checker', () => {
 		})
 	})
 
+	test('detects threaded comment missing ids and duplicate root refs', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.threadedComments.push(
+			{
+				ref: 'A1',
+				text: 'Root',
+				partPath: 'xl/threadedComments/threadedComment1.xml',
+			},
+			{
+				ref: 'A1',
+				text: 'Second root',
+				id: '{thread-2}',
+				partPath: 'xl/threadedComments/threadedComment1.xml',
+			},
+		)
+
+		const result = check(wb)
+		const issues = result.issues.filter((i) => i.rule === 'threaded-comment-integrity')
+
+		expect(result.passed).toBe(false)
+		expect(issues.some((issue) => issue.details?.kind === 'missing-threaded-comment-id')).toBe(true)
+		expect(
+			issues.some((issue) => issue.details?.kind === 'duplicate-threaded-comment-root-ref'),
+		).toBe(true)
+	})
+
+	test('detects self-parented threaded comments', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.threadedComments.push({
+			ref: 'B2',
+			text: 'Self parent',
+			id: '{thread-1}',
+			parentId: '{thread-1}',
+			partPath: 'xl/threadedComments/threadedComment1.xml',
+		})
+
+		const result = check(wb)
+		const issue = result.issues.find(
+			(i) =>
+				i.rule === 'threaded-comment-integrity' &&
+				i.details?.kind === 'self-parented-threaded-comment',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(issue?.refs).toEqual(['Sheet1!B2'])
+		expect(issue?.details).toMatchObject({
+			partPath: 'xl/threadedComments/threadedComment1.xml',
+			id: '{thread-1}',
+			parentId: '{thread-1}',
+		})
+	})
+
+	test('detects threaded comment package ownership ambiguities', () => {
+		const wb = createWorkbook()
+		const s1 = wb.addSheet('Sheet1')
+		const s2 = wb.addSheet('Sheet2')
+		s1.threadedComments.push({
+			ref: 'A1',
+			text: 'Root one',
+			id: '{thread-1}',
+			partPath: 'xl/threadedComments/threadedComment1.xml',
+		})
+		s2.threadedComments.push({
+			ref: 'A1',
+			text: 'Root two',
+			id: '{thread-2}',
+			partPath: 'xl/threadedComments/threadedComment1.xml',
+		})
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/threadedComments/threadedComment1.xml',
+						featureFamily: 'preservedThreadedComments',
+						ownerScope: 'worksheet',
+						contentType: 'application/vnd.ms-excel.threadedcomments+xml',
+					},
+				],
+				relationships: [
+					{
+						sourcePartPath: 'xl/worksheets/sheet1.xml',
+						relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+						id: 'rIdThreaded1',
+						type: 'http://schemas.microsoft.com/office/2017/10/relationships/threadedComment',
+						rawTarget: '../threadedComments/threadedComment1.xml',
+						resolvedTarget: 'xl/threadedComments/threadedComment1.xml',
+					},
+					{
+						sourcePartPath: 'xl/worksheets/sheet2.xml',
+						relationshipPartPath: 'xl/worksheets/_rels/sheet2.xml.rels',
+						id: 'rIdThreaded2',
+						type: 'http://schemas.microsoft.com/office/2017/10/relationships/threadedComment',
+						rawTarget: '../threadedComments/threadedComment1.xml',
+						resolvedTarget: 'xl/threadedComments/threadedComment1.xml',
+					},
+				],
+			},
+		})
+		const issues = result.issues.filter((i) => i.rule === 'threaded-comment-integrity')
+
+		expect(result.passed).toBe(false)
+		expect(
+			issues.some((issue) => issue.details?.kind === 'threaded-comment-part-multiple-sheet-owners'),
+		).toBe(true)
+		expect(
+			issues.some(
+				(issue) => issue.details?.kind === 'threaded-comment-part-ambiguous-package-owner',
+			),
+		).toBe(true)
+	})
+
+	test('detects threaded comments that reference missing package parts', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.threadedComments.push({
+			ref: 'A1',
+			text: 'Root',
+			id: '{thread-1}',
+			partPath: 'xl/threadedComments/missing.xml',
+		})
+
+		const result = check(wb, { packageGraph: { parts: [], relationships: [] } })
+		const issue = result.issues.find(
+			(i) =>
+				i.rule === 'threaded-comment-integrity' &&
+				i.details?.kind === 'missing-threaded-comment-part',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(issue?.severity).toBe('error')
+		expect(issue?.refs).toEqual(['xl/threadedComments/missing.xml'])
+	})
+
 	test('detects legacy comment VML row and column target drift', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
@@ -1081,6 +1217,120 @@ describe('checker', () => {
 			anchor: [0, 0, 0, 0, 2, 0, -1, 0],
 			shapeId: '_x0000_s1025',
 		})
+	})
+
+	test('detects legacy comment VML shape id format, reversed anchors, and visibility conflicts', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.comments.set('A1', {
+			text: 'One',
+			legacyDrawing: {
+				shapeId: 'CommentShape1',
+				row: 0,
+				column: 0,
+				style: 'position:absolute;visibility:hidden',
+				visible: true,
+				anchor: [2, 0, 4, 0, 1, 0, 3, 0],
+			},
+		})
+
+		const result = check(wb)
+		const issues = result.issues.filter((i) => i.rule === 'legacy-comment-drawing-integrity')
+
+		expect(result.passed).toBe(false)
+		expect(
+			issues.some((issue) => issue.details?.kind === 'legacy-comment-vml-shape-id-format'),
+		).toBe(true)
+		expect(
+			issues.some((issue) => issue.details?.kind === 'legacy-comment-vml-anchor-reversed'),
+		).toBe(true)
+		expect(
+			issues.some((issue) => issue.details?.kind === 'legacy-comment-vml-visibility-conflict'),
+		).toBe(true)
+	})
+
+	test('detects missing legacy comment VML sidecar relationships', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.comments.set('A1', {
+			text: 'One',
+			legacyDrawing: {
+				shapeId: '_x0000_s1025',
+				row: 0,
+				column: 0,
+			},
+		})
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/comments1.xml',
+						featureFamily: 'preservedComments',
+						ownerScope: 'worksheet',
+						contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml',
+					},
+				],
+				relationships: [
+					{
+						sourcePartPath: 'xl/worksheets/sheet1.xml',
+						relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+						id: 'rIdComments',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments',
+						rawTarget: '../comments1.xml',
+						resolvedTarget: 'xl/comments1.xml',
+					},
+				],
+			},
+		})
+		const issue = result.issues.find(
+			(i) =>
+				i.rule === 'legacy-comment-drawing-integrity' &&
+				i.details?.kind === 'missing-legacy-comment-vml-relationship',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(issue?.message).toContain('no VML drawing relationship')
+		expect(issue?.details).toMatchObject({
+			commentCount: 1,
+			legacyDrawingCount: 1,
+		})
+	})
+
+	test('detects orphaned classic comments package parts', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/comments1.xml',
+						featureFamily: 'preservedComments',
+						ownerScope: 'worksheet',
+						contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml',
+					},
+				],
+				relationships: [
+					{
+						sourcePartPath: 'xl/worksheets/sheet1.xml',
+						relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+						id: 'rIdComments',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments',
+						rawTarget: '../comments1.xml',
+						resolvedTarget: 'xl/comments1.xml',
+					},
+				],
+			},
+		})
+		const issue = result.issues.find(
+			(i) =>
+				i.rule === 'legacy-comment-drawing-integrity' &&
+				i.details?.kind === 'orphan-legacy-comments-part',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(issue?.refs).toEqual(['xl/comments1.xml'])
 	})
 
 	test('detects external workbook references', () => {

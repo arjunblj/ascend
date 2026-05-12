@@ -246,6 +246,9 @@ describe('agent workflow loss audit', () => {
 		expect(
 			committed.writePolicy.diagnostics.some((entry) => entry.code.startsWith('external-link')),
 		).toBe(false)
+		expect(committed.writePolicy.diagnostics.some((entry) => entry.code.includes('comment'))).toBe(
+			false,
+		)
 		expect(committed.packageGraphAudit.ok).toBe(true)
 		expect(committed.postWrite.valid).toBe(true)
 		expect(committed.postWrite.packageGraphAudit.ok).toBe(true)
@@ -493,6 +496,169 @@ describe('agent workflow loss audit', () => {
 				'xl/charts/style1.xml',
 				'xl/charts/colors1.xml',
 			]),
+		)
+	})
+
+	test('plans group legacy comment XML and VML write-risk locations', async () => {
+		const input = join(TEMP_DIR, 'legacy-comments.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		wb.getWorkbookModel().sheets[0]?.comments.set('B2', {
+			text: 'Review this',
+			author: 'Ada',
+		})
+		await wb.save(input)
+
+		const plan = await createAgentPlan(input, [
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'B2', text: 'Review this again', author: 'Ada' },
+		])
+
+		expect(plan.writePolicy.summary.legacyCommentLocations).toBe(1)
+		expect(plan.writePolicy.summary.commentIntegrityIssues).toBe(0)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'legacy-comment-preservation-risk',
+				severity: 'warning',
+				locations: ['Sheet1!B2'],
+				partPaths: expect.arrayContaining(['xl/comments1.xml', 'xl/drawings/vmlDrawing1.vml']),
+				packageParts: expect.arrayContaining([
+					expect.objectContaining({
+						partPath: 'xl/comments1.xml',
+						featureFamily: 'preservedComments',
+					}),
+					expect.objectContaining({
+						partPath: 'xl/drawings/vmlDrawing1.vml',
+						featureFamily: 'preservedVml',
+					}),
+				]),
+				suggestedAction: expect.stringContaining('setComment'),
+				details: expect.objectContaining({
+					safeTextEdit: 'setComment',
+					comments: [
+						expect.objectContaining({
+							sheetName: 'Sheet1',
+							ref: 'B2',
+							location: 'Sheet1!B2',
+							author: 'Ada',
+							hasLegacyDrawing: true,
+						}),
+					],
+					relatedOperations: [
+						expect.objectContaining({
+							operationIndex: 0,
+							op: 'setComment',
+							sheetName: 'Sheet1',
+							ref: 'B2',
+						}),
+					],
+					verifyIssues: [],
+				}),
+			}),
+		)
+	})
+
+	test('plans group threaded comment identity and persons sidecar write-risk locations', async () => {
+		const input = join(TEMP_DIR, 'threaded-comments.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makeThreadedCommentXlsx())
+
+		const plan = await createAgentPlan(input, [
+			{
+				op: 'setThreadedComment',
+				sheet: 'Sheet1',
+				partPath: 'xl/threadedComments/threadedComment1.xml',
+				threadedCommentId: 'tc2',
+				text: 'Reviewed again',
+			},
+		])
+
+		expect(plan.writePolicy.summary.threadedCommentLocations).toBe(2)
+		expect(plan.writePolicy.summary.commentIntegrityIssues).toBe(0)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'threaded-comment-preservation-risk',
+				severity: 'warning',
+				locations: ['Sheet1!A1', 'Sheet1!A1'],
+				partPaths: expect.arrayContaining([
+					'xl/threadedComments/threadedComment1.xml',
+					'xl/persons/person.xml',
+				]),
+				packageParts: expect.arrayContaining([
+					expect.objectContaining({
+						partPath: 'xl/threadedComments/threadedComment1.xml',
+						featureFamily: 'preservedThreadedComments',
+					}),
+					expect.objectContaining({
+						partPath: 'xl/persons/person.xml',
+						featureFamily: 'preservedThreadedComments',
+					}),
+				]),
+				suggestedAction: expect.stringContaining('setThreadedComment'),
+				details: expect.objectContaining({
+					safeTextEdit: 'setThreadedComment',
+					threadedComments: [
+						expect.objectContaining({
+							sheetName: 'Sheet1',
+							ref: 'A1',
+							id: 'tc1',
+							personId: '0',
+							author: 'Ada Lovelace',
+						}),
+						expect.objectContaining({
+							sheetName: 'Sheet1',
+							ref: 'A1',
+							id: 'tc2',
+							parentId: 'tc1',
+							personId: '1',
+							author: 'Grace Hopper',
+						}),
+					],
+					relatedOperations: [
+						expect.objectContaining({
+							operationIndex: 0,
+							op: 'setThreadedComment',
+							sheetName: 'Sheet1',
+							partPath: 'xl/threadedComments/threadedComment1.xml',
+							threadedCommentId: 'tc2',
+						}),
+					],
+					verifyIssues: [],
+				}),
+			}),
+		)
+	})
+
+	test('plans include threaded comment verify issues in write-risk diagnostics', async () => {
+		const input = join(TEMP_DIR, 'threaded-comments-missing-person.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makeThreadedCommentXlsx({ includePersons: false }))
+
+		const plan = await createAgentPlan(input, [
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'B1', value: 'ok' }] },
+		])
+
+		expect(plan.check.issues).toContainEqual(
+			expect.objectContaining({
+				rule: 'threaded-comment-integrity',
+				refs: ['Sheet1!A1'],
+			}),
+		)
+		expect(plan.writePolicy.summary.commentIntegrityIssues).toBe(3)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'threaded-comment-preservation-risk',
+				severity: 'warning',
+				partPaths: ['xl/threadedComments/threadedComment1.xml'],
+				details: expect.objectContaining({
+					verifyIssues: expect.arrayContaining([
+						expect.objectContaining({
+							rule: 'threaded-comment-integrity',
+							refs: ['Sheet1!A1'],
+							suggestedFix: expect.stringContaining('persons part'),
+						}),
+					]),
+				}),
+			}),
 		)
 	})
 
@@ -829,6 +995,69 @@ function makePreservedCustomXlsx(): Uint8Array {
 				'xl/worksheets/sheet1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`),
 				'xl/custom/custom1.xml': encode('<custom>preserve me</custom>'),
+			}),
+		),
+	)
+}
+
+function makeThreadedCommentXlsx(options: { readonly includePersons?: boolean } = {}): Uint8Array {
+	const includePersons = options.includePersons ?? true
+	return createZip(
+		new Map(
+			Object.entries({
+				'[Content_Types].xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/threadedComments/threadedComment1.xml" ContentType="application/vnd.ms-excel.threadedcomments+xml"/>
+  ${
+		includePersons
+			? '<Override PartName="/xl/persons/person.xml" ContentType="application/vnd.ms-excel.person+xml"/>'
+			: ''
+	}
+</Types>`),
+				'_rels/.rels': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+				'xl/_rels/workbook.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`),
+				'xl/workbook.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`),
+				'xl/worksheets/sheet1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`),
+				'xl/worksheets/_rels/sheet1.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdThreaded" Type="http://schemas.microsoft.com/office/2017/10/relationships/threadedComment" Target="../threadedComments/threadedComment1.xml"/>
+</Relationships>`),
+				...(includePersons
+					? {
+							'xl/persons/person.xml':
+								encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<personList xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">
+  <person id="0" displayName="Ada Lovelace"/>
+  <person id="1" displayName="Grace Hopper"/>
+</personList>`),
+						}
+					: {}),
+				'xl/threadedComments/threadedComment1.xml':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<ThreadedComments xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">
+  <threadedComment ref="A1" personId="0" id="tc1" dT="2024-01-01T00:00:00.000">
+    <text>Please review</text>
+  </threadedComment>
+  <threadedComment ref="A1" personId="1" id="tc2" parentId="tc1" dT="2024-01-02T00:00:00.000">
+    <text>Reviewed</text>
+  </threadedComment>
+</ThreadedComments>`),
 			}),
 		),
 	)

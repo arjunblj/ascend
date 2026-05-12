@@ -1,6 +1,7 @@
 import type {
 	RangeRef,
 	Sheet,
+	SheetComment,
 	SheetConditionalFormat,
 	SheetConditionalFormatValueObject,
 	SheetDataValidation,
@@ -431,7 +432,8 @@ function copyTransferMetadata(
 	move: boolean,
 ): void {
 	if (mode === 'all' || mode === 'comments') {
-		copyCellMap(sourceSheet.comments, targetSheet.comments, source, rowDelta, colDelta, move)
+		copyCommentMap(sourceSheet.comments, targetSheet.comments, source, rowDelta, colDelta, move)
+		copyThreadedComments(sourceSheet, targetSheet, source, rowDelta, colDelta, move)
 	}
 	if (mode === 'all' || mode === 'hyperlinks') {
 		copyCellMap(sourceSheet.hyperlinks, targetSheet.hyperlinks, source, rowDelta, colDelta, move)
@@ -559,6 +561,128 @@ function rangeKey(range: RangeRef): string {
 	return `${range.start.row}:${range.start.col}:${range.end.row}:${range.end.col}`
 }
 
+function copyCommentMap(
+	sourceMap: Map<string, SheetComment>,
+	targetMap: Map<string, SheetComment>,
+	source: RangeRef,
+	rowDelta: number,
+	colDelta: number,
+	move: boolean,
+): void {
+	const entries = [...sourceMap.entries()].filter(([ref]) =>
+		rangeContainsCell(source, parseA1(ref)),
+	)
+	const copied = entries.map(([ref, value]) => {
+		const pos = parseA1(ref)
+		const target = { row: pos.row + rowDelta, col: pos.col + colDelta }
+		return [toA1(target), retargetLegacyCommentDrawing(value, target, rowDelta, colDelta)] as const
+	})
+	if (move) {
+		for (const [ref] of entries) sourceMap.delete(ref)
+	}
+	for (const [ref, value] of copied) {
+		targetMap.set(ref, value)
+	}
+}
+
+function copyThreadedComments(
+	sourceSheet: Sheet,
+	targetSheet: Sheet,
+	source: RangeRef,
+	rowDelta: number,
+	colDelta: number,
+	move: boolean,
+): void {
+	const sourceEntries = sourceSheet.threadedComments
+		.map((comment, index) => ({ comment, index }))
+		.filter(({ comment }) => rangeContainsCell(source, parseA1(comment.ref)))
+	if (sourceEntries.length === 0) return
+
+	const sourceIndexes = new Set(sourceEntries.map((entry) => entry.index))
+	const targetRange = shiftRange(source, rowDelta, colDelta)
+	const targetIndexes = new Set(
+		targetSheet.threadedComments
+			.map((comment, index) => ({ comment, index }))
+			.filter(({ comment }) => rangeContainsCell(targetRange, parseA1(comment.ref)))
+			.map((entry) => entry.index),
+	)
+	const idMap = move
+		? new Map<string, string>()
+		: buildThreadedCommentIdMap(sourceSheet, targetSheet, sourceEntries)
+	const copied = sourceEntries.map(({ comment }) =>
+		retargetThreadedComment(comment, rowDelta, colDelta, move, idMap),
+	)
+
+	if (sourceSheet === targetSheet) {
+		const removeIndexes = new Set([...targetIndexes, ...(move ? sourceIndexes : [])])
+		sourceSheet.threadedComments = sourceSheet.threadedComments.filter(
+			(_, index) => !removeIndexes.has(index),
+		)
+		sourceSheet.threadedComments.push(...copied)
+		return
+	}
+
+	if (move) {
+		sourceSheet.threadedComments = sourceSheet.threadedComments.filter(
+			(_, index) => !sourceIndexes.has(index),
+		)
+	}
+	targetSheet.threadedComments = targetSheet.threadedComments.filter(
+		(_, index) => !targetIndexes.has(index),
+	)
+	targetSheet.threadedComments.push(...copied)
+}
+
+function buildThreadedCommentIdMap(
+	sourceSheet: Sheet,
+	targetSheet: Sheet,
+	entries: readonly { readonly comment: Sheet['threadedComments'][number] }[],
+): Map<string, string> {
+	const existingIds = new Set<string>()
+	for (const sheet of sourceSheet === targetSheet ? [sourceSheet] : [sourceSheet, targetSheet]) {
+		for (const comment of sheet.threadedComments) {
+			if (comment.id) existingIds.add(comment.id)
+		}
+	}
+	const idMap = new Map<string, string>()
+	for (const { comment } of entries) {
+		if (!comment.id || idMap.has(comment.id)) continue
+		idMap.set(comment.id, nextThreadedCommentId(comment.id, existingIds))
+	}
+	return idMap
+}
+
+function nextThreadedCommentId(baseId: string, existingIds: Set<string>): string {
+	const base = `${baseId}-copy`
+	let candidate = base
+	let suffix = 2
+	while (existingIds.has(candidate)) candidate = `${base}-${suffix++}`
+	existingIds.add(candidate)
+	return candidate
+}
+
+function retargetThreadedComment(
+	comment: Sheet['threadedComments'][number],
+	rowDelta: number,
+	colDelta: number,
+	move: boolean,
+	idMap: Map<string, string>,
+): Sheet['threadedComments'][number] {
+	const pos = parseA1(comment.ref)
+	const ref = toA1({ row: pos.row + rowDelta, col: pos.col + colDelta })
+	if (move) return { ...comment, ref }
+
+	const { id, parentId, ...rest } = comment
+	const nextId = id ? idMap.get(id) : undefined
+	const nextParentId = parentId ? idMap.get(parentId) : undefined
+	return {
+		...rest,
+		ref,
+		...(nextId ? { id: nextId } : {}),
+		...(nextParentId ? { parentId: nextParentId } : {}),
+	}
+}
+
 function copyCellMap<T extends object>(
 	sourceMap: Map<string, T>,
 	targetMap: Map<string, T>,
@@ -570,13 +694,50 @@ function copyCellMap<T extends object>(
 	const entries = [...sourceMap.entries()].filter(([ref]) =>
 		rangeContainsCell(source, parseA1(ref)),
 	)
-	for (const [ref, value] of entries) {
+	const copied = entries.map(([ref, value]) => {
 		const pos = parseA1(ref)
-		targetMap.set(toA1({ row: pos.row + rowDelta, col: pos.col + colDelta }), { ...value })
-	}
+		return [toA1({ row: pos.row + rowDelta, col: pos.col + colDelta }), { ...value }] as const
+	})
 	if (move) {
 		for (const [ref] of entries) sourceMap.delete(ref)
 	}
+	for (const [ref, value] of copied) {
+		targetMap.set(ref, value)
+	}
+}
+
+function retargetLegacyCommentDrawing(
+	comment: SheetComment,
+	target: { readonly row: number; readonly col: number },
+	rowDelta: number,
+	colDelta: number,
+): SheetComment {
+	const drawing = comment.legacyDrawing
+	if (!drawing) return { ...comment }
+	return {
+		...comment,
+		legacyDrawing: {
+			...drawing,
+			...(drawing.row !== undefined ? { row: target.row } : {}),
+			...(drawing.column !== undefined ? { column: target.col } : {}),
+			...(drawing.anchor
+				? { anchor: translateLegacyCommentAnchor(drawing.anchor, rowDelta, colDelta) }
+				: {}),
+		},
+	}
+}
+
+function translateLegacyCommentAnchor(
+	anchor: NonNullable<NonNullable<SheetComment['legacyDrawing']>['anchor']>,
+	rowDelta: number,
+	colDelta: number,
+): NonNullable<NonNullable<SheetComment['legacyDrawing']>['anchor']> {
+	const next = [...anchor] as [number, number, number, number, number, number, number, number]
+	next[0] = Math.max(0, next[0] + colDelta)
+	next[2] = Math.max(0, next[2] + rowDelta)
+	next[4] = Math.max(next[0], next[4] + colDelta)
+	next[6] = Math.max(next[2], next[6] + rowDelta)
+	return next
 }
 
 function copyDataValidations(

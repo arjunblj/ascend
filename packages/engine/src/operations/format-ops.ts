@@ -465,10 +465,16 @@ export function handleSetComment(
 	const result = getSheet(workbook, op.sheet)
 	if (!result.ok) return result
 
-	const comment = op.author !== undefined ? { text: op.text, author: op.author } : { text: op.text }
-	result.value.comments.set(op.ref, comment)
+	const ref = op.ref.toUpperCase()
+	const existing = findCommentEntry(result.value.comments, ref)
+	if (existing && existing[0] !== ref) result.value.comments.delete(existing[0])
+	const comment =
+		op.author !== undefined
+			? { ...existing?.[1], text: op.text, author: op.author }
+			: { ...existing?.[1], text: op.text }
+	result.value.comments.set(ref, comment)
 
-	return ok(patch([op.ref], [op.sheet]))
+	return ok(patch([ref], [op.sheet]))
 }
 
 export function handleSetThreadedComment(
@@ -546,8 +552,26 @@ export function handleDeleteComment(
 	if (!sheetResult.ok) return sheetResult
 	const sheet = sheetResult.value
 	sheet.ensureWritable()
-	sheet.comments.delete(op.ref.toUpperCase())
+	const ref = op.ref.toUpperCase()
+	for (const [commentRef] of sheet.comments) {
+		if (commentRef.toUpperCase() === ref) sheet.comments.delete(commentRef)
+	}
+	sheet.threadedComments = sheet.threadedComments.filter(
+		(comment) => comment.ref.toUpperCase() !== ref,
+	)
 	return ok(patch([`${op.sheet}!${op.ref}`], [op.sheet]))
+}
+
+function findCommentEntry(
+	comments: Workbook['sheets'][number]['comments'],
+	ref: string,
+):
+	| [string, Workbook['sheets'][number]['comments'] extends Map<string, infer T> ? T : never]
+	| null {
+	for (const entry of comments) {
+		if (entry[0].toUpperCase() === ref) return entry
+	}
+	return null
 }
 
 export function handleSetHyperlink(

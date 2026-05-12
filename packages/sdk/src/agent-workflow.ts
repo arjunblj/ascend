@@ -17,7 +17,7 @@ import {
 import { AscendException, ascendError, type FeatureReport, type Operation } from '@ascend/schema'
 import { listCapabilities, summarizeCapabilities } from './capabilities.ts'
 import { collectFormulaReferences } from './formula-info.ts'
-import type { FormulaReferenceInfo } from './types.ts'
+import type { CheckIssue, FormulaReferenceInfo } from './types.ts'
 import { AscendWorkbook } from './workbook.ts'
 
 export interface AgentPlanResult {
@@ -126,6 +126,9 @@ export interface WritePolicyReport {
 		readonly packageGraphIssues: number
 		readonly externalReferences: number
 		readonly externalReferenceBindingIssues: number
+		readonly legacyCommentLocations: number
+		readonly threadedCommentLocations: number
+		readonly commentIntegrityIssues: number
 		readonly x14ConditionalFormatExtensionPayloads: number
 		readonly x14DataValidationExtensionPayloads: number
 		readonly calcChainPolicy: 'not-present' | 'preserved' | 'discarded-for-formula-topology'
@@ -142,6 +145,8 @@ export interface WritePolicyDiagnostic {
 		| 'calc-chain-discarded'
 		| 'active-content-preserved'
 		| 'visual-sidecar-preservation-risk'
+		| 'legacy-comment-preservation-risk'
+		| 'threaded-comment-preservation-risk'
 		| 'conditional-format-extension-preservation'
 		| 'data-validation-extension-preservation'
 		| 'external-link-dependency'
@@ -151,6 +156,7 @@ export interface WritePolicyDiagnostic {
 	readonly severity: 'info' | 'warning' | 'blocker'
 	readonly message: string
 	readonly suggestedAction: string
+	readonly locations?: readonly string[]
 	readonly partPaths?: readonly string[]
 	readonly packageParts?: readonly WritePolicyPackagePart[]
 	readonly featureFamily?: string
@@ -319,6 +325,7 @@ export async function createAgentPlan(
 		wb.getWorkbookModel(),
 		ops,
 		wb.inspect().externalReferenceDetails,
+		check.issues,
 	)
 	await progressFromPhase(writePolicyPhase(writePolicy), progress)
 	const planDigest = digestPlan(inputSha256, ops)
@@ -487,6 +494,7 @@ export async function commitAgentPlan(
 	const preservation = wb.writePlanSummary()
 	await progressFromPhase(preservationPhase(preservation), progress)
 	await progress('write-policy', 'started', 'Explaining write preservation and loss policy.')
+	const writePolicyCheck = wb.check()
 	const writePolicy = buildWritePolicyReport(
 		wb.report.features,
 		packageGraph,
@@ -495,6 +503,7 @@ export async function commitAgentPlan(
 		wb.getWorkbookModel(),
 		ops,
 		wb.inspect().externalReferenceDetails,
+		writePolicyCheck.issues,
 	)
 	await progressFromPhase(writePolicyPhase(writePolicy), progress)
 	const sourceBytes = await readFile(file)
@@ -1221,6 +1230,7 @@ function buildWritePolicyReport(
 	workbook: Workbook,
 	operations: readonly Operation[] = [],
 	externalReferences: readonly ExternalReferenceInfo[] = [],
+	checkIssues: readonly CheckIssue[] = [],
 ): WritePolicyReport {
 	const diagnostics: WritePolicyDiagnostic[] = []
 	const copiedThroughParts = preservation.parts.filter((part) => part.origin !== 'generated')
@@ -1358,6 +1368,71 @@ function buildWritePolicyReport(
 			packageParts: packagePartDetails(packagePartByPath, visualPartPaths),
 			featureFamily: [...visualFamilies].sort().join(','),
 			preservationPolicy: 'preserve-exact',
+		})
+	}
+	const commentIntegrityIssues = collectCommentIntegrityIssues(checkIssues)
+	const legacyCommentLocations = collectLegacyCommentLocations(workbook)
+	const legacyCommentPartPaths = collectLegacyCommentPartPaths(
+		packageGraph.parts,
+		legacyCommentLocations,
+	)
+	if (legacyCommentLocations.length > 0 || commentIntegrityIssues.legacy.length > 0) {
+		const relatedOperations = collectLegacyCommentRelatedOperations(operations)
+		diagnostics.push({
+			code: 'legacy-comment-preservation-risk',
+			severity: 'warning',
+			message:
+				legacyCommentLocations.length > 0
+					? `${legacyCommentLocations.length} legacy comment location(s) depend on comments XML${legacyCommentPartPaths.some((path) => path.includes('/drawings/')) ? ' and VML drawing' : ''} package preservation.`
+					: `${commentIntegrityIssues.legacy.length} legacy comment verify issue(s) require inspection before write.`,
+			suggestedAction:
+				'For text-only edits, prefer setComment on the existing sheet/ref. Inspect inspectSheet(sheet).comments legacyDrawing/VML metadata before layout changes, then verify postWrite.check and postWrite.packageGraphAudit.',
+			locations: legacyCommentLocations.map((entry) => entry.location),
+			...(legacyCommentPartPaths.length > 0 ? { partPaths: legacyCommentPartPaths } : {}),
+			...(legacyCommentPartPaths.length > 0
+				? { packageParts: packagePartDetails(packagePartByPath, legacyCommentPartPaths) }
+				: {}),
+			featureFamily: 'preservedComments,preservedVml',
+			preservationPolicy: 'preserve-exact',
+			details: {
+				comments: legacyCommentLocations,
+				relatedOperations,
+				packageGraphIssues: packageGraphIssuesForParts(packageGraphAudit, legacyCommentPartPaths),
+				verifyIssues: commentIntegrityIssues.legacy,
+				safeTextEdit: 'setComment',
+			},
+		})
+	}
+	const threadedCommentLocations = collectThreadedCommentLocations(workbook)
+	const threadedCommentPartPaths = collectThreadedCommentPartPaths(
+		packageGraph.parts,
+		threadedCommentLocations,
+	)
+	if (threadedCommentLocations.length > 0 || commentIntegrityIssues.threaded.length > 0) {
+		const relatedOperations = collectThreadedCommentRelatedOperations(operations)
+		diagnostics.push({
+			code: 'threaded-comment-preservation-risk',
+			severity: 'warning',
+			message:
+				threadedCommentLocations.length > 0
+					? `${threadedCommentLocations.length} threaded comment location(s) depend on threaded comment ids, parent ids, person ids, and persons sidecar preservation.`
+					: `${commentIntegrityIssues.threaded.length} threaded comment verify issue(s) require inspection before write.`,
+			suggestedAction:
+				'For text-only edits, use setThreadedComment with partPath and threadedCommentId from inspectSheet(sheet).threadedComments. Preserve parentId/personId/persons metadata and verify postWrite.check plus postWrite.packageGraphAudit.',
+			locations: threadedCommentLocations.map((entry) => entry.location),
+			...(threadedCommentPartPaths.length > 0 ? { partPaths: threadedCommentPartPaths } : {}),
+			...(threadedCommentPartPaths.length > 0
+				? { packageParts: packagePartDetails(packagePartByPath, threadedCommentPartPaths) }
+				: {}),
+			featureFamily: 'preservedThreadedComments',
+			preservationPolicy: 'preserve-exact',
+			details: {
+				threadedComments: threadedCommentLocations,
+				relatedOperations,
+				packageGraphIssues: packageGraphIssuesForParts(packageGraphAudit, threadedCommentPartPaths),
+				verifyIssues: commentIntegrityIssues.threaded,
+				safeTextEdit: 'setThreadedComment',
+			},
 		})
 	}
 	const x14ConditionalFormatExtensionPayloads =
@@ -1561,6 +1636,10 @@ function buildWritePolicyReport(
 			packageGraphIssues: packageGraphAudit.issues.length,
 			externalReferences: externalReferences.length,
 			externalReferenceBindingIssues: externalReferenceBindingIssues.length,
+			legacyCommentLocations: legacyCommentLocations.length,
+			threadedCommentLocations: threadedCommentLocations.length,
+			commentIntegrityIssues:
+				commentIntegrityIssues.legacy.length + commentIntegrityIssues.threaded.length,
 			x14ConditionalFormatExtensionPayloads: x14ConditionalFormatExtensionPayloads.length,
 			x14DataValidationExtensionPayloads: x14DataValidationExtensionPayloads.length,
 			calcChainPolicy,
@@ -1968,6 +2047,182 @@ function copyExternalReferenceInfo(
 	reference: ExternalReferenceInfo | undefined,
 ): ExternalReferenceInfo | undefined {
 	return reference ? { ...reference } : undefined
+}
+
+interface LegacyCommentLocation {
+	readonly sheetName: string
+	readonly ref: string
+	readonly location: string
+	readonly author?: string
+	readonly hasLegacyDrawing: boolean
+	readonly shapeId?: string
+	readonly vmlTarget?: { readonly row?: number; readonly column?: number }
+}
+
+interface ThreadedCommentLocation {
+	readonly sheetName: string
+	readonly ref: string
+	readonly location: string
+	readonly commentIndex: number
+	readonly partPath?: string
+	readonly id?: string
+	readonly parentId?: string
+	readonly personId?: string
+	readonly author?: string
+}
+
+interface CommentRelatedOperation {
+	readonly operationIndex: number
+	readonly op: string
+	readonly sheetName?: string
+	readonly ref?: string
+	readonly source?: string
+	readonly target?: string
+	readonly targetSheet?: string
+	readonly mode?: string
+	readonly partPath?: string
+	readonly threadedCommentId?: string
+	readonly commentIndex?: number
+}
+
+function collectCommentIntegrityIssues(checkIssues: readonly CheckIssue[]): {
+	readonly legacy: readonly CheckIssue[]
+	readonly threaded: readonly CheckIssue[]
+} {
+	return {
+		legacy: checkIssues.filter((issue) => issue.rule === 'legacy-comment-drawing-integrity'),
+		threaded: checkIssues.filter((issue) => issue.rule === 'threaded-comment-integrity'),
+	}
+}
+
+function collectLegacyCommentLocations(workbook: Workbook): LegacyCommentLocation[] {
+	return workbook.sheets.flatMap((sheet) =>
+		[...sheet.comments.entries()].map(([ref, comment]) => ({
+			sheetName: sheet.name,
+			ref,
+			location: `${sheet.name}!${ref}`,
+			...(comment.author ? { author: comment.author } : {}),
+			hasLegacyDrawing: comment.legacyDrawing !== undefined,
+			...(comment.legacyDrawing?.shapeId ? { shapeId: comment.legacyDrawing.shapeId } : {}),
+			...(comment.legacyDrawing
+				? {
+						vmlTarget: {
+							...(comment.legacyDrawing.row !== undefined
+								? { row: comment.legacyDrawing.row }
+								: {}),
+							...(comment.legacyDrawing.column !== undefined
+								? { column: comment.legacyDrawing.column }
+								: {}),
+						},
+					}
+				: {}),
+		})),
+	)
+}
+
+function collectThreadedCommentLocations(workbook: Workbook): ThreadedCommentLocation[] {
+	return workbook.sheets.flatMap((sheet) =>
+		sheet.threadedComments.map((comment, commentIndex) => ({
+			sheetName: sheet.name,
+			ref: comment.ref,
+			location: `${sheet.name}!${comment.ref}`,
+			commentIndex,
+			...(comment.partPath ? { partPath: comment.partPath } : {}),
+			...(comment.id ? { id: comment.id } : {}),
+			...(comment.parentId ? { parentId: comment.parentId } : {}),
+			...(comment.personId ? { personId: comment.personId } : {}),
+			...(comment.author ? { author: comment.author } : {}),
+		})),
+	)
+}
+
+function collectLegacyCommentPartPaths(
+	parts: readonly XlsxPackageGraph['parts'][number][],
+	locations: readonly LegacyCommentLocation[],
+): string[] {
+	const hasVmlLayout = locations.some((location) => location.hasLegacyDrawing)
+	return uniqueStrings(
+		parts
+			.filter(
+				(part) =>
+					part.featureFamily === 'preservedComments' ||
+					(hasVmlLayout && part.featureFamily === 'preservedVml'),
+			)
+			.map((part) => part.path),
+	)
+}
+
+function collectThreadedCommentPartPaths(
+	parts: readonly XlsxPackageGraph['parts'][number][],
+	locations: readonly ThreadedCommentLocation[],
+): string[] {
+	return uniqueStrings([
+		...parts
+			.filter((part) => part.featureFamily === 'preservedThreadedComments')
+			.map((part) => part.path),
+		...locations.flatMap((location) => (location.partPath ? [location.partPath] : [])),
+	])
+}
+
+function packageGraphIssuesForParts(
+	audit: PackageGraphAudit,
+	partPaths: readonly string[],
+): readonly XlsxPackageGraphFidelityIssue[] {
+	if (partPaths.length === 0) return []
+	const pathSet = new Set(partPaths)
+	return audit.issues.filter((issue) => issue.partPath !== undefined && pathSet.has(issue.partPath))
+}
+
+function collectLegacyCommentRelatedOperations(
+	operations: readonly Operation[],
+): CommentRelatedOperation[] {
+	const related: CommentRelatedOperation[] = []
+	for (const [operationIndex, op] of operations.entries()) {
+		if (op.op === 'setComment' || op.op === 'deleteComment') {
+			related.push({
+				operationIndex,
+				op: op.op,
+				sheetName: op.sheet,
+				ref: op.ref,
+			})
+			continue
+		}
+		if ((op.op === 'copyRange' || op.op === 'moveRange') && copiesComments(op.mode)) {
+			related.push({
+				operationIndex,
+				op: op.op,
+				sheetName: op.sheet,
+				source: op.source,
+				target: op.target,
+				...(op.targetSheet ? { targetSheet: op.targetSheet } : {}),
+				...(op.mode ? { mode: op.mode } : {}),
+			})
+		}
+	}
+	return related
+}
+
+function collectThreadedCommentRelatedOperations(
+	operations: readonly Operation[],
+): CommentRelatedOperation[] {
+	return operations.flatMap((op, operationIndex) => {
+		if (op.op !== 'setThreadedComment') return []
+		return [
+			{
+				operationIndex,
+				op: op.op,
+				sheetName: op.sheet,
+				...(op.ref ? { ref: op.ref } : {}),
+				...(op.partPath ? { partPath: op.partPath } : {}),
+				...(op.threadedCommentId ? { threadedCommentId: op.threadedCommentId } : {}),
+				...(op.commentIndex !== undefined ? { commentIndex: op.commentIndex } : {}),
+			},
+		]
+	})
+}
+
+function copiesComments(mode: string | undefined): boolean {
+	return mode === undefined || mode === 'all' || mode === 'comments'
 }
 
 interface X14ConditionalFormatExtensionPayload {

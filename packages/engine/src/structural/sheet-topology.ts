@@ -3,11 +3,12 @@ import type {
 	FilterColumn,
 	Sheet,
 	SheetAdvancedFilterInfo,
+	SheetComment,
 	SortState,
 	Table,
 	TableColumn,
 } from '@ascend/core'
-import { parseRange } from '@ascend/core'
+import { parseA1Safe, parseRange } from '@ascend/core'
 import { rewriteSheetMetadataFormulasForShift } from './formula-rewrite.ts'
 import {
 	expandSqrefRows,
@@ -24,7 +25,8 @@ export function shiftSheetCellMetadata(
 	at: number,
 	delta: number,
 ): void {
-	shiftMappedRefs(sheet.comments, axis, at, delta)
+	shiftCommentRefs(sheet.comments, axis, at, delta)
+	shiftThreadedCommentRefs(sheet.threadedComments, axis, at, delta)
 	shiftMappedRefs(sheet.hyperlinks, axis, at, delta)
 	rewriteHyperlinkLocationsForShift(sheet, axis, at, delta)
 	shiftRowOrColMap(sheet.rowHeights, axis === 'row', at, delta)
@@ -119,6 +121,81 @@ function splitSheetQualifiedRef(input: string): { sheet: string; ref: string } |
 	const sheet = input.slice(0, bang).replace(/^'|'$/g, '')
 	const ref = input.slice(bang + 1)
 	return sheet && ref ? { sheet, ref } : null
+}
+
+function shiftCommentRefs(
+	map: Map<string, SheetComment>,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): void {
+	const entries = [...map.entries()]
+	map.clear()
+	for (const [ref, value] of entries) {
+		const next = shiftA1Ref(ref, axis, at, delta)
+		if (!next) continue
+		map.set(next, rewriteLegacyCommentDrawingTarget(value, next, axis, at, delta))
+	}
+}
+
+function shiftThreadedCommentRefs(
+	comments: Sheet['threadedComments'],
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): void {
+	for (let index = comments.length - 1; index >= 0; index--) {
+		const comment = comments[index]
+		if (!comment) continue
+		const next = shiftA1Ref(comment.ref, axis, at, delta)
+		if (!next) comments.splice(index, 1)
+		else if (next !== comment.ref) comments[index] = { ...comment, ref: next }
+	}
+}
+
+function rewriteLegacyCommentDrawingTarget(
+	comment: SheetComment,
+	ref: string,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): SheetComment {
+	const drawing = comment.legacyDrawing
+	if (!drawing) return comment
+	const target = parseA1Safe(ref)
+	if (!target) return comment
+	return {
+		...comment,
+		legacyDrawing: {
+			...drawing,
+			...(drawing.row !== undefined ? { row: target.row } : {}),
+			...(drawing.column !== undefined ? { column: target.col } : {}),
+			...(drawing.anchor
+				? { anchor: shiftLegacyCommentAnchor(drawing.anchor, axis, at, delta) }
+				: {}),
+		},
+	}
+}
+
+function shiftLegacyCommentAnchor(
+	anchor: NonNullable<NonNullable<SheetComment['legacyDrawing']>['anchor']>,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): NonNullable<NonNullable<SheetComment['legacyDrawing']>['anchor']> {
+	const next = [...anchor] as [number, number, number, number, number, number, number, number]
+	const startIndex = axis === 'row' ? 2 : 0
+	const endIndex = axis === 'row' ? 6 : 4
+	next[startIndex] = shiftAnchorMarker(next[startIndex], at, delta)
+	next[endIndex] = Math.max(next[startIndex], shiftAnchorMarker(next[endIndex], at, delta))
+	return next
+}
+
+function shiftAnchorMarker(index: number, at: number, delta: number): number {
+	if (delta > 0) return index >= at ? index + delta : index
+	const deleteEnd = at + Math.abs(delta)
+	if (index >= at && index < deleteEnd) return at
+	return index >= deleteEnd ? index + delta : index
 }
 
 function shiftMappedRefs<T>(

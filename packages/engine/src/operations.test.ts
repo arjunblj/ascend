@@ -634,6 +634,63 @@ describe('applyOperation', () => {
 		expect(badIndex.error.message).toContain('commentIndex')
 	})
 
+	test('setComment edits text while preserving legacy drawing metadata', () => {
+		const wb = setup()
+		const sheet = wb.getSheet('Sheet1')
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+		sheet.comments.set('A1', {
+			text: 'Original',
+			author: 'Ada',
+			legacyDrawing: {
+				shapeId: '_x0000_s1025',
+				row: 0,
+				column: 0,
+				anchor: [0, 15, 0, 2, 2, 15, 3, 2],
+				visible: true,
+			},
+		})
+
+		const result = applyOperation(wb, {
+			op: 'setComment',
+			sheet: 'Sheet1',
+			ref: 'a1',
+			text: 'Updated',
+		})
+		expectOk(result)
+
+		expect(sheet.comments.get('A1')).toEqual({
+			text: 'Updated',
+			author: 'Ada',
+			legacyDrawing: {
+				shapeId: '_x0000_s1025',
+				row: 0,
+				column: 0,
+				anchor: [0, 15, 0, 2, 2, 15, 3, 2],
+				visible: true,
+			},
+		})
+	})
+
+	test('deleteComment removes legacy and threaded comments at the cell ref', () => {
+		const wb = setup()
+		const sheet = wb.getSheet('Sheet1')
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+		sheet.comments.set('A1', { text: 'Legacy' })
+		sheet.threadedComments.push(
+			{ ref: 'A1', text: 'Root', id: 'tc1' },
+			{ ref: 'A1', text: 'Reply', id: 'tc2', parentId: 'tc1' },
+			{ ref: 'B1', text: 'Keep', id: 'tc3' },
+		)
+
+		const result = applyOperation(wb, { op: 'deleteComment', sheet: 'Sheet1', ref: 'a1' })
+		expectOk(result)
+
+		expect(sheet.comments.has('A1')).toBe(false)
+		expect(sheet.threadedComments).toEqual([{ ref: 'B1', text: 'Keep', id: 'tc3' }])
+	})
+
 	test('insertImage allocates image identity and anchor metadata', () => {
 		const wb = setup()
 		const result = applyOperation(wb, {
@@ -1175,7 +1232,11 @@ describe('applyOperation', () => {
 		const sheet = wb.addSheet('Sheet1')
 		sheet.cells.set(0, 0, cell(numberValue(1)))
 		sheet.cells.set(0, 1, cell(numberValue(2)))
-		sheet.comments.set('A1', { text: 'Review', author: 'Ascend' })
+		sheet.comments.set('A1', {
+			text: 'Review',
+			author: 'Ascend',
+			legacyDrawing: { shapeId: '_x0000_s1025', row: 0, column: 0 },
+		})
 		sheet.hyperlinks.set('B1', { target: 'https://example.com', display: 'Example' })
 		sheet.dataValidations.push({ sqref: 'A1:B1', type: 'whole', formula1: 'A1' })
 
@@ -1207,7 +1268,11 @@ describe('applyOperation', () => {
 			}),
 		)
 
-		expect(sheet.comments.get('C1')).toEqual({ text: 'Review', author: 'Ascend' })
+		expect(sheet.comments.get('C1')).toEqual({
+			text: 'Review',
+			author: 'Ascend',
+			legacyDrawing: { shapeId: '_x0000_s1025', row: 0, column: 2 },
+		})
 		expect(sheet.hyperlinks.get('D1')).toEqual({
 			target: 'https://example.com',
 			display: 'Example',
@@ -1218,6 +1283,51 @@ describe('applyOperation', () => {
 			formula1: 'E1',
 		})
 		expect(sheet.cells.get(0, 2)).toBeUndefined()
+	})
+
+	test('copyRange comments mode retargets legacy VML metadata and clones threaded comments', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.comments.set('A1', {
+			text: 'Review',
+			author: 'Ascend',
+			legacyDrawing: {
+				shapeId: '_x0000_s1025',
+				row: 0,
+				column: 0,
+				anchor: [0, 0, 0, 0, 1, 0, 3, 0],
+			},
+		})
+		sheet.threadedComments.push(
+			{ ref: 'A1', text: 'Root', id: 'tc1', author: 'Ada' },
+			{ ref: 'A1', text: 'Reply', id: 'tc2', parentId: 'tc1', author: 'Grace' },
+		)
+
+		const result = applyOperation(wb, {
+			op: 'copyRange',
+			sheet: 'Sheet1',
+			source: 'A1',
+			target: 'C3',
+			mode: 'comments',
+		})
+		expectOk(result)
+
+		expect(sheet.comments.get('C3')).toEqual({
+			text: 'Review',
+			author: 'Ascend',
+			legacyDrawing: {
+				shapeId: '_x0000_s1025',
+				row: 2,
+				column: 2,
+				anchor: [2, 0, 2, 0, 3, 0, 5, 0],
+			},
+		})
+		expect(sheet.threadedComments).toEqual([
+			{ ref: 'A1', text: 'Root', id: 'tc1', author: 'Ada' },
+			{ ref: 'A1', text: 'Reply', id: 'tc2', parentId: 'tc1', author: 'Grace' },
+			{ ref: 'C3', text: 'Root', id: 'tc1-copy', author: 'Ada' },
+			{ ref: 'C3', text: 'Reply', id: 'tc2-copy', parentId: 'tc1-copy', author: 'Grace' },
+		])
 	})
 
 	test('moveRange relocates source cells and clears original range', () => {
@@ -1451,7 +1561,11 @@ describe('applyOperation', () => {
 		const sourceStyle = wb.styles.register({ numberFormat: '$#,##0.00' })
 		source.cells.set(0, 0, { value: numberValue(10), formula: null, styleId: sourceStyle })
 		source.cells.set(0, 1, { value: numberValue(20), formula: 'A1*2', styleId: sourceStyle })
-		source.comments.set('A1', { text: 'Review', author: 'Ascend' })
+		source.comments.set('A1', {
+			text: 'Review',
+			author: 'Ascend',
+			legacyDrawing: { shapeId: '_x0000_s1025', row: 0, column: 0 },
+		})
 		source.hyperlinks.set('B1', { target: 'https://example.com', display: 'Example' })
 		source.dataValidations.push({ sqref: 'A1:B1', type: 'whole', formula1: 'A1' })
 		source.conditionalFormats.push({
@@ -1490,7 +1604,11 @@ describe('applyOperation', () => {
 		expect(target.cells.get(2, 2)?.value).toEqual(numberValue(10))
 		expect(target.cells.get(2, 3)?.formula).toBe('C3*2')
 		expect(target.cells.get(2, 3)?.styleId).toBe(sourceStyle)
-		expect(target.comments.get('C3')).toEqual({ text: 'Review', author: 'Ascend' })
+		expect(target.comments.get('C3')).toEqual({
+			text: 'Review',
+			author: 'Ascend',
+			legacyDrawing: { shapeId: '_x0000_s1025', row: 2, column: 2 },
+		})
 		expect(target.hyperlinks.get('D3')).toEqual({
 			target: 'https://example.com',
 			display: 'Example',
@@ -1529,7 +1647,11 @@ describe('applyOperation', () => {
 		const target = wb.addSheet('Sheet2')
 		source.cells.set(0, 0, cell(numberValue(10)))
 		source.cells.set(0, 1, cell(numberValue(20)))
-		source.comments.set('A1', { text: 'Review' })
+		source.comments.set('A1', {
+			text: 'Review',
+			legacyDrawing: { shapeId: '_x0000_s1026', row: 0, column: 0 },
+		})
+		source.threadedComments.push({ ref: 'A1', text: 'Thread', id: 'tc1' })
 		source.hyperlinks.set('B1', { location: 'Sheet1!A1', display: 'Jump' })
 		source.dataValidations.push({ sqref: 'A1:B1', type: 'whole', formula1: 'A1' })
 		source.conditionalFormats.push({
@@ -1553,13 +1675,18 @@ describe('applyOperation', () => {
 		expect(source.cells.get(0, 0)).toBeUndefined()
 		expect(source.cells.get(0, 1)).toBeUndefined()
 		expect(source.comments.size).toBe(0)
+		expect(source.threadedComments).toEqual([])
 		expect(source.hyperlinks.size).toBe(0)
 		expect(source.dataValidations).toEqual([])
 		expect(source.conditionalFormats).toEqual([])
 		expect(source.merges).toEqual([])
 		expect(target.cells.get(1, 0)?.value).toEqual(numberValue(10))
 		expect(target.cells.get(1, 1)?.value).toEqual(numberValue(20))
-		expect(target.comments.get('A2')).toEqual({ text: 'Review' })
+		expect(target.comments.get('A2')).toEqual({
+			text: 'Review',
+			legacyDrawing: { shapeId: '_x0000_s1026', row: 1, column: 0 },
+		})
+		expect(target.threadedComments).toEqual([{ ref: 'A2', text: 'Thread', id: 'tc1' }])
 		expect(target.hyperlinks.get('B2')).toEqual({ location: 'Sheet1!A1', display: 'Jump' })
 		expect(target.dataValidations).toEqual([{ sqref: 'A2:B2', type: 'whole', formula1: 'A2' }])
 		expect(target.conditionalFormats).toEqual([
@@ -2580,7 +2707,24 @@ describe('applyOperation', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
 		s.cells.set(0, 0, cell(numberValue(1)))
-		s.comments.set('A2', { text: 'note' })
+		s.comments.set('A2', {
+			text: 'note',
+			legacyDrawing: {
+				shapeId: '_x0000_s1025',
+				row: 1,
+				column: 0,
+				anchor: [0, 15, 1, 2, 2, 15, 4, 16],
+				visible: true,
+			},
+		})
+		s.threadedComments.push({
+			ref: 'B2',
+			text: 'thread',
+			id: 'tc1',
+			partPath: 'xl/threadedComments/threadedComment1.xml',
+			personId: '0',
+			author: 'Ada',
+		})
 		s.hyperlinks.set('B2', { target: 'https://example.com', location: 'Sheet1!A2' })
 		s.dataValidations.push({ sqref: 'A2:B2', type: 'list', formula1: 'A2' })
 		s.conditionalFormats.push({
@@ -2617,7 +2761,26 @@ describe('applyOperation', () => {
 
 		applyOperation(wb, { op: 'insertRows', sheet: 'Sheet1', at: 1, count: 2 })
 
-		expect(s.comments.get('A4')).toEqual({ text: 'note' })
+		expect(s.comments.get('A4')).toEqual({
+			text: 'note',
+			legacyDrawing: {
+				shapeId: '_x0000_s1025',
+				row: 3,
+				column: 0,
+				anchor: [0, 15, 3, 2, 2, 15, 6, 16],
+				visible: true,
+			},
+		})
+		expect(s.threadedComments).toEqual([
+			{
+				ref: 'B4',
+				text: 'thread',
+				id: 'tc1',
+				partPath: 'xl/threadedComments/threadedComment1.xml',
+				personId: '0',
+				author: 'Ada',
+			},
+		])
 		expect(s.hyperlinks.get('B4')).toEqual({
 			target: 'https://example.com',
 			location: 'Sheet1!A4',
@@ -2643,6 +2806,63 @@ describe('applyOperation', () => {
 		expect(s.rowHeights.get(3)).toBe(24)
 	})
 
+	test('row and column shifts keep comment refs and VML metadata coherent', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.comments.set('A2', {
+			text: 'note',
+			legacyDrawing: {
+				shapeId: '_x0000_s1025',
+				row: 1,
+				column: 0,
+				anchor: [0, 15, 1, 2, 2, 15, 4, 2],
+			},
+		})
+		s.threadedComments.push({
+			ref: 'B2',
+			text: 'thread',
+			id: 'tc1',
+			partPath: 'xl/threadedComments/threadedComment1.xml',
+		})
+
+		expectOk(applyOperation(wb, { op: 'insertRows', sheet: 'Sheet1', at: 1, count: 2 }))
+		expectOk(applyOperation(wb, { op: 'insertCols', sheet: 'Sheet1', at: 0, count: 1 }))
+
+		expect(s.comments.get('B4')).toEqual({
+			text: 'note',
+			legacyDrawing: {
+				shapeId: '_x0000_s1025',
+				row: 3,
+				column: 1,
+				anchor: [1, 15, 3, 2, 3, 15, 6, 2],
+			},
+		})
+		expect(s.threadedComments).toEqual([
+			{
+				ref: 'C4',
+				text: 'thread',
+				id: 'tc1',
+				partPath: 'xl/threadedComments/threadedComment1.xml',
+			},
+		])
+	})
+
+	test('row and column deletes remove comments whose refs are deleted', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.comments.set('A2', { text: 'delete me' })
+		s.comments.set('C2', { text: 'keep me' })
+		s.threadedComments.push(
+			{ ref: 'B2', text: 'delete thread', id: 'tc1' },
+			{ ref: 'D2', text: 'keep thread', id: 'tc2' },
+		)
+
+		expectOk(applyOperation(wb, { op: 'deleteCols', sheet: 'Sheet1', at: 0, count: 2 }))
+
+		expect([...s.comments.entries()]).toEqual([['A2', { text: 'keep me' }]])
+		expect(s.threadedComments).toEqual([{ ref: 'B2', text: 'keep thread', id: 'tc2' }])
+	})
+
 	test('insertCols shifts tables, filters, comments, and hyperlinks', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
@@ -2650,7 +2870,21 @@ describe('applyOperation', () => {
 		s.cells.set(0, 1, { value: stringValue('Value'), formula: null, styleId: sid })
 		s.cells.set(1, 0, { value: stringValue('Cash'), formula: null, styleId: sid })
 		s.cells.set(1, 1, { value: numberValue(10), formula: null, styleId: sid })
-		s.comments.set('A1', { text: 'header' })
+		s.comments.set('A1', {
+			text: 'header',
+			legacyDrawing: {
+				shapeId: '_x0000_s1026',
+				row: 0,
+				column: 0,
+				anchor: [0, 15, 0, 2, 2, 15, 3, 16],
+			},
+		})
+		s.threadedComments.push({
+			ref: 'A2',
+			text: 'threaded header',
+			id: 'tc2',
+			partPath: 'xl/threadedComments/threadedComment1.xml',
+		})
 		s.hyperlinks.set('B2', { target: 'https://example.com/value' })
 		s.autoFilter = { ref: 'A1:B2', columns: [] }
 		s.tables.push({
@@ -2666,7 +2900,20 @@ describe('applyOperation', () => {
 
 		applyOperation(wb, { op: 'insertCols', sheet: 'Sheet1', at: 0, count: 1 })
 
-		expect(s.comments.get('B1')).toEqual({ text: 'header' })
+		expect(s.comments.get('B1')).toEqual({
+			text: 'header',
+			legacyDrawing: {
+				shapeId: '_x0000_s1026',
+				row: 0,
+				column: 1,
+				anchor: [1, 15, 0, 2, 3, 15, 3, 16],
+			},
+		})
+		expect(s.threadedComments[0]).toMatchObject({
+			ref: 'B2',
+			text: 'threaded header',
+			id: 'tc2',
+		})
 		expect(s.hyperlinks.get('C2')).toEqual({ target: 'https://example.com/value' })
 		expect(s.autoFilter?.ref).toBe('B1:C2')
 		expect(s.tables[0]?.ref).toEqual({
@@ -3140,7 +3387,16 @@ describe('applyOperation', () => {
 		sheet.cells.set(2, 0, { value: stringValue('A'), formula: null, styleId: sid })
 		sheet.cells.set(2, 1, { value: numberValue(1), formula: null, styleId: sid })
 		sheet.hyperlinks.set('A2', { target: 'https://example.com/b' })
-		sheet.comments.set('B3', { text: 'lowest' })
+		sheet.comments.set('B3', {
+			text: 'lowest',
+			legacyDrawing: {
+				shapeId: '_x0000_s1027',
+				row: 2,
+				column: 1,
+				anchor: [1, 15, 2, 2, 3, 15, 5, 16],
+			},
+		})
+		sheet.threadedComments.push({ ref: 'B3', text: 'lowest thread', id: 'tc-lowest' })
 		sheet.dataValidations.push({ sqref: 'A2:B2', type: 'list', formula1: '"A,B"' })
 		sheet.conditionalFormats.push({ sqref: 'B3', rules: [] })
 		sheet.ignoredErrors.push({ sqref: 'A2', formula: true })
@@ -3158,7 +3414,16 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(2, 0)?.value).toEqual(stringValue('B'))
 		expect(sheet.cells.get(2, 1)?.value).toEqual(numberValue(2))
 		expect(sheet.hyperlinks.get('A3')).toEqual({ target: 'https://example.com/b' })
-		expect(sheet.comments.get('B2')).toEqual({ text: 'lowest' })
+		expect(sheet.comments.get('B2')).toEqual({
+			text: 'lowest',
+			legacyDrawing: {
+				shapeId: '_x0000_s1027',
+				row: 1,
+				column: 1,
+				anchor: [1, 15, 1, 2, 3, 15, 4, 16],
+			},
+		})
+		expect(sheet.threadedComments).toEqual([{ ref: 'B2', text: 'lowest thread', id: 'tc-lowest' }])
 		expect(sheet.dataValidations[0]?.sqref).toBe('A3:B3')
 		expect(sheet.conditionalFormats[0]?.sqref).toBe('B2')
 		expect(sheet.ignoredErrors[0]?.sqref).toBe('A3')

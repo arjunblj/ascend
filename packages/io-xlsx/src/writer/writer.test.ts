@@ -7,6 +7,12 @@ import { unzipSync } from 'fflate'
 import { applyOperations } from '../../../engine/src/index.ts'
 import { fingerprintXlsx } from '../../test/fidelity-harness.ts'
 import { makeXlsx } from '../../test/helpers.ts'
+import { inspectXlsxPackageGraph } from '../package-graph.ts'
+import {
+	auditXlsxPackageGraphBytePreservation,
+	auditXlsxPackageGraphReadIntegrity,
+	auditXlsxPackageGraphSafeEditIntegrity,
+} from '../package-graph-fidelity.ts'
 import type { PreservationCapsule } from '../preserve.ts'
 import { advancedFilterSparklineWorkbook } from '../reader/advanced-filter-sparkline.test.ts'
 import { readXlsx } from '../reader/index.ts'
@@ -54,6 +60,98 @@ function roundTrip(wb: Workbook, capsules?: PreservationCapsule[]) {
 	const read = readXlsx(written.value)
 	if (!read.ok) throw new Error(`read failed: ${read.error.message}`)
 	return { bytes: written.value, result: read.value }
+}
+
+function decodeTestXml(bytes: Uint8Array | undefined): string {
+	expect(bytes).toBeDefined()
+	return new TextDecoder().decode(bytes)
+}
+
+function commentsAndThreadedCommentsWorkbook(): Uint8Array {
+	return makeXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="vml" ContentType="application/vnd.openxmlformats-officedocument.vmlDrawing"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/comments1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml"/>
+  <Override PartName="/xl/threadedComments/threadedComment1.xml" ContentType="application/vnd.ms-excel.threadedcomments+xml"/>
+  <Override PartName="/xl/persons/person.xml" ContentType="application/vnd.ms-excel.person+xml"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Sheet1" sheetId="1" r:id="rIdSheet"/>
+  </sheets>
+</workbook>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheetData>
+    <row r="1"><c r="A1" t="inlineStr"><is><t>original</t></is></c></row>
+  </sheetData>
+  <legacyDrawing r:id="rIdVml"/>
+</worksheet>`,
+		'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdComments" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="../comments1.xml"/>
+  <Relationship Id="rIdVml" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing" Target="../drawings/vmlDrawing1.vml"/>
+  <Relationship Id="rIdThreaded" Type="http://schemas.microsoft.com/office/2017/10/relationships/threadedComment" Target="../threadedComments/threadedComment1.xml"/>
+</Relationships>`,
+		'xl/comments1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<comments xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <authors>
+    <author>Ada</author>
+    <author>Grace</author>
+  </authors>
+  <commentList>
+    <comment ref="B1" authorId="0"><text><t>Legacy visible note</t></text></comment>
+    <comment ref="C3" authorId="1"><text><t>Legacy hidden note</t></text></comment>
+  </commentList>
+</comments>`,
+		'xl/drawings/vmlDrawing1.vml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xml xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">
+  <o:shapelayout v:ext="edit"><o:idmap v:ext="edit" data="2"/></o:shapelayout>
+  <v:shapetype id="_x0000_t202" coordsize="21600,21600" o:spt="202" path="m,l,21600r21600,l21600,xe">
+    <v:stroke joinstyle="miter"/><v:path gradientshapeok="t" o:connecttype="rect"/>
+  </v:shapetype>
+  <v:shape id="_x0000_s2048" type="#_x0000_t202" style="position:absolute;margin-left:59.25pt;margin-top:1.5pt;width:144pt;height:79.5pt;z-index:1;visibility:visible" fillcolor="#ffffe1" o:insetmode="auto">
+    <v:fill color2="#ffffe1"/><v:shadow on="t" color="black" obscured="t"/><v:path o:connecttype="none"/>
+    <v:textbox style="mso-direction-alt:auto"><div style="text-align:left"/></v:textbox>
+    <x:ClientData ObjectType="Note"><x:MoveWithCells/><x:SizeWithCells/><x:Anchor>1, 15, 0, 2, 3, 20, 4, 8</x:Anchor><x:Visible/><x:Row>0</x:Row><x:Column>1</x:Column></x:ClientData>
+  </v:shape>
+  <v:shape id="_x0000_s2049" type="#_x0000_t202" style="position:absolute;margin-left:90pt;margin-top:36pt;width:120pt;height:60pt;z-index:2;visibility:hidden" fillcolor="#ffffe1" o:insetmode="auto">
+    <v:fill color2="#ffffe1"/><v:shadow on="t" color="black" obscured="t"/><v:path o:connecttype="none"/>
+    <v:textbox style="mso-direction-alt:auto"><div style="text-align:left"/></v:textbox>
+    <x:ClientData ObjectType="Note"><x:MoveWithCells/><x:SizeWithCells/><x:Anchor>2, 10, 2, 4, 5, 30, 6, 12</x:Anchor><x:Visible>false</x:Visible><x:Row>2</x:Row><x:Column>2</x:Column></x:ClientData>
+  </v:shape>
+</xml>`,
+		'xl/persons/person.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<personList xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">
+  <person id="{person-ada}" displayName="Ada Thread" userId="ada@example.test" providerId="None"/>
+  <person id="{person-grace}" displayName="Grace Thread" userId="grace@example.test" providerId="None"/>
+</personList>`,
+		'xl/threadedComments/threadedComment1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<ThreadedComments xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">
+  <threadedComment ref="D4" personId="{person-ada}" id="{root-thread}" dT="2024-03-01T10:11:12.000Z">
+    <text>Thread root</text>
+  </threadedComment>
+  <threadedComment ref="D4" personId="{person-grace}" id="{reply-thread}" parentId="{root-thread}" dT="2024-03-02T10:11:12.000Z" done="1">
+    <text>Thread reply</text>
+  </threadedComment>
+</ThreadedComments>`,
+	})
 }
 
 describe('writeXlsx', () => {
@@ -3530,6 +3628,135 @@ describe('writeXlsx', () => {
 			)
 		},
 	)
+
+	it('preserves comments, VML, threaded comments, persons, and package graph through dirty cell edits', () => {
+		const source = commentsAndThreadedCommentsWorkbook()
+		const sourceEntries = unzipSync(source)
+		const sourceGraph = inspectXlsxPackageGraph(source)
+		expect(auditXlsxPackageGraphReadIntegrity(sourceGraph)).toEqual([])
+
+		const opened = readXlsx(source)
+		expectOk(opened)
+		const sheet = opened.value.workbook.getSheet('Sheet1')
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+		expect(sheet.comments.get('B1')).toMatchObject({
+			text: 'Legacy visible note',
+			author: 'Ada',
+			legacyDrawing: {
+				shapeId: '_x0000_s2048',
+				anchor: [1, 15, 0, 2, 3, 20, 4, 8],
+				visible: true,
+			},
+		})
+		expect(sheet.comments.get('C3')).toMatchObject({
+			text: 'Legacy hidden note',
+			author: 'Grace',
+			legacyDrawing: {
+				shapeId: '_x0000_s2049',
+				anchor: [2, 10, 2, 4, 5, 30, 6, 12],
+				visible: false,
+			},
+		})
+		expect(sheet.threadedComments).toEqual([
+			{
+				ref: 'D4',
+				text: 'Thread root',
+				partPath: 'xl/threadedComments/threadedComment1.xml',
+				id: '{root-thread}',
+				personId: '{person-ada}',
+				author: 'Ada Thread',
+				dateTime: '2024-03-01T10:11:12.000Z',
+			},
+			{
+				ref: 'D4',
+				text: 'Thread reply',
+				partPath: 'xl/threadedComments/threadedComment1.xml',
+				id: '{reply-thread}',
+				parentId: '{root-thread}',
+				personId: '{person-grace}',
+				author: 'Grace Thread',
+				dateTime: '2024-03-02T10:11:12.000Z',
+				done: true,
+			},
+		])
+
+		const applied = applyOperations(opened.value.workbook, [
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'edited' }] },
+		])
+		expectOk(applied)
+		expect(applied.value.sheetsModified).toEqual(['Sheet1'])
+
+		const written = writeXlsx(opened.value.workbook, opened.value.capsules, {
+			dirtySheetNames: applied.value.sheetsModified,
+		})
+		expectOk(written)
+
+		const writtenEntries = unzipSync(written.value)
+		expect(writtenEntries['xl/comments1.xml']).toEqual(sourceEntries['xl/comments1.xml'])
+		expect(writtenEntries['xl/drawings/vmlDrawing1.vml']).toEqual(
+			sourceEntries['xl/drawings/vmlDrawing1.vml'],
+		)
+		expect(writtenEntries['xl/threadedComments/threadedComment1.xml']).toEqual(
+			sourceEntries['xl/threadedComments/threadedComment1.xml'],
+		)
+		expect(writtenEntries['xl/persons/person.xml']).toEqual(sourceEntries['xl/persons/person.xml'])
+
+		const worksheetXml = decodeTestXml(writtenEntries['xl/worksheets/sheet1.xml'])
+		expect(worksheetXml).toContain('r:id="rIdVml"')
+		expect(worksheetXml).toContain('<t>edited</t>')
+		const worksheetRelsXml = decodeTestXml(writtenEntries['xl/worksheets/_rels/sheet1.xml.rels'])
+		expect(worksheetRelsXml).toContain('Id="rIdComments"')
+		expect(worksheetRelsXml).toContain(
+			'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments"',
+		)
+		expect(worksheetRelsXml).toContain('Target="../comments1.xml"')
+		expect(worksheetRelsXml).toContain('Id="rIdVml"')
+		expect(worksheetRelsXml).toContain(
+			'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing"',
+		)
+		expect(worksheetRelsXml).toContain('Target="../drawings/vmlDrawing1.vml"')
+		expect(worksheetRelsXml).toContain('Id="rIdThreaded"')
+		expect(worksheetRelsXml).toContain(
+			'Type="http://schemas.microsoft.com/office/2017/10/relationships/threadedComment"',
+		)
+		expect(worksheetRelsXml).toContain('Target="../threadedComments/threadedComment1.xml"')
+		const contentTypesXml = decodeTestXml(writtenEntries['[Content_Types].xml'])
+		expect(contentTypesXml).toContain(
+			'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml"',
+		)
+		expect(contentTypesXml).toContain('ContentType="application/vnd.ms-excel.threadedcomments+xml"')
+		expect(contentTypesXml).toContain('ContentType="application/vnd.ms-excel.person+xml"')
+
+		const writtenGraph = inspectXlsxPackageGraph(written.value)
+		expect(auditXlsxPackageGraphReadIntegrity(writtenGraph)).toEqual([])
+		expect(auditXlsxPackageGraphSafeEditIntegrity(sourceGraph, writtenGraph)).toEqual([])
+		expect(auditXlsxPackageGraphBytePreservation(sourceGraph, source, written.value)).toEqual([])
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		const reopenedSheet = reopened.value.workbook.getSheet('Sheet1')
+		expect(reopenedSheet?.cells.get(0, 0)?.value).toEqual({ kind: 'string', value: 'edited' })
+		expect(reopenedSheet?.comments.get('B1')).toMatchObject({
+			text: 'Legacy visible note',
+			author: 'Ada',
+			legacyDrawing: {
+				shapeId: '_x0000_s2048',
+				anchor: [1, 15, 0, 2, 3, 20, 4, 8],
+				visible: true,
+			},
+		})
+		expect(reopenedSheet?.comments.get('C3')).toMatchObject({
+			text: 'Legacy hidden note',
+			author: 'Grace',
+			legacyDrawing: {
+				shapeId: '_x0000_s2049',
+				anchor: [2, 10, 2, 4, 5, 30, 6, 12],
+				visible: false,
+			},
+		})
+		expect(reopenedSheet?.threadedComments).toEqual(sheet.threadedComments)
+	})
 
 	it('preserves conditional formatting and data validations on round-trip', () => {
 		const wb = new Workbook()

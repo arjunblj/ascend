@@ -1202,6 +1202,16 @@ describe('recalculate', () => {
 			formula: 'GETPIVOTDATA("Sales",$A$1,"Region","South")',
 			styleId: sid,
 		})
+		sheet.cells.set(5, 0, {
+			value: EMPTY,
+			formula: 'GETPIVOTDATA("Sales",$A$1,"Close Date",DATE(1999,3,5))',
+			styleId: sid,
+		})
+		sheet.cells.set(6, 0, {
+			value: EMPTY,
+			formula: 'GETPIVOTDATA("Sales",$A$1,"Close Date",DATE(1999,3,6))',
+			styleId: sid,
+		})
 		wb.pivotCaches.push({
 			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
 			cacheId: 1,
@@ -1215,6 +1225,14 @@ describe('recalculate', () => {
 					],
 				},
 				{ index: 1, name: 'Sales' },
+				{
+					index: 2,
+					name: 'Close Date',
+					sharedItems: [
+						{ index: 0, kind: 'date', value: '1999-03-05T00:00:00' },
+						{ index: 1, kind: 'date', value: '1999-03-06T00:00:00' },
+					],
+				},
 			],
 		})
 		wb.pivotTables.push({
@@ -1234,10 +1252,22 @@ describe('recalculate', () => {
 					],
 				},
 				{ index: 1, dataField: true, name: 'Sales' },
+				{
+					index: 2,
+					axis: 'axisPage',
+					name: 'Close Date',
+					items: [
+						{ index: 0, cacheIndex: 0 },
+						{ index: 1, cacheIndex: 1 },
+					],
+				},
 			],
 			rowFields: [],
 			columnFields: [],
-			pageFields: [{ index: 0, item: 0 }],
+			pageFields: [
+				{ index: 0, item: 0 },
+				{ index: 2, item: 0 },
+			],
 			dataFields: [{ fieldIndex: 1, name: 'Sum of Sales', subtotal: 'sum' }],
 		})
 
@@ -1246,6 +1276,8 @@ describe('recalculate', () => {
 		expect(result.errors).toEqual([])
 		expect(sheet.cells.get(3, 0)?.value).toEqual(numberValue(100))
 		expect(sheet.cells.get(4, 0)?.value).toEqual(errorValue('#REF!'))
+		expect(sheet.cells.get(5, 0)?.value).toEqual(numberValue(100))
+		expect(sheet.cells.get(6, 0)?.value).toEqual(errorValue('#REF!'))
 	})
 
 	test('binary arithmetic broadcasts row and column arrays', () => {

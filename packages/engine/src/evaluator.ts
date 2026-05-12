@@ -1335,7 +1335,12 @@ function lookupPivotValueForFilters(
 		const bounds = parsePivotLocation(pivot.locationRef)
 		if (!bounds) continue
 		if (!rangesIntersect(anchorBounds, bounds)) continue
-		const visibleFilters = resolvePivotPageFilters(ctx.workbook, pivot, filters)
+		const visibleFilters = resolvePivotPageFilters(
+			ctx.workbook,
+			pivot,
+			filters,
+			ctx.calcContext.dateSystem,
+		)
 		if (!visibleFilters) continue
 		const value = lookupVisiblePivotValue(
 			ctx,
@@ -1353,6 +1358,7 @@ function resolvePivotPageFilters(
 	workbook: Workbook,
 	pivot: Workbook['pivotTables'][number],
 	filters: readonly PivotFilter[],
+	dateSystem: '1900' | '1904',
 ): readonly PivotFilter[] | null {
 	if (pivot.pageFields.length === 0 || filters.length === 0) return filters
 	const cache =
@@ -1368,7 +1374,7 @@ function resolvePivotPageFilters(
 			visibleFilters.push(filter)
 			continue
 		}
-		const selected = selectedPivotPageFieldItem(pivot, cache, pageField)
+		const selected = selectedPivotPageFieldItem(pivot, cache, pageField, dateSystem)
 		if (!selected || selected !== filter.item) return null
 	}
 	return visibleFilters
@@ -1396,6 +1402,7 @@ function selectedPivotPageFieldItem(
 	pivot: Workbook['pivotTables'][number],
 	cache: Workbook['pivotCaches'][number] | undefined,
 	pageField: Workbook['pivotTables'][number]['pageFields'][number],
+	dateSystem: '1900' | '1904',
 ): string | null {
 	if (pageField.index < 0 || pageField.item === undefined) return null
 	const pivotItem = pivot.fields[pageField.index]?.items?.[pageField.item]
@@ -1405,7 +1412,13 @@ function selectedPivotPageFieldItem(
 	const cacheItem = cache?.fields[pageField.index]?.sharedItems?.find(
 		(entry) => entry.index === pivotItem.cacheIndex,
 	)
-	if (cacheItem?.value !== undefined) return normalizePivotText(cacheItem.value)
+	if (cacheItem?.value !== undefined) {
+		if (cacheItem.kind === 'date') {
+			const serial = parseIsoDateTimeSerial(cacheItem.value, dateSystem)
+			return serial === undefined ? null : normalizePivotText(String(serial))
+		}
+		return normalizePivotText(cacheItem.value)
+	}
 	if (cacheItem?.kind === 'missing') return normalizePivotText('(blank)')
 	return null
 }

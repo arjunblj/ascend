@@ -162,7 +162,7 @@ export function createServer(): McpServer {
 		},
 		async ({ file }) => {
 			try {
-				const wb = await WorkbookDocument.open(file, { mode: 'full' })
+				const wb = await WorkbookDocument.open(file, { mode: 'metadata-only' })
 				const info = wb.inspect()
 				const activeFeatureFamilies = new Set([
 					'preservedMacro',

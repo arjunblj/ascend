@@ -431,9 +431,10 @@ export function readXlsx(
 			}
 
 			consumed.add(sheetPath)
-			consumed.add(
-				resolvePartPathCaseInsensitive(archive, getRelsPath(sheetPath)) ?? getRelsPath(sheetPath),
-			)
+			const sheetRelsPart = readPartWithPath(archive, getRelsPath(sheetPath))
+			const sheetRelationships = sheetRelsPart ? parseRelationships(sheetRelsPart.text) : []
+			if (sheetRelationships.length > 0) sheetRelsByPath.set(sheetPath, sheetRelationships)
+			consumed.add(sheetRelsPart?.path ?? getRelsPath(sheetPath))
 			sourceWorksheetNames.push(entry.name)
 			if (selectedSheets && !selectedSheets.has(entry.name.toLowerCase())) continue
 			sheetsToParse.push({
@@ -539,8 +540,10 @@ export function readXlsx(
 					? readPartWithPath(archive, getRelsPath(entry.path))
 					: undefined
 				const sheetRelsXml = sheetRelsPart?.text
-				const sheetRelationships = sheetRelsXml ? parseRelationships(sheetRelsXml) : []
-				sheetRelsByPath.set(entry.path, sheetRelationships)
+				const sheetRelationships = sheetRelsXml
+					? parseRelationships(sheetRelsXml)
+					: (sheetRelsByPath.get(entry.path) ?? [])
+				if (sheetRelationships.length > 0) sheetRelsByPath.set(entry.path, sheetRelationships)
 				const sheetFormulaFeatures: SheetFormulaFeatures = {
 					hasSharedFormula: false,
 					hasArrayFormula: false,
@@ -642,27 +645,27 @@ export function readXlsx(
 			sourceSheetNames,
 			loadedSheetNames,
 		}
-		const capsules = isPartial
-			? []
-			: collectCapsules(
-					archive,
-					consumed,
-					contentTypes,
-					rootRels,
-					effectiveWbRels,
-					sheetPathToAnchor,
-					workbookPath,
-					sheetRelsByPath,
-				)
-		if (!isPartial) {
-			workbook.activeContent.push(
-				...collectActiveContent(archive, capsules, sheetPathToAnchor, sheetRelsByPath),
-			)
-		}
+		const packageInventory = collectCapsules(
+			archive,
+			consumed,
+			contentTypes,
+			rootRels,
+			effectiveWbRels,
+			sheetPathToAnchor,
+			workbookPath,
+			sheetRelsByPath,
+		)
+		const capsules = isPartial ? [] : packageInventory
+		workbook.activeContent.push(
+			...collectActiveContent(archive, packageInventory, sheetPathToAnchor, sheetRelsByPath, {
+				hydrateOpaqueBinarySummaries: !isPartial,
+				hydrateWorksheetControlDetails: !isPartial,
+			}),
+		)
 		if (!isPartial) workbook.connectionParts.push(...collectConnectionParts(archive, capsules))
 		if (!isPartial) workbook.dataModelParts.push(...collectDataModelParts(capsules))
 		if (!isPartial) attachChartParts(archive, workbook, capsules)
-		const report = buildReport(contentTypes, formulaFeatures, workbook, capsules, loadInfo)
+		const report = buildReport(contentTypes, formulaFeatures, workbook, packageInventory, loadInfo)
 		if (loadInfo.isPartial) {
 			workbook.sourceArchiveBytes = null
 			return ok({ workbook, report, capsules: [], loadInfo })
@@ -1206,9 +1209,15 @@ function collectActiveContent(
 	capsules: readonly PreservationCapsule[],
 	sheetPathToAnchor: ReadonlyMap<string, { sheetId: string; sheetName: string }>,
 	sheetRelsByPath: ReadonlyMap<string, readonly Relationship[]>,
+	options: {
+		readonly hydrateOpaqueBinarySummaries: boolean
+		readonly hydrateWorksheetControlDetails: boolean
+	},
 ): ActiveContentInfo[] {
 	const activeContent: ActiveContentInfo[] = []
-	const worksheetControls = collectWorksheetControls(archive, sheetPathToAnchor, sheetRelsByPath)
+	const worksheetControls = options.hydrateWorksheetControlDetails
+		? collectWorksheetControls(archive, sheetPathToAnchor, sheetRelsByPath)
+		: new Map<string, NonNullable<ActiveContentInfo['worksheetControl']>>()
 	const capsuleRelationshipByTarget = mapCapsuleRelationshipsByTarget(capsules)
 	for (const capsule of capsules) {
 		const kind = classifyActiveContent(capsule)
@@ -1220,7 +1229,7 @@ function collectActiveContent(
 				: undefined
 		const entry = archive.get(capsule.partPath)
 		const vbaProject =
-			kind === 'vbaProject'
+			kind === 'vbaProject' && options.hydrateOpaqueBinarySummaries
 				? summarizeVbaProject(archive.readBytes(capsule.partPath) ?? new Uint8Array())
 				: undefined
 		const activeX =

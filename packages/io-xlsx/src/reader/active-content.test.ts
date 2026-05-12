@@ -158,6 +158,119 @@ describe('active content inventory', () => {
 		expect(JSON.stringify(vbaProject?.vbaProject)).not.toContain('Attribute VB_Name')
 	})
 
+	test('metadata-only reads inventory active content without hydrating preservation capsules', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="bin" ContentType="application/vnd.ms-office.vbaProject"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.ms-excel.sheet.macroEnabled.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/vbaProject.bin" ContentType="application/vnd.ms-office.vbaProject"/>
+  <Override PartName="/xl/vbaProjectSignature.bin" ContentType="application/vnd.ms-office.vbaProjectSignature"/>
+  <Override PartName="/xl/activeX/activeX1.xml" ContentType="application/vnd.ms-office.activeX+xml"/>
+  <Override PartName="/xl/ctrlProps/ctrlProp1.xml" ContentType="application/vnd.ms-excel.controlproperties+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdVba" Type="http://schemas.microsoft.com/office/2006/relationships/vbaProject" Target="vbaProject.bin"/>
+</Relationships>`,
+			'xl/_rels/vbaProject.bin.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdVbaSignature" Type="http://schemas.microsoft.com/office/2006/relationships/vbaProjectSignature" Target="vbaProjectSignature.bin"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+			'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdActiveX" Type="http://schemas.microsoft.com/office/2006/relationships/activeXControl" Target="../activeX/activeX1.xml"/>
+  <Relationship Id="rIdControl" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/ctrlProp" Target="../ctrlProps/ctrlProp1.xml"/>
+</Relationships>`,
+			'xl/vbaProject.bin': 'macro-bytes',
+			'xl/vbaProjectSignature.bin': 'signature-bytes',
+			'xl/activeX/activeX1.xml': `<?xml version="1.0"?><ax:ocx ax:classid="{8BD21D40-EC42-11CE-9E0D-00AA006002F3}" ax:persistence="persistStreamInit" r:id="rIdBinary" xmlns:ax="http://schemas.microsoft.com/office/2006/activeX" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/>`,
+			'xl/activeX/_rels/activeX1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdBinary" Type="http://schemas.microsoft.com/office/2006/relationships/activeXControlBinary" Target="activeX1.bin"/>
+</Relationships>`,
+			'xl/ctrlProps/ctrlProp1.xml': `<?xml version="1.0"?><formControlPr macro="Module1.Run" fmlaLink="$A$1"/>`,
+		})
+
+		const result = readXlsx(bytes, { mode: 'metadata-only' })
+		expectOk(result)
+
+		expect(result.value.loadInfo.isPartial).toBe(true)
+		expect(result.value.capsules).toEqual([])
+		const metadataVbaProject = result.value.workbook.activeContent.find(
+			(content) => content.kind === 'vbaProject',
+		)
+		expect(result.value.workbook.activeContent).toContainEqual(
+			expect.objectContaining({
+				kind: 'vbaProject',
+				partPath: 'xl/vbaProject.bin',
+				sourceRelationshipId: 'rIdVba',
+				byteSize: 11,
+			}),
+		)
+		expect(metadataVbaProject?.vbaProject).toBeUndefined()
+		expect(result.value.workbook.activeContent).toContainEqual({
+			kind: 'vbaSignature',
+			partPath: 'xl/vbaProjectSignature.bin',
+			contentType: 'application/vnd.ms-office.vbaProjectSignature',
+			anchor: 'workbook',
+			sourcePartPath: 'xl/vbaProject.bin',
+			relType: 'http://schemas.microsoft.com/office/2006/relationships/vbaProjectSignature',
+			sourceRelationshipId: 'rIdVbaSignature',
+			relationshipCount: 0,
+			invalidationPolicy: 'invalidatedByPackageEdit',
+			resigningPolicy: 'notSupported',
+		})
+		const metadataActiveX = result.value.workbook.activeContent.find(
+			(content) => content.kind === 'activeX',
+		)
+		expect(result.value.workbook.activeContent).toContainEqual(
+			expect.objectContaining({
+				kind: 'activeX',
+				partPath: 'xl/activeX/activeX1.xml',
+				anchor: 'sheet',
+				sheetName: 'Data',
+				sourceRelationshipId: 'rIdActiveX',
+				activeX: expect.objectContaining({
+					classId: '{8BD21D40-EC42-11CE-9E0D-00AA006002F3}',
+					binaryRelationshipId: 'rIdBinary',
+				}),
+			}),
+		)
+		expect(metadataActiveX?.worksheetControl).toBeUndefined()
+		expect(result.value.workbook.activeContent).toContainEqual(
+			expect.objectContaining({
+				kind: 'formControl',
+				partPath: 'xl/ctrlProps/ctrlProp1.xml',
+				anchor: 'sheet',
+				sheetName: 'Data',
+				sourceRelationshipId: 'rIdControl',
+				formControl: expect.objectContaining({ macro: 'Module1.Run' }),
+			}),
+		)
+		expect(
+			result.value.report.features.find((feature) => feature.feature === 'preservedMacro'),
+		).toMatchObject({
+			count: 2,
+			locations: ['xl/vbaProject.bin', 'xl/vbaProjectSignature.bin'],
+		})
+	})
+
 	test('links VBA project signatures to their signed VBA project relationship', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

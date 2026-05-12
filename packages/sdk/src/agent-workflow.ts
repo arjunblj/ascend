@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { copyFile, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
+import type { ExternalReferenceInfo } from '@ascend/core'
 import type {
 	XlsxPackageGraph,
 	XlsxPackageGraphFidelityIssue,
@@ -120,6 +121,8 @@ export interface WritePolicyReport {
 		readonly invalidatedSignatures: number
 		readonly approvalRequiredFeatures: number
 		readonly packageGraphIssues: number
+		readonly externalReferences: number
+		readonly externalReferenceBindingIssues: number
 		readonly calcChainPolicy: 'not-present' | 'preserved' | 'discarded-for-formula-topology'
 	}
 }
@@ -134,6 +137,8 @@ export interface WritePolicyDiagnostic {
 		| 'calc-chain-discarded'
 		| 'active-content-preserved'
 		| 'visual-sidecar-preservation-risk'
+		| 'external-link-dependency'
+		| 'external-link-binding-risk'
 		| 'package-graph-audit-issue'
 		| 'approval-required-feature'
 	readonly severity: 'info' | 'warning' | 'blocker'
@@ -303,6 +308,7 @@ export async function createAgentPlan(
 		packageGraph,
 		preservation,
 		packageGraphAudit,
+		wb.inspect().externalReferenceDetails,
 	)
 	await progressFromPhase(writePolicyPhase(writePolicy), progress)
 	const planDigest = digestPlan(inputSha256, ops)
@@ -476,6 +482,7 @@ export async function commitAgentPlan(
 		packageGraph,
 		preservation,
 		packageGraphAudit,
+		wb.inspect().externalReferenceDetails,
 	)
 	await progressFromPhase(writePolicyPhase(writePolicy), progress)
 	const sourceBytes = await readFile(file)
@@ -1199,6 +1206,7 @@ function buildWritePolicyReport(
 	packageGraph: XlsxPackageGraph,
 	preservation: ReturnType<AscendWorkbook['writePlanSummary']>,
 	packageGraphAudit: PackageGraphAudit,
+	externalReferences: readonly ExternalReferenceInfo[] = [],
 ): WritePolicyReport {
 	const diagnostics: WritePolicyDiagnostic[] = []
 	const copiedThroughParts = preservation.parts.filter((part) => part.origin !== 'generated')
@@ -1338,6 +1346,48 @@ function buildWritePolicyReport(
 			preservationPolicy: 'preserve-exact',
 		})
 	}
+	if (externalReferences.length > 0) {
+		const externalReferencePartPaths = uniqueStrings(
+			externalReferences.map((entry) => entry.partPath),
+		)
+		diagnostics.push({
+			code: 'external-link-dependency',
+			severity: 'info',
+			message: `${externalReferences.length} external workbook dependency link(s) are preserved by relationship-id metadata.`,
+			suggestedAction:
+				'Inspect externalReferenceDetails and externalReferenceUsages before rewriting workbook paths or trusting imported formula dependencies.',
+			partPaths: externalReferencePartPaths,
+			packageParts: packagePartDetails(packagePartByPath, externalReferencePartPaths),
+			featureFamily: 'preservedExternalLink',
+			preservationPolicy: 'preserve-exact',
+		})
+	}
+	const externalReferenceBindingIssues = externalReferences.filter(
+		(entry) =>
+			entry.linkBindingStatus !== undefined && entry.linkBindingStatus !== 'externalBookRelId',
+	)
+	if (externalReferenceBindingIssues.length > 0) {
+		const issuePartPaths = uniqueStrings(
+			externalReferenceBindingIssues.map((entry) => entry.partPath),
+		)
+		const fallbackCount = externalReferenceBindingIssues.filter(
+			(entry) => entry.linkBindingStatus === 'fallbackPathRelationship',
+		).length
+		const missingCount = externalReferenceBindingIssues.filter(
+			(entry) => entry.linkBindingStatus === 'missingPathRelationship',
+		).length
+		diagnostics.push({
+			code: 'external-link-binding-risk',
+			severity: 'warning',
+			message: `${externalReferenceBindingIssues.length} external workbook dependency link(s) have ambiguous package binding (${fallbackCount} fallback, ${missingCount} missing).`,
+			suggestedAction:
+				'Use rewriteExternalLink with a stable partPath/linkRelId selector to repair or intentionally preserve the externalBook relationship binding.',
+			partPaths: issuePartPaths,
+			packageParts: packagePartDetails(packagePartByPath, issuePartPaths),
+			featureFamily: 'preservedExternalLink',
+			preservationPolicy: 'preserve-exact',
+		})
+	}
 	if (!packageGraphAudit.ok) {
 		const issuePartPaths = uniqueStrings(
 			packageGraphAudit.issues.flatMap((issue) => (issue.partPath ? [issue.partPath] : [])),
@@ -1381,6 +1431,8 @@ function buildWritePolicyReport(
 				(diagnostic) => diagnostic.code === 'approval-required-feature',
 			).length,
 			packageGraphIssues: packageGraphAudit.issues.length,
+			externalReferences: externalReferences.length,
+			externalReferenceBindingIssues: externalReferenceBindingIssues.length,
 			calcChainPolicy,
 		},
 	}

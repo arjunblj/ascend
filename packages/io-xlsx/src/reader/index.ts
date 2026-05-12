@@ -753,6 +753,8 @@ function parseSheetValuesOnlyByteChunks(
 }
 
 function applyStreamedRow(sheet: Sheet, row: StreamedSheetRow): void {
+	if (row.rowHeight !== undefined) sheet.rowHeights.set(row.row, row.rowHeight)
+	if (row.rowDef) sheet.rowDefs.set(row.row, row.rowDef)
 	for (const [col, cell] of row.cells) {
 		sheet.cells.set(row.row, col, cell)
 	}

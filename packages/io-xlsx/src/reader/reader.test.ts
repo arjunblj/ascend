@@ -3971,6 +3971,47 @@ ${rowEntries.join('\n')}
 		expect(sheet.cells.get(19, 0)).toBeUndefined()
 	})
 
+	it('preserves row metadata in streamed capped values reads', () => {
+		const rowEntries = [
+			'<row r="1" ht="21" customHeight="1" hidden="1" outlineLevel="2"><c r="A1"><v>1</v></c></row>',
+			'<row r="2" collapsed="1"><c r="A2"><v>2</v></c></row>',
+			...Array.from(
+				{ length: 4000 },
+				(_, i) => `<row r="${i + 3}"><c r="A${i + 3}"><v>${i + 3}</v></c></row>`,
+			),
+		]
+		const sheetXml = `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+${rowEntries.join('\n')}
+  </sheetData>
+</worksheet>`
+
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': sheetXml,
+		})
+
+		const result = readXlsx(bytes, { mode: 'values', maxRows: 2 })
+		expectOk(result)
+
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet?.cells.get(0, 0)?.value).toEqual({ kind: 'number', value: 1 })
+		expect(sheet?.cells.get(1, 0)?.value).toEqual({ kind: 'number', value: 2 })
+		expect(sheet?.cells.get(2, 0)).toBeUndefined()
+		expect(sheet?.rowHeights.get(0)).toBe(21)
+		expect(sheet?.rowDefs.get(0)).toEqual({
+			customHeight: true,
+			hidden: true,
+			outlineLevel: 2,
+		})
+		expect(sheet?.rowDefs.get(1)).toEqual({ collapsed: true })
+	})
+
 	it('reports preserved non-semantic parts explicitly', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

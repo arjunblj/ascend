@@ -13,6 +13,7 @@ import type {
 	SheetConditionalFormatValueObject,
 	SheetDataValidation,
 	SheetProtectedRange,
+	SheetRowDef,
 	SheetSparklineGroupInfo,
 	SheetX14ConditionalFormatDataBarInfo,
 	SheetX14ConditionalFormatIconInfo,
@@ -112,6 +113,8 @@ export interface SheetFormulaFeatures {
 export interface StreamedSheetRow {
 	readonly row: number
 	readonly cells: readonly (readonly [number, Cell])[]
+	readonly rowDef?: SheetRowDef
+	readonly rowHeight?: number
 }
 
 export class ValueInternPool {
@@ -340,22 +343,6 @@ function hasWorksheetTagInRange(xml: string, start: number, end: number, tagName
 		cursor = index + tagName.length + 1
 	}
 	return false
-}
-
-function hasRowPresentationMetadata(rawAttrs: string): boolean {
-	return (
-		rawAttrValueStart(rawAttrs, 'ht') !== -1 ||
-		rawAttrValueStart(rawAttrs, 'spans') !== -1 ||
-		rawAttrValueStart(rawAttrs, 'customHeight') !== -1 ||
-		rawAttrValueStart(rawAttrs, 's') !== -1 ||
-		rawAttrValueStart(rawAttrs, 'customFormat') !== -1 ||
-		rawAttrValueStart(rawAttrs, 'hidden') !== -1 ||
-		rawAttrValueStart(rawAttrs, 'collapsed') !== -1 ||
-		rawAttrValueStart(rawAttrs, 'outlineLevel') !== -1 ||
-		rawAttrValueStart(rawAttrs, 'thickTop') !== -1 ||
-		rawAttrValueStart(rawAttrs, 'thickBot') !== -1 ||
-		rawAttrValueStart(rawAttrs, 'x14ac:dyDescent') !== -1
-	)
 }
 
 function hasRowPresentationMetadataInRange(xml: string, start: number, end: number): boolean {
@@ -1169,6 +1156,7 @@ export function* streamSheetRowsTextChunks(
 			const explicitRowIndex = rawNumAttr(rowAttrsRaw, 'r')
 			const row = explicitRowIndex !== undefined ? explicitRowIndex - 1 : currentRow + 1
 			if (ctx.maxRows !== undefined && row >= ctx.maxRows) return
+			const rowMetadata = streamedRowMetadataFromRawAttrs(rowAttrsRaw)
 			let rowEnd: number
 			if (isSelfClosingTag(buffer, 0, rowTagEnd)) {
 				rowEnd = rowTagEnd + 1
@@ -1181,7 +1169,7 @@ export function* streamSheetRowsTextChunks(
 			if (directParsed) {
 				buffer = buffer.slice(rowEnd)
 				currentRow = directParsed.row
-				yield directParsed
+				yield withStreamedRowMetadata(directParsed, rowMetadata)
 				continue
 			}
 			const parsed = parseStreamedSheetRowXml(
@@ -1259,6 +1247,11 @@ export function* streamSheetRowsByteChunks(
 			)
 			const row = explicitRowIndex !== undefined ? explicitRowIndex - 1 : currentRow + 1
 			if (ctx.maxRows !== undefined && row >= ctx.maxRows) return
+			const rowMetadata = streamedRowMetadataFromRawByteAttrs(
+				buffer,
+				BYTES_ROW_OPEN.length,
+				rowTagEnd,
+			)
 			let rowEnd: number
 			if (isSelfClosingTagBytes(buffer, 0, rowTagEnd)) {
 				rowEnd = rowTagEnd + 1
@@ -1272,7 +1265,7 @@ export function* streamSheetRowsByteChunks(
 			if (directParsed) {
 				buffer = buffer.subarray(rowEnd)
 				currentRow = directParsed.row
-				yield directParsed
+				yield withStreamedRowMetadata(directParsed, rowMetadata)
 				continue
 			}
 			const parsed = parseStreamedSheetRowXml(
@@ -1309,6 +1302,51 @@ function trailingBytes(
 	length: number,
 ): Uint8Array<ArrayBufferLike> {
 	return bytes.length <= length ? bytes : bytes.subarray(bytes.length - length)
+}
+
+function streamedRowMetadataFromRawAttrs(
+	rowAttrsRaw: string,
+): Pick<StreamedSheetRow, 'rowDef' | 'rowHeight'> {
+	const rowHeight = rawNumAttr(rowAttrsRaw, 'ht')
+	const hidden = rawBoolAttr(rowAttrsRaw, 'hidden')
+	const collapsed = rawBoolAttr(rowAttrsRaw, 'collapsed')
+	const outlineLevel = rawNumAttr(rowAttrsRaw, 'outlineLevel')
+	const rowDef = rowDefFromRawAttrs(rowAttrsRaw, {
+		...(hidden !== undefined ? { hidden } : {}),
+		...(collapsed !== undefined ? { collapsed } : {}),
+		...(outlineLevel !== undefined ? { outlineLevel } : {}),
+	}) as SheetRowDef | null
+	return {
+		...(rowHeight !== undefined ? { rowHeight } : {}),
+		...(rowDef ? { rowDef } : {}),
+	}
+}
+
+function streamedRowMetadataFromRawByteAttrs(
+	bytes: Uint8Array,
+	start: number,
+	end: number,
+): Pick<StreamedSheetRow, 'rowDef' | 'rowHeight'> {
+	const rowHeight = rawNumAttrInBytes(bytes, start, end, 'ht')
+	const hidden = rawBoolAttrInBytes(bytes, start, end, 'hidden')
+	const collapsed = rawBoolAttrInBytes(bytes, start, end, 'collapsed')
+	const outlineLevel = rawNumAttrInBytes(bytes, start, end, 'outlineLevel')
+	const rowDef = rowDefFromRawByteAttrs(bytes, start, end, {
+		...(hidden !== undefined ? { hidden } : {}),
+		...(collapsed !== undefined ? { collapsed } : {}),
+		...(outlineLevel !== undefined ? { outlineLevel } : {}),
+	}) as SheetRowDef | null
+	return {
+		...(rowHeight !== undefined ? { rowHeight } : {}),
+		...(rowDef ? { rowDef } : {}),
+	}
+}
+
+function withStreamedRowMetadata(
+	row: StreamedSheetRow,
+	metadata: Pick<StreamedSheetRow, 'rowDef' | 'rowHeight'>,
+): StreamedSheetRow {
+	return metadata.rowDef || metadata.rowHeight !== undefined ? { ...row, ...metadata } : row
 }
 
 function parseStreamedValuesRowBytes(
@@ -1742,22 +1780,11 @@ function parseStreamedSheetRowXml(
 	const explicitRowIndex = rawNumAttr(rowAttrsRaw, 'r')
 	const row = explicitRowIndex !== undefined ? explicitRowIndex - 1 : currentRow + 1
 	if (ctx.maxRows !== undefined && row >= ctx.maxRows) return null
+	const rowMetadata = streamedRowMetadataFromRawAttrs(rowAttrsRaw)
 	rowSheet.cells.clear()
-	rowSheet.rowDefs.clear()
-	if (hasRowPresentationMetadata(rowAttrsRaw)) {
-		const hidden = rawBoolAttr(rowAttrsRaw, 'hidden')
-		const collapsed = rawBoolAttr(rowAttrsRaw, 'collapsed')
-		const outlineLevel = rawNumAttr(rowAttrsRaw, 'outlineLevel')
-		const rowDef = rowDefFromRawAttrs(rowAttrsRaw, {
-			...(hidden !== undefined ? { hidden } : {}),
-			...(collapsed !== undefined ? { collapsed } : {}),
-			...(outlineLevel !== undefined ? { outlineLevel } : {}),
-		})
-		if (rowDef) {
-			rowSheet.rowDefs.set(row, rowDef as import('@ascend/core').SheetRowDef)
-		}
+	if (isSelfClosingTag(rowXml, rowOpen, rowTagEnd)) {
+		return withStreamedRowMetadata({ row, cells: [] }, rowMetadata)
 	}
-	if (isSelfClosingTag(rowXml, rowOpen, rowTagEnd)) return { row, cells: [] }
 
 	const rowClose = rowXml.indexOf('</row>', rowTagEnd + 1)
 	if (rowClose === -1) return null
@@ -1861,7 +1888,7 @@ function parseStreamedSheetRowXml(
 		nextCol = cellOut.col + 1
 	}
 	const first = rowSheet.cells.iterateRows().next()
-	return { row, cells: first.done ? [] : first.value[1] }
+	return withStreamedRowMetadata({ row, cells: first.done ? [] : first.value[1] }, rowMetadata)
 }
 
 function parseSlowCell(

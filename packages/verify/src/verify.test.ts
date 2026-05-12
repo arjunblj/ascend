@@ -1854,6 +1854,117 @@ describe('checker', () => {
 		})
 	})
 
+	test('detects missing structured tables in x14 metadata formulas', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.x14DataValidations.push({
+			index: 0,
+			sqref: 'A1:A5',
+			type: 'list',
+			formula1: 'MissingList[Name]',
+		})
+		s.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'B1:B5',
+			type: 'dataBar',
+			formulas: ['SUM(MissingRules[Amount])>0'],
+			dataBar: { cfvo: [{ type: 'formula', value: 'MissingBars[Value]' }] },
+		})
+
+		const result = check(wb)
+		const validationIssues = result.issues.filter((i) => i.rule === 'data-validation-integrity')
+		const formatIssues = result.issues.filter((i) => i.rule === 'conditional-format-integrity')
+
+		expect(result.passed).toBe(false)
+		expect(validationIssues).toContainEqual(
+			expect.objectContaining({
+				severity: 'error',
+				refs: ['Sheet1!A1:A5'],
+				details: expect.objectContaining({
+					kind: 'x14-formula-missing-table',
+					source: 'x14DataValidation',
+					field: 'formula1',
+					reference: 'MissingList[Name]',
+					tableName: 'MissingList',
+					column: 'Name',
+				}),
+			}),
+		)
+		expect(formatIssues).toContainEqual(
+			expect.objectContaining({
+				severity: 'error',
+				refs: ['Sheet1!B1:B5'],
+				details: expect.objectContaining({
+					kind: 'x14-formula-missing-table',
+					source: 'x14ConditionalFormat',
+					field: 'formulas[0]',
+					reference: 'SUM(MissingRules[Amount])>0',
+					tableName: 'MissingRules',
+					column: 'Amount',
+				}),
+			}),
+		)
+		expect(formatIssues).toContainEqual(
+			expect.objectContaining({
+				severity: 'error',
+				refs: ['Sheet1!B1:B5'],
+				details: expect.objectContaining({
+					kind: 'x14-formula-missing-table',
+					source: 'x14ConditionalFormat',
+					field: 'dataBar.cfvo[0].value',
+					reference: 'MissingBars[Value]',
+					tableName: 'MissingBars',
+					column: 'Value',
+				}),
+			}),
+		)
+	})
+
+	test('detects duplicate x14 document-order indexes', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.x14DataValidations.push(
+			{ index: 0, sqref: 'A1:A5', type: 'list' },
+			{ index: 0, sqref: 'B1:B5', type: 'whole' },
+		)
+		s.x14ConditionalFormats.push(
+			{ index: 3, sqref: 'C1:C5', type: 'dataBar', formulas: [] },
+			{ index: 3, sqref: 'D1:D5', type: 'iconSet', formulas: [] },
+		)
+
+		const result = check(wb)
+
+		expect(result.passed).toBe(false)
+		expect(result.issues).toContainEqual(
+			expect.objectContaining({
+				rule: 'data-validation-integrity',
+				severity: 'error',
+				refs: ['Sheet1!A1:A5', 'Sheet1!B1:B5'],
+				details: expect.objectContaining({
+					kind: 'duplicate-x14-data-validation-index',
+					source: 'x14DataValidation',
+					index: 0,
+					count: 2,
+					sqrefs: ['A1:A5', 'B1:B5'],
+				}),
+			}),
+		)
+		expect(result.issues).toContainEqual(
+			expect.objectContaining({
+				rule: 'conditional-format-integrity',
+				severity: 'error',
+				refs: ['Sheet1!C1:C5', 'Sheet1!D1:D5'],
+				details: expect.objectContaining({
+					kind: 'duplicate-x14-conditional-format-index',
+					source: 'x14ConditionalFormat',
+					index: 3,
+					count: 2,
+					sqrefs: ['C1:C5', 'D1:D5'],
+				}),
+			}),
+		)
+	})
+
 	test('detects deleted x14 entries that still carry live references', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

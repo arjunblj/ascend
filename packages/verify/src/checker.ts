@@ -11,7 +11,13 @@ import {
 	type WorkbookDependencyAnalysis,
 	type WorkbookFormulaAnalysis,
 } from '@ascend/engine'
-import { extractRefs, type FormulaNode, type FormulaRef, parseFormula } from '@ascend/formulas'
+import {
+	extractRefs,
+	type FormulaNode,
+	type FormulaRef,
+	parseFormula,
+	type StructuredRefNode,
+} from '@ascend/formulas'
 import { isError, levenshtein } from '@ascend/schema'
 
 export interface CheckResult {
@@ -2245,6 +2251,14 @@ interface MissingSheetReference {
 	readonly token?: string
 }
 
+interface MissingTableReference {
+	readonly field: string
+	readonly reference: string
+	readonly tableName: string
+	readonly column?: string
+	readonly endColumn?: string
+}
+
 interface ExternalMetadataReference {
 	readonly field: string
 	readonly reference: string
@@ -2323,6 +2337,26 @@ function missingSheetReferencesInFormula(
 	return missing
 }
 
+function missingTableReferencesInFormula(
+	entry: X14FormulaReferenceEntry,
+	tableNameSet: ReadonlySet<string>,
+): MissingTableReference[] {
+	const parsed = parseFormulaText(entry.formula)
+	if (!parsed.ok) return []
+	const missing: MissingTableReference[] = []
+	for (const reference of structuredReferencesForFormula(parsed.value)) {
+		if (!reference.table || tableNameSet.has(reference.table.toLowerCase())) continue
+		missing.push({
+			field: entry.field,
+			reference: entry.formula,
+			tableName: reference.table,
+			...(reference.column ? { column: reference.column } : {}),
+			...(reference.endColumn ? { endColumn: reference.endColumn } : {}),
+		})
+	}
+	return missing
+}
+
 function externalReferencesInFormula(entry: X14FormulaReferenceEntry): ExternalMetadataReference[] {
 	const parsed = parseFormulaText(entry.formula)
 	if (!parsed.ok) return []
@@ -2356,6 +2390,47 @@ function addFormulaSheetName(sheetNames: Map<string, string>, sheetName: string)
 function sheetNamesForFormulaRef(ref: FormulaRef): string[] {
 	if (ref.kind === 'sheetSpan') return [ref.startSheet, ref.endSheet]
 	return ref.sheet ? [ref.sheet] : []
+}
+
+function structuredReferencesForFormula(node: FormulaNode): StructuredRefNode[] {
+	const references: StructuredRefNode[] = []
+	collectStructuredReferences(node, references)
+	return references
+}
+
+function collectStructuredReferences(node: FormulaNode, references: StructuredRefNode[]): void {
+	switch (node.type) {
+		case 'structuredRef':
+			references.push(node)
+			break
+		case 'binary':
+			collectStructuredReferences(node.left, references)
+			collectStructuredReferences(node.right, references)
+			break
+		case 'dynamicRangeRef':
+			collectStructuredReferences(node.start, references)
+			collectStructuredReferences(node.end, references)
+			break
+		case 'unary':
+			collectStructuredReferences(node.operand, references)
+			break
+		case 'function':
+			for (const arg of node.args) collectStructuredReferences(arg, references)
+			break
+		case 'array':
+			for (const row of node.rows) {
+				for (const cell of row) collectStructuredReferences(cell, references)
+			}
+			break
+		case 'spillRef':
+			collectStructuredReferences(node.target, references)
+			break
+		case 'sheetSpanRef':
+			collectStructuredReferences(node.target, references)
+			break
+		default:
+			break
+	}
 }
 
 function collectSheetQualifiedNameReferences(
@@ -2398,6 +2473,41 @@ function collectSheetQualifiedNameReferences(
 	}
 }
 
+function pushX14MissingTableIssues(
+	issues: CheckIssue[],
+	params: {
+		readonly rule: 'conditional-format-integrity' | 'data-validation-integrity'
+		readonly source: 'x14ConditionalFormat' | 'x14DataValidation'
+		readonly sheetName: string
+		readonly index: number
+		readonly sqref: string
+		readonly missing: readonly MissingTableReference[]
+		readonly fallbackRef: string
+	},
+): void {
+	for (const missing of params.missing) {
+		issues.push({
+			rule: params.rule,
+			severity: 'error',
+			message: `${params.source} ${missing.field} on sheet "${params.sheetName}" references missing table "${missing.tableName}"`,
+			refs: x14EntryRefs(params.sheetName, params.sqref, params.fallbackRef),
+			suggestedFix:
+				'Repair the structured reference table name before writing preserved x14 extension metadata.',
+			details: {
+				kind: 'x14-formula-missing-table',
+				source: params.source,
+				sheetName: params.sheetName,
+				index: params.index,
+				field: missing.field,
+				reference: missing.reference,
+				tableName: missing.tableName,
+				...(missing.column ? { column: missing.column } : {}),
+				...(missing.endColumn ? { endColumn: missing.endColumn } : {}),
+			},
+		})
+	}
+}
+
 function formulaHasDetectableReferences(formula: string | undefined): boolean {
 	if (!formula) return false
 	const parsed = parseFormulaText(formula)
@@ -2410,6 +2520,52 @@ function x14FormulaLiveFields(entries: readonly X14FormulaReferenceEntry[]): str
 		if (formulaHasDetectableReferences(entry.formula)) fields.push(entry.field)
 	}
 	return fields
+}
+
+function workbookTableNameSet(wb: Workbook): ReadonlySet<string> {
+	const names = new Set<string>()
+	for (const sheet of wb.sheets) {
+		for (const table of sheet.tables) names.add(table.name.toLowerCase())
+	}
+	return names
+}
+
+function pushDuplicateX14IndexIssues(
+	issues: CheckIssue[],
+	params: {
+		readonly rule: 'conditional-format-integrity' | 'data-validation-integrity'
+		readonly source: 'x14ConditionalFormat' | 'x14DataValidation'
+		readonly sheetName: string
+		readonly entries: readonly { readonly index: number; readonly sqref: string }[]
+		readonly kind: 'duplicate-x14-conditional-format-index' | 'duplicate-x14-data-validation-index'
+		readonly fallbackPrefix: string
+	},
+): void {
+	const byIndex = new Map<number, readonly { readonly index: number; readonly sqref: string }[]>()
+	for (const entry of params.entries) {
+		byIndex.set(entry.index, [...(byIndex.get(entry.index) ?? []), entry])
+	}
+	for (const [index, entries] of byIndex) {
+		if (entries.length < 2) continue
+		issues.push({
+			rule: params.rule,
+			severity: 'error',
+			message: `${params.source} index ${index} appears ${entries.length} times on sheet "${params.sheetName}"`,
+			refs: entries.flatMap((entry) =>
+				x14EntryRefs(params.sheetName, entry.sqref, `${params.fallbackPrefix}[${index}]`),
+			),
+			suggestedFix:
+				'Repair duplicate x14 document-order indexes before writing preserved extension metadata.',
+			details: {
+				kind: params.kind,
+				source: params.source,
+				sheetName: params.sheetName,
+				index,
+				count: entries.length,
+				sqrefs: entries.map((entry) => entry.sqref),
+			},
+		})
+	}
 }
 
 function pushX14MissingSheetIssues(
@@ -2543,8 +2699,20 @@ function checkX14DataValidationIntegrity(
 ): CheckIssue[] {
 	const issues: CheckIssue[] = []
 	const sheetNameSet = new Set(sheetNames.map((name) => name.toLowerCase()))
+	const tableNameSet = workbookTableNameSet(wb)
 
 	for (const sheet of wb.sheets) {
+		pushDuplicateX14IndexIssues(issues, {
+			rule: 'data-validation-integrity',
+			source: 'x14DataValidation',
+			sheetName: sheet.name,
+			entries: sheet.x14DataValidations.map((entry) => ({
+				index: entry.index,
+				sqref: entry.sqref,
+			})),
+			kind: 'duplicate-x14-data-validation-index',
+			fallbackPrefix: 'x14DataValidation',
+		})
 		for (let index = 0; index < sheet.dataValidations.length; index++) {
 			const validation = sheet.dataValidations[index]
 			if (!validation) continue
@@ -2595,6 +2763,17 @@ function checkX14DataValidationIntegrity(
 					),
 				],
 				sheetNames,
+				fallbackRef,
+			})
+			pushX14MissingTableIssues(issues, {
+				rule: 'data-validation-integrity',
+				source: 'x14DataValidation',
+				sheetName: sheet.name,
+				index: validation.index,
+				sqref: validation.sqref,
+				missing: formulaEntries.flatMap((entry) =>
+					missingTableReferencesInFormula(entry, tableNameSet),
+				),
 				fallbackRef,
 			})
 			pushExternalMetadataReferenceIssues(issues, {
@@ -2659,6 +2838,7 @@ function checkConditionalFormatIntegrity(wb: Workbook): CheckIssue[] {
 	const issues: CheckIssue[] = []
 	const sheetNames = wb.sheets.map((sheet) => sheet.name)
 	const sheetNameSet = new Set(sheetNames.map((name) => name.toLowerCase()))
+	const tableNameSet = workbookTableNameSet(wb)
 	for (const sheet of wb.sheets) {
 		const entries: ConditionalFormatPriorityEntry[] = []
 		for (let formatIndex = 0; formatIndex < sheet.conditionalFormats.length; formatIndex++) {
@@ -2710,6 +2890,17 @@ function checkConditionalFormatIntegrity(wb: Workbook): CheckIssue[] {
 				})
 			}
 		}
+		pushDuplicateX14IndexIssues(issues, {
+			rule: 'conditional-format-integrity',
+			source: 'x14ConditionalFormat',
+			sheetName: sheet.name,
+			entries: sheet.x14ConditionalFormats.map((entry) => ({
+				index: entry.index,
+				sqref: entry.sqref,
+			})),
+			kind: 'duplicate-x14-conditional-format-index',
+			fallbackPrefix: 'x14ConditionalFormat',
+		})
 		for (const format of sheet.x14ConditionalFormats) {
 			const fallbackRef = `x14ConditionalFormat[${format.index}]`
 			const formulaEntries = x14ConditionalFormatFormulaEntries(format)
@@ -2726,6 +2917,17 @@ function checkConditionalFormatIntegrity(wb: Workbook): CheckIssue[] {
 					),
 				],
 				sheetNames,
+				fallbackRef,
+			})
+			pushX14MissingTableIssues(issues, {
+				rule: 'conditional-format-integrity',
+				source: 'x14ConditionalFormat',
+				sheetName: sheet.name,
+				index: format.index,
+				sqref: format.sqref,
+				missing: formulaEntries.flatMap((entry) =>
+					missingTableReferencesInFormula(entry, tableNameSet),
+				),
 				fallbackRef,
 			})
 			pushExternalMetadataReferenceIssues(issues, {

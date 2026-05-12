@@ -2052,7 +2052,7 @@ describe('readXlsx', () => {
 			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
-  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink" Target="externalLinks/externalLink1.xml"/>
+  <Relationship Id="rId2" Type="http://purl.oclc.org/ooxml/officeDocument/relationships/externalLink" Target="externalLinks/externalLink1.xml"/>
 </Relationships>`,
 			'xl/workbook.xml': `<?xml version="1.0"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -2092,7 +2092,20 @@ describe('readXlsx', () => {
 			{
 				partPath: 'xl/externalLinks/externalLink1.xml',
 				relId: 'rId2',
+				sourcePartPath: 'xl/workbook.xml',
+				sourceRelationshipPart: 'xl/_rels/workbook.xml.rels',
+				sourceRelationshipType:
+					'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink',
+				sourceRelationshipRawType:
+					'http://purl.oclc.org/ooxml/officeDocument/relationships/externalLink',
+				sourceRelationshipRawTarget: 'externalLinks/externalLink1.xml',
+				sourceRelationshipResolvedTarget: 'xl/externalLinks/externalLink1.xml',
+				externalBookRelId: 'rIdExt',
 				linkRelId: 'rIdExt',
+				linkRelationshipPart: 'xl/externalLinks/_rels/externalLink1.xml.rels',
+				linkRelationshipType:
+					'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath',
+				linkRelationshipRawTarget: '../sources/source.xlsx',
 				target: '../sources/source.xlsx',
 				targetMode: 'External',
 			},
@@ -2139,7 +2152,18 @@ describe('readXlsx', () => {
 			{
 				partPath: 'xl/externalLinks/externalLink1.xml',
 				relId: 'rId2',
+				sourcePartPath: 'xl/workbook.xml',
+				sourceRelationshipPart: 'xl/_rels/workbook.xml.rels',
+				sourceRelationshipType:
+					'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink',
+				sourceRelationshipRawTarget: 'externalLinks/externalLink1.xml',
+				sourceRelationshipResolvedTarget: 'xl/externalLinks/externalLink1.xml',
+				externalBookRelId: 'rIdChosen',
 				linkRelId: 'rIdChosen',
+				linkRelationshipPart: 'xl/externalLinks/_rels/externalLink1.xml.rels',
+				linkRelationshipType:
+					'http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlStartup',
+				linkRelationshipRawTarget: 'personal.xls',
 				target: 'personal.xls',
 				targetMode: 'External',
 			},

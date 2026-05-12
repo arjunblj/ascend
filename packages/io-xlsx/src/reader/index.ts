@@ -264,7 +264,18 @@ export function readXlsx(
 			workbook.externalReferenceDetails.push({
 				partPath,
 				relId,
+				sourcePartPath: workbookPath,
+				sourceRelationshipPart: wbRelsPath,
+				sourceRelationshipType: rel.type,
+				...(rel.rawType ? { sourceRelationshipRawType: rel.rawType } : {}),
+				sourceRelationshipRawTarget: rel.target,
+				sourceRelationshipResolvedTarget: partPath,
+				...(externalBookRelId ? { externalBookRelId } : {}),
 				...(linkRelationship?.id ? { linkRelId: linkRelationship.id } : {}),
+				...(linkRelationship ? { linkRelationshipPart: getRelsPath(partPath) } : {}),
+				...(linkRelationship?.type ? { linkRelationshipType: linkRelationship.type } : {}),
+				...(linkRelationship?.rawType ? { linkRelationshipRawType: linkRelationship.rawType } : {}),
+				...(linkRelationship?.target ? { linkRelationshipRawTarget: linkRelationship.target } : {}),
 				...(linkRelationship?.target ? { target: linkRelationship.target } : {}),
 				...(linkRelationship?.targetMode ? { targetMode: linkRelationship.targetMode } : {}),
 			})

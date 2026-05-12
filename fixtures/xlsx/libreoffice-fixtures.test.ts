@@ -112,7 +112,18 @@ describe('LibreOffice XLSX fixture corpus', () => {
 			{
 				partPath: 'xl/externalLinks/externalLink1.xml',
 				relId: 'rId4',
+				sourcePartPath: 'xl/workbook.xml',
+				sourceRelationshipPart: 'xl/_rels/workbook.xml.rels',
+				sourceRelationshipType:
+					'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink',
+				sourceRelationshipRawTarget: 'externalLinks/externalLink1.xml',
+				sourceRelationshipResolvedTarget: 'xl/externalLinks/externalLink1.xml',
+				externalBookRelId: 'rId1',
 				linkRelId: 'rId1',
+				linkRelationshipPart: 'xl/externalLinks/_rels/externalLink1.xml.rels',
+				linkRelationshipType:
+					'http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlPathMissing',
+				linkRelationshipRawTarget: 'Tabelle1',
 				target: 'Tabelle1',
 				targetMode: 'External',
 			},
@@ -127,7 +138,20 @@ describe('LibreOffice XLSX fixture corpus', () => {
 			{
 				partPath: 'xl/externalLinks/externalLink1.xml',
 				relId: 'rId2',
+				sourcePartPath: 'xl/workbook.xml',
+				sourceRelationshipPart: 'xl/_rels/workbook.xml.rels',
+				sourceRelationshipType:
+					'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink',
+				sourceRelationshipRawType:
+					'http://purl.oclc.org/ooxml/officeDocument/relationships/externalLink',
+				sourceRelationshipRawTarget: 'externalLinks/externalLink1.xml',
+				sourceRelationshipResolvedTarget: 'xl/externalLinks/externalLink1.xml',
+				externalBookRelId: 'rId1',
 				linkRelId: 'rId1',
+				linkRelationshipPart: 'xl/externalLinks/_rels/externalLink1.xml.rels',
+				linkRelationshipType:
+					'http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlStartup',
+				linkRelationshipRawTarget: 'personal.xls',
 				target: 'personal.xls',
 				targetMode: 'External',
 			},

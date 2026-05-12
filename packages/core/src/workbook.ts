@@ -187,7 +187,18 @@ export interface WorkbookMacroSheetInfo {
 export interface ExternalReferenceInfo {
 	readonly partPath: string
 	readonly relId?: string
+	readonly sourcePartPath?: string
+	readonly sourceRelationshipPart?: string
+	readonly sourceRelationshipType?: string
+	readonly sourceRelationshipRawType?: string
+	readonly sourceRelationshipRawTarget?: string
+	readonly sourceRelationshipResolvedTarget?: string
+	readonly externalBookRelId?: string
 	readonly linkRelId?: string
+	readonly linkRelationshipPart?: string
+	readonly linkRelationshipType?: string
+	readonly linkRelationshipRawType?: string
+	readonly linkRelationshipRawTarget?: string
 	readonly target?: string
 	readonly targetMode?: string
 }

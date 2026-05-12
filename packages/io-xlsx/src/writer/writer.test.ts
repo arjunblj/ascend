@@ -3998,6 +3998,7 @@ describe('writeXlsx', () => {
 		wb.externalReferenceDetails.push({
 			partPath: 'xl/externalLinks/externalLink1.xml',
 			relId: 'rId2',
+			linkRelId: 'rIdExt',
 			target: '../sources/source.xlsx',
 			targetMode: 'External',
 		})
@@ -4014,7 +4015,7 @@ describe('writeXlsx', () => {
 					},
 					{
 						id: 'rIdExt',
-						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath',
+						type: 'http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlStartup',
 						target: '../sources/source.xlsx',
 						targetMode: 'External',
 					},
@@ -4044,6 +4045,9 @@ describe('writeXlsx', () => {
 		)
 		expect(rels).toContain('Target="../sources/reforecast &amp; final.xlsx"')
 		expect(rels).toContain('TargetMode="External"')
+		expect(rels).toContain(
+			'Type="http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlStartup"',
+		)
 		expect(rels).toContain('Id="rIdMetadata"')
 		expect(rels).toContain('Target="../customXml/item1.xml"')
 
@@ -4052,6 +4056,8 @@ describe('writeXlsx', () => {
 		expect(read.value.workbook.externalReferenceDetails[0]).toMatchObject({
 			partPath: 'xl/externalLinks/externalLink1.xml',
 			linkRelId: 'rIdExt',
+			linkRelationshipType:
+				'http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlStartup',
 			target: '../sources/reforecast & final.xlsx',
 			targetMode: 'External',
 		})

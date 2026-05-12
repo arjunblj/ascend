@@ -292,30 +292,30 @@ function buildSheetXmlToSink(
 		if (rowDef?.thickBot !== undefined) rowAttrs.push(`thickBot="${rowDef.thickBot ? '1' : '0'}"`)
 		if (rowDef?.dyDescent !== undefined) rowAttrs.push(`x14ac:dyDescent="${rowDef.dyDescent}"`)
 		const rowStart = `<row ${rowAttrs.join(' ')}>`
-		const rowParts = options.batchRows ? [rowStart] : undefined
+		const denseCellsWithoutRefsXml =
+			options.batchRows && options.omitDenseCellRefs === true && blankCells.length === 0
+				? defaultStyleScalarCellsWithoutRefsXml(
+						cells,
+						options.useInlineStrings,
+						options.usePlainStrings,
+					)
+				: false
+		if (denseCellsWithoutRefsXml !== false) out.push(`${rowStart}${denseCellsWithoutRefsXml}</row>`)
+		const rowParts =
+			options.batchRows && denseCellsWithoutRefsXml === false ? [rowStart] : undefined
 		const rowOut: SheetXmlSink =
 			rowParts === undefined ? out : { push: (chunk) => rowParts.push(chunk) }
-		if (rowParts === undefined) out.push(rowStart)
+		if (rowParts === undefined && denseCellsWithoutRefsXml === false) out.push(rowStart)
 		const rowNumber = row + 1
-		const wroteDenseCellsWithoutRefs =
-			rowParts !== undefined &&
-			options.omitDenseCellRefs === true &&
-			blankCells.length === 0 &&
-			pushDefaultStyleScalarCellsWithoutRefs(
-				rowParts,
-				cells,
-				options.useInlineStrings,
-				options.usePlainStrings,
-			)
 		const omitCellRefs =
-			!wroteDenseCellsWithoutRefs &&
+			denseCellsWithoutRefsXml === false &&
 			options.omitDenseCellRefs === true &&
 			blankCells.length === 0 &&
 			canOmitDenseCellRefs(cells, options.useInlineStrings, options.usePlainStrings)
 		let cellIndex = 0
 		let blankIndex = 0
 		while (
-			!wroteDenseCellsWithoutRefs &&
+			denseCellsWithoutRefsXml === false &&
 			(cellIndex < cells.length || blankIndex < blankCells.length)
 		) {
 			const cellEntry = cells[cellIndex]
@@ -358,11 +358,13 @@ function buildSheetXmlToSink(
 			)
 			cellIndex++
 		}
-		if (rowParts === undefined) {
-			out.push('</row>')
-		} else {
-			rowParts.push('</row>')
-			out.push(rowParts.join(''))
+		if (denseCellsWithoutRefsXml === false) {
+			if (rowParts === undefined) {
+				out.push('</row>')
+			} else {
+				rowParts.push('</row>')
+				out.push(rowParts.join(''))
+			}
 		}
 		if (populatedRow && populatedRow[0] === row) nextRow = rowIterator.next()
 		if (heightEntry && heightEntry[0] === row) rowHeightIndex++
@@ -769,12 +771,11 @@ function canOmitDenseCellRefs(
 	return true
 }
 
-function pushDefaultStyleScalarCellsWithoutRefs(
-	out: string[],
+function defaultStyleScalarCellsWithoutRefsXml(
 	cells: readonly (readonly [number, Cell])[],
 	useInlineStrings?: boolean,
 	usePlainStrings?: boolean,
-): boolean {
+): string | false {
 	if (cells.length === 0) return false
 	let body = ''
 	for (let index = 0; index < cells.length; index++) {
@@ -808,8 +809,7 @@ function pushDefaultStyleScalarCellsWithoutRefs(
 			return false
 		}
 	}
-	out.push(body)
-	return true
+	return body
 }
 
 function canOmitDefaultStyleScalarCellRef(

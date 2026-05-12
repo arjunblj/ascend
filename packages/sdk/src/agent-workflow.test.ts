@@ -4,7 +4,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { inspectXlsxPackageGraph } from '@ascend/io-xlsx'
 import { createZip, encode } from '../../io-xlsx/src/writer/zip.ts'
-import { AscendWorkbook, auditLossPolicy, commitAgentPlan, createAgentPlan } from './index.ts'
+import {
+	AscendWorkbook,
+	auditLossPolicy,
+	auditPackageGraphIntegrity,
+	commitAgentPlan,
+	createAgentPlan,
+} from './index.ts'
 
 const TEMP_DIR = join(tmpdir(), `ascend-agent-workflow-${process.pid}`)
 
@@ -80,6 +86,16 @@ describe('agent workflow loss audit', () => {
 				bytePreservationExpected: false,
 			}),
 		])
+		const fidelityAudit = auditPackageGraphIntegrity(
+			inspectXlsxPackageGraph(makePreservedCustomXlsx()),
+		)
+		expect(fidelityAudit.ok).toBe(false)
+		expect(fidelityAudit.issues).toContainEqual(
+			expect.objectContaining({
+				code: 'package_feature_classification',
+				partPath: 'xl/custom/custom1.xml',
+			}),
+		)
 	})
 
 	test('plans report blocked preserved features and commits require explicit allow-loss', async () => {
@@ -92,6 +108,13 @@ describe('agent workflow loss audit', () => {
 		const plan = await createAgentPlan(input, ops)
 		expect(plan.lossAudit.ok).toBe(false)
 		expect(plan.lossAudit.blockedFeatures[0]?.feature).toBe('preservedOther')
+		expect(plan.packageGraphAudit.ok).toBe(false)
+		expect(plan.packageGraphAudit.issues).toContainEqual(
+			expect.objectContaining({
+				code: 'package_feature_classification',
+				partPath: 'xl/custom/custom1.xml',
+			}),
+		)
 		expect(plan.lossAudit.blockedPackageParts).toEqual([
 			expect.objectContaining({
 				partPath: 'xl/custom/custom1.xml',
@@ -104,6 +127,10 @@ describe('agent workflow loss audit', () => {
 		expect(plan.trace.traceDigest).toMatch(/^[a-f0-9]{64}$/)
 		const lossPhase = plan.trace.phases.find((phase) => phase.phase === 'loss-audit')
 		expect(lossPhase?.status).toBe('blocked')
+		const packageGraphPhase = plan.trace.phases.find(
+			(phase) => phase.phase === 'package-graph-audit',
+		)
+		expect(packageGraphPhase?.status).toBe('warning')
 		expect(lossPhase?.details).toMatchObject({
 			blockedPackageParts: [
 				expect.objectContaining({
@@ -115,6 +142,7 @@ describe('agent workflow loss audit', () => {
 		expect(plan.needsApproval).toBe(true)
 		expect(plan.approvals[0]?.kind).toBe('lossy-write')
 		expect(plan.modelOutput.blocked).toBe(true)
+		expect(plan.modelOutput.counts.packageGraphIssues).toBe(1)
 		expect(plan.modelOutput.nextActions.join('\n')).toContain('approval')
 
 		await expect(commitAgentPlan(input, ops, { output })).rejects.toThrow(
@@ -126,6 +154,7 @@ describe('agent workflow loss audit', () => {
 			allowLoss: ['preservedOther'],
 		})
 		expect(committed.lossAudit.ok).toBe(true)
+		expect(committed.packageGraphAudit.ok).toBe(false)
 		expect(committed.outputSha256).toMatch(/^[a-f0-9]{64}$/)
 		expect(committed.postWrite.valid).toBe(true)
 		expect(committed.postWrite.outputSha256).toBe(committed.outputSha256)
@@ -182,6 +211,7 @@ describe('agent workflow loss audit', () => {
 			{ output },
 		)
 		expect(committed.lossAudit.ok).toBe(true)
+		expect(committed.packageGraphAudit.ok).toBe(true)
 		expect(committed.postWrite.valid).toBe(true)
 		expect(committed.postWrite.reopened).toBe(true)
 		expect(committed.postWrite.check.valid).toBe(true)
@@ -214,6 +244,7 @@ describe('agent workflow loss audit', () => {
 
 		expect(planEvents[0]).toBe('1:hash-input:started')
 		expect(planEvents).toContain('3:load-workbook:started')
+		expect(planEvents.some((event) => event.includes('package-graph-audit:ok'))).toBe(true)
 		expect(planEvents.at(-1)).toContain('finalize:ok')
 		expect(commitEvents[0]).toBe('1:hash-input:started')
 		expect(commitEvents.some((event) => event.includes('apply:ok'))).toBe(true)

@@ -3,9 +3,11 @@ import { copyFile, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
 import type {
 	XlsxPackageGraph,
+	XlsxPackageGraphFidelityIssue,
 	XlsxPackageLossPolicy,
 	XlsxPackageOwnerScope,
 } from '@ascend/io-xlsx'
+import { auditXlsxPackageGraphReadIntegrity } from '@ascend/io-xlsx'
 import { AscendException, ascendError, type FeatureReport, type Operation } from '@ascend/schema'
 import { listCapabilities, summarizeCapabilities } from './capabilities.ts'
 import { AscendWorkbook } from './workbook.ts'
@@ -25,6 +27,7 @@ export interface AgentPlanResult {
 	readonly preservation: ReturnType<AscendWorkbook['writePlanSummary']>
 	readonly unsupportedFeatures: readonly unknown[]
 	readonly lossAudit: LossAudit
+	readonly packageGraphAudit: PackageGraphAudit
 	readonly capabilities: ReturnType<typeof summarizeCapabilities>
 }
 
@@ -56,6 +59,7 @@ export interface AgentCommitResult {
 	readonly preservation: ReturnType<AscendWorkbook['writePlanSummary']>
 	readonly postWrite: AgentPostWriteVerification
 	readonly lossAudit: LossAudit
+	readonly packageGraphAudit: PackageGraphAudit
 }
 
 export interface AgentPostWriteVerification {
@@ -91,6 +95,12 @@ export interface LossAuditPackagePart {
 	readonly sourceRelationshipResolvedTarget?: string
 	readonly sourceRelationshipTargetMode?: string
 	readonly reason: string
+}
+
+export interface PackageGraphAudit {
+	readonly ok: boolean
+	readonly issues: readonly XlsxPackageGraphFidelityIssue[]
+	readonly policy: 'read-integrity'
 }
 
 export interface AgentWorkflowTrace {
@@ -155,6 +165,7 @@ export interface AgentModelOutput {
 		readonly checkIssues?: number
 		readonly lintWarnings?: number
 		readonly blockedFeatures?: number
+		readonly packageGraphIssues?: number
 		readonly preservationParts?: number
 	}
 }
@@ -205,9 +216,13 @@ export async function createAgentPlan(
 	await progress('preview', 'started', 'Previewing operations.', { count: ops.length })
 	const preview = wb.preview(ops)
 	await progressFromPhase(previewPhase(preview), progress)
+	const packageGraph = wb.packageGraph()
 	await progress('loss-audit', 'started', 'Auditing preserved and unsupported features.')
-	const lossAudit = auditLossPolicy(wb.report.features, [], wb.packageGraph())
+	const lossAudit = auditLossPolicy(wb.report.features, [], packageGraph)
 	await progressFromPhase(lossAuditPhase(lossAudit), progress)
+	await progress('package-graph-audit', 'started', 'Auditing package graph fidelity.')
+	const packageGraphAudit = auditPackageGraphIntegrity(packageGraph)
+	await progressFromPhase(packageGraphAuditPhase(packageGraphAudit), progress)
 	await progress('approval-audit', 'started', 'Auditing explicit approval requirements.')
 	const approvals = buildApprovalRequirements(wb.report.features, ops)
 	await progressFromPhase(approvalPhase(approvals), progress)
@@ -234,6 +249,7 @@ export async function createAgentPlan(
 			checkPhase(check),
 			lintPhase(lint),
 			lossAuditPhase(lossAudit),
+			packageGraphAuditPhase(packageGraphAudit),
 			approvalPhase(approvals),
 			preservationPhase(preservation),
 		],
@@ -241,6 +257,11 @@ export async function createAgentPlan(
 			artifact('ops', ops, `${ops.length} operation(s)`),
 			artifact('preview', preview, `${preview.changedCells.length} changed cell(s)`),
 			artifact('lossAudit', lossAudit, `${lossAudit.blockedFeatures.length} blocked feature(s)`),
+			artifact(
+				'packageGraphAudit',
+				packageGraphAudit,
+				`${packageGraphAudit.issues.length} package graph issue(s)`,
+			),
 			artifact('approvals', approvals, `${approvals.length} approval requirement(s)`),
 			artifact('preservation', preservation, `${preservation.totalParts} package part(s)`),
 		],
@@ -260,6 +281,7 @@ export async function createAgentPlan(
 		preservation,
 		unsupportedFeatures: wb.report.features,
 		lossAudit,
+		packageGraphAudit,
 		capabilities: summarizeCapabilities(listCapabilities({ gapsOnly: true })),
 	}
 }
@@ -315,6 +337,7 @@ export async function commitAgentPlan(
 	await progress('load-workbook', 'started', 'Opening workbook.')
 	const wb = await AscendWorkbook.open(file)
 	await progress('load-workbook', 'ok', 'Workbook opened.')
+	const packageGraph = wb.packageGraph()
 	await progress('approval-audit', 'started', 'Auditing explicit approval requirements.')
 	const approvals = buildApprovalRequirements(wb.report.features, ops)
 	const effectiveAllowLoss = mergeAllowLoss(
@@ -322,9 +345,12 @@ export async function commitAgentPlan(
 		approvalSatisfiedLossFeatures(approvals, options.approvals),
 	)
 	await progress('loss-audit', 'started', 'Auditing preserved and unsupported features.')
-	const lossAudit = auditLossPolicy(wb.report.features, effectiveAllowLoss, wb.packageGraph())
-	const blockedApprovals = unsatisfiedApprovalRequirements(approvals, lossAudit, options.approvals)
+	const lossAudit = auditLossPolicy(wb.report.features, effectiveAllowLoss, packageGraph)
 	await progressFromPhase(lossAuditPhase(lossAudit), progress)
+	await progress('package-graph-audit', 'started', 'Auditing package graph fidelity.')
+	const packageGraphAudit = auditPackageGraphIntegrity(packageGraph)
+	const blockedApprovals = unsatisfiedApprovalRequirements(approvals, lossAudit, options.approvals)
+	await progressFromPhase(packageGraphAuditPhase(packageGraphAudit), progress)
 	await progressFromPhase(approvalPhase(approvals, options.approvals, blockedApprovals), progress)
 	if (blockedApprovals.length > 0) {
 		throw new AscendException(
@@ -395,6 +421,7 @@ export async function commitAgentPlan(
 				? okPhase('hash-guard', 'Input hash matched expected SHA-256.')
 				: okPhase('hash-guard', 'No input hash guard requested.'),
 			lossAuditPhase(lossAudit),
+			packageGraphAuditPhase(packageGraphAudit),
 			approvalPhase(approvals, options.approvals, blockedApprovals),
 			applyPhase(apply),
 			recalcPhase(recalc),
@@ -413,6 +440,11 @@ export async function commitAgentPlan(
 				recalc ? `${recalc.changed.length} recalculated cell(s)` : 'not required',
 			),
 			artifact('lossAudit', lossAudit, `${lossAudit.blockedFeatures.length} blocked feature(s)`),
+			artifact(
+				'packageGraphAudit',
+				packageGraphAudit,
+				`${packageGraphAudit.issues.length} package graph issue(s)`,
+			),
 			artifact('approvals', approvals, `${approvals.length} approval requirement(s)`),
 			artifact('preservation', preservation, `${preservation.totalParts} package part(s)`),
 			artifact(
@@ -443,6 +475,7 @@ export async function commitAgentPlan(
 		preservation,
 		postWrite,
 		lossAudit,
+		packageGraphAudit,
 	}
 	return result
 }
@@ -487,6 +520,15 @@ export function auditLossPolicy(
 		blockedPackageParts,
 		allowedLoss: allowLoss,
 		policy: 'block-preserved-and-unsupported',
+	}
+}
+
+export function auditPackageGraphIntegrity(packageGraph: XlsxPackageGraph): PackageGraphAudit {
+	const issues = auditXlsxPackageGraphReadIntegrity(packageGraph)
+	return {
+		ok: issues.length === 0,
+		issues,
+		policy: 'read-integrity',
 	}
 }
 
@@ -776,6 +818,19 @@ function lossAuditPhase(lossAudit: LossAudit): AgentTracePhase {
 	return okPhase('loss-audit', 'No unapproved preserved or unsupported feature loss detected.', 0)
 }
 
+function packageGraphAuditPhase(audit: PackageGraphAudit): AgentTracePhase {
+	if (!audit.ok) {
+		return phaseResult(
+			'package-graph-audit',
+			'warning',
+			`${audit.issues.length} package graph fidelity issue(s) require inspection.`,
+			audit.issues.length,
+			{ issues: audit.issues },
+		)
+	}
+	return okPhase('package-graph-audit', 'Package graph fidelity audit passed.', 0)
+}
+
 function approvalPhase(
 	approvals: readonly ApprovalRequirement[],
 	granted: readonly string[] | 'all' = [],
@@ -870,6 +925,7 @@ function modelOutputFromTrace(trace: AgentWorkflowTrace): AgentModelOutput {
 	setCount(counts, 'checkIssues', phaseCount(trace, 'check'))
 	setCount(counts, 'lintWarnings', phaseCount(trace, 'lint', 'warning'))
 	setCount(counts, 'blockedFeatures', phaseCount(trace, 'loss-audit', 'blocked'))
+	setCount(counts, 'packageGraphIssues', phaseCount(trace, 'package-graph-audit', 'warning'))
 	setCount(counts, 'preservationParts', phaseCount(trace, 'preservation-audit'))
 	return {
 		summary: blocked
@@ -912,6 +968,16 @@ function buildNextActions(trace: AgentWorkflowTrace): string[] {
 	}
 	if (trace.phases.some((phase) => phase.status === 'failed')) {
 		return ['Inspect failed trace phases and run repair-plan before committing.']
+	}
+	if (
+		trace.phases.some(
+			(phase) => phase.phase === 'package-graph-audit' && phase.status === 'warning',
+		)
+	) {
+		return [
+			'Inspect packageGraphAudit.issues before editing around malformed or unclassified package structure.',
+			...(trace.kind === 'plan' ? ['Commit with this planDigest and inputSha256 when ready.'] : []),
+		]
 	}
 	if (trace.kind === 'plan') return ['Commit with this planDigest and inputSha256 when ready.']
 	if (trace.kind === 'commit')

@@ -61,6 +61,7 @@ export async function commitCommand(args: string[], flags: Map<string, string>):
 	console.log(bullet('Input SHA-256', result.inputSha256))
 	console.log(bullet('Output SHA-256', result.outputSha256))
 	console.log(bullet('Plan digest', result.planDigest))
+	console.log(bullet('Package graph issues', result.packageGraphAudit.issues.length))
 	return 0
 }
 

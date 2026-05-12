@@ -789,7 +789,7 @@ export function createServer(): McpServer {
 
 	server.tool(
 		'ascend.plan',
-		'Agent-safe edit planning: validate, preview, recalc-audit, and preservation-audit operations without saving',
+		'Agent-safe edit planning: validate, preview, recalc-audit, package-graph-audit, and preservation-audit operations without saving',
 		{
 			file: z.string().describe('Path to workbook file'),
 			ops: z.array(z.record(z.string(), z.unknown())).describe('Operations to plan'),

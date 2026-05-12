@@ -26,11 +26,13 @@ export type {
 	ApprovalRequirement,
 	LossAudit,
 	LossAuditPackagePart,
+	PackageGraphAudit,
 	RepairAction,
 	RepairPlanResult,
 } from './agent-workflow.ts'
 export {
 	auditLossPolicy,
+	auditPackageGraphIntegrity,
 	commitAgentPlan,
 	createAgentPlan,
 	createRepairPlan,

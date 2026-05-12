@@ -7,7 +7,7 @@ import { createAgentProgressReporter } from '../progress.ts'
 
 export const usage = `Usage: ascend plan <file> --ops <file.json> [flags]
 
-  Validate, preview, recalc-audit, and preservation-audit operations without saving.
+  Validate, preview, recalc-audit, package-graph-audit, and preservation-audit operations without saving.
 
 Arguments:
   <file>              Path to the workbook file
@@ -52,6 +52,7 @@ export async function planCommand(args: string[], flags: Map<string, string>): P
 	console.log(bullet('Plan digest', result.planDigest))
 	console.log(bullet('Would succeed', result.preview.wouldSucceed ? 'yes' : 'no'))
 	console.log(bullet('Cell changes', result.preview.cellChanges.length))
+	console.log(bullet('Package graph issues', result.packageGraphAudit.issues.length))
 	console.log(bullet('Write parts', result.preservation.totalParts))
 	console.log(bullet('Approval required', result.needsApproval ? 'yes' : 'no'))
 	for (const approval of result.approvals) {

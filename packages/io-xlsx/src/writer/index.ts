@@ -19,11 +19,13 @@ import {
 } from '../reader/pivots.ts'
 import {
 	getRelsPath,
+	isExternalLinkPathRelationshipType,
 	parseRelationships,
 	REL_CALC_CHAIN,
 	REL_CHARTSHEET,
 	REL_COMMENTS,
 	REL_DRAWING,
+	REL_EXTERNAL_LINK_PATH,
 	REL_IMAGE,
 	REL_MACROSHEET,
 	REL_PIVOT_CACHE_DEFINITION,
@@ -87,8 +89,6 @@ const REL_DIGITAL_SIGNATURE_ORIGIN =
 	'http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/origin'
 const REL_HYPERLINK =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink'
-const REL_EXTERNAL_LINK_PATH =
-	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath'
 const CT_SHEET_METADATA =
 	'application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml'
 const CT_COMMENTS = 'application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml'
@@ -2626,10 +2626,10 @@ function buildGeneratedExternalLinkRelationships(
 		]
 	}
 	let changed = false
-	const updated = relationships.map((rel, index) => {
+	const updated = relationships.map((rel) => {
 		const matchesLinkRelId = detail.linkRelId !== undefined && rel.id === detail.linkRelId
 		const matchesDefaultLink =
-			detail.linkRelId === undefined && (rel.type === REL_EXTERNAL_LINK_PATH || index === 0)
+			detail.linkRelId === undefined && isExternalLinkPathRelationshipType(rel.type)
 		if (!matchesLinkRelId && !matchesDefaultLink) return rel
 		changed = true
 		return {

@@ -55,6 +55,7 @@ import {
 } from './pivots.ts'
 import {
 	getRelsPath,
+	isExternalLinkPathRelationshipType,
 	parseRelationships,
 	REL_CHART,
 	REL_CHARTSHEET,
@@ -246,7 +247,11 @@ export function readXlsx(
 			const partPath = resolvePath(workbookPath, rel.target)
 			workbook.externalReferences.push(partPath)
 			const relsXml = readPart(archive, getRelsPath(partPath))
-			const linkRelationship = relsXml ? parseRelationships(relsXml)[0] : undefined
+			const linkRelationship = relsXml
+				? parseRelationships(relsXml).find((entry) =>
+						isExternalLinkPathRelationshipType(entry.type),
+					)
+				: undefined
 			workbook.externalReferenceDetails.push({
 				partPath,
 				relId,

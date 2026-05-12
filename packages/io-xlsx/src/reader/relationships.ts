@@ -39,10 +39,27 @@ export const REL_VML_DRAWING =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing'
 export const REL_THREADED_COMMENT =
 	'http://schemas.microsoft.com/office/2017/10/relationships/threadedComment'
+export const REL_EXTERNAL_LINK_PATH =
+	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath'
+export const REL_EXTERNAL_LINK_STARTUP_PATH =
+	'http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlStartup'
+export const REL_EXTERNAL_LINK_ALTERNATE_STARTUP_PATH =
+	'http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlAlternateStartup'
+export const REL_EXTERNAL_LINK_LIBRARY_PATH =
+	'http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlLibrary'
+export const REL_EXTERNAL_LINK_MISSING_PATH =
+	'http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlPathMissing'
 
 const STRICT_REL_PREFIX = 'http://purl.oclc.org/ooxml/officeDocument/relationships/'
 const TRANSITIONAL_REL_PREFIX =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
+const EXTERNAL_LINK_PATH_REL_TYPES = new Set([
+	REL_EXTERNAL_LINK_PATH,
+	REL_EXTERNAL_LINK_STARTUP_PATH,
+	REL_EXTERNAL_LINK_ALTERNATE_STARTUP_PATH,
+	REL_EXTERNAL_LINK_LIBRARY_PATH,
+	REL_EXTERNAL_LINK_MISSING_PATH,
+])
 
 const RELATIONSHIP_RE = /<Relationship\b([^>]*)\/>/g
 const ATTR_RE = /([A-Za-z_][\w:.-]*)="([^"]*)"/g
@@ -75,6 +92,10 @@ export function parseRelationships(xml: string): Relationship[] {
 		}
 	}
 	return rels
+}
+
+export function isExternalLinkPathRelationshipType(type: string): boolean {
+	return EXTERNAL_LINK_PATH_REL_TYPES.has(normalizeRelationshipType(type))
 }
 
 function decodeXmlAttr(value: string): string {

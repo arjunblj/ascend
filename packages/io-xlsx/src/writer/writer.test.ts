@@ -3849,7 +3849,6 @@ describe('writeXlsx', () => {
 		wb.externalReferenceDetails.push({
 			partPath: 'xl/externalLinks/externalLink1.xml',
 			relId: 'rId2',
-			linkRelId: 'rIdExt',
 			target: '../sources/source.xlsx',
 			targetMode: 'External',
 		})
@@ -3859,6 +3858,11 @@ describe('writeXlsx', () => {
 				partPath: 'xl/externalLinks/externalLink1.xml',
 				contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml',
 				relationships: [
+					{
+						id: 'rIdMetadata',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml',
+						target: '../customXml/item1.xml',
+					},
 					{
 						id: 'rIdExt',
 						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath',
@@ -3878,7 +3882,6 @@ describe('writeXlsx', () => {
 			{
 				op: 'rewriteExternalLink',
 				partPath: 'xl/externalLinks/externalLink1.xml',
-				linkRelId: 'rIdExt',
 				newTarget: '../sources/reforecast & final.xlsx',
 			},
 		])
@@ -3892,6 +3895,8 @@ describe('writeXlsx', () => {
 		)
 		expect(rels).toContain('Target="../sources/reforecast &amp; final.xlsx"')
 		expect(rels).toContain('TargetMode="External"')
+		expect(rels).toContain('Id="rIdMetadata"')
+		expect(rels).toContain('Target="../customXml/item1.xml"')
 
 		const read = readXlsx(written.value)
 		expectOk(read)

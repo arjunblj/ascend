@@ -102,6 +102,38 @@ describe('LibreOffice XLSX fixture corpus', () => {
 		{ timeout: 30_000 },
 	)
 
+	test('reads LibreOffice external workbook path relationship variants', () => {
+		const missingPath = readXlsx(loadFixture('MissingPathExternal.xlsx'))
+		expectOk(missingPath)
+		expect(missingPath.value.workbook.externalReferences).toEqual([
+			'xl/externalLinks/externalLink1.xml',
+		])
+		expect(missingPath.value.workbook.externalReferenceDetails).toEqual([
+			{
+				partPath: 'xl/externalLinks/externalLink1.xml',
+				relId: 'rId4',
+				linkRelId: 'rId1',
+				target: 'Tabelle1',
+				targetMode: 'External',
+			},
+		])
+
+		const startupPath = readXlsx(loadFixture('XlStartupExternal.xlsx'))
+		expectOk(startupPath)
+		expect(startupPath.value.workbook.externalReferences).toEqual([
+			'xl/externalLinks/externalLink1.xml',
+		])
+		expect(startupPath.value.workbook.externalReferenceDetails).toEqual([
+			{
+				partPath: 'xl/externalLinks/externalLink1.xml',
+				relId: 'rId2',
+				linkRelId: 'rId1',
+				target: 'personal.xls',
+				targetMode: 'External',
+			},
+		])
+	})
+
 	test('captures LibreOffice sparkline styling and multi-sparkline groups', () => {
 		const initial = readXlsx(loadFixture('Sparklines.xlsx'))
 		expectOk(initial)

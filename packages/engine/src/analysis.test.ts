@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { StyleId } from '@ascend/core'
-import { createWorkbook } from '@ascend/core'
+import { createTableId, createWorkbook } from '@ascend/core'
 import { EMPTY, numberValue } from '@ascend/schema'
 import {
 	analyzeWorkbook,
@@ -76,6 +76,53 @@ describe('analyzeWorkbook', () => {
 			},
 		])
 		expect(analysis.dependencyGraph.getDependents(cellKey(0, 1, 0))).toEqual([cellKey(0, 0, 1)])
+	})
+
+	test('narrows INDEX structured table dependencies with constant columns', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: EMPTY, formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(1, 2, {
+			value: EMPTY,
+			formula: 'INDEX(Sales[],MATCH(Sales[[#This Row],[Item]],Sales[Item],0),2)',
+			styleId: sid,
+		})
+		sheet.cells.set(2, 0, { value: numberValue(11), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: numberValue(21), formula: null, styleId: sid })
+		sheet.cells.set(2, 2, { value: EMPTY, formula: 'C2+1', styleId: sid })
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 2 } },
+			columns: [{ name: 'Item' }, { name: 'Price' }, { name: 'Total' }],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+
+		const analysis = analyzeWorkbook(wb)
+		const formulaKey = cellKey(0, 1, 2)
+		const formula = analysis.formulas.get(formulaKey)
+		expect(formula?.deps).toEqual([])
+		expect(formula?.rangeDeps).toContainEqual({
+			sheetIndex: 0,
+			startRow: 1,
+			startCol: 1,
+			endRow: 2,
+			endCol: 1,
+		})
+		expect(formula?.rangeDeps).not.toContainEqual({
+			sheetIndex: 0,
+			startRow: 1,
+			startCol: 0,
+			endRow: 2,
+			endCol: 2,
+		})
+		expect(analysis.cycleKeys.has(formulaKey)).toBe(false)
 	})
 
 	test('LET bindings do not get treated as defined-name dependencies', () => {

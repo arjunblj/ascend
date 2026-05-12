@@ -1000,22 +1000,15 @@ export function resolveFormulaDependencies(
 			if (rangeDep) rangeDeps.push(rangeDep)
 		}
 	}
-	for (const structuredRef of collectStructuredRefs(formula.ast)) {
-		const resolved = structuredRefResolver.resolve(
-			structuredRef,
+	rangeDeps.push(
+		...collectStructuredRefDependencies(
+			formula.ast,
+			structuredRefResolver,
 			formula.sheetIndex,
 			formula.row,
 			formula.col,
-		)
-		if (!resolved) continue
-		rangeDeps.push({
-			sheetIndex: resolved.sheetIndex,
-			startRow: resolved.startRow,
-			startCol: resolved.startCol,
-			endRow: resolved.endRow,
-			endCol: resolved.endCol,
-		})
-	}
+		),
+	)
 	if (
 		!deps.includes(formula.key) &&
 		formulaHasValueDependentSelfRange(
@@ -1119,6 +1112,10 @@ function formulaHasValueDependentSelfRange(
 			if (!inValueContext) return false
 			return definedNameHasValueDependentSelfRange(ctx, node.name, node.sheet, currentSheetIndex)
 		case 'function': {
+			if (node.name.toUpperCase() === 'INDEX') {
+				const narrowed = indexFunctionHasValueDependentSelfRange(ctx, node, currentSheetIndex)
+				if (narrowed !== null) return narrowed
+			}
 			const valueContext = !REFERENCE_SHAPE_FUNCTIONS.has(node.name.toUpperCase())
 			return node.args.some((arg) =>
 				formulaHasValueDependentSelfRange(ctx, arg, currentSheetIndex, valueContext),
@@ -1172,6 +1169,27 @@ function definedNameHasValueDependentSelfRange(
 		parsed.sheetIndex,
 		true,
 	)
+}
+
+function indexFunctionHasValueDependentSelfRange(
+	ctx: SelfCycleContext,
+	node: Extract<FormulaNode, { type: 'function' }>,
+	currentSheetIndex: number,
+): boolean | null {
+	const range = narrowedIndexStructuredRefRange(
+		node,
+		ctx.structuredRefResolver,
+		ctx.formulaSheetIndex,
+		ctx.formulaRow,
+		ctx.formulaCol,
+	)
+	if (!range) return null
+	if (rangeContainsFormulaCell(ctx, range)) return true
+	for (let i = 1; i < node.args.length; i++) {
+		const arg = node.args[i]
+		if (arg && formulaHasValueDependentSelfRange(ctx, arg, currentSheetIndex, true)) return true
+	}
+	return false
 }
 
 function resolveSelfCycleRange(
@@ -1326,6 +1344,60 @@ function rangeContainsFormulaCell(ctx: SelfCycleContext, range: SelfCycleRange):
 		ctx.formulaCol >= range.startCol &&
 		ctx.formulaCol <= range.endCol
 	)
+}
+
+function narrowedIndexStructuredRefRange(
+	node: Extract<FormulaNode, { type: 'function' }>,
+	structuredRefResolver: StructuredRefResolver,
+	sheetIndex: number,
+	row: number,
+	col: number,
+): RangeDependency | null {
+	if (node.name.toUpperCase() !== 'INDEX') return null
+	const source = node.args[0]
+	if (!source || source.type !== 'structuredRef') return null
+	const resolved = structuredRefResolver.resolve(source, sheetIndex, row, col)
+	if (!resolved) return null
+
+	const height = resolved.endRow - resolved.startRow + 1
+	const width = resolved.endCol - resolved.startCol + 1
+	let startRow = resolved.startRow
+	let endRow = resolved.endRow
+	let startCol = resolved.startCol
+	let endCol = resolved.endCol
+
+	const rowNum = constantIndexNumber(node.args[1])
+	const colNum = constantIndexNumber(node.args[2])
+	if (colNum !== null) {
+		if (colNum < 1 || colNum > width) return null
+		startCol = resolved.startCol + colNum - 1
+		endCol = startCol
+	}
+	if (rowNum !== null) {
+		if (rowNum < 1 || rowNum > height) return null
+		startRow = resolved.startRow + rowNum - 1
+		endRow = startRow
+	}
+	if (rowNum === null && colNum === null) return null
+	return { sheetIndex: resolved.sheetIndex, startRow, startCol, endRow, endCol }
+}
+
+function constantIndexNumber(node: FormulaNode | undefined): number | null {
+	if (!node || node.type === 'missing') return null
+	if (node.type === 'number') {
+		const value = Math.trunc(node.value)
+		return value === 0 ? null : value
+	}
+	if (
+		node.type === 'unary' &&
+		(node.op === '+' || node.op === '-') &&
+		node.operand.type === 'number'
+	) {
+		const value = Math.trunc(node.operand.value)
+		if (value === 0) return null
+		return node.op === '-' ? -value : value
+	}
+	return null
 }
 
 function resolveSheetSpan(
@@ -1488,46 +1560,99 @@ function collectNameRefs(node: FormulaNode): Array<{ name: string; sheet?: strin
 	return result
 }
 
-function collectStructuredRefs(
+function collectStructuredRefDependencies(
 	node: FormulaNode,
-): Array<Extract<FormulaNode, { type: 'structuredRef' }>> {
-	const result: Array<Extract<FormulaNode, { type: 'structuredRef' }>> = []
-	walkStructuredRefs(node, result)
+	structuredRefResolver: StructuredRefResolver,
+	sheetIndex: number,
+	row: number,
+	col: number,
+): RangeDependency[] {
+	const result: RangeDependency[] = []
+	walkStructuredRefDependencies(node, structuredRefResolver, sheetIndex, row, col, result)
 	return result
 }
 
-function walkStructuredRefs(
+function walkStructuredRefDependencies(
 	node: FormulaNode,
-	result: Array<Extract<FormulaNode, { type: 'structuredRef' }>>,
+	structuredRefResolver: StructuredRefResolver,
+	sheetIndex: number,
+	row: number,
+	col: number,
+	result: RangeDependency[],
 ): void {
 	switch (node.type) {
-		case 'structuredRef':
-			result.push(node)
+		case 'structuredRef': {
+			const resolved = structuredRefResolver.resolve(node, sheetIndex, row, col)
+			if (resolved) result.push(resolved)
 			break
+		}
 		case 'binary':
-			walkStructuredRefs(node.left, result)
-			walkStructuredRefs(node.right, result)
+			walkStructuredRefDependencies(node.left, structuredRefResolver, sheetIndex, row, col, result)
+			walkStructuredRefDependencies(node.right, structuredRefResolver, sheetIndex, row, col, result)
 			break
 		case 'dynamicRangeRef':
-			walkStructuredRefs(node.start, result)
-			walkStructuredRefs(node.end, result)
+			walkStructuredRefDependencies(node.start, structuredRefResolver, sheetIndex, row, col, result)
+			walkStructuredRefDependencies(node.end, structuredRefResolver, sheetIndex, row, col, result)
 			break
 		case 'unary':
-			walkStructuredRefs(node.operand, result)
+			walkStructuredRefDependencies(
+				node.operand,
+				structuredRefResolver,
+				sheetIndex,
+				row,
+				col,
+				result,
+			)
 			break
-		case 'function':
-			for (const arg of node.args) walkStructuredRefs(arg, result)
+		case 'function': {
+			const narrowed = narrowedIndexStructuredRefRange(
+				node,
+				structuredRefResolver,
+				sheetIndex,
+				row,
+				col,
+			)
+			if (narrowed) {
+				result.push(narrowed)
+				for (let i = 1; i < node.args.length; i++) {
+					const arg = node.args[i]
+					if (arg) {
+						walkStructuredRefDependencies(arg, structuredRefResolver, sheetIndex, row, col, result)
+					}
+				}
+				break
+			}
+			for (const arg of node.args) {
+				walkStructuredRefDependencies(arg, structuredRefResolver, sheetIndex, row, col, result)
+			}
 			break
+		}
 		case 'array':
-			for (const row of node.rows) {
-				for (const cell of row) walkStructuredRefs(cell, result)
+			for (const sourceRow of node.rows) {
+				for (const cell of sourceRow) {
+					walkStructuredRefDependencies(cell, structuredRefResolver, sheetIndex, row, col, result)
+				}
 			}
 			break
 		case 'spillRef':
-			walkStructuredRefs(node.target, result)
+			walkStructuredRefDependencies(
+				node.target,
+				structuredRefResolver,
+				sheetIndex,
+				row,
+				col,
+				result,
+			)
 			break
 		case 'sheetSpanRef':
-			walkStructuredRefs(node.target, result)
+			walkStructuredRefDependencies(
+				node.target,
+				structuredRefResolver,
+				sheetIndex,
+				row,
+				col,
+				result,
+			)
 			break
 		case 'wholeRowRange':
 		case 'wholeColumnRange':

@@ -3473,6 +3473,29 @@ describe('readXlsx', () => {
 		expect(sheet?.cells.get(0, 26)?.value).toEqual(stringValue('World'))
 	})
 
+	it('full mode preserves simple formula cells without cached values', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1"><v>7</v></c><c r="B1"><f>A1*2</f></c><c r="AA1"><f>A1&lt;10</f></c></row></sheetData>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet?.cells.get(0, 1)?.value).toEqual(EMPTY)
+		expect(sheet?.cells.get(0, 1)?.formula).toBe('A1*2')
+		expect(sheet?.cells.get(0, 26)?.value).toEqual(EMPTY)
+		expect(sheet?.cells.get(0, 26)?.formula).toBe('A1<10')
+	})
+
 	it('values mode reads simple inline strings without full cell XML parsing', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': CONTENT_TYPES,

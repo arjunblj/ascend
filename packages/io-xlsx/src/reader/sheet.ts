@@ -2480,12 +2480,14 @@ function parseSimpleFullScalarRow(
 		col: number
 		numberValue: number | undefined
 		sharedStringIndex: number
+		formulaText: string | null
 		styleIdx: number
 	} = {
 		row,
 		col: 0,
 		numberValue: undefined,
 		sharedStringIndex: -1,
+		formulaText: null,
 		styleIdx: 0,
 	}
 	while (true) {
@@ -2494,27 +2496,40 @@ function parseSimpleFullScalarRow(
 		const next = parseCanonicalFullScalarCell(xml, cursor, bodyEnd, rowText, row, nextCol, out)
 		if (next === -1) return false
 		const styleId = ctx.styleIds[out.styleIdx] ?? DEFAULT_STYLE_ID
+		const normalizedFormula =
+			out.formulaText !== null ? normalizeStoredFormulaText(out.formulaText) : null
+		const formula =
+			normalizedFormula !== null
+				? (ctx.valuePool?.internString(normalizedFormula) ?? normalizedFormula)
+				: null
+		if (out.formulaText !== null && (!formula || formula === '')) return false
 		if (out.sharedStringIndex >= 0) {
 			const text = ctx.sharedStrings.getString?.(out.sharedStringIndex)
 			if (text !== undefined) {
-				sheet.cells.setStringResolved(out.row, out.col, text, null, styleId)
+				sheet.cells.setStringResolved(out.row, out.col, text, formula, styleId)
 			} else {
 				sheet.cells.setResolved(
 					out.row,
 					out.col,
 					ctx.sharedStrings.get(out.sharedStringIndex) ?? stringValue(''),
-					null,
+					formula,
 					styleId,
 				)
 			}
-		} else if (out.numberValue === undefined) {
+		} else if (out.numberValue === undefined && formula === null) {
 			return false
+		} else if (out.numberValue === undefined) {
+			sheet.cells.setResolved(out.row, out.col, EMPTY, formula, styleId)
 		} else if (ctx.isDateFormat[out.styleIdx]) {
-			sheet.cells.setResolved(out.row, out.col, dateValue(out.numberValue), null, styleId)
+			sheet.cells.setResolved(out.row, out.col, dateValue(out.numberValue), formula, styleId)
 		} else if (styleId === DEFAULT_STYLE_ID) {
-			sheet.cells.setPlainNumber(out.row, out.col, out.numberValue)
+			if (formula === null) sheet.cells.setPlainNumber(out.row, out.col, out.numberValue)
+			else sheet.cells.setNumberResolved(out.row, out.col, out.numberValue, formula, styleId)
 		} else {
-			sheet.cells.setNumberResolved(out.row, out.col, out.numberValue, null, styleId)
+			sheet.cells.setNumberResolved(out.row, out.col, out.numberValue, formula, styleId)
+		}
+		if (out.formulaText !== null) {
+			sheet.storedFormulaText.set(formulaStorageKey(out.row, out.col), out.formulaText)
 		}
 		nextCol = out.col + 1
 		cursor = next
@@ -2533,6 +2548,7 @@ function parseCanonicalFullScalarCell(
 		col: number
 		numberValue: number | undefined
 		sharedStringIndex: number
+		formulaText: string | null
 		styleIdx: number
 	},
 ): number {
@@ -2554,14 +2570,57 @@ function parseCanonicalFullScalarCell(
 	out.col = col
 	out.numberValue = undefined
 	out.sharedStringIndex = -1
+	out.formulaText = null
 	out.styleIdx = 0
 
 	const content = resolveCanonicalFullScalarContentStart(xml, index, bodyEnd, out)
 	if (!content) return -1
 	const contentStart = content.start
+	if (xml.startsWith('<f>', contentStart)) {
+		return parseCanonicalFullFormulaContent(xml, contentStart, bodyEnd, content.kind, out)
+	}
 	if (!xml.startsWith('<v>', contentStart)) return -1
 	const valueStart = contentStart + 3
 	if (content.kind === 'sharedString') {
+		const parsedIndex = parseCanonicalUnsignedIntegerValue(xml, valueStart, bodyEnd)
+		if (!parsedIndex) return -1
+		out.sharedStringIndex = parsedIndex.value
+		return parsedIndex.next
+	}
+	const parsedInt = parseCanonicalIntegerValue(xml, valueStart, bodyEnd)
+	if (parsedInt) {
+		out.numberValue = parsedInt.value
+		return parsedInt.next
+	}
+	const valueEnd = xml.indexOf('</v></c>', valueStart)
+	if (valueEnd === -1 || valueEnd > bodyEnd) return -1
+	const value = parseSimpleXmlNumber(xml, valueStart, valueEnd)
+	if (value === undefined) return -1
+	out.numberValue = value
+	return valueEnd + 8
+}
+
+function parseCanonicalFullFormulaContent(
+	xml: string,
+	contentStart: number,
+	bodyEnd: number,
+	kind: 'number' | 'sharedString',
+	out: {
+		numberValue: number | undefined
+		sharedStringIndex: number
+		formulaText: string | null
+	},
+): number {
+	const formulaStart = contentStart + 3
+	const formulaEnd = xml.indexOf('</f>', formulaStart)
+	if (formulaEnd === -1 || formulaEnd > bodyEnd) return -1
+	const rawFormula = xml.slice(formulaStart, formulaEnd)
+	out.formulaText = rawFormula.includes('&') ? decodeXmlText(rawFormula) : rawFormula
+	const cursor = formulaEnd + 4
+	if (xml.startsWith('</c>', cursor)) return cursor + 4
+	if (!xml.startsWith('<v>', cursor)) return -1
+	const valueStart = cursor + 3
+	if (kind === 'sharedString') {
 		const parsedIndex = parseCanonicalUnsignedIntegerValue(xml, valueStart, bodyEnd)
 		if (!parsedIndex) return -1
 		out.sharedStringIndex = parsedIndex.value

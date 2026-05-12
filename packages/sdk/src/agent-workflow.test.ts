@@ -1256,6 +1256,164 @@ describe('agent workflow loss audit', () => {
 		)
 	})
 
+	test('plans warn when row or column topology edits shift preserved x14 sqref metadata', async () => {
+		const input = join(TEMP_DIR, 'x14-topology-risk.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().sheets[0]
+		sheet?.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'A2:A5',
+			type: 'dataBar',
+			priority: 1,
+			formulas: [],
+			preservedRuleChildXml: ['<x14:extLst><x14:ext uri="{cf-extension}"/></x14:extLst>'],
+		})
+		sheet?.x14DataValidations.push({
+			index: 0,
+			sqref: 'C2:C5',
+			type: 'list',
+			formula1: '$A$1:$A$4',
+			preservedAttributes: {
+				'xr:uid': '{DV-TOPOLOGY-UID}',
+			},
+			preservedChildXml: ['<x14ac:metadata flag="1"/>'],
+		})
+		await wb.save(input)
+
+		const plan = await createAgentPlan(input, [
+			{ op: 'insertRows', sheet: 'Sheet1', at: 1, count: 1 },
+			{ op: 'deleteCols', sheet: 'Sheet1', at: 2, count: 1 },
+		])
+
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'conditional-format-extension-preservation',
+				severity: 'warning',
+				details: expect.objectContaining({
+					semanticEditRisk: true,
+					relatedOperations: [
+						expect.objectContaining({
+							operationIndex: 0,
+							op: 'insertRows',
+							sheet: 'Sheet1',
+							sheetName: 'Sheet1',
+							range: '2:2',
+							affectedPayloads: [
+								expect.objectContaining({
+									source: 'x14:conditionalFormatting',
+								}),
+							],
+						}),
+					],
+				}),
+			}),
+		)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'data-validation-extension-preservation',
+				severity: 'warning',
+				details: expect.objectContaining({
+					semanticEditRisk: true,
+					relatedOperations: [
+						expect.objectContaining({
+							operationIndex: 0,
+							op: 'insertRows',
+							sheet: 'Sheet1',
+							range: '2:2',
+						}),
+						expect.objectContaining({
+							operationIndex: 1,
+							op: 'deleteCols',
+							sheet: 'Sheet1',
+							range: 'C:C',
+						}),
+					],
+				}),
+			}),
+		)
+	})
+
+	test('plans warn when table rename and column rename rewrite preserved x14 formulas', async () => {
+		const input = join(TEMP_DIR, 'x14-table-reference-risk.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		expect(
+			wb.apply([
+				{
+					op: 'setCells',
+					sheet: 'Sheet1',
+					updates: [
+						{ ref: 'A1', value: 'Qty' },
+						{ ref: 'B1', value: 'Price' },
+					],
+				},
+				{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:B3', name: 'Sales', hasHeaders: true },
+			]).errors,
+		).toHaveLength(0)
+		const sheet = wb.getWorkbookModel().sheets[0]
+		sheet?.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'A2:A3',
+			type: 'dataBar',
+			priority: 1,
+			formulas: ['SUM(Sales[Qty])>0'],
+			dataBar: { cfvo: [{ type: 'formula', value: 'SUM(Sales[Qty])' }] },
+			preservedRuleChildXml: ['<x14:extLst><x14:ext uri="{cf-extension}"/></x14:extLst>'],
+		})
+		sheet?.x14DataValidations.push({
+			index: 0,
+			sqref: 'B2:B3',
+			type: 'list',
+			formula1: 'SUM(Sales[Qty])',
+			preservedChildXml: ['<x14ac:metadata flag="1"/>'],
+		})
+		await wb.save(input)
+
+		const tableRename = await createAgentPlan(input, [
+			{ op: 'renameTable', table: 'Sales', newName: 'Revenue' },
+		])
+		expect(tableRename.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'conditional-format-extension-preservation',
+				severity: 'warning',
+				details: expect.objectContaining({
+					relatedOperations: [
+						expect.objectContaining({
+							operationIndex: 0,
+							op: 'renameTable',
+							sheet: 'Sheet1',
+							table: 'Sales',
+							newName: 'Revenue',
+						}),
+					],
+				}),
+			}),
+		)
+
+		const columnRename = await createAgentPlan(input, [
+			{ op: 'setTableColumn', table: 'Sales', column: 'Qty', newName: 'Units' },
+		])
+		expect(columnRename.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'data-validation-extension-preservation',
+				severity: 'warning',
+				details: expect.objectContaining({
+					relatedOperations: [
+						expect.objectContaining({
+							operationIndex: 0,
+							op: 'setTableColumn',
+							sheet: 'Sheet1',
+							table: 'Sales',
+							column: 'Qty',
+							newName: 'Units',
+						}),
+					],
+				}),
+			}),
+		)
+	})
+
 	test('simple x14 rules do not produce extension preservation diagnostics', async () => {
 		const input = join(TEMP_DIR, 'simple-x14-rules.xlsx')
 		mkdirSync(TEMP_DIR, { recursive: true })

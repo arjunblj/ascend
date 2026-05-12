@@ -4,6 +4,7 @@ import { dirname, extname, join } from 'node:path'
 import {
 	type ChartPartInfo,
 	type ExternalReferenceInfo,
+	indexToColumn,
 	parseRange,
 	type RangeRef,
 	type SheetDrawingObjectRef,
@@ -305,6 +306,7 @@ export async function createAgentPlan(
 	await progress('hash-input', 'ok', 'Input workbook hash captured.')
 	await progress('load-workbook', 'started', 'Opening workbook.')
 	const wb = await AscendWorkbook.open(file)
+	const writePolicyWorkbook = snapshotWritePolicyWorkbook(wb.getWorkbookModel())
 	await progress('load-workbook', 'ok', 'Workbook opened.')
 	await progress('preview', 'started', 'Previewing operations.', { count: ops.length })
 	const preview = wb.preview(ops)
@@ -334,7 +336,7 @@ export async function createAgentPlan(
 		packageGraph,
 		preservation,
 		packageGraphAudit,
-		wb.getWorkbookModel(),
+		writePolicyWorkbook,
 		ops,
 		wb.inspect().externalReferenceDetails,
 		check.issues,
@@ -448,6 +450,7 @@ export async function commitAgentPlan(
 
 	await progress('load-workbook', 'started', 'Opening workbook.')
 	const wb = await AscendWorkbook.open(file)
+	const writePolicyWorkbook = snapshotWritePolicyWorkbook(wb.getWorkbookModel())
 	await progress('load-workbook', 'ok', 'Workbook opened.')
 	const packageGraph = wb.packageGraph()
 	await progress('approval-audit', 'started', 'Auditing explicit approval requirements.')
@@ -512,7 +515,7 @@ export async function commitAgentPlan(
 		packageGraph,
 		preservation,
 		packageGraphAudit,
-		wb.getWorkbookModel(),
+		writePolicyWorkbook,
 		ops,
 		wb.inspect().externalReferenceDetails,
 		writePolicyCheck.issues,
@@ -1234,6 +1237,12 @@ function packageGraphAuditFromDetails(details: unknown): PackageGraphAudit | und
 	return audit as PackageGraphAudit
 }
 
+function snapshotWritePolicyWorkbook(workbook: Workbook): Workbook {
+	const snapshot = workbook.clone()
+	for (const sheet of snapshot.sheets) sheet.ensureWritable()
+	return snapshot
+}
+
 function buildWritePolicyReport(
 	features: readonly FeatureReport[],
 	packageGraph: XlsxPackageGraph,
@@ -1553,6 +1562,7 @@ function buildWritePolicyReport(
 		collectX14ConditionalFormatExtensionPayloads(workbook)
 	if (x14ConditionalFormatExtensionPayloads.length > 0) {
 		const relatedOperations = collectX14ConditionalFormatSemanticEdits(
+			workbook,
 			operations,
 			x14ConditionalFormatExtensionPayloads,
 		)
@@ -1566,7 +1576,10 @@ function buildWritePolicyReport(
 			severity: relatedOperations.length > 0 ? 'warning' : 'info',
 			message:
 				relatedOperations.length > 0
-					? `${x14ConditionalFormatExtensionPayloads.length} preserved x14 conditional-format extension payload(s) share a sheet with planned conditional-format semantic edits.`
+					? x14ConditionalFormatRiskMessage(
+							x14ConditionalFormatExtensionPayloads.length,
+							relatedOperations,
+						)
 					: `${x14ConditionalFormatExtensionPayloads.length} x14 conditional-format extension payload(s) will be preserved as opaque worksheet XML; no conditional-format semantic edit is planned.`,
 			suggestedAction: x14ConditionalFormatSuggestedAction(relatedOperations.length > 0),
 			...(partPaths.length > 0 ? { partPaths } : {}),
@@ -1584,6 +1597,7 @@ function buildWritePolicyReport(
 	const x14DataValidationExtensionPayloads = collectX14DataValidationExtensionPayloads(workbook)
 	if (x14DataValidationExtensionPayloads.length > 0) {
 		const relatedOperations = collectX14DataValidationSemanticEdits(
+			workbook,
 			operations,
 			x14DataValidationExtensionPayloads,
 		)
@@ -1597,7 +1611,10 @@ function buildWritePolicyReport(
 			severity: relatedOperations.length > 0 ? 'warning' : 'info',
 			message:
 				relatedOperations.length > 0
-					? `${x14DataValidationExtensionPayloads.length} preserved x14 data-validation extension payload(s) overlap planned data-validation semantic edits.`
+					? x14DataValidationRiskMessage(
+							x14DataValidationExtensionPayloads.length,
+							relatedOperations,
+						)
 					: `${x14DataValidationExtensionPayloads.length} x14 data-validation extension payload(s) will be preserved as opaque worksheet XML; no data-validation semantic edit is planned.`,
 			suggestedAction: x14DataValidationSuggestedAction(relatedOperations.length > 0),
 			...(partPaths.length > 0 ? { partPaths } : {}),
@@ -3488,8 +3505,14 @@ const X14_DATA_VALIDATION_MODELED_ATTRIBUTES = new Set([
 interface X14SemanticEdit {
 	readonly operationIndex: number
 	readonly op: Operation['op']
+	readonly sheet?: string
 	readonly sheetName: string
 	readonly range?: string
+	readonly table?: string
+	readonly column?: string | number
+	readonly newName?: string
+	readonly at?: number
+	readonly count?: number
 	readonly priority?: number
 	readonly ruleIndex?: number
 	readonly affectedPayloads: readonly X14AffectedPayload[]
@@ -3508,59 +3531,338 @@ interface X14AffectedPayload {
 }
 
 function collectX14ConditionalFormatSemanticEdits(
+	workbook: Workbook,
 	operations: readonly Operation[],
 	payloads: readonly X14ConditionalFormatExtensionPayload[],
 ): X14SemanticEdit[] {
 	const edits: X14SemanticEdit[] = []
 	operations.forEach((operation, operationIndex) => {
-		if (operation.op !== 'setConditionalFormat' && operation.op !== 'deleteConditionalFormat') {
+		if (operation.op === 'setConditionalFormat' || operation.op === 'deleteConditionalFormat') {
+			const affectedPayloads = payloads.filter((payload) =>
+				conditionalFormatOperationAffectsPayload(operation, payload),
+			)
+			if (affectedPayloads.length === 0) return
+			edits.push({
+				operationIndex,
+				op: operation.op,
+				sheet: operation.sheet,
+				sheetName: operation.sheet,
+				...(operation.range ? { range: operation.range } : {}),
+				...(operation.op === 'deleteConditionalFormat' && operation.priority !== undefined
+					? { priority: operation.priority }
+					: {}),
+				...(operation.op === 'deleteConditionalFormat' && operation.ruleIndex !== undefined
+					? { ruleIndex: operation.ruleIndex }
+					: {}),
+				affectedPayloads: affectedPayloads.map(x14AffectedPayload),
+				reason:
+					'conditional-format operation may change rule order, priority, or range semantics around preserved x14 extension XML',
+			})
 			return
 		}
-		const affectedPayloads = payloads.filter((payload) =>
-			conditionalFormatOperationAffectsPayload(operation, payload),
-		)
-		if (affectedPayloads.length === 0) return
-		edits.push({
+		const topologyEdit = x14TopologyEdit(operation, operationIndex, payloads)
+		if (topologyEdit) edits.push(topologyEdit)
+		const tableEdit = x14ConditionalFormatTableReferenceEdit(
+			workbook,
+			operation,
 			operationIndex,
-			op: operation.op,
-			sheetName: operation.sheet,
-			...(operation.range ? { range: operation.range } : {}),
-			...(operation.op === 'deleteConditionalFormat' && operation.priority !== undefined
-				? { priority: operation.priority }
-				: {}),
-			...(operation.op === 'deleteConditionalFormat' && operation.ruleIndex !== undefined
-				? { ruleIndex: operation.ruleIndex }
-				: {}),
-			affectedPayloads: affectedPayloads.map(x14AffectedPayload),
-			reason:
-				'conditional-format operation may change rule order, priority, or range semantics around preserved x14 extension XML',
-		})
+			payloads,
+		)
+		if (tableEdit) edits.push(tableEdit)
 	})
 	return edits
 }
 
 function collectX14DataValidationSemanticEdits(
+	workbook: Workbook,
 	operations: readonly Operation[],
 	payloads: readonly X14DataValidationExtensionPayload[],
 ): X14SemanticEdit[] {
 	const edits: X14SemanticEdit[] = []
 	operations.forEach((operation, operationIndex) => {
-		if (operation.op !== 'setDataValidation' && operation.op !== 'deleteDataValidation') return
-		const affectedPayloads = payloads.filter((payload) =>
-			dataValidationOperationAffectsPayload(operation, payload),
-		)
-		if (affectedPayloads.length === 0) return
-		edits.push({
+		if (operation.op === 'setDataValidation' || operation.op === 'deleteDataValidation') {
+			const affectedPayloads = payloads.filter((payload) =>
+				dataValidationOperationAffectsPayload(operation, payload),
+			)
+			if (affectedPayloads.length === 0) return
+			edits.push({
+				operationIndex,
+				op: operation.op,
+				sheet: operation.sheet,
+				sheetName: operation.sheet,
+				range: operation.range,
+				affectedPayloads: affectedPayloads.map(x14AffectedPayload),
+				reason:
+					'data-validation operation overlaps preserved x14 extension XML for the same worksheet range',
+			})
+			return
+		}
+		const topologyEdit = x14TopologyEdit(operation, operationIndex, payloads)
+		if (topologyEdit) edits.push(topologyEdit)
+		const tableEdit = x14DataValidationTableReferenceEdit(
+			workbook,
+			operation,
 			operationIndex,
-			op: operation.op,
-			sheetName: operation.sheet,
-			range: operation.range,
-			affectedPayloads: affectedPayloads.map(x14AffectedPayload),
-			reason:
-				'data-validation operation overlaps preserved x14 extension XML for the same worksheet range',
-		})
+			payloads,
+		)
+		if (tableEdit) edits.push(tableEdit)
 	})
 	return edits
+}
+
+function x14TopologyEdit(
+	operation: Operation,
+	operationIndex: number,
+	payloads: readonly (X14ConditionalFormatExtensionPayload | X14DataValidationExtensionPayload)[],
+): X14SemanticEdit | undefined {
+	if (!isRowColumnTopologyOperation(operation)) return undefined
+	const affectedPayloads = payloads.filter((payload) =>
+		topologyOperationAffectsPayloadSqref(operation, payload),
+	)
+	if (affectedPayloads.length === 0) return undefined
+	return {
+		operationIndex,
+		op: operation.op,
+		sheet: operation.sheet,
+		sheetName: operation.sheet,
+		range: topologyOperationRange(operation),
+		at: operation.at,
+		count: operation.count,
+		affectedPayloads: affectedPayloads.map(x14AffectedPayload),
+		reason:
+			'row or column topology operation can rewrite shifted x14 sqref metadata or tombstone fully deleted x14 entries',
+	}
+}
+
+function x14ConditionalFormatTableReferenceEdit(
+	workbook: Workbook,
+	operation: Operation,
+	operationIndex: number,
+	payloads: readonly X14ConditionalFormatExtensionPayload[],
+): X14SemanticEdit | undefined {
+	if (!isTableReferenceRewriteOperation(operation)) return undefined
+	const affectedPayloads = payloads.filter((payload) =>
+		x14ConditionalFormatPayloadReferencesTable(workbook, payload, operation),
+	)
+	if (affectedPayloads.length === 0) return undefined
+	return x14TableReferenceEdit(operation, operationIndex, affectedPayloads)
+}
+
+function x14DataValidationTableReferenceEdit(
+	workbook: Workbook,
+	operation: Operation,
+	operationIndex: number,
+	payloads: readonly X14DataValidationExtensionPayload[],
+): X14SemanticEdit | undefined {
+	if (!isTableReferenceRewriteOperation(operation)) return undefined
+	const affectedPayloads = payloads.filter((payload) =>
+		x14DataValidationPayloadReferencesTable(workbook, payload, operation),
+	)
+	if (affectedPayloads.length === 0) return undefined
+	return x14TableReferenceEdit(operation, operationIndex, affectedPayloads)
+}
+
+function x14TableReferenceEdit(
+	operation: Extract<Operation, { op: 'renameTable' | 'setTableColumn' }>,
+	operationIndex: number,
+	affectedPayloads: readonly (
+		| X14ConditionalFormatExtensionPayload
+		| X14DataValidationExtensionPayload
+	)[],
+): X14SemanticEdit {
+	const sheetName = affectedPayloads[0]?.sheetName ?? ''
+	return {
+		operationIndex,
+		op: operation.op,
+		...(sheetName ? { sheet: sheetName, sheetName } : { sheetName }),
+		table: operation.table,
+		...(operation.op === 'setTableColumn' ? { column: operation.column } : {}),
+		...(operation.newName ? { newName: operation.newName } : {}),
+		affectedPayloads: affectedPayloads.map(x14AffectedPayload),
+		reason:
+			'table rename or column rename rewrites structured references in x14 formulas that reference the table',
+	}
+}
+
+function isRowColumnTopologyOperation(
+	operation: Operation,
+): operation is Extract<
+	Operation,
+	{ op: 'insertRows' | 'deleteRows' | 'insertCols' | 'deleteCols' }
+> {
+	return (
+		operation.op === 'insertRows' ||
+		operation.op === 'deleteRows' ||
+		operation.op === 'insertCols' ||
+		operation.op === 'deleteCols'
+	)
+}
+
+function topologyOperationAffectsPayloadSqref(
+	operation: Extract<Operation, { op: 'insertRows' | 'deleteRows' | 'insertCols' | 'deleteCols' }>,
+	payload: X14ConditionalFormatExtensionPayload | X14DataValidationExtensionPayload,
+): boolean {
+	if (operation.sheet !== payload.sheetName) return false
+	const ranges = parseSqrefRanges(payload.sqref)
+	if (ranges.length === 0) return true
+	const axis = operation.op === 'insertRows' || operation.op === 'deleteRows' ? 'row' : 'col'
+	return ranges.some((range) => topologyOperationAffectsRange(operation, axis, range))
+}
+
+function topologyOperationAffectsRange(
+	operation: Extract<Operation, { op: 'insertRows' | 'deleteRows' | 'insertCols' | 'deleteCols' }>,
+	axis: 'row' | 'col',
+	range: RangeRef,
+): boolean {
+	const end =
+		axis === 'row'
+			? Math.max(range.start.row, range.end.row)
+			: Math.max(range.start.col, range.end.col)
+	const opStart = operation.at
+	const opEnd = operation.at + operation.count - 1
+	if (operation.op === 'insertRows' || operation.op === 'insertCols') {
+		return opStart <= end
+	}
+	return opStart <= end && opEnd >= 0 && operation.count > 0
+}
+
+function topologyOperationRange(
+	operation: Extract<Operation, { op: 'insertRows' | 'deleteRows' | 'insertCols' | 'deleteCols' }>,
+): string {
+	const start = operation.at
+	const end = operation.at + operation.count - 1
+	if (operation.op === 'insertRows' || operation.op === 'deleteRows') {
+		return `${start + 1}:${end + 1}`
+	}
+	return `${indexToColumn(start)}:${indexToColumn(end)}`
+}
+
+function isTableReferenceRewriteOperation(
+	operation: Operation,
+): operation is Extract<Operation, { op: 'renameTable' | 'setTableColumn' }> {
+	return (
+		operation.op === 'renameTable' ||
+		(operation.op === 'setTableColumn' && operation.newName !== undefined)
+	)
+}
+
+function x14ConditionalFormatPayloadReferencesTable(
+	workbook: Workbook,
+	payload: X14ConditionalFormatExtensionPayload,
+	operation: Extract<Operation, { op: 'renameTable' | 'setTableColumn' }>,
+): boolean {
+	return formulaTextsReferenceTable(
+		x14ConditionalFormatPayloadFormulaTexts(workbook, payload),
+		workbook,
+		payload,
+		operation,
+	)
+}
+
+function x14DataValidationPayloadReferencesTable(
+	workbook: Workbook,
+	payload: X14DataValidationExtensionPayload,
+	operation: Extract<Operation, { op: 'renameTable' | 'setTableColumn' }>,
+): boolean {
+	return formulaTextsReferenceTable(
+		x14DataValidationPayloadFormulaTexts(workbook, payload),
+		workbook,
+		payload,
+		operation,
+	)
+}
+
+function x14ConditionalFormatPayloadFormulaTexts(
+	workbook: Workbook,
+	payload: X14ConditionalFormatExtensionPayload,
+): string[] {
+	const format = workbook.sheets
+		.find((sheet) => sheet.name === payload.sheetName)
+		?.x14ConditionalFormats.find((entry) => entry.index === payload.index)
+	return uniqueStrings([
+		...(format?.formulas ?? []),
+		...conditionalFormatValueObjectFormulas(format?.dataBar?.cfvo),
+		...conditionalFormatValueObjectFormulas(format?.iconSet?.cfvo),
+	])
+}
+
+function x14DataValidationPayloadFormulaTexts(
+	workbook: Workbook,
+	payload: X14DataValidationExtensionPayload,
+): string[] {
+	const validation = workbook.sheets
+		.find((sheet) => sheet.name === payload.sheetName)
+		?.x14DataValidations.find((entry) => entry.index === payload.index)
+	return [validation?.formula1, validation?.formula2].filter(
+		(formula): formula is string => formula !== undefined,
+	)
+}
+
+function formulaTextsReferenceTable(
+	formulas: readonly string[],
+	workbook: Workbook,
+	payload: X14ConditionalFormatExtensionPayload | X14DataValidationExtensionPayload,
+	operation: Extract<Operation, { op: 'renameTable' | 'setTableColumn' }>,
+): boolean {
+	if (formulas.length === 0) return false
+	return formulas.some((formula) =>
+		formulaStructuredReferences(formula).some((reference) =>
+			structuredReferenceMatchesTableOperation(workbook, payload, reference, operation),
+		),
+	)
+}
+
+function formulaStructuredReferences(
+	formula: string,
+): Extract<FormulaReferenceInfo, { kind: 'structured' }>[] {
+	const parsed = parseFormula(normalizeFormulaInput(formula))
+	if (!parsed.ok) return []
+	return flattenFormulaReferences(collectFormulaReferences(parsed.value)).filter(
+		(reference): reference is Extract<FormulaReferenceInfo, { kind: 'structured' }> =>
+			reference.kind === 'structured',
+	)
+}
+
+function structuredReferenceMatchesTableOperation(
+	workbook: Workbook,
+	payload: X14ConditionalFormatExtensionPayload | X14DataValidationExtensionPayload,
+	reference: Extract<FormulaReferenceInfo, { kind: 'structured' }>,
+	operation: Extract<Operation, { op: 'renameTable' | 'setTableColumn' }>,
+): boolean {
+	const tableName = reference.table || tableNameForLocalStructuredReference(workbook, payload)
+	if (!tableName || !tableNameMatchesTableOperation(tableName, operation)) return false
+	if (operation.op === 'renameTable') return true
+	const columns = [String(operation.column), operation.newName].flatMap((column) =>
+		column === undefined ? [] : [column.toLowerCase()],
+	)
+	if (!reference.column && !reference.endColumn) return true
+	return (
+		(reference.column !== undefined && columns.includes(reference.column.toLowerCase())) ||
+		(reference.endColumn !== undefined && columns.includes(reference.endColumn.toLowerCase()))
+	)
+}
+
+function tableNameMatchesTableOperation(
+	tableName: string,
+	operation: Extract<Operation, { op: 'renameTable' | 'setTableColumn' }>,
+): boolean {
+	const normalized = tableName.toLowerCase()
+	if (normalized === operation.table.toLowerCase()) return true
+	return operation.op === 'renameTable' && normalized === operation.newName.toLowerCase()
+}
+
+function tableNameForLocalStructuredReference(
+	workbook: Workbook,
+	payload: X14ConditionalFormatExtensionPayload | X14DataValidationExtensionPayload,
+): string | undefined {
+	const sheet = workbook.sheets.find((entry) => entry.name === payload.sheetName)
+	if (!sheet) return undefined
+	return sheet.tables.find((table) => rangesMayOverlap(toRangeStringSafe(table.ref), payload.sqref))
+		?.name
+}
+
+function toRangeStringSafe(range: RangeRef): string {
+	return `${indexToColumn(Math.min(range.start.col, range.end.col))}${Math.min(range.start.row, range.end.row) + 1}:${indexToColumn(Math.max(range.start.col, range.end.col))}${Math.max(range.start.row, range.end.row) + 1}`
 }
 
 function conditionalFormatOperationAffectsPayload(
@@ -3650,6 +3952,36 @@ function x14DataValidationSuggestedAction(hasSemanticEditRisk: boolean): string 
 		return 'Inspect inspectSheet(sheet).x14DataValidations entries by sheetName, sheetPartPath, index, and sqref before committing data-validation edits; verify postWrite.packageGraphAudit after write.'
 	}
 	return 'No action is required for unrelated cell edits; keep inspectSheet(sheet).x14DataValidations provenance with the edit record if auditing opaque x14 payload preservation.'
+}
+
+function x14ConditionalFormatRiskMessage(
+	payloadCount: number,
+	relatedOperations: readonly X14SemanticEdit[],
+): string {
+	if (
+		relatedOperations.every(
+			(operation) =>
+				operation.op === 'setConditionalFormat' || operation.op === 'deleteConditionalFormat',
+		)
+	) {
+		return `${payloadCount} preserved x14 conditional-format extension payload(s) share a sheet with planned conditional-format semantic edits.`
+	}
+	return `${payloadCount} preserved x14 conditional-format extension payload(s) intersect planned conditional-format, topology, or table-reference edits.`
+}
+
+function x14DataValidationRiskMessage(
+	payloadCount: number,
+	relatedOperations: readonly X14SemanticEdit[],
+): string {
+	if (
+		relatedOperations.every(
+			(operation) =>
+				operation.op === 'setDataValidation' || operation.op === 'deleteDataValidation',
+		)
+	) {
+		return `${payloadCount} preserved x14 data-validation extension payload(s) overlap planned data-validation semantic edits.`
+	}
+	return `${payloadCount} preserved x14 data-validation extension payload(s) intersect planned data-validation, topology, or table-reference edits.`
 }
 
 function preservedChildElementName(xml: string): string {

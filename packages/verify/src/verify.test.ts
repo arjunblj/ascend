@@ -2833,6 +2833,62 @@ describe('checker', () => {
 		expect(issue?.refs).toEqual(['xl/threadedComments/missing.xml'])
 	})
 
+	test('detects threaded comment package owner drift from the model sheet', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.preservedXml = { partPath: 'xl/worksheets/sheet1.xml' }
+		s.threadedComments.push({
+			ref: 'A1',
+			text: 'Root',
+			id: '{thread-1}',
+			partPath: 'xl/threadedComments/threadedComment1.xml',
+		})
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/threadedComments/threadedComment1.xml',
+						featureFamily: 'preservedThreadedComments',
+						ownerScope: 'worksheet',
+						contentType: 'application/vnd.ms-excel.threadedcomments+xml',
+					},
+				],
+				relationships: [
+					{
+						sourcePartPath: 'xl/worksheets/sheet2.xml',
+						relationshipPartPath: 'xl/worksheets/_rels/sheet2.xml.rels',
+						id: 'rIdThreaded',
+						type: 'http://schemas.microsoft.com/office/2017/10/relationships/threadedComment',
+						rawTarget: '../threadedComments/threadedComment1.xml',
+						resolvedTarget: 'xl/threadedComments/threadedComment1.xml',
+					},
+				],
+			},
+		})
+		const issue = result.issues.find(
+			(i) =>
+				i.rule === 'threaded-comment-integrity' &&
+				i.details?.kind === 'threaded-comment-sheet-owner-mismatch',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(issue?.severity).toBe('error')
+		expect(issue?.refs).toEqual([
+			'Sheet1',
+			'xl/worksheets/sheet1.xml',
+			'xl/worksheets/sheet2.xml',
+			'xl/threadedComments/threadedComment1.xml',
+		])
+		expect(issue?.details).toMatchObject({
+			partPath: 'xl/threadedComments/threadedComment1.xml',
+			sheetName: 'Sheet1',
+			expectedWorksheetPartPath: 'xl/worksheets/sheet1.xml',
+			actualWorksheetPartPath: 'xl/worksheets/sheet2.xml',
+		})
+		expect(issue?.suggestedFix).toContain('threadedComments relationship')
+	})
+
 	test('detects threaded comment relationships that resolve to missing package parts', () => {
 		const wb = createWorkbook()
 		wb.addSheet('Sheet1')

@@ -3503,6 +3503,7 @@ function checkThreadedCommentIntegrity(
 	const idsByWorkbook = new Map<string, ThreadedCommentIntegrityEntry>()
 	const rootRefsByPart = new Map<string, Map<string, ThreadedCommentIntegrityEntry>>()
 	const claimedPartsBySheet = new Map<string, Set<string>>()
+	const sheetsByName = new Map(wb.sheets.map((sheet) => [sheet.name, sheet]))
 	let threadedCommentCount = 0
 	let threadedCommentsWithPersonIds = 0
 
@@ -3927,6 +3928,31 @@ function checkThreadedCommentIntegrity(
 					worksheetPartPaths: [...worksheetOwners],
 				},
 			})
+		}
+		if (worksheetOwners.size === 1 && sheetNames.size === 1) {
+			const sheetName = [...sheetNames][0]
+			const sheetPartPath = sheetName
+				? sheetsByName.get(sheetName)?.preservedXml?.partPath
+				: undefined
+			const ownerPartPath = [...worksheetOwners][0]
+			if (sheetName && sheetPartPath && ownerPartPath && ownerPartPath !== sheetPartPath) {
+				issues.push({
+					rule: 'threaded-comment-integrity',
+					severity: 'error',
+					message: `Threaded comments part "${partPath}" is modeled on sheet "${sheetName}" but owned by worksheet part "${ownerPartPath}"`,
+					refs: [sheetName, sheetPartPath, ownerPartPath, partPath],
+					suggestedFix:
+						'Restore the threadedComments relationship on the worksheet that owns these threaded comments before writing.',
+					details: {
+						kind: 'threaded-comment-sheet-owner-mismatch',
+						partPath,
+						sheetName,
+						expectedWorksheetPartPath: sheetPartPath,
+						actualWorksheetPartPath: ownerPartPath,
+						relationships: threadedRelationships.map(queryTableRelationshipDetails),
+					},
+				})
+			}
 		}
 	}
 	for (const relationship of packageGraph.relationships) {

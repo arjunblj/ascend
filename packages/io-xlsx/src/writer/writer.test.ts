@@ -6033,6 +6033,56 @@ describe('writeXlsx', () => {
 		)
 	})
 
+	it('does not rewrite non-x14 extension nodes with x14 local names before the worksheet extension', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Data')
+		sheet.x14DataValidations.push({
+			index: 0,
+			sqref: 'A2',
+			type: 'list',
+			formula1: 'List!$A$2:$A$3',
+		})
+		sheet.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'C2',
+			formulas: ['A2>0'],
+			type: 'expression',
+		})
+		sheet.preservedExtLst = `<extLst xmlns:x15="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main" xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"><ext uri="{UNRELATED-X15}"><x15:conditionalFormattings><x15:conditionalFormatting><x15:cfRule type="expression"><xm:f>Z1&gt;0</xm:f></x15:cfRule><xm:sqref>Z2</xm:sqref></x15:conditionalFormatting></x15:conditionalFormattings><x15:dataValidations count="1"><x15:dataValidation type="whole"><xm:sqref>Z3</xm:sqref></x15:dataValidation></x15:dataValidations></ext><ext uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}"><x14:conditionalFormattings><x14:conditionalFormatting><x14:cfRule type="expression"><xm:f>A1&gt;0</xm:f></x14:cfRule><xm:sqref>C1</xm:sqref></x14:conditionalFormatting></x14:conditionalFormattings><x14:dataValidations count="1"><x14:dataValidation type="list"><x14:formula1><xm:f>List!$A$1:$A$2</xm:f></x14:formula1><xm:sqref>A1</xm:sqref></x14:dataValidation></x14:dataValidations></ext></extLst>`
+
+		const written = writeXlsx(wb)
+		expectOk(written)
+		const entries = unzipSync(written.value)
+		const worksheet = entries['xl/worksheets/sheet1.xml']
+		expect(worksheet).toBeDefined()
+		if (!worksheet) return
+		const xml = new TextDecoder().decode(worksheet)
+		const unrelatedExt = xml.match(/<ext uri="\{UNRELATED-X15\}">[\s\S]*?<\/ext>/)?.[0]
+		const worksheetExt = xml.match(
+			/<ext uri="\{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF\}"[\s\S]*?<\/ext>/,
+		)?.[0]
+
+		expect(unrelatedExt).toContain('<xm:f>Z1&gt;0</xm:f>')
+		expect(unrelatedExt).toContain('<xm:sqref>Z2</xm:sqref>')
+		expect(unrelatedExt).toContain('<x15:dataValidations count="1">')
+		expect(unrelatedExt).toContain('<xm:sqref>Z3</xm:sqref>')
+		expect(unrelatedExt).not.toContain('<xm:f>A2&gt;0</xm:f>')
+		expect(unrelatedExt).not.toContain('<xm:sqref>A2</xm:sqref>')
+		expect(unrelatedExt).not.toContain('<xm:sqref>C2</xm:sqref>')
+
+		expect(worksheetExt).toContain('<xm:f>A2&gt;0</xm:f>')
+		expect(worksheetExt).toContain('<xm:sqref>C2</xm:sqref>')
+		expect(worksheetExt).toContain('<x14:dataValidations count="1">')
+		expect(worksheetExt).toContain('<xm:f>List!$A$2:$A$3</xm:f>')
+		expect(worksheetExt).toContain('<xm:sqref>A2</xm:sqref>')
+		expect(worksheetExt).not.toContain('<xm:f>A1&gt;0</xm:f>')
+		expect(worksheetExt).not.toContain('<xm:sqref>C1</xm:sqref>')
+		expect(worksheetExt).not.toContain('List!$A$1:$A$2')
+		expect(xml.indexOf('<ext uri="{UNRELATED-X15}">')).toBeLessThan(
+			xml.indexOf('<ext uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}"'),
+		)
+	})
+
 	it('writes generated x14 containers into the worksheet extension and preserves extension order', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Data')

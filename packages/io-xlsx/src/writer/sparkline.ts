@@ -179,24 +179,31 @@ function updateX14ConditionalFormattingExtLstXml(
 ): string {
 	if (formats.length === 0) return xml
 	let entryIndex = 0
-	const next = xml.replace(
-		CONDITIONAL_FORMATTING_RE,
-		(match, tag: string, attrs: string, body: string) => {
-			const format = formats.find((entry) => entry.index === entryIndex)
-			entryIndex += 1
-			if (!format) return match
-			if (format.deleted) return ''
-			let updatedBody = setFirstSparklineText(body, 'sqref', format.sqref)
-			updatedBody = setOrderedElementTexts(
-				updatedBody,
-				'f',
-				x14ConditionalFormatFormulaTexts(format),
-			)
-			return `<${tag}${attrs}>${updatedBody}</${tag}>`
-		},
-	)
-	const missing = activeX14Entries(formats).filter((entry) => entry.index >= entryIndex)
-	return normalizeX14ConditionalFormattingContainers(appendX14ConditionalFormattings(next, missing))
+	const replaced = replaceWorksheetExtBody(xml, (extBody) => {
+		const next = extBody.replace(
+			CONDITIONAL_FORMATTING_RE,
+			(match, tag: string, attrs: string, body: string) => {
+				const format = formats.find((entry) => entry.index === entryIndex)
+				entryIndex += 1
+				if (!format) return match
+				if (format.deleted) return ''
+				let updatedBody = setFirstSparklineText(body, 'sqref', format.sqref)
+				updatedBody = setOrderedElementTexts(
+					updatedBody,
+					'f',
+					x14ConditionalFormatFormulaTexts(format),
+				)
+				return `<${tag}${attrs}>${updatedBody}</${tag}>`
+			},
+		)
+		const missing = activeX14Entries(formats).filter((entry) => entry.index >= entryIndex)
+		return normalizeX14ConditionalFormattingContainers(
+			appendX14ConditionalFormattingsToBody(next, missing),
+		)
+	})
+	if (replaced.didReplace) return replaced.xml
+	const active = activeX14Entries(formats)
+	return active.length > 0 ? insertIntoWorksheetExt(xml, x14ConditionalFormattingsXml(active)) : xml
 }
 
 function updateX14DataValidationExtLstXml(
@@ -205,29 +212,34 @@ function updateX14DataValidationExtLstXml(
 ): string {
 	if (validations.length === 0) return xml
 	let entryIndex = 0
-	const next = xml.replace(
-		DATA_VALIDATION_RE,
-		(match, tag: string, attrs: string, body: string | undefined) => {
-			const validation = validations.find((entry) => entry.index === entryIndex)
-			entryIndex += 1
-			if (!validation) return match
-			if (validation.deleted) return ''
-			let updatedAttrs = attrs
-			if (attrRe('sqref').test(updatedAttrs)) {
-				updatedAttrs = updatedAttrs.replace(
-					attrRe('sqref'),
-					` sqref="${escapeXml(validation.sqref)}"`,
-				)
-			}
-			let updatedBody = setFirstSparklineText(body ?? '', 'sqref', validation.sqref)
-			updatedBody = setNestedFormulaText(updatedBody, 'formula1', validation.formula1)
-			updatedBody = setNestedFormulaText(updatedBody, 'formula2', validation.formula2)
-			if (updatedBody.length === 0) return `<${tag}${updatedAttrs}/>`
-			return `<${tag}${updatedAttrs}>${updatedBody}</${tag}>`
-		},
-	)
-	const missing = activeX14Entries(validations).filter((entry) => entry.index >= entryIndex)
-	return normalizeX14DataValidationCounts(appendX14DataValidations(next, missing))
+	const replaced = replaceWorksheetExtBody(xml, (extBody) => {
+		const next = extBody.replace(
+			DATA_VALIDATION_RE,
+			(match, tag: string, attrs: string, body: string | undefined) => {
+				const validation = validations.find((entry) => entry.index === entryIndex)
+				entryIndex += 1
+				if (!validation) return match
+				if (validation.deleted) return ''
+				let updatedAttrs = attrs
+				if (attrRe('sqref').test(updatedAttrs)) {
+					updatedAttrs = updatedAttrs.replace(
+						attrRe('sqref'),
+						` sqref="${escapeXml(validation.sqref)}"`,
+					)
+				}
+				let updatedBody = setFirstSparklineText(body ?? '', 'sqref', validation.sqref)
+				updatedBody = setNestedFormulaText(updatedBody, 'formula1', validation.formula1)
+				updatedBody = setNestedFormulaText(updatedBody, 'formula2', validation.formula2)
+				if (updatedBody.length === 0) return `<${tag}${updatedAttrs}/>`
+				return `<${tag}${updatedAttrs}>${updatedBody}</${tag}>`
+			},
+		)
+		const missing = activeX14Entries(validations).filter((entry) => entry.index >= entryIndex)
+		return normalizeX14DataValidationCounts(appendX14DataValidationsToBody(next, missing))
+	})
+	if (replaced.didReplace) return replaced.xml
+	const active = activeX14Entries(validations)
+	return active.length > 0 ? insertIntoWorksheetExt(xml, x14DataValidationsXml(active)) : xml
 }
 
 function normalizeX14DataValidationCounts(xml: string): string {
@@ -251,7 +263,7 @@ function normalizeX14ConditionalFormattingContainers(xml: string): string {
 	)
 }
 
-function appendX14ConditionalFormattings(
+function appendX14ConditionalFormattingsToBody(
 	xml: string,
 	formats: readonly SheetX14ConditionalFormatInfo[],
 ): string {
@@ -263,13 +275,10 @@ function appendX14ConditionalFormattings(
 	}
 	const closing = new RegExp(String.raw`<\/(${PREFIXED_TAG}conditionalFormattings)>`)
 	if (closing.test(xml)) return xml.replace(closing, `${additions}</$1>`)
-	return insertIntoWorksheetExt(
-		xml,
-		`<x14:conditionalFormattings>${additions}</x14:conditionalFormattings>`,
-	)
+	return `${xml}<x14:conditionalFormattings>${additions}</x14:conditionalFormattings>`
 }
 
-function appendX14DataValidations(
+function appendX14DataValidationsToBody(
 	xml: string,
 	validations: readonly SheetX14DataValidationInfo[],
 ): string {
@@ -293,10 +302,37 @@ function appendX14DataValidations(
 			return `<${tag}${setXmlAttr(attrs, 'count', String(validations.length))}>${additions}</${tag}>`
 		})
 	}
-	return insertIntoWorksheetExt(
-		xml,
-		`<x14:dataValidations count="${validations.length}">${additions}</x14:dataValidations>`,
-	)
+	return `${xml}<x14:dataValidations count="${validations.length}">${additions}</x14:dataValidations>`
+}
+
+function x14ConditionalFormattingsXml(formats: readonly SheetX14ConditionalFormatInfo[]): string {
+	return `<x14:conditionalFormattings>${formats.map(buildX14ConditionalFormattingXml).join('')}</x14:conditionalFormattings>`
+}
+
+function x14DataValidationsXml(validations: readonly SheetX14DataValidationInfo[]): string {
+	return `<x14:dataValidations count="${validations.length}">${validations.map(buildX14DataValidationXml).join('')}</x14:dataValidations>`
+}
+
+function replaceWorksheetExtBody(
+	xml: string,
+	update: (body: string) => string,
+): { readonly xml: string; readonly didReplace: boolean } {
+	let didReplace = false
+	const openClose = new RegExp(String.raw`<(${PREFIXED_TAG}ext)\b([^>]*)>([\s\S]*?)<\/\1>`, 'g')
+	const next = xml.replace(openClose, (match, tag: string, attrs: string, body: string) => {
+		if (didReplace || attr(attrs, 'uri') !== X14_WORKSHEET_EXT_URI) return match
+		didReplace = true
+		return `<${tag}${worksheetExtAttrs(xml, attrs)}>${update(body)}</${tag}>`
+	})
+	if (didReplace) return { xml: next, didReplace }
+
+	const selfClosing = new RegExp(String.raw`<(${PREFIXED_TAG}ext)\b([^>]*)\/>`, 'g')
+	const expanded = next.replace(selfClosing, (match, tag: string, attrs: string) => {
+		if (didReplace || attr(attrs, 'uri') !== X14_WORKSHEET_EXT_URI) return match
+		didReplace = true
+		return `<${tag}${worksheetExtAttrs(xml, attrs)}>${update('')}</${tag}>`
+	})
+	return { xml: expanded, didReplace }
 }
 
 function insertIntoWorksheetExt(xml: string, body: string): string {

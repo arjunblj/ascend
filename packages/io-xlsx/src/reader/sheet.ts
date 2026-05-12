@@ -279,14 +279,28 @@ export function parseSheetValuesOnlyBytes(
 	sheetId?: Sheet['id'],
 ): Sheet | null {
 	if (!ctx.valuesOnly || ctx.richMetadata || ctx.formulaOnly) return null
-	const sheetDataLoc = locateSheetDataBytes(bytes)
-	if (!sheetDataLoc) return null
-	if (hasUnsupportedValuesOnlyOuterTagsBytes(bytes, sheetDataLoc)) return null
-
+	const sheetDataStart = locateSheetDataStartBytes(bytes)
+	if (!sheetDataStart) return null
 	const sheet = new Sheet(name, sheetId)
 	sheet.preservedDimensionRef = parseDimensionRefBytes(bytes)
 	applyDensityHintFromDimensionBytes(sheet, bytes)
-	return parseSheetDataBytes(bytes, sheetDataLoc, sheet, ctx) ? sheet : null
+	if (sheetDataStart.selfClosing) {
+		if (
+			hasUnsupportedValuesOnlyOuterTagsInRangeBytes(bytes, 0, sheetDataStart.tagStart) ||
+			hasUnsupportedValuesOnlyOuterTagsInRangeBytes(bytes, sheetDataStart.closeEnd, bytes.length)
+		) {
+			return null
+		}
+		return sheet
+	}
+	if (hasUnsupportedValuesOnlyOuterTagsInRangeBytes(bytes, 0, sheetDataStart.tagStart)) {
+		return null
+	}
+
+	const closeEnd = parseSheetDataBytesToClose(bytes, sheetDataStart.contentStart, sheet, ctx)
+	if (closeEnd === false) return null
+	if (hasUnsupportedValuesOnlyOuterTagsInRangeBytes(bytes, closeEnd, bytes.length)) return null
+	return sheet
 }
 
 function hasValuesModeSheetMetadata(xml: string, sheetDataLoc: SheetDataLocation | null): boolean {
@@ -403,32 +417,58 @@ function bytesLiteral(value: string): Uint8Array {
 	return out
 }
 
-function parseSheetDataBytes(
+function parseSheetDataBytesToClose(
 	bytes: Uint8Array,
-	sheetData: SheetDataLocation,
+	contentStart: number,
 	sheet: Sheet,
 	ctx: SheetParseContext,
-): boolean {
-	let rowCursor = sheetData.contentStart
+): number | false {
+	return parseSheetDataRowsBytes(bytes, contentStart, bytes.length, sheet, ctx, true)
+}
+
+function parseSheetDataRowsBytes(
+	bytes: Uint8Array,
+	contentStart: number,
+	contentEnd: number,
+	sheet: Sheet,
+	ctx: SheetParseContext,
+	stopAtSheetDataClose = false,
+): number | false {
+	let rowCursor = contentStart
 	let currentRow = -1
 	const cellOut = { row: 0, col: 0 }
 
 	while (true) {
-		const rowOpen = nextXmlElementOpenBytes(bytes, rowCursor, sheetData.contentEnd)
-		if (rowOpen === -1) return true
+		const rowOpen = nextXmlElementOpenBytes(bytes, rowCursor, contentEnd)
+		if (rowOpen === -1) return stopAtSheetDataClose ? false : contentEnd
+		if (
+			stopAtSheetDataClose &&
+			indexOfBytes(
+				bytes,
+				BYTES_SHEET_DATA_CLOSE,
+				rowOpen,
+				rowOpen + BYTES_SHEET_DATA_CLOSE.length,
+			) === rowOpen
+		) {
+			return rowOpen + BYTES_SHEET_DATA_CLOSE.length
+		}
 		if (
 			rowOpen === -2 ||
-			!startsWithElementOpenAtBytes(bytes, BYTES_ROW_OPEN, rowOpen, sheetData.contentEnd)
+			!startsWithElementOpenAtBytes(bytes, BYTES_ROW_OPEN, rowOpen, contentEnd)
 		) {
 			return false
 		}
 		const rowTagEnd = findTagEndBytes(bytes, rowOpen)
-		if (rowTagEnd === -1 || rowTagEnd >= sheetData.contentEnd) return false
+		if (rowTagEnd === -1 || rowTagEnd >= contentEnd) return false
 		const rowAttrStart = rowOpen + BYTES_ROW_OPEN.length
 		const explicitRowIndex = rawRowIndexAttrInBytes(bytes, rowAttrStart, rowTagEnd)
 		const row = explicitRowIndex !== undefined ? explicitRowIndex - 1 : currentRow + 1
 		currentRow = row
-		if (ctx.maxRows !== undefined && row >= ctx.maxRows) return true
+		if (ctx.maxRows !== undefined && row >= ctx.maxRows) {
+			if (!stopAtSheetDataClose) return contentEnd
+			const close = indexOfBytes(bytes, BYTES_SHEET_DATA_CLOSE, rowOpen, contentEnd)
+			return close === -1 ? false : close + BYTES_SHEET_DATA_CLOSE.length
+		}
 		if (hasRowPresentationMetadataBytes(bytes, rowAttrStart, rowTagEnd)) {
 			parseRowPresentationMetadataBytes(bytes, rowAttrStart, rowTagEnd, row, sheet)
 		}
@@ -437,7 +477,7 @@ function parseSheetDataBytes(
 			continue
 		}
 
-		const rowClose = indexOfBytes(bytes, BYTES_ROW_CLOSE, rowTagEnd + 1, sheetData.contentEnd)
+		const rowClose = indexOfBytes(bytes, BYTES_ROW_CLOSE, rowTagEnd + 1, contentEnd)
 		if (rowClose === -1) return false
 		if (parseSimpleValuesRowBytes(bytes, rowTagEnd + 1, rowClose, row, ctx, sheet)) {
 			rowCursor = rowClose + BYTES_ROW_CLOSE.length
@@ -2719,6 +2759,13 @@ interface SheetDataLocation {
 	readonly closeEnd: number
 }
 
+interface SheetDataStartLocation {
+	readonly contentStart: number
+	readonly tagStart: number
+	readonly closeEnd: number
+	readonly selfClosing: boolean
+}
+
 function locateSheetData(xml: string): SheetDataLocation | null {
 	const open = xml.indexOf('<sheetData')
 	if (open === -1) return null
@@ -2728,6 +2775,20 @@ function locateSheetData(xml: string): SheetDataLocation | null {
 	const close = xml.indexOf('</sheetData>', tagEnd + 1)
 	if (close === -1) return null
 	return { contentStart: tagEnd + 1, contentEnd: close, tagStart: open, closeEnd: close + 12 }
+}
+
+function locateSheetDataStartBytes(bytes: Uint8Array): SheetDataStartLocation | null {
+	if (indexOfElementOpenBytes(bytes, BYTES_WORKSHEET_OPEN, 0, bytes.length) === -1) return null
+	const open = indexOfElementOpenBytes(bytes, BYTES_SHEET_DATA_OPEN, 0, bytes.length)
+	if (open === -1) return null
+	const tagEnd = findTagEndBytes(bytes, open)
+	if (tagEnd === -1) return null
+	return {
+		contentStart: tagEnd + 1,
+		tagStart: open,
+		closeEnd: tagEnd + 1,
+		selfClosing: isSelfClosingTagBytes(bytes, open, tagEnd),
+	}
 }
 
 function locateSheetDataBytes(bytes: Uint8Array): SheetDataLocation | null {
@@ -2780,16 +2841,6 @@ function parseDimensionRefBytes(bytes: Uint8Array): string | null {
 	if (tagEnd === -1) return null
 	const ref = rawAttrDecodedBytes(bytes, open + BYTES_DIMENSION_OPEN.length, tagEnd, 'ref')
 	return ref ?? null
-}
-
-function hasUnsupportedValuesOnlyOuterTagsBytes(
-	bytes: Uint8Array,
-	sheetData: SheetDataLocation,
-): boolean {
-	return (
-		hasUnsupportedValuesOnlyOuterTagsInRangeBytes(bytes, 0, sheetData.tagStart) ||
-		hasUnsupportedValuesOnlyOuterTagsInRangeBytes(bytes, sheetData.closeEnd, bytes.length)
-	)
 }
 
 function hasUnsupportedValuesOnlyOuterTagsInRangeBytes(

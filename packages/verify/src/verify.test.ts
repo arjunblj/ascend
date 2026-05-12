@@ -2714,6 +2714,43 @@ describe('checker', () => {
 		})
 	})
 
+	test('detects threaded comment parent id cycles', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.threadedComments.push(
+			{
+				ref: 'B2',
+				text: 'First reply',
+				id: '{thread-1}',
+				parentId: '{thread-2}',
+				partPath: 'xl/threadedComments/threadedComment1.xml',
+			},
+			{
+				ref: 'B3',
+				text: 'Second reply',
+				id: '{thread-2}',
+				parentId: '{thread-1}',
+				partPath: 'xl/threadedComments/threadedComment1.xml',
+			},
+		)
+
+		const result = check(wb)
+		const issue = result.issues.find(
+			(i) =>
+				i.rule === 'threaded-comment-integrity' &&
+				i.details?.kind === 'threaded-comment-parent-cycle',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(issue?.refs).toEqual(['Sheet1!B2', 'Sheet1!B3'])
+		expect(issue?.details).toMatchObject({
+			partPath: 'xl/threadedComments/threadedComment1.xml',
+			cycleIds: ['{thread-1}', '{thread-2}'],
+			commentIndexes: [0, 1],
+		})
+		expect(issue?.suggestedFix).toContain('parentId chains')
+	})
+
 	test('detects threaded comment package ownership ambiguities', () => {
 		const wb = createWorkbook()
 		const s1 = wb.addSheet('Sheet1')

@@ -3457,6 +3457,7 @@ interface ThreadedCommentIntegrityEntry {
 	readonly index: number
 	readonly partPath: string
 	readonly id?: string
+	readonly parentId?: string
 }
 
 function isThreadedCommentRelationshipType(relationshipType: string | undefined): boolean {
@@ -3603,6 +3604,7 @@ function checkThreadedCommentIntegrity(
 						index,
 						partPath,
 						id: comment.id,
+						...(comment.parentId ? { parentId: comment.parentId } : {}),
 					})
 				}
 				const existingWorkbookId = idsByWorkbook.get(comment.id)
@@ -3764,6 +3766,7 @@ function checkThreadedCommentIntegrity(
 			})
 		}
 	}
+	issues.push(...checkThreadedCommentParentCycles(wb, idsByPart))
 	if (!packageGraph) return issues
 
 	const personParts = packageGraph.parts.filter(isThreadedPersonPart)
@@ -3964,6 +3967,72 @@ function checkThreadedCommentIntegrity(
 		})
 	}
 	return issues
+}
+
+function checkThreadedCommentParentCycles(
+	wb: Workbook,
+	idsByPart: ReadonlyMap<string, ReadonlyMap<string, ThreadedCommentIntegrityEntry>>,
+): CheckIssue[] {
+	const issues: CheckIssue[] = []
+	const reportedCycles = new Set<string>()
+	for (const sheet of wb.sheets) {
+		for (let index = 0; index < sheet.threadedComments.length; index++) {
+			const comment = sheet.threadedComments[index]
+			if (!comment?.id || !comment.parentId || comment.parentId === comment.id) continue
+			const partPath = comment.partPath ?? '(unknown threaded comment part)'
+			const partIds = idsByPart.get(partPath)
+			if (!partIds) continue
+			const cycle = threadedCommentParentCycle(partIds, comment.id, comment.parentId)
+			if (!cycle) continue
+			const cycleKey = `${partPath}#${[...cycle.ids].sort().join('\u0000')}`
+			if (reportedCycles.has(cycleKey)) continue
+			reportedCycles.add(cycleKey)
+			issues.push({
+				rule: 'threaded-comment-integrity',
+				severity: 'warning',
+				message: `Threaded comments in "${partPath}" contain a parentId cycle: ${cycle.ids.join(' -> ')}`,
+				refs: cycle.entries.map((entry) => `${entry.sheetName}!${entry.ref}`),
+				suggestedFix:
+					'Repair threadedComment parentId chains before editing replies; cyclic threads cannot be represented as a valid root/reply tree.',
+				details: {
+					kind: 'threaded-comment-parent-cycle',
+					partPath,
+					cycleIds: cycle.ids,
+					commentIndexes: cycle.entries.map((entry) => entry.index),
+				},
+			})
+		}
+	}
+	return issues
+}
+
+function threadedCommentParentCycle(
+	partIds: ReadonlyMap<string, ThreadedCommentIntegrityEntry>,
+	startId: string,
+	parentId: string,
+): {
+	readonly ids: readonly string[]
+	readonly entries: readonly ThreadedCommentIntegrityEntry[]
+} | null {
+	const seen = new Map<string, number>([[startId, 0]])
+	const chain = [startId]
+	let currentParentId: string | undefined = parentId
+	while (currentParentId) {
+		const cycleStart = seen.get(currentParentId)
+		if (cycleStart !== undefined) {
+			const ids = chain.slice(cycleStart)
+			const entries = ids
+				.map((id) => partIds.get(id))
+				.filter((entry): entry is ThreadedCommentIntegrityEntry => entry !== undefined)
+			return { ids, entries }
+		}
+		const parent = partIds.get(currentParentId)
+		if (!parent) return null
+		seen.set(currentParentId, chain.length)
+		chain.push(currentParentId)
+		currentParentId = parent.parentId
+	}
+	return null
 }
 
 function styleVisibility(style: string | undefined): boolean | undefined {

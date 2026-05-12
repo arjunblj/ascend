@@ -204,6 +204,11 @@ function chartReferenceSheetName(reference: string): { sheetName?: string; exter
 	return { sheetName, external: sheetName.startsWith('[') }
 }
 
+function externalTargetFromSheetName(sheetName: string): string {
+	const match = /^\[[^\]]+\]/.exec(sheetName)
+	return match?.[0] ?? sheetName
+}
+
 function checkChartSeriesReferences(wb: Workbook, sheetNames: readonly string[]): CheckIssue[] {
 	const issues: CheckIssue[] = []
 	const sheetNameSet = new Set(sheetNames.map((name) => name.toLowerCase()))
@@ -213,7 +218,31 @@ function checkChartSeriesReferences(wb: Workbook, sheetNames: readonly string[])
 			if (!series) continue
 			for (const entry of chartSeriesReferenceEntries(series)) {
 				const parsed = chartReferenceSheetName(entry.reference)
-				if (parsed.external || !parsed.sheetName) continue
+				if (parsed.external) {
+					issues.push({
+						rule: 'chart-series-integrity',
+						severity: 'warning',
+						message: `Chart series ${entry.field} in "${chart.partPath}" references external workbook ${parsed.sheetName ? `"${externalTargetFromSheetName(parsed.sheetName)}"` : 'data'}`,
+						refs: [`${chart.partPath}#series${seriesIndex}`],
+						suggestedFix:
+							'Replace the chart source with local workbook data or verify the external link metadata before editing chart ranges.',
+						details: {
+							kind: 'chart-series-external-reference',
+							partPath: chart.partPath,
+							seriesIndex,
+							field: entry.field,
+							reference: entry.reference,
+							...(parsed.sheetName ? { externalSheet: parsed.sheetName } : {}),
+							...(parsed.sheetName
+								? { externalTarget: externalTargetFromSheetName(parsed.sheetName) }
+								: {}),
+							...(chart.sheetName ? { ownerSheet: chart.sheetName } : {}),
+							...(chart.chartType ? { chartType: chart.chartType } : {}),
+						},
+					})
+					continue
+				}
+				if (!parsed.sheetName) continue
 				if (sheetNameSet.has(parsed.sheetName.toLowerCase())) continue
 				const closest = findClosestSheetName(parsed.sheetName, sheetNames)
 				issues.push({
@@ -548,6 +577,33 @@ function checkTableIntegrity(wb: Workbook): CheckIssue[] {
 				} else {
 					columnsByName.set(normalizedColumnName, columnEntry)
 				}
+
+				const formulaEntries: X14FormulaReferenceEntry[] = []
+				if (column.formula) {
+					formulaEntries.push({ field: `columns[${columnIndex}].formula`, formula: column.formula })
+				}
+				if (column.totalsRowFormula) {
+					formulaEntries.push({
+						field: `columns[${columnIndex}].totalsRowFormula`,
+						formula: column.totalsRowFormula,
+					})
+				}
+				pushExternalMetadataReferenceIssues(issues, {
+					rule: 'table-integrity',
+					source: 'tableColumn',
+					sheetName: sheet.name,
+					index: columnIndex,
+					references: formulaEntries.flatMap(externalReferencesInFormula),
+					refs: [`${sheet.name}!${ref}`],
+					suggestedFix:
+						'Replace table column formulas with local workbook data or verify the external link metadata before editing table formulas.',
+					details: {
+						tableName: table.name,
+						ref,
+						columnName: column.name,
+						...(table.partPath ? { partPath: table.partPath } : {}),
+					},
+				})
 			}
 
 			const entry: TableIntegrityEntry = {
@@ -881,6 +937,14 @@ interface MissingSheetReference {
 	readonly token?: string
 }
 
+interface ExternalMetadataReference {
+	readonly field: string
+	readonly reference: string
+	readonly sheetName: string
+	readonly externalTarget: string
+	readonly token?: string
+}
+
 function sqrefTokens(sqref: string): string[] {
 	return sqref.trim().split(/\s+/).filter(Boolean)
 }
@@ -911,11 +975,32 @@ function missingSheetReferencesInSqref(
 	return missing
 }
 
+function externalReferencesInSqref(sqref: string): ExternalMetadataReference[] {
+	const external: ExternalMetadataReference[] = []
+	for (const token of sqrefTokens(sqref)) {
+		const parsed = chartReferenceSheetName(token)
+		if (!parsed.external) continue
+		external.push({
+			field: 'sqref',
+			reference: sqref,
+			sheetName: parsed.sheetName ?? token,
+			externalTarget: externalTargetFromSheetName(parsed.sheetName ?? token),
+			token,
+		})
+	}
+	return external
+}
+
+function parseFormulaText(formula: string) {
+	const trimmed = formula.trim()
+	return parseFormula(trimmed.startsWith('=') ? trimmed.slice(1) : trimmed)
+}
+
 function missingSheetReferencesInFormula(
 	entry: X14FormulaReferenceEntry,
 	sheetNameSet: ReadonlySet<string>,
 ): MissingSheetReference[] {
-	const parsed = parseFormula(entry.formula)
+	const parsed = parseFormulaText(entry.formula)
 	if (!parsed.ok) return []
 	const missing: MissingSheetReference[] = []
 	for (const ref of extractRefs(parsed.value)) {
@@ -932,6 +1017,24 @@ function missingSheetReferencesInFormula(
 	return missing
 }
 
+function externalReferencesInFormula(entry: X14FormulaReferenceEntry): ExternalMetadataReference[] {
+	const parsed = parseFormulaText(entry.formula)
+	if (!parsed.ok) return []
+	const external: ExternalMetadataReference[] = []
+	for (const ref of extractRefs(parsed.value)) {
+		for (const sheetName of sheetNamesForFormulaRef(ref)) {
+			if (!sheetName.startsWith('[')) continue
+			external.push({
+				field: entry.field,
+				reference: entry.formula,
+				sheetName,
+				externalTarget: externalTargetFromSheetName(sheetName),
+			})
+		}
+	}
+	return external
+}
+
 function sheetNamesForFormulaRef(ref: FormulaRef): string[] {
 	if (ref.kind === 'sheetSpan') return [ref.startSheet, ref.endSheet]
 	return ref.sheet ? [ref.sheet] : []
@@ -939,7 +1042,7 @@ function sheetNamesForFormulaRef(ref: FormulaRef): string[] {
 
 function formulaHasDetectableReferences(formula: string | undefined): boolean {
 	if (!formula) return false
-	const parsed = parseFormula(formula)
+	const parsed = parseFormulaText(formula)
 	return parsed.ok && extractRefs(parsed.value).length > 0
 }
 
@@ -988,6 +1091,47 @@ function pushX14MissingSheetIssues(
 	}
 }
 
+function pushExternalMetadataReferenceIssues(
+	issues: CheckIssue[],
+	params: {
+		readonly rule: 'conditional-format-integrity' | 'data-validation-integrity' | 'table-integrity'
+		readonly source:
+			| 'conditionalFormat'
+			| 'x14ConditionalFormat'
+			| 'dataValidation'
+			| 'x14DataValidation'
+			| 'tableColumn'
+		readonly sheetName: string
+		readonly index: number
+		readonly references: readonly ExternalMetadataReference[]
+		readonly refs: readonly string[]
+		readonly suggestedFix: string
+		readonly details?: Readonly<Record<string, unknown>>
+	},
+): void {
+	for (const reference of params.references) {
+		issues.push({
+			rule: params.rule,
+			severity: 'warning',
+			message: `${params.source} ${reference.field} on sheet "${params.sheetName}" references external workbook "${reference.externalTarget}"`,
+			refs: params.refs,
+			suggestedFix: params.suggestedFix,
+			details: {
+				kind: `${params.source}-external-reference`,
+				source: params.source,
+				sheetName: params.sheetName,
+				index: params.index,
+				field: reference.field,
+				reference: reference.reference,
+				externalSheet: reference.sheetName,
+				externalTarget: reference.externalTarget,
+				...(reference.token ? { token: reference.token } : {}),
+				...params.details,
+			},
+		})
+	}
+}
+
 function x14ConditionalFormatFormulaEntries(
 	format: Workbook['sheets'][number]['x14ConditionalFormats'][number],
 ): X14FormulaReferenceEntry[] {
@@ -1006,6 +1150,35 @@ function x14ConditionalFormatFormulaEntries(
 	return entries
 }
 
+function conditionalFormatRuleFormulaEntries(
+	rule: Workbook['sheets'][number]['conditionalFormats'][number]['rules'][number],
+	ruleIndex: number,
+): X14FormulaReferenceEntry[] {
+	const entries: X14FormulaReferenceEntry[] = rule.formulas.map((formula, index) => ({
+		field: `rules[${ruleIndex}].formulas[${index}]`,
+		formula,
+	}))
+	for (let index = 0; index < (rule.colorScale?.cfvo.length ?? 0); index++) {
+		const value = rule.colorScale?.cfvo[index]?.value
+		if (value !== undefined) {
+			entries.push({ field: `rules[${ruleIndex}].colorScale.cfvo[${index}].value`, formula: value })
+		}
+	}
+	for (let index = 0; index < (rule.dataBar?.cfvo.length ?? 0); index++) {
+		const value = rule.dataBar?.cfvo[index]?.value
+		if (value !== undefined) {
+			entries.push({ field: `rules[${ruleIndex}].dataBar.cfvo[${index}].value`, formula: value })
+		}
+	}
+	for (let index = 0; index < (rule.iconSet?.cfvo.length ?? 0); index++) {
+		const value = rule.iconSet?.cfvo[index]?.value
+		if (value !== undefined) {
+			entries.push({ field: `rules[${ruleIndex}].iconSet.cfvo[${index}].value`, formula: value })
+		}
+	}
+	return entries
+}
+
 function checkX14DataValidationIntegrity(
 	wb: Workbook,
 	sheetNames: readonly string[],
@@ -1014,6 +1187,34 @@ function checkX14DataValidationIntegrity(
 	const sheetNameSet = new Set(sheetNames.map((name) => name.toLowerCase()))
 
 	for (const sheet of wb.sheets) {
+		for (let index = 0; index < sheet.dataValidations.length; index++) {
+			const validation = sheet.dataValidations[index]
+			if (!validation) continue
+			const formulaEntries: X14FormulaReferenceEntry[] = []
+			if (validation.formula1) {
+				formulaEntries.push({ field: 'formula1', formula: validation.formula1 })
+			}
+			if (validation.formula2) {
+				formulaEntries.push({ field: 'formula2', formula: validation.formula2 })
+			}
+			pushExternalMetadataReferenceIssues(issues, {
+				rule: 'data-validation-integrity',
+				source: 'dataValidation',
+				sheetName: sheet.name,
+				index,
+				references: [
+					...externalReferencesInSqref(validation.sqref),
+					...formulaEntries.flatMap(externalReferencesInFormula),
+				],
+				refs: x14EntryRefs(sheet.name, validation.sqref, `dataValidation[${index}]`),
+				suggestedFix:
+					'Replace validation references with local workbook ranges or verify the external link metadata before editing validations.',
+				details: {
+					sqref: validation.sqref,
+					...(validation.type ? { validationType: validation.type } : {}),
+				},
+			})
+		}
 		for (const validation of sheet.x14DataValidations) {
 			const formulaEntries: X14FormulaReferenceEntry[] = []
 			if (validation.formula1) {
@@ -1037,6 +1238,23 @@ function checkX14DataValidationIntegrity(
 				],
 				sheetNames,
 				fallbackRef,
+			})
+			pushExternalMetadataReferenceIssues(issues, {
+				rule: 'data-validation-integrity',
+				source: 'x14DataValidation',
+				sheetName: sheet.name,
+				index: validation.index,
+				references: [
+					...externalReferencesInSqref(validation.sqref),
+					...formulaEntries.flatMap(externalReferencesInFormula),
+				],
+				refs: x14EntryRefs(sheet.name, validation.sqref, fallbackRef),
+				suggestedFix:
+					'Replace x14 validation references with local workbook ranges or verify the external link metadata before writing preserved extension metadata.',
+				details: {
+					sqref: validation.sqref,
+					...(validation.type ? { validationType: validation.type } : {}),
+				},
 			})
 
 			if (!validation.deleted) continue
@@ -1089,9 +1307,39 @@ function checkConditionalFormatIntegrity(wb: Workbook): CheckIssue[] {
 			const format = sheet.conditionalFormats[formatIndex]
 			if (!format) continue
 			const ranges = parseSqrefRanges(format.sqref)
+			pushExternalMetadataReferenceIssues(issues, {
+				rule: 'conditional-format-integrity',
+				source: 'conditionalFormat',
+				sheetName: sheet.name,
+				index: formatIndex,
+				references: externalReferencesInSqref(format.sqref),
+				refs: x14EntryRefs(sheet.name, format.sqref, `conditionalFormat[${formatIndex}]`),
+				suggestedFix:
+					'Replace conditional-format ranges with local workbook ranges or verify the external link metadata before editing conditional formats.',
+				details: {
+					sqref: format.sqref,
+				},
+			})
 			for (let ruleIndex = 0; ruleIndex < format.rules.length; ruleIndex++) {
 				const rule = format.rules[ruleIndex]
 				if (!rule) continue
+				pushExternalMetadataReferenceIssues(issues, {
+					rule: 'conditional-format-integrity',
+					source: 'conditionalFormat',
+					sheetName: sheet.name,
+					index: formatIndex,
+					references: conditionalFormatRuleFormulaEntries(rule, ruleIndex).flatMap(
+						externalReferencesInFormula,
+					),
+					refs: x14EntryRefs(sheet.name, format.sqref, `conditionalFormat[${formatIndex}]`),
+					suggestedFix:
+						'Replace conditional-format formulas with local workbook ranges or verify the external link metadata before editing conditional formats.',
+					details: {
+						sqref: format.sqref,
+						ruleIndex,
+						ruleType: rule.type,
+					},
+				})
 				entries.push({
 					source: 'conditionalFormat',
 					sheetName: sheet.name,
@@ -1121,6 +1369,23 @@ function checkConditionalFormatIntegrity(wb: Workbook): CheckIssue[] {
 				],
 				sheetNames,
 				fallbackRef,
+			})
+			pushExternalMetadataReferenceIssues(issues, {
+				rule: 'conditional-format-integrity',
+				source: 'x14ConditionalFormat',
+				sheetName: sheet.name,
+				index: format.index,
+				references: [
+					...externalReferencesInSqref(format.sqref),
+					...formulaEntries.flatMap(externalReferencesInFormula),
+				],
+				refs: x14EntryRefs(sheet.name, format.sqref, fallbackRef),
+				suggestedFix:
+					'Replace x14 conditional-format references with local workbook ranges or verify the external link metadata before writing preserved extension metadata.',
+				details: {
+					sqref: format.sqref,
+					...(format.type ? { ruleType: format.type } : {}),
+				},
 			})
 
 			if (format.deleted) {
@@ -1420,6 +1685,364 @@ function checkLegacyCommentDrawingIntegrity(wb: Workbook): CheckIssue[] {
 	return issues
 }
 
+function isExternalLinkRelationshipType(relationshipType: string | undefined): boolean {
+	return relationshipType?.toLowerCase().endsWith('/relationships/externallink') ?? false
+}
+
+function isExternalLinkPathRelationshipType(relationshipType: string | undefined): boolean {
+	const normalized = relationshipType?.toLowerCase()
+	if (!normalized) return false
+	return (
+		normalized.includes('/relationships/externallinkpath') ||
+		normalized.includes('/relationships/xlexternallinkpath/')
+	)
+}
+
+function relationshipKey(
+	sourcePartPath: string | undefined,
+	id: string | undefined,
+): string | null {
+	if (!sourcePartPath || !id) return null
+	return `${sourcePartPath}#${id}`
+}
+
+function checkExternalLinkIntegrity(wb: Workbook, packageGraph?: VerifyPackageGraph): CheckIssue[] {
+	const issues: CheckIssue[] = []
+	const externalReferenceParts = new Set(wb.externalReferences)
+	const detailsByPart = new Map<string, Workbook['externalReferenceDetails'][number]>()
+	const claimedPathRelationshipKeys = new Set<string>()
+
+	for (const partPath of wb.externalReferences) {
+		const details = wb.externalReferenceDetails.filter((entry) => entry.partPath === partPath)
+		if (details.length === 0) {
+			issues.push({
+				rule: 'external-link-integrity',
+				severity: 'warning',
+				message: `External reference "${partPath}" has no externalLink metadata detail`,
+				refs: [partPath],
+				suggestedFix:
+					'Re-read or repair the workbook externalReferences metadata before preserving external links.',
+				details: { kind: 'external-reference-missing-detail', partPath },
+			})
+		}
+		if (details.length > 1) {
+			issues.push({
+				rule: 'external-link-integrity',
+				severity: 'warning',
+				message: `External reference "${partPath}" has duplicate externalLink metadata entries`,
+				refs: [partPath],
+				suggestedFix:
+					'Collapse duplicate externalLink metadata entries before writing workbook relationships.',
+				details: { kind: 'duplicate-external-reference-detail', partPath, count: details.length },
+			})
+		}
+	}
+
+	for (const detail of wb.externalReferenceDetails) {
+		detailsByPart.set(detail.partPath, detail)
+		const pathRelationshipKey = relationshipKey(detail.partPath, detail.linkRelId)
+		if (pathRelationshipKey) claimedPathRelationshipKeys.add(pathRelationshipKey)
+
+		if (!externalReferenceParts.has(detail.partPath)) {
+			issues.push({
+				rule: 'external-link-integrity',
+				severity: 'warning',
+				message: `ExternalLink metadata for "${detail.partPath}" is not listed by workbook externalReferences`,
+				refs: [detail.partPath],
+				suggestedFix:
+					'Reconnect the workbook externalReference entry or remove the orphan externalLink metadata before writing.',
+				details: {
+					kind: 'orphan-external-link-metadata',
+					partPath: detail.partPath,
+					relId: detail.relId,
+				},
+			})
+		}
+
+		if (
+			detail.sourceRelationshipType !== undefined &&
+			!isExternalLinkRelationshipType(detail.sourceRelationshipType)
+		) {
+			issues.push({
+				rule: 'external-link-integrity',
+				severity: 'warning',
+				message: `External reference "${detail.partPath}" uses unexpected workbook relationship type "${detail.sourceRelationshipType}"`,
+				refs: [
+					detail.sourceRelationshipPart && detail.relId
+						? `${detail.sourceRelationshipPart}#${detail.relId}`
+						: detail.partPath,
+				],
+				suggestedFix: 'Repair the workbook relationship type before preserving externalLink parts.',
+				details: {
+					kind: 'external-link-source-relationship-type-mismatch',
+					partPath: detail.partPath,
+					relationshipId: detail.relId,
+					relationshipType: detail.sourceRelationshipType,
+					relationshipRawType: detail.sourceRelationshipRawType,
+				},
+			})
+		}
+
+		if (detail.linkBindingStatus === 'fallbackPathRelationship' && detail.externalBookRelId) {
+			issues.push({
+				rule: 'external-link-integrity',
+				severity: 'warning',
+				message: `ExternalLink part "${detail.partPath}" has fallbackPathRelationship binding because externalBook r:id "${detail.externalBookRelId}" does not bind to the selected path relationship "${detail.linkRelId ?? '(missing)'}"`,
+				refs: [
+					detail.partPath,
+					detail.linkRelationshipPart && detail.linkRelId
+						? `${detail.linkRelationshipPart}#${detail.linkRelId}`
+						: detail.partPath,
+				],
+				suggestedFix:
+					'Repair the externalBook r:id or externalLinkPath relationship before relying on this external workbook target.',
+				details: {
+					kind: 'external-link-binding-risk',
+					bindingKind: 'external-book-relationship-binding-mismatch',
+					partPath: detail.partPath,
+					externalBookRelId: detail.externalBookRelId,
+					linkRelId: detail.linkRelId,
+					linkBindingStatus: detail.linkBindingStatus,
+					linkRelationshipType: detail.linkRelationshipType,
+					linkRelationshipRawTarget: detail.linkRelationshipRawTarget,
+					target: detail.target,
+				},
+			})
+		}
+
+		if (detail.linkBindingStatus === 'missingPathRelationship') {
+			issues.push({
+				rule: 'external-link-integrity',
+				severity: 'error',
+				message: `ExternalLink part "${detail.partPath}" has no external workbook path relationship`,
+				refs: [detail.partPath],
+				suggestedFix:
+					'Restore an externalLinkPath relationship for the externalBook r:id before writing external link metadata.',
+				details: {
+					kind: 'missing-external-link-path-relationship',
+					partPath: detail.partPath,
+					externalBookRelId: detail.externalBookRelId,
+					linkBindingStatus: detail.linkBindingStatus,
+				},
+			})
+		}
+
+		if (
+			detail.linkRelationshipType &&
+			!isExternalLinkPathRelationshipType(detail.linkRelationshipType)
+		) {
+			issues.push({
+				rule: 'external-link-integrity',
+				severity: 'warning',
+				message: `ExternalLink part "${detail.partPath}" path relationship "${detail.linkRelId}" has unexpected type "${detail.linkRelationshipType}"`,
+				refs: [
+					detail.linkRelationshipPart && detail.linkRelId
+						? `${detail.linkRelationshipPart}#${detail.linkRelId}`
+						: detail.partPath,
+				],
+				suggestedFix:
+					'Inspect the externalLinkPath relationship dialect before preserving this external link.',
+				details: {
+					kind: 'external-link-path-relationship-type-mismatch',
+					partPath: detail.partPath,
+					linkRelId: detail.linkRelId,
+					linkRelationshipType: detail.linkRelationshipType,
+					linkRelationshipRawType: detail.linkRelationshipRawType,
+				},
+			})
+		}
+
+		if (
+			detail.linkRelId &&
+			detail.targetMode !== undefined &&
+			detail.targetMode.toLowerCase() !== 'external'
+		) {
+			issues.push({
+				rule: 'external-link-integrity',
+				severity: 'warning',
+				message: `ExternalLink part "${detail.partPath}" path relationship "${detail.linkRelId}" is not marked TargetMode="External"`,
+				refs: [
+					detail.linkRelationshipPart
+						? `${detail.linkRelationshipPart}#${detail.linkRelId}`
+						: detail.partPath,
+				],
+				suggestedFix:
+					'Set the externalLinkPath relationship target mode to External before writing.',
+				details: {
+					kind: 'external-link-path-target-mode-mismatch',
+					partPath: detail.partPath,
+					linkRelId: detail.linkRelId,
+					targetMode: detail.targetMode,
+					target: detail.target,
+				},
+			})
+		}
+	}
+
+	if (!packageGraph) return issues
+
+	const graphPartByPath = new Map(packageGraph.parts.map((part) => [part.path, part]))
+	const graphRelationshipBySourceAndId = new Map(
+		packageGraph.relationships.map((relationship) => [
+			`${relationship.sourcePartPath}#${relationship.id}`,
+			relationship,
+		]),
+	)
+	const graphRelationshipsByTarget = new Map<string, VerifyPackageGraphRelationship[]>()
+	for (const relationship of packageGraph.relationships) {
+		if (!relationship.resolvedTarget) continue
+		const relationships = graphRelationshipsByTarget.get(relationship.resolvedTarget)
+		if (relationships) relationships.push(relationship)
+		else graphRelationshipsByTarget.set(relationship.resolvedTarget, [relationship])
+	}
+
+	for (const detail of wb.externalReferenceDetails) {
+		const graphPart = graphPartByPath.get(detail.partPath)
+		if (!graphPart) {
+			issues.push({
+				rule: 'external-link-integrity',
+				severity: 'error',
+				message: `External reference metadata points at missing externalLink package part "${detail.partPath}"`,
+				refs: [detail.partPath],
+				suggestedFix:
+					'Restore the externalLink package part or remove the stale workbook externalReference before writing.',
+				details: {
+					kind: 'missing-external-link-part',
+					partPath: detail.partPath,
+					relId: detail.relId,
+				},
+			})
+			continue
+		}
+
+		const sourceRelationshipKey = relationshipKey(detail.sourcePartPath, detail.relId)
+		const sourceRelationship = sourceRelationshipKey
+			? graphRelationshipBySourceAndId.get(sourceRelationshipKey)
+			: undefined
+		if (
+			sourceRelationshipKey &&
+			(!sourceRelationship || sourceRelationship.resolvedTarget !== detail.partPath)
+		) {
+			issues.push({
+				rule: 'external-link-integrity',
+				severity: 'error',
+				message: `Workbook externalReference relationship "${detail.relId ?? '(missing)'}" does not bind to "${detail.partPath}" in the package graph`,
+				refs: [
+					detail.sourceRelationshipPart && detail.relId
+						? `${detail.sourceRelationshipPart}#${detail.relId}`
+						: detail.partPath,
+				],
+				suggestedFix:
+					'Repair the workbook externalReference relationship id/target binding before writing external links.',
+				details: {
+					kind: 'external-link-source-relationship-binding-mismatch',
+					partPath: detail.partPath,
+					graphPart,
+					relationshipId: detail.relId,
+					incomingRelationships: (graphRelationshipsByTarget.get(detail.partPath) ?? []).map(
+						queryTableRelationshipDetails,
+					),
+				},
+			})
+		}
+
+		const expectedPathRelId = detail.linkRelId ?? detail.externalBookRelId
+		if (expectedPathRelId) {
+			const pathRelationship = graphRelationshipBySourceAndId.get(
+				`${detail.partPath}#${expectedPathRelId}`,
+			)
+			if (!pathRelationship) {
+				issues.push({
+					rule: 'external-link-integrity',
+					severity: 'error',
+					message: `ExternalLink path relationship "${expectedPathRelId}" is missing from "${detail.partPath}" in the package graph`,
+					refs: [
+						detail.linkRelationshipPart && detail.linkRelId
+							? `${detail.linkRelationshipPart}#${detail.linkRelId}`
+							: `${detail.partPath}#${expectedPathRelId}`,
+					],
+					suggestedFix:
+						'Restore the externalLinkPath relationship or clear the stale externalLink metadata before writing.',
+					details: {
+						kind:
+							expectedPathRelId === detail.externalBookRelId && !detail.linkRelId
+								? 'external-book-relationship-missing'
+								: 'external-link-path-relationship-binding-mismatch',
+						partPath: detail.partPath,
+						linkRelId: expectedPathRelId,
+						linkRelationshipPart: detail.linkRelationshipPart,
+					},
+				})
+			}
+		}
+	}
+
+	for (const part of packageGraph.parts) {
+		if (part.featureFamily !== 'preservedExternalLink') continue
+		if (!/(^|\/)externalLinks\/[^/]+\.xml$/i.test(part.path)) continue
+		if (detailsByPart.has(part.path) || externalReferenceParts.has(part.path)) continue
+		issues.push({
+			rule: 'external-link-integrity',
+			severity: 'warning',
+			message: `ExternalLink package part "${part.path}" is not claimed by workbook externalReferences metadata`,
+			refs: [part.path],
+			suggestedFix:
+				'Inspect workbook externalReferences and reconnect or intentionally remove the orphan externalLink sidecar before writing.',
+			details: {
+				kind: 'orphan-external-link-part',
+				partPath: part.path,
+				ownerScope: part.ownerScope,
+				contentType: part.contentType,
+				incomingRelationships: (graphRelationshipsByTarget.get(part.path) ?? []).map(
+					queryTableRelationshipDetails,
+				),
+			},
+		})
+	}
+
+	for (const relationship of packageGraph.relationships) {
+		if (
+			isExternalLinkRelationshipType(relationship.type) &&
+			relationship.resolvedTarget &&
+			!externalReferenceParts.has(relationship.resolvedTarget) &&
+			!detailsByPart.has(relationship.resolvedTarget)
+		) {
+			issues.push({
+				rule: 'external-link-integrity',
+				severity: 'warning',
+				message: `ExternalLink relationship "${relationship.id}" is not claimed by workbook externalReferences metadata`,
+				refs: [`${relationship.relationshipPartPath}#${relationship.id}`],
+				suggestedFix:
+					'Reconnect the workbook externalReference metadata or remove the orphan externalLink relationship before writing.',
+				details: {
+					kind: 'orphan-external-link-relationship',
+					relationship: queryTableRelationshipDetails(relationship),
+				},
+			})
+		}
+		if (
+			isExternalLinkPathRelationshipType(relationship.type) &&
+			detailsByPart.has(relationship.sourcePartPath) &&
+			!claimedPathRelationshipKeys.has(`${relationship.sourcePartPath}#${relationship.id}`)
+		) {
+			issues.push({
+				rule: 'external-link-integrity',
+				severity: 'warning',
+				message: `ExternalLink path relationship "${relationship.id}" is not claimed by externalLink metadata`,
+				refs: [`${relationship.relationshipPartPath}#${relationship.id}`],
+				suggestedFix:
+					'Bind the path relationship from externalBook r:id or remove the orphan externalLinkPath relationship before writing.',
+				details: {
+					kind: 'orphan-external-link-path-relationship',
+					relationship: queryTableRelationshipDetails(relationship),
+				},
+			})
+		}
+	}
+
+	return issues
+}
+
 function checkPackageGraphIntegrity(packageGraph?: VerifyPackageGraph): CheckIssue[] {
 	if (!packageGraph) return []
 	const issues: CheckIssue[] = []
@@ -1466,6 +2089,7 @@ export function check(workbook: Workbook, analysis?: CheckAnalysis): CheckResult
 		...checkMergeOverlaps(workbook),
 		...checkTableIntegrity(workbook),
 		...checkTableQueryTableIntegrity(workbook, analysis?.packageGraph),
+		...checkExternalLinkIntegrity(workbook, analysis?.packageGraph),
 		...checkX14DataValidationIntegrity(workbook, sheetNames),
 		...checkConditionalFormatIntegrity(workbook),
 		...checkThreadedCommentIntegrity(workbook),

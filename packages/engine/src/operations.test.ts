@@ -4993,6 +4993,129 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('rewriteExternalLink rejects ambiguous duplicate target selectors', () => {
+		const wb = setup()
+		wb.externalReferenceDetails.push(
+			{
+				partPath: 'xl/externalLinks/externalLink1.xml',
+				relId: 'rId2',
+				linkRelId: 'rIdExt1',
+				target: '../sources/shared.xlsx',
+				targetMode: 'External',
+			},
+			{
+				partPath: 'xl/externalLinks/externalLink2.xml',
+				relId: 'rId3',
+				linkRelId: 'rIdExt2',
+				target: '../sources/shared.xlsx',
+				targetMode: 'External',
+			},
+		)
+
+		const ambiguous = applyOperation(wb, {
+			op: 'rewriteExternalLink',
+			target: '../sources/shared.xlsx',
+			newTarget: '../sources/reforecast.xlsx',
+		})
+		expectErr(ambiguous)
+		expect(ambiguous.error.message).toContain('matched 2 links')
+		expect(wb.externalReferenceDetails.map((entry) => entry.target)).toEqual([
+			'../sources/shared.xlsx',
+			'../sources/shared.xlsx',
+		])
+
+		const disambiguated = applyOperation(wb, {
+			op: 'rewriteExternalLink',
+			target: '../sources/shared.xlsx',
+			linkRelId: 'rIdExt2',
+			newTarget: '../sources/reforecast.xlsx',
+		})
+		expectOk(disambiguated)
+		expect(wb.externalReferenceDetails.map((entry) => entry.target)).toEqual([
+			'../sources/shared.xlsx',
+			'../sources/reforecast.xlsx',
+		])
+	})
+
+	test('rewriteExternalLink selects missing path bindings by intended externalBook relationship id', () => {
+		const wb = setup()
+		wb.externalReferenceDetails.push({
+			partPath: 'xl/externalLinks/externalLink1.xml',
+			relId: 'rId2',
+			externalBookRelId: 'rIdMissing',
+			linkBindingStatus: 'missingPathRelationship',
+		})
+
+		const result = applyOperation(wb, {
+			op: 'rewriteExternalLink',
+			linkRelId: 'rIdMissing',
+			newTarget: '../sources/repaired.xlsx',
+			targetMode: 'External',
+		})
+		expectOk(result)
+
+		expect(wb.externalReferenceDetails[0]).toMatchObject({
+			externalBookRelId: 'rIdMissing',
+			linkBindingStatus: 'missingPathRelationship',
+			target: '../sources/repaired.xlsx',
+			targetMode: 'External',
+		})
+		expect(wb.externalReferenceDetails[0]?.linkRelId).toBeUndefined()
+	})
+
+	test('rewriteExternalLink rejects blank replacement targets without mutation', () => {
+		const wb = setup()
+		wb.externalReferenceDetails.push({
+			partPath: 'xl/externalLinks/externalLink1.xml',
+			relId: 'rId2',
+			linkRelId: 'rIdExt',
+			target: '../sources/source.xlsx',
+			targetMode: 'External',
+		})
+
+		const result = applyOperation(wb, {
+			op: 'rewriteExternalLink',
+			linkRelId: 'rIdExt',
+			newTarget: ' \t ',
+		})
+		expectErr(result)
+		expect(result.error.message).toContain('newTarget must be a non-empty external workbook target')
+		expect(wb.externalReferenceDetails[0]?.target).toBe('../sources/source.xlsx')
+	})
+
+	test('rewriteExternalLink preserves symbolic external formula and defined name references', () => {
+		const wb = setup()
+		const sheet = wb.sheets[0]
+		if (!sheet) throw new Error('expected sheet')
+		sheet.cells.set(0, 2, {
+			value: numberValue(0),
+			formula: 'SUM([1]Sheet1!B2:B10)+[Budget.xlsx]FY26!A1',
+			styleId: sid,
+		})
+		wb.definedNames.set('ExternalSource', '[1]Sheet1!A1:D10')
+		wb.externalReferenceDetails.push({
+			partPath: 'xl/externalLinks/externalLink1.xml',
+			relId: 'rId2',
+			linkRelId: 'rIdExt',
+			linkRelationshipKind: 'externalLinkPath',
+			linkBindingStatus: 'externalBookRelId',
+			target: '../sources/Budget.xlsx',
+			targetMode: 'External',
+		})
+
+		const result = applyOperation(wb, {
+			op: 'rewriteExternalLink',
+			linkRelId: 'rIdExt',
+			newTarget: '../sources/Reforecast.xlsx',
+		})
+		expectOk(result)
+
+		expect(result.value.recalcRequired).toBe(false)
+		expect(sheet.cells.get(0, 2)?.formula).toBe('SUM([1]Sheet1!B2:B10)+[Budget.xlsx]FY26!A1')
+		expect(wb.definedNames.get('ExternalSource')).toBe('[1]Sheet1!A1:D10')
+		expect(wb.externalReferenceDetails[0]?.target).toBe('../sources/Reforecast.xlsx')
+	})
+
 	test('appendRows expands table filter and sort metadata refs', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

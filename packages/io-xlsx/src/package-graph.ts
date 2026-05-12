@@ -1,5 +1,6 @@
 import { parseContentTypes } from './reader/content-types.ts'
 import {
+	isExternalLinkPathRelationshipType,
 	parseRelationships,
 	REL_CHART,
 	REL_CHARTSHEET,
@@ -388,6 +389,7 @@ function classifyRelationshipFeatureFamily(
 	if (relationship.type === REL_DRAWING) return 'preservedDrawing'
 	if (relationship.type === REL_VML_DRAWING) return 'preservedVml'
 	if (relationship.type === REL_CHART) return 'preservedChart'
+	if (isExternalLinkPathRelationshipType(relationship.type)) return 'preservedExternalLink'
 	if (relationship.type === REL_PIVOT_TABLE || relationship.type === REL_PIVOT_CACHE_DEFINITION) {
 		return 'preservedPivot'
 	}

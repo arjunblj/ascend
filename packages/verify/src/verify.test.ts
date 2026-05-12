@@ -389,6 +389,172 @@ describe('checker', () => {
 		expect(orphanIssue?.suggestedFix).toContain('orphan queryTable sidecar')
 	})
 
+	test('detects externalLink package binding mismatches', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+		wb.externalReferences.push('xl/externalLinks/externalLink1.xml')
+		wb.externalReferenceDetails.push({
+			partPath: 'xl/externalLinks/externalLink1.xml',
+			relId: 'rIdExternal',
+			sourcePartPath: 'xl/workbook.xml',
+			sourceRelationshipPart: 'xl/_rels/workbook.xml.rels',
+			externalBookRelId: 'rIdBook',
+			linkBindingStatus: 'externalBookRelId',
+			target: '../sources/source.xlsx',
+			targetMode: 'External',
+		})
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/externalLinks/externalLink1.xml',
+						featureFamily: 'preservedExternalLink',
+						ownerScope: 'external-link',
+						contentType:
+							'application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml',
+					},
+				],
+				relationships: [
+					{
+						sourcePartPath: 'xl/workbook.xml',
+						relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+						id: 'rIdOther',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink',
+						rawTarget: 'externalLinks/externalLink1.xml',
+						resolvedTarget: 'xl/externalLinks/externalLink1.xml',
+						featureFamily: 'preservedExternalLink',
+					},
+					{
+						sourcePartPath: 'xl/externalLinks/externalLink1.xml',
+						relationshipPartPath: 'xl/externalLinks/_rels/externalLink1.xml.rels',
+						id: 'rIdPath',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath',
+						rawTarget: '../sources/source.xlsx',
+						targetMode: 'External',
+						featureFamily: 'preservedExternalLink',
+					},
+				],
+			},
+		})
+
+		const externalIssues = result.issues.filter((i) => i.rule === 'external-link-integrity')
+		expect(result.passed).toBe(false)
+		expect(externalIssues).toContainEqual(
+			expect.objectContaining({
+				severity: 'error',
+				message: expect.stringContaining('does not bind'),
+				refs: ['xl/_rels/workbook.xml.rels#rIdExternal'],
+				details: expect.objectContaining({
+					kind: 'external-link-source-relationship-binding-mismatch',
+				}),
+			}),
+		)
+		expect(externalIssues).toContainEqual(
+			expect.objectContaining({
+				severity: 'warning',
+				message: expect.stringContaining('not claimed by externalLink metadata'),
+				refs: ['xl/externalLinks/_rels/externalLink1.xml.rels#rIdPath'],
+				details: expect.objectContaining({
+					kind: 'orphan-external-link-path-relationship',
+				}),
+			}),
+		)
+		expect(externalIssues).toContainEqual(
+			expect.objectContaining({
+				severity: 'error',
+				message: expect.stringContaining('rIdBook'),
+				refs: ['xl/externalLinks/externalLink1.xml#rIdBook'],
+				suggestedFix: expect.stringContaining('externalLinkPath relationship'),
+				details: expect.objectContaining({
+					kind: 'external-book-relationship-missing',
+				}),
+			}),
+		)
+	})
+
+	test('detects orphan externalLink package sidecars and fallback binding risks', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+		wb.externalReferences.push('xl/externalLinks/externalLink2.xml')
+		wb.externalReferenceDetails.push({
+			partPath: 'xl/externalLinks/externalLink2.xml',
+			relId: 'rIdExternal2',
+			sourcePartPath: 'xl/workbook.xml',
+			sourceRelationshipPart: 'xl/_rels/workbook.xml.rels',
+			externalBookRelId: 'rIdMissing',
+			linkRelId: 'rIdPath',
+			linkBindingStatus: 'fallbackPathRelationship',
+			target: 'library.xlsx',
+			targetMode: 'External',
+		})
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/externalLinks/externalLink1.xml',
+						featureFamily: 'preservedExternalLink',
+						ownerScope: 'external-link',
+						contentType:
+							'application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml',
+					},
+					{
+						path: 'xl/externalLinks/externalLink2.xml',
+						featureFamily: 'preservedExternalLink',
+						ownerScope: 'external-link',
+						contentType:
+							'application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml',
+					},
+				],
+				relationships: [
+					{
+						sourcePartPath: 'xl/workbook.xml',
+						relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+						id: 'rIdExternal2',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink',
+						rawTarget: 'externalLinks/externalLink2.xml',
+						resolvedTarget: 'xl/externalLinks/externalLink2.xml',
+						featureFamily: 'preservedExternalLink',
+					},
+					{
+						sourcePartPath: 'xl/externalLinks/externalLink2.xml',
+						relationshipPartPath: 'xl/externalLinks/_rels/externalLink2.xml.rels',
+						id: 'rIdPath',
+						type: 'http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlLibrary',
+						rawTarget: 'library.xlsx',
+						targetMode: 'External',
+						featureFamily: 'preservedExternalLink',
+					},
+				],
+			},
+		})
+
+		const externalIssues = result.issues.filter((i) => i.rule === 'external-link-integrity')
+		expect(result.passed).toBe(false)
+		expect(externalIssues).toContainEqual(
+			expect.objectContaining({
+				severity: 'warning',
+				message: expect.stringContaining('fallbackPathRelationship'),
+				refs: ['xl/externalLinks/externalLink2.xml', 'xl/externalLinks/externalLink2.xml'],
+				suggestedFix: expect.stringContaining('externalBook r:id'),
+				details: expect.objectContaining({
+					kind: 'external-link-binding-risk',
+				}),
+			}),
+		)
+		expect(externalIssues).toContainEqual(
+			expect.objectContaining({
+				severity: 'warning',
+				message: expect.stringContaining('not claimed'),
+				refs: ['xl/externalLinks/externalLink1.xml'],
+				details: expect.objectContaining({
+					kind: 'orphan-external-link-part',
+				}),
+			}),
+		)
+	})
+
 	test('surfaces package graph relationship target issues as check diagnostics', () => {
 		const wb = createWorkbook()
 		wb.addSheet('Sheet1')
@@ -427,6 +593,132 @@ describe('checker', () => {
 		expect(packageIssues[0]?.details?.code).toBe('package_relationship_target')
 		expect(packageIssues[0]?.refs).toEqual(['xl/_rels/workbook.xml.rels#rIdMissingSheet'])
 		expect(packageIssues[0]?.suggestedFix).toContain('restore the referenced package part')
+	})
+
+	test('detects external link relationship mismatches and orphan package sidecars', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+		wb.externalReferences.push('xl/externalLinks/externalLink1.xml')
+		wb.externalReferenceDetails.push({
+			partPath: 'xl/externalLinks/externalLink1.xml',
+			relId: 'rIdExternal',
+			sourcePartPath: 'xl/workbook.xml',
+			sourceRelationshipPart: 'xl/_rels/workbook.xml.rels',
+			sourceRelationshipType:
+				'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink',
+			sourceRelationshipRawTarget: 'externalLinks/externalLink1.xml',
+			sourceRelationshipResolvedTarget: 'xl/externalLinks/externalLink1.xml',
+			externalBookRelId: 'rIdMissing',
+			linkRelId: 'rIdPath',
+			linkRelationshipPart: 'xl/externalLinks/_rels/externalLink1.xml.rels',
+			linkRelationshipKind: 'externalLinkPath',
+			linkBindingStatus: 'fallbackPathRelationship',
+			linkRelationshipType:
+				'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath',
+			linkRelationshipRawTarget: '../sources/source.xlsx',
+			target: '../sources/source.xlsx',
+			targetMode: 'External',
+		})
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/workbook.xml',
+						featureFamily: 'workbook',
+						ownerScope: 'workbook',
+					},
+					{
+						path: 'xl/externalLinks/externalLink1.xml',
+						featureFamily: 'preservedExternalLink',
+						ownerScope: 'workbook',
+					},
+					{
+						path: 'xl/externalLinks/externalLink2.xml',
+						featureFamily: 'preservedExternalLink',
+						ownerScope: 'workbook',
+					},
+				],
+				relationships: [
+					{
+						sourcePartPath: 'xl/workbook.xml',
+						relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+						id: 'rIdOther',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink',
+						rawTarget: 'externalLinks/externalLink1.xml',
+						resolvedTarget: 'xl/externalLinks/externalLink1.xml',
+						featureFamily: 'preservedExternalLink',
+					},
+					{
+						sourcePartPath: 'xl/externalLinks/externalLink1.xml',
+						relationshipPartPath: 'xl/externalLinks/_rels/externalLink1.xml.rels',
+						id: 'rIdPath',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath',
+						rawTarget: '../sources/source.xlsx',
+						targetMode: 'External',
+						featureFamily: 'preservedExternalLink',
+					},
+				],
+			},
+		})
+		const externalIssues = result.issues.filter((i) => i.rule === 'external-link-integrity')
+
+		expect(result.passed).toBe(false)
+		expect(
+			externalIssues.some((issue) => issue.details?.kind === 'external-link-binding-risk'),
+		).toBe(true)
+		const sourceMismatch = externalIssues.find(
+			(issue) => issue.details?.kind === 'external-link-source-relationship-binding-mismatch',
+		)
+		expect(sourceMismatch?.severity).toBe('error')
+		expect(sourceMismatch?.refs).toEqual(['xl/_rels/workbook.xml.rels#rIdExternal'])
+		expect(sourceMismatch?.details).toMatchObject({
+			partPath: 'xl/externalLinks/externalLink1.xml',
+			relationshipId: 'rIdExternal',
+			incomingRelationships: [{ id: 'rIdOther' }],
+		})
+		expect(
+			externalIssues.some((issue) => issue.details?.kind === 'external-link-binding-risk'),
+		).toBe(true)
+		const orphanPart = externalIssues.find(
+			(issue) => issue.details?.kind === 'orphan-external-link-part',
+		)
+		expect(orphanPart?.severity).toBe('warning')
+		expect(orphanPart?.refs).toEqual(['xl/externalLinks/externalLink2.xml'])
+	})
+
+	test('detects orphaned externalLink workbook metadata', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+		wb.externalReferences.push('xl/externalLinks/externalLink1.xml')
+		wb.externalReferenceDetails.push({
+			partPath: 'xl/externalLinks/externalLink2.xml',
+			relId: 'rIdExternal2',
+			linkBindingStatus: 'externalBookRelId',
+		})
+
+		const result = check(wb)
+		const externalIssues = result.issues.filter((i) => i.rule === 'external-link-integrity')
+
+		expect(result.passed).toBe(false)
+		expect(externalIssues).toContainEqual(
+			expect.objectContaining({
+				severity: 'warning',
+				refs: ['xl/externalLinks/externalLink1.xml'],
+				details: expect.objectContaining({
+					kind: 'external-reference-missing-detail',
+				}),
+			}),
+		)
+		expect(externalIssues).toContainEqual(
+			expect.objectContaining({
+				severity: 'warning',
+				refs: ['xl/externalLinks/externalLink2.xml'],
+				details: expect.objectContaining({
+					kind: 'orphan-external-link-metadata',
+				}),
+			}),
+		)
 	})
 
 	test('detects ambiguous overlapping conditional format priorities', () => {
@@ -836,7 +1128,7 @@ describe('checker', () => {
 		})
 	})
 
-	test('does not flag external workbook chart series references as missing local sheets', () => {
+	test('detects external workbook chart series references without treating them as missing local sheets', () => {
 		const wb = createWorkbook()
 		wb.addSheet('Data')
 		wb.chartParts.push({
@@ -851,7 +1143,94 @@ describe('checker', () => {
 		})
 
 		const result = check(wb)
-		expect(result.issues.filter((i) => i.rule === 'chart-series-integrity')).toHaveLength(0)
+		const issues = result.issues.filter((i) => i.rule === 'chart-series-integrity')
+		expect(issues).toHaveLength(2)
+		expect(issues.every((issue) => issue.severity === 'warning')).toBe(true)
+		expect(issues.map((issue) => issue.details?.kind)).toEqual([
+			'chart-series-external-reference',
+			'chart-series-external-reference',
+		])
+		expect(issues[0]?.details).toMatchObject({
+			partPath: 'xl/charts/chart1.xml',
+			seriesIndex: 0,
+			field: 'categoryRef',
+			externalTarget: '[Book1.xlsx]',
+		})
+	})
+
+	test('detects external refs in table, validation, and conditional metadata', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: s.id,
+			partPath: 'xl/tables/table1.xml',
+			ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } },
+			columns: [{ name: 'Name' }, { name: 'Amount', formula: '[Budget.xlsx]Data!B2' }],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+		s.dataValidations.push({
+			sqref: 'B2:B5',
+			type: 'list',
+			formula1: '[Lists.xlsx]Valid!$A$1:$A$5',
+		})
+		s.x14DataValidations.push({
+			index: 0,
+			sqref: "'[Lists.xlsx]Valid'!$C$1",
+			type: 'whole',
+		})
+		s.conditionalFormats.push({
+			sqref: 'C2:C5',
+			rules: [{ type: 'expression', priority: 1, formulas: ['[Rules.xlsx]Sheet1!A1>0'] }],
+		})
+		s.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'D2:D5',
+			type: 'dataBar',
+			formulas: [],
+			dataBar: { cfvo: [{ type: 'formula', value: '[Rules.xlsx]Sheet1!B1' }] },
+		})
+
+		const result = check(wb)
+		const tableIssue = result.issues.find(
+			(issue) =>
+				issue.rule === 'table-integrity' &&
+				issue.details?.kind === 'tableColumn-external-reference',
+		)
+		const validationIssues = result.issues.filter(
+			(issue) =>
+				issue.rule === 'data-validation-integrity' &&
+				(issue.details?.kind === 'dataValidation-external-reference' ||
+					issue.details?.kind === 'x14DataValidation-external-reference'),
+		)
+		const conditionalIssues = result.issues.filter(
+			(issue) =>
+				issue.rule === 'conditional-format-integrity' &&
+				(issue.details?.kind === 'conditionalFormat-external-reference' ||
+					issue.details?.kind === 'x14ConditionalFormat-external-reference'),
+		)
+
+		expect(result.passed).toBe(false)
+		expect(tableIssue?.severity).toBe('warning')
+		expect(tableIssue?.refs).toEqual(['Sheet1!A1:B3'])
+		expect(tableIssue?.details).toMatchObject({
+			tableName: 'Sales',
+			columnName: 'Amount',
+			field: 'columns[1].formula',
+			externalTarget: '[Budget.xlsx]',
+		})
+		expect(validationIssues).toHaveLength(2)
+		expect(validationIssues.map((issue) => issue.details?.externalTarget).sort()).toEqual([
+			'[Lists.xlsx]',
+			'[Lists.xlsx]',
+		])
+		expect(conditionalIssues).toHaveLength(2)
+		expect(conditionalIssues.map((issue) => issue.details?.externalTarget).sort()).toEqual([
+			'[Rules.xlsx]',
+			'[Rules.xlsx]',
+		])
 	})
 
 	test('detects chart parts without worksheet or chartsheet ownership', () => {

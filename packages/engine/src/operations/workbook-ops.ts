@@ -32,6 +32,14 @@ const WORKBOOK_PROPERTY_KEYS = [
 	'filterPrivacy',
 	'date1904',
 ] as const
+
+function externalLinkSelectorRelId(entry: {
+	readonly linkRelId?: string
+	readonly externalBookRelId?: string
+}): string | undefined {
+	return entry.linkRelId ?? entry.externalBookRelId
+}
+
 const CORE_DOCUMENT_PROPERTY_KEYS = [
 	'title',
 	'subject',
@@ -367,7 +375,8 @@ export function handleRewriteExternalLink(
 		.filter(({ entry }) => {
 			if (op.partPath !== undefined && entry.partPath !== op.partPath) return false
 			if (op.relId !== undefined && entry.relId !== op.relId) return false
-			if (op.linkRelId !== undefined && entry.linkRelId !== op.linkRelId) return false
+			if (op.linkRelId !== undefined && externalLinkSelectorRelId(entry) !== op.linkRelId)
+				return false
 			if (op.target !== undefined && entry.target !== op.target) return false
 			return true
 		})

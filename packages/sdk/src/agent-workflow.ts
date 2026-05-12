@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { copyFile, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
 import { type ExternalReferenceInfo, parseRange, type RangeRef, type Workbook } from '@ascend/core'
+import { normalizeFormulaInput, parseFormula } from '@ascend/formulas'
 import type {
 	XlsxPackageGraph,
 	XlsxPackageGraphFidelityIssue,
@@ -15,6 +16,8 @@ import {
 } from '@ascend/io-xlsx'
 import { AscendException, ascendError, type FeatureReport, type Operation } from '@ascend/schema'
 import { listCapabilities, summarizeCapabilities } from './capabilities.ts'
+import { collectFormulaReferences } from './formula-info.ts'
+import type { FormulaReferenceInfo } from './types.ts'
 import { AscendWorkbook } from './workbook.ts'
 
 export interface AgentPlanResult {
@@ -1420,20 +1423,52 @@ function buildWritePolicyReport(
 			},
 		})
 	}
+	const externalLinkRisk = buildExternalLinkRisk(workbook, operations, externalReferences)
 	if (externalReferences.length > 0) {
 		const externalReferencePartPaths = uniqueStrings(
 			externalReferences.map((entry) => entry.partPath),
 		)
+		const relatedOperations = externalLinkRisk.relatedOperations.filter(
+			(operation) => operation.externalReference?.partPath !== undefined,
+		)
 		diagnostics.push({
 			code: 'external-link-dependency',
-			severity: 'info',
-			message: `${externalReferences.length} external workbook dependency link(s) are preserved by relationship-id metadata.`,
+			severity: relatedOperations.length > 0 ? 'warning' : 'info',
+			message:
+				relatedOperations.length > 0
+					? `${externalReferences.length} external workbook dependency link(s) are preserved by relationship-id metadata and ${relatedOperations.length} planned operation(s) reference them.`
+					: `${externalReferences.length} external workbook dependency link(s) are preserved by relationship-id metadata.`,
 			suggestedAction:
-				'Inspect externalReferenceDetails and externalReferenceUsages before rewriting workbook paths or trusting imported formula dependencies.',
+				relatedOperations.length > 0
+					? 'Inspect details.externalLinks and details.relatedOperations before committing formula or defined-name edits that depend on external workbooks.'
+					: 'Inspect externalReferenceDetails and externalReferenceUsages before rewriting workbook paths or trusting imported formula dependencies.',
 			partPaths: externalReferencePartPaths,
 			packageParts: packagePartDetails(packagePartByPath, externalReferencePartPaths),
 			featureFamily: 'preservedExternalLink',
 			preservationPolicy: 'preserve-exact',
+			details: {
+				externalLinks: externalLinkRisk.linkGroups.filter(
+					(group) => group.externalReference !== undefined,
+				),
+				relatedOperations,
+				operationScoped: relatedOperations.length > 0,
+			},
+		})
+	}
+	if (externalReferences.length === 0 && externalLinkRisk.relatedOperations.length > 0) {
+		diagnostics.push({
+			code: 'external-link-dependency',
+			severity: 'warning',
+			message: `${externalLinkRisk.relatedOperations.length} planned operation(s) contain external workbook formula or defined-name references without imported external-link package metadata.`,
+			suggestedAction:
+				'Keep the formula or defined name text symbolic, inspect externalReferenceUsages after apply, and add external-link package metadata before relying on workbook path rebinding.',
+			featureFamily: 'preservedExternalLink',
+			preservationPolicy: 'preserve-exact',
+			details: {
+				externalLinks: externalLinkRisk.linkGroups,
+				relatedOperations: externalLinkRisk.relatedOperations,
+				operationScoped: true,
+			},
 		})
 	}
 	const externalReferenceBindingIssues = externalReferences.filter(
@@ -1450,16 +1485,35 @@ function buildWritePolicyReport(
 		const missingCount = externalReferenceBindingIssues.filter(
 			(entry) => entry.linkBindingStatus === 'missingPathRelationship',
 		).length
+		const bindingIssueGroups = externalLinkRisk.linkGroups.filter((group) =>
+			group.externalReference
+				? externalReferenceBindingIssues.some(
+						(entry) => entry.partPath === group.externalReference?.partPath,
+					)
+				: false,
+		)
+		const relatedOperations = bindingIssueGroups.flatMap((group) => group.relatedOperations)
 		diagnostics.push({
 			code: 'external-link-binding-risk',
-			severity: 'warning',
+			severity: relatedOperations.length > 0 ? 'warning' : 'info',
 			message: `${externalReferenceBindingIssues.length} external workbook dependency link(s) have ambiguous package binding (${fallbackCount} fallback, ${missingCount} missing).`,
 			suggestedAction:
-				'Use rewriteExternalLink with a stable partPath/linkRelId selector to repair or intentionally preserve the externalBook relationship binding.',
+				relatedOperations.length > 0
+					? 'Use rewriteExternalLink with a stable partPath/linkRelId selector before or with these operation-scoped formula and defined-name edits.'
+					: 'Use rewriteExternalLink with a stable partPath/linkRelId selector to repair or intentionally preserve the externalBook relationship binding before editing formulas or names that depend on it.',
 			partPaths: issuePartPaths,
 			packageParts: packagePartDetails(packagePartByPath, issuePartPaths),
 			featureFamily: 'preservedExternalLink',
 			preservationPolicy: 'preserve-exact',
+			details: {
+				bindingIssueCounts: { fallback: fallbackCount, missing: missingCount },
+				externalLinks: bindingIssueGroups,
+				relatedOperations,
+				operationScoped: relatedOperations.length > 0,
+				rewriteExternalLinkRecommendations: bindingIssueGroups.map(
+					externalLinkRewriteRecommendation,
+				),
+			},
 		})
 	}
 	if (!packageGraphAudit.ok) {
@@ -1512,6 +1566,408 @@ function buildWritePolicyReport(
 			calcChainPolicy,
 		},
 	}
+}
+
+interface ExternalLinkRisk {
+	readonly linkGroups: readonly ExternalLinkRiskGroup[]
+	readonly relatedOperations: readonly ExternalLinkRelatedOperation[]
+}
+
+interface ExternalLinkRiskGroup {
+	readonly key: string
+	readonly workbook?: string | undefined
+	readonly sheet?: string | undefined
+	readonly references: readonly string[]
+	readonly externalReference?: ExternalReferenceInfo | undefined
+	readonly bindingRisk?: ExternalLinkBindingRisk | undefined
+	readonly relatedOperations: readonly ExternalLinkRelatedOperation[]
+}
+
+interface ExternalLinkBindingRisk {
+	readonly status: NonNullable<ExternalReferenceInfo['linkBindingStatus']>
+	readonly externalBookRelId?: string | undefined
+	readonly linkRelId?: string | undefined
+	readonly linkRelationshipPart?: string | undefined
+	readonly linkRelationshipKind?: ExternalReferenceInfo['linkRelationshipKind'] | undefined
+	readonly linkRelationshipRawTarget?: string | undefined
+	readonly target?: string | undefined
+	readonly targetMode?: string | undefined
+}
+
+interface ExternalLinkRelatedOperation {
+	readonly operationIndex: number
+	readonly op: Operation['op']
+	readonly sourceKind:
+		| 'cellFormula'
+		| 'fillFormula'
+		| 'definedName'
+		| 'deletedDefinedName'
+		| 'externalLinkRewrite'
+	readonly sheetName?: string | undefined
+	readonly sourceRef?: string | undefined
+	readonly range?: string | undefined
+	readonly name?: string | undefined
+	readonly scope?: string | undefined
+	readonly formula?: string | undefined
+	readonly workbook?: string | undefined
+	readonly sheet?: string | undefined
+	readonly references?: readonly string[] | undefined
+	readonly externalReference?: ExternalReferenceInfo | undefined
+	readonly selector?: ExternalLinkRewriteSelector | undefined
+	readonly newTarget?: string | undefined
+	readonly targetMode?: string | undefined
+}
+
+interface ExternalLinkRewriteSelector {
+	readonly partPath?: string | undefined
+	readonly relId?: string | undefined
+	readonly linkRelId?: string | undefined
+	readonly target?: string | undefined
+}
+
+interface ExternalFormulaReferenceGroup {
+	readonly workbook: string
+	readonly sheet?: string | undefined
+	readonly references: readonly string[]
+	readonly externalReference?: ExternalReferenceInfo | undefined
+}
+
+function buildExternalLinkRisk(
+	workbook: Workbook,
+	operations: readonly Operation[],
+	externalReferences: readonly ExternalReferenceInfo[],
+): ExternalLinkRisk {
+	const relatedOperations = collectExternalLinkRelatedOperations(
+		workbook,
+		operations,
+		externalReferences,
+	)
+	const groupByKey = new Map<string, ExternalLinkRiskGroup>()
+	for (const reference of externalReferences) {
+		groupByKey.set(externalLinkGroupKey(reference), {
+			key: externalLinkGroupKey(reference),
+			externalReference: copyExternalReferenceInfo(reference),
+			...(externalLinkBindingRisk(reference)
+				? { bindingRisk: externalLinkBindingRisk(reference) }
+				: {}),
+			references: [],
+			relatedOperations: [],
+		})
+	}
+	for (const operation of relatedOperations) {
+		const key = operation.externalReference
+			? externalLinkGroupKey(operation.externalReference)
+			: `token:${operation.workbook ?? operation.selector?.target ?? operation.operationIndex}`
+		const existing = groupByKey.get(key)
+		const references = uniqueStrings([
+			...(existing?.references ?? []),
+			...(operation.references ?? []),
+		])
+		groupByKey.set(key, {
+			key,
+			...((operation.workbook ?? existing?.workbook)
+				? { workbook: operation.workbook ?? existing?.workbook }
+				: {}),
+			...((operation.sheet ?? existing?.sheet)
+				? { sheet: operation.sheet ?? existing?.sheet }
+				: {}),
+			references,
+			...((operation.externalReference ?? existing?.externalReference)
+				? {
+						externalReference: copyExternalReferenceInfo(
+							operation.externalReference ?? existing?.externalReference,
+						),
+					}
+				: {}),
+			...(externalLinkBindingRisk(operation.externalReference ?? existing?.externalReference)
+				? {
+						bindingRisk: externalLinkBindingRisk(
+							operation.externalReference ?? existing?.externalReference,
+						),
+					}
+				: {}),
+			relatedOperations: [...(existing?.relatedOperations ?? []), operation],
+		})
+	}
+	return {
+		linkGroups: [...groupByKey.values()],
+		relatedOperations,
+	}
+}
+
+function collectExternalLinkRelatedOperations(
+	workbook: Workbook,
+	operations: readonly Operation[],
+	externalReferences: readonly ExternalReferenceInfo[],
+): ExternalLinkRelatedOperation[] {
+	const related: ExternalLinkRelatedOperation[] = []
+	operations.forEach((operation, operationIndex) => {
+		switch (operation.op) {
+			case 'setFormula':
+				for (const group of externalFormulaReferenceGroups(operation.formula, externalReferences)) {
+					related.push({
+						operationIndex,
+						op: operation.op,
+						sourceKind: 'cellFormula',
+						sheetName: operation.sheet,
+						sourceRef: `${operation.sheet}!${operation.ref}`,
+						formula: operation.formula,
+						workbook: group.workbook,
+						...(group.sheet ? { sheet: group.sheet } : {}),
+						references: group.references,
+						...(group.externalReference
+							? { externalReference: copyExternalReferenceInfo(group.externalReference) }
+							: {}),
+					})
+				}
+				break
+			case 'fillFormula':
+				for (const group of externalFormulaReferenceGroups(operation.formula, externalReferences)) {
+					related.push({
+						operationIndex,
+						op: operation.op,
+						sourceKind: 'fillFormula',
+						sheetName: operation.sheet,
+						range: operation.range,
+						formula: operation.formula,
+						workbook: group.workbook,
+						...(group.sheet ? { sheet: group.sheet } : {}),
+						references: group.references,
+						...(group.externalReference
+							? { externalReference: copyExternalReferenceInfo(group.externalReference) }
+							: {}),
+					})
+				}
+				break
+			case 'setDefinedName':
+				for (const group of externalFormulaReferenceGroups(operation.ref, externalReferences)) {
+					related.push({
+						operationIndex,
+						op: operation.op,
+						sourceKind: 'definedName',
+						name: operation.name,
+						...(operation.scope ? { scope: operation.scope } : {}),
+						formula: operation.ref,
+						workbook: group.workbook,
+						...(group.sheet ? { sheet: group.sheet } : {}),
+						references: group.references,
+						...(group.externalReference
+							? { externalReference: copyExternalReferenceInfo(group.externalReference) }
+							: {}),
+					})
+				}
+				break
+			case 'deleteDefinedName':
+				for (const name of matchingDefinedNames(workbook, operation)) {
+					for (const group of externalFormulaReferenceGroups(name.formula, externalReferences)) {
+						related.push({
+							operationIndex,
+							op: operation.op,
+							sourceKind: 'deletedDefinedName',
+							name: name.name,
+							...(definedNameScopeName(workbook, name.scope)
+								? { scope: definedNameScopeName(workbook, name.scope) }
+								: {}),
+							formula: name.formula,
+							workbook: group.workbook,
+							...(group.sheet ? { sheet: group.sheet } : {}),
+							references: group.references,
+							...(group.externalReference
+								? { externalReference: copyExternalReferenceInfo(group.externalReference) }
+								: {}),
+						})
+					}
+				}
+				break
+			case 'rewriteExternalLink':
+				for (const reference of externalReferences.filter((entry) =>
+					rewriteExternalLinkMatches(operation, entry),
+				)) {
+					related.push({
+						operationIndex,
+						op: operation.op,
+						sourceKind: 'externalLinkRewrite',
+						externalReference: copyExternalReferenceInfo(reference),
+						selector: externalLinkRewriteSelector(operation),
+						newTarget: operation.newTarget,
+						...(operation.targetMode ? { targetMode: operation.targetMode } : {}),
+					})
+				}
+				break
+		}
+	})
+	return related
+}
+
+function externalFormulaReferenceGroups(
+	formula: string,
+	externalReferences: readonly ExternalReferenceInfo[],
+): ExternalFormulaReferenceGroup[] {
+	const parsed = parseFormula(normalizeFormulaInput(formula))
+	if (!parsed.ok) return []
+	const groups = new Map<string, ExternalFormulaReferenceGroup>()
+	for (const reference of flattenFormulaReferences(collectFormulaReferences(parsed.value))) {
+		if (reference.scope?.kind !== 'external') continue
+		const key = `${reference.scope.workbook}\u0000${reference.scope.sheet}`
+		const existing = groups.get(key)
+		const references = uniqueStrings([...(existing?.references ?? []), reference.text])
+		groups.set(key, {
+			workbook: reference.scope.workbook,
+			sheet: reference.scope.sheet,
+			references,
+			...(existing?.externalReference
+				? { externalReference: existing.externalReference }
+				: {
+						...(resolveExternalReference(externalReferences, reference.scope.workbook)
+							? {
+									externalReference: resolveExternalReference(
+										externalReferences,
+										reference.scope.workbook,
+									),
+								}
+							: {}),
+					}),
+		})
+	}
+	return [...groups.values()]
+}
+
+function flattenFormulaReferences(
+	references: readonly FormulaReferenceInfo[],
+): FormulaReferenceInfo[] {
+	const flattened: FormulaReferenceInfo[] = []
+	for (const reference of references) {
+		if (reference.kind === 'union' || reference.kind === 'intersection') {
+			flattened.push(...flattenFormulaReferences(reference.members))
+			continue
+		}
+		flattened.push(reference)
+	}
+	return flattened
+}
+
+function resolveExternalReference(
+	details: readonly ExternalReferenceInfo[],
+	workbookToken: string,
+): ExternalReferenceInfo | undefined {
+	const numericIndex = parseExternalReferenceIndex(workbookToken)
+	if (numericIndex !== undefined) return copyExternalReferenceInfo(details[numericIndex])
+	const tokenName = externalReferenceBasename(workbookToken)
+	const matches = details.filter((entry) => {
+		if (entry.target === workbookToken || entry.partPath === workbookToken) return true
+		return entry.target !== undefined && externalReferenceBasename(entry.target) === tokenName
+	})
+	return matches.length === 1 ? copyExternalReferenceInfo(matches[0]) : undefined
+}
+
+function parseExternalReferenceIndex(workbookToken: string): number | undefined {
+	if (!/^\d+$/.test(workbookToken)) return undefined
+	const index = Number(workbookToken)
+	return Number.isSafeInteger(index) && index > 0 ? index - 1 : undefined
+}
+
+function externalReferenceBasename(path: string): string {
+	const normalized = path.replace(/\\/g, '/')
+	return normalized.slice(normalized.lastIndexOf('/') + 1)
+}
+
+function matchingDefinedNames(
+	workbook: Workbook,
+	operation: Extract<Operation, { op: 'deleteDefinedName' }>,
+): ReturnType<Workbook['definedNames']['list']> {
+	return workbook.definedNames.list().filter((name) => {
+		if (name.name !== operation.name) return false
+		if (!operation.scope) return name.scope.kind === 'workbook'
+		return definedNameScopeName(workbook, name.scope) === operation.scope
+	})
+}
+
+function definedNameScopeName(
+	workbook: Workbook,
+	scope: ReturnType<Workbook['definedNames']['list']>[number]['scope'],
+): string | undefined {
+	if (scope.kind === 'workbook') return undefined
+	return workbook.sheets.find((sheet) => sheet.id === scope.sheetId)?.name
+}
+
+function rewriteExternalLinkMatches(
+	operation: Extract<Operation, { op: 'rewriteExternalLink' }>,
+	reference: ExternalReferenceInfo,
+): boolean {
+	if (operation.partPath !== undefined && reference.partPath !== operation.partPath) return false
+	if (operation.relId !== undefined && reference.relId !== operation.relId) return false
+	if (operation.linkRelId !== undefined && reference.linkRelId !== operation.linkRelId) return false
+	if (operation.target !== undefined && reference.target !== operation.target) return false
+	return (
+		operation.partPath !== undefined ||
+		operation.relId !== undefined ||
+		operation.linkRelId !== undefined ||
+		operation.target !== undefined
+	)
+}
+
+function externalLinkRewriteSelector(
+	operation: Extract<Operation, { op: 'rewriteExternalLink' }>,
+): ExternalLinkRewriteSelector {
+	return {
+		...(operation.partPath ? { partPath: operation.partPath } : {}),
+		...(operation.relId ? { relId: operation.relId } : {}),
+		...(operation.linkRelId ? { linkRelId: operation.linkRelId } : {}),
+		...(operation.target ? { target: operation.target } : {}),
+	}
+}
+
+function externalLinkGroupKey(reference: ExternalReferenceInfo): string {
+	return `part:${reference.partPath}`
+}
+
+function externalLinkBindingRisk(
+	reference: ExternalReferenceInfo | undefined,
+): ExternalLinkBindingRisk | undefined {
+	if (!reference?.linkBindingStatus || reference.linkBindingStatus === 'externalBookRelId') {
+		return undefined
+	}
+	return {
+		status: reference.linkBindingStatus,
+		...(reference.externalBookRelId ? { externalBookRelId: reference.externalBookRelId } : {}),
+		...(reference.linkRelId ? { linkRelId: reference.linkRelId } : {}),
+		...(reference.linkRelationshipPart
+			? { linkRelationshipPart: reference.linkRelationshipPart }
+			: {}),
+		...(reference.linkRelationshipKind
+			? { linkRelationshipKind: reference.linkRelationshipKind }
+			: {}),
+		...(reference.linkRelationshipRawTarget
+			? { linkRelationshipRawTarget: reference.linkRelationshipRawTarget }
+			: {}),
+		...(reference.target ? { target: reference.target } : {}),
+		...(reference.targetMode ? { targetMode: reference.targetMode } : {}),
+	}
+}
+
+function externalLinkRewriteRecommendation(group: ExternalLinkRiskGroup): {
+	readonly op: 'rewriteExternalLink'
+	readonly partPath?: string | undefined
+	readonly linkRelId?: string | undefined
+	readonly target?: string | undefined
+	readonly newTarget: '<new-target>'
+	readonly targetMode?: string | undefined
+} {
+	const reference = group.externalReference
+	return {
+		op: 'rewriteExternalLink',
+		...(reference?.partPath ? { partPath: reference.partPath } : {}),
+		...(reference?.linkRelId ? { linkRelId: reference.linkRelId } : {}),
+		...(reference?.target ? { target: reference.target } : {}),
+		newTarget: '<new-target>',
+		...(reference?.targetMode ? { targetMode: reference.targetMode } : {}),
+	}
+}
+
+function copyExternalReferenceInfo(
+	reference: ExternalReferenceInfo | undefined,
+): ExternalReferenceInfo | undefined {
+	return reference ? { ...reference } : undefined
 }
 
 interface X14ConditionalFormatExtensionPayload {

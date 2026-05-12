@@ -153,6 +153,43 @@ describe('XLSX package graph fidelity audits', () => {
 		)
 	})
 
+	test('classifies external workbook path relationships as external-link metadata', () => {
+		const graph = inspectXlsxPackageGraph(
+			makeXlsx({
+				...baseWorkbookParts({
+					extraContentTypes: `
+  <Override PartName="/xl/externalLinks/externalLink1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml"/>
+`,
+				}),
+				'xl/_rels/workbook.xml.rels': relationshipsXml(`
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdExternal" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink" Target="externalLinks/externalLink1.xml"/>
+`),
+				'xl/workbook.xml': '<workbook/>',
+				'xl/externalLinks/externalLink1.xml':
+					'<externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"/>',
+				'xl/externalLinks/_rels/externalLink1.xml.rels': relationshipsXml(`
+  <Relationship Id="rIdPath" Type="http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlPathMissing" Target="missing.xlsx" TargetMode="External"/>
+`),
+			}),
+		)
+
+		expect(graph.relationships).toContainEqual(
+			expect.objectContaining({
+				relationshipPartPath: 'xl/externalLinks/_rels/externalLink1.xml.rels',
+				id: 'rIdPath',
+				targetMode: 'External',
+				featureFamily: 'preservedExternalLink',
+			}),
+		)
+		expect(auditXlsxPackageGraphReadIntegrity(graph)).not.toContainEqual(
+			expect.objectContaining({
+				code: 'package_feature_classification',
+				partPath: 'missing.xlsx',
+			}),
+		)
+	})
+
 	test('treats default-covered content type override removal as package graph drift', () => {
 		const before = inspectXlsxPackageGraph(
 			makeXlsx({

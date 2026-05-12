@@ -243,6 +243,9 @@ describe('agent workflow loss audit', () => {
 		expect(committed.lossAudit.ok).toBe(true)
 		expect(committed.writePolicy.ok).toBe(true)
 		expect(committed.writePolicy.diagnostics.every((entry) => entry.severity === 'info')).toBe(true)
+		expect(
+			committed.writePolicy.diagnostics.some((entry) => entry.code.startsWith('external-link')),
+		).toBe(false)
 		expect(committed.packageGraphAudit.ok).toBe(true)
 		expect(committed.postWrite.valid).toBe(true)
 		expect(committed.postWrite.packageGraphAudit.ok).toBe(true)
@@ -292,7 +295,17 @@ describe('agent workflow loss audit', () => {
 		await Bun.write(input, makeExternalLinkMissingBindingXlsx())
 
 		const plan = await createAgentPlan(input, [
-			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] },
+			{
+				op: 'setFormula',
+				sheet: 'Sheet1',
+				ref: 'A1',
+				formula: '=SUM([1]FY26!B2:B10)',
+			},
+			{
+				op: 'setDefinedName',
+				name: 'BudgetSource',
+				ref: '[1]FY26!A1:D10',
+			},
 		])
 
 		expect(plan.writePolicy.summary.externalReferences).toBe(1)
@@ -300,7 +313,7 @@ describe('agent workflow loss audit', () => {
 		expect(plan.writePolicy.diagnostics).toContainEqual(
 			expect.objectContaining({
 				code: 'external-link-dependency',
-				severity: 'info',
+				severity: 'warning',
 				partPaths: ['xl/externalLinks/externalLink1.xml'],
 				packageParts: [
 					expect.objectContaining({
@@ -309,6 +322,27 @@ describe('agent workflow loss audit', () => {
 						preservationPolicy: 'preserve-exact',
 					}),
 				],
+				details: expect.objectContaining({
+					operationScoped: true,
+					relatedOperations: [
+						expect.objectContaining({
+							operationIndex: 0,
+							op: 'setFormula',
+							sourceKind: 'cellFormula',
+							sourceRef: 'Sheet1!A1',
+							formula: '=SUM([1]FY26!B2:B10)',
+							references: ['[1]FY26!B2:B10'],
+						}),
+						expect.objectContaining({
+							operationIndex: 1,
+							op: 'setDefinedName',
+							sourceKind: 'definedName',
+							name: 'BudgetSource',
+							formula: '[1]FY26!A1:D10',
+							references: ['[1]FY26!A1:D10'],
+						}),
+					],
+				}),
 			}),
 		)
 		expect(plan.writePolicy.diagnostics).toContainEqual(
@@ -318,6 +352,25 @@ describe('agent workflow loss audit', () => {
 				partPaths: ['xl/externalLinks/externalLink1.xml'],
 				message: expect.stringContaining('0 fallback, 1 missing'),
 				suggestedAction: expect.stringContaining('rewriteExternalLink'),
+				details: expect.objectContaining({
+					operationScoped: true,
+					bindingIssueCounts: { fallback: 0, missing: 1 },
+					externalLinks: [
+						expect.objectContaining({
+							bindingRisk: expect.objectContaining({
+								status: 'missingPathRelationship',
+								externalBookRelId: 'rIdMissing',
+							}),
+						}),
+					],
+					rewriteExternalLinkRecommendations: [
+						expect.objectContaining({
+							op: 'rewriteExternalLink',
+							partPath: 'xl/externalLinks/externalLink1.xml',
+							newTarget: '<new-target>',
+						}),
+					],
+				}),
 			}),
 		)
 		expect(plan.writePolicy.ok).toBe(false)

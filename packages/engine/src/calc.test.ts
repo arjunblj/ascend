@@ -318,6 +318,24 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 0)?.value).toEqual(numberValue(25))
 	})
 
+	test('full recalc fast-paths previous-row additive formula chains', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: EMPTY, formula: 'A1+3', styleId: sid })
+		sheet.cells.set(2, 0, { value: EMPTY, formula: 'A2+3', styleId: sid })
+		sheet.cells.set(3, 0, { value: EMPTY, formula: 'A3-1', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(result.changed).toEqual(['Sheet1!A2', 'Sheet1!A3', 'Sheet1!A4'])
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(5))
+		expect(sheet.cells.get(2, 0)?.value).toEqual(numberValue(8))
+		expect(sheet.cells.get(3, 0)?.value).toEqual(numberValue(7))
+		expect(sheet.cells.get(3, 0)?.formula).toBe('A3-1')
+	})
+
 	test('recalculation after value change reports changed cells', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

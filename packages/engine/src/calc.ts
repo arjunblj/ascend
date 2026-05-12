@@ -1388,6 +1388,12 @@ export function recalculate(
 		scratch.growingAggregateStateCache.clear()
 		scratch.indexMatchReturnBySource.clear()
 		scratch.indexMatchReturnFormulaCount = 0
+		const linearChainFast = tryFastFullPreviousRowAddendRecalc(workbook, changed, start)
+		if (linearChainFast) {
+			clearRangeValueCache()
+			clearCriteriaMatchCache()
+			return linearChainFast
+		}
 		const scalarIfFast = tryFastFullScalarIfAggregateFallbackTextRecalc(workbook, changed, start)
 		if (scalarIfFast) {
 			clearRangeValueCache()
@@ -1874,6 +1880,124 @@ export function recalculate(
 		errors,
 		duration: performance.now() - start,
 	}
+}
+
+function tryFastFullPreviousRowAddendRecalc(
+	workbook: Workbook,
+	changed: string[],
+	start: number,
+): RecalcResult | null {
+	const formulas: Array<{
+		readonly sheetIndex: number
+		readonly row: number
+		readonly col: number
+		readonly formula: string
+		readonly addend: number
+	}> = []
+	for (let sheetIndex = 0; sheetIndex < workbook.sheets.length; sheetIndex++) {
+		const sheet = workbook.sheets[sheetIndex]
+		if (!sheet) continue
+		for (const [row, entries] of sheet.cells.iterateRows()) {
+			for (const [col, cell] of entries) {
+				if (cell.formula === null && cell.formulaInfo === undefined) continue
+				if (cell.formula === null || cell.formulaInfo !== undefined) return null
+				const addend = parsePreviousRowAddendFormula(cell.formula, row, col)
+				if (addend === undefined) return null
+				formulas.push({ sheetIndex, row, col, formula: cell.formula, addend })
+			}
+		}
+	}
+	if (formulas.length === 0) return null
+	const plannedNumbers = new Map<CellKey, number>()
+	const plans: Array<{
+		readonly sheetIndex: number
+		readonly row: number
+		readonly col: number
+		readonly formula: string
+		readonly nextNumber: number
+	}> = []
+	for (const formula of formulas) {
+		const sheet = workbook.sheets[formula.sheetIndex]
+		if (!sheet) return null
+		const sourceKey = cellKey(formula.sheetIndex, formula.row - 1, formula.col)
+		const plannedPrevious = plannedNumbers.get(sourceKey)
+		let previousNumber = plannedPrevious
+		if (previousNumber === undefined) {
+			const previous = sheet.cells.readValue(formula.row - 1, formula.col)
+			if (previous?.kind !== 'number') return null
+			previousNumber = previous.value
+		}
+		const nextNumber = previousNumber + formula.addend
+		plannedNumbers.set(cellKey(formula.sheetIndex, formula.row, formula.col), nextNumber)
+		plans.push({
+			sheetIndex: formula.sheetIndex,
+			row: formula.row,
+			col: formula.col,
+			formula: formula.formula,
+			nextNumber,
+		})
+	}
+	for (const plan of plans) {
+		const sheet = workbook.sheets[plan.sheetIndex]
+		if (!sheet) return null
+		const oldValue = sheet.cells.readValue(plan.row, plan.col)
+		const newValue = numberValue(plan.nextNumber)
+		if (valuesEqual(oldValue, newValue)) continue
+		const oldStyleId = sheet.cells.readStyleId(plan.row, plan.col) ?? DEFAULT_STYLE_ID
+		sheet.cells.setNumberResolved(plan.row, plan.col, plan.nextNumber, plan.formula, oldStyleId)
+		changed.push(cellRefString(workbook, plan.sheetIndex, plan.row, plan.col))
+	}
+	return { changed, errors: [], duration: performance.now() - start }
+}
+
+function parsePreviousRowAddendFormula(
+	formula: string,
+	row: number,
+	col: number,
+): number | undefined {
+	if (row <= 0) return undefined
+	const text = formula.charCodeAt(0) === 61 ? formula.slice(1) : formula
+	const ref = `${indexToColumn(col)}${row}`
+	if (!text.startsWith(ref)) return undefined
+	const op = text.charCodeAt(ref.length)
+	if (op !== 43 && op !== 45) return undefined
+	const addend = parseFiniteNumberLiteral(text, ref.length + 1)
+	if (!Number.isFinite(addend)) return undefined
+	return op === 45 ? -addend : addend
+}
+
+function parseFiniteNumberLiteral(text: string, offset: number): number {
+	let index = offset
+	let sawDigit = false
+	let sawDot = false
+	for (; index < text.length; index++) {
+		const char = text.charCodeAt(index)
+		if (char >= 48 && char <= 57) {
+			sawDigit = true
+			continue
+		}
+		if (char === 46 && !sawDot) {
+			sawDot = true
+			continue
+		}
+		break
+	}
+	if (!sawDigit) return Number.NaN
+	if (index < text.length) {
+		const exponent = text.charCodeAt(index)
+		if (exponent !== 69 && exponent !== 101) return Number.NaN
+		index++
+		const sign = text.charCodeAt(index)
+		if (sign === 43 || sign === 45) index++
+		let sawExponentDigit = false
+		for (; index < text.length; index++) {
+			const char = text.charCodeAt(index)
+			if (char < 48 || char > 57) return Number.NaN
+			sawExponentDigit = true
+		}
+		if (!sawExponentDigit) return Number.NaN
+	}
+	return Number(text.slice(offset))
 }
 
 function tryFastDirtyPrefixAggregateRecalc(

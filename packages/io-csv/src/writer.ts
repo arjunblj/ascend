@@ -41,13 +41,12 @@ export function writeCsv(workbook: Workbook, opts?: WriteCsvOptions): Result<str
 	}
 
 	const lines: string[] = []
+	const plainScalarFastPath = d.delimiter === ',' && d.quote === '"' && d.escape === '"'
 
 	for (let r = range.start.row; r <= range.end.row; r++) {
 		const fields: string[] = []
 		for (let c = range.start.col; c <= range.end.col; c++) {
-			const cell = sheet.cells.get(r, c)
-			const text = cell ? formatValue(cell.value) : ''
-			fields.push(quoteField(text, d))
+			fields.push(formatField(sheet.cells.readValue(r, c), d, plainScalarFastPath))
 		}
 		lines.push(fields.join(d.delimiter))
 	}
@@ -55,24 +54,28 @@ export function writeCsv(workbook: Workbook, opts?: WriteCsvOptions): Result<str
 	return ok(lines.join(d.lineEnding))
 }
 
-function formatValue(value: CellValue): string {
+function formatField(value: CellValue, d: CsvDialect, plainScalarFastPath: boolean): string {
 	value = topLeftScalar(value)
 	switch (value.kind) {
 		case 'empty':
 			return ''
 		case 'number':
-			return String(value.value)
+			return formatScalarField(String(value.value), d, plainScalarFastPath)
 		case 'string':
-			return value.value
+			return quoteField(value.value, d)
 		case 'boolean':
-			return value.value ? 'TRUE' : 'FALSE'
+			return formatScalarField(value.value ? 'TRUE' : 'FALSE', d, plainScalarFastPath)
 		case 'error':
-			return value.value
+			return formatScalarField(value.value, d, plainScalarFastPath)
 		case 'date':
-			return serialToIso(value.serial)
+			return formatScalarField(serialToIso(value.serial), d, plainScalarFastPath)
 		case 'richText':
-			return value.runs.map((r) => r.text).join('')
+			return quoteField(value.runs.map((r) => r.text).join(''), d)
 	}
+}
+
+function formatScalarField(text: string, d: CsvDialect, plainScalarFastPath: boolean): string {
+	return plainScalarFastPath ? text : quoteField(text, d)
 }
 
 function quoteField(text: string, d: CsvDialect): string {

@@ -186,6 +186,18 @@ describe('writeCsv', () => {
 
 		expect(writeResult.value).toContain('"hello,world"')
 	})
+
+	test('quotes scalar fields when a custom delimiter appears in formatted text', () => {
+		const readResult = readCsv('date\n2024-01-01')
+		expect(readResult.ok).toBe(true)
+		if (!readResult.ok) throw new Error(readResult.error.message)
+
+		const writeResult = writeCsv(readResult.value, { dialect: { delimiter: '-' } })
+		expect(writeResult.ok).toBe(true)
+		if (!writeResult.ok) throw new Error(writeResult.error.message)
+
+		expect(writeResult.value).toBe('date\n"2024-01-01"')
+	})
 })
 
 describe('Unicode and BOM', () => {

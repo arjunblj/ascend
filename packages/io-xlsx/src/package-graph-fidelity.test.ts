@@ -32,8 +32,18 @@ describe('XLSX package graph fidelity audits', () => {
 		expect(issues.map((issue) => issue.code)).toContain('package_feature_classification')
 		expect(issues.map((issue) => issue.code)).toContain('package_relationship_target')
 		expect(issues.find((issue) => issue.code === 'package_relationship_target')).toMatchObject({
+			severity: 'error',
+			sourcePartPath: 'xl/workbook.xml',
 			relationshipPartPath: 'xl/_rels/workbook.xml.rels',
 			relationshipId: 'rIdMissing',
+			featureFamily: 'worksheet',
+			suggestedAction: expect.stringContaining('relationship target'),
+		})
+		expect(issues.find((issue) => issue.code === 'package_feature_classification')).toMatchObject({
+			severity: 'warning',
+			partPath: 'odd/package.bin',
+			ownerScope: 'unknown',
+			featureFamily: 'preservedOther',
 		})
 	})
 
@@ -60,9 +70,119 @@ describe('XLSX package graph fidelity audits', () => {
 		expect(
 			issues.find((issue) => issue.code === 'package_preserved_relationship_identity'),
 		).toMatchObject({
+			severity: 'error',
+			sourcePartPath: '',
 			relationshipPartPath: '_rels/.rels',
 			relationshipId: 'rIdOffice',
+			featureFamily: 'workbook',
+			suggestedAction: expect.stringContaining('raw type'),
 		})
+	})
+
+	test('uses OPC source, id, target, and TargetMode fields for adversarial relationship drift', () => {
+		const before = inspectXlsxPackageGraph(
+			makeXlsx({
+				...baseWorkbookParts(),
+				...adversarialRelationshipParts({
+					imageTarget: '../media/image%201.png',
+					hyperlinkTarget: 'https://example.com/original',
+					absoluteTarget: '/xl/charts/chart1.xml',
+				}),
+			}),
+		)
+		const after = inspectXlsxPackageGraph(
+			makeXlsx({
+				...baseWorkbookParts(),
+				...adversarialRelationshipParts({
+					imageTarget: '../media/image2.png',
+					hyperlinkTarget: 'https://example.com/changed',
+					absoluteTarget: '../charts/chart1.xml',
+				}),
+			}),
+		)
+
+		const issues = auditXlsxPackageGraphSafeEditIntegrity(before, after)
+		expect(issues).toContainEqual(
+			expect.objectContaining({
+				code: 'package_preserved_relationship_identity',
+				sourcePartPath: 'xl/drawings/drawing1.xml',
+				relationshipPartPath: 'xl/drawings/_rels/drawing1.xml.rels',
+				relationshipId: 'rId20',
+				featureFamily: 'preservedMedia',
+				expected: expect.objectContaining({
+					rawTarget: '../media/image%201.png',
+					resolvedTarget: 'xl/media/image 1.png',
+				}),
+				actual: expect.objectContaining({
+					rawTarget: '../media/image2.png',
+					resolvedTarget: 'xl/media/image2.png',
+				}),
+			}),
+		)
+		expect(issues).toContainEqual(
+			expect.objectContaining({
+				code: 'package_preserved_relationship_identity',
+				relationshipPartPath: 'xl/drawings/_rels/drawing1.xml.rels',
+				relationshipId: 'rId7',
+				featureFamily: 'preservedOther',
+				expected: expect.objectContaining({
+					rawTarget: 'https://example.com/original',
+					targetMode: 'External',
+				}),
+				actual: expect.objectContaining({
+					rawTarget: 'https://example.com/changed',
+					targetMode: 'External',
+				}),
+			}),
+		)
+		expect(issues).toContainEqual(
+			expect.objectContaining({
+				code: 'package_preserved_relationship_identity',
+				relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+				relationshipId: 'rId100',
+				featureFamily: 'preservedChart',
+				expected: expect.objectContaining({
+					rawTarget: '/xl/charts/chart1.xml',
+					resolvedTarget: 'xl/charts/chart1.xml',
+				}),
+				actual: expect.objectContaining({
+					rawTarget: '../charts/chart1.xml',
+					resolvedTarget: 'xl/charts/chart1.xml',
+				}),
+			}),
+		)
+	})
+
+	test('treats default-covered content type override removal as package graph drift', () => {
+		const before = inspectXlsxPackageGraph(
+			makeXlsx({
+				...baseWorkbookParts({
+					extraContentTypes: `
+  <Override PartName="/xl/charts/style1.xml" ContentType="application/xml"/>
+`,
+				}),
+				'xl/charts/style1.xml': '<cs:chartStyle/>',
+			}),
+		)
+		const after = inspectXlsxPackageGraph(
+			makeXlsx({
+				...baseWorkbookParts(),
+				'xl/charts/style1.xml': '<cs:chartStyle/>',
+			}),
+		)
+
+		expect(auditXlsxPackageGraphSafeEditIntegrity(before, after)).toContainEqual(
+			expect.objectContaining({
+				code: 'package_content_type_override',
+				partPath: 'xl/charts/style1.xml',
+				featureFamily: 'preservedChartStyle',
+				expected: {
+					partPath: 'xl/charts/style1.xml',
+					contentType: 'application/xml',
+				},
+				actual: undefined,
+			}),
+		)
 	})
 
 	test('detects byte drift for preserve-exact sidecars', () => {
@@ -86,7 +206,9 @@ describe('XLSX package graph fidelity audits', () => {
 	})
 })
 
-function baseWorkbookParts(): Record<string, string> {
+function baseWorkbookParts(
+	options: { readonly extraContentTypes?: string } = {},
+): Record<string, string> {
 	return {
 		'[Content_Types].xml': contentTypesXml(`
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
@@ -95,6 +217,7 @@ function baseWorkbookParts(): Record<string, string> {
   <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
   <Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>
   <Override PartName="/xl/charts/chart1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>
+${options.extraContentTypes ?? ''}
 `),
 		'_rels/.rels': relationshipsXml(`
   <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
@@ -104,6 +227,28 @@ function baseWorkbookParts(): Record<string, string> {
   <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
 `),
 		'xl/worksheets/sheet1.xml': '<worksheet/>',
+	}
+}
+
+function adversarialRelationshipParts(options: {
+	readonly imageTarget: string
+	readonly hyperlinkTarget: string
+	readonly absoluteTarget: string
+}): Record<string, string> {
+	return {
+		'xl/worksheets/_rels/sheet1.xml.rels': relationshipsXml(`
+  <Relationship Id="rId42" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>
+  <Relationship Id="rId100" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="${options.absoluteTarget}"/>
+`),
+		'xl/drawings/drawing1.xml': '<xdr:wsDr/>',
+		'xl/drawings/_rels/drawing1.xml.rels': relationshipsXml(`
+  <Relationship Id="rId20" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${options.imageTarget}"/>
+  <Relationship Id="rId7" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="${options.hyperlinkTarget}" TargetMode="External"/>
+  <Relationship Id="rId99" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image2.png"/>
+`),
+		'xl/media/image 1.png': 'image-one',
+		'xl/media/image2.png': 'image-two',
+		'xl/charts/chart1.xml': '<c:chartSpace/>',
 	}
 }
 

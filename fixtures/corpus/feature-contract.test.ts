@@ -14,6 +14,7 @@ import {
 	inspectXlsxPackageGraph,
 	readXlsx,
 	type XlsxPackageGraph,
+	type XlsxPackageGraphFidelityIssue,
 } from '@ascend/io-xlsx'
 import type { CompatibilityTier, FeatureReport } from '@ascend/schema'
 import {
@@ -1090,7 +1091,7 @@ function assertPackageGraphReadIntegrity(
 	graph: XlsxPackageGraph,
 ): void {
 	for (const issue of auditXlsxPackageGraphReadIntegrity(graph)) {
-		assertFeature(entry, issue.code, false, issue.message)
+		assertFeature(entry, issue.code, false, formatPackageGraphIssue(issue))
 	}
 }
 
@@ -1099,6 +1100,7 @@ function assertPackageGraphEditIntegrity(
 	before: ContractSubject,
 	after: ContractSubject,
 ): void {
+	assertPackageGraphFeatureFamiliesSurvive(entry, before.packageGraph, after.packageGraph)
 	const issues = [
 		...auditXlsxPackageGraphSafeEditIntegrity(before.packageGraph, after.packageGraph),
 		...auditXlsxPackageGraphBytePreservation(
@@ -1108,8 +1110,54 @@ function assertPackageGraphEditIntegrity(
 		),
 	]
 	for (const issue of issues) {
-		assertFeature(entry, issue.code, false, issue.message)
+		assertFeature(entry, issue.code, false, formatPackageGraphIssue(issue))
 	}
+}
+
+function assertPackageGraphFeatureFamiliesSurvive(
+	entry: NormalizedCorpusManifestEntry,
+	before: XlsxPackageGraph,
+	after: XlsxPackageGraph,
+): void {
+	const afterFamilies = new Set(after.parts.map((part) => part.featureFamily))
+	for (const family of safeEditRequiredFeatureFamilies(before)) {
+		assertFeature(
+			entry,
+			'package_feature_family_preservation',
+			afterFamilies.has(family),
+			`package graph feature family disappeared after safe edit: ${family}`,
+		)
+	}
+}
+
+function safeEditRequiredFeatureFamilies(graph: XlsxPackageGraph): readonly string[] {
+	const families = new Set<string>()
+	for (const part of graph.parts) {
+		if (part.preservationPolicy === 'discard-on-recalc') continue
+		if (part.preservationPolicy === 'invalidate-on-edit') continue
+		families.add(part.featureFamily)
+	}
+	return [...families].sort()
+}
+
+function formatPackageGraphIssue(issue: XlsxPackageGraphFidelityIssue): string {
+	return [
+		issue.message,
+		`severity=${issue.severity}`,
+		issue.partPath ? `part=${issue.partPath}` : undefined,
+		issue.sourcePartPath !== undefined
+			? `source=${issue.sourcePartPath || '<package>'}`
+			: undefined,
+		issue.relationshipPartPath ? `rels=${issue.relationshipPartPath}` : undefined,
+		issue.relationshipId ? `relId=${issue.relationshipId}` : undefined,
+		issue.ownerScope ? `owner=${issue.ownerScope}` : undefined,
+		issue.featureFamily ? `family=${issue.featureFamily}` : undefined,
+		issue.suggestedAction ? `action=${issue.suggestedAction}` : undefined,
+		issue.expected !== undefined ? `expected=${JSON.stringify(issue.expected)}` : undefined,
+		issue.actual !== undefined ? `actual=${JSON.stringify(issue.actual)}` : undefined,
+	]
+		.filter(isDefined)
+		.join(' | ')
 }
 
 function expectManifestCount(
@@ -1412,6 +1460,17 @@ if (CONTRACT_CASES.length === 0) {
 					assertManifestEditCoverage(entry, before, after)
 				},
 				SAFE_EDIT_TIMEOUT_MS,
+			)
+
+			it.skipIf(!bytes)(
+				'blocks partial-load writes from fidelity-safe corpus contracts',
+				async () => {
+					const partial = await AscendWorkbook.open(requireBytes(bytes), { mode: 'metadata-only' })
+					expect(partial.inspect().load.isPartial).toBe(true)
+					expect(() => partial.toBytes()).toThrow(
+						'Cannot export a partial workbook view. Reopen the workbook with a full load before saving or exporting.',
+					)
+				},
 			)
 		})
 	}

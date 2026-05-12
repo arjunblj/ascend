@@ -13,12 +13,19 @@ export type XlsxPackageGraphFidelityIssueCode =
 	| 'package_preserved_relationship'
 	| 'package_preserved_relationship_identity'
 
+export type XlsxPackageGraphFidelityIssueSeverity = 'warning' | 'error'
+
 export interface XlsxPackageGraphFidelityIssue {
 	readonly code: XlsxPackageGraphFidelityIssueCode
+	readonly severity: XlsxPackageGraphFidelityIssueSeverity
 	readonly message: string
 	readonly partPath?: string
+	readonly sourcePartPath?: string
 	readonly relationshipPartPath?: string
 	readonly relationshipId?: string
+	readonly featureFamily?: string
+	readonly ownerScope?: string
+	readonly suggestedAction?: string
 	readonly expected?: unknown
 	readonly actual?: unknown
 }
@@ -46,8 +53,13 @@ export function auditXlsxPackageGraphReadIntegrity(
 		if (part.featureFamily !== 'preservedOther' || allowPreservedOtherPart(part.path)) continue
 		issues.push({
 			code: 'package_feature_classification',
+			severity: 'warning',
 			message: `package graph has unclassified preservedOther part: ${part.path}`,
 			partPath: part.path,
+			ownerScope: part.ownerScope,
+			featureFamily: part.featureFamily,
+			suggestedAction:
+				'Classify this OOXML part family or add a narrow fixture-backed allowlist entry before treating the package as fully audited.',
 		})
 	}
 	for (const relationship of graph.relationships) {
@@ -57,9 +69,14 @@ export function auditXlsxPackageGraphReadIntegrity(
 		}
 		issues.push({
 			code: 'package_relationship_target',
+			severity: 'error',
 			message: `relationship ${relationship.relationshipPartPath}#${relationship.id} resolves to missing target ${relationship.resolvedTarget ?? relationship.rawTarget}`,
+			sourcePartPath: relationship.sourcePartPath,
 			relationshipPartPath: relationship.relationshipPartPath,
 			relationshipId: relationship.id,
+			featureFamily: relationship.featureFamily,
+			suggestedAction:
+				'Inspect the relationship target and preserve or repair the referenced package part before writing.',
 			expected: relationship.rawTarget,
 			actual: relationship.resolvedTarget,
 		})
@@ -76,22 +93,62 @@ export function auditXlsxPackageGraphSafeEditIntegrity(
 	if (!sameJson(after.contentTypeDefaults, before.contentTypeDefaults)) {
 		issues.push({
 			code: 'package_content_type_default_set',
+			severity: 'error',
 			message: 'content type default set changed after safe edit',
+			partPath: '[Content_Types].xml',
+			ownerScope: 'package',
+			featureFamily: 'packageContentTypes',
+			suggestedAction:
+				'Preserve the package-level default content type table unless an explicit generated-part rewrite owns the change.',
 			expected: before.contentTypeDefaults,
 			actual: after.contentTypeDefaults,
 		})
 	}
 
-	const afterOverrides = new Set(
-		preservationRelevantContentTypeOverrides(after, options).map(contentTypeOverrideKey),
+	const beforeOverrides = preservationRelevantContentTypeOverrides(before, options)
+	const afterOverrides = preservationRelevantContentTypeOverrides(after, options)
+	const beforeOverridesByPart = new Map(
+		beforeOverrides.map((override) => [override.partPath, override]),
 	)
-	for (const override of preservationRelevantContentTypeOverrides(before, options)) {
-		if (afterOverrides.has(contentTypeOverrideKey(override))) continue
+	const afterOverridesByPart = new Map(
+		afterOverrides.map((override) => [override.partPath, override]),
+	)
+	const beforeOverrideKeys = new Set(beforeOverrides.map(contentTypeOverrideKey))
+	for (const override of beforeOverrides) {
+		const afterOverride = afterOverridesByPart.get(override.partPath)
+		if (afterOverride?.contentType === override.contentType) continue
+		const beforePart = before.parts.find((part) => part.path === override.partPath)
 		issues.push({
 			code: 'package_content_type_override',
-			message: `content type override disappeared after safe edit: ${override.partPath}`,
+			severity: 'error',
+			message: afterOverride
+				? `content type override changed after safe edit: ${override.partPath}`
+				: `content type override disappeared after safe edit: ${override.partPath}`,
 			partPath: override.partPath,
+			...(beforePart?.ownerScope ? { ownerScope: beforePart.ownerScope } : {}),
+			...(beforePart?.featureFamily ? { featureFamily: beforePart.featureFamily } : {}),
+			suggestedAction:
+				'Preserve the exact override for this package part or prove that the generated replacement owns the content type change.',
 			expected: override,
+			actual: afterOverride,
+		})
+	}
+	for (const override of afterOverrides) {
+		if (beforeOverridesByPart.has(override.partPath)) continue
+		if (beforeOverrideKeys.has(contentTypeOverrideKey(override))) continue
+		const afterPart = after.parts.find((part) => part.path === override.partPath)
+		if (!afterPart || afterPart.preservationPolicy === 'generated') continue
+		issues.push({
+			code: 'package_content_type_override',
+			severity: 'error',
+			message: `content type override appeared after safe edit: ${override.partPath}`,
+			partPath: override.partPath,
+			ownerScope: afterPart.ownerScope,
+			featureFamily: afterPart.featureFamily,
+			suggestedAction:
+				'Inspect why a preserved package part gained a new explicit content type override after a safe edit.',
+			expected: undefined,
+			actual: override,
 		})
 	}
 
@@ -104,8 +161,13 @@ export function auditXlsxPackageGraphSafeEditIntegrity(
 			if (afterPart === undefined) continue
 			issues.push({
 				code: 'package_signature_invalidation',
+				severity: 'error',
 				message: `signature part ${beforePart.path} was retained after a generated workbook mutation`,
 				partPath: beforePart.path,
+				ownerScope: beforePart.ownerScope,
+				featureFamily: beforePart.featureFamily,
+				suggestedAction:
+					'Drop invalidated package signatures after dirty writes or block the write until signature handling is explicit.',
 				expected: undefined,
 				actual: packagePartIdentity(afterPart),
 			})
@@ -115,8 +177,13 @@ export function auditXlsxPackageGraphSafeEditIntegrity(
 		if (!afterPart) {
 			issues.push({
 				code: 'package_preserved_part',
+				severity: 'error',
 				message: `preserved package part disappeared after safe edit: ${beforePart.path}`,
 				partPath: beforePart.path,
+				ownerScope: beforePart.ownerScope,
+				featureFamily: beforePart.featureFamily,
+				suggestedAction:
+					'Copy this preserved package part through the write path or classify an intentional loss policy.',
 				expected: packagePartIdentity(beforePart),
 			})
 			continue
@@ -126,8 +193,13 @@ export function auditXlsxPackageGraphSafeEditIntegrity(
 		if (sameJson(afterIdentity, beforeIdentity)) continue
 		issues.push({
 			code: 'package_preserved_part_identity',
+			severity: 'error',
 			message: `preserved package part identity changed after safe edit: ${beforePart.path}`,
 			partPath: beforePart.path,
+			ownerScope: beforePart.ownerScope,
+			featureFamily: beforePart.featureFamily,
+			suggestedAction:
+				'Preserve content type, owner scope, relationship provenance, feature family, and loss policy for this copied-through part.',
 			expected: beforeIdentity,
 			actual: afterIdentity,
 		})
@@ -145,9 +217,14 @@ export function auditXlsxPackageGraphSafeEditIntegrity(
 		if (!afterRel) {
 			issues.push({
 				code: 'package_preserved_relationship',
+				severity: 'error',
 				message: `preserved relationship disappeared after safe edit: ${beforeRel.relationshipPartPath}#${beforeRel.id}`,
+				sourcePartPath: beforeRel.sourcePartPath,
 				relationshipPartPath: beforeRel.relationshipPartPath,
 				relationshipId: beforeRel.id,
+				featureFamily: beforeRel.featureFamily,
+				suggestedAction:
+					'Preserve this relationship id, source relationship part, type dialect, target, and target mode across safe edits.',
 				expected: packageRelationshipIdentity(beforeRel),
 			})
 			continue
@@ -157,9 +234,14 @@ export function auditXlsxPackageGraphSafeEditIntegrity(
 		if (sameJson(afterIdentity, beforeIdentity)) continue
 		issues.push({
 			code: 'package_preserved_relationship_identity',
+			severity: 'error',
 			message: `preserved relationship identity changed after safe edit: ${beforeRel.relationshipPartPath}#${beforeRel.id}`,
+			sourcePartPath: beforeRel.sourcePartPath,
 			relationshipPartPath: beforeRel.relationshipPartPath,
 			relationshipId: beforeRel.id,
+			featureFamily: beforeRel.featureFamily,
+			suggestedAction:
+				'Preserve relationship id, source part, relationship part path, raw type, normalized type, raw target, resolved target, and target mode.',
 			expected: beforeIdentity,
 			actual: afterIdentity,
 		})
@@ -182,8 +264,13 @@ export function auditXlsxPackageGraphBytePreservation(
 		if (beforePartBytes === undefined || afterPartBytes === undefined) {
 			issues.push({
 				code: 'package_preserved_part_bytes',
+				severity: 'error',
 				message: `preserved package part bytes are unavailable after safe edit: ${part.path}`,
 				partPath: part.path,
+				ownerScope: part.ownerScope,
+				featureFamily: part.featureFamily,
+				suggestedAction:
+					'Keep exact bytes available for copied-through OOXML sidecars during safe-edit writes.',
 				expected: beforePartBytes?.byteLength,
 				actual: afterPartBytes?.byteLength,
 			})
@@ -192,8 +279,13 @@ export function auditXlsxPackageGraphBytePreservation(
 		if (bytesEqual(beforePartBytes, afterPartBytes)) continue
 		issues.push({
 			code: 'package_preserved_part_bytes',
+			severity: 'error',
 			message: `preserved package part bytes changed after safe edit: ${part.path}`,
 			partPath: part.path,
+			ownerScope: part.ownerScope,
+			featureFamily: part.featureFamily,
+			suggestedAction:
+				'Copy preserve-exact sidecars byte-for-byte unless the feature has a semantic writer with its own fidelity tests.',
 			expected: beforePartBytes.byteLength,
 			actual: afterPartBytes.byteLength,
 		})

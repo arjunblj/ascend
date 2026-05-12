@@ -212,6 +212,7 @@ describe('operation schema agent DX', () => {
 	test('table topology operations expose ownership preconditions', () => {
 		const create = getOperationsSchema().find((entry) => entry.op === 'createTable')
 		const append = getOperationsSchema().find((entry) => entry.op === 'appendRows')
+		const rename = getOperationsSchema().find((entry) => entry.op === 'renameTable')
 		const resize = getOperationsSchema().find((entry) => entry.op === 'resizeTable')
 
 		expect(create?.description).toContain('non-overlapping')
@@ -219,6 +220,8 @@ describe('operation schema agent DX', () => {
 		expect(create?.recoveryActions.join('\n')).toContain('overlapping table ranges')
 		expect(append?.description).toContain('shifting another table')
 		expect(append?.recoveryActions.join('\n')).toContain('totals-row appends')
+		expect(rename?.description).toContain('workbook-unique')
+		expect(rename?.recoveryActions.join('\n')).toContain('case-insensitively')
 		expect(resize?.description).toContain('dropping referenced fields')
 		expect(resize?.schema.properties.table?.description).toContain('Workbook-unique table name')
 	})

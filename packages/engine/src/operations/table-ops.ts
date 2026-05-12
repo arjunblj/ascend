@@ -252,8 +252,13 @@ export function handleRenameTable(
 		return err(ascendError('NAME_NOT_FOUND', `Table "${op.table}" not found`))
 	}
 	const { table, sheet } = located
-	if (sheet.tables.some((t) => t.name === op.newName && t.id !== table.id)) {
-		return err(ascendError('NAME_CONFLICT', `Table "${op.newName}" already exists`))
+	if (findTableNameCollision(workbook, op.newName, table.id)) {
+		return err(
+			ascendError('NAME_CONFLICT', `Table "${op.newName}" already exists`, {
+				suggestedFix:
+					'Choose a workbook-unique table name so structured references remain unambiguous.',
+			}),
+		)
 	}
 	const idx = sheet.tables.findIndex((t) => t.id === table.id)
 	if (idx >= 0) {
@@ -304,10 +309,15 @@ export function handleResizeTable(
 	return ok(patch([], [sheet.name], true))
 }
 
-function findTableNameCollision(workbook: Workbook, name: string): Table | null {
+function findTableNameCollision(
+	workbook: Workbook,
+	name: string,
+	exceptTableId?: TableId,
+): Table | null {
 	const lowerName = name.toLowerCase()
 	for (const sheet of workbook.sheets) {
 		for (const table of sheet.tables) {
+			if (table.id === exceptTableId) continue
 			if (table.name.toLowerCase() === lowerName) return table
 		}
 	}

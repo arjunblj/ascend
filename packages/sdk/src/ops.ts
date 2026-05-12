@@ -555,7 +555,7 @@ export function listOperations(): readonly OperationSchema[] {
 		{ op: 'deleteTable', description: 'Remove a table from its sheet', requiredFields: ['table'] },
 		{
 			op: 'renameTable',
-			description: 'Rename an existing table',
+			description: 'Rename an existing table to a workbook-unique name',
 			requiredFields: ['table', 'newName'],
 		},
 		{
@@ -1212,6 +1212,12 @@ function operationRecoveryActions(op: string): readonly string[] {
 			return [
 				'Run ascend check first on imported workbooks; overlapping table ranges make append ownership ambiguous.',
 				'Confirm appended rows will not expand the table into another table; totals-row appends can insert rows and must not shift another table.',
+				...common,
+			]
+		case 'renameTable':
+			return [
+				'Choose a workbook-unique table name; Excel treats table names case-insensitively in structured references.',
+				'Run ascend check first on imported workbooks with duplicate table names or ids before renaming.',
 				...common,
 			]
 		case 'setTableColumn':

@@ -3624,6 +3624,60 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(10))
 	})
 
+	test('renameTable rejects workbook-scoped case-insensitive duplicate table names', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const otherSheet = wb.addSheet('Sheet2')
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } },
+			columns: [
+				{ id: 1, name: 'Region' },
+				{ id: 2, name: 'Amount' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+		otherSheet.tables.push({
+			id: createTableId(),
+			name: 'FORECAST',
+			sheetId: otherSheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } },
+			columns: [
+				{ id: 1, name: 'Region' },
+				{ id: 2, name: 'Amount' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+		sheet.cells.set(4, 0, { value: EMPTY, formula: 'SUM(Sales[Amount])', styleId: sid })
+		wb.definedNames.set('SalesAmount', 'SUM(Sales[Amount])')
+
+		const duplicate = applyOperation(wb, {
+			op: 'renameTable',
+			table: 'Sales',
+			newName: 'forecast',
+		})
+
+		expectErr(duplicate)
+		expect(duplicate.error.code).toBe('NAME_CONFLICT')
+		expect(duplicate.error.suggestedFix).toContain('workbook-unique')
+		expect(sheet.tables[0]?.name).toBe('Sales')
+		expect(otherSheet.tables[0]?.name).toBe('FORECAST')
+		expect(sheet.cells.get(4, 0)?.formula).toBe('SUM(Sales[Amount])')
+		expect(wb.definedNames.get('SalesAmount')).toBe('SUM(Sales[Amount])')
+
+		const caseOnly = applyOperation(wb, {
+			op: 'renameTable',
+			table: 'Sales',
+			newName: 'SALES',
+		})
+		expectOk(caseOnly)
+		expect(sheet.tables[0]?.name).toBe('SALES')
+	})
+
 	test('setWorkbookProtection updates workbook-level protection metadata', () => {
 		const wb = createWorkbook()
 		const result = applyOperation(wb, {

@@ -364,6 +364,7 @@ function classifyOwnerScope(
 	if (/(^|\/)(activeX|ctrlProps|embeddings)\//i.test(partPath)) return 'active-content'
 	if (/(^|\/)(metadata|calcChain)\.xml$/i.test(partPath)) return 'metadata'
 	if (primary?.sourcePartPath.includes('/worksheets/')) return 'worksheet'
+	if (primary?.sourcePartPath.includes('/tables/')) return 'worksheet'
 	if (primary?.sourcePartPath.includes('/drawings/')) return 'drawing'
 	if (primary?.sourcePartPath.includes('/charts/')) return 'chart'
 	return 'unknown'

@@ -14,6 +14,8 @@ import { stringValue } from '../../packages/schema/src/index.ts'
 
 const S0 = 0 as StyleId
 const TABLE_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml'
+const QUERY_TABLE_CONTENT_TYPE =
+	'application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml'
 
 interface TableFixtureCase {
 	readonly label: string
@@ -92,6 +94,73 @@ describe('vendored table package graph fidelity', () => {
 			expectTableBytesPreserved(beforeGraph, sourceBytes, written.value)
 		})
 	}
+
+	test('LibreOffice query table sidecar preserves table-owned relationship and bytes', () => {
+		const sourceBytes = readFileSync(
+			new URL('./libreoffice/TableEmptyHeaders.xlsx', import.meta.url),
+		)
+		const beforeGraph = inspectXlsxPackageGraph(sourceBytes)
+		const beforeQueryTableParts = queryTablePartIdentities(beforeGraph)
+		const beforeTableRelationships = tableRelationshipIdentities(beforeGraph)
+		const beforeQueryTableOverrides = queryTableContentTypeOverrides(beforeGraph)
+		expect(beforeQueryTableParts).toEqual([
+			expect.objectContaining({
+				path: 'xl/queryTables/queryTable1.xml',
+				contentType: QUERY_TABLE_CONTENT_TYPE,
+				ownerScope: 'worksheet',
+				sourceRelationshipPart: 'xl/tables/_rels/table1.xml.rels',
+				sourceRelationshipId: 'rId1',
+				sourceRelationshipRawTarget: '../queryTables/queryTable1.xml',
+				preservationPolicy: 'preserve-exact',
+			}),
+		])
+		expect(beforeQueryTableOverrides).toEqual([
+			{
+				partPath: 'xl/queryTables/queryTable1.xml',
+				contentType: QUERY_TABLE_CONTENT_TYPE,
+			},
+		])
+
+		const read = readXlsx(sourceBytes)
+		expectOk(read)
+		const sheet = read.value.workbook.sheets.find((entry) => entry.name === 'BTC')
+		const table = sheet?.tables.find((entry) => entry.name === 'Bitcoin')
+		expect(table?.queryTable).toMatchObject({
+			relationshipId: 'rId1',
+			partPath: 'xl/queryTables/queryTable1.xml',
+			target: '../queryTables/queryTable1.xml',
+		})
+		if (!sheet) return
+
+		sheet.cells.set(199, 30, {
+			value: stringValue('__ascend_query_table_package_safe_edit__'),
+			formula: null,
+			styleId: S0,
+		})
+		const written = writeXlsx(read.value.workbook, read.value.capsules, {
+			dirtySheetNames: [sheet.name],
+		})
+		expectOk(written)
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		const reopenedTable = reopened.value.workbook.sheets
+			.find((entry) => entry.name === 'BTC')
+			?.tables.find((entry) => entry.name === 'Bitcoin')
+		expect(reopenedTable?.queryTable).toMatchObject({
+			relationshipId: 'rId1',
+			partPath: 'xl/queryTables/queryTable1.xml',
+			target: '../queryTables/queryTable1.xml',
+		})
+		expect(reopenedTable?.columns.map((column) => column.queryTableFieldId)).toEqual([1, 2])
+
+		const afterGraph = inspectXlsxPackageGraph(written.value)
+		expectNoPackageGraphIssues(auditXlsxPackageGraphSafeEditIntegrity(beforeGraph, afterGraph))
+		expect(queryTablePartIdentities(afterGraph)).toEqual(beforeQueryTableParts)
+		expect(tableRelationshipIdentities(afterGraph)).toEqual(beforeTableRelationships)
+		expect(queryTableContentTypeOverrides(afterGraph)).toEqual(beforeQueryTableOverrides)
+		expectFeatureBytesPreserved(beforeGraph, sourceBytes, written.value, 'preservedQueryTable')
+	})
 })
 
 function tablePartIdentities(graph: XlsxPackageGraph): readonly Record<string, unknown>[] {
@@ -149,16 +218,64 @@ function tableContentTypeOverrides(graph: XlsxPackageGraph): readonly Record<str
 		.sort(compareJson)
 }
 
+function queryTablePartIdentities(graph: XlsxPackageGraph): readonly Record<string, unknown>[] {
+	return graph.parts
+		.filter((part) => part.featureFamily === 'preservedQueryTable')
+		.map((part) => ({
+			path: part.path,
+			contentType: part.contentType,
+			contentTypeSource: part.contentTypeSource,
+			ownerScope: part.ownerScope,
+			sourceRelationshipPart: part.sourceRelationshipPart,
+			sourceRelationshipId: part.sourceRelationshipId,
+			sourceRelationshipType: part.sourceRelationshipType,
+			sourceRelationshipRawType: part.sourceRelationshipRawType,
+			sourceRelationshipRawTarget: part.sourceRelationshipRawTarget,
+			sourceRelationshipResolvedTarget: part.sourceRelationshipResolvedTarget,
+			preservationPolicy: part.preservationPolicy,
+			bytePreservationExpected: part.bytePreservationExpected,
+		}))
+		.sort(compareJson)
+}
+
+function queryTableContentTypeOverrides(
+	graph: XlsxPackageGraph,
+): readonly Record<string, unknown>[] {
+	const queryTablePaths = new Set(
+		graph.parts
+			.filter((part) => part.featureFamily === 'preservedQueryTable')
+			.map((part) => part.path),
+	)
+	return graph.contentTypeOverrides
+		.filter((override) => queryTablePaths.has(override.partPath))
+		.map((override) => ({
+			partPath: override.partPath,
+			contentType: override.contentType,
+		}))
+		.sort(compareJson)
+}
+
 function expectTableBytesPreserved(
 	graph: XlsxPackageGraph,
 	sourceBytes: Uint8Array,
 	writtenBytes: Uint8Array,
 ): void {
+	expectFeatureBytesPreserved(graph, sourceBytes, writtenBytes, 'preservedTable')
 	for (const part of graph.parts.filter((entry) => entry.featureFamily === 'preservedTable')) {
+		expect(part.contentType).toBe(TABLE_CONTENT_TYPE)
+	}
+}
+
+function expectFeatureBytesPreserved(
+	graph: XlsxPackageGraph,
+	sourceBytes: Uint8Array,
+	writtenBytes: Uint8Array,
+	featureFamily: string,
+): void {
+	for (const part of graph.parts.filter((entry) => entry.featureFamily === featureFamily)) {
 		const before = readZipPart(sourceBytes, part.path)
 		const after = readZipPart(writtenBytes, part.path)
 		expect(after).toEqual(before)
-		expect(part.contentType).toBe(TABLE_CONTENT_TYPE)
 		expect(part.preservationPolicy).toBe('preserve-exact')
 		expect(part.bytePreservationExpected).toBe(true)
 	}

@@ -401,6 +401,11 @@ function getRangeValues(
 		const cached = activeRangeValueCache.get(key)
 		if (cached) return cached
 	}
+	const sparseRows = tryMaterializeSparseRange(sheet, startRow, startCol, endRow, endCol)
+	if (sparseRows) {
+		activeRangeValueCache?.set(key, sparseRows)
+		return sparseRows
+	}
 	const rows: CellValue[][] = []
 	for (let r = startRow; r <= endRow; r++) {
 		const row: CellValue[] = []
@@ -410,6 +415,28 @@ function getRangeValues(
 		rows.push(row)
 	}
 	activeRangeValueCache?.set(key, rows)
+	return rows
+}
+
+function tryMaterializeSparseRange(
+	sheet: Workbook['sheets'][number],
+	startRow: number,
+	startCol: number,
+	endRow: number,
+	endCol: number,
+): CellValue[][] | null {
+	const height = endRow - startRow + 1
+	const width = endCol - startCol + 1
+	const area = height * width
+	if (area < 4096 || sheet.cells.cellCount() * 4 >= area) return null
+	const rows: CellValue[][] = new Array(height)
+	for (let rowOffset = 0; rowOffset < height; rowOffset++) {
+		rows[rowOffset] = new Array(width).fill(EMPTY)
+	}
+	sheet.cells.forEachValueInRange(startRow, startCol, endRow, endCol, (value, row, col) => {
+		const targetRow = rows[row - startRow]
+		if (targetRow) targetRow[col - startCol] = value
+	})
 	return rows
 }
 

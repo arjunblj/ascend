@@ -263,6 +263,39 @@ const benchmarks: readonly MicroBenchmark[] = [
 		},
 	},
 	{
+		name: 'Recalc sparse CORREL materialized range',
+		targetOpsPerSec: 500_000,
+		run() {
+			const workbook = createWorkbook()
+			const sheet = workbook.addSheet('Sheet1')
+			const rows = 1024
+			const cols = 128
+			for (let row = 0; row < rows; row++) {
+				sheet.cells.setResolved(row, 0, numberValue(row), null, SID)
+				for (let col = 1; col < cols; col++) {
+					if ((row * 31 + col * 17) % 97 !== 0) continue
+					sheet.cells.setResolved(row, col, numberValue(row * cols + col), null, SID)
+				}
+			}
+			const range = `A1:${indexToColumn(cols - 1)}${rows}`
+			const formulaRow = rows
+			sheet.cells.set(formulaRow, 0, {
+				value: EMPTY,
+				formula: `CORREL(${range},${range})`,
+				styleId: SID,
+			})
+			const result = recalculate(workbook, defaultCalcContext())
+			if (result.errors.length > 0) {
+				throw new Error(`Sparse CORREL recalc failed: ${result.errors[0]?.error.message}`)
+			}
+			const value = sheet.cells.readValue(formulaRow, 0)
+			if (value.kind !== 'number' || Math.abs(value.value - 1) > 1e-9) {
+				throw new Error(`Sparse CORREL produced ${JSON.stringify(value)}`)
+			}
+			return rows * cols
+		},
+	},
+	{
 		name: 'Conditional formatting range context (5k cells)',
 		targetOpsPerSec: 250_000,
 		run() {

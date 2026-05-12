@@ -86,7 +86,6 @@ export function parseVmlDrawingObjectRefs(
 		const rawAttrs = match[1] ?? ''
 		const body = match[2] ?? ''
 		const objectType = firstLocalTagAttrs(body, 'ClientData').get('ObjectType')
-		if (objectType === 'Note') continue
 		const ref = parseVmlDrawingObject(rawAttrs, body, vmlPath, objectType, relsById)
 		if (ref) refs.push(ref)
 	}

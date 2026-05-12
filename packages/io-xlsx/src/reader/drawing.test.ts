@@ -69,7 +69,7 @@ describe('drawing inventory', () => {
 		])
 	})
 
-	test('parses non-comment VML drawing objects with anchors, text, and relationships', () => {
+	test('parses VML drawing objects with anchors, notes, text, and relationships', () => {
 		const refs = parseVmlDrawingObjectRefs(
 			`<xml xmlns:v="urn:schemas-microsoft-com:vml"
   xmlns:o="urn:schemas-microsoft-com:office:office"
@@ -123,6 +123,15 @@ describe('drawing inventory', () => {
 					from: { col: 2, colOff: 14, row: 3, rowOff: 6 },
 					to: { col: 4, colOff: 3, row: 8, rowOff: 0 },
 				},
+			},
+			{
+				drawingPartPath: 'xl/drawings/vmlDrawing1.vml',
+				source: 'vml',
+				kind: 'shape',
+				id: 1026,
+				name: '_x0000_s1026',
+				vmlShapeId: '_x0000_s1026',
+				vmlObjectType: 'Note',
 			},
 		])
 	})

@@ -5947,7 +5947,7 @@ describe('writeXlsx', () => {
 		const xml = new TextDecoder().decode(worksheet)
 
 		expect(xml).toContain('<x14:dataValidations count="1">')
-		expect(xml).toContain('<x14:dataValidation sqref="A2"/>')
+		expect(xml).toContain('<x14:dataValidation><xm:sqref>A2</xm:sqref></x14:dataValidation>')
 		expect(xml).not.toContain('sqref="A1"')
 		expect(xml).not.toContain('<xm:sqref>B1</xm:sqref>')
 		expect(xml).not.toContain('sqref="C1"')
@@ -5963,6 +5963,8 @@ describe('writeXlsx', () => {
 				sqref: 'A2',
 				type: 'list',
 				formula1: 'List!$A$2:$A$3',
+				preservedAttributes: { customFlag: 'keep' },
+				preservedChildXml: ['<x14ac:metadata flag="keep"><x14ac:item val="1"/></x14ac:metadata>'],
 			},
 			{
 				index: 1,
@@ -5977,6 +5979,13 @@ describe('writeXlsx', () => {
 				sqref: 'C2',
 				formulas: ['A2>0'],
 				type: 'expression',
+				preservedRuleAttributes: {
+					activePresent: '1',
+					'xr:uid': '{CF-KEEP}',
+				},
+				preservedRuleChildXml: [
+					'<x14:extLst><x14:ext uri="{cf-child}"><x14ac:metadata flag="keep"/></x14:ext></x14:extLst>',
+				],
 			},
 			{
 				index: 1,
@@ -6031,6 +6040,137 @@ describe('writeXlsx', () => {
 		expect(conditionalXml?.indexOf('<x14:extLst>')).toBeLessThan(
 			conditionalXml?.indexOf('<xm:sqref>C2</xm:sqref>') ?? -1,
 		)
+	})
+
+	it('rewrites full modeled x14 data-validation entries over preserved XML', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Data')
+		sheet.x14DataValidations.push({
+			index: 0,
+			sqref: 'A2:A4',
+			type: 'whole',
+			operator: 'between',
+			allowBlank: true,
+			showInputMessage: false,
+			showErrorMessage: true,
+			showDropDown: false,
+			promptTitle: 'New prompt title',
+			prompt: 'New prompt',
+			errorTitle: 'New error title',
+			error: 'New error',
+			errorStyle: 'warning',
+			imeMode: 'disabled',
+			formula1: '1',
+			formula2: '10',
+			preservedAttributes: { customFlag: 'new' },
+			preservedChildXml: ['<x14ac:metadata flag="new"/>'],
+		})
+		sheet.preservedExtLst = `<extLst xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main" xmlns:x14ac="http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac"><ext uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}"><x14:dataValidations count="1"><x14:dataValidation type="list" allowBlank="0" showInputMessage="1" prompt="Old prompt" customFlag="old"><x14:formula1><xm:f>Old!$A$1:$A$2</xm:f></x14:formula1><x14ac:metadata flag="old"/><xm:sqref>A1</xm:sqref></x14:dataValidation></x14:dataValidations></ext></extLst>`
+
+		const written = writeXlsx(wb)
+		expectOk(written)
+		const entries = unzipSync(written.value)
+		const worksheet = entries['xl/worksheets/sheet1.xml']
+		expect(worksheet).toBeDefined()
+		if (!worksheet) return
+		const xml = new TextDecoder().decode(worksheet)
+		const validationXml = xml.match(/<x14:dataValidation\b[\s\S]*?<\/x14:dataValidation>/)?.[0]
+
+		expect(validationXml).toContain('type="whole"')
+		expect(validationXml).toContain('operator="between"')
+		expect(validationXml).toContain('allowBlank="1"')
+		expect(validationXml).toContain('showInputMessage="0"')
+		expect(validationXml).toContain('showErrorMessage="1"')
+		expect(validationXml).toContain('showDropDown="0"')
+		expect(validationXml).toContain('promptTitle="New prompt title"')
+		expect(validationXml).toContain('prompt="New prompt"')
+		expect(validationXml).toContain('errorTitle="New error title"')
+		expect(validationXml).toContain('error="New error"')
+		expect(validationXml).toContain('errorStyle="warning"')
+		expect(validationXml).toContain('imeMode="disabled"')
+		expect(validationXml).toContain('customFlag="new"')
+		expect(validationXml).toContain('<x14:formula1><xm:f>1</xm:f></x14:formula1>')
+		expect(validationXml).toContain('<x14:formula2><xm:f>10</xm:f></x14:formula2>')
+		expect(validationXml).toContain('<x14ac:metadata flag="new"/>')
+		expect(validationXml).toContain('<xm:sqref>A2:A4</xm:sqref>')
+		expect(validationXml).not.toContain('Old prompt')
+		expect(validationXml).not.toContain('customFlag="old"')
+		expect(validationXml).not.toContain('Old!$A$1:$A$2')
+		expect(validationXml).not.toContain('<xm:sqref>A1</xm:sqref>')
+	})
+
+	it('rewrites full modeled x14 conditional-format entries over preserved XML', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Data')
+		sheet.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'C2:C4',
+			type: 'iconSet',
+			priority: 7,
+			id: '{NEW-CF}',
+			formulas: ['A2>0'],
+			preservedRuleAttributes: {
+				activePresent: '1',
+				'xr:uid': '{NEW-UID}',
+			},
+			preservedRuleChildXml: ['<x14ac:metadata flag="new"/>'],
+			dataBar: {
+				minLength: 5,
+				maxLength: 95,
+				border: true,
+				cfvo: [
+					{ type: 'formula', value: 'A2' },
+					{ type: 'num', value: '10', gte: false },
+				],
+				borderColor: { rgb: 'FF003300' },
+				negativeFillColor: { rgb: 'FF00AA00' },
+			},
+			iconSet: {
+				iconSet: '3Flags',
+				reverse: true,
+				showValue: false,
+				cfvo: [
+					{ type: 'percent', value: '0' },
+					{ type: 'percent', value: '50' },
+					{ type: 'percent', value: '90' },
+				],
+				icons: [
+					{ iconSet: '3Flags', iconId: 0 },
+					{ iconSet: '3Flags', iconId: 1 },
+					{ iconSet: '3Flags', iconId: 2 },
+				],
+			},
+		})
+		sheet.preservedExtLst = `<extLst xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main" xmlns:x14ac="http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac" xmlns:xr="http://schemas.microsoft.com/office/spreadsheetml/2014/revision"><ext uri="{78C0D931-6437-407d-A8EE-F0AAD7539E65}"><x14:conditionalFormattings><x14:conditionalFormatting><x14:cfRule type="dataBar" priority="1" id="{OLD-CF}" oldFlag="drop"><xm:f>Old!A1&gt;0</xm:f><x14:dataBar minLength="0" maxLength="100"><x14:cfvo type="autoMin"/><x14:cfvo type="autoMax"/><x14:fillColor rgb="FFFF0000"/></x14:dataBar><x14ac:metadata flag="old"/></x14:cfRule><xm:sqref>B1:B3</xm:sqref></x14:conditionalFormatting></x14:conditionalFormattings></ext></extLst>`
+
+		const written = writeXlsx(wb)
+		expectOk(written)
+		const entries = unzipSync(written.value)
+		const worksheet = entries['xl/worksheets/sheet1.xml']
+		expect(worksheet).toBeDefined()
+		if (!worksheet) return
+		const xml = new TextDecoder().decode(worksheet)
+		const ruleXml = xml.match(/<x14:cfRule\b[\s\S]*?<\/x14:cfRule>/)?.[0]
+
+		expect(ruleXml).toContain('type="iconSet"')
+		expect(ruleXml).toContain('priority="7"')
+		expect(ruleXml).toContain('id="{NEW-CF}"')
+		expect(ruleXml).toContain('activePresent="1"')
+		expect(ruleXml).toContain('xr:uid="{NEW-UID}"')
+		expect(ruleXml).toContain('<xm:f>A2&gt;0</xm:f>')
+		expect(ruleXml).toContain(
+			'<x14:dataBar minLength="5" maxLength="95" border="1"><x14:cfvo type="formula"><xm:f>A2</xm:f></x14:cfvo><x14:cfvo type="num" gte="0" val="10"/><x14:borderColor rgb="FF003300"/><x14:negativeFillColor rgb="FF00AA00"/></x14:dataBar>',
+		)
+		expect(ruleXml).toContain(
+			'<x14:iconSet iconSet="3Flags" showValue="0" reverse="1"><x14:cfvo type="percent" val="0"/><x14:cfvo type="percent" val="50"/><x14:cfvo type="percent" val="90"/><x14:cfIcon iconSet="3Flags" iconId="0"/><x14:cfIcon iconSet="3Flags" iconId="1"/><x14:cfIcon iconSet="3Flags" iconId="2"/></x14:iconSet>',
+		)
+		expect(ruleXml).toContain('<x14ac:metadata flag="new"/>')
+		expect(xml).toContain('<xm:sqref>C2:C4</xm:sqref>')
+		expect(ruleXml).not.toContain('oldFlag="drop"')
+		expect(ruleXml).not.toContain('{OLD-CF}')
+		expect(ruleXml).not.toContain('Old!A1')
+		expect(ruleXml).not.toContain('FFFF0000')
+		expect(xml).not.toContain('<xm:sqref>B1:B3</xm:sqref>')
 	})
 
 	it('does not rewrite non-x14 extension nodes with x14 local names before the worksheet extension', () => {
@@ -6121,35 +6261,37 @@ describe('writeXlsx', () => {
 		if (!worksheet) return
 		const xml = new TextDecoder().decode(worksheet)
 		const unrelatedExt = xml.match(/<ext uri="\{UNRELATED\}">[\s\S]*?<\/ext>/)?.[0]
-		const worksheetExt = xml.match(
+		const dataValidationExt = xml.match(
 			/<ext uri="\{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF\}"[\s\S]*?<\/ext>/,
+		)?.[0]
+		const conditionalFormatExt = xml.match(
+			/<ext uri="\{78C0D931-6437-407d-A8EE-F0AAD7539E65\}"[\s\S]*?<\/ext>/,
 		)?.[0]
 
 		expect(unrelatedExt).toBe('<ext uri="{UNRELATED}"><x15:keep/></ext>')
-		expect(worksheetExt).toContain(
+		expect(dataValidationExt).toContain(
 			'xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"',
 		)
-		expect(worksheetExt).toContain('xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"')
-		expect(worksheetExt).toContain('<x15:before/>')
-		expect(worksheetExt).toContain('<x14:conditionalFormattings>')
-		expect(worksheetExt).toContain('<x14:dataValidations count="2">')
-		expect(worksheetExt).toContain('activePresent="1"')
-		expect(worksheetExt).toContain('customFlag="1"')
-		expect(worksheetExt).toContain('<x14ac:metadata flag="dv"/>')
-		expect(worksheetExt).toContain(
+		expect(dataValidationExt).toContain(
+			'xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"',
+		)
+		expect(dataValidationExt).toContain('<x15:before/>')
+		expect(dataValidationExt).toContain('<x14:dataValidations count="2">')
+		expect(dataValidationExt).toContain('customFlag="1"')
+		expect(dataValidationExt).toContain('<x14ac:metadata flag="dv"/>')
+		expect(conditionalFormatExt).toContain('<x14:conditionalFormattings>')
+		expect(conditionalFormatExt).toContain('activePresent="1"')
+		expect(conditionalFormatExt).toContain(
 			'<x14:extLst><x14:ext uri="{cf-child}"><x14ac:metadata flag="cf"/></x14:ext></x14:extLst>',
 		)
-		expect(worksheetExt?.indexOf('<xm:sqref>B2</xm:sqref>')).toBeLessThan(
-			worksheetExt?.indexOf('<xm:sqref>B3</xm:sqref>') ?? -1,
+		expect(dataValidationExt?.indexOf('<xm:sqref>B2</xm:sqref>')).toBeLessThan(
+			dataValidationExt?.indexOf('<xm:sqref>B3</xm:sqref>') ?? -1,
 		)
 		expect(xml.indexOf('<ext uri="{UNRELATED}">')).toBeLessThan(
 			xml.indexOf('<ext uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}"'),
 		)
-		expect(worksheetExt?.indexOf('<x15:before/>')).toBeLessThan(
-			worksheetExt?.indexOf('<x14:conditionalFormattings>') ?? -1,
-		)
-		expect(worksheetExt?.indexOf('<x14:conditionalFormattings>')).toBeLessThan(
-			worksheetExt?.indexOf('<x14:dataValidations') ?? -1,
+		expect(xml.indexOf('<ext uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}"')).toBeLessThan(
+			xml.indexOf('<ext uri="{78C0D931-6437-407d-A8EE-F0AAD7539E65}"'),
 		)
 	})
 

@@ -1157,7 +1157,7 @@ describe('agent workflow loss audit', () => {
 			sqref: 'C2:C5',
 			type: 'list',
 			operator: 'between',
-			formula1: 'Lookup!$A$1:$A$4',
+			formula1: '$A$1:$A$4',
 			preservedAttributes: {
 				'xr:uid': '{DV-UID}',
 				showErrorMessage: '1',
@@ -1170,6 +1170,9 @@ describe('agent workflow loss audit', () => {
 			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 7 }] },
 		])
 
+		expect(plan.check.valid).toBe(true)
+		expect(plan.modelOutput.blocked).toBe(false)
+		expect(plan.modelOutput.counts.checkIssues).toBe(0)
 		expect(plan.writePolicy.summary.x14DataValidationExtensionPayloads).toBe(1)
 		expect(plan.writePolicy.diagnostics).toContainEqual(
 			expect.objectContaining({
@@ -1244,6 +1247,13 @@ describe('agent workflow loss audit', () => {
 				}),
 			}),
 		)
+		expect(semanticEdit.modelOutput.blocked).toBe(false)
+		expect(semanticEdit.modelOutput.warnings).toEqual([
+			'write-policy: 1 write policy warning(s) require inspection.',
+		])
+		expect(semanticEdit.modelOutput.nextActions.join('\n')).toContain(
+			'Inspect writePolicy.diagnostics',
+		)
 	})
 
 	test('simple x14 rules do not produce extension preservation diagnostics', async () => {
@@ -1281,6 +1291,8 @@ describe('agent workflow loss audit', () => {
 					diagnostic.code === 'data-validation-extension-preservation',
 			),
 		).toBe(false)
+		expect(plan.modelOutput.warnings).not.toContainEqual(expect.stringContaining('write-policy:'))
+		expect(plan.modelOutput.warnings).toEqual([])
 	})
 
 	test('partial workbook views cannot produce full-fidelity write plans', async () => {

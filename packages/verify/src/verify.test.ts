@@ -378,6 +378,58 @@ describe('checker', () => {
 		expect(externalIssues[0]?.suggestedFix).toBeDefined()
 	})
 
+	test('detects chart series references to missing local sheets', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Data')
+		wb.addSheet('Summary')
+		wb.chartParts.push({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Summary',
+			chartType: 'barChart',
+			series: [
+				{
+					nameRef: "'Data'!$B$1",
+					categoryRef: "'Missing Data'!$A$2:$A$5",
+					valueRef: "'Data'!$B$2:$B$5",
+				},
+			],
+		})
+
+		const result = check(wb)
+		const issues = result.issues.filter((i) => i.rule === 'chart-series-integrity')
+		expect(result.passed).toBe(false)
+		expect(issues).toHaveLength(1)
+		expect(issues[0]?.message).toContain('Missing Data')
+		expect(issues[0]?.refs).toEqual(['xl/charts/chart1.xml#series0'])
+		expect(issues[0]?.details).toEqual({
+			partPath: 'xl/charts/chart1.xml',
+			seriesIndex: 0,
+			field: 'categoryRef',
+			reference: "'Missing Data'!$A$2:$A$5",
+			sheetName: 'Missing Data',
+			ownerSheet: 'Summary',
+			chartType: 'barChart',
+		})
+	})
+
+	test('does not flag external workbook chart series references as missing local sheets', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Data')
+		wb.chartParts.push({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Data',
+			series: [
+				{
+					categoryRef: "'[Book1.xlsx]Sheet1'!$A$2:$A$5",
+					valueRef: '[Book1.xlsx]Sheet1!$B$2:$B$5',
+				},
+			],
+		})
+
+		const result = check(wb)
+		expect(result.issues.filter((i) => i.rule === 'chart-series-integrity')).toHaveLength(0)
+	})
+
 	test('suggests closest sheet name for broken refs', () => {
 		const wb = createWorkbook()
 		wb.addSheet('Sheet1')

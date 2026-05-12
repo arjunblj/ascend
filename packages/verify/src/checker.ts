@@ -129,6 +129,84 @@ function checkExternalRefs(analysis: WorkbookFormulaAnalysis): CheckIssue[] {
 	return issues
 }
 
+interface ChartSeriesReferenceEntry {
+	readonly field: 'nameRef' | 'categoryRef' | 'valueRef'
+	readonly reference: string
+}
+
+function chartSeriesReferenceEntries(series: {
+	readonly nameRef?: string
+	readonly categoryRef?: string
+	readonly valueRef?: string
+}): ChartSeriesReferenceEntry[] {
+	const entries: ChartSeriesReferenceEntry[] = []
+	if (series.nameRef) entries.push({ field: 'nameRef', reference: series.nameRef })
+	if (series.categoryRef) entries.push({ field: 'categoryRef', reference: series.categoryRef })
+	if (series.valueRef) entries.push({ field: 'valueRef', reference: series.valueRef })
+	return entries
+}
+
+function chartReferenceSheetName(reference: string): { sheetName?: string; external: boolean } {
+	const trimmed = reference.trim()
+	if (trimmed.startsWith('[')) return { external: true }
+	if (trimmed.startsWith("'")) {
+		let sheetName = ''
+		for (let i = 1; i < trimmed.length; i++) {
+			const char = trimmed[i]
+			if (char === "'" && trimmed[i + 1] === "'") {
+				sheetName += "'"
+				i++
+				continue
+			}
+			if (char === "'" && trimmed[i + 1] === '!') {
+				return { sheetName, external: sheetName.startsWith('[') }
+			}
+			sheetName += char
+		}
+		return { external: false }
+	}
+	const bang = trimmed.indexOf('!')
+	if (bang === -1) return { external: false }
+	const sheetName = trimmed.slice(0, bang)
+	return { sheetName, external: sheetName.startsWith('[') }
+}
+
+function checkChartSeriesReferences(wb: Workbook, sheetNames: readonly string[]): CheckIssue[] {
+	const issues: CheckIssue[] = []
+	const sheetNameSet = new Set(sheetNames.map((name) => name.toLowerCase()))
+	for (const chart of wb.chartParts) {
+		for (let seriesIndex = 0; seriesIndex < chart.series.length; seriesIndex++) {
+			const series = chart.series[seriesIndex]
+			if (!series) continue
+			for (const entry of chartSeriesReferenceEntries(series)) {
+				const parsed = chartReferenceSheetName(entry.reference)
+				if (parsed.external || !parsed.sheetName) continue
+				if (sheetNameSet.has(parsed.sheetName.toLowerCase())) continue
+				const closest = findClosestSheetName(parsed.sheetName, sheetNames)
+				issues.push({
+					rule: 'chart-series-integrity',
+					severity: 'warning',
+					message: `Chart series ${entry.field} in "${chart.partPath}" references non-existent sheet "${parsed.sheetName}"`,
+					refs: [`${chart.partPath}#series${seriesIndex}`],
+					suggestedFix: closest
+						? `Did you mean sheet "${closest}"?`
+						: 'Repair the chart series source reference before editing chart data ranges.',
+					details: {
+						partPath: chart.partPath,
+						seriesIndex,
+						field: entry.field,
+						reference: entry.reference,
+						sheetName: parsed.sheetName,
+						...(chart.sheetName ? { ownerSheet: chart.sheetName } : {}),
+						...(chart.chartType ? { chartType: chart.chartType } : {}),
+					},
+				})
+			}
+		}
+	}
+	return issues
+}
+
 function checkCircularRefs(wb: Workbook, analysis: WorkbookDependencyAnalysis): CheckIssue[] {
 	return analysis.cycles.map((cycle) => {
 		const refs = cycle.map((key) => {
@@ -655,6 +733,7 @@ export function check(
 	const issues = [
 		...checkBrokenRefs(workbook, formulas, sheetNames),
 		...checkExternalRefs(formulas),
+		...checkChartSeriesReferences(workbook, sheetNames),
 		...checkCircularRefs(workbook, dependencies),
 		...checkFormulaErrors(workbook, formulas),
 		...checkBlockedSpills(workbook),

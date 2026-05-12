@@ -581,6 +581,9 @@ export class AscendWorkbook extends WorkbookReadView {
 		const result = verifyCheck(this.wb, {
 			formulas: this.formulaAnalysis(),
 			dependencies: this.dependencyAnalysis(),
+			...(this.wb.sourceArchiveBytes
+				? { packageGraph: inspectXlsxPackageGraph(this.wb.sourceArchiveBytes) }
+				: {}),
 		})
 		const issues: CheckIssue[] = result.issues.map(sdkCheckIssueFromVerify)
 		return { valid: result.passed, issues }

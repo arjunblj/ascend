@@ -227,6 +227,173 @@ describe('checker', () => {
 		expect(overlapIssue?.suggestedFix).toContain('unambiguous table ownership')
 	})
 
+	test('detects queryTable relationship binding mismatches', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.tables.push({
+			id: createTableId(),
+			name: 'SalesQuery',
+			sheetId: s.id,
+			partPath: 'xl/tables/table1.xml',
+			tableType: 'queryTable',
+			ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } },
+			columns: [{ name: 'Name' }, { name: 'Amount' }],
+			hasHeaders: true,
+			hasTotals: false,
+			queryTable: {
+				relationshipId: 'rIdQuery',
+				partPath: 'xl/queryTables/queryTable1.xml',
+				relationshipType:
+					'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
+				target: '../queryTables/queryTable1.xml',
+			},
+		})
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/tables/table1.xml',
+						featureFamily: 'preservedTable',
+						ownerScope: 'worksheet',
+					},
+					{
+						path: 'xl/queryTables/queryTable1.xml',
+						featureFamily: 'preservedQueryTable',
+						ownerScope: 'worksheet',
+						contentType:
+							'application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml',
+					},
+				],
+				relationships: [
+					{
+						sourcePartPath: 'xl/tables/table1.xml',
+						relationshipPartPath: 'xl/tables/_rels/table1.xml.rels',
+						id: 'rIdOther',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
+						rawTarget: '../queryTables/queryTable1.xml',
+						resolvedTarget: 'xl/queryTables/queryTable1.xml',
+						featureFamily: 'preservedQueryTable',
+					},
+				],
+			},
+		})
+		const queryIssues = result.issues.filter((i) => i.rule === 'table-query-integrity')
+		expect(result.passed).toBe(false)
+		expect(queryIssues).toHaveLength(1)
+		expect(queryIssues[0]?.message).toContain('does not bind')
+		expect(queryIssues[0]?.refs).toEqual(['Sheet1!A1:B3', 'xl/queryTables/queryTable1.xml'])
+		expect(queryIssues[0]?.details).toMatchObject({
+			kind: 'query-table-relationship-binding-mismatch',
+			table: {
+				tableName: 'SalesQuery',
+				tablePartPath: 'xl/tables/table1.xml',
+				queryTablePartPath: 'xl/queryTables/queryTable1.xml',
+				relationshipId: 'rIdQuery',
+			},
+			incomingRelationships: [
+				{
+					sourcePartPath: 'xl/tables/table1.xml',
+					relationshipPartPath: 'xl/tables/_rels/table1.xml.rels',
+					id: 'rIdOther',
+					resolvedTarget: 'xl/queryTables/queryTable1.xml',
+				},
+			],
+		})
+	})
+
+	test('detects orphan queryTable package sidecars', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: s.id,
+			partPath: 'xl/tables/table1.xml',
+			ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } },
+			columns: [{ name: 'Name' }, { name: 'Amount' }],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/tables/table1.xml',
+						featureFamily: 'preservedTable',
+						ownerScope: 'worksheet',
+					},
+					{
+						path: 'xl/queryTables/queryTable1.xml',
+						featureFamily: 'preservedQueryTable',
+						ownerScope: 'worksheet',
+						contentType:
+							'application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml',
+					},
+				],
+				relationships: [
+					{
+						sourcePartPath: 'xl/tables/table1.xml',
+						relationshipPartPath: 'xl/tables/_rels/table1.xml.rels',
+						id: 'rIdQuery',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
+						rawTarget: '../queryTables/queryTable1.xml',
+						resolvedTarget: 'xl/queryTables/queryTable1.xml',
+						featureFamily: 'preservedQueryTable',
+					},
+				],
+			},
+		})
+		const orphanIssue = result.issues.find(
+			(i) => i.rule === 'table-query-integrity' && i.details?.kind === 'orphan-query-table-part',
+		)
+		expect(result.passed).toBe(false)
+		expect(orphanIssue?.severity).toBe('warning')
+		expect(orphanIssue?.refs).toEqual(['xl/queryTables/queryTable1.xml'])
+		expect(orphanIssue?.suggestedFix).toContain('orphan queryTable sidecar')
+	})
+
+	test('surfaces package graph relationship target issues as check diagnostics', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/workbook.xml',
+						featureFamily: 'workbook',
+						ownerScope: 'workbook',
+					},
+					{
+						path: 'xl/unknown/vendorBlob.xml',
+						featureFamily: 'preservedOther',
+						ownerScope: 'unknown',
+						preservationPolicy: 'unknown-review-required',
+					},
+				],
+				relationships: [
+					{
+						sourcePartPath: 'xl/workbook.xml',
+						relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+						id: 'rIdMissingSheet',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet',
+						rawTarget: 'worksheets/missing.xml',
+						resolvedTarget: 'xl/worksheets/missing.xml',
+						featureFamily: 'worksheet',
+					},
+				],
+			},
+		})
+		const packageIssues = result.issues.filter((i) => i.rule === 'package-graph-integrity')
+		expect(result.passed).toBe(false)
+		expect(packageIssues).toHaveLength(1)
+		expect(packageIssues[0]?.details?.code).toBe('package_relationship_target')
+		expect(packageIssues[0]?.refs).toEqual(['xl/_rels/workbook.xml.rels#rIdMissingSheet'])
+		expect(packageIssues[0]?.suggestedFix).toContain('restore the referenced package part')
+	})
+
 	test('detects ambiguous overlapping conditional format priorities', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

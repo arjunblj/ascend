@@ -331,9 +331,13 @@ export class WorkbookDocument {
 				issues: [partialDependencyCheckIssue(issue)],
 			}
 		}
-		const result = verifyCheck(this.view.getWorkbookModel(), {
+		const workbook = this.view.getWorkbookModel()
+		const result = verifyCheck(workbook, {
 			formulas: this.view.formulaAnalysis(),
 			dependencies: this.view.dependencyAnalysis(),
+			...(workbook.sourceArchiveBytes
+				? { packageGraph: inspectXlsxPackageGraph(workbook.sourceArchiveBytes) }
+				: {}),
 		})
 		this.refreshCacheFootprint('verify')
 		const issues = result.issues.map(sdkCheckIssueFromVerify)

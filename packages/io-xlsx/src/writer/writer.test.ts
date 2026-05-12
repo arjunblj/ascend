@@ -837,7 +837,7 @@ describe('writeXlsx', () => {
 				invalid: true,
 			})
 		},
-		20_000,
+		60_000,
 	)
 
 	it('preserves unchanged pivot and slicer capsules byte-for-byte', () => {

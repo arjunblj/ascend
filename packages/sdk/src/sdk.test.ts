@@ -2095,6 +2095,56 @@ describe('AscendWorkbook', () => {
 		expect(result.issues).toHaveLength(0)
 	})
 
+	test('check surfaces source package graph integrity issues', async () => {
+		const bytes = makeSyntheticXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdXmlMaps" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/xmlMaps" Target="xmlMaps.xml"/>
+</Relationships>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData/>
+</worksheet>`,
+		})
+
+		const workbook = await AscendWorkbook.open(bytes)
+		const document = await WorkbookDocument.open(bytes)
+
+		for (const result of [workbook.check(), document.check()]) {
+			const issue = result.issues.find((entry) => entry.rule === 'package-graph-integrity')
+			expect(result.valid).toBe(false)
+			expect(issue).toMatchObject({
+				severity: 'error',
+				refs: ['xl/_rels/workbook.xml.rels#rIdXmlMaps'],
+				details: {
+					code: 'package_relationship_target',
+					sourcePartPath: 'xl/workbook.xml',
+					relationshipId: 'rIdXmlMaps',
+					expected: 'xmlMaps.xml',
+					actual: 'xl/xmlMaps.xml',
+				},
+			})
+			expect(issue?.suggestedFix).toContain('restore the referenced package part')
+		}
+	})
+
 	test('check preserves structured verification metadata for agent repair', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'renameSheet', sheet: 'Sheet1', newName: 'SummaryData' }])

@@ -27,6 +27,37 @@ export interface CheckIssue {
 	readonly details?: Readonly<Record<string, unknown>>
 }
 
+export interface CheckAnalysis {
+	readonly formulas?: WorkbookFormulaAnalysis
+	readonly dependencies?: WorkbookDependencyAnalysis
+	readonly packageGraph?: VerifyPackageGraph
+}
+
+export interface VerifyPackageGraph {
+	readonly parts: readonly VerifyPackageGraphPart[]
+	readonly relationships: readonly VerifyPackageGraphRelationship[]
+}
+
+export interface VerifyPackageGraphPart {
+	readonly path: string
+	readonly featureFamily?: string
+	readonly ownerScope?: string
+	readonly contentType?: string
+	readonly preservationPolicy?: string
+}
+
+export interface VerifyPackageGraphRelationship {
+	readonly sourcePartPath: string
+	readonly relationshipPartPath: string
+	readonly id: string
+	readonly type: string
+	readonly rawType?: string
+	readonly rawTarget: string
+	readonly resolvedTarget?: string
+	readonly targetMode?: string
+	readonly featureFamily?: string
+}
+
 function findClosestSheetName(target: string, sheetNames: readonly string[]): string | null {
 	if (sheetNames.length === 0) return null
 	let best: string | null = null
@@ -554,12 +585,208 @@ function checkTableIntegrity(wb: Workbook): CheckIssue[] {
 	return issues
 }
 
+function checkTableQueryTableIntegrity(
+	wb: Workbook,
+	packageGraph?: VerifyPackageGraph,
+): CheckIssue[] {
+	const issues: CheckIssue[] = []
+	const graphPartByPath = new Map(packageGraph?.parts.map((part) => [part.path, part]) ?? [])
+	const graphRelationshipsByTarget = new Map<string, VerifyPackageGraphRelationship[]>()
+	for (const relationship of packageGraph?.relationships ?? []) {
+		if (!relationship.resolvedTarget) continue
+		const relationships = graphRelationshipsByTarget.get(relationship.resolvedTarget)
+		if (relationships) relationships.push(relationship)
+		else graphRelationshipsByTarget.set(relationship.resolvedTarget, [relationship])
+	}
+	const claimedQueryParts = new Map<string, TableQueryTableIntegrityEntry>()
+
+	for (const sheet of wb.sheets) {
+		for (const table of sheet.tables) {
+			const queryTable = table.queryTable
+			if (!queryTable) continue
+			const tableRef = rangeToA1(table.ref)
+			const entry: TableQueryTableIntegrityEntry = {
+				tableName: table.name,
+				sheetName: sheet.name,
+				ref: tableRef,
+				queryTablePartPath: queryTable.partPath,
+				relationshipId: queryTable.relationshipId,
+				...(table.partPath ? { tablePartPath: table.partPath } : {}),
+			}
+
+			if (!table.partPath) {
+				issues.push({
+					rule: 'table-query-integrity',
+					severity: 'error',
+					message: `Table "${table.name}" has a queryTable sidecar but no table part path`,
+					refs: [`${sheet.name}!${tableRef}`, queryTable.partPath],
+					suggestedFix:
+						'Preserve or repair the table part path before editing queryTable-backed table data.',
+					details: {
+						kind: 'query-table-missing-table-part',
+						table: entry,
+					},
+				})
+			}
+			if (table.tableType && table.tableType !== 'queryTable') {
+				issues.push({
+					rule: 'table-query-integrity',
+					severity: 'warning',
+					message: `Table "${table.name}" owns queryTable part "${queryTable.partPath}" but tableType is "${table.tableType}"`,
+					refs: [`${sheet.name}!${tableRef}`, queryTable.partPath],
+					suggestedFix:
+						'Confirm whether this table is query-backed before resizing or refreshing it.',
+					details: {
+						kind: 'query-table-type-mismatch',
+						table: entry,
+						tableType: table.tableType,
+					},
+				})
+			}
+			if (!isQueryTableRelationshipType(queryTable.relationshipType)) {
+				issues.push({
+					rule: 'table-query-integrity',
+					severity: 'warning',
+					message: `Table "${table.name}" queryTable relationship "${queryTable.relationshipId}" has unexpected type "${queryTable.relationshipType}"`,
+					refs: [`${sheet.name}!${tableRef}`, queryTable.partPath],
+					suggestedFix:
+						'Inspect the table relationship type dialect before preserving queryTable sidecars.',
+					details: {
+						kind: 'query-table-relationship-type-mismatch',
+						table: entry,
+						relationshipType: queryTable.relationshipType,
+						...(queryTable.relationshipRawType
+							? { relationshipRawType: queryTable.relationshipRawType }
+							: {}),
+					},
+				})
+			}
+
+			const existingClaim = claimedQueryParts.get(queryTable.partPath)
+			if (existingClaim) {
+				issues.push({
+					rule: 'table-query-integrity',
+					severity: 'error',
+					message: `QueryTable part "${queryTable.partPath}" is claimed by multiple tables`,
+					refs: [
+						`${existingClaim.sheetName}!${existingClaim.ref}`,
+						`${sheet.name}!${tableRef}`,
+						queryTable.partPath,
+					],
+					suggestedFix:
+						'Give each query-backed table a distinct queryTable part relationship before editing table topology.',
+					details: {
+						kind: 'duplicate-query-table-part-owner',
+						first: existingClaim,
+						duplicate: entry,
+					},
+				})
+			} else {
+				claimedQueryParts.set(queryTable.partPath, entry)
+			}
+
+			if (!packageGraph) continue
+			const graphPart = graphPartByPath.get(queryTable.partPath)
+			if (!graphPart) {
+				issues.push({
+					rule: 'table-query-integrity',
+					severity: 'error',
+					message: `Table "${table.name}" references missing queryTable package part "${queryTable.partPath}"`,
+					refs: [`${sheet.name}!${tableRef}`, queryTable.partPath],
+					suggestedFix:
+						'Restore the queryTable package part or remove the stale queryTable relationship before writing.',
+					details: {
+						kind: 'missing-query-table-part',
+						table: entry,
+					},
+				})
+				continue
+			}
+			const incomingRelationships = graphRelationshipsByTarget.get(queryTable.partPath) ?? []
+			const matchingRelationship = incomingRelationships.find(
+				(relationship) =>
+					relationship.sourcePartPath === table.partPath &&
+					relationship.id === queryTable.relationshipId,
+			)
+			if (!matchingRelationship) {
+				issues.push({
+					rule: 'table-query-integrity',
+					severity: 'error',
+					message: `Table "${table.name}" queryTable relationship "${queryTable.relationshipId}" does not bind to "${queryTable.partPath}" in the package graph`,
+					refs: [`${sheet.name}!${tableRef}`, queryTable.partPath],
+					suggestedFix:
+						'Repair the table relationship id/target binding before editing query-backed table structure.',
+					details: {
+						kind: 'query-table-relationship-binding-mismatch',
+						table: entry,
+						graphPart,
+						incomingRelationships: incomingRelationships.map(queryTableRelationshipDetails),
+					},
+				})
+			}
+		}
+	}
+
+	if (packageGraph) {
+		for (const part of packageGraph.parts) {
+			if (part.featureFamily !== 'preservedQueryTable') continue
+			if (claimedQueryParts.has(part.path)) continue
+			issues.push({
+				rule: 'table-query-integrity',
+				severity: 'warning',
+				message: `QueryTable package part "${part.path}" is not claimed by any workbook table model`,
+				refs: [part.path],
+				suggestedFix:
+					'Inspect table relationships and reconnect or intentionally remove the orphan queryTable sidecar before table edits.',
+				details: {
+					kind: 'orphan-query-table-part',
+					partPath: part.path,
+					ownerScope: part.ownerScope,
+					contentType: part.contentType,
+					incomingRelationships: (graphRelationshipsByTarget.get(part.path) ?? []).map(
+						queryTableRelationshipDetails,
+					),
+				},
+			})
+		}
+	}
+
+	return issues
+}
+
 interface TableIntegrityEntry {
 	readonly tableName: string
 	readonly tableId: string
 	readonly sheetName: string
 	readonly ref: string
 	readonly partPath?: string
+}
+
+interface TableQueryTableIntegrityEntry {
+	readonly tableName: string
+	readonly sheetName: string
+	readonly ref: string
+	readonly tablePartPath?: string
+	readonly queryTablePartPath: string
+	readonly relationshipId: string
+}
+
+function isQueryTableRelationshipType(relationshipType: string): boolean {
+	return relationshipType.toLowerCase().endsWith('/relationships/querytable')
+}
+
+function queryTableRelationshipDetails(
+	relationship: VerifyPackageGraphRelationship,
+): Readonly<Record<string, unknown>> {
+	return {
+		sourcePartPath: relationship.sourcePartPath,
+		relationshipPartPath: relationship.relationshipPartPath,
+		id: relationship.id,
+		type: relationship.type,
+		rawTarget: relationship.rawTarget,
+		...(relationship.rawType ? { rawType: relationship.rawType } : {}),
+		...(relationship.resolvedTarget ? { resolvedTarget: relationship.resolvedTarget } : {}),
+	}
 }
 
 interface ConditionalFormatPriorityEntry {
@@ -860,13 +1087,37 @@ function checkLegacyCommentDrawingIntegrity(wb: Workbook): CheckIssue[] {
 	return issues
 }
 
-export function check(
-	workbook: Workbook,
-	analysis?: {
-		readonly formulas?: WorkbookFormulaAnalysis
-		readonly dependencies?: WorkbookDependencyAnalysis
-	},
-): CheckResult {
+function checkPackageGraphIntegrity(packageGraph?: VerifyPackageGraph): CheckIssue[] {
+	if (!packageGraph) return []
+	const issues: CheckIssue[] = []
+	const partPaths = new Set(packageGraph.parts.map((part) => part.path))
+
+	for (const relationship of packageGraph.relationships) {
+		if (relationship.targetMode?.toLowerCase() === 'external') continue
+		if (relationship.resolvedTarget && partPaths.has(relationship.resolvedTarget)) continue
+		issues.push({
+			rule: 'package-graph-integrity',
+			severity: 'error',
+			message: `Package relationship ${relationship.relationshipPartPath}#${relationship.id} resolves to missing target "${relationship.resolvedTarget ?? relationship.rawTarget}"`,
+			refs: [`${relationship.relationshipPartPath}#${relationship.id}`],
+			suggestedFix:
+				'Repair the relationship target or restore the referenced package part before writing.',
+			details: {
+				code: 'package_relationship_target',
+				sourcePartPath: relationship.sourcePartPath,
+				relationshipPartPath: relationship.relationshipPartPath,
+				relationshipId: relationship.id,
+				featureFamily: relationship.featureFamily,
+				expected: relationship.rawTarget,
+				actual: relationship.resolvedTarget,
+			},
+		})
+	}
+
+	return issues
+}
+
+export function check(workbook: Workbook, analysis?: CheckAnalysis): CheckResult {
 	const formulas = analysis?.formulas ?? analyzeWorkbookFormulas(workbook)
 	const dependencies = analysis?.dependencies ?? analyzeWorkbookDependencies(workbook)
 	const sheetNames = workbook.sheets.map((s) => s.name)
@@ -881,9 +1132,11 @@ export function check(
 		...checkOrphanedNames(workbook),
 		...checkMergeOverlaps(workbook),
 		...checkTableIntegrity(workbook),
+		...checkTableQueryTableIntegrity(workbook, analysis?.packageGraph),
 		...checkConditionalFormatIntegrity(workbook),
 		...checkThreadedCommentIntegrity(workbook),
 		...checkLegacyCommentDrawingIntegrity(workbook),
+		...checkPackageGraphIntegrity(analysis?.packageGraph),
 	]
 	return { passed: issues.length === 0, issues }
 }

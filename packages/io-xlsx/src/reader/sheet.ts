@@ -1099,7 +1099,7 @@ function parseSheetDataFromLoc(
 
 		const rowClose = xml.indexOf('</row>', rowTagEnd + 1)
 		if (rowClose === -1 || rowClose > sheetData.contentEnd) return
-		if (parseSimpleFullNumberRow(xml, rowTagEnd + 1, rowClose, row, cellCtx, sheet)) {
+		if (parseSimpleFullScalarRow(xml, rowTagEnd + 1, rowClose, row, cellCtx, sheet)) {
 			rowCursor = rowClose + 6
 			continue
 		}
@@ -2463,7 +2463,7 @@ function parseSimpleValuesRow(
 	}
 }
 
-function parseSimpleFullNumberRow(
+function parseSimpleFullScalarRow(
 	xml: string,
 	bodyStart: number,
 	bodyEnd: number,
@@ -2479,20 +2479,37 @@ function parseSimpleFullNumberRow(
 		row: number
 		col: number
 		numberValue: number | undefined
+		sharedStringIndex: number
 		styleIdx: number
 	} = {
 		row,
 		col: 0,
 		numberValue: undefined,
+		sharedStringIndex: -1,
 		styleIdx: 0,
 	}
 	while (true) {
 		cursor = skipXmlWhitespace(xml, cursor, bodyEnd)
 		if (cursor >= bodyEnd) return true
-		const next = parseCanonicalFullNumberCell(xml, cursor, bodyEnd, rowText, row, nextCol, out)
-		if (next === -1 || out.numberValue === undefined) return false
+		const next = parseCanonicalFullScalarCell(xml, cursor, bodyEnd, rowText, row, nextCol, out)
+		if (next === -1) return false
 		const styleId = ctx.styleIds[out.styleIdx] ?? DEFAULT_STYLE_ID
-		if (ctx.isDateFormat[out.styleIdx]) {
+		if (out.sharedStringIndex >= 0) {
+			const text = ctx.sharedStrings.getString?.(out.sharedStringIndex)
+			if (text !== undefined) {
+				sheet.cells.setStringResolved(out.row, out.col, text, null, styleId)
+			} else {
+				sheet.cells.setResolved(
+					out.row,
+					out.col,
+					ctx.sharedStrings.get(out.sharedStringIndex) ?? stringValue(''),
+					null,
+					styleId,
+				)
+			}
+		} else if (out.numberValue === undefined) {
+			return false
+		} else if (ctx.isDateFormat[out.styleIdx]) {
 			sheet.cells.setResolved(out.row, out.col, dateValue(out.numberValue), null, styleId)
 		} else if (styleId === DEFAULT_STYLE_ID) {
 			sheet.cells.setPlainNumber(out.row, out.col, out.numberValue)
@@ -2504,7 +2521,7 @@ function parseSimpleFullNumberRow(
 	}
 }
 
-function parseCanonicalFullNumberCell(
+function parseCanonicalFullScalarCell(
 	xml: string,
 	cursor: number,
 	bodyEnd: number,
@@ -2515,6 +2532,7 @@ function parseCanonicalFullNumberCell(
 		row: number
 		col: number
 		numberValue: number | undefined
+		sharedStringIndex: number
 		styleIdx: number
 	},
 ): number {
@@ -2535,12 +2553,20 @@ function parseCanonicalFullNumberCell(
 	out.row = row
 	out.col = col
 	out.numberValue = undefined
+	out.sharedStringIndex = -1
 	out.styleIdx = 0
 
-	const contentStart = resolveCanonicalFullNumberContentStart(xml, index, bodyEnd, out)
-	if (contentStart === -1) return -1
+	const content = resolveCanonicalFullScalarContentStart(xml, index, bodyEnd, out)
+	if (!content) return -1
+	const contentStart = content.start
 	if (!xml.startsWith('<v>', contentStart)) return -1
 	const valueStart = contentStart + 3
+	if (content.kind === 'sharedString') {
+		const parsedIndex = parseCanonicalUnsignedIntegerValue(xml, valueStart, bodyEnd)
+		if (!parsedIndex) return -1
+		out.sharedStringIndex = parsedIndex.value
+		return parsedIndex.next
+	}
 	const parsedInt = parseCanonicalIntegerValue(xml, valueStart, bodyEnd)
 	if (parsedInt) {
 		out.numberValue = parsedInt.value
@@ -2554,28 +2580,81 @@ function parseCanonicalFullNumberCell(
 	return valueEnd + 8
 }
 
-function resolveCanonicalFullNumberContentStart(
+function resolveCanonicalFullScalarContentStart(
 	xml: string,
 	refEnd: number,
 	bodyEnd: number,
 	out: { styleIdx: number },
-): number {
-	if (xml.startsWith('">', refEnd)) return refEnd + 2
-	if (!xml.startsWith('" s="', refEnd)) return -1
-	let cursor = refEnd + 5
-	let styleIdx = 0
+): { start: number; kind: 'number' | 'sharedString' } | undefined {
+	let cursor = refEnd + 1
+	let kind: 'number' | 'sharedString' = 'number'
+	while (cursor < bodyEnd) {
+		cursor = skipXmlWhitespace(xml, cursor, bodyEnd)
+		const marker = xml.charCodeAt(cursor)
+		if (marker === 62) return { start: cursor + 1, kind }
+		if (marker === 47) return undefined
+		const nameStart = cursor
+		while (cursor < bodyEnd) {
+			const code = xml.charCodeAt(cursor)
+			if (code === 61 || code === 47 || code === 62 || isXmlWhitespaceCode(code)) break
+			cursor += 1
+		}
+		const nameEnd = cursor
+		if (nameEnd === nameStart) return undefined
+		cursor = skipXmlWhitespace(xml, cursor, bodyEnd)
+		if (xml.charCodeAt(cursor) !== 61) return undefined
+		cursor = skipXmlWhitespace(xml, cursor + 1, bodyEnd)
+		const quote = xml.charCodeAt(cursor)
+		if (quote !== 34 && quote !== 39) return undefined
+		const valueStart = cursor + 1
+		cursor = valueStart
+		while (cursor < bodyEnd && xml.charCodeAt(cursor) !== quote) cursor += 1
+		if (cursor >= bodyEnd) return undefined
+		if (attrNameEquals(xml, nameStart, nameEnd, 's')) {
+			const styleIdx = parseUnsignedIntInXmlRange(xml, valueStart, cursor)
+			if (styleIdx === undefined) return undefined
+			out.styleIdx = styleIdx
+		} else if (attrNameEquals(xml, nameStart, nameEnd, 't')) {
+			if (cursor === valueStart + 1 && xml.charCodeAt(valueStart) === 115) {
+				kind = 'sharedString'
+			} else if (!(cursor === valueStart + 1 && xml.charCodeAt(valueStart) === 110)) {
+				return undefined
+			}
+		} else {
+			return undefined
+		}
+		cursor += 1
+	}
+	return undefined
+}
+
+function parseUnsignedIntInXmlRange(xml: string, start: number, end: number): number | undefined {
+	let value = 0
+	if (start >= end) return undefined
+	for (let cursor = start; cursor < end; cursor++) {
+		const code = xml.charCodeAt(cursor)
+		if (code < 48 || code > 57) return undefined
+		value = value * 10 + (code - 48)
+	}
+	return value
+}
+
+function parseCanonicalUnsignedIntegerValue(
+	xml: string,
+	start: number,
+	bodyEnd: number,
+): { value: number; next: number } | undefined {
+	let cursor = start
+	let value = 0
 	const digitStart = cursor
 	while (cursor < bodyEnd) {
 		const code = xml.charCodeAt(cursor)
 		if (code < 48 || code > 57) break
-		styleIdx = styleIdx * 10 + (code - 48)
+		value = value * 10 + (code - 48)
 		cursor += 1
 	}
-	if (cursor === digitStart || cursor >= bodyEnd || xml.charCodeAt(cursor) !== 34) return -1
-	const tagEnd = cursor + 1
-	if (tagEnd >= bodyEnd || xml.charCodeAt(tagEnd) !== 62) return -1
-	out.styleIdx = styleIdx
-	return tagEnd + 1
+	if (cursor === digitStart || !xml.startsWith('</v></c>', cursor)) return undefined
+	return { value, next: cursor + 8 }
 }
 
 function parseCanonicalValuesCell(

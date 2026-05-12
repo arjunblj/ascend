@@ -146,9 +146,11 @@ function commentsAndThreadedCommentsWorkbook(): Uint8Array {
 <ThreadedComments xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">
   <threadedComment ref="D4" personId="{person-ada}" id="{root-thread}" dT="2024-03-01T10:11:12.000Z">
     <text>Thread root</text>
+    <mentions><mention mentionpersonId="{person-grace}" startIndex="0" length="6"/></mentions>
   </threadedComment>
   <threadedComment ref="D4" personId="{person-grace}" id="{reply-thread}" parentId="{root-thread}" dT="2024-03-02T10:11:12.000Z" done="1">
     <text>Thread reply</text>
+    <extLst><ext uri="{reply-ext}"><futureThreadMetadata preserved="1"/></ext></extLst>
   </threadedComment>
 </ThreadedComments>`,
 	})
@@ -6793,6 +6795,12 @@ describe('writeXlsx', () => {
 		expect(threadedXml).not.toContain('ref="D4"')
 		expect(threadedXml).toContain('parentId="{root-thread}"')
 		expect(threadedXml).toContain('done="1"')
+		expect(threadedXml).toContain(
+			'<mentions><mention mentionpersonId="{person-grace}" startIndex="0" length="6"/></mentions>',
+		)
+		expect(threadedXml).toContain(
+			'<extLst><ext uri="{reply-ext}"><futureThreadMetadata preserved="1"/></ext></extLst>',
+		)
 
 		const reopened = readXlsx(written.value)
 		expectOk(reopened)
@@ -6837,6 +6845,12 @@ describe('writeXlsx', () => {
 		expect(threadedXml).toContain('id="{root-thread}-copy"')
 		expect(threadedXml).toContain('parentId="{root-thread}-copy"')
 		expect(threadedXml).toContain('ref="E4"')
+		expect(threadedXml).toMatch(
+			/id="\{root-thread\}-copy"[\s\S]*<mentions><mention mentionpersonId="\{person-grace\}" startIndex="0" length="6"\/><\/mentions>/,
+		)
+		expect(threadedXml).toMatch(
+			/id="\{reply-thread\}-copy"[\s\S]*<extLst><ext uri="\{reply-ext\}"><futureThreadMetadata preserved="1"\/><\/ext><\/extLst>/,
+		)
 
 		const reopened = readXlsx(written.value)
 		expectOk(reopened)

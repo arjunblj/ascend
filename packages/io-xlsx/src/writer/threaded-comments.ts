@@ -88,9 +88,7 @@ export function syncThreadedCommentsXml(
 	const fallbackTag = sourceComments[0]?.tag ?? 'threadedComment'
 	const renderedComments = comments
 		.map((comment) => {
-			const source =
-				(comment.id ? sourceByKey.get(`id:${comment.id}`) : undefined) ??
-				sourceByKey.get(`ref:${comment.ref}`)
+			const source = findSourceThreadedComment(sourceByKey, comment)
 			return source
 				? updateThreadedCommentElement(source, comment)
 				: buildThreadedCommentElement(fallbackTag, comment)
@@ -206,6 +204,27 @@ function findMatchingThreadedComment(
 	if (seen.has(key)) return undefined
 	seen.add(key)
 	return candidates[0]
+}
+
+function findSourceThreadedComment(
+	sourceByKey: ReadonlyMap<string, SourceThreadedComment>,
+	comment: SheetThreadedComment,
+): SourceThreadedComment | undefined {
+	if (comment.id) {
+		const exact = sourceByKey.get(`id:${comment.id}`)
+		if (exact) return exact
+		const copiedFromId = sourceThreadedCommentIdForCopiedComment(comment.id)
+		if (copiedFromId) {
+			const source = sourceByKey.get(`id:${copiedFromId}`)
+			if (source) return source
+		}
+	}
+	return sourceByKey.get(`ref:${comment.ref}`)
+}
+
+function sourceThreadedCommentIdForCopiedComment(id: string): string | undefined {
+	const match = id.match(/^(.+)-copy(?:-\d+)?$/u)
+	return match?.[1]
 }
 
 function threadedCommentMatches(
